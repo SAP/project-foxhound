@@ -66,7 +66,7 @@ parent:
              DevicePrefs devicePrefs,
              LayerTreeIdMapping[] mapping,
              GfxInfoFeatureStatus[] features,
-             uint32_t wrNamespace);
+             uint32_t wrNamespace) returns (GPUDeviceData data);
 
   async InitCompositorManager(Endpoint<PCompositorManagerParent> endpoint, uint32_t aNamespace);
   async InitVsyncBridge(Endpoint<PVsyncBridgeParent> endpoint);
@@ -80,7 +80,7 @@ parent:
   // Forward GPU process its endpoints to the VR process.
   async InitVR(Endpoint<PVRGPUChild> endpoint);
   // Called to update a gfx variable.
-  async UpdateVar(GfxVarUpdate var);
+  async UpdateVar(GfxVarUpdate[] var);
 
   async PreferenceUpdate(Pref pref);
   async ScreenInformationChanged();
@@ -138,10 +138,6 @@ parent:
   async CrashProcess();
 
 child:
-  // Sent when the GPU process has initialized devices. This occurs once, after
-  // Init().
-  async InitComplete(GPUDeviceData data);
-
   // Sent when APZ detects checkerboarding and apz checkerboard reporting is enabled.
   async ReportCheckerboard(uint32_t severity, nsCString log);
 
@@ -191,6 +187,10 @@ child:
   // Buffer contains bincoded Rust structs.
   // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/ipc.html
   async FOGData(ByteBuf buf);
+
+  // Reports GL string values obtained from an OpenGL context to gfxInfo in the
+  // parent process.
+  async ReportGLStrings(GfxInfoGLStrings aStrings);
 };
 
 } // namespace gfx

@@ -10,11 +10,11 @@
 #ifndef mozilla_dom_HTMLImageElement_h
 #define mozilla_dom_HTMLImageElement_h
 
+#include "Units.h"
 #include "mozilla/Attributes.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsGenericHTMLElement.h"
 #include "nsImageLoadingContent.h"
-#include "Units.h"
-#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 class EventChainPreVisitor;
@@ -39,6 +39,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   bool Draggable() const override;
 
@@ -63,7 +64,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
@@ -203,7 +204,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   }
 
 #ifdef DEBUG
-  HTMLFormElement* GetForm() const;
+  HTMLFormElement* GetFormInternal() const;
 #endif
   void SetForm(HTMLFormElement* aForm);
   void ClearForm(bool aRemoveFromForm);
@@ -252,7 +253,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
       nsAString& aResult);
 
   enum class StartLoad : bool { No, Yes };
-  void StopLazyLoading(StartLoad = StartLoad::Yes);
+  void StopLazyLoading(StartLoad);
 
   // This is used when restyling, for retrieving the extra style from the source
   // element.

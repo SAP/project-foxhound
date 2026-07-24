@@ -24,62 +24,6 @@ namespace mozilla {
 namespace layers {
 
 /**
- * AndroidHardwareBufferApi provides apis for managing AHardwareBuffer.
- * The apis are supported since Android O(APIVersion 26).
- */
-class AndroidHardwareBufferApi final {
- public:
-  static void Init();
-  static void Shutdown();
-
-  static AndroidHardwareBufferApi* Get() { return sInstance; }
-
-  void Allocate(const AHardwareBuffer_Desc* aDesc,
-                AHardwareBuffer** aOutBuffer);
-  void Acquire(AHardwareBuffer* aBuffer);
-  void Release(AHardwareBuffer* aBuffer);
-  void Describe(const AHardwareBuffer* aBuffer, AHardwareBuffer_Desc* aOutDesc);
-  int Lock(AHardwareBuffer* aBuffer, uint64_t aUsage, int32_t aFence,
-           const ARect* aRect, void** aOutVirtualAddress);
-  int Unlock(AHardwareBuffer* aBuffer, int32_t* aFence);
-  int SendHandleToUnixSocket(const AHardwareBuffer* aBuffer, int aSocketFd);
-  int RecvHandleFromUnixSocket(int aSocketFd, AHardwareBuffer** aOutBuffer);
-
- private:
-  AndroidHardwareBufferApi();
-  bool Load();
-
-  using _AHardwareBuffer_allocate = int (*)(const AHardwareBuffer_Desc* desc,
-                                            AHardwareBuffer** outBuffer);
-  using _AHardwareBuffer_acquire = void (*)(AHardwareBuffer* buffer);
-  using _AHardwareBuffer_release = void (*)(AHardwareBuffer* buffer);
-  using _AHardwareBuffer_describe = void (*)(const AHardwareBuffer* buffer,
-                                             AHardwareBuffer_Desc* outDesc);
-  using _AHardwareBuffer_lock = int (*)(AHardwareBuffer* buffer, uint64_t usage,
-                                        int32_t fence, const ARect* rect,
-                                        void** outVirtualAddress);
-  using _AHardwareBuffer_unlock = int (*)(AHardwareBuffer* buffer,
-                                          int32_t* fence);
-  using _AHardwareBuffer_sendHandleToUnixSocket =
-      int (*)(const AHardwareBuffer* buffer, int socketFd);
-  using _AHardwareBuffer_recvHandleFromUnixSocket =
-      int (*)(int socketFd, AHardwareBuffer** outBuffer);
-
-  _AHardwareBuffer_allocate mAHardwareBuffer_allocate = nullptr;
-  _AHardwareBuffer_acquire mAHardwareBuffer_acquire = nullptr;
-  _AHardwareBuffer_release mAHardwareBuffer_release = nullptr;
-  _AHardwareBuffer_describe mAHardwareBuffer_describe = nullptr;
-  _AHardwareBuffer_lock mAHardwareBuffer_lock = nullptr;
-  _AHardwareBuffer_unlock mAHardwareBuffer_unlock = nullptr;
-  _AHardwareBuffer_sendHandleToUnixSocket
-      mAHardwareBuffer_sendHandleToUnixSocket = nullptr;
-  _AHardwareBuffer_recvHandleFromUnixSocket
-      mAHardwareBuffer_recvHandleFromUnixSocket = nullptr;
-
-  static StaticAutoPtr<AndroidHardwareBufferApi> sInstance;
-};
-
-/**
  * AndroidHardwareBuffer is a wrapper of AHardwareBuffer. AHardwareBuffer wraps
  * android GraphicBuffer. It is supported since Android O(APIVersion 26).
  * The manager is mainly used for release fences delivery from
@@ -94,6 +38,23 @@ class AndroidHardwareBuffer
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
 
   virtual ~AndroidHardwareBuffer();
+
+  // Serializes the AndroidHardwareBuffer to a file descriptor that can, if
+  // desired, be shared to another process, and deserialized with
+  // DeserializeFromFileDescriptor(). Note that while an AndroidHardwareBuffer
+  // deserialized from the returned file descriptor will refer to the same
+  // underlying system buffer, it will be a different instance of this class.
+  // Fences will therefore not be propagated between the instances.
+  UniqueFileHandle SerializeToFileDescriptor() const;
+
+  // Creates an AndroidHardwareBuffer from a file descriptor that was previously
+  // obtained from ToFileDescriptor(). The file descriptor may have been shared
+  // from another process. Note that while the returned AndroidHardwareBuffer
+  // refers to the same underlying system buffer as the one that was originally
+  // serialized, it will be a different instance of this class. Fences will
+  // therefore not be propagated between the instances.
+  static already_AddRefed<AndroidHardwareBuffer> DeserializeFromFileDescriptor(
+      UniqueFileHandle&& aFd);
 
   int Lock(uint64_t aUsage, const ARect* aRect, void** aOutVirtualAddress);
   int Unlock();
@@ -117,11 +78,7 @@ class AndroidHardwareBuffer
 
  protected:
   AndroidHardwareBuffer(AHardwareBuffer* aNativeBuffer, gfx::IntSize aSize,
-                        uint32_t aStride, gfx::SurfaceFormat aFormat,
-                        uint64_t aId);
-
-  void SetReleaseFence(UniqueFileHandle&& aFenceFd,
-                       const MonitorAutoLock& aAutoLock);
+                        uint32_t aStride, gfx::SurfaceFormat aFormat);
 
   AHardwareBuffer* mNativeBuffer;
 
@@ -129,17 +86,17 @@ class AndroidHardwareBuffer
   // AndroidHardwareBufferManager.
   bool mIsRegistered;
 
-  // protected by AndroidHardwareBufferManager::mMonitor
+  mutable Monitor mMonitor{"AndroidHardwareBuffer::mMonitor"};
 
   // FileDescriptor of release fence.
   // Release fence is a fence that is used for waiting until usage/composite of
   // AHardwareBuffer is ended. The fence is delivered via ImageBridge.
-  UniqueFileHandle mReleaseFenceFd;
+  UniqueFileHandle mReleaseFenceFd MOZ_GUARDED_BY(mMonitor);
 
   // FileDescriptor of acquire fence.
   // Acquire fence is a fence that is used for waiting until rendering to
   // its AHardwareBuffer is completed.
-  UniqueFileHandle mAcquireFenceFd;
+  UniqueFileHandle mAcquireFenceFd MOZ_GUARDED_BY(mMonitor);
 
   static uint64_t GetNextId();
 
@@ -156,22 +113,20 @@ class AndroidHardwareBufferManager {
   static void Init();
   static void Shutdown();
 
-  AndroidHardwareBufferManager();
-
   static AndroidHardwareBufferManager* Get() { return sInstance; }
 
   void Register(RefPtr<AndroidHardwareBuffer> aBuffer);
 
   void Unregister(AndroidHardwareBuffer* aBuffer);
 
-  already_AddRefed<AndroidHardwareBuffer> GetBuffer(uint64_t aBufferId);
-
-  Monitor& GetMonitor() { return mMonitor; }
+  already_AddRefed<AndroidHardwareBuffer> GetBuffer(uint64_t aBufferId) const;
 
  private:
-  Monitor mMonitor MOZ_UNANNOTATED;
+  AndroidHardwareBufferManager() = default;
+
+  mutable Monitor mMonitor{"AndroidHardwareBufferManager::mMonitor"};
   std::unordered_map<uint64_t, ThreadSafeWeakPtr<AndroidHardwareBuffer>>
-      mBuffers;
+      mBuffers MOZ_GUARDED_BY(mMonitor);
 
   static StaticAutoPtr<AndroidHardwareBufferManager> sInstance;
 };

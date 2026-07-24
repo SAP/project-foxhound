@@ -114,8 +114,7 @@ imgRequestProxy::imgRequestProxy()
       mListenerIsStrongRef(false),
       mDecodeRequested(false),
       mPendingNotify(false),
-      mValidating(false),
-      mHadListener(false) {
+      mValidating(false) {
   /* member initializers and constructor code */
   LOG_FUNC(gImgLog, "imgRequestProxy::imgRequestProxy");
 }
@@ -161,7 +160,6 @@ nsresult imgRequestProxy::Init(imgRequest* aOwner, nsILoadGroup* aLoadGroup,
   // that call might well want to release it if the imgRequest has
   // already seen OnStopRequest.
   if (mListener) {
-    mHadListener = true;
     mListenerIsStrongRef = true;
     NS_ADDREF(mListener);
   }

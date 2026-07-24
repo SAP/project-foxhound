@@ -138,7 +138,7 @@ internal data class IconDirectoryEntry(
  *
  * The Icon Directory consists of n-many Icon Directory Entries in sequence, with no gaps.
  */
-@Suppress("MagicNumber", "ReturnCount", "ComplexMethod", "NestedBlockDepth", "ComplexCondition")
+@Suppress("MagicNumber", "ReturnCount", "CognitiveComplexMethod", "NestedBlockDepth", "ComplexCondition", "CyclomaticComplexMethod")
 internal fun decodeDirectoryEntries(data: ByteArray, maxSize: Int): List<IconDirectoryEntry> {
     // Fail if we don't have enough space for the header.
     if (data.size < HEADER_LENGTH_BYTES) {

@@ -39,3 +39,6 @@ avoid-dot-mozilla-without-xdg:
         - toolkit/crashreporter/crash_helper_server/src/logging/env.rs
         - toolkit/moz.configure
         - toolkit/xre/nsXREDirProvider.cpp
+        - toolkit/xre/test/marionette/xdg_config/test_xdg_config_legacy_existing.py
+        - toolkit/tests/gtest/TestXREAppDir.cpp
+        - xpcom/io/nsAppFileLocationProvider.cpp

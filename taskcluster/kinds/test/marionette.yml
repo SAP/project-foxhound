@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    suite: marionette
     mozharness:
         script: marionette.py
         config:
@@ -47,19 +46,21 @@ marionette-unittest:
         by-test-platform:
             .*-asan.*: 3600
             .*-tsan.*: 4500
+            .*/debug: 3600
             default: 1800
     instance-size: default
     chunks: 1
-    suite: marionette
+    suite: marionette-unittest
     test-manifest-loader: null  # don't load in taskgraph
     mozharness:
         extra-options:
             - --subsuite=unittest
             - --test-manifest=unit/unit-tests.toml
 
-marionette:
+marionette-integration:
     description: "Marionette integration run"
     treeherder-symbol: Mn()
+    suite: marionette-integration
     variants:
         - webrender-sw
         - headless
@@ -89,7 +90,7 @@ marionette:
             .*-asan.*: 3600
             .*-tsan.*: 3600
             .*-ccov.*: 3600
-            .*-debug.*: 3600
+            .*/debug: 3600
             default: 2700
     instance-size: default
     chunks:

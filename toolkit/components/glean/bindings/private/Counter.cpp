@@ -81,7 +81,8 @@ namespace mozilla::glean {
 namespace impl {
 
 template <>
-void CounterMetric<CounterType::eBaseOrLabeled>::Add(int32_t aAmount) const {
+void CounterStandalone<CounterType::eBaseOrLabeled>::Add(
+    int32_t aAmount) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (aAmount >= 0) {
     if (scalarId) {
@@ -131,7 +132,7 @@ void CounterMetric<CounterType::eBaseOrLabeled>::Add(int32_t aAmount) const {
 }
 
 template <>
-void CounterMetric<CounterType::eDualLabeled>::Add(int32_t aAmount) const {
+void CounterStandalone<CounterType::eDualLabeled>::Add(int32_t aAmount) const {
   if (IsSubmetricId(mId)) {
     GetDualLabeledDistributionMirrorLock().apply([&](const auto& lock) {
       auto tuple = lock.ref()->MaybeGet(mId);

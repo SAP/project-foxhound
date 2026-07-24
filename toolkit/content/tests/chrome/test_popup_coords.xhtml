@@ -17,7 +17,8 @@
            onpopupshowing="popupShowingEventOccurred(event);"
            onpopupshown="eventOccurred(event); openThePopup('inner')"
            onpopuphiding="eventOccurred(event);"
-           onpopuphidden="eventOccurred(event); SimpleTest.finish();">
+           onpopuphidden="eventOccurred(event); SimpleTest.finish();"
+           native="false">
   <button id="item1" label="First"/>
   <label id="inner" value="Second" popup="innerpopup"/>
   <button id="item2" label="Third"/>
@@ -27,12 +28,15 @@
            onpopupshowing="popupShowingEventOccurred(event);"
            onpopupshown="eventOccurred(event); event.target.hidePopup();"
            onpopuphiding="eventOccurred(event);"
-           onpopuphidden="eventOccurred(event); document.getElementById('outerpopup').hidePopup();">
+           onpopuphidden="eventOccurred(event); document.getElementById('outerpopup').hidePopup();"
+           native="false">
   <menuitem id="inner1" label="Inner First"/>
   <menuitem id="inner2" label="Inner Second"/>
 </menupopup>
 
 <script>
+<![CDATA[
+
 SimpleTest.waitForExplicitFinish();
 
 function openThePopup(id)
@@ -54,6 +58,13 @@ function eventOccurred(event)
   is(event.rangeOffset, 0, testname + "rangeOffset");
 }
 
+function isRounded(a, b, msg) {
+  const diff = Math.abs(b - a);
+  const withinOnePx = diff <= 1;
+
+  is(withinOnePx, true, msg);
+}
+
 function popupShowingEventOccurred(event)
 {
   // the popupshowing event should have the event coordinates and
@@ -63,8 +74,8 @@ function popupShowingEventOccurred(event)
 
   var trigger = document.getElementById(event.target.id == "outerpopup" ? "outer" : "inner");
   var rect = trigger.getBoundingClientRect();
-  is(event.clientX, Math.round(rect.left + 4), testname + "clientX");
-  is(event.clientY, Math.round(rect.top + 5), testname + "clientY");
+  isRounded(event.clientX, rect.left + 4, testname + "clientX");
+  isRounded(event.clientY, rect.top + 5, testname + "clientY");
   // rangeOffset should be just at the trigger element, since they are labels
   // they don't have any childrens so the offset should be zero.
   is(event.rangeParent, trigger, testname + "rangeParent");
@@ -73,11 +84,13 @@ function popupShowingEventOccurred(event)
   var popuprect = event.target.getBoundingClientRect();
   var marginLeft = parseFloat(getComputedStyle(event.target).marginLeft);
   var marginTop = parseFloat(getComputedStyle(event.target).marginTop);
-  is(Math.round(popuprect.left - marginLeft), Math.round(rect.left + 4), "popup left");
-  is(Math.round(popuprect.top - marginTop), Math.round(rect.top + 5), "popup top");
+  isRounded(popuprect.left - marginLeft, rect.left + 4, "popup left");
+  isRounded(popuprect.top - marginTop, rect.top + 5, "popup top");
   ok(popuprect.width > 0, "popup width");
   ok(popuprect.height > 0, "popup height");
 }
+
+]]>
 </script>
 
 <body xmlns="http://www.w3.org/1999/xhtml">

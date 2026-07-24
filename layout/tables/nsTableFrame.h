@@ -2,12 +2,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsTableFrame_h__
-#define nsTableFrame_h__
+#ifndef nsTableFrame_h_
+#define nsTableFrame_h_
 
 #include "TableArea.h"
 #include "celldata.h"
-#include "mozilla/Attributes.h"
 #include "nsCellMap.h"
 #include "nsContainerFrame.h"
 #include "nsDisplayList.h"
@@ -144,8 +143,9 @@ class nsTableFrame : public nsContainerFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsTableFrame)
 
-  typedef nsTArray<nsIFrame*> FrameTArray;
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(PositionedTablePartArray, FrameTArray)
+  using TablePartsArray = nsTArray<nsContainerFrame*>;
+  NS_DECLARE_FRAME_PROPERTY_DELETABLE(PositionedTablePartsProperty,
+                                      TablePartsArray)
 
   /** nsTableWrapperFrame has intimate knowledge of the inner table frame */
   friend class nsTableWrapperFrame;
@@ -178,21 +178,17 @@ class nsTableFrame : public nsContainerFrame {
   // special height reflow will occur.
   static void RequestSpecialBSizeReflow(const ReflowInput& aReflowInput);
 
-  static void RePositionViews(nsIFrame* aFrame);
-
   static bool PageBreakAfter(nsIFrame* aSourceFrame, nsIFrame* aNextFrame);
 
   // Register or deregister a positioned table part with its nsTableFrame.
   // These objects will be visited by FixupPositionedTableParts after reflow is
   // complete. (See that function for more explanation.) Should be called
-  // during frame construction or style recalculation.
-  //
-  // @return true if the frame is a registered positioned table part.
+  // during style recalculation.
   static void PositionedTablePartMaybeChanged(
-      nsIFrame*, mozilla::ComputedStyle* aOldStyle);
+      nsContainerFrame*, mozilla::ComputedStyle* aOldStyle);
 
   // Unregister a positioned table part with its nsTableFrame, if needed.
-  static void MaybeUnregisterPositionedTablePart(nsIFrame* aFrame);
+  static void MaybeUnregisterPositionedTablePart(nsContainerFrame* aFrame);
 
   /*
    * Notification that rowspan or colspan has changed for content inside a
@@ -273,7 +269,7 @@ class nsTableFrame : public nsContainerFrame {
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -281,7 +277,7 @@ class nsTableFrame : public nsContainerFrame {
       mozilla::ComputeSizeFlags aFlags) override;
 
   mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -588,9 +584,6 @@ class nsTableFrame : public nsContainerFrame {
   void FixupPositionedTableParts(nsPresContext* aPresContext,
                                  ReflowOutput& aDesiredSize,
                                  const ReflowInput& aReflowInput);
-
-  // Clears the list of positioned table parts.
-  void ClearAllPositionedTableParts();
 
   nsITableLayoutStrategy* LayoutStrategy() const {
     return static_cast<nsTableFrame*>(FirstInFlow())

@@ -22,7 +22,7 @@ nsICOEncoder::nsICOEncoder()
     : mICOFileHeader{},
       mICODirEntry{},
       mImageBufferStart(nullptr),
-      mImageBufferCurr(0),
+      mImageBufferCurr(nullptr),
       mImageBufferSize(0),
       mImageBufferReadPoint(0),
       mFinished(false),
@@ -45,7 +45,8 @@ NS_IMETHODIMP
 nsICOEncoder::InitFromData(const uint8_t* aData, uint32_t aLength,
                            uint32_t aWidth, uint32_t aHeight, uint32_t aStride,
                            uint32_t aInputFormat,
-                           const nsAString& aOutputOptions) {
+                           const nsAString& aOutputOptions,
+                           const nsACString& aRandomizationKey) {
   // validate input format
   if (aInputFormat != INPUT_FORMAT_RGB && aInputFormat != INPUT_FORMAT_RGBA &&
       aInputFormat != INPUT_FORMAT_HOSTARGB) {
@@ -100,7 +101,8 @@ nsICOEncoder::AddImageFrame(const uint8_t* aData, uint32_t aLength,
     nsresult rv;
     nsAutoString noParams;
     rv = mContainedEncoder->InitFromData(aData, aLength, aWidth, aHeight,
-                                         aStride, aInputFormat, noParams);
+                                         aStride, aInputFormat, noParams,
+                                         VoidCString());
     NS_ENSURE_SUCCESS(rv, rv);
 
     uint32_t PNGImageBufferSize;
@@ -131,7 +133,8 @@ nsICOEncoder::AddImageFrame(const uint8_t* aData, uint32_t aLength,
     params.AppendInt(mICODirEntry.mBitCount);
 
     rv = mContainedEncoder->InitFromData(aData, aLength, aWidth, aHeight,
-                                         aStride, aInputFormat, params);
+                                         aStride, aInputFormat, params,
+                                         VoidCString());
     NS_ENSURE_SUCCESS(rv, rv);
 
     uint32_t andMaskSize = ((GetRealWidth() + 31) / 32) * 4 *  // row AND mask

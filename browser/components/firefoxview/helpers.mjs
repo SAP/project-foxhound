@@ -24,7 +24,9 @@ export const LOGGING_PREF = "browser.tabs.firefox-view.logLevel";
 export const MAX_TABS_FOR_RECENT_BROWSING = 5;
 
 export function formatURIForDisplay(uriString) {
-  return lazy.BrowserUtils.formatURIStringForDisplay(uriString);
+  return lazy.BrowserUtils.formatURIStringForDisplay(uriString, {
+    showFilenameForLocalURIs: true,
+  });
 }
 
 export function convertTimestamp(
@@ -88,7 +90,11 @@ export function escapeHtmlEntities(text) {
     .replace(/'/g, "&#39;");
 }
 
-export function navigateToLink(e, url = e.originalTarget.url) {
+export function navigateToLink(
+  e,
+  url = e.originalTarget.url,
+  { forceNewTab = true } = {}
+) {
   let currentWindow =
     e.target.ownerGlobal.browsingContext.embedderWindowGlobal.browsingContext
       .window;
@@ -98,7 +104,7 @@ export function navigateToLink(e, url = e.originalTarget.url) {
       false,
       true
     );
-    if (where == "current") {
+    if (where == "current" && forceNewTab) {
       where = "tab";
     }
     currentWindow.openTrustedLinkIn(url, where);

@@ -7,6 +7,7 @@
 #ifndef mozilla_DepthOrderedFrameList_h
 #define mozilla_DepthOrderedFrameList_h
 
+#include "mozilla/HashTable.h"
 #include "mozilla/ReverseIterator.h"
 #include "nsTArray.h"
 
@@ -16,52 +17,70 @@ namespace mozilla {
 
 class DepthOrderedFrameList {
  public:
-  // Add a dirty root.
+  // Add a frame to the set being tracked.
   void Add(nsIFrame* aFrame);
+
   // Remove this frame if present.
-  void Remove(nsIFrame* aFrame);
-  // Remove and return one of the shallowest dirty roots from the list.
-  // (If two roots are at the same depth, order is indeterminate.)
+  void Remove(nsIFrame* aFrame) {
+    mFrames.remove(aFrame);
+    mSortedFrames.ClearAndRetainStorage();
+  }
+
+  // Remove and return one of the shallowest frames from the list.
+  // (If two frames are at the same depth, order is indeterminate.)
   nsIFrame* PopShallowestRoot();
-  // Remove all dirty roots.
-  void Clear() { mList.Clear(); }
+
+  // Remove all frames.
+  void Clear() {
+    mFrames.clear();
+    mSortedFrames.Clear();
+  }
+
   // Is this frame one of the elements in the list?
-  bool Contains(nsIFrame* aFrame) const { return mList.Contains(aFrame); }
+  bool Contains(nsIFrame* aFrame) const { return mFrames.has(aFrame); }
+
   // Are there no elements?
-  bool IsEmpty() const { return mList.IsEmpty(); }
+  bool IsEmpty() const { return mFrames.empty(); }
 
   // Is the given frame an ancestor of any dirty root?
   bool FrameIsAncestorOfAnyElement(nsIFrame* aFrame) const;
 
-  auto IterFromShallowest() const { return Reversed(mList); }
-
-  // The number of elements that there are.
-  size_t Length() const { return mList.Length(); }
-  nsIFrame* ElementAt(size_t i) const { return mList.ElementAt(i); }
-  void RemoveElementAt(size_t i) { mList.RemoveElementAt(i); }
+  auto IterFromShallowest() const {
+    EnsureSortedList();
+    return Reversed(mSortedFrames);
+  }
 
  private:
+  // Set of the frames we're tracking and their depth in the frame tree. This
+  // is the primary record maintained by the Add and Remove methods. The sorted
+  // list in mSortedFrames is created on demand when we need to iterate in depth
+  // order.
+  HashMap<nsIFrame*, uint32_t> mFrames;
+
   struct FrameAndDepth {
     nsIFrame* mFrame;
-    const uint32_t mDepth;
+    uint32_t mDepth;
 
     // Easy conversion to nsIFrame*, as it's the most likely need.
     operator nsIFrame*() const { return mFrame; }
 
     // Used to sort by reverse depths, i.e., deeper < shallower.
-    class CompareByReverseDepth {
-     public:
-      bool Equals(const FrameAndDepth& aA, const FrameAndDepth& aB) const {
-        return aA.mDepth == aB.mDepth;
-      }
-      bool LessThan(const FrameAndDepth& aA, const FrameAndDepth& aB) const {
-        // Reverse depth! So '>' instead of '<'.
-        return aA.mDepth > aB.mDepth;
-      }
-    };
+    bool operator<(const FrameAndDepth& aOther) const {
+      // Reverse depth! So '>' instead of '<'.
+      return mDepth > aOther.mDepth;
+    }
   };
-  // List of all known dirty roots, sorted by decreasing depths.
-  nsTArray<FrameAndDepth> mList;
+
+  // The list of frames sorted by decreasing depths; created/updated lazily.
+  mutable nsTArray<FrameAndDepth> mSortedFrames;
+
+  void EnsureSortedList() const {
+    if (mSortedFrames.IsEmpty() && !mFrames.empty()) {
+      BuildSortedList();
+    }
+  }
+
+  void BuildSortedList() const;
 };
 
 }  // namespace mozilla

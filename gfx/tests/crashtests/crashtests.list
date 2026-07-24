@@ -76,6 +76,7 @@ load 516512-1.html
 load 532726-1.html
 load 538065-1.html
 load 546870-1.html
+load 552216.html
 load 557348-1.html
 load 563740-1.html
 load 580100-1.html
@@ -224,5 +225,10 @@ load 1808830.html
 load 1825450.html
 load 1683679.html
 load 1843622.html
+skip-if(Android&&debug) pref(gfx.missing_fonts.notify,true) load 1871755-1.html
 load 1898569.html
 load 1938548.html
+load 1962172-1.html
+load 1983053.html
+load 1999841-1.html
+load 2006199.html

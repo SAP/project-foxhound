@@ -2,7 +2,6 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   DiscoveryStreamFeed: "resource://newtab/lib/DiscoveryStreamFeed.sys.mjs",
-
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   QueryCache: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
@@ -71,12 +70,11 @@ async function clearHistoryAndBookmarks() {
  * not necessarily have had all its javascript/render logic executed.
  */
 async function waitForPreloaded(browser) {
-  let readyState = await ContentTask.spawn(
-    browser,
-    null,
-    () => content.document.readyState
-  );
-  if (readyState !== "complete") {
+  let [readyState, location] = await ContentTask.spawn(browser, null, () => [
+    content.document.readyState,
+    content.document.location.href,
+  ]);
+  if (readyState !== "complete" || location === "about:blank") {
     await BrowserTestUtils.browserLoaded(browser);
   }
 }
@@ -96,8 +94,16 @@ function refreshHighlightsFeed() {
   );
 }
 
+function clearHighlightsBookmarks() {
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.feeds.section.highlights",
+    false
+  );
+}
+
 /**
  * Helper to populate the Highlights section with bookmark cards.
+ *
  * @param count Number of items to add.
  */
 async function addHighlightsBookmarks(count) {

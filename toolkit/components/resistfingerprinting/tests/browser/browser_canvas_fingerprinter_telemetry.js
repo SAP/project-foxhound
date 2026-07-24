@@ -12,52 +12,35 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 const TEST_PAGE_NORMAL = TEST_PATH + "empty.html";
 const TEST_PAGE_FINGERPRINTER = TEST_PATH + "canvas-fingerprinter.html";
 
-const TELEMETRY_CANVAS_FINGERPRINTING_PER_TAB = "CANVAS_FINGERPRINTING_PER_TAB";
+// Glean labeled counter metric name
+const GLEAN_METRIC = "canvas_fingerprinting_per_tab2";
 
-const KEY_UNKNOWN = "unknown";
-const KEY_KNOWN_TEXT = "known_text";
+const KEY_UNKNOWN = "not_found";
+const KEY_KNOWN_TEXT = "found";
 
 async function clearTelemetry() {
-  Services.telemetry.getSnapshotForHistograms("main", true /* clear */);
-  Services.telemetry
-    .getKeyedHistogramById(TELEMETRY_CANVAS_FINGERPRINTING_PER_TAB)
-    .clear();
+  // Clear Glean metrics between tests to ensure isolation.
+  // The test-only clearing API is exposed via FOG in Firefox.
+  // This clears all metrics; acceptable for test isolation.
+  Services.fog.testResetFOG();
 }
 
-async function getKeyedHistogram(histogram_id, key, bucket, checkCntFn) {
-  let histogram;
-
-  // Wait until the telemetry probe appears.
+async function getLabeledCounter(metricName, label, checkCntFn) {
+  // Wait until the labeled counter appears with a value.
+  let value = 0;
   await TestUtils.waitForCondition(() => {
-    let histograms = Services.telemetry.getSnapshotForKeyedHistograms(
-      "main",
-      false /* clear */
-    ).parent;
-
-    histogram = histograms[histogram_id];
-
-    let checkRes = false;
-
-    if (histogram && histogram[key]) {
-      checkRes = checkCntFn ? checkCntFn(histogram[key].values[bucket]) : true;
-    }
-
-    return checkRes;
+    value =
+      Glean.contentblocking.canvasFingerprintingPerTab2[label].testGetValue();
+    return checkCntFn ? checkCntFn(value) : value > 0;
   });
-
-  return histogram[key].values[bucket] || 0;
+  return value;
 }
 
-async function checkKeyedHistogram(histogram_id, key, bucket, expectedCnt) {
-  let cnt = await getKeyedHistogram(histogram_id, key, bucket, cnt => {
-    if (cnt === undefined) {
-      cnt = 0;
-    }
-
-    return cnt == expectedCnt;
+async function checkLabeledCounter(metricName, label, expectedCnt) {
+  let cnt = await getLabeledCounter(metricName, label, v => {
+    return (v ?? 0) == expectedCnt;
   });
-
-  is(cnt, expectedCnt, "There should be expected count in keyed telemetry.");
+  is(cnt, expectedCnt, "Expected count in Glean labeled counter.");
 }
 
 add_setup(async function () {
@@ -77,12 +60,7 @@ add_task(async function test_canvas_fingerprinting_telemetry() {
 
   // Check that the telemetry has been record properly for normal page. The
   // telemetry should show there was no known fingerprinting attempt.
-  await checkKeyedHistogram(
-    TELEMETRY_CANVAS_FINGERPRINTING_PER_TAB,
-    KEY_UNKNOWN,
-    0,
-    1
-  );
+  await checkLabeledCounter(GLEAN_METRIC, KEY_UNKNOWN, 1);
 
   await clearTelemetry();
 });
@@ -100,12 +78,8 @@ add_task(async function test_canvas_fingerprinting_telemetry() {
 
   // The telemetry should show a a known fingerprinting text and a known
   // canvas fingerprinter.
-  await checkKeyedHistogram(
-    TELEMETRY_CANVAS_FINGERPRINTING_PER_TAB,
-    KEY_KNOWN_TEXT,
-    6, // CanvasFingerprinter::eVariant4
-    1
-  );
+  // CanvasFingerprinter::eVariant4 encoded under label KEY_KNOWN_TEXT
+  await checkLabeledCounter(GLEAN_METRIC, KEY_KNOWN_TEXT, 1);
 
   await clearTelemetry();
 });

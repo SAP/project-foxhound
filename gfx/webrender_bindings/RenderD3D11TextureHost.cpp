@@ -6,15 +6,17 @@
 
 #include "RenderD3D11TextureHost.h"
 
+#include <dcomp.h>
+
 #include "GLContextEGL.h"
 #include "GLLibraryEGL.h"
 #include "RenderThread.h"
 #include "RenderCompositor.h"
 #include "RenderCompositorD3D11SWGL.h"
 #include "ScopedGLHelpers.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/FenceD3D11.h"
 #include "mozilla/layers/GpuProcessD3D11TextureMap.h"
@@ -57,6 +59,76 @@ RenderDXGITextureHost::~RenderDXGITextureHost() {
   DeleteTextureHandle();
 }
 
+/* static */
+bool RenderDXGITextureHost::UseDCompositionTextureOverlay(
+    gfx::SurfaceFormat aFormat) {
+  if (!gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin()) {
+    return false;
+  }
+
+  if (!gfx::DeviceManagerDx::Get()->CanUseDCompositionTexture()) {
+    return false;
+  }
+
+  if (aFormat != gfx::SurfaceFormat::B8G8R8A8 &&
+      aFormat != gfx::SurfaceFormat::B8G8R8X8) {
+    return false;
+  }
+
+  return true;
+}
+
+IDCompositionTexture* RenderDXGITextureHost::GetDCompositionTexture() {
+  if (mDCompositionTexture) {
+    return mDCompositionTexture;
+  }
+
+  if (!UseDCompositionTextureOverlay(mFormat)) {
+    return nullptr;
+  }
+
+  if (mFencesHolderId.isNothing()) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    return nullptr;
+  }
+
+  HRESULT hr;
+  RefPtr<IDCompositionDevice2> dcomp =
+      gfx::DeviceManagerDx::Get()->GetDirectCompositionDevice();
+  if (!dcomp) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    gfxCriticalNoteOnce << "Failed to get DirectCompositionDevice";
+    return nullptr;
+  }
+
+  RefPtr<IDCompositionDevice4> dcomp4;
+  hr = dcomp->QueryInterface((IDCompositionDevice4**)getter_AddRefs(dcomp4));
+  if (FAILED(hr)) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    gfxCriticalNoteOnce << "Failed to get DCompositionDevice4";
+    return nullptr;
+  }
+
+  RefPtr<ID3D11Texture2D> texture2D = GetD3D11Texture2DWithGL();
+  if (!texture2D) {
+    gfxCriticalNoteOnce << "Failed to get D3D11Texture";
+    return nullptr;
+  }
+
+  RefPtr<IDCompositionTexture> dcompTexture;
+  hr =
+      dcomp4->CreateCompositionTexture(texture2D, getter_AddRefs(dcompTexture));
+  if (FAILED(hr)) {
+    gfxCriticalNoteOnce << "CreateCompositionTexture failed:  "
+                        << gfx::hexa(hr);
+    return nullptr;
+  }
+
+  mDCompositionTexture = dcompTexture;
+
+  return mDCompositionTexture;
+}
+
 ID3D11Texture2D* RenderDXGITextureHost::GetD3D11Texture2DWithGL() {
   if (mTexture) {
     return mTexture;
@@ -75,11 +147,40 @@ ID3D11Texture2D* RenderDXGITextureHost::GetD3D11Texture2DWithGL() {
 }
 
 size_t RenderDXGITextureHost::GetPlaneCount() const {
-  if (mFormat == gfx::SurfaceFormat::NV12 ||
-      mFormat == gfx::SurfaceFormat::P010 ||
-      mFormat == gfx::SurfaceFormat::P016) {
-    return 2;
+  switch (mFormat) {
+    case gfx::SurfaceFormat::NV12:
+    case gfx::SurfaceFormat::P010:
+    case gfx::SurfaceFormat::P016: {
+      return 2;
+    }
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::R8G8B8X8:
+    case gfx::SurfaceFormat::A8R8G8B8:
+    case gfx::SurfaceFormat::X8R8G8B8:
+    case gfx::SurfaceFormat::R8G8B8:
+    case gfx::SurfaceFormat::B8G8R8:
+    case gfx::SurfaceFormat::R5G6B5_UINT16:
+    case gfx::SurfaceFormat::R10G10B10A2_UINT32:
+    case gfx::SurfaceFormat::R10G10B10X2_UINT32:
+    case gfx::SurfaceFormat::R16G16B16A16F:
+    case gfx::SurfaceFormat::A8:
+    case gfx::SurfaceFormat::A16:
+    case gfx::SurfaceFormat::R8G8:
+    case gfx::SurfaceFormat::R16G16:
+    case gfx::SurfaceFormat::YUV420:
+    case gfx::SurfaceFormat::YUV420P10:
+    case gfx::SurfaceFormat::YUV422P10:
+    case gfx::SurfaceFormat::NV16:
+    case gfx::SurfaceFormat::YUY2:
+    case gfx::SurfaceFormat::HSV:
+    case gfx::SurfaceFormat::Lab:
+    case gfx::SurfaceFormat::Depth:
+    case gfx::SurfaceFormat::UNKNOWN:
+      return 1;
   }
+  MOZ_ASSERT_UNREACHABLE("unhandled enum value for gfx::SurfaceFormat");
   return 1;
 }
 
@@ -474,7 +575,7 @@ bool RenderDXGITextureHost::SyncObjectNeeded() {
 }
 
 RenderDXGIYCbCrTextureHost::RenderDXGIYCbCrTextureHost(
-    RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
+    const RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
     const gfx::YUVColorSpace aYUVColorSpace, const gfx::ColorDepth aColorDepth,
     const gfx::ColorRange aColorRange, const gfx::IntSize aSizeY,
     const gfx::IntSize aSizeCbCr,

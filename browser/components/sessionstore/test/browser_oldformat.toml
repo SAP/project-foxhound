@@ -72,12 +72,17 @@ prefs = [
 ["browser_1284886_suspend_tab.js"]
 
 ["browser_1446343-windowsize.js"]
-skip-if = ["os == 'linux'"] # Bug 1600180
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1600180
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1600180
+]
 
 ["browser_248970_b_perwindowpb.js"]
 # Disabled because of leaks.
 # Re-enabling and rewriting this test is tracked in bug 936919.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_339445.js"]
 
@@ -90,11 +95,15 @@ skip-if = ["true"]
 ["browser_367052.js"]
 
 ["browser_393716.js"]
-skip-if = ["debug"] # Bug 1507747
+skip-if = [
+  "debug", # Bug 1507747
+]
 
 ["browser_394759_basic.js"]
 # Disabled for intermittent failures, bug 944372.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_394759_behavior.js"]
 https_first_disabled = true
@@ -110,6 +119,9 @@ https_first_disabled = true
 ["browser_454908.js"]
 
 ["browser_456342.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_461634.js"]
 
@@ -121,10 +133,14 @@ https_first_disabled = true
 # Disabled for frequent intermittent failures
 
 ["browser_464620_a.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_464620_b.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_465215.js"]
 
@@ -136,8 +152,7 @@ skip-if = ["true"]
 
 ["browser_477657.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'", # bug 1610668 for ubuntu 18.04
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1610668
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1610668
 ]
 
 ["browser_480893.js"]
@@ -161,7 +176,9 @@ skip-if = [
 ["browser_522375.js"]
 
 ["browser_522545.js"]
-skip-if = ["true"] # Bug 1380968
+skip-if = [
+  "true", # Bug 1380968
+]
 
 ["browser_524745.js"]
 
@@ -199,7 +216,9 @@ https_first_disabled = true
 ["browser_590268.js"]
 
 ["browser_590563.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
 
 ["browser_595601-restore_hidden.js"]
 
@@ -231,7 +250,9 @@ https_first_disabled = true
 ["browser_624727.js"]
 
 ["browser_625016.js"]
-run-if = ["os != 'mac'"] # not running on macOS where closing all windows doesn't quit the application
+run-if = [
+  "os != 'mac'", # not running on macOS where closing all windows doesn't quit the application
+]
 
 ["browser_628270.js"]
 
@@ -271,7 +292,9 @@ https_first_disabled = true
 ["browser_739805.js"]
 
 ["browser_819510_perwindowpb.js"]
-skip-if = ["true"] # Bug 1284312, Bug 1341980, bug 1381451
+skip-if = [
+  "true", # Bug 1284312, Bug 1341980, bug 1381451
+]
 
 ["browser_906076_lazy_tabs.js"]
 https_first_disabled = true

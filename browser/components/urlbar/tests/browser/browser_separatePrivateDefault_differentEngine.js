@@ -47,14 +47,14 @@ add_setup(async function () {
   let engine2 = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + "POSTSearchEngine.xml",
   });
-  await Services.search.moveEngine(engine2, 0);
+  await SearchService.moveEngine(engine2, 0);
 
   // Add an engine with an alias.
   await SearchTestUtils.installSearchExtension({
     name: "MozSearch",
     keyword: "alias",
   });
-  gAliasEngine = Services.search.getEngineByName("MozSearch");
+  gAliasEngine = SearchService.getEngineByName("MozSearch");
 
   registerCleanupFunction(async () => {
     await PlacesUtils.history.clear();
@@ -151,7 +151,7 @@ add_task(async function test_openPBWindow() {
   });
   await AssertPrivateResult(
     window,
-    await Services.search.getDefaultPrivate(),
+    await SearchService.getDefaultPrivate(),
     true
   );
 
@@ -189,7 +189,7 @@ add_task(async function test_openPBWindow() {
 //   });
 //   await AssertPrivateResult(
 //     window,
-//     await Services.search.getDefaultPrivate(),
+//     await SearchService.getDefaultPrivate(),
 //     true
 //   );
 
@@ -236,7 +236,7 @@ add_task(async function test_openPBWindow() {
 //   });
 //   await AssertPrivateResult(
 //     window,
-//     await Services.search.getDefaultPrivate(),
+//     await SearchService.getDefaultPrivate(),
 //     true
 //   );
 
@@ -291,7 +291,7 @@ add_task(async function test_restrict_search() {
   info(
     "Test that 'Search in a Private Window' has the right string with the restriction token"
   );
-  let engine = await Services.search.getDefaultPrivate();
+  let engine = await SearchService.getDefaultPrivate();
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
     value: UrlbarTokenizer.RESTRICT.SEARCH + "test",

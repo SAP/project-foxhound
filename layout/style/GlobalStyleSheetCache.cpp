@@ -135,7 +135,7 @@ static constexpr struct {
 } kBuiltInSheetInfo[] = {
 #define STYLE_SHEET(identifier_, url_, flags_) \
   {nsLiteralCString(url_), BuiltInStyleSheetFlags::flags_},
-#include "mozilla/BuiltInStyleSheetList.h"
+#include "mozilla/BuiltInStyleSheetList.inc"
 #undef STYLE_SHEET
 };
 
@@ -311,11 +311,9 @@ void GlobalStyleSheetCache::LoadSheetFromSharedMemory(
   nsCOMPtr<nsIURI> uri;
   MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), aURL));
 
-  sheet->SetPrincipal(nsContentUtils::GetSystemPrincipal());
-  sheet->SetURIs(uri, uri, uri);
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      dom::ReferrerInfo::CreateForExternalCSSResources(sheet);
-  sheet->SetReferrerInfo(referrerInfo);
+      dom::ReferrerInfo::CreateForExternalCSSResources(sheet, uri);
+  sheet->SetURIs(uri, uri, referrerInfo, nsContentUtils::GetSystemPrincipal());
   sheet->SetSharedContents(aHeader->mSheets[i]);
   sheet->SetComplete();
   URLExtraData::sShared[i] = sheet->URLData();

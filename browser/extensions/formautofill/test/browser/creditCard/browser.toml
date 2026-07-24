@@ -17,16 +17,15 @@ support-files = [
 
 ["browser_anti_clickjacking.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1600059
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1600059
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt && a11y_checks && swgl && verify-standalone",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1600059
 ]
 
 ["browser_creditCard_capture_form_removal.js"]
 
 ["browser_creditCard_capture_multiple_cc_number.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_capture_page_navigation.js"]
@@ -35,67 +34,61 @@ skip-if = [
 
 ["browser_creditCard_doorhanger_action.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_display.js"]
 skip-if = [
-  "os == 'linux'", # Bug 1895422
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1895422
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_fields.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_iframe.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_logo.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_not_shown.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_doorhanger_sync.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug", # perma-fail see Bug 1655601
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug", # perma-fail see Bug 1655601
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # perma-fail see Bug 1655601
 ]
 
 ["browser_creditCard_dropdown_layout.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_creditCard_fill_cancel_login.js"]
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_creditCard_heuristics.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug"] # Bug 1714221
 
 ["browser_creditCard_osAuth.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["browser_creditCard_submission_autodetect_type.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug"]
 
 ["browser_creditCard_submission_normalized.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug"]
 
 ["browser_creditCard_telemetry_autofill.js"]
 support-files = ["browser_telemetry_utils.js"]
@@ -103,11 +96,9 @@ support-files = ["browser_telemetry_utils.js"]
 ["browser_creditCard_telemetry_manage.js"]
 support-files = ["browser_telemetry_utils.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1960313
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1960313
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1960313
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1960313
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1960313
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1960313
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1960313
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1960313
 ]
 
 ["browser_creditCard_telemetry_popup.js"]
@@ -120,10 +111,16 @@ support-files = ["browser_telemetry_utils.js"]
 support-files = ["browser_telemetry_utils.js"]
 
 ["browser_editCreditCardDialog.js"]
-skip-if = ["true"] # perma-fail see Bug 1600059
+skip-if = [
+  "true", # perma-fail see Bug 1600059
+]
 
 ["browser_insecure_form.js"]
-skip-if = ["true"] # perma-fail see Bug 1456284
+skip-if = [
+  "true", # perma-fail see Bug 1456284
+]
 
 ["browser_manageCreditCardsDialog.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]

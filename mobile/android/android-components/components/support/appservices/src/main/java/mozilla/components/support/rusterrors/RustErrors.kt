@@ -18,7 +18,8 @@ import mozilla.components.concept.base.crash.RustCrashReport
  * errors like network errors, will be counted with Glean.
  */
 public fun initializeRustErrors(crashReporter: CrashReporting) {
-    setApplicationErrorReporter(AndroidComponentsErrorReportor(crashReporter))
+    ErrorReporter.crashReporter = crashReporter
+    setApplicationErrorReporter(ErrorReporter)
 }
 
 internal class AppServicesErrorReport(
@@ -26,14 +27,24 @@ internal class AppServicesErrorReport(
     override val message: String,
 ) : Exception(typeName), RustCrashReport
 
-private class AndroidComponentsErrorReportor(
-    val crashReporter: CrashReporting,
-) : ApplicationErrorReporter {
+/**
+ * Report an error from a Rust component to sentry
+ *
+ * Normally these error reports come from Rust, but this function provides a way to do it from
+ * Kotlin code.
+ */
+fun reportRustError(typeName: String, message: String) {
+    ErrorReporter.reportError(typeName, message)
+}
+
+internal object ErrorReporter : ApplicationErrorReporter {
+    internal var crashReporter: CrashReporting? = null
+
     override fun reportError(typeName: String, message: String) {
-        crashReporter.submitCaughtException(AppServicesErrorReport(typeName, message))
+        crashReporter?.submitCaughtException(AppServicesErrorReport(typeName, message))
     }
 
     override fun reportBreadcrumb(message: String, module: String, line: UInt, column: UInt) {
-        crashReporter.recordCrashBreadcrumb(Breadcrumb("$module[$line]: $message"))
+        crashReporter?.recordCrashBreadcrumb(Breadcrumb("$module[$line]: $message"))
     }
 }

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_FILTERNODESOFTWARE_H_
-#define _MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#ifndef MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#define MOZILLA_GFX_FILTERNODESOFTWARE_H_
 
 #include "Filters.h"
 #include "mozilla/Mutex.h"
@@ -61,9 +61,6 @@ class FilterNodeSoftware : public FilterNode,
   // FilterInvalidationListener implementation
   void FilterInvalidated(FilterNodeSoftware* aFilter) override;
 
- protected:
-  // The following methods are intended to be overriden by subclasses.
-
   /**
    * Translates a *FilterInputs enum value into an index for the
    * mInputFilters / mInputSurfaces arrays. Returns -1 for invalid inputs.
@@ -71,6 +68,9 @@ class FilterNodeSoftware : public FilterNode,
    * InputIndex(enumValue) is -1, we abort.
    */
   virtual int32_t InputIndex(uint32_t aInputEnumIndex) { return -1; }
+
+ protected:
+  // The following methods are intended to be overriden by subclasses.
 
   /**
    * Every filter node has an output rect, which can also be infinite. The
@@ -360,7 +360,7 @@ class FilterNodeComponentTransferSoftware : public FilterNodeSoftware {
   void RequestFromInputsForRect(const IntRect& aRect) override;
   virtual void GenerateLookupTable(ptrdiff_t aComponent,
                                    uint8_t aTables[4][256], bool aDisabled);
-  virtual void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) = 0;
+  virtual bool FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) = 0;
 
   bool mDisableR;
   bool mDisableG;
@@ -379,10 +379,10 @@ class FilterNodeTableTransferSoftware
                     uint32_t aSize) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
 
  private:
-  void FillLookupTableImpl(std::vector<Float>& aTableValues,
+  bool FillLookupTableImpl(const std::vector<Float>& aTableValues,
                            uint8_t aTable[256]);
 
   std::vector<Float> mTableR;
@@ -402,10 +402,10 @@ class FilterNodeDiscreteTransferSoftware
                     uint32_t aSize) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
 
  private:
-  void FillLookupTableImpl(std::vector<Float>& aTableValues,
+  bool FillLookupTableImpl(const std::vector<Float>& aTableValues,
                            uint8_t aTable[256]);
 
   std::vector<Float> mTableR;
@@ -425,10 +425,10 @@ class FilterNodeLinearTransferSoftware
   void SetAttribute(uint32_t aIndex, Float aValue) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
 
  private:
-  void FillLookupTableImpl(Float aSlope, Float aIntercept, uint8_t aTable[256]);
+  bool FillLookupTableImpl(Float aSlope, Float aIntercept, uint8_t aTable[256]);
 
   Float mSlopeR;
   Float mSlopeG;
@@ -451,10 +451,10 @@ class FilterNodeGammaTransferSoftware
   void SetAttribute(uint32_t aIndex, Float aValue) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
 
  private:
-  void FillLookupTableImpl(Float aAmplitude, Float aExponent, Float aOffset,
+  bool FillLookupTableImpl(Float aAmplitude, Float aExponent, Float aOffset,
                            uint8_t aTable[256]);
 
   Float mAmplitudeR;
@@ -502,6 +502,7 @@ class FilterNodeConvolveMatrixSoftware : public FilterNodeSoftware {
                                                CoordType aKernelUnitLengthX,
                                                CoordType aKernelUnitLengthY);
 
+  MarginDouble GetInflateSourceMargin() const;
   IntRect InflatedSourceRect(const IntRect& aDestRect);
   IntRect InflatedDestRect(const IntRect& aSourceRect);
 
@@ -765,6 +766,9 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
                                                CoordType aKernelUnitLengthX,
                                                CoordType aKernelUnitLengthY);
 
+  MarginDouble GetInflateSourceMargin() const;
+  IntRect InflatedSourceRect(const IntRect& aDestRect);
+
   LightType mLight;
   LightingType mLighting;
   Float mSurfaceScale;
@@ -779,4 +783,4 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#endif  // MOZILLA_GFX_FILTERNODESOFTWARE_H_

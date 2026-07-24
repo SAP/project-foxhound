@@ -10,8 +10,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=944011
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 944011 comment 24 - Event handlers should fire even if the
-      target comes from a non-current inner. **/
+  /**
+   * Test for Bug 944011 comment 24 - Event handlers should fire even if the
+   * target comes from a non-current inner.
+   */
   SimpleTest.waitForExplicitFinish();
   var gLoadCount = 0;
   function loaded() {

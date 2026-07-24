@@ -19,19 +19,20 @@ add_setup(async function () {
 });
 
 add_task(async function test_muxer() {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
   Assert.throws(
-    () => UrlbarProvidersManager.registerMuxer(),
+    () => providersManager.registerMuxer(),
     /invalid muxer/,
     "Should throw with no arguments"
   );
   Assert.throws(
-    () => UrlbarProvidersManager.registerMuxer({}),
+    () => providersManager.registerMuxer({}),
     /invalid muxer/,
     "Should throw with empty object"
   );
   Assert.throws(
     () =>
-      UrlbarProvidersManager.registerMuxer({
+      providersManager.registerMuxer({
         name: "",
       }),
     /invalid muxer/,
@@ -39,7 +40,7 @@ add_task(async function test_muxer() {
   );
   Assert.throws(
     () =>
-      UrlbarProvidersManager.registerMuxer({
+      providersManager.registerMuxer({
         name: "test",
         sort: "no",
       }),
@@ -48,21 +49,21 @@ add_task(async function test_muxer() {
   );
 
   let matches = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-      UrlbarUtils.RESULT_SOURCE.TABS,
-      { url: "http://mozilla.org/tab/" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: "http://mozilla.org/bookmark/" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/history/" }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      source: UrlbarUtils.RESULT_SOURCE.TABS,
+      payload: { url: "http://mozilla.org/tab/" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: "http://mozilla.org/bookmark/" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/history/" },
+    }),
   ];
 
   let provider = registerBasicTestProvider(matches);
@@ -89,37 +90,37 @@ add_task(async function test_muxer() {
   }
   let muxer = new TestMuxer();
 
-  UrlbarProvidersManager.registerMuxer(muxer);
+  providersManager.registerMuxer(muxer);
   context.muxer = "TestMuxer";
 
   info("Check results, the order should be: bookmark, history, tab");
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await providersManager.startQuery(context, controller);
   Assert.deepEqual(context.results, [matches[1], matches[2], matches[0]]);
 
   // Sanity check, should not throw.
-  UrlbarProvidersManager.unregisterMuxer(muxer);
-  UrlbarProvidersManager.unregisterMuxer("TestMuxer"); // no-op.
+  providersManager.unregisterMuxer(muxer);
+  providersManager.unregisterMuxer("TestMuxer"); // no-op.
 });
 
 add_task(async function test_preselectedHeuristic_singleProvider() {
   let matches = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/a" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/b" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/c" }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/a" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: { url: "http://mozilla.org/b" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/c" },
+    }),
   ];
-  matches[1].heuristic = true;
 
   let provider = registerBasicTestProvider(matches);
   let context = createContext(undefined, {
@@ -128,47 +129,50 @@ add_task(async function test_preselectedHeuristic_singleProvider() {
   let controller = UrlbarTestUtils.newMockController();
 
   info("Check results, the order should be: b (heuristic), a, c");
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, [matches[1], matches[0], matches[2]]);
 });
 
 add_task(async function test_preselectedHeuristic_multiProviders() {
   let matches1 = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/a" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/b" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/c" }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/a" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/b" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/c" },
+    }),
   ];
 
   let matches2 = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/d" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/e" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/f" }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/d" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: { url: "http://mozilla.org/e" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/f" },
+    }),
   ];
-  matches2[1].heuristic = true;
 
   let provider1 = registerBasicTestProvider(matches1);
   let provider2 = registerBasicTestProvider(matches2);
@@ -179,7 +183,10 @@ add_task(async function test_preselectedHeuristic_multiProviders() {
   let controller = UrlbarTestUtils.newMockController();
 
   info("Check results, the order should be: e (heuristic), a, b, c, d, f");
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, [
     matches2[1],
     ...matches1,
@@ -192,51 +199,51 @@ add_task(async function test_suggestions() {
   Services.prefs.setIntPref("browser.urlbar.maxHistoricalSearchSuggestions", 1);
 
   let matches = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/a" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/b" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      {
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/a" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/b" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: {
         engine: "mozSearch",
         query: "moz",
         suggestion: "mozzarella",
         lowerCaseSuggestion: "mozzarella",
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      {
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      payload: {
         engine: "mozSearch",
         query: "moz",
         suggestion: "mozilla",
         lowerCaseSuggestion: "mozilla",
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      {
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      payload: {
         engine: "mozSearch",
         query: "moz",
         providesSearchMode: true,
         keyword: "@moz",
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/c" }
-    ),
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/c" },
+    }),
   ];
 
   let provider = registerBasicTestProvider(matches);
@@ -247,7 +254,10 @@ add_task(async function test_suggestions() {
   let controller = UrlbarTestUtils.newMockController();
 
   info("Check results, the order should be: mozzarella, moz, a, b, @moz, c");
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, [
     matches[2],
     matches[3],
@@ -261,44 +271,47 @@ add_task(async function test_suggestions() {
 });
 
 add_task(async function test_deduplicate_for_unitConversion() {
-  const searchSuggestion = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    {
+  const searchSuggestion = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.SEARCH,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    payload: {
       engine: "Google",
       query: "10cm to m",
       suggestion: "= 0.1 meters",
-    }
-  );
+    },
+  });
   const searchProvider = registerBasicTestProvider(
     [searchSuggestion],
     null,
     UrlbarUtils.PROVIDER_TYPE.PROFILE
   );
 
-  const unitConversionSuggestion = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.DYNAMIC,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+  const unitConversionSuggestion = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    suggestedIndex: 1,
+    payload: {
       dynamicType: "unitConversion",
       output: "0.1 m",
       input: "10cm to m",
-    }
-  );
-  unitConversionSuggestion.suggestedIndex = 1;
+    },
+  });
 
   const unitConversion = registerBasicTestProvider(
     [unitConversionSuggestion],
     null,
     UrlbarUtils.PROVIDER_TYPE.PROFILE,
-    "UnitConversion"
+    "UrlbarProviderUnitConversion"
   );
 
   const context = createContext(undefined, {
     providers: [searchProvider.name, unitConversion.name],
   });
   const controller = UrlbarTestUtils.newMockController();
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, [unitConversionSuggestion]);
 });
 
@@ -307,35 +320,31 @@ add_task(async function test_deduplicate_for_unitConversion() {
 // same time.  It's the resultGroups in each test that is important.
 const BAD_HEURISTIC_RESULTS = [
   // heuristic
-  Object.assign(
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/heuristic-0" }
-    ),
-    { heuristic: true }
-  ),
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    heuristic: true,
+    payload: { url: "http://mozilla.org/heuristic-0" },
+  }),
   // heuristic
-  Object.assign(
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/heuristic-1" }
-    ),
-    { heuristic: true }
-  ),
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    heuristic: true,
+    payload: { url: "http://mozilla.org/heuristic-1" },
+  }),
   // non-heuristic
-  new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.HISTORY,
-    { url: "http://mozilla.org/non-heuristic-0" }
-  ),
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "http://mozilla.org/non-heuristic-0" },
+  }),
   // non-heuristic
-  new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.HISTORY,
-    { url: "http://mozilla.org/non-heuristic-1" }
-  ),
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "http://mozilla.org/non-heuristic-1" },
+  }),
 ];
 
 const BAD_HEURISTIC_RESULTS_FIRST_HEURISTIC = BAD_HEURISTIC_RESULTS[0];
@@ -592,14 +601,17 @@ add_task(async function test_badHeuristicsGroups_notFirst_4() {
  *   The expected results.
  */
 async function doBadHeuristicGroupsTest(resultGroups, expectedResults) {
-  sandbox.stub(UrlbarPrefs, "resultGroups").get(() => {
-    return { children: resultGroups };
-  });
+  sandbox
+    .stub(UrlbarPrefs, "getResultGroups")
+    .returns({ children: resultGroups });
 
   let provider = registerBasicTestProvider(BAD_HEURISTIC_RESULTS);
   let context = createContext("foo", { providers: [provider.name] });
   let controller = UrlbarTestUtils.newMockController();
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, expectedResults);
 
   sandbox.restore();
@@ -612,22 +624,18 @@ async function doBadHeuristicGroupsTest(resultGroups, expectedResults) {
 // `maxRichResults` span will be exceeded in this case.
 add_task(async function roomForHeuristic_suggestedIndex() {
   let results = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/heuristic" }
-      ),
-      { heuristic: true }
-    ),
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/suggestedIndex" }
-      ),
-      { suggestedIndex: 1 }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: { url: "http://example.com/heuristic" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      suggestedIndex: 1,
+      payload: { url: "http://example.com/suggestedIndex" },
+    }),
   ];
 
   UrlbarPrefs.set("maxRichResults", 1);
@@ -648,14 +656,13 @@ add_task(async function roomForHeuristic_suggestedIndex() {
 // exceeded in this case.
 add_task(async function roomForHeuristic_largeResultSpan() {
   let results = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/heuristic" }
-      ),
-      { heuristic: true, resultSpan: 2 }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      resultSpan: 2,
+      payload: { url: "http://example.com/heuristic" },
+    }),
   ];
 
   UrlbarPrefs.set("maxRichResults", 1);
@@ -674,14 +681,12 @@ add_task(async function roomForHeuristic_largeResultSpan() {
 // heuristic should not be included.
 add_task(async function roomForHeuristic_maxRichResultsZero() {
   let results = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/heuristic" }
-      ),
-      { heuristic: true }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: { url: "http://example.com/heuristic" },
+    }),
   ];
 
   UrlbarPrefs.set("maxRichResults", 0);
@@ -700,22 +705,18 @@ add_task(async function roomForHeuristic_maxRichResultsZero() {
 // neither the heuristic nor the suggested-index results should be included.
 add_task(async function roomForHeuristic_maxRichResultsZero_suggestedIndex() {
   let results = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/heuristic" }
-      ),
-      { heuristic: true }
-    ),
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/suggestedIndex" }
-      ),
-      { suggestedIndex: 1 }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: { url: "http://example.com/heuristic" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      suggestedIndex: 1,
+      payload: { url: "http://example.com/suggestedIndex" },
+    }),
   ];
 
   UrlbarPrefs.set("maxRichResults", 0);
@@ -733,33 +734,24 @@ add_task(async function roomForHeuristic_maxRichResultsZero_suggestedIndex() {
 add_task(async function test_orderBy() {
   // The GENERAL groups has an orderBy property, so let's just add to history.
   let results1 = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/test1" }
-      ),
-      { payload: { frecency: 10 } }
-    ),
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/test2" }
-      ),
-      { payload: { frecency: 1000 } }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://example.com/test1", frecency: 10 },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://example.com/test2", frecency: 1000 },
+    }),
   ];
   let provider1 = registerBasicTestProvider(results1);
   let results2 = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/test3" }
-      ),
-      { payload: { frecency: 100 } }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://example.com/test3", frecency: 100 },
+    }),
   ];
   let provider2 = registerBasicTestProvider(results2);
 

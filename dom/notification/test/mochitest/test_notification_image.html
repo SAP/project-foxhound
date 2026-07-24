@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/dom/serviceworkers/test/utils.js"></script>
+<script src="MockAlertsService.js"></script>
+<script src="NotificationTest.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+<script>
+
+/* globals ImageDecoder */
+
+async function decodeImage(arrayBuffer) {
+  let decoder = new ImageDecoder({ data: arrayBuffer, type: "image/png" });
+  let {image} = await decoder.decode();
+  return image;
+}
+
+add_setup(async () => {
+  await NotificationTest.allowNotifications();
+  await MockAlertsService.register();
+  await MockAlertsService.enableAutoClick();
+});
+
+async function getIconImage(notification) {
+  info("Waiting for notification show");
+  await new Promise(resolve => notification.addEventListener("show", resolve, {once: true}));
+
+  info("Waiting for notification ids");
+  let ids = await MockAlertsService.getNotificationIds()
+  is(ids.length, 1, "Got one notification");
+
+  info("Waiting for notification icon image");
+  return await MockAlertsService.getIconImage(ids[0]);
+}
+
+async function assertImageColor(arrayBuffer, [r, g, b]) {
+  let image = await decodeImage(arrayBuffer);
+  is(image.displayWidth, 1, "Expected width");
+  is(image.displayHeight, 1, "Expected height");
+
+  const offscreen = new OffscreenCanvas(16, 16);
+  const ctx = offscreen.getContext("2d");
+  ctx.drawImage(image, 0, 0);
+
+  let {data} = ctx.getImageData(0, 0, 1, 1);
+  is(data[0], r, "Got correct image R");
+  is(data[1], g, "Got correct image G");
+  is(data[2], b, "Got correct image B");
+}
+
+add_task(async function test_icon_dataurl() {
+  let notification = new Notification("test", {
+    icon: "data:image/gif;base64,R0lGODlhAQABAPAAAPIu7////yH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
+  });
+
+  let arrayBuffer = await getIconImage(notification);
+  ok(arrayBuffer, "Got image stream");
+
+  await assertImageColor(arrayBuffer, [242, 46, 239])
+
+  await MockAlertsService.closeNotifications();
+});
+
+add_task(async function test_image_invalid_url() {
+  let notification = new Notification("test", {
+    icon: "foo://exa[mple.org"
+  });
+
+  let arrayBuffer = await getIconImage(notification);
+  is(arrayBuffer, null, "Got no image");
+
+  await MockAlertsService.closeNotifications();
+})
+
+add_task(async function test_image_bad_dataurl() {
+  let notification = new Notification("test", {
+    icon: "data:image/png,foobar" // invalid image data
+  });
+
+  let arrayBuffer = await getIconImage(notification);
+  is(arrayBuffer, null, "Got no image");
+
+  await MockAlertsService.closeNotifications();
+});
+
+add_task(async function test_icon_https() {
+  let url = new URL("./file_pink.gif", location.href);
+  is(url.protocol, "https:");
+
+  let notification = new Notification("test", {
+    icon: url
+  });
+
+  let arrayBuffer = await getIconImage(notification);
+  ok(arrayBuffer, "Got image");
+
+  await assertImageColor(arrayBuffer, [242, 46, 239])
+
+  await MockAlertsService.closeNotifications();
+})
+
+add_task(async function test_icon_http() {
+  // Test mixed content request.
+  let url = new URL("./file_pink.gif", location.href);
+  url.protocol = "http:";
+
+  let notification = new Notification("test", {
+    icon: url
+  });
+
+  let arrayBuffer = await getIconImage(notification);
+  ok(arrayBuffer, "Got image");
+
+  await assertImageColor(arrayBuffer, [242, 46, 239])
+
+  await MockAlertsService.closeNotifications();
+})
+</script>

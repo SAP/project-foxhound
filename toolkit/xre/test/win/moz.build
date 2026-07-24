@@ -55,3 +55,8 @@ if CONFIG["MOZ_LAUNCHER_PROCESS"]:
     # Needed for TestLauncherRegistryInfo
     for var in ("MOZ_APP_BASENAME", "MOZ_APP_VENDOR"):
         DEFINES[var] = '"%s"' % CONFIG[var]
+
+LegacyTest(
+    f"!/{FINAL_TARGET}/TestXREMakeCommandLineWin{CONFIG['BIN_SUFFIX']}",
+    description="TestXREMakeCommandLineWin tests",
+)

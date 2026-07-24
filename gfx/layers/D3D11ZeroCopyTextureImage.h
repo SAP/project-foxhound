@@ -32,10 +32,18 @@ class ZeroCopyUsageInfo final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ZeroCopyUsageInfo)
 
+  enum class DisableReason : uint8_t {
+    Default,
+    UsingTooManyFrames,
+  };
+
   ZeroCopyUsageInfo() = default;
 
   bool SupportsZeroCopyNV12Texture() { return mSupportsZeroCopyNV12Texture; }
-  void DisableZeroCopyNV12Texture() { mSupportsZeroCopyNV12Texture = false; }
+  void DisableZeroCopyNV12Texture(
+      DisableReason aReason = DisableReason::Default);
+
+  int GetRefCount() { return mRefCnt; }
 
  protected:
   ~ZeroCopyUsageInfo() = default;
@@ -47,16 +55,15 @@ class ZeroCopyUsageInfo final {
 // Expected to be used in GPU process.
 class D3D11ZeroCopyTextureImage : public Image {
  public:
-  D3D11ZeroCopyTextureImage(ID3D11Texture2D* aTexture, uint32_t aArrayIndex,
-                            const gfx::IntSize& aSize,
-                            const gfx::IntRect& aRect,
-                            gfx::ColorSpace2 aColorSpace,
-                            gfx::ColorRange aColorRange,
-                            gfx::ColorDepth aColorDepth);
+  D3D11ZeroCopyTextureImage(
+      ID3D11Texture2D* aTexture, const uint32_t aArrayIndex,
+      const gfx::IntSize& aSize, const gfx::IntRect& aRect,
+      const gfx::SurfaceFormat aFormat, const gfx::ColorSpace2 aColorSpace,
+      const gfx::ColorRange aColorRange, const gfx::ColorDepth aColorDepth);
   virtual ~D3D11ZeroCopyTextureImage();
 
   void AllocateTextureClient(KnowsCompositor* aKnowsCompositor,
-                             RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+                             ZeroCopyUsageInfo* aUsageInfo,
                              const RefPtr<FenceD3D11> aWriteFence);
 
   gfx::IntSize GetSize() const override;
@@ -89,6 +96,7 @@ class D3D11ZeroCopyTextureImage : public Image {
   const uint32_t mArrayIndex;
   const gfx::IntSize mSize;
   const gfx::IntRect mPictureRect;
+  const gfx::SurfaceFormat mFormat;
   const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
   const gfx::ColorDepth mColorDepth;
@@ -113,11 +121,13 @@ class IMFSampleWrapper : public SupportsThreadSafeWeakPtr<IMFSampleWrapper> {
 class D3D11TextureIMFSampleImage final : public D3D11ZeroCopyTextureImage {
  public:
   D3D11TextureIMFSampleImage(IMFSample* aVideoSample, ID3D11Texture2D* aTexture,
-                             uint32_t aArrayIndex, const gfx::IntSize& aSize,
+                             const uint32_t aArrayIndex,
+                             const gfx::IntSize& aSize,
                              const gfx::IntRect& aRect,
-                             gfx::ColorSpace2 aColorSpace,
-                             gfx::ColorRange aColorRange,
-                             gfx::ColorDepth aColorDepth);
+                             const gfx::SurfaceFormat aFormat,
+                             const gfx::ColorSpace2 aColorSpace,
+                             const gfx::ColorRange aColorRange,
+                             const gfx::ColorDepth aColorDepth);
   virtual ~D3D11TextureIMFSampleImage() = default;
 
   RefPtr<IMFSampleWrapper> GetIMFSampleWrapper();
@@ -132,9 +142,9 @@ class D3D11TextureAVFrameImage final : public D3D11ZeroCopyTextureImage {
  public:
   D3D11TextureAVFrameImage(D3D11TextureWrapper* aWrapper,
                            const gfx::IntSize& aSize, const gfx::IntRect& aRect,
-                           gfx::ColorSpace2 aColorSpace,
-                           gfx::ColorRange aColorRange,
-                           gfx::ColorDepth aColorDepth);
+                           const gfx::ColorSpace2 aColorSpace,
+                           const gfx::ColorRange aColorRange,
+                           const gfx::ColorDepth aColorDepth);
   virtual ~D3D11TextureAVFrameImage() = default;
 
  private:

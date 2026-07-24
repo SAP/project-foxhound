@@ -7,7 +7,6 @@
 #ifndef mozilla_WindowsDiagnostics_h
 #define mozilla_WindowsDiagnostics_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 

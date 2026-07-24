@@ -109,7 +109,7 @@ class ProxyRunner(Layer):
     }
 
     def __init__(self, env, mach_cmd):
-        super(ProxyRunner, self).__init__(env, mach_cmd)
+        super().__init__(env, mach_cmd)
         self.proxy = None
         self.tmpdir = None
 
@@ -160,9 +160,9 @@ class ProxyRunner(Layer):
         if metadata.flavor == "mobile-browser":
             command.extend(["--tool=%s" % "mitmproxy-android"])
             command.extend(["--binary=android"])
-            command.extend(
-                [f"--app={get_pretty_app_name(self.get_arg('android-app-name'))}"]
-            )
+            command.extend([
+                f"--app={get_pretty_app_name(self.get_arg('android-app-name'))}"
+            ])
         else:
             command.extend(["--tool=%s" % "mitmproxy"])
             # XXX See bug 1712337, we need a single point where we can get the binary used from

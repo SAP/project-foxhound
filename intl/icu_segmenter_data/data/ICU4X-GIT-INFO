@@ -1,7 +1,34 @@
-commit 5e404744dd6c9dd7f86aac82586e3fa98ea75f7f
-Author: Robert Bastian <4706271+robertbastian@users.noreply.github.com>
-Date:   Wed May 7 13:52:58 2025 -0700
+commit 38a49da495248dd1ded84cf306e4ca42e64d5bb3
+Author: Manish Goregaokar <manishsmail@gmail.com>
+Date:   Tue Oct 28 11:03:18 2025 -0700
 
-    2.0.0 Final (#6548)
+    Bump everything to ICU4X 2.1.1 (#7191)
     
-    #6543
+    I made a small mistake in the release: most crates got published without
+    an updated dep on `icu_locale_core` and `icu_provider`. What happened
+    was that when I updated crate deps I updated the section for ICU4X
+    crates, but those crates are in a different Cargo.toml "section" and
+    they didn't get an update (I plan to improve the release checklist to
+    avoid this problem in the future, it has never been clear about this
+    step).
+    
+    These crates don't use ~ deps unlike the rest (see
+    https://github.com/unicode-org/icu4x/issues/4343), which is why they are
+    separate.
+    
+    This breaks clients who depend directly on a component crate or
+    metacrate (say, `icu_calendar`), and they update that: this leads to
+    combinations like `icu_locale_core 2.0.0` with `writeable 0.6.2`.
+    
+    ICU4X 2.0 had broken no-alloc support, which meant that it claimed to
+    support no-alloc but in practice it didn't _work_. But the crates
+    successfully compiled together. ICU4X 2.1 fixes this. Unfortunately,
+    ICU4X 2.1 "fixed" no-alloc crates will not work with ICU4X 2.0 "broken"
+    no-alloc crates.
+    
+    To prevent people from getting inconsistent lockfiles, we just globally
+    publish 2.1.1.
+    
+    A more surgical alternative is to publish 2.1.1 only for component
+    crates (not for provider/etc crates which people will not depend on
+    directly anyway).

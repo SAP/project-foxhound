@@ -4,153 +4,222 @@
 
 package org.mozilla.fenix.reviewprompt
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.test.assertUnused
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
+import org.mozilla.experiments.nimbus.NimbusMessagingHelperInterface
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.ReviewPromptAction
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.nimbus.FakeNimbusEventStore
 import org.mozilla.fenix.reviewprompt.ReviewPromptState.Eligible.Type
-import org.mozilla.fenix.utils.Settings
 
-@RunWith(AndroidJUnit4::class)
 class ReviewPromptMiddlewareTest {
 
-    private val settings = Settings(testContext).apply {
-        numberOfAppLaunches = 5
-        isDefaultBrowser = true
-        lastReviewPromptTimeInMillis = 0L
-    }
+    private val eventStore = FakeNimbusEventStore()
 
-    private lateinit var triggers: Sequence<Boolean>
+    private var shouldUseNewTriggerCriteria = true
+    private var shouldShowCustomPrompt = true
+    private lateinit var mainCriteria: Sequence<Boolean>
+    private lateinit var subCriteria: Sequence<Boolean>
+    private lateinit var legacyCriteria: Sequence<Boolean>
 
     private val store = AppStore(
         middlewares = listOf(
             ReviewPromptMiddleware(
-                settings = settings,
-                timeNowInMillis = { TEST_TIME_NOW },
-                triggers = { triggers },
+                shouldUseNewTriggerCriteria = { shouldUseNewTriggerCriteria },
+                shouldShowCustomPrompt = { shouldShowCustomPrompt },
+                createJexlHelper = {
+                    object : NimbusMessagingHelperInterface {
+                        override fun evalJexl(expression: String) = assertUnused()
+                        override fun evalJexlDebug(expression: String) = assertUnused()
+                        override fun getUuid(template: String) = assertUnused()
+                        override fun stringFormat(template: String, uuid: String?) = assertUnused()
+                    }
+                },
+                buildTriggerMainCriteria = { mainCriteria },
+                buildTriggerSubCriteria = { subCriteria },
+                buildTriggerLegacyCriteria = { legacyCriteria },
+                nimbusEventStore = eventStore,
             ),
         ),
     )
 
     @Test
-    fun `GIVEN prompt has never been shown AND a trigger is satisfied WHEN check requested THEN sets eligible`() {
-        triggers = sequenceOf(true)
+    fun `GIVEN new criteria are enabled WHEN check requested THEN main and sub-criteria are checked`() {
+        shouldUseNewTriggerCriteria = true
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
-
-        assertTrue(store.state.reviewPrompt is ReviewPromptState.Eligible)
-    }
-
-    @Test
-    fun `GIVEN prompt has never been shown AND the first trigger is satisfied WHEN check requested THEN sets eligible`() {
-        triggers = sequenceOf(true, false, false)
-
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
-
-        assertTrue(store.state.reviewPrompt is ReviewPromptState.Eligible)
-    }
-
-    @Test
-    fun `GIVEN prompt has never been shown AND the first trigger is satisfied WHEN check requested THEN other triggers are not checked`() {
-        var checkedOtherTriggers = false
-        triggers = sequence {
+        var mainCriteriaChecked = false
+        var subCriteriaChecked = false
+        var legacyCriteriaChecked = false
+        mainCriteria = sequence {
+            mainCriteriaChecked = true
             yield(true)
-            checkedOtherTriggers = true
+        }
+        subCriteria = sequence {
+            subCriteriaChecked = true
+            yield(true)
+        }
+        legacyCriteria = sequence {
+            legacyCriteriaChecked = true
             yield(true)
         }
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
-        assertFalse(checkedOtherTriggers)
+        assertTrue(mainCriteriaChecked)
+        assertTrue(subCriteriaChecked)
+        assertFalse(legacyCriteriaChecked)
     }
 
     @Test
-    fun `GIVEN prompt has never been shown AND one of the triggers is satisfied WHEN check requested THEN sets eligible`() {
-        triggers = sequenceOf(false, false, true, false, false)
+    fun `GIVEN new criteria are disabled WHEN check requested THEN legacy criteria are checked`() {
+        shouldUseNewTriggerCriteria = false
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        var mainCriteriaChecked = false
+        var subCriteriaChecked = false
+        var legacyCriteriaChecked = false
+        mainCriteria = sequence {
+            mainCriteriaChecked = true
+            yield(true)
+        }
+        subCriteria = sequence {
+            subCriteriaChecked = true
+            yield(true)
+        }
+        legacyCriteria = sequence {
+            legacyCriteriaChecked = true
+            yield(true)
+        }
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertFalse(mainCriteriaChecked)
+        assertFalse(subCriteriaChecked)
+        assertTrue(legacyCriteriaChecked)
+    }
+
+    @Test
+    fun `GIVEN main criteria satisfied AND one of sub-criteria satisfied WHEN check requested THEN sets eligible`() {
+        mainCriteria = sequenceOf(true)
+        subCriteria = sequenceOf(false, true, false)
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertTrue(store.state.reviewPrompt is ReviewPromptState.Eligible)
     }
 
     @Test
-    fun `GIVEN prompt has never been shown AND no triggers are satisfied WHEN check requested THEN sets not eligible`() {
-        triggers = sequenceOf(false)
+    fun `GIVEN main criteria satisfied AND first sub-criteria satisfied WHEN check requested THEN other sub-criteria are not checked`() {
+        mainCriteria = sequenceOf(true)
+        var continuedPastFirstSatisfied = false
+        subCriteria = sequence {
+            yield(true)
+            continuedPastFirstSatisfied = true
+            yield(true)
+        }
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
-        assertEquals(
-            AppState(reviewPrompt = ReviewPromptState.NotEligible),
-            store.state,
-        )
+        assertFalse(continuedPastFirstSatisfied)
     }
 
     @Test
-    fun `GIVEN prompt has never been shown AND there are no triggers WHEN check requested THEN sets not eligible`() {
-        triggers = emptySequence()
+    fun `GIVEN no main criteria AND one of sub-criteria satisfied WHEN check requested THEN sets eligible`() {
+        mainCriteria = emptySequence()
+        subCriteria = sequenceOf(false, true, false)
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
-
-        assertEquals(
-            AppState(reviewPrompt = ReviewPromptState.NotEligible),
-            store.state,
-        )
-    }
-
-    @Test
-    fun `GIVEN prompt has been shown more than 4 months ago AND a trigger is satisfied WHEN check requested THEN sets eligible`() {
-        settings.lastReviewPromptTimeInMillis = MORE_THAN_4_MONTHS_FROM_TEST_TIME_NOW
-        triggers = sequenceOf(true)
-
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertTrue(store.state.reviewPrompt is ReviewPromptState.Eligible)
     }
 
     @Test
-    fun `GIVEN prompt has been shown less than 4 months ago WHEN check requested THEN sets not eligible`() {
-        settings.lastReviewPromptTimeInMillis = LESS_THAN_4_MONTHS_FROM_TEST_TIME_NOW
+    fun `GIVEN main criteria satisfied AND no sub-criteria satisfied WHEN check requested THEN sets not eligible`() {
+        mainCriteria = sequenceOf(true)
+        subCriteria = sequenceOf(false)
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertEquals(
             AppState(reviewPrompt = ReviewPromptState.NotEligible),
             store.state,
         )
+    }
+
+    @Test
+    fun `GIVEN main criteria satisfied AND no sub-criteria WHEN check requested THEN sets not eligible`() {
+        mainCriteria = sequenceOf(true)
+        subCriteria = emptySequence()
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.NotEligible),
+            store.state,
+        )
+    }
+
+    @Test
+    fun `GIVEN one of main criteria not satisfied AND sub-criteria satisfied WHEN check requested THEN sets not eligible`() {
+        mainCriteria = sequenceOf(true, false, true)
+        subCriteria = sequenceOf(true)
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.NotEligible),
+            store.state,
+        )
+    }
+
+    @Test
+    fun `GIVEN one of main criteria not satisfied WHEN check requested THEN other criteria not checked`() {
+        var continuedPastFirstNotSatisfied = false
+        mainCriteria = sequence {
+            yield(false)
+            continuedPastFirstNotSatisfied = true
+            yield(false)
+        }
+        subCriteria = sequence {
+            continuedPastFirstNotSatisfied = true
+            yield(false)
+        }
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertFalse(continuedPastFirstNotSatisfied)
     }
 
     @Test
     fun `GIVEN check ran WHEN check requested again THEN does nothing`() {
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        mainCriteria = sequenceOf()
+        subCriteria = sequenceOf()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
         val expectedState = store.state
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertEquals(expectedState, store.state)
     }
 
     @Test
     fun `GIVEN review prompt shown WHEN check requested THEN does nothing`() {
-        store.dispatch(ReviewPromptAction.ReviewPromptShown).joinBlocking()
+        store.dispatch(ReviewPromptAction.ReviewPromptShown)
         val expectedState = store.state
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertEquals(expectedState, store.state)
     }
 
     @Test
-    fun `WHEN review prompt shown THEN last review prompt time updated`() {
-        store.dispatch(ReviewPromptAction.ReviewPromptShown).joinBlocking()
+    fun `WHEN review prompt shown THEN an event is recorded`() {
+        store.dispatch(ReviewPromptAction.ReviewPromptShown)
 
-        assertEquals(TEST_TIME_NOW, settings.lastReviewPromptTimeInMillis)
+        eventStore.assertSingleEventEquals("review_prompt_shown")
     }
 
     @Test
@@ -169,11 +238,12 @@ class ReviewPromptMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN telemetry enabled AND a trigger is satisfied WHEN check requested THEN sets eligible for Custom prompt`() {
-        settings.isTelemetryEnabled = true
-        triggers = sequenceOf(true)
+    fun `GIVEN custom prompt enabled AND criteria satisfied WHEN check requested THEN sets eligible for Custom prompt`() {
+        shouldShowCustomPrompt = true
+        mainCriteria = sequenceOf(true)
+        subCriteria = sequenceOf(true)
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertEquals(
             AppState(reviewPrompt = ReviewPromptState.Eligible(Type.Custom)),
@@ -182,11 +252,12 @@ class ReviewPromptMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN telemetry disabled AND a trigger is satisfied WHEN check requested THEN sets eligible for Play Store prompt`() {
-        settings.isTelemetryEnabled = false
-        triggers = sequenceOf(true)
+    fun `GIVEN custom prompt disabled AND criteria satisfied WHEN check requested THEN sets eligible for Play Store prompt`() {
+        shouldShowCustomPrompt = false
+        mainCriteria = sequenceOf(true)
+        subCriteria = sequenceOf(true)
 
-        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
 
         assertEquals(
             AppState(reviewPrompt = ReviewPromptState.Eligible(Type.PlayStore)),
@@ -195,30 +266,111 @@ class ReviewPromptMiddlewareTest {
     }
 
     @Test
-    fun `WHEN app is the default browser AND was launched at least 5 times THEN legacy trigger is satisfied`() {
-        assertTrue(legacyReviewPromptTrigger(settings))
+    fun `GIVEN new criteria are disabled AND custom prompt enabled AND criteria satisfied WHEN check requested THEN sets eligible for Custom prompt`() {
+        shouldUseNewTriggerCriteria = false
+        shouldShowCustomPrompt = true
+        legacyCriteria = sequenceOf(true)
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.Eligible(Type.Custom)),
+            store.state,
+        )
     }
 
     @Test
-    fun `WHEN app isn't the default browser THEN legacy trigger is not satisfied`() {
-        settings.isDefaultBrowser = false
+    fun `GIVEN new criteria are disabled AND custom prompt disabled AND criteria satisfied WHEN check requested THEN sets eligible for Play Store prompt`() {
+        shouldUseNewTriggerCriteria = false
+        shouldShowCustomPrompt = false
+        legacyCriteria = sequenceOf(true)
 
-        assertFalse(legacyReviewPromptTrigger(settings))
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt)
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.Eligible(Type.PlayStore)),
+            store.state,
+        )
     }
 
     @Test
-    fun `WHEN app was launched less than 5 times THEN legacy trigger is not satisfied`() {
-        settings.numberOfAppLaunches = 4
+    fun `WHEN evalJexl returns false THEN createdAtLeastOneBookmark returns false`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = false)
 
-        assertFalse(legacyReviewPromptTrigger(settings))
+        val result = createdAtLeastOneBookmark(jexlHelper)
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns true THEN createdAtLeastOneBookmark returns true`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = true)
+
+        val result = createdAtLeastOneBookmark(jexlHelper)
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns false THEN isDefaultBrowser returns false`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = false)
+
+        val result = isDefaultBrowser(jexlHelper)
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns true THEN isDefaultBrowser returns true`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = true)
+
+        val result = isDefaultBrowser(jexlHelper)
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns false THEN usedAppOnAtLeastFourOfLastSevenDays returns false`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = false)
+
+        val result = usedAppOnAtLeastFourOfLastSevenDays(jexlHelper)
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns true THEN usedAppOnAtLeastFourOfLastSevenDays returns true`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = true)
+
+        val result = usedAppOnAtLeastFourOfLastSevenDays(jexlHelper)
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns false THEN hasNotBeenPromptedLastFourMonths returns false`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = false)
+
+        val result = hasNotBeenPromptedLastFourMonths(jexlHelper)
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN evalJexl returns true THEN hasNotBeenPromptedLastFourMonths returns true`() {
+        val jexlHelper = FakeNimbusMessagingHelperInterface(evalJexlValue = true)
+
+        val result = hasNotBeenPromptedLastFourMonths(jexlHelper)
+
+        assertTrue(result)
     }
 
     private fun assertNoOp(action: ReviewPromptAction) {
         val withoutMiddleware = AppStore()
-        withoutMiddleware.dispatch(action).joinBlocking()
+        withoutMiddleware.dispatch(action)
         val expectedState = withoutMiddleware.state
 
-        store.dispatch(action).joinBlocking()
+        store.dispatch(action)
 
         assertEquals(
             expectedState,
@@ -226,9 +378,11 @@ class ReviewPromptMiddlewareTest {
         )
     }
 
-    companion object {
-        private const val TEST_TIME_NOW = 1598416882805L
-        private const val MORE_THAN_4_MONTHS_FROM_TEST_TIME_NOW = 1588048882804L
-        private const val LESS_THAN_4_MONTHS_FROM_TEST_TIME_NOW = 1595824882905L
+    private class FakeNimbusMessagingHelperInterface(val evalJexlValue: Boolean) :
+        NimbusMessagingHelperInterface {
+        override fun evalJexl(expression: String): Boolean = evalJexlValue
+        override fun evalJexlDebug(expression: String): String = ""
+        override fun getUuid(template: String): String? = null
+        override fun stringFormat(template: String, uuid: String?): String = ""
     }
 }

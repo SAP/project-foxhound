@@ -12,7 +12,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 const TELEMETRY_MIN_MS_BETWEEN_OPEN_MANAGEMENT = 5000;
@@ -118,6 +118,7 @@ export class AboutLoginsChild extends JSWindowActorChild {
       /**
        * Shows the Primary Password prompt if enabled, or the
        * OS auth dialog otherwise.
+       *
        * @param resolve Callback that is called with result of authentication.
        * @param messageId The string ID that corresponds to a string stored in aboutLogins.ftl.
        *                  This string will be displayed only when the OS auth dialog is used.

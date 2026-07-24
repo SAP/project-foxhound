@@ -100,7 +100,7 @@
 
     <Button
         android:id="@+id/deny_button"
-        style="?android:attr/borderlessButtonStyle"
+        style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_below="@id/do_not_ask_again"

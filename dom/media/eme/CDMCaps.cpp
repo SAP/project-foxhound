@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/CDMCaps.h"
+
+#include "SamplesWaitingForKey.h"
 #include "mozilla/EMEUtils.h"
 #include "nsThreadUtils.h"
-#include "SamplesWaitingForKey.h"
 
 namespace mozilla {
 

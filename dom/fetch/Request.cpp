@@ -7,25 +7,22 @@
 #include "Request.h"
 
 #include "js/Value.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/FetchUtil.h"
+#include "mozilla/dom/Headers.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReadableStreamDefaultReader.h"
+#include "mozilla/dom/URL.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsTaintingUtils.h"
-
-#include "mozilla/ErrorResult.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/dom/Headers.h"
-#include "mozilla/dom/Fetch.h"
-#include "mozilla/dom/FetchUtil.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/URL.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Unused.h"
-
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
 
 namespace mozilla::dom {
 
@@ -108,7 +105,7 @@ void GetRequestURL(nsIGlobalObject* aGlobal, const nsACString& aInput,
   // This fails with URIs with weird protocols, even when they are valid,
   // so we ignore the failure
   nsAutoCString credentials;
-  Unused << resolvedURI->GetUserPass(credentials);
+  (void)resolvedURI->GetUserPass(credentials);
   if (!credentials.IsEmpty()) {
     aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
@@ -365,6 +362,11 @@ SafeRefPtr<Request> Request::Constructor(
       return nullptr;
     }
     request->SetNeverTaint(aInit.mNeverTaint.Value());
+  }
+
+  if (aInit.mCookieJarSettings.WasPassed() &&
+      aInit.mCookieJarSettings.Value()) {
+    request->SetCookieJarSettings(aInit.mCookieJarSettings.Value());
   }
 
   // Request constructor step 14.

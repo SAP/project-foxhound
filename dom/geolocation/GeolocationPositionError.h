@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_GeolocationPositionError_h
 #define mozilla_dom_GeolocationPositionError_h
 
-#include "nsWrapperCache.h"
-#include "nsISupportsImpl.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/CallbackObject.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsISupportsImpl.h"
+#include "nsWrapperCache.h"
 
 class nsIDOMGeoPositionErrorCallback;
 

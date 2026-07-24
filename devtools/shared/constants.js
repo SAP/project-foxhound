@@ -116,6 +116,7 @@ const COMPATIBILITY_ISSUE_TYPE = {
 // This `id` is intended to be used instead of a regular CSSRule Type constant.
 // See https://developer.mozilla.org/en-US/docs/Web/API/CSSRule#Type_constants
 const ELEMENT_STYLE = 100;
+const PRES_HINTS = 200;
 
 /* WebConsole Panel ========================================================= */
 
@@ -162,5 +163,6 @@ module.exports = {
   MESSAGE_CATEGORY,
   style: {
     ELEMENT_STYLE,
+    PRES_HINTS,
   },
 };

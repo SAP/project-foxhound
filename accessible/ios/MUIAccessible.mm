@@ -165,7 +165,7 @@ static bool isAccessibilityElementInternal(Accessible* aAccessible) {
     rule = iosIsElement;                                                     \
     break;
   switch (aAccessible->Role()) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
   }
 
   switch (rule) {

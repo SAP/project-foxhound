@@ -33,6 +33,9 @@ const perfSvc = {
 const DEFAULT_PROPS = {
   Prefs: { values: { featureConfig: {} } },
   TopSites: { initialized: true, rows: [] },
+  App: {
+    isForStartupCache: false,
+  },
   TopSitesRows: TOP_SITES_DEFAULT_ROWS,
   topSiteIconType: () => "no_image",
   dispatch() {},
@@ -1017,22 +1020,22 @@ describe("<TopSiteForm>", () => {
     );
 
     it("should render the preview button on invalid urls", () => {
-      assert.equal(0, wrapper.find(".preview").length);
+      assert.equal(0, wrapper.find("#topsites-form-preview-button").length);
 
       wrapper.setState({ customScreenshotUrl: " " });
 
-      assert.equal(1, wrapper.find(".preview").length);
+      assert.equal(1, wrapper.find("#topsites-form-preview-button").length);
     });
 
     it("should render the preview button when input value updated", () => {
-      assert.equal(0, wrapper.find(".preview").length);
+      assert.equal(0, wrapper.find("#topsites-form-preview-button").length);
 
       wrapper.setState({
         customScreenshotUrl: "http://baz.com",
         screenshotPreview: null,
       });
 
-      assert.equal(1, wrapper.find(".preview").length);
+      assert.equal(1, wrapper.find("#topsites-form-preview-button").length);
     });
   });
 
@@ -1047,14 +1050,14 @@ describe("<TopSiteForm>", () => {
     it("shouldn't dispatch a request for invalid urls", () => {
       wrapper.setState({ customScreenshotUrl: " ", url: "foo" });
 
-      wrapper.find(".preview").simulate("click");
+      wrapper.find("#topsites-form-preview-button").simulate("click");
 
       assert.notCalled(wrapper.props().dispatch);
     });
 
     it("should dispatch a PREVIEW_REQUEST", () => {
       wrapper.setState({ customScreenshotUrl: "screenshot" });
-      wrapper.find(".preview").simulate("submit");
+      wrapper.find("#topsites-form-preview-button").simulate("click");
 
       assert.calledTwice(wrapper.props().dispatch);
       assert.calledWith(
@@ -1151,23 +1154,23 @@ describe("<TopSiteForm>", () => {
       assert.equal(0, wrapper.find(".custom-image-input-container").length);
     });
     it("should call onClose if Cancel button is clicked", () => {
-      wrapper.find(".cancel").simulate("click");
+      wrapper.find("#topsites-form-cancel-button").simulate("click");
       assert.calledOnce(wrapper.instance().props.onClose);
     });
     it("should set validationError if url is empty", () => {
       assert.equal(wrapper.state().validationError, false);
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.equal(wrapper.state().validationError, true);
     });
     it("should set validationError if url is invalid", () => {
       wrapper.setState({ url: "not valid" });
       assert.equal(wrapper.state().validationError, false);
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.equal(wrapper.state().validationError, true);
     });
     it("should call onClose and dispatch with right args if URL is valid", () => {
       wrapper.setState({ url: "valid.com", label: "a label" });
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.calledOnce(wrapper.instance().props.onClose);
       assert.calledWith(wrapper.instance().props.dispatch, {
         data: {
@@ -1189,7 +1192,7 @@ describe("<TopSiteForm>", () => {
     });
     it("should not pass empty string label in dispatch data", () => {
       wrapper.setState({ url: "valid.com", label: "" });
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.calledWith(wrapper.instance().props.dispatch, {
         data: { site: { url: "http://valid.com" }, index: -1 },
         meta: { from: "ActivityStream:Content", to: "ActivityStream:Main" },
@@ -1243,13 +1246,13 @@ describe("<TopSiteForm>", () => {
       );
     });
     it("should call onClose if Cancel button is clicked", () => {
-      wrapper.find(".cancel").simulate("click");
+      wrapper.find("#topsites-form-cancel-button").simulate("click");
       assert.calledOnce(wrapper.instance().props.onClose);
     });
     it("should show error and not call onClose or dispatch if URL is empty", () => {
       wrapper.setState({ url: "" });
       assert.equal(wrapper.state().validationError, false);
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.equal(wrapper.state().validationError, true);
       assert.notCalled(wrapper.instance().props.onClose);
       assert.notCalled(wrapper.instance().props.dispatch);
@@ -1257,13 +1260,13 @@ describe("<TopSiteForm>", () => {
     it("should show error and not call onClose or dispatch if URL is invalid", () => {
       wrapper.setState({ url: "not valid" });
       assert.equal(wrapper.state().validationError, false);
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.equal(wrapper.state().validationError, true);
       assert.notCalled(wrapper.instance().props.onClose);
       assert.notCalled(wrapper.instance().props.dispatch);
     });
     it("should call onClose and dispatch with right args if URL is valid", () => {
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.calledOnce(wrapper.instance().props.onClose);
       assert.calledTwice(wrapper.instance().props.dispatch);
       assert.calledWith(wrapper.instance().props.dispatch, {
@@ -1293,7 +1296,7 @@ describe("<TopSiteForm>", () => {
     it("should set customScreenshotURL to null if it was removed", () => {
       wrapper.setState({ customScreenshotUrl: "" });
 
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
 
       assert.calledWith(wrapper.instance().props.dispatch, {
         data: {
@@ -1310,7 +1313,7 @@ describe("<TopSiteForm>", () => {
     });
     it("should call onClose and dispatch with right args if URL is valid (negative index)", () => {
       wrapper.setProps({ index: -1 });
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.calledOnce(wrapper.instance().props.onClose);
       assert.calledTwice(wrapper.instance().props.dispatch);
       assert.calledWith(wrapper.instance().props.dispatch, {
@@ -1328,7 +1331,7 @@ describe("<TopSiteForm>", () => {
     });
     it("should not pass empty string label in dispatch data", () => {
       wrapper.setState({ label: "" });
-      wrapper.find(".done").simulate("submit");
+      wrapper.find("#topsites-form-save-button").simulate("click");
       assert.calledWith(wrapper.instance().props.dispatch, {
         data: {
           site: { url: "https://foo.bar", customScreenshotURL: "http://foo" },
@@ -1343,14 +1346,22 @@ describe("<TopSiteForm>", () => {
         customScreenshotUrl: "foo",
         screenshotPreview: "custom",
       });
-      assert.equal(0, wrapper.find(".preview").length);
-      assert.equal(1, wrapper.find(".done").length);
+      assert.equal(0, wrapper.find("#topsites-form-preview-button").length);
+      assert.equal(
+        1,
+        wrapper.find('moz-button[data-l10n-id="newtab-topsites-save-button"]')
+          .length
+      );
     });
     it("should render the save button if custom screenshot url was cleared", () => {
       wrapper.setState({ customScreenshotUrl: "" });
       wrapper.setProps({ site: { customScreenshotURL: "foo" } });
-      assert.equal(0, wrapper.find(".preview").length);
-      assert.equal(1, wrapper.find(".done").length);
+      assert.equal(0, wrapper.find("#topsites-form-preview-button").length);
+      assert.equal(
+        1,
+        wrapper.find('moz-button[data-l10n-id="newtab-topsites-save-button"]')
+          .length
+      );
     });
   });
 
@@ -1528,7 +1539,7 @@ describe("<TopSiteList>", () => {
     assert.lengthOf(wrapper.find(TopSitePlaceholder), 3, "placeholders");
   });
   it("should update state onDragStart and clear it onDragEnd", () => {
-    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={{ APP }} />);
+    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={APP} />);
     const instance = wrapper.instance();
     const index = 7;
     const link = { url: "https://foo.com" };
@@ -1645,16 +1656,6 @@ describe("<TopSiteList>", () => {
       site3,
       draggedSite,
       addButton,
-      null,
-      null,
-      null,
-      null,
-    ]);
-    assert.deepEqual(instance._makeTopSitesPreview(3), [
-      site2,
-      site3,
-      addButton,
-      draggedSite,
       null,
       null,
       null,
@@ -1800,6 +1801,58 @@ describe("<TopSiteList>", () => {
       />
     );
     assert.lengthOf(wrapper.find("li.hide-for-narrow"), 2);
+  });
+
+  describe("Keyboard navigation", () => {
+    let sandbox;
+    let wrapper;
+    let instance;
+    let mockAnchor;
+    let mockTargetSibling;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      const rows = [
+        { url: "https://foo.com" },
+        { url: "https://bar.com" },
+        { url: "https://baz.com" },
+      ];
+      wrapper = shallow(
+        <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={APP} />
+      );
+      instance = wrapper.instance();
+
+      mockAnchor = { focus: sandbox.spy(), tabIndex: -1 };
+      mockTargetSibling = { querySelector: sandbox.stub().returns(mockAnchor) };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it("should navigate to next site with ArrowRight", () => {
+      instance.focusedRef = { nextSibling: mockTargetSibling };
+      const mockEvent = { key: "ArrowRight" };
+
+      instance.onKeyDown(mockEvent);
+
+      assert.calledOnce(mockTargetSibling.querySelector);
+      assert.calledWith(mockTargetSibling.querySelector, "a");
+      assert.calledOnce(mockAnchor.focus);
+      assert.equal(mockAnchor.tabIndex, 0);
+    });
+
+    it("should navigate to previous site with ArrowLeft", () => {
+      instance.focusedRef = { previousSibling: mockTargetSibling };
+      const mockEvent = { key: "ArrowLeft" };
+
+      instance.onKeyDown(mockEvent);
+
+      assert.calledOnce(mockTargetSibling.querySelector);
+      assert.calledWith(mockTargetSibling.querySelector, "a");
+      assert.calledOnce(mockAnchor.focus);
+      assert.equal(mockAnchor.tabIndex, 0);
+    });
   });
 });
 

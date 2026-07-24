@@ -140,7 +140,7 @@ add_task(async function () {
  *
  * @param {Inspector} view
  * @param {Integer} ruleIndex
- * @param {Array<Object>} expectedSelectors:
+ * @param {Array<object>} expectedSelectors:
  *        An array of objects representing each selector. Objects have the following shape:
  *        - selector: The expected selector text
  *        - matches: True if the selector should have the "matching" class

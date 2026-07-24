@@ -10,6 +10,8 @@ support-files = [
 ["browser_enable_DRM_prompt.js"]
 
 ["browser_globalplugin_crashinfobar.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_private_browsing_eme_persistent_state.js"]

@@ -6,6 +6,8 @@ support-files = [
 prefs = [
   "browser.sessionstore.closedTabsFromAllWindows=true",
   "browser.sessionstore.closedTabsFromClosedWindows=true",
+  "browser.toolbars.share-button.enabled=true",
+  "browser.urlbar.trustPanel.featureGate=false",
   "sidebar.revamp=false",
 ]
 
@@ -38,7 +40,11 @@ tags = "overflowable-toolbar"
 ["browser_1856572_ensure_Fluent_works_in_customizeMode.js"]
 # Bug 1856572: Causes a drag-drop native loop assertion failure on debug
 # MacOS builds in browser_876926_customize_mode_wrapping.js
-skip-if = ["os == 'mac' && debug"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug",
+]
 
 ["browser_1880230_hideInNonPrivateBrowsing.js"]
 
@@ -46,8 +52,7 @@ skip-if = ["os == 'mac' && debug"]
 
 ["browser_876926_customize_mode_wrapping.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && release_or_beta", # bug 1921617
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # bug 1921617
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # bug 1921617
 ]
 
 ["browser_876944_customize_mode_create_destroy.js"]
@@ -59,7 +64,9 @@ skip-if = [
 ["browser_877447_skip_missing_ids.js"]
 
 ["browser_878452_drag_to_panel.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"] # Bug 1961559
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1961559
+]
 
 ["browser_884402_customize_from_overflow.js"]
 tags = "overflowable-toolbar"
@@ -67,7 +74,7 @@ tags = "overflowable-toolbar"
 ["browser_885052_customize_mode_observers_disabed.js"]
 tags = "fullscreen"
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64'", # Bug 1781368
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1781368
 ]
 
 ["browser_885530_showInPrivateBrowsing.js"]
@@ -84,7 +91,10 @@ skip-if = [
 
 ["browser_909779_overflow_toolbars_new_window.js"]
 tags = "overflowable-toolbar"
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_913972_currentset_overflow.js"]
 tags = "overflowable-toolbar"
@@ -92,19 +102,23 @@ tags = "overflowable-toolbar"
 ["browser_914138_widget_API_overflowable_toolbar.js"]
 tags = "overflowable-toolbar"
 skip-if = [
-  "os == 'linux'",
   "devedition",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["browser_918049_skipintoolbarset_dnd.js"]
 
 ["browser_923857_customize_mode_event_wrapping_during_reset.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt && socketprocess_networking"] # Bug 1961545
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt && socketprocess_networking", # Bug 1961545
+]
 
 ["browser_927717_customize_drag_empty_toolbar.js"]
 
 ["browser_934113_menubar_removable.js"]
-run-if = ["os != 'mac'"] # Because this test is about the menubar, it can't be run on mac
+run-if = [
+  "os != 'mac'", # Because this test is about the menubar, it can't be run on mac
+]
 
 ["browser_934951_zoom_in_toolbar.js"]
 
@@ -119,6 +133,9 @@ run-if = ["os != 'mac'"] # Because this test is about the menubar, it can't be r
 ["browser_940946_removable_from_navbar_customizemode.js"]
 
 ["browser_941083_invalidate_wrapper_cache_createWidget.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_942581_unregisterArea_keeps_placements.js"]
 
@@ -150,10 +167,9 @@ support-files = ["dummy_history_item.html"]
 
 ["browser_947914_button_zoomReset.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1775671
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && debug && socketprocess_networking", # Bug 1775671
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1775671
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775671
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1775671
 ]
 
 ["browser_947987_removable_default.js"]
@@ -161,6 +177,9 @@ skip-if = [
 ["browser_948985_non_removable_defaultArea.js"]
 
 ["browser_952963_areaType_getter_no_area.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt && socketprocess_networking && verify-standalone",
+]
 
 ["browser_956602_remove_special_widget.js"]
 
@@ -170,7 +189,9 @@ tags = "overflowable-toolbar"
 ["browser_963639_customizing_attribute_non_customizable_toolbar.js"]
 
 ["browser_968565_insert_before_hidden_items.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1961547
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1961547
+]
 
 ["browser_969427_recreate_destroyed_widget_after_reset.js"]
 
@@ -182,7 +203,10 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] #
 
 ["browser_976792_insertNodeInWindow.js"]
 tags = "overflowable-toolbar"
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_978084_dragEnd_after_move.js"]
 
@@ -200,6 +224,9 @@ tags = "overflowable-toolbar"
 ["browser_985815_propagate_setToolbarVisibility.js"]
 
 ["browser_987177_destroyWidget_xul.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+]
 
 ["browser_987177_xul_wrapper_updating.js"]
 
@@ -214,8 +241,16 @@ tags = "overflowable-toolbar"
 ["browser_992747_toggle_noncustomizable_toolbar.js"]
 
 ["browser_993322_widget_notoolbar.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && swgl && verify-standalone",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt && verify-standalone",
+]
 
 ["browser_995164_registerArea_during_customize_mode.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1779584
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1779584
+]
 
 ["browser_996364_registerArea_different_properties.js"]
 
@@ -277,7 +312,9 @@ https_first_disabled = true
 ["browser_history_after_appMenu.js"]
 
 ["browser_history_recently_closed.js"]
-fail-if = ["a11y_checks"] # Bug 1947098
+fail-if = [
+  "a11y_checks", # Bug 1947098
+]
 
 ["browser_history_recently_closed_middleclick.js"]
 https_first_disabled = true
@@ -287,7 +324,9 @@ https_first_disabled = true
 ["browser_insert_before_moved_node.js"]
 
 ["browser_menubar_visibility.js"]
-run-if = ["os != 'mac'"] # no toggle-able menubar on macOS.
+run-if = [
+  "os != 'mac'", # no toggle-able menubar on macOS.
+]
 
 ["browser_newtab_button_customizemode.js"]
 
@@ -306,7 +345,9 @@ tags = "overflowable-toolbar"
 
 ["browser_panelUINotifications_fullscreen.js"]
 tags = "fullscreen"
-run-if = ["os != 'mac'"]
+run-if = [
+  "os != 'mac'",
+]
 
 ["browser_panelUINotifications_fullscreen_noAutoHideToolbar.js"]
 tags = "fullscreen"
@@ -328,11 +369,16 @@ tags = "fullscreen"
 ["browser_proton_toolbar_hide_toolbarbuttons.js"]
 
 ["browser_registerArea.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt && a11y_checks && swgl && verify-standalone",
+]
 
 ["browser_reload_tab.js"]
 
 ["browser_remote_attribute.js"]
-skip-if = ["true"] # Bug 1968817, test depends on the Pocket toolbar icon which no longer exists.
+skip-if = [
+  "true", # Bug 1968817, test depends on the Pocket toolbar icon which no longer exists.
+]
 
 ["browser_remote_tabs_button.js"]
 
@@ -348,6 +394,24 @@ skip-if = ["true"] # Bug 1968817, test depends on the Pocket toolbar icon which 
 
 ["browser_searchbar_removal.js"]
 
+["browser_share_tab_button_linux.js"]
+run-if = [
+  "os == 'linux'",
+]
+support-files = ["browser_shareurl.html"]
+
+["browser_share_tab_button_macosx.js"]
+run-if = [
+  "os == 'mac'",
+]
+support-files = ["browser_shareurl.html"]
+
+["browser_share_tab_button_win.js"]
+run-if = [
+  "os == 'win'",
+]
+support-files = ["browser_shareurl.html"]
+
 ["browser_sidebar_button_reset.js"]
 
 ["browser_sidebar_position_start.js"]
@@ -357,7 +421,9 @@ skip-if = ["true"] # Bug 1968817, test depends on the Pocket toolbar icon which 
 ["browser_switch_to_customize_mode.js"]
 
 ["browser_synced_tabs_menu.js"]
-fail-if = ["a11y_checks"] # Bug 1854536 clicked #PanelUI-remotetabs-connect-device-button may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854536 clicked #PanelUI-remotetabs-connect-device-button may not be focusable
+]
 
 ["browser_tabbar_big_widgets.js"]
 
@@ -365,7 +431,8 @@ fail-if = ["a11y_checks"] # Bug 1854536 clicked #PanelUI-remotetabs-connect-devi
 
 ["browser_touchbar_customization.js"]
 skip-if = [
-  "os == 'linux'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
   "os == 'win'",
 ]
 
@@ -374,7 +441,11 @@ skip-if = [
 ["browser_vertical_tabs_customize_navbar.js"]
 
 ["browser_widget_animation.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1961548
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1961548
+]
 
 ["browser_widget_recreate_events.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1961546
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1961546
+]

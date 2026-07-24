@@ -8,6 +8,7 @@
 #define DOM_NOTIFICATION_NOTIFICATIONUTILS_H_
 
 #include <cstdint>
+
 #include "mozilla/dom/DOMTypes.h"
 #include "nsCOMPtr.h"
 #include "nsINotificationStorage.h"
@@ -38,6 +39,7 @@ enum class PermissionCheckPurpose : uint8_t {
   PermissionRequest,
   PermissionAttribute,
   NotificationShow,
+  LoadImageForShow,
 };
 
 /**

@@ -11,8 +11,7 @@
 #include "mozilla/MacroArgs.h"
 #include "mozilla/MacroForEach.h"
 
-#include <limits>
-#include <stdint.h>
+#include <cstdint>
 #include <type_traits>
 
 #ifdef __wasi__

@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_quota_EncryptingOutputStream_impl_h
 #define mozilla_dom_quota_EncryptingOutputStream_impl_h
 
-#include "EncryptingOutputStream.h"
-
 #include <algorithm>
 #include <utility>
+
 #include "CipherStrategy.h"
+#include "EncryptingOutputStream.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Span.h"
 #include "mozilla/fallible.h"

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsBoundingMetrics_h
-#define __nsBoundingMetrics_h
+#ifndef _nsBoundingMetrics_h
+#define _nsBoundingMetrics_h
 
 #include "nsCoord.h"
 #include <algorithm>
@@ -80,4 +80,4 @@ struct nsBoundingMetrics {
   }
 };
 
-#endif  // __nsBoundingMetrics_h
+#endif  // _nsBoundingMetrics_h

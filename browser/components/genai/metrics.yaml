@@ -41,7 +41,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -92,7 +92,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -109,7 +109,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D217782
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -126,7 +126,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D217782
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -143,7 +143,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -181,7 +181,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -207,7 +207,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D237127
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -227,7 +227,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -247,7 +247,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D226205
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -260,6 +260,55 @@ genai.chatbot:
         type: string
         description: Sidebar is currently open.
 
+  length_disclaimer:
+    type: event
+    description: >
+      Warning message for length disclaimer is shown.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980228
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D260463
+    data_sensitivity:
+      - interaction
+    expires: 154
+    notification_emails:
+      - elee@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      type:
+        type: string
+        description: Content scope.
+      length:
+        type: quantity
+        description: Page content length.
+      provider:
+        type: string
+        description: Current provider id.
+
+  length_disclaimer_dismissed:
+    type: event
+    description: >
+      Warning message is dismissed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980228
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D260463
+    data_sensitivity:
+      - interaction
+    expires: 154
+    notification_emails:
+      - elee@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      type:
+        type: string
+        description: Content scope.
+      provider:
+        type: string
+        description: Current provider id.
+
   onboarding_close:
     type: event
     description: >
@@ -270,30 +319,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
-    notification_emails:
-      - elee@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      provider:
-        type: string
-        description: Which provider was last selected.
-      step:
-        type: quantity
-        description: Onboarding screen number.
-
-  onboarding_continue:
-    type: event
-    description: >
-      Chatbot onboarding continued from provider choice.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1911104
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D223938
-    data_sensitivity:
-      - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -316,7 +342,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -339,7 +365,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -362,7 +388,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -371,29 +397,6 @@ genai.chatbot:
       provider:
         type: string
         description: Current provider id.
-      step:
-        type: quantity
-        description: Onboarding screen number.
-
-  onboarding_provider_learn:
-    type: event
-    description: >
-      Chatbot onboarding opened provider learn more link.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1911104
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D223938
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-      - elee@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      provider:
-        type: string
-        description: Which provider.
       step:
         type: quantity
         description: Onboarding screen number.
@@ -408,7 +411,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -431,7 +434,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -446,29 +449,6 @@ genai.chatbot:
       text:
         type: string
         description: Which terms link.
-
-  onboarding_text_highlight_displayed:
-    type: event
-    description: >
-      Chatbot onboarding impression for text highlight screen.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1911104
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D223938
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-      - elee@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      provider:
-        type: string
-        description: Which provider was last selected.
-      step:
-        type: quantity
-        description: Onboarding screen number.
 
   prompt_click:
     type: event
@@ -515,7 +495,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -541,7 +521,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D217782
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -561,7 +541,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D217782
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -589,7 +569,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D225895
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -615,7 +595,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -635,7 +615,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D217782
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -661,7 +641,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -681,7 +661,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -704,7 +684,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -724,7 +704,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D223938
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -747,7 +727,7 @@ genai.chatbot:
       - https://phabricator.services.mozilla.com/D214470
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: 154
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -809,7 +789,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D251779
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -826,7 +806,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -843,7 +823,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D251779
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -860,7 +840,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D251779
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -878,7 +858,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D249104
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -898,7 +878,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -921,7 +901,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -947,7 +927,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -991,7 +971,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -1026,7 +1006,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D249851
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -1046,7 +1026,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D249855
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -1071,7 +1051,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D251779
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:
@@ -1094,7 +1074,7 @@ genai.linkpreview:
       - https://phabricator.services.mozilla.com/D243790
     data_sensitivity:
       - interaction
-    expires: 150
+    expires: 162
     notification_emails:
       - elee@mozilla.com
     send_in_pings:

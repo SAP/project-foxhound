@@ -5,7 +5,6 @@
 package org.mozilla.gecko.media;
 
 import android.media.MediaCrypto;
-import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
@@ -143,11 +142,7 @@ final class RemoteMediaDrmBridgeStub extends IMediaDrmBridge.Stub
 
   RemoteMediaDrmBridgeStub(final String keySystem, final String stubId) throws RemoteException {
     try {
-      if (Build.VERSION.SDK_INT < 23) {
-        mBridge = new GeckoMediaDrmBridgeV21(keySystem);
-      } else {
-        mBridge = new GeckoMediaDrmBridgeV23(keySystem);
-      }
+      mBridge = new GeckoMediaDrmBridgeV23(keySystem);
       mStubId = stubId;
       mBridgeStubs.add(this);
     } catch (final Exception e) {

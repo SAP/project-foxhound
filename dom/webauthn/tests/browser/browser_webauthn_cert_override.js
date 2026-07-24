@@ -4,18 +4,28 @@
 
 "use strict";
 
-add_virtual_authenticator();
-
 let expectSecurityError = expectError("Security");
 
-async function test_webauthn_with_cert_override(
+async function test_webauthn_with_cert_override({
   aTestDomain,
-  aExpectSecurityError
-) {
+  aExpectSecurityError = false,
+  aFeltPrivacyV1 = false,
+  aAllowCertificateOverrideByPref = false,
+}) {
+  let authenticatorId = add_virtual_authenticator(/*autoremove*/ false);
+
   let certOverrideService = Cc[
     "@mozilla.org/security/certoverride;1"
   ].getService(Ci.nsICertOverrideService);
-
+  Services.prefs.setBoolPref(
+    "security.certerrors.felt-privacy-v1",
+    aFeltPrivacyV1
+  );
+  Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  Services.prefs.setBoolPref(
+    "security.webauthn.allow_with_certificate_override",
+    aAllowCertificateOverrideByPref
+  );
   let testURL = "https://" + aTestDomain;
   let certErrorLoaded;
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -33,11 +43,42 @@ async function test_webauthn_with_cert_override(
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("Adding certificate error override.");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
-    let doc = content.document;
-    let exceptionButton = doc.getElementById("exceptionDialogButton");
-    exceptionButton.click();
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [aFeltPrivacyV1],
+    async function (aFeltPrivacyV1) {
+      const doc = content.document;
+
+      if (!aFeltPrivacyV1) {
+        info("Using old cert error page flow.");
+        let doc = content.document;
+        let exceptionButton = doc.getElementById("exceptionDialogButton");
+        exceptionButton.click();
+      } else {
+        info("Using felt-privacy-v1 cert error page flow.");
+        const netErrorCard =
+          doc.querySelector("net-error-card").wrappedJSObject;
+        await netErrorCard.getUpdateComplete();
+        await EventUtils.synthesizeMouseAtCenter(
+          netErrorCard.advancedButton,
+          {},
+          content
+        );
+        await ContentTaskUtils.waitForCondition(() => {
+          return (
+            netErrorCard.exceptionButton &&
+            !netErrorCard.exceptionButton.disabled
+          );
+        }, "Waiting for exception button");
+        netErrorCard.exceptionButton.scrollIntoView();
+        EventUtils.synthesizeMouseAtCenter(
+          netErrorCard.exceptionButton,
+          {},
+          content
+        );
+      }
+    }
+  );
 
   info("Waiting for page load.");
   await loaded;
@@ -80,10 +121,55 @@ async function test_webauthn_with_cert_override(
   await loaded;
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  remove_virtual_authenticator(authenticatorId);
+
+  Services.prefs.clearUserPref(
+    "security.webauthn.allow_with_certificate_override"
+  );
+  Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+  Services.prefs.clearUserPref("security.certerrors.felt-privacy-v1");
 }
 
-add_task(() => test_webauthn_with_cert_override("expired.example.com", false));
-add_task(() => test_webauthn_with_cert_override("untrusted.example.com", true));
-add_task(() =>
-  test_webauthn_with_cert_override("no-subject-alt-name.example.com", true)
-);
+for (let feltPrivacyV1 of [false, true]) {
+  add_task(() =>
+    test_webauthn_with_cert_override({
+      aTestDomain: "expired.example.com",
+      aExpectSecurityError: false,
+      aFeltPrivacyV1: feltPrivacyV1,
+      aAllowCertificateOverrideByPref: false,
+    })
+  );
+  add_task(() =>
+    test_webauthn_with_cert_override({
+      aTestDomain: "untrusted.example.com",
+      aExpectSecurityError: true,
+      aFeltPrivacyV1: feltPrivacyV1,
+      aAllowCertificateOverrideByPref: false,
+    })
+  );
+  add_task(() =>
+    test_webauthn_with_cert_override({
+      aTestDomain: "no-subject-alt-name.example.com",
+      aExpectSecurityError: true,
+      aFeltPrivacyV1: feltPrivacyV1,
+      aAllowCertificateOverrideByPref: false,
+    })
+  );
+  add_task(() =>
+    test_webauthn_with_cert_override({
+      aTestDomain: "badcertdomain.localhost",
+      aExpectSecurityError: false,
+      aFeltPrivacyV1: feltPrivacyV1,
+      aAllowCertificateOverrideByPref: false,
+    })
+  );
+  add_task(() =>
+    test_webauthn_with_cert_override({
+      aTestDomain: "untrusted.example.com",
+      aExpectSecurityError: false,
+      aFeltPrivacyV1: feltPrivacyV1,
+      aAllowCertificateOverrideByPref: true,
+    })
+  );
+}

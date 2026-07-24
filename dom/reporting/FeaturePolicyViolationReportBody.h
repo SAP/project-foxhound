@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_FeaturePolicyViolationReportBody_h
 #define mozilla_dom_FeaturePolicyViolationReportBody_h
 
-#include "mozilla/dom/ReportBody.h"
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/ReportBody.h"
 #include "nsString.h"
 
 namespace mozilla::dom {

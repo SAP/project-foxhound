@@ -10,7 +10,6 @@
 
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"

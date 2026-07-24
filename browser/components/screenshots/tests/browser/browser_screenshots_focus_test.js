@@ -481,3 +481,51 @@ add_task(async function testFocusedIsLocked() {
     }
   );
 });
+
+add_task(async function testExitSplitViewToAnotherTab() {
+  // See Bug 2013290
+  const helper = new ScreenshotsHelper(gBrowser.selectedBrowser);
+
+  const tab1 = await addTabAndLoadBrowser(
+    `data:text/html,<html><body><input id="field"></body></html>`
+  );
+  const tab2 = await addTabAndLoadBrowser();
+  const tab3 = await addTabAndLoadBrowser();
+  const browser = tab1.linkedBrowser;
+
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  gBrowser.addTabSplitView([tab1, tab2]);
+
+  await SimpleTest.promiseFocus(browser);
+  // Place focus in the content document of the current tab
+  EventUtils.synthesizeKey("VK_TAB", {});
+
+  let focusId = await SpecialPowers.spawn(browser, [], async () => {
+    return await new Promise(resolve => {
+      const input = content.document.getElementById("field");
+      if (content.document.activeElement == input) {
+        resolve(input.id);
+      } else {
+        input.addEventListener("focus", () => resolve(input.id), {
+          capture: true,
+          once: true,
+        });
+      }
+    });
+  });
+  is(focusId, "field", "The input in the content document has focus");
+
+  helper.triggerUIFromToolbar();
+  await helper.waitForPanel();
+
+  const screenshotExit = TestUtils.topicObserved("screenshots-exit");
+  // Click on the 3rd tab - which is not in the split view
+  EventUtils.synthesizeMouseAtCenter(tab3, {}, window);
+
+  await screenshotExit;
+  is(gBrowser.selectedTab, tab3, "tab3 is the selectedTab");
+
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(tab3);
+});

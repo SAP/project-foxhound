@@ -85,6 +85,42 @@ UNIFIED_SOURCES += [
     "nsParserUtils.cpp",
 ]
 
+# Each target needs to compile:
+# (nsHtml5TokenizerALU.cpp XOR nsHtml5TokenizerALUStubs.cpp)
+# AND
+# (nsHtml5TokenizerSIMD.cpp XOR nsHtml5TokenizerSIMDStubs.cpp)
+# AND
+# (nsHtml5TokenizerALU.cpp OR nsHtml5TokenizerSIMD.cpp)
+#
+# Make sure the result is consistent with mozilla::htmlaccel::htmlaccelEnabled().
+#
+# Due to https://github.com/llvm/llvm-project/issues/160886, none of the
+# code here actually ends up with SIMD instructions, and SIMD stays in
+# htmlaccelNotInline.cpp instead. Once the LLVM bug is fixed, the functions
+# in htmlaccelNotInline.cpp should becomed always inlined and
+# nsHtml5TokenizerSIMD.cpp should be built with HTML_ACCEL_FLAGS.
+
+if (CONFIG["TARGET_CPU"] == "x86_64") and (
+    CONFIG["CC_TYPE"] != "gcc" or int(CONFIG["CC_VERSION"].split(".")[0]) >= 12
+):
+    UNIFIED_SOURCES += [
+        "nsHtml5TokenizerALU.cpp",
+        "nsHtml5TokenizerSIMD.cpp",
+    ]
+elif (
+    CONFIG["TARGET_CPU"] == "aarch64" and CONFIG["TARGET_ENDIANNESS"] == "little"
+) and (CONFIG["CC_TYPE"] != "gcc" or int(CONFIG["CC_VERSION"].split(".")[0]) >= 12):
+    # aarch64 doesn't need special flags for SIMD.
+    UNIFIED_SOURCES += [
+        "nsHtml5TokenizerALUStubs.cpp",
+        "nsHtml5TokenizerSIMD.cpp",
+    ]
+else:
+    UNIFIED_SOURCES += [
+        "nsHtml5TokenizerALU.cpp",
+        "nsHtml5TokenizerSIMDStubs.cpp",
+    ]
+
 FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [

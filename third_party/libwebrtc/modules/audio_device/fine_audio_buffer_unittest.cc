@@ -10,13 +10,13 @@
 
 #include "modules/audio_device/fine_audio_buffer.h"
 
-#include <limits.h>
-
+#include <climits>
+#include <cstdint>
 #include <memory>
 
 #include "api/array_view.h"
-#include "api/task_queue/default_task_queue_factory.h"
 #include "modules/audio_device/mock_audio_device_buffer.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -27,9 +27,9 @@ using ::testing::Return;
 
 namespace webrtc {
 
-const int kSampleRate = 44100;
-const int kChannels = 2;
-const int kSamplesPer10Ms = kSampleRate * 10 / 1000;
+constexpr int kSampleRate = 44100;
+constexpr int kChannels = 2;
+constexpr int kSamplesPer10Ms = kSampleRate * 10 / 1000;
 
 // The fake audio data is 0,1,..SCHAR_MAX-1,0,1,... This is to make it easy
 // to detect errors. This function verifies that the buffers contain such data.
@@ -93,8 +93,7 @@ void RunFineBufferTest(int frame_size_in_samples) {
   const int kNumberOfUpdateBufferCalls =
       1 + ((kNumberOfFrames * frame_size_in_samples - 1) / kSamplesPer10Ms);
 
-  auto task_queue_factory = CreateDefaultTaskQueueFactory();
-  MockAudioDeviceBuffer audio_device_buffer(task_queue_factory.get());
+  MockAudioDeviceBuffer audio_device_buffer(CreateTestEnvironment());
   audio_device_buffer.SetPlayoutSampleRate(kSampleRate);
   audio_device_buffer.SetPlayoutChannels(kChannels);
   audio_device_buffer.SetRecordingSampleRate(kSampleRate);
@@ -132,15 +131,13 @@ void RunFineBufferTest(int frame_size_in_samples) {
 
   for (int i = 0; i < kNumberOfFrames; ++i) {
     fine_buffer.GetPlayoutData(
-        rtc::ArrayView<int16_t>(out_buffer.get(),
-                                kChannels * kFrameSizeSamples),
-        0);
+        ArrayView<int16_t>(out_buffer.get(), kChannels * kFrameSizeSamples), 0);
     EXPECT_TRUE(
         VerifyBuffer(out_buffer.get(), i, kChannels * kFrameSizeSamples));
     UpdateInputBuffer(in_buffer.get(), i, kChannels * kFrameSizeSamples);
     fine_buffer.DeliverRecordedData(
-        rtc::ArrayView<const int16_t>(in_buffer.get(),
-                                      kChannels * kFrameSizeSamples),
+        ArrayView<const int16_t>(in_buffer.get(),
+                                 kChannels * kFrameSizeSamples),
         0);
   }
 }

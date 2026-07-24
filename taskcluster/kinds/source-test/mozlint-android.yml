@@ -14,7 +14,7 @@ task-defaults:
     treeherder:
         kind: test
         tier: 1
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: android-build}
         env:
@@ -55,6 +55,7 @@ task-defaults:
             - name: public/reports
               path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/reports
               type: directory
+    run-on-repo-type: [hg]
     run:
         using: run-task
         tooltool-downloads: internal  # For internal toolchains.
@@ -63,6 +64,8 @@ task-defaults:
             # Aliases aren't allowed for toolchains installed by fetch.
             - linux64-android-gradle-dependencies
             - linux64-android-sdk-linux-repack
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-jdk-repack
             - linux64-node
 

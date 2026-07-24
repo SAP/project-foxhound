@@ -91,8 +91,8 @@ bool Vacuumer::execute() {
   if (!databaseFile) {
     NS_WARNING("Trying to vacuum a in-memory database!");
     if (inAutomation && os) {
-      mozilla::Unused << os->NotifyObservers(
-          nullptr, OBSERVER_TOPIC_VACUUM_SKIP, u":memory:");
+      (void)os->NotifyObservers(nullptr, OBSERVER_TOPIC_VACUUM_SKIP,
+                                u":memory:");
     }
     return false;
   }
@@ -111,9 +111,8 @@ bool Vacuumer::execute() {
   if (NS_SUCCEEDED(rv) && (now - lastVacuum) < VACUUM_INTERVAL_SECONDS) {
     // This database was vacuumed recently, skip it.
     if (inAutomation && os) {
-      mozilla::Unused << os->NotifyObservers(
-          nullptr, OBSERVER_TOPIC_VACUUM_SKIP,
-          NS_ConvertUTF8toUTF16(mDBFilename).get());
+      (void)os->NotifyObservers(nullptr, OBSERVER_TOPIC_VACUUM_SKIP,
+                                NS_ConvertUTF8toUTF16(mDBFilename).get());
     }
     return false;
   }
@@ -126,9 +125,8 @@ bool Vacuumer::execute() {
   NS_ENSURE_SUCCESS(rv, false);
   if (!vacuumGranted) {
     if (inAutomation && os) {
-      mozilla::Unused << os->NotifyObservers(
-          nullptr, OBSERVER_TOPIC_VACUUM_SKIP,
-          NS_ConvertUTF8toUTF16(mDBFilename).get());
+      (void)os->NotifyObservers(nullptr, OBSERVER_TOPIC_VACUUM_SKIP,
+                                NS_ConvertUTF8toUTF16(mDBFilename).get());
     }
     return false;
   }
@@ -145,19 +143,18 @@ bool Vacuumer::execute() {
   }
 
   bool incremental = false;
-  mozilla::Unused << mParticipant->GetUseIncrementalVacuum(&incremental);
+  (void)mParticipant->GetUseIncrementalVacuum(&incremental);
 
   // Notify vacuum is about to start.
   if (os) {
-    mozilla::Unused << os->NotifyObservers(
-        nullptr, OBSERVER_TOPIC_VACUUM_BEGIN,
-        NS_ConvertUTF8toUTF16(mDBFilename).get());
+    (void)os->NotifyObservers(nullptr, OBSERVER_TOPIC_VACUUM_BEGIN,
+                              NS_ConvertUTF8toUTF16(mDBFilename).get());
   }
 
   rv = mDBConn->AsyncVacuum(this, incremental, expectedPageSize);
   if (NS_FAILED(rv)) {
     // The connection is not ready.
-    mozilla::Unused << Complete(rv, nullptr);
+    (void)Complete(rv, nullptr);
     return false;
   }
 
@@ -195,9 +192,8 @@ Vacuumer::Complete(nsresult aStatus, nsISupports* aValue) {
 nsresult Vacuumer::notifyCompletion(bool aSucceeded) {
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
-    mozilla::Unused << os->NotifyObservers(
-        nullptr, OBSERVER_TOPIC_VACUUM_END,
-        NS_ConvertUTF8toUTF16(mDBFilename).get());
+    (void)os->NotifyObservers(nullptr, OBSERVER_TOPIC_VACUUM_END,
+                              NS_ConvertUTF8toUTF16(mDBFilename).get());
   }
 
   nsresult rv = mParticipant->OnEndVacuum(aSucceeded);

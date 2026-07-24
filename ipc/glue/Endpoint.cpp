@@ -6,7 +6,7 @@
 
 #include "mozilla/ipc/Endpoint.h"
 #include "chrome/common/ipc_message.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 
@@ -49,6 +49,9 @@ UntypedManagedEndpoint::~UntypedManagedEndpoint() {
         [toplevel = mInner->mToplevel, id = mInner->mId] {
           if (IProtocol* actor = toplevel->Get();
               actor && actor->CanSend() && actor->GetIPCChannel()) {
+            // Clear the reservation which was taken when the
+            // UntypedManagedEndpoint was deserialized.
+            actor->ToplevelProtocol()->ClearReservation(id);
             actor->GetIPCChannel()->Send(MakeUnique<IPC::Message>(
                 id, MANAGED_ENDPOINT_DROPPED_MESSAGE_TYPE));
           }
@@ -56,10 +59,33 @@ UntypedManagedEndpoint::~UntypedManagedEndpoint() {
   }
 }
 
+bool UntypedManagedEndpoint::IsValidForManager(
+    IRefCountedProtocol* aManager) const {
+  return IsValid() && aManager && aManager->Id() == mInner->mManagerId &&
+         aManager->GetProtocolId() == mInner->mManagerType;
+}
+
+bool UntypedManagedEndpoint::IsValidForManager(
+    const UntypedManagedEndpoint& aManager) const {
+  return IsValid() && aManager.IsValid() &&
+         aManager.mInner->mId == mInner->mManagerId &&
+         aManager.mInner->mType == mInner->mManagerType;
+}
+
 bool UntypedManagedEndpoint::BindCommon(IProtocol* aActor,
                                         IRefCountedProtocol* aManager) {
   MOZ_ASSERT(aManager);
-  if (!mInner) {
+  if (!aActor) {
+    NS_WARNING("Cannot bind to null actor");
+    return false;
+  }
+
+  if (!IsForProtocol(aActor->GetProtocolId())) {
+    NS_WARNING("Cannot bind to incorrect protocol");
+    return false;
+  }
+
+  if (!IsValidForManager(aManager)) {
     NS_WARNING("Cannot bind to invalid endpoint");
     return false;
   }
@@ -72,15 +98,19 @@ bool UntypedManagedEndpoint::BindCommon(IProtocol* aActor,
                           mInner->mToplevel->Get());
   }
 
-  if (NS_WARN_IF(aManager->Id() != mInner->mManagerId) ||
-      NS_WARN_IF(aManager->GetProtocolId() != mInner->mManagerType) ||
-      NS_WARN_IF(aActor->GetProtocolId() != mInner->mType)) {
-    MOZ_ASSERT_UNREACHABLE("Actor and manager do not match Endpoint");
+  if (!aManager->CanSend() || !aManager->GetIPCChannel()) {
+    NS_WARNING("Manager cannot send");
     return false;
   }
 
-  if (!aManager->CanSend() || !aManager->GetIPCChannel()) {
-    NS_WARNING("Manager cannot send");
+  // The endpoint was never sent over IPC, so instead we'll reserve the
+  // ActorId as-if it was sent over IPC.
+  // WARNING: If you introduce error return paths after this point, but before
+  // SetManagerAndRegister, we may leak our ActorId reservation.
+  if (!mInner->mToplevel &&
+      !aManager->ToplevelProtocol()->TryReserve(mInner->mId)) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Failed to reserve ActorId for in-proc UntypedManagedEndpoint");
     return false;
   }
 
@@ -95,12 +125,15 @@ bool UntypedManagedEndpoint::BindCommon(IProtocol* aActor,
   return true;
 }
 
+}  // namespace mozilla::ipc
+
+namespace IPC {
+
 /* static */
-void IPDLParamTraits<UntypedManagedEndpoint>::Write(IPC::MessageWriter* aWriter,
-                                                    IProtocol* aActor,
-                                                    paramType&& aParam) {
+void ParamTraits<mozilla::ipc::UntypedManagedEndpoint>::Write(
+    MessageWriter* aWriter, paramType&& aParam) {
   bool isValid = aParam.mInner.isSome();
-  WriteIPDLParam(aWriter, aActor, isValid);
+  WriteParam(aWriter, isValid);
   if (!isValid) {
     return;
   }
@@ -111,42 +144,54 @@ void IPDLParamTraits<UntypedManagedEndpoint>::Write(IPC::MessageWriter* aWriter,
   MOZ_RELEASE_ASSERT(inner.mOtherSide, "Has not been sent over IPC yet");
   MOZ_RELEASE_ASSERT(inner.mOtherSide->ActorEventTarget()->IsOnCurrentThread(),
                      "Must be being sent from the correct thread");
-  MOZ_RELEASE_ASSERT(
-      inner.mOtherSide->Get() && inner.mOtherSide->Get()->ToplevelProtocol() ==
-                                     aActor->ToplevelProtocol(),
-      "Must be being sent over the same toplevel protocol");
+  MOZ_RELEASE_ASSERT(inner.mOtherSide->Get() && aWriter->GetActor() &&
+                         inner.mOtherSide->Get()->ToplevelProtocol() ==
+                             aWriter->GetActor()->ToplevelProtocol(),
+                     "Must be being sent over the same toplevel protocol");
 
-  WriteIPDLParam(aWriter, aActor, inner.mId);
-  WriteIPDLParam(aWriter, aActor, inner.mType);
-  WriteIPDLParam(aWriter, aActor, inner.mManagerId);
-  WriteIPDLParam(aWriter, aActor, inner.mManagerType);
+  WriteParam(aWriter, inner.mId);
+  WriteParam(aWriter, inner.mType);
+  WriteParam(aWriter, inner.mManagerId);
+  WriteParam(aWriter, inner.mManagerType);
 }
 
 /* static */
-bool IPDLParamTraits<UntypedManagedEndpoint>::Read(IPC::MessageReader* aReader,
-                                                   IProtocol* aActor,
-                                                   paramType* aResult) {
-  *aResult = UntypedManagedEndpoint{};
+bool ParamTraits<mozilla::ipc::UntypedManagedEndpoint>::Read(
+    MessageReader* aReader, paramType* aResult) {
+  *aResult = mozilla::ipc::UntypedManagedEndpoint{};
   bool isValid = false;
-  if (!aActor || !ReadIPDLParam(aReader, aActor, &isValid)) {
+  if (!aReader->GetActor() || !ReadParam(aReader, &isValid)) {
     return false;
   }
   if (!isValid) {
     return true;
   }
 
+  mozilla::ipc::IToplevelProtocol* toplevel =
+      aReader->GetActor()->ToplevelProtocol();
+
+  mozilla::ipc::ActorId id = 0;
+  if (!ReadParam(aReader, &id)) {
+    return false;
+  }
+
+  // Attempt to perform a reservation.
+  // If this succeeds, immediately construct mInner, so that the reservation is
+  // cleaned up when the ManagedEndpoint is destroyed.
+  if (!toplevel->TryReserve(id)) {
+    aReader->FatalError("Failed to reserve remote ActorId with toplevel");
+    return false;
+  }
+
   aResult->mInner.emplace();
   auto& inner = *aResult->mInner;
-  inner.mToplevel = aActor->ToplevelProtocol()->GetWeakLifecycleProxy();
-  return ReadIPDLParam(aReader, aActor, &inner.mId) &&
-         ReadIPDLParam(aReader, aActor, &inner.mType) &&
-         ReadIPDLParam(aReader, aActor, &inner.mManagerId) &&
-         ReadIPDLParam(aReader, aActor, &inner.mManagerType);
+  inner.mToplevel = toplevel->GetWeakLifecycleProxy();
+  inner.mId = id;
+
+  return ReadParam(aReader, &inner.mType) &&
+         ReadParam(aReader, &inner.mManagerId) &&
+         ReadParam(aReader, &inner.mManagerType);
 }
-
-}  // namespace mozilla::ipc
-
-namespace IPC {
 
 void ParamTraits<mozilla::ipc::UntypedEndpoint>::Write(MessageWriter* aWriter,
                                                        paramType&& aParam) {

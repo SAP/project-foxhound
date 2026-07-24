@@ -4,9 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "MimeType.h"
+#include "gtest/gtest.h"
 #include "nsString.h"
 
 TEST(MimeType, EmptyString)
@@ -821,8 +820,8 @@ TEST(MimeTypeParsing, contentTypes1)
 
   bool parsed = CMimeType::Parse(val, contentType, contentCharset);
 
-  ASSERT_FALSE(parsed);
-  ASSERT_TRUE(contentType.EqualsLiteral(""));
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(contentType.EqualsLiteral("text/plain"));
   ASSERT_TRUE(contentCharset.EqualsLiteral(""));
 }
 
@@ -1099,4 +1098,62 @@ TEST(MimeTypeParsing, invalidSubtype2)
   const nsAutoCString val("text/json/bad");
   RefPtr<CMimeType> parsed = CMimeType::Parse(val);
   ASSERT_TRUE(!parsed);
+}
+
+TEST(MimeTypeParsing, countParameters0)
+{
+  constexpr nsLiteralCString val("text/plain");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 0);
+}
+
+TEST(MimeTypeParsing, countParameters1)
+{
+  constexpr nsLiteralCString val("video/webm; codecs=\"vp09.00.10.08, opus\"");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 1);
+}
+
+TEST(MimeTypeParsing, countParameters2)
+{
+  constexpr nsLiteralCString val(
+      "video/mp4; codecs=\"avc1.64001f\"; profile=high");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 2);
+}
+
+TEST(MimeTypeParsing, countParameters3)
+{
+  constexpr nsLiteralCString val(
+      "video/mp4; codecs=\"a,b\"; FrameRate=60; BITRATE=100000");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 3);
+}
+
+TEST(MimeTypeParsing, EmptyParsing)
+{
+  constexpr nsLiteralCString val("");
+  nsCString contentType;
+  nsCString contentCharset;
+  bool parsed = CMimeType::Parse(val, contentType, contentCharset);
+
+  ASSERT_FALSE(parsed);
+  ASSERT_TRUE(contentType.EqualsLiteral(""));
+  ASSERT_TRUE(contentCharset.EqualsLiteral(""));
+}
+
+TEST(MimeTypeParsing, EmptySubtype)
+{
+  constexpr nsLiteralCString val("audio/");
+  nsCString contentType;
+  nsCString contentCharset;
+  bool parsed = CMimeType::Parse(val, contentType, contentCharset);
+
+  ASSERT_FALSE(parsed);
+  ASSERT_TRUE(contentType.EqualsLiteral(""));
+  ASSERT_TRUE(contentCharset.EqualsLiteral(""));
 }

@@ -18,11 +18,11 @@ function run_test() {
     ["ZH-HANT-HK", "zh-Hant-HK"],
     ["en-us-x-priv", "en-US-x-priv"],
     ["en-us-x-twain", "en-US-x-twain"],
-    ["de, en-US, en", "de,en-US;q=0.7,en;q=0.3"],
-    ["de,en-us,en", "de,en-US;q=0.7,en;q=0.3"],
-    ["en-US, en", "en-US,en;q=0.5"],
-    ["EN-US;q=0.2, EN", "en-US,en;q=0.5"],
-    ["en ;q=0.8, de  ", "en,de;q=0.5"],
+    ["de, en-US, en", "de,en-US;q=0.9,en;q=0.8"],
+    ["de,en-us,en", "de,en-US;q=0.9,en;q=0.8"],
+    ["en-US, en", "en-US,en;q=0.9"],
+    ["EN-US;q=0.2, EN", "en-US,en;q=0.9"],
+    ["en ;q=0.8, de  ", "en,de;q=0.9"],
     [",en,", "en"],
   ];
 

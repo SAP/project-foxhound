@@ -5,12 +5,13 @@
 
 #include "SharedTextureDMABuf.h"
 
+#include <gbm.h>
+
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/webgpu/WebGPUParent.h"
-#include "mozilla/widget/DMABufSurface.h"
 #include "mozilla/widget/DMABufDevice.h"
-#include <gbm.h>
+#include "mozilla/widget/DMABufSurface.h"
 
 namespace mozilla::webgpu {
 

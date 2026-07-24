@@ -22,7 +22,7 @@
 
 const IGNORED_URLS = ["debugger eval code", "XStringBundle"];
 const IGNORED_EXTENSIONS = ["css", "svg", "png"];
-import { isPretty, getRawSourceURL } from "../utils/source";
+import { getRawSourceURL } from "../utils/source";
 import { prefs } from "../utils/prefs";
 import { getDisplayURL } from "../utils/sources-tree/getURL";
 
@@ -394,7 +394,7 @@ function isSourceVisibleInSourceTree(
     !!source.url &&
     !IGNORED_EXTENSIONS.includes(source.displayURL.fileExtension) &&
     !IGNORED_URLS.includes(source.url) &&
-    !isPretty(source) &&
+    !source.isPrettyPrinted &&
     // Only accept web extension sources when the chrome pref is enabled (to allows showing content scripts),
     // or when we are debugging an extension
     (!source.isExtension || showContentScripts || debuggeeIsWebExtension)
@@ -418,16 +418,30 @@ function addSortedItem(array, newValue, comparator) {
   array.splice(index, 0, newValue);
 }
 
+// Cache each of last possible containers to speedup item addition
+// when we are adding to the same container (thread, group, folder)
+let lastThreadItem = null;
+let lastGroupItem = null;
+let lastDirectoryItem = null;
+
 function addSource(threadItems, source, sourceActor) {
   // Ensure creating or fetching the related Thread Item
-  let threadItem = threadItems.find(item => {
-    return item.threadActorID == sourceActor.thread;
-  });
-  if (!threadItem) {
-    threadItem = createThreadTreeItem(sourceActor.thread);
-    // Note that threadItems will be cloned once to force a state update
-    // by the callsite of `addSourceActor`
-    addSortedItem(threadItems, threadItem, sortThreadItems);
+  let threadItem;
+  if (lastThreadItem?.threadActorID == sourceActor.thread) {
+    threadItem = lastThreadItem;
+  } else {
+    threadItem = threadItems.find(item => {
+      return item.threadActorID == sourceActor.thread;
+    });
+    if (!threadItem) {
+      threadItem = createThreadTreeItem(sourceActor.thread);
+      // Note that threadItems will be cloned once to force a state update
+      // by the callsite of `addSourceActor`
+      addSortedItem(threadItems, threadItem, sortThreadItems);
+    }
+    lastThreadItem = threadItem;
+    lastGroupItem = null;
+    lastDirectoryItem = null;
   }
 
   // Then ensure creating or fetching the related Group Item
@@ -435,28 +449,36 @@ function addSource(threadItems, source, sourceActor) {
   const { displayURL } = source;
   const { group, origin } = displayURL;
 
-  let groupItem = threadItem.children.find(item => {
-    return item.groupName == group;
-  });
+  let groupItem;
+  if (lastGroupItem?.groupName == group) {
+    groupItem = lastGroupItem;
+  } else {
+    groupItem = threadItem.children.find(item => {
+      return item.groupName == group;
+    });
 
-  if (!groupItem) {
-    groupItem = createGroupTreeItem(group, origin, threadItem, source);
-    // Copy children in order to force updating react in case we picked
-    // this directory as a project root
-    threadItem.children = [...threadItem.children];
+    if (!groupItem) {
+      groupItem = createGroupTreeItem(group, origin, threadItem, source);
+      // Copy children in order to force updating react in case we picked
+      // this directory as a project root
+      threadItem.children = [...threadItem.children];
 
-    addSortedItem(threadItem.children, groupItem, sortItems);
+      addSortedItem(threadItem.children, groupItem, sortItems);
+    }
+    lastGroupItem = groupItem;
+    lastDirectoryItem = null;
   }
 
   // Then ensure creating or fetching all possibly nested Directory Item(s)
   const { path } = displayURL;
   const parentPath = path.substring(0, path.lastIndexOf("/"));
-  const parentUrl = source.url.substring(0, source.url.lastIndexOf("/"));
-  const directoryItem = addOrGetParentDirectory(
-    groupItem,
-    parentPath,
-    parentUrl
-  );
+  let directoryItem;
+  if (lastDirectoryItem?.path == parentPath) {
+    directoryItem = lastDirectoryItem;
+  } else {
+    directoryItem = addOrGetParentDirectory(groupItem, parentPath);
+    lastDirectoryItem = directoryItem;
+  }
 
   // Check if a previous source actor registered this source.
   // It happens if we load the same url multiple times, or,
@@ -479,7 +501,8 @@ function addSource(threadItems, source, sourceActor) {
 }
 /**
  * Find all the source items in tree
- * @param {Object} item - Current item node in the tree
+ *
+ * @param {object} item - Current item node in the tree
  * @param {Function} callback
  */
 function findSourceInThreadItem(source, threadItem) {
@@ -502,9 +525,7 @@ function findSourceInThreadItem(source, threadItem) {
     });
   }
 
-  const directoryItem = groupItem._allGroupDirectoryItems.find(item => {
-    return item.type == "directory" && item.path == parentPath;
-  });
+  const directoryItem = groupItem._allGroupDirectoryItems.get(parentPath);
   if (!directoryItem) {
     return null;
   }
@@ -597,38 +618,29 @@ export function sortThreads(a, b) {
  *
  * @param {GroupItem} groupItem
  *        The Group Item for the group where the path should be displayed.
- * @param {String} path
+ * @param {string} path
  *        Path of the directory for which we want a Directory Item.
- * @param {String} url
- *        URL of the directory for which we want a Directory Item.
  * @return {GroupItem|DirectoryItem}
  *        The parent Item where this path should be inserted.
  *        Note that it may be displayed right under the Group Item if the path is empty.
  */
-function addOrGetParentDirectory(groupItem, path, url) {
+function addOrGetParentDirectory(groupItem, path) {
   // We reached the top of the Tree, so return the Group Item.
   if (!path) {
     return groupItem;
   }
   // See if we have this directory already registered by a previous source
-  const existing = groupItem._allGroupDirectoryItems.find(item => {
-    return item.type == "directory" && item.path == path;
-  });
+  const existing = groupItem._allGroupDirectoryItems.get(path);
   if (existing) {
     return existing;
   }
   // It doesn't exists, so we will create a new Directory Item.
   // But now, lookup recursively for the parent Item for this to-be-create Directory Item
   const parentPath = path.substring(0, path.lastIndexOf("/"));
-  const parentUrl = url.substring(0, url.lastIndexOf("/"));
-  const parentDirectory = addOrGetParentDirectory(
-    groupItem,
-    parentPath,
-    parentUrl
-  );
+  const parentDirectory = addOrGetParentDirectory(groupItem, parentPath);
 
   // We can now create the new Directory Item and register it in its parent Item.
-  const directory = createDirectoryTreeItem(path, url, parentDirectory);
+  const directory = createDirectoryTreeItem(path, parentDirectory);
   // Copy children in order to force updating react in case we picked
   // this directory as a project root
   parentDirectory.children = [...parentDirectory.children];
@@ -637,7 +649,7 @@ function addOrGetParentDirectory(groupItem, path, url) {
 
   // Also maintain the list of all group items,
   // Which helps speedup querying for existing items.
-  groupItem._allGroupDirectoryItems.push(directory);
+  groupItem._allGroupDirectoryItems.set(directory.path, directory);
 
   return directory;
 }
@@ -693,20 +705,22 @@ function createGroupTreeItem(groupName, origin, parent, source) {
     }),
 
     groupName,
-    url: origin,
+
+    // This is only used by project directory root tooltip
+    origin,
 
     // When a content script appear in a web page,
     // a dedicated group is created for it and should
     // be having an extension icon.
     isForExtensionSource: source.isExtension,
 
-    // List of all nested items for this group.
+    // Map of all nested directory items for this group, keyed by their path.
     // This helps find any nested directory in a given group without having to walk the tree.
-    // This is meant to be used only by the reducer.
-    _allGroupDirectoryItems: [],
+    // This is meant to be used only within the reducer.
+    _allGroupDirectoryItems: new Map(),
   };
 }
-function createDirectoryTreeItem(path, url, parent) {
+function createDirectoryTreeItem(path, parent) {
   // If the parent is a group we want to use '/' as separator
   const pathSeparator = parent.type == "directory" ? "/" : "|";
 
@@ -733,7 +747,6 @@ function createDirectoryTreeItem(path, url, parent) {
     // path will be:
     //   foo/bar
     path,
-    url,
   };
 }
 function createSourceTreeItem(source, sourceActor, parent) {
@@ -755,8 +768,8 @@ function createSourceTreeItem(source, sourceActor, parent) {
  * Update `expanded` and `focusedItem` so that we show and focus
  * the new selected source.
  *
- * @param {Object} state
- * @param {Object} selectedLocation
+ * @param {object} state
+ * @param {object} selectedLocation
  *        The new location being selected.
  */
 function updateSelectedLocation(state, selectedLocation) {
@@ -782,8 +795,8 @@ function updateSelectedLocation(state, selectedLocation) {
 /**
  * Get the SourceItem displayed in the SourceTree for the currently selected location.
  *
- * @param {Object} state
- * @param {Object} selectedLocation
+ * @param {object} state
+ * @param {object} selectedLocation
  * @return {SourceItem}
  *        The directory source item where the given source is displayed.
  */

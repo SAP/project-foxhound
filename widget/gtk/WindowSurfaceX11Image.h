@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
-#define _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
+#ifndef MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
+#define MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
 
 #ifdef MOZ_X11
 
@@ -37,4 +37,4 @@ class WindowSurfaceX11Image : public WindowSurfaceX11 {
 }  // namespace mozilla
 
 #endif  // MOZ_X11
-#endif  // _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
+#endif  // MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H

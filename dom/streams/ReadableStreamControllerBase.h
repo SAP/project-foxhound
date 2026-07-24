@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_ReadableStreamControllerBase_h
 #define mozilla_dom_ReadableStreamControllerBase_h
 
+#include "UnderlyingSourceCallbackHelpers.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
-#include "UnderlyingSourceCallbackHelpers.h"
 
 namespace mozilla::dom {
 struct ReadRequest;

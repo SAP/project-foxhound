@@ -14,7 +14,7 @@ enum RTCDataChannelType {
   "blob"
 };
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface RTCDataChannel : EventTarget
 {
   readonly attribute UTF8String label;
@@ -29,6 +29,7 @@ interface RTCDataChannel : EventTarget
   attribute unsigned long bufferedAmountLowThreshold;
   attribute EventHandler onopen;
   attribute EventHandler onerror;
+  attribute EventHandler onclosing;
   attribute EventHandler onclose;
   undefined close();
   attribute EventHandler onmessage;

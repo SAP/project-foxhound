@@ -6,7 +6,6 @@
 
 #include "PersistenceType.h"
 
-#include <utility>
 #include "nsIFile.h"
 #include "nsLiteralString.h"
 #include "nsString.h"
@@ -175,6 +174,12 @@ Maybe<PersistenceType> TypeFrom_impl(T& aData) {
 void BadPersistenceType() { MOZ_CRASH("Bad persistence type value!"); }
 
 }  // namespace
+
+bool IsTemporaryPersistenceType(const PersistenceType aPersistenceType) {
+  return std::find(std::begin(kTemporaryPersistenceTypes),
+                   std::end(kTemporaryPersistenceTypes),
+                   aPersistenceType) != std::end(kTemporaryPersistenceTypes);
+}
 
 bool IsValidPersistenceType(const PersistenceType aPersistenceType) {
   switch (aPersistenceType) {

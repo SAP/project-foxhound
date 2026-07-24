@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -29,7 +36,7 @@
   -->
   <string name="search_hint">ፈልግ ስለ %1$s</string>
   <!-- Menu item: Share the currently visible page -->
-  <string name="menu_share">ያጋሩ…\n\n</string>
+  <string name="menu_share">ያጋሩ…</string>
   <!-- Menu item: Report an issue on the current site -->
   <string name="menu_report_site_issue">የድረ-ገጹን ችግር አመልክት</string>
   <!--
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።</p> <p>እንደ የግል አሳሽ ይጠቀሙበት፡- <ul> <li>በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ</li> <li>መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)</li> <li>ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ</li> </ul> </p> <p>%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።<br/> <a href=\"%2$s\">የበለጠ ለመረዳት</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።</p>\n<p>እንደ የግል አሳሽ ይጠቀሙበት፡-\n<ul>\n<li>በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ</li>\n<li>መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)</li>\n<li>ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ</li>\n</ul> </p>\n<p>%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።<br/>\n<a href=\"%2$s\">የበለጠ ለመረዳት</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">ግላዊነት እና ደህንነት</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -266,7 +273,7 @@
   <string name="preference_privacy_block_analytics_summary">እንደ ማሸብለል እና መታ በማድረግ ያሉ እንቅስቃሴዎችን ለመተንተን እና ለመለካት ጥቅም ላይ የዋለ</string>
   <string name="preference_privacy_block_social">ማህበራዊ ሚዲያ መከታተያዎችን አግድ\n</string>
   <string name="preference_privacy_block_social_summary">የእርስዎን ጉብኝቶች ለመከታተል እና እንደ የአጋራ አዝራሮች ያሉ ተግባሮችን ለማሳየት በጣቢያዎች ላይ የተካተተ</string>
-  <string name="preference_privacy_block_content">ሌሎች የይዘት መከታተያዎችን ያግዱ\n</string>
+  <string name="preference_privacy_block_content">ሌሎች የይዘት መከታተያዎችን ያግዱ</string>
   <string name="preference_privacy_block_content_summary2">ማስቻል አንዳንድ ገፆችን ያልታሰበ ፀባይ እንዲፈጽሙ ሊያደርጋቸው ይችላል</string>
   <string name="preference_privacy_category_cookies">ኩኪዎችን አግድ</string>
   <!--
@@ -303,7 +310,7 @@
   <string name="preference_category_performance">አፈፃፀም</string>
   <string name="preference_performance_block_webfonts">የድር ቅርጸ ቁምፊዎችን አግድ</string>
   <!-- This text is shown below the setting for disabling web fonts. Some websites use icons/images from a font and those do not show up if fonts are blocked. -->
-  <string name="preference_performance_block_webfonts_summary">አዶዎችን ወይም ምስሎችን የጠፉ ሊያስከትል ይችላል\n</string>
+  <string name="preference_performance_block_webfonts_summary">የአዶዎችን ወይም የምስሎችን መጥፋት ሊያስከትል ይችላል</string>
   <string name="preference_performance_block_javascript">ጃቫ-ስክሪፕት አግድ</string>
   <!-- This text is shown below setting for disabling JavaScript. Some websites may not work correctly when JavaScript is disabled -->
   <string name="preference_performance_block_javascript_summary">ገፆች በፍጥነት ሊከፍቱ ይችላሉ፣ ግን ደግሞ ያልተጠበቀ ባህሪ ሊኖራቸው ይችላል</string>
@@ -354,7 +361,7 @@
   <!-- Explanation text above the list of search engines -->
   <string name="preference_select_preferred_engine">የእርስዎን ተመራጭ ፍርግም ይምረጡ፡-</string>
   <!-- Clickable action text that shows when user long-presses on a search engine search field (this is similar to paste or copy when long-pressing a text field) -->
-  <string name="action_option_add_search_engine">የፍለጋ ፕሮግራም አክል\n</string>
+  <string name="action_option_add_search_engine">የፍለጋ ፍርግም አክል</string>
   <string name="search_add_manually_name_hint">የመፈለጊያ ማሸን ስም</string>
   <string name="search_add_manually_string">የሚጠቀሙ ሕብረ ቁምፊዎችን ፈልግ</string>
   <string name="search_add_manually_save">አስቀምጥ</string>
@@ -362,7 +369,7 @@
   <string name="search_add_manually_example">ለምሳሌ: ለምሳሌ.com /search/?q=%s</string>
   <string name="search_add_confirmation">አዲስ የፍለጋ ፕሮግራም ታክሏል</string>
   <string name="search_add_error_empty_name">የፍለጋውን ስም አስገባ</string>
-  <string name="search_add_error_duplicate_name">አንድ የተጫነ የፍለጋ ፕሮግራም አስቀድሞ በዚያ ስም እየተጠቀመ ነው\n</string>
+  <string name="search_add_error_duplicate_name">አንድ የተጫነ የፍለጋ ፍርግም አስቀድሞ ያንን ስም እየተጠቀመ ነው።</string>
   <string name="search_add_error_empty_search">የፍለጋ ህብረ ቁምፊ ያስገቡ</string>
   <string name="search_add_error_format">የፍለጋ ሕብረቁምፊ ና የምሳሌ ቅርጸት እንደ ሚመሳሰሉ አረጋግጥ</string>
   <!-- Content description (not visible, for screen readers etc.): Clear text in URL bar -->
@@ -462,27 +469,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">በመቀጠል፣ በ%1$s ተስማምተዋል</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">በመቀጠል፣ በ%1$s ተስማምተዋል።</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">የFirefox የአጠቃቀም ውል።</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">የFirefox የአጠቃቀም ውል</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox የእርስዎን ግላዊነት ያስባል። በእኛ %1$s ውስጥ የበለጠ ይወቁ</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox የእርስዎን ግላዊነት ያስባል። በእኛ %1$s ውስጥ የበለጠ ይወቁ።</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">የግላዊነት ማስታወቂያ።</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">የግላዊነት ማስታወቂያ</string>
   <!-- New Onboarding flow first screen button label -->
@@ -881,7 +880,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ይህ የሰርቨር ውቅር ችግር ሊሆን ይችላል፣ ወይም ሰርቨሩን ለመምሰል የሚሞክር ሰው ሊሆን ይችላል። <br/><br/> ከዚህ ሰርቨር ጋር ከዚህ ቀደም በተሳካ ሁኔታ ከተገናኙ፤ ስህተቱ ጊዜያዊ ሊሆን ይችላል።]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>አንድ ሰው ድረ-ገፁን ለማስመሰል እየሞከረ ሊሆን ይችላል እና መቀጠል አደገኛ ሊሆን ይችላል።</label> <br><br> <label>%1$s <b>%2$s</b>ን አያምንም ምክንያቱም የእውቅና ማረጋገጫ ሰጪው ስለማይታወቅ፣ የእውቅና ማረጋገጫው በራሱ የተፈረመ ነው ወይም ሰርቨሩ ትክክለኛ መካከለኛ የእውቅና ማረጋገጫዎችን እየላከ አይደለም።</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>አንድ ሰው ድረ-ገፁን ለማስመሰል እየሞከረ ሊሆን ይችላል እና መቀጠል አደገኛ ሊሆን ይችላል።</label> <br><br>\n<label>%1$s <b>%2$s</b>ን አያምንም ምክንያቱም የእውቅና ማረጋገጫ ሰጪው ስለማይታወቅ፣ የእውቅና ማረጋገጫው በራሱ የተፈረመ ነው ወይም ሰርቨሩ ትክክለኛ መካከለኛ የእውቅና ማረጋገጫዎችን እየላከ አይደለም።</label>]]></string>
   <!--
     Sessions List
 

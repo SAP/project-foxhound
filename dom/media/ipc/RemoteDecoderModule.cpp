@@ -9,8 +9,8 @@
 #  include "AOMDecoder.h"
 #endif
 #include "RemoteAudioDecoder.h"
-#include "RemoteMediaManagerChild.h"
 #include "RemoteMediaDataDecoder.h"
+#include "RemoteMediaManagerChild.h"
 #include "RemoteVideoDecoder.h"
 #include "VideoUtils.h"
 #include "gfxConfig.h"
@@ -36,6 +36,27 @@ already_AddRefed<PlatformDecoderModule> RemoteDecoderModule::Create(
 RemoteDecoderModule::RemoteDecoderModule(RemoteMediaIn aLocation)
     : mLocation(aLocation) {}
 
+const char* RemoteDecoderModule::Name() const {
+  switch (mLocation) {
+    case RemoteMediaIn::Unspecified:
+      return "Remote: Unspecified";
+    case RemoteMediaIn::RddProcess:
+      return "Remote: RddProcess";
+    case RemoteMediaIn::GpuProcess:
+      return "Remote: GpuProcess";
+    case RemoteMediaIn::UtilityProcess_Generic:
+      return "Remote: Utility_Generic";
+    case RemoteMediaIn::UtilityProcess_AppleMedia:
+      return "Remote: Utility_AppleMedia";
+    case RemoteMediaIn::UtilityProcess_WMF:
+      return "Remote: Utility_WMF";
+    case RemoteMediaIn::UtilityProcess_MFMediaEngineCDM:
+      return "Remote: Utility_MFMediaEngineCDM";
+    default:
+      MOZ_CRASH("Missing enum handling");
+  }
+}
+
 media::DecodeSupportSet RemoteDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   MOZ_CRASH("Deprecated: Use RemoteDecoderModule::Supports");
@@ -46,11 +67,20 @@ media::DecodeSupportSet RemoteDecoderModule::Supports(
     DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
       RemoteMediaManagerChild::Supports(mLocation, aParams, aDiagnostics);
+#ifdef MOZ_WMF_CDM
   // This should only be supported by mf media engine cdm process.
   if (aParams.mMediaEngineId &&
       mLocation != RemoteMediaIn::UtilityProcess_MFMediaEngineCDM) {
     supports = false;
   }
+#endif
+#ifdef ANDROID
+  if ((aParams.mCDM && mLocation != RemoteMediaIn::RddProcess) ||
+      (!aParams.mCDM && aParams.mConfig.IsAudio() &&
+       mLocation != RemoteMediaIn::UtilityProcess_Generic)) {
+    supports = false;
+  }
+#endif
   MOZ_LOG(
       sPDMLog, LogLevel::Debug,
       ("Sandbox %s decoder %s requested type %s", RemoteMediaInToStr(mLocation),

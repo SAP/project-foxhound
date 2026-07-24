@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.reviewprompt.ui
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,29 +16,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.PrimaryButton
-import mozilla.components.lib.state.ext.observeAsState
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
+import mozilla.components.compose.base.button.FilledButton
+import mozilla.components.compose.base.theme.surfaceDimVariant
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.BottomSheetHandle
 import org.mozilla.fenix.reviewprompt.CustomReviewPromptAction
 import org.mozilla.fenix.reviewprompt.CustomReviewPromptState
 import org.mozilla.fenix.reviewprompt.CustomReviewPromptState.Feedback
@@ -48,6 +50,8 @@ import org.mozilla.fenix.reviewprompt.CustomReviewPromptState.PrePrompt
 import org.mozilla.fenix.reviewprompt.CustomReviewPromptState.Rate
 import org.mozilla.fenix.reviewprompt.CustomReviewPromptStore
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 
 /**
  * Prompt that can show either:
@@ -55,30 +59,68 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * - state asking to leave a Play Store rating,
  * - or state asking to leave feedback.
  *
- * @param state The state (or step) the prompt should be showing.
- * @param onRequestDismiss Called when the accessibility affordance to dismiss the prompt is clicked.
+ * @param customReviewPromptState The state (or step) the prompt should be showing.
+ * @param onDismissRequest Called when the accessibility affordance to dismiss the prompt is clicked.
  * @param onNegativePrePromptButtonClick Called when the negative button in the pre-prompt is clicked.
  * @param onPositivePrePromptButtonClick Called when the positive button in the pre-prompt is clicked.
  * @param onRateButtonClick Called when the rate on Play Store button is clicked.
  * @param onLeaveFeedbackButtonClick Called when the leave feedback button is clicked.
- * @param modifier The modifier to be applied to the prompt.
+ * @param modifier The modifier to be applied to the prompt bottom sheet.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomReviewPrompt(
-    state: CustomReviewPromptState,
-    onRequestDismiss: () -> Unit,
+    customReviewPromptState: CustomReviewPromptState,
+    onDismissRequest: () -> Unit,
     onNegativePrePromptButtonClick: () -> Unit,
     onPositivePrePromptButtonClick: () -> Unit,
     onRateButtonClick: () -> Unit,
     onLeaveFeedbackButtonClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(Unit) {
+        sheetState.show()
+    }
+
     BottomSheet(
-        onRequestDismiss,
-        modifier.animateContentSize(),
+        sheetState = sheetState,
+        customReviewPromptState = customReviewPromptState,
+        onDismissRequest = onDismissRequest,
+        onNegativePrePromptButtonClick = onNegativePrePromptButtonClick,
+        onPositivePrePromptButtonClick = onPositivePrePromptButtonClick,
+        onRateButtonClick = onRateButtonClick,
+        onLeaveFeedbackButtonClick = onLeaveFeedbackButtonClick,
+        modifier = modifier,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BottomSheet(
+    sheetState: SheetState,
+    customReviewPromptState: CustomReviewPromptState,
+    onDismissRequest: () -> Unit,
+    onNegativePrePromptButtonClick: () -> Unit,
+    onPositivePrePromptButtonClick: () -> Unit,
+    onRateButtonClick: () -> Unit,
+    onLeaveFeedbackButtonClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.outline) },
     ) {
-        Crossfade(state) { state ->
-            when (state) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp),
+        ) {
+            when (customReviewPromptState) {
                 PrePrompt -> PrePrompt(
                     onNegativeButtonClick = onNegativePrePromptButtonClick,
                     onPositiveButtonClick = onPositivePrePromptButtonClick,
@@ -92,39 +134,6 @@ fun CustomReviewPrompt(
 }
 
 @Composable
-private fun BottomSheet(
-    onRequestDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier.fillMaxWidth(),
-        Alignment.BottomCenter,
-    ) {
-        Column(
-            Modifier
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .background(FirefoxTheme.colors.layer3)
-                .widthIn(max = FirefoxTheme.layout.size.maxWidth.medium)
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 16.dp),
-        ) {
-            BottomSheetHandle(
-                onRequestDismiss = onRequestDismiss,
-                contentDescription = stringResource(R.string.mozac_cfr_dismiss_button_content_description),
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(all = 16.dp)
-                    .width(32.dp),
-            )
-
-            content()
-        }
-    }
-}
-
-@Composable
 private fun PrePrompt(
     onNegativeButtonClick: () -> Unit,
     onPositiveButtonClick: () -> Unit,
@@ -132,11 +141,10 @@ private fun PrePrompt(
 ) {
     Column(modifier) {
         Text(
-            stringResource(
+            text = stringResource(
                 R.string.review_prompt_pre_prompt_header,
                 stringResource(R.string.firefox),
             ),
-            color = FirefoxTheme.colors.textPrimary,
             style = FirefoxTheme.typography.headline7,
         )
 
@@ -173,19 +181,18 @@ private fun FoxEmojiButton(
         modifier
             .height(100.dp)
             .clip(RoundedCornerShape(size = 18.dp))
-            .border(1.dp, FirefoxTheme.colors.borderPrimary, RoundedCornerShape(size = 18.dp))
-            .background(FirefoxTheme.colors.layer1)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(size = 18.dp))
+            .background(MaterialTheme.colorScheme.surfaceDimVariant)
             .clickable(onClick = onClick),
         Arrangement.Center,
         Alignment.CenterHorizontally,
     ) {
-        Image(emoji, contentDescription = null)
+        Image(painter = emoji, contentDescription = null)
 
         Spacer(Modifier.height(10.dp))
 
         Text(
-            label,
-            color = FirefoxTheme.colors.textPrimary,
+            text = label,
             style = FirefoxTheme.typography.caption,
         )
     }
@@ -196,27 +203,29 @@ private fun RateStep(onRateButtonClick: () -> Unit, modifier: Modifier = Modifie
     Column(modifier.padding(vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
-                painterResource(R.drawable.review_prompt_positive_button),
+                painter = painterResource(R.drawable.review_prompt_positive_button),
                 contentDescription = null,
             )
 
             Spacer(Modifier.width(10.dp))
 
             Text(
-                stringResource(
+                text = stringResource(
                     R.string.review_prompt_rate_header,
                     stringResource(R.string.firefox),
                 ),
-                color = FirefoxTheme.colors.textPrimary,
                 style = FirefoxTheme.typography.headline7,
             )
         }
 
         Spacer(Modifier.height(20.dp))
 
-        PrimaryButton(
-            stringResource(R.string.review_prompt_rate_button, stringResource(R.string.firefox)),
-            Modifier.fillMaxWidth(),
+        FilledButton(
+            text = stringResource(
+                R.string.review_prompt_rate_button,
+                stringResource(R.string.firefox),
+            ),
+            modifier = Modifier.fillMaxWidth(),
             onClick = onRateButtonClick,
         )
     }
@@ -227,135 +236,164 @@ private fun FeedbackStep(onLeaveFeedbackButtonClick: () -> Unit, modifier: Modif
     Column(modifier.padding(vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
-                painterResource(R.drawable.review_prompt_negative_button),
+                painter = painterResource(R.drawable.review_prompt_negative_button),
                 contentDescription = null,
             )
 
             Spacer(Modifier.width(10.dp))
 
             Text(
-                stringResource(
+                text = stringResource(
                     R.string.review_prompt_feedback_header,
                     stringResource(R.string.firefox),
                 ),
-                color = FirefoxTheme.colors.textPrimary,
                 style = FirefoxTheme.typography.headline7,
             )
         }
 
         Spacer(Modifier.height(20.dp))
 
-        PrimaryButton(
-            stringResource(R.string.review_prompt_feedback_button),
-            Modifier.fillMaxWidth(),
+        FilledButton(
+            text = stringResource(R.string.review_prompt_feedback_button),
+            modifier = Modifier.fillMaxWidth(),
             onClick = onLeaveFeedbackButtonClick,
         )
     }
 }
 
-@PreviewLightDark
-@Composable
-private fun PrePromptPreview() {
-    FirefoxTheme {
-        CustomReviewPrompt(
-            state = PrePrompt,
-            onRequestDismiss = {},
-            onNegativePrePromptButtonClick = {},
-            onPositivePrePromptButtonClick = {},
-            onRateButtonClick = {},
-            onLeaveFeedbackButtonClick = {},
-        )
-    }
-}
+// *** Code below used for previews only *** //
 
-@PreviewLightDark
+@OptIn(ExperimentalMaterial3Api::class)
+@FlexibleWindowPreview
 @Composable
-private fun RatePromptPreview() {
-    FirefoxTheme {
-        CustomReviewPrompt(
-            state = Rate,
-            onRequestDismiss = {},
-            onNegativePrePromptButtonClick = {},
-            onPositivePrePromptButtonClick = {},
-            onRateButtonClick = {},
-            onLeaveFeedbackButtonClick = {},
-        )
-    }
-}
+private fun BottomSheetPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-@PreviewLightDark
-@Composable
-private fun FeedbackPromptPreview() {
-    FirefoxTheme {
-        CustomReviewPrompt(
-            state = Feedback,
-            onRequestDismiss = {},
-            onNegativePrePromptButtonClick = {},
-            onPositivePrePromptButtonClick = {},
-            onRateButtonClick = {},
-            onLeaveFeedbackButtonClick = {},
-        )
-    }
-}
-
-@PreviewLightDark
-@Composable
-private fun FoxEmojiButtonPreview() {
-    FirefoxTheme {
-        FoxEmojiButton(
-            emoji = painterResource(R.drawable.review_prompt_positive_button),
-            label = "It’s great!",
-            onClick = {},
-            modifier = Modifier
-                .padding(16.dp)
-                .width(176.dp),
-        )
-    }
-}
-
-@FlexibleWindowLightDarkPreview
-@Composable
-private fun BottomSheetPreview() {
-    FirefoxTheme {
+    FirefoxTheme(theme) {
         BottomSheet(
-            onRequestDismiss = {},
-        ) {
-            Box(
-                Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(Color.Red),
-            )
-        }
+            sheetState = sheetState,
+            customReviewPromptState = PrePrompt,
+            onDismissRequest = {},
+            onNegativePrePromptButtonClick = {},
+            onPositivePrePromptButtonClick = {},
+            onRateButtonClick = {},
+            onLeaveFeedbackButtonClick = {},
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview
+@Composable
+private fun PrePromptPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    FirefoxTheme(theme) {
+        BottomSheet(
+            sheetState = sheetState,
+            customReviewPromptState = PrePrompt,
+            onDismissRequest = {},
+            onNegativePrePromptButtonClick = {},
+            onPositivePrePromptButtonClick = {},
+            onRateButtonClick = {},
+            onLeaveFeedbackButtonClick = {},
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview
+@Composable
+private fun RatePromptPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    FirefoxTheme(theme) {
+        BottomSheet(
+            sheetState = sheetState,
+            customReviewPromptState = Rate,
+            onDismissRequest = {},
+            onNegativePrePromptButtonClick = {},
+            onPositivePrePromptButtonClick = {},
+            onRateButtonClick = {},
+            onLeaveFeedbackButtonClick = {},
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview
+@Composable
+private fun FeedbackPromptPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    FirefoxTheme(theme) {
+        BottomSheet(
+            sheetState = sheetState,
+            customReviewPromptState = Feedback,
+            onDismissRequest = {},
+            onNegativePrePromptButtonClick = {},
+            onPositivePrePromptButtonClick = {},
+            onRateButtonClick = {},
+            onLeaveFeedbackButtonClick = {},
+        )
     }
 }
 
 @Preview
 @Composable
-private fun InteractiveCustomReviewPromptPreview() {
-    val store = CustomReviewPromptStore(PrePrompt)
-    val promptState by store.observeAsState(PrePrompt) { it }
-    FirefoxTheme {
-        Box(
-            Modifier.height(224.dp),
-            Alignment.BottomCenter,
-        ) {
-            CustomReviewPrompt(
-                state = promptState,
-                onRequestDismiss = {},
-                onNegativePrePromptButtonClick = {
-                    store.dispatch(CustomReviewPromptAction.PositivePrePromptButtonClicked)
-                },
-                onPositivePrePromptButtonClick = {
-                    store.dispatch(CustomReviewPromptAction.NegativePrePromptButtonClicked)
-                },
-                onRateButtonClick = {
-                    store.dispatch(CustomReviewPromptAction.RateButtonClicked)
-                },
-                onLeaveFeedbackButtonClick = {
-                    store.dispatch(CustomReviewPromptAction.LeaveFeedbackButtonClicked)
-                },
+private fun FoxEmojiButtonPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        Surface {
+            FoxEmojiButton(
+                emoji = painterResource(R.drawable.review_prompt_positive_button),
+                label = "It’s great!",
+                onClick = {},
+                modifier = Modifier
+                    .padding(16.dp)
+                    .width(176.dp),
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview
+@Composable
+private fun InteractiveBottomSheetPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    val store = CustomReviewPromptStore(PrePrompt)
+    val promptState by store.stateFlow.collectAsState()
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    FirefoxTheme(theme) {
+        BottomSheet(
+            sheetState = sheetState,
+            customReviewPromptState = promptState,
+            onDismissRequest = {},
+            onNegativePrePromptButtonClick = {
+                store.dispatch(CustomReviewPromptAction.PositivePrePromptButtonClicked)
+            },
+            onPositivePrePromptButtonClick = {
+                store.dispatch(CustomReviewPromptAction.NegativePrePromptButtonClicked)
+            },
+            onRateButtonClick = {
+                store.dispatch(CustomReviewPromptAction.RateButtonClicked)
+            },
+            onLeaveFeedbackButtonClick = {
+                store.dispatch(CustomReviewPromptAction.LeaveFeedbackButtonClicked)
+            },
+        )
     }
 }

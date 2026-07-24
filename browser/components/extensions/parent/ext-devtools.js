@@ -267,13 +267,17 @@ class DevToolsPageDefinition {
     // (if the toolbox target is supported).
     for (let toolbox of DevToolsShim.getToolboxes()) {
       if (
+        // Skip toolboxes in the middle of their destroy sequence (fully
+        // destroyed will not be returned by getToolboxes()).
+        toolbox.isDestroying() ||
+        // Skip remote / non-web toolboxes (ie. target is not a local tab).
         !toolbox.commands.descriptorFront.isLocalTab ||
+        // Skip private browsing windows if the extension is not allowed to
+        // access them.
         !this.extension.canAccessWindow(
           toolbox.commands.descriptorFront.localTab.ownerGlobal
         )
       ) {
-        // Skip any non-local tab and private browsing windows if the extension
-        // is not allowed to access them.
         continue;
       }
 

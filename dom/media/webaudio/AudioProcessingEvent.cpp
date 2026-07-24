@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioProcessingEvent.h"
+
+#include "AudioContext.h"
 #include "mozilla/dom/AudioProcessingEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "AudioContext.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {

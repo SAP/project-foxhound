@@ -9,6 +9,10 @@
 
 #import <BrowserEngineKit/BrowserEngineKit.h>
 
+#import "mozilla/widget/GeckoViewSupport.h"
+
+using namespace mozilla::widget;
+
 namespace mozilla::ipc {
 
 void BEProcessCapabilityGrantDeleter::operator()(void* aGrant) const {
@@ -124,6 +128,19 @@ ExtensionKitProcess& ExtensionKitProcess::operator=(
 ExtensionKitProcess::~ExtensionKitProcess() {
   SwitchObject(mKind, mProcessObject,
                [&](auto* aProcessObject) { [aProcessObject release]; });
+}
+
+void LockdownExtensionKitProcess(ExtensionKitSandboxRevision aRevision) {
+  if (id<GeckoProcessExtension> process = GetCurrentProcessExtension()) {
+    switch (aRevision) {
+      case ExtensionKitSandboxRevision::Revision1:
+        [process lockdownSandbox:@"1.0"];
+        return;
+      default:
+        NSLog(@"Unknown ExtensionKit sandbox revision");
+        return;
+    }
+  }
 }
 
 }  // namespace mozilla::ipc

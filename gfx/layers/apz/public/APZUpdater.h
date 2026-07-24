@@ -12,7 +12,6 @@
 
 #include "base/platform_thread.h"  // for PlatformThreadId
 #include "LayersTypes.h"
-#include "mozilla/layers/APZTestData.h"
 #include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -24,6 +23,7 @@ namespace mozilla {
 
 namespace layers {
 
+class APZTestData;
 class APZCTreeManager;
 class FocusTarget;
 class WebRenderScrollData;

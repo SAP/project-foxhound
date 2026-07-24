@@ -8,6 +8,9 @@
 
 #include "js/Array.h"               // JS::GetArrayLength, JS::IsArrayObject
 #include "js/PropertyAndElement.h"  // JS_GetElement
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/Promise.h"
@@ -16,24 +19,16 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/AutoUtils.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheCommon.h"
 #include "mozilla/dom/cache/CacheWorkerRef.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "nsIGlobalObject.h"
 
 namespace mozilla::dom::cache {
 
 using mozilla::ipc::PBackgroundChild;
-
-namespace {
-
-enum class PutStatusPolicy { Default, RequireOK };
 
 bool IsValidPutRequestURL(const nsACString& aUrl, ErrorResult& aRv) {
   bool validScheme = false;
@@ -54,7 +49,7 @@ bool IsValidPutRequestURL(const nsACString& aUrl, ErrorResult& aRv) {
   return true;
 }
 
-static bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv) {
+bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv) {
   nsAutoCString method;
   aRequest.GetMethod(method);
   if (!method.LowerCaseEqualsLiteral("get")) {
@@ -65,8 +60,8 @@ static bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv) {
   return true;
 }
 
-static bool IsValidPutRequestMethod(const RequestOrUTF8String& aRequest,
-                                    ErrorResult& aRv) {
+bool IsValidPutRequestMethod(const RequestOrUTF8String& aRequest,
+                             ErrorResult& aRv) {
   // If the provided request is a string URL, then it will default to
   // a valid http method automatically.
   if (!aRequest.IsRequest()) {
@@ -75,9 +70,8 @@ static bool IsValidPutRequestMethod(const RequestOrUTF8String& aRequest,
   return IsValidPutRequestMethod(aRequest.GetAsRequest(), aRv);
 }
 
-static bool IsValidPutResponseStatus(Response& aResponse,
-                                     PutStatusPolicy aPolicy,
-                                     ErrorResult& aRv) {
+bool IsValidPutResponseStatus(Response& aResponse, PutStatusPolicy aPolicy,
+                              ErrorResult& aRv) {
   if ((aPolicy == PutStatusPolicy::RequireOK && !aResponse.Ok()) ||
       aResponse.Status() == 206) {
     nsAutoCString url;
@@ -89,8 +83,6 @@ static bool IsValidPutResponseStatus(Response& aResponse,
 
   return true;
 }
-
-}  // namespace
 
 // Helper class to wait for Add()/AddAll() fetch requests to complete and
 // then perform a PutAll() with the responses.  This class holds a WorkerRef
@@ -493,7 +485,7 @@ JSObject* Cache::WrapObject(JSContext* aContext,
   return Cache_Binding::Wrap(aContext, this, aGivenProto);
 }
 
-void Cache::DestroyInternal(CacheChild* aActor) {
+void Cache::OnActorDestroy(CacheChild* aActor) {
   MOZ_DIAGNOSTIC_ASSERT(mActor);
   MOZ_DIAGNOSTIC_ASSERT(mActor == aActor);
   mActor->ClearListener();
@@ -506,17 +498,11 @@ nsIGlobalObject* Cache::GetGlobalObject() const { return mGlobal; }
 void Cache::AssertOwningThread() const { NS_ASSERT_OWNINGTHREAD(Cache); }
 #endif
 
-PBackgroundChild* Cache::GetIPCManager() {
-  NS_ASSERT_OWNINGTHREAD(Cache);
-  MOZ_DIAGNOSTIC_ASSERT(mActor);
-  return mActor->Manager();
-}
-
 Cache::~Cache() {
   NS_ASSERT_OWNINGTHREAD(Cache);
   if (mActor) {
     mActor->StartDestroyFromListener();
-    // DestroyInternal() is called synchronously by StartDestroyFromListener().
+    // OnActorDestroy() is called synchronously by StartDestroyFromListener().
     // So we should have already cleared the mActor.
     MOZ_DIAGNOSTIC_ASSERT(!mActor);
   }

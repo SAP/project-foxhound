@@ -17,7 +17,7 @@ The stub installer probably won't be built by default in a local tree; normally 
 Uninstaller
 ~~~~~~~~~~~
 
-The uninstaller is built as part of the main application build, not the installer target, so ``mach build`` is what will get you an uninstaller. You'll find it at ``$OBJDIR/dist/bin/uninstaller/helper.exe``.
+The uninstaller is built as part of the main application build, not the installer target, so ``mach build`` is what will get you an uninstaller. You'll find it at ``$OBJDIR/dist/bin/uninstall/helper.exe``.
 
 Branding
 ~~~~~~~~

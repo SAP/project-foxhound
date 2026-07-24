@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_GkRustUtils_h
-#define __mozilla_GkRustUtils_h
+#ifndef _mozilla_GkRustUtils_h
+#define _mozilla_GkRustUtils_h
 
 #include "nsString.h"
 

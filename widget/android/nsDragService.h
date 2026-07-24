@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDragService_h__
-#define nsDragService_h__
+#ifndef nsDragService_h_
+#define nsDragService_h_
 
 #include "nsBaseDragService.h"
 
@@ -62,4 +62,4 @@ class nsDragService final : public nsBaseDragService {
   already_AddRefed<nsIDragSession> CreateDragSession() override;
 };
 
-#endif  // nsDragService_h__
+#endif  // nsDragService_h_

@@ -26,7 +26,30 @@ using namespace mozilla::a11y;
     // contain invisible items.
     toFilter = [static_cast<mozMenuAccessible*>(self) moxVisibleChildren];
   } else {
-    toFilter = [self moxUnignoredChildren];
+    NSMutableArray* flattened = [[[NSMutableArray alloc] init] autorelease];
+    void (^__block unnest)(NSArray*);
+    // Listboxes can contain nested groups, which then contain options.
+    // In order for VoiceOver to property advertise an option as
+    // "selected", it needs to appear in AXSelectableChildren, so
+    // we unnest any groups and present all "leaf" options as
+    // selectable here. We do this here, instead of relying solely on our
+    // `ignore` functions because multiple levels of groups could exist, and the
+    // `ignore` functions only analyse single-level parent-child relationships.
+    // Additionally, we don't want to override `moxUnignoredChildren` with this
+    // logic because groups should still be exposed in the tree.
+    unnest = ^(NSArray* children) {
+      for (mozAccessible* child : children) {
+        if ([[child moxRole] isEqualToString:@"AXGroup"]) {
+          unnest([child moxUnignoredChildren]);
+        } else {
+          [flattened addObject:child];
+        }
+      }
+    };
+    // This will do classic ignore-filtering, ensuring we don't expose accs that
+    // are invisible or defunct as selectable.
+    unnest([self moxUnignoredChildren]);
+    toFilter = flattened;
   }
   return [toFilter
       filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(

@@ -9,12 +9,10 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
-#include <utility>
+
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsDebug.h"
 #include "nsError.h"

@@ -7,7 +7,6 @@
 #ifndef vm_GuardFuse_h
 #define vm_GuardFuse_h
 
-#include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 
 #include <stddef.h>

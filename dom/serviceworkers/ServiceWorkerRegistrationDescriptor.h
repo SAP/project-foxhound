@@ -7,8 +7,9 @@
 #define _mozilla_dom_ServiceWorkerRegistrationDescriptor_h
 
 #include "mozilla/Maybe.h"
-#include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/ServiceWorkerDescriptor.h"
+#include "mozilla/dom/WorkerBinding.h"
 
 namespace mozilla {
 
@@ -36,12 +37,14 @@ class ServiceWorkerRegistrationDescriptor final {
  public:
   ServiceWorkerRegistrationDescriptor(
       uint64_t aId, uint64_t aVersion, nsIPrincipal* aPrincipal,
-      const nsACString& aScope, ServiceWorkerUpdateViaCache aUpdateViaCache);
+      const nsACString& aScope, WorkerType aType,
+      ServiceWorkerUpdateViaCache aUpdateViaCache);
 
   ServiceWorkerRegistrationDescriptor(
       uint64_t aId, uint64_t aVersion,
       const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-      const nsACString& aScope, ServiceWorkerUpdateViaCache aUpdateViaCache);
+      const nsACString& aScope, WorkerType aType,
+      ServiceWorkerUpdateViaCache aUpdateViaCache);
 
   explicit ServiceWorkerRegistrationDescriptor(
       const IPCServiceWorkerRegistrationDescriptor& aDescriptor);
@@ -74,6 +77,8 @@ class ServiceWorkerRegistrationDescriptor final {
 
   const nsCString& Scope() const;
 
+  WorkerType Type() const;
+
   Maybe<ServiceWorkerDescriptor> GetInstalling() const;
 
   Maybe<ServiceWorkerDescriptor> GetWaiting() const;
@@ -87,6 +92,8 @@ class ServiceWorkerRegistrationDescriptor final {
   bool IsValid() const;
 
   void SetUpdateViaCache(ServiceWorkerUpdateViaCache aUpdateViaCache);
+
+  void SetWorkerType(WorkerType aType);
 
   void SetWorkers(ServiceWorkerInfo* aInstalling, ServiceWorkerInfo* aWaiting,
                   ServiceWorkerInfo* aActive);

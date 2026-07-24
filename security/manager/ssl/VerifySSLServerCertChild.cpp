@@ -54,7 +54,7 @@ ipc::IPCResult VerifySSLServerCertChild::RecvOnVerifySSLServerCertFinished(
   if (NS_FAILED(rv)) {
     // We can't release this off the STS thread because some parts of it are
     // not threadsafe. Just leak mResultTask.
-    Unused << mResultTask.forget();
+    mResultTask.forget().leak();
   }
   return IPC_OK();
 }
@@ -114,7 +114,7 @@ SECStatus RemoteProcessCertVerification(
            dcInfo = std::move(dcInfo), providerFlags(aProviderFlags),
            certVerifierFlags(aCertVerifierFlags)](
               net::SocketProcessBackgroundChild* aActor) mutable {
-            Unused << aActor->SendInitVerifySSLServerCert(
+            (void)aActor->SendInitVerifySSLServerCert(
                 std::move(endpoint), peerCertBytes, hostName, port,
                 originAttributes, stapledOCSPResponse, sctsFromTLSExtension,
                 dcInfo, providerFlags, certVerifierFlags);

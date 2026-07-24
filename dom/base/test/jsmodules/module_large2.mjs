@@ -74,5 +74,5 @@
  * large large large large large large large large large large large large
  * large large large large large large large large large large large large
  */
-
+/* global results */
 results.push(2);

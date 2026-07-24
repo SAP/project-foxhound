@@ -25,6 +25,11 @@ public abstract class WebMessage {
   /** An unmodifiable Map of headers. Defaults to an empty instance. */
   public final @NonNull Map<String, String> headers;
 
+  /**
+   * Construct a new WebMessage from the given builder.
+   *
+   * @param builder Builder instance containing the message parameters
+   */
   protected WebMessage(final @NonNull Builder builder) {
     uri = builder.mUri;
     headers = Collections.unmodifiableMap(builder.mHeaders);

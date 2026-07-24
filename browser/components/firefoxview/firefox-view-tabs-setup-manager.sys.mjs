@@ -44,9 +44,9 @@ const SYNC_SERVICE_FINISHED = "weave:service:sync:finish";
 const PRIMARY_PASSWORD_UNLOCKED = "passwordmgr-crypto-login";
 
 function openTabInWindow(window, url) {
-  const { switchToTabHavingURI } =
-    window.docShell.chromeEventHandler.ownerGlobal;
-  switchToTabHavingURI(url, true, {});
+  // Null checks as the passed window might be closing, particularly in tests.
+  const ownerGlobal = window.docShell?.chromeEventHandler?.ownerGlobal;
+  ownerGlobal?.switchToTabHavingURI(url, true, {});
 }
 
 export const TabsSetupFlowManager = new (class {
@@ -247,7 +247,7 @@ export const TabsSetupFlowManager = new (class {
         }
         this._lastFxASignedIn = this.fxaSignedIn;
         break;
-      case TOPIC_DEVICELIST_UPDATED:
+      case TOPIC_DEVICELIST_UPDATED: {
         this.logger.debug("Handling observer notification:", topic, data);
         const { deviceStateChanged, deviceAdded } = await this.refreshDevices();
         if (deviceStateChanged) {
@@ -261,6 +261,7 @@ export const TabsSetupFlowManager = new (class {
           }
         }
         break;
+      }
       case FXA_DEVICE_CONNECTED:
       case FXA_DEVICE_DISCONNECTED:
         await lazy.fxAccounts.device.refreshDeviceList({ ignoreCached: true });

@@ -24,9 +24,9 @@ add_task(async function () {
 /**
  * Assert indication bar position.
  *
- * @param {String} indicationBarSelector
+ * @param {string} indicationBarSelector
  * @param {Element} panel
- * @param {Number} expectedPositionRate
+ * @param {number} expectedPositionRate
  */
 function assertPosition(indicationBarSelector, panel, expectedPositionRate) {
   const barEl = panel.querySelector(indicationBarSelector);

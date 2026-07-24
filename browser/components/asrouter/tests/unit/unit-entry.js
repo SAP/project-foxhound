@@ -14,7 +14,6 @@ import {
   MESSAGE_TYPE_LIST,
   MESSAGE_TYPE_HASH,
 } from "modules/ActorConstants.mjs";
-import { MESSAGING_EXPERIMENTS_DEFAULT_FEATURES } from "modules/MessagingExperimentConstants.sys.mjs";
 
 enzyme.configure({ adapter: new Adapter() });
 
@@ -43,11 +42,8 @@ chai.tv4.addSchema("file:///FxMSCommon.schema.json", FxMSCommonSchema);
 
 const overrider = new GlobalOverrider();
 
-const RemoteSettings = name => ({
+const RemoteSettings = _cid => ({
   get: () => {
-    if (name === "attachment") {
-      return Promise.resolve([{ attachment: {} }]);
-    }
     return Promise.resolve([]);
   },
   on: () => {},
@@ -212,6 +208,7 @@ const TEST_GLOBAL = {
       insert() {},
       markPageAsTyped() {},
       removeObserver() {},
+      pageFrecencyThreshold() {},
     },
     "@mozilla.org/io/string-input-stream;1": {
       createInstance() {
@@ -484,11 +481,21 @@ const TEST_GLOBAL = {
     },
   },
   XPCOMUtils: {
+    declareLazy: declaration => {
+      Object.entries(declaration).forEach(([key, value]) => {
+        if (typeof value === "function") {
+          updateGlobalOrObject(global)[key] = value();
+        } else if (typeof value === "object" && value.pref) {
+          updateGlobalOrObject(global)[key] = value.default;
+        }
+      });
+      return global;
+    },
     defineLazyGlobalGetters: updateGlobalOrObject,
     defineLazyServiceGetter: updateGlobalOrObject,
     defineLazyServiceGetters: updateGlobalOrObject,
-    defineLazyPreferenceGetter(object, name) {
-      updateGlobalOrObject(object)[name] = "";
+    defineLazyPreferenceGetter(object, name, _pref, defaultValue = "") {
+      updateGlobalOrObject(object)[name] = defaultValue;
     },
     generateQI() {
       return {};
@@ -524,13 +531,7 @@ const TEST_GLOBAL = {
   FeatureCalloutBroker: {
     showFeatureCallout() {},
   },
-  NimbusFeatures: FakeNimbusFeatures([
-    ...MESSAGING_EXPERIMENTS_DEFAULT_FEATURES,
-    "glean",
-    "newtab",
-    "pocketNewtab",
-    "cookieBannerHandling",
-  ]),
+  NimbusFeatures: FakeNimbusFeatures,
   TelemetryEnvironment: {
     setExperimentActive() {},
     currentEnvironment: {

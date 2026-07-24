@@ -36,6 +36,12 @@ using MResumePointIterator = InlineForwardListIterator<MResumePoint>;
 
 class LBlock;
 
+// Represents the likelihood of a basic block to be executed at runtime.
+// Unknown: default value.
+// Likely: Likely to be executed at runtime, hot block.
+// Unlikely: unlikely to be executed, cold block.
+enum class Frequency : uint8_t { Unknown = 0, Likely = 1, Unlikely = 2 };
+
 class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
  public:
   enum Kind {
@@ -62,8 +68,9 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   // This block will unconditionally bail out.
   bool alwaysBails_ = false;
 
-  // Will be used for branch hinting in wasm.
-  wasm::BranchHint branchHint_ = wasm::BranchHint::Invalid;
+  // Represents the execution frequency of this block, considered unknown by
+  // default. Various passes can use this information for optimizations.
+  Frequency frequency_ = Frequency::Unknown;
 
   // Pushes a copy of a local variable or argument.
   void pushVariable(uint32_t slot) { push(slots_[slot]); }
@@ -385,14 +392,14 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   uint32_t id() const { return id_; }
   uint32_t numPredecessors() const { return predecessors_.length(); }
 
-  bool branchHintingUnlikely() const {
-    return branchHint_ == wasm::BranchHint::Unlikely;
-  }
-  bool branchHintingLikely() const {
-    return branchHint_ == wasm::BranchHint::Likely;
-  }
+  bool isUnknownFrequency() const { return frequency_ == Frequency::Unknown; }
 
-  void setBranchHinting(wasm::BranchHint value) { branchHint_ = value; }
+  bool isLikelyFrequency() const { return frequency_ == Frequency::Likely; }
+
+  bool isUnlikelyFrequency() const { return frequency_ == Frequency::Unlikely; }
+
+  Frequency getFrequency() const { return frequency_; }
+  void setFrequency(Frequency value) { frequency_ = value; }
 
   uint32_t domIndex() const {
     MOZ_ASSERT(!isDead());
@@ -441,7 +448,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   bool resumePointsEmpty() const { return resumePoints_.empty(); }
 #endif
   MInstructionIterator begin() { return instructions_.begin(); }
-  MInstructionIterator begin(MInstruction* at) {
+  MInstructionIterator begin(const MInstruction* at) {
     MOZ_ASSERT(at->block() == this);
     return instructions_.begin(at);
   }

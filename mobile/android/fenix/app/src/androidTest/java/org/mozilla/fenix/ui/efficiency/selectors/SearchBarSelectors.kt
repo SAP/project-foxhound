@@ -4,14 +4,16 @@
 
 package org.mozilla.fenix.ui.efficiency.selectors
 
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_SEARCH_BOX
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.SEARCH_SELECTOR
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object SearchBarSelectors {
-    val EDIT_SEARCHBAR_VIEW = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
-        value = "mozac_browser_toolbar_edit_url_view",
-        description = "Empty edit search bar",
+    val TOOLBAR_IN_EDIT_MODE = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_TAG,
+        value = ADDRESSBAR_SEARCH_BOX,
+        description = "Toolbar in edit mode",
         groups = listOf(),
     )
 
@@ -23,14 +25,14 @@ object SearchBarSelectors {
     )
 
     val SEARCH_ENGINE_SELECTOR = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
-        value = "search_selector",
-        description = "Search selector button",
+        strategy = SelectorStrategy.COMPOSE_BY_TAG,
+        value = SEARCH_SELECTOR,
+        description = "Search engine selector button",
         groups = listOf("requiredForPage"),
     )
 
     val all = listOf(
-        EDIT_SEARCHBAR_VIEW,
+        TOOLBAR_IN_EDIT_MODE,
         URL_TEXT,
         SEARCH_ENGINE_SELECTOR,
     )

@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_MIDIAccessManager_h
 #define mozilla_dom_MIDIAccessManager_h
 
-#include "nsPIDOMWindow.h"
-#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/Observer.h"
+#include "mozilla/dom/MIDITypes.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 

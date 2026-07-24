@@ -10,13 +10,13 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "handlerService",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "protocolService",
   "@mozilla.org/uriloader/external-protocol-service;1",
-  "nsIExternalProtocolService"
+  Ci.nsIExternalProtocolService
 );
 
 const hasHandlerApp = handlerConfig => {

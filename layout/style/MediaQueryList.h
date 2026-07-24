@@ -9,7 +9,6 @@
 #ifndef mozilla_dom_MediaQueryList_h
 #define mozilla_dom_MediaQueryList_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/dom/MediaQueryListBinding.h"

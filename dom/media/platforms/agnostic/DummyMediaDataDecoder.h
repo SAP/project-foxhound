@@ -8,9 +8,9 @@
 #  define DummyMediaDataDecoder_h_
 
 #  include "MediaInfo.h"
-#  include "mozilla/UniquePtr.h"
 #  include "PlatformDecoderModule.h"
 #  include "ReorderQueue.h"
+#  include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 

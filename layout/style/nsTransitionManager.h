@@ -61,7 +61,7 @@ class nsTransitionManager final
 
   // Returns whether the transition actually started.
   bool ConsiderInitiatingTransition(
-      const mozilla::AnimatedPropertyID&, const nsStyleUIReset& aStyle,
+      const mozilla::CSSPropertyId&, const nsStyleUIReset& aStyle,
       uint32_t aTransitionIndex, float aDelay, float aDuration,
       mozilla::StyleTransitionBehavior aBehavior,
       mozilla::dom::Element* aElement,
@@ -72,8 +72,7 @@ class nsTransitionManager final
       mozilla::AnimatedPropertyIDSet& aPropertiesChecked);
 
   already_AddRefed<mozilla::dom::CSSTransition> DoCreateTransition(
-      const mozilla::AnimatedPropertyID& aProperty,
-      mozilla::dom::Element* aElement,
+      const mozilla::CSSPropertyId& aProperty, mozilla::dom::Element* aElement,
       const mozilla::PseudoStyleRequest& aPseudoRequest,
       const mozilla::ComputedStyle& aNewStyle,
       CSSTransitionCollection*& aElementTransitions,

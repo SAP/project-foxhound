@@ -9,7 +9,6 @@
 
 #include "CacheCipherKeyManager.h"
 #include "mozilla/dom/cache/Action.h"
-#include "mozilla/RefPtr.h"
 #include "nsString.h"
 
 class mozIStorageConnection;

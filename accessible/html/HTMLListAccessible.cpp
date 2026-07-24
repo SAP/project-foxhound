@@ -85,7 +85,7 @@ HTMLListBulletAccessible::HTMLListBulletAccessible(nsIContent* aContent,
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLListBulletAccessible: LocalAccessible
 
-ENameValueFlag HTMLListBulletAccessible::Name(nsString& aName) const {
+ENameValueFlag HTMLListBulletAccessible::DirectName(nsString& aName) const {
   nsLayoutUtils::GetMarkerSpokenText(mContent, aName);
   return eNameOK;
 }

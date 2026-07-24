@@ -57,11 +57,11 @@ async function testEditSelector(view, name) {
   const rule = ruleEditor.rule;
   const textPropEditor = rule.textProps[0].editor;
 
-  is(view._elementStyle.rules.length, 3, "Should have 3 rules.");
+  is(view.elementStyle.rules.length, 3, "Should have 3 rules.");
   ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
   ok(
     ruleEditor.element.getAttribute("unmatched"),
     "Rule with " + name + " does not match the current element."
   );
-  ok(textPropEditor.filterProperty.hidden, "Overridden search is hidden.");
+  ok(!textPropEditor.filterProperty, "Overridden search is hidden.");
 }

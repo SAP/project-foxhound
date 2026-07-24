@@ -47,14 +47,12 @@ class BenchmarkSupport(PageloadSupport):
 
     def modify_command(self, cmd, test):
         # Enable cpuTime, and wallclock-tracking metrics
-        cmd.extend(
-            [
-                "--browsertime.cpuTime_test",
-                "true",
-                "--browsertime.wallclock_tracking_test",
-                "true",
-            ]
-        )
+        cmd.extend([
+            "--browsertime.cpuTime_test",
+            "true",
+            "--browsertime.wallclock_tracking_test",
+            "true",
+        ])
 
     def handle_result(self, bt_result, raw_result, **kwargs):
         """Parse a result for the required results.
@@ -273,9 +271,9 @@ class BenchmarkSupport(PageloadSupport):
                 if not isinstance(value, Iterable):
                     updated_metric = [value]
                 # pylint: disable=W1633
-                _subtests[metric]["replicates"].extend(
-                    [round(x, 3) for x in updated_metric]
-                )
+                _subtests[metric]["replicates"].extend([
+                    round(x, 3) for x in updated_metric
+                ])
 
         vals = []
         subtests = []

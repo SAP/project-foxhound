@@ -10,16 +10,16 @@
 
 #include "p2p/base/async_stun_tcp_socket.h"
 
-#include <errno.h>
-#include <stdint.h>
-#include <string.h>
-
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
 
+#include "absl/base/nullability.h"
 #include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/transport/stun.h"
-#include "api/units/timestamp.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/async_tcp_socket.h"
 #include "rtc_base/byte_order.h"
@@ -28,7 +28,6 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -37,7 +36,7 @@ static const size_t kMaxPacketSize = 64 * 1024;
 typedef uint16_t PacketLength;
 static const size_t kPacketLenSize = sizeof(PacketLength);
 static const size_t kPacketLenOffset = 2;
-static const size_t kBufSize = kMaxPacketSize + cricket::kStunHeaderSize;
+static const size_t kBufSize = kMaxPacketSize + kStunHeaderSize;
 static const size_t kTurnChannelDataHdrSize = 4;
 
 inline bool IsStunMessage(uint16_t msg_type) {
@@ -45,24 +44,14 @@ inline bool IsStunMessage(uint16_t msg_type) {
   return (msg_type & 0xC000) ? false : true;
 }
 
-// AsyncStunTCPSocket
-// Binds and connects `socket` and creates AsyncTCPSocket for
-// it. Takes ownership of `socket`. Returns NULL if bind() or
-// connect() fail (`socket` is destroyed in that case).
-AsyncStunTCPSocket* AsyncStunTCPSocket::Create(
-    Socket* socket,
-    const SocketAddress& bind_address,
-    const SocketAddress& remote_address) {
-  return new AsyncStunTCPSocket(
-      AsyncTCPSocketBase::ConnectSocket(socket, bind_address, remote_address));
-}
-
-AsyncStunTCPSocket::AsyncStunTCPSocket(Socket* socket)
-    : AsyncTCPSocketBase(socket, kBufSize) {}
+AsyncStunTCPSocket::AsyncStunTCPSocket(
+    const Environment& env,
+    absl_nonnull std::unique_ptr<Socket> socket)
+    : AsyncTCPSocketBase(std::move(socket), kBufSize), env_(env) {}
 
 int AsyncStunTCPSocket::Send(const void* pv,
                              size_t cb,
-                             const rtc::PacketOptions& options) {
+                             const AsyncSocketPacketOptions& options) {
   if (cb > kBufSize || cb < kPacketLenSize + kPacketLenOffset) {
     SetError(EMSGSIZE);
     return -1;
@@ -92,14 +81,15 @@ int AsyncStunTCPSocket::Send(const void* pv,
     return res;
   }
 
-  rtc::SentPacket sent_packet(options.packet_id, TimeMillis());
+  SentPacketInfo sent_packet(options.packet_id,
+                             env_.clock().TimeInMilliseconds());
   SignalSentPacket(this, sent_packet);
 
   // We claim to have sent the whole thing, even if we only sent partial
   return static_cast<int>(cb);
 }
 
-size_t AsyncStunTCPSocket::ProcessInput(rtc::ArrayView<const uint8_t> data) {
+size_t AsyncStunTCPSocket::ProcessInput(ArrayView<const uint8_t> data) {
   SocketAddress remote_addr(GetRemoteAddress());
   // STUN packet - First 4 bytes. Total header size is 20 bytes.
   // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -127,9 +117,9 @@ size_t AsyncStunTCPSocket::ProcessInput(rtc::ArrayView<const uint8_t> data) {
       return processed_bytes;
     }
 
-    rtc::ReceivedPacket received_packet(
+    ReceivedIpPacket received_packet(
         data.subview(processed_bytes, expected_pkt_len), remote_addr,
-        Timestamp::Micros(TimeMicros()));
+        env_.clock().CurrentTime());
     NotifyPacketReceived(received_packet);
     processed_bytes += actual_length;
   }
@@ -140,12 +130,12 @@ size_t AsyncStunTCPSocket::GetExpectedLength(const void* data,
                                              int* pad_bytes) {
   *pad_bytes = 0;
   PacketLength pkt_len =
-      webrtc::GetBE16(static_cast<const char*>(data) + kPacketLenOffset);
+      GetBE16(static_cast<const char*>(data) + kPacketLenOffset);
   size_t expected_pkt_len;
-  uint16_t msg_type = webrtc::GetBE16(data);
+  uint16_t msg_type = GetBE16(data);
   if (IsStunMessage(msg_type)) {
     // STUN message.
-    expected_pkt_len = cricket::kStunHeaderSize + pkt_len;
+    expected_pkt_len = kStunHeaderSize + pkt_len;
   } else {
     // TURN ChannelData message.
     expected_pkt_len = kTurnChannelDataHdrSize + pkt_len;

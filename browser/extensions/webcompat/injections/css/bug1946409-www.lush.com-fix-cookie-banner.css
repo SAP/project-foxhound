@@ -1,0 +1,21 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * Bug 1946409 - www.lush.com - cookie banner is offscreen.
+ * WebCompat issue #147859 - https://github.com/webcompat/web-bugs/issues/147859
+ *
+ * We can use some basic CSS to position it as the site appears to intend.
+ */
+
+#portal-cookie-banner__wrapper {
+  height: 100vh;
+}
+
+#portal-cookie-banner__content {
+  position: absolute;
+
+  /* padding-bottom added to make sure address bar does not cover bottom button */
+  padding-bottom: 40px;
+}

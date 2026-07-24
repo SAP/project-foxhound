@@ -4,7 +4,6 @@
 package org.mozilla.fenix.translations.preferences.downloadlanguages
 
 import android.net.ConnectivityManager
-import android.os.Build
 import androidx.core.net.ConnectivityManagerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.every
@@ -18,7 +17,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito
 import org.mozilla.fenix.wifi.WifiConnectionMonitor
-import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
 class DownloadLanguagesFeatureTest {
@@ -73,7 +71,6 @@ class DownloadLanguagesFeatureTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to not connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_ENABLED THEN onDataSaverAndWifiChanged callback should return true`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_ENABLED
@@ -86,7 +83,6 @@ class DownloadLanguagesFeatureTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to not connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_WHITELISTED THEN onDataSaverAndWifiChanged callback should return true`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_WHITELISTED
@@ -99,7 +95,6 @@ class DownloadLanguagesFeatureTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_WHITELISTED THEN onDataSaverAndWifiChanged callback should return false`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_WHITELISTED
@@ -112,7 +107,6 @@ class DownloadLanguagesFeatureTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_DISABLED THEN onDataSaverAndWifiChanged callback should return false`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_DISABLED

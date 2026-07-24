@@ -17,10 +17,10 @@
 #include "nsIArray.h"
 #include "nsITransferable.h"
 #include "nsPrimitiveHelpers.h"
-#include "nsViewManager.h"
 #include "nsWindow.h"
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
 StaticRefPtr<nsDragService> sDragServiceInstance;
@@ -51,12 +51,7 @@ static nsWindow* GetWindow(dom::Document* aDocument) {
     return nullptr;
   }
 
-  RefPtr<nsViewManager> vm = presShell->GetViewManager();
-  if (!vm) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIWidget> widget = vm->GetRootWidget();
+  nsCOMPtr<nsIWidget> widget = presShell->GetRootWidget();
   if (!widget) {
     return nullptr;
   }
@@ -68,10 +63,6 @@ static nsWindow* GetWindow(dom::Document* aDocument) {
 nsresult nsDragSession::InvokeDragSessionImpl(
     nsIWidget* aWidget, nsIArray* aTransferableArray,
     const Maybe<CSSIntRegion>& aRegion, uint32_t aActionType) {
-  if (jni::GetAPIVersion() < 24) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
   uint32_t count = 0;
   aTransferableArray->GetLength(&count);
   if (count != 1) {

@@ -136,6 +136,11 @@
 #define ID_LUMINANCE_MAX              0x55d9
 #define ID_LUMINANCE_MIN              0x55da
 
+/* Other Elements */
+#define ID_CHAPTERS                   0x1043a770
+#define ID_ATTACHMENTS                0x1941a469
+#define ID_TAGS                       0x1254c367
+
 /* EBML Types */
 enum ebml_type_enum {
   TYPE_UNKNOWN,
@@ -177,6 +182,19 @@ enum ebml_type_enum {
 #define TRACK_ID_AV1                "V_AV1"
 #define TRACK_ID_VORBIS             "A_VORBIS"
 #define TRACK_ID_OPUS               "A_OPUS"
+#define TRACK_ID_AVC                "V_MPEG4/ISO/AVC"
+#define TRACK_ID_HEVC               "V_MPEGH/ISO/HEVC"
+#define TRACK_ID_AAC                "A_AAC"
+#define TRACK_ID_AAC_MP4_LC         "A_AAC/MPEG4/LC"
+#define TRACK_ID_AAC_MP4_LC_SBR     "A_AAC/MPEG4/LC/SBR"
+#define TRACK_ID_AAC_MP4_LTP        "A_AAC/MPEG4/LTP"
+#define TRACK_ID_AAC_MP4_MAIN       "A_AAC/MPEG4/MAIN"
+#define TRACK_ID_AAC_MP4_SSR        "A_AAC/MPEG4/SSR"
+#define TRACK_ID_FLAC               "A_FLAC"
+#define TRACK_ID_MP3                "A_MPEG/L3"
+#define TRACK_ID_PCM_FLOAT          "A_PCM/FLOAT/IEEE"
+#define TRACK_ID_PCM_INT_BE         "A_PCM/INT/BIG"
+#define TRACK_ID_PCM_INT_LE         "A_PCM/INT/LIT"
 
 /* Track Encryption */
 #define CONTENT_ENC_ALGO_AES        5
@@ -238,6 +256,9 @@ struct ebml {
   struct ebml_type doctype_version;
   struct ebml_type doctype_read_version;
 };
+
+#define DOCTYPE_WEBM "webm"
+#define DOCTYPE_MKV  "matroska"
 
 /* Matroksa Definitions */
 struct seek {
@@ -2113,7 +2134,7 @@ ne_context_new(nestegg ** context, nestegg_io io, nestegg_log callback)
 }
 
 static int
-ne_match_webm(nestegg_io io, int64_t max_offset)
+ne_match_doc_type(nestegg_io io, int64_t max_offset, const char* doc_type)
 {
   int r;
   uint64_t id;
@@ -2141,13 +2162,13 @@ ne_match_webm(nestegg_io io, int64_t max_offset)
 
   /* we don't check the return value of ne_parse, that might fail because
      max_offset is not on a valid element end point. We only want to check
-     the EBML ID and that the doctype is "webm". */
+     the EBML ID and that the doctype is equal to given doc type. */
   ne_parse(ctx, NULL, max_offset);
   while (ctx->ancestor)
     ne_ctx_pop(ctx);
 
   if (ne_get_string(ctx->ebml.doctype, &doctype) != 0 ||
-      strcmp(doctype, "webm") != 0) {
+      strcmp(doctype, doc_type) != 0) {
     nestegg_destroy(ctx);
     return 0;
   }
@@ -2215,8 +2236,8 @@ nestegg_init(nestegg ** context, nestegg_io io, nestegg_log callback, int64_t ma
   }
 
   if (ne_get_string(ctx->ebml.doctype, &doctype) != 0)
-    doctype = "matroska";
-  if (!!strcmp(doctype, "webm") && !!strcmp(doctype, "matroska")) {
+    doctype = DOCTYPE_MKV;
+  if (!!strcmp(doctype, DOCTYPE_WEBM) && !!strcmp(doctype, DOCTYPE_MKV)) {
     nestegg_destroy(ctx);
     return -1;
   }
@@ -2467,6 +2488,7 @@ nestegg_track_codec_id(nestegg * ctx, unsigned int track)
   if (ne_get_string(entry->codec_id, &codec_id) != 0)
     return -1;
 
+  ctx->log(ctx, NESTEGG_LOG_DEBUG, "nestegg_track_codec_id: %s\n", codec_id);
   if (strcmp(codec_id, TRACK_ID_VP8) == 0)
     return NESTEGG_CODEC_VP8;
 
@@ -2481,6 +2503,31 @@ nestegg_track_codec_id(nestegg * ctx, unsigned int track)
 
   if (strcmp(codec_id, TRACK_ID_OPUS) == 0)
     return NESTEGG_CODEC_OPUS;
+
+  if (strcmp(codec_id, TRACK_ID_AVC) == 0)
+    return NESTEGG_CODEC_AVC;
+
+  if (strcmp(codec_id, TRACK_ID_HEVC) == 0)
+    return NESTEGG_CODEC_HEVC;
+
+  if (strcmp(codec_id, TRACK_ID_AAC) == 0 ||
+      strcmp(codec_id, TRACK_ID_AAC_MP4_LC) == 0 ||
+      strcmp(codec_id, TRACK_ID_AAC_MP4_LC_SBR) == 0 ||
+      strcmp(codec_id, TRACK_ID_AAC_MP4_LTP) == 0 ||
+      strcmp(codec_id, TRACK_ID_AAC_MP4_MAIN) == 0 ||
+      strcmp(codec_id, TRACK_ID_AAC_MP4_SSR) == 0)
+    return NESTEGG_CODEC_AAC;
+
+  if (strcmp(codec_id, TRACK_ID_FLAC) == 0)
+    return NESTEGG_CODEC_FLAC;
+
+  if (strcmp(codec_id, TRACK_ID_MP3) == 0)
+    return NESTEGG_CODEC_MP3;
+
+  if (strcmp(codec_id, TRACK_ID_PCM_FLOAT) == 0 ||
+      strcmp(codec_id, TRACK_ID_PCM_INT_BE) == 0 ||
+      strcmp(codec_id, TRACK_ID_PCM_INT_LE) == 0)
+    return NESTEGG_CODEC_PCM;
 
   return NESTEGG_CODEC_UNKNOWN;
 }
@@ -2502,11 +2549,23 @@ nestegg_track_codec_data_count(nestegg * ctx, unsigned int track,
 
   codec_id = nestegg_track_codec_id(ctx, track);
 
-  if (codec_id == NESTEGG_CODEC_OPUS) {
+  /* Usually don't have codec private */
+  if (codec_id == NESTEGG_CODEC_MP3 || codec_id == NESTEGG_CODEC_VP8 ||
+      codec_id == NESTEGG_CODEC_VP9) {
+    *count = 0;
+    return 0;
+  }
+
+  /* Usually one codec private */
+  if (codec_id == NESTEGG_CODEC_OPUS || codec_id == NESTEGG_CODEC_PCM ||
+      codec_id == NESTEGG_CODEC_AAC  || codec_id == NESTEGG_CODEC_FLAC ||
+      codec_id == NESTEGG_CODEC_AVC || codec_id == NESTEGG_CODEC_HEVC ||
+      codec_id == NESTEGG_CODEC_AV1) {
     *count = 1;
     return 0;
   }
 
+  /* Vorbis spec requires three headers in the codec private */
   if (codec_id != NESTEGG_CODEC_VORBIS)
     return -1;
 
@@ -2531,6 +2590,7 @@ nestegg_track_codec_data(nestegg * ctx, unsigned int track, unsigned int item,
 {
   struct track_entry * entry;
   struct ebml_binary codec_private;
+  unsigned int count = 0;
 
   *data = NULL;
   *length = 0;
@@ -2539,8 +2599,7 @@ nestegg_track_codec_data(nestegg * ctx, unsigned int track, unsigned int item,
   if (!entry)
     return -1;
 
-  if (nestegg_track_codec_id(ctx, track) != NESTEGG_CODEC_VORBIS &&
-      nestegg_track_codec_id(ctx, track) != NESTEGG_CODEC_OPUS)
+  if (nestegg_track_codec_data_count(ctx, track, &count) != 0 || count == 0)
     return -1;
 
   if (ne_get_binary(entry->codec_private, &codec_private) != 0)
@@ -3099,6 +3158,77 @@ nestegg_read_packet(nestegg * ctx, nestegg_packet ** pkt)
   return 1;
 }
 
+int
+nestegg_read_last_packet(nestegg * context, unsigned int track,
+                         nestegg_packet ** packet)
+{
+  struct saved_state saved;
+  uint64_t max_end_ns = 0;
+  nestegg_packet * last_packet = NULL;
+
+  if (!context || !packet) {
+    return -1;
+  }
+
+  *packet = NULL;
+
+  /* Save and restore the parser state later. */
+  ne_ctx_save(context, &saved);
+
+  for (;;) {
+    nestegg_packet * pkt = NULL;
+    unsigned int pkt_track = 0;
+    int r = nestegg_read_packet(context, &pkt);
+    if (r == 0) {
+      /* EOS */
+      break;
+    }
+    if (r < 0) {
+      if (pkt) {
+        nestegg_free_packet(pkt);
+      }
+      if (last_packet) {
+        nestegg_free_packet(last_packet);
+        last_packet = NULL;
+      }
+      ne_ctx_restore(context, &saved);
+      return -1;
+    }
+
+    if (nestegg_packet_track(pkt, &pkt_track) == 0 && pkt_track == track) {
+      /* Calculate the end timestamp of this packet */
+      uint64_t ts = 0;
+      uint64_t dur = 0;
+      uint64_t end_ns = 0;
+      nestegg_packet_tstamp(pkt, &ts);
+      if (nestegg_packet_duration(pkt, &dur) != 0) {
+        dur = 0;
+      }
+      end_ns = ts + dur;
+      if (end_ns >= max_end_ns) {
+        if (last_packet) {
+          nestegg_free_packet(last_packet);
+        }
+        last_packet = pkt;
+        max_end_ns = end_ns;
+        pkt = NULL;
+      }
+    }
+
+    if (pkt) {
+      nestegg_free_packet(pkt);
+    }
+  }
+
+  ne_ctx_restore(context, &saved);
+
+  if (!last_packet) {
+    return -1;
+  }
+  *packet = last_packet;
+  return 0;
+}
+
 void
 nestegg_free_packet(nestegg_packet * pkt)
 {
@@ -3307,8 +3437,8 @@ nestegg_has_cues(nestegg * ctx)
     ne_find_seek_for_id(ctx->segment.seek_head.head, ID_CUES);
 }
 
-int
-nestegg_sniff(unsigned char const * buffer, size_t length)
+static int ne_sniff(unsigned char const* buffer, size_t length,
+                         const char* doc_type)
 {
   nestegg_io io;
   struct io_buffer userdata;
@@ -3321,5 +3451,281 @@ nestegg_sniff(unsigned char const * buffer, size_t length)
   io.seek = ne_buffer_seek;
   io.tell = ne_buffer_tell;
   io.userdata = &userdata;
-  return ne_match_webm(io, length);
+  return ne_match_doc_type(io, length, doc_type);
+}
+
+int nestegg_sniff_webm(unsigned char const* buffer, size_t length)
+{
+  return ne_sniff(buffer, length, DOCTYPE_WEBM);
+}
+
+int nestegg_sniff_mkv(unsigned char const* buffer, size_t length)
+{
+  return ne_sniff(buffer, length, DOCTYPE_MKV);
+}
+
+/* Count frames in a Block/SimpleBlock from its lacing header, then skip the
+   remaining payload. Sets frames_out on success; returns 1 on success, <0 on error. */
+static int
+ne_read_block_lacing(nestegg * ctx, uint64_t block_size, uint64_t* frames_out)
+{
+  int r;
+  int64_t timecode;
+  uint64_t track_number, length, flags, frames, header_bytes, remaining;
+  unsigned int lacing;
+
+  if (block_size > LIMIT_BLOCK)
+    return -1;
+
+  r = ne_read_vint(ctx->io, &track_number, &length);
+  if (r != 1)
+    return r;
+
+  if (track_number == 0)
+    return -1;
+
+  r = ne_read_int(ctx->io, &timecode, 2);
+  if (r != 1)
+    return r;
+
+  r = ne_read_uint(ctx->io, &flags, 1);
+  if (r != 1)
+    return r;
+
+  frames = 0;
+  lacing = (flags & BLOCK_FLAGS_LACING) >> 1;
+
+  switch (lacing) {
+  case LACING_NONE:
+    frames = 1;
+    break;
+  case LACING_XIPH:
+  case LACING_FIXED:
+  case LACING_EBML:
+    r = ne_read_uint(ctx->io, &frames, 1);
+    if (r != 1)
+      return r;
+    frames += 1;
+    break;
+  default:
+    assert(0);
+    return -1;
+  }
+
+  if (frames > 256)
+    return -1;
+
+   /* Skip the remainder of the block payload. */
+  header_bytes = length + 2 + 1 + (lacing == LACING_NONE ? 0 : 1);
+  if (block_size < header_bytes)
+    return -1;
+  remaining = block_size - header_bytes;
+  if (remaining) {
+    r = ne_io_read_skip(ctx->io, remaining);
+    if (r != 1)
+      return r;
+  }
+
+  *frames_out = frames;
+  return 1;
+}
+
+/* Consume the payload of a SimpleBlock or BlockGroup:
+   - If block-like, count frames via lacing and add to frames_out.
+   - If not, skip the payload.
+   Always advances I/O to the end of the element.
+   Returns 1 on success, <0 on error. */
+static int
+ne_sum_block_or_group(nestegg * ctx, uint64_t id, uint64_t size, uint64_t * frames_out)
+{
+  int r;
+
+  if (id == ID_SIMPLE_BLOCK) {
+    uint64_t frames;
+    frames = 0;
+    r = ne_read_block_lacing(ctx, size, &frames);
+    if (r != 1)
+      return r;
+    *frames_out += frames;
+    return 1;
+  }
+
+  if (id == ID_BLOCK_GROUP) {
+    int64_t group_end;
+    group_end = ne_io_tell(ctx->io) + (int64_t) size;
+    while (ne_io_tell(ctx->io) < group_end) {
+      uint64_t gid, gsize;
+      r = ne_read_element(ctx, &gid, &gsize);
+      if (r != 1)
+        return r;
+
+      if (gid == ID_BLOCK) {
+        uint64_t frames;
+        frames = 0;
+        r = ne_read_block_lacing(ctx, gsize, &frames);
+        if (r != 1)
+          return r;
+        *frames_out += frames;
+      } else {
+        r = ne_io_read_skip(ctx->io, gsize);
+        if (r != 1)
+          return r;
+      }
+    }
+    return 1;
+  }
+
+  /* Not a block-like element: skip its payload. */
+  r = ne_io_read_skip(ctx->io, size);
+  if (r != 1)
+    return r;
+
+  return 1;
+}
+
+/* Returns non-zero if 'size' equals the EBML unknown-size pattern for any VINT
+   length. Patterns (data bits all 1): 0x7F, 0x3FFF, 0x1FFFFF, 0x0FFFFFFF,
+   0x07FFFFFFFF, 0x03FFFFFFFFFF, 0x01FFFFFFFFFFFF, 0x00FFFFFFFFFFFFFF. */
+static int
+ne_size_is_unknown(uint64_t size)
+{
+  int len;
+  for (len = 1; len <= 8; ++len) {
+    uint64_t mask;
+    if (len == 8)
+      mask = 0x00FFFFFFFFFFFFFFULL;  /* 56 data bits = all ones */
+    else
+      mask = (1ULL << (7 * len)) - 1ULL; /* 7 data bits per byte */
+    if (size == mask)
+      return 1;
+  }
+  return 0;
+}
+
+/* Read ONE Cluster and return the sum of frames of ALL SimpleBlock/Block in it.
+   Returns 1 on success (Cluster found), 0 on clean EOS before any Cluster,
+   <0 on error. */
+static int
+ne_read_cluster_frames_count(nestegg * ctx, uint64_t * frames_out)
+{
+  int r;
+  uint64_t id, size;
+  int64_t cluster_end;
+  uint64_t totalFrames;
+
+  assert(ctx->ancestor == NULL);
+
+  /* Find the next Cluster at the top level. */
+  for (;;) {
+    r = ne_read_element(ctx, &id, &size);
+    if (r == 0)
+      return 0; /* EOS before any Cluster */
+    if (r != 1)
+      return r;
+
+    if (id != ID_CLUSTER) {
+      /* Not a Cluster: consume and keep scanning. */
+      r = ne_io_read_skip(ctx->io, size);
+      if (r != 1)
+        return r;
+      continue;
+    }
+
+    totalFrames = 0;
+
+    if (ne_size_is_unknown(size)) {
+      for (;;) {
+        uint64_t nid, nsize;
+
+        r = ne_peek_element(ctx, &nid, &nsize);
+        if (r == 0)
+          break; /* EOS ends the unknown-sized Cluster */
+        if (r != 1)
+          return r;
+
+        /* Stop at next top-level element without consuming it. */
+        if (nid == ID_EBML        ||
+            nid == ID_SEGMENT     ||
+            nid == ID_SEEK_HEAD   ||
+            nid == ID_INFO        ||
+            nid == ID_TRACKS      ||
+            nid == ID_CHAPTERS    ||
+            nid == ID_CLUSTER     ||
+            nid == ID_CUES        ||
+            nid == ID_ATTACHMENTS ||
+            nid == ID_TAGS) {
+          break;
+        }
+
+        r = ne_read_element(ctx, &nid, &nsize);
+        if (r != 1)
+          return r;
+
+        /* Sum frames for blocks; skip other children. */
+        r = ne_sum_block_or_group(ctx, nid, nsize, &totalFrames);
+        if (r != 1)
+          return r;
+      }
+
+      *frames_out = totalFrames;
+      ctx->log(ctx, NESTEGG_LOG_DEBUG,
+               "ne_read_cluster_frames_count: totalFrames=%llu (unknown-sized Cluster)",
+               totalFrames);
+      return 1;
+    }
+
+    /* Known-sized Cluster: read until cluster_end. */
+    cluster_end = ne_io_tell(ctx->io) + (int64_t) size;
+
+    while (ne_io_tell(ctx->io) < cluster_end) {
+      uint64_t cid, csize;
+      r = ne_read_element(ctx, &cid, &csize);
+      if (r != 1)
+        return r;
+
+      /* Sum frames for blocks; skip other children. */
+      r = ne_sum_block_or_group(ctx, cid, csize, &totalFrames);
+      if (r != 1)
+        return r;
+    }
+
+    *frames_out = totalFrames;
+    ctx->log(ctx, NESTEGG_LOG_DEBUG,
+             "ne_read_cluster_frames_count: totalFrames=%llu", totalFrames);
+    return 1;
+  }
+}
+
+int
+nestegg_read_total_frames_count(nestegg * context, uint64_t * frames_out)
+{
+  struct saved_state saved;
+  uint64_t totalFrames;
+  int r;
+
+  if (!context || !frames_out)
+    return -1;
+
+  ne_ctx_save(context, &saved);
+
+  totalFrames = 0;
+  for (;;) {
+    uint64_t clusterFrames;
+    clusterFrames = 0;
+    r = ne_read_cluster_frames_count(context, &clusterFrames);
+    if (r == 0) {
+      /* EOS */
+      break;
+    }
+    if (r < 0) {
+      ne_ctx_restore(context, &saved);
+      return -1;
+    }
+    totalFrames += clusterFrames;
+  }
+
+  ne_ctx_restore(context, &saved);
+
+  *frames_out = totalFrames;
+  return 0;
 }

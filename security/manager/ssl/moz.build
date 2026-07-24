@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DIRS += ["abridged_certs"]
+DIRS += ["abridged_certs", "pdf_trust_anchors", "qwac_trust_anchors"]
 
 TEST_DIRS += ["tests"]
 
@@ -18,6 +18,7 @@ XPIDL_SOURCES += [
     "nsIContentSignatureVerifier.idl",
     "nsICryptoHash.idl",
     "nsIDataStorage.idl",
+    "nsIFIPSUtils.idl",
     "nsINSSComponent.idl",
     "nsINSSErrorsService.idl",
     "nsINSSVersion.idl",
@@ -49,6 +50,7 @@ XPCOM_MANIFESTS += [
 EXTRA_JS_MODULES.psm += [
     "ClientAuthDialogService.sys.mjs",
     "DER.sys.mjs",
+    "QWACs.sys.mjs",
     "RemoteSecuritySettings.sys.mjs",
     "X509.sys.mjs",
 ]
@@ -99,12 +101,12 @@ UNIFIED_SOURCES += [
     "CryptoTask.cpp",
     "DataStorageManager.cpp",
     "EnterpriseRoots.cpp",
+    "FIPSUtils.cpp",
     "IPCClientCertsChild.cpp",
     "IPCClientCertsParent.cpp",
     "md4.c",
     "nsCertOverrideService.cpp",
     "nsCertTree.cpp",
-    "nsClientAuthRemember.cpp",
     "nsNSSCallbacks.cpp",
     "nsNSSCertHelper.cpp",
     "nsNSSCertificate.cpp",
@@ -128,9 +130,13 @@ UNIFIED_SOURCES += [
     "NSSSocketControl.cpp",
     "nsTLSSocketProvider.cpp",
     "OSKeyStore.cpp",
+    "PDFSignatureVerification.cpp",
+    "PDFTrustDomain.cpp",
     "PKCS11ModuleDB.cpp",
     "PSMRunnable.cpp",
     "PublicKeyPinningService.cpp",
+    "QWACs.cpp",
+    "QWACTrustDomain.cpp",
     "RootCertificateTelemetryUtils.cpp",
     "SecretDecoderRing.cpp",
     "SSLServerCertVerification.cpp",
@@ -141,10 +147,22 @@ UNIFIED_SOURCES += [
     "X509CertValidity.cpp",
 ]
 
+if CONFIG["OS_ARCH"] == "Darwin":
+    # On macOS this file includes CoreFoundation.h, which contains definitions
+    # that conflict with headers included in other unified source files. We
+    # compile this one independently to prevent that interference.
+    SOURCES += [
+        "nsClientAuthRemember.cpp",
+    ]
+else:
+    UNIFIED_SOURCES += [
+        "nsClientAuthRemember.cpp",
+    ]
+
 if CONFIG["OS_ARCH"] == "WINNT":
     # On Windows this file includes ntsecapi.h, which contains definitions that
-    # conflict with headers included in remaining source files. We compile this
-    # one independently to prevent that interferance.
+    # conflict with headers included in other unified source files. We compile
+    # this one independently to prevent that interference.
     SOURCES += [
         "OSReauthenticator.cpp",
     ]
@@ -189,21 +207,30 @@ if CONFIG["OS_ARCH"] == "WINNT":
         "crypt32",
         "kernel32",
         "ncrypt",
+        "ntdll",
+        "synchronization",
         "userenv",
         "ws2_32",
-        "ntdll",
     ]
 
     UNIFIED_SOURCES += [
         "CredentialManagerSecret.cpp",
     ]
-    # Version string comparison is generally wrong, but by the time it would
-    # actually matter, either bug 1489995 would be fixed, or the build would
-    # require version >= 1.78.
-    if CONFIG["RUSTC_VERSION"] and CONFIG["RUSTC_VERSION"] >= "1.78.0":
-        OS_LIBS += [
-            "synchronization",
-        ]
+
+if CONFIG["NIGHTLY_BUILD"] and not CONFIG["MOZ_NO_SMART_CARDS"]:
+    EXPORTS.mozilla.psm += [
+        "PKCS11ModuleChild.h",
+        "PKCS11ModuleParent.h",
+    ]
+
+    UNIFIED_SOURCES += [
+        "PKCS11ModuleChild.cpp",
+        "PKCS11ModuleParent.cpp",
+    ]
+
+    IPDL_SOURCES += [
+        "PPKCS11Module.ipdl",
+    ]
 
 FINAL_LIBRARY = "xul"
 

@@ -11,11 +11,12 @@ plugins {
 
 android {
     namespace = 'org.mozilla.fenix.benchmark'
-    compileSdk = config.compileSdkVersion
+
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
 
     defaultConfig {
-        minSdk = 23
-        targetSdk = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -62,10 +63,12 @@ configurations.configureEach {
 }
 
 dependencies {
-    implementation libs.androidx.test.junit
-    implementation libs.androidx.espresso.core
-    implementation libs.androidx.test.uiautomator
     implementation libs.androidx.benchmark.macro.junit4
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.test.espresso.core
+    implementation libs.androidx.test.junit
+    implementation libs.androidx.test.uiautomator
+    implementation libs.mockwebserver
 }
 
 androidComponents {

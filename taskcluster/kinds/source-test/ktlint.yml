@@ -4,6 +4,7 @@
 ---
 task-defaults:
     description: 'Run ktlint over all modules'
+    run-on-repo-type: [hg]
     run:
         using: gradlew
         gradlew: ['ktlint']
@@ -13,13 +14,15 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - android-gradle-dependencies
             - linux64-jdk-repack
     platform: 'lint/opt'
     treeherder:
         kind: test
         tier: 1
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         docker-image: {in-tree: lint}
         max-run-time: 1200

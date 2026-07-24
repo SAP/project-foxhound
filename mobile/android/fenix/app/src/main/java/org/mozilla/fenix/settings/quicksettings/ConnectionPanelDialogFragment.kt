@@ -12,8 +12,6 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.plus
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.SessionState
 import org.mozilla.fenix.R
@@ -42,7 +40,7 @@ class ConnectionPanelDialogFragment : FenixDialogFragment() {
 
         val controller = DefaultConnectionDetailsController(
             context = requireContext(),
-            ioScope = viewLifecycleOwner.lifecycleScope + Dispatchers.IO,
+            scope = viewLifecycleOwner.lifecycleScope,
             cookieBannersStorage = requireComponents.core.cookieBannersStorage,
             fragment = this,
             navController = { findNavController() },

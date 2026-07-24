@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsSound_h__
-#define __nsSound_h__
+#ifndef _nsSound_h_
+#define _nsSound_h_
 
 #include "nsISound.h"
 #include "nsIStreamLoader.h"
@@ -30,4 +30,4 @@ class nsSound : public nsISound, public nsIStreamLoaderObserver {
   bool mInited;
 };
 
-#endif /* __nsSound_h__ */
+#endif /* _nsSound_h_ */

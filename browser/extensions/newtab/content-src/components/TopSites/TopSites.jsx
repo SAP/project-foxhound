@@ -32,6 +32,7 @@ function topSiteIconType(link) {
 
 /**
  * Iterates through TopSites and counts types of images.
+ *
  * @param acc Accumulator for reducer.
  * @param topsite Entry in TopSites.
  */
@@ -131,7 +132,13 @@ export class _TopSites extends React.PureComponent {
     const { props } = this;
     const { editForm, showSearchShortcutsForm } = props.TopSites;
     const extraMenuOptions = ["AddTopSite"];
+    let visibleTopSites;
     const colors = props.Prefs.values["newNewtabExperience.colors"];
+
+    // do not run this function when for startup cache
+    if (!props.App.isForStartupCache.TopSites) {
+      visibleTopSites = this._getVisibleTopSites()?.length;
+    }
 
     if (props.Prefs.values["improvesearch.topSiteSearchShortcuts"]) {
       extraMenuOptions.push("AddSearchShortcut");
@@ -163,6 +170,7 @@ export class _TopSites extends React.PureComponent {
             dispatch={props.dispatch}
             topSiteIconType={topSiteIconType}
             colors={colors}
+            visibleTopSites={visibleTopSites}
           />
           <div className="edit-topsites-wrapper">
             {editForm && (
@@ -204,6 +212,7 @@ export class _TopSites extends React.PureComponent {
 }
 
 export const TopSites = connect(state => ({
+  App: state.App,
   TopSites: state.TopSites,
   Prefs: state.Prefs,
   TopSitesRows: state.Prefs.values.topSitesRows,

@@ -27,6 +27,7 @@ class NullVideoDataCreator : public DummyDataCreator {
 
 class NullDecoderModule : public PlatformDecoderModule {
  public:
+  const char* Name() const override { return "Null"; }
   // Decode thread.
   already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
       const CreateDecoderParams& aParams) override {

@@ -4,7 +4,7 @@
 
 #define VECS_PER_SPECIFIC_BRUSH 3
 
-#include shared,prim_shared,brush
+#include shared,prim_shared,brush,image_source
 
 // Interpolated UV coordinates to sample.
 varying highp vec2 v_uv;
@@ -31,15 +31,15 @@ flat varying mediump vec2 v_perspective;
 #define BLEND_MODE_ALPHA            0
 #define BLEND_MODE_PREMUL_ALPHA     1
 
-struct ImageBrushData {
+struct ImageBrushPrimitiveData {
     vec4 color;
     vec4 background_color;
     vec2 stretch_size;
 };
 
-ImageBrushData fetch_image_data(int address) {
-    vec4[3] raw_data = fetch_from_gpu_cache_3(address);
-    ImageBrushData data = ImageBrushData(
+ImageBrushPrimitiveData fetch_image_data(int address) {
+    vec4[3] raw_data = fetch_from_gpu_buffer_3f(address);
+    ImageBrushPrimitiveData data = ImageBrushPrimitiveData(
         raw_data[0],
         raw_data[1],
         raw_data[2].xy
@@ -63,7 +63,7 @@ void brush_vs(
     int brush_flags,
     vec4 segment_data
 ) {
-    ImageBrushData image_data = fetch_image_data(prim_address);
+    ImageBrushPrimitiveData image_data = fetch_image_data(prim_address);
 
     // If this is in WR_FEATURE_TEXTURE_RECT mode, the rect and size use
     // non-normalized texture coordinates.

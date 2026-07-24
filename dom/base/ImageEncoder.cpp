@@ -5,6 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageEncoder.h"
+
+#include "YCbCrUtils.h"
+#include "gfxUtils.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/MemoryBlobImpl.h"
@@ -13,15 +18,10 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/layers/CanvasRenderer.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/SyncRunnable.h"
-#include "mozilla/Unused.h"
-#include "gfxUtils.h"
 #include "nsComponentManagerUtils.h"
-#include "nsThreadUtils.h"
 #include "nsNetUtil.h"
+#include "nsThreadUtils.h"
 #include "nsXPCOMCIDInternal.h"
-#include "YCbCrUtils.h"
 
 using namespace mozilla::gfx;
 
@@ -150,7 +150,8 @@ class EncodingRunnable : public Runnable {
                    imgIEncoder* aEncoder,
                    EncodingCompleteEvent* aEncodingCompleteEvent,
                    int32_t aFormat, const CSSIntSize aSize,
-                   bool aUsePlaceholder, bool aUsingCustomOptions)
+                   CanvasUtils::ImageExtraction aExtractionBehavior,
+                   const nsCString& aRandomizationKey, bool aUsingCustomOptions)
       : Runnable("EncodingRunnable"),
         mType(aType),
         mOptions(aOptions),
@@ -160,21 +161,24 @@ class EncodingRunnable : public Runnable {
         mEncodingCompleteEvent(aEncodingCompleteEvent),
         mFormat(aFormat),
         mSize(aSize),
-        mUsePlaceholder(aUsePlaceholder),
+        mExtractionBehavior(aExtractionBehavior),
+        mRandomizationKey(aRandomizationKey),
         mUsingCustomOptions(aUsingCustomOptions) {}
 
   nsresult ProcessImageData(uint64_t* aImgSize, void** aImgData) {
     nsCOMPtr<nsIInputStream> stream;
     nsresult rv = ImageEncoder::ExtractDataInternal(
-        mType, mOptions, mImageBuffer.get(), mFormat, mSize, mUsePlaceholder,
-        mImage, nullptr, nullptr, getter_AddRefs(stream), mEncoder);
+        mType, mOptions, mImageBuffer.get(), mFormat, mSize,
+        mExtractionBehavior, mRandomizationKey, mImage, nullptr, nullptr,
+        getter_AddRefs(stream), mEncoder);
 
     // If there are unrecognized custom parse options, we should fall back to
     // the default values for the encoder without any options at all.
     if (rv == NS_ERROR_INVALID_ARG && mUsingCustomOptions) {
       rv = ImageEncoder::ExtractDataInternal(
-          mType, u""_ns, mImageBuffer.get(), mFormat, mSize, mUsePlaceholder,
-          mImage, nullptr, nullptr, getter_AddRefs(stream), mEncoder);
+          mType, u""_ns, mImageBuffer.get(), mFormat, mSize,
+          mExtractionBehavior, mRandomizationKey, mImage, nullptr, nullptr,
+          getter_AddRefs(stream), mEncoder);
     }
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -199,7 +203,7 @@ class EncodingRunnable : public Runnable {
     if (NS_FAILED(rv)) {
       if (!mEncodingCompleteEvent->CanBeDeletedOnAnyThread()) {
         // Better to leak than to crash.
-        Unused << mEncodingCompleteEvent.forget();
+        mEncodingCompleteEvent.forget().leak();
       }
       return rv;
     }
@@ -216,14 +220,17 @@ class EncodingRunnable : public Runnable {
   RefPtr<EncodingCompleteEvent> mEncodingCompleteEvent;
   int32_t mFormat;
   const CSSIntSize mSize;
-  bool mUsePlaceholder;
+  CanvasUtils::ImageExtraction mExtractionBehavior;
+  nsCString mRandomizationKey;
   bool mUsingCustomOptions;
 };
 
 /* static */
 nsresult ImageEncoder::ExtractData(
     nsAString& aType, const nsAString& aOptions, const CSSIntSize aSize,
-    bool aUsePlaceholder, nsICanvasRenderingContextInternal* aContext,
+    CanvasUtils::ImageExtraction aExtractionBehavior,
+    const nsCString& aRandomizationKey,
+    nsICanvasRenderingContextInternal* aContext,
     OffscreenCanvasDisplayHelper* aOffscreenDisplay, nsIInputStream** aStream) {
   nsCOMPtr<imgIEncoder> encoder = ImageEncoder::GetImageEncoder(aType);
   if (!encoder) {
@@ -231,14 +238,15 @@ nsresult ImageEncoder::ExtractData(
   }
 
   return ExtractDataInternal(aType, aOptions, nullptr, 0, aSize,
-                             aUsePlaceholder, nullptr, aContext,
-                             aOffscreenDisplay, aStream, encoder);
+                             aExtractionBehavior, aRandomizationKey, nullptr,
+                             aContext, aOffscreenDisplay, aStream, encoder);
 }
 
 /* static */
 nsresult ImageEncoder::ExtractDataFromLayersImageAsync(
     nsAString& aType, const nsAString& aOptions, bool aUsingCustomOptions,
-    layers::Image* aImage, bool aUsePlaceholder,
+    layers::Image* aImage, CanvasUtils::ImageExtraction aExtractionBehavior,
+    const nsCString& aRandomizationKey,
     EncodeCompleteCallback* aEncodeCallback) {
   nsCOMPtr<imgIEncoder> encoder = ImageEncoder::GetImageEncoder(aType);
   if (!encoder) {
@@ -249,10 +257,10 @@ nsresult ImageEncoder::ExtractDataFromLayersImageAsync(
       new EncodingCompleteEvent(aEncodeCallback);
 
   CSSIntSize size = CSSIntSize::FromUnknownSize(aImage->GetSize());
-  nsCOMPtr<nsIRunnable> event =
-      new EncodingRunnable(aType, aOptions, nullptr, aImage, encoder,
-                           completeEvent, imgIEncoder::INPUT_FORMAT_HOSTARGB,
-                           size, aUsePlaceholder, aUsingCustomOptions);
+  nsCOMPtr<nsIRunnable> event = new EncodingRunnable(
+      aType, aOptions, nullptr, aImage, encoder, completeEvent,
+      imgIEncoder::INPUT_FORMAT_HOSTARGB, size, aExtractionBehavior,
+      VoidCString(), aUsingCustomOptions);
   return NS_DispatchBackgroundTask(event.forget());
 }
 
@@ -260,7 +268,9 @@ nsresult ImageEncoder::ExtractDataFromLayersImageAsync(
 nsresult ImageEncoder::ExtractDataAsync(
     nsAString& aType, const nsAString& aOptions, bool aUsingCustomOptions,
     UniquePtr<uint8_t[]> aImageBuffer, int32_t aFormat, const CSSIntSize aSize,
-    bool aUsePlaceholder, EncodeCompleteCallback* aEncodeCallback) {
+    CanvasUtils::ImageExtraction aExtractionBehavior,
+    const nsCString& aRandomizationKey,
+    EncodeCompleteCallback* aEncodeCallback) {
   nsCOMPtr<imgIEncoder> encoder = ImageEncoder::GetImageEncoder(aType);
   if (!encoder) {
     return NS_IMAGELIB_ERROR_NO_ENCODER;
@@ -271,7 +281,8 @@ nsresult ImageEncoder::ExtractDataAsync(
 
   nsCOMPtr<nsIRunnable> event = new EncodingRunnable(
       aType, aOptions, std::move(aImageBuffer), nullptr, encoder, completeEvent,
-      aFormat, aSize, aUsePlaceholder, aUsingCustomOptions);
+      aFormat, aSize, aExtractionBehavior, aRandomizationKey,
+      aUsingCustomOptions);
   return NS_DispatchBackgroundTask(event.forget());
 }
 
@@ -280,10 +291,11 @@ nsresult ImageEncoder::GetInputStream(int32_t aWidth, int32_t aHeight,
                                       uint8_t* aImageBuffer, int32_t aFormat,
                                       imgIEncoder* aEncoder,
                                       const nsAString& aEncoderOptions,
+                                      const nsACString& aRandomizationKey,
                                       nsIInputStream** aStream) {
-  nsresult rv =
-      aEncoder->InitFromData(aImageBuffer, aWidth * aHeight * 4, aWidth,
-                             aHeight, aWidth * 4, aFormat, aEncoderOptions);
+  nsresult rv = aEncoder->InitFromData(aImageBuffer, aWidth * aHeight * 4,
+                                       aWidth, aHeight, aWidth * 4, aFormat,
+                                       aEncoderOptions, aRandomizationKey);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<imgIEncoder> encoder(aEncoder);
@@ -294,8 +306,10 @@ nsresult ImageEncoder::GetInputStream(int32_t aWidth, int32_t aHeight,
 /* static */
 nsresult ImageEncoder::ExtractDataInternal(
     const nsAString& aType, const nsAString& aOptions, uint8_t* aImageBuffer,
-    int32_t aFormat, const CSSIntSize aSize, bool aUsePlaceholder,
-    layers::Image* aImage, nsICanvasRenderingContextInternal* aContext,
+    int32_t aFormat, const CSSIntSize aSize,
+    CanvasUtils::ImageExtraction aExtractionBehavior,
+    const nsCString& aRandomizationKey, layers::Image* aImage,
+    nsICanvasRenderingContextInternal* aContext,
     OffscreenCanvasDisplayHelper* aOffscreenDisplay, nsIInputStream** aStream,
     imgIEncoder* aEncoder) {
   if (aSize.IsEmpty()) {
@@ -305,20 +319,58 @@ nsresult ImageEncoder::ExtractDataInternal(
   nsCOMPtr<nsIInputStream> imgStream;
 
   // get image bytes
-  nsresult rv;
-  if (aImageBuffer && !aUsePlaceholder) {
+  nsresult rv = NS_OK;
+  bool hasImageSource = aImageBuffer || aContext || aOffscreenDisplay || aImage;
+  bool usePlaceholder =
+      aExtractionBehavior == CanvasUtils::ImageExtraction::Placeholder;
+  if (!hasImageSource || usePlaceholder) {
     if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
       return NS_ERROR_INVALID_ARG;
     }
 
-    rv = ImageEncoder::GetInputStream(aSize.width, aSize.height, aImageBuffer,
-                                      aFormat, aEncoder, aOptions,
-                                      getter_AddRefs(imgStream));
-  } else if (aContext && !aUsePlaceholder) {
+    // no context, so we have to encode an empty image
+    // note that if we didn't have a current context, the spec says we're
+    // supposed to just return transparent black pixels of the canvas
+    // dimensions.
+    RefPtr<DataSourceSurface> emptyCanvas =
+        Factory::CreateDataSourceSurfaceWithStride(
+            IntSize(aSize.width, aSize.height), SurfaceFormat::B8G8R8A8,
+            4 * aSize.width, true);
+    if (NS_WARN_IF(!emptyCanvas)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    DataSourceSurface::MappedSurface map;
+    if (!emptyCanvas->Map(DataSourceSurface::MapType::WRITE, &map)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (usePlaceholder) {
+      auto size = 4 * aSize.width * aSize.height;
+      auto* data = map.mData;
+      GeneratePlaceholderCanvasData(size, data);
+    }
+    rv = aEncoder->InitFromData(map.mData, aSize.width * aSize.height * 4,
+                                aSize.width, aSize.height, aSize.width * 4,
+                                imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
+                                VoidCString());
+    emptyCanvas->Unmap();
+    if (NS_SUCCEEDED(rv)) {
+      imgStream = aEncoder;
+    }
+  } else if (aImageBuffer) {
+    if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    rv = ImageEncoder::GetInputStream(
+        aSize.width, aSize.height, aImageBuffer, aFormat, aEncoder, aOptions,
+        aRandomizationKey, getter_AddRefs(imgStream));
+  } else if (aContext) {
     NS_ConvertUTF16toUTF8 encoderType(aType);
     rv = aContext->GetInputStream(encoderType.get(), aOptions,
+                                  aExtractionBehavior, aRandomizationKey,
                                   getter_AddRefs(imgStream));
-  } else if (aOffscreenDisplay && !aUsePlaceholder) {
+  } else if (aOffscreenDisplay) {
     const NS_ConvertUTF16toUTF8 encoderType(aType);
     if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
       return NS_ERROR_INVALID_ARG;
@@ -343,13 +395,14 @@ nsresult ImageEncoder::ExtractDataInternal(
       auto size = data->GetSize();
       rv = aEncoder->InitFromData(map.mData, size.width * size.height * 4,
                                   size.width, size.height, size.width * 4,
-                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions);
+                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
+                                  VoidCString());
       data->Unmap();
     }
     if (NS_SUCCEEDED(rv)) {
       imgStream = aEncoder;
     }
-  } else if (aImage && !aUsePlaceholder) {
+  } else if (aImage) {
     // It is safe to convert PlanarYCbCr format from YUV to RGB off-main-thread.
     // Other image formats could have problem to convert format off-main-thread.
     // So here it uses a help function GetBRGADataSourceSurfaceSync() to convert
@@ -373,10 +426,10 @@ nsresult ImageEncoder::ExtractDataInternal(
         return rv;
       }
 
-      rv = aEncoder->InitFromData(data.Elements(),
-                                  aSize.width * aSize.height * 4, aSize.width,
-                                  aSize.height, aSize.width * 4,
-                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions);
+      rv = aEncoder->InitFromData(
+          data.Elements(), aSize.width * aSize.height * 4, aSize.width,
+          aSize.height, aSize.width * 4, imgIEncoder::INPUT_FORMAT_HOSTARGB,
+          aOptions, VoidCString());
     } else {
       if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
         return NS_ERROR_INVALID_ARG;
@@ -393,43 +446,11 @@ nsresult ImageEncoder::ExtractDataInternal(
       auto size = dataSurface->GetSize();
       rv = aEncoder->InitFromData(map.mData, size.width * size.height * 4,
                                   size.width, size.height, size.width * 4,
-                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions);
+                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
+                                  VoidCString());
       dataSurface->Unmap();
     }
 
-    if (NS_SUCCEEDED(rv)) {
-      imgStream = aEncoder;
-    }
-  } else {
-    if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
-      return NS_ERROR_INVALID_ARG;
-    }
-
-    // no context, so we have to encode an empty image
-    // note that if we didn't have a current context, the spec says we're
-    // supposed to just return transparent black pixels of the canvas
-    // dimensions.
-    RefPtr<DataSourceSurface> emptyCanvas =
-        Factory::CreateDataSourceSurfaceWithStride(
-            IntSize(aSize.width, aSize.height), SurfaceFormat::B8G8R8A8,
-            4 * aSize.width, true);
-    if (NS_WARN_IF(!emptyCanvas)) {
-      return NS_ERROR_INVALID_ARG;
-    }
-
-    DataSourceSurface::MappedSurface map;
-    if (!emptyCanvas->Map(DataSourceSurface::MapType::WRITE, &map)) {
-      return NS_ERROR_INVALID_ARG;
-    }
-    if (aUsePlaceholder) {
-      auto size = 4 * aSize.width * aSize.height;
-      auto* data = map.mData;
-      GeneratePlaceholderCanvasData(size, data);
-    }
-    rv = aEncoder->InitFromData(map.mData, aSize.width * aSize.height * 4,
-                                aSize.width, aSize.height, aSize.width * 4,
-                                imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions);
-    emptyCanvas->Unmap();
     if (NS_SUCCEEDED(rv)) {
       imgStream = aEncoder;
     }

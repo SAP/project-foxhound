@@ -66,7 +66,7 @@ struct PropertyAnimation {
 };
 
 struct PropertyAnimationGroup {
-  nsCSSPropertyID mProperty;
+  NonCustomCSSPropertyId mProperty;
 
   nsTArray<PropertyAnimation> mAnimations;
   RefPtr<StyleAnimationValue> mBaseStyle;

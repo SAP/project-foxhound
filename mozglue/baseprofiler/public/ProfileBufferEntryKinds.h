@@ -29,6 +29,7 @@ static constexpr size_t ProfileBufferEntryNumChars = 8;
   MACRO(DynamicStringFragment, char*, ProfileBufferEntryNumChars) \
   MACRO(JitReturnAddr, void*, sizeof(void*))                      \
   MACRO(InnerWindowID, uint64_t, sizeof(uint64_t))                \
+  MACRO(SourceId, uint32_t, sizeof(uint32_t))                     \
   MACRO(LineNumber, int, sizeof(int))                             \
   MACRO(ColumnNumber, int, sizeof(int))                           \
   MACRO(NativeLeafAddr, void*, sizeof(void*))                     \

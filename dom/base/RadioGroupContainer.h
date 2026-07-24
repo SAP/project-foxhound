@@ -10,7 +10,6 @@
 #include "nsClassHashtable.h"
 
 class nsIContent;
-class nsIRadioVisitor;
 
 namespace mozilla::dom {
 
@@ -26,9 +25,17 @@ class RadioGroupContainer final {
                        nsCycleCollectionTraversalCallback& cb);
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  using VisitCallback = std::function<bool(HTMLInputElement*)>;
-  void WalkRadioGroup(const nsAString& aName, const VisitCallback& aCallback);
-  nsresult WalkRadioGroup(const nsAString& aName, nsIRadioVisitor* aVisitor);
+  template <typename VisitCallback>
+  void WalkRadioGroup(const nsAString& aName, VisitCallback&& aCallback,
+                      const HTMLInputElement* aExcludedElement) {
+    nsRadioGroupStruct* radioGroup = GetOrCreateRadioGroup(aName);
+    for (HTMLInputElement* button : GetButtonsInGroup(radioGroup)) {
+      if (button != aExcludedElement && !aCallback(button)) {
+        return;
+      }
+    }
+  }
+
   void SetCurrentRadioButton(const nsAString& aName, HTMLInputElement* aRadio);
   HTMLInputElement* GetCurrentRadioButton(const nsAString& aName);
   nsresult GetNextRadioButton(const nsAString& aName, const bool aPrevious,
@@ -48,6 +55,9 @@ class RadioGroupContainer final {
   nsRadioGroupStruct* GetOrCreateRadioGroup(const nsAString& aName);
 
  private:
+  Span<const RefPtr<HTMLInputElement>> GetButtonsInGroup(
+      nsRadioGroupStruct* aGroup) const;
+
   nsClassHashtable<nsStringHashKey, nsRadioGroupStruct> mRadioGroups;
 };
 

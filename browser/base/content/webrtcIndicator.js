@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gScreenManager",
   "@mozilla.org/gfx/screenmanager;1",
-  "nsIScreenManager"
+  Ci.nsIScreenManager
 );
 
 /**

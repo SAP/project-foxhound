@@ -46,13 +46,22 @@
 
 .backups-control {
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    "header button"
-    "description .";
-  grid-gap: 0 12px;
+  grid-template-columns: 1fr auto auto;
+  column-gap: var(--space-large);
+  row-gap: var(--space-xsmall);
   align-items: center;
+
+  moz-button {
+    justify-self: end;
+  }
+
+  moz-button:last-of-type {
+    grid-column: 3;
+  }
+
+  [id$="description"] {
+    grid-column: 1 / -1;
+  }
 }
 
 section {

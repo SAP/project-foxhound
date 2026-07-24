@@ -12,7 +12,14 @@
  * by the library.
  */
 
-/* globals exportFunction */
+if (
+  !(window.CSSStyleProperties ?? window.CSS2Properties).prototype.msTouchAction
+) {
+  const bug = location.origin.includes("wellcare") ? "1818818" : "1944004";
+  console.info(
+    `FastClick is being disabled for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=${bug} for details.`
+  );
 
-CSS2Properties.prototype.wrappedJSObject.msTouchAction =
-  window.wrappedJSObject.String("none");
+  (window.CSSStyleProperties ?? window.CSS2Properties).prototype.msTouchAction =
+    "none";
+}

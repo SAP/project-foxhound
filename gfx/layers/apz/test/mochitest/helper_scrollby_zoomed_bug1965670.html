@@ -1,0 +1,61 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width; initial-scale=1.0">
+  <title>Test that scrollBy() works correctly when zoomed in</title>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <script type="application/javascript">
+
+    let utils = SpecialPowers.getDOMWindowUtils(window);
+
+    async function test() {
+      // Scroll the visual viewport within the layout viewport.
+      utils.scrollToVisual(0, 100, utils.UPDATE_TYPE_MAIN_THREAD,
+        utils.SCROLL_MODE_INSTANT);
+      await promiseApzFlushedRepaints();
+
+      is(window.scrollX, 0, "Layout viewport should be at (0, 0)");
+      is(window.scrollY, 0, "Layout viewport should be at (0, 0)");
+      is(visualViewport.pageLeft, 0, "Visual viewport should be at (0, 100)");
+      is(visualViewport.pageTop, 100, "Visual viewport should be at (0, 100)");
+
+      // Do a smooth scrollBy() in this state and wait for it
+      // to complete.
+      let scrollendPromise = promiseScrollend();
+      window.scrollBy({ top: 40, left: 0, behavior: 'smooth' });
+      await scrollendPromise;
+
+      // Check that it's the layout viewport that scrolled.
+      // The relative offset between the layout and visual viewports
+      // should be preserved.
+      is(window.scrollX, 0, "Layout viewport should be at (0, 0)");
+      is(window.scrollY, 40, "Layout viewport should be at (0, 40)");
+      is(visualViewport.pageLeft, 0, "Visual viewport should be at (0, 100)");
+      is(visualViewport.pageTop, 140, "Visual viewport should be at (0, 140)");
+    }
+
+    // Zoom in to create room to scroll the visual viewport within the
+    // layout viewport.
+    utils.setResolutionAndScaleTo(2.0);
+
+    waitUntilApzStable()
+      .then(test)
+      .then(subtestDone, subtestFailed);
+
+  </script>
+  <style>
+    body {
+      height: 500vh;
+      background: linear-gradient(red, black);
+    }
+  </style>
+</head>
+
+<body>
+</body>
+
+</html>

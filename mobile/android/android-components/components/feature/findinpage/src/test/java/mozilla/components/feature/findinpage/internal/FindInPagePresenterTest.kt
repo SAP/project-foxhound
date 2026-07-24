@@ -4,7 +4,7 @@
 
 package mozilla.components.feature.findinpage.internal
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
@@ -14,13 +14,10 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.findinpage.view.FindInPageView
 import mozilla.components.support.test.any
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.never
@@ -29,15 +26,11 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 class FindInPagePresenterTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val dispatcher = coroutinesTestRule.testDispatcher
+    private val testDispatcher = StandardTestDispatcher()
 
     private lateinit var store: BrowserStore
 
     @Before
-    @ExperimentalCoroutinesApi
     fun setUp() {
         store = BrowserStore(
             BrowserState(
@@ -52,39 +45,41 @@ class FindInPagePresenterTest {
     @Test
     fun `view is updated to display latest find result`() {
         val view: FindInPageView = mock()
-        val presenter = FindInPagePresenter(store, view)
+        val presenter = FindInPagePresenter(store, view, testDispatcher)
         presenter.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val result = FindResultState(0, 2, false)
-        store.dispatch(ContentAction.AddFindResultAction("test-tab", result)).joinBlocking()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(ContentAction.AddFindResultAction("test-tab", result))
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(view, never()).displayResult(result)
 
         presenter.bind(store.state.selectedTab!!)
-        store.dispatch(ContentAction.AddFindResultAction("test-tab", result)).joinBlocking()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(ContentAction.AddFindResultAction("test-tab", result))
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(view).displayResult(result)
 
         val result2 = FindResultState(1, 2, true)
-        store.dispatch(ContentAction.AddFindResultAction("test-tab", result2)).joinBlocking()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(ContentAction.AddFindResultAction("test-tab", result2))
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(view).displayResult(result2)
     }
 
     @Test
     fun `no find results are observed after stop has been called`() {
         val view: FindInPageView = mock()
-        val presenter = FindInPagePresenter(store, view)
+        val presenter = FindInPagePresenter(store, view, testDispatcher)
         presenter.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         presenter.bind(store.state.selectedTab!!)
-        store.dispatch(ContentAction.AddFindResultAction("test-tab", mock())).joinBlocking()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(ContentAction.AddFindResultAction("test-tab", mock()))
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(view, times(1)).displayResult(any())
 
         presenter.stop()
-        store.dispatch(ContentAction.AddFindResultAction("test-tab", mock())).joinBlocking()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(ContentAction.AddFindResultAction("test-tab", mock()))
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(view, times(1)).displayResult(any())
     }
 
@@ -92,7 +87,7 @@ class FindInPagePresenterTest {
     fun `bind updates session and focuses view`() {
         val view: FindInPageView = mock()
 
-        val presenter = FindInPagePresenter(mock(), view)
+        val presenter = FindInPagePresenter(BrowserStore(), view, testDispatcher)
         val session = Mockito.mock(SessionState::class.java, Mockito.RETURNS_DEEP_STUBS)
         `when`(session.content.private).thenReturn(false)
         presenter.bind(session)
@@ -105,7 +100,7 @@ class FindInPagePresenterTest {
     fun `unbind clears session and view`() {
         val view: FindInPageView = mock()
 
-        val presenter = FindInPagePresenter(mock(), view)
+        val presenter = FindInPagePresenter(BrowserStore(), view, testDispatcher)
         val session = Mockito.mock(SessionState::class.java, Mockito.RETURNS_DEEP_STUBS)
         `when`(session.content.private).thenReturn(false)
         presenter.bind(session)

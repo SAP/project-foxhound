@@ -89,6 +89,9 @@ void SVGSwitchFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 void SVGSwitchFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                       const nsDisplayListSet& aLists) {
+  if (HidesContent()) {
+    return;
+  }
   if (auto* kid = GetActiveChildFrame()) {
     BuildDisplayListForChild(aBuilder, kid, aLists);
   }

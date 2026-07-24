@@ -8,11 +8,19 @@
 const FEATURE_PREF = "privacy.globalprivacycontrol.functionality.enabled";
 const MODE_PREF = "privacy.globalprivacycontrol.enabled";
 const DNT_PREF = "privacy.donottrackheader.enabled";
+const RELAY_PREF = "signon.firefoxRelay.feature";
 
 const SECTION_ID = "nonTechnicalPrivacyGroup";
-const GPC_ID = "globalPrivacyControlBox";
-const GPC_CHECKBOX_ID = "globalPrivacyControlCheckbox";
-const NEW_DNT_ID = "doNotTrackBox";
+const GPC_CHECKBOX_ID = "gpcEnabled";
+const NEW_DNT_ID = "dntRemoval";
+
+add_setup(function () {
+  registerCleanupFunction(function () {
+    Services.prefs.clearUserPref(
+      "privacy.globalprivacycontrol.was_ever_enabled"
+    );
+  });
+});
 
 // Test the section is hidden on page load if the feature pref is disabled.
 // Also make sure we keep the old DNT interface.
@@ -21,6 +29,7 @@ add_task(async function test_section_hidden_when_feature_flag_disabled() {
     set: [
       [FEATURE_PREF, false],
       [MODE_PREF, false],
+      [RELAY_PREF, undefined],
     ],
   });
 
@@ -49,8 +58,8 @@ add_task(async function test_section_shown_when_feature_flag_enabled() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:preferences#privacy" },
     async function (browser) {
-      let gpc = browser.contentDocument.getElementById(GPC_ID);
-      is_element_visible(gpc, "#globalPrivacyControlBox is shown");
+      let gpc = browser.contentDocument.getElementById(GPC_CHECKBOX_ID);
+      is_element_visible(gpc, "#gpcEnabled is shown");
       let new_dnt = browser.contentDocument.getElementById(NEW_DNT_ID);
       is_element_visible(new_dnt, "#doNotTrackBox is shown");
       let section = browser.contentDocument.getElementById(SECTION_ID);
@@ -61,7 +70,7 @@ add_task(async function test_section_shown_when_feature_flag_enabled() {
   await SpecialPowers.popPrefEnv();
 });
 
-// Test that we hide the new DNT section if DNT is disaled
+// Test that we hide the new DNT section if DNT is disabled
 add_task(async function test_section_hide_dnt_link_when_disabled() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -74,8 +83,8 @@ add_task(async function test_section_hide_dnt_link_when_disabled() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:preferences#privacy" },
     async function (browser) {
-      let gpc = browser.contentDocument.getElementById(GPC_ID);
-      is_element_visible(gpc, "#globalPrivacyControlBox is shown");
+      let gpc = browser.contentDocument.getElementById(GPC_CHECKBOX_ID);
+      is_element_visible(gpc, "#gpcEnabled is shown");
       let new_dnt = browser.contentDocument.getElementById(NEW_DNT_ID);
       is_element_hidden(new_dnt, "#doNotTrackBox is hidden");
     }
@@ -127,11 +136,7 @@ add_task(async function test_checkbox_modifies_prefs() {
         "initially, the checkbox should be unchecked"
       );
 
-      await BrowserTestUtils.synthesizeMouseAtCenter(
-        "#" + GPC_CHECKBOX_ID,
-        {},
-        browser
-      );
+      gpc_checkbox.click();
       Assert.ok(gpc_checkbox.checked, "gpc checkbox should be checked");
       Assert.equal(
         true,
@@ -139,11 +144,7 @@ add_task(async function test_checkbox_modifies_prefs() {
         "GPC should be on after checking the checkbox"
       );
 
-      await BrowserTestUtils.synthesizeMouseAtCenter(
-        "#" + GPC_CHECKBOX_ID,
-        {},
-        browser
-      );
+      gpc_checkbox.click();
       Assert.ok(!gpc_checkbox.checked, "both checkboxes are disabled");
       Assert.equal(
         false,
@@ -152,6 +153,4 @@ add_task(async function test_checkbox_modifies_prefs() {
       );
     }
   );
-
-  await SpecialPowers.popPrefEnv();
 });

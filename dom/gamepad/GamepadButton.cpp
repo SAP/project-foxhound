@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/GamepadButton.h"
+
 #include "mozilla/dom/GamepadBinding.h"
 
 namespace mozilla::dom {

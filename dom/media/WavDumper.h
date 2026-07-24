@@ -6,15 +6,15 @@
 
 #if !defined(WavDumper_h_)
 #  define WavDumper_h_
-#  include <stdio.h>
-#  include <stdint.h>
-#  include <nsTArray.h>
-#  include <nsString.h>
-#  include <mozilla/Unused.h>
+#  include <ByteWriter.h>
 #  include <mozilla/Atomics.h>
 #  include <mozilla/DebugOnly.h>
+#  include <mozilla/EndianUtils.h>
 #  include <mozilla/Sprintf.h>
-#  include <ByteWriter.h>
+#  include <nsString.h>
+#  include <nsTArray.h>
+#  include <stdint.h>
+#  include <stdio.h>
 
 /**
  * If MOZ_DUMP_AUDIO is set, this dumps a file to disk containing the output of
@@ -99,7 +99,7 @@ class WavDumper {
       }
       i += written;
     }
-    mozilla::Unused << fwrite(header.Elements(), header.Length(), 1, mFile);
+    (void)fwrite(header.Elements(), header.Length(), 1, mFile);
   }
 
   template <typename T>
@@ -123,7 +123,7 @@ class WavDumper {
 
  private:
   void WriteDumpFileHelper(const int16_t* aInput, size_t aSamples) {
-    mozilla::Unused << fwrite(aInput, sizeof(int16_t), aSamples, mFile);
+    (void)fwrite(aInput, sizeof(int16_t), aSamples, mFile);
   }
 
   void WriteDumpFileHelper(const float* aInput, size_t aSamples) {
@@ -136,7 +136,7 @@ class WavDumper {
           writer.WriteU16(int16_t(aInput[i] * 32767.0f));
       MOZ_ASSERT(rv);
     }
-    mozilla::Unused << fwrite(buf.Elements(), buf.Length(), 1, mFile);
+    (void)fwrite(buf.Elements(), buf.Length(), 1, mFile);
   }
 
   FILE* mFile = nullptr;

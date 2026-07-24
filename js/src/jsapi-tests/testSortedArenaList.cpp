@@ -16,14 +16,30 @@
 using namespace js;
 using namespace js::gc;
 
+class TestArenaChunk : public ArenaChunk {
+ public:
+  static TestArenaChunk* init(void* ptr, GCRuntime* gc) {
+    auto* const arenaChunk =
+        static_cast<TestArenaChunk*>(ArenaChunk::init(ptr, gc, true));
+    arenaChunk->initAsCommitted();
+    return arenaChunk;
+  }
+};
+
 // Automatically allocate and free an Arena for testing purposes.
 class MOZ_RAII AutoTestArena {
+  TestArenaChunk* arenaChunk = nullptr;
   Arena* arena = nullptr;
 
  public:
   explicit AutoTestArena(JSContext* cx, AllocKind kind, size_t nfree) {
     // For testing purposes only. Don't do this in real code!
-    arena = js_pod_calloc<Arena>(1);
+    void* const arenaChunkPtr =
+        TestArenaChunk::allocate(&cx->runtime()->gc, StallAndRetry::No);
+    MOZ_RELEASE_ASSERT(arenaChunkPtr);
+    arenaChunk = TestArenaChunk::init(arenaChunkPtr, &cx->runtime()->gc);
+
+    arena = arenaChunk->fetchNextFreeArena(&cx->runtime()->gc);
     MOZ_RELEASE_ASSERT(arena);
 
     arena->init(&cx->runtime()->gc, cx->zone(), kind);
@@ -36,7 +52,7 @@ class MOZ_RAII AutoTestArena {
     MOZ_RELEASE_ASSERT(arena->countFreeCells() == nfree);
   }
 
-  ~AutoTestArena() { js_free(arena); }
+  ~AutoTestArena() { UnmapPages(arenaChunk, ChunkSize); }
 
   Arena* get() { return arena; }
   operator Arena*() { return arena; }

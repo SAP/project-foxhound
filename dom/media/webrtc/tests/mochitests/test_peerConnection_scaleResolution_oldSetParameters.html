@@ -63,9 +63,7 @@
                                                scaleResolutionDownBy: 2 }] });
 
     let offer = await pc1.createOffer();
-    if (codec == "H264") {
-      offer.sdp = sdputils.removeAllButPayloadType(offer.sdp, 126);
-    }
+    offer.sdp = sdputils.removeAllButCodec(offer.sdp, codec);
     await pc1.setLocalDescription(offer);
     await pc2.setRemoteDescription(pc1.localDescription);
 

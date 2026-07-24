@@ -27,10 +27,25 @@ export class SelectionActionDelegateParent extends GeckoViewActorParent {
         break;
       }
 
+      case "GeckoView:ShowMagnifier": {
+        return this.eventDispatcher.sendRequest({
+          ...data,
+          type: "GeckoView:ShowMagnifier",
+        });
+      }
+
+      case "GeckoView:HideMagnifier": {
+        return this.eventDispatcher.sendRequest({
+          type: "GeckoView:HideMagnifier",
+        });
+      }
+
       default: {
         super.receiveMessage(aMessage);
       }
     }
+
+    return undefined;
   }
 
   hideSelectionAction(aRespondTo, reason) {

@@ -1,0 +1,75 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-size-tokens */
+  --progress-height: 10px;
+  --progress-border-width: 0.5px;
+  --progress-color: var(--icon-color-success);
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-medium);
+}
+
+#bandwidth-header {
+  margin: 0;
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-medium);
+}
+
+#usage-help-text {
+  color: var(--text-color-deemphasized);
+}
+
+#progress-bar {
+  position: absolute;
+  width: 100%;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: var(--progress-height);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-base-design-tokens, stylelint-plugin-mozilla/use-design-tokens */
+  background-color: light-dark(var(--color-gray-20), var(--color-gray-80));
+
+  border: var(--progress-border-width) solid var(--border-color-card);
+  border-radius: var(--border-radius-circle);
+
+  &::-moz-progress-bar {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-non-semantic-token-usage */
+    background-color: var(--progress-color);
+    border: var(--progress-border-width) solid var(--border-color-card);
+    border-radius: var(--border-radius-circle);
+    box-shadow: var(--box-shadow-level-1);
+  }
+
+  &[percent="75"]::-moz-progress-bar,
+  &[percent="75"] + #min-progress {
+    --progress-color: var(--icon-color-warning);
+  }
+
+  &[percent="90"]::-moz-progress-bar,
+  &[percent="90"] + #min-progress {
+    --progress-color: var(--icon-color-critical);
+  }
+}
+
+#progress-container {
+  position: relative;
+
+  & > #min-progress {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: var(--progress-height);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    height: var(--progress-height);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-non-semantic-token-usage */
+    background-color: var(--progress-color);
+    border-radius: var(--border-radius-circle);
+    position: absolute;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
+    top: var(--progress-border-width);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
+    left: var(--progress-border-width);
+  }
+}

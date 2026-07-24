@@ -6,9 +6,9 @@
 #ifndef GPU_CompilationInfo_H_
 #define GPU_CompilationInfo_H_
 
-#include "nsWrapperCache.h"
-#include "ObjectModel.h"
 #include "CompilationMessage.h"
+#include "ObjectModel.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::webgpu {
 class ShaderModule;
@@ -27,8 +27,7 @@ class CompilationInfo final : public nsWrapperCache, public ChildOf<Device> {
       nsTArray<RefPtr<mozilla::webgpu::CompilationMessage>>& aMessages);
 
  private:
-  ~CompilationInfo() = default;
-  void Cleanup() {}
+  virtual ~CompilationInfo();
 
   nsTArray<RefPtr<mozilla::webgpu::CompilationMessage>> mMessages;
 };

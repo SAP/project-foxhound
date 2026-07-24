@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 /**
  * @typedef {import("../../../../toolkit/components/translations/translations").SelectTranslationsPanelState} SelectTranslationsPanelState
  * @typedef {import("../../../../toolkit/components/translations/translations").LanguagePair} LanguagePair
@@ -23,14 +21,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "GfxInfo",
   "@mozilla.org/gfx/info;1",
-  "nsIGfxInfo"
+  Ci.nsIGfxInfo
 );
 
 /**
@@ -257,7 +255,6 @@ var SelectTranslationsPanel = new (class {
       };
 
       TranslationsPanelShared.defineLazyElements(document, this.#lazyElements, {
-        betaIcon: "select-translations-panel-beta-icon",
         cancelButton: "select-translations-panel-cancel-button",
         copyButton: "select-translations-panel-copy-button",
         doneButtonPrimary: "select-translations-panel-done-button-primary",
@@ -2211,11 +2208,13 @@ var SelectTranslationsPanel = new (class {
       `Creating new Translator (${TranslationsUtils.serializeLanguagePair(languagePair)})`
     );
 
-    const translator = await Translator.create(
+    const translator = await Translator.create({
       languagePair,
-      this.#requestTranslationsPort,
-      true /* allowSameLanguage */
-    );
+      requestTranslationsPort: this.#requestTranslationsPort,
+      allowSameLanguage: true,
+      activeRequestCapacity: 1,
+    });
+
     return translator;
   }
 

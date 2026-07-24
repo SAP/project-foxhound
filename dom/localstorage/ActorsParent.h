@@ -8,6 +8,7 @@
 #define mozilla_dom_localstorage_ActorsParent_h
 
 #include <cstdint>
+
 #include "mozilla/AlreadyAddRefed.h"
 
 namespace mozilla {

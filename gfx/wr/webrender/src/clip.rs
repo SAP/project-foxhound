@@ -98,9 +98,9 @@ use api::units::*;
 use crate::image_tiling::{self, Repetition};
 use crate::border::{ensure_no_corner_overlap, BorderRadiusAu};
 use crate::box_shadow::{BLUR_SAMPLE_SCALE, BoxShadowClipSource, BoxShadowCacheKey};
+use crate::renderer::GpuBufferBuilderF;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::ellipse::Ellipse;
-use crate::gpu_cache::GpuCache;
 use crate::gpu_types::{BoxShadowStretchMode};
 use crate::intern;
 use crate::internal_types::{FastHashMap, FastHashSet, LayoutPrimitiveInfo};
@@ -146,7 +146,7 @@ pub struct ClipTreeLeaf {
 }
 
 /// ID for a ClipTreeNode
-#[derive(Debug, Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ClipNodeId(u32);
@@ -155,11 +155,27 @@ impl ClipNodeId {
     pub const NONE: ClipNodeId = ClipNodeId(0);
 }
 
+impl std::fmt::Debug for ClipNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if *self == Self::NONE {
+            write!(f, "<none>")
+        } else {
+            write!(f, "#{}", self.0)
+        }
+    }
+}
+
 /// ID for a ClipTreeLeaf
-#[derive(Debug, Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, MallocSizeOf, Eq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ClipLeafId(u32);
+
+impl std::fmt::Debug for ClipLeafId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
 
 /// A clip-tree built during scene building and used during frame-building to apply clips to primitives.
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -1021,6 +1037,11 @@ impl ClipNodeRange {
 
 /// A helper struct for converting between coordinate systems
 /// of clip sources and primitives.
+///
+/// Note that the variants don't represent the same transformation
+/// because depending on the situation we either map between the
+/// clip and primitive spaces or project them both to visibility
+/// space.
 // todo(gw): optimize:
 //  separate arrays for matrices
 //  cache and only build as needed.
@@ -1028,8 +1049,17 @@ impl ClipNodeRange {
 #[derive(Debug, MallocSizeOf)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub enum ClipSpaceConversion {
+    /// The clip and the clipped primitive are in the same coordinate space.
     Local,
+    /// The clip and the clipped primitive are in the same coordinate system.
+    ///
+    /// This variant represents the transform from the clip's local space to
+    /// the clipped primitive's local space.
     ScaleOffset(ScaleOffset),
+    /// The clip and the clipped primitive are in different coordinate system.
+    ///
+    /// This Variant represents the transform from the clip's local space to
+    /// the visibility space.
     Transform(LayoutToVisTransform),
 }
 
@@ -1092,7 +1122,7 @@ impl ClipNodeInfo {
         &self,
         node: &ClipNode,
         clipped_rect: &LayoutRect,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         resource_cache: &mut ResourceCache,
         mask_tiles: &mut Vec<VisibleMaskImageTile>,
         spatial_tree: &SpatialTree,
@@ -1158,12 +1188,12 @@ impl ClipNodeInfo {
                             if request_resources {
                                 resource_cache.request_image(
                                     req,
-                                    gpu_cache,
+                                    gpu_buffer,
                                 );
                             }
 
                             let task_id = rg_builder.add().init(
-                                RenderTask::new_image(props.descriptor.size, req)
+                                RenderTask::new_image(props.descriptor.size, req, false)
                             );
 
                             mask_tiles.push(VisibleMaskImageTile {
@@ -1176,13 +1206,13 @@ impl ClipNodeInfo {
                     visible_tiles = Some(tile_range_start..mask_tiles.len());
                 } else {
                     if request_resources {
-                        resource_cache.request_image(request, gpu_cache);
+                        resource_cache.request_image(request, gpu_buffer);
                     }
 
                     let tile_range_start = mask_tiles.len();
 
                     let task_id = rg_builder.add().init(
-                        RenderTask::new_image(props.descriptor.size, request)
+                        RenderTask::new_image(props.descriptor.size, request, false)
                     );
 
                     mask_tiles.push(VisibleMaskImageTile {
@@ -1499,7 +1529,7 @@ impl ClipStore {
         prim_to_pic_mapper: &SpaceMapper<LayoutPixel, PicturePixel>,
         pic_to_vis_mapper: &SpaceMapper<PicturePixel, VisPixel>,
         spatial_tree: &SpatialTree,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         resource_cache: &mut ResourceCache,
         device_pixel_scale: DevicePixelScale,
         culling_rect: &VisRect,
@@ -1567,7 +1597,7 @@ impl ClipStore {
                     if let Some(instance) = node_info.create_instance(
                         node,
                         &local_bounding_rect,
-                        gpu_cache,
+                        gpu_buffer,
                         resource_cache,
                         &mut self.mask_tiles,
                         spatial_tree,
@@ -2118,23 +2148,6 @@ impl ClipItemKind {
             ClipItemKind::BoxShadow { .. } => {
                 ClipResult::Partial
             }
-        }
-    }
-}
-
-/// Represents a local rect and a device space
-/// rectangles that are either outside or inside bounds.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Geometry {
-    pub local_rect: LayoutRect,
-    pub device_rect: DeviceIntRect,
-}
-
-impl From<LayoutRect> for Geometry {
-    fn from(local_rect: LayoutRect) -> Self {
-        Geometry {
-            local_rect,
-            device_rect: DeviceIntRect::zero(),
         }
     }
 }

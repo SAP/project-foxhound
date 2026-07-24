@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSOCKSSocketProvider_h__
-#define nsSOCKSSocketProvider_h__
+#ifndef nsSOCKSSocketProvider_h_
+#define nsSOCKSSocketProvider_h_
 
 #include "nsISocketProvider.h"
 
@@ -25,4 +25,4 @@ class nsSOCKSSocketProvider : public nsISocketProvider {
   uint32_t mVersion;  // NS_SOCKS_VERSION_4 or 5
 };
 
-#endif /* nsSOCKSSocketProvider_h__ */
+#endif /* nsSOCKSSocketProvider_h_ */

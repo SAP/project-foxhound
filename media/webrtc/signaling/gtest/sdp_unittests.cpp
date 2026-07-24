@@ -1438,13 +1438,13 @@ TEST_F(SdpTest, parseFmtpMaxPlaybackRate) {
 TEST_F(SdpTest, parseFmtpMaxPlaybackRateWith0) {
   ParseSdp(kVideoSdp + "a=fmtp:120 maxplaybackrate=0\r\n");
   sdp_attr_t* attr_p = sdp_find_attr(sdp_ptr_, 1, 0, SDP_ATTR_FMTP, 1);
-  ASSERT_EQ(NULL, attr_p);
+  ASSERT_EQ(nullptr, attr_p);
 }
 
 TEST_F(SdpTest, parseFmtpMaxPlaybackRateWith4294967296) {
   ParseSdp(kVideoSdp + "a=fmtp:120 maxplaybackrate=4294967296\r\n");
   sdp_attr_t* attr_p = sdp_find_attr(sdp_ptr_, 1, 0, SDP_ATTR_FMTP, 1);
-  ASSERT_EQ(NULL, attr_p);
+  ASSERT_EQ(nullptr, attr_p);
 }
 
 TEST_F(SdpTest, parseFmtpMaxFs) {

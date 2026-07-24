@@ -43,9 +43,11 @@ browser.engagement:
       - baseline
       - metrics
       - usage-reporting
+      - events
     telemetry_mirror: BROWSER_ENGAGEMENT_ACTIVE_TICKS
     no_lint:
       - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
 
   uri_count:
     type: counter
@@ -76,8 +78,10 @@ browser.engagement:
       - baseline
       - metrics
       - usage-reporting
+      - events
     no_lint:
       - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
     telemetry_mirror: BROWSER_ENGAGEMENT_TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE
 
   uri_count_normal_mode:
@@ -140,6 +144,11 @@ browser.engagement:
       - rweiss@mozilla.com
     expires: never
     unit: tabs
+    send_in_pings:
+      - metrics
+      - events
+    no_lint:
+      - METRIC_ON_EVENTS_LIFETIME
     telemetry_mirror: BROWSER_ENGAGEMENT_MAX_CONCURRENT_TAB_COUNT
 
   max_concurrent_vertical_tab_count:
@@ -191,7 +200,7 @@ browser.engagement:
       - https://bugzil.la/1505535
     notification_emails:
       - bmiroglio@mozilla.com
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     unit: pinned tabs
     telemetry_mirror: BROWSER_ENGAGEMENT_MAX_CONCURRENT_TAB_PINNED_COUNT
@@ -229,6 +238,11 @@ browser.engagement:
     notification_emails:
       - vsabino@mozilla.com
     expires: never
+    send_in_pings:
+      - metrics
+      - events
+    no_lint:
+      - METRIC_ON_EVENTS_LIFETIME
     telemetry_mirror: BROWSER_ENGAGEMENT_TAB_OPEN_EVENT_COUNT
 
   vertical_tab_open_event_count:
@@ -278,7 +292,7 @@ browser.engagement:
       - https://bugzil.la/1505535
     notification_emails:
       - bmiroglio@mozilla.com
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_ENGAGEMENT_TAB_PINNED_EVENT_COUNT
 
@@ -679,8 +693,8 @@ browser.ui:
   mirror_for_toolbar_widgets:
     type: labeled_boolean
     description: >
-      The widgets in the toolbars. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      The widgets in the toolbars. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.toolbar_widgets.
     bugs:
@@ -697,8 +711,7 @@ browser.ui:
     type: labeled_counter
     description: >
       Records when widgets are added, removed or moved in the UI. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.customized_widgets.
     bugs:
@@ -949,8 +962,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the menu bar. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.menu_bar.
     bugs:
@@ -967,8 +979,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the tab bar. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.tabs_bar.
     bugs:
@@ -985,8 +996,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the vertical tab bar.
-      See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      See https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.vertical_tabs_container.
     bugs:
@@ -1002,8 +1012,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the nav bar. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.nav_bar.
     bugs:
@@ -1020,8 +1029,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the bookmarks bar. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.bookmarks_bar.
     bugs:
@@ -1038,8 +1046,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the app menu. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.app_menu.
     bugs:
@@ -1056,8 +1063,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the tab context menu.
-      See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      See https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.tabs_context.
     bugs:
@@ -1075,8 +1081,7 @@ browser.ui.interaction:
     description: >
       Records a count for each entrypoint (the container of the trigger
       node) when an item from the tabs context menu is selected. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.tabs_context_entrypoint.
     bugs:
@@ -1093,8 +1098,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the content context
-      menu. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      menu. See https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.content_context.
     bugs:
@@ -1111,8 +1115,7 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the overflow menu. See
-      https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.overflow_menu.
     bugs:
@@ -1129,8 +1132,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the Unified Extensions
-      area. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      area. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.unified_extensions_area.
     bugs:
@@ -1148,8 +1151,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with items in the pinned area of the
-      overflow menu. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      overflow menu. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.pinned_overflow_menu.
     bugs:
@@ -1166,8 +1169,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with page action items in the url
-      bar. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      bar. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.pageaction_urlbar.
     bugs:
@@ -1184,8 +1187,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records a count of interactions with page action items in the panel.
-      See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.pageaction_panel.
     bugs:
@@ -1202,8 +1205,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Home section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneHome.
     bugs:
@@ -1220,8 +1223,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the General section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneGeneral.
     bugs:
@@ -1238,8 +1241,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Privacy section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_panePrivacy.
     bugs:
@@ -1256,8 +1259,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Search section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneSearch.
     bugs:
@@ -1274,8 +1277,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Search results section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneSearchResults.
     bugs:
@@ -1292,8 +1295,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Sync section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneSync.
     bugs:
@@ -1310,8 +1313,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the Containers section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneContainers.
     bugs:
@@ -1324,12 +1327,27 @@ browser.ui.interaction:
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_PREFERENCES_PANECONTAINERS
 
+  preferences_pane_ai:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the AI Controls section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/2012800
+    data_reviews:
+      - https://bugzil.la/2012800
+    notification_emails:
+      - mstriemer@mozilla.com
+      - sopsal@mozilla.com
+    expires: never
+
   preferences_pane_experimental:
     type: labeled_counter
     description: >
       Records the items interacted with in the Experimental section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneExperimental.
     bugs:
@@ -1348,8 +1366,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in the More From Mozilla section
-      of preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneMoreFromMozilla.
     bugs:
@@ -1366,8 +1384,8 @@ browser.ui.interaction:
     type: labeled_counter
     description: >
       Records the items interacted with in any other section of
-      preferences. See https://firefox-source-
-      docs.mozilla.org/browser/BrowserUsageTelemetry.html
+      preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
       This metric was generated to correspond to the Legacy Telemetry
       scalar browser.ui.interaction.preferences_paneUnknown.
     bugs:
@@ -1558,31 +1576,6 @@ browser.sanitizer:
     expires: never
     telemetry_mirror: FX_SANITIZE_OPENWINDOWS
 
-glam_experiment:
-  active_ticks:
-    type: counter
-    disabled: true
-    description: |
-      Duplicate of:
-      `browser.engagement.active_ticks`
-
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1545172#c8
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1781578
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1811152#c5
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146
-
 browser.content_crash:
   dump_unavailable:
     type: counter
@@ -1683,3 +1676,131 @@ contextual_services:
     expires: never
     send_in_pings:
       - context-id-deletion-request
+
+web_notification_permission:
+  icon_shown:
+    type: event
+    description: >
+      Recorded when the notification permission icon is shown and displays the
+      shaking animation in the URL bar
+    extra_keys:
+      site_category:
+        description: Category of the site requesting notification permissions
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  icon_clicked:
+    type: event
+    description: >
+      Recorded when the user clicks the notification permission icon in the URL bar
+    extra_keys:
+      site_category:
+        description: Category of the site requesting notification permissions
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  prompt_shown:
+    type: event
+    description: >
+      Recorded when the notification permission prompt is shown to the user
+    extra_keys:
+      site_category:
+        description: Category of the site requesting notification permissions
+        type: string
+      trigger:
+        description: How the prompt was triggered (user click vs automatic)
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  prompt_blocked:
+    type: event
+    description: >
+      Recorded when the notification permission prompt is blocked (auto-denied)
+    extra_keys:
+      site_category:
+        description: Category of the site requesting notification permissions
+        type: string
+      reason:
+        description: Why the prompt was blocked (user action or through previous browser config)
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  prompt_interaction:
+    type: event
+    description: >
+      Recorded when the user interacts with the notification permission prompt
+    extra_keys:
+      site_category:
+        description: Category of the site requesting notification permissions
+        type: string
+      action:
+        description: The action the user took
+        type: string
+      is_persistent:
+        description: Whether the user's choice will be remembered
+        type: boolean
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  permission_revoked_toolbar:
+    type: event
+    description: >
+      Recorded when the user revokes notification permission via the toolbar
+      permission panel (clicking the X button to remove the permission)
+    extra_keys:
+      site_category:
+        description: Category of the site whose notification permission was revoked
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never
+
+  permission_revoked_preferences:
+    type: event
+    description: >
+      Recorded when the user revokes notification permission via the
+      preferences/settings panel
+    extra_keys:
+      site_category:
+        description: Category of the site whose notification permission was revoked
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
+    notification_emails:
+      - jhan@mozilla.com
+    expires: never

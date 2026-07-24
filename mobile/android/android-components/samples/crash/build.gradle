@@ -2,15 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
     defaultConfig {
         applicationId "org.mozilla.samples.crash"
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -35,15 +40,15 @@ android {
 dependencies {
     implementation project(':components:lib-crash')
     implementation project(':components:lib-fetch-httpurlconnection')
-    implementation libs.mozilla.glean
     implementation project(':components:service-glean')
     implementation project(':components:support-base')
     implementation project(':components:support-utils')
-
-    implementation libs.kotlin.coroutines
+    implementation project(':components:support-ktx')
 
     implementation libs.androidx.appcompat
     implementation libs.androidx.core.ktx
-    implementation libs.google.material
     implementation libs.androidx.recyclerview
+    implementation libs.google.material
+    implementation libs.kotlinx.coroutines
+    implementation libs.mozilla.glean
 }

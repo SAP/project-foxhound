@@ -25,7 +25,7 @@ partial namespace CSS {
 
 // https://www.w3.org/TR/css-highlight-api-1/#registration
 partial namespace CSS {
-  [Pref="dom.customHighlightAPI.enabled", GetterThrows]
+  [GetterThrows]
   readonly attribute HighlightRegistry highlights;
 };
 
@@ -40,4 +40,86 @@ dictionary PropertyDefinition {
 partial namespace CSS {
   [Pref="layout.css.properties-and-values.enabled", Throws]
   undefined registerProperty(PropertyDefinition definition);
+};
+
+// https://drafts.css-houdini.org/css-typed-om-1/#numeric-factory
+// TODO: Ideally, only a single Pref annotation would be needed here, but
+// partial namespaces can't currently be gated by a pref as a whole.
+// See bug 1980157.
+partial namespace CSS {
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue number(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue percent(double value);
+
+  // <length>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cap(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue ch(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue em(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue ex(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue ic(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rcap(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rch(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rem(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rex(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue ric(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rlh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vw(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vb(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vmin(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue vmax(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svw(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svb(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svmin(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue svmax(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvw(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvb(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvmin(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue lvmax(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvw(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvb(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvmin(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dvmax(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqw(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqh(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqb(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqmin(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cqmax(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue cm(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue mm(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue Q(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue in(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue pt(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue pc(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue px(double value);
+
+  // <angle>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue deg(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue grad(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue rad(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue turn(double value);
+
+  // <time>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue s(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue ms(double value);
+
+  // <frequency>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue Hz(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue kHz(double value);
+
+  // <resolution>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dpi(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dpcm(double value);
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue dppx(double value);
+
+  // <flex>
+  [NewObject, Pref="layout.css.typed-om.enabled"] CSSUnitValue fr(double value);
 };

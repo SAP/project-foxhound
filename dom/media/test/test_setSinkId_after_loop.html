@@ -13,7 +13,7 @@ This test captures loopback device audio to test that a media element produces
 audio output soon after a setSinkId() call after looping.  In bug 1838756,
 incorrect timekeeping caused silence in the output as long as the duration of
 loops completed.
- **/
+ */
 add_task(async () => {
   const audio = new Audio();
   audio.src = "sin-441-1s-44100.flac";

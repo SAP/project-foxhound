@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsScannerString_h___
-#define nsScannerString_h___
+#ifndef nsScannerString_h_
+#define nsScannerString_h_
 
 #include "nsString.h"
 #include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator
@@ -453,4 +453,4 @@ bool CopyUnicodeTo(const nsScannerIterator& aSrcStart,
 bool AppendUnicodeTo(const nsScannerIterator& aSrcStart,
                      const nsScannerIterator& aSrcEnd, nsAString& aDest);
 
-#endif  // !defined(nsScannerString_h___)
+#endif  // !defined(nsScannerString_h_)

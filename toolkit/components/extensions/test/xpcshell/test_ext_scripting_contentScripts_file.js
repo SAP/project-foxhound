@@ -8,8 +8,6 @@ const FILE_DUMMY_URL = Services.io.newFileURI(
 // the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
   return ExtensionTestUtils.loadExtension({
     manifest: {

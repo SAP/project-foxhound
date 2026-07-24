@@ -29,6 +29,12 @@ export class BackupUIChild extends JSWindowActorChild {
     if (event.type == "BackupUI:InitWidget") {
       this.#inittedWidgets.add(event.target);
       this.sendAsyncMessage("RequestState");
+    } else if (event.type == "BackupUI:TriggerCreateBackup") {
+      let result = await this.sendQuery("TriggerCreateBackup", event.detail);
+
+      if (!result.success) {
+        event.target.backupErrorCode = result.errorCode;
+      }
     } else if (event.type == "BackupUI:EnableScheduledBackups") {
       const target = event.target;
 
@@ -50,11 +56,11 @@ export class BackupUIChild extends JSWindowActorChild {
 
       target.close();
     } else if (event.type == "BackupUI:ShowFilepicker") {
-      let targetNodeName = event.target.nodeName;
+      let targetNodeName = event.composedTarget.nodeName;
       let { path, filename, iconURL } = await this.sendQuery("ShowFilepicker", {
         win: event.detail?.win,
         filter: event.detail?.filter,
-        displayDirectoryPath: event.detail?.displayDirectoryPath,
+        existingBackupPath: event.detail?.existingBackupPath,
       });
 
       let widgets = ChromeUtils.nondeterministicGetWeakSetKeys(
@@ -63,16 +69,21 @@ export class BackupUIChild extends JSWindowActorChild {
 
       for (let widget of widgets) {
         if (widget.isConnected && widget.nodeName == targetNodeName) {
-          widget.dispatchEvent(
-            new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+          const win = widget.ownerGlobal;
+          // Using Cu.cloneInto here allows us to embed components that use this event
+          // in non-parent-processes such as about:welcome
+          const detail = Cu.cloneInto({ path, filename, iconURL }, win, {
+            wrapReflectors: true,
+          });
+          const event = new win.CustomEvent(
+            "BackupUI:SelectNewFilepickerPath",
+            {
               bubbles: true,
-              detail: {
-                path,
-                filename,
-                iconURL,
-              },
-            })
+              composed: true,
+              detail,
+            }
           );
+          widget.dispatchEvent(event);
           break;
         }
       }
@@ -83,17 +94,16 @@ export class BackupUIChild extends JSWindowActorChild {
       });
     } else if (event.type == "BackupUI:RestoreFromBackupFile") {
       let { backupFile, backupPassword } = event.detail;
-      event.target.recoveryInProgress = true;
-      event.target.recoveryErrorCode = 0;
       let result = await this.sendQuery("RestoreFromBackupFile", {
         backupFile,
         backupPassword,
       });
-      event.target.recoveryInProgress = false;
+
       if (result.success) {
         event.target.restoreFromBackupDialogEl?.close();
-      } else {
-        event.target.recoveryErrorCode = result.errorCode;
+
+        // Since we always launch the new profile from this event, let's close the current instance now
+        this.sendAsyncMessage("QuitCurrentProfile");
       }
     } else if (event.type == "BackupUI:RestoreFromBackupChooseFile") {
       this.sendAsyncMessage("RestoreFromBackupChooseFile");
@@ -115,19 +125,16 @@ export class BackupUIChild extends JSWindowActorChild {
       } else {
         target.disableEncryptionErrorCode = result.errorCode;
       }
-    } else if (event.type == "BackupUI:RerunEncryption") {
-      const target = event.target;
-
-      const result = await this.sendQuery("RerunEncryption", event.detail);
-      if (result.success) {
-        target.close();
-      } else {
-        target.rerunEncryptionErrorCode = result.errorCode;
-      }
     } else if (event.type == "BackupUI:ShowBackupLocation") {
       this.sendAsyncMessage("ShowBackupLocation");
     } else if (event.type == "BackupUI:EditBackupLocation") {
       this.sendAsyncMessage("EditBackupLocation");
+    } else if (event.type == "BackupUI:SetEmbeddedComponentPersistentData") {
+      this.sendAsyncMessage("SetEmbeddedComponentPersistentData", event.detail);
+    } else if (event.type == "BackupUI:FlushEmbeddedComponentPersistentData") {
+      this.sendAsyncMessage("FlushEmbeddedComponentPersistentData");
+    } else if (event.type == "BackupUI:ErrorBarDismissed") {
+      this.sendAsyncMessage("ErrorBarDismissed");
     }
   }
 
@@ -143,12 +150,22 @@ export class BackupUIChild extends JSWindowActorChild {
         this.#inittedWidgets
       );
       for (let widget of widgets) {
-        if (widget.isConnected) {
-          // Note: we might need to switch to using Cu.cloneInto here in the
-          // event that these widgets are embedded in a non-parent-process
-          // context, like in an onboarding card.
-          widget.backupServiceState = message.data.state;
+        if (!widget.isConnected || !widget.ownerGlobal) {
+          continue;
         }
+
+        const state = Cu.cloneInto(message.data.state, widget.ownerGlobal);
+
+        const waivedWidget = Cu.waiveXrays(widget);
+        waivedWidget.backupServiceState = state;
+        //dispatch the event for the React listeners
+        widget.dispatchEvent(
+          new this.contentWindow.CustomEvent("BackupUI:StateWasUpdated", {
+            bubbles: true,
+            composed: true,
+            detail: { state },
+          })
+        );
       }
     }
   }

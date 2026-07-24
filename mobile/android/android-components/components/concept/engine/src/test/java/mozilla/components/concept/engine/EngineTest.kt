@@ -9,6 +9,7 @@ import android.util.AttributeSet
 import android.util.JsonReader
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.Engine.BrowsingData
+import mozilla.components.concept.engine.preferences.BrowserPrefObserverDelegate
 import mozilla.components.concept.engine.utils.EngineVersion
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -53,6 +54,30 @@ class EngineTest {
 
         override val settings: Settings
             get() = throw NotImplementedError("Not needed for test")
+
+        override fun registerPrefObserverDelegate(prefObserverDelegate: BrowserPrefObserverDelegate) {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun unregisterPrefObserverDelegate() {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun registerPrefForObservation(
+            pref: String,
+            onSuccess: () -> Unit,
+            onError: (Throwable) -> Unit,
+        ) {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun unregisterPrefForObservation(
+            pref: String,
+            onSuccess: () -> Unit,
+            onError: (Throwable) -> Unit,
+        ) {
+            throw NotImplementedError("Not needed for test")
+        }
     }
 
     @Test

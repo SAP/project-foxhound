@@ -10,7 +10,6 @@
 #include "nsUrlClassifierDBService.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Attributes.h"
 #include "nsIPrincipal.h"
 #include "LookupCache.h"
 
@@ -68,12 +67,13 @@ class UrlClassifierDBServiceWorkerProxy final
    public:
     BeginUpdateRunnable(nsUrlClassifierDBServiceWorker* aTarget,
                         nsIUrlClassifierUpdateObserver* aUpdater,
-                        const nsACString& aTables)
+                        const nsACString& aTables, const nsACString& aProvider)
         : mozilla::Runnable(
               "UrlClassifierDBServiceWorkerProxy::BeginUpdateRunnable"),
           mTarget(aTarget),
           mUpdater(aUpdater),
-          mTables(aTables) {}
+          mTables(aTables),
+          mProvider(aProvider) {}
 
     NS_DECL_NSIRUNNABLE
 
@@ -81,6 +81,7 @@ class UrlClassifierDBServiceWorkerProxy final
     const RefPtr<nsUrlClassifierDBServiceWorker> mTarget;
     const nsCOMPtr<nsIUrlClassifierUpdateObserver> mUpdater;
     const nsCString mTables;
+    const nsCString mProvider;
   };
 
   class BeginStreamRunnable : public mozilla::Runnable {

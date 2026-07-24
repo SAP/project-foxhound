@@ -6,7 +6,7 @@ import datetime
 import jsone
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.copy import deepcopy
-from taskgraph.util.schema import Schema, resolve_keyed_by, validate_schema
+from taskgraph.util.schema import LegacySchema, resolve_keyed_by, validate_schema
 from taskgraph.util.templates import merge
 from taskgraph.util.treeherder import join_symbol, split_symbol
 from voluptuous import Any, Optional, Required
@@ -18,20 +18,18 @@ transforms = TransformSequence()
 """List of available test variants defined."""
 
 
-variant_description_schema = Schema(
-    {
-        str: {
-            Required("description"): str,
-            Required("suffix"): str,
-            Optional("mozinfo"): str,
-            Required("component"): str,
-            Required("expiration"): str,
-            Optional("when"): {Any("$eval", "$if"): str},
-            Optional("replace"): {str: object},
-            Optional("merge"): {str: object},
-        }
+variant_description_schema = LegacySchema({
+    str: {
+        Required("description"): str,
+        Required("suffix"): str,
+        Optional("mozinfo"): str,
+        Required("component"): str,
+        Required("expiration"): str,
+        Optional("when"): {Any("$eval", "$if"): str},
+        Optional("replace"): {str: object},
+        Optional("merge"): {str: object},
     }
-)
+})
 """variant description schema"""
 
 
@@ -81,7 +79,9 @@ def split_variants(config, tasks):
     def replace_task_items(task_key, variant_key):
         for item in variant_key:
             if isinstance(variant_key[item], dict):
-                task_key[item] = replace_task_items(task_key[item], variant_key[item])
+                task_key[item] = replace_task_items(
+                    task_key.get(item, {}), variant_key[item]
+                )
             else:
                 task_key[item] = variant_key[item]
         return task_key
@@ -122,7 +122,7 @@ def split_variants(config, tasks):
         variants = remove_expired(variants, expired_variants)
 
         if task.pop("run-without-variant"):
-            taskv = deepcopy(task)
+            taskv = deepcopy(task) if variants else task
             taskv["attributes"]["unittest_variant"] = None
             yield taskv
 

@@ -60,6 +60,8 @@ class GestureEventListener final {
    */
   int32_t GetLastTouchIdentifier() const;
 
+  void Destroy();
+
   /**
    * Function used to disable long tap gestures.
    *

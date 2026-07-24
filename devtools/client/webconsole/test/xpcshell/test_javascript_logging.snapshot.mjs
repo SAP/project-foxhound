@@ -171,6 +171,15 @@ export default [
   //     ])
   "a=1&a=2&b=3&b=3&b=5&c=this+is+6&d=7&e=8&f=9&g=10&h=11",
 
+  // const el = document.createElement("h1");
+  // el.setAttribute("class", "test-class-a test-class-b");
+  // el.setAttribute("id", "my-element");
+  // el.setAttribute("aria-collapsed", "false");
+  // el.setAttribute("hidden", "");
+  // el;
+  //     
+  "<H1 #my-element .test-class-a test-class-b>",
+
   // new Error("foo")
   "Error: foo",
 

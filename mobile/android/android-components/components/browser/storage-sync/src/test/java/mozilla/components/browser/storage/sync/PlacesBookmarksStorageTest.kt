@@ -5,7 +5,6 @@
 package mozilla.components.browser.storage.sync
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.appservices.places.uniffi.PlacesApiException
@@ -13,8 +12,6 @@ import mozilla.components.concept.storage.BookmarkInfo
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -22,21 +19,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 
-@ExperimentalCoroutinesApi // for runTestOnMain
 @RunWith(AndroidJUnit4::class)
 class PlacesBookmarksStorageTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     private lateinit var bookmarks: PlacesBookmarksStorage
 
     @Before
-    fun setup() = runTestOnMain {
+    fun setup() = runTest {
         bookmarks = PlacesBookmarksStorage(testContext)
         // There's a database on disk which needs to be cleaned up between tests.
         bookmarks.writer.deleteEverything()
@@ -44,14 +37,14 @@ class PlacesBookmarksStorageTest {
 
     @After
     @Suppress("DEPRECATION")
-    fun cleanup() = runTestOnMain {
+    fun cleanup() = runTest {
         bookmarks.cleanup()
     }
 
     @Test
-    fun `get bookmarks tree by root, recursive or not`() = runTestOnMain {
-        val tree = bookmarks.getTree(BookmarkRoot.Root.id)!!
-        assertEquals(BookmarkRoot.Root.id, tree.guid)
+    fun `get bookmarks tree by root, recursive or not`() = runTest {
+        val tree = bookmarks.getTree(BookmarkRoot.Root.id).getOrNull()
+        assertEquals(BookmarkRoot.Root.id, tree!!.guid)
         assertNotNull(tree.children)
         assertEquals(4, tree.children!!.size)
 
@@ -68,8 +61,8 @@ class PlacesBookmarksStorageTest {
             assertEquals(BookmarkNodeType.FOLDER, child.type)
         }
 
-        val deepTree = bookmarks.getTree(BookmarkRoot.Root.id, true)!!
-        assertEquals(BookmarkRoot.Root.id, deepTree.guid)
+        val deepTree = bookmarks.getTree(BookmarkRoot.Root.id, true).getOrNull()
+        assertEquals(BookmarkRoot.Root.id, deepTree!!.guid)
         assertNotNull(deepTree.children)
         assertEquals(4, deepTree.children!!.size)
 
@@ -80,7 +73,7 @@ class PlacesBookmarksStorageTest {
         assertTrue(BookmarkRoot.Menu.id in children)
 
         // Recursive means children of children are fetched.
-        for (child in deepTree.children!!) {
+        for (child in deepTree.children) {
             // For an empty tree, we expect to see empty lists.
             assertEquals(emptyList<BookmarkNode>(), child.children)
             assertEquals(BookmarkRoot.Root.id, child.parentGuid)
@@ -89,15 +82,15 @@ class PlacesBookmarksStorageTest {
     }
 
     @Test
-    fun `bookmarks APIs smoke testing - basic operations`() = runTestOnMain {
+    fun `bookmarks APIs smoke testing - basic operations`() = runTest {
         val url = "http://www.mozilla.org"
 
-        assertEquals(emptyList<BookmarkNode>(), bookmarks.getBookmarksWithUrl(url))
-        assertEquals(emptyList<BookmarkNode>(), bookmarks.searchBookmarks("mozilla"))
+        assertEquals(emptyList<BookmarkNode>(), bookmarks.getBookmarksWithUrl(url).getOrNull())
+        assertEquals(emptyList<BookmarkNode>(), bookmarks.searchBookmarks("mozilla").getOrNull())
 
-        val insertedItem = bookmarks.addItem(BookmarkRoot.Mobile.id, url, "Mozilla", 5u)
+        val insertedItem = bookmarks.addItem(BookmarkRoot.Mobile.id, url, "Mozilla", 5u).getOrNull()!!
 
-        with(bookmarks.getBookmarksWithUrl(url)) {
+        with(bookmarks.getBookmarksWithUrl(url).getOrNull()!!) {
             assertEquals(1, this.size)
             with(this[0]) {
                 assertEquals(insertedItem, this.guid)
@@ -105,12 +98,12 @@ class PlacesBookmarksStorageTest {
                 assertEquals("Mozilla", this.title)
                 assertEquals(BookmarkRoot.Mobile.id, this.parentGuid)
                 // Clamped to actual range. 'Mobile' was empty, so we get 0 back.
-                assertEquals(0u, this.position)
+                assertEquals(0U, this.position)
                 assertEquals("http://www.mozilla.org/", this.url)
             }
         }
 
-        val folderGuid = bookmarks.addFolder(BookmarkRoot.Mobile.id, "Test Folder", null)
+        val folderGuid = bookmarks.addFolder(BookmarkRoot.Mobile.id, "Test Folder", null).getOrNull()!!
         bookmarks.updateNode(
             insertedItem,
             BookmarkInfo(
@@ -120,7 +113,7 @@ class PlacesBookmarksStorageTest {
                 url = null,
             ),
         )
-        with(bookmarks.getBookmarksWithUrl(url)) {
+        with(bookmarks.getBookmarksWithUrl(url).getOrNull()!!) {
             assertEquals(1, this.size)
             with(this[0]) {
                 assertEquals(insertedItem, this.guid)
@@ -132,59 +125,59 @@ class PlacesBookmarksStorageTest {
             }
         }
 
-        val separatorGuid = bookmarks.addSeparator(folderGuid, 1u)
-        with(bookmarks.getTree(folderGuid)!!) {
+        val separatorGuid = bookmarks.addSeparator(folderGuid, 1u).getOrNull()!!
+        with(bookmarks.getTree(folderGuid).getOrNull()!!) {
             assertEquals(2, this.children!!.size)
             assertEquals(BookmarkNodeType.SEPARATOR, this.children!![1].type)
         }
 
-        assertTrue(bookmarks.deleteNode(separatorGuid))
-        with(bookmarks.getTree(folderGuid)!!) {
-            assertEquals(1, this.children!!.size)
+        assertTrue(bookmarks.deleteNode(separatorGuid).getOrNull()!!)
+        with(bookmarks.getTree(folderGuid).getOrNull()) {
+            assertEquals(1, this!!.children!!.size)
             assertEquals(BookmarkNodeType.ITEM, this.children!![0].type)
         }
 
-        with(bookmarks.searchBookmarks("mozilla")) {
+        with(bookmarks.searchBookmarks("mozilla").getOrNull()!!) {
             assertEquals(1, this.size)
             assertEquals("http://www.mozilla.org/", this[0].url)
         }
 
-        with(bookmarks.getBookmark(folderGuid)!!) {
-            assertEquals(folderGuid, this.guid)
+        with(bookmarks.getBookmark(folderGuid).getOrNull()) {
+            assertEquals(folderGuid, this!!.guid)
             assertEquals("Test Folder", this.title)
             assertEquals(BookmarkRoot.Mobile.id, this.parentGuid)
         }
 
-        with(bookmarks.getRecentBookmarks(1)) {
+        with(bookmarks.getRecentBookmarks(1).getOrNull()!!) {
             assertEquals(insertedItem, this[0].guid)
         }
 
-        with(bookmarks.getRecentBookmarks(1, TimeUnit.DAYS.toMillis(1))) {
+        with(bookmarks.getRecentBookmarks(1, TimeUnit.DAYS.toMillis(1)).getOrNull()!!) {
             assertEquals(insertedItem, this[0].guid)
         }
 
-        with(bookmarks.getRecentBookmarks(1, 99, System.currentTimeMillis() + 100)) {
+        with(bookmarks.getRecentBookmarks(1, 99, System.currentTimeMillis() + 100).getOrNull()!!) {
             assertTrue(this.isEmpty())
         }
 
-        val secondInsertedItem = bookmarks.addItem(BookmarkRoot.Unfiled.id, url, "Mozilla", 6u)
+        val secondInsertedItem = bookmarks.addItem(BookmarkRoot.Unfiled.id, url, "Mozilla", 6u).getOrNull()!!
 
-        with(bookmarks.getRecentBookmarks(2)) {
+        with(bookmarks.getRecentBookmarks(2).getOrNull()!!) {
             assertEquals(secondInsertedItem, this[0].guid)
             assertEquals(insertedItem, this[1].guid)
         }
 
-        with(bookmarks.getRecentBookmarks(2, TimeUnit.DAYS.toMillis(1))) {
+        with(bookmarks.getRecentBookmarks(2, TimeUnit.DAYS.toMillis(1)).getOrNull()!!) {
             assertEquals(secondInsertedItem, this[0].guid)
             assertEquals(insertedItem, this[1].guid)
         }
 
-        with(bookmarks.getRecentBookmarks(2, 99, System.currentTimeMillis() + 100)) {
+        with(bookmarks.getRecentBookmarks(2, 99, System.currentTimeMillis() + 100).getOrNull()!!) {
             assertTrue(this.isEmpty())
         }
 
-        assertTrue(bookmarks.deleteNode(secondInsertedItem))
-        assertTrue(bookmarks.deleteNode(folderGuid))
+        assertTrue(bookmarks.deleteNode(secondInsertedItem).getOrNull()!!)
+        assertTrue(bookmarks.deleteNode(folderGuid).getOrNull()!!)
 
         for (
         root in listOf(
@@ -196,14 +189,15 @@ class PlacesBookmarksStorageTest {
         )
         ) {
             try {
-                bookmarks.deleteNode(root.id)
-                fail("Expected root deletion for ${root.id} to fail")
+                if (bookmarks.deleteNode(root.id).isSuccess) {
+                    fail("Expected root deletion for ${root.id} to fail")
+                }
             } catch (e: PlacesApiException.InvalidBookmarkOperation) {
                 // Expected
             }
         }
 
-        with(bookmarks.searchBookmarks("mozilla")) {
+        with(bookmarks.searchBookmarks("mozilla").getOrDefault(listOf())) {
             assertTrue(this.isEmpty())
         }
     }

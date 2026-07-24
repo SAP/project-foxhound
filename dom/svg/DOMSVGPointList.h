@@ -7,13 +7,13 @@
 #ifndef DOM_SVG_DOMSVGPOINTLIST_H_
 #define DOM_SVG_DOMSVGPOINTLIST_H_
 
+#include "SVGPointList.h"  // IWYU pragma: keep
 #include "mozAutoDocUpdate.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsTArray.h"
-#include "SVGPointList.h"  // IWYU pragma: keep
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 
 // {61812ad1-c078-4cd1-87e6-bc1c1b8d7284}
 #define MOZILLA_DOMSVGPOINTLIST_IID \
@@ -41,15 +41,13 @@ class MOZ_RAII AutoChangePointListNotifier {
     MOZ_ASSERT(mValue, "Expecting non-null value");
     if (mValue->IsInList()) {
       mUpdateBatch.emplace(mValue->Element()->GetComposedDoc(), true);
-      mEmptyOrOldValue =
-          mValue->Element()->WillChangePointList(mUpdateBatch.ref());
+      mValue->Element()->WillChangePointList(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangePointListNotifier() {
     if (mValue->IsInList()) {
-      mValue->Element()->DidChangePointList(mEmptyOrOldValue,
-                                            mUpdateBatch.ref());
+      mValue->Element()->DidChangePointList(mUpdateBatch.ref());
       if (mValue->AttrIsAnimating()) {
         mValue->Element()->AnimationNeedsResample();
       }
@@ -59,7 +57,6 @@ class MOZ_RAII AutoChangePointListNotifier {
  private:
   Maybe<mozAutoDocUpdate> mUpdateBatch;
   T* const mValue;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 /**

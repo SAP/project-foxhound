@@ -7,7 +7,6 @@
 #define CANVASIMAGECACHE_H_
 
 #include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/Rect.h"
 #include "nsSize.h"
 

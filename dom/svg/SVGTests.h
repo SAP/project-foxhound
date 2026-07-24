@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGTESTS_H_
 #define DOM_SVG_SVGTESTS_H_
 
-#include "nsStringFwd.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/SVGStringList.h"
+#include "nsStringFwd.h"
 
 class nsAttrValue;
 class nsAtom;

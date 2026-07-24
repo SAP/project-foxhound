@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Maybe.h"
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
@@ -123,11 +122,6 @@ inline bool IgnoreForPreBarrierVerifier(JSRuntime* runtime,
                                         JS::GCCellPtr thing) {
   // Skip things in other runtimes.
   if (thing.asCell()->asTenured().runtimeFromAnyThread() != runtime) {
-    return true;
-  }
-
-  // Ignore buffers as these don't escape and are not barriered.
-  if (thing.kind() == JS::TraceKind::SmallBuffer) {
     return true;
   }
 
@@ -276,8 +270,8 @@ void gc::GCRuntime::startVerifyPreBarriers() {
   marker().start();
 
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
-    zone->changeGCState(Zone::NoGC, Zone::VerifyPreBarriers);
-    zone->setNeedsIncrementalBarrier(true);
+    zone->changeGCState(this, Zone::NoGC, Zone::VerifyPreBarriers);
+    zone->setNeedsMarkingBarrier(this, true);
     zone->arenas.clearFreeLists();
   }
 
@@ -364,13 +358,13 @@ void gc::GCRuntime::endVerifyPreBarriers() {
   /* We need to disable barriers before tracing, which may invoke barriers. */
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     if (zone->isVerifyingPreBarriers()) {
-      zone->changeGCState(Zone::VerifyPreBarriers, Zone::NoGC);
+      zone->changeGCState(this, Zone::VerifyPreBarriers, Zone::NoGC);
     } else {
       compartmentCreated = true;
     }
 
     MOZ_ASSERT(!zone->wasGCStarted());
-    MOZ_ASSERT(!zone->needsIncrementalBarrier());
+    MOZ_ASSERT(!zone->needsMarkingBarrier());
   }
 
   verifyPreData = nullptr;
@@ -524,6 +518,16 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
 
   MOZ_ASSERT(!gcmarker->isWeakMarking());
 
+#  ifdef DEBUG
+  // The test mark queue can cause spurious differences if the non-incremental
+  // marking for validation happens before the full queue has been processed,
+  // since the later part of the queue may mark things during sweeping. Disable
+  // validation if there is anything left in the queue at this point.
+  if (gc->testMarkQueueRemaining() > 0) {
+    return;
+  }
+#  endif
+
   /* We require that the nursery is empty at the start of collection. */
   MOZ_ASSERT(gc->nursery().isEmpty());
 
@@ -572,9 +576,11 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
 
     AutoEnterOOMUnsafeRegion oomUnsafe;
     for (auto r = zone->gcEphemeronEdges().all(); !r.empty(); r.popFront()) {
-      MOZ_ASSERT(r.front().key()->asTenured().zone() == zone);
+      MOZ_ASSERT(r.front().key()->zone() == zone);
       if (!savedEphemeronEdges.putNew(r.front().key(),
                                       std::move(r.front().value()))) {
+        // Notice the std::move -- this could consume the moved-from value even
+        // on failure, so it's unsafe to continue if putNew fails.
         oomUnsafe.crash("saving weak keys table for validator");
       }
     }
@@ -582,19 +588,9 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     zone->gcEphemeronEdges().clearAndCompact();
   }
 
-#  ifdef DEBUG
-  // The test mark queue can cause spurious differences if the non-incremental
-  // marking for validation happens before the full queue has been processed,
-  // since the later part of the queue may mark things during sweeping. Disable
-  // validation if there is anything left in the queue at this point.
-  if (gc->testMarkQueueRemaining() > 0) {
-    return;
-  }
-#  endif
-
   /*
-   * After this point, the function should run to completion, so we shouldn't
-   * do anything fallible.
+   * After this point, the function must run to completion, so we shouldn't do
+   * anything fallible.
    */
   initialized = true;
 
@@ -636,7 +632,8 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
 
     /* Update zone state for gray marking. */
     for (GCZonesIter zone(gc); !zone.done(); zone.next()) {
-      zone->changeGCState(zone->initialMarkingState(), Zone::MarkBlackAndGray);
+      zone->changeGCState(gc, zone->initialMarkingState(),
+                          Zone::MarkBlackAndGray);
     }
 
     /*
@@ -650,7 +647,8 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
 
     /* Restore zone state. */
     for (GCZonesIter zone(gc); !zone.done(); zone.next()) {
-      zone->changeGCState(Zone::MarkBlackAndGray, zone->initialMarkingState());
+      zone->changeGCState(gc, Zone::MarkBlackAndGray,
+                          zone->initialMarkingState());
     }
     MOZ_ASSERT(gc->marker().isDrained());
   }
@@ -931,8 +929,9 @@ void HeapCheckTracerBase::dumpCellInfo(Cell* cell) {
   }
   fprintf(stderr, " %p", cell);
   if (obj) {
-    fprintf(stderr, " (compartment %p)", obj->compartment());
+    fprintf(stderr, " in compartment %p", obj->compartment());
   }
+  fprintf(stderr, " in zone %p", cell->zone());
 }
 
 void HeapCheckTracerBase::dumpCellPath(const char* name) {
@@ -1204,8 +1203,13 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
   // Symbols key must be marked in the atom marking bitmap for the zone.
   if (key->is<JS::Symbol>()) {
     GCRuntime* gc = &mapRuntime->gc;
-    if (!gc->atomMarking.atomIsMarked(zone, key->as<JS::Symbol>())) {
-      fprintf(stderr, "Symbol key %p not marked in atom marking bitmap\n", key);
+    CellColor bitmapColor =
+        gc->atomMarking.getAtomMarkColor(zone, key->as<JS::Symbol>());
+    if (bitmapColor < keyColor) {
+      fprintf(stderr, "Atom marking bitmap is less marked than symbol key %p\n",
+              key);
+      fprintf(stderr, "(key %p is %s, bitmap is %s)\n", key,
+              CellColorName(keyColor), CellColorName(bitmapColor));
       ok = false;
     }
   }
@@ -1271,12 +1275,8 @@ bool GCRuntime::isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind) {
 }
 
 bool GCRuntime::isPointerWithinBufferAlloc(void* ptr) {
-  if (isPointerWithinTenuredCell(ptr, JS::TraceKind::SmallBuffer)) {
-    return true;
-  }
-
   for (AllZonesIter zone(this); !zone.done(); zone.next()) {
-    if (zone->bufferAllocator.isPointerWithinMediumOrLargeBuffer(ptr)) {
+    if (zone->bufferAllocator.isPointerWithinBuffer(ptr)) {
       return true;
     }
   }

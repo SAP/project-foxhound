@@ -18,7 +18,6 @@ import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProv
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchTermSuggestionsProvider
 import mozilla.components.feature.awesomebar.provider.SessionSuggestionProvider
-import mozilla.components.feature.awesomebar.provider.TopSitesSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.feature.syncedtabs.SyncedTabsStorageSuggestionProvider
@@ -1422,32 +1421,6 @@ class SearchSuggestionsProvidersBuilderTest {
     }
 
     @Test
-    fun `GIVEN should show shortcuts suggestions WHEN configuring providers THEN add the top sites provider and top sites suggestion providers`() {
-        val settings: Settings = mockk(relaxed = true)
-        every { components.settings } returns settings
-        val state = getSearchProviderState(
-            showShortcutsSuggestions = true,
-        )
-
-        val result = builder.getProvidersToAdd(state)
-
-        assertEquals(1, result.filterIsInstance<TopSitesSuggestionProvider>().size)
-    }
-
-    @Test
-    fun `GIVEN should not show shortcuts suggestions WHEN configuring providers THEN don't add the top sites provider`() {
-        val settings: Settings = mockk(relaxed = true)
-        every { components.settings } returns settings
-        val state = getSearchProviderState(
-            showShortcutsSuggestions = false,
-        )
-
-        val result = builder.getProvidersToAdd(state)
-
-        assertEquals(0, result.filterIsInstance<TopSitesSuggestionProvider>().size)
-    }
-
-    @Test
     fun `GIVEN should show recent searches WHEN configuring providers THEN add the recent search suggestions provider`() {
         val settings: Settings = mockk(relaxed = true)
         every { components.settings } returns settings
@@ -1498,7 +1471,6 @@ private fun getSearchProviderState(
     showNonSponsoredSuggestions: Boolean = true,
     showTrendingSearches: Boolean = true,
     showRecentSearches: Boolean = true,
-    showShortcutsSuggestions: Boolean = true,
 ) = SearchProviderState(
     showSearchShortcuts = showSearchShortcuts,
     showSearchTermHistory = showSearchTermHistory,
@@ -1515,6 +1487,5 @@ private fun getSearchProviderState(
     showNonSponsoredSuggestions = showNonSponsoredSuggestions,
     showTrendingSearches = showTrendingSearches,
     showRecentSearches = showRecentSearches,
-    showShortcutsSuggestions = showShortcutsSuggestions,
     searchEngineSource = searchEngineSource,
 )

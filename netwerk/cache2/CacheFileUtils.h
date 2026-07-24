@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheFileUtils__h__
-#define CacheFileUtils__h__
+#ifndef CacheFileUtils_h_
+#define CacheFileUtils_h_
 
 #include "nsError.h"
 #include "nsCOMPtr.h"

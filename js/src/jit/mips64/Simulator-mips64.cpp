@@ -30,10 +30,7 @@
 #include "jit/mips64/Simulator-mips64.h"
 
 #include "mozilla/Casting.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <float.h>
 #include <limits>
@@ -569,8 +566,9 @@ class MipsDebugger {
 
  private:
   // We set the breakpoint code to 0xfffff to easily recognize it.
-  static const Instr kBreakpointInstr = op_special | ff_break | 0xfffff << 6;
-  static const Instr kNopInstr = op_special | ff_sll;
+  static const Instr kBreakpointInstr =
+      static_cast<uint32_t>(op_special) | ff_break | 0xfffff << 6;
+  static const Instr kNopInstr = static_cast<uint32_t>(op_special) | ff_sll;
 
   Simulator* sim_;
 
@@ -1162,11 +1160,13 @@ void SimulatorProcess::checkICacheLocked(SimInstruction* instr) {
   char* cached_line = cache_page->cachedData(offset & ~CachePage::kLineMask);
 
   if (cache_hit) {
+#ifdef DEBUG
     // Check that the data in memory matches the contents of the I-cache.
     int cmpret =
         memcmp(reinterpret_cast<void*>(instr), cache_page->cachedData(offset),
                SimInstruction::kInstrSize);
     MOZ_ASSERT(cmpret == 0);
+#endif
   } else {
     // Cache miss.  Load memory into the cache.
     memcpy(cached_line, line, CachePage::kLineLength);
@@ -1925,9 +1925,6 @@ void Simulator::softwareInterrupt(SimInstruction* instr) {
 
   // We first check if we met a call_rt_redirected.
   if (instr->instructionBits() == kCallRedirInstr) {
-#if !defined(USES_N64_ABI)
-    MOZ_CRASH("Only N64 ABI supported.");
-#else
     Redirection* redirection = Redirection::FromSwiInstruction(instr);
     uintptr_t nativeFn =
         reinterpret_cast<uintptr_t>(redirection->nativeFunction());
@@ -1983,7 +1980,6 @@ void Simulator::softwareInterrupt(SimInstruction* instr) {
 
     setRegister(ra, saved_ra);
     set_pc(getRegister(ra));
-#endif
   } else if (func == ff_break && code <= kMaxStopCode) {
     if (isWatchpoint(code)) {
       printWatchpoint(code);
@@ -3772,7 +3768,7 @@ void Simulator::branchDelayInstructionDecode(SimInstruction* instr) {
   }
 
   if (instr->isForbiddenInBranchDelay()) {
-    MOZ_CRASH("Eror:Unexpected opcode in a branch delay slot.");
+    MOZ_CRASH("Error: Unexpected opcode in a branch delay slot.");
   }
   instructionDecode(instr);
 }

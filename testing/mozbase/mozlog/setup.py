@@ -10,6 +10,7 @@ DEPS = [
     "blessed>=1.19.1",
     "mozterm",
     "mozfile",
+    "mozsystemmonitor",
 ]
 
 

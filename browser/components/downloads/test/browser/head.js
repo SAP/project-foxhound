@@ -11,7 +11,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsCommon:
+    "moz-src:///browser/components/downloads/DownloadsCommon.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -297,6 +298,7 @@ async function setDownloadDir() {
 
 let gHttpServer = null;
 let gShouldServeInterruptibleFileAsDownload = false;
+let gProgressResponseCallback = null;
 function startServer() {
   gHttpServer = new HttpServer();
   gHttpServer.start(-1);
@@ -369,6 +371,39 @@ function startServer() {
         .catch(console.error);
     }
   );
+
+  gHttpServer.registerPathHandler("/progress", async (aRequest, aResponse) => {
+    aResponse.setStatusLine(null, 200, "OK");
+    aResponse.setHeader("Content-Type", "text/plain", false);
+    aResponse.setHeader("Content-Disposition", "attachment", false);
+    aResponse.setHeader("Content-Length", "10", false);
+    aResponse.processAsync();
+
+    // This will be called with new bump functions.
+    let { promise, resolve } = Promise.withResolvers();
+
+    const bumpProgress = () => {
+      let subpromise = Promise.withResolvers();
+      resolve(subpromise.resolve);
+      return subpromise.promise;
+    };
+
+    let callback = gProgressResponseCallback;
+    gProgressResponseCallback = null;
+    callback(bumpProgress);
+
+    let stream = aResponse.bodyOutputStream;
+    for (let i = 0; i < 10; i += 1) {
+      let finished = await promise;
+      ({ promise, resolve } = Promise.withResolvers());
+
+      stream.write("x", 1);
+      stream.flush();
+      finished();
+    }
+
+    aResponse.finish();
+  });
 }
 
 function serveInterruptibleAsDownload() {
@@ -404,14 +439,14 @@ function openLibrary(aLeftPaneRoot) {
  * @param aDownload
  *        The Download object to wait upon.
  *
- * @return {Promise}
- * @resolves When the download has reached its progress.
- * @rejects Never.
+ * @returns {Promise<void>}
+ *   Resolves when the download has reached its progress.
  */
 function promiseDownloadHasProgress(aDownload, progress) {
   return new Promise(resolve => {
     // Wait for the download to reach its progress.
-    let onchange = function () {
+    let previousOnchange = aDownload.onchange;
+    let onchange = function (...args) {
       let downloadInProgress =
         !aDownload.stopped && aDownload.progress == progress;
       let downloadFinished =
@@ -420,9 +455,11 @@ function promiseDownloadHasProgress(aDownload, progress) {
         aDownload.succeeded;
       if (downloadInProgress || downloadFinished) {
         info(`Download reached ${progress}%`);
-        aDownload.onchange = null;
+        aDownload.onchange = previousOnchange;
         resolve();
       }
+
+      return previousOnchange?.(...args);
     };
 
     // Register for the notification, but also call the function directly in
@@ -464,13 +501,13 @@ async function simulateDropAndCheck(win, dropTarget, urls) {
         }
         succeeded.add(download.source.url);
         if (succeeded.size == urls.length) {
-          list.removeView(view).then(resolve);
+          list.removeView(view);
+          resolve();
         }
       },
     };
-    list.addView(view).then(function () {
-      EventUtils.synthesizeDrop(dropTarget, dropTarget, dragData, "link", win);
-    });
+    list.addView(view);
+    EventUtils.synthesizeDrop(dropTarget, dropTarget, dragData, "link", win);
   });
 
   for (let url of urls) {

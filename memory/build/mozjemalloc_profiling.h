@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZJEMALLOC_PROFILING_H
-#define _MOZJEMALLOC_PROFILING_H
+#ifndef MOZJEMALLOC_PROFILING_H
+#define MOZJEMALLOC_PROFILING_H
 
-#include "mozilla/Atomics.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
@@ -20,7 +19,17 @@ struct PurgeStats {
   arena_id_t arena_id;
   const char* arena_label;
   const char* caller;
-  size_t pages = 0;
+
+  // The number of previously-dirty pages that are now clean.
+  size_t pages_dirty = 0;
+
+  // The total number of pages that were cleaned (includes previously an pages).
+  size_t pages_total = 0;
+
+  // The number of pages that can't be purged because of alignment because
+  // of logical/hardware page alignment.
+  size_t pages_unpurgable = 0;
+
   size_t system_calls = 0;
   size_t chunks = 0;
 
@@ -48,4 +57,4 @@ MOZ_JEMALLOC_API void jemalloc_set_profiler_callbacks(
 
 }  // namespace mozilla
 
-#endif  // ! _MOZJEMALLOC_PROFILING_H
+#endif  // ! MOZJEMALLOC_PROFILING_H

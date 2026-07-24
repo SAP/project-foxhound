@@ -9,7 +9,6 @@
 
 #include <stdint.h>  // for uint64_t
 #include <unordered_map>
-#include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"        // for Monitor
 #include "mozilla/RefPtr.h"         // for RefPtr
@@ -151,6 +150,11 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual void NotifyMemoryPressure() {}
   virtual void AccumulateMemoryReport(wr::MemoryReport*) {}
 
+  // Ensures the WebRenderBridgeParent has completed initialization (either
+  // successfully or with failure) by the time this returns. Must be called
+  // from the Compositor thread.
+  virtual void EnsureWebRenderBridgeParentInitialized() = 0;
+
  protected:
   virtual ~CompositorBridgeParentBase();
 
@@ -175,10 +179,8 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual bool DeallocPWebRenderBridgeParent(
       PWebRenderBridgeParent* aActor) = 0;
 
-  virtual PCompositorWidgetParent* AllocPCompositorWidgetParent(
-      const CompositorWidgetInitData& aInitData) = 0;
-  virtual bool DeallocPCompositorWidgetParent(
-      PCompositorWidgetParent* aActor) = 0;
+  virtual already_AddRefed<PCompositorWidgetParent>
+  AllocPCompositorWidgetParent(const CompositorWidgetInitData& aInitData) = 0;
 
   virtual mozilla::ipc::IPCResult RecvAdoptChild(const LayersId& id) = 0;
   virtual mozilla::ipc::IPCResult RecvFlushRenderingAsync(
@@ -213,6 +215,8 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
       const uint32_t& startIndex, nsTArray<float>* intervals) = 0;
   virtual mozilla::ipc::IPCResult RecvCheckContentOnlyTDR(
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) = 0;
+  virtual mozilla::ipc::IPCResult RecvCheckAndClearWRDidRasterize(
+      const LayersId& aId, bool* aDidRasterize) = 0;
   virtual mozilla::ipc::IPCResult RecvDynamicToolbarOffsetChanged(
       const int32_t& aOffset) = 0;
 
@@ -252,6 +256,14 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   void InitSameProcess(widget::CompositorWidget* aWidget,
                        const LayersId& aLayerTreeId);
 
+#ifdef XP_MACOSX
+  // macOS platform-specific initdata uses move semantics, which
+  // changes the method signature. Other platforms don't need to
+  // override the existing method.
+  mozilla::ipc::IPCResult RecvPCompositorWidgetConstructor(
+      PCompositorWidgetParent* actor,
+      CompositorWidgetInitData&& aInitData) override;
+#endif
   mozilla::ipc::IPCResult RecvInitialize(
       const LayersId& aRootLayerTreeId) override;
   mozilla::ipc::IPCResult RecvWillClose() override;
@@ -284,6 +296,9 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) override {
     return IPC_OK();
   }
+
+  mozilla::ipc::IPCResult RecvCheckAndClearWRDidRasterize(
+      const LayersId& aId, bool* aDidRasterize) override;
 
   mozilla::ipc::IPCResult RecvDynamicToolbarOffsetChanged(
       const int32_t& aOffset) override;
@@ -350,9 +365,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       RefPtr<const wr::WebRenderPipelineInfo> aInfo);
   RefPtr<AsyncImagePipelineManager> GetAsyncImagePipelineManager() const;
 
-  PCompositorWidgetParent* AllocPCompositorWidgetParent(
+  already_AddRefed<PCompositorWidgetParent> AllocPCompositorWidgetParent(
       const CompositorWidgetInitData& aInitData) override;
-  bool DeallocPCompositorWidgetParent(PCompositorWidgetParent* aActor) override;
 
   void ObserveLayersUpdate(LayersId aLayersId, bool aActive) override {}
 
@@ -507,6 +521,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize,
       const WindowKind& aWindowKind) override;
   bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
+  void EnsureWebRenderBridgeParentInitialized() override;
   RefPtr<WebRenderBridgeParent> GetWebRenderBridgeParent() const;
   Maybe<TimeStamp> GetTestingTimeStamp() const;
 
@@ -619,6 +634,14 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   static uint32_t sFramesComposited;
 
   RefPtr<AsyncImagePipelineManager> mAsyncImageManager;
+  // Whether mWrBridge has finished initialization (either successfully or with
+  // failure).
+  bool mWrBridgeInitialized = false;
+  Monitor mWrApiResultMonitor{"CompositorBridgeParent::mWrApiMonitor"};
+  // Holds the result of WebRenderAPI creation. Set from the Renderer thread
+  // and read by the Compositor thread.
+  Maybe<mozilla::Result<RefPtr<wr::WebRenderAPI>, nsCString>> mWrApiResult
+      MOZ_GUARDED_BY(mWrApiResultMonitor);
   RefPtr<WebRenderBridgeParent> mWrBridge;
   widget::CompositorWidget* mWidget;
   Maybe<TimeStamp> mTestTime;

@@ -7,8 +7,8 @@
 #define WEBGL_CONTEXT_LOSS_HANDLER_H_
 
 #include "mozilla/Atomics.h"
-#include "mozilla/WeakPtr.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/WeakPtr.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {

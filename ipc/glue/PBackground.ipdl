@@ -14,13 +14,13 @@ include protocol PBackgroundSessionStorageManager;
 include protocol PBackgroundSessionStorageService;
 include protocol PBackgroundStorage;
 include protocol PBackgroundTest;
+include protocol PBoundStorageKey;
 include protocol PBroadcastChannel;
 include protocol PCache;
 include protocol PCacheStorage;
 include protocol PCacheStreamControl;
 include protocol PClientManager;
 include protocol PCookieStore;
-include protocol PEndpointForReport;
 include protocol PFileSystemManager;
 include protocol PFileSystemRequest;
 include protocol PGamepadEventChannel;
@@ -100,7 +100,6 @@ sync protocol PBackground
   manages PCacheStreamControl;
   manages PClientManager;
   manages PCookieStore;
-  manages PEndpointForReport;
   manages PFileSystemRequest;
   manages PGamepadEventChannel;
   manages PGamepadTestChannel;
@@ -178,6 +177,7 @@ parent:
   async CreateWebTransportParent(
       nsString aURL,
       nullable nsIPrincipal aPrincipal,
+      uint64_t aBrowsingContextID,
       IPCClientInfo?  aClientInfo,
       bool aDedicated,
       bool aRequireUnreliable,
@@ -255,6 +255,11 @@ parent:
 
   async PClientManager();
 
+  async CreateBoundStorageKeyParent(
+    Endpoint<PBoundStorageKeyParent> aEndPoint,
+    Namespace aNamespace,
+    PrincipalInfo aPrincipalInfo);
+
   async CreateMIDIManager(Endpoint<PMIDIManagerParent> aEndpoint);
   async CreateMIDIPort(Endpoint<PMIDIPortParent> aEndpoint,
                        MIDIPortInfo portInfo, bool sysexEnabled);
@@ -278,11 +283,6 @@ parent:
   // having this actor managed by an actor explicitly tied to a global.
   async PServiceWorkerRegistration(IPCServiceWorkerRegistrationDescriptor aDescriptor,
                                    IPCClientInfo aForClient);
-
-  async PEndpointForReport(nsString aGroupName, PrincipalInfo aPrincipalInfo);
-
-  async RemoveEndpoint(nsString aGroupName, nsCString aEndpointURL,
-                       PrincipalInfo aPrincipalInfo);
 
   async PIdleScheduler();
 

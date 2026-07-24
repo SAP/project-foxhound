@@ -11,6 +11,7 @@
 #include "ScriptLoadRequest.h"
 #include "ModuleLoaderBase.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "nsURIHashKey.h"
@@ -22,24 +23,12 @@ class LoadedScript;
 class ModuleScript;
 class ModuleLoaderBase;
 
-// A reference counted set of module keys (URL and module type) we have visited
-// in the process of loading a module graph.
-class VisitedURLSet : public nsTHashtable<ModuleMapKey> {
-  NS_INLINE_DECL_REFCOUNTING(VisitedURLSet)
-
- private:
-  ~VisitedURLSet() = default;
-};
-
 // A load request for a module, created for every top level module script and
 // every module import.  Load request can share an ModuleScript if there are
 // multiple imports of the same module.
 
 class ModuleLoadRequest final : public ScriptLoadRequest {
-  ~ModuleLoadRequest() {
-    MOZ_ASSERT(!mWaitingParentRequest);
-    MOZ_ASSERT(mAwaitingImports == 0);
-  }
+  ~ModuleLoadRequest();
 
   ModuleLoadRequest(const ModuleLoadRequest& aOther) = delete;
   ModuleLoadRequest(ModuleLoadRequest&& aOther) = delete;
@@ -51,48 +40,37 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
   using SRIMetadata = mozilla::dom::SRIMetadata;
 
   enum class Kind {
-    // Top-level modules, not imported statically or dynamically..
+    // Top-level modules, not imported statically nor dynamically.
     TopLevel,
 
     // Modules imported statically with `import` declarations.
     StaticImport,
 
     // Modules imported dynamically with dynamic `import()`.
-    // This is actually also a top-level module, but this should be used for
-    // dynamic imports.
     DynamicImport,
   };
 
-  ModuleLoadRequest(nsIURI* aURI, JS::ModuleType aModuleType,
-                    mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                    ScriptFetchOptions* aFetchOptions,
-                    const SRIMetadata& aIntegrity, nsIURI* aReferrer,
-                    LoadContextBase* aContext, Kind aKind,
-                    ModuleLoaderBase* aLoader, VisitedURLSet* aVisitedSet,
-                    ModuleLoadRequest* aRootModule);
+  ModuleLoadRequest(ModuleType aModuleType, const SRIMetadata& aIntegrity,
+                    nsIURI* aReferrer, LoadContextBase* aContext, Kind aKind,
+                    ModuleLoaderBase* aLoader, ModuleLoadRequest* aRootModule);
 
-  static VisitedURLSet* NewVisitedSetForTopLevelImport(
-      nsIURI* aURI, JS::ModuleType aModuleType);
-
-  bool IsTopLevel() const override { return mIsTopLevel; }
-
-  bool IsDynamicImport() const { return mIsDynamicImport; }
+  bool IsTopLevel() const override { return mKind == Kind::TopLevel; }
+  bool IsStaticImport() const { return mKind == Kind::StaticImport; }
+  bool IsDynamicImport() const { return mKind == Kind::DynamicImport; }
 
   bool IsErrored() const;
 
   nsIGlobalObject* GetGlobalObject();
 
   void SetReady() override;
-  void Cancel() override;
+  void Cancel() override { mLoader->Cancel(this); };
 
-  void SetDynamicImport(LoadedScript* aReferencingScript,
-                        JS::Handle<JSString*> aSpecifier,
-                        JS::Handle<JSObject*> aPromise);
-  void ClearDynamicImport();
+  void SetImport(Handle<JSScript*> aReferrerScript,
+                 Handle<JSObject*> aModuleRequestObj, Handle<Value> aPayload);
+  void ClearImport();
 
   void ModuleLoaded();
   void ModuleErrored();
-  void DependenciesLoaded();
   void LoadFailed();
 
   ModuleLoadRequest* GetRootModule() {
@@ -101,8 +79,6 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
     }
     return mRootModule;
   }
-
-  void MarkModuleForBytecodeEncoding() { MarkForBytecodeEncoding(); }
 
   // Convenience methods to call into the module loader for this request.
 
@@ -124,30 +100,40 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
     return mLoader->InstantiateModuleGraph(this);
   }
   nsresult EvaluateModule() { return mLoader->EvaluateModule(this); }
-  void StartDynamicImport() { mLoader->StartDynamicImport(this); }
   void ProcessDynamicImport() { mLoader->ProcessDynamicImport(this); }
 
-  void ChildLoadComplete(bool aSuccess);
-
- private:
   void LoadFinished();
-  void CancelImports();
-  void CheckModuleDependenciesLoaded();
 
-  void ChildModuleUnlinked();
+#ifdef NIGHTLY_BUILD
+  void SetHasWasmMimeTypeEssence() { mHasWasmMimeTypeEssence = true; }
 
-  void AssertAllImportsFinished() const;
-  void AssertAllImportsCancelled() const;
+  bool HasWasmMimeTypeEssence() { return mHasWasmMimeTypeEssence; }
+#endif
+
+  void SetErroredLoadingImports() {
+    MOZ_ASSERT(IsDynamicImport());
+    MOZ_ASSERT(IsFetching() || IsCompiling());
+    mErroredLoadingImports = true;
+  }
 
  public:
-  // Is this a request for a top level module script or an import?
-  const bool mIsTopLevel;
+  // Fields.
+  const Kind mKind;
 
   // Type of module (JavaScript, JSON)
-  const JS::ModuleType mModuleType;
+  const ModuleType mModuleType;
 
   // Is this the top level request for a dynamic module import?
   const bool mIsDynamicImport;
+
+#ifdef NIGHTLY_BUILD
+  // We can only distinguish JavaScript and Wasm modules by mime type essence.
+  bool mHasWasmMimeTypeEssence = false;
+#endif
+
+  // A flag (for dynamic import) that indicates the module script is
+  // successfully fetched and compiled, but its dependencies are failed to load.
+  bool mErroredLoadingImports;
 
   // Pointer to the script loader, used to trigger actions when the module load
   // finishes.
@@ -161,25 +147,9 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
   // failure.
   RefPtr<ModuleScript> mModuleScript;
 
-  // Array of imported modules.
-  nsTArray<RefPtr<ModuleLoadRequest>> mImports;
-
-  // Parent module (i.e. importer of this module) that is waiting for this
-  // module and its dependencies to load, or null.
-  RefPtr<ModuleLoadRequest> mWaitingParentRequest;
-
-  // Number of child modules (i.e. imported modules) that this module is waiting
-  // for.
-  size_t mAwaitingImports = 0;
-
-  // Set of module URLs visited while fetching the module graph this request is
-  // part of.
-  RefPtr<VisitedURLSet> mVisitedSet;
-
-  // For dynamic imports, the details to pass to FinishDynamicImport.
-  RefPtr<LoadedScript> mDynamicReferencingScript;
-  JS::Heap<JSString*> mDynamicSpecifier;
-  JS::Heap<JSObject*> mDynamicPromise;
+  Heap<JSScript*> mReferrerScript;
+  Heap<JSObject*> mModuleRequestObj;
+  Heap<Value> mPayload;
 };
 
 }  // namespace JS::loader

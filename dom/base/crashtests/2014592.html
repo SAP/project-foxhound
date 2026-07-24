@@ -1,0 +1,15 @@
+<script>
+  const key = navigation.currentEntry.key;
+  history.pushState({}, "", "?s" + 0);
+  navigation.addEventListener("navigate", (e) => {});
+  history.back();
+
+  setTimeout(() => {
+    for (let i = 0; i < 200; i++) {
+      try {
+        history.pushState({}, "", "?r" + i);
+      } catch (e) {}
+    }
+    navigation.traverseTo(key);
+  }, 0);
+</script>

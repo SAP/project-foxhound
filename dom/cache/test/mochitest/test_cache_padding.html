@@ -92,6 +92,25 @@ function fetchOpaqueResponse(url) {
   return fetch(url, { mode: "no-cors" });
 }
 
+// This test (and the underlying implementation being tested) relies on the
+// implementation details of sqlite. In particular, when using the obfuscating
+// VFS in private contexts [0][1], reserving 32 bytes per page [2] for the
+// encryption IV causes sqlite to grow the database under some conditions when
+// the serialized security info [3] exceeds 8119 bytes. The growth size is
+// 32KiB [4], which means that in private contexts, the given values that are
+// supposed to be equal here will be off by that amount.
+// [0] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/dom/cache/Manager.cpp#79
+// [1] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/storage/mozStorageConnection.cpp#1175
+// [2] https://searchfox.org/firefox-main/rev/1b3787c361452ef9c9e37d8ffd4c414135d547f5/storage/ObfuscatingVFS.cpp#309
+// [3] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/security/manager/ssl/TransportSecurityInfo.cpp#114
+// [4] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/dom/cache/DBSchema.cpp#255
+function equalOrOffByOneGrowthChunk(a, b, message) {
+  if (SpecialPowers.getBoolPref("browser.privatebrowsing.autostart") && a != b) {
+    b += 32768;
+  }
+  is(a, b, message);
+}
+
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv({
   "set": [["dom.caches.enabled", true],
@@ -162,7 +181,7 @@ SpecialPowers.pushPrefEnv({
   let usage4 = await verifyUsage();
   // Since we put the same request and response again, the size should be the
   // same (DOM Cache removes the previous cached request and response)
-  ok(usage4 == usage3,
+  equalOrOffByOneGrowthChunk(usage4, usage3,
      "We won't generate different padding for cloned response");
 
   info("Stage 4: Verify the cached response has the same size.");
@@ -173,7 +192,7 @@ SpecialPowers.pushPrefEnv({
   await cache.put(cors_base + url, opaqueResponse);
   await waitForIOToComplete(cache, url);
   let usage5 = await verifyUsage();
-  ok(usage5 == usage3,
+  equalOrOffByOneGrowthChunk(usage5, usage3,
      "We won't generate different padding for cached response");
 
   info("Stage 5: Verify padding size may changes in different fetch()s.");
@@ -210,7 +229,7 @@ SpecialPowers.pushPrefEnv({
   await cache.delete(cors_base + url);
   await waitForIOToComplete(cache, url);
   let usage7  = await verifyUsage();
-  ok(usage7 == usage2,
+  equalOrOffByOneGrowthChunk(usage7, usage2,
      "The opaque response should be removed by caches.delete() and " +
      "cache.delete()");
 

@@ -4,15 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "TCPServerSocket.h"
+
+#include "TCPServerSocketChild.h"
+#include "TCPServerSocketParent.h"
+#include "TCPSocket.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/TCPServerSocketBinding.h"
 #include "mozilla/dom/TCPServerSocketEvent.h"
 #include "mozilla/dom/TCPSocketBinding.h"
-#include "TCPServerSocketParent.h"
-#include "TCPServerSocketChild.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/ErrorResult.h"
-#include "TCPServerSocket.h"
-#include "TCPSocket.h"
 #include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
 

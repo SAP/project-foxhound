@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 const { Component } = require("resource://devtools/client/shared/vendor/react.mjs");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -44,6 +45,23 @@ class ObjectInspectorItem extends Component {
       renderItemActions: () => null,
     };
   }
+
+  static propTypes = {
+    item: PropTypes.object.isRequired,
+    depth: PropTypes.number.isRequired,
+    expanded: PropTypes.bool,
+    focused: PropTypes.bool,
+    mode: PropTypes.string,
+    arrow: PropTypes.element,
+    invokeGetter: PropTypes.func,
+    onCmdCtrlClick: PropTypes.func,
+    onDoubleClick: PropTypes.func,
+    onLabelClick: PropTypes.func,
+    onContextMenu: PropTypes.func,
+    dimTopLevelWindow: PropTypes.bool,
+    renderItemActions: PropTypes.func,
+    setExpanded: PropTypes.func,
+  };
 
   // eslint-disable-next-line complexity
   getLabelAndValue() {

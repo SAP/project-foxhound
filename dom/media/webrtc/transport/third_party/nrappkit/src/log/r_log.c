@@ -53,16 +53,14 @@
 #include <registry.h>
 #include <time.h>
 
-
-#include "nr_common.h"
-#include "nr_reg_keys.h"
+#include <csi_platform.h>
 
 
 #define LOGGING_DEFAULT_LEVEL  5
 
 int NR_LOG_LOGGING = 0;
 
-static char *log_level_strings[]={
+static const char *log_level_strings[]={
      "EMERG",
      "ALERT",
      "CRIT",
@@ -73,7 +71,7 @@ static char *log_level_strings[]={
      "DEBUG"
 };
 
-static char *log_level_reg_strings[]={
+static const char *log_level_reg_strings[]={
      "emergency",
      "alert",
      "critical",
@@ -106,7 +104,7 @@ static int log_type_ct;
 
 
 typedef struct log_destination_ {
-     char *dest_name;
+     const char *dest_name;
      int enabled;
      int default_level;
      r_dest_vlog *dest_vlog;
@@ -151,17 +149,17 @@ static int r_log_level_environment=0;
 static int r_log_initted=0;
 static int r_log_env_verbose=0;
 
-static void r_log_facility_change_cb(void *cb_arg, char action, NR_registry name);
-static void r_log_facility_delete_cb(void *cb_arg, char action, NR_registry name);
-static void r_log_destination_change_cb(void *cb_arg, char action, NR_registry name);
-static void r_log_default_level_change_cb(void *cb_arg, char action, NR_registry name);
+static void r_log_facility_change_cb(void *cb_arg, char action, NR_registry_name name);
+static void r_log_facility_delete_cb(void *cb_arg, char action, NR_registry_name name);
+static void r_log_destination_change_cb(void *cb_arg, char action, NR_registry_name name);
+static void r_log_default_level_change_cb(void *cb_arg, char action, NR_registry_name name);
 static int r_log_get_default_level(void);
 static int r_log_get_destinations(int usereg);
 static int r_logging_dest(int dest_index, int facility, int level);
 static int _r_log_init(int usereg);
-static int r_log_get_reg_level(NR_registry name, int *level);
+static int r_log_get_reg_level(NR_registry_name name, int *level);
 
-int r_log_register(char *facility_name,int *log_facility)
+int r_log_register(const char *facility_name,int *log_facility)
   {
     int i,j;
     int level;
@@ -227,16 +225,7 @@ int r_log_register(char *facility_name,int *log_facility)
     return(_status);
   }
 
-int r_log_facility(int facility,char **typename)
-  {
-    if(facility >= 0 && facility < log_type_ct){
-      *typename=log_types[facility].facility_name;
-      return(0);
-    }
-    return(R_NOT_FOUND);
-  }
-
-static int r_log_get_reg_level(NR_registry name, int *out)
+static int r_log_get_reg_level(NR_registry_name name, int *out)
   {
     char level[32];
     int r,_status;
@@ -267,7 +256,7 @@ static int r_log_get_reg_level(NR_registry name, int *out)
   }
 
 /* Handle the case where a value changes */
-static void r_log_facility_change_cb(void *cb_arg, char action, NR_registry name)
+static void r_log_facility_change_cb(void *cb_arg, char action, NR_registry_name name)
   {
     int *lt_level=(int *)cb_arg;
     int level;
@@ -286,7 +275,7 @@ static void r_log_facility_change_cb(void *cb_arg, char action, NR_registry name
   }
 
 /* Handle the case where a value is deleted */
-static void r_log_facility_delete_cb(void *cb_arg, char action, NR_registry name)
+static void r_log_facility_delete_cb(void *cb_arg, char action, NR_registry_name name)
   {
     int *lt_level=(int *)cb_arg;
 
@@ -305,7 +294,7 @@ int r_log(int facility,int level,const char *format,...)
     return(0);
   }
 
-int r_dump(int facility,int level,char *name,char *data,int len)
+int r_dump(int facility,int level,const char *name,const char *data,int len)
   {
     char *hex = 0;
     size_t unused;
@@ -313,11 +302,11 @@ int r_dump(int facility,int level,char *name,char *data,int len)
     if(!r_logging(facility,level))
       return(0);
 
-    hex=RMALLOC((len*2)+1);
+    hex=(char*)RMALLOC((len*2)+1);
     if (!hex)
       return(R_FAILED);
 
-    if (nr_nbin2hex((UCHAR*)data, len, hex, len*2+1, &unused))
+    if (nr_nbin2hex((const UCHAR*)data, len, hex, len*2+1, &unused))
       strcpy(hex, "?");
 
     if(name)
@@ -341,9 +330,9 @@ int r_dump(int facility,int level,char *name,char *data,int len)
 int r_vlog(int facility,int level,const char *format,va_list ap)
   {
     char log_fmt_buf[MAX_ERROR_STRING_SIZE];
-    char *level_str="unknown";
-    char *facility_str="unknown";
-    char *fmt_str=(char *)format;
+    const char *level_str="unknown";
+    const char *facility_str="unknown";
+    const char *fmt_str=format;
     int i;
 
     if(r_log_env_verbose){
@@ -390,72 +379,6 @@ int syslog_vlog(int facility,int level,const char *format,va_list ap)
 
 int noop_vlog(int facility,int level,const char *format,va_list ap)
   {
-    return(0);
-  }
-
-int r_log_e(int facility,int level,const char *format,...)
-  {
-    va_list ap;
-
-    va_start(ap,format);
-    r_vlog_e(facility,level,format,ap);
-    va_end(ap);
-
-    return(0);
-  }
-
-int r_vlog_e(int facility,int level,const char *format,va_list ap)
-  {
-    char log_fmt_buf[MAX_ERROR_STRING_SIZE];
-    if(r_logging(facility,level)) {
-      int formatlen = strlen(format);
-
-      if(formatlen+2 > MAX_ERROR_STRING_SIZE)
-        return(1);
-
-      strncpy(log_fmt_buf, format, formatlen);
-      strcpy(&log_fmt_buf[formatlen], ": ");
-      snprintf(&log_fmt_buf[formatlen+2], MAX_ERROR_STRING_SIZE - formatlen - 2, "%s",
-#ifdef WIN32
-               strerror(WSAGetLastError()));
-#else
-               strerror(errno));
-#endif
-      log_fmt_buf[MAX_ERROR_STRING_SIZE-1]=0;
-
-      r_vlog(facility,level,log_fmt_buf,ap);
-    }
-    return(0);
-  }
-
-int r_log_nr(int facility,int level,int r,const char *format,...)
-  {
-    va_list ap;
-
-    va_start(ap,format);
-    r_vlog_nr(facility,level,r,format,ap);
-    va_end(ap);
-
-    return(0);
-  }
-
-int r_vlog_nr(int facility,int level,int r,const char *format,va_list ap)
-  {
-    char log_fmt_buf[MAX_ERROR_STRING_SIZE];
-    if(r_logging(facility,level)) {
-      int formatlen = strlen(format);
-
-      if(formatlen+2 > MAX_ERROR_STRING_SIZE)
-        return(1);
-      strncpy(log_fmt_buf, format, formatlen);
-      strcpy(&log_fmt_buf[formatlen], ": ");
-      snprintf(&log_fmt_buf[formatlen+2], MAX_ERROR_STRING_SIZE - formatlen - 2, "%s",
-               nr_strerror(r));
-
-      log_fmt_buf[MAX_ERROR_STRING_SIZE-1]=0;
-
-      r_vlog(facility,level,log_fmt_buf,ap);
-    }
     return(0);
   }
 
@@ -594,12 +517,12 @@ static int r_log_get_destinations(int usereg)
     return(_status);
   }
 
-static void r_log_destination_change_cb(void *cb_arg, char action, NR_registry name)
+static void r_log_destination_change_cb(void *cb_arg, char action, NR_registry_name name)
   {
     r_log_get_destinations(1);
   }
 
-static void r_log_default_level_change_cb(void *cb_arg, char action, NR_registry name)
+static void r_log_default_level_change_cb(void *cb_arg, char action, NR_registry_name name)
   {
     r_log_get_destinations(1);
   }

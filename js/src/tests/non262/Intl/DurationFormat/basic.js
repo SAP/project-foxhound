@@ -195,7 +195,7 @@ const tests = {
         {
           duration: {hours: 1, minutes: 2},
           expected: [
-            ...Hour(Integer("1"), Literal(" "), Unit("Std.")),
+            ...Hour(Integer("1"), Unit("h")),
             Literal(", "),
             ...Minute(Integer("2"), Literal(" "), Unit("Min.")),
           ],

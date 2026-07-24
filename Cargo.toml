@@ -14,17 +14,23 @@ members = [
   "security/manager/ssl/osclientcerts",
   "security/manager/ssl/tests/unit/pkcs11testmodule",
   "security/manager/ssl/tests/unit/test_trust_anchors",
+  "security/manager/ssl/qwac_trust_anchors",
+  "security/manager/ssl/pdf_trust_anchors",
   "security/manager/ssl/trust_anchors",
   "security/mls/mls_gk",
+  "services/app-services-tools/embedded-uniffi-bindgen",
+  "services/app-services-tools/nimbus-fml",
   "testing/geckodriver",
   "toolkit/components/uniffi-bindgen-gecko-js",
+  "toolkit/crashreporter/android/export",
   "toolkit/crashreporter/client/app",
   "toolkit/crashreporter/crash_helper_server",
   "toolkit/crashreporter/crash_helper_client",
-  "toolkit/crashreporter/minidump-analyzer/android/export",
+  "toolkit/crashreporter/crashping",
   "toolkit/crashreporter/mozwer-rust",
   "toolkit/library/gtest/rust",
   "toolkit/library/rust/",
+  "services/application-services/components/viaduct-necko",
 ]
 
 # Excluded crates may be built as dependencies, but won't be considered members
@@ -44,6 +50,7 @@ exclude = [
   "media/mp4parse-rust/mp4parse",
   "media/mp4parse-rust/mp4parse_capi",
   "xpcom/rust/gkrust_utils",
+  "toolkit/components/protobuf/scripts",
   "toolkit/crashreporter/minidump-analyzer",
   "tools/lint/test/files/clippy",
   "tools/fuzzing/rust",
@@ -60,17 +67,17 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-rust-version = "1.82.0"
+rust-version = "1.90.0"
 
 [workspace.dependencies]
 # Shared across multiple UniFFI consumers.
-uniffi = "0.29.3"
-uniffi_bindgen = "0.29.3"
-uniffi_pipeline = "0.29.3"
+uniffi = "0.31"
+uniffi_bindgen = "0.31"
+uniffi_pipeline = "0.31"
 # Shared across multiple application-services consumers.
-rusqlite = "0.33.0"
+rusqlite = "0.37"
 # Shared across multiple glean consumers.
-glean = "=64.5.1"
+glean = "=67.0.0"
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
 # a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
@@ -121,6 +128,10 @@ mozilla-central-workspace-hack = { path = "build/workspace-hack" }
 # crate, which we don't really need as we require MSVC anyways.
 windows-targets = { path = "build/rust/windows-targets" }
 
+# windows-link replacement that doesn't use raw-dylibs, which have problems on
+# the i686-pc-windows-gnu target.
+windows-link = { path = "build/rust/windows-link" }
+
 # Patch windows to use a non-vendored local copy of the crate.
 windows = { path = "build/rust/windows" }
 
@@ -148,20 +159,25 @@ hermit-abi = { path = "build/rust/hermit-abi" }
 # Patch base64 0.21 to 0.22
 base64_21 = { package = "base64", path = "build/rust/base64" }
 
-# Patch wasi 0.10 to 0.14
-wasi_0_10 = { package = "wasi", path = "build/rust/wasi-0.10" }
-
 # Patch wasi 0.11 to 0.14
 wasi_0_11 = { package = "wasi", path = "build/rust/wasi" }
+
+# Patch itertools 0.13 to 0.14
+itertools = { path = "build/rust/itertools" }
 
 # tokio 0.29.0 includes an experimental "tracing" feature which requires
 # backtrace ^0.3.58 and the `tokio_unstable` flag. We don't use it, and nothing
 # else we do use requires backtrace, so dummy it out for now.
 backtrace = { path = "build/rust/backtrace" }
 
-# Locally patch bindgen for https://github.com/rust-lang/rust-bindgen/pull/2824
-# and for bug 1945218
-bindgen = { path = "third_party/rust/bindgen" }
+# Locally patch bindgen to a yet-unreleased version.
+bindgen_0_72 = { package = "bindgen", git = "https://github.com/rust-lang/rust-bindgen", rev = "9366e0af8da529c958b4cd4fcbe492d951c86f5c" }
+
+# Patch bindgen 0.69 to 0.72
+bindgen = { path = "build/rust/bindgen" }
+
+# Patch nix 0.29 to 0.30+
+nix = { path = "build/rust/nix" }
 
 # Patch autocfg to hide rustc output. Workaround for https://github.com/cuviper/autocfg/issues/30
 autocfg = { path = "third_party/rust/autocfg" }
@@ -182,10 +198,23 @@ memoffset = { path = "build/rust/memoffset" }
 hashbrown_0_13 = { package = "hashbrown", path = "build/rust/hashbrown-0.13" }
 
 # Patch `hashbrown` 0.14.* to depend on 0.15.*
-hashbrown_0_14 = { package = "hashbrown", path = "build/rust/hashbrown" }
+hashbrown_0_14 = { package = "hashbrown", path = "build/rust/hashbrown-0.14" }
+
+# Patch `hashbrown` 0.15.* to depend on 0.16.*
+hashbrown_0_15 = { package = "hashbrown", path = "build/rust/hashbrown" }
+
+# Patch `hashlink` 0.10.* to 0.11.*
+# This technically breaks `hashbrown::DefaultHashBuilder: Copy`, but it's not something we use.
+hashlink = { path = "build/rust/hashlink" }
 
 # Patch `thiserror` 1 to 2.
 thiserror = { path = "build/rust/thiserror" }
+
+# Patch `toml` 0.5 to 0.9
+toml = { path = "build/rust/toml" }
+
+# Patch thin_vec with not-yet-published changes.
+thin-vec = { path = "third_party/rust/thin-vec" }
 
 # The following overrides point to dummy projects, as a temporary measure until this is resolved:
 # https://github.com/rust-lang/cargo/issues/6179
@@ -198,15 +227,14 @@ web-sys = { path = "build/rust/dummy-web/web-sys" }
 core-foundation = { path = "build/rust/core-foundation" }
 # Patch `core-graphics-types` 0.1.* to 0.2.
 core-graphics-types = { path = "build/rust/core-graphics-types" }
+# Patch `dispatch2` to an empty crate that cannot be built.
+dispatch2 = { path = "build/rust/dispatch2" }
 
 # Patch `half` 1.* to 2.
 half = { path = "build/rust/half" }
 
 # Upgrade `rusqlite` 0.31 to 0.33.
 rusqlite = { path = "build/rust/rusqlite" }
-
-# Patch `itertools` 0.10.* to 0.14.
-itertools = { path = "build/rust/itertools" }
 
 # Overrides to allow easier use of common internal crates.
 moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
@@ -218,24 +246,20 @@ moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
 # Workaround for https://github.com/rust-lang/cargo/issues/11232
 rure = { path = "third_party/rust/rure" }
 
-# Patch `unicode-width` 0.1.* to 0.2.
-unicode-width = { path = "build/rust/unicode-width" }
-
 # To-be-published changes.
 unicode-bidi = { git = "https://github.com/servo/unicode-bidi", rev = "ca612daf1c08c53abe07327cb3e6ef6e0a760f0c" }
 nss-gk-api = { git = "https://github.com/beurdouche/nss-gk-api", rev = "e48a946811ffd64abc78de3ee284957d8d1c0d63" }
-cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "958a3f098acb92ddacdce18a7ef2c4a87ac3326f" }
 
 # Other overrides
 any_all_workaround = { git = "https://github.com/hsivonen/any_all_workaround", rev = "7fb1b7034c9f172aade21ee1c8554e8d8a48af80" }
-chardetng = { git = "https://github.com/hsivonen/chardetng", rev = "3484d3e3ebdc8931493aa5df4d7ee9360a90e76b" }
-chardetng_c = { git = "https://github.com/hsivonen/chardetng_c", rev = "ed8a4c6f900a90d4dbc1d64b856e61490a1c3570" }
+chardetng = { git = "https://github.com/hsivonen/chardetng", rev = "a07d20273ce36146adaf76bd667dd57bd7b3508b" }
+chardetng_c = { git = "https://github.com/hsivonen/chardetng_c", rev = "2f0aba284677d098de14f91ffe5a9e5b9a4922c2" }
 cose = { git = "https://github.com/franziskuskiefer/cose-rust", rev = "43c22248d136c8b38fe42ea709d08da6355cf04b" }
 firefox-on-glean = { path = "toolkit/components/glean/api" }
 icu_capi = { path = "intl/icu_capi" }
 icu_segmenter_data = { path = "intl/icu_segmenter_data" }
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
-midir = { git = "https://github.com/mozilla/midir.git", rev = "37ad39de3382c2aad0758dab49ba545331a2257d" }
+midir = { git = "https://github.com/mozilla/midir.git", rev = "54759f681f3b523e120d047adec2bb1a97152017" }
 # Allow webrender to have a versioned dependency on the older crate on crates.io
 # in order to build standalone.
 malloc_size_of_derive = { path = "xpcom/rust/malloc_size_of_derive" }
@@ -245,20 +269,27 @@ wr_malloc_size_of = { path = "gfx/wr/wr_malloc_size_of" }
 # objc 0.2.7 + fa7ca43b862861dd1cd000d7ad01e6e0266cda13
 objc = { git = "https://github.com/glandium/rust-objc", rev = "4de89f5aa9851ceca4d40e7ac1e2759410c04324" }
 
+# allocator-api2 + f95e3419ce41883904fcb2279b52aa35b5f04d76 + fdd92751afa7ce34408b677004b429d597e72c90
+allocator-api2 = { git = "https://github.com/glandium/allocator-api2", rev = "ad5f3d56a5a4519eff52af4ff85293431466ef5c" }
+
 # application-services overrides to make updating them all simpler.
-context_id = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-filter_adult = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-relevancy = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-search = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-suggest = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "b5175a2a2458834c9fdc0468d851658b0657f95b" }
-
-allocator-api2 = { path = "third_party/rust/allocator-api2" }
-
+context_id = { path = "third_party/application-services/components/context_id" }
+error-support = { path = "third_party/application-services/components/support/error" }
+filter_adult = { path = "third_party/application-services/components/filter_adult" }
+interrupt-support = { path = "third_party/application-services/components/support/interrupt" }
+relevancy = { path = "third_party/application-services/components/relevancy" }
+search = { path = "third_party/application-services/components/search" }
+sql-support = { path = "third_party/application-services/components/support/sql" }
+suggest = { path = "third_party/application-services/components/suggest" }
+sync15 = { path = "third_party/application-services/components/sync15" }
+tabs = { path = "third_party/application-services/components/tabs" }
+tracing-support = { path = "third_party/application-services/components/support/tracing" }
+viaduct = { path = "third_party/application-services/components/viaduct" }
+webext-storage = { path = "third_party/application-services/components/webext-storage" }
+logins = { path = "third_party/application-services/components/logins" }
+init_rust_components = { path = "third_party/application-services/components/init_rust_components" }
 # Patched version of zip 2.4.2 to allow for reading omnijars.
 zip = { path = "third_party/rust/zip" }
+
+# Patch libcrux-traits to avoid unnecessary unused dependencies and conflicts.
+libcrux-traits = { path = "build/rust/libcrux-traits" }

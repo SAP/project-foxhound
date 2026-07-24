@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Multiline editor selection test</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/multilineeditor/multiline-editor.mjs"
+    ></script>
+    <script>
+      let html;
+      let testHelpers;
+
+      add_setup(async function setup() {
+        testHelpers = new LitTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attributes) => html`<moz-multiline-editor ${attributes}></moz-multiline-editor>`,
+        });
+      });
+
+      add_task(async function testSelectionProperties() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.value = "Hello World";
+        is(editor.selectionStart, 11, "Selection starts at end of text after setting value");
+        is(editor.selectionEnd, 11, "Selection ends at end of text after setting value");
+      });
+
+      add_task(async function testSetSelectionRange() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.value = "Hello World";
+        editor.setSelectionRange(0, 5);
+        is(editor.selectionStart, 0, "Selection start is 0");
+        is(editor.selectionEnd, 5, "Selection end is 5");
+      });
+
+      add_task(async function testSelectAll() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        const text = "Hello World";
+        editor.value = text;
+        editor.select();
+        is(editor.selectionStart, 0, "Selection starts at beginning");
+        is(editor.selectionEnd, text.length, "Selection ends at text length");
+      });
+
+      add_task(async function testSelectionWithMultiline() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.value = "Line 1\nLine 2";
+        editor.setSelectionRange(0, 6);
+        is(editor.selectionStart, 0, "Selection start is correct");
+        is(editor.selectionEnd, 6, "Selection end is correct");
+      });
+
+      add_task(async function testSelectionStartProperty() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.value = "Hello World";
+        const initialEnd = editor.selectionEnd;
+        editor.selectionStart = 6;
+        is(editor.selectionStart, 6, "Selection start is set via property");
+        is(editor.selectionEnd, initialEnd, "Selection end remains unchanged");
+      });
+
+      add_task(async function testSelectionEndProperty() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.value = "Hello World";
+        editor.setSelectionRange(0, 5);
+        editor.selectionEnd = 11;
+        is(editor.selectionStart, 0, "Selection start remains at 0");
+        is(editor.selectionEnd, 11, "Selection end is set via property");
+      });
+
+      add_task(async function testSelectionchangeEvent() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        let selectionChangeEventFired = false;
+        editor.addEventListener("selectionchange", () => {
+          selectionChangeEventFired = true;
+        });
+
+        editor.value = "Hello World";
+        editor.setSelectionRange(0, 5);
+
+        ok(selectionChangeEventFired, "Selectionchange event was fired");
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

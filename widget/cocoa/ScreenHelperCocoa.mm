@@ -138,7 +138,7 @@ static already_AddRefed<Screen> MakeScreen(NSScreen* aScreen) {
     dpi = rect.height / (heightMM / MM_PER_INCH_FLOAT);
   }
   MOZ_LOG(sScreenLog, LogLevel::Debug,
-          ("New screen [%d %d %d %d (%d %d %d %d) %d %f %f %f]", rect.x, rect.y,
+          ("New screen [%d %d %d %d (%d %d %d %d) %u %f %f %f]", rect.x, rect.y,
            rect.width, rect.height, availRect.x, availRect.y, availRect.width,
            availRect.height, pixelDepth, contentsScaleFactor.scale,
            defaultCssScaleFactor.scale, dpi));

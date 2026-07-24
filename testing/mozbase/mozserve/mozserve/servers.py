@@ -114,8 +114,8 @@ class Http3Server:
             t2.start()
             if "server listening" in msg:
                 searchObj = re.search(
-                    r"HTTP3 server listening on ports ([0-9]+), ([0-9]+), ([0-9]+), ([0-9]+) and ([0-9]+)."
-                    " EchConfig is @([\x00-\x7F]+)@",
+                    r"HTTP3 server listening on ports ([0-9]+), ([0-9]+), ([0-9]+), ([0-9]+), ([0-9]+) and ([0-9]+)."
+                    " EchConfig is @([\x00-\x7f]+)@",
                     msg,
                     0,
                 )
@@ -125,9 +125,10 @@ class Http3Server:
                     self._ports["MOZHTTP3_PORT_ECH"] = searchObj.group(3)
                     self._ports["MOZHTTP3_PORT_PROXY"] = searchObj.group(4)
                     self._ports["MOZHTTP3_PORT_NO_RESPONSE"] = searchObj.group(5)
-                    self._echConfig = searchObj.group(6)
+                    self._ports["MOZHTTP3_PORT_MASQUE"] = searchObj.group(6)
+                    self._echConfig = searchObj.group(7)
             else:
-                self._log.error("http3server failed to start?")
+                self._log.info("http3server failed to start?")
         except OSError as e:
             # This occurs if the subprocess couldn't be started
             self._log.error("Could not run the http3 server: %s" % (str(e)))

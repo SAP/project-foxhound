@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "GamepadEventChannelParent.h"
+
 #include "GamepadPlatformService.h"
 #include "mozilla/dom/GamepadMonitoring.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -31,7 +32,7 @@ class SendGamepadUpdateRunnable final : public Runnable {
   }
   NS_IMETHOD Run() override {
     AssertIsOnBackgroundThread();
-    Unused << mParent->SendGamepadUpdate(mEvent);
+    (void)mParent->SendGamepadUpdate(mEvent);
     return NS_OK;
   }
 };

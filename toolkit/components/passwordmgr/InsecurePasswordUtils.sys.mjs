@@ -65,7 +65,7 @@ export const InsecurePasswordUtils = {
    *
    * @param {FormLike} aForm A form-like object. @See {FormLikeFactory}
    *
-   * @returns {Object} An object with the following boolean values:
+   * @returns {object} An object with the following boolean values:
    *  isFormSubmitHTTP: if the submit action is an http:// URL
    *  isFormSubmitSecure: if the submit action URL is secure,
    *    either because it is HTTPS or because its origin is considered trustworthy

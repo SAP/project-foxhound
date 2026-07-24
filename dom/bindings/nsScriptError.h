@@ -7,13 +7,11 @@
 #ifndef mozilla_dom_nsScriptError_h
 #define mozilla_dom_nsScriptError_h
 
-#include "mozilla/Atomics.h"
-
 #include <stdint.h>
 
-#include "jsapi.h"
 #include "js/RootingAPI.h"
-
+#include "jsapi.h"
+#include "mozilla/Atomics.h"
 #include "nsCOMArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIScriptError.h"

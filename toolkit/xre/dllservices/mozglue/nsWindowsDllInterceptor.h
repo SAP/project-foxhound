@@ -13,17 +13,11 @@
 
 #include <utility>
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/NativeNt.h"
 
-#include "mozilla/Types.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Vector.h"
 #include "mozilla/interceptor/MMPolicies.h"
 #include "mozilla/interceptor/PatcherDetour.h"
 #include "mozilla/interceptor/PatcherNopSpace.h"

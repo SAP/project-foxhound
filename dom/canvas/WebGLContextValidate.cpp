@@ -3,19 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebGLContext.h"
-
 #include <algorithm>
-#include "GLSLANG/ShaderLang.h"
+
 #include "CanvasUtils.h"
-#include "gfxEnv.h"
 #include "GLContext.h"
-#include "jsfriendapi.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_webgl.h"
-#include "nsPrintfCString.h"
+#include "GLSLANG/ShaderLang.h"
 #include "WebGLBuffer.h"
+#include "WebGLContext.h"
 #include "WebGLContextUtils.h"
 #include "WebGLFormats.h"
 #include "WebGLFramebuffer.h"
@@ -26,6 +20,11 @@
 #include "WebGLTexture.h"
 #include "WebGLValidateStrings.h"
 #include "WebGLVertexArray.h"
+#include "gfxEnv.h"
+#include "jsfriendapi.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "nsPrintfCString.h"
 
 ////////////////////
 // Minimum value constants defined in GLES 2.0.25 $6.2 "State Tables":

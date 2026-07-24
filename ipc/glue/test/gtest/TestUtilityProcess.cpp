@@ -3,8 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <algorithm>
+#include <type_traits>
+
 #include "gtest/gtest.h"
-#include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/gtest/ipc/TestUtilityProcess.h"
+#include "mozilla/gtest/WaitFor.h"
+#include "nsThreadUtils.h"
 
 #include "mozilla/ipc/UtilityProcessManager.h"
 
@@ -27,116 +32,86 @@
 #endif  // XP_MACOSX
 
 using namespace mozilla;
+using namespace mozilla::gtest::ipc;
 using namespace mozilla::ipc;
 
-#define WAIT_FOR_EVENTS \
-  SpinEventLoopUntil("UtilityProcess::emptyUtil"_ns, [&]() { return done; });
-
-bool setupDone = false;
-
-class UtilityProcess : public ::testing::Test {
- protected:
-  void SetUp() override {
-    if (setupDone) {
-      return;
-    }
-
-#if defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
-    appShell = do_GetService(NS_APPSHELLSERVICE_CONTRACTID);
-#endif  // defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
-
+// Note that some test suites inherit TestUtilityProcess, so any change here
+// will propagate there. Please ensure compatibility.
+/* static */ void TestUtilityProcess::SetUpTestSuite() {
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
+  // Ensure only one execution even with GTEST_REPEAT>1
+  static bool sOnce = false;
+  if (!sOnce) {
     mozilla::SandboxBroker::GeckoDependentInitialize();
+    sOnce = true;
+  }
 #endif  // defined(XP_WIN) && defined(MOZ_SANDBOX)
 
-    setupDone = true;
+#if defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
+  // Ensure that the app shell service is running
+  nsCOMPtr<nsIAppShellService> appShell =
+      do_GetService(NS_APPSHELLSERVICE_CONTRACTID);
+#endif  // defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
+}
+
+TEST_F(TestUtilityProcess, LaunchAllKinds) {
+  using kind_t = std::underlying_type<SandboxingKind>::type;
+
+  auto manager = UtilityProcessManager::GetSingleton();
+  ASSERT_TRUE(manager);
+
+  auto currentPid = base::GetCurrentProcId();
+  ASSERT_GE(currentPid, base::ProcessId(1));
+
+  // Launch all kinds
+  for (kind_t i = 0; i < SandboxingKind::COUNT; ++i) {
+    auto kind = static_cast<SandboxingKind>(i);
+    auto res = WaitFor(manager->LaunchProcess(kind));
+    ASSERT_TRUE(res.isOk())
+    << "First launch LaunchError: " << res.inspectErr().FunctionName() << ", "
+    << res.inspectErr().ErrorCode();
   }
 
-#if defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
-  nsCOMPtr<nsIAppShellService> appShell;
-#endif  // defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
-};
+  // Collect process identifiers
+  std::array<base::ProcessId, SandboxingKind::COUNT> pids{};
+  for (kind_t i = 0; i < SandboxingKind::COUNT; ++i) {
+    auto kind = static_cast<SandboxingKind>(i);
+    auto utilityPid = manager->ProcessPid(kind);
+    ASSERT_TRUE(utilityPid.isSome())
+    << "No PID for kind " << kind;
+    ASSERT_GE(*utilityPid, base::ProcessId(1));
+    ASSERT_NE(*utilityPid, currentPid);
 
-TEST_F(UtilityProcess, ProcessManager) {
-  RefPtr<UtilityProcessManager> utilityProc =
-      UtilityProcessManager::GetSingleton();
-  ASSERT_NE(utilityProc, nullptr);
-}
+    printf_stderr("Utility process running as PID %" PRIPID "\n", *utilityPid);
 
-TEST_F(UtilityProcess, NoProcess) {
-  RefPtr<UtilityProcessManager> utilityProc =
-      UtilityProcessManager::GetSingleton();
-  EXPECT_NE(utilityProc, nullptr);
+    pids[i] = *utilityPid;
+  }
 
-  Maybe<int32_t> noPid =
-      utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
-  ASSERT_TRUE(noPid.isNothing());
-}
+  // Re-launching should resolve immediately with process identifiers unchanged
+  for (kind_t i = 0; i < SandboxingKind::COUNT; ++i) {
+    auto kind = static_cast<SandboxingKind>(i);
+    auto res = WaitFor(manager->LaunchProcess(kind));
+    ASSERT_TRUE(res.isOk())
+    << "Second launch LaunchError: " << res.inspectErr().FunctionName() << ", "
+    << res.inspectErr().ErrorCode();
 
-TEST_F(UtilityProcess, LaunchProcess) {
-  bool done = false;
+    ASSERT_TRUE(manager->ProcessPid(kind) == Some(pids[i]));
+  }
 
-  RefPtr<UtilityProcessManager> utilityProc =
-      UtilityProcessManager::GetSingleton();
-  EXPECT_NE(utilityProc, nullptr);
+  // Check that every process identifier is unique
+  std::sort(pids.begin(), pids.end());
+  auto adjacentEqualPids = std::adjacent_find(pids.begin(), pids.end());
+  ASSERT_TRUE(adjacentEqualPids == pids.end());
 
-  int32_t thisPid = base::GetCurrentProcId();
-  EXPECT_GE(thisPid, 1);
+  // After being individually shut down, a process is no longer referenced
+  for (kind_t i = 0; i < SandboxingKind::COUNT; ++i) {
+    auto kind = static_cast<SandboxingKind>(i);
+    manager->CleanShutdown(kind);
+    ASSERT_TRUE(manager->ProcessPid(kind).isNothing());
+  }
 
-  utilityProc->LaunchProcess(SandboxingKind::GENERIC_UTILITY)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [&]() mutable {
-            EXPECT_TRUE(true);
-
-            Maybe<int32_t> utilityPid =
-                utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
-            EXPECT_TRUE(utilityPid.isSome());
-            EXPECT_GE(*utilityPid, 1);
-            EXPECT_NE(*utilityPid, thisPid);
-
-            printf_stderr("UtilityProcess running as %d\n", *utilityPid);
-
-            done = true;
-          },
-          [&](LaunchError const&) {
-            EXPECT_TRUE(false);
-            done = true;
-          });
-
-  WAIT_FOR_EVENTS;
-}
-
-TEST_F(UtilityProcess, DestroyProcess) {
-  bool done = false;
-
-  RefPtr<UtilityProcessManager> utilityProc =
-      UtilityProcessManager::GetSingleton();
-
-  utilityProc->LaunchProcess(SandboxingKind::GENERIC_UTILITY)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [&]() {
-            Maybe<int32_t> utilityPid =
-                utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
-            EXPECT_TRUE(utilityPid.isSome());
-            EXPECT_GE(*utilityPid, 1);
-
-            utilityProc->CleanShutdown(SandboxingKind::GENERIC_UTILITY);
-
-            utilityPid =
-                utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
-            EXPECT_TRUE(utilityPid.isNothing());
-
-            EXPECT_TRUE(true);
-            done = true;
-          },
-          [&](LaunchError const&) {
-            EXPECT_TRUE(false);
-            done = true;
-          });
-
-  WAIT_FOR_EVENTS;
+  // Drain the event queue.
+  NS_ProcessPendingEvents(nullptr);
 }
 
 #if defined(XP_WIN)
@@ -147,9 +122,7 @@ static void LoadLibraryCrash_Test() {
       L"2b49036e-6ba3-400c-a297-38fa1f6c5255.dll");
 }
 
-TEST_F(UtilityProcess, LoadLibraryCrash) {
+TEST_F(TestUtilityProcess, LoadLibraryCrash) {
   ASSERT_DEATH_IF_SUPPORTED(LoadLibraryCrash_Test(), "");
 }
 #endif  // defined(XP_WIN)
-
-#undef WAIT_FOR_EVENTS

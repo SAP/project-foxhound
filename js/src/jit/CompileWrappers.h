@@ -13,6 +13,7 @@
 #include "js/TypeDecls.h"
 #include "vm/Realm.h"
 #include "vm/RealmFuses.h"
+#include "vm/RuntimeFuses.h"
 
 struct JSAtomState;
 
@@ -80,7 +81,6 @@ class CompileRuntime {
   const void* addressOfJitActivation();
   const void* addressOfJitStackLimit();
   const void* addressOfInterruptBits();
-  const void* addressOfInlinedICScript();
   const void* addressOfRealm();
   const void* addressOfZone();
   const void* addressOfMegamorphicCache();
@@ -88,10 +88,18 @@ class CompileRuntime {
   const void* addressOfStringToAtomCache();
   const void* addressOfLastBufferedWholeCell();
 
-  bool hasSeenObjectEmulateUndefinedFuseIntact();
-  const void* addressOfHasSeenObjectEmulateUndefinedFuse();
+  bool runtimeFuseIntact(RuntimeFuses::FuseIndex index);
+  const void* addressOfRuntimeFuse(RuntimeFuses::FuseIndex index);
 
-  bool hasSeenArrayExceedsInt32LengthFuseIntact();
+  bool hasSeenObjectEmulateUndefinedFuseIntact() {
+    return runtimeFuseIntact(
+        RuntimeFuses::FuseIndex::HasSeenObjectEmulateUndefinedFuse);
+  }
+
+  bool hasSeenArrayExceedsInt32LengthFuseIntact() {
+    return runtimeFuseIntact(
+        RuntimeFuses::FuseIndex::HasSeenArrayExceedsInt32LengthFuse);
+  }
 
 #ifdef DEBUG
   const void* addressOfIonBailAfterCounter();
@@ -115,7 +123,7 @@ class CompileZone {
   CompileRuntime* runtime();
   bool isAtomsZone();
 
-  const uint32_t* addressOfNeedsIncrementalBarrier();
+  const uint32_t* addressOfNeedsMarkingBarrier();
   uint32_t* addressOfTenuredAllocCount();
   gc::FreeSpan** addressOfFreeList(gc::AllocKind allocKind);
   bool allocNurseryObjects();
@@ -131,6 +139,8 @@ class CompileZone {
   gc::AllocSite* catchAllAllocSite(JS::TraceKind traceKind,
                                    gc::CatchAllAllocSite siteKind);
   gc::AllocSite* tenuringAllocSite();
+
+  void* jitZone();
 
   bool hasRealmWithAllocMetadataBuilder();
 };

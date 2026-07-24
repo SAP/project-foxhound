@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - beetmover-components
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     post-beetmover:
         description: Dummy task to wait on all builds before publishing them

@@ -19,7 +19,7 @@
  *          openTabContextMenu closeTabContextMenu
  *          openToolsMenu closeToolsMenu
  *          imageBuffer imageBufferFromDataURI
- *          getInlineOptionsBrowser
+ *          getInlineOptionsBrowser getMenuitemImage getRawMenuitemImage
  *          getListStyleImage getRawListStyleImage getPanelForNode
  *          awaitExtensionPanel awaitPopupResize
  *          promiseContentDimensions alterContent
@@ -145,22 +145,37 @@ function getInlineOptionsBrowser(aboutAddonsBrowser) {
   return contentDocument.getElementById("addon-inline-options");
 }
 
-function getRawListStyleImage(button) {
+function _ensurePopupsInitialized(element) {
   // Ensure popups are initialized so that the elements are rendered and
   // getComputedStyle works.
   for (
-    let popup = button.closest("panel,menupopup");
+    let popup = element.closest("panel,menupopup");
     popup;
     popup = popup.parentElement?.closest("panel,menupopup")
   ) {
     popup.ensureInitialized();
   }
+}
 
+function getRawListStyleImage(button) {
+  _ensurePopupsInitialized(button);
   return button.ownerGlobal.getComputedStyle(button).listStyleImage;
 }
 
 function getListStyleImage(button) {
   let match = /url\("([^"]*)"\)/.exec(getRawListStyleImage(button));
+  return match && match[1];
+}
+
+function getRawMenuitemImage(menuitem) {
+  _ensurePopupsInitialized(menuitem);
+  return menuitem.ownerGlobal
+    .getComputedStyle(menuitem)
+    .getPropertyValue("--webextension-menuitem-image");
+}
+
+function getMenuitemImage(menuitem) {
+  let match = /url\("([^"]*)"\)/.exec(getRawMenuitemImage(menuitem));
   return match && match[1];
 }
 
@@ -501,6 +516,20 @@ async function openContextMenuInPopup(
   await popupShownPromise;
   return contentAreaContextMenu;
 }
+
+// Ensure each test leaves the sidebar in its initial state when it completes
+const initialSidebarState = { ...SidebarController.getUIState(), command: "" };
+registerCleanupFunction(async function () {
+  const { ObjectUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/ObjectUtils.sys.mjs"
+  );
+  if (
+    !ObjectUtils.deepEqual(SidebarController.getUIState(), initialSidebarState)
+  ) {
+    info("Restoring to initial sidebar state");
+    await SidebarController.initializeUIState(initialSidebarState);
+  }
+});
 
 async function openContextMenuInSidebar(selector = "body") {
   let contentAreaContextMenu =

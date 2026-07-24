@@ -6,9 +6,9 @@
 #define mozilla_dom_WebAuthnPromiseHolder_h
 
 #include "mozilla/MozPromise.h"
-#include "nsIWebAuthnResult.h"
-#include "nsIWebAuthnPromise.h"
 #include "nsIThread.h"
+#include "nsIWebAuthnPromise.h"
+#include "nsIWebAuthnResult.h"
 
 namespace mozilla::dom {
 

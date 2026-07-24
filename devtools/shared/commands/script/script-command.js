@@ -17,20 +17,20 @@ class ScriptCommand {
   /**
    * Execute a JavaScript expression.
    *
-   * @param {String} expression: The code you want to evaluate.
-   * @param {Object} options: Options for evaluation:
-   * @param {Object} options.frameActor: a FrameActor ID. The actor holds a reference to
+   * @param {string} expression: The code you want to evaluate.
+   * @param {object} options: Options for evaluation:
+   * @param {object} options.frameActor: a FrameActor ID. The actor holds a reference to
    *        a Debugger.Frame. This option allows you to evaluate the string in the frame
    *        of the given FrameActor.
-   * @param {String} options.url: the url to evaluate the script as. Defaults to "debugger eval code".
+   * @param {string} options.url: the url to evaluate the script as. Defaults to "debugger eval code".
    * @param {TargetFront} options.selectedTargetFront: When passed, the expression will be
    *        evaluated in the context of the target (as opposed to the default, top-level one).
-   * @param {String} options.selectedNodeActor: A NodeActor ID that may be used by helper
+   * @param {string} options.selectedNodeActor: A NodeActor ID that may be used by helper
    *        functions that can reference the currently selected node in the Inspector, like $0.
-   * @param {String} options.selectedObjectActor: the actorID of a given objectActor.
+   * @param {string} options.selectedObjectActor: the actorID of a given objectActor.
    *        This is used by context menu entries to get a reference to an object, in order
    *        to perform some operation on it (copy it, store it as a global variable, …).
-   * @param {Number} options.innerWindowID: An optional window id to be used for the evaluation,
+   * @param {number} options.innerWindowID: An optional window id to be used for the evaluation,
    *        instead of the regular webConsoleActor.evalWindow.
    *        This is used by functions that may want to evaluate in a different window (for
    *        example a non-remote iframe), like getting the elements of a given document.

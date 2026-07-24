@@ -28,6 +28,8 @@ NS_IMPL_CYCLE_COLLECTION(LoadContextBase, mRequest)
 
 LoadContextBase::LoadContextBase(ContextKind kind) : mKind(kind) {}
 
+LoadContextBase::~LoadContextBase() = default;
+
 void LoadContextBase::SetRequest(ScriptLoadRequest* aRequest) {
   MOZ_ASSERT(!mRequest);
   mRequest = aRequest;

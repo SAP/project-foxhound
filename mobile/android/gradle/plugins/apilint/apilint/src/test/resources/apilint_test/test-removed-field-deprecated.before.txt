@@ -1,0 +1,10 @@
+import java.lang.Deprecated;
+import test.DeprecationSchedule;
+import test.GeckoResult;
+import test.AllowOrDeny;
+
+package test {
+  public class TestClass {
+    field @Deprecated @DeprecationSchedule(id="allowdeny",version=92) public static final GeckoResult<AllowOrDeny> ALLOW;
+  }
+}

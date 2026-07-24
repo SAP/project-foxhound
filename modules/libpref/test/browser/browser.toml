@@ -4,6 +4,6 @@ support-files = ["file_access_sanitized_pref.html"]
 ["browser_sanitization_events.js"]
 skip-if = [
   "ccov",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
   "tsan",
-  "os == 'linux' && asan",
 ]

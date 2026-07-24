@@ -87,7 +87,7 @@ add_task(async function test_primary_password_authentication_causes_refresh() {
   }
 
   info("No logins should be displayed if the user is not authenticated.");
-  await checkEmptyState(".no-logins-card-content", megalist);
+  await checkEmptyState(".reauth-card-content", megalist);
   const mpDialogShownAboutLogins = waitForPPDialog("authenticate", 5000);
   info("Open about:logins.");
   await BrowserTestUtils.openNewForegroundTab({

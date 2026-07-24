@@ -4,9 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAtom.h"
+#include "txExpr.h"
 #include "txIXPathContext.h"
 #include "txNodeSet.h"
-#include "txExpr.h"
 #include "txXPathTreeWalker.h"
 
 txNamedAttributeStep::txNamedAttributeStep(int32_t aNsID, nsAtom* aPrefix,

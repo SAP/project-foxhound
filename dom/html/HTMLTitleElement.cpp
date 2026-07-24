@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/HTMLTitleElement.h"
 
-#include "mozilla/dom/HTMLTitleElementBinding.h"
 #include "mozilla/ErrorResult.h"
-#include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLTitleElementBinding.h"
 #include "nsContentUtils.h"
+#include "nsStyleConsts.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Title)
 

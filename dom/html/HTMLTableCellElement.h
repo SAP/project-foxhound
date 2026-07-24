@@ -6,7 +6,6 @@
 #ifndef mozilla_dom_HTMLTableCellElement_h
 #define mozilla_dom_HTMLTableCellElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {

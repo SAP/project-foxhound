@@ -22,9 +22,12 @@ struct MediaDataIPDL
 struct CryptoInfo {
   CryptoScheme mEncryptionScheme;
   uint8_t[] mIV;
+  uint8_t[] mConstantIV;
   uint8_t[] mKeyId;
   uint32_t[] mClearBytes;
   uint32_t[] mCipherBytes;
+  uint8_t mCryptByteBlock;
+  uint8_t mSkipByteBlock;
 };
 
 } // namespace mozilla

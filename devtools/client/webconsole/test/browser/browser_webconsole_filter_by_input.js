@@ -207,6 +207,7 @@ function createServerAndGetTestUrl() {
     "/" + HTML_FILENAME,
     function (request, response) {
       response.setStatusLine(request.httpVersion, 200, "OK");
+      response.setHeader("Content-Type", "text/html");
       response.write(HTML_CONTENT);
     }
   );

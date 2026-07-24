@@ -9,8 +9,16 @@ EXPORTS.mozilla.dom += [
     "WindowsUtilsParent.h",
 ]
 
+UNIFIED_SOURCES += [
+    "WindowsUtilsChild.cpp",
+]
+
 IPDL_SOURCES += [
     "PWindowsUtils.ipdl",
+]
+
+LOCAL_INCLUDES += [
+    "/dom/system/windows/location",
 ]
 
 DIRS += ["location"]

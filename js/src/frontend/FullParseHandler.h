@@ -163,9 +163,8 @@ class FullParseHandler {
   UnaryNodeResult newSyntheticComputedName(Node expr, uint32_t begin,
                                            uint32_t end) {
     TokenPos pos(begin, end);
-    UnaryNode* node;
-    MOZ_TRY_VAR(node,
-                newResult<UnaryNode>(ParseNodeKind::ComputedName, pos, expr));
+    UnaryNode* node =
+        MOZ_TRY(newResult<UnaryNode>(ParseNodeKind::ComputedName, pos, expr));
     node->setSyntheticComputedName();
     return node;
   }
@@ -204,11 +203,9 @@ class FullParseHandler {
   }
 
   CallSiteNodeResult newCallSiteObject(uint32_t begin) {
-    CallSiteNode* callSiteObj;
-    MOZ_TRY_VAR(callSiteObj, newResult<CallSiteNode>(begin));
+    CallSiteNode* callSiteObj = MOZ_TRY(newResult<CallSiteNode>(begin));
 
-    ListNode* rawNodes;
-    MOZ_TRY_VAR(rawNodes, newArrayLiteral(callSiteObj->pn_pos.begin));
+    ListNode* rawNodes = MOZ_TRY(newArrayLiteral(callSiteObj->pn_pos.begin));
 
     addArrayElement(callSiteObj, rawNodes);
 
@@ -695,6 +692,15 @@ class FullParseHandler {
                                  moduleRequest);
   }
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  BinaryNodeResult newImportSourceDeclaration(Node importedBinding,
+                                              Node moduleRequest,
+                                              const TokenPos& pos) {
+    return newResult<BinaryNode>(ParseNodeKind::ImportSourceDecl, pos,
+                                 importedBinding, moduleRequest);
+  }
+#endif
+
   BinaryNodeResult newImportSpec(Node importNameNode, Node bindingName) {
     return newBinary(ParseNodeKind::ImportSpec, importNameNode, bindingName);
   }
@@ -709,9 +715,8 @@ class FullParseHandler {
 
   BinaryNodeResult newExportFromDeclaration(uint32_t begin, Node exportSpecSet,
                                             Node moduleRequest) {
-    BinaryNode* decl;
-    MOZ_TRY_VAR(decl, newResult<BinaryNode>(ParseNodeKind::ExportFromStmt,
-                                            exportSpecSet, moduleRequest));
+    BinaryNode* decl = MOZ_TRY(newResult<BinaryNode>(
+        ParseNodeKind::ExportFromStmt, exportSpecSet, moduleRequest));
     decl->pn_pos.begin = begin;
     return decl;
   }
@@ -752,6 +757,14 @@ class FullParseHandler {
                                  singleArg);
   }
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  BinaryNodeResult newCallImportSource(NullaryNodeType importHolder,
+                                       Node singleArg) {
+    return newResult<BinaryNode>(ParseNodeKind::CallImportSourceExpr,
+                                 importHolder, singleArg);
+  }
+#endif
+
   BinaryNodeResult newCallImportSpec(Node specifierArg, Node optionalArg) {
     return newResult<BinaryNode>(ParseNodeKind::CallImportSpec, specifierArg,
                                  optionalArg);
@@ -765,9 +778,8 @@ class FullParseHandler {
 
   TernaryNodeResult newIfStatement(uint32_t begin, Node cond, Node thenBranch,
                                    Node elseBranch) {
-    TernaryNode* node;
-    MOZ_TRY_VAR(node, newResult<TernaryNode>(ParseNodeKind::IfStmt, cond,
-                                             thenBranch, elseBranch));
+    TernaryNode* node = MOZ_TRY(newResult<TernaryNode>(
+        ParseNodeKind::IfStmt, cond, thenBranch, elseBranch));
     node->pn_pos.begin = begin;
     return node;
   }

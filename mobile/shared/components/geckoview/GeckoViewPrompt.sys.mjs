@@ -38,6 +38,9 @@ export class PromptFactory {
       case "DOMPopupBlocked":
         this._handlePopupBlocked(aEvent);
         break;
+      case "DOMRedirectBlocked":
+        this._handleRedirectBlocked(aEvent);
+        break;
     }
   }
 
@@ -323,6 +326,24 @@ export class PromptFactory {
             aEvent.popupWindowName,
             aEvent.popupWindowFeatures
           );
+        }
+      }
+    );
+  }
+
+  _handleRedirectBlocked(aEvent) {
+    const dwi = aEvent.requestingWindow;
+    const redirectURISpec = aEvent.redirectURI.spec;
+
+    const prompt = new lazy.GeckoViewPrompter(aEvent.requestingWindow);
+    prompt.asyncShowPrompt(
+      {
+        type: "redirect",
+        targetUri: redirectURISpec,
+      },
+      ({ response }) => {
+        if (response && dwi) {
+          dwi.top.location.href = redirectURISpec;
         }
       }
     );

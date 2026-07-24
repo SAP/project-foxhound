@@ -19,10 +19,35 @@ const SHUTDOWN_TOPIC = "profile-before-change";
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "CURRENT_CONTEXT_ID",
   CONTEXT_ID_PREF,
+  ""
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "UNIFIED_ADS_ENDPOINT",
+  "browser.newtabpage.activity-stream.unifiedAds.endpoint",
+  ""
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "OHTTP_RELAY_URL",
+  "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
+  ""
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "OHTTP_CONFIG_URL",
+  "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
   ""
 );
 
@@ -43,6 +68,7 @@ class JsContextIdCallback extends ContextIdCallback {
 
     Glean.contextualServices.contextId.set(oldContextId);
     GleanPings.contextIdDeletionRequest.submit();
+    ContextId.sendMARSDeletionRequest(oldContextId);
   }
 }
 
@@ -75,10 +101,15 @@ export class _ContextId extends EventTarget {
         CONTEXT_ID_ROTATION_DAYS_PREF,
         0
       );
+      // Note that we're setting `running_in_test_automation` to true
+      // all of the time. This is because we don't want the ContextID
+      // component to be responsible for sending the DELETE request to MARS,
+      // since it doesn't know to do it over OHTTP. We'll send the DELETE
+      // request ourselves over OHTTP at rotation time.
       this.#comp = ContextIdComponent.init(
         lazy.CURRENT_CONTEXT_ID,
         Services.prefs.getIntPref(CONTEXT_ID_TIMESTAMP_PREF, 0),
-        Cu.isInAutomation,
+        true /* running_in_test_automation */,
         new JsContextIdCallback(this.dispatchEvent.bind(this))
       );
       this.#observer = (subject, topic, data) => {
@@ -166,6 +197,66 @@ export class _ContextId extends EventTarget {
     }
 
     return lazy.CURRENT_CONTEXT_ID;
+  }
+
+  /**
+   * For now, the context_id application-services component does not know how
+   * to send the MARS deletion request over OHTTP, so we do it ourselves
+   * manually, using the New Tab unified ads preferences. This will eventually
+   * go away once the context_id component knows how to use OHTTP itself.
+   *
+   * @param {string} oldContextId
+   *   The old context_id being rotated away from.
+   * @returns {Promise<undefined>}
+   */
+  async sendMARSDeletionRequest(oldContextId) {
+    if (
+      !lazy.UNIFIED_ADS_ENDPOINT ||
+      !lazy.OHTTP_RELAY_URL ||
+      !lazy.OHTTP_CONFIG_URL
+    ) {
+      return;
+    }
+
+    const endpoint = `${lazy.UNIFIED_ADS_ENDPOINT}v1/delete_user`;
+    const body = {
+      context_id: oldContextId,
+    };
+    const headers = new Headers();
+    headers.append("content-type", "application/json");
+
+    const config = await lazy.ObliviousHTTP.getOHTTPConfig(
+      lazy.OHTTP_CONFIG_URL
+    );
+
+    if (!config) {
+      console.error(
+        new Error(
+          `OHTTP was configured for ${endpoint} but we couldn't fetch a valid config`
+        )
+      );
+    }
+
+    // We don't actually use this AbortController, but ObliviousHTTP wants it.
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const response = await lazy.ObliviousHTTP.ohttpRequest(
+      lazy.OHTTP_RELAY_URL,
+      config,
+      endpoint,
+      {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify(body),
+        credentials: "omit",
+        signal,
+      }
+    );
+
+    if (!response.ok) {
+      console.error(new Error(`Unexpected status (${response.status})`));
+    }
   }
 }
 

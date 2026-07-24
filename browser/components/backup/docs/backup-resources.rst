@@ -48,3 +48,11 @@ Each ``BackupResource`` subclass is registered for use by the
 .. js:autoclass:: SessionStoreBackupResource
   :members:
   :private-members:
+
+.. js:autoclass:: SiteSettingsBackupResource
+  :members:
+  :private-members:
+
+.. js:autoclass:: BookmarksBackupResource
+  :members:
+  :private-members:

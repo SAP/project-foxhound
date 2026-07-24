@@ -15,9 +15,7 @@ class nsIFrame;
 namespace mozilla {
 
 struct DisplayItemKey {
-  bool operator==(const DisplayItemKey& aOther) const {
-    return mFrame == aOther.mFrame && mPerFrameKey == aOther.mPerFrameKey;
-  }
+  bool operator==(const DisplayItemKey&) const = default;
 
   nsIFrame* mFrame;
   uint32_t mPerFrameKey;
@@ -64,17 +62,15 @@ class MergedListUnits {};
 
 template <typename Units>
 struct Index {
-  Index() : val(0) {}
+  Index() = default;
   explicit Index(size_t aVal) : val(aVal) {
     MOZ_RELEASE_ASSERT(aVal < std::numeric_limits<uint32_t>::max(),
                        "List index overflowed");
   }
 
-  bool operator==(const Index<Units>& aOther) const {
-    return val == aOther.val;
-  }
+  bool operator==(const Index<Units>&) const = default;
 
-  uint32_t val;
+  uint32_t val = 0;
 };
 typedef Index<OldListUnits> OldListIndex;
 typedef Index<MergedListUnits> MergedListIndex;

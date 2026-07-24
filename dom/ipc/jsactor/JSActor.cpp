@@ -5,26 +5,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSActor.h"
-#include "mozilla/dom/JSActorBinding.h"
 
 #include "chrome/common/ipc_channel.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/FunctionRef.h"
+#include "js/Promise.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ClonedErrorHolder.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/JSActorBinding.h"
 #include "mozilla/dom/JSActorManager.h"
+#include "mozilla/dom/JSIPCValue.h"
+#include "mozilla/dom/JSIPCValueUtils.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/PWindowGlobal.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "js/Promise.h"
-#include "xpcprivate.h"
 #include "nsFrameMessageManager.h"
 #include "nsICrashReporter.h"
+#include "xpcprivate.h"
 
 namespace mozilla::dom {
 
@@ -41,13 +41,10 @@ struct JSActorMessageMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable(
-        "actor", "Actor Name", MS::Format::String, MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable(
-        "name", "Message Name", MS::Format::String, MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("actor", "Actor Name", MS::Format::String);
+    schema.AddKeyLabelFormat("name", "Message Name", MS::Format::String);
     schema.SetTooltipLabel("JSActor - {marker.name}");
-    schema.SetTableLabel(
-        "{marker.name} - [{marker.data.actor}] {marker.data.name}");
+    schema.SetTableLabel("[{marker.data.actor}] {marker.data.name}");
     return schema;
   }
 };
@@ -153,9 +150,10 @@ nsresult JSActor::QueryInterfaceActor(const nsIID& aIID, void** aPtr) {
   return mWrappedJS->QueryInterface(aIID, aPtr);
 }
 
-void JSActor::Init(const nsACString& aName) {
+void JSActor::Init(const nsACString& aName, bool aSendTyped) {
   MOZ_ASSERT(mName.IsEmpty(), "Cannot set name twice!");
   mName = aName;
+  mSendTyped = aSendTyped;
   InvokeCallback(CallbackFunction::ActorCreated);
 }
 
@@ -171,28 +169,30 @@ void JSActor::ThrowStateErrorForGetter(const char* aName,
   }
 }
 
-static Maybe<ipc::StructuredCloneData> TryClone(JSContext* aCx,
-                                                JS::Handle<JS::Value> aValue) {
-  Maybe<ipc::StructuredCloneData> data{std::in_place};
+static RefPtr<ipc::StructuredCloneData> TryClone(JSContext* aCx,
+                                                 JS::Handle<JS::Value> aValue) {
+  auto data = MakeRefPtr<ipc::StructuredCloneData>(
+      JS::StructuredCloneScope::DifferentProcess,
+      StructuredCloneHolder::TransferringNotSupported);
 
   // Try to directly serialize the passed-in data, and return it to our caller.
   IgnoredErrorResult rv;
   data->Write(aCx, aValue, rv);
   if (rv.Failed()) {
-    // Serialization failed, return `Nothing()` instead.
+    // Serialization failed, return null instead.
     JS_ClearPendingException(aCx);
-    data.reset();
+    data = nullptr;
   }
   return data;
 }
 
-static Maybe<ipc::StructuredCloneData> CloneJSStack(
+static RefPtr<ipc::StructuredCloneData> CloneJSStack(
     JSContext* aCx, JS::Handle<JSObject*> aStack) {
   JS::Rooted<JS::Value> stackVal(aCx, JS::ObjectOrNullValue(aStack));
   return TryClone(aCx, stackVal);
 }
 
-static Maybe<ipc::StructuredCloneData> CaptureJSStack(JSContext* aCx) {
+static RefPtr<ipc::StructuredCloneData> CaptureJSStack(JSContext* aCx) {
   JS::Rooted<JSObject*> stack(aCx, nullptr);
   if (JS::IsAsyncStackCaptureEnabledForRealm(aCx) &&
       !JS::CaptureCurrentStack(aCx, &stack)) {
@@ -208,9 +208,11 @@ void JSActor::SendAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
                                ErrorResult& aRv) {
   profiler_add_marker("SendAsyncMessage", geckoprofiler::category::IPC, {},
                       JSActorMessageMarker{}, mName, aMessageName);
-  Maybe<ipc::StructuredCloneData> data{std::in_place};
-  if (!nsFrameMessageManager::GetParamsForMessage(aCx, aObj, aTransfers,
-                                                  *data)) {
+  JSIPCValueUtils::Context cx(aCx, /* aStrict = */ false);
+  IgnoredErrorResult error;
+  auto data =
+      JSIPCValueUtils::FromJSVal(cx, aObj, aTransfers, mSendTyped, error);
+  if (error.Failed()) {
     aRv.ThrowDataCloneError(nsPrintfCString(
         "Failed to serialize message '%s::%s'",
         NS_LossyConvertUTF16toASCII(aMessageName).get(), mName.get()));
@@ -222,7 +224,9 @@ void JSActor::SendAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
   meta.messageName() = aMessageName;
   meta.kind() = JSActorMessageKind::Message;
 
-  SendRawMessage(meta, std::move(data), CaptureJSStack(aCx), aRv);
+  auto stack = CaptureJSStack(aCx);
+
+  SendRawMessage(meta, std::move(data), stack, aRv);
 }
 
 already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
@@ -231,9 +235,10 @@ already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
                                              ErrorResult& aRv) {
   profiler_add_marker("SendQuery", geckoprofiler::category::IPC, {},
                       JSActorMessageMarker{}, mName, aMessageName);
-  Maybe<ipc::StructuredCloneData> data{std::in_place};
-  if (!nsFrameMessageManager::GetParamsForMessage(
-          aCx, aObj, JS::UndefinedHandleValue, *data)) {
+  JSIPCValueUtils::Context cx(aCx, /* aStrict = */ false);
+  IgnoredErrorResult error;
+  auto data = JSIPCValueUtils::FromJSVal(cx, aObj, mSendTyped, error);
+  if (error.Failed()) {
     aRv.ThrowDataCloneError(nsPrintfCString(
         "Failed to serialize message '%s::%s'",
         NS_LossyConvertUTF16toASCII(aMessageName).get(), mName.get()));
@@ -257,7 +262,9 @@ already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
   meta.queryId() = mNextQueryId++;
   meta.kind() = JSActorMessageKind::Query;
 
-  SendRawMessage(meta, std::move(data), CaptureJSStack(aCx), aRv);
+  auto stack = CaptureJSStack(aCx);
+
+  SendRawMessage(meta, std::move(data), stack, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -372,17 +379,16 @@ void JSActor::ReceiveQueryReply(JSContext* aCx,
 }
 
 void JSActor::SendRawMessageInProcess(const JSActorMessageMeta& aMeta,
-                                      Maybe<ipc::StructuredCloneData>&& aData,
-                                      Maybe<ipc::StructuredCloneData>&& aStack,
+                                      JSIPCValue&& aData,
+                                      ipc::StructuredCloneData* aStack,
                                       OtherSideCallback&& aGetOtherSide) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "JSActor Async Message",
-      [aMeta, data{std::move(aData)}, stack{std::move(aStack)},
+      [aMeta, data{std::move(aData)}, stack = RefPtr{aStack},
        getOtherSide{std::move(aGetOtherSide)}]() mutable {
         if (RefPtr<JSActorManager> otherSide = getOtherSide()) {
-          otherSide->ReceiveRawMessage(aMeta, std::move(data),
-                                       std::move(stack));
+          otherSide->ReceiveRawMessage(aMeta, std::move(data), stack);
         }
       }));
 }
@@ -421,8 +427,15 @@ void JSActor::QueryHandler::RejectedCallback(JSContext* aCx,
     }
   }
 
-  Maybe<ipc::StructuredCloneData> data = TryClone(aCx, value);
-  if (!data) {
+  // The only valid type a QueryReject message can have is "any", so serialize
+  // it as an untyped value, and never log anything for it. Ideally, we would
+  // require that this is an error object (bug 1907175).
+  JSIPCValueUtils::Context cx(aCx);
+  IgnoredErrorResult error;
+  auto data =
+      JSIPCValueUtils::FromJSVal(cx, value, /* aSendTyped = */ false, error);
+
+  if (error.Failed()) {
     // Failed to clone the rejection value. Make sure that this
     // rejection is reported, despite being "handled". This is done by
     // creating a new promise in the rejected state, and throwing it
@@ -430,9 +443,15 @@ void JSActor::QueryHandler::RejectedCallback(JSContext* aCx,
     if (!JS::CallOriginalPromiseReject(aCx, aValue)) {
       JS_ClearPendingException(aCx);
     }
+
+    // Unlike other cases, we want to send a reject reply message even if
+    // serialization failed, so send the JS value undefined, rather than
+    // returning.
+    data = JSIPCValue(void_t());
   }
 
-  SendReply(aCx, JSActorMessageKind::QueryReject, std::move(data));
+  const JSActorMessageKind kind = JSActorMessageKind::QueryReject;
+  SendReply(aCx, kind, std::move(data));
 }
 
 void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
@@ -442,8 +461,10 @@ void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  Maybe<ipc::StructuredCloneData> data = TryClone(aCx, aValue);
-  if (!data) {
+  JSIPCValueUtils::Context cx(aCx);
+  IgnoredErrorResult error;
+  auto data = JSIPCValueUtils::FromJSVal(cx, aValue, mActor->mSendTyped, error);
+  if (error.Failed()) {
     nsAutoCString msg;
     msg.Append(mActor->Name());
     msg.Append(':');
@@ -462,11 +483,12 @@ void JSActor::QueryHandler::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  SendReply(aCx, JSActorMessageKind::QueryResolve, std::move(data));
+  const JSActorMessageKind kind = JSActorMessageKind::QueryResolve;
+  SendReply(aCx, kind, std::move(data));
 }
 
 void JSActor::QueryHandler::SendReply(JSContext* aCx, JSActorMessageKind aKind,
-                                      Maybe<ipc::StructuredCloneData>&& aData) {
+                                      JSIPCValue&& aData) {
   MOZ_ASSERT(mActor);
   profiler_add_marker("SendQueryReply", geckoprofiler::category::IPC, {},
                       JSActorMessageMarker{}, mActor->Name(), mMessageName);
@@ -478,10 +500,11 @@ void JSActor::QueryHandler::SendReply(JSContext* aCx, JSActorMessageKind aKind,
   meta.kind() = aKind;
 
   JS::Rooted<JSObject*> promise(aCx, mPromise->PromiseObj());
-  JS::Rooted<JSObject*> stack(aCx, JS::GetPromiseResolutionSite(promise));
+  JS::Rooted<JSObject*> jsStack(aCx, JS::GetPromiseResolutionSite(promise));
 
-  mActor->SendRawMessage(meta, std::move(aData), CloneJSStack(aCx, stack),
-                         IgnoreErrors());
+  auto stack = CloneJSStack(aCx, jsStack);
+
+  mActor->SendRawMessage(meta, std::move(aData), stack, IgnoreErrors());
   mActor = nullptr;
   mPromise = nullptr;
 }

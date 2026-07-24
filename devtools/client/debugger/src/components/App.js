@@ -14,7 +14,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { prefs } from "../utils/prefs";
 import { primaryPaneTabs } from "../constants";
 import actions from "../actions/index";
-import AccessibleImage from "./shared/AccessibleImage";
+import DebuggerImage from "./shared/DebuggerImage";
 
 import {
   getSelectedLocation,
@@ -216,7 +216,7 @@ class App extends Component {
         { className: "editor-notification-footer", "aria-role": "status" },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "sourcemap" })
+          React.createElement(DebuggerImage, { name: "sourcemap" })
         ),
         `Source Map Error: ${this.props.sourceMapError}`,
         button({ className: "close-button", onClick: this.closeSourceMapError })
@@ -227,7 +227,7 @@ class App extends Component {
         { className: "editor-notification-footer", "aria-role": "status" },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "sourcemap" })
+          React.createElement(DebuggerImage, { name: "sourcemap" })
         ),
         L10N.getFormatStr(
           "editorNotificationFooter.noOriginalScopes",

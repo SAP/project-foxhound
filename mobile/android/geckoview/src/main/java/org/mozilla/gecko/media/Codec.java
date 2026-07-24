@@ -518,7 +518,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
       final int flags,
       final String drmStubId) {
     try {
-      final AsyncCodec codec = AsyncCodecFactory.create(name);
+      final AsyncCodec codec = AsyncCodec.create(name);
       codec.setCallbacks(new Callbacks(), null);
 
       final MediaCrypto crypto = RemoteMediaDrmBridgeStub.getMediaCrypto(drmStubId);

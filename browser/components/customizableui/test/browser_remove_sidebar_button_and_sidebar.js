@@ -15,6 +15,10 @@ add_setup(async () => {
 registerCleanupFunction(async () => {
   await SpecialPowers.popPrefEnv();
   gBrowser.removeAllTabsBut(gBrowser.tabs[0]);
+  // Ensure sidebar is hidden after each test:
+  if (!document.getElementById("sidebar-box").hidden) {
+    SidebarController.hide({ dismissPanel: true });
+  }
 });
 
 add_task(async function test_button_removed() {

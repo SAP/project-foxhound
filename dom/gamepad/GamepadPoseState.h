@@ -7,6 +7,11 @@
 #ifndef mozilla_dom_gamepad_GamepadPoseState_h_
 #define mozilla_dom_gamepad_GamepadPoseState_h_
 
+#include <cstdint>
+#include <cstring>
+
+#include "mozilla/TypedEnumBits.h"
+
 namespace mozilla::dom {
 
 enum class GamepadCapabilityFlags : uint16_t {

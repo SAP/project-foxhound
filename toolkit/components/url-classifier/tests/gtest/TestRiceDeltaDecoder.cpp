@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "RiceDeltaDecoder.h"
 
 #include "Common.h"
@@ -12,6 +11,24 @@ namespace {
 
 struct TestingData {
   std::vector<uint32_t> mExpectedDecoded;
+  std::vector<uint8_t> mEncoded;
+  uint32_t mRiceParameter;
+};
+
+struct TestingData64 {
+  std::vector<uint64_t> mExpectedDecoded;
+  std::vector<uint8_t> mEncoded;
+  uint32_t mRiceParameter;
+};
+
+struct TestingData128 {
+  nsCString mExpectedDecoded;
+  std::vector<uint8_t> mEncoded;
+  uint32_t mRiceParameter;
+};
+
+struct TestingData256 {
+  nsCString mExpectedDecoded;
   std::vector<uint8_t> mEncoded;
   uint32_t mRiceParameter;
 };
@@ -32,11 +49,98 @@ static bool runOneTest(TestingData& aData) {
   return rv && decoded == aData.mExpectedDecoded;
 }
 
+static bool runOneTest64(TestingData64& aData) {
+  RiceDeltaDecoder decoder(&aData.mEncoded[0], aData.mEncoded.size());
+
+  std::vector<uint64_t> decoded(aData.mExpectedDecoded.size());
+
+  uint64_t firstValue =
+      reinterpret_cast<uint64_t*>(&aData.mExpectedDecoded[0])[0];
+  bool rv = decoder.Decode64(
+      aData.mRiceParameter, firstValue,
+      decoded.size() - 1,  // # of entries (first value not included).
+      &decoded[0]);
+
+  return rv && decoded == aData.mExpectedDecoded;
+}
+
+static bool runOneTest128(TestingData128& aData) {
+  RiceDeltaDecoder decoder(&aData.mEncoded[0], aData.mEncoded.size());
+
+  nsAutoCString decoded;
+  decoded.SetCapacity(aData.mExpectedDecoded.Length());
+
+  uint64_t firstValueHigh =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[1];
+  uint64_t firstValueLow =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[0];
+
+  bool rv =
+      decoder.Decode128(aData.mRiceParameter, firstValueHigh, firstValueLow,
+                        (aData.mExpectedDecoded.Length() / 16) -
+                            1,  // # of entries (first value not included).
+                        decoded);
+
+  return rv && decoded == aData.mExpectedDecoded;
+}
+
+static bool runOneTest256(TestingData256& aData) {
+  RiceDeltaDecoder decoder(&aData.mEncoded[0], aData.mEncoded.size());
+
+  nsAutoCString decoded;
+  decoded.SetCapacity(aData.mExpectedDecoded.Length());
+
+  uint64_t firstValueOne =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[3];
+  uint64_t firstValueTwo =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[2];
+  uint64_t firstValueThree =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[1];
+  uint64_t firstValueFour =
+      reinterpret_cast<const uint64_t*>(aData.mExpectedDecoded.get())[0];
+  bool rv =
+      decoder.Decode256(aData.mRiceParameter, firstValueOne, firstValueTwo,
+                        firstValueThree, firstValueFour,
+                        (aData.mExpectedDecoded.Length() / 32) -
+                            1,  // # of entries (first value not included).
+                        decoded);
+
+  return rv && decoded == aData.mExpectedDecoded;
+}
+
 TEST(UrlClassifierRiceDeltaDecoder, SingleEncodedValue)
 {
   TestingData td = {{99}, {99}, 0};
 
   ASSERT_TRUE(runOneTest(td));
+}
+
+TEST(UrlClassifierRiceDeltaDecoder, SingleEncodedValue64)
+{
+  TestingData64 td = {{99}, {99}, 0};
+  ASSERT_TRUE(runOneTest64(td));
+}
+
+TEST(UrlClassifierRiceDeltaDecoder, SingleEncodedValue128)
+{
+  TestingData128 td = {
+      nsLiteralCString(
+          "\x63\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
+      {99, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+      0};
+  ASSERT_TRUE(runOneTest128(td));
+}
+
+TEST(UrlClassifierRiceDeltaDecoder, SingleEncodedValue256)
+{
+  TestingData256 td = {
+      nsLiteralCString(
+          "\x63\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+          "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
+      {99, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+       0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+      0};
+  ASSERT_TRUE(runOneTest256(td));
 }
 
 // In this batch of tests, the encoded data would be like

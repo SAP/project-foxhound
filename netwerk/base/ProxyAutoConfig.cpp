@@ -146,7 +146,7 @@ static void PACLogToConsole(nsString& aMessage) {
     auto task = [message(aMessage)]() {
       SocketProcessChild* child = SocketProcessChild::GetSingleton();
       if (child) {
-        Unused << child->SendOnConsoleMessage(message);
+        (void)child->SendOnConsoleMessage(message);
       }
     };
     if (NS_IsMainThread()) {
@@ -392,7 +392,14 @@ class JSContextWrapper {
     JSContext* cx = JS_NewContext(JS::DefaultHeapMaxBytes + aExtraHeapSize);
     if (NS_WARN_IF(!cx)) return nullptr;
 
-    JS::ContextOptionsRef(cx).setDisableIon().setDisableEvalSecurityChecks();
+    // PAC scripts are user-provided scripts that run in the parent process.
+    // Disable Ion because we don't require it and it reduces attack surface.
+    // Disable security checks because we cannot enforce restrictions on these
+    // scripts.
+    JS::ContextOptionsRef(cx)
+        .setDisableIon()
+        .setDisableEvalSecurityChecks()
+        .setDisableFilenameSecurityChecks();
 
     JSContextWrapper* entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
@@ -893,7 +900,7 @@ nsresult RemoteProxyAutoConfig::Init(nsIThread* aPACThread) {
     return rv;
   }
 
-  Unused << socketProcessParent->SendInitProxyAutoConfigChild(std::move(child));
+  (void)socketProcessParent->SendInitProxyAutoConfigChild(std::move(child));
   mProxyAutoConfigParent = new ProxyAutoConfigParent();
   return aPACThread->Dispatch(
       NS_NewRunnableFunction("ProxyAutoConfigParent::ProxyAutoConfigParent",
@@ -908,8 +915,8 @@ nsresult RemoteProxyAutoConfig::ConfigurePAC(const nsACString& aPACURI,
                                              bool aIncludePath,
                                              uint32_t aExtraHeapSize,
                                              nsISerialEventTarget*) {
-  Unused << mProxyAutoConfigParent->SendConfigurePAC(
-      aPACURI, aPACScriptData, aIncludePath, aExtraHeapSize);
+  (void)mProxyAutoConfigParent->SendConfigurePAC(aPACURI, aPACScriptData,
+                                                 aIncludePath, aExtraHeapSize);
   return NS_OK;
 }
 

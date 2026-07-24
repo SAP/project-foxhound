@@ -4,17 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_serializationhelpers_h__
-#define mozilla_dom_indexeddb_serializationhelpers_h__
+#ifndef mozilla_dom_indexeddb_serializationhelpers_h_
+#define mozilla_dom_indexeddb_serializationhelpers_h_
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-
 #include "mozilla/dom/BindingIPCUtils.h"
-#include "mozilla/dom/indexedDB/Key.h"
-#include "mozilla/dom/indexedDB/KeyPath.h"
 #include "mozilla/dom/IDBCursor.h"
 #include "mozilla/dom/IDBTransaction.h"
+#include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/indexedDB/KeyPath.h"
 
 namespace IPC {
 
@@ -83,4 +82,4 @@ struct ParamTraits<mozilla::dom::IDBTransaction::Durability>
 
 }  // namespace IPC
 
-#endif  // mozilla_dom_indexeddb_serializationhelpers_h__
+#endif  // mozilla_dom_indexeddb_serializationhelpers_h_

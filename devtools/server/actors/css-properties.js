@@ -35,7 +35,7 @@ exports.CssPropertiesActor = CssPropertiesActor;
  * the values are objects that contain information about that property.
  *
  * @param {Document} doc
- * @return {Object}
+ * @return {object}
  */
 function generateCssProperties(doc) {
   const properties = {};
@@ -71,7 +71,7 @@ exports.generateCssProperties = generateCssProperties;
  * Test if a CSS is property is known using server-code.
  *
  * @param {string} name
- * @return {Boolean}
+ * @return {boolean}
  */
 function isCssPropertyKnown(name) {
   try {
@@ -91,9 +91,9 @@ exports.isCssPropertyKnown = isCssPropertyKnown;
  * A wrapper for InspectorUtils.cssPropertySupportsType that ignores invalid
  * properties.
  *
- * @param {String} name The property name.
+ * @param {string} name The property name.
  * @param {number} type The type tested for support.
- * @return {Boolean} Whether the property supports the type.
+ * @return {boolean} Whether the property supports the type.
  *        If the property is unknown, false is returned.
  */
 function safeCssPropertySupportsType(name, type) {

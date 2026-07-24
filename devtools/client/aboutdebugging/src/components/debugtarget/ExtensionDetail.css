@@ -15,7 +15,7 @@
 
 .extension-backgroundscript__status::before {
   background-color: var(--grey-50);
-  border-radius: 100%;
+  border-radius: var(--border-radius-circle);
   content: "";
   height: calc(var(--base-unit) * 2);
   margin-inline-end: var(--base-unit);

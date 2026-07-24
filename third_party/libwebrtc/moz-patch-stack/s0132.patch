@@ -1,0 +1,164 @@
+From: Dan Baker <dbaker@mozilla.com>
+Date: Wed, 3 Dec 2025 10:19:00 -0700
+Subject: Bug 2000941 - (fix-5efb280e2b) fix build issue by adding check for
+ clang before utilizing #pragma clang
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/e30031be03fd478848bc83e40c479d1f21cbab8c
+---
+ api/audio/audio_processing_statistics.cc                | 4 ++++
+ api/audio/audio_processing_statistics.h                 | 4 ++++
+ api/data_channel_interface.h                            | 4 ++++
+ modules/audio_processing/include/audio_frame_proxies.cc | 6 ++++++
+ pc/dtmf_sender.cc                                       | 8 ++++++++
+ pc/sctp_data_channel.cc                                 | 4 ++++
+ 6 files changed, 30 insertions(+)
+
+diff --git a/api/audio/audio_processing_statistics.cc b/api/audio/audio_processing_statistics.cc
+index b6e92eaa12..a5cb89de7f 100644
+--- a/api/audio/audio_processing_statistics.cc
++++ b/api/audio/audio_processing_statistics.cc
+@@ -16,11 +16,15 @@ AudioProcessingStats::AudioProcessingStats() = default;
+ 
+ // TODO: https://issues.webrtc.org/42221314 - remove pragma when deprecated
+ // field `voice_detected` is removed.
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+ AudioProcessingStats::AudioProcessingStats(const AudioProcessingStats& other) =
+     default;
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+ 
+ AudioProcessingStats::~AudioProcessingStats() = default;
+ 
+diff --git a/api/audio/audio_processing_statistics.h b/api/audio/audio_processing_statistics.h
+index 897af0c2c3..53e882cb8b 100644
+--- a/api/audio/audio_processing_statistics.h
++++ b/api/audio/audio_processing_statistics.h
+@@ -20,8 +20,10 @@
+ namespace webrtc {
+ // This version of the stats uses Optionals, it will replace the regular
+ // AudioProcessingStatistics struct.
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+ struct RTC_EXPORT AudioProcessingStats {
+   AudioProcessingStats();
+   AudioProcessingStats(const AudioProcessingStats& other);
+@@ -64,7 +66,9 @@ struct RTC_EXPORT AudioProcessingStats {
+   // call to `GetStatistics()`.
+   std::optional<int32_t> delay_ms;
+ };
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+ 
+ }  // namespace webrtc
+ 
+diff --git a/api/data_channel_interface.h b/api/data_channel_interface.h
+index 1dc737f80b..544d8edaf9 100644
+--- a/api/data_channel_interface.h
++++ b/api/data_channel_interface.h
+@@ -32,8 +32,10 @@ namespace webrtc {
+ 
+ // C++ version of: https://www.w3.org/TR/webrtc/#idl-def-rtcdatachannelinit
+ // TODO(deadbeef): Use std::optional for the "-1 if unset" things.
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+ struct DataChannelInit {
+   // Deprecated. Reliability is assumed, and channel will be unreliable if
+   // maxRetransmitTime or MaxRetransmits is set.
+@@ -71,7 +73,9 @@ struct DataChannelInit {
+   // https://w3c.github.io/webrtc-priority/#new-rtcdatachannelinit-member
+   std::optional<PriorityValue> priority;
+ };
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+ 
+ // At the JavaScript level, data can be passed in as a string or a blob, so
+ // this structure's `binary` flag tells whether the data should be interpreted
+diff --git a/modules/audio_processing/include/audio_frame_proxies.cc b/modules/audio_processing/include/audio_frame_proxies.cc
+index 84523250a5..ecd5b177f1 100644
+--- a/modules/audio_processing/include/audio_frame_proxies.cc
++++ b/modules/audio_processing/include/audio_frame_proxies.cc
+@@ -32,14 +32,20 @@ int ProcessAudioFrame(AudioProcessing* ap, AudioFrame* frame) {
+   AudioProcessingStats stats = ap->GetStatistics();
+ 
+   // TODO: https://issues.webrtc.org/42221314 - remove when deleted
++
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+   if (stats.voice_detected) {
+     frame->vad_activity_ = *stats.voice_detected
+                                ? AudioFrame::VADActivity::kVadActive
+                                : AudioFrame::VADActivity::kVadPassive;
+   }
++
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+ 
+   return result;
+ }
+diff --git a/pc/dtmf_sender.cc b/pc/dtmf_sender.cc
+index 7890e58841..4d8a540a17 100644
+--- a/pc/dtmf_sender.cc
++++ b/pc/dtmf_sender.cc
+@@ -191,10 +191,14 @@ void DtmfSender::DoInsertDtmf() {
+     // Fire a “OnToneChange” event with an empty string and stop.
+     if (observer_) {
+       observer_->OnToneChange(std::string(), tones_);
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+       observer_->OnToneChange(std::string());
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+     }
+     return;
+   } else {
+@@ -232,10 +236,14 @@ void DtmfSender::DoInsertDtmf() {
+   if (observer_) {
+     observer_->OnToneChange(tones_.substr(first_tone_pos, 1),
+                             tones_.substr(first_tone_pos + 1));
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+     observer_->OnToneChange(tones_.substr(first_tone_pos, 1));
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+   }
+ 
+   // Erase the unrecognized characters plus the tone that's just processed.
+diff --git a/pc/sctp_data_channel.cc b/pc/sctp_data_channel.cc
+index 18a8e8ab6b..9f32b7b5f8 100644
+--- a/pc/sctp_data_channel.cc
++++ b/pc/sctp_data_channel.cc
+@@ -84,11 +84,15 @@ BYPASS_PROXY_METHOD2(void,
+ END_PROXY_MAP(DataChannel)
+ }  // namespace
+ 
++#if defined(__clang__)
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
+ InternalDataChannelInit::InternalDataChannelInit(const DataChannelInit& base)
+     : DataChannelInit(base), open_handshake_role(kOpener) {
++#if defined(__clang__)
+ #pragma clang diagnostic pop
++#endif
+   // If the channel is externally negotiated, do not send the OPEN message.
+   if (base.negotiated) {
+     open_handshake_role = kNone;

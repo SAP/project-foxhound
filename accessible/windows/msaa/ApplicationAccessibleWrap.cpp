@@ -22,15 +22,6 @@ NS_IMPL_ISUPPORTS_INHERITED0(ApplicationAccessibleWrap, ApplicationAccessible)
 
 already_AddRefed<AccAttributes> ApplicationAccessibleWrap::NativeAttributes() {
   RefPtr<AccAttributes> attributes = new AccAttributes();
-
-  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  if (gfxInfo) {
-    bool isD2DEnabled = false;
-    gfxInfo->GetD2DEnabled(&isD2DEnabled);
-    RefPtr<nsAtom> attrName = NS_Atomize(u"D2D"_ns);
-    attributes->SetAttribute(attrName, isD2DEnabled);
-  }
-
   return attributes.forget();
 }
 

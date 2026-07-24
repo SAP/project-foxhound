@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/media_types.h"
 #include "api/test/network_emulation/create_cross_traffic.h"
 #include "api/test/network_emulation/cross_traffic.h"
@@ -30,7 +31,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/buffer.h"
 #include "system_wrappers/include/clock.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/scenario/scenario.h"
@@ -95,7 +96,7 @@ TEST(ReceiveSideCongestionControllerTest,
 void CheckRfc8888Feedback(
     const std::vector<std::unique_ptr<rtcp::RtcpPacket>>& rtcp_packets) {
   ASSERT_THAT(rtcp_packets, SizeIs(1));
-  rtc::Buffer buffer = rtcp_packets[0]->Build();
+  Buffer buffer = rtcp_packets[0]->Build();
   rtcp::CommonHeader header;
   EXPECT_TRUE(header.Parse(buffer.data(), buffer.size()));
   // Check for RFC 8888 format message type 11(CCFB)
@@ -104,7 +105,7 @@ void CheckRfc8888Feedback(
 }
 
 TEST(ReceiveSideCongestionControllerTest, SendsRfc8888FeedbackIfForced) {
-  test::ExplicitKeyValueConfig field_trials(
+  FieldTrials field_trials = CreateTestFieldTrials(
       "WebRTC-RFC8888CongestionControlFeedback/force_send:true/");
   MockFunction<void(std::vector<std::unique_ptr<rtcp::RtcpPacket>>)>
       rtcp_sender;

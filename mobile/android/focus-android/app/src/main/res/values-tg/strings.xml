@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p> <p>Онро ҳамчун браузери хусусӣ истифода баред: <ul> <li>Ҷустуҷӯ кунед ва рост дар дохили барнома тамошо намоед</li> <li>Васоити пайгириро манъ кунед (ё танзимотро иваз карда, ба васоити пайгирӣ иҷозат диҳед)</li> <li>Кукиҳоро нест кунед, аз он ҷумла таърихи ҷустуҷӯ ва тамошоро пок намоед</li> </ul> </p> <p>«%1$s» аз ҷониши «Mozilla» истеҳсол карда шудааст. Мақсади мо дар мусоидат ба Интернети солим ва кушод мебошад.<br/> <a href=\"%2$s\">Маълумоти бештар</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p>\n<p>Онро ҳамчун браузери хусусӣ истифода баред:\n<ul>\n<li>Ҷустуҷӯ кунед ва рост дар дохили барнома тамошо намоед</li>\n<li>Васоити пайгириро манъ кунед (ё танзимотро иваз карда, ба васоити пайгирӣ иҷозат диҳед)</li>\n<li>Кукиҳоро нест кунед, аз он ҷумла таърихи ҷустуҷӯ ва тамошоро пок намоед</li>\n</ul> </p>\n<p>«%1$s» аз ҷониши «Mozilla» истеҳсол карда шудааст. Мақсади мо дар мусоидат ба Интернети солим ва кушод мебошад.<br/>\n<a href=\"%2$s\">Маълумоти бештар</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Маълумоти бештар</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Бо идома додан, шумо бо %1$s розӣ мешавед</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Бо идома додан, шумо бо %1$s розӣ мешавед.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Шартҳои истифодаи «Firefox».</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Шартҳои истифодаи «Firefox»</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Браузери «Firefox» ба махфияти шумо ғамхорӣ мекунад. Маълумоти бештар дар «%1$s»</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Браузери «Firefox» ба махфияти шумо ғамхорӣ мекунад. Маълумоти бештар дар «%1$s».</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Огоҳномаи махфият.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Огоҳномаи махфият</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Пок кардани таърихи тамошо</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Пӯшидани варақаҳои дигар</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Илова кардани варақаи нав</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ин метавонад дар танзимоти сервер мушкилӣ дошта бошад ё касе кӯшиш мекунад, ки серверро тақаллуб намояд. <br/><br/> Агар шумо қаблан ба ин сервер бо муваффақият пайваст шуда бошед, эҳтимол ин хато муваққатӣ аст ва шумо метавонед баъдтар амалро аз нав кӯшиш намоед.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Касе метавонад тақаллуб кардани сомонаро кӯшиш намояд ва идомаи кор бо ин сомона хатарнок аст.</label> <br><br> <label>«%1$s» ба <b>%2$s</b> эътимод надорад, зеро барорандаи гувоҳнома номаълум аст, гувоҳнома ба таври худ имзо гузоштааст ё сервер гувоҳномаҳои фосилавии дурустро намефиристад.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Касе метавонад тақаллуб кардани сомонаро кӯшиш намояд ва идомаи кор бо ин сомона хатарнок аст.</label> <br><br>\n<label>«%1$s» ба <b>%2$s</b> эътимод надорад, зеро барорандаи гувоҳнома номаълум аст, гувоҳнома ба таври худ имзо гузоштааст ё сервер гувоҳномаҳои фосилавии дурустро намефиристад.</label>]]></string>
   <!--
     Sessions List
 

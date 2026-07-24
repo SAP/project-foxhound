@@ -18,8 +18,8 @@
  *
  */
 
-#ifndef nsWildCard_h__
-#define nsWildCard_h__
+#ifndef nsWildCard_h_
+#define nsWildCard_h_
 
 #include "nscore.h"
 
@@ -60,4 +60,4 @@ int NS_WildCardMatch(const char* aStr, const char* aExpr,
 int NS_WildCardMatch(const char16_t* aStr, const char16_t* aExpr,
                      bool aCaseInsensitive);
 
-#endif /* nsWildCard_h__ */
+#endif /* nsWildCard_h_ */

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_WIDGET_WINDOW_SURFACE_H
-#define _MOZILLA_WIDGET_WINDOW_SURFACE_H
+#ifndef MOZILLA_WIDGET_WINDOW_SURFACE_H
+#define MOZILLA_WIDGET_WINDOW_SURFACE_H
 
 #include "mozilla/gfx/2D.h"
 #include "Units.h"
@@ -38,4 +38,4 @@ class WindowSurface {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // _MOZILLA_WIDGET_WINDOW_SURFACE_H
+#endif  // MOZILLA_WIDGET_WINDOW_SURFACE_H

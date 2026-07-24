@@ -30,10 +30,6 @@
       />
       <html:link
         rel="stylesheet"
-        href="chrome://browser/skin/sanitizeDialog.css"
-      />
-      <html:link
-        rel="stylesheet"
         href="chrome://browser/skin/sanitizeDialog_v2.css"
       />
 
@@ -112,6 +108,7 @@
           <checkbox
             class="clearingItemCheckbox"
             data-l10n-id="item-history-and-downloads"
+            aria-describedby="browsing-history-downloads-description"
             preference="privacy.clearHistory.browsingHistoryAndDownloads"
             id="browsingHistoryAndDownloads"
           />
@@ -124,13 +121,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cookies-site-data"
-            aria-describedby="cookies-site-data-description"
-            preference="privacy.clearHistory.cookiesAndStorage"
-            id="cookiesAndStorage"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cookies-site-data"
+              aria-describedby="cookies-site-data-description"
+              preference="privacy.clearHistory.cookiesAndStorage"
+              id="cookiesAndStorage"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cookiesAndStorage-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             id="cookies-site-data-description"
             data-l10n-id="item-cookies-site-data-description"
@@ -140,13 +154,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cached-content"
-            aria-describedby="cached-content-description"
-            preference="privacy.clearHistory.cache"
-            id="cache"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cached-content"
+              aria-describedby="cached-content-description"
+              preference="privacy.clearHistory.cache"
+              id="cache"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cache-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             id="cached-content-description"
             data-l10n-id="item-cached-content-description"
@@ -205,13 +236,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cookies-site-data"
-            aria-describedby="cookies-site-data-description"
-            preference="privacy.clearSiteData.cookiesAndStorage"
-            id="cookiesAndStorage"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cookies-site-data"
+              aria-describedby="cookies-site-data-description"
+              preference="privacy.clearSiteData.cookiesAndStorage"
+              id="cookiesAndStorage"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cookiesAndStorage-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             id="cookies-site-data-description"
             data-l10n-id="item-cookies-site-data-description"
@@ -221,13 +269,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cached-content"
-            aria-describedby="cached-content-description"
-            preference="privacy.clearSiteData.cache"
-            id="cache"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cached-content"
+              aria-describedby="cached-content-description"
+              preference="privacy.clearSiteData.cache"
+              id="cache"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cache-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             id="cached-content-description"
             data-l10n-id="item-cached-content-description"
@@ -286,13 +351,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cookies-site-data"
-            preference="privacy.clearOnShutdown_v2.cookiesAndStorage"
-            aria-describedby="cookies-site-data-description"
-            id="cookiesAndStorage"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cookies-site-data"
+              preference="privacy.clearOnShutdown_v2.cookiesAndStorage"
+              aria-describedby="cookies-site-data-description"
+              id="cookiesAndStorage"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cookiesAndStorage-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             class="sanitizeCheckboxDescription text-deemphasized"
             data-l10n-id="item-cookies-site-data-description"
@@ -302,13 +384,30 @@
       </hbox>
       <hbox class="checkboxWithDescription">
         <vbox>
-          <checkbox
-            class="clearingItemCheckbox"
-            data-l10n-id="item-cached-content"
-            preference="privacy.clearOnShutdown_v2.cache"
-            aria-describedby="cached-content-description"
-            id="cache"
-          />
+          <hbox align="center">
+            <checkbox
+              class="clearingItemCheckbox"
+              data-l10n-id="item-cached-content"
+              preference="privacy.clearOnShutdown_v2.cache"
+              aria-describedby="cached-content-description"
+              id="cache"
+            />
+            <hbox
+              class="data-size-loading"
+              id="cache-loading"
+              hidden="true"
+              align="center"
+            >
+              <html:img
+                class="data-size-spinner"
+                src="chrome://global/skin/icons/loading.svg"
+              />
+              <label
+                class="data-size-label"
+                data-l10n-id="sanitize-calculating-size"
+              />
+            </hbox>
+          </hbox>
           <description
             class="sanitizeCheckboxDescription text-deemphasized"
             data-l10n-id="item-cached-content-description"

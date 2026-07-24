@@ -7,16 +7,16 @@
 #ifndef FILE_BLOCK_CACHE_H_
 #define FILE_BLOCK_CACHE_H_
 
-#include "mozilla/Attributes.h"
+#include <deque>
+
+#include "MediaBlockCacheBase.h"
+#include "mozilla/AbstractThread.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/AbstractThread.h"
-#include "nsTArray.h"
-#include "MediaBlockCacheBase.h"
 #include "nsDeque.h"
+#include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include <deque>
 
 struct PRFileDesc;
 
@@ -77,8 +77,7 @@ class FileBlockCache : public MediaBlockCacheBase {
   // Synchronously reads data from file. May read from file or memory
   // depending on whether written blocks have been flushed to file yet.
   // Not recommended to be called from the main thread, as can cause jank.
-  nsresult Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
-                int32_t* aBytes) override;
+  nsresult Read(int64_t aOffset, uint8_t* aData, int32_t aLength) override;
 
   // Moves a block asynchronously. Can be called on any thread.
   // This defers file I/O to a non-main thread.

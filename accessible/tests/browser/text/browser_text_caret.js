@@ -4,6 +4,12 @@
 
 "use strict";
 
+/* import-globals-from ../../mochitest/attributes.js */
+/* import-globals-from ../../mochitest/states.js */
+loadScripts(
+  { name: "attributes.js", dir: MOCHITESTS_DIR },
+  { name: "states.js", dir: MOCHITESTS_DIR }
+);
 /* import-globals-from ../../mochitest/text.js */
 
 /**
@@ -17,8 +23,10 @@ addAccessibleTask(
           cols="6">ab cd e</textarea>
 <textarea id="empty"></textarea>
 <div id="contentEditable" contenteditable>a<span>b</span></div>
+<div id="editableWithTextThenP" contenteditable>a<p>b</p></div>
+<div id="editableWithTextAndLink" contenteditable>a<a href="#">b</a>c</div>
   `,
-  async function (browser, docAcc) {
+  async function testRetrieval(browser, docAcc) {
     const textarea = findAccessibleChildByID(docAcc, "textarea", [
       nsIAccessibleText,
     ]);
@@ -511,6 +519,62 @@ addAccessibleTask(
       kOk,
       kOk
     );
+
+    const editableWithTextThenP = findAccessibleChildByID(
+      docAcc,
+      "editableWithTextThenP",
+      [nsIAccessibleText]
+    );
+    info("Focusing editableWithTextThenP");
+    caretMoved = waitForEvent(EVENT_TEXT_CARET_MOVED, editableWithTextThenP);
+    editableWithTextThenP.takeFocus();
+    evt = await caretMoved;
+    is(
+      editableWithTextThenP.caretOffset,
+      0,
+      "Initial caret offset in editableWithTextThenP is 0"
+    );
+    evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+    ok(!evt.isAtEndOfLine, "Caret is not at end of line");
+    info("Pressing ArrowRight");
+    caretMoved = waitForEvent(EVENT_TEXT_CARET_MOVED, editableWithTextThenP);
+    EventUtils.synthesizeKey("KEY_ArrowRight");
+    evt = await caretMoved;
+    is(
+      editableWithTextThenP.caretOffset,
+      1,
+      "Caret offset is 1 after ArrowRight"
+    );
+    evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+    ok(evt.isAtEndOfLine, "Caret is at end of line");
+
+    const editableWithTextAndLink = findAccessibleChildByID(
+      docAcc,
+      "editableWithTextAndLink",
+      [nsIAccessibleText]
+    );
+    info("Focusing editableWithTextAndLink");
+    caretMoved = waitForEvent(EVENT_TEXT_CARET_MOVED, editableWithTextAndLink);
+    editableWithTextAndLink.takeFocus();
+    evt = await caretMoved;
+    is(
+      editableWithTextAndLink.caretOffset,
+      0,
+      "Initial caret offset in editableWithTextAndLink is 0"
+    );
+    evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+    ok(!evt.isAtEndOfLine, "Caret is not at end of line");
+    info("Pressing ArrowRight");
+    caretMoved = waitForEvent(EVENT_TEXT_CARET_MOVED, editableWithTextAndLink);
+    EventUtils.synthesizeKey("KEY_ArrowRight");
+    evt = await caretMoved;
+    is(
+      editableWithTextAndLink.caretOffset,
+      1,
+      "Caret offset is 1 after ArrowRight"
+    );
+    evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+    ok(!evt.isAtEndOfLine, "Caret is not at end of line");
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
@@ -692,4 +756,117 @@ addAccessibleTask(
     is(input.caretOffset, -1, "No caret in inputAfterEmpty");
   },
   { chrome: true, topLevel: true }
+);
+
+/**
+ * Test retrieving the caret line number.
+ */
+addAccessibleTask(
+  `
+ab
+<blockquote id="blockquote">
+  cd<br>
+  ef
+  <p id="p">gh</p>
+</blockquote>
+ij
+  `,
+  async function testLineNumber(browser, docAcc) {
+    docAcc.QueryInterface(nsIAccessibleText);
+    testAttrs(docAcc, { "line-number": "1" }, true);
+    info("Moving caret to b");
+    let moved = waitForEvent(EVENT_TEXT_CARET_MOVED, docAcc);
+    docAcc.caretOffset = 1;
+    await moved;
+    testAttrs(docAcc, { "line-number": "1" }, true);
+    info("Moving caret to c");
+    const blockquote = findAccessibleChildByID(docAcc, "blockquote", [
+      nsIAccessibleText,
+    ]);
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, blockquote);
+    blockquote.caretOffset = 0;
+    await moved;
+    testAttrs(docAcc, { "line-number": "2" }, true);
+    info("Moving caret to d");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, blockquote);
+    blockquote.caretOffset = 1;
+    await moved;
+    testAttrs(docAcc, { "line-number": "2" }, true);
+    info("Moving caret to e");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, blockquote);
+    blockquote.caretOffset = 3;
+    await moved;
+    testAttrs(docAcc, { "line-number": "3" }, true);
+    info("Moving caret to f");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, blockquote);
+    blockquote.caretOffset = 4;
+    await moved;
+    testAttrs(docAcc, { "line-number": "3" }, true);
+    info("moving caret to g");
+    const p = findAccessibleChildByID(docAcc, "p", [nsIAccessibleText]);
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, p);
+    p.caretOffset = 0;
+    await moved;
+    testAttrs(docAcc, { "line-number": "4" }, true);
+    info("moving caret to h");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, p);
+    p.caretOffset = 1;
+    await moved;
+    testAttrs(docAcc, { "line-number": "4" }, true);
+    info("moving caret to i");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, docAcc);
+    docAcc.caretOffset = 4;
+    await moved;
+    testAttrs(docAcc, { "line-number": "5" }, true);
+    info("moving caret to j");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, docAcc);
+    docAcc.caretOffset = 5;
+    await moved;
+    testAttrs(docAcc, { "line-number": "5" }, true);
+    info("moving caret to end");
+    moved = waitForEvent(EVENT_TEXT_CARET_MOVED, docAcc);
+    // We end up with space at the end of the document, so use characterCount to
+    // ensure we really move to the end.
+    docAcc.caretOffset = docAcc.characterCount;
+    await moved;
+    testAttrs(docAcc, { "line-number": "5" }, true);
+  },
+  {
+    // Bug 2007033: This is currently only supported for LocalAccessible.
+    chrome: true,
+    topLevel: false,
+    contentSetup: async function contentSetup() {
+      content.document.designMode = "on";
+    },
+  }
+);
+
+/**
+ * Test setting the caret in a document which isn't focused.
+ */
+addAccessibleTask(
+  `<div id="editable" contenteditable>abc</div>`,
+  async function testCaretUnfocusedDoc(browser, docAcc, topDocAcc) {
+    testStates(topDocAcc, STATE_FOCUSED);
+    const editable = findAccessibleChildByID(docAcc, "editable", [
+      nsIAccessibleText,
+    ]);
+    info("Moving caret to b");
+    await contentSpawnMutation(
+      browser,
+      { unexpected: [[EVENT_TEXT_CARET_MOVED, editable]] },
+      function () {
+        const sel = content.getSelection();
+        const editableLeaf =
+          content.document.getElementById("editable").firstChild;
+        sel.setBaseAndExtent(editableLeaf, 1, editableLeaf, 1);
+      }
+    );
+    info("Focusing editable");
+    let focused = waitForEvent(EVENT_FOCUS, editable);
+    editable.takeFocus();
+    await focused;
+    is(editable.caretOffset, 1, "editable caretOffset is 1");
+  },
+  { chrome: false, topLevel: false, iframe: true, remoteIframe: true }
 );

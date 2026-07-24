@@ -24,13 +24,14 @@
 
   pref("pdfjs.enableUpdatedAddImage", true);
   pref("pdfjs.enableSignatureEditor", true);
-
-  #if defined(EARLY_BETA_OR_EARLIER)
-    pref("pdfjs.enableHighlightFloatingButton", true);
-  #else
-    pref("pdfjs.enableHighlightFloatingButton", false);
-  #endif
+  pref("pdfjs.enableComment", true);
+  pref("pdfjs.enableHighlightFloatingButton", true);
 
   pref("pdfjs.enableAltTextForEnglish", false);
+  pref("pdfjs.enableAltText", true);
+  pref("pdfjs.enableAltTextModelDownload", false);
+  pref("pdfjs.enableGuessAltText", false);
+
+  pref("pdfjs.enableHWA", true);
 
 #endif

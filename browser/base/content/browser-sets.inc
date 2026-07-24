@@ -33,6 +33,7 @@
     <command id="cmd_help_importFromAnotherBrowser" />
     <command id="cmd_close" />
     <command id="cmd_closeWindow" />
+    <command id="cmd_returnToOpener" />
     <command id="cmd_minimizeWindow" />
     <command id="cmd_maximizeWindow" />
     <command id="cmd_restoreWindow" />
@@ -78,6 +79,7 @@
     <command id="Profiles:CreateProfile" />
     <command id="Profiles:ManageProfiles" />
     <command id="Profiles:LaunchProfile" />
+    <command id="Profiles:MoveTabsToProfile" />
     <command id="Browser:NextTab" />
     <command id="Browser:PrevTab" />
     <command id="Browser:ShowAllTabs" />
@@ -96,6 +98,9 @@
     <command id="Tools:Downloads" />
     <command id="Tools:Addons" />
     <command id="cmd_openUnifiedExtensionsPanel" />
+    <command id="Tools:AIWindow" />
+    <command id="Tools:ChatsHistory" />
+    <command id="Tools:ClassicWindow" />
     <command id="Tools:Sanitize" />
     <command id="Tools:PrivateBrowsing" />
     <command id="Browser:Screenshot" />
@@ -114,6 +119,11 @@
 #endif
   </commandset>
 #include ../../components/places/content/placesCommands.inc.xhtml
+  <commandset id="splitViewCommands">
+    <command id="splitViewCmd_separateTabs"/>
+    <command id="splitViewCmd_reverseTabs"/>
+    <command id="splitViewCmd_closeTabs"/>
+  </commandset>
 
   <keyset id="mainKeyset">
     <key id="key_newNavigator"
@@ -213,10 +223,10 @@
     <key id="goForwardKb2" data-l10n-id="nav-fwd-shortcut-alt" command="Browser:Forward" modifiers="accel"/>
 #endif
     <key id="goHome" keycode="VK_HOME" modifiers="alt"/>
-    <key keycode="VK_F5" command="Browser:Reload"/>
+    <key id="key_reload2" keycode="VK_F5" command="Browser:Reload"/>
 #ifndef XP_MACOSX
     <key id="showAllHistoryKb" data-l10n-id="history-show-all-shortcut" command="Browser:ShowAllHistory" modifiers="accel,shift"/>
-    <key keycode="VK_F5" command="Browser:ReloadSkipCache" modifiers="accel"/>
+    <key id="key_reload_skip_cache2" keycode="VK_F5" command="Browser:ReloadSkipCache" modifiers="accel"/>
     <key id="key_enterFullScreen" keycode="VK_F11" command="View:FullScreen"/>
     <key id="key_exitFullScreen" keycode="VK_F11" command="View:FullScreen" reserved="true" disabled="true"/>
 #else

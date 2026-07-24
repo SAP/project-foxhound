@@ -17,21 +17,25 @@ const TOOLBAR_MAPPING = {
   tabstrip: "TabsToolbar",
 };
 
+const DEFAULT_ICON = "default.png";
+const LIGHT_THEME_ICON = "black.png";
+const DARK_THEME_ICON = "white.png";
+
 async function testBrowserAction(extension, expectedIcon) {
-  let browserActionWidget = getBrowserActionWidget(extension);
+  const browserActionWidget = getBrowserActionWidget(extension);
   await promiseAnimationFrame();
-  let browserActionButton = browserActionWidget
+  const browserActionButton = browserActionWidget
     .forWindow(window)
     .node.querySelector(".unified-extensions-item-action-button");
-  let image = getListStyleImage(browserActionButton);
+  const image = getListStyleImage(browserActionButton);
   ok(
-    image.includes(expectedIcon),
+    image?.includes(expectedIcon),
     `Expected browser action icon (${image}) to be ${expectedIcon}`
   );
 }
 
 async function testStaticTheme(options) {
-  let {
+  const {
     themeData,
     themeIcons,
     withDefaultIcon,
@@ -39,7 +43,7 @@ async function testStaticTheme(options) {
     defaultArea = "navbar",
   } = options;
 
-  let manifest = {
+  const manifest = {
     browser_action: {
       theme_icons: themeIcons,
       default_area: defaultArea,
@@ -47,17 +51,17 @@ async function testStaticTheme(options) {
   };
 
   if (withDefaultIcon) {
-    manifest.browser_action.default_icon = "default.png";
+    manifest.browser_action.default_icon = DEFAULT_ICON;
   }
 
-  let extension = ExtensionTestUtils.loadExtension({ manifest });
+  const extension = ExtensionTestUtils.loadExtension({ manifest });
 
   await extension.startup();
 
   // Ensure we show the menupanel at least once. This makes sure that the
   // elements we're going to query the style of are in the flat tree.
   if (defaultArea == "menupanel") {
-    let shown = BrowserTestUtils.waitForPopupEvent(
+    const shown = BrowserTestUtils.waitForPopupEvent(
       window.gUnifiedExtensions.panel,
       "shown"
     );
@@ -66,17 +70,15 @@ async function testStaticTheme(options) {
   }
 
   // Confirm that the browser action has the correct default icon before a theme is loaded.
-  let toolbarId = TOOLBAR_MAPPING[defaultArea];
-  let expectedDefaultIcon;
+  const toolbarId = TOOLBAR_MAPPING[defaultArea];
+
   // Some platforms have dark toolbars by default, take it in account when picking the default icon.
-  if (
-    toolbarId &&
-    document.getElementById(toolbarId).hasAttribute("brighttext")
-  ) {
-    expectedDefaultIcon = "light.png";
-  } else {
-    expectedDefaultIcon = withDefaultIcon ? "default.png" : "dark.png";
-  }
+  const hasDarkToolbar =
+    toolbarId && document.getElementById(toolbarId).hasAttribute("brighttext");
+  const expectedDefaultIcon = hasDarkToolbar
+    ? DARK_THEME_ICON
+    : LIGHT_THEME_ICON;
+
   if (Services.appinfo.nativeMenubar) {
     ok(
       !document.getElementById("toolbar-menubar").hasAttribute("brighttext"),
@@ -85,7 +87,7 @@ async function testStaticTheme(options) {
   }
   await testBrowserAction(extension, expectedDefaultIcon);
 
-  let theme = ExtensionTestUtils.loadExtension({
+  const theme = ExtensionTestUtils.loadExtension({
     manifest: {
       theme: {
         colors: themeData,
@@ -96,13 +98,7 @@ async function testStaticTheme(options) {
   await theme.startup();
 
   // Confirm that the correct icon is used when the theme is loaded.
-  if (expectedIcon == "dark") {
-    // The dark icon should be used if the area is light.
-    await testBrowserAction(extension, "dark.png");
-  } else {
-    // The light icon should be used if the area is dark.
-    await testBrowserAction(extension, "light.png");
-  }
+  await testBrowserAction(extension, expectedIcon);
 
   await theme.unload();
 
@@ -115,11 +111,11 @@ async function testStaticTheme(options) {
 add_task(async function browseraction_theme_icons_light_theme() {
   await testStaticTheme({
     themeData: LIGHT_THEME_COLORS,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -127,16 +123,16 @@ add_task(async function browseraction_theme_icons_light_theme() {
   });
   await testStaticTheme({
     themeData: LIGHT_THEME_COLORS,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
@@ -147,11 +143,11 @@ add_task(async function browseraction_theme_icons_light_theme() {
 add_task(async function browseraction_theme_icons_dark_theme() {
   await testStaticTheme({
     themeData: DARK_THEME_COLORS,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -159,16 +155,16 @@ add_task(async function browseraction_theme_icons_dark_theme() {
   });
   await testStaticTheme({
     themeData: DARK_THEME_COLORS,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
@@ -177,7 +173,7 @@ add_task(async function browseraction_theme_icons_dark_theme() {
 });
 
 add_task(async function browseraction_theme_icons_different_toolbars() {
-  let themeData = {
+  const themeData = {
     frame: "#000",
     tab_background_text: "#fff",
     toolbar: "#fff",
@@ -185,11 +181,11 @@ add_task(async function browseraction_theme_icons_different_toolbars() {
   };
   await testStaticTheme({
     themeData,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -197,28 +193,28 @@ add_task(async function browseraction_theme_icons_different_toolbars() {
   });
   await testStaticTheme({
     themeData,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
   });
   await testStaticTheme({
     themeData,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     defaultArea: "tabstrip",
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -226,17 +222,17 @@ add_task(async function browseraction_theme_icons_different_toolbars() {
   });
   await testStaticTheme({
     themeData,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     defaultArea: "tabstrip",
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
@@ -244,17 +240,17 @@ add_task(async function browseraction_theme_icons_different_toolbars() {
 });
 
 add_task(async function browseraction_theme_icons_overflow_panel() {
-  let themeData = {
+  const themeData = {
     popup: "#000",
     popup_text: "#fff",
   };
   await testStaticTheme({
     themeData,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -262,16 +258,16 @@ add_task(async function browseraction_theme_icons_overflow_panel() {
   });
   await testStaticTheme({
     themeData,
-    expectedIcon: "dark",
+    expectedIcon: LIGHT_THEME_ICON,
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
@@ -279,12 +275,12 @@ add_task(async function browseraction_theme_icons_overflow_panel() {
 
   await testStaticTheme({
     themeData,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     defaultArea: "menupanel",
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 19,
       },
     ],
@@ -292,17 +288,17 @@ add_task(async function browseraction_theme_icons_overflow_panel() {
   });
   await testStaticTheme({
     themeData,
-    expectedIcon: "light",
+    expectedIcon: DARK_THEME_ICON,
     defaultArea: "menupanel",
     themeIcons: [
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 16,
       },
       {
-        light: "light.png",
-        dark: "dark.png",
+        dark: LIGHT_THEME_ICON,
+        light: DARK_THEME_ICON,
         size: 32,
       },
     ],
@@ -310,7 +306,7 @@ add_task(async function browseraction_theme_icons_overflow_panel() {
 });
 
 add_task(async function browseraction_theme_icons_dynamic_theme() {
-  let themeExtension = ExtensionTestUtils.loadExtension({
+  const themeExtension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["theme"],
     },
@@ -328,20 +324,20 @@ add_task(async function browseraction_theme_icons_dynamic_theme() {
 
   await themeExtension.startup();
 
-  let extension = ExtensionTestUtils.loadExtension({
+  const extension = ExtensionTestUtils.loadExtension({
     manifest: {
       browser_action: {
-        default_icon: "default.png",
+        default_icon: DEFAULT_ICON,
         default_area: "navbar",
         theme_icons: [
           {
-            light: "light.png",
-            dark: "dark.png",
+            dark: LIGHT_THEME_ICON,
+            light: DARK_THEME_ICON,
             size: 16,
           },
           {
-            light: "light.png",
-            dark: "dark.png",
+            dark: LIGHT_THEME_ICON,
+            light: DARK_THEME_ICON,
             size: 32,
           },
         ],
@@ -352,27 +348,27 @@ add_task(async function browseraction_theme_icons_dynamic_theme() {
   await extension.startup();
 
   // Confirm that the browser action has the default icon before a theme is set.
-  await testBrowserAction(extension, "default.png");
+  await testBrowserAction(extension, LIGHT_THEME_ICON);
 
   // Update the theme to a light theme.
   themeExtension.sendMessage("update-theme", LIGHT_THEME_COLORS);
   await themeExtension.awaitMessage("theme-updated");
 
   // Confirm that the dark icon is used for the light theme.
-  await testBrowserAction(extension, "dark.png");
+  await testBrowserAction(extension, LIGHT_THEME_ICON);
 
   // Update the theme to a dark theme.
   themeExtension.sendMessage("update-theme", DARK_THEME_COLORS);
   await themeExtension.awaitMessage("theme-updated");
 
   // Confirm that the light icon is used for the dark theme.
-  await testBrowserAction(extension, "light.png");
+  await testBrowserAction(extension, DARK_THEME_ICON);
 
   // Unload the theme.
   await themeExtension.unload();
 
-  // Confirm that the default icon is used when the theme is unloaded.
-  await testBrowserAction(extension, "default.png");
+  // Confirm that the light icon is used when the theme is unloaded.
+  await testBrowserAction(extension, LIGHT_THEME_ICON);
 
   await extension.unload();
 });

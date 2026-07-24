@@ -17,7 +17,6 @@ server.registerPathHandler("/imported.css", (req, res) => {
 });
 
 add_setup(() => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   // The restrictedDomains pref should be set early, because the pref is read
   // only once (on first use) by WebExtensionPolicy::IsRestrictedURI.

@@ -30,17 +30,11 @@
     />
     <link
       rel="stylesheet"
-      href="chrome://browser/content/contentSearchUI.css"
-    />
-    <link
-      rel="stylesheet"
       href="chrome://newtab/content/css/activity-stream.css"
     />
   </head>
   <body class="activity-stream">
     <div id="root"></div>
-    <script src="chrome://browser/content/contentSearchUI.js"></script>
-    <script src="chrome://browser/content/contentSearchHandoffUI.js"></script>
     <script src="chrome://browser/content/contentTheme.js"></script>
     <script src="chrome://global/content/vendor/react-dev.js"></script>
     <script src="chrome://global/content/vendor/react-dom-dev.js"></script>
@@ -54,6 +48,11 @@
       async
       type="module"
       src="chrome://global/content/elements/moz-toggle.mjs"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-badge.mjs"
     ></script>
     <script
       async
@@ -89,6 +88,16 @@
       async
       type="module"
       src="chrome://global/content/elements/moz-reorderable-list.mjs"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/panel-list.js"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-support-link.mjs"
     ></script>
   </body>
 </html>

@@ -26,7 +26,6 @@ add_task(async function test_cookie_banners_promo_user_set_prefs() {
   await ASRouter.onPrefChange();
 
   const { win, tab } = await openTabAndWaitForRender();
-
   await SpecialPowers.spawn(tab, [promoImgSrc], async function (imgSrc) {
     const promoImage = content.document.querySelector(
       ".promo-image-large > img"

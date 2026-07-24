@@ -9,8 +9,6 @@
 
 #include <ostream>
 
-#include "mozilla/Attributes.h"
-
 #include "gfxPoint.h"
 
 namespace mozilla {

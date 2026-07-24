@@ -26,8 +26,8 @@
 }
 
 .toggle-group-label-iconic::before {
-  width: var(--icon-size-default);
-  height: var(--icon-size-default);
+  width: var(--icon-size);
+  height: var(--icon-size);
   margin-inline-end: 5px;
   -moz-context-properties: fill;
   fill: currentColor;

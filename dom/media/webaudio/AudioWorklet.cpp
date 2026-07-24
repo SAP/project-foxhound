@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioWorklet.h"
+
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/WorkletImpl.h"
 

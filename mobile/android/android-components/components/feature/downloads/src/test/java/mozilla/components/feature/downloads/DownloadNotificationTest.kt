@@ -5,7 +5,6 @@
 package mozilla.components.feature.downloads
 
 import android.app.PendingIntent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.EXTRA_PROGRESS
 import androidx.core.app.NotificationCompat.EXTRA_PROGRESS_INDETERMINATE
@@ -14,15 +13,13 @@ import androidx.core.content.ContextCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.DownloadJobState
-import mozilla.components.feature.downloads.fake.FakeDateTimeProvider
 import mozilla.components.feature.downloads.fake.FakeFileSizeFormatter
 import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.FakeDateTimeProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
-import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
 class DownloadNotificationTest {
@@ -86,15 +83,6 @@ class DownloadNotificationTest {
             .setCompatGroup("myGroup").build()
 
         assertEquals("myGroup", notificationBuilder.group)
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
-    fun `setCompatGroup will not set the group`() {
-        val notificationBuilder = NotificationCompat.Builder(testContext, "")
-            .setCompatGroup("myGroup").build()
-
-        assertNotEquals("myGroup", notificationBuilder.group)
     }
 
     @Test

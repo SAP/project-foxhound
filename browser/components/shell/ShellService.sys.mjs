@@ -16,14 +16,21 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "XreDirProvider",
   "@mozilla.org/xre/directory-provider;1",
-  "nsIXREDirProvider"
+  Ci.nsIXREDirProvider
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "BackgroundTasks",
   "@mozilla.org/backgroundtasks;1",
-  "nsIBackgroundTasks"
+  Ci.nsIBackgroundTasks
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "imgTools",
+  "@mozilla.org/image/tools;1",
+  Ci.imgITools
 );
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -78,9 +85,8 @@ let ShellServiceInternal = {
   async getOSUserProfileAgeInDays() {
     let currentDate = new Date();
     let homeFolderCreationDate = new Date(
-      (
-        await IOUtils.stat(Services.dirsvc.get("Home", Ci.nsIFile).path)
-      ).creationTime
+      (await IOUtils.stat(Services.dirsvc.get("Home", Ci.nsIFile).path))
+        .creationTime
     );
     // Round and return the age (=difference between today and creation) to a
     // resolution of days.
@@ -134,13 +140,13 @@ let ShellServiceInternal = {
     return false;
   },
 
-  /*
+  /**
    * Check if UserChoice is impossible.
    *
    * Separated for easy stubbing in tests.
    *
-   * @return string telemetry result like "Err*", or null if UserChoice
-   * is possible.
+   * @returns {string}
+   *   Telemetry result like "Err*", or null if UserChoice is possible.
    */
   _userChoiceImpossibleTelemetryResult() {
     let winShellService = this.shellService.QueryInterface(
@@ -155,10 +161,11 @@ let ShellServiceInternal = {
     return null;
   },
 
-  /*
+  /**
    * Accommodate `setDefaultPDFHandlerOnlyReplaceBrowsers` feature.
-   * @return true if Firefox should set itself as default PDF handler, false
-   * otherwise.
+   *
+   * @returns {boolean}
+   *   True if Firefox should set itself as default PDF handler, false otherwise.
    */
   _shouldSetDefaultPDFHandler() {
     if (
@@ -247,14 +254,15 @@ let ShellServiceInternal = {
     };
   },
 
-  /*
+  /**
    * Set the default browser through the UserChoice registry keys on Windows.
    *
    * NOTE: This does NOT open the System Settings app for manual selection
    * in case of failure. If that is desired, catch the exception and call
    * setDefaultBrowser().
    *
-   * @return Promise, resolves when successful, rejects with Error on failure.
+   * @returns {Promise<void>}
+   *   Resolves when successful, rejects with Error on failure.
    */
   async setAsDefaultUserChoice() {
     if (AppConstants.platform != "win") {
@@ -591,6 +599,37 @@ let ShellServiceInternal = {
       throw new WDBAError(exitCode, telemetryResult);
     }
   },
+
+  /**
+   * This function can be used to convert compatible image formats into icons
+   * compatible with the createShortcut function.
+   *
+   * @param {nsIFile} file - The file to write to.
+   * @param {imgIContainer} imgContainer - The container holding the image.
+   */
+  async createWindowsIcon(file, imgContainer) {
+    if (AppConstants.platform !== "win") {
+      throw new Error(
+        "createWindowsIcon is not supported on non-Windows platforms"
+      );
+    }
+
+    let stream = lazy.imgTools.encodeScaledImage(
+      imgContainer,
+      "image/vnd.microsoft.icon",
+      256,
+      256
+    );
+    let streamSize = stream.available();
+
+    let bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+      Ci.nsIBinaryInputStream
+    );
+    bis.setInputStream(stream);
+    let newByteArray = new Uint8Array(streamSize);
+    bis.readArrayBuffer(streamSize, newByteArray.buffer);
+    await IOUtils.write(file.path, newByteArray);
+  },
 };
 
 // Functions may be present or absent dependent on whether the `nsIShellService`
@@ -602,25 +641,28 @@ let ShellServiceInternal = {
 let shellInterface;
 switch (AppConstants.platform) {
   case "win":
-    shellInterface = "nsIWindowsShellService";
+    shellInterface = Ci.nsIWindowsShellService;
     break;
   case "macosx":
-    shellInterface = "nsIMacShellService";
+    shellInterface = Ci.nsIMacShellService;
     break;
   case "linux":
-    shellInterface = "nsIGNOMEShellService";
+    shellInterface = Ci.nsIGNOMEShellService;
     break;
   default:
     lazy.log.warn(
       `No platform native shell service interface for ${AppConstants.platform} queried, add for new platforms.`
     );
-    shellInterface = "nsIShellService";
+    shellInterface = Ci.nsIShellService;
 }
 
 XPCOMUtils.defineLazyServiceGetters(ShellServiceInternal, {
-  defaultAgent: ["@mozilla.org/default-agent;1", "nsIDefaultAgent"],
+  defaultAgent: ["@mozilla.org/default-agent;1", Ci.nsIDefaultAgent],
   shellService: ["@mozilla.org/browser/shell-service;1", shellInterface],
-  macDockSupport: ["@mozilla.org/widget/macdocksupport;1", "nsIMacDockSupport"],
+  macDockSupport: [
+    "@mozilla.org/widget/macdocksupport;1",
+    Ci.nsIMacDockSupport,
+  ],
 });
 
 /**

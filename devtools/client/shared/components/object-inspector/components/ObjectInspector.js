@@ -9,6 +9,7 @@ const {
   createFactory,
   createElement,
 } = require("resource://devtools/client/shared/vendor/react.mjs");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
   Provider,
@@ -77,9 +78,38 @@ const {
 // children.
 
 class ObjectInspector extends Component {
+  static propTypes = {
+    roots: PropTypes.array.isRequired,
+    focusedItem: PropTypes.object,
+    activeItem: PropTypes.object,
+    rootsChanged: PropTypes.func,
+    autoReleaseObjectActors: PropTypes.bool,
+    loadedProperties: PropTypes.object.isRequired,
+    evaluations: PropTypes.object.isRequired,
+    expandedPaths: PropTypes.object.isRequired,
+    closeObjectInspector: PropTypes.func,
+    nodeExpand: PropTypes.func,
+    nodeCollapse: PropTypes.func,
+    recordTelemetryEvent: PropTypes.func,
+    setExpanded: PropTypes.func,
+    focusable: PropTypes.bool,
+    onFocus: PropTypes.func,
+    onActivate: PropTypes.func,
+    autoExpandAll: PropTypes.bool,
+    autoExpandDepth: PropTypes.number,
+    disableWrap: PropTypes.bool,
+    displayRootNodeAsHeader: PropTypes.bool,
+    getInitiallyExpanded: PropTypes.func,
+    inline: PropTypes.bool,
+    preventBlur: PropTypes.bool,
+    mode: PropTypes.string,
+    standalone: PropTypes.bool,
+  };
+
   static defaultProps = {
     autoReleaseObjectActors: true
   };
+
   constructor(_props) {
     super();
     this.cachedNodes = new Map();
@@ -101,47 +131,6 @@ class ObjectInspector extends Component {
     this.roots = this.props.roots;
     this.focusedItem = this.props.focusedItem;
     this.activeItem = this.props.activeItem;
-  }
-
-  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
-  UNSAFE_componentWillUpdate(nextProps) {
-    this.removeOutdatedNodesFromCache(nextProps);
-
-    if (this.roots !== nextProps.roots) {
-      // Since the roots changed, we assume the properties did as well,
-      // so we need to cleanup the component internal state.
-      const oldRoots = this.roots;
-      this.roots = nextProps.roots;
-      this.focusedItem = nextProps.focusedItem;
-      this.activeItem = nextProps.activeItem;
-      if (this.props.rootsChanged) {
-        this.props.rootsChanged(this.roots, oldRoots, this.props.autoReleaseObjectActors);
-      }
-    }
-  }
-
-  removeOutdatedNodesFromCache(nextProps) {
-    // When the roots changes, we can wipe out everything.
-    if (this.roots !== nextProps.roots) {
-      this.cachedNodes.clear();
-      return;
-    }
-
-    for (const [path, properties] of nextProps.loadedProperties) {
-      if (properties !== this.props.loadedProperties.get(path)) {
-        this.cachedNodes.delete(path);
-      }
-    }
-
-    // If there are new evaluations, we want to remove the existing cached
-    // nodes from the cache.
-    if (nextProps.evaluations > this.props.evaluations) {
-      for (const key of nextProps.evaluations.keys()) {
-        if (!this.props.evaluations.has(key)) {
-          this.cachedNodes.delete(key);
-        }
-      }
-    }
   }
 
   shouldComponentUpdate(nextProps) {
@@ -172,9 +161,50 @@ class ObjectInspector extends Component {
     );
   }
 
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillUpdate(nextProps) {
+    this.removeOutdatedNodesFromCache(nextProps);
+
+    if (this.roots !== nextProps.roots) {
+      // Since the roots changed, we assume the properties did as well,
+      // so we need to cleanup the component internal state.
+      const oldRoots = this.roots;
+      this.roots = nextProps.roots;
+      this.focusedItem = nextProps.focusedItem;
+      this.activeItem = nextProps.activeItem;
+      if (this.props.rootsChanged) {
+        this.props.rootsChanged(this.roots, oldRoots, this.props.autoReleaseObjectActors);
+      }
+    }
+  }
+
   componentWillUnmount() {
     if (this.props.autoReleaseObjectActors){
       this.props.closeObjectInspector(this.props.roots);
+    }
+  }
+
+  removeOutdatedNodesFromCache(nextProps) {
+    // When the roots changes, we can wipe out everything.
+    if (this.roots !== nextProps.roots) {
+      this.cachedNodes.clear();
+      return;
+    }
+
+    for (const [path, properties] of nextProps.loadedProperties) {
+      if (properties !== this.props.loadedProperties.get(path)) {
+        this.cachedNodes.delete(path);
+      }
+    }
+
+    // If there are new evaluations, we want to remove the existing cached
+    // nodes from the cache.
+    if (nextProps.evaluations > this.props.evaluations) {
+      for (const key of nextProps.evaluations.keys()) {
+        if (!this.props.evaluations.has(key)) {
+          this.cachedNodes.delete(key);
+        }
+      }
     }
   }
 
@@ -303,7 +333,7 @@ class ObjectInspector extends Component {
       displayRootNodeAsHeader = false,
       expandedPaths,
       focusable = true,
-      initiallyExpanded,
+      getInitiallyExpanded,
       inline,
       preventBlur,
     } = this.props;
@@ -324,7 +354,7 @@ class ObjectInspector extends Component {
 
       autoExpandAll,
       autoExpandDepth,
-      initiallyExpanded,
+      getInitiallyExpanded,
       isExpanded: item => expandedPaths && expandedPaths.has(item.path),
       isExpandable: this.isNodeExpandable,
       focused: this.focusedItem,
@@ -369,7 +399,7 @@ function mapStateToProps(state, _props) {
 const OI = connect(mapStateToProps, actions)(ObjectInspector);
 
 // eslint-disable-next-line react/display-name
-module.exports = props => {
+const ObjectInspectorWrapper = props => {
   const { roots, standalone = false } = props;
 
   if (!roots.length) {
@@ -389,3 +419,10 @@ module.exports = props => {
   const store = createStore(reducer);
   return createElement(Provider, { store }, oiElement);
 };
+
+ObjectInspectorWrapper.propTypes = {
+  roots: PropTypes.array.isRequired,
+  standalone: PropTypes.bool,
+};
+
+module.exports = ObjectInspectorWrapper;

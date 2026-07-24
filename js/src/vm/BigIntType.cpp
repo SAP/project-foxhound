@@ -79,6 +79,7 @@
 #include "vm/BigIntType.h"
 
 #include "mozilla/Casting.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/HashFunctions.h"
@@ -98,19 +99,18 @@
 #include <memory>
 #include <type_traits>  // std::is_same_v
 
-#include "jsnum.h"
-
+#include "builtin/Number.h"
 #include "gc/GCEnum.h"
 #include "js/BigInt.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printer.h"               // js::GenericPrinter
 #include "js/StableStringChars.h"
 #include "js/Utility.h"
-#include "util/CheckedArithmetic.h"
 #include "util/DifferentialTesting.h"
 #include "vm/JSONPrinter.h"  // js::JSONPrinter
 #include "vm/StaticStrings.h"
 
+#include "gc/BufferAllocator-inl.h"
 #include "gc/GCContext-inl.h"
 #include "gc/Nursery-inl.h"
 #include "vm/JSContext-inl.h"
@@ -159,15 +159,13 @@ BigInt* BigInt::createUninitialized(JSContext* cx, size_t digitLength,
   MOZ_ASSERT(x->isNegative() == isNegative);
 
   if (digitLength > InlineDigitsLength) {
-    x->heapDigits_ = js::AllocNurseryOrMallocBuffer<Digit>(cx, x, digitLength);
+    x->heapDigits_ = js::AllocateCellBuffer<Digit>(cx, x, digitLength);
     if (!x->heapDigits_) {
       // |x| is partially initialized, expose it as a BigInt using inline digits
       // to the GC.
       x->setLengthAndFlags(0, 0);
       return nullptr;
     }
-
-    AddCellMemory(x, digitLength * sizeof(Digit), js::MemoryUse::BigIntDigits);
   }
 
   return x;
@@ -178,26 +176,17 @@ void BigInt::initializeDigitsToZero() {
   std::uninitialized_fill_n(digs.begin(), digs.Length(), 0);
 }
 
-void BigInt::finalize(JS::GCContext* gcx) {
-  MOZ_ASSERT(isTenured());
-  if (hasHeapDigits()) {
-    size_t size = digitLength() * sizeof(Digit);
-    gcx->free_(this, heapDigits_, size, js::MemoryUse::BigIntDigits);
-  }
-}
-
 js::HashNumber BigInt::hash() const {
   js::HashNumber h =
       mozilla::HashBytes(digits().data(), digitLength() * sizeof(Digit));
   return mozilla::AddToHash(h, isNegative());
 }
 
-size_t BigInt::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-  return hasInlineDigits() ? 0 : mallocSizeOf(heapDigits_);
+size_t BigInt::sizeOfExcludingThis() const {
+  return hasInlineDigits() ? 0 : gc::GetAllocSize(zone(), heapDigits_);
 }
 
-size_t BigInt::sizeOfExcludingThisInNursery(
-    mozilla::MallocSizeOf mallocSizeOf) const {
+size_t BigInt::sizeOfExcludingThisInNursery() const {
   MOZ_ASSERT(!isTenured());
 
   if (hasInlineDigits()) {
@@ -210,7 +199,7 @@ size_t BigInt::sizeOfExcludingThisInNursery(
     return RoundUp(digitLength() * sizeof(Digit), sizeof(Value));
   }
 
-  return mallocSizeOf(heapDigits_);
+  return gc::GetAllocSize(zone(), heapDigits_);
 }
 
 BigInt* BigInt::zero(JSContext* cx, gc::Heap heap) {
@@ -1458,16 +1447,6 @@ JSLinearString* BigInt::toStringGeneric(JSContext* cx, HandleBigInt x,
                                maximumCharactersRequired - writePos);
 }
 
-static void FreeDigits(JSContext* cx, BigInt* bi, BigInt::Digit* digits,
-                       size_t nbytes) {
-  if (bi->isTenured()) {
-    MOZ_ASSERT(!cx->nursery().isInside(digits));
-    js_free(digits);
-  } else {
-    cx->nursery().freeBuffer(digits, nbytes);
-  }
-}
-
 BigInt* BigInt::destructivelyTrimHighZeroDigits(JSContext* cx, BigInt* x) {
   if (x->isZero()) {
     MOZ_ASSERT(!x->isNegative());
@@ -1494,24 +1473,19 @@ BigInt* BigInt::destructivelyTrimHighZeroDigits(JSContext* cx, BigInt* x) {
     MOZ_ASSERT(x->hasHeapDigits());
 
     size_t oldLength = x->digitLength();
-    Digit* newdigits = js::ReallocNurseryOrMallocBuffer<Digit>(
-        cx, x, x->heapDigits_, oldLength, newLength, js::MallocArena);
+    Digit* newdigits = ReallocateCellBuffer<Digit>(cx, x, x->heapDigits_,
+                                                   oldLength, newLength);
     if (!newdigits) {
       return nullptr;
     }
     x->heapDigits_ = newdigits;
-
-    RemoveCellMemory(x, oldLength * sizeof(Digit), js::MemoryUse::BigIntDigits);
-    AddCellMemory(x, newLength * sizeof(Digit), js::MemoryUse::BigIntDigits);
   } else {
     if (x->hasHeapDigits()) {
       Digit digits[InlineDigitsLength];
       std::copy_n(x->heapDigits_, InlineDigitsLength, digits);
-
-      size_t nbytes = x->digitLength() * sizeof(Digit);
-      FreeDigits(cx, x, x->heapDigits_, nbytes);
-      RemoveCellMemory(x, nbytes, js::MemoryUse::BigIntDigits);
-
+      if (!cx->nursery().isInside(x->heapDigits_)) {
+        FreeBuffer(x->zone(), x->heapDigits_);
+      }
       std::copy_n(digits, InlineDigitsLength, x->inlineDigits_);
     }
   }
@@ -1953,7 +1927,7 @@ BigInt* BigInt::mul(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     uint64_t rhs = y->uint64FromAbsNonZero();
 
     uint64_t res;
-    if (js::SafeMul(lhs, rhs, &res)) {
+    if (mozilla::SafeMul(lhs, rhs, &res)) {
       MOZ_ASSERT(res != 0);
       return createFromNonZeroRawUint64(cx, res, resultNegative);
     }
@@ -2262,13 +2236,13 @@ BigInt* BigInt::pow(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     while (true) {
       uint64_t runningSquareStart = runningSquareInt;
       uint64_t r;
-      if (!js::SafeMul(runningSquareInt, runningSquareInt, &r)) {
+      if (!mozilla::SafeMul(runningSquareInt, runningSquareInt, &r)) {
         break;
       }
       runningSquareInt = r;
 
       if (n & 1) {
-        if (!js::SafeMul(resultInt, runningSquareInt, &r)) {
+        if (!mozilla::SafeMul(resultInt, runningSquareInt, &r)) {
           // Recover |runningSquare| before we restart the loop.
           runningSquareInt = runningSquareStart;
           break;
@@ -3679,48 +3653,11 @@ bool BigInt::equal(const BigInt* lhs, double rhs) {
 
 JS::Result<bool> BigInt::equal(JSContext* cx, Handle<BigInt*> lhs,
                                HandleString rhs) {
-  BigInt* rhsBigInt;
-  MOZ_TRY_VAR(rhsBigInt, StringToBigInt(cx, rhs));
+  BigInt* rhsBigInt = MOZ_TRY(StringToBigInt(cx, rhs));
   if (!rhsBigInt) {
     return false;
   }
   return equal(lhs, rhsBigInt);
-}
-
-// BigInt proposal section 3.2.5
-JS::Result<bool> BigInt::looselyEqual(JSContext* cx, HandleBigInt lhs,
-                                      HandleValue rhs) {
-  // Step 1.
-  if (rhs.isBigInt()) {
-    return equal(lhs, rhs.toBigInt());
-  }
-
-  // Steps 2-5 (not applicable).
-
-  // Steps 6-7.
-  if (rhs.isString()) {
-    RootedString rhsString(cx, rhs.toString());
-    return equal(cx, lhs, rhsString);
-  }
-
-  // Steps 8-9 (not applicable).
-
-  // Steps 10-11.
-  if (rhs.isObject()) {
-    RootedValue rhsPrimitive(cx, rhs);
-    if (!ToPrimitive(cx, &rhsPrimitive)) {
-      return cx->alreadyReportedError();
-    }
-    return looselyEqual(cx, lhs, rhsPrimitive);
-  }
-
-  // Step 12.
-  if (rhs.isNumber()) {
-    return equal(lhs, rhs.toNumber());
-  }
-
-  // Step 13.
-  return false;
 }
 
 // BigInt proposal section 1.1.12. BigInt::lessThan ( x, y )
@@ -4057,9 +3994,9 @@ JS::ubi::Node::Size JS::ubi::Concrete<BigInt>::size(
   size_t size = sizeof(JS::BigInt);
   if (IsInsideNursery(&bi)) {
     size += Nursery::nurseryCellHeaderSize();
-    size += bi.sizeOfExcludingThisInNursery(mallocSizeOf);
+    size += bi.sizeOfExcludingThisInNursery();
   } else {
-    size += bi.sizeOfExcludingThis(mallocSizeOf);
+    size += bi.sizeOfExcludingThis();
   }
   return size;
 }

@@ -98,6 +98,7 @@ class ContentScriptParent {
       jsPaths: [],
       cssPaths: [],
       originAttributesPatterns: null,
+      cssOrigin: details.cssOrigin || "author",
     };
 
     if (details.cookieStoreId != null) {

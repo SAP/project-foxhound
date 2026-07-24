@@ -40,26 +40,39 @@ internal fun loginsReducer(state: LoginsState, action: LoginsAction) = when (act
             newPassword = action.item.password,
             isPasswordVisible = true,
         ),
+        updateLoginState = UpdateLoginState.None,
     )
     is DetailLoginMenuAction.DeleteLoginMenuItemClicked -> state.copy(
-        loginsDeletionState = state.loginsLoginDetailState?.let {
-            LoginDeletionState.Presenting(it.login.guid)
-        },
-        loginsLoginDetailState = null,
+        loginDeletionDialogState = LoginDeletionDialogState.Presenting(action.item.guid),
+    )
+    is LoginDeletionDialogAction.DeleteTapped -> state.withDeletedLoginRemoved()
+        .copy(loginDeletionDialogState = LoginDeletionDialogState.None, loginsLoginDetailState = null)
+    is LoginDeletionDialogAction.CancelTapped -> state.copy(
+        loginDeletionDialogState = LoginDeletionDialogState.None,
     )
     is LoginsListBackClicked -> state.respondToLoginsListBackClick()
     is AddLoginBackClicked -> state.respondToAddLoginBackClick()
     is EditLoginBackClicked -> state.respondToEditLoginBackClick()
-    ViewDisposed,
-    is Init, LearnMoreAboutSync,
-    -> state
+    is LoginsListAppeared, LearnMoreAboutSync,
+        -> state
+}
+
+private fun LoginsState.withDeletedLoginRemoved(): LoginsState = when {
+    loginDeletionDialogState is LoginDeletionDialogState.Presenting -> copy(
+        loginItems = loginItems.filterNot { it.guid == loginDeletionDialogState.guidToDelete },
+    )
+
+    else -> this
 }
 
 private fun LoginsState.handleSearchLogins(action: SearchLogins): LoginsState = copy(
     searchText = action.searchText,
     loginItems = action.loginItems.filter {
         it.url.contains(
-            action.searchText,
+            other = action.searchText,
+            ignoreCase = true,
+        ) || it.username.contains(
+            other = action.searchText,
             ignoreCase = true,
         )
     },
@@ -70,8 +83,12 @@ private fun LoginsState.handleLoginsLoadedAction(action: LoginsLoaded): LoginsSt
         loginItems = if (searchText.isNullOrEmpty()) {
             action.loginItems.sortedWith(sortOrder.comparator)
         } else {
-            action.loginItems.sortedWith(sortOrder.comparator)
-                .filter { it.url.contains(searchText, ignoreCase = true) }
+            action.loginItems.sortedWith(sortOrder.comparator).filter {
+                it.url.contains(
+                    other = searchText,
+                    ignoreCase = true,
+                ) || it.username.contains(other = searchText, ignoreCase = true)
+            }
         },
     )
 
@@ -94,6 +111,16 @@ private fun LoginsState.handleEditLoginAction(action: EditLoginAction): LoginsSt
     when (action) {
         is EditLoginAction.UsernameChanged -> copy(
             loginsEditLoginState = this.loginsEditLoginState?.copy(newUsername = action.usernameChanged),
+            updateLoginState = if (loginItems.hasDuplicate(
+                    host = this.loginsEditLoginState?.login?.url,
+                    username = action.usernameChanged,
+                    guid = this.loginsEditLoginState?.login?.guid,
+                )
+            ) {
+                UpdateLoginState.Duplicate
+            } else {
+                UpdateLoginState.None
+            },
         )
         is EditLoginAction.PasswordChanged -> copy(
             loginsEditLoginState = this.loginsEditLoginState?.copy(newPassword = action.passwordChanged),
@@ -154,7 +181,7 @@ private fun LoginsState.handleAddLoginAction(action: AddLoginAction): LoginsStat
 private fun LoginsState.respondToLoginsDetailBackClick(): LoginsState = when {
     loginsLoginDetailState != null -> copy(
         loginsLoginDetailState = null,
-        loginsDeletionState = null,
+        loginDeletionDialogState = LoginDeletionDialogState.None,
     )
 
     else -> this
@@ -172,10 +199,15 @@ private fun LoginsState.respondToAddLoginBackClick(): LoginsState = when {
 private fun LoginsState.respondToEditLoginBackClick(): LoginsState = when {
     loginsEditLoginState != null -> copy(
         loginsEditLoginState = null,
+        updateLoginState = UpdateLoginState.None,
     )
 
     else -> this
 }
 
-private fun List<LoginItem>.hasDuplicate(host: String?, username: String?): Boolean =
-    this.isNotEmpty() && this.any { it.url == host && it.username == username }
+private fun List<LoginItem>.hasDuplicate(
+    host: String?,
+    username: String?,
+    guid: String? = null,
+): Boolean =
+    this.isNotEmpty() && this.any { it.url == host && it.username == username && guid != it.guid }

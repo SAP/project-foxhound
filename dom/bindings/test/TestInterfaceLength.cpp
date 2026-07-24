@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TestInterfaceLength.h"
+
 #include "mozilla/dom/TestFunctionsBinding.h"
 
 namespace mozilla::dom {

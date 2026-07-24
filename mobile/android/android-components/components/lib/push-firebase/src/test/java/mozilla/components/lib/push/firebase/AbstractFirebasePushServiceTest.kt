@@ -6,13 +6,16 @@ package mozilla.components.lib.push.firebase
 
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.RemoteMessage
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.push.PushProcessor
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -31,10 +34,13 @@ class AbstractFirebasePushServiceTest {
     private val processor: PushProcessor = mock()
     private val service = TestService()
 
+    private val mockMessaging: FirebaseMessaging = mock()
+
     @Before
     fun setup() {
         reset(processor)
         PushProcessor.install(processor)
+        `when`(mockMessaging.deleteToken()).thenReturn(mock())
     }
 
     @Test
@@ -89,12 +95,42 @@ class AbstractFirebasePushServiceTest {
     }
 
     @Test
-    fun `force registration should never be on Main`() {
-        // Default dispatcher isn't main
-        assertTrue(service.coroutineContext != Dispatchers.Main)
+    fun `service is initialized with correct default background dispatcher`() = runTest {
+        val backgroundService = object : AbstractFirebasePushService() {
+            override fun getFirebaseMessaging(): FirebaseMessaging {
+                return mockMessaging
+            }
+        }
+        assertNotNull("Dispatcher should be present", backgroundService.coroutineContext)
 
-        val service = object : AbstractFirebasePushService(Dispatchers.Default) {}
-        service.deleteToken()
+        assertFalse(
+            "Default dispatcher should not be a Main dispatcher",
+            backgroundService.coroutineContext is kotlinx.coroutines.MainCoroutineDispatcher,
+        )
+    }
+
+    @Test
+    fun `service is initialized with correct background dispatcher`() = runTest {
+        val testDispatcher = StandardTestDispatcher()
+
+        val backgroundService = object : AbstractFirebasePushService(testDispatcher) {
+            override fun getFirebaseMessaging(): FirebaseMessaging {
+                return mockMessaging
+            }
+        }
+
+        assertTrue(
+            "Service context should use the provided dispatcher",
+            backgroundService.coroutineContext == testDispatcher,
+        )
+
+        backgroundService.deleteToken()
+
+        verify(mockMessaging, never()).deleteToken()
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify(mockMessaging).deleteToken()
     }
 
     @Test

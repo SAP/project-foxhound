@@ -363,7 +363,7 @@ bool VRManagerChild::EnumerateVRDisplays() {
   return success;
 }
 
-void VRManagerChild::DetectRuntimes() { Unused << SendDetectRuntimes(); }
+void VRManagerChild::DetectRuntimes() { (void)SendDetectRuntimes(); }
 
 PVRLayerChild* VRManagerChild::CreateVRLayer(uint32_t aDisplayID,
                                              uint32_t aGroup) {
@@ -403,7 +403,7 @@ void VRManagerChild::CancelFrameRequestCallback(int32_t aHandle) {
 }
 
 void VRManagerChild::RunFrameRequestCallbacks() {
-  AUTO_PROFILER_TRACING_MARKER("VR", "RunFrameRequestCallbacks", GRAPHICS);
+  AUTO_PROFILER_MARKER("RunFrameRequestCallbacks", GRAPHICS);
 
   TimeStamp nowTime = TimeStamp::Now();
   mozilla::TimeDuration duration = nowTime - mStartTimeStamp;
@@ -563,7 +563,7 @@ void VRManagerChild::AddListener(VRManagerEventObserver* aObserver) {
 
   mListeners.AppendElement(aObserver);
   if (mListeners.Length() == 1) {
-    Unused << SendSetHaveEventListener(true);
+    (void)SendSetHaveEventListener(true);
   }
 }
 
@@ -572,11 +572,11 @@ void VRManagerChild::RemoveListener(VRManagerEventObserver* aObserver) {
 
   mListeners.RemoveElement(aObserver);
   if (mListeners.IsEmpty()) {
-    Unused << SendSetHaveEventListener(false);
+    (void)SendSetHaveEventListener(false);
   }
 }
 
-void VRManagerChild::StartActivity() { Unused << SendStartActivity(); }
+void VRManagerChild::StartActivity() { (void)SendStartActivity(); }
 
 void VRManagerChild::StopActivity() {
   for (auto& listener : mListeners) {
@@ -586,7 +586,7 @@ void VRManagerChild::StopActivity() {
     }
   }
 
-  Unused << SendStopActivity();
+  (void)SendStopActivity();
 }
 
 void VRManagerChild::HandleFatalError(const char* aMsg) {

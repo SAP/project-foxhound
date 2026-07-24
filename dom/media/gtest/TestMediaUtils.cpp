@@ -1,11 +1,11 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "MediaUtils.h"
+#include "gtest/gtest.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/gtest/MozHelpers.h"
@@ -193,7 +193,8 @@ void DoTwoTicketsWithSameNameBothBlockShutdown() {
   TimeStamp before = TimeStamp::Now();
   auto timerResult = NS_NewTimerWithCallback(
       [t = std::move(ticket2Holder)](nsITimer* aTimer) {},
-      waitBeforeDestroyingTicket, nsITimer::TYPE_ONE_SHOT, __func__);
+      waitBeforeDestroyingTicket, nsITimer::TYPE_ONE_SHOT,
+      "DoTwoTicketsWithSameNameBothBlockShutdown"_ns);
   ASSERT_TRUE(timerResult.isOk());
 
   AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownNetTeardown);

@@ -5,19 +5,25 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
+    set: [
+      ["browser.urlbar.trustPanel.featureGate", false],
+      ["test.wait300msAfterTabSwitch", true],
+      // Extend clickjacking delay for test because timer expiry can happen before we
+      // check the toggle is disabled (especially in chaos mode).
+      [SEC_DELAY_PREF, 1000],
+      [TRACKING_PREF, true],
+      [SMARTBLOCK_EMBEDS_ENABLED_PREF, true],
+    ],
   });
 
   await UrlClassifierTestUtils.addTestTrackers();
-  // Extend clickjacking delay for test because timer expiry can happen before we
-  // check the toggle is disabled (especially in chaos mode).
-  Services.prefs.setIntPref(SEC_DELAY_PREF, 1000);
-  Services.prefs.setBoolPref(TRACKING_PREF, true);
-  Services.prefs.setBoolPref(SMARTBLOCK_EMBEDS_ENABLED_PREF, true);
+  await generateTestShims();
 
   registerCleanupFunction(() => {
     UrlClassifierTestUtils.cleanupTestTrackers();
-    Services.prefs.clearUserPref(TRACKING_PREF);
+
+    // It's unclear why/where this pref ends up getting set, but we ought to reset it.
+    Services.prefs.clearUserPref("browser.protections_panel.infoMessage.seen");
   });
 
   Services.fog.testResetFOG();

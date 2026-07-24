@@ -5,11 +5,10 @@
 
 /* All the xptcall private declarations - only include locally. */
 
-#ifndef xptcprivate_h___
-#define xptcprivate_h___
+#ifndef xptcprivate_h_
+#define xptcprivate_h_
 
 #include "xptcall.h"
-#include "mozilla/Attributes.h"
 
 #if !defined(__ia64) || \
     (!defined(__hpux) && !defined(__linux__) && !defined(__FreeBSD__))
@@ -65,4 +64,4 @@ class nsXPTCStubBase final : public nsIXPTCStubBase {
 #  define ATTRIBUTE_USED
 #endif
 
-#endif /* xptcprivate_h___ */
+#endif /* xptcprivate_h_ */

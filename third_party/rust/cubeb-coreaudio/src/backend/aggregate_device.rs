@@ -40,9 +40,9 @@ impl From<usize> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::OS(status) => write!(f, "OSStatus({})", status),
-            Error::Timeout(duration) => write!(f, "Timeout({:?})", duration),
-            Error::LessThan2Devices(number) => write!(f, "LessThan2Devices({} only)", number),
+            Error::OS(status) => write!(f, "OSStatus({status})"),
+            Error::Timeout(duration) => write!(f, "Timeout({duration:?})"),
+            Error::LessThan2Devices(number) => write!(f, "LessThan2Devices({number} only)"),
         }
     }
 }
@@ -152,9 +152,9 @@ impl AggregateDevice {
         debug_assert_running_serially();
         let waiting_time = Duration::new(5, 0);
 
-        let condvar_pair = Arc::new((Mutex::new(()), Condvar::new()));
-        let mut cloned_condvar_pair = condvar_pair.clone();
-        let data_ptr = &mut cloned_condvar_pair as *mut Arc<(Mutex<()>, Condvar)>;
+        let condvar_pair = Box::new((Mutex::new(()), Condvar::new()));
+        let data_ptr = Box::into_raw(condvar_pair);
+        sync_callback_registry_register(data_ptr as usize);
 
         let address = get_property_address(
             Property::HardwareDevices,
@@ -177,12 +177,14 @@ impl AggregateDevice {
                 data_ptr as *mut c_void,
             );
             assert_eq!(status, NO_ERR);
+            sync_callback_registry_unregister(data_ptr as usize);
+            unsafe { drop(Box::from_raw(data_ptr)) };
         });
 
         let device = Self::create_blank_device(plugin_id)?;
 
         // Wait until the aggregate is created.
-        let (lock, cvar) = &*condvar_pair;
+        let (lock, cvar) = unsafe { &*data_ptr };
         let guard = lock.lock().unwrap();
         let (_guard, timeout_res) = cvar
             .wait_timeout_while(guard, waiting_time, |()| !get_devices().contains(&device))
@@ -202,10 +204,12 @@ impl AggregateDevice {
             data: *mut c_void,
         ) -> OSStatus {
             assert_eq!(id, kAudioObjectSystemObject);
-            let pair = unsafe { &mut *(data as *mut Arc<(Mutex<()>, Condvar)>) };
-            let (lock, cvar) = &**pair;
-            let _guard = lock.lock().unwrap();
-            cvar.notify_one();
+            with_sync_callback_ptr(data, || {
+                let pair = unsafe { &*(data as *const (Mutex<()>, Condvar)) };
+                let (lock, cvar) = pair;
+                let _guard = lock.lock().unwrap();
+                cvar.notify_one();
+            });
             NO_ERR
         }
 
@@ -233,8 +237,8 @@ impl AggregateDevice {
 
         let sys_time = SystemTime::now();
         let time_id = sys_time.duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let device_name = format!("{}_{}", PRIVATE_AGGREGATE_DEVICE_NAME, time_id);
-        let device_uid = format!("org.mozilla.{}", device_name);
+        let device_name = format!("{PRIVATE_AGGREGATE_DEVICE_NAME}_{time_id}");
+        let device_uid = format!("org.mozilla.{device_name}");
 
         let mut device_id = kAudioObjectUnknown;
         let status = unsafe {
@@ -314,9 +318,9 @@ impl AggregateDevice {
 
         let waiting_time = Duration::new(5, 0);
 
-        let condvar_pair = Arc::new((Mutex::new(AudioObjectID::default()), Condvar::new()));
-        let mut cloned_condvar_pair = condvar_pair.clone();
-        let data_ptr = &mut cloned_condvar_pair as *mut Arc<(Mutex<AudioObjectID>, Condvar)>;
+        let condvar_pair = Box::new((Mutex::new(AudioObjectID::default()), Condvar::new()));
+        let data_ptr = Box::into_raw(condvar_pair);
+        sync_callback_registry_register(data_ptr as usize);
 
         let status = audio_object_add_property_listener(
             device_id,
@@ -325,22 +329,27 @@ impl AggregateDevice {
             data_ptr as *mut c_void,
         );
         if status != NO_ERR {
+            sync_callback_registry_unregister(data_ptr as usize);
+            unsafe { drop(Box::from_raw(data_ptr)) };
             return Err(Error::from(status));
         }
 
-        let remove_listener = || -> OSStatus {
-            audio_object_remove_property_listener(
+        let cleanup = || {
+            let status = audio_object_remove_property_listener(
                 device_id,
                 &address,
                 devices_changed_callback,
                 data_ptr as *mut c_void,
-            )
+            );
+            sync_callback_registry_unregister(data_ptr as usize);
+            unsafe { drop(Box::from_raw(data_ptr)) };
+            status
         };
 
         Self::set_sub_devices(device_id, input_id, output_id)?;
 
         // Wait until the sub devices are added.
-        let (lock, cvar) = &*condvar_pair;
+        let (lock, cvar) = unsafe { &*data_ptr };
         let device = lock.lock().unwrap();
         if *device != device_id {
             let (dev, timeout_res) = cvar.wait_timeout(device, waiting_time).unwrap();
@@ -353,13 +362,10 @@ impl AggregateDevice {
                 );
             }
             if *dev != device_id {
-                let status = remove_listener();
+                let status = cleanup();
                 // If the error is kAudioHardwareBadObjectError, it implies `device_id` is somehow
                 // dead, so its listener should receive nothing. It's ok to leave here.
                 assert!(status == NO_ERR || status == (kAudioHardwareBadObjectError as OSStatus));
-                // TODO: Destroy the aggregate device immediately if error is not
-                // kAudioHardwareBadObjectError. Otherwise the `devices_changed_callback` is able
-                // to touch the `cloned_condvar_pair` after it's freed.
                 return Err(Error::from(waiting_time));
             }
         }
@@ -370,15 +376,17 @@ impl AggregateDevice {
             _addresses: *const AudioObjectPropertyAddress,
             data: *mut c_void,
         ) -> OSStatus {
-            let pair = unsafe { &mut *(data as *mut Arc<(Mutex<AudioObjectID>, Condvar)>) };
-            let (lock, cvar) = &**pair;
-            let mut device = lock.lock().unwrap();
-            *device = id;
-            cvar.notify_one();
+            with_sync_callback_ptr(data, || {
+                let pair = unsafe { &*(data as *const (Mutex<AudioObjectID>, Condvar)) };
+                let (lock, cvar) = pair;
+                let mut device = lock.lock().unwrap();
+                *device = id;
+                cvar.notify_one();
+            });
             NO_ERR
         }
 
-        let status = remove_listener();
+        let status = cleanup();
         assert_eq!(status, NO_ERR);
         Ok(())
     }
@@ -670,8 +678,8 @@ impl AggregateDevice {
 
             let output_rate =
                 match get_device_sample_rate(output_id, DeviceType::INPUT | DeviceType::OUTPUT) {
-                    Ok(rate) => format!("{}", rate),
-                    Err(e) => format!("Error {}", e),
+                    Ok(rate) => format!("{rate}"),
+                    Err(e) => format!("Error {e}"),
                 };
             cubeb_log!(
                 "The nominal rate of the output device {}: {}",

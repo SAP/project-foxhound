@@ -513,8 +513,11 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
       }
 
       function spawnTest(aFile) {
+        var subtestUrl =
+          location.href.substring(0, location.href.lastIndexOf("/") + 1) +
+          aFile;
         w = window.open(
-          "",
+          subtestUrl,
           "_blank",
           test.windowFeatures ? test.windowFeatures : ""
         );
@@ -558,9 +561,6 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
             { once: true }
           );
         }
-        var subtestUrl =
-          location.href.substring(0, location.href.lastIndexOf("/") + 1) +
-          aFile;
         function urlResolves(url) {
           var request = new XMLHttpRequest();
           request.open("GET", url, false);
@@ -573,12 +573,11 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
             "Subtest URL " +
               subtestUrl +
               " does not resolve. " +
-              "Be sure it's present in the support-files section of mochitest.ini."
+              "Be sure it's present in the support-files section of mochitest.toml."
           );
           reject();
           return undefined;
         }
-        w.location = subtestUrl;
         return w;
       }
 
@@ -665,7 +664,6 @@ function isKeyApzEnabled() {
 // The snapshot is returned in the form of a data URL.
 function getSnapshot(rect) {
   function parentProcessSnapshot() {
-    /* eslint-env mozilla/chrome-script */
     addMessageListener("snapshot", function (parentRect) {
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
       if (!topWin) {
@@ -1094,6 +1092,10 @@ function promiseOneEvent(eventTarget, eventType, filter) {
       }
     });
   });
+}
+
+function promiseScrollend(aTarget = window) {
+  return promiseOneEvent(aTarget, "scrollend");
 }
 
 function visualViewportAsZoomedRect() {

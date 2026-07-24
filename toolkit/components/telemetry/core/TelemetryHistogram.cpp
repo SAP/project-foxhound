@@ -17,11 +17,8 @@
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineFunction, JS_DefineProperty, JS_DefineUCProperty, JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/JSONWriter.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/Unused.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
 #include "nsHashKeys.h"
@@ -1519,15 +1516,13 @@ struct HistogramMarker {
   using MS = mozilla::MarkerSchema;
   static MS MarkerTypeDisplay() {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("id", "Histogram Name",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("id", "Histogram Name", MS::Format::UniqueString);
     schema.AddKeyLabelFormat("key", "Key", MS::Format::String);
     schema.AddKeyLabelFormat("val", "Sample", MS::Format::Integer);
     schema.SetTooltipLabel(
         "{marker.data.id}[{marker.data.key}] {marker.data.val}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.id}[{marker.data.key}]: "
+        "{marker.data.id}[{marker.data.key}]: "
         "{marker.data.val}");
     return schema;
   }

@@ -128,61 +128,61 @@
     },
     "nightlycore24": {
       "base": {
-        "reference": "test_pdf_navigation_base-core24_2204.png"
+        "reference": "test_pdf_navigation_base-nightlycore24_2204.png"
       },
       "next": {
-        "reference": "test_pdf_navigation_next-core24_2204.png"
+        "reference": "test_pdf_navigation_next-nightlycore24_2204.png"
       },
       "previous": {
-        "reference": "test_pdf_navigation_previous-core24_2204.png"
+        "reference": "test_pdf_navigation_previous-nightlycore24_2204.png"
       },
       "down": {
-        "reference": "test_pdf_navigation_down-core24_2204.png"
+        "reference": "test_pdf_navigation_down-nightlycore24_2204.png"
       },
       "up": {
-        "reference": "test_pdf_navigation_up-core24_2204.png"
+        "reference": "test_pdf_navigation_up-nightlycore24_2204.png"
       },
       "right": {
-        "reference": "test_pdf_navigation_right-core24_2204.png"
+        "reference": "test_pdf_navigation_right-nightlycore24_2204.png"
       },
       "left": {
-        "reference": "test_pdf_navigation_left-core24_2204.png"
+        "reference": "test_pdf_navigation_left-nightlycore24_2204.png"
       },
       "pagedown": {
-        "reference": "test_pdf_navigation_pagedown-core24_2204.png"
+        "reference": "test_pdf_navigation_pagedown-nightlycore24_2204.png"
       },
       "pageup": {
-        "reference": "test_pdf_navigation_pageup-core24_2204.png"
+        "reference": "test_pdf_navigation_pageup-nightlycore24_2204.png"
       },
       "end": {
-        "reference": "test_pdf_navigation_end-core24_2204.png"
+        "reference": "test_pdf_navigation_end-nightlycore24_2204.png"
       },
       "home": {
-        "reference": "test_pdf_navigation_home-core24_2204.png"
+        "reference": "test_pdf_navigation_home-nightlycore24_2204.png"
       },
       "firstPage": {
-        "reference": "test_pdf_navigation_firstPage-core24_2204.png"
+        "reference": "test_pdf_navigation_firstPage-nightlycore24_2204.png"
       },
       "lastPage": {
-        "reference": "test_pdf_navigation_lastPage-core24_2204.png"
+        "reference": "test_pdf_navigation_lastPage-nightlycore24_2204.png"
       },
       "pageRotateCw": {
-        "reference": "test_pdf_navigation_pageRotateCw-core24_2204.png"
+        "reference": "test_pdf_navigation_pageRotateCw-nightlycore24_2204.png"
       },
       "pageRotateCcw": {
-        "reference": "test_pdf_navigation_pageRotateCcw-core24_2204.png"
+        "reference": "test_pdf_navigation_pageRotateCcw-nightlycore24_2204.png"
       },
       "documentProperties": {
-        "reference": "test_pdf_navigation_documentProperties-core24_2204.png"
+        "reference": "test_pdf_navigation_documentProperties-nightlycore24_2204.png"
       },
       "select_text_with_highlight": {
-        "reference": "test_pdf_navigation_select_text_with_highlight-core24_2204.png"
+        "reference": "test_pdf_navigation_select_text_with_highlight-nightlycore24_2204.png"
       },
       "select_text_without_highlight": {
-        "reference": "test_pdf_navigation_select_text_without_highlight-core24_2204.png"
+        "reference": "test_pdf_navigation_select_text_without_highlight-nightlycore24_2204.png"
       },
       "hand_tool": {
-        "reference": "test_pdf_navigation_hand_tool-core24_2204.png"
+        "reference": "test_pdf_navigation_hand_tool-nightlycore24_2204.png"
       }
     },
     "releasecore24": {

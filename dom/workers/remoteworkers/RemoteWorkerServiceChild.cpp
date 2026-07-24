@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerServiceChild.h"
-#include "RemoteWorkerController.h"
+
 #include "RemoteWorkerChild.h"
+#include "RemoteWorkerController.h"
 
 namespace mozilla::dom {
 

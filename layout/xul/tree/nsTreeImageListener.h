@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTreeImageListener_h__
-#define nsTreeImageListener_h__
+#ifndef nsTreeImageListener_h_
+#define nsTreeImageListener_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTreeBodyFrame.h"
@@ -64,4 +63,4 @@ class nsTreeImageListener final : public imgINotificationObserver {
   InvalidationArea* mInvalidationArea;
 };
 
-#endif  // nsTreeImageListener_h__
+#endif  // nsTreeImageListener_h_

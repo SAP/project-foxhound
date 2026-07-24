@@ -13,9 +13,6 @@
 
 #include "nsNetUtil.h"
 
-#include "FileChannelChild.h"
-
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/net/NeckoCommon.h"
 
 // URL file handling, copied and modified from
@@ -170,12 +167,7 @@ nsFileProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                                   nsIChannel** result) {
   nsresult rv;
 
-  RefPtr<nsFileChannel> chan;
-  if (mozilla::net::IsNeckoChild()) {
-    chan = new mozilla::net::FileChannelChild(uri);
-  } else {
-    chan = new nsFileChannel(uri);
-  }
+  RefPtr<nsFileChannel> chan = new nsFileChannel(uri);
 
   // file URLs with hostnames should be considered an error
   // Before bug 1507354 file URLs ignored the host part. So we intentionally

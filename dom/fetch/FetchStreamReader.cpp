@@ -5,9 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FetchStreamReader.h"
+
 #include "InternalResponse.h"
+#include "jsapi.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/Promise.h"
@@ -17,14 +20,12 @@
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIPipe.h"
 #include "nsIScriptError.h"
 #include "nsPIDOMWindow.h"
-#include "jsapi.h"
 
 namespace mozilla::dom {
 

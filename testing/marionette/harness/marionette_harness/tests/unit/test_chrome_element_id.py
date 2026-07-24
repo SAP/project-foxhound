@@ -57,7 +57,17 @@ class TestElementIDChrome(ChromeHandlerMixin, WindowManagerMixin, MarionetteTest
         self.marionette.start_session()
 
         self.marionette.set_context("chrome")
-        self.marionette.switch_to_window(win)
+
+        # By default the first browser window will be selected again.
+        # Find and select the custom chrome window.
+        chrome_window_handle = self.marionette.current_chrome_window_handle
+        chrome_windows = [
+            win
+            for win in self.marionette.chrome_window_handles
+            if win != chrome_window_handle
+        ]
+
+        self.marionette.switch_to_window(chrome_windows[0])
 
         found_el_new = self.marionette.find_element(By.ID, "textInput")
         self.assertNotEqual(found_el_new.id, found_el.id)

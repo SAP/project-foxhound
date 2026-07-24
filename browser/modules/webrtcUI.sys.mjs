@@ -537,7 +537,7 @@ export var webrtcUI = {
    * For camera and microphone streams, this will also revoke any associated
    * permissions from SitePermissions.
    *
-   * @param {Array<Object>} activeStreams - An array of streams obtained via webrtcUI.getActiveStreams.
+   * @param {Array<object>} activeStreams - An array of streams obtained via webrtcUI.getActiveStreams.
    * @param {boolean} stopCameras - True to stop the camera streams (defaults to true)
    * @param {boolean} stopMics - True to stop the microphone streams (defaults to true)
    * @param {boolean} stopScreens - True to stop the screen streams (defaults to true)
@@ -568,19 +568,7 @@ export var webrtcUI = {
     for (let stream of activeStreams) {
       let { browser } = stream;
 
-      let gBrowser = browser.getTabBrowser();
-      if (!gBrowser) {
-        console.error("Can't stop sharing stream - cannot find gBrowser.");
-        continue;
-      }
-
-      let tab = gBrowser.getTabForBrowser(browser);
-      if (!tab) {
-        console.error("Can't stop sharing stream - cannot find tab.");
-        continue;
-      }
-
-      this.clearPermissionsAndStopSharing(ids, tab);
+      this.clearPermissionsAndStopSharing(ids, browser);
     }
 
     // Switch to the newest stream's browser.
@@ -597,19 +585,20 @@ export var webrtcUI = {
   /**
    * Clears permissions and stops sharing (if active) for a list of device types
    * and a specific tab.
+   *
    * @param {("camera"|"microphone"|"screen")[]} types - Device types to stop
    * and clear permissions for.
-   * @param tab - Tab of the devices to stop and clear permissions.
+   * @param linkedBrowser - Tab's linkedBrowser of the devices to stop and clear permissions.
    */
-  clearPermissionsAndStopSharing(types, tab) {
+  clearPermissionsAndStopSharing(types, linkedBrowser) {
     let invalidTypes = types.filter(
       type => !["camera", "screen", "microphone", "speaker"].includes(type)
     );
     if (invalidTypes.length) {
       throw new Error(`Invalid device types ${invalidTypes.join(",")}`);
     }
-    let browser = tab.linkedBrowser;
-    let sharingState = tab._sharingState?.webRTC;
+    let browser = linkedBrowser;
+    let sharingState = browser._sharingState?.webRTC;
 
     // If we clear a WebRTC permission we need to remove all permissions of
     // the same type across device ids. We also need to stop active WebRTC
@@ -700,6 +689,7 @@ export var webrtcUI = {
    * child frames.
    * Note: activePerms is an internal WebRTC UI permission map and does not
    * reflect the PermissionManager or SitePermissions state.
+   *
    * @param aBrowser - Browser to clear active permissions for.
    */
   forgetActivePermissionsFromBrowser(aBrowser) {
@@ -714,6 +704,7 @@ export var webrtcUI = {
   /**
    * Shows the Permission Panel for the tab associated with the provided
    * active stream.
+   *
    * @param aActiveStream - The stream that the user wants to see permissions for.
    * @param aEvent - The user input event that is invoking the panel. This can be
    *        undefined / null if no such event exists.
@@ -990,8 +981,10 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
     let stream = activeStreams[0];
 
     const sharingItem = doc.createXULElement("menuitem");
-    const streamTitle = stream.browser.contentTitle || stream.uri;
-    doc.l10n.setAttributes(sharingItem, l10nIds[0], { streamTitle });
+    const displayHost = getDisplayHostForStream(stream);
+    doc.l10n.setAttributes(sharingItem, l10nIds[0], {
+      streamTitle: displayHost,
+    });
     sharingItem.setAttribute("disabled", "true");
     menu.appendChild(sharingItem);
 
@@ -1015,11 +1008,11 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
 
     for (let stream of activeStreams) {
       const controlItem = doc.createXULElement("menuitem");
-      const streamTitle = stream.browser.contentTitle || stream.uri;
+      const displayHost = getDisplayHostForStream(stream);
       doc.l10n.setAttributes(
         controlItem,
         "webrtc-indicator-menuitem-control-sharing-on",
-        { streamTitle }
+        { streamTitle: displayHost }
       );
       controlItem.stream = stream;
       controlItem.addEventListener("command", this);
@@ -1028,8 +1021,27 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
   }
 }
 
+function getDisplayHostForStream(stream) {
+  let uri = Services.io.newURI(stream.uri);
+
+  let displayHost;
+
+  try {
+    displayHost = uri.displayHost;
+  } catch (ex) {
+    displayHost = null;
+  }
+
+  // Host getter threw or returned "". Fall back to spec.
+  if (displayHost == null || displayHost == "") {
+    displayHost = uri.displaySpec;
+  }
+
+  return displayHost;
+}
+
 function onTabSharingMenuPopupShowing(e) {
-  const streams = webrtcUI.getActiveStreams(true, true, true, true);
+  const streams = webrtcUI.getActiveStreams(true, true, true, true, true);
   for (let streamInfo of streams) {
     const names = streamInfo.devices.map(({ mediaSource }) => {
       const l10nId = MEDIA_SOURCE_L10NID_BY_TYPE.get(mediaSource);

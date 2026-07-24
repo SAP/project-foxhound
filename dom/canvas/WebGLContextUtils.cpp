@@ -4,24 +4,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContextUtils.h"
-#include "WebGLContext.h"
-#include "HostWebGLContext.h"
+
 #include "GLContext.h"
-#include "jsapi.h"
-#include "js/Warnings.h"  // JS::WarnASCII
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Sprintf.h"
-#include "nsPrintfCString.h"
-#include "nsServiceManagerUtils.h"
-#include <stdarg.h>
+#include "HostWebGLContext.h"
 #include "WebGLBuffer.h"
+#include "WebGLContext.h"
 #include "WebGLExtensions.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLProgram.h"
 #include "WebGLTexture.h"
 #include "WebGLVertexArray.h"
+#include "js/Warnings.h"  // JS::WarnASCII
+#include "jsapi.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/gfx/Logging.h"
+#include "nsPrintfCString.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla {
 

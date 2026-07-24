@@ -7,7 +7,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -143,8 +144,8 @@ export class BasePopup {
     }
     browser.removeEventListener("pagetitlechanged", this);
     browser.removeEventListener("DOMWindowClose", this);
-    browser.removeEventListener("DoZoomEnlargeBy10", this);
-    browser.removeEventListener("DoZoomReduceBy10", this);
+    browser.removeEventListener("DoZoomEnlarge", this);
+    browser.removeEventListener("DoZoomReduce", this);
   }
 
   // Returns the name of the event fired on `viewNode` when the popup is being
@@ -240,7 +241,7 @@ export class BasePopup {
         this.closePopup();
         break;
 
-      case "DoZoomEnlargeBy10": {
+      case "DoZoomEnlarge": {
         const browser = event.target;
         let { ZoomManager } = browser.ownerGlobal;
         let zoom = this.browser.fullZoom;
@@ -252,7 +253,7 @@ export class BasePopup {
         break;
       }
 
-      case "DoZoomReduceBy10": {
+      case "DoZoomReduce": {
         const browser = event.target;
         let { ZoomManager } = browser.ownerGlobal;
         let zoom = browser.fullZoom;
@@ -334,8 +335,8 @@ export class BasePopup {
       mm.addMessageListener("Extension:BrowserResized", this);
       browser.addEventListener("pagetitlechanged", this);
       browser.addEventListener("DOMWindowClose", this);
-      browser.addEventListener("DoZoomEnlargeBy10", this, true); // eslint-disable-line mozilla/balanced-listeners
-      browser.addEventListener("DoZoomReduceBy10", this, true); // eslint-disable-line mozilla/balanced-listeners
+      browser.addEventListener("DoZoomEnlarge", this, true); // eslint-disable-line mozilla/balanced-listeners
+      browser.addEventListener("DoZoomReduce", this, true); // eslint-disable-line mozilla/balanced-listeners
 
       lazy.ExtensionParent.apiManager.emit(
         "extension-browser-inserted",
@@ -722,4 +723,25 @@ export class ViewPopup extends BasePopup {
       this.destroy();
     }
   }
+}
+
+// Checks whether there is anything preventing a panel from being opened via
+// action.openPopup(), browserAction.openPopup() or pageAction.openPopup().
+export function isGloballyBlockingOpenPopup(window) {
+  if (
+    Services.prefs.getBoolPref("extensions.openPopup.undoBug2022281", false)
+  ) {
+    return false;
+  }
+  // Avoid covering existing menus and panels. We only need to check before
+  // opening the extension popup, because any menus/panels that are opened
+  // later will render on top of the extension popup.
+  for (let elem of window.document.querySelectorAll("menupopup,panel")) {
+    if (elem.state !== "closed" && elem.state !== "hiding") {
+      // State "open" or "showing" means that something else is already shown.
+      return true;
+    }
+  }
+
+  return false;
 }

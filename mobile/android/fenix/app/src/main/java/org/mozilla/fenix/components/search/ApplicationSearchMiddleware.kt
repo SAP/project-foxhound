@@ -17,7 +17,6 @@ import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.feature.search.ext.createApplicationSearchEngine
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.R
 
@@ -40,12 +39,12 @@ class ApplicationSearchMiddleware(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         if (action is InitAction) {
-            loadSearchEngines(context.store)
+            loadSearchEngines(store)
         }
 
         next(action)

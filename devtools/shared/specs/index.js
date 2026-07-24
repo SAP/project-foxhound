@@ -54,11 +54,6 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/breakpoint-list",
   },
   {
-    types: ["changes"],
-    spec: "devtools/shared/specs/changes",
-    front: "devtools/client/fronts/changes",
-  },
-  {
     types: ["compatibility"],
     spec: "devtools/shared/specs/compatibility",
     front: "devtools/client/fronts/compatibility",

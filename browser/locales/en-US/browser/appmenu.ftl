@@ -233,6 +233,10 @@ profiler-popup-presets-debug-description = Preset for debugging in { -brand-shor
 profiler-popup-presets-debug-label =
   .label = Debug
 
+profiler-popup-presets-web-compat-description = Recommended preset for debugging web compatibility issues in websites, rather than tracking performance.
+profiler-popup-presets-web-compat-label =
+  .label = Web Compat
+
 profiler-popup-presets-custom-label =
   .label = Custom
 
@@ -313,10 +317,13 @@ appmenuitem-relay-title = { -relay-brand-short-name }
 appmenuitem-relay-description = Mask your real email and phone
 appmenuitem-services-relay-description = Launch email masks dashboard
 appmenuitem-vpn-title = { -mozilla-vpn-brand-name }
-appmenuitem-vpn-description = Protect your online activity
+appmenuitem-vpn-description-2 = Get whole-device protection
 
 appmenu-services-header = My services
-appmenu-other-protection-header = Try other protection tools from { -vendor-short-name }:
+# "Mozilla" is intentionally hardcoded to prevent forks from replacing it
+# with their own vendor name, since these tools are created and maintained by
+# Mozilla.
+appmenu-other-protection-header2 = Try other protection tools from Mozilla:
 
 ## Profiles panel
 
@@ -325,6 +332,8 @@ appmenu-profiles-2 =
 appmenu-other-profiles = Other profiles
 appmenu-manage-profiles =
     .label = Manage profiles
+appmenu-copy-profile =
+    .label = Copy this profile
 appmenu-create-profile =
     .label = New profile
 appmenu-edit-profile =

@@ -20,14 +20,14 @@ const SUGGEST_PREF = "browser.search.suggest.enabled";
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderTabToSearch:
-    "resource:///modules/UrlbarProviderTabToSearch.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderTabToSearch.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 /**
@@ -90,7 +90,7 @@ add_setup(async function () {
   engineName = suggestionEngine.name;
 
   // And the first one-off engine.
-  await Services.search.moveEngine(suggestionEngine, 0);
+  await SearchService.moveEngine(suggestionEngine, 0);
 
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
@@ -487,9 +487,17 @@ add_task(async function test_handoff_pbm() {
   let tab = win.gBrowser.selectedBrowser;
 
   await SpecialPowers.spawn(tab, [], async function () {
-    let btn = content.document.getElementById("search-handoff-button");
-    btn.click();
+    await ContentTaskUtils.waitForCondition(() =>
+      content.document.querySelector("content-search-handoff-ui")
+    );
+    let handoffUI = content.document.querySelector("content-search-handoff-ui");
+    await handoffUI.updateComplete;
+    handoffUI.shadowRoot.querySelector(".search-handoff-button").click();
   });
+
+  await TestUtils.waitForCondition(() => {
+    return win.gURLBar.focused && !win.gURLBar.hasAttribute("focused");
+  }, "Urlbar has hidden focus");
 
   let searchPromise = UrlbarTestUtils.promiseSearchComplete(win);
   await new Promise(r => EventUtils.synthesizeKey("f", {}, win, r));
@@ -557,7 +565,7 @@ add_task(async function test_tabtosearch() {
   ).result;
   Assert.equal(
     tabToSearchResult.providerName,
-    "TabToSearch",
+    "UrlbarProviderTabToSearch",
     "The second result is a tab-to-search result."
   );
   Assert.equal(
@@ -615,7 +623,7 @@ add_task(async function test_tabtosearch_onboard() {
   ).result;
   Assert.equal(
     tabToSearchResult.providerName,
-    "TabToSearch",
+    "UrlbarProviderTabToSearch",
     "The second result is a tab-to-search result."
   );
   Assert.equal(

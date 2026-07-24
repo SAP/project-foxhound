@@ -21,6 +21,7 @@
 
 #  define MAKE_LOAD_TYPE(type, flags) ((type) | ((flags) << 16))
 #  define LOAD_TYPE_HAS_FLAGS(type, flags) ((type) & ((flags) << 16))
+#  define LOAD_TYPE_SET_FLAGS(type, flags) ((type) | ((flags) << 16))
 
 /**
  * These are flags that confuse ConvertLoadTypeToDocShellLoadInfo and should
@@ -200,6 +201,18 @@ inline nsDOMNavigationTiming::Type ConvertLoadTypeToNavigationType(
 
   return result;
 }
+
+static inline uint32_t MaybeAddLoadFlags(uint32_t aLoadType, uint32_t aFlags) {
+  uint32_t loadType = LOAD_TYPE_SET_FLAGS(aLoadType, aFlags);
+  if (IsValidLoadType(loadType)) {
+    return loadType;
+  }
+
+  NS_WARNING("Adjusting load flags results in an invalid load type.");
+  return aLoadType;
+}
+
+#  undef LOAD_TYPE_SET_FLAGS
 
 #endif  // MOZILLA_INTERNAL_API
 #endif

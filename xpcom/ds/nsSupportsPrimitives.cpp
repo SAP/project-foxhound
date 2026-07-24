@@ -5,10 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSupportsPrimitives.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
-#include <algorithm>
 
 template <typename T>
 static char* DataToString(const char* aFormat, T aData) {

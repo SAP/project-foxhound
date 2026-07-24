@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUDPSocket_h__
-#define nsUDPSocket_h__
+#ifndef nsUDPSocket_h_
+#define nsUDPSocket_h_
 
 #include "nsIUDPSocket.h"
 #include "mozilla/Mutex.h"
@@ -33,6 +33,8 @@ class nsUDPSocket final : public nsASocketHandler, public nsIUDPSocket {
 
   uint64_t ByteCountSent() override { return mByteWriteCount; }
   uint64_t ByteCountReceived() override { return mByteReadCount; }
+
+  bool IsTRRConnection() override;
 
   nsUDPSocket();
 
@@ -69,6 +71,7 @@ class nsUDPSocket final : public nsASocketHandler, public nsIUDPSocket {
 
   uint64_t mByteReadCount{0};
   uint64_t mByteWriteCount{0};
+  bool mIsTRRServiceChannel{false};
 };
 
 //-----------------------------------------------------------------------------
@@ -113,4 +116,4 @@ class nsUDPOutputStream : public nsIOutputStream {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsUDPSocket_h__
+#endif  // nsUDPSocket_h_

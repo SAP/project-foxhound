@@ -3,9 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 7200
+    run-on-repo-type: [hg]
     run:
         using: mozharness
         actions: [build]
@@ -13,7 +14,7 @@ task-defaults:
     optimization:
         skip-unless-expanded: null
     fetches:
-        toolchain:
+        fetch:
             - windows-rs
 
 win32-mingwclang/opt:
@@ -54,6 +55,7 @@ win32-mingwclang/opt:
             - linux64-dump_syms
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - winappsdk-x86-pc-windows-msvc
 
 win32-mingwclang/debug:
     description: "Win32 MinGW-Clang Debug"
@@ -93,6 +95,7 @@ win32-mingwclang/debug:
             - linux64-dump_syms
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - winappsdk-x86-pc-windows-msvc
 
 win64-mingwclang/opt:
     description: "Win64 MinGW-Clang Opt"
@@ -132,6 +135,7 @@ win64-mingwclang/opt:
             - linux64-dump_syms
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-mingwclang/debug:
     description: "Win64 MinGW-Clang Debug"
@@ -171,3 +175,4 @@ win64-mingwclang/debug:
             - linux64-dump_syms
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - winappsdk-x86_64-pc-windows-msvc

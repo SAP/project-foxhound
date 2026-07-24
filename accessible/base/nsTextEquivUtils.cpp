@@ -11,6 +11,7 @@
 #include "AccIterator.h"
 #include "CssAltContent.h"
 #include "nsCoreUtils.h"
+#include "Relation.h"
 #include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/Text.h"
 
@@ -45,8 +46,20 @@ static nsTHashSet<const Accessible*>& GetReferencedAccs() {
 ////////////////////////////////////////////////////////////////////////////////
 // nsTextEquivUtils. Public.
 
-nsresult nsTextEquivUtils::GetNameFromSubtree(
-    const LocalAccessible* aAccessible, nsAString& aName) {
+bool nsTextEquivUtils::HasNameRule(const Accessible* aAccessible,
+                                   ETextEquivRule aRule) {
+  uint32_t rule = GetRoleRule(aAccessible->Role());
+  if (aAccessible->IsHTMLTableRow() && !aAccessible->HasStrongARIARole()) {
+    // For table row accessibles, we only want to calculate the name from the
+    // sub tree if an ARIA role is present.
+    rule = eNameFromSubtreeIfReqRule;
+  }
+
+  return (rule & aRule) == aRule;
+}
+
+nsresult nsTextEquivUtils::GetNameFromSubtree(const Accessible* aAccessible,
+                                              nsAString& aName) {
   aName.Truncate();
 
   if (GetReferencedAccs().Contains(aAccessible)) {
@@ -59,14 +72,18 @@ nsresult nsTextEquivUtils::GetNameFromSubtree(
   }
   GetReferencedAccs().Insert(aAccessible);
 
-  if (GetRoleRule(aAccessible->Role()) == eNameFromSubtreeRule) {
-    // XXX: is it necessary to care the accessible is not a document?
-    if (aAccessible->IsContent()) {
-      nsAutoString name;
-      AppendFromAccessibleChildren(aAccessible, &name);
-      name.CompressWhitespace();
-      if (!nsCoreUtils::IsWhitespaceString(name)) aName = name;
-    }
+  Relation customActions(aAccessible->RelationByType(RelationType::ACTION));
+  while (Accessible* target = customActions.Next()) {
+    // aria-action targets are excluded from name calculation, so consider any
+    // of these targets as "referenced" for our purposes.
+    GetReferencedAccs().Insert(target);
+  }
+
+  if (HasNameRule(aAccessible, eNameFromSubtreeRule)) {
+    nsAutoString name;
+    AppendFromAccessibleChildren(aAccessible, &name);
+    name.CompressWhitespace();
+    if (!nsCoreUtils::IsWhitespaceString(name)) aName = name;
   }
 
   // Once the text alternative computation is complete (i.e., once we've
@@ -80,9 +97,48 @@ nsresult nsTextEquivUtils::GetNameFromSubtree(
   return NS_OK;
 }
 
-nsresult nsTextEquivUtils::GetTextEquivFromIDRefs(
+void nsTextEquivUtils::GetTextEquivFromAccIterable(
+    const Accessible* aAccessible, AccIterable* aIter, nsAString& aTextEquiv) {
+  if (GetReferencedAccs().Contains(aAccessible)) {
+    // We got here when trying to resolve a dependant label or description,
+    // early out.
+    return;
+  }
+  // Remember the initiating accessible so we know when we've returned to it.
+  if (GetReferencedAccs().IsEmpty()) {
+    sInitiatorAcc = aAccessible;
+  }
+  // This method doesn't allow self-referencing accessibles, so add the
+  // initiator to the referenced accs hash.
+  GetReferencedAccs().Insert(aAccessible);
+
+  aTextEquiv.Truncate();
+
+  while (Accessible* acc = aIter->Next()) {
+    if (!aTextEquiv.IsEmpty()) aTextEquiv += ' ';
+
+    if (GetReferencedAccs().Contains(acc)) {
+      continue;
+    }
+    GetReferencedAccs().Insert(acc);
+
+    AppendFromAccessible(acc, &aTextEquiv);
+  }
+
+  if (aAccessible == sInitiatorAcc) {
+    // This is the top-level initiator, clear the hash.
+    GetReferencedAccs().Clear();
+    sInitiatorAcc = nullptr;
+  } else {
+    // This is not the top-level initiator, just remove the calling accessible.
+    GetReferencedAccs().Remove(aAccessible);
+  }
+}
+
+bool nsTextEquivUtils::GetTextEquivFromIDRefs(
     const LocalAccessible* aAccessible, nsAtom* aIDRefsAttr,
     nsAString& aTextEquiv) {
+  bool usedHiddenOrSelf = false;
   // If this is an aria-labelledby or aria-describedby traversal and we're
   // already in such a traversal, or if we've already consulted the given
   // accessible, early out.
@@ -90,13 +146,15 @@ nsresult nsTextEquivUtils::GetTextEquivFromIDRefs(
                                aIDRefsAttr == nsGkAtoms::aria_describedby;
   if ((sInAriaRelationTraversal && isAriaTraversal) ||
       GetReferencedAccs().Contains(aAccessible)) {
-    return NS_OK;
+    return usedHiddenOrSelf;
   }
 
   aTextEquiv.Truncate();
 
   nsIContent* content = aAccessible->GetContent();
-  if (!content) return NS_OK;
+  if (!content) {
+    return usedHiddenOrSelf;
+  }
 
   nsIContent* refContent = nullptr;
   AssociatedElementsIterator iter(aAccessible->Document(), content,
@@ -116,23 +174,23 @@ nsresult nsTextEquivUtils::GetTextEquivFromIDRefs(
         sInAriaRelationTraversal = false;
       }
     });
-    nsresult rv =
+    usedHiddenOrSelf |=
         AppendTextEquivFromContent(aAccessible, refContent, &aTextEquiv);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return NS_OK;
+  return usedHiddenOrSelf;
 }
 
-nsresult nsTextEquivUtils::AppendTextEquivFromContent(
+bool nsTextEquivUtils::AppendTextEquivFromContent(
     const LocalAccessible* aInitiatorAcc, nsIContent* aContent,
     nsAString* aString) {
   // Prevent recursion which can cause infinite loops.
   LocalAccessible* accessible =
       aInitiatorAcc->Document()->GetAccessible(aContent);
+  bool usedHiddenOrSelf = aInitiatorAcc == accessible;
   if (GetReferencedAccs().Contains(aInitiatorAcc) ||
       GetReferencedAccs().Contains(accessible)) {
-    return NS_OK;
+    return usedHiddenOrSelf;
   }
 
   // Remember the initiating accessible so we know when we've returned to it.
@@ -141,14 +199,14 @@ nsresult nsTextEquivUtils::AppendTextEquivFromContent(
   }
   GetReferencedAccs().Insert(aInitiatorAcc);
 
-  nsresult rv = NS_ERROR_FAILURE;
   if (accessible) {
-    rv = AppendFromAccessible(accessible, aString);
+    AppendFromAccessible(accessible, aString);
     GetReferencedAccs().Insert(accessible);
   } else {
     // The given content is invisible or otherwise inaccessible, so use the DOM
     // subtree.
-    rv = AppendFromDOMNode(aContent, aString);
+    AppendFromDOMNode(aContent, aString);
+    usedHiddenOrSelf = true;
   }
 
   // Once the text alternative computation is complete (i.e., once we've
@@ -158,23 +216,31 @@ nsresult nsTextEquivUtils::AppendTextEquivFromContent(
     GetReferencedAccs().Clear();
     sInitiatorAcc = nullptr;
   }
-  return rv;
+
+  return usedHiddenOrSelf;
 }
 
 nsresult nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent* aContent,
                                                           nsAString* aString) {
-  if (aContent->IsText()) {
+  if (auto cssAlt = CssAltContent(aContent)) {
+    AccType type = aContent->GetPrimaryFrame()
+                       ? aContent->GetPrimaryFrame()->AccessibleType()
+                       : AccType::eNoType;
+    if (type == AccType::eNoType || type == AccType::eTextLeafType) {
+      // If this is a text leaf, or an empty content, append its alt text here.
+      // In the case of image alt contents, we will get to those with the
+      // accessible based subtree name calculation.
+      cssAlt.AppendToString(*aString);
+      return NS_OK;
+    }
+  } else if (aContent->IsText()) {
     if (aContent->TextLength() > 0) {
       nsIFrame* frame = aContent->GetPrimaryFrame();
       if (frame) {
-        if (auto cssAlt = CssAltContent(aContent)) {
-          cssAlt.AppendToString(*aString);
-        } else {
-          nsIFrame::RenderedText text = frame->GetRenderedText(
-              0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
-              nsIFrame::TrailingWhitespace::DontTrim);
-          aString->Append(text.mString);
-        }
+        nsIFrame::RenderedText text = frame->GetRenderedText(
+            0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
+            nsIFrame::TrailingWhitespace::DontTrim);
+        aString->Append(text.mString);
       } else {
         // If aContent is an object that is display: none, we have no a frame.
         aContent->GetAsText()->AppendTextTo(*aString);
@@ -251,6 +317,24 @@ nsresult nsTextEquivUtils::AppendFromAccessible(Accessible* aAccessible,
         }
       }
     }
+  } else if (aAccessible->IsRemote()) {
+    if (aAccessible->IsText()) {
+      // Leafs should have their text appended with no spacing.
+      nsAutoString name;
+      aAccessible->Name(name);
+      aString->Append(name);
+      return NS_OK;
+    }
+    if (RefPtr<nsAtom>(aAccessible->DisplayStyle()) == nsGkAtoms::block ||
+        aAccessible->IsHTMLListItem() || aAccessible->IsTableRow() ||
+        aAccessible->IsTableCell()) {
+      // Similar to local case above, we need to add spaces around block level
+      // accessibles.
+      isHTMLBlock = true;
+      if (!aString->IsEmpty()) {
+        aString->Append(char16_t(' '));
+      }
+    }
   }
 
   bool isEmptyTextEquiv = true;
@@ -300,7 +384,7 @@ nsresult nsTextEquivUtils::AppendFromAccessible(Accessible* aAccessible,
 
 nsresult nsTextEquivUtils::AppendFromValue(Accessible* aAccessible,
                                            nsAString* aString) {
-  if (GetRoleRule(aAccessible->Role()) != eNameFromValueRule) {
+  if (!HasNameRule(aAccessible, eNameFromValueRule)) {
     return NS_OK_NO_NAME_CLAUSE_HANDLED;
   }
 
@@ -387,7 +471,7 @@ uint32_t nsTextEquivUtils::GetRoleRule(role aRole) {
     return nameRule;
 
   switch (aRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       MOZ_CRASH("Unknown role.");
   }
@@ -397,11 +481,11 @@ uint32_t nsTextEquivUtils::GetRoleRule(role aRole) {
 
 bool nsTextEquivUtils::ShouldIncludeInSubtreeCalculation(
     Accessible* aAccessible) {
-  uint32_t nameRule = GetRoleRule(aAccessible->Role());
-  if (nameRule == eNameFromSubtreeRule) {
+  if (HasNameRule(aAccessible, eNameFromSubtreeRule)) {
     return true;
   }
-  if (!(nameRule & eNameFromSubtreeIfReqRule)) {
+
+  if (!HasNameRule(aAccessible, eNameFromSubtreeIfReqRule)) {
     return false;
   }
 

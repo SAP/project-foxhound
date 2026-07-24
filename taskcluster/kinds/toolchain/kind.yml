@@ -11,10 +11,12 @@ kind-dependencies:
 transforms:
     - gecko_taskgraph.transforms.try_job:transforms
     - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.custom_car:transforms
     - gecko_taskgraph.transforms.cached_tasks:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: build
         platform: toolchains/opt
@@ -32,7 +34,9 @@ tasks-from:
     - clang-tidy.yml
     - clang.yml
     - compiler-rt.yml
+    - dxc.yml
     - dump-syms.yml
+    - embedded-uniffi-bindgen.yml
     - fix-stacks.yml
     - gcc.yml
     - geckodriver.yml
@@ -48,6 +52,7 @@ tasks-from:
     - minidump-stackwalk.yml
     - misc.yml
     - nasm.yml
+    - nimbus-fml.yml
     - node.yml
     - onnx.yml
     - pkgconf.yml

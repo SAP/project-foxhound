@@ -43,7 +43,7 @@ async function onBrowseBtnPress() {
  * @param {object} event
  *        The event causing this handler function to be called.
  */
-function onDialogAccept(event) {
+async function onDialogAccept(event) {
   let nameBox = document.getElementById("device_name");
   let pathBox = document.getElementById("device_path");
   let pkcs11ModuleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
@@ -51,7 +51,7 @@ function onDialogAccept(event) {
   );
 
   try {
-    pkcs11ModuleDB.addModule(nameBox.value, pathBox.value, 0, 0);
+    await pkcs11ModuleDB.addModule(nameBox.value, pathBox.value, 0, 0);
   } catch (e) {
     addModuleFailure("add-module-failure");
     event.preventDefault();

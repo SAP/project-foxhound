@@ -37,9 +37,6 @@ newtab-topsites-add-button = दाजाबदेर
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = बे हाबाखौ मावनो हायै खालामनो हाया।
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -62,9 +59,6 @@ newtab-menu-unpin = आनपिन
 newtab-menu-delete-history = जारिमिन निफ्राय खोमोर
 newtab-menu-save-to-pocket = { -pocket-brand-name } आव थिना दोन
 newtab-menu-delete-pocket = { -pocket-brand-name } निफ्राय खोमोर
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -116,18 +110,12 @@ newtab-section-menu-move-up = गोजौआव लाबो
 newtab-section-menu-move-down = गाहायाव लाबो
 newtab-section-menu-privacy-notice = गुमुरथि मिथिसारहोनाय
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = गिबि साइटफोर
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider } आ बसोन होनाइ
-
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
 
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
@@ -137,68 +125,3 @@ newtab-discovery-empty-section-topstories-loading = ल'ड खालाम ग�
 ## Pocket Content Section.
 
 newtab-pocket-cta-button = { -pocket-brand-name } ला
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
-## Error Fallback Content.
-## This message and suggested action link are shown in each section of UI that fails to render.
-
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

@@ -8,6 +8,7 @@
 
 #include "nsHttpRequestHead.h"
 #include "nsIHttpHeaderVisitor.h"
+#include "mozilla/net/Dictionary.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpRequestHead
@@ -96,6 +97,11 @@ void nsHttpRequestHead::SetRequestURI(const nsACString& s) {
 void nsHttpRequestHead::SetPath(const nsACString& s) {
   RecursiveMutexAutoLock mon(mRecursiveMutex);
   mPath = s;
+}
+
+void nsHttpRequestHead::SetDictionary(DictionaryCacheEntry* aDict) {
+  RecursiveMutexAutoLock mon(mRecursiveMutex);  // XXX necessary?
+  mDict = aDict;
 }
 
 uint32_t nsHttpRequestHead::HeaderCount() {

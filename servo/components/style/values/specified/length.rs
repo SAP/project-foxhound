@@ -8,11 +8,12 @@
 
 use super::{AllowQuirks, Number, Percentage, ToComputedValue};
 use crate::computed_value_flags::ComputedValueFlags;
+use crate::derives::*;
 use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::GeckoFontMetrics;
 use crate::parser::{Parse, ParserContext};
-use crate::values::computed::{self, CSSPixelLength, Context};
+use crate::values::computed::{self, CSSPixelLength, Context, FontSize};
 use crate::values::generics::length as generics;
 use crate::values::generics::length::{
     GenericAnchorSizeFunction, GenericLengthOrNumber, GenericLengthPercentageOrNormal,
@@ -25,11 +26,15 @@ use crate::values::specified::NonNegativeNumber;
 use crate::values::CSSFloat;
 use crate::{Zero, ZeroNoPercent};
 use app_units::AU_PER_PX;
-use cssparser::{Parser, Token};
+use cssparser::{match_ignore_ascii_case, Parser, Token};
+use debug_unreachable::debug_unreachable;
 use std::cmp;
 use std::fmt::{self, Write};
 use style_traits::values::specified::AllowedNumericType;
-use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
+use style_traits::{
+    CssString, CssWriter, NumericValue, ParseError, ParsingMode, SpecifiedValueInfo,
+    StyleParseErrorKind, ToCss, ToTyped, TypedValue, UnitValue,
+};
 
 pub use super::image::Image;
 pub use super::image::{EndingShape as GradientEndingShape, Gradient};
@@ -60,22 +65,34 @@ pub enum FontRelativeLength {
     /// A "ex" value: https://drafts.csswg.org/css-values/#ex
     #[css(dimension)]
     Ex(CSSFloat),
+    /// A "rex" value: https://drafts.csswg.org/css-values/#rex
+    #[css(dimension)]
+    Rex(CSSFloat),
     /// A "ch" value: https://drafts.csswg.org/css-values/#ch
     #[css(dimension)]
     Ch(CSSFloat),
+    /// A "rch" value: https://drafts.csswg.org/css-values/#rch
+    #[css(dimension)]
+    Rch(CSSFloat),
     /// A "cap" value: https://drafts.csswg.org/css-values/#cap
     #[css(dimension)]
     Cap(CSSFloat),
+    /// A "rcap" value: https://drafts.csswg.org/css-values/#rcap
+    #[css(dimension)]
+    Rcap(CSSFloat),
     /// An "ic" value: https://drafts.csswg.org/css-values/#ic
     #[css(dimension)]
     Ic(CSSFloat),
+    /// A "ric" value: https://drafts.csswg.org/css-values/#ric
+    #[css(dimension)]
+    Ric(CSSFloat),
     /// A "rem" value: https://drafts.csswg.org/css-values/#rem
     #[css(dimension)]
     Rem(CSSFloat),
     /// A "lh" value: https://drafts.csswg.org/css-values/#lh
     #[css(dimension)]
     Lh(CSSFloat),
-    /// A "rlh" value: https://drafts.csswg.org/css-values/#lh
+    /// A "rlh" value: https://drafts.csswg.org/css-values/#rlh
     #[css(dimension)]
     Rlh(CSSFloat),
 }
@@ -119,12 +136,20 @@ impl FontRelativeLength {
     pub const EM: &'static str = "em";
     /// Unit identifier for `ex`.
     pub const EX: &'static str = "ex";
+    /// Unit identifier for `rex`.
+    pub const REX: &'static str = "rex";
     /// Unit identifier for `ch`.
     pub const CH: &'static str = "ch";
+    /// Unit identifier for `rch`.
+    pub const RCH: &'static str = "rch";
     /// Unit identifier for `cap`.
     pub const CAP: &'static str = "cap";
+    /// Unit identifier for `rcap`.
+    pub const RCAP: &'static str = "rcap";
     /// Unit identifier for `ic`.
     pub const IC: &'static str = "ic";
+    /// Unit identifier for `ric`.
+    pub const RIC: &'static str = "ric";
     /// Unit identifier for `rem`.
     pub const REM: &'static str = "rem";
     /// Unit identifier for `lh`.
@@ -135,14 +160,18 @@ impl FontRelativeLength {
     /// Return the unitless, raw value.
     fn unitless_value(&self) -> CSSFloat {
         match *self {
-            Self::Em(v) |
-            Self::Ex(v) |
-            Self::Ch(v) |
-            Self::Cap(v) |
-            Self::Ic(v) |
-            Self::Rem(v) |
-            Self::Lh(v) |
-            Self::Rlh(v) => v,
+            Self::Em(v)
+            | Self::Ex(v)
+            | Self::Rex(v)
+            | Self::Ch(v)
+            | Self::Rch(v)
+            | Self::Cap(v)
+            | Self::Rcap(v)
+            | Self::Ic(v)
+            | Self::Ric(v)
+            | Self::Rem(v)
+            | Self::Lh(v)
+            | Self::Rlh(v) => v,
         }
     }
 
@@ -151,9 +180,13 @@ impl FontRelativeLength {
         match *self {
             Self::Em(_) => Self::EM,
             Self::Ex(_) => Self::EX,
+            Self::Rex(_) => Self::REX,
             Self::Ch(_) => Self::CH,
+            Self::Rch(_) => Self::RCH,
             Self::Cap(_) => Self::CAP,
+            Self::Rcap(_) => Self::RCAP,
             Self::Ic(_) => Self::IC,
+            Self::Ric(_) => Self::RIC,
             Self::Rem(_) => Self::REM,
             Self::Lh(_) => Self::LH,
             Self::Rlh(_) => Self::RLH,
@@ -173,9 +206,13 @@ impl FontRelativeLength {
         Ok(match (self, other) {
             (&Em(one), &Em(other)) => Em(op(one, other)),
             (&Ex(one), &Ex(other)) => Ex(op(one, other)),
+            (&Rex(one), &Rex(other)) => Rex(op(one, other)),
             (&Ch(one), &Ch(other)) => Ch(op(one, other)),
+            (&Rch(one), &Rch(other)) => Rch(op(one, other)),
             (&Cap(one), &Cap(other)) => Cap(op(one, other)),
+            (&Rcap(one), &Rcap(other)) => Rcap(op(one, other)),
             (&Ic(one), &Ic(other)) => Ic(op(one, other)),
+            (&Ric(one), &Ric(other)) => Ric(op(one, other)),
             (&Rem(one), &Rem(other)) => Rem(op(one, other)),
             (&Lh(one), &Lh(other)) => Lh(op(one, other)),
             (&Rlh(one), &Rlh(other)) => Rlh(op(one, other)),
@@ -183,7 +220,8 @@ impl FontRelativeLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Em(..) | Ex(..) | Ch(..) | Cap(..) | Ic(..) | Rem(..) | Lh(..) | Rlh(..) => {},
+                    Em(..) | Rem(..) | Ex(..) | Rex(..) | Ch(..) | Rch(..) | Cap(..) | Rcap(..)
+                    | Ic(..) | Ric(..) | Lh(..) | Rlh(..) => {},
                 }
                 debug_unreachable!("Forgot to handle unit in try_op()")
             },
@@ -194,9 +232,13 @@ impl FontRelativeLength {
         match self {
             Self::Em(x) => Self::Em(op(*x)),
             Self::Ex(x) => Self::Ex(op(*x)),
+            Self::Rex(x) => Self::Rex(op(*x)),
             Self::Ch(x) => Self::Ch(op(*x)),
+            Self::Rch(x) => Self::Rch(op(*x)),
             Self::Cap(x) => Self::Cap(op(*x)),
+            Self::Rcap(x) => Self::Rcap(op(*x)),
             Self::Ic(x) => Self::Ic(op(*x)),
+            Self::Ric(x) => Self::Ric(op(*x)),
             Self::Rem(x) => Self::Rem(op(*x)),
             Self::Lh(x) => Self::Lh(op(*x)),
             Self::Rlh(x) => Self::Rlh(op(*x)),
@@ -228,8 +270,15 @@ impl FontRelativeLength {
             Self::Ch(v) => v * metrics.mChSize.px(),
             Self::Cap(v) => v * metrics.mCapHeight.px(),
             Self::Ic(v) => v * metrics.mIcWidth.px(),
-            // `lh`, `rlh` & `rem` are unsupported as we have no context for it.
-            Self::Rem(_) | Self::Lh(_) | Self::Rlh(_) => return Err(()),
+            // `lh`, `rlh` are unsupported as we have no line-height context
+            // `rem`, `rex`, `rch`, `rcap`, and `ric` are unsupported as we have no root font context.
+            Self::Lh(_)
+            | Self::Rlh(_)
+            | Self::Rem(_)
+            | Self::Rex(_)
+            | Self::Rch(_)
+            | Self::Rcap(_)
+            | Self::Ric(_) => return Err(()),
         })
     }
 
@@ -252,15 +301,75 @@ impl FontRelativeLength {
             orientation: FontMetricsOrientation,
             flags: QueryFontMetricsFlags,
         ) -> FontMetrics {
-            context.query_font_metrics(
+            context.query_font_metrics(base_size, orientation, flags)
+        }
+
+        fn ex_size(
+            context: &Context,
+            base_size: FontBaseSize,
+            reference_font_size: &FontSize,
+        ) -> computed::Length {
+            // The x-height is an intrinsically horizontal metric.
+            let metrics = query_font_metrics(
+                context,
                 base_size,
-                orientation,
-                flags,
+                FontMetricsOrientation::Horizontal,
+                QueryFontMetricsFlags::empty(),
+            );
+            metrics.x_height_or_default(reference_font_size.used_size())
+        }
+
+        fn ch_size(
+            context: &Context,
+            base_size: FontBaseSize,
+            reference_font_size: &FontSize,
+        ) -> computed::Length {
+            // https://drafts.csswg.org/css-values/#ch:
+            //
+            //     Equal to the used advance measure of the “0” (ZERO,
+            //     U+0030) glyph in the font used to render it. (The advance
+            //     measure of a glyph is its advance width or height,
+            //     whichever is in the inline axis of the element.)
+            //
+            let metrics = query_font_metrics(
+                context,
+                base_size,
+                FontMetricsOrientation::MatchContextPreferHorizontal,
+                QueryFontMetricsFlags::NEEDS_CH,
+            );
+            metrics.zero_advance_measure_or_default(
+                reference_font_size.used_size(),
+                context.style().writing_mode.is_upright(),
             )
+        }
+
+        fn cap_size(context: &Context, base_size: FontBaseSize) -> computed::Length {
+            let metrics = query_font_metrics(
+                context,
+                base_size,
+                FontMetricsOrientation::Horizontal,
+                QueryFontMetricsFlags::empty(),
+            );
+            metrics.cap_height_or_default()
+        }
+
+        fn ic_size(
+            context: &Context,
+            base_size: FontBaseSize,
+            reference_font_size: &FontSize,
+        ) -> computed::Length {
+            let metrics = query_font_metrics(
+                context,
+                base_size,
+                FontMetricsOrientation::MatchContextPreferVertical,
+                QueryFontMetricsFlags::NEEDS_IC,
+            );
+            metrics.ic_width_or_default(reference_font_size.used_size())
         }
 
         let reference_font_size = base_size.resolve(context);
         match *self {
+            // Local font-relative units
             Self::Em(length) => {
                 if context.for_non_inherited_property && base_size == FontBaseSize::CurrentStyle {
                     context
@@ -270,118 +379,6 @@ impl FontRelativeLength {
                 }
 
                 (reference_font_size.computed_size(), length)
-            },
-            Self::Ex(length) => {
-                // The x-height is an intrinsically horizontal metric.
-                let metrics = query_font_metrics(
-                    context,
-                    base_size,
-                    FontMetricsOrientation::Horizontal,
-                    QueryFontMetricsFlags::empty(),
-                );
-                let reference_size = metrics.x_height.unwrap_or_else(|| {
-                    // https://drafts.csswg.org/css-values/#ex
-                    //
-                    //     In the cases where it is impossible or impractical to
-                    //     determine the x-height, a value of 0.5em must be
-                    //     assumed.
-                    //
-                    // (But note we use 0.5em of the used, not computed
-                    // font-size)
-                    reference_font_size.used_size() * 0.5
-                });
-                (reference_size, length)
-            },
-            Self::Ch(length) => {
-                // https://drafts.csswg.org/css-values/#ch:
-                //
-                //     Equal to the used advance measure of the “0” (ZERO,
-                //     U+0030) glyph in the font used to render it. (The advance
-                //     measure of a glyph is its advance width or height,
-                //     whichever is in the inline axis of the element.)
-                //
-                let metrics = query_font_metrics(
-                    context,
-                    base_size,
-                    FontMetricsOrientation::MatchContextPreferHorizontal,
-                    QueryFontMetricsFlags::NEEDS_CH,
-                );
-                let reference_size = metrics.zero_advance_measure.unwrap_or_else(|| {
-                    // https://drafts.csswg.org/css-values/#ch
-                    //
-                    //     In the cases where it is impossible or impractical to
-                    //     determine the measure of the “0” glyph, it must be
-                    //     assumed to be 0.5em wide by 1em tall. Thus, the ch
-                    //     unit falls back to 0.5em in the general case, and to
-                    //     1em when it would be typeset upright (i.e.
-                    //     writing-mode is vertical-rl or vertical-lr and
-                    //     text-orientation is upright).
-                    //
-                    // Same caveat about computed vs. used font-size applies
-                    // above.
-                    let wm = context.style().writing_mode;
-                    if wm.is_vertical() && wm.is_upright() {
-                        reference_font_size.used_size()
-                    } else {
-                        reference_font_size.used_size() * 0.5
-                    }
-                });
-                (reference_size, length)
-            },
-            Self::Cap(length) => {
-                let metrics = query_font_metrics(
-                    context,
-                    base_size,
-                    FontMetricsOrientation::Horizontal,
-                    QueryFontMetricsFlags::empty(),
-                );
-                let reference_size = metrics.cap_height.unwrap_or_else(|| {
-                    // https://drafts.csswg.org/css-values/#cap
-                    //
-                    //     In the cases where it is impossible or impractical to
-                    //     determine the cap-height, the font’s ascent must be
-                    //     used.
-                    //
-                    metrics.ascent
-                });
-                (reference_size, length)
-            },
-            Self::Ic(length) => {
-                let metrics = query_font_metrics(
-                    context,
-                    base_size,
-                    FontMetricsOrientation::MatchContextPreferVertical,
-                    QueryFontMetricsFlags::NEEDS_IC,
-                );
-                let reference_size = metrics.ic_width.unwrap_or_else(|| {
-                    // https://drafts.csswg.org/css-values/#ic
-                    //
-                    //     In the cases where it is impossible or impractical to
-                    //     determine the ideographic advance measure, it must be
-                    //     assumed to be 1em.
-                    //
-                    // Same caveat about computed vs. used as for other
-                    // metric-dependent units.
-                    reference_font_size.used_size()
-                });
-                (reference_size, length)
-            },
-            Self::Rem(length) => {
-                // https://drafts.csswg.org/css-values/#rem:
-                //
-                //     When specified on the font-size property of the root
-                //     element, the rem units refer to the property's initial
-                //     value.
-                //
-                let reference_size = if context.builder.is_root_element || context.in_media_query {
-                    reference_font_size.computed_size()
-                } else {
-                    context
-                        .device()
-                        .root_font_size()
-                        .zoom(context.builder.effective_zoom)
-                };
-                (reference_size, length)
             },
             Self::Lh(length) => {
                 // https://drafts.csswg.org/css-values-4/#lh
@@ -404,8 +401,8 @@ impl FontRelativeLength {
                         line_height_base,
                         context.style().writing_mode,
                     );
-                    if context.for_non_inherited_property &&
-                        line_height_base == LineHeightBase::CurrentStyle
+                    if context.for_non_inherited_property
+                        && line_height_base == LineHeightBase::CurrentStyle
                     {
                         context
                             .rule_cache_conditions
@@ -416,6 +413,73 @@ impl FontRelativeLength {
                 };
                 (reference_size, length)
             },
+            Self::Ex(length) => (ex_size(context, base_size, &reference_font_size), length),
+            Self::Ch(length) => (ch_size(context, base_size, &reference_font_size), length),
+            Self::Cap(length) => (cap_size(context, base_size), length),
+            Self::Ic(length) => (ic_size(context, base_size, &reference_font_size), length),
+
+            // Root font relative units
+            Self::Rex(length) => {
+                let reference_size = if context.builder.is_root_element || context.in_media_query {
+                    ex_size(context, base_size, &reference_font_size)
+                } else {
+                    context
+                        .device()
+                        .root_font_metrics_ex()
+                        .zoom(context.builder.effective_zoom)
+                };
+                (reference_size, length)
+            },
+            Self::Rch(length) => {
+                let reference_size = if context.builder.is_root_element || context.in_media_query {
+                    ch_size(context, base_size, &reference_font_size)
+                } else {
+                    context
+                        .device()
+                        .root_font_metrics_ch()
+                        .zoom(context.builder.effective_zoom)
+                };
+                (reference_size, length)
+            },
+            Self::Rcap(length) => {
+                let reference_size = if context.builder.is_root_element || context.in_media_query {
+                    cap_size(context, base_size)
+                } else {
+                    context
+                        .device()
+                        .root_font_metrics_cap()
+                        .zoom(context.builder.effective_zoom)
+                };
+                (reference_size, length)
+            },
+            Self::Ric(length) => {
+                let reference_size = if context.builder.is_root_element || context.in_media_query {
+                    ic_size(context, base_size, &reference_font_size)
+                } else {
+                    context
+                        .device()
+                        .root_font_metrics_ic()
+                        .zoom(context.builder.effective_zoom)
+                };
+                (reference_size, length)
+            },
+            Self::Rem(length) => {
+                // https://drafts.csswg.org/css-values/#rem:
+                //
+                //     When specified on the font-size property of the root
+                //     element, the rem units refer to the property's initial
+                //     value.
+                //
+                let reference_size = if context.builder.is_root_element || context.in_media_query {
+                    reference_font_size.computed_size()
+                } else {
+                    context
+                        .device()
+                        .root_font_size()
+                        .zoom(context.builder.effective_zoom)
+                };
+                (reference_size, length)
+            },
             Self::Rlh(length) => {
                 // https://drafts.csswg.org/css-values-4/#rlh
                 //
@@ -423,7 +487,8 @@ impl FontRelativeLength {
                 //     to the initial values of font and line-height properties.
                 //
                 let reference_size = if context.builder.is_root_element {
-                    context.builder
+                    context
+                        .builder
                         .calc_line_height(
                             context.device(),
                             line_height_base,
@@ -662,10 +727,10 @@ impl ViewportPercentageLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Vw(..) | Svw(..) | Lvw(..) | Dvw(..) | Vh(..) | Svh(..) | Lvh(..) |
-                    Dvh(..) | Vmin(..) | Svmin(..) | Lvmin(..) | Dvmin(..) | Vmax(..) |
-                    Svmax(..) | Lvmax(..) | Dvmax(..) | Vb(..) | Svb(..) | Lvb(..) | Dvb(..) |
-                    Vi(..) | Svi(..) | Lvi(..) | Dvi(..) => {},
+                    Vw(..) | Svw(..) | Lvw(..) | Dvw(..) | Vh(..) | Svh(..) | Lvh(..) | Dvh(..)
+                    | Vmin(..) | Svmin(..) | Lvmin(..) | Dvmin(..) | Vmax(..) | Svmax(..)
+                    | Lvmax(..) | Dvmax(..) | Vb(..) | Svb(..) | Lvb(..) | Dvb(..) | Vi(..)
+                    | Svi(..) | Lvi(..) | Dvi(..) => {},
                 }
                 debug_unreachable!("Forgot to handle unit in try_op()")
             },
@@ -785,13 +850,13 @@ impl AbsoluteLength {
     /// Return the unitless, raw value.
     fn unitless_value(&self) -> CSSFloat {
         match *self {
-            Self::Px(v) |
-            Self::In(v) |
-            Self::Cm(v) |
-            Self::Mm(v) |
-            Self::Q(v) |
-            Self::Pt(v) |
-            Self::Pc(v) => v,
+            Self::Px(v)
+            | Self::In(v)
+            | Self::Cm(v)
+            | Self::Mm(v)
+            | Self::Q(v)
+            | Self::Pt(v)
+            | Self::Pc(v) => v,
         }
     }
 
@@ -806,6 +871,27 @@ impl AbsoluteLength {
             Self::Pt(_) => "pt",
             Self::Pc(_) => "pc",
         }
+    }
+
+    // Return the canonical unit for this value.
+    fn canonical_unit(&self) -> Option<&'static str> {
+        Some("px")
+    }
+
+    // Convert this value to the specified unit, if possible.
+    fn to(&self, unit: &str) -> Result<Self, ()> {
+        let px = self.to_px();
+
+        Ok(match_ignore_ascii_case! { unit,
+            "px" => Self::Px(px),
+            "in" => Self::In(px / PX_PER_IN),
+            "cm" => Self::Cm(px / PX_PER_CM),
+            "mm" => Self::Mm(px / PX_PER_MM),
+            "q" => Self::Q(px / PX_PER_Q),
+            "pt" => Self::Pt(px / PX_PER_PT),
+            "pc" => Self::Pc(px / PX_PER_PC),
+             _ => return Err(()),
+        })
     }
 
     /// Convert this into a pixel value.
@@ -883,12 +969,12 @@ pub enum ContainerRelativeLength {
 impl ContainerRelativeLength {
     fn unitless_value(&self) -> CSSFloat {
         match *self {
-            Self::Cqw(v) |
-            Self::Cqh(v) |
-            Self::Cqi(v) |
-            Self::Cqb(v) |
-            Self::Cqmin(v) |
-            Self::Cqmax(v) => v,
+            Self::Cqw(v)
+            | Self::Cqh(v)
+            | Self::Cqi(v)
+            | Self::Cqb(v)
+            | Self::Cqmin(v)
+            | Self::Cqmax(v) => v,
         }
     }
 
@@ -1026,14 +1112,30 @@ impl NoCalcLength {
         }
     }
 
-    // Return the unit, as a string.
-    fn unit(&self) -> &'static str {
+    /// Return the unit, as a string.
+    pub fn unit(&self) -> &'static str {
         match *self {
             Self::Absolute(v) => v.unit(),
             Self::FontRelative(v) => v.unit(),
             Self::ViewportPercentage(v) => v.unit(),
             Self::ContainerRelative(v) => v.unit(),
             Self::ServoCharacterWidth(_) => "",
+        }
+    }
+
+    /// Return the canonical unit for this value, if one exists.
+    pub fn canonical_unit(&self) -> Option<&'static str> {
+        match *self {
+            Self::Absolute(v) => v.canonical_unit(),
+            _ => None,
+        }
+    }
+
+    /// Convert this value to the specified unit, if possible.
+    pub fn to(&self, unit: &str) -> Result<Self, ()> {
+        match self {
+            Self::Absolute(v) => Ok(Self::Absolute(v.to(unit)?)),
+            _ => Err(()),
         }
     }
 
@@ -1069,11 +1171,14 @@ impl NoCalcLength {
     }
 
     /// Parse a given absolute or relative dimension.
-    pub fn parse_dimension(
-        context: &ParserContext,
+    pub fn parse_dimension_with_flags(
+        parsing_mode: ParsingMode,
+        in_page_rule: bool,
         value: CSSFloat,
         unit: &str,
     ) -> Result<Self, ()> {
+        let allows_computational_dependence = parsing_mode.allows_computational_dependence();
+
         Ok(match_ignore_ascii_case! { unit,
             "px" => Self::Absolute(AbsoluteLength::Px(value)),
             "in" => Self::Absolute(AbsoluteLength::In(value)),
@@ -1083,109 +1188,122 @@ impl NoCalcLength {
             "pt" => Self::Absolute(AbsoluteLength::Pt(value)),
             "pc" => Self::Absolute(AbsoluteLength::Pc(value)),
             // font-relative
-            "em" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Em(value)),
-            "ex" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Ex(value)),
-            "ch" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Ch(value)),
-            "cap" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Cap(value)),
-            "ic" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Ic(value)),
-            "rem" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Rem(value)),
-            "lh" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Lh(value)),
-            "rlh" if context.allows_computational_dependence() => Self::FontRelative(FontRelativeLength::Rlh(value)),
+            "em" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Em(value)),
+            "ex" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Ex(value)),
+            "rex" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Rex(value)),
+            "ch" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Ch(value)),
+            "rch" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Rch(value)),
+            "cap" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Cap(value)),
+            "rcap" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Rcap(value)),
+            "ic" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Ic(value)),
+            "ric" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Ric(value)),
+            "rem" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Rem(value)),
+            "lh" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Lh(value)),
+            "rlh" if allows_computational_dependence => Self::FontRelative(FontRelativeLength::Rlh(value)),
             // viewport percentages
-            "vw" if !context.in_page_rule() => {
+            "vw" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vw(value))
             },
-            "svw" if !context.in_page_rule() => {
+            "svw" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svw(value))
             },
-            "lvw" if !context.in_page_rule() => {
+            "lvw" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvw(value))
             },
-            "dvw" if !context.in_page_rule() => {
+            "dvw" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvw(value))
             },
-            "vh" if !context.in_page_rule() => {
+            "vh" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vh(value))
             },
-            "svh" if !context.in_page_rule() => {
+            "svh" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svh(value))
             },
-            "lvh" if !context.in_page_rule() => {
+            "lvh" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvh(value))
             },
-            "dvh" if !context.in_page_rule() => {
+            "dvh" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvh(value))
             },
-            "vmin" if !context.in_page_rule() => {
+            "vmin" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vmin(value))
             },
-            "svmin" if !context.in_page_rule() => {
+            "svmin" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svmin(value))
             },
-            "lvmin" if !context.in_page_rule() => {
+            "lvmin" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvmin(value))
             },
-            "dvmin" if !context.in_page_rule() => {
+            "dvmin" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvmin(value))
             },
-            "vmax" if !context.in_page_rule() => {
+            "vmax" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vmax(value))
             },
-            "svmax" if !context.in_page_rule() => {
+            "svmax" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svmax(value))
             },
-            "lvmax" if !context.in_page_rule() => {
+            "lvmax" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvmax(value))
             },
-            "dvmax" if !context.in_page_rule() => {
+            "dvmax" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvmax(value))
             },
-            "vb" if !context.in_page_rule() => {
+            "vb" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vb(value))
             },
-            "svb" if !context.in_page_rule() => {
+            "svb" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svb(value))
             },
-            "lvb" if !context.in_page_rule() => {
+            "lvb" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvb(value))
             },
-            "dvb" if !context.in_page_rule() => {
+            "dvb" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvb(value))
             },
-            "vi" if !context.in_page_rule() => {
+            "vi" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vi(value))
             },
-            "svi" if !context.in_page_rule() => {
+            "svi" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Svi(value))
             },
-            "lvi" if !context.in_page_rule() => {
+            "lvi" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Lvi(value))
             },
-            "dvi" if !context.in_page_rule() => {
+            "dvi" if !in_page_rule => {
                 Self::ViewportPercentage(ViewportPercentageLength::Dvi(value))
             },
             // Container query lengths. Inherit the limitation from viewport units since
             // we may fall back to them.
-            "cqw" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqw" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqw(value))
             },
-            "cqh" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqh" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqh(value))
             },
-            "cqi" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqi" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqi(value))
             },
-            "cqb" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqb" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqb(value))
             },
-            "cqmin" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqmin" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqmin(value))
             },
-            "cqmax" if !context.in_page_rule() && cfg!(feature = "gecko") => {
+            "cqmax" if !in_page_rule && cfg!(feature = "gecko") => {
                 Self::ContainerRelative(ContainerRelativeLength::Cqmax(value))
             },
             _ => return Err(()),
         })
+    }
+
+    /// Parse a given absolute or relative dimension.
+    pub fn parse_dimension_with_context(
+        context: &ParserContext,
+        value: CSSFloat,
+        unit: &str,
+    ) -> Result<Self, ()> {
+        Self::parse_dimension_with_flags(context.parsing_mode, context.in_page_rule(), value, unit)
     }
 
     pub(crate) fn try_op<O>(&self, other: &Self, op: O) -> Result<Self, ()>
@@ -1216,11 +1334,11 @@ impl NoCalcLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Absolute(..) |
-                    FontRelative(..) |
-                    ViewportPercentage(..) |
-                    ContainerRelative(..) |
-                    ServoCharacterWidth(..) => {},
+                    Absolute(..)
+                    | FontRelative(..)
+                    | ViewportPercentage(..)
+                    | ContainerRelative(..)
+                    | ServoCharacterWidth(..) => {},
                 }
                 debug_unreachable!("Forgot to handle unit in try_op()")
             },
@@ -1292,6 +1410,17 @@ impl ToCss for NoCalcLength {
     }
 }
 
+impl ToTyped for NoCalcLength {
+    fn to_typed(&self) -> Option<TypedValue> {
+        let value = self.unitless_value();
+        let unit = CssString::from(self.unit());
+        Some(TypedValue::Numeric(NumericValue::Unit(UnitValue {
+            value,
+            unit,
+        })))
+    }
+}
+
 impl SpecifiedValueInfo for NoCalcLength {}
 
 impl PartialOrd for NoCalcLength {
@@ -1316,11 +1445,11 @@ impl PartialOrd for NoCalcLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Absolute(..) |
-                    FontRelative(..) |
-                    ViewportPercentage(..) |
-                    ContainerRelative(..) |
-                    ServoCharacterWidth(..) => {},
+                    Absolute(..)
+                    | FontRelative(..)
+                    | ViewportPercentage(..)
+                    | ContainerRelative(..)
+                    | ServoCharacterWidth(..) => {},
                 }
                 debug_unreachable!("Forgot an arm in partial_cmp?")
             },
@@ -1342,7 +1471,8 @@ impl Zero for NoCalcLength {
 /// This is commonly used for the `<length>` values.
 ///
 /// <https://drafts.csswg.org/css-values/#lengths>
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[typed_value(derive_fields)]
 pub enum Length {
     /// The internal length type that cannot parse `calc`
     NoCalc(NoCalcLength),
@@ -1370,9 +1500,13 @@ impl PartialOrd for FontRelativeLength {
         match (self, other) {
             (&Em(ref one), &Em(ref other)) => one.partial_cmp(other),
             (&Ex(ref one), &Ex(ref other)) => one.partial_cmp(other),
+            (&Rex(ref one), &Rex(ref other)) => one.partial_cmp(other),
             (&Ch(ref one), &Ch(ref other)) => one.partial_cmp(other),
+            (&Rch(ref one), &Rch(ref other)) => one.partial_cmp(other),
             (&Cap(ref one), &Cap(ref other)) => one.partial_cmp(other),
+            (&Rcap(ref one), &Rcap(ref other)) => one.partial_cmp(other),
             (&Ic(ref one), &Ic(ref other)) => one.partial_cmp(other),
+            (&Ric(ref one), &Ric(ref other)) => one.partial_cmp(other),
             (&Rem(ref one), &Rem(ref other)) => one.partial_cmp(other),
             (&Lh(ref one), &Lh(ref other)) => one.partial_cmp(other),
             (&Rlh(ref one), &Rlh(ref other)) => one.partial_cmp(other),
@@ -1380,7 +1514,8 @@ impl PartialOrd for FontRelativeLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Em(..) | Ex(..) | Ch(..) | Cap(..) | Ic(..) | Rem(..) | Lh(..) | Rlh(..) => {},
+                    Em(..) | Ex(..) | Rex(..) | Ch(..) | Rch(..) | Cap(..) | Rcap(..) | Ic(..)
+                    | Ric(..) | Rem(..) | Lh(..) | Rlh(..) => {},
                 }
                 debug_unreachable!("Forgot an arm in partial_cmp?")
             },
@@ -1454,10 +1589,10 @@ impl PartialOrd for ViewportPercentageLength {
             // able to figure it own on its own so we help.
             _ => unsafe {
                 match *self {
-                    Vw(..) | Svw(..) | Lvw(..) | Dvw(..) | Vh(..) | Svh(..) | Lvh(..) |
-                    Dvh(..) | Vmin(..) | Svmin(..) | Lvmin(..) | Dvmin(..) | Vmax(..) |
-                    Svmax(..) | Lvmax(..) | Dvmax(..) | Vb(..) | Svb(..) | Lvb(..) | Dvb(..) |
-                    Vi(..) | Svi(..) | Lvi(..) | Dvi(..) => {},
+                    Vw(..) | Svw(..) | Lvw(..) | Dvw(..) | Vh(..) | Svh(..) | Lvh(..) | Dvh(..)
+                    | Vmin(..) | Svmin(..) | Lvmin(..) | Dvmin(..) | Vmax(..) | Svmax(..)
+                    | Lvmax(..) | Dvmax(..) | Vb(..) | Svb(..) | Lvb(..) | Dvb(..) | Vi(..)
+                    | Svi(..) | Lvi(..) | Dvi(..) => {},
                 }
                 debug_unreachable!("Forgot an arm in partial_cmp?")
             },
@@ -1479,14 +1614,14 @@ impl Length {
             Token::Dimension {
                 value, ref unit, ..
             } if num_context.is_ok(context.parsing_mode, value) => {
-                NoCalcLength::parse_dimension(context, value, unit)
+                NoCalcLength::parse_dimension_with_context(context, value, unit)
                     .map(Length::NoCalc)
                     .map_err(|()| location.new_unexpected_token_error(token.clone()))
             },
             Token::Number { value, .. } if num_context.is_ok(context.parsing_mode, value) => {
-                if value != 0. &&
-                    !context.parsing_mode.allows_unitless_lengths() &&
-                    !allow_quirks.allowed(context.quirks_mode)
+                if value != 0.
+                    && !context.parsing_mode.allows_unitless_lengths()
+                    && !allow_quirks.allowed(context.quirks_mode)
                 {
                     return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 }
@@ -1643,7 +1778,8 @@ impl NonNegativeLength {
 ///
 /// https://drafts.csswg.org/css-values-4/#typedef-length-percentage
 #[allow(missing_docs)]
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[typed_value(derive_fields)]
 pub enum LengthPercentage {
     Length(NoCalcLength),
     Percentage(computed::Percentage),
@@ -1723,7 +1859,7 @@ impl LengthPercentage {
             Token::Dimension {
                 value, ref unit, ..
             } if num_context.is_ok(context.parsing_mode, value) => {
-                return NoCalcLength::parse_dimension(context, value, unit)
+                return NoCalcLength::parse_dimension_with_context(context, value, unit)
                     .map(LengthPercentage::Length)
                     .map_err(|()| location.new_unexpected_token_error(token.clone()));
             },
@@ -1735,9 +1871,9 @@ impl LengthPercentage {
                 )));
             },
             Token::Number { value, .. } if num_context.is_ok(context.parsing_mode, value) => {
-                if value != 0. &&
-                    !context.parsing_mode.allows_unitless_lengths() &&
-                    !allow_quirks.allowed(context.quirks_mode)
+                if value != 0.
+                    && !context.parsing_mode.allows_unitless_lengths()
+                    && !allow_quirks.allowed(context.quirks_mode)
                 {
                     return Err(location.new_unexpected_token_error(token.clone()));
                 } else {
@@ -2051,7 +2187,8 @@ impl Parse for Size {
 }
 
 macro_rules! parse_size_non_length {
-    ($size:ident, $input:expr, $auto_or_none:expr => $auto_or_none_ident:ident) => {{
+    ($size:ident, $input:expr, $allow_webkit_fill_available:expr,
+     $auto_or_none:expr => $auto_or_none_ident:ident) => {{
         let size = $input.try_parse(|input| {
             Ok(try_match_ident_ignore_ascii_case! { input,
                 "min-content" | "-moz-min-content" => $size::MinContent,
@@ -2059,8 +2196,7 @@ macro_rules! parse_size_non_length {
                 "fit-content" | "-moz-fit-content" => $size::FitContent,
                 #[cfg(feature = "gecko")]
                 "-moz-available" => $size::MozAvailable,
-                #[cfg(feature = "gecko")]
-                "-webkit-fill-available" if is_webkit_fill_available_keyword_enabled() => $size::WebkitFillAvailable,
+                "-webkit-fill-available" if $allow_webkit_fill_available => $size::WebkitFillAvailable,
                 "stretch" if is_stretch_enabled() => $size::Stretch,
                 $auto_or_none => $size::$auto_or_none_ident,
             })
@@ -2071,10 +2207,18 @@ macro_rules! parse_size_non_length {
     }};
 }
 
-#[cfg(feature = "gecko")]
-fn is_webkit_fill_available_keyword_enabled() -> bool {
+fn is_webkit_fill_available_enabled_in_width_and_height() -> bool {
     static_prefs::pref!("layout.css.webkit-fill-available.enabled")
 }
+
+fn is_webkit_fill_available_enabled_in_all_size_properties() -> bool {
+    // For convenience at the callsites, we check both prefs here,
+    // since both must be 'true' in order for the keyword to be
+    // enabled in all size properties.
+    static_prefs::pref!("layout.css.webkit-fill-available.enabled")
+        && static_prefs::pref!("layout.css.webkit-fill-available.all-size-properties.enabled")
+}
+
 fn is_stretch_enabled() -> bool {
     static_prefs::pref!("layout.css.stretch-size-keyword.enabled")
 }
@@ -2098,6 +2242,12 @@ macro_rules! parse_fit_content_function {
     };
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParseAnchorFunctions {
+    Yes,
+    No,
+}
+
 impl Size {
     /// Parses, with quirks.
     pub fn parse_quirky<'i, 't>(
@@ -2105,16 +2255,52 @@ impl Size {
         input: &mut Parser<'i, 't>,
         allow_quirks: AllowQuirks,
     ) -> Result<Self, ParseError<'i>> {
-        parse_size_non_length!(Size, input, "auto" => Auto);
+        let allow_webkit_fill_available = is_webkit_fill_available_enabled_in_all_size_properties();
+        Self::parse_quirky_internal(
+            context,
+            input,
+            allow_quirks,
+            allow_webkit_fill_available,
+            ParseAnchorFunctions::Yes,
+        )
+    }
+
+    /// Parses for flex-basis: <width>
+    pub fn parse_size_for_flex_basis_width<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Self::parse_quirky_internal(
+            context,
+            input,
+            AllowQuirks::No,
+            true,
+            ParseAnchorFunctions::No,
+        )
+    }
+
+    /// Parses, with quirks and configurable support for
+    /// whether the '-webkit-fill-available' keyword is allowed.
+    /// TODO(dholbert) Fold this function into callsites in bug 1989073 when
+    /// removing 'layout.css.webkit-fill-available.all-size-properties.enabled'.
+    fn parse_quirky_internal<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_quirks: AllowQuirks,
+        allow_webkit_fill_available: bool,
+        allow_anchor_functions: ParseAnchorFunctions,
+    ) -> Result<Self, ParseError<'i>> {
+        parse_size_non_length!(Size, input, allow_webkit_fill_available,
+                               "auto" => Auto);
         parse_fit_content_function!(Size, input, context, allow_quirks);
 
+        let allow_anchor = allow_anchor_functions == ParseAnchorFunctions::Yes
+            && static_prefs::pref!("layout.css.anchor-positioning.enabled");
         match input
             .try_parse(|i| NonNegativeLengthPercentage::parse_quirky(context, i, allow_quirks))
         {
             Ok(length) => return Ok(GenericSize::LengthPercentage(length)),
-            Err(e) if !static_prefs::pref!("layout.css.anchor-positioning.enabled") => {
-                return Err(e.into())
-            },
+            Err(e) if !allow_anchor => return Err(e.into()),
             Err(_) => (),
         };
         if let Ok(length) = input.try_parse(|i| {
@@ -2129,6 +2315,45 @@ impl Size {
         Ok(Self::AnchorSizeFunction(Box::new(
             GenericAnchorSizeFunction::parse(context, input)?,
         )))
+    }
+
+    /// Parse a size for width or height, where -webkit-fill-available
+    /// support is only controlled by one pref (vs. other properties where
+    /// there's an additional pref check):
+    /// TODO(dholbert) Remove this custom parse func in bug 1989073, along with
+    /// 'layout.css.webkit-fill-available.all-size-properties.enabled'.
+    pub fn parse_size_for_width_or_height_quirky<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_quirks: AllowQuirks,
+    ) -> Result<Self, ParseError<'i>> {
+        let allow_webkit_fill_available = is_webkit_fill_available_enabled_in_width_and_height();
+        Self::parse_quirky_internal(
+            context,
+            input,
+            allow_quirks,
+            allow_webkit_fill_available,
+            ParseAnchorFunctions::Yes,
+        )
+    }
+
+    /// Parse a size for width or height, where -webkit-fill-available
+    /// support is only controlled by one pref (vs. other properties where
+    /// there's an additional pref check):
+    /// TODO(dholbert) Remove this custom parse func in bug 1989073, along with
+    /// 'layout.css.webkit-fill-available.all-size-properties.enabled'.
+    pub fn parse_size_for_width_or_height<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let allow_webkit_fill_available = is_webkit_fill_available_enabled_in_width_and_height();
+        Self::parse_quirky_internal(
+            context,
+            input,
+            AllowQuirks::No,
+            allow_webkit_fill_available,
+            ParseAnchorFunctions::Yes,
+        )
     }
 
     /// Returns `0%`.
@@ -2157,7 +2382,9 @@ impl MaxSize {
         input: &mut Parser<'i, 't>,
         allow_quirks: AllowQuirks,
     ) -> Result<Self, ParseError<'i>> {
-        parse_size_non_length!(MaxSize, input, "none" => None);
+        let allow_webkit_fill_available = is_webkit_fill_available_enabled_in_all_size_properties();
+        parse_size_non_length!(MaxSize, input, allow_webkit_fill_available,
+                               "none" => None);
         parse_fit_content_function!(MaxSize, input, context, allow_quirks);
 
         match input
@@ -2187,9 +2414,6 @@ impl MaxSize {
 /// A specified non-negative `<length>` | `<number>`.
 pub type NonNegativeLengthOrNumber = GenericLengthOrNumber<NonNegativeLength, NonNegativeNumber>;
 
-/// A specified value for `anchor-size` function.
-pub type AnchorSizeFunction = GenericAnchorSizeFunction<LengthPercentage>;
-
 /// A specified value for `margin` properties.
 pub type Margin = GenericMargin<LengthPercentage>;
 
@@ -2218,7 +2442,7 @@ impl Margin {
         }) {
             return Ok(Self::AnchorContainingCalcFunction(l));
         }
-        let inner = AnchorSizeFunction::parse(context, input)?;
+        let inner = GenericAnchorSizeFunction::<Margin>::parse(context, input)?;
         Ok(Self::AnchorSizeFunction(Box::new(inner)))
     }
 }

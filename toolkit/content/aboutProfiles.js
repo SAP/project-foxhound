@@ -7,12 +7,16 @@
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+const { canDeleteProfile, deleteSharedProfilesStore } =
+  ChromeUtils.importESModule(
+    "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs"
+  );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "ProfileService",
   "@mozilla.org/toolkit/profile-service;1",
-  "nsIToolkitProfileService"
+  Ci.nsIToolkitProfileService
 );
 
 async function flush() {
@@ -50,7 +54,7 @@ async function flush() {
   }
 }
 
-function rebuildProfileList() {
+async function rebuildProfileList() {
   let parent = document.getElementById("profiles");
   while (parent.firstChild) {
     parent.firstChild.remove();
@@ -66,6 +70,7 @@ function rebuildProfileList() {
   for (let profile of ProfileService.profiles) {
     let isCurrentProfile = profile == currentProfile;
     let isInUse = isCurrentProfile;
+    let canDelete = await canDeleteProfile(profile);
     if (!isInUse) {
       try {
         let lock = profile.lock({});
@@ -84,6 +89,7 @@ function rebuildProfileList() {
       isDefault: profile == defaultProfile,
       isCurrentProfile,
       isInUse,
+      canDelete,
     });
   }
 }
@@ -102,13 +108,20 @@ function display(profileData) {
   });
 
   if (profileData.isCurrentProfile) {
-    let currentProfile = document.createElement("h3");
-    document.l10n.setAttributes(currentProfile, "profiles-current-profile");
-    div.appendChild(currentProfile);
+    let profileMessage = document.createElement("h3");
+    document.l10n.setAttributes(profileMessage, "profiles-current-profile");
+    div.appendChild(profileMessage);
   } else if (profileData.isInUse) {
-    let currentProfile = document.createElement("h3");
-    document.l10n.setAttributes(currentProfile, "profiles-in-use-profile");
-    div.appendChild(currentProfile);
+    let profileMessage = document.createElement("h3");
+    document.l10n.setAttributes(profileMessage, "profiles-in-use-profile");
+    div.appendChild(profileMessage);
+  } else if (!profileData.canDelete) {
+    let profileMessage = document.createElement("h3");
+    document.l10n.setAttributes(
+      profileMessage,
+      "profiles-cannot-delete-profile"
+    );
+    div.appendChild(profileMessage);
   }
 
   let table = document.createElement("table");
@@ -166,7 +179,7 @@ function display(profileData) {
   };
   div.appendChild(renameButton);
 
-  if (!profileData.isInUse) {
+  if (!profileData.isInUse && profileData.canDelete) {
     let removeButton = document.createElement("button");
     document.l10n.setAttributes(removeButton, "profiles-remove");
     removeButton.onclick = function () {
@@ -249,6 +262,16 @@ async function removeProfile(profile) {
   let deleteFiles = false;
 
   if (profile.rootDir.exists()) {
+    if (!(await canDeleteProfile(profile))) {
+      let [title, msg] = await document.l10n.formatValues([
+        "profile-has-selectable-profiles-title",
+        "profile-has-selectable-profiles-message",
+      ]);
+      Services.prompt.alert(window, title, msg);
+
+      return;
+    }
+
     let [title, msg, dontDeleteStr, deleteStr] =
       await document.l10n.formatValues([
         { id: "profiles-delete-profile-title" },
@@ -307,6 +330,8 @@ async function removeProfile(profile) {
     }
   }
 
+  let { storeID } = profile;
+
   try {
     profile.removeInBackground(deleteFiles);
   } catch (e) {
@@ -317,6 +342,10 @@ async function removeProfile(profile) {
 
     Services.prompt.alert(window, title, msg);
     return;
+  }
+
+  if (deleteFiles && storeID) {
+    await deleteSharedProfilesStore(storeID);
   }
 
   flush();

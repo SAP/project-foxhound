@@ -66,7 +66,7 @@ async function startTest() {
   );
 
   info("Opening computed view");
-  view = selectComputedView(inspector);
+  view = await selectComputedView(inspector);
 
   info("Test valid background image URL in computed view");
   await testCopyUrlToClipboard(

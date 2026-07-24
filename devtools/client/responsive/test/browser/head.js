@@ -343,14 +343,14 @@ function dragElementBy(selector, x, y, ui) {
  *
  * @param {ResponsiveUI} ui
  *        The ResponsiveUI instance.
- * @param {String} selector
+ * @param {string} selector
  *        The css selector of the resize handler, eg .viewport-horizontal-resize-handle.
  * @param {Array<number>} moveBy
  *        Array of 2 integers representing the x,y distance of the resize action.
  * @param {Array<number>} moveBy
  *        Array of 2 integers representing the actual resize performed.
- * @param {Object} options
- * @param {Boolean} options.hasDevice
+ * @param {object} options
+ * @param {boolean} options.hasDevice
  *        Whether a device is currently set and will be overridden by the resize
  */
 async function testViewportResize(
@@ -869,12 +869,12 @@ function rotateViewport(ui) {
 async function setTouchAndMetaViewportSupport(ui, value) {
   await ui.updateTouchSimulation(value);
   info("Reload so the new configuration applies cleanly to the page");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await promiseContentReflow(ui);
 }
 
-// This function checks that zoom, layout viewport width and height
+// This function checks that zoom, the initial containing block width and height
 // are all as expected.
 async function testViewportZoomWidthAndHeight(msg, ui, zoom, width, height) {
   if (typeof zoom !== "undefined") {
@@ -887,8 +887,8 @@ async function testViewportZoomWidthAndHeight(msg, ui, zoom, width, height) {
   if (typeof width !== "undefined" || typeof height !== "undefined") {
     const innerSize = await spawnViewportTask(ui, {}, function () {
       return {
-        width: content.innerWidth,
-        height: content.innerHeight,
+        width: content.document.documentElement.clientWidth,
+        height: content.document.documentElement.clientHeight,
       };
     });
     if (typeof width !== "undefined") {
@@ -951,8 +951,8 @@ async function waitForDeviceAndViewportState(ui) {
  *        The ResponsiveUI instance.
  * @param {Integer} expected
  *        The expected dpr for the content page.
- * @param {Object} options
- * @param {Boolean} options.waitForTargetConfiguration
+ * @param {object} options
+ * @param {boolean} options.waitForTargetConfiguration
  *        If set to true, the function will wait for the targetConfigurationCommand configuration
  *        to reflect the ratio that was set. This can be used to prevent pending requests
  *        to the actor.

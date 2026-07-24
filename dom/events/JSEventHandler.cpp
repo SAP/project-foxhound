@@ -3,23 +3,24 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "nsJSUtils.h"
-#include "nsString.h"
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsVariant.h"
-#include "nsGkAtoms.h"
-#include "xpcpublic.h"
-#include "nsJSEnvironment.h"
-#include "nsDOMJSUtils.h"
+#include "mozilla/JSEventHandler.h"
+
 #include "mozilla/ContentEvents.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/JSEventHandler.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/BeforeUnloadEvent.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "nsDOMJSUtils.h"
+#include "nsGkAtoms.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsJSEnvironment.h"
+#include "nsJSUtils.h"
+#include "nsString.h"
+#include "nsVariant.h"
+#include "xpcpublic.h"
 
 namespace mozilla {
 

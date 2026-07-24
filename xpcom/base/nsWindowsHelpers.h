@@ -328,6 +328,24 @@ struct CloseHandleDeleter {
   }
 };
 
+using AutoFreeSecurityDescriptor =
+    mozilla::UniquePtr<SECURITY_DESCRIPTOR, LocalFreeDeleter>;
+
+struct DestroyPrivateObjectSecurityDeleter {
+  void operator()(PSECURITY_DESCRIPTOR aSecDescPtr) {
+    ::DestroyPrivateObjectSecurity(&aSecDescPtr);
+  }
+};
+
+using AutoDestroySecurityDescriptor =
+    mozilla::UniquePtr<SECURITY_DESCRIPTOR,
+                       DestroyPrivateObjectSecurityDeleter>;
+
+struct RegCloseKeyDeleter {
+  using pointer = HKEY;
+  void operator()(HKEY aRegKey) { ::RegCloseKey(aRegKey); }
+};
+
 // One caller of this function is early in startup and several others are not,
 // so they have different ways of determining the two parameters. This function
 // exists just so any future code that needs to determine whether the dynamic

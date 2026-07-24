@@ -32,6 +32,7 @@
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "third_party/tflite/src/tensorflow/lite/model_builder.h"
 
 namespace webrtc {
 namespace test {
@@ -41,8 +42,7 @@ static const int kChunksPerSecond = 1000 / AudioProcessing::kChunkSizeMs;
 struct Int16Frame {
   void SetFormat(int sample_rate_hz, int num_channels) {
     sample_rate_hz_ = sample_rate_hz;
-    samples_per_channel_ =
-        rtc::CheckedDivExact(sample_rate_hz, kChunksPerSecond);
+    samples_per_channel_ = CheckedDivExact(sample_rate_hz, kChunksPerSecond);
     num_channels_ = num_channels;
     config = StreamConfig(sample_rate_hz, num_channels);
     data.resize(num_channels * samples_per_channel_);
@@ -159,14 +159,20 @@ struct SimulationSettings {
   std::optional<int> dump_start_frame;
   std::optional<int> dump_end_frame;
   std::optional<int> init_to_process;
+  std::optional<std::string> neural_echo_residual_estimator_model;
 };
 
+// State used by the audio processor, but not owned by it.
+// This state must outlive the audio processor.
+struct AudioProcessingBuilderState {
+  std::unique_ptr<tflite::FlatBufferModel> model;
+};
 // Provides common functionality for performing audioprocessing simulations.
 class AudioProcessingSimulator {
  public:
   AudioProcessingSimulator(
       const SimulationSettings& settings,
-      absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing);
+      absl_nonnull scoped_refptr<AudioProcessing> audio_processing);
 
   AudioProcessingSimulator() = delete;
   AudioProcessingSimulator(const AudioProcessingSimulator&) = delete;
@@ -210,7 +216,7 @@ class AudioProcessingSimulator {
                                     int capture_frames_since_init) const;
 
   const SimulationSettings settings_;
-  rtc::scoped_refptr<AudioProcessing> ap_;
+  scoped_refptr<AudioProcessing> ap_;
 
   std::unique_ptr<ChannelBuffer<float>> in_buf_;
   std::unique_ptr<ChannelBuffer<float>> out_buf_;

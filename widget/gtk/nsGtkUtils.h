@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGtkUtils_h__
-#define nsGtkUtils_h__
+#ifndef nsGtkUtils_h_
+#define nsGtkUtils_h_
 
 #include <glib.h>
 
@@ -56,4 +56,4 @@ static inline void MozClearHandleID(T& handle, gboolean (*destroy)(T)) {
   }
 }
 
-#endif  // nsGtkUtils_h__
+#endif  // nsGtkUtils_h_

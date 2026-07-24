@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include "ProfilingCategoryList.h"
+#include "mozilla/ProfilingCategoryList.h"
 
 namespace mozilla {
 namespace baseprofiler {

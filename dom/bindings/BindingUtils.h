@@ -4,53 +4,51 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_BindingUtils_h__
-#define mozilla_dom_BindingUtils_h__
+#ifndef mozilla_dom_BindingUtils_h_
+#define mozilla_dom_BindingUtils_h_
 
 #include <type_traits>
 
-#include "jsfriendapi.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
-#include "js/experimental/BindingAllocs.h"
-#include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
-#include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowProxyIfWindow
 #include "js/MemoryFunctions.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetReservedSlot, JS::SetReservedSlot
 #include "js/RealmOptions.h"
 #include "js/String.h"  // JS::GetLatin1LinearStringChars, JS::GetTwoByteLinearStringChars, JS::GetLinearStringLength, JS::LinearStringHasLatin1Chars, JS::StringHasLatin1Chars
 #include "js/Wrapper.h"
 #include "js/Zone.h"
-#include "mozilla/ArrayUtils.h"
+#include "js/experimental/BindingAllocs.h"
+#include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
+#include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowProxyIfWindow
+#include "jsfriendapi.h"
 #include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/EnumeratedRange.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Likely.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/SegmentedVector.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/FakeString.h"
 #include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrototypeList.h"
 #include "mozilla/dom/RemoteObjectProxy.h"
-#include "mozilla/SegmentedVector.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsIGlobalObject.h"
-#include "nsJSUtils.h"
 #include "nsISupportsImpl.h"
+#include "nsIVariant.h"
+#include "nsJSUtils.h"
+#include "nsWrapperCacheInlines.h"
 #include "xpcObjectHelper.h"
 #include "xpcpublic.h"
-#include "nsIVariant.h"
-#include "mozilla/dom/FakeString.h"
-#include "mozilla/ProfilerLabels.h"
-
-#include "nsWrapperCacheInlines.h"
 
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
@@ -174,10 +172,8 @@ inline bool IsDOMObject(JSObject* obj) { return IsDOMClass(JS::GetClass(obj)); }
       obj, value, cx)
 
 // Test whether the given object is an instance of the given interface.
-#define IS_INSTANCE_OF(Interface, obj)                                       \
-  mozilla::dom::IsInstanceOf<mozilla::dom::prototypes::id::Interface,        \
-                             mozilla::dom::Interface##_Binding::NativeType>( \
-      obj)
+#define IS_INSTANCE_OF(Interface, obj) \
+  mozilla::dom::IsInstanceOf<mozilla::dom::prototypes::id::Interface>(obj)
 
 // Unwrap the given non-wrapper object.  This can be used with any obj that
 // converts to JSObject*; as long as that JSObject* is live the return value
@@ -424,11 +420,11 @@ MOZ_ALWAYS_INLINE nsresult UnwrapObjectWithCrossOriginAsserts(V&& obj,
 }
 }  // namespace binding_detail
 
-template <prototypes::ID PrototypeID, class T>
+template <prototypes::ID PrototypeID>
 MOZ_ALWAYS_INLINE bool IsInstanceOf(JSObject* obj) {
   AssertStaticUnwrapOK<PrototypeID>();
   void* ignored;
-  nsresult unwrapped = binding_detail::UnwrapObjectInternal<T, true>(
+  nsresult unwrapped = binding_detail::UnwrapObjectInternal<void, true>(
       obj, ignored, PrototypeID, PrototypeTraits<PrototypeID>::Depth, nullptr);
   return NS_SUCCEEDED(unwrapped);
 }
@@ -894,11 +890,11 @@ bool DefineLegacyUnforgeableAttributes(
 #ifdef _MSC_VER
 #  define HAS_MEMBER_CHECK(_name) \
     template <typename V>         \
-    static yes& Check##_name(char(*)[(&V::_name == 0) + 1])
+    static yes& Check##_name(char (*)[(&V::_name == 0) + 1])
 #else
 #  define HAS_MEMBER_CHECK(_name) \
     template <typename V>         \
-    static yes& Check##_name(char(*)[sizeof(&V::_name) + 1])
+    static yes& Check##_name(char (*)[sizeof(&V::_name) + 1])
 #endif
 
 #define HAS_MEMBER(_memberName, _valueName) \
@@ -1029,55 +1025,22 @@ using ToWrapperCacheHelper = std::conditional_t<
     CastableToWrapperCache<CastableToWrapperCacheHelper::OffsetOf<T>()>,
     NeedsQIToWrapperCache>;
 
-template <class Base>
-class NativeTypeHelpersBase_nsISupports : public Base {
- public:
-  static bool AddProperty(JSContext* cx, JS::Handle<JSObject*> aObj,
-                          JS::Handle<jsid>, JS::Handle<JS::Value>) {
-    nsISupports* self =
-        UnwrapPossiblyNotInitializedDOMObject<nsISupports>(aObj);
-    // We obviously can't preserve if we're not initialized.
-    if (self) {
-      nsWrapperCache* cache = Base::GetWrapperCache(self);
-      // We don't want to preserve if we don't have a wrapper.
-      if (cache->GetWrapperPreserveColor()) {
-        cache->PreserveWrapper(self);
-      }
-    }
-    return true;
-  }
-};
-
 template <class T,
           bool CastableToWrapperCache = std::is_base_of_v<nsWrapperCache, T>>
 class NativeTypeHelpers_nsISupports;
 
 template <class T>
 class NativeTypeHelpers_nsISupports<T, true>
-    : public NativeTypeHelpersBase_nsISupports<
-          CastableToWrapperCache<CastableToWrapperCacheHelper::OffsetOf<T>()>> {
-};
+    : public CastableToWrapperCache<
+          CastableToWrapperCacheHelper::OffsetOf<T>()> {};
 
 template <class T>
-class NativeTypeHelpers_nsISupports<T, false>
-    : public NativeTypeHelpersBase_nsISupports<NeedsQIToWrapperCache> {};
+class NativeTypeHelpers_nsISupports<T, false> : public NeedsQIToWrapperCache {};
 
 template <class T>
 class NativeTypeHelpers_Other
     : public CastableToWrapperCache<
-          CastableToWrapperCacheHelper::OffsetOf<T>()> {
- public:
-  static bool AddProperty(JSContext* cx, JS::Handle<JSObject*> aObj,
-                          JS::Handle<jsid>, JS::Handle<JS::Value>) {
-    T* self = UnwrapPossiblyNotInitializedDOMObject<T>(aObj);
-    // We obviously can't preserve if we're not initialized, and we don't want
-    // to preserve if we don't have a wrapper.
-    if (self && self->GetWrapperPreserveColor()) {
-      self->PreserveWrapper(self, NS_CYCLE_COLLECTION_PARTICIPANT(T));
-    }
-    return true;
-  }
-};
+          CastableToWrapperCacheHelper::OffsetOf<T>()> {};
 
 template <class T>
 using NativeTypeHelpers = std::conditional_t<std::is_base_of_v<nsISupports, T>,
@@ -1501,7 +1464,7 @@ inline bool WrapNewBindingNonWrapperCachedObject(
     }
 
     // JS object took ownership
-    Unused << value.release();
+    (void)value.release();
   }
 
   return FinishWrapping(cx, obj, rval);
@@ -3133,9 +3096,8 @@ struct CreateGlobalOptionsWithXPConnect {
 
 template <class T>
 using IsGlobalWithXPConnect =
-    std::integral_constant<bool,
-                           std::is_base_of<nsGlobalWindowInner, T>::value ||
-                               std::is_base_of<MessageManagerGlobal, T>::value>;
+    std::disjunction<std::is_base_of<nsGlobalWindowInner, T>,
+                     std::is_base_of<MessageManagerGlobal, T>>;
 
 template <class T>
 struct CreateGlobalOptions
@@ -3617,4 +3579,4 @@ void ClearXrayExpandoSlots(JS::RootingContext* aCx, JSObject* aObject,
 
 }  // namespace mozilla
 
-#endif /* mozilla_dom_BindingUtils_h__ */
+#endif /* mozilla_dom_BindingUtils_h_ */

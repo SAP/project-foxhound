@@ -7,7 +7,7 @@
     android:id="@+id/sign_out_fragment"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/layer1"
+    android:background="?attr/colorSurface"
     android:padding="8dp">
 
     <TextView
@@ -29,7 +29,7 @@
         android:layout_width="wrap_content"
         android:layout_height="0dp"
         android:letterSpacing="0"
-        android:padding="10dp"
+        android:paddingHorizontal="12dp"
         android:scrollbars="none"
         android:text="@string/sign_out_cancel"
         android:textAlignment="center"

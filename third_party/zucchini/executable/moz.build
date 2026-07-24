@@ -1,0 +1,43 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+Program("zucchini")
+
+DisableStlWrapping()
+
+LOCAL_INCLUDES += [
+    "/third_party/abseil-cpp/",
+    "/third_party/googletest/googletest/include",
+    "/third_party/zucchini/chromium-shim/",
+    "/third_party/zucchini/chromium/",
+]
+
+DEFINES["UNICODE"] = True
+DEFINES["ENABLED_VLOG_LEVEL"] = 1
+
+if not CONFIG["MOZ_DEBUG"]:
+    DEFINES["NDEBUG"] = True
+
+SOURCES += [
+    "/third_party/zucchini/chromium/base/command_line.cc",
+    "/third_party/zucchini/chromium/components/zucchini/main_utils.cc",
+    "/third_party/zucchini/chromium/components/zucchini/zucchini_commands.cc",
+    "/third_party/zucchini/chromium/components/zucchini/zucchini_main.cc",
+    "/third_party/zucchini/chromium/components/zucchini/zucchini_tools.cc",
+]
+
+if CONFIG["TARGET_OS"] == "WINNT":
+    USE_STATIC_MSVCRT = True
+
+if CONFIG["TARGET_KERNEL"] == "Linux":
+    SOURCES += [
+        "/third_party/zucchini/chromium/base/process/process_handle_posix.cc",
+        "/third_party/zucchini/chromium/base/strings/string_split.cc",
+    ]
+
+USE_LIBS += [
+    "zucchini",
+]

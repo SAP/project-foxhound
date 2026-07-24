@@ -61,7 +61,7 @@ data class Response(
 
         @Suppress("TooGenericExceptionCaught")
         private val charset = contentType?.let {
-            val charset = it.substringAfter("charset=")
+            val charset = it.substringAfter("charset=", "UTF-8")
             try {
                 Charset.forName(charset)
             } catch (e: Exception) {

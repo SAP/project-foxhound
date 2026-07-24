@@ -10,101 +10,21 @@
 #define mozilla_UniquePtr_h
 
 #include <memory>
-#include <type_traits>
 #include <utility>
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/CompactPair.h"
-#include "mozilla/Compiler.h"
 
 namespace mozilla {
 
 template <typename T>
-class DefaultDelete;
+using DefaultDelete = std::default_delete<T>;
+
 template <typename T, class D = DefaultDelete<T>>
 using UniquePtr = std::unique_ptr<T, D>;
 
 }  // namespace mozilla
 
 namespace mozilla {
-
-namespace detail {
-
-struct HasPointerTypeHelper {
-  template <class U>
-  static double Test(...);
-  template <class U>
-  static char Test(typename U::pointer* = 0);
-};
-
-template <class T>
-class HasPointerType
-    : public std::integral_constant<bool, sizeof(HasPointerTypeHelper::Test<T>(
-                                              0)) == 1> {};
-
-template <class T, class D, bool = HasPointerType<D>::value>
-struct PointerTypeImpl {
-  typedef typename D::pointer Type;
-};
-
-template <class T, class D>
-struct PointerTypeImpl<T, D, false> {
-  typedef T* Type;
-};
-
-template <class T, class D>
-struct PointerType {
-  typedef typename PointerTypeImpl<T, std::remove_reference_t<D>>::Type Type;
-};
-
-}  // namespace detail
-
-/**
- * A default deletion policy using plain old operator delete.
- *
- * Note that this type can be specialized, but authors should beware of the risk
- * that the specialization may at some point cease to match (either because it
- * gets moved to a different compilation unit or the signature changes). If the
- * non-specialized (|delete|-based) version compiles for that type but does the
- * wrong thing, bad things could happen.
- *
- * This is a non-issue for types which are always incomplete (i.e. opaque handle
- * types), since |delete|-ing such a type will always trigger a compilation
- * error.
- */
-template <typename T>
-class DefaultDelete {
- public:
-  constexpr DefaultDelete() = default;
-
-  template <typename U>
-  MOZ_IMPLICIT DefaultDelete(
-      const DefaultDelete<U>& aOther,
-      std::enable_if_t<std::is_convertible_v<U*, T*>, int> aDummy = 0) {}
-
-  void operator()(T* aPtr) const {
-    static_assert(sizeof(T) > 0, "T must be complete");
-    delete aPtr;
-  }
-};
-
-/** A default deletion policy using operator delete[]. */
-template <typename T>
-class DefaultDelete<T[]> {
- public:
-  constexpr DefaultDelete() = default;
-
-  void operator()(T* aPtr) const {
-    static_assert(sizeof(T) > 0, "T must be complete");
-    delete[] aPtr;
-  }
-
-  template <typename U>
-  void operator()(U* aPtr) const = delete;
-};
-
-// No operator<, operator>, operator<=, operator>= for now because simplicity.
 
 namespace detail {
 
@@ -180,20 +100,9 @@ struct UniqueSelector<T[N]> {
  */
 
 template <typename T, typename... Args>
-typename detail::UniqueSelector<T>::SingleObject MakeUnique(Args&&... aArgs) {
-  return UniquePtr<T>(new T(std::forward<Args>(aArgs)...));
+auto MakeUnique(Args&&... aArgs) {
+  return std::make_unique<T>(std::forward<Args>(aArgs)...);
 }
-
-template <typename T>
-typename detail::UniqueSelector<T>::UnknownBound MakeUnique(
-    decltype(sizeof(int)) aN) {
-  using ArrayType = std::remove_extent_t<T>;
-  return UniquePtr<T>(new ArrayType[aN]());
-}
-
-template <typename T, typename... Args>
-typename detail::UniqueSelector<T>::KnownBound MakeUnique(Args&&... aArgs) =
-    delete;
 
 /**
  * WrapUnique is a helper function to transfer ownership from a raw pointer
@@ -299,6 +208,8 @@ auto TempPtrToSetter(UniquePtr<T, Deleter>* const p) {
 }  // namespace mozilla
 
 namespace std {
+
+// No operator<, operator>, operator<=, operator>= for now because simplicity.
 
 template <typename T, class D>
 bool operator==(const mozilla::UniquePtr<T, D>& aX, const T* aY) {

@@ -14,6 +14,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   WebDriverNewSessionHandler:
     "chrome://remote/content/webdriver-bidi/NewSessionHandler.sys.mjs",
   WebDriverSession: "chrome://remote/content/shared/webdriver/Session.sys.mjs",
+  UserPromptHandlerManager:
+    "chrome://remote/content/webdriver-bidi/UserPromptHandlerManager.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
@@ -44,6 +46,7 @@ export class WebDriverBiDi {
   #running;
   #session;
   #sessionlessConnections;
+  #userPromptHandlerManager;
 
   /**
    * Creates a new instance of the WebDriverBiDi class.
@@ -144,6 +147,10 @@ export class WebDriverBiDi {
     }
 
     if (this.#session.bidi) {
+      this.#userPromptHandlerManager = new lazy.UserPromptHandlerManager(
+        this.#session.userPromptHandler
+      );
+
       // Creating a WebDriver BiDi session too early can cause issues with
       // clients in not being able to find any available browsing context.
       // Also when closing the application while it's still starting up can
@@ -176,6 +183,10 @@ export class WebDriverBiDi {
 
     // For multiple session check first if the last session was closed.
     lazy.cleanupCacheBypassState();
+
+    if (this.#userPromptHandlerManager) {
+      this.#userPromptHandlerManager.destroy();
+    }
 
     this.#session.destroy();
     this.#session = null;

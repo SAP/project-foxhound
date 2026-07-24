@@ -2,27 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MTRANSPORTHANDLER_H__
-#define _MTRANSPORTHANDLER_H__
+#ifndef MTRANSPORTHANDLER_H_
+#define MTRANSPORTHANDLER_H_
 
+#include <set>
+#include <string>
+#include <vector>
+
+#include "MediaEventSource.h"
+#include "RTCStatsReport.h"
+#include "common/CandidateInfo.h"
 #include "mozilla/RefPtr.h"
-#include "nsISupportsImpl.h"
-#include "transport/transportlayer.h"  // Need the State enum
-#include "transport/dtlsidentity.h"    // For DtlsDigest
-#include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "mozilla/dom/RTCIceTransportBinding.h"  // RTCIceTransportState
-#include "transport/nricectx.h"                  // Need some enums
-#include "common/CandidateInfo.h"
-#include "transport/nr_socket_proxy_config.h"
-#include "RTCStatsReport.h"
-#include "MediaEventSource.h"
-
+#include "mozilla/dom/RTCPeerConnectionBinding.h"
+#include "nsISupportsImpl.h"
 #include "nsString.h"
-
-#include <string>
-#include <set>
-#include <vector>
+#include "transport/dtlsidentity.h"  // For DtlsDigest
+#include "transport/nr_socket_proxy_config.h"
+#include "transport/nricectx.h"        // Need some enums
+#include "transport/transportlayer.h"  // Need the State enum
 
 namespace mozilla {
 class DtlsIdentity;
@@ -202,4 +201,4 @@ void TokenizeCandidate(const std::string& aCandidate,
 
 }  // namespace mozilla
 
-#endif  //_MTRANSPORTHANDLER_H__
+#endif  // MTRANSPORTHANDLER_H_

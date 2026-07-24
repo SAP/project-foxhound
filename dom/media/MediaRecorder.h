@@ -7,9 +7,9 @@
 #ifndef MediaRecorder_h
 #define MediaRecorder_h
 
-#include "mozilla/dom/MediaRecorderBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/MediaRecorderBinding.h"
 #include "nsIDocumentActivity.h"
 
 // Max size for allowing queue encoded data in memory

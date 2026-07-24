@@ -6,8 +6,8 @@
 #define CUBEBDEVICEENUMERATOR_H_
 
 #include "AudioDeviceInfo.h"
-#include "cubeb/cubeb.h"
 #include "MediaEventSource.h"
+#include "cubeb/cubeb.h"
 #include "mozilla/Mutex.h"
 #include "nsTArray.h"
 

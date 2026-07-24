@@ -25,6 +25,7 @@ import mozilla.components.feature.pwa.ext.trustedOrigins
 import mozilla.components.lib.state.ext.flow
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.ktx.android.net.isInScope
+import kotlin.properties.Delegates
 
 /**
  * Hides a custom tab toolbar for Progressive Web Apps and Trusted Web Activities.
@@ -51,6 +52,15 @@ class WebAppHideToolbarFeature(
     private val setToolbarVisibility: (Boolean) -> Unit,
 ) : LifecycleAwareFeature {
 
+    private var _shouldToolbarsBeVisible: Boolean by Delegates.observable(false) { _, _, newValue ->
+        setToolbarVisibility(newValue)
+    }
+
+    /**
+     * Whether the toolbar should be visible for the current tab.
+     */
+    val shouldToolbarsBeVisible = _shouldToolbarsBeVisible
+
     private val manifestScope = listOfNotNull(manifest?.getTrustedScope())
     private var scope: CoroutineScope? = null
 
@@ -58,7 +68,7 @@ class WebAppHideToolbarFeature(
         // Hide the toolbar by default to prevent a flash.
         val tab = store.state.findTabOrCustomTabOrSelectedTab(tabId)
         val customTabState = customTabsStore.state.getCustomTabStateForTab(tab)
-        setToolbarVisibility(shouldToolbarBeVisible(tab, customTabState))
+        _shouldToolbarsBeVisible = shouldToolbarBeVisible(tab, customTabState)
     }
 
     override fun start() {
@@ -78,7 +88,7 @@ class WebAppHideToolbarFeature(
                     .map { (tab, customTabState) -> shouldToolbarBeVisible(tab, customTabState) }
                     .distinctUntilChanged()
                     .collect { toolbarVisible ->
-                        setToolbarVisibility(toolbarVisible)
+                        _shouldToolbarsBeVisible = toolbarVisible
                     }
             }
         }

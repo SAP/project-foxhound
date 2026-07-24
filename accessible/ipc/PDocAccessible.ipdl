@@ -100,7 +100,8 @@ parent:
                        LayoutDeviceIntRect aCaretRect,
                        int32_t aOffset,
                        bool aIsSelectionCollapsed, bool aIsAtEndOfLine,
-                       int32_t aGranularity, bool aFromUser);
+                       int32_t aGranularity, bool aFromUser,
+                       bool aSuppressEvent);
   async MutationEvents(MutationEventData[] aData);
   async RequestAckMutationEvents();
   async SelectionEvent(uint64_t aID, uint64_t aWidgetID, uint32_t aType);
@@ -109,11 +110,9 @@ parent:
   async ScrollingEvent(uint64_t aID, uint64_t aType,
                        uint32_t aScrollX, uint32_t aScrollY,
                        uint32_t aMaxScrollX, uint32_t aMaxScrollY);
-#ifndef XP_WIN
   async AnnouncementEvent(uint64_t aID,
                           nsString aAnnouncement,
                           uint16_t aPriority);
-#endif
   async TextSelectionChangeEvent(uint64_t aID, TextRangeData[] aSelection);
 
   /*
@@ -151,9 +150,6 @@ child:
   async ScrollTo(uint64_t aID, uint32_t aScrollType);
   async ScrollToPoint(uint64_t aID, uint32_t aScrollType, int32_t aX,
                       int32_t aY);
-#ifndef XP_WIN
-  async Announce(uint64_t aID, nsString aAnnouncement, uint16_t aPriority);
-#endif
 
   // AccessibleText
 

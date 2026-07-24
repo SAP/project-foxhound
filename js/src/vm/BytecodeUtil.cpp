@@ -1888,6 +1888,11 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::DynamicImport:
       return write("import(...)");
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+    case JSOp::DynamicImportSource:
+      return write("import.source(...)");
+#endif
+
     case JSOp::Typeof:
     case JSOp::TypeofExpr:
       return write("(typeof ") && decompilePCForStackOperand(pc, -1) &&
@@ -2769,8 +2774,8 @@ static bool GetPCCountJSON(JSContext* cx, const ScriptAndCounts& sac,
   json.beginListProperty("opcodes");
 
   uint64_t hits = 0;
-  for (BytecodeRangeWithPosition range(cx, script); !range.empty();
-       range.popFront()) {
+  for (BytecodeRangeWithPosition range(cx, script, SkipPrologueOps::Yes);
+       !range.empty(); range.popFront()) {
     jsbytecode* pc = range.frontPC();
     size_t offset = script->pcToOffset(pc);
     JSOp op = JSOp(*pc);

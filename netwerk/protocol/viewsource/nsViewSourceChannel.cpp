@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsViewSourceChannel.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentUtils.h"
@@ -976,12 +975,6 @@ nsViewSourceChannel::IsNoCacheResponse(bool* _retval) {
 }
 
 NS_IMETHODIMP
-nsViewSourceChannel::IsPrivateResponse(bool* _retval) {
-  return !mHttpChannel ? NS_ERROR_NULL_POINTER
-                       : mHttpChannel->IsPrivateResponse(_retval);
-}
-
-NS_IMETHODIMP
 nsViewSourceChannel::RedirectTo(nsIURI* uri) {
   return !mHttpChannel ? NS_ERROR_NULL_POINTER : mHttpChannel->RedirectTo(uri);
 }
@@ -1014,6 +1007,18 @@ NS_IMETHODIMP
 nsViewSourceChannel::SetRequestContextID(uint64_t rcid) {
   return !mHttpChannel ? NS_ERROR_NULL_POINTER
                        : mHttpChannel->SetRequestContextID(rcid);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetIsUserAgentHeaderOutdated(bool* aValue) {
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER
+                       : mHttpChannel->GetIsUserAgentHeaderOutdated(aValue);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetIsUserAgentHeaderOutdated(bool aValue) {
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER
+                       : mHttpChannel->SetIsUserAgentHeaderOutdated(aValue);
 }
 
 NS_IMETHODIMP
@@ -1209,6 +1214,19 @@ nsViewSourceChannel::AsyncOnChannelRedirect(
   }
 
   callback->OnRedirectVerifyCallback(NS_OK);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry** aDictionary) {
+  *aDictionary = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry* aDictionary) {
   return NS_OK;
 }
 

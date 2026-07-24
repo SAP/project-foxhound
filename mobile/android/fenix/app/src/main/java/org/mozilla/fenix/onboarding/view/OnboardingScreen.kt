@@ -2,27 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@file:OptIn(ExperimentalFoundationApi::class)
-
 package org.mozilla.fenix.onboarding.view
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,10 +72,10 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * @param onMarketingOptInToggle callback for when the user toggles the opt-in checkbox
  * @param onMarketingDataContinueClick callback for when the user clicks the continue button on the
  * marketing data opt out screen.
- * on the marketing data opt out screen.
  * @param onFinish Invoked when the onboarding is completed.
  * @param onImpression Invoked when a page in the pager is displayed.
  * @param currentIndex callback for when the current horizontal pager page changes
+ * @param onNavigateToNextPage callback for when the user navigates to the next page in onboarding.
  */
 @Composable
 @Suppress("LongParameterList", "LongMethod")
@@ -99,6 +99,7 @@ fun OnboardingScreen(
     onFinish: (pageType: OnboardingPageUiData) -> Unit,
     onImpression: (pageType: OnboardingPageUiData) -> Unit,
     currentIndex: (index: Int) -> Unit,
+    onNavigateToNextPage: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { pagesToDisplay.size })
@@ -106,12 +107,17 @@ fun OnboardingScreen(
         .observeAsComposableState { it.account != null }
     val widgetPinnedFlow: StateFlow<Boolean> = WidgetPinnedState.isPinned
     val isWidgetPinnedState by widgetPinnedFlow.collectAsState()
+    var lastSettledPage by remember { mutableIntStateOf(pagerState.settledPage) }
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }
             .distinctUntilChanged()
             .collect { page ->
+                if (page > lastSettledPage) {
+                    onNavigateToNextPage()
+                }
                 currentIndex(page)
+                lastSettledPage = page
             }
     }
 
@@ -166,28 +172,28 @@ fun OnboardingScreen(
         pagesToDisplay = pagesToDisplay,
         pagerState = pagerState,
         onMakeFirefoxDefaultClick = {
-            scrollToNextPageOrDismiss()
             onMakeFirefoxDefaultClick()
+            scrollToNextPageOrDismiss()
         },
         onMakeFirefoxDefaultSkipClick = {
-            scrollToNextPageOrDismiss()
             onSkipDefaultClick()
+            scrollToNextPageOrDismiss()
         },
         onSignInButtonClick = {
             onSignInButtonClick()
             scrollToNextPageOrDismiss()
         },
         onSignInSkipClick = {
-            scrollToNextPageOrDismiss()
             onSkipSignInClick()
+            scrollToNextPageOrDismiss()
         },
         onNotificationPermissionButtonClick = {
-            scrollToNextPageOrDismiss()
             onNotificationPermissionButtonClick()
+            scrollToNextPageOrDismiss()
         },
         onNotificationPermissionSkipClick = {
-            scrollToNextPageOrDismiss()
             onSkipNotificationClick()
+            scrollToNextPageOrDismiss()
         },
         onAddFirefoxWidgetClick = {
             if (isWidgetPinnedState) {
@@ -197,21 +203,21 @@ fun OnboardingScreen(
             }
         },
         onSkipFirefoxWidgetClick = {
-            scrollToNextPageOrDismiss()
             onSkipFirefoxWidgetClick()
+            scrollToNextPageOrDismiss()
         },
         onCustomizeToolbarButtonClick = {
-            scrollToNextPageOrDismiss()
             onCustomizeToolbarClick()
+            scrollToNextPageOrDismiss()
         },
         onCustomizeThemeButtonClick = {
-            scrollToNextPageOrDismiss()
             onCustomizeThemeClick()
+            scrollToNextPageOrDismiss()
         },
         termsOfServiceEventHandler = termsOfServiceEventHandler,
         onAgreeAndConfirmTermsOfService = {
-            scrollToNextPageOrDismiss()
             termsOfServiceEventHandler.onAcceptTermsButtonClicked()
+            scrollToNextPageOrDismiss()
         },
         onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
         onMarketingOptInToggle = onMarketingOptInToggle,
@@ -269,55 +275,56 @@ private fun OnboardingContent(
 ) {
     val nestedScrollConnection = remember { DisableForwardSwipeNestedScrollConnection(pagerState) }
 
-    Column(
-        modifier = Modifier
-            .background(FirefoxTheme.colors.layer1)
-            .statusBarsPadding(),
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            key = { pagesToDisplay[it].type },
+    Surface {
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .nestedScroll(nestedScrollConnection),
-        ) { pageIndex ->
-            // protect against a rare case where the user goes to the marketing screen at the same
-            // moment it gets removed by [MarketingPageRemovalSupport]
-            val pageUiState = pagesToDisplay.getOrElse(pageIndex) { pagesToDisplay[it.dec()] }
-            val onboardingPageState = mapToOnboardingPageState(
-                onboardingPageUiData = pageUiState,
-                onMakeFirefoxDefaultClick = onMakeFirefoxDefaultClick,
-                onMakeFirefoxDefaultSkipClick = onMakeFirefoxDefaultSkipClick,
-                onSignInButtonClick = onSignInButtonClick,
-                onSignInSkipClick = onSignInSkipClick,
-                onNotificationPermissionButtonClick = onNotificationPermissionButtonClick,
-                onNotificationPermissionSkipClick = onNotificationPermissionSkipClick,
-                onAddFirefoxWidgetClick = onAddFirefoxWidgetClick,
-                onAddFirefoxWidgetSkipClick = onSkipFirefoxWidgetClick,
-                onCustomizeToolbarButtonClick = onCustomizeToolbarButtonClick,
-                onCustomizeThemeClick = onCustomizeThemeButtonClick,
-                onTermsOfServiceButtonClick = onAgreeAndConfirmTermsOfService,
-            )
-            OnboardingPageForType(
-                type = pageUiState.type,
-                state = onboardingPageState,
-                onboardingStore = onboardingStore,
-                termsOfServiceEventHandler = termsOfServiceEventHandler,
-                onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
-                onMarketingOptInToggle = onMarketingOptInToggle,
-                onMarketingDataContinueClick = onMarketingDataContinueClick,
+                .statusBarsPadding(),
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                key = { pagesToDisplay[it].type },
+                modifier = Modifier
+                    .weight(1f)
+                    .nestedScroll(nestedScrollConnection),
+            ) { pageIndex ->
+                // protect against a rare case where the user goes to the marketing screen at the same
+                // moment it gets removed by [MarketingPageRemovalSupport]
+                val pageUiState = pagesToDisplay.getOrElse(pageIndex) { pagesToDisplay[it.dec()] }
+                val onboardingPageState = mapToOnboardingPageState(
+                    onboardingPageUiData = pageUiState,
+                    onMakeFirefoxDefaultClick = onMakeFirefoxDefaultClick,
+                    onMakeFirefoxDefaultSkipClick = onMakeFirefoxDefaultSkipClick,
+                    onSignInButtonClick = onSignInButtonClick,
+                    onSignInSkipClick = onSignInSkipClick,
+                    onNotificationPermissionButtonClick = onNotificationPermissionButtonClick,
+                    onNotificationPermissionSkipClick = onNotificationPermissionSkipClick,
+                    onAddFirefoxWidgetClick = onAddFirefoxWidgetClick,
+                    onAddFirefoxWidgetSkipClick = onSkipFirefoxWidgetClick,
+                    onCustomizeToolbarButtonClick = onCustomizeToolbarButtonClick,
+                    onCustomizeThemeClick = onCustomizeThemeButtonClick,
+                    onTermsOfServiceButtonClick = onAgreeAndConfirmTermsOfService,
+                    shouldShowElevation = false,
+                )
+                OnboardingPageForType(
+                    type = pageUiState.type,
+                    state = onboardingPageState,
+                    onboardingStore = onboardingStore,
+                    termsOfServiceEventHandler = termsOfServiceEventHandler,
+                    onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
+                    onMarketingOptInToggle = onMarketingOptInToggle,
+                    onMarketingDataContinueClick = onMarketingDataContinueClick,
+                )
+            }
+
+            PagerIndicator(
+                pagerState = pagerState,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(bottom = 16.dp),
+                inactiveColor = MaterialTheme.colorScheme.outlineVariant,
+                leaveTrail = true,
             )
         }
-
-        PagerIndicator(
-            pagerState = pagerState,
-            activeColor = FirefoxTheme.colors.actionPrimary,
-            inactiveColor = FirefoxTheme.colors.actionSecondary,
-            leaveTrail = true,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(bottom = 16.dp),
-        )
     }
 }
 

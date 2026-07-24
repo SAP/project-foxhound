@@ -7,16 +7,13 @@
 // Original author: ekr@rtfm.com
 #include <iostream>
 
-#include "prio.h"
-
-#include "nsCOMPtr.h"
-#include "nsNetCID.h"
-
-#include "nsISocketTransportService.h"
-
 #include "nsASocketHandler.h"
+#include "nsCOMPtr.h"
+#include "nsISocketTransportService.h"
+#include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
+#include "prio.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -141,7 +138,7 @@ void SocketTransportServiceTest::SetUp() {
   // Register ourselves as a listener for the read side of the
   // socket. The registration has to happen on the STS thread,
   // hence this event stuff.
-  rv = target_->Dispatch(new RegisterEvent(this), 0);
+  rv = target_->Dispatch(new RegisterEvent(this), NS_DISPATCH_NORMAL);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE_WAIT(registered_, 10000);
 }
@@ -158,7 +155,7 @@ void SocketTransportServiceTest::RegisterHandler() {
 void SocketTransportServiceTest::SendEvent() {
   nsresult rv;
 
-  rv = target_->Dispatch(new EventReceived(this), 0);
+  rv = target_->Dispatch(new EventReceived(this), NS_DISPATCH_NORMAL);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE_WAIT(Received() == 1, 10000);
 }

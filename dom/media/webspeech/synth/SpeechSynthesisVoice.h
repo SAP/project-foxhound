@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_SpeechSynthesisVoice_h
 #define mozilla_dom_SpeechSynthesisVoice_h
 
+#include "js/TypeDecls.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
 
 namespace mozilla::dom {
 

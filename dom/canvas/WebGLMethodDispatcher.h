@@ -6,8 +6,8 @@
 #ifndef WEBGLMETHODDISPATCHER_H_
 #define WEBGLMETHODDISPATCHER_H_
 
-#include "TexUnpackBlob.h"
 #include "HostWebGLContext.h"
+#include "TexUnpackBlob.h"
 #include "WebGLQueueParamTraits.h"
 
 namespace mozilla {

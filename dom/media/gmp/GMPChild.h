@@ -6,11 +6,11 @@
 #ifndef GMPChild_h_
 #define GMPChild_h_
 
-#include "mozilla/gmp/PGMPChild.h"
-#include "GMPTimerChild.h"
-#include "GMPStorageChild.h"
 #include "GMPLoader.h"
+#include "GMPStorageChild.h"
+#include "GMPTimerChild.h"
 #include "gmp-entrypoints.h"
+#include "mozilla/gmp/PGMPChild.h"
 #include "prlink.h"
 
 namespace mozilla {

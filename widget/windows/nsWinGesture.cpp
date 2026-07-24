@@ -286,11 +286,11 @@ inline bool TestTransition(int32_t a, int32_t b) {
   return (a < 0) == (b < 0);
 }
 
-void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, int32_t scrollOverflow,
+void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, bool scrollOverflow,
                                       bool& endFeedback) {
   // If scroll overflow was returned indicating we panned past the bounds of
   // the scrollable view port, start feeback.
-  if (scrollOverflow != 0) {
+  if (scrollOverflow) {
     if (!mFeedbackActive) {
       BeginPanningFeedback(hWnd);
       mFeedbackActive = true;
@@ -316,11 +316,11 @@ void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, int32_t scrollOverflow,
   }
 }
 
-void nsWinGesture::UpdatePanFeedbackY(HWND hWnd, int32_t scrollOverflow,
+void nsWinGesture::UpdatePanFeedbackY(HWND hWnd, bool scrollOverflow,
                                       bool& endFeedback) {
   // If scroll overflow was returned indicating we panned past the bounds of
   // the scrollable view port, start feeback.
-  if (scrollOverflow != 0) {
+  if (scrollOverflow) {
     if (!mFeedbackActive) {
       BeginPanningFeedback(hWnd);
       mFeedbackActive = true;

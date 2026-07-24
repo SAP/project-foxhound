@@ -3,12 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "OpusTrackEncoder.h"
-#include "nsString.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/ProfilerLabels.h"
-#include "VideoUtils.h"
 
 #include <opus/opus.h>
+
+#include "VideoUtils.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/ProfilerLabels.h"
+#include "nsString.h"
 
 #define LOG(args, ...)
 

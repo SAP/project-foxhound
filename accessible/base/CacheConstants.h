@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _CacheConstants_h_
-#define _CacheConstants_h_
+#ifndef CacheConstants_h_
+#define CacheConstants_h_
 
 #include "nsGkAtoms.h"
 #include "mozilla/a11y/RelationType.h"
@@ -83,12 +83,24 @@ static constexpr RelationData kRelationTypeAtoms[] = {
      RelationType::CONTROLLER_FOR},
     {nsGkAtoms::aria_describedby, nullptr, RelationType::DESCRIBED_BY,
      RelationType::DESCRIPTION_FOR},
+    {nsGkAtoms::commandfor, nullptr, RelationType::DESCRIBED_BY,
+     RelationType::DESCRIPTION_FOR},
+    {nsGkAtoms::popovertarget, nullptr, RelationType::DESCRIBED_BY,
+     RelationType::DESCRIPTION_FOR},
     {nsGkAtoms::aria_flowto, nullptr, RelationType::FLOWS_TO,
      RelationType::FLOWS_FROM},
     {nsGkAtoms::aria_details, nullptr, RelationType::DETAILS,
      RelationType::DETAILS_FOR},
+    {nsGkAtoms::commandfor, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
+    {nsGkAtoms::popovertarget, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
+    {nsGkAtoms::target, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
     {nsGkAtoms::aria_errormessage, nullptr, RelationType::ERRORMSG,
      RelationType::ERRORMSG_FOR},
+    {nsGkAtoms::aria_actions, nullptr, RelationType::ACTION,
+     RelationType::ACTION_FOR},
 };
 
 // The count of numbers needed to serialize an nsRect. This is used when
@@ -152,7 +164,13 @@ class CacheKey {
   // CSS position; e.g. fixed.
   static constexpr nsStaticAtom* CssPosition = nsGkAtoms::position;
   // nsString, CacheDomain::NameAndDescription
+  static constexpr nsStaticAtom* CssAltContent = nsGkAtoms::content;
+  // nsString, CacheDomain::NameAndDescription
   static constexpr nsStaticAtom* Description = nsGkAtoms::description;
+  // EDescriptionValueFlag, CacheDomain::NameAndDescription
+  // Returned by Accessible::Description.
+  static constexpr nsStaticAtom* DescriptionValueFlag =
+      nsGkAtoms::aria_description;
   // nsString, CacheDomain::Relations
   // The "name" DOM attribute.
   static constexpr nsStaticAtom* DOMName = nsGkAtoms::attributeName;
@@ -166,6 +184,9 @@ class CacheKey {
   // nsTArray<int32_t>, no domain
   // As returned by HyperTextAccessibleBase::CachedHyperTextOffsets.
   static constexpr nsStaticAtom* HyperTextOffsets = nsGkAtoms::offset;
+  // bool, CacheDomain::ARIA
+  // Accessible has aria-actions
+  static constexpr nsStaticAtom* HasActions = nsGkAtoms::hasActions;
   // bool, CacheDomain::Actions
   // Whether this image has a longdesc.
   static constexpr nsStaticAtom* HasLongdesc = nsGkAtoms::longdesc;
@@ -192,9 +213,6 @@ class CacheKey {
   static constexpr nsStaticAtom* MinValue = nsGkAtoms::min;
   // nsString, CacheDomain::NameAndDescription
   static constexpr nsStaticAtom* Name = nsGkAtoms::name;
-  // ENameValueFlag, CacheDomain::NameAndDescription
-  // Returned by Accessible::Name.
-  static constexpr nsStaticAtom* NameValueFlag = nsGkAtoms::explicit_name;
   // double, CacheDomain::Value
   // The numeric value returned by Accessible::CurValue.
   static constexpr nsStaticAtom* NumericValue = nsGkAtoms::value;
@@ -208,6 +226,11 @@ class CacheKey {
   // nsAtom, CacheUpdateType::Initial
   // The type of a popup (used for HTML popover).
   static constexpr nsStaticAtom* PopupType = nsGkAtoms::ispopup;
+  // bool, CacheDomain::Relations
+  // Whether popovertarget/commandfor should expose a DETAILS relation (true)
+  // or DESCRIBED_BY relation (false). Only meaningful when popovertarget or
+  // commandfor is cached.
+  static constexpr nsStaticAtom* PopoverInvokerIsDetails = nsGkAtoms::details;
   // nsAtom, CacheDomain::Actions
   static constexpr nsStaticAtom* PrimaryAction = nsGkAtoms::action;
   // float, no domain
@@ -253,6 +276,8 @@ class CacheKey {
   // The textual value returned by Accessible::Value (as opposed to
   // the numeric value returned by Accessible::CurValue).
   static constexpr nsStaticAtom* TextValue = nsGkAtoms::aria_valuetext;
+  // nsString, CacheDomain::NameAndDescription
+  static constexpr nsStaticAtom* Tooltip = nsGkAtoms::tooltip;
   // gfx::Matrix4x4, CacheDomain::TransformMatrix
   static constexpr nsStaticAtom* TransformMatrix = nsGkAtoms::transform;
   // int32_t, CacheDomain::Value
@@ -261,6 +286,8 @@ class CacheKey {
   // The list of Accessibles in the viewport used for hit testing and on-screen
   // determination.
   static constexpr nsStaticAtom* Viewport = nsGkAtoms::viewport;
+  // Computed writing mode
+  static constexpr nsStaticAtom* WritingMode = nsGkAtoms::writing_mode;
 };
 
 // Return true if the given cache domains are already active.

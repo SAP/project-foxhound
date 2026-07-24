@@ -13,6 +13,7 @@
 // Global includes
 #include <cstddef>
 #include <cstdint>
+
 #include "ErrorList.h"
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/Maybe.h"

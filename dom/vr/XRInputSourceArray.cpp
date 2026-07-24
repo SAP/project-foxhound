@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRInputSourceArray.h"
-#include "mozilla/dom/XRSession.h"
-#include "mozilla/dom/XRInputSourcesChangeEvent.h"
+
 #include "VRDisplayClient.h"
+#include "mozilla/dom/XRInputSourcesChangeEvent.h"
+#include "mozilla/dom/XRSession.h"
 
 namespace mozilla::dom {
 

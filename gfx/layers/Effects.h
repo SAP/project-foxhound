@@ -17,7 +17,6 @@
 #include "mozilla/layers/TextureHost.h"      // for CompositingRenderTarget, etc
 #include "mozilla/mozalloc.h"                // for operator delete, etc
 #include "nscore.h"                          // for nsACString
-#include "mozilla/EnumeratedArray.h"
 
 namespace mozilla {
 namespace layers {

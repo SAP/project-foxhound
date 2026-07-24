@@ -20,9 +20,7 @@
 #include "mozIStorageService.h"
 #include "mozStorageCID.h"
 #include "mozStorageHelper.h"
-#include "mozilla/Array.h"
 #include "mozilla/ErrorNames.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/FileSystemTypes.h"
 #include "mozilla/dom/PFileSystemManager.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
@@ -178,10 +176,8 @@ static void MakeDatabaseManagerVersions(
 
   quota::OriginMetadata originMetadata = GetOriginMetadataSample();
 
-  nsCString taskQueueName("OPFS "_ns + originMetadata.mOrigin);
-
   RefPtr<TaskQueue> ioTaskQueue =
-      TaskQueue::Create(do_AddRef(streamTransportService), taskQueueName.get());
+      TaskQueue::Create(do_AddRef(streamTransportService), "OPFS");
 
   aDataManager = MakeRefPtr<MockFileSystemDataManager>(
       originMetadata, WrapMovingNotNull(streamTransportService),

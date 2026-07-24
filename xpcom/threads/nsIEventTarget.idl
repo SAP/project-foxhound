@@ -10,6 +10,7 @@
 #include "nsCOMPtr.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/TypedEnumBits.h"
 
 class nsITargetShutdownTask;
 %}
@@ -20,51 +21,85 @@ native alreadyAddRefed_nsIRunnable(already_AddRefed<nsIRunnable>);
 [builtinclass, scriptable, rust_sync, uuid(a03b8b63-af8b-4164-b0e5-c41e8b2b7cfa)]
 interface nsIEventTarget : nsISupports
 {
-  /* until we can get rid of all uses, keep the non-alreadyAddRefed<> version */
-%{C++
-    nsresult Dispatch(nsIRunnable* aEvent, uint32_t aFlags) {
-      return Dispatch(nsCOMPtr<nsIRunnable>(aEvent).forget(), aFlags);
-    }
-%}
-
   /**
-   * This flag specifies the default mode of event dispatch, whereby the event
-   * is simply queued for later processing.  When this flag is specified,
-   * dispatch returns immediately after the event is queued.
-   */
-  const unsigned long DISPATCH_NORMAL = 0;
-
-  // NOTE: 1 used to be DISPATCH_SYNC
-
-  /**
-   * This flag specifies that the dispatch is occurring from a running event
-   * that was dispatched to the same event target, and that event is about to
-   * finish.
+   * Flags used to customize the behaviour of a `Dispatch` call.
    *
-   * A thread pool can use this as an optimization hint to not spin up
-   * another thread, since the current thread is about to become idle.
+   * WARNING: These flags are generally hints, and are not universally supported
+   * by all nsIEventTarget implementations. An implementation may ignore some or
+   * all of these flags.
    *
-   * These events are always async.
+   * HISTORIC NOTE: There used to be a `DISPATCH_SYNC` flag which would spin a
+   * nested event loop while dispatching (and could not be safely ignored by
+   * event target implementations), but this has since been removed.
    */
-  const unsigned long DISPATCH_AT_END = 2;
+  cenum DispatchFlags : 32 {
+    /**
+     * DISPATCH_NORMAL corresponds to the absense of other flags. This is used
+     * for dispatching async events to an event target which will be queued for
+     * later processing.
+     */
+    DISPATCH_NORMAL = 0,
 
-  /**
-   * This flag specifies that the dispatched event may block the thread on
-   * which it executes, usually by doing some sort of I/O.  This information
-   * may be used by the event target to execute the job on a thread
-   * specifically dedicated to doing I/O, leaving other threads available for
-   * CPU-intensive work.
-   */
-  const unsigned long DISPATCH_EVENT_MAY_BLOCK = 4;
+    // NOTE: 1 << 0 used to be DISPATCH_SYNC
 
-  /**
-   * This flag specifies that the dispatched event should be delivered to the
-   * target thread even if the thread has been configured to block dispatching
-   * of runnables. This is generally done for threads which have their own
-   * internal event loop, such as thread pools or the timer thread, and will not
-   * service runnables dispatched to them until shutdown.
-   */
-  const unsigned long DISPATCH_IGNORE_BLOCK_DISPATCH = 8;
+    /**
+     * This flag specifies that the dispatch is occurring from a running event
+     * that was dispatched to the same event target, and that event is about to
+     * finish.
+     *
+     * A thread pool can use this as an optimization hint to not spin up
+     * another thread, since the current thread is about to become idle.
+    */
+    DISPATCH_AT_END = 1 << 1,
+
+    /**
+     * This flag specifies that the dispatched event may block the thread on
+     * which it executes, usually by doing some sort of I/O.  This information
+     * may be used by the event target to execute the job on a thread
+     * specifically dedicated to doing I/O, leaving other threads available for
+     * CPU-intensive work.
+     */
+    DISPATCH_EVENT_MAY_BLOCK = 1 << 2,
+
+    /**
+     * This flag specifies that the dispatched event should be delivered to the
+     * target thread even if the thread has been configured to block dispatching
+     * of runnables. This is generally done for threads which have their own
+     * internal event loop, such as thread pools or the timer thread, and will not
+     * service runnables dispatched to them until shutdown.
+     */
+    DISPATCH_IGNORE_BLOCK_DISPATCH = 1 << 3,
+
+    /**
+     * This flag specifies that the caller of the given dispatch is prepared to
+     * handle dispatch failures itself.
+     *
+     * Some nsIEventTarget implementations, such as nsThread, leak the passed-in
+     * runnable if there is a failure when dispatching (e.g. due to the thread
+     * being destroyed). This is done as many callers are unprepared to handle
+     * calls to Dispatch failing, and could otherwise e.g. destroy a object on
+     * the wrong thread.
+     *
+     * By specifying DISPATCH_FALLIBLE, you communicate to the nsIEventTarget
+     * implementation that you are prepared to handle the consequences of the
+     * dispatch failing. nsIEventTarget implementations should neither leak
+     * passed-in runnables nor fire assertions on state-related error codepaths
+     * (such as late shutdown dispatch assertions) when DISPATCH_FALLIBLE is
+     * specified.
+     *
+     * When using DISPATCH_FALLIBLE, the caller must be careful that the event
+     * object is safe to discard on the calling thread, and that other systems
+     * do not depend on the runnable completing on error cases.
+     *
+     * NOTE: Many nsIEventTarget implementations (including TaskQueue and
+     * nsThreadPool) never leak the passed-in runnable on failure, whether or
+     * not this flag is specified. Dispatched events may always be released by
+     * the dispatcher on error for those types.
+     *
+     * See bug 803174, bug 1237213 and bug 1824189 for historical context.
+     */
+    DISPATCH_FALLIBLE = 1 << 4,
+  };
 
   /**
    * IsOnCurrentThread() should return true if events dispatched to this target
@@ -114,16 +149,24 @@ public:
   // Fallible version of IsOnCurrentThread.
   boolean isOnCurrentThread();
 
+  /* until we can get rid of all uses, keep the non-alreadyAddRefed<> version */
+%{C++
+    nsresult Dispatch(nsIRunnable* aEvent, DispatchFlags aFlags) {
+      return Dispatch(nsCOMPtr<nsIRunnable>(aEvent).forget(), aFlags);
+    }
+%}
+
   /**
    * Dispatch an event to this event target.  This function may be called from
    * any thread, and it may be called re-entrantly.
    *
    * @param event
    *   The alreadyAddRefed<> event to dispatch.
-   *   NOTE that the event will be leaked if it fails to dispatch.
+   *   NOTE that the event should be leaked if it fails to dispatch unless
+   *   NS_DISPATCH_FALLIBLE is passed.
    * @param flags
    *   The flags modifying event dispatch.  The flags are described in detail
-   *   below.
+   *   above.
    *
    * @throws NS_ERROR_INVALID_ARG
    *   Indicates that event is null.
@@ -132,7 +175,8 @@ public:
    * events, so this event would never run and has not been dispatched.
    */
   [noscript, binaryname(Dispatch)] void dispatchFromC(in alreadyAddRefed_nsIRunnable event,
-                                                      [default(DISPATCH_NORMAL)] in unsigned long flags);
+                                                      [default(DISPATCH_NORMAL)] in nsIEventTarget_DispatchFlags flags);
+
   /**
    * Version of Dispatch to expose to JS, which doesn't require an alreadyAddRefed<>
    * (it will be converted to that internally)
@@ -141,7 +185,7 @@ public:
    *   The (raw) event to dispatch.
    * @param flags
    *   The flags modifying event dispatch.  The flags are described in detail
-   *   below.
+   *   above.
    *
    * @throws NS_ERROR_INVALID_ARG
    *   Indicates that event is null.
@@ -149,7 +193,8 @@ public:
    *   Indicates that the thread is shutting down and has finished processing
    * events, so this event would never run and has not been dispatched.
    */
-  [binaryname(DispatchFromScript)] void dispatch(in nsIRunnable event, in unsigned long flags);
+  [binaryname(DispatchFromScript)] void dispatch(in nsIRunnable event, in nsIEventTarget_DispatchFlags flags);
+
   /**
    * Dispatch an event to this event target, but do not run it before delay
    * milliseconds have passed.  This function may be called from any thread.
@@ -166,8 +211,8 @@ public:
    *   Indicates that event is null.
    * @throws NS_ERROR_UNEXPECTED
    *   Indicates that the thread is shutting down and has finished processing
-   * events, so this event would never run and has not been dispatched, or
-   * that delay is zero.
+   *   events, so this event would never run and has not been dispatched, or
+   *   that delay is zero.
    */
   [noscript] void delayedDispatch(in alreadyAddRefed_nsIRunnable event, in unsigned long delay);
 
@@ -209,6 +254,25 @@ public:
    *   accepting events, or that the shutdown task cannot be found.
    */
   [noscript] void unregisterShutdownTask(in nsITargetShutdownTask task);
+
+  cenum FeatureFlags : 32 {
+      SUPPORTS_BASE = 0,
+      // Indicates that the event target supports shutdown tasks.
+      SUPPORTS_SHUTDOWN_TASKS = 1 << 0,
+      // Indicates whether or not it is possible to dispatch events to this
+      // event target while its shutdown tasks are executed from those.
+      SUPPORTS_SHUTDOWN_TASK_DISPATCH = 1 << 1,
+      // Indicates whether the event target supports prioritization.
+      // Events implementing nsIRunnablePriority can get run in a different
+      // order than they were dispatched.
+      SUPPORTS_PRIORITIZATION = 1 << 2,
+  };
+
+  /**
+   * Returns a FeatureFlags bitmask indicating supported features.
+   */
+  [noscript, notxpcom] nsIEventTarget_FeatureFlags getFeatures();
+
 };
 
 %{C++
@@ -217,6 +281,11 @@ public:
 #define NS_DISPATCH_AT_END nsIEventTarget::DISPATCH_AT_END
 #define NS_DISPATCH_EVENT_MAY_BLOCK nsIEventTarget::DISPATCH_EVENT_MAY_BLOCK
 #define NS_DISPATCH_IGNORE_BLOCK_DISPATCH nsIEventTarget::DISPATCH_IGNORE_BLOCK_DISPATCH
+#define NS_DISPATCH_FALLIBLE nsIEventTarget::DISPATCH_FALLIBLE
+
+// Convenience bitwise operators for the flag cenum
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsIEventTarget::DispatchFlags)
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsIEventTarget::FeatureFlags)
 
 // Convenient NS_DECL variant that includes some C++-only methods.
 #define NS_DECL_NSIEVENTTARGET_FULL                                   \

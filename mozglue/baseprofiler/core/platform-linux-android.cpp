@@ -60,14 +60,9 @@
 #endif                   // def __GLIBC__
 #include <strings.h>     // index
 #include <errno.h>
-#include <stdarg.h>
 
 #include "prenv.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/DebugOnly.h"
-
-#include <string.h>
-#include <list>
 
 using namespace mozilla;
 

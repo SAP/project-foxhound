@@ -7,7 +7,6 @@
 #include "GLContext.h"
 
 #include <algorithm>
-#include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <regex>
@@ -49,7 +48,6 @@
 
 #include "OGLShaderProgram.h"  // for ShaderProgramType
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
 #ifdef XP_MACOSX
@@ -630,9 +628,14 @@ bool GLContext::InitImpl() {
 
   ////////////////
 
-  const char* glVendorString = (const char*)fGetString(LOCAL_GL_VENDOR);
-  const char* glRendererString = (const char*)fGetString(LOCAL_GL_RENDERER);
+  const char* glVendorString =
+      reinterpret_cast<const char*>(fGetString(LOCAL_GL_VENDOR));
+  const char* glRendererString =
+      reinterpret_cast<const char*>(fGetString(LOCAL_GL_RENDERER));
   if (!glVendorString || !glRendererString) return false;
+
+  mVendorString.Assign(glVendorString);
+  mRendererString.Assign(glRendererString);
 
   // The order of these strings must match up with the order of the enum
   // defined in GLContext.h for vendor IDs.
@@ -668,7 +671,6 @@ bool GLContext::InitImpl() {
       "NVIDIA Tegra",
       "Android Emulator",
       "Gallium 0.4 on llvmpipe",
-      "Intel HD Graphics 3000 OpenGL Engine",
       "Microsoft Basic Render Driver",
       "Samsung Xclipse",
       "Unknown"};
@@ -682,7 +684,9 @@ bool GLContext::InitImpl() {
   }
 
   {
-    const auto versionStr = (const char*)fGetString(LOCAL_GL_VERSION);
+    const auto versionStr =
+        reinterpret_cast<const char*>(fGetString(LOCAL_GL_VERSION));
+    mVersionString.Assign(versionStr);
     if (strstr(versionStr, "Mesa")) {
       mIsMesa = true;
     }
@@ -942,6 +946,17 @@ bool GLContext::InitImpl() {
   }
 
   mMaxTexOrRbSize = std::min(mMaxTextureSize, mMaxRenderbufferSize);
+
+#ifdef MOZ_WIDGET_ANDROID
+  if (Renderer() == GLRenderer::SamsungXclipse && jni::GetAPIVersion() >= 35) {
+    // On Samsung Xclipse GPUs on Android 15 attribute values for the final
+    // vertex in a buffer may be incorrect. Padding the buffer to contain
+    // enough space for an additional vertex avoids the issue. See bug 1983036.
+    GLint maxVertexAttribStride;
+    raw_fGetIntegerv(LOCAL_GL_MAX_VERTEX_ATTRIB_STRIDE, &maxVertexAttribStride);
+    mVertexBufferExtraPadding = Some(maxVertexAttribStride);
+  }
+#endif
 
   ////////////////////////////////////////////////////////////////////////////
 
@@ -1666,30 +1681,33 @@ void GLContext::DebugCallback(GLenum source, GLenum type, GLuint id,
 void GLContext::InitExtensions() {
   MOZ_GL_ASSERT(this, IsCurrent());
 
-  std::vector<nsCString> driverExtensionList;
-
   [&]() {
     if (mSymbols.fGetStringi) {
       GLuint count = 0;
       if (GetPotentialInteger(LOCAL_GL_NUM_EXTENSIONS, (GLint*)&count)) {
         for (GLuint i = 0; i < count; i++) {
           // This is UTF-8.
-          const char* rawExt = (const char*)fGetStringi(LOCAL_GL_EXTENSIONS, i);
+          const char* rawExt = reinterpret_cast<const char*>(
+              fGetStringi(LOCAL_GL_EXTENSIONS, i));
 
           // We CANNOT use nsDependentCString here, because the spec doesn't
           // guarantee that the pointers returned are different, only that their
           // contents are. On Flame, each of these index string queries returns
           // the same address.
-          driverExtensionList.push_back(nsCString(rawExt));
+          mExtensionStrings.AppendElement(nsCString(rawExt));
         }
         return;
       }
     }
 
-    const char* rawExts = (const char*)fGetString(LOCAL_GL_EXTENSIONS);
+    const char* rawExts =
+        reinterpret_cast<const char*>(fGetString(LOCAL_GL_EXTENSIONS));
     if (rawExts) {
-      nsDependentCString exts(rawExts);
-      SplitByChar(exts, ' ', &driverExtensionList);
+      for (auto extension : nsDependentCString(rawExts).Split(' ')) {
+        if (!extension.IsEmpty()) {
+          mExtensionStrings.AppendElement(extension);
+        }
+      }
     }
   }();
   const auto err = fGetError();
@@ -1698,10 +1716,10 @@ void GLContext::InitExtensions() {
   const bool shouldDumpExts = ShouldDumpExts();
   if (shouldDumpExts) {
     printf_stderr("%i GL driver extensions: (*: recognized)\n",
-                  (uint32_t)driverExtensionList.size());
+                  (uint32_t)mExtensionStrings.Length());
   }
 
-  MarkBitfieldByStrings(driverExtensionList, shouldDumpExts, sExtensionNames,
+  MarkBitfieldByStrings(mExtensionStrings, shouldDumpExts, sExtensionNames,
                         &mAvailableExtensions);
 
   if (WorkAroundDriverBugs()) {
@@ -1748,15 +1766,6 @@ void GLContext::InitExtensions() {
     }
 
 #ifdef XP_MACOSX
-    // Bug 1009642: On OSX Mavericks (10.9), the driver for Intel HD
-    // 3000 appears to be buggy WRT updating sub-images of S3TC
-    // textures with glCompressedTexSubImage2D. Works on Intel HD 4000
-    // and Intel HD 5000/Iris that I tested.
-    // Bug 1124996: Appears to be the same on OSX Yosemite (10.10)
-    if (Renderer() == GLRenderer::IntelHD3000) {
-      MarkExtensionUnsupported(EXT_texture_compression_s3tc);
-    }
-
     // OSX supports EXT_texture_sRGB in Legacy contexts, but not in Core
     // contexts. Though EXT_texture_sRGB was included into GL2.1, it *excludes*
     // the interactions with s3tc. Strictly speaking, you must advertize support
@@ -1847,23 +1856,19 @@ void GLContext::AttachBuffersToFB(GLuint colorTex, GLuint colorRB,
     fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
                           target, colorTex, 0);
   } else if (colorRB) {
-    // On the Android 4.3 emulator, IsRenderbuffer may return false incorrectly.
-    MOZ_GL_ASSERT(this, fIsRenderbuffer(colorRB) ||
-                            Renderer() == GLRenderer::AndroidEmulator);
+    MOZ_GL_ASSERT(this, fIsRenderbuffer(colorRB));
     fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
                              LOCAL_GL_RENDERBUFFER, colorRB);
   }
 
   if (depthRB) {
-    MOZ_GL_ASSERT(this, fIsRenderbuffer(depthRB) ||
-                            Renderer() == GLRenderer::AndroidEmulator);
+    MOZ_GL_ASSERT(this, fIsRenderbuffer(depthRB));
     fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_DEPTH_ATTACHMENT,
                              LOCAL_GL_RENDERBUFFER, depthRB);
   }
 
   if (stencilRB) {
-    MOZ_GL_ASSERT(this, fIsRenderbuffer(stencilRB) ||
-                            Renderer() == GLRenderer::AndroidEmulator);
+    MOZ_GL_ASSERT(this, fIsRenderbuffer(stencilRB));
     fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_STENCIL_ATTACHMENT,
                              LOCAL_GL_RENDERBUFFER, stencilRB);
   }
@@ -1998,10 +2003,18 @@ void GLContext::AssertNotPassingStackBufferToTheGL(const void* ptr) {
   // approach of only asserting when address and someStackAddress are
   // on the same page.
   bool isStackAddress = pageDistance <= 1;
+
+#  if !(defined(_WIN32) && !defined(_WIN64))
+  // On 32-bit Windows, heap and stack are adjacent in the limited 2GB address
+  // space, causing false positives where legitimate heap allocations appear
+  // within 1 page of the stack. Disable this assertion there.
   MOZ_ASSERT(!isStackAddress,
              "Please don't pass stack arrays to the GL. "
              "Consider using HeapCopyOfStackArray. "
              "See bug 1005658.");
+#  else
+  (void)isStackAddress;
+#  endif
 }
 
 void GLContext::CreatedProgram(GLContext* aOrigin, GLuint aName) {
@@ -2724,7 +2737,7 @@ void MesaMemoryLeakWorkaround() {
 
   if (foundPath) {
     // Deliberately leak to prevent unload
-    Unused << dlopen(foundPath->get(), RTLD_LAZY);
+    (void)dlopen(foundPath->get(), RTLD_LAZY);
   }
 #endif  // XP_LINUX but not ANDROID
 }

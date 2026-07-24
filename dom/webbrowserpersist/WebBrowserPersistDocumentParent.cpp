@@ -6,13 +6,13 @@
 
 #include "WebBrowserPersistDocumentParent.h"
 
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/dom/PContentParent.h"
-#include "nsIInputStream.h"
-#include "nsThreadUtils.h"
+#include "WebBrowserPersistRemoteDocument.h"
 #include "WebBrowserPersistResourcesParent.h"
 #include "WebBrowserPersistSerializeParent.h"
-#include "WebBrowserPersistRemoteDocument.h"
+#include "mozilla/dom/PContentParent.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "nsIInputStream.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 

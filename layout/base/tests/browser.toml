@@ -4,7 +4,9 @@ prefs = [
 ]
 
 ["browser_animatedImageLeak.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "opt",
+]
 support-files = [
   "helper_animatedImageLeak.html"
 ]
@@ -19,16 +21,19 @@ support-files = ["helper_bug1701027-2.html"]
 
 ["browser_bug1757410.js"]
 run-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug",
-  "os == 'win' && processor == 'x86_64' && debug"
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+  "os == 'win' && arch == 'x86_64' && debug",
 ]
 
 ["browser_bug1787079.js"]
-run-if = ["os == 'win' && processor == 'x86_64' && debug"]
+run-if = [
+  "os == 'win' && arch == 'x86_64' && debug",
+]
 
 ["browser_bug1791083.js"]
-skip-if = ["!sessionHistoryInParent"]
+skip-if = [
+  "!sessionHistoryInParent",
+]
 
 ["browser_css_registered_property.js"]
 
@@ -48,9 +53,8 @@ support-files = [
 
 ["browser_select_popup_position_in_out_of_process_iframe.js"]
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
-  "os == 'linux' && socketprocess_networking && fission && !debug",
-] # high frequency intermittent
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && fission && socketprocess_networking", # high frequency intermittent
+]
 support-files = [
   "!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js",
   "!/browser/base/content/test/forms/head.js"

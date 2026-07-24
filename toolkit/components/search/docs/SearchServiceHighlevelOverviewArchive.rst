@@ -31,7 +31,7 @@ described by number 1 below.
 1. When the user opens the Firefox Browser, the code starts to build the browser
    UI components. During this startup phase, we have various systems making
    calls to the ``SearchService``. E.g. `browser.js <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/browser/base/content/browser.js#3797>`_
-   calls ``Services.search.getDefault`` to fetch the default Search Engine.
+   calls ``SearchService.getDefault`` to fetch the default Search Engine.
 
 2. The ``SearchService`` needs information from ``System Add-ons``,
    ``SearchSettings``, and ``Remote Settings`` to build the correct engines in

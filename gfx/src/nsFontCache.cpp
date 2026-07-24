@@ -17,6 +17,8 @@ using mozilla::services::GetObserverService;
 
 NS_IMPL_ISUPPORTS(nsFontCache, nsIObserver)
 
+static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
+
 // The Init and Destroy methods are necessary because it's not
 // safe to call AddObserver from a constructor or RemoveObserver
 // from a destructor.  That should be fixed.
@@ -117,7 +119,14 @@ void nsFontCache::DetectFontFingerprinting(const nsFont& aFont) {
   // number of cache misses in a short amount of time, which indicates the
   // usage of an unreasonable amount of different fonts by the web page.
 
-  if (mReportedProbableFingerprinting || aFont.family.families.list.IsEmpty()) {
+  if (aFont.family.families.list.IsEmpty()) {
+    return;
+  }
+
+  if (!MOZ_LOG_TEST(gFingerprinterDetection, mozilla::LogLevel::Info) &&
+      mReportedProbableFingerprinting) {
+    // We've already reported fingerprinting for this document, and logging
+    // isn't enabled, so skip the rest of the detection logic.
     return;
   }
 
@@ -143,20 +152,39 @@ void nsFontCache::DetectFontFingerprinting(const nsFont& aFont) {
   uint16_t fontsMissedRecently = 0;
 
   bool clearMissedFonts = false;
-  for (auto iter = missedFonts->Iter(); !iter.Done(); iter.Next()) {
-    if (now - kFingerprintingLastNSec <= iter.Data()) {
-      if (++fontsMissedRecently > kFingerprintingCacheMissThreshold) {
-        mContext->Document()->RecordFontFingerprinting();
-        mReportedProbableFingerprinting = true;
-        clearMissedFonts = true;
-        break;
+  if (!mReportedProbableFingerprinting) {
+    for (auto iter = missedFonts->Iter(); !iter.Done(); iter.Next()) {
+      if (now - kFingerprintingLastNSec <= iter.Data()) {
+        if (++fontsMissedRecently > kFingerprintingCacheMissThreshold) {
+          mContext->Document()->RecordFontFingerprinting();
+          mReportedProbableFingerprinting = true;
+          clearMissedFonts = true;
+          break;
+        }
+      } else {
+        // Remove the old entries from missed cache list.
+        iter.Remove();
       }
-    } else {
-      // Remove the old entries from missed cache list.
-      iter.Remove();
     }
+    if (mReportedProbableFingerprinting) {
+      // We detected a font fingerprinter, so print out all the fonts they
+      // queries and missed
+      for (auto iter = missedFonts->Iter(); !iter.Done(); iter.Next()) {
+        MOZ_LOG(
+            gFingerprinterDetection, mozilla::LogLevel::Info,
+            ("Font Fingerprinting Tripped | Document %p | Font Family | %s",
+             mContext->Document(), NS_ConvertUTF16toUTF8(iter.Key()).get()));
+      }
+    }
+  } else {
+    // I've already reported the font fingerprinting, but I want to report each
+    // additional font
+    MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Info,
+            ("Font Fingerprinting Tripped | Document %p | Font Family | %s",
+             mContext->Document(), NS_ConvertUTF16toUTF8(key).get()));
   }
-  if (clearMissedFonts) {
+  if (!MOZ_LOG_TEST(gFingerprinterDetection, mozilla::LogLevel::Info) &&
+      clearMissedFonts) {
     missedFonts->Clear();
   }
 }

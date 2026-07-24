@@ -9,33 +9,25 @@
 
 #include "mozilla/Tainting.h"
 
-#include "base/basictypes.h"
-#include "base/process.h"
+#include "chrome/common/ipc_message_utils.h"
 
-#include "mozilla/ipc/IPDLParamTraits.h"
-
-namespace mozilla {
-namespace ipc {
+namespace IPC {
 
 template <typename T>
-struct IPDLParamTraits<mozilla::Tainted<T>> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const mozilla::Tainted<T>& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+struct ParamTraits<mozilla::Tainted<T>> {
+  static void Write(MessageWriter* aWriter, const mozilla::Tainted<T>& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    mozilla::Tainted<T>&& aParam) {
-    WriteIPDLParam(aWriter, aActor, std::move(aParam.mValue));
+  static void Write(MessageWriter* aWriter, mozilla::Tainted<T>&& aParam) {
+    WriteParam(aWriter, std::move(aParam.mValue));
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   mozilla::Tainted<T>* aResult) {
-    return ReadIPDLParam(aReader, aActor, &(aResult->mValue));
+  static bool Read(MessageReader* aReader, mozilla::Tainted<T>* aResult) {
+    return ReadParam(aReader, &(aResult->mValue));
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif  // ifndef mozilla_ipc_Tainting_h

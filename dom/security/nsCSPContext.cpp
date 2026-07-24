@@ -4,62 +4,63 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsCSPContext.h"
+
 #include <string>
 #include <unordered_set>
 #include <utility>
 
-#include "nsCOMPtr.h"
-#include "nsContentPolicyUtils.h"
-#include "nsContentSecurityUtils.h"
-#include "nsContentUtils.h"
-#include "nsCSPContext.h"
-#include "nsCSPParser.h"
-#include "nsCSPService.h"
-#include "nsCSPUtils.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsError.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIClassInfoImpl.h"
-#include "mozilla/dom/Document.h"
-#include "nsIHttpChannel.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIObserver.h"
-#include "nsIObserverService.h"
-#include "nsIStringStream.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIUploadChannel.h"
-#include "nsIURIMutator.h"
-#include "nsIScriptError.h"
-#include "nsMimeTypes.h"
-#include "nsNetUtil.h"
-#include "nsIContentPolicy.h"
-#include "nsSupportsPrimitives.h"
-#include "nsThreadUtils.h"
-#include "nsScriptSecurityManager.h"
-#include "nsStreamUtils.h"
-#include "nsString.h"
-#include "nsStringStream.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/CSPReportBinding.h"
 #include "mozilla/dom/CSPViolationReportBody.h"
+#include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/ReportingUtils.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "nsINetworkInterceptController.h"
-#include "nsSandboxFlags.h"
-#include "nsIScriptElement.h"
+#include "nsCOMPtr.h"
+#include "nsCSPParser.h"
+#include "nsCSPService.h"
+#include "nsCSPUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentSecurityUtils.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIContentPolicy.h"
 #include "nsIEventTarget.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/Element.h"
-#include "nsXULAppAPI.h"
+#include "nsIHttpChannel.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsINetworkInterceptController.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsIScriptElement.h"
+#include "nsIScriptError.h"
+#include "nsIStringStream.h"
+#include "nsISupportsPrimitives.h"
+#include "nsIURIMutator.h"
+#include "nsIUploadChannel.h"
 #include "nsJSUtils.h"
+#include "nsMimeTypes.h"
+#include "nsNetUtil.h"
+#include "nsSandboxFlags.h"
+#include "nsScriptSecurityManager.h"
+#include "nsStreamUtils.h"
+#include "nsString.h"
+#include "nsStringStream.h"
+#include "nsSupportsPrimitives.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -347,7 +348,7 @@ nsCSPContext::EnsureIPCPoliciesRead() {
     for (auto& policy : mIPCPolicies) {
       rv = AppendPolicy(policy.policy(), policy.reportOnlyFlag(),
                         policy.deliveredViaMetaTagFlag());
-      Unused << NS_WARN_IF(NS_FAILED(rv));
+      (void)NS_WARN_IF(NS_FAILED(rv));
     }
     mIPCPolicies.Clear();
   }
@@ -516,8 +517,14 @@ nsCSPContext::GetAllowsEval(bool* outShouldReportViolation,
     }
   }
 
+  bool trustedTypesRequired = (mRequireTrustedTypesForDirectiveState ==
+                               RequireTrustedTypesForDirectiveState::ENFORCE);
+
   for (uint32_t i = 0; i < mPolicies.Length(); i++) {
-    if (!mPolicies[i]->allows(SCRIPT_SRC_DIRECTIVE, CSP_UNSAFE_EVAL, u""_ns)) {
+    if (!(trustedTypesRequired &&
+          mPolicies[i]->allows(SCRIPT_SRC_DIRECTIVE, CSP_TRUSTED_TYPES_EVAL,
+                               u""_ns)) &&
+        !mPolicies[i]->allows(SCRIPT_SRC_DIRECTIVE, CSP_UNSAFE_EVAL, u""_ns)) {
       // policy is violated: must report the violation and allow the inline
       // script if the policy is report-only.
       *outShouldReportViolation = true;
@@ -631,7 +638,7 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, bool aHasUnsafeHash,
                               const nsAString& aNonce, bool aParserCreated,
                               Element* aTriggeringElement,
                               nsICSPEventListener* aCSPEventListener,
-                              const nsAString& aContentOfPseudoScript,
+                              const nsAString& aSourceText,
                               uint32_t aLineNumber, uint32_t aColumnNumber,
                               bool* outAllowsInline) {
   *outAllowsInline = true;
@@ -683,14 +690,14 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, bool aHasUnsafeHash,
     // once. Even though we are in a for loop, it is probable that there is only
     // one policy, so this check may be unnecessary.
     if (content.IsEmpty()) {
-      if (aContentOfPseudoScript.IsVoid()) {
+      if (aSourceText.IsVoid()) {
         // Lazily retrieve the text of inline script, see bug 1376651.
         nsCOMPtr<nsIScriptElement> element =
             do_QueryInterface(aTriggeringElement);
         MOZ_ASSERT(element);
         element->GetScriptText(content);
       } else {
-        content = aContentOfPseudoScript;
+        content = aSourceText;
       }
     }
 
@@ -1180,17 +1187,16 @@ nsresult nsCSPContext::GatherSecurityPolicyViolationEventData(
 
 bool nsCSPContext::ShouldThrottleReport(
     const mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit) {
-  // Fetch rate limiting preferences
+  // Fetch the rate limit preference.
   const uint32_t kLimitCount =
       StaticPrefs::security_csp_reporting_limit_count();
-  const uint32_t kTimeSpanSeconds =
-      StaticPrefs::security_csp_reporting_limit_timespan();
 
-  // Disable throttling if either of the preferences is set to 0.
-  if (kLimitCount == 0 || kTimeSpanSeconds == 0) {
+  // Disable throttling if the preference is set to 0.
+  if (kLimitCount == 0) {
     return false;
   }
 
+  const uint32_t kTimeSpanSeconds = 2;
   TimeDuration throttleSpan = TimeDuration::FromSeconds(kTimeSpanSeconds);
   if (mSendReportLimitSpanStart.IsNull() ||
       ((TimeStamp::Now() - mSendReportLimitSpanStart) > throttleSpan)) {
@@ -1516,10 +1522,10 @@ void nsCSPContext::HandleInternalPageViolation(
     effectiveDirective.Assign(
         CSP_CSPDirectiveToString(aCSPViolationData.mEffectiveDirective));
     nsFmtCString s(
-        FMT_STRING("Unexpected CSP violation on page {} caused by {} (URL: {}, "
-                   "Source: {}) violating the directive: \"{}\" (file: {} "
-                   "line: {}). For debugging you can set the pref "
-                   "security.csp.testing.allow_internal_csp_violation=true."),
+        "Unexpected CSP violation on page {} caused by {} (URL: {}, "
+        "Source: {}) violating the directive: \"{}\" (file: {} "
+        "line: {}). For debugging you can set the pref "
+        "security.csp.testing.allow_internal_csp_violation=true.",
         selfURISpec.get(), effectiveDirective.get(),
         NS_ConvertUTF16toUTF8(aInit.mBlockedURI).get(),
         NS_ConvertUTF16toUTF8(aCSPViolationData.mSample).get(), directive.get(),
@@ -1531,11 +1537,12 @@ void nsCSPContext::HandleInternalPageViolation(
 
 nsresult nsCSPContext::FireViolationEvent(
     Element* aTriggeringElement, nsICSPEventListener* aCSPEventListener,
-    const mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit) {
+    const mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit,
+    const nsAString& aReportGroupName) {
   if (aCSPEventListener) {
     nsAutoString json;
     if (aViolationEventInit.ToJSON(json)) {
-      aCSPEventListener->OnCSPViolationEvent(json);
+      aCSPEventListener->OnCSPViolationEvent(json, aReportGroupName);
     }
 
     return NS_OK;
@@ -1562,7 +1569,8 @@ nsresult nsCSPContext::FireViolationEvent(
             WindowGlobalParent::GetByInnerWindowId(mInnerWindowID)) {
       nsAutoString json;
       if (aViolationEventInit.ToJSON(json)) {
-        Unused << parent->SendDispatchSecurityPolicyViolation(json);
+        (void)parent->SendDispatchSecurityPolicyViolation(json,
+                                                          aReportGroupName);
       }
     }
     return NS_OK;
@@ -1670,8 +1678,10 @@ class CSPReportSenderRunnable final : public Runnable {
     // A frame-ancestors violation has occurred, but we should not dispatch
     // the violation event to a potentially cross-origin ancestor.
     if (!mViolatedDirectiveName.EqualsLiteral("frame-ancestors")) {
-      mCSPContext->FireViolationEvent(mCSPViolationData.mElement,
-                                      mCSPEventListener, init);
+      mCSPContext->FireViolationEvent(
+          mCSPViolationData.mElement, mCSPEventListener, init,
+          mCSPContext->GetReportGroupFor(
+              mCSPViolationData.mViolatedPolicyIndex));
     }
 
     return NS_OK;
@@ -2400,4 +2410,14 @@ void nsCSPContext::SerializePolicies(
   }
 
   aPolicies.AppendElements(mIPCPolicies);
+}
+
+nsString nsCSPContext::GetReportGroupFor(uint64_t aPolicyIndex) const {
+  nsString result;
+  if (aPolicyIndex >= mPolicies.Length()) {
+    return EmptyString();
+  }
+
+  mPolicies[aPolicyIndex]->getReportGroup(result);
+  return result;
 }

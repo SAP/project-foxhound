@@ -9,11 +9,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.ext.consumeFrom
-import org.mozilla.fenix.HomeActivity
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentExceptionsBinding
+import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 
@@ -24,7 +25,7 @@ import org.mozilla.fenix.ext.showToolbar
 class TrackingProtectionExceptionsFragment : Fragment() {
 
     private lateinit var exceptionsStore: ExceptionsFragmentStore
-    private lateinit var exceptionsView: TrackingProtectionExceptionsView
+    private var exceptionsView: TrackingProtectionExceptionsView? = null
     private lateinit var exceptionsInteractor: DefaultTrackingProtectionExceptionsInteractor
 
     override fun onResume() {
@@ -42,15 +43,20 @@ class TrackingProtectionExceptionsFragment : Fragment() {
             container,
             false,
         )
-        exceptionsStore = StoreProvider.get(this) {
-            ExceptionsFragmentStore(
-                ExceptionsFragmentState(items = emptyList()),
-            )
-        }
+        exceptionsStore = fragmentStore(ExceptionsFragmentState(items = emptyList())) {
+            ExceptionsFragmentStore(it)
+        }.value
+
         exceptionsInteractor = DefaultTrackingProtectionExceptionsInteractor(
-            activity = activity as HomeActivity,
             exceptionsStore = exceptionsStore,
             trackingProtectionUseCases = requireComponents.useCases.trackingProtectionUseCases,
+            openLearnMorePage = { url ->
+                findNavController().openToBrowser()
+                requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+                    searchTermOrURL = url,
+                    newTab = true,
+                )
+            },
         )
         exceptionsView = TrackingProtectionExceptionsView(
             binding.exceptionsLayout,
@@ -62,7 +68,12 @@ class TrackingProtectionExceptionsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         consumeFrom(exceptionsStore) {
-            exceptionsView.update(it.items)
+            exceptionsView?.update(it.items)
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        exceptionsView = null
     }
 }

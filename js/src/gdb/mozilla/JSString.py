@@ -32,7 +32,7 @@ class JSStringTypeCache:
 
 class Common(mozilla.prettyprinters.Pointer):
     def __init__(self, value, cache):
-        super(Common, self).__init__(value, cache)
+        super().__init__(value, cache)
         if not cache.mod_JSString:
             cache.mod_JSString = JSStringTypeCache(cache)
         self.stc = cache.mod_JSString
@@ -53,8 +53,7 @@ class JSStringPtr(Common):
             0xE5E5E5E5: "jemalloc freed memory",
         }.get(flags & 0xFFFFFFFF)
         if corrupt:
-            for ch in "<CORRUPT:%s>" % corrupt:
-                yield ch
+            yield from "<CORRUPT:%s>" % corrupt
             return
         is_rope = (flags & self.stc.LINEAR_BIT) == 0
         if is_rope:
@@ -70,11 +69,10 @@ class JSStringPtr(Common):
                     chars = d["inlineStorageLatin1"]
                 else:
                     chars = d["inlineStorageTwoByte"]
+            elif is_latin1:
+                chars = d["s"]["u2"]["nonInlineCharsLatin1"]
             else:
-                if is_latin1:
-                    chars = d["s"]["u2"]["nonInlineCharsLatin1"]
-                else:
-                    chars = d["s"]["u2"]["nonInlineCharsTwoByte"]
+                chars = d["s"]["u2"]["nonInlineCharsTwoByte"]
             for i in range(int(length)):
                 yield chars[i]
 

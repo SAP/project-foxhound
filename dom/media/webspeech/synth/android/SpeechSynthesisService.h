@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_SpeechSynthesisService_h
 #define mozilla_dom_SpeechSynthesisService_h
 
-#include "nsISpeechService.h"
-#include "mozilla/java/SpeechSynthesisServiceNatives.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/java/SpeechSynthesisServiceNatives.h"
+#include "nsISpeechService.h"
 
 namespace mozilla {
 namespace dom {

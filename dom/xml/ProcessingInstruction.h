@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_ProcessingInstruction_h
 #define mozilla_dom_ProcessingInstruction_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/CharacterData.h"
 #include "nsAString.h"
 

@@ -7,17 +7,19 @@
 #ifndef mozilla_dom_WebAuthnUtil_h
 #define mozilla_dom_WebAuthnUtil_h
 
-#include "mozilla/dom/WebAuthenticationBinding.h"
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
 
 namespace mozilla::dom {
+
+class WindowGlobalParent;
 
 bool IsValidAppId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
                   const nsCString& aAppId);
 
 bool IsWebAuthnAllowedInDocument(const nsCOMPtr<Document>& aDoc);
 
-bool IsWebAuthnAllowedForPrincipal(const nsCOMPtr<nsIPrincipal>& aPrincipal);
+bool IsWebAuthnAllowedInContext(WindowGlobalParent* aContext);
 
 bool IsWebAuthnAllowedForTransportSecurityInfo(
     nsITransportSecurityInfo* aSecurityInfo);
@@ -29,6 +31,18 @@ bool IsValidRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
                  const nsACString& aRpId);
 
 nsresult HashCString(const nsACString& aIn, /* out */ nsTArray<uint8_t>& aOut);
+
+uint32_t WebAuthnTimeout(const Optional<uint32_t>& aTimeout);
+
+nsresult SerializeWebAuthnCreationOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialCreationOptions& aOptions,
+    /* out */ nsString& aOut);
+
+nsresult SerializeWebAuthnRequestOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialRequestOptions& aOptions,
+    /* out */ nsString& aOut);
 
 }  // namespace mozilla::dom
 

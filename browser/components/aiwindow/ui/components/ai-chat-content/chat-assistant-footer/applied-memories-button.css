@@ -1,0 +1,159 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  --aiwindow-text-accent: light-dark(var(--color-violet-90), var(--color-white));
+  --aiwindow-border-subtle: light-dark(var(--color-gray-20), var(--color-gray-60));
+  --aiwindow-memory-item-bg: light-dark(var(--color-gray-05), var(--color-gray-80));
+  --aiwindow-popover-bg: light-dark(var(--color-white), var(--color-gray-90));
+  --memories-accent-bg-hover: rgba(191, 143, 204, 0.2);
+  --memories-accent-bg-active: rgba(191, 143, 204, 0.26);
+  --memories-accent-border: rgba(0, 0, 0, 0);
+}
+
+:host([data-open]) moz-button.memories-trigger {
+  color: var(--aiwindow-text-accent);
+  --button-background-color-ghost: var(--memories-accent-bg-hover);
+  --button-border-color-ghost: var(--memories-accent-border);
+  --button-background-color-ghost-selected: var(--memories-accent-bg-hover);
+  --button-border-color-ghost-selected: var(--memories-accent-border);
+  --button-text-color-ghost-selected: currentColor;
+  --button-background-color-ghost-hover: var(--memories-accent-bg-hover);
+  --button-border-color-ghost-hover: var(--memories-accent-border);
+}
+
+moz-button.memories-trigger {
+  color: var(--text-color-deemphasized, rgba(21, 20, 26, 0.69));
+  --button-icon-fill: light-dark(var(--color-gray-70), var(--color-white));
+  --button-padding: var(--space-small);
+  --button-background-color-ghost-hover: var(--memories-accent-bg-hover);
+  --button-border-color-ghost-hover: var(--memories-accent-border);
+  --button-background-color-ghost-active: var(--memories-accent-bg-active);
+  --button-border-color-ghost-active: var(--memories-accent-border);
+}
+
+moz-button.memories-trigger::part(button) {
+  padding: var(--button-padding-block, var(--space-xsmall)) var(--space-xsmall);
+  gap: var(--space-xsmall);
+}
+
+moz-button.memories-trigger[disabled] {
+  opacity: 0.6;
+}
+
+moz-button.memories-trigger::part(moz-button-label) {
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 0;
+  max-width: 0;
+  transition:
+    opacity 120ms ease,
+    max-width 120ms ease;
+  font-size: var(--font-size-small, 13px);
+}
+
+moz-button.memories-trigger:not([disabled]):hover::part(moz-button-label),
+:host([data-open]) moz-button.memories-trigger::part(moz-button-label) {
+  opacity: 1;
+  max-width: 12em;
+}
+
+.popover {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  /* stylelint-disable-next-line */
+  width: 318px;
+  /* stylelint-disable-next-line */
+  bottom: 40px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-medium);
+  padding: var(--space-large);
+  border-radius: var(--border-radius-medium);
+  border-width: var(--border-width);
+  border-style: solid;
+  /* stylelint-disable-next-line */
+  border-color: var(--aiwindow-border-subtle);
+  background: var(--aiwindow-popover-bg);
+  box-shadow: var(--box-shadow-level-3);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.popover.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    transition: none;
+  }
+}
+
+.memories-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+}
+
+.memories-list-item {
+  display: flex;
+  /* stylelint-disable-next-line */
+  width: 306px;
+  height: var(--size-item-large);
+  padding: var(--space-xsmall) var(--space-xsmall) var(--space-xsmall) var(--space-small);
+  justify-content: space-between;
+  align-items: center;
+  border-radius: var(--border-radius-medium);
+  /* stylelint-disable-next-line */
+  background-color: var(--aiwindow-memory-item-bg);
+}
+
+.memories-list-label {
+  font-size: var(--font-size-small, 13px);
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-color);
+}
+
+.memories-remove-button {
+  display: none;
+}
+
+.memories-list-item:hover .memories-remove-button {
+  display: inline-flex;
+}
+
+.retry-row {
+  padding: 0 var(--space-xsmall);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+  font-size: var(--font-size-small, 13px);
+  cursor: pointer;
+}
+
+.retry-row-button {
+  border: none;
+  height: var(--size-item-large);
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+  --button-padding: var(--space-xsmall);
+  --button-font-weight: var(--button-font-weight);
+}

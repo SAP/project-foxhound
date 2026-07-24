@@ -41,12 +41,12 @@ using StyleSheetParsePromise = MozPromise</* Dummy */ bool,
                                           /* IsExclusive = */ true>;
 
 enum class StyleRuleChangeKind : uint32_t;
-enum class StyleLikelyBaseUriDependency : uint8_t;
+enum class StyleNonLocalUriDependency : uint8_t;
 
 struct StyleRuleChange {
   StyleRuleChange() = delete;
   MOZ_IMPLICIT StyleRuleChange(StyleRuleChangeKind aKind) : mKind(aKind) {}
-  // Only relevant for Kind::StyleRuleDeclarations.
+  // Only relevant for Kind::*Declarations.
   StyleRuleChange(StyleRuleChangeKind aKind, const DeclarationBlock* aOldBlock,
                   const DeclarationBlock* aNewBlock)
       : mKind(aKind), mOldBlock(aOldBlock), mNewBlock(aNewBlock) {}
@@ -123,6 +123,10 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(StyleSheet)
 
+  static already_AddRefed<StyleSheet> CreateConstructedSheet(
+      dom::Document& aConstructorDocument, nsIURI* aBaseURI,
+      const dom::CSSStyleSheetInit& aOptions, ErrorResult& aError);
+
   already_AddRefed<StyleSheet> CreateEmptyChildSheet(
       already_AddRefed<dom::MediaList> aMediaList) const;
 
@@ -161,9 +165,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   void PropagateUseCountersTo(dom::Document*) const;
 
   // Whether our original contents may be using relative URIs.
-  StyleLikelyBaseUriDependency OriginalContentsBaseUriDependency() const;
+  StyleNonLocalUriDependency OriginalContentsUriDependency() const;
 
-  URLExtraData* URLData() const { return Inner().mURLData; }
+  URLExtraData* URLData() const { return mURLData.get(); }
 
   // nsICSSLoaderObserver interface
   NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
@@ -192,25 +196,17 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Whether the sheet is for an inline <style> element.
   bool IsInline() const { return !GetOriginalURI(); }
-
-  nsIURI* GetSheetURI() const { return Inner().mSheetURI; }
-
   /**
    * Get the URI this sheet was originally loaded from, if any. Can return null.
    */
-  nsIURI* GetOriginalURI() const { return Inner().mOriginalSheetURI; }
+  nsIURI* GetOriginalURI() const { return mOriginalSheetURI; }
+  nsIURI* GetBaseURI() const;
 
-  nsIURI* GetBaseURI() const { return Inner().mBaseURI; }
+  void SetURIs(nsIURI* aOriginalSheetURI, nsIURI* aBaseURI,
+               nsIReferrerInfo* aReferrerInfo, nsIPrincipal* aPrincipal);
 
-  /**
-   * SetURIs must be called on all sheets before parsing into them.
-   * SetURIs may only be called while the sheet is 1) incomplete and 2)
-   * has no rules in it.
-   *
-   * FIXME(emilio): Can we pass this down when constructing the sheet instead?
-   */
-  inline void SetURIs(nsIURI* aSheetURI, nsIURI* aOriginalSheetURI,
-                      nsIURI* aBaseURI);
+  void SetOriginClean(bool aValue) { Inner().mOriginClean = aValue; }
+  bool IsOriginClean() const { return Inner().mOriginClean; }
 
   /**
    * Whether the sheet is applicable.  A sheet that is not applicable
@@ -310,27 +306,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   }
 
   // Principal() never returns a null pointer.
-  nsIPrincipal* Principal() const { return Inner().mPrincipal; }
-
-  /**
-   * SetPrincipal should be called on all sheets before parsing into them.
-   * This can only be called once with a non-null principal.
-   *
-   * Calling this with a null pointer is allowed and is treated as a no-op.
-   *
-   * FIXME(emilio): Can we get this at construction time instead?
-   */
-  void SetPrincipal(nsIPrincipal* aPrincipal) {
-    StyleSheetInfo& info = Inner();
-    MOZ_ASSERT_IF(info.mPrincipalSet, info.mPrincipal == aPrincipal);
-    if (aPrincipal) {
-      info.mPrincipal = aPrincipal;
-#ifdef DEBUG
-      info.mPrincipalSet = true;
-#endif
-    }
-  }
-
+  nsIPrincipal* Principal() const;
   void SetTitle(const nsAString& aTitle) { mTitle = aTitle; }
   void SetMedia(already_AddRefed<dom::MediaList> aMedia);
 
@@ -338,12 +314,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   CORSMode GetCORSMode() const { return Inner().mCORSMode; }
 
   // Get this style sheet's ReferrerInfo
-  nsIReferrerInfo* GetReferrerInfo() const { return Inner().mReferrerInfo; }
-
-  // Set this style sheet's ReferrerInfo
-  void SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
-    Inner().mReferrerInfo = aReferrerInfo;
-  }
+  nsIReferrerInfo* GetReferrerInfo() const;
 
   // Get this style sheet's integrity metadata
   void GetIntegrity(dom::SRIMetadata& aResult) const {
@@ -545,8 +516,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // returns false.
   bool AreRulesAvailable(nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
 
-  void SetURLExtraData();
-
  protected:
   // Internal methods which do not have security check and completeness check.
   uint32_t InsertRuleInternal(const nsACString& aRule, uint32_t aIndex,
@@ -624,6 +593,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   nsTArray<dom::CSSImportRule*> mReferencingRules;  // weak ref
 
   RefPtr<dom::MediaList> mMedia;
+
+  RefPtr<URLExtraData> mURLData;
+  RefPtr<nsIURI> mOriginalSheetURI;
 
   // mParsingMode controls access to nonstandard style constructs that
   // are not safe for use on the public Web but necessary in UA sheets

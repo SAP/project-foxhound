@@ -331,7 +331,8 @@ DeviceInputTrack::UpdateRequestedProcessingParams() {
   if (auto p = params.valueOr(CUBEB_INPUT_PROCESSING_PARAM_NONE);
       p != mProcessingParamsRequest.mParams) {
     mProcessingParamsRequest.mParams = p;
-    mProcessingParamsRequest.mGeneration += 1;
+    mProcessingParamsRequest.mGeneration =
+        Graph()->ProcessingParamsGeneration();
 
     TRACK_GRAPH_LOG(
         "%sNativeInputTrack notifying of setting requested processing params "

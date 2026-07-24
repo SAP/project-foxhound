@@ -11,7 +11,6 @@
 #include "mozilla/LoaderAPIInterfaces.h"
 #include "mozilla/glue/WindowsDllServices.h"
 #include "mozilla/glue/WinUtils.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 namespace glue {

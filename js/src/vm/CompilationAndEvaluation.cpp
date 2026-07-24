@@ -20,8 +20,7 @@
 #include "frontend/BytecodeCompiler.h"  // frontend::{CompileGlobalScript, CompileStandaloneFunction, CompileStandaloneFunctionInNonSyntacticScope}
 #include "frontend/CompilationStencil.h"  // for frontened::{CompilationStencil, BorrowingCompilationStencil, CompilationGCOutput, InitialStencilAndDelazifications}
 #include "frontend/FrontendContext.h"     // js::AutoReportFrontendContext
-#include "frontend/Parser.h"      // frontend::Parser, frontend::ParseGoal
-#include "frontend/StencilXdr.h"  // js::XDRStencilEncoder
+#include "frontend/Parser.h"  // frontend::Parser, frontend::ParseGoal
 #include "js/CharacterEncoding.h"  // JS::UTF8Chars, JS::ConstUTF8CharsZ, JS::UTF8CharsToNewTwoByteCharsZ
 #include "js/ColumnNumber.h"            // JS::ColumnNumberOneOrigin
 #include "js/EnvironmentChain.h"        // JS::EnvironmentChain
@@ -159,44 +158,6 @@ JS_PUBLIC_API bool JS::StartCollectingDelazifications(
 
 static bool FinishCollectingDelazifications(JSContext* cx,
                                             JS::Handle<ScriptSourceObject*> sso,
-                                            JS::TranscodeBuffer& buffer) {
-  if (!sso->isCollectingDelazifications()) {
-    JS_ReportErrorASCII(cx, "Not collecting delazifications");
-    return false;
-  }
-
-  RefPtr<frontend::InitialStencilAndDelazifications> stencils =
-      sso->maybeGetStencils();
-  sso->unsetCollectingDelazifications();
-
-  AutoReportFrontendContext fc(cx);
-  UniquePtr<frontend::CompilationStencil> stencilHolder;
-  const frontend::CompilationStencil* stencil;
-
-  if (stencils->canLazilyParse()) {
-    stencilHolder.reset(stencils->getMerged(&fc));
-    if (!stencilHolder) {
-      return false;
-    }
-    stencil = stencilHolder.get();
-  } else {
-    stencil = stencils->getInitial();
-  }
-
-  XDRStencilEncoder encoder(&fc, buffer);
-  XDRResult res = encoder.codeStencil(sso->source(), *stencil);
-  if (res.isErr()) {
-    if (JS::IsTranscodeFailureResult(res.unwrapErr())) {
-      fc.clearAutoReport();
-      JS_ReportErrorASCII(cx, "XDR encoding failure");
-    }
-    return false;
-  }
-  return true;
-}
-
-static bool FinishCollectingDelazifications(JSContext* cx,
-                                            JS::Handle<ScriptSourceObject*> sso,
                                             JS::Stencil** stencilOut) {
   if (!sso->isCollectingDelazifications()) {
     JS_ReportErrorASCII(cx, "Not collecting delazifications");
@@ -212,22 +173,16 @@ static bool FinishCollectingDelazifications(JSContext* cx,
 }
 
 JS_PUBLIC_API bool JS::FinishCollectingDelazifications(
-    JSContext* cx, JS::HandleScript script, JS::TranscodeBuffer& buffer) {
-  JS::Rooted<ScriptSourceObject*> sso(cx, script->sourceObject());
-  return ::FinishCollectingDelazifications(cx, sso, buffer);
-}
-
-JS_PUBLIC_API bool JS::FinishCollectingDelazifications(
     JSContext* cx, JS::HandleScript script, JS::Stencil** stencilOut) {
   JS::Rooted<ScriptSourceObject*> sso(cx, script->sourceObject());
   return ::FinishCollectingDelazifications(cx, sso, stencilOut);
 }
 
 JS_PUBLIC_API bool JS::FinishCollectingDelazifications(
-    JSContext* cx, JS::Handle<JSObject*> module, JS::TranscodeBuffer& buffer) {
+    JSContext* cx, JS::Handle<JSObject*> module, JS::Stencil** stencilOut) {
   JS::Rooted<ScriptSourceObject*> sso(
       cx, module->as<ModuleObject>().scriptSourceObject());
-  return ::FinishCollectingDelazifications(cx, sso, buffer);
+  return ::FinishCollectingDelazifications(cx, sso, stencilOut);
 }
 
 JS_PUBLIC_API void JS::AbortCollectingDelazifications(JS::HandleScript script) {

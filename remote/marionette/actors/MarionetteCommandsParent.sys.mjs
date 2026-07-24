@@ -57,13 +57,18 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
     });
   }
 
-  toBrowserWindowCoordinates(position, _context) {
-    return this.sendQuery(
+  async toBrowserWindowCoordinates(position, _context) {
+    const chromeWindow = this.manager.browsingContext.topChromeWindow;
+    const dpr = chromeWindow.devicePixelRatio;
+
+    const val = await this.sendQuery(
       "MarionetteCommandsParent:_toBrowserWindowCoordinates",
       {
         position,
       }
     );
+
+    return [val.x / dpr, val.y / dpr];
   }
 
   async sendQuery(name, serializedValue) {
@@ -185,6 +190,13 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
       strategy,
       selector,
       opts,
+    });
+  }
+
+  generateTestReport(messageBody, messageGroup) {
+    return this.sendQuery("MarionetteCommandsParent:generateTestReport", {
+      message: messageBody,
+      group: messageGroup,
     });
   }
 

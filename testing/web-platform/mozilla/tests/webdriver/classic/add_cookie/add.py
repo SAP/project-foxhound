@@ -1,5 +1,11 @@
+import pytest
 from tests.support.asserts import assert_error
-from tests.support.helpers import clear_all_cookies
+
+
+@pytest.fixture(autouse=True)
+def clean_up_cookies(session):
+    # Ensure that any test in the file does not navigate away once done with checking the cookies.
+    session.transport.send("DELETE", "session/%s/cookie" % session.session_id)
 
 
 def add_cookie(session, cookie):
@@ -12,13 +18,11 @@ def add_cookie(session, cookie):
 
 def test_invalid_samesite_none_and_not_secure(session, url):
     session.url = url("/common/blank.html")
-    clear_all_cookies(session)
 
     name = "foo"
     value = "bar"
 
     session.execute_script(f"document.cookie='{name}={value}'")
-
     cookie = session.cookies(name)
 
     # Set a cookie with exactly the same values as they are set with `document.cookie`.
@@ -32,7 +36,4 @@ def test_invalid_samesite_none_and_not_secure(session, url):
             "httpOnly": cookie["httpOnly"],
         },
     )
-
     assert_error(result, "unable to set cookie")
-
-    clear_all_cookies(session)

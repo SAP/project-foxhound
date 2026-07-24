@@ -8,9 +8,8 @@
 #define ipc_MediaControlIPC_h
 
 #include "ipc/EnumSerializer.h"
-
-#include "mozilla/dom/MediaControllerBinding.h"
 #include "mozilla/dom/MediaControlKeySource.h"
+#include "mozilla/dom/MediaControllerBinding.h"
 #include "mozilla/dom/MediaPlaybackStatus.h"
 
 namespace IPC {

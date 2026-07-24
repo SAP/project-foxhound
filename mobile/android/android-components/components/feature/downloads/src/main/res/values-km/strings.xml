@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
+  <string name="mozac_feature_downloads_notification_channel">ទាញ​យក</string>
+  <!--
+    Summary text shown on an in progress download notification.
+    %1$s will be replaced with the estimated time remaining to complete the download.
+  -->
+  <string name="mozac_feature_downloads_time_remaining">ក្នុង %1$s</string>
+  <!-- Summary text shown on an in progress download notification when the estimated time remaining is unknown. -->
+  <string name="mozac_feature_downloads_time_remaining_unknown">មិនស្គាល់ពេលវេលា</string>
+  <!-- Text shown on the second row of a paused download notification. -->
+  <string name="mozac_feature_downloads_paused_notification_text">ទាញយកបានផ្អាក</string>
+  <!-- Text shown on the second row of an completed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_completed_notification_text2">ការទាញយកបានបញ្ចប់</string>
+  <!-- Text shown on the second row of an failed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_failed_notification_text2">បរាជ័យក្នុងការទាញយក</string>
+  <!--
+    Alert dialog confirmation before downloading a previously downloaded file, this is the title.
+    %1$s will be replaced with the size of the file.
+  -->
+  <string name="mozac_feature_downloads_again_dialog_title">ទាញយកឯកសារម្តងទៀត? (%1$s)</string>
+  <!--
+    Alert dialog confirmation before downloading a file, this is the title.
+    %1$s will be replaced with the size of the file.
+  -->
+  <string name="mozac_feature_downloads_dialog_title_3">ទាញយកឯកសារ? (%1$s)</string>
+  <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_dialog_title_with_unknown_size">ទាញយកឯកសារ?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">ទាញយកឯកសារម្តងទៀត?</string>
+  <!-- Alert dialog confirmation before download a file, this is the positive action. -->
+  <string name="mozac_feature_downloads_dialog_download">ទាញ​យក</string>
+  <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
+  <string name="mozac_feature_downloads_dialog_download_again">ទាញយកម្តងទៀត</string>
+  <!-- Alert dialog confirmation before download a file, this is the negative action. -->
+  <string name="mozac_feature_downloads_dialog_cancel">បោះបង់</string>
+  <!--
+    Alert dialog confirmation before downloading a previously downloaded file, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s មានរួចហើយ។</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">បើកឯកសារដែលមានស្រាប់</string>
+  <!--
+    Alert dialog confirmation before downloading a file without network connection, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_file_failure_no_connection" tools:ignore="UnusedResources">%1$s មិនត្រូវបានទាញយកទេ។</string>
+  <!-- Alert dialog confirmation before downloading a file without network connection, this is the description. -->
+  <string name="mozac_feature_downloads_file_check_connection" tools:ignore="UnusedResources">សូមពិនិត្យមើលការតភ្ជាប់របស់អ្នក ហើយព្យាយាមម្តងទៀត។</string>
+  <!-- Error shown when the user is trying to download a invalid file. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_downloads_file_not_supported2">%1$s មិនអាចទាញយកប្រភេទឯកសារនេះបានទេ</string>
+  <!-- Message that appears when the downloaded file could not be opened. -->
+  <string name="mozac_feature_downloads_could_not_open_file">មិនអាចបើកឯកសារបានទេ</string>
+  <!-- Message that appears when the downloaded file is a specific type (%1$s) that Android doesn't support opening. -->
+  <string name="mozac_feature_downloads_open_not_supported1">រកមិនឃើញកម្មវិធីសម្រាប់បើកឯកសារ %1$s ទេ</string>
+  <!-- Button that pauses the download when pressed. -->
+  <string name="mozac_feature_downloads_button_pause">ផ្អាក</string>
+  <!-- Button that resumes the download when pressed. -->
+  <string name="mozac_feature_downloads_button_resume">បន្ត</string>
+  <!-- Button that cancels the download when pressed. -->
+  <string name="mozac_feature_downloads_button_cancel">បោះបង់</string>
+  <!-- Button that opens the downloaded file when pressed. -->
+  <string name="mozac_feature_downloads_button_open">បើក</string>
+  <!-- Button that restarts the download after a failed attempt. -->
+  <string name="mozac_feature_downloads_button_try_again">ព្យាយាម​ម្ដងទៀត</string>
+  <!-- Content description for close button -->
+  <string name="mozac_feature_downloads_button_close">បិទ</string>
+  <!-- Title for the third party download app chooser dialog -->
+  <string name="mozac_feature_downloads_third_party_app_chooser_dialog_title">បញ្ចប់​សកម្មភាព​ដោយ​ប្រើ</string>
+  <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
+  <string name="mozac_feature_downloads_unable_to_open_third_party_app">មិនអាចបើក %1$s បានទេ</string>
+  <!-- Text for the info dialog when write to storage permissions have been denied but user tries to download a file. -->
+  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">ត្រូវការសិទ្ធិចូលប្រើឯកសារ និងមេឌៀ ដើម្បីទាញយកឯកសារបាន។ ចូលទៅកាន់ការកំណត់ Android ចុចលើការអនុញ្ញាត ហើយចុចលើអនុញ្ញាត។</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the title -->
+  <string name="mozac_feature_downloads_cancel_active_downloads_warning_content_title">បោះបង់ការទាញយកឯកជន?</string>
+  <!-- Alert dialog confirmation before cancelling private downloads, this is the body. %1$s will be replaced with the name of the file. -->
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">ប្រសិនបើអ្នកបិទផ្ទាំងឯកជនទាំងអស់ឥឡូវនេះ ការទាញយក %1$s នឹងត្រូវបានលុបចោល។ តើអ្នកប្រាកដថាអ្នកចង់ចាកចេញពីការរុករកឯកជនដែរឬទេ?</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the positive action. -->
+  <string name="mozac_feature_downloads_cancel_active_downloads_accept">បោះបង់ការទាញយក</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the negative action. Leaves user in Private browsing -->
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_deny">បន្តរុករកជាលក្ខណៈឯកជន</string>
+</resources>

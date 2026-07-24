@@ -10,13 +10,22 @@ if CONFIG["ONNX_RUNTIME"]:
 JAR_MANIFESTS += ["jar.mn"]
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Machine Learning")
+    BUG_COMPONENT = ("Core", "Machine Learning: On Device")
 
-DIRS += ["actors"]
+DIRS += [
+    "actors",
+    "security",
+]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
+    DIRS += ["backends/llama"]
+
+XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.toml"]
 
 BROWSER_CHROME_MANIFESTS += [
     "tests/browser/browser.toml",
     "tests/browser/perftest.toml",
+    "tests/browser_eval/eval.toml",
 ]
 
 XPIDL_SOURCES += ["nsIMLUtils.idl"]

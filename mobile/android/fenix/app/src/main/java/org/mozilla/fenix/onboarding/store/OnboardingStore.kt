@@ -58,9 +58,12 @@ sealed interface OnboardingAction : Action {
  * A [Store] that holds the [OnboardingState] for the onboarding pages and reduces [OnboardingAction]s
  * dispatched to the store.
  */
-class OnboardingStore(middleware: List<Middleware<OnboardingState, OnboardingAction>> = emptyList()) :
+class OnboardingStore(
+    initialState: OnboardingState = OnboardingState(),
+    middleware: List<Middleware<OnboardingState, OnboardingAction>> = emptyList(),
+) :
     Store<OnboardingState, OnboardingAction>(
-        initialState = OnboardingState(),
+        initialState = initialState,
         reducer = ::reducer,
         middleware = middleware,
     ) {

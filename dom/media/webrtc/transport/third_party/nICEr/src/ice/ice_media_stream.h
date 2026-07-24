@@ -107,7 +107,6 @@ typedef STAILQ_HEAD(nr_ice_media_stream_head_,nr_ice_media_stream_) nr_ice_media
 
 int nr_ice_media_stream_create(struct nr_ice_ctx_ *ctx,const char *label,const char *ufrag,const char *pwd,int components, nr_ice_media_stream **streamp);
 int nr_ice_media_stream_destroy(nr_ice_media_stream **streamp);
-int nr_ice_media_stream_finalize(nr_ice_media_stream *lstr,nr_ice_media_stream *rstr);
 int nr_ice_media_stream_initialize(struct nr_ice_ctx_ *ctx, nr_ice_media_stream *stream);
 int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attrsp,int *attrctp);
 int nr_ice_media_stream_get_default_candidate(nr_ice_media_stream *stream, int component, nr_ice_candidate **candp);
@@ -127,12 +126,10 @@ int nr_ice_media_stream_set_state(nr_ice_media_stream *str, int state);
 void nr_ice_media_stream_stop_checking(nr_ice_media_stream *str);
 void nr_ice_media_stream_set_obsolete(nr_ice_media_stream *str);
 int nr_ice_media_stream_is_done_gathering(nr_ice_media_stream *str);
-int nr_ice_media_stream_get_best_candidate(nr_ice_media_stream *str, int component, nr_ice_candidate **candp);
 int nr_ice_media_stream_send(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component, UCHAR *data, int len);
 int nr_ice_media_stream_get_active(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component, nr_ice_candidate **local, nr_ice_candidate **remote);
 int nr_ice_media_stream_find_component(nr_ice_media_stream *str, int comp_id, nr_ice_component **compp);
 int nr_ice_media_stream_find_pair(nr_ice_media_stream *str, nr_ice_candidate *local, nr_ice_candidate *remote, nr_ice_cand_pair **pair);
-int nr_ice_media_stream_addrs(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component, nr_transport_addr *local, nr_transport_addr *remote);
 int
 nr_ice_peer_ctx_parse_media_stream_attribute(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, char *attr);
 int nr_ice_media_stream_get_consent_status(nr_ice_media_stream *stream, int component_id, int *can_send, struct timeval *ts);

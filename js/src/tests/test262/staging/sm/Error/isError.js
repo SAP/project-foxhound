@@ -1,13 +1,10 @@
-// |reftest| shell-option(--enable-error-iserror) skip-if(!Error.isError||!xulRuntime.shell) -- Error.isError is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!Error.isError) -- Error.isError is not enabled unconditionally
 // Copyright (C) 2025 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 features:
   - Error.isError
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending

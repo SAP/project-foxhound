@@ -7,9 +7,9 @@
 #include "DDMediaLogs.h"
 
 #include "DDLogUtils.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "nsIThread.h"
 #include "nsIThreadManager.h"
-#include "mozilla/JSONStringWriteFuncs.h"
 
 namespace mozilla {
 

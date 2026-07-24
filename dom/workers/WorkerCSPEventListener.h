@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_WorkerCSPEventListener_h
 #define mozilla_dom_WorkerCSPEventListener_h
 
-#include "mozilla/dom/WorkerRef.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/WorkerRef.h"
 #include "nsIContentSecurityPolicy.h"
 
 namespace mozilla::dom {

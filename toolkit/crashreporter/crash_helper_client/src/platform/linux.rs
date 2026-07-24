@@ -8,10 +8,10 @@ use nix::libc::{prctl, PR_SET_PTRACER};
 use crate::CrashHelperClient;
 
 impl CrashHelperClient {
-    pub(crate) fn prepare_for_minidump(crash_helper_pid: Pid) {
+    pub(crate) fn prepare_for_minidump(crash_helper_pid: Pid) -> bool {
         unsafe {
-            // TODO: Log a warning in case we fail to set the ptracer
-            let _ = prctl(PR_SET_PTRACER, crash_helper_pid);
+            let res = prctl(PR_SET_PTRACER, crash_helper_pid);
+            res >= 0
         }
     }
 }

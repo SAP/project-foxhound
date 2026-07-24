@@ -92,18 +92,18 @@ The structure has the following fields:
 ``in_flags``
    A bitwise ``OR`` of the following bit flags:
 
- - :ref:`PR_POLL_READ`: ``fd`` is readable.
- - :ref:`PR_POLL_WRITE`: ``fd`` is writable.
- - :ref:`PR_POLL_EXCEPT`: ``fd`` has an exception condition.
+ - ``PR_POLL_READ``: ``fd`` is readable.
+ - ``PR_POLL_WRITE``: ``fd`` is writable.
+ - ``PR_POLL_EXCEPT``: ``fd`` has an exception condition.
 
 ``out_flags``
    A bitwise ``OR`` of the following bit flags:
 
- - :ref:`PR_POLL_READ`
- - :ref:`PR_POLL_WRITE`
- - :ref:`PR_POLL_EXCEPT`
- - :ref:`PR_POLL_ERR`: ``fd`` has an error.
- - :ref:`PR_POLL_NVAL`: ``fd`` is bad.
+ - ``PR_POLL_READ``
+ - ``PR_POLL_WRITE``
+ - ``PR_POLL_EXCEPT``
+ - ``PR_POLL_ERR``: ``fd`` has an error.
+ - ``PR_POLL_NVAL``: ``fd`` is bad.
 
 Note that the ``PR_POLL_ERR`` and ``PR_POLL_NVAL`` flags are used only
 in ``out_flags``. The ``PR_POLL_ERR`` and ``PR_POLL_NVAL`` events are

@@ -29,8 +29,7 @@ SOURCES += [
 
 OS_LIBS += ["msi"]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 TEST_DIRS += ["tests/TestShellEx"]
 

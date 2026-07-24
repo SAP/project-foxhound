@@ -12,6 +12,8 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.toolbar.ScrollableToolbar
 import mozilla.components.support.ktx.android.view.findViewInHierarchy
+import kotlin.let
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -52,6 +54,7 @@ class EngineViewClippingBehavior(
         set(value) { field = value.coerceIn(-topToolbarHeight.toFloat(), 0f) }
 
     private val hasTopToolbar = topToolbarHeight > 0
+    private val dynamicToolbarMaxHeight = topToolbarHeight + bottomToolbarHeight
 
     override fun layoutDependsOn(parent: CoordinatorLayout, child: View, dependency: View): Boolean {
         if (dependency is ScrollableToolbar) {
@@ -103,8 +106,14 @@ class EngineViewClippingBehavior(
             // is either positive or zero, but for clipping
             // the values should be negative because the baseline
             // for clipping is bottom toolbar height.
-            val contentBottomClipping = recentTopToolbarTranslation - recentBottomToolbarTranslation
-            it.setVerticalClipping(contentBottomClipping.roundToInt())
+            val contentBottomClipping = (recentTopToolbarTranslation - recentBottomToolbarTranslation).roundToInt()
+            val safeVerticalClipping = when {
+                // Consider toolbars almost fully hidden as fully hidden.
+                // See bug 2005988 for context.
+                abs(dynamicToolbarMaxHeight + contentBottomClipping) in 0..2 -> -dynamicToolbarMaxHeight
+                else -> contentBottomClipping
+            }
+            it.setVerticalClipping(safeVerticalClipping)
         }
     }
 }

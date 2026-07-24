@@ -9,6 +9,7 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/dom/JSActor.h"
+#include "mozilla/dom/JSIPCValue.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 
@@ -44,8 +45,9 @@ class JSActorManager : public nsISupports {
    * Handle receiving a raw message from the other side.
    */
   void ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
-                         Maybe<ipc::StructuredCloneData>&& aData,
-                         Maybe<ipc::StructuredCloneData>&& aStack);
+                         JSIPCValue&& aData, ipc::StructuredCloneData* aStack);
+
+  virtual const nsACString& GetRemoteType() const = 0;
 
  protected:
   /**

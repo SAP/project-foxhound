@@ -7,11 +7,8 @@
 #ifndef MOZILLA_GFX_COMPOSITORMANAGERCHILD_H
 #define MOZILLA_GFX_COMPOSITORMANAGERCHILD_H
 
-#include <stddef.h>  // for size_t
-#include <stdint.h>  // for uint32_t, uint64_t
-#include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"                    // for override
-#include "mozilla/RefPtr.h"                        // for already_AddRefed
+#include <stddef.h>                                // for size_t
+#include <stdint.h>                                // for uint32_t, uint64_t
 #include "mozilla/StaticPtr.h"                     // for StaticRefPtr
 #include "mozilla/layers/CompositableForwarder.h"  // for FwdTransactionCounter
 #include "mozilla/layers/PCompositorManagerChild.h"

@@ -19,13 +19,7 @@ class CheckboxAccessible : public LeafAccessible {
   enum { eAction_Click = 0 };
 
   CheckboxAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : LeafAccessible(aContent, aDoc) {
-    // Ignore "CheckboxStateChange" DOM event in lieu of document observer
-    // state change notification.
-    if (aContent->IsHTMLElement()) {
-      mStateFlags |= eIgnoreDOMUIEvent;
-    }
-  }
+      : LeafAccessible(aContent, aDoc) {}
 
   // LocalAccessible
   virtual mozilla::a11y::role NativeRole() const override;

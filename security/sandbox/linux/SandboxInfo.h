@@ -8,6 +8,7 @@
 #define mozilla_SandboxInfo_h
 
 #include "mozilla/Types.h"
+#include <cstdint>
 
 // Information on what parts of sandboxing are enabled in this build
 // and/or supported by the system.

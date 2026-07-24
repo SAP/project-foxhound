@@ -64,7 +64,7 @@ function configureStore(webConsoleUI, options = {}) {
   const sidebarToggle = getBoolPref(PREFS.FEATURES.SIDEBAR_TOGGLE);
   const autocomplete = getBoolPref(PREFS.FEATURES.AUTOCOMPLETE);
   const eagerEvaluation = getBoolPref(PREFS.FEATURES.EAGER_EVALUATION);
-  const groupWarnings = getBoolPref(PREFS.FEATURES.GROUP_WARNINGS);
+  const groupSimilar = getBoolPref(PREFS.FEATURES.GROUP_SIMILAR_MESSAGES);
   const historyCount = getIntPref(PREFS.UI.INPUT_HISTORY_COUNT);
 
   const initialState = {
@@ -74,7 +74,7 @@ function configureStore(webConsoleUI, options = {}) {
       autocomplete,
       eagerEvaluation,
       historyCount,
-      groupWarnings,
+      groupSimilar,
     }),
     filters: FilterState({
       error: getBoolPref(PREFS.FILTER.ERROR),

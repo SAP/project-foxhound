@@ -147,8 +147,7 @@ static ReadDependentCBResult ReadDependentCB(
     ReadAheadLib(aDependentLib);
   }
 #endif
-  LibHandleType libHandle;
-  MOZ_TRY_VAR(libHandle, GetLibHandle(aDependentLib));
+  LibHandleType libHandle = MOZ_TRY(GetLibHandle(aDependentLib));
 
   AppendDependentLib(libHandle);
   return Ok();

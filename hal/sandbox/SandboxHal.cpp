@@ -15,7 +15,6 @@
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/HalWakeLock.h"
 #include "mozilla/Observer.h"
-#include "mozilla/Unused.h"
 #include "WindowIdentifier.h"
 
 using namespace mozilla;
@@ -200,7 +199,7 @@ class HalParent : public PHalParent,
   }
 
   void Notify(const BatteryInformation& aBatteryInfo) override {
-    Unused << SendNotifyBatteryChange(aBatteryInfo);
+    (void)SendNotifyBatteryChange(aBatteryInfo);
   }
 
   virtual mozilla::ipc::IPCResult RecvEnableNetworkNotifications() override {
@@ -221,7 +220,7 @@ class HalParent : public PHalParent,
   }
 
   void Notify(const NetworkInformation& aNetworkInfo) override {
-    Unused << SendNotifyNetworkChange(aNetworkInfo);
+    (void)SendNotifyNetworkChange(aNetworkInfo);
   }
 
   virtual mozilla::ipc::IPCResult RecvLockScreenOrientation(
@@ -267,7 +266,7 @@ class HalParent : public PHalParent,
   }
 
   void Notify(const SensorData& aSensorData) override {
-    Unused << SendNotifySensorChange(aSensorData);
+    (void)SendNotifySensorChange(aSensorData);
   }
 
   virtual mozilla::ipc::IPCResult RecvModifyWakeLock(
@@ -297,7 +296,7 @@ class HalParent : public PHalParent,
   }
 
   void Notify(const WakeLockInformation& aWakeLockInfo) override {
-    Unused << SendNotifyWakeLockChange(aWakeLockInfo);
+    (void)SendNotifyWakeLockChange(aWakeLockInfo);
   }
 
   virtual mozilla::ipc::IPCResult RecvPerformHapticFeedback(

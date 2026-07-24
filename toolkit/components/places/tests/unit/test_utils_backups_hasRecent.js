@@ -10,9 +10,13 @@
 
 /**
  * Creates a fake empty dated backup.
- * @param {Date} date the Date to use for the backup file name
- * @param {string} backupsFolderPath the path to the backups folder
- * @returns path of the created backup file
+ *
+ * @param {Date} date
+ *   The Date to use for the backup file name.
+ * @param {string} backupsFolderPath
+ *   The path to the backups folder.
+ * @returns {string}
+ *   The path of the created backup file.
  */
 async function createFakeBackup(date, backupsFolderPath) {
   let backupFilePath = PathUtils.join(

@@ -9,7 +9,6 @@
 
 #include <stdint.h>                             // for uint32_t, uint64_t
 #include <sys/types.h>                          // for int32_t
-#include "mozilla/Attributes.h"                 // for override
 #include "mozilla/RefPtr.h"                     // for RefPtr, already_AddRefed
 #include "mozilla/gfx/Types.h"                  // for SurfaceFormat
 #include "mozilla/layers/CompositableClient.h"  // for CompositableClient

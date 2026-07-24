@@ -26,14 +26,12 @@
 #ifndef mozilla_dom_PushManager_h
 #define mozilla_dom_PushManager_h
 
-#include "nsWrapperCache.h"
-
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/TypedArray.h"
-
 #include "nsCOMPtr.h"
-#include "mozilla/RefPtr.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 class nsIPrincipal;

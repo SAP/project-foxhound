@@ -7,15 +7,14 @@
 #ifndef mozilla_dom_RemoteWorkerController_h
 #define mozilla_dom_RemoteWorkerController_h
 
-#include "nsISupportsImpl.h"
-#include "nsTArray.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
 #include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "mozilla/dom/SharedWorkerOpArgs.h"
+#include "nsISupportsImpl.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

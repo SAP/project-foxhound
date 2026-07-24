@@ -17,9 +17,6 @@ static constexpr Register IonGenericCallReturnAddrReg = CallTempReg0;
 
 static constexpr Register IonGenericCallCalleeReg = CallTempReg1;
 static constexpr Register IonGenericCallArgcReg = CallTempReg2;
-static constexpr Register IonGenericCallScratch = CallTempReg3;
-static constexpr Register IonGenericCallScratch2 = CallTempReg4;
-static constexpr Register IonGenericCallScratch3 = CallTempReg5;
 
 #ifdef JS_CODEGEN_ARM
 // We need a second scratch register that does not alias `lr` or
@@ -27,6 +24,20 @@ static constexpr Register IonGenericCallScratch3 = CallTempReg5;
 static_assert(CallTempReg0 == CallTempNonArgRegs[0]);
 static constexpr Register IonGenericSecondScratchReg = CallTempReg0;
 #endif
+
+inline AllocatableGeneralRegisterSet IonGenericCallScratchRegs() {
+  AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+  MOZ_ASSERT(!regs.has(FramePointer));
+  regs.take(IonGenericCallCalleeReg);
+  regs.take(IonGenericCallArgcReg);
+#ifndef JS_USE_LINK_REGISTER
+  regs.take(IonGenericCallReturnAddrReg);
+#endif
+#ifdef JS_CODEGEN_ARM
+  regs.take(IonGenericSecondScratchReg);
+#endif
+  return regs;
+}
 
 }  // namespace js::jit
 

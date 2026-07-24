@@ -72,6 +72,9 @@ async function openFirefoxViewTab(win) {
     : TestUtils.topicObserved("firefoxview-entered");
 
   if (!fxviewTab?.selected) {
+    testScope.info(
+      "Navigating to about:firefoxview by clicking firefox-view-button"
+    );
     await BrowserTestUtils.synthesizeMouseAtCenter(
       "#firefox-view-button",
       { type: "mousedown" },
@@ -90,16 +93,14 @@ async function openFirefoxViewTab(win) {
   testScope.info(
     "openFirefoxViewTab, waiting for complete readyState, visible and firefoxview-entered"
   );
-  await Promise.all([
-    TestUtils.waitForCondition(() => {
-      const document = fxviewTab.linkedBrowser.contentDocument;
-      return (
-        document.readyState == "complete" &&
-        document.visibilityState == "visible"
-      );
-    }),
-    enteredPromise,
-  ]);
+  await enteredPromise;
+  await TestUtils.waitForCondition(() => {
+    const document = fxviewTab.linkedBrowser.contentDocument;
+    return (
+      document.readyState == "complete" && document.visibilityState == "visible"
+    );
+  });
+
   testScope.info("openFirefoxViewTab, ready resolved");
   return fxviewTab;
 }

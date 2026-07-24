@@ -7,7 +7,7 @@
 
 "use strict";
 
-add_task(function test() {
+add_task(function testTyped() {
   const tests = [
     {
       tokens: ["mozilla", "is", "i"],
@@ -289,6 +289,65 @@ add_task(function testSuggestions() {
       ),
       expected,
       `Match "${tokens.map(t => t.value).join(", ")}" on "${phrase}"`
+    );
+  }
+});
+
+/**
+ * Tests ALL highlighting.
+ */
+add_task(function testAll() {
+  const tests = [
+    {
+      tokens: [],
+      phrase: "mozilla is for the Open Web",
+      expected: [[0, "mozilla is for the Open Web".length]],
+    },
+    {
+      tokens: undefined,
+      phrase: "mozilla is for the Open Web",
+      expected: [[0, "mozilla is for the Open Web".length]],
+    },
+  ];
+  for (let { tokens, phrase, expected } of tests) {
+    Assert.deepEqual(
+      UrlbarUtils.getTokenMatches(tokens, phrase, UrlbarUtils.HIGHLIGHT.ALL),
+      expected,
+      `Match "${tokens?.join(", ")}" on "${phrase}"`
+    );
+  }
+});
+
+/**
+ * Tests no tokens parameter for TYPED or SUGGESTED type.
+ */
+add_task(function testNoTokensWithTypedOrSuggetion() {
+  const tests = [
+    {
+      tokens: [],
+      phrase: "mozilla is for the Open Web",
+      expected: [],
+    },
+    {
+      tokens: undefined,
+      phrase: "mozilla is for the Open Web",
+      expected: [],
+    },
+  ];
+  for (let { tokens, phrase, expected } of tests) {
+    Assert.deepEqual(
+      UrlbarUtils.getTokenMatches(tokens, phrase, UrlbarUtils.HIGHLIGHT.TYPED),
+      expected,
+      `Match "${tokens?.join(", ")}" on "${phrase} for TYPED"`
+    );
+    Assert.deepEqual(
+      UrlbarUtils.getTokenMatches(
+        tokens,
+        phrase,
+        UrlbarUtils.HIGHLIGHT.SUGGESTED
+      ),
+      expected,
+      `Match "${tokens?.join(", ")}" on "${phrase} for SUGGESTED"`
     );
   }
 });

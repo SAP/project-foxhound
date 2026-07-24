@@ -171,7 +171,6 @@ Structure:
           },
         },
         gfx: {
-            D2DEnabled: <bool>, // null on failure
             DWriteEnabled: <bool>, // null on failure
             ContentBackend: <string> // One of "Cairo", "Skia", or "Direct2D 1.1"
             Headless: <bool>, // null on failure
@@ -328,7 +327,7 @@ The special value ``NONE`` could occur if there is no default search engine.
 
 The special value ``UNDEFINED`` could occur if a default search engine exists but its identifier could not be determined.
 
-This field's contents are ``Services.search.defaultEngine.identifier`` (if defined) or ``"other-"`` + ``Services.search.defaultEngine.name`` if not. In other words, search engines without an ``.identifier`` are prefixed with ``other-``.
+This field's contents are ``SearchService.defaultEngine.identifier`` (if defined) or ``"other-"`` + ``SearchService.defaultEngine.name`` if not. In other words, search engines without an ``.identifier`` are prefixed with ``other-``.
 
 defaultSearchEngineData
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -394,11 +393,7 @@ The following is a partial list of `collected preferences <https://searchfox.org
 
 - ``browser.urlbar.quicksuggest.onboardingDialogChoice``: The user's choice in the Firefox Suggest onboarding dialog. If the dialog was shown multiple times, this records the user's most recent choice. Values are the following. Empty string: The user has not made a choice (e.g., because the dialog hasn't been shown). ``accept_2`` is recorded when the user accepts the dialog and opts in, ``reject_2`` is recorded when the user rejects the dialog and opts out, ``learn_more_1`` is recorded when the user clicks "Learn more" on the introduction section (the user remains opted out), ``learn_more_2`` is recorded when the user clicks "Learn more" on the main section (the user remains opted out), ``close_1`` is recorded when the user clicks close button on the introduction section (the user remains opted out), ``not_now_2`` is recorded when the user clicks "Not now" link on main section (the user remains opted out), ``dismiss_1`` recorded when the user dismisses the dialog on the introduction section (the user remains opted out), ``dismiss_2`` recorded when the user dismisses the dialog on main (the user remains opted out).
 
-- ``browser.urlbar.quicksuggest.dataCollection.enabled``: Whether the user has opted in to data collection for Firefox Suggest. This pref is set to true when the user opts in to the Firefox Suggest onboarding dialog modal. The user can also toggle the pref using a toggle switch in the Firefox Suggest preferences UI.
-
 - ``browser.urlbar.showSearchTerms.enabled``: True if to show the search term in the urlbar while on a default search engine results page.
-
-- ``browser.urlbar.suggest.quicksuggest.nonsponsored``: True if non-sponsored Firefox Suggest suggestions are enabled in the urlbar.
 
 - ``browser.urlbar.suggest.quicksuggest.sponsored``: True if sponsored Firefox Suggest suggestions are enabled in the urlbar.
 
@@ -422,15 +417,11 @@ The following is a partial list of `collected preferences <https://searchfox.org
 
 - ``network.trr.strict_native_fallback``: Whether strict fallback mode is enabled for DoH mode 2. Defaults to true on Nightly, false elsewhere.
 
-- ``extensions.InstallTriggerImpl.enabled``: Whether the InstallTrigger implementation should be enabled (or hidden and none of its methods available).
-
-- ``extensions.InstallTrigger.enabled``: Whether the InstallTrigger implementation should be enabled (or completely hidden), separate from InstallTriggerImpl because InstallTrigger is improperly used also for UA detection.
+- ``extensions.InstallTrigger.enabled``: Whether the InstallTrigger property should be enabled (or completely hidden).
 
 - ``extensions.eventPages.enabled``: Whether non-persistent background pages (also known as Event pages) should be enabled for `"manifest_version": 2` extensions.
 
 - ``extensions.quarantinedDomains.enabled``: Whether "Quarantined Domains" is enabled.
-
-- ``extensions.manifestV3.enabled``: Whether `"manifest_version": 3` extensions should be allowed to install successfully.
 
 - ``media.gmp-gmpopenh264.enabled``: Whether OpenH264 is enabled.
 

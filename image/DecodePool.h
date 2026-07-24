@@ -16,7 +16,6 @@
 #include "nsCOMPtr.h"
 #include "nsIEventTarget.h"
 #include "nsIObserver.h"
-#include "mozilla/RefPtr.h"
 #include "nsStringFwd.h"
 
 class nsIThread;

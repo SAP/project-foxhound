@@ -19,7 +19,7 @@ import { LinkMenu } from "../../LinkMenu/LinkMenu";
  * @param type
  * @param showAdReporting
  * @returns {Element}
- * @constructor
+ * @class
  */
 export function AdBannerContextMenu({
   dispatch,

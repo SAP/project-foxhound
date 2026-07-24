@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_CookieStoreParent_h
 #define mozilla_dom_CookieStoreParent_h
 
-#include "mozilla/dom/PCookieStoreParent.h"
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/PCookieStoreParent.h"
 
 namespace mozilla::dom {
 
@@ -21,7 +21,7 @@ class CookieStoreParent final : public PCookieStoreParent {
  public:
   using GetRequestPromise =
       MozPromise<CopyableTArray<CookieStruct>, nsresult, true>;
-  using SetDeleteRequestPromise = MozPromise<bool, nsresult, true>;
+  using SetDeleteRequestPromise = MozPromise<bool, bool, true>;
   using GetSubscriptionsRequestPromise =
       MozPromise<CopyableTArray<CookieSubscription>, nsresult, true>;
   using SubscribeOrUnsubscribeRequestPromise = MozPromise<bool, nsresult, true>;
@@ -80,16 +80,22 @@ class CookieStoreParent final : public PCookieStoreParent {
       const nsACString& aPath, bool aOnlyFirstMatch,
       nsTArray<CookieStruct>& aResults);
 
+  enum SetReturnType {
+    eFailure,
+    eSilentFailure,
+    eSuccess,
+  };
+
   // Returns true if a cookie notification has been generated while completing
   // the operation.
-  bool SetRequestOnMainThread(
+  SetReturnType SetRequestOnMainThread(
       ThreadsafeContentParentHandle* aParent, const RefPtr<nsIURI> aCookieURI,
       const nsAString& aDomain, const OriginAttributes& aOriginAttributes,
       bool aThirdPartyContext, bool aPartitionForeign, bool aUsingStorageAccess,
       bool aIsOn3PCBExceptionList, const nsAString& aName,
       const nsAString& aValue, bool aSession, int64_t aExpires,
       const nsAString& aPath, int32_t aSameSite, bool aPartitioned,
-      const nsID& aOperationID);
+      const nsID& aOperationID, bool& aWaitForNotification);
 
   // Returns true if a cookie notification has been generated while completing
   // the operation.

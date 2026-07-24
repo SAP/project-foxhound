@@ -1,12 +1,17 @@
 /* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
 
 const { PrefUtils } = ChromeUtils.importESModule(
-  "resource://normandy/lib/PrefUtils.sys.mjs"
+  "moz-src:///toolkit/modules/PrefUtils.sys.mjs"
 );
 const { JsonSchema } = ChromeUtils.importESModule(
   "resource://gre/modules/JsonSchema.sys.mjs"
 );
+
+const {
+  NimbusTelemetry: { UnenrollReason },
+} = ChromeUtils.importESModule("resource://nimbus/lib/Telemetry.sys.mjs");
 
 const { ProfilesDatastoreService } = ChromeUtils.importESModule(
   "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs"
@@ -127,6 +132,19 @@ function checkExpectedPrefBranches(prefs) {
   }
 }
 
+/**
+ * Generate a comparison function for `Array.prototype.sort`.
+ *
+ * @param {string} property
+ *
+ * @returns {(a: object, b: object) => number} The comparison function.
+ */
+function compareBy(property) {
+  return (a, b) => a[property].localeCompare(b[property]);
+}
+
+const compareByExperiment = compareBy("experiment");
+
 add_setup(function setup() {
   Services.fog.initializeFOG();
   Services.telemetry.clearEvents();
@@ -146,7 +164,6 @@ async function setupTest({ ...args } = {}) {
     ...ctx,
     async cleanup() {
       assertNoObservers(ctx.manager);
-      await NimbusTestUtils.waitForAllUnenrollments();
       await baseCleanup();
     },
   };
@@ -533,6 +550,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_FOO]: { userBranchValue: USER_VALUE } },
       expectedUnenrollments: [SLUG_1],
       expectedPrefs: { [PREF_FOO]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_FOO,
+        about_config_change: "false",
+      },
     },
     {
       name: "set pref on the user branch with a prefFlips experiment and change that pref on the default branch",
@@ -563,6 +585,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_FOO]: { userBranchValue: USER_VALUE } },
       expectedUnenrollments: [SLUG_1],
       expectedPrefs: { [PREF_FOO]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_FOO,
+        about_config_change: "false",
+      },
     },
     {
       name: "set pref on the default branch with a prefFlips experiment and change that pref on the default branch",
@@ -578,6 +605,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_FOO]: { defaultBranchValue: DEFAULT_VALUE } },
       expectedUnenrollments: [SLUG_1],
       expectedPrefs: { [PREF_FOO]: DEFAULT_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_FOO,
+        about_config_change: "false",
+      },
     },
     // Single enrollment case, multiple prefs being reset
     {
@@ -598,6 +630,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_BAR]: { userBranchValue: USER_VALUE } },
       expectedUnenrollments: [SLUG_1],
       expectedPrefs: { [PREF_FOO]: SET_BEFORE_VALUE, [PREF_BAR]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_BAR,
+        about_config_change: "false",
+      },
     },
     {
       name: "set prefs on the user branch with a prefFlips experiment and change one pref on the default branch",
@@ -639,6 +676,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_BAR]: { userBranchValue: USER_VALUE } },
       expectedUnenrollments: [SLUG_1],
       expectedPrefs: { [PREF_FOO]: SET_BEFORE_VALUE, [PREF_BAR]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_BAR,
+        about_config_change: "false",
+      },
     },
     {
       name: "set prefs on the default branch with a prefFlips experiment and change one pref on the default branch",
@@ -660,6 +702,11 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
         [PREF_BAR]: DEFAULT_VALUE,
+      },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_BAR,
+        about_config_change: "false",
       },
     },
     // Multiple enrollment cases
@@ -690,6 +737,11 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_1],
       expectedUnenrollments: [SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE, [PREF_BAR]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_BAR,
+        about_config_change: "false",
+      },
     },
     {
       name: "set pref on the user branch two prefFlips experiments and then change a pref controlled by only one experiment on the default branch",
@@ -719,6 +771,11 @@ add_task(async function test_prefFlips_unenrollment() {
         [PREF_FOO]: EXPERIMENT_VALUE,
         [PREF_BAR]: EXPERIMENT_VALUE,
       },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_BAR,
+        about_config_change: "false",
+      },
     },
     // - test that we unenroll from all conflicting experiments
     {
@@ -743,6 +800,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_FOO]: { userBranchValue: USER_VALUE } },
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: USER_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_FOO,
+        about_config_change: "false",
+      },
     },
     {
       name: "set pref on the default branch with two prefFlips experiments and then change that pref on the default branch",
@@ -766,6 +828,11 @@ add_task(async function test_prefFlips_unenrollment() {
       setPrefsAfter: { [PREF_FOO]: { defaultBranchValue: DEFAULT_VALUE } },
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: DEFAULT_VALUE },
+      unenrollReason: UnenrollReason.CHANGED_PREF,
+      unenrollTelemetry: {
+        changed_pref: PREF_FOO,
+        about_config_change: "false",
+      },
     },
     // - test we unenroll when the experiments conflict with eachother.
     {
@@ -789,6 +856,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_1],
       expectedUnenrollments: [SLUG_2],
       expectedPrefs: { [PREF_FOO]: SLUG_1 },
+      unenrollReason: UnenrollReason.PREF_FLIPS_FAILED,
+      unenrollTelemetry: { pref_name: PREF_FOO, pref_type: "string" },
     },
     {
       name: "set pref on the default branch with two experiments with conflicting values",
@@ -811,6 +880,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_1],
       expectedUnenrollments: [SLUG_2],
       expectedPrefs: { [PREF_FOO]: SLUG_1 },
+      unenrollReason: UnenrollReason.PREF_FLIPS_FAILED,
+      unenrollTelemetry: { pref_name: PREF_FOO, pref_type: "string" },
     },
     {
       name: "set pref on the user branch with an experiment and set it on the default branch with another",
@@ -833,6 +904,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_1],
       expectedUnenrollments: [SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_FAILED,
+      unenrollTelemetry: { pref_name: PREF_FOO, pref_type: "string" },
     },
     {
       name: "set pref on the default branch with an experiment and set it on the user branch with another",
@@ -855,6 +928,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_1],
       expectedUnenrollments: [SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_FAILED,
+      unenrollTelemetry: { pref_name: PREF_FOO, pref_type: "string" },
     },
 
     // Multiple enrollment cases (prefFlips -> setPref)
@@ -892,6 +967,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in prefFlips experiments on the default branch and then a setPref experiment on the user branch",
@@ -921,6 +998,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in prefFlips experiments on the user branch and then a setPref experiment on the default branch",
@@ -950,6 +1029,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in prefFlips experiments on the default branch and then a setPref experiment on the default branch",
@@ -979,6 +1060,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in prefFlip experiment on the user branch and then a setPref experiment on the user branch and unenroll to check if original values are restored (no original value)",
@@ -1006,6 +1089,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: null,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the user branch and then a setPref experiment on the default branch and unenroll to check if original values are restored (no original value)",
@@ -1033,6 +1118,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SLUG_2, // we can't clear the default branch
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the default branch and then a setPref experiment on the user branch and unenroll to check if original values are restored (no original value)",
@@ -1060,6 +1147,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: null,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the default branch and then a setPref experiment on the default branch and unenroll to check if original values are restored (no original value)",
@@ -1087,6 +1176,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SLUG_2,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the user branch and then a setPref experiment on the user branch and unenroll to check if original values are restored",
@@ -1115,6 +1206,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the user branch and then a setPref experiment on the default branch and unenroll to check if original values are restored",
@@ -1143,6 +1236,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the default branch and then a setPref experiment on the user branch and unenroll to check if original values are restored",
@@ -1171,6 +1266,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in prefFlip experiment on the default branch and then a setPref experiment on the default branch and unenroll to check if original values are restored",
@@ -1199,6 +1296,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     // * setPref experiment, rollout -> prefFlips experiment
     {
@@ -1230,6 +1329,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in a setPref experiment and rollout on the user branch then a prefFlips experiment on the default branch",
@@ -1260,6 +1361,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in a setPref experiment and rollout on the default branch then a prefFlips experiment on the user branch",
@@ -1290,6 +1393,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in a setPref experiment and rollout on the default branch then a prefFlips experiment on the default branch",
@@ -1320,6 +1425,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedEnrollments: [SLUG_3],
       expectedUnenrollments: [SLUG_1, SLUG_2],
       expectedPrefs: { [PREF_FOO]: EXPERIMENT_VALUE },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_3 },
     },
     {
       name: "enroll in a setPref experiment on the user branch and a prefFlips experiment on the user branch and unenroll to check if original values are restored (no original value)",
@@ -1347,6 +1454,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: null, // we can't clear the default branch
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the user branch and a prefFlips experiment on the default branch and unenroll to check if original values are restored (no original value)",
@@ -1374,6 +1483,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SLUG_2, // Cannot clear the default branch
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the default branch and a prefFlips experiment on the user branch and unenroll to check if original values are restored (no original value)",
@@ -1401,6 +1512,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SLUG_1, // cannot clear the default branch
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the default branch and a prefFlips experiment on the default branch and unenroll to check if original values are restored (no original value)",
@@ -1428,6 +1541,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SLUG_2, // cannot clear the default branch
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the user branch and a prefFlips experiment on the user branch and unenroll to check if original values are restored",
@@ -1458,6 +1573,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the user branch and a prefFlips experiment on the default branch and unenroll to check if original values are restored",
@@ -1488,6 +1605,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the default branch and a prefFlips experiment on the user branch and unenroll to check if original values are restored",
@@ -1518,6 +1637,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
     {
       name: "enroll in a setPref experiment on the default branch and a prefFlips experiment on the default branch and unenroll to check if original values are restored",
@@ -1548,6 +1669,8 @@ add_task(async function test_prefFlips_unenrollment() {
       expectedPrefs: {
         [PREF_FOO]: SET_BEFORE_VALUE,
       },
+      unenrollReason: UnenrollReason.PREF_FLIPS_CONFLICT,
+      unenrollTelemetry: { conflicting_slug: SLUG_2 },
     },
   ];
 
@@ -1574,6 +1697,10 @@ add_task(async function test_prefFlips_unenrollment() {
       // Prefs to check after enrollment. They will be checked on the user
       // branch.
       expectedPrefs,
+      // The reason for unenrollment.
+      unenrollReason,
+      // Extra keys in the unenrollment telemetry.
+      unenrollTelemetry = {},
     } = testCase;
 
     info("Setting prefs before enrollment...");
@@ -1608,7 +1735,7 @@ add_task(async function test_prefFlips_unenrollment() {
       Assert.ok(enrollment.active, `It should still be active`);
     }
 
-    await NimbusTestUtils.waitForActiveEnrollments(expectedEnrollments);
+    await NimbusTestUtils.assert.activeEnrollments(expectedEnrollments);
 
     info("Checking expected unenrollments...");
     for (const slug of expectedUnenrollments) {
@@ -1616,12 +1743,34 @@ add_task(async function test_prefFlips_unenrollment() {
 
       Assert.ok(!!enrollment, `An enrollment for ${slug} should exist`);
       Assert.ok(!enrollment.active, "It should no longer be active");
+      Assert.equal(
+        enrollment.unenrollReason,
+        unenrollReason,
+        "It should have unenrolled for the correct reason"
+      );
     }
+
+    Assert.deepEqual(
+      (Glean.nimbusEvents.unenrollment.testGetValue("events") ?? [])
+        .map(event => event.extra)
+        .sort(compareByExperiment),
+
+      expectedUnenrollments
+        .map(slug => ({
+          experiment: slug,
+          reason: unenrollReason,
+          branch: "control",
+          ...unenrollTelemetry,
+        }))
+        .sort(compareByExperiment),
+
+      "Saw expected unenrollment telemetry"
+    );
 
     let expectedCurrentEnrollments = new Set(expectedEnrollments).difference(
       new Set(expectedUnenrollments)
     );
-    await NimbusTestUtils.waitForActiveEnrollments(
+    await NimbusTestUtils.assert.activeEnrollments(
       Array.from(expectedCurrentEnrollments)
     );
 
@@ -1635,7 +1784,7 @@ add_task(async function test_prefFlips_unenrollment() {
     expectedCurrentEnrollments = expectedCurrentEnrollments.difference(
       new Set(unenrollmentOrder)
     );
-    await NimbusTestUtils.waitForActiveEnrollments(
+    await NimbusTestUtils.assert.activeEnrollments(
       Array.from(expectedCurrentEnrollments)
     );
 
@@ -1652,7 +1801,7 @@ add_task(async function test_prefFlips_unenrollment() {
       }
     }
 
-    await NimbusTestUtils.waitForActiveEnrollments([]);
+    await NimbusTestUtils.assert.activeEnrollments([]);
 
     info("Cleaning up prefs...");
     Services.prefs.deleteBranch(PREF_FOO);
@@ -2104,7 +2253,7 @@ add_task(async function test_prefFlip_setPref_restore() {
     );
     Assert.deepEqual(
       Glean.nimbusEvents.enrollmentStatus
-        .testGetValue("events")
+        .testGetValue("nimbus-targeting-context")
         ?.map(ev => ev.extra),
       [
         {
@@ -2232,34 +2381,25 @@ async function test_prefFlips_restore_unenroll() {
     }
   );
 
-  // Set up a previous ExperimentStore on disk.
-  let storePath;
-  {
-    const store = NimbusTestUtils.stubs.store();
-    await store.init();
-
-    await NimbusTestUtils.addEnrollmentForRecipe(recipe, {
-      store,
-      extra: {
-        source: "rs-loader",
-        prefFlips: {
-          originalValues: {
-            "test.pref.please.ignore": null,
+  const { manager, cleanup } = await setupTest({
+    storePath: await NimbusTestUtils.createStoreWith(store => {
+      NimbusTestUtils.addEnrollmentForRecipe(recipe, {
+        store,
+        extra: {
+          source: "rs-loader",
+          prefFlips: {
+            originalValues: {
+              "test.pref.please.ignore": null,
+            },
           },
         },
-      },
-    });
+      });
 
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
-
-  // Set the pref controlled by the experiment.
-  Services.prefs.setStringPref("test.pref.please.ignore", "test-value");
-
-  const { manager, cleanup } = await setupTest({
-    storePath,
+      // Set the pref controlled by the experiment.
+      Services.prefs.setStringPref("test.pref.please.ignore", "test-value");
+    }),
     secureExperiments: [recipe],
-    migrationState: NimbusTestUtils.migrationState.IMPORTED_ENROLLMENTS_TO_SQL,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
   });
 
   const activeEnrollment = manager.store.getExperimentForFeature(FEATURE_ID);
@@ -2315,7 +2455,7 @@ add_task(async function test_prefFlips_failed() {
   // That callback triggers an async unenroll() without awaiting (because it
   // wouldn't block the ExperimentStore anyway) so we have to wait for the
   // unenroll to be propagated to the database first.
-  await NimbusTestUtils.waitForInactiveEnrollment(recipe.slug);
+  await NimbusTestUtils.assert.enrollmentExists(recipe.slug, { active: false });
 
   const enrollment = manager.store.get(recipe.slug);
   Assert.ok(!enrollment.active, "Experiment should not be active");
@@ -2393,7 +2533,7 @@ add_task(async function test_prefFlips_failed_multiple_prefs() {
   // That callback triggers an async unenroll() without awaiting (because it
   // wouldn't block the ExperimentStore anyway) so we have to wait for the
   // unenroll to be propagated to the database first.
-  await NimbusTestUtils.waitForInactiveEnrollment(recipe.slug);
+  await NimbusTestUtils.assert.enrollmentExists(recipe.slug, { active: false });
 
   const enrollment = manager.store.get(recipe.slug);
   Assert.ok(!enrollment.active, "Experiment should not be active");
@@ -2524,11 +2664,11 @@ add_task(async function test_prefFlips_failed_experiment_and_rollout_1() {
       Assert.ok(enrollment.active, `The enrollment for ${slug} is active`);
     }
 
-    await NimbusTestUtils.waitForActiveEnrollments(expectedEnrollments);
+    await NimbusTestUtils.assert.activeEnrollments(expectedEnrollments);
 
     info("Checking expected unenrollments...");
     for (const slug of expectedUnenrollments) {
-      await NimbusTestUtils.waitForInactiveEnrollment(slug);
+      await NimbusTestUtils.assert.enrollmentExists(slug, { active: false });
       const enrollment = manager.store.get(slug);
       Assert.ok(!enrollment.active, "The enrollment is no longer active.");
     }
@@ -2634,7 +2774,7 @@ add_task(async function test_prefFlips_failed_experiment_and_rollout_2() {
       );
     }
 
-    await NimbusTestUtils.waitForActiveEnrollments(expectedEnrollments);
+    await NimbusTestUtils.assert.activeEnrollments(expectedEnrollments);
 
     info("Checking expected enrollments...");
     for (const slug of expectedEnrollments) {
@@ -2644,7 +2784,7 @@ add_task(async function test_prefFlips_failed_experiment_and_rollout_2() {
 
     info("Checking expected unenrollments...");
     for (const slug of expectedUnenrollments) {
-      await NimbusTestUtils.waitForInactiveEnrollment(slug);
+      await NimbusTestUtils.assert.enrollmentExists(slug, { active: false });
       const enrollment = manager.store.get(slug);
       Assert.ok(!enrollment.active, "The enrollment is no longer active.");
     }
@@ -2703,7 +2843,7 @@ add_task(async function test_prefFlips_update_failure() {
     { manager, slug: "experiment" }
   );
 
-  await NimbusTestUtils.waitForActiveEnrollments(["rollout"]);
+  await NimbusTestUtils.assert.activeEnrollments(["rollout"]);
 
   const rolloutEnrollment = manager.store.get("rollout");
   const experimentEnrollment = manager.store.get("experiment");
@@ -2724,17 +2864,12 @@ add_task(async function test_prefFlips_update_failure() {
 });
 
 async function test_prefFlips_restore() {
-  let storePath;
-
   const PREF_1 = "pref.one";
   const PREF_2 = "pref.two";
   const PREF_3 = "pref.three";
   const PREF_4 = "pref.FOUR";
 
-  {
-    const store = NimbusTestUtils.stubs.store();
-    await store.init();
-
+  const storePath = await NimbusTestUtils.createStoreWith(store => {
     NimbusTestUtils.addEnrollmentForRecipe(
       NimbusTestUtils.factories.recipe.withFeatureConfig(
         "rollout-1",
@@ -2822,13 +2957,11 @@ async function test_prefFlips_restore() {
         },
       }
     );
-
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
+  });
 
   const { manager, cleanup } = await setupTest({
     storePath,
-    migrationState: NimbusTestUtils.migrationState.IMPORTED_ENROLLMENTS_TO_SQL,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
   });
 
   Assert.ok(manager.store.get("rollout-1").active, "rollout-1 is active");
@@ -2896,13 +3029,9 @@ add_task(async function test_prefFlips_restore_db() {
 });
 
 async function test_prefFlips_restore_failure_conflict() {
-  let storePath;
-
   const PREF = "pref.foo.bar";
-  {
-    const store = NimbusTestUtils.stubs.store();
-    await store.init();
 
+  const storePath = await NimbusTestUtils.createStoreWith(store => {
     NimbusTestUtils.addEnrollmentForRecipe(
       NimbusTestUtils.factories.recipe.withFeatureConfig("rollout-1", {
         featureId: FEATURE_ID,
@@ -2973,17 +3102,15 @@ async function test_prefFlips_restore_failure_conflict() {
         },
       }
     );
-
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
+  });
 
   const { manager, cleanup } = await setupTest({
     storePath,
-    migrationState: NimbusTestUtils.migrationState.IMPORTED_ENROLLMENTS_TO_SQL,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
   });
 
-  await NimbusTestUtils.waitForActiveEnrollments(["rollout-1"]);
-  await NimbusTestUtils.waitForInactiveEnrollment("rollout-2");
+  await NimbusTestUtils.assert.activeEnrollments(["rollout-1"]);
+  await NimbusTestUtils.assert.enrollmentExists("rollout-2", { active: false });
 
   Assert.ok(manager.store.get("rollout-1").active, "rollout-1 is active");
   Assert.ok(!manager.store.get("rollout-2").active, "rollout-2 is not active");
@@ -3074,11 +3201,11 @@ async function test_prefFlips_restore_failure_wrong_type() {
   const { manager, cleanup } = await setupTest({
     storePath,
     secureExperiments: [recipe],
-    migrationState: NimbusTestUtils.migrationState.IMPORTED_ENROLLMENTS_TO_SQL,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
   });
 
   await NimbusTestUtils.flushStore(manager.store);
-  await NimbusTestUtils.waitForInactiveEnrollment(recipe.slug);
+  await NimbusTestUtils.assert.enrollmentExists(recipe.slug, { active: false });
 
   const enrollment = manager.store.get(recipe.slug);
 
@@ -3136,7 +3263,9 @@ add_task(
     PrefUtils.setPref(PREF, "default-value", { branch: DEFAULT });
 
     await manager.enroll(recipe, "rs-loader");
-    await NimbusTestUtils.waitForInactiveEnrollment(recipe.slug);
+    await NimbusTestUtils.assert.enrollmentExists(recipe.slug, {
+      active: false,
+    });
 
     let enrollment = manager.store.get(recipe.slug);
 
@@ -3144,7 +3273,9 @@ add_task(
     Assert.equal(enrollment.unenrollReason, "prefFlips-failed");
 
     await manager.enroll(recipe, "rs-loader", { reenroll: true });
-    await NimbusTestUtils.waitForInactiveEnrollment(recipe.slug);
+    await NimbusTestUtils.assert.enrollmentExists(recipe.slug, {
+      active: false,
+    });
 
     enrollment = manager.store.get(recipe.slug);
 

@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLOutputElement_h
 #define mozilla_dom_HTMLOutputElement_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/ConstraintValidation.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"

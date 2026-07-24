@@ -320,3 +320,4 @@ pref(layout.css.scroll-driven-animations.enabled,true) load 1821416.html
 load 1872309.html
 pref(layout.css.scroll-driven-animations.enabled,true) load 1944977.html
 pref(dom.viewTransitions.enabled,true) load 1966679.html
+load 1987809.html

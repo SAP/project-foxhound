@@ -23,10 +23,6 @@ class AudioStreamTrack;
 namespace mozilla {
 
 /**
- * CrossGraphTransmitter and CrossGraphPort are currently unused, but intended
- * for connecting MediaTracks of different MediaTrackGraphs with different
- * sample rates or clock sources for bug 1674892.
- *
  * Create with MediaTrackGraph::CreateCrossGraphTransmitter()
  */
 class CrossGraphTransmitter : public ProcessedMediaTrack {

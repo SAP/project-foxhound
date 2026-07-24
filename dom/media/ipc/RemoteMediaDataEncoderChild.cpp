@@ -5,12 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteMediaDataEncoderChild.h"
-#include "RemoteMediaManagerChild.h"
+
 #include "RemoteDecodeUtils.h"
+#include "RemoteMediaManagerChild.h"
+#include "mozilla/dom/WebCodecsUtils.h"
 
 namespace mozilla {
 
 extern LazyLogModule sPEMLog;
+
+#define AUTO_MARKER(var, postfix) \
+  AutoWebCodecsMarker var("RemoteMediaDataEncoderChild", postfix);
 
 #define LOGE(fmt, ...)                           \
   MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Error, \
@@ -78,6 +83,7 @@ RemoteMediaDataEncoderChild::Construct() {
       [self = RefPtr{this}](MediaResult aResult) {
         LOGD("[{}] Construct resolved code={}", fmt::ptr(self.get()),
              aResult.Description());
+        self->mHasConstructed = true;
         self->mConstructPromise.Resolve(self, __func__);
         if (!self->mInitPromise.IsEmpty()) {
           self->DoSendInit();
@@ -96,6 +102,8 @@ RemoteMediaDataEncoderChild::Construct() {
 }
 
 void RemoteMediaDataEncoderChild::DoSendInit() {
+  MOZ_ASSERT(mHasConstructed);
+
   LOGD("[{}] Init send", fmt::ptr(this));
   SendInit()->Then(
       mThread, __func__,
@@ -138,7 +146,11 @@ RefPtr<MediaDataEncoder::InitPromise> RemoteMediaDataEncoderChild::Init() {
         // create promise and wait for that first. This can happen if the owner
         // created the encoder via RemoteEncoderModule's CreateAudioEncoder or
         // CreateVideoEncoder instead of AsyncCreateEncoder.
-        if (self->mConstructPromise.IsEmpty()) {
+        //
+        // mConstructPromise might not have been created yet either because we
+        // may have delayed dispatching related to the process launching.
+        // mHasConstructed will be set when the construct IPDL call returns.
+        if (self->mHasConstructed) {
           self->DoSendInit();
         } else {
           LOGD("[{}] Init deferred, still constructing", fmt::ptr(self.get()));
@@ -148,8 +160,8 @@ RefPtr<MediaDataEncoder::InitPromise> RemoteMediaDataEncoderChild::Init() {
 }
 
 RefPtr<PRemoteEncoderChild::EncodePromise>
-RemoteMediaDataEncoderChild::DoSendEncode(const MediaData* aSample,
-                                          ShmemRecycleTicket* aTicket) {
+RemoteMediaDataEncoderChild::DoSendEncode(
+    const nsTArray<RefPtr<MediaData>>& aSamples, ShmemRecycleTicket* aTicket) {
   if (mRemoteCrashed) {
     LOGE("[{}] remote crashed", fmt::ptr(this));
     nsresult err = NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_UTILITY_ERR;
@@ -163,53 +175,72 @@ RemoteMediaDataEncoderChild::DoSendEncode(const MediaData* aSample,
         MediaResult(err, "Remote process crashed"), __func__);
   }
 
-  if (aSample->mType == MediaData::Type::AUDIO_DATA) {
+  if (aSamples.IsEmpty()) {
+    LOGE("[{}] no samples to encode", fmt::ptr(this));
+    return PRemoteEncoderChild::EncodePromise::CreateAndResolve(
+        MediaResult(NS_ERROR_INVALID_ARG), __func__);
+  }
+
+  MediaData::Type type = aSamples[0]->mType;
+
+  if (type == MediaData::Type::AUDIO_DATA) {
+    nsTArray<RefPtr<AudioData>> audioSamples;
+    for (auto& sample : aSamples) {
+      audioSamples.AppendElement(sample->As<AudioData>());
+    }
+
     auto samples = MakeRefPtr<ArrayOfRemoteAudioData>();
-    if (!samples->Fill(aSample->As<const AudioData>(), [&](size_t aSize) {
+    if (!samples->Fill(audioSamples, [&](size_t aSize) {
           return AllocateBuffer(aSize, aTicket);
         })) {
       LOGE("[{}] buffer audio failed", fmt::ptr(this));
       return PRemoteEncoderChild::EncodePromise::CreateAndResolve(
           MediaResult(NS_ERROR_OUT_OF_MEMORY), __func__);
     }
-    LOGD("[{}] send audio", fmt::ptr(this));
+    LOGD("[{}] send {} audio samples", fmt::ptr(this), audioSamples.Length());
     return SendEncode(std::move(samples));
   }
 
-  if (aSample->mType == MediaData::Type::VIDEO_DATA) {
-    auto samples = MakeRefPtr<ArrayOfRemoteVideoData>();
-    const auto* videoSample = aSample->As<const VideoData>();
-    if (layers::Image* videoImage = videoSample->mImage) {
-      // We don't need to supply a working deallocator because the ticket is
-      // responsible for that cleanup.
-      layers::SurfaceDescriptor sd;
-      nsresult rv = videoImage->BuildSurfaceDescriptorGPUVideoOrBuffer(
-          sd, layers::Image::BuildSdbFlags::Default,
-          Some(GetVideoBridgeSourceFromRemoteMediaIn(mLocation)),
-          [&](uint32_t aBufferSize) {
-            ShmemBuffer buffer = AllocateBuffer(aBufferSize, aTicket);
-            if (buffer.Valid()) {
-              return layers::MemoryOrShmem(std::move(buffer.Get()));
-            }
-            return layers::MemoryOrShmem();
-          },
-          [&](layers::MemoryOrShmem&&) {});
-
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        LOGE("[{}] buffer video failed, code={}", fmt::ptr(this),
-             fmt::enums::format_as(rv));
-        return PRemoteEncoderChild::EncodePromise::CreateAndResolve(
-            MediaResult(rv), __func__);
-      }
-
-      samples->Append(RemoteVideoData(
-          MediaDataIPDL(videoSample->mOffset, videoSample->mTime,
-                        videoSample->mTimecode, videoSample->mDuration,
-                        videoSample->mKeyframe),
-          videoSample->mDisplay, RemoteImageHolder(std::move(sd)),
-          videoSample->mFrameID));
+  if (type == MediaData::Type::VIDEO_DATA) {
+    nsTArray<RefPtr<VideoData>> videoSamples;
+    for (auto& sample : aSamples) {
+      videoSamples.AppendElement(sample->As<VideoData>());
     }
-    LOGD("[{}] send video", fmt::ptr(this));
+
+    auto samples = MakeRefPtr<ArrayOfRemoteVideoData>();
+    for (const auto& videoSample : videoSamples) {
+      if (layers::Image* videoImage = videoSample->mImage) {
+        // We don't need to supply a working deallocator because the ticket is
+        // responsible for that cleanup.
+        layers::SurfaceDescriptor sd;
+        nsresult rv = videoImage->BuildSurfaceDescriptorGPUVideoOrBuffer(
+            sd, layers::Image::BuildSdbFlags::Default,
+            Some(GetVideoBridgeSourceFromRemoteMediaIn(mLocation)),
+            [&](uint32_t aBufferSize) {
+              ShmemBuffer buffer = AllocateBuffer(aBufferSize, aTicket);
+              if (buffer.Valid()) {
+                return layers::MemoryOrShmem(std::move(buffer.Get()));
+              }
+              return layers::MemoryOrShmem();
+            },
+            [&](layers::MemoryOrShmem&&) {});
+
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          LOGE("[{}] buffer video failed, code={}", fmt::ptr(this),
+               fmt::enums::format_as(rv));
+          return PRemoteEncoderChild::EncodePromise::CreateAndResolve(
+              MediaResult(rv), __func__);
+        }
+
+        samples->Append(RemoteVideoData(
+            MediaDataIPDL(videoSample->mOffset, videoSample->mTime,
+                          videoSample->mTimecode, videoSample->mDuration,
+                          videoSample->mKeyframe),
+            videoSample->mDisplay, RemoteImageHolder(std::move(sd)),
+            videoSample->mFrameID));
+      }
+    }
+    LOGD("[{}] send {} video samples", fmt::ptr(this), videoSamples.Length());
     return SendEncode(std::move(samples));
   }
 
@@ -219,14 +250,19 @@ RemoteMediaDataEncoderChild::DoSendEncode(const MediaData* aSample,
 
 RefPtr<MediaDataEncoder::EncodePromise> RemoteMediaDataEncoderChild::Encode(
     const MediaData* aSample) {
+  return Encode(nsTArray<RefPtr<MediaData>>{const_cast<MediaData*>(aSample)});
+}
+
+RefPtr<MediaDataEncoder::EncodePromise> RemoteMediaDataEncoderChild::Encode(
+    nsTArray<RefPtr<MediaData>>&& aSamples) {
   return InvokeAsync(
       mThread, __func__,
-      [self = RefPtr{this},
-       sample = RefPtr{aSample}]() -> RefPtr<MediaDataEncoder::EncodePromise> {
+      [self = RefPtr{this}, samples = std::move(aSamples)]()
+          -> RefPtr<MediaDataEncoder::EncodePromise> {
         auto promise =
             MakeRefPtr<MediaDataEncoder::EncodePromise::Private>(__func__);
         auto ticket = MakeRefPtr<ShmemRecycleTicket>();
-        self->DoSendEncode(sample, ticket)
+        self->DoSendEncode(samples, ticket)
             ->Then(
                 self->mThread, __func__,
                 [self, promise, ticket](EncodeResultIPDL&& aResponse) {
@@ -247,12 +283,16 @@ RefPtr<MediaDataEncoder::EncodePromise> RemoteMediaDataEncoderChild::Encode(
                     size_t count = remoteSamples->Count();
                     samples.SetCapacity(count);
                     for (size_t i = 0; i < count; ++i) {
+                      AUTO_MARKER(marker, ".Encode.ElementAt");
                       if (RefPtr<MediaRawData> sample =
                               remoteSamples->ElementAt(i)) {
+                        marker.End();
                         samples.AppendElement(std::move(sample));
                       } else {
-                        LOGE("[{}] Encode resolved, failed to buffer samples",
-                             fmt::ptr(self.get()));
+                        LOGE(
+                            "[{}] Encode resolved, failed to buffer "
+                            "samples",
+                            fmt::ptr(self.get()));
                         promise->Reject(MediaResult(NS_ERROR_OUT_OF_MEMORY),
                                         __func__);
                         return;
@@ -438,5 +478,7 @@ nsCString RemoteMediaDataEncoderChild::GetDescriptionName() const {
   MutexAutoLock lock(mMutex);
   return mDescription;
 }
+
+#undef AUTO_MARKER
 
 }  // namespace mozilla

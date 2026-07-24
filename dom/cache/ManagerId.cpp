@@ -7,11 +7,9 @@
 #include "mozilla/dom/cache/ManagerId.h"
 
 #include "CacheCommon.h"
-
 #include "mozilla/dom/quota/PrincipalUtils.h"
 #include "nsIPrincipal.h"
 #include "nsProxyRelease.h"
-#include "mozilla/RefPtr.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::dom::cache {

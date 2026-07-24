@@ -151,6 +151,7 @@ EXTRA_JS_MODULES += [
     "AboutPagesUtils.sys.mjs",
     "ActorManagerParent.sys.mjs",
     "AppMenuNotifications.sys.mjs",
+    "AppServicesTracing.sys.mjs",
     "AsyncPrefs.sys.mjs",
     "BinarySearch.sys.mjs",
     "BrowserTelemetryUtils.sys.mjs",
@@ -161,7 +162,6 @@ EXTRA_JS_MODULES += [
     "Console.sys.mjs",
     "ContentDOMReference.sys.mjs",
     "CreditCard.sys.mjs",
-    "DateTimePickerPanel.sys.mjs",
     "DeferredTask.sys.mjs",
     "E10SUtils.sys.mjs",
     "EventEmitter.sys.mjs",
@@ -210,7 +210,15 @@ EXTRA_JS_MODULES += [
     "Timer.sys.mjs",
     "Troubleshoot.sys.mjs",
     "UpdateUtils.sys.mjs",
+    "UrlUtils.sys.mjs",
     "WebChannel.sys.mjs",
+]
+
+MOZ_SRC_FILES += [
+    "ColorPickerPanel.sys.mjs",
+    "DateTimePickerPanel.sys.mjs",
+    "FaviconUtils.sys.mjs",
+    "InputPickerPanelCommon.sys.mjs",
 ]
 
 if CONFIG["MOZ_ASAN_REPORTER"]:
@@ -255,6 +263,10 @@ if "Android" != CONFIG["OS_TARGET"]:
         "subprocess",
     ]
 
+    DEFINES["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] = (
+        CONFIG["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] or ""
+    )
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     EXTRA_JS_MODULES += [
         "WindowsLaunchOnLogin.sys.mjs",
@@ -262,7 +274,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     ]
 
 for var in (
-    "ANDROID_PACKAGE_NAME",
     "MOZ_APP_NAME",
     "MOZ_APP_BASENAME",
     "MOZ_APP_DISPLAYNAME",
@@ -270,7 +281,6 @@ for var in (
     "MOZ_APP_VERSION_DISPLAY",
     "MOZ_BING_API_CLIENTID",
     "MOZ_BING_API_KEY",
-    "MOZ_GOOGLE_LOCATION_SERVICE_API_KEY",
     "MOZ_GOOGLE_SAFEBROWSING_API_KEY",
     "MOZ_MACBUNDLE_ID",
     "MOZ_MACBUNDLE_NAME",
@@ -337,7 +347,6 @@ for var in (
     "MOZ_JXL",
     "MOZ_SYSTEM_POLICIES",
     "MOZ_SELECTABLE_PROFILES",
-    "BROWSER_NEWTAB_AS_ADDON",
     "USE_LIBZ_RS",
     "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS",
 ):
@@ -353,3 +362,7 @@ XPIDL_SOURCES += [
 ]
 
 XPIDL_MODULE = "toolkit_modules"
+
+MOZ_SRC_FILES += [
+    "PrefUtils.sys.mjs",
+]

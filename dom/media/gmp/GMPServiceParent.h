@@ -7,20 +7,20 @@
 #define GMPServiceParent_h_
 
 #include "GMPService.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/gmp/PGMPServiceParent.h"
-#include "mozIGeckoMediaPluginChromeService.h"
-#include "nsClassHashtable.h"
-#include "nsTHashMap.h"
-#include "mozilla/Atomics.h"
-#include "nsNetUtil.h"
-#include "nsIAsyncShutdown.h"
-#include "nsRefPtrHashtable.h"
-#include "nsThreadUtils.h"
-#include "mozilla/gmp/PGMPParent.h"
-#include "mozilla/media/MediaUtils.h"
-#include "mozilla/MozPromise.h"
 #include "GMPStorage.h"
+#include "mozIGeckoMediaPluginChromeService.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/gmp/PGMPParent.h"
+#include "mozilla/gmp/PGMPServiceParent.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsClassHashtable.h"
+#include "nsIAsyncShutdown.h"
+#include "nsNetUtil.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashMap.h"
+#include "nsThreadUtils.h"
 
 template <class>
 struct already_AddRefed;
@@ -158,6 +158,8 @@ class GeckoMediaPluginServiceParent final
       const nsACString& aAPI, const nsTArray<nsCString>& aTags) override;
 
  private:
+  already_AddRefed<GMPParent> CreateGMPParent();
+
   // Creates a copy of aOriginal. Note that the caller is responsible for
   // adding this to GeckoMediaPluginServiceParent::mPlugins.
   already_AddRefed<GMPParent> ClonePlugin(const GMPParent* aOriginal);

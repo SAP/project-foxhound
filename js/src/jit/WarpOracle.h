@@ -40,6 +40,13 @@ class MOZ_STACK_CLASS WarpOracle {
       HashMap<JSObject*, uint32_t, DefaultHasher<JSObject*>, SystemAllocPolicy>;
   NurseryObjectsMap nurseryObjectsMap_;
 
+  // Like nurseryObjects_/nurseryObjectsMap_ but for boxed Values.
+  // Use mozilla::Vector because js::Vector asserts it's not used for JS::Value.
+  mozilla::Vector<Value, 8, SystemAllocPolicy> nurseryValues_;
+  using NurseryValuesMap =
+      HashMap<gc::Cell*, uint32_t, DefaultHasher<gc::Cell*>, SystemAllocPolicy>;
+  NurseryValuesMap nurseryValuesMap_;
+
  public:
   WarpOracle(JSContext* cx, MIRGenerator& mirGen, HandleScript outerScript);
   ~WarpOracle() { scriptSnapshots_.clear(); }
@@ -49,8 +56,15 @@ class MOZ_STACK_CLASS WarpOracle {
 
   [[nodiscard]] bool registerNurseryObject(JSObject* obj,
                                            uint32_t* nurseryIndex);
+  [[nodiscard]] bool registerNurseryValue(Value v, uint32_t* nurseryIndex);
 
   [[nodiscard]] bool snapshotJitZoneStub(JitZone::StubKind kind);
+
+  [[nodiscard]] bool addFuseDependency(RealmFuses::FuseIndex fuseIndex,
+                                       bool* stillValid);
+
+  [[nodiscard]] bool addFuseDependency(RuntimeFuses::FuseIndex fuseIndex,
+                                       bool* stillValid);
 
   AbortReasonOr<WarpSnapshot*> createSnapshot();
 

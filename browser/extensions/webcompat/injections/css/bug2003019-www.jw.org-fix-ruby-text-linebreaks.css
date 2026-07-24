@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.jw.org - ruby text does not wrap correctly.
+ * Bug #2003019 - https://bugzilla.mozilla.org/show_bug.cgi?id=2003019
+ * WebCompat issue #191594 - https://webcompat.com/issues/191594
+ *
+ * Until bug 2003395 is fixed, we can introduce line-breaking opportunities
+ * into the ruby-text ourselves to work around this issue.
+ */
+ruby::after {
+  content: "\200B"; /* Zero-width space (line break opportunity) */
+}

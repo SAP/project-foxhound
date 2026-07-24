@@ -37,19 +37,19 @@ loader.lazyRequireGetter(
  * h.hide();
  * h.destroy();
  *
- * @param {Number} options.x
+ * @param {number} options.x
  *        X coordinate of the top left corner of the accessible object
- * @param {Number} options.y
+ * @param {number} options.y
  *        Y coordinate of the top left corner of the accessible object
- * @param {Number} options.w
+ * @param {number} options.w
  *        Width of the the accessible object
- * @param {Number} options.h
+ * @param {number} options.h
  *        Height of the the accessible object
- * @param {Number} options.duration
+ * @param {number} options.duration
  *        Duration of time that the highlighter should be shown.
- * @param {String|null} options.name
+ * @param {string | null} options.name
  *        Name of the the accessible object
- * @param {String} options.role
+ * @param {string} options.role
  *        Role of the the accessible object
  *
  * Structure:
@@ -72,12 +72,14 @@ loader.lazyRequireGetter(
 class AccessibleHighlighter extends AutoRefreshHighlighter {
   constructor(highlighterEnv) {
     super(highlighterEnv);
-    this.ID_CLASS_PREFIX = "accessible-";
     this.accessibleInfobar = new Infobar(this);
 
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-accessible",
+      }
     );
     this.isReady = this.markup.initialize();
 
@@ -105,7 +107,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   /**
    * Build highlighter markup.
    *
-   * @return {Object} Container element for the highlighter markup.
+   * @return {object} Container element for the highlighter markup.
    */
   _buildMarkup() {
     const container = this.markup.createNode({
@@ -115,44 +117,41 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
       },
     });
 
-    const root = this.markup.createNode({
+    this.rootEl = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
+        id: "accessible-root",
         class:
-          "root" +
+          "accessible-root" +
           (this.highlighterEnv.useSimpleHighlightersForReducedMotion
             ? " use-simple-highlighters"
             : ""),
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the SVG element.
     const svg = this.markup.createSVGNode({
       nodeType: "svg",
-      parent: root,
+      parent: this.rootEl,
       attributes: {
-        id: "elements",
+        id: "accessible-elements",
         width: "100%",
         height: "100%",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     this.markup.createSVGNode({
       nodeType: "path",
       parent: svg,
       attributes: {
-        class: "bounds",
-        id: "bounds",
+        class: "accessible-bounds",
+        id: "accessible-bounds",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the accessible's infobar markup.
-    this.accessibleInfobar.buildMarkup(root);
+    this.accessibleInfobar.buildMarkup(this.rootEl);
 
     return container;
   }
@@ -175,26 +174,27 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
     this.accessibleInfobar.destroy();
     this.accessibleInfobar = null;
     this.markup.destroy();
+    this.rootEl = null;
   }
 
   /**
    * Find an element in highlighter markup.
    *
-   * @param  {String} id
+   * @param  {string} id
    *         Highlighter markup elemet id attribute.
    * @return {DOMNode} Element in the highlighter markup.
    */
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   /**
    * Check if node is a valid element, document or text node.
    *
-   * @override  AutoRefreshHighlighter.prototype._isNodeValid
+   * @override
    * @param  {DOMNode} node
    *         The node to highlight.
-   * @return {Boolean} whether or not node is valid.
+   * @return {boolean} whether or not node is valid.
    */
   _isNodeValid(node) {
     return (
@@ -207,7 +207,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   /**
    * Show the highlighter on a given accessible.
    *
-   * @return {Boolean} True if accessible is highlighted, false otherwise.
+   * @return {boolean} True if accessible is highlighted, false otherwise.
    */
   _show() {
     if (this._highlightTimer) {
@@ -232,7 +232,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   /**
    * Update and show accessible bounds for a current accessible.
    *
-   * @return {Boolean} True if accessible is highlighted, false otherwise.
+   * @return {boolean} True if accessible is highlighted, false otherwise.
    */
   _update() {
     let shown = false;
@@ -275,7 +275,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
    * color contrast calculation.
    */
   hideAccessibleBounds() {
-    if (this.getElement("elements").hasAttribute("hidden")) {
+    if (this.getElement("accessible-elements").hasAttribute("hidden")) {
       return;
     }
 
@@ -299,7 +299,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   _hideAccessibleBounds() {
     this._shouldRestoreBoundsVisibility = null;
     setIgnoreLayoutChanges(true);
-    this.getElement("elements").setAttribute("hidden", "true");
+    this.getElement("accessible-elements").setAttribute("hidden", "true");
     setIgnoreLayoutChanges(
       false,
       this.highlighterEnv.window.document.documentElement
@@ -316,7 +316,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
     }
 
     setIgnoreLayoutChanges(true);
-    this.getElement("elements").removeAttribute("hidden");
+    this.getElement("accessible-elements").removeAttribute("hidden");
     setIgnoreLayoutChanges(
       false,
       this.highlighterEnv.window.document.documentElement
@@ -326,7 +326,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   /**
    * Get current accessible bounds.
    *
-   * @return {Object|null} Returns, if available, positioning and bounds
+   * @return {object | null} Returns, if available, positioning and bounds
    *                       information for the accessible object.
    */
   get _bounds() {
@@ -350,7 +350,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
    * Update accessible bounds for a current accessible. Re-draw highlighter
    * markup.
    *
-   * @return {Boolean} True if accessible is highlighted, false otherwise.
+   * @return {boolean} True if accessible is highlighted, false otherwise.
    */
   _updateAccessibleBounds() {
     const bounds = this._bounds;
@@ -359,14 +359,13 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
       return false;
     }
 
-    const boundsEl = this.getElement("bounds");
+    const boundsEl = this.getElement("accessible-bounds");
     const { left, right, top, bottom } = bounds;
     const path = `M${left},${top} L${right},${top} L${right},${bottom} L${left},${bottom} L${left},${top}`;
     boundsEl.setAttribute("d", path);
 
     // Un-zoom the root wrapper if the page was zoomed.
-    const rootId = this.ID_CLASS_PREFIX + "elements";
-    this.markup.scaleRootElement(this.currentNode, rootId);
+    this.markup.scaleRootElement(this.currentNode, "accessible-elements");
 
     return true;
   }

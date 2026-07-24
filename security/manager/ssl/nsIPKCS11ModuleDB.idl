@@ -4,11 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsISerialEventTarget.idl"
 #include "nsISupports.idl"
-
-interface nsIPKCS11Module;
-interface nsIPKCS11Slot;
-interface nsISimpleEnumerator;
 
 %{C++
 #define NS_PKCS11MODULEDB_CONTRACTID "@mozilla.org/security/pkcs11moduledb;1"
@@ -17,24 +14,19 @@ interface nsISimpleEnumerator;
 [scriptable, uuid(ff9fbcd7-9517-4334-b97a-ceed78909974)]
 interface nsIPKCS11ModuleDB : nsISupports
 {
-  [must_use]
-  void deleteModule(in AString moduleName);
+  [implicit_jscontext, must_use]
+  Promise deleteModule(in AString moduleName);
 
-  [must_use]
-  void addModule(in AString moduleName,
-                 in AString libraryFullPath,
-                 in long cryptoMechanismFlags,
-                 in long cipherFlags);
+  [implicit_jscontext, must_use]
+  Promise addModule(in AString moduleName,
+                    in AString libraryPath,
+                    in unsigned long mechanismFlags,
+                    in unsigned long cipherFlags);
 
-  [must_use]
-  nsISimpleEnumerator listModules();
-
-  [must_use]
-  readonly attribute boolean canToggleFIPS;
-
-  [must_use]
-  void toggleFIPSMode();
-
-  [must_use]
-  readonly attribute boolean isFIPSEnabled;
+  /**
+   * Resolves with an array of nsIPKCS11Module describing the configured
+   * PKCS#11 modules known to the module DB.
+   */
+  [implicit_jscontext, must_use]
+  Promise listModules();
 };

@@ -17,6 +17,7 @@ add_task(async function () {
     "example.com": "security-state-secure",
     "nocert.example.com": "security-state-broken",
     localhost: "security-state-secure",
+    notlocalhost: "security-state-insecure",
   };
 
   const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL, {
@@ -97,6 +98,11 @@ add_task(async function () {
     done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTP to localhost.");
     await executeRequests(1, "http://localhost" + CORS_SJS_PATH);
+    await done;
+
+    done = waitForNetworkEvents(monitor, 1);
+    info("Requesting a resource over HTTP to notlocalhost.");
+    await executeRequests(1, "http://notlocalhost" + CORS_SJS_PATH);
     await done;
 
     const expectedCount = Object.keys(EXPECTED_SECURITY_STATES).length;

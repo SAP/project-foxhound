@@ -7,7 +7,7 @@
  * Setup the loader to return the provided mock object instead of the regular
  * runtime-client-factory module.
  *
- * @param {Object}
+ * @param {object}
  *        mock should implement the following methods:
  *        - createClientForRuntime(runtime)
  */

@@ -6,8 +6,8 @@
 #define DOM_MEDIA_MEDIAKEYSYSTEMACCESSMANAGER_H_
 
 #include "DecoderDoctorDiagnostics.h"
-#include "mozilla/dom/MediaKeySystemAccess.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/MediaKeySystemAccess.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIObserver.h"
 #include "nsISupportsImpl.h"

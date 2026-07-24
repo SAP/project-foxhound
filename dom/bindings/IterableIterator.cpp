@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/IterableIterator.h"
+
 #include "mozilla/dom/Promise-inl.h"
 
 namespace mozilla::dom {

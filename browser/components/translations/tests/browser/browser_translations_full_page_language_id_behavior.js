@@ -147,7 +147,7 @@ const cases = [
   },
   {
     // Case 12 - Nothing is set to auto translate.
-    page: SPANISH_PAGE_MISMATCH_SHORT_URL,
+    page: SPANISH_PAGE_UNDECLARED_SHORT_URL,
     buttonShown: true,
     message:
       "A language was detected, but it was so low confidence only show the button.",
@@ -295,4 +295,213 @@ add_task(async function test_language_identification_behavior() {
     panel.removeEventListener("popupshown", handlePopupShown);
     await cleanup();
   }
+});
+
+/**
+ * This test case tests the behavior when the page has no declared language
+ * tag and the detected language is not supported by Translations.
+ */
+add_task(async function test_detected_language_unsupported() {
+  info("Testing unsupported detected language with no declared language");
+  TranslationsParent.testAutomaticPopup = true;
+
+  let wasPopupShown = false;
+  window.FullPageTranslationsPanel.elements; // De-lazify the panel.
+
+  const { resolve } = Promise.withResolvers();
+  const panel = window.document.getElementById("full-page-translations-panel");
+
+  function handlePopupShown() {
+    wasPopupShown = true;
+    panel.removeEventListener("popupshown", handlePopupShown);
+    resolve();
+  }
+  panel.addEventListener("popupshown", handlePopupShown);
+
+  const { cleanup, runInPage } = await loadTestPage({
+    page: SPANISH_PAGE_UNDECLARED_URL,
+    // Deliberately omit Spanish so that it is not supported.
+    languagePairs: [
+      { fromLang: "en", toLang: "fr" },
+      { fromLang: "fr", toLang: "en" },
+      { fromLang: "en", toLang: "uk" },
+      { fromLang: "uk", toLang: "en" },
+    ],
+    autoDownloadFromRemoteSettings: true,
+    contentEagerMode: true,
+  });
+
+  await FullPageTranslationsTestUtils.assertTranslationsButton(
+    { button: false },
+    "The translations button is not visible when the detected language is unsupported."
+  );
+
+  await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+    runInPage,
+    "No translation should occur when the detected language is unsupported."
+  );
+
+  is(
+    wasPopupShown,
+    false,
+    "A translation was not offered for an unsupported detected language."
+  );
+
+  TranslationsParent.testAutomaticPopup = false;
+  await cleanup();
+});
+
+add_task(async function test_norwegian_bokmal_offered_for_translation() {
+  TranslationsParent.testAutomaticPopup = true;
+
+  let wasPopupShown = false;
+  window.FullPageTranslationsPanel.elements; // De-lazify the panel.
+  const { promise: popupShown, resolve } = Promise.withResolvers();
+  const panel = window.document.getElementById("full-page-translations-panel");
+  function handlePopupShown() {
+    wasPopupShown = true;
+    panel.removeEventListener("popupshown", handlePopupShown);
+    resolve();
+  }
+  panel.addEventListener("popupshown", handlePopupShown);
+
+  const html = String.raw;
+  const { cleanup, win } = await loadTestPage({
+    html: html`
+      <!DOCTYPE html>
+      <html lang="nb">
+        <head>
+          <meta charset="utf-8" />
+          <title>Translations Test</title>
+          <style>
+            div {
+              margin: 10px auto;
+              width: 300px;
+            }
+            p {
+              margin: 47px 0;
+              font-size: 21px;
+              line-height: 2;
+            }
+          </style>
+        </head>
+        <body>
+          <div>
+            <header lang="en">
+              The following is an excerpt from Norsk literaturhistorie for
+              gymnasiet, lærerskoler og høiere folkeskoler, which is in the
+              public domain
+            </header>
+            <p>
+              Som nævnt var det mest i Bergen at vi merker noget til norsk
+              åndsliv i den tid.
+            </p>
+            <p>
+              Bergen var den største by i Norden, og den by i Norge som stod i
+              livligst samkvem med utlandet.
+            </p>
+            <p>
+              Her måtte de nye idéer derfor først vise sig. Herfra gik den
+              "første literære fornyelse" ut.
+            </p>
+            <p>
+              Bispen Geble Pederssøn i Bergen var vor første humanist. Han
+              interesserte sig især for skolen i sin by.
+            </p>
+            <p>
+              I Bergen var det også at interessen for Norges gamle historie
+              holdt sig. Flere arbeidet med oversættelser av de gamle sagaer.
+            </p>
+            <p>
+              Blandt dem skal vi især merke lagmand Mattis Størssøn († 1569),
+              som gav et utdrag av de gamle kongesagaer.
+            </p>
+            <p>
+              Han skrev også et klageskrift mot de tyske kjøbmænd. Han var en
+              anset mand og regjeringen brukte ham til flere vigtige hverv.
+            </p>
+            <p>
+              Mest kjendt av Bergens-humanistene var allikevel *Absalon
+              Pederssøn
+            </p>
+            <p>Beyer*, Geble Pederssøns elev og fostersøn. Han studerte ved</p>
+            <p>
+              universitetene i Kjøbenhavn og Wittenberg, hvor han tok
+              magistergraden.
+            </p>
+            <p>
+              Siden blev han lektor ved stiftsskolen i Bergen og til slut
+              slotsprest.
+            </p>
+            <p>Han døde i 1574.</p>
+            <p>
+              I sine 14 sidste leve-år førte Absalon Pederssøn en dagbok, som er
+            </p>
+            <p>
+              bevart under navnet _Bergens kapitelsbog_. Han fortæller her de
+              mindste
+            </p>
+            <p>småting, som f. eks. at et par elever fra stiftsskolen en</p>
+            <p>
+              søndagseftermiddag går i vinkjelderen istedenfor i kirken. Men
+            </p>
+            <p>
+              småtingene gjør netop boken til et levende og egte kulturbillede
+              fra
+            </p>
+            <p>
+              Bergen i den tid. Desuten har Absalon Pederssøn skrevet en Norges
+            </p>
+            <p>beskrivelse.</p>
+            <p>
+              Den sidste bok er merkelig ved at forfatteren viser sterk
+              nationalfølelse og med styrke uttaler sin sorg over Norges
+              tilbakegang og sit haap om at landet igjen maa reise sig av
+              dvalen. Han siger om Norge i gamle dager, at da „var hun udi agt
+              og ære; da havde hun en guldkrone paa sit hoved og en forgyldt
+              løve med en blodøks; — — da udbredte Norige sin magt og vinger,“
+              og at „Noriges rige haver standet udi sin blomster og været et
+              sterkt og mandigt rige blandt andre kongeriger; men,“ siger han
+              senere: „Fra den dag Norige kom under Danmark og miste sin egen
+              herre og konning, saa haver det og mist sin manddoms styrke og
+              magt og begynder at blive gammel og graahærd og saa tung, at det
+              ei kan bære sin egen uld. — — Idet at hun er vorden træt og gammel
+              af seilas og formaar ikke mere at drage udenlands, haver hun i sin
+              rasendes alderdom, i hvilken hun bliver til barn paa det ny igjen,
+              tilbudet en stor hob af hansestæderne, at de maa ikke alene seile
+              her i riget, men ogsaa garpe[15] plante sig fast blandt disse
+              klipper, hvilke som haver faaet det norske sand i deres sko, at de
+              vil ikke gjerne herud igjen, men vil dø derpaa, at bergefisk og
+              norsk smør er udi deres hansestæder en god ret.“ Han mener om
+              Norge, at „hun gaar paa krykker og stylter og vil snart falde
+              omkuld. — — Dog kunde vel Norige engang vaagne op af søvne, dersom
+              hun finge en regenter over sig; thi hun er ikke aldeles saa
+              forfalden og forsvækket, at hun jo kunde komme til sin magt igjen.
+              — — Udi folket er endnu noget af den gamle dyd, manddom og
+              styrke.“
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+    languagePairs: [
+      { fromLang: "nb", toLang: "en" },
+      { fromLang: "en", toLang: "nb" },
+    ],
+  });
+
+  await popupShown;
+  ok(wasPopupShown, "Translation offered");
+  FullPageTranslationsTestUtils.assertSelectedFromLanguage({
+    win,
+    langTag: "nb",
+  });
+  FullPageTranslationsTestUtils.assertSelectedToLanguage({
+    win,
+    langTag: "en",
+  });
+
+  TranslationsParent.testAutomaticPopup = false;
+  panel.removeEventListener("popupshown", handlePopupShown);
+  await cleanup();
 });

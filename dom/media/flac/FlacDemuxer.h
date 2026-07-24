@@ -7,7 +7,6 @@
 #ifndef FLAC_DEMUXER_H_
 #define FLAC_DEMUXER_H_
 
-#include "mozilla/Attributes.h"
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
 namespace mozilla {

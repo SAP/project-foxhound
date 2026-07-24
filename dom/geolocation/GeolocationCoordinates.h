@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_GeolocationCoordinates_h
 #define mozilla_dom_GeolocationCoordinates_h
 
-#include "nsIDOMGeoPositionCoords.h"
 #include "GeolocationPosition.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "mozilla/dom/Nullable.h"
 #include "js/TypeDecls.h"
+#include "mozilla/dom/Nullable.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDOMGeoPositionCoords.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

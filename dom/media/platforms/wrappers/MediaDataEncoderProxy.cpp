@@ -27,6 +27,20 @@ RefPtr<MediaDataEncoder::InitPromise> MediaDataEncoderProxy::Init() {
 }
 
 RefPtr<MediaDataEncoder::EncodePromise> MediaDataEncoderProxy::Encode(
+    nsTArray<RefPtr<MediaData>>&& aSamples) {
+  MOZ_ASSERT(!mIsShutdown);
+
+  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+    return mProxyEncoder->Encode(std::move(aSamples));
+  }
+  return InvokeAsync(
+      mProxyThread, __func__,
+      [self = RefPtr{this}, samples = std::move(aSamples)]() mutable {
+        return self->mProxyEncoder->Encode(std::move(samples));
+      });
+}
+
+RefPtr<MediaDataEncoder::EncodePromise> MediaDataEncoderProxy::Encode(
     const MediaData* aSample) {
   MOZ_ASSERT(!mIsShutdown);
 

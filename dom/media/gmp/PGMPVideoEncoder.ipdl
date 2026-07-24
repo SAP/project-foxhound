@@ -43,6 +43,7 @@ parent:
   async EncodedData(GMPVideoEncodedFrameData aEncodedFrame,
                 uint8_t[] aEncodedData,
                 uint8_t[] aCodecSpecificInfo);
+  async DroppedFrame(uint64_t aTimestamp);
   async Error(GMPErr aErr);
   async Shutdown();
 };

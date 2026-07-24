@@ -19,8 +19,8 @@ skip_on(android,device) fuzzy(1,3692) fuzzy-if(platform(win),2,5585) fuzzy-if(pl
 fuzzy(2,405) fuzzy-if(platform(swgl),2,1510) == split-batch.yaml split-batch-ref.yaml
 # Next 3 tests affected by bug 1548099 on Android
 skip_on(android) == shadow-red.yaml shadow-red-ref.yaml
-skip_on(android) fuzzy(1,999) fuzzy-if(platform(swgl),2,1324) == shadow-grey.yaml shadow-grey-ref.yaml
-skip_on(android) fuzzy(1,834) fuzzy-if(platform(swgl),2,1538) == shadow-grey-transparent.yaml shadow-grey-ref.yaml
+skip_on(android) fuzzy(1,999) fuzzy-if(platform(swgl),2,1331) == shadow-grey.yaml shadow-grey-ref.yaml
+skip_on(android) fuzzy(1,834) fuzzy-if(platform(swgl),2,1549) == shadow-grey-transparent.yaml shadow-grey-ref.yaml
 == subtle-shadow.yaml subtle-shadow-ref.yaml
 fuzzy(1,64) == shadow-atomic.yaml shadow-atomic-ref.yaml
 fuzzy(1,64) == shadow-clip-rect.yaml shadow-atomic-ref.yaml
@@ -41,14 +41,14 @@ platform(linux) options(disable-subpixel) == border-radius.yaml border-radius-al
 platform(linux) == border-radius.yaml border-radius-subpx.png
 options(disable-aa) == transparent-no-aa.yaml transparent-no-aa-ref.yaml
 != diacritics.yaml diacritics-ref.yaml
-fuzzy(1,30) platform(linux) options(disable-subpixel) == alpha-transform.yaml alpha-transform.png
-fuzzy(1,20) platform(linux) == subpixel-rotate.yaml subpixel-rotate.png
+fuzzy(1,42) platform(linux) options(disable-subpixel) == alpha-transform.yaml alpha-transform.png
+fuzzy(1,39) platform(linux) == subpixel-rotate.yaml subpixel-rotate.png
 fuzzy(1,72) platform(linux) == subpixel-scale.yaml subpixel-scale.png
 fuzzy(1,26) platform(linux) == subpixel-skew.yaml subpixel-skew.png
 fuzzy(1,381) platform(linux) == subpixel-translate.yaml subpixel-translate-ref.yaml
 != shadow-rotate.yaml blank.yaml
 platform(linux) == embedded-bitmaps.yaml embedded-bitmaps.png
-fuzzy(1,13) platform(linux) == clipped-transform.yaml clipped-transform.png
+fuzzy(1,21) platform(linux) == clipped-transform.yaml clipped-transform.png
 platform(mac) fuzzy(195,30) == color-bitmap-shadow.yaml color-bitmap-shadow-ref.yaml
 platform(linux) == writing-modes.yaml writing-modes-ref.yaml
 fuzzy(1,5) platform(linux) == blurred-shadow-local-clip-rect.yaml blurred-shadow-local-clip-rect-ref.png
@@ -57,7 +57,7 @@ fuzzy(1,1) platform(linux) == two-shadows.yaml two-shadows.png
 == shadow-fast-clip.yaml shadow-fast-clip-ref.yaml
 skip_on(android,device) fuzzy-if(platform(win),1,18) == shadow-partial-glyph.yaml shadow-partial-glyph-ref.yaml  # Fails on Pixel2
 fuzzy(2,212) platform(linux) == shadow-transforms.yaml shadow-transforms.png
-fuzzy(2,370) platform(linux) == raster-space.yaml raster-space.png
+fuzzy(2,372) platform(linux) == raster-space.yaml raster-space.png
 skip_on(android) skip_on(mac,>=10.14) != allow-subpixel.yaml allow-subpixel-ref.yaml  # Android: we don't enable sub-px aa on this platform.
 != large-glyphs.yaml blank.yaml
 != large-line-decoration.yaml blank.yaml

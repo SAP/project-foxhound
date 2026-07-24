@@ -16,6 +16,7 @@
 #include "ThirdPartyCookieBlockingExceptions.h"
 
 #include "nsString.h"
+#include "nsICookieValidation.h"
 #include "nsIMemoryReporter.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/MozPromise.h"
@@ -100,11 +101,11 @@ class CookieService final : public nsICookieService,
                   const nsACString& aName, const nsACString& aPath,
                   bool aFromHttp, const nsID* aOperationID);
 
-  bool SetCookiesFromIPC(const nsACString& aBaseDomain,
-                         const OriginAttributes& aAttrs, nsIURI* aHostURI,
-                         bool aFromHttp, bool aIsThirdParty,
-                         const nsTArray<CookieStruct>& aCookies,
-                         dom::BrowsingContext* aBrowsingContext);
+  nsICookieValidation::ValidationError SetCookiesFromIPC(
+      const nsACString& aBaseDomain, const OriginAttributes& aAttrs,
+      nsIURI* aHostURI, bool aFromHttp, bool aIsThirdParty,
+      const nsTArray<CookieStruct>& aCookies,
+      dom::BrowsingContext* aBrowsingContext);
 
  protected:
   virtual ~CookieService();
@@ -149,7 +150,6 @@ class CookieService final : public nsICookieService,
                        OriginAttributes* aOriginAttributes, int32_t aSameSite,
                        nsICookie::schemeType aSchemeMap, bool aIsPartitioned,
                        bool aFromHttp, const nsID* aOperationID,
-                       bool aRejectWhenInvalid,
                        nsICookieValidation** aValidation);
 };
 

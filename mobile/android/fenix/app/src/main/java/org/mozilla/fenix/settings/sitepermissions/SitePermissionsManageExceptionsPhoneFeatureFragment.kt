@@ -16,11 +16,11 @@ import android.widget.Button
 import android.widget.RadioButton
 import androidx.annotation.IdRes
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.permission.SitePermissions
@@ -101,7 +101,10 @@ class SitePermissionsManageExceptionsPhoneFeatureFragment : Fragment() {
     }
 
     @VisibleForTesting
-    internal fun initAutoplayOption(@IdRes viewId: Int, value: AutoplayValue) {
+    internal fun initAutoplayOption(
+        @IdRes viewId: Int,
+        value: AutoplayValue,
+    ) {
         val radio = rootView.findViewById<RadioButton>(viewId)
         radio.isVisible = true
         radio.text = value.label
@@ -153,7 +156,7 @@ class SitePermissionsManageExceptionsPhoneFeatureFragment : Fragment() {
         val button = rootView.findViewById<Button>(R.id.reset_permission)
         button.setText(R.string.clear_permission)
         button.setOnClickListener {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(R.string.confirm_clear_permission_site)
                 setTitle(R.string.clear_permission)
                 setPositiveButton(R.string.clear_permission_positive) { dialog: DialogInterface, _ ->

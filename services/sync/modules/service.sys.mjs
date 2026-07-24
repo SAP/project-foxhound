@@ -62,6 +62,7 @@ ChromeUtils.importESModule("resource://services-sync/telemetry.sys.mjs");
 import { Svc, Utils } from "resource://services-sync/util.sys.mjs";
 
 import { getFxAccountsSingleton } from "resource://gre/modules/FxAccounts.sys.mjs";
+import { SCOPE_APP_SYNC } from "resource://gre/modules/FxAccountsCommon.sys.mjs";
 
 const fxAccounts = getFxAccountsSingleton();
 
@@ -577,13 +578,14 @@ Sync11Service.prototype = {
           });
         }
         break;
-      case "weave:service:setup-complete":
+      case "weave:service:setup-complete": {
         let status = this._checkSetup();
         if (status != STATUS_DISABLED && status != CLIENT_NOT_CONFIGURED) {
           this._startTracking();
         }
         break;
-      case "nsPref:changed":
+      }
+      case "nsPref:changed": {
         if (this._ignorePrefObserver) {
           return;
         }
@@ -595,6 +597,7 @@ Sync11Service.prototype = {
         }
         this._handleEngineStatusChanged(engine);
         break;
+      }
       case "weave:service:sync:finish":
         if (this._queuedSyncReason) {
           this.sync({ why: this._queuedSyncReason });
@@ -794,7 +797,8 @@ Sync11Service.prototype = {
         "No config or incomplete config in getMaxRecordPayloadSize." +
           " Are we running tests?"
       );
-      return 256 * 1024;
+      // should stay in sync with MAX_PAYLOAD_SIZE in the Rust tabs engine.
+      return 2 * 1024 * 1024;
     }
     let payloadMax = config.max_record_payload_bytes;
     if (config.max_post_bytes && payloadMax <= config.max_post_bytes) {
@@ -973,6 +977,12 @@ Sync11Service.prototype = {
     let user = await fxAccounts.getSignedInUser();
     if (!user) {
       throw new Error("No FxA user is signed in");
+    }
+    // Check if the user has sync keys. With OAuth-based authentication,
+    // keys cannot be fetched on demand - they must exist locally.
+    let hasKeys = await fxAccounts.keys.hasKeysForScope(SCOPE_APP_SYNC);
+    if (!hasKeys) {
+      throw new Error("User does not have sync keys");
     }
     this._log.info("Configuring sync with current FxA user");
     Svc.PrefBranch.setStringPref("username", user.email);
@@ -1330,9 +1340,9 @@ Sync11Service.prototype = {
    * Perform a full sync (or of the given engines). While a sync is in progress,
    * this call is ignored; to guarantee a follow-up you must call queueSync().
    *
-   * @param {Object} options
-   * @param {Array<String>} [options.engines] — names of engines to sync
-   * @param {String} [options.why] — reason for the sync
+   * @param {object} options
+   * @param {Array<string>} [options.engines] — names of engines to sync
+   * @param {string} [options.why] — reason for the sync
    * @returns {Promise<void>}
    */
   async sync({ engines, why } = {}) {
@@ -1385,7 +1395,7 @@ Sync11Service.prototype = {
   /**
    * Kick off a sync after the current one finishes, or immediately if idle.
    *
-   * @param {String} why — reason for calling the sync
+   * @param {string} why — reason for calling the sync
    */
   queueSync(why) {
     if (this._locked) {
@@ -1426,6 +1436,7 @@ Sync11Service.prototype = {
 
   /**
    * Upload a fresh meta/global record
+   *
    * @throws the response object if the upload request was not a success
    */
   async _uploadNewMetaGlobal() {
@@ -1441,6 +1452,7 @@ Sync11Service.prototype = {
 
   /**
    * Upload meta/global, throwing the response on failure
+   *
    * @param {WBORecord} meta meta/global record
    * @throws the response object if the request was not a success
    */
@@ -1460,8 +1472,9 @@ Sync11Service.prototype = {
 
   /**
    * Upload crypto/keys
+   *
    * @param {WBORecord} cryptoKeys crypto/keys record
-   * @param {Number} lastModified known last modified timestamp (in decimal seconds),
+   * @param {number} lastModified known last modified timestamp (in decimal seconds),
    *                 will be used to set the X-If-Unmodified-Since header
    */
   async _uploadCryptoKeys(cryptoKeys, lastModified) {

@@ -237,7 +237,7 @@ int
 nr_stun_attr_string_illegal(nr_stun_attr_info *attr_info, size_t len, void *data, size_t max_bytes, size_t max_chars)
 {
     int _status;
-    char *s = data;
+    char *s = (char*)data;
     size_t nchars;
 
     if (len > max_bytes) {
@@ -260,7 +260,7 @@ int
 nr_stun_attr_error_code_illegal(nr_stun_attr_info *attr_info, size_t attrlen, void *data)
 {
     int r,_status;
-    nr_stun_attr_error_code *ec = data;
+    nr_stun_attr_error_code *ec = (nr_stun_attr_error_code*)data;
 
     if (ec->number < 300 || ec->number > 699)
         ABORT(R_FAILED);
@@ -298,7 +298,7 @@ nr_stun_attr_username_illegal(nr_stun_attr_info *attr_info, size_t attrlen, void
 }
 
 static int
-nr_stun_attr_codec_UCHAR_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_UCHAR_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %u", msg, attr_info->name, *(UCHAR*)data);
     return 0;
@@ -347,7 +347,7 @@ nr_stun_attr_codec nr_stun_attr_codec_UCHAR = {
 };
 
 static int
-nr_stun_attr_codec_UINT4_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_UINT4_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %u", msg, attr_info->name, *(UINT4*)data);
     return 0;
@@ -390,7 +390,7 @@ nr_stun_attr_codec nr_stun_attr_codec_UINT4 = {
 };
 
 static int
-nr_stun_attr_codec_UINT8_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_UINT8_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %llu", msg, attr_info->name, *(UINT8*)data);
     return 0;
@@ -433,7 +433,7 @@ nr_stun_attr_codec nr_stun_attr_codec_UINT8 = {
 };
 
 static int
-nr_stun_attr_codec_addr_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_addr_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %s", msg, attr_info->name, ((nr_transport_addr*)data)->as_string);
     return 0;
@@ -444,7 +444,7 @@ nr_stun_attr_codec_addr_encode(nr_stun_attr_info *attr_info, void *data, size_t 
 {
     int r,_status;
     int start = offset;
-    nr_transport_addr *addr = data;
+    nr_transport_addr *addr = (nr_transport_addr*)data;
     UCHAR pad = '\0';
     UCHAR family;
 
@@ -494,7 +494,7 @@ nr_stun_attr_codec_addr_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCH
     UINT2 port;
     UINT4 addr4;
     struct in6_addr addr6;
-    nr_transport_addr *result = data;
+    nr_transport_addr *result = (nr_transport_addr*)data;
 
     if (nr_stun_decode(1, buf, buflen, &offset, &pad)
      || nr_stun_decode(1, buf, buflen, &offset, &family))
@@ -548,9 +548,9 @@ nr_stun_attr_codec nr_stun_attr_codec_addr = {
 };
 
 static int
-nr_stun_attr_codec_data_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_data_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_data *d = data;
+    nr_stun_attr_data *d = (nr_stun_attr_data*)data;
     r_dump(NR_LOG_STUN, LOG_DEBUG, attr_info->name, (char*)d->data, d->length);
     return 0;
 }
@@ -558,7 +558,7 @@ nr_stun_attr_codec_data_print(nr_stun_attr_info *attr_info, char *msg, void *dat
 static int
 nr_stun_attr_codec_data_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
-    nr_stun_attr_data *d = data;
+    nr_stun_attr_data *d = (nr_stun_attr_data*)data;
     int start = offset;
 
     if (nr_stun_encode_htons(attr_info->type     , buflen, buf, &offset)
@@ -575,7 +575,7 @@ static int
 nr_stun_attr_codec_data_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int _status;
-    nr_stun_attr_data *result = data;
+    nr_stun_attr_data *result = (nr_stun_attr_data*)data;
 
     /* -1 because it is going to be null terminated just to be safe */
     if (attrlen >= (sizeof(result->data) - 1)) {
@@ -602,9 +602,9 @@ nr_stun_attr_codec nr_stun_attr_codec_data = {
 };
 
 static int
-nr_stun_attr_codec_error_code_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_error_code_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_error_code *error_code = data;
+    nr_stun_attr_error_code *error_code = (nr_stun_attr_error_code*)data;
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %d %s",
                           msg, attr_info->name, error_code->number,
                           error_code->reason);
@@ -614,18 +614,18 @@ nr_stun_attr_codec_error_code_print(nr_stun_attr_info *attr_info, char *msg, voi
 static int
 nr_stun_attr_codec_error_code_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
-    nr_stun_attr_error_code *error_code = data;
+    nr_stun_attr_error_code *error_code = (nr_stun_attr_error_code*)data;
     int start = offset;
     int length = strlen(error_code->reason);
     UCHAR pad[2] = { 0 };
-    UCHAR class = error_code->number / 100;
-    UCHAR number = error_code->number % 100;
+    UCHAR err_class = error_code->number / 100;
+    UCHAR err_number = error_code->number % 100;
 
     if (nr_stun_encode_htons(attr_info->type   , buflen, buf, &offset)
      || nr_stun_encode_htons(4 + length        , buflen, buf, &offset)
      || nr_stun_encode(pad, 2                  , buflen, buf, &offset)
-     || nr_stun_encode(&class, 1               , buflen, buf, &offset)
-     || nr_stun_encode(&number, 1              , buflen, buf, &offset)
+     || nr_stun_encode(&err_class, 1           , buflen, buf, &offset)
+     || nr_stun_encode(&err_number, 1          , buflen, buf, &offset)
      || nr_stun_encode((UCHAR*)error_code->reason, length, buflen, buf, &offset))
         return R_FAILED;
 
@@ -638,18 +638,18 @@ static int
 nr_stun_attr_codec_error_code_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int _status;
-    nr_stun_attr_error_code *result = data;
+    nr_stun_attr_error_code *result = (nr_stun_attr_error_code*)data;
     UCHAR pad[2];
-    UCHAR class;
-    UCHAR number;
+    UCHAR err_class;
+    UCHAR err_number;
     size_t size_reason;
 
     if (nr_stun_decode(2, buf, buflen, &offset, pad)
-     || nr_stun_decode(1, buf, buflen, &offset, &class)
-     || nr_stun_decode(1, buf, buflen, &offset, &number))
+     || nr_stun_decode(1, buf, buflen, &offset, &err_class)
+     || nr_stun_decode(1, buf, buflen, &offset, &err_number))
         ABORT(R_FAILED);
 
-    result->number = (class * 100) + number;
+    result->number = (err_class * 100) + err_number;
 
     size_reason = attrlen - 4;
 
@@ -677,9 +677,9 @@ nr_stun_attr_codec nr_stun_attr_codec_error_code = {
 };
 
 static int
-nr_stun_attr_codec_fingerprint_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_fingerprint_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_fingerprint *fingerprint = data;
+    nr_stun_attr_fingerprint *fingerprint = (nr_stun_attr_fingerprint*)data;
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %08x", msg, attr_info->name, fingerprint->checksum);
     return 0;
 }
@@ -688,7 +688,7 @@ static int
 nr_stun_attr_codec_fingerprint_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
     UINT4 checksum;
-    nr_stun_attr_fingerprint *fingerprint = data;
+    nr_stun_attr_fingerprint *fingerprint = (nr_stun_attr_fingerprint*)data;
     nr_stun_message_header *header = (nr_stun_message_header*)buf;
 
     /* the length must include the FINGERPRINT attribute when computing
@@ -714,7 +714,7 @@ static int
 nr_stun_attr_codec_fingerprint_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int r,_status;
-    nr_stun_attr_fingerprint *fingerprint = data;
+    nr_stun_attr_fingerprint *fingerprint = (nr_stun_attr_fingerprint*)data;
     nr_stun_message_header *header = (nr_stun_message_header*)buf;
     size_t length;
     UINT4 checksum;
@@ -761,7 +761,7 @@ nr_stun_attr_codec nr_stun_attr_codec_fingerprint = {
 };
 
 static int
-nr_stun_attr_codec_flag_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_flag_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: on", msg, attr_info->name);
     return 0;
@@ -800,9 +800,9 @@ nr_stun_attr_codec nr_stun_attr_codec_flag = {
 };
 
 static int
-nr_stun_attr_codec_message_integrity_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_message_integrity_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_message_integrity *integrity = data;
+    nr_stun_attr_message_integrity *integrity = (nr_stun_attr_message_integrity*)data;
     r_dump(NR_LOG_STUN, LOG_DEBUG, attr_info->name, (char*)integrity->hash, sizeof(integrity->hash));
     return 0;
 }
@@ -842,7 +842,7 @@ static int
 nr_stun_attr_codec_message_integrity_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
     int start = offset;
-    nr_stun_attr_message_integrity *integrity = data;
+    nr_stun_attr_message_integrity *integrity = (nr_stun_attr_message_integrity*)data;
 
     if (nr_stun_compute_message_integrity(buf, offset, integrity->password, integrity->passwordlen, integrity->hash))
         return R_FAILED;
@@ -862,7 +862,7 @@ nr_stun_attr_codec_message_integrity_decode(nr_stun_attr_info *attr_info, size_t
 {
     int _status;
     int start;
-    nr_stun_attr_message_integrity *result = data;
+    nr_stun_attr_message_integrity *result = (nr_stun_attr_message_integrity*)data;
     UCHAR computedHMAC[20];
 
     result->valid = 0;
@@ -917,7 +917,7 @@ nr_stun_attr_codec nr_stun_attr_codec_noop = {
 };
 
 static int
-nr_stun_attr_codec_quoted_string_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_quoted_string_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %s",
                           msg, attr_info->name, (char*)data);
@@ -948,7 +948,7 @@ nr_stun_attr_codec nr_stun_attr_codec_quoted_string = {
 };
 
 static int
-nr_stun_attr_codec_string_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_string_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %s",
                           msg, attr_info->name, (char*)data);
@@ -959,7 +959,7 @@ static int
 nr_stun_attr_codec_string_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
     int start = offset;
-    char *str = data;
+    char *str = (char*)data;
     int length = strlen(str);
 
     if (nr_stun_encode_htons(attr_info->type  , buflen, buf, &offset)
@@ -976,7 +976,7 @@ static int
 nr_stun_attr_codec_string_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int _status;
-    char *result = data;
+    char *result = (char*)data;
 
     /* actual enforcement of the specific string size happens elsewhere */
     if (attrlen >= NR_STUN_MAX_STRING_SIZE) {
@@ -1010,9 +1010,9 @@ nr_stun_attr_codec nr_stun_attr_codec_string = {
 };
 
 static int
-nr_stun_attr_codec_unknown_attributes_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_unknown_attributes_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_unknown_attributes *unknown_attributes = data;
+    nr_stun_attr_unknown_attributes *unknown_attributes = (nr_stun_attr_unknown_attributes*)data;
     char type[9];
     char str[64 + (NR_STUN_MAX_UNKNOWN_ATTRIBUTES * sizeof(type))];
     int i;
@@ -1032,7 +1032,7 @@ nr_stun_attr_codec_unknown_attributes_encode(nr_stun_attr_info *attr_info, void 
 {
     int _status;
     int start = offset;
-    nr_stun_attr_unknown_attributes *unknown_attributes = data;
+    nr_stun_attr_unknown_attributes *unknown_attributes = (nr_stun_attr_unknown_attributes*)data;
     int length = (2 * unknown_attributes->num_attributes);
     int i;
 
@@ -1061,7 +1061,7 @@ static int
 nr_stun_attr_codec_unknown_attributes_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int _status;
-    nr_stun_attr_unknown_attributes *unknown_attributes = data;
+    nr_stun_attr_unknown_attributes *unknown_attributes = (nr_stun_attr_unknown_attributes*)data;
     int i;
     UINT2 *a;
 
@@ -1096,9 +1096,9 @@ nr_stun_attr_codec nr_stun_attr_codec_unknown_attributes = {
 };
 
 static int
-nr_stun_attr_codec_xor_mapped_address_print(nr_stun_attr_info *attr_info, char *msg, void *data)
+nr_stun_attr_codec_xor_mapped_address_print(nr_stun_attr_info *attr_info, const char *msg, void *data)
 {
-    nr_stun_attr_xor_mapped_address *xor_mapped_address = data;
+    nr_stun_attr_xor_mapped_address *xor_mapped_address = (nr_stun_attr_xor_mapped_address*)data;
     r_log(NR_LOG_STUN, LOG_DEBUG, "%s %s: %s (unmasked) %s (masked)",
                           msg, attr_info->name,
                           xor_mapped_address->unmasked.as_string,
@@ -1109,7 +1109,7 @@ nr_stun_attr_codec_xor_mapped_address_print(nr_stun_attr_info *attr_info, char *
 static int
 nr_stun_attr_codec_xor_mapped_address_encode(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen)
 {
-    nr_stun_attr_xor_mapped_address *xor_mapped_address = data;
+    nr_stun_attr_xor_mapped_address *xor_mapped_address = (nr_stun_attr_xor_mapped_address*)data;
     nr_stun_message_header *header = (nr_stun_message_header*)buf;
     UINT4 magic_cookie;
 
@@ -1135,7 +1135,7 @@ static int
 nr_stun_attr_codec_xor_mapped_address_decode(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data)
 {
     int r,_status;
-    nr_stun_attr_xor_mapped_address *xor_mapped_address = data;
+    nr_stun_attr_xor_mapped_address *xor_mapped_address = (nr_stun_attr_xor_mapped_address*)data;
     nr_stun_message_header *header = (nr_stun_message_header*)buf;
     UINT4 magic_cookie;
 
@@ -1342,7 +1342,7 @@ nr_stun_encode_message(nr_stun_message *msg)
 
     if ((r=nr_stun_encode((UCHAR*)(&msg->header.id), sizeof(msg->header.id), sizeof(msg->buffer), msg->buffer, &msg->length)))
         ABORT(r);
-    r_dump(NR_LOG_STUN, LOG_DEBUG, "Encoded ID", (void*)&msg->header.id, sizeof(msg->header.id));
+    r_dump(NR_LOG_STUN, LOG_DEBUG, "Encoded ID", (const char*)&msg->header.id, sizeof(msg->header.id));
 
     TAILQ_FOREACH(attr, &msg->attributes, entry) {
         if ((r=nr_stun_find_attr_info(attr->type, &attr_info))) {
@@ -1435,7 +1435,7 @@ nr_stun_decode_message(nr_stun_message *msg, int (*get_password)(void *arg, nr_s
         r_log(NR_LOG_STUN, LOG_DEBUG, "Parsed MsgType: 0x%03x", msg->header.type);
     r_log(NR_LOG_STUN, LOG_DEBUG, "Parsed Length: %d", msg->header.length);
     r_log(NR_LOG_STUN, LOG_DEBUG, "Parsed Cookie: %08x", msg->header.magic_cookie);
-    r_dump(NR_LOG_STUN, LOG_DEBUG, "Parsed ID", (void*)&msg->header.id, sizeof(msg->header.id));
+    r_dump(NR_LOG_STUN, LOG_DEBUG, "Parsed ID", (const char*)&msg->header.id, sizeof(msg->header.id));
 
     if (msg->header.length + sizeof(msg->header) != msg->length) {
        r_log(NR_LOG_STUN, LOG_WARNING, "Inconsistent message header length: %d/%d",

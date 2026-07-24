@@ -27,13 +27,13 @@ The function has the following parameters:
    Specifies which directory entries, if any, to skip. Values can
    include the following:
 
-    - :ref:`PR_SKIP_NONE`. Do not skip any files.
-    - :ref:`PR_SKIP_DOT`. Skip the directory entry "." representing the
+    - ``PR_SKIP_NONE``. Do not skip any files.
+    - ``PR_SKIP_DOT``. Skip the directory entry "." representing the
       current directory.
-    - :ref:`PR_SKIP_DOT_DOT`. Skip the directory entry ".." representing
+    - ``PR_SKIP_DOT_DOT``. Skip the directory entry ".." representing
       the parent directory.
-    - :ref:`PR_SKIP_BOTH`. Skip both "." and ".."
-    - :ref:`PR_SKIP_HIDDEN`. Skip hidden files. On Windows platforms and
+    - ``PR_SKIP_BOTH``. Skip both "." and ".."
+    - ``PR_SKIP_HIDDEN``. Skip hidden files. On Windows platforms and
       the Mac OS, this value identifies files with the "hidden"
       attribute set. On Unix platform, this value identifies files whose
       names begin with a period (".").

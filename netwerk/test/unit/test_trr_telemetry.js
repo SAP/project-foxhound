@@ -13,13 +13,21 @@ const { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
-function setup() {
-  h2Port = trr_test_setup();
-}
+let trrServer;
+add_setup(async function setup() {
+  trr_test_setup();
+  Services.prefs.setBoolPref("network.trr.useGET", false);
 
-setup();
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
+});
+
 registerCleanupFunction(async () => {
   trr_clear_prefs();
+  if (trrServer) {
+    await trrServer.stop();
+  }
 });
 
 async function trrLookup(mode, rolloutMode) {
@@ -106,7 +114,7 @@ async function trrByTypeLookup(trrURI, expectedSuccess, expectedSkipReason) {
 }
 
 add_task(async function test_trr_by_type_lookup_success() {
-  await trrByTypeLookup("httpssvc", true, Ci.nsITRRSkipReason.TRR_OK);
+  await trrByTypeLookup("doh?httpssvc=1", true, Ci.nsITRRSkipReason.TRR_OK);
 });
 
 add_task(async function test_trr_by_type_lookup_fail() {

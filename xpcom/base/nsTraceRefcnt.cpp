@@ -41,13 +41,11 @@
 #  include <unistd.h>
 #endif
 
-#include "mozilla/Atomics.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BlockingResourceBase.h"
 #include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/UniquePtr.h"
 
-#include <string>
 #include <vector>
 
 #ifdef HAVE_DLFCN_H

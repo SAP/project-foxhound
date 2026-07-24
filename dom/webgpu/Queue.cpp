@@ -3,53 +3,130 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/WebGPUBinding.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "Queue.h"
 
 #include <algorithm>
 
 #include "CommandBuffer.h"
 #include "CommandEncoder.h"
+#include "ExternalTexture.h"
+#include "Utility.h"
 #include "ipc/WebGPUChild.h"
 #include "mozilla/Casting.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BufferSourceBinding.h"
-#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WebGLTexelConversions.h"
 #include "mozilla/dom/WebGLTypes.h"
+#include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "nsLayoutUtils.h"
-#include "Utility.h"
 
 namespace mozilla::webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(Queue, mParent, mBridge)
+GPU_IMPL_CYCLE_COLLECTION(Queue, mParent)
 GPU_IMPL_JS_WRAP(Queue)
 
-Queue::Queue(Device* const aParent, WebGPUChild* aBridge, RawId aId)
-    : ChildOf(aParent), mId(aId), mBridge(aBridge) {
-  MOZ_RELEASE_ASSERT(aId);
-}
+Queue::Queue(Device* const aParent, RawId aId)
+    : ObjectBase(aParent->GetChild(), aId, ffi::wgpu_client_drop_queue),
+      ChildOf(aParent) {}
 
-Queue::~Queue() { Cleanup(); }
+Queue::~Queue() = default;
+
+struct ExternalTextureWorkDoneHandler : dom::PromiseNativeHandler {
+  NS_DECL_ISUPPORTS
+
+  explicit ExternalTextureWorkDoneHandler(
+      nsTArray<RefPtr<ExternalTexture>>&& aExternalTextures,
+      uint64_t aSubmissionId)
+      : mExternalTextures(std::move(aExternalTextures)),
+        mSubmissionId(aSubmissionId) {}
+
+  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                        ErrorResult& aRv) override {
+    for (const auto& externalTexture : mExternalTextures) {
+      externalTexture->OnSubmittedWorkDone(mSubmissionId);
+    }
+  }
+  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                        ErrorResult& aRv) override {
+    MOZ_ASSERT_UNREACHABLE("Work done promise should not be rejected");
+  }
+
+ private:
+  ~ExternalTextureWorkDoneHandler() = default;
+  // We must hold a strong reference to the external textures to ensure that
+  // they are not released before all work involving them is done.
+  const nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
+  const uint64_t mSubmissionId;
+};
+
+NS_IMPL_ISUPPORTS0(ExternalTextureWorkDoneHandler)
 
 void Queue::Submit(
     const dom::Sequence<OwningNonNull<CommandBuffer>>& aCommandBuffers) {
   nsTArray<RawId> list(aCommandBuffers.Length());
+  nsTArray<RefPtr<ExternalTexture>> externalTextures;
   for (uint32_t i = 0; i < aCommandBuffers.Length(); ++i) {
     auto idMaybe = aCommandBuffers[i]->Commit();
+
+    // Generate a validation error if any external texture used by any command
+    // buffer is expired. Technically this is a Device timeline step, but since
+    // the external texture's expired state is only set on the content timeline
+    // it is functionally equivalent to check here and raise any error on the
+    // device timeline. A compromised content process could skip this step, but
+    // equally it could skip setting the external texture's expired state even
+    // if this check were performed on the server side.
+    // https://www.w3.org/TR/webgpu/#dom-gpuqueue-submit
+    for (const auto& externalTexture :
+         aCommandBuffers[i]->GetExternalTextures()) {
+      if (externalTexture->IsExpired()) {
+        ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(),
+                                          "External texture is expired");
+        return;
+      }
+    }
+    externalTextures.AppendElements(aCommandBuffers[i]->GetExternalTextures());
+
     if (idMaybe) {
-      list.AppendElement(*idMaybe);
+      list.AppendElement(idMaybe);
     }
   }
 
-  mBridge->QueueSubmit(mId, mParent->mId, list);
+  nsTArray<RawId> externalTextureSourceIds;
+  for (auto& externalTexture : externalTextures) {
+    externalTextureSourceIds.AppendElement(externalTexture->Source()->GetId());
+  }
+
+  GetChild()->QueueSubmit(GetId(), mParent->GetId(), list,
+                          externalTextureSourceIds);
+
+  if (!externalTextures.IsEmpty()) {
+    for (const auto& externalTexture : externalTextures) {
+      externalTexture->OnSubmit(mNextExternalTextureSubmissionIndex);
+    }
+    ErrorResult rv;
+    RefPtr<dom::Promise> promise = OnSubmittedWorkDone(rv);
+    // Without this promise we have no way of knowing when work involving the
+    // external textures is done. This would lead to us holding on to the
+    // external texture's resources indefinitely, which we don't want.
+    // The alternative of releasing the resources immediately is unacceptable
+    // while there is still pending work, so just crash.
+    MOZ_RELEASE_ASSERT(promise);
+    RefPtr<ExternalTextureWorkDoneHandler> handler =
+        new ExternalTextureWorkDoneHandler(std::move(externalTextures),
+                                           mNextExternalTextureSubmissionIndex);
+    promise->AppendNativeHandler(handler);
+
+    mNextExternalTextureSubmissionIndex++;
+  }
 }
 
 already_AddRefed<dom::Promise> Queue::OnSubmittedWorkDone(ErrorResult& aRv) {
@@ -58,11 +135,9 @@ already_AddRefed<dom::Promise> Queue::OnSubmittedWorkDone(ErrorResult& aRv) {
     return nullptr;
   }
 
-  ffi::wgpu_client_on_submitted_work_done(mBridge->GetClient(), mId);
+  ffi::wgpu_client_on_submitted_work_done(GetClient(), GetId());
 
-  auto pending_promise = RefPtr(promise);
-  mBridge->mPendingOnSubmittedWorkDonePromises.push_back(
-      std::move(pending_promise));
+  GetChild()->EnqueueOnSubmittedWorkDonePromise(GetId(), promise);
 
   return promise.forget();
 }
@@ -72,7 +147,7 @@ void Queue::WriteBuffer(
     const dom::MaybeSharedArrayBufferOrMaybeSharedArrayBufferView& aData,
     uint64_t aDataOffset, const dom::Optional<uint64_t>& aSize,
     ErrorResult& aRv) {
-  if (!aBuffer.mId) {
+  if (!aBuffer.GetId()) {
     // Invalid buffers are unknown to the parent -- don't try to write
     // to them.
     return;
@@ -85,75 +160,75 @@ void Queue::WriteBuffer(
       elementByteSize = byteSize(type);
     }
   }
-  dom::ProcessTypedArraysFixed(
-      aData, [&, elementByteSize](const Span<const uint8_t>& aData) {
-        uint64_t byteLength = aData.Length();
+  dom::ProcessTypedArraysFixed(aData, [&, elementByteSize](
+                                          const Span<const uint8_t>& aData) {
+    uint64_t byteLength = aData.Length();
 
-        auto checkedByteOffset =
-            CheckedInt<uint64_t>(aDataOffset) * elementByteSize;
-        if (!checkedByteOffset.isValid()) {
-          aRv.ThrowOperationError("offset x element size overflows");
-          return;
-        }
-        auto offset = checkedByteOffset.value();
+    auto checkedByteOffset =
+        CheckedInt<uint64_t>(aDataOffset) * elementByteSize;
+    if (!checkedByteOffset.isValid()) {
+      aRv.ThrowOperationError("offset x element size overflows");
+      return;
+    }
+    auto offset = checkedByteOffset.value();
 
-        size_t size;
-        if (aSize.WasPassed()) {
-          const auto checkedByteSize =
-              CheckedInt<size_t>(aSize.Value()) * elementByteSize;
-          if (!checkedByteSize.isValid()) {
-            aRv.ThrowOperationError("write size x element size overflows");
-            return;
-          }
-          size = checkedByteSize.value();
-        } else {
-          const auto checkedByteSize = CheckedInt<size_t>(byteLength) - offset;
-          if (!checkedByteSize.isValid()) {
-            aRv.ThrowOperationError("data byte length - offset underflows");
-            return;
-          }
-          size = checkedByteSize.value();
-        }
+    size_t size;
+    if (aSize.WasPassed()) {
+      const auto checkedByteSize =
+          CheckedInt<size_t>(aSize.Value()) * elementByteSize;
+      if (!checkedByteSize.isValid()) {
+        aRv.ThrowOperationError("write size x element size overflows");
+        return;
+      }
+      size = checkedByteSize.value();
+    } else {
+      const auto checkedByteSize = CheckedInt<size_t>(byteLength) - offset;
+      if (!checkedByteSize.isValid()) {
+        aRv.ThrowOperationError("data byte length - offset underflows");
+        return;
+      }
+      size = checkedByteSize.value();
+    }
 
-        auto checkedByteEnd = CheckedInt<uint64_t>(offset) + size;
-        if (!checkedByteEnd.isValid() || checkedByteEnd.value() > byteLength) {
-          aRv.ThrowOperationError(
-              nsPrintfCString("Wrong data size %" PRIuPTR, size));
-          return;
-        }
+    auto checkedByteEnd = CheckedInt<uint64_t>(offset) + size;
+    if (!checkedByteEnd.isValid() || checkedByteEnd.value() > byteLength) {
+      aRv.ThrowOperationError(
+          nsPrintfCString("Wrong data size %" PRIuPTR, size));
+      return;
+    }
 
-        if (size % 4 != 0) {
-          aRv.ThrowOperationError("Byte size must be a multiple of 4");
-          return;
-        }
+    if (size % 4 != 0) {
+      aRv.ThrowOperationError("Byte size must be a multiple of 4");
+      return;
+    }
 
-        if (size < 1024) {
-          ipc::ByteBuf bb{};
-          bb.Allocate(size);
-          memcpy(bb.mData, aData.Elements() + offset, size);
-          auto data_buffer_index = mBridge->QueueDataBuffer(std::move(bb));
-          ffi::wgpu_queue_write_buffer_inline(mBridge->GetClient(),
-                                              mParent->mId, mId, aBuffer.mId,
-                                              aBufferOffset, data_buffer_index);
-          return;
-        }
+    if (size < 1024) {
+      ipc::ByteBuf bb{};
+      bb.Allocate(size);
+      memcpy(bb.mData, aData.Elements() + offset, size);
+      auto data_buffer_index = GetChild()->QueueDataBuffer(std::move(bb));
+      ffi::wgpu_queue_write_buffer_inline(GetClient(), mParent->GetId(),
+                                          GetId(), aBuffer.GetId(),
+                                          aBufferOffset, data_buffer_index);
+      return;
+    }
 
-        mozilla::ipc::MutableSharedMemoryHandle handle;
-        if (size != 0) {
-          handle = mozilla::ipc::shared_memory::Create(size);
-          auto mapping = handle.Map();
-          if (!handle || !mapping) {
-            aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-            return;
-          }
+    mozilla::ipc::MutableSharedMemoryHandle handle;
+    if (size != 0) {
+      handle = mozilla::ipc::shared_memory::Create(size);
+      auto mapping = handle.Map();
+      if (!handle || !mapping) {
+        aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+        return;
+      }
 
-          memcpy(mapping.DataAs<uint8_t>(), aData.Elements() + offset, size);
-        }
-        auto shmem_handle_index = mBridge->QueueShmemHandle(std::move(handle));
-        ffi::wgpu_queue_write_buffer_via_shmem(
-            mBridge->GetClient(), mParent->mId, mId, aBuffer.mId, aBufferOffset,
-            shmem_handle_index);
-      });
+      memcpy(mapping.DataAs<uint8_t>(), aData.Elements() + offset, size);
+    }
+    auto shmem_handle_index = GetChild()->QueueShmemHandle(std::move(handle));
+    ffi::wgpu_queue_write_buffer_via_shmem(GetClient(), mParent->GetId(),
+                                           GetId(), aBuffer.GetId(),
+                                           aBufferOffset, shmem_handle_index);
+  });
 }
 
 static CheckedInt<size_t> ComputeApproxSize(
@@ -253,10 +328,10 @@ void Queue::WriteTexture(
       handle = mozilla::ipc::MutableSharedMemoryHandle();
     }
 
-    auto shmem_handle_index = mBridge->QueueShmemHandle(std::move(handle));
-    ffi::wgpu_queue_write_texture_via_shmem(mBridge->GetClient(), mParent->mId,
-                                            mId, copyView, dataLayout, extent,
-                                            shmem_handle_index);
+    auto shmem_handle_index = GetChild()->QueueShmemHandle(std::move(handle));
+    ffi::wgpu_queue_write_texture_via_shmem(GetClient(), mParent->GetId(),
+                                            GetId(), copyView, dataLayout,
+                                            extent, shmem_handle_index);
   });
 }
 
@@ -524,9 +599,9 @@ void Queue::CopyExternalImageToTexture(
   ffi::WGPUTexelCopyTextureInfo copyView = {};
   CommandEncoder::ConvertTextureCopyViewToFFI(aDestination, &copyView);
 
-  auto shmem_handle_index = mBridge->QueueShmemHandle(std::move(handle));
-  ffi::wgpu_queue_write_texture_via_shmem(mBridge->GetClient(), mParent->mId,
-                                          mId, copyView, dataLayout, extent,
+  auto shmem_handle_index = GetChild()->QueueShmemHandle(std::move(handle));
+  ffi::wgpu_queue_write_texture_via_shmem(GetClient(), mParent->GetId(),
+                                          GetId(), copyView, dataLayout, extent,
                                           shmem_handle_index);
 }
 

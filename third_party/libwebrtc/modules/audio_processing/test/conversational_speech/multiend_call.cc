@@ -11,9 +11,21 @@
 #include "modules/audio_processing/test/conversational_speech/multiend_call.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <iterator>
+#include <map>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
+#include "modules/audio_processing/test/conversational_speech/timing.h"
+#include "modules/audio_processing/test/conversational_speech/wavreader_abstract_factory.h"
+#include "modules/audio_processing/test/conversational_speech/wavreader_interface.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "test/testsupport/file_utils.h"
 
@@ -22,7 +34,7 @@ namespace test {
 namespace conversational_speech {
 
 MultiEndCall::MultiEndCall(
-    rtc::ArrayView<const Turn> timing,
+    ArrayView<const Turn> timing,
     absl::string_view audiotracks_path,
     std::unique_ptr<WavReaderAbstractFactory> wavreader_abstract_factory)
     : timing_(timing),
@@ -97,8 +109,8 @@ bool MultiEndCall::CheckTiming() {
   speaking_turns_.clear();
 
   // Begin and end timestamps for the last two turns (unit: number of samples).
-  Interval second_last_turn = {0, 0};
-  Interval last_turn = {0, 0};
+  Interval second_last_turn = {.begin = 0, .end = 0};
+  Interval last_turn = {.begin = 0, .end = 0};
 
   // Initialize map to store speaking turn indices of each speaker (used to
   // detect self cross-talk).

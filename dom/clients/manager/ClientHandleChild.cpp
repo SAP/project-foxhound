@@ -64,7 +64,7 @@ void ClientHandleChild::MaybeStartTeardown() {
     return;
   }
   mTeardownStarted = true;
-  Unused << SendTeardown();
+  (void)SendTeardown();
 }
 
 }  // namespace mozilla::dom

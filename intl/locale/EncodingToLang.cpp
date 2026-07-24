@@ -20,7 +20,7 @@ using namespace mozilla::intl;
 // 1. Putting the pointers in a static array in Rust, at a distance.
 // 2. Run-time initializer.
 // 3. Using pointer pointers, as seen here.
-const mozilla::NotNull<const mozilla::Encoding *> *
+const mozilla::NotNull<const mozilla::Encoding*>*
     EncodingToLang::kEncodingsByRoughFrequency[] = {
 #define _(encoding, lang) &encoding,
 #include "EncodingsByFrequency.inc"

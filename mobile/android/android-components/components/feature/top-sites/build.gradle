@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.devtools.ksp'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas".toString())
             arg("room.generateKotlin", "true")
@@ -22,13 +21,6 @@ android {
             annotationProcessorOptions {
                 arguments += ["room.incremental": "true"]
             }
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -42,17 +34,15 @@ android {
 dependencies {
     implementation project(':components:browser-storage-sync')
     implementation project(':components:concept-toolbar')
-    implementation project(':components:support-ktx')
     implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
 
-    implementation libs.kotlin.coroutines
-
-    implementation libs.androidx.paging
     implementation libs.androidx.lifecycle.livedata
-
+    implementation libs.androidx.paging
     implementation libs.androidx.room.runtime
     ksp libs.androidx.room.compiler
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
 
@@ -60,22 +50,22 @@ dependencies {
     testImplementation libs.androidx.test.junit
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
-    testRuntimeOnly libs.junit.vintage
     testRuntimeOnly libs.junit.platform.launcher
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
-    testImplementation libs.kotlin.coroutines
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.kotlinx.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
     androidTestImplementation project(':components:support-android-test')
 
-    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.arch.core.testing
+    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
-    androidTestImplementation libs.testing.coroutines
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlinx.coroutines.test
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

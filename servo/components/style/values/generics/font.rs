@@ -4,6 +4,7 @@
 
 //! Generic types for font stuff.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::animated::ToAnimatedZero;
 use crate::{One, Zero};
@@ -101,7 +102,17 @@ impl<T> TaggedFontValue for VariationValue<T> {
 
 /// A value both for font-variation-settings and font-feature-settings.
 #[derive(
-    Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedValue, ToCss, ToResolvedValue, ToShmem,
+    Clone,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[css(comma)]
@@ -222,7 +233,9 @@ pub enum FontStyle<Angle> {
 
 impl<Angle: Zero> FontStyle<Angle> {
     /// Return the 'normal' value, which is represented as 'oblique 0deg'.
-    pub fn normal() -> Self { Self::Oblique(Angle::zero()) }
+    pub fn normal() -> Self {
+        Self::Oblique(Angle::zero())
+    }
 }
 
 /// A generic value for the `font-size-adjust` property.
@@ -245,6 +258,7 @@ impl<Angle: Zero> FontStyle<Angle> {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 pub enum GenericFontSizeAdjust<Factor> {
     #[animation(error)]
@@ -294,6 +308,7 @@ impl<Factor: ToCss> ToCss for GenericFontSizeAdjust<Factor> {
     ToCss,
     ToShmem,
     Parse,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C, u8)]

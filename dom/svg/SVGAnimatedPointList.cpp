@@ -102,7 +102,7 @@ nsresult SVGAnimatedPointList::SetAnimValue(const SVGPointList& aNewAnimValue,
     domWrapper->InternalListWillChangeTo(aNewAnimValue);
   }
   if (!mAnimVal) {
-    mAnimVal = MakeUnique<SVGPointList>();
+    mAnimVal = std::make_unique<SVGPointList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aNewAnimValue);
   if (NS_FAILED(rv)) {
@@ -130,8 +130,9 @@ void SVGAnimatedPointList::ClearAnimValue(SVGElement* aElement) {
   aElement->DidAnimatePointList();
 }
 
-UniquePtr<SMILAttr> SVGAnimatedPointList::ToSMILAttr(SVGElement* aElement) {
-  return MakeUnique<SMILAnimatedPointList>(this, aElement);
+std::unique_ptr<SMILAttr> SVGAnimatedPointList::ToSMILAttr(
+    SVGElement* aElement) {
+  return std::make_unique<SMILAnimatedPointList>(this, aElement);
 }
 
 nsresult SVGAnimatedPointList::SMILAnimatedPointList::ValueFromString(

@@ -29,7 +29,6 @@
  *   session to the proxy.
  */
 
-/* eslint-env node */
 /* global serverPort */
 
 "use strict";
@@ -42,6 +41,9 @@ registerCleanupFunction(() => {
 });
 
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 let proxy_port;
 let filter;

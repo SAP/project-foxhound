@@ -218,7 +218,7 @@ void BaseHistory::SendPendingVisitedResultsToChildProcesses() {
       }
     }
     if (!resultsForProcess.IsEmpty()) {
-      Unused << NS_WARN_IF(!cp->SendNotifyVisited(resultsForProcess));
+      (void)NS_WARN_IF(!cp->SendNotifyVisited(resultsForProcess));
     }
   }
 }

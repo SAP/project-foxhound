@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_CSSPseudoElement_h
 #define mozilla_dom_CSSPseudoElement_h
 
+#include "PseudoStyleType.h"
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/RefPtr.h"
-#include "nsCSSPseudoElements.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {
@@ -35,17 +34,7 @@ class CSSPseudoElement final : public nsWrapperCache {
                                JS::Handle<JSObject*> aGivenProto) override;
 
   PseudoStyleType GetType() const { return mPseudoType; }
-  void GetType(nsString& aRetVal) const {
-    MOZ_ASSERT(nsCSSPseudoElements::GetPseudoAtom(mPseudoType),
-               "All pseudo-types allowed by this class should have a"
-               " corresponding atom");
-    // Our atoms use one colon and we would like to return two colons syntax
-    // for the returned pseudo type string, so serialize this to the
-    // non-deprecated two colon syntax.
-    aRetVal.Assign(char16_t(':'));
-    aRetVal.Append(
-        nsDependentAtomString(nsCSSPseudoElements::GetPseudoAtom(mPseudoType)));
-  }
+  void GetType(nsString& aRetVal) const;
   dom::Element* Element() const { return mOriginatingElement.get(); }
 
   // Given an element:pseudoType pair, returns the CSSPseudoElement stored as a

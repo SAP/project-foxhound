@@ -2,9 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
+// eslint-disable-next-line mozilla/use-static-import
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
@@ -13,13 +16,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
 
-ChromeUtils.defineLazyGetter(lazy, "log", () => {
-  const { Logger } = ChromeUtils.importESModule(
-    "resource://messaging-system/lib/Logger.sys.mjs"
-  );
-  return new Logger("ASRouterTriggerListeners");
+  log: () => {
+    const { Logger } = ChromeUtils.importESModule(
+      "resource://messaging-system/lib/Logger.sys.mjs"
+    );
+    return new Logger("ASRouterTriggerListeners");
+  },
+
+  newtabPageEnabled: {
+    pref: "browser.newtabpage.enabled",
+    default: true,
+  },
 });
 
 const FEW_MINUTES = 15 * 60 * 1000; // 15 mins
@@ -39,7 +47,11 @@ function isPrivateWindow(win) {
  *
  * @returns {object} - {host, url} pair that matched the list of allowed hosts
  */
-function checkURLMatch(aLocationURI, { hosts, matchPatternSet }, aRequest) {
+function checkURLMatch(
+  aLocationURI,
+  { hosts, matchPatternSet, regexPatterns },
+  aRequest
+) {
   // If checks pass we return a match
   let match;
   try {
@@ -60,6 +72,15 @@ function checkURLMatch(aLocationURI, { hosts, matchPatternSet }, aRequest) {
     }
   }
 
+  // Check against regex patterns
+  if (regexPatterns) {
+    for (const regex of regexPatterns) {
+      if (regex.test(match.url)) {
+        return match;
+      }
+    }
+  }
+
   // Nothing else to check, return early
   if (!aRequest) {
     return false;
@@ -69,12 +90,23 @@ function checkURLMatch(aLocationURI, { hosts, matchPatternSet }, aRequest) {
   const originalLocation = aRequest.QueryInterface(Ci.nsIChannel).originalURI;
   // We have been redirected
   if (originalLocation.spec !== aLocationURI.spec) {
-    return (
-      hosts.has(originalLocation.host) && {
+    if (hosts.has(originalLocation.host)) {
+      return {
         host: originalLocation.host,
         url: originalLocation.spec,
+      };
+    }
+
+    if (regexPatterns) {
+      for (const regex of regexPatterns) {
+        if (regex.test(originalLocation.spec)) {
+          return {
+            host: originalLocation.host,
+            url: originalLocation.spec,
+          };
+        }
       }
-    );
+    }
   }
 
   return false;
@@ -95,6 +127,85 @@ function createMatchPatternSet(patterns, flags) {
  */
 export const ASRouterTriggerListeners = new Map([
   [
+    "selectableProfilesUpdated",
+    {
+      id: "selectableProfilesUpdated",
+      _initialized: false,
+      _triggerHandler: null,
+      // Preferences that manage the "Data Collection and Use" section in
+      // about:preferences#privacy. Changes to these are shared across profiles
+      // in a profile group and should show an infobar in other profiles.
+      _trackedPrefs: [
+        "datareporting.healthreport.uploadEnabled",
+        "datareporting.usage.uploadEnabled",
+        "datareporting.policy.dataSubmissionEnabled",
+        "app.shield.optoutstudies.enabled",
+        "browser.crashReports.unsubmittedCheck.autoSubmit2",
+        "browser.discovery.enabled",
+      ],
+      _lastValues: null,
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          Services.obs.addObserver(this, "sps-profiles-updated");
+          this._initialized = true;
+          this._lastValues = new Map();
+          for (const pref of this._trackedPrefs) {
+            const value = Services.prefs.getBoolPref(pref, false);
+            this._lastValues.set(pref, value);
+          }
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      observe(_aSubject, aTopic, aData) {
+        if (aTopic !== "sps-profiles-updated") {
+          return;
+        }
+        // We only react to changes made by another running instance (other profiles open)
+        if (aData !== "remote") {
+          return;
+        }
+        // Diff the tracked prefs and if any changed, fire the trigger
+        let anyChanged = false;
+        for (const pref of this._trackedPrefs) {
+          const current = Services.prefs.getBoolPref(pref, false);
+          const previous = this._lastValues.get(pref);
+          if (current !== previous) {
+            anyChanged = true;
+            this._lastValues.set(pref, current);
+          }
+        }
+        if (!anyChanged) {
+          return;
+        }
+
+        const browser =
+          Services.wm.getMostRecentBrowserWindow()?.gBrowser?.selectedBrowser;
+        if (browser) {
+          this._triggerHandler(browser, {
+            id: this.id,
+            param: { type: aData },
+          });
+        }
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(this, "sps-profiles-updated");
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._lastValues = null;
+        }
+      },
+
+      QueryInterface: ChromeUtils.generateQI([
+        "nsIObserver",
+        "nsISupportsWeakReference",
+      ]),
+    },
+  ],
+  [
     "openArticleURL",
     {
       id: "openArticleURL",
@@ -103,8 +214,9 @@ export const ASRouterTriggerListeners = new Map([
       _hosts: new Set(),
       _matchPatternSet: null,
       readerModeEvent: "Reader:UpdateReaderButton",
+      _regexPatterns: null,
 
-      init(triggerHandler, hosts, patterns) {
+      init(triggerHandler, hosts, patterns, regexPatterns) {
         if (!this._initialized) {
           this.receiveMessage = this.receiveMessage.bind(this);
           lazy.AboutReaderParent.addMessageListener(this.readerModeEvent, this);
@@ -120,6 +232,13 @@ export const ASRouterTriggerListeners = new Map([
         if (hosts) {
           hosts.forEach(h => this._hosts.add(h));
         }
+
+        if (regexPatterns) {
+          this._regexPatterns = [
+            ...(this._regexPatterns || []),
+            ...regexPatterns.map(pattern => new RegExp(pattern)),
+          ];
+        }
       },
 
       receiveMessage({ data, target }) {
@@ -127,6 +246,7 @@ export const ASRouterTriggerListeners = new Map([
           const match = checkURLMatch(target.currentURI, {
             hosts: this._hosts,
             matchPatternSet: this._matchPatternSet,
+            regexPatterns: this._regexPatterns,
           });
           if (match) {
             this._triggerHandler(target, { id: this.id, param: match });
@@ -144,6 +264,7 @@ export const ASRouterTriggerListeners = new Map([
           this._triggerHandler = null;
           this._hosts = new Set();
           this._matchPatternSet = null;
+          this._regexPatterns = null;
         }
       },
     },
@@ -195,8 +316,9 @@ export const ASRouterTriggerListeners = new Map([
       _hosts: null,
       _matchPatternSet: null,
       _visits: null,
+      regexPatterns: null,
 
-      init(triggerHandler, hosts = [], patterns) {
+      init(triggerHandler, hosts = [], patterns, regexPatterns) {
         if (!this._initialized) {
           this.onTabSwitch = this.onTabSwitch.bind(this);
           lazy.EveryWindow.registerCallback(
@@ -229,10 +351,19 @@ export const ASRouterTriggerListeners = new Map([
         } else {
           this._hosts = new Set(hosts); // Clone the hosts to avoid unexpected behaviour
         }
+
+        if (regexPatterns) {
+          this._regexPatterns = [
+            ...(this._regexPatterns || []),
+            ...regexPatterns.map(pattern => new RegExp(pattern)),
+          ];
+        }
       },
 
-      /* _updateVisits - Record visit timestamps for websites that match `this._hosts` and only
+      /**
+       * _updateVisits - Record visit timestamps for websites that match `this._hosts` and only
        * if it's been more than FEW_MINUTES since the last visit.
+       *
        * @param {string} host - Location host of current selected tab
        * @returns {boolean} - If the new visit has been recorded
        */
@@ -260,6 +391,7 @@ export const ASRouterTriggerListeners = new Map([
         const match = checkURLMatch(gBrowser.currentURI, {
           hosts: this._hosts,
           matchPatternSet: this._matchPatternSet,
+          regexPatterns: this._regexPatterns,
         });
         if (match) {
           this.triggerHandler(gBrowser.selectedBrowser, match);
@@ -298,7 +430,11 @@ export const ASRouterTriggerListeners = new Map([
         if (aWebProgress.isTopLevel && !isSameDocument) {
           const match = checkURLMatch(
             aLocationURI,
-            { hosts: this._hosts, matchPatternSet: this._matchPatternSet },
+            {
+              hosts: this._hosts,
+              matchPatternSet: this._matchPatternSet,
+              regexPatterns: this._regexPatterns,
+            },
             aRequest
           );
           if (match) {
@@ -316,6 +452,7 @@ export const ASRouterTriggerListeners = new Map([
           this._hosts = null;
           this._matchPatternSet = null;
           this._visits = null;
+          this._regexPatterns = null;
         }
       },
     },
@@ -335,12 +472,13 @@ export const ASRouterTriggerListeners = new Map([
       _hosts: null,
       _matchPatternSet: null,
       _visits: null,
+      _regexPatterns: null,
 
       /*
        * If the listener is already initialised, `init` will replace the trigger
        * handler and add any new hosts to `this._hosts`.
        */
-      init(triggerHandler, hosts = [], patterns) {
+      init(triggerHandler, hosts = [], patterns, regexPatterns) {
         if (!this._initialized) {
           this.onLocationChange = this.onLocationChange.bind(this);
           lazy.EveryWindow.registerCallback(
@@ -372,6 +510,13 @@ export const ASRouterTriggerListeners = new Map([
         } else {
           this._hosts = new Set(hosts); // Clone the hosts to avoid unexpected behaviour
         }
+
+        if (regexPatterns) {
+          this._regexPatterns = [
+            ...(this._regexPatterns || []),
+            ...regexPatterns.map(pattern => new RegExp(pattern)),
+          ];
+        }
       },
 
       uninit() {
@@ -383,6 +528,7 @@ export const ASRouterTriggerListeners = new Map([
           this._hosts = null;
           this._matchPatternSet = null;
           this._visits = null;
+          this._regexPatterns = null;
         }
       },
 
@@ -396,7 +542,11 @@ export const ASRouterTriggerListeners = new Map([
         if (aWebProgress.isTopLevel && !isSameDocument) {
           const match = checkURLMatch(
             aLocationURI,
-            { hosts: this._hosts, matchPatternSet: this._matchPatternSet },
+            {
+              hosts: this._hosts,
+              matchPatternSet: this._matchPatternSet,
+              regexPatterns: this._regexPatterns,
+            },
             aRequest
           );
           if (match) {
@@ -612,7 +762,7 @@ export const ASRouterTriggerListeners = new Map([
 
       observe(aSubject, aTopic) {
         switch (aTopic) {
-          case "SiteProtection:ContentBlockingEvent":
+          case "SiteProtection:ContentBlockingEvent": {
             const { browser, host, event } = aSubject.wrappedJSObject;
             if (this._events.filter(e => (e & event) === e).length) {
               this._triggerHandler(browser, {
@@ -627,6 +777,7 @@ export const ASRouterTriggerListeners = new Map([
               });
             }
             break;
+          }
           case "SiteProtection:ContentBlockingMilestone":
             if (this._events.includes(aSubject.wrappedJSObject.event)) {
               this._triggerHandler(
@@ -692,7 +843,7 @@ export const ASRouterTriggerListeners = new Map([
 
       observe(aSubject, aTopic) {
         switch (aTopic) {
-          case "captive-portal-login-success":
+          case "captive-portal-login-success": {
             const browser = Services.wm.getMostRecentBrowserWindow();
             // The check is here rather than in init because some
             // folks leave their browsers running for a long time,
@@ -705,6 +856,7 @@ export const ASRouterTriggerListeners = new Map([
               });
             }
             break;
+          }
         }
       },
 
@@ -739,7 +891,7 @@ export const ASRouterTriggerListeners = new Map([
 
       observe(aSubject, aTopic, aData) {
         switch (aTopic) {
-          case "nsPref:changed":
+          case "nsPref:changed": {
             const browser = Services.wm.getMostRecentBrowserWindow();
             if (browser && this._observedPrefs.includes(aData)) {
               this._triggerHandler(browser.gBrowser.selectedBrowser, {
@@ -750,6 +902,7 @@ export const ASRouterTriggerListeners = new Map([
               });
             }
             break;
+          }
         }
       },
 
@@ -1113,8 +1266,17 @@ export const ASRouterTriggerListeners = new Map([
             lastWakeTime: this._lastWakeTime,
           });
           switch (topic) {
-            case "idle":
+            case "idle": {
               const now = Date.now();
+              // Use the data (idle time in seconds) that nsUserIdleService is
+              // supposed to give us (reading subject.idleTime may trigger a
+              // new system call with different results).
+              const idleTimeSec = parseInt(data, 10);
+              if (isNaN(idleTimeSec)) {
+                throw new Error(
+                  `Idle observer notification received with invalid data: ${data}`
+                );
+              }
               // If the idle notification is within 1 second of the last wake
               // notification, ignore it. We do this to avoid counting time the
               // computer spent asleep as "idle time"
@@ -1122,9 +1284,10 @@ export const ASRouterTriggerListeners = new Map([
                 this._lastWakeTime &&
                 now - this._lastWakeTime < this._wakeDelay;
               if (!isImmediatelyAfterWake) {
-                this._idleSince = now - subject.idleTime;
+                this._idleSince = now - idleTimeSec * 1000;
               }
               break;
+            }
             case "active":
               // Trigger when user returns from being idle.
               if (this._isVisible) {
@@ -1569,7 +1732,8 @@ export const ASRouterTriggerListeners = new Map([
         const existingCallout = this._callouts.get(win);
         const isNewtabOrHome =
           browser.currentURI.spec.startsWith("about:home") ||
-          browser.currentURI.spec.startsWith("about:newtab");
+          (browser.currentURI.spec.startsWith("about:newtab") &&
+            lazy.newtabPageEnabled);
         if (
           existingCallout &&
           (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)
@@ -1602,7 +1766,8 @@ export const ASRouterTriggerListeners = new Map([
             const existingCallout = this._callouts.get(win);
             const isNewtabOrHome =
               browser.currentURI.spec.startsWith("about:home") ||
-              browser.currentURI.spec.startsWith("about:newtab");
+              (browser.currentURI.spec.startsWith("about:newtab") &&
+                lazy.newtabPageEnabled);
             if (
               existingCallout &&
               (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)

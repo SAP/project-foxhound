@@ -9,6 +9,8 @@
  * https://w3c.github.io/webauthn/
  * and
  * https://fedidcg.github.io/FedCM/
+ * and
+ * https://w3c-fedid.github.io/digital-credentials/
  */
 
 [Exposed=Window, SecureContext]
@@ -40,6 +42,8 @@ dictionary CredentialRequestOptions {
   // https://fedidcg.github.io/FedCM/#browser-api-credential-request-options
   [Pref="dom.security.credentialmanagement.identity.enabled"]
   IdentityCredentialRequestOptions identity;
+  [Pref="dom.security.credentialmanagement.digital.enabled"]
+  DigitalCredentialRequestOptions digital;
 };
 
 enum CredentialMediationRequirement {
@@ -50,9 +54,12 @@ enum CredentialMediationRequirement {
 };
 
 dictionary CredentialCreationOptions {
+  CredentialMediationRequirement mediation = "optional";
   // This is taken from the partial definition in
   // https://w3c.github.io/webauthn/#sctn-credentialcreationoptions-extension
   [Pref="security.webauth.webauthn"]
   PublicKeyCredentialCreationOptions publicKey;
+  [Pref="dom.security.credentialmanagement.digital.enabled"]
+  DigitalCredentialCreationOptions digital;
   AbortSignal signal;
 };

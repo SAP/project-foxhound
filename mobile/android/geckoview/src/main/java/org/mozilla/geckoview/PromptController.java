@@ -40,6 +40,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.Prov
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PopupPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse;
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.RedirectPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.RepostConfirmPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.SharePrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
@@ -448,6 +449,19 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     }
   }
 
+  private static final class RedirectHandler implements PromptHandler<RedirectPrompt> {
+    @Override
+    public RedirectPrompt newPrompt(final GeckoBundle info, final Observer observer) {
+      return new RedirectPrompt(info.getString("id"), info.getString("targetUri"), observer);
+    }
+
+    @Override
+    public GeckoResult<PromptResponse> callDelegate(
+        final RedirectPrompt prompt, final GeckoSession session, final PromptDelegate delegate) {
+      return delegate.onRedirectPrompt(session, prompt);
+    }
+  }
+
   private static final class RepostHandler implements PromptHandler<RepostConfirmPrompt> {
     @Override
     public RepostConfirmPrompt newPrompt(final GeckoBundle info, final Observer observer) {
@@ -786,6 +800,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     sPromptHandlers.register(new FileHandler(), "file");
     sPromptHandlers.register(new FolderUploadHandler(), "folderUpload");
     sPromptHandlers.register(new PopupHandler(), "popup");
+    sPromptHandlers.register(new RedirectHandler(), "redirect");
     sPromptHandlers.register(new RepostHandler(), "repost");
     sPromptHandlers.register(new ShareHandler(), "share");
     sPromptHandlers.register(new LoginSaveHandler(), "Autocomplete:Save:Login");

@@ -6,11 +6,11 @@
 
 #include "nsMimeTypeArray.h"
 
+#include "mozilla/StaticPrefs_pdfjs.h"
 #include "mozilla/dom/MimeTypeArrayBinding.h"
 #include "mozilla/dom/MimeTypeBinding.h"
-#include "nsPluginArray.h"
-#include "mozilla/StaticPrefs_pdfjs.h"
 #include "nsContentUtils.h"
+#include "nsPluginArray.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -79,7 +79,11 @@ void nsMimeTypeArray::GetSupportedNames(nsTArray<nsString>& retval) {
   }
 }
 
-bool nsMimeTypeArray::ForceNoPlugins() { return StaticPrefs::pdfjs_disabled(); }
+bool nsMimeTypeArray::ForceNoPlugins() {
+  return StaticPrefs::pdfjs_disabled() &&
+         !nsContentUtils::ShouldResistFingerprinting(
+             mWindow ? mWindow->GetDocShell() : nullptr, RFPTarget::PdfjsSpoof);
+}
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsMimeType, mPluginElement)
 

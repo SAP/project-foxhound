@@ -6,6 +6,7 @@ package mozilla.components.browser.engine.gecko
 
 import android.os.Build
 import android.view.WindowManager
+import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
@@ -17,12 +18,14 @@ import mozilla.components.browser.engine.gecko.ext.isExcludedForTrackingProtecti
 import mozilla.components.browser.engine.gecko.fetch.toResponse
 import mozilla.components.browser.engine.gecko.media.GeckoMediaDelegate
 import mozilla.components.browser.engine.gecko.mediasession.GeckoMediaSessionDelegate
+import mozilla.components.browser.engine.gecko.pageextraction.intoPageExtractionError
 import mozilla.components.browser.engine.gecko.permission.GeckoPermissionRequest
 import mozilla.components.browser.engine.gecko.prompt.GeckoPromptDelegate
 import mozilla.components.browser.engine.gecko.translate.GeckoTranslateSessionDelegate
 import mozilla.components.browser.engine.gecko.translate.GeckoTranslationUtils.intoTranslationError
 import mozilla.components.browser.engine.gecko.window.GeckoWindowRequest
 import mozilla.components.browser.errorpages.ErrorType
+import mozilla.components.concept.engine.DownloadDelegate
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags.Companion.ALLOW_ADDITIONAL_HEADERS
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags.Companion.ALLOW_JAVASCRIPT_URL
@@ -34,6 +37,7 @@ import mozilla.components.concept.engine.history.HistoryItem
 import mozilla.components.concept.engine.history.HistoryTrackingDelegate
 import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.concept.engine.manifest.WebAppManifestParser
+import mozilla.components.concept.engine.pageextraction.PageExtractionError
 import mozilla.components.concept.engine.request.RequestInterceptor
 import mozilla.components.concept.engine.request.RequestInterceptor.InterceptionResponse
 import mozilla.components.concept.engine.translate.TranslationError
@@ -59,15 +63,21 @@ import mozilla.components.support.ktx.kotlin.isGeoLocation
 import mozilla.components.support.ktx.kotlin.isPhone
 import mozilla.components.support.ktx.kotlin.sanitizeFileName
 import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
+import mozilla.components.support.utils.CertificateUtils
 import mozilla.components.support.utils.DownloadUtils
 import mozilla.components.support.utils.DownloadUtils.RESPONSE_CODE_SUCCESS
 import mozilla.components.support.utils.DownloadUtils.makePdfContentDisposition
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_COLD
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_HOT
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_UNKNOWN
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_WARM
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -125,6 +135,8 @@ class GeckoEngineSession(
     override val settings: Settings = object : Settings() {
         override var requestInterceptor: RequestInterceptor? = null
         override var historyTrackingDelegate: HistoryTrackingDelegate? = null
+        override var downloadDelegate: DownloadDelegate? = null
+
         override var userAgentString: String?
             get() = geckoSession.settings.userAgentOverride
             set(value) {
@@ -193,6 +205,7 @@ class GeckoEngineSession(
             .flags(flags.getGeckoFlags())
             .originalInput(originalInput)
             .textDirectiveUserActivation(textDirectiveUserActivation)
+            .appLinkLaunchType(flags.toGeckoLaunchType())
 
         if (additionalHeaders != null) {
             val headerFilter = if (flags.contains(ALLOW_ADDITIONAL_HEADERS)) {
@@ -252,8 +265,8 @@ class GeckoEngineSession(
                 val contentLength = 0L
                 // NB: If the title is an empty string, there is a chance the PDF will not have a name.
                 // See https://github.com/mozilla-mobile/android-components/issues/12276
-                val fileName = DownloadUtils.guessFileName(
-                    disposition,
+                val fileName = settings.downloadDelegate?.guessFileName(
+                    contentDisposition = disposition,
                     url = url,
                     mimeType = contentType,
                 )
@@ -378,6 +391,13 @@ class GeckoEngineSession(
 
         geckoSession.restoreState(state.actualState)
         return true
+    }
+
+    /**
+     * See [EngineSession.flushSessionState]
+     */
+    override fun flushSessionState() {
+        geckoSession.flushSessionState()
     }
 
     /**
@@ -836,6 +856,28 @@ class GeckoEngineSession(
     }
 
     /**
+     * See [EngineSession.getPageContent]
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun getPageContent(onResult: (String) -> Unit, onException: (Throwable) -> Unit) {
+        geckoSession.sessionPageExtractor.pageContent
+            .then(
+                { content ->
+                    if (content == null) {
+                        onException(PageExtractionError.UnexpectedNull())
+                        return@then GeckoResult()
+                    }
+                    onResult(content)
+                    GeckoResult<Unit>()
+                },
+                { error ->
+                    onException(error.intoPageExtractionError())
+                    GeckoResult()
+                },
+            )
+    }
+
+    /**
      * Purges the history for the session (back and forward history).
      */
     override fun purgeHistory() {
@@ -856,9 +898,32 @@ class GeckoEngineSession(
     }
 
     /**
+     * See [EngineSession.processBackPressed].
+     */
+    override fun processBackPressed(
+          onResult: (Boolean) -> Unit,
+    ) {
+        geckoSession.processBackPressed().then(
+            { response ->
+                if (response == null) {
+                    logger.error("Did not receive a back key pressed.")
+                    onResult(false)
+                    return@then GeckoResult<Void>()
+                }
+                onResult(response)
+                GeckoResult()
+            },
+            { throwable ->
+                onResult(false)
+                GeckoResult()
+            },
+        )
+    }
+
+    /**
      * NavigationDelegate implementation for forwarding callbacks to observers of the session.
      */
-    @Suppress("ComplexMethod")
+    @Suppress("CognitiveComplexMethod")
     private fun createNavigationDelegate() = object : GeckoSession.NavigationDelegate {
         override fun onLocationChange(
             session: GeckoSession,
@@ -968,7 +1033,12 @@ class GeckoEngineSession(
             uri: String,
         ): GeckoResult<GeckoSession> {
             val newEngineSession =
-                GeckoEngineSession(runtime, privateMode, defaultSettings, openGeckoSession = false)
+                GeckoEngineSession(
+                    runtime = runtime,
+                    privateMode = privateMode,
+                    defaultSettings = defaultSettings,
+                    openGeckoSession = false,
+                )
             notifyObservers {
                 onWindowRequest(GeckoWindowRequest(uri, newEngineSession))
             }
@@ -1068,11 +1138,11 @@ class GeckoEngineSession(
             }
 
             notifyObservers {
-                // TODO provide full certificate info: https://github.com/mozilla-mobile/android-components/issues/5557
                 onSecurityChange(
                     securityInfo.isSecure,
                     securityInfo.host,
-                    securityInfo.getIssuerName(),
+                    CertificateUtils.issuerOrganization(securityInfo.certificate),
+                    securityInfo.certificate,
                 )
             }
         }
@@ -1121,7 +1191,6 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod")
     internal fun createHistoryDelegate() = object : GeckoSession.HistoryDelegate {
         @SuppressWarnings("ReturnCount")
         override fun onVisited(
@@ -1224,7 +1293,7 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod", "NestedBlockDepth")
+    @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
     internal fun createContentDelegate() = object : GeckoSession.ContentDelegate {
         override fun onCookieBannerDetected(session: GeckoSession) {
             notifyObservers { onCookieBannerChange(CookieBannerHandlingStatus.DETECTED) }
@@ -1250,7 +1319,13 @@ class GeckoEngineSession(
             screenY: Int,
             element: GeckoSession.ContentDelegate.ContextElement,
         ) {
-            val hitResult = handleLongClick(element.srcUri, element.type, element.linkUri, element.title)
+            val hitResult = handleLongClick(
+                elementSrc = element.srcUri,
+                elementType = element.type,
+                uri = element.linkUri,
+                title = element.title,
+                linkText = element.linkText,
+            )
             hitResult?.let {
                 notifyObservers { onLongPress(it) }
             }
@@ -1276,8 +1351,9 @@ class GeckoEngineSession(
                 val contentLength = headers[CONTENT_LENGTH]?.trim()?.toLongOrNull()
                 val contentDisposition = headers[CONTENT_DISPOSITION]?.trim()
                 val url = uri
-                val fileName = DownloadUtils.guessFileName(
-                    contentDisposition,
+
+                val fileName = settings.downloadDelegate?.guessFileName(
+                    contentDisposition = contentDisposition,
                     url = url,
                     mimeType = contentType,
                 )
@@ -1287,7 +1363,7 @@ class GeckoEngineSession(
                         url = url,
                         contentLength = contentLength,
                         contentType = DownloadUtils.sanitizeMimeType(contentType),
-                        fileName = fileName.sanitizeFileName(),
+                        fileName = fileName?.sanitizeFileName(),
                         response = response,
                         isPrivate = privateMode,
                         openInApp = webResponse.requestExternalApp,
@@ -1449,10 +1525,6 @@ class GeckoEngineSession(
         return cookiesPolicies
     }
 
-    internal fun GeckoSession.ProgressDelegate.SecurityInformation.getIssuerName(): String? {
-        return certificate?.issuerDN?.name?.substringAfterLast("O=")?.substringBeforeLast(",C=")
-    }
-
     private operator fun Int.contains(mask: Int): Boolean {
         return (this and mask) != 0
     }
@@ -1506,8 +1578,22 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod")
-    fun handleLongClick(elementSrc: String?, elementType: Int, uri: String? = null, title: String? = null): HitResult? {
+    /**
+     * Handles long click events.
+     *
+     * @param elementSrc The source of the element.
+     * @param elementType The type of the element.
+     * @param uri The (optional) URI of the element.
+     * @param title The (optional) title of the element.
+     * @param linkText The (optional) link text of the element.
+     */
+    fun handleLongClick(
+        elementSrc: String?,
+        elementType: Int,
+        uri: String? = null,
+        title: String? = null,
+        linkText: String? = null,
+    ): HitResult? {
         return when (elementType) {
             GeckoSession.ContentDelegate.ContextElement.TYPE_AUDIO ->
                 elementSrc?.let {
@@ -1535,7 +1621,7 @@ class GeckoEngineSession(
                         else -> HitResult.UNKNOWN(it)
                     }
                 } ?: uri?.let {
-                    HitResult.UNKNOWN(it)
+                    HitResult.UNKNOWN(src = it, linkText = linkText)
                 }
             }
             else -> HitResult.UNKNOWN("")
@@ -1548,6 +1634,7 @@ class GeckoEngineSession(
         defaultSettings?.trackingProtectionPolicy?.let { updateTrackingProtection(it) }
         defaultSettings?.requestInterceptor?.let { settings.requestInterceptor = it }
         defaultSettings?.historyTrackingDelegate?.let { settings.historyTrackingDelegate = it }
+        defaultSettings?.downloadDelegate?.let { settings.downloadDelegate = it }
         defaultSettings?.testingModeEnabled?.let {
             geckoSession.settings.fullAccessibilityTree = it
         }
@@ -1586,7 +1673,6 @@ class GeckoEngineSession(
         /**
          * Provides an ErrorType corresponding to the error code provided.
          */
-        @Suppress("ComplexMethod")
         internal fun geckoErrorToErrorType(errorCode: Int) =
             when (errorCode) {
                 WebRequestError.ERROR_UNKNOWN -> ErrorType.UNKNOWN
@@ -1615,11 +1701,42 @@ class GeckoEngineSession(
                 WebRequestError.ERROR_SAFEBROWSING_UNWANTED_URI -> ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI
                 WebRequestError.ERROR_SAFEBROWSING_HARMFUL_URI -> ErrorType.ERROR_SAFEBROWSING_HARMFUL_URI
                 WebRequestError.ERROR_SAFEBROWSING_PHISHING_URI -> ErrorType.ERROR_SAFEBROWSING_PHISHING_URI
+                WebRequestError.ERROR_HARMFULADDON_URI -> ErrorType.ERROR_HARMFULADDON_URI
                 WebRequestError.ERROR_HTTPS_ONLY -> ErrorType.ERROR_HTTPS_ONLY
                 WebRequestError.ERROR_BAD_HSTS_CERT -> ErrorType.ERROR_BAD_HSTS_CERT
                 else -> ErrorType.UNKNOWN
             }
     }
+}
+
+/**
+ * Provides all gecko app link intent launch types ignoring the types that only exists on AC.
+ * Ensures AC app-link launch types map to GeckoView.
+ **/
+private fun EngineSession.LoadUrlFlags.toGeckoLaunchType(): Int {
+    return when (getGeckoAppLinkLaunchType()) {
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_COLD ->
+            APP_LINK_LAUNCH_TYPE_COLD
+
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_WARM ->
+            APP_LINK_LAUNCH_TYPE_WARM
+
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_HOT ->
+            APP_LINK_LAUNCH_TYPE_HOT
+
+        else -> APP_LINK_LAUNCH_TYPE_UNKNOWN
+    }
+}
+
+private fun EngineSession.LoadUrlFlags.getGeckoAppLinkLaunchType(): Int {
+    val launchTypes = listOf(
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_COLD,
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_WARM,
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_HOT,
+    )
+
+    return launchTypes.firstOrNull { contains(it) }
+        ?: EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_UNKNOWN
 }
 
 /**

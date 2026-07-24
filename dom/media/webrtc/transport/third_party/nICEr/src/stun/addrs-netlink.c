@@ -83,7 +83,7 @@ static int get_siocgifflags(nr_local_addr *addr) {
   }
   struct ifreq ifr;
   memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, addr->addr.ifname, IFNAMSIZ - 1);
+  (void)strlcpy(ifr.ifr_name, addr->addr.ifname, sizeof(ifr.ifr_name));
   int rc = ioctl(fd, SIOCGIFFLAGS, &ifr);
   close(fd);
   if (rc == -1) {
@@ -150,12 +150,12 @@ stun_convert_netlink(nr_local_addr *addr, struct ifaddrmsg *address_msg, struct 
   int e;
   int s = socket(AF_INET, SOCK_DGRAM, 0);
 
-  strncpy(ifr.ifr_name, addr->addr.ifname, sizeof(ifr.ifr_name));
+  (void)strlcpy(ifr.ifr_name, addr->addr.ifname, sizeof(ifr.ifr_name));
   /* TODO (Bug 896851): interface property for Android */
   /* Getting ethtool for ethernet information. */
   ecmd.cmd = ETHTOOL_GSET;
   /* In/out param */
-  ifr.ifr_data = (void*)&ecmd;
+  ifr.ifr_data = (char*)&ecmd;
 
   e = ioctl(s, SIOCETHTOOL, &ifr);
   if (e == 0)
@@ -170,7 +170,7 @@ stun_convert_netlink(nr_local_addr *addr, struct ifaddrmsg *address_msg, struct 
 #endif
   }
 
-  strncpy(wrq.ifr_name, addr->addr.ifname, sizeof(wrq.ifr_name));
+  (void)strlcpy(wrq.ifr_name, addr->addr.ifname, sizeof(wrq.ifr_name));
   e = ioctl(s, SIOCGIWRATE, &wrq);
   if (e == 0)
   {

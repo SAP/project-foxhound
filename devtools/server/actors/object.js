@@ -165,7 +165,7 @@ class ObjectActor extends Actor {
   /**
    * Returns a grip for this actor for returning in a protocol message.
    *
-   * @param {Number} depth
+   * @param {number} depth
    *                 Current depth in the generated preview object sent to the client.
    */
   form({ depth = 0 } = {}) {
@@ -287,9 +287,9 @@ class ObjectActor extends Actor {
   /**
    * Populate the `preview` property on `grip` given its type.
    *
-   * @param {Object} grip
+   * @param {object} grip
    *                 Object onto which preview data attribute should be added.
-   * @param {Number} depth
+   * @param {number} depth
    *                 Current depth in the generated preview object sent to the client.
    */
   _populateGripPreview(grip, depth) {
@@ -365,7 +365,7 @@ class ObjectActor extends Actor {
    * Handle a protocol request to provide the prototype and own properties of
    * the object.
    *
-   * @returns {Object} An object containing the data of this.obj, of the following form:
+   * @returns {object} An object containing the data of this.obj, of the following form:
    *          - {Object} prototype: The descriptor of this.obj's prototype.
    *          - {Object} ownProperties: an object where the keys are the names of the
    *                     this.obj's ownProperties, and the values the descriptors of
@@ -421,7 +421,7 @@ class ObjectActor extends Actor {
    * @param array ownProperties
    *        The array that holds the list of known ownProperties names for
    *        |this.obj|.
-   * @param {Number} depth
+   * @param {number} depth
    *                 Current depth in the generated preview object sent to the client.
    * @param number [limit=Infinity]
    *        Optional limit of getter values to find.
@@ -520,7 +520,8 @@ class ObjectActor extends Actor {
 
   /**
    * Evaluate the getter function |desc.get|.
-   * @param {Object} getter
+   *
+   * @param {object} getter
    */
   _evaluateGetter(getter) {
     const result = getter.call(this.obj);
@@ -787,7 +788,7 @@ function safeGetOwnPropertyDescriptor(obj, name) {
 /**
  * Check if the value is rejected promise
  *
- * @param {Object} getterValue
+ * @param {object} getterValue
  * @returns {boolean} true if the value is rejected promise, false otherwise.
  */
 function isRejectedPromise(getterValue) {

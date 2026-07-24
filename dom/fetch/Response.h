@@ -7,14 +7,12 @@
 #ifndef mozilla_dom_Response_h
 #define mozilla_dom_Response_h
 
-#include "nsWrapperCache.h"
-#include "nsISupportsImpl.h"
-
-#include "mozilla/dom/Fetch.h"
-#include "mozilla/dom/ResponseBinding.h"
-
 #include "InternalHeaders.h"
 #include "InternalResponse.h"
+#include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/ResponseBinding.h"
+#include "nsISupportsImpl.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace ipc {

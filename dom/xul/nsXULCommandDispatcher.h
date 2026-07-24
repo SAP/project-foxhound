@@ -9,16 +9,16 @@
 
 */
 
-#ifndef nsXULCommandDispatcher_h__
-#define nsXULCommandDispatcher_h__
+#ifndef nsXULCommandDispatcher_h_
+#define nsXULCommandDispatcher_h_
 
-#include "nsCOMPtr.h"
-#include "nsIDOMXULCommandDispatcher.h"
-#include "nsWeakReference.h"
-#include "nsString.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsTArray.h"
 #include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDOMXULCommandDispatcher.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsWeakReference.h"
 
 class nsPIDOMWindowOuter;
 class nsPIWindowRoot;
@@ -79,4 +79,4 @@ class nsXULCommandDispatcher : public nsIDOMXULCommandDispatcher,
   nsTArray<nsString> mPendingUpdates;
 };
 
-#endif  // nsXULCommandDispatcher_h__
+#endif  // nsXULCommandDispatcher_h_

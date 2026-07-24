@@ -22,7 +22,6 @@
 #endif
 
 #include "mozmemory_wrap.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 #include "mozjemalloc_types.h"
 #include "malloc_decls.h"

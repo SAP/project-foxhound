@@ -7,6 +7,7 @@
 #include "ReportInternalError.h"
 
 #include <cinttypes>
+
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"

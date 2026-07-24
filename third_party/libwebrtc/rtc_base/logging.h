@@ -48,24 +48,16 @@
 #ifndef RTC_BASE_LOGGING_H_
 #define RTC_BASE_LOGGING_H_
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvarargs"
-
-#if defined(__clang__)
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wclass-varargs"
-#endif
-
 #include <errno.h>
 
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <sstream>  // no-presubmit-check TODO(webrtc:8982)
 #include <string>
 #include <type_traits>
 #include <utility>
 
-#include "absl/base/attributes.h"
 #include "absl/strings/has_absl_stringify.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -73,7 +65,6 @@
 #include "rtc_base/platform_thread_types.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/inline.h"
-#include "rtc_base/type_traits.h"
 
 #if !defined(NDEBUG) || defined(DLOG_ALWAYS_ON)
 #define RTC_DLOG_IS_ON 1
@@ -128,7 +119,7 @@ class LogLineRef {
   absl::string_view message() const { return message_; }
   absl::string_view filename() const { return filename_; }
   int line() const { return line_; }
-  std::optional<rtc::PlatformThreadId> thread_id() const { return thread_id_; }
+  std::optional<PlatformThreadId> thread_id() const { return thread_id_; }
   Timestamp timestamp() const { return timestamp_; }
   absl::string_view tag() const { return tag_; }
   LoggingSeverity severity() const { return severity_; }
@@ -144,7 +135,7 @@ class LogLineRef {
   void set_message(std::string message) { message_ = std::move(message); }
   void set_filename(absl::string_view filename) { filename_ = filename; }
   void set_line(int line) { line_ = line; }
-  void set_thread_id(std::optional<rtc::PlatformThreadId> thread_id) {
+  void set_thread_id(std::optional<PlatformThreadId> thread_id) {
     thread_id_ = thread_id;
   }
   void set_timestamp(Timestamp timestamp) { timestamp_ = timestamp; }
@@ -154,7 +145,7 @@ class LogLineRef {
   std::string message_;
   absl::string_view filename_;
   int line_ = 0;
-  std::optional<rtc::PlatformThreadId> thread_id_;
+  std::optional<PlatformThreadId> thread_id_;
   Timestamp timestamp_ = Timestamp::MinusInfinity();
   // The default Android debug output tag.
   absl::string_view tag_ = "libjingle";
@@ -690,9 +681,6 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
 #define RTC_LOG_GLE(sev) RTC_LOG_GLE_EX(sev, static_cast<int>(GetLastError()))
 #define RTC_LOG_ERR_EX(sev, err) RTC_LOG_GLE_EX(sev, err)
 #define RTC_LOG_ERR(sev) RTC_LOG_GLE(sev)
-#elif defined(__native_client__) && __native_client__
-#define RTC_LOG_ERR_EX(sev, err) RTC_LOG(sev)
-#define RTC_LOG_ERR(sev) RTC_LOG(sev)
 #elif defined(WEBRTC_POSIX)
 #define RTC_LOG_ERR_EX(sev, err) RTC_LOG_ERRNO_EX(sev, err)
 #define RTC_LOG_ERR(sev) RTC_LOG_ERRNO(sev)
@@ -747,23 +735,5 @@ inline const char* AdaptString(const std::string& str) {
 
 }  // namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::LoggingSeverity;
-using ::webrtc::LogLineRef;
-using ::webrtc::LogMessage;
-using ::webrtc::LogSink;
-using ::webrtc::LS_ERROR;
-using ::webrtc::LS_INFO;
-using ::webrtc::LS_NONE;
-using ::webrtc::LS_VERBOSE;
-using ::webrtc::LS_WARNING;
-}  // namespace rtc
-
-#pragma GCC diagnostic pop
-#if defined(__clang__)
-#  pragma clang diagnostic pop
-#endif
 
 #endif  // RTC_BASE_LOGGING_H_

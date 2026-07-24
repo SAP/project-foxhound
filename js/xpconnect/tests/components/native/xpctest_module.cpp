@@ -7,7 +7,6 @@
 /* module registration and factory code. */
 
 #include "mozilla/GenericFactory.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Try.h"
 #include "nsComponentManager.h"
 #include "xpctest_private.h"

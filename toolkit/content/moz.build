@@ -31,14 +31,10 @@ for var in ("OS_CPPFLAGS", "OS_CXXFLAGS", "DEBUG", "OPTIMIZE", "FRAMEPTR"):
 DEFINES["CXXFLAGS"] = " ".join(cxx_flags)
 
 if CONFIG["OS_TARGET"] == "Android":
-    DEFINES["ANDROID_PACKAGE_NAME"] = CONFIG["ANDROID_PACKAGE_NAME"]
     DEFINES["MOZ_USE_LIBCXX"] = True
 
 if CONFIG["MOZ_INSTALL_TRACKING"]:
     DEFINES["MOZ_INSTALL_TRACKING"] = 1
-
-if CONFIG["MOZ_BUILD_APP"] == "mobile/android":
-    DEFINES["MOZ_FENNEC"] = True
 
 JAR_MANIFESTS += ["jar.mn"]
 
@@ -262,3 +258,9 @@ with Files("treeUtils.js"):
 
 with Files("viewZoomOverlay.js"):
     BUG_COMPONENT = ("Toolkit", "General")
+
+with Files("preferencesBindings.js"):
+    BUG_COMPONENT = ("Toolkit", "Preferences")
+
+with Files("preferences/*"):
+    BUG_COMPONENT = ("Toolkit", "Preferences")

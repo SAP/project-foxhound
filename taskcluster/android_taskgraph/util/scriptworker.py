@@ -4,11 +4,11 @@
 
 import itertools
 import os
-from copy import deepcopy
 from datetime import datetime
 from functools import lru_cache
 
 import jsone
+from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.yaml import load_yaml
@@ -60,13 +60,16 @@ def generate_beetmover_upstream_artifacts(
         else:
             raise Exception(f"Unsupported type of dependency. Got job: {job}")
 
-    for locale, dep in itertools.product(locales, dependencies):
+    for current_locale, dep in itertools.product(locales, dependencies):
         paths = list()
 
         for filename in map_config["mapping"]:
             if dep not in map_config["mapping"][filename]["from"]:
                 continue
-            if locale != "multi" and not map_config["mapping"][filename]["all_locales"]:
+            if (
+                current_locale != "multi"
+                and not map_config["mapping"][filename]["all_locales"]
+            ):
                 continue
             if (
                 "only_for_platforms" in map_config["mapping"][filename]
@@ -87,10 +90,10 @@ def generate_beetmover_upstream_artifacts(
                 file_config,
                 "source_path_modifier",
                 "source path modifier",
-                locale=locale,
+                locale=current_locale,
             )
 
-            kwargs["locale"] = locale
+            kwargs["locale"] = current_locale
 
             paths.append(
                 os.path.join(
@@ -112,14 +115,12 @@ def generate_beetmover_upstream_artifacts(
         if not paths:
             continue
 
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": f"<{dep}>"},
-                "taskType": map_config["tasktype_map"].get(dep),
-                "paths": sorted(paths),
-                "locale": locale,
-            }
-        )
+        upstream_artifacts.append({
+            "taskId": {"task-reference": f"<{dep}>"},
+            "taskType": map_config["tasktype_map"].get(dep),
+            "paths": sorted(paths),
+            "locale": current_locale,
+        })
 
     upstream_artifacts.sort(key=lambda u: u["paths"])
     return upstream_artifacts
@@ -170,7 +171,7 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
 
     resolve_keyed_by(
         map_config,
-        "s3_bucket_paths",
+        "bucket_paths",
         job["label"],
         **{"build-type": job["attributes"]["build-type"]},
     )
@@ -217,13 +218,13 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             # This format string should ideally be in the configuration file,
             # but this would mean keeping variable names in sync between code + config.
             destinations = [
-                "{s3_bucket_path}/{dest_path}/{filename}".format(
-                    s3_bucket_path=bucket_path,
+                "{bucket_path}/{dest_path}/{filename}".format(
+                    bucket_path=bucket_path,
                     dest_path=dest_path,
                     filename=file_config.get("pretty_name", filename),
                 )
                 for dest_path, bucket_path in itertools.product(
-                    file_config["destinations"], map_config["s3_bucket_paths"]
+                    file_config["destinations"], map_config["bucket_paths"]
                 )
             ]
             # Creating map entries
@@ -268,17 +269,17 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
         else:
             folder_prefix = f"{version}-candidates/build{build_number}/android/"
 
-        kwargs.update(
-            {"locale": locale, "version": version, "folder_prefix": folder_prefix}
-        )
+        kwargs.update({
+            "locale": locale,
+            "version": version,
+            "folder_prefix": folder_prefix,
+        })
         kwargs.update(**platforms)
         paths = jsone.render(paths, kwargs)
-        artifacts.append(
-            {
-                "taskId": {"task-reference": f"<{dep}>"},
-                "locale": locale,
-                "paths": paths,
-            }
-        )
+        artifacts.append({
+            "taskId": {"task-reference": f"<{dep}>"},
+            "locale": locale,
+            "paths": paths,
+        })
 
     return artifacts

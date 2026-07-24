@@ -198,6 +198,12 @@ bool CheckStringIsIndex(const CharT* s, size_t length, uint32_t* indexp);
  * be at least X (e.g., ensureLinear will change a JSRope to be a JSLinearString).
  *
  * Foxhound: the JSString class (and all subclasses) are taint aware.
+ *
+ * The following type transitions are currently possible:
+ *  - Replace a non-atom with an atom ref
+ *  - Replace leftmost rope child with a dependent string
+ *  - Replace a rope with an extensible or dependent string
+ *  - Make a linear string extensible for testing
  */
 // clang-format on
 
@@ -218,6 +224,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   size_t length() const { return headerLengthField(); }
   MOZ_ALWAYS_INLINE
   uint32_t flags() const { return headerFlagsField(); }
+  uint32_t getFlagsAtomic() const { return headerFlagsFieldAtomic(); }
 
   // Class for temporarily holding character data that will be used for JSString
   // contents. The data may be allocated in the nursery, the malloc heap, or as
@@ -457,6 +464,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   // Also see LATIN1_CHARS_BIT description under "Flag Encoding".
   static const uint32_t LATIN1_CHARS_BIT = js::Bit(10);
 
+  // Linear strings only.
   static const uint32_t INDEX_VALUE_BIT = js::Bit(11);
   static const uint32_t INDEX_VALUE_SHIFT = 16;
 
@@ -494,6 +502,28 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static const uint32_t PINNED_ATOM_BIT = js::Bit(15);
   static const uint32_t PERMANENT_ATOM_MASK =
       ATOM_BIT | PINNED_ATOM_BIT | ATOM_IS_PERMANENT_BIT;
+
+  // When doing a placement new or simple flags update to reinitialize a
+  // JSString with a different representation subtype, keep these bits. There
+  // are different bitsets here for which string type we're coming from.
+  //
+  // DEPENDED_ON_BIT - necessary for strings that depend on the current
+  // characters. (Does not apply to ropes.) Prevents future conversion to
+  // AtomRef from discarding depended-on character data.
+  //
+  // IN_STRING_TO_ATOM_CACHE - the string is not being mutated, so if its string
+  // data can be found in the cache, the replace operation won't affect that.
+  //
+  // INDEX_VALUE_BIT and the associated value - keep the index optimization
+  // working.
+  //
+  // Note that this does not include NON_DEDUP bit, which is only used for plain
+  // linear strings (none of the subtypes) and will need to be considered on a
+  // case-by-case basis.
+  static const uint32_t PRESERVE_LINEAR_NONATOM_BITS_ON_REPLACE =
+      DEPENDED_ON_BIT | IN_STRING_TO_ATOM_CACHE | INDEX_VALUE_BIT |
+      ~uint32_t(0) << INDEX_VALUE_SHIFT;
+  static const uint32_t PRESERVE_ROPE_BITS_ON_REPLACE = IN_STRING_TO_ATOM_CACHE;
 
   static const uint32_t MAX_LENGTH = JS::MaxStringLength;
 
@@ -709,6 +739,8 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 
   MOZ_ALWAYS_INLINE
   bool isRope() const { return !(flags() & LINEAR_BIT); }
+  MOZ_ALWAYS_INLINE
+  bool isRopeAtomic() const { return !(getFlagsAtomic() & LINEAR_BIT); }
 
   MOZ_ALWAYS_INLINE
   JSRope& asRope() const {
@@ -925,11 +957,35 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     return nurseryZone();
   }
 
-  void setLengthAndFlags(uint32_t len, uint32_t flags) {
+  void initLengthAndFlags(uint32_t len, uint32_t flags) {
     setHeaderLengthAndFlags(len, flags);
   }
-  void setFlagBit(uint32_t flag) { setHeaderFlagBit(flag); }
-  void clearFlagBit(uint32_t flag) { clearHeaderFlagBit(flag); }
+  void setLengthAndFlags(uint32_t len, uint32_t flags) {
+    assertTypeUnchanged(flags);
+    setHeaderLengthAndFlags(len, flags);
+  }
+  void setFlagBit(uint32_t flag) {
+    assertTypeUnchanged(flags() | flag);
+    setHeaderFlagBit(flag);
+  }
+  void clearFlagBit(uint32_t flag) {
+    assertTypeUnchanged(flags() & ~flag);
+    clearHeaderFlagBit(flag);
+  }
+  void changeStringType(uint32_t len, uint32_t flags) {
+    setHeaderLengthAndFlags(len, flags);
+#ifdef JS_GC_CONCURRENT_MARKING
+    // Synchronize with concurrent marking. See comments in
+    // GCMarker::eagerlyMarkChildren(JSRope* rope) for details
+    js::gc::MemoryReleaseFence(this);
+#endif
+  }
+
+#ifdef DEBUG
+  void assertTypeUnchanged(uint32_t newFlags) const;
+#else
+  void assertTypeUnchanged(uint32_t newFlags) const {}
+#endif
 
   void fixupAfterMovingGC() {}
 

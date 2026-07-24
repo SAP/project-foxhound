@@ -16,7 +16,7 @@ interface BookmarksStorage : Storage {
      * @param recursive Whether to recurse and obtain all levels of children.
      * @return The populated root starting from the guid.
      */
-    suspend fun getTree(guid: String, recursive: Boolean = false): BookmarkNode?
+    suspend fun getTree(guid: String, recursive: Boolean = false): Result<BookmarkNode?>
 
     /**
      * Obtains the details of a bookmark without children, if one exists with that guid. Otherwise, null.
@@ -24,7 +24,7 @@ interface BookmarksStorage : Storage {
      * @param guid The bookmark guid to obtain.
      * @return The bookmark node or null if it does not exist.
      */
-    suspend fun getBookmark(guid: String): BookmarkNode?
+    suspend fun getBookmark(guid: String): Result<BookmarkNode?>
 
     /**
      * Produces a list of all bookmarks with the given URL.
@@ -32,7 +32,7 @@ interface BookmarksStorage : Storage {
      * @param url The URL string.
      * @return The list of bookmarks that match the URL
      */
-    suspend fun getBookmarksWithUrl(url: String): List<BookmarkNode>
+    suspend fun getBookmarksWithUrl(url: String): Result<List<BookmarkNode>>
 
     /**
      * Produces a list of the most recently added bookmarks.
@@ -46,7 +46,7 @@ interface BookmarksStorage : Storage {
         limit: Int,
         maxAge: Long? = null,
         currentTime: Long = System.currentTimeMillis(),
-    ): List<BookmarkNode>
+    ): Result<List<BookmarkNode>>
 
     /**
      * Searches bookmarks with a query string.
@@ -55,7 +55,7 @@ interface BookmarksStorage : Storage {
      * @param limit The maximum number of entries to return.
      * @return The list of matching bookmark nodes up to the limit number of items.
      */
-    suspend fun searchBookmarks(query: String, limit: Int = DEFAULT_BOOKMARKS_SEARCH_LIMIT): List<BookmarkNode>
+    suspend fun searchBookmarks(query: String, limit: Int = DEFAULT_BOOKMARKS_SEARCH_LIMIT): Result<List<BookmarkNode>>
 
     /**
      * Adds a new bookmark item to a given node.
@@ -68,7 +68,7 @@ interface BookmarksStorage : Storage {
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    suspend fun addItem(parentGuid: String, url: String, title: String, position: UInt?): String
+    suspend fun addItem(parentGuid: String, url: String, title: String, position: UInt?): Result<String>
 
     /**
      * Adds a new bookmark folder to a given node.
@@ -80,7 +80,7 @@ interface BookmarksStorage : Storage {
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    suspend fun addFolder(parentGuid: String, title: String, position: UInt? = null): String
+    suspend fun addFolder(parentGuid: String, title: String, position: UInt? = null): Result<String>
 
     /**
      * Adds a new bookmark separator to a given node.
@@ -91,7 +91,7 @@ interface BookmarksStorage : Storage {
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    suspend fun addSeparator(parentGuid: String, position: UInt?): String
+    suspend fun addSeparator(parentGuid: String, position: UInt?): Result<String>
 
     /**
      * Edits the properties of an existing bookmark item and/or moves an existing one underneath a new parent guid.
@@ -101,7 +101,7 @@ interface BookmarksStorage : Storage {
      * @param guid The guid of the item to update.
      * @param info The info to change in the bookmark.
      */
-    suspend fun updateNode(guid: String, info: BookmarkInfo)
+    suspend fun updateNode(guid: String, info: BookmarkInfo): Result<Unit>
 
     /**
      * Deletes a bookmark node and all of its children, if any.
@@ -110,7 +110,7 @@ interface BookmarksStorage : Storage {
      *
      * @return Whether the bookmark existed or not.
      */
-    suspend fun deleteNode(guid: String): Boolean
+    suspend fun deleteNode(guid: String): Result<Boolean>
 
     /**
      * Counts the number of bookmarks in the trees under the specified GUIDs.

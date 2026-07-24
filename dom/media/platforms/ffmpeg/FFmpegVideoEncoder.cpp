@@ -6,12 +6,14 @@
 
 #include "FFmpegVideoEncoder.h"
 
-#include <algorithm>
-
 #include <aom/aomcx.h>
 
+#include <algorithm>
+
+#include "AnnexB.h"
 #include "BufferReader.h"
 #include "EncoderConfig.h"
+#include "FFmpegEncoderModule.h"
 #include "FFmpegLog.h"
 #include "FFmpegRuntimeLinker.h"
 #include "FFmpegUtils.h"
@@ -25,6 +27,9 @@
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/dom/VideoFrameBinding.h"
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/gfx/gfxVars.h"
+#endif
 #include "nsPrintfCString.h"
 
 // The ffmpeg namespace is introduced to avoid the PixelFormat's name conflicts
@@ -118,11 +123,19 @@ struct H264LiteralSetting {
   H264Setting get() const { return {mValue, mString.AsString()}; }
 };
 
+#if LIBAVCODEC_VERSION_MAJOR < 62
 static constexpr H264LiteralSetting H264Profiles[]{
     {FF_PROFILE_H264_BASELINE, "baseline"_ns},
     {FF_PROFILE_H264_MAIN, "main"_ns},
     {FF_PROFILE_H264_EXTENDED, ""_ns},
     {FF_PROFILE_H264_HIGH, "high"_ns}};
+#else
+static constexpr H264LiteralSetting H264Profiles[]{
+    {AV_PROFILE_H264_BASELINE, "baseline"_ns},
+    {AV_PROFILE_H264_MAIN, "main"_ns},
+    {AV_PROFILE_H264_EXTENDED, ""_ns},
+    {AV_PROFILE_H264_HIGH, "high"_ns}};
+#endif
 
 static Maybe<H264Setting> GetH264Profile(const H264_PROFILE& aProfile) {
   switch (aProfile) {
@@ -309,9 +322,32 @@ bool FFmpegVideoEncoder<LIBAV_VER>::SvcEnabled() const {
   return mConfig.mScalabilityMode != ScalabilityMode::None;
 }
 
+bool FFmpegVideoEncoder<LIBAV_VER>::ShouldTryHardware() const {
+#ifdef MOZ_WIDGET_ANDROID
+  // On Android, the MediaCodec encoders are the only ones available to us,
+  // which may be implemented in hardware or software.
+  if (mCodecID == AV_CODEC_ID_H264 || mCodecID == AV_CODEC_ID_HEVC) {
+    return StaticPrefs::media_ffvpx_hw_enabled();
+  }
+
+  if (StaticPrefs::media_ffvpx_hw_minimal()) {
+    return false;
+  }
+#endif
+
+  if (mConfig.mHardwarePreference == HardwarePreference::RequireSoftware) {
+    return false;
+  }
+
+  RefPtr<PlatformEncoderModule> pem =
+      FFmpegEncoderModule<LIBAV_VER>::Create(mLib);
+  return pem->SupportsCodec(mConfig.mCodec)
+      .contains(media::EncodeSupport::HardwareEncode);
+}
+
 MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoder() {
   MediaResult result(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR);
-  if (mConfig.mHardwarePreference != HardwarePreference::RequireSoftware) {
+  if (ShouldTryHardware()) {
     result = InitEncoderInternal(/* aHardware */ true);
   }
   // TODO(aosmond): We should be checking here for RequireHardware, but we fail
@@ -335,7 +371,35 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
   mCodecContext = r.unwrap();
   mCodecName = mCodecContext->codec->name;
 
+#ifdef MOZ_WIDGET_ANDROID
+  // We need to create a MediaCodec encoder for H264/HEVC but it may or may not
+  // be backed by actual hardware.
+  switch (mCodecID) {
+    case AV_CODEC_ID_H264:
+      mIsHardwareAccelerated = aHardware && gfx::gfxVars::UseH264HwEncode();
+      break;
+    case AV_CODEC_ID_HEVC:
+      mIsHardwareAccelerated = aHardware && gfx::gfxVars::UseHEVCHwEncode();
+      break;
+    default:
+      mIsHardwareAccelerated = aHardware;
+      break;
+  }
+  mUseDurationMap = aHardware;
+#else
+#  ifdef MOZ_FFMPEG_ENCODER_USE_DURATION_MAP
+  mUseDurationMap = true;
+#  endif
+  mIsHardwareAccelerated = aHardware;
+#endif
+
   // And now the video-specific part
+#ifdef MOZ_WIDGET_ANDROID
+  // COLOR_FormatYUV420SemiPlanar(NV12) is the most widely supported
+  // format by the Android hardware encoders.
+  mCodecContext->pix_fmt =
+      aHardware ? ffmpeg::FFMPEG_PIX_FMT_NV12 : ffmpeg::FFMPEG_PIX_FMT_YUV420P;
+#else
   mCodecContext->pix_fmt = ffmpeg::FFMPEG_PIX_FMT_YUV420P;
   // // TODO: do this properly, based on the colorspace of the frame. Setting
   // this like that crashes encoders. if (mConfig.mCodec != CodecType::AV1) {
@@ -352,6 +416,8 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
   //       mCodecContext->color_trc = AVCOL_TRC_BT709;
   //     }
   // }
+#endif
+
   mCodecContext->width = static_cast<int>(mConfig.mSize.width);
   mCodecContext->height = static_cast<int>(mConfig.mSize.height);
   // Reasonnable default for the quantization range.
@@ -473,21 +539,33 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
     }
   }
 
+#ifdef MOZ_WIDGET_ANDROID
+  // If we are using MediaCodec, we can set more options.
+  if (aHardware) {
+    if (mConfig.mBitrateMode == BitrateMode::Constant) {
+      mLib->av_opt_set(mCodecContext->priv_data, "bitrate_mode", "cbr", 0);
+    } else {
+      mLib->av_opt_set(mCodecContext->priv_data, "bitrate_mode", "vbr", 0);
+    }
+  }
+#endif
+
   nsAutoCString h264Log;
   if (mConfig.mCodecSpecific.is<H264Specific>()) {
-    // TODO: Set profile, level, avcc/annexb for openh264 and others.
-    if (mCodecName == "libx264") {
-      const H264Specific& h264Specific =
-          mConfig.mCodecSpecific.as<H264Specific>();
-      H264Settings s = GetH264Settings(h264Specific);
-      mCodecContext->profile = s.mProfile;
-      mCodecContext->level = s.mLevel;
-      for (const auto& pair : s.mSettingKeyValuePairs) {
-        mLib->av_opt_set(mCodecContext->priv_data, pair.first.get(),
-                         pair.second.get(), 0);
-      }
+    const H264Specific& h264Specific =
+        mConfig.mCodecSpecific.as<H264Specific>();
+    H264Settings s = GetH264Settings(h264Specific);
+    mCodecContext->profile = s.mProfile;
+    mCodecContext->level = s.mLevel;
+    for (const auto& pair : s.mSettingKeyValuePairs) {
+      mLib->av_opt_set(mCodecContext->priv_data, pair.first.get(),
+                       pair.second.get(), 0);
+    }
 
-      // Log the settings.
+    // Log the settings.
+    const char* formatStr =
+        h264Specific.mFormat == H264BitStreamFormat::AVC ? "AVCC" : "AnnexB";
+    if (mCodecName.Equals("libx264"_ns)) {
       // When using profile other than EXTENDED, the profile string is in the
       // first element of mSettingKeyValuePairs, while EXTENDED profile has no
       // profile string.
@@ -501,11 +579,13 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
       const char* levelStr = s.mSettingKeyValuePairs.Length() == 3
                                  ? s.mSettingKeyValuePairs[1].second.get()
                                  : s.mSettingKeyValuePairs[0].second.get();
-      const char* formatStr =
-          h264Specific.mFormat == H264BitStreamFormat::AVC ? "AVCC" : "AnnexB";
       h264Log.AppendPrintf(", H264: profile - %d (%s), level %d (%s), %s",
                            mCodecContext->profile, profileStr,
                            mCodecContext->level, levelStr, formatStr);
+    } else {
+      h264Log.AppendPrintf(", H264: profile - %d, level %d, %s",
+                           mCodecContext->profile, mCodecContext->level,
+                           formatStr);
     }
   }
 
@@ -570,7 +650,7 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegVideoEncoder<
 
   // Set AVFrame properties for its internal data allocation. For now, we always
   // convert into ffmpeg's buffer.
-  mFrame->format = ffmpeg::FFMPEG_PIX_FMT_YUV420P;
+  mFrame->format = mCodecContext->pix_fmt;
   mFrame->width = static_cast<int>(mConfig.mSize.width);
   mFrame->height = static_cast<int>(mConfig.mSize.height);
   mFrame->pict_type =
@@ -590,12 +670,25 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegVideoEncoder<
                                          MakeErrorString(mLib, ret).get())));
   }
 
-  MediaResult rv = ConvertToI420(
-      sample->mImage, mFrame->data[0], mFrame->linesize[0], mFrame->data[1],
-      mFrame->linesize[1], mFrame->data[2], mFrame->linesize[2], mConfig.mSize);
+  nsresult rv;
+  switch (mFrame->format) {
+    case ffmpeg::FFMPEG_PIX_FMT_YUV420P:
+      rv = ConvertToI420(sample->mImage, mFrame->data[0], mFrame->linesize[0],
+                         mFrame->data[1], mFrame->linesize[1], mFrame->data[2],
+                         mFrame->linesize[2], mConfig.mSize);
+      break;
+    case ffmpeg::FFMPEG_PIX_FMT_NV12:
+      rv = ConvertToNV12(sample->mImage, mFrame->data[0], mFrame->linesize[0],
+                         mFrame->data[1], mFrame->linesize[1], mConfig.mSize);
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unhandled ffmpeg format!");
+      rv = NS_ERROR_DOM_MEDIA_FATAL_ERR;
+      break;
+  }
   if (NS_FAILED(rv)) {
     return Err(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                           "failed to convert format to I420"_ns));
+                           "failed to convert format to ffmpeg format"_ns));
   }
 
   // Set presentation timestamp and duration of the AVFrame. The unit of pts is
@@ -615,11 +708,13 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegVideoEncoder<
   } else {
     mFrame->pts = aSample->mTime.ToMicroseconds();
   }
-#  if LIBAVCODEC_VERSION_MAJOR >= 60
-  mFrame->duration = aSample->mDuration.ToMicroseconds();
+#  ifdef MOZ_FFMPEG_ENCODER_USE_DURATION_MAP
+  if (mUseDurationMap) {
+    // Save duration in the time_base unit.
+    mDurationMap.Insert(mFrame->pts, aSample->mDuration.ToMicroseconds());
+  }
 #  else
-  // Save duration in the time_base unit.
-  mDurationMap.Insert(mFrame->pts, aSample->mDuration.ToMicroseconds());
+  mFrame->duration = aSample->mDuration.ToMicroseconds();
 #  endif
   Duration(mFrame) = aSample->mDuration.ToMicroseconds();
 
@@ -670,20 +765,33 @@ FFmpegVideoEncoder<LIBAV_VER>::ToMediaRawData(AVPacket* aPacket) {
                 e.Description().get());
   }
 
+  if (mCodecID == AV_CODEC_ID_H264 &&
+      mConfig.mCodecSpecific.is<H264Specific>() &&
+      mConfig.mCodecSpecific.as<H264Specific>().mFormat ==
+          H264BitStreamFormat::AVC &&
+      !mCodecName.Equals("libx264"_ns) && AnnexB::IsAnnexB(*data)) {
+    if (data->mExtraData) {
+      mLastExtraData = std::move(data->mExtraData);
+    }
+    if (!AnnexB::ConvertSampleToAVCC(data, mLastExtraData)) {
+      return Err(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                             "Failed to convert to AVCC"_ns));
+    }
+  }
+
   // TODO(bug 1869560): The unit of pts, dts, and duration is time_base, which
   // is recommended to be the reciprocal of the frame rate, but we set it to
   // microsecond for now.
   data->mTime = media::TimeUnit::FromMicroseconds(aPacket->pts);
-#if LIBAVCODEC_VERSION_MAJOR >= 60
-  data->mDuration = media::TimeUnit::FromMicroseconds(aPacket->duration);
-#else
+#ifdef MOZ_FFMPEG_ENCODER_USE_DURATION_MAP
   int64_t duration;
-  if (mDurationMap.Find(aPacket->pts, duration)) {
+  if (mUseDurationMap && mDurationMap.Find(aPacket->pts, duration)) {
     data->mDuration = media::TimeUnit::FromMicroseconds(duration);
-  } else {
+  } else
+#endif
+  {
     data->mDuration = media::TimeUnit::FromMicroseconds(aPacket->duration);
   }
-#endif
   data->mTimecode = media::TimeUnit::FromMicroseconds(aPacket->dts);
 
   if (mConfig.mCodec == CodecType::AV1) {
@@ -710,18 +818,32 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   MOZ_ASSERT(aPacket);
 
-  // H264 Extra data comes with the key frame and we only extract it when
-  // encoding into AVCC format.
+  // We only extract the extra data when encoding into AVCC format.
   if (mCodecID != AV_CODEC_ID_H264 ||
       !mConfig.mCodecSpecific.is<H264Specific>() ||
       mConfig.mCodecSpecific.as<H264Specific>().mFormat !=
-          H264BitStreamFormat::AVC ||
-      !(aPacket->flags & AV_PKT_FLAG_KEY)) {
+          H264BitStreamFormat::AVC) {
     return Err(
-        MediaResult(NS_ERROR_NOT_AVAILABLE, "No available extra data"_ns));
+        MediaResult(NS_ERROR_NOT_AVAILABLE, "Extra data unnecessary"_ns));
   }
 
-  if (mCodecName != "libx264") {
+  Span<const uint8_t> packetBuf(aPacket->data,
+                                static_cast<size_t>(aPacket->size));
+  if (!mCodecName.Equals("libx264"_ns) && AnnexB::IsAnnexB(packetBuf)) {
+    auto extraData = AnnexB::ExtractExtraDataForAVCC(packetBuf);
+    if (!extraData) {
+      return Err(MediaResult(NS_ERROR_NOT_AVAILABLE,
+                             "Extra data missing from packet"_ns));
+    }
+    return extraData.forget();
+  }
+
+  if (!(aPacket->flags & AV_PKT_FLAG_KEY)) {
+    return Err(MediaResult(NS_ERROR_NOT_AVAILABLE,
+                           "Extra data only comes with key frame"_ns));
+  }
+
+  if (!mCodecName.Equals("libx264"_ns)) {
     return Err(MediaResult(
         NS_ERROR_NOT_IMPLEMENTED,
         RESULT_DETAIL(
@@ -742,8 +864,7 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
         Span<const uint8_t>(mCodecContext->extradata,
                             static_cast<size_t>(mCodecContext->extradata_size));
   } else {
-    buf =
-        Span<const uint8_t>(aPacket->data, static_cast<size_t>(aPacket->size));
+    buf = packetBuf;
   }
   if (buf.empty()) {
     return Err(MediaResult(NS_ERROR_UNEXPECTED,
@@ -753,18 +874,14 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
   BufferReader reader(buf);
 
   // The first part is sps.
-  uint32_t spsSize;
-  MOZ_TRY_VAR(spsSize, reader.ReadU32());
-  Span<const uint8_t> spsData;
-  MOZ_TRY_VAR(spsData,
-              reader.ReadSpan<const uint8_t>(static_cast<size_t>(spsSize)));
+  uint32_t spsSize = MOZ_TRY(reader.ReadU32());
+  Span<const uint8_t> spsData =
+      MOZ_TRY(reader.ReadSpan<const uint8_t>(static_cast<size_t>(spsSize)));
 
   // The second part is pps.
-  uint32_t ppsSize;
-  MOZ_TRY_VAR(ppsSize, reader.ReadU32());
-  Span<const uint8_t> ppsData;
-  MOZ_TRY_VAR(ppsData,
-              reader.ReadSpan<const uint8_t>(static_cast<size_t>(ppsSize)));
+  uint32_t ppsSize = MOZ_TRY(reader.ReadU32());
+  Span<const uint8_t> ppsData =
+      MOZ_TRY(reader.ReadSpan<const uint8_t>(static_cast<size_t>(ppsSize)));
 
   // Ensure we have profile, constraints and level needed to create the extra
   // data.
@@ -867,34 +984,34 @@ FFmpegVideoEncoder<LIBAV_VER>::GetSVCSettings() {
 
 FFmpegVideoEncoder<LIBAV_VER>::H264Settings FFmpegVideoEncoder<
     LIBAV_VER>::GetH264Settings(const H264Specific& aH264Specific) {
-  MOZ_ASSERT(mCodecName == "libx264",
-             "GetH264Settings is libx264-only for now");
-
   nsTArray<std::pair<nsCString, nsCString>> keyValuePairs;
 
   Maybe<H264Setting> profile = GetH264Profile(aH264Specific.mProfile);
   MOZ_RELEASE_ASSERT(profile.isSome());
-  if (!profile->mString.IsEmpty()) {
-    keyValuePairs.AppendElement(std::make_pair("profile"_ns, profile->mString));
-  } else {
-    MOZ_RELEASE_ASSERT(aH264Specific.mProfile ==
-                       H264_PROFILE::H264_PROFILE_EXTENDED);
-  }
+  MOZ_RELEASE_ASSERT(!profile->mString.IsEmpty() ||
+                     aH264Specific.mProfile ==
+                         H264_PROFILE::H264_PROFILE_EXTENDED);
 
   Maybe<H264Setting> level = GetH264Level(aH264Specific.mLevel);
   MOZ_RELEASE_ASSERT(level.isSome());
   MOZ_RELEASE_ASSERT(!level->mString.IsEmpty());
+
+  if (!profile->mString.IsEmpty()) {
+    keyValuePairs.AppendElement(std::make_pair("profile"_ns, profile->mString));
+  }
   keyValuePairs.AppendElement(std::make_pair("level"_ns, level->mString));
 
-  // Set format: libx264's default format is annexb.
-  if (aH264Specific.mFormat == H264BitStreamFormat::AVC) {
-    keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=0"));
-    // mCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER
-    // if we don't want to append SPS/PPS data in all keyframe
-    // (LIBAVCODEC_VERSION_MAJOR >= 57 only).
-  } else {
-    // Set annexb explicitly even if it's default format.
-    keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=1"));
+  if (mCodecName.Equals("libx264"_ns)) {
+    // Set format: libx264's default format is annexb.
+    if (aH264Specific.mFormat == H264BitStreamFormat::AVC) {
+      keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=0"));
+      // mCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER
+      // if we don't want to append SPS/PPS data in all keyframe
+      // (LIBAVCODEC_VERSION_MAJOR >= 57 only).
+    } else {
+      // Set annexb explicitly even if it's default format.
+      keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=1"));
+    }
   }
 
   return H264Settings{.mProfile = profile->mValue,

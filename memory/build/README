@@ -58,9 +58,9 @@ Main components
    allocation functions.  All functions that get and return memory to the OS
    belong here.
 
- * Constants.h, Globals.h, Globals_inc.h and Globals.cpp
+ * Constants.h, Globals.h, Globals.inc and Globals.cpp
 
-   Compile time constants and other global values.  Globals_inc.h is
+   Compile time constants and other global values. Globals.inc is
    included indirectly depending on whether page size is a compile time
    constant or set at runtime.
 

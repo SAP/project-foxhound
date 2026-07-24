@@ -4,8 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/PGamepadTestChannelParent.h"
+#ifndef DOM_GAMEPAD_IPC_GAMEPADTESTCHANNELPARENT_H_
+#define DOM_GAMEPAD_IPC_GAMEPADTESTCHANNELPARENT_H_
+
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/PGamepadTestChannelParent.h"
 
 #ifndef mozilla_dom_GamepadTestChannelParent_h_
 #  define mozilla_dom_GamepadTestChannelParent_h_
@@ -47,3 +50,5 @@ class GamepadTestChannelParent final : public PGamepadTestChannelParent,
 }  // namespace mozilla::dom
 
 #endif
+
+#endif  // DOM_GAMEPAD_IPC_GAMEPADTESTCHANNELPARENT_H_

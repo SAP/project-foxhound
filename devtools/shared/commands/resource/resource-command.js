@@ -12,6 +12,13 @@ function cacheKey(resourceType, resourceId) {
   return `${resourceType}:${resourceId}`;
 }
 
+loader.lazyGetter(this, "logger", function () {
+  return console.createInstance({
+    prefix: "devtools_resourcecommand",
+    maxLogLevel: "Warn",
+  });
+});
+
 class ResourceCommand {
   #destroyed = false;
 
@@ -119,7 +126,7 @@ class ResourceCommand {
   /**
    * Return all specified resources cached in this watcher.
    *
-   * @param {String} resourceType
+   * @param {string} resourceType
    * @return {Array} resources cached in this watcher
    */
   getAllResources(resourceType) {
@@ -135,9 +142,9 @@ class ResourceCommand {
   /**
    * Return the specified resource cached in this watcher.
    *
-   * @param {String} resourceType
-   * @param {String} resourceId
-   * @return {Object} resource cached in this watcher
+   * @param {string} resourceType
+   * @param {string} resourceId
+   * @return {object} resource cached in this watcher
    */
   getResourceById(resourceType, resourceId) {
     return this._cache.get(cacheKey(resourceType, resourceId));
@@ -149,7 +156,7 @@ class ResourceCommand {
    *
    * @param {Array:string} resources
    *        List of all resources which should be fetched and observed.
-   * @param {Object} options
+   * @param {object} options
    *        - {Function} onAvailable: This attribute is mandatory.
    *                                  Function which will be called with an array of resources
    *                                  each time resource(s) are created.
@@ -189,6 +196,8 @@ class ResourceCommand {
         );
       }
     }
+
+    logger.debug("Start watching: " + resources.join(", "));
 
     // Copy the array in order to avoid the callsite to modify the list of watched resources by mutating the array.
     // You have to call (un)watchResources to update the list of resources being watched!
@@ -295,6 +304,8 @@ class ResourceCommand {
       }
     }
 
+    logger.debug("Stop watching: " + resources.join(", "));
+
     // Unregister the callbacks from the watchers registries.
     // Check _watchers for the fully initialized watchers, as well as
     // `_pendingWatchers` for new watchers still being created by `watchResources`
@@ -336,13 +347,13 @@ class ResourceCommand {
   /**
    * Wait for a single resource of the provided resourceType.
    *
-   * @param {String} resourceType
+   * @param {string} resourceType
    *        One of ResourceCommand.TYPES, type of the expected resource.
-   * @param {Object} additional options
+   * @param {object} additional options
    *        - {Boolean} ignoreExistingResources: ignore existing resources or not.
    *        - {Function} predicate: if provided, will wait until a resource makes
    *          predicate(resource) return true.
-   * @return {Promise<Object>}
+   * @return {Promise<object>}
    *         Return a promise which resolves once we fully settle the resource listener.
    *         You should await for its resolution before doing the action which may fire
    *         your resource.
@@ -377,9 +388,9 @@ class ResourceCommand {
   /**
    * Check if there are any watchers for the specified resource.
    *
-   * @param {String} resourceType
+   * @param {string} resourceType
    *         One of ResourceCommand.TYPES
-   * @return {Boolean}
+   * @return {boolean}
    *         If the resources type is beibg watched.
    */
   isResourceWatched(resourceType) {
@@ -464,12 +475,12 @@ class ResourceCommand {
   /**
    * Method called by the TargetCommand for each already existing or target which has just been created.
    *
-   * @param {Object} arg
+   * @param {object} arg
    * @param {Front} arg.targetFront
    *        The Front of the target that is available.
    *        This Front inherits from TargetMixin and is typically
    *        composed of a WindowGlobalTargetFront or ContentProcessTargetFront.
-   * @param {Boolean} arg.isTargetSwitching
+   * @param {boolean} arg.isTargetSwitching
    *         true when the new target was created because of a target switching.
    */
   async _onTargetAvailable({ targetFront, isTargetSwitching }) {
@@ -600,10 +611,11 @@ class ResourceCommand {
 
   /**
    * Method called by the TargetCommand when a target has just been destroyed
-   * @param {Object} arg
+   *
+   * @param {object} arg
    * @param {Front} arg.targetFront
    *        The Front of the target that was destroyed
-   * @param {Boolean} arg.isModeSwitching
+   * @param {boolean} arg.isModeSwitching
    *         true when this is called as the result of a change to the devtools.browsertoolbox.scope pref.
    */
   _onTargetDestroyed({ targetFront, isModeSwitching }) {
@@ -702,11 +714,25 @@ class ResourceCommand {
           resource.resourceId = `auto:${++gLastResourceId}`;
         }
 
+        logger.debug(
+          `Received resource available from backend: type=${resource.resourceType}, resourceId=${resource.resourceId}`
+        );
+
         // Only consider top level document, and ignore remote iframes top document
         let isWillNavigate = false;
         if (resourceType == DOCUMENT_EVENT) {
           isWillNavigate = resource.name === "will-navigate";
-          if (isWillNavigate && resource.targetFront.isTopLevel) {
+          const isBrowserToolbox =
+            this.targetCommand.descriptorFront.isBrowserProcessDescriptor;
+          if (
+            isWillNavigate &&
+            resource.targetFront.isTopLevel &&
+            // When selecting a document in the Browser Toolbox iframe picker, we're getting
+            // a will-navigate event. In such case, we don't want to clear the cache,
+            // otherwise we'd miss some resources that we might already received (e.g. stylesheets)
+            // See Bug 1981937
+            (!isBrowserToolbox || !resource.isFrameSwitching)
+          ) {
             includesDocumentEventWillNavigate = true;
             this._onWillNavigate(resource.targetFront);
           }
@@ -775,13 +801,13 @@ class ResourceCommand {
    * - the backward compatibility code (LegacyListeners)
    * - target actors RDP events
    *
-   * @param {Object} source
+   * @param {object} source
    *        A dictionary object with only one of these two attributes:
    *        - targetFront: a Target Front, if the resource is watched from the
    *          target process or thread.
    *        - watcherFront: a Watcher Front, if the resource is watched from
    *          the parent process.
-   * @param {Array<Object>} updates
+   * @param {Array<object>} updates
    *        Depending on the listener.
    *
    *        Among the element in the array, the following attributes are given special handling.
@@ -819,6 +845,10 @@ class ResourceCommand {
         resourceUpdates,
         nestedResourceUpdates,
       } = update;
+
+      logger.debug(
+        `Received resource update from backend: type=${resourceType}, resourceId=${resourceId}`
+      );
 
       if (!resourceId) {
         console.warn(`Expected resource ${resourceType} to have a resourceId`);
@@ -884,7 +914,7 @@ class ResourceCommand {
   /**
    * Called every time a resource is destroyed in the remote target.
    *
-   * @param {Object} source
+   * @param {object} source
    *        A dictionary object with only one of these two attributes:
    *        - targetFront: a Target Front, if the resource is watched from the
    *          target process or thread.
@@ -897,6 +927,10 @@ class ResourceCommand {
   async _onResourceDestroyed({ targetFront }, resources) {
     for (const resource of resources) {
       const { resourceType, resourceId } = resource;
+      logger.debug(
+        `Received resource destroyed from backend: type=${resourceType}, resourceId=${resourceId}`
+      );
+
       this._cache.delete(cacheKey(resourceType, resourceId));
       if (!resource.targetFront) {
         resource.targetFront = targetFront;
@@ -930,6 +964,15 @@ class ResourceCommand {
     for (const watcherEntry of this._watchers) {
       const { onAvailable, onUpdated, onDestroyed, pendingEvents } =
         watcherEntry;
+
+      if (!pendingEvents.length) {
+        // Bail out early if there are no events to handle.
+        continue;
+      }
+
+      logger.debug(
+        `Notify a ResourceCommand listener for ${pendingEvents.length} pendingEvents`
+      );
       // Immediately clear the buffer in order to avoid possible races, where an event listener
       // would end up somehow adding a new throttled resource
       watcherEntry.pendingEvents = [];
@@ -1000,7 +1043,7 @@ class ResourceCommand {
    * Tells if the server supports listening to the given resource type
    * via the watcher actor's watchResources method.
    *
-   * @return {Boolean} True, if the server supports this type.
+   * @return {boolean} True, if the server supports this type.
    */
   hasResourceCommandSupport(resourceType) {
     return this.watcherFront?.traits?.resources?.[resourceType];
@@ -1011,7 +1054,7 @@ class ResourceCommand {
    * via the watcher actor's watchResources method, and that, for a specific
    * target.
    *
-   * @return {Boolean} True, if the server supports this type.
+   * @return {boolean} True, if the server supports this type.
    */
   _hasResourceCommandSupportForTarget(resourceType, targetFront) {
     // First check if the watcher supports this target type.
@@ -1032,10 +1075,10 @@ class ResourceCommand {
    * For backward compatibility code, we register the legacy listeners on
    * each individual target
    *
-   * @param {String} resourceType
+   * @param {string} resourceType
    *        One string of ResourceCommand.TYPES, which designates the types of resources
    *        to be listened.
-   * @param {Object}
+   * @param {object}
    *        - {Boolean} bypassListenerCount
    *          Pass true to avoid checking/updating the listenersCount map.
    *          Exclusively used when target switching, to stop & start listening
@@ -1276,6 +1319,7 @@ ResourceCommand.TYPES = ResourceCommand.prototype.TYPES = {
   STYLESHEET: "stylesheet",
   NETWORK_EVENT: "network-event",
   WEBSOCKET: "websocket",
+  WEBTRANSPORT: "webtransport",
   COOKIE: "cookies",
   LOCAL_STORAGE: "local-storage",
   SESSION_STORAGE: "session-storage",
@@ -1338,11 +1382,6 @@ loader.lazyRequireGetter(
   LegacyListeners,
   ResourceCommand.TYPES.CONSOLE_MESSAGE,
   "resource://devtools/shared/commands/resource/legacy-listeners/console-messages.js"
-);
-loader.lazyRequireGetter(
-  LegacyListeners,
-  ResourceCommand.TYPES.CSS_CHANGE,
-  "resource://devtools/shared/commands/resource/legacy-listeners/css-changes.js"
 );
 loader.lazyRequireGetter(
   LegacyListeners,

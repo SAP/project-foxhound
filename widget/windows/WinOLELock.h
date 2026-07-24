@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_WinOLELock_h__
-#define mozilla_widget_WinOLELock_h__
+#ifndef mozilla_widget_WinOLELock_h_
+#define mozilla_widget_WinOLELock_h_
 
 #include <type_traits>
 #include <minwindef.h>
@@ -190,4 +190,4 @@ class ScopedOLEMemory<U[]> {
   size_t mExtent;
 };
 
-#endif  // mozilla_widget_WinOLELock_h__
+#endif  // mozilla_widget_WinOLELock_h_

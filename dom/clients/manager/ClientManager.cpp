@@ -10,11 +10,11 @@
 #include "ClientManagerChild.h"
 #include "ClientManagerOpChild.h"
 #include "ClientSource.h"
+#include "mozilla/ClearOnShutdown.h"  // PastShutdownPhase
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ClearOnShutdown.h"  // PastShutdownPhase
-#include "mozilla/StaticPrefs_dom.h"
 #include "prthread.h"
 
 namespace mozilla::dom {

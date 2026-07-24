@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <cstdio>
-
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/interceptor/Arm64.h"
@@ -26,11 +24,13 @@
 using namespace mozilla;
 using namespace mozilla::interceptor::arm64;
 
+constexpr uintptr_t kExamplePCValue = 0x7ff959a7ea80;
+
 bool TestCheckForPCRelAdrp() {
   // A real-world example from bug 1964688 comment 5:
   // 00007ff9`59a7ea80 d0dfff11 adrp xip1,00007ff9`19a60000
   Result<LoadOrBranch, PCRelCheckError> result =
-      CheckForPCRel(0x7ff959a7ea80, 0xd0dfff11);
+      CheckForPCRel(kExamplePCValue, 0xd0dfff11);
   if (result.isErr()) {
     auto error = result.unwrapErr();
     TEST_FAILED(
@@ -65,7 +65,7 @@ bool TestCheckForPCRelAdr() {
   // Fictional example with adr:
   // 00007ff959a7ea80 50dfff11 adr x17, #0x7ff959a3ea62
   Result<LoadOrBranch, PCRelCheckError> result =
-      CheckForPCRel(0x7ff959a7ea80, 0x50dfff11);
+      CheckForPCRel(kExamplePCValue, 0x50dfff11);
 
   // For the moment we expect to recognize adr instructions but we don't have
   // a decoder
@@ -90,8 +90,90 @@ bool TestCheckForPCRelAdr() {
   return true;
 }
 
+bool TestCheckForPCRelBlr() {
+  // blr x16
+  Result<LoadOrBranch, PCRelCheckError> result =
+      CheckForPCRel(kExamplePCValue, 0xd63f0200);
+
+  if (!result.isErr()) {
+    TEST_FAILED(
+        "Unexpectedly recognized blr as a PC-relative instruction with a "
+        "decoder. If you have implemented a decoder for this instruction, "
+        "please update TestArm64Disassembler.cpp.\n");
+  }
+
+  auto error = result.unwrapErr();
+  if (error != PCRelCheckError::NoDecoderAvailable) {
+    TEST_FAILED(
+        "Failed to recognize blr as a PC-relative instruction, got "
+        "PCRelCheckError %d.\n",
+        error);
+  }
+
+  TEST_PASS(
+      "Properly recognized blr as a PC-relative instruction without a "
+      "decoder.\n");
+  return true;
+}
+
+bool TestCheckForPCRelBr() {
+  // br x16
+  Result<LoadOrBranch, PCRelCheckError> result =
+      CheckForPCRel(kExamplePCValue, 0xd61f0200);
+
+  if (!result.isErr()) {
+    TEST_FAILED(
+        "Unexpectedly recognized br as a PC-relative instruction with a "
+        "decoder. While br is not actually PC-relative, we treat it as such "
+        "due to bug 2010042. If you have implemented a decoder for this "
+        "instruction, "
+        "please update TestArm64Disassembler.cpp.\n");
+  }
+  auto error = result.unwrapErr();
+  if (error != PCRelCheckError::NoDecoderAvailable) {
+    TEST_FAILED(
+        "Failed to recognize br as a PC-relative instruction, got "
+        "PCRelCheckError %d.\n",
+        error);
+  }
+
+  TEST_PASS(
+      "Properly recognized br as a PC-relative instruction without a "
+      "decoder.\n");
+  return true;
+}
+
+bool TestCheckForAbsB() {
+  // b 0x400
+  Result<LoadOrBranch, PCRelCheckError> result =
+      CheckForPCRel(kExamplePCValue, 0x14000100);
+  if (result.isErr()) {
+    auto error = result.unwrapErr();
+    TEST_FAILED("Failed to decode b, got PCRelCheckError %d.\n", error);
+  }
+
+  auto loadOrBranch = result.unwrap();
+  if (loadOrBranch.mType != LoadOrBranch::Type::Branch) {
+    TEST_FAILED("Computed an incorrect LoadOrBranch::Type for b, got %d.\n",
+                loadOrBranch.mType);
+  }
+  if (loadOrBranch.mAbsAddress != (kExamplePCValue + 0x400)) {
+    TEST_FAILED("Computed a wrong absolute address for b, got address %p.\n",
+                loadOrBranch.mAbsAddress);
+  }
+  if (loadOrBranch.mCond != IntegerConditionCode::AL) {
+    TEST_FAILED("Computed a wrong condition code for b, got %d.\n",
+                static_cast<int32_t>(loadOrBranch.mCond));
+  }
+
+  TEST_PASS("Properly decoded b.\n");
+  return true;
+}
+
 int wmain(int argc, wchar_t* argv[]) {
-  if (!TestCheckForPCRelAdrp() || !TestCheckForPCRelAdr()) {
+  if (!TestCheckForPCRelAdrp() || !TestCheckForPCRelAdr() ||
+      !TestCheckForPCRelBlr() || !TestCheckForPCRelBr() ||
+      !TestCheckForAbsB()) {
     return -1;
   }
   return 0;

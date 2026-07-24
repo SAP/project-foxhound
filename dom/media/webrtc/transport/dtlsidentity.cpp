@@ -9,14 +9,13 @@
 #include "cert.h"
 #include "cryptohi.h"
 #include "keyhi.h"
+#include "mozilla/Sprintf.h"
+#include "mozpkix/nss_scoped_ptrs.h"
 #include "nsError.h"
 #include "pk11pub.h"
-#include "sechash.h"
-#include "mozpkix/nss_scoped_ptrs.h"
 #include "secerr.h"
+#include "sechash.h"
 #include "sslerr.h"
-
-#include "mozilla/Sprintf.h"
 
 namespace mozilla {
 

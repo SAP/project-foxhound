@@ -25,16 +25,24 @@ prefs = [
 ["browser_test_iframe_transform.js"]
 
 ["browser_test_resolution.js"]
-skip-if = ["os == 'win'"] # bug 1372296
+skip-if = [
+  "os == 'win'", # bug 1372296
+]
 
 ["browser_test_simple_transform.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1784767
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1784767
+]
 
 ["browser_test_zoom.js"]
-skip-if = ["true"] # Bug 1734271
+skip-if = [
+  "true", # Bug 1734271
+]
 
 ["browser_test_zoom_text.js"]
 https_first_disabled = true
-skip-if = ["os == 'win'"] # bug 1372296
+skip-if = [
+  "os == 'win'", # bug 1372296
+]
 
 ["browser_zero_area.js"]

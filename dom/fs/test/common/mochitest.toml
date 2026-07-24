@@ -12,4 +12,6 @@ support-files = [
 ]
 
 ["dummy.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]

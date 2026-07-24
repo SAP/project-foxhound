@@ -4,34 +4,62 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "GeolocationPosition.h"
-#include "nsIConsoleService.h"
-#include "nsServiceManagerUtils.h"
 #include "CoreLocationLocationProvider.h"
-#include "prtime.h"
+#include "GeolocationPosition.h"
+#include "MLSFallback.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "mozilla/glean/DomGeolocationMetrics.h"
-#include "MLSFallback.h"
+#include "nsCOMPtr.h"
+#include "nsIConsoleService.h"
+#include "nsServiceManagerUtils.h"
+#include "prtime.h"
 
 #include <CoreLocation/CLError.h>
 #include <CoreLocation/CLLocation.h>
 #include <CoreLocation/CLLocationManager.h>
 #include <CoreLocation/CLLocationManagerDelegate.h>
 
-#include <objc/objc.h>
 #include <objc/objc-runtime.h>
+#include <objc/objc.h>
 
 #include "nsObjCExceptions.h"
 
 using namespace mozilla;
 
-MOZ_RUNINIT static const CLLocationAccuracy kHIGH_ACCURACY =
-    kCLLocationAccuracyBest;
-MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
-    kCLLocationAccuracyNearestTenMeters;
+#define kDefaultAccuracy kCLLocationAccuracyNearestTenMeters
+
+static LazyLogModule gCoreLocationProviderLog("CoreLocation");
+#define LOGD(...) \
+  MOZ_LOG(gCoreLocationProviderLog, LogLevel::Debug, (__VA_ARGS__))
+#define LOGI(...) \
+  MOZ_LOG(gCoreLocationProviderLog, LogLevel::Info, (__VA_ARGS__))
+
+static void LogLocationPermissionState() {
+  CLAuthorizationStatus authStatus = [CLLocationManager authorizationStatus];
+  const char* authStatusStr = "Unknown";
+  switch (authStatus) {
+    case kCLAuthorizationStatusNotDetermined:
+      authStatusStr = "NotDetermined";
+      break;
+    case kCLAuthorizationStatusRestricted:
+      authStatusStr = "Restricted";
+      break;
+    case kCLAuthorizationStatusDenied:
+      authStatusStr = "Denied";
+      break;
+    case kCLAuthorizationStatusAuthorizedAlways:
+      authStatusStr = "AuthorizedAlways";
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown CLAuthorizationStatus");
+      break;
+  }
+
+  LOGD("Authorization status: %s (code: %d)", authStatusStr, (int)authStatus);
+}
 
 @interface LocationDelegate : NSObject <CLLocationManagerDelegate> {
   CoreLocationLocationProvider* mProvider;
@@ -42,6 +70,9 @@ MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
        didFailWithError:(NSError*)aError;
 - (void)locationManager:(CLLocationManager*)aManager
      didUpdateLocations:(NSArray*)locations;
+- (void)locationManagerDidChangeAuthorization:(CLLocationManager*)aManager;
+- (void)locationManagerDidPauseLocationUpdates:(CLLocationManager*)aManager;
+- (void)locationManagerDidResumeLocationUpdates:(CLLocationManager*)aManager;
 
 @end
 
@@ -61,10 +92,24 @@ MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
 
   NS_ENSURE_TRUE_VOID(console);
 
+  LogLocationPermissionState();
+
+  if ([aError code] == kCLErrorLocationUnknown) {
+    // The system will keep trying to get location.  See
+    // https://developer.apple.com/documentation/corelocation/cllocationmanagerdelegate/locationmanager(_:didfailwitherror:)?language=objc#Discussion
+    return;
+  }
+
   NSString* message = [@"Failed to acquire position: "
       stringByAppendingString:[aError localizedDescription]];
 
   console->LogStringMessage(NS_ConvertUTF8toUTF16([message UTF8String]).get());
+  LOGD("%s", [message UTF8String]);
+
+  // Telemetry will store up to 16 different error codes.
+  nsAutoCString errorCodeStr;
+  errorCodeStr.AppendInt(static_cast<int32_t>([aError code]));
+  glean::geolocation::macos_error_code.Get(errorCodeStr).Add();
 
   // The CL provider does not fallback to GeoIP, so use
   // NetworkGeolocationProvider for this. The concept here is: on error, hand
@@ -114,7 +159,21 @@ MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
         .Add();
   }
 
+  LOGD("Location updated.");
   mProvider->Update(geoPosition);
+}
+
+- (void)locationManagerDidChangeAuthorization:(CLLocationManager*)aManager {
+  LOGD("Authorization changed");
+  LogLocationPermissionState();
+}
+
+- (void)locationManagerDidPauseLocationUpdates:(CLLocationManager*)aManager {
+  LOGD("Paused location updates");
+}
+
+- (void)locationManagerDidResumeLocationUpdates:(CLLocationManager*)aManager {
+  LOGD("Resumed location updates");
 }
 @end
 
@@ -151,7 +210,7 @@ class CoreLocationObjects {
     mLocationDelegate = [[LocationDelegate alloc] init:aProvider];
     NS_ENSURE_TRUE(mLocationDelegate, NS_ERROR_NOT_AVAILABLE);
 
-    mLocationManager.desiredAccuracy = kDEFAULT_ACCURACY;
+    mLocationManager.desiredAccuracy = kDefaultAccuracy;
     mLocationManager.delegate = mLocationDelegate;
 
     return NS_OK;
@@ -191,6 +250,10 @@ CoreLocationLocationProvider::Startup() {
   // guaranteed
   [mCLObjects->mLocationManager stopUpdatingLocation];
   [mCLObjects->mLocationManager startUpdatingLocation];
+  glean::geolocation::geolocation_service
+      .EnumGet(glean::geolocation::GeolocationServiceLabel::eSystem)
+      .Add();
+  LOGI("CoreLocationLocationProvider requested location updates.");
   return NS_OK;
 }
 
@@ -219,6 +282,7 @@ CoreLocationLocationProvider::Shutdown() {
     mMLSFallbackProvider = nullptr;
   }
 
+  LOGI("CoreLocationLocationProvider stopped location updates.");
   return NS_OK;
 }
 
@@ -227,7 +291,7 @@ CoreLocationLocationProvider::SetHighAccuracy(bool aEnable) {
   NS_ENSURE_STATE(mCLObjects);
 
   mCLObjects->mLocationManager.desiredAccuracy =
-      (aEnable ? kHIGH_ACCURACY : kDEFAULT_ACCURACY);
+      aEnable ? kCLLocationAccuracyBest : kDefaultAccuracy;
 
   return NS_OK;
 }

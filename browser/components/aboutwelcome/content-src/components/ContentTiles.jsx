@@ -8,10 +8,14 @@ import { AddonsPicker } from "./AddonsPicker";
 import { SingleSelect } from "./SingleSelect";
 import { MobileDownloads } from "./MobileDownloads";
 import { MultiSelect } from "./MultiSelect";
+import { TextAreaTile } from "./TextAreaTile";
 import { EmbeddedMigrationWizard } from "./EmbeddedMigrationWizard";
+import { EmbeddedFxBackupOptIn } from "./EmbeddedFxBackupOptIn";
 import { ActionChecklist } from "./ActionChecklist";
 import { EmbeddedBrowser } from "./EmbeddedBrowser";
+import { ConfirmationChecklist } from "./ConfirmationChecklist";
 import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
+import { EmbeddedBackupRestore } from "./EmbeddedBackupRestore";
 
 const HEADER_STYLES = [
   "backgroundColor",
@@ -83,17 +87,132 @@ export const ContentTiles = props => {
     }
   }, [tiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    /**
+     * In Spotlight dialogs, the VO cursor can move without changing DOM focus.
+     * When a user lands on content tiles, or a tile re-renders, DOM focus often
+     * stays on or "snaps back" to the dialog’s first tabbable control by
+     * SubDialog’s focus enforcement. Pressing Space/Enter then activates that
+     * outside control instead of the VO target.
+     *
+     * To address this, we remember the last real DOM-focused element inside
+     * #content-tiles-container. If focus jumps outside tiles without a recent
+     * tab, such as with a VO focus move, restore focus to that element on the
+     * next rAF. Tab navigation is unaffected.
+     */
+    const page =
+      document.querySelector(
+        "#multi-stage-message-root.onboardingContainer[data-page]"
+      )?.dataset.page || document.location.href;
+
+    if (page !== "spotlight") {
+      return () => {};
+    }
+
+    const tilesEl = document.getElementById("content-tiles-container");
+    const dialog = tilesEl?.closest('main[role="alertdialog"]') || null;
+    if (!tilesEl || !dialog) {
+      return () => {};
+    }
+
+    // We use 250ms to tell “intentional tab navigation” from a programmatic
+    // snap. It’s long enough to cover a human Tab press (and a quick double-tab
+    // / key repeat), but short enough that we don’t delay correcting unintended
+    // focus jumps.
+    const TAB_GRACE_WINDOW_MS = 250;
+    let lastTilesEl = null;
+    let lastTabAt = 0;
+    let restoring = false;
+    let tabFromTiles = false;
+
+    function onKeyDown(e) {
+      if (e.key === "Tab") {
+        lastTabAt = performance.now();
+
+        if (tilesEl.contains(document.activeElement)) {
+          tabFromTiles = true;
+        }
+      }
+    }
+
+    function onFocusIn(event) {
+      const { target } = event;
+
+      // Track true DOM focus inside tiles.
+      if (tilesEl.contains(target)) {
+        lastTilesEl = target;
+        // Reset when focus enters tiles
+        tabFromTiles = false;
+        return;
+      }
+
+      // If focus left tiles without a recent tab, treat as a programmatic snap.
+      const tabRecently = performance.now() - lastTabAt < TAB_GRACE_WINDOW_MS;
+      if (
+        tabRecently ||
+        !lastTilesEl ||
+        !document.contains(lastTilesEl) ||
+        restoring
+      ) {
+        tabFromTiles = false;
+        return;
+      }
+
+      // If tab was pressed while in tiles and focus moved to action buttons, don't restore focus for the intended keyboard navigation
+      const actionButtons = dialog.querySelector(".action-buttons");
+      if (actionButtons?.contains(target) && tabFromTiles) {
+        tabFromTiles = false;
+        return;
+      }
+
+      // Restore immediately (before paint) to avoid visible flicker.
+      restoring = true;
+      try {
+        lastTilesEl.focus({ preventScroll: true });
+      } finally {
+        restoring = false;
+      }
+    }
+
+    // Preempt other dialog handlers.
+    dialog.addEventListener("keydown", onKeyDown, true);
+    dialog.addEventListener("focusin", onFocusIn, true);
+
+    return () => {
+      dialog.removeEventListener("keydown", onKeyDown, true);
+      dialog.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, []);
+
   const toggleTile = (index, tile) => {
     const tileId = `${tile.type}${tile.id ? "_" : ""}${tile.id ?? ""}_header`;
-    setExpandedTileIndex(prevIndex => (prevIndex === index ? null : index));
-    AboutWelcomeUtils.sendActionTelemetry(props.messageId, tileId);
+    AboutWelcomeUtils.sendActionTelemetry(
+      props.messageId,
+      tileId,
+      "CLICK_BUTTON",
+      { writeInMicrosurvey: props.writeInMicrosurvey }
+    );
+    if (tile.type === "link" && tile.action) {
+      props.handleAction(
+        {
+          currentTarget: {
+            value: tileId,
+          },
+        },
+        tile.action
+      );
+    } else {
+      setExpandedTileIndex(prevIndex => (prevIndex === index ? null : index));
+    }
   };
 
   const toggleTiles = () => {
     setTilesHeaderExpanded(prev => !prev);
     AboutWelcomeUtils.sendActionTelemetry(
       props.messageId,
-      "content_tiles_header"
+      "content_tiles_header",
+      "CLICK_BUTTON",
+      { writeInMicrosurvey: props.writeInMicrosurvey }
     );
   };
 
@@ -109,6 +228,14 @@ export const ContentTiles = props => {
     const isExpanded = expandedTileIndex === index;
     const { header, title, subtitle } = tile;
 
+    const tileHeaderProps =
+      tile.type === "link"
+        ? { role: "link" }
+        : {
+            "aria-expanded": isExpanded,
+            "aria-controls": `tile-content-${index}`,
+          };
+
     return (
       <div
         key={index}
@@ -119,8 +246,7 @@ export const ContentTiles = props => {
           <button
             className="tile-header secondary"
             onClick={() => toggleTile(index, tile)}
-            aria-expanded={isExpanded}
-            aria-controls={`tile-content-${index}`}
+            {...tileHeaderProps}
             style={AboutWelcomeUtils.getValidStyle(header.style, HEADER_STYLES)}
           >
             <div className="header-text-container">
@@ -133,7 +259,11 @@ export const ContentTiles = props => {
                 </Localized>
               )}
             </div>
-            <div className="arrow-icon"></div>
+            <div
+              className={
+                tile.type === "link" ? "external-link-icon" : "arrow-icon"
+              }
+            ></div>
           </button>
         )}
         {(title || subtitle) && (
@@ -156,7 +286,7 @@ export const ContentTiles = props => {
             )}
           </div>
         )}
-        {isExpanded || !header ? (
+        {tile.type !== "link" && (isExpanded || !header) ? (
           <div className="tile-content" id={`tile-content-${index}`}>
             {tile.type === "addons-picker" && tile.data && (
               <AddonsPicker
@@ -165,6 +295,7 @@ export const ContentTiles = props => {
                 message_id={props.messageId}
                 handleAction={props.handleAction}
                 layout={content.position}
+                writeInMicrosurvey={props.writeInMicrosurvey}
               />
             )}
             {["theme", "single-select"].includes(tile.type) && tile.data && (
@@ -203,6 +334,14 @@ export const ContentTiles = props => {
                 multiSelectId={`tile-${index}`}
               />
             )}
+            {tile.type === "textarea" && tile.data && (
+              <TextAreaTile
+                content={{ tiles: tile }}
+                textInputs={props.textInputs}
+                setTextInput={props.setTextInput}
+                tileIndex={index}
+              />
+            )}
             {tile.type === "migration-wizard" && (
               <EmbeddedMigrationWizard
                 handleAction={props.handleAction}
@@ -210,10 +349,41 @@ export const ContentTiles = props => {
               />
             )}
             {tile.type === "action_checklist" && tile.data && (
-              <ActionChecklist content={content} message_id={props.messageId} />
+              <ActionChecklist
+                content={content}
+                message_id={props.messageId}
+                writeInMicrosurvey={props.writeInMicrosurvey}
+              />
             )}
             {tile.type === "embedded_browser" && tile.data?.url && (
               <EmbeddedBrowser url={tile.data.url} style={tile.data.style} />
+            )}
+            {tile.type === "backup_restore" && (
+              <EmbeddedBackupRestore
+                handleAction={props.handleAction}
+                content={{ tiles: tile }}
+                skipButton={props.content.skip_button}
+              />
+            )}
+            {tile.type === "fx_backup_file_path" && (
+              <EmbeddedFxBackupOptIn
+                handleAction={props.handleAction}
+                isEncryptedBackup={content.isEncryptedBackup}
+                options={tile.options}
+              />
+            )}
+            {tile.type === "fx_backup_password" && (
+              <EmbeddedFxBackupOptIn
+                handleAction={props.handleAction}
+                isEncryptedBackup={content.isEncryptedBackup}
+                options={tile.options}
+              />
+            )}
+            {tile.type === "confirmation-checklist" && tile.data && (
+              <ConfirmationChecklist
+                content={tile.data}
+                handleAction={props.handleAction}
+              />
             )}
           </div>
         ) : null}
@@ -223,11 +393,13 @@ export const ContentTiles = props => {
 
   const renderContentTiles = () => {
     if (Array.isArray(tiles)) {
+      const containerStyle = content?.tiles_container?.style;
+
       return (
         <div
           id="content-tiles-container"
           style={AboutWelcomeUtils.getValidStyle(
-            content?.contentTilesContainer?.style,
+            containerStyle,
             CONTAINER_STYLES
           )}
         >

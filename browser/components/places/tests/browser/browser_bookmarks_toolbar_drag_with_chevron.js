@@ -6,7 +6,10 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.toolbars.bookmarks.visibility", "newtab"]],
+    set: [
+      ["browser.toolbars.bookmarks.visibility", "newtab"],
+      ["browser.urlbar.trustPanel.featureGate", false],
+    ],
   });
 
   info("Open new tab and bookmarks toolbar");

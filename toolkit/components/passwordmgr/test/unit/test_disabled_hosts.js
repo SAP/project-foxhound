@@ -172,7 +172,7 @@ add_task(
       [origin]
     );
 
-    LoginTestUtils.clearData();
+    await LoginTestUtils.clearData();
 
     // Test adding disabled host with IDN ("http://xn--pss.net").
     Services.logins.setLoginSavingEnabled(encoding, false);
@@ -184,7 +184,7 @@ add_task(
       [origin]
     );
 
-    LoginTestUtils.clearData();
+    await LoginTestUtils.clearData();
   }
 );
 
@@ -206,7 +206,7 @@ add_task(
       [encoding]
     );
 
-    LoginTestUtils.clearData();
+    await LoginTestUtils.clearData();
 
     // Test adding disabled host with IDN ("http://xn--19g.com").
     Services.logins.setLoginSavingEnabled(encoding, false);
@@ -218,6 +218,6 @@ add_task(
       [encoding]
     );
 
-    LoginTestUtils.clearData();
+    await LoginTestUtils.clearData();
   }
 );

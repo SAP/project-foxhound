@@ -11,6 +11,8 @@
 #include "mozilla/layers/LayersTypes.h"
 #include <tuple>
 
+using LayersUpdateFlags = AsyncPanZoomController::LayersUpdateFlags;
+
 class APZEventResultTester : public APZCTreeManagerTester {
  protected:
   UniquePtr<ScopedLayerTreeRegistration> registration;
@@ -36,8 +38,9 @@ class APZEventResultTester : public APZCTreeManagerTester {
     metadata.SetScrollUpdates(scrollUpdates);
     metadata.GetMetrics().SetScrollGeneration(
         scrollUpdates.LastElement().GetGeneration());
-    apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                              /*aThisLayerTreeUpdated=*/true);
+    apzc->NotifyLayersUpdated(metadata,
+                              LayersUpdateFlags{.mIsFirstPaint = false,
+                                                .mThisLayerTreeUpdated = true});
   }
 
   void CreateScrollableRootLayer() {

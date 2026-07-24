@@ -46,7 +46,7 @@ add_task(async function testIgnoreMinifiedSourceForPrettySource() {
   await waitForSelectedSource(dbg, "pretty.js");
 
   info("Pretty print the source");
-  await prettyPrint(dbg);
+  await togglePrettyPrint(dbg);
 
   fileResults = await doProjectSearch(dbg, "stuff", 2);
 

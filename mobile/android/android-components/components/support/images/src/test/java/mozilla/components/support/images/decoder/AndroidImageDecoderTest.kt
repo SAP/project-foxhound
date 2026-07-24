@@ -6,6 +6,7 @@ package mozilla.components.support.images.decoder
 
 import android.graphics.Bitmap
 import android.util.Size
+import androidx.core.graphics.scale
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.images.DesiredSize
 import mozilla.components.support.test.any
@@ -235,9 +236,11 @@ class AndroidImageDecoderTest {
     fun `WHEN bitmap size is good THEN returns non null`() {
         val bitmap: Bitmap = mock()
         val size = Size(128, 128)
-        val decoder = spy(AndroidImageDecoder())
+        val scaler: BitmapScaler = mock()
+        val decoder = spy(AndroidImageDecoder(scaler))
         doReturn(size).`when`(decoder).decodeBitmapBounds(any())
         doReturn(bitmap).`when`(decoder).decodeBitmap(any(), anyInt())
+        doReturn(bitmap).`when`(scaler).scale(bitmap, 256, 256)
 
         val decodedBitmap = decoder.decode(
             ByteArray(0),

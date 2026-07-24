@@ -6,7 +6,9 @@ package mozilla.components.feature.downloads.ext
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
-import mozilla.components.support.utils.DownloadUtils
+import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.DefaultDownloadFileUtils
+import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -22,11 +24,13 @@ class DownloadStateKtTest {
             url = "url",
             fileName = null,
         )
+        val fakeUtils = FakeDownloadFileUtils()
+
         val expectedName = with(download) {
-            DownloadUtils.guessFileName(null, destinationDirectory, url, contentType)
+            fakeUtils.guessFileName(null, url, contentType)
         }
 
-        val result = download.realFilenameOrGuessed
+        val result = download.getRealFilenameOrGuessed(fakeUtils)
 
         assertEquals(expectedName, result)
     }
@@ -39,10 +43,13 @@ class DownloadStateKtTest {
             contentType = "image/jpeg",
         )
         val guessedName = with(download) {
-            DownloadUtils.guessFileName(null, destinationDirectory, url, contentType)
+            DefaultDownloadFileUtils(
+                testContext,
+                downloadLocation = { "downloads" },
+            ).guessFileName(null, url, contentType)
         }
 
-        val result = download.realFilenameOrGuessed
+        val result = download.fileName
 
         assertEquals("test", result)
         assertNotEquals(guessedName, result)

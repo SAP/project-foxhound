@@ -13,9 +13,9 @@
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/Try.h"
+#include "mozilla/dom/AnimationTimelinesController.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/CustomEvent.h"
@@ -41,7 +41,7 @@
 #include "nsPrintObject.h"
 #include "nsQueryObject.h"
 #include "nsReadableUtils.h"
-#include "nsView.h"
+#include "nsSubDocumentFrame.h"
 
 // Print Options
 #include "nsGkAtoms.h"
@@ -84,7 +84,6 @@ static const char sPrintSettingsServiceContractID[] =
 #include "nsIWebBrowserChrome.h"
 #include "nsPageSequenceFrame.h"
 #include "nsRange.h"
-#include "nsViewManager.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -188,7 +187,7 @@ void nsPrintJob::BuildNestedPrintObjects(
             do_GetService(sPrintSettingsServiceContractID);
         embedding::PrintData printData;
         printSettingsService->SerializeToPrintData(mPrintSettings, &printData);
-        Unused << cc->SendUpdateRemotePrintSettings(bc, printData);
+        (void)cc->SendUpdateRemotePrintSettings(bc, printData);
       }
       continue;
     }
@@ -310,7 +309,6 @@ static void DumpPrintObjectsTree(nsPrintObject* aPO, int aLevel, FILE* aFD);
 static void DumpPrintObjectsList(const nsTArray<nsPrintObject*>& aDocList);
 static void RootFrameList(nsPresContext* aPresContext, FILE* out,
                           const char* aPrefix);
-static void DumpViews(nsIDocShell* aDocShell, FILE* out);
 static void DumpLayoutData(const char* aTitleStr, const char* aURLStr,
                            nsPresContext* aPresContext, nsDeviceContext* aDC,
                            nsIFrame* aRootFrame, nsIDocShell* aDocShell,
@@ -475,7 +473,7 @@ nsresult nsPrintJob::PrintPreview(Document& aDoc,
 
 int32_t nsPrintJob::GetRawNumPages() const {
   auto [seqFrame, numSheets] = GetSeqFrameAndCountSheets();
-  Unused << numSheets;
+  (void)numSheets;
   return seqFrame ? seqFrame->GetRawNumPages() : 0;
 }
 
@@ -492,7 +490,7 @@ bool nsPrintJob::GetIsEmpty() const {
 
 int32_t nsPrintJob::GetPrintPreviewNumSheets() const {
   auto [seqFrame, numSheets] = GetSeqFrameAndCountSheets();
-  Unused << seqFrame;
+  (void)seqFrame;
   return numSheets;
 }
 
@@ -720,11 +718,9 @@ nsresult nsPrintJob::ReconstructAndReflow() {
     bool documentIsTopLevel = true;
     if (po->mParent) {
       nsSize adjSize;
-      bool doReturn;
-      nsresult rv = SetRootView(po, doReturn, documentIsTopLevel, adjSize);
-
-      MOZ_ASSERT(!documentIsTopLevel, "How could this happen?");
-
+      bool doReturn = false;
+      documentIsTopLevel = false;
+      nsresult rv = SetRootView(po, documentIsTopLevel, doReturn, adjSize);
       if (NS_FAILED(rv) || doReturn) {
         return rv;
       }
@@ -1182,26 +1178,11 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
   return NS_OK;
 }
 
-nsView* nsPrintJob::GetParentViewForRoot() {
-  if (mIsCreatingPrintPreview) {
-    if (nsCOMPtr<nsIDocumentViewer> viewer =
-            do_QueryInterface(mDocViewerPrint)) {
-      return viewer->FindContainerView();
-    }
-  }
-  return nullptr;
-}
-
-nsresult nsPrintJob::SetRootView(nsPrintObject* aPO, bool& doReturn,
-                                 bool& documentIsTopLevel, nsSize& adjSize) {
+nsresult nsPrintJob::SetRootView(nsPrintObject* aPO, bool aDocumentIsTopLevel,
+                                 bool& doReturn, nsSize& adjSize) {
   bool canCreateScrollbars = true;
 
-  nsView* rootView;
-  nsView* parentView = nullptr;
-
-  doReturn = false;
-
-  if (aPO->mParent && aPO->mParent->PrintingIsEnabled()) {
+  if (!aDocumentIsTopLevel) {
     nsIFrame* frame =
         aPO->mContent ? aPO->mContent->GetPrimaryFrame() : nullptr;
     // Without a frame, this document can't be displayed; therefore, there is no
@@ -1216,43 +1197,19 @@ nsresult nsPrintJob::SetRootView(nsPrintObject* aPO, bool& doReturn,
     // zoom this would be wrong as we use the same mPrt->mPrintDC for all
     // subdocuments.
     adjSize = frame->GetContentRect().Size();
-    documentIsTopLevel = false;
     // presshell exists because parent is printable
 
     // the top nsPrintObject's widget will always have scrollbars
     if (frame && frame->IsSubDocumentFrame()) {
-      nsView* view = frame->GetView();
-      NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
-      view = view->GetFirstChild();
-      NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
-      parentView = view;
       canCreateScrollbars = false;
     }
   } else {
     adjSize = mPrt->mPrintDC->GetDeviceSurfaceDimensions();
-    documentIsTopLevel = true;
-    parentView = GetParentViewForRoot();
   }
 
-  if (aPO->mViewManager->GetRootView()) {
-    // Reuse the root view that is already on the root frame.
-    rootView = aPO->mViewManager->GetRootView();
-    // Remove it from its existing parent if necessary
-    aPO->mViewManager->RemoveChild(rootView);
-    rootView->SetParent(parentView);
-  } else {
-    // Create a child window of the parent that is our "root view/window"
-    nsRect tbounds = nsRect(nsPoint(0, 0), adjSize);
-    rootView = aPO->mViewManager->CreateView(tbounds, parentView);
-    NS_ENSURE_TRUE(rootView, NS_ERROR_OUT_OF_MEMORY);
-  }
-
-  if (mIsCreatingPrintPreview && documentIsTopLevel) {
+  if (mIsCreatingPrintPreview && aDocumentIsTopLevel) {
     aPO->mPresContext->SetPaginatedScrolling(canCreateScrollbars);
   }
-
-  // Setup hierarchical relationship in view manager
-  aPO->mViewManager->SetRootView(rootView);
 
   return NS_OK;
 }
@@ -1276,26 +1233,31 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   nsPresContext::nsPresContextType type =
       mIsCreatingPrintPreview ? nsPresContext::eContext_PrintPreview
                               : nsPresContext::eContext_Print;
-  const bool shouldBeRoot =
-      (!aPO->mParent || !aPO->mParent->PrintingIsEnabled()) &&
-      !GetParentViewForRoot();
+  const bool documentIsTopLevel =
+      !aPO->mParent || !aPO->mParent->PrintingIsEnabled();
+  auto* embedderFrame = [&]() -> nsSubDocumentFrame* {
+    if (documentIsTopLevel) {
+      if (nsCOMPtr<nsIDocumentViewer> viewer =
+              do_QueryInterface(mDocViewerPrint)) {
+        return viewer->FindContainerFrame();
+      }
+    } else if (aPO->mContent) {
+      return do_QueryFrame(aPO->mContent->GetPrimaryFrame());
+    }
+    return nullptr;
+  }();
+
+  const bool shouldBeRoot = documentIsTopLevel && !embedderFrame;
   aPO->mPresContext = shouldBeRoot ? new nsRootPresContext(aPO->mDocument, type)
                                    : new nsPresContext(aPO->mDocument, type);
   aPO->mPresContext->SetPrintSettings(mPrintSettings);
 
   // init it with the DC
-  MOZ_TRY(aPO->mPresContext->Init(printData->mPrintDC));
-
-  aPO->mViewManager = new nsViewManager();
-
-  MOZ_TRY(aPO->mViewManager->Init(printData->mPrintDC));
+  aPO->mPresContext->Init(printData->mPrintDC);
 
   bool doReturn = false;
-  bool documentIsTopLevel = false;
   nsSize adjSize;
-
-  nsresult rv = SetRootView(aPO.get(), doReturn, documentIsTopLevel, adjSize);
-
+  nsresult rv = SetRootView(aPO.get(), documentIsTopLevel, doReturn, adjSize);
   if (NS_FAILED(rv) || doReturn) {
     return rv;
   }
@@ -1339,9 +1301,8 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   // in media_queries.rs for more details.
   RefPtr<Document> doc = aPO->mDocument;
   RefPtr<nsPresContext> presContext = aPO->mPresContext;
-  RefPtr<nsViewManager> viewManager = aPO->mViewManager;
 
-  aPO->mPresShell = doc->CreatePresShell(presContext, viewManager);
+  aPO->mPresShell = doc->CreatePresShell(presContext, embedderFrame);
   if (!aPO->mPresShell) {
     return NS_ERROR_FAILURE;
   }
@@ -1364,8 +1325,8 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
        pageSize.width, pageSize.height));
 
   if (mIsCreatingPrintPreview && documentIsTopLevel) {
-    mDocViewerPrint->SetPrintPreviewPresentation(
-        aPO->mViewManager, aPO->mPresContext, aPO->mPresShell.get());
+    mDocViewerPrint->SetPrintPreviewPresentation(aPO->mPresContext,
+                                                 aPO->mPresShell.get());
   }
 
   MOZ_TRY(aPO->mPresShell->Initialize());
@@ -1414,9 +1375,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
     }
   }
   // Make sure animations are active.
-  for (DocumentTimeline* tl : aPO->mDocument->Timelines()) {
-    tl->TriggerAllPendingAnimationsNow();
-  }
+  aPO->mDocument->TimelinesController().TriggerAllPendingAnimationsNow();
   // Process the reflow event Initialize posted
   presShell->FlushPendingNotifications(FlushType::Layout);
   aPO->mDocument->UpdateRemoteFrameEffects();
@@ -1442,18 +1401,6 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
       RootFrameList(aPO->mPresContext, fd, 0);
       // DumpFrames(fd, aPO->mPresContext, renderingContext, theRootFrame, 0);
       fprintf(fd, "---------------------------------------\n\n");
-      fprintf(fd, "--------------- Views From Root Frame----------------\n");
-      nsView* v = theRootFrame->GetView();
-      if (v) {
-        v->List(fd);
-      } else {
-        printf("View is null!\n");
-      }
-      if (aPO->mDocShell) {
-        fprintf(fd, "--------------- All Views ----------------\n");
-        DumpViews(aPO->mDocShell, fd);
-        fprintf(fd, "---------------------------------------\n\n");
-      }
       fclose(fd);
     }
   }
@@ -1601,8 +1548,11 @@ void SelectionRangeState::SelectNodesExceptInSubtree(const Position& aStart,
   if (auto* text = Text::FromNode(aStart.mNode)) {
     if (start.mNode != text && aStart.mOffset &&
         aStart.mOffset < text->Length()) {
-      text->InsertData(aStart.mOffset, kEllipsis, IgnoreErrors());
-      ellipsizedStart = true;
+      // Only insert ellipsis if there is any non-whitespace prior to selection.
+      if (!text->TextStartsWithOnlyWhitespace(aStart.mOffset)) {
+        text->InsertData(aStart.mOffset, kEllipsis, IgnoreErrors());
+        ellipsizedStart = true;
+      }
     }
   }
 
@@ -1624,8 +1574,11 @@ void SelectionRangeState::SelectNodesExceptInSubtree(const Position& aStart,
   // If the end is mid text then add an ellipsis.
   if (auto* text = Text::FromNode(start.mNode)) {
     if (start.mOffset && start.mOffset < text->Length()) {
-      text->InsertData(start.mOffset, kEllipsis, IgnoreErrors());
-      start.mOffset += kEllipsis.Length();
+      // Only insert ellipsis if there is any non-whitespace after selection.
+      if (!text->TextEndsWithOnlyWhitespace(start.mOffset)) {
+        text->InsertData(start.mOffset, kEllipsis, IgnoreErrors());
+        start.mOffset += kEllipsis.Length();
+      }
     }
   }
 }
@@ -1970,8 +1923,6 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
 nsresult nsPrintJob::FinishPrintPreview() {
   nsresult rv = NS_OK;
 
-#ifdef NS_PRINT_PREVIEW
-
   // If mPrt is null we've already finished with print preview. If mPrt is not
   // null but mIsCreatingPrintPreview is false FinishPrintPreview must have
   // already failed due to DocumentReadyForPrinting failing.
@@ -2024,9 +1975,6 @@ nsresult nsPrintJob::FinishPrintPreview() {
   // before it is to be created
 
   printData->OnEndPrinting();
-
-#endif  // NS_PRINT_PREVIEW
-
   return NS_OK;
 }
 
@@ -2204,38 +2152,6 @@ static void DumpFrames(FILE* out, nsPresContext* aPresContext,
 }
 
 /** ---------------------------------------------------
- *  Dumps the Views from the DocShell
- */
-static void DumpViews(nsIDocShell* aDocShell, FILE* out) {
-  NS_ASSERTION(aDocShell, "Pointer is null!");
-  NS_ASSERTION(out, "Pointer is null!");
-
-  if (nullptr != aDocShell) {
-    fprintf(out, "docshell=%p \n", aDocShell);
-    if (PresShell* presShell = aDocShell->GetPresShell()) {
-      nsViewManager* vm = presShell->GetViewManager();
-      if (vm) {
-        nsView* root = vm->GetRootView();
-        if (root) {
-          root->List(out);
-        }
-      }
-    } else {
-      fputs("null pres shell\n", out);
-    }
-
-    // dump the views of the sub documents
-    int32_t i, n;
-    BrowsingContext* bc = nsDocShell::Cast(aDocShell)->GetBrowsingContext();
-    for (auto& child : bc->Children()) {
-      if (auto childDS = child->GetDocShell()) {
-        DumpViews(childAsShell, out);
-      }
-    }
-  }
-}
-
-/** ---------------------------------------------------
  *  Dumps the Views and Frames
  */
 void DumpLayoutData(const char* aTitleStr, const char* aURLStr,
@@ -2250,11 +2166,9 @@ void DumpLayoutData(const char* aTitleStr, const char* aURLStr,
     return;
   }
 
-#  ifdef NS_PRINT_PREVIEW
   if (aPresContext->Type() == nsPresContext::eContext_PrintPreview) {
     return;
   }
-#  endif
 
   NS_ASSERTION(aRootFrame, "Pointer is null!");
   NS_ASSERTION(aDocShell, "Pointer is null!");
@@ -2279,11 +2193,6 @@ void DumpLayoutData(const char* aTitleStr, const char* aURLStr,
       v->List(fd);
     } else {
       printf("View is null!\n");
-    }
-    if (aDocShell) {
-      fprintf(fd, "--------------- All Views ----------------\n");
-      DumpViews(aDocShell, fd);
-      fprintf(fd, "---------------------------------------\n\n");
     }
     if (aFD == nullptr) {
       fclose(fd);

@@ -2,4 +2,4 @@
 name=org.mozilla.firefox.Locale
 
 [ExtensionOf]
-ref=app/org.mozilla.firefox/${ARCH}/${FLATPAK_BRANCH}
+ref=app/org.mozilla.firefox/${ARCH_NAME}/${FLATPAK_BRANCH}

@@ -14,27 +14,30 @@
 #include "MediaTrackGraph.h"
 #include "VideoUtils.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/AudioStreamTrack.h"
-#include "mozilla/dom/BlobEvent.h"
-#include "mozilla/dom/EmptyBlobImpl.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/MediaRecorderErrorEvent.h"
-#include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/media/MediaUtils.h"
+#include "mozilla/DefineEnum.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/ToString.h"
+#include "mozilla/dom/AudioStreamTrack.h"
+#include "mozilla/dom/BlobEvent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/EmptyBlobImpl.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/MediaRecorderErrorEvent.h"
+#include "mozilla/dom/VideoStreamTrack.h"
+#include "mozilla/glean/DomMediaMetrics.h"
+#include "mozilla/media/MediaUtils.h"
 #include "nsContentTypeParser.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsError.h"
-#include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsMimeTypes.h"
 #include "nsProxyRelease.h"
-#include "nsGlobalWindowInner.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 
@@ -427,13 +430,233 @@ TypeSupport CanRecordWith(MediaStreamTrack* aTrack,
   MOZ_CRASH("Unexpected track type");
 }
 
+struct ParsedMIMEType {
+  MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(MediaType,
+                                                     (Audio, Video, Unknown));
+  MediaType mMediaType = MediaType::Unknown;
+  MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(Container, (MP4, MKV, WebM,
+                                                                 Ogg, Unknown));
+  Container mContainer = Container::Unknown;
+  nsTArray<CodecType> mCodecs;
+};
+
+constexpr std::array<std::array<CodecType, 5>, 5> kValidAudioCodecs = {{
+    // MP4
+    {{CodecType::AAC, CodecType::Flac, CodecType::Opus}},
+    // MKV
+    {{CodecType::AAC, CodecType::Flac, CodecType::Opus, CodecType::PCM,
+      CodecType::Vorbis}},
+    // WebM
+    {{CodecType::Opus, CodecType::Vorbis}},
+    // Ogg
+    {{CodecType::Flac, CodecType::Opus, CodecType::Vorbis}},
+    // Unknown
+    {{}},
+}};
+
+constexpr std::array<std::array<CodecType, 5>, 5> kValidVideoOnlyCodecs = {{
+    // MP4
+    {{CodecType::AV1, CodecType::H264, CodecType::H265, CodecType::VP9}},
+    // MKV
+    {{CodecType::AV1, CodecType::H264, CodecType::H265, CodecType::VP8,
+      CodecType::VP9}},
+    // WebM
+    {{CodecType::AV1, CodecType::VP8, CodecType::VP9}},
+    // Ogg
+    {{CodecType::VP8, CodecType::VP9}},
+    // Unknown
+    {{}},
+}};
+
+constexpr auto kValidContainerCodecPairs = []() constexpr {
+  std::array<
+      std::array<std::array<CodecType, UnderlyingValue(kHighestCodecType) + 1>,
+                 UnderlyingValue(ParsedMIMEType::sHighestContainer) + 1>,
+      UnderlyingValue(ParsedMIMEType::sHighestMediaType) + 1>
+      result{};
+
+  // Generate valid audio container-codec pairs
+  for (size_t c = 0; c < kValidAudioCodecs.size(); ++c) {
+    for (size_t i = 0;
+         i < kValidAudioCodecs[c].size() && IsAudio(kValidAudioCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Audio)][c][i] =
+          kValidAudioCodecs[c][i];
+    }
+  }
+
+  // Generate valid video container-codec pairs
+  for (size_t c = 0; c < kValidVideoOnlyCodecs.size(); ++c) {
+    size_t k = 0;
+    // Add video-only codecs
+    for (size_t i = 0; i < kValidVideoOnlyCodecs[c].size() &&
+                       IsVideo(kValidVideoOnlyCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Video)][c][k++] =
+          kValidVideoOnlyCodecs[c][i];
+    }
+    // Add audio-only codecs
+    for (size_t i = 0;
+         i < kValidAudioCodecs[c].size() && IsAudio(kValidAudioCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Video)][c][k++] =
+          kValidAudioCodecs[c][i];
+    }
+  }
+
+  return result;
+}();
+
+static ParsedMIMEType::Container GetContainerFromMimeType(
+    const MediaMIMEType& aType) {
+  if (aType == MEDIAMIMETYPE(VIDEO_MP4) || aType == MEDIAMIMETYPE(AUDIO_MP4)) {
+    return ParsedMIMEType::Container::MP4;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_MATROSKA) ||
+      aType == MEDIAMIMETYPE(VIDEO_MATROSKA_LEGACY) ||
+      aType == MEDIAMIMETYPE(AUDIO_MATROSKA) ||
+      aType == MEDIAMIMETYPE(AUDIO_MATROSKA_LEGACY)) {
+    return ParsedMIMEType::Container::MKV;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_WEBM) ||
+      aType == MEDIAMIMETYPE(AUDIO_WEBM)) {
+    return ParsedMIMEType::Container::WebM;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_OGG) || aType == MEDIAMIMETYPE(AUDIO_OGG)) {
+    return ParsedMIMEType::Container::Ogg;
+  }
+  return ParsedMIMEType::Container::Unknown;
+}
+
+static CodecType GetCodecTypeFromString(const nsAString& aCodec) {
+  if (IsVP8CodecString(aCodec)) {
+    return CodecType::VP8;
+  }
+  if (IsVP9CodecString(aCodec)) {
+    return CodecType::VP9;
+  }
+  if (IsAV1CodecString(aCodec)) {
+    return CodecType::AV1;
+  }
+  if (IsH264CodecString(aCodec)) {
+    return CodecType::H264;
+  }
+  if (IsH265CodecString(aCodec)) {
+    return CodecType::H265;
+  }
+  if (IsAACCodecString(aCodec)) {
+    return CodecType::AAC;
+  }
+  if (aCodec.EqualsLiteral("flac")) {
+    return CodecType::Flac;
+  }
+  if (aCodec.EqualsLiteral("pcm")) {
+    return CodecType::PCM;
+  }
+  if (aCodec.EqualsLiteral("opus")) {
+    return CodecType::Opus;
+  }
+  if (aCodec.EqualsLiteral("vorbis")) {
+    return CodecType::Vorbis;
+  }
+  return CodecType::Unknown;
+}
+
+static ParsedMIMEType ParseMimeType(const Maybe<MediaContainerType>& aType) {
+  ParsedMIMEType result;
+
+  if (!aType) {
+    return result;
+  }
+
+  result.mMediaType = [&] {
+    if (aType->Type().HasAudioMajorType()) {
+      return ParsedMIMEType::MediaType::Audio;
+    }
+    if (aType->Type().HasVideoMajorType()) {
+      return ParsedMIMEType::MediaType::Video;
+    }
+    return ParsedMIMEType::MediaType::Unknown;
+  }();
+  result.mContainer = GetContainerFromMimeType(aType->Type());
+  for (const auto& codec : aType->ExtendedType().Codecs().Range()) {
+    result.mCodecs.AppendElement(GetCodecTypeFromString(codec));
+  }
+  return result;
+}
+
+static bool IsValidContainerCodecPair(ParsedMIMEType::MediaType aMediaType,
+                                      ParsedMIMEType::Container aContainer,
+                                      CodecType aCodec) {
+  const auto& validCodecs =
+      kValidContainerCodecPairs[UnderlyingValue(aMediaType)]
+                               [UnderlyingValue(aContainer)];
+  return std::find(validCodecs.begin(), validCodecs.end(), aCodec) !=
+         validCodecs.end();
+}
+
+static nsTArray<nsCString> GetMIMELabelStrings(const ParsedMIMEType& aType) {
+  nsTArray<nsCString> labels;
+  if (aType.mContainer == ParsedMIMEType::Container::Unknown ||
+      aType.mMediaType == ParsedMIMEType::MediaType::Unknown) {
+    labels.AppendElement("others"_ns);
+    return labels;
+  }
+  nsCString baseLabel(ParsedMIMEType::EnumValueToString(aType.mContainer));
+  ToLowerCase(baseLabel);
+  if (aType.mCodecs.IsEmpty()) {
+    nsCString label = baseLabel;
+    label.AppendLiteral("_unspecified");
+    labels.AppendElement(label);
+    return labels;
+  }
+  for (const auto& codec : aType.mCodecs) {
+    nsCString label = baseLabel;
+    if (IsValidContainerCodecPair(aType.mMediaType, aType.mContainer, codec)) {
+      label.AppendLiteral("_");
+      label.Append(EnumValueToString(codec));
+      ToLowerCase(label);
+    } else {
+      label.AppendLiteral("_others");
+    }
+    LOG(LogLevel::Verbose,
+        ("GetMIMELabelStrings: type: %s, container: %s, codec: %s => label: %s",
+         ToString(aType.mMediaType).c_str(), ToString(aType.mContainer).c_str(),
+         ToString(codec).c_str(), label.get()));
+    labels.AppendElement(label);
+  }
+  return labels;
+}
+
+// The primary goal is to measure how frequently the MP4 container is requested,
+// while also collecting data on other container/codec combinations as a
+// secondary benefit.
+static void RecordQueriedMIMEType(const Maybe<MediaContainerType>& aMimeType,
+                                  const nsAString& aMimeTypeString) {
+  LOG(LogLevel::Verbose, ("RecordQueriedMIMEType: %s",
+                          NS_ConvertUTF16toUTF8(aMimeTypeString).get()));
+  if (aMimeTypeString.IsEmpty()) {
+    LOG(LogLevel::Verbose, ("MIME queried is empty"));
+    glean::media_recorder::mime_type_query.Get("empty"_ns).Add(1);
+    return;
+  }
+  ParsedMIMEType aType = ParseMimeType(aMimeType);
+  nsTArray<nsCString> labels = GetMIMELabelStrings(aType);
+  for (const auto& label : labels) {
+    LOG(LogLevel::Verbose, ("MIME queried: %s", label.get()));
+    glean::media_recorder::mime_type_query.Get(label).Add(1);
+  }
+}
+
 TypeSupport IsTypeSupportedImpl(const nsAString& aMIMEType) {
   if (aMIMEType.IsEmpty()) {
+    RecordQueriedMIMEType(Nothing(), aMIMEType);
     // Lie and return true even if no container/codec support is enabled,
     // because the spec mandates it.
     return TypeSupport::Supported;
   }
   Maybe<MediaContainerType> mime = MakeMediaContainerType(aMIMEType);
+  RecordQueriedMIMEType(mime, aMIMEType);
   TypeSupport audioSupport = CanRecordAudioTrackWith(mime, aMIMEType);
   TypeSupport videoSupport = CanRecordVideoTrackWith(mime, aMIMEType);
   return std::max(audioSupport, videoSupport);

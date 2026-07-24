@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_PaintRequest_h_
 #define mozilla_dom_PaintRequest_h_
 
-#include "nsPresContext.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Event.h"
+#include "nsPresContext.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {

@@ -8,6 +8,6 @@
  */
 
 interface mixin PopoverInvokerElement {
-  [CEReactions] attribute Element? popoverTargetElement;
+  [CEReactions, BinaryName="popoverTargetElementForBindings"] attribute Element? popoverTargetElement;
   [CEReactions] attribute DOMString popoverTargetAction;
 };

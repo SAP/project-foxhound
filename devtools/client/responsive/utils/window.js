@@ -19,7 +19,8 @@ exports.getDOMWindowUtils = getDOMWindowUtils;
 
 /**
  * Check if the given browser window has finished the startup.
- * @params {nsIDOMWindow} window
+ *
+ * @param {nsIDOMWindow} window
  */
 const isStartupFinished = window => window.gBrowserInit?.delayedStartupFinished;
 

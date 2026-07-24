@@ -57,7 +57,7 @@ class ScopedTimingChecker {
       auto ret = NS_NewTimerWithCallback(
           [self = this](nsITimer* t) { self->TimerFn(); },
           TimeDuration::FromMilliseconds(ms), nsITimer::TYPE_ONE_SHOT,
-          "TimingChecker", mTarget);
+          "TimingChecker"_ns, mTarget);
       MOZ_ASSERT(ret.isOk());
       mTimer = ret.unwrap();
     } else {
@@ -76,7 +76,7 @@ class ScopedTimingChecker {
     auto ret = NS_NewTimerWithCallback(
         [self = this](nsITimer* t) { self->TimerFn(); },
         TimeDuration::FromMilliseconds(ms), nsITimer::TYPE_ONE_SHOT,
-        "TimingChecker", mTarget);
+        "TimingChecker"_ns, mTarget);
     MOZ_ASSERT(ret.isOk());
     mTimer = ret.unwrap();
   }
@@ -329,7 +329,7 @@ TEST(ThreadPoolIdleTimeout, Test)
             waitForRepeats.Notify();
           }
         },
-        50, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP, "Background Bursts",
+        50, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP, "Background Bursts"_ns,
         helperTarget);
 
     ASSERT_TRUE(res.isOk());
@@ -412,7 +412,7 @@ TEST(ThreadPoolIdleTimeout, Test)
               }
             }
           },
-          50, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP, "Background Noise",
+          50, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP, "Background Noise"_ns,
           helperTarget);
 
       ASSERT_TRUE(res.isOk());

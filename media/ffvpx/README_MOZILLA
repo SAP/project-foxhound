@@ -128,6 +128,10 @@ might need to be reapplied or extended to other files including `time.h`. The
 issue being that it's included instead of the system header, causing all sorts
 of issues.
 
+Additionally, `jni.h` and `jni.c` in ffmpeg sources need to be renamed to 
+`fffjni.h` and `fffjni.c`, and `#include` to those files need to be updated.
+This is because there are header collisions with the JDK.
+
 `moz.build` files might need to be modified as well, in light of compilation
 and link errors.
 
@@ -141,3 +145,10 @@ Finally, apply the patches:
   stdio.h function, that causes bug 1879740 issue on Windows.
 - opusenc-dtx.patch to allow enabling DTX in the opus encoder.
 - libaomenc-svc.patch to allow configuring SVC in the libaom encoder.
+- mediacodec_eos.patch to add a method to check definitely if a decoder has
+  reached the end of stream on Android.
+- mediacodec_drm.patch to add support for encrypted packets on Android.
+- mediacodec_force_key_frames.patch to add support for forcing key frames when
+  encoding via the frame pict_type on Android.
+- mediacodec_h264.patch to remove the H264 extradata parsing that brings in
+  encumbered code on Android.

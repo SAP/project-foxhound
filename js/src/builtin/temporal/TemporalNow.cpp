@@ -10,11 +10,11 @@
 
 #include <stdint.h>
 
-#include "jsdate.h"
 #include "jspubtd.h"
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
+#include "builtin/Date.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
@@ -79,7 +79,7 @@ static bool SystemDateTime(JSContext* cx, Handle<Value> temporalTimeZoneLike,
 
     // Step 4.
     int32_t offsetMillis = DateTimeInfo::getOffsetMilliseconds(
-        DateTimeInfo::forceUTC(cx->realm()), epochMillis,
+        cx->realm()->getDateTimeInfo(), epochMillis,
         DateTimeInfo::TimeZoneOffset::UTC);
     MOZ_ASSERT(std::abs(offsetMillis) < ToMilliseconds(TemporalUnit::Day));
 

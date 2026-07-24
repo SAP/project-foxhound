@@ -6,14 +6,15 @@
 #ifndef WebMDemuxer_h_
 #define WebMDemuxer_h_
 
-#include "nsTArray.h"
+#include <stdint.h>
+
+#include <deque>
+#include <utility>
+
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
 #include "NesteggPacketHolder.h"
-
-#include <deque>
-#include <stdint.h>
-#include <utility>
+#include "nsTArray.h"
 
 typedef struct nestegg nestegg;
 
@@ -131,8 +132,6 @@ class WebMDemuxer : public MediaDataDemuxer,
   // Public accessor for nestegg callbacks
   bool IsMediaSource() const { return mIsMediaSource; }
 
-  int64_t LastWebMBlockOffset() const { return mLastWebMBlockOffset; }
-
   struct NestEggContext {
     NestEggContext(WebMDemuxer* aParent, MediaResource* aResource)
         : mParent(aParent), mResource(aResource), mContext(nullptr) {}
@@ -146,21 +145,26 @@ class WebMDemuxer : public MediaDataDemuxer,
     bool IsMediaSource() const { return mParent->IsMediaSource(); }
     MediaResourceIndex* GetResource() { return &mResource; }
 
-    int64_t GetEndDataOffset() const {
-      return (!mParent->IsMediaSource() || mParent->LastWebMBlockOffset() < 0)
-                 ? mResource.GetLength()
-                 : mParent->LastWebMBlockOffset();
-    }
-
     WebMDemuxer* mParent;
     MediaResourceIndex mResource;
     nestegg* mContext;
+    nsresult mLastIORV = NS_OK;
   };
 
- private:
+ protected:
+  virtual nsresult SetVideoCodecInfo(nestegg* aContext, int aTrackId);
+  virtual nsresult SetAudioCodecInfo(nestegg* aContext, int aTrackId,
+                                     const nestegg_audio_params& aParams);
+  virtual nsresult GetCodecPrivateData(nestegg* aContext, int aTrackId,
+                                       nsTArray<const unsigned char*>* aHeaders,
+                                       nsTArray<size_t>* aHeaderLens);
+
+  virtual bool CheckKeyFrameByExamineByteStream(const MediaRawData* aSample);
+
+  virtual ~WebMDemuxer();
+
   friend class WebMTrackDemuxer;
 
-  ~WebMDemuxer();
   void InitBufferedState();
   int64_t FloorDefaultDurationToTimecodeScale(nestegg* aContext,
                                               unsigned aTrackNumber);
@@ -179,16 +183,17 @@ class WebMDemuxer : public MediaDataDemuxer,
                         const media::TimeUnit& aTarget);
   CryptoTrack GetTrackCrypto(TrackInfo::TrackType aType, size_t aTrackNumber);
 
-  // Read a packet from the nestegg file. Returns nullptr if all packets for
-  // the particular track have been read. Pass TrackInfo::kVideoTrack or
-  // TrackInfo::kVideoTrack to indicate the type of the packet we want to read.
-  nsresult NextPacket(TrackInfo::TrackType aType,
-                      RefPtr<NesteggPacketHolder>& aPacket);
+  // Read a packet from the nestegg file.
+  // Returns NS_ERROR_DOM_MEDIA_END_OF_STREAM if all packets for the
+  // particular track have been read. Pass TrackInfo::kVideoTrack or
+  // TrackInfo::kVideoTrack to indicate the type of the packet to read.
+  Result<RefPtr<NesteggPacketHolder>, nsresult> NextPacket(
+      TrackInfo::TrackType aType);
 
   // Internal method that demuxes the next packet from the stream. The caller
   // is responsible for making sure it doesn't get lost.
-  nsresult DemuxPacket(TrackInfo::TrackType aType,
-                       RefPtr<NesteggPacketHolder>& aPacket);
+  Result<RefPtr<NesteggPacketHolder>, nsresult> DemuxPacket(
+      TrackInfo::TrackType aType);
 
   // libnestegg audio and video context for webm container.
   // Access on reader's thread only.
@@ -198,9 +203,11 @@ class WebMDemuxer : public MediaDataDemuxer,
     return aType == TrackInfo::kVideoTrack ? mVideoContext.mResource
                                            : mAudioContext.mResource;
   }
+  const NestEggContext& CallbackContext(TrackInfo::TrackType aType) const {
+    return aType == TrackInfo::kVideoTrack ? mVideoContext : mAudioContext;
+  }
   nestegg* Context(TrackInfo::TrackType aType) const {
-    return aType == TrackInfo::kVideoTrack ? mVideoContext.mContext
-                                           : mAudioContext.mContext;
+    return CallbackContext(aType).mContext;
   }
 
   MediaInfo mInfo;
@@ -242,10 +249,6 @@ class WebMDemuxer : public MediaDataDemuxer,
   bool mHasAudio;
   bool mNeedReIndex;
 
-  // The last complete block parsed by the WebMBufferedState. -1 if not set.
-  // We cache those values rather than retrieving them for performance reasons
-  // as nestegg only performs 1-byte read at a time.
-  int64_t mLastWebMBlockOffset;
   const bool mIsMediaSource;
   // Discard padding in WebM cannot occur more than once. This is set to true if
   // a discard padding element has been found and processed, and the decoding is

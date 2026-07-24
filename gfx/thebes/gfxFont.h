@@ -7,20 +7,21 @@
 #ifndef GFX_FONT_H
 #define GFX_FONT_H
 
+#include <limits>
 #include <new>
-#include <utility>
 #include <functional>
 #include "PLDHashTable.h"
 #include "ThebesRLBoxTypes.h"
 #include "gfxFontVariations.h"
 #include "gfxRect.h"
 #include "gfxTypes.h"
+#include "harfbuzz/hb.h"
+#include "harfbuzz/hb-ot.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/MruCache.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
@@ -51,6 +52,7 @@
 #include "gfxFontEntry.h"
 #include "gfxFontFeatures.h"
 
+class FontVisibilityProvider;
 class gfxContext;
 class gfxGraphiteShaper;
 class gfxHarfBuzzShaper;
@@ -362,7 +364,7 @@ class gfxFontCache final
         mWordCacheExpirationTimer->InitWithNamedFuncCallback(
             WordCacheExpirationTimerCallback, this,
             SHAPED_WORD_TIMEOUT_SECONDS * 1000, nsITimer::TYPE_REPEATING_SLACK,
-            "gfxFontCache::WordCacheExpiration");
+            "gfxFontCache::WordCacheExpiration"_ns);
         mTimerRunning = true;
       }
     }
@@ -1641,23 +1643,61 @@ class gfxFont {
   }
 
   struct Baselines {
-    gfxFloat mAlphabetic;
-    gfxFloat mHanging;
-    gfxFloat mIdeographic;
+    std::atomic<gfxFloat> mAlphabetic;
+    std::atomic<gfxFloat> mHanging;
+    std::atomic<gfxFloat> mIdeographicUnder;
+    std::atomic<gfxFloat> mIdeographicOver;
+    std::atomic<gfxFloat> mIdeographicInkUnder;
+    std::atomic<gfxFloat> mIdeographicInkOver;
+    std::atomic<gfxFloat> mCentral;
+    std::atomic<gfxFloat> mMath;
+
+    Baselines()
+        : mAlphabetic(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mHanging(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mIdeographicUnder(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mIdeographicOver(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mIdeographicInkUnder(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mIdeographicInkOver(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mCentral(std::numeric_limits<gfxFloat>::quiet_NaN()),
+          mMath(std::numeric_limits<gfxFloat>::quiet_NaN()) {}
   };
-  Baselines GetBaselines(Orientation aOrientation);
+
+  typedef std::atomic<gfxFloat> Baselines::* BaselinePtr;
+  typedef std::pair<BaselinePtr, hb_ot_layout_baseline_tag_t> Baseline;
+
+  static constexpr Baseline kAlphabetic = {&Baselines::mAlphabetic,
+                                           HB_OT_LAYOUT_BASELINE_TAG_ROMAN};
+  static constexpr Baseline kHanging = {&Baselines::mHanging,
+                                        HB_OT_LAYOUT_BASELINE_TAG_HANGING};
+  static constexpr Baseline kIdeographicUnder = {
+      &Baselines::mIdeographicUnder,
+      HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_BOTTOM_OR_LEFT};
+  static constexpr Baseline kIdeographicOver = {
+      &Baselines::mIdeographicOver,
+      HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_TOP_OR_RIGHT};
+  static constexpr Baseline kIdeographicInkUnder = {
+      &Baselines::mIdeographicInkUnder,
+      HB_OT_LAYOUT_BASELINE_TAG_IDEO_FACE_BOTTOM_OR_LEFT};
+  static constexpr Baseline kIdeographicInkOver = {
+      &Baselines::mIdeographicInkOver,
+      HB_OT_LAYOUT_BASELINE_TAG_IDEO_FACE_TOP_OR_RIGHT};
+  static constexpr Baseline kCentral = {
+      &Baselines::mCentral, HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_CENTRAL};
+  static constexpr Baseline kMath = {&Baselines::mMath,
+                                     HB_OT_LAYOUT_BASELINE_TAG_MATH};
+
+  gfxFloat GetBaseline(const Baseline& aBaseline, Orientation aOrientation);
 
   /**
    * We let layout specify spacing on either side of any
    * character. We need to specify both before and after
    * spacing so that substring measurement can do the right things.
-   * These values are in appunits. They're always an integral number of
-   * appunits, but we specify them in floats in case very large spacing
-   * values are required.
+   * These values are in appunits.
    */
   struct Spacing {
-    gfxFloat mBefore;
-    gfxFloat mAfter;
+    nscoord mBefore;
+    nscoord mAfter;
   };
   /**
    * Metrics for a particular string
@@ -1817,7 +1857,7 @@ class gfxFont {
   }
 
   template <typename T>
-  bool InitFakeSmallCapsRun(nsPresContext* aPresContext,
+  bool InitFakeSmallCapsRun(FontVisibilityProvider* aFontVisibilityProvider,
                             DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
                             const T* aText, uint32_t aOffset, uint32_t aLength,
                             FontMatchType aMatchType,
@@ -1953,6 +1993,17 @@ class gfxFont {
   virtual const Metrics& GetHorizontalMetrics() const = 0;
 
   void CreateVerticalMetrics();
+  void CreateVerticalBaselines();
+
+  Baselines& GetBaselines(Orientation aOrientation) {
+    if (aOrientation == nsFontMetrics::eHorizontal) {
+      return mHorizontalBaselines;
+    }
+    if (!mVerticalBaselines) {
+      CreateVerticalBaselines();
+    }
+    return *mVerticalBaselines;
+  }
 
   bool MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
                      BoundingBoxType aBoundingBoxType,
@@ -2217,8 +2268,11 @@ class gfxFont {
 
   mozilla::Atomic<mozilla::gfx::ScaledFont*> mAzureScaledFont;
 
+  Baselines mHorizontalBaselines;
+
   // For vertical metrics, created on demand.
   mozilla::Atomic<Metrics*> mVerticalMetrics;
+  mozilla::Atomic<Baselines*> mVerticalBaselines;
 
   // Table used for MathML layout.
   mozilla::Atomic<gfxMathTable*> mMathTable;

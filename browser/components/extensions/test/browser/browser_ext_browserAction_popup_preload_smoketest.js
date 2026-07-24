@@ -114,7 +114,7 @@ async function testCancelPreloadedPopup({ browserAction, widget }) {
     window
   );
   EventUtils.synthesizeMouseAtCenter(
-    window.gURLBar.textbox,
+    window.gURLBar,
     { type: "mouseover" },
     window
   );

@@ -23,14 +23,16 @@ extern mozilla::LazyLogModule sFFmpegVideoLog;
 namespace mozilla {
 
 D3D11TextureWrapper::D3D11TextureWrapper(AVFrame* aAVFrame,
-                                         FFmpegLibWrapper* aLib,
+                                         const FFmpegLibWrapper* aLib,
                                          ID3D11Texture2D* aTexture,
-                                         unsigned int aArrayIdx,
+                                         const gfx::SurfaceFormat aFormat,
+                                         const unsigned int aArrayIdx,
                                          std::function<void()>&& aReleaseMethod)
-    : mLib(aLib),
-      mTexture(aTexture),
+    : mFormat(aFormat),
       mArrayIdx(aArrayIdx),
-      mReleaseMethod(std::move(aReleaseMethod)) {
+      mReleaseMethod(std::move(aReleaseMethod)),
+      mLib(aLib),
+      mTexture(aTexture) {
   MOZ_ASSERT(XRE_IsGPUProcess());
   MOZ_ASSERT(gfx::gfxVars::HwDecodedVideoZeroCopy());
   MOZ_ASSERT(mLib);

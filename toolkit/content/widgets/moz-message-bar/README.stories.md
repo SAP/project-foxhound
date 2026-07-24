@@ -53,3 +53,23 @@ The `data-l10n-attrs` will be set up automatically via `MozLitElement`, so you c
 ```html
   <moz-message-bar data-l10n-id="with-heading-and-message"></moz-message-bar>
 ```
+
+### Custom `message` slot
+
+Normally the "message" of `moz-message-bar` can only be a string (containing no HTML elements). However, if you'd like to use a message that contains nested HTML, such as an anchor link, you can use the message slot.
+
+
+```html
+<moz-message-bar>
+  <span slot="message" data-l10n-id="moz-message-bar-message-slot">
+    <a data-l10n-name="moz-message-bar-link" href="http://example.com"></a>
+  </span>
+</moz-message-bar>
+```
+
+
+```html story
+<moz-message-bar>
+  <span slot="message">Here is a message with a nested <a href="https://example.com" target="_blank">link</a>.</span>
+</moz-message-bar>
+```

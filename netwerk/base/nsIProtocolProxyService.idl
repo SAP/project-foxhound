@@ -201,6 +201,21 @@ interface nsIProtocolProxyService : nsISupports
                                       in nsIProxyInfo aFailoverProxy);
 
     /**
+     * Creates a new nsIProxyInfo instance for MASQUE proxy.
+     *
+     * Note: MASQUE support in Firefox is still experimental. You can follow the
+     * implementation progress via Bug 1978893.
+     */
+    nsIProxyInfo newMASQUEProxyInfo(in AUTF8String aHost,
+                                    in long aPort,
+                                    in AUTF8String aMasqueTemplate,
+                                    in ACString aProxyAuthorizationHeader,
+                                    in ACString aConnectionIsolationKey,
+                                    in unsigned long aFlags,
+                                    in unsigned long aFailoverTimeout,
+                                    in nsIProxyInfo aFailoverProxy);
+
+    /**
      * If the proxy identified by aProxyInfo is unavailable for some reason,
      * this method may be called to access an alternate proxy that may be used
      * instead.  As a side-effect, this method may affect future result values

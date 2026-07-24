@@ -14,8 +14,6 @@
 #include <utility>
 
 #include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ServoStyleConsts.h"

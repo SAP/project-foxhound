@@ -49,19 +49,7 @@ class ListObject : public NativeObject {
   /**
    * Add an element to the end of the list. Returns false on OOM.
    */
-  [[nodiscard]] inline bool append(JSContext* cx, HandleValue value);
-
-  /**
-   * Adds |value| and |size| elements to a list consisting of (value, size)
-   * pairs stored in successive elements.
-   *
-   * This function is intended for use by streams code's queue-with-sizes data
-   * structure and related operations.  See builtin/streams/QueueWithSizes*.
-   * (You *could* use this on any list of even length without issue, but it's
-   * hard to imagine realistic situations where you'd want to...)
-   */
-  [[nodiscard]] inline bool appendValueAndSize(JSContext* cx, HandleValue value,
-                                               double size);
+  [[nodiscard]] inline bool append(JSContext* cx, Value value);
 
   /**
    * Remove and return the first element of the list.
@@ -69,12 +57,6 @@ class ListObject : public NativeObject {
    * Precondition: This list is not empty.
    */
   inline JS::Value popFirst(JSContext* cx);
-
-  /**
-   * Remove the first two elements from a nonempty list of (value, size) pairs
-   * of elements.
-   */
-  inline void popFirstPair(JSContext* cx);
 
   /**
    * Remove and return the first element of the list.

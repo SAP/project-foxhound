@@ -174,7 +174,7 @@ impl TestToken {
         }
     }
 
-    fn get_credentials(&self) -> Ref<Vec<TestTokenCredential>> {
+    fn get_credentials(&self) -> Ref<'_, Vec<TestTokenCredential>> {
         self.credentials.borrow()
     }
 
@@ -990,14 +990,14 @@ impl TestTokenManager {
         .dispatch_background_task();
     }
 
-    pub fn has_platform_authenticator(&self) -> bool {
+    pub fn has_user_verifying_platform_authenticator(&self) -> bool {
         if !static_prefs::pref!("security.webauth.webauthn_enable_softtoken") {
             return false;
         }
 
         for token in self.state.lock().unwrap().values_mut() {
             let _ = token.init();
-            if token.transport.as_str() == "internal" {
+            if token.transport.as_str() == "internal" && token.has_user_verification {
                 return true;
             }
         }

@@ -1,6 +1,8 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_expiration.js"
-skip-if = ["os == 'android'"]
 
 ["test_annos_expire_never.js"]
 

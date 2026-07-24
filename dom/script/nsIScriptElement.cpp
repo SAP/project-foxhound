@@ -73,6 +73,17 @@ already_AddRefed<nsIParser> nsIScriptElement::GetCreatorParser() {
   return parser.forget();
 }
 
+bool nsIScriptElement::AttemptToExecute(nsCOMPtr<nsIParser> aParser) {
+  mDoneAddingChildren = true;
+  bool block = MaybeProcessScript(aParser);
+  if (!mAlreadyStarted) {
+    // Need to lose parser-insertedness here to allow another script to cause
+    // execution later.
+    LoseParserInsertedness();
+  }
+  return block;
+}
+
 mozilla::dom::ReferrerPolicy nsIScriptElement::GetReferrerPolicy() {
   return mozilla::dom::ReferrerPolicy::_empty;
 }

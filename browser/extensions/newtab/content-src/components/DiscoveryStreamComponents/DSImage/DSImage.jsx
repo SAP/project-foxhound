@@ -117,14 +117,28 @@ export class DSImage extends React.PureComponent {
     }
   }
 
+  // Wraps the image url with the Pocket proxy to both resize and crop the image.
   reformatImageURL(url, width, height) {
     const smart = this.props.smartCrop ? "smart/" : "";
     // Change the image URL to request a size tailored for the parent container width
-    // Also: force JPEG, quality 60, no upscaling, no EXIF data
+    // Also: force WebP, quality 75, no upscaling, no EXIF data
     // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
-    return `https://img-getpocket.cdn.mozilla.net/${width}x${height}/${smart}filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(
+    const formattedUrl = `https://img-getpocket.cdn.mozilla.net/${width}x${height}/${smart}filters:format(webp):quality(75):no_upscale():strip_exif()/${encodeURIComponent(
       url
     )}`;
+    return this.secureImageURL(formattedUrl);
+  }
+
+  // Wraps the image URL with the moz-cached-ohttp:// protocol.
+  // This enables Firefox to load resources over Oblivious HTTP (OHTTP),
+  // providing privacy-preserving resource loading.
+  // Applied only when inferred personalization is enabled.
+  // See: https://firefox-source-docs.mozilla.org/browser/components/mozcachedohttp/docs/index.html
+  secureImageURL(url) {
+    if (!this.props.secureImage) {
+      return url;
+    }
+    return `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(url)}`;
   }
 
   componentDidMount() {
@@ -154,7 +168,12 @@ export class DSImage extends React.PureComponent {
         this.props.rawSource &&
         !this.state.optimizedImageFailed
       ) {
-        let baseSource = this.props.rawSource;
+        const baseSource = this.props.rawSource;
+
+        // We don't care about securing this.props.source, as this exclusivly
+        // comes from an older service that is not personalized.
+        // This can also return a non secure url if this functionality is not enabled.
+        const securedSource = this.secureImageURL(baseSource);
 
         let sizeRules = [];
         let srcSetRules = [];
@@ -193,7 +212,7 @@ export class DSImage extends React.PureComponent {
             onLoad={this.onLoad}
             onError={this.onOptimizedImageError}
             sizes={sizeRules.join(",")}
-            src={baseSource}
+            src={securedSource}
             srcSet={srcSetRules.join(",")}
           />
         );
@@ -258,7 +277,7 @@ DSImage.defaultProps = {
   rawSource: null, // Unadulterated image URL to filter through Thumbor
   extraClassNames: null, // Additional classnames to append to component
   optimize: true, // Measure parent container to request exact sizes
-  alt_text: null,
+  alt_text: "",
   windowObj: window, // Added to support unit tests
   sizes: [],
 };

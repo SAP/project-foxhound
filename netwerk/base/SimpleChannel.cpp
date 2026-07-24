@@ -15,13 +15,13 @@
 #include "nsNetUtil.h"
 
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/net/NeckoChild.h"
-#include "mozilla/net/PSimpleChannelChild.h"
 
 namespace mozilla {
 namespace net {
+
+NS_IMPL_ISUPPORTS_INHERITED(SimpleChannel, nsBaseChannel, nsIChildChannel)
 
 SimpleChannel::SimpleChannel(UniquePtr<SimpleChannelCallbacks>&& aCallbacks)
     : mCallbacks(std::move(aCallbacks)) {
@@ -33,8 +33,8 @@ nsresult SimpleChannel::OpenContentStream(bool async,
                                           nsIChannel** channel) {
   NS_ENSURE_TRUE(mCallbacks, NS_ERROR_UNEXPECTED);
 
-  nsCOMPtr<nsIInputStream> stream;
-  MOZ_TRY_VAR(stream, mCallbacks->OpenContentStream(async, this));
+  nsCOMPtr<nsIInputStream> stream =
+      MOZ_TRY(mCallbacks->OpenContentStream(async, this));
   MOZ_ASSERT(stream);
 
   mCallbacks = nullptr;
@@ -74,57 +74,31 @@ nsresult SimpleChannel::BeginAsyncRead(nsIStreamListener* listener,
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(SimpleChannelChild, SimpleChannel, nsIChildChannel)
-
-SimpleChannelChild::SimpleChannelChild(
-    UniquePtr<SimpleChannelCallbacks>&& aCallbacks)
-    : SimpleChannel(std::move(aCallbacks)) {}
-
 NS_IMETHODIMP
-SimpleChannelChild::ConnectParent(uint32_t aId) {
-  MOZ_ASSERT(NS_IsMainThread());
+SimpleChannel::ConnectParent(uint32_t aId) {
+  if (!IsNeckoChild()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   mozilla::dom::ContentChild* cc =
       static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
   if (cc->IsShuttingDown()) {
     return NS_ERROR_FAILURE;
   }
 
-  // Reference freed in DeallocPSimpleChannelChild.
-  if (!gNeckoChild->SendPSimpleChannelConstructor(do_AddRef(this).take(),
-                                                  aId)) {
-    return NS_ERROR_FAILURE;
-  }
-
+  gNeckoChild->SendConnectBaseChannel(aId);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SimpleChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener) {
-  if (CanSend()) {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
-
-  nsresult rv;
-  rv = AsyncOpen(aListener);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (CanSend()) {
-    Unused << Send__delete__(this);
-  }
-  return NS_OK;
+SimpleChannel::CompleteRedirectSetup(nsIStreamListener* aListener) {
+  return AsyncOpen(aListener);
 }
 
 already_AddRefed<nsIChannel> NS_NewSimpleChannelInternal(
     nsIURI* aURI, nsILoadInfo* aLoadInfo,
     UniquePtr<SimpleChannelCallbacks>&& aCallbacks) {
-  RefPtr<SimpleChannel> chan;
-  if (IsNeckoChild()) {
-    chan = new SimpleChannelChild(std::move(aCallbacks));
-  } else {
-    chan = new SimpleChannel(std::move(aCallbacks));
-  }
+  RefPtr<SimpleChannel> chan = new SimpleChannel(std::move(aCallbacks));
 
   chan->SetURI(aURI);
 

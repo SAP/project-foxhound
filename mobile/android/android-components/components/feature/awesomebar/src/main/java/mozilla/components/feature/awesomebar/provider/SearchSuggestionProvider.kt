@@ -167,7 +167,6 @@ class SearchSuggestionProvider private constructor(
         }
     }
 
-    @Suppress("ComplexMethod")
     private fun createMultipleSuggestions(text: String, result: List<String>?): List<AwesomeBar.Suggestion> {
         val suggestions = mutableListOf<AwesomeBar.Suggestion>()
 

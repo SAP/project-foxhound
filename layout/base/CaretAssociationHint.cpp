@@ -57,7 +57,7 @@ CaretAssociationHint ComputeCaretAssociationHint(
       return CaretAssociationHint::After;
     }
   }
-  return frameData.mFrame ? frameData.mHint : aDefault;
+  return frameData ? frameData.mHint : aDefault;
 }
 
 }  // namespace mozilla

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGIOProtocolHandler_h___
-#define nsGIOProtocolHandler_h___
+#ifndef nsGIOProtocolHandler_h_
+#define nsGIOProtocolHandler_h_
 
 #include "nsIProtocolHandler.h"
 #include "nsIObserver.h"
@@ -35,4 +35,4 @@ class nsGIOProtocolHandler final : public nsIProtocolHandler,
   nsTArray<nsCString> mSupportedProtocols;
 };
 
-#endif  // nsGIOProtocolHandler_h___
+#endif  // nsGIOProtocolHandler_h_

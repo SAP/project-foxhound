@@ -1,0 +1,16 @@
+---
+glean-parser:
+    description: |
+        Lints Glean telemetry configuration files (metrics.yaml and pings.yaml)
+        using the glean_parser's built-in linter.
+    include:
+        - .
+    exclude:
+        - mobile/android/android-components/samples/glean/metrics.yaml
+        - mobile/android/android-components/samples/glean/samples-glean-library/metrics.yaml
+    extensions:
+        - yaml
+    support-files:
+        - 'tools/lint/glean-parser/**'
+    type: global
+    payload: glean-parser:lint

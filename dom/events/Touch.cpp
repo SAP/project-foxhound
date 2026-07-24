@@ -70,8 +70,7 @@ Touch::Touch(int32_t aIdentifier, LayoutDeviceIntPoint aPoint,
              LayoutDeviceIntPoint aRadius, float aRotationAngle, float aForce,
              int32_t aTiltX, int32_t aTiltY, int32_t aTwist)
     : Touch(aIdentifier, aPoint, aRadius, aRotationAngle, aForce) {
-  tiltX = aTiltX;
-  tiltY = aTiltY;
+  mTilt.emplace(aTiltX, aTiltY);
   twist = aTwist;
 }
 

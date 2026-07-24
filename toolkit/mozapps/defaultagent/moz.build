@@ -86,8 +86,7 @@ DEFINES["_UNICODE"] = True
 
 FINAL_LIBRARY = "xul"
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 with Files("**"):
     BUG_COMPONENT = ("Toolkit", "Default Browser Agent")

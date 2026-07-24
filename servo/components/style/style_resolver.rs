@@ -20,6 +20,7 @@ use selectors::matching::{
     IncludeStartingStyle, MatchingContext, MatchingForInvalidation, MatchingMode,
     NeedsSelectorFlags, VisitedHandlingMode,
 };
+use selectors::parser::PseudoElement as PseudoElementTrait;
 use servo_arc::Arc;
 
 /// Whether pseudo-elements should be resolved or not.
@@ -118,7 +119,7 @@ impl From<ResolvedElementStyles> for ElementStyles {
     }
 }
 
-fn with_default_parent_styles<E, F, R>(element: E, f: F) -> R
+pub(crate) fn with_default_parent_styles<E, F, R>(element: E, f: F) -> R
 where
     E: TElement,
     F: FnOnce(Option<&ComputedValues>, Option<&ComputedValues>) -> R,
@@ -163,16 +164,16 @@ fn eager_pseudo_is_definitely_not_generated(
 
     if !style
         .flags
-        .intersects(ComputedValueFlags::DISPLAY_DEPENDS_ON_INHERITED_STYLE) &&
-        style.get_box().clone_display() == Display::None
+        .intersects(ComputedValueFlags::DISPLAY_DEPENDS_ON_INHERITED_STYLE)
+        && style.get_box().clone_display() == Display::None
     {
         return true;
     }
 
     if !style
         .flags
-        .intersects(ComputedValueFlags::CONTENT_DEPENDS_ON_INHERITED_STYLE) &&
-        style.ineffective_content_property()
+        .intersects(ComputedValueFlags::CONTENT_DEPENDS_ON_INHERITED_STYLE)
+        && style.ineffective_content_property()
     {
         return true;
     }
@@ -216,8 +217,8 @@ where
 
         let inside_link = parent_style.map_or(false, |s| s.visited_style().is_some());
 
-        let visited_rules = if self.context.shared.visited_styles_enabled &&
-            (inside_link || self.element.is_link())
+        let visited_rules = if self.context.shared.visited_styles_enabled
+            && (inside_link || self.element.is_link())
         {
             let visited_matching_results = self.match_primary(
                 VisitedHandlingMode::RelevantLinkVisited,
@@ -251,10 +252,10 @@ where
     ) -> PrimaryStyle {
         // Before doing the cascade, check the sharing cache and see if we can
         // reuse the style via rule node identity.
-        let may_reuse = self.element.matches_user_and_content_rules() &&
-            parent_style.is_some() &&
-            inputs.rules.is_some() &&
-            include_starting_style == IncludeStartingStyle::No;
+        let may_reuse = self.element.matches_user_and_content_rules()
+            && parent_style.is_some()
+            && inputs.rules.is_some()
+            && include_starting_style == IncludeStartingStyle::No;
 
         if may_reuse {
             let cached = self.context.thread_local.sharing_cache.lookup_by_rules(
@@ -296,8 +297,11 @@ where
 
         let mut pseudo_styles = EagerPseudoStyles::default();
 
-        // FIXME(bug 1954142): This should account for element-backed pseudo elements.
-        if !self.element.is_pseudo_element() {
+        if !self
+            .element
+            .implemented_pseudo_element()
+            .is_some_and(|p| !PseudoElementTrait::is_element_backed(&p))
+        {
             let layout_parent_style_for_pseudo =
                 layout_parent_style_for_pseudo(&primary_style, layout_parent_style);
             SelectorImpl::each_eagerly_cascaded_pseudo_element(|pseudo| {
@@ -308,8 +312,8 @@ where
                 );
 
                 if let Some(style) = pseudo_style {
-                    if !matches!(self.pseudo_resolution, PseudoElementResolution::Force) &&
-                        eager_pseudo_is_definitely_not_generated(&pseudo, &style.0)
+                    if !matches!(self.pseudo_resolution, PseudoElementResolution::Force)
+                        && eager_pseudo_is_definitely_not_generated(&pseudo, &style.0)
                     {
                         return;
                     }
@@ -376,9 +380,6 @@ where
     ) -> ResolvedStyle {
         debug_assert!(pseudo.map_or(true, |p| p.is_eager()));
 
-        let implemented_pseudo = self.element.implemented_pseudo_element();
-        let pseudo = pseudo.or(implemented_pseudo.as_ref());
-
         let mut conditions = Default::default();
         let values = self.context.shared.stylist.cascade_style_and_visited(
             Some(self.element),
@@ -388,6 +389,7 @@ where
             parent_style,
             layout_parent_style,
             FirstLineReparenting::No,
+            /* try_tactic = */ &Default::default(),
             Some(&self.context.thread_local.rule_cache),
             &mut conditions,
         );
@@ -437,8 +439,8 @@ where
                             Some(&pseudo),
                         );
 
-                        if !matches!(self.pseudo_resolution, PseudoElementResolution::Force) &&
-                            eager_pseudo_is_definitely_not_generated(&pseudo, &style.0)
+                        if !matches!(self.pseudo_resolution, PseudoElementResolution::Force)
+                            && eager_pseudo_is_definitely_not_generated(&pseudo, &style.0)
                         {
                             continue;
                         }
@@ -522,11 +524,10 @@ where
         );
 
         let stylist = &self.context.shared.stylist;
-        let implemented_pseudo = self.element.implemented_pseudo_element();
         // Compute the primary rule node.
         stylist.push_applicable_declarations(
             self.element,
-            implemented_pseudo.as_ref(),
+            None,
             self.element.style_attribute(),
             self.element.smil_override(),
             self.element.animation_declarations(self.context.shared),
@@ -570,10 +571,6 @@ where
             self.element, pseudo_element, visited_handling
         );
         debug_assert!(pseudo_element.is_eager());
-        debug_assert!(
-            !self.element.is_pseudo_element(),
-            "Element pseudos can't have any other eager pseudo."
-        );
 
         let mut applicable_declarations = ApplicableDeclarationList::new();
 
@@ -637,8 +634,7 @@ where
         let parent_el = self.element.inheritance_parent();
         let parent_data = parent_el.as_ref().and_then(|e| e.borrow_data());
         let parent_style = parent_data.as_ref().map(|d| d.styles.primary());
-        let parent_after_change_style =
-            parent_style.and_then(|s| self.after_change_style(s));
+        let parent_after_change_style = parent_style.and_then(|s| self.after_change_style(s));
         let parent_values = parent_after_change_style
             .as_ref()
             .or(parent_style)
@@ -674,7 +670,8 @@ where
         primary_style: &Arc<ComputedValues>,
     ) -> Option<Arc<ComputedValues>> {
         let rule_node = primary_style.rules();
-        let without_transition_rules = self.context
+        let without_transition_rules = self
+            .context
             .shared
             .stylist
             .rule_tree()

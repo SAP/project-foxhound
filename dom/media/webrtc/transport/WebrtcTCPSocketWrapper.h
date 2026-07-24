@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef webrtc_tcp_socket_wrapper__
-#define webrtc_tcp_socket_wrapper__
+#ifndef webrtc_tcp_socket_wrapper_
+#define webrtc_tcp_socket_wrapper_
 
 #include <memory>
 
+#include "mozilla/net/WebrtcTCPSocketCallback.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-
-#include "mozilla/net/WebrtcTCPSocketCallback.h"
 
 class nsIEventTarget;
 
@@ -66,4 +65,4 @@ class WebrtcTCPSocketWrapper : public WebrtcTCPSocketCallback {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // webrtc_tcp_socket_wrapper__
+#endif  // webrtc_tcp_socket_wrapper_

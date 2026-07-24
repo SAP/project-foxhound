@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -41,7 +43,7 @@ private val shapeProgressBarChecklist = RoundedCornerShape(
  */
 @Composable
 fun ProgressBarSetupChecklistView(numberOfTasks: Int, numberOfTasksCompleted: Int) {
-    Box(modifier = Modifier.background(FirefoxTheme.colors.layer1)) {
+    Surface {
         ProgressBarBackground()
 
         ProgressBarCompleted(numberOfTasks, numberOfTasksCompleted)
@@ -60,7 +62,7 @@ private fun ProgressBarBackground() {
             .fillMaxWidth()
             .height(heightProgressBarChecklist)
             .clip(shapeProgressBarChecklist)
-            .background(FirefoxTheme.colors.borderDisabled),
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)),
     ) {}
 }
 
@@ -119,24 +121,24 @@ private fun ProgressBarSegmentation(numberOfTasks: Int) {
                     modifier = Modifier
                         .height(heightProgressBarChecklist)
                         .width(4.dp)
-                        .background(FirefoxTheme.colors.layer1),
+                        .background(MaterialTheme.colorScheme.surface),
                 ) {}
             }
         }
     }
 }
 
-@Suppress("MagicNumber")
 @FlexibleWindowLightDarkPreview
 @Composable
 private fun PreviewProgressIndicatorSetupChecklist() {
     FirefoxTheme {
-        Box(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1)
-                .padding(16.dp),
-        ) {
-            ProgressBarSetupChecklistView(6, 3)
+        Surface {
+            Box(modifier = Modifier.padding(16.dp)) {
+                ProgressBarSetupChecklistView(
+                    numberOfTasks = 6,
+                    numberOfTasksCompleted = 3,
+                )
+            }
         }
     }
 }

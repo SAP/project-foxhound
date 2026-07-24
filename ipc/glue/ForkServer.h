@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef __FORKSERVER_H_
-#define __FORKSERVER_H_
+#ifndef FORKSERVER_H_
+#define FORKSERVER_H_
 
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
@@ -46,4 +46,4 @@ enum {
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif  // __FORKSERVER_H_
+#endif  // FORKSERVER_H_

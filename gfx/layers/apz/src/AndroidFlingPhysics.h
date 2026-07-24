@@ -9,7 +9,6 @@
 
 #include "AsyncPanZoomController.h"
 #include "Units.h"
-#include "mozilla/Assertions.h"
 
 namespace mozilla {
 namespace layers {

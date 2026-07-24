@@ -46,7 +46,10 @@ add_task(async function test_actor_extract_text() {
  */
 add_task(async function test_actor_disabled() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.chat.provider", ""]],
+    set: [
+      ["browser.ml.chat.provider", ""],
+      ["browser.ml.chat.page", false],
+    ],
   });
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     Assert.throws(
@@ -55,4 +58,5 @@ add_task(async function test_actor_disabled() {
       "Actor disabled"
     );
   });
+  await SpecialPowers.popPrefEnv();
 });

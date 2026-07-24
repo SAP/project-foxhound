@@ -19,14 +19,14 @@
 }
 
 /* Info box */
-#infoBox:not([hidden="true"]) {
+#infoBox:not([hidden]) {
   display: block;
 }
 
 #editBookmarkPanelContent {
   grid-template-columns: auto 1fr;
 
-  .caption-label:not([hidden="true"]) {
+  .caption-label:not([hidden]) {
     display: block;
     grid-column: 2;
   }
@@ -104,13 +104,13 @@
 }
 
 #organizeButton {
-  list-style-image: url("chrome://global/skin/icons/settings.svg");
+  --menuitem-icon: url("chrome://global/skin/icons/settings.svg");
 }
 
 #viewMenu {
-  list-style-image: url("chrome://browser/skin/sort.svg");
+  --menuitem-icon: url("chrome://browser/skin/sort.svg");
 }
 
 #maintenanceButton {
-  list-style-image: url("chrome://global/skin/icons/arrows-updown.svg");
+  --menuitem-icon: url("chrome://global/skin/icons/arrows-updown.svg");
 }

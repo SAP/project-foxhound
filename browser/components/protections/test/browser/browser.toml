@@ -14,5 +14,8 @@ support-files = [
 ["browser_protections_report_ui.js"]
 
 ["browser_protections_telemetry.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_protections_vpn.js"]

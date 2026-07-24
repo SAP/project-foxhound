@@ -39,7 +39,6 @@ awsy-tp6:
     run-on-projects:
         by-test-platform:
             .*-devedition/.*: []  # don't run on devedition
-            windows.*-32.*/opt: []
             linux(?!.*shippable).*/opt: []
             windows(?!.*shippable).*/opt: []
             mac(?!.*shippable).*/opt: []
@@ -59,7 +58,6 @@ awsy-base:
     run-on-projects:
         by-test-platform:
             .*-devedition/.*: []  # don't run on devedition.
-            windows.*-32.*/opt: []
             linux(?!.*shippable).*/opt: []
             windows(?!.*shippable).*/opt: []
             mac(?!.*shippable).*/opt: []

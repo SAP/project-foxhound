@@ -7,7 +7,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
+  ClientEnvironmentBase:
+    "resource://gre/modules/components-utils/ClientEnvironment.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
@@ -15,6 +18,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
 ChromeUtils.defineLazyGetter(lazy, "telemetryClientId", () =>
   lazy.ClientID.getClientID()
 );
+ChromeUtils.defineLazyGetter(lazy, "impressionId", () => {
+  const PREF_IMPRESSION_ID = "browser.newtabpage.activity-stream.impressionId";
+  let impressionId = Services.prefs.getCharPref(PREF_IMPRESSION_ID, "");
+  if (!impressionId) {
+    impressionId = String(Services.uuid.generateUUID());
+    Services.prefs.setCharPref(PREF_IMPRESSION_ID, impressionId);
+  }
+  return impressionId;
+});
 ChromeUtils.defineLazyGetter(
   lazy,
   "browserSessionId",
@@ -59,9 +71,6 @@ export class AboutWelcomeTelemetry {
   }
 
   async _createPing(event) {
-    if (event.event_context && typeof event.event_context === "object") {
-      event.event_context = JSON.stringify(event.event_context);
-    }
     let ping = {
       ...event,
       addon_version: Services.appinfo.appBuildID,
@@ -84,8 +93,8 @@ export class AboutWelcomeTelemetry {
    *                containing a nested structure of data for reporting as
    *                telemetry, as documented in
    * https://firefox-source-docs.mozilla.org/browser/extensions/newtab/docs/v2-system-addon/data_events.html
-   *                Does not have all of its data (`_createPing` will augment
-   *                with ids and attribution if available).
+   *                Does not have all of its data yet (`_createPing` will
+   *                augment with ids and attribution if available).
    */
   async sendTelemetry(event) {
     if (!this.telemetryEnabled) {
@@ -93,6 +102,51 @@ export class AboutWelcomeTelemetry {
     }
 
     const ping = await this._createPing(event);
+    this.parseAndSubmitPing(ping);
+  }
+
+  parseAndSubmitPing(ping) {
+    let pingKey = "messagingSystem";
+    if (ping.event_context) {
+      if (typeof ping.event_context === "string") {
+        try {
+          ping.event_context = JSON.parse(ping.event_context);
+        } catch (e) {
+          // The Empty JSON strings and non-objects often provided by the existing
+          // telemetry we need to send failing to parse do not fit in the spirit
+          // of what this error is meant to capture. Instead, we want to capture
+          // when what we got should have been an object, but failed to parse.
+
+          // Try to determine if this error should be recorded on
+          // messaging-system or microsurvey. This type of error *should* never
+          // happen on microsurvey, since write_in_microsurvey is always passed
+          // in an object event_context, but because the data is potentially
+          // sensitive, we should fail safe.
+          const eventContextStr = ping.event_context;
+          if (eventContextStr.length) {
+            if (eventContextStr.includes("write_in_microsurvey")) {
+              pingKey = "microsurvey";
+              ping.write_in_microsurvey = true;
+            }
+            if (eventContextStr.includes("{")) {
+              Glean[pingKey].eventContextParseError.add(1);
+            }
+          }
+        }
+      }
+      if (typeof ping.event_context === "object") {
+        pingKey = "microsurvey";
+        ping.write_in_microsurvey =
+          ping.event_context.writeInMicrosurvey ?? false;
+        delete ping.event_context.writeInMicrosurvey;
+      }
+    }
+    if (ping.write_in_microsurvey) {
+      ping.impression_id = lazy.impressionId;
+      // Remove potentially identifying information
+      delete ping.client_id;
+      delete ping.browser_session_id;
+    }
 
     try {
       this.submitGleanPingForPing(ping);
@@ -100,13 +154,25 @@ export class AboutWelcomeTelemetry {
       // Though Glean APIs are forbidden to throw, it may be possible that a
       // mismatch between the shape of `ping` and the defined metrics is not
       // adequately handled.
-      Glean.messagingSystem.gleanPingForPingFailures.add(1);
+
+      // If the message is a write-in microsurvey, we record failures on the
+      // restricted microsurvey ping. This isn't ideal, since it's a counter,
+      // but if we recorded it on the unrestricted messaging-system ping, it
+      // would be possible to line up the submission timestamps between the
+      // unrestricted failure ping and the restricted write-in response ping to
+      // link the two (and thus deanonymize the write-in response).
+      Glean[pingKey].gleanPingForPingFailures.add(1);
     }
   }
 
   /**
    * Tries to infer appropriate Glean metrics on the "messaging-system" ping,
-   * sets them, and submits a "messaging-system" ping.
+   * sets them, and submits a "messaging-system" ping. This is mostly used to
+   * send "messaging-system" telemetry via Glean.messagingSystem, but it can
+   * also send "microsurvey" pings via Glean.microsurvey, when the event
+   * includes an "event_input_value" (which happens if the message uses the
+   * "textarea" content tile). Telemetry from such messages must be kept on a
+   * separate ping with a different data policy.
    *
    * Does not check if telemetry is enabled.
    * (Though Glean will check the global prefs).
@@ -117,67 +183,72 @@ export class AboutWelcomeTelemetry {
   submitGleanPingForPing(ping) {
     lazy.log.debug(`Submitting Glean ping for ${JSON.stringify(ping)}`);
     // event.event_context is an object, but it may have been stringified.
-    let event_context = ping?.event_context;
+    let { event_context } = ping;
+    const writeInMicrosurvey = !!ping.write_in_microsurvey;
+    // This is the ping we record metrics in. Since write-in microsurveys can
+    // contain sensitive data, they have their own restricted ping.
+    const pingKey = writeInMicrosurvey ? "microsurvey" : "messagingSystem";
+    delete ping.write_in_microsurvey;
 
-    if (typeof event_context === "string") {
-      try {
-        event_context = JSON.parse(event_context);
-      } catch (e) {
-        // The Empty JSON strings and non-objects often provided by the
-        // existing telemetry we need to send failing to parse do not fit in
-        // the spirit of what this error is meant to capture. Instead, we want
-        // to capture when what we got should have been an object,
-        // but failed to parse.
-        if (event_context.length && event_context.includes("{")) {
-          Glean.messagingSystem.eventContextParseError.add(1);
-        }
-      }
+    if (event_context && typeof event_context === "object") {
+      event_context = { ...event_context };
     }
 
-    // We echo certain properties from event_context into their own metrics
-    // to aid analysis.
+    // We echo certain properties from event_context into their own metrics to
+    // aid analysis. Most of these are recorded in microsurvey when the message
+    // includes `write_in_microsurvey: true`.
     if (event_context?.reason) {
-      Glean.messagingSystem.eventReason.set(event_context.reason);
+      Glean[pingKey].eventReason.set(event_context.reason);
     }
     if (event_context?.page) {
-      Glean.messagingSystem.eventPage.set(event_context.page);
+      Glean[pingKey].eventPage.set(event_context.page);
     }
     if (event_context?.source) {
-      Glean.messagingSystem.eventSource.set(event_context.source);
+      Glean[pingKey].eventSource.set(event_context.source);
     }
     if (event_context?.screen_family) {
-      Glean.messagingSystem.eventScreenFamily.set(event_context.screen_family);
+      Glean[pingKey].eventScreenFamily.set(event_context.screen_family);
     }
+    // Do not record this metric in messagingSystem, only microsurvey
+    if (event_context?.value && writeInMicrosurvey) {
+      Glean.microsurvey.eventInputValue.set(event_context.value);
+    }
+    // Delete the value in event_context, because it should only be recorded in
+    // the dedicated metric above, in the microsurvey ping.
+    delete event_context?.value;
     // Screen_index was being coerced into a boolean value
     // which resulted in 0 (first screen index) being ignored.
     if (Number.isInteger(event_context?.screen_index)) {
-      Glean.messagingSystem.eventScreenIndex.set(event_context.screen_index);
+      Glean[pingKey].eventScreenIndex.set(event_context.screen_index);
     }
     if (event_context?.screen_id) {
-      Glean.messagingSystem.eventScreenId.set(event_context.screen_id);
+      Glean[pingKey].eventScreenId.set(event_context.screen_id);
     }
     if (event_context?.screen_initials) {
-      Glean.messagingSystem.eventScreenInitials.set(
-        event_context.screen_initials
-      );
+      Glean[pingKey].eventScreenInitials.set(event_context.screen_initials);
     }
 
     // The event_context is also provided as-is as stringified JSON.
     if (event_context) {
-      Glean.messagingSystem.eventContext.set(JSON.stringify(event_context));
+      let stringifiedEC =
+        typeof event_context === "string"
+          ? event_context
+          : JSON.stringify(event_context);
+      Glean[pingKey].eventContext.set(stringifiedEC);
     }
 
     if ("attribution" in ping) {
       for (const [key, value] of Object.entries(ping.attribution)) {
         const camelKey = this._snakeToCamelCase(key);
+        const attributionKey = `${pingKey}Attribution`;
         try {
-          Glean.messagingSystemAttribution[camelKey].set(value);
+          Glean[attributionKey][camelKey].set(value);
         } catch (e) {
           // We here acknowledge that we don't know the full breadth of data
           // being collected. Ideally AttributionCode will later centralize
           // definition and reporting of attribution data and we can be rid of
           // this fail-safe for collecting the names of unknown keys.
-          Glean.messagingSystemAttribution.unknownKeys[camelKey].add(1);
+          Glean[attributionKey].unknownKeys[camelKey].add(1);
         }
       }
     }
@@ -197,22 +268,36 @@ export class AboutWelcomeTelemetry {
         // Ideally this can later be removed after running for a version or two
         // with no values seen in messaging_system.invalid_nested_data
         if (typeof value === "object") {
-          Glean.messagingSystem.invalidNestedData[camelKey].add(1);
+          Glean[pingKey].invalidNestedData[camelKey].add(1);
         } else {
-          Glean.messagingSystem[camelKey].set(value);
+          Glean[pingKey][camelKey].set(value);
         }
       } catch (e) {
         // We here acknowledge that we don't know the full breadth of data being
         // collected. Ideally we will later gain that confidence and can remove
         // this fail-safe for collecting the names of unknown keys.
-        Glean.messagingSystem.unknownKeys[camelKey].add(1);
+        Glean[pingKey].unknownKeys[camelKey].add(1);
         // TODO(bug 1600008): For testing, also record the overall count.
-        Glean.messagingSystem.unknownKeyCount.add(1);
+        Glean[pingKey].unknownKeyCount.add(1);
       }
     }
 
+    // The microsurvey ping has some special handling, because it uses OHTTP to
+    // anonymize user data. This causes it to be sent without certain metadata
+    // that we actually need. So we must reconstruct that metadata as metrics.
+    if (writeInMicrosurvey) {
+      let { os, version, channel } = lazy.ClientEnvironmentBase;
+      Glean.microsurvey.os.set(Services.appinfo.OS);
+      Glean.microsurvey.osVersion.set(os.version);
+      if (os.isWindows) {
+        Glean.microsurvey.windowsBuildNumber.set(os.windowsBuildNumber);
+      }
+      Glean.microsurvey.appDisplayVersion.set(version);
+      Glean.microsurvey.appChannel.set(channel);
+    }
+
     // With all the metrics set, now it's time to submit this ping.
-    GleanPings.messagingSystem.submit();
+    GleanPings[pingKey].submit();
   }
 
   _snakeToCamelCase(s) {

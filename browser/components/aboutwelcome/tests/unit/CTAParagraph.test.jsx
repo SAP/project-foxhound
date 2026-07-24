@@ -36,9 +36,16 @@ describe("CTAParagraph component", () => {
     assert.ok(wrapper.exists());
   });
 
+  it("should render CTAParagraph icon if one is passed", () => {
+    wrapper.setProps({ content: { text: "CTA Text", icon: {} } });
+    assert.ok(wrapper.exists());
+    const infoIcon = wrapper.find(".cta-paragraph-icon");
+    assert.ok(infoIcon.exists());
+  });
+
   it("should call handleAction method when button is link is clicked", () => {
     const btnLink = wrapper.find(".cta-paragraph span");
-    btnLink.simulate("click");
+    btnLink.simulate("click", { preventDefault() {} });
     assert.calledOnce(handleAction);
   });
 

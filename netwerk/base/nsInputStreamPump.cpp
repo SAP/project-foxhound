@@ -6,6 +6,7 @@
 
 #include "nsIOService.h"
 #include "nsInputStreamPump.h"
+#include "nsIInputStreamPriority.h"
 #include "nsIStreamTransportService.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsThreadUtils.h"
@@ -73,7 +74,10 @@ static nsresult CallPeekFunc(nsIInputStream* aInStream, void* aClosure,
 nsresult nsInputStreamPump::PeekStream(PeekSegmentFun callback, void* closure) {
   RecursiveMutexAutoLock lock(mMutex);
 
-  MOZ_ASSERT(mAsyncStream, "PeekStream called without stream");
+  if (!mAsyncStream) {
+    MOZ_DIAGNOSTIC_ASSERT(false, "PeekStream called without stream");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   nsresult rv = CreateBufferedStreamIfNeeded();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -328,6 +332,23 @@ nsInputStreamPump::Init(nsIInputStream* stream, uint32_t segsize,
 }
 
 NS_IMETHODIMP
+nsInputStreamPump::Reset() {
+  RecursiveMutexAutoLock lock(mMutex);
+  LOG(("nsInputStreamPump::Reset [this=%p]\n", this));
+  mListener = nullptr;
+
+  if (mAsyncStream && NS_SUCCEEDED(mAsyncStream->StreamStatus())) {
+    mAsyncStream->Close();
+    mAsyncStream->AsyncWait(nullptr, 0, 0, nullptr);
+  }
+
+  // release the reference, input stream must be closed by the transaction
+  mStream = nullptr;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsInputStreamPump::AsyncRead(nsIStreamListener* listener) {
   RecursiveMutexAutoLock lock(mMutex);
 
@@ -358,6 +379,13 @@ nsInputStreamPump::AsyncRead(nsIStreamListener* listener) {
     mTargetThread = mozilla::GetCurrentSerialEventTarget();
   }
   NS_ENSURE_STATE(mTargetThread);
+
+  if (mHighPriorityStream) {
+    if (nsCOMPtr<nsIInputStreamPriority> pri =
+            do_QueryInterface(mAsyncStream)) {
+      pri->SetPriority(nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
+    }
+  }
 
   rv = EnsureWaiting();
   if (NS_FAILED(rv)) return rv;
@@ -494,6 +522,9 @@ uint32_t nsInputStreamPump::OnStateStart() MOZ_REQUIRES(mMutex) {
 
   {
     nsCOMPtr<nsIStreamListener> listener = mListener;
+    if (!listener) {
+      return STATE_DEAD;
+    }
     // We're on the writing thread
     AssertOnThread();
 
@@ -573,6 +604,9 @@ uint32_t nsInputStreamPump::OnStateTransfer() MOZ_REQUIRES(mMutex) {
       }
 
       nsCOMPtr<nsIStreamListener> listener = mListener;
+      if (!listener) {
+        return STATE_DEAD;
+      }
       // Note: Must exit mutex for call to OnStartRequest to avoid
       // deadlocks when calls to RetargetDeliveryTo for multiple
       // nsInputStreamPumps are needed (e.g. nsHttpChannel).
@@ -675,9 +709,8 @@ uint32_t nsInputStreamPump::OnStateStop() MOZ_REQUIRES(mMutex) {
   // stream.  in some cases, this is redundant, but since close is idempotent,
   // this is OK.  otherwise, be sure to honor the "close-when-done" option.
 
-  if (!mAsyncStream || !mListener) {
+  if (!mAsyncStream) {
     MOZ_ASSERT(mAsyncStream, "null mAsyncStream: OnStateStop called twice?");
-    MOZ_ASSERT(mListener, "null mListener: OnStateStop called twice?");
     return STATE_DEAD;
   }
 

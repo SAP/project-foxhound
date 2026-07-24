@@ -15,7 +15,7 @@
  *         A list of gridFragment objects.
  * @param  {Array} fragments2
  *         Another list of gridFragment objects to compare to the first list.
- * @return {Boolean}
+ * @return {boolean}
  *         True if the fragments are the same, false otherwise.
  */
 function compareFragmentsGeometry(fragments1, fragments2) {

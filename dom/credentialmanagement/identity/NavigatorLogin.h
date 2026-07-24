@@ -8,12 +8,12 @@
 #define mozilla_dom_NavigatorLogin_h
 
 #include "ErrorList.h"
-#include "mozilla/dom/LoginStatusBinding.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/LoginStatusBinding.h"
+#include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "nsCOMPtr.h"
 
 namespace mozilla::dom {
 

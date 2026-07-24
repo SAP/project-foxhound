@@ -23,7 +23,7 @@ Services.prefs.setBoolPref(
 /**
  * Returns a Date in the past usable to add expirable visits.
  *
- * @note Expiration ignores any visit added in the last 7 days, but it's
+ * Note: Expiration ignores any visit added in the last 7 days, but it's
  *       better be safe against DST issues, by going back one day more.
  */
 function getExpirableDate() {
@@ -191,7 +191,7 @@ add_task(async function test_notifications_add_remove() {
         addNotifications++;
       },
     };
-    await list.addView(viewOne);
+    list.addView(viewOne);
     Assert.equal(addNotifications, 2);
 
     // Check that we receive add notifications for new elements.
@@ -206,17 +206,17 @@ add_task(async function test_notifications_add_remove() {
         removeNotifications++;
       },
     };
-    await list.addView(viewTwo);
+    list.addView(viewTwo);
     await list.remove(downloadOne);
     Assert.equal(removeNotifications, 1);
 
     // We should not receive remove notifications after the view is removed.
-    await list.removeView(viewTwo);
+    list.removeView(viewTwo);
     await list.remove(downloadTwo);
     Assert.equal(removeNotifications, 1);
 
     // We should not receive add notifications after the view is removed.
-    await list.removeView(viewOne);
+    list.removeView(viewOne);
     await list.add(await promiseNewDownload());
     Assert.equal(addNotifications, 3);
   }
@@ -244,7 +244,7 @@ add_task(async function test_notifications_change() {
 
     // Check that we receive change notifications.
     let receivedOnDownloadChanged = false;
-    await list.addView({
+    list.addView({
       onDownloadChanged(aDownload) {
         Assert.equal(aDownload, downloadOne);
         receivedOnDownloadChanged = true;
@@ -288,7 +288,7 @@ add_task(async function test_notifications_this() {
       receivedOnDownloadRemoved = true;
     },
   };
-  await list.addView(view);
+  list.addView(view);
 
   let download = await promiseNewDownload();
   await list.add(download);
@@ -328,7 +328,7 @@ add_task(async function test_history_expiration() {
       }
     },
   };
-  await list.addView(downloadView);
+  list.addView(downloadView);
 
   // Work with one finished download and one canceled download.
   await downloadOne.start();
@@ -375,7 +375,7 @@ add_task(async function test_history_clear() {
       }
     },
   };
-  await list.addView(downloadView);
+  list.addView(downloadView);
 
   await downloadOne.start();
   await downloadTwo.start();
@@ -416,7 +416,7 @@ add_task(async function test_removeFinished() {
       }
     },
   };
-  await list.addView(downloadView);
+  list.addView(downloadView);
 
   // Start three of the downloads, but don't start downloadTwo, then set
   // downloadFour to have partial data. All downloads except downloadFour
@@ -462,7 +462,7 @@ add_task(async function test_removeFinished_keepsDownloadingFile() {
       deferred.resolve();
     },
   };
-  await list.addView(downloadView);
+  list.addView(downloadView);
 
   await oneDownload.start();
   await otherDownload.start();

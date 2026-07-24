@@ -12,7 +12,6 @@ rust:
         - gfx/wr/wr_malloc_size_of/
         - intl/icu_segmenter_data/
         - media/mp4parse-rust/
-        - servo/
         - '**/*.mako.rs'
     extensions:
         - rs

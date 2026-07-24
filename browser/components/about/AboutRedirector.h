@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AboutRedirector_h__
-#define AboutRedirector_h__
+#ifndef AboutRedirector_h_
+#define AboutRedirector_h_
 
 #include "nsIAboutModule.h"
 
@@ -27,4 +27,4 @@ class AboutRedirector : public nsIAboutModule {
 }  // namespace browser
 }  // namespace mozilla
 
-#endif  // AboutRedirector_h__
+#endif  // AboutRedirector_h_

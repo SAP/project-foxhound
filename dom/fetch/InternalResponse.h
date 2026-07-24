@@ -7,19 +7,17 @@
 #ifndef mozilla_dom_InternalResponse_h
 #define mozilla_dom_InternalResponse_h
 
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/FetchTypes.h"
-#include "nsIInputStream.h"
-#include "nsICacheInfoChannel.h"
-#include "nsISupportsImpl.h"
-#include "nsProxyRelease.h"
-
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/ResponseBinding.h"
-#include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/SafeRefPtr.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/UniquePtr.h"
+#include "nsICacheInfoChannel.h"
+#include "nsIInputStream.h"
+#include "nsISupportsImpl.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla {
 namespace ipc {

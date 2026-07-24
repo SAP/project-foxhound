@@ -6,6 +6,8 @@ package org.mozilla.fenix.home.toolbar
 
 import android.content.Context
 import androidx.core.graphics.drawable.toDrawable
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -16,12 +18,14 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.menu.Orientation
 import mozilla.components.lib.state.helpers.AbstractBinding
 import mozilla.components.support.ktx.android.content.getColorFromAttr
-import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.GleanMetrics.UnifiedSearch
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.increaseTapAreaVertically
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
+import org.mozilla.fenix.telemetry.ACTION_SEARCH_ENGINE_SELECTOR_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 
 /**
  * A binding that shows the search engine in the search selector button.
@@ -31,7 +35,8 @@ internal class SearchSelectorBinding(
     private val toolbarView: HomeToolbarView,
     private val searchSelectorMenu: SearchSelectorMenu,
     browserStore: BrowserStore,
-) : AbstractBinding<BrowserState>(browserStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<BrowserState>(browserStore, mainDispatcher) {
 
     override fun start() {
         super.start()
@@ -44,7 +49,12 @@ internal class SearchSelectorBinding(
                     Orientation.DOWN
                 }
 
-                UnifiedSearch.searchMenuTapped.record(NoExtras())
+                Toolbar.buttonTapped.record(
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_SEARCH_ENGINE_SELECTOR_CLICKED,
+                    ),
+                )
 
                 searchSelectorMenu.menuController.show(
                     anchor = it.findViewById(R.id.search_selector),
@@ -63,7 +73,7 @@ internal class SearchSelectorBinding(
                 val name = searchEngine?.name
                 val icon = searchEngine?.let {
                     val iconSize =
-                        context.resources.getDimensionPixelSize(R.dimen.preference_icon_drawable_size)
+                        context.pixelSizeFor(R.dimen.preference_icon_drawable_size)
                     searchEngine.icon.toDrawable(context.resources).apply {
                         setBounds(0, 0, iconSize, iconSize)
                         // Setting tint manually for icons that were converted from Drawable

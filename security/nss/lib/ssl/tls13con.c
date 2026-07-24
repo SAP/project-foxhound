@@ -387,8 +387,13 @@ tls13_CreateKEMKeyPair(sslSocket *ss, const sslNamedGroupDef *groupDef,
             paramSet = CKP_NSS_KYBER_768_ROUND3;
             break;
         case ssl_grp_kem_mlkem768x25519:
-            mechanism = CKM_NSS_ML_KEM_KEY_PAIR_GEN;
-            paramSet = CKP_NSS_ML_KEM_768;
+        case ssl_grp_kem_secp256r1mlkem768:
+            mechanism = CKM_ML_KEM_KEY_PAIR_GEN;
+            paramSet = CKP_ML_KEM_768;
+            break;
+        case ssl_grp_kem_secp384r1mlkem1024:
+            mechanism = CKM_ML_KEM_KEY_PAIR_GEN;
+            paramSet = CKP_ML_KEM_1024;
             break;
         default:
             PORT_Assert(0);
@@ -401,14 +406,29 @@ tls13_CreateKEMKeyPair(sslSocket *ss, const sslNamedGroupDef *groupDef,
         goto loser;
     }
 
+    /* avoid pairwise check in non-FIPS mode */
+    /* the only difference between CKM_ML_KEM_KEY_PAIR_GEN and
+     * CKM_NSS_ML_KEM_KEY_PAIR_GEN is the latter skips the pairwise consistency
+     * check and is only supported by softoken */
+    if ((mechanism == CKM_ML_KEM_KEY_PAIR_GEN) && !PK11_IsFIPS() &&
+        PK11_DoesMechanism(slot, CKM_NSS_ML_KEM_KEY_PAIR_GEN)) {
+        mechanism = CKM_NSS_ML_KEM_KEY_PAIR_GEN;
+    }
+
     privKey = PK11_GenerateKeyPairWithOpFlags(slot, mechanism,
-                                              &paramSet, &pubKey, PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE | PK11_ATTR_PUBLIC,
-                                              CKF_DERIVE, CKF_DERIVE, ss->pkcs11PinArg);
+                                              &paramSet, &pubKey,
+                                              PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE | PK11_ATTR_PUBLIC,
+                                              CKF_ENCAPSULATE | CKF_DECAPSULATE,
+                                              CKF_ENCAPSULATE | CKF_DECAPSULATE,
+                                              ss->pkcs11PinArg);
 
     if (!privKey) {
         privKey = PK11_GenerateKeyPairWithOpFlags(slot, mechanism,
-                                                  &paramSet, &pubKey, PK11_ATTR_SESSION | PK11_ATTR_SENSITIVE | PK11_ATTR_PRIVATE,
-                                                  CKF_DERIVE, CKF_DERIVE, ss->pkcs11PinArg);
+                                                  &paramSet, &pubKey,
+                                                  PK11_ATTR_SESSION | PK11_ATTR_SENSITIVE | PK11_ATTR_PRIVATE,
+                                                  CKF_ENCAPSULATE | CKF_DECAPSULATE,
+                                                  CKF_ENCAPSULATE | CKF_DECAPSULATE,
+                                                  ss->pkcs11PinArg);
     }
 
     PK11_FreeSlot(slot);
@@ -448,6 +468,61 @@ loser:
     return SECFailure;
 }
 
+/* only copy the ECDH component of an ephemeral KeyPair */
+sslEphemeralKeyPair *
+tls13_CopyECDHKeyFromHybrid(sslEphemeralKeyPair *copyKeyPair,
+                            const sslNamedGroupDef *groupDef)
+{
+    /* We could use ssl_CopyEphemeralKeyPair here, but we would need to free
+     * the KEM components. So we only copy the ECDH keys */
+    sslEphemeralKeyPair *keyPair = PORT_ZNew(sslEphemeralKeyPair);
+    if (!keyPair) {
+        return NULL;
+    }
+    PR_INIT_CLIST(&keyPair->link);
+    keyPair->group = groupDef;
+    keyPair->keys = ssl_GetKeyPairRef(copyKeyPair->keys);
+    return keyPair;
+}
+
+/*
+ * find a hybrid key Pair they might contain the same ecdh key so we
+ * can reuse them. Each ec group can map to more than one hybrid Pair
+ */
+sslEphemeralKeyPair *
+tls13_FindHybridKeyPair(sslSocket *ss, const sslNamedGroupDef *groupDef)
+{
+    sslEphemeralKeyPair *hybridPair = NULL;
+    switch (groupDef->name) {
+        case ssl_grp_ec_secp256r1:
+            /* future, this may be a loop to check multiple named groups */
+            hybridPair = ssl_LookupEphemeralKeyPair(ss,
+                                                    ssl_LookupNamedGroup(ssl_grp_kem_secp256r1mlkem768));
+            break;
+        case ssl_grp_ec_secp384r1:
+            hybridPair = ssl_LookupEphemeralKeyPair(ss,
+                                                    ssl_LookupNamedGroup(ssl_grp_kem_secp384r1mlkem1024));
+            break;
+        case ssl_grp_ec_curve25519: {
+            /* a loop to check multiple named groups */
+            SSLNamedGroup gnames[] = { ssl_grp_kem_xyber768d00,
+                                       ssl_grp_kem_mlkem768x25519 };
+            for (int i = 0; i < PR_ARRAY_SIZE(gnames); i++) {
+                hybridPair = ssl_LookupEphemeralKeyPair(ss,
+                                                        ssl_LookupNamedGroup(gnames[i]));
+                if (hybridPair != NULL) {
+                    break;
+                }
+            }
+            break;
+        }
+        default:
+            PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+            return NULL;
+    }
+    return hybridPair;
+}
+
 SECStatus
 tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef,
                      sslEphemeralKeyPair **outKeyPair)
@@ -455,21 +530,36 @@ tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef,
     SECStatus rv;
     const ssl3DHParams *params;
     sslEphemeralKeyPair *keyPair = NULL;
+    const sslNamedGroupDef *ecGroup = NULL;
 
     PORT_Assert(groupDef);
     switch (groupDef->keaType) {
         case ssl_kea_ecdh_hybrid:
-            if (groupDef->name != ssl_grp_kem_xyber768d00 && groupDef->name != ssl_grp_kem_mlkem768x25519) {
+            switch (groupDef->name) {
+                case ssl_grp_kem_secp256r1mlkem768:
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp256r1);
+                    break;
+                case ssl_grp_kem_secp384r1mlkem1024:
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp384r1);
+                    break;
+                case ssl_grp_kem_xyber768d00:
+                case ssl_grp_kem_mlkem768x25519:
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
+                    break;
+                default:
+                    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+                    return SECFailure;
+            }
+            if (ecGroup == NULL) {
                 PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
                 return SECFailure;
             }
-            const sslNamedGroupDef *x25519 = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
-            sslEphemeralKeyPair *x25519Pair = ssl_LookupEphemeralKeyPair(ss, x25519);
-            if (x25519Pair) {
-                keyPair = ssl_CopyEphemeralKeyPair(x25519Pair);
+            keyPair = ssl_LookupEphemeralKeyPair(ss, ecGroup);
+            if (keyPair) {
+                keyPair = ssl_CopyEphemeralKeyPair(keyPair);
             }
             if (!keyPair) {
-                rv = ssl_CreateECDHEphemeralKeyPair(ss, x25519, &keyPair);
+                rv = ssl_CreateECDHEphemeralKeyPair(ss, ecGroup, &keyPair);
                 if (rv != SECSuccess) {
                     return SECFailure;
                 }
@@ -477,23 +567,9 @@ tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef,
             keyPair->group = groupDef;
             break;
         case ssl_kea_ecdh:
-            if (groupDef->name == ssl_grp_ec_curve25519) {
-                sslEphemeralKeyPair *hybridPair = ssl_LookupEphemeralKeyPair(ss, ssl_LookupNamedGroup(ssl_grp_kem_mlkem768x25519));
-                if (!hybridPair) {
-                    hybridPair = ssl_LookupEphemeralKeyPair(ss, ssl_LookupNamedGroup(ssl_grp_kem_xyber768d00));
-                }
-                if (hybridPair) {
-                    // We could use ssl_CopyEphemeralKeyPair here, but we would need to free
-                    // the KEM components. We should pull this out into a utility function when
-                    // we refactor to support multiple hybrid mechanisms.
-                    keyPair = PORT_ZNew(sslEphemeralKeyPair);
-                    if (!keyPair) {
-                        return SECFailure;
-                    }
-                    PR_INIT_CLIST(&keyPair->link);
-                    keyPair->group = groupDef;
-                    keyPair->keys = ssl_GetKeyPairRef(hybridPair->keys);
-                }
+            keyPair = tls13_FindHybridKeyPair(ss, groupDef);
+            if (keyPair) {
+                keyPair = tls13_CopyECDHKeyFromHybrid(keyPair, groupDef);
             }
             if (!keyPair) {
                 rv = ssl_CreateECDHEphemeralKeyPair(ss, groupDef, &keyPair);
@@ -663,6 +739,7 @@ tls13_SetupClientHello(sslSocket *ss, sslClientHelloType chType)
         }
     }
 
+    tls13_EchKeyLog(ss);
     return SECSuccess;
 }
 
@@ -712,6 +789,12 @@ tls13_ImportKEMKeyShare(SECKEYPublicKey *peerKey, TLS13KeyShareEntry *entry)
         case ssl_grp_kem_mlkem768x25519:
             expected_len = X25519_PUBLIC_KEY_BYTES + KYBER768_PUBLIC_KEY_BYTES;
             break;
+        case ssl_grp_kem_secp256r1mlkem768:
+            expected_len = SECP256_PUBLIC_KEY_BYTES + KYBER768_PUBLIC_KEY_BYTES;
+            break;
+        case ssl_grp_kem_secp384r1mlkem1024:
+            expected_len = SECP384_PUBLIC_KEY_BYTES + MLKEM1024_PUBLIC_KEY_BYTES;
+            break;
         default:
             PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
             return SECFailure;
@@ -736,6 +819,20 @@ tls13_ImportKEMKeyShare(SECKEYPublicKey *peerKey, TLS13KeyShareEntry *entry)
             // key_exchange.data is `mlkem768 || x25519`
             pk.data = entry->key_exchange.data;
             pk.len = KYBER768_PUBLIC_KEY_BYTES;
+            break;
+        case ssl_grp_kem_secp256r1mlkem768:
+            peerKey->keyType = kyberKey;
+            peerKey->u.kyber.params = params_ml_kem768;
+            /* key_exchange.data is `secp256 || mlkem768` */
+            pk.data = entry->key_exchange.data + SECP256_PUBLIC_KEY_BYTES;
+            pk.len = KYBER768_PUBLIC_KEY_BYTES;
+            break;
+        case ssl_grp_kem_secp384r1mlkem1024:
+            peerKey->keyType = kyberKey;
+            peerKey->u.kyber.params = params_ml_kem1024;
+            /* key_exchange.data is `secp384 || mlkem1024` */
+            pk.data = entry->key_exchange.data + SECP384_PUBLIC_KEY_BYTES;
+            pk.len = MLKEM1024_PUBLIC_KEY_BYTES;
             break;
         default:
             PORT_Assert(0);
@@ -775,15 +872,38 @@ tls13_HandleKEMCiphertext(sslSocket *ss, TLS13KeyShareEntry *entry, sslKeyPair *
             ct.data = entry->key_exchange.data;
             ct.len = KYBER768_CIPHERTEXT_BYTES;
             break;
+        case ssl_grp_kem_secp256r1mlkem768:
+            if (entry->key_exchange.len != SECP256_PUBLIC_KEY_BYTES + KYBER768_CIPHERTEXT_BYTES) {
+                ssl_MapLowLevelError(SSL_ERROR_RX_MALFORMED_HYBRID_KEY_SHARE);
+                return SECFailure;
+            }
+            ct.data = entry->key_exchange.data + SECP256_PUBLIC_KEY_BYTES;
+            ct.len = KYBER768_CIPHERTEXT_BYTES;
+            break;
+        case ssl_grp_kem_secp384r1mlkem1024:
+            if (entry->key_exchange.len != SECP384_PUBLIC_KEY_BYTES + MLKEM1024_CIPHERTEXT_BYTES) {
+                ssl_MapLowLevelError(SSL_ERROR_RX_MALFORMED_HYBRID_KEY_SHARE);
+                return SECFailure;
+            }
+            ct.data = entry->key_exchange.data + SECP384_PUBLIC_KEY_BYTES;
+            ct.len = MLKEM1024_CIPHERTEXT_BYTES;
+            break;
         default:
             PORT_Assert(0);
             ssl_MapLowLevelError(SEC_ERROR_LIBRARY_FAILURE);
             return SECFailure;
     }
 
-    rv = PK11_Decapsulate(keyPair->privKey, &ct, CKM_HKDF_DERIVE, PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE, CKF_DERIVE, outKey);
+    rv = PK11_Decapsulate(keyPair->privKey, &ct, CKM_HKDF_DERIVE,
+                          PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE,
+                          CKF_DERIVE, outKey);
     if (rv != SECSuccess) {
-        ssl_MapLowLevelError(SSL_ERROR_KEY_EXCHANGE_FAILURE);
+        rv = PK11_Decapsulate(keyPair->privKey, &ct, CKM_HKDF_DERIVE,
+                              PK11_ATTR_SESSION | PK11_ATTR_SENSITIVE,
+                              CKF_DERIVE, outKey);
+        if (rv != SECSuccess) {
+            ssl_MapLowLevelError(SSL_ERROR_KEY_EXCHANGE_FAILURE);
+        }
     }
     return rv;
 }
@@ -813,7 +933,7 @@ tls13_HandleKEMKey(sslSocket *ss,
         goto loser;
     }
 
-    PK11SlotInfo *slot = PK11_GetBestSlot(CKM_NSS_KYBER, ss->pkcs11PinArg);
+    PK11SlotInfo *slot = PK11_GetBestSlot(CKM_ML_KEM, ss->pkcs11PinArg);
     if (!slot) {
         goto loser;
     }
@@ -824,9 +944,14 @@ tls13_HandleKEMKey(sslSocket *ss,
         goto loser;
     }
 
-    rv = PK11_Encapsulate(peerKey,
-                          CKM_HKDF_DERIVE, PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE | PK11_ATTR_PUBLIC,
+    rv = PK11_Encapsulate(peerKey, CKM_HKDF_DERIVE,
+                          PK11_ATTR_SESSION | PK11_ATTR_INSENSITIVE,
                           CKF_DERIVE, key, ciphertext);
+    if (rv != SECSuccess) {
+        rv = PK11_Encapsulate(peerKey, CKM_HKDF_DERIVE,
+                              PK11_ATTR_SESSION | PK11_ATTR_SENSITIVE,
+                              CKF_DERIVE, key, ciphertext);
+    }
 
     /* Destroy the imported public key */
     PORT_Assert(peerKey->pkcs11Slot);
@@ -855,6 +980,8 @@ tls13_HandleKeyShare(sslSocket *ss,
     unsigned char *ec_data;
     SECStatus rv;
     int keySize = 0;
+    const sslNamedGroupDef *ecGroup = NULL;
+    int ec_len = 0;
 
     PORT_InitCheapArena(&arena, DER_DEFAULT_CHUNKSIZE);
     peerKey = PORT_ArenaZNew(&arena.arena, SECKEYPublicKey);
@@ -869,16 +996,36 @@ tls13_HandleKeyShare(sslSocket *ss,
         case ssl_kea_ecdh_hybrid:
             switch (entry->group->name) {
                 case ssl_grp_kem_xyber768d00:
+                    ec_len = X25519_PUBLIC_KEY_BYTES;
                     // x25519 share is at the beginning
-                    ec_data = entry->key_exchange.len < X25519_PUBLIC_KEY_BYTES
+                    ec_data = entry->key_exchange.len < ec_len
                                   ? NULL
                                   : entry->key_exchange.data;
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
                     break;
                 case ssl_grp_kem_mlkem768x25519:
+                    ec_len = X25519_PUBLIC_KEY_BYTES;
                     // x25519 share is at the end
-                    ec_data = entry->key_exchange.len < X25519_PUBLIC_KEY_BYTES
+                    ec_data = entry->key_exchange.len < ec_len
                                   ? NULL
-                                  : entry->key_exchange.data + entry->key_exchange.len - X25519_PUBLIC_KEY_BYTES;
+                                  : entry->key_exchange.data + entry->key_exchange.len - ec_len;
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
+                    break;
+                case ssl_grp_kem_secp256r1mlkem768:
+                    ec_len = SECP256_PUBLIC_KEY_BYTES;
+                    /* secp256 share is at the beginning */
+                    ec_data = entry->key_exchange.len < ec_len
+                                  ? NULL
+                                  : entry->key_exchange.data;
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp256r1);
+                    break;
+                case ssl_grp_kem_secp384r1mlkem1024:
+                    ec_len = SECP384_PUBLIC_KEY_BYTES;
+                    /* secp384 share is at the beginning */
+                    ec_data = entry->key_exchange.len < ec_len
+                                  ? NULL
+                                  : entry->key_exchange.data;
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp256r1);
                     break;
                 default:
                     ec_data = NULL;
@@ -888,10 +1035,7 @@ tls13_HandleKeyShare(sslSocket *ss,
                 PORT_SetError(SSL_ERROR_RX_MALFORMED_HYBRID_KEY_SHARE);
                 goto loser;
             }
-            rv = ssl_ImportECDHKeyShare(peerKey,
-                                        ec_data,
-                                        X25519_PUBLIC_KEY_BYTES,
-                                        ssl_LookupNamedGroup(ssl_grp_ec_curve25519));
+            rv = ssl_ImportECDHKeyShare(peerKey, ec_data, ec_len, ecGroup);
             mechanism = CKM_ECDH1_DERIVE;
             break;
         case ssl_kea_ecdh:
@@ -2762,6 +2906,8 @@ tls13_HandleClientKeyShare(sslSocket *ss, TLS13KeyShareEntry *peerShare)
             goto loser; /* Error set by tls13_HandleKEMKey */
         }
         switch (peerShare->group->name) {
+            case ssl_grp_kem_secp384r1mlkem1024:
+            case ssl_grp_kem_secp256r1mlkem768:
             case ssl_grp_kem_xyber768d00:
                 ss->ssl3.hs.dheSecret = PK11_ConcatSymKeys(dheSecret, kemSecret, CKM_HKDF_DERIVE, CKA_DERIVE);
                 break;
@@ -3621,6 +3767,8 @@ tls13_HandleServerKeyShare(sslSocket *ss)
             goto loser; /* Error set by tls13_HandleKEMCiphertext */
         }
         switch (entry->group->name) {
+            case ssl_grp_kem_secp384r1mlkem1024:
+            case ssl_grp_kem_secp256r1mlkem768:
             case ssl_grp_kem_xyber768d00:
                 ss->ssl3.hs.dheSecret = PK11_ConcatSymKeys(dheSecret, kemSecret, CKM_HKDF_DERIVE, CKA_DERIVE);
                 break;
@@ -4289,15 +4437,17 @@ tls13_HandleCertificate(sslSocket *ss, PRUint8 *b, PRUint32 length, PRBool alrea
     return ssl3_AuthCertificate(ss); /* sets ss->ssl3.hs.ws */
 }
 
-/* Add context to the hash functions as described in
+/* Add context when signing hashes as described in
    [draft-ietf-tls-tls13; Section 4.9.1] */
 SECStatus
-tls13_AddContextToHashes(sslSocket *ss, const SSL3Hashes *hashes,
-                         SSLHashType algorithm, PRBool sending,
-                         SSL3Hashes *tbsHash)
+tls13_SignOrVerifyHashWithContext(sslSocket *ss, const SSL3Hashes *hashes,
+                                  SECKEYPrivateKey *privKey, SECKEYPublicKey *pubKey,
+                                  SSLSignatureScheme scheme, sslSignOrVerify direction,
+                                  SECItem *signature)
 {
     SECStatus rv = SECSuccess;
-    PK11Context *ctx;
+    tlsSignOrVerifyContext ctx = { sig_verify, { NULL } };
+    void *pwArg = ss->pkcs11PinArg;
     const unsigned char context_padding[] = {
         0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
         0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
@@ -4311,44 +4461,53 @@ tls13_AddContextToHashes(sslSocket *ss, const SSL3Hashes *hashes,
 
     const char *client_cert_verify_string = "TLS 1.3, client CertificateVerify";
     const char *server_cert_verify_string = "TLS 1.3, server CertificateVerify";
-    const char *context_string = (sending ^ ss->sec.isServer) ? client_cert_verify_string
-                                                              : server_cert_verify_string;
-    unsigned int hashlength;
+    const char *context_string = ((direction == sig_sign && ss->sec.isServer) ||
+                                  (direction == sig_verify && !ss->sec.isServer))
+                                     ? server_cert_verify_string
+                                     : client_cert_verify_string;
 
     /* Double check that we are doing the same hash.*/
     PORT_Assert(hashes->len == tls13_GetHashSize(ss));
 
-    ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(algorithm));
-    if (!ctx) {
-        PORT_SetError(SEC_ERROR_NO_MEMORY);
+    PRINT_BUF(50, (ss, "TLS 1.3 hash without context", hashes->u.raw, hashes->len));
+    PRINT_BUF(50, (ss, "Context string", context_string, strlen(context_string)));
+
+    ctx = tls_CreateSignOrVerifyContext(privKey, pubKey, scheme,
+                                        direction, signature, pwArg);
+    if (ctx.u.ptr == NULL) {
+        goto loser;
+    }
+    rv = tls_SignOrVerifyUpdate(ctx, context_padding, sizeof(context_padding));
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    rv = tls_SignOrVerifyUpdate(ctx, (const unsigned char *)context_string,
+                                /* +1 includes the terminating 0 */
+                                strlen(context_string) + 1);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    rv = tls_SignOrVerifyUpdate(ctx, hashes->u.raw, hashes->len);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    rv = tls_SignOrVerifyEnd(ctx, signature);
+    if (rv) {
         goto loser;
     }
 
-    PORT_Assert(SECFailure);
-    PORT_Assert(!SECSuccess);
-
-    PRINT_BUF(50, (ss, "TLS 1.3 hash without context", hashes->u.raw, hashes->len));
-    PRINT_BUF(50, (ss, "Context string", context_string, strlen(context_string)));
-    rv |= PK11_DigestBegin(ctx);
-    rv |= PK11_DigestOp(ctx, context_padding, sizeof(context_padding));
-    rv |= PK11_DigestOp(ctx, (unsigned char *)context_string,
-                        strlen(context_string) + 1); /* +1 includes the terminating 0 */
-    rv |= PK11_DigestOp(ctx, hashes->u.raw, hashes->len);
-    /* Update the hash in-place */
-    rv |= PK11_DigestFinal(ctx, tbsHash->u.raw, &hashlength, sizeof(tbsHash->u.raw));
-    PK11_DestroyContext(ctx, PR_TRUE);
-    PRINT_BUF(50, (ss, "TLS 1.3 hash with context", tbsHash->u.raw, hashlength));
-
-    tbsHash->len = hashlength;
-    tbsHash->hashAlg = algorithm;
-
-    if (rv) {
-        ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-        goto loser;
+    /* if we are server & sending or !server & !sending, update the scheme */
+    /* only update on server cert verify */
+    if ((direction == sig_sign && ss->sec.isServer) ||
+        (direction == sig_verify && !ss->sec.isServer)) {
+        ss->sec.signatureScheme = scheme;
+        ss->sec.authType = ssl_SignatureSchemeToAuthType(scheme);
     }
     return SECSuccess;
 
 loser:
+    tls_DestroySignOrVerifyContext(ctx);
+    ssl_MapLowLevelError(SSL_ERROR_SIGN_HASHES_FAILURE);
     return SECFailure;
 }
 
@@ -5153,9 +5312,7 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
     SECStatus rv = SECFailure;
     SECItem buf = { siBuffer, NULL, 0 };
     unsigned int len;
-    SSLHashType hashAlg;
     SSL3Hashes hash;
-    SSL3Hashes tbsHash; /* The hash "to be signed". */
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
@@ -5176,14 +5333,10 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         return SECFailure;
     }
-    hashAlg = ssl_SignatureSchemeToHashType(ss->ssl3.hs.signatureScheme);
-    rv = tls13_AddContextToHashes(ss, &hash, hashAlg,
-                                  PR_TRUE, &tbsHash);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
 
-    rv = ssl3_SignHashes(ss, &tbsHash, privKey, &buf);
+    rv = tls13_SignOrVerifyHashWithContext(ss, &hash, privKey, NULL,
+                                           ss->ssl3.hs.signatureScheme,
+                                           sig_sign, &buf);
     if (rv == SECSuccess && !ss->sec.isServer) {
         /* Remember the info about the slot that did the signing.
          * Later, when doing an SSL restart handshake, verify this.
@@ -5200,7 +5353,7 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
         PK11_FreeSlot(slot);
     }
     if (rv != SECSuccess) {
-        goto done; /* err code was set by ssl3_SignHashes */
+        goto done; /* err code was set by tls13_SignOrVerifyHashWithContext */
     }
 
     len = buf.len + 2 + 2;
@@ -5241,8 +5394,6 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
     SECItem signed_hash = { siBuffer, NULL, 0 };
     SECStatus rv;
     SSLSignatureScheme sigScheme;
-    SSLHashType hashAlg;
-    SSL3Hashes tbsHash;
     SSL3Hashes hashes;
 
     SSL_TRC(3, ("%d: TLS13[%d]: handle certificate_verify handshake",
@@ -5316,13 +5467,6 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
         FATAL_ERROR(ss, PORT_GetError(), illegal_parameter);
         return SECFailure;
     }
-    hashAlg = ssl_SignatureSchemeToHashType(sigScheme);
-
-    rv = tls13_AddContextToHashes(ss, &hashes, hashAlg, PR_FALSE, &tbsHash);
-    if (rv != SECSuccess) {
-        FATAL_ERROR(ss, SSL_ERROR_DIGEST_FAILURE, internal_error);
-        return SECFailure;
-    }
 
     rv = ssl3_ConsumeHandshakeVariable(ss, &signed_hash, 2, &b, &length);
     if (rv != SECSuccess) {
@@ -5341,8 +5485,8 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
-    rv = ssl_VerifySignedHashesWithPubKey(ss, pubKey, sigScheme,
-                                          &tbsHash, &signed_hash);
+    rv = tls13_SignOrVerifyHashWithContext(ss, &hashes, NULL, pubKey,
+                                           sigScheme, sig_verify, &signed_hash);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, PORT_GetError(), decrypt_error);
         goto loser;

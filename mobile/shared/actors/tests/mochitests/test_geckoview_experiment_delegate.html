@@ -16,7 +16,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1845824
   // Note: TestRunnerActivity provides a pseudo Experiment Delegate for this test.
   async function requestExperiment(message) {
     const chromeScript = SpecialPowers.loadChromeScript(_ => {
-      /* eslint-env mozilla/chrome-script */
       addMessageListener("experiment", (msg) => {
         var result;
         const navigator = Services.wm.getMostRecentWindow("navigator:geckoview");

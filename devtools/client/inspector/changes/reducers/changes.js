@@ -12,8 +12,8 @@ const {
 /**
  * Return a deep clone of the given state object.
  *
- * @param {Object} state
- * @return {Object}
+ * @param {object} state
+ * @return {object}
  */
 function cloneState(state = {}) {
   return Object.entries(state).reduce((sources, [sourceId, source]) => {
@@ -41,7 +41,7 @@ function cloneState(state = {}) {
  * create entries in the given rules collection for each rule and assign parent/child
  * dependencies.
  *
- * @param {Object} ruleData
+ * @param {object} ruleData
  *        Information about a CSS rule:
  *        {
  *          id:        {String}
@@ -55,11 +55,11 @@ function cloneState(state = {}) {
  *                     Indexes of each ancestor rule within its parent rule.
  *        }
  *
- * @param {Object} rules
+ * @param {object} rules
  *        Collection of rules to be mutated.
  *        This is a reference to the corresponding `rules` object from the state.
  *
- * @return {Object}
+ * @return {object}
  *         Entry for the CSS rule created the given collection of rules.
  */
 function createRule(ruleData, rules) {
@@ -181,10 +181,10 @@ const INITIAL_STATE = {};
 
 const reducers = {
   /**
-   * CSS changes are collected on the server by the ChangesActor which dispatches them to
-   * the client as atomic operations: a rule/declaration updated, added or removed.
+   * CSS changes are collected on the server by the CSSChangeWatcher which sends CSS_CHANGE
+   * resources to the client as atomic operations: a rule/declaration updated, added or removed.
    *
-   * By design, the ChangesActor has no big-picture context of all the collected changes.
+   * By design, the CSSChangeWatcher has no big-picture context of all the collected changes.
    * It only holds the stack of atomic changes. This makes it roboust for many use cases:
    * building a diff-view, supporting undo/redo, offline persistence, etc. Consumers,
    * like the Changes panel, get to massage the data for their particular purposes.

@@ -8,7 +8,6 @@
 #include "HalTypes.h"
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#include "mozilla/BitSet.h"
 
 namespace mozilla::hal_impl {
 

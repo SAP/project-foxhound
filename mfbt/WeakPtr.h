@@ -71,15 +71,11 @@
 #ifndef mozilla_WeakPtr_h
 #define mozilla_WeakPtr_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
-
-#include <string.h>
-#include <type_traits>
 
 #if defined(MOZILLA_INTERNAL_API)
 // For thread safety checking.

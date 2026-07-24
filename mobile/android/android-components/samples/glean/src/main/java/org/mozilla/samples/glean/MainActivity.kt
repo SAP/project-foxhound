@@ -63,7 +63,7 @@ open class MainActivity : AppCompatActivity(), NimbusInterface.Observer {
         setupNimbusExperiments()
     }
 
-    /** Begin Nimbus component specific functions */
+    // Begin Nimbus component specific functions
 
     /**
      * This sets up the update receiver and sets the onClickListener for the "Update Experiments"
@@ -121,5 +121,5 @@ open class MainActivity : AppCompatActivity(), NimbusInterface.Observer {
         binding.textViewExperimentStatus.text = text
     }
 
-    /** End Nimbus component functions */
+    // End Nimbus component functions
 }

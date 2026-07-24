@@ -10,9 +10,8 @@
 
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_legacy.h"
 
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -46,7 +45,6 @@
 #include "logging/rtc_event_log/events/rtc_event_video_receive_stream_config.h"
 #include "logging/rtc_event_log/events/rtc_event_video_send_stream_config.h"
 #include "logging/rtc_event_log/rtc_stream_config.h"
-#include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/app.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
@@ -296,14 +294,6 @@ std::string RtcEventLogEncoderLegacy::Encode(const RtcEvent& event) {
       return EncodeBweUpdateLossBased(rtc_event);
     }
 
-    case RtcEvent::Type::DtlsTransportState: {
-      return "";
-    }
-
-    case RtcEvent::Type::DtlsWritableState: {
-      return "";
-    }
-
     case RtcEvent::Type::IceCandidatePairConfig: {
       auto& rtc_event =
           static_cast<const RtcEventIceCandidatePairConfig&>(event);
@@ -376,10 +366,10 @@ std::string RtcEventLogEncoderLegacy::Encode(const RtcEvent& event) {
       // Fake event used for unit test.
       RTC_DCHECK_NOTREACHED();
       break;
+    case RtcEvent::Type::BweUpdateScream:
+    case RtcEvent::Type::DtlsTransportState:
+    case RtcEvent::Type::DtlsWritableState:
     case RtcEvent::Type::RouteChangeEvent:
-    case RtcEvent::Type::GenericPacketReceived:
-    case RtcEvent::Type::GenericPacketSent:
-    case RtcEvent::Type::GenericAckReceived:
     case RtcEvent::Type::FrameDecoded:
     case RtcEvent::Type::NetEqSetMinimumDelay:
       // These are unsupported in the old format, but shouldn't crash.
@@ -410,21 +400,20 @@ std::string RtcEventLogEncoderLegacy::EncodeAudioNetworkAdaptation(
 
   auto* audio_network_adaptation =
       rtclog_event.mutable_audio_network_adaptation();
-  if (event.config().bitrate_bps)
-    audio_network_adaptation->set_bitrate_bps(*event.config().bitrate_bps);
-  if (event.config().frame_length_ms)
-    audio_network_adaptation->set_frame_length_ms(
-        *event.config().frame_length_ms);
-  if (event.config().uplink_packet_loss_fraction) {
+  if (event.bitrate_bps())
+    audio_network_adaptation->set_bitrate_bps(*event.bitrate_bps());
+  if (event.frame_length_ms())
+    audio_network_adaptation->set_frame_length_ms(*event.frame_length_ms());
+  if (event.uplink_packet_loss_fraction()) {
     audio_network_adaptation->set_uplink_packet_loss_fraction(
-        *event.config().uplink_packet_loss_fraction);
+        *event.uplink_packet_loss_fraction());
   }
-  if (event.config().enable_fec)
-    audio_network_adaptation->set_enable_fec(*event.config().enable_fec);
-  if (event.config().enable_dtx)
-    audio_network_adaptation->set_enable_dtx(*event.config().enable_dtx);
-  if (event.config().num_channels)
-    audio_network_adaptation->set_num_channels(*event.config().num_channels);
+  if (event.enable_fec())
+    audio_network_adaptation->set_enable_fec(*event.enable_fec());
+  if (event.enable_dtx())
+    audio_network_adaptation->set_enable_dtx(*event.enable_dtx());
+  if (event.num_channels())
+    audio_network_adaptation->set_num_channels(*event.num_channels());
 
   return Serialize(&rtclog_event);
 }
@@ -715,10 +704,9 @@ std::string RtcEventLogEncoderLegacy::EncodeVideoSendStreamConfig(
   return Serialize(&rtclog_event);
 }
 
-std::string RtcEventLogEncoderLegacy::EncodeRtcpPacket(
-    int64_t timestamp_us,
-    const rtc::Buffer& packet,
-    bool is_incoming) {
+std::string RtcEventLogEncoderLegacy::EncodeRtcpPacket(int64_t timestamp_us,
+                                                       const Buffer& packet,
+                                                       bool is_incoming) {
   rtclog::Event rtclog_event;
   rtclog_event.set_timestamp_us(timestamp_us);
   rtclog_event.set_type(rtclog::Event::RTCP_EVENT);
@@ -765,7 +753,7 @@ std::string RtcEventLogEncoderLegacy::EncodeRtcpPacket(
 
 std::string RtcEventLogEncoderLegacy::EncodeRtpPacket(
     int64_t timestamp_us,
-    rtc::ArrayView<const uint8_t> header,
+    ArrayView<const uint8_t> header,
     size_t packet_length,
     int probe_cluster_id,
     bool is_incoming) {

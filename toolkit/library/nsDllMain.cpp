@@ -5,8 +5,6 @@
 
 #include <windows.h>
 #include "nsToolkit.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/WindowsVersion.h"
 
 #if defined(__GNUC__)
 // If DllMain gets name mangled, it won't be seen.

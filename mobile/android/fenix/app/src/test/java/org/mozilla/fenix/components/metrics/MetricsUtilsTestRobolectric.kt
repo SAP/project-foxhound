@@ -310,4 +310,51 @@ class MetricsUtilsTestRobolectric {
         assertEquals("shortcut.widget", snapshot.single().extra?.getValue("source"))
         verify { nimbusEventStore.recordEvent("performed_search") }
     }
+
+    @Test
+    fun `given a search engine with NO telemetry suffix, when recording a search then the telemetry id is the engine id`() {
+        val searchEngineId = "engine-id"
+        assertNull(Metrics.searchCount["$searchEngineId.shortcut"].testGetValue())
+
+        val engine: SearchEngine = mockk(relaxed = true)
+        val nimbusEventStore: NimbusEventStore = mockk(relaxed = true)
+
+        every { engine.id } returns searchEngineId
+        every { engine.type } returns SearchEngine.Type.BUNDLED
+        every { engine.telemetrySuffix } returns null
+
+        MetricsUtils.recordSearchMetrics(
+            engine,
+            false,
+            MetricsUtils.Source.SHORTCUT,
+            nimbusEventStore,
+        )
+
+        assertNotNull(Metrics.searchCount["$searchEngineId.shortcut"].testGetValue())
+        verify { nimbusEventStore.recordEvent("performed_search") }
+    }
+
+    @Test
+    fun `given a search engine with a telemetry suffix, when recording a search then the telemetry id is the engine id with the suffix`() {
+        val searchEngineId = "engine-id"
+        val telemetrySuffix = "telemetry-suffix"
+        assertNull(Metrics.searchCount["$searchEngineId-$telemetrySuffix.shortcut"].testGetValue())
+
+        val engine: SearchEngine = mockk(relaxed = true)
+        val nimbusEventStore: NimbusEventStore = mockk(relaxed = true)
+
+        every { engine.id } returns searchEngineId
+        every { engine.type } returns SearchEngine.Type.BUNDLED
+        every { engine.telemetrySuffix } returns telemetrySuffix
+
+        MetricsUtils.recordSearchMetrics(
+            engine,
+            false,
+            MetricsUtils.Source.SHORTCUT,
+            nimbusEventStore,
+        )
+
+        assertNotNull(Metrics.searchCount["$searchEngineId-$telemetrySuffix.shortcut"].testGetValue())
+        verify { nimbusEventStore.recordEvent("performed_search") }
+    }
 }

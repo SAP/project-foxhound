@@ -6,13 +6,12 @@
 
 /* rendering object for replaced elements with image data */
 
-#ifndef nsImageFrame_h___
-#define nsImageFrame_h___
+#ifndef nsImageFrame_h_
+#define nsImageFrame_h_
 
 #include "imgIContainer.h"
 #include "imgINotificationObserver.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/StaticPtr.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsDisplayList.h"
@@ -92,7 +91,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
                        nsEventStatus*) override;
   Cursor GetCursor(const nsPoint&) override;
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) final;
+                            AttrModType aModType) final;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,
@@ -252,7 +251,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   }
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -312,7 +311,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool ShouldUseMappedAspectRatio() const;
 
   nsAtom* GetViewTransitionName() const;
-  Maybe<nsSize> GetViewTransitionSnapshotSize() const;
+  Maybe<nsSize> GetViewTransitionBorderBoxSize() const;
   mozilla::wr::ImageKey GetViewTransitionImageKey(
       mozilla::layers::RenderRootStateManager*,
       mozilla::wr::IpcResourceUpdateQueue&) const;
@@ -455,10 +454,11 @@ class nsDisplayImage final : public nsPaintedDisplayItem {
    *         Not necessarily contained in this item's bounds.
    */
   nsRect GetDestRect() const;
+  nsRect GetDestRectViewTransition() const;
 
   nsRect GetBounds(bool* aSnap) const {
     *aSnap = true;
-    return Frame()->GetContentRectRelativeToSelf() + ToReferenceFrame();
+    return Frame()->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
   }
 
   nsRect GetBounds(nsDisplayListBuilder*, bool* aSnap) const final {
@@ -488,4 +488,4 @@ class nsDisplayImage final : public nsPaintedDisplayItem {
 
 }  // namespace mozilla
 
-#endif /* nsImageFrame_h___ */
+#endif /* nsImageFrame_h_ */

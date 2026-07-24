@@ -6,11 +6,10 @@
 
 loader.lazyRequireGetter(
   this,
-  "isWhitespaceTextNode",
+  ["isWhitespaceTextNode", "getNodeDisplayName"],
   "resource://devtools/server/actors/inspector/utils.js",
   true
 );
-
 /**
  * The walker-search module provides a simple API to index and search strings
  * and elements inside a given document.
@@ -104,22 +103,26 @@ class WalkerIndex {
       }
 
       if (node.nodeType === 1) {
-        // For each element node, we get the tagname and all attributes names
-        // and values
-        const localName = node.localName;
-        if (localName === "_moz_generated_content_marker") {
-          this._addToIndex("tag", node, "::marker");
-          this._addToIndex("text", node, node.textContent.trim());
-        } else if (localName === "_moz_generated_content_before") {
-          this._addToIndex("tag", node, "::before");
-          this._addToIndex("text", node, node.textContent.trim());
-        } else if (localName === "_moz_generated_content_after") {
-          this._addToIndex("tag", node, "::after");
-          this._addToIndex("text", node, node.textContent.trim());
+        if (node.implementedPseudoElement) {
+          // For pseudo elements we get the displayName (e.g. `::view-transition-group(myGroup)`)
+          const displayName = getNodeDisplayName(node);
+          this._addToIndex("tag", node, displayName);
+
+          // And for the pseudo elements that do have text child (via the CSS `content` property),
+          // we also get the text.
+          if (
+            displayName === "::marker" ||
+            displayName === "::before" ||
+            displayName === "::after"
+          ) {
+            this._addToIndex("text", node, node.textContent.trim());
+          }
         } else {
+          // For each element node, we get the tagname …
           this._addToIndex("tag", node, node.localName);
         }
 
+        // … and all attributes names and values
         for (const { name, value } of node.attributes) {
           this._addToIndex("attributeName", node, name);
           this._addToIndex("attributeValue", node, value);
@@ -225,6 +228,11 @@ class WalkerSearch {
 
     let [attributeName, attributeValue] = query.split("=", 2);
 
+    // Remove leading space in attribute name
+    if (attributeName) {
+      attributeName = attributeName.trimStart();
+    }
+
     // Remove leading and trailing quotes
     const isExactMatch =
       attributeValue.startsWith('"') && attributeValue.endsWith('"');
@@ -304,8 +312,9 @@ class WalkerSearch {
 
   /**
    * Search the document
-   * @param {String} query What to search for
-   * @param {Object} options The following options are accepted:
+   *
+   * @param {string} query What to search for
+   * @param {object} options The following options are accepted:
    * - searchMethod {String} one of WalkerSearch.SEARCH_METHOD_*
    *   defaults to WalkerSearch.SEARCH_METHOD_CONTAINS (does not apply to
    *   selector and XPath search types)

@@ -29,11 +29,6 @@ const responsiveSpec = generateActorSpec({
       },
       response: {},
     },
-
-    dispatchOrientationChangeEvent: {
-      request: {},
-      response: {},
-    },
   },
 });
 

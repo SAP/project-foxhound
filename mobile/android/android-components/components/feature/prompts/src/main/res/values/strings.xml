@@ -52,6 +52,8 @@
     <string name="mozac_feature_prompts_deny">Deny</string>
     <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
     <string name="mozac_feature_prompts_popup_dialog_title">Allow this site to open?</string>
+    <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+    <string name="mozac_feature_prompts_redirect_dialog_title">Allow redirect to this site?</string>
     <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
     <string name="mozac_feature_prompt_before_unload_dialog_title">Are you sure?</string>
     <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -113,12 +115,8 @@
     <string name="mozac_feature_prompts_suggest_strong_password_use_password">Use password</string>
     <!-- Pressing this will dismiss the suggested strong password dialog -->
     <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Not now</string>
-    <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-    <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title" tools:ignore="UnusedResources" moz:removedIn="142">Password saved</string>
     <!-- Title for showing the suggest strong password updated confirmation snackbar -->
     <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Password updated</string>
-    <!-- Title for showing the username updated confirmation snackbar -->
-    <string name="mozac_feature_prompt_login_snackbar_username_updated" tools:ignore="UnusedResources" moz:removedIn="142">Username updated</string>
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">Resend data to this site?</string>
@@ -178,4 +176,10 @@
     <string name="mozac_feature_prompts_identity_credentials_continue">Continue</string>
     <!-- Text for the cancel button of the Identity Credential dialogs. -->
     <string name="mozac_feature_prompts_identity_credentials_cancel">Cancel</string>
+
+    <!-- Email Mask Autofill -->
+    <!-- Text for the email mask prompt to allow users to fill an email input field in a sign up form with an email mask. -->
+    <string name="mozac_feature_relay_chip_text">Use email mask</string>
+    <!-- Informational text for the contextual feature recommendation (CFR) enabling the email mask aliases. The %s is the name of the service, "Firefox Relay". -->
+    <string name="mozac_feature_relay_email_masks_cfr">New! %s email masks are now available on mobile.</string>
 </resources>

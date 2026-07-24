@@ -10,6 +10,7 @@ installation script for talos. This script:
 - sets up talos in development mode: `python setup.py develop`
 - downloads pageloader and packages to talos/page_load_test/pageloader.xpi
 """
+
 import os
 import subprocess
 import sys

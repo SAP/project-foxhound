@@ -129,7 +129,7 @@ def add_command(config, tasks):
                 platform=task["attributes"]["build_platform"],
                 **{
                     "release-type": config.params["release_type"],
-                    "release-level": release_level(config.params["project"]),
+                    "release-level": release_level(config.params),
                 },
             )
             # ignore things that resolved to null
@@ -143,11 +143,15 @@ def add_command(config, tasks):
             command.append(f"--{arg}")
             command.append(task["extra"][arg])
 
-        task["run"].update(
-            {
-                "using": "mach",
-                "mach": " ".join(command),
-            }
-        )
+        task["run"].update({
+            "using": "mach",
+            "mach": " ".join(command),
+        })
+
+        if task.get("index"):
+            task["index"].setdefault(
+                "job-name",
+                f"update-verify-config-{task['name']}-{task['extra']['channel']}",
+            )
 
         yield task

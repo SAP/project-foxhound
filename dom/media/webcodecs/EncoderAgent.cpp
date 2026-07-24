@@ -79,7 +79,7 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
   SetState(State::Configuring);
 
   LOG("EncoderAgent #%zu (%p) is creating an encoder (%s)", mId, this,
-      GetCodecTypeString(aConfig.mCodec));
+      mozilla::EnumValueToString(aConfig.mCodec));
 
   RefPtr<ConfigurePromise> p = mConfigurePromise.Ensure(__func__);
 
@@ -224,7 +224,7 @@ RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
   MOZ_ASSERT(mOwnerThread->IsOnCurrentThread());
 
   LOG("EncoderAgent #%zu (%p) shutdown in %s state", mId, this,
-      EnumValueToString(mState));
+      EncoderAgent::EnumValueToString(mState));
 
   MOZ_ASSERT(mShutdownWhileCreationPromise.IsEmpty(),
              "Shutdown while shutting down is prohibited");
@@ -281,14 +281,11 @@ RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
   mReconfigurationRequest.DisconnectIfExists();
   mReconfigurationPromise.RejectIfExists(r, __func__);
 
-  // Cancel encoder in flight if any.
+  // Cancel encode in flight if any.
   mEncodeRequest.DisconnectIfExists();
   mEncodePromise.RejectIfExists(r, __func__);
 
-  // Cancel flush-out in flight if any.
-  mDrainRequest.DisconnectIfExists();
-  mEncodeRequest.DisconnectIfExists();
-
+  // Cancel drain in flight if any.
   mDrainRequest.DisconnectIfExists();
   mDrainPromise.RejectIfExists(r, __func__);
 
@@ -298,18 +295,19 @@ RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
   return encoder->Shutdown();
 }
 
-RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Encode(MediaData* aInput) {
+RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Encode(
+    nsTArray<RefPtr<MediaData>>&& aInputs) {
   MOZ_ASSERT(mOwnerThread->IsOnCurrentThread());
-  MOZ_ASSERT(aInput);
+  MOZ_ASSERT(!aInputs.IsEmpty());
   MOZ_ASSERT(mState == State::Configured || mState == State::Error);
   MOZ_ASSERT(mEncodePromise.IsEmpty());
   MOZ_ASSERT(!mEncodeRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("EncoderAgent #%zu (%p) tried to encoder in error state", mId, this);
+    LOGE("EncoderAgent #%zu (%p) tried to encode in error state", mId, this);
     return EncodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                    "Cannot encoder in error state"),
+                    "Cannot encode in error state"),
         __func__);
   }
 
@@ -319,19 +317,21 @@ RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Encode(MediaData* aInput) {
 
   RefPtr<EncodePromise> p = mEncodePromise.Ensure(__func__);
 
-  mEncoder->Encode(aInput)
+  LOGV("EncoderAgent #%zu (%p) is encoding %zu samples", mId, this,
+       aInputs.Length());
+  mEncoder->Encode(std::move(aInputs))
       ->Then(
           mOwnerThread, __func__,
           [self = RefPtr{this}](MediaDataEncoder::EncodedData&& aData) {
             self->mEncodeRequest.Complete();
-            LOGV("EncoderAgent #%zu (%p) encode successful", self->mId,
+            LOGV("EncoderAgent #%zu (%p) encode a batch successful", self->mId,
                  self.get());
             self->SetState(State::Configured);
             self->mEncodePromise.Resolve(std::move(aData), __func__);
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mEncodeRequest.Complete();
-            LOGV("EncoderAgent #%zu (%p) failed to encode", self->mId,
+            LOGV("EncoderAgent #%zu (%p) failed to encode a batch", self->mId,
                  self.get());
             self->SetState(State::Error);
             self->mEncodePromise.Reject(aError, __func__);
@@ -348,16 +348,17 @@ RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Drain() {
   MOZ_ASSERT(mDrainPromise.IsEmpty());
   MOZ_ASSERT(mEncoder);
 
-  SetState(State::Flushing);
+  SetState(State::Draining);
 
   RefPtr<EncodePromise> p = mDrainPromise.Ensure(__func__);
-  DryUntilDrain();
+  Dry(MediaDataEncoder::EncodedData());
   return p;
 }
 
-void EncoderAgent::DryUntilDrain() {
+void EncoderAgent::Dry(MediaDataEncoder::EncodedData&& aPendingOutputs) {
   MOZ_ASSERT(mOwnerThread->IsOnCurrentThread());
-  MOZ_ASSERT(mState == State::Flushing);
+  MOZ_ASSERT(mState == State::Draining);
+  MOZ_ASSERT(!mDrainPromise.IsEmpty());
   MOZ_ASSERT(!mDrainRequest.Exists());
   MOZ_ASSERT(mEncoder);
 
@@ -365,29 +366,27 @@ void EncoderAgent::DryUntilDrain() {
   mEncoder->Drain()
       ->Then(
           mOwnerThread, __func__,
-          [self = RefPtr{this}](MediaDataEncoder::EncodedData&& aData) {
+          [self = RefPtr{this}, outputs = std::move(aPendingOutputs)](
+              MediaDataEncoder::EncodedData&& aData) mutable {
             self->mDrainRequest.Complete();
 
             if (aData.IsEmpty()) {
               LOG("EncoderAgent #%zu (%p) is dry now", self->mId, self.get());
               self->SetState(State::Configured);
-              self->mDrainPromise.Resolve(std::move(self->mDrainData),
-                                          __func__);
+              self->mDrainPromise.Resolve(std::move(outputs), __func__);
               return;
             }
 
             LOG("EncoderAgent #%zu (%p) drained %zu encoder data. Keep "
-                "draining "
-                "until dry",
+                "draining until dry",
                 self->mId, self.get(), aData.Length());
-            self->mDrainData.AppendElements(std::move(aData));
-            self->DryUntilDrain();
+            outputs.AppendElements(std::move(aData));
+            self->Dry(std::move(outputs));
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mDrainRequest.Complete();
 
             LOGE("EncoderAgent %p failed to drain encoder", self.get());
-            self->mDrainData.Clear();
             self->mDrainPromise.Reject(aError, __func__);
           })
       ->Track(mDrainRequest);
@@ -402,15 +401,15 @@ void EncoderAgent::SetState(State aState) {
         return aNewState == State::Configuring;
       case State::Configuring:
         return aNewState == State::Configured || aNewState == State::Error ||
-               aNewState == State::Flushing ||
+               aNewState == State::Draining ||
                aNewState == State::Unconfigured ||
                aNewState == State::ShuttingDown;
       case State::Configured:
         return aNewState == State::Unconfigured ||
                aNewState == State::Configuring ||
-               aNewState == State::Encoding || aNewState == State::Flushing;
+               aNewState == State::Encoding || aNewState == State::Draining;
       case State::Encoding:
-      case State::Flushing:
+      case State::Draining:
         return aNewState == State::Configured || aNewState == State::Error ||
                aNewState == State::Unconfigured;
       case State::ShuttingDown:
@@ -426,7 +425,8 @@ void EncoderAgent::SetState(State aState) {
 
   DebugOnly<bool> isValid = validateStateTransition(mState, aState);
   LOGV("EncoderAgent #%zu (%p) state change: %s -> %s", mId, this,
-       EnumValueToString(mState), EnumValueToString(aState));
+       EncoderAgent::EnumValueToString(mState),
+       EncoderAgent::EnumValueToString(aState));
   MOZ_ASSERT(isValid);
   mState = aState;
 }

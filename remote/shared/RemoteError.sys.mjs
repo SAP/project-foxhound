@@ -17,3 +17,23 @@ export class RemoteError extends Error {
     throw new Error("Not implemented");
   }
 }
+
+/**
+ * Internal class for navigation errors.
+ */
+export class NavigationError extends Error {
+  #status;
+
+  constructor(errorName, status) {
+    super(errorName);
+    this.#status = status;
+  }
+
+  get isNavigationError() {
+    return true;
+  }
+
+  get isBindingAborted() {
+    return this.#status == Cr.NS_BINDING_ABORTED;
+  }
+}

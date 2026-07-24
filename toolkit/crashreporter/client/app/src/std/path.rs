@@ -92,7 +92,7 @@ impl Path {
         super::fs::ReadDir::new(&self.0)
     }
 
-    delegate!(fn display(&self) -> Display);
+    delegate!(fn display(&self) -> Display<'_>);
     delegate!(fn file_stem(&self) -> Option<&OsStr>);
     delegate!(fn file_name(&self) -> Option<&OsStr>);
     delegate!(fn extension(&self) -> Option<&OsStr>);
@@ -105,7 +105,7 @@ impl Path {
         self.0.parent().map(Path::from_path)
     }
 
-    pub fn ancestors(&self) -> Ancestors {
+    pub fn ancestors(&self) -> Ancestors<'_> {
         Ancestors(self.0.ancestors())
     }
 }

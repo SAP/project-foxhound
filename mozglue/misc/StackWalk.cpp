@@ -7,7 +7,6 @@
 /* API for getting a stack trace of the C/C++ stack on the current thread */
 
 #include "mozilla/Array.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/StackWalk.h"
@@ -108,10 +107,8 @@ class FrameSkipper {
 #  include <process.h>
 #  include <stdio.h>
 #  include <malloc.h>
-#  include "mozilla/ArrayUtils.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/StackWalk_windows.h"
-#  include "mozilla/WindowsVersion.h"
 
 #  include <imagehlp.h>
 // We need a way to know if we are building for WXP (or later), as if we are, we
@@ -911,7 +908,7 @@ void DemangleSymbol(const char* aSymbol, char* aBuffer, int aBufLen) {
 
 #  if defined(MOZ_DEMANGLE_SYMBOLS)
   /* See demangle.h in the gcc source for the voodoo */
-  char* demangled = abi::__cxa_demangle(aSymbol, 0, 0, 0);
+  char* demangled = abi::__cxa_demangle(aSymbol, nullptr, nullptr, nullptr);
 
   if (demangled) {
     strncpy(aBuffer, demangled, aBufLen);

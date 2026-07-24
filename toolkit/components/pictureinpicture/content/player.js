@@ -69,7 +69,7 @@ const BOTTOM_RIGHT_QUADRANT = 4;
  * Public function to be called from PictureInPicture.sys.mjs. This is the main
  * entrypoint for initializing the player window.
  *
- * @param {Number} id
+ * @param {number} id
  *   A unique numeric ID for the window, used for Telemetry Events.
  * @param {WindowGlobalParent} wgp
  *   The WindowGlobalParent that is hosting the originating video.
@@ -85,7 +85,7 @@ function setupPlayer(id, wgp, videoRef, autoFocus) {
  * Public function to be called from PictureInPicture.sys.mjs. This update the
  * controls based on whether or not the video is playing.
  *
- * @param {Boolean} isPlaying
+ * @param {boolean} isPlaying
  *   True if the Picture-in-Picture video is playing.
  */
 function setIsPlayingState(isPlaying) {
@@ -96,7 +96,7 @@ function setIsPlayingState(isPlaying) {
  * Public function to be called from PictureInPicture.sys.mjs. This update the
  * controls based on whether or not the video is muted.
  *
- * @param {Boolean} isMuted
+ * @param {boolean} isMuted
  *   True if the Picture-in-Picture video is muted.
  */
 function setIsMutedState(isMuted) {
@@ -105,7 +105,8 @@ function setIsMutedState(isMuted) {
 
 /**
  * Function to resize and reposition the PiP window
- * @param {Object} rect
+ *
+ * @param {object} rect
  *   An object containing `left`, `top`, `width`, and `height` for the PiP
  *   window
  */
@@ -204,9 +205,14 @@ let Player = {
   deferredResize: null,
 
   /**
+   * Set a shortcut that can be used for unpiping without pausing
+   */
+  isUnpipWithoutPauseShortcut: e => e.shiftKey === true,
+
+  /**
    * Initializes the player browser, and sets up the initial state.
    *
-   * @param {Number} id
+   * @param {number} id
    *   A unique numeric ID for the window, used for Telemetry Events.
    * @param {WindowGlobalParent} wgp
    *   The WindowGlobalParent that is hosting the originating video.
@@ -444,7 +450,7 @@ let Player = {
             document.exitFullscreen();
           } else {
             // We handle the ESC key, as an intent to leave the picture-in-picture modus
-            this.onClose();
+            this.onClose(this.isUnpipWithoutPauseShortcut(event));
           }
         } else if (
           Services.prefs.getBoolPref(KEYBOARD_CONTROLS_ENABLED_PREF, false) &&
@@ -555,6 +561,7 @@ let Player = {
    * because if we get an input event from the keyboard, onKeyDown will set
    * this.preventNextInputEvent to true.
    * This function is called by input events on the scrubber
+   *
    * @param {Event} event The input event
    */
   handleScrubbing(event) {
@@ -580,6 +587,7 @@ let Player = {
   /**
    * This function handles setting the scrubbing state to false and playing
    * the video if we paused it before scrubbing.
+   *
    * @param {Event} event The change event
    */
   handleScrubbingDone(event) {
@@ -598,7 +606,8 @@ let Player = {
    * Set the volume on the video and unmute if the video was muted.
    * If the volume is changed via the keyboard, onKeyDown will set
    * this.preventNextInputEvent to true.
-   * @param {Number} volume A number between 0 and 1 that represents the volume
+   *
+   * @param {number} volume A number between 0 and 1 that represents the volume
    */
   handleAudioScrubbing(volume) {
     // When using the keyboard to adjust the volume, we get both a keydown and
@@ -692,7 +701,7 @@ let Player = {
       }
 
       case "close": {
-        this.onClose();
+        this.onClose(this.isUnpipWithoutPauseShortcut(event));
         break;
       }
 
@@ -765,7 +774,8 @@ let Player = {
 
   /**
    * Function to toggle the visibility of the subtitles settings panel
-   * @param {Object} options [optional] Object containing options for the function
+   *
+   * @param {object} options [optional] Object containing options for the function
    *   - forceHide: true to force hide the subtitles settings panel
    *   - isKeyboard: true if the subtitles button was activated using the keyboard
    *     to show or hide the subtitles settings panel
@@ -798,10 +808,15 @@ let Player = {
     }
   },
 
-  onClose() {
-    this.actor.sendAsyncMessage("PictureInPicture:Pause", {
-      reason: "pip-closed",
-    });
+  onClose(bypassPause = false) {
+    // By default, we want to pause the video on close, unless the user
+    // used the assigned isUnpipWithoutPauseShortcut
+    if (!bypassPause) {
+      this.actor.sendAsyncMessage("PictureInPicture:Pause", {
+        reason: "pip-closed",
+      });
+    }
+
     this.closePipWindow({ reason: "CloseButton" });
   },
 
@@ -1257,7 +1272,7 @@ let Player = {
    * SET isPlaying to true if the video is playing, false otherwise. This will
    * update the internal state and displayed controls.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   get isPlaying() {
     return this._isPlaying;
@@ -1296,7 +1311,7 @@ let Player = {
    * SET isMuted to true if the video is muted, false otherwise. This will
    * update the internal state and displayed controls.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   get isMuted() {
     return this._isMuted;
@@ -1369,7 +1384,7 @@ let Player = {
   /**
    * Makes the player controls visible.
    *
-   * @param {Boolean} revealIndefinitely
+   * @param {boolean} revealIndefinitely
    *   If false, this will hide the controls again after
    *   CONTROLS_FADE_TIMEOUT_MS milliseconds has passed. If true, the controls
    *   will remain visible until revealControls is called again with
@@ -1417,9 +1432,9 @@ let Player = {
    * impose a minimum window size. For other platforms, this function is a
    * no-op.
    *
-   * @param {Number} width
+   * @param {number} width
    *   The width of the video being played.
-   * @param {Number} height
+   * @param {number} height
    *   The height of the video being played.
    */
   computeAndSetMinimumSize(width, height) {

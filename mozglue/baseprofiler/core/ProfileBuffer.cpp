@@ -6,9 +6,7 @@
 
 #include "ProfileBuffer.h"
 
-#include "mozilla/MathAlgorithms.h"
-
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 
 namespace mozilla {
 namespace baseprofiler {
@@ -58,8 +56,8 @@ uint64_t ProfileBuffer::AddThreadIdEntry(BaseProfilerThreadId aThreadId) {
 
 void ProfileBuffer::CollectCodeLocation(
     const char* aLabel, const char* aStr, uint32_t aFrameFlags,
-    uint64_t aInnerWindowID, const Maybe<uint32_t>& aLineNumber,
-    const Maybe<uint32_t>& aColumnNumber,
+    uint64_t aInnerWindowID, uint32_t aSourceId,
+    const Maybe<uint32_t>& aLineNumber, const Maybe<uint32_t>& aColumnNumber,
     const Maybe<ProfilingCategoryPair>& aCategoryPair) {
   AddEntry(ProfileBufferEntry::Label(aLabel));
   AddEntry(ProfileBufferEntry::FrameFlags(uint64_t(aFrameFlags)));
@@ -103,6 +101,10 @@ void ProfileBuffer::CollectCodeLocation(
 
   if (aInnerWindowID) {
     AddEntry(ProfileBufferEntry::InnerWindowID(aInnerWindowID));
+  }
+
+  if (aSourceId) {
+    AddEntry(ProfileBufferEntry::SourceId(aSourceId));
   }
 
   if (aLineNumber) {
@@ -209,7 +211,7 @@ void ProfileBufferCollector::CollectProfilingStackFrame(
   MOZ_ASSERT(aFrame.isLabelFrame());
 
   mBuf.CollectCodeLocation(label, dynamicString, aFrame.flags(),
-                           aFrame.realmID(), line, column,
+                           aFrame.realmID(), 0, line, column,
                            Some(aFrame.categoryPair()));
 }
 

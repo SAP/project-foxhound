@@ -47,6 +47,14 @@ interface nsINSSErrorsService : nsISupports
     [must_use]
     uint32_t getErrorClass(in nsresult aXPCOMErrorCode);
 
+    /**
+     *  Function will fail if aXPCOMErrorCode is not an NSS error code.
+     *  @param aXPCOMErrorCode An error code obtained using getXPCOMFromNSSError
+     *  @return True if the error code is overrideable
+     */
+    [must_use]
+    boolean isErrorOverridable(in nsresult aXPCOMErrorCode);
+
     const unsigned long ERROR_CLASS_SSL_PROTOCOL = 1;
     const unsigned long ERROR_CLASS_BAD_CERT     = 2;
 

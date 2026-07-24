@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type * as Bidi from 'chromium-bidi/lib/cjs/protocol/protocol.js';
+import type * as Bidi from 'webdriver-bidi-protocol';
 
 import {ProtocolError, TimeoutError} from '../common/Errors.js';
 import {PuppeteerURL} from '../common/util.js';
@@ -17,6 +17,14 @@ import {BidiDeserializer} from './Deserializer.js';
 export function createEvaluationError(
   details: Bidi.Script.ExceptionDetails,
 ): unknown {
+  if (details.exception.type === 'object' && !('value' in details.exception)) {
+    // Heuristic detecting a platform object was thrown. WebDriver BiDi serializes
+    // platform objects without value. If so, throw a generic error with the actual
+    // exception's message, as there is no way to restore the original exception's
+    // constructor.
+    return new Error(details.text);
+  }
+
   if (details.exception.type !== 'error') {
     return BidiDeserializer.deserialize(details.exception);
   }

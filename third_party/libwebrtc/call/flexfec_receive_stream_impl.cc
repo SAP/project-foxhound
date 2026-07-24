@@ -10,8 +10,7 @@
 
 #include "call/flexfec_receive_stream_impl.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -114,7 +113,7 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
                                            recovered_packet_receiver)),
       rtp_receive_statistics_(ReceiveStatistics::Create(&env.clock())),
       rtp_rtcp_(env,
-                RtpRtcpInterface::Configuration{.audio = false,
+                {.audio = false,
                  .receiver_only = true,
                  .receive_statistics = rtp_receive_statistics_.get(),
                  .outgoing_transport = config.rtcp_send_transport,

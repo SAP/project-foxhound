@@ -13,14 +13,17 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 
 ChromeUtils.defineESModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   ExtensionSettingsStore:
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -57,10 +60,13 @@ Object.defineProperty(this, "BROWSER_NEW_TAB_URL", {
       if (
         !privateAllowed &&
         (extensionControlled ||
-          AboutNewTab.newTabURL.startsWith("moz-extension://"))
+          ExtensionUtils.isExtensionUrl(AboutNewTab.newTabURL))
       ) {
         return "about:privatebrowsing";
       }
+    }
+    if (AIWindow.isAIWindowActive(window)) {
+      return AIWindow.newTabURL;
     }
     return AboutNewTab.newTabURL;
   },
@@ -126,7 +132,7 @@ function checkForMiddleClick(node, event) {
   // We should be using the disabled property here instead of the attribute,
   // but some elements that this function is used with don't support it (e.g.
   // menuitem).
-  if (node.getAttribute("disabled") == "true") {
+  if (node.hasAttribute("disabled")) {
     return;
   } // Do nothing
 
@@ -272,7 +278,8 @@ function closeMenus(node) {
   }
 }
 
-/** This function takes in a key element and compares it to the keys pressed during an event.
+/**
+ * This function takes in a key element and compares it to the keys pressed during an event.
  *
  * @param aEvent
  *        The KeyboardEvent event you want to compare against your key.
@@ -318,44 +325,13 @@ function eventMatchesKey(aEvent, aKey) {
 }
 
 // Gather all descendent text under given document node.
+// NOTE: Keep this in sync with _gatherTextUnder in
+// browser/actors/ContextMenuChild.sys.mjs
 function gatherTextUnder(root) {
-  var text = "";
-  var node = root.firstChild;
-  var depth = 1;
-  while (node && depth > 0) {
-    // See if this node is text.
-    if (node.nodeType == Node.TEXT_NODE) {
-      // Add this text to our collection.
-      text += " " + node.data;
-    } else if (HTMLImageElement.isInstance(node)) {
-      // If it has an "alt" attribute, add that.
-      var altText = node.getAttribute("alt");
-      if (altText) {
-        text += " " + altText;
-      }
-    }
-    // Find next node to test.
-    // First, see if this node has children.
-    if (node.hasChildNodes()) {
-      // Go to first child.
-      node = node.firstChild;
-      depth++;
-    } else {
-      // No children, try next sibling (or parent next sibling).
-      while (depth > 0 && !node.nextSibling) {
-        node = node.parentNode;
-        depth--;
-      }
-      if (node.nextSibling) {
-        node = node.nextSibling;
-      }
-    }
-  }
-  // Strip leading and tailing whitespace.
-  text = text.trim();
-  // Compress remaining whitespace.
-  text = text.replace(/\s+/g, " ");
-  return text;
+  const encoder = Cu.createDocumentEncoder("text/plain");
+  encoder.init(root.ownerDocument, "text/plain", 0);
+  encoder.setContainerNode(root);
+  return encoder.encodeToString().trim();
 }
 
 // This function exists for legacy reasons.

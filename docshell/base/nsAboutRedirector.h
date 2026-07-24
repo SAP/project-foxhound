@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAboutRedirector_h__
-#define nsAboutRedirector_h__
+#ifndef nsAboutRedirector_h_
+#define nsAboutRedirector_h_
 
 #include "nsIAboutModule.h"
 
@@ -23,4 +23,4 @@ class nsAboutRedirector : public nsIAboutModule {
   virtual ~nsAboutRedirector() {}
 };
 
-#endif  // nsAboutRedirector_h__
+#endif  // nsAboutRedirector_h_

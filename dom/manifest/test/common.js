@@ -1,6 +1,6 @@
 /**
  * Common infrastructure for manifest tests.
- **/
+ */
 "use strict";
 const { ManifestProcessor } = SpecialPowers.ChromeUtils.importESModule(
   "resource://gre/modules/ManifestProcessor.sys.mjs"

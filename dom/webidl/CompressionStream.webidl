@@ -11,6 +11,9 @@ enum CompressionFormat {
   "deflate",
   "deflate-raw",
   "gzip",
+  "brotli",
+
+  // Mozilla specific
   "zstd",
 };
 

@@ -15,7 +15,6 @@
 #include "BasePoint3D.h"
 #include "BasePoint4D.h"
 #include "BaseSize.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/gfx/NumericTools.h"
 
 #include <cmath>

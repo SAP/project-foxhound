@@ -99,7 +99,7 @@ async function runURLBarSearchTest({
     if (!expectSearch) {
       expectedURI = "http://" + valueToOpen + "/";
     } else {
-      expectedURI = (await Services.search.getDefault()).getSubmission(
+      expectedURI = (await SearchService.getDefault()).getSubmission(
         valueToOpen,
         null,
         "keyword"
@@ -354,7 +354,9 @@ add_task(async function test_navigate_invalid_url() {
     gBrowser,
     "about:blank"
   ));
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   await runURLBarSearchTest({
     valueToOpen: "mozilla is awesome",
     expectSearch: true,
@@ -373,7 +375,9 @@ add_task(async function test_search_mode() {
     gBrowser,
     "about:blank"
   ));
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   await runURLBarSearchTest({
     enterSearchMode: true,
     valueToOpen: "mozilla",

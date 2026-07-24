@@ -112,6 +112,27 @@ add_task(async function () {
       },
     },
     {
+      desc: "Test Copy Rule with hidden unused variables",
+      node: getRuleViewRuleEditor(view, 2).rule.textProps[0].editor.nameSpan,
+      menuItemLabel: "styleinspector.contextmenu.copyRule",
+      expectedPattern:
+        ":where\\(#testid\\) {[\\r\\n]+" +
+        "\tcolor: gold;[\\r\\n]+" +
+        Array.from({ length: 13 }, (_, i) => {
+          return `\t--unused-${i + 1}: ${i + 1};[\\r\\n]+`;
+        }).join("") +
+        "\tbackground-color: tomato;[\\r\\n]+" +
+        "}",
+      visible: {
+        copyLocation: false,
+        copyDeclaration: true,
+        copyPropertyName: true,
+        copyPropertyValue: false,
+        copySelector: false,
+        copyRule: true,
+      },
+    },
+    {
       desc: "Test Copy Selector",
       node: ruleEditor.selectorText,
       menuItemLabel: "styleinspector.contextmenu.copySelector",

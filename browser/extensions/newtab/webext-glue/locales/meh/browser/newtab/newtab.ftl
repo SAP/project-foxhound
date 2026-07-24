@@ -103,9 +103,6 @@ newtab-menu-delete-pocket = Xita nuu { -pocket-brand-name }
 newtab-menu-archive-pocket = Chuva´a nuu { -pocket-brand-name }
 newtab-menu-show-privacy-info = Da patrocinadores da nuu'u ji privacidad
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = Nsá´á
@@ -212,12 +209,6 @@ newtab-pocket-learn-more = Ka´vi kue´eka
 newtab-pocket-cta-button = Taji { -pocket-brand-name }
 newtab-pocket-cta-text = Chuva'a da tu'un jiniñu'unu { -pocket-brand-name } je chu'un mikinu ji tu'un ka'vi vii.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -242,55 +233,3 @@ newtab-custom-pocket-sponsored = Da historias patrocinadas
 newtab-custom-recent-title = Da a skuata nsá´á
 newtab-custom-close-button = Nakasɨ
 newtab-custom-settings = Tetiñu kue´e da kei´i
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

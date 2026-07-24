@@ -10,10 +10,10 @@
 #include <thread>
 
 #include "AudioDriftCorrection.h"
-#include "AudioSegment.h"
 #include "AudioInputSource.h"
-#include "MediaTrackGraph.h"
+#include "AudioSegment.h"
 #include "GraphDriver.h"
+#include "MediaTrackGraph.h"
 #include "mozilla/NotNull.h"
 
 namespace mozilla {

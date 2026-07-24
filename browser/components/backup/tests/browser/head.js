@@ -58,6 +58,19 @@ function createMockValidityPassEventPromise(parentEl, passwordInputsEl, event) {
 }
 
 /**
+ * Tries to get the BackupService, and if it is not inited, inits it
+ *
+ * @returns {BackupService}
+ */
+function getAndMaybeInitBackupService() {
+  try {
+    return BackupService.get();
+  } catch {
+    return BackupService.init();
+  }
+}
+
+/**
  * Dispatches an input event for a password input field.
  *
  * @param {HTMLElement} inputEl

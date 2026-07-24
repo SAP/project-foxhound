@@ -127,8 +127,7 @@ def pretty_printer_for_regexp(pattern, name):
 
 
 def clear_module_printers(module_name):
-    global printers_by_tag, ptr_printers_by_tag, ref_printers_by_tag
-    global template_printers_by_tag, printers_by_regexp
+    global printers_by_regexp
 
     # Remove all pretty-printers defined in the module named |module_name|
     # from d.
@@ -267,8 +266,7 @@ def implemented_types(t):
                     yield t2
 
     yield t
-    for t2 in followers(t):
-        yield t2
+    yield from followers(t)
 
 
 template_regexp = re.compile(r"([\w_:]+)<")
@@ -391,7 +389,7 @@ class Pointer:
         # Don't try to provide pretty-printers for NULL pointers.
         if value.type.strip_typedefs().code == gdb.TYPE_CODE_PTR and value == 0:
             return None
-        return super(Pointer, cls).__new__(cls)
+        return super().__new__(cls)
 
     def __init__(self, value, cache):
         self.value = value

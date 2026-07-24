@@ -5,7 +5,6 @@
 package mozilla.components.browser.storage.sync
 
 import android.content.Context
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -30,6 +29,8 @@ import mozilla.components.concept.storage.SearchResult
 import mozilla.components.concept.storage.TopFrecentSiteInfo
 import mozilla.components.concept.storage.VisitInfo
 import mozilla.components.concept.storage.VisitType
+import mozilla.components.concept.storage.constraints
+import mozilla.components.concept.storage.periodicStorageWorkRequest
 import mozilla.components.concept.sync.SyncAuthInfo
 import mozilla.components.concept.sync.SyncStatus
 import mozilla.components.concept.sync.SyncableStore
@@ -254,9 +255,7 @@ open class PlacesHistoryStorage(
             ) {
                 constraints {
                     setRequiresBatteryNotLow(true)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        setRequiresDeviceIdle(true)
-                    }
+                    setRequiresDeviceIdle(true)
                 }
             },
         )
@@ -400,8 +399,19 @@ open class PlacesHistoryStorage(
         }
 
         val schemasToIgnore = listOf(
-            "", "about", "imap", "news", "mailbox", "moz-anno", "moz-extension",
-            "view-source", "chrome", "resource", "data", "javascript", "blob",
+            "",
+            "about",
+            "imap",
+            "news",
+            "mailbox",
+            "moz-anno",
+            "moz-extension",
+            "view-source",
+            "chrome",
+            "resource",
+            "data",
+            "javascript",
+            "blob",
         )
 
         return !schemasToIgnore.contains(scheme)

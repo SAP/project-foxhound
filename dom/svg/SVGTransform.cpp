@@ -6,8 +6,8 @@
 
 #include "SVGTransform.h"
 
-#include "nsError.h"
 #include "nsContentUtils.h"  // for NS_ENSURE_FINITE
+#include "nsError.h"
 #include "nsTextFormatter.h"
 
 namespace {

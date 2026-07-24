@@ -2,10 +2,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsTableRowGroupFrame_h__
-#define nsTableRowGroupFrame_h__
+#ifndef nsTableRowGroupFrame_h_
+#define nsTableRowGroupFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/WritingModes.h"
 #include "nsAtom.h"
 #include "nsContainerFrame.h"
@@ -189,7 +188,8 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    *                       frame and the index is at least aStartLine.
    *                       -1 if the frame cannot be found.
    */
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
 
   /** Find the orginating cell frame on a row that is the nearest to the
    * inline-dir coordinate of aPos.

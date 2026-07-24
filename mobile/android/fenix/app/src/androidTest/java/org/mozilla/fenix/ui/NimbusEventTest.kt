@@ -9,6 +9,7 @@ import io.mockk.mockk
 import mozilla.components.concept.sync.AuthType
 import mozilla.components.service.fxa.FirefoxAccount
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.TelemetryAccountObserver

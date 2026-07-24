@@ -1,7 +1,10 @@
 diff --git a/intl/icu/source/data/locales/dsb.txt b/intl/icu/source/data/locales/dsb.txt
 --- a/intl/icu/source/data/locales/dsb.txt
 +++ b/intl/icu/source/data/locales/dsb.txt
-@@ -480,21 +480,25 @@ dsb{
+@@ -499,28 +499,32 @@ dsb{
+                 MMMMW{
+                     few{"W. 'tyźeń' MMMM"}
+                     one{"W. 'tyźeń' MMMM"}
                      other{"W. 'tyźeń' MMMM"}
                      two{"W. 'tyźeń' MMMM"}
                  }
@@ -14,6 +17,7 @@ diff --git a/intl/icu/source/data/locales/dsb.txt b/intl/icu/source/data/locales
                  h{"h a"}
                  hm{"h:mm a"}
                  hms{"h:mm:ss a"}
+                 hv{"'zeg'. h a v"}
                  yM{"M.y"}
                  yMEd{"E, d.M.y"}
 +                yMM{"MM y"}
@@ -27,10 +31,16 @@ diff --git a/intl/icu/source/data/locales/dsb.txt b/intl/icu/source/data/locales
                  yQQQQ{"QQQQ y"}
                  yw{
                      few{"w. 'tyźeń' 'lěta' Y"}
+                     one{"w. 'tyźeń' 'lěta' Y"}
+                     other{"w. 'tyźeń' 'lěta' Y"}
+                     two{"w. 'tyźeń' 'lěta' Y"}
 diff --git a/intl/icu/source/data/locales/hsb.txt b/intl/icu/source/data/locales/hsb.txt
 --- a/intl/icu/source/data/locales/hsb.txt
 +++ b/intl/icu/source/data/locales/hsb.txt
-@@ -480,21 +480,25 @@ hsb{
+@@ -499,28 +499,32 @@ hsb{
+                 MMMMW{
+                     few{"W. 'tydźeń' MMMM"}
+                     one{"W. 'tydźeń' MMMM"}
                      other{"W. 'tydźeń' MMMM"}
                      two{"W. 'tydźeń' MMMM"}
                  }
@@ -43,6 +53,7 @@ diff --git a/intl/icu/source/data/locales/hsb.txt b/intl/icu/source/data/locales
                  h{"h a"}
                  hm{"h:mm a"}
                  hms{"h:mm:ss a"}
+                 hv{"h 'hodź'. a v"}
                  yM{"M.y"}
                  yMEd{"E, d.M.y"}
 +                yMM{"MM y"}
@@ -56,3 +67,6 @@ diff --git a/intl/icu/source/data/locales/hsb.txt b/intl/icu/source/data/locales
                  yQQQQ{"QQQQ y"}
                  yw{
                      few{"w. 'tydźeń' 'lěta' Y"}
+                     one{"w. 'tydźeń' 'lěta' Y"}
+                     other{"w. 'tydźeń' 'lěta' Y"}
+                     two{"w. 'tydźeń' 'lěta' Y"}

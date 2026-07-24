@@ -7,13 +7,11 @@
 #include "mozilla/dom/AutoEntryScript.h"
 
 #include <stdint.h>
-#include <utility>
+
 #include "js/ProfilingCategory.h"
 #include "js/ProfilingStack.h"
 #include "jsapi.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Span.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"

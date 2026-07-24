@@ -6,30 +6,26 @@
 
 #include "nsXULPrototypeCache.h"
 
-#include "nsXULPrototypeDocument.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-
+#include "js/TracingAPI.h"
+#include "js/experimental/JSStencil.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_nglayout.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/scache/StartupCache.h"
+#include "mozilla/scache/StartupCacheUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIObserverService.h"
 #include "nsIStorageStream.h"
-
-#include "nsAppDirectoryServiceDefs.h"
-
-#include "js/experimental/JSStencil.h"
-#include "js/TracingAPI.h"
-
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_nglayout.h"
-#include "mozilla/scache/StartupCache.h"
-#include "mozilla/scache/StartupCacheUtils.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/intl/LocaleService.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsXULPrototypeDocument.h"
 
 using namespace mozilla;
 using namespace mozilla::scache;
@@ -207,11 +203,12 @@ nsresult nsXULPrototypeCache::WritePrototype(
 
 static nsresult PathifyURIForType(nsXULPrototypeCache::CacheType cacheType,
                                   nsIURI* in, nsACString& out) {
+  scache::ResourceType resourceType;
   switch (cacheType) {
     case nsXULPrototypeCache::CacheType::Prototype:
-      return PathifyURI(CACHE_PREFIX("proto"), in, out);
+      return PathifyURI(CACHE_PREFIX("proto"), in, out, &resourceType);
     case nsXULPrototypeCache::CacheType::Script:
-      return PathifyURI(CACHE_PREFIX("script"), in, out);
+      return PathifyURI(CACHE_PREFIX("script"), in, out, &resourceType);
   }
   MOZ_ASSERT_UNREACHABLE("unknown cache type?");
   return NS_ERROR_UNEXPECTED;

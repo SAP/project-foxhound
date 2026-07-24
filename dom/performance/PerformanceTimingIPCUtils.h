@@ -6,7 +6,6 @@
 #ifndef _mozilla_dom_PerformanceTimingIPCUtils_h
 #define _mozilla_dom_PerformanceTimingIPCUtils_h
 
-#include "mozilla/EnumTypeTraits.h"
 #include "ipc/EnumSerializer.h"
 #include "nsITimedChannel.h"
 

@@ -8,9 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stddef.h>
-
-#include <algorithm>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
@@ -20,6 +18,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/create_modular_peer_connection_factory.h"
 #include "api/enable_media_with_defaults.h"
 #include "api/jsep.h"
 #include "api/media_stream_interface.h"
@@ -32,14 +31,12 @@
 #include "api/rtp_transceiver_direction.h"
 #include "api/rtp_transceiver_interface.h"
 #include "api/scoped_refptr.h"
-#include "api/task_queue/default_task_queue_factory.h"
-#include "api/transport/field_trial_based_config.h"
+#include "api/test/rtc_error_matchers.h"
 #include "media/base/stream_params.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/transport_info.h"
 #include "pc/media_session.h"
 #include "pc/peer_connection_wrapper.h"
-#include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/thread.h"
@@ -60,7 +57,6 @@
 
 namespace webrtc {
 
-using cricket::MediaContentDescription;
 using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
 using ::testing::Combine;
 using ::testing::ElementsAre;
@@ -72,8 +68,6 @@ PeerConnectionFactoryDependencies CreatePeerConnectionFactoryDependencies() {
   dependencies.worker_thread = Thread::Current();
   dependencies.network_thread = Thread::Current();
   dependencies.signaling_thread = Thread::Current();
-  dependencies.task_queue_factory = CreateDefaultTaskQueueFactory();
-  dependencies.trials = std::make_unique<FieldTrialBasedConfig>();
   dependencies.adm = FakeAudioCaptureModule::Create();
   EnableMediaWithDefaults(dependencies);
   dependencies.sctp_factory = std::make_unique<FakeSctpTransportFactory>();
@@ -98,7 +92,7 @@ class PeerConnectionJsepTest : public ::testing::Test {
   }
 
   WrapperPtr CreatePeerConnection(const RTCConfiguration& config) {
-    rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory =
+    scoped_refptr<PeerConnectionFactoryInterface> pc_factory =
         CreateModularPeerConnectionFactory(
             CreatePeerConnectionFactoryDependencies());
     auto observer = std::make_unique<MockPeerConnectionObserver>();
@@ -124,7 +118,7 @@ class PeerConnectionJsepTest : public ::testing::Test {
 TEST_F(PeerConnectionJsepTest, EmptyInitialOffer) {
   auto caller = CreatePeerConnection();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ASSERT_EQ(0u, offer->description()->contents().size());
 }
 
@@ -132,24 +126,24 @@ TEST_F(PeerConnectionJsepTest, EmptyInitialOffer) {
 // section.
 TEST_F(PeerConnectionJsepTest, AudioOnlyInitialOffer) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(1u, contents.size());
-  EXPECT_EQ(webrtc::MediaType::AUDIO, contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::AUDIO, contents[0].media_description()->type());
 }
 
 // Test than an initial offer with one video track generates one video media
 // section
 TEST_F(PeerConnectionJsepTest, VideoOnlyInitialOffer) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(1u, contents.size());
-  EXPECT_EQ(webrtc::MediaType::VIDEO, contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::VIDEO, contents[0].media_description()->type());
 }
 
 // Test that an initial offer with one data channel generates one data media
@@ -158,10 +152,10 @@ TEST_F(PeerConnectionJsepTest, DataOnlyInitialOffer) {
   auto caller = CreatePeerConnection();
   caller->CreateDataChannel("dc");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(1u, contents.size());
-  EXPECT_EQ(webrtc::MediaType::DATA, contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::DATA, contents[0].media_description()->type());
 }
 
 // Test that creating multiple data channels only results in one data section
@@ -172,7 +166,7 @@ TEST_F(PeerConnectionJsepTest, MultipleDataChannelsCreateOnlyOneDataSection) {
   caller->CreateDataChannel("second");
   caller->CreateDataChannel("third");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ASSERT_EQ(1u, offer->description()->contents().size());
 }
 
@@ -181,31 +175,31 @@ TEST_F(PeerConnectionJsepTest, MultipleDataChannelsCreateOnlyOneDataSection) {
 // JSEP section 5.2.1.
 TEST_F(PeerConnectionJsepTest, MediaSectionsInInitialOfferOrderedCorrectly) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::AUDIO);
   RtpTransceiverInit init;
   init.direction = RtpTransceiverDirection::kSendOnly;
-  caller->AddTransceiver(webrtc::MediaType::VIDEO, init);
+  caller->AddTransceiver(MediaType::VIDEO, init);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(3u, contents.size());
 
   const MediaContentDescription* media_description1 =
       contents[0].media_description();
-  EXPECT_EQ(webrtc::MediaType::VIDEO, media_description1->type());
+  EXPECT_EQ(MediaType::VIDEO, media_description1->type());
   EXPECT_EQ(RtpTransceiverDirection::kSendRecv,
             media_description1->direction());
 
   const MediaContentDescription* media_description2 =
       contents[1].media_description();
-  EXPECT_EQ(webrtc::MediaType::AUDIO, media_description2->type());
+  EXPECT_EQ(MediaType::AUDIO, media_description2->type());
   EXPECT_EQ(RtpTransceiverDirection::kSendRecv,
             media_description2->direction());
 
   const MediaContentDescription* media_description3 =
       contents[2].media_description();
-  EXPECT_EQ(webrtc::MediaType::VIDEO, media_description3->type());
+  EXPECT_EQ(MediaType::VIDEO, media_description3->type());
   EXPECT_EQ(RtpTransceiverDirection::kSendOnly,
             media_description3->direction());
 }
@@ -213,10 +207,10 @@ TEST_F(PeerConnectionJsepTest, MediaSectionsInInitialOfferOrderedCorrectly) {
 // Test that media sections in the initial offer have different mids.
 TEST_F(PeerConnectionJsepTest, MediaSectionsInInitialOfferHaveDifferentMids) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(2u, contents.size());
   EXPECT_NE(contents[0].mid(), contents[1].mid());
@@ -225,10 +219,10 @@ TEST_F(PeerConnectionJsepTest, MediaSectionsInInitialOfferHaveDifferentMids) {
 TEST_F(PeerConnectionJsepTest,
        StoppedTransceiverHasNoMediaSectionInInitialOffer) {
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   transceiver->StopInternal();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   EXPECT_EQ(0u, offer->description()->contents().size());
 }
 
@@ -246,10 +240,10 @@ TEST_F(PeerConnectionJsepTest, SetLocalEmptyOfferCreatesNoTransceivers) {
 
 TEST_F(PeerConnectionJsepTest, SetLocalOfferSetsTransceiverMid) {
   auto caller = CreatePeerConnection();
-  auto audio_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
-  auto video_transceiver = caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  auto audio_transceiver = caller->AddTransceiver(MediaType::AUDIO);
+  auto video_transceiver = caller->AddTransceiver(MediaType::VIDEO);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto audio_mid = offer->description()->contents()[0].mid();
   auto video_mid = offer->description()->contents()[1].mid();
 
@@ -265,8 +259,8 @@ TEST_F(PeerConnectionJsepTest, SetLocalOfferSetsTransceiverMid) {
 // transceivers, one for receiving audio and one for receiving video.
 TEST_F(PeerConnectionJsepTest, SetRemoteOfferCreatesTransceivers) {
   auto caller = CreatePeerConnection();
-  auto caller_audio = caller->AddTransceiver(webrtc::MediaType::AUDIO);
-  auto caller_video = caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  auto caller_audio = caller->AddTransceiver(MediaType::AUDIO);
+  auto caller_video = caller->AddTransceiver(MediaType::VIDEO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -274,12 +268,12 @@ TEST_F(PeerConnectionJsepTest, SetRemoteOfferCreatesTransceivers) {
   auto transceivers = callee->pc()->GetTransceivers();
   ASSERT_EQ(2u, transceivers.size());
 
-  EXPECT_EQ(webrtc::MediaType::AUDIO, transceivers[0]->media_type());
+  EXPECT_EQ(MediaType::AUDIO, transceivers[0]->media_type());
   EXPECT_EQ(caller_audio->mid(), transceivers[0]->mid());
   EXPECT_EQ(RtpTransceiverDirection::kRecvOnly, transceivers[0]->direction());
   EXPECT_EQ(0u, transceivers[0]->sender()->stream_ids().size());
 
-  EXPECT_EQ(webrtc::MediaType::VIDEO, transceivers[1]->media_type());
+  EXPECT_EQ(MediaType::VIDEO, transceivers[1]->media_type());
   EXPECT_EQ(caller_video->mid(), transceivers[1]->mid());
   EXPECT_EQ(RtpTransceiverDirection::kRecvOnly, transceivers[1]->direction());
   EXPECT_EQ(0u, transceivers[1]->sender()->stream_ids().size());
@@ -334,7 +328,7 @@ TEST_F(PeerConnectionJsepTest,
   auto caller = CreatePeerConnection();
   caller->AddAudioTrack("a");
   auto callee = CreatePeerConnection();
-  auto transceiver = callee->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = callee->AddTransceiver(MediaType::AUDIO);
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
@@ -414,28 +408,27 @@ TEST_F(PeerConnectionJsepTest, SetRemoteOfferReusesTransceiversOfBothTypes) {
 // offered media in the same order and with the same mids.
 TEST_F(PeerConnectionJsepTest, CreateAnswerHasSameMidsAsOffer) {
   auto caller = CreatePeerConnection();
-  auto first_transceiver = caller->AddTransceiver(webrtc::MediaType::VIDEO);
-  auto second_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
-  auto third_transceiver = caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  auto first_transceiver = caller->AddTransceiver(MediaType::VIDEO);
+  auto second_transceiver = caller->AddTransceiver(MediaType::AUDIO);
+  auto third_transceiver = caller->AddTransceiver(MediaType::VIDEO);
   caller->CreateDataChannel("dc");
   auto callee = CreatePeerConnection();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   const auto* offer_data = GetFirstDataContent(offer->description());
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto contents = answer->description()->contents();
   ASSERT_EQ(4u, contents.size());
-  EXPECT_EQ(webrtc::MediaType::VIDEO, contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::VIDEO, contents[0].media_description()->type());
   EXPECT_EQ(first_transceiver->mid(), contents[0].mid());
-  EXPECT_EQ(webrtc::MediaType::AUDIO, contents[1].media_description()->type());
+  EXPECT_EQ(MediaType::AUDIO, contents[1].media_description()->type());
   EXPECT_EQ(second_transceiver->mid(), contents[1].mid());
-  EXPECT_EQ(webrtc::MediaType::VIDEO, contents[2].media_description()->type());
+  EXPECT_EQ(MediaType::VIDEO, contents[2].media_description()->type());
   EXPECT_EQ(third_transceiver->mid(), contents[2].mid());
-  EXPECT_EQ(webrtc::MediaType::DATA, contents[3].media_description()->type());
+  EXPECT_EQ(MediaType::DATA, contents[3].media_description()->type());
   EXPECT_EQ(offer_data->mid(), contents[3].mid());
 }
 
@@ -450,7 +443,7 @@ TEST_F(PeerConnectionJsepTest, CreateAnswerRejectsStoppedTransceiver) {
 
   callee->pc()->GetTransceivers()[0]->StopInternal();
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto contents = answer->description()->contents();
   ASSERT_EQ(1u, contents.size());
   EXPECT_TRUE(contents[0].rejected);
@@ -463,13 +456,13 @@ TEST_F(PeerConnectionJsepTest, CreateAnswerNegotiatesDirection) {
   auto caller = CreatePeerConnection();
   RtpTransceiverInit init;
   init.direction = RtpTransceiverDirection::kSendOnly;
-  caller->AddTransceiver(webrtc::MediaType::AUDIO, init);
+  caller->AddTransceiver(MediaType::AUDIO, init);
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("a");
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto contents = answer->description()->contents();
   ASSERT_EQ(1u, contents.size());
   EXPECT_EQ(RtpTransceiverDirection::kRecvOnly,
@@ -484,7 +477,7 @@ TEST_F(PeerConnectionJsepTest, CreateAnswerNegotiatesDirection) {
 // property of the transceivers mentioned in the session description.
 TEST_F(PeerConnectionJsepTest, SetLocalAnswerUpdatesCurrentDirection) {
   auto caller = CreatePeerConnection();
-  auto caller_audio = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto caller_audio = caller->AddTransceiver(MediaType::AUDIO);
   caller_audio->SetDirectionWithError(RtpTransceiverDirection::kRecvOnly);
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("a");
@@ -528,7 +521,7 @@ TEST_F(PeerConnectionJsepTest, SetRemoteAnswerUpdatesCurrentDirection) {
 TEST_F(PeerConnectionJsepTest,
        ChangeDirectionFromRecvOnlyToSendRecvDoesNotBreakVideoNegotiation) {
   auto caller = CreatePeerConnection();
-  auto caller_transceiver = caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  auto caller_transceiver = caller->AddTransceiver(MediaType::VIDEO);
   auto callee = CreatePeerConnection();
   caller_transceiver->SetDirectionWithError(RtpTransceiverDirection::kRecvOnly);
 
@@ -546,7 +539,7 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        ChangeDirectionFromRecvOnlyToSendRecvDoesNotBreakAudioNegotiation) {
   auto caller = CreatePeerConnection();
-  auto caller_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto caller_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   caller_transceiver->SetDirectionWithError(RtpTransceiverDirection::kRecvOnly);
 
@@ -587,7 +580,7 @@ TEST_F(PeerConnectionJsepTest, SettingTransceiverInactiveDoesNotStopIt) {
 TEST_F(PeerConnectionJsepTest,
        ReOfferMediaSectionForAssociatedStoppedTransceiverIsRejected) {
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -609,7 +602,7 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        StoppingTransceiverInOfferStopsTransceiverOnRemoteSide) {
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -632,14 +625,14 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        CreateOfferDoesNotRecycleMediaSectionIfFirstStopped) {
   auto caller = CreatePeerConnection();
-  auto first_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto first_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   ASSERT_TRUE(
       caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal()));
 
-  auto second_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto second_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   first_transceiver->StopInternal();
 
   auto reoffer = caller->CreateOffer();
@@ -655,7 +648,7 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        RecycleMediaSectionWhenStoppingTransceiverOnAnswerer) {
   auto caller = CreatePeerConnection();
-  auto first_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto first_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -675,7 +668,7 @@ TEST_F(PeerConnectionJsepTest,
   // correctly.
   caller->AddAudioTrack("audio2");
   callee->AddAudioTrack("audio2");
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto offer_contents = offer->description()->contents();
   auto second_mid = offer_contents[0].mid();
   ASSERT_EQ(1u, offer_contents.size());
@@ -684,8 +677,7 @@ TEST_F(PeerConnectionJsepTest,
 
   // Setting the offer on each side will dissociate the first transceivers and
   // associate the new transceivers.
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   EXPECT_EQ(std::nullopt, first_transceiver->mid());
   ASSERT_EQ(1u, caller->pc()->GetTransceivers().size());
   EXPECT_EQ(second_mid, caller->pc()->GetTransceivers()[0]->mid());
@@ -694,15 +686,14 @@ TEST_F(PeerConnectionJsepTest,
   EXPECT_EQ(second_mid, callee->pc()->GetTransceivers()[0]->mid());
 
   // The new answer should also recycle the m section correctly.
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   ASSERT_EQ(1u, answer_contents.size());
   EXPECT_FALSE(answer_contents[0].rejected);
   EXPECT_EQ(second_mid, answer_contents[0].mid());
 
   // Finishing the negotiation shouldn't add or dissociate any transceivers.
-  ASSERT_TRUE(
-      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetLocalDescription(answer->Clone()));
   ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));
   auto caller_transceivers = caller->pc()->GetTransceivers();
   ASSERT_EQ(1u, caller_transceivers.size());
@@ -717,7 +708,7 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest, CreateOfferRecyclesWhenOfferingTwice) {
   // Do a negotiation with a port 0 for the media section.
   auto caller = CreatePeerConnection();
-  auto first_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto first_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
   first_transceiver->StopInternal();
@@ -726,7 +717,7 @@ TEST_F(PeerConnectionJsepTest, CreateOfferRecyclesWhenOfferingTwice) {
 
   // Create a new offer that recycles the media section and set it as a local
   // description.
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto offer_contents = offer->description()->contents();
   ASSERT_EQ(1u, offer_contents.size());
   EXPECT_FALSE(offer_contents[0].rejected);
@@ -763,16 +754,15 @@ TEST_F(PeerConnectionJsepTest, CreateOfferRecyclesWhenOfferingTwice) {
 // - The new transceiver is associated with the new MID value.
 class RecycleMediaSectionTest
     : public PeerConnectionJsepTest,
-      public ::testing::WithParamInterface<
-          std::tuple<webrtc::MediaType, webrtc::MediaType>> {
+      public ::testing::WithParamInterface<std::tuple<MediaType, MediaType>> {
  protected:
   RecycleMediaSectionTest() {
     first_type_ = std::get<0>(GetParam());
     second_type_ = std::get<1>(GetParam());
   }
 
-  webrtc::MediaType first_type_;
-  webrtc::MediaType second_type_;
+  MediaType first_type_;
+  MediaType second_type_;
 };
 
 // Test that recycling works properly when a new transceiver recycles an m=
@@ -793,7 +783,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalAndCurrentRemoteRejected) {
 
   // The offer should reuse the previous media section but allocate a new MID
   // and change the media type.
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto offer_contents = offer->description()->contents();
   ASSERT_EQ(1u, offer_contents.size());
   EXPECT_FALSE(offer_contents[0].rejected);
@@ -803,8 +793,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalAndCurrentRemoteRejected) {
 
   // Setting the local offer will dissociate the previous transceiver and set
   // the MID for the new transceiver.
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   EXPECT_EQ(std::nullopt, first_transceiver->mid());
   EXPECT_EQ(second_mid, second_transceiver->mid());
 
@@ -817,7 +806,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalAndCurrentRemoteRejected) {
   EXPECT_EQ(second_type_, callee_transceivers[0]->media_type());
 
   // The answer should have only one media section for the new transceiver.
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   ASSERT_EQ(1u, answer_contents.size());
   EXPECT_FALSE(answer_contents[0].rejected);
@@ -825,8 +814,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalAndCurrentRemoteRejected) {
   EXPECT_EQ(second_type_, answer_contents[0].media_description()->type());
 
   // Setting the local answer should succeed.
-  ASSERT_TRUE(
-      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetLocalDescription(answer->Clone()));
 
   // Setting the remote answer should succeed and not create any new
   // transceivers.
@@ -856,7 +844,7 @@ TEST_P(RecycleMediaSectionTest, CurrentRemoteOnlyRejected) {
   // The offer should reuse the previous media section but allocate a new MID
   // and change the media type.
   auto caller_second_transceiver = caller->AddTransceiver(second_type_);
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   const auto& offer_contents = offer->description()->contents();
   ASSERT_EQ(1u, offer_contents.size());
   EXPECT_FALSE(offer_contents[0].rejected);
@@ -866,8 +854,7 @@ TEST_P(RecycleMediaSectionTest, CurrentRemoteOnlyRejected) {
 
   // Setting the local offer will dissociate the previous transceiver and set
   // the MID for the new transceiver.
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   EXPECT_EQ(std::nullopt, caller_first_transceiver->mid());
   EXPECT_EQ(second_mid, caller_second_transceiver->mid());
 
@@ -880,7 +867,7 @@ TEST_P(RecycleMediaSectionTest, CurrentRemoteOnlyRejected) {
   EXPECT_EQ(second_type_, callee_transceivers[0]->media_type());
 
   // The answer should have only one media section for the new transceiver.
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   ASSERT_EQ(1u, answer_contents.size());
   EXPECT_FALSE(answer_contents[0].rejected);
@@ -888,8 +875,7 @@ TEST_P(RecycleMediaSectionTest, CurrentRemoteOnlyRejected) {
   EXPECT_EQ(second_type_, answer_contents[0].media_description()->type());
 
   // Setting the local answer should succeed.
-  ASSERT_TRUE(
-      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetLocalDescription(answer->Clone()));
 
   // Setting the remote answer should succeed and not create any new
   // transceivers.
@@ -919,7 +905,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalOnlyRejected) {
   // The offer should reuse the previous media section but allocate a new MID
   // and change the media type.
   auto callee_second_transceiver = callee->AddTransceiver(second_type_);
-  auto offer = callee->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = callee->CreateOffer();
   const auto& offer_contents = offer->description()->contents();
   ASSERT_EQ(1u, offer_contents.size());
   EXPECT_FALSE(offer_contents[0].rejected);
@@ -929,8 +915,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalOnlyRejected) {
 
   // Setting the local offer will dissociate the previous transceiver and set
   // the MID for the new transceiver.
-  ASSERT_TRUE(
-      callee->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(callee->SetLocalDescription(offer->Clone()));
   EXPECT_EQ(std::nullopt, callee_first_transceiver->mid());
   EXPECT_EQ(second_mid, callee_second_transceiver->mid());
 
@@ -943,7 +928,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalOnlyRejected) {
   EXPECT_EQ(second_type_, caller_transceivers[0]->media_type());
 
   // The answer should have only one media section for the new transceiver.
-  auto answer = caller->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = caller->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   ASSERT_EQ(1u, answer_contents.size());
   EXPECT_FALSE(answer_contents[0].rejected);
@@ -951,8 +936,7 @@ TEST_P(RecycleMediaSectionTest, CurrentLocalOnlyRejected) {
   EXPECT_EQ(second_type_, answer_contents[0].media_description()->type());
 
   // Setting the local answer should succeed.
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(answer->Clone()));
 
   // Setting the remote answer should succeed and not create any new
   // transceivers.
@@ -1114,18 +1098,17 @@ TEST_P(RecycleMediaSectionTest, PendingRemoteRejectedAndNotRejectedLocal) {
 // for the media section. This is needed for full test coverage because
 // MediaSession has separate functions for processing audio and video media
 // sections.
-INSTANTIATE_TEST_SUITE_P(
-    PeerConnectionJsepTest,
-    RecycleMediaSectionTest,
-    Combine(Values(webrtc::MediaType::AUDIO, webrtc::MediaType::VIDEO),
-            Values(webrtc::MediaType::AUDIO, webrtc::MediaType::VIDEO)));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionJsepTest,
+                         RecycleMediaSectionTest,
+                         Combine(Values(MediaType::AUDIO, MediaType::VIDEO),
+                                 Values(MediaType::AUDIO, MediaType::VIDEO)));
 
 // Test that a new data channel section will not reuse a recycleable audio or
 // video media section. Additionally, tests that the new section is added to the
 // end of the session description.
 TEST_F(PeerConnectionJsepTest, DataChannelDoesNotRecycleMediaSection) {
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
@@ -1136,25 +1119,20 @@ TEST_F(PeerConnectionJsepTest, DataChannelDoesNotRecycleMediaSection) {
 
   caller->CreateDataChannel("dc");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto offer_contents = offer->description()->contents();
   ASSERT_EQ(2u, offer_contents.size());
-  EXPECT_EQ(webrtc::MediaType::AUDIO,
-            offer_contents[0].media_description()->type());
-  EXPECT_EQ(webrtc::MediaType::DATA,
-            offer_contents[1].media_description()->type());
+  EXPECT_EQ(MediaType::AUDIO, offer_contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::DATA, offer_contents[1].media_description()->type());
 
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   ASSERT_EQ(2u, answer_contents.size());
-  EXPECT_EQ(webrtc::MediaType::AUDIO,
-            answer_contents[0].media_description()->type());
-  EXPECT_EQ(webrtc::MediaType::DATA,
-            answer_contents[1].media_description()->type());
+  EXPECT_EQ(MediaType::AUDIO, answer_contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::DATA, answer_contents[1].media_description()->type());
 }
 
 // Test that if a new track is added to an existing session that has a data,
@@ -1169,11 +1147,11 @@ TEST_F(PeerConnectionJsepTest, AudioTrackAddedAfterDataSectionInReoffer) {
 
   caller->AddAudioTrack("a");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(2u, contents.size());
-  EXPECT_EQ(webrtc::MediaType::DATA, contents[0].media_description()->type());
-  EXPECT_EQ(webrtc::MediaType::AUDIO, contents[1].media_description()->type());
+  EXPECT_EQ(MediaType::DATA, contents[0].media_description()->type());
+  EXPECT_EQ(MediaType::AUDIO, contents[1].media_description()->type());
 }
 
 // Tests for MID properties.
@@ -1185,13 +1163,13 @@ static void RenameSection(size_t mline_index,
   std::string old_mid(desc->contents()[mline_index].mid());
   desc->contents()[mline_index].set_mid(new_mid);
   desc->transport_infos()[mline_index].content_name = new_mid;
-  const ContentGroup* bundle = desc->GetGroupByName(cricket::GROUP_TYPE_BUNDLE);
+  const ContentGroup* bundle = desc->GetGroupByName(GROUP_TYPE_BUNDLE);
   if (bundle) {
     ContentGroup new_bundle = *bundle;
     if (new_bundle.RemoveContentName(old_mid)) {
       new_bundle.AddContentName(new_mid);
     }
-    desc->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
+    desc->RemoveGroupByName(GROUP_TYPE_BUNDLE);
     desc->AddGroup(new_bundle);
   }
 }
@@ -1207,12 +1185,11 @@ TEST_F(PeerConnectionJsepTest, OfferAnswerWithChangedMids) {
   caller->AddAudioTrack("b");
   auto callee = CreatePeerConnection();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   RenameSection(0, kFirstMid, offer.get());
   RenameSection(1, kSecondMid, offer.get());
 
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   auto caller_transceivers = caller->pc()->GetTransceivers();
   EXPECT_EQ(kFirstMid, caller_transceivers[0]->mid());
   EXPECT_EQ(kSecondMid, caller_transceivers[1]->mid());
@@ -1222,13 +1199,12 @@ TEST_F(PeerConnectionJsepTest, OfferAnswerWithChangedMids) {
   EXPECT_EQ(kFirstMid, callee_transceivers[0]->mid());
   EXPECT_EQ(kSecondMid, callee_transceivers[1]->mid());
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto answer_contents = answer->description()->contents();
   EXPECT_EQ(kFirstMid, answer_contents[0].mid());
   EXPECT_EQ(kSecondMid, answer_contents[1].mid());
 
-  ASSERT_TRUE(
-      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetLocalDescription(answer->Clone()));
   ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));
 }
 
@@ -1250,11 +1226,10 @@ TEST_F(PeerConnectionJsepTest, CreateOfferGeneratesUniqueMidIfAlreadyTaken) {
   caller->AddAudioTrack("a");
   auto callee = CreatePeerConnection();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   RenameSection(0, default_second_mid, offer.get());
 
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
@@ -1283,11 +1258,10 @@ TEST_F(PeerConnectionJsepTest,
   caller->AddAudioTrack("a");
   auto callee = CreatePeerConnection();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   RenameSection(0, default_data_mid, offer.get());
 
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
@@ -1329,7 +1303,7 @@ TEST_F(PeerConnectionJsepTest, AddingTrackWithAddTrackSpecifiesTrackId) {
   auto caller = CreatePeerConnection();
   caller->AddAudioTrack(kTrackId);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(1u, contents.size());
   auto streams = contents[0].media_description()->streams();
@@ -1344,10 +1318,10 @@ TEST_F(PeerConnectionJsepTest,
   const std::string kTrackId = "audio_track";
 
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   transceiver->sender()->SetTrack(caller->CreateAudioTrack(kTrackId).get());
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(1u, contents.size());
   auto streams = contents[0].media_description()->streams();
@@ -1362,13 +1336,13 @@ TEST_F(PeerConnectionJsepTest, NoMsidInOfferIfTransceiverDirectionHasNoSend) {
 
   RtpTransceiverInit init_recvonly;
   init_recvonly.direction = RtpTransceiverDirection::kRecvOnly;
-  ASSERT_TRUE(caller->AddTransceiver(webrtc::MediaType::AUDIO, init_recvonly));
+  ASSERT_TRUE(caller->AddTransceiver(MediaType::AUDIO, init_recvonly));
 
   RtpTransceiverInit init_inactive;
   init_inactive.direction = RtpTransceiverDirection::kInactive;
-  ASSERT_TRUE(caller->AddTransceiver(webrtc::MediaType::VIDEO, init_inactive));
+  ASSERT_TRUE(caller->AddTransceiver(MediaType::VIDEO, init_inactive));
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   auto contents = offer->description()->contents();
   ASSERT_EQ(2u, contents.size());
   // MSID is specified in the first stream, so no streams means no MSID.
@@ -1386,17 +1360,17 @@ TEST_F(PeerConnectionJsepTest, NoMsidInAnswerIfNoRespondingTracks) {
   // no tracks to send in response.
   RtpTransceiverInit init_recvonly;
   init_recvonly.direction = RtpTransceiverDirection::kRecvOnly;
-  caller->AddTransceiver(webrtc::MediaType::AUDIO, init_recvonly);
+  caller->AddTransceiver(MediaType::AUDIO, init_recvonly);
 
   // sendrecv transceiver will get negotiated to recvonly since the callee has
   // no tracks to send in response.
   RtpTransceiverInit init_sendrecv;
   init_sendrecv.direction = RtpTransceiverDirection::kSendRecv;
-  caller->AddTransceiver(webrtc::MediaType::VIDEO, init_sendrecv);
+  caller->AddTransceiver(MediaType::VIDEO, init_sendrecv);
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   auto contents = answer->description()->contents();
   ASSERT_EQ(2u, contents.size());
   // MSID is specified in the first stream, so no streams means no MSID.
@@ -1437,7 +1411,7 @@ TEST_F(PeerConnectionJsepTest, IncludeMsidEvenIfDirectionHasChanged) {
 // any MSID information for that section.
 TEST_F(PeerConnectionJsepTest, RemoveMsidIfTransceiverStopped) {
   auto caller = CreatePeerConnection();
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
 
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
@@ -1594,7 +1568,7 @@ TEST_F(PeerConnectionJsepTest, CurrentDirectionResetWhenRtpTransceiverStopped) {
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
 
-  auto transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto transceiver = caller->AddTransceiver(MediaType::AUDIO);
 
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
 
@@ -1658,9 +1632,9 @@ static void RemoveRtpHeaderExtensionByUri(
     absl::string_view uri) {
   std::vector<RtpExtension> header_extensions =
       media_description->rtp_header_extensions();
-  header_extensions.erase(std::remove_if(
-      header_extensions.begin(), header_extensions.end(),
-      [uri](const RtpExtension& extension) { return extension.uri == uri; }));
+  std::erase_if(header_extensions, [uri](const RtpExtension& extension) {
+    return extension.uri == uri;
+  });
   media_description->set_rtp_header_extensions(header_extensions);
 }
 
@@ -1668,7 +1642,7 @@ static void RemoveRtpHeaderExtensionByUri(
 // support a=mid, BUNDLE, and the MID header extension.
 static void ClearMids(SessionDescriptionInterface* sdesc) {
   SessionDescription* desc = sdesc->description();
-  desc->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
+  desc->RemoveGroupByName(GROUP_TYPE_BUNDLE);
   ContentInfo* audio_content = GetFirstAudioContent(desc);
   if (audio_content) {
     desc->GetTransportInfoByName(audio_content->mid())->content_name = "";
@@ -1692,7 +1666,7 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidAudioOnlyOffer) {
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("audio");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ClearMids(offer.get());
 
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
@@ -1706,7 +1680,7 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidAudioVideoOffer) {
   callee->AddAudioTrack("audio");
   callee->AddVideoTrack("video");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ClearMids(offer.get());
 
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
@@ -1720,7 +1694,7 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidAudioOnlyAnswer) {
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   ClearMids(answer.get());
 
   EXPECT_TRUE(caller->SetRemoteDescription(std::move(answer)));
@@ -1735,7 +1709,7 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidAudioVideoAnswer) {
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   ClearMids(answer.get());
 
   ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));
@@ -1750,11 +1724,10 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidTwoRemoteOffers) {
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("audio");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ClearMids(offer.get());
 
-  ASSERT_TRUE(
-      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(callee->SetRemoteDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
   EXPECT_TRUE(callee->SetLocalDescription(callee->CreateAnswer()));
 }
@@ -1764,7 +1737,7 @@ TEST_F(PeerConnectionJsepTest, SetLocalDescriptionFailsMissingMid) {
   auto caller = CreatePeerConnection();
   caller->AddAudioTrack("audio");
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ClearMids(offer.get());
 
   std::string error;
@@ -1906,7 +1879,7 @@ TEST_F(PeerConnectionJsepTest, AttemptToRollbackImplicitly) {
 
 TEST_F(PeerConnectionJsepTest, RollbackRemovesTransceiver) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   ASSERT_EQ(callee->pc()->GetTransceivers().size(), 1u);
@@ -1924,7 +1897,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRemovesTransceiver) {
 
 TEST_F(PeerConnectionJsepTest, RollbackKeepsTransceiverAndClearsMid) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   callee->AddAudioTrack("a");
@@ -1950,7 +1923,7 @@ TEST_F(PeerConnectionJsepTest, RollbackKeepsTransceiverAndClearsMid) {
 TEST_F(PeerConnectionJsepTest,
        RollbackKeepsTransceiverAfterAddTrackEvenWhenTrackIsNulled) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   callee->AddAudioTrack("a");
@@ -1970,10 +1943,10 @@ TEST_F(PeerConnectionJsepTest,
 
 TEST_F(PeerConnectionJsepTest, RollbackRestoresMid) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("a");
-  auto offer = callee->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = callee->CreateOffer();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_EQ(callee->pc()->GetTransceivers().size(), 1u);
   EXPECT_NE(callee->pc()->GetTransceivers()[0]->mid(), std::nullopt);
@@ -1993,7 +1966,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRestoresInitSendEncodings) {
   init.send_encodings.push_back(encoding);
   encoding.rid = "lo";
   init.send_encodings.push_back(encoding);
-  caller->AddTransceiver(webrtc::MediaType::VIDEO, init);
+  caller->AddTransceiver(MediaType::VIDEO, init);
   auto encodings =
       caller->pc()->GetTransceivers()[0]->sender()->init_send_encodings();
   EXPECT_TRUE(caller->SetLocalDescription(caller->CreateOffer()));
@@ -2016,15 +1989,15 @@ TEST_F(PeerConnectionJsepTest, RollbackDoesNotAffectSendEncodings) {
   init.send_encodings.push_back(encoding);
   encoding.rid = "lo";
   init.send_encodings.push_back(encoding);
-  caller->AddTransceiver(webrtc::MediaType::VIDEO, init);
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO, init);
+  callee->AddTransceiver(MediaType::VIDEO);
   callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal());
   caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal());
   auto params = caller->pc()->GetTransceivers()[0]->sender()->GetParameters();
   EXPECT_TRUE(params.encodings[0].active);
   params.encodings[0].active = false;
   caller->pc()->GetTransceivers()[0]->sender()->SetParameters(params);
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   std::string offer_string;
   EXPECT_TRUE(offer.get()->ToString(&offer_string));
   std::string simulcast_line =
@@ -2047,7 +2020,7 @@ TEST_F(PeerConnectionJsepTest, RollbackDoesNotAffectSendEncodings) {
 TEST_F(PeerConnectionJsepTest, RollbackRestoresMidAndRemovesTransceiver) {
   auto callee = CreatePeerConnection();
   callee->AddVideoTrack("a");
-  auto offer = callee->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = callee->CreateOffer();
   auto caller = CreatePeerConnection();
   caller->AddAudioTrack("b");
   caller->AddVideoTrack("c");
@@ -2057,8 +2030,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRestoresMidAndRemovesTransceiver) {
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateRollback()));
   EXPECT_EQ(callee->pc()->GetTransceivers().size(), 1u);
   EXPECT_EQ(callee->pc()->GetTransceivers()[0]->mid(), mid);
-  EXPECT_EQ(callee->pc()->GetTransceivers()[0]->media_type(),
-            webrtc::MediaType::VIDEO);
+  EXPECT_EQ(callee->pc()->GetTransceivers()[0]->media_type(), MediaType::VIDEO);
   EXPECT_TRUE(callee->SetLocalDescription(std::move(offer)));
   EXPECT_EQ(callee->observer()->remove_track_events_.size(),
             callee->observer()->add_track_events_.size());
@@ -2094,9 +2066,9 @@ TEST_F(PeerConnectionJsepTest, ImplicitlyRollbackTransceiversWithSameMids) {
   config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.enable_implicit_rollback = true;
   auto caller = CreatePeerConnection(config);
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO);
   auto callee = CreatePeerConnection(config);
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  callee->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
   auto initial_mid = callee->pc()->GetTransceivers()[0]->mid();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -2114,7 +2086,7 @@ TEST_F(PeerConnectionJsepTest, RollbackToNegotiatedStableState) {
   config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   auto caller = CreatePeerConnection(config);
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection(config);
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   EXPECT_TRUE(callee->CreateAnswerAndSetAsLocal());
@@ -2147,7 +2119,7 @@ TEST_F(PeerConnectionJsepTest, RollbackHasToDestroyTransport) {
   pc->AddAudioTrack("a");
   pc->AddVideoTrack("b");
   EXPECT_TRUE(pc->CreateOfferAndSetAsLocal());
-  auto offer = pc->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = pc->CreateOffer();
   EXPECT_EQ(pc->pc()->GetTransceivers().size(), 2u);
   auto audio_transport =
       pc->pc()->GetTransceivers()[0]->sender()->dtls_transport();
@@ -2165,7 +2137,7 @@ TEST_F(PeerConnectionJsepTest, RollbackHasToDestroyTransport) {
 
 TEST_F(PeerConnectionJsepTest, RollbackLocalDirectionChange) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   EXPECT_TRUE(
@@ -2188,7 +2160,7 @@ TEST_F(PeerConnectionJsepTest, RollbackLocalDirectionChange) {
 
 TEST_F(PeerConnectionJsepTest, RollbackRemoteDirectionChange) {
   auto caller = CreatePeerConnection();
-  auto caller_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto caller_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("a");
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -2218,7 +2190,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRemoteDirectionChange) {
 TEST_F(PeerConnectionJsepTest,
        RollbackRestoresFiredDirectionAndOnTrackCanFireAgain) {
   auto caller = CreatePeerConnection();
-  auto caller_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto caller_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   callee->AddAudioTrack("a");
   ASSERT_EQ(callee->pc()->GetTransceivers().size(), 1u);
@@ -2248,7 +2220,7 @@ TEST_F(PeerConnectionJsepTest,
 TEST_F(PeerConnectionJsepTest,
        RollbackFromInactiveToReceivingMakesOnTrackFire) {
   auto caller = CreatePeerConnection();
-  auto caller_transceiver = caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  auto caller_transceiver = caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
   // Perform full O/A so that transceiver is associated. Ontrack fires.
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
@@ -2271,9 +2243,9 @@ TEST_F(PeerConnectionJsepTest,
 
 TEST_F(PeerConnectionJsepTest, RollbackAfterMultipleSLD) {
   auto callee = CreatePeerConnection();
-  callee->AddTransceiver(webrtc::MediaType::AUDIO);
+  callee->AddTransceiver(MediaType::AUDIO);
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  callee->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
   callee->observer()->clear_legacy_renegotiation_needed();
   callee->observer()->clear_latest_negotiation_needed_event();
@@ -2287,9 +2259,9 @@ TEST_F(PeerConnectionJsepTest, RollbackAfterMultipleSLD) {
 
 TEST_F(PeerConnectionJsepTest, NoRollbackNeeded) {
   auto caller = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::AUDIO);
   auto callee = CreatePeerConnection();
-  callee->AddTransceiver(webrtc::MediaType::AUDIO);
+  callee->AddTransceiver(MediaType::AUDIO);
   EXPECT_TRUE(caller->CreateOfferAndSetAsLocal());
   EXPECT_TRUE(caller->CreateOfferAndSetAsLocal());
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
@@ -2322,7 +2294,7 @@ TEST_F(PeerConnectionJsepTest, DataChannelImplicitRollback) {
   config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.enable_implicit_rollback = true;
   auto caller = CreatePeerConnection(config);
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO);
   auto callee = CreatePeerConnection(config);
   callee->CreateDataChannel("dummy");
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
@@ -2339,7 +2311,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRemoteDataChannelThenAddTransceiver) {
   caller->CreateDataChannel("dummy");
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_TRUE(callee->SetRemoteDescription(callee->CreateRollback()));
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  callee->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
 }
 
@@ -2350,7 +2322,7 @@ TEST_F(PeerConnectionJsepTest,
   caller->CreateDataChannel("dummy");
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_TRUE(callee->SetRemoteDescription(callee->CreateRollback()));
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  callee->AddTransceiver(MediaType::VIDEO);
   callee->CreateDataChannel("dummy");
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
 }
@@ -2368,7 +2340,7 @@ TEST_F(PeerConnectionJsepTest, RollbackRemoteDataChannelThenAddDataChannel) {
 TEST_F(PeerConnectionJsepTest, RollbackRemoteTransceiverThenAddDataChannel) {
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_TRUE(callee->SetRemoteDescription(callee->CreateRollback()));
   callee->CreateDataChannel("dummy");
@@ -2379,25 +2351,38 @@ TEST_F(PeerConnectionJsepTest,
        RollbackRemoteTransceiverThenAddDataChannelAndTransceiver) {
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
+  caller->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_TRUE(callee->SetRemoteDescription(callee->CreateRollback()));
   callee->CreateDataChannel("dummy");
-  callee->AddTransceiver(webrtc::MediaType::VIDEO);
+  callee->AddTransceiver(MediaType::VIDEO);
   EXPECT_TRUE(callee->CreateOfferAndSetAsLocal());
 }
 
 TEST_F(PeerConnectionJsepTest, BundleOnlySectionDoesNotNeedRtcpMux) {
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
-  caller->AddTransceiver(webrtc::MediaType::AUDIO);
-  caller->AddTransceiver(webrtc::MediaType::VIDEO);
-  auto offer = caller->CreateOffer();
+  caller->AddTransceiver(MediaType::AUDIO);
+  caller->AddTransceiver(MediaType::VIDEO);
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   // Remove rtcp-mux and set bundle-only on the second content.
   offer->description()->contents()[1].media_description()->set_rtcp_mux(false);
   offer->description()->contents()[1].bundle_only = true;
 
   EXPECT_TRUE(callee->SetRemoteDescription(std::move(offer)));
+}
+
+// This test is a regression test for crbug.com/410960672
+TEST_F(PeerConnectionJsepTest, OfferRollbackRemoveReoffer) {
+  auto caller = CreatePeerConnection();
+  // Add first video track.
+  auto sender = caller->AddVideoTrack("foo");
+  caller->SetLocalDescription(caller->CreateOffer());
+  caller->SetRemoteDescription(caller->CreateRollback());
+  RTCError error = caller->pc()->RemoveTrackOrError(sender);
+  EXPECT_THAT(error, IsRtcOk());
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
+  caller->SetLocalDescription(std::move(offer));
 }
 
 }  // namespace webrtc

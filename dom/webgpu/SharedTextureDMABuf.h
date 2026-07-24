@@ -6,8 +6,8 @@
 #ifndef GPU_SharedTextureDMABuf_H_
 #define GPU_SharedTextureDMABuf_H_
 
-#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/webgpu/SharedTexture.h"
 #include "nsTArrayForwardDeclare.h"
 

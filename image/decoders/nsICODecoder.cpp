@@ -8,8 +8,6 @@
 
 #include "nsICODecoder.h"
 
-#include <stdlib.h>
-
 #include <utility>
 
 #include "RasterImage.h"
@@ -646,7 +644,7 @@ LexerResult nsICODecoder::DoDecode(SourceBufferIterator& aIterator,
 
   return mLexer.Lex(
       aIterator, aOnResume,
-      [=](ICOState aState, const char* aData, size_t aLength) {
+      [this](ICOState aState, const char* aData, size_t aLength) {
         switch (aState) {
           case ICOState::HEADER:
             return ReadHeader(aData);

@@ -4,6 +4,8 @@
 
 package mozilla.components.service.fxa.sync
 
+import androidx.annotation.VisibleForTesting
+import androidx.work.WorkInfo
 import mozilla.components.concept.storage.KeyProvider
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.service.fxa.SyncConfig
@@ -117,7 +119,7 @@ internal interface SyncDispatcher : Closeable, Observable<SyncStatusObserver> {
     )
     fun startPeriodicSync(unit: TimeUnit, period: Long, initialDelay: Long)
     fun stopPeriodicSync()
-    fun workersStateChanged(isRunning: Boolean)
+    fun workersStateChanged(currentWorkStates: List<WorkInfo.State>?)
 }
 
 /**
@@ -130,7 +132,8 @@ internal abstract class SyncManager(
     open val logger = Logger("SyncManager")
 
     // A SyncDispatcher instance bound to an account and a set of syncable stores.
-    private var syncDispatcher: SyncDispatcher? = null
+    @VisibleForTesting
+    internal var syncDispatcher: SyncDispatcher? = null
 
     private val syncStatusObserverRegistry = ObserverRegistry<SyncStatusObserver>()
 

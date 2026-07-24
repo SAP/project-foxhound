@@ -37,14 +37,13 @@ function runTest()
     is(XULStore.getValue(URI, "button2", "foo"), "bar", "attribute persisted");
     button2.removeAttribute("foo");
     XULStore.persist(button2, "foo");
-    is(XULStore.hasValue(URI, "button2", "foo"), false, "attribute removed");
+    is(XULStore.getValue(URI, "button2", "foo"), "-moz-missing\n", "attribute removed");
 
     button3.removeAttribute("hidden");
 
     window.close();
     window.arguments[1].windowOpened();
-  }
-  else {
+  } else {
     is(button1.getAttribute("value"), "Pressed",
        "Attribute set");
     is(button2.hasAttribute("value"), false,

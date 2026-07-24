@@ -77,6 +77,13 @@ loader.lazyGetter(
   () =>
     require("resource://devtools/client/application/panel.js").ApplicationPanel
 );
+loader.lazyGetter(
+  this,
+  "AntiTrackingPanel",
+  () =>
+    require("resource://devtools/client/anti-tracking/panel.js")
+      .AntiTrackingPanel
+);
 
 // Other dependencies
 loader.lazyRequireGetter(
@@ -475,6 +482,26 @@ Tools.application = {
   },
 };
 
+Tools.antitracking = {
+  id: "antitracking",
+  ordinal: 11,
+  visibilityswitch: "devtools.anti-tracking.enabled",
+  icon: "chrome://browser/skin/tracking-protection.svg",
+  url: "chrome://devtools/content/anti-tracking/index.html",
+  label: "Anti tracking",
+  panelLabel: "Anti tracking",
+  tooltip: "Anti tracking",
+  inMenu: false,
+
+  isToolSupported() {
+    return true;
+  },
+
+  build(iframeWindow, toolbox, commands) {
+    return new AntiTrackingPanel(iframeWindow, toolbox, commands);
+  },
+};
+
 var defaultTools = [
   Tools.options,
   Tools.webConsole,
@@ -489,6 +516,11 @@ var defaultTools = [
   Tools.accessibility,
   Tools.application,
 ];
+
+// The Anti tracking panel is an internal tool, to be enabled manually via about:config
+if (Services.prefs.getBoolPref("devtools.anti-tracking.enabled", false)) {
+  defaultTools.push(Tools.antitracking);
+}
 
 exports.defaultTools = defaultTools;
 

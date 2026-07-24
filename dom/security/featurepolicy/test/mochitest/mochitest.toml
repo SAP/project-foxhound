@@ -14,10 +14,14 @@ support-files = [
 
 ["test_nested.html"]
 scheme = "https"
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_parser.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_xslt.html"]
 support-files = [

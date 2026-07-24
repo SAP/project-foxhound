@@ -38,11 +38,11 @@ import:
               FUNNEL_ORGANIC: "adjust_campaign == ''"
 
               # Using Glean events, specific to the browser
-              INACTIVE_1_DAY: "'app_launched'|eventLastSeen('Hours') >= 24"
-              INACTIVE_2_DAYS: "'app_launched'|eventLastSeen('Days', 0) >= 2"
-              INACTIVE_3_DAYS: "'app_launched'|eventLastSeen('Days', 0) >= 3"
-              INACTIVE_4_DAYS: "'app_launched'|eventLastSeen('Days', 0) >= 4"
-              INACTIVE_5_DAYS: "'app_launched'|eventLastSeen('Days', 0) >= 5"
+              INACTIVE_1_DAY: "'app_opened'|eventLastSeen('Hours') >= 24"
+              INACTIVE_2_DAYS: "'app_opened'|eventLastSeen('Days', 0) >= 2"
+              INACTIVE_3_DAYS: "'app_opened'|eventLastSeen('Days', 0) >= 3"
+              INACTIVE_4_DAYS: "'app_opened'|eventLastSeen('Days', 0) >= 4"
+              INACTIVE_5_DAYS: "'app_opened'|eventLastSeen('Days', 0) >= 5"
 
               # Behavioral Targeting Events
               # See https://experimenter.info/mobile-behavioral-targeting for more info
@@ -57,12 +57,12 @@ import:
               FXA_NOT_SIGNED_IN: "'sync_auth.sign_in'|eventLastSeen('Years', 0) > 4"
 
               # https://mozilla-hub.atlassian.net/wiki/spaces/FJT/pages/11469471/Core+Active
-              USER_INFREQUENT: "'app_launched'|eventCountNonZero('Days', 28) >= 1 && 'app_launched'|eventCountNonZero('Days', 28) < 7"
-              USER_CASUAL: "'app_launched'|eventCountNonZero('Days', 28) >= 7 && 'app_launched'|eventCountNonZero('Days', 28) < 14"
-              USER_REGULAR: "'app_launched'|eventCountNonZero('Days', 28) >= 14 && 'app_launched'|eventCountNonZero('Days', 28) < 21"
-              USER_CORE_ACTIVE: "'app_launched'|eventCountNonZero('Days', 28) >= 21"
+              USER_INFREQUENT: "'app_opened'|eventCountNonZero('Days', 28) >= 1 && 'app_opened'|eventCountNonZero('Days', 28) < 7"
+              USER_CASUAL: "'app_opened'|eventCountNonZero('Days', 28) >= 7 && 'app_opened'|eventCountNonZero('Days', 28) < 14"
+              USER_REGULAR: "'app_opened'|eventCountNonZero('Days', 28) >= 14 && 'app_opened'|eventCountNonZero('Days', 28) < 21"
+              USER_CORE_ACTIVE: "'app_opened'|eventCountNonZero('Days', 28) >= 21"
 
-              LAUNCHED_ONCE_THIS_WEEK: "'app_launched'|eventSum('Days', 7) == 1"
+              LAUNCHED_ONCE_THIS_WEEK: "'app_opened'|eventSum('Days', 7) == 1"
 
             actions:
               ENABLE_PRIVATE_BROWSING: ://enable_private_browsing
@@ -81,6 +81,7 @@ import:
               OPEN_SETTINGS_SEARCH_ENGINE: ://settings_search_engine
               OPEN_SETTINGS_TRACKING_PROTECTION: ://settings_tracking_protection
               OPEN_SETTINGS_WALLPAPERS: ://settings_wallpapers
+              OPEN_SETTINGS_APP_ICON: ://settings_app_icon
               OPEN_SETTINGS: ://settings
               OPEN_SHARE_SHEET: ://share_sheet
               TURN_ON_SYNC: ://turn_on_sync

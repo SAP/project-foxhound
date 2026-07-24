@@ -21,6 +21,7 @@
 #include "nsTHashMap.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozIStoragePendingStatement.h"
+#include "mozIStorageValueArray.h"
 #include "Helpers.h"
 
 class nsNavHistory;
@@ -797,6 +798,29 @@ class nsNavHistoryFolderResultNode final
   nsresult OnChildrenFilled();
   void EnsureRegisteredAsFolderObserver();
   nsresult FillChildrenAsync();
+  /*
+   * Fill children of this folder by the current query.
+   *
+   * @param aPendingStmt
+   *        The Storage pending statement that will be used to control async
+   *        execution. If this is nullptr, this method processes as sync.
+   */
+  nsresult FillChildrenInternal(
+      mozIStoragePendingStatement** aPendingStmt = nullptr);
+
+  /**
+   * Turns aRow into a node and appends it as a child of this node if it is
+   * appropriate to do so.
+   *
+   * @param aRow
+   *        A Storage statement (in the case of synchronous execution) or row of
+   *        a result set (in the case of asynchronous execution).
+   * @param aCurrentIndex
+   *        The index of aRow within the results.  When called on the first row,
+   *        this should be set to -1.
+   */
+  nsresult AppendRowAsChild(mozIStorageValueArray* aRow,
+                            int32_t& aCurrentIndex);
 
   bool mIsRegisteredFolderObserver;
   int32_t mAsyncBookmarkIndex;

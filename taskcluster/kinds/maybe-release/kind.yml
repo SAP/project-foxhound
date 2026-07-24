@@ -9,6 +9,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Check recent releases and trigger a new ship-it phase if worthwhile.
     worker-type: shipit
     worker:
@@ -48,6 +49,6 @@ tasks:
         name: maybe-release-firefox-android
         shipping-product: firefox-android
         worker:
-            phase: promote_android
+            phase: ship_android
         treeherder:
             platform: fenix-android-all/opt

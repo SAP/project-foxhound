@@ -8,12 +8,14 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
@@ -39,11 +41,8 @@ private const val CFR_VERTICAL_OFFSET_PORTRAIT = -6
  * @param onRequestDismiss Invoked when when accessibility services or UI automation requests
  * dismissal of the bottom sheet.
  * @param handlebarContentDescription Bottom sheet handlebar content description.
- * @param isExtensionsExpanded Whether the extensions menu is expanded.
- * @param isMoreMenuExpanded Whether the more menu is expanded.
+ * @param isMenuDragBarDark Whether or not the menu's drag bar background should be dark.
  * @param cornerShape The shape of the bottom sheet's top corners.
- * @param handleColor The color of the handle.
- * @param handleCornerRadius The corner radius of the handle.
  * @param menuCfrState An optional [MenuCFRState] that describes how to display a
  * contextual feature recommendation (CFR) popup in the menu.
  * @param content The children composable to be laid out.
@@ -53,18 +52,15 @@ fun MenuDialogBottomSheet(
     modifier: Modifier = Modifier,
     onRequestDismiss: () -> Unit,
     handlebarContentDescription: String,
-    isExtensionsExpanded: Boolean = false,
-    isMoreMenuExpanded: Boolean = false,
+    isMenuDragBarDark: Boolean = false,
     cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-    handleColor: Color = FirefoxTheme.colors.borderInverted,
-    handleCornerRadius: CornerRadius = CornerRadius.Zero,
     menuCfrState: MenuCFRState? = null,
     content: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .background(
-                color = FirefoxTheme.colors.layer1,
+                color = MaterialTheme.colorScheme.surface,
                 shape = cornerShape,
             )
             .nestedScroll(rememberNestedScrollInteropConnection()),
@@ -75,22 +71,16 @@ fun MenuDialogBottomSheet(
                 state = menuCfrState,
                 onRequestDismiss = onRequestDismiss,
                 contentDescription = handlebarContentDescription,
-                isExtensionsExpanded = isExtensionsExpanded,
-                isMoreMenuExpanded = isMoreMenuExpanded,
+                isMenuDragBarDark = isMenuDragBarDark,
                 cornerShape = cornerShape,
-                handleColor = handleColor,
-                handleCornerRadius = handleCornerRadius,
             )
         } else {
             MenuBottomSheetHandle(
                 modifier = modifier,
                 onRequestDismiss = onRequestDismiss,
                 contentDescription = handlebarContentDescription,
-                isExtensionsExpanded = isExtensionsExpanded,
-                isMoreMenuExpanded = isMoreMenuExpanded,
+                isMenuDragBarDark = isMenuDragBarDark,
                 cornerShape = cornerShape,
-                color = handleColor,
-                cornerRadius = handleCornerRadius,
             )
         }
 
@@ -103,31 +93,27 @@ private fun MenuBottomSheetHandle(
     modifier: Modifier = Modifier,
     onRequestDismiss: () -> Unit,
     contentDescription: String,
-    isExtensionsExpanded: Boolean = false,
-    isMoreMenuExpanded: Boolean = false,
+    isMenuDragBarDark: Boolean = false,
     cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-    color: Color = FirefoxTheme.colors.borderInverted,
-    cornerRadius: CornerRadius = CornerRadius.Zero,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = if (isExtensionsExpanded || isMoreMenuExpanded) {
-                    FirefoxTheme.colors.layerSearch
+                color = if (isMenuDragBarDark) {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
                 } else {
                     Color.Transparent
                 },
                 shape = cornerShape,
-            ),
+            )
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BottomSheetHandle(
             onRequestDismiss = onRequestDismiss,
             contentDescription = contentDescription,
             modifier = modifier,
-            cornerRadius = cornerRadius,
-            color = color,
         )
     }
 }
@@ -141,11 +127,8 @@ private fun CFRBottomSheetHandle(
     state: MenuCFRState,
     contentDescription: String,
     onRequestDismiss: () -> Unit,
-    isExtensionsExpanded: Boolean,
-    isMoreMenuExpanded: Boolean,
+    isMenuDragBarDark: Boolean,
     cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-    handleColor: Color = FirefoxTheme.colors.borderInverted,
-    handleCornerRadius: CornerRadius = CornerRadius.Zero,
 ) {
     val (indicatorDirection, verticalOffset) = when (state.orientation) {
         OrientationMode.Landscape -> CFRPopup.IndicatorDirection.UP to CFR_VERTICAL_OFFSET_LANDSCAPE
@@ -190,11 +173,8 @@ private fun CFRBottomSheetHandle(
             modifier = modifier,
             onRequestDismiss = onRequestDismiss,
             contentDescription = contentDescription,
-            isExtensionsExpanded = isExtensionsExpanded,
-            isMoreMenuExpanded = isMoreMenuExpanded,
+            isMenuDragBarDark = isMenuDragBarDark,
             cornerShape = cornerShape,
-            color = handleColor,
-            cornerRadius = handleCornerRadius,
         )
     }
 }

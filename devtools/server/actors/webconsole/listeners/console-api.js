@@ -15,7 +15,7 @@ const {
  * The window.console API observer. This allows the window.console API messages
  * to be sent to the remote Web Console instance.
  *
- * @constructor
+ * @class
  * @param nsIDOMWindow window
  *        Optional - the window object for which we are created. This is used
  *        for filtering out messages that belong to other windows.
@@ -50,6 +50,7 @@ class ConsoleAPIListener {
 
   /**
    * The content window for which we listen to window.console API calls.
+   *
    * @type nsIDOMWindow
    */
   window = null;
@@ -84,7 +85,7 @@ class ConsoleAPIListener {
       // We create a principal here to get the privileged principal of this
       // script. Note that this is importantly *NOT* the principal of the
       // content we are observing, as that would not have access to the
-      // message object created in ConsoleAPIStorage.jsm's scope.
+      // message object created in ConsoleAPIStorage.sys.mjs's scope.
       Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
     );
   }
@@ -176,7 +177,7 @@ class ConsoleAPIListener {
     }
 
     if (this.addonId) {
-      // ConsoleAPI.jsm messages contains a consoleID, (and it is currently
+      // ConsoleAPI messages contains a consoleID, (and it is currently
       // used in Addon SDK add-ons), the standard 'console' object
       // (which is used in regular webpages and in WebExtensions pages)
       // contains the originAttributes of the source document principal.

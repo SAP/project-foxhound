@@ -10,15 +10,23 @@
 
 #include "api/audio/audio_mixer.h"
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "absl/strings/string_view.h"
+#include "api/audio/audio_frame.h"
+#include "api/scoped_refptr.h"
 #include "common_audio/wav_file.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/audio_mixer/default_output_rate_calculator.h"
+#include "modules/audio_mixer/output_rate_calculator.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
 
 ABSL_FLAG(int,
@@ -112,7 +120,7 @@ const std::vector<std::string> parse_input_files() {
 int main(int argc, char* argv[]) {
   absl::ParseCommandLine(argc, argv);
 
-  rtc::scoped_refptr<webrtc::AudioMixerImpl> mixer(
+  webrtc::scoped_refptr<webrtc::AudioMixerImpl> mixer(
       webrtc::AudioMixerImpl::Create(
           std::unique_ptr<webrtc::OutputRateCalculator>(
               new webrtc::DefaultOutputRateCalculator()),

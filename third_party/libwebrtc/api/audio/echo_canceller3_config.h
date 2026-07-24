@@ -23,6 +23,9 @@ struct RTC_EXPORT EchoCanceller3Config {
   // ranges. Returns true if and only of the config did not need to be changed.
   static bool Validate(EchoCanceller3Config* config);
 
+  // Produces a default configuration for multichannel.
+  static EchoCanceller3Config CreateDefaultMultichannelConfig();
+
   EchoCanceller3Config();
   EchoCanceller3Config(const EchoCanceller3Config& e);
   EchoCanceller3Config& operator=(const EchoCanceller3Config& other);
@@ -233,6 +236,11 @@ struct RTC_EXPORT EchoCanceller3Config {
       float anti_howling_activation_threshold = 400.f;
       float anti_howling_gain = 1.f;
     } high_bands_suppression;
+
+    struct HighFrequencySuppression {
+      int limiting_gain_band = 16;
+      int bands_in_limiting_gain = 1;
+    } high_frequency_suppression;
 
     float floor_first_increase = 0.00001f;
     bool conservative_hf_suppression = false;

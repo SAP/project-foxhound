@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFEPointLightElement.h"
-#include "mozilla/dom/SVGFEPointLightElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
+#include "mozilla/dom/SVGFEPointLightElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEPointLight)
 

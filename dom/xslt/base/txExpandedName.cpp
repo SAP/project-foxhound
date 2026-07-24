@@ -4,10 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txExpandedName.h"
-#include "nsString.h"
+
 #include "nsReadableUtils.h"
-#include "txStringUtils.h"
+#include "nsString.h"
 #include "txNamespaceMap.h"
+#include "txStringUtils.h"
 #include "txXMLUtils.h"
 
 nsresult txExpandedName::init(const nsAString& aQName,

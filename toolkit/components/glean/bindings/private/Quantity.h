@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
+#include "mozilla/glean/bindings/QuantityStandalone.h"
 #include "nsTString.h"
 #include "nsIScriptError.h"
 
@@ -16,16 +17,9 @@ namespace mozilla::glean {
 
 namespace impl {
 
-class QuantityMetric {
+class QuantityMetric : public QuantityStandalone {
  public:
-  constexpr explicit QuantityMetric(uint32_t id) : mId(id) {}
-
-  /**
-   * Set to the specified value.
-   *
-   * @param aValue the value to set.
-   */
-  void Set(int64_t aValue) const;
+  constexpr explicit QuantityMetric(uint32_t id) : QuantityStandalone(id) {}
 
   /**
    * **Test-only API**
@@ -46,9 +40,6 @@ class QuantityMetric {
    */
   Result<Maybe<int64_t>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 
 }  // namespace impl

@@ -190,7 +190,7 @@ export const GeckoViewTranslationsSettings = {
         const { language, operation, operationLevel } = aData;
         if (operation === "delete") {
           if (operationLevel === "all") {
-            lazy.TranslationsParent.deleteAllLanguageFiles().then(
+            lazy.TranslationsUtils.deleteAllLanguageFiles().then(
               function () {
                 aCallback.onSuccess();
               },

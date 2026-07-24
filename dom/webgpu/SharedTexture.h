@@ -8,8 +8,8 @@
 
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 
 namespace mozilla {
 

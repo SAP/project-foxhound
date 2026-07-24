@@ -8,12 +8,8 @@ apt-get update
 apt-get install \
     python-is-python3 \
     sudo \
-    python3-yaml \
-    python3-pip
+    python3-yaml
 
-pip install --break-system-packages --disable-pip-version-check --quiet --no-cache-dir orjson==3.10.15
-
-apt-get remove --purge python3-pip
 apt-get autoremove --purge
 apt-get clean
 apt-get autoclean

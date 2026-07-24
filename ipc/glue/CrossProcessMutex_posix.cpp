@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CrossProcessMutex.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
@@ -95,7 +94,7 @@ CrossProcessMutex::~CrossProcessMutex() {
 
   if (count == 0) {
     // Nothing can be done if the destroy fails so ignore return code.
-    Unused << pthread_mutex_destroy(mMutex);
+    (void)pthread_mutex_destroy(mMutex);
   }
 
   MOZ_COUNT_DTOR(CrossProcessMutex);

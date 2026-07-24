@@ -7,7 +7,6 @@
 #include <Mferror.h>
 #include <mfapi.h>
 #include <oleauto.h>
-#include <optional>
 #include <windows.h>
 #include <windows.media.h>
 

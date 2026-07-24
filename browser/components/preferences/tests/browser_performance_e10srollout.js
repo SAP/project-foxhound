@@ -37,6 +37,7 @@ add_task(async function testPrefsAreDefault() {
   let useRecommendedPerformanceSettings = doc.querySelector(
     "#useRecommendedPerformanceSettings"
   );
+  let allowHWAccel = doc.querySelector("#allowHWAccel");
 
   is(
     Services.prefs.getBoolPref(
@@ -51,13 +52,9 @@ add_task(async function testPrefsAreDefault() {
   );
 
   useRecommendedPerformanceSettings.click();
+  await allowHWAccel.updateComplete;
 
-  let performanceSettings = doc.querySelector("#performanceSettings");
-  is(
-    performanceSettings.hidden,
-    false,
-    "performance settings section is shown"
-  );
+  ok(BrowserTestUtils.isVisible(allowHWAccel), "allowHWAccel setting is shown");
 
   is(
     Services.prefs.getBoolPref(
@@ -71,26 +68,8 @@ add_task(async function testPrefsAreDefault() {
     "checkbox should not be checked after clicking on checkbox"
   );
 
-  let contentProcessCount = doc.querySelector("#contentProcessCount");
-  is(
-    contentProcessCount.disabled,
-    false,
-    "process count control should be enabled"
-  );
-  is(
-    Services.prefs.getIntPref("dom.ipc.processCount"),
-    DEFAULT_PROCESS_COUNT,
-    "default pref should be default value"
-  );
-  is(
-    contentProcessCount.selectedItem.value,
-    "" + DEFAULT_PROCESS_COUNT,
-    "selected item should be the default one"
-  );
-
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
-  Services.prefs.clearUserPref("dom.ipc.processCount");
   Services.prefs.setBoolPref(
     "browser.preferences.defaultPerformanceSettings.enabled",
     true
@@ -112,29 +91,8 @@ add_task(async function testPrefsSetByUser() {
   is(prefs.selectedPane, "paneGeneral", "General pane was selected");
 
   let doc = gBrowser.contentDocument;
-  let performanceSettings = doc.querySelector("#performanceSettings");
-  is(
-    performanceSettings.hidden,
-    false,
-    "performance settings section is shown"
-  );
-
-  let contentProcessCount = doc.querySelector("#contentProcessCount");
-  is(
-    contentProcessCount.disabled,
-    false,
-    "process count control should be enabled"
-  );
-  is(
-    Services.prefs.getIntPref("dom.ipc.processCount"),
-    kNewCount,
-    "process count should be the set value"
-  );
-  is(
-    contentProcessCount.selectedItem.value,
-    "" + kNewCount,
-    "selected item should be the set one"
-  );
+  let allowHWAccel = doc.querySelector("#allowHWAccel");
+  ok(BrowserTestUtils.isVisible(allowHWAccel), "allowHWAccel setting is shown");
 
   let useRecommendedPerformanceSettings = doc.querySelector(
     "#useRecommendedPerformanceSettings"

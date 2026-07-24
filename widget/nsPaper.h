@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPaper_h__
-#define nsPaper_h__
+#ifndef nsPaper_h_
+#define nsPaper_h_
 
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/gfx/Point.h"
@@ -124,4 +124,4 @@ class CommonPaperInfoArray
 
 }  // namespace mozilla
 
-#endif /* nsPaper_h__ */
+#endif /* nsPaper_h_ */

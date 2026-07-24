@@ -22,7 +22,6 @@ import mozilla.components.lib.fetch.httpurlconnection.HttpURLConnectionClient
 import mozilla.components.service.glean.net.ConceptFetchHttpUploader
 import mozilla.components.support.base.log.Log
 import mozilla.components.support.base.log.sink.AndroidLogSink
-import mozilla.components.support.utils.PendingIntentUtils
 import mozilla.telemetry.glean.BuildInfo
 import mozilla.telemetry.glean.Glean
 import mozilla.telemetry.glean.config.Configuration
@@ -133,7 +132,7 @@ private fun createNonFatalPendingIntent(context: Context): PendingIntent {
         context,
         0,
         Intent(CrashApplication.NON_FATAL_CRASH_BROADCAST),
-        PendingIntentUtils.defaultFlags,
+        PendingIntent.FLAG_IMMUTABLE,
     )
 }
 

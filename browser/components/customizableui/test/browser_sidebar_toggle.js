@@ -13,6 +13,19 @@ registerCleanupFunction(async function () {
   }
 });
 
+async function ensureSidebarLauncherIsVisible() {
+  await TestUtils.waitForTick();
+  // Show the sidebar launcher if its hidden
+  if (SidebarController.sidebarContainer.hidden) {
+    document.getElementById("sidebar-button").doCommand();
+  }
+  await TestUtils.waitForTick();
+  Assert.ok(
+    BrowserTestUtils.isVisible(SidebarController.sidebarMain),
+    "Sidebar launcher is visible"
+  );
+}
+
 var showSidebar = async function (win = window) {
   let button = win.document.getElementById("sidebar-button");
   let sidebarFocusedPromise = BrowserTestUtils.waitForEvent(
@@ -68,7 +81,7 @@ add_task(async function () {
     await hideSidebar();
   } else {
     const sidebar = document.querySelector("sidebar-main");
-    ok(sidebar, "Sidebar is shown.");
+    await ensureSidebarLauncherIsVisible();
     for (const [index, toolButton] of sidebar.toolButtons.entries()) {
       await SidebarController.toggle(toolButton.getAttribute("view"));
       is(

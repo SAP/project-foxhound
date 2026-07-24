@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/JSON.h"
-#include "nsContentUtils.h"
-#include "nsArrayUtils.h"
-#include "nsTString.h"
 #include "PaymentRequestUtils.h"
+
+#include "js/JSON.h"
+#include "nsArrayUtils.h"
+#include "nsContentUtils.h"
+#include "nsTString.h"
 
 namespace mozilla::dom {
 

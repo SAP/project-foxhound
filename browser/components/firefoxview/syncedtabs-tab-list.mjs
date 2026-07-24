@@ -167,7 +167,7 @@ export class SyncedTabsTabRow extends FxviewTabRowBase {
         href=${ifDefined(this.url)}
         class="fxview-tab-row-main"
         id="fxview-tab-row-main"
-        disabled=${this.closeRequested}
+        ?disabled=${this.closeRequested}
         tabindex=${this.active &&
         this.currentActiveElementId === "fxview-tab-row-main"
           ? "0"

@@ -4,10 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "FFmpegRuntimeLinker.h"
+
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLog.h"
-#include "FFmpegRuntimeLinker.h"
-#include "mozilla/ArrayUtils.h"
 #include "prlink.h"
 
 namespace mozilla {
@@ -19,14 +19,17 @@ const char* FFmpegRuntimeLinker::sLinkStatusLibraryName = "";
 template <int V>
 class FFmpegDecoderModule {
  public:
-  static void Init(FFmpegLibWrapper*);
-  static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
+  static void Init(const FFmpegLibWrapper*);
+  static already_AddRefed<PlatformDecoderModule> Create(
+      const FFmpegLibWrapper*);
 };
 
 template <int V>
 class FFmpegEncoderModule {
  public:
-  static already_AddRefed<PlatformEncoderModule> Create(FFmpegLibWrapper*);
+  static void Init(const FFmpegLibWrapper*);
+  static already_AddRefed<PlatformEncoderModule> Create(
+      const FFmpegLibWrapper*);
 };
 
 static FFmpegLibWrapper sLibAV;
@@ -34,6 +37,7 @@ static FFmpegLibWrapper sLibAV;
 static const char* sLibs[] = {
 // clang-format off
 #if defined(XP_DARWIN)
+  "libavcodec.62.dylib",
   "libavcodec.61.dylib",
   "libavcodec.60.dylib",
   "libavcodec.59.dylib",
@@ -44,9 +48,10 @@ static const char* sLibs[] = {
   "libavcodec.54.dylib",
   "libavcodec.53.dylib",
 #elif defined(XP_OPENBSD)
-  "libavcodec.so", // OpenBSD hardly controls the major/minor library version
+  "libavcodec.so", // OpenBSD port controls the major/minor library version
                    // of ffmpeg and update it regulary on ABI/API changes
 #else
+  "libavcodec.so.62",
   "libavcodec.so.61",
   "libavcodec.so.60",
   "libavcodec.so.59",
@@ -96,28 +101,40 @@ bool FFmpegRuntimeLinker::Init() {
           switch (sLibAV.mVersion) {
             case 53:
               FFmpegDecoderModule<53>::Init(&sLibAV);
+              FFmpegEncoderModule<53>::Init(&sLibAV);
               break;
             case 54:
               FFmpegDecoderModule<54>::Init(&sLibAV);
+              FFmpegEncoderModule<54>::Init(&sLibAV);
               break;
             case 55:
             case 56:
               FFmpegDecoderModule<55>::Init(&sLibAV);
+              FFmpegEncoderModule<55>::Init(&sLibAV);
               break;
             case 57:
               FFmpegDecoderModule<57>::Init(&sLibAV);
+              FFmpegEncoderModule<57>::Init(&sLibAV);
               break;
             case 58:
               FFmpegDecoderModule<58>::Init(&sLibAV);
+              FFmpegEncoderModule<58>::Init(&sLibAV);
               break;
             case 59:
               FFmpegDecoderModule<59>::Init(&sLibAV);
+              FFmpegEncoderModule<59>::Init(&sLibAV);
               break;
             case 60:
               FFmpegDecoderModule<60>::Init(&sLibAV);
+              FFmpegEncoderModule<60>::Init(&sLibAV);
               break;
             case 61:
               FFmpegDecoderModule<61>::Init(&sLibAV);
+              FFmpegEncoderModule<61>::Init(&sLibAV);
+              break;
+            case 62:
+              FFmpegDecoderModule<62>::Init(&sLibAV);
+              FFmpegEncoderModule<62>::Init(&sLibAV);
               break;
           }
           return true;
@@ -209,6 +226,9 @@ already_AddRefed<PlatformDecoderModule> FFmpegRuntimeLinker::CreateDecoder() {
     case 61:
       module = FFmpegDecoderModule<61>::Create(&sLibAV);
       break;
+    case 62:
+      module = FFmpegDecoderModule<62>::Create(&sLibAV);
+      break;
     default:
       module = nullptr;
   }
@@ -246,6 +266,9 @@ already_AddRefed<PlatformEncoderModule> FFmpegRuntimeLinker::CreateEncoder() {
       break;
     case 61:
       module = FFmpegEncoderModule<61>::Create(&sLibAV);
+      break;
+    case 62:
+      module = FFmpegEncoderModule<62>::Create(&sLibAV);
       break;
     default:
       module = nullptr;

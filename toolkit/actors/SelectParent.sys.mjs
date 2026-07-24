@@ -22,6 +22,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "MAC_NATIVE_SELECT_ENABLED",
+  "widget.macos.native-anchored-select",
+  false
+);
+
 // Minimum elements required to show select search
 const SEARCH_MINIMUM_ELEMENTS = 40;
 
@@ -72,13 +79,13 @@ export var SelectParentHelper = {
    *
    * @param {Element}        menulist
    * @param {Array<Element>} items
-   * @param {Array<Object>}  uniqueItemStyles
-   * @param {Number}         selectedIndex
-   * @param {Number}         zoom
-   * @param {Boolean}        custom
-   * @param {Boolean}        isDarkBackground
-   * @param {Object}         uaStyle
-   * @param {Object}         selectStyle
+   * @param {Array<object>}  uniqueItemStyles
+   * @param {number}         selectedIndex
+   * @param {number}         zoom
+   * @param {boolean}        custom
+   * @param {boolean}        isDarkBackground
+   * @param {object}         uaStyle
+   * @param {object}         selectStyle
    */
   populate(
     menulist,
@@ -115,10 +122,6 @@ export var SelectParentHelper = {
 
     if (!custom) {
       selectStyle = uaStyle;
-    }
-
-    if (selectStyle["background-color"] == "rgba(0, 0, 0, 0)") {
-      selectStyle["background-color"] = uaStyle["background-color"];
     }
 
     if (selectStyle.color == selectStyle["background-color"]) {
@@ -342,7 +345,7 @@ export var SelectParentHelper = {
 
   handleEvent(event) {
     switch (event.type) {
-      case "mouseup":
+      case "mouseup": {
         function inRect(rect, x, y) {
           return (
             x >= rect.left &&
@@ -360,6 +363,7 @@ export var SelectParentHelper = {
           this._currentMenulist.menupopup.state == "open";
         this._actor.sendAsyncMessage("Forms:MouseUp", { onAnchor });
         break;
+      }
 
       case "mouseover":
         if (
@@ -401,8 +405,7 @@ export var SelectParentHelper = {
         }
         break;
 
-      case "popuphidden":
-        this._actor.sendAsyncMessage("Forms:DismissedDropDown", {});
+      case "popuphidden": {
         let popup = event.target;
         this._unregisterListeners(popup);
         popup.parentNode.hidden = true;
@@ -413,8 +416,13 @@ export var SelectParentHelper = {
         this._currentMenulist = null;
         this._selectRect = null;
         this._currentZoom = 1;
-        this._actor = null;
+        try {
+          this._actor.sendAsyncMessage("Forms:DismissedDropDown", {});
+        } finally {
+          this._actor = null;
+        }
         break;
+      }
     }
   },
 
@@ -486,13 +494,13 @@ export var SelectParentHelper = {
    *
    * @param {Element}        menulist
    * @param {Array<Element>} options
-   * @param {Array<Object>}  uniqueOptionStyles
-   * @param {Number}         selectedIndex
+   * @param {Array<object>}  uniqueOptionStyles
+   * @param {number}         selectedIndex
    * @param {Element}        parentElement
-   * @param {Boolean}        isGroupDisabled
-   * @param {Boolean}        addSearch
-   * @param {Number}         nthChildIndex
-   * @returns {Number}
+   * @param {boolean}        isGroupDisabled
+   * @param {boolean}        addSearch
+   * @param {number}         nthChildIndex
+   * @returns {number}
    */
   populateChildren(
     menulist,
@@ -599,7 +607,7 @@ export var SelectParentHelper = {
         item.setAttribute("value", option.index);
 
         if (parentElement) {
-          item.classList.add("contentSelectDropdown-ingroup");
+          item.setAttribute("indented", true);
         }
       }
     }
@@ -714,10 +722,8 @@ export var SelectParentHelper = {
           allHidden = true;
         } else {
           if (
-            !currentItem.classList.contains("contentSelectDropdown-ingroup") &&
-            currentItem.previousElementSibling.classList.contains(
-              "contentSelectDropdown-ingroup"
-            )
+            !currentItem.hasAttribute("indented") &&
+            currentItem.previousElementSibling.hasAttribute("indented")
           ) {
             if (prevCaption != null) {
               prevCaption.hidden = allHidden;
@@ -784,6 +790,13 @@ export class SelectParent extends JSWindowActorParent {
     if (AppConstants.platform == "win") {
       popup.setAttribute("consumeoutsideclicks", "false");
       popup.setAttribute("ignorekeys", "shortcuts");
+    } else if (
+      AppConstants.platform == "macosx" &&
+      (lazy.CUSTOM_STYLING_ENABLED ||
+        lazy.DOM_FORMS_SELECTSEARCH ||
+        !lazy.MAC_NATIVE_SELECT_ENABLED)
+    ) {
+      popup.setAttribute("native", "false");
     }
 
     let container =

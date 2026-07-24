@@ -1,33 +1,22 @@
 import pytest
-from webdriver import NoSuchElementException
 
-URL = "https://e.seb.lt/ib/login"
+URL = "https://login.seb.lt/ui/"
 
-UNSUPPORTED_CSS = ".alert"
+HERO_CSS = "#userId"
+UNSUPPORTED_TEXT = "Google Chrome"
 
 
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
     await client.navigate(URL)
-    try:
-        client.await_css(
-            UNSUPPORTED_CSS,
-            condition="elem.innerText.includes('Chrome')",
-            is_displayed=True,
-            timeout=3,
-        )
-        assert False
-    except NoSuchElementException:
-        assert True
+    await client.stall(3)
+    client.await_css(HERO_CSS, is_displayed=True)
+    assert not client.find_text(UNSUPPORTED_TEXT, is_displayed=True)
 
 
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):
     await client.navigate(URL)
-    assert client.await_css(
-        UNSUPPORTED_CSS,
-        condition="elem.innerText.includes('Chrome')",
-        is_displayed=True,
-    )
+    assert client.await_text(UNSUPPORTED_TEXT, is_displayed=True)

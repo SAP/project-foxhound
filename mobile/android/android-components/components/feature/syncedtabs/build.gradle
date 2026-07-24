@@ -1,33 +1,22 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.sendtab'
 }
 
 dependencies {
-    implementation project(':components:service-firefox-accounts')
     implementation project(':components:browser-icons')
     implementation project(':components:browser-state')
     implementation project(':components:browser-storage-sync')
@@ -35,24 +24,24 @@ dependencies {
     implementation project(':components:concept-engine')
     implementation project(':components:concept-toolbar')
     implementation project(':components:feature-session')
-    implementation project(':components:support-utils')
-    implementation project(':components:support-ktx')
+    implementation project(':components:service-firefox-accounts')
     implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
 
-    implementation libs.androidx.work.runtime
     implementation libs.androidx.lifecycle.runtime
-
-    implementation libs.kotlin.coroutines
+    implementation libs.androidx.work.runtime
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.concurrent
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

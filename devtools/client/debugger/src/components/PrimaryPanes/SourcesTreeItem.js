@@ -8,12 +8,12 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import SourceIcon from "../shared/SourceIcon";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 import {
-  getGeneratedSourceByURL,
   getHideIgnoredSources,
   isSourceOverridden,
+  getGeneratedSourceByURL,
 } from "../../selectors/index";
 import actions from "../../actions/index";
 
@@ -74,39 +74,40 @@ class SourceTreeItemContents extends Component {
       const icon = item.thread.targetType.includes("worker")
         ? "worker"
         : "window";
-      return React.createElement(AccessibleImage, {
-        className: classnames(icon),
+      return React.createElement(DebuggerImage, {
+        name: icon,
       });
     }
     if (item.type == "group") {
       if (item.groupName === "Webpack") {
-        return React.createElement(AccessibleImage, {
-          className: "webpack",
+        return React.createElement(DebuggerImage, {
+          name: "webpack",
         });
       } else if (item.groupName === "Angular") {
-        return React.createElement(AccessibleImage, {
-          className: "angular",
+        return React.createElement(DebuggerImage, {
+          name: "angular",
         });
       }
       // Check if the group relates to an extension.
       // This happens when a webextension injects a content script.
       if (item.isForExtensionSource) {
-        return React.createElement(AccessibleImage, {
-          className: "extension",
+        return React.createElement(DebuggerImage, {
+          name: "extension",
         });
       }
-      return React.createElement(AccessibleImage, {
-        className: "globe-small",
+      return React.createElement(DebuggerImage, {
+        name: "globe-small",
       });
     }
     if (item.type == "directory") {
-      return React.createElement(AccessibleImage, {
-        className: "folder",
+      return React.createElement(DebuggerImage, {
+        name: "folder",
       });
     }
     if (item.type == "source") {
       const { source, sourceActor } = item;
       return React.createElement(SourceIcon, {
+        className: this.props.isSourceOverridden ? " has-network-override" : "",
         location: createLocation({
           source,
           sourceActor,
@@ -117,10 +118,7 @@ class SourceTreeItemContents extends Component {
           if (icon === "extension") {
             return sourceTypes[source.displayURL.fileExtension] || "javascript";
           }
-          return (
-            icon +
-            (this.props.isSourceOverridden ? " has-network-override" : "")
-          );
+          return icon;
         },
       });
     }

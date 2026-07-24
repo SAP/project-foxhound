@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/** Document Zoom Management Code
+/**
+ * Document Zoom Management Code
  *
  * To use this, you'll need to have a global gBrowser variable
  * or use the methods that accept a browser to be modified.
- **/
+ */
 
 var ZoomManager = {
   set useFullZoom(aVal) {
@@ -56,18 +57,28 @@ var ZoomManager = {
     }
   },
 
-  enlarge: function ZoomManager_enlarge() {
-    var i = this.zoomValues.indexOf(this.snap(this.zoom)) + 1;
+  enlargeForBrowser: function ZoomManager_enlargeForBrowser(aBrowser) {
+    var i =
+      this.zoomValues.indexOf(this.snap(this.getZoomForBrowser(aBrowser))) + 1;
     if (i < this.zoomValues.length) {
-      this.zoom = this.zoomValues[i];
+      this.setZoomForBrowser(aBrowser, this.zoomValues[i]);
     }
   },
 
-  reduce: function ZoomManager_reduce() {
-    var i = this.zoomValues.indexOf(this.snap(this.zoom)) - 1;
+  reduceForBrowser: function ZoomManager_reduceForBrowser(aBrowser) {
+    var i =
+      this.zoomValues.indexOf(this.snap(this.getZoomForBrowser(aBrowser))) - 1;
     if (i >= 0) {
-      this.zoom = this.zoomValues[i];
+      this.setZoomForBrowser(aBrowser, this.zoomValues[i]);
     }
+  },
+
+  enlarge: function ZoomManager_enlarge() {
+    this.enlargeForBrowser(gBrowser);
+  },
+
+  reduce: function ZoomManager_reduce() {
+    this.reduceForBrowser(gBrowser);
   },
 
   reset: function ZoomManager_reset() {

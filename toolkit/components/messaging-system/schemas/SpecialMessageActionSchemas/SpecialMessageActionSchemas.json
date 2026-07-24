@@ -112,6 +112,18 @@
         {
           "type": "object",
           "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["OPEN_TAB_IN_SPLITVIEW"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false,
+          "description": "Opens the selected tab in a splitview with about:opentabs"
+        },
+        {
+          "type": "object",
+          "properties": {
             "data": {
               "type": "object",
               "properties": {
@@ -544,7 +556,11 @@
                       "type": ["boolean", "string", "number", "null", "object"]
                     }
                   },
-                  "description": "An object representing a pref containing a name and a value. The value can be an object with the property `timestamp` with a truthy value to set the pref to a string of the current time in ms."
+                  "description": "An object representing a pref containing a name and a value. The value can be an object with the property `timestamp` with a truthy value to set the pref to a string of the current time in ms. It can also be an object with the property 'copyFromPref' with a string value that is the name of a source pref whose value will be copied to the target pref."
+                },
+                "onImpression": {
+                  "type": "boolean",
+                  "description": "Whether SET_PREF was triggered on message impression instead of a direct user action."
                 }
               },
               "required": ["pref"],
@@ -680,7 +696,7 @@
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["DATAREPORTING_NOTIFY_DATA_POLICY_INTERACTED"]
+              "enum": ["SET_TERMS_OF_USE_INTERACTED"]
             }
           },
           "required": ["type"],
@@ -763,6 +779,56 @@
           "required": ["type"],
           "additionalProperties": false,
           "description": "Summarize current page content."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "anchor_id": {
+                "type": "string",
+                "description": "Anchor to attach the panel to, if set will override widget_id"
+              },
+              "widget_id": {
+                "type": "string",
+                "description": "ID of the widget whose panel will open, can be set instead of anchor_id"
+              },
+              "panel_id": {
+                "type": "string",
+                "description": "ID of the panel to open"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": ["OPEN_PANEL"]
+            }
+          },
+          "required": ["data", "type"],
+          "additionalProperties": true,
+          "description": "Opens a given panel based on ID"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["FXA_AIWINDOW_SIGNIN_FLOW"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false,
+          "description": "Opens AI Window after successful authentication with Accounts sign-in flow"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["CREATE_TASKBAR_TAB"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false,
+          "description": "Creates a taskbar tab from the current URL and asks to pin it to the taskbar. Windows only."
         }
       ]
     }

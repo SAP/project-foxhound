@@ -11,13 +11,10 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
-import mozilla.components.support.utils.ext.getPackageInfoCompat
-import mozilla.components.support.utils.ext.queryIntentActivitiesCompat
-import mozilla.components.support.utils.ext.resolveActivityCompat
-import java.util.HashMap
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 
 /**
  * Helpful tools for dealing with other browsers on this device.
@@ -99,7 +96,7 @@ class Browsers private constructor(
     private val packageName = context.packageName
 
     private val browsers: Map<String, ActivityInfo> = {
-        val packageManager = context.packageManager
+        val packageManager = context.packageManagerCompatHelper
 
         val browsers = resolveBrowsers(context, packageManager, uri)
 
@@ -115,7 +112,8 @@ class Browsers private constructor(
     /**
      * The [ActivityInfo] of the default browser of the user (or null if none could be found).
      */
-    val defaultBrowser: ActivityInfo? = findDefault(context, context.packageManager, uri)
+    val defaultBrowser: ActivityInfo? =
+        findDefault(context, context.packageManagerCompatHelper, uri)
 
     /**
      * The [ActivityInfo] of the installed Firefox, including Focus, browser (or null if none could be found).
@@ -261,7 +259,7 @@ class Browsers private constructor(
 
     private fun resolveBrowsers(
         context: Context,
-        packageManager: PackageManager,
+        packageManager: PackageManagerCompatHelper,
         uri: Uri,
     ): MutableMap<String, ActivityInfo> {
         val browsers = HashMap<String, ActivityInfo>()
@@ -275,7 +273,7 @@ class Browsers private constructor(
     }
 
     private fun findKnownBrowsers(
-        packageManager: PackageManager,
+        packageManager: PackageManagerCompatHelper,
         browsers: MutableMap<String, ActivityInfo>,
         uri: Uri,
     ) {
@@ -310,7 +308,11 @@ class Browsers private constructor(
         }
     }
 
-    private fun findDefault(context: Context, packageManager: PackageManager, uri: Uri): ActivityInfo? {
+    private fun findDefault(
+        context: Context,
+        packageManager: PackageManagerCompatHelper,
+        uri: Uri,
+    ): ActivityInfo? {
         val intent = Intent(Intent.ACTION_VIEW, uri)
         intent.addCategory(Intent.CATEGORY_BROWSABLE)
 
@@ -367,17 +369,13 @@ class Browsers private constructor(
          */
         fun findResolvers(
             context: Context,
-            packageManager: PackageManager,
+            packageManager: PackageManagerCompatHelper,
             includeThisApp: Boolean = true,
         ): List<ResolveInfo> {
             val httpIntent = Intent.parseUri(SAMPLE_BROWSER_HTTP_URL, Intent.URI_INTENT_SCHEME)
             val httpsIntent = Intent.parseUri(SAMPLE_BROWSER_HTTPS_URL, Intent.URI_INTENT_SCHEME)
 
-            val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PackageManager.MATCH_ALL
-            } else {
-                PackageManager.MATCH_DEFAULT_ONLY
-            }
+            val flag = PackageManager.MATCH_ALL
 
             val httpResults = packageManager.queryIntentActivitiesCompat(httpIntent, flag)
                 .filter {
@@ -402,7 +400,7 @@ class Browsers private constructor(
          */
         fun findResolvers(
             context: Context,
-            packageManager: PackageManager,
+            packageManager: PackageManagerCompatHelper,
             url: String,
             includeThisApp: Boolean = true,
             contentType: String? = null,
@@ -413,13 +411,9 @@ class Browsers private constructor(
                 addCategory(Intent.CATEGORY_BROWSABLE)
             }
 
-            val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PackageManager.MATCH_ALL
-            } else {
-                PackageManager.MATCH_DEFAULT_ONLY
-            }
+            val flag = PackageManager.MATCH_ALL
+
             return packageManager.queryIntentActivitiesCompat(intent, flag)
-                .orEmpty()
                 .filter {
                     it.activityInfo.exported && (
                         includeThisApp ||

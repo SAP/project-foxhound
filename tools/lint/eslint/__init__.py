@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
-from mozbuild.nodeutil import find_node_executable
+from mozbuild.nodeutil import check_node_executables_valid, find_node_executable
 from mozlint import result
 
 from eslint import prettier_utils, setup_helper
@@ -36,7 +36,7 @@ and try again.
 def setup(root, **lintargs):
     setup_helper.set_project_root(root)
 
-    if not setup_helper.check_node_executables_valid():
+    if not check_node_executables_valid():
         return 1
 
     return setup_helper.eslint_maybe_setup()
@@ -69,9 +69,10 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
     if not lintargs.get("formatonly", False):
         exclude_args = []
         for path in config.get("exclude", []):
-            exclude_args.extend(
-                ["--ignore-pattern", os.path.relpath(path, lintargs["root"])]
-            )
+            exclude_args.extend([
+                "--ignore-pattern",
+                os.path.relpath(path, lintargs["root"]),
+            ])
 
         for rule in rules:
             extra_args.extend(["--rule", rule])
@@ -188,15 +189,13 @@ def run(cmd_args, config):
             fixed = fixed + 1
 
         for err in errors:
-            err.update(
-                {
-                    "hint": err.get("fix"),
-                    "level": "error" if err["severity"] == 2 else "warning",
-                    "lineno": err.get("line") or 0,
-                    "path": obj["filePath"],
-                    "rule": err.get("ruleId"),
-                }
-            )
+            err.update({
+                "hint": err.get("fix"),
+                "level": "error" if err["severity"] == 2 else "warning",
+                "lineno": err.get("line") or 0,
+                "path": obj["filePath"],
+                "rule": err.get("ruleId"),
+            })
             results.append(result.from_config(config, **err))
 
     return {"results": results, "fixed": fixed}

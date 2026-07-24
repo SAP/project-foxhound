@@ -37,7 +37,7 @@ For example, to run all chrome tests under `toolkit/content`, run the following 
 
 ::
 
-   ./mach test toolkit/content/test/chrome/chrome.ini
+   ./mach test toolkit/content/test/chrome/chrome.toml
 
 To run a single test, just pass the path to the test into mach:
 

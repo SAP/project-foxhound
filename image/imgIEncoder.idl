@@ -111,7 +111,8 @@ interface imgIEncoder : nsIAsyncInputStream
                     in uint32_t height,
                     in uint32_t stride,
                     in uint32_t inputFormat,
-                    in AString outputOptions);
+                    in AString outputOptions,
+                    in ACString randomizationKey);
 
   /*
    * For encoding images which may contain multiple frames, the 1-shot

@@ -13,6 +13,9 @@
 
 // Constants identifying Win32 "native" resources.
 
+#ifndef TOOLKIT_XRE_NSNATIVEAPPSUPPORTWIN_H_
+#define TOOLKIT_XRE_NSNATIVEAPPSUPPORTWIN_H_
+
 #define IDI_APPICON 1
 #define IDI_DOCUMENT 2
 #define IDI_NEWWINDOW 3
@@ -27,3 +30,5 @@
 
 // String that goes in the WinXP Start Menu.
 #define IDS_STARTMENU_APPNAME 103
+
+#endif  // TOOLKIT_XRE_NSNATIVEAPPSUPPORTWIN_H_

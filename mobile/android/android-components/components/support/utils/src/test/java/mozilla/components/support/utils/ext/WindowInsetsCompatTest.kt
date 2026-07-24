@@ -9,7 +9,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsCompat.Type.displayCutout
 import androidx.core.view.WindowInsetsCompat.Type.mandatorySystemGestures
 import androidx.core.view.WindowInsetsCompat.Type.systemBars
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
@@ -27,7 +26,6 @@ class WindowInsetsCompatTest {
     private var bottomPixels: Int = 0
 
     @Before
-    @ExperimentalCoroutinesApi
     fun setUp() {
         windowInsetsCompat = mock()
 

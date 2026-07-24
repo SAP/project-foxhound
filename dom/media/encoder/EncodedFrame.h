@@ -6,10 +6,10 @@
 #ifndef EncodedFrame_h_
 #define EncodedFrame_h_
 
-#include "nsISupportsImpl.h"
-#include "mozilla/media/MediaUtils.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 

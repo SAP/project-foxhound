@@ -22,11 +22,6 @@ const TEST_PROVIDER_INFO = [
       /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/telemetry\/searchTelemetryAd_searchbox_with_content_redirect.html/,
     ],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad/],
-    shoppingTab: {
-      selector: "nav a",
-      regexp: "&page=shopping",
-      inspectRegexpInSERP: true,
-    },
     components: [
       {
         type: SearchSERPTelemetryUtils.COMPONENTS.INCONTENT_SEARCHBOX,
@@ -66,6 +61,26 @@ const TEST_PROVIDER_INFO = [
         default: true,
       },
     ],
+    impressionAttributes: [
+      {
+        key: "is_shopping_page",
+        url: {
+          regexp: "&page=shopping",
+        },
+      },
+      {
+        key: "shopping_tab_displayed",
+        element: {
+          selector: "nav a",
+          attributeName: "href",
+          regexp: "&page=shopping",
+          component: {
+            type: "shopping_tab",
+            countImpressions: true,
+          },
+        },
+      },
+    ],
   },
 ];
 
@@ -103,14 +118,8 @@ add_task(async function test_click_tab() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -135,14 +144,8 @@ add_task(async function test_click_tab() {
     },
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -184,14 +187,8 @@ add_task(async function test_click_shopping() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -216,14 +213,8 @@ add_task(async function test_click_shopping() {
     },
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "true",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -269,14 +260,8 @@ add_task(async function test_click_related_search_in_new_tab() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -301,14 +286,11 @@ add_task(async function test_click_related_search_in_new_tab() {
     },
     {
       impression: {
-        provider: "example",
         tagged: "false",
         partner_code: "",
         source: "opened_in_new_tab",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -357,14 +339,8 @@ add_task(async function test_click_redirect_search_in_newtab() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -389,14 +365,11 @@ add_task(async function test_click_redirect_search_in_newtab() {
     },
     {
       impression: {
-        provider: "example",
         tagged: "false",
         partner_code: "",
         source: "opened_in_new_tab",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -452,14 +425,8 @@ add_task(async function test_content_source_reset() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -488,14 +455,9 @@ add_task(async function test_content_source_reset() {
     },
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
         source: "follow_on_from_refine_on_incontent_search",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -520,14 +482,10 @@ add_task(async function test_content_source_reset() {
     },
     {
       impression: {
-        provider: "example",
         tagged: "false",
         partner_code: "",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -581,14 +539,8 @@ add_task(async function test_click_refinement_button() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -613,14 +565,11 @@ add_task(async function test_click_refinement_button() {
     },
     {
       impression: {
-        provider: "example",
         tagged: "false",
         partner_code: "",
         source: "follow_on_from_refine_on_SERP",
         is_shopping_page: "false",
-        is_private: "false",
         shopping_tab_displayed: "true",
-        is_signed_in: "false",
       },
       adImpressions: [
         {

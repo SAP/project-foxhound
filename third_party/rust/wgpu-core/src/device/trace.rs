@@ -1,258 +1,284 @@
-use alloc::{string::String, vec::Vec};
+#[cfg(feature = "trace")]
+mod record;
+#[cfg(feature = "replay")]
+mod replay;
+
 use core::{convert::Infallible, ops::Range};
 
+use alloc::{string::String, vec::Vec};
+use macro_rules_attribute::apply;
+
+use crate::{
+    command::{serde_object_reference_struct, BasePass, Command, ReferenceType, RenderCommand},
+    id::{markers, PointerId},
+    pipeline::GeneralRenderPipelineDescriptor,
+};
+
 #[cfg(feature = "trace")]
-use {alloc::borrow::Cow, std::io::Write as _};
-
-use crate::id;
-
-//TODO: consider a readable Id that doesn't include the backend
+pub use record::*;
+#[cfg(feature = "replay")]
+pub use replay::*;
 
 type FileName = String;
 
 pub const FILE_NAME: &str = "trace.ron";
 
-#[cfg(feature = "trace")]
-pub(crate) fn new_render_bundle_encoder_descriptor<'a>(
-    label: crate::Label<'a>,
-    context: &'a super::RenderPassContext,
-    depth_read_only: bool,
-    stencil_read_only: bool,
-) -> crate::command::RenderBundleEncoderDescriptor<'a> {
-    crate::command::RenderBundleEncoderDescriptor {
-        label,
-        color_formats: Cow::Borrowed(&context.attachments.colors),
-        depth_stencil: context.attachments.depth_stencil.map(|format| {
-            wgt::RenderBundleDepthStencil {
-                format,
-                depth_read_only,
-                stencil_read_only,
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Data {
+    File(FileName),
+    String(DataKind, String),
+    Binary(DataKind, Vec<u8>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
+pub enum DataKind {
+    Bin,
+    Wgsl,
+
+    /// IR of Naga module, serialized in RON format
+    Ron,
+    Spv,
+    Dxil,
+    Hlsl,
+    Msl,
+    Glsl,
+}
+
+impl core::fmt::Display for DataKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            DataKind::Bin => "bin",
+            DataKind::Wgsl => "wgsl",
+            DataKind::Ron => "ron",
+            DataKind::Spv => "spv",
+            DataKind::Dxil => "dxil",
+            DataKind::Hlsl => "hlsl",
+            DataKind::Msl => "metal",
+            DataKind::Glsl => "glsl",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl DataKind {
+    #[cfg(feature = "replay")]
+    fn is_string(&self) -> bool {
+        match *self {
+            DataKind::Wgsl | DataKind::Ron | DataKind::Hlsl | DataKind::Msl | DataKind::Glsl => {
+                true
             }
-        }),
-        sample_count: context.sample_count,
-        multiview: context.multiview,
+            DataKind::Bin | DataKind::Spv | DataKind::Dxil => false,
+        }
+    }
+}
+
+impl Data {
+    pub fn kind(&self) -> DataKind {
+        match self {
+            Data::File(file) => {
+                if file.ends_with(".bin") {
+                    DataKind::Bin
+                } else if file.ends_with(".wgsl") {
+                    DataKind::Wgsl
+                } else if file.ends_with(".ron") {
+                    DataKind::Ron
+                } else if file.ends_with(".spv") {
+                    DataKind::Spv
+                } else if file.ends_with(".dxil") {
+                    DataKind::Dxil
+                } else if file.ends_with(".hlsl") {
+                    DataKind::Hlsl
+                } else if file.ends_with(".metal") {
+                    DataKind::Msl
+                } else if file.ends_with(".glsl") {
+                    DataKind::Glsl
+                } else {
+                    panic!("unknown data file extension: {file}");
+                }
+            }
+            Data::String(kind, _) => *kind,
+            Data::Binary(kind, _) => *kind,
+        }
     }
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Action<'a> {
+#[apply(serde_object_reference_struct)]
+pub enum Action<'a, R: ReferenceType> {
     Init {
         desc: crate::device::DeviceDescriptor<'a>,
         backend: wgt::Backend,
     },
     ConfigureSurface(
-        id::SurfaceId,
+        R::Surface,
         wgt::SurfaceConfiguration<Vec<wgt::TextureFormat>>,
     ),
-    CreateBuffer(id::BufferId, crate::resource::BufferDescriptor<'a>),
-    FreeBuffer(id::BufferId),
-    DestroyBuffer(id::BufferId),
-    CreateTexture(id::TextureId, crate::resource::TextureDescriptor<'a>),
-    FreeTexture(id::TextureId),
-    DestroyTexture(id::TextureId),
+    CreateBuffer(R::Buffer, crate::resource::BufferDescriptor<'a>),
+    FreeBuffer(R::Buffer),
+    DestroyBuffer(R::Buffer),
+    CreateTexture(R::Texture, crate::resource::TextureDescriptor<'a>),
+    FreeTexture(R::Texture),
+    DestroyTexture(R::Texture),
     CreateTextureView {
-        id: id::TextureViewId,
-        parent_id: id::TextureId,
+        id: R::TextureView,
+        parent: R::Texture,
         desc: crate::resource::TextureViewDescriptor<'a>,
     },
-    DestroyTextureView(id::TextureViewId),
-    CreateSampler(id::SamplerId, crate::resource::SamplerDescriptor<'a>),
-    DestroySampler(id::SamplerId),
-    GetSurfaceTexture {
-        id: id::TextureId,
-        parent_id: id::SurfaceId,
+    DestroyTextureView(R::TextureView),
+    CreateExternalTexture {
+        id: R::ExternalTexture,
+        desc: crate::resource::ExternalTextureDescriptor<'a>,
+        planes: alloc::boxed::Box<[R::TextureView]>,
     },
-    Present(id::SurfaceId),
-    DiscardSurfaceTexture(id::SurfaceId),
+    FreeExternalTexture(R::ExternalTexture),
+    DestroyExternalTexture(R::ExternalTexture),
+    CreateSampler(
+        PointerId<markers::Sampler>,
+        crate::resource::SamplerDescriptor<'a>,
+    ),
+    DestroySampler(PointerId<markers::Sampler>),
+    GetSurfaceTexture {
+        id: R::Texture,
+        parent: R::Surface,
+    },
+    Present(R::Surface),
+    DiscardSurfaceTexture(R::Surface),
     CreateBindGroupLayout(
-        id::BindGroupLayoutId,
+        PointerId<markers::BindGroupLayout>,
         crate::binding_model::BindGroupLayoutDescriptor<'a>,
     ),
-    DestroyBindGroupLayout(id::BindGroupLayoutId),
+    GetRenderPipelineBindGroupLayout {
+        id: PointerId<markers::BindGroupLayout>,
+        pipeline: PointerId<markers::RenderPipeline>,
+        index: u32,
+    },
+    GetComputePipelineBindGroupLayout {
+        id: PointerId<markers::BindGroupLayout>,
+        pipeline: PointerId<markers::ComputePipeline>,
+        index: u32,
+    },
+    DestroyBindGroupLayout(PointerId<markers::BindGroupLayout>),
     CreatePipelineLayout(
-        id::PipelineLayoutId,
-        crate::binding_model::PipelineLayoutDescriptor<'a>,
+        PointerId<markers::PipelineLayout>,
+        crate::binding_model::ResolvedPipelineLayoutDescriptor<
+            'a,
+            PointerId<markers::BindGroupLayout>,
+        >,
     ),
-    DestroyPipelineLayout(id::PipelineLayoutId),
-    CreateBindGroup(
-        id::BindGroupId,
-        crate::binding_model::BindGroupDescriptor<'a>,
-    ),
-    DestroyBindGroup(id::BindGroupId),
+    DestroyPipelineLayout(PointerId<markers::PipelineLayout>),
+    CreateBindGroup(PointerId<markers::BindGroup>, TraceBindGroupDescriptor<'a>),
+    DestroyBindGroup(PointerId<markers::BindGroup>),
     CreateShaderModule {
-        id: id::ShaderModuleId,
+        id: PointerId<markers::ShaderModule>,
         desc: crate::pipeline::ShaderModuleDescriptor<'a>,
-        data: FileName,
+        data: Data,
     },
-    DestroyShaderModule(id::ShaderModuleId),
+    CreateShaderModulePassthrough {
+        id: PointerId<markers::ShaderModule>,
+        data: Vec<Data>,
+
+        entry_point: String,
+        label: crate::Label<'a>,
+        num_workgroups: (u32, u32, u32),
+        runtime_checks: wgt::ShaderRuntimeChecks,
+    },
+    DestroyShaderModule(PointerId<markers::ShaderModule>),
     CreateComputePipeline {
-        id: id::ComputePipelineId,
-        desc: crate::pipeline::ComputePipelineDescriptor<'a>,
-        #[cfg_attr(feature = "replay", serde(default))]
-        implicit_context: Option<super::ImplicitPipelineContext>,
+        id: PointerId<markers::ComputePipeline>,
+        desc: TraceComputePipelineDescriptor<'a>,
     },
-    DestroyComputePipeline(id::ComputePipelineId),
-    CreateRenderPipeline {
-        id: id::RenderPipelineId,
-        desc: crate::pipeline::RenderPipelineDescriptor<'a>,
-        #[cfg_attr(feature = "replay", serde(default))]
-        implicit_context: Option<super::ImplicitPipelineContext>,
+    DestroyComputePipeline(PointerId<markers::ComputePipeline>),
+    CreateGeneralRenderPipeline {
+        id: PointerId<markers::RenderPipeline>,
+        desc: TraceGeneralRenderPipelineDescriptor<'a>,
     },
-    DestroyRenderPipeline(id::RenderPipelineId),
+    DestroyRenderPipeline(PointerId<markers::RenderPipeline>),
     CreatePipelineCache {
-        id: id::PipelineCacheId,
+        id: PointerId<markers::PipelineCache>,
         desc: crate::pipeline::PipelineCacheDescriptor<'a>,
     },
-    DestroyPipelineCache(id::PipelineCacheId),
+    DestroyPipelineCache(PointerId<markers::PipelineCache>),
     CreateRenderBundle {
-        id: id::RenderBundleId,
+        id: R::RenderBundle,
         desc: crate::command::RenderBundleEncoderDescriptor<'a>,
-        base: crate::command::BasePass<crate::command::RenderCommand, Infallible>,
+        base: BasePass<RenderCommand<R>, Infallible>,
     },
-    DestroyRenderBundle(id::RenderBundleId),
+    DestroyRenderBundle(PointerId<markers::RenderBundle>),
     CreateQuerySet {
-        id: id::QuerySetId,
+        id: PointerId<markers::QuerySet>,
         desc: crate::resource::QuerySetDescriptor<'a>,
     },
-    DestroyQuerySet(id::QuerySetId),
+    DestroyQuerySet(PointerId<markers::QuerySet>),
     WriteBuffer {
-        id: id::BufferId,
-        data: FileName,
+        id: R::Buffer,
+        data: Data,
         range: Range<wgt::BufferAddress>,
         queued: bool,
     },
     WriteTexture {
-        to: crate::command::TexelCopyTextureInfo,
-        data: FileName,
+        to: wgt::TexelCopyTextureInfo<R::Texture>,
+        data: Data,
         layout: wgt::TexelCopyBufferLayout,
         size: wgt::Extent3d,
     },
-    Submit(crate::SubmissionIndex, Vec<Command>),
+    Submit(crate::SubmissionIndex, Vec<Command<R>>),
+    FailedCommands {
+        commands: Option<Vec<Command<R>>>,
+        /// If `None`, then encoding failed due to a validation error (returned
+        /// from `CommandEncoder::finish`). If `Some`, submission failed due to
+        /// a resource having been destroyed.
+        failed_at_submit: Option<crate::SubmissionIndex>,
+        error: String,
+    },
     CreateBlas {
-        id: id::BlasId,
+        id: R::Blas,
         desc: crate::resource::BlasDescriptor<'a>,
         sizes: wgt::BlasGeometrySizeDescriptors,
     },
-    DestroyBlas(id::BlasId),
+    DestroyBlas(R::Blas),
     CreateTlas {
-        id: id::TlasId,
+        id: R::Tlas,
         desc: crate::resource::TlasDescriptor<'a>,
     },
-    DestroyTlas(id::TlasId),
+    DestroyTlas(R::Tlas),
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Command {
-    CopyBufferToBuffer {
-        src: id::BufferId,
-        src_offset: wgt::BufferAddress,
-        dst: id::BufferId,
-        dst_offset: wgt::BufferAddress,
-        size: Option<wgt::BufferAddress>,
-    },
-    CopyBufferToTexture {
-        src: crate::command::TexelCopyBufferInfo,
-        dst: crate::command::TexelCopyTextureInfo,
-        size: wgt::Extent3d,
-    },
-    CopyTextureToBuffer {
-        src: crate::command::TexelCopyTextureInfo,
-        dst: crate::command::TexelCopyBufferInfo,
-        size: wgt::Extent3d,
-    },
-    CopyTextureToTexture {
-        src: crate::command::TexelCopyTextureInfo,
-        dst: crate::command::TexelCopyTextureInfo,
-        size: wgt::Extent3d,
-    },
-    ClearBuffer {
-        dst: id::BufferId,
-        offset: wgt::BufferAddress,
-        size: Option<wgt::BufferAddress>,
-    },
-    ClearTexture {
-        dst: id::TextureId,
-        subresource_range: wgt::ImageSubresourceRange,
-    },
-    WriteTimestamp {
-        query_set_id: id::QuerySetId,
-        query_index: u32,
-    },
-    ResolveQuerySet {
-        query_set_id: id::QuerySetId,
-        start_query: u32,
-        query_count: u32,
-        destination: id::BufferId,
-        destination_offset: wgt::BufferAddress,
-    },
-    PushDebugGroup(String),
-    PopDebugGroup,
-    InsertDebugMarker(String),
-    RunComputePass {
-        base: crate::command::BasePass<crate::command::ComputeCommand, Infallible>,
-        timestamp_writes: Option<crate::command::PassTimestampWrites>,
-    },
-    RunRenderPass {
-        base: crate::command::BasePass<crate::command::RenderCommand, Infallible>,
-        target_colors: Vec<Option<crate::command::RenderPassColorAttachment>>,
-        target_depth_stencil: Option<crate::command::RenderPassDepthStencilAttachment>,
-        timestamp_writes: Option<crate::command::PassTimestampWrites>,
-        occlusion_query_set_id: Option<id::QuerySetId>,
-    },
-    BuildAccelerationStructures {
-        blas: Vec<crate::ray_tracing::TraceBlasBuildEntry>,
-        tlas: Vec<crate::ray_tracing::TraceTlasPackage>,
-    },
-}
+/// cbindgen:ignore
+pub type TraceBindGroupDescriptor<'a> = crate::binding_model::BindGroupDescriptor<
+    'a,
+    PointerId<markers::BindGroupLayout>,
+    PointerId<markers::Buffer>,
+    PointerId<markers::Sampler>,
+    PointerId<markers::TextureView>,
+    PointerId<markers::Tlas>,
+    PointerId<markers::ExternalTexture>,
+>;
 
-#[cfg(feature = "trace")]
-#[derive(Debug)]
-pub struct Trace {
-    path: std::path::PathBuf,
-    file: std::fs::File,
-    config: ron::ser::PrettyConfig,
-    binary_id: usize,
-}
+/// Not a public API. For use by `player` only.
+///
+/// cbindgen:ignore
+#[doc(hidden)]
+pub type TraceGeneralRenderPipelineDescriptor<'a> = GeneralRenderPipelineDescriptor<
+    'a,
+    PointerId<markers::PipelineLayout>,
+    PointerId<markers::ShaderModule>,
+    PointerId<markers::PipelineCache>,
+>;
 
-#[cfg(feature = "trace")]
-impl Trace {
-    pub fn new(path: std::path::PathBuf) -> Result<Self, std::io::Error> {
-        log::info!("Tracing into '{:?}'", path);
-        let mut file = std::fs::File::create(path.join(FILE_NAME))?;
-        file.write_all(b"[\n")?;
-        Ok(Self {
-            path,
-            file,
-            config: ron::ser::PrettyConfig::default(),
-            binary_id: 0,
-        })
-    }
-
-    pub fn make_binary(&mut self, kind: &str, data: &[u8]) -> String {
-        self.binary_id += 1;
-        let name = std::format!("data{}.{}", self.binary_id, kind);
-        let _ = std::fs::write(self.path.join(&name), data);
-        name
-    }
-
-    pub(crate) fn add(&mut self, action: Action) {
-        match ron::ser::to_string_pretty(&action, self.config.clone()) {
-            Ok(string) => {
-                let _ = writeln!(self.file, "{},", string);
-            }
-            Err(e) => {
-                log::warn!("RON serialization failure: {:?}", e);
-            }
-        }
-    }
-}
-
-#[cfg(feature = "trace")]
-impl Drop for Trace {
-    fn drop(&mut self) {
-        let _ = self.file.write_all(b"]");
-    }
-}
+/// Not a public API. For use by `player` only.
+///
+/// cbindgen:ignore
+#[doc(hidden)]
+pub type TraceComputePipelineDescriptor<'a> = crate::pipeline::ComputePipelineDescriptor<
+    'a,
+    PointerId<markers::PipelineLayout>,
+    PointerId<markers::ShaderModule>,
+    PointerId<markers::PipelineCache>,
+>;

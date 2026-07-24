@@ -8,6 +8,7 @@
 #define mozilla_FlushType_h
 
 #include <stdint.h>
+
 #include "X11UndefineNone.h"
 #include "mozilla/EnumeratedArray.h"
 

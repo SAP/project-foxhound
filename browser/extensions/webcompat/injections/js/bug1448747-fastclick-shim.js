@@ -13,19 +13,26 @@
  * by the library (mainly non-functioning drop-down lists).
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixFastclick) {
+  Object.defineProperty(window, "__firefoxWebCompatFixFastclick", {
+    configurable: false,
+    value: true,
+  });
 
-(function () {
-  const proto = CSS2Properties.prototype.wrappedJSObject;
+  console.info(
+    "FastClick is being disabled for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1448747 for details."
+  );
+
+  const proto = (window.CSSStyleProperties ?? window.CSS2Properties).prototype;
   const descriptor = Object.getOwnPropertyDescriptor(proto, "touchAction");
   const { get } = descriptor;
 
-  descriptor.get = exportFunction(function () {
+  descriptor.get = function () {
     if (new Error().stack?.includes("notNeeded")) {
       return "none";
     }
     return get.call(this);
-  }, window);
+  };
 
   Object.defineProperty(proto, "touchAction", descriptor);
-})();
+}

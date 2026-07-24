@@ -8,9 +8,9 @@
 #define mozilla_dom_URLClassifierParent_h
 
 #include "mozilla/dom/PContent.h"
-#include "mozilla/dom/PURLClassifierParent.h"
-#include "mozilla/dom/PURLClassifierLocalParent.h"
 #include "mozilla/dom/PURLClassifierLocalByNameParent.h"
+#include "mozilla/dom/PURLClassifierLocalParent.h"
+#include "mozilla/dom/PURLClassifierParent.h"
 #include "nsIURIClassifier.h"
 #include "nsIUrlClassifierFeature.h"
 
@@ -36,7 +36,7 @@ class URLClassifierParent : public nsIURIClassifierCallback,
     if (mIPCOpen) {
       ClassifierInfo info = ClassifierInfo(
           nsCString(aList), nsCString(aProvider), nsCString(aFullHash));
-      Unused << Send__delete__(this, Some(info), aErrorCode);
+      (void)Send__delete__(this, Some(info), aErrorCode);
     }
     return NS_OK;
   }
@@ -44,7 +44,7 @@ class URLClassifierParent : public nsIURIClassifierCallback,
   // Custom.
   void ClassificationFailed() {
     if (mIPCOpen) {
-      Unused << Send__delete__(this, Nothing(), NS_ERROR_FAILURE);
+      (void)Send__delete__(this, Nothing(), NS_ERROR_FAILURE);
     }
   }
 

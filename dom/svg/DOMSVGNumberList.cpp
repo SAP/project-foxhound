@@ -6,13 +6,14 @@
 
 #include "DOMSVGNumberList.h"
 
-#include "SVGElement.h"
-#include "DOMSVGNumber.h"
-#include "nsError.h"
-#include "SVGAnimatedNumberList.h"
-#include "mozilla/dom/SVGNumberListBinding.h"
-#include "mozilla/RefPtr.h"
 #include <algorithm>
+
+#include "DOMSVGNumber.h"
+#include "SVGAnimatedNumberList.h"
+#include "SVGElement.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/SVGNumberListBinding.h"
+#include "nsError.h"
 
 // See the comment in this file's header.
 

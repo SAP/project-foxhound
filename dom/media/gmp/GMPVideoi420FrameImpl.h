@@ -7,8 +7,8 @@
 #define GMPVideoi420FrameImpl_h_
 
 #include "gmp-video-frame-i420.h"
-#include "mozilla/ipc/Shmem.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ipc/Shmem.h"
 #include "nsTArray.h"
 
 namespace mozilla::gmp {
@@ -17,14 +17,24 @@ class GMPPlaneData;
 class GMPVideoi420FrameData;
 class GMPVideoHostImpl;
 
-class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
+enum class HostReportPolicy : uint8_t {
+  None,
+  Destroyed,
+};
+
+class GMPVideoi420FrameImpl : public GMPVideoi420Frame {
  public:
-  explicit GMPVideoi420FrameImpl(GMPVideoHostImpl* aHost);
-  GMPVideoi420FrameImpl(const GMPVideoi420FrameData& aFrameData,
-                        ipc::Shmem&& aShmemBuffer, GMPVideoHostImpl* aHost);
-  GMPVideoi420FrameImpl(const GMPVideoi420FrameData& aFrameData,
-                        nsTArray<uint8_t>&& aArrayBuffer,
-                        GMPVideoHostImpl* aHost);
+  explicit GMPVideoi420FrameImpl(
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
+  GMPVideoi420FrameImpl(
+      const GMPVideoi420FrameData& aFrameData, ipc::Shmem&& aShmemBuffer,
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
+  GMPVideoi420FrameImpl(
+      const GMPVideoi420FrameData& aFrameData, nsTArray<uint8_t>&& aArrayBuffer,
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
   virtual ~GMPVideoi420FrameImpl();
 
   // This is called during a normal destroy sequence, which is
@@ -75,7 +85,7 @@ class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
   const uint8_t* Buffer() const;
   int32_t AllocatedSize() const;
 
- private:
+ protected:
   struct GMPFramePlane {
     explicit GMPFramePlane(const GMPPlaneData& aPlaneData);
     GMPFramePlane() = default;
@@ -98,6 +108,10 @@ class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
   GMPErr MaybeResize(int32_t aNewSize);
   void DestroyBuffer();
 
+ public:
+  const HostReportPolicy mReportPolicy;
+
+ protected:
   GMPVideoHostImpl* mHost;
   nsTArray<uint8_t> mArrayBuffer;
   ipc::Shmem mShmemBuffer;

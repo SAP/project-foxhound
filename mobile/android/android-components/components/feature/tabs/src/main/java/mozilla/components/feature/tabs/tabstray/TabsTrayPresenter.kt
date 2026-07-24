@@ -4,7 +4,9 @@
 
 package mozilla.components.feature.tabs.tabstray
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -26,13 +28,14 @@ class TabsTrayPresenter(
     private val store: BrowserStore,
     internal var tabsFilter: (TabSessionState) -> Boolean,
     internal var tabPartitionsFilter: (Map<String, TabPartition>) -> TabPartition?,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val closeTabsTray: () -> Unit,
 ) {
     private var scope: CoroutineScope? = null
     private var initialOpen: Boolean = true
 
     fun start() {
-        scope = store.flowScoped { flow -> collect(flow) }
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow -> collect(flow) }
     }
 
     fun stop() {

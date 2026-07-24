@@ -6,11 +6,11 @@
 
 #include "SVGAnimatedViewBox.h"
 
-#include "mozAutoDocUpdate.h"
-#include "mozilla/Maybe.h"
 #include <utility>
 
 #include "SVGViewBoxSMILType.h"
+#include "mozAutoDocUpdate.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/dom/SVGRect.h"
@@ -66,11 +66,11 @@ nsresult SVGViewBox::FromString(const nsAString& aStr, SVGViewBox* aViewBox) {
   return NS_OK;
 }
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
+constinit static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
     sBaseSVGViewBoxTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
+constinit static SVGAttrTearoffTable<SVGAnimatedViewBox, SVGRect>
     sAnimSVGViewBoxTearoffTable;
-MOZ_CONSTINIT SVGAttrTearoffTable<SVGAnimatedViewBox, SVGAnimatedRect>
+constinit SVGAttrTearoffTable<SVGAnimatedViewBox, SVGAnimatedRect>
     SVGAnimatedViewBox::sSVGAnimatedRectTearoffTable;
 
 //----------------------------------------------------------------------
@@ -87,13 +87,13 @@ class MOZ_RAII AutoChangeViewBoxNotifier {
 
     if (mDoSetAttr) {
       mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue = mSVGElement->WillChangeViewBox(mUpdateBatch.ref());
+      mSVGElement->WillChangeViewBox(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeViewBoxNotifier() {
     if (mDoSetAttr) {
-      mSVGElement->DidChangeViewBox(mEmptyOrOldValue, mUpdateBatch.ref());
+      mSVGElement->DidChangeViewBox(mUpdateBatch.ref());
     }
     if (mViewBox->mAnimVal) {
       mSVGElement->AnimationNeedsResample();
@@ -104,7 +104,6 @@ class MOZ_RAII AutoChangeViewBoxNotifier {
   SVGAnimatedViewBox* const mViewBox;
   SVGElement* const mSVGElement;
   Maybe<mozAutoDocUpdate> mUpdateBatch;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
@@ -139,7 +138,7 @@ void SVGAnimatedViewBox::SetAnimValue(const SVGViewBox& aRect,
                                       SVGElement* aSVGElement) {
   if (!mAnimVal) {
     // it's okay if allocation fails - and no point in reporting that
-    mAnimVal = MakeUnique<SVGViewBox>(aRect);
+    mAnimVal = std::make_unique<SVGViewBox>(aRect);
   } else {
     if (aRect == *mAnimVal) {
       return;
@@ -149,18 +148,28 @@ void SVGAnimatedViewBox::SetAnimValue(const SVGViewBox& aRect,
   aSVGElement->DidAnimateViewBox();
 }
 
+void SVGAnimatedViewBox::SetBaseField(float aValue, SVGElement* aSVGElement,
+                                      float& aField) {
+  if (!mHasBaseVal) {
+    aField = aValue;
+    return;
+  }
+  if (aField == aValue) {
+    return;
+  }
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement);
+  aField = aValue;
+}
+
 void SVGAnimatedViewBox::SetBaseValue(const SVGViewBox& aRect,
-                                      SVGElement* aSVGElement) {
-  if (!mHasBaseVal || mBaseVal == aRect) {
-    // This method is used to set a single x, y, width
-    // or height value. It can't create a base value
-    // as the other components may be undefined. We record
-    // the new value though, so as not to lose data.
-    mBaseVal = aRect;
+                                      SVGElement* aSVGElement,
+                                      bool aDoSetAttr) {
+  // Comparison against mBaseVal is only valid if we currently have a base val.
+  if (mHasBaseVal && mBaseVal == aRect) {
     return;
   }
 
-  AutoChangeViewBoxNotifier notifier(this, aSVGElement);
+  AutoChangeViewBoxNotifier notifier(this, aSVGElement, aDoSetAttr);
 
   mBaseVal = aRect;
   mHasBaseVal = true;
@@ -175,15 +184,7 @@ nsresult SVGAnimatedViewBox::SetBaseValueString(const nsAString& aValue,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  // Comparison against mBaseVal is only valid if we currently have a base val.
-  if (mHasBaseVal && viewBox == mBaseVal) {
-    return NS_OK;
-  }
-
-  AutoChangeViewBoxNotifier notifier(this, aSVGElement, aDoSetAttr);
-  mHasBaseVal = true;
-  mBaseVal = viewBox;
-
+  SetBaseValue(viewBox, aSVGElement, aDoSetAttr);
   return NS_OK;
 }
 
@@ -253,8 +254,9 @@ already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMAnimVal(
   return domAnimVal.forget();
 }
 
-UniquePtr<SMILAttr> SVGAnimatedViewBox::ToSMILAttr(SVGElement* aSVGElement) {
-  return MakeUnique<SMILViewBox>(this, aSVGElement);
+std::unique_ptr<SMILAttr> SVGAnimatedViewBox::ToSMILAttr(
+    SVGElement* aSVGElement) {
+  return std::make_unique<SMILViewBox>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedViewBox::SMILViewBox ::ValueFromString(

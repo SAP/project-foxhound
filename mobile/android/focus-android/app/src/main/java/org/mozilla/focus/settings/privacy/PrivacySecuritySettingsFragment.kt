@@ -5,11 +5,10 @@
 package org.mozilla.focus.settings.privacy
 
 import android.content.SharedPreferences
-import android.os.Build
 import android.os.Bundle
 import androidx.core.content.edit
 import androidx.preference.Preference
-import androidx.preference.SwitchPreferenceCompat
+import androidx.preference.SwitchPreference
 import mozilla.components.lib.auth.canUseBiometricFeature
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.GleanMetrics.CookieBanner
@@ -33,14 +32,14 @@ class PrivacySecuritySettingsFragment :
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {
         addPreferencesFromResource(R.xml.privacy_security_settings)
 
-        val biometricPreference: SwitchPreferenceCompat? =
+        val biometricPreference: SwitchPreference? =
             findPreference(getString(R.string.pref_key_biometric))
         val appName = getString(R.string.app_name)
         biometricPreference?.summary =
             getString(R.string.preference_security_biometric_summary2, appName)
 
-        // Remove the biometric toggle if the software or hardware do not support it
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || !requireContext().canUseBiometricFeature()) {
+        // Remove the biometric toggle if not supported
+        if (!requireContext().canUseBiometricFeature()) {
             biometricPreference?.let { preferenceScreen.removePreference(it) }
         }
         if (!FocusNimbus.features.onboarding.value().isCfrEnabled ||
@@ -58,11 +57,11 @@ class PrivacySecuritySettingsFragment :
         cookiesPreference?.updateSummary()
 
         val safeBrowsingSwitchPreference =
-            findPreference(getString(R.string.pref_key_safe_browsing)) as? SwitchPreferenceCompat
+            findPreference(getString(R.string.pref_key_safe_browsing)) as? SwitchPreference
         val javaScriptPreference =
-            findPreference(getString(R.string.pref_key_performance_block_javascript)) as? SwitchPreferenceCompat
+            findPreference(getString(R.string.pref_key_performance_block_javascript)) as? SwitchPreference
         val webFontsPreference =
-            findPreference(getString(R.string.pref_key_performance_block_webfonts)) as? SwitchPreferenceCompat
+            findPreference(getString(R.string.pref_key_performance_block_webfonts)) as? SwitchPreference
         val cookieBannerPreference = findPreference<Preference>(getString(R.string.pref_key_cookie_banner_settings))
 
         cookiesPreference?.onPreferenceChangeListener = preferencesListener
@@ -130,7 +129,7 @@ class PrivacySecuritySettingsFragment :
     private fun updateBiometricsToggleAvailability() {
         val switch =
             preferenceScreen.findPreference(resources.getString(R.string.pref_key_biometric))
-                as? SwitchPreferenceCompat
+                as? SwitchPreference
 
         if (!requireContext().canUseBiometricFeature()) {
             switch?.isChecked = false
@@ -211,7 +210,7 @@ class PrivacySecuritySettingsFragment :
 
     private fun updateStealthToggleAvailability() {
         val switch =
-            preferenceScreen.findPreference(resources.getString(R.string.pref_key_secure)) as? SwitchPreferenceCompat
+            preferenceScreen.findPreference(resources.getString(R.string.pref_key_secure)) as? SwitchPreference
 
         val sharedPreferences = preferenceManager.sharedPreferences
 

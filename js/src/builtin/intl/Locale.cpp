@@ -17,14 +17,17 @@
 
 #include <algorithm>
 #include <string>
-#include <string.h>
 #include <utility>
 
+#include "builtin/Array.h"
 #include "builtin/Boolean.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
+#include "builtin/intl/LocaleNegotiation.h"
+#include "builtin/intl/ParameterNegotiation.h"
 #include "builtin/intl/StringAsciiChars.h"
+#include "builtin/intl/UsingEnum.h"
 #include "builtin/String.h"
 #include "js/Conversions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -41,6 +44,7 @@
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+using namespace js::intl;
 using namespace mozilla::intl::LanguageTagLimits;
 
 const JSClass LocaleObject::class_ = {
@@ -53,7 +57,7 @@ const JSClass LocaleObject::class_ = {
 
 const JSClass& LocaleObject::protoClass_ = PlainObject::class_;
 
-static inline bool IsLocale(HandleValue v) {
+static inline bool IsLocale(Handle<JS::Value> v) {
   return v.isObject() && v.toObject().is<LocaleObject>();
 }
 
@@ -73,8 +77,8 @@ static size_t BaseNameLength(const mozilla::intl::Locale& tag) {
 }
 
 struct IndexAndLength {
-  size_t index;
-  size_t length;
+  size_t index = 0;
+  size_t length = 0;
 
   IndexAndLength(size_t index, size_t length) : index(index), length(length) {};
 
@@ -103,27 +107,29 @@ static mozilla::Maybe<IndexAndLength> UnicodeExtensionPosition(
   return mozilla::Nothing();
 }
 
-static LocaleObject* CreateLocaleObject(JSContext* cx, HandleObject prototype,
+static LocaleObject* CreateLocaleObject(JSContext* cx,
+                                        Handle<JSObject*> prototype,
                                         const mozilla::intl::Locale& tag) {
-  intl::FormatBuffer<char, intl::INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
+  FormatBuffer<char, INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
   if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
+    ReportInternalError(cx, result.unwrapErr());
     return nullptr;
   }
 
-  RootedString tagStr(cx, buffer.toAsciiString(cx));
+  Rooted<JSString*> tagStr(cx, buffer.toAsciiString(cx));
   if (!tagStr) {
     return nullptr;
   }
 
   size_t baseNameLength = BaseNameLength(tag);
 
-  RootedString baseName(cx, NewDependentString(cx, tagStr, 0, baseNameLength));
+  Rooted<JSString*> baseName(cx,
+                             NewDependentString(cx, tagStr, 0, baseNameLength));
   if (!baseName) {
     return nullptr;
   }
 
-  RootedValue unicodeExtension(cx, UndefinedValue());
+  Rooted<JS::Value> unicodeExtension(cx, JS::UndefinedValue());
   if (auto result = UnicodeExtensionPosition(tag)) {
     JSString* str = NewDependentString(
         cx, tagStr, baseNameLength + 1 + result->index, result->length);
@@ -139,34 +145,11 @@ static LocaleObject* CreateLocaleObject(JSContext* cx, HandleObject prototype,
     return nullptr;
   }
 
-  locale->setFixedSlot(LocaleObject::LANGUAGE_TAG_SLOT, StringValue(tagStr));
-  locale->setFixedSlot(LocaleObject::BASENAME_SLOT, StringValue(baseName));
-  locale->setFixedSlot(LocaleObject::UNICODE_EXTENSION_SLOT, unicodeExtension);
+  locale->initFixedSlot(LocaleObject::LANGUAGE_TAG_SLOT, StringValue(tagStr));
+  locale->initFixedSlot(LocaleObject::BASENAME_SLOT, StringValue(baseName));
+  locale->initFixedSlot(LocaleObject::UNICODE_EXTENSION_SLOT, unicodeExtension);
 
   return locale;
-}
-
-static inline bool IsValidUnicodeExtensionValue(JSContext* cx,
-                                                const JSLinearString* linear,
-                                                bool* isValid) {
-  if (linear->length() == 0) {
-    *isValid = false;
-    return true;
-  }
-
-  if (!StringIsAscii(linear)) {
-    *isValid = false;
-    return true;
-  }
-
-  intl::StringAsciiChars chars(linear);
-  if (!chars.init(cx)) {
-    return false;
-  }
-
-  *isValid =
-      mozilla::intl::LocaleParser::CanParseUnicodeExtensionType(chars).isOk();
-  return true;
 }
 
 /**
@@ -232,76 +215,91 @@ class SepKeywordIterator {
   }
 };
 
-/**
- * 9.2.10 GetOption ( options, property, type, values, fallback )
- *
- * If the requested property is present and not-undefined, set the result string
- * to |ToString(value)|. Otherwise set the result string to nullptr.
- */
-static bool GetStringOption(JSContext* cx, HandleObject options,
-                            Handle<PropertyName*> name,
-                            MutableHandle<JSLinearString*> string) {
-  // Step 1.
-  RootedValue option(cx);
-  if (!GetProperty(cx, options, options, name, &option)) {
-    return false;
+enum class LocaleHourCycle { H11, H12, H23, H24 };
+
+static constexpr std::string_view LocaleHourCycleToString(
+    LocaleHourCycle hourCycle) {
+#ifndef USING_ENUM
+  using enum LocaleHourCycle;
+#else
+  USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
+#endif
+  switch (hourCycle) {
+    case H11:
+      return "h11";
+    case H12:
+      return "h12";
+    case H23:
+      return "h23";
+    case H24:
+      return "h24";
   }
-
-  // Step 2.
-  JSLinearString* linear = nullptr;
-  if (!option.isUndefined()) {
-    // Steps 2.a-b, 2.d (not applicable).
-
-    // Steps 2.c, 2.e.
-    JSString* str = ToString(cx, option);
-    if (!str) {
-      return false;
-    }
-    linear = str->ensureLinear(cx);
-    if (!linear) {
-      return false;
-    }
-  }
-
-  // Step 3.
-  string.set(linear);
-  return true;
+  MOZ_CRASH("invalid locale hour cycle");
 }
 
-/**
- * 9.2.10 GetOption ( options, property, type, values, fallback )
- *
- * If the requested property is present and not-undefined, set the result string
- * to |ToString(ToBoolean(value))|. Otherwise set the result string to nullptr.
- */
-static bool GetBooleanOption(JSContext* cx, HandleObject options,
-                             Handle<PropertyName*> name,
-                             MutableHandle<JSLinearString*> string) {
-  // Step 1.
-  RootedValue option(cx);
-  if (!GetProperty(cx, options, options, name, &option)) {
-    return false;
+static JSLinearString* ToUnicodeValue(JSContext* cx,
+                                      LocaleHourCycle hourCycle) {
+#ifndef USING_ENUM
+  using enum LocaleHourCycle;
+#else
+  USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
+#endif
+  switch (hourCycle) {
+    case H11:
+      return cx->names().h11;
+    case H12:
+      return cx->names().h12;
+    case H23:
+      return cx->names().h23;
+    case H24:
+      return cx->names().h24;
   }
+  MOZ_CRASH("invalid locale hour cycle");
+}
 
-  // Step 2.
-  JSLinearString* linear = nullptr;
-  if (!option.isUndefined()) {
-    // Steps 2.a, 2.c-d (not applicable).
+enum class LocaleCaseFirst { Upper, Lower, False };
 
-    // Steps 2.c, 2.e.
-    linear = BooleanToString(cx, ToBoolean(option));
+static constexpr std::string_view LocaleCaseFirstToString(
+    LocaleCaseFirst caseFirst) {
+#ifndef USING_ENUM
+  using enum LocaleCaseFirst;
+#else
+  USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
+#endif
+  switch (caseFirst) {
+    case False:
+      return "false";
+    case Lower:
+      return "lower";
+    case Upper:
+      return "upper";
   }
+  MOZ_CRASH("invalid locale case first");
+}
 
-  // Step 3.
-  string.set(linear);
-  return true;
+static JSLinearString* ToUnicodeValue(JSContext* cx,
+                                      LocaleCaseFirst caseFirst) {
+#ifndef USING_ENUM
+  using enum LocaleCaseFirst;
+#else
+  USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
+#endif
+  switch (caseFirst) {
+    case False:
+      return cx->names().false_;
+    case Lower:
+      return cx->names().lower;
+    case Upper:
+      return cx->names().upper;
+  }
+  MOZ_CRASH("invalid locale case first");
 }
 
 /**
  * ApplyOptionsToTag ( tag, options )
  */
 static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
-                              HandleObject options) {
+                              Handle<JSObject*> options) {
   // Step 1. (Not applicable in our implementation.)
 
   Rooted<JSLinearString*> option(cx);
@@ -313,7 +311,7 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
 
   // Step 3.
   mozilla::intl::LanguageSubtag language;
-  if (option && !intl::ParseStandaloneLanguageTag(option, language)) {
+  if (option && !ParseStandaloneLanguageTag(option, language)) {
     if (UniqueChars str = QuoteString(cx, option, '"')) {
       JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
                                 JSMSG_INVALID_OPTION_VALUE, "language",
@@ -329,7 +327,7 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
 
   // Step 5.
   mozilla::intl::ScriptSubtag script;
-  if (option && !intl::ParseStandaloneScriptTag(option, script)) {
+  if (option && !ParseStandaloneScriptTag(option, script)) {
     if (UniqueChars str = QuoteString(cx, option, '"')) {
       JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
                                 JSMSG_INVALID_OPTION_VALUE, "script",
@@ -345,7 +343,7 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
 
   // Step 7.
   mozilla::intl::RegionSubtag region;
-  if (option && !intl::ParseStandaloneRegionTag(option, region)) {
+  if (option && !ParseStandaloneRegionTag(option, region)) {
     if (UniqueChars str = QuoteString(cx, option, '"')) {
       JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
                                 JSMSG_INVALID_OPTION_VALUE, "region",
@@ -363,7 +361,7 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
   mozilla::intl::Locale::VariantsVector variants;
   if (option) {
     bool ok;
-    if (!intl::ParseStandaloneVariantTag(option, variants, &ok)) {
+    if (!ParseStandaloneVariantTag(option, variants, &ok)) {
       ReportOutOfMemory(cx);
       return false;
     }
@@ -413,7 +411,7 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                   JSMSG_DUPLICATE_VARIANT_SUBTAG);
       } else {
-        intl::ReportInternalError(cx);
+        ReportInternalError(cx);
       }
       return false;
     }
@@ -428,10 +426,10 @@ static bool ApplyOptionsToTag(JSContext* cx, mozilla::intl::Locale& tag,
  */
 bool js::intl::ApplyUnicodeExtensionToTag(
     JSContext* cx, mozilla::intl::Locale& tag,
-    JS::HandleVector<intl::UnicodeExtensionKeyword> keywords) {
+    JS::HandleVector<UnicodeExtensionKeyword> keywords) {
   // If no Unicode extensions were present in the options object, we can skip
   // everything below and directly return.
-  if (keywords.length() == 0) {
+  if (keywords.empty()) {
     return true;
   }
 
@@ -499,7 +497,7 @@ bool js::intl::ApplyUnicodeExtensionToTag(
   }
 
   if (auto res = tag.SetUnicodeExtension(newExtension); res.isErr()) {
-    intl::ReportInternalError(cx, res.unwrapErr());
+    ReportInternalError(cx, res.unwrapErr());
     return false;
   }
 
@@ -522,7 +520,7 @@ static JS::Result<JSString*> LanguageTagFromMaybeWrappedLocale(JSContext* cx,
     return nullptr;
   }
 
-  RootedString tagStr(cx, unwrapped->as<LocaleObject>().languageTag());
+  Rooted<JSString*> tagStr(cx, unwrapped->as<LocaleObject>().languageTag());
   if (!cx->compartment()->wrap(cx, &tagStr)) {
     return cx->alreadyReportedError();
   }
@@ -541,13 +539,13 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Steps 2-6 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
-  RootedObject proto(cx);
+  Rooted<JSObject*> proto(cx);
   if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_Locale, &proto)) {
     return false;
   }
 
   // Steps 7-9.
-  HandleValue tagValue = args.get(0);
+  Handle<JS::Value> tagValue = args.get(0);
   JSString* tagStr;
   if (tagValue.isObject()) {
     JS_TRY_VAR_OR_RETURN_FALSE(
@@ -573,7 +571,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 10.
-  RootedObject options(cx);
+  Rooted<JSObject*> options(cx);
   if (args.hasDefined(1)) {
     options = ToObject(cx, args[1]);
     if (!options) {
@@ -583,7 +581,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 11.
   mozilla::intl::Locale tag;
-  if (!intl::ParseLocale(cx, tagLinearStr, tag)) {
+  if (!ParseLocale(cx, tagLinearStr, tag)) {
     return false;
   }
 
@@ -600,7 +598,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_DUPLICATE_VARIANT_SUBTAG);
     } else {
-      intl::ReportInternalError(cx);
+      ReportInternalError(cx);
     }
     return false;
   }
@@ -612,146 +610,86 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     // Step 14.
-    JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
+    JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
 
-    // Step 15.
+    // Steps 15-17.
     Rooted<JSLinearString*> calendar(cx);
-    if (!GetStringOption(cx, options, cx->names().calendar, &calendar)) {
+    if (!GetUnicodeExtensionOption(cx, options, UnicodeExtensionKey::Calendar,
+                                   &calendar)) {
       return false;
     }
-
-    // Steps 16-17.
     if (calendar) {
-      bool isValid;
-      if (!IsValidUnicodeExtensionValue(cx, calendar, &isValid)) {
-        return false;
-      }
-
-      if (!isValid) {
-        if (UniqueChars str = QuoteString(cx, calendar, '"')) {
-          JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                                    JSMSG_INVALID_OPTION_VALUE, "calendar",
-                                    str.get());
-        }
-        return false;
-      }
-
       if (!keywords.emplaceBack("ca", calendar)) {
         return false;
       }
     }
 
-    // Step 18.
+    // Steps 18-20.
     Rooted<JSLinearString*> collation(cx);
-    if (!GetStringOption(cx, options, cx->names().collation, &collation)) {
+    if (!GetUnicodeExtensionOption(cx, options, UnicodeExtensionKey::Collation,
+                                   &collation)) {
       return false;
     }
-
-    // Steps 19-20.
     if (collation) {
-      bool isValid;
-      if (!IsValidUnicodeExtensionValue(cx, collation, &isValid)) {
-        return false;
-      }
-
-      if (!isValid) {
-        if (UniqueChars str = QuoteString(cx, collation, '"')) {
-          JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                                    JSMSG_INVALID_OPTION_VALUE, "collation",
-                                    str.get());
-        }
-        return false;
-      }
-
       if (!keywords.emplaceBack("co", collation)) {
         return false;
       }
     }
 
-    // Step 21 (without validation).
-    Rooted<JSLinearString*> hourCycle(cx);
-    if (!GetStringOption(cx, options, cx->names().hourCycle, &hourCycle)) {
+    // Step 21.
+    static constexpr auto hourCycles = MapOptions<LocaleHourCycleToString>(
+        LocaleHourCycle::H11, LocaleHourCycle::H12, LocaleHourCycle::H23,
+        LocaleHourCycle::H24);
+    mozilla::Maybe<LocaleHourCycle> hourCycle{};
+    if (!GetStringOption(cx, options, cx->names().hourCycle, hourCycles,
+                         &hourCycle)) {
       return false;
     }
 
-    // Steps 21-22.
+    // Step 22.
     if (hourCycle) {
-      if (!StringEqualsLiteral(hourCycle, "h11") &&
-          !StringEqualsLiteral(hourCycle, "h12") &&
-          !StringEqualsLiteral(hourCycle, "h23") &&
-          !StringEqualsLiteral(hourCycle, "h24")) {
-        if (UniqueChars str = QuoteString(cx, hourCycle, '"')) {
-          JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                                    JSMSG_INVALID_OPTION_VALUE, "hourCycle",
-                                    str.get());
-        }
-        return false;
-      }
-
-      if (!keywords.emplaceBack("hc", hourCycle)) {
+      if (!keywords.emplaceBack("hc", ToUnicodeValue(cx, *hourCycle))) {
         return false;
       }
     }
 
-    // Step 23 (without validation).
-    Rooted<JSLinearString*> caseFirst(cx);
-    if (!GetStringOption(cx, options, cx->names().caseFirst, &caseFirst)) {
+    // Step 23.
+    static constexpr auto caseFirsts = MapOptions<LocaleCaseFirstToString>(
+        LocaleCaseFirst::Upper, LocaleCaseFirst::Lower, LocaleCaseFirst::False);
+    mozilla::Maybe<LocaleCaseFirst> caseFirst{};
+    if (!GetStringOption(cx, options, cx->names().caseFirst, caseFirsts,
+                         &caseFirst)) {
       return false;
     }
 
-    // Steps 23-24.
+    // Step 24.
     if (caseFirst) {
-      if (!StringEqualsLiteral(caseFirst, "upper") &&
-          !StringEqualsLiteral(caseFirst, "lower") &&
-          !StringEqualsLiteral(caseFirst, "false")) {
-        if (UniqueChars str = QuoteString(cx, caseFirst, '"')) {
-          JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                                    JSMSG_INVALID_OPTION_VALUE, "caseFirst",
-                                    str.get());
-        }
-        return false;
-      }
-
-      if (!keywords.emplaceBack("kf", caseFirst)) {
+      if (!keywords.emplaceBack("kf", ToUnicodeValue(cx, *caseFirst))) {
         return false;
       }
     }
 
     // Steps 25-26.
-    Rooted<JSLinearString*> numeric(cx);
+    mozilla::Maybe<bool> numeric{};
     if (!GetBooleanOption(cx, options, cx->names().numeric, &numeric)) {
       return false;
     }
 
     // Step 27.
     if (numeric) {
-      if (!keywords.emplaceBack("kn", numeric)) {
+      if (!keywords.emplaceBack("kn", BooleanToString(cx, *numeric))) {
         return false;
       }
     }
 
-    // Step 28.
+    // Steps 28-30.
     Rooted<JSLinearString*> numberingSystem(cx);
-    if (!GetStringOption(cx, options, cx->names().numberingSystem,
-                         &numberingSystem)) {
+    if (!GetUnicodeExtensionOption(cx, options,
+                                   UnicodeExtensionKey::NumberingSystem,
+                                   &numberingSystem)) {
       return false;
     }
-
-    // Steps 29-30.
     if (numberingSystem) {
-      bool isValid;
-      if (!IsValidUnicodeExtensionValue(cx, numberingSystem, &isValid)) {
-        return false;
-      }
-      if (!isValid) {
-        if (UniqueChars str = QuoteString(cx, numberingSystem, '"')) {
-          JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                                    JSMSG_INVALID_OPTION_VALUE,
-                                    "numberingSystem", str.get());
-        }
-        return false;
-      }
-
       if (!keywords.emplaceBack("nu", numberingSystem)) {
         return false;
       }
@@ -770,7 +708,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_DUPLICATE_VARIANT_SUBTAG);
     } else {
-      intl::ReportInternalError(cx);
+      ReportInternalError(cx);
     }
     return false;
   }
@@ -855,7 +793,8 @@ static inline auto FindUnicodeExtensionType(
 // Return the sequence of types for the Unicode extension keyword specified by
 // key or undefined when the keyword isn't present.
 static bool GetUnicodeExtension(JSContext* cx, LocaleObject* locale,
-                                UnicodeKey key, MutableHandleValue value) {
+                                UnicodeKey key,
+                                MutableHandle<JS::Value> value) {
   // Return undefined when no Unicode extension subtag is present.
   const Value& unicodeExtensionValue = locale->unicodeExtension();
   if (unicodeExtensionValue.isUndefined()) {
@@ -982,12 +921,12 @@ static bool Locale_maximize(JSContext* cx, const CallArgs& args) {
   }
 
   mozilla::intl::Locale tag;
-  if (!intl::ParseLocale(cx, tagStr, tag)) {
+  if (!ParseLocale(cx, tagStr, tag)) {
     return false;
   }
 
   if (auto result = tag.AddLikelySubtags(); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
+    ReportInternalError(cx, result.unwrapErr());
     return false;
   }
 
@@ -1019,12 +958,12 @@ static bool Locale_minimize(JSContext* cx, const CallArgs& args) {
   }
 
   mozilla::intl::Locale tag;
-  if (!intl::ParseLocale(cx, tagStr, tag)) {
+  if (!ParseLocale(cx, tagStr, tag)) {
     return false;
   }
 
   if (auto result = tag.RemoveLikelySubtags(); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
+    ReportInternalError(cx, result.unwrapErr());
     return false;
   }
 
@@ -1148,7 +1087,7 @@ static bool Locale_numeric(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  RootedValue value(cx);
+  Rooted<JS::Value> value(cx);
   if (!GetUnicodeExtension(cx, locale, "kn", &value)) {
     return false;
   }
@@ -1172,7 +1111,7 @@ static bool Locale_numeric(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 // get Intl.Locale.prototype.numberingSystem
-static bool Intl_Locale_numberingSystem(JSContext* cx, const CallArgs& args) {
+static bool Locale_numberingSystem(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsLocale(args.thisv()));
 
   // Step 3.
@@ -1184,7 +1123,7 @@ static bool Intl_Locale_numberingSystem(JSContext* cx, const CallArgs& args) {
 static bool Locale_numberingSystem(JSContext* cx, unsigned argc, Value* vp) {
   // Steps 1-2.
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsLocale, Intl_Locale_numberingSystem>(cx, args);
+  return CallNonGenericMethod<IsLocale, Locale_numberingSystem>(cx, args);
 }
 
 // get Intl.Locale.prototype.language
@@ -1396,224 +1335,160 @@ const ClassSpec LocaleObject::classSpec_ = {
     ClassSpec::DontDefineConstructor,
 };
 
-bool js::intl_ValidateAndCanonicalizeLanguageTag(JSContext* cx, unsigned argc,
-                                                 Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-
-  HandleValue tagValue = args[0];
-  bool applyToString = args[1].toBoolean();
-
-  if (tagValue.isObject()) {
-    JSString* tagStr;
-    JS_TRY_VAR_OR_RETURN_FALSE(
-        cx, tagStr,
-        LanguageTagFromMaybeWrappedLocale(cx, &tagValue.toObject()));
-    if (tagStr) {
-      args.rval().setString(tagStr);
-      return true;
-    }
-  }
-
-  if (!applyToString && !tagValue.isString()) {
-    args.rval().setNull();
-    return true;
-  }
-
-  JSString* tagStr = ToString(cx, tagValue);
-  if (!tagStr) {
-    return false;
-  }
-
-  Rooted<JSLinearString*> tagLinearStr(cx, tagStr->ensureLinear(cx));
-  if (!tagLinearStr) {
-    return false;
-  }
-
+static JSLinearString* ValidateAndCanonicalizeLanguageTag(
+    JSContext* cx, Handle<JSLinearString*> string) {
   // Handle the common case (a standalone language) first.
   // Only the following Unicode BCP 47 locale identifier subset is accepted:
   //   unicode_locale_id = unicode_language_id
   //   unicode_language_id = unicode_language_subtag
   //   unicode_language_subtag = alpha{2,3}
-  JSString* language;
-  JS_TRY_VAR_OR_RETURN_FALSE(
-      cx, language, intl::ParseStandaloneISO639LanguageTag(cx, tagLinearStr));
+  JSLinearString* language;
+  JS_TRY_VAR_OR_RETURN_NULL(cx, language,
+                            ParseStandaloneISO639LanguageTag(cx, string));
   if (language) {
-    args.rval().setString(language);
+    return language;
+  }
+
+  mozilla::intl::Locale tag;
+  if (!ParseLocale(cx, string, tag)) {
+    return nullptr;
+  }
+
+  auto result = tag.Canonicalize();
+  if (result.isErr()) {
+    if (result.unwrapErr() ==
+        mozilla::intl::Locale::CanonicalizationError::DuplicateVariant) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_DUPLICATE_VARIANT_SUBTAG);
+    } else {
+      ReportInternalError(cx);
+    }
+    return nullptr;
+  }
+
+  FormatBuffer<char, INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
+  if (auto result = tag.ToString(buffer); result.isErr()) {
+    ReportInternalError(cx, result.unwrapErr());
+    return nullptr;
+  }
+
+  return buffer.toAsciiString(cx);
+}
+
+static JSLinearString* ValidateAndCanonicalizeLanguageTag(
+    JSContext* cx, Handle<Value> tagValue) {
+  if (tagValue.isObject()) {
+    JSString* tagStr;
+    JS_TRY_VAR_OR_RETURN_NULL(
+        cx, tagStr,
+        LanguageTagFromMaybeWrappedLocale(cx, &tagValue.toObject()));
+    if (tagStr) {
+      return tagStr->ensureLinear(cx);
+    }
+  }
+
+  JSString* tagStr = ToString(cx, tagValue);
+  if (!tagStr) {
+    return nullptr;
+  }
+
+  Rooted<JSLinearString*> tagLinearStr(cx, tagStr->ensureLinear(cx));
+  if (!tagLinearStr) {
+    return nullptr;
+  }
+  return ValidateAndCanonicalizeLanguageTag(cx, tagLinearStr);
+}
+
+/**
+ * Canonicalizes a locale list.
+ *
+ * Spec: ECMAScript Internationalization API Specification, 9.2.1.
+ */
+bool js::intl::CanonicalizeLocaleList(JSContext* cx, Handle<Value> locales,
+                                      MutableHandle<LocalesList> result) {
+  MOZ_ASSERT(result.empty());
+
+  // Step 1.
+  if (locales.isUndefined()) {
     return true;
   }
 
-  mozilla::intl::Locale tag;
-  if (!intl::ParseLocale(cx, tagLinearStr, tag)) {
-    return false;
-  }
-
-  auto result = tag.Canonicalize();
-  if (result.isErr()) {
-    if (result.unwrapErr() ==
-        mozilla::intl::Locale::CanonicalizationError::DuplicateVariant) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_DUPLICATE_VARIANT_SUBTAG);
-    } else {
-      intl::ReportInternalError(cx);
-    }
-    return false;
-  }
-
-  intl::FormatBuffer<char, intl::INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
-  if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return false;
-  }
-
-  JSString* resultStr = buffer.toAsciiString(cx);
-  if (!resultStr) {
-    return false;
-  }
-
-  args.rval().setString(resultStr);
-  return true;
-}
-
-bool js::intl_TryValidateAndCanonicalizeLanguageTag(JSContext* cx,
-                                                    unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-
-  Rooted<JSLinearString*> linear(cx, args[0].toString()->ensureLinear(cx));
-  if (!linear) {
-    return false;
-  }
-
-  mozilla::intl::Locale tag;
-  {
-    if (!StringIsAscii(linear)) {
-      // The caller handles invalid inputs.
-      args.rval().setNull();
-      return true;
-    }
-
-    intl::StringAsciiChars chars(linear);
-    if (!chars.init(cx)) {
+  // Step 3 (and the remaining steps).
+  if (locales.isString()) {
+    Rooted<JSLinearString*> linear(cx, locales.toString()->ensureLinear(cx));
+    if (!linear) {
       return false;
     }
 
-    if (mozilla::intl::LocaleParser::TryParse(chars, tag).isErr()) {
-      // The caller handles invalid inputs.
-      args.rval().setNull();
-      return true;
+    auto* languageTag = ValidateAndCanonicalizeLanguageTag(cx, linear);
+    if (!languageTag) {
+      return false;
+    }
+    return result.append(languageTag);
+  }
+
+  if (locales.isObject()) {
+    JSString* languageTag;
+    JS_TRY_VAR_OR_RETURN_FALSE(
+        cx, languageTag,
+        LanguageTagFromMaybeWrappedLocale(cx, &locales.toObject()));
+    if (languageTag) {
+      auto* linear = languageTag->ensureLinear(cx);
+      if (!linear) {
+        return false;
+      }
+      return result.append(linear);
     }
   }
 
-  auto result = tag.Canonicalize();
-  if (result.isErr()) {
-    if (result.unwrapErr() ==
-        mozilla::intl::Locale::CanonicalizationError::DuplicateVariant) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_DUPLICATE_VARIANT_SUBTAG);
-    } else {
-      intl::ReportInternalError(cx);
-    }
+  // Step 2. (Implicit)
+
+  // Step 4.
+  Rooted<JSObject*> obj(cx, ToObject(cx, locales));
+  if (!obj) {
     return false;
   }
 
-  intl::FormatBuffer<char, intl::INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
-  if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
+  // Step 5.
+  uint64_t length;
+  if (!GetLengthProperty(cx, obj, &length)) {
     return false;
   }
 
-  JSString* resultStr = buffer.toAsciiString(cx);
-  if (!resultStr) {
-    return false;
-  }
-  args.rval().setString(resultStr);
-  return true;
-}
-
-bool js::intl_ValidateAndCanonicalizeUnicodeExtensionType(JSContext* cx,
-                                                          unsigned argc,
-                                                          Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 3);
-
-  HandleValue typeArg = args[0];
-  MOZ_ASSERT(typeArg.isString(), "type must be a string");
-
-  HandleValue optionArg = args[1];
-  MOZ_ASSERT(optionArg.isString(), "option name must be a string");
-
-  HandleValue keyArg = args[2];
-  MOZ_ASSERT(keyArg.isString(), "key must be a string");
-
-  Rooted<JSLinearString*> unicodeType(cx, typeArg.toString()->ensureLinear(cx));
-  if (!unicodeType) {
-    return false;
-  }
-
-  bool isValid;
-  if (!IsValidUnicodeExtensionValue(cx, unicodeType, &isValid)) {
-    return false;
-  }
-  if (!isValid) {
-    UniqueChars optionChars = EncodeAscii(cx, optionArg.toString());
-    if (!optionChars) {
+  // Steps 6-7.
+  Rooted<Value> value(cx);
+  for (uint64_t k = 0; k < length; k++) {
+    // Step 7.a-c.
+    bool hole;
+    if (!CheckForInterrupt(cx) ||
+        !HasAndGetElement(cx, obj, k, &hole, &value)) {
       return false;
     }
 
-    UniqueChars unicodeTypeChars = QuoteString(cx, unicodeType, '"');
-    if (!unicodeTypeChars) {
-      return false;
-    }
+    if (!hole) {
+      // Step 7.c.ii.
+      if (!value.isString() && !value.isObject()) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_INVALID_LOCALES_ELEMENT);
+        return false;
+      }
 
-    JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
-                              JSMSG_INVALID_OPTION_VALUE, optionChars.get(),
-                              unicodeTypeChars.get());
-    return false;
-  }
+      // Step 7.c.iii-iv.
+      JSLinearString* tag = ValidateAndCanonicalizeLanguageTag(cx, value);
+      if (!tag) {
+        return false;
+      }
 
-  char unicodeKey[UnicodeKeyLength];
-  {
-    JSLinearString* str = keyArg.toString()->ensureLinear(cx);
-    if (!str) {
-      return false;
-    }
-    MOZ_ASSERT(str->length() == UnicodeKeyLength);
-
-    for (size_t i = 0; i < UnicodeKeyLength; i++) {
-      char16_t ch = str->latin1OrTwoByteChar(i);
-      MOZ_ASSERT(mozilla::IsAscii(ch));
-      unicodeKey[i] = char(ch);
+      // Step 7.c.v.
+      bool addToResult =
+          std::none_of(result.begin(), result.end(),
+                       [tag](auto* other) { return EqualStrings(tag, other); });
+      if (addToResult && !result.append(tag)) {
+        return false;
+      }
     }
   }
 
-  UniqueChars unicodeTypeChars = EncodeAscii(cx, unicodeType);
-  if (!unicodeTypeChars) {
-    return false;
-  }
-
-  size_t unicodeTypeLength = unicodeType->length();
-  MOZ_ASSERT(strlen(unicodeTypeChars.get()) == unicodeTypeLength);
-
-  // Convert into canonical case before searching for replacements.
-  mozilla::intl::AsciiToLowerCase(unicodeTypeChars.get(), unicodeTypeLength,
-                                  unicodeTypeChars.get());
-
-  auto key = mozilla::Span(unicodeKey, UnicodeKeyLength);
-  auto type = mozilla::Span(unicodeTypeChars.get(), unicodeTypeLength);
-
-  // Search if there's a replacement for the current Unicode keyword.
-  JSString* result;
-  if (const char* replacement =
-          mozilla::intl::Locale::ReplaceUnicodeExtensionType(key, type)) {
-    result = NewStringCopyZ<CanGC>(cx, replacement);
-  } else {
-    result = StringToLowerCase(cx, unicodeType);
-  }
-  if (!result) {
-    return false;
-  }
-
-  args.rval().setString(result);
+  // Step 8.
   return true;
 }

@@ -8,6 +8,7 @@ include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 EXPORTS.mozilla.dom += ["CandidateInfo.h"]
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/util/libekr",
     "/third_party/abseil-cpp",
     "/third_party/libwebrtc",

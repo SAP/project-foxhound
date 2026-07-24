@@ -6,10 +6,9 @@
 
 #include "SVGPathSegUtils.h"
 
-#include "mozilla/ArrayUtils.h"        // std::size
-#include "mozilla/ServoStyleConsts.h"  // StylePathCommand
-#include "gfx2DGlue.h"
 #include "SVGArcConverter.h"
+#include "gfx2DGlue.h"
+#include "mozilla/ServoStyleConsts.h"  // StylePathCommand
 #include "nsMathUtils.h"
 #include "nsTextFormatter.h"
 
@@ -110,7 +109,7 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
     case StylePathCommand::Tag::Move: {
       const Point& p = aCommand.move.point.ToGfxPoint();
       aState.start = aState.pos =
-          aCommand.move.by_to == StyleByTo::To ? p : aState.pos + p;
+          aCommand.move.point.IsToPosition() ? p : aState.pos + p;
       if (aState.ShouldUpdateLengthAndControlPoints()) {
         // aState.length is unchanged, since move commands don't affect path=
         // length.
@@ -119,7 +118,7 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       break;
     }
     case StylePathCommand::Tag::Line: {
-      Point to = aCommand.line.by_to == StyleByTo::To
+      Point to = aCommand.line.point.IsToPosition()
                      ? aCommand.line.point.ToGfxPoint()
                      : aState.pos + aCommand.line.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
@@ -130,17 +129,12 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       break;
     }
     case StylePathCommand::Tag::CubicCurve: {
-      const bool isRelative = aCommand.cubic_curve.by_to == StyleByTo::By;
-      Point to = isRelative
+      Point to = aCommand.cubic_curve.point.IsByCoordinate()
                      ? aState.pos + aCommand.cubic_curve.point.ToGfxPoint()
                      : aCommand.cubic_curve.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        Point cp1 = aCommand.cubic_curve.control1.ToGfxPoint();
-        Point cp2 = aCommand.cubic_curve.control2.ToGfxPoint();
-        if (isRelative) {
-          cp1 += aState.pos;
-          cp2 += aState.pos;
-        }
+        Point cp1 = aCommand.cubic_curve.control1.ToGfxPoint(aState.pos, to);
+        Point cp2 = aCommand.cubic_curve.control2.ToGfxPoint(aState.pos, to);
         aState.length +=
             (float)CalcLengthOfCubicBezier(aState.pos, cp1, cp2, to);
         aState.cp2 = cp2;
@@ -150,14 +144,11 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       break;
     }
     case StylePathCommand::Tag::QuadCurve: {
-      const bool isRelative = aCommand.quad_curve.by_to == StyleByTo::By;
-      Point to = isRelative
+      Point to = aCommand.quad_curve.point.IsByCoordinate()
                      ? aState.pos + aCommand.quad_curve.point.ToGfxPoint()
                      : aCommand.quad_curve.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        Point cp = isRelative
-                       ? aState.pos + aCommand.quad_curve.control1.ToGfxPoint()
-                       : aCommand.quad_curve.control1.ToGfxPoint();
+        Point cp = aCommand.quad_curve.control1.ToGfxPoint(aState.pos, to);
         aState.length += (float)CalcLengthOfQuadraticBezier(aState.pos, cp, to);
         aState.cp1 = cp;
         aState.cp2 = to;
@@ -167,9 +158,8 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
     }
     case StylePathCommand::Tag::Arc: {
       const auto& arc = aCommand.arc;
-      Point to = arc.by_to == StyleByTo::To
-                     ? arc.point.ToGfxPoint()
-                     : aState.pos + arc.point.ToGfxPoint();
+      Point to = arc.point.IsToPosition() ? arc.point.ToGfxPoint()
+                                          : aState.pos + arc.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
         float dist = 0;
         Point radii = arc.radii.ToGfxPoint();
@@ -193,38 +183,34 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       break;
     }
     case StylePathCommand::Tag::HLine: {
-      Point to(aCommand.h_line.by_to == StyleByTo::To
-                   ? aCommand.h_line.x
-                   : aState.pos.x + aCommand.h_line.x,
+      const auto x = aCommand.h_line.x.ToGfxCoord();
+      Point to(aCommand.h_line.x.IsToPosition() ? x : aState.pos.x + x,
                aState.pos.y);
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        aState.length += std::fabs(to.x - aState.pos.x);
+        aState.length += std::abs(to.x - aState.pos.x);
         aState.cp1 = aState.cp2 = to;
       }
       aState.pos = to;
       break;
     }
     case StylePathCommand::Tag::VLine: {
-      Point to(aState.pos.x, aCommand.v_line.by_to == StyleByTo::To
-                                 ? aCommand.v_line.y
-                                 : aState.pos.y + aCommand.v_line.y);
+      const auto y = aCommand.v_line.y.ToGfxCoord();
+      Point to(aState.pos.x,
+               aCommand.v_line.y.IsToPosition() ? y : aState.pos.y + y);
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        aState.length += std::fabs(to.y - aState.pos.y);
+        aState.length += std::abs(to.y - aState.pos.y);
         aState.cp1 = aState.cp2 = to;
       }
       aState.pos = to;
       break;
     }
     case StylePathCommand::Tag::SmoothCubic: {
-      const bool isRelative = aCommand.smooth_cubic.by_to == StyleByTo::By;
-      Point to = isRelative
+      Point to = aCommand.smooth_cubic.point.IsByCoordinate()
                      ? aState.pos + aCommand.smooth_cubic.point.ToGfxPoint()
                      : aCommand.smooth_cubic.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
         Point cp1 = aState.pos - (aState.cp2 - aState.pos);
-        Point cp2 = isRelative ? aState.pos +
-                                     aCommand.smooth_cubic.control2.ToGfxPoint()
-                               : aCommand.smooth_cubic.control2.ToGfxPoint();
+        Point cp2 = aCommand.smooth_cubic.control2.ToGfxPoint(aState.pos, to);
         aState.length +=
             (float)CalcLengthOfCubicBezier(aState.pos, cp1, cp2, to);
         aState.cp2 = cp2;
@@ -234,7 +220,7 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       break;
     }
     case StylePathCommand::Tag::SmoothQuad: {
-      Point to = aCommand.smooth_quad.by_to == StyleByTo::To
+      Point to = aCommand.smooth_quad.point.IsToPosition()
                      ? aCommand.smooth_quad.point.ToGfxPoint()
                      : aState.pos + aCommand.smooth_quad.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
@@ -265,8 +251,8 @@ Maybe<EdgeDir> GetDirection(Point v) {
     return Nothing();
   }
 
-  bool x = fabs(v.x) > 0.001;
-  bool y = fabs(v.y) > 0.001;
+  bool x = std::abs(v.x) > 0.001;
+  bool y = std::abs(v.y) > 0.001;
   if (x && y) {
     return Nothing();
   }
@@ -359,11 +345,6 @@ struct IsRectHelper {
   }
 };
 
-bool ApproxEqual(gfx::Point a, gfx::Point b) {
-  auto v = b - a;
-  return fabs(v.x) < 0.001 && fabs(v.y) < 0.001;
-}
-
 Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
   Point pathStart(0.0, 0.0);
   Point segStart(0.0, 0.0);
@@ -374,6 +355,7 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
       0,
       {EdgeDir::NONE, EdgeDir::NONE, EdgeDir::NONE, EdgeDir::NONE},
   };
+  static constexpr float kEpsilon = 0.001f;
 
   for (const StylePathCommand& cmd : aPath) {
     switch (cmd.tag) {
@@ -387,7 +369,7 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
           return Nothing();
         }
 
-        if (!ApproxEqual(pathStart, segStart)) {
+        if (!pathStart.WithinEpsilonOf(segStart, kEpsilon)) {
           // If we were only interested in filling we could auto-close here
           // by calling helper.Edge like in the ClosePath case and detect some
           // unclosed paths as rectangles.
@@ -404,7 +386,7 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
           return Nothing();
         }
 
-        if (cmd.move.by_to == StyleByTo::By) {
+        if (cmd.move.point.IsByCoordinate()) {
           to = segStart + to;
         }
 
@@ -429,7 +411,7 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
       }
       case StylePathCommand::Tag::Line: {
         Point to = cmd.line.point.ToGfxPoint();
-        if (cmd.line.by_to == StyleByTo::By) {
+        if (cmd.line.point.IsByCoordinate()) {
           to = segStart + to;
         }
 
@@ -440,8 +422,8 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
         break;
       }
       case StylePathCommand::Tag::HLine: {
-        Point to = gfx::Point(cmd.h_line.x, segStart.y);
-        if (cmd.h_line.by_to == StyleByTo::By) {
+        Point to = gfx::Point(cmd.h_line.x.ToGfxCoord(), segStart.y);
+        if (cmd.h_line.x.IsByCoordinate()) {
           to.x += segStart.x;
         }
 
@@ -452,8 +434,8 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
         break;
       }
       case StylePathCommand::Tag::VLine: {
-        Point to = gfx::Point(segStart.x, cmd.v_line.y);
-        if (cmd.h_line.by_to == StyleByTo::By) {
+        Point to = gfx::Point(segStart.x, cmd.v_line.y.ToGfxCoord());
+        if (cmd.v_line.y.IsByCoordinate()) {
           to.y += segStart.y;
         }
 
@@ -468,8 +450,8 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
     }
   }
 
-  if (!ApproxEqual(pathStart, segStart)) {
-    // Same situation as with moveto regarding stroking not fullly closed path
+  if (!pathStart.WithinEpsilonOf(segStart, kEpsilon)) {
+    // Same situation as with moveto regarding stroking not fully closed path
     // even though the fill is a rectangle.
     return Nothing();
   }
@@ -478,7 +460,7 @@ Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
     return Nothing();
   }
 
-  auto size = (helper.max - helper.min);
+  auto size = helper.max - helper.min;
   return Some(Rect(helper.min, Size(size.x, size.y)));
 }
 

@@ -189,12 +189,22 @@ class NetworkEventStackTracesWatcher {
   }
 
   _setStackTrace(resourceId, stacktrace) {
-    this.stacktraces.set(resourceId, stacktrace);
+    const isBrowserToolBox = this.targetActor.sessionContext.type == "all";
+
+    const filteredStacktrace = isBrowserToolBox
+      ? stacktrace
+      : lazy.NetworkUtils.removeChromeFrames(stacktrace);
+
+    this.stacktraces.set(resourceId, filteredStacktrace);
+
+    const stacktraceAvailable =
+      filteredStacktrace && !!filteredStacktrace.length;
+
     this.onStackTraceAvailable([
       {
         resourceId,
-        stacktraceAvailable: stacktrace && !!stacktrace.length,
-        lastFrame: stacktrace && stacktrace.length ? stacktrace[0] : undefined,
+        stacktraceAvailable,
+        lastFrame: stacktraceAvailable ? filteredStacktrace[0] : undefined,
       },
     ]);
   }

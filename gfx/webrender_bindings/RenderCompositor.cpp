@@ -13,6 +13,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/webrender/RenderCompositorLayerNative.h"
 #include "mozilla/webrender/RenderCompositorLayersSWGL.h"
 #include "mozilla/webrender/RenderCompositorOGL.h"
 #include "mozilla/webrender/RenderCompositorSWGL.h"
@@ -244,7 +245,11 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
 #if defined(MOZ_WAYLAND)
   if (gfx::gfxVars::UseWebRenderCompositor() &&
       aWidget->GetCompositorOptions().AllowNativeCompositor()) {
-    return RenderCompositorNativeOGL::Create(aWidget, aError);
+    if (StaticPrefs::gfx_webrender_layer_compositor_AtStartup()) {
+      return RenderCompositorLayerNativeOGL::Create(aWidget, aError);
+    } else {
+      return RenderCompositorNativeOGL::Create(aWidget, aError);
+    }
   }
 #endif
 
@@ -260,6 +265,16 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   // RenderCompositorOGL is not used on android
   return nullptr;
 #elif defined(XP_DARWIN)
+  if (gfx::gfxVars::UseWebRenderCompositor() &&
+      aWidget->GetCompositorOptions().AllowNativeCompositor()) {
+    if (StaticPrefs::gfx_webrender_layer_compositor_AtStartup()) {
+      UniquePtr<RenderCompositor> compositor =
+          RenderCompositorLayerNativeOGL::Create(aWidget, aError);
+      if (compositor) {
+        return compositor;
+      }
+    }
+  }
   // Mac uses NativeLayerCA
   return RenderCompositorNativeOGL::Create(aWidget, aError);
 #else

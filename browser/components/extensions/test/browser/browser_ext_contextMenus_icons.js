@@ -137,12 +137,21 @@ add_task(async function test_child_icon() {
           },
         });
 
+        browser.contextMenus.create({
+          title: "child3",
+          id: "contextmenu-child3",
+          icons: {
+            18: "green_icon.png",
+          },
+        });
+
+        // See bug 1986618
         browser.contextMenus.create(
           {
-            title: "child3",
-            id: "contextmenu-child3",
+            title: "child4",
+            id: "contextmenu-child4",
             icons: {
-              18: "green_icon.png",
+              16: "data:image/svg+xml,%3csvg width='16' height='16' xmlns='http://www.w3.org/2000/svg'%3e %3crect width='16' height='16' style='fill:black' /%3e %3ctext x='50%25' y='59%25' font-size='0.7em' fill='black' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif'%3eH%3c/text%3e %3c/svg%3e",
             },
           },
           () => {
@@ -207,6 +216,17 @@ add_task(async function test_child_icon() {
   )[0];
   confirmContextMenuIcon(contextMenuChild3, "green_icon.png");
 
+  let contextMenuChild4 = contextMenu.getElementsByAttribute(
+    "label",
+    "child4"
+  )[0];
+  is(
+    contextMenuChild4.getAttribute("image"),
+    "data:image/svg+xml,%3csvg width='16' height='16' xmlns='http://www.w3.org/2000/svg'%3e %3crect width='16' height='16' style='fill:black' /%3e %3ctext x='50%25' y='59%25' font-size='0.7em' fill='black' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif'%3eH%3c/text%3e %3c/svg%3e".replaceAll(
+      " ",
+      "%20"
+    )
+  );
   await closeContextMenu();
 
   await extension.unload();
@@ -294,7 +314,7 @@ add_task(async function test_manifest_without_icons() {
   );
 
   items = menu.getElementsByAttribute("label", "second item");
-  is(items.length, 1, "Secobnd child item should exist");
+  is(items.length, 1, "Second child item should exist");
   is(
     items[0].getAttribute("image").split("/").pop(),
     "green.png",

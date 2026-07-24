@@ -10,11 +10,10 @@
 
 #include "modules/rtp_rtcp/source/rtcp_receiver.h"
 
-#include <string.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -60,7 +59,6 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/tmmbn.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "modules/rtp_rtcp/source/tmmbr_help.h"
 #include "rtc_base/checks.h"
@@ -68,6 +66,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
@@ -107,9 +106,7 @@ bool ResetTimestampIfExpired(const Timestamp now,
 }  // namespace
 
 RTCPReceiver::RegisteredSsrcs::RegisteredSsrcs(
-    bool disable_sequence_checker,
-    const RtpRtcpInterface::Configuration& config)
-    : packet_sequence_checker_(disable_sequence_checker) {
+    const RtpRtcpInterface::Configuration& config) {
   packet_sequence_checker_.Detach();
   ssrcs_.push_back(config.local_media_ssrc);
   if (config.rtx_send_ssrc) {
@@ -157,44 +154,13 @@ struct RTCPReceiver::PacketInformation {
 
 RTCPReceiver::RTCPReceiver(const Environment& env,
                            const RtpRtcpInterface::Configuration& config,
-                           ModuleRtpRtcpImpl2* owner)
-    : env_(env),
-      receiver_only_(config.receiver_only),
-      enable_congestion_controller_feedback_(env_.field_trials().IsEnabled(
-          "WebRTC-RFC8888CongestionControlFeedback")),
-      rtp_rtcp_(owner),
-      registered_ssrcs_(false, config),
-      network_link_rtcp_observer_(config.network_link_rtcp_observer),
-      rtcp_event_observer_(config.rtcp_event_observer),
-      rtcp_intra_frame_observer_(config.intra_frame_callback),
-      rtcp_loss_notification_observer_(config.rtcp_loss_notification_observer),
-      network_state_estimate_observer_(config.network_state_estimate_observer),
-      bitrate_allocation_observer_(config.bitrate_allocation_observer),
-      report_interval_(config.rtcp_report_interval_ms > 0
-                           ? TimeDelta::Millis(config.rtcp_report_interval_ms)
-                           : (config.audio ? kDefaultAudioReportInterval
-                                           : kDefaultVideoReportInterval)),
-      // TODO(bugs.webrtc.org/10774): Remove fallback.
-      remote_ssrc_(0),
-      xr_rrtr_status_(config.non_sender_rtt_measurement),
-      oldest_tmmbr_info_(Timestamp::Zero()),
-      cname_callback_(config.rtcp_cname_callback),
-      report_block_data_observer_(config.report_block_data_observer),
-      packet_type_counter_observer_(config.rtcp_packet_type_counter_observer),
-      num_skipped_packets_(0),
-      last_skipped_packets_warning_(env_.clock().CurrentTime()) {
-  RTC_DCHECK(owner);
-}
-
-RTCPReceiver::RTCPReceiver(const Environment& env,
-                           const RtpRtcpInterface::Configuration& config,
                            ModuleRtpRtcp* owner)
     : env_(env),
       receiver_only_(config.receiver_only),
       enable_congestion_controller_feedback_(env_.field_trials().IsEnabled(
           "WebRTC-RFC8888CongestionControlFeedback")),
       rtp_rtcp_(owner),
-      registered_ssrcs_(true, config),
+      registered_ssrcs_(config),
       network_link_rtcp_observer_(config.network_link_rtcp_observer),
       rtcp_event_observer_(config.rtcp_event_observer),
       rtcp_intra_frame_observer_(config.intra_frame_callback),
@@ -215,24 +181,11 @@ RTCPReceiver::RTCPReceiver(const Environment& env,
       num_skipped_packets_(0),
       last_skipped_packets_warning_(env_.clock().CurrentTime()) {
   RTC_DCHECK(owner);
-  // Dear reader - if you're here because of this log statement and are
-  // wondering what this is about, chances are that you are using an instance
-  // of RTCPReceiver without using the webrtc APIs. This creates a bit of a
-  // problem for WebRTC because this class is a part of an internal
-  // implementation that is constantly changing and being improved.
-  // The intention of this log statement is to give a heads up that changes
-  // are coming and encourage you to use the public APIs or be prepared that
-  // things might break down the line as more changes land. A thing you could
-  // try out for now is to replace the `CustomSequenceChecker` in the header
-  // with a regular `SequenceChecker` and see if that triggers an
-  // error in your code. If it does, chances are you have your own threading
-  // model that is not the same as WebRTC internally has.
-  RTC_LOG(LS_INFO) << "************** !!!DEPRECATION WARNING!! **************";
 }
 
 RTCPReceiver::~RTCPReceiver() {}
 
-void RTCPReceiver::IncomingPacket(rtc::ArrayView<const uint8_t> packet) {
+void RTCPReceiver::IncomingPacket(ArrayView<const uint8_t> packet) {
   if (packet.empty()) {
     RTC_LOG(LS_WARNING) << "Incoming empty RTCP packet";
     return;
@@ -406,7 +359,7 @@ std::vector<ReportBlockData> RTCPReceiver::GetLatestReportBlockData() const {
   return result;
 }
 
-bool RTCPReceiver::ParseCompoundPacket(rtc::ArrayView<const uint8_t> packet,
+bool RTCPReceiver::ParseCompoundPacket(ArrayView<const uint8_t> packet,
                                        PacketInformation* packet_information) {
   MutexLock lock(&rtcp_receiver_lock_);
 
@@ -1259,7 +1212,8 @@ std::vector<rtcp::TmmbItem> RTCPReceiver::TmmbrReceived() {
 }
 
 bool RTCPReceiver::RtcpRrTimeoutLocked(Timestamp now) {
-  bool result = ResetTimestampIfExpired(now, last_received_rb_, report_interval_);
+  bool result =
+      ResetTimestampIfExpired(now, last_received_rb_, report_interval_);
   if (result && rtcp_event_observer_) {
     rtcp_event_observer_->OnRtcpTimeout();
   }
@@ -1268,7 +1222,7 @@ bool RTCPReceiver::RtcpRrTimeoutLocked(Timestamp now) {
 
 bool RTCPReceiver::RtcpRrSequenceNumberTimeoutLocked(Timestamp now) {
   bool result = ResetTimestampIfExpired(now, last_increased_sequence_number_,
-                                 report_interval_);
+                                        report_interval_);
   if (result && rtcp_event_observer_) {
     rtcp_event_observer_->OnRtcpTimeout();
   }

@@ -95,15 +95,13 @@ def check_against(path, pref_names):
 def check_value_for_pref(some_pref, some_value, path):
     errors = []
     if some_pref["value"] == some_value:
-        errors.append(
-            {
-                "path": path,
-                "message": some_pref["raw"],
-                "lineno": some_pref["line"],
-                "hint": "Remove the duplicate pref or add it to IGNORE_PREFS.",
-                "level": "error",
-            }
-        )
+        errors.append({
+            "path": path,
+            "message": some_pref["raw"],
+            "lineno": some_pref["line"],
+            "hint": "Remove the duplicate pref or add it to IGNORE_PREFS.",
+            "level": "error",
+        })
     return errors
 
 
@@ -115,14 +113,12 @@ def read_prefs(path):
         for lineno, line in enumerate(source, start=1):
             match = PATTERN.match(line)
             if match:
-                prefs.append(
-                    {
-                        "name": match.group("pref"),
-                        "value": evaluate_pref(match.group("val")),
-                        "line": lineno,
-                        "raw": line,
-                    }
-                )
+                prefs.append({
+                    "name": match.group("pref"),
+                    "value": evaluate_pref(match.group("val")),
+                    "line": lineno,
+                    "raw": line,
+                })
     return prefs
 
 

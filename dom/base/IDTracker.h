@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_IDTracker_h_
 #define mozilla_dom_IDTracker_h_
 
-#include "mozilla/Attributes.h"
 #include "nsIObserver.h"
 #include "nsThreadUtils.h"
 

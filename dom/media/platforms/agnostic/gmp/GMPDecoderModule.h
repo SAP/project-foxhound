@@ -26,6 +26,7 @@
 namespace mozilla {
 
 class GMPDecoderModule : public PlatformDecoderModule {
+  const char* Name() const override { return "GMP"; }
   template <typename T, typename... Args>
   friend already_AddRefed<T> MakeAndAddRef(Args&&...);
 

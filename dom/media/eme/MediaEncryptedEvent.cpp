@@ -5,13 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaEncryptedEvent.h"
-#include "mozilla/dom/MediaEncryptedEventBinding.h"
-#include "nsContentUtils.h"
+
 #include "js/ArrayBuffer.h"
 #include "jsfriendapi.h"
-#include "nsINode.h"
-#include "mozilla/dom/MediaKeys.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/MediaEncryptedEventBinding.h"
+#include "mozilla/dom/MediaKeys.h"
+#include "nsContentUtils.h"
+#include "nsINode.h"
 
 namespace mozilla::dom {
 

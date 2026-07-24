@@ -49,6 +49,1239 @@ characteristics:
     data_sensitivity:
       - technical
 
+# =============================================================================
+# ClientRects Fingerprinting Metrics
+# =============================================================================
+# These metrics track DOMRect measurements for elements with various CSS
+# transforms using 4 different measurement APIs. Fingerprinters use these
+# measurements to identify browsers based on rendering differences.
+#
+# ATTRIBUTION:
+# Implementation based on CreepJS (https://github.com/AbrahamJuliot/creepjs)
+# Original source: src/domrect/index.ts
+# License: MIT
+#
+# CreepJS was inspired by TU Munich's privacy research:
+# - https://privacycheck.sec.lrz.de/active/fp_gcr/fp_getclientrects.html
+# - https://privacycheck.sec.lrz.de/active/fp_e/fp_emoji.html
+# =============================================================================
+
+# Element.getClientRects() measurements (12 elements)
+
+  clientrects_element_gcr_01:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 1.
+      Element style: border 2.715px, padding 3.98px, margin-left 12.12px.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_02:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 2.
+      Element style: transform skewY(23.1753218deg) rotate3d(10.00099, 90, 0.100000000100009, 60000000000008.00000009deg).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_03:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 3.
+      Element style: transform skewY(-23.1753218deg) scale(1099.0000000099, 1.89) matrix(1.11, 2.0001, -1.0001, 1.009, 150, 94.4).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_04:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 4.
+      Element style: transform matrix(1.11, 2.0001, -1.0001, 1.009, 150, 94.4), position absolute.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_05:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 5.
+      Element style: margin-left 42.395pt (point units).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_06:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 6.
+      Element style: transform perspective(12890px) translateZ(101.5px).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_07:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 7.
+      Element style: margin-top -350.552px, margin-left 0.9099rem, position absolute.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_08:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 8.
+      Element style: margin-top -150.552px, margin-left 15.9099rem, position absolute.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_09:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 9.
+      Element style: margin-top -110.552px, margin-left 15.9099rem, position absolute.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_10:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 10.
+      Element style: margin-top -315.552px, margin-left 15.9099rem, position absolute.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_11:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 11.
+      Element style: width 10px, height 10px, margin-left 15.0000009099rem.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gcr_12:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getClientRects()[0] for test element 12.
+      Element style: identical to element 11 (for equal-element consistency check).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# Element.getBoundingClientRect() measurements (12 elements)
+
+  clientrects_element_gbcr_01:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 1.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_02:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 2.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_03:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 3.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_04:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 4.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_05:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 5.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_06:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 6.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_07:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 7.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_08:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 8.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_09:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 9.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_10:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 10.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_11:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 11.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_element_gbcr_12:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() for test element 12.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# Range.getClientRects() measurements (12 elements)
+
+  clientrects_range_gcr_01:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 1.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_02:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 2.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_03:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 3.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_04:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 4.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_05:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 5.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_06:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 6.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_07:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 7.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_08:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 8.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_09:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 9.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_10:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 10.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_11:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 11.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gcr_12:
+    type: string
+    description: >-
+      DOMRect JSON from Range.getClientRects()[0] after Range.selectNode() for test element 12.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# Range.getBoundingClientRect() after selectNode (12 elements)
+
+  clientrects_range_gbcr_01:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 1.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_02:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 2.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_03:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 3.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_04:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 4.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_05:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 5.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_06:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 6.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_07:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 7.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_08:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 8.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_09:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 9.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_10:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 10.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_11:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 11.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_range_gbcr_12:
+    type: string
+    description: >-
+      DOMRect JSON from Element.getBoundingClientRect() after Range.selectNode() for test element 12.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# Reference and validation elements
+
+  clientrects_known_dimensions:
+    type: string
+    description: >-
+      Full DOMRect JSON for .rect-known element (100x100px, transform rotate(45deg)).
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_ghost_dimensions:
+    type: string
+    description: >-
+      DOMRect JSON for .rect-ghost element (0x0px, should be all zeros).
+      Non-zero values indicate API tampering or lie detection failure.
+      Format: {"b":N,"h":N,"l":N,"r":N,"t":N,"w":N,"x":N,"y":N}
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# Emoji-based fingerprinting metrics (6 emojis: 👾🤖🦄🎃🎨🌈)
+
+  clientrects_emoji_01:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 👾 (alien monster).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_02:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 🤖 (robot).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_03:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 🦄 (unicorn).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_04:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 🎃 (jack-o-lantern).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_05:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 🎨 (artist palette).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_06:
+    type: string
+    description: >-
+      Bounding rect dimensions for emoji 🌈 (rainbow).
+      Format: JSON object with w,h keys.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_text_font_family:
+    type: string
+    description: >
+      The computed font-family used for text elements in clientrects measurements.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+  clientrects_emoji_font_family:
+    type: string
+    description: >
+      The computed font-family used for emoji elements in clientrects measurements.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010673
+    expires: never
+    data_sensitivity:
+      - technical
+
+# SVG Fingerprinting Metrics
+# Based on CreepJS (https://github.com/AbrahamJuliot/creepjs) src/svg/index.ts
+
+  svg_bbox:
+    type: string
+    description: >-
+      JSON object from SVGGraphicsElement.getBBox().
+      Format: {"x":N,"y":N,"w":N,"h":N}. Varies by browser rendering engine.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    expires: never
+    data_sensitivity:
+      - technical
+
+  svg_computed_text_length:
+    type: string
+    description: >-
+      SVGTextContentElement.getComputedTextLength() for emoji text element.
+      Returns the total length of rendered text, varies by font rendering.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    expires: never
+    data_sensitivity:
+      - technical
+
+  svg_extent_of_char:
+    type: string
+    description: >-
+      JSON object from SVGTextContentElement.getExtentOfChar(0).
+      Format: {"x":N,"y":N,"w":N,"h":N}. Varies by emoji rendering.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    expires: never
+    data_sensitivity:
+      - technical
+
+  svg_substring_length:
+    type: string
+    description: >-
+      SVGTextContentElement.getSubStringLength(0, 10) for first 10 characters.
+      Varies by font metrics and text shaping.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    expires: never
+    data_sensitivity:
+      - technical
+
+  svg_emoji_set:
+    type: string
+    description: >-
+      JSON array of emojis with unique rendering dimensions.
+      Tests which emojis render at distinct sizes, varies by OS/font support.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+    expires: never
+    data_sensitivity:
+      - technical
+
   submission_schema:
     type: quantity
     unit: versions
@@ -399,6 +1632,42 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1881773
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1881773#c4
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  timezone_web:
+    type: string
+    description: >
+      The timezone string reported via the web using Intl API (e.g. America/New_York)
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005864
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005864
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  timezone_offset_web:
+    type: string
+    description: >
+      The timezone offset in minutes exposed to web content via getTimezoneOffset()
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005864
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005864
     expires: never
     data_sensitivity:
       - interaction
@@ -1167,7 +2436,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata1software:
+  canvasdata1_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a simple organge box and used as a control image
@@ -1185,7 +2454,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata2software:
+  canvasdata2_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a bordered triage, and used to test point interpolation
@@ -1203,7 +2472,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata3software:
+  canvasdata3_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a stretched photographic image, used to test image operations.
@@ -1221,7 +2490,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata4software:
+  canvasdata4_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is two rotated, semi-transparenct overlapping squares, used to test transparency and point interpolation.
@@ -1239,7 +2508,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata5software:
+  canvasdata5_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a local font rendered normally.
@@ -1257,7 +2526,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata6software:
+  canvasdata6_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a local font rendered with italics, rotation, and shadow-blur.
@@ -1275,7 +2544,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata7software:
+  canvasdata7_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a system-ui font rendered normally.
@@ -1293,7 +2562,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata8software:
+  canvasdata8_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a system-ui font rendered with italics, rotation, and shadow-blur.
@@ -1311,7 +2580,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata9software:
+  canvasdata9_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a font shipped with Firefox rendered normally.
@@ -1329,7 +2598,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata10software:
+  canvasdata10_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas. The image is a font shipped with Firefox rendered with italics, rotation, and shadow-blur.
@@ -1347,7 +2616,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata11_webglsoftware:
+  canvasdata11_webgl_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a WebGL canvas (instead of Canvas2D). IT is a RGB gradient cube.
@@ -1365,7 +2634,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata12_fingerprintjs1software:
+  canvasdata12_fingerprintjs1_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas, it is a copy of fingerprintjs' text canvas
@@ -1383,7 +2652,7 @@ characteristics:
     data_sensitivity:
       - technical
 
-  canvasdata13_fingerprintjs2software:
+  canvasdata13_fingerprintjs2_software:
     type: string
     description: >
       The sha1 hash of an image rendered on a canvas, it is a copy of fingerprintjs' geometry canvas
@@ -1400,6 +2669,578 @@ characteristics:
     expires: never
     data_sensitivity:
       - technical
+
+  canvasdata1_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata1 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata1_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata1 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata2_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata2 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata2_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata2 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata3_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata3 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata3_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata3 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata4_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata4 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata4_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata4 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata5_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata5 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata5_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata5 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata6_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata6 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata6_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata6 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata7_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata7 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata7_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata7 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata8_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata8 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata8_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata8 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata9_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata9 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata9_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata9 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata10_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata10 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata10_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata10 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata11_webgl_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata11_webgl rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata11_webgl_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata11_webgl software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata12_fingerprintjs1_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata12_fingerprintjs1 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata12_fingerprintjs1_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata12_fingerprintjs1 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata13_fingerprintjs2_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata13_fingerprintjs2 rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  canvasdata13_fingerprintjs2_software_raw:
+    type: text
+    description: >
+      Gzip-compressed, base64-encoded raw pixel data from canvasdata13_fingerprintjs2 software rendering
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1894958
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900693
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005867
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
 
   canvas_dpr:
     type: string
@@ -1775,7 +3616,14 @@ characteristics:
   gl_params:
     type: text
     description: >
-      The list of GL parameters of GL1.
+      The list of GL parameters of GL1. Parameters: ALIASED_LINE_WIDTH_RANGE,
+      ALIASED_POINT_SIZE_RANGE, IMPLEMENTATION_COLOR_READ_FORMAT,
+      IMPLEMENTATION_COLOR_READ_TYPE, MAX_COMBINED_TEXTURE_IMAGE_UNITS, MAX_CUBE_MAP_TEXTURE_SIZE,
+      MAX_FRAGMENT_UNIFORM_VECTORS, MAX_RENDERBUFFER_SIZE, MAX_TEXTURE_IMAGE_UNITS,
+      MAX_TEXTURE_SIZE, MAX_VARYING_VECTORS, MAX_VERTEX_ATTRIBS, MAX_VERTEX_TEXTURE_IMAGE_UNITS,
+      MAX_VERTEX_UNIFORM_VECTORS, MAX_VIEWPORT_DIMS, SHADING_LANGUAGE_VERSION,
+      STENCIL_BACK_VALUE_MASK, STENCIL_BACK_WRITEMASK, STENCIL_VALUE_MASK, STENCIL_WRITEMASK,
+      SUBPIXEL_BITS.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1842,6 +3690,42 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922506
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1922506#c17
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl_antialias:
+    type: string
+    description: >
+      Whether antialias was granted for the default WebGL context.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl_alpha:
+    type: string
+    description: >
+      Whether alpha was granted for the default WebGL context.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
     expires: never
     data_sensitivity:
       - technical
@@ -2115,6 +3999,42 @@ characteristics:
     data_sensitivity:
       - technical
 
+  gl_antialias_software:
+    type: string
+    description: >
+      Whether antialias was granted for the default WebGL context (software rendering).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl_alpha_software:
+    type: string
+    description: >
+      Whether alpha was granted for the default WebGL context (software rendering).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
   gl2_extensions:
     type: text
     description: >
@@ -2380,6 +4300,42 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1943627
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1943627#c1
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl2_antialias:
+    type: string
+    description: >
+      Whether antialias was granted for the default WebGL2 context.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl2_alpha:
+    type: string
+    description: >
+      Whether alpha was granted for the default WebGL2 context.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
     expires: never
     data_sensitivity:
       - technical
@@ -2653,6 +4609,42 @@ characteristics:
     data_sensitivity:
       - technical
 
+  gl2_antialias_software:
+    type: string
+    description: >
+      Whether antialias was granted for the default WebGL2 context (software rendering).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
+  gl2_alpha_software:
+    type: string
+    description: >
+      Whether alpha was granted for the default WebGL2 context (software rendering).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019364
+    expires: never
+    data_sensitivity:
+      - technical
+
   prefs_network_cookie_cookiebehavior: # network.cookie.cookieBehavior
     type: quantity
     unit: int
@@ -2670,6 +4662,30 @@ characteristics:
     expires: never
     data_sensitivity:
       - interaction
+
+  mathml_diag_prefs_modified:
+    type: string
+    description: >
+      MathML prefs that have been modified from defaults. Format is
+      "shortname=val,..." (e.g. "dis=1,fnt=0"). Empty if no prefs modified.
+      Shortnames: dis=disabled, str=scale_stretchy_operators,
+      spc=mathspace_names, rtl=rtl_operator_mirroring,
+      var=mathvariant_styling_fallback, shf=math_shift,
+      acc=operator_dictionary_accent, leg=legacy_mathvariant_attribute,
+      fnt=font_family_math. Values are 1 (true) or 0 (false).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    expires: never
+    data_sensitivity:
+      - technical
 
   voices_count:
     type: quantity
@@ -3004,6 +5020,44 @@ characteristics:
     data_sensitivity:
       - technical
 
+  avail_top:
+    type: quantity
+    unit: int
+    description: >
+      Available top property
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019245
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019245
+    expires: never
+    data_sensitivity:
+      - technical
+
+  avail_left:
+    type: quantity
+    unit: int
+    description: >
+      Available left property
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019245
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2019245
+    expires: never
+    data_sensitivity:
+      - technical
+
   camera_count:
     type: quantity
     unit: int
@@ -3152,6 +5206,107 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896490
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896490#c3
+    expires: never
+    data_sensitivity:
+      - technical
+
+  audio_compressor_gain_reduction:
+    type: string
+    description: >
+      WebAudio DynamicsCompressorNode gain reduction value from OfflineAudioContext
+      rendering. This is most likely consistent for all/most users but we wish to verify
+      that experimentally.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    expires: never
+    data_sensitivity:
+      - technical
+
+  audio_float_frequency_sum:
+    type: string
+    description: >
+      Sum of float frequency data from AnalyserNode.getFloatFrequencyData() during
+      OfflineAudioContext rendering. Collected as string to preserve floating-point
+      precision.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    expires: never
+    data_sensitivity:
+      - technical
+
+  audio_float_time_domain_sum:
+    type: string
+    description: >
+      Sum of float time domain data from AnalyserNode.getFloatTimeDomainData() during
+      OfflineAudioContext rendering. Collected as string to preserve floating-point precision.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    expires: never
+    data_sensitivity:
+      - technical
+
+  audio_fingerprint2:
+    type: string
+    description: >
+      A second method to calculate an audio fingerprint, used by a different fingerprinter.
+      Hash of audio buffer sample snapshot (100 samples from 4500-4600 range) from
+      OfflineAudioContext rendering.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    expires: never
+    data_sensitivity:
+      - technical
+
+  audio_unique_samples:
+    type: quantity
+    unit: int
+    description: >
+      Count of unique sample values in the OfflineAudioContext audio buffer. This is
+      used by fingerprinting scripts to detect anamolies - they expect 1-3k unique
+      samples, not 5000. We are collecting it to ensure we are behaving as they
+      generally expect non-anomalous browsers to behave.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010675
     expires: never
     data_sensitivity:
       - technical
@@ -3372,6 +5527,26 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1945182
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1945182#c1
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  math_ops_fdlibm_2:
+    type: text
+    description: >
+      Result of additional fingerprintable math operations, with fdlibm enabled
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
     expires: never
     data_sensitivity:
       # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
@@ -3842,6 +6017,60 @@ characteristics:
     data_sensitivity:
       - technical
 
+  os_distro:
+    type: string
+    description: >
+      User's OS distribution, as reported by lsb_release (Linux only, blank otherwise)
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    expires: never
+    data_sensitivity:
+      - technical
+
+  os_distro_id:
+    type: string
+    description: >
+      User's OS distribution, as reported by MOZ_DISTRIBUTION_ID
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    expires: never
+    data_sensitivity:
+      - technical
+
+  os_distro_version:
+    type: string
+    description: >
+      User's OS distribution version, as reported by lsb_release (Linux only, blank otherwise)
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005865
+    expires: never
+    data_sensitivity:
+      - technical
+
   cpu_model:
     type: string
     description: >
@@ -3872,6 +6101,101 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944933
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944933#c1
+    expires: never
+    data_sensitivity:
+      - technical
+
+  css_system_colors:
+    type: text
+    description: >
+      JSON array containing CSS system color keywords and their computed values as
+      uppercase hex (without # prefix). System colors (like Canvas, ButtonFace,
+      LinkText, etc.) are CSS keywords that resolve to theme/OS-specific colors and
+      can be used for fingerprinting. This metric collects the computed backgroundColor
+      for each system color keyword. Data format: [{"Canvas": "FFFFFF"}, {"ButtonFace": "F0F0F0"}, ...].
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010671
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010671
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  css_system_fonts:
+    type: text
+    description: >
+      JSON array containing CSS system font keywords and their computed font properties.
+      System fonts (like caption, icon, menu, etc.) and common font families are tested
+      to determine their rendered fontSize and fontFamily values, which can vary by OS
+      and be used for fingerprinting. This metric collects computed fontSize + fontFamily
+      for each font keyword/name tested.
+      Data format: [{"caption": "11px system-ui"}, {"Arial": "16px Arial"}, ...].
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010671
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010671
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  firefox_binary_arch:
+    type: string
+    description: >
+      Architecture of the Firefox binary itself (not the CPU). This can differ
+      from cpu_arch when running under emulation (e.g., x86-64 Firefox via
+      Rosetta 2 on ARM64 Mac) or when running 32-bit Firefox on 64-bit CPU.
+      Format: "xpcomabi:<abi>|is64bit:<bool>" where abi is from XPCOMABI
+      (e.g., "Darwin_x86_64-gcc3") and is64bit indicates 64-bit build.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fpu_control_state:
+    type: string
+    description: >
+      The current FPU (Floating-Point Unit) rounding mode and precision settings.
+      Format depends on architecture:
+      - x86/x86-64: "std:X;x87:Y;sse:Z;prec:P" where X,Y,Z are rounding modes (0-3)
+        and P is precision (single/double/extended)
+      - ARM: "std:X;arm:Y" where X,Y are rounding modes (0-3)
+      Rounding modes: 0=nearest, 1=down/negative, 2=up/positive, 3=toward-zero
+      This helps identify unusual FPU configurations that may cause math variations.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2005866
     expires: never
     data_sensitivity:
       - technical
@@ -4048,6 +6372,48 @@ characteristics:
     data_sensitivity:
       - technical
 
+  mathml_diag_values:
+    type: text
+    description: >
+      Array of widths from all MathML elements, collected similar to math_ops.
+      Each element represents the getBoundingClientRect().width of a rendered
+      MathML element. The array index corresponds to the element's id number.
+      Format is a JSON stringified array like: ["123.456", "789.012", ...]
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  mathml_diag_font_family:
+    type: string
+    description: >
+      The computed font-family value from a MathML element on the page.
+      Shows what font is actually being used for MathML rendering.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010669
+    expires: never
+    data_sensitivity:
+      - technical
+
   monochrome:
     type: boolean
     description: >
@@ -4146,6 +6512,25 @@ characteristics:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935712
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935712#c0
+    expires: never
+    data_sensitivity:
+      - technical
+
+  wgpu_is_fallback_adapter:
+    type: boolean
+    description: >
+      WebGPU adapter isFallbackAdapter property. Indicates whether the adapter
+      is a software renderer (true) or hardware GPU (false).
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010672
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010672
     expires: never
     data_sensitivity:
       - technical
@@ -4865,6 +7250,258 @@ characteristics:
     data_sensitivity:
       - technical
 
+  fonts_variant_c_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts queried of variant C
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_c_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts queried of variant C
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_d_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts queried of variant D
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_d_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts queried of variant D
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_e_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts queried of variant E
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_e_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts queried of variant E
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_f_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts used to render "A" with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_f_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts used to render "A" with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_g_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts used to render emoji (U+1F47E) with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_g_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts used to render emoji (U+1F47E) with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_h_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts used to render 89 emojis with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_h_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts used to render 89 emojis with variant F font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_i_allowlisted:
+    type: string
+    description: >
+      SHA256 of allowlisted fonts used to render SVG emojis with emoji-specific font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
+  fonts_variant_i_nonallowlisted:
+    type: string
+    description: >
+      SHA256 of non-allowlisted fonts used to render SVG emojis with emoji-specific font list
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014267
+    expires: never
+    data_sensitivity:
+      - technical
+
   screens:
     type: text
     description: >
@@ -4882,4 +7519,63 @@ characteristics:
     data_sensitivity:
       # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
       # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  sdp_codec_list:
+    type: text
+    description: >
+      JSON-stringified SDP codec section from RTCPeerConnection.createOffer().
+      Contains m-lines, a=rtpmap, a=fmtp, and a=rtcp-fb lines with
+      session-specific values (ICE credentials, DTLS fingerprint) stripped.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive.
+      - highly_sensitive
+
+  storage_quota:
+    type: quantity
+    unit: megabytes
+    description: >
+      Storage quota in MB from StorageManager.estimate(), rounded to integer.
+      Acts as a disk-size proxy for fingerprinting entropy analysis.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    expires: never
+    data_sensitivity:
+      - technical
+
+  webauthn_capabilities:
+    type: text
+    description: >
+      JSON-stringified dictionary from
+      PublicKeyCredential.getClientCapabilities(). Contains boolean values
+      indicating passkey and authenticator support.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016748
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive.
       - highly_sensitive

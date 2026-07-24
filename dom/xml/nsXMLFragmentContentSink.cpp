@@ -4,29 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "nsXMLContentSink.h"
-#include "nsIFragmentContentSink.h"
-#include "nsIXMLContentSink.h"
-#include "nsContentSink.h"
-#include "nsIExpatSink.h"
-#include "nsIDTD.h"
-#include "mozilla/dom/Document.h"
-#include "nsIContent.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/NodeInfo.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsError.h"
-#include "nsIDocShell.h"
-#include "nsIScriptError.h"
-#include "nsTHashtable.h"
-#include "nsHashKeys.h"
-#include "nsTArray.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "nsCOMPtr.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentSink.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsError.h"
+#include "nsHashKeys.h"
+#include "nsIContent.h"
+#include "nsIDocShell.h"
+#include "nsIExpatSink.h"
+#include "nsIFragmentContentSink.h"
+#include "nsIScriptError.h"
+#include "nsTArray.h"
+#include "nsXMLContentSink.h"
 
 using namespace mozilla::dom;
 
@@ -55,13 +51,11 @@ class nsXMLFragmentContentSink : public nsXMLContentSink,
                          bool* aRetval) override;
 
   // nsIContentSink
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
+  NS_IMETHOD WillBuildModel() override;
   NS_IMETHOD DidBuildModel(bool aTerminated) override;
   virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override;
   virtual nsISupports* GetTarget() override;
   NS_IMETHOD DidProcessATokenImpl();
-
-  // nsIXMLContentSink
 
   // nsIFragmentContentSink
   NS_IMETHOD FinishFragmentParsing(DocumentFragment** aFragment) override;
@@ -81,8 +75,6 @@ class nsXMLFragmentContentSink : public nsXMLContentSink,
                                  uint32_t aLineNumber, uint32_t aColumnNumber,
                                  nsIContent** aResult, bool* aAppendContent,
                                  mozilla::dom::FromParser aFromParser) override;
-  virtual nsresult CloseElement(nsIContent* aContent) override;
-
   virtual void MaybeStartLayout(bool aIgnorePendingSheets) override;
 
   // nsContentSink overrides
@@ -105,17 +97,10 @@ class nsXMLFragmentContentSink : public nsXMLContentSink,
   bool mParseError;
 };
 
-static nsresult NewXMLFragmentContentSinkHelper(
-    nsIFragmentContentSink** aResult) {
-  nsXMLFragmentContentSink* it = new nsXMLFragmentContentSink();
-
-  NS_ADDREF(*aResult = it);
-
-  return NS_OK;
-}
-
 nsresult NS_NewXMLFragmentContentSink(nsIFragmentContentSink** aResult) {
-  return NewXMLFragmentContentSinkHelper(aResult);
+  auto* it = new nsXMLFragmentContentSink();
+  NS_ADDREF(*aResult = it);
+  return NS_OK;
 }
 
 nsXMLFragmentContentSink::nsXMLFragmentContentSink() : mParseError(false) {
@@ -135,7 +120,7 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsXMLFragmentContentSink, nsXMLContentSink,
                                    mTargetDocument, mRoot)
 
 NS_IMETHODIMP
-nsXMLFragmentContentSink::WillBuildModel(nsDTDMode aDTDMode) {
+nsXMLFragmentContentSink::WillBuildModel() {
   if (mRoot) {
     return NS_OK;
   }
@@ -180,12 +165,10 @@ nsresult nsXMLFragmentContentSink::CreateElement(
     const char16_t** aAtts, uint32_t aAttsCount,
     mozilla::dom::NodeInfo* aNodeInfo, uint32_t aLineNumber,
     uint32_t aColumnNumber, nsIContent** aResult, bool* aAppendContent,
-    FromParser /*aFromParser*/) {
-  // Claim to not be coming from parser, since we don't do any of the
-  // fancy CloseElement stuff.
+    FromParser aFromParser) {
   nsresult rv = nsXMLContentSink::CreateElement(
       aAtts, aAttsCount, aNodeInfo, aLineNumber, aColumnNumber, aResult,
-      aAppendContent, NOT_FROM_PARSER);
+      aAppendContent, aFromParser);
 
   // When we aren't grabbing all of the content we, never open a doc
   // element, we run into trouble on the first element, so we don't append,
@@ -195,21 +178,6 @@ nsresult nsXMLFragmentContentSink::CreateElement(
   }
 
   return rv;
-}
-
-nsresult nsXMLFragmentContentSink::CloseElement(nsIContent* aContent) {
-  // don't do fancy stuff in nsXMLContentSink
-  if (mPreventScriptExecution && (aContent->IsHTMLElement(nsGkAtoms::script) ||
-                                  aContent->IsSVGElement(nsGkAtoms::script))) {
-    nsCOMPtr<nsIScriptElement> sele = do_QueryInterface(aContent);
-    if (sele) {
-      sele->PreventExecution();
-    } else {
-      NS_ASSERTION(nsNameSpaceManager::GetInstance()->mSVGDisabled,
-                   "Script did QI correctly, but wasn't a disabled SVG!");
-    }
-  }
-  return NS_OK;
 }
 
 void nsXMLFragmentContentSink::MaybeStartLayout(bool aIgnorePendingSheets) {}
@@ -311,7 +279,6 @@ nsXMLFragmentContentSink::FinishFragmentParsing(DocumentFragment** aFragment) {
   mTargetDocument = nullptr;
   mNodeInfoManager = nullptr;
   mScriptLoader = nullptr;
-  mCSSLoader = nullptr;
   mContentStack.Clear();
   mDocumentURI = nullptr;
   mDocShell = nullptr;

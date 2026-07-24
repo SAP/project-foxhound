@@ -8,6 +8,7 @@
 
 #include "nsISupportsImpl.h"
 #include "mozilla/net/neqo_glue_ffi_generated.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
@@ -45,7 +46,9 @@ class StreamId {
 
   constexpr uint64_t Index() const { return mId >> 2; }
 
-  constexpr bool operator==(uint64_t aVal) const { return mId == aVal; }
+  constexpr bool operator==(const StreamId& aRhs) const {
+    return mId == aRhs.mId;
+  }
 
   static constexpr StreamId From(uint64_t aVal) { return StreamId(aVal); }
 

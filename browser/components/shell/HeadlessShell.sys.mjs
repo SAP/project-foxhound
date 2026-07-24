@@ -17,10 +17,10 @@ export class ScreenshotParent extends JSWindowActorParent {
 
 ChromeUtils.registerWindowActor("Screenshot", {
   parent: {
-    esModuleURI: "resource:///modules/HeadlessShell.sys.mjs",
+    esModuleURI: "moz-src:///browser/components/shell/HeadlessShell.sys.mjs",
   },
   child: {
-    esModuleURI: "resource:///modules/ScreenshotChild.sys.mjs",
+    esModuleURI: "moz-src:///browser/components/shell/ScreenshotChild.sys.mjs",
   },
 });
 

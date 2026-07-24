@@ -830,7 +830,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTransitions(
 NS_IMETHODIMP
 nsNavHistoryQuery::Clone(nsINavHistoryQuery** _clone) {
   nsNavHistoryQuery* clone = nullptr;
-  Unused << Clone(&clone);
+  (void)Clone(&clone);
   *_clone = clone;
   return NS_OK;
 }
@@ -1019,7 +1019,7 @@ nsNavHistoryQueryOptions::SetAsyncEnabled(bool aAsyncEnabled) {
 NS_IMETHODIMP
 nsNavHistoryQueryOptions::Clone(nsINavHistoryQueryOptions** _clone) {
   nsNavHistoryQueryOptions* clone = nullptr;
-  Unused << Clone(&clone);
+  (void)Clone(&clone);
   *_clone = clone;
   return NS_OK;
 }

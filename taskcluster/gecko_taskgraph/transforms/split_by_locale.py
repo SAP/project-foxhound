@@ -6,33 +6,31 @@ This transform splits the jobs it receives into per-locale tasks. Locales are
 provided by the `locales-file`.
 """
 
-from copy import deepcopy
 from pprint import pprint
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import Schema
+from taskgraph.util.copy import deepcopy
+from taskgraph.util.schema import LegacySchema
 from voluptuous import Extra, Optional, Required
 
 from gecko_taskgraph.transforms.l10n import parse_locales_file
 
 transforms = TransformSequence()
 
-split_by_locale_schema = Schema(
-    {
-        # The file to pull locale information from. This should be a json file
-        # such as browser/locales/l10n-changesets.json.
-        Required("locales-file"): str,
-        # The platform name in the form used by the locales files. Defaults to
-        # attributes.build_platform if not provided.
-        Optional("locale-file-platform"): str,
-        # A list of properties elsewhere in the job that need to have the locale
-        # name substituted into them. The referenced properties may be strings
-        # or lists. In the case of the latter, all list values will have
-        # substitutions performed.
-        Optional("properties-with-locale"): [str],
-        Extra: object,
-    }
-)
+split_by_locale_schema = LegacySchema({
+    # The file to pull locale information from. This should be a json file
+    # such as browser/locales/l10n-changesets.json.
+    Required("locales-file"): str,
+    # The platform name in the form used by the locales files. Defaults to
+    # attributes.build_platform if not provided.
+    Optional("locale-file-platform"): str,
+    # A list of properties elsewhere in the job that need to have the locale
+    # name substituted into them. The referenced properties may be strings
+    # or lists. In the case of the latter, all list values will have
+    # substitutions performed.
+    Optional("properties-with-locale"): [str],
+    Extra: object,
+})
 
 
 transforms.add_validate(split_by_locale_schema)

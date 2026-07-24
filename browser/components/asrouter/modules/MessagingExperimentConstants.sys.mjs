@@ -14,6 +14,7 @@
  * Other Nimbus features contain specific variables whose keys are enumerated in
  * FeatureManifest.yaml. Conversely, messaging experiment features contain
  * actual messages, with the usual message keys like `template` and `targeting`.
+ *
  * @see FeatureManifest.yaml
  * Messages delivered through these feature IDs record reach events, with the
  * exception of "pbNewtab". If you're adding new features to this list, make
@@ -39,6 +40,16 @@ export const MESSAGING_EXPERIMENTS_DEFAULT_FEATURES = [
   "fxms-message-13",
   "fxms-message-14",
   "fxms-message-15",
+  "fxms-message-16",
+  "fxms-message-17",
+  "fxms-message-18",
+  "fxms-message-19",
+  "fxms-message-20",
+  "fxms-message-21",
+  "fxms-message-22",
+  "fxms-message-23",
+  "fxms-message-24",
+  "fxms-message-25",
   "infobar",
   "moments-page",
   "pbNewtab",

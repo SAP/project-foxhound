@@ -12,11 +12,12 @@
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/ListFormat.h"
 #include "mozilla/intl/NumberFormat.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
 
 #include <array>
 #include <charconv>
+#include <utility>
 
 #include "jspubtd.h"
 #include "NamespaceImports.h"
@@ -25,7 +26,11 @@
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/ListFormat.h"
+#include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/NumberFormat.h"
+#include "builtin/intl/Packed.h"
+#include "builtin/intl/ParameterNegotiation.h"
+#include "builtin/intl/UsingEnum.h"
 #include "builtin/temporal/Duration.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
@@ -47,19 +52,21 @@
 using namespace js;
 using namespace js::intl;
 
+using js::temporal::TemporalUnit;
+
 static constexpr auto durationUnits = std::array{
-    temporal::TemporalUnit::Year,        temporal::TemporalUnit::Month,
-    temporal::TemporalUnit::Week,        temporal::TemporalUnit::Day,
-    temporal::TemporalUnit::Hour,        temporal::TemporalUnit::Minute,
-    temporal::TemporalUnit::Second,      temporal::TemporalUnit::Millisecond,
-    temporal::TemporalUnit::Microsecond, temporal::TemporalUnit::Nanosecond,
+    TemporalUnit::Year,        TemporalUnit::Month,
+    TemporalUnit::Week,        TemporalUnit::Day,
+    TemporalUnit::Hour,        TemporalUnit::Minute,
+    TemporalUnit::Second,      TemporalUnit::Millisecond,
+    TemporalUnit::Microsecond, TemporalUnit::Nanosecond,
 };
 
 const JSClass DurationFormatObject::class_ = {
     "Intl.DurationFormat",
     JSCLASS_HAS_RESERVED_SLOTS(DurationFormatObject::SLOT_COUNT) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_DurationFormat) |
-        JSCLASS_FOREGROUND_FINALIZE,
+        JSCLASS_BACKGROUND_FINALIZE,
     &DurationFormatObject::classOps_,
     &DurationFormatObject::classSpec_,
 };
@@ -67,8 +74,15 @@ const JSClass DurationFormatObject::class_ = {
 const JSClass& DurationFormatObject::protoClass_ = PlainObject::class_;
 
 static bool durationFormat_format(JSContext* cx, unsigned argc, Value* vp);
+
 static bool durationFormat_formatToParts(JSContext* cx, unsigned argc,
                                          Value* vp);
+
+static bool durationFormat_resolvedOptions(JSContext* cx, unsigned argc,
+                                           Value* vp);
+
+static bool durationFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                              Value* vp);
 
 static bool durationFormat_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -77,14 +91,12 @@ static bool durationFormat_toSource(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec durationFormat_static_methods[] = {
-    JS_SELF_HOSTED_FN("supportedLocalesOf",
-                      "Intl_DurationFormat_supportedLocalesOf", 1, 0),
+    JS_FN("supportedLocalesOf", durationFormat_supportedLocalesOf, 1, 0),
     JS_FS_END,
 };
 
 static const JSFunctionSpec durationFormat_methods[] = {
-    JS_SELF_HOSTED_FN("resolvedOptions", "Intl_DurationFormat_resolvedOptions",
-                      0, 0),
+    JS_FN("resolvedOptions", durationFormat_resolvedOptions, 0, 0),
     JS_FN("format", durationFormat_format, 1, 0),
     JS_FN("formatToParts", durationFormat_formatToParts, 1, 0),
     JS_FN("toSource", durationFormat_toSource, 0, 0),
@@ -122,9 +134,127 @@ const ClassSpec DurationFormatObject::classSpec_ = {
     ClassSpec::DontDefineConstructor,
 };
 
-void js::DurationFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
-  MOZ_ASSERT(gcx->onMainThread());
+enum class DurationDisplay : uint8_t { Auto, Always };
+enum class DurationStyle : uint8_t { Long, Short, Narrow, Numeric, TwoDigit };
+enum class DurationBaseStyle : uint8_t { Long, Short, Narrow, Digital };
 
+#define FOR_EACH_DURATION_UNIT(MACRO) \
+  MACRO(Year, year)                   \
+  MACRO(Month, month)                 \
+  MACRO(Week, week)                   \
+  MACRO(Day, day)                     \
+  MACRO(Hour, hour)                   \
+  MACRO(Minute, minute)               \
+  MACRO(Second, second)               \
+  MACRO(Millisecond, millisecond)     \
+  MACRO(Microsecond, microsecond)     \
+  MACRO(Nanosecond, nanosecond)
+
+struct js::intl::DurationFormatOptions {
+// Packed representation to keep the unit options as small as possible.
+#define DECLARE_DURATION_UNIT(UPPER, LOWER)                    \
+  DurationDisplay LOWER##sDisplay : 1 = DurationDisplay::Auto; \
+  DurationStyle LOWER##sStyle : 3 = DurationStyle::Short;
+
+  FOR_EACH_DURATION_UNIT(DECLARE_DURATION_UNIT)
+
+#undef DECLARE_DURATION_UNIT
+
+  DurationBaseStyle style = DurationBaseStyle::Short;
+  int8_t fractionalDigits = -1;
+};
+
+struct DurationUnitOptions {
+  // Use the same bit-widths for fast extraction from DurationFormatOptions.
+  DurationDisplay display : 1;
+  DurationStyle style : 3;
+};
+
+struct PackedDurationFormatOptions {
+  using RawValue = uint64_t;
+
+  template <typename T>
+  using DisplayField =
+      packed::EnumField<T, DurationDisplay::Auto, DurationDisplay::Always>;
+
+  template <typename T>
+  using StyleField =
+      packed::EnumField<T, DurationStyle::Long, DurationStyle::TwoDigit>;
+
+#define DECLARE_DURATION_UNIT(Name, Previous)        \
+  using Name##DisplayField = DisplayField<Previous>; \
+  using Name##StyleField = StyleField<Name##DisplayField>;
+
+  DECLARE_DURATION_UNIT(Years, RawValue);
+  DECLARE_DURATION_UNIT(Months, YearsStyleField);
+  DECLARE_DURATION_UNIT(Weeks, MonthsStyleField);
+  DECLARE_DURATION_UNIT(Days, WeeksStyleField);
+  DECLARE_DURATION_UNIT(Hours, DaysStyleField);
+  DECLARE_DURATION_UNIT(Minutes, HoursStyleField);
+  DECLARE_DURATION_UNIT(Seconds, MinutesStyleField);
+  DECLARE_DURATION_UNIT(Milliseconds, SecondsStyleField);
+  DECLARE_DURATION_UNIT(Microseconds, MillisecondsStyleField);
+  DECLARE_DURATION_UNIT(Nanoseconds, MicrosecondsStyleField);
+
+#undef DECLARE_DURATION_UNIT
+
+  using BaseStyleField =
+      packed::EnumField<NanosecondsStyleField, DurationBaseStyle::Long,
+                        DurationBaseStyle::Digital>;
+
+  using FractionalDigitsField =
+      packed::RangeField<BaseStyleField, int8_t, -1, 9>;
+
+  using PackedValue = packed::PackedValue<FractionalDigitsField>;
+
+  static auto pack(const DurationFormatOptions& options) {
+#define PACK_DURATION_UNIT(UPPER, LOWER)                \
+  UPPER##sDisplayField::pack(options.LOWER##sDisplay) | \
+      UPPER##sStyleField::pack(options.LOWER##sStyle) |
+
+    RawValue rawValue = FOR_EACH_DURATION_UNIT(PACK_DURATION_UNIT)
+                            BaseStyleField::pack(options.style) |
+                        FractionalDigitsField::pack(options.fractionalDigits);
+    return PackedValue::toValue(rawValue);
+
+#undef PACK_DURATION_UNIT
+  }
+
+  static auto unpack(JS::Value value) {
+#define UNPACK_DURATION_UNIT(UPPER, LOWER)                   \
+  .LOWER##sDisplay = UPPER##sDisplayField::unpack(rawValue), \
+  .LOWER##sStyle = UPPER##sStyleField::unpack(rawValue),
+
+    RawValue rawValue = PackedValue::fromValue(value);
+    return DurationFormatOptions{
+        FOR_EACH_DURATION_UNIT(UNPACK_DURATION_UNIT).style =
+            BaseStyleField::unpack(rawValue),
+        .fractionalDigits = FractionalDigitsField::unpack(rawValue),
+    };
+
+#undef UNPACK_DURATION_UNIT
+  }
+};
+
+DurationFormatOptions js::intl::DurationFormatObject::getOptions() const {
+  const auto& slot = getFixedSlot(OPTIONS_SLOT);
+  if (slot.isUndefined()) {
+    // GCC complains when returning `{}` without an explicit type. This happens
+    // because DurationFormatOptions contains bit-fields of scoped enum types.
+    //
+    // Simplified test case: https://godbolt.org/z/dxfWEGn6b
+    return DurationFormatOptions{};
+  }
+  return PackedDurationFormatOptions::unpack(slot);
+}
+
+void js::intl::DurationFormatObject::setOptions(
+    const DurationFormatOptions& options) {
+  setFixedSlot(OPTIONS_SLOT, PackedDurationFormatOptions::pack(options));
+}
+
+void js::intl::DurationFormatObject::finalize(JS::GCContext* gcx,
+                                              JSObject* obj) {
   auto* durationFormat = &obj->as<DurationFormatObject>();
 
   for (auto unit : durationUnits) {
@@ -138,10 +268,493 @@ void js::DurationFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
     RemoveICUCellMemory(gcx, obj, ListFormatObject::EstimatedMemoryUse);
     delete lf;
   }
+}
 
-  if (auto* options = durationFormat->getOptions()) {
-    gcx->delete_(obj, options, MemoryUse::IntlOptions);
+static constexpr std::string_view DisplayToString(DurationDisplay display) {
+#ifndef USING_ENUM
+  using enum DurationDisplay;
+#else
+  USING_ENUM(DurationDisplay, Auto, Always);
+#endif
+  switch (display) {
+    case Auto:
+      return "auto";
+    case Always:
+      return "always";
   }
+  MOZ_CRASH("invalid duration format display");
+}
+
+static constexpr std::string_view DurationStyleToString(DurationStyle style) {
+#ifndef USING_ENUM
+  using enum DurationStyle;
+#else
+  USING_ENUM(DurationStyle, Long, Short, Narrow, Numeric, TwoDigit);
+#endif
+  switch (style) {
+    case Long:
+      return "long";
+    case Short:
+      return "short";
+    case Narrow:
+      return "narrow";
+    case Numeric:
+      return "numeric";
+    case TwoDigit:
+      return "2-digit";
+  }
+  MOZ_CRASH("invalid duration format style");
+}
+
+static constexpr std::string_view BaseStyleToString(DurationBaseStyle style) {
+#ifndef USING_ENUM
+  using enum DurationBaseStyle;
+#else
+  USING_ENUM(DurationBaseStyle, Long, Short, Narrow, Digital);
+#endif
+  switch (style) {
+    case Long:
+      return "long";
+    case Short:
+      return "short";
+    case Narrow:
+      return "narrow";
+    case Digital:
+      return "digital";
+  }
+  MOZ_CRASH("invalid duration format base style");
+}
+
+/**
+ * Return the singular name for |unit|.
+ */
+static std::string_view SingularUnitName(TemporalUnit unit) {
+  switch (unit) {
+#define SINGULAR_UNIT_NAME(UPPER, LOWER) \
+  case TemporalUnit::UPPER:              \
+    return #LOWER;
+
+    FOR_EACH_DURATION_UNIT(SINGULAR_UNIT_NAME)
+
+#undef SINGULAR_UNIT_NAME
+
+    case TemporalUnit::Unset:
+    case TemporalUnit::Auto:
+      break;
+  }
+  MOZ_CRASH("invalid temporal unit");
+}
+
+/**
+ * Return the plural name for |unit|.
+ */
+static std::string_view PluralUnitName(TemporalUnit unit) {
+  switch (unit) {
+#define PLURAL_UNIT_NAME(UPPER, LOWER) \
+  case TemporalUnit::UPPER:            \
+    return #LOWER "s";
+
+    FOR_EACH_DURATION_UNIT(PLURAL_UNIT_NAME)
+
+#undef PLURAL_UNIT_NAME
+
+    case TemporalUnit::Unset:
+    case TemporalUnit::Auto:
+      break;
+  }
+  MOZ_CRASH("invalid temporal unit");
+}
+
+/**
+ * Return the "style" property name for |unit|.
+ */
+static Handle<PropertyName*> DurationStyleName(TemporalUnit unit,
+                                               JSContext* cx) {
+  switch (unit) {
+#define DURATION_STYLE_NAME(UPPER, LOWER) \
+  case TemporalUnit::UPPER:               \
+    return cx->names().LOWER##s;
+
+    FOR_EACH_DURATION_UNIT(DURATION_STYLE_NAME)
+
+#undef DURATION_STYLE_NAME
+
+    case TemporalUnit::Unset:
+    case TemporalUnit::Auto:
+      break;
+  }
+  MOZ_CRASH("invalid temporal unit");
+}
+
+/**
+ * Return the "display" property name for |unit|.
+ */
+static Handle<PropertyName*> DurationDisplayName(TemporalUnit unit,
+                                                 JSContext* cx) {
+  switch (unit) {
+#define DURATION_DISPLAY_NAME(UPPER, LOWER) \
+  case TemporalUnit::UPPER:                 \
+    return cx->names().LOWER##sDisplay;
+
+    FOR_EACH_DURATION_UNIT(DURATION_DISPLAY_NAME)
+
+#undef DURATION_DISPLAY_NAME
+
+    case TemporalUnit::Unset:
+    case TemporalUnit::Auto:
+      break;
+  }
+  MOZ_CRASH("invalid temporal unit");
+}
+
+/**
+ * IsFractionalSecondUnitName ( unit )
+ */
+static inline bool IsFractionalSecondUnitName(TemporalUnit unit) {
+  return TemporalUnit::Millisecond <= unit && unit <= TemporalUnit::Nanosecond;
+}
+
+/**
+ * GetDurationUnitOptions ( unit, options, baseStyle, stylesList, digitalBase,
+ * prevStyle, twoDigitHours )
+ */
+static bool GetDurationUnitOptions(
+    JSContext* cx, TemporalUnit unit, Handle<JSObject*> options,
+    DurationBaseStyle baseStyle, DurationStyle digitalBase,
+    DurationStyle prevStyle,
+    std::pair<DurationStyle, DurationDisplay>* result) {
+  // Step 1.
+  mozilla::Maybe<DurationStyle> styleOption{};
+  switch (unit) {
+    case TemporalUnit::Year:
+    case TemporalUnit::Month:
+    case TemporalUnit::Week:
+    case TemporalUnit::Day: {
+      static constexpr auto styles = MapOptions<DurationStyleToString>(
+          DurationStyle::Long, DurationStyle::Short, DurationStyle::Narrow);
+      if (!GetStringOption(cx, options, DurationStyleName(unit, cx), styles,
+                           &styleOption)) {
+        return false;
+      }
+      break;
+    }
+
+    case TemporalUnit::Hour:
+    case TemporalUnit::Minute:
+    case TemporalUnit::Second: {
+      static constexpr auto styles = MapOptions<DurationStyleToString>(
+          DurationStyle::Long, DurationStyle::Short, DurationStyle::Narrow,
+          DurationStyle::Numeric, DurationStyle::TwoDigit);
+      if (!GetStringOption(cx, options, DurationStyleName(unit, cx), styles,
+                           &styleOption)) {
+        return false;
+      }
+      break;
+    }
+
+    case TemporalUnit::Millisecond:
+    case TemporalUnit::Microsecond:
+    case TemporalUnit::Nanosecond: {
+      static constexpr auto styles = MapOptions<DurationStyleToString>(
+          DurationStyle::Long, DurationStyle::Short, DurationStyle::Narrow,
+          DurationStyle::Numeric);
+      if (!GetStringOption(cx, options, DurationStyleName(unit, cx), styles,
+                           &styleOption)) {
+        return false;
+      }
+      break;
+    }
+
+    case TemporalUnit::Unset:
+    case TemporalUnit::Auto:
+      MOZ_CRASH("invalid temporal unit");
+  }
+
+  // Step 2.
+  auto displayDefault = DurationDisplay::Always;
+
+  // Step 3.
+  if (styleOption.isNothing()) {
+    // Step 3.a.
+    if (baseStyle == DurationBaseStyle::Digital) {
+      // Step 3.a.i.
+      styleOption = mozilla::Some(digitalBase);
+
+      // Step 3.a.ii.
+      if (!(TemporalUnit::Hour <= unit && unit <= TemporalUnit::Second)) {
+        displayDefault = DurationDisplay::Auto;
+      }
+    }
+
+    // Step 3.b. ("fractional" handled implicitly)
+    else if (prevStyle == DurationStyle::Numeric ||
+             prevStyle == DurationStyle::TwoDigit) {
+      // Step 3.b.i.
+      styleOption = mozilla::Some(DurationStyle::Numeric);
+
+      // Step 3.b.ii.
+      if (unit != TemporalUnit::Minute && unit != TemporalUnit::Second) {
+        displayDefault = DurationDisplay::Auto;
+      }
+    }
+
+    // Step 3.c.
+    else {
+      // Step 3.c.i.
+      styleOption = mozilla::Some(static_cast<DurationStyle>(baseStyle));
+
+      // Step 3.c.ii.
+      displayDefault = DurationDisplay::Auto;
+    }
+  }
+  auto style = *styleOption;
+
+  // Step 4.
+  bool isFractional =
+      style == DurationStyle::Numeric && IsFractionalSecondUnitName(unit);
+  if (isFractional) {
+    // Step 4.a. (Not applicable in our implementation)
+
+    // Step 4.b.
+    displayDefault = DurationDisplay::Auto;
+  }
+
+  // Steps 5-6.
+  static constexpr auto displays = MapOptions<DisplayToString>(
+      DurationDisplay::Auto, DurationDisplay::Always);
+
+  mozilla::Maybe<DurationDisplay> displayOption{};
+  if (!GetStringOption(cx, options, DurationDisplayName(unit, cx), displays,
+                       &displayOption)) {
+    return false;
+  }
+  auto display = displayOption.valueOr(displayDefault);
+
+  // Step 7. (Inlined ValidateDurationUnitStyle)
+
+  // ValidateDurationUnitStyle, step 1.
+  if (display == DurationDisplay::Always && isFractional) {
+    MOZ_ASSERT(styleOption.isSome() || displayOption.isSome(),
+               "no error is thrown when both 'style' and 'display' are absent");
+
+    JSErrNum errorNumber =
+        styleOption.isSome() && displayOption.isSome()
+            ? JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION
+        : displayOption.isSome()
+            ? JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION_DEFAULT_STYLE
+            : JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION_DEFAULT_DISPLAY;
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, errorNumber,
+                              PluralUnitName(unit).data());
+    return false;
+  }
+
+  // ValidateDurationUnitStyle, steps 2-3.
+  if ((prevStyle == DurationStyle::Numeric ||
+       prevStyle == DurationStyle::TwoDigit) &&
+      !(style == DurationStyle::Numeric || style == DurationStyle::TwoDigit)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_INTL_DURATION_INVALID_NON_NUMERIC_OPTION,
+                              PluralUnitName(unit).data(),
+                              DurationStyleToString(style).data());
+    return false;
+  }
+
+  // Step 8. (Our implementation doesn't use |twoDigitHours|.)
+
+  // Step 9.
+  if ((TemporalUnit::Minute == unit || unit == TemporalUnit::Second) &&
+      (prevStyle == DurationStyle::Numeric ||
+       prevStyle == DurationStyle::TwoDigit)) {
+    style = DurationStyle::TwoDigit;
+  }
+
+  // Step 10.
+  *result = {style, display};
+  return true;
+}
+
+/**
+ * Intl.DurationFormat ( [ locales [ , options ] ] )
+ */
+static bool InitializeDurationFormat(
+    JSContext* cx, Handle<DurationFormatObject*> durationFormat,
+    const CallArgs& args) {
+  // Step 3. (Inlined ResolveOptions)
+
+  // ResolveOptions, step 1.
+  Rooted<LocalesList> requestedLocales(cx, cx);
+  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+    return false;
+  }
+
+  Rooted<ArrayObject*> requestedLocalesArray(
+      cx, LocalesListToArray(cx, requestedLocales));
+  if (!requestedLocalesArray) {
+    return false;
+  }
+  durationFormat->setRequestedLocales(requestedLocalesArray);
+
+  DurationFormatOptions dfOptions{};
+
+  if (args.hasDefined(1)) {
+    // ResolveOptions, steps 2-3.
+    Rooted<JSObject*> options(cx, JS::ToObject(cx, args[1]));
+    if (!options) {
+      return false;
+    }
+
+    // ResolveOptions, step 4.
+    LocaleMatcher matcher;
+    if (!GetLocaleMatcherOption(cx, options, &matcher)) {
+      return false;
+    }
+
+    // ResolveOptions, step 5.
+    //
+    // This implementation only supports the "lookup" locale matcher, therefore
+    // the "localeMatcher" option doesn't need to be stored.
+
+    // ResolveOptions, step 6.
+    Rooted<JSLinearString*> numberingSystem(cx);
+    if (!GetUnicodeExtensionOption(cx, options,
+                                   UnicodeExtensionKey::NumberingSystem,
+                                   &numberingSystem)) {
+      return false;
+    }
+    if (numberingSystem) {
+      durationFormat->setNumberingSystem(numberingSystem);
+    }
+
+    // ResolveOptions, step 7. (Not applicable)
+
+    // ResolveOptions, step 8. (Performed in ResolveLocale)
+
+    // ResolveOptions, step 9. (Return)
+
+    // Step 4. (Not applicable when ResolveOptions is inlined.)
+
+    // Steps 5-11. (Performed in ResolveLocale)
+
+    // Steps 12-13.
+    static constexpr auto styles = MapOptions<BaseStyleToString>(
+        DurationBaseStyle::Long, DurationBaseStyle::Short,
+        DurationBaseStyle::Narrow, DurationBaseStyle::Digital);
+    DurationBaseStyle style;
+    if (!GetStringOption(cx, options, cx->names().style, styles,
+                         DurationBaseStyle::Short, &style)) {
+      return false;
+    }
+    dfOptions.style = style;
+
+    // Step 14.
+    //
+    // This implementation doesn't support passing an empty string for
+    // |prevStyle|. Using one of the textual styles has the same effect, so we
+    // use "long" here.
+    constexpr auto emptyPrevStyle = DurationStyle::Long;
+
+    // Step 15. (Loop unrolled)
+    using DurationUnitOption = std::pair<DurationStyle, DurationDisplay>;
+
+    DurationUnitOption years;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Year, options, style,
+                                DurationStyle::Short, emptyPrevStyle, &years)) {
+      return false;
+    }
+    dfOptions.yearsStyle = years.first;
+    dfOptions.yearsDisplay = years.second;
+
+    DurationUnitOption months;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Month, options, style,
+                                DurationStyle::Short, emptyPrevStyle,
+                                &months)) {
+      return false;
+    }
+    dfOptions.monthsStyle = months.first;
+    dfOptions.monthsDisplay = months.second;
+
+    DurationUnitOption weeks;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Week, options, style,
+                                DurationStyle::Short, emptyPrevStyle, &weeks)) {
+      return false;
+    }
+    dfOptions.weeksStyle = weeks.first;
+    dfOptions.weeksDisplay = weeks.second;
+
+    DurationUnitOption days;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Day, options, style,
+                                DurationStyle::Short, emptyPrevStyle, &days)) {
+      return false;
+    }
+    dfOptions.daysStyle = days.first;
+    dfOptions.daysDisplay = days.second;
+
+    DurationUnitOption hours;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Hour, options, style,
+                                DurationStyle::Numeric, emptyPrevStyle,
+                                &hours)) {
+      return false;
+    }
+    dfOptions.hoursStyle = hours.first;
+    dfOptions.hoursDisplay = hours.second;
+
+    DurationUnitOption minutes;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Minute, options, style,
+                                DurationStyle::Numeric, hours.first,
+                                &minutes)) {
+      return false;
+    }
+    dfOptions.minutesStyle = minutes.first;
+    dfOptions.minutesDisplay = minutes.second;
+
+    DurationUnitOption seconds;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Second, options, style,
+                                DurationStyle::Numeric, minutes.first,
+                                &seconds)) {
+      return false;
+    }
+    dfOptions.secondsStyle = seconds.first;
+    dfOptions.secondsDisplay = seconds.second;
+
+    DurationUnitOption milliseconds;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Millisecond, options, style,
+                                DurationStyle::Numeric, seconds.first,
+                                &milliseconds)) {
+      return false;
+    }
+    dfOptions.millisecondsStyle = milliseconds.first;
+    dfOptions.millisecondsDisplay = milliseconds.second;
+
+    DurationUnitOption microseconds;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Microsecond, options, style,
+                                DurationStyle::Numeric, milliseconds.first,
+                                &microseconds)) {
+      return false;
+    }
+    dfOptions.microsecondsStyle = microseconds.first;
+    dfOptions.microsecondsDisplay = microseconds.second;
+
+    DurationUnitOption nanoseconds;
+    if (!GetDurationUnitOptions(cx, TemporalUnit::Nanosecond, options, style,
+                                DurationStyle::Numeric, microseconds.first,
+                                &nanoseconds)) {
+      return false;
+    }
+    dfOptions.nanosecondsStyle = nanoseconds.first;
+    dfOptions.nanosecondsDisplay = nanoseconds.second;
+
+    // Step 16.
+    mozilla::Maybe<int32_t> fractionalDigits{};
+    if (!GetNumberOption(cx, options, cx->names().fractionalDigits, 0, 9,
+                         &fractionalDigits)) {
+      return false;
+    }
+    dfOptions.fractionalDigits =
+        static_cast<int8_t>(fractionalDigits.valueOr(-1));
+  }
+  durationFormat->setOptions(dfOptions);
+
+  return true;
 }
 
 /**
@@ -156,7 +769,7 @@ static bool DurationFormat(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
-  RootedObject proto(cx);
+  Rooted<JSObject*> proto(cx);
   if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_DurationFormat,
                                           &proto)) {
     return false;
@@ -168,17 +781,64 @@ static bool DurationFormat(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  HandleValue locales = args.get(0);
-  HandleValue options = args.get(1);
-
-  // Steps 3-28.
-  if (!InitializeObject(cx, durationFormat,
-                        cx->names().InitializeDurationFormat, locales,
-                        options)) {
+  // Steps 3-16.
+  if (!InitializeDurationFormat(cx, durationFormat, args)) {
     return false;
   }
 
+  // Step 17.
   args.rval().setObject(*durationFormat);
+  return true;
+}
+
+/**
+ * Resolve the actual locale to finish initialization of the DurationFormat.
+ */
+static bool ResolveLocale(JSContext* cx,
+                          Handle<DurationFormatObject*> durationFormat) {
+  // Return if the locale was already resolved.
+  if (durationFormat->isLocaleResolved()) {
+    return true;
+  }
+
+  Rooted<ArrayObject*> requestedLocales(
+      cx, &durationFormat->getRequestedLocales()->as<ArrayObject>());
+
+  // %Intl.DurationFormat%.[[RelevantExtensionKeys]] is « "nu" ».
+  mozilla::EnumSet<UnicodeExtensionKey> relevantExtensionKeys{
+      UnicodeExtensionKey::NumberingSystem,
+  };
+
+  // Initialize locale options from constructor arguments.
+  Rooted<LocaleOptions> localeOptions(cx);
+  if (auto* nu = durationFormat->getNumberingSystem()) {
+    localeOptions.setUnicodeExtension(UnicodeExtensionKey::NumberingSystem, nu);
+  }
+
+  // Use the default locale data.
+  auto localeData = LocaleData::Default;
+
+  // Resolve the actual locale.
+  Rooted<ResolvedLocale> resolved(cx);
+  if (!ResolveLocale(cx, AvailableLocaleKind::DurationFormat, requestedLocales,
+                     localeOptions, relevantExtensionKeys, localeData,
+                     &resolved)) {
+    return false;
+  }
+
+  // Finish initialization by setting the actual locale and numbering system.
+  auto* locale = resolved.toLocale(cx);
+  if (!locale) {
+    return false;
+  }
+  durationFormat->setLocale(locale);
+
+  auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem);
+  MOZ_ASSERT(nu, "resolved numbering system is non-null");
+  durationFormat->setNumberingSystem(nu);
+
+  MOZ_ASSERT(durationFormat->isLocaleResolved(),
+             "locale successfully resolved");
   return true;
 }
 
@@ -191,28 +851,16 @@ static JSString* GetTimeSeparator(
     return separator;
   }
 
-  Rooted<JSObject*> internals(cx, GetInternalsObject(cx, durationFormat));
-  if (!internals) {
+  if (!ResolveLocale(cx, durationFormat)) {
     return nullptr;
   }
 
-  Rooted<Value> value(cx);
-
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
-  UniqueChars locale = EncodeLocale(cx, value.toString());
+  auto locale = EncodeLocale(cx, durationFormat->getLocale());
   if (!locale) {
     return nullptr;
   }
 
-  if (!GetProperty(cx, internals, internals, cx->names().numberingSystem,
-                   &value)) {
-    return nullptr;
-  }
-
-  UniqueChars numberingSystem = EncodeAscii(cx, value.toString());
+  auto numberingSystem = EncodeAscii(cx, durationFormat->getNumberingSystem());
   if (!numberingSystem) {
     return nullptr;
   }
@@ -291,150 +939,21 @@ struct DurationValue {
  * Return the |unit| value from |duration|.
  */
 static auto ToDurationValue(const temporal::Duration& duration,
-                            temporal::TemporalUnit unit) {
-  using namespace temporal;
-
+                            TemporalUnit unit) {
   switch (unit) {
-    case TemporalUnit::Year:
-      return DurationValue{duration.years};
-    case TemporalUnit::Month:
-      return DurationValue{duration.months};
-    case TemporalUnit::Week:
-      return DurationValue{duration.weeks};
-    case TemporalUnit::Day:
-      return DurationValue{duration.days};
-    case TemporalUnit::Hour:
-      return DurationValue{duration.hours};
-    case TemporalUnit::Minute:
-      return DurationValue{duration.minutes};
-    case TemporalUnit::Second:
-      return DurationValue{duration.seconds};
-    case TemporalUnit::Millisecond:
-      return DurationValue{duration.milliseconds};
-    case TemporalUnit::Microsecond:
-      return DurationValue{duration.microseconds};
-    case TemporalUnit::Nanosecond:
-      return DurationValue{duration.nanoseconds};
+#define TO_DURATION_VALUE(UPPER, LOWER) \
+  case TemporalUnit::UPPER:             \
+    return DurationValue{duration.LOWER##s};
+
+    FOR_EACH_DURATION_UNIT(TO_DURATION_VALUE)
+
+#undef TO_DURATION_VALUE
+
+    case TemporalUnit::Unset:
     case TemporalUnit::Auto:
       break;
   }
   MOZ_CRASH("invalid temporal unit");
-}
-
-/**
- * Return the "display" property name for |unit|.
- */
-static PropertyName* DurationDisplayName(temporal::TemporalUnit unit,
-                                         JSContext* cx) {
-  using namespace temporal;
-
-  switch (unit) {
-    case TemporalUnit::Year:
-      return cx->names().yearsDisplay;
-    case TemporalUnit::Month:
-      return cx->names().monthsDisplay;
-    case TemporalUnit::Week:
-      return cx->names().weeksDisplay;
-    case TemporalUnit::Day:
-      return cx->names().daysDisplay;
-    case TemporalUnit::Hour:
-      return cx->names().hoursDisplay;
-    case TemporalUnit::Minute:
-      return cx->names().minutesDisplay;
-    case TemporalUnit::Second:
-      return cx->names().secondsDisplay;
-    case TemporalUnit::Millisecond:
-      return cx->names().millisecondsDisplay;
-    case TemporalUnit::Microsecond:
-      return cx->names().microsecondsDisplay;
-    case TemporalUnit::Nanosecond:
-      return cx->names().nanosecondsDisplay;
-    case TemporalUnit::Auto:
-      break;
-  }
-  MOZ_CRASH("invalid temporal unit");
-}
-
-/**
- * Convert |value|, which must be a string, to a |DurationDisplay|.
- */
-static bool ToDurationDisplay(JSContext* cx, const Value& value,
-                              DurationDisplay* result) {
-  MOZ_ASSERT(value.isString());
-
-  auto* linear = value.toString()->ensureLinear(cx);
-  if (!linear) {
-    return false;
-  }
-
-  if (StringEqualsAscii(linear, "auto")) {
-    *result = DurationDisplay::Auto;
-  } else {
-    MOZ_ASSERT(StringEqualsAscii(linear, "always"));
-    *result = DurationDisplay::Always;
-  }
-  return true;
-}
-
-/**
- * Return the "style" property name for |unit|.
- */
-static PropertyName* DurationStyleName(temporal::TemporalUnit unit,
-                                       JSContext* cx) {
-  using namespace temporal;
-
-  switch (unit) {
-    case TemporalUnit::Year:
-      return cx->names().yearsStyle;
-    case TemporalUnit::Month:
-      return cx->names().monthsStyle;
-    case TemporalUnit::Week:
-      return cx->names().weeksStyle;
-    case TemporalUnit::Day:
-      return cx->names().daysStyle;
-    case TemporalUnit::Hour:
-      return cx->names().hoursStyle;
-    case TemporalUnit::Minute:
-      return cx->names().minutesStyle;
-    case TemporalUnit::Second:
-      return cx->names().secondsStyle;
-    case TemporalUnit::Millisecond:
-      return cx->names().millisecondsStyle;
-    case TemporalUnit::Microsecond:
-      return cx->names().microsecondsStyle;
-    case TemporalUnit::Nanosecond:
-      return cx->names().nanosecondsStyle;
-    case TemporalUnit::Auto:
-      break;
-  }
-  MOZ_CRASH("invalid temporal unit");
-}
-
-/**
- * Convert |value|, which must be a string, to a |DurationStyle|.
- */
-static bool ToDurationStyle(JSContext* cx, const Value& value,
-                            DurationStyle* result) {
-  MOZ_ASSERT(value.isString());
-
-  auto* linear = value.toString()->ensureLinear(cx);
-  if (!linear) {
-    return false;
-  }
-
-  if (StringEqualsAscii(linear, "long")) {
-    *result = DurationStyle::Long;
-  } else if (StringEqualsAscii(linear, "short")) {
-    *result = DurationStyle::Short;
-  } else if (StringEqualsAscii(linear, "narrow")) {
-    *result = DurationStyle::Narrow;
-  } else if (StringEqualsAscii(linear, "numeric")) {
-    *result = DurationStyle::Numeric;
-  } else {
-    MOZ_ASSERT(StringEqualsAscii(linear, "2-digit"));
-    *result = DurationStyle::TwoDigit;
-  }
-  return true;
 }
 
 /**
@@ -442,10 +961,9 @@ static bool ToDurationStyle(JSContext* cx, const Value& value,
  */
 static std::pair<uint32_t, uint32_t> GetFractionalDigits(
     const DurationFormatObject* durationFormat) {
-  auto* options = durationFormat->getOptions();
-  MOZ_ASSERT(options, "unexpected unresolved duration format options");
+  auto options = durationFormat->getOptions();
 
-  int8_t digits = options->fractionalDigits;
+  int8_t digits = options.fractionalDigits;
   MOZ_ASSERT(digits <= 9);
 
   if (digits < 0) {
@@ -455,201 +973,44 @@ static std::pair<uint32_t, uint32_t> GetFractionalDigits(
 }
 
 static DurationUnitOptions GetUnitOptions(const DurationFormatOptions& options,
-                                          temporal::TemporalUnit unit) {
-  using namespace temporal;
-
+                                          TemporalUnit unit) {
   switch (unit) {
-#define GET_UNIT_OPTIONS(name) \
-  DurationUnitOptions { options.name##Display, options.name##Style }
+#define GET_UNIT_OPTIONS(UPPER, LOWER) \
+  case TemporalUnit::UPPER:            \
+    return DurationUnitOptions{options.LOWER##sDisplay, options.LOWER##sStyle};
 
-    case TemporalUnit::Year:
-      return GET_UNIT_OPTIONS(years);
-    case TemporalUnit::Month:
-      return GET_UNIT_OPTIONS(months);
-    case TemporalUnit::Week:
-      return GET_UNIT_OPTIONS(weeks);
-    case TemporalUnit::Day:
-      return GET_UNIT_OPTIONS(days);
-    case TemporalUnit::Hour:
-      return GET_UNIT_OPTIONS(hours);
-    case TemporalUnit::Minute:
-      return GET_UNIT_OPTIONS(minutes);
-    case TemporalUnit::Second:
-      return GET_UNIT_OPTIONS(seconds);
-    case TemporalUnit::Millisecond:
-      return GET_UNIT_OPTIONS(milliseconds);
-    case TemporalUnit::Microsecond:
-      return GET_UNIT_OPTIONS(microseconds);
-    case TemporalUnit::Nanosecond:
-      return GET_UNIT_OPTIONS(nanoseconds);
-    case TemporalUnit::Auto:
-      break;
+    FOR_EACH_DURATION_UNIT(GET_UNIT_OPTIONS)
 
 #undef GET_UNIT_OPTIONS
-  }
-  MOZ_CRASH("invalid duration unit");
-}
 
-static void SetUnitOptions(DurationFormatOptions& options,
-                           temporal::TemporalUnit unit,
-                           const DurationUnitOptions& unitOptions) {
-  using namespace temporal;
-
-  switch (unit) {
-#define SET_UNIT_OPTIONS(name)                    \
-  do {                                            \
-    options.name##Display = unitOptions.display_; \
-    options.name##Style = unitOptions.style_;     \
-  } while (0)
-
-    case TemporalUnit::Year:
-      SET_UNIT_OPTIONS(years);
-      return;
-    case TemporalUnit::Month:
-      SET_UNIT_OPTIONS(months);
-      return;
-    case TemporalUnit::Week:
-      SET_UNIT_OPTIONS(weeks);
-      return;
-    case TemporalUnit::Day:
-      SET_UNIT_OPTIONS(days);
-      return;
-    case TemporalUnit::Hour:
-      SET_UNIT_OPTIONS(hours);
-      return;
-    case TemporalUnit::Minute:
-      SET_UNIT_OPTIONS(minutes);
-      return;
-    case TemporalUnit::Second:
-      SET_UNIT_OPTIONS(seconds);
-      return;
-    case TemporalUnit::Millisecond:
-      SET_UNIT_OPTIONS(milliseconds);
-      return;
-    case TemporalUnit::Microsecond:
-      SET_UNIT_OPTIONS(microseconds);
-      return;
-    case TemporalUnit::Nanosecond:
-      SET_UNIT_OPTIONS(nanoseconds);
-      return;
+    case TemporalUnit::Unset:
     case TemporalUnit::Auto:
       break;
-
-#undef SET_UNIT_OPTIONS
   }
   MOZ_CRASH("invalid duration unit");
 }
 
-static DurationFormatOptions* NewDurationFormatOptions(
-    JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
-  Rooted<JSObject*> internals(cx, GetInternalsObject(cx, durationFormat));
-  if (!internals) {
-    return nullptr;
-  }
-
-  auto options = cx->make_unique<DurationFormatOptions>();
-  if (!options) {
-    return nullptr;
-  }
-
-  Rooted<Value> value(cx);
-  for (temporal::TemporalUnit unit : durationUnits) {
-    DurationDisplay display;
-    if (!GetProperty(cx, internals, internals, DurationDisplayName(unit, cx),
-                     &value)) {
-      return nullptr;
-    }
-    if (!ToDurationDisplay(cx, value, &display)) {
-      return nullptr;
-    }
-
-    DurationStyle style;
-    if (!GetProperty(cx, internals, internals, DurationStyleName(unit, cx),
-                     &value)) {
-      return nullptr;
-    }
-    if (!ToDurationStyle(cx, value, &style)) {
-      return nullptr;
-    }
-
-    SetUnitOptions(*options, unit,
-                   DurationUnitOptions{static_cast<uint8_t>(display),
-                                       static_cast<uint8_t>(style)});
-  }
-
-  if (!GetProperty(cx, internals, internals, cx->names().fractionalDigits,
-                   &value)) {
-    return nullptr;
-  }
-  if (value.isUndefined()) {
-    options->fractionalDigits = -1;
-  } else {
-    options->fractionalDigits = value.toInt32();
-  }
-
-  return options.release();
-}
-
-static DurationFormatOptions* GetOrCreateDurationFormatOptions(
-    JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
-  auto* options = durationFormat->getOptions();
-  if (options) {
-    return options;
-  }
-
-  options = NewDurationFormatOptions(cx, durationFormat);
-  if (!options) {
-    return nullptr;
-  }
-  durationFormat->setOptions(options);
-
-  AddCellMemory(durationFormat, sizeof(DurationFormatOptions),
-                MemoryUse::IntlOptions);
-  return options;
-}
-
 /**
- * Return the locale for `mozilla::intl::NumberFormat` objects.
- */
-static UniqueChars NewDurationNumberFormatLocale(
-    JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
-  // ICU expects numberingSystem as a Unicode locale extensions on locale.
-
-  Rooted<JSObject*> internals(cx, GetInternalsObject(cx, durationFormat));
-  if (!internals) {
-    return nullptr;
-  }
-
-  JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
-
-  Rooted<Value> value(cx);
-  if (!GetProperty(cx, internals, internals, cx->names().numberingSystem,
-                   &value)) {
-    return nullptr;
-  }
-
-  {
-    auto* numberingSystem = value.toString()->ensureLinear(cx);
-    if (!numberingSystem) {
-      return nullptr;
-    }
-
-    if (!keywords.emplaceBack("nu", numberingSystem)) {
-      return nullptr;
-    }
-  }
-
-  return FormatLocale(cx, internals, keywords);
-}
-
-/**
- * Create a `mozilla::intl::NumberFormat` instance based on |internals.locale|
- * and |options|.
+ * Create a `mozilla::intl::NumberFormat` instance based on
+ * |durationFormat.locale| and |options|.
  */
 static mozilla::intl::NumberFormat* NewDurationNumberFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
     const mozilla::intl::NumberFormatOptions& options) {
-  auto locale = NewDurationNumberFormatLocale(cx, durationFormat);
+  if (!ResolveLocale(cx, durationFormat)) {
+    return nullptr;
+  }
+
+  // ICU expects numberingSystem as a Unicode locale extensions on locale.
+
+  Rooted<JSLinearString*> localeStr(cx, durationFormat->getLocale());
+
+  JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
+  if (!keywords.emplaceBack("nu", durationFormat->getNumberingSystem())) {
+    return nullptr;
+  }
+
+  auto locale = FormatLocale(cx, localeStr, keywords);
   if (!locale) {
     return nullptr;
   }
@@ -663,65 +1024,19 @@ static mozilla::intl::NumberFormat* NewDurationNumberFormat(
 }
 
 /**
- * Return the singular name for |unit|.
+ * Return the number format unit for |unit|.
  */
-static std::string_view UnitName(temporal::TemporalUnit unit) {
-  using namespace temporal;
-
+static auto ToNumberFormatUnit(TemporalUnit unit) {
   switch (unit) {
-    case TemporalUnit::Year:
-      return "year";
-    case TemporalUnit::Month:
-      return "month";
-    case TemporalUnit::Week:
-      return "week";
-    case TemporalUnit::Day:
-      return "day";
-    case TemporalUnit::Hour:
-      return "hour";
-    case TemporalUnit::Minute:
-      return "minute";
-    case TemporalUnit::Second:
-      return "second";
-    case TemporalUnit::Millisecond:
-      return "millisecond";
-    case TemporalUnit::Microsecond:
-      return "microsecond";
-    case TemporalUnit::Nanosecond:
-      return "nanosecond";
-    case TemporalUnit::Auto:
-      break;
-  }
-  MOZ_CRASH("invalid temporal unit");
-}
+#define TO_NUMBER_FORMAT_UNIT(UPPER, LOWER) \
+  case TemporalUnit::UPPER:                 \
+    return NumberFormatUnit::UPPER;
 
-/**
- * Return the singular name for |unit|.
- */
-static auto PartUnitName(temporal::TemporalUnit unit) {
-  using namespace temporal;
+    FOR_EACH_DURATION_UNIT(TO_NUMBER_FORMAT_UNIT)
 
-  switch (unit) {
-    case TemporalUnit::Year:
-      return &JSAtomState::year;
-    case TemporalUnit::Month:
-      return &JSAtomState::month;
-    case TemporalUnit::Week:
-      return &JSAtomState::week;
-    case TemporalUnit::Day:
-      return &JSAtomState::day;
-    case TemporalUnit::Hour:
-      return &JSAtomState::hour;
-    case TemporalUnit::Minute:
-      return &JSAtomState::minute;
-    case TemporalUnit::Second:
-      return &JSAtomState::second;
-    case TemporalUnit::Millisecond:
-      return &JSAtomState::millisecond;
-    case TemporalUnit::Microsecond:
-      return &JSAtomState::microsecond;
-    case TemporalUnit::Nanosecond:
-      return &JSAtomState::nanosecond;
+#undef TO_NUMBER_FORMAT_UNIT
+
+    case TemporalUnit::Unset:
     case TemporalUnit::Auto:
       break;
   }
@@ -757,15 +1072,13 @@ static auto UnitDisplay(DurationStyle style) {
  * decimal string when the fractional part is non-zero.
  */
 static auto ComputeFractionalDigits(const temporal::Duration& duration,
-                                    temporal::TemporalUnit unit) {
-  using namespace temporal;
-
+                                    TemporalUnit unit) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT(TemporalUnit::Second <= unit && unit <= TemporalUnit::Microsecond);
 
   // Directly return the duration amount when no sub-seconds are present, i.e.
   // the fractional part is zero.
-  TimeDuration timeDuration;
+  temporal::TimeDuration timeDuration;
   int32_t exponent;
   switch (unit) {
     case TemporalUnit::Second: {
@@ -773,7 +1086,7 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
           duration.nanoseconds == 0) {
         return DurationValue{duration.seconds};
       }
-      timeDuration = TimeDurationFromComponents({
+      timeDuration = temporal::TimeDurationFromComponents({
           0,
           0,
           0,
@@ -793,7 +1106,7 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
       if (duration.microseconds == 0 && duration.nanoseconds == 0) {
         return DurationValue{duration.milliseconds};
       }
-      timeDuration = TimeDurationFromComponents({
+      timeDuration = temporal::TimeDurationFromComponents({
           0,
           0,
           0,
@@ -813,7 +1126,7 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
       if (duration.nanoseconds == 0) {
         return DurationValue{duration.microseconds};
       }
-      timeDuration = TimeDurationFromComponents({
+      timeDuration = temporal::TimeDurationFromComponents({
           0,
           0,
           0,
@@ -840,7 +1153,7 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
   char* chars = result.decimal;
 
   // Leading '-' sign when the duration is negative.
-  if (timeDuration < TimeDuration{}) {
+  if (timeDuration < temporal::TimeDuration{}) {
     *chars++ = '-';
     timeDuration = timeDuration.abs();
   }
@@ -884,7 +1197,7 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
  */
 static mozilla::intl::NumberFormat* NewNumericFormatter(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
-    temporal::TemporalUnit unit) {
+    TemporalUnit unit) {
   // FormatNumericHours, step 1. (Not applicable in our implementation.)
   // FormatNumericMinutes, steps 1-2. (Not applicable in our implementation.)
   // FormatNumericSeconds, steps 1-2. (Not applicable in our implementation.)
@@ -892,10 +1205,8 @@ static mozilla::intl::NumberFormat* NewNumericFormatter(
   // FormatNumericHours, step 2.
   // FormatNumericMinutes, step 3.
   // FormatNumericSeconds, step 3.
-  auto* dfOptions = durationFormat->getOptions();
-  MOZ_ASSERT(dfOptions, "unexpected unresolved duration format options");
-
-  auto style = GetUnitOptions(*dfOptions, unit).style();
+  auto dfOptions = durationFormat->getOptions();
+  auto style = GetUnitOptions(dfOptions, unit).style;
 
   // FormatNumericHours, step 3.
   // FormatNumericMinutes, step 4.
@@ -929,7 +1240,7 @@ static mozilla::intl::NumberFormat* NewNumericFormatter(
   options.mGrouping = mozilla::intl::NumberFormatOptions::Grouping::Never;
 
   // FormatNumericSeconds, steps 11-14.
-  if (unit == temporal::TemporalUnit::Second) {
+  if (unit == TemporalUnit::Second) {
     // FormatNumericSeconds, step 11.
     auto fractionalDigits = GetFractionalDigits(durationFormat);
 
@@ -949,7 +1260,7 @@ static mozilla::intl::NumberFormat* NewNumericFormatter(
 
 static mozilla::intl::NumberFormat* GetOrCreateNumericFormatter(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
-    temporal::TemporalUnit unit) {
+    TemporalUnit unit) {
   // Obtain a cached mozilla::intl::NumberFormat object.
   auto* nf = durationFormat->getNumberFormat(unit);
   if (nf) {
@@ -970,19 +1281,16 @@ static mozilla::intl::NumberFormat* GetOrCreateNumericFormatter(
  * NextUnitFractional ( durationFormat, unit )
  */
 static bool NextUnitFractional(const DurationFormatObject* durationFormat,
-                               temporal::TemporalUnit unit) {
-  using namespace temporal;
-
+                               TemporalUnit unit) {
   // Steps 1-3.
   if (TemporalUnit::Second <= unit && unit <= TemporalUnit::Microsecond) {
-    auto* options = durationFormat->getOptions();
-    MOZ_ASSERT(options, "unexpected unresolved duration format options");
+    auto options = durationFormat->getOptions();
 
     using TemporalUnitType = std::underlying_type_t<TemporalUnit>;
 
     auto nextUnit =
         static_cast<TemporalUnit>(static_cast<TemporalUnitType>(unit) + 1);
-    auto nextStyle = GetUnitOptions(*options, nextUnit).style();
+    auto nextStyle = GetUnitOptions(options, nextUnit).style;
     return nextStyle == DurationStyle::Numeric;
   }
 
@@ -995,7 +1303,7 @@ static bool NextUnitFractional(const DurationFormatObject* durationFormat,
  */
 static mozilla::intl::NumberFormat* NewNumberFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
-    temporal::TemporalUnit unit, DurationStyle style) {
+    TemporalUnit unit, DurationStyle style) {
   // Step 4.h.i.
   mozilla::intl::NumberFormatOptions options{};
 
@@ -1011,7 +1319,8 @@ static mozilla::intl::NumberFormat* NewNumberFormat(
   }
 
   // Steps 4.h.iii.4-6.
-  options.mUnit = mozilla::Some(std::pair{UnitName(unit), UnitDisplay(style)});
+  options.mUnit =
+      mozilla::Some(std::pair{SingularUnitName(unit), UnitDisplay(style)});
 
   // Step 4.h.iii.7.
   return NewDurationNumberFormat(cx, durationFormat, options);
@@ -1019,14 +1328,13 @@ static mozilla::intl::NumberFormat* NewNumberFormat(
 
 static mozilla::intl::NumberFormat* GetOrCreateNumberFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
-    temporal::TemporalUnit unit, DurationStyle style) {
+    TemporalUnit unit, DurationStyle style) {
   // Obtain a cached mozilla::intl::NumberFormat object.
-  auto* nf = durationFormat->getNumberFormat(unit);
-  if (nf) {
+  if (auto* nf = durationFormat->getNumberFormat(unit)) {
     return nf;
   }
 
-  nf = NewNumberFormat(cx, durationFormat, unit, style);
+  auto* nf = NewNumberFormat(cx, durationFormat, unit, style);
   if (!nf) {
     return nullptr;
   }
@@ -1048,17 +1356,17 @@ static JSLinearString* FormatDurationValueToString(
 static ArrayObject* FormatDurationValueToParts(JSContext* cx,
                                                mozilla::intl::NumberFormat* nf,
                                                const DurationValue& value,
-                                               temporal::TemporalUnit unit) {
+                                               TemporalUnit unit) {
   if (value.isDecimal()) {
     return FormatNumberToParts(cx, nf, std::string_view{value},
-                               PartUnitName(unit));
+                               ToNumberFormatUnit(unit));
   }
-  return FormatNumberToParts(cx, nf, value.number, PartUnitName(unit));
+  return FormatNumberToParts(cx, nf, value.number, ToNumberFormatUnit(unit));
 }
 
 static bool FormatDurationValue(JSContext* cx, mozilla::intl::NumberFormat* nf,
-                                temporal::TemporalUnit unit,
-                                const DurationValue& value, bool formatToParts,
+                                TemporalUnit unit, const DurationValue& value,
+                                bool formatToParts,
                                 MutableHandle<Value> result) {
   if (!formatToParts) {
     auto* str = FormatDurationValueToString(cx, nf, value);
@@ -1087,10 +1395,9 @@ static bool FormatDurationValue(JSContext* cx, mozilla::intl::NumberFormat* nf,
  */
 static bool FormatNumericHoursOrMinutesOrSeconds(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
-    temporal::TemporalUnit unit, const DurationValue& value, bool formatToParts,
+    TemporalUnit unit, const DurationValue& value, bool formatToParts,
     MutableHandle<Value> result) {
-  MOZ_ASSERT(temporal::TemporalUnit::Hour <= unit &&
-             unit <= temporal::TemporalUnit::Second);
+  MOZ_ASSERT(TemporalUnit::Hour <= unit && unit <= TemporalUnit::Second);
 
   // FormatNumericHours, steps 1-10.
   // FormatNumericMinutes, steps 1-11.
@@ -1127,13 +1434,10 @@ static PlainObject* NewLiteralPart(JSContext* cx, JSString* value) {
 static bool FormatNumericUnits(JSContext* cx,
                                Handle<DurationFormatObject*> durationFormat,
                                const temporal::Duration& duration,
-                               temporal::TemporalUnit firstNumericUnit,
+                               TemporalUnit firstNumericUnit,
                                bool signDisplayed, bool formatToParts,
                                MutableHandle<Value> result) {
-  using namespace temporal;
-
-  auto* options = durationFormat->getOptions();
-  MOZ_ASSERT(options, "unexpected unresolved duration format options");
+  auto options = durationFormat->getOptions();
 
   Rooted<Value> formattedValue(cx);
 
@@ -1152,21 +1456,19 @@ static bool FormatNumericUnits(JSContext* cx,
   auto hoursValue = DurationValue{duration.hours};
 
   // Step 4.
-  auto hoursDisplay = GetUnitOptions(*options, TemporalUnit::Hour).display();
+  auto hoursDisplay = GetUnitOptions(options, TemporalUnit::Hour).display;
 
   // Step 5.
   auto minutesValue = DurationValue{duration.minutes};
 
   // Step 6.
-  auto minutesDisplay =
-      GetUnitOptions(*options, TemporalUnit::Minute).display();
+  auto minutesDisplay = GetUnitOptions(options, TemporalUnit::Minute).display;
 
   // Step 7-8.
   auto secondsValue = ComputeFractionalDigits(duration, TemporalUnit::Second);
 
   // Step 9.
-  auto secondsDisplay =
-      GetUnitOptions(*options, TemporalUnit::Second).display();
+  auto secondsDisplay = GetUnitOptions(options, TemporalUnit::Second).display;
 
   // Step 10.
   bool hoursFormatted = false;
@@ -1347,47 +1649,41 @@ static bool FormatNumericUnits(JSContext* cx,
   return true;
 }
 
+static auto ToListFormatStyle(DurationBaseStyle style) {
+#ifndef USING_ENUM
+  using enum mozilla::intl::ListFormat::Style;
+#else
+  USING_ENUM(mozilla::intl::ListFormat::Style, Long, Short, Narrow);
+#endif
+  switch (style) {
+    case DurationBaseStyle::Long:
+      return Long;
+    case DurationBaseStyle::Short:
+      return Short;
+    case DurationBaseStyle::Narrow:
+      return Narrow;
+    case DurationBaseStyle::Digital:
+      return Short;
+  }
+  MOZ_CRASH("invalid duration format base style");
+}
+
 static mozilla::intl::ListFormat* NewDurationListFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
-  Rooted<JSObject*> internals(cx, GetInternalsObject(cx, durationFormat));
-  if (!internals) {
+  if (!ResolveLocale(cx, durationFormat)) {
     return nullptr;
   }
+  auto dfOptions = durationFormat->getOptions();
 
-  Rooted<Value> value(cx);
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
-  UniqueChars locale = EncodeLocale(cx, value.toString());
+  auto locale = EncodeLocale(cx, durationFormat->getLocale());
   if (!locale) {
     return nullptr;
   }
 
-  mozilla::intl::ListFormat::Options options;
-  options.mType = mozilla::intl::ListFormat::Type::Unit;
-
-  if (!GetProperty(cx, internals, internals, cx->names().style, &value)) {
-    return nullptr;
-  }
-  {
-    auto* linear = value.toString()->ensureLinear(cx);
-    if (!linear) {
-      return nullptr;
-    }
-
-    using ListFormatStyle = mozilla::intl::ListFormat::Style;
-    if (StringEqualsLiteral(linear, "long")) {
-      options.mStyle = ListFormatStyle::Long;
-    } else if (StringEqualsLiteral(linear, "short")) {
-      options.mStyle = ListFormatStyle::Short;
-    } else if (StringEqualsLiteral(linear, "narrow")) {
-      options.mStyle = ListFormatStyle::Narrow;
-    } else {
-      MOZ_ASSERT(StringEqualsLiteral(linear, "digital"));
-      options.mStyle = ListFormatStyle::Short;
-    }
-  }
+  mozilla::intl::ListFormat::Options options = {
+      .mType = mozilla::intl::ListFormat::Type::Unit,
+      .mStyle = ToListFormatStyle(dfOptions.style),
+  };
 
   auto result = mozilla::intl::ListFormat::TryCreate(
       mozilla::MakeStringSpan(locale.get()), options);
@@ -1401,12 +1697,11 @@ static mozilla::intl::ListFormat* NewDurationListFormat(
 static mozilla::intl::ListFormat* GetOrCreateListFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
   // Obtain a cached mozilla::intl::ListFormat object.
-  auto* lf = durationFormat->getListFormat();
-  if (lf) {
+  if (auto* lf = durationFormat->getListFormat()) {
     return lf;
   }
 
-  lf = NewDurationListFormat(cx, durationFormat);
+  auto* lf = NewDurationListFormat(cx, durationFormat);
   if (!lf) {
     return nullptr;
   }
@@ -1617,9 +1912,7 @@ static bool PartitionDurationFormatPattern(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
     Handle<Value> durationLike, bool formatToParts,
     MutableHandle<Value> result) {
-  using namespace temporal;
-
-  Duration duration;
+  temporal::Duration duration;
   if (!ToTemporalDuration(cx, durationLike, &duration)) {
     return false;
   }
@@ -1639,10 +1932,7 @@ static bool PartitionDurationFormatPattern(
   static_assert(durationUnits.size() == FormattedDurationValueVectorCapacity,
                 "inline stack capacity large enough for all duration units");
 
-  auto* options = GetOrCreateDurationFormatOptions(cx, durationFormat);
-  if (!options) {
-    return false;
-  }
+  auto options = durationFormat->getOptions();
 
   Rooted<Value> formattedValue(cx);
 
@@ -1667,13 +1957,13 @@ static bool PartitionDurationFormatPattern(
     // Step 4.a. (Moved below)
 
     // Step 4.b.
-    auto unitOptions = GetUnitOptions(*options, unit);
+    auto unitOptions = GetUnitOptions(options, unit);
 
     // Step 4.c.
-    auto style = unitOptions.style();
+    auto style = unitOptions.style;
 
     // Step 4.d.
-    auto display = unitOptions.display();
+    auto display = unitOptions.display;
 
     // Steps 4.e-f. (Not applicable in our implementation.)
 
@@ -1750,7 +2040,7 @@ static bool PartitionDurationFormatPattern(
                          result);
 }
 
-static bool IsDurationFormat(HandleValue v) {
+static bool IsDurationFormat(Handle<JS::Value> v) {
   return v.isObject() && v.toObject().is<DurationFormatObject>();
 }
 
@@ -1794,8 +2084,112 @@ static bool durationFormat_formatToParts(JSContext* cx, unsigned argc,
       cx, args);
 }
 
-bool js::TemporalDurationToLocaleString(JSContext* cx,
-                                        const JS::CallArgs& args) {
+/**
+ * Intl.DurationFormat.prototype.resolvedOptions ( )
+ */
+static bool durationFormat_resolvedOptions(JSContext* cx,
+                                           const JS::CallArgs& args) {
+  Rooted<DurationFormatObject*> durationFormat(
+      cx, &args.thisv().toObject().as<DurationFormatObject>());
+
+  if (!ResolveLocale(cx, durationFormat)) {
+    return false;
+  }
+  auto dfOptions = durationFormat->getOptions();
+
+  // Step 3.
+  Rooted<IdValueVector> options(cx, cx);
+
+  // Step 4.
+  if (!options.emplaceBack(NameToId(cx->names().locale),
+                           StringValue(durationFormat->getLocale()))) {
+    return false;
+  }
+
+  if (!options.emplaceBack(NameToId(cx->names().numberingSystem),
+                           StringValue(durationFormat->getNumberingSystem()))) {
+    return false;
+  }
+
+  auto* style = NewStringCopy<CanGC>(cx, BaseStyleToString(dfOptions.style));
+  if (!style) {
+    return false;
+  }
+  if (!options.emplaceBack(NameToId(cx->names().style), StringValue(style))) {
+    return false;
+  }
+
+  for (auto unit : durationUnits) {
+    auto unitOptions = GetUnitOptions(dfOptions, unit);
+
+    auto* style =
+        NewStringCopy<CanGC>(cx, DurationStyleToString(unitOptions.style));
+    if (!style) {
+      return false;
+    }
+    if (!options.emplaceBack(NameToId(DurationStyleName(unit, cx)),
+                             StringValue(style))) {
+      return false;
+    }
+
+    auto* display =
+        NewStringCopy<CanGC>(cx, DisplayToString(unitOptions.display));
+    if (!display) {
+      return false;
+    }
+    if (!options.emplaceBack(NameToId(DurationDisplayName(unit, cx)),
+                             StringValue(display))) {
+      return false;
+    }
+  }
+
+  if (dfOptions.fractionalDigits >= 0) {
+    MOZ_ASSERT(dfOptions.fractionalDigits <= 9);
+    if (!options.emplaceBack(NameToId(cx->names().fractionalDigits),
+                             Int32Value(dfOptions.fractionalDigits))) {
+      return false;
+    }
+  }
+
+  // Step 5.
+  auto* result = NewPlainObjectWithUniqueNames(cx, options);
+  if (!result) {
+    return false;
+  }
+  args.rval().setObject(*result);
+  return true;
+}
+
+/**
+ * Intl.DurationFormat.prototype.resolvedOptions ( )
+ */
+static bool durationFormat_resolvedOptions(JSContext* cx, unsigned argc,
+                                           Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsDurationFormat, durationFormat_resolvedOptions>(
+      cx, args);
+}
+
+/**
+ * Intl.DurationFormat.supportedLocalesOf ( locales [ , options ] )
+ */
+static bool durationFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                              Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-3.
+  auto* array = SupportedLocalesOf(cx, AvailableLocaleKind::DurationFormat,
+                                   args.get(0), args.get(1));
+  if (!array) {
+    return false;
+  }
+  args.rval().setObject(*array);
+  return true;
+}
+
+bool js::intl::TemporalDurationToLocaleString(JSContext* cx,
+                                              const JS::CallArgs& args) {
   MOZ_ASSERT(args.thisv().isObject());
   MOZ_ASSERT(args.thisv().toObject().is<temporal::DurationObject>());
 
@@ -1805,9 +2199,7 @@ bool js::TemporalDurationToLocaleString(JSContext* cx,
     return false;
   }
 
-  if (!intl::InitializeObject(cx, durationFormat,
-                              cx->names().InitializeDurationFormat, args.get(0),
-                              args.get(1))) {
+  if (!InitializeDurationFormat(cx, durationFormat, args)) {
     return false;
   }
 
@@ -1815,3 +2207,5 @@ bool js::TemporalDurationToLocaleString(JSContext* cx,
                                         /* formatToParts= */ false,
                                         args.rval());
 }
+
+#undef FOR_EACH_DURATION_UNIT

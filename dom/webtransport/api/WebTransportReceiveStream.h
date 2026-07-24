@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DOM_WEBTRANSPORT_API_WEBTRANSPORTRECEIVESTREAM__H_
-#define DOM_WEBTRANSPORT_API_WEBTRANSPORTRECEIVESTREAM__H_
+#ifndef DOM_WEBTRANSPORT_API_WEBTRANSPORTRECEIVESTREAM_H_
+#define DOM_WEBTRANSPORT_API_WEBTRANSPORTRECEIVESTREAM_H_
 
 #include "mozilla/dom/ReadableStream.h"
 

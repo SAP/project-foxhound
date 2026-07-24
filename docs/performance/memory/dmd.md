@@ -482,5 +482,5 @@ the following two macros:
     MOZ_DEFINE_MALLOC_SIZE_OF_ON_ALLOC
 
 Fortunately, most of the existing memory reporters do this. See
-[Performance/Memory_Reporting](https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Memory_reporting "Platform/Memory Reporting")
-for more details about how memory reporters are written.
+[Memory Reporting](memory_reporting.md) for more details about how
+memory reporters are written.

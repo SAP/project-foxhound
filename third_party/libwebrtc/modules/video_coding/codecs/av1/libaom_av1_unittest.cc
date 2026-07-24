@@ -8,21 +8,29 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/transport/rtp/dependency_descriptor.h"
+#include "api/units/data_rate.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_frame.h"
+#include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/codecs/av1/dav1d_decoder.h"
 #include "modules/video_coding/codecs/av1/libaom_av1_encoder.h"
@@ -32,7 +40,7 @@
 #include "modules/video_coding/svc/create_scalability_structure.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
-#include "modules/video_coding/svc/scalable_video_controller_no_layering.h"
+#include "rtc_base/checks.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -316,7 +324,8 @@ TEST_P(LibaomAv1SvcTest, SetRatesMatchMeasuredBitrate) {
   for (const auto& frame : encoded_frames) {
     ASSERT_TRUE(frame.codec_specific_info.generic_frame_info);
     const auto& layer = *frame.codec_specific_info.generic_frame_info;
-    LayerId layer_id = {layer.spatial_id, layer.temporal_id};
+    LayerId layer_id = {.spatial_id = layer.spatial_id,
+                        .temporal_id = layer.temporal_id};
     // This is almost same as
     // layer_size[layer_id] += DataSize::Bytes(frame.encoded_image.size());
     // but avoids calling deleted default constructor for DataSize.

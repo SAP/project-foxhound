@@ -1446,8 +1446,6 @@ gfx.hdr:
     expires: never
     unit: bitfield
     telemetry_mirror: GFX_HDR_WINDOWS_DISPLAY_COLORSPACE_BITFIELD
-    no_lint:
-      - UNIT_IN_NAME
 
 fontlist:
   initotherfamilynames:
@@ -1876,3 +1874,30 @@ webfont:
       - jkew@mozilla.com
     expires: never
     telemetry_mirror: WEBFONT_COMPRESSION_WOFF2
+
+webgpu:
+  expose_adapter:
+    type: dual_labeled_counter
+    description: >
+      The number of times wgpu-hal tried to expose an adapter.
+      Note that a call to `requestAdapter` might result in multiple
+      calls to expose adapter.
+    dual_labels:
+      key:
+        description: >
+          A backend-specific description of the adapter.
+          See `gfx/wgpu_bindings/src/telemetry.rs` for more details.
+      category:
+        description: >
+          The result of trying to expose the adapter.
+          Either success or failure, both containing additional information.
+          See `gfx/wgpu_bindings/src/telemetry.rs` for more details.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980057
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980057
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - gfx-telemetry-alerts@mozilla.com
+    expires: never

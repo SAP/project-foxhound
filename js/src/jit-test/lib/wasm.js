@@ -13,7 +13,7 @@ function canRunHugeMemoryTests() {
     // blocklist of properties that can't be true is great.  But the latter is
     // probably better.
     let blocked = ['rooting-analysis','simulator',
-                   'android','wasi','asan','tsan','ubsan','dtrace','valgrind'];
+                   'android','wasi','asan','tsan','ubsan','valgrind'];
     for ( let b of blocked ) {
         if (getBuildConfiguration(b)) {
             print("Failing canRunHugeMemoryTests() because '" + b + "' is true");
@@ -517,6 +517,18 @@ let WasmNonNullExternrefValues = [
 ];
 let WasmExternrefValues = [null, ...WasmNonNullExternrefValues];
 
+// Max number of memories in a single wasm module.
+let MaxMemories = 100
+
+// Constants related to memory sizes.
+const MaxMemory64PagesValidation = BigInt(Math.pow(2, 37) - 1); // from spec
+const MaxTable64ElemsValidation = 0xFFFF_FFFF_FFFF_FFFFn; // from spec
+const MaxTableElemsRuntime = 10000000; // from WasmConstants.h
+const MaxUint32 = 0xFFFF_FFFF;
+
+// Constants related to other limits.
+const MaxImports = 1000000; // from WasmConstants.h
+
 // Common array utilities
 
 // iota(n,k) creates an Array of length n with values k..k+n-1
@@ -610,3 +622,80 @@ function assertEqResults(got, expected) {
 var TailCallIterations = getBuildConfiguration("simulator") ? 1000 : 100000;
 // TailCallBallast is selected to spill registers as parameters.
 var TailCallBallast = 30;
+
+function wasmGetIon(bytecode, funcIndex) {
+    return JSON.parse(wasmDumpIon(bytecode, funcIndex));
+}
+
+function wasmIonGetFirstMIRPass(ionJSON) {
+    if (ionJSON.functions.length !== 1) {
+        throw new Error(`Expected one function in iongraph JSON, but got ${ionJSON.functions.length}`);
+    }
+    return ionJSON.functions[0].passes.find(pass => pass.lir.blocks.length === 0);
+}
+
+function wasmIonGetLastMIRPass(ionJSON) {
+    if (ionJSON.functions.length !== 1) {
+        throw new Error(`Expected one function in iongraph JSON, but got ${ionJSON.functions.length}`);
+    }
+    return ionJSON.functions[0].passes.findLast(pass => pass.lir.blocks.length === 0);
+}
+
+function wasmIonGetFirstLIRPass(ionJSON) {
+    if (ionJSON.functions.length !== 1) {
+        throw new Error(`Expected one function in iongraph JSON, but got ${ionJSON.functions.length}`);
+    }
+    return ionJSON.functions[0].passes.find(pass => pass.lir.blocks.length > 0);
+}
+
+function wasmIonGetLastLIRPass(ionJSON) {
+    if (ionJSON.functions.length !== 1) {
+        throw new Error(`Expected one function in iongraph JSON, but got ${ionJSON.functions.length}`);
+    }
+    return ionJSON.functions[0].passes.findLast(pass => pass.lir.blocks.length > 0);
+}
+
+function wasmIonGetAllInstructions(ionJSONPass) {
+    const blocks = ionJSONPass.lir.blocks.length > 0 ? ionJSONPass.lir.blocks : ionJSONPass.mir.blocks;
+    const result = [];
+    for (const block of blocks) {
+        result.push(...block.instructions);
+    }
+    return result;
+}
+
+function wasmIonGetAllOpcodes(ionJSONPass) {
+    return wasmIonGetAllInstructions(ionJSONPass).map(ins => ins.opcode);
+}
+
+function assertOpcodesInOrder(pass, expectedOps) {
+  const actualOps = wasmIonGetAllOpcodes(pass);
+
+  let nopes = []; // Instructions we should NOT see while iterating
+  let expectedCur = -1;
+  function nextExpectedCur() {
+    nopes = [];
+    expectedCur += 1;
+    while (expectedCur < expectedOps.length && expectedOps[expectedCur].startsWith("!")) {
+      nopes.push(expectedOps[expectedCur].slice(1));
+      expectedCur += 1;
+    }
+  }
+  nextExpectedCur();
+
+  for (const actual of actualOps) {
+    const expected = expectedOps[expectedCur];
+    for (const nope of nopes) {
+      if (actual.startsWith(nope)) {
+        throw new Error(`Saw unexpected op ${nope} before ${expected ? `expected ${expected}` : "end of instructions"}`);
+      }
+    }
+    if (expected !== undefined && actual.startsWith(expected)) {
+      nextExpectedCur();
+    }
+  }
+
+  if (expectedCur < expectedOps.length) {
+    throw new Error(`Did not see the following opcodes: ${expectedOps.slice(expectedCur).join(", ")}`)
+  }
+}

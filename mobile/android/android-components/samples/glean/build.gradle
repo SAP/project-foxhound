@@ -4,22 +4,16 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
 
         dependencies {
-            classpath libs.glean.gradle.plugin
+            classpath libs.mozilla.glean.gradle.plugin
         }
     }
 }
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
 }
 
@@ -27,11 +21,12 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
     defaultConfig {
         applicationId "org.mozilla.samples.glean"
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -57,29 +52,27 @@ android {
 }
 
 dependencies {
-    implementation libs.mozilla.glean
+    implementation project(':components:lib-fetch-httpurlconnection')
+    implementation project(':components:samples-glean-library')
     implementation project(':components:service-glean')
     implementation project(':components:service-nimbus')
-    implementation project(':components:support-base')
     implementation project(':components:support-appservices')
-    implementation project(':components:lib-fetch-httpurlconnection')
-
-    implementation libs.kotlin.coroutines
+    implementation project(':components:support-base')
 
     implementation libs.androidx.appcompat
     implementation libs.androidx.browser
-
-    implementation project(':components:samples-glean-library')
+    implementation libs.kotlinx.coroutines
+    implementation libs.mozilla.glean
 
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.monitor
-    androidTestImplementation libs.androidx.test.runner
-    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.espresso.core
     androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.androidx.test.monitor
+    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
-    androidTestImplementation libs.androidx.espresso.core
     androidTestImplementation libs.androidx.work.testing
-    androidTestImplementation libs.testing.mockwebserver
+    androidTestImplementation libs.mockwebserver
 }
 
 ext {

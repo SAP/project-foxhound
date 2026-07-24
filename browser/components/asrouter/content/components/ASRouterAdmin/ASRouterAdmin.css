@@ -25,15 +25,15 @@
   padding: 10px 14px;
   border-radius: 4px;
   margin-inline-start: 20px;
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   text-decoration: none;
   user-select: none;
 }
 .asrouter-admin .sidebar .category:hover {
-  background-color: var(--in-content-button-background-hover);
+  background-color: var(--button-background-color-hover);
 }
 .asrouter-admin .sidebar .category:hover:active {
-  background-color: var(--in-content-button-background-active);
+  background-color: var(--button-background-color-active);
 }
 .asrouter-admin .sidebar .category[data-selected] {
   color: var(--color-accent-primary);
@@ -120,7 +120,7 @@
 }
 .asrouter-admin h1 {
   font-size: 2rem;
-  font-weight: 200;
+  font-weight: normal;
 }
 .asrouter-admin h2 button,
 .asrouter-admin p button {
@@ -140,24 +140,24 @@
   border-collapse: collapse;
 }
 .asrouter-admin table.errorReporting tr {
-  border: 1px solid var(--in-content-box-border-color);
+  border: 1px solid var(--border-color);
 }
 .asrouter-admin table.errorReporting td {
   padding: 4px;
 }
 .asrouter-admin table.errorReporting td[rowspan] {
-  border: 1px solid var(--in-content-box-border-color);
+  border: 1px solid var(--border-color);
 }
 .asrouter-admin table.bordered-table {
   min-width: 100%;
 }
 .asrouter-admin table.bordered-table tr:first-child td {
-  border-top: 1px solid var(--in-content-box-border-color);
+  border-top: 1px solid var(--border-color);
 }
 .asrouter-admin table.bordered-table td {
   vertical-align: top;
   padding: 8px;
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 .asrouter-admin table.bordered-table td.no-wrap {
   white-space: nowrap;
@@ -166,10 +166,10 @@
   width: 0;
 }
 .asrouter-admin table.bordered-table td:first-child {
-  border-inline-start: 1px solid var(--in-content-box-border-color);
+  border-inline-start: 1px solid var(--border-color);
 }
 .asrouter-admin table.bordered-table td:last-child {
-  border-inline-end: 1px solid var(--in-content-box-border-color);
+  border-inline-end: 1px solid var(--border-color);
 }
 .asrouter-admin table input[type=checkbox], .asrouter-admin table input[type=radio] {
   margin: 0;
@@ -180,8 +180,8 @@
   border-radius: 3px;
 }
 .asrouter-admin .sourceLabel:not(:empty).isDisabled {
-  background: rgba(215, 0, 34, 0.3);
-  color: var(--dialog-warning-text-color);
+  background: var(--background-color-critical);
+  color: var(--text-color);
 }
 .asrouter-admin .messages-list {
   display: flex;
@@ -230,7 +230,7 @@
 .asrouter-admin .helpLink {
   padding: 10px;
   display: flex;
-  background: var(--in-content-box-info-background);
+  background: var(--background-color-box-info);
   border-radius: 3px;
   align-items: center;
   width: fit-content;
@@ -311,7 +311,7 @@
 }
 .asrouter-admin textarea[readonly] {
   color: var(--text-color-deemphasized);
-  border-color: var(--in-content-border-color);
+  border-color: var(--border-color);
 }
 .asrouter-admin .monospace {
   font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", "Fira Mono", "Droid Sans Mono", "Source Code Pro", monospace;
@@ -340,7 +340,7 @@
   display: flex;
   flex-flow: column nowrap;
   padding: 8px;
-  border: 1px solid var(--in-content-box-border-color);
+  border: 1px solid var(--border-color);
   border-radius: 5px;
 }
 .asrouter-admin .impressions-section .impressions-item .impressions-inner-box {
@@ -350,7 +350,7 @@
 }
 .asrouter-admin .impressions-section .impressions-item .impressions-category {
   font-size: var(--font-size-large);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   flex-grow: 0.1;
 }

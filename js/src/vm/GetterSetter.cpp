@@ -13,15 +13,23 @@
 using namespace js;
 
 js::GetterSetter::GetterSetter(HandleObject getter, HandleObject setter)
-    : TenuredCellWithGCPointer(getter), setter_(setter) {}
+    : CellWithGCPointer(getter), setter_(setter) {}
 
 // static
-GetterSetter* GetterSetter::create(JSContext* cx, HandleObject getter,
-                                   HandleObject setter) {
-  return cx->newCell<GetterSetter>(getter, setter);
+GetterSetter* GetterSetter::create(JSContext* cx, Handle<NativeObject*> owner,
+                                   HandleObject getter, HandleObject setter) {
+  // Try to allocate the GetterSetter in the nursery iff the owner object is
+  // also in the nursery.
+  gc::Heap heap = owner->isTenured() ? gc::Heap::Tenured : gc::Heap::Default;
+  return cx->newCell<GetterSetter>(heap, getter, setter);
 }
 
 JS::ubi::Node::Size JS::ubi::Concrete<GetterSetter>::size(
     mozilla::MallocSizeOf mallocSizeOf) const {
-  return js::gc::Arena::thingSize(get().asTenured().getAllocKind());
+  GetterSetter& gs = get();
+  size_t size = sizeof(js::GetterSetter);
+  if (IsInsideNursery(&gs)) {
+    size += Nursery::nurseryCellHeaderSize();
+  }
+  return size;
 }

@@ -8,55 +8,52 @@
 
 #include <stdint.h>
 
-#include <utility>
 #include <memory>
 #include <string>
+#include <utility>
 
-#include "api/frame_transformer_interface.h"
-
-#include "nsString.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsISupports.h"
 #include "ErrorList.h"
-#include "nsDebug.h"
-#include "nsCycleCollectionTraversalCallback.h"
-#include "nsTArray.h"
-#include "nsWrapperCache.h"
-#include "nsIGlobalObject.h"
-#include "nsCOMPtr.h"
-#include "nsStringFwd.h"
-#include "nsLiteralString.h"
-#include "nsContentUtils.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Result.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Logging.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Likely.h"
-#include "mozilla/dom/RTCRtpScriptTransformerBinding.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/PrototypeList.h"
-#include "mozilla/dom/WorkerRef.h"
-#include "mozilla/dom/RTCEncodedAudioFrame.h"
-#include "mozilla/dom/RTCEncodedVideoFrame.h"
-#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/ReadableStream.h"
-#include "mozilla/dom/WritableStream.h"
-#include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
-#include "mozilla/dom/WritableStreamDefaultController.h"
-#include "mozilla/dom/ReadableStreamControllerBase.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Promise-inl.h"
+#include "api/frame_transformer_interface.h"
+#include "js/CallArgs.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
-#include "js/CallArgs.h"
 #include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PrototypeList.h"
+#include "mozilla/dom/RTCEncodedAudioFrame.h"
+#include "mozilla/dom/RTCEncodedVideoFrame.h"
+#include "mozilla/dom/RTCRtpScriptTransformerBinding.h"
+#include "mozilla/dom/ReadableStream.h"
+#include "mozilla/dom/ReadableStreamControllerBase.h"
+#include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
+#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
+#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/WritableStream.h"
+#include "mozilla/dom/WritableStreamDefaultController.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsCycleCollectionTraversalCallback.h"
+#include "nsDebug.h"
+#include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsLiteralString.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 #include "sdp/SdpAttribute.h"  // CheckRidValidity
 
 namespace mozilla::dom {
@@ -314,9 +311,11 @@ void RTCRtpScriptTransformer::TransformFrame(
       auto* videoFrame =
           static_cast<webrtc::TransformableVideoFrameInterface*>(aFrame.get());
       if (videoFrame->IsKeyFrame()) {
-        ResolveGenerateKeyFramePromises(videoFrame->GetRid(),
-                                        videoFrame->GetTimestamp());
-        if (!videoFrame->GetRid().empty() &&
+        MOZ_ASSERT(videoFrame->Rid().has_value());
+        ResolveGenerateKeyFramePromises(
+            videoFrame->Rid().value_or(std::string()),
+            videoFrame->GetTimestamp());
+        if (videoFrame->Rid().has_value() && !videoFrame->Rid()->empty() &&
             videoFrame->Metadata().GetSimulcastIdx() == 0) {
           ResolveGenerateKeyFramePromises("", videoFrame->GetTimestamp());
         }
@@ -362,7 +361,7 @@ already_AddRefed<Promise> RTCRtpScriptTransformer::GenerateKeyFrame(
       mGenerateKeyFramePromises.LookupOrInsert(key);
   if (!promises.Length()) {
     // No pending keyframe generation request for this rid. Make one.
-    if (!mProxy || !mProxy->GenerateKeyFrame(utf8Rid)) {
+    if (mProxy && !mProxy->GenerateKeyFrame(utf8Rid)) {
       ErrorResult rv;
       rv.ThrowInvalidStateError(
           "RTCRtpScriptTransformer is not associated with a video sender");
@@ -400,7 +399,7 @@ void RTCRtpScriptTransformer::GenerateKeyFrameError(
 
 already_AddRefed<Promise> RTCRtpScriptTransformer::SendKeyFrameRequest() {
   if (!mKeyFrameRequestPromises.Length()) {
-    if (!mProxy || !mProxy->RequestKeyFrame()) {
+    if (mProxy && !mProxy->RequestKeyFrame()) {
       ErrorResult rv;
       rv.ThrowInvalidStateError(
           "RTCRtpScriptTransformer is not associated with a video receiver");
@@ -430,7 +429,10 @@ already_AddRefed<Promise> RTCRtpScriptTransformer::OnTransformedFrame(
   if (aFrame->GetCounter() > mLastReceivedFrameCounter &&
       aFrame->CheckOwner(this) && mProxy) {
     mLastReceivedFrameCounter = aFrame->GetCounter();
-    mProxy->OnTransformedFrame(aFrame->TakeFrame());
+    // also skip if frame has been detached (transferred away)
+    if (auto frame = aFrame->TakeFrame()) {
+      mProxy->OnTransformedFrame(std::move(frame));
+    }
   }
 
   return Promise::CreateResolvedWithUndefined(GetParentObject(), aError);

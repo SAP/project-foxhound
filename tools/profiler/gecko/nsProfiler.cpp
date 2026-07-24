@@ -24,6 +24,7 @@
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
+#include "mozilla/SharedLibraries.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/Preferences.h"
@@ -37,7 +38,6 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "platform.h"
-#include "SharedLibraries.h"
 #include "zlib.h"
 
 #ifndef ANDROID
@@ -1056,7 +1056,7 @@ void nsProfiler::RestartGatheringTimer() {
         NS_FAILED(mGatheringTimer->InitWithNamedFuncCallback(
             GatheringTimerCallback, this, delayMs,
             nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-            "nsProfilerGatheringTimer"))) {
+            "nsProfilerGatheringTimer"_ns))) {
       // Can't restart the timer, so we can't wait any longer.
       FinishGathering();
     }
@@ -1178,8 +1178,7 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
   }
 
   // Start building shared library info starting from the current process.
-  mProfileGenerationAdditionalInformation.emplace(
-      SharedLibraryInfo::GetInfoForSelf());
+  mProfileGenerationAdditionalInformation.emplace();
 
   // Request profiles from the other processes. This will trigger asynchronous
   // calls to ProfileGatherer::GatheredOOPProfile as the profiles arrive.
@@ -1215,6 +1214,8 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
     ResetGathering(NS_ERROR_NOT_AVAILABLE);
     return GatheringPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
   }
+
+  mProfileGenerationAdditionalInformation->Append(rv.unwrap());
 
   LogEvent([&](Json::Value& aEvent) {
     aEvent.append(
@@ -1287,10 +1288,10 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
       childTimeoutS = cMaxChildTimeoutS;
     }
     const uint32_t childTimeoutMs = childTimeoutS * PR_MSEC_PER_SEC;
-    Unused << NS_NewTimerWithFuncCallback(
+    (void)NS_NewTimerWithFuncCallback(
         getter_AddRefs(mGatheringTimer), GatheringTimerCallback, this,
         childTimeoutMs, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-        "nsProfilerGatheringTimer", GetMainThreadSerialEventTarget());
+        "nsProfilerGatheringTimer"_ns, GetMainThreadSerialEventTarget());
 
     MOZ_ASSERT(mPendingProfiles.capacity() >= profiles.Length());
     for (const auto& profile : profiles) {

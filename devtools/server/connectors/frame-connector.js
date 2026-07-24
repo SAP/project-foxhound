@@ -88,7 +88,7 @@ function connectToFrame(connection, frame, onDestroy) {
     });
 
     const destroy = DevToolsUtils.makeInfallible(function () {
-      EventEmitter.off(connection, "closed", destroy);
+      connection.off("closed", destroy);
       Services.obs.removeObserver(
         onMessageManagerClose,
         "message-manager-close"
@@ -153,7 +153,7 @@ function connectToFrame(connection, frame, onDestroy) {
 
     // Listen for connection close to cleanup things
     // when user unplug the device or we lose the connection somehow.
-    EventEmitter.on(connection, "closed", destroy);
+    connection.on("closed", destroy);
 
     mm.sendAsyncMessage("debug:connect", {
       prefix,

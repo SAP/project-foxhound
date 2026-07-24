@@ -9,9 +9,8 @@
 #include "GeckoProfiler.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/glean/DomMetrics.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
+#include "mozilla/glean/DomMetrics.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -57,6 +56,8 @@ void nsDOMNavigationTiming::Clear() {
   mContentfulComposite = TimeStamp();
   mLargestContentfulRender = TimeStamp();
   mNonBlankPaint = TimeStamp();
+  mLCPElement.Truncate();
+  mLCPImageURL.Truncate();
 
   mDocShellHasBeenActiveSinceNavigationStart = false;
 }
@@ -67,6 +68,8 @@ void nsDOMNavigationTiming::Anonymize(nsIURI* aFinalURI) {
   mBeforeUnloadStart = TimeStamp();
   mUnloadStart = TimeStamp();
   mUnloadEnd = TimeStamp();
+  mLCPElement.Truncate();
+  mLCPImageURL.Truncate();
 }
 
 DOMTimeMilliSec nsDOMNavigationTiming::TimeStampToDOM(TimeStamp aStamp) const {
@@ -297,7 +300,7 @@ void nsDOMNavigationTiming::TTITimeout(nsITimer* aTimer) {
         (TTI_WINDOW_SIZE_MS + 100) -
             delta.ToMilliseconds(),  // slightly after the window ends
         nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-        "nsDOMNavigationTiming::TTITimeout");
+        "nsDOMNavigationTiming::TTITimeout"_ns);
     return;
   }
 
@@ -433,7 +436,7 @@ void nsDOMNavigationTiming::NotifyContentfulCompositeForRootContentDocument(
   mTTITimer->InitWithNamedFuncCallback(TTITimeoutCallback, this,
                                        TTI_WINDOW_SIZE_MS,
                                        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-                                       "nsDOMNavigationTiming::TTITimeout");
+                                       "nsDOMNavigationTiming::TTITimeout"_ns);
 
   if (mDocShellHasBeenActiveSinceNavigationStart) {
     glean::performance_time::to_first_contentful_paint.AccumulateRawDuration(
@@ -442,13 +445,16 @@ void nsDOMNavigationTiming::NotifyContentfulCompositeForRootContentDocument(
 }
 
 void nsDOMNavigationTiming::NotifyLargestContentfulRenderForRootContentDocument(
-    const DOMHighResTimeStamp& aRenderTime) {
+    const DOMHighResTimeStamp& aRenderTime, const nsAString& aElement,
+    const nsACString& aImageURL) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mNavigationStart.IsNull());
 
   // This can get called multiple times and updates over time.
   mLargestContentfulRender =
       mNavigationStart + TimeDuration::FromMilliseconds(aRenderTime);
+  mLCPElement = aElement;
+  mLCPImageURL = aImageURL;
 }
 
 void nsDOMNavigationTiming::NotifyDocShellStateChanged(
@@ -456,6 +462,43 @@ void nsDOMNavigationTiming::NotifyDocShellStateChanged(
   mDocShellHasBeenActiveSinceNavigationStart &=
       (aDocShellState == DocShellState::eActive);
 }
+
+namespace geckoprofiler::markers {
+
+struct LCPMarker : public BaseMarkerType<LCPMarker> {
+  static constexpr const char* Name = "LargestContentfulPaint";
+
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"timeMs", MS::InputType::TimeDuration, "Elapsed Time",
+       MS::Format::Duration},
+      {"element", MS::InputType::String, "Element", MS::Format::String},
+      {"imageURL", MS::InputType::CString, "Image URL", MS::Format::Url}};
+
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable,
+                                               MS::Location::TimelineOverview};
+  static constexpr const char* ChartLabel =
+      "Largest contentful paint after {marker.data.timeMs}";
+  static constexpr const char* TableLabel =
+      "Largest contentful paint after {marker.data.timeMs}";
+
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   TimeDuration aElapsedTime,
+                                   const ProfilerString16View& aElement,
+                                   const ProfilerString8View& aImageURL) {
+    aWriter.IntProperty("timeMs",
+                        static_cast<uint32_t>(aElapsedTime.ToMilliseconds()));
+    if (aElement.Length() > 0) {
+      aWriter.StringProperty("element", NS_ConvertUTF16toUTF8(aElement));
+    }
+    if (aImageURL.Length() > 0) {
+      aWriter.StringProperty("imageURL", aImageURL);
+    }
+  }
+};
+
+}  // namespace geckoprofiler::markers
 
 void nsDOMNavigationTiming::MaybeAddLCPProfilerMarker(
     MarkerInnerWindowId aInnerWindowID) {
@@ -472,17 +515,14 @@ void nsDOMNavigationTiming::MaybeAddLCPProfilerMarker(
     return;
   }
 
-  TimeDuration elapsed = lcpTime - navStartTime;
-  nsPrintfCString marker("Largest contentful paint after %dms",
-                         int(elapsed.ToMilliseconds()));
-  PROFILER_MARKER_TEXT(
-      "LargestContentfulPaint", DOM,
-      // Putting this marker to the main thread even if it's called from another
-      // one.
-      MarkerOptions(MarkerThreadId::MainThread(),
-                    MarkerTiming::Interval(navStartTime, lcpTime),
-                    std::move(aInnerWindowID)),
-      marker);
+  TimeDuration elapsedTime = lcpTime - navStartTime;
+  PROFILER_MARKER("LargestContentfulPaint", DOM,
+                  // Putting this marker to the main thread even if it's
+                  // called from another one.
+                  MarkerOptions(MarkerThreadId::MainThread(),
+                                MarkerTiming::Interval(navStartTime, lcpTime),
+                                std::move(aInnerWindowID)),
+                  LCPMarker, elapsedTime, mLCPElement, mLCPImageURL);
 }
 
 mozilla::TimeStamp nsDOMNavigationTiming::GetUnloadEventStartTimeStamp() const {
@@ -542,45 +582,42 @@ nsDOMNavigationTiming::nsDOMNavigationTiming(nsDocShell* aDocShell,
           aOther->mDocShellHasBeenActiveSinceNavigationStart) {}
 
 /* static */
-void mozilla::ipc::IPDLParamTraits<nsDOMNavigationTiming*>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor,
-    nsDOMNavigationTiming* aParam) {
+void IPC::ParamTraits<nsDOMNavigationTiming*>::Write(
+    MessageWriter* aWriter, nsDOMNavigationTiming* aParam) {
   bool isNull = !aParam;
-  WriteIPDLParam(aWriter, aActor, isNull);
+  WriteParam(aWriter, isNull);
   if (isNull) {
     return;
   }
 
   RefPtr<nsIURI> unloadedURI = aParam->mUnloadedURI.get();
   RefPtr<nsIURI> loadedURI = aParam->mLoadedURI.get();
-  WriteIPDLParam(aWriter, aActor, unloadedURI ? Some(unloadedURI) : Nothing());
-  WriteIPDLParam(aWriter, aActor, loadedURI ? Some(loadedURI) : Nothing());
-  WriteIPDLParam(aWriter, aActor, uint32_t(aParam->mNavigationType));
-  WriteIPDLParam(aWriter, aActor, aParam->mNavigationStartHighRes);
-  WriteIPDLParam(aWriter, aActor, aParam->mNavigationStart);
-  WriteIPDLParam(aWriter, aActor, aParam->mNonBlankPaint);
-  WriteIPDLParam(aWriter, aActor, aParam->mContentfulComposite);
-  WriteIPDLParam(aWriter, aActor, aParam->mBeforeUnloadStart);
-  WriteIPDLParam(aWriter, aActor, aParam->mUnloadStart);
-  WriteIPDLParam(aWriter, aActor, aParam->mUnloadEnd);
-  WriteIPDLParam(aWriter, aActor, aParam->mLoadEventStart);
-  WriteIPDLParam(aWriter, aActor, aParam->mLoadEventEnd);
-  WriteIPDLParam(aWriter, aActor, aParam->mDOMLoading);
-  WriteIPDLParam(aWriter, aActor, aParam->mDOMInteractive);
-  WriteIPDLParam(aWriter, aActor, aParam->mDOMContentLoadedEventStart);
-  WriteIPDLParam(aWriter, aActor, aParam->mDOMContentLoadedEventEnd);
-  WriteIPDLParam(aWriter, aActor, aParam->mDOMComplete);
-  WriteIPDLParam(aWriter, aActor, aParam->mTTFI);
-  WriteIPDLParam(aWriter, aActor,
-                 aParam->mDocShellHasBeenActiveSinceNavigationStart);
+  WriteParam(aWriter, unloadedURI ? Some(unloadedURI) : Nothing());
+  WriteParam(aWriter, loadedURI ? Some(loadedURI) : Nothing());
+  WriteParam(aWriter, uint32_t(aParam->mNavigationType));
+  WriteParam(aWriter, aParam->mNavigationStartHighRes);
+  WriteParam(aWriter, aParam->mNavigationStart);
+  WriteParam(aWriter, aParam->mNonBlankPaint);
+  WriteParam(aWriter, aParam->mContentfulComposite);
+  WriteParam(aWriter, aParam->mBeforeUnloadStart);
+  WriteParam(aWriter, aParam->mUnloadStart);
+  WriteParam(aWriter, aParam->mUnloadEnd);
+  WriteParam(aWriter, aParam->mLoadEventStart);
+  WriteParam(aWriter, aParam->mLoadEventEnd);
+  WriteParam(aWriter, aParam->mDOMLoading);
+  WriteParam(aWriter, aParam->mDOMInteractive);
+  WriteParam(aWriter, aParam->mDOMContentLoadedEventStart);
+  WriteParam(aWriter, aParam->mDOMContentLoadedEventEnd);
+  WriteParam(aWriter, aParam->mDOMComplete);
+  WriteParam(aWriter, aParam->mTTFI);
+  WriteParam(aWriter, aParam->mDocShellHasBeenActiveSinceNavigationStart);
 }
 
 /* static */
-bool mozilla::ipc::IPDLParamTraits<nsDOMNavigationTiming*>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor,
-    RefPtr<nsDOMNavigationTiming>* aResult) {
+bool IPC::ParamTraits<nsDOMNavigationTiming*>::Read(
+    IPC::MessageReader* aReader, RefPtr<nsDOMNavigationTiming>* aResult) {
   bool isNull;
-  if (!ReadIPDLParam(aReader, aActor, &isNull)) {
+  if (!ReadParam(aReader, &isNull)) {
     return false;
   }
   if (isNull) {
@@ -592,26 +629,25 @@ bool mozilla::ipc::IPDLParamTraits<nsDOMNavigationTiming*>::Read(
   uint32_t type;
   Maybe<RefPtr<nsIURI>> unloadedURI;
   Maybe<RefPtr<nsIURI>> loadedURI;
-  if (!ReadIPDLParam(aReader, aActor, &unloadedURI) ||
-      !ReadIPDLParam(aReader, aActor, &loadedURI) ||
-      !ReadIPDLParam(aReader, aActor, &type) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mNavigationStartHighRes) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mNavigationStart) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mNonBlankPaint) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mContentfulComposite) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mBeforeUnloadStart) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mUnloadStart) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mUnloadEnd) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mLoadEventStart) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mLoadEventEnd) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mDOMLoading) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mDOMInteractive) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mDOMContentLoadedEventStart) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mDOMContentLoadedEventEnd) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mDOMComplete) ||
-      !ReadIPDLParam(aReader, aActor, &timing->mTTFI) ||
-      !ReadIPDLParam(aReader, aActor,
-                     &timing->mDocShellHasBeenActiveSinceNavigationStart)) {
+  if (!ReadParam(aReader, &unloadedURI) || !ReadParam(aReader, &loadedURI) ||
+      !ReadParam(aReader, &type) ||
+      !ReadParam(aReader, &timing->mNavigationStartHighRes) ||
+      !ReadParam(aReader, &timing->mNavigationStart) ||
+      !ReadParam(aReader, &timing->mNonBlankPaint) ||
+      !ReadParam(aReader, &timing->mContentfulComposite) ||
+      !ReadParam(aReader, &timing->mBeforeUnloadStart) ||
+      !ReadParam(aReader, &timing->mUnloadStart) ||
+      !ReadParam(aReader, &timing->mUnloadEnd) ||
+      !ReadParam(aReader, &timing->mLoadEventStart) ||
+      !ReadParam(aReader, &timing->mLoadEventEnd) ||
+      !ReadParam(aReader, &timing->mDOMLoading) ||
+      !ReadParam(aReader, &timing->mDOMInteractive) ||
+      !ReadParam(aReader, &timing->mDOMContentLoadedEventStart) ||
+      !ReadParam(aReader, &timing->mDOMContentLoadedEventEnd) ||
+      !ReadParam(aReader, &timing->mDOMComplete) ||
+      !ReadParam(aReader, &timing->mTTFI) ||
+      !ReadParam(aReader,
+                 &timing->mDocShellHasBeenActiveSinceNavigationStart)) {
     return false;
   }
   timing->mNavigationType = nsDOMNavigationTiming::Type(type);

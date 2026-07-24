@@ -10,7 +10,6 @@
 #ifdef XP_UNIX
 #  include <errno.h>
 #endif
-#include <type_traits>
 
 #include "mozilla/IntegerPrintfMacros.h"
 
@@ -18,12 +17,10 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 
 #include "mozilla/ipc/MessageChannel.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/StaticMutex.h"
 #if defined(DEBUG) || defined(FUZZING)
 #  include "mozilla/Tokenizer.h"
 #endif
-#include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "prtime.h"
@@ -436,18 +433,19 @@ bool IProtocol::SetManagerAndRegister(IRefCountedProtocol* aManager,
   SetManager(aManager);
 
   mId = aId == kNullActorId ? mToplevel->NextId() : aId;
-  while (mToplevel->mActorMap.Contains(mId)) {
-    // The ID already existing is an error case, but we want to proceed with
-    // registration so that we can tear down the actor cleanly - generate a new
-    // ID for that case.
-    NS_WARNING("Actor already exists with the selected ID!");
-    mId = mToplevel->NextId();
-    success = false;
-  }
 
   RefPtr<ActorLifecycleProxy> proxy = ActorConnected();
-  mToplevel->mActorMap.InsertOrUpdate(mId, proxy);
   MOZ_ASSERT(proxy->Get() == this);
+
+  mToplevel->mActorMap.WithEntryHandle(mId, [&](auto entry) {
+    if (aId == kNullActorId) {
+      MOZ_RELEASE_ASSERT(!entry, "Entry must not exist for new actor ID");
+    } else {
+      MOZ_RELEASE_ASSERT(entry && !entry.Data(),
+                         "Entry must be a reservation for reserved actor ID");
+    }
+    entry.InsertOrUpdate(proxy);
+  });
 
   UntypedManagedContainer* container =
       aManager->GetManagedActors(GetProtocolId());
@@ -699,10 +697,37 @@ int64_t IToplevelProtocol::NextId() {
 }
 
 IProtocol* IToplevelProtocol::Lookup(ActorId aId) {
-  if (auto entry = mActorMap.Lookup(aId)) {
+  if (auto entry = mActorMap.Lookup(aId); entry && entry.Data()) {
     return entry.Data()->Get();
   }
   return nullptr;
+}
+
+bool IToplevelProtocol::TryReserve(ActorId aId) {
+  // The ID must be coming from the other side.
+  // This logic should check for the opposite sign as NextId().
+  if (mozilla::Abs(aId) >= MSG_ROUTING_CONTROL ||
+      (GetSide() == ChildSide && aId <= kNullActorId) ||
+      (GetSide() == ParentSide && aId >= kNullActorId)) {
+    return false;
+  }
+
+  // Ensure the entry isn't already in use, and then insert it into our map.
+  return mActorMap.WithEntryHandle(aId, [&](auto entry) {
+    if (entry) {
+      return false;
+    }
+    entry.Insert(nullptr);
+    return true;
+  });
+}
+
+void IToplevelProtocol::ClearReservation(ActorId aId) {
+  auto entry = mActorMap.Lookup(aId);
+  // Only remove if it's still a placeholder.
+  if (entry && !entry.Data()) {
+    entry.Remove();
+  }
 }
 
 Shmem IToplevelProtocol::CreateSharedMemory(size_t aSize, bool aUnsafe) {
@@ -715,7 +740,7 @@ Shmem IToplevelProtocol::CreateSharedMemory(size_t aSize, bool aUnsafe) {
   if (!createdMessage) {
     return {};
   }
-  Unused << GetIPCChannel()->Send(std::move(createdMessage));
+  (void)GetIPCChannel()->Send(std::move(createdMessage));
 
   MOZ_ASSERT(!mShmemMap.Contains(shmem.Id()),
              "Don't insert with an existing ID");
@@ -804,7 +829,7 @@ void IPDLResolverInner::ResolveOrReject(
   }
 
   IPC::MessageWriter writer(*reply, actor);
-  WriteIPDLParam(&writer, actor, aResolve);
+  WriteParam(&writer, aResolve);
   aWrite(reply.get(), actor);
 
   actor->ChannelSend(std::move(reply));
@@ -831,7 +856,7 @@ IPDLResolverInner::~IPDLResolverInner() {
     ResolveOrReject(false, [](IPC::Message* aMessage, IProtocol* aActor) {
       IPC::MessageWriter writer(*aMessage, aActor);
       ResponseRejectReason reason = ResponseRejectReason::ResolverDestroyed;
-      WriteIPDLParam(&writer, aActor, reason);
+      WriteParam(&writer, reason);
     });
   }
 }

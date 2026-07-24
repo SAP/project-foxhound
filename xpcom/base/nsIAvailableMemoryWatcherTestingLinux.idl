@@ -1,0 +1,23 @@
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * nsIAvailableMemoryWatcherTestingLinux: Linux-only testing interface for
+ * methods related to the available memory watcher. This interface is kept
+ * separate from nsIAvailableMemoryWatcherBase so that testing methods remain
+ * isolated from production code.
+ */
+
+[builtinclass, scriptable, uuid(88c3f4a6-6f9a-4f6b-9a4b-5c1b1b0c2ad3)]
+interface nsIAvailableMemoryWatcherTestingLinux : nsISupports
+{
+  /**
+   * Set the PSI file path for testing purposes.
+   * Only meaningful on Linux in testing builds.
+   */
+  void setPSIPathForTesting(in ACString aPSIPath);
+};

@@ -14,10 +14,10 @@
 #ifndef mozilla_dom_ShadowIncludingTreeIterator_h
 #define mozilla_dom_ShadowIncludingTreeIterator_h
 
-#include "nsINode.h"
-#include "nsTArray.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsINode.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

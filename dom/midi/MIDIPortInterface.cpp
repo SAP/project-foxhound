@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIPortInterface.h"
+
 #include "mozilla/dom/MIDIPlatformService.h"
 #include "mozilla/dom/MIDITypes.h"
 

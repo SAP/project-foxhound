@@ -17,13 +17,13 @@
  * only meant to be applied on Linux or Android.
  */
 
-/* globals exportFunction */
+if (!navigator.appVersion.includes("Linux")) {
+  console.info(
+    "navigator.appVersion has been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1799968 for details."
+  );
 
-console.info(
-  "navigator.appVersion has been shimmed for compatibility reasons. See https://webcompat.com/issues/108993 for details."
-);
-
-const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
-const appVersion = Object.getOwnPropertyDescriptor(nav, "appVersion");
-appVersion.get = exportFunction(() => "5.0 (Linux)", window);
-Object.defineProperty(nav, "appVersion", appVersion);
+  const nav = Object.getPrototypeOf(navigator);
+  const appVersion = Object.getOwnPropertyDescriptor(nav, "appVersion");
+  appVersion.get = () => "5.0 (Linux)";
+  Object.defineProperty(nav, "appVersion", appVersion);
+}

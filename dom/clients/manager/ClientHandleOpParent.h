@@ -6,9 +6,9 @@
 #ifndef _mozilla_dom_ClientHandleOpParent_h
 #define _mozilla_dom_ClientHandleOpParent_h
 
+#include "ClientHandleParent.h"
 #include "ClientOpPromise.h"
 #include "mozilla/dom/PClientHandleOpParent.h"
-#include "ClientHandleParent.h"
 
 namespace mozilla::dom {
 

@@ -117,6 +117,8 @@
 
 namespace mozilla::net {
 
+class WebTransportEventService;
+
 class WebTransportStreamCallbackWrapper;
 
 class WebTransportSessionProxy final
@@ -177,7 +179,9 @@ class WebTransportSessionProxy final
       uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome);
 
   nsCOMPtr<nsIChannel> mChannel;
+  uint64_t mHttpChannelID = 0;
   nsCOMPtr<nsIChannel> mRedirectChannel;
+  RefPtr<WebTransportEventService> mService;
   nsCOMPtr<WebTransportSessionEventListener> mListener MOZ_GUARDED_BY(mMutex);
   RefPtr<WebTransportSessionBase> mWebTransportSession MOZ_GUARDED_BY(mMutex);
   uint64_t mSessionId MOZ_GUARDED_BY(mMutex) = UINT64_MAX;
@@ -191,7 +195,8 @@ class WebTransportSessionProxy final
   nsTArray<std::function<void(nsresult)>> mPendingCreateStreamEvents
       MOZ_GUARDED_BY(mMutex);
   nsCOMPtr<nsIEventTarget> mTarget MOZ_GUARDED_BY(mMutex);
-  nsTArray<RefPtr<nsIWebTransportHash>> mServerCertHashes;
+  nsTArray<RefPtr<nsIWebTransportHash>> mServerCertHashes
+      MOZ_GUARDED_BY(mMutex);
   bool mDedicatedConnection;  // for WebTranport
   nsIWebTransport::HTTPVersion mHTTPVersion = nsIWebTransport::HTTPVersion::h3;
 };

@@ -6,8 +6,8 @@
 
 /* state and methods used while laying out a single line of a block frame */
 
-#ifndef nsLineLayout_h___
-#define nsLineLayout_h___
+#ifndef nsLineLayout_h_
+#define nsLineLayout_h_
 
 #include "BlockReflowState.h"
 #include "JustificationUtils.h"
@@ -654,8 +654,18 @@ class nsLineLayout {
                                   nscoord aBStartEdge);
   void VerticalAlignFrames(PerSpanData* psd);
 
-  void PlaceTopBottomFrames(PerSpanData* psd, nscoord aDistanceFromStart,
-                            nscoord aLineBSize);
+  nscoord ComputeTopAlignFrameStart(const PerFrameData* pfd,
+                                    const mozilla::WritingMode& aWM,
+                                    nscoord aDistanceFromStart,
+                                    nscoord aLineBSize);
+
+  nscoord ComputeBottomAlignFrameStart(const PerFrameData* pfd,
+                                       const mozilla::WritingMode& aWM,
+                                       nscoord aDistanceFromStart,
+                                       nscoord aLineBSize);
+
+  void PlaceTopBottomCenterFrames(PerSpanData* psd, nscoord aDistanceFromStart,
+                                  nscoord aLineBSize);
 
   void ApplyRelativePositioning(PerFrameData* aPFD);
 
@@ -706,4 +716,4 @@ class nsLineLayout {
   static bool ShouldApplyLineHeightInPreserveWhiteSpace(const PerSpanData* psd);
 };
 
-#endif /* nsLineLayout_h___ */
+#endif /* nsLineLayout_h_ */

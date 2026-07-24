@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheFileOutputStream__h__
-#define CacheFileOutputStream__h__
+#ifndef CacheFileOutputStream_h_
+#define CacheFileOutputStream_h_
 
 #include "nsIAsyncOutputStream.h"
 #include "nsISeekableStream.h"
 #include "nsCOMPtr.h"
 #include "CacheFileChunk.h"
+#include "Dictionary.h"
 
 namespace mozilla {
 namespace net {
@@ -39,6 +40,8 @@ class CacheFileOutputStream : public nsIAsyncOutputStream,
   void NotifyCloseListener();
   bool IsAlternativeData() const { return mAlternativeData; };
 
+  void SetDictionary(DictionaryCacheEntry* aDict) { mDict = aDict; }
+
   // Memory reporting
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -62,6 +65,7 @@ class CacheFileOutputStream : public nsIAsyncOutputStream,
   nsCOMPtr<nsIOutputStreamCallback> mCallback;
   uint32_t mCallbackFlags;
   nsCOMPtr<nsIEventTarget> mCallbackTarget;
+  RefPtr<DictionaryCacheEntry> mDict;
 };
 
 }  // namespace net

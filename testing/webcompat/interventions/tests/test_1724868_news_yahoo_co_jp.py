@@ -27,7 +27,7 @@ async def go(client, should_work):
             is_displayed=True,
         )
         if _iframe:
-            client.switch_frame(_iframe)
+            client.switch_to_frame(_iframe)
             continue
         if should_work:
             assert _supported or _vpn1 or _vpn2

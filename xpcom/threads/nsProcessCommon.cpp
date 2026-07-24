@@ -12,8 +12,6 @@
  *****************************************************************************
  */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsProcess.h"

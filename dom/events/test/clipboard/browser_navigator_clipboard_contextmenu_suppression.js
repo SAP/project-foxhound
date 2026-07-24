@@ -7,12 +7,7 @@
 "use strict";
 requestLongerTimeout(2);
 
-const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
-  "chrome://mochitests/content",
-  "https://example.com"
-);
-const kContentFileName = "file_toplevel.html";
-const kContentFileUrl = kBaseUrlForContent + kContentFileName;
+const kContentFileUrl = kBaseUrlForContent + "file_toplevel.html";
 const kIsMac = navigator.platform.indexOf("Mac") > -1;
 
 async function waitForPasteContextMenu() {
@@ -101,6 +96,8 @@ function testPasteContextMenuSuppression(aWriteFun, aMsg) {
 
         info("Dismiss paste button, cross-origin request should be rejected");
         await promiseDismissPasteButton();
+        // XXX eden: not sure why first promiseDismissPasteButton doesn't work on Windows opt build.
+        await promiseDismissPasteButton();
         await Assert.rejects(
           readTextRequest1,
           /NotAllowedError/,
@@ -114,8 +111,6 @@ function testPasteContextMenuSuppression(aWriteFun, aMsg) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
-      ["dom.events.asyncClipboard.clipboardItem", true],
       ["test.events.async.enabled", true],
       // Avoid paste button delay enabling making test too long.
       ["security.dialog_enable_delay", 0],
@@ -371,6 +366,13 @@ if (
         set: [["middlemouse.paste", true]],
       });
 
+      // We intentionally turn off this a11y check, because the following click
+      // is send on an arbitrary web content that is not expected to be tested
+      // by itself with the browser mochitests, therefore this rule check shall
+      // be ignored by a11y-checks suite.
+      AccessibilityUtils.setEnv({
+        mustHaveAccessibleRule: false,
+      });
       await SpecialPowers.spawn(browser, [], async () => {
         EventUtils.synthesizeMouse(
           content.document.documentElement,
@@ -380,6 +382,7 @@ if (
           content.window
         );
       });
+      AccessibilityUtils.resetEnv();
     },
     true,
     "middle click"

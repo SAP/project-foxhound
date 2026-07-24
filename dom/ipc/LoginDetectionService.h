@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_LoginDetectionService_h
 #define mozilla_dom_LoginDetectionService_h
 
-#include "nsIObserver.h"
-#include "nsIObserverService.h"
-#include "nsILoginDetectionService.h"
-#include "nsILoginManager.h"
-#include "nsWeakReference.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
+#include "nsILoginDetectionService.h"
+#include "nsILoginManager.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsWeakReference.h"
 
 namespace mozilla::dom {
 

@@ -2,49 +2,32 @@
 firefox-appdir = "browser"
 head = "head_searchconfig.js"
 dupe-manifest = ""
+prefs = [
+  # Enable separatePrivateDefault testing. We test with this on, as we have
+  # separate tests for ensuring the normal = private when this is off.
+  "browser.search.separatePrivateDefault.ui.enabled=true",
+  "browser.search.separatePrivateDefault=true",
+]
 support-files = ["../../../../../../browser/locales/all-locales"]
 tags = "searchconfig remote-settings"
 # These are extensive tests, we don't need to run them on asan/tsan.
 # They are also skipped for mobile and Thunderbird as these are specifically
 # testing the Firefox config at the moment.
 skip-if = [
-  "os == 'android'",
   "appname == 'thunderbird'",
   "asan",
-  "tsan",
   "debug",
+  "os == 'android'",
   "os == 'win' && ccov",
+  "tsan",
 ]
-# These tests do take a little longer on Linux ccov, so allow that here.
-requesttimeoutfactor = 2
-
-["test_amazon.js"]
-
-["test_baidu.js"]
-
-["test_bing.js"]
 
 ["test_distributions.js"]
 
-["test_duckduckgo.js"]
+["test_searchconfig.js"]
+requesttimeoutfactor = 5  # Slow and high CPU use on Linux and Windows
 
-# The test_ebay needs newSearchConfig.enabled=true because there
-# are changes to ebay and locale pl for search-config-v2.
-# We have rolled out search-config-v2 100% to Beta 126 and the next Beta 127
-# will pick up newSearchConfig.enabled=true from Nimbus Settings but not
-# immediately, we need to turn the PREF on for this test to prevent failures
-# in the merge from central to Beta 127.
-
-["test_ebay.js"]
-prefs = ["browser.search.newSearchConfig.enabled=true"]
-
-["test_ecosia.js"]
-
-["test_google.js"]
-
-["test_qwant.js"]
-
-["test_rakuten.js"]
+["test_searchconfig_google_additional.js"]
 
 ["test_searchconfig_ui_schemas_valid.js"]
 support-files = [
@@ -67,7 +50,3 @@ support-files = [
 ]
 
 ["test_selector_db_out_of_date.js"]
-
-["test_wikipedia.js"]
-
-["test_yahoojp.js"]

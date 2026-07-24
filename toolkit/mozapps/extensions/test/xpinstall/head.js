@@ -11,6 +11,8 @@ const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
 
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/browser/" + RELATIVE_DIR;
+const SECURE_TESTROOT = "https://example.com/browser/" + RELATIVE_DIR;
+const SECURE_TESTROOT2 = "https://example.org/browser/" + RELATIVE_DIR;
 const PROMPT_URL = "chrome://global/content/commonDialog.xhtml";
 const ADDONS_URL = "chrome://mozapps/content/extensions/aboutaddons.html";
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
@@ -35,20 +37,6 @@ function extractChromeRoot(path) {
     return "file://" + tmpdir.path + "/";
   }
   return chromeRootPath;
-}
-
-function setInstallTriggerPrefs() {
-  Services.prefs.setBoolPref("extensions.InstallTrigger.enabled", true);
-  Services.prefs.setBoolPref("extensions.InstallTriggerImpl.enabled", true);
-  // Relax the user input requirements while running tests that call this test helper.
-  Services.prefs.setBoolPref("xpinstall.userActivation.required", false);
-  registerCleanupFunction(clearInstallTriggerPrefs);
-}
-
-function clearInstallTriggerPrefs() {
-  Services.prefs.clearUserPref("extensions.InstallTrigger.enabled");
-  Services.prefs.clearUserPref("extensions.InstallTriggerImpl.enabled");
-  Services.prefs.clearUserPref("xpinstall.userActivation.required");
 }
 
 /**
@@ -212,7 +200,10 @@ var Harness = {
     is(this.runningInstalls.length, 0, "Should be no running installs left");
     this.runningInstalls.forEach(function (aInstall) {
       info(
-        "Install for " + aInstall.sourceURI + " is in state " + aInstall.state
+        "Install for " +
+          aInstall.sourceURI?.spec +
+          " is in state " +
+          aInstall.state
       );
     });
 
@@ -320,7 +311,24 @@ var Harness = {
   handleEvent(event) {
     if (event.type === "popupshown") {
       if (event.target == event.view.PanelUI.notificationPanel) {
-        event.view.PanelUI.notificationPanel.hidePopup();
+        // NOTE: Accepting the post install dialog (because mozAddonManager
+        // AddonInstall install method doesn't get resolved until the dialog
+        // is explicitly dismissed).
+        const { AppMenuNotifications } = ChromeUtils.importESModule(
+          "resource://gre/modules/AppMenuNotifications.sys.mjs"
+        );
+        let notification = AppMenuNotifications.activeNotification;
+        if (notification?.id === "addon-installed") {
+          let popupnotificationID =
+            event.view.PanelUI._getPopupId(notification);
+          let popupnotification =
+            event.target.ownerGlobal.document.getElementById(
+              popupnotificationID
+            );
+          popupnotification?.button.click();
+        } else {
+          event.view.PanelUI.notificationPanel.hidePopup();
+        }
       } else if (event.target.firstElementChild) {
         let popupId = event.target.firstElementChild.getAttribute("popupid");
         if (popupId === "addon-webext-permissions") {
@@ -452,6 +460,22 @@ var Harness = {
   },
 
   onDownloadFailed(install) {
+    if (install.installTelemetryInfo?.method === "amWebAPI") {
+      // NOTE: mozAddonManager API will reject the promise returned
+      // to the caller side instead of showing an addon-install-failed
+      // dialog, and so we need to assert this here and remove the
+      // AddonInstall instance from the Harness runningInstalls array
+      // here (whereas for install flows that are expected to be showing
+      // the addon-install-failed dialog that is done from the observe
+      // method on the related observer service topic being notified).
+      isnot(
+        this.runningInstalls.indexOf(install),
+        -1,
+        "Should only see download failures for started installs"
+      );
+      this.runningInstalls.splice(this.runningInstalls.indexOf(install), 1);
+    }
+
     if (this.downloadFailedCallback) {
       this.downloadFailedCallback(install);
     }

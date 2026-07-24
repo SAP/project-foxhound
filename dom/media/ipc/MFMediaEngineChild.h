@@ -9,8 +9,8 @@
 #include "MFMediaEngineUtils.h"
 #include "TimeUnits.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/PMFMediaEngineChild.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/PMFMediaEngineChild.h"
 
 namespace mozilla {
 
@@ -46,7 +46,7 @@ class MFMediaEngineChild final : public PMFMediaEngineChild {
   mozilla::ipc::IPCResult RecvUpdateStatisticData(const StatisticData& aData);
   mozilla::ipc::IPCResult RecvNotifyResizing(uint32_t aWidth, uint32_t aHeight);
 
-  nsISerialEventTarget* ManagerThread() { return mManagerThread; }
+  nsISerialEventTarget* ManagerThread() const { return mManagerThread; }
   void AssertOnManagerThread() const {
     MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
   }

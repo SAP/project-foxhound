@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ScrollAreaEvent.h"
+
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/dom/DOMRect.h"
-#include "mozilla/dom/ScrollAreaEvent.h"
 #include "mozilla/ContentEvents.h"
+#include "mozilla/dom/DOMRect.h"
 
 namespace mozilla::dom {
 

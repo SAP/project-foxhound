@@ -9,8 +9,8 @@
 
 #include "BaseBlobImpl.h"
 #include "nsCOMPtr.h"
-#include "nsIMemoryReporter.h"
 #include "nsICloneableInputStream.h"
+#include "nsIMemoryReporter.h"
 
 namespace mozilla::dom {
 

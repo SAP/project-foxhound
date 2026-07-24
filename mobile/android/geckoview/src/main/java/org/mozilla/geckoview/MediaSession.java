@@ -33,6 +33,11 @@ public class MediaSession {
   private final GeckoSession mSession;
   private boolean mIsActive;
 
+  /**
+   * Create a new MediaSession for the given GeckoSession.
+   *
+   * @param session The GeckoSession this media session is associated with.
+   */
   protected MediaSession(final GeckoSession session) {
     mSession = session;
   }
@@ -478,6 +483,7 @@ public class MediaSession {
     }
   }
 
+  /** Media session feature flag definitions for supported media operations. */
   @Retention(RetentionPolicy.SOURCE)
   @LongDef(
       flag = true,
@@ -498,6 +504,7 @@ public class MediaSession {
 
   /** Flags for supported media session features. */
   public static class Feature {
+    /** No media session features supported. */
     public static final long NONE = 0;
 
     /** Playback supported. */

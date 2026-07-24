@@ -5,11 +5,13 @@ support-files = ""
 ["test_basic.js"]
 
 ["test_console_shouldLog.js"]
+environment = ["MOZ_LOG=shouldlogtest_0:0,shouldlogtest_1:1,shouldlogtest_2:2,shouldlogtest_3:3,shouldlogtest_4:4,shouldlogtest_5:5"]
+
+["test_consoleMethod_levels.js"]
 
 ["test_failing_console_listener.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan",
 ]
 
 ["test_formatting.js"]
@@ -20,4 +22,6 @@ skip-if = [
 support-files = [
   "worker.mjs",
 ]
-run-if = ["os != 'android'"] # Uses ChromeWorker.
+run-if = [
+  "os != 'android'", # Uses ChromeWorker.
+]

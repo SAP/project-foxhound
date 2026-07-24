@@ -7,7 +7,6 @@
 #include "MacStringHelpers.h"
 #include "nsObjCExceptions.h"
 
-#include "mozilla/IntegerTypeTraits.h"
 #include <limits>
 
 namespace mozilla {

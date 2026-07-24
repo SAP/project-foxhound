@@ -9,7 +9,6 @@
 #include "mozilla/LauncherRegistryInfo.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "nsWindowsHelpers.h"
 
 #include "LauncherRegistryInfo.cpp"
@@ -24,11 +23,13 @@ static const wchar_t kBrowserSuffix[] = L"|Browser";
 static const wchar_t kLauncherSuffix[] = L"|Launcher";
 static const wchar_t kImageSuffix[] = L"|Image";
 static const wchar_t kTelemetrySuffix[] = L"|Telemetry";
+static const wchar_t kCrashTimestampSuffix[] = L"|LauncherCrashTime";
 
 MOZ_RUNINIT static std::wstring gBrowserValue;
 MOZ_RUNINIT static std::wstring gLauncherValue;
 MOZ_RUNINIT static std::wstring gImageValue;
 MOZ_RUNINIT static std::wstring gTelemetryValue;
+MOZ_RUNINIT static std::wstring gCrashTimestampValue;
 
 static DWORD gMyImageTimestamp;
 
@@ -216,7 +217,12 @@ static mozilla::LauncherVoidResult DeleteAllRegstryValues() {
     return vr;
   }
 
-  return DeleteRegistryValueData(gTelemetryValue);
+  vr = DeleteRegistryValueData(gTelemetryValue);
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  return DeleteRegistryValueData(gCrashTimestampValue);
 }
 
 bool GetInstallHash(const char16_t*, mozilla::UniquePtr<NS_tchar[]>& result) {
@@ -734,6 +740,175 @@ static mozilla::LauncherVoidResult TestReEnable() {
   return mozilla::Ok();
 }
 
+static mozilla::LauncherVoidResult TestCrashTimeoutReenabling() {
+  // First disable due to crash
+  mozilla::LauncherVoidResult vr = SetupEnabledScenario();
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  mozilla::LauncherRegistryInfo info;
+  vr = info.DisableDueToFailure();
+  if (vr.isErr()) {
+    return vr.propagateErr();
+  }
+
+  // Verify we're FailDisabled initially
+  EXPECT_ENABLED_STATE_IS(EnabledState::FailDisabled);
+
+  // Delete launcher timestamp to make it force-disabled
+  vr = DeleteRegistryValueData(gLauncherValue);
+  if (vr.isErr()) {
+    return vr;
+  }
+  EXPECT_ENABLED_STATE_IS(EnabledState::ForceDisabled);
+
+  EXPECT_REG_QWORD_EXISTS(gCrashTimestampValue);
+
+  // Test that launcher process is still disabled when trying to launch
+  EXPECT_CHECK_RESULT_IS(ProcessType::Launcher, ProcessType::Browser);
+  EXPECT_COMMIT_IS_OK();
+  EXPECT_ENABLED_STATE_IS(EnabledState::ForceDisabled);
+
+  // Now simulate 45+ days have passed by setting crash timestamp to an old time
+  // Get current time
+  FILETIME currentTime;
+  ::GetSystemTimeAsFileTime(&currentTime);
+  uint64_t currentTimestamp =
+      (static_cast<uint64_t>(currentTime.dwHighDateTime) << 32) |
+      currentTime.dwLowDateTime;
+
+  // 46 days ago in 100-nanosecond intervals
+  constexpr uint64_t kTimeoutInterval = 46ULL * 24 * 60 * 60 * 10000000ULL;
+  uint64_t oldCrashTime = currentTimestamp - kTimeoutInterval;
+
+  // Set the old crash time
+  vr = WriteRegistryValueData<uint64_t>(gCrashTimestampValue, REG_QWORD,
+                                        oldCrashTime);
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  // Now attempt to launch - should re-enable launcher process
+  EXPECT_CHECK_RESULT_IS(ProcessType::Launcher, ProcessType::Launcher);
+  EXPECT_COMMIT_IS_OK();
+
+  EXPECT_REG_QWORD_DOES_NOT_EXIST(gCrashTimestampValue);
+
+  // Verify browser timestamp was cleared (not 0)
+  EXPECT_REG_QWORD_DOES_NOT_EXIST(gBrowserValue);
+
+  // Verify launcher timestamp exists (indicating successful launch attempt)
+  EXPECT_REG_QWORD_EXISTS(gLauncherValue);
+
+  return mozilla::Ok();
+}
+
+static mozilla::LauncherVoidResult TestCrashTimeoutNotExpired() {
+  // First disable due to crash
+  mozilla::LauncherVoidResult vr = SetupEnabledScenario();
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  mozilla::LauncherRegistryInfo info;
+  vr = info.DisableDueToFailure();
+  if (vr.isErr()) {
+    return vr.propagateErr();
+  }
+
+  // Delete launcher timestamp to make it force-disabled
+  vr = DeleteRegistryValueData(gLauncherValue);
+  if (vr.isErr()) {
+    return vr;
+  }
+  EXPECT_ENABLED_STATE_IS(EnabledState::ForceDisabled);
+
+  // Simulate only 30 days have passed (less than 45)
+  FILETIME currentTime;
+  ::GetSystemTimeAsFileTime(&currentTime);
+  uint64_t currentTimestamp =
+      (static_cast<uint64_t>(currentTime.dwHighDateTime) << 32) |
+      currentTime.dwLowDateTime;
+
+  // 30 days ago in 100-nanosecond intervals
+  constexpr uint64_t kPartialTimeoutInterval =
+      30ULL * 24 * 60 * 60 * 10000000ULL;
+  uint64_t recentCrashTime = currentTimestamp - kPartialTimeoutInterval;
+
+  vr = WriteRegistryValueData<uint64_t>(gCrashTimestampValue, REG_QWORD,
+                                        recentCrashTime);
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  // Attempt to launch - should still be disabled
+  EXPECT_CHECK_RESULT_IS(ProcessType::Launcher, ProcessType::Browser);
+  EXPECT_COMMIT_IS_OK();
+  EXPECT_ENABLED_STATE_IS(EnabledState::ForceDisabled);
+
+  // Verify crash timestamp still exists (wasn't cleared)
+  EXPECT_REG_QWORD_EXISTS_AND_EQ(gCrashTimestampValue, recentCrashTime);
+
+  // Verify browser timestamp is still 0 (force-disabled)
+  EXPECT_REG_QWORD_EXISTS_AND_EQ(gBrowserValue, 0ULL);
+
+  return mozilla::Ok();
+}
+
+static mozilla::LauncherVoidResult TestCrashTimeoutInFuture() {
+  // First disable due to crash
+  mozilla::LauncherVoidResult vr = SetupEnabledScenario();
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  mozilla::LauncherRegistryInfo info;
+  vr = info.DisableDueToFailure();
+  if (vr.isErr()) {
+    return vr.propagateErr();
+  }
+
+  // Delete launcher timestamp to make it force-disabled
+  vr = DeleteRegistryValueData(gLauncherValue);
+  if (vr.isErr()) {
+    return vr;
+  }
+  EXPECT_ENABLED_STATE_IS(EnabledState::ForceDisabled);
+
+  // Simulate a crash "in the future"
+  FILETIME currentTime;
+  ::GetSystemTimeAsFileTime(&currentTime);
+  uint64_t currentTimestamp =
+      (static_cast<uint64_t>(currentTime.dwHighDateTime) << 32) |
+      currentTime.dwLowDateTime;
+
+  // 30 days ago in 100-nanosecond intervals
+  constexpr uint64_t kPartialTimeoutInterval =
+      30ULL * 24 * 60 * 60 * 10000000ULL;
+  uint64_t recentCrashTime = currentTimestamp + kPartialTimeoutInterval;
+
+  vr = WriteRegistryValueData<uint64_t>(gCrashTimestampValue, REG_QWORD,
+                                        recentCrashTime);
+  if (vr.isErr()) {
+    return vr;
+  }
+
+  // Attempt to launch - we should re-enable
+  EXPECT_CHECK_RESULT_IS(ProcessType::Launcher, ProcessType::Launcher);
+  EXPECT_COMMIT_IS_OK();
+
+  EXPECT_REG_QWORD_DOES_NOT_EXIST(gCrashTimestampValue);
+
+  // Verify browser timestamp was cleared (not 0)
+  EXPECT_REG_QWORD_DOES_NOT_EXIST(gBrowserValue);
+
+  // Verify launcher timestamp exists (indicating successful launch attempt)
+  EXPECT_REG_QWORD_EXISTS(gLauncherValue);
+
+  return mozilla::Ok();
+}
+
 int main(int argc, char* argv[]) {
   auto fullPath = mozilla::GetFullBinaryPath();
   if (!fullPath) {
@@ -753,12 +928,15 @@ int main(int argc, char* argv[]) {
   gTelemetryValue = fullPath.get();
   gTelemetryValue += kTelemetrySuffix;
 
+  gCrashTimestampValue = fullPath.get();
+  gCrashTimestampValue += kCrashTimestampSuffix;
+
   mozilla::LauncherResult<DWORD> timestamp = 0;
   RUN_TEST(timestamp, GetCurrentImageTimestamp);
   gMyImageTimestamp = timestamp.unwrap();
 
-  auto onExit = mozilla::MakeScopeExit(
-      []() { mozilla::Unused << DeleteAllRegstryValues(); });
+  auto onExit =
+      mozilla::MakeScopeExit([]() { (void)DeleteAllRegstryValues(); });
 
   mozilla::LauncherVoidResult vr = mozilla::Ok();
 
@@ -778,6 +956,9 @@ int main(int argc, char* argv[]) {
   RUN_TEST(vr, TestDisableDuringLauncherLaunch);
   RUN_TEST(vr, TestDisableDuringBrowserLaunch);
   RUN_TEST(vr, TestReEnable);
+  RUN_TEST(vr, TestCrashTimeoutReenabling);
+  RUN_TEST(vr, TestCrashTimeoutNotExpired);
+  RUN_TEST(vr, TestCrashTimeoutInFuture);
 
   return 0;
 }

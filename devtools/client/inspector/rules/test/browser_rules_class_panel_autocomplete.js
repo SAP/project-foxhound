@@ -242,7 +242,7 @@ async function checkAutocompleteItems(
 }
 
 function getAutocompleteItems(autocompletePopup) {
-  return Array.from(autocompletePopup._panel.querySelectorAll("li")).map(
+  return Array.from(autocompletePopup.tooltip.panel.querySelectorAll("li")).map(
     el => el.textContent
   );
 }

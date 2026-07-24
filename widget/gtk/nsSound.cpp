@@ -5,8 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <string.h>
-
 #include "nscore.h"
 #include "prlink.h"
 
@@ -22,7 +20,6 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "mozilla/FileUtils.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WidgetUtils.h"
 #include "nsIXULAppInfo.h"
 #include "nsContentUtils.h"
@@ -74,7 +71,7 @@ struct ScopedCanberraFile {
     }
   }
 
-  void forget() { mozilla::Unused << mFile.forget(); }
+  void forget() { mFile.forget().leak(); }
   nsIFile* operator->() { return mFile; }
   operator nsIFile*() { return mFile; }
 

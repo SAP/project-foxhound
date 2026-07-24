@@ -6,7 +6,7 @@
 
 document.addEventListener("dialogaccept", resetPassword);
 
-function resetPassword() {
+async function resetPassword() {
   var pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
     Ci.nsIPK11TokenDB
   );
@@ -14,7 +14,7 @@ function resetPassword() {
   token.reset();
 
   try {
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   } catch (e) {}
 
   let l10n = new Localization(["security/pippki/pippki.ftl"], true);

@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLLIElement.h"
-#include "mozilla/dom/HTMLLIElementBinding.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/HTMLLIElementBinding.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 

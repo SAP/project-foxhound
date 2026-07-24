@@ -28,7 +28,7 @@ async function reloadAndGetCounter(tab, query) {
 
 add_task(async function test_redirectCache() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

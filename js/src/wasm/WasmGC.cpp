@@ -46,7 +46,8 @@ using namespace js::wasm;
 bool wasm::CreateStackMapForFunctionEntryTrap(
     const wasm::ArgTypeVector& argTypes, const RegisterOffsets& trapExitLayout,
     size_t trapExitLayoutWords, size_t nBytesReservedBeforeTrap,
-    size_t nInboundStackArgBytes, wasm::StackMap** result) {
+    size_t nInboundStackArgBytes, wasm::StackMaps& stackMaps,
+    wasm::StackMap** result) {
   // Ensure this is defined on all return paths.
   *result = nullptr;
 
@@ -82,8 +83,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   }
 #endif
 
-  wasm::StackMap* stackMap =
-      wasm::StackMap::create(nTotalBytes / sizeof(void*));
+  wasm::StackMap* stackMap = stackMaps.create(nTotalBytes / sizeof(void*));
   if (!stackMap) {
     return false;
   }
@@ -129,7 +129,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   }
 #endif
 
-  *result = stackMap;
+  *result = stackMaps.finalize(stackMap);
   return true;
 }
 
@@ -172,7 +172,7 @@ void wasm::EmitWasmPreBarrierGuard(MacroAssembler& masm, Register instance,
                                    MaybeTrapSiteDesc trapSiteDesc) {
   // If no incremental GC has started, we don't need the barrier.
   masm.loadPtr(
-      Address(instance, Instance::offsetOfAddressOfNeedsIncrementalBarrier()),
+      Address(instance, Instance::offsetOfAddressOfNeedsMarkingBarrier()),
       scratch);
   masm.branchTest32(Assembler::Zero, Address(scratch, 0), Imm32(0x1),
                     skipBarrier);
@@ -260,15 +260,15 @@ void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
                                     const mozilla::Maybe<Register>& object,
                                     Register otherScratch, Register setValue,
                                     Label* skipBarrier) {
+  // If the pointer being stored is to a tenured object, no barrier.
+  masm.branchWasmAnyRefIsNurseryCell(false, setValue, otherScratch,
+                                     skipBarrier);
+
   // If there is a containing object and it is in the nursery, no barrier.
   if (object) {
     masm.branchPtrInNurseryChunk(Assembler::Equal, *object, otherScratch,
                                  skipBarrier);
   }
-
-  // If the pointer being stored is to a tenured object, no barrier.
-  masm.branchWasmAnyRefIsNurseryCell(false, setValue, otherScratch,
-                                     skipBarrier);
 }
 
 void wasm::CheckWholeCellLastElementCache(MacroAssembler& masm,
@@ -312,11 +312,13 @@ bool wasm::IsPlausibleStackMapKey(const uint8_t* nextPC) {
   // TODO(loong64): Implement IsValidStackMapKey.
   return true;
 #  elif defined(JS_CODEGEN_RISCV64)
-  const uint32_t* insn = (const uint32_t*)nextPC;
+  const uint32_t* insn = reinterpret_cast<const uint32_t*>(nextPC);
   return (((uintptr_t(insn) & 3) == 0) &&
           ((insn[-1] == 0x00006037 && insn[-2] == 0x00100073) ||  // break;
-           ((insn[-1] & kBaseOpcodeMask) == JALR) ||
-           ((insn[-1] & kBaseOpcodeMask) == JAL) ||
+           ((insn[-1] & kBaseOpcodeMask) == JALR) ||              // jalr
+           ((insn[-1] & kBaseOpcodeMask) == JAL) ||               // jal
+           ((insn[-2] & kBaseOpcodeMask) == JAL &&
+            insn[-1] == 0x00000013 /* addi zero, zero, 0 */) ||  // jal; nop
            (insn[-1] == 0x00100073 &&
             (insn[-2] & kITypeMask) == RO_CSRRWI)));  // wasm trap
 #  else
@@ -329,7 +331,7 @@ void StackMaps::checkInvariants(const uint8_t* base) const {
 #ifdef DEBUG
   // Chech that each entry points from the stackmap structure points
   // to a plausible instruction.
-  for (auto iter = mapping_.iter(); !iter.done(); iter.next()) {
+  for (auto iter = codeOffsetToStackMap_.iter(); !iter.done(); iter.next()) {
     MOZ_ASSERT(IsPlausibleStackMapKey(base + iter.get().key()),
                "wasm stackmap does not reference a valid insn");
   }

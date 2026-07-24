@@ -14,8 +14,6 @@
 
 #include "cairo.h"
 
-#include <vector>
-
 using namespace mozilla::gfx;
 
 gfxPattern::gfxPattern(const DeviceColor& aColor) : mExtend(ExtendMode::CLAMP) {

@@ -3,13 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::io::Read;
-use std::sync::{Arc, Barrier, Mutex};
-use std::thread::{self, ThreadId};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::RecvTimeoutError;
 use flate2::read::GzDecoder;
-use glean_core::{glean_test_get_experimentation_id, DynamicLabelType};
+use glean_core::{glean_test_get_experimentation_id, DynamicLabelType, LabeledCounter};
 use serde_json::Value as JsonValue;
 
 use crate::private::PingType;
@@ -63,6 +62,7 @@ fn send_a_ping() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Define a new ping and submit it.
@@ -105,6 +105,7 @@ fn send_a_ping_without_info_sections() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Define a new ping and submit it.
@@ -272,6 +273,7 @@ fn sending_of_foreground_background_pings() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Simulate becoming active.
@@ -354,6 +356,8 @@ fn sending_of_startup_baseline_ping() {
 #[test]
 fn no_dirty_baseline_on_clean_shutdowns() {
     let _lock = lock_test();
+
+    glean_core::glean_set_test_mode(true);
 
     // Create an instance of Glean, wait for init and then flip the dirty
     // bit to true.
@@ -590,6 +594,8 @@ fn ping_collection_must_happen_after_concurrently_scheduled_metrics_recordings()
 
     let (s, r) = crossbeam_channel::bounded(1);
 
+    glean_core::glean_set_test_mode(true);
+
     // Define a fake uploader that reports back the submission URL
     // using a crossbeam channel.
     #[derive(Debug)]
@@ -770,6 +776,8 @@ fn no_sending_of_deletion_ping_if_unchanged_outside_of_run() {
     let _lock = lock_test();
 
     let (s, r) = crossbeam_channel::bounded::<String>(1);
+
+    glean_core::glean_set_test_mode(true);
 
     // Define a fake uploader that reports back the submission URL
     // using a crossbeam channel.
@@ -1078,6 +1086,7 @@ fn setting_source_tags_after_initialization_should_not_crash() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Attempt to set source tags after `Glean.initialize` is called,
@@ -1114,6 +1123,8 @@ fn flipping_upload_enabled_respects_order_of_events() {
     let _lock = lock_test();
 
     let (s, r) = crossbeam_channel::bounded::<String>(1);
+
+    glean_core::glean_set_test_mode(true);
 
     // Define a fake uploader that reports back the submission URL
     // using a crossbeam channel.
@@ -1195,6 +1206,7 @@ fn registering_pings_before_init_must_work() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Submit a test ping.
@@ -1234,6 +1246,7 @@ fn test_a_ping_before_submission() {
         .with_uploader(FakeUploader { sender: s })
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     // Create a custom ping and register it.
@@ -1281,6 +1294,39 @@ fn test_boolean_get_num_errors() {
     // Check specifically for an invalid label
     let result = metric.test_get_num_recorded_errors(ErrorType::InvalidLabel);
 
+    assert_eq!(result, 0);
+}
+
+#[test]
+fn test_labeled_counter_metric() {
+    let _lock = lock_test();
+
+    let _t = new_glean(None, false);
+
+    let metric = LabeledCounter::new(
+        LabeledMetricData::Common {
+            cmd: CommonMetricData {
+                name: "labeled_counter".into(),
+                category: "telemetry".into(),
+                send_in_pings: vec!["store1".into()],
+                disabled: false,
+                lifetime: Lifetime::Ping,
+                ..Default::default()
+            },
+        },
+        Some(vec!["key1".into()]),
+    );
+
+    metric.get("key1").add(1);
+    metric.get("key2").add(2);
+
+    // Check that the value was recorded
+    let value = metric.test_get_value(Some("store1".into())).unwrap();
+    assert_eq!(value["key1"], 1);
+    assert_eq!(value["key2"], 2);
+
+    // Check for an invalid label
+    let result = metric.test_get_num_recorded_errors(ErrorType::InvalidLabel);
     assert_eq!(result, 0);
 }
 
@@ -1342,80 +1388,12 @@ fn test_text_can_hold_long_string() {
 }
 
 #[test]
-fn signaling_done() {
-    let _lock = lock_test();
-
-    // Define a fake uploader that reports back the submission URL
-    // using a crossbeam channel.
-    #[derive(Debug)]
-    pub struct FakeUploader {
-        barrier: Arc<Barrier>,
-        counter: Arc<Mutex<HashMap<ThreadId, u32>>>,
-    }
-    impl net::PingUploader for FakeUploader {
-        fn upload(&self, _upload_request: net::CapablePingUploadRequest) -> net::UploadResult {
-            let mut map = self.counter.lock().unwrap();
-            *map.entry(thread::current().id()).or_insert(0) += 1;
-
-            // Wait for the sync.
-            self.barrier.wait();
-
-            // Signal that this uploader thread is done.
-            net::UploadResult::done()
-        }
-    }
-
-    // Create a custom configuration to use a fake uploader.
-    let dir = tempfile::tempdir().unwrap();
-    let tmpname = dir.path().to_path_buf();
-
-    // We use a barrier to sync this test thread with the uploader thread.
-    let barrier = Arc::new(Barrier::new(2));
-    // We count how many times `upload` was invoked per thread.
-    let call_count = Arc::new(Mutex::default());
-
-    let cfg = ConfigurationBuilder::new(true, tmpname, GLOBAL_APPLICATION_ID)
-        .with_server_endpoint("invalid-test-host")
-        .with_uploader(FakeUploader {
-            barrier: Arc::clone(&barrier),
-            counter: Arc::clone(&call_count),
-        })
-        .build();
-
-    let _t = new_glean(Some(cfg), true);
-
-    // Define a new ping and submit it.
-    const PING_NAME: &str = "test-ping";
-    let custom_ping = new_test_ping(PING_NAME);
-    custom_ping.submit(None);
-    custom_ping.submit(None);
-
-    // Sync up with the upload thread.
-    barrier.wait();
-
-    // Submit another ping and wait for it to do work.
-    custom_ping.submit(None);
-
-    // Sync up with the upload thread again.
-    // This will not be the same thread as the one before (hopefully).
-    barrier.wait();
-
-    // No one's ever gonna wait for the uploader thread (the RLB doesn't store the handle to it),
-    // so all we can do is hope it finishes within time.
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    let map = call_count.lock().unwrap();
-    assert_eq!(2, map.len(), "should have launched 2 uploader threads");
-    for &count in map.values() {
-        assert_eq!(1, count, "each thread should call upload only once");
-    }
-}
-
-#[test]
 fn configure_ping_throttling() {
     let _lock = lock_test();
 
     let (s, r) = crossbeam_channel::bounded::<String>(1);
+
+    glean_core::glean_set_test_mode(true);
 
     // Define a fake uploader that reports back the submission URL
     // using a crossbeam channel.
@@ -1520,6 +1498,7 @@ fn pings_ride_along_builtin_pings() {
         .with_ping_schedule(ping_schedule)
         .build();
 
+    glean_core::glean_set_test_mode(true);
     let _t = new_glean(Some(cfg), true);
 
     let _ride_along_ping = new_test_ping("ride-along");
@@ -1533,6 +1512,62 @@ fn pings_ride_along_builtin_pings() {
 
     // We expect a ride-along ping to ride along.
     let url = r.recv().unwrap();
+    assert!(url.contains("ride-along"));
+}
+
+#[test]
+fn pings_get_submitted_on_disabled_ping_schedule() {
+    let _lock = lock_test();
+
+    // Define a fake uploader that reports back the submission headers
+    // using a crossbeam channel.
+    let (s, r) = crossbeam_channel::bounded::<String>(3);
+
+    #[derive(Debug)]
+    pub struct FakeUploader {
+        sender: crossbeam_channel::Sender<String>,
+    }
+    impl net::PingUploader for FakeUploader {
+        fn upload(&self, upload_request: net::CapablePingUploadRequest) -> net::UploadResult {
+            let upload_request = upload_request.capable(|_| true).unwrap();
+            self.sender.send(upload_request.url).unwrap();
+            net::UploadResult::http_status(200)
+        }
+    }
+
+    // Create a custom configuration to use a fake uploader.
+    let dir = tempfile::tempdir().unwrap();
+    let tmpname = dir.path().to_path_buf();
+
+    let ping_schedule = HashMap::from([("baseline".to_string(), vec!["ride-along".to_string()])]);
+
+    let cfg = ConfigurationBuilder::new(false, tmpname, GLOBAL_APPLICATION_ID)
+        .with_server_endpoint("invalid-test-host")
+        .with_uploader(FakeUploader { sender: s })
+        .with_ping_schedule(ping_schedule)
+        .build();
+
+    let _t = new_glean(Some(cfg), true);
+
+    let ride_along_ping = PingType::new(
+        "ride-along",
+        true,
+        true,
+        true,
+        true,
+        true,
+        vec![],
+        vec![],
+        false,
+        vec![],
+    );
+    ride_along_ping.set_enabled(true);
+
+    // Simulate becoming active.
+    handle_client_active();
+
+    // We expect a ride-along ping to ride along.
+    let url = r.recv_timeout(Duration::from_millis(100)).unwrap();
     assert!(url.contains("ride-along"));
 }
 

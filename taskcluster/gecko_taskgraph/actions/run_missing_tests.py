@@ -7,6 +7,7 @@ import logging
 
 from taskgraph.util.taskcluster import get_artifact
 
+from ..util.constants import TEST_KINDS
 from .registry import register_callback_action
 from .util import create_tasks, fetch_graph_and_labels
 
@@ -39,7 +40,7 @@ def run_missing_tests(parameters, graph_config, input, task_group_id, task_id):
     already_run = 0
     for label in target_tasks:
         task = full_task_graph.tasks[label]
-        if task.kind != "test":
+        if task.kind not in TEST_KINDS:
             continue  # not a test
         if label in label_to_taskid:
             already_run += 1

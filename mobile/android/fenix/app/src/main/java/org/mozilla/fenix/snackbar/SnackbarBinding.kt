@@ -5,7 +5,9 @@
 package org.mozilla.fenix.snackbar
 
 import android.content.Context
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.navigation.NavController
+import com.google.android.material.snackbar.BaseTransientBottomBar.LENGTH_INDEFINITE
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -22,9 +24,10 @@ import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.lib.state.helpers.AbstractBinding
 import mozilla.components.ui.widgets.SnackbarDelegate
-import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.SentFromFirefox
 import org.mozilla.fenix.R
+import org.mozilla.fenix.bookmarks.BookmarksGlobalResultReport
+import org.mozilla.fenix.bookmarks.friendlyRootTitle
 import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
@@ -37,10 +40,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
-import org.mozilla.fenix.library.bookmarks.friendlyRootTitle
-
-const val WEBCOMPAT_SNACKBAR_DURATION_MS = 20000
-const val DOWNLOAD_SNACKBAR_DURATION_MS = 20000
+import org.mozilla.fenix.utils.getSnackbarTimeout
 
 /**
  * A binding for observing the [SnackbarState] in the [AppStore] and displaying the snackbar.
@@ -56,6 +56,8 @@ const val DOWNLOAD_SNACKBAR_DURATION_MS = 20000
  * if the selected session should be used.
  * @param ioDispatcher The [CoroutineDispatcher] used for background operations executed when
  * the user starts a snackbar action.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 @Suppress("LongParameterList")
 class SnackbarBinding(
@@ -68,19 +70,42 @@ class SnackbarBinding(
     private val sendTabUseCases: SendTabUseCases?,
     private val customTabSessionId: String?,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
 
     private val currentSession
         get() = browserStore.state.findCustomTabOrSelectedTab(customTabSessionId)
 
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
     override suspend fun onState(flow: Flow<AppState>) {
         flow.map { state -> state.snackbarState }
             .distinctUntilChanged()
             .collect { state ->
                 when (state) {
+                    is SnackbarState.ShowSnackbar -> {
+                        snackbarDelegate.show(
+                            text = state.title,
+                            duration = state.duration,
+                        )
+
+                        appStore.dispatch(SnackbarAction.SnackbarShown)
+                    }
+
                     is SnackbarState.BookmarkAdded -> {
                         showBookmarkAddedSnackbarFor(state)
+                    }
+
+                    is SnackbarState.BookmarkOperationResultReported -> {
+                        showBookmarkResultSnackbar(state)
+                    }
+
+                    is SnackbarState.ReportSent -> {
+                        snackbarDelegate.show(
+                            text = R.string.crash_reporting_snack_bar_message,
+                            duration = Snackbar.LENGTH_SHORT,
+                        )
+
+                        appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
 
                     is SnackbarState.BookmarkDeleted -> {
@@ -95,14 +120,6 @@ class SnackbarBinding(
                     is SnackbarState.ShortcutAdded -> {
                         snackbarDelegate.show(
                             text = R.string.snackbar_added_to_shortcuts,
-                            duration = Snackbar.LENGTH_LONG,
-                        )
-                        appStore.dispatch(SnackbarAction.SnackbarShown)
-                    }
-
-                    is SnackbarState.ShortcutRemoved -> {
-                        snackbarDelegate.show(
-                            text = R.string.snackbar_top_site_removed,
                             duration = Snackbar.LENGTH_LONG,
                         )
                         appStore.dispatch(SnackbarAction.SnackbarShown)
@@ -181,8 +198,8 @@ class SnackbarBinding(
                     is SnackbarState.SharedTabsSuccessfully -> {
                         snackbarDelegate.show(
                             text = when (state.tabs.size) {
-                                1 -> R.string.sync_sent_tab_snackbar
-                                else -> R.string.sync_sent_tabs_snackbar
+                                1 -> R.string.sync_sent_tab_snackbar_2
+                                else -> R.string.sync_sent_tabs_snackbar_2
                             },
                             duration = Snackbar.LENGTH_SHORT,
                         )
@@ -242,19 +259,9 @@ class SnackbarBinding(
 
                     SnackbarState.WebCompatReportSent -> {
                         snackbarDelegate.show(
-                            text = context.getString(R.string.webcompat_reporter_success_snackbar_text),
-                            duration = WEBCOMPAT_SNACKBAR_DURATION_MS,
-                            action = context.getString(R.string.webcompat_reporter_dismiss_success_snackbar_text),
+                            text = context.getString(R.string.webcompat_reporter_success_snackbar_text_2),
+                            duration = context.getSnackbarTimeout().value.toInt(),
                             listener = { snackbarDelegate.dismiss() },
-                        )
-
-                        appStore.dispatch(SnackbarAction.SnackbarShown)
-                    }
-
-                    SnackbarState.SiteDataCleared -> {
-                        snackbarDelegate.show(
-                            text = R.string.clear_site_data_snackbar,
-                            duration = Snackbar.LENGTH_LONG,
                         )
 
                         appStore.dispatch(SnackbarAction.SnackbarShown)
@@ -274,18 +281,12 @@ class SnackbarBinding(
                     is SnackbarState.DownloadInProgress -> {
                         snackbarDelegate.show(
                             text = context.getString(R.string.download_in_progress_snackbar),
-                            duration = DOWNLOAD_SNACKBAR_DURATION_MS,
-                            action = if (FeatureFlags.showLiveDownloads) {
-                                context.getString(R.string.download_in_progress_snackbar_action_details)
-                            } else {
-                                null
-                            },
+                            duration = context.getSnackbarTimeout(hasAction = true).value.toInt(),
+                            action = context.getString(R.string.download_in_progress_snackbar_action_details),
                         ) {
-                            if (FeatureFlags.showLiveDownloads) {
-                                navController.navigate(
-                                    BrowserFragmentDirections.actionGlobalDownloadsFragment(),
-                                )
-                            }
+                            navController.navigate(
+                                BrowserFragmentDirections.actionGlobalDownloadsFragment(),
+                            )
                         }
 
                         appStore.dispatch(SnackbarAction.SnackbarShown)
@@ -295,18 +296,14 @@ class SnackbarBinding(
                         snackbarDelegate.show(
                             text = context.getString(R.string.download_item_status_failed),
                             subText = state.fileName,
-                            duration = DOWNLOAD_SNACKBAR_DURATION_MS,
-                            action = if (FeatureFlags.showLiveDownloads) {
-                                context.getString(R.string.download_failed_snackbar_action_details)
-                            } else {
-                                null
-                            },
+                            subTextOverflow = TextOverflow.MiddleEllipsis,
+                            duration = LENGTH_INDEFINITE,
+                            action = context.getString(R.string.download_failed_snackbar_action_details),
+                            withDismissAction = true,
                         ) {
-                            if (FeatureFlags.showLiveDownloads) {
-                                navController.navigate(
-                                    BrowserFragmentDirections.actionGlobalDownloadsFragment(),
-                                )
-                            }
+                            navController.navigate(
+                                BrowserFragmentDirections.actionGlobalDownloadsFragment(),
+                            )
                         }
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
@@ -315,11 +312,13 @@ class SnackbarBinding(
                         snackbarDelegate.show(
                             text = context.getString(R.string.download_completed_snackbar),
                             subText = state.downloadState.fileName,
-                            duration = DOWNLOAD_SNACKBAR_DURATION_MS,
+                            subTextOverflow = TextOverflow.MiddleEllipsis,
+                            duration = context.getSnackbarTimeout(hasAction = true).value.toInt(),
                             action = context.getString(R.string.download_completed_snackbar_action_open),
                         ) {
                             val fileWasOpened = AbstractFetchDownloadService.openFile(
                                 applicationContext = context.applicationContext,
+                                packageName = context.applicationContext.packageName,
                                 downloadFileName = state.downloadState.fileName,
                                 downloadFilePath = state.downloadState.filePath,
                                 downloadContentType = state.downloadState.contentType,
@@ -338,9 +337,9 @@ class SnackbarBinding(
                         snackbarDelegate.show(
                             text = getCannotOpenFileErrorMessage(
                                 context,
-                                state.downloadState,
+                                state.downloadState.filePath,
                             ),
-                            duration = DOWNLOAD_SNACKBAR_DURATION_MS,
+                            duration = context.getSnackbarTimeout(hasAction = false).value.toInt(),
                         )
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
@@ -390,5 +389,18 @@ class SnackbarBinding(
         }
 
         appStore.dispatch(SnackbarAction.SnackbarShown)
+    }
+
+    private fun showBookmarkResultSnackbar(state: SnackbarState.BookmarkOperationResultReported) {
+        val id = when (state.result) {
+            BookmarksGlobalResultReport.EditBookmarkFailed -> R.string.bookmark_error_edit_bookmark
+            BookmarksGlobalResultReport.SelectFolderFailed -> R.string.bookmark_error_select_folder
+            BookmarksGlobalResultReport.AddFolderFailed -> R.string.bookmark_error_add_folder
+            BookmarksGlobalResultReport.EditFolderFailed -> R.string.bookmark_error_edit_folder
+        }
+        snackbarDelegate.show(
+            text = context.getString(id),
+            duration = Snackbar.LENGTH_LONG,
+        )
     }
 }

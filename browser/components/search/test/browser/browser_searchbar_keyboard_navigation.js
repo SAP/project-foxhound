@@ -91,7 +91,7 @@ add_task(async function test_arrows() {
 
   ok(!textbox.selectedButton, "no one-off button should be selected");
 
-  await checkHeader(Services.search.defaultEngine);
+  await checkHeader(SearchService.defaultEngine);
   // The down arrow should first go through the suggestions.
   for (let i = 0; i < kValues.length; ++i) {
     EventUtils.synthesizeKey("KEY_ArrowDown");
@@ -105,7 +105,7 @@ add_task(async function test_arrows() {
       kValues[i],
       "the textfield value should be " + kValues[i]
     );
-    await checkHeader(Services.search.defaultEngine);
+    await checkHeader(SearchService.defaultEngine);
   }
 
   // Pressing down again should remove suggestion selection and change the text
@@ -134,13 +134,13 @@ add_task(async function test_arrows() {
     textbox.selectedButton.classList.contains("search-setting-button"),
     "the settings item should be selected"
   );
-  await checkHeader(Services.search.defaultEngine);
+  await checkHeader(SearchService.defaultEngine);
   EventUtils.synthesizeKey("KEY_ArrowDown");
 
   // We should now be back to the initial situation.
   is(searchPopup.selectedIndex, -1, "no suggestion should be selected");
   ok(!textbox.selectedButton, "no one-off button should be selected");
-  await checkHeader(Services.search.defaultEngine);
+  await checkHeader(SearchService.defaultEngine);
 
   info("now test the up arrow key");
   EventUtils.synthesizeKey("KEY_ArrowUp");
@@ -148,7 +148,7 @@ add_task(async function test_arrows() {
     textbox.selectedButton.classList.contains("search-setting-button"),
     "the settings item should be selected"
   );
-  await checkHeader(Services.search.defaultEngine);
+  await checkHeader(SearchService.defaultEngine);
 
   // cycle through the one-off items, the first one is already selected.
   for (let i = oneOffs.length; i; --i) {
@@ -178,7 +178,7 @@ add_task(async function test_arrows() {
       kValues[i],
       "the textfield value should be " + kValues[i]
     );
-    await checkHeader(Services.search.defaultEngine);
+    await checkHeader(SearchService.defaultEngine);
     EventUtils.synthesizeKey("KEY_ArrowUp");
   }
 
@@ -423,8 +423,8 @@ add_task(async function test_alt_up() {
 add_task(async function test_accel_down() {
   // Pressing accel+down should select the next visible search engine, without
   // selecting suggestions.
-  let engines = await Services.search.getVisibleEngines();
-  let current = Services.search.defaultEngine;
+  let engines = await SearchService.getVisibleEngines();
+  let current = SearchService.defaultEngine;
   let currIdx = -1;
   for (let i = 0, l = engines.length; i < l; ++i) {
     if (engines[i].name == current.name) {
@@ -440,23 +440,20 @@ add_task(async function test_accel_down() {
     );
     let expected = engines[++currIdx % engines.length];
     is(
-      Services.search.defaultEngine.name,
+      SearchService.defaultEngine.name,
       expected.name,
       "Default engine should have changed"
     );
     is(searchPopup.selectedIndex, -1, "no suggestion should be selected");
   }
-  await Services.search.setDefault(
-    current,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  await SearchService.setDefault(current, SearchService.CHANGE_REASON.UNKNOWN);
 });
 
 add_task(async function test_accel_up() {
   // Pressing accel+down should select the previous visible search engine, without
   // selecting suggestions.
-  let engines = await Services.search.getVisibleEngines();
-  let current = Services.search.defaultEngine;
+  let engines = await SearchService.getVisibleEngines();
+  let current = SearchService.defaultEngine;
   let currIdx = -1;
   for (let i = 0, l = engines.length; i < l; ++i) {
     if (engines[i].name == current.name) {
@@ -473,16 +470,13 @@ add_task(async function test_accel_up() {
     let expected =
       engines[--currIdx < 0 ? (currIdx = engines.length - 1) : currIdx];
     is(
-      Services.search.defaultEngine.name,
+      SearchService.defaultEngine.name,
       expected.name,
       "Default engine should have changed"
     );
     is(searchPopup.selectedIndex, -1, "no suggestion should be selected");
   }
-  await Services.search.setDefault(
-    current,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  await SearchService.setDefault(current, SearchService.CHANGE_REASON.UNKNOWN);
 });
 
 add_task(async function test_tab_and_arrows() {

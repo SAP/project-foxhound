@@ -8,8 +8,8 @@
 #define mozilla_dom_URLClassifierChild_h
 
 #include "mozilla/dom/PURLClassifierChild.h"
-#include "mozilla/dom/PURLClassifierLocalChild.h"
 #include "mozilla/dom/PURLClassifierLocalByNameChild.h"
+#include "mozilla/dom/PURLClassifierLocalChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/UrlClassifierFeatureResult.h"
 #include "nsIURIClassifier.h"

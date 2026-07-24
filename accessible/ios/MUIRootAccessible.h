@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_
+#define ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_
+
 #import "MUIAccessible.h"
 
 // our protocol that we implement (so uikit widgets can talk to us)
@@ -27,3 +30,5 @@
 - (id)representedView;
 
 @end
+
+#endif  // ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_

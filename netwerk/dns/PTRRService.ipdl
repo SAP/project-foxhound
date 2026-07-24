@@ -18,7 +18,7 @@ async protocol PTRRService
 
 parent:
   async NotifyNetworkConnectivityServiceObservers(nsCString aTopic);
-  async InitTRRConnectionInfo();
+  async InitTRRConnectionInfo(bool aForceReinit);
   async SetConfirmationState(uint32_t aNewState);
 
 child:

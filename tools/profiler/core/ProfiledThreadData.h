@@ -16,7 +16,6 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/ProfileJSONWriter.h"
 #include "mozilla/ProfilerThreadRegistrationInfo.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
@@ -77,7 +76,9 @@ class ProfiledThreadData final {
       const ProfileBuffer& aBuffer, JSContext* aCx,
       mozilla::FailureLatch& aFailureLatch,
       ProfilerCodeAddressService* aService,
-      mozilla::ProgressLogger aProgressLogger);
+      mozilla::ProgressLogger aProgressLogger,
+      const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap =
+          nullptr);
 
   void StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
                   SpliceableJSONWriter& aWriter, const nsACString& aProcessName,
@@ -154,6 +155,7 @@ struct ThreadStreamingContext {
   JSContext* mJSContext;
   SpliceableChunkedJSONWriter mSamplesDataWriter;
   SpliceableChunkedJSONWriter mMarkersDataWriter;
+  SpliceableChunkedJSONWriter mShapesDataWriter;
   mozilla::NotNull<mozilla::UniquePtr<UniqueStacks>> mUniqueStacks;
 
   // These are updated when writing samples, and reused for "same-sample"s.
@@ -165,7 +167,9 @@ struct ThreadStreamingContext {
                          const ProfileBuffer& aBuffer, JSContext* aCx,
                          mozilla::FailureLatch& aFailureLatch,
                          ProfilerCodeAddressService* aService,
-                         mozilla::ProgressLogger aProgressLogger);
+                         mozilla::ProgressLogger aProgressLogger,
+                         const nsTHashMap<SourceId, IndexIntoSourceTable>*
+                             aSourceIdToIndexMap = nullptr);
 
   void FinalizeWriter();
 };
@@ -183,10 +187,12 @@ class ProcessStreamingContext final : public mozilla::FailureLatch {
 
   // Add the streaming context corresponding to each profiled thread. This
   // should be called exactly the number of times specified in the constructor.
-  void AddThreadStreamingContext(ProfiledThreadData& aProfiledThreadData,
-                                 const ProfileBuffer& aBuffer, JSContext* aCx,
-                                 ProfilerCodeAddressService* aService,
-                                 mozilla::ProgressLogger aProgressLogger);
+  void AddThreadStreamingContext(
+      ProfiledThreadData& aProfiledThreadData, const ProfileBuffer& aBuffer,
+      JSContext* aCx, ProfilerCodeAddressService* aService,
+      mozilla::ProgressLogger aProgressLogger,
+      const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap =
+          nullptr);
 
   // Retrieve the ThreadStreamingContext for a given thread id.
   // Returns null if that thread id doesn't correspond to any profiled thread.

@@ -12,10 +12,12 @@ interface NavigationCurrentEntryChangeEvent : Event {
   constructor(DOMString type, NavigationCurrentEntryChangeEventInit eventInitDict);
 
   readonly attribute NavigationType? navigationType;
-  readonly attribute NavigationHistoryEntry from;
+  // Allow `from` to be null, unlike the spec: see bug 1999668
+  readonly attribute NavigationHistoryEntry? from;
 };
 
 dictionary NavigationCurrentEntryChangeEventInit : EventInit {
   NavigationType? navigationType = null;
-  required NavigationHistoryEntry from;
+  // Allow `from` to be null, unlike the spec: see bug 1999668
+  required NavigationHistoryEntry? from;
 };

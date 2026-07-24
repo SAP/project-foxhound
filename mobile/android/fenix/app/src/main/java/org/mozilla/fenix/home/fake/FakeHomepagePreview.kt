@@ -5,11 +5,14 @@
 package org.mozilla.fenix.home.fake
 
 import android.content.Context
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.recover.RecoverableTab
+import mozilla.components.compose.base.BannerColors
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.feature.tab.collections.Tab
@@ -20,18 +23,12 @@ import mozilla.components.service.nimbus.messaging.MessageData
 import mozilla.components.service.nimbus.messaging.StyleData
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
-import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryCaps
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryShim
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
-import org.mozilla.fenix.compose.MessageCardColors
 import org.mozilla.fenix.compose.MessageCardState
-import org.mozilla.fenix.compose.SelectableChipColors
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.interactor.BookmarksInteractor
 import org.mozilla.fenix.home.collections.CollectionColors
@@ -39,6 +36,7 @@ import org.mozilla.fenix.home.collections.CollectionsState
 import org.mozilla.fenix.home.interactor.HomepageInteractor
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.PocketState
+import org.mozilla.fenix.home.pocket.interactor.PocketStoriesInteractor
 import org.mozilla.fenix.home.privatebrowsing.interactor.PrivateBrowsingInteractor
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.interactor.RecentSyncedTabInteractor
@@ -50,10 +48,11 @@ import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryHigh
 import org.mozilla.fenix.home.recentvisits.interactor.RecentVisitsInteractor
 import org.mozilla.fenix.home.search.HomeSearchInteractor
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
-import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.home.store.NimbusMessageState
+import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerInteractor
+import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerInteractorNoOp
+import org.mozilla.fenix.home.topsites.interactor.TopSiteInteractor
 import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
-import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.wallpapers.WallpaperState
 import java.io.File
 import java.util.UUID
@@ -64,6 +63,7 @@ import kotlin.random.Random
  */
 internal object FakeHomepagePreview {
     private val random = Random(seed = 1)
+    private const val DEFAULT_POCKET_STORIES_COUNT = 30
 
     val homepageInteractor: HomepageInteractor
         get() = object :
@@ -75,7 +75,9 @@ internal object FakeHomepagePreview {
             BookmarksInteractor by bookmarksInteractor,
             RecentVisitsInteractor by recentVisitsInteractor,
             HomeSearchInteractor by homeSearchInteractor,
-            CollectionInteractor by collectionInteractor {
+            CollectionInteractor by collectionInteractor,
+            PocketStoriesInteractor by storiesInteractor,
+            PrivacyNoticeBannerInteractor by PrivacyNoticeBannerInteractorNoOp {
             override fun reportSessionMetrics(state: AppState) { /* no op */ }
 
             override fun onPasteAndGo(clipboardText: String) { /* no op */ }
@@ -88,6 +90,19 @@ internal object FakeHomepagePreview {
 
             override fun onMessageClosedClicked(message: Message) { /* no op */ }
 
+            override fun onMenuItemTapped(item: SearchSelectorMenu.Item) { /* no op */ }
+
+            override fun showWallpapersOnboardingDialog(state: WallpaperState): Boolean {
+                return false
+            }
+
+            override fun onChecklistItemClicked(item: ChecklistItem) { /* no op */ }
+
+            override fun onRemoveChecklistButtonClicked() { /* no op */ }
+        }
+
+    internal val storiesInteractor
+        get() = object : PocketStoriesInteractor {
             override fun onStoryShown(
                 storyShown: PocketStory,
                 storyPosition: Triple<Int, Int, Int>,
@@ -102,15 +117,8 @@ internal object FakeHomepagePreview {
                 storyPosition: Triple<Int, Int, Int>,
             ) { /* no op */ }
 
-            override fun onMenuItemTapped(item: SearchSelectorMenu.Item) { /* no op */ }
-
-            override fun showWallpapersOnboardingDialog(state: WallpaperState): Boolean {
-                return false
-            }
-
-            override fun onChecklistItemClicked(item: ChecklistItem) { /* no op */ }
-
-            override fun onRemoveChecklistButtonClicked() { /* no op */ }
+            override fun onDiscoverMoreClicked() { /* no op */ }
+            override fun onDiscoverMoreScreenViewed() { /* no op */ }
         }
 
     internal val privateBrowsingInteractor
@@ -139,6 +147,10 @@ internal object FakeHomepagePreview {
             override fun onSponsorPrivacyClicked() { /* no op */ }
 
             override fun onTopSiteLongClicked(topSite: TopSite) { /* no op */ }
+
+            override fun onShowAllTopSitesClicked() { /* no op */ }
+
+            override fun onShortcutsLibraryViewed() { /* no op */ }
         }
 
     internal val recentTabInteractor
@@ -223,7 +235,7 @@ internal object FakeHomepagePreview {
         messageText = stringResource(id = R.string.default_browser_experiment_card_text),
         titleText = stringResource(id = R.string.default_browser_experiment_card_title),
         buttonText = "",
-        messageColors = MessageCardColors.buildMessageCardColors(),
+        bannerColors = BannerColors.bannerColors(),
     )
 
     internal fun message() = Message(
@@ -283,7 +295,7 @@ internal object FakeHomepagePreview {
         }
     }
 
-    internal fun recentTabs(tabCount: Int = 2): List<RecentTab.Tab> =
+    internal fun recentTabs(tabCount: Int = 1): List<RecentTab.Tab> =
         mutableListOf<RecentTab.Tab>().apply {
             repeat(tabCount) {
                 add(
@@ -292,6 +304,7 @@ internal object FakeHomepagePreview {
                             id = randomId(),
                             content = ContentState(
                                 url = URL,
+                                title = "A title that is really really really long",
                             ),
                         ),
                     ),
@@ -310,6 +323,14 @@ internal object FakeHomepagePreview {
 
     internal fun bookmarks(bookmarkCount: Int = 4) =
         mutableListOf<Bookmark>().apply {
+            add(
+                Bookmark(
+                    title = "A long long Other Bookmark Title",
+                    url = "https://www.example.com",
+                    previewImageUrl = null,
+                ),
+            )
+
             repeat(bookmarkCount) {
                 add(
                     Bookmark(
@@ -387,18 +408,19 @@ internal object FakeHomepagePreview {
     }
 
     @Composable
-    internal fun pocketState(limit: Int = 1) = PocketState(
-        stories = pocketStories(limit = limit),
+    internal fun pocketState(limit: Int = DEFAULT_POCKET_STORIES_COUNT) = PocketState(
+        stories = stories(limit = limit),
         categories = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor"
             .split(" ")
             .map { PocketRecommendedStoriesCategory(it) },
         categoriesSelections = emptyList(),
-        categoryColors = SelectableChipColors.buildColors(),
-        textColor = FirefoxTheme.colors.textPrimary,
-        linkTextColor = FirefoxTheme.colors.textAccent,
+        categoryColors = FilterChipDefaults.filterChipColors(),
+        textColor = MaterialTheme.colorScheme.onSurface,
+        linkTextColor = MaterialTheme.colorScheme.tertiary,
+        showDiscoverMoreButton = false,
     )
 
-    internal fun contentRecommendation(index: Int = 0): ContentRecommendation =
+    internal fun contentRecommendation(index: Int = Random.nextInt(until = 5)): ContentRecommendation =
         ContentRecommendation(
             corpusItemId = "corpusItemId$index",
             scheduledCorpusItemId = "scheduledCorpusItemId$index",
@@ -415,34 +437,9 @@ internal object FakeHomepagePreview {
             impressions = index.toLong(),
         )
 
-    internal fun pocketRecommendedStory(index: Int = 0) = PocketRecommendedStory(
-            title = "Story - This is a ${"very ".repeat(index)} long title",
-            publisher = "Publisher",
-            url = "https://story$index.com",
-            imageUrl = URL,
-            timeToRead = index,
-            category = "Category #$index",
-            timesShown = index.toLong(),
-        )
-
-    internal fun pocketSponsoredStory(index: Int = 0) = PocketSponsoredStory(
-        id = index,
-        title = "This is a ${"very ".repeat(index)} long title",
+    internal fun sponsoredContent(index: Int = Random.nextInt(until = 5)) = SponsoredContent(
         url = "https://sponsored-story$index.com",
-        imageUrl = URL,
-        sponsor = "Mozilla",
-        shim = PocketSponsoredStoryShim("", ""),
-        priority = index,
-        caps = PocketSponsoredStoryCaps(
-            flightCount = index,
-            flightPeriod = index * 2,
-            lifetimeCount = index * 3,
-        ),
-    )
-
-    internal fun sponsoredContent(index: Int = 0) = SponsoredContent(
-        url = "https://sponsored-story$index.com",
-        title = "This is a ${"very ".repeat(index)} long title",
+        title = "This is a ${"very ".repeat(index)}long title",
         callbacks = PocketStory.SponsoredContentCallbacks(clickUrl = "", impressionUrl = ""),
         imageUrl = URL,
         domain = "domain",
@@ -453,23 +450,11 @@ internal object FakeHomepagePreview {
         caps = PocketStory.SponsoredContentFrequencyCaps(flightPeriod = 1, flightCount = 0),
     )
 
-    @Suppress("MagicNumber")
-    internal fun pocketStories(limit: Int = 5) = mutableListOf<PocketStory>().apply {
-        for (index in 0 until limit) {
-            when {
-                (index % 4 == 0) -> add(
-                    sponsoredContent(index),
-                )
-                (index % 3 == 0) -> add(
-                    contentRecommendation(index),
-                )
-                (index % 2 == 0) -> add(
-                    pocketRecommendedStory(index),
-                )
-                else -> add(
-                    pocketSponsoredStory(index),
-                )
-            }
+    internal fun stories(limit: Int = 5) = (0 until limit).map { index ->
+        if (index % 2 == 0) {
+            sponsoredContent(index)
+        } else {
+            contentRecommendation(index)
         }
     }
 

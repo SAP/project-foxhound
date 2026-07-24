@@ -7,7 +7,6 @@
 #include "OmxPromiseLayer.h"
 
 #include "ImageContainer.h"
-
 #include "OmxDataDecoder.h"
 #include "OmxPlatformLayer.h"
 

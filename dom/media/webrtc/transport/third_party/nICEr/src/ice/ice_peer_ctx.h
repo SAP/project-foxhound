@@ -85,12 +85,10 @@ void nr_ice_peer_ctx_refresh_consent_all_streams(nr_ice_peer_ctx *pctx);
 void nr_ice_peer_ctx_disconnect_all_streams(nr_ice_peer_ctx *pctx);
 void nr_ice_peer_ctx_disconnected(nr_ice_peer_ctx *pctx);
 void nr_ice_peer_ctx_connected(nr_ice_peer_ctx *pctx);
-void nr_ice_peer_ctx_dump_state(nr_ice_peer_ctx *pctx, int log_level);
 int nr_ice_peer_ctx_log_state(nr_ice_peer_ctx *pctx);
 void nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx);
 int nr_ice_peer_ctx_find_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component_id, nr_ice_component **compp);
 int nr_ice_peer_ctx_deliver_packet_maybe(nr_ice_peer_ctx *pctx, nr_ice_component *comp, nr_transport_addr *source_addr, UCHAR *data, int len);
-int nr_ice_peer_ctx_disable_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *lstream, int component_id);
 int nr_ice_peer_ctx_pair_new_trickle_candidate(nr_ice_ctx *ctx, nr_ice_peer_ctx *pctx, nr_ice_candidate *cand);
 void nr_ice_peer_ctx_switch_controlling_role(nr_ice_peer_ctx *pctx);
 

@@ -5,10 +5,10 @@
 #include "WebrtcGlobalStatsHistory.h"
 
 #include "domstubs.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/fallible.h"
 #include "mozilla/mozalloc_oom.h"
 #include "nsDOMNavigationTiming.h"

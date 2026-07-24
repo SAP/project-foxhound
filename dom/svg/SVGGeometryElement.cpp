@@ -7,21 +7,22 @@
 #include "SVGGeometryElement.h"
 
 #include "DOMSVGPoint.h"
-#include "gfxPlatform.h"
-#include "nsCOMPtr.h"
 #include "SVGAnimatedLength.h"
 #include "SVGCircleElement.h"
 #include "SVGEllipseElement.h"
 #include "SVGGeometryProperty.h"
 #include "SVGPathElement.h"
 #include "SVGRectElement.h"
-#include "nsStyleTransformMatrix.h"
+#include "gfxPlatform.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/SVGContentUtils.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/DOMPointBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
 #include "nsLayoutUtils.h"
-#include "mozilla/SVGContentUtils.h"
+#include "nsStyleTransformMatrix.h"
 
 using namespace mozilla::gfx;
 
@@ -187,7 +188,7 @@ bool SVGGeometryElement::IsPointInFill(const DOMPointInit& aPoint) {
 bool SVGGeometryElement::IsPointInStroke(const DOMPointInit& aPoint) {
   // stroke-* attributes and the d attribute are presentation attributes, so we
   // flush the layout before building the path.
-  Unused << GetPrimaryFrame(FlushType::Layout);
+  (void)GetPrimaryFrame(FlushType::Layout);
 
   RefPtr<Path> path = GetOrBuildPathForHitTest();
   if (!path) {
@@ -238,39 +239,29 @@ already_AddRefed<DOMSVGPoint> SVGGeometryElement::GetPointAtLength(
 }
 
 gfx::Matrix SVGGeometryElement::LocalTransform() const {
-  gfx::Matrix result;
   nsIFrame* f = GetPrimaryFrame();
   if (!f || !f->IsTransformed()) {
-    return result;
+    return {};
   }
-  nsStyleTransformMatrix::TransformReferenceBox refBox(f);
-  const float a2css = AppUnitsPerCSSPixel();
-  nsDisplayTransform::FrameTransformProperties props(f, refBox, a2css);
-  if (!props.HasTransform()) {
-    return result;
-  }
-  auto matrix = nsStyleTransformMatrix::ReadTransforms(
-      props.mTranslate, props.mRotate, props.mScale,
-      props.mMotion.ptrOr(nullptr), props.mTransform, refBox, a2css);
-  if (!matrix.IsIdentity()) {
-    std::ignore = matrix.CanDraw2D(&result);
-  }
-  return result;
+  return gfx::Matrix(SVGUtils::GetTransformMatrixInUserSpace(f));
 }
 
-float SVGGeometryElement::GetPathLengthScale(PathLengthScaleForType aFor) {
-  MOZ_ASSERT(aFor == eForTextPath || aFor == eForStroking, "Unknown enum");
+float SVGGeometryElement::GetPathLengthScale(PathLengthScaleUsageType aFor) {
+  MOZ_ASSERT(aFor == PathLengthScaleUsageType::TextPath ||
+                 aFor == PathLengthScaleUsageType::Stroking,
+             "Unknown enum");
   if (mPathLength.IsExplicitlySet()) {
     float zoom = UserSpaceMetrics::GetZoom(this);
     float authorsPathLengthEstimate = mPathLength.GetAnimValue() * zoom;
-    if (authorsPathLengthEstimate >= 0) {
+    if (std::isfinite(authorsPathLengthEstimate) &&
+        authorsPathLengthEstimate >= 0) {
       RefPtr<Path> path = GetOrBuildPathForMeasuring();
       if (!path) {
         // The path is empty or invalid so its length must be zero and
         // we know that 0 / authorsPathLengthEstimate = 0.
         return 0.0;
       }
-      if (aFor == eForTextPath) {
+      if (aFor == PathLengthScaleUsageType::TextPath) {
         // For textPath, a transform on the referenced path affects the
         // textPath layout, so when calculating the actual path length
         // we need to take that into account.
@@ -297,7 +288,7 @@ float SVGGeometryElement::GetTotalLength() {
 void SVGGeometryElement::FlushIfNeeded() {
   FlushType flushType =
       GeometryDependsOnCoordCtx() ? FlushType::Layout : FlushType::Style;
-  Unused << GetPrimaryFrame(flushType);
+  (void)GetPrimaryFrame(flushType);
 }
 
 }  // namespace mozilla::dom

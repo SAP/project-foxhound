@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __SANDBOXPRIVATE_H__
-#define __SANDBOXPRIVATE_H__
+#ifndef SANDBOXPRIVATE_H_
+#define SANDBOXPRIVATE_H_
 
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -136,4 +136,4 @@ class SandboxPrivate final : public nsIGlobalObject,
   RefPtr<JS::loader::ModuleLoaderBase> mModuleLoader;
 };
 
-#endif  // __SANDBOXPRIVATE_H__
+#endif  // SANDBOXPRIVATE_H_

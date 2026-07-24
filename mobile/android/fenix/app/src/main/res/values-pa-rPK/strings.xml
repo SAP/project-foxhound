@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">نجی %s</string>
@@ -10,10 +17,6 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">ہور چوݨاں</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">نجی ورتوں چالو کرو</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">نجی ورتوں چالو نہ کرو</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">پتہ پایو</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
@@ -27,9 +30,9 @@
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">کھوج دی لکھت پایو</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">تہاڈیاں کھلھیاں ٹیباں نوں اتھے وکھایا جاۓگا۔</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">تہاڈیاں کھلھیاں ٹیباں نوں اتھے وکھایا جاۓگا۔</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">تہاڈیاں نجی ٹیباں نوں اتھے وکھایا جاۓگا۔</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">تہاڈیاں نجی ٹیباں نوں اتھے وکھایا جاۓگا۔</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d چݨیاں</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -41,7 +44,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">بہو چوݨ ڈھنگ وچھوں باہر جاؤ</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">چݨیاں ٹیباں نوں مجموعے چ سمبھالو</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">چݨیاں ٹیباں نوں مجموعے چ سمبھالو</string>
   <!--
     Home - Bookmarks
 
@@ -54,13 +57,7 @@
   <string name="home_bookmarks_menu_item_remove">ہٹاؤ</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">%1$s ایپ موزلے ولوں تیار کیتی اے۔</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2" moz:removedIn="141" tools:ignore="UnusedResources">جدوں تسیں ساریاں نجی ٹیباں نوں بند کردے او یا ایپ توں باہر جاندے او تاں %1$s تہاڈی کھوج تے ورتوں دی تاریخ نوں ساف کردا اے۔ حالاں‌کہ ایہہ تہانوں سائٹاں یا تہاڈے اینٹرنیٹ دیݨ والے لئی اݨپچھاتا نہیں بݨاوندا، پر ایس نال ایس فون نوں ورتے والے کسے توں وی تہاڈے ولوں آن‌لائین کیتے نوں نجی رکھݨا ہور سوکھا ہو جاندا اے۔</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">نجی ورتوں بارے عام فرضی گلاں</string>
   <!--
     True Private Browsing Mode
@@ -68,13 +65,6 @@
     Title for info card on private homescreen in True Private Browsing Mode.
   -->
   <string name="felt_privacy_desc_card_title">ایس ڈوائیس اُتے کوئی پیڑھاں نہ چھڈو</string>
-  <!--
-    Explanation for private browsing displayed to users on home view when they first enable
-    private mode in our new Total Private Browsing mode.
-    %1$s is the name of the app (for example "Firefox").
-    %2$s is a link using felt_privacy_info_card_subtitle_link_text as text
-  -->
-  <string name="felt_privacy_info_card_subtitle_2">جدوں وی آپݨیاں نجی ٹیباں نوں بند کردے او تاں %1$s تہاڈے کوکیاں، تاریخ تے سائیٹ ڈیٹے نوں ہٹا دندا اے۔ %2$s</string>
   <!--
     Clickable portion of the explanation for private browsing that links the user to our
     about privacy page.
@@ -91,12 +81,8 @@
   <string name="open_in_app_cfr_positive_button_text">سیٹنگاں نوں جاؤ</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">بند کرو</string>
-  <!--
-    Private browsing erase action "contextual feature recommendation" (CFR)
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
 
-    Text for the message displayed in the contextual feature recommendation popup promoting the erase private browsing feature.
-  -->
-  <string name="erase_action_cfr_message" moz:removedIn="141" tools:ignore="UnusedResources">تازہ نجی سیشن شروع کرن لئی اتھے چھوہو۔ آپݨے تاریخ، کوکیاں — ہر چیز ہٹا دیو۔</string>
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">کیمرے لئی پہنچ چاہیدی اے۔ فون دیاں سیٹنگاں تے جاؤ، اجازتاں نوں چھوہو تے اجازت دیݨ دی چوݨ نوں چھوہو۔</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -183,18 +169,6 @@
   <string name="browser_menu_stop">روکو</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">پھیلاؤ</string>
-  <!--
-    Browser menu banner header text for extensions onboarding.
-    %s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_extensions_banner_onboarding_header" moz:removedIn="141" tools:ignore="UnusedResources">%s نوں آپݨا بݨاؤ</string>
-  <!--
-    Browser menu banner body text for extensions onboarding.
-    %s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_extensions_banner_onboarding_body" moz:removedIn="141" tools:ignore="UnusedResources">پھیلاؤ تہاڈے براؤز کرن دے پدھر نوں اُچا کردیاں ہن، فیر بھاویں ایہہ %s دی وکھ تے کارگذاری نوں بدلݨا ہووے جاں پردےداری تے سرکھیا ودھاوݨا۔</string>
-  <!-- Browser menu banner link text for learning more about extensions -->
-  <string name="browser_menu_extensions_banner_learn_more" moz:removedIn="141" tools:ignore="UnusedResources">ہور جاݨو</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">پھیلاواں دا انتظام کرو</string>
   <!-- Browser menu button that opens AMO in a tab -->
@@ -202,9 +176,9 @@
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">کھاتے دی جاݨکاری</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">مدد</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">مدد</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">نویں کیہہ آں</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">نویں کیہہ آں</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">سیٹنگاں</string>
   <!-- Browser menu button that opens a user's library -->
@@ -212,27 +186,19 @@
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">ڈیسک‌ٹاپ سائٹ</string>
   <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab">سادے ٹیب چ کھولھو</string>
+  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">سادے ٹیب چ کھولھو</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">مکھ سکرین تے جوڑو</string>
-  <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
-  <string name="browser_menu_add_to_homescreen_2" moz:removedIn="141" tools:ignore="UnusedResources">ہوم سکرین تے جوڑو</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
   <string name="resync_button_content_description">مڑ جوڑ کرو</string>
   <!-- Browser menu button that opens the find in page menu -->
   <string name="browser_menu_find_in_page">صفحے چ لبھو</string>
-  <!-- Browser menu button that opens the find in page menu -->
-  <string name="browser_menu_find_in_page_2" moz:removedIn="141" tools:ignore="UnusedResources">صفحے چ لبھو…</string>
   <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
   <string name="browser_menu_translations">صفحے دا اُلتھا کرو</string>
-  <!-- Browser menu button that saves the current tab to a collection -->
-  <string name="browser_menu_save_to_collection" moz:removedIn="141" tools:ignore="UnusedResources">بھنڈار چ سنبھالو…</string>
   <!-- Browser menu button that saves the current tab to a collection -->
   <string name="browser_menu_save_to_collection_2">بھنڈار چ سنبھالو</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">سانجھا کرو</string>
-  <!-- Browser menu button that open a share menu to share the current site -->
-  <string name="browser_menu_share_2" moz:removedIn="141" tools:ignore="UnusedResources">سانجھا کرو…</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -242,7 +208,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">%1$s دی طاقت نال چل رہا</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">%1$s دی طاقت نال چل رہا</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -255,19 +221,17 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">ایپ وچ کھولھو</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view">پڑھن جھلک دیاں ترجیحاں</string>
+  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">پڑھن جھلک دیاں ترجیحاں</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">پڑھن جھلک نوں پسند قاری منظر بݨاؤ</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">پتہ پایو</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">پتہ پایو</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">سودھو</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">سودھو</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">مکھ صفحے دیاں ترجیحاں</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">مکھ صفحے دیاں ترجیحاں</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">لوگ این کرو</string>
-  <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
-  <string name="browser_menu_sign_in_caption" moz:removedIn="141" tools:ignore="UnusedResources">پاس‌ورڈ، ٹیباں تے ہوراں نوں ہم وقت کرو</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
   <string name="browser_menu_sign_back_in_to_sync">ہم وقت کرن لئی واپس سائین ان کرو</string>
   <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
@@ -276,43 +240,8 @@
   <string name="browser_menu_new_private_tab">نجی ٹیب کھولھو</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">پاس‌ورڈ</string>
-  <!--
-    Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_new_in_firefox" moz:removedIn="141" tools:ignore="UnusedResources">%1$s وچ نواں</string>
-  <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
-  <string name="browser_menu_switch_to_desktop_site" moz:removedIn="141" tools:ignore="UnusedResources">ڈیسک‌ٹاپ سائیٹ لئی بدلو</string>
-  <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
-  <string name="browser_menu_switch_to_mobile_site" moz:removedIn="142" tools:ignore="UnusedResources">موبائیل سائیٹ لئی سوئچ کرو</string>
-  <!-- Browser menu label that navigates to the page tools sub-menu -->
-  <string name="browser_menu_tools" moz:removedIn="141" tools:ignore="UnusedResources">سند</string>
-  <!--
-    Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
-    bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen
-  -->
-  <string name="browser_menu_save" moz:removedIn="141" tools:ignore="UnusedResources">سنبھالو</string>
-  <!-- Browser menu description that describes the various save related menu items inside of the save sub-menu -->
-  <string name="browser_menu_save_description" moz:removedIn="141" tools:ignore="UnusedResources">بک‌مارک، شارٹ‌کٹ، مکھ صفحہ، بھنڈار، PDF جوڑو</string>
-  <!-- Browser menu label that bookmarks the currently visited page -->
-  <string name="browser_menu_bookmark_this_page" moz:removedIn="141" tools:ignore="UnusedResources">ایس صفحے نوں بک‌مارک کرو</string>
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
   <string name="browser_menu_edit_bookmark">بک‌مارک نوں سودھو</string>
-  <!-- Browser menu label that the saves the currently visited page as a PDF -->
-  <string name="browser_menu_save_as_pdf" moz:removedIn="141" tools:ignore="UnusedResources">PDF وجوں سنبھالو…</string>
-  <!-- Browser menu label for turning ON reader view of the current visited page -->
-  <string name="browser_menu_turn_on_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">پڑھن جھلک نوں چالو کرو</string>
-  <!-- Browser menu label for turning OFF reader view of the current visited page -->
-  <string name="browser_menu_turn_off_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">پڑھن جھلک نوں بند کرو</string>
-  <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
-  <string name="browser_menu_translate_page" moz:removedIn="141" tools:ignore="UnusedResources">صفحے دا اُلتھا کرو…</string>
-  <!--
-    Browser menu label that is displayed when the current page has been translated by the translation feature.
-    %1$s is the name of the language that page was translated to (e.g. English).
-  -->
-  <string name="browser_menu_translated_to" moz:removedIn="141" tools:ignore="UnusedResources">%1$s وچ اُلتھا کیتا</string>
-  <!-- Browser menu label for the print feature -->
-  <string name="browser_menu_print" moz:removedIn="141" tools:ignore="UnusedResources">چھاپو…</string>
   <!--
     Browser menu label for the Delete browsing data on quit feature.
     %1$s is the name of the app (for example "Firefox").
@@ -330,11 +259,6 @@
     Content description for the Home screen button on the browser toolbar
   -->
   <string name="browser_toolbar_home">مکھ سکرین</string>
-  <!--
-    Content description (not visible, for screen readers etc.): Erase button: Erase the browsing
-    history and go back to the home screen.
-  -->
-  <string name="browser_toolbar_erase" moz:removedIn="141" tools:ignore="UnusedResources">براؤز کرن دی تاریخ مٹاؤ</string>
   <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">صفحے دا اُلتھا کرو</string>
   <!--
@@ -376,24 +300,8 @@
   <!--
     Home onboarding
 
-    Home onboarding dialog welcome screen title text.
+    Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
-  <string name="onboarding_home_welcome_title_2" moz:removedIn="141" tools:ignore="UnusedResources">ودھ نجی انٹرنیٹ وچ ست بسم اللہ</string>
-  <!-- Home onboarding dialog welcome screen description text. -->
-  <string name="onboarding_home_welcome_description" moz:removedIn="141" tools:ignore="UnusedResources">ودھ ہور رنگ۔ ودھ پردہ داری۔ فائدے نالوں لوکاں نوں پہل دیݨ دا اوہی وعدہ۔</string>
-  <!-- Home onboarding dialog sign into sync screen title text. -->
-  <string name="onboarding_home_sync_title_3" moz:removedIn="141" tools:ignore="UnusedResources">سکریناں وچالے بدلݨ پہلاں توں ودھ سوکھالا ہویا</string>
-  <!-- Home onboarding dialog sign into sync screen description text. -->
-  <string name="onboarding_home_sync_description" moz:removedIn="141" tools:ignore="UnusedResources">ہور ڈوائیساں توں جتھے تسیں ٹیباں نوں چھڈیا اے، اوتھوں ہی ہݨ آپݨی مکھ سکرین توں لوو۔</string>
-  <!-- Text for the button to continue the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_get_started_button" moz:removedIn="141" tools:ignore="UnusedResources">شروع کریئے</string>
-  <!-- Text for the button to navigate to the sync sign in screen on the home onboarding dialog. -->
-  <string name="onboarding_home_sign_in_button" moz:removedIn="141" tools:ignore="UnusedResources">لوگ‌این کرو</string>
-  <!-- Text for the button to skip the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_skip_button" moz:removedIn="141" tools:ignore="UnusedResources">اگلے تے چلو</string>
-  <!-- Onboarding home screen sync popup dialog message, shown on top of Recent Synced Tabs in the Jump back in section. -->
-  <string name="sync_cfr_message" moz:removedIn="142" tools:ignore="UnusedResources">تہاڈیاں ٹیباں ہم وقت ہندیاں پئیاں ہن۔ آپݨے ہور ڈوائیس تے جتھے تسیں چھڈو م، اوتھوں ہی تسیں ہی شروع کرو۔</string>
-  <!-- Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog -->
   <string name="onboarding_home_content_description_close_button">بند کرو</string>
   <!--
     Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
@@ -403,19 +311,8 @@
   <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">فائرفاکس پردے داری سوچنا</string>
   <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_title_nimbus_2">اسیں تہانوں سرکھیت رکھݨا چاہندے آں</string>
-  <!--
-    Title for set firefox as default browser screen used by Nimbus experiments.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources">پتا کرو کہ لکھاں فائرفاکس نوں پسند کیوں کردے ہن</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources">ہور چوݨاں نال سرکھیت براؤز کرنا</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_description_nimbus_3">کمپنیاں نوں چوری چوری ویب اُتے تہاڈا پچھا کرن توں ساڈا غیر فائدہ سمرتھ براؤزر آپݨے آپ ہی روکدا اے۔</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources">10 کروڑ توں ودھ لوک نے آپݨی پردےداری دی سرکھیا لئی اوس براؤزر دی چوݨ کیتی اے، جس دا مقصد کوئی فائدہ نہیں اے۔</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources">جاݨے پچھاݨے ٹریکر؟ آپݨے آپ پابندی لئی۔ پھیلاؤ؟ 700 توں ودھ ازماوݨ لئی۔ PDF؟ ساڈے بلٹ‌ان ریڈر نال اہناں نوں ورتݨا سوکھا۔</string>
   <!-- Text for the button to set firefox as default browser on the device -->
   <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">مول براؤزر تے طور تے بݨاؤ</string>
   <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -462,6 +359,10 @@
   <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">فائرفاکس وجیٹ جوڑو</string>
   <!-- Text for the button to dismiss the screen and move on with the flow -->
   <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">ہݨے نہیں</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!--
     Search Widget
 
@@ -603,8 +504,6 @@
   <string name="preferences_gestures">اشارے</string>
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">چݨندا کرو</string>
-  <!-- Preference description for banner about signing in -->
-  <string name="preferences_sign_in_description_2">جدوں لوگ‌این کیتا ٹیباں، اتے پتے، پاس‌ورڈ تے ہور ملا جا سکدے ہن۔</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
   <string name="preferences_account_default_name_2">موزیلا کھاتا</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
@@ -613,8 +512,6 @@
   <string name="preferences_language">بولی</string>
   <!-- Preference for translations -->
   <string name="preferences_translations">ترجمے</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">ڈیٹا چوݨاں</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">ڈیٹا بھنڈار</string>
   <!-- Preference for developers -->
@@ -659,8 +556,6 @@
   <string name="preferences_open_links_in_apps_ask">کھولھݨ توں پہلا پچھو</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">کدے نہیں</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">باہری ڈاؤن‌لوڈ مینیجر</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">گیکو لاگاں دا چالو کرو</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -678,12 +573,8 @@
   <!--
     Add-on Permissions
 
-    The title of the required permissions section from addon's permissions screen
+    The title of the origin permission option allowing a user to enable the extension to run on all sites
   -->
-  <string name="addons_permissions_heading_required" tools:ignore="UnusedResources" moz:removedIn="141">لوڑیندا</string>
-  <!-- The title of the optional permissions section from addon's permissions screen -->
-  <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources" moz:removedIn="141">چوݨواں</string>
-  <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
   <string name="addons_permissions_allow_for_all_sites">سبھ سائیٹاں لئی منظوری</string>
   <!-- The subtitle for the allow for all sites preference toggle -->
   <string name="addons_permissions_allow_for_all_sites_subtitle">جے تسیں ایس پھیلاؤ تے بھروسا کدے او تاں تسیں ہر ویب‌سائیٹ لئی ایس نوں اجازت دے سکدے او۔</string>
@@ -705,11 +596,7 @@
   <string name="customize_addon_collection_user_hint">بھنڈار مالک (ورتونکار ID)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">پھیلاؤ بھنڈار نوں سودھیا گیا۔ تبدیلیاں لاگو کرن لئی ایپلیکیشن نوں بند کیتا جا رہا اے…</string>
-  <!--
-    Customize Home
-
-    Header text for jumping back into the recent tab in customize the home screen
-  -->
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">واپس جاؤ</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">اتے پتے</string>
@@ -730,10 +617,6 @@
     Content description for various wallpapers. %1$s is the name of the wallpaper.
   -->
   <string name="wallpapers_item_name_content_description">وال‌پیپر سامان: %1$s</string>
-  <!-- Snackbar message for when wallpaper is selected -->
-  <string name="wallpaper_updated_snackbar_message">وال‌پیپر اپڈیٹ کیتا!</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action">ویکھو</string>
   <!-- Snackbar message for when wallpaper couldn't be downloaded -->
   <string name="wallpaper_download_error_snackbar_message">وال‌پیپر ڈاؤن‌لوڈ نہیں کیتا جا سکیا</string>
   <!-- Snackbar label for action to retry downloading the wallpaper -->
@@ -866,12 +749,6 @@
   <string name="preference_experiments_2">گھوکھاں</string>
   <!-- Summary for studies preferences -->
   <string name="preference_experiments_summary_2">موزیلے نوں مطالعے انسٹال کرن تے چلاوݨ دے اجازت دیو</string>
-  <!--
-    Turn On Sync Preferences
-
-    Header of the Sync and save your data preference view
-  -->
-  <string name="preferences_sync_2">آپݨا ڈیٹا ہم وقت کرو تے سنبھالو</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">مڑ کنیکٹ کرن لئی سائین ان کرو</string>
   <!-- Preference for removing FxA account -->
@@ -1051,15 +928,15 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">نجی ٹیب کھولھو</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">نجی</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">نجی</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">ہم وقت کرو</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">ہم وقت کرو</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">سریاں ٹیباں سانجھیاں کرو</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">سریاں ٹیباں سانجھیاں کرو</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">تازہ بند کیتیاں ٹیباں</string>
   <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources">تازہ بند کیتیاں</string>
+  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">تازہ بند کیتیاں</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">کھاتے دیاں سیٹنگاں</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1067,11 +944,11 @@
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">ساریاں ٹیباں بند کرو</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">اتا پتہ</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">اتا پتہ</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">بند کرو</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">بند کرو</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">چݨیاں ٹیباں سانجھیاں کرو</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">چݨیاں ٹیباں سانجھیاں کرو</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">چݨیاں ٹیباں دا مینو</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -1109,9 +986,9 @@
   <!-- Text for the button to clear all history -->
   <string name="history_delete_all">تاریخ ہٹاؤ</string>
   <!-- Text for the snackbar to confirm that multiple browsing history items has been deleted -->
-  <string name="history_delete_multiple_items_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">تاریخ ہٹایا گیا</string>
+  <string name="history_delete_multiple_items_snackbar">تاریخ ہٹایا گیا</string>
   <!-- Text for the snackbar to confirm that a single browsing history item has been deleted. %1$s is the shortened URL of the deleted history item. -->
-  <string name="history_delete_single_item_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">%1$s مٹا گیا</string>
+  <string name="history_delete_single_item_snackbar">%1$s مٹا گیا</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">مٹاؤ</string>
   <!--
@@ -1148,14 +1025,6 @@
   <string name="tab_crash_close">ٹیب بند کرو</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">ٹیب بحال کرو</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">کیہہ تسیں ایہہ فولڈر نوں ہٹاؤݨا چاہندے او؟</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. %s is the name of the app (for example "Firefox"). -->
-  <string name="bookmark_delete_multiple_folders_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">%s چݨیاں چیزاں نوں ہٹائےگا۔</string>
   <!-- Text for the cancel button on delete bookmark dialog -->
   <string name="bookmark_delete_negative">رد کرو</string>
   <!-- Screen title for adding a bookmarks folder -->
@@ -1165,7 +1034,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">سودھو</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">کاپی کرو</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">کاپی کرو</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">سانجھا کرو</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -1178,8 +1047,6 @@
   <string name="bookmark_menu_open_all_in_private_tabs_button">سبھناں نوں نجی ٹیباں چ کھولھو</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">مٹاؤ</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">سامبھو</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -1189,37 +1056,23 @@
   <string name="edit_bookmark_fragment_title">بک‌مارک نوں سودھو</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">فولڈر نوں سودھو</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">ہم وقت کیتے بک‌مارک ویکھݨ لئی سائین ان کرو</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">پتہ</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">فولڈر</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">ناں</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">فولڈر پایو</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">فولڈر چݨو</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">ناں ہوݨا چاہیدا اے</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">غلط URL</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">اتھے کوئی بک‌مارک نہیں اے</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s مٹا گیا</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2" tools:ignore="UnusedResources" moz:removedIn="143">بک‌مارک ہٹایا</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_3" tools:ignore="UnusedResources" moz:removedIn="143">چݨو فولڈراں نوں ہٹایا جا رہا اے</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">موڑو</string>
-  <!-- Text for the button to search all bookmarks -->
-  <string name="bookmark_search" tools:ignore="UnusedResources" moz:removedIn="143">کھوج دی لکھت پایو</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">موڑو</string>
   <!-- Content description for the bookmark navigation bar back button -->
   <string name="bookmark_navigate_back_button_content_description">واپس کرو</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
@@ -1348,12 +1201,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d ٹیب چݨی</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">ٹیباں سانبھالیاں!</string>
-  <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection">بھنڈار سنبھالیاں!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">ٹیب سنبھالی!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">بند کرو</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -1399,8 +1246,6 @@
   <string name="toast_copy_link_to_clipboard">کلپ‌بورڈ چ کاپی کیتا</string>
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">لنک کرن لئی سائین ان کرو</string>
-  <!-- An option from the three dot menu to sync and save data -->
-  <string name="sync_menu_sync_and_save_data">ڈیٹا ہم وقت کرو تے سنبھالو</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">سارے ڈوائیساں تے بھیجو</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -1445,23 +1290,23 @@
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">فائرفاکس نوں آپݨا ڈفالٹ براؤزر بݨاؤ</string>
   <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title">نجی براؤز کرن نوں ازماؤ</string>
+  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">نجی براؤز کرن نوں ازماؤ</string>
   <!--
     Text shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_text">%1$s وچ بناں کسے سنبھالے کوکی جاں تاریخ دے براؤز کرو</string>
+  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">%1$s وچ بناں کسے سنبھالے کوکی جاں تاریخ دے براؤز کرو</string>
   <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title">بناں پیڑاں چھڈے براؤز کرو</string>
+  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">بناں پیڑاں چھڈے براؤز کرو</string>
   <!--
     Text A shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_A_text">%1$s نال نجی براؤز کرن سمیں تہاڈی جاݨکاری سنبھالدا نہیں اے۔</string>
+  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">%1$s نال نجی براؤز کرن سمیں تہاڈی جاݨکاری سنبھالدا نہیں اے۔</string>
   <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title">آپݨی پہلی کھوج کرو</string>
+  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">آپݨی پہلی کھوج کرو</string>
   <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text">نیڑے تیڑے کجھ لبھو۔ جاں کجھ موج مستی لئی لبھو۔</string>
+  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">نیڑے تیڑے کجھ لبھو۔ جاں کجھ موج مستی لئی لبھو۔</string>
   <!--
     Survey
 
@@ -1473,12 +1318,6 @@
   <string name="preferences_take_survey">سرویکھݨ بھرو</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">نہیں، شکریہ</string>
-  <!--
-    Snackbar
-
-    Text shown in snackbar when user deletes a collection
-  -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">بھنڈار ہٹیایا گیا</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">موڑو</string>
   <!-- QR code scanner prompt dialog positive option to allow navigation to scanned link -->
@@ -1489,8 +1328,6 @@
   <string name="qr_scanner_dialog_invalid">ایس پتے نال مسئلہ ہو گیا۔</string>
   <!-- QR code scanner prompt dialog positive option when there is an error -->
   <string name="qr_scanner_dialog_invalid_ok">ٹھیک اے</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">مٹاؤ</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">فونٹ دا آکار</string>
   <!-- Title for Accessibility Text Automatic Size Scaling Preference -->
@@ -1505,7 +1342,7 @@
   <!-- Title for the downloads item in Delete browsing data -->
   <string name="preferences_delete_browsing_data_downloads">ڈاؤن‌لوڈ</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">باہر نکل جاؤ</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">باہر نکل جاؤ</string>
   <!-- Text for the cancel button for the data deletion dialog -->
   <string name="delete_browsing_data_prompt_cancel">رد کرو</string>
   <!-- Text for the allow button for the data deletion dialog -->
@@ -1520,14 +1357,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">ہم وقت چالو اے</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">تیباں بھیجیاں!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">ٹیب بھیجی اے!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">بھیجݨ توں ناکام</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -1698,12 +1527,10 @@
   <string name="search_engine_edit">سودھو</string>
   <!-- Text for the menu button to delete a search engine -->
   <string name="search_engine_delete">مٹاؤ</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%1$s مٹا گیا</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">مٹاؤ</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">مٹاؤ</string>
   <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button">سودھو</string>
+  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">سودھو</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">مٹاؤ</string>
   <!-- Negative action of a dialog asking to delete login -->
@@ -1716,11 +1543,15 @@
   <string name="top_sites_menu_settings">سیٹنگاں</string>
   <!-- Content description for close button in collection placeholder. -->
   <string name="remove_home_collection_placeholder_content_description">ہٹاؤ</string>
-  <!-- Content description for privacy content close button -->
-  <string name="privacy_content_close_button_content_description" tools:ignore="UnusedResources" moz:removedIn="143">بند کرو</string>
   <!-- Snackbar button text to navigate to telemetry settings. -->
   <string name="experiments_snackbar_button">سیٹنگاں نوں جاؤ</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

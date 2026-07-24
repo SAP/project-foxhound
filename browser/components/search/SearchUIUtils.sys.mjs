@@ -6,21 +6,34 @@
  * Various utilities for search related UI.
  */
 
+/**
+ * @import { SearchUtils } from "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
+ * @import { UrlbarInput } from "chrome://browser/content/urlbar/UrlbarInput.mjs"
+ * @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+ */
+
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import {
+  AboutNewTabComponentRegistry,
+  BaseAboutNewTabComponentRegistrant,
+} from "moz-src:///browser/components/newtab/AboutNewTabComponents.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineLazyGetter(lazy, "SearchUIUtilsL10n", () => {
-  return new Localization(["browser/search.ftl", "branding/brand.ftl"]);
-});
-
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SearchEngineInstallError:
+    "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  SearchUIUtilsL10n: () => {
+    return new Localization(["browser/search.ftl", "branding/brand.ftl"]);
+  },
 });
 
 export var SearchUIUtils = {
@@ -29,18 +42,22 @@ export var SearchUIUtils = {
   init() {
     if (!this.initialized) {
       Services.obs.addObserver(this, "browser-search-engine-modified");
-
       this.initialized = true;
     }
   },
 
-  observe(engine, topic, data) {
+  /**
+   * @param {{wrappedJSObject: SearchEngine}} subject
+   * @param {"browser-search-engine-modified"} topic
+   * @param {string} data
+   */
+  observe(subject, topic, data) {
     switch (data) {
       case "engine-default":
-        this.updatePlaceholderNamePreference(engine, false);
+        this.updatePlaceholderNamePreference(subject.wrappedJSObject, false);
         break;
       case "engine-default-private":
-        this.updatePlaceholderNamePreference(engine, true);
+        this.updatePlaceholderNamePreference(subject.wrappedJSObject, true);
         break;
     }
   },
@@ -82,7 +99,9 @@ export var SearchUIUtils = {
    *   name of the application default engine to replaced the removed engine.
    */
   async removalOfSearchEngineNotificationBox(oldEngine, newEngine) {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     let buttons = [
       {
@@ -115,11 +134,11 @@ export var SearchUIUtils = {
     // _updatePlaceholderFromDefaultEngine only updates the pref if the search service
     // hasn't finished initializing, so we explicitly update it here to be sure.
     SearchUIUtils.updatePlaceholderNamePreference(
-      await Services.search.getDefault(),
+      await lazy.SearchService.getDefault(),
       false
     );
     SearchUIUtils.updatePlaceholderNamePreference(
-      await Services.search.getDefaultPrivate(),
+      await lazy.SearchService.getDefaultPrivate(),
       true
     );
 
@@ -138,7 +157,9 @@ export var SearchUIUtils = {
    *   Name of the new default engine.
    */
   async searchSettingsResetNotificationBox(newEngine) {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     let buttons = [
       {
@@ -185,24 +206,30 @@ export var SearchUIUtils = {
    */
   async addOpenSearchEngine(locationURL, image, browsingContext) {
     try {
-      await Services.search.addOpenSearchEngine(locationURL, image);
+      await lazy.SearchService.addOpenSearchEngine(
+        locationURL,
+        image,
+        browsingContext?.embedderElement?.contentPrincipal?.originAttributes
+      );
     } catch (ex) {
-      let titleMsgName;
-      let descMsgName;
-      switch (ex.result) {
-        case Ci.nsISearchService.ERROR_DUPLICATE_ENGINE:
-          titleMsgName = "opensearch-error-duplicate-title";
-          descMsgName = "opensearch-error-duplicate-desc";
-          break;
-        case Ci.nsISearchService.ERROR_ENGINE_CORRUPTED:
-          titleMsgName = "opensearch-error-format-title";
-          descMsgName = "opensearch-error-format-desc";
-          break;
-        default:
-          // i.e. ERROR_DOWNLOAD_FAILURE
-          titleMsgName = "opensearch-error-download-title";
-          descMsgName = "opensearch-error-download-desc";
-          break;
+      // Use a general download error message, unless we have something more
+      // specific.
+      let titleMsgName = "opensearch-error-download-title";
+      let descMsgName = "opensearch-error-download-desc";
+
+      if (ex instanceof lazy.SearchEngineInstallError) {
+        switch (ex.type) {
+          case "duplicate-title":
+            titleMsgName = "opensearch-error-duplicate-title";
+            descMsgName = "opensearch-error-duplicate-desc";
+            break;
+          case "corrupted":
+            titleMsgName = "opensearch-error-format-title";
+            descMsgName = "opensearch-error-format-desc";
+            break;
+          default:
+          // e.g. download failure, use the more general message.
+        }
       }
 
       let [title, text] = await lazy.SearchUIUtilsL10n.formatValues([
@@ -242,13 +269,13 @@ export var SearchUIUtils = {
   /**
    * Update the placeholderName preference for the default search engine.
    *
-   * @param {nsISearchEngine} engine The new default search engine.
+   * @param {SearchEngine} engine The new default search engine.
    * @param {boolean} isPrivate Whether this change applies to private windows.
    */
   updatePlaceholderNamePreference(engine, isPrivate) {
     const prefName =
       "browser.urlbar.placeholderName" + (isPrivate ? ".private" : "");
-    if (engine.isAppProvided) {
+    if (engine.isConfigEngine) {
       Services.prefs.setStringPref(prefName, engine.name);
     } else {
       Services.prefs.clearUserPref(prefName);
@@ -296,21 +323,30 @@ export var SearchUIUtils = {
       return;
     }
 
-    let focusUrlBarIfSearchFieldIsNotActive = function (aSearchBar) {
-      if (!aSearchBar || window.document.activeElement != aSearchBar.textbox) {
+    /** @type {(searchBar: MozSearchbar | UrlbarInput) => void} */
+    let focusUrlBarIfSearchFieldIsNotActive = function (searchBar) {
+      if (!searchBar || window.document.activeElement != searchBar.inputField) {
         // Limit the results to search suggestions, like the search bar.
         window.gURLBar.searchModeShortcut();
       }
     };
 
-    let searchBar = /** @type {MozSearchbar} */ (
-      window.document.getElementById("searchbar")
+    let searchBar = /** @type {MozSearchbar | UrlbarInput} */ (
+      window.document.getElementById(
+        Services.prefs.getBoolPref("browser.search.widget.new")
+          ? "searchbar-new"
+          : "searchbar"
+      )
     );
     let placement =
       lazy.CustomizableUI.getPlacementOfWidget("search-container");
     let focusSearchBar = () => {
-      searchBar = /** @type {MozSearchbar} */ (
-        window.document.getElementById("searchbar")
+      searchBar = /** @type {MozSearchbar | UrlbarInput} */ (
+        window.document.getElementById(
+          Services.prefs.getBoolPref("browser.search.widget.new")
+            ? "searchbar-new"
+            : "searchbar"
+        )
       );
       searchBar.select();
       focusUrlBarIfSearchFieldIsNotActive(searchBar);
@@ -339,69 +375,76 @@ export var SearchUIUtils = {
   },
 
   /**
-   * Loads a search results page, given a set of search terms. Uses the current
-   * engine if the search bar is visible, or the default engine otherwise.
+   * Opens a search results page, given a set of search terms.
    *
-   * @param {WindowProxy} window
+   * @param {object} options
+   *   Options objects.
+   * @param {WindowProxy} options.window
    *   The window where the search was triggered.
-   * @param {string} searchText
+   * @param {string} options.searchText
    *   The search terms to use for the search.
-   * @param {?string} where
+   * @param {?string} [options.where]
    *   String indicating where the search should load. Most commonly used
-   *   are 'tab' or 'window', defaults to 'current'.
-   * @param {boolean} usePrivate
-   *   Whether to use the Private Browsing mode default search engine.
-   *   Defaults to `false`.
-   * @param {nsIPrincipal} triggeringPrincipal
+   *   are ``tab`` or ``window``, defaults to ``current``.
+   * @param {boolean} [options.usePrivateWindow]
+   *   Whether to open the window in private browsing mode (if opening a window).
+   *   Defaults to the type of window that ``options.window` is.
+   * @param {nsIPrincipal} options.triggeringPrincipal
    *   The principal to use for a new window or tab.
-   * @param {nsIPolicyContainer} policyContainer
+   * @param {nsIPolicyContainer} [options.policyContainer]
    *   The policyContainer to use for a new window or tab.
-   * @param {boolean} [inBackground=false]
+   * @param {boolean} [options.inBackground]
    *   Set to true for the tab to be loaded in the background.
-   * @param {?nsISearchEngine} [engine=null]
-   *   The search engine to use for the search.
-   * @param {?MozTabbrowserTab} [tab=null]
+   * @param {?SearchEngine} [options.engine]
+   *   The search engine to use for the search. If not supplied, this will default
+   *   to the default search engine for normal or private mode, depending on
+   *   ``options.usePrivateWindow``.
+   * @param {?MozTabbrowserTab} [options.tab]
    *   The tab to show the search result.
-   *
-   * @returns {Promise<?{engine: nsISearchEngine, url: nsIURI}>}
-   *   Object containing the search engine used to perform the
-   *   search and the url, or null if no search was performed.
+   * @param {?Values<typeof SearchUtils.URL_TYPE>} [options.searchUrlType]
+   *   A `SearchUtils.URL_TYPE` value indicating the type of search that should
+   *   be performed. A falsey value is equivalent to
+   *   `SearchUtils.URL_TYPE.SEARCH`, which will perform a usual web search.
+   * @param {keyof typeof lazy.BrowserSearchTelemetry.KNOWN_SEARCH_SOURCES} options.sapSource
+   *   The search access point source.
    */
-  async _loadSearch(
+  async loadSearch({
     window,
     searchText,
     where,
-    usePrivate,
+    usePrivateWindow = lazy.PrivateBrowsingUtils.isWindowPrivate(window),
     triggeringPrincipal,
     policyContainer,
     inBackground = false,
-    engine = null,
-    tab = null
-  ) {
+    engine,
+    tab,
+    searchUrlType,
+    sapSource,
+  }) {
     if (!triggeringPrincipal) {
       throw new Error(
-        "Required argument triggeringPrincipal missing within _loadSearch"
+        "Required argument triggeringPrincipal missing within loadSearch"
       );
     }
 
     if (!engine) {
-      engine = usePrivate
-        ? await Services.search.getDefaultPrivate()
-        : await Services.search.getDefault();
+      engine = usePrivateWindow
+        ? await lazy.SearchService.getDefaultPrivate()
+        : await lazy.SearchService.getDefault();
     }
 
-    let submission = engine.getSubmission(searchText);
+    let submission = engine.getSubmission(searchText, searchUrlType);
 
     // getSubmission can return null if the engine doesn't have a URL
-    // with a text/html response type. This is unlikely (since
-    // SearchService._addEngineToStore() should fail for such an engine),
-    // but let's be on the safe side.
+    // for the given response type. This is an error if it occurs, since
+    // we should only get here if the engine supports the URL type begin
+    // passed.
     if (!submission) {
-      return null;
+      throw new Error(`No submission URL found for ${searchUrlType}`);
     }
 
     window.openLinkIn(submission.uri.spec, where || "current", {
-      private: usePrivate && !lazy.PrivateBrowsingUtils.isWindowPrivate(window),
+      private: usePrivateWindow,
       postData: submission.postData,
       inBackground,
       relatedToCurrent: true,
@@ -413,42 +456,60 @@ export var SearchUIUtils = {
       },
     });
 
-    return { engine, url: submission.uri };
+    lazy.BrowserSearchTelemetry.recordSearch(
+      window.gBrowser.selectedBrowser,
+      engine,
+      sapSource,
+      { searchUrlType }
+    );
   },
 
   /**
    * Perform a search initiated from the context menu.
-   * This should only be called from the context menu.
+   * Note: This should only be called from the context menu.
    *
-   * @param {WindowProxy} window
+   * @param {object} options
+   *   Options object.
+   * @param {SearchEngine} options.engine
+   *   The engine to search with.
+   * @param {WindowProxy} options.window
    *   The window where the search was triggered.
-   * @param {string} searchText
+   * @param {string} options.searchText
    *   The search terms to use for the search.
-   * @param {boolean} usePrivate
-   *   Whether to use the Private Browsing mode default search engine.
-   *   Defaults to `false`.
-   * @param {nsIPrincipal} triggeringPrincipal
+   * @param {boolean} [options.usePrivateWindow]
+   *   Whether to open the window in private browsing mode (if opening a window).
+   *   Defaults to the type of window that ``options.window` is.
+   * @param {nsIPrincipal} options.triggeringPrincipal
    *   The principal of the document whose context menu was clicked.
-   * @param {nsIPolicyContainer} policyContainer
+   * @param {nsIPolicyContainer} options.policyContainer
    *   The policyContainer to use for a new window or tab.
-   * @param {XULCommandEvent|PointerEvent} event
+   * @param {XULCommandEvent|PointerEvent} options.event
    *   The event triggering the search.
+   * @param {?Values<typeof SearchUtils.URL_TYPE>} [options.searchUrlType]
+   *   A `SearchUtils.URL_TYPE` value indicating the type of search that should
+   *   be performed. A falsey value is equivalent to
+   *   `SearchUtils.URL_TYPE.SEARCH` and will perform a usual web search.
    */
-  async loadSearchFromContext(
+  async loadSearchFromContext({
     window,
+    engine,
     searchText,
-    usePrivate,
+    usePrivateWindow,
     triggeringPrincipal,
     policyContainer,
-    event
-  ) {
+    event,
+    searchUrlType = null,
+  }) {
     event = lazy.BrowserUtils.getRootEvent(event);
     let where = lazy.BrowserUtils.whereToOpenLink(event);
     if (where == "current") {
       // override: historically search opens in new tab
       where = "tab";
     }
-    if (usePrivate && !lazy.PrivateBrowsingUtils.isWindowPrivate(window)) {
+    if (
+      usePrivateWindow &&
+      !lazy.PrivateBrowsingUtils.isWindowPrivate(window)
+    ) {
       where = "window";
     }
     let inBackground = Services.prefs.getBoolPref(
@@ -458,110 +519,64 @@ export var SearchUIUtils = {
       inBackground = !inBackground;
     }
 
-    let searchInfo = await SearchUIUtils._loadSearch(
+    return this.loadSearch({
       window,
+      engine,
       searchText,
+      searchUrlType,
       where,
-      usePrivate,
-      Services.scriptSecurityManager.createNullPrincipal(
+      usePrivateWindow,
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
         triggeringPrincipal.originAttributes
       ),
       policyContainer,
-      inBackground
-    );
-
-    if (searchInfo) {
-      lazy.BrowserSearchTelemetry.recordSearch(
-        window.gBrowser.selectedBrowser,
-        searchInfo.engine,
-        "contextmenu"
-      );
-    }
-  },
-
-  /**
-   * Perform a search initiated from the command line.
-   *
-   * @param {WindowProxy} window
-   *   The window where the search was triggered.
-   * @param {string} searchText
-   *   The search terms to use for the search.
-   * @param {boolean} usePrivate
-   *   Whether to use the Private Browsing mode default search engine.
-   *   Defaults to `false`.
-   * @param {nsIPrincipal} triggeringPrincipal
-   *   The principal to use for a new window or tab.
-   * @param {nsIPolicyContainer} policyContainer
-   *   The policyContainer to use for a new window or tab.
-   */
-  async loadSearchFromCommandLine(
-    window,
-    searchText,
-    usePrivate,
-    triggeringPrincipal,
-    policyContainer
-  ) {
-    let searchInfo = await SearchUIUtils._loadSearch(
-      window,
-      searchText,
-      "current",
-      usePrivate,
-      triggeringPrincipal,
-      policyContainer
-    );
-    if (searchInfo) {
-      lazy.BrowserSearchTelemetry.recordSearch(
-        window.gBrowser.selectedBrowser,
-        searchInfo.engine,
-        "system"
-      );
-    }
-  },
-
-  /**
-   * Perform a search initiated from an extension.
-   *
-   * @param {object} params
-   *   The params.
-   * @param {WindowProxy} params.window
-   *   The window where the search was triggered.
-   * @param {string} params.query
-   *   The search terms to use for the search.
-   * @param {nsISearchEngine} params.engine
-   *   The search engine to use for the search.
-   * @param {string} params.where
-   *   String indicating where the search should load.
-   * @param {MozTabbrowserTab} params.tab
-   *   The tab to show the search result.
-   * @param {nsIPrincipal} params.triggeringPrincipal
-   *   The principal to use for a new window or tab.
-   */
-  async loadSearchFromExtension({
-    window,
-    query,
-    engine,
-    where,
-    tab,
-    triggeringPrincipal,
-  }) {
-    let searchInfo = await SearchUIUtils._loadSearch(
-      window,
-      query,
-      where,
-      lazy.PrivateBrowsingUtils.isWindowPrivate(window),
-      triggeringPrincipal,
-      null,
-      false,
-      engine,
-      tab
-    );
-
-    if (searchInfo) {
-      lazy.BrowserSearchTelemetry.recordSearch(
-        window.gBrowser.selectedBrowser,
-        searchInfo.engine,
-        "webextension"
-      );
-    }
+      inBackground,
+      sapSource:
+        searchUrlType == lazy.SearchUtils.URL_TYPE.VISUAL_SEARCH
+          ? "contextmenu_visual"
+          : "contextmenu",
+    });
   },
 };
+
+/**
+ * A registrant that adds the handoff search bar to about:newtab / about:home.
+ */
+export class SearchNewTabComponentsRegistrant extends BaseAboutNewTabComponentRegistrant {
+  constructor() {
+    super();
+    // Wire up a lazy preference getter, primarily so that we have an easy way
+    // of updating our external component registration if the pref changes.
+    this.lazy = XPCOMUtils.declareLazy({
+      prefHandoffToAwesomebar: {
+        pref: "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
+        default: true,
+        onUpdate: () => {
+          this.updated();
+        },
+      },
+    });
+  }
+
+  getComponents() {
+    const { caretBlinkCount, caretBlinkTime } = Services.appinfo;
+
+    return [
+      {
+        type: AboutNewTabComponentRegistry.TYPES.SEARCH,
+        l10nURLs: [],
+        componentURL: "chrome://browser/content/contentSearchHandoffUI.mjs",
+        tagName: "content-search-handoff-ui",
+        cssVariables: {
+          "--caret-blink-count":
+            caretBlinkCount > -1 ? caretBlinkCount : "infinite",
+          "--caret-blink-time":
+            caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`,
+        },
+        attributes: {
+          nonhandoff: !this.lazy.prefHandoffToAwesomebar,
+        },
+      },
+    ];
+  }
+}

@@ -93,7 +93,7 @@ fn fog_init_internal(
     uploader: Option<Box<dyn glean::net::PingUploader>>,
     enable_internal_pings: bool,
 ) -> Result<(), nsresult> {
-    metrics::fog::initialization.start();
+    let timer_id = metrics::fog::initializations.start();
 
     log::debug!("Initializing FOG.");
 
@@ -122,7 +122,7 @@ fn fog_init_internal(
 
     glean::initialize(conf, client_info);
 
-    metrics::fog::initialization.stop();
+    metrics::fog::initializations.stop_and_accumulate(timer_id);
 
     Ok(())
 }
@@ -148,21 +148,24 @@ fn build_configuration(
     };
     log::debug!("Client Info: {:#?}", client_info);
 
+    let application_id = if app_id_override.is_empty() {
+        let app_id_guard = super::APP_ID.read().unwrap();
+        if app_id_guard.is_empty() {
+            "firefox.desktop".to_string()
+        } else {
+            app_id_guard.clone()
+        }
+    } else {
+        app_id_override.to_utf8().to_string()
+    };
+
     let localhost_port = static_prefs::pref!("telemetry.fog.test.localhost_port");
     let server = if localhost_port > 0 {
         format!("http://localhost:{}", localhost_port)
+    } else if application_id == "thunderbird.desktop" {
+        String::from("https://incoming.thunderbird.net")
     } else {
-        if app_id_override == "thunderbird.desktop" {
-            String::from("https://incoming.thunderbird.net")
-        } else {
-            String::from("https://incoming.telemetry.mozilla.org")
-        }
-    };
-
-    let application_id = if app_id_override.is_empty() {
-        "firefox.desktop".to_string()
-    } else {
-        app_id_override.to_utf8().to_string()
+        String::from("https://incoming.telemetry.mozilla.org")
     };
 
     extern "C" {

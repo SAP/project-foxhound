@@ -10,13 +10,13 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ReadableStreamGenericReader.h"
 #include "mozilla/dom/ReadRequest.h"
+#include "mozilla/dom/ReadableStreamGenericReader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "mozilla/LinkedList.h"
 
 namespace mozilla::dom {
 

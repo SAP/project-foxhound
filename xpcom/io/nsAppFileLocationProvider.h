@@ -9,7 +9,6 @@
 
 #include "nsIDirectoryService.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 
 class nsIFile;
 

@@ -41,6 +41,8 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
   private boolean mIsNightMode;
   private BroadcastReceiver mBroadcastReceiver;
   private IntentFilter mIntentFilter;
+  private volatile int mAllPointerCapabilities;
+  private volatile int mPointingDeviceKinds;
 
   @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
   private ContrastChangeListener mContrastChangeListener;
@@ -120,6 +122,9 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
         (sApplicationContext.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK)
             == Configuration.UI_MODE_NIGHT_YES;
+
+    mAllPointerCapabilities = GeckoAppShell.getAllPointerCapabilities();
+    mPointingDeviceKinds = GeckoAppShell.getPointingDeviceKinds();
 
     mInitialized = true;
   }
@@ -225,6 +230,16 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
     onDeviceChanged();
   }
 
+  @WrapForJNI(calledFrom = "gecko")
+  private static int getAllPointerCapabilities() {
+    return getInstance().mAllPointerCapabilities;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static int getPointingDeviceKinds() {
+    return getInstance().mPointingDeviceKinds;
+  }
+
   @WrapForJNI(stubName = "OnDeviceChanged", calledFrom = "any", dispatchTo = "gecko")
   private static native void nativeOnDeviceChanged();
 
@@ -237,12 +252,27 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
     }
   }
 
+  private boolean updatePointerCapabilities() {
+    final int allPointerCapabilities = GeckoAppShell.getAllPointerCapabilities();
+    final int pointingDeviceKinds = GeckoAppShell.getPointingDeviceKinds();
+    if (mAllPointerCapabilities == allPointerCapabilities
+        && mPointingDeviceKinds == pointingDeviceKinds) {
+      return false;
+    }
+    mAllPointerCapabilities = allPointerCapabilities;
+    mPointingDeviceKinds = pointingDeviceKinds;
+    return true;
+  }
+
   private void notifyDeviceChanged(final int deviceId) {
     final InputDevice device = InputDevice.getDevice(deviceId);
     if (device == null || !InputDeviceUtils.isPointerTypeDevice(device)) {
       return;
     }
-    onDeviceChanged();
+
+    if (updatePointerCapabilities()) {
+      onDeviceChanged();
+    }
   }
 
   @Override
@@ -255,7 +285,9 @@ public class GeckoSystemStateListener implements InputManager.InputDeviceListene
     // Call onDeviceChanged directly without checking device source types
     // since we can no longer get a valid `InputDevice` in the case of
     // device removal.
-    onDeviceChanged();
+    if (updatePointerCapabilities()) {
+      onDeviceChanged();
+    }
   }
 
   @Override

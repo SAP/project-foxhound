@@ -7,6 +7,7 @@
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <script>
+// eslint-disable-next-line no-unused-vars
 let gotMsg = false;
 let console = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
 let listener = {
@@ -39,13 +40,16 @@ console.registerListener(listener);
 </script>
 
 <script>
+  /* global gotMsg */
   SimpleTest.waitForExplicitFinish();
 
   let hasError = false;
+  // eslint-disable-next-line no-unused-vars
   function importMapError() {
     hasError = true;
   }
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     import("./module_simpleExport.mjs").then((ns) => {
       ok(ns.x == 42, 'Check simple imported value result: ' + ns.x);

@@ -15,7 +15,8 @@
   color: inherit;
 
   &[_moz-menuactive] {
-    background-color: light-dark(hsla(0, 0%, 0%, 0.12), hsla(0, 0%, 100%, 0.22));
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+    background-color: light-dark(var(--color-black-alpha-10), var(--color-white-alpha-20));
     color: inherit;
 
     @media (prefers-contrast) {
@@ -25,13 +26,22 @@
   }
 }
 
-:root[customtitlebar]:not([lwtheme]) {
+:root[customtitlebar]:not([lwtheme], [builtintheme]) {
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-windows-mica) or ((-moz-windows-accent-color-in-titlebar) and -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled")) {
+    --toolbox-bgcolor: ActiveCaption;
+    --toolbox-textcolor: CaptionText;
+    --toolbox-bgcolor-inactive: InactiveCaption;
+    --toolbox-textcolor-inactive: InactiveCaptionText;
+  }
+
   @media (-moz-windows-mica) {
     background-color: transparent;
     /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("widget.windows.mica.toplevel-backdrop", 2) {
       /* For acrylic, do the same we do for popups to guarantee some contrast */
-      background-color: light-dark(rgba(255, 255, 255, 0.6), rgba(0, 0, 0, 0.6));
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+      background-color: light-dark(var(--color-white-alpha-60), var(--color-black-alpha-60));
     }
 
     /* Using a semitransparent background preserves the tinting from the backdrop.
@@ -39,7 +49,7 @@
      * as the backdrop matches our color scheme. The .6 matches what we do for
      * acrylic, and the .15 matches the 85% we do for the default toolbar
      * background on the native theme. */
-    --toolbar-bgcolor: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.15));
+    --toolbar-bgcolor: light-dark(var(--color-white-alpha-60), var(--color-white-alpha-20));
   }
 
   /* stylelint-disable-next-line media-query-no-invalid */
@@ -215,26 +225,11 @@
   }
 }
 
-/* Bookmarks roots menu-items */
-
-#bookmarksToolbarFolderMenu,
-#BMB_bookmarksToolbar,
-#panelMenu_bookmarksToolbar {
-  list-style-image: url("chrome://browser/skin/places/bookmarksToolbar.svg");
-}
-
 /* Address bar */
 
-#urlbar,
+.urlbar,
 #searchbar {
   font-size: 1.15em;
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.urlbar.experimental.expandTextOnFocus") {
-  #urlbar[breakout-extend] {
-    font-size: 1.25em;
-  }
 }
 
 @media (prefers-contrast) {
@@ -248,7 +243,7 @@
   }
 
   :root:not([lwtheme]) {
-    #urlbar:not([focused]) > #urlbar-background,
+    :not([focused]) > .urlbar-background,
     #searchbar:not(:focus-within),
     .findbar-textbox:not(:focus) {
       border-color: ThreeDShadow;
@@ -280,7 +275,7 @@
 /* All tabs menupopup */
 
 .alltabs-item[selected="true"] {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #UITourTooltipButtons {

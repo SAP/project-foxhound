@@ -145,7 +145,10 @@ class DownloadCancelDialogFragment : AppCompatDialogFragment() {
     }
 
     @VisibleForTesting
-    internal fun buildWarningText(downloadCount: Int, @StringRes stringId: Int) = String.format(
+    internal fun buildWarningText(
+        downloadCount: Int,
+        @StringRes stringId: Int,
+    ) = String.format(
         getString(stringId),
         downloadCount,
     )

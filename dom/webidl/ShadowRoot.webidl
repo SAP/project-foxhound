@@ -31,6 +31,9 @@ interface ShadowRoot : DocumentFragment
   readonly attribute Element host;
   attribute EventHandler onslotchange;
 
+  [Pref="dom.shadowdom.referenceTarget.enabled"]
+  attribute DOMString? referenceTarget;
+
   Element? getElementById(DOMString elementId);
 
   // https://w3c.github.io/DOM-Parsing/#the-innerhtml-mixin

@@ -18,6 +18,9 @@
 #include "GeckoProfiler.h"
 
 #include <unordered_map>
+#ifdef FUZZING
+#  include "prenv.h"
+#endif
 
 #ifdef XP_DARWIN
 #  include "mozilla/gfx/UnscaledFontMac.h"
@@ -348,8 +351,10 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
                                 const mozilla::wr::LayoutIntRect* aDirtyRect,
                                 Range<uint8_t> aOutput) {
   IntSize size(aRenderRect->width(), aRenderRect->height());
-  AUTO_PROFILER_TRACING_MARKER("WebRender", "RasterizeSingleBlob", GRAPHICS);
+  AUTO_PROFILER_MARKER("RasterizeSingleBlob", GRAPHICS);
+#ifndef FUZZING
   MOZ_RELEASE_ASSERT(size.width > 0 && size.height > 0);
+#endif
   if (size.width <= 0 || size.height <= 0) {
     return false;
   }
@@ -463,6 +468,14 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
 }  // namespace wr
 }  // namespace mozilla
 
+#ifdef FUZZING
+mozilla::StaticMutex sFuzzDumpLock;
+static void writehex(const void* bytes, size_t len) {
+  const uint8_t* ptr = static_cast<const uint8_t*>(bytes);
+  while (len--) printf("%02X", *ptr++ & 0xFF);
+}
+#endif
+
 extern "C" {
 
 bool wr_moz2d_render_cb(const mozilla::wr::ByteSlice blob,
@@ -473,6 +486,39 @@ bool wr_moz2d_render_cb(const mozilla::wr::ByteSlice blob,
                         const mozilla::wr::TileOffset* aTileOffset,
                         const mozilla::wr::LayoutIntRect* aDirtyRect,
                         mozilla::wr::MutByteSlice output) {
+#ifdef FUZZING
+  if (!!PR_GetEnv("MOZ2D_RECORD")) {
+    sFuzzDumpLock.Lock();
+    printf("<dump>");
+    writehex(&aFormat, sizeof(uint8_t));
+    writehex(&aRenderRect->min.x, sizeof(int32_t));
+    writehex(&aRenderRect->min.y, sizeof(int32_t));
+    writehex(&aRenderRect->max.x, sizeof(int32_t));
+    writehex(&aRenderRect->max.y, sizeof(int32_t));
+    writehex(&aVisibleRect->min.x, sizeof(int32_t));
+    writehex(&aVisibleRect->min.y, sizeof(int32_t));
+    writehex(&aVisibleRect->max.x, sizeof(int32_t));
+    writehex(&aVisibleRect->max.y, sizeof(int32_t));
+    writehex(&aTileSize, sizeof(uint16_t));
+    if (aTileSize) {
+      writehex(&aTileOffset->x, sizeof(int32_t));
+      writehex(&aTileOffset->y, sizeof(int32_t));
+    }
+    uint8_t byte = aDirtyRect ? 1 : 0;
+    writehex(&byte, 1);
+    if (byte) {
+      writehex(&aDirtyRect->min.x, sizeof(int32_t));
+      writehex(&aDirtyRect->min.y, sizeof(int32_t));
+      writehex(&aDirtyRect->max.x, sizeof(int32_t));
+      writehex(&aDirtyRect->max.y, sizeof(int32_t));
+    }
+    writehex(&output.len, sizeof(uint32_t));
+    writehex(blob.buffer, blob.len);
+    printf("</dump>\n");
+    sFuzzDumpLock.Unlock();
+  }
+#endif
+
   return mozilla::wr::Moz2DRenderCallback(
       mozilla::wr::ByteSliceToRange(blob),
       mozilla::wr::ImageFormatToSurfaceFormat(aFormat), aVisibleRect,

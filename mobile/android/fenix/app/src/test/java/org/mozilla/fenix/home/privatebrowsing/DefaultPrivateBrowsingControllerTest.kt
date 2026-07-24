@@ -13,7 +13,6 @@ import io.mockk.verify
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -138,7 +137,7 @@ class DefaultPrivateBrowsingControllerTest {
             private = false,
             engineSession = mockk(relaxed = true),
         )
-        store.dispatch(TabListAction.AddTabAction(tab, select = true)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(tab, select = true))
 
         val newMode = BrowsingMode.Private
 
@@ -168,7 +167,7 @@ class DefaultPrivateBrowsingControllerTest {
             private = true,
             engineSession = mockk(relaxed = true),
         )
-        store.dispatch(TabListAction.AddTabAction(tab, select = true)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(tab, select = true))
 
         val newMode = BrowsingMode.Normal
 
@@ -185,6 +184,53 @@ class DefaultPrivateBrowsingControllerTest {
                     sessionId = null,
                 ),
             )
+        }
+    }
+
+    @Test
+    fun `GIVEN normal browsing mode and homepage as a new tab is enabled WHEN private mode button is selected from home THEN open a new homepage tab in private browsing mode`() {
+        every { navController.currentDestination } returns mockk {
+            every { id } returns R.id.homeFragment
+        }
+        every { settings.enableHomepageAsNewTab } returns true
+        every { settings.incrementNumTimesPrivateModeOpened() } just Runs
+
+        assertNull(Homepage.privateModeIconTapped.testGetValue())
+
+        val newMode = BrowsingMode.Normal
+
+        controller.handlePrivateModeButtonClicked(newMode)
+
+        val snapshot = Homepage.privateModeIconTapped.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        verify {
+            browsingModeManager.mode = newMode
+            fenixBrowserUseCases.addNewHomepageTab(private = false)
+        }
+    }
+
+    @Test
+    fun `GIVEN private browsing mode and homepage as a new tab is enabled WHEN private mode button is selected from home THEN open a new homepage tab in normal browsing mode`() {
+        every { navController.currentDestination } returns mockk {
+            every { id } returns R.id.homeFragment
+        }
+        every { settings.enableHomepageAsNewTab } returns true
+        every { settings.incrementNumTimesPrivateModeOpened() } just Runs
+
+        assertNull(Homepage.privateModeIconTapped.testGetValue())
+
+        val newMode = BrowsingMode.Private
+
+        controller.handlePrivateModeButtonClicked(newMode)
+
+        val snapshot = Homepage.privateModeIconTapped.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        verify {
+            browsingModeManager.mode = newMode
+            fenixBrowserUseCases.addNewHomepageTab(private = true)
+            settings.incrementNumTimesPrivateModeOpened()
         }
     }
 }

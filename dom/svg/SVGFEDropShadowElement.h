@@ -63,6 +63,10 @@ class SVGFEDropShadowElement final : public SVGFEDropShadowElementBase {
   NumberPairAttributesInfo GetNumberPairInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT, IN1 };
+  SVGAnimatedString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
   enum { DX, DY };
   SVGAnimatedNumber mNumberAttributes[2];
   static NumberInfo sNumberInfo[2];
@@ -70,10 +74,6 @@ class SVGFEDropShadowElement final : public SVGFEDropShadowElementBase {
   enum { STD_DEV };
   SVGAnimatedNumberPair mNumberPairAttributes[1];
   static NumberPairInfo sNumberPairInfo[1];
-
-  enum { RESULT, IN1 };
-  SVGAnimatedString mStringAttributes[2];
-  static StringInfo sStringInfo[2];
 };
 
 }  // namespace mozilla::dom

@@ -10,7 +10,6 @@
 #define mozilla_LockFreeQueue_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/PodOperations.h"
 #include <algorithm>
 #include <atomic>

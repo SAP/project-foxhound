@@ -23,6 +23,10 @@ NS_IMPL_ISUPPORTS(ParentChannelWrapper, nsIParentChannel, nsIStreamListener,
 void ParentChannelWrapper::Register(uint64_t aRegistrarId) {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
+  if (!registrar) {
+    // Shutdown is in progress.
+    return;
+  }
   nsCOMPtr<nsIChannel> dummy;
   MOZ_ALWAYS_SUCCEEDS(
       NS_LinkRedirectChannels(aRegistrarId, this, getter_AddRefs(dummy)));

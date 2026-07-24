@@ -8,10 +8,10 @@ DIRS += [
 ]
 
 CompiledModules(
-    "AccessibleImage.js",
     "Accordion.js",
     "Badge.js",
     "BracketArrow.js",
+    "DebuggerImage.js",
     "Dropdown.js",
     "EventListeners.js",
     "Modal.js",
@@ -19,6 +19,6 @@ CompiledModules(
     "PreviewFunction.js",
     "ResultList.js",
     "SearchInput.js",
-    "SourceIcon.js",
     "SmartGap.js",
+    "SourceIcon.js",
 )

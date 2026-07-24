@@ -46,14 +46,14 @@ class RtcEventEndLog final : public RtcEvent {
   Type GetType() const override { return kType; }
   bool IsConfigEvent() const override { return false; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> batch);
+  static std::string Encode(ArrayView<const RtcEvent*> batch);
 
   static RtcEventLogParseStatus Parse(absl::string_view encoded_bytes,
                                       bool batched,
                                       std::vector<LoggedStopEvent>& output);
 
  private:
-  RtcEventEndLog(const RtcEventEndLog& other);
+  RtcEventEndLog(const RtcEventEndLog&) = default;
 
   static constexpr EventParameters event_params_{"EndLog",
                                                  RtcEventEndLog::kType};

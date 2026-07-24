@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """output formats for Talos"""
+
 # NOTE: we have a circular dependency with output.py when we import results
 import simplejson as json
 from mozlog import get_proxy_logger
@@ -169,20 +170,17 @@ class Output:
                     if test.using_xperf:
                         if len(vals) > 0:
                             subtest["value"] = vals[0]
-                    else:
-                        # calculate mean value
-                        if len(vals) > 0:
-                            varray = [float(v) for v in vals]
-                            subtest["value"] = filter.mean(varray)
+                    # calculate mean value
+                    elif len(vals) > 0:
+                        varray = [float(v) for v in vals]
+                        subtest["value"] = filter.mean(varray)
             if counter_subtests:
-                suites.append(
-                    {
-                        "name": test.name(),
-                        "extraOptions": self.results.extra_options or [],
-                        "subtests": counter_subtests,
-                        "shouldAlert": test.test_config.get("suite_should_alert", True),
-                    }
-                )
+                suites.append({
+                    "name": test.name(),
+                    "extraOptions": self.results.extra_options or [],
+                    "subtests": counter_subtests,
+                    "shouldAlert": test.test_config.get("suite_should_alert", True),
+                })
         return test_results
 
     def output(self, results, results_url):

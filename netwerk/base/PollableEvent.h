@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PollableEvent_h__
-#define PollableEvent_h__
+#ifndef PollableEvent_h_
+#define PollableEvent_h_
 
 #include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"

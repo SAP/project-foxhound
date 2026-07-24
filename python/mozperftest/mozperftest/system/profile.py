@@ -46,7 +46,7 @@ class Profile(Layer):
     }
 
     def __init__(self, env, mach_cmd):
-        super(Profile, self).__init__(env, mach_cmd)
+        super().__init__(env, mach_cmd)
         self._created_dirs = []
 
     def setup(self):

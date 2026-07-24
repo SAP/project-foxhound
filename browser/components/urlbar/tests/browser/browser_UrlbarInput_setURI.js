@@ -4,17 +4,8 @@
 
 function test() {
   waitForExplicitFinish();
-
-  // avoid prompting about phishing
-  Services.prefs.setIntPref(phishyUserPassPref, 32);
-  registerCleanupFunction(function () {
-    Services.prefs.clearUserPref(phishyUserPassPref);
-  });
-
   nextTest();
 }
-
-const phishyUserPassPref = "network.http.phishy-userpass-length";
 
 function nextTest() {
   let testCase = tests.shift();

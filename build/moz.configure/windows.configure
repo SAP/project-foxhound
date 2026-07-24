@@ -83,7 +83,7 @@ def get_sdk_dirs(sdk, subdir):
     ]
 
 
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def valid_windows_sdk_dir_result(value):
     if value:
         return "0x%04x in %s" % (value.version, quote(value.path))
@@ -168,7 +168,7 @@ def valid_windows_sdk_dir(
     )
 
 
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def valid_ucrt_sdk_dir_result(value):
     if value:
         return "%s in %s" % (value.version, quote(value.path))
@@ -411,13 +411,13 @@ lib_path_for_host = lib_path_for(host)
 
 
 @depends_if(lib_path_for_host, when=host_is_windows)
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def host_linker_libpaths(libs):
     return ["-LIBPATH:%s" % quote(l) for l in libs]
 
 
 @depends_if(lib_path_for_host, when=host_is_windows)
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def host_linker_libpaths_bat(libs):
     # .bat files need a different style of quoting. Batch quoting is actually
     # not defined, and up to applications to handle, so it's not really clear
@@ -586,10 +586,14 @@ with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
         when=depends(target)(lambda target: target.cpu != "x86"),
     )
     set_config("MSVC_CXX_RUNTIME_DLL", "msvcp140.dll")
+    set_config("MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL", "msvcp140_atomic_wait.dll")
 
     # Disable warnings about using MSVC-specific secure CRT functions.
     set_define("_CRT_SECURE_NO_WARNINGS", True)
     set_define("_CRT_NONSTDC_NO_WARNINGS", True)
+
+    # Work around issues with newer STL and older runtimes, see bug 1994496.
+    set_define("_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR", True)
 
     set_define("HAVE_SEH_EXCEPTIONS", True)
     set_define("HAVE_IO_H", True)

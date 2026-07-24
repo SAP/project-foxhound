@@ -5,31 +5,31 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PermissionMessageUtils.h"
+
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsCOMPtr.h"
 #include "nsIPrincipal.h"
 
-namespace mozilla::ipc {
+namespace IPC {
 
-void IPDLParamTraits<nsIPrincipal*>::Write(IPC::MessageWriter* aWriter,
-                                           IProtocol* aActor,
-                                           nsIPrincipal* aParam) {
-  Maybe<PrincipalInfo> info;
+void ParamTraits<nsIPrincipal*>::Write(IPC::MessageWriter* aWriter,
+                                       nsIPrincipal* aParam) {
+  mozilla::Maybe<mozilla::ipc::PrincipalInfo> info;
   if (aParam) {
     info.emplace();
     nsresult rv = PrincipalToPrincipalInfo(aParam, info.ptr());
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  WriteIPDLParam(aWriter, aActor, info);
+  WriteParam(aWriter, info);
 }
 
-bool IPDLParamTraits<nsIPrincipal*>::Read(IPC::MessageReader* aReader,
-                                          IProtocol* aActor,
-                                          RefPtr<nsIPrincipal>* aResult) {
-  Maybe<PrincipalInfo> info;
-  if (!ReadIPDLParam(aReader, aActor, &info)) {
+bool ParamTraits<nsIPrincipal*>::Read(IPC::MessageReader* aReader,
+                                      RefPtr<nsIPrincipal>* aResult) {
+  mozilla::Maybe<mozilla::ipc::PrincipalInfo> info;
+  if (!ReadParam(aReader, &info)) {
     return false;
   }
 
@@ -48,4 +48,4 @@ bool IPDLParamTraits<nsIPrincipal*>::Read(IPC::MessageReader* aReader,
   return true;
 }
 
-}  // namespace mozilla::ipc
+}  // namespace IPC

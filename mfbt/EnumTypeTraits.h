@@ -8,7 +8,7 @@
 #ifndef mozilla_EnumTypeTraits_h
 #define mozilla_EnumTypeTraits_h
 
-#include <stddef.h>
+#include <cstddef>
 #include <type_traits>
 
 namespace mozilla {
@@ -116,17 +116,13 @@ inline constexpr auto UnderlyingValue(const T v) {
  */
 
 template <typename T>
-struct MinContiguousEnumValue {
-  static constexpr T value = static_cast<T>(0);
-};
+struct MinContiguousEnumValue : std::integral_constant<T, T(0)> {};
 
 template <typename T>
 struct MaxContiguousEnumValue;
 
 template <typename T>
-struct MaxEnumValue {
-  static constexpr auto value = MaxContiguousEnumValue<T>::value;
-};
+struct MaxEnumValue : MaxContiguousEnumValue<T> {};
 
 // Provides the min and max values for a contiguous enum (requires at least
 // MaxContiguousEnumValue to be defined).

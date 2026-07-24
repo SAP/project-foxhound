@@ -6,15 +6,15 @@
 #ifndef RTCIDENTITYPROVIDER_H_
 #define RTCIDENTITYPROVIDER_H_
 
-#include "mozilla/RefPtr.h"
-#include "nsCOMPtr.h"
-#include "nsISupportsImpl.h"
-#include "nsIGlobalObject.h"
-#include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RTCIdentityProviderBinding.h"
+#include "nsCOMPtr.h"
+#include "nsIGlobalObject.h"
+#include "nsISupportsImpl.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

@@ -15,7 +15,6 @@
 #include "mozStorageStatementData.h"
 #include "mozIStorageAsyncStatement.h"
 #include "StorageBaseStatementInternal.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace storage {

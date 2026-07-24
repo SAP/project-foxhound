@@ -53,12 +53,10 @@ def build_scriptworker_beetmover_payload(config, task, task_def):
     }
 
     scope_prefix = config.graph_config["scriptworker"]["scope-prefix"]
-    task_def["scopes"].extend(
-        [
-            "{}:beetmover:action:{}".format(scope_prefix, worker["action"]),
-            "{}:beetmover:bucket:{}".format(scope_prefix, worker["bucket"]),
-        ]
-    )
+    task_def["scopes"].extend([
+        "{}:beetmover:action:{}".format(scope_prefix, worker["action"]),
+        "{}:beetmover:bucket:{}".format(scope_prefix, worker["bucket"]),
+    ])
 
 
 @payload_builder(

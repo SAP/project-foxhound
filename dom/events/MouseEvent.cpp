@@ -440,7 +440,9 @@ nsIntPoint MouseEvent::GetMovementPoint() const {
   }
 
   if (!mEvent || !mEvent->AsGUIEvent()->mWidget ||
-      (mEvent->mMessage != eMouseMove && mEvent->mMessage != ePointerMove)) {
+      (mEvent->mMessage != eMouseMove && mEvent->mMessage != ePointerMove &&
+       !(StaticPrefs::dom_event_pointer_rawupdate_movement_enabled() &&
+         mEvent->mMessage == ePointerRawUpdate))) {
     // Pointer Lock spec defines that movementX/Y must be zero for all mouse
     // events except mousemove.
     return nsIntPoint(0, 0);

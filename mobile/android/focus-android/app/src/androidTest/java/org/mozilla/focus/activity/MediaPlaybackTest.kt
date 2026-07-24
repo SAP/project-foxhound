@@ -45,7 +45,7 @@ class MediaPlaybackTest : TestSetup() {
     @SmokeTest
     @Test
     fun testVideoPlayback() {
-        val videoPageUrl = getMediaTestAsset(webServer, "videoPage").url
+        val videoPageUrl = webServer.getMediaTestAsset("videoPage").url
 
         searchScreen {
         }.loadPage(videoPageUrl) {
@@ -61,7 +61,7 @@ class MediaPlaybackTest : TestSetup() {
     @SmokeTest
     @Test
     fun testAudioPlayback() {
-        val audioPageUrl = getMediaTestAsset(webServer, "audioPage").url
+        val audioPageUrl = webServer.getMediaTestAsset("audioPage").url
 
         searchScreen {
         }.loadPage(audioPageUrl) {
@@ -77,7 +77,7 @@ class MediaPlaybackTest : TestSetup() {
     @SmokeTest
     @Test
     fun testMediaContentNotification() {
-        val audioPageUrl = getMediaTestAsset(webServer, "audioPage").url
+        val audioPageUrl = webServer.getMediaTestAsset("audioPage").url
         val notificationMessage = "A site is playing media"
 
         searchScreen {

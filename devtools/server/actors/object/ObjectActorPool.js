@@ -27,9 +27,9 @@ loader.lazyRequireGetter(
  *
  * @param {ThreadActor} threadActor
  *        The related Thread Actor from which JS values are coming from.
- * @param {String} label
+ * @param {string} label
  *        Pool's description (for debugging purpose)
- * @param {Boolean} uniqueActorPerValue
+ * @param {boolean} uniqueActorPerValue
  *        Ensure instantiating only one Object Actor for each unique JS Value
  *        passed to createObjectGrip.
  */

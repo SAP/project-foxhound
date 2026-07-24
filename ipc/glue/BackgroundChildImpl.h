@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ipc_backgroundchildimpl_h__
-#define mozilla_ipc_backgroundchildimpl_h__
+#ifndef mozilla_ipc_backgroundchildimpl_h_
+#define mozilla_ipc_backgroundchildimpl_h_
 
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/UniquePtr.h"
@@ -155,17 +155,10 @@ class BackgroundChildImpl : public PBackgroundChild {
   already_AddRefed<PServiceWorkerRegistrationChild>
   AllocPServiceWorkerRegistrationChild(
       const IPCServiceWorkerRegistrationDescriptor&);
-
-  virtual PEndpointForReportChild* AllocPEndpointForReportChild(
-      const nsAString& aGroupName,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  virtual bool DeallocPEndpointForReportChild(
-      PEndpointForReportChild* aActor) override;
 };
 
 class BackgroundChildImpl::ThreadLocal final {
-  friend class mozilla::DefaultDelete<ThreadLocal>;
+  friend mozilla::DefaultDelete<ThreadLocal>;
 
  public:
   mozilla::UniquePtr<mozilla::dom::indexedDB::ThreadLocal>
@@ -183,4 +176,4 @@ class BackgroundChildImpl::ThreadLocal final {
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif  // mozilla_ipc_backgroundchildimpl_h__
+#endif  // mozilla_ipc_backgroundchildimpl_h_

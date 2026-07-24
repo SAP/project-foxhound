@@ -6,15 +6,12 @@ package mozilla.components.lib.state
 
 import androidx.annotation.CheckResult
 import androidx.annotation.VisibleForTesting
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
-import mozilla.components.lib.state.internal.DefaultStoreDispatcher
-import mozilla.components.lib.state.internal.ReducerChainBuilder
-import mozilla.components.lib.state.internal.StoreDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 
 /**
  * A generic store holding an immutable [State].
@@ -26,45 +23,30 @@ import java.util.concurrent.Executors
  * @param reducer A function that gets the current [State] and [Action] passed in and will return a new [State].
  * @param middleware Optional list of [Middleware] sitting between the [Store] and the [Reducer].
  */
-open class Store<S : State, A : Action> internal constructor(
+open class Store<S : State, A : Action>(
     initialState: S,
-    reducer: Reducer<S, A>,
-    middleware: List<Middleware<S, A>>,
-    dispatcher: StoreDispatcher,
+    private val reducer: Reducer<S, A>,
+    private val middleware: List<Middleware<S, A>> = emptyList(),
 ) {
-
-    /**
-     * @param initialState The initial state until a dispatched [Action] creates a new state.
-     * @param reducer A function that gets the current [State] and [Action] passed in and will return a new [State].
-     * @param middleware Optional list of [Middleware] sitting between the [Store] and the [Reducer].
-     * @param threadNamePrefix Optional prefix with which to name threads for the [Store]. If not provided,
-     * the naming scheme will be deferred to [Executors.defaultThreadFactory]
-     */
-    constructor(
-        initialState: S,
-        reducer: Reducer<S, A>,
-        middleware: List<Middleware<S, A>> = emptyList(),
-        threadNamePrefix: String? = null,
-    ) : this(
-        initialState = initialState,
-        reducer = reducer,
-        middleware = middleware,
-        dispatcher = DefaultStoreDispatcher(threadNamePrefix),
-    )
-
-    private val reducerChainBuilder = ReducerChainBuilder(dispatcher, reducer, middleware)
-    private val scope = CoroutineScope(dispatcher.coroutineContext)
+    private var reducerChain: ((A) -> Unit)? = null
 
     @VisibleForTesting
     internal val subscriptions = Collections.newSetFromMap(ConcurrentHashMap<Subscription<S, A>, Boolean>())
 
-    @Volatile private var currentState = initialState
+    private val mutableStateFlow = MutableStateFlow(initialState)
 
     /**
      * The current [State].
      */
     val state: S
-        get() = currentState
+        get() = mutableStateFlow.value
+
+    /**
+     * An observable flow which will emit the store state as it updates.
+     *
+     * @return the current state as a [StateFlow]
+     */
+    val stateFlow: StateFlow<S> = mutableStateFlow.asStateFlow()
 
     /**
      * Registers an [Observer] function that will be invoked whenever the [State] changes.
@@ -90,28 +72,31 @@ open class Store<S : State, A : Action> internal constructor(
 
     /**
      * Dispatch an [Action] to the store in order to trigger a [State] change.
+     * This function may be invoked on any thread.
+     * Invocations are serialized by synchronizing on `this@Store`,
+     * preventing concurrent modification of the underlying store.
+     * Long running reducers and/or middlewares can and will impact all consumers.
+     *
+     * @return Unit. Previously this returned a new Job that was launched here, but this no longer happens.
      */
-    fun dispatch(action: A) = scope.launch {
-        synchronized(this@Store) {
-            reducerChainBuilder.get(this@Store).invoke(action)
+    fun dispatch(action: A) {
+        synchronized(this) {
+            if (reducerChain == null) {
+                var chain: (A) -> Unit = { action ->
+                    val newState = reducer(state, action)
+                    if (newState != mutableStateFlow.value) {
+                        mutableStateFlow.value = newState
+                        subscriptions.forEach { subscription -> subscription.dispatch(newState) }
+                    }
+                }
+                middleware.reversed().forEach { middleware ->
+                    val next = chain
+                    chain = { action -> middleware(this, next, action) }
+                }
+                reducerChain = chain
+            }
+            reducerChain?.invoke(action)
         }
-    }
-
-    /**
-     * Transitions from the current [State] to the passed in [state] and notifies all observers.
-     */
-    internal fun transitionTo(state: S) {
-        if (state == currentState) {
-            // Nothing has changed.
-            return
-        }
-
-        currentState = state
-        subscriptions.forEach { subscription -> subscription.dispatch(state) }
-    }
-
-    private fun removeSubscription(subscription: Subscription<S, A>) {
-        subscriptions.remove(subscription)
     }
 
     /**
@@ -168,7 +153,7 @@ open class Store<S : State, A : Action> internal constructor(
         fun unsubscribe() {
             active = false
 
-            storeReference.get()?.removeSubscription(this)
+            storeReference.get()?.subscriptions?.remove(this)
             storeReference.clear()
 
             binding?.unbind()

@@ -120,35 +120,35 @@ async function startTest()
   onAttach(state);
 }
 
-function onAttach(aState)
+function onAttach(state)
 {
-  onConsoleAPICall = onConsoleAPICall.bind(null, aState);
-  aState.webConsoleFront.on("consoleAPICall", onConsoleAPICall);
-  doConsoleCalls(aState.actor);
+  onConsoleAPICall = onConsoleAPICall.bind(null, state);
+  state.webConsoleFront.on("consoleAPICall", onConsoleAPICall);
+  doConsoleCalls(state.actor);
 }
 
 let consoleCalls = [];
 
-function onConsoleAPICall(aState, aPacket)
+function onConsoleAPICall(state, packet)
 {
-  info("received message level: " + aPacket.message.level);
+  info("received message level: " + packet.message.level);
 
-  consoleCalls.push(aPacket.message);
+  consoleCalls.push(packet.message);
   if (consoleCalls.length != expectedConsoleCalls.length) {
     return;
   }
 
-  aState.webConsoleFront.off("consoleAPICall", onConsoleAPICall);
+  state.webConsoleFront.off("consoleAPICall", onConsoleAPICall);
 
-  expectedConsoleCalls.forEach(function(aMessage, aIndex) {
-    info("checking received console call #" + aIndex);
-    checkConsoleAPICall(consoleCalls[aIndex], expectedConsoleCalls[aIndex]);
+  expectedConsoleCalls.forEach(function(message, index) {
+    info("checking received console call #" + index);
+    checkConsoleAPICall(consoleCalls[index], expectedConsoleCalls[index]);
   });
 
 
   consoleCalls = [];
 
-  closeDebugger(aState, function() {
+  closeDebugger(state, function() {
     SimpleTest.finish();
   });
 }

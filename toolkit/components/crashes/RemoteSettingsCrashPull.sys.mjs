@@ -28,9 +28,7 @@ export var RemoteSettingsCrashPull = {
       return;
     }
 
-    const enabled = Services.prefs.getBoolPref(
-      "browser.crashReports.crashPull"
-    );
+    const enabled = Services.prefs.getBoolPref("browser.crashReports.onDemand");
     if (!enabled) {
       return;
     }

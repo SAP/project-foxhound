@@ -6,12 +6,13 @@
 
 #include "nsMathMLFrame.h"
 
+#include "PseudoStyleType.h"
 #include "gfxContext.h"
 #include "gfxMathTable.h"
 #include "gfxUtils.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/dom/MathMLElement.h"
 #include "mozilla/gfx/2D.h"
-#include "nsCSSPseudoElements.h"
 #include "nsCSSValue.h"
 #include "nsLayoutUtils.h"
 #include "nsMathMLChar.h"
@@ -29,7 +30,7 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-eMathMLFrameType nsMathMLFrame::GetMathMLFrameType() {
+MathMLFrameType nsMathMLFrame::GetMathMLFrameType() {
   // see if it is an embellished operator (mapped to 'Op' in TeX)
   if (mEmbellishData.coreFrame) {
     return GetMathMLFrameTypeFor(mEmbellishData.coreFrame);
@@ -41,18 +42,18 @@ eMathMLFrameType nsMathMLFrame::GetMathMLFrameType() {
   }
 
   // everything else is treated as ordinary (mapped to 'Ord' in TeX)
-  return eMathMLFrameType_Ordinary;
+  return MathMLFrameType::Ordinary;
 }
 
 NS_IMETHODIMP
 nsMathMLFrame::InheritAutomaticData(nsIFrame* aParent) {
-  mEmbellishData.flags = 0;
+  mEmbellishData.flags.clear();
   mEmbellishData.coreFrame = nullptr;
-  mEmbellishData.direction = NS_STRETCH_DIRECTION_UNSUPPORTED;
+  mEmbellishData.direction = StretchDirection::Unsupported;
   mEmbellishData.leadingSpace = 0;
   mEmbellishData.trailingSpace = 0;
 
-  mPresentationData.flags = 0;
+  mPresentationData.flags.clear();
   mPresentationData.baseFrame = nullptr;
 
   // by default, just inherit the display of our parent
@@ -63,27 +64,28 @@ nsMathMLFrame::InheritAutomaticData(nsIFrame* aParent) {
 }
 
 NS_IMETHODIMP
-nsMathMLFrame::UpdatePresentationData(uint32_t aFlagsValues,
-                                      uint32_t aWhichFlags) {
-  NS_ASSERTION(NS_MATHML_IS_COMPRESSED(aWhichFlags) ||
-                   NS_MATHML_IS_DTLS_SET(aWhichFlags),
+nsMathMLFrame::UpdatePresentationData(MathMLPresentationFlags aFlagsValues,
+                                      MathMLPresentationFlags aWhichFlags) {
+  NS_ASSERTION(aWhichFlags.contains(MathMLPresentationFlag::Compressed) ||
+                   aWhichFlags.contains(MathMLPresentationFlag::Dtls),
                "aWhichFlags should only be compression or dtls flag");
 
-  if (NS_MATHML_IS_COMPRESSED(aWhichFlags)) {
+  if (!StaticPrefs::mathml_math_shift_enabled() &&
+      aWhichFlags.contains(MathMLPresentationFlag::Compressed)) {
     // updating the compression flag is allowed
-    if (NS_MATHML_IS_COMPRESSED(aFlagsValues)) {
+    if (aFlagsValues.contains(MathMLPresentationFlag::Compressed)) {
       // 'compressed' means 'prime' style in App. G, TeXbook
-      mPresentationData.flags |= NS_MATHML_COMPRESSED;
+      mPresentationData.flags += MathMLPresentationFlag::Compressed;
     }
     // no else. the flag is sticky. it retains its value once it is set
   }
   // These flags determine whether the dtls font feature settings should
   // be applied.
-  if (NS_MATHML_IS_DTLS_SET(aWhichFlags)) {
-    if (NS_MATHML_IS_DTLS_SET(aFlagsValues)) {
-      mPresentationData.flags |= NS_MATHML_DTLS;
+  if (aWhichFlags.contains(MathMLPresentationFlag::Dtls)) {
+    if (aFlagsValues.contains(MathMLPresentationFlag::Dtls)) {
+      mPresentationData.flags += MathMLPresentationFlag::Dtls;
     } else {
-      mPresentationData.flags &= ~NS_MATHML_DTLS;
+      mPresentationData.flags -= MathMLPresentationFlag::Dtls;
     }
   }
   return NS_OK;
@@ -93,9 +95,9 @@ nsMathMLFrame::UpdatePresentationData(uint32_t aFlagsValues,
 void nsMathMLFrame::GetEmbellishDataFrom(nsIFrame* aFrame,
                                          nsEmbellishData& aEmbellishData) {
   // initialize OUT params
-  aEmbellishData.flags = 0;
+  aEmbellishData.flags.clear();
   aEmbellishData.coreFrame = nullptr;
-  aEmbellishData.direction = NS_STRETCH_DIRECTION_UNSUPPORTED;
+  aEmbellishData.direction = StretchDirection::Unsupported;
   aEmbellishData.leadingSpace = 0;
   aEmbellishData.trailingSpace = 0;
 
@@ -113,7 +115,7 @@ void nsMathMLFrame::GetEmbellishDataFrom(nsIFrame* aFrame,
 void nsMathMLFrame::GetPresentationDataFrom(
     nsIFrame* aFrame, nsPresentationData& aPresentationData, bool aClimbTree) {
   // initialize OUT params
-  aPresentationData.flags = 0;
+  aPresentationData.flags.clear();
   aPresentationData.baseFrame = nullptr;
 
   nsIFrame* frame = aFrame;
@@ -193,13 +195,10 @@ nscoord nsMathMLFrame::CalcLength(const nsCSSValue& aCSSValue,
   nsCSSUnit unit = aCSSValue.GetUnit();
   mozilla::dom::NonSVGFrameUserSpaceMetrics userSpaceMetrics(aFrame);
 
-  // The axis is only relevant for percentages, so it doesn't matter what we use
-  // here.
-  auto axis = SVGContentUtils::X;
-
   return nsPresContext::CSSPixelsToAppUnits(
       aCSSValue.GetFloatValue() *
-      SVGLength::GetPixelsPerCSSUnit(userSpaceMetrics, unit, axis,
+      SVGLength::GetPixelsPerCSSUnit(userSpaceMetrics, unit,
+                                     SVGLength::Axis::XY,
                                      /* aApplyZoom = */ true));
 }
 
@@ -220,15 +219,13 @@ void nsMathMLFrame::GetSupDropFromChild(nsIFrame* aChild, nscoord& aSupDrop,
 }
 
 /* static */
-void nsMathMLFrame::ParseAndCalcNumericValue(const nsString& aString,
-                                             nscoord* aLengthValue,
-                                             uint32_t aFlags,
-                                             float aFontSizeInflation,
-                                             nsIFrame* aFrame) {
+void nsMathMLFrame::ParseAndCalcNumericValue(
+    const nsString& aString, nscoord* aLengthValue, float aFontSizeInflation,
+    nsIFrame* aFrame, dom::MathMLElement::ParseFlags aFlags) {
   nsCSSValue cssValue;
 
   if (!dom::MathMLElement::ParseNumericValue(
-          aString, cssValue, aFlags, aFrame->PresContext()->Document())) {
+          aString, cssValue, aFrame->PresContext()->Document(), aFlags)) {
     // Invalid attribute value. aLengthValue remains unchanged, so the default
     // length value is used.
     return;
@@ -283,7 +280,7 @@ void nsDisplayMathMLBar::Paint(nsDisplayListBuilder* aBuilder,
 void nsMathMLFrame::DisplayBar(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                const nsRect& aRect,
                                const nsDisplayListSet& aLists,
-                               uint32_t aIndex) {
+                               uint16_t aIndex) {
   if (!aFrame->StyleVisibility()->IsVisible() || aRect.IsEmpty()) {
     return;
   }

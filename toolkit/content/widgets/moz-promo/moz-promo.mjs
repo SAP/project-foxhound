@@ -15,9 +15,15 @@ import { MozLitElement } from "../lit-utils.mjs";
  * @property {string} heading - The heading of the promo element.
  * @property {string} message - The message of the promo element.
  * @property {string} imageSrc - The main image of the promo element.
- * @property {string} iconAlignment - How the icon should be aligned. Can be "start", "end", "center".
+ * @property {string} imageAlignment - How the image should be aligned. Can be "start", "end", "center".
  */
 export default class MozPromo extends MozLitElement {
+  static queries = {
+    actionsSlot: "slot[name=actions]",
+    supportLinkSlot: "slot[name=support-link]",
+    actionsSupportWrapper: ".actions-and-support-link-wrapper",
+  };
+
   static properties = {
     type: { type: String, reflect: true },
     heading: { type: String, fluent: true },
@@ -33,17 +39,23 @@ export default class MozPromo extends MozLitElement {
   }
 
   updated(changedProperties) {
-    // super.updated?.(changedProperties);
     if (changedProperties.has("imageSrc") && this.imageSrc) {
       this.style.setProperty("--promo-image-url", `url("${this.imageSrc}")`);
     }
   }
 
+  handleSlotChange() {
+    let hasActions = this.actionsSlot.assignedNodes().length;
+    let hasSupport = this.supportLinkSlot.assignedNodes().length;
+    this.actionsSupportWrapper.classList.toggle(
+      "active",
+      hasActions || hasSupport
+    );
+  }
+
   headingTemplate() {
     if (this.heading) {
-      return html`<strong class="heading heading-medium"
-        >${this.heading}</strong
-      >`;
+      return html`<h2 class="heading heading-medium">${this.heading}</h2>`;
     }
     return "";
   }
@@ -63,7 +75,15 @@ export default class MozPromo extends MozLitElement {
         ${imageStartAligned ? this.imageTemplate() : ""}
         <div class="text-container">
           ${this.headingTemplate()}
-          <p class="message">${this.message}</p>
+          <p class="message">
+            ${this.message}<span class="actions-and-support-link-wrapper">
+              <slot name="actions" @slotchange=${this.handleSlotChange}></slot>
+              <slot
+                name="support-link"
+                @slotchange=${this.handleSlotChange}
+              ></slot>
+            </span>
+          </p>
         </div>
         ${!imageStartAligned ? this.imageTemplate() : ""}
       </div>`;

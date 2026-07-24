@@ -52,7 +52,7 @@ Result<Ok, nsresult> DatabaseFileManager::TraverseFiles(
               break;
             }
 
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
 
             QM_TRY(std::forward<UnknownDirEntryOp>(aUnknownDirEntryOp)(
                 *file, /* isDirectory */ true));
@@ -74,7 +74,7 @@ Result<Ok, nsresult> DatabaseFileManager::TraverseFiles(
               break;
             }
 
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
 
             QM_TRY(std::forward<UnknownDirEntryOp>(aUnknownDirEntryOp)(
                 *file, /* isDirectory */ false));

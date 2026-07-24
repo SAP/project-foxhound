@@ -1,0 +1,13 @@
+[package]
+name = "toolkit-protobuf"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "prost_build_wrapper"
+path = "prost_build_wrapper.rs"
+
+[dependencies]
+anyhow = "1.0.99"
+clap = { version = "4.5.45", features = ["derive"] }
+prost-build = "0.12.1"

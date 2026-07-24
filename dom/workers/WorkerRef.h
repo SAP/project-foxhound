@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_workers_WorkerRef_h
 #define mozilla_dom_workers_WorkerRef_h
 
-#include "mozilla/dom/WorkerStatus.h"
 #include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/WorkerStatus.h"
 #include "nsISupports.h"
 #include "nsTString.h"
 

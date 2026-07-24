@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="select-unselectable-img-ref.html">
+</head>
+<body>
+  <div><img
+   style="user-select:none;width:100px;height:100px"
+   src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAAE0lEQVR4nGNk+M+ADJgYGCjiAwBPkgEJOTC6CgAAAABJRU5ErkJggg=="
+  ></div>
+  <script>
+    getSelection().selectAllChildren(document.querySelector("div"));
+  </script>
+</body>
+</html>

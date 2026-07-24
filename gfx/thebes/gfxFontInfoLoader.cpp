@@ -163,7 +163,7 @@ void gfxFontInfoLoader::StartLoader(uint32_t aDelay) {
     mTimer = NS_NewTimer();
     mTimer->InitWithNamedFuncCallback(DelayedStartCallback, this, aDelay,
                                       nsITimer::TYPE_ONE_SHOT,
-                                      "gfxFontInfoLoader::StartLoader");
+                                      "gfxFontInfoLoader::StartLoader"_ns);
     mState = stateTimerOnDelay;
     return;
   }

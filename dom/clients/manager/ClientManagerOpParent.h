@@ -6,8 +6,8 @@
 #ifndef _mozilla_dom_ClientManagerOpParent_h
 #define _mozilla_dom_ClientManagerOpParent_h
 
-#include "mozilla/dom/PClientManagerOpParent.h"
 #include "ClientOpPromise.h"
+#include "mozilla/dom/PClientManagerOpParent.h"
 
 namespace mozilla::dom {
 

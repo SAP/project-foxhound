@@ -54,7 +54,7 @@ registerCleanupFunction(
 /**
  * Compared logins in storage to expected values
  *
- * @param {array} expectedLogins
+ * @param {Array} expectedLogins
  *        An array of expected login properties
  * @return {nsILoginInfo[]} - All saved logins sorted by timeCreated
  */
@@ -117,7 +117,7 @@ async function verifyLogins(expectedLogins = []) {
  * Submit the content form and return a promise resolving to the username and
  * password values echoed out in the response
  *
- * @param {Object} [browser] - browser with the form
+ * @param {object} [browser] - browser with the form
  * @param {String = ""} formAction - Optional url to set the form's action to before submitting
  * @param {Object = null} selectorValues - Optional object with field values to set before form submission
  * @param {Object = null} responseSelectors - Optional object with selectors to find the username and password in the response
@@ -178,8 +178,8 @@ async function submitFormAndGetResults(
  * Wait for a given result page to load and return a promise resolving to an object with the parsed-out
  * username/password values from the response
  *
- * @param {Object} [browser] - browser which is loading this page
- * @param {String} resultURL - the path or filename to look for in the content.location
+ * @param {object} [browser] - browser which is loading this page
+ * @param {string} resultURL - the path or filename to look for in the content.location
  * @param {Object = null} - Optional object with selectors to find the username and password in the response
  */
 async function getFormSubmitResponseResult(
@@ -224,9 +224,9 @@ async function getFormSubmitResponseResult(
  * Loads a test page in `DIRECTORY_URL` which automatically submits to formsubmit.sjs and returns a
  * promise resolving with the field values when the optional `aTaskFn` is done.
  *
- * @param {String} aPageFile - test page file name which auto-submits to formsubmit.sjs
+ * @param {string} aPageFile - test page file name which auto-submits to formsubmit.sjs
  * @param {Function} aTaskFn - task which can be run before the tab closes.
- * @param {String} [aOrigin="https://example.com"] - origin of the server to use
+ * @param {string} [aOrigin="https://example.com"] - origin of the server to use
  *                                                  to load `aPageFile`.
  */
 function testSubmittingLoginForm(
@@ -257,9 +257,9 @@ function testSubmittingLoginForm(
  * Loads a test page in `DIRECTORY_URL` which automatically submits to formsubmit.sjs and returns a
  * promise resolving with the field values when the optional `aTaskFn` is done.
  *
- * @param {String} aPageFile - test page file name which auto-submits to formsubmit.sjs
+ * @param {string} aPageFile - test page file name which auto-submits to formsubmit.sjs
  * @param {Function} aTaskFn - task which can be run before the tab closes.
- * @param {String} [aOrigin="http://example.com"] - origin of the server to use
+ * @param {string} [aOrigin="http://example.com"] - origin of the server to use
  *                                                  to load `aPageFile`.
  */
 function testSubmittingLoginFormHTTP(
@@ -321,9 +321,9 @@ const REMOVE_LOGIN_MENUITEM = 0;
  * Checks if we have a password capture popup notification
  * of the right type and with the right label.
  *
- * @param {String} aKind The desired `passwordNotificationType` ("any" for any type)
- * @param {Object} [popupNotifications = PopupNotifications]
- * @param {Object} [browser = null] Optional browser whose notifications should be searched.
+ * @param {string} aKind The desired `passwordNotificationType` ("any" for any type)
+ * @param {object} [popupNotifications = PopupNotifications]
+ * @param {object} [browser = null] Optional browser whose notifications should be searched.
  * @return the found password popup notification.
  */
 function getCaptureDoorhanger(
@@ -424,7 +424,7 @@ function getDoorhangerButton(aPopup, aButtonIndex) {
  * Clicks the specified popup notification button.
  *
  * @param {Element} aPopup Popup Notification element
- * @param {Number} aButtonIndex Number indicating which button to click.
+ * @param {number} aButtonIndex Number indicating which button to click.
  *                              See the constants in this file.
  */
 function clickDoorhangerButton(aPopup, aButtonIndex) {
@@ -477,8 +477,8 @@ async function clearMessageCache(browser) {
 /**
  * Checks the doorhanger's username and password.
  *
- * @param {String} username The username.
- * @param {String} password The password.
+ * @param {string} username The username.
+ * @param {string} password The password.
  */
 async function checkDoorhangerUsernamePassword(username, password) {
   await BrowserTestUtils.waitForCondition(() => {
@@ -500,7 +500,7 @@ async function checkDoorhangerUsernamePassword(username, password) {
  *        An optional string value to replace whatever is in the password field
  * @param {string} [newValues.username = undefined]
  *        An optional string value to replace whatever is in the username field
- * @param {Object} [popupNotifications = PopupNotifications]
+ * @param {object} [popupNotifications = PopupNotifications]
  */
 async function updateDoorhangerInputValues(
   newValues,
@@ -813,9 +813,24 @@ async function openPasswordContextMenu(
  * Returns a promise that will passed additional data specific to the message.
  */
 function listenForTestNotification(expectedMessage, count = 1) {
+  let expectedMessages = [];
+  if (Array.isArray(expectedMessage)) {
+    expectedMessages = expectedMessage;
+  } else {
+    for (let i = 0; i < count; i++) {
+      expectedMessages.push(expectedMessage);
+    }
+  }
+
   return new Promise(resolve => {
     LoginManagerParent.setListenerForTests((msg, data) => {
-      if (msg == expectedMessage && --count == 0) {
+      let idx = expectedMessages.indexOf(msg);
+      if (idx == -1) {
+        return;
+      }
+
+      expectedMessages.splice(idx, 1);
+      if (!expectedMessages.length) {
         LoginManagerParent.setListenerForTests(null);
         info("listenForTestNotification, resolving for message: " + msg);
         resolve(data);

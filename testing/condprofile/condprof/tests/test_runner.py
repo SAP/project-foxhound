@@ -25,15 +25,14 @@ with open(os.path.join(os.path.dirname(__file__), "ftp_mozilla.html")) as f:
     FTP_PAGE = f.read()
 
 FTP_ARCHIVE = re.compile(
-    "https://ftp.mozilla.org/pub/firefox/nightly/" "latest-mozilla-central/firefox.*"
+    "https://ftp.mozilla.org/pub/firefox/nightly/latest-mozilla-central/firefox.*"
 )
 
 ADDON = re.compile("https://addons.mozilla.org/.*/.*xpi")
 
 
 async def fakesleep(duration):
-    if duration > 1:
-        duration = 1
+    duration = min(duration, 1)
     await asyncio.realsleep(duration)
 
 

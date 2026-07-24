@@ -9,6 +9,7 @@ support-files = [
 
 ["test_pointerlock-api.html"]
 tags = "fullscreen"
+scheme = "https"
 support-files = [
   "file_pointerlock-api.html",
   "file_pointerlock-api-with-shadow.html",
@@ -31,10 +32,10 @@ support-files = [
   "file_changeLockElement.html",
 ]
 skip-if = [
-  "!debug && !asan && !tsan && !ccov", # Bug 1833142
-  "display == 'wayland' && os_version == '22.04'", # Bug 1857057
+  "opt", # Bug 1833142
   "os == 'android'", # Bug 1612553
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1886190
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857057
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1886190
 ]
 
 ["test_pointerlock_focus.html"]
@@ -47,15 +48,16 @@ support-files = [
   "file_pointerlock_xorigin_iframe_no_user_gesture.html",
   "file_pointerlock_xorigin_iframe_not_focused.html",
 ]
-skip-if = ["display == 'wayland' && os_version == '22.04'"] # Bug 1857057
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857057
+]
 
 ["test_pointerlock_xorigin_iframe_movementXY.html"]
 skip-if = [
-  "display == 'wayland' && os_version == '22.04'", # Bug 1857057
   "os == 'android'", # bug 1897103
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1897207
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && xorigin", # Bug 1897207
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1897207
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1897207
-  "os == 'win' && os_version == '11.2009' && opt", # Bug 1897207
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857057
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && xorigin", # Bug 1897207
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1897207
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1897207
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && xorigin && verify-standalone", # Bug 1897207
 ]

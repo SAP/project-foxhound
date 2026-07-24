@@ -6,6 +6,7 @@
 #ifndef include_dom_media_ipc_RemoteDecoderChild_h
 #define include_dom_media_ipc_RemoteDecoderChild_h
 
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/PRemoteDecoderChild.h"
 #include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/ShmemRecycleAllocator.h"
@@ -42,6 +43,14 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   void SetSeekThreshold(const media::TimeUnit& aTime);
   MediaDataDecoder::ConversionRequired NeedsConversion() const;
   bool ShouldDecoderAlwaysBeRecycled() const;
+  using DecodeProperties =
+      EnumeratedArray<MediaDataDecoder::PropertyName,
+                      Maybe<MediaDataDecoder::PropertyValue>,
+                      MediaDataDecoder::sPropertyNameCount>;
+  const DecodeProperties& GetDecodeProperties() const {
+    return mDecodeProperties;
+  }
+
   void DestroyIPDL();
 
   // Called from IPDL when our actor has been destroyed
@@ -79,6 +88,7 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   MediaDataDecoder::ConversionRequired mConversion =
       MediaDataDecoder::ConversionRequired::kNeedNone;
   bool mShouldDecoderAlwaysBeRecycled = false;
+  DecodeProperties mDecodeProperties;
 };
 
 }  // namespace mozilla

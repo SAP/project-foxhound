@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "RemoteDecoderParent.h"
 
+#include "RemoteCDMParent.h"
 #include "RemoteMediaManagerParent.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -14,11 +14,13 @@ RemoteDecoderParent::RemoteDecoderParent(
     RemoteMediaManagerParent* aParent,
     const CreateDecoderParams::OptionSet& aOptions,
     nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
-    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId)
+    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId,
+    RemoteCDMParent* aCDM)
     : ShmemRecycleAllocator(this),
       mParent(aParent),
       mOptions(aOptions),
       mDecodeTaskQueue(aDecodeTaskQueue),
+      mCDM(aCDM),
       mTrackingId(aTrackingId),
       mMediaEngineId(aMediaEngineId),
       mManagerThread(aManagerThread) {
@@ -63,12 +65,21 @@ mozilla::ipc::IPCResult RemoteDecoderParent::RecvInit(
           nsCString hardwareReason;
           bool hardwareAccelerated =
               self->mDecoder->IsHardwareAccelerated(hardwareReason);
+          nsTArray<DecodePropertyIPDL> properties;
+          for (size_t i = 0; i < MediaDataDecoder::sPropertyNameCount; i++) {
+            MediaDataDecoder::PropertyName name =
+                static_cast<MediaDataDecoder::PropertyName>(i);
+            if (auto v = self->mDecoder->GetDecodeProperty(name)) {
+              properties.AppendElement(
+                  DecodePropertyIPDL(name, std::move(v.ref())));
+            }
+          }
           resolver(InitCompletionIPDL{
               track, self->mDecoder->GetDescriptionName(),
               self->mDecoder->GetProcessName(), self->mDecoder->GetCodecName(),
               hardwareAccelerated, hardwareReason,
               self->mDecoder->NeedsConversion(),
-              self->mDecoder->ShouldDecoderAlwaysBeRecycled()});
+              self->mDecoder->ShouldDecoderAlwaysBeRecycled(), properties});
         }
       });
   return IPC_OK();

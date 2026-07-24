@@ -25,7 +25,7 @@ def main(args):
         "-C",
         metavar="DIR",
         default=".",
-        help="Change to given directory before considering " "other paths",
+        help="Change to given directory before considering other paths",
     )
     parser.add_argument("--strip", action="store_true", help="Strip executables")
     parser.add_argument(

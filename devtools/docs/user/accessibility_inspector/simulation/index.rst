@@ -72,10 +72,6 @@ The following table shows a colorful image of a cat's face, and what it looks li
   The simulation transformation matrices are based on the paper: `A Physiologically-based Model for Simulation of Color Vision Deficiency <https://www.inf.ufrgs.br/~oliveira/pubs_files/CVD_Simulation/CVD_Simulation.html>`_, Gustavo M. Machado, Manuel M. OliveiraLeandro A. F. Fernandes, IEEE Transactions on Visualization and Computer Graphics, Volume 15 (2009).
 
 
-.. note::
-  Firefox 81 removed unnecessary simulations for *protanomaly*, *deuteranomaly*, and *tritanomaly*, and added a simulation for *achromatopsia* (no color).
-
-
 See also
 ********
 

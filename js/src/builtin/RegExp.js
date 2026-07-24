@@ -949,7 +949,10 @@ function RegExpSplit(string, limit) {
   if (optimizable) {
     // Step 5.
     flags = UnsafeGetInt32FromReservedSlot(rx, REGEXP_FLAGS_SLOT);
-
+    #ifdef NIGHTLY_BUILD
+    assert(!!(flags & REGEXP_LEGACY_FEATURES_ENABLED_FLAG),
+           "Legacy features must be enabled in optimized path");
+    #endif
     // Steps 6-7.
     unicodeMatching = !!(flags & REGEXP_UNICODE_FLAG);
 
@@ -957,7 +960,8 @@ function RegExpSplit(string, limit) {
     // If split operation is optimizable, perform non-sticky match.
     if (flags & REGEXP_STICKY_FLAG) {
       var source = UnsafeGetStringFromReservedSlot(rx, REGEXP_SOURCE_SLOT);
-      splitter = RegExpConstructRaw(source, flags & ~REGEXP_STICKY_FLAG);
+      var newFlags = flags & ~(REGEXP_STICKY_FLAG | REGEXP_LEGACY_FEATURES_ENABLED_FLAG);
+      splitter = RegExpConstructRaw(source, newFlags, true);
     } else {
       splitter = rx;
     }
@@ -1214,6 +1218,10 @@ function RegExpMatchAll(string) {
     // Step 5, 9-12.
     source = UnsafeGetStringFromReservedSlot(rx, REGEXP_SOURCE_SLOT);
     flags = UnsafeGetInt32FromReservedSlot(rx, REGEXP_FLAGS_SLOT);
+    #ifdef NIGHTLY_BUILD
+    assert(!!(flags & REGEXP_LEGACY_FEATURES_ENABLED_FLAG),
+    "Legacy features must be enabled in optimized path");
+    #endif
 
     // Step 6.
     matcher = rx;
@@ -1236,8 +1244,9 @@ function RegExpMatchAll(string) {
     // Steps 9-12.
     flags =
       (callFunction(std_String_includes, flags, "g") ? REGEXP_GLOBAL_FLAG : 0) |
-      (callFunction(std_String_includes, flags, "u") ? REGEXP_UNICODE_FLAG : 0);
-
+      (callFunction(std_String_includes, flags, "u") ? REGEXP_UNICODE_FLAG : 0) |
+      (callFunction(std_String_includes, flags, "v") ? REGEXP_UNICODESETS_FLAG : 0);
+    
     // Take the non-optimized path.
     lastIndex = REGEXP_STRING_ITERATOR_LASTINDEX_SLOW;
   }
@@ -1395,7 +1404,8 @@ function RegExpStringIteratorNext() {
     }
 
     // Reify the RegExp object.
-    regexp = RegExpConstructRaw(source, flags);
+    var newFlags = flags & ~REGEXP_LEGACY_FEATURES_ENABLED_FLAG;
+    regexp = RegExpConstructRaw(source, newFlags, true);
     regexp.lastIndex = lastIndex;
     UnsafeSetReservedSlot(obj, REGEXP_STRING_ITERATOR_REGEXP_SLOT, regexp);
 

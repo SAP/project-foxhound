@@ -1,17 +1,20 @@
 ChromeUtils.defineESModuleGetters(this, {
-  AppProvidedSearchEngine:
-    "moz-src:///toolkit/components/search/AppProvidedSearchEngine.sys.mjs",
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   TopSites: "resource:///modules/topsites/TopSites.sys.mjs",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarProvider: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "TEST_BASE_URL", () =>
@@ -25,11 +28,19 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
   const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
+
+ChromeUtils.defineLazyGetter(this, "SearchbarTestUtils", () => {
+  const { SearchbarTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/UrlbarTestUtils.sys.mjs"
   );
   module.init(this);
@@ -164,7 +175,7 @@ async function installPersistTestEngines(globalDefault = "Example") {
   let persistSandbox = sinon.createSandbox();
   // Mostly to prevent warnings about missing icon urls for these engines.
   persistSandbox
-    .stub(AppProvidedSearchEngine.prototype, "getIconURL")
+    .stub(AppProvidedConfigEngine.prototype, "getIconURL")
     .returns(
       Promise.resolve(
         "data:image/x-icon;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA="
@@ -184,4 +195,26 @@ async function resetApplicationProvidedEngines() {
   );
   await SearchTestUtils.updateRemoteSettingsConfig();
   await settingsWritten;
+}
+
+async function startCustomizing(win = window) {
+  if (!win.document.documentElement.hasAttribute("customizing")) {
+    let eventPromise = BrowserTestUtils.waitForEvent(
+      win.gNavToolbox,
+      "customizationready"
+    );
+    win.gCustomizeMode.enter();
+    await eventPromise;
+  }
+}
+
+async function endCustomizing(win = window) {
+  if (win.document.documentElement.hasAttribute("customizing")) {
+    let eventPromise = BrowserTestUtils.waitForEvent(
+      win.gNavToolbox,
+      "aftercustomization"
+    );
+    win.gCustomizeMode.exit();
+    await eventPromise;
+  }
 }

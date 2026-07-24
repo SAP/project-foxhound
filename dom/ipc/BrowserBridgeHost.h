@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_BrowserBridgeHost_h
 #define mozilla_dom_BrowserBridgeHost_h
 
-#include "mozilla/dom/RemoteBrowser.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/RemoteBrowser.h"
 
 namespace mozilla::dom {
 

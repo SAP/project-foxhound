@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * Test for EmbeddingGenerator.sys.mjs
+ * Test for EmbeddingsGenerator.sys.mjs
  */
 
 "use strict";
@@ -12,6 +12,8 @@ ChromeUtils.defineESModuleGetters(this, {
   EmbeddingsGenerator: "chrome://global/content/ml/EmbeddingsGenerator.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
+
+const EMBEDDING_SIZE = 256;
 
 async function setup() {
   const { removeMocks, remoteClients } = await createAndMockMLRemoteSettings({
@@ -59,13 +61,13 @@ add_task(async function test_EmbeddingsGenerator_for_minimum_cpu_cores() {
 
 class MockMLEngineForEmbedMany {
   async run(request) {
-    const texts = request.args[0];
+    const texts = request.args;
     return texts.map(text => {
       if (typeof text !== "string" || text.trim() === "") {
         throw new Error("Invalid input: text must be a non-empty string");
       }
       // Return a mock embedding vector (e.g., an array of zeros)
-      return Array(384).fill(0);
+      return Array(EMBEDDING_SIZE).fill(0);
     });
   }
 }
@@ -83,7 +85,7 @@ add_task(async function test_embedMany_valid_inputs() {
   Assert.ok(Array.isArray(result), "Result should be an array");
   Assert.equal(result.length, 2, "Should return 2 embeddings");
   for (const vector of result) {
-    Assert.equal(vector.length, 384, "Each embedding should be of size 384");
+    Assert.equal(vector.length, EMBEDDING_SIZE, "Check embeddings dimension");
   }
 
   sinon.restore();
@@ -160,7 +162,7 @@ class MockMLEngineForEmbed {
         throw new Error("Invalid input: text must be a non-empty string");
       }
       // Return a mock embedding vector (e.g., an array of zeros)
-      return Array(384).fill(0);
+      return Array(EMBEDDING_SIZE).fill(0);
     });
   }
 }
@@ -175,7 +177,7 @@ add_task(async function test_embed_valid_input() {
   const result = await embeddingsGenerator.embed("test string");
 
   Assert.ok(Array.isArray(result), "Embedding result should be an array");
-  Assert.equal(result[0].length, 384, "Embedding should be of size 384");
+  Assert.equal(result[0].length, EMBEDDING_SIZE, "Check embedding dimension");
 
   sinon.restore();
 });
@@ -200,4 +202,27 @@ add_task(async function test_embed_invalid_input_empty_string() {
   Assert.ok(threw, "Error should be thrown for empty string");
 
   sinon.restore();
+});
+
+add_task(async function test_default_backend_is_static_emebddings() {
+  const embeddingsGenerator = new EmbeddingsGenerator();
+
+  Assert.equal(
+    embeddingsGenerator.options.backend,
+    "static-embeddings",
+    "Check default backend"
+  );
+});
+
+add_task(async function test_onnx() {
+  const embeddingsGenerator = new EmbeddingsGenerator({
+    backend: "onnx-native",
+    embeddingSize: 384,
+  });
+
+  Assert.equal(
+    embeddingsGenerator.options.backend,
+    "onnx-native",
+    "Check other backend"
+  );
 });

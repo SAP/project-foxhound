@@ -11,13 +11,13 @@
 #include "UnderlyingSourceCallbackHelpers.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/WritableStream.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/TransformStreamBinding.h"
 #include "mozilla/dom/TransformerBinding.h"
+#include "mozilla/dom/WritableStream.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {

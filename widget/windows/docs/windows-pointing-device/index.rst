@@ -1194,8 +1194,7 @@ Here is an explanation of the codepaths Firefox uses to handle pointer input:
     handle. It will then handle the rest of the gesture itself.
 
     DirectManipulation is used for all top-level and popup windows as long as
-    it isn't disabled via the ``apz.allow_zooming``,
-    ``apz.windows.use_direct_manipulation``, or
+    it isn't disabled via the ``apz.allow_zooming`` or
     ``apz.windows.force_disable_direct_manipulation`` prefs.
 
 3.  If the pointing device is touch, the next action depends on

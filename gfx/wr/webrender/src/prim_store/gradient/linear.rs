@@ -12,12 +12,15 @@ use euclid::approxeq::ApproxEq;
 use euclid::{point2, vec2, size2};
 use api::{ExtendMode, GradientStop, LineOrientation, PremultipliedColorF, ColorF, ColorU};
 use api::units::*;
+use crate::gpu_types::{ImageBrushPrimitiveData, LinearGradientBrushData};
+use crate::pattern::gradient::linear_gradient_pattern;
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
 use crate::scene_building::IsVisible;
 use crate::frame_builder::FrameBuildingState;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::image_tiling::simplify_repeated_primitive;
-use crate::prim_store::{BrushSegment, GradientTileRange};
+use crate::prim_store::{BrushSegment, GradientTileRange, VECS_PER_SEGMENT};
 use crate::prim_store::{PrimitiveInstanceKind, PrimitiveOpacity};
 use crate::prim_store::{PrimKeyCommonData, PrimTemplateCommonData, PrimitiveStore};
 use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, InternablePrimitive};
@@ -25,8 +28,7 @@ use crate::render_task::{RenderTask, RenderTaskKind};
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::{RenderTaskCacheKeyKind, RenderTaskCacheKey, RenderTaskParent};
 use crate::renderer::GpuBufferAddress;
-use crate::segment::EdgeAaSegmentMask;
-use crate::util::pack_as_float;
+use crate::segment::EdgeMask;
 use super::{stops_and_min_alpha, GradientStopKey, GradientGpuBlockBuilder, apply_gradient_local_clip};
 use std::ops::{Deref, DerefMut};
 use std::mem::swap;
@@ -48,7 +50,6 @@ pub struct LinearGradientKey {
     pub reverse_stops: bool,
     pub cached: bool,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
-    pub edge_aa_mask: EdgeAaSegmentMask,
     pub enable_dithering: bool,
 }
 
@@ -68,7 +69,6 @@ impl LinearGradientKey {
             reverse_stops: linear_grad.reverse_stops,
             cached: linear_grad.cached,
             nine_patch: linear_grad.nine_patch,
-            edge_aa_mask: linear_grad.edge_aa_mask,
             enable_dithering: linear_grad.enable_dithering,
         }
     }
@@ -82,8 +82,8 @@ impl InternDebug for LinearGradientKey {}
 pub struct LinearGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
-    pub start_point: DevicePoint,
-    pub end_point: DevicePoint,
+    pub start_point: LayoutPoint,
+    pub end_point: LayoutPoint,
     pub task_size: DeviceIntSize,
     pub scale: DeviceVector2D,
     pub stretch_size: LayoutSize,
@@ -95,6 +95,46 @@ pub struct LinearGradientTemplate {
     pub is_fast_path: bool,
     pub cached: bool,
     pub src_color: Option<RenderTaskId>,
+}
+
+impl PatternBuilder for LinearGradientTemplate {
+    fn build(
+        &self,
+        _sub_rect: Option<DeviceRect>,
+        ctx: &PatternBuilderContext,
+        state: &mut PatternBuilderState,
+    ) -> Pattern {
+        let (start, end) = if self.reverse_stops {
+            (self.end_point, self.start_point)
+        } else {
+            (self.start_point, self.end_point)
+        };
+        // LinearGradientTemplate stores the start and end points relative to the
+        // primitive origin, but the shader works with start/end points in "proper"
+        // layout coordinates (relative to the primitive's spatial node).
+        let offset = self.common.prim_rect.min.to_vector();
+        linear_gradient_pattern(
+            start + offset,
+            end + offset,
+            self.extend_mode,
+            &self.stops,
+            ctx.fb_config.is_software,
+            state.frame_gpu_data,
+        )
+    }
+
+    fn get_base_color(
+        &self,
+        _ctx: &PatternBuilderContext,
+    ) -> ColorF {
+        ColorF::WHITE
+    }
+
+    fn use_shared_pattern(
+        &self,
+    ) -> bool {
+        true
+    }
 }
 
 impl Deref for LinearGradientTemplate {
@@ -123,8 +163,9 @@ pub fn optimize_linear_gradient(
     end: &mut LayoutPoint,
     extend_mode: ExtendMode,
     stops: &mut [GradientStopKey],
+    enable_dithering: bool,
     // Callback called for each fast-path segment (rect, start end, stops).
-    callback: &mut dyn FnMut(&LayoutRect, LayoutPoint, LayoutPoint, &[GradientStopKey], EdgeAaSegmentMask)
+    callback: &mut dyn FnMut(&LayoutRect, LayoutPoint, LayoutPoint, &[GradientStopKey], EdgeMask)
 ) -> bool {
     // First sanitize the gradient parameters. See if we can remove repetitions,
     // tighten the primitive bounds, etc.
@@ -185,9 +226,9 @@ pub fn optimize_linear_gradient(
     }
 
     // If the gradient is small, no need to bother with decomposing it.
-    if (horizontal && tile_size.width < 256.0)
-        || (vertical && tile_size.height < 256.0) {
-
+    if !enable_dithering &&
+        ((horizontal && tile_size.width < 256.0)
+        || (vertical && tile_size.height < 256.0)) {
         return false;
     }
 
@@ -255,15 +296,15 @@ pub fn optimize_linear_gradient(
 
     let (side_edges, first_edge, last_edge) = if vertical {
         (
-            EdgeAaSegmentMask::LEFT | EdgeAaSegmentMask::RIGHT,
-            EdgeAaSegmentMask::TOP,
-            EdgeAaSegmentMask::BOTTOM
+            EdgeMask::LEFT | EdgeMask::RIGHT,
+            EdgeMask::TOP,
+            EdgeMask::BOTTOM
         )
     } else {
         (
-            EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::BOTTOM,
-            EdgeAaSegmentMask::LEFT,
-            EdgeAaSegmentMask::RIGHT
+            EdgeMask::TOP | EdgeMask::BOTTOM,
+            EdgeMask::LEFT,
+            EdgeMask::RIGHT
         )
     };
 
@@ -341,8 +382,7 @@ pub fn optimize_linear_gradient(
 impl From<LinearGradientKey> for LinearGradientTemplate {
     fn from(item: LinearGradientKey) -> Self {
 
-        let mut common = PrimTemplateCommonData::with_key_common(item.common);
-        common.edge_aa_mask = item.edge_aa_mask;
+        let common = PrimTemplateCommonData::with_key_common(item.common);
 
         let (mut stops, min_alpha) = stops_and_min_alpha(&item.stops);
 
@@ -357,8 +397,8 @@ impl From<LinearGradientKey> for LinearGradientTemplate {
         // should be drawn in.
         let stops_opacity = PrimitiveOpacity::from_alpha(min_alpha);
 
-        let start_point = DevicePoint::new(item.start_point.x, item.start_point.y);
-        let end_point = DevicePoint::new(item.end_point.x, item.end_point.y);
+        let start_point = LayoutPoint::new(item.start_point.x, item.start_point.y);
+        let end_point = LayoutPoint::new(item.end_point.x, item.end_point.y);
         let tile_spacing: LayoutSize = item.tile_spacing.into();
         let stretch_size: LayoutSize = item.stretch_size.into();
         let mut task_size: DeviceSize = stretch_size.cast_unit();
@@ -454,46 +494,31 @@ impl LinearGradientTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(mut request) = frame_state.gpu_cache.request(
-            &mut self.common.gpu_cache_handle
-        ) {
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
 
-            // Write_prim_gpu_blocks
-            if self.cached {
-                // We are using the image brush.
-                request.push(PremultipliedColorF::WHITE);
-                request.push(PremultipliedColorF::WHITE);
-                request.push([
-                    self.stretch_size.width,
-                    self.stretch_size.height,
-                    0.0,
-                    0.0,
-                ]);
-            } else {
-                // We are using the gradient brush.
-                request.push([
-                    self.start_point.x,
-                    self.start_point.y,
-                    self.end_point.x,
-                    self.end_point.y,
-                ]);
-                request.push([
-                    pack_as_float(self.extend_mode as u32),
-                    self.stretch_size.width,
-                    self.stretch_size.height,
-                    0.0,
-                ]);
-            }
-
-            // write_segment_gpu_blocks
-            for segment in &self.brush_segments {
-                // has to match VECS_PER_SEGMENT
-                request.write_segment(
-                    segment.local_rect,
-                    segment.extra_data,
-                );
-            }
+        // Write_prim_gpu_blocks
+        if self.cached {
+            writer.push(&ImageBrushPrimitiveData {
+                color: PremultipliedColorF::WHITE,
+                background_color: PremultipliedColorF::WHITE,
+                stretch_size: self.stretch_size,
+            });
+        } else {
+            // We are using the gradient brush.
+            writer.push(&LinearGradientBrushData {
+                start: self.start_point,
+                end: self.end_point,
+                extend_mode: self.extend_mode,
+                stretch_size: self.stretch_size,
+            });
         }
+
+        // write_segment_gpu_blocks
+        for segment in &self.brush_segments {
+            segment.write_gpu_blocks(&mut writer);
+        }
+
+        self.common.gpu_buffer_address = writer.finish();
 
         // Tile spacing is always handled by decomposing into separate draw calls so the
         // primitive opacity is equivalent to stops opacity. This might change to being
@@ -525,11 +550,10 @@ impl LinearGradientTemplate {
                 }),
                 false,
                 RenderTaskParent::Surface,
-                frame_state.gpu_cache,
                 &mut frame_state.frame_gpu_data.f32,
                 frame_state.rg_builder,
                 &mut frame_state.surface_builder,
-                &mut |rg_builder, _, _| {
+                &mut |rg_builder, _| {
                     rg_builder.add().init(RenderTask::new_dynamic(
                         self.task_size,
                         RenderTaskKind::FastLinearGradient(gradient),
@@ -554,11 +578,10 @@ impl LinearGradientTemplate {
                 }),
                 false,
                 RenderTaskParent::Surface,
-                frame_state.gpu_cache,
                 &mut frame_state.frame_gpu_data.f32,
                 frame_state.rg_builder,
                 &mut frame_state.surface_builder,
-                &mut |rg_builder, gpu_buffer_builder, _| {
+                &mut |rg_builder, gpu_buffer_builder| {
                     let stops = Some(GradientGpuBlockBuilder::build(
                         self.reverse_stops,
                         gpu_buffer_builder,
@@ -568,8 +591,11 @@ impl LinearGradientTemplate {
                     rg_builder.add().init(RenderTask::new_dynamic(
                         self.task_size,
                         RenderTaskKind::LinearGradient(LinearGradientTask {
-                            start: self.start_point,
-                            end: self.end_point,
+                            // Cached brush gradients are rasteried with 1 layout
+                            // pixel = 1 device pixel (regardless of potential
+                            // scaling factors).
+                            start: self.start_point.cast_unit(),
+                            end: self.end_point.cast_unit(),
                             scale: self.scale,
                             extend_mode: self.extend_mode,
                             stops: stops.unwrap(),
@@ -598,7 +624,7 @@ pub struct LinearGradient {
     pub reverse_stops: bool,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
     pub cached: bool,
-    pub edge_aa_mask: EdgeAaSegmentMask,
+    pub edge_aa_mask: EdgeMask,
     pub enable_dithering: bool,
 }
 
@@ -631,6 +657,7 @@ impl InternablePrimitive for LinearGradient {
             PrimitiveInstanceKind::LinearGradient {
                 data_handle,
                 visible_tiles_range: GradientTileRange::empty(),
+                use_legacy_path: true,
             }
         }
     }

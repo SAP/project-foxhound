@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function invalidError() {
-  return [{ messageId: "preferBooleanCheck", type: "BinaryExpression" }];
+  return [{ messageId: "preferBooleanCheck" }];
 }
 
 ruleTester.run("check-length", rule, {

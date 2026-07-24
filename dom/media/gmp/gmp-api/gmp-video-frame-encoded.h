@@ -35,8 +35,9 @@
 #define GMP_VIDEO_FRAME_ENCODED_h_
 
 #include <stdint.h>
-#include "gmp-video-frame.h"
+
 #include "gmp-video-codec.h"
+#include "gmp-video-frame.h"
 
 enum GMPVideoFrameType {
   kGMPKeyFrame = 0,

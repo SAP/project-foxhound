@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNativeAppSupportBase_h__
-#define nsNativeAppSupportBase_h__
+#ifndef nsNativeAppSupportBase_h_
+#define nsNativeAppSupportBase_h_
 
 #include "nsAppRunner.h"
 #include "nsINativeAppSupport.h"

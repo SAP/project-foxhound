@@ -6,34 +6,34 @@
   --card-padding: 24px;
   --exit-icon-size: 12px;
   --exit-icon-position: calc((var(--card-padding) - var(--exit-icon-size)) / 2);
-  --social-color: #9059ff;
-  --cookie-color: #0090f4;
-  --tracker-color: #2ac3a2;
-  --fingerprinter-color: #ffa436;
-  --cryptominer-color: #adadbc;
+  --social-color: var(--color-violet-50);
+  --cookie-color: var(--color-blue-40);
+  --tracker-color: var(--color-cyan-30);
+  --fingerprinter-color: var(--color-orange-30);
+  --cryptominer-color: var(--color-gray-50);
 
   /* Highlight colors for trackers */
-  --social-highlight-color: #7b4cdb;
-  --cookie-highlight-color: #0081db;
-  --tracker-highlight-color: #23a488;
-  --fingerprinter-highlight-color: #d37f17;
-  --cryptominer-highlight-color: #9292a0;
+  --social-highlight-color: var(--color-violet-60);
+  --cookie-highlight-color: var(--color-blue-50);
+  --tracker-highlight-color: var(--color-cyan-50);
+  --fingerprinter-highlight-color: var(--color-orange-50);
+  --cryptominer-highlight-color: var(--color-gray-60);
 
   --tab-highlight: var(--social-color); /* start with social selected */
   --column-width: 16px;
-  --graph-empty: #cececf;
+  --graph-empty: var(--color-gray-30);
   --graph-curve: cubic-bezier(0.66, 0.75, 0.59, 0.91);
 
   /* Colors for the loading indicator */
-  --protection-report-loader-color-stop: #aeaeae3d;
+  --protection-report-loader-color-stop: oklch(from var(--color-gray-50) l c h / 24%);
   --protection-report-loader-gradient-opacity: 0.95;
 
-  --grey-70: #38383d;
-  --grey-90-a60: rgba(12, 12, 13, 0.6);
+  --gear-icon-fill: oklch(from var(--color-gray-100) l c h / 60%);
+  --hover-grey-link: var(--color-gray-80);
 
-  --gear-icon-fill: var(--grey-90-a60);
-  --hover-grey-link: var(--grey-70);
-  --feature-banner-color: rgba(0, 0, 0, 0.05);
+  --block-background-color: var(--color-gray-70);
+  --breaches-background-color: var(--color-orange-30);
+  --feature-banner-color: var(--color-black-alpha-10);
 }
 
 body {
@@ -67,7 +67,7 @@ body[focuseddatatype="cryptominer"] {
 }
 
 h2 {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 #report-title {
@@ -181,16 +181,16 @@ a.hidden,
 }
 
 .icon {
-  width: 64px;
-  height: 64px;
+  width: var(--size-image-large);
+  height: var(--size-image-large);
   grid-column: 1;
   margin: 0 auto;
   z-index: 1;
 }
 
 .vpn-card .icon {
-  width: 56px;
-  height: 56px;
+  width: var(--size-image-medium);
+  height: var(--size-image-medium);
 }
 
 .new-banner .icon {
@@ -200,15 +200,15 @@ a.hidden,
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --social-highlight-color: #9661ff;
-    --cookie-highlight-color: #2ba8ff;
-    --tracker-highlight-color: #39e1bc;
-    --fingerprinter-highlight-color: #ffb65e;
-    --cryptominer-highlight-color: #bebeca;
+    --social-highlight-color: var(--color-violet-50);
+    --cookie-highlight-color: var(--color-blue-40);
+    --tracker-highlight-color: var(--color-cyan-20);
+    --fingerprinter-highlight-color: var(--color-orange-30);
+    --cryptominer-highlight-color: var(--color-gray-50);
 
-    --gear-icon-fill: rgba(249, 249, 250, 0.6);
+    --gear-icon-fill: oklch(from var(--color-gray-05) l c h / 60%);
     --hover-grey-link: var(--grey-30);
-    --feature-banner-color: rgba(255, 255, 255, 0.1);
+    --feature-banner-color: var(--color-white-alpha-10);
   }
 
   .etp-card .icon.dark,
@@ -308,8 +308,8 @@ a.hidden,
 
 #protection-settings:hover:active {
   text-decoration: none;
-  color: var(--in-content-text-color);
-  fill: var(--in-content-text-color);
+  color: var(--text-color);
+  fill: var(--text-color);
 }
 
 #protection-settings:-moz-focusring {
@@ -317,7 +317,7 @@ a.hidden,
 }
 
 .card .card-body {
-  border-block-start: 1px solid var(--in-content-border-color);
+  border-block-start: 1px solid var(--border-color);
   grid-column: span 2;
   grid-row: 2;
   position: relative;
@@ -333,7 +333,7 @@ a.hidden,
 }
 
 #graph-week-summary {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #graph-wrapper {
@@ -349,9 +349,9 @@ a.hidden,
 }
 
 #private-window-message {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   grid-area: 1 / 2 / 1 / 7;
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 13px 45px;
   font-size: 13px;
   margin-bottom: 25px;
@@ -387,47 +387,57 @@ a.hidden,
 .graph-bar.empty {
   height: 0;
   border: 1px var(--graph-empty) solid;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   cursor: default;
 }
 
 .social-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--social-color);
 }
 
 .hover-social .social-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--social-highlight-color);
 }
 
 .cookie-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cookie-color);
 }
 
 .hover-cookie .cookie-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cookie-highlight-color);
 }
 
 .tracker-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--tracker-color);
 }
 
 .hover-tracker .tracker-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--tracker-highlight-color);
 }
 
 .fingerprinter-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--fingerprinter-color);
 }
 
 .hover-fingerprinter .fingerprinter-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--fingerprinter-highlight-color);
 }
 
 .cryptominer-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cryptominer-color);
 }
 
 .hover-cryptominer .cryptominer-bar {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cryptominer-highlight-color);
 }
 
@@ -479,6 +489,7 @@ input[type="radio"] {
 }
 
 #highlight {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background: var(--tab-highlight);
   position: absolute;
   height: 3px;
@@ -557,13 +568,13 @@ label:hover {
   display: none;
   padding: 22px 20px 20px;
   border-block-start: 1px solid var(--tab-highlight);
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   font-size: 0.8em;
   line-height: 1.75;
 }
 
 .tab-content .content-title {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .tab-content p {
@@ -587,6 +598,7 @@ label:hover {
 input[data-type="social"]:checked ~ #highlight,
 .hover-social label[for="tab-social"] ~ #highlight-hover,
 label[for="tab-social"]:hover ~ #highlight-hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--social-color);
   grid-area: social;
 }
@@ -594,6 +606,7 @@ label[for="tab-social"]:hover ~ #highlight-hover {
 input[data-type="cookie"]:checked ~ #highlight,
 .hover-cookie label[for="tab-cookie"] ~ #highlight-hover,
 label[for="tab-cookie"]:hover ~ #highlight-hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cookie-color);
   grid-area: cookie;
 }
@@ -601,6 +614,7 @@ label[for="tab-cookie"]:hover ~ #highlight-hover {
 input[data-type="tracker"]:checked ~ #highlight,
 .hover-tracker label[for="tab-tracker"] ~ #highlight-hover,
 label[for="tab-tracker"]:hover ~ #highlight-hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--tracker-color);
   grid-area: tracker;
 }
@@ -608,6 +622,7 @@ label[for="tab-tracker"]:hover ~ #highlight-hover {
 input[data-type="fingerprinter"]:checked ~ #highlight,
 .hover-fingerprinter label[for="tab-fingerprinter"] ~ #highlight-hover,
 label[for="tab-fingerprinter"]:hover ~ #highlight-hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--fingerprinter-color);
   grid-area: fingerprinter;
 }
@@ -615,6 +630,7 @@ label[for="tab-fingerprinter"]:hover ~ #highlight-hover {
 input[data-type="cryptominer"]:checked ~ #highlight,
 .hover-cryptominer label[for="tab-cryptominer"] ~ #highlight-hover,
 label[for="tab-cryptominer"]:hover ~ #highlight-hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--cryptominer-color);
   grid-area: cryptominer;
 }
@@ -626,7 +642,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 .etp-card {
   margin-top: 31px;
-  grid-template-rows: 20% auto auto;
+  grid-template-rows: auto auto auto;
 }
 
 /* Lockwise Card */
@@ -662,11 +678,12 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 }
 
 .block {
-  background-color: var(--grey-60);
-  border-radius: 4px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--block-background-color);
+  border-radius: var(--border-radius-small);
   text-align: center;
   font-size: 1.125em;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   color: #fff;
   padding: 7px;
   line-height: 18px;
@@ -753,7 +770,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 .progress-bar {
   grid-area: 2 / 1 / 2 / 7;
   margin-inline-start: 15px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   height: 25px;
   box-shadow: 0 0 0 1px rgba(202, 201, 213, 0.5);
   border: none;
@@ -767,8 +784,8 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 }
 
 .progress-bar::-moz-progress-bar {
-  background: #ffffff;
-  border-radius: 0 4px 4px 0;
+  background: white;
+  border-radius: 0 var(--border-radius-small) var(--border-radius-small) 0;
 }
 
 .monitor-partial-breaches-motivation-text {
@@ -785,7 +802,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 }
 
 #monitor-partial-breaches-motivation-title {
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   grid-area: 1 / 1 / 1 / 7;
   margin-inline-end: 15px;
 }
@@ -819,7 +836,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 }
 
 #monitor-breaches-title {
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 #monitor-breaches-title,
@@ -868,7 +885,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 .monitor-block {
   display: flex;
   flex-direction: column;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   text-align: center;
   margin-inline-end: 15px;
 }
@@ -938,7 +955,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 .monitor-stat {
   display: flex;
   font-size: 1.75em;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin-block-end: 5px;
   word-break: break-all;
   justify-content: center;
@@ -969,7 +986,8 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 .number-of-breaches.block {
   font-size: 1.45em;
-  background-color: var(--orange-50);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--breaches-background-color);
   padding: 15px;
   grid-column: 1 / 2;
   width: 70px;
@@ -983,12 +1001,13 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #vpn-banner-link,
 .monitor-partial-breaches-link-wrapper,
 .monitor-breaches-link-wrapper {
-  background-color: var(--in-content-primary-button-background);
-  border: 1px solid var(--in-content-primary-button-border-color);
-  border-radius: 4px;
+  background-color: var(--button-background-color-primary);
+  border: var(--button-border);
+  border-color: var(--button-border-color-primary);
+  border-radius: var(--border-radius-small);
   text-decoration: none;
-  color: var(--in-content-primary-button-text-color);
-  font-weight: 600;
+  color: var(--button-text-color-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 #manage-protections:hover,
@@ -998,9 +1017,9 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #vpn-banner-link:hover,
 #monitor-partial-breaches-link:hover,
 #monitor-breaches-link:hover {
-  background-color: var(--in-content-primary-button-background-hover);
-  color: var(--in-content-primary-button-text-color-hover);
-  border-color: var(--in-content-button-border-color-hover);
+  background-color: var(--button-background-color-primary-hover);
+  color: var(--button-text-color-primary-hover);
+  border-color: var(--button-border-color-hover);
 }
 
 #manage-protections:hover:active,
@@ -1010,9 +1029,9 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #vpn-banner-link:hover:active,
 #monitor-partial-breaches-link:hover:active,
 #monitor-breaches-link:hover:active {
-  background-color: var(--in-content-primary-button-background-active);
-  color: var(--in-content-primary-button-text-color-active);
-  border-color: var(--in-content-button-border-color-active);
+  background-color: var(--button-background-color-primary-active);
+  color: var(--button-text-color-primary-active);
+  border-color: var(--button-border-color-active);
 }
 
 #manage-protections:focus-visible,
@@ -1023,8 +1042,8 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #monitor-partial-breaches-link:focus-visible,
 .monitor-block > a:focus-visible,
 #monitor-breaches-link:focus-visible {
-  outline: var(--in-content-focus-outline);
-  outline-offset: var(--in-content-focus-outline-offset);
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .monitor-card.loading::after,
@@ -1085,6 +1104,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 .new-banner {
   width: 100%;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background: var(--feature-banner-color);
 }
 

@@ -31,8 +31,13 @@ math {
   letter-spacing: normal;
   text-rendering: optimizeLegibility;
   -moz-float-edge: margin-box;
+  math-shift: normal;
   math-style: compact;
   math-depth: 0;
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("mathml.font_family_math.enabled") {
+    font-family: math;
+  }
 }
 math[display="block" i] {
   display: block;
@@ -269,6 +274,38 @@ munder > :not(:first-child),
 mover > :not(:first-child),
 munderover > :not(:first-child) {
   math-style: compact;
+}
+
+/*
+   https://w3c.github.io/mathml-core/#user-agent-stylesheet
+
+   A `math-shift: compact` value is applied to secondary elements like
+   denominators, roots, subscripts and specific multi-script parts to render
+   them at a reduced, "cramped" size.
+
+   For certain sub-elements within `mmultiscripts`, `math-shift: inherit` is
+   used to ensure they adopt the scaling of their parent.
+*/
+mfrac > :nth-child(2) {
+  math-shift: compact;
+}
+
+mroot,
+msqrt {
+  math-shift: compact;
+}
+
+msub > :nth-child(2),
+msubsup > :nth-child(2),
+mmultiscripts > :nth-child(even),
+mmultiscripts > mprescripts ~ :nth-child(odd),
+mover[accent="true" i] > :first-child,
+munderover[accent="true" i] > :first-child {
+  math-shift: compact;
+}
+
+mmultiscripts > mprescripts ~ :nth-child(even) {
+  math-shift: inherit;
 }
 
 /*

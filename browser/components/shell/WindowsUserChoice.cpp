@@ -27,7 +27,6 @@
 #include <winternl.h>  // for NT_SUCCESS()
 
 #include "nsDebug.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "nsWindowsHelpers.h"
 

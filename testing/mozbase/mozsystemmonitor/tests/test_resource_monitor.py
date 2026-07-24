@@ -149,7 +149,7 @@ class TestResourceMonitor(unittest.TestCase):
         v = monitor.max_memory_percent()
         self.assertIsInstance(v, float)
 
-    def test_as_dict(self):
+    def test_as_profile(self):
         monitor = SystemResourceMonitor(poll_interval=0.25)
 
         monitor.start()
@@ -166,16 +166,20 @@ class TestResourceMonitor(unittest.TestCase):
         time.sleep(0.4)
         monitor.stop()
 
-        d = monitor.as_dict()
+        d = monitor.as_profile()
 
-        self.assertEqual(d["version"], 2)
-        self.assertEqual(len(d["events"]), 2)
-        self.assertEqual(len(d["phases"]), 2)
-        self.assertIn("system", d)
-        self.assertIsInstance(d["system"], dict)
-        self.assertIsInstance(d["overall"], dict)
-        self.assertIn("duration", d["overall"])
-        self.assertIn("cpu_times", d["overall"])
+        self.assertEqual(len(d["threads"]), 1)
+        self.assertIn("markers", d["threads"][0])
+        self.assertIn("data", d["threads"][0]["markers"])
+        markers = d["threads"][0]["markers"]["data"]
+        self.assertTrue(
+            any(m["type"] == "Phase" and m["phase"] == "phase1" for m in markers)
+        )
+        self.assertTrue(
+            any(m["type"] == "Phase" and m["phase"] == "phase2" for m in markers)
+        )
+        self.assertIn({"type": "Text", "text": "foo"}, markers)
+        self.assertIn({"type": "Text", "text": "bar"}, markers)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,14 @@
 #include "nsISupports.idl"
 interface nsIHttpChannel;
 
+[scriptable, uuid(53b81d9c-3b62-4ecb-b8d2-5f5a17914c9e)]
+interface nsINetworkErrorReport : nsISupports
+{
+  readonly attribute AUTF8String body;
+  readonly attribute AString group;
+  readonly attribute AString url;
+};
+
 [scriptable, uuid(391ba410-0a68-42f7-b3e4-3ec26db645c0)]
 interface nsINetworkErrorLogging : nsISupports
 {
@@ -18,5 +26,5 @@ interface nsINetworkErrorLogging : nsISupports
   /**
    * Maybe send error log payload if theres a policy.
    */
-  void generateNELReport(in nsIHttpChannel aChannel);
+  nsINetworkErrorReport generateNELReport(in nsIHttpChannel aChannel);
 };

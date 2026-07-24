@@ -7,11 +7,11 @@
 #include "mozilla/TimingParams.h"
 
 #include "mozilla/AnimationUtils.h"
+#include "mozilla/ServoCSSParser.h"
 #include "mozilla/dom/AnimatableBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeAnimationOptionsBinding.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
-#include "mozilla/ServoCSSParser.h"
 
 namespace mozilla {
 

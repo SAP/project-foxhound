@@ -1,0 +1,27 @@
+# Increase measure unit capacity for ICU 78.
+#
+# ICU bug: https://unicode-org.atlassian.net/browse/ICU-23264
+
+diff --git a/intl/icu/source/i18n/number_skeletons.cpp b/intl/icu/source/i18n/number_skeletons.cpp
+--- a/intl/icu/source/i18n/number_skeletons.cpp
++++ b/intl/icu/source/i18n/number_skeletons.cpp
+@@ -1067,18 +1067,17 @@ void blueprint_helpers::parseMeasureUnit
+     }
+ 
+     // Need to do char <-> char16_t conversion...
+     CharString type;
+     SKELETON_UCHAR_TO_CHAR(type, stemString, 0, firstHyphen, status);
+     CharString subType;
+     SKELETON_UCHAR_TO_CHAR(subType, stemString, firstHyphen + 1, stemString.length(), status);
+ 
+-    // Note: the largest type as of this writing (Aug 2020) is "volume", which has 33 units.
+-    static constexpr int32_t CAPACITY = 40;
++    static constexpr int32_t CAPACITY = 50;
+     MeasureUnit units[CAPACITY];
+     UErrorCode localStatus = U_ZERO_ERROR;
+     int32_t numUnits = MeasureUnit::getAvailable(type.data(), units, CAPACITY, localStatus);
+     if (U_FAILURE(localStatus)) {
+         // More than 30 units in this type?
+         status = U_INTERNAL_PROGRAM_ERROR;
+         return;
+     }

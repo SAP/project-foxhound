@@ -55,8 +55,9 @@ async function testRemoveTextInFilter(inspector, view) {
   const searchField = view.searchField;
 
   searchField.focus();
+  const onRuleviewFiltered = inspector.once("ruleview-filtered");
   EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  await inspector.once("ruleview-filtered");
+  await onRuleviewFiltered;
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 3, "Should have 3 rules.");

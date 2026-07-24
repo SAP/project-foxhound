@@ -7,10 +7,10 @@
 #ifndef DOM_SVG_SVGPATHELEMENT_H_
 #define DOM_SVG_SVGPATHELEMENT_H_
 
-#include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
 #include "SVGAnimatedPathSegList.h"
 #include "SVGGeometryElement.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/gfx/2D.h"
 
 nsresult NS_NewSVGPathElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);

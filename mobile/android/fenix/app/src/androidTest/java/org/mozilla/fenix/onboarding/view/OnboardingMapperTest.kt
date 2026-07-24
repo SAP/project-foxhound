@@ -317,7 +317,7 @@ class OnboardingMapperTest {
 
     @Test
     fun termsOfServiceData_toPageUiData_returnsConvertedPage() {
-        val imageRes = R.drawable.ic_extensions_onboarding
+        val imageRes = R.drawable.ic_firefox
         val title = "Terms of service card title"
         val description = "Terms of service card body"
         val primaryButtonLabel = "onboarding card primary button text"

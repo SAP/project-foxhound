@@ -31,7 +31,6 @@ class JsepTrackTestBase : public ::testing::Test {
 };
 
 struct CodecOverrides {
-  CodecOverrides() = default;
   bool addFecCodecs = false;
   bool preferRed = false;
   bool addDtmfCodec = false;

@@ -7,15 +7,13 @@
 #ifndef mozilla_dom_DOMImplementation_h
 #define mozilla_dom_DOMImplementation_h
 
-#include "nsWrapperCache.h"
-
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIURI.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsString.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;

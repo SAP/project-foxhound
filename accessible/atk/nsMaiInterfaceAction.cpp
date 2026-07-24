@@ -10,6 +10,7 @@
 #include "nsMai.h"
 #include "mozilla/Likely.h"
 #include "nsAccessibilityService.h"
+#include "Relation.h"
 #include "RemoteAccessible.h"
 #include "nsString.h"
 
@@ -20,8 +21,29 @@ extern "C" {
 
 static gboolean doActionCB(AtkAction* aAction, gint aActionIndex) {
   AtkObject* atkObject = ATK_OBJECT(aAction);
-  if (Accessible* acc = GetInternalObj(atkObject)) {
-    return acc->DoAction(aActionIndex);
+  Accessible* acc = GetInternalObj(atkObject);
+  if (!acc) {
+    // If we don't have an Accessible, we can't have any actions.
+    return false;
+  }
+
+  if (aActionIndex < acc->ActionCount()) {
+    acc->DoAction(aActionIndex);
+    return true;
+  }
+
+  // Check for custom actions.
+  Relation customActions(acc->RelationByType(RelationType::ACTION));
+  gint actionIndex = acc->ActionCount();
+  while (Accessible* target = customActions.Next()) {
+    if (target->HasPrimaryAction()) {
+      MOZ_ASSERT(target->ActionCount() > 0);
+      if (actionIndex == aActionIndex) {
+        target->DoAction(0);
+        return true;
+      }
+      actionIndex++;
+    }
   }
 
   return false;
@@ -29,19 +51,53 @@ static gboolean doActionCB(AtkAction* aAction, gint aActionIndex) {
 
 static gint getActionCountCB(AtkAction* aAction) {
   AtkObject* atkObject = ATK_OBJECT(aAction);
-  if (Accessible* acc = GetInternalObj(atkObject)) {
-    return acc->ActionCount();
+  Accessible* acc = GetInternalObj(atkObject);
+  if (!acc) {
+    // If we don't have an Accessible, we can't have any actions.
+    return 0;
   }
 
-  return 0;
+  gint actionCount = acc->ActionCount();
+  Relation customActions(acc->RelationByType(RelationType::ACTION));
+  while (Accessible* target = customActions.Next()) {
+    if (target->HasPrimaryAction()) {
+      actionCount++;
+    }
+  }
+
+  return actionCount;
 }
 
 static const gchar* getActionDescriptionCB(AtkAction* aAction,
                                            gint aActionIndex) {
   AtkObject* atkObject = ATK_OBJECT(aAction);
   nsAutoString description;
-  if (Accessible* acc = GetInternalObj(atkObject)) {
+  Accessible* acc = GetInternalObj(atkObject);
+  if (!acc) {
+    // If we don't have an Accessible, we can't have any actions.
+    return 0;
+  }
+
+  if (aActionIndex < acc->ActionCount()) {
     acc->ActionDescriptionAt(aActionIndex, description);
+  } else {
+    // Check for custom actions.
+    Relation customActions(acc->RelationByType(RelationType::ACTION));
+    gint actionIndex = acc->ActionCount();
+    while (Accessible* target = customActions.Next()) {
+      if (target->HasPrimaryAction()) {
+        MOZ_ASSERT(target->ActionCount() > 0);
+        if (actionIndex == aActionIndex) {
+          // Use target's name as action description.
+          target->Name(description);
+          break;
+        }
+        actionIndex++;
+      }
+    }
+  }
+
+  if (!description.IsEmpty()) {
     return AccessibleWrap::ReturnString(description);
   }
 
@@ -50,13 +106,47 @@ static const gchar* getActionDescriptionCB(AtkAction* aAction,
 
 static const gchar* getActionNameCB(AtkAction* aAction, gint aActionIndex) {
   AtkObject* atkObject = ATK_OBJECT(aAction);
-  nsAutoString autoStr;
-  if (Accessible* acc = GetInternalObj(atkObject)) {
-    acc->ActionNameAt(aActionIndex, autoStr);
-    return AccessibleWrap::ReturnString(autoStr);
+  nsAutoString name;
+  Accessible* acc = GetInternalObj(atkObject);
+  if (!acc) {
+    // If we don't have an Accessible, we can't have any actions.
+    return 0;
+  }
+
+  if (aActionIndex < acc->ActionCount()) {
+    acc->ActionNameAt(aActionIndex, name);
+  } else {
+    // Check for custom actions.
+    Relation customActions(acc->RelationByType(RelationType::ACTION));
+    gint actionIndex = acc->ActionCount();
+    while (Accessible* target = customActions.Next()) {
+      if (target->HasPrimaryAction()) {
+        MOZ_ASSERT(target->ActionCount() > 0);
+        if (actionIndex == aActionIndex) {
+          name.AssignLiteral("custom");
+          nsAutoString domNodeId;
+          target->DOMNodeID(domNodeId);
+          if (!domNodeId.IsEmpty()) {
+            name.AppendPrintf("_%s", NS_ConvertUTF16toUTF8(domNodeId).get());
+          }
+          break;
+        }
+        actionIndex++;
+      }
+    }
+  }
+
+  if (!name.IsEmpty()) {
+    return AccessibleWrap::ReturnString(name);
   }
 
   return nullptr;
+}
+
+static const gchar* getActionLocalizedNameCB(AtkAction* aAction,
+                                             gint aActionIndex) {
+  // Mirror action description into localized name.
+  return getActionDescriptionCB(aAction, aActionIndex);
 }
 
 static const gchar* getKeyBindingCB(AtkAction* aAction, gint aActionIndex) {
@@ -80,4 +170,5 @@ void actionInterfaceInitCB(AtkActionIface* aIface) {
   aIface->get_description = getActionDescriptionCB;
   aIface->get_keybinding = getKeyBindingCB;
   aIface->get_name = getActionNameCB;
+  aIface->get_localized_name = getActionLocalizedNameCB;
 }

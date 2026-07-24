@@ -6,13 +6,14 @@
 
 #include "DOMSVGTransformList.h"
 
+#include <algorithm>
+
+#include "DOMSVGTransform.h"
+#include "SVGAnimatedTransformList.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGTransformListBinding.h"
-#include "DOMSVGTransform.h"
-#include "SVGAnimatedTransformList.h"
 #include "nsError.h"
-#include <algorithm>
 
 // local helper functions
 namespace {
@@ -110,7 +111,8 @@ void DOMSVGTransformList::InternalListLengthWillChange(uint32_t aNewLength) {
 }
 
 SVGTransformList& DOMSVGTransformList::InternalList() const {
-  SVGAnimatedTransformList* alist = Element()->GetAnimatedTransformList();
+  SVGAnimatedTransformList* alist =
+      Element()->GetExistingAnimatedTransformList();
   return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal
                                             : alist->mBaseVal;
 }
@@ -130,7 +132,7 @@ void DOMSVGTransformList::Clear(ErrorResult& error) {
     mAList->InternalBaseValListWillChangeLengthTo(0);
 
     mItems.Clear();
-    auto* alist = Element()->GetAnimatedTransformList();
+    auto* alist = Element()->GetExistingAnimatedTransformList();
     alist->mBaseVal.Clear();
     alist->mIsBaseSet = false;
   }

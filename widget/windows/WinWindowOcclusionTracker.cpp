@@ -22,7 +22,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPtr.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "nsWindow.h"
 #include "transport/runnable_utils.h"
 #include "WinEventObserver.h"
@@ -430,16 +430,22 @@ void WinWindowOcclusionTracker::Destroy() {
 
 /* static */
 MessageLoop* WinWindowOcclusionTracker::OcclusionCalculatorLoop() {
-  return sTracker ? sTracker->mThread->message_loop() : nullptr;
+  // sTracker is not secured by a monitor and is freed on the main thread, so
+  // take a local strong reference.
+  RefPtr<WinWindowOcclusionTracker> tracker = sTracker;
+  return tracker ? tracker->mThread->message_loop() : nullptr;
 }
 
 /* static */
 bool WinWindowOcclusionTracker::IsInWinWindowOcclusionThread() {
-  return sTracker &&
-         sTracker->mThread->thread_id() == PlatformThread::CurrentId();
+  // sTracker is not secured by a monitor and is freed on the main thread, so
+  // take a local strong reference.
+  RefPtr<WinWindowOcclusionTracker> tracker = sTracker;
+  return tracker &&
+         tracker->mThread->thread_id() == PlatformThread::CurrentId();
 }
 
-void WinWindowOcclusionTracker::Enable(nsBaseWidget* aWindow, HWND aHwnd) {
+void WinWindowOcclusionTracker::Enable(nsIWidget* aWindow, HWND aHwnd) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WinWindowOcclusionTracker::Enable() aWindow %p aHwnd %p",
       aWindow, aHwnd);
@@ -459,7 +465,7 @@ void WinWindowOcclusionTracker::Enable(nsBaseWidget* aWindow, HWND aHwnd) {
   mSerializedTaskDispatcher->PostTaskToCalculator(runnable.forget());
 }
 
-void WinWindowOcclusionTracker::Disable(nsBaseWidget* aWindow, HWND aHwnd) {
+void WinWindowOcclusionTracker::Disable(nsIWidget* aWindow, HWND aHwnd) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info,
       "WinWindowOcclusionTracker::Disable() aWindow %p aHwnd %p", aWindow,
@@ -479,7 +485,7 @@ void WinWindowOcclusionTracker::Disable(nsBaseWidget* aWindow, HWND aHwnd) {
   mSerializedTaskDispatcher->PostTaskToCalculator(runnable.forget());
 }
 
-void WinWindowOcclusionTracker::OnWindowVisibilityChanged(nsBaseWidget* aWindow,
+void WinWindowOcclusionTracker::OnWindowVisibilityChanged(nsIWidget* aWindow,
                                                           bool aVisible) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info,
@@ -695,7 +701,7 @@ void WinWindowOcclusionTracker::UpdateOcclusionState(
     if (!widget) {
       continue;
     }
-    auto* baseWidget = static_cast<nsBaseWidget*>(widget.get());
+    auto* baseWidget = static_cast<nsIWidget*>(widget.get());
     baseWidget->NotifyOcclusionState(occlState);
     if (baseWidget->SizeMode() != nsSizeMode_Minimized) {
       mNumVisibleRootWindows++;
@@ -769,7 +775,7 @@ void WinWindowOcclusionTracker::MarkNonIconicWindowsOccluded() {
     if (!widget) {
       continue;
     }
-    auto* baseWidget = static_cast<nsBaseWidget*>(widget.get());
+    auto* baseWidget = static_cast<nsIWidget*>(widget.get());
     auto state = (baseWidget->SizeMode() == nsSizeMode_Minimized)
                      ? OcclusionState::HIDDEN
                      : OcclusionState::OCCLUDED;

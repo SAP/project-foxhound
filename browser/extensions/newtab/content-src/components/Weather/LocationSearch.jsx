@@ -15,6 +15,7 @@ function LocationSearch({ outerClassName }) {
   const locationSearchString = useSelector(
     state => state.Weather.locationSearchString
   );
+
   const [userInput, setUserInput] = useState(locationSearchString || "");
   const inputRef = useRef(null);
 
@@ -50,8 +51,9 @@ function LocationSearch({ outerClassName }) {
   function handleChange(event) {
     const { value } = event.target;
     setUserInput(value);
+
     // if the user input contains less than three characters and suggestedLocations is not an empty array,
-    // reset suggestedLocations to [] so there arent incorrect items in the datalist
+    // reset suggestedLocations to [] so there aren't incorrect items in the datalist
     if (value.length < 3 && suggestedLocations.length) {
       dispatch(
         ac.AlsoToMain({
@@ -114,10 +116,10 @@ function LocationSearch({ outerClassName }) {
           onClick={handleCloseSearch}
         />
         <datalist id="merino-location-list">
-          {(suggestedLocations || []).map(merinoLcation => (
-            <option value={merinoLcation.key} key={merinoLcation.key}>
-              {merinoLcation.localized_name},{" "}
-              {merinoLcation.administrative_area.localized_name}
+          {(suggestedLocations || []).map(merinoLocation => (
+            <option value={merinoLocation.key} key={merinoLocation.key}>
+              {merinoLocation.localized_name},{" "}
+              {merinoLocation.administrative_area.localized_name}
             </option>
           ))}
         </datalist>

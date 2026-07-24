@@ -8,21 +8,19 @@
 #ifndef mozilla_mozalloc_abort_h
 #define mozilla_mozalloc_abort_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 /**
  * Terminate this process in such a way that breakpad is triggered, if
  * at all possible.
  *
- * Note: MOZ_NORETURN seems to break crash stacks on ARM, so we don't
+ * Note: [[noreturn]] seems to break crash stacks on ARM, so we don't
  * use that annotation there.
  */
-extern "C" MFBT_API
+extern "C"
 #if !defined(__arm__)
-    MOZ_NORETURN
+    [[noreturn]]
 #endif
-    void
-    mozalloc_abort(const char* const msg);
+    MFBT_API void mozalloc_abort(const char* const msg);
 
 #endif /* ifndef mozilla_mozalloc_abort_h */

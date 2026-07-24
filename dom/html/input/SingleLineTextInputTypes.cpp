@@ -6,12 +6,12 @@
 
 #include "mozilla/dom/SingleLineTextInputTypes.h"
 
-#include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/TextUtils.h"
 #include "HTMLSplitOnSpacesTokenizer.h"
-#include "nsContentUtils.h"
+#include "mozilla/TextUtils.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/HTMLInputElement.h"
 #include "nsCRTGlue.h"
+#include "nsContentUtils.h"
 #include "nsIIOService.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -179,14 +179,17 @@ bool EmailInputType::IsValidEmailAddressList(const nsAString& aValue) {
 
 /* static */
 bool EmailInputType::IsValidEmailAddress(const nsAString& aValue) {
+  nsAutoString trimmed(aValue);
+  trimmed.Trim(" \n\r\t\f");
+
   // Email addresses can't be empty and can't end with a '.' or '-'.
-  if (aValue.IsEmpty() || aValue.Last() == '.' || aValue.Last() == '-') {
+  if (trimmed.IsEmpty() || trimmed.Last() == '.' || trimmed.Last() == '-') {
     return false;
   }
 
   uint32_t atPos;
   nsAutoCString value;
-  if (!PunycodeEncodeEmailAddress(aValue, value, &atPos) ||
+  if (!PunycodeEncodeEmailAddress(trimmed, value, &atPos) ||
       atPos == (uint32_t)kNotFound || atPos == 0 ||
       atPos == value.Length() - 1) {
     // Could not encode, or "@" was not found, or it was at the start or end

@@ -10,8 +10,8 @@
  * can.
  */
 
-#ifndef nsAttrName_h___
-#define nsAttrName_h___
+#ifndef nsAttrName_h_
+#define nsAttrName_h_
 
 #include "mozilla/dom/NodeInfo.h"
 #include "nsAtom.h"

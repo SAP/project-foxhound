@@ -24,7 +24,7 @@ void CookiePrivateStorage::StaleCookies(
     Cookie* cookie = aCookieList.ElementAt(i);
 
     if (cookie->IsStale()) {
-      cookie->SetLastAccessed(aCurrentTimeInUsec);
+      cookie->SetLastAccessedInUSec(aCurrentTimeInUsec);
     }
   }
 }

@@ -1,0 +1,48 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+buildscript {
+    repositories {
+        gradle.configureMavenRepositories(delegate)
+    }
+    dependencies {
+        classpath libs.kotlin.serialization
+    }
+}
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlinx-serialization'
+
+android {
+    defaultConfig {
+        buildConfigField("String", "LIBRARY_VERSION", "\"" + config.componentsVersion + "\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    namespace = 'mozilla.components.lib.llm.mlpa'
+}
+
+dependencies {
+    api project(":components:concept-fetch")
+    api project(":components:concept-integrity")
+    api project(":components:concept-llm")
+    implementation project(':components:support-base')
+    implementation libs.kotlinx.serialization.json
+
+    testImplementation project(':components:support-test')
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlinx.coroutines.test
+}
+
+apply from: '../../../common-config.gradle'
+apply from: '../../../publish.gradle'
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

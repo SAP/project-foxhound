@@ -766,7 +766,7 @@ bool OculusSession::StartSession() {
   if (orv == ovrSuccess) {
     orv = ovr_SetTrackingOriginType(session, ovrTrackingOrigin_FloorLevel);
     if (orv != ovrSuccess) {
-      NS_WARNING("ovr_SetTrackingOriginType failed.\n");
+      NS_WARNING("ovr_SetTrackingOriginType failed.");
     }
     mSession = session;
     return true;

@@ -507,10 +507,11 @@ function internalPersist(persistArgs) {
       filesFolder = persistArgs.targetFile.clone();
 
       var nameWithoutExtension = getFileBaseName(filesFolder.leafName);
-      var filesFolderLeafName =
-        ContentAreaUtils.stringBundle.formatStringFromName("filesFolder", [
-          nameWithoutExtension,
-        ]);
+      // Given the minimal benefits, the "_files" suffix is intentionally not
+      // localized. Localizing it introduces complexity in handling OS filename
+      // length limits (e.g. bug 1959738) and risks breaking the folder-linking
+      // feature if an unsupported suffix is used.
+      var filesFolderLeafName = nameWithoutExtension + "_files";
 
       filesFolder.leafName = filesFolderLeafName;
     }
@@ -553,6 +554,7 @@ function internalPersist(persistArgs) {
  * Structure for holding info about automatically supplied parameters for
  * internalSave(...). This allows parameters to be supplied so the user does not
  * need to be prompted for file info.
+ *
  * @param aFileAutoChosen This is an nsIFile object that has been
  *        pre-determined as the filename for the target to save to
  * @param aUriAutoChosen  This is the nsIURI object for the target
@@ -565,6 +567,7 @@ function AutoChosen(aFileAutoChosen, aUriAutoChosen) {
 /**
  * Structure for holding info about a URL and the target filename it should be
  * saved to. This structure is populated by initFileInfo(...).
+ *
  * @param aSuggestedFileName This is used by initFileInfo(...) when it
  *        cannot 'discover' the filename from the url
  * @param aFileName The target filename
@@ -590,6 +593,7 @@ function FileInfo(
  * Determine what the 'default' filename string is, its file extension and the
  * filename without the extension. This filename is used when prompting the user
  * for confirmation in the file picker dialog.
+ *
  * @param aFI A FileInfo structure into which we'll put the results of this method.
  * @param aURL The String representation of the URL of the document being saved
  * @param aURLCharset The charset of aURL.
@@ -656,6 +660,7 @@ function initFileInfo(
 /**
  * Given the Filepicker Parameters (aFpP), show the file picker dialog,
  * prompting the user to confirm (or change) the fileName.
+ *
  * @param aFpP
  *        A structure (see definition in internalSave(...) method)
  *        containing all the data used within this method.
@@ -670,9 +675,9 @@ function initFileInfo(
  *        An nsIURI associated with the download. The last used
  *        directory of the picker is retrieved from/stored in the
  *        Content Pref Service using this URI.
- * @return Promise
- * @resolve a boolean. When true, it indicates that the file picker dialog
- *          is accepted.
+ * @returns {Promise<boolean>}
+ *   Resolves to a boolean. When true, it indicates that the file picker dialog is
+ *   accepted.
  */
 function promiseTargetFile(
   aFpP,
@@ -1180,7 +1185,8 @@ function getCharsetforSave(aDocument) {
 
 /**
  * Open a URL from chrome, determining if we can handle it internally or need to
- *  launch an external application to handle it.
+ * launch an external application to handle it.
+ *
  * @param aURL The URL to be opened
  *
  * WARNING: Please note that openURL() does not perform any content security checks!!!

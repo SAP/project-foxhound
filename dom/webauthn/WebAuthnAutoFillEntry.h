@@ -10,6 +10,7 @@
 
 #ifdef XP_WIN
 #  include <windows.h>
+
 #  include "winwebauthn/webauthn.h"
 #endif
 

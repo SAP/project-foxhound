@@ -163,11 +163,11 @@ function assertOverrideCellStatus(request, { overridden }) {
 /**
  * Open the netmonitor context menu on the provided element
  *
- * @param {Object} monitor
+ * @param {object} monitor
  *        The network monitor object
  * @param {Element} el
  *        The element on which the menu should be opened
- * @param {String} id
+ * @param {string} id
  *        The id of the context menu item
  */
 async function openContextMenuForItem(monitor, el, id) {

@@ -174,4 +174,39 @@ interface mozILocaleService : nsISupports
    * Example: ["en-US", "de", "pl", "sr-Cyrl", "zh-Hans-HK"]
    */
   readonly attribute Array<ACString> packagedLocales;
+
+  /**
+   * The unicode ellipsis char "…", or "...", depending on the current app locale.
+   */
+  readonly attribute AString ellipsis;
+
+  /**
+   * If true, accesskeys should always be appended for the current app locale.
+   */
+  readonly attribute boolean alwaysAppendAccesskeys;
+
+  /**
+   * If true, accesskeys should always be separated from the label.
+   */
+  readonly attribute boolean insertSeparatorBeforeAccesskeys;
+
+  /**
+   * A comma-separated list of valid BCP 47 language tags.
+   */
+  readonly attribute ACString acceptLanguages;
+
+  /**
+   * The initial setting of the language drop-down menu
+   * in the Fonts and Colors > Advanced preference panel.
+   *
+   * Takes one of the values of the menuitems in the "selectLangs" menulist in
+   * https://searchfox.org/firefox-main/source/browser/components/preferences/dialogs/fonts.xhtml
+   */
+  readonly attribute ACString fontLanguageGroup;
+
+  /**
+   * The suffix appended prior to navigating when using `ctrl` or `command`
+   * when hitting return/enter in the URL bar.
+   */
+  readonly attribute ACString urlFixupSuffix;
 };

@@ -24,15 +24,18 @@ gcloud:
     - notPackage org.mozilla.fenix.syncintegration
     - notPackage org.mozilla.fenix.experimentintegration
     - package org.mozilla.fenix.ui.efficiency.tests
+    - package org.mozilla.fenix.ui.efficiency.examples
 
   device:
     - model: MediumPhone.arm
       version: 34
       locale: en_US
 
+  parameterized-tests: default
+
 flank:
   project: GOOGLE_PROJECT
-  max-test-shards: 100
+  max-test-shards: 5
   num-test-runs: 1
   output-style: compact
   full-junit-result: true

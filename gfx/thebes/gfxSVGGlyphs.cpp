@@ -152,7 +152,8 @@ nsresult gfxSVGGlyphsDocument::SetupPresentation() {
   mDocument->FlushPendingNotifications(FlushType::Layout);
 
   if (mDocument->HasAnimationController()) {
-    mDocument->GetAnimationController()->Resume(SMILTimeContainer::PAUSE_IMAGE);
+    mDocument->GetAnimationController()->Resume(
+        SMILTimeContainer::PauseType::Image);
   }
   mDocument->SetImageAnimationState(true);
 
@@ -281,8 +282,7 @@ gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(const uint8_t* aBuffer,
       if (Z_OK == inflateInit2(&s, 16 + MAX_WBITS)) {
         int result = inflate(&s, Z_FINISH);
         if (Z_STREAM_END == result) {
-          MOZ_ASSERT(size_t(s.next_out - outBuf.Elements()) == origLen);
-          ParseDocument(outBuf.Elements(), outBuf.Length());
+          ParseDocument(outBuf.Elements(), s.total_out);
         } else {
           NS_WARNING("Failed to decompress SVG glyphs document");
         }
@@ -372,8 +372,8 @@ nsresult gfxSVGGlyphsDocument::ParseDocument(const uint8_t* aBuffer,
                          u""_ns,   // aQualifiedName
                          nullptr,  // aDoctype
                          uri, uri, principal,
-                         false,    // aLoadedAsData
-                         nullptr,  // aEventObject
+                         mozilla::dom::LoadedAsData::No,  // aLoadedAsData
+                         nullptr,                         // aEventObject
                          DocumentFlavor::SVG);
   NS_ENSURE_SUCCESS(rv, rv);
 

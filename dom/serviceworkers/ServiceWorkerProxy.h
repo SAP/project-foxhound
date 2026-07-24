@@ -7,15 +7,18 @@
 #ifndef moz_dom_ServiceWorkerProxy_h
 #define moz_dom_ServiceWorkerProxy_h
 
-#include "nsProxyRelease.h"
 #include "ServiceWorkerDescriptor.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla::dom {
 
 class PostMessageSource;
-class ServiceWorkerCloneData;
 class ServiceWorkerInfo;
 class ServiceWorkerParent;
+
+namespace ipc {
+class StructuredCloneData;
+}
 
 class ServiceWorkerProxy final {
   // Background thread only
@@ -49,7 +52,7 @@ class ServiceWorkerProxy final {
 
   void RevokeActor(ServiceWorkerParent* aActor);
 
-  void PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
+  void PostMessage(ipc::StructuredCloneData* aData,
                    const PostMessageSource& aSource);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ServiceWorkerProxy);

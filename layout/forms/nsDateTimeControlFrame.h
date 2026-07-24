@@ -13,10 +13,9 @@
  * bug 1306215 (month), bug 1306216 (week) and bug 1306217 (datetime-local).
  */
 
-#ifndef nsDateTimeControlFrame_h__
-#define nsDateTimeControlFrame_h__
+#ifndef nsDateTimeControlFrame_h_
+#define nsDateTimeControlFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
@@ -61,4 +60,4 @@ class nsDateTimeControlFrame final : public nsContainerFrame {
   nscoord mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
-#endif  // nsDateTimeControlFrame_h__
+#endif  // nsDateTimeControlFrame_h_

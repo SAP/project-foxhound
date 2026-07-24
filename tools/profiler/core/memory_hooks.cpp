@@ -10,9 +10,9 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/FastBernoulliTrial.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/JSONWriter.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PlatformMutex.h"
 #include "mozilla/ProfilerCounts.h"
@@ -26,10 +26,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -146,10 +144,11 @@ class InfallibleAllocWithoutHooksPolicy {
  public:
   template <typename T>
   static T* maybe_pod_malloc(size_t aNumElems) {
-    if (aNumElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (MOZ_UNLIKELY(!mozilla::SafeMul(aNumElems, sizeof(T), &size))) {
       return nullptr;
     }
-    return (T*)gMallocTable.malloc(aNumElems * sizeof(T));
+    return (T*)gMallocTable.malloc(size);
   }
 
   template <typename T>
@@ -159,10 +158,11 @@ class InfallibleAllocWithoutHooksPolicy {
 
   template <typename T>
   static T* maybe_pod_realloc(T* aPtr, size_t aOldSize, size_t aNewSize) {
-    if (aNewSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (MOZ_UNLIKELY(!mozilla::SafeMul(aNewSize, sizeof(T), &size))) {
       return nullptr;
     }
-    return (T*)gMallocTable.realloc(aPtr, aNewSize * sizeof(T));
+    return (T*)gMallocTable.realloc(aPtr, size);
   }
 
   template <typename T>

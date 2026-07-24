@@ -5,12 +5,12 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 #notification-popup-box {
-  height: calc(var(--urlbar-min-height) - 2px /* border */ - 2 * var(--urlbar-container-padding));
+  height: calc(var(--urlbar-min-height) - 2 * var(--urlbar-container-border-padding));
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: var(--urlbar-icon-fill-opacity);
   color: inherit;
-  border-radius: var(--urlbar-icon-border-radius);
+  border-radius: var(--urlbar-inner-border-radius);
 
   &:hover {
     background-color: hsla(0, 0%, 70%, 0.2);
@@ -45,7 +45,7 @@
   &:focus-visible {
     outline: var(--focus-outline);
     outline-offset: var(--focus-outline-inset);
-    border-radius: var(--urlbar-icon-border-radius);
+    border-radius: var(--urlbar-inner-border-radius);
   }
 
   #nav-bar:not([keyNav]) & {
@@ -56,7 +56,7 @@
 .blocked-permission-icon:focus-visible {
   outline: var(--focus-outline);
   outline-offset: calc(var(--urlbar-icon-padding) + var(--focus-outline-inset));
-  border-radius: 1px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 /* INDIVIDUAL NOTIFICATIONS */
@@ -90,6 +90,22 @@
 
   &.blocked-permission-icon {
     list-style-image: url(chrome://browser/skin/notification-icons/geo-blocked.svg);
+  }
+}
+
+.localhost-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
+
+  &.blocked-permission-icon {
+    list-style-image: url(chrome://browser/skin/notification-icons/local-host-blocked.svg);
+  }
+}
+
+.local-network-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/local-network.svg);
+
+  &.blocked-permission-icon {
+    list-style-image: url(chrome://browser/skin/notification-icons/local-network-blocked.svg);
   }
 }
 
@@ -195,14 +211,6 @@
 #identity-credential-notification-icon,
 #credential-chooser-notification-icon {
   list-style-image: url(chrome://browser/skin/login.svg);
-}
-
-#webRTC-previewVideo {
-  border-radius: var(--border-radius-small);
-  border: 1px solid var(--panel-separator-color);
-  min-width: 0;
-  min-height: 10em;
-  max-height: 250px;
 }
 
 #webRTC-all-windows-shared,

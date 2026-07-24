@@ -20,6 +20,7 @@ class AwesomeBarFacts {
         const val BOOKMARK_SUGGESTION_CLICKED = "bookmark_suggestion_clicked"
         const val CLIPBOARD_SUGGESTION_CLICKED = "clipboard_suggestion_clicked"
         const val HISTORY_SUGGESTION_CLICKED = "history_suggestion_clicked"
+        const val HISTORY_SUGGESTION_REMOVED = "history_suggestion_removed"
         const val SEARCH_ACTION_CLICKED = "search_action_clicked"
         const val SEARCH_SUGGESTION_CLICKED = "search_suggestion_clicked"
         const val TRENDING_SEARCH_SUGGESTION_CLICKED = "trending_search_suggestion_clicked"
@@ -67,6 +68,13 @@ internal fun emitHistorySuggestionClickedFact() {
     emitAwesomebarFact(
         Action.INTERACTION,
         AwesomeBarFacts.Items.HISTORY_SUGGESTION_CLICKED,
+    )
+}
+
+internal fun emitHistorySuggestionRemovedFact() {
+    emitAwesomebarFact(
+        Action.INTERACTION,
+        AwesomeBarFacts.Items.HISTORY_SUGGESTION_REMOVED,
     )
 }
 

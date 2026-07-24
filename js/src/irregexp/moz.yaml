@@ -9,8 +9,8 @@ origin:
   description: A fast regular expression engine from V8
   url: https://v8.dev
 
-  release: 7354415ae0a197eeebad3479de763bddfd1a7692 (Fri Jun 06 16:45:14 2025).
-  revision: 7354415ae0a197eeebad3479de763bddfd1a7692
+  release: b5aa4c8b718d75f9cf4d4afd635ffd217f0acb38 (Sun Sep 07 04:43:21 2025).
+  revision: b5aa4c8b718d75f9cf4d4afd635ffd217f0acb38
 
   license: BSD-3-Clause
   license-file: LICENSE.v8
@@ -22,6 +22,7 @@ vendoring:
   skip-vendoring-steps: ['fetch', 'move-contents']
   patches:
     - patches/trace-constiterator-operator-not-equal.patch
+    - patches/public-regexp-destructor.patch
 
   update-actions:
     - action: run-script

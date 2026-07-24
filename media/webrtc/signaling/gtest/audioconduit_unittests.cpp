@@ -7,6 +7,7 @@
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
+#include "api/audio_codecs/opus/audio_encoder_opus_config.h"
 #include "AudioConduit.h"
 #include "Canonicals.h"
 
@@ -30,7 +31,7 @@ class AudioConduitTest : public ::testing::Test {
   }
 
   ~AudioConduitTest() override {
-    mozilla::Unused << WaitFor(mAudioConduit->Shutdown());
+    (void)WaitFor(mAudioConduit->Shutdown());
     mCallWrapper->Destroy();
   }
 
@@ -770,6 +771,50 @@ TEST_F(AudioConduitTest, TestSyncGroup) {
   });
   ASSERT_TRUE(Call()->mAudioReceiveConfig);
   ASSERT_EQ(Call()->mAudioReceiveConfig->sync_group, "test");
+}
+
+TEST_F(AudioConduitTest, TestConfigureSendMediaCodecOpusMaxBr) {
+  using Config = AudioEncoderOpusConfig;
+  mControl.Update([&](auto& aControl) {
+    aControl.mTransmitting = true;
+    AudioCodecConfig codecConfig(109, "opus", 48000, 2, /*FECEnabled=*/true);
+    codecConfig.mEncodingConstraints.maxBitrateBps = Some(5000);
+    aControl.mAudioSendCodec = Some(codecConfig);
+  });
+  ASSERT_TRUE(Call()->mAudioSendConfig);
+  EXPECT_EQ(Call()->mAudioSendConfig->send_codec_spec->target_bitrate_bps,
+            std::clamp(5000, Config::kMinBitrateBps, Config::kMaxBitrateBps));
+
+  mControl.Update([&](auto& aControl) {
+    auto c = aControl.mAudioSendCodec.Ref();
+    c->mEncodingConstraints.maxBitrateBps = Some(256000);
+    aControl.mAudioSendCodec = c;
+  });
+  ASSERT_TRUE(Call()->mAudioSendConfig);
+  EXPECT_EQ(Call()->mAudioSendConfig->send_codec_spec->target_bitrate_bps,
+            std::clamp(256000, Config::kMinBitrateBps, Config::kMaxBitrateBps));
+}
+
+TEST_F(AudioConduitTest, TestConfigureSendMediaCodecG722MaxBr) {
+  constexpr int kFixedG722BitratePerChannelBps = 64000;
+  mControl.Update([&](auto& aControl) {
+    aControl.mTransmitting = true;
+    AudioCodecConfig codecConfig(9, "G722", 8000, 1, /*FECEnabled=*/false);
+    codecConfig.mEncodingConstraints.maxBitrateBps = Some(5000);
+    aControl.mAudioSendCodec = Some(codecConfig);
+  });
+  ASSERT_TRUE(Call()->mAudioSendConfig);
+  EXPECT_EQ(Call()->mAudioSendConfig->send_codec_spec->target_bitrate_bps,
+            kFixedG722BitratePerChannelBps);
+
+  mControl.Update([&](auto& aControl) {
+    AudioCodecConfig codecConfig(9, "G722", 8000, 2, /*FECEnabled=*/false);
+    codecConfig.mEncodingConstraints.maxBitrateBps = Some(256000);
+    aControl.mAudioSendCodec = Some(codecConfig);
+  });
+  ASSERT_TRUE(Call()->mAudioSendConfig);
+  EXPECT_EQ(Call()->mAudioSendConfig->send_codec_spec->target_bitrate_bps,
+            2 * kFixedG722BitratePerChannelBps);
 }
 
 }  // End namespace test.

@@ -7,7 +7,6 @@
 #ifndef LAYOUT_SVG_SVGFILTERFRAME_H_
 #define LAYOUT_SVG_SVGFILTERFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "nsQueryFrame.h"
 
@@ -52,7 +51,7 @@ class SVGFilterFrame final : public SVGContainerFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG
   void Init(nsIContent* aContent, nsContainerFrame* aParent,

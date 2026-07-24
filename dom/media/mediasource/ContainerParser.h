@@ -7,12 +7,12 @@
 #ifndef MOZILLA_CONTAINERPARSER_H_
 #define MOZILLA_CONTAINERPARSER_H_
 
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
-#include "MediaSpan.h"
 #include "MediaContainerType.h"
 #include "MediaResource.h"
 #include "MediaResult.h"
+#include "MediaSpan.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 

@@ -44,12 +44,12 @@ add_task(async function () {
   await testLink(5, true, false);
 
   // Pinned: Link to an about: URI should not open a new tab
-  // Tests link to about:logo
+  // Tests link to about:blank
   await testLink(
     function (doc) {
       let link = doc.createElement("a");
       link.textContent = "Link to Mozilla";
-      link.href = "about:logo";
+      link.href = "about:blank";
       doc.body.appendChild(link);
       return link;
     },
@@ -84,7 +84,10 @@ async function testLink(
       return loaded;
     });
   } else {
-    promise = BrowserTestUtils.browserLoaded(browser, testSubFrame);
+    promise = BrowserTestUtils.browserLoaded(browser, {
+      wantLoad: () => true,
+      includeSubFrames: testSubFrame,
+    });
   }
 
   let href;

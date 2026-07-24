@@ -5,6 +5,7 @@
 #include "StreamUtils.h"
 
 #include <cmath>
+
 #include "mozilla/dom/QueuingStrategyBinding.h"
 
 namespace mozilla::dom {

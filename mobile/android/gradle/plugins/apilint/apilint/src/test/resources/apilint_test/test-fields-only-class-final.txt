@@ -1,0 +1,8 @@
+package test {
+  public final class FieldOnlyTest {
+    ctor protected FieldOnlyTest();
+    field public final int testField0;
+    field public final int testField1;
+    field public final int testField2;
+  }
+}

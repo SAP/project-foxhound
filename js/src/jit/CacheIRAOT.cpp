@@ -8,9 +8,9 @@
 
 #  include "jit/CacheIRAOT.h"
 
-#  include "jsmath.h"
 #  include "jstypes.h"
 
+#  include "builtin/Math.h"
 #  include "gc/AllocKind.h"
 #  include "jit/CacheIR.h"
 #  include "jit/CacheIRAOTGenerated.h"

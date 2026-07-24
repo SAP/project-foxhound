@@ -83,8 +83,6 @@ async function testAvailability({
 }
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
   // test_optional_declarativeNetRequestFeedback calls permission.request().
   // We don't care about the UI, only about the effect of being granted.
   Services.prefs.setBoolPref(

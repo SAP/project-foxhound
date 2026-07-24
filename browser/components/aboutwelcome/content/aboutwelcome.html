@@ -23,6 +23,7 @@
       href="chrome://browser/content/aboutwelcome/aboutwelcome.css"
     />
     <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="browser/backupSettings.ftl" />
     <link rel="localization" href="preview/onboarding.ftl" />
     <link rel="localization" href="browser/newtab/onboarding.ftl" />
     <link rel="localization" href="browser/spotlight.ftl" />
@@ -43,6 +44,14 @@
     <script src="chrome://global/content/elements/panel-list.js" async></script>
     <script
       src="chrome://browser/content/migration/migration-wizard.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://browser/content/backup/restore-from-backup.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://global/content/elements/moz-support-link.mjs"
       type="module"
     ></script>
   </body>

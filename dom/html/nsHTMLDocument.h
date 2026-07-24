@@ -3,20 +3,18 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsHTMLDocument_h___
-#define nsHTMLDocument_h___
+#ifndef nsHTMLDocument_h_
+#define nsHTMLDocument_h_
 
-#include "mozilla/Attributes.h"
-#include "nsContentList.h"
+#include "PLDHashTable.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLSharedElement.h"
+#include "nsContentList.h"
 #include "nsIHTMLCollection.h"
 #include "nsIScriptElement.h"
 #include "nsTArray.h"
-
-#include "PLDHashTable.h"
 #include "nsThreadUtils.h"
-#include "mozilla/dom/HTMLSharedElement.h"
-#include "mozilla/dom/BindingDeclarations.h"
 
 class nsCommandManager;
 class nsIURI;
@@ -41,7 +39,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
  public:
   using Document::SetDocumentURI;
 
-  nsHTMLDocument();
+  explicit nsHTMLDocument(mozilla::dom::LoadedAsData aLoadedAsData);
   virtual nsresult Init(nsIPrincipal* aPrincipal,
                         nsIPrincipal* aPartitionedPrincipal) override;
 
@@ -206,4 +204,4 @@ inline const nsHTMLDocument* Document::AsHTMLDocument() const {
 
 }  // namespace mozilla::dom
 
-#endif /* nsHTMLDocument_h___ */
+#endif /* nsHTMLDocument_h_ */

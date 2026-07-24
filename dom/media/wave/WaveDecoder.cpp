@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WaveDecoder.h"
+
 #include "MediaContainerType.h"
 #include "MediaDecoder.h"
 

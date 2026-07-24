@@ -4,6 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "TextDirectiveUtil.h"
+
+#include "ContentIterator.h"
+#include "Document.h"
+#include "Text.h"
+#include "fragmentdirectives_ffi_generated.h"
+#include "mozilla/ContentIterator.h"
+#include "mozilla/ResultVariant.h"
+#include "mozilla/SelectionMovementUtils.h"
+#include "mozilla/intl/WordBreaker.h"
 #include "nsComputedDOMStyle.h"
 #include "nsDOMAttributeMap.h"
 #include "nsFind.h"
@@ -16,14 +25,6 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsUnicharUtils.h"
-#include "ContentIterator.h"
-#include "Document.h"
-#include "fragmentdirectives_ffi_generated.h"
-#include "Text.h"
-#include "mozilla/ContentIterator.h"
-#include "mozilla/ResultVariant.h"
-#include "mozilla/intl/WordBreaker.h"
-#include "mozilla/SelectionMovementUtils.h"
 
 namespace mozilla::dom {
 LazyLogModule gFragmentDirectiveLog("FragmentDirective");
@@ -53,8 +54,7 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
                                                       : current->Length(),
                  current->Length());
     const Text* text = Text::FromNode(current);
-    text->TextFragment().AppendTo(content, startOffset,
-                                  endOffset - startOffset);
+    text->DataBuffer().AppendTo(content, startOffset, endOffset - startOffset);
   }
   content.CompressWhitespace();
   return content;
@@ -101,14 +101,14 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
   if (!aText || aText->Length() == 0 || aPos >= aText->Length()) {
     return false;
   }
-  const nsTextFragment& frag = aText->TextFragment();
+  const CharacterDataBuffer& characterDataBuffer = aText->DataBuffer();
   const char NBSP_CHAR = char(0xA0);
-  if (frag.Is2b()) {
-    const char16_t* content = frag.Get2b();
+  if (characterDataBuffer.Is2b()) {
+    const char16_t* content = characterDataBuffer.Get2b();
     return IsSpaceCharacter(content[aPos]) ||
            content[aPos] == char16_t(NBSP_CHAR);
   }
-  const char* content = frag.Get1b();
+  const char* content = characterDataBuffer.Get1b();
   return IsSpaceCharacter(content[aPos]) || content[aPos] == NBSP_CHAR;
 }
 
@@ -191,7 +191,7 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
   return false;
 }
 
-/* static */ void TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(
+/* static */ bool TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(
     nsRange& aRange) {
   // 1. While range is not collapsed:
   while (!aRange.Collapsed()) {
@@ -208,7 +208,7 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
       // tree order.
       // 1.3.2. Set range's start offset to 0.
       if (NS_FAILED(aRange.SetStart(node->GetNextNode(), 0))) {
-        return;
+        return false;
       }
       // 1.3.3. Continue.
       continue;
@@ -227,11 +227,12 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
     // 1.6.2 If cp does not have the White_Space property set, return.
     // 1.6.3 Add 1 to range’s start offset.
     if (!IsWhitespaceAtPosition(text, offset)) {
-      return;
+      return true;
     }
 
     aRange.SetStart(node, offset + 1);
   }
+  return false;
 }
 // https://wicg.github.io/scroll-to-text-fragment/#find-a-range-from-a-text-directive
 // Steps 2.2.3, 2.3.4
@@ -248,7 +249,8 @@ RangeBoundary TextDirectiveUtil::MoveToNextBoundaryPoint(
   }
   ++pos;
   if (pos < node->Length() &&
-      node->GetText()->IsLowSurrogateFollowingHighSurrogateAt(pos)) {
+      node->GetCharacterDataBuffer()->IsLowSurrogateFollowingHighSurrogateAt(
+          pos)) {
     ++pos;
   }
   return {node, pos};

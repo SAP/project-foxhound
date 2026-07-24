@@ -24,9 +24,6 @@ MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
 MockFilePicker.returnValue = MockFilePicker.returnOK;
 
 async function test() {
-  // SpecialPowers.DOMWindowUtils doesn't appear to fire mouseEvents correctly
-  var wu = SpecialPowers.getDOMWindowUtils(window);
-
   try {
     var domActivateEvents;
     var fileInput = document.getElementById("file");
@@ -42,13 +39,11 @@ async function test() {
     await promiseApzFlushedRepaints();
 
     domActivateEvents = 0;
-    wu.sendMouseEvent("mousedown", rect.left + 5, rect.top + 5, 0, 1, 0);
-    wu.sendMouseEvent("mouseup", rect.left + 5, rect.top + 5, 0, 1, 0);
+    synthesizeMouseAtPoint(rect.left + 5, rect.top + 5, {});
     is(domActivateEvents, 1, "click on button should fire 1 DOMActivate event");
 
     domActivateEvents = 0;
-    wu.sendMouseEvent("mousedown", rect.right - 5, rect.top + 5, 0, 1, 0);
-    wu.sendMouseEvent("mouseup", rect.right - 5, rect.top + 5, 0, 1, 0);
+    synthesizeMouseAtPoint(rect.right - 5, rect.top + 5, {});
     is(domActivateEvents, 1, "click on text field should fire 1 DOMActivate event");
   } finally {
     SimpleTest.executeSoon(function() {

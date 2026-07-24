@@ -45,7 +45,6 @@ nsSystemStatusBarCocoa::StatusItem::StatusItem(NativeMenuMac* aMenu)
   mStatusItem = [[NSStatusBar.systemStatusBar
       statusItemWithLength:NSSquareStatusItemLength] retain];
   mStatusItem.menu = mMenu->NativeNSMenu();
-  mStatusItem.highlightMode = YES;
 
   // We want the status item to get its image from menu item that mMenu was
   // initialized with. Icon loads are asynchronous, so we need to let the menu

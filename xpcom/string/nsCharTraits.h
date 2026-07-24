@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCharTraits_h___
-#define nsCharTraits_h___
+#ifndef nsCharTraits_h_
+#define nsCharTraits_h_
 
 #include <ctype.h>   // for |EOF|, |WEOF|
 #include <stdint.h>  // for |uint32_t|
@@ -485,4 +485,4 @@ struct nsCharSinkTraits<CharT*> {
   }
 };
 
-#endif  // !defined(nsCharTraits_h___)
+#endif  // !defined(nsCharTraits_h_)

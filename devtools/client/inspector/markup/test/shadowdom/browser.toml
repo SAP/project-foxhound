@@ -1,0 +1,57 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "doc_markup_shadowdom_open_debugger_pretty_printed.html",
+  "head.js",
+  "shadowdom_open_debugger.min.js",
+  "!/devtools/client/debugger/test/mochitest/shared-head.js",
+  "!/devtools/client/inspector/markup/test/head.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+]
+
+["browser_markup_shadowdom.js"]
+
+["browser_markup_shadowdom_clickreveal.js"]
+
+["browser_markup_shadowdom_clickreveal_scroll.js"]
+
+["browser_markup_shadowdom_copy_paths.js"]
+
+["browser_markup_shadowdom_delete.js"]
+
+["browser_markup_shadowdom_dynamic.js"]
+
+["browser_markup_shadowdom_hover.js"]
+
+["browser_markup_shadowdom_marker_and_before_pseudos.js"]
+
+["browser_markup_shadowdom_maxchildren.js"]
+
+["browser_markup_shadowdom_mutations_shadow.js"]
+
+["browser_markup_shadowdom_navigation.js"]
+
+["browser_markup_shadowdom_nested_pick_inspect.js"]
+
+["browser_markup_shadowdom_noslot.js"]
+
+["browser_markup_shadowdom_open_debugger.js"]
+
+["browser_markup_shadowdom_open_debugger_pretty_printed.js"]
+
+["browser_markup_shadowdom_shadowroot_mode.js"]
+
+["browser_markup_shadowdom_show_nodes_button.js"]
+
+["browser_markup_shadowdom_slotted_keyboard_focus.js"]
+
+["browser_markup_shadowdom_slotupdate.js"]
+
+["browser_markup_shadowdom_ua_widgets.js"]
+
+["browser_markup_shadowdom_ua_widgets_with_nac.js"]

@@ -37,7 +37,7 @@ To run all the tests in `dom/svg/`, this command would work:
 You can also pass a manifest path to run all tests on that manifest:
 
 ```
-./mach test dom/base/test/mochitest.ini
+./mach test dom/base/test/mochitest.toml
 ```
 
 ## Running flavors and subsuites
@@ -118,10 +118,9 @@ breakpoints or switch to the Netmonitor panel before starting the test.
 
 ## Debug using the Firefox Profiler
 
-Run the profiler locally with `--profiler`, and on try with
-`--env MOZ_PROFILER_STARTUP=1`. For the latter, only failures will generate
-and upload profiles, so make sure to add an assertion that fails the test you're
-interested in.
+Run the profiler with `--profiler` (both locally and on try). On try, only
+failures will generate and upload profiles, so make sure to add an assertion that
+fails the test you're interested in.
 
 ## Finding errors
 
@@ -231,9 +230,13 @@ test log.
 
 In addition to mochitest assertions, mochitest supports the
 [CommonJS standard assertions](http://wiki.commonjs.org/wiki/Unit_Testing/1.1),
-like [nodejs' assert module](https://nodejs.org/api/assert.html#assert) but
+like [Node.JS' Assert module](https://nodejs.org/api/assert.html#assert) but
 implemented in `Assert.sys.mjs`. These are auto-imported in the browser flavor, but
 need to be imported manually in other flavors.
+
+It is recommended to use `Assert` methods over `is`/`ok` functions, because
+they are better documented and easier to find.
+
 
 ### Helper functions
 
@@ -257,35 +260,35 @@ Then you can eventually fetch their content by using `XMLHttpRequest` or so.
 ./mach addtest --suite mochitest-{plain,chrome,browser-chrome} path/to/new/test
 ```
 
-That will add the manifest entry to the relevant manifest (`mochitest.ini`,
-`chrome.ini`, etc. depending on the flavor) to tell the build system about your
+That will add the manifest entry to the relevant manifest (`mochitest.toml`,
+`chrome.toml`, etc. depending on the flavor) to tell the build system about your
 new test, as well as creating the file based on a template.
 
-```ini
+```toml
 [test_new_feature.html]
 ```
 
 Optionally, you can specify metadata for your test, like whether to skip the
 test on certain platforms:
 
-```ini
+```toml
 [test_new_feature.html]
-skip-if = os == 'win'
+skip-if = ["os == 'win'"]
 ```
 
-The [mochitest.ini format](/build/buildsystem/test_manifests.rst), which is
+The [mochitest.toml format](/build/buildsystem/test_manifests.rst), which is
 recognized by the parser, defines a long list of metadata.
 
-### Adding a new mochitest.ini or chrome.ini file
+### Adding a new mochitest.toml or chrome.toml file
 
-If a `mochitest.ini` or `chrome.ini` file does not exist in the test directory
+If a `mochitest.toml` or `chrome.toml` file does not exist in the test directory
 where you want to add a test, add them and update the moz.build file in the
 directory for your test. For example, in `gfx/layers/moz.build`, we add
 these two manifest files:
 
 ```python
-MOCHITEST_MANIFESTS += ['apz/test/mochitest.ini']
-MOCHITEST_CHROME_MANIFESTS += ['apz/test/chrome.ini']
+MOCHITEST_MANIFESTS += ['apz/test/mochitest.toml']
+MOCHITEST_CHROME_MANIFESTS += ['apz/test/chrome.toml']
 ```
 
 <!--  TODO: This might be outdated.*

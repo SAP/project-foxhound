@@ -6,7 +6,6 @@
 
 #include "ProxyConfigLookupParent.h"
 #include "ProxyConfigLookup.h"
-#include "mozilla/Unused.h"
 #include "nsProxyInfo.h"
 
 namespace mozilla {
@@ -28,14 +27,14 @@ void ProxyConfigLookupParent::DoProxyLookup() {
             nsProxyInfo::SerializeProxyInfo(
                 static_cast<nsProxyInfo*>(aProxyInfo), proxyInfoArray);
           }
-          Unused << Send__delete__(self, proxyInfoArray, aStatus);
+          (void)Send__delete__(self, proxyInfoArray, aStatus);
         }
       },
       mURI, mProxyResolveFlags);
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     nsTArray<ProxyInfoCloneArgs> emptyArray;
-    Unused << Send__delete__(self, emptyArray, rv);
+    (void)Send__delete__(self, emptyArray, rv);
   }
 }
 

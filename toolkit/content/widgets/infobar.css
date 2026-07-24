@@ -29,7 +29,7 @@
   }
 
   .text-container {
-    padding-block: calc(1lh - var(--icon-size-default) / 2);
+    padding-block: calc(1lh - var(--icon-size) / 2);
   }
 
   .content {
@@ -90,7 +90,7 @@ img.inline-icon {
 }
 
 strong {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 /* type="system" infobar styles */

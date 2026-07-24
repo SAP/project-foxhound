@@ -1,0 +1,46 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    attributes:
+        dxc-crash-symbols: true
+        enable-full-crashsymbols: true
+        local-toolchain: true
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-dump_syms
+            - linux64-makecab
+            - vs-toolchain
+        fetch:
+            - dxc-src
+    run:
+        script: build-dxc.sh
+        sparse-profile: null
+    worker-type: b-linux-docker-amd
+    worker:
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+            MAKECAB: /builds/worker/fetches/makecab/makecab
+        max-run-time: 1800
+
+win64-dxc:
+    description: "DirectX Shader Compiler (x86_64)"
+    treeherder:
+        symbol: TW64(dxc)
+    run:
+        arguments:
+            - "x86_64"
+        toolchain-artifact: public/build/dxc-x86_64-pc-windows-msvc.tar.zst
+        toolchain-alias: dxc-x86_64-pc-windows-msvc
+
+win64-aarch64-dxc:
+    description: "DirectX Shader Compiler (aarch64)"
+    treeherder:
+        symbol: TWA64(dxc)
+    run:
+        arguments:
+            - "aarch64"
+        toolchain-artifact: public/build/dxc-aarch64-pc-windows-msvc.tar.zst
+        toolchain-alias: dxc-aarch64-pc-windows-msvc

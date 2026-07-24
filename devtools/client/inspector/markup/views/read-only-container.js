@@ -6,31 +6,28 @@
 
 const ReadOnlyEditor = require("resource://devtools/client/inspector/markup/views/read-only-editor.js");
 const MarkupContainer = require("resource://devtools/client/inspector/markup/views/markup-container.js");
-const { extend } = require("resource://devtools/shared/extend.js");
 
 /**
  * An implementation of MarkupContainer for Pseudo Elements,
  * Doctype nodes, or any other type generic node that doesn't
  * fit for other editors.
  * Does not allow any editing, just viewing / selecting.
- *
- * @param  {MarkupView} markupView
- *         The markup view that owns this container.
- * @param  {NodeFront} node
- *         The node to display.
  */
-function MarkupReadOnlyContainer(markupView, node) {
-  MarkupContainer.prototype.initialize.call(
-    this,
-    markupView,
-    node,
-    "readonlycontainer"
-  );
+class MarkupReadOnlyContainer extends MarkupContainer {
+  /**
+   *
+   * @param  {MarkupView} markupView
+   *         The markup view that owns this container.
+   * @param  {NodeFront} node
+   *         The node to display.
+   */
+  constructor(markupView, node) {
+    super();
+    super.initialize(markupView, node, "readonlycontainer");
 
-  this.editor = new ReadOnlyEditor(this, node);
-  this.tagLine.appendChild(this.editor.elt);
+    this.editor = new ReadOnlyEditor(this, node);
+    this.tagLine.appendChild(this.editor.elt);
+  }
 }
-
-MarkupReadOnlyContainer.prototype = extend(MarkupContainer.prototype, {});
 
 module.exports = MarkupReadOnlyContainer;

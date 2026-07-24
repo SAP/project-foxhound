@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef INTL_UNICHARUTIL_UTIL_NSSPECIALCASINGDATA_H_
+#define INTL_UNICHARUTIL_UTIL_NSSPECIALCASINGDATA_H_
+
 #include <stdint.h>
 
 namespace mozilla {
@@ -24,3 +27,5 @@ const MultiCharMapping* SpecialTitle(uint32_t aCh);
 
 }  // namespace unicode
 }  // namespace mozilla
+
+#endif  // INTL_UNICHARUTIL_UTIL_NSSPECIALCASINGDATA_H_

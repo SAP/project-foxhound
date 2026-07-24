@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p> <p>Usalo como navegador privado: <ul> <li>Buscar y navegar directamente en la aplicación</li> <li>Bloquear rastreadores (o actualizar los ajustes para permitir rastreadores)</li> <li>Borrar para eliminar cookies e historial de búsqueda y navegación</li> </ul> </p> <p>%1$s es producido por Mozilla. Nuestra misión es promover una Internet saludable y abierta.<br/> <a href=\"%2$s\">Conocer más</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p>\n<p>Usalo como navegador privado:\n<ul>\n<li>Buscar y navegar directamente en la aplicación</li>\n<li>Bloquear rastreadores (o actualizar los ajustes para permitir rastreadores)</li>\n<li>Borrar para eliminar cookies e historial de búsqueda y navegación</li>\n</ul> </p>\n<p>%1$s es producido por Mozilla. Nuestra misión es promover una Internet saludable y abierta.<br/>\n<a href=\"%2$s\">Conocer más</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ña i\'í tsi Ña kunka vai</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -456,14 +463,6 @@
   <string name="onboarding_first_screen_title">A nikitsau nu %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Rápido. Privado. Sin distracciones.</string>
-  <!--
-    New Onboarding flow first screen 'terms of use link'
-
-    Text for the link used in onboarding_first_screen_terms_of_use_text
-  -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Kavi sana kuatyu\'un Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Nixi inka vaa tutu\'ku.</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Enlace vaa</string>
   <!--

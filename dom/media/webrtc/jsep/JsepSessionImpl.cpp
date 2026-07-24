@@ -7,27 +7,24 @@
 #include <stdlib.h>
 
 #include <bitset>
-#include <iterator>
 #include <set>
 #include <string>
 #include <utility>
 
-#include "mozilla/StaticPrefs_media.h"
-#include "transport/logging.h"
+#include "api/rtp_parameters.h"
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepTransport.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/DataChannelProtocol.h"
 #include "nsDebug.h"
 #include "nspr.h"
 #include "nss.h"
 #include "pk11pub.h"
-
-#include "api/rtp_parameters.h"
-
-#include "jsep/JsepTrack.h"
-#include "jsep/JsepTransport.h"
 #include "sdp/HybridSdpParser.h"
 #include "sdp/SipccSdp.h"
+#include "transport/logging.h"
 
 namespace mozilla {
 
@@ -308,9 +305,12 @@ nsresult JsepSessionImpl::CreateOfferMsection(const JsepOfferOptions& options,
           new SdpFlagAttribute(SdpAttribute::kRtcpRsizeAttribute));
     }
   }
-  // Ditto for extmap-allow-mixed
-  msection->GetAttributeList().SetAttribute(
-      new SdpFlagAttribute(SdpAttribute::kExtmapAllowMixedAttribute));
+
+  if (msection->GetMediaType() != SdpMediaSection::MediaType::kApplication) {
+    // Ditto for extmap-allow-mixed
+    msection->GetAttributeList().SetAttribute(
+        new SdpFlagAttribute(SdpAttribute::kExtmapAllowMixedAttribute));
+  }
 
   nsresult rv = AddTransportAttributes(msection, SdpSetupAttribute::kActpass);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1088,7 +1088,7 @@ JsepSession::Result JsepSessionImpl::SetRemoteDescription(
   NS_ENSURE_SUCCESS(rv, dom::PCError::OperationError);
 
   mRemoteIsIceLite = iceLite;
-  mIceOptions = iceOptions;
+  mIceOptions = std::move(iceOptions);
   SetIceRestarting(iceRestarting);
   return Result();
 }
@@ -1919,15 +1919,15 @@ nsresult JsepSessionImpl::ValidateRemoteDescription(const Sdp& description) {
     const SdpMediaSection& oldMsection =
         mCurrentRemoteDescription->GetMediaSection(i);
 
-    if (mSdpHelper.MsectionIsDisabled(newMsection) ||
-        mSdpHelper.MsectionIsDisabled(oldMsection)) {
-      continue;
-    }
-
     if (oldMsection.GetMediaType() != newMsection.GetMediaType()) {
       JSEP_SET_ERROR("Remote description changes the media type of m-line "
                      << i);
       return NS_ERROR_INVALID_ARG;
+    }
+
+    if (mSdpHelper.MsectionIsDisabled(newMsection) ||
+        mSdpHelper.MsectionIsDisabled(oldMsection)) {
+      continue;
     }
 
     bool differ = mSdpHelper.IceCredentialsDiffer(newMsection, oldMsection);

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -70,7 +77,7 @@
   -->
   <string name="menu_trackers_blocked_subtitle">Изключването на тази функция би могла да реши някои проблеми със сайта</string>
   <!-- Menu item: This is the label for turning off content blocking for the current website. -->
-  <string name="menu_content_blocking">Блокиране на съдържанието</string>
+  <string name="menu_content_blocking">Блокиране на съдържание</string>
   <!-- This is the subtitle content blocking toggle -->
   <string name="menu_content_blocking_subtitle">Изключете, за да поправите някои сайтове</string>
   <!--
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ви дава контрол.</p> <p>Използвайте го, за да разглеждате поверително: <ul> <li>Търсене и разглеждане изцяло в приложението</li> <li>Спиране на проследяването (или позволяване с промяна в настройките)</li> <li>Изчистване на бисквитките, търсенията и историята на разглеждане</li> </ul> </p> <p>%1$s се разработва от Mozilla. Нашата мисия е да развиваме здрав и отворен Интернет.<br/> <a href=\"%2$s\">Научете повече</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ви дава контрол.</p>\n<p>Използвайте го, за да разглеждате поверително:\n<ul>\n<li>Търсене и разглеждане изцяло в приложението</li>\n<li>Спиране на проследяването (или позволяване с промяна в настройките)</li>\n<li>Изчистване на бисквитките, търсенията и историята на разглеждане</li>\n</ul> </p>\n<p>%1$s се разработва от Mozilla. Нашата мисия е да развиваме здрав и отворен Интернет.<br/>\n<a href=\"%2$s\">Научете повече</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Научете повече</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -265,9 +272,9 @@
   <string name="preference_privacy_block_ads">Спиране на следене от реклами</string>
   <string name="preference_privacy_block_ads_summary">Някои реклами проследяват посещенията, даже и да не натискате върху тях</string>
   <string name="preference_privacy_block_analytics">Спиране на следене с цел анализ</string>
-  <string name="preference_privacy_block_analytics_summary">Използват го, за да събират, анализират и измерват дейности като докосване и плъзгане</string>
+  <string name="preference_privacy_block_analytics_summary">Използва се, за да се събират, анализират и измерват дейности като докосване и плъзгане</string>
   <string name="preference_privacy_block_social">Спиране на следене от социални мрежи</string>
-  <string name="preference_privacy_block_social_summary">Вградени в сайтове, за да ви проследява и да показва функционални елементи, като например бутони за споделяне</string>
+  <string name="preference_privacy_block_social_summary">Вградени елементи в сайтове, които проследяват вашите посещения и показват функционални елементи като бутони за споделяне с приятели</string>
   <string name="preference_privacy_block_content">Спиране на следене през друго съдържание</string>
   <string name="preference_privacy_block_content_summary2">Активирането може да предизвика неочаквано поведение на някои страници</string>
   <string name="preference_privacy_category_cookies">Забраняване на бисквитки</string>
@@ -341,7 +348,7 @@
   <!-- Header for the list of installed search engines -->
   <string name="preference_search_installed_search_engines">Инсталирани търсачки</string>
   <!-- Header for the list of installed search engines -->
-  <string name="preference_choose_search_engine">Избиране на търсеща машина</string>
+  <string name="preference_choose_search_engine">Избор на търсачка</string>
   <!-- Action for restoring the default list of search engines -->
   <string name="preference_search_restore">Възстановяване на стандартните търсачки</string>
   <!--
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Продължавайки, вие се съгласявате с %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Продължавайки, вие се съгласявате с %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Условия за ползване на Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Условия за ползване на Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox се грижи за вашата поверителност. Научете повече в нашия %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox се грижи за вашата поверителност. Научете повече в нашия %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Политика на поверителност.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Политика на поверителност</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Това може да е проблем с конфигурацията на сървъра или може някой да се опитва да се представя за сървъра. <br/><br/> Ако сте се свързвали успешно с този сървър в миналото, грешката може да е временна.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Някой може да се опитва да се представя за сайта и продължаването да бъде рисковано.</label> <br><br> <label>%1$s не вярва на <b>%2$s</b>, защото издателят на сертификата му е неизвестен, сертификатът е самоподписан или сървърът не изпраща правилните междинни сертификати.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Някой може да се опитва да се представя за сайта и продължаването да бъде рисковано.</label> <br><br>\n<label>%1$s не вярва на <b>%2$s</b>, защото издателят на сертификата му е неизвестен, сертификатът е самоподписан или сървърът не изпраща правилните междинни сертификати.</label>]]></string>
   <!--
     Sessions List
 

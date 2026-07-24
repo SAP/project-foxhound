@@ -5,11 +5,13 @@
 import os
 import subprocess
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from compare_locales import parser
 from compare_locales.lint.linter import L10nLinter
 from compare_locales.lint.util import l10n_base_reference_and_tests
 from compare_locales.paths import ProjectFiles, TOMLParser
+from filelock import FileLock, Timeout
 from mach import util as mach_util
 from mozfile import which
 from mozlint import pathutils, result
@@ -56,7 +58,7 @@ def lint_strings(name, paths, lintconfig, **lintargs):
         if fp.isfile:
             all_files.append(p)
     # Filter out files explicitly excluded in the l10n.yml configuration.
-    # `browser/locales/en-US/firefox-l10n.js` is a good example.
+    # `toolkit/locales/en-US/chrome/global/intl.css` is a good example.
     all_files, _ = pathutils.filterpaths(
         lintargs["root"],
         all_files,
@@ -88,46 +90,66 @@ def lint_strings(name, paths, lintconfig, **lintargs):
 
 # Similar to the lint/lint_strings wrapper setup, for comm-central support.
 def source_repo_setup(**lint_args):
-    gs = mozpath.join(mach_util.get_state_dir(), L10N_SOURCE_NAME)
-    marker = mozpath.join(gs, ".git", "l10n_pull_marker")
+    state_dir = mach_util.get_state_dir()
+    lock_file = (Path(state_dir) / L10N_SOURCE_NAME).with_suffix(".lock")
+    timeout = 60
+
+    # In the scenario where multiple processes run this same linter where the l10n source
+    # has not yet been cloned, we need a lock to prevent them from all trying to clone
+    # to the same place at the same time.
     try:
-        last_pull = datetime.fromtimestamp(os.stat(marker).st_mtime)
-        skip_clone = datetime.now() < last_pull + PULL_AFTER
-    except OSError:
-        skip_clone = False
-    if skip_clone:
-        return
-    git = which("git")
-    if not git:
-        if os.environ.get("MOZ_AUTOMATION"):
-            raise MissingVCSTool("Unable to obtain git path.")
-        print("warning: l10n linter requires Git but was unable to find 'git'")
-        return 1
+        with FileLock(lock_file, timeout=timeout):
+            gs = mozpath.join(state_dir, L10N_SOURCE_NAME)
+            marker = mozpath.join(gs, ".git", "l10n_pull_marker")
+            try:
+                last_pull = datetime.fromtimestamp(os.stat(marker).st_mtime)
+                skip_clone = datetime.now() < last_pull + PULL_AFTER
+            except OSError:
+                skip_clone = False
+            if skip_clone:
+                return 0
+            git = which("git")
+            if not git:
+                if os.environ.get("MOZ_AUTOMATION"):
+                    raise MissingVCSTool("Unable to obtain git path.")
+                print("warning: l10n linter requires Git but was unable to find 'git'")
+                return 1
 
-    # If this is called from a source hook on a git repo, there might be a index
-    # file listed in the environment as a git operation is ongoing. This seems
-    # to confuse the git call here into thinking that it is actually operating
-    # on the main repository, rather than the l10n-source repo. Therefore,
-    # we remove this environment flag.
-    if "GIT_INDEX_FILE" in os.environ:
-        os.environ.pop("GIT_INDEX_FILE")
+            # If this is called from a source hook on a git repo, there might be a index
+            # file listed in the environment as a git operation is ongoing. This seems
+            # to confuse the git call here into thinking that it is actually operating
+            # on the main repository, rather than the l10n-source repo. Therefore,
+            # we remove this environment flag.
+            if "GIT_INDEX_FILE" in os.environ:
+                os.environ.pop("GIT_INDEX_FILE")
 
-    kwargs = {
-        "check": False,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.STDOUT,
-    }
-    if os.path.exists(gs):
-        proc = subprocess.run([git, "pull", L10N_SOURCE_REPO], cwd=gs, **kwargs)
-    else:
-        proc = subprocess.run([git, "clone", L10N_SOURCE_REPO, gs], **kwargs)
+            kwargs = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.STDOUT,
+            }
+            if os.path.exists(gs):
+                proc = subprocess.run(
+                    [git, "pull", L10N_SOURCE_REPO], check=False, cwd=gs, **kwargs
+                )
+            else:
+                proc = subprocess.run(
+                    [git, "clone", L10N_SOURCE_REPO, gs], check=False, **kwargs
+                )
 
-    if proc.returncode != 0:
-        lint_args["log"].error(f"Failed to pull {L10N_SOURCE_REPO}:\n{proc.stdout}")
-        return 1
+            if proc.returncode != 0:
+                lint_args["log"].error(
+                    f"Failed to pull {L10N_SOURCE_REPO}:\n{proc.stdout}"
+                )
+                return 1
 
-    with open(marker, "w") as fh:
-        fh.flush()
+            with open(marker, "w") as fh:
+                fh.flush()
+    except Timeout:
+        print(
+            f"Could not acquire the lock at {lock_file} for the {L10N_SOURCE_NAME} checkout after {timeout} seconds."
+        )
+
+    return 0
 
 
 def load_configs(l10n_configs, root, l10n_base, locale):
@@ -178,13 +200,11 @@ class MozL10nLinter(L10nLinter):
     """Subclass linter to generate the right result type."""
 
     def __init__(self, lintconfig):
-        super(MozL10nLinter, self).__init__()
+        super().__init__()
         self.lintconfig = lintconfig
 
     def lint(self, files, get_reference_and_tests):
         return [
             result.from_config(self.lintconfig, **result_data)
-            for result_data in super(MozL10nLinter, self).lint(
-                files, get_reference_and_tests
-            )
+            for result_data in super().lint(files, get_reference_and_tests)
         ]

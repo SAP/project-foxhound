@@ -545,14 +545,8 @@
         let nextScriptIndex = i + 1;
         if (nextScriptIndex < scripts.length) {
           var callNextAppend = () => appendScript(nextScriptIndex);
-          SpecialPowers.wrap(script).addEventListener("afterscriptexecute", callNextAppend, {mozSystemGroup: true, once: true});
-
-          // Module scripts don't fire the "afterscriptexecute" event when there
-          // was an error, instead the "error" event is emitted. So listen for
-          // both events when creating module scripts.
-          if (spec.module) {
-            script.addEventListener("error", callNextAppend, {once: true});
-          }
+          script.addEventListener("load", callNextAppend, {once: true});
+          script.addEventListener("error", callNextAppend, {once: true});
         }
 
         scriptElements[i] = script;

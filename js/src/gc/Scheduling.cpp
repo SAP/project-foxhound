@@ -155,7 +155,7 @@ static bool CheckIncrementalLimit(double factor) {
 }
 
 static bool CheckNonZeroUnitRange(double value) {
-  return value > 0.0 && value <= 100.0;
+  return value > 0.0 && value <= 1.0;
 }
 
 GCSchedulingTunables::GCSchedulingTunables() {

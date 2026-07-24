@@ -65,8 +65,9 @@ async function testPointerEvents(ui) {
       content
     );
 
-    const win = content.document.defaultView;
-    const bg = win.getComputedStyle(div).getPropertyValue("background-color");
+    const bg = content
+      .getComputedStyle(div)
+      .getPropertyValue("background-color");
 
     is(
       bg,

@@ -109,9 +109,6 @@ newtab-menu-delete-pocket = Air a sguabadh à { -pocket-brand-name }
 newtab-menu-archive-pocket = Tasglannaich ann am { -pocket-brand-name }
 newtab-menu-show-privacy-info = Na sponsairean againn ⁊ do phrìobhaideachd
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = Deiseil
@@ -232,9 +229,6 @@ newtab-pocket-pocket-firefox-family = Tha { -pocket-brand-name } ’na phàirt d
 newtab-pocket-save = Sàbhail
 newtab-pocket-saved = Air a shàbhaladh
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
 ## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
 
 newtab-pocket-onboarding-discover = Faigh lorg air brod an lìn
@@ -269,60 +263,5 @@ newtab-custom-pocket-sponsored = Sgeulachdan sponsairichte
 newtab-custom-pocket-show-recent-saves = Seall na chaidh a shàbhaladh o chionn goird
 newtab-custom-recent-title = Gnìomhachd o chionn goirid
 newtab-custom-recent-subtitle = Roghainn de làraichean is susbaint faisg ort
-newtab-custom-recent-toggle =
-    .label = Gnìomhachd o chionn goirid
-    .description = Roghainn de làraichean is susbaint faisg ort
 newtab-custom-close-button = Dùin
 newtab-custom-settings = Stiùirich barrachd roghainnean
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

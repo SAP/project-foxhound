@@ -348,7 +348,7 @@ const DownloadMap = new (class extends EventEmitter {
       this.loadPromise = (async () => {
         const list = await Downloads.getList(Downloads.ALL);
 
-        await list.addView({
+        list.addView({
           onDownloadAdded: download => {
             const item = this.newFromDownload(download, null);
             this.emit("create", item);
@@ -828,7 +828,7 @@ this.downloads = class extends ExtensionAPIPersistent {
             return true;
           }
 
-          async function createTarget(downloadsDir) {
+          async function createTarget() {
             if (!filename) {
               let uri = Services.io.newURI(options.url);
               if (uri instanceof Ci.nsIURL) {
@@ -842,7 +842,7 @@ this.downloads = class extends ExtensionAPIPersistent {
             }
 
             let target = PathUtils.joinRelative(
-              downloadsDir,
+              await Downloads.getPreferredDownloadsDirectory(),
               filename || "download"
             );
 
@@ -925,10 +925,6 @@ this.downloads = class extends ExtensionAPIPersistent {
               downloadLastDir.setFile(extension.baseURI, lastDir);
             }
 
-            // Use windowTracker to find a window, rather than Services.wm,
-            // so that this doesn't break where navigator:browser isn't the
-            // main window (e.g. Thunderbird).
-            const window = global.windowTracker.getTopWindow().window;
             const basename = PathUtils.filename(target);
             const ext = basename.match(/\.([^.]+)$/)?.[1];
 
@@ -945,8 +941,15 @@ this.downloads = class extends ExtensionAPIPersistent {
             const picker = Cc["@mozilla.org/filepicker;1"].createInstance(
               Ci.nsIFilePicker
             );
+            // The picker requires a BrowsingContext to associate DOM File
+            // objects. Since this caller is a system principal, and the file
+            // saving operation should outlast the extension context, we use an
+            // arbitrary chrome window's browsingContext.
+            // We cannot use the extension context's browsingContext, because
+            // its canOpenModalPicker may be false for non-foreground tabs,
+            // which would cause the modal to be blocked.
             picker.init(
-              window.browsingContext,
+              context.browsingContext.topChromeWindow.browsingContext,
               null,
               Ci.nsIFilePicker.modeSave
             );
@@ -976,8 +979,24 @@ this.downloads = class extends ExtensionAPIPersistent {
             });
           }
 
-          const downloadsDir = await Downloads.getPreferredDownloadsDirectory();
-          const target = await createTarget(downloadsDir);
+          const targetPromise = createTarget();
+          if (context.isBackgroundContext) {
+            // Prevent event page suspension, so extensions can be notified of
+            // the download ID for the download they just initiated.
+            // This work-around is also needed for blob:-URLs, at least until
+            // blob:-URLs can outlive an extension context (bug 2005952).
+            //
+            // Note: Although there may be other async code before and after
+            // this point, they are not captured by this waitUntil logic,
+            // because these async calls are not using an unbounded amount of
+            // time. The resolution of targetPromise can take an unbounded
+            // amount of time if we wait for user input in the file picker.
+            extension.emit("background-script-idle-waituntil", {
+              promise: targetPromise,
+              reason: "downloads_saveAs",
+            });
+          }
+          const target = await targetPromise;
           const uri = Services.io.newURI(options.url);
           const cookieJarSettings = Cc[
             "@mozilla.org/cookieJarSettings;1"
@@ -1211,12 +1230,6 @@ this.downloads = class extends ExtensionAPIPersistent {
 
           let windowlessBrowser =
             Services.appShell.createWindowlessBrowser(true);
-          let systemPrincipal =
-            Services.scriptSecurityManager.getSystemPrincipal();
-          windowlessBrowser.docShell.createAboutBlankDocumentViewer(
-            systemPrincipal,
-            systemPrincipal
-          );
 
           let canvas = windowlessBrowser.document.createElement("canvas");
           let img = new windowlessBrowser.docShell.domWindow.Image(size, size);

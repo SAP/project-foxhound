@@ -2,12 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(async function testTabSwitchActionContext() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-});
-
 add_task(async function test_actions_context_menu() {
   function background() {
     browser.contextMenus.create({

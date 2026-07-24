@@ -39,7 +39,7 @@ class VRParent final : public PVRParent {
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs);
   mozilla::ipc::IPCResult RecvNotifyVsync(const TimeStamp& vsyncTimestamp);
-  mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvUpdateVar(const nsTArray<GfxVarUpdate>& var);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvOpenVRControllerActionPathToVR(
       const nsCString& aPath);

@@ -110,6 +110,6 @@ const runAutocompletionTest = async function (editor) {
  * Get the autocomplete panel left offset, relative to the provided input's left offset.
  */
 function getPopupOffset({ popup, input }) {
-  const popupQuads = popup._panel.getBoxQuads({ relativeTo: input });
+  const popupQuads = popup.tooltip.panel.getBoxQuads({ relativeTo: input });
   return popupQuads[0].getBounds().left;
 }

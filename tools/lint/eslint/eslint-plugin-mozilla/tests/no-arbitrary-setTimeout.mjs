@@ -20,7 +20,7 @@ function wrapCode(code, filename = "xpcshell/test_foo.js") {
 
 function invalidCode(code) {
   let obj = wrapCode(code);
-  obj.errors = [{ messageId: "listenForEvents", type: "CallExpression" }];
+  obj.errors = [{ messageId: "listenForEvents" }];
   return obj;
 }
 

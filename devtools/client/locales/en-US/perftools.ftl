@@ -32,6 +32,7 @@ perftools-description-local-build =
   If you’re profiling a build that you have compiled yourself, on this
   machine, please add your build’s objdir to the list below so that
   it can be used to look up symbol information.
+perftools-pick-local-build-directory = Pick build directory
 
 ## The controls for the interval at which the profiler samples the code.
 
@@ -163,6 +164,9 @@ perftools-presets-power-description = Preset for investigating power use bugs in
 
 perftools-presets-debug-label = Debug
 perftools-presets-debug-description = Preset for debugging in { -brand-shorter-name }. High overhead, do not use for performance work but use for focusing on understanding browser behavior.
+
+perftools-presets-web-compat-label = Web Compat
+perftools-presets-web-compat-description = Recommended preset for debugging web compatibility issues in websites, rather than tracking performance.
 
 perftools-presets-custom-label = Custom
 

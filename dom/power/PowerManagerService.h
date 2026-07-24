@@ -6,14 +6,14 @@
 #ifndef mozilla_dom_power_PowerManagerService_h
 #define mozilla_dom_power_PowerManagerService_h
 
-#include "nsCOMPtr.h"
-#include "nsHashKeys.h"
-#include "nsTArray.h"
-#include "nsIDOMWakeLockListener.h"
-#include "nsIPowerManagerService.h"
 #include "mozilla/HalWakeLockInformation.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/WakeLock.h"
+#include "nsCOMPtr.h"
+#include "nsHashKeys.h"
+#include "nsIDOMWakeLockListener.h"
+#include "nsIPowerManagerService.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

@@ -6,9 +6,15 @@
 
 #include "FetchUtil.h"
 
-#include "zlib.h"
-
+#include "js/BuildId.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/InternalRequest.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/Response.h"
+#include "mozilla/dom/WorkerRef.h"
 #include "nsCRT.h"
 #include "nsError.h"
 #include "nsIAsyncInputStream.h"
@@ -17,15 +23,7 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
-#include "js/BuildId.h"
-#include "mozilla/dom/Document.h"
-
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/InternalRequest.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/WorkerRef.h"
+#include "zlib.h"
 
 namespace mozilla::dom {
 
@@ -203,7 +201,7 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
   nsAutoCString computedReferrerSpec;
   referrerInfo = aChannel->GetReferrerInfo();
   if (referrerInfo) {
-    Unused << referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
+    (void)referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
   }
 
   // Step 8 https://fetch.spec.whatwg.org/#main-fetch
@@ -655,7 +653,7 @@ class JSStreamConsumer final : public nsIInputStreamCallback,
 NS_IMPL_ISUPPORTS(JSStreamConsumer, nsIInputStreamCallback)
 
 // static
-MOZ_CONSTINIT nsCString FetchUtil::WasmAltDataType;
+constinit nsCString FetchUtil::WasmAltDataType;
 
 // static
 void FetchUtil::InitWasmAltDataType() {
@@ -702,9 +700,13 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::Handle<JSObject*> aObj,
       break;
   }
 
+  // For WASM, the Content-Type must be exactly "application/wasm" with no
+  // parameters. Check the raw header value before parsing normalizes it.
+  ErrorResult result;
   nsAutoCString mimeType;
-  nsAutoCString mixedCaseMimeType;  // unused
-  response->GetMimeType(mimeType, mixedCaseMimeType);
+  response->GetInternalHeaders()->Get("Content-Type"_ns, mimeType, result);
+  MOZ_ALWAYS_TRUE(!result.Failed());
+  ToLowerCase(mimeType);
 
   if (!mimeType.EqualsASCII(requiredMimeType)) {
     JS_ReportErrorNumberASCII(aCx, js::GetErrorMessage, nullptr,

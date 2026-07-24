@@ -41,6 +41,7 @@ class ChooserParser(BaseTryParser):
 
 
 def run(
+    metrics,
     update=False,
     query=None,
     try_config_params=None,
@@ -60,8 +61,11 @@ def run(
     push = not stage_changes and not dry_run
     check_working_directory(push)
 
+    metrics.mach_try.taskgraph_generation_duration.start()
     tg = generate_tasks(parameters, full)
+    metrics.mach_try.taskgraph_generation_duration.stop()
 
+    metrics.mach_try.task_filtering_duration.start()
     # Remove tasks that are not to be shown unless `--full` is specified.
     if not full:
         excluded_tasks = [
@@ -71,6 +75,8 @@ def run(
         ]
         for task in excluded_tasks:
             tg.tasks.pop(task)
+
+    metrics.mach_try.task_filtering_duration.stop()
 
     queue = multiprocessing.Queue()
 
@@ -89,7 +95,9 @@ def run(
     )
     process.start()
 
+    metrics.mach_try.interactive_duration.start()
     selected = queue.get()
+    metrics.mach_try.interactive_duration.stop()
 
     # Allow the close page to render before terminating the process.
     time.sleep(1)
@@ -102,6 +110,7 @@ def run(
     return push_to_try(
         "chooser",
         message.format(msg=msg),
+        metrics,
         try_task_config=generate_try_task_config(
             "chooser", selected, params=try_config_params
         ),

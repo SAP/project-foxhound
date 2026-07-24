@@ -26,6 +26,7 @@ async def test_capability_type(new_session, add_browser_capabilities):
         ("browserVersion", str),
         ("platformName", str),
         ("proxy", dict),
+        ("setWindowRect", bool),
         ("userAgent", str),
     ]
 

@@ -22,9 +22,6 @@
 #ifndef wasm_wasm_baseline_defs_h
 #define wasm_wasm_baseline_defs_h
 
-#include <algorithm>
-#include <utility>
-
 #include "jit/AtomicOp.h"
 #include "jit/IonTypes.h"
 #include "jit/JitAllocPolicy.h"

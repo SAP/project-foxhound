@@ -14,8 +14,6 @@
  * from JIT code.
  */
 
-#include <stddef.h>
-
 #include "gc/AllocKind.h"
 #include "js/TraceKind.h"
 
@@ -25,7 +23,7 @@ namespace js {
 namespace gc {
 
 class GCRuntime;
-struct Cell;
+class Cell;
 
 namespace gcprobes {
 

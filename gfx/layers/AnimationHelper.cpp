@@ -19,12 +19,12 @@
 #include "mozilla/dom/KeyframeEffect.h"  // for dom::KeyFrameEffectReadOnly
 #include "mozilla/dom/Nullable.h"        // for dom::Nullable
 #include "mozilla/layers/APZSampler.h"   // for APZSampler
-#include "mozilla/AnimatedPropertyID.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/LayerAnimationInfo.h"   // for GetCSSPropertiesFor()
 #include "mozilla/Maybe.h"                // for Maybe<>
 #include "mozilla/MotionPathUtils.h"      // for ResolveMotionPath()
 #include "mozilla/StyleAnimationValue.h"  // for StyleAnimationValue, etc
-#include "nsCSSPropertyID.h"              // for eCSSProperty_offset_path, etc
+#include "NonCustomCSSPropertyId.h"       // for eCSSProperty_offset_path, etc
 #include "nsDisplayList.h"                // for nsDisplayTransform, etc
 
 namespace mozilla::layers {
@@ -46,8 +46,15 @@ static dom::Nullable<TimeDuration> CalculateElapsedTimeForScrollTimeline(
       aOptions.axis() == layers::ScrollDirection::eHorizontal;
   double range =
       isHorizontal ? aScrollMeta->mRange.width : aScrollMeta->mRange.height;
+  // The APZ sampler may give us a zero range (e.g. if the user resizes the
+  // element).
+  if (range == 0.0) {
+    // If the range is zero, we cannot calculate the progress, so just return
+    // nullptr.
+    return nullptr;
+  }
   MOZ_ASSERT(
-      range > 0,
+      range > 0.0,
       "We don't expect to get a zero or negative range on the compositor");
 
   // The offset may be negative if the writing mode is from right to left.
@@ -239,8 +246,12 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 #endif
     }
 
-    uint32_t segmentIndex = 0;
     size_t segmentSize = animation.mSegments.Length();
+    if (segmentSize == 0) {
+      return AnimationHelper::SampleResult();
+    }
+
+    uint32_t segmentIndex = 0;
     PropertyAnimation::SegmentData* segment = animation.mSegments.Elements();
     while (segment->mEndPortion < computedTiming.mProgress.Value() &&
            segmentIndex < segmentSize - 1) {
@@ -452,7 +463,7 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
   AnimationStorageData storageData;
   storageData.mLayersId = aLayersId;
 
-  nsCSSPropertyID prevID = eCSSProperty_UNKNOWN;
+  NonCustomCSSPropertyId prevId = eCSSProperty_UNKNOWN;
   PropertyAnimationGroup* currData = nullptr;
   DebugOnly<const layers::Animatable*> currBaseStyle = nullptr;
 
@@ -460,7 +471,7 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
     // Animations with same property are grouped together, so we can just
     // check if the current property is the same as the previous one for
     // knowing this is a new group.
-    if (prevID != animation.property()) {
+    if (prevId != animation.property()) {
       // Got a different group, we should create a different array.
       currData = storageData.mAnimation.AppendElement();
       currData->mProperty = animation.property();
@@ -470,7 +481,7 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
         storageData.mTransformData = animation.transformData();
       }
 
-      prevID = animation.property();
+      prevId = animation.property();
 
       // Reset the debug pointer.
       currBaseStyle = nullptr;
@@ -585,7 +596,7 @@ AnimationStorageData AnimationHelper::ExtractAnimations(
   if (!storageData.mAnimation.IsEmpty()) {
     nsCSSPropertyIDSet seenProperties;
     for (const auto& group : storageData.mAnimation) {
-      nsCSSPropertyID id = group.mProperty;
+      NonCustomCSSPropertyId id = group.mProperty;
 
       MOZ_ASSERT(!seenProperties.HasProperty(id), "Should be a new property");
       seenProperties.AddProperty(id);
@@ -651,9 +662,9 @@ gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
 
   for (const auto& value : aValues) {
     MOZ_ASSERT(value);
-    AnimatedPropertyID property(eCSSProperty_UNKNOWN);
+    CSSPropertyId property(eCSSProperty_UNKNOWN);
     Servo_AnimationValue_GetPropertyId(value, &property);
-    switch (property.mID) {
+    switch (property.mId) {
       case eCSSProperty_transform:
         MOZ_ASSERT(!transform);
         transform = Servo_AnimationValue_GetTransform(value);

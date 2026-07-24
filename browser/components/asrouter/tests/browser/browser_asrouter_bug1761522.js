@@ -46,9 +46,9 @@ async function serveRemoteSettings() {
     );
   });
 
-  // Serve the ms-language-packs record for cfr-v1-ja-JP-mac, pointing to an attachment.
+  // Serve the ms-language-packs records, with cfr-v1-ja-JP-mac pointing to an attachment.
   server.registerPathHandler(
-    "/v1/buckets/main/collections/ms-language-packs/records/cfr-v1-ja-JP-mac",
+    "/v1/buckets/main/collections/ms-language-packs/changeset",
     (request, response) => {
       response.setStatusLine(null, 200, "OK");
       response.setHeader(
@@ -58,17 +58,20 @@ async function serveRemoteSettings() {
       );
       response.write(
         JSON.stringify({
-          permissions: {},
-          data: {
-            attachment: {
-              hash: "f9aead2693c4ff95c2764df72b43fdf5b3490ed06414588843848f991136040b",
-              size: attachment.buffer.byteLength,
-              filename: "asrouter.ftl",
-              location: `main-workspace/ms-language-packs/${attachmentUuid}`,
+          metadata: {},
+          timestamp: 42,
+          changes: [
+            {
+              attachment: {
+                hash: "f9aead2693c4ff95c2764df72b43fdf5b3490ed06414588843848f991136040b",
+                size: attachment.buffer.byteLength,
+                filename: "asrouter.ftl",
+                location: `main-workspace/ms-language-packs/${attachmentUuid}`,
+              },
+              id: "cfr-v1-ja-JP-mac",
+              last_modified: Date.now(),
             },
-            id: "cfr-v1-ja-JP-mac",
-            last_modified: Date.now(),
-          },
+          ],
         })
       );
     }
@@ -180,9 +183,11 @@ add_task(async function test_asrouter() {
   });
   const localeService = Services.locale;
   RemoteSettings("cfr").verifySignature = false;
+  RemoteSettings("ms-language-packs").verifySignature = false;
 
   registerCleanupFunction(async () => {
     RemoteSettings("cfr").verifySignature = true;
+    RemoteSettings("ms-language-packs").verifySignature = true;
     Services.locale = localeService;
     await SpecialPowers.popPrefEnv();
     await stop();

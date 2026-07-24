@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_DocumentFragment_h__
-#define mozilla_dom_DocumentFragment_h__
+#ifndef mozilla_dom_DocumentFragment_h_
+#define mozilla_dom_DocumentFragment_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "nsStringFwd.h"
@@ -49,9 +48,7 @@ class DocumentFragment : public FragmentOrElement {
   }
 
   explicit DocumentFragment(nsNodeInfoManager* aNodeInfoManager)
-      : FragmentOrElement(aNodeInfoManager->GetNodeInfo(
-            nsGkAtoms::documentFragmentNodeName, nullptr, kNameSpaceID_None,
-            DOCUMENT_FRAGMENT_NODE)),
+      : FragmentOrElement(aNodeInfoManager->GetDocumentFragmentNodeInfo()),
         mHost(nullptr) {
     Init();
   }
@@ -112,4 +109,4 @@ inline const mozilla::dom::DocumentFragment* nsINode::AsDocumentFragment()
   return static_cast<const mozilla::dom::DocumentFragment*>(this);
 }
 
-#endif  // mozilla_dom_DocumentFragment_h__
+#endif  // mozilla_dom_DocumentFragment_h_

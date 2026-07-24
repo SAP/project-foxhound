@@ -25,13 +25,11 @@
 #ifndef mozilla_ErrorResult_h
 #define mozilla_ErrorResult_h
 
-#include <stdarg.h>
-
 #include <new>
 #include <utility>
 
-#include "js/GCAnnotations.h"
 #include "js/ErrorReport.h"
+#include "js/GCAnnotations.h"
 #include "js/Value.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -381,11 +379,11 @@ class TErrorResult {
                                                                \
   template <int N>                                             \
   void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw##name( \
-      const char(&aMessage)[N]) {                              \
+      const char (&aMessage)[N]) {                             \
     ThrowDOMException(err, aMessage);                          \
   }
 
-#include "mozilla/dom/DOMExceptionNames.h"
+#include "mozilla/dom/DOMExceptionNames.inc"
 
 #undef DOMEXCEPTION
 
@@ -401,7 +399,7 @@ class TErrorResult {
 
   // Check whether the TErrorResult says to just throw whatever is on
   // the JSContext already.
-  bool IsJSContextException() {
+  bool IsJSContextException() const {
     return ErrorCode() == NS_ERROR_INTERNAL_ERRORRESULT_EXCEPTION_ON_JSCONTEXT;
   }
 
@@ -481,11 +479,10 @@ class TErrorResult {
 
   friend struct IPC::ParamTraits<TErrorResult>;
   friend struct IPC::ParamTraits<ErrorResult>;
-  void SerializeMessage(IPC::MessageWriter* aWriter) const;
-  bool DeserializeMessage(IPC::MessageReader* aReader);
+  friend struct IPC::ParamTraits<CopyableErrorResult>;
 
-  void SerializeDOMExceptionInfo(IPC::MessageWriter* aWriter) const;
-  bool DeserializeDOMExceptionInfo(IPC::MessageReader* aReader);
+  void SerializeErrorResult(IPC::MessageWriter* aWriter) const;
+  bool DeserializeErrorResult(IPC::MessageReader* aReader);
 
   // Helper method that creates a new Message for this TErrorResult,
   // and returns the arguments array from that Message.

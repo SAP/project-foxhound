@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsStreamTransportService_h__
-#define nsStreamTransportService_h__
+#ifndef nsStreamTransportService_h_
+#define nsStreamTransportService_h_
 
 #include "nsIStreamTransportService.h"
 #include "nsIEventTarget.h"
@@ -11,7 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/Mutex.h"
 

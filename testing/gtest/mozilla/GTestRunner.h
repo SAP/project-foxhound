@@ -3,8 +3,13 @@
  * * License, v. 2.0. If a copy of the MPL was not distributed with this
  * * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef TESTING_GTEST_MOZILLA_GTESTRUNNER_H_
+#define TESTING_GTEST_MOZILLA_GTESTRUNNER_H_
+
 namespace mozilla {
 
 extern int (*RunGTest)(int*, char**);
 
 }  // namespace mozilla
+
+#endif  // TESTING_GTEST_MOZILLA_GTESTRUNNER_H_

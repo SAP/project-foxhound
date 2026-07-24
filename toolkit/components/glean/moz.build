@@ -11,10 +11,6 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
 
-EXPORTS.mozilla += [
-    "ipc/FOGIPC.h",
-]
-
 EXPORTS.mozilla.glean += [
     "!GleanMetrics.h",
     "!GleanPings.h",
@@ -23,38 +19,9 @@ EXPORTS.mozilla.glean += [
 EXPORTS.mozilla.glean.bindings += [
     "!GleanJSMetricsLookup.h",
     "!GleanJSPingsLookup.h",
-    "bindings/Category.h",
-    "bindings/EventGIFFTMap.h",
-    "bindings/Glean.h",
-    "bindings/GleanMetric.h",
-    "bindings/GleanPings.h",
-    "bindings/HistogramGIFFTMap.h",
-    "bindings/MetricTypes.h",
-    "bindings/private/Boolean.h",
-    "bindings/private/Common.h",
-    "bindings/private/Counter.h",
-    "bindings/private/CustomDistribution.h",
-    "bindings/private/Datetime.h",
-    "bindings/private/Denominator.h",
-    "bindings/private/DistributionData.h",
-    "bindings/private/DualLabeledCounter.h",
-    "bindings/private/Event.h",
-    "bindings/private/Labeled.h",
-    "bindings/private/MemoryDistribution.h",
-    "bindings/private/Numerator.h",
-    "bindings/private/Object.h",
-    "bindings/private/Ping.h",
-    "bindings/private/Quantity.h",
-    "bindings/private/Rate.h",
-    "bindings/private/String.h",
-    "bindings/private/StringList.h",
-    "bindings/private/Text.h",
-    "bindings/private/Timespan.h",
-    "bindings/private/TimingDistribution.h",
-    "bindings/private/Url.h",
-    "bindings/private/Uuid.h",
-    "bindings/ScalarGIFFTMap.h",
 ]
+
+include("glean.mozbuild")
 
 EXPORTS.mozilla.glean.bindings.jog += [
     "bindings/jog/JOG.h",
@@ -79,6 +46,7 @@ UNIFIED_SOURCES += [
     "bindings/Glean.cpp",
     "bindings/GleanMetric.cpp",
     "bindings/GleanPings.cpp",
+    "bindings/GleanWebIDL.cpp",
     "bindings/jog/JOG.cpp",
     "bindings/private/Boolean.cpp",
     "bindings/private/Common.cpp",
@@ -136,13 +104,11 @@ if CONFIG["MOZ_GLEAN_EXTRA_TAGS_FILES"]:
     tags_yamls.extend(CONFIG["MOZ_GLEAN_EXTRA_TAGS_FILES"])
     tags_yamls = sorted(tags_yamls)
 
-metrics_headers = sorted(
-    {
-        convert_yaml_path_to_header_name(path) + ".h"
-        for path in metrics_yamls
-        if path != "toolkit/components/glean/metrics.yaml"
-    }
-)
+metrics_headers = sorted({
+    convert_yaml_path_to_header_name(path) + ".h"
+    for path in metrics_yamls
+    if path != "toolkit/components/glean/metrics.yaml"
+})
 EXPORTS.mozilla.glean += [("!" + filename) for filename in metrics_headers]
 
 # GeneratedFile's `inputs` are relative to our dir.

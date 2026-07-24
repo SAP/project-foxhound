@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
@@ -13,14 +14,17 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
 
 class AboutURITest : TestSetup() {
     @get:Rule
-    val activityIntentTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2944327
     @Test
     fun verifyWebCompatPageIsLoadingTest() {
         val webCompatPage = "about:compat"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(webCompatPage.toUri()) {
             verifyUrl(webCompatPage)
 

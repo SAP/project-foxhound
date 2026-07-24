@@ -25,30 +25,29 @@ import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.lib.state.ext.consumeFlow
 import mozilla.components.lib.state.ext.observe
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentTrackingProtectionBinding
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
+import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
+import com.google.android.material.R as materialR
 
 @Suppress("TooManyFunctions")
 class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
@@ -57,8 +56,8 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
 
     private fun inflateRootView(container: ViewGroup? = null): View {
         val contextThemeWrapper = ContextThemeWrapper(
-            activity,
-            (activity as HomeActivity).themeManager.currentThemeResource,
+            requireContext(),
+            requireActivity().theme,
         )
         return LayoutInflater.from(contextThemeWrapper).inflate(
             R.layout.fragment_tracking_protection,
@@ -87,9 +86,9 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
         val view = inflateRootView(container)
         val tab = store.state.findTabOrCustomTab(provideCurrentTabId())
 
-        protectionsStore = StoreProvider.get(this) {
+        protectionsStore = storeProvider.get { restoredState ->
             ProtectionsStore(
-                ProtectionsState(
+                restoredState ?: ProtectionsState(
                     tab = tab,
                     url = args.url,
                     isTrackingProtectionEnabled = args.trackingProtectionEnabled,
@@ -104,7 +103,7 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
             context = requireContext(),
             fragment = this,
             store = protectionsStore,
-            ioScope = viewLifecycleOwner.lifecycleScope + Dispatchers.IO,
+            scope = viewLifecycleOwner.lifecycleScope,
             cookieBannersStorage = requireComponents.core.cookieBannersStorage,
             navController = { findNavController() },
             openTrackingProtectionSettings = ::openTrackingProtectionSettings,
@@ -115,7 +114,11 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
         )
         val binding = FragmentTrackingProtectionBinding.bind(view)
         trackingProtectionView =
-            TrackingProtectionPanelView(binding.fragmentTp, trackingProtectionInteractor)
+            TrackingProtectionPanelView(
+                containerView = binding.fragmentTp,
+                settings = requireContext().settings(),
+                interactor = trackingProtectionInteractor,
+            )
         tab?.let { updateTrackers(it) }
         return view
     }
@@ -157,12 +160,13 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
     }
 
     private fun handleLearnMoreClicked() {
-        (activity as HomeActivity).openToBrowserAndLoad(
-            searchTermOrURL = SupportUtils.getGenericSumoURLForTopic(
-                SupportUtils.SumoTopic.SMARTBLOCK,
-            ),
+        val url = SupportUtils.getGenericSumoURLForTopic(
+            SupportUtils.SumoTopic.SMARTBLOCK,
+        )
+        findNavController().openToBrowser()
+        requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+            searchTermOrURL = url,
             newTab = true,
-            from = BrowserDirection.FromTrackingProtectionDialog,
         )
     }
 
@@ -170,8 +174,7 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
         return if (args.gravity == Gravity.BOTTOM) {
             BottomSheetDialog(requireContext(), this.theme).apply {
                 setOnShowListener {
-                    val bottomSheet =
-                        findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+                    val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                     val behavior = BottomSheetBehavior.from(bottomSheet)
                     behavior.state = BottomSheetBehavior.STATE_EXPANDED
                 }

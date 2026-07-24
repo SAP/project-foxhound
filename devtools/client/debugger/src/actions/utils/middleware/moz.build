@@ -8,8 +8,5 @@ DIRS += []
 CompiledModules(
     "context.js",
     "log.js",
-    "promise.js",
-    "thunk.js",
     "timing.js",
-    "wait-service.js",
 )

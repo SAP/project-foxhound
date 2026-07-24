@@ -11,6 +11,7 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for MicroTaskRunnable
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CustomElementRegistryBinding.h"
 #include "mozilla/dom/Document.h"
@@ -18,11 +19,10 @@
 #include "mozilla/dom/ElementInternals.h"
 #include "mozilla/dom/ElementInternalsBinding.h"
 #include "mozilla/dom/HTMLFormElement.h"
-#include "mozilla/RefPtr.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsTHashSet.h"
 #include "nsAtomHashKeys.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsTHashSet.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -41,6 +41,7 @@ enum class ElementCallbackType {
   eConnected,
   eDisconnected,
   eAdopted,
+  eConnectedMove,
   eAttributeChanged,
   eFormAssociated,
   eFormReset,

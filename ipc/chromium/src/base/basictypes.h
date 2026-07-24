@@ -13,7 +13,6 @@
 
 #include "base/port.h"  // Types that only need exist on certain systems
 
-#include "mozilla/Assertions.h"
 #include "mozilla/IntegerPrintfMacros.h"
 
 // A type to represent a Unicode code-point value. As of Unicode 4.0,

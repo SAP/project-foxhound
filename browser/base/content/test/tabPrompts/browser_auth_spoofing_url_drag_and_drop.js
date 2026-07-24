@@ -22,7 +22,7 @@ const AUTH_URL = TEST_PATH_AUTH + "auth-route.sjs";
 /**
  * Opens a new tab with a url that ether redirects us cross or same domain
  *
- * @param {Boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
+ * @param {boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
  *        if false, we will open a url that redirects us to a same domain url
  */
 async function trigger401AndHandle(crossDomain) {

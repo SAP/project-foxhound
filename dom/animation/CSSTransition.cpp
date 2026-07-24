@@ -7,10 +7,10 @@
 #include "CSSTransition.h"
 
 #include "mozilla/AnimationEventDispatcher.h"
-#include "mozilla/dom/CSSTransitionBinding.h"
-#include "mozilla/dom/KeyframeEffectBinding.h"
-#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/CSSTransitionBinding.h"
+#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/KeyframeEffectBinding.h"
 #include "nsPresContext.h"
 
 namespace mozilla::dom {
@@ -213,7 +213,7 @@ void CSSTransition::Tick(TickState& aState) {
   QueueEvents();
 }
 
-const AnimatedPropertyID& CSSTransition::TransitionProperty() const {
+const CSSPropertyId& CSSTransition::TransitionProperty() const {
   MOZ_ASSERT(mTransitionProperty.IsValid(),
              "Transition property should be initialized");
   return mTransitionProperty;

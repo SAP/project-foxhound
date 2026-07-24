@@ -8,7 +8,6 @@
 #define nsMediaSniffer_h
 
 #include "nsIContentSniffer.h"
-#include "mozilla/Attributes.h"
 
 // ed905ba3-c656-480e-934e-6bc35bd36aff
 #define NS_MEDIA_SNIFFER_CID \

@@ -79,7 +79,11 @@ mozilla::ipc::IPCResult APZChild::RecvNotifyMozMouseScrollEvent(
 mozilla::ipc::IPCResult APZChild::RecvNotifyAPZStateChange(
     const ScrollableLayerGuid& aGuid, const APZStateChange& aChange,
     const int& aArg, Maybe<uint64_t> aInputBlockId) {
-  mController->NotifyAPZStateChange(aGuid, aChange, aArg, aInputBlockId);
+  MOZ_ASSERT(mController->IsRepaintThread());
+  EnsureAPZTaskRunnable();
+
+  mAPZTaskRunnable->QueueAPZStateChange(aGuid, aChange, aArg, aInputBlockId);
+
   return IPC_OK();
 }
 

@@ -21,7 +21,7 @@ namespace mozilla {
 
 /* static */
 DisplayItemType LayerAnimationInfo::GetDisplayItemTypeForProperty(
-    nsCSSPropertyID aProperty) {
+    NonCustomCSSPropertyId aProperty) {
   switch (aProperty) {
     case eCSSProperty_background_color:
       return DisplayItemType::TYPE_BACKGROUND_COLOR;

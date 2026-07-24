@@ -8,7 +8,6 @@
 #define mozilla_dom_VideoColorSpace_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"

@@ -65,6 +65,23 @@ $ git wip
 ... etc
 ```
 
+## `git-absorb`: Automatically fixup! commits
+
+[`git-absorb`](https://github.com/tummychow/git-absorb) automatically creates
+fixup commits for your staged changes. It analyzes your changes and determines
+which commits they should be integrated into.
+
+Install with:
+```
+$ cargo install git-absorb
+```
+
+Usage:
+```
+$ git add -p
+$ git absorb --and-rebase
+```
+
 ## Git Maintenance
 
 [Git maintenance](https://git-scm.com/docs/git-maintenance) can set up a job to
@@ -77,3 +94,34 @@ $ git maintenance start
 ```
 
 For more advanced configuration please see the doc linked above.
+
+(git-mercurial-transplant)=
+## Transplanting Patches To and From Mercurial Repositories
+
+A simple mercurial changeset series can be transplanted to a git repository for the current directory using:
+```bash
+for id in `hg --repository $mercurial_repository_root log --template '{node|short} ' --rev $ancestor_first_revset`; do
+  hg --repository $mercurial_repository_root export $id | git am --patch-format=hg || break
+done
+```
+`git am` fails with the following output if `--patch-format=hg` is missing:
+> ```text
+> Applying: # HG changeset patch
+> fatal: empty ident name (for <>) not allowed
+> ```
+
+A simple git commit series can be transplanted to a mercurial repository for the current directory using:
+```bash
+git -C $git_work_tree_dir format-patch --stdout --find-copies $since_or_revision_range | hg import -
+```
+
+[git-cinnabar](https://github.com/glandium/git-cinnabar) can
+[fetch](https://github.com/glandium/git-cinnabar?tab=readme-ov-file#fetching-a-specific-mercurial-changeset)
+changesets with their ancestors from mercurial repositories, such as
+https://hg.mozilla.org/try/ or local repositories, with histories matching the
+git repository.  Fetching from https://hg.mozilla.org/mozilla-central/ or
+https://hg.mozilla.org/mozilla-unified/ first can make fetches from other
+mercurial repositories much faster.  After fetching from a mercurial
+repository, git commits and their ancestors not fetched from that mercurial
+repository can be pushed to that mercurial repository or to a clone of that
+mercurial repository.

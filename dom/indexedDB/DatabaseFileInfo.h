@@ -8,7 +8,6 @@
 #define DOM_INDEXEDDB_DATABASEFILEINFO_H_
 
 #include "DatabaseFileInfoFwd.h"
-
 #include "DatabaseFileManager.h"
 #include "FileInfo.h"
 

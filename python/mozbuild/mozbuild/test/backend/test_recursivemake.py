@@ -983,7 +983,7 @@ class TestRecursiveMakeBackend(BackendTester):
             "HOST_RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libhostrusttool.a",
             "CARGO_FILE := $(srcdir)/Cargo.toml",
             "CARGO_TARGET_DIR := %s" % env.topobjdir,
-            "HOST_RUST_LIBRARY_FEATURES := musthave cantlivewithout",
+            "HOST_RUST_LIBRARY_FEATURES := musthave,cantlivewithout",
         ]
 
         self.assertEqual(lines, expected)
@@ -1004,7 +1004,51 @@ class TestRecursiveMakeBackend(BackendTester):
             "RUST_LIBRARY_FILE := x86_64-unknown-linux-gnu/release/libfeature_library.a",
             "CARGO_FILE := $(srcdir)/Cargo.toml",
             "CARGO_TARGET_DIR := %s" % env.topobjdir,
-            "RUST_LIBRARY_FEATURES := musthave cantlivewithout",
+            "RUST_LIBRARY_FEATURES := musthave,cantlivewithout",
+        ]
+
+        self.assertEqual(lines, expected)
+
+    def test_rust_program_with_features(self):
+        """Test that a Rust program with features is written to backend.mk correctly."""
+        env = self._consume("rust-program-features", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            # Strip out computed flags, they're a PITA to test.
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            f"CARGO_FILE := {env.topsrcdir}/Cargo.toml",
+            f"CARGO_TARGET_DIR := {env.topobjdir}",
+            "RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-program-features.exe",
+            "RUST_CARGO_PROGRAMS += test-program-features",
+            "RUST_PROGRAM_FEATURES := musthave,cantlivewithout",
+        ]
+
+        self.assertEqual(lines, expected)
+
+    def test_host_rust_program_with_features(self):
+        """Test that a host Rust program with features is written to backend.mk correctly."""
+        env = self._consume("host-rust-program-features", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            # Strip out computed flags, they're a PITA to test.
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            f"CARGO_FILE := {env.topsrcdir}/Cargo.toml",
+            f"CARGO_TARGET_DIR := {env.topobjdir}",
+            "HOST_RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-features.exe",
+            "HOST_RUST_CARGO_PROGRAMS += test-host-program-features",
+            "HOST_RUST_PROGRAM_FEATURES := musthave,cantlivewithout",
         ]
 
         self.assertEqual(lines, expected)

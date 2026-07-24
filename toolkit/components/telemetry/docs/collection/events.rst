@@ -167,47 +167,6 @@ Also, the ``event-telemetry-storage-limit-reached`` topic is notified when the e
 limit is reached (1000 event records).
 This is intended only for use internally or in tests.
 
-.. _events.event-summary:
-
-Event Summary
-=============
-
-Calling ``recordEvent`` on any non-expired registered event will accumulate to a
-:doc:`Scalar <scalars>` for ease of analysing uptake and usage patterns. Even if the event category
-isn't enabled.
-
-The scalar is ``telemetry.event_counts`` for statically-registered events (the ones in
-``Events.yaml``) and ``telemetry.dynamic_event_counts`` for dynamically-registered events (the ones
-registered via ``registerEvents``). These are :ref:`keyed scalars <scalars.keyed-scalars>` where
-the keys are of the form ``category#method#object`` and the values are counts of the number of
-times ``recordEvent`` was called with that combination of ``category``, ``method``, and ``object``.
-
-These two scalars have a default maximum key limit of 500 per process.
-
-Example:
-
-.. code-block:: js
-
-  // telemetry.event_counts summarizes in the same process the events were recorded
-
-  // Let us suppose in the parent process this happens:
-  Services.telemetry.recordEvent("interaction", "click", "document", "xuldoc");
-  Services.telemetry.recordEvent("interaction", "click", "document", "xuldoc-neighbour");
-
-  // And in each of child processes 1 through 4, this happens:
-  Services.telemetry.recordEvent("interaction", "click", "document", "htmldoc");
-
-In the case that ``interaction.click.document`` is statically-registered, this will result in the
-parent-process scalar ``telemetry.event_counts`` having a key ``interaction#click#document`` with
-value ``2`` and the content-process scalar ``telemetry.event_counts`` having a key
-``interaction#click#document`` with the value ``4``.
-
-All dynamically-registered events end up in the dynamic-process ``telemetry.dynamic_event_counts``
-(notice the different name) regardless of in which process the events were recorded. From the
-example above, if ``interaction.click.document`` was registered with ``registerEvents`` then
-the dynamic-process scalar ``telemetry.dynamic_event_counts`` would have a key
-``interaction#click#document`` with the value ``6``.
-
 Testing
 =======
 
@@ -226,6 +185,7 @@ Tests involving Event Telemetry often follow this three-step form:
 Version History
 ===============
 
+- Firefox 149: Remove Event Summary (`bug 2012188 <https://bugzilla.mozilla.org/show_bug.cgi?id=2012188>`_).
 - Firefox 134: Remove ``operating_systems`` (`bug 1925369 <https://bugzilla.mozilla.org/show_bug.cgi?id=1925369>`_).
 - Firefox 132: recordEvent|registerEvents deprecation and removal (see `bug 1863031 <https://bugzilla.mozilla.org/show_bug.cgi?id=1863031>`__).
 - Firefox 79:  ``geckoview`` support removed (see `bug 1620395 <https://bugzilla.mozilla.org/show_bug.cgi?id=1620395>`__).

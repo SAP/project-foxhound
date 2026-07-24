@@ -4,10 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsconsolemessage_h__
-#define __nsconsolemessage_h__
-
-#include "mozilla/Attributes.h"
+#ifndef _nsconsolemessage_h_
+#define _nsconsolemessage_h_
 
 #include "nsIConsoleMessage.h"
 #include "nsString.h"
@@ -28,4 +26,4 @@ class nsConsoleMessage final : public nsIConsoleMessage {
   bool mIsForwardedFromContentProcess;
 };
 
-#endif /* __nsconsolemessage_h__ */
+#endif /* _nsconsolemessage_h_ */

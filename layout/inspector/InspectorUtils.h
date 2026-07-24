@@ -8,7 +8,6 @@
 #ifndef mozilla_dom_InspectorUtils_h
 #define mozilla_dom_InspectorUtils_h
 
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/InspectorUtilsBinding.h"
 #include "nsLayoutUtils.h"
 
@@ -106,6 +105,17 @@ class InspectorUtils {
   // Utilities for working with CSS colors
   static void RgbToColorName(GlobalObject& aGlobal, uint8_t aR, uint8_t aG,
                              uint8_t aB, nsACString& aResult);
+
+  static void RgbToNearestColorName(GlobalObject&, float aR, float aG, float aB,
+                                    InspectorNearestColor& aResult);
+
+  static void RgbToHsv(GlobalObject&, float aR, float aG, float aB,
+                       nsTArray<float>& aResult);
+
+  static void HsvToRgb(GlobalObject&, float aH, float aS, float aV,
+                       nsTArray<float>& aResult);
+
+  static float RelativeLuminance(GlobalObject&, float aR, float aG, float aB);
 
   // Convert a given CSS color string to rgba. Returns null on failure or an
   // InspectorRGBATuple on success.
@@ -232,6 +242,8 @@ class InspectorUtils {
 
   static Element* ContainingBlockOf(GlobalObject&, Element&);
 
+  static bool IsBlockContainer(GlobalObject&, Element&);
+
   static void GetBlockLineCounts(GlobalObject&, Element&,
                                  Nullable<nsTArray<uint32_t>>& aResult);
 
@@ -297,10 +309,13 @@ class InspectorUtils {
       nsACString& aNewStyleSheetText);
 
   static void SetVerticalClipping(GlobalObject&, BrowsingContext* aContext,
-                                  mozilla::ScreenIntCoord aOffset);
+                                  mozilla::CSSCoord aOffset);
   static void SetDynamicToolbarMaxHeight(GlobalObject&,
                                          BrowsingContext* aContext,
-                                         mozilla::ScreenIntCoord aHeight);
+                                         mozilla::CSSCoord aHeight);
+  static uint16_t GetGridContainerType(GlobalObject&, Element&);
+  static void GetAnchorFor(GlobalObject&, Element&, const nsAString& aName,
+                           Nullable<InspectorAnchorElement>&);
 };
 
 }  // namespace mozilla::dom

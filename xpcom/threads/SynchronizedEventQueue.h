@@ -39,7 +39,7 @@ class ThreadTargetSink {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadTargetSink)
 
-  virtual bool PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+  virtual bool PutEvent(RefPtr<nsIRunnable>& aEvent,
                         EventQueuePriority aPriority) = 0;
 
   // After this method is called, no more events can be posted.

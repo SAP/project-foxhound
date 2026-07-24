@@ -9,8 +9,8 @@
 
 #include "CacheCipherKeyManager.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/cache/Types.h"
 #include "nsISupportsImpl.h"
 
 class mozIStorageConnection;

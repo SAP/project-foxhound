@@ -53,7 +53,7 @@ prefs = ["security.allow_unsafe_parent_loads=true"] # This is far from ideal. Bu
 # We want this test to run for mochitest-dt as well, so we include it here
 skip-if = [
   "debug", # no point in running on both opt and debug, and will likely intermittently timeout on debug, Bug 1598726
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
 ]
 
 ["../../../../browser/base/content/test/static/browser_parsable_css.js"]
@@ -97,14 +97,12 @@ skip-if = [
 
 ["browser_source_map-no-race.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_source_map-pub-sub.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_source_map-reload.js"]
@@ -113,10 +111,9 @@ skip-if = [
 
 ["browser_tab_descriptor_fission.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1966872
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1966872
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1966872
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1966872
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1966872
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1966872
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1966872
 ]
 
 ["browser_target_cached-front.js"]
@@ -131,8 +128,7 @@ skip-if = [
 
 ["browser_target_parents.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1897912
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1897912
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1897912
 ]
 
 ["browser_target_remote.js"]
@@ -149,8 +145,12 @@ skip-if = [
 
 ["browser_toolbox_connecting_with_frozen_process.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan",
+]
+
+["browser_toolbox_content_modal_overlap.js"]
+skip-if = [
+  "a11y_checks", # we only click in the toolbox area for it to get focused, no need to check that the actual target is accessible
 ]
 
 ["browser_toolbox_contentpage_contextmenu.js"]
@@ -176,7 +176,9 @@ skip-if = [
 ["browser_toolbox_hosts.js"]
 
 ["browser_toolbox_hosts_size.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_hosts_telemetry.js"]
 
@@ -184,12 +186,13 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_toolbox_keyboard_navigation_notification_box.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_toolbox_many_toggles.js"]
-run-if = ["os != 'win'"] # Content process killing throws on Window
+run-if = [
+  "os != 'win'", # Content process killing throws on Window
+]
 
 ["browser_toolbox_meatball.js"]
 
@@ -203,16 +206,14 @@ run-if = ["os != 'win'"] # Content process killing throws on Window
 
 ["browser_toolbox_options_disable_cache-03.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_toolbox_options_disable_js.js"]
 
 ["browser_toolbox_options_enable_serviceworkers_testing.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_toolbox_options_frames_button.js"]
@@ -240,6 +241,8 @@ disabled = "Bug 962258"
 
 ["browser_toolbox_selectionchanged_event.js"]
 
+["browser_toolbox_server_error.js"]
+
 ["browser_toolbox_show_toolbox_tool_ready.js"]
 
 ["browser_toolbox_split_console.js"]
@@ -261,31 +264,45 @@ disabled = "Bug 962258"
 ["browser_toolbox_theme_registration.js"]
 
 ["browser_toolbox_toggle.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1767761
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1767761
+]
 
 ["browser_toolbox_tool_ready.js"]
 
 ["browser_toolbox_tool_remote_reopen.js"]
 
 ["browser_toolbox_toolbar_minimum_width.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_toolbar_overflow.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_toolbar_overflow_button_visibility.js"]
 
 ["browser_toolbox_toolbar_reorder_by_dnd.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_toolbar_reorder_by_width.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_toolbar_reorder_with_extension.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_toolbar_reorder_with_hidden_extension.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_toolbox_tools_per_toolbox_registration.js"]
 
@@ -297,12 +314,13 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_toolbox_view_source_style_editor_fallback.js"]
 
+["browser_toolbox_visibility.js"]
+
 ["browser_toolbox_watchedByDevTools.js"]
 
 ["browser_toolbox_window_global_debugging.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1950845
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1950845
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1950845
 ]
 
 ["browser_toolbox_window_reload_target.js"]
@@ -322,4 +340,6 @@ skip-if = [
 ["browser_webextension_descriptor.js"]
 
 ["browser_webextension_dropdown.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks"] # Bug 1781498
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1781498
+]

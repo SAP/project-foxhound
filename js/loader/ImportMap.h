@@ -11,7 +11,6 @@
 #include <map>
 
 #include "js/SourceText.h"
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
@@ -80,7 +79,7 @@ class ImportMap {
    * https://html.spec.whatwg.org/multipage/webappapis.html#parse-an-import-map-string
    */
   static mozilla::UniquePtr<ImportMap> ParseString(
-      JSContext* aCx, JS::SourceText<char16_t>& aInput, nsIURI* aBaseURL,
+      JSContext* aCx, SourceText<char16_t>& aInput, nsIURI* aBaseURL,
       const ReportWarningHelper& aWarning);
 
   /**

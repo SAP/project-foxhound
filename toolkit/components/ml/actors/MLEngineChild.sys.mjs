@@ -5,20 +5,14 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 /**
- * @typedef {import("../../promiseworker/PromiseWorker.sys.mjs").BasePromiseWorker} BasePromiseWorker
+ * @import { BasePromiseWorker } from "resource://gre/modules/PromiseWorker.sys.mjs"
+ * @import { PipelineOptions } from "chrome://global/content/ml/EngineProcess.sys.mjs"
+ * @import { EngineStatus, EngineId, StatusByEngineId, PipelineOptionsRaw } from "../ml.d.ts"
+ * @import { ProgressAndStatusCallbackParams } from "chrome://global/content/ml/Utils.sys.mjs"
+ * @import { MLEngineParent } from "./MLEngineParent.sys.mjs"
  */
 
-/**
- * @typedef {object} Lazy
- * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
- * @property {typeof import("../../promiseworker/PromiseWorker.sys.mjs").BasePromiseWorker} BasePromiseWorker
- * @property {typeof setTimeout} setTimeout
- * @property {typeof clearTimeout} clearTimeout
- */
-
-/** @type {Lazy} */
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   BasePromiseWorker: "resource://gre/modules/PromiseWorker.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -26,44 +20,24 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DEFAULT_ENGINE_ID: "chrome://global/content/ml/EngineProcess.sys.mjs",
   DEFAULT_MODELS: "chrome://global/content/ml/EngineProcess.sys.mjs",
   WASM_BACKENDS: "chrome://global/content/ml/EngineProcess.sys.mjs",
+  BACKENDS: "chrome://global/content/ml/EngineProcess.sys.mjs",
+  console: () =>
+    console.createInstance({
+      maxLogLevelPref: "browser.ml.logLevel",
+      prefix: "GeckoMLEngineChild",
+    }),
+  // Prefs:
+  CACHE_TIMEOUT_MS: { pref: "browser.ml.modelCacheTimeout" },
+  MODEL_HUB_ROOT_URL: { pref: "browser.ml.modelHubRootUrl" },
+  MODEL_HUB_URL_TEMPLATE: { pref: "browser.ml.modelHubUrlTemplate" },
+  LOG_LEVEL: { pref: "browser.ml.logLevel" },
+  PIPELINE_OVERRIDE_OPTIONS: {
+    pref: "browser.ml.overridePipelineOptions",
+    default: "{}",
+  },
+  // Services
+  mlUtils: { service: "@mozilla.org/ml-utils;1", iid: Ci.nsIMLUtils },
 });
-
-ChromeUtils.defineLazyGetter(lazy, "console", () => {
-  return console.createInstance({
-    maxLogLevelPref: "browser.ml.logLevel",
-    prefix: "GeckoMLEngineChild",
-  });
-});
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "CACHE_TIMEOUT_MS",
-  "browser.ml.modelCacheTimeout"
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "MODEL_HUB_ROOT_URL",
-  "browser.ml.modelHubRootUrl"
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "MODEL_HUB_URL_TEMPLATE",
-  "browser.ml.modelHubUrlTemplate"
-);
-XPCOMUtils.defineLazyPreferenceGetter(lazy, "LOG_LEVEL", "browser.ml.logLevel");
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "mlUtils",
-  "@mozilla.org/ml-utils;1",
-  "nsIMLUtils"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "PIPELINE_OVERRIDE_OPTIONS",
-  "browser.ml.overridePipelineOptions",
-  "{}"
-);
 
 const SAFE_OVERRIDE_OPTIONS = [
   "dtype",
@@ -88,12 +62,17 @@ export class MLEngineChild extends JSProcessActorChild {
   #engineDispatchers = new Map();
 
   /**
-   * Engine statuses
+   * Tracks that an engine is present, even if the dispatcher is not present yet.
    *
-   * @type {Map<string, string>}
+   * @type {Map<EngineId, PipelineOptions>}
    */
-  #engineStatuses = new Map();
+  #enginesPresent = new Map();
 
+  /**
+   * @param {object} message
+   * @param {string} message.name
+   * @param {any} message.data
+   */
   // eslint-disable-next-line consistent-return
   async receiveMessage({ name, data }) {
     switch (name) {
@@ -101,8 +80,8 @@ export class MLEngineChild extends JSProcessActorChild {
         await this.#onNewPortCreated(data);
         break;
       }
-      case "MLEngine:GetStatus": {
-        return this.getStatus();
+      case "MLEngine:GetStatusByEngineId": {
+        return this.getStatusByEngineId();
       }
       case "MLEngine:ForceShutdown": {
         for (const engineDispatcher of this.#engineDispatchers.values()) {
@@ -140,20 +119,20 @@ export class MLEngineChild extends JSProcessActorChild {
         this.getUpdatedPipelineOptions(pipelineOptions);
       options.updateOptions(updatedPipelineOptions);
       const engineId = options.engineId;
-      this.#engineStatuses.set(engineId, "INITIALIZING");
+      if (!engineId) {
+        throw new Error("Expected an engineId, but none was present.");
+      }
+      this.#enginesPresent.set(engineId, options);
 
       // Check if we already have an engine under this id.
-      if (this.#engineDispatchers.has(engineId)) {
-        let currentEngineDispatcher = this.#engineDispatchers.get(engineId);
-
+      let currentEngineDispatcher = this.#engineDispatchers.get(engineId);
+      if (currentEngineDispatcher) {
         // The option matches, let's reuse the engine
-        if (currentEngineDispatcher.pipelineOptions.equals(options)) {
+        if (currentEngineDispatcher.pipelineOptions?.equals(options)) {
           port.postMessage({
             type: "EnginePort:EngineReady",
             error: null,
           });
-          this.#engineStatuses.set(engineId, "READY");
-
           return;
         }
 
@@ -165,8 +144,6 @@ export class MLEngineChild extends JSProcessActorChild {
         this.#engineDispatchers.delete(engineId);
       }
 
-      this.#engineStatuses.set(engineId, "CREATING");
-
       const dispatcher = new EngineDispatcher(this, port, options);
       this.#engineDispatchers.set(engineId, dispatcher);
 
@@ -177,10 +154,9 @@ export class MLEngineChild extends JSProcessActorChild {
       // NOTE: This is done after adding to #engineDispatchers to ensure other
       // async calls see the new dispatcher.
       if (!lazy.PipelineOptions.isMocked(pipelineOptions)) {
-        await dispatcher.ensureInferenceEngineIsReady();
+        await dispatcher.isReady();
       }
 
-      this.#engineStatuses.set(engineId, "READY");
       port.postMessage({
         type: "EnginePort:EngineReady",
         error: null,
@@ -196,7 +172,7 @@ export class MLEngineChild extends JSProcessActorChild {
   /**
    * Gets the wasm array buffer from RemoteSettings.
    *
-   * @param {string} backend - The ML engine for which the WASM buffer is requested.
+   * @param {?string} backend - The ML engine for which the WASM buffer is requested.
    * @returns {Promise<ArrayBuffer>}
    */
   getWasmArrayBuffer(backend) {
@@ -206,15 +182,29 @@ export class MLEngineChild extends JSProcessActorChild {
   /**
    * Gets the configuration of the worker
    *
-   * @returns {Promise<object>}
+   * @returns {Promise<ReturnType<typeof MLEngineParent.getWorkerConfig>>}
    */
   getWorkerConfig() {
     return this.sendQuery("MLEngine:GetWorkerConfig");
   }
 
   /**
+   * Selects the most appropriate backend for the current environment.
+   *
+   * @static
+   * @param {?string} backend - Requested backend or an auto-select sentinel.
+   * @returns {Promise<string>} Resolved backend identifier.
+   */
+  chooseBestBackend(backend) {
+    return this.sendQuery("MLEngine:ChooseBestBackend", backend);
+  }
+
+  /**
    * Gets the inference options from RemoteSettings.
    *
+   * @param {string | null} featureId
+   * @param {string | null} taskName
+   * @param {string | null} modelId
    * @returns {Promise<object>}
    */
   getInferenceOptions(featureId, taskName, modelId) {
@@ -248,55 +238,75 @@ export class MLEngineChild extends JSProcessActorChild {
    * Removes an engine by its ID. Optionally shuts down if no engines remain.
    *
    * @param {string} engineId - The ID of the engine to remove.
-   * @param {boolean} [shutDownIfEmpty] - If true, shuts down the engine process if no engines remain.
+   * @param {boolean} shutDownIfEmpty - If true, shuts down the engine process if no engines remain.
    * @param {boolean} replacement - Flag indicating whether the engine is being replaced.
    */
-  removeEngine(engineId, shutDownIfEmpty, replacement) {
+  async removeEngine(engineId, shutDownIfEmpty, replacement) {
     this.#engineDispatchers.delete(engineId);
-    this.#engineStatuses.delete(engineId);
+    this.#enginesPresent.delete(engineId);
 
-    this.sendAsyncMessage("MLEngine:Removed", {
-      engineId,
-      shutdown: shutDownIfEmpty,
-      replacement,
-    });
+    try {
+      await this.sendQuery("MLEngine:Removed", {
+        engineId,
+        shutdown: shutDownIfEmpty,
+        replacement,
+      });
+    } catch (error) {
+      lazy.console.error("Failed to send MLEngine:Removed", error);
+    }
 
     if (this.#engineDispatchers.size === 0 && shutDownIfEmpty) {
-      this.sendAsyncMessage("MLEngine:DestroyEngineProcess");
+      try {
+        await this.sendQuery("MLEngine:DestroyEngineProcess");
+      } catch (error) {
+        lazy.console.error(
+          "Failed to send MLEngine:DestroyEngineProcess",
+          error
+        );
+      }
     }
   }
 
   /**
    * Collects information about the current status.
+   *
+   * @returns {StatusByEngineId}
    */
-  async getStatus() {
+  getStatusByEngineId() {
+    /** @type {StatusByEngineId} */
     const statusMap = new Map();
 
-    for (const [key, value] of this.#engineStatuses) {
-      if (this.#engineDispatchers.has(key)) {
-        statusMap.set(key, this.#engineDispatchers.get(key).getStatus());
-      } else {
-        // The engine is probably being created
-        statusMap.set(key, { status: value });
+    for (let [engineId, options] of this.#enginesPresent) {
+      const dispatcher = this.#engineDispatchers.get(engineId);
+      let status = dispatcher?.getStatus();
+      if (!status) {
+        // This engine doesn't have a dispatcher yet.
+        status = {
+          status: "SHUTTING_DOWN_PREVIOUS_ENGINE",
+          options,
+        };
       }
+      statusMap.set(engineId, status);
     }
     return statusMap;
   }
 
   /**
    * @param {PipelineOptions} pipelineOptions - options that we want to safely override
-   * @returns {object} - updated pipeline options
+   * @returns {PipelineOptionsRaw} - updated pipeline options
    */
   getUpdatedPipelineOptions(pipelineOptions) {
     const overrideOptionsByFeature = JSON.parse(lazy.PIPELINE_OVERRIDE_OPTIONS);
+    /** @type {any} - This is hard to type check. */
     const overrideOptions = {};
-    if (overrideOptionsByFeature.hasOwnProperty(pipelineOptions.featureId)) {
-      for (let key of Object.keys(
-        overrideOptionsByFeature[pipelineOptions.featureId]
-      )) {
+    const { featureId } = pipelineOptions;
+    if (
+      featureId &&
+      overrideOptionsByFeature.hasOwnProperty(pipelineOptions.featureId)
+    ) {
+      for (let key of Object.keys(overrideOptionsByFeature[featureId])) {
         if (SAFE_OVERRIDE_OPTIONS.includes(key)) {
-          overrideOptions[key] =
-            overrideOptionsByFeature[pipelineOptions.featureId][key];
+          overrideOptions[key] = overrideOptionsByFeature[featureId][key];
         }
       }
     }
@@ -312,19 +322,16 @@ class EngineDispatcher {
   /** @type {MessagePort | null} */
   #port = null;
 
-  /** @type {TimeoutID | null} */
+  /** @type {number | null} */
   #keepAliveTimeout = null;
 
-  /** @type {PromiseWithResolvers} */
-  #modelRequest;
+  /** @type {Promise<InferenceEngine>} */
+  #engine;
 
-  /** @type {Promise<Engine> | null} */
-  #engine = null;
-
-  /** @type {string} */
+  /** @type {?string} */
   #taskName;
 
-  /** @type {string} */
+  /** @type {?string} */
   #featureId;
 
   /** @type {string} */
@@ -333,7 +340,7 @@ class EngineDispatcher {
   /** @type {PipelineOptions | null} */
   pipelineOptions = null;
 
-  /** @type {string} */
+  /** @type {EngineStatus} */
   #status;
 
   /**
@@ -348,7 +355,7 @@ class EngineDispatcher {
    *
    * @param {PipelineOptions} pipelineOptions
    * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback The callback to call for updating about notifications such as dowload progress status.
-   * @returns {Promise<Engine>}
+   * @returns {Promise<InferenceEngine>}
    */
   async initializeInferenceEngine(pipelineOptions, notificationsCallback) {
     let remoteSettingsOptions = await this.mlEngineChild.getInferenceOptions(
@@ -363,7 +370,10 @@ class EngineDispatcher {
 
     // If the merged options don't have a modelId and we have a default modelId, we set it
     if (!mergedOptions.modelId) {
-      const defaultModelEntry = lazy.DEFAULT_MODELS[this.#taskName];
+      const defaultModelEntry = this.#taskName
+        ? lazy.DEFAULT_MODELS[this.#taskName]
+        : null;
+
       if (defaultModelEntry) {
         lazy.console.debug(
           `Using default model ${defaultModelEntry.modelId} for task ${this.#taskName}`
@@ -377,11 +387,22 @@ class EngineDispatcher {
     lazy.console.debug("Inference engine options:", mergedOptions);
     this.pipelineOptions = mergedOptions;
 
+    this.pipelineOptions.backend = await this.mlEngineChild.chooseBestBackend(
+      pipelineOptions.backend
+    );
+
+    // Retrigger validation
+    this.pipelineOptions = new lazy.PipelineOptions(this.pipelineOptions);
+
     // load the wasm if required.
     let wasm = null;
-    if (lazy.WASM_BACKENDS.includes(pipelineOptions.backend || "onnx")) {
+    if (
+      lazy.WASM_BACKENDS.includes(
+        this.pipelineOptions.backend || lazy.BACKENDS.onnx
+      )
+    ) {
       wasm = await this.mlEngineChild.getWasmArrayBuffer(
-        pipelineOptions.backend
+        this.pipelineOptions.backend
       );
     }
 
@@ -407,12 +428,20 @@ class EngineDispatcher {
    * @param {PipelineOptions} pipelineOptions
    */
   constructor(mlEngineChild, port, pipelineOptions) {
-    this.#status = "CREATED";
+    this.#status = "INITIALIZING";
+    /** @type {MLEngineChild} */
     this.mlEngineChild = mlEngineChild;
-    this.#featureId = pipelineOptions.featureId;
-    this.#taskName = pipelineOptions.taskName;
-    this.timeoutMS = pipelineOptions.timeoutMS;
-    this.#engineId = pipelineOptions.engineId;
+    const { featureId, taskName, timeoutMS, engineId } = pipelineOptions;
+    if (typeof timeoutMS != "number") {
+      throw new Error("Expected a timeoutMS");
+    }
+    if (!engineId) {
+      throw new Error("Expected an engineId");
+    }
+    this.#featureId = featureId;
+    this.#taskName = taskName;
+    this.timeoutMS = timeoutMS;
+    this.#engineId = engineId;
 
     this.#engine = this.initializeInferenceEngine(
       pipelineOptions,
@@ -421,15 +450,18 @@ class EngineDispatcher {
       }
     );
 
-    // Trigger the keep alive timer.
     this.#engine
-      .then(() => void this.keepAlive())
+      .then(() => {
+        this.#status = "IDLE";
+        // Trigger the keep alive timer.
+        void this.keepAlive();
+      })
       .catch(error => {
         if (
           // Ignore errors from tests intentionally causing errors.
           !error?.message?.startsWith("Intentionally")
         ) {
-          lazy.console.error("Could not initalize the engine", error);
+          lazy.console.error("Could not initialize the engine", error);
         }
       });
 
@@ -443,18 +475,13 @@ class EngineDispatcher {
     return {
       status: this.#status,
       options: this.pipelineOptions,
-      engineId: this.#engineId,
     };
   }
 
   /**
-   * Resolves the engine to fully initialize it.
+   * @param {MessagePort} port
+   * @param {ProgressAndStatusCallbackParams} notificationsData
    */
-  async ensureInferenceEngineIsReady() {
-    this.#engine = await this.#engine;
-    this.#status = "READY";
-  }
-
   handleInitProgressStatus(port, notificationsData) {
     port.postMessage({
       type: "EnginePort:InitProgress",
@@ -472,7 +499,7 @@ class EngineDispatcher {
       // Clear any previous timeout.
       lazy.clearTimeout(this.#keepAliveTimeout);
     }
-    if (this.timeoutMS >= 0) {
+    if (this.timeoutMS && this.timeoutMS >= 0) {
       this.#keepAliveTimeout = lazy.setTimeout(
         this.terminate.bind(
           this,
@@ -487,16 +514,10 @@ class EngineDispatcher {
   }
 
   /**
-   * @param {MessagePort} port
+   * Wait for the engine to be ready.
    */
-  getModel(port) {
-    if (this.#modelRequest) {
-      // There could be a race to get a model, use the first request.
-      return this.#modelRequest.promise;
-    }
-    this.#modelRequest = Promise.withResolvers();
-    port.postMessage({ type: "EnginePort:ModelRequest" });
-    return this.#modelRequest.promise;
+  async isReady() {
+    await this.#engine;
   }
 
   /**
@@ -504,7 +525,9 @@ class EngineDispatcher {
    */
   #setupMessageHandler(port) {
     this.#port = port;
-    port.onmessage = async ({ data }) => {
+    port.onmessage = async event => {
+      const { data } = /** @type {any} */ (event);
+
       switch (data.type) {
         case "EnginePort:Discard": {
           port.close();
@@ -515,26 +538,15 @@ class EngineDispatcher {
           await this.terminate(data.shutdown, data.replacement);
           break;
         }
-        case "EnginePort:ModelResponse": {
-          if (this.#modelRequest) {
-            const { model, error } = data;
-            if (model) {
-              this.#modelRequest.resolve(model);
-            } else {
-              this.#modelRequest.reject(error);
-            }
-            this.#modelRequest = null;
-          } else {
-            lazy.console.error(
-              "Got a EnginePort:ModelResponse but no model resolvers"
-            );
-          }
-          break;
-        }
         case "EnginePort:Run": {
+          const resourcesBefore = {
+            cpuTime: ChromeUtils.cpuTimeSinceProcessStart,
+            memory: ChromeUtils.currentProcessMemoryUsage,
+          };
+
           const { requestId, request, engineRunOptions } = data;
           try {
-            await this.ensureInferenceEngineIsReady();
+            await this.isReady();
           } catch (error) {
             port.postMessage({
               type: "EnginePort:RunResponse",
@@ -555,16 +567,27 @@ class EngineDispatcher {
           this.keepAlive();
 
           this.#status = "RUNNING";
+          const engine = await this.#engine;
+
           try {
+            const response = await engine.run(
+              request,
+              requestId,
+              engineRunOptions
+            );
+
+            const resourcesAfter = {
+              cpuTime: ChromeUtils.cpuTimeSinceProcessStart,
+              memory: ChromeUtils.currentProcessMemoryUsage,
+            };
+
             port.postMessage({
               type: "EnginePort:RunResponse",
               requestId,
-              response: await this.#engine.run(
-                request,
-                requestId,
-                engineRunOptions
-              ),
+              response,
               error: null,
+              resourcesBefore,
+              resourcesAfter,
             });
           } catch (error) {
             port.postMessage({
@@ -574,7 +597,7 @@ class EngineDispatcher {
               error,
             });
           }
-          this.#status = "IDLING";
+          this.#status = "IDLE";
           break;
         }
         default:
@@ -603,13 +626,13 @@ class EngineDispatcher {
     this.#status = "TERMINATING";
     try {
       const engine = await this.#engine;
-      engine.terminate();
+      await engine.terminate();
     } catch (error) {
       lazy.console.error("Failed to get the engine", error);
     }
     this.#status = "TERMINATED";
 
-    this.mlEngineChild.removeEngine(
+    await this.mlEngineChild.removeEngine(
       this.#engineId,
       shutDownIfEmpty,
       replacement
@@ -621,17 +644,17 @@ class EngineDispatcher {
  * Wrapper for a function that fetches a model file from a specified URL and task name.
  *
  * @param {object} config
- * @param {string} config.engineId - The engine id - defaults to "default-engine".
- * @param {string} config.taskName - name of the inference task.
- * @param {string} config.url - The URL of the model file to fetch. Can be a path relative to
+ * @param {string | null | undefined} config.engineId - The engine id - defaults to "default-engine".
+ * @param {string | null | undefined} config.taskName - name of the inference task.
+ * @param {string | null | undefined} config.url - The URL of the model file to fetch. Can be a path relative to
  * the model hub root or an absolute URL.
- * @param {string} config.modelHubRootUrl - root url of the model hub. When not provided, uses the default from prefs.
- * @param {string} config.modelHubUrlTemplate - url template of the model hub. When not provided, uses the default from prefs.
- * @param {?function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
- * @param {string} config.featureId - The feature id
+ * @param {string | null | undefined} config.modelHubRootUrl - root url of the model hub. When not provided, uses the default from prefs.
+ * @param {string | null | undefined} config.modelHubUrlTemplate - url template of the model hub. When not provided, uses the default from prefs.
+ * @param {function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
+ * @param {string | null | undefined} config.featureId - The feature id
  * @param {string} config.sessionId - Shared across the same session.
  * @param {object} config.telemetryData - Additional telemetry data.
- * @returns {Promise} A promise that resolves to a Meta object containing the URL, response headers,
+ * @returns {Promise<BasePromiseWorker.Meta>} A promise that resolves to a Meta object containing the URL, response headers,
  * and model path.
  */
 async function getModelFile({
@@ -662,7 +685,7 @@ async function getModelFile({
  * Wrapper around the ChromeWorker that runs the inference.
  */
 class InferenceEngine {
-  /** @type {BasePromiseWorker} */
+  /** @type {?BasePromiseWorker} */
   #worker;
 
   /**
@@ -671,19 +694,19 @@ class InferenceEngine {
    * @param {object} config
    * @param {string} config.workerUrl  The url of the worker
    * @param {object} config.workerOptions the options to pass to BasePromiseWorker
-   * @param {ArrayBuffer} config.wasm
+   * @param {?ArrayBuffer} config.wasm
    * @param {PipelineOptions} config.pipelineOptions
    * @param {?function(ProgressAndStatusCallbackParams):void} config.notificationsCallback The callback to call for updating about notifications such as dowload progress status.
-   * @param {?function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
-   * @param {?function(object):Promise<void>} config.notifyModelDownloadCompleteFn - A function to notify that all files needing downloads are completed.
-   * @returns {InferenceEngine}
+   * @param {function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
+   * @param {function(object):Promise<void>} config.notifyModelDownloadCompleteFn - A function to notify that all files needing downloads are completed.
+   * @returns {Promise<InferenceEngine>}
    */
   static async create({
     workerUrl,
     workerOptions,
     wasm,
     pipelineOptions,
-    notificationsCallback, // eslint-disable-line no-unused-vars
+    notificationsCallback,
     getModelFileFn,
     notifyModelDownloadCompleteFn,
   }) {
@@ -691,9 +714,14 @@ class InferenceEngine {
     pipelineOptions.numThreads =
       pipelineOptions.numThreads || lazy.mlUtils.getOptimalCPUConcurrency();
 
-    /** @type {BasePromiseWorker} */
-    const worker = new lazy.BasePromiseWorker(workerUrl, workerOptions, {
-      getModelFile: async (url, sessionId = "") =>
+    /** @type {Record<string, Function>} */
+    const functions = {
+      /**
+       * @param {object} options
+       * @param {string} [options.url]
+       * @param {string} [options.sessionId]
+       */
+      getModelFile: async ({ url, sessionId = "" } = {}) =>
         getModelFile({
           engineId: pipelineOptions.engineId,
           url,
@@ -712,7 +740,7 @@ class InferenceEngine {
             modelRevision: pipelineOptions.modelRevision,
           },
         }),
-      onInferenceProgress: notificationsCallback,
+      onInferenceProgress: notificationsCallback ?? (() => {}),
       notifyModelDownloadComplete: async (sessionId = "") =>
         notifyModelDownloadCompleteFn({
           sessionId,
@@ -721,12 +749,25 @@ class InferenceEngine {
           modelId: pipelineOptions.modelId,
           modelRevision: pipelineOptions.modelRevision,
         }),
-    });
+    };
 
+    /** @type {BasePromiseWorker} */
+    const worker = new lazy.BasePromiseWorker(
+      workerUrl,
+      workerOptions,
+      functions
+    );
+
+    const startTime = ChromeUtils.now();
     const args = [wasm, pipelineOptions];
     const closure = {};
     const transferables = wasm instanceof ArrayBuffer ? [wasm] : [];
     await worker.post("initializeEngine", args, closure, transferables);
+    ChromeUtils.addProfilerMarker(
+      "MLEngineChild",
+      { startTime },
+      `Initialize engine`
+    );
     return new InferenceEngine(worker);
   }
 
@@ -745,10 +786,15 @@ class InferenceEngine {
    * @returns {Promise<string>}
    */
   run(request, requestId, engineRunOptions) {
+    if (!this.#worker) {
+      throw new Error(
+        "Attempting to call InferenceEngine#run after the worker was shut down."
+      );
+    }
     return this.#worker.post("run", [request, requestId, engineRunOptions]);
   }
 
-  terminate() {
+  async terminate() {
     if (this.#worker) {
       this.#worker.terminate();
       this.#worker = null;

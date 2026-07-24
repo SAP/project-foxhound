@@ -9,6 +9,7 @@
 #include "SpeculativeTransaction.h"
 #include "HTTPSRecordResolver.h"
 #include "nsICachingChannel.h"
+#include "nsHttpConnectionMgr.h"
 #include "nsHttpHandler.h"
 
 namespace mozilla {
@@ -28,7 +29,6 @@ SpeculativeTransaction::CreateWithNewConnInfo(nsHttpConnectionInfo* aConnInfo) {
       new SpeculativeTransaction(aConnInfo, mCallbacks, mCaps);
   trans->mParallelSpeculativeConnectLimit = mParallelSpeculativeConnectLimit;
   trans->mIgnoreIdle = mIgnoreIdle;
-  trans->mIsFromPredictor = mIsFromPredictor;
   trans->mAllow1918 = mAllow1918;
   return trans.forget();
 }

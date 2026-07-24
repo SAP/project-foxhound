@@ -108,8 +108,6 @@ class BaselineICFallbackCode {
   }
 };
 
-enum class ArgumentsRectifierKind { Normal, TrialInlining };
-
 enum class DebugTrapHandlerKind { Interpreter, Compiler, Count };
 
 enum class IonGenericCallKind { Call, Construct, Count };
@@ -146,13 +144,6 @@ class JitRuntime {
 
   // Generic bailout table; used if the bailout table overflows.
   WriteOnceData<uint32_t> bailoutHandlerOffset_{0};
-
-  // Argument-rectifying thunks, in the case of insufficient arguments passed
-  // to a function call site. The return offset is used to rebuild stack frames
-  // when bailing out.
-  WriteOnceData<uint32_t> argumentsRectifierOffset_{0};
-  WriteOnceData<uint32_t> trialInliningArgumentsRectifierOffset_{0};
-  WriteOnceData<uint32_t> argumentsRectifierReturnOffset_{0};
 
   // Thunk that invalides an (Ion compiled) caller on the Ion stack.
   WriteOnceData<uint32_t> invalidatorOffset_{0};
@@ -259,8 +250,10 @@ class JitRuntime {
                                  Label* bailoutTail);
   void generateBailoutTailStub(MacroAssembler& masm, Label* bailoutTail);
   void generateEnterJIT(JSContext* cx, MacroAssembler& masm);
-  void generateArgumentsRectifier(MacroAssembler& masm,
-                                  ArgumentsRectifierKind kind);
+  void generateEnterJitShared(MacroAssembler& masm, Register argcReg,
+                              Register argvReg, Register calleeTokenReg,
+                              Register scratch, Register scratch2,
+                              Register scratch3);
   void generateBailoutHandler(MacroAssembler& masm, Label* bailoutTail);
   void generateInvalidator(MacroAssembler& masm, Label* bailoutTail);
   uint32_t generatePreBarrier(JSContext* cx, MacroAssembler& masm,
@@ -278,6 +271,8 @@ class JitRuntime {
   void generateIonGenericCallArgumentsShift(MacroAssembler& masm, Register argc,
                                             Register curr, Register end,
                                             Register scratch, Label* done);
+  void generateIonGenericHandleUnderflow(MacroAssembler& masm,
+                                         bool isConstructing, Label* vmCall);
 
   JitCode* generateDebugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
 
@@ -345,6 +340,9 @@ class JitRuntime {
   const void* addressOfDisallowArbitraryCode() const {
     return &disallowArbitraryCode_.refNoCheck();
   }
+  static size_t offsetOfDisallowArbitraryCode() {
+    return offsetof(JitRuntime, disallowArbitraryCode_);
+  }
 #endif
 
   uint8_t* allocateIonOsrTempData(size_t size);
@@ -381,19 +379,7 @@ class JitRuntime {
     return trampolineCode(profilerExitFrameTailOffset_);
   }
 
-  TrampolinePtr getArgumentsRectifier(
-      ArgumentsRectifierKind kind = ArgumentsRectifierKind::Normal) const {
-    if (kind == ArgumentsRectifierKind::TrialInlining) {
-      return trampolineCode(trialInliningArgumentsRectifierOffset_);
-    }
-    return trampolineCode(argumentsRectifierOffset_);
-  }
-
   uint32_t vmInterpreterEntryOffset() { return vmInterpreterEntryOffset_; }
-
-  TrampolinePtr getArgumentsRectifierReturnAddr() const {
-    return trampolineCode(argumentsRectifierReturnOffset_);
-  }
 
   TrampolinePtr getInvalidationThunk() const {
     return trampolineCode(invalidatorOffset_);

@@ -13,10 +13,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
+#include <cstdint>
 #include <initializer_list>
 #include <type_traits>
-
-#include <stdint.h>
 
 namespace mozilla {
 
@@ -25,8 +24,8 @@ namespace mozilla {
  * using a bit mask with the size of U for each value. It works both for enum
  * and enum class types. EnumSet also works with U being a BitSet.
  */
-template <typename T, typename Serialized = typename std::make_unsigned<
-                          typename std::underlying_type<T>::type>::type>
+template <typename T,
+          typename Serialized = std::make_unsigned_t<std::underlying_type_t<T>>>
 class EnumSet {
  public:
   using valueType = T;

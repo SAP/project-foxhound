@@ -77,6 +77,46 @@ sealed interface DownloadUIAction : Action {
     data class ShareFileClicked(val filePath: String, val contentType: String?) : DownloadUIAction
 
     /**
+     * [DownloadUIAction] to rename the file of a [FileItem].
+     */
+    data class RenameFileClicked(val item: FileItem) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to confirm renaming the file of a [FileItem].
+     */
+    data class RenameFileConfirmed(val item: FileItem, val newName: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to dismiss the renaming of a [FileItem].
+     */
+    data object RenameFileDismissed : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to change the file extension.
+     */
+    data class FileExtensionChangedByUser(val item: FileItem, val newName: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to show the dialog to change the file extension of a [FileItem].
+     */
+    data object ShowChangeFileExtensionDialog : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to close the dialog to change the file extension of a [FileItem].
+     */
+    data object CloseChangeFileExtensionDialog : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to confirm renaming the file of a [FileItem].
+     */
+    data class RenameFileFailed(val error: RenameFileError) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to dismiss the failure of renaming the file of a [FileItem].
+     */
+    data object RenameFileFailureDismissed : DownloadUIAction
+
+    /**
      * [DownloadUIAction] when a search query is entered.
      */
     data class SearchQueryEntered(val searchQuery: String) : DownloadUIAction
@@ -107,7 +147,7 @@ sealed interface DownloadUIAction : Action {
     data class ResumeDownload(val downloadId: String) : DownloadUIAction
 
     /**
-     * [DownloadUIAction] to cancel a downloading file.
+     * [DownloadUIAction] to cancel an incomplete download file.
      */
     data class CancelDownload(val downloadId: String) : DownloadUIAction
 
@@ -115,4 +155,36 @@ sealed interface DownloadUIAction : Action {
      * [DownloadUIAction] to retry a failed download file.
      */
     data class RetryDownload(val downloadId: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] fired when a navigation to settings event occurs.
+     */
+    object SettingsIconClicked : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] fired when a back navigation event occurs.
+     */
+    object NavigationIconClicked : DownloadUIAction
+}
+
+/**
+ * User-visible errors that can occur while renaming a downloaded file.
+ */
+sealed interface RenameFileError {
+    /**
+     * The proposed file name conflicts with an existing file.
+     *
+     * @property proposedFileName The name the user attempted to rename the file to.
+     */
+    data class NameAlreadyExists(val proposedFileName: String) : RenameFileError
+
+    /**
+     * The proposed file name is not valid and has a path separator or slash.
+     */
+    data object InvalidFileName : RenameFileError
+
+    /**
+     * The file could not be renamed due to a system or storage failure.
+     */
+    data object CannotRename : RenameFileError
 }

@@ -8,11 +8,7 @@ import React from "react";
 
 const DEFAULT_PROPS = {
   prefs: {
-    ...INITIAL_STATE.Prefs,
-    values: {
-      ...INITIAL_STATE.Prefs.values,
-      "discoverystream.sections.enabled": false,
-    },
+    "discoverystream.sections.enabled": false,
   },
   type: "foo",
   firstVisibleTimestamp: new Date("March 21, 2024 10:11:12").getTime(),
@@ -129,6 +125,11 @@ describe("Discovery Stream <AdBanner>", () => {
     // AdBannerContextMenu.test.jsx
   });
 
+  it("should render data-is-sponsored-link='true' on banner link", () => {
+    const link = wrapper.find(".ad-banner-link a");
+    assert.equal(link.prop("data-is-sponsored-link"), true);
+  });
+
   it("should call onLinkClick when banner is clicked", () => {
     const link = wrapper.find(".ad-banner-link a");
     link.simulate("click");
@@ -150,6 +151,32 @@ describe("Discovery Stream <AdBanner>", () => {
           format: DEFAULT_PROPS.spoc.format,
         },
       })
+    );
+  });
+
+  it("should set proper ohttp src if ohttp, contextual, inferred, and sections are true", () => {
+    wrapper.setProps({
+      children: (
+        <AdBanner
+          dispatch={dispatch}
+          {...DEFAULT_PROPS}
+          prefs={{
+            ...DEFAULT_PROPS.prefs,
+            "discoverystream.sections.enabled": true,
+            "unifiedAds.ohttp.enabled": true,
+            ohttpImagesConfig: { enabled: true },
+            "discoverystream.sections.contextualAds.enabled": true,
+            "discoverystream.sections.personalization.inferred.user.enabled": true,
+            "discoverystream.sections.personalization.inferred.enabled": true,
+          }}
+        />
+      ),
+    });
+
+    const image = wrapper.find(".ad-banner-content img");
+    assert.equal(
+      image.prop("src"),
+      `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(DEFAULT_PROPS.spoc.raw_image_src)}`
     );
   });
 });

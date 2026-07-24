@@ -6,8 +6,8 @@
 
 #include "BackgroundThreadObject.h"
 
-#include "nsThreadUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom::quota {
 

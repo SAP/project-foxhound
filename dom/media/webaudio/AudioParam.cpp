@@ -112,7 +112,7 @@ void AudioParam::SendEventToEngine(const AudioParamEvent& aEvent) {
         params.AppendFmt(" constant={}", aEvent.TimeConstant());
       }
     }
-    WEB_AUDIO_API_LOG("%f: %s for %u %s %s", GetParentObject()->CurrentTime(),
+    WEB_AUDIO_API_LOG("{:f}: {} for {} {} {}", GetParentObject()->CurrentTime(),
                       NS_ConvertUTF16toUTF8(mName).get(), ParentNodeId(),
                       AudioTimelineEvent::EnumValueToString(aEvent.mType),
                       params.get());

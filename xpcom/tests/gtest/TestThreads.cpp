@@ -6,7 +6,6 @@
 
 #include "nsThreadUtils.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <memory>
 #include "nspr.h"
 #include "nsCOMPtr.h"

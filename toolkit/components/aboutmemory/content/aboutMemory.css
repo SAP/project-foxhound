@@ -35,7 +35,7 @@ div.ancillary {
 div.section {
   padding: 2em;
   margin: 1em 0;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   background: var(--background-color-box);
 }
@@ -62,7 +62,7 @@ div.sidebarContents {
 div.sidebarItem {
   padding: 0.5em;
   margin: 1em 0;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   background: var(--background-color-box);
   user-select: none; /* no need to include this when cutting+pasting */
@@ -86,7 +86,7 @@ div.opsRow {
   padding: 0.5em;
   margin-right: 0.5em;
   margin-top: 0.5em;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   background: var(--background-color-box);
   display: inline-block;
@@ -96,7 +96,7 @@ div.opsRowLabel,
 div.sidebarLabel {
   display: block;
   margin-bottom: 0.2em;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .opsRowLabel label {
@@ -144,9 +144,9 @@ a.treemapEntry {
   position: absolute;
   color: FieldText;
   text-decoration: none;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   z-index: 0;
 
   > .treemapEntryContent {
@@ -167,7 +167,7 @@ a.treemapEntry {
     }
 
     > .treemapEntryProcessName {
-      font-weight: bold;
+      font-weight: var(--font-weight-bold);
     }
 
     > .treemapEntryPid {
@@ -202,7 +202,7 @@ a.treemapEntry {
 }
 
 .mrValue {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .hasKids {

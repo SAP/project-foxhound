@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.tabhistory
 
+import android.app.Dialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -12,18 +13,30 @@ import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
+import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentTabHistoryDialogBinding
 import org.mozilla.fenix.ext.requireComponents
+import com.google.android.material.R as materialR
 
 class TabHistoryDialogFragment : BottomSheetDialogFragment() {
 
     var customTabSessionId: String? = null
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+        return super.onCreateDialog(savedInstanceState).apply {
+            setOnShowListener {
+                val bottomSheet = findViewById<View?>(materialR.id.design_bottom_sheet)
+                bottomSheet?.setBackgroundResource(android.R.color.transparent)
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -36,7 +49,7 @@ class TabHistoryDialogFragment : BottomSheetDialogFragment() {
 
         val binding = FragmentTabHistoryDialogBinding.bind(view)
 
-        view.setBackgroundColor(view.context.getColorFromAttr(R.attr.layer1))
+        view.setBackgroundColor(view.context.getColorFromAttr(materialR.attr.colorSurface))
 
         customTabSessionId = requireArguments().getString(EXTRA_SESSION_ID)
 
@@ -51,7 +64,21 @@ class TabHistoryDialogFragment : BottomSheetDialogFragment() {
             interactor = TabHistoryInteractor(controller),
         )
 
-        requireComponents.core.store.flowScoped(viewLifecycleOwner) { flow ->
+        // flush the session state for showing the most recent the engine session state of the selected tab.
+        requireComponents.core.store.state.selectedTabId?.let {
+            requireComponents.core.store.dispatch(
+                EngineAction.FlushEngineSessionStateAction(it),
+            )
+        }
+
+        // flush the session state for showing the most recent the engine session state of the custom tab.
+        customTabSessionId?.let {
+            requireComponents.core.store.dispatch(
+                EngineAction.FlushEngineSessionStateAction(it),
+            )
+        }
+
+        requireComponents.core.store.flowScoped(viewLifecycleOwner, Dispatchers.Main) { flow ->
             flow.mapNotNull { state -> state.findCustomTabOrSelectedTab(customTabSessionId)?.content?.history }
                 .distinctUntilChanged()
                 .collect { historyState ->

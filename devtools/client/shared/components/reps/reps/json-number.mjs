@@ -6,9 +6,9 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import { JSON_NUMBER } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { JSON_NUMBER } from "./constants.mjs";
 
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
+import { wrapRender } from "./rep-utils.mjs";
 
 /**
  * Renders a number that can't be parsed natively in JS. This is likely to happen
@@ -36,7 +36,7 @@ function JsonNumber(props) {
     span(
       {
         className: "parsed-value",
-        title: "Javacript parsed value",
+        title: "JavaScript parsed value",
       },
       span({ className: "parsed-value-prefix" }, "JS:"),
       props.object.parsedValue

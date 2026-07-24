@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>
+  Tests that scheduled :hover task is surely destroyed when the target
+  document is destroyed
+</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<style>
+iframe {
+  width: 100vw;
+  height: 100vh;
+  border: none;
+}
+</style>
+<iframe></iframe>
+<script>
+async function test() {
+  const iframe = document.querySelector("iframe");
+  await setupCrossOriginIFrame(iframe, "helper_fission_plain.html");
+  const remoteType = await SpecialPowers.spawn(iframe, [], async () => {
+    return await SpecialPowers.spawnChrome([], () => {
+      return windowGlobalParent.domProcess.remoteType;
+    });
+  });
+  if (remoteType === "web") {
+    is(SpecialPowers.effectiveIsolationStrategy(), SpecialPowers.ISOLATION_STRATEGY.IsolateHighValue);
+    ok(true, "Skipping this test since the document on example.com got loaded in the same content process");
+    return;
+  }
+
+  // Setup a touchstart and a touchend event listener in the iframe
+  // document.
+  const touchstartPromise = SpecialPowers.spawn(iframe, [], () => {
+    return new Promise(resolve => {
+      content.window.addEventListener("touchstart", () => { resolve(); });
+    });
+  });
+  const touchendPromise = SpecialPowers.spawn(iframe, [], () => {
+    return new Promise(resolve => {
+      content.window.addEventListener("touchend", () => { resolve(); });
+    });
+  });
+  await SpecialPowers.spawn(iframe, [], async () => {
+    await new Promise(resolve => resolve());
+  });
+
+  // Touch on the iframe.
+  // This will trigger a scheduled task to set :hover state.
+  synthesizeTouchAtPoint(100, 100, {
+    type: "touchstart",
+    id: 0,
+    rx: 1,
+    ry: 1,
+    angle: 1,
+    force: 1,
+    tiltX: 0,
+    tiltY: 0,
+    twist: 0,
+    modifiers: 0,
+  });
+  await touchstartPromise;
+
+  // And destroy the iframe while the scheduled task is still
+  // pending.
+  iframe.style.display = "none";
+  // Flush the above change.
+  getComputedStyle(iframe).display;
+
+  // Wait a couple of frames just in case.
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  await new Promise(resolve => requestAnimationFrame(resolve));
+
+  // Finish the touch block explicitely, otherwise in subsequent tests
+  // new touch events won't be dispatched as expected.
+  synthesizeTouchAtPoint(100, 100, {
+    type: "touchend",
+    id: 0,
+    rx: 1,
+    ry: 1,
+    angle: 1,
+    force: 1,
+    tiltX: 0,
+    tiltY: 0,
+    twist: 0,
+    modifiers: 0,
+  });
+  await touchendPromise;
+
+  ok(true, "There's no need to check, it's okay if there's no leak");
+}
+
+if (!SpecialPowers.Services.appinfo.fissionAutostart) {
+  ok(true, "This test doesn't need to run with disabling Fission");
+  subtestDone();
+} else {
+  waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
+}
+</script>
+</html>

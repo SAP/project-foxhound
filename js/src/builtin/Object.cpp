@@ -1546,15 +1546,13 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
     if (piter) {
       do {
         NativeIterator* ni = piter->getNativeIterator();
-        MOZ_ASSERT(ni->isReusable());
 
         // Guard against indexes.
         if (ni->mayHavePrototypeProperties()) {
           break;
         }
 
-        JSLinearString** properties =
-            ni->propertiesBegin()->unbarrieredAddress();
+        IteratorProperty* properties = ni->propertiesBegin();
         JSObject* array = NewDenseCopiedArray(cx, ni->numKeys(), properties);
         if (!array) {
           return false;
@@ -1846,7 +1844,6 @@ static bool CountEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
                                         LookupInShapeIteratorCache(cx, nobj));
   if (piter) {
     NativeIterator* ni = piter->getNativeIterator();
-    MOZ_ASSERT(ni->isReusable());
 
     // Guard against indexes.
     if (!ni->mayHavePrototypeProperties()) {

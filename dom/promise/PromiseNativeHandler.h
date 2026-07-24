@@ -8,10 +8,10 @@
 #define mozilla_dom_PromiseNativeHandler_h
 
 #include <functional>
+
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/StaticString.h"
 #include "nsISupports.h"
 

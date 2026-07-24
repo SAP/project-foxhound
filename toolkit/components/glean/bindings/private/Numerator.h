@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
+#include "mozilla/glean/bindings/NumeratorStandalone.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "nsString.h"
@@ -23,16 +24,9 @@ namespace impl {
 
 // Actually a RateMetric, but one whose denominator is a CounterMetric external
 // to the RateMetric.
-class NumeratorMetric {
+class NumeratorMetric : public NumeratorStandalone {
  public:
-  constexpr explicit NumeratorMetric(uint32_t aId) : mId(aId) {}
-
-  /*
-   * Increases the numerator by `amount`.
-   *
-   * @param aAmount The amount to increase by. Should be positive.
-   */
-  void AddToNumerator(int32_t aAmount = 1) const;
+  constexpr explicit NumeratorMetric(uint32_t aId) : NumeratorStandalone(aId) {}
 
   /**
    * **Test-only API**
@@ -53,9 +47,6 @@ class NumeratorMetric {
    */
   Result<Maybe<std::pair<int32_t, int32_t>>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 }  // namespace impl
 

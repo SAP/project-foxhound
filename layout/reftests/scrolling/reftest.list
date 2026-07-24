@@ -142,3 +142,5 @@ pref(layout.disable-pixel-alignment,true) fuzzy-if(Android||cocoaWidget,255-255,
 
 fuzzy-if(Android,54-54,8-29) == xul-scrollbar-iterate.html xul-scrollbar-iterate-ref.html
 == scrollbars-area-in-iframe.html scrollbars-area-in-iframe-ref.html
+
+pref(layout.css.anchor-positioning.enabled,true) pref(image.testing.decode-sync.enabled,false) == anchor-scroll-01.html anchor-scroll-ref.html

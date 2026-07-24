@@ -12,6 +12,8 @@
 #    include "config_android32.h"
 #  elif defined(MOZ_WIDGET_ANDROID) && defined(__aarch64__)
 #    include "config_android64.h"
+#  elif defined(MOZ_WIDGET_ANDROID) && defined(HAVE_64BIT_BUILD)
+#    include "config_android_x86_64.h"
 #  elif defined(__aarch64__)
 #    include "config_unix_aarch64.h"
 #  else
@@ -49,10 +51,16 @@
 #    else
 #      include "config_darwin64.h"
 #    endif
+#  elif defined(MOZ_WIDGET_ANDROID) && defined(__aarch64__)
+#    include "config_android64.h"
+#  elif defined(MOZ_WIDGET_ANDROID) && defined(__arm__)
+#    include "config_android32.h"
 #  elif defined(MOZ_WIDGET_ANDROID) && defined(HAVE_64BIT_BUILD)
-#      include "config_android_x86_64.h"
+#    include "config_android_x86_64.h"
 #  elif defined(XP_UNIX)
-#    if defined(HAVE_64BIT_BUILD)
+#    if defined(__aarch64__)
+#      include "config_unix_aarch64.h"
+#    elif defined(HAVE_64BIT_BUILD)
 #      include "config_unix64.h"
 #    else
 #      include "config_unix32.h"

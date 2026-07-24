@@ -29,8 +29,8 @@
 
 #include "js/Class.h"
 #include "js/TypeDecls.h"
-#include "nsStringFwd.h"
 #include "mozilla/Maybe.h"
+#include "nsStringFwd.h"
 
 namespace mozilla::dom {
 

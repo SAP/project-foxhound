@@ -65,11 +65,12 @@ class StatusBar extends Component {
     const { openStatistics, summary, timingMarkers, connector } = this.props;
     const { count, contentSize, transferredSize, ms } = summary;
     const { DOMContentLoaded, load } = timingMarkers;
-    const { isBrowserToolbox } = connector.getToolbox();
+    const toolbox = connector.getToolbox();
 
     return div(
       { className: "devtools-toolbar devtools-toolbar-bottom" },
-      !isBrowserToolbox
+      !toolbox.isBrowserToolbox &&
+        !toolbox.commands.descriptorFront.isWebExtensionDescriptor
         ? Localized(
             {
               id: "network-menu-summary-tooltip-perf",

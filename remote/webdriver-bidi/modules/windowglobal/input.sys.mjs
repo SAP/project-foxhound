@@ -15,14 +15,97 @@ ChromeUtils.defineESModuleGetters(lazy, {
   dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   event: "chrome://remote/content/shared/webdriver/Event.sys.mjs",
+  FilePickerListener:
+    "chrome://remote/content/shared/listeners/FilePickerListener.sys.mjs",
+  OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
+  setDefaultSerializationOptions:
+    "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
 });
 
 class InputModule extends WindowGlobalBiDiModule {
+  #filePickerListener;
+  #subscribedEvents;
+
   constructor(messageHandler) {
     super(messageHandler);
+
+    this.#filePickerListener = new lazy.FilePickerListener();
+    this.#filePickerListener.on(
+      "file-picker-opening",
+      this.#onFilePickerOpening
+    );
+
+    // Set of event names which have active subscriptions.
+    this.#subscribedEvents = new Set();
   }
 
-  destroy() {}
+  destroy() {
+    this.#filePickerListener.off(
+      "file-picker-opening",
+      this.#onFilePickerOpening
+    );
+    this.#subscribedEvents = null;
+  }
+
+  async setFiles(options) {
+    const { element: sharedReference, files } = options;
+
+    const element =
+      await this.#deserializeElementSharedReference(sharedReference);
+
+    if (
+      !HTMLInputElement.isInstance(element) ||
+      element.type !== "file" ||
+      element.disabled
+    ) {
+      throw new lazy.error.UnableToSetFileInputError(
+        `Element needs to be an <input> element with type "file" and not disabled`
+      );
+    }
+
+    if (files.length > 1 && !element.hasAttribute("multiple")) {
+      throw new lazy.error.UnableToSetFileInputError(
+        `Element should have an attribute "multiple" set when trying to set more than 1 file`
+      );
+    }
+
+    const fileObjects = [];
+    for (const file of files) {
+      try {
+        fileObjects.push(await File.createFromFileName(file));
+      } catch (e) {
+        throw new lazy.error.UnsupportedOperationError(
+          `Failed to add file ${file} (${e})`
+        );
+      }
+    }
+
+    const selectedFiles = Array.from(element.files);
+
+    const intersection = fileObjects.filter(fileObject =>
+      selectedFiles.some(
+        selectedFile =>
+          // Compare file fields to identify if the files are equal.
+          // TODO: Bug 1883856. Add check for full path or use a different way
+          // to compare files when it's available.
+          selectedFile.name === fileObject.name &&
+          selectedFile.size === fileObject.size &&
+          selectedFile.type === fileObject.type
+      )
+    );
+
+    if (
+      intersection.length === selectedFiles.length &&
+      selectedFiles.length === fileObjects.length
+    ) {
+      lazy.event.cancel(element);
+    } else {
+      element.mozSetFileArray(fileObjects);
+
+      lazy.event.input(element);
+      lazy.event.change(element);
+    }
+  }
 
   async #deserializeElementSharedReference(sharedReference) {
     if (typeof sharedReference?.sharedId !== "string") {
@@ -41,6 +124,85 @@ class InputModule extends WindowGlobalBiDiModule {
     }
 
     return element;
+  }
+
+  #onFilePickerOpening = (eventName, data) => {
+    const { element } = data;
+    if (element.ownerGlobal.browsingContext != this.messageHandler.context) {
+      return;
+    }
+
+    const realm = this.messageHandler.getRealm();
+
+    const serializedNode = this.serialize(
+      element,
+      lazy.setDefaultSerializationOptions(),
+      lazy.OwnershipModel.None,
+      realm
+    );
+
+    this.emitEvent("input.fileDialogOpened", {
+      context: this.messageHandler.context,
+      element: serializedNode,
+      multiple: element.multiple,
+    });
+  };
+
+  #startListingOnFilePickerOpened() {
+    if (!this.#subscribedEvents.has("script.FilePickerOpened")) {
+      this.#filePickerListener.startListening();
+    }
+  }
+
+  #stopListingOnFilePickerOpened() {
+    if (this.#subscribedEvents.has("script.FilePickerOpened")) {
+      this.#filePickerListener.stopListening();
+    }
+  }
+
+  #subscribeEvent(event) {
+    switch (event) {
+      case "input.fileDialogOpened": {
+        this.#startListingOnFilePickerOpened();
+        this.#subscribedEvents.add(event);
+        break;
+      }
+    }
+  }
+
+  #unsubscribeEvent(event) {
+    switch (event) {
+      case "input.fileDialogOpened": {
+        this.#stopListingOnFilePickerOpened();
+        this.#subscribedEvents.delete(event);
+        break;
+      }
+    }
+  }
+
+  _applySessionData(params) {
+    // TODO: Bug 1775231. Move this logic to a shared module or an abstract
+    // class.
+    const { category } = params;
+    if (category === "event") {
+      const filteredSessionData = params.sessionData.filter(item =>
+        this.messageHandler.matchesContext(item.contextDescriptor)
+      );
+      for (const event of this.#subscribedEvents.values()) {
+        const hasSessionItem = filteredSessionData.some(
+          item => item.value === event
+        );
+        // If there are no session items for this context, we should unsubscribe from the event.
+        if (!hasSessionItem) {
+          this.#unsubscribeEvent(event);
+        }
+      }
+
+      // Subscribe to all events, which have an item in SessionData.
+      for (const { value } of filteredSessionData) {
+        this.#subscribeEvent(value);
+      }
+    }
   }
 
   _assertInViewPort(options) {
@@ -69,7 +231,7 @@ class InputModule extends WindowGlobalBiDiModule {
           lazy.event.sendKeyUp(details.eventData, this.messageHandler.window);
           break;
         case "synthesizeMouseAtPoint":
-          lazy.event.synthesizeMouseAtPoint(
+          await lazy.event.synthesizeMouseAtPoint(
             details.x,
             details.y,
             details.eventData,
@@ -155,79 +317,14 @@ class InputModule extends WindowGlobalBiDiModule {
    */
   _toBrowserWindowCoordinates(options) {
     const { position } = options;
-
-    const [x, y] = position;
     const window = this.messageHandler.window;
-    const dpr = window.devicePixelRatio;
 
-    const val = lazy.LayoutUtils.rectToTopLevelWidgetRect(window, {
-      left: x,
-      top: y,
+    return lazy.LayoutUtils.rectToTopLevelWidgetRect(window, {
+      left: position[0],
+      top: position[1],
       height: 0,
       width: 0,
     });
-
-    return [val.x / dpr, val.y / dpr];
-  }
-
-  async setFiles(options) {
-    const { element: sharedReference, files } = options;
-
-    const element =
-      await this.#deserializeElementSharedReference(sharedReference);
-
-    if (
-      !HTMLInputElement.isInstance(element) ||
-      element.type !== "file" ||
-      element.disabled
-    ) {
-      throw new lazy.error.UnableToSetFileInputError(
-        `Element needs to be an <input> element with type "file" and not disabled`
-      );
-    }
-
-    if (files.length > 1 && !element.hasAttribute("multiple")) {
-      throw new lazy.error.UnableToSetFileInputError(
-        `Element should have an attribute "multiple" set when trying to set more than 1 file`
-      );
-    }
-
-    const fileObjects = [];
-    for (const file of files) {
-      try {
-        fileObjects.push(await File.createFromFileName(file));
-      } catch (e) {
-        throw new lazy.error.UnsupportedOperationError(
-          `Failed to add file ${file} (${e})`
-        );
-      }
-    }
-
-    const selectedFiles = Array.from(element.files);
-
-    const intersection = fileObjects.filter(fileObject =>
-      selectedFiles.some(
-        selectedFile =>
-          // Compare file fields to identify if the files are equal.
-          // TODO: Bug 1883856. Add check for full path or use a different way
-          // to compare files when it's available.
-          selectedFile.name === fileObject.name &&
-          selectedFile.size === fileObject.size &&
-          selectedFile.type === fileObject.type
-      )
-    );
-
-    if (
-      intersection.length === selectedFiles.length &&
-      selectedFiles.length === fileObjects.length
-    ) {
-      lazy.event.cancel(element);
-    } else {
-      element.mozSetFileArray(fileObjects);
-
-      lazy.event.input(element);
-      lazy.event.change(element);
-    }
   }
 }
 

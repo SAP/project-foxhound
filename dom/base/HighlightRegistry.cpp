@@ -6,14 +6,12 @@
 
 #include "HighlightRegistry.h"
 
-#include "mozilla/ErrorResult.h"
-#include "mozilla/CompactPair.h"
-
 #include "Document.h"
 #include "Highlight.h"
-#include "mozilla/dom/HighlightBinding.h"
 #include "PresShell.h"
-
+#include "mozilla/CompactPair.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/HighlightBinding.h"
 #include "nsAtom.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsFrameSelection.h"
@@ -128,6 +126,19 @@ void HighlightRegistry::RepaintHighlightSelection(Highlight& aHighlight) {
 
     const RefPtr<nsAtom> highlightName = iter.first();
     frameSelection->RepaintHighlightSelection(highlightName);
+  }
+}
+
+void HighlightRegistry::RepaintAllHighlightSelections() {
+  if (mHighlightsOrdered.IsEmpty()) {
+    return;
+  }
+  RefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+  if (!frameSelection) {
+    return;
+  }
+  for (auto const& iter : mHighlightsOrdered) {
+    frameSelection->RepaintHighlightSelection(iter.first());
   }
 }
 

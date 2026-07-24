@@ -23,7 +23,6 @@
 #include "Registry.h"
 
 #include "json/json.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/glean/ToolkitMozappsDefaultagentMetrics.h"
 #include "mozilla/glean/GleanPings.h"

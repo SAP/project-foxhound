@@ -8,8 +8,8 @@
  * support
  */
 
-#ifndef FuzzingInterfaceStream_h__
-#define FuzzingInterfaceStream_h__
+#ifndef FuzzingInterfaceStream_h_
+#define FuzzingInterfaceStream_h_
 
 #ifdef JS_STANDALONE
 #  error "FuzzingInterfaceStream.h cannot be used in JS standalone builds."
@@ -78,4 +78,4 @@ typedef int (*FuzzingTestFuncStream)(nsCOMPtr<nsIInputStream>);
   MOZ_LIBFUZZER_INTERFACE_STREAM(initFunc, testFunc, moduleName);    \
   MOZ_AFL_INTERFACE_STREAM(initFunc, testFunc, moduleName);
 
-#endif  // FuzzingInterfaceStream_h__
+#endif  // FuzzingInterfaceStream_h_

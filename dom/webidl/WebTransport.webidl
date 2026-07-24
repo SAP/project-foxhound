@@ -87,9 +87,8 @@ interface WebTransport {
   readonly attribute ReadableStream incomingBidirectionalStreams;
 
 
-  /* XXX spec says this should be WebTransportSendStream */
   [NewObject]
-  Promise<WritableStream> createUnidirectionalStream(
+  Promise<WebTransportSendStream> createUnidirectionalStream(
     optional WebTransportSendStreamOptions options = {});
   /* a ReadableStream of WebTransportReceiveStream objects */
   readonly attribute ReadableStream incomingUnidirectionalStreams;

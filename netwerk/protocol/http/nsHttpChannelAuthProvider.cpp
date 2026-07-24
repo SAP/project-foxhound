@@ -68,7 +68,6 @@ nsHttpChannelAuthProvider::nsHttpChannelAuthProvider()
     : mProxyAuth(false),
       mTriedProxyAuth(false),
       mTriedHostAuth(false),
-      mSuppressDefensiveAuth(false),
       mCrossOrigin(false),
       mConnectionBased(false),
       mHttpHandler(gHttpHandler) {}
@@ -240,29 +239,6 @@ nsHttpChannelAuthProvider::AddAuthorizationHeaders(
                            Port(), path, mIdent);
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHttpChannelAuthProvider::CheckForSuperfluousAuth() {
-  LOG(
-      ("nsHttpChannelAuthProvider::CheckForSuperfluousAuth? "
-       "[this=%p channel=%p]\n",
-       this, mAuthChannel));
-
-  MOZ_ASSERT(mAuthChannel, "Channel not initialized");
-
-  // we've been called because it has been determined that this channel is
-  // getting loaded without taking the userpass from the URL.  if the URL
-  // contained a userpass, then (provided some other conditions are true),
-  // we'll give the user an opportunity to abort the channel as this might be
-  // an attempt to spoof a different site (see bug 232567).
-  if (!ConfirmAuth("SuperfluousAuth", true)) {
-    // calling cancel here sets our mStatus and aborts the HTTP
-    // transaction, which prevents OnDataAvailable events.
-    Unused << mAuthChannel->Cancel(NS_ERROR_SUPERFLUOS_AUTH);
-    return NS_ERROR_SUPERFLUOS_AUTH;
-  }
   return NS_OK;
 }
 
@@ -601,9 +577,9 @@ nsresult nsHttpChannelAuthProvider::GetCredentials(
     ac.rank = Rank(ac.challenge);
     if (StringBeginsWith(ac.challenge, "Digest"_ns,
                          nsCaseInsensitiveCStringComparator)) {
-      Unused << nsHttpDigestAuth::ParseChallenge(ac.challenge, realm, domain,
-                                                 nonce, opaque, &stale,
-                                                 &ac.algorithm, &qop);
+      (void)nsHttpDigestAuth::ParseChallenge(ac.challenge, realm, domain, nonce,
+                                             opaque, &stale, &ac.algorithm,
+                                             &qop);
     }
     cc.AppendElement(ac);
   }
@@ -849,9 +825,9 @@ nsresult nsHttpChannelAuthProvider::GetCredentialsForChallenge(
   // in the cache have changed, in which case we'd want to give them a
   // try instead.
   //
-  nsHttpAuthEntry* entry = nullptr;
-  Unused << authCache->GetAuthEntryForDomain(scheme, host, port, realm, suffix,
-                                             &entry);
+  RefPtr<nsHttpAuthEntry> entry;
+  (void)authCache->GetAuthEntryForDomain(scheme, host, port, realm, suffix,
+                                         entry);
 
   // hold reference to the auth session state (in case we clear our
   // reference to the entry).
@@ -976,23 +952,6 @@ nsresult nsHttpChannelAuthProvider::GetCredentialsForChallenge(
     }
   }
 
-  if (identFromURI) {
-    // Warn the user before automatically using the identity from the URL
-    // to automatically log them into a site (see bug 232567).
-    if (!ConfirmAuth("AutomaticAuth", false)) {
-      // calling cancel here sets our mStatus and aborts the HTTP
-      // transaction, which prevents OnDataAvailable events.
-      rv = mAuthChannel->Cancel(NS_ERROR_ABORT);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
-      // this return code alone is not equivalent to Cancel, since
-      // it only instructs our caller that authentication failed.
-      // without an explicit call to Cancel, our caller would just
-      // load the page that accompanies the HTTP auth challenge.
-      return NS_ERROR_ABORT;
-    }
-  }
-
-  //
   // get credentials for the given user:pass
   //
   // always store the credentials we're trying now so that they will be used
@@ -1056,7 +1015,7 @@ bool nsHttpChannelAuthProvider::BlockPrompt(bool proxyAuth) {
 
   if (!topDoc && !xhr) {
     nsCOMPtr<nsIURI> topURI;
-    Unused << chanInternal->GetTopWindowURI(getter_AddRefs(topURI));
+    (void)chanInternal->GetTopWindowURI(getter_AddRefs(topURI));
     if (topURI) {
       mCrossOrigin = !NS_SecurityCompareURIs(topURI, mURI, true);
     } else {
@@ -1380,9 +1339,6 @@ nsresult nsHttpChannelAuthProvider::PromptForIdentity(
     }
   }
 
-  // remember that we successfully showed the user an auth dialog
-  if (!proxyAuth) mSuppressDefensiveAuth = true;
-
   if (mConnectionBased) {
     // Connection can be reset by the server in the meantime user is entering
     // the credentials.  Result would be just a "Connection was reset" error.
@@ -1429,9 +1385,9 @@ NS_IMETHODIMP nsHttpChannelAuthProvider::OnAuthAvailable(
   }
 
   nsHttpAuthCache* authCache = gHttpHandler->AuthCache(mIsPrivate);
-  nsHttpAuthEntry* entry = nullptr;
-  Unused << authCache->GetAuthEntryForDomain(scheme, host, port, realm, suffix,
-                                             &entry);
+  RefPtr<nsHttpAuthEntry> entry;
+  (void)authCache->GetAuthEntryForDomain(scheme, host, port, realm, suffix,
+                                         entry);
 
   nsCOMPtr<nsISupports> sessionStateGrip;
   if (entry) sessionStateGrip = entry->mMetaData;
@@ -1484,7 +1440,7 @@ NS_IMETHODIMP nsHttpChannelAuthProvider::OnAuthCancelled(nsISupports* aContext,
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(mAuthChannel);
   if (channel) {
     nsresult status;
-    Unused << channel->GetStatus(&status);
+    (void)channel->GetStatus(&status);
     if (NS_FAILED(status)) {
       // If the channel is already cancelled, there is no need to deal with the
       // rest challenges.
@@ -1605,148 +1561,16 @@ nsresult nsHttpChannelAuthProvider::ContinueOnAuthAvailable(
   // authentication it'll respond with failure and resend the challenge list
   mRemainingChallenges.Truncate();
 
-  Unused << mAuthChannel->OnAuthAvailable();
+  (void)mAuthChannel->OnAuthAvailable();
 
   return NS_OK;
-}
-
-bool nsHttpChannelAuthProvider::ConfirmAuth(const char* bundleKey,
-                                            bool doYesNoPrompt) {
-  // skip prompting the user if
-  //   1) prompts are disabled by pref
-  //   2) we've already prompted the user
-  //   3) we're not a toplevel channel
-  //   4) the userpass length is less than the "phishy" threshold
-
-  if (!StaticPrefs::network_auth_confirmAuth_enabled()) {
-    return true;
-  }
-
-  uint32_t loadFlags;
-  nsresult rv = mAuthChannel->GetLoadFlags(&loadFlags);
-  if (NS_FAILED(rv)) return true;
-
-  if (mSuppressDefensiveAuth ||
-      !(loadFlags & nsIChannel::LOAD_INITIAL_DOCUMENT_URI)) {
-    return true;
-  }
-
-  nsAutoCString userPass;
-  rv = mURI->GetUserPass(userPass);
-  if (NS_FAILED(rv) ||
-      (userPass.Length() < gHttpHandler->PhishyUserPassLength())) {
-    return true;
-  }
-
-  // we try to confirm by prompting the user.  if we cannot do so, then
-  // assume the user said ok.  this is done to keep things working in
-  // embedded builds, where the string bundle might not be present, etc.
-
-  nsCOMPtr<nsIStringBundleService> bundleService;
-  bundleService = mozilla::components::StringBundle::Service();
-  if (!bundleService) return true;
-
-  nsCOMPtr<nsIStringBundle> bundle;
-  bundleService->CreateBundle(NECKO_MSGS_URL, getter_AddRefs(bundle));
-  if (!bundle) return true;
-
-  nsAutoCString host;
-  rv = mURI->GetHost(host);
-  if (NS_FAILED(rv)) return true;
-
-  nsAutoCString user;
-  rv = mURI->GetUsername(user);
-  if (NS_FAILED(rv)) return true;
-
-  NS_ConvertUTF8toUTF16 ucsHost(host), ucsUser(user);
-
-  size_t userLength = ucsUser.Length();
-  if (userLength > MAX_DISPLAYED_USER_LENGTH) {
-    size_t desiredLength = MAX_DISPLAYED_USER_LENGTH;
-    // Don't cut off right before a low surrogate. Just include it.
-    if (NS_IS_LOW_SURROGATE(ucsUser[desiredLength])) {
-      desiredLength++;
-    }
-    ucsUser.Replace(desiredLength, userLength - desiredLength,
-                    nsContentUtils::GetLocalizedEllipsis());
-  }
-
-  size_t hostLen = ucsHost.Length();
-  if (hostLen > MAX_DISPLAYED_HOST_LENGTH) {
-    size_t cutPoint = hostLen - MAX_DISPLAYED_HOST_LENGTH;
-    // Likewise, don't cut off right before a low surrogate here.
-    // Keep the low surrogate
-    if (NS_IS_LOW_SURROGATE(ucsHost[cutPoint])) {
-      cutPoint--;
-    }
-    // It's possible cutPoint was 1 and is now 0. Only insert the ellipsis
-    // if we're actually removing anything.
-    if (cutPoint > 0) {
-      ucsHost.Replace(0, cutPoint, nsContentUtils::GetLocalizedEllipsis());
-    }
-  }
-
-  AutoTArray<nsString, 2> strs = {ucsHost, ucsUser};
-
-  nsAutoString msg;
-  rv = bundle->FormatStringFromName(bundleKey, strs, msg);
-  if (NS_FAILED(rv)) return true;
-
-  nsCOMPtr<nsIInterfaceRequestor> callbacks;
-  rv = mAuthChannel->GetNotificationCallbacks(getter_AddRefs(callbacks));
-  if (NS_FAILED(rv)) return true;
-
-  nsCOMPtr<nsILoadGroup> loadGroup;
-  rv = mAuthChannel->GetLoadGroup(getter_AddRefs(loadGroup));
-  if (NS_FAILED(rv)) return true;
-
-  nsCOMPtr<nsIPromptService> promptSvc =
-      do_GetService("@mozilla.org/prompter;1", &rv);
-  if (NS_FAILED(rv) || !promptSvc) {
-    return true;
-  }
-
-  // do not prompt again
-  mSuppressDefensiveAuth = true;
-
-  // Get current browsing context to use as prompt parent
-  nsCOMPtr<nsIChannel> chan = do_QueryInterface(mAuthChannel);
-  if (!chan) {
-    return true;
-  }
-
-  nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
-  RefPtr<mozilla::dom::BrowsingContext> browsingContext;
-  loadInfo->GetBrowsingContext(getter_AddRefs(browsingContext));
-
-  bool confirmed;
-  if (doYesNoPrompt) {
-    int32_t choice;
-    bool checkState = false;
-    rv = promptSvc->ConfirmExBC(
-        browsingContext, StaticPrefs::prompts_modalType_confirmAuth(), nullptr,
-        msg.get(),
-        nsIPromptService::BUTTON_POS_1_DEFAULT +
-            nsIPromptService::STD_YES_NO_BUTTONS,
-        nullptr, nullptr, nullptr, nullptr, &checkState, &choice);
-    if (NS_FAILED(rv)) return true;
-
-    confirmed = choice == 0;
-  } else {
-    rv = promptSvc->ConfirmBC(browsingContext,
-                              StaticPrefs::prompts_modalType_confirmAuth(),
-                              nullptr, msg.get(), &confirmed);
-    if (NS_FAILED(rv)) return true;
-  }
-
-  return confirmed;
 }
 
 void nsHttpChannelAuthProvider::SetAuthorizationHeader(
     nsHttpAuthCache* authCache, const nsHttpAtom& header,
     const nsACString& scheme, const nsACString& host, int32_t port,
     const nsACString& path, nsHttpAuthIdentity& ident) {
-  nsHttpAuthEntry* entry = nullptr;
+  RefPtr<nsHttpAuthEntry> entry;
   nsresult rv;
 
   // set informations that depend on whether
@@ -1761,7 +1585,7 @@ void nsHttpChannelAuthProvider::SetAuthorizationHeader(
     if (mProxyInfo) {
       nsAutoCString type;
       mProxyInfo->GetType(type);
-      if (type.EqualsLiteral("https")) {
+      if (type.EqualsLiteral("https") || type.EqualsLiteral("masque")) {
         // Let this be overriden by anything from the cache.
         auto const& pa = mProxyInfo->ProxyAuthorizationHeader();
         if (!pa.IsEmpty()) {
@@ -1777,7 +1601,7 @@ void nsHttpChannelAuthProvider::SetAuthorizationHeader(
     GetOriginAttributesSuffix(chan, suffix);
   }
 
-  rv = authCache->GetAuthEntryForPath(scheme, host, port, path, suffix, &entry);
+  rv = authCache->GetAuthEntryForPath(scheme, host, port, path, suffix, entry);
   if (NS_SUCCEEDED(rv)) {
     // if we are trying to add a header for origin server auth and if the
     // URL contains an explicit username, then try the given username first.
@@ -1839,12 +1663,6 @@ void nsHttpChannelAuthProvider::SetAuthorizationHeader(
         rv = mAuthChannel->SetWWWCredentials(creds);
         MOZ_ASSERT(NS_SUCCEEDED(rv));
       }
-
-      // suppress defensive auth prompting for this channel since we know
-      // that we already prompted at least once this session.  we only do
-      // this for non-proxy auth since the URL's userpass is not used for
-      // proxy auth.
-      if (header == nsHttp::Authorization) mSuppressDefensiveAuth = true;
     } else {
       ident.Clear();  // don't remember the identity
     }

@@ -35,6 +35,11 @@ function log(...args) {
 class _RFPHelper {
   _resizeObservers = new WeakMap();
 
+  // Track the observer status. It looks like pref changes can be notified
+  // also if the pref is actually unchanged. This might be a tests-only issue
+  // where we repeatedly push the prefs. See bug 1992137.
+  _letterboxingPrefObserversAdded = false;
+
   // ============================================================================
   // Shared Setup
   // ============================================================================
@@ -289,11 +294,17 @@ class _RFPHelper {
 
   _handleLetterboxingPrefChanged() {
     if (Services.prefs.getBoolPref(kPrefLetterboxing, false)) {
-      Services.ww.registerNotification(this);
+      if (!this._letterboxingPrefObserversAdded) {
+        Services.ww.registerNotification(this);
+        this._letterboxingPrefObserversAdded = true;
+      }
       this._attachAllWindows();
     } else {
       this._detachAllWindows();
-      Services.ww.unregisterNotification(this);
+      if (this._letterboxingPrefObserversAdded) {
+        Services.ww.unregisterNotification(this);
+        this._letterboxingPrefObserversAdded = false;
+      }
     }
   }
 

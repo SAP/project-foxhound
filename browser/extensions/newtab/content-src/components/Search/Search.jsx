@@ -2,23 +2,30 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals ContentSearchUIController, ContentSearchHandoffUIController */
+/* globals ContentSearchHandoffUIController */
+
+/**
+ * @backward-compat { version 148 }
+ *
+ * Temporary dual implementation to support train hopping. The old handoff UI
+ * is kept alongside the new contentSearchHandoffUI.mjs custom element until
+ * the module lands on all channels. Controlled by the pref
+ * browser.newtabpage.activity-stream.search.useHandoffComponent.
+ * Remove the old implementation and the pref once this ships to Release.
+ */
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { connect } from "react-redux";
-import { IS_NEWTAB } from "content-src/lib/constants";
 import { Logo } from "content-src/components/Logo/Logo";
 import React from "react";
-import { TrendingSearches } from "../DiscoveryStreamComponents/TrendingSearches/TrendingSearches";
+import { ExternalComponentWrapper } from "content-src/components/ExternalComponentWrapper/ExternalComponentWrapper";
 
 export class _Search extends React.PureComponent {
   constructor(props) {
     super(props);
-    this.onSearchClick = this.onSearchClick.bind(this);
     this.onSearchHandoffClick = this.onSearchHandoffClick.bind(this);
     this.onSearchHandoffPaste = this.onSearchHandoffPaste.bind(this);
     this.onSearchHandoffDrop = this.onSearchHandoffDrop.bind(this);
-    this.onInputMount = this.onInputMount.bind(this);
     this.onInputMountHandoff = this.onInputMountHandoff.bind(this);
     this.onSearchHandoffButtonMount =
       this.onSearchHandoffButtonMount.bind(this);
@@ -29,10 +36,6 @@ export class _Search extends React.PureComponent {
     if (event.detail.type === "Search") {
       this.props.dispatch(ac.UserEvent({ event: "SEARCH" }));
     }
-  }
-
-  onSearchClick(event) {
-    window.gContentSearchController.search(event);
   }
 
   doSearchHandoff(text) {
@@ -69,49 +72,49 @@ export class _Search extends React.PureComponent {
   }
 
   componentDidMount() {
-    const caret = this.fakeCaret;
-    const { caretBlinkCount, caretBlinkTime } = this.props.Prefs.values;
+    const {
+      caretBlinkCount,
+      caretBlinkTime,
+      "search.useHandoffComponent": useHandoffComponent,
+      "externalComponents.enabled": useExternalComponents,
+    } = this.props.Prefs.values;
 
-    if (caret) {
-      // If caret blink count isn't defined, use the default infinite behavior for animation
-      caret.style.setProperty(
-        "--caret-blink-count",
-        caretBlinkCount > -1 ? caretBlinkCount : "infinite"
-      );
-
-      // Apply custom blink rate if set, else fallback to default (567ms on/off --> 1134ms total)
-      caret.style.setProperty(
-        "--caret-blink-time",
-        caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`
-      );
+    if (useExternalComponents) {
+      // Nothing to do - the external component will have set the caret
+      // values itself.
+      return;
     }
-  }
 
-  componentWillUnmount() {
-    delete window.gContentSearchController;
-  }
+    if (useHandoffComponent) {
+      const { handoffUI } = this;
+      if (handoffUI) {
+        // If caret blink count isn't defined, use the default infinite behavior for animation
+        handoffUI.style.setProperty(
+          "--caret-blink-count",
+          caretBlinkCount > -1 ? caretBlinkCount : "infinite"
+        );
 
-  onInputMount(input) {
-    if (input) {
-      // The "healthReportKey" and needs to be "newtab" or "abouthome" so that
-      // BrowserUsageTelemetry.sys.mjs knows to handle events with this name, and
-      // can add the appropriate telemetry probes for search. Without the correct
-      // name, certain tests like browser_UsageTelemetry_content.js will fail
-      // (See github ticket #2348 for more details)
-      const healthReportKey = IS_NEWTAB ? "newtab" : "abouthome";
-
-      // gContentSearchController needs to exist as a global so that tests for
-      // the existing about:home can find it; and so it allows these tests to pass.
-      // In the future, when activity stream is default about:home, this can be renamed
-      window.gContentSearchController = new ContentSearchUIController(
-        input,
-        input.parentNode,
-        healthReportKey
-      );
-      addEventListener("ContentSearchClient", this);
+        // Apply custom blink rate if set, else fallback to default (567ms on/off --> 1134ms total)
+        handoffUI.style.setProperty(
+          "--caret-blink-time",
+          caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`
+        );
+      }
     } else {
-      window.gContentSearchController = null;
-      removeEventListener("ContentSearchClient", this);
+      const caret = this.fakeCaret;
+      if (caret) {
+        // If caret blink count isn't defined, use the default infinite behavior for animation
+        caret.style.setProperty(
+          "--caret-blink-count",
+          caretBlinkCount > -1 ? caretBlinkCount : "infinite"
+        );
+
+        // Apply custom blink rate if set, else fallback to default (567ms on/off --> 1134ms total)
+        caret.style.setProperty(
+          "--caret-blink-time",
+          caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`
+        );
+      }
     }
   }
 
@@ -134,6 +137,37 @@ export class _Search extends React.PureComponent {
    * in order to execute searches in various tests
    */
   render() {
+    const useHandoffComponent =
+      this.props.Prefs.values["search.useHandoffComponent"];
+    const useExternalComponents =
+      this.props.Prefs.values["externalComponents.enabled"];
+
+    if (useHandoffComponent) {
+      if (useExternalComponents) {
+        return (
+          <div className="search-wrapper">
+            {this.props.showLogo && <Logo />}
+            <ExternalComponentWrapper
+              type="SEARCH"
+              className="search-inner-wrapper"
+            ></ExternalComponentWrapper>
+          </div>
+        );
+      }
+      return (
+        <div className="search-wrapper">
+          {this.props.showLogo && <Logo />}
+          <div className="search-inner-wrapper">
+            <content-search-handoff-ui
+              ref={el => {
+                this.handoffUI = el;
+              }}
+            ></content-search-handoff-ui>
+          </div>
+        </div>
+      );
+    }
+
     const wrapperClassName = [
       "search-wrapper",
       this.props.disable && "search-disabled",
@@ -141,72 +175,36 @@ export class _Search extends React.PureComponent {
     ]
       .filter(v => v)
       .join(" ");
-    const prefs = this.props.Prefs.values;
-
-    const trendingSearchEnabled =
-      prefs["trendingSearch.enabled"] &&
-      prefs["system.trendingSearch.enabled"] &&
-      prefs["trendingSearch.defaultSearchEngine"]?.toLowerCase() === "google";
-
-    const trendingSearchVariant =
-      this.props.Prefs.values["trendingSearch.variant"];
 
     return (
-      <>
-        <div className={wrapperClassName}>
-          {this.props.showLogo && <Logo />}
-          {!this.props.handoffEnabled && (
-            <div className="search-inner-wrapper no-handoff">
-              <input
-                id="newtab-search-text"
-                data-l10n-id="newtab-search-box-input"
-                maxLength="256"
-                ref={this.onInputMount}
-                type="search"
-              />
-              <button
-                id="searchSubmit"
-                className="search-button"
-                data-l10n-id="newtab-search-box-search-button"
-                onClick={this.onSearchClick}
-              />
-              {trendingSearchEnabled &&
-                (trendingSearchVariant === "a" ||
-                  trendingSearchVariant === "c") && <TrendingSearches />}
-            </div>
-          )}
-          {this.props.handoffEnabled && (
-            <div className="search-inner-wrapper">
-              <button
-                className="search-handoff-button"
-                ref={this.onSearchHandoffButtonMount}
-                onClick={this.onSearchHandoffClick}
-                tabIndex="-1"
-              >
-                <div className="fake-textbox" />
-                <input
-                  type="search"
-                  className="fake-editable"
-                  tabIndex="-1"
-                  aria-hidden="true"
-                  onDrop={this.onSearchHandoffDrop}
-                  onPaste={this.onSearchHandoffPaste}
-                  ref={this.onInputMountHandoff}
-                />
-                <div
-                  className="fake-caret"
-                  ref={el => {
-                    this.fakeCaret = el;
-                  }}
-                />
-              </button>
-              {trendingSearchEnabled &&
-                (trendingSearchVariant === "a" ||
-                  trendingSearchVariant === "c") && <TrendingSearches />}
-            </div>
-          )}
+      <div className={wrapperClassName}>
+        {this.props.showLogo && <Logo />}
+        <div className="search-inner-wrapper">
+          <button
+            className="search-handoff-button"
+            ref={this.onSearchHandoffButtonMount}
+            onClick={this.onSearchHandoffClick}
+            tabIndex="-1"
+          >
+            <div className="fake-textbox" />
+            <input
+              type="search"
+              className="fake-editable"
+              tabIndex="-1"
+              aria-hidden="true"
+              onDrop={this.onSearchHandoffDrop}
+              onPaste={this.onSearchHandoffPaste}
+              ref={this.onInputMountHandoff}
+            />
+            <div
+              className="fake-caret"
+              ref={el => {
+                this.fakeCaret = el;
+              }}
+            />
+          </button>
         </div>
-      </>
+      </div>
     );
   }
 }

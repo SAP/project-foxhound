@@ -9,9 +9,19 @@
 
 use super::{FeatureFlags, FeatureType, QueryFeatureExpression};
 use crate::custom_properties;
-use crate::values::{computed, AtomString};
-use crate::{error_reporting::ContextualParseError, parser::ParserContext};
-use cssparser::{Parser, SourcePosition, Token};
+use crate::derives::*;
+use crate::dom::AttributeTracker;
+use crate::properties::CSSWideKeyword;
+use crate::properties_and_values::registry::PropertyRegistrationData;
+use crate::properties_and_values::value::{
+    AllowComputationallyDependent, ComputedValue as ComputedRegisteredValue,
+    SpecifiedValue as SpecifiedRegisteredValue,
+};
+use crate::stylesheets::CustomMediaEvaluator;
+use crate::stylist::Stylist;
+use crate::values::{computed, AtomString, DashedIdent};
+use crate::{error_reporting::ContextualParseError, parser::Parse, parser::ParserContext};
+use cssparser::{match_ignore_ascii_case, parse_important, Parser, SourcePosition, Token};
 use selectors::kleene_value::KleeneValue;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
@@ -32,14 +42,19 @@ enum AllowOr {
     No,
 }
 
+#[derive(Clone, Debug, PartialEq, ToShmem)]
+enum StyleFeatureValue {
+    Value(Option<Arc<custom_properties::SpecifiedValue>>),
+    Keyword(CSSWideKeyword),
+}
+
 /// A style query feature:
 /// https://drafts.csswg.org/css-conditional-5/#typedef-style-feature
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
 pub struct StyleFeature {
     name: custom_properties::Name,
-    // TODO: This is a "primary" reference, probably should be unconditionally measured.
-    #[ignore_malloc_size_of = "Arc"]
-    value: Option<Arc<custom_properties::SpecifiedValue>>,
+    #[ignore_malloc_size_of = "StyleFeatureValue has an Arc variant"]
+    value: StyleFeatureValue,
 }
 
 impl ToCss for StyleFeature {
@@ -49,9 +64,16 @@ impl ToCss for StyleFeature {
     {
         dest.write_str("--")?;
         crate::values::serialize_atom_identifier(&self.name, dest)?;
-        if let Some(ref v) = self.value {
-            dest.write_str(": ")?;
-            v.to_css(dest)?;
+        match self.value {
+            StyleFeatureValue::Keyword(k) => {
+                dest.write_str(": ")?;
+                k.to_css(dest)?;
+            },
+            StyleFeatureValue::Value(Some(ref v)) => {
+                dest.write_str(": ")?;
+                v.to_css(dest)?;
+            },
+            StyleFeatureValue::Value(None) => (),
         }
         Ok(())
     }
@@ -63,8 +85,8 @@ impl StyleFeature {
         input: &mut Parser<'i, 't>,
         feature_type: FeatureType,
     ) -> Result<Self, ParseError<'i>> {
-        if !static_prefs::pref!("layout.css.style-queries.enabled") ||
-            feature_type != FeatureType::Container
+        if !static_prefs::pref!("layout.css.style-queries.enabled")
+            || feature_type != FeatureType::Container
         {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
@@ -77,32 +99,119 @@ impl StyleFeature {
         };
         let value = if input.try_parse(|i| i.expect_colon()).is_ok() {
             input.skip_whitespace();
-            Some(Arc::new(custom_properties::SpecifiedValue::parse(
-                input,
-                &context.url_data,
-            )?))
+            if let Ok(keyword) = input.try_parse(|i| CSSWideKeyword::parse(i)) {
+                StyleFeatureValue::Keyword(keyword)
+            } else {
+                let value = custom_properties::SpecifiedValue::parse(input, &context.url_data)?;
+                // `!important` is allowed (but ignored) after the value.
+                let _ = input.try_parse(parse_important);
+                StyleFeatureValue::Value(Some(Arc::new(value)))
+            }
         } else {
-            None
+            StyleFeatureValue::Value(None)
         };
         Ok(Self { name, value })
     }
 
+    // Substitute custom-property references in `value`, then re-parse and compute it,
+    // and compare against `current_value`.
+    fn substitute_and_compare(
+        value: &Arc<custom_properties::SpecifiedValue>,
+        registration: &PropertyRegistrationData,
+        stylist: &Stylist,
+        ctx: &computed::Context,
+        current_value: Option<&ComputedRegisteredValue>,
+    ) -> bool {
+        let substituted = match crate::custom_properties::substitute(
+            &value,
+            ctx.inherited_custom_properties(),
+            stylist,
+            ctx,
+            // FIXME: do we need to pass a real AttributeTracker for the query?
+            &mut AttributeTracker::new_dummy(),
+        ) {
+            Ok(sub) => sub,
+            Err(_) => return current_value.is_none(),
+        };
+        if registration.syntax.is_universal() {
+            return match current_value {
+                Some(v) => v.as_universal().is_some_and(|v| v.css == substituted),
+                None => substituted.is_empty(),
+            };
+        }
+        let mut input = cssparser::ParserInput::new(&substituted);
+        let mut parser = Parser::new(&mut input);
+        let computed = SpecifiedRegisteredValue::compute(
+            &mut parser,
+            registration,
+            &value.url_data,
+            ctx,
+            AllowComputationallyDependent::Yes,
+        )
+        .ok();
+        computed.as_ref() == current_value
+    }
+
     fn matches(&self, ctx: &computed::Context) -> KleeneValue {
         // FIXME(emilio): Confirm this is the right style to query.
-        let registration = ctx
+        let stylist = ctx
             .builder
             .stylist
-            .expect("container queries should have a stylist around")
-            .get_custom_property_registration(&self.name);
+            .expect("container queries should have a stylist around");
+        let registration = stylist.get_custom_property_registration(&self.name);
         let current_value = ctx
             .inherited_custom_properties()
             .get(registration, &self.name);
         KleeneValue::from(match self.value {
-            Some(ref v) => current_value.is_some_and(|cur| {
-                custom_properties::compute_variable_value(v, registration, ctx)
-                    .is_some_and(|v| v == *cur)
-            }),
-            None => current_value.is_some(),
+            StyleFeatureValue::Value(Some(ref v)) => {
+                if ctx.container_info.is_none() {
+                    // If no container, custom props are guaranteed-unknown.
+                    false
+                } else if v.has_references() {
+                    // If there are --var() references in the query value,
+                    // try to substitute them before comparing to current.
+                    Self::substitute_and_compare(v, registration, stylist, ctx, current_value)
+                } else {
+                    custom_properties::compute_variable_value(&v, registration, ctx).as_ref()
+                        == current_value
+                }
+            },
+            StyleFeatureValue::Value(None) => current_value.is_some(),
+            StyleFeatureValue::Keyword(kw) => {
+                match kw {
+                    CSSWideKeyword::Unset => current_value.is_none(),
+                    CSSWideKeyword::Initial => {
+                        if let Some(initial) = &registration.initial_value {
+                            let v = custom_properties::compute_variable_value(
+                                &initial,
+                                registration,
+                                ctx,
+                            );
+                            v == current_value.cloned()
+                        } else {
+                            current_value.is_none()
+                        }
+                    },
+                    CSSWideKeyword::Inherit => {
+                        if let Some(inherited) = ctx
+                            .container_info
+                            .as_ref()
+                            .expect("queries should provide container info")
+                            .inherited_style()
+                        {
+                            current_value
+                                == inherited.custom_properties().get(registration, &self.name)
+                        } else {
+                            false
+                        }
+                    },
+                    // Cascade-dependent keywords, such as revert and revert-layer,
+                    // are invalid as values in a style feature, and cause the
+                    // container style query to be false.
+                    // https://drafts.csswg.org/css-conditional-5/#evaluate-a-style-range
+                    CSSWideKeyword::Revert | CSSWideKeyword::RevertLayer => false,
+                }
+            },
         })
     }
 }
@@ -218,6 +327,8 @@ impl ToCss for MozPrefFeature {
 pub enum QueryCondition {
     /// A simple feature expression, implicitly parenthesized.
     Feature(QueryFeatureExpression),
+    /// A custom media query reference in a boolean context, implicitly parenthesized.
+    Custom(DashedIdent),
     /// A negation of a condition.
     Not(Box<QueryCondition>),
     /// A set of joint operations.
@@ -241,6 +352,11 @@ impl ToCss for QueryCondition {
             // NOTE(emilio): QueryFeatureExpression already includes the
             // parenthesis.
             QueryCondition::Feature(ref f) => f.to_css(dest),
+            QueryCondition::Custom(ref name) => {
+                dest.write_char('(')?;
+                name.to_css(dest)?;
+                dest.write_char(')')
+            },
             QueryCondition::Not(ref c) => {
                 dest.write_str("not ")?;
                 c.to_css(dest)
@@ -297,8 +413,11 @@ impl QueryCondition {
     {
         visitor(self);
         match *self {
-            Self::Feature(..) | Self::GeneralEnclosed(..) | Self::Style(..) | Self::MozPref(..) => {
-            },
+            Self::Custom(..)
+            | Self::Feature(..)
+            | Self::GeneralEnclosed(..)
+            | Self::Style(..)
+            | Self::MozPref(..) => {},
             Self::Not(ref cond) => cond.visit(visitor),
             Self::Operation(ref conds, _op) => {
                 for cond in conds.iter() {
@@ -394,6 +513,11 @@ impl QueryCondition {
             Ok(expr) => return Ok(Self::Feature(expr)),
             Err(e) => e,
         };
+        if static_prefs::pref!("layout.css.custom-media.enabled") {
+            if let Ok(custom) = input.try_parse(|input| DashedIdent::parse(context, input)) {
+                return Ok(Self::Custom(custom));
+            }
+        }
         if let Ok(inner) = Self::parse(context, input, feature_type) {
             return Ok(Self::InParens(Box::new(inner)));
         }
@@ -475,36 +599,27 @@ impl QueryCondition {
     /// https://drafts.csswg.org/mediaqueries/#typedef-general-enclosed
     /// Kleene 3-valued logic is adopted here due to the introduction of
     /// <general-enclosed>.
-    pub fn matches(&self, context: &computed::Context) -> KleeneValue {
+    pub fn matches(
+        &self,
+        context: &computed::Context,
+        custom: &mut CustomMediaEvaluator,
+    ) -> KleeneValue {
         match *self {
+            QueryCondition::Custom(ref f) => custom.matches(f, context),
             QueryCondition::Feature(ref f) => f.matches(context),
             QueryCondition::GeneralEnclosed(_) => KleeneValue::Unknown,
-            QueryCondition::InParens(ref c) => c.matches(context),
-            QueryCondition::Not(ref c) => !c.matches(context),
+            QueryCondition::InParens(ref c) => c.matches(context, custom),
+            QueryCondition::Not(ref c) => !c.matches(context, custom),
             QueryCondition::Style(ref c) => c.matches(context),
             QueryCondition::MozPref(ref c) => c.matches(context),
             QueryCondition::Operation(ref conditions, op) => {
                 debug_assert!(!conditions.is_empty(), "We never create an empty op");
                 match op {
                     Operator::And => {
-                        let mut result = KleeneValue::True;
-                        for c in conditions.iter() {
-                            result &= c.matches(context);
-                            if result == KleeneValue::False {
-                                break;
-                            }
-                        }
-                        result
+                        KleeneValue::any_false(conditions.iter(), |c| c.matches(context, custom))
                     },
                     Operator::Or => {
-                        let mut result = KleeneValue::False;
-                        for c in conditions.iter() {
-                            result |= c.matches(context);
-                            if result == KleeneValue::True {
-                                break;
-                            }
-                        }
-                        result
+                        KleeneValue::any(conditions.iter(), |c| c.matches(context, custom))
                     },
                 }
             },

@@ -916,7 +916,6 @@ static void RecordZeroLengthEvent(bool aIsSync, const nsCString& aSpec,
     };
     glean::zero_byte_load::load_properties.Record(Some(extra));
   } else if (StringEndsWith(fileName, ".js"_ns) ||
-             StringEndsWith(fileName, ".jsm"_ns) ||
              StringEndsWith(fileName, ".mjs"_ns)) {
     // We're going to skip reporting telemetry on JS loads
     // coming not from omni.ja.

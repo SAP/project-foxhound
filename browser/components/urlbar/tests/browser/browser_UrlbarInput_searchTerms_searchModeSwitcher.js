@@ -20,7 +20,7 @@ add_setup(async function () {
     ],
   });
   let cleanup = await installPersistTestEngines();
-  nonDefaultEngine = Services.search.getEngineByName("MochiSearch");
+  nonDefaultEngine = SearchService.getEngineByName("MochiSearch");
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     cleanup();
@@ -33,9 +33,7 @@ add_task(async function visibility_of_elements() {
   let urlbar = window.gURLBar;
 
   Assert.equal(
-    BrowserTestUtils.isVisible(
-      urlbar.querySelector("#urlbar-searchmode-switcher")
-    ),
+    BrowserTestUtils.isVisible(urlbar.querySelector(".searchmode-switcher")),
     true,
     "Unified Search Button is visible."
   );
@@ -62,7 +60,7 @@ add_task(async function select_default_engine_and_search() {
 
   info("Search with the default engine.");
   let [url] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(

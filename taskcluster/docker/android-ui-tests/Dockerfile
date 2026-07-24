@@ -14,7 +14,6 @@ ENV CURL='curl --location --retry 5' \
 
 RUN apt-get update && \
     apt-get install \
-      autoconf2.13 \
       build-essential \
       base-files \
       ccache \
@@ -45,7 +44,7 @@ RUN apt-get update && \
       zip \
       zstd
 
-RUN pip3 install taskcluster==83.5.6
+RUN pip3 install taskcluster==94.0.1
 
 RUN locale-gen "$LANG"
 
@@ -58,7 +57,7 @@ RUN chown -R worker:worker ${HOME}/.config
 USER worker:worker
 
 ENV GOOGLE_SDK_DOWNLOAD ./gcloud.tar.gz
-ENV GOOGLE_SDK_VERSION 518
+ENV GOOGLE_SDK_VERSION 548
 
 ENV TEST_TOOLS /builds/worker/test-tools
 ENV PATH ${PATH}:${TEST_TOOLS}:${TEST_TOOLS}/google-cloud-sdk/bin
@@ -78,10 +77,10 @@ RUN curl -L https://github.com/Flank/flank/releases/download/v${FLANK_VERSION}/f
     && chmod +x ${FLANK_DOWNLOAD}
 
 # Used in taskcluster/scripts/tests/parse-junit-results.py for parsing and displaying JUnit XML results
-RUN pip3 install junitparser==3.2.0 beautifultable==1.1.0
+RUN pip3 install junitparser==4.0.2 beautifultable==1.1.0
 
 # Used for env var ingest in testrail.py
-RUN pip3 install python-dotenv==1.1.0
+RUN pip3 install python-dotenv==1.2.1
 
 # run-task expects to run as root
 USER root

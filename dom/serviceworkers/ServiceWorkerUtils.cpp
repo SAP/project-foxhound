@@ -6,8 +6,6 @@
 
 #include "ServiceWorkerUtils.h"
 
-#include "nsContentPolicyUtils.h"
-
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LoadInfo.h"
@@ -15,8 +13,8 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
@@ -24,6 +22,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "nsCOMPtr.h"
+#include "nsContentPolicyUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIGlobalObject.h"
 #include "nsIPrincipal.h"
@@ -280,13 +279,13 @@ void ServiceWorkerScopeAndScriptAreValid(const ClientInfo& aClientInfo,
   // The refs should really be empty coming in here, but if someone
   // injects bad data into IPC, who knows.  So let's revalidate that.
   nsAutoCString ref;
-  Unused << aScopeURI->GetRef(ref);
+  (void)aScopeURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on scope URL");
     return;
   }
 
-  Unused << aScriptURI->GetRef(ref);
+  (void)aScriptURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on script URL");
     return;

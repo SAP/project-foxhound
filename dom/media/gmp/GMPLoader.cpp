@@ -5,13 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPLoader.h"
-#include <stdio.h>
-#include "mozilla/Attributes.h"
-#include "nsExceptionHandler.h"
+
 #include "gmp-entrypoints.h"
-#include "prlink.h"
+#include "nsExceptionHandler.h"
 #include "prenv.h"
 #include "prerror.h"
+#include "prlink.h"
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
 #  include "mozilla/sandboxing/SandboxInitialization.h"
@@ -22,8 +21,6 @@
 #  include "mozilla/SandboxInfo.h"
 #  include "mozilla/SandboxProfilerObserver.h"
 #endif
-
-#include <string>
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -167,8 +164,8 @@ namespace {
 class LinuxSandboxStarter : public mozilla::gmp::SandboxStarter {
  private:
   LinuxSandboxStarter() = default;
-  friend mozilla::detail::UniqueSelector<LinuxSandboxStarter>::SingleObject
-  mozilla::MakeUnique<LinuxSandboxStarter>();
+  friend std::unique_ptr<LinuxSandboxStarter>
+  std::make_unique<LinuxSandboxStarter>();
 
  public:
   static UniquePtr<SandboxStarter> Make() {

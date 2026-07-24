@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include <iterator>
 #include <utility>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr_exclusion.h"
 
 namespace base {
 
@@ -24,14 +24,16 @@ class ReversedAdapter {
 
   explicit ReversedAdapter(T& t) : t_(t) {}
   ReversedAdapter(const ReversedAdapter& ra) : t_(ra.t_) {}
+  ReversedAdapter& operator=(const ReversedAdapter&) = delete;
 
   Iterator begin() const { return std::rbegin(t_); }
   Iterator end() const { return std::rend(t_); }
 
  private:
-  T& t_;
-
-  DISALLOW_ASSIGN(ReversedAdapter);
+  // Not a raw_ref<...> for performance reasons: on-stack pointer.
+  // It is only used inside for loops. Ideally, the container being iterated
+  // over should be the one held via a raw_ref/raw_ptrs.
+  RAW_PTR_EXCLUSION T& t_;
 };
 
 }  // namespace internal

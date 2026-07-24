@@ -3,19 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/FloatingPoint.h"
-
 #include "txXSLTNumber.h"
-#include "nsGkAtoms.h"
-#include "txCore.h"
+
 #include <math.h>
-#include "txExpr.h"
-#include "txXSLTPatterns.h"
-#include "txIXPathContext.h"
-#include "txXPathTreeWalker.h"
 
 #include <algorithm>
+
+#include "nsGkAtoms.h"
+#include "txCore.h"
+#include "txExpr.h"
+#include "txIXPathContext.h"
+#include "txXPathTreeWalker.h"
+#include "txXSLTPatterns.h"
 
 using mozilla::MakeUnique;
 using mozilla::UniquePtr;

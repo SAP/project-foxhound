@@ -13,9 +13,9 @@
 #include "mozilla/dom/RemoteType.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "nsString.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

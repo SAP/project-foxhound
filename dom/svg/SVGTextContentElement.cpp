@@ -6,16 +6,16 @@
 
 #include "mozilla/dom/SVGTextContentElement.h"
 
-#include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/dom/SVGTextContentElementBinding.h"
-#include "mozilla/dom/SVGRect.h"
-#include "nsBidiUtils.h"
 #include "DOMSVGPoint.h"
+#include "SVGTextFrame.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
+#include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/dom/SVGRect.h"
+#include "mozilla/dom/SVGTextContentElementBinding.h"
+#include "nsBidiUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsTextFragment.h"
 #include "nsTextFrameUtils.h"
 #include "nsTextNode.h"
-#include "SVGTextFrame.h"
 
 namespace mozilla::dom {
 
@@ -31,7 +31,7 @@ SVGElement::EnumInfo SVGTextContentElement::sEnumInfo[1] = {
 
 SVGElement::LengthInfo SVGTextContentElement::sLengthInfo[1] = {
     {nsGkAtoms::textLength, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::XY}};
+     SVGLength::Axis::XY}};
 
 SVGTextFrame* SVGTextContentElement::GetSVGTextFrame() {
   nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
@@ -83,15 +83,16 @@ Maybe<int32_t> SVGTextContentElement::GetNonLayoutDependentNumberOfChars() {
       return Nothing();
     }
 
-    const nsTextFragment* text = &n->AsText()->TextFragment();
-    uint32_t length = text->GetLength();
+    const CharacterDataBuffer* characterDataBuffer = &n->AsText()->DataBuffer();
+    uint32_t length = characterDataBuffer->GetLength();
 
-    if (text->Is2b()) {
-      if (FragmentHasSkippableCharacter(text->Get2b(), length)) {
+    if (characterDataBuffer->Is2b()) {
+      if (FragmentHasSkippableCharacter(characterDataBuffer->Get2b(), length)) {
         return Nothing();
       }
     } else {
-      auto buffer = reinterpret_cast<const uint8_t*>(text->Get1b());
+      const auto* buffer =
+          reinterpret_cast<const uint8_t*>(characterDataBuffer->Get1b());
       if (FragmentHasSkippableCharacter(buffer, length)) {
         return Nothing();
       }

@@ -34,6 +34,12 @@ const METRIC_REOPEN_TYPE = Object.freeze({
   DELETED: "deleted",
 });
 
+const METRIC_GROUP_TYPE = Object.freeze({
+  EXPANDED: "expanded",
+  COLLAPSED: "collapsed",
+  SAVED: "saved",
+});
+
 /**
  * @typedef {object} TabMetricsContext
  * @property {boolean} [isUserTriggered=false]
@@ -66,5 +72,6 @@ export const TabMetrics = {
   METRIC_SOURCE,
   METRIC_TABS_LAYOUT,
   METRIC_REOPEN_TYPE,
+  METRIC_GROUP_TYPE,
   userTriggeredContext,
 };

@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["debug"] # bug 1884982 - takes 20+ minutes to run on debug
+skip-if = [
+  "debug", # bug 1884982 - takes 20+ minutes to run on debug
+]
 prefs = [
   "dom.storage_access.prompt.testing=true", # Disable the Storage Access API prompts for all of the tests in this directory
   "dom.storage_access.prompt.testing.allow=true",
@@ -92,6 +94,12 @@ support-files = [
 
 ["browser_fixed_ABA_partitionKey.js"]
 
+["browser_foreignWorker_eventSource.js"]
+support-files= [
+  "eventsource_worker.js",
+  "eventsource_message.sjs",
+]
+
 ["browser_hasStorageAccess.js"]
 
 ["browser_iframe_document_open.js"]
@@ -124,6 +132,10 @@ support-files= [
 
 ["browser_partitionedABA.js"]
 
+["browser_partitionedABBredirectToABAServiceWorkers.js"]
+
+["browser_partitionedABOpen.js"]
+
 ["browser_partitionedABnavigatestToAA.js"]
 
 ["browser_partitionedBlobSubresources.js"]
@@ -154,7 +166,9 @@ support-files = ["localStorageEvents.html"]
 ["browser_partitionedLockManager.js"]
 
 ["browser_partitionedMessaging.js"]
-skip-if = ["true"] #Bug 1588241
+skip-if = [
+  "true", # Bug 1588241
+]
 
 ["browser_partitionedServiceWorkers.js"]
 support-files = [
@@ -176,7 +190,9 @@ support-files = [
 ["browser_permissionInPrivateWindows.js"]
 
 ["browser_permissionPropagation.js"]
-skip-if = ["os == 'win' && debug"] # Bug 1645505
+skip-if = [
+  "os == 'win' && debug", # Bug 1645505
+]
 
 ["browser_referrerDefaultPolicy.js"]
 support-files = ["referrer.sjs"]
@@ -224,7 +240,9 @@ support-files = [
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.xhr.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.xhr.html",
 ]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"] # Bug 1775745
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1775745
+]
 
 ["browser_staticPartition_network.js"]
 
@@ -287,27 +305,6 @@ support-files = [
 
 ["browser_storageAccessWithHeuristics.js"]
 
-["browser_storageAccess_TopLevel_Arguments.js"]
-
-["browser_storageAccess_TopLevel_CookieBehavior.js"]
-
-["browser_storageAccess_TopLevel_CookiePermission.js"]
-
-["browser_storageAccess_TopLevel_CrossOriginSameSite.js"]
-
-["browser_storageAccess_TopLevel_Doorhanger.js"]
-
-["browser_storageAccess_TopLevel_Embed.js"]
-
-["browser_storageAccess_TopLevel_Enable.js"]
-
-["browser_storageAccess_TopLevel_RequireIntermediatePermission.js"]
-
-["browser_storageAccess_TopLevel_StorageAccessPermission.js"]
-
-["browser_storageAccess_TopLevel_UserActivation.js"]
-skip-if = ["debug"] # Bug 1700551
-
 ["browser_storageAccess_cookies_on_grant.js"]
 
 ["browser_storageAccess_userActivation.js"]
@@ -348,6 +345,9 @@ support-files = [
 
 ["browser_urlQueryStringStripping.js"]
 support-files = ["file_stripping.html"]
+skip-if = [
+  "opt && verify-standalone",
+]
 
 ["browser_urlQueryStringStrippingWithEncoding.js"]
 support-files = ["file_stripping.html"]

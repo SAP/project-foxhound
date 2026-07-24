@@ -6,10 +6,10 @@
 #ifndef TRANSFRMX_MOZILLA_TEXT_OUTPUT_H
 #define TRANSFRMX_MOZILLA_TEXT_OUTPUT_H
 
-#include "txXMLEventHandler.h"
 #include "nsCOMPtr.h"
 #include "nsIWeakReferenceUtils.h"
 #include "txOutputFormat.h"
+#include "txXMLEventHandler.h"
 
 class nsITransformObserver;
 class nsIContent;

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AnimationEvent.h"
+
 #include "mozilla/ContentEvents.h"
 #include "prtime.h"
 

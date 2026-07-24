@@ -4,8 +4,8 @@
  *  * License, v. 2.0. If a copy of the MPL was not distributed with this
  *  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef RegionBuilder_h__
-#define RegionBuilder_h__
+#ifndef RegionBuilder_h_
+#define RegionBuilder_h_
 
 #include "nsTArray.h"
 #include "pixman.h"
@@ -28,4 +28,4 @@ class RegionBuilder {
   nsTArray<pixman_box32_t> mRects;
 };
 
-#endif  // RegionBuilder_h__
+#endif  // RegionBuilder_h_

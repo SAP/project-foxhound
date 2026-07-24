@@ -8,7 +8,6 @@
 #define mozilla_image_ProgressTracker_h
 
 #include "CopyOnWrite.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"

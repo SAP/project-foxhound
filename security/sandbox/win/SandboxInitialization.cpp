@@ -28,7 +28,8 @@ static WindowsDllInterceptor::FuncHookType<DuplicateHandle_func>
 
 static BOOL WINAPI patched_CloseHandle(HANDLE hObject) {
   // Check all handles being closed against the sandbox's tracked handles.
-  base::win::OnHandleBeingClosed(hObject);
+  base::win::OnHandleBeingClosed(hObject,
+                                 base::win::HandleOperation::kCloseHandleHook);
   return stub_CloseHandle(hObject);
 }
 
@@ -40,7 +41,8 @@ static BOOL WINAPI patched_DuplicateHandle(
   // tracked handles.
   if ((dwOptions & DUPLICATE_CLOSE_SOURCE) &&
       (GetProcessId(hSourceProcessHandle) == ::GetCurrentProcessId())) {
-    base::win::OnHandleBeingClosed(hSourceHandle);
+    base::win::OnHandleBeingClosed(
+        hSourceHandle, base::win::HandleOperation::kDuplicateHandleHook);
   }
 
   return stub_DuplicateHandle(hSourceProcessHandle, hSourceHandle,
@@ -112,7 +114,9 @@ static bool ShouldDisableHandleVerifier() {
   // Chromium only has the verifier enabled for 32-bit and our close monitoring
   // hooks cause debug assertions for 64-bit anyway.
   // For x86 keep the verifier enabled by default only for Nightly or debug.
-  return false;
+  // The handle verifier uses thread local storage, which at least one gtest
+  // manipulates causing it to crash, so we have to disable.
+  return !!getenv("MOZ_RUN_GTEST");
 #else
   return !getenv("MOZ_ENABLE_HANDLE_VERIFIER");
 #endif
@@ -174,8 +178,8 @@ static sandbox::BrokerServices* InitializeBrokerServices() {
   // process because it will initialize the sandbox broker, which requires
   // the process to swap its window station. During this time all the UI
   // will be broken. This has to run before threads and windows are created.
-  scoped_refptr<sandbox::TargetPolicy> policy = brokerServices->CreatePolicy();
-  policy->CreateAlternateDesktop(true);
+  (void)brokerServices->CreateAlternateDesktop(
+      sandbox::Desktop::kAlternateWinstation);
 
   // Ensure the relevant mitigations are enforced.
   mozilla::sandboxing::ApplyParentProcessMitigations();
@@ -193,7 +197,7 @@ sandbox::BrokerServices* GetInitializedBrokerServices() {
 void ApplyParentProcessMitigations() {
   // The main reason for this call is for the token hardening, but chromium code
   // also ensures DEP without ATL thunk so we do the same.
-  sandbox::ApplyProcessMitigationsToCurrentProcess(
+  sandbox::RatchetDownSecurityMitigations(
       sandbox::MITIGATION_DEP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
       sandbox::MITIGATION_HARDEN_TOKEN_IL_POLICY);
 }

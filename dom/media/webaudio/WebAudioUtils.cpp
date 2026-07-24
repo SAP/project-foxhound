@@ -5,16 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebAudioUtils.h"
-#include "blink/HRTFDatabaseLoader.h"
 
+#include "blink/HRTFDatabaseLoader.h"
+#include "mozilla/SchedulerGroup.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsJSUtils.h"
 #include "nsServiceManagerUtils.h"
-
-#include "mozilla/SchedulerGroup.h"
 
 namespace mozilla {
 

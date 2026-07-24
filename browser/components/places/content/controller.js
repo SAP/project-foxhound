@@ -1675,6 +1675,21 @@ var PlacesControllerDragHelper = {
           title: data.label,
           type: PlacesUtils.TYPE_X_MOZ_URL,
         });
+      } else if (
+        XULElement.isInstance(data) &&
+        data.localName == "tab-split-view-wrapper" &&
+        data.ownerGlobal.isChromeWindow
+      ) {
+        // Splitview tabs are dragged together via tab-split-view-wrapper, so that means
+        // mozItemCount/dropCount is 1, which is why we unpack its tabs to bookmark here.
+        data.tabs.forEach(tab => {
+          let uri = tab.linkedBrowser.currentURI?.spec ?? "about:blank";
+          nodes.push({
+            uri,
+            title: tab.label,
+            type: PlacesUtils.TYPE_X_MOZ_URL,
+          });
+        });
       } else {
         throw new Error("bogus data was passed as a tab");
       }
@@ -1738,5 +1753,5 @@ XPCOMUtils.defineLazyServiceGetter(
   PlacesControllerDragHelper,
   "dragService",
   "@mozilla.org/widget/dragservice;1",
-  "nsIDragService"
+  Ci.nsIDragService
 );

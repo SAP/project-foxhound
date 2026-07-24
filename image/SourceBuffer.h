@@ -19,7 +19,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nsTArray.h"
 
 class nsIInputStream;
@@ -325,6 +324,10 @@ class SourceBuffer final {
   /// Append the data available on the provided nsIInputStream to the buffer.
   nsresult AppendFromInputStream(nsIInputStream* aInputStream, uint32_t aCount);
 
+  /// Take ownership of provided data and append it without copying.
+  nsresult AdoptData(char* aData, size_t aLength,
+                     void* (*aRealloc)(void*, size_t), void (*aFree)(void*));
+
   /**
    * Mark the buffer complete, with a status that will be available to
    * consumers. Further calls to Append() are forbidden after Complete().
@@ -383,7 +386,16 @@ class SourceBuffer final {
       mData = static_cast<char*>(malloc(mCapacity));
     }
 
-    ~Chunk() { free(mData); }
+    /// Create an "adopted" chunk taking ownership of the provided data.
+    Chunk(char* aData, size_t aLength, void* (*aRealloc)(void*, size_t),
+          void (*aFree)(void*))
+        : mCapacity(aLength),
+          mLength(aLength),
+          mData(aData),
+          mRealloc(aRealloc),
+          mFree(aFree) {}
+
+    ~Chunk() { mFree(mData); }
 
     Chunk(Chunk&& aOther)
         : mCapacity(aOther.mCapacity),
@@ -394,7 +406,7 @@ class SourceBuffer final {
     }
 
     Chunk& operator=(Chunk&& aOther) {
-      free(mData);
+      mFree(mData);
       mCapacity = aOther.mCapacity;
       mLength = aOther.mLength;
       mData = aOther.mData;
@@ -419,7 +431,11 @@ class SourceBuffer final {
 
     bool SetCapacity(size_t aCapacity) {
       MOZ_ASSERT(mData, "Allocation failed but nobody checked for it");
-      char* data = static_cast<char*>(realloc(mData, aCapacity));
+      MOZ_ASSERT(aCapacity > 0, "zero sized resize");
+      if (aCapacity == 0) {
+        return false;
+      }
+      char* data = static_cast<char*>(mRealloc(mData, aCapacity));
       if (!data) {
         return false;
       }
@@ -436,6 +452,8 @@ class SourceBuffer final {
     size_t mCapacity;
     size_t mLength;
     char* mData;
+    void* (*mRealloc)(void*, size_t) = realloc;
+    void (*mFree)(void*) = free;
   };
 
   nsresult AppendChunk(Maybe<Chunk>&& aChunk) MOZ_REQUIRES(mMutex);

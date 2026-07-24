@@ -96,8 +96,7 @@ nsTouchBarUpdater::IsTouchBarInitialized(bool* aResult) {
 }
 
 BaseWindow* nsTouchBarUpdater::GetCocoaWindow(nsIBaseWindow* aWindow) {
-  nsCOMPtr<nsIWidget> widget = nullptr;
-  aWindow->GetMainWidget(getter_AddRefs(widget));
+  nsCOMPtr<nsIWidget> widget = aWindow->GetMainWidget();
   if (!widget) {
     return nil;
   }

@@ -10,7 +10,6 @@
 // https://www.rfc-editor.org/rfc/rfc7540.txt
 
 #include "ASpdySession.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Queue.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
@@ -207,8 +206,6 @@ class Http2Session final : public ASpdySession,
   const static uint32_t kQueueMinimumCleanup = 24576;
   const static uint32_t kQueueTailRoom = 4096;
   const static uint32_t kQueueReserved = 1024;
-
-  const static uint32_t kMaxStreamID = 0x7800000;
 
   // This is a sentinel for a deleted stream. It is not a valid
   // 31 bit stream ID.
@@ -413,7 +410,7 @@ class Http2Session final : public ASpdySession,
   void UpdateLocalSessionWindow(uint32_t bytes);
 
   void MaybeDecrementConcurrent(Http2StreamBase* stream);
-  bool RoomForMoreConcurrent();
+  uint32_t RoomForMoreConcurrent();
   void IncrementConcurrent(Http2StreamBase* stream);
   void QueueStream(Http2StreamBase* stream);
 
@@ -440,7 +437,7 @@ class Http2Session final : public ASpdySession,
   // further up the stack.
   RefPtr<nsAHttpSegmentReader> mSegmentReader;
   nsAHttpSegmentWriter* mSegmentWriter;
-
+  const uint32_t kMaxStreamID;
   uint32_t mSendingChunkSize;    /* the transmission chunk size */
   uint32_t mNextStreamID;        /* 24 bits */
   uint32_t mConcurrentHighWater; /* max parallelism on session */
@@ -657,6 +654,7 @@ class Http2Session final : public ASpdySession,
  private:
   TimeStamp mLastTRRResponseTime;  // Time of the last successful TRR response
   uint32_t mTrrStreams;
+  nsCString mTrrHost;
 
   // Whether we allow websockets, based on a pref
   bool mEnableWebsockets = false;

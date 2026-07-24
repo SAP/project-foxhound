@@ -569,8 +569,7 @@ namespace detail {
 
 // The UntypedTArray type allows low-level access from XPConnect to nsTArray
 // internals without static knowledge of the array element type in question.
-class UntypedTArray : public nsTArray_base<nsTArrayFallibleAllocator,
-                                           nsTArray_RelocateUsingMemutils> {
+class UntypedTArray : public nsTArray_base<nsTArray_RelocateUsingMemutils> {
  public:
   void* Elements() const { return static_cast<void*>(Hdr() + 1); }
 

@@ -27,6 +27,7 @@
 #include "api/call/audio_sink.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
+#include "api/crypto/frame_decryptor_interface.h"
 #include "api/environment/environment.h"
 #include "api/frame_transformer_interface.h"
 #include "api/neteq/neteq_factory.h"
@@ -39,31 +40,27 @@
 #include "call/syncable.h"
 #include "modules/audio_coding/include/audio_coding_module_typedefs.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-
-// TODO(solenberg, nisse): This file contains a few NOLINT marks, to silence
-// warnings about use of unsigned short.
-// These need cleanup, in a separate cl.
-
-namespace rtc {
-class TimestampWrapAroundHandler;
-}
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 
 class AudioDeviceModule;
-class FrameDecryptorInterface;
 class PacketRouter;
 class RateLimiter;
 class ReceiveStatistics;
 class RtpPacketReceived;
 class RtpRtcp;
 
-struct CallReceiveStatistics {
+struct ChannelReceiveStatistics {
   int packets_lost = 0;
   uint32_t jitter_ms = 0;
   int64_t payload_bytes_received = 0;
   int64_t header_and_padding_bytes_received = 0;
   int packets_received = 0;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcreceivedrtpstreamstats-packetsreceivedwithect1
+  int64_t packets_received_with_ect1 = 0;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcreceivedrtpstreamstats-packetsreceivedwithce
+  int64_t packets_received_with_ce = 0;
   uint32_t nacks_sent = 0;
   // The capture NTP time (in local timebase) of the first played out audio
   // frame.
@@ -128,11 +125,11 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
 
   // Audio+Video Sync.
   virtual uint32_t GetDelayEstimate() const = 0;
-  virtual bool SetMinimumPlayoutDelay(int delay_ms) = 0;
-  virtual bool GetPlayoutRtpTimestamp(uint32_t* rtp_timestamp,
-                                      int64_t* time_ms) const = 0;
-  virtual void SetEstimatedPlayoutNtpTimestampMs(int64_t ntp_timestamp_ms,
-                                                 int64_t time_ms) = 0;
+  virtual bool SetMinimumPlayoutDelay(TimeDelta delay) = 0;
+  virtual std::optional<Syncable::PlayoutInfo> GetPlayoutRtpTimestamp()
+      const = 0;
+  virtual void SetEstimatedPlayoutNtpTimestamp(NtpTime ntp_time,
+                                               Timestamp time) = 0;
   virtual std::optional<int64_t> GetCurrentEstimatedPlayoutNtpTimestampMs(
       int64_t now_ms) const = 0;
 
@@ -149,7 +146,7 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
       PacketRouter* packet_router) = 0;
   virtual void ResetReceiverCongestionControlObjects() = 0;
 
-  virtual CallReceiveStatistics GetRTCPStatistics() const = 0;
+  virtual ChannelReceiveStatistics GetRTCPStatistics() const = 0;
   virtual void SetNACKStatus(bool enable, int max_packets) = 0;
   virtual void SetRtcpMode(webrtc::RtcpMode mode) = 0;
   virtual void SetNonSenderRttMeasurement(bool enabled) = 0;
@@ -165,14 +162,12 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   // Sets a frame transformer between the depacketizer and the decoder, to
   // transform the received frames before decoding them.
   virtual void SetDepacketizerToDecoderFrameTransformer(
-      rtc::scoped_refptr<webrtc::FrameTransformerInterface>
-          frame_transformer) = 0;
+      scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer) = 0;
 
   virtual void SetFrameDecryptor(
-      rtc::scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor) = 0;
+      scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor) = 0;
 
   virtual void OnLocalSsrcChange(uint32_t local_ssrc) = 0;
-  virtual uint32_t GetLocalSsrc() const = 0;
 };
 
 std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
@@ -186,11 +181,11 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
     bool enable_non_sender_rtt,
-    rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
+    scoped_refptr<AudioDecoderFactory> decoder_factory,
     std::optional<AudioCodecPairId> codec_pair_id,
-    rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+    scoped_refptr<FrameDecryptorInterface> frame_decryptor,
     const webrtc::CryptoOptions& crypto_options,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+    scoped_refptr<FrameTransformerInterface> frame_transformer,
     RtcpEventObserver* rtcp_event_observer);
 
 }  // namespace voe

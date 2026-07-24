@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_Feature_h
 #define mozilla_dom_Feature_h
 
+#include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsCOMPtr.h"
 
 class nsIPrincipal;
 

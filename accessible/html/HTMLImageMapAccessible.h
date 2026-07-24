@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLImageMapAccessible_h__
-#define mozilla_a11y_HTMLImageMapAccessible_h__
+#ifndef mozilla_a11y_HTMLImageMapAccessible_h_
+#define mozilla_a11y_HTMLImageMapAccessible_h_
 
 #include "HTMLLinkAccessible.h"
 #include "ImageAccessible.h"
@@ -47,7 +47,8 @@ class HTMLAreaAccessible final : public HTMLLinkAccessible {
   HTMLAreaAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // LocalAccessible
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual LocalAccessible* LocalChildAtPoint(
       int32_t aX, int32_t aY, EWhichChildAtPoint aWhichChild) override;
   virtual nsRect RelativeBounds(nsIFrame** aBoundingFrame) const override;

@@ -57,6 +57,18 @@ GeneratedFile(
     inputs=["geckoview/src/main/java/org/mozilla/gecko/util/XPCOMError.jinja"],
 )
 
+GeneratedFile(
+    "geckoview/src/main/java/org/mozilla/geckoview/CrashReport.java",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
+)
+
+GeneratedFile(
+    "android-components/components/lib/crash/src/main/java/mozilla/components/lib/crash/service/CrashReport.kt",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
+)
+
 CONFIGURE_SUBST_FILES += ["installer/Makefile"]
 
 DIRS += [
@@ -77,11 +89,17 @@ DIRS += [
 TEST_HARNESS_FILES.testing.mochitest.tests.junit += [
     "geckoview/src/androidTest/assets/www/forms_iframe.html",
     "geckoview/src/androidTest/assets/www/forms_xorigin.html",
+    "geckoview/src/androidTest/assets/www/framebusting_child.html",
+    "geckoview/src/androidTest/assets/www/framebusting_parent.html",
     "geckoview/src/androidTest/assets/www/hello.html",
     "geckoview/src/androidTest/assets/www/hsts_header.sjs",
     "geckoview/src/androidTest/assets/www/iframe_http_only.html",
     "geckoview/src/androidTest/assets/www/simple_redirect.sjs",
     "geckoview/src/androidTest/assets/www/update_manifest.json",
+    "geckoview/src/androidTest/assets/www/worker/open_window.html",
+    "geckoview/src/androidTest/assets/www/worker/open_window.js",
+    "geckoview/src/androidTest/assets/www/worker/open_window_target.html",
+    "geckoview/src/androidTest/assets/www/worker/service-worker.js",
 ]
 
 SPHINX_TREES["/mobile/android"] = "docs"

@@ -23,6 +23,11 @@ let gResponse = 1;
 })();
 
 add_setup(async function () {
+  // This test is specific to the legacy history sidebar. For equivalent telemetry for
+  // the new sidebar and history panel implementation, see bug 2002108.
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
   await PlacesUtils.history.clear();
 
   // Visited pages listed by descending visit date.

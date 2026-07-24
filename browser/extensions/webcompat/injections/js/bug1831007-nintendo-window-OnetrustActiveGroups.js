@@ -15,10 +15,10 @@
  * the value to be overwritten at any time.
  */
 
-/* globals exportFunction */
+if (typeof OnetrustActiveGroups === "undefined") {
+  console.info(
+    "The window.OnetrustActiveGroups property has been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1831007 for details."
+  );
 
-console.info(
-  "The window.OnetrustActiveGroups property has been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1831007 for details."
-);
-
-window.wrappedJSObject.OnetrustActiveGroups = "";
+  window.OnetrustActiveGroups = "";
+}

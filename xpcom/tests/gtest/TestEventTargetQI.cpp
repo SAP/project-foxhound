@@ -40,7 +40,7 @@ TEST(TestEventTargetQI, ThreadPool)
 
 TEST(TestEventTargetQI, SharedThreadPool)
 {
-  nsCOMPtr<nsIThreadPool> thing = SharedThreadPool::Get("TestPool"_ns, 1);
+  nsCOMPtr<nsIThreadPool> thing = SharedThreadPool::Get("TestPool", 1);
   EXPECT_TRUE(thing);
 
   EXPECT_FALSE(TestQITo<nsISerialEventTarget>(thing));

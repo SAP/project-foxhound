@@ -54,7 +54,6 @@ option(
 )
 set_config("MOZ_STUB_INSTALLER", True, when="MOZ_STUB_INSTALLER")
 
-
 project_flag(
     env="MOZ_PROFILE_MIGRATOR",
     help="Enable profile migrator",
@@ -95,6 +94,12 @@ option(
 )
 set_config("MOZ_DISTRIBUTION_ID", depends("--with-distribution-id")(lambda v: v[0]))
 
+option(
+    "--built-by-mozilla",
+    help="Enable Mozilla official build designation",
+)
+set_config("BUILT_BY_MOZILLA", depends("--built-by-mozilla")(lambda v: bool(v) or None))
+set_define("BUILT_BY_MOZILLA", depends("--built-by-mozilla")(lambda v: bool(v) or None))
 
 @depends("MOZ_APP_VENDOR", build_project)
 def check_moz_app_vendor(moz_app_vendor, build_project):
@@ -105,7 +110,7 @@ def check_moz_app_vendor(moz_app_vendor, build_project):
 # Set the MOZ_CONFIGURE_OPTIONS variable with all the options that
 # were passed somehow (environment, command line, mozconfig)
 @dependable
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 @imports(_from="mozbuild.util", _import="ensure_unicode")
 @imports(_from="mozbuild.util", _import="system_encoding")
 @imports("__sandbox__")
@@ -747,27 +752,7 @@ def gl_provider_define(provider):
 
 
 set_define("MOZ_GL_PROVIDER", gl_provider_define)
-
-
-@depends(gl_provider, toolkit_gtk)
-def gl_default_provider(value, toolkit_gtk):
-    if value:
-        return value
-    elif toolkit_gtk:
-        return "EGL"
-
-
 set_config("MOZ_GL_PROVIDER", gl_provider)
-set_config("MOZ_GL_DEFAULT_PROVIDER", gl_default_provider)
-
-
-@depends(gl_default_provider)
-def gl_provider_define(provider):
-    if provider:
-        return "GL_PROVIDER_%s" % provider
-
-
-set_define(gl_provider_define, True)
 
 
 # PDF printing
@@ -1055,7 +1040,7 @@ set_config("MOZ_PACKAGER_FORMAT", packager_format)
 @depends(target_is_android, "--enable-debug", milestone.is_nightly)
 def enable_minify_default(is_android, debug, is_nightly):
     if is_android and not debug and not is_nightly:
-        return ("properties", "js")
+        return ("properties",)
     return ("properties",)
 
 
@@ -1080,6 +1065,21 @@ def enable_minify(value):
 
 set_config("MOZ_PACKAGER_MINIFY", True, when=enable_minify.properties)
 set_config("MOZ_PACKAGER_MINIFY_JS", True, when=enable_minify.js)
+
+
+@depends(target_is_android, "--enable-debug", milestone.is_nightly)
+def enable_minify_pdfjs_default(is_android, debug, is_nightly):
+    return is_android and not debug and not is_nightly
+
+
+option(
+    name="--enable-minify-pdfjs",
+    help="Enable minification of PDF.js JavaScript files during packaging",
+    default=enable_minify_pdfjs_default,
+)
+
+
+set_config("MOZ_PACKAGER_MINIFY_PDFJS", True, when="--enable-minify-pdfjs")
 
 
 @depends(host, build_project)
@@ -1189,7 +1189,8 @@ include("../build/moz.configure/keyfiles.configure")
 
 simple_keyfile("Mozilla API")
 
-simple_keyfile("Google Location Service API")
+with only_when(depends(target.os)(lambda os: os != "Android")):
+    simple_keyfile("Google Location Service API")
 
 simple_keyfile("Google Safebrowsing API")
 
@@ -1209,9 +1210,15 @@ option(
     "--enable-webrender-debugger", help="Build the websocket debug server in WebRender"
 )
 
-set_config(
-    "MOZ_WEBRENDER_DEBUGGER", depends_if("--enable-webrender-debugger")(lambda _: True)
-)
+
+@depends("--enable-webrender-debugger")
+def webrender_debugger(value):
+    if value:
+        return True
+
+
+set_config("MOZ_WEBRENDER_DEBUGGER", webrender_debugger)
+set_define("MOZ_WEBRENDER_DEBUGGER", webrender_debugger)
 
 # Additional system headers defined at the application level
 # ==============================================================
@@ -1254,7 +1261,6 @@ def printing(value):
 
 set_config("NS_PRINTING", printing)
 set_define("NS_PRINTING", printing)
-set_define("NS_PRINT_PREVIEW", printing)
 
 
 # Speech-dispatcher support
@@ -1307,9 +1313,9 @@ set_define("MOZ_WEBSPEECH_TEST_BACKEND", webspeech_test_backend)
 
 # Graphics
 # ==============================================================
-@depends(target, milestone)
-def skia_pdf_default(target, milestone):
-    return milestone.is_nightly and target.os != "WINNT"
+@depends(milestone)
+def skia_pdf_default(milestone):
+    return milestone.is_nightly
 
 
 option("--enable-skia-pdf", default=skia_pdf_default, help="{Enable|Disable} Skia PDF")
@@ -2614,6 +2620,14 @@ def ffvpx(target):
             ]
         elif target.cpu == "aarch64":
             use_nasm = False
+    elif target.os == "Android":
+        if target.cpu == "x86_64":
+            flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_android_x86_64.asm"]
+        elif target.cpu == "x86":
+            audio_only = True
+        elif target.cpu == "aarch64" or target.cpu == "arm":
+            flags = ["-DPIC", "-DELF"]
+            use_nasm = False
     elif target.cpu == "x86_64":
         flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_unix64.asm"]
     else:
@@ -2745,7 +2759,7 @@ with only_when(target_is_windows):
         dxc_dll_path,
         when=dxc_supports_target,
     )
-    @checking("for dxcompiler.dll and dxil.dll")
+    @checking("for dxcompiler.dll")
     @imports("os.path")
     def dxcompiler(target, artifact, windows_sdk_dir, dxc_path):
         if not windows_sdk_dir and not artifact:
@@ -2779,6 +2793,46 @@ with only_when(target_is_windows):
         set_define("MOZ_DXC_DLL_NAME", dxcompiler.dxc_name)
         with only_when(dxcompiler.from_sdk):
             set_config("MOZ_DXC_DLL_PATH", dxcompiler.dxc_path)
+
+with only_when(target_is_windows & compile_environment):
+    option(
+        env="MOZ_WINDOWS_APP_SDK_DIR",
+        nargs=1,
+        help="Path to the DLLs from the Windows App SDK redistributable",
+    )
+
+    @depends(target)
+    def windows_app_sdk_task_job_name(target):
+        return f"winappsdk-{target.cpu}-pc-windows-msvc"
+
+    @depends(
+        "MOZ_WINDOWS_APP_SDK_DIR",
+        bootstrap_path(
+            windows_app_sdk_task_job_name,
+            when=depends("MOZ_WINDOWS_APP_SDK_DIR")(lambda x: not x),
+        ),
+    )
+    @checking("for the Windows App SDK")
+    @imports("os")
+    def windows_app_sdk(dir, bootstrapped):
+        if bootstrapped:
+            dir = bootstrapped
+        elif dir:
+            dir = dir[0]
+
+        if not dir:
+            raise FatalCheckError("Windows App SDK dir not present!")
+        if not os.path.exists(dir):
+            raise FatalCheckError(f"Could not find Windows App SDK directory at {dir}")
+        if not os.path.isdir(dir):
+            raise FatalCheckError(
+                f"Windows App SDK directory is not a directory at {dir}"
+            )
+        if len(os.listdir(dir)) == 0:
+            raise FatalCheckError(f"Windows App SDK directory is empty at {dir}")
+        return dir
+
+    set_config("MOZ_WINDOWSAPPSDK_DIR", windows_app_sdk)
 
 
 # Remoting protocol support
@@ -3283,13 +3337,6 @@ with only_when(target_is_android):
         help="Append username to app display and android name",
     )
 
-    confvar(
-        env="ANDROID_PACKAGE_NAME",
-        nargs=1,
-        set_as_config=False,
-        help="Name of the Android package (default org.mozilla.$MOZ_APP_NAME)",
-    )
-
     with only_when("ANDROID_APPEND_USERNAME_TO_PACKAGE_NAME"):
         option(env="USER", nargs=1, help="System user name")
 
@@ -3299,19 +3346,6 @@ with only_when(target_is_android):
                 return user[0].replace("-", "_")
             else:
                 return "unknown"
-
-    @depends("ANDROID_PACKAGE_NAME", moz_app_name, mangled_username)
-    def android_package_name(value, moz_app_name, username):
-        if value:
-            if username:
-                return f"{value[0]}_{username}"
-            else:
-                return value[0]
-        if moz_app_name == "fennec":
-            return "org.mozilla.fennec_aurora"
-        return "org.mozilla.%s" % moz_app_name
-
-    set_config("ANDROID_PACKAGE_NAME", android_package_name)
 
 
 @depends("MOZ_APP_DISPLAYNAME", mangled_username)
@@ -3671,6 +3705,17 @@ option(env="MOZ_PKG_SPECIAL", nargs=1, help="Name of special moz flavor")
 set_config("MOZ_PKG_SPECIAL", depends_if("MOZ_PKG_SPECIAL")(lambda x: x[0]))
 
 
+# Smart card support
+# ==============================================================
+@depends(target)
+def disable_smart_cards(target):
+    return target.os == "Android"
+
+
+set_config("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
+set_define("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
+
+
 # OSX Packaging
 # ==============================================================
 
@@ -3711,6 +3756,7 @@ with only_when(target_is_osx):
     option(env="DMG_TOOL", nargs=1, help="Path to the dmg tool")
     set_config("DMG_TOOL", depends_if("DMG_TOOL")(lambda x: x[0]))
 
+    # Media Plugin Helper
     moz_eme_process_name = dependable("media-plugin-helper")
 
     set_config("MOZ_EME_PROCESS_NAME", moz_eme_process_name)
@@ -3734,6 +3780,81 @@ with only_when(target_is_osx):
         return f"{distribution_id[0]}.{eme_process_bundle_id}-{eme_process_name}"
 
     set_config("MOZ_EME_PROCESS_BUNDLEID", moz_eme_process_bundle_id)
+
+    # GPU Helper
+    #
+    # Set up configuration strings for building and referencing the GPU process
+    # executable. For a local developer build where the display name is
+    # "Nightly", the strings will be as follows.
+    #
+    # MOZ_GPU_PROCESS_NAME = gpu-helper
+    # MOZ_GPU_PROCESS_NAME_BRANDED = Nightly GPU Helper
+    # MOZ_GPU_PROCESS_NAME_BUNDLENAME = gpu-helper.app
+    # MOZ_GPU_PROCESS_BUNDLEID = org.mozilla.nightly-gpu-helper
+    moz_gpu_process_name = dependable("gpu-helper")
+
+    set_config("MOZ_GPU_PROCESS_NAME", moz_gpu_process_name)
+    set_config(
+        "MOZ_GPU_PROCESS_NAME_BRANDED",
+        depends_if(moz_app_displayname)(lambda name: f"{name} GPU Helper"),
+    )
+    set_config(
+        "MOZ_GPU_PROCESS_BUNDLENAME",
+        depends(moz_gpu_process_name)(lambda name: f"{name}.app"),
+    )
+
+    # Generate a lower case string with no spaces to be used as the bundle ID
+    # for the GPU helper .app of the form org.mozilla.<executable-name>.
+    @depends(moz_app_displayname, moz_gpu_process_name, "--with-distribution-id")
+    def moz_gpu_process_bundle_id(app_displayname, gpu_process_name, distribution_id):
+        if not app_displayname:
+            return
+
+        gpu_process_bundle_id = app_displayname.replace(" ", "-").lower()
+        return f"{distribution_id[0]}.{gpu_process_bundle_id}-{gpu_process_name}"
+
+    set_config("MOZ_GPU_PROCESS_BUNDLEID", moz_gpu_process_bundle_id)
+
+    with only_when(milestone.is_nightly & ~disable_smart_cards):
+        # Security Module Helper
+        #
+        # Set up configuration strings for building and referencing the PKCS#11
+        # utility process executable. For a local developer build where the
+        # display name is "Nightly", the strings will be as follows.
+        #
+        # MOZ_PKCS11_PROCESS_NAME = security-module-helper
+        # MOZ_PKCS11_PROCESS_NAME_BRANDED = Nightly Security Module Helper
+        # MOZ_PKCS11_PROCESS_NAME_BUNDLENAME = security-module-helper.app
+        # MOZ_PKCS11_PROCESS_BUNDLEID = org.mozilla.nightly-security-module-helper
+        moz_pkcs11_process_name = dependable("security-module-helper")
+
+        set_config("MOZ_PKCS11_PROCESS_NAME", moz_pkcs11_process_name)
+        set_config(
+            "MOZ_PKCS11_PROCESS_NAME_BRANDED",
+            depends_if(moz_app_displayname)(
+                lambda name: f"{name} Security Module Helper"
+            ),
+        )
+        set_config(
+            "MOZ_PKCS11_PROCESS_BUNDLENAME",
+            depends(moz_pkcs11_process_name)(lambda name: f"{name}.app"),
+        )
+
+        # Generate a lower case string with no spaces to be used as the bundle ID
+        # for the PKCS11 helper .app of the form org.mozilla.<executable-name>.
+        @depends(moz_app_displayname, moz_pkcs11_process_name, "--with-distribution-id")
+        def moz_pkcs11_process_bundle_id(
+            app_displayname, pkcs11_process_name, distribution_id
+        ):
+            if not app_displayname:
+                return
+
+            pkcs11_process_bundle_id = app_displayname.replace(" ", "-").lower()
+            return (
+                f"{distribution_id[0]}.{pkcs11_process_bundle_id}-{pkcs11_process_name}"
+            )
+
+        set_config("MOZ_PKCS11_PROCESS_BUNDLEID", moz_pkcs11_process_bundle_id)
 
 
 # JS Packaging
@@ -3833,7 +3954,9 @@ with only_when(compile_environment):
     def default_user_appdir(target):
         if target.kernel in ("WINNT", "Darwin"):
             return "Mozilla"
-        return ".mozilla"
+        elif target.os == "Android":
+            return ".mozilla"
+        return "mozilla"
 
     option(
         "--with-user-appdir",
@@ -3850,7 +3973,12 @@ with only_when(compile_environment):
             die("--with-user-appdir must be a single relative path.")
         return '"{}"'.format(appdir[0])
 
+    @depends(depends("--with-user-appdir")(lambda x: x), when=toolkit_gtk)
+    def forced_or_dotted_user_appdir(value):
+        return value.origin != "default" or value[0].startswith(".")
+
     set_define("MOZ_USER_DIR", user_appdir)
+    set_define("MOZ_LEGACY_HOME", True, when=forced_or_dotted_user_appdir)
 
 
 # Check for sin_len and sin6_len - used by SCTP; only appears in Mac/*BSD generally
@@ -3930,16 +4058,6 @@ with only_when(target_has_linux_kernel & compile_environment):
     )
 
 
-# Smart card support
-# ==============================================================
-@depends(build_project)
-def disable_smart_cards(build_project):
-    return build_project == "mobile/android"
-
-
-set_config("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
-set_define("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
-
 # Enable UniFFI fixtures
 # ==============================================================
 # These are used to test the uniffi-bindgen-gecko-js code generation.  They
@@ -3961,6 +4079,17 @@ option(
 )
 
 set_config("MOZ_SYSTEM_POLICIES", True, when="--enable-system-policies")
+
+# System preferences
+# ==============================================================
+
+option(
+    "--disable-system-preferences",
+    help="Disable reading preferences from /etc/firefox",
+)
+
+set_config("MOZ_SYSTEM_PREFERENCES", True, when="--enable-system-preferences")
+set_define("MOZ_SYSTEM_PREFERENCES", True, when="--enable-system-preferences")
 
 # Allow disabling the creation a legacy profile
 # ==============================================================
@@ -4221,3 +4350,28 @@ with only_when(artifact_builds):
             return onnxruntime_task_name in onnx_tasks
 
     set_define("ONNX_RUNTIME", is_onnxruntime_supported_by_taskcluster)
+
+set_config(
+    "GECKO_TRACE_ENABLE",
+    True,
+    when=moz_debug | milestone.is_early_beta_or_earlier,
+)
+set_define(
+    "GECKO_TRACE_ENABLE",
+    True,
+    when=moz_debug | milestone.is_early_beta_or_earlier,
+)
+
+
+# Desktop Launcher
+# ==============================================================
+with only_when(target_is_windows):
+    desktop_launcher_enabled = ~compile_environment | check_header(
+        "winhttp.h",
+        includes=["windows.h"],
+        body="auto flag = WINHTTP_FLAG_SECURE_DEFAULTS",
+        language="C++",
+        when=compile_environment,
+    )
+    set_config("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
+    set_define("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)

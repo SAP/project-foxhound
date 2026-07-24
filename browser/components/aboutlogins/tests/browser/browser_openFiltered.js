@@ -27,9 +27,9 @@ add_setup(async function () {
     entryPoint: "preferences",
   });
   await tabOpenedPromise;
-  registerCleanupFunction(() => {
+  registerCleanupFunction(async () => {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   });
 });
 

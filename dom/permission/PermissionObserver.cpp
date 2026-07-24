@@ -6,12 +6,12 @@
 
 #include "PermissionObserver.h"
 
-#include "mozilla/dom/WindowGlobalChild.h"
-#include "mozilla/Services.h"
-#include "nsIObserverService.h"
-#include "nsIPermission.h"
 #include "PermissionStatusSink.h"
 #include "PermissionUtils.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "nsIObserverService.h"
+#include "nsIPermission.h"
 
 namespace mozilla::dom {
 

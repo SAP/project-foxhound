@@ -256,7 +256,7 @@ void NativeRegExpMacroAssembler::LoadCurrentCharacterImpl(
   // path requires a large number of characters, but not the reverse.
   DCHECK_GE(eats_at_least, characters);
 
-  DCHECK(base::IsInRange(cp_offset, kMinCPOffset, kMaxCPOffset));
+  CHECK(base::IsInRange(cp_offset, kMinCPOffset, kMaxCPOffset));
   if (check_bounds) {
     if (cp_offset >= 0) {
       CheckPosition(cp_offset + eats_at_least - 1, on_end_of_input);
@@ -325,7 +325,7 @@ int NativeRegExpMacroAssembler::CheckStackGuardState(
     } else if (check.InterruptRequested()) {
       AllowGarbageCollection yes_gc;
       Tagged<Object> result = isolate->stack_guard()->HandleInterrupts();
-      if (IsException(result, isolate)) return_value = EXCEPTION;
+      if (IsExceptionHole(result, isolate)) return_value = EXCEPTION;
     }
 
     // We are not using operator == here because it does a slow DCHECK
@@ -413,9 +413,8 @@ int NativeRegExpMacroAssembler::ExecuteForTesting(
     const uint8_t* input_end, int* output, int output_size, Isolate* isolate,
     Tagged<JSRegExp> regexp) {
   Tagged<RegExpData> data = regexp->data(isolate);
-  SBXCHECK(Is<IrRegExpData>(data));
   return Execute(input, start_offset, input_start, input_end, output,
-                 output_size, isolate, Cast<IrRegExpData>(data));
+                 output_size, isolate, SbxCast<IrRegExpData>(data));
 }
 
 // Returns a {Result} sentinel, or the number of successful matches.
@@ -436,9 +435,9 @@ int NativeRegExpMacroAssembler::Execute(
           int call_origin, Isolate* isolate, Address regexp_data);
 
   auto fn = GeneratedCode<RegexpMatcherSig>::FromCode(isolate, code);
-  int result =
-      fn.Call(input.ptr(), start_offset, input_start, input_end, output,
-              output_size, call_origin, isolate, regexp_data.ptr());
+  int result = fn.CallSandboxed(input.ptr(), start_offset, input_start,
+                                input_end, output, output_size, call_origin,
+                                isolate, regexp_data.ptr());
   DCHECK_GE(result, SMALLEST_REGEXP_RESULT);
 
   if (result == EXCEPTION && !isolate->has_exception()) {

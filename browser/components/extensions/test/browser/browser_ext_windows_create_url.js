@@ -206,7 +206,7 @@ add_task(async function testWindowCreate() {
       );
       let dialogEl = dialog._frame.contentDocument.querySelector("dialog");
       Assert.ok(dialogEl, "Dialog element should exist");
-      dialogEl.setAttribute("buttondisabledaccept", false);
+      dialogEl.removeAttribute("buttondisabledaccept");
       dialogEl.acceptDialog();
     });
   };

@@ -6,18 +6,22 @@ use api::{BorderRadius, ColorF, ExternalImageId, ImageBufferKind, ImageKey, Imag
 use api::units::*;
 use api::ColorDepth;
 use crate::image_source::resolve_image;
+use crate::picture::ResolvedSurfaceTexture;
+use crate::renderer::GpuBufferBuilderF;
 use euclid::Box2D;
-use crate::gpu_cache::GpuCache;
 use crate::gpu_types::{ZBufferId, ZBufferIdGenerator};
 use crate::internal_types::{FrameAllocator, FrameMemory, FrameVec, TextureSource};
-use crate::picture::{ImageDependency, ResolvedSurfaceTexture, TileCacheInstance, TileId, TileSurface};
+use crate::invalidation::compare::ImageDependency;
+use crate::tile_cache::{TileCacheInstance, TileSurface};
+use crate::tile_cache::TileId;
 use crate::prim_store::DeferredResolve;
 use crate::resource_cache::{ImageRequest, ResourceCache};
+use crate::segment::EdgeMask;
 use crate::util::{extract_inner_rect_safe, Preallocator, ScaleOffset};
 use crate::tile_cache::PictureCacheDebugInfo;
 use crate::device::Device;
 use crate::space::SpaceMapper;
-use std::{ops, u64, os::raw::c_void};
+use std::{ops, u64, os::raw::c_void, hash};
 use std::num::NonZeroUsize;
 
 /*
@@ -36,6 +40,15 @@ pub enum CompositorSurfaceKind {
     Underlay,
     /// Create a native surface, draw it between sub-slices (supports transparent)
     Overlay,
+}
+
+impl CompositorSurfaceKind {
+    pub fn is_composited(&self) -> bool {
+        match *self {
+            CompositorSurfaceKind::Blit => false,
+            CompositorSurfaceKind::Underlay | CompositorSurfaceKind::Overlay => true,
+        }
+    }
 }
 
 /// Describes details of an operation to apply to a native surface
@@ -93,7 +106,6 @@ pub enum CompositeTileSurface {
     Color {
         color: ColorF,
     },
-    Clear,
     ExternalSurface {
         external_surface_index: ResolvedExternalSurfaceIndex,
     },
@@ -127,7 +139,6 @@ bitflags! {
 pub enum TileKind {
     Opaque,
     Alpha,
-    Clear,
 }
 
 // Index in to the compositor transforms stored in `CompositeState`
@@ -168,8 +179,6 @@ pub fn tile_kind(surface: &CompositeTileSurface, is_opaque: bool) -> TileKind {
         // Color tiles are, by definition, opaque. We might support non-opaque color
         // tiles if we ever find pages that have a lot of these.
         CompositeTileSurface::Color { .. } => TileKind::Opaque,
-        // Clear tiles have a special bucket
-        CompositeTileSurface::Clear => TileKind::Clear,
         CompositeTileSurface::Texture { .. }
         | CompositeTileSurface::ExternalSurface { .. } => {
             // Texture surfaces get bucketed by opaque/alpha, for z-rejection
@@ -206,6 +215,7 @@ pub struct ExternalSurfaceDescriptor {
     pub local_clip_rect: PictureRect,
     pub clip_rect: DeviceRect,
     pub transform_index: CompositorTransformIndex,
+    pub compositor_clip_index: Option<CompositorClipIndex>,
     pub image_rendering: ImageRendering,
     pub z_id: ZBufferId,
     pub dependency: ExternalSurfaceDependency,
@@ -449,7 +459,6 @@ pub enum TileSurfaceKind {
     Color {
         color: ColorF,
     },
-    Clear,
 }
 
 impl From<&TileSurface> for TileSurfaceKind {
@@ -457,7 +466,6 @@ impl From<&TileSurface> for TileSurfaceKind {
         match surface {
             TileSurface::Texture { .. } => TileSurfaceKind::Texture,
             TileSurface::Color { color } => TileSurfaceKind::Color { color: *color },
-            TileSurface::Clear => TileSurfaceKind::Clear,
         }
     }
 }
@@ -610,9 +618,31 @@ pub struct CompositorTransform {
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Debug)]
 pub struct CompositorClip {
     pub rect: DeviceRect,
     pub radius: BorderRadius,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct CompositeRoundedCorner {
+    pub rect: LayoutRect,
+    pub radius: LayoutSize,
+    pub edge_flags: EdgeMask,
+}
+
+impl Eq for CompositeRoundedCorner {}
+
+impl hash::Hash for CompositeRoundedCorner {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.rect.min.x.to_bits().hash(state);
+        self.rect.min.y.to_bits().hash(state);
+        self.rect.max.x.to_bits().hash(state);
+        self.rect.max.y.to_bits().hash(state);
+        self.radius.width.to_bits().hash(state);
+        self.radius.height.to_bits().hash(state);
+        self.edge_flags.bits().hash(state);
+    }
 }
 
 /// The list of tiles to be drawn this frame
@@ -651,6 +681,8 @@ pub struct CompositeState {
     low_quality_pinch_zoom: bool,
     /// List of registered clips used by picture cache and/or external surfaces
     pub clips: FrameVec<CompositorClip>,
+    /// Set to true when any tile is rasterized (has is_valid = false)
+    pub did_rasterize_any_tile: bool,
 }
 
 impl CompositeState {
@@ -683,10 +715,11 @@ impl CompositeState {
             transforms: memory.new_vec(),
             low_quality_pinch_zoom,
             clips,
+            did_rasterize_any_tile: false,
         }
     }
 
-    fn compositor_clip_params(
+    pub fn compositor_clip_params(
         &self,
         clip_index: Option<CompositorClipIndex>,
         default_rect: DeviceRect,
@@ -845,7 +878,7 @@ impl CompositeState {
         is_opaque: bool,
         device_clip_rect: DeviceRect,
         resource_cache: &ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         deferred_resolves: &mut FrameVec<DeferredResolve>,
         clip_index: Option<CompositorClipIndex>,
     ) {
@@ -896,7 +929,7 @@ impl CompositeState {
                 &image_dependencies,
                 required_plane_count,
                 resource_cache,
-                gpu_cache,
+                gpu_buffer,
                 deferred_resolves,
             );
             if external_surface_index == ResolvedExternalSurfaceIndex::INVALID {
@@ -958,7 +991,7 @@ impl CompositeState {
         tile_cache: &TileCacheInstance,
         device_clip_rect: DeviceRect,
         resource_cache: &ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         deferred_resolves: &mut FrameVec<DeferredResolve>,
     ) {
         let slice_transform = self.get_compositor_transform(tile_cache.transform_index);
@@ -974,7 +1007,7 @@ impl CompositeState {
                 tile_cache.compositor_clip,
                 backdrop_surface.device_rect,
             );
-    
+
             // Use the backdrop native surface we created and add that to the composite state.
             self.descriptor.surfaces.push(
                 CompositeSurfaceDescriptor {
@@ -997,7 +1030,7 @@ impl CompositeState {
                 true,
                 device_clip_rect,
                 resource_cache,
-                gpu_cache,
+                gpu_buffer,
                 deferred_resolves,
                 tile_cache.compositor_clip,
             );
@@ -1078,14 +1111,21 @@ impl CompositeState {
             // For each compositor surface that was promoted, build the
             // information required for the compositor to draw it
             for compositor_surface in &sub_slice.compositor_surfaces {
+                let compositor_clip_index = if compositor_surface.descriptor.compositor_clip_index.is_some() {
+                    assert!(tile_cache.compositor_clip.is_none());
+                    compositor_surface.descriptor.compositor_clip_index
+                } else {
+                    tile_cache.compositor_clip
+                };
+
                 self.push_compositor_surface(
                     &compositor_surface.descriptor,
                     compositor_surface.is_opaque,
                     device_clip_rect,
                     resource_cache,
-                    gpu_cache,
+                    gpu_buffer,
                     deferred_resolves,
-                    tile_cache.compositor_clip,
+                    compositor_clip_index,
                 );
             }
         }
@@ -1127,7 +1167,7 @@ impl CompositeState {
         image_dependencies: &[ImageDependency; 3],
         required_plane_count: usize,
         resource_cache: &ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         deferred_resolves: &mut FrameVec<DeferredResolve>,
     ) -> ResolvedExternalSurfaceIndex {
         let mut planes = [
@@ -1147,8 +1187,9 @@ impl CompositeState {
             let cache_item = resolve_image(
                 request,
                 resource_cache,
-                gpu_cache,
+                gpu_buffer,
                 deferred_resolves,
+                true,
             );
 
             if cache_item.texture_id != TextureSource::Invalid {
@@ -1220,6 +1261,71 @@ impl CompositeState {
     pub fn end_frame(&mut self) {
         // Sort tiles from front to back.
         self.tiles.sort_by_key(|tile| tile.z_id.0);
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn print_to_string(&self) -> String {
+        use crate::print_tree::PrintTree;
+        use crate::print_tree::PrintTreePrinter;
+
+        let mut buf = Vec::<u8>::new();
+        {
+            let mut pt = PrintTree::new_with_sink("composite config", &mut buf);
+
+            pt.new_level("tiles".into());
+            for (i, tile) in self.tiles.iter().enumerate() {
+                pt.new_level(format!("tile {}", i));
+                pt.add_item(format!("local_rect = {:?}", tile.local_rect.to_rect()));
+                pt.add_item(format!("local_valid_rect = {:?}", tile.local_valid_rect.to_rect()));
+                pt.add_item(format!("local_dirty_rect = {:?}", tile.local_dirty_rect.to_rect()));
+                pt.add_item(format!("device_clip_rect = {:?}", tile.device_clip_rect.to_rect()));
+                pt.add_item(format!("z_id = {:?}", tile.z_id));
+                pt.add_item(format!("kind = {:?}", tile.kind));
+                pt.add_item(format!("tile_id = {:?}", tile.tile_id));
+                pt.add_item(format!("clip = {:?}", tile.clip_index));
+                pt.add_item(format!("transform = {:?}", tile.transform_index));
+                pt.end_level();
+            }
+            pt.end_level();
+
+            pt.new_level("external_surfaces".into());
+            for (i, surface) in self.external_surfaces.iter().enumerate() {
+                pt.new_level(format!("surface {}", i));
+                pt.add_item(format!("{:?}", surface.image_buffer_kind));
+                pt.end_level();
+            }
+            pt.end_level();
+
+            pt.new_level("occluders".into());
+            for (i, occluder) in self.occluders.occluders.iter().enumerate() {
+                pt.new_level(format!("occluder {}", i));
+                pt.add_item(format!("{:?}", occluder.z_id));
+                pt.add_item(format!("{:?}", occluder.world_rect.to_rect()));
+                pt.end_level();
+            }
+            pt.end_level();
+
+            pt.new_level("transforms".into());
+            for (i, transform) in self.transforms.iter().enumerate() {
+                pt.new_level(format!("transform {}", i));
+                pt.add_item(format!("local_to_raster {:?}", transform.local_to_raster));
+                pt.add_item(format!("raster_to_device {:?}", transform.raster_to_device));
+                pt.add_item(format!("local_to_device {:?}", transform.local_to_device));
+                pt.end_level();
+            }
+            pt.end_level();
+
+            pt.new_level("clips".into());
+            for (i, clip) in self.clips.iter().enumerate() {
+                pt.new_level(format!("clip {}", i));
+                pt.add_item(format!("{:?}", clip.rect.to_rect()));
+                pt.add_item(format!("{:?}", clip.radius));
+                pt.end_level();
+            }
+            pt.end_level();
+        }
+
+        std::str::from_utf8(&buf).unwrap_or("(Tree printer emitted non-utf8)").to_string()
     }
 }
 
@@ -1540,6 +1646,8 @@ pub struct CompositorInputLayer {
     pub usage: CompositorSurfaceUsage,
     // If true, layer is opaque, blend can be disabled
     pub is_opaque: bool,
+    pub rounded_clip_rect: DeviceIntRect,
+    pub rounded_clip_radii: ClipRadius,
 }
 
 // Provides the parameters about the frame to the compositor implementation.
@@ -1581,6 +1689,8 @@ pub trait LayerCompositor {
         transform: CompositorSurfaceTransform,
         clip_rect: DeviceIntRect,
         image_rendering: ImageRendering,
+        rounded_clip_rect: DeviceIntRect,
+        rounded_clip_radii: ClipRadius,
     );
 
     // Finish compositing this frame - commit the visual tree to the OS
@@ -1726,7 +1836,7 @@ impl Occluders {
             occluders: memory.new_vec(),
             scratch: OccludersScratchBuffers {
                 events: memory.new_vec(),
-                active: memory.new_vec(),    
+                active: memory.new_vec(),
             }
         }
     }

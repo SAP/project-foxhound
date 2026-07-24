@@ -10,8 +10,10 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -35,46 +37,36 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.getPermissionAllowID
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_APPS_PHOTOS
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.ext.waitNotNull
+import mozilla.components.feature.downloads.R as downloadsR
 
 /**
  * Implementation of Robot Pattern for download UI handling.
  */
 
-class DownloadRobot {
+class DownloadRobot(private val composeTestRule: ComposeTestRule) {
 
     fun verifyDownloadPrompt(fileName: String) {
-        var currentTries = 0
-        while (currentTries++ < 3) {
-            Log.i(TAG, "verifyDownloadPrompt: Started try #$currentTries")
-            try {
-                assertUIObjectExists(
-                    itemContainingText("Download file?"),
-                    itemContainingText(fileName),
-                    cancelButton(),
-                    downloadButton(),
-                )
+        itemWithResId("org.mozilla.fenix.debug:id/parentPanel").waitForExists(waitingTime)
+        Log.i(TAG, "verifyDownloadPrompt: Waiting for $waitingTime ms for the \"Download file?\" download prompt to exist")
 
-                break
-            } catch (e: AssertionError) {
-                Log.i(TAG, "verifyDownloadPrompt: AssertionError caught, executing fallback methods")
-                Log.e("DOWNLOAD_ROBOT", "Failed to find locator: ${e.localizedMessage}")
-
-                browserScreen {
+        assertUIObjectExists(
+            itemWithResIdContainingText("org.mozilla.fenix.debug:id/alertTitle", "Download file?"),
+            itemWithResIdContainingText("android:id/message", fileName),
+            cancelButton(),
+            downloadButton(),
+            )
+                browserScreen(this@DownloadRobot.composeTestRule) {
                 }.clickDownloadLink(fileName) {
                 }
-            }
-        }
     }
 
     fun verifyDownloadCompleteSnackbar(fileName: String) =
@@ -84,12 +76,21 @@ class DownloadRobot {
             itemContainingText(fileName),
         )
 
-    fun verifyDownloadFailedSnackbar(fileName: String) =
-        assertUIObjectExists(
-            itemContainingText(getStringResource(R.string.download_failed_snackbar_action_details)),
-            itemContainingText(getStringResource(R.string.download_item_status_failed)),
-            itemWithText(fileName),
-        )
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyDownloadFailedSnackbar(fileName: String) {
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Waiting for the snackbar to exist")
+        this@DownloadRobot.composeTestRule.waitUntilExactlyOneExists(hasTestTag(SNACKBAR_TEST_TAG))
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Waited for the snackbar to exist")
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Trying to verify that the \"Download failed\" snackbar message exists")
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_item_status_failed), useUnmergedTree = true).assertIsDisplayed()
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Verified that the \"Download failed\" snackbar message exists")
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Trying to verify that the \"Details\" snackbar button exists")
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_failed_snackbar_action_details), useUnmergedTree = true).assertIsDisplayed()
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Verified that the \"Details\" snackbar button exists")
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Trying to verify that the file name: $fileName exists")
+        this@DownloadRobot.composeTestRule.onNodeWithText(fileName, useUnmergedTree = true).assertIsDisplayed()
+        Log.i(TAG, "verifyDownloadFailedSnackbar: Verified that the file name: $fileName exists")
+    }
 
     fun waitUntilDownloadSnackbarGone() {
         // Auto dismiss timeout for download snackbars is 20 seconds
@@ -105,21 +106,21 @@ class DownloadRobot {
     fun verifyDownloadedFileName(fileName: String) =
         assertUIObjectExists(itemContainingText(fileName))
 
-    fun openMultiSelectMoreOptionsMenu(composeTestRule: ComposeTestRule) {
+    fun openMultiSelectMoreOptionsMenu() {
         Log.i(TAG, "openMultiSelectMoreOptionsMenu: Trying to click multi-select more options button")
-        composeTestRule.onNodeWithContentDescription(getStringResource(R.string.content_description_menu)).performClick()
+        this@DownloadRobot.composeTestRule.onNodeWithContentDescription(getStringResource(R.string.content_description_menu)).performClick()
         Log.i(TAG, "openMultiSelectMoreOptionsMenu: Clicked multi-select more options button")
     }
 
-    fun clickMultiSelectRemoveButton(composeTestRule: ComposeTestRule) {
+    fun clickMultiSelectRemoveButton() {
         Log.i(TAG, "clickMultiSelectRemoveButton: Trying to click multi-select remove button")
-        composeTestRule.onNodeWithText(getStringResource(R.string.download_delete_item)).performClick()
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_delete_item)).performClick()
         Log.i(TAG, "clickMultiSelectRemoveButton: Clicked multi-select remove button")
     }
 
-    fun clickMultiSelectDeleteDialogButton(composeTestRule: ComposeTestRule) {
+    fun clickMultiSelectDeleteDialogButton() {
         Log.i(TAG, "clickMultiSelectDeleteDialogButton: Trying to click the \"Delete\" dialog button")
-        composeTestRule
+        this@DownloadRobot.composeTestRule
             .onNodeWithText(
                 getStringResource(R.string.download_delete_multi_select_dialog_confirm),
                 ignoreCase = true,
@@ -128,9 +129,10 @@ class DownloadRobot {
     }
 
     fun openPageAndDownloadFile(url: Uri, downloadFile: String) {
-        navigationToolbar {
+        navigationToolbar(this@DownloadRobot.composeTestRule) {
         }.enterURLAndEnterToBrowser(url) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            assertUIObjectExists(itemContainingText(downloadFile))
         }.clickDownloadLink(downloadFile) {
             verifyDownloadPrompt(downloadFile)
         }.clickDownload {
@@ -138,70 +140,68 @@ class DownloadRobot {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    fun verifyDownloadedFileExistsInDownloadsList(testRule: HomeActivityComposeTestRule, fileName: String) {
+    fun verifyDownloadedFileExistsInDownloadsList(fileName: String) {
         Log.i(TAG, "verifyDownloadedFileName: Trying to verify that the downloaded file: $fileName is displayed")
-        testRule.waitUntilAtLeastOneExists(
+        this@DownloadRobot.composeTestRule.waitUntilAtLeastOneExists(
             hasTestTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName"),
         )
-        testRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
+        this@DownloadRobot.composeTestRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
             .assertIsDisplayed()
         Log.i(TAG, "verifyDownloadedFileName: Trying to verify that the downloaded file: $fileName is displayed")
     }
 
     @OptIn(ExperimentalTestApi::class)
-    fun verifyDownloadFileIsNotDisplayed(testRule: HomeActivityComposeTestRule, fileName: String) {
+    fun verifyDownloadFileIsNotDisplayed(fileName: String) {
         Log.i(TAG, "verifyDownloadFileIsNotDisplayed: Trying to verify that the downloaded file: $fileName is not displayed")
-        testRule.waitUntilDoesNotExist(
+        this@DownloadRobot.composeTestRule.waitUntilDoesNotExist(
             hasTestTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName"),
         )
-        testRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
+        this@DownloadRobot.composeTestRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
             .assertIsNotDisplayed()
         Log.i(TAG, "verifyDownloadFileIsNotDisplayed: Trying to verify that the downloaded file: $fileName is not displayed")
     }
 
     @OptIn(ExperimentalTestApi::class)
-    fun verifyEmptyDownloadsList(testRule: HomeActivityComposeTestRule) {
+    fun verifyEmptyDownloadsList() {
         Log.i(TAG, "verifyEmptyDownloadsList: Waiting for $waitingTime until the \"No downloads yet\" list message exists")
-        testRule.waitUntilAtLeastOneExists(hasText(testRule.activity.getString(R.string.download_empty_message_2)), waitingTime)
+        this@DownloadRobot.composeTestRule.waitUntilAtLeastOneExists(hasText(getStringResource(R.string.download_empty_message_2)), waitingTime)
         Log.i(TAG, "verifyEmptyDownloadsList: Waited for $waitingTime until the \"No downloads yet\" list message exists")
         Log.i(TAG, "verifyEmptyDownloadsList: Trying to verify that the \"No downloads yet\" list message is displayed")
-        testRule.onNodeWithText(text = testRule.activity.getString(R.string.download_empty_message_2))
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_empty_message_2))
             .assertIsDisplayed()
         Log.i(TAG, "verifyEmptyDownloadsList: Verified that the \"No downloads yet\" list message is displayed")
 
         Log.i(TAG, "verifyEmptyDownloadsList: Waiting for $waitingTime until the \"Files you download will appear here.\" list message exists")
-        testRule.waitUntilAtLeastOneExists(hasText(testRule.activity.getString(R.string.download_empty_description)), waitingTime)
+        this@DownloadRobot.composeTestRule.waitUntilAtLeastOneExists(hasText(getStringResource(R.string.download_empty_description)), waitingTime)
         Log.i(TAG, "verifyEmptyDownloadsList: Waited for $waitingTime until the \"Files you download will appear here.\" list message exists")
         Log.i(TAG, "verifyEmptyDownloadsList: Trying to verify that the \"Files you download will appear here.\" list message is displayed")
-        testRule.onNodeWithText(text = testRule.activity.getString(R.string.download_empty_description))
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_empty_description))
             .assertIsDisplayed()
         Log.i(TAG, "verifyEmptyDownloadsList: Verified that the \"Files you download will appear here.\" list message is displayed")
     }
 
-    fun deleteDownloadedItem(testRule: HomeActivityComposeTestRule, fileName: String) {
+    fun deleteDownloadedItem(fileName: String) {
         Log.i(TAG, "deleteDownloadedItem: Trying to click the delete menu item to delete downloaded file: $fileName")
-        testRule.onNodeWithText(testRule.activity.getString(R.string.download_delete_item))
-            .performClick()
+        this@DownloadRobot.composeTestRule.onNodeWithText(getStringResource(R.string.download_delete_item)).performClick()
         Log.i(TAG, "deleteDownloadedItem: Clicked the delete menu item to delete downloaded file: $fileName")
     }
 
-    fun clickDownloadItemMenuIcon(testRule: HomeActivityComposeTestRule, fileName: String) {
+    fun clickDownloadItemMenuIcon(fileName: String) {
         Log.i(TAG, "clickDownloadItemMenuIcon: Trying to click the menu overflow icon to open item menu: $fileName")
-        testRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM_MENU}.$fileName")
-            .performClick()
+        this@DownloadRobot.composeTestRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM_MENU}.$fileName").performClick()
         Log.i(TAG, "clickDownloadItemMenuIcon: Clicked the menu overflow icon to open item menu: $fileName")
     }
 
-    fun clickDownloadedItem(testRule: ComposeTestRule, fileName: String) {
+    fun clickDownloadedItem(fileName: String) {
         Log.i(TAG, "clickDownloadedItem: Trying to click downloaded file: $fileName")
-        testRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
+        this@DownloadRobot.composeTestRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$fileName")
             .performClick()
         Log.i(TAG, "clickDownloadedItem: Clicked downloaded file: $fileName")
     }
 
-    fun longClickDownloadedItem(testRule: HomeActivityComposeTestRule, title: String) {
+    fun longClickDownloadedItem(title: String) {
         Log.i(TAG, "longClickDownloadedItem: Trying to long click downloaded file: $title")
-        testRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$title")
+        this@DownloadRobot.composeTestRule.onNodeWithTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM}.$title")
             .performTouchInput {
                 longClick()
             }
@@ -209,21 +209,42 @@ class DownloadRobot {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    fun clickDownloadsFilter(filter: String, composeTestRule: ComposeTestRule) {
-        composeTestRule.waitUntilExactlyOneExists((hasText(filter)))
+    fun clickDownloadsFilter(filter: String) {
+        this@DownloadRobot.composeTestRule.waitUntilExactlyOneExists((hasText(filter)))
         Log.i(TAG, "clickImagesFilter: Trying to click the \"Images\" downloads filter")
-        composeTestRule.onNodeWithText(filter).performClick()
+        this@DownloadRobot.composeTestRule.onNodeWithText(filter).performClick()
         Log.i(TAG, "clickImagesFilter: Clicked the \"Images\" download downloads filter")
     }
 
-    class Transition {
+    fun clickTryAgainDownloadMenuButton() {
+        Log.i(TAG, "clickDownloadedItem: Trying to click the \"Try again\"button")
+        this@DownloadRobot.composeTestRule.onNodeWithContentDescription(getStringResource(R.string.download_retry_action))
+            .performClick()
+        Log.i(TAG, "clickDownloadedItem: Clicked the \"Try again\" button")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyDownloadFileFailedMessage(fileName: String) {
+        Log.i(TAG, "verifyDownloadFileFailedMessage: Trying to verify the download failed for file: $fileName message")
+        this@DownloadRobot.composeTestRule.onNodeWithText(fileName, useUnmergedTree = true).assert(hasAnySibling(hasText(getStringResource(R.string.download_item_status_failed))))
+        Log.i(TAG, "verifyDownloadFileFailedMessage: Verified the download failed for file: $fileName message")
+    }
+
+    fun verifyPauseDownloadMenuButtonButton() {
+        Log.i(TAG, "verifyPauseDownloadMenuButtonButton: Trying to click the \"Try again\"button")
+        this@DownloadRobot.composeTestRule.onNodeWithContentDescription(getStringResource(R.string.download_pause_action))
+            .assertIsDisplayed()
+        Log.i(TAG, "verifyPauseDownloadMenuButtonButton: Clicked the \"Try again\" button")
+    }
+
+    class Transition(private val composeTestRule: ComposeTestRule) {
         fun clickDownload(interact: DownloadRobot.() -> Unit): Transition {
             Log.i(TAG, "clickDownload: Trying to click the \"Download\" download prompt button")
             downloadButton().click()
             Log.i(TAG, "clickDownload: Clicked the \"Download\" download prompt button")
 
-            DownloadRobot().interact()
-            return Transition()
+            DownloadRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
         }
 
         fun closeDownloadPrompt(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -231,8 +252,8 @@ class DownloadRobot {
             itemWithResId("$packageName:id/download_dialog_close_button").click()
             Log.i(TAG, "closeDownloadPrompt: Clicked the close download prompt button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickOpen(type: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -253,8 +274,8 @@ class DownloadRobot {
             )
             Log.i(TAG, "clickOpen: Verified that the open intent is matched with associated data type")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickAllowPermission(interact: DownloadRobot.() -> Unit): Transition {
@@ -266,47 +287,60 @@ class DownloadRobot {
             mDevice.findObject(By.res(getPermissionAllowID() + ":id/permission_allow_button")).click()
             Log.i(TAG, "clickAllowPermission: Clicked the \"ALLOW\" permission button")
 
-            DownloadRobot().interact()
-            return Transition()
+            DownloadRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
         }
 
-        fun exitDownloadsManagerToBrowser(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun exitDownloadsManagerToBrowser(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "exitDownloadsManagerToBrowser: Trying to click the navigate up toolbar button")
             composeTestRule.onNodeWithContentDescription(getStringResource(R.string.download_navigate_back_description)).performClick()
             Log.i(TAG, "exitDownloadsManagerToBrowser: Clicked the navigate up toolbar button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
-        fun goBack(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
-            Log.i(TAG, "goBack: Trying to click the navigate up toolbar button")
+        fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+            Log.i(TAG, "goBackToHomeScreen: Trying to click the navigate up toolbar button")
             composeTestRule.onNodeWithContentDescription(getStringResource(R.string.download_navigate_back_description)).performClick()
-            Log.i(TAG, "goBack: Clicked the navigate up toolbar button")
+            Log.i(TAG, "goBackToHomeScreen: Clicked the navigate up toolbar button")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
-        fun shareDownloadedItem(testRule: HomeActivityComposeTestRule, fileName: String, interact: ShareOverlayRobot.() -> Unit): ShareOverlayRobot.Transition {
+        @OptIn(ExperimentalTestApi::class)
+        fun shareDownloadedItem(fileName: String, interact: ShareOverlayRobot.() -> Unit): ShareOverlayRobot.Transition {
             Log.i(TAG, "shareDownloadedItem: Trying to click the Share file menu item to share downloaded file: $fileName")
-            testRule.onNodeWithText(testRule.activity.getString(R.string.download_share_file))
+            composeTestRule.onNodeWithText(getStringResource(R.string.download_share_file))
                 .performClick()
             Log.i(TAG, "shareDownloadedItem: Clicked the Share file menu item to share downloaded file: $fileName")
+            Log.i(TAG, "shareDownloadedItem: Waiting for $waitingTime until the share button does not exist")
+            composeTestRule.waitUntilDoesNotExist(hasText(getStringResource(R.string.download_share_file)), waitingTime)
+            Log.i(TAG, "shareDownloadedItem: Waited for $waitingTime until the share button does not exist")
 
             ShareOverlayRobot().interact()
             return ShareOverlayRobot.Transition()
         }
+
+        fun openNotificationShade(interact: NotificationRobot.() -> Unit): NotificationRobot.Transition {
+            Log.i(TAG, "openNotificationShade: Trying to open the notification tray")
+            mDevice.openNotification()
+            Log.i(TAG, "openNotificationShade: Opened the notification tray")
+
+            NotificationRobot().interact()
+            return NotificationRobot.Transition()
+        }
     }
 }
 
-fun downloadRobot(interact: DownloadRobot.() -> Unit): DownloadRobot.Transition {
-    DownloadRobot().interact()
-    return DownloadRobot.Transition()
+fun downloadRobot(composeTestRule: ComposeTestRule, interact: DownloadRobot.() -> Unit): DownloadRobot.Transition {
+    DownloadRobot(composeTestRule).interact()
+    return DownloadRobot.Transition(composeTestRule)
 }
 
 private fun downloadButton() =
-    itemWithResIdContainingText("android:id/button1", getStringResource(R.string.mozac_feature_downloads_dialog_download))
+    itemWithResIdContainingText("android:id/button1", getStringResource(downloadsR.string.mozac_feature_downloads_dialog_download))
 
 private fun cancelButton() =
     itemWithResIdContainingText("android:id/button2", "CANCEL")

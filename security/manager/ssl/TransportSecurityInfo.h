@@ -9,7 +9,6 @@
 
 #include "CertVerifier.h"  // For CertificateTransparencyInfo, EVStatus
 #include "ScopedNSSTypes.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/Maybe.h"
@@ -33,7 +32,7 @@ class TransportSecurityInfo : public nsITransportSecurityInfo {
  public:
   TransportSecurityInfo(
       uint32_t aSecurityState, PRErrorCode aErrorCode,
-      nsTArray<RefPtr<nsIX509Cert>>&& aFailedCertChain,
+      nsTArray<RefPtr<nsIX509Cert>>&& aHandshakeCertificates,
       nsCOMPtr<nsIX509Cert>& aServerCert,
       nsTArray<RefPtr<nsIX509Cert>>&& aSucceededCertChain,
       Maybe<uint16_t> aCipherSuite, Maybe<nsCString> aKeaGroupName,
@@ -60,9 +59,11 @@ class TransportSecurityInfo : public nsITransportSecurityInfo {
 
   const uint32_t mSecurityState;
   const PRErrorCode mErrorCode;
-  // Peer cert chain for failed connections.
-  const nsTArray<RefPtr<nsIX509Cert>> mFailedCertChain;
+  // Certificates provided in the TLS handshake by the server.
+  const nsTArray<RefPtr<nsIX509Cert>> mHandshakeCertificates;
+  // The server end-entity certificate.
   const nsCOMPtr<nsIX509Cert> mServerCert;
+  // The chain built during certificate validation, if successful.
   const nsTArray<RefPtr<nsIX509Cert>> mSucceededCertChain;
   const mozilla::Maybe<uint16_t> mCipherSuite;
   const mozilla::Maybe<nsCString> mKeaGroupName;

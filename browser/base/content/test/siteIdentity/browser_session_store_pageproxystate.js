@@ -51,7 +51,7 @@ add_task(async function test_session_store_security_state() {
   info("Switch to second tab which has not been loaded yet.");
   BrowserTestUtils.switchTab(gBrowser, gBrowser.tabs[1]);
   is(
-    gURLBar.textbox.getAttribute("pageproxystate"),
+    gURLBar.getAttribute("pageproxystate"),
     "invalid",
     "Page proxy state is invalid after tab switch"
   );
@@ -59,11 +59,11 @@ add_task(async function test_session_store_security_state() {
   // Wait for valid pageproxystate. As soon as we have a valid pageproxystate,
   // showing the identity box, it should indicate a secure connection.
   await BrowserTestUtils.waitForMutationCondition(
-    gURLBar.textbox,
+    gURLBar,
     {
       attributeFilter: ["pageproxystate"],
     },
-    () => gURLBar.textbox.getAttribute("pageproxystate") == "valid"
+    () => gURLBar.getAttribute("pageproxystate") == "valid"
   );
 
   // Wait for a tick for security state to apply.

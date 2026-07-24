@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s méré anjeun kadali.</p> <p>Paké pikeun panyungsi nyamuni: <ul> <li>Maluruh jeung nyungsi langsung dina aplikasina</li> <li>Meungpeuk palacak (atawa apdét setélan pikeun nyatujuan palacak)</li> <li>Mupus pikeun ngaleungitkeun réréméh pon kitu ogé jujutan pamaluruhan jeung panyungsian</li> </ul> </p> <p>%1$s dijieun ku Mozilla. Misi kami pikeun ngamumulé Internét nembrak anu séhat.<br/> <a href=\"%2$s\">Lenyepan</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s méré anjeun kadali.</p>\n<p>Paké pikeun panyungsi nyamuni:\n<ul>\n<li>Maluruh jeung nyungsi langsung dina aplikasina</li>\n<li>Meungpeuk palacak (atawa apdét setélan pikeun nyatujuan palacak)</li>\n<li>Mupus pikeun ngaleungitkeun réréméh pon kitu ogé jujutan pamaluruhan jeung panyungsian</li>\n</ul> </p>\n<p>%1$s dijieun ku Mozilla. Misi kami pikeun ngamumulé Internét nembrak anu séhat.<br/>\n<a href=\"%2$s\">Lenyepan</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Salindungan &amp; Kaamanan</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -842,7 +849,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ieu bisa jadi alatan aya masalah dina konpigurasi serper, atawa aya anu nyobaan ngarupakeun serperna. <br/><br/> Lamun saméméhna anjeun kungsi nyambung ka ieu serper, bisa jadi érorna samentara.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Batur bisa nyobaan malsukeun lokana, mending ulah diteruskeun.</label> <br><br> <label>%1$s cangcaya ka <b>%2$s</b> alatan nu ngaluarkeun sértipikatna teu dipikawanoh, sértipikatna ditéken sorangan, atawa serperna teu ngirim sértipikat panengah anu bener.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Batur bisa nyobaan malsukeun lokana, mending ulah diteruskeun.</label> <br><br>\n<label>%1$s cangcaya ka <b>%2$s</b> alatan nu ngaluarkeun sértipikatna teu dipikawanoh, sértipikatna ditéken sorangan, atawa serperna teu ngirim sértipikat panengah anu bener.</label>]]></string>
   <!--
     Sessions List
 

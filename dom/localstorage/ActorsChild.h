@@ -8,6 +8,7 @@
 #define mozilla_dom_localstorage_ActorsChild_h
 
 #include <cstdint>
+
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/PBackgroundLSDatabaseChild.h"
 #include "mozilla/dom/PBackgroundLSObserverChild.h"

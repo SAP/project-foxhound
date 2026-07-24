@@ -23,7 +23,6 @@ add_task(async function setup() {
   });
 
   testWindow = window.open("about:blank", "_blank", "width=100,height=100");
-  await waitForLoad(testWindow);
 
   // Fetch the windowId and tabId we need to filter with WebRequest.
   let extension = ExtensionTestUtils.loadExtension({

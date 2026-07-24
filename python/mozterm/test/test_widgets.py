@@ -31,12 +31,10 @@ def terminal():
 )
 def test_footer(terminal):
     footer = Footer(terminal=terminal)
-    footer.write(
-        [
-            ("bright_black", "foo"),
-            ("green", "bar"),
-        ]
-    )
+    footer.write([
+        ("bright_black", "foo"),
+        ("green", "bar"),
+    ])
     value = terminal.stream.getvalue()
     expected = "\x1b7\x1b[90mfoo\x1b(B\x1b[m \x1b[32mbar\x1b(B\x1b[m\x1b8"
     assert value == expected

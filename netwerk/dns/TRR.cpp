@@ -34,7 +34,6 @@
 #include "TRRLoadInfo.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
@@ -50,7 +49,18 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS_INHERITED(TRR, Runnable, nsIStreamListener, nsITimerCallback)
+NS_IMPL_ISUPPORTS_INHERITED(TRR, Runnable, nsIStreamListener, nsITimerCallback,
+                            nsIRunnablePriority)
+
+NS_IMETHODIMP
+TRR::GetPriority(uint32_t* aPriority) {
+  if (StaticPrefs::network_trr_high_priority_events()) {
+    *aPriority = nsIRunnablePriority::PRIORITY_MEDIUMHIGH;
+  } else {
+    *aPriority = nsIRunnablePriority::PRIORITY_NORMAL;
+  }
+  return NS_OK;
+}
 
 // when firing off a normal A or AAAA query
 TRR::TRR(AHostResolver* aResolver, nsHostRecord* aRec, enum TrrType aType)
@@ -330,7 +340,10 @@ nsresult TRR::SendHTTPRequest() {
   rv = internalChannel->SetIsTRRServiceChannel(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (UseDefaultServer() && StaticPrefs::network_trr_async_connInfo()) {
+  // When using OHTTP, the we can't use cached connection info, since we
+  // need to connect to the relay, not the TRR server.
+  if (UseDefaultServer() && !useOHTTP &&
+      StaticPrefs::network_trr_async_connInfo()) {
     RefPtr<nsHttpConnectionInfo> trrConnInfo =
         TRRService::Get()->TRRConnectionInfo();
     if (trrConnInfo) {
@@ -341,7 +354,10 @@ nsresult TRR::SendHTTPRequest() {
         LOG(("TRR::SendHTTPRequest use conn info:%s\n",
              trrConnInfo->HashKey().get()));
       } else {
-        MOZ_DIAGNOSTIC_CRASH("host not equal to trrConnInfo origin");
+        // The connection info is inconsistent. Avoid using it and generate a
+        // new one.
+        TRRService::Get()->SetDefaultTRRConnectionInfo(nullptr);
+        TRRService::Get()->InitTRRConnectionInfo(true);
       }
     } else {
       TRRService::Get()->InitTRRConnectionInfo();
@@ -388,7 +404,7 @@ nsresult TRR::SendHTTPRequest() {
       mTimeoutMs ? mTimeoutMs : TRRService::Get()->GetRequestTimeout(),
       nsITimer::TYPE_ONE_SHOT);
 
-  mChannel = channel;
+  mChannel = std::move(channel);
   return NS_OK;
 }
 

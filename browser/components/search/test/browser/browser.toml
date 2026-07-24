@@ -6,6 +6,8 @@ support-files = [
   "discovery.html",
   "head.js",
   "opensearch.html",
+  "searchSuggestionEngine.xml",
+  "searchSuggestionEngine.sjs",
   "test_windows1252.html",
   "test.html",
   "testEngine.xml",
@@ -15,32 +17,29 @@ support-files = [
   "tooManyEnginesOffered.html",
 ]
 tags = "searchnontelem"
+prefs = ["browser.search.widget.new=false"]
 
 ["browser_426329.js"]
 support-files = ["test.html", "discovery.html", "426329.xml"]
-
-["browser_aboutHome_search_POST.js"]
-support-files = ["POSTSearchEngine.xml", "print_postdata.sjs"]
-
-["browser_aboutHome_search_composing.js"]
-support-files = ["searchSuggestionEngine.xml", "searchSuggestionEngine.sjs"]
-
-["browser_aboutHome_search_suggestion.js"]
-support-files = ["searchSuggestionEngine.xml", "searchSuggestionEngine.sjs"]
 skip-if = [
-  "os == 'mac'",
-  "os == 'linux' && os_version == '18.04' && !debug",
-  "os == 'linux' && os_version == '18.04' && bits == 64",
-  "win10_2009 && bits == 64 && !debug", # Bug 1399648, bug 1402502
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1920926 and being removed in bug 2012951
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1920926 and being removed in bug 2012951
 ]
-
-["browser_addKeywordSearch.js"]
 
 ["browser_addSearchEngineFromForm.js"]
 support-files = ["test.html", "test_windows1252.html"]
 
 ["browser_contentContextMenu.js"]
 support-files = ["browser_contentContextMenu.xhtml"]
+
+["browser_contentContextMenu_visualSearch.js"]
+support-files = [
+  "browser_contentContextMenu.xhtml",
+  "ctxmenu-image.png",
+  "firebird.png",
+  "firebird.png^headers^",
+  "search-glass.svg",
+]
 
 ["browser_contentSearch.js"]
 support-files = [
@@ -50,20 +49,13 @@ support-files = [
   "testEngine_chromeicon.xml",
 ]
 
-["browser_contentSearchUI.js"]
-support-files = [
-  "contentSearchUI.html",
-  "contentSearchUI.js",
-  "searchSuggestionEngine.sjs",
-]
-
 ["browser_contentSearchUI_default.js"]
 
 ["browser_contextSearchTabPosition.js"]
 
 ["browser_contextmenu.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1937944
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1937944
 ]
 
 ["browser_contextmenu_whereToOpenLink.js"]
@@ -71,8 +63,6 @@ skip-if = [
 ["browser_defaultPrivate_nimbus.js"]
 
 ["browser_displayNotification.js"]
-
-["browser_google_behavior.js"]
 
 ["browser_hiddenOneOffs_diacritics.js"]
 
@@ -91,13 +81,15 @@ skip-if = [
 ["browser_rich_suggestions.js"]
 support-files = ["trendingSuggestionEngine.sjs"]
 
-["browser_searchEngine_behaviors.js"]
-
 ["browser_searchPanelHeader.js"]
+
+["browser_searchRestrictToken_privateWindow.js"]
 
 ["browser_search_annotation.js"]
 
 ["browser_search_discovery.js"]
+
+["browser_search_lastused_pref.js"]
 
 ["browser_searchbar_addEngine.js"]
 
@@ -109,9 +101,8 @@ support-files = ["trendingSuggestionEngine.sjs"]
 
 ["browser_searchbar_keyboard_navigation.js"]
 skip-if = [
-  "os == 'win' && debug", # Bug 1792718
-  "os == 'linux' && asan", # Bug 1792718
   "debug", # Bug 1792718
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1792718
   "tsan", # Bug 1792718
 ]
 
@@ -120,8 +111,6 @@ skip-if = [
 ["browser_searchbar_results.js"]
 
 ["browser_searchbar_smallpanel_keyboard_navigation.js"]
-
-["browser_searchbar_widths.js"]
 
 ["browser_tooManyEnginesOffered.js"]
 

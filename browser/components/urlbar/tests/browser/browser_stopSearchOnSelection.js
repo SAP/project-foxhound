@@ -28,7 +28,7 @@ add_setup(async function () {
     url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
     setAsDefault: true,
   });
-  await Services.search.moveEngine(engine, 0);
+  await SearchService.moveEngine(engine, 0);
   registerCleanupFunction(async () => {
     await PlacesUtils.history.clear();
   });

@@ -7,9 +7,9 @@
 #include "mozilla/dom/SVGFEColorMatrixElement.h"
 
 #include "DOMSVGAnimatedNumberList.h"
-#include "mozilla/dom/SVGFEColorMatrixElementBinding.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFEColorMatrixElementBinding.h"
 
 #define NUM_ENTRIES_IN_4x5_MATRIX 20
 

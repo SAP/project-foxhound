@@ -13,7 +13,10 @@ support-files = [
 ]
 
 ["test_event_listener_leaks.html"]
-skip-if = ["os == 'linux' && bits == 64"] # Bug 1777087
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1777087
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && xorigin && verify-standalone",
+]
 
 ["test_messageChannel.html"]
 

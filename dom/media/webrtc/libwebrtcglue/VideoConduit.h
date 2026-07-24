@@ -5,16 +5,15 @@
 #ifndef VIDEO_SESSION_H_
 #define VIDEO_SESSION_H_
 
+#include "MediaConduitInterface.h"
+#include "RtpRtcpConfig.h"
+#include "RunningStat.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/UniquePtr.h"
-
-#include "MediaConduitInterface.h"
-#include "RtpRtcpConfig.h"
-#include "RunningStat.h"
 
 // conflicts with #include of scoped_ptr.h
 #undef FF
@@ -51,7 +50,7 @@ class WebrtcVideoEncoder : public VideoEncoder, public webrtc::VideoEncoder {};
 // Interface of external video decoder for WebRTC.
 class WebrtcVideoDecoder : public VideoDecoder, public webrtc::VideoDecoder {};
 
-class RecvSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class RecvSinkProxy : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   explicit RecvSinkProxy(WebrtcVideoConduit* aOwner) : mOwner(aOwner) {}
 
@@ -61,7 +60,7 @@ class RecvSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
   WebrtcVideoConduit* const mOwner;
 };
 
-class SendSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class SendSinkProxy : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   explicit SendSinkProxy(WebrtcVideoConduit* aOwner) : mOwner(aOwner) {}
 
@@ -177,7 +176,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   void NotifyUnsetCurrentRemoteSSRC();
   void SetRemoteSSRCConfig(uint32_t aSsrc, uint32_t aRtxSsrc);
   void SetRemoteSSRCAndRestartAsNeeded(uint32_t aSsrc, uint32_t aRtxSsrc);
-  rtc::RefCountedObject<mozilla::VideoStreamFactory>*
+  webrtc::RefCountedObject<mozilla::VideoStreamFactory>*
   CreateVideoStreamFactory();
 
  public:
@@ -209,7 +208,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
 
   void OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
                      webrtc::RTPHeader&& aHeader);
-  void OnRtcpReceived(rtc::CopyOnWriteBuffer&& aPacket);
+  void OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket);
 
   void OnRtcpBye() override;
   void OnRtcpTimeout() override;
@@ -232,12 +231,12 @@ class WebrtcVideoConduit : public VideoSessionConduit,
         aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtpReceived);
   }
   void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mReceiverRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtcpReceived);
   }
   void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mSenderRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtcpReceived);
   }
@@ -275,7 +274,8 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Should only be called from Shutdown()
   void SetIsShutdown();
 
-  void DeliverPacket(rtc::CopyOnWriteBuffer packet, PacketType type) override;
+  void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
+                     PacketType type) override;
 
   MediaEventSource<void>& RtcpByeEvent() override { return mRtcpByeEvent; }
   MediaEventSource<void>& RtcpTimeoutEvent() override {
@@ -375,7 +375,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   const UniquePtr<WebrtcVideoEncoderFactory> mEncoderFactory;
 
   // These sink proxies are needed because both the recv and send sides of the
-  // conduit need to implement rtc::VideoSinkInterface<webrtc::VideoFrame>.
+  // conduit need to implement webrtc::VideoSinkInterface<webrtc::VideoFrame>.
   RecvSinkProxy mRecvSinkProxy;
   SendSinkProxy mSendSinkProxy;
 
@@ -467,7 +467,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
 
   // Written only on the Call thread. Guarded by mMutex, except for reads on the
   // Call thread. Calls can happen under mMutex on any thread.
-  DataMutex<RefPtr<rtc::RefCountedObject<VideoStreamFactory>>>
+  DataMutex<RefPtr<webrtc::RefCountedObject<VideoStreamFactory>>>
       mVideoStreamFactory;
 
   // Call thread only.

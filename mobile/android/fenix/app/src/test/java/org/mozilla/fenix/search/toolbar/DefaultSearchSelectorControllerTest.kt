@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.search.toolbar
 
+import android.app.Activity
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
 import androidx.navigation.NavOptions
@@ -12,7 +13,6 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Before
 import org.junit.Test
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
@@ -21,7 +21,7 @@ import org.mozilla.fenix.utils.Settings
 
 class DefaultSearchSelectorControllerTest {
 
-    private val activity: HomeActivity = mockk(relaxed = true)
+    private val activity: Activity = mockk(relaxed = true)
     private val navController: NavController = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
 

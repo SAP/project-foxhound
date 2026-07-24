@@ -64,9 +64,9 @@ class AccessibilityActor extends Actor {
    *
    * @param  {null} subject
    *         Not used.
-   * @param  {String} topic
+   * @param  {string} topic
    *         Name of the a11y service event: "a11y-init-or-shutdown".
-   * @param  {String} data
+   * @param  {string} data
    *         "0" corresponds to shutdown and "1" to init.
    */
   observe(subject, topic, data) {
@@ -85,7 +85,7 @@ class AccessibilityActor extends Actor {
   /**
    * Get or create AccessibilityWalker actor, similar to WalkerActor.
    *
-   * @return {Object}
+   * @return {object}
    *         AccessibleWalkerActor for the current tab.
    */
   getWalker() {
@@ -103,7 +103,7 @@ class AccessibilityActor extends Actor {
    * <feColorMatrix> since it is accelerated and scrolling with filter applied
    * needs to be smooth (Bug1431466).
    *
-   * @return {Object|null}
+   * @return {object | null}
    *         SimulatorActor for the current tab.
    */
   getSimulator() {

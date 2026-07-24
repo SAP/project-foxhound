@@ -4,43 +4,49 @@
 
 package org.mozilla.fenix.components.appstate
 
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.DeletingBrowserDataInProgress
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.Dismiss
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.None
+import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.ShowSnackbar
 
 class SnackbarStateReducerTest {
-    private val appStore = AppStore(
-        initialState = AppState(
-            snackbarState = DeletingBrowserDataInProgress,
-        ),
+    private val initialState = AppState(
+        snackbarState = DeletingBrowserDataInProgress,
     )
 
     @Test
     fun `WHEN snackbar dismissed action is dispatched THEN state is updated`() {
-        appStore.dispatch(SnackbarAction.SnackbarDismissed).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.SnackbarDismissed)
 
-        assertTrue(appStore.state.snackbarState is Dismiss)
-        assertTrue((appStore.state.snackbarState as Dismiss).previous == DeletingBrowserDataInProgress)
+        assertTrue(finalState.snackbarState is Dismiss)
+        assertTrue((finalState.snackbarState as Dismiss).previous == DeletingBrowserDataInProgress)
     }
 
     @Test
     fun `WHEN snackbar shown action is dispatched THEN state is updated`() {
-        appStore.dispatch(SnackbarAction.SnackbarShown).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.SnackbarShown)
 
-        assertTrue(appStore.state.snackbarState is None)
-        assertTrue((appStore.state.snackbarState as None).previous == DeletingBrowserDataInProgress)
+        assertTrue(finalState.snackbarState is None)
+        assertTrue((finalState.snackbarState as None).previous == DeletingBrowserDataInProgress)
     }
 
     @Test
     fun `WHEN reset action is dispatched THEN state is updated`() {
-        appStore.dispatch(SnackbarAction.Reset).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.Reset)
 
-        assertTrue(appStore.state.snackbarState is None)
-        assertTrue((appStore.state.snackbarState as None).previous == DeletingBrowserDataInProgress)
+        assertTrue(finalState.snackbarState is None)
+        assertTrue((finalState.snackbarState as None).previous == DeletingBrowserDataInProgress)
+    }
+
+    @Test
+    fun `WHEN show snackbar action is dispatched THEN state is updated with title`() {
+        val testTitle = "Test Title"
+        val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.ShowSnackbar(testTitle))
+
+        assertTrue(finalState.snackbarState is ShowSnackbar)
+        assertTrue((finalState.snackbarState as ShowSnackbar).title == testTitle)
     }
 }

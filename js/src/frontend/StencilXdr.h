@@ -42,12 +42,8 @@ struct SharedDataContainer;
 template <typename DataT>
 struct CanCopyDataToDisk {
   // Check that the object is fully packed, to save disk space.
-#ifdef __cpp_lib_has_unique_object_representations
   static constexpr bool unique_repr =
       std::has_unique_object_representations<DataT>();
-#else
-  static constexpr bool unique_repr = true;
-#endif
 
   // Approximation which assumes that 32bits variant of the class would not
   // have pointers if the 64bits variant does not have pointer.
@@ -215,6 +211,10 @@ class XDRStencilEncoder : public XDRState<XDR_ENCODE> {
 };
 
 JS::TranscodeResult EncodeStencil(JSContext* cx,
+                                  frontend::CompilationStencil* stencil,
+                                  JS::TranscodeBuffer& buffer);
+
+JS::TranscodeResult EncodeStencil(JS::FrontendContext* fc,
                                   frontend::CompilationStencil* stencil,
                                   JS::TranscodeBuffer& buffer);
 

@@ -7,25 +7,22 @@
 #include "ThirdPartyUtil.h"
 
 #include <cstdint>
+
 #include "MainThreadUtils.h"
 #include "mozIDOMWindow.h"
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/Components.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "nsCOMPtr.h"
@@ -58,7 +55,6 @@ NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 // MOZ_LOG=thirdPartyUtil:5
 //
 static mozilla::LazyLogModule gThirdPartyLog("thirdPartyUtil");
-#undef LOG
 #define LOG(args) MOZ_LOG(gThirdPartyLog, mozilla::LogLevel::Debug, args)
 
 static mozilla::StaticRefPtr<ThirdPartyUtil> gService;
@@ -294,7 +290,7 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel, nsIURI* aURI,
     uint32_t flags = 0;
     // Avoid checking the return value here since some channel implementations
     // may return NS_ERROR_NOT_IMPLEMENTED.
-    mozilla::Unused << httpChannelInternal->GetThirdPartyFlags(&flags);
+    (void)httpChannelInternal->GetThirdPartyFlags(&flags);
 
     doForce = (flags & nsIHttpChannelInternal::THIRD_PARTY_FORCE_ALLOW);
 
@@ -458,7 +454,9 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
     if (aHostURI->SchemeIs("view-source")) {
       rv = NS_GetInnermostURIHost(aHostURI, aBaseDomain);
     } else {
-      rv = aHostURI->GetAsciiHost(aBaseDomain);
+      // Apply IPV6 fixup to work around Bug 1603199.
+      rv =
+          nsContentUtils::GetAsciiHostOrIPv6WithBrackets(aHostURI, aBaseDomain);
     }
   }
 
@@ -540,3 +538,4 @@ ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
 
   return result;
 }
+#undef LOG

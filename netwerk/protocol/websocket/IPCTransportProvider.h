@@ -11,6 +11,7 @@
 #include "mozilla/net/PTransportProviderParent.h"
 #include "mozilla/net/PTransportProviderChild.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsISocketTransport.h"
 #include "nsITransportProvider.h"
 
 /*

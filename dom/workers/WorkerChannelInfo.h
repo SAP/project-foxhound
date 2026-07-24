@@ -7,14 +7,14 @@
 #ifndef mozilla_dom_WorkerChannel_h
 #define mozilla_dom_WorkerChannel_h
 
-#include "nsIWorkerChannelInfo.h"
-#include "nsILoadInfo.h"
-#include "nsIChannel.h"
-#include "nsTArray.h"
-#include "nsIURI.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/OriginAttributes.h"
+#include "nsIChannel.h"
+#include "nsILoadInfo.h"
+#include "nsIURI.h"
+#include "nsIWorkerChannelInfo.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

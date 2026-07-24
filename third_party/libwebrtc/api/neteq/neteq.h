@@ -186,14 +186,14 @@ class NetEq {
   virtual ~NetEq() {}
 
   virtual int InsertPacket(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload) {
+                           ArrayView<const uint8_t> payload) {
     return InsertPacket(rtp_header, payload,
                         /*receive_time=*/Timestamp::MinusInfinity());
   }
 
   // TODO: webrtc:343501093 - removed unused method.
   virtual int InsertPacket(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload,
+                           ArrayView<const uint8_t> payload,
                            Timestamp receive_time) {
     return InsertPacket(rtp_header, payload,
                         RtpPacketInfo(rtp_header, receive_time));
@@ -203,7 +203,7 @@ class NetEq {
   // Returns 0 on success, -1 on failure.
   // TODO: webrtc:343501093 - Make this method pure virtual.
   virtual int InsertPacket(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload,
+                           ArrayView<const uint8_t> payload,
                            const RtpPacketInfo& /* rtp_packet_info */) {
     return InsertPacket(rtp_header, payload);
   }
@@ -238,9 +238,14 @@ class NetEq {
   virtual void SetCodecs(const std::map<int, SdpAudioFormat>& codecs) = 0;
 
   // Associates `rtp_payload_type` with the given codec, which NetEq will
-  // instantiate when it needs it. Returns true iff successful.
+  // instantiate when it needs it. Returns true if successful.
   virtual bool RegisterPayloadType(int rtp_payload_type,
                                    const SdpAudioFormat& audio_format) = 0;
+
+  // Creates a decoder for `rtp_payload_type`. Can be used to instantiate a
+  // decoder ahead of time to avoid blocking when needed. Returns true if
+  // successful.
+  virtual bool CreateDecoder(int rtp_payload_type) { return false; }
 
   // Removes `rtp_payload_type` from the codec database. Returns 0 on success,
   // -1 on failure. Removing a payload type that is not registered is ok and

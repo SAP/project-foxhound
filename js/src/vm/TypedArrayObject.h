@@ -43,11 +43,10 @@ class TypedArrayObject : public ArrayBufferViewObject {
   static_assert(js::detail::TypedArrayDataSlot == DATA_SLOT,
                 "bad inlined constant in TypedData.h");
 
-  static bool sameBuffer(Handle<TypedArrayObject*> a,
-                         Handle<TypedArrayObject*> b) {
+  static bool sameBuffer(const TypedArrayObject* a, const TypedArrayObject* b) {
     // Inline buffers.
     if (!a->hasBuffer() || !b->hasBuffer()) {
-      return a.get() == b.get();
+      return a == b;
     }
 
     // Shared buffers.
@@ -120,18 +119,22 @@ class TypedArrayObject : public ArrayBufferViewObject {
   static bool getElements(JSContext* cx, Handle<TypedArrayObject*> tarray,
                           size_t length, Value* vp);
 
-  static bool GetTemplateObjectForNative(JSContext* cx, Native native,
-                                         const JS::HandleValueArray args,
-                                         MutableHandleObject res);
+  static bool GetTemplateObjectForLength(JSContext* cx, Scalar::Type type,
+                                         int32_t length,
+                                         MutableHandle<TypedArrayObject*> res);
+
+  static TypedArrayObject* GetTemplateObjectForBuffer(
+      JSContext* cx, Scalar::Type type,
+      Handle<ArrayBufferObjectMaybeShared*> buffer);
+
+  static TypedArrayObject* GetTemplateObjectForBufferView(
+      JSContext* cx, Handle<TypedArrayObject*> bufferView);
+
+  static TypedArrayObject* GetTemplateObjectForArrayLike(
+      JSContext* cx, Scalar::Type type, Handle<JSObject*> arrayLike);
 
   // Maximum allowed byte length for any typed array.
   static constexpr size_t ByteLengthLimit = ArrayBufferObject::ByteLengthLimit;
-
-  static bool isOriginalLengthGetter(Native native);
-
-  static bool isOriginalByteOffsetGetter(Native native);
-
-  static bool isOriginalByteLengthGetter(Native native);
 
   /* Accessors and functions */
 
@@ -177,6 +180,8 @@ class FixedLengthTypedArrayObject : public TypedArrayObject {
     assertZeroLengthArrayData();
     return elementsRaw();
   }
+
+  bool hasMallocedElements(JSContext* cx) const;
 
 #ifdef DEBUG
   void assertZeroLengthArrayData() const;
@@ -252,6 +257,8 @@ bool IsTypedArrayConstructor(const JSObject* obj);
 bool IsTypedArrayConstructor(HandleValue v, Scalar::Type type);
 
 JSNative TypedArrayConstructorNative(Scalar::Type type);
+
+Scalar::Type TypedArrayConstructorType(const JSFunction* fun);
 
 // In WebIDL terminology, a BufferSource is either an ArrayBuffer or a typed
 // array view. In either case, extract the dataPointer/byteLength.
@@ -329,6 +336,48 @@ bool DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
                              uint64_t index, Handle<PropertyDescriptor> desc,
                              ObjectOpResult& result);
 
+void TypedArrayFillInt32(TypedArrayObject* obj, int32_t fillValue,
+                         intptr_t start, intptr_t end);
+
+void TypedArrayFillInt64(TypedArrayObject* obj, int64_t fillValue,
+                         intptr_t start, intptr_t end);
+
+void TypedArrayFillDouble(TypedArrayObject* obj, double fillValue,
+                          intptr_t start, intptr_t end);
+
+void TypedArrayFillFloat32(TypedArrayObject* obj, float fillValue,
+                           intptr_t start, intptr_t end);
+
+void TypedArrayFillBigInt(TypedArrayObject* obj, BigInt* fillValue,
+                          intptr_t start, intptr_t end);
+
+bool TypedArraySet(JSContext* cx, TypedArrayObject* target,
+                   TypedArrayObject* source, intptr_t offset);
+
+void TypedArraySetInfallible(TypedArrayObject* target, TypedArrayObject* source,
+                             intptr_t offset);
+
+bool TypedArraySetFromSubarray(JSContext* cx, TypedArrayObject* target,
+                               TypedArrayObject* source, intptr_t offset,
+                               intptr_t sourceOffset, intptr_t sourceLength);
+
+void TypedArraySetFromSubarrayInfallible(TypedArrayObject* target,
+                                         TypedArrayObject* source,
+                                         intptr_t offset, intptr_t sourceOffset,
+                                         intptr_t sourceLength);
+
+TypedArrayObject* TypedArraySubarray(JSContext* cx,
+                                     Handle<TypedArrayObject*> obj,
+                                     intptr_t start, intptr_t end);
+
+TypedArrayObject* TypedArraySubarrayWithLength(JSContext* cx,
+                                               Handle<TypedArrayObject*> obj,
+                                               intptr_t start, intptr_t length);
+
+TypedArrayObject* TypedArraySubarrayRecover(JSContext* cx,
+                                            Handle<TypedArrayObject*> obj,
+                                            intptr_t start, intptr_t length);
+
 static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
   switch (viewType) {
     case Scalar::Int8:
@@ -355,6 +404,52 @@ static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
 
 static inline constexpr unsigned TypedArrayElemSize(Scalar::Type viewType) {
   return 1u << TypedArrayShift(viewType);
+}
+
+/**
+ * Check if |targetType| and |sourceType| have compatible bit-level
+ * representations to allow bitwise copying.
+ */
+constexpr bool CanUseBitwiseCopy(Scalar::Type targetType,
+                                 Scalar::Type sourceType) {
+  switch (targetType) {
+    case Scalar::Int8:
+    case Scalar::Uint8:
+      return sourceType == Scalar::Int8 || sourceType == Scalar::Uint8 ||
+             sourceType == Scalar::Uint8Clamped;
+
+    case Scalar::Uint8Clamped:
+      return sourceType == Scalar::Uint8 || sourceType == Scalar::Uint8Clamped;
+
+    case Scalar::Int16:
+    case Scalar::Uint16:
+      return sourceType == Scalar::Int16 || sourceType == Scalar::Uint16;
+
+    case Scalar::Int32:
+    case Scalar::Uint32:
+      return sourceType == Scalar::Int32 || sourceType == Scalar::Uint32;
+
+    case Scalar::Float16:
+      return sourceType == Scalar::Float16;
+
+    case Scalar::Float32:
+      return sourceType == Scalar::Float32;
+
+    case Scalar::Float64:
+      return sourceType == Scalar::Float64;
+
+    case Scalar::BigInt64:
+    case Scalar::BigUint64:
+      return sourceType == Scalar::BigInt64 || sourceType == Scalar::BigUint64;
+
+    case Scalar::MaxTypedArrayViewType:
+    case Scalar::Int64:
+    case Scalar::Simd128:
+      // GCC8 doesn't like MOZ_CRASH in constexpr functions, so we can't use it
+      // here to catch invalid typed array types.
+      break;
+  }
+  return false;
 }
 
 extern ArraySortResult TypedArraySortFromJit(

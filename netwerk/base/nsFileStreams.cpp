@@ -22,7 +22,6 @@
 #include "nsIClassInfoImpl.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/RandomAccessStreamParams.h"
-#include "mozilla/Unused.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "nsNetCID.h"
@@ -337,7 +336,7 @@ nsresult nsFileStreamBase::DoOpen() {
     // Result doesn't need to be checked. If the file's parent path does not
     // exist, make it. If it does exist, do nothing.
     if (parent) {
-      mozilla::Unused << parent->Create(nsIFile::DIRECTORY_TYPE, 0755);
+      (void)parent->Create(nsIFile::DIRECTORY_TYPE, 0755);
     }
   }
 

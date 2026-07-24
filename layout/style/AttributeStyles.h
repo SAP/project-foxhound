@@ -13,7 +13,6 @@
 #define mozilla_AttributeStyles_h_
 
 #include "PLDHashTable.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"

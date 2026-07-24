@@ -10,12 +10,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.GleanMetrics.ShowSearchSuggestions
@@ -26,12 +24,11 @@ import org.mozilla.focus.ext.requireComponents
 import org.mozilla.focus.searchsuggestions.SearchSuggestionsViewModel
 import org.mozilla.focus.searchsuggestions.State
 import org.mozilla.focus.ui.theme.FocusTheme
-import kotlin.coroutines.CoroutineContext
 
-class SearchSuggestionsFragment : Fragment(), CoroutineScope {
-    private var job = Job()
-    override val coroutineContext: CoroutineContext
-        get() = job + Dispatchers.Main
+/**
+ * Fragment responsible for displaying search suggestions and related UI states.
+ */
+class SearchSuggestionsFragment : Fragment() {
 
     private var _binding: FragmentSearchSuggestionsBinding? = null
     private val binding get() = _binding!!
@@ -43,17 +40,7 @@ class SearchSuggestionsFragment : Fragment(), CoroutineScope {
 
     override fun onResume() {
         super.onResume()
-
-        if (job.isCancelled) {
-            job = Job()
-        }
-
         searchSuggestionsViewModel.refresh()
-    }
-
-    override fun onPause() {
-        job.cancel()
-        super.onPause()
     }
 
     override fun onDestroyView() {
@@ -110,18 +97,23 @@ class SearchSuggestionsFragment : Fragment(), CoroutineScope {
             searchSuggestionsViewModel.dismissNoSuggestionsMessage()
         }
 
-        val searchSuggestionsView = view.findViewById<ComposeView>(R.id.search_suggestions_view)
-        searchSuggestionsView.setContent {
-            FocusTheme {
-                SearchOverlay(
-                    searchSuggestionsViewModel,
-                    defaultSearchEngineName,
-                ) { view.hideKeyboard() }
+        view.findViewById<ComposeView>(R.id.search_suggestions_view).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                FocusTheme {
+                    SearchOverlay(
+                        searchSuggestionsViewModel,
+                        defaultSearchEngineName,
+                    ) { view.hideKeyboard() }
+                }
             }
         }
     }
 
     companion object {
+        /**
+         * Creates a new instance of [SearchSuggestionsFragment].
+         */
         fun create() = SearchSuggestionsFragment()
     }
 }

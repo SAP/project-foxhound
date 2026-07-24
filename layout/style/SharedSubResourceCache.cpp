@@ -7,6 +7,7 @@
 #include "SharedSubResourceCache.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/Services.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CacheablePerformanceTimingData.h"
 #include "mozilla/dom/Document.h"
@@ -17,7 +18,10 @@
 #include "mozilla/net/HttpBaseChannel.h"
 #include "nsCOMPtr.h"
 #include "nsDOMNavigationTiming.h"
+#include "nsHttpResponseHead.h"
 #include "nsIHttpChannel.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
 #include "nsIRequest.h"
 #include "nsITimedChannel.h"
 #include "nsPIDOMWindow.h"
@@ -26,6 +30,24 @@
 namespace mozilla {
 
 namespace SharedSubResourceCacheUtils {
+
+void AddMemoryPressureObserver(nsIObserver* aObserver) {
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (!obsService) {
+    return;
+  }
+  obsService->AddObserver(aObserver, "memory-pressure", false);
+  obsService->AddObserver(aObserver, "memory-pressure-stop", false);
+}
+
+void RemoveMemoryPressureObserver(nsIObserver* aObserver) {
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (!obsService) {
+    return;
+  }
+  obsService->RemoveObserver(aObserver, "memory-pressure");
+  obsService->RemoveObserver(aObserver, "memory-pressure-stop");
+}
 
 void AddPerformanceEntryForCache(
     const nsString& aEntryName, const nsString& aInitiatorType,
@@ -61,8 +83,7 @@ void AddPerformanceEntryForCache(
   storage->AddEntry(aEntryName, aInitiatorType, std::move(data));
 }
 
-bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryLoaderPrincipal,
-                      nsIPrincipal* aEntryPartitionPrincipal,
+bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryPartitionPrincipal,
                       const Maybe<bool>& aChrome,
                       const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
                       const Maybe<nsCString>& aSchemelessSite,
@@ -72,13 +93,13 @@ bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryLoaderPrincipal,
     RefPtr<nsIURI> uri = aEntryURI;
     if (!uri) {
       // If there's no uri (inline resource) try to use the principal URI.
-      uri = aEntryLoaderPrincipal->GetURI();
+      uri = aEntryPartitionPrincipal->GetURI();
     }
     const bool isChrome = [&] {
       if (uri && (uri->SchemeIs("chrome") || uri->SchemeIs("resource"))) {
         return true;
       }
-      if (!aEntryURI && aEntryLoaderPrincipal->IsSystemPrincipal()) {
+      if (!aEntryURI && aEntryPartitionPrincipal->IsSystemPrincipal()) {
         return true;
       }
       return false;
@@ -141,6 +162,8 @@ bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryLoaderPrincipal,
 
 }  // namespace SharedSubResourceCacheUtils
 
+SubResourceNetworkMetadataHolder::~SubResourceNetworkMetadataHolder() = default;
+
 SubResourceNetworkMetadataHolder::SubResourceNetworkMetadataHolder(
     nsIRequest* aRequest) {
   nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(aRequest);
@@ -153,6 +176,18 @@ SubResourceNetworkMetadataHolder::SubResourceNetworkMetadataHolder(
   if (httpBaseChannel) {
     mResponseHead = httpBaseChannel->MaybeCloneResponseHeadForCachedResource();
   }
+}
+
+size_t SubResourceNetworkMetadataHolder::SizeOfExcludingThis(
+    MallocSizeOf aMallocSizeOf) const {
+  size_t n = 0;
+  if (mPerfData) {
+    n += mPerfData->SizeOfExcludingThis(aMallocSizeOf);
+  }
+  if (mResponseHead) {
+    mResponseHead->SizeOfIncludingThis(aMallocSizeOf);
+  }
+  return n;
 }
 
 }  // namespace mozilla

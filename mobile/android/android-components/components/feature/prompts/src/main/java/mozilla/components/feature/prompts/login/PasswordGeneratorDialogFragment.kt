@@ -15,16 +15,17 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.compose.content
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import mozilla.components.concept.storage.Login
+import mozilla.components.concept.storage.LoginHint
 import mozilla.components.feature.prompts.R
 import mozilla.components.feature.prompts.dialog.KEY_PROMPT_UID
 import mozilla.components.feature.prompts.dialog.KEY_SESSION_ID
 import mozilla.components.feature.prompts.dialog.PromptDialogFragment
 import mozilla.components.feature.prompts.dialog.emitGeneratedPasswordFilledFact
+import com.google.android.material.R as materialR
 
 private const val GENERATED_PASSWORD = "GENERATED_PASSWORD"
 private const val URL = "URL"
@@ -52,8 +53,7 @@ internal class PasswordGeneratorDialogFragment : PromptDialogFragment() {
         return BottomSheetDialog(requireContext(), R.style.MozDialogStyle).apply {
             setCancelable(true)
             setOnShowListener {
-                val bottomSheet =
-                    findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+                val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.peekHeight = resources.displayMetrics.heightPixels
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
@@ -65,24 +65,21 @@ internal class PasswordGeneratorDialogFragment : PromptDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-        setContent {
-            val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-            MaterialTheme(colors) {
-                if (generatedPassword.isNotEmpty() && currentUrl.isNotEmpty()) {
-                    PasswordGeneratorBottomSheet(
-                        generatedStrongPassword = generatedPassword,
-                        onUsePassword = {
-                            onUsePassword(
-                                generatedPassword = generatedPassword,
-                                currentUrl = currentUrl,
-                            )
-                        },
-                        onCancelDialog = { onCancelDialog() },
-                        colors = colorsProvider.provideColors(),
-                    )
-                }
+    ) = content {
+        val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+        MaterialTheme(colors) {
+            if (generatedPassword.isNotEmpty() && currentUrl.isNotEmpty()) {
+                PasswordGeneratorBottomSheet(
+                    generatedStrongPassword = generatedPassword,
+                    onUsePassword = {
+                        onUsePassword(
+                            generatedPassword = generatedPassword,
+                            currentUrl = currentUrl,
+                        )
+                    },
+                    onCancelDialog = { onCancelDialog() },
+                    colors = colorsProvider.provideColors(),
+                )
             }
         }
     }
@@ -99,6 +96,7 @@ internal class PasswordGeneratorDialogFragment : PromptDialogFragment() {
             httpRealm = currentUrl,
             username = "",
             password = generatedPassword,
+            hint = LoginHint.GENERATED,
         )
         feature?.onConfirm(sessionId, promptRequestUID, login)
         emitGeneratedPasswordFilledFact()

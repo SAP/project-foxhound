@@ -7,10 +7,8 @@
 #ifndef mozilla_dom_worklet_WorkletThread_h
 #define mozilla_dom_worklet_WorkletThread_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "nsIObserver.h"
 #include "nsThread.h"
@@ -61,14 +59,9 @@ class WorkletThread final : public nsThread, public nsIObserver {
 
   // This should only be called by consumers that have an
   // nsIEventTarget/nsIThread pointer.
-  NS_IMETHOD
-  Dispatch(already_AddRefed<nsIRunnable> aRunnable, uint32_t aFlags) override;
-
-  NS_IMETHOD
-  DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) override;
-
-  NS_IMETHOD
-  DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override;
+  using nsThread::DelayedDispatch;
+  using nsThread::Dispatch;
+  using nsThread::DispatchFromScript;
 
   const RefPtr<WorkletImpl> mWorkletImpl;
 

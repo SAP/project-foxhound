@@ -33,9 +33,10 @@
 #ifndef GMP_PLATFORM_h_
 #define GMP_PLATFORM_h_
 
+#include <stdint.h>
+
 #include "gmp-errors.h"
 #include "gmp-storage.h"
-#include <stdint.h>
 
 /* Platform helper API. */
 

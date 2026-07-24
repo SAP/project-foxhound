@@ -13,6 +13,8 @@
    */
   --heading-font-size-xlarge: var(--font-size-xlarge);
   --heading-font-size-large: var(--font-size-large);
+  --heading-font-size-medium: var(--font-size-medium);
+  --select-max-width: 20rem;
   user-select: text;
 }
 
@@ -67,12 +69,21 @@
 
 #mainPrefPane {
   width: 100%;
-  padding: 0;
+  /* at some point we'll end up removing the sticky element using z-index above this that cuts off the top of the focus outline in https://bugzilla.mozilla.org/show_bug.cgi?id=1867385, but we're adding padding intentionally until then */
+  padding: calc(var(--focus-outline-offset) + var(--focus-outline-width)) 0 0;
 }
 
 html|div[data-category],
-groupbox[data-category] {
+groupbox[data-category],
+setting-group[data-category] {
   margin: 0 0 32px;
+}
+
+/* Bug 2002963 - payments and addresses are in a groupbox together, but they probably shouldn't be */
+#formAutofillGroupBox:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
 
 html|h1 {
@@ -167,13 +178,19 @@ radio {
   margin: 4px 0;
 }
 
-.spotlight {
+.spotlight:not(setting-group:has(> moz-card)) {
   background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
-  outline: var(--color-accent-primary) 1px dotted;
+  outline: var(--border-color-selected) 1px dotted;
   animation: fade-out 0.5s ease-out 2s forwards;
   /* Show the border to spotlight the components in high-contrast mode. */
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
+}
+
+setting-group:has(> moz-card).spotlight {
+  outline: 2px solid var(--border-color-selected);
+  border-radius: var(--border-radius-medium);
+  animation: fade-out 0.5s ease-out 2s forwards;
 }
 
 @keyframes fade-out {
@@ -183,7 +200,7 @@ radio {
   }
 }
 
-[data-subcategory] {
+[data-subcategory]:not(setting-group:has(> moz-card)) {
   margin-inline: -4px;
   padding-inline: 4px;
 }
@@ -200,7 +217,7 @@ radio {
 
 .subcategory:not([hidden]) ~ .subcategory {
   padding-top: var(--space-xxlarge);
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
 }
 
 /* Category List */
@@ -231,6 +248,10 @@ radio {
   list-style-image: url("chrome://browser/skin/preferences/category-sync.svg");
 }
 
+#category-ai-features > .category-icon {
+  list-style-image: url("chrome://global/skin/icons/highlights.svg");
+}
+
 #category-experimental > .category-icon {
   list-style-image: url("chrome://global/skin/icons/experiments.svg");
 }
@@ -250,31 +271,11 @@ radio {
 
 /* General Pane */
 
-.is-default > #isNotDefaultPane,
-:not(.is-default) > #isDefaultPane {
-  visibility: hidden;
-}
-
-#isDefaultLabel,
-#isNotDefaultLabel {
-  font-weight: var(--font-weight-bold);
-}
-
 /* stylelint-disable-next-line media-query-no-invalid */
 @media not -moz-pref("browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
   }
-}
-
-#dataMigration {
-  /* This should really be using baseline, but that doesn't work properly with
-   * the <description> and XUL <button> markup. */
-  align-items: center;
-}
-
-#browserContainersExtensionContent {
-  padding-block: 5px;
 }
 
 .extension-controlled {
@@ -329,28 +330,6 @@ radio {
 
 #activeLanguages > richlistitem {
   padding: 0.3em;
-}
-
-#saveWhere {
-  align-items: center;
-}
-
-#saveTo {
-  margin-inline-end: 1em;
-}
-
-#downloadFolder {
-  flex: 1;
-  margin-block: 4px;
-  margin-inline-start: 0;
-  padding-inline-start: 30px;
-  background-repeat: no-repeat;
-  background-size: 16px;
-  background-position: center left 8px;
-}
-
-#downloadFolder:-moz-locale-dir(rtl) {
-  background-position-x: right 8px;
 }
 
 #updateBox {
@@ -487,7 +466,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
 }
 
 #homeContentsGroup > [data-subcategory] .section-checkbox {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 #homeContentsGroup > [data-subcategory] > vbox menulist {
@@ -503,20 +482,12 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin-inline-end: var(--space-small);
 }
 
-.addon-with-favicon .menu-icon {
-  margin-inline-start: 0;
-}
-
 a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
   display: inline-block;
   white-space: initial;
 }
 
 /* Search Pane */
-
-#engineList {
-  margin: 2px 0 5px;
-}
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked),
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked) {
@@ -527,15 +498,16 @@ a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked, selected),
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked, selected) {
-  fill: var(--in-content-item-selected-text);
-  stroke: var(--in-content-item-selected);
+  fill: var(--text-color-accent-primary-selected);
+  stroke: var(--color-accent-primary-selected);
 }
 
 @media (forced-colors) {
   #engineList > treechildren::-moz-tree-image(hover),
   #blocklistsTree > treechildren::-moz-tree-image(hover) {
-    fill: var(--in-content-item-hover-text);
-    stroke: var(--in-content-item-hover);
+    fill: var(--text-color-list-item-hover);
+    /* fill allows icon and text colors, but we have no such rules for stroke */
+    stroke: var(--background-color-list-item-hover);
   }
 }
 
@@ -591,7 +563,7 @@ a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
   margin-bottom: 0;
 }
 
-.text-link[disabled="true"] {
+.text-link[disabled] {
   pointer-events: none;
 }
 
@@ -619,20 +591,20 @@ html|dialog {
 
 html|dialog::backdrop,
 .dialogOverlay[topmost="true"] {
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--background-color-overlay);
 }
 
 html|dialog,
 .dialogBox {
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   box-shadow: var(--box-shadow-popup);
 }
 
 .dialogBox {
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   background-clip: content-box;
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   /* `transparent` will use the dialogText color in high-contrast themes and
      when page colors are disabled */
   display: flex;
@@ -645,7 +617,7 @@ html|dialog,
   @media not (forced-colors) {
     html|dialog,
     .dialogBox {
-      --in-content-page-background: #42414d;
+      --background-color-canvas: #42414d;
     }
   }
 }
@@ -659,11 +631,11 @@ html|dialog,
 
 .dialogTitleBar {
   padding: 0.4em 0.2em;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .dialogTitle {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   text-align: center;
   user-select: none;
 }
@@ -732,7 +704,7 @@ html|dialog,
 .fxaProfileImage {
   width: 80px;
   height: 80px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   border: 1px solid transparent;
   list-style-image: url(chrome://browser/skin/fxa/avatar-color.svg);
   margin-inline-end: var(--space-xlarge);
@@ -779,8 +751,26 @@ html|dialog,
   margin-block: 0 4px;
 }
 
-#noFxaSignIn {
+button#noFxaSignIn {
   margin-inline-start: 8px;
+}
+
+#syncConfigured {
+  --box-icon-start-fill: var(--icon-color-success);
+}
+
+#syncNotConfigured,
+#noFxaSignIn {
+  --box-icon-start-fill: var(--icon-color-warning);
+}
+
+#syncSetup {
+  white-space: nowrap;
+}
+
+#syncNow,
+#syncing {
+  min-width: 150px;
 }
 
 .fxaSyncIllustration {
@@ -794,7 +784,7 @@ html|dialog,
 }
 
 .separator {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 #fxaGroup {
@@ -816,6 +806,16 @@ html|dialog,
   margin-inline: 4px 8px;
 }
 
+#fxaLoginVerified {
+  --box-icon-size: calc(var(--icon-size-xlarge) * 2);
+  --box-icon-border-radius: var(--border-radius-circle);
+
+  &[description] {
+    --box-label-alignment: end;
+    --box-description-alignment: start;
+  }
+}
+
 #syncStatusContainer {
   margin-top: 32px;
 }
@@ -826,7 +826,7 @@ html|dialog,
 
 .sync-group {
   margin-block: var(--space-large);
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .sync-configured {
@@ -922,6 +922,7 @@ dialog > .sync-engines-list + hbox {
 
 .fxaMobilePromo {
   margin-top: 2px !important;
+  margin-bottom: var(--space-xxlarge);
 }
 
 .androidIcon,
@@ -953,7 +954,7 @@ dialog > .sync-engines-list + hbox {
     content: "";
     width: 1px;
     height: 100%;
-    background-color: var(--in-content-border-color);
+    background-color: var(--border-color);
     top: 0;
     inset-inline-end: 0;
     position: absolute;
@@ -988,10 +989,10 @@ dialog > .sync-engines-list + hbox {
 }
 
 .info-box-container {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 9px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .info-box-container.smaller-font-size {
@@ -1018,7 +1019,7 @@ dialog > .sync-engines-list + hbox {
 
 .sticky-container {
   position: sticky;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   top: 0;
   z-index: 1;
   /* The sticky-container should have the capability to cover all spotlight area. */
@@ -1032,6 +1033,11 @@ dialog > .sync-engines-list + hbox {
   max-width: var(--page-main-content-width);
 }
 
+#search-tooltip-container {
+  position: relative;
+  top: 0;
+}
+
 .search-tooltip {
   max-width: 10em;
   font-size: 1rem;
@@ -1042,6 +1048,7 @@ dialog > .sync-engines-list + hbox {
   border: 1px solid #d7b600;
   margin-top: -18px;
   opacity: 0.85;
+  z-index: 1;
 }
 
 .search-tooltip:hover {
@@ -1090,6 +1097,7 @@ dialog > .sync-engines-list + hbox {
   text-overflow: ellipsis;
 }
 
+.setting-hidden,
 .visually-hidden {
   display: none !important;
 }
@@ -1219,6 +1227,10 @@ richlistitem .text-link:hover {
   font-size: var(--font-size-large);
 }
 
+#experimentalCategory-reset {
+  margin-top: var(--space-small);
+}
+
 .featureGateDescription {
   white-space: pre-wrap;
 }
@@ -1309,12 +1321,12 @@ richlistitem .text-link:hover {
   min-height: 204px;
   margin-block: 10px 0;
   margin-inline-start: 30px;
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-evenly;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 @media (forced-colors) {
@@ -1331,7 +1343,7 @@ richlistitem .text-link:hover {
 }
 
 .qr-code-box-image {
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding: 2px;
   width: 80px;
   flex: 0 0 auto;
@@ -1386,87 +1398,119 @@ richlistitem .text-link:hover {
   }
 }
 
-#websiteAppearanceGroup {
-  display: block;
+#webAppearanceGroup .description-deemphasized {
+  margin-block-end: var(--space-large);
 }
 
-#web-appearance-chooser {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-large);
+/** SRD setting-chooser control START **/
+.setting-chooser-item {
+  flex: 1;
+
+  &::part(image) {
+    width: 54px;
+    box-shadow: var(--box-shadow-card);
+    margin-block-start: var(--space-medium);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--border-radius-small);
+  }
+
+  &:dir(rtl)::part(image) {
+    transform: scaleX(-1);
+  }
+}
+/** SRD setting-chooser control END **/
+
+/** SRD rows control for Homepage START **/
+setting-group[groupid="homepage"] {
+  --select-max-width: fit-content;
+  --select-min-width: 15em;
+}
+/** SRD rows control for Homepage END **/
+
+/** SRD rows control for New Tab START **/
+setting-group[groupid="home"] {
+  --select-max-width: 17rem;
+}
+/** SRD rows control for New Tab END **/
+
+/** SRD History first item is label-less START **/
+/* bug 2001196: Workaround for using legend as label for the select. */
+setting-group[groupid="history"] > moz-fieldset::part(inputs),
+setting-group[groupid="history"] > moz-card > moz-fieldset::part(inputs) {
+  margin-block-start: 0;
+}
+/** SRD History first item is label-less END **/
+
+setting-group[groupid="aiFeatures"] {
+  --select-max-width: fit-content;
+
+  > moz-card > moz-fieldset::part(inputs) {
+    gap: var(--space-xlarge);
+  }
 }
 
-#web-appearance-chooser,
-#web-appearance-override-warning,
-#text-zoom-override-warning {
-  margin: var(--space-medium) 0;
+#blockAiGroup {
+  @media not (prefers-contrast) {
+    --block-ai-background-color: light-dark(color-mix(in srgb, currentColor 3%, transparent), color-mix(in srgb, currentColor 5%, transparent));
+    background-color: var(--block-ai-background-color);
+  }
 }
 
-#web-appearance-override-warning:not([hidden]) {
-  display: flex;
+#aiBlockedMessage {
+  margin: calc(-1 * var(--space-large));
+  margin-top: var(--space-medium);
+  --message-bar-border-radius: 0 0 var(--box-border-radius) var(--box-border-radius);
+  border-bottom-color: transparent;
+  border-inline-color: transparent;
 }
 
-.web-appearance-choice {
-  width: 100%;
-  border: 1px solid var(--in-content-box-border-color);
-  background-color: var(--in-content-box-background-color);
-  color: var(--in-content-text-color);
-  border-radius: 4px;
-  overflow: clip;
+#aiControlDefaultToggle {
+  --toggle-width: 40px;
+  --toggle-height: 20px;
 }
 
-.web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background);
-  padding: var(--space-medium) 0;
+.ai-controls-description {
+  --ai-controls-description-image-margin: calc(64px + var(--space-large));
+  --ai-controls-description-background-color: light-dark(var(--color-violet-0), var(--color-violet-90));
+  anchor-name: --ai-controls-description;
+
+  @media not (forced-colors) {
+    --card-background-color: var(--ai-controls-description-background-color);
+  }
+
+  > p {
+    margin: 0;
+    margin-inline-end: var(--ai-controls-description-image-margin);
+  }
+
+  > img {
+    position: fixed;
+    position-anchor: --ai-controls-description;
+    inset-block-end: anchor(end);
+    inset-inline-end: anchor(end);
+    margin-inline-end: var(--space-large);
+  }
 }
 
-.web-appearance-choice:hover > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-hover);
-}
-
-.web-appearance-choice:hover:active > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-active);
-}
-
-.web-appearance-choice img {
-  display: block;
-  margin: 0 auto;
-
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
-  box-shadow: 0 0 2px 0 rgba(0, 0, 0, 0.2);
-
-  transform: scaleX(1);
-  content: url("chrome://browser/content/preferences/web-appearance-light.svg");
-}
-
-.web-appearance-choice.dark img {
-  content: url("chrome://browser/content/preferences/web-appearance-dark.svg");
-}
-
-.web-appearance-choice img:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-.web-appearance-choice-footer {
-  border-top: 1px solid var(--in-content-box-border-color);
-  padding: 4px 8px;
-  overflow-wrap: anywhere;
-  display: flex;
+setting-group[groupid="aiStatesDescription"] {
+  p,
+  ul {
+    margin: 0;
+  }
 }
 
 #translations-manage-install-list {
   height: 220px;
   overflow: auto;
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   resize: vertical;
   margin: 4px 0;
 }
 
 .translations-manage-language:first-child {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
   padding: 8px;
   margin-bottom: 8px;
 }
@@ -1484,6 +1528,10 @@ richlistitem .text-link:hover {
 #translations-manage-error {
   color: var(--text-color-error);
   margin: var(--space-large) 0;
+}
+
+.translations-download-language-error {
+  background-color: var(--background-color-critical);
 }
 
 .hidden-category {
@@ -1538,6 +1586,10 @@ richlistitem .text-link:hover {
   margin: 0 0 var(--space-small);
 }
 
+.subsection-heading {
+  margin-bottom: var(--space-small);
+}
+
 .section-header-last {
   margin: 0 0 var(--space-large);
 }
@@ -1553,4 +1605,41 @@ richlistitem .text-link:hover {
   > a {
     font-size: var(--font-size-small);
   }
+}
+
+#dohProviderSelect {
+  --select-max-width: 235px;
+}
+
+#browserContainersbox moz-message-bar {
+  margin-block-start: 0;
+}
+
+#etpBannerEl {
+  border-radius: var(--border-radius-large);
+  background-clip: content-box;
+  background-image:
+    url("chrome://browser/content/preferences/etp-advanced-banner.svg"),
+    radial-gradient(151.822% 149.985% at 50% -42.53%, rgba(174, 73, 236, 1), rgba(33, 3, 64, 1));
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 128px;
+}
+
+#etpLevelWarning {
+  --promo-image-position: top;
+}
+
+#etpResetButtonGroup {
+  display: flex;
+  gap: var(--space-small);
+}
+
+#addresses-list-header,
+#payments-list-header {
+  --box-label-font-weight: var(--heading-font-weight);
+}
+
+.box-header-bold {
+  --box-label-font-weight: var(--heading-font-weight);
 }

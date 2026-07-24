@@ -11,19 +11,22 @@
 use euclid::{vec2, size2};
 use api::{ColorF, ColorU, ExtendMode, GradientStop, PremultipliedColorF};
 use api::units::*;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput, PatternTextureInput};
+use crate::gpu_types::ImageBrushPrimitiveData;
+use crate::pattern::gradient::{radial_gradient_pattern};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
 use crate::scene_building::IsVisible;
 use crate::frame_builder::FrameBuildingState;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::prim_store::{BrushSegment, GradientTileRange, InternablePrimitive};
+use crate::prim_store::{BrushSegment, GradientTileRange, InternablePrimitive, VECS_PER_SEGMENT};
 use crate::prim_store::{PrimitiveInstanceKind, PrimitiveOpacity};
 use crate::prim_store::{PrimKeyCommonData, PrimTemplateCommonData, PrimitiveStore};
 use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, FloatKey};
 use crate::render_task::{RenderTask, RenderTaskKind};
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::{RenderTaskCacheKeyKind, RenderTaskCacheKey, RenderTaskParent};
-use crate::renderer::{GpuBufferAddress, GpuBufferBuilder};
+use crate::renderer::GpuBufferAddress;
+use crate::segment::EdgeMask;
 
 use std::{hash, ops::{Deref, DerefMut}};
 use super::{
@@ -94,7 +97,7 @@ pub struct RadialGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
     pub params: RadialGradientParams,
-    pub center: DevicePoint,
+    pub center: LayoutPoint,
     pub task_size: DeviceIntSize,
     pub scale: DeviceVector2D,
     pub stretch_size: LayoutSize,
@@ -109,19 +112,27 @@ impl PatternBuilder for RadialGradientTemplate {
     fn build(
         &self,
         _sub_rect: Option<DeviceRect>,
-        _ctx: &PatternBuilderContext,
+        ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // The scaling parameter is used to compensate for when we reduce the size
         // of the render task for cached gradients. Here we aren't applying any.
         let no_scale = DeviceVector2D::one();
 
+        // RadialGradientTemplate stores the center point relative to the primitive
+        // origin, but the shader works with start/end points in "proper" layout
+        // coordinates (relative to the primitive's spatial node).
+        let center = self.center.cast_unit() + self.common.prim_rect.min.to_vector();
+
         radial_gradient_pattern(
-            self.center,
+            center,
             no_scale,
-            &self.params,
+            self.params.start_radius,
+            self.params.end_radius,
+            self.params.ratio_xy,
             self.extend_mode,
             &self.stops,
+            ctx.fb_config.is_software,
             state.frame_gpu_data,
         )
     }
@@ -190,7 +201,7 @@ impl From<RadialGradientKey> for RadialGradientTemplate {
 
         RadialGradientTemplate {
             common,
-            center: DevicePoint::new(item.center.x, item.center.y),
+            center: item.center.into(),
             extend_mode: item.extend_mode,
             params: item.params,
             stretch_size,
@@ -214,27 +225,20 @@ impl RadialGradientTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(mut request) =
-            frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
-            // write_prim_gpu_blocks
-            request.push(PremultipliedColorF::WHITE);
-            request.push(PremultipliedColorF::WHITE);
-            request.push([
-                self.stretch_size.width,
-                self.stretch_size.height,
-                0.0,
-                0.0,
-            ]);
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
 
-            // write_segment_gpu_blocks
-            for segment in &self.brush_segments {
-                // has to match VECS_PER_SEGMENT
-                request.write_segment(
-                    segment.local_rect,
-                    segment.extra_data,
-                );
-            }
+        // write_prim_gpu_blocks
+        writer.push(&ImageBrushPrimitiveData {
+            color: PremultipliedColorF::WHITE,
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size: self.stretch_size,
+        });
+
+        // write_segment_gpu_blocks
+        for segment in &self.brush_segments {
+            segment.write_gpu_blocks(&mut writer);
         }
+        self.common.gpu_buffer_address = writer.finish();
 
         let task_size = self.task_size;
         let cache_key = RadialGradientCacheKey {
@@ -255,11 +259,10 @@ impl RadialGradientTemplate {
             }),
             false,
             RenderTaskParent::Surface,
-            frame_state.gpu_cache,
             &mut frame_state.frame_gpu_data.f32,
             frame_state.rg_builder,
             &mut frame_state.surface_builder,
-            &mut |rg_builder, gpu_buffer_builder, _| {
+            &mut |rg_builder, gpu_buffer_builder| {
                 let stops = GradientGpuBlockBuilder::build(
                     false,
                     gpu_buffer_builder,
@@ -270,7 +273,10 @@ impl RadialGradientTemplate {
                     task_size,
                     RenderTaskKind::RadialGradient(RadialGradientTask {
                         extend_mode: self.extend_mode,
-                        center: self.center,
+                        // In this code path we chose to render the gradient as if
+                        // layout coordinates were equivalent to device coordinates.
+                        // This can lead to loss of precision.
+                        center: self.center.cast_unit(),
                         scale: self.scale,
                         params: self.params.clone(),
                         stops,
@@ -327,7 +333,7 @@ impl InternablePrimitive for RadialGradient {
         PrimitiveInstanceKind::RadialGradient {
             data_handle,
             visible_tiles_range: GradientTileRange::empty(),
-            cached: true,
+            use_legacy_path: true,
         }
     }
 }
@@ -408,17 +414,23 @@ pub struct RadialGradientCacheKey {
 /// This function tries to detect that, potentially shrink the gradient primitive to only
 /// the useful part and if needed insert solid color primitives around the gradient where
 /// parts of it have been removed.
+///
+/// If the radial gradient is split into multiple primitives, we must prevent anti-aliasing
+/// from being appplied at the edges connecting these primitives to prevent seams. This is
+/// done by masking out sides in `aa_mask` for the central gradient primitive and providing
+/// an edge mask for each extracted solid primitive.
 pub fn optimize_radial_gradient(
     prim_rect: &mut LayoutRect,
     stretch_size: &mut LayoutSize,
     center: &mut LayoutPoint,
     tile_spacing: &mut LayoutSize,
+    aa_mask: &mut EdgeMask,
     clip_rect: &LayoutRect,
     radius: LayoutSize,
     end_offset: f32,
     extend_mode: ExtendMode,
     stops: &[GradientStopKey],
-    solid_parts: &mut dyn FnMut(&LayoutRect, ColorU),
+    solid_parts: &mut dyn FnMut(&LayoutRect, ColorU, EdgeMask),
 ) {
     let offset = apply_gradient_local_clip(
         prim_rect,
@@ -488,7 +500,7 @@ pub fn optimize_radial_gradient(
                 gradient_rect.min,
                 size2(l, t),
             );
-            solid_parts(&solid_rect, bg_color);
+            solid_parts(&solid_rect, bg_color, EdgeMask::LEFT | EdgeMask::TOP);
         }
 
         if l != 0.0 && b != 0.0 {
@@ -496,7 +508,7 @@ pub fn optimize_radial_gradient(
                 gradient_rect.bottom_left() - vec2(0.0, b),
                 size2(l, b),
             );
-            solid_parts(&solid_rect, bg_color);
+            solid_parts(&solid_rect, bg_color, EdgeMask::LEFT | EdgeMask::BOTTOM);
         }
 
         if t != 0.0 && r != 0.0 {
@@ -504,7 +516,7 @@ pub fn optimize_radial_gradient(
                 gradient_rect.top_right() - vec2(r, 0.0),
                 size2(r, t),
             );
-            solid_parts(&solid_rect, bg_color);
+            solid_parts(&solid_rect, bg_color, EdgeMask::TOP | EdgeMask::RIGHT);
         }
 
         if r != 0.0 && b != 0.0 {
@@ -512,7 +524,7 @@ pub fn optimize_radial_gradient(
                 gradient_rect.bottom_right() - vec2(r, b),
                 size2(r, b),
             );
-            solid_parts(&solid_rect, bg_color);
+            solid_parts(&solid_rect, bg_color, EdgeMask::RIGHT | EdgeMask::BOTTOM);
         }
 
         if l != 0.0 {
@@ -520,7 +532,11 @@ pub fn optimize_radial_gradient(
                 gradient_rect.min + vec2(0.0, t),
                 size2(l, gradient_rect.height() - t - b),
             );
-            solid_parts(&solid_rect, bg_color);
+            let mut solid_aa = EdgeMask::LEFT;
+            solid_aa.set(EdgeMask::TOP, t == 0.0);
+            solid_aa.set(EdgeMask::BOTTOM, b == 0.0);
+            solid_parts(&solid_rect, bg_color, solid_aa);
+            aa_mask.remove(EdgeMask::LEFT);
         }
 
         if r != 0.0 {
@@ -528,7 +544,11 @@ pub fn optimize_radial_gradient(
                 gradient_rect.top_right() + vec2(-r, t),
                 size2(r, gradient_rect.height() - t - b),
             );
-            solid_parts(&solid_rect, bg_color);
+            let mut solid_aa = EdgeMask::RIGHT;
+            solid_aa.set(EdgeMask::TOP, t == 0.0);
+            solid_aa.set(EdgeMask::BOTTOM, b == 0.0);
+            solid_parts(&solid_rect, bg_color, solid_aa);
+            aa_mask.remove(EdgeMask::RIGHT);
         }
 
         if t != 0.0 {
@@ -536,7 +556,11 @@ pub fn optimize_radial_gradient(
                 gradient_rect.min + vec2(l, 0.0),
                 size2(gradient_rect.width() - l - r, t),
             );
-            solid_parts(&solid_rect, bg_color);
+            let mut solid_aa = EdgeMask::TOP;
+            solid_aa.set(EdgeMask::LEFT, l == 0.0);
+            solid_aa.set(EdgeMask::RIGHT, r == 0.0);
+            solid_parts(&solid_rect, bg_color, solid_aa);
+            aa_mask.remove(EdgeMask::TOP);
         }
 
         if b != 0.0 {
@@ -544,7 +568,11 @@ pub fn optimize_radial_gradient(
                 gradient_rect.bottom_left() + vec2(l, -b),
                 size2(gradient_rect.width() - l - r, b),
             );
-            solid_parts(&solid_rect, bg_color);
+            let mut solid_aa = EdgeMask::BOTTOM;
+            solid_aa.set(EdgeMask::LEFT, l == 0.0);
+            solid_aa.set(EdgeMask::RIGHT, r == 0.0);
+            solid_parts(&solid_rect, bg_color, solid_aa);
+            aa_mask.remove(EdgeMask::BOTTOM);
         }
     }
 
@@ -561,47 +589,4 @@ pub fn optimize_radial_gradient(
 
     tile_spacing.width += l + r;
     tile_spacing.height += t + b;
-}
-
-pub fn radial_gradient_pattern(
-    center: DevicePoint,
-    scale: DeviceVector2D,
-    params: &RadialGradientParams,
-    extend_mode: ExtendMode,
-    stops: &[GradientStop],
-    gpu_buffer_builder: &mut GpuBufferBuilder
-) -> Pattern {
-    let mut writer = gpu_buffer_builder.f32.write_blocks(2);
-    writer.push_one([
-        center.x,
-        center.y,
-        scale.x,
-        scale.y,
-    ]);
-    writer.push_one([
-        params.start_radius,
-        params.end_radius,
-        params.ratio_xy,
-        if extend_mode == ExtendMode::Repeat { 1.0 } else { 0.0 }
-    ]);
-    let gradient_address = writer.finish();
-
-    let stops_address = GradientGpuBlockBuilder::build(
-        false,
-        &mut gpu_buffer_builder.f32,
-        &stops,
-    );
-
-    let is_opaque = stops.iter().all(|stop| stop.color.a >= 1.0);
-
-    Pattern {
-        kind: PatternKind::RadialGradient,
-        shader_input: PatternShaderInput(
-            gradient_address.as_int(),
-            stops_address.as_int(),
-        ),
-        texture_input: PatternTextureInput::default(),
-        base_color: ColorF::WHITE,
-        is_opaque,
-    }
 }

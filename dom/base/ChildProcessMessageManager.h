@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_ChildProcessMessageManager_h
 #define mozilla_dom_ChildProcessMessageManager_h
 
-#include "mozilla/dom/SyncMessageSender.h"
-#include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/MessageManagerBinding.h"
+#include "mozilla/dom/SyncMessageSender.h"
 
 namespace mozilla::dom {
 

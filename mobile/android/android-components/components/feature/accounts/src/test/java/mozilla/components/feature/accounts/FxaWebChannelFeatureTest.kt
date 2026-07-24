@@ -28,7 +28,6 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import mozilla.components.support.webextensions.BuiltInWebExtensionController
 import org.json.JSONException
@@ -38,21 +37,16 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.never
-import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.robolectric.Shadows.shadowOf
 
 @RunWith(AndroidJUnit4::class)
 class FxaWebChannelFeatureTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setup() {
@@ -168,9 +162,7 @@ class FxaWebChannelFeatureTest {
         val controller: BuiltInWebExtensionController = mock()
 
         val tab = createTab("https://www.mozilla.org", id = "test-tab", engineSession = engineSession)
-        val store = spy(
-            BrowserStore(initialState = BrowserState(tabs = listOf(tab), selectedTabId = tab.id)),
-        )
+        val store = BrowserStore(initialState = BrowserState(tabs = listOf(tab), selectedTabId = tab.id))
 
         val webchannelFeature = FxaWebChannelFeature(null, engine, store, accountManager, serverConfig)
         webchannelFeature.extensionController = controller
@@ -1075,6 +1067,6 @@ class FxaWebChannelFeatureTest {
         whenever(port.senderUrl()).thenReturn("https://foo.bar/email")
         whenever(serverConfig.server).thenReturn(FxaServer.Custom("https://foo.bar"))
 
-        return spy(FxaWebChannelFeature(null, mock(), store, accountManager, serverConfig, fxaCapabilities))
+        return FxaWebChannelFeature(null, mock(), store, accountManager, serverConfig, fxaCapabilities)
     }
 }

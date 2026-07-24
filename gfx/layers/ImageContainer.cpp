@@ -508,7 +508,7 @@ void ImageContainer::GetCurrentImages(nsTArray<OwningImage>* aImages,
                                       uint32_t* aGenerationCounter) {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
 
-  *aImages = mCurrentImages.Clone();
+  aImages->Assign(mCurrentImages);
   if (aGenerationCounter) {
     *aGenerationCounter = mGenerationCounter;
   }
@@ -707,7 +707,9 @@ Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
       yuvDesc.ySize().width < 0 || yuvDesc.ySize().height < 0 ||
       yuvDesc.cbCrSize().width < 0 || yuvDesc.cbCrSize().height < 0 ||
       yuvData.mYStride < 0 || yuvData.mCbCrStride < 0 || !yuvData.mYChannel ||
-      !yuvData.mCbChannel || !yuvData.mCrChannel) {
+      !yuvData.mCbChannel || !yuvData.mCrChannel ||
+      !(yuvData.YDataSize() <= yuvDesc.ySize()) ||
+      !(yuvData.CbCrDataSize() <= yuvDesc.cbCrSize())) {
     gfxCriticalError() << "Unusual PlanarYCbCrData: " << yuvData.mYSkip << ","
                        << yuvData.mCbSkip << "," << yuvData.mCrSkip << ", "
                        << yuvDesc.ySize().width << "," << yuvDesc.ySize().height
@@ -715,7 +717,8 @@ Maybe<PlanarYCbCrData> PlanarYCbCrData::From(
                        << yuvDesc.cbCrSize().height << ", " << yuvData.mYStride
                        << "," << yuvData.mCbCrStride << ", "
                        << yuvData.mYChannel << "," << yuvData.mCbChannel << ","
-                       << yuvData.mCrChannel;
+                       << yuvData.mCrChannel << "," << yuvData.YDataSize().width
+                       << "," << yuvData.YDataSize().height;
     return {};
   }
 
@@ -812,8 +815,12 @@ nsresult PlanarYCbCrImage::BuildSurfaceDescriptorBuffer(
                                            yOffset, cbOffset, crOffset);
 
   uint32_t bufferSize = ImageDataSerializer::ComputeYCbCrBufferSize(
-      ySize, pdata->mYStride, cbcrSize, pdata->mCbCrStride, yOffset, cbOffset,
-      crOffset);
+      pdata->mPictureRect, ySize, pdata->mYStride, cbcrSize, pdata->mCbCrStride,
+      yOffset, cbOffset, crOffset, pdata->mColorDepth,
+      pdata->mChromaSubsampling);
+  if (bufferSize == 0) {
+    return NS_ERROR_FAILURE;
+  }
 
   aSdBuffer.data() = aAllocate(bufferSize);
 

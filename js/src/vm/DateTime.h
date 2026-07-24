@@ -8,11 +8,13 @@
 #define vm_DateTime_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stdint.h>
 
 #include "js/AllocPolicy.h"
+#include "js/RealmOptions.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "threading/ExclusiveData.h"
@@ -122,14 +124,8 @@ using TimeZoneIdentifierVector =
  * potential win from better caching offsets the loss from extra complexity.)
  */
 class DateTimeInfo {
- public:
-  // For realms that force the UTC time zone (for fingerprinting protection) a
-  // separate DateTimeInfo instance is used that is always in the UTC time zone.
-  enum class ForceUTC { No, Yes };
-
- private:
+  // DateTimeInfo for the default time zone.
   static ExclusiveData<DateTimeInfo>* instance;
-  static ExclusiveData<DateTimeInfo>* instanceUTC;
 
   static constexpr int32_t InvalidOffset = INT32_MIN;
 
@@ -144,12 +140,10 @@ class DateTimeInfo {
   friend bool InitDateTimeState();
   friend void FinishDateTimeState();
 
-  explicit DateTimeInfo(bool forceUTC);
-  ~DateTimeInfo();
+  DateTimeInfo();
 
-  static auto acquireLockWithValidTimeZone(ForceUTC forceUTC) {
-    auto guard =
-        forceUTC == ForceUTC::Yes ? instanceUTC->lock() : instance->lock();
+  static auto acquireLockWithValidTimeZone() {
+    auto guard = instance->lock();
     if (guard->timeZoneStatus_ != TimeZoneStatus::Valid) {
       guard->updateTimeZone();
     }
@@ -157,7 +151,10 @@ class DateTimeInfo {
   }
 
  public:
-  static ForceUTC forceUTC(JS::Realm* realm);
+#if JS_HAS_INTL_API
+  explicit DateTimeInfo(RefPtr<JS::TimeZoneString> timeZone);
+#endif
+  ~DateTimeInfo();
 
   // The spec implicitly assumes DST and time zone adjustment information
   // never change in the course of a function -- sometimes even across
@@ -169,9 +166,12 @@ class DateTimeInfo {
    * zone (Lord Howe Island, Australia) has a fractional-hour offset, just to
    * keep things interesting.
    */
-  static int32_t getDSTOffsetMilliseconds(ForceUTC forceUTC,
+  static int32_t getDSTOffsetMilliseconds(DateTimeInfo* dtInfo,
                                           int64_t utcMilliseconds) {
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+    if (MOZ_UNLIKELY(dtInfo)) {
+      return dtInfo->internalGetDSTOffsetMilliseconds(utcMilliseconds);
+    }
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalGetDSTOffsetMilliseconds(utcMilliseconds);
   }
 
@@ -180,12 +180,7 @@ class DateTimeInfo {
    * standard time (i.e. not including any offset due to DST) as computed by the
    * operating system.
    */
-  static int32_t utcToLocalStandardOffsetSeconds(ForceUTC forceUTC) {
-    // UTC offset is always zero.
-    if (forceUTC == ForceUTC::Yes) {
-      return 0;
-    }
-
+  static int32_t utcToLocalStandardOffsetSeconds() {
     // First try the cached offset to avoid any mutex overhead.
     int32_t offset = utcToLocalOffsetSeconds;
     if (offset != InvalidOffset) {
@@ -193,10 +188,25 @@ class DateTimeInfo {
     }
 
     // If that fails, use the mutex-synchronized code path.
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+    auto guard = acquireLockWithValidTimeZone();
     offset = guard->utcToLocalStandardOffsetSeconds_;
     utcToLocalOffsetSeconds = offset;
     return offset;
+  }
+
+  /**
+   * Cache key for this date-time info. Returns a different value when the
+   * time zone changed.
+   */
+  static int32_t timeZoneCacheKey(DateTimeInfo* dtInfo) {
+    if (MOZ_UNLIKELY(dtInfo)) {
+      // |utcToLocalStandardOffsetSeconds_| is incremented when the time zone
+      // override is modified.
+      return dtInfo->utcToLocalStandardOffsetSeconds_;
+    }
+
+    // Use the offset as the cache key for the default time zone.
+    return utcToLocalStandardOffsetSeconds();
   }
 
   enum class TimeZoneOffset { UTC, Local };
@@ -206,9 +216,13 @@ class DateTimeInfo {
    * Return the time zone offset, including DST, in milliseconds at the
    * given time. The input time can be either at UTC or at local time.
    */
-  static int32_t getOffsetMilliseconds(ForceUTC forceUTC, int64_t milliseconds,
+  static int32_t getOffsetMilliseconds(DateTimeInfo* dtInfo,
+                                       int64_t milliseconds,
                                        TimeZoneOffset offset) {
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+    if (MOZ_UNLIKELY(dtInfo)) {
+      return dtInfo->internalGetOffsetMilliseconds(milliseconds, offset);
+    }
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalGetOffsetMilliseconds(milliseconds, offset);
   }
 
@@ -216,18 +230,26 @@ class DateTimeInfo {
    * Copy the display name for the current time zone at the given time,
    * localized for the specified locale, into the supplied vector.
    */
-  static bool timeZoneDisplayName(ForceUTC forceUTC,
+  static bool timeZoneDisplayName(DateTimeInfo* dtInfo,
                                   TimeZoneDisplayNameVector& result,
                                   int64_t utcMilliseconds, const char* locale) {
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+    if (MOZ_UNLIKELY(dtInfo)) {
+      return dtInfo->internalTimeZoneDisplayName(result, utcMilliseconds,
+                                                 locale);
+    }
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalTimeZoneDisplayName(result, utcMilliseconds, locale);
   }
 
   /**
    * Copy the identifier for the current time zone into the supplied vector.
    */
-  static bool timeZoneId(ForceUTC forceUTC, TimeZoneIdentifierVector& result) {
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+  static bool timeZoneId(DateTimeInfo* dtInfo,
+                         TimeZoneIdentifierVector& result) {
+    if (MOZ_UNLIKELY(dtInfo)) {
+      return dtInfo->internalTimeZoneId(result);
+    }
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalTimeZoneId(result);
   }
 
@@ -235,8 +257,11 @@ class DateTimeInfo {
    * A number indicating the raw offset from GMT in milliseconds.
    */
   static mozilla::Result<int32_t, mozilla::intl::ICUError> getRawOffsetMs(
-      ForceUTC forceUTC) {
-    auto guard = acquireLockWithValidTimeZone(forceUTC);
+      DateTimeInfo* dtInfo) {
+    if (MOZ_UNLIKELY(dtInfo)) {
+      return dtInfo->timeZone()->GetRawOffsetMs();
+    }
+    auto guard = acquireLockWithValidTimeZone();
     return guard->timeZone()->GetRawOffsetMs();
   }
 #else
@@ -244,8 +269,8 @@ class DateTimeInfo {
    * Return the local time zone adjustment (ES2019 20.3.1.7) as computed by
    * the operating system.
    */
-  static int32_t localTZA(ForceUTC forceUTC) {
-    return utcToLocalStandardOffsetSeconds(forceUTC) * msPerSecond;
+  static int32_t localTZA() {
+    return utcToLocalStandardOffsetSeconds() * msPerSecond;
   }
 #endif /* JS_HAS_INTL_API */
 
@@ -255,24 +280,20 @@ class DateTimeInfo {
     return &DateTimeInfo::utcToLocalOffsetSeconds;
   }
 
+#if JS_HAS_INTL_API
+  void updateTimeZoneOverride(RefPtr<JS::TimeZoneString> timeZone);
+#endif
+
  private:
   // The method below should only be called via js::ResetTimeZoneInternal().
   friend void js::ResetTimeZoneInternal(ResetTimeZoneMode);
 
   static void resetTimeZone(ResetTimeZoneMode mode) {
-    {
-      auto guard = instance->lock();
-      guard->internalResetTimeZone(mode);
+    auto guard = instance->lock();
+    guard->internalResetTimeZone(mode);
 
-      // Mark the cached value as invalid.
-      utcToLocalOffsetSeconds = InvalidOffset;
-    }
-    {
-      // Only needed to initialize the default state and any later call will
-      // perform an unnecessary reset.
-      auto guard = instanceUTC->lock();
-      guard->internalResetTimeZone(mode);
-    }
+    // Mark the cached value as invalid.
+    utcToLocalOffsetSeconds = InvalidOffset;
   }
 
   struct RangeCache {
@@ -289,8 +310,6 @@ class DateTimeInfo {
 
     void sanityCheck();
   };
-
-  bool forceUTC_;
 
   enum class TimeZoneStatus : uint8_t { Valid, NeedsUpdate, UpdateIfChanged };
 
@@ -329,6 +348,10 @@ class DateTimeInfo {
    * time zone changes. It must not be used to convert between local and UTC
    * time, because, as outlined above, this could lead to different results when
    * compared to ICU.
+   *
+   * If |timeZoneOverride_| is non-null, i.e. when not using the default time
+   * zone, this field is reused as the time zone cache key. See also
+   * |timeZoneCacheKey()| and |updateTimeZoneOverride()|.
    */
   int32_t utcToLocalStandardOffsetSeconds_;
 
@@ -343,6 +366,11 @@ class DateTimeInfo {
 
   RangeCache utcRange_;    // localtime-based ranges
   RangeCache localRange_;  // UTC-based ranges
+
+  /**
+   * Time zone override for realms with non-default time zone.
+   */
+  RefPtr<JS::TimeZoneString> timeZoneOverride_;
 
   /**
    * The current time zone. Lazily constructed to avoid potential I/O access
@@ -377,11 +405,13 @@ class DateTimeInfo {
 
   void internalResetTimeZone(ResetTimeZoneMode mode);
 
+  void resetState();
+
   void updateTimeZone();
 
   void internalResyncICUDefaultTimeZone();
 
-  int64_t toClampedSeconds(int64_t milliseconds);
+  static int64_t toClampedSeconds(int64_t milliseconds);
 
   using ComputeFn = int32_t (DateTimeInfo::*)(int64_t);
 

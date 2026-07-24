@@ -1,11 +1,12 @@
 ["DEFAULT"]
 head = "head.js head_remote.js head_telemetry.js head_sync.js head_storage.js head_service_worker.js"
 firefox-appdir = "browser"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 dupe-manifest = true
 support-files = "data/**"
 tags = "webextensions sw-webextensions"
-run-sequentially = "Bug 1760041 pass logged after tests when running multiple ini files"
 
 prefs = [
   "extensions.backgroundServiceWorker.enabled=true",
@@ -44,7 +45,7 @@ skip-if = [
 ["test_ext_scripting_contentScripts.js"]
 
 ["test_ext_scripting_contentScripts_css.js"]
-run-sequentially = "very high failure rate in parallel"
+run-sequentially = ["os == 'mac'"] # frequent timeouts in parallel on Mac
 
 ["test_ext_scripting_contentScripts_file.js"]
 

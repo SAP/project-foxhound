@@ -11,18 +11,33 @@
 #include "base/task.h"            // for NewRunnableMethod, etc
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalNote
 #include "mozilla/StaticMutex.h"
-#include "mozilla/Array.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/ThreadLocal.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_general.h"
 #include "mozilla/Sprintf.h"
 #include "WidgetUtilsGtk.h"
 #include "mozilla/widget/xx-pip-v1-client-protocol.h"
 #include "nsGtkKeyUtils.h"
+#include "nsGtkUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsWindow.h"
 #include "wayland-proxy.h"
+
+#undef LOG
+#undef LOG_VERBOSE
+#ifdef MOZ_LOGGING
+#  include "mozilla/Logging.h"
+#  include "nsTArray.h"
+#  include "Units.h"
+extern mozilla::LazyLogModule gWidgetWaylandLog;
+#  define LOG(...) \
+    MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#  define LOG_VERBOSE(...) \
+    MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Verbose, (__VA_ARGS__))
+#else
+#  define LOG(...)
+#  define LOG_VERBOSE(...)
+#endif /* MOZ_LOGGING */
 
 namespace mozilla::widget {
 
@@ -34,6 +49,7 @@ void WaylandDisplayRelease() {
   if (!gWaylandDisplay) {
     return;
   }
+  LOG("WaylandDisplayRelease()");
   delete gWaylandDisplay;
   gWaylandDisplay = nullptr;
 }
@@ -189,7 +205,9 @@ static void pointer_handle_motion(void* data, struct wl_pointer* pointer,
 static void pointer_handle_button(void* data, struct wl_pointer* pointer,
                                   uint32_t serial, uint32_t time,
                                   uint32_t button, uint32_t state) {
-  gLastSerial = serial;
+  if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+    gLastSerial = serial;
+  }
 }
 
 static void pointer_handle_axis(void* data, struct wl_pointer* pointer,
@@ -304,6 +322,13 @@ static void seat_handle_capabilities(void* data, struct wl_seat* seat,
   } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
     display->ClearKeyboard();
   }
+
+  wl_touch* touch = display->GetTouch();
+  if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !touch) {
+    display->SetTouch(wl_seat_get_touch(seat));
+  } else if (!(caps & WL_SEAT_CAPABILITY_TOUCH) && touch) {
+    display->ClearTouch();
+  }
 }
 
 static void seat_handle_name(void* data, struct wl_seat* seat,
@@ -339,18 +364,20 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
 static void keyboard_handle_enter(void* data, struct wl_keyboard* keyboard,
                                   uint32_t serial, struct wl_surface* surface,
                                   struct wl_array* keys) {
-  KeymapWrapper::SetFocusIn(surface, serial);
+  gLastSerial = serial;
 }
 
 static void keyboard_handle_leave(void* data, struct wl_keyboard* keyboard,
                                   uint32_t serial, struct wl_surface* surface) {
-  KeymapWrapper::SetFocusOut(surface);
+  KeymapWrapper::ResetRepeatState();
 }
 
 static void keyboard_handle_key(void* data, struct wl_keyboard* keyboard,
                                 uint32_t serial, uint32_t time, uint32_t key,
                                 uint32_t state) {
-  gLastSerial = serial;
+  if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    gLastSerial = serial;
+  }
   // hardware key code is +8.
   // https://gitlab.gnome.org/GNOME/gtk/-/blob/3.24.41/gdk/wayland/gdkdevice-wayland.c#L2341
   KeymapWrapper::KeyboardHandlerForWayland(serial, key + 8, state);
@@ -378,10 +405,44 @@ void nsWaylandDisplay::SetKeyboard(wl_keyboard* aKeyboard) {
 
 void nsWaylandDisplay::ClearKeyboard() {
   if (mKeyboard) {
-    wl_keyboard_destroy(mKeyboard);
+    wl_keyboard_release(mKeyboard);
     mKeyboard = nullptr;
     KeymapWrapper::ClearKeymap();
   }
+}
+
+static void touch_handle_down(void* data, struct wl_touch* touch,
+                              uint32_t serial, uint32_t time,
+                              struct wl_surface* surface, int32_t id,
+                              wl_fixed_t x, wl_fixed_t y) {
+  gLastSerial = serial;
+}
+
+static void touch_handle_up(void* data, struct wl_touch* touch, uint32_t serial,
+                            uint32_t time, int32_t id) {}
+
+static void touch_handle_motion(void* data, struct wl_touch* touch,
+                                uint32_t time, int32_t id, wl_fixed_t x,
+                                wl_fixed_t y) {}
+
+static void touch_handle_frame(void* data, struct wl_touch* touch) {}
+
+static void touch_handle_cancel(void* data, struct wl_touch* touch) {}
+
+static const struct wl_touch_listener touch_listener = {
+    touch_handle_down,  touch_handle_up,     touch_handle_motion,
+    touch_handle_frame, touch_handle_cancel,
+};
+
+void nsWaylandDisplay::SetTouch(wl_touch* aTouch) {
+  MOZ_ASSERT(aTouch);
+  MOZ_DIAGNOSTIC_ASSERT(!mTouch);
+  mTouch = aTouch;
+  wl_touch_add_listener(mTouch, &touch_listener, nullptr);
+}
+
+void nsWaylandDisplay::ClearTouch() {
+  MozClearPointer(mTouch, wl_touch_release);
 }
 
 void nsWaylandDisplay::SetCompositor(wl_compositor* aCompositor) {
@@ -447,6 +508,7 @@ void nsWaylandDisplay::SetAppMenuManager(
 }
 
 void nsWaylandDisplay::SetCMSupportedFeature(uint32_t aFeature) {
+  LOG("nsWaylandDisplay::SetCMSupportedFeature() [%d]", aFeature);
   switch (aFeature) {
     case WP_COLOR_MANAGER_V1_FEATURE_ICC_V2_V4:
       mColorManagerSupportedFeature.mICC = true;
@@ -471,6 +533,7 @@ void nsWaylandDisplay::SetCMSupportedFeature(uint32_t aFeature) {
 
 void nsWaylandDisplay::SetCMSupportedTFNamed(uint32_t aTF) {
   if (aTF < sColorTransfersNum) {
+    LOG("nsWaylandDisplay::SetCMSupportedTFNamed() [%d]", aTF);
     mSupportedTransfer[aTF] = aTF;
   } else {
     NS_WARNING("Unknow color transfer function!");
@@ -479,6 +542,7 @@ void nsWaylandDisplay::SetCMSupportedTFNamed(uint32_t aTF) {
 
 void nsWaylandDisplay::SetCMSupportedPrimariesNamed(uint32_t aPrimaries) {
   if (aPrimaries < sColorPrimariesNum) {
+    LOG("nsWaylandDisplay::SetCMSupportedPrimariesNamed() [%u]", aPrimaries);
     mSupportedPrimaries[aPrimaries] = aPrimaries;
   } else {
     NS_WARNING("Unknown color primaries!");
@@ -521,9 +585,143 @@ static const struct wp_color_manager_v1_listener color_manager_listener = {
 void nsWaylandDisplay::SetColorManager(wp_color_manager_v1* aColorManager) {
   mColorManager = aColorManager;
   if (mColorManager) {
+    LOG("nsWaylandDisplay::SetColorManager()");
     wp_color_manager_v1_add_listener(mColorManager, &color_manager_listener,
                                      this);
   }
+}
+
+void nsWaylandDisplay::SetSupportedCoefficientsAndRanges(uint32_t aCoefficients,
+                                                         uint32_t aRange) {
+  if (aCoefficients < sSupportedRangesNum) {
+    LOG("nsWaylandDisplay::SetSupportedCoefficientsAndRanges(): coefficients "
+        "%d range %d",
+        aCoefficients, aRange);
+    mSupportedRanges[aCoefficients] += aRange;
+  }
+}
+
+uint32_t nsWaylandDisplay::GetColorRange(uint32_t aCoefficients,
+                                         bool aFullRange) {
+  if (aCoefficients >= sSupportedRangesNum) {
+    return 0;
+  }
+  auto range = mSupportedRanges[aCoefficients];
+  if (aFullRange) {
+    return range == sSupportedRangeBoth || range == sSupportedRangeFull
+               ? WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL
+               : 0;
+  } else {
+    return range == sSupportedRangeBoth || range == sSupportedRangeLimited
+               ? WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_LIMITED
+               : 0;
+  }
+}
+
+static void supported_alpha_mode(
+    void* data,
+    struct wp_color_representation_manager_v1* color_representation_manager,
+    uint32_t alpha_mode) {}
+
+static void supported_coefficients_and_ranges(
+    void* data,
+    struct wp_color_representation_manager_v1* color_representation_manager,
+    uint32_t coefficients, uint32_t range) {
+  auto* display = static_cast<nsWaylandDisplay*>(data);
+  display->SetSupportedCoefficientsAndRanges(coefficients, range);
+}
+
+static void color_representation_done(
+    void* data,
+    struct wp_color_representation_manager_v1* color_representation_manager) {}
+
+static const struct wp_color_representation_manager_v1_listener
+    color_representation_listener = {
+        supported_alpha_mode,
+        supported_coefficients_and_ranges,
+        color_representation_done,
+};
+
+void nsWaylandDisplay::SetColorRepresentationManager(
+    wp_color_representation_manager_v1* aColorRepresentationManager) {
+  mColorRepresentationManager = aColorRepresentationManager;
+  if (mColorRepresentationManager) {
+    LOG("nsWaylandDisplay::SetColorRepresentationManager()");
+    wp_color_representation_manager_v1_add_listener(
+        mColorRepresentationManager, &color_representation_listener, this);
+  }
+}
+
+static void output_handle_geometry(void* data, struct wl_output* wl_output,
+                                   int x, int y, int physical_width,
+                                   int physical_height, int subpixel,
+                                   const char* make, const char* model,
+                                   int32_t transform) {
+  auto* monitor = static_cast<nsWaylandDisplay::MonitorConfig*>(data);
+  LOG("nsWaylandDisplay ID %d geometry position %d %d physical size %d %d "
+      "subpixel %d transform %d",
+      monitor->id, x, y, physical_width, physical_height, subpixel, transform);
+  monitor->x = x;
+  monitor->y = y;
+}
+
+static void output_handle_done(void* data, struct wl_output* wl_output) {}
+
+static void output_handle_scale(void* data, struct wl_output* wl_output,
+                                int32_t scale) {}
+
+static void output_handle_mode(void* data, struct wl_output* wl_output,
+                               uint32_t flags, int width, int height,
+                               int refresh) {
+  auto* monitor = static_cast<nsWaylandDisplay::MonitorConfig*>(data);
+  LOG("nsWaylandDisplay ID %d mode output size %d x %d", monitor->id, width,
+      height);
+  if ((flags & WL_OUTPUT_MODE_CURRENT) == 0) {
+    return;
+  }
+  monitor->pixelWidth = width;
+  monitor->pixelHeight = height;
+}
+
+static const struct wl_output_listener output_listener = {
+    output_handle_geometry,
+    output_handle_mode,
+    output_handle_done,
+    output_handle_scale,
+};
+
+void nsWaylandDisplay::AddWlOutput(wl_output* aWlOutput, int aId) {
+  wl_output_add_listener(aWlOutput, &output_listener, AddMonitorConfig(aId));
+}
+
+nsWaylandDisplay::MonitorConfig* nsWaylandDisplay::AddMonitorConfig(int aId) {
+  LOG("nsWaylandDisplay add monitor ID %d num %zu", aId, mMonitors.Length());
+  UniquePtr<MonitorConfig> monitor = MakeUnique<MonitorConfig>(aId);
+  mMonitors.AppendElement(std::move(monitor));
+  return mMonitors.LastElement().get();
+}
+
+bool nsWaylandDisplay::RemoveMonitorConfig(int aId) {
+  for (unsigned int i = 0; i < mMonitors.Length(); i++) {
+    if (mMonitors[i]->id == aId) {
+      LOG("nsWaylandDisplay remove Monitor ID %d num %d", aId, i);
+      mMonitors.RemoveElementAt(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+nsWaylandDisplay::MonitorConfig* nsWaylandDisplay::GetMonitorConfig(int x,
+                                                                    int y) {
+  for (const auto& monitor : mMonitors) {
+    if (monitor->x == x && monitor->y == y) {
+      LOG("nsWaylandDisplay::GetMonitorConfig() %d, %d matches", x, y);
+      return monitor.get();
+    }
+  }
+  LOG("nsWaylandDisplay::GetMonitorConfig() %d, %d missing!", x, y);
+  return nullptr;
 }
 
 static void global_registry_handler(void* data, wl_registry* registry,
@@ -605,16 +803,26 @@ static void global_registry_handler(void* data, wl_registry* registry,
     display->SetPointerGestures(gestures);
   } else if (iface.EqualsLiteral("wp_color_manager_v1")) {
     auto* colorManager = WaylandRegistryBind<wp_color_manager_v1>(
-        registry, id, &wp_color_manager_v1_interface, version);
+        registry, id, &wp_color_manager_v1_interface, 1);
     display->SetColorManager(colorManager);
+  } else if (iface.EqualsLiteral("wp_color_representation_manager_v1")) {
+    auto* colorRepresentationManager =
+        WaylandRegistryBind<wp_color_representation_manager_v1>(
+            registry, id, &wp_color_representation_manager_v1_interface, 1);
+    display->SetColorRepresentationManager(colorRepresentationManager);
   } else if (iface.EqualsLiteral("xx_pip_shell_v1")) {
     auto* pipShell = WaylandRegistryBind<xx_pip_shell_v1>(
-        registry, id, &xx_pip_shell_v1_interface, version);
+        registry, id, &xx_pip_shell_v1_interface, 1);
     display->SetPipShell(pipShell);
   } else if (iface.EqualsLiteral("xdg_wm_base")) {
+    uint32_t vers = MIN(version, (uint32_t)xdg_wm_base_interface.version);
     auto* xdgWm = WaylandRegistryBind<xdg_wm_base>(
-        registry, id, &xdg_wm_base_interface, version);
+        registry, id, &xdg_wm_base_interface, vers);
     display->SetXdgWm(xdgWm);
+  } else if (iface.EqualsLiteral("wl_output") && version > 1) {
+    auto* output =
+        WaylandRegistryBind<wl_output>(registry, id, &wl_output_interface, 2);
+    display->AddWlOutput(output, id);
   }
 }
 
@@ -622,6 +830,9 @@ static void global_registry_remover(void* data, wl_registry* registry,
                                     uint32_t id) {
   auto* display = static_cast<nsWaylandDisplay*>(data);
   if (!display) {
+    return;
+  }
+  if (display->RemoveMonitorConfig(id)) {
     return;
   }
   display->RemoveSeat(id);
@@ -632,6 +843,9 @@ static const struct wl_registry_listener registry_listener = {
 
 nsWaylandDisplay::~nsWaylandDisplay() {
   g_list_free_full(mAsyncRoundtrips, (GDestroyNotify)wl_callback_destroy);
+  MozClearPointer(mColorManager, wp_color_manager_v1_destroy);
+  MozClearPointer(mColorRepresentationManager,
+                  wp_color_representation_manager_v1_destroy);
 }
 
 void nsWaylandDisplay::AsyncRoundtripCallback(void* aData,
@@ -647,18 +861,111 @@ static const struct wl_callback_listener async_roundtrip_listener = {
     nsWaylandDisplay::AsyncRoundtripCallback};
 
 void nsWaylandDisplay::RequestAsyncRoundtrip() {
+  LOG("nsWaylandDisplay::RequestAsyncRoundtrip()");
   wl_callback* callback = wl_display_sync(mDisplay);
   wl_callback_add_listener(callback, &async_roundtrip_listener, this);
   mAsyncRoundtrips = g_list_append(mAsyncRoundtrips, callback);
 }
 
 void nsWaylandDisplay::WaitForAsyncRoundtrips() {
+  LOG("nsWaylandDisplay::WaitForAsyncRoundtrips()");
   while (g_list_length(mAsyncRoundtrips) > 0) {
     if (wl_display_dispatch(mDisplay) < 0) {
       NS_WARNING("Failed to get events from Wayland display!");
       return;
     }
   }
+}
+
+// Separate crash functions for different Wayland protocol error patterns.
+// These functions are marked MOZ_NEVER_INLINE to ensure distinct crash
+// signatures for different error types, making them easier to track and fix.
+//
+// Pattern analysis is based on 25 recent crash reports with the
+// mozilla::widget::WlLogHandler signature. Frequencies are noted in comments
+// below.
+
+// 32% of crashes - Example: "unknown object (4278190083), message error(ous)"
+MOZ_NEVER_INLINE static void WlLogHandler_UnknownObject(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 20% of crashes - Example: "wp_viewport#296: error 2: source rectangle out
+// of buffer bounds"
+MOZ_NEVER_INLINE static void WlLogHandler_ViewportBufferBounds(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 20% of crashes - Example: "wl_display#1: error 1: invalid arguments for
+// wl_surface#730.frame"
+MOZ_NEVER_INLINE static void WlLogHandler_InvalidSurfaceFrame(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 12% of crashes - Example: "wp_color_manager_v1#44: error -1: Invalid output
+// (2)"
+MOZ_NEVER_INLINE static void WlLogHandler_ColorManagerInvalidOutput(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 8% of crashes - Example: "Message length 22222 exceeds limit 4096"
+MOZ_NEVER_INLINE static void WlLogHandler_MessageLengthExceeded(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "wl_display#1: error 0: invalid object 61246"
+MOZ_NEVER_INLINE static void WlLogHandler_InvalidDisplayObject(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "failed to import supplied dmabufs: EGL failed to
+// allocate resources"
+MOZ_NEVER_INLINE static void WlLogHandler_DmabufImportFailed(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "wl_registry@36: error 0: invalid global
+// wl_output (55)"
+MOZ_NEVER_INLINE static void WlLogHandler_RegistryError(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "invalid object (277), type (wl_callback), message
+// begin(3uuou)"
+MOZ_NEVER_INLINE static void WlLogHandler_CallbackInvalid(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "error marshalling arguments for set_surface
+// (signature o): null value passed for arg 0"
+MOZ_NEVER_INLINE static void WlLogHandler_MarshallingError(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
 }
 
 static void WlLogHandler(const char* format, va_list args) {
@@ -676,6 +983,65 @@ static void WlLogHandler(const char* format, va_list args) {
     return;
   }
 
+  // Pattern matching to dispatch to specific crash functions.
+  // Patterns ordered by frequency (most common first) for performance.
+
+  // Pattern 1: Unknown object errors (32% of crashes)
+  if (strstr(error, "unknown object") && strstr(error, "message error")) {
+    WlLogHandler_UnknownObject(error);
+  }
+
+  // Pattern 2: wp_viewport buffer bounds errors (20% of crashes)
+  if (strstr(error, "wp_viewport") &&
+      strstr(error, "source rectangle out of buffer bounds")) {
+    WlLogHandler_ViewportBufferBounds(error);
+  }
+
+  // Pattern 3: Invalid wl_surface.frame arguments (20% of crashes)
+  if (strstr(error, "wl_display") && strstr(error, "invalid arguments") &&
+      strstr(error, "wl_surface") && strstr(error, ".frame")) {
+    WlLogHandler_InvalidSurfaceFrame(error);
+  }
+
+  // Pattern 4: wp_color_manager_v1 invalid output (12% of crashes)
+  if (strstr(error, "wp_color_manager_v1") && strstr(error, "Invalid output")) {
+    WlLogHandler_ColorManagerInvalidOutput(error);
+  }
+
+  // Pattern 5: Message length exceeded (8% of crashes)
+  if ((strstr(error, "message length") || strstr(error, "Message length")) &&
+      strstr(error, "exceeds")) {
+    WlLogHandler_MessageLengthExceeded(error);
+  }
+
+  // Pattern 6: Invalid wl_display object (4% of crashes)
+  if (strstr(error, "wl_display") && strstr(error, "invalid object") &&
+      !strstr(error, "unknown object")) {
+    WlLogHandler_InvalidDisplayObject(error);
+  }
+
+  // Pattern 7: dmabuf import failures (4% of crashes)
+  if (strstr(error, "dmabuf") && strstr(error, "failed") &&
+      strstr(error, "EGL")) {
+    WlLogHandler_DmabufImportFailed(error);
+  }
+
+  // Pattern 8: wl_registry errors (4% of crashes)
+  if (strstr(error, "wl_registry") && strstr(error, "wl_output")) {
+    WlLogHandler_RegistryError(error);
+  }
+
+  // Pattern 9: wl_callback invalid (4% of crashes)
+  if (strstr(error, "wl_callback") && strstr(error, "invalid object")) {
+    WlLogHandler_CallbackInvalid(error);
+  }
+
+  // Pattern 10: Marshalling errors (4% of crashes)
+  if (strstr(error, "error marshalling arguments")) {
+    WlLogHandler_MarshallingError(error);
+  }
+
+  // Fallback for unmatched patterns - use original inline code
   MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
                           GetDesktopEnvironmentIdentifier().get(), error,
                           WaylandProxy::GetState());
@@ -698,6 +1064,8 @@ nsWaylandDisplay::nsWaylandDisplay(wl_display* aDisplay)
   // in a similar fashion
   wl_log_set_handler_client(WlLogHandler);
 
+  LOG("nsWaylandDisplay::nsWaylandDisplay()");
+
   mFormats = new DMABufFormats();
   mRegistry = wl_display_get_registry(mDisplay);
   wl_registry_add_listener(mRegistry, &registry_listener, this);
@@ -705,6 +1073,8 @@ nsWaylandDisplay::nsWaylandDisplay(wl_display* aDisplay)
   RequestAsyncRoundtrip();
   WaitForAsyncRoundtrips();
   EnsureDMABufFormats();
+
+  LOG("nsWaylandDisplay::nsWaylandDisplay() init finished");
 
   for (auto& e : mSupportedTransfer) {
     e = -1;

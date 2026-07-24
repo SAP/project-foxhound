@@ -26,3 +26,5 @@ pref(layout.forms.reveal-password-button.enabled,true) != suppress-password-butt
 
 needs-focus == focus-on-anchor.html#anchor focus-on-anchor-ref.html
 needs-focus == select-overflow.html select-overflow-ref.html
+
+needs-focus == border-radius-selection.html border-radius-selection-ref.html

@@ -6,7 +6,6 @@
 #ifndef mozilla_dom_HTMLTableRowElement_h
 #define mozilla_dom_HTMLTableRowElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 class nsContentList;

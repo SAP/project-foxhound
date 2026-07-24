@@ -6,10 +6,9 @@ package org.mozilla.fenix.translations.preferences.automatic
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.translate.LanguageSetting
@@ -37,42 +36,40 @@ class AutomaticTranslationPreferenceFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            FirefoxTheme {
-                val languageSettings = browserStore.observeAsComposableState { state ->
-                    state.translationEngine.languageSettings
-                }.value
-                val translationSupport = browserStore.observeAsComposableState { state ->
-                    state.translationEngine.supportedLanguages
-                }.value
-                val engineError = browserStore.observeAsComposableState { state ->
-                    state.translationEngine.engineError
-                }.value
-                val couldNotLoadLanguagesError =
-                    engineError as? TranslationError.CouldNotLoadLanguagesError
-                val couldNotLoadLanguageSettingsError =
-                    engineError as? TranslationError.CouldNotLoadLanguageSettingsError
+    ) = content {
+        FirefoxTheme {
+            val languageSettings = browserStore.observeAsComposableState { state ->
+                state.translationEngine.languageSettings
+            }.value
+            val translationSupport = browserStore.observeAsComposableState { state ->
+                state.translationEngine.supportedLanguages
+            }.value
+            val engineError = browserStore.observeAsComposableState { state ->
+                state.translationEngine.engineError
+            }.value
+            val couldNotLoadLanguagesError =
+                engineError as? TranslationError.CouldNotLoadLanguagesError
+            val couldNotLoadLanguageSettingsError =
+                engineError as? TranslationError.CouldNotLoadLanguageSettingsError
 
-                AutomaticTranslationPreference(
-                    automaticTranslationListPreferences = getAutomaticTranslationListPreferences(
-                        languageSettings = languageSettings,
-                        translationSupport = translationSupport,
-                    ),
-                    hasLanguageError = couldNotLoadLanguagesError != null ||
-                        couldNotLoadLanguageSettingsError != null ||
-                        languageSettings == null,
-                    onItemClick = {
-                        findNavController().navigate(
-                            AutomaticTranslationPreferenceFragmentDirections
-                                .actionAutomaticTranslationPreferenceToAutomaticTranslationOptionsPreference(
-                                    it.language.code,
-                                    it.language.localizedDisplayName,
-                                ),
-                        )
-                    },
-                )
-            }
+            AutomaticTranslationPreference(
+                automaticTranslationListPreferences = getAutomaticTranslationListPreferences(
+                    languageSettings = languageSettings,
+                    translationSupport = translationSupport,
+                ),
+                hasLanguageError = couldNotLoadLanguagesError != null ||
+                    couldNotLoadLanguageSettingsError != null ||
+                    languageSettings == null,
+                onItemClick = {
+                    findNavController().navigate(
+                        AutomaticTranslationPreferenceFragmentDirections
+                            .actionAutomaticTranslationPreferenceToAutomaticTranslationOptionsPreference(
+                                it.language.code,
+                                it.language.localizedDisplayName,
+                            ),
+                    )
+                },
+            )
         }
     }
 
@@ -97,6 +94,8 @@ class AutomaticTranslationPreferenceFragment : Fragment() {
                 }
             }
         }
+
+        automaticTranslationListPreferences.sortBy { it.language.localizedDisplayName }
         return automaticTranslationListPreferences
     }
 }

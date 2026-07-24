@@ -7,12 +7,10 @@ package org.mozilla.fenix.components.menu
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.test.runTest
-import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.feature.addons.Addon
 import mozilla.components.lib.state.Middleware
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -46,9 +44,6 @@ class MenuStoreTest {
             initialState = MenuState(),
             middleware = listOf(testMiddleware),
         )
-
-        // Wait for InitAction and middleware
-        store.waitUntilIdle()
 
         assertTrue(initActionObserved)
         assertNull(store.state.browserMenuState)
@@ -128,18 +123,18 @@ class MenuStoreTest {
         )
 
         assertEquals(selectedTab, state.browserMenuState!!.selectedTab)
-        assertNull(state.browserMenuState!!.bookmarkState.guid)
-        assertFalse(state.browserMenuState!!.bookmarkState.isBookmarked)
-        assertFalse(state.browserMenuState!!.isPinned)
+        assertNull(state.browserMenuState.bookmarkState.guid)
+        assertFalse(state.browserMenuState.bookmarkState.isBookmarked)
+        assertFalse(state.browserMenuState.isPinned)
 
         var newState = state.copyWithBrowserMenuState {
             it.copy(selectedTab = firefoxTab)
         }
 
         assertEquals(firefoxTab, newState.browserMenuState!!.selectedTab)
-        assertNull(state.browserMenuState!!.bookmarkState.guid)
-        assertFalse(state.browserMenuState!!.bookmarkState.isBookmarked)
-        assertFalse(state.browserMenuState!!.isPinned)
+        assertNull(newState.browserMenuState.bookmarkState.guid)
+        assertFalse(newState.browserMenuState.bookmarkState.isBookmarked)
+        assertFalse(newState.browserMenuState.isPinned)
 
         val bookmarkState = BookmarkState(guid = "id", isBookmarked = true)
         val isPinned = true
@@ -148,8 +143,8 @@ class MenuStoreTest {
         }
 
         assertEquals(firefoxTab, newState.browserMenuState!!.selectedTab)
-        assertEquals(bookmarkState, newState.browserMenuState!!.bookmarkState)
-        assertEquals(isPinned, newState.browserMenuState!!.isPinned)
+        assertEquals(bookmarkState, newState.browserMenuState.bookmarkState)
+        assertEquals(isPinned, newState.browserMenuState.isPinned)
     }
 
     @Test
@@ -182,7 +177,7 @@ class MenuStoreTest {
         )
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.AddBookmark).join()
+        store.dispatch(MenuAction.AddBookmark)
 
         assertEquals(initialState, store.state)
     }
@@ -210,7 +205,7 @@ class MenuStoreTest {
             guid = "id1",
             isBookmarked = true,
         )
-        store.dispatch(MenuAction.UpdateBookmarkState(bookmarkState = newBookmarkState)).join()
+        store.dispatch(MenuAction.UpdateBookmarkState(bookmarkState = newBookmarkState))
 
         assertEquals(newBookmarkState, store.state.browserMenuState!!.bookmarkState)
     }
@@ -230,7 +225,7 @@ class MenuStoreTest {
         )
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.AddShortcut).join()
+        store.dispatch(MenuAction.AddShortcut)
 
         assertEquals(initialState, store.state)
     }
@@ -250,7 +245,7 @@ class MenuStoreTest {
         )
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.RemoveShortcut).join()
+        store.dispatch(MenuAction.RemoveShortcut)
 
         assertEquals(initialState, store.state)
     }
@@ -273,7 +268,7 @@ class MenuStoreTest {
         assertNotNull(store.state.browserMenuState)
         assertFalse(store.state.browserMenuState!!.isPinned)
 
-        store.dispatch(MenuAction.UpdatePinnedState(isPinned = true)).join()
+        store.dispatch(MenuAction.UpdatePinnedState(isPinned = true))
         assertTrue(store.state.browserMenuState!!.isPinned)
     }
 
@@ -284,7 +279,7 @@ class MenuStoreTest {
 
         assertEquals(0, store.state.extensionMenuState.recommendedAddons.size)
 
-        store.dispatch(MenuAction.UpdateExtensionState(recommendedAddons = listOf(addon))).join()
+        store.dispatch(MenuAction.UpdateExtensionState(recommendedAddons = listOf(addon)))
 
         assertEquals(1, store.state.extensionMenuState.recommendedAddons.size)
         assertEquals(addon, store.state.extensionMenuState.recommendedAddons.first())
@@ -295,7 +290,7 @@ class MenuStoreTest {
         val initialState = MenuState()
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.FindInPage).join()
+        store.dispatch(MenuAction.FindInPage)
 
         assertEquals(initialState, store.state)
     }
@@ -305,7 +300,7 @@ class MenuStoreTest {
         val initialState = MenuState()
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.RequestDesktopSite).join()
+        store.dispatch(MenuAction.RequestDesktopSite)
 
         assertTrue(store.state.isDesktopMode)
     }
@@ -315,7 +310,7 @@ class MenuStoreTest {
         val initialState = MenuState(isDesktopMode = true)
         val store = MenuStore(initialState = initialState)
 
-        store.dispatch(MenuAction.RequestMobileSite).join()
+        store.dispatch(MenuAction.RequestMobileSite)
 
         assertFalse(store.state.isDesktopMode)
     }
@@ -326,7 +321,7 @@ class MenuStoreTest {
             val addon = Addon(id = "ext1")
             val store = MenuStore(initialState = MenuState())
 
-            store.dispatch(MenuAction.UpdateInstallAddonInProgress(addon)).join()
+            store.dispatch(MenuAction.UpdateInstallAddonInProgress(addon))
 
             assertEquals(addon, store.state.extensionMenuState.addonInstallationInProgress)
         }
@@ -347,7 +342,7 @@ class MenuStoreTest {
                 ),
             )
 
-            store.dispatch(MenuAction.InstallAddonSuccess(addon)).join()
+            store.dispatch(MenuAction.InstallAddonSuccess(addon))
 
             assertEquals(null, store.state.extensionMenuState.addonInstallationInProgress)
             assertEquals(1, store.state.extensionMenuState.recommendedAddons.size)
@@ -370,7 +365,7 @@ class MenuStoreTest {
                 ),
             )
 
-            store.dispatch(MenuAction.InstallAddonFailed(addon)).join()
+            store.dispatch(MenuAction.InstallAddonFailed(addon))
 
             assertEquals(null, store.state.extensionMenuState.addonInstallationInProgress)
             assertEquals(2, store.state.extensionMenuState.recommendedAddons.size)
@@ -394,54 +389,11 @@ class MenuStoreTest {
                     },
                 ),
             )
-            store.dispatch(MenuAction.UpdateWebExtensionBrowserMenuItems(webExtensionMenuItemList)).join()
+            store.dispatch(MenuAction.UpdateWebExtensionBrowserMenuItems(webExtensionMenuItemList))
 
             assertEquals(
                 store.state.extensionMenuState.browserWebExtensionMenuItem,
                 webExtensionMenuItemList,
             )
-        }
-
-    @Test
-    fun `WHEN update show extensions onboarding dispatched THEN extension state is updated`() =
-        runTest {
-            val initialState = MenuState()
-            val store = MenuStore(initialState = initialState)
-
-            store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(true)).join()
-
-            assertTrue(store.state.extensionMenuState.showExtensionsOnboarding)
-        }
-
-    @Test
-    fun `WHEN update manage extensions menu item visibility is dispatched THEN extension state is updated`() =
-        runTest {
-            val addon = Addon(id = "ext1")
-            val addonTwo = Addon(id = "ext2")
-            val store = MenuStore(
-                initialState = MenuState(
-                    extensionMenuState = ExtensionMenuState(
-                        recommendedAddons = listOf(
-                            addon,
-                            addonTwo,
-                        ),
-                    ),
-                ),
-            )
-
-            store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true)).join()
-
-            assertTrue(store.state.extensionMenuState.shouldShowManageExtensionsMenuItem)
-        }
-
-    @Test
-    fun `WHEN update show disabled extensions onboarding dispatched THEN extension state is updated`() =
-        runTest {
-            val initialState = MenuState()
-            val store = MenuStore(initialState = initialState)
-
-            store.dispatch(MenuAction.UpdateShowDisabledExtensionsOnboarding(true)).join()
-
-            assertTrue(store.state.extensionMenuState.showDisabledExtensionsOnboarding)
         }
 }

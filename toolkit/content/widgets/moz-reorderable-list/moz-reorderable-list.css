@@ -5,13 +5,15 @@
 :host {
   position: relative;
   display: block;
+
+  --moz-reorderable-list-indicator-height: 2px;
 }
 
 .indicator {
-  height: 2px;
+  height: var(--moz-reorderable-list-indicator-height);
   background-color: var(--color-accent-primary);
   pointer-events: none;
-  margin-block: -1px;
+  margin-block: calc(-1 * var(--moz-reorderable-list-indicator-height));
   width: 4em;
   position: absolute;
   z-index: 1;

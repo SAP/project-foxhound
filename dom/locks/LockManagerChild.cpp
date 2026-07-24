@@ -5,8 +5,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LockManagerChild.h"
-#include "LockRequestChild.h"
 
+#include "LockRequestChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WindowGlobalChild.h"

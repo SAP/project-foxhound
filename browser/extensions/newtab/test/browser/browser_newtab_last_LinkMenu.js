@@ -15,7 +15,6 @@ async function setupPrefs() {
       [
         "browser.newtabpage.activity-stream.discoverystream.config",
         JSON.stringify({
-          api_key_pref: "extensions.pocket.oAuthConsumerKey",
           collapsible: true,
           enabled: true,
           personalized: false,

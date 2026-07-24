@@ -43,25 +43,6 @@ void verifyImplFunction(bool aX, bool aExpected, const char* aFile, int aLine,
 #define VERIFY_IS_INVALID(x) VERIFY_IMPL((x).isValid(), false)
 #define VERIFY_IS_VALID_IF(x, condition) VERIFY_IMPL((x).isValid(), (condition))
 
-template <typename T, size_t Size = sizeof(T)>
-struct testTwiceBiggerType {
-  static void run() {
-    VERIFY(
-        detail::IsSupported<typename detail::TwiceBiggerType<T>::Type>::value);
-    VERIFY(sizeof(typename detail::TwiceBiggerType<T>::Type) == 2 * sizeof(T));
-    VERIFY(bool(std::is_signed_v<typename detail::TwiceBiggerType<T>::Type>) ==
-           bool(std::is_signed_v<T>));
-  }
-};
-
-template <typename T>
-struct testTwiceBiggerType<T, 8> {
-  static void run() {
-    VERIFY_IS_FALSE(
-        detail::IsSupported<typename detail::TwiceBiggerType<T>::Type>::value);
-  }
-};
-
 template <typename T>
 void test() {
   static bool alreadyRun = false;
@@ -76,8 +57,6 @@ void test() {
   VERIFY(detail::IsSupported<T>::value);
   const bool isTSigned = std::is_signed_v<T>;
   VERIFY(bool(isTSigned) == !bool(T(-1) > T(0)));
-
-  testTwiceBiggerType<T>::run();
 
   using unsignedT = std::make_unsigned_t<T>;
 

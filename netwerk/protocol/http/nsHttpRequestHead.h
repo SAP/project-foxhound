@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpRequestHead_h__
-#define nsHttpRequestHead_h__
+#ifndef nsHttpRequestHead_h_
+#define nsHttpRequestHead_h_
 
 #include "nsHttp.h"
 #include "nsHttpHeaderArray.h"
@@ -22,6 +22,8 @@ struct ParamTraits;
 
 namespace mozilla {
 namespace net {
+
+class DictionaryCacheEntry;
 
 //-----------------------------------------------------------------------------
 // nsHttpRequestHead represents the request line and headers from an HTTP
@@ -54,6 +56,8 @@ class nsHttpRequestHead {
   void SetVersion(HttpVersion version);
   void SetRequestURI(const nsACString& s);
   void SetPath(const nsACString& s);
+  // keep a ref to the dictionary we offered, if any
+  void SetDictionary(DictionaryCacheEntry* aDict);
   uint32_t HeaderCount();
 
   // Using this function it is possible to itereate through all headers
@@ -136,6 +140,8 @@ class nsHttpRequestHead {
   nsCString mRequestURI MOZ_GUARDED_BY(mRecursiveMutex);
   nsCString mPath MOZ_GUARDED_BY(mRecursiveMutex);
 
+  RefPtr<DictionaryCacheEntry> mDict MOZ_GUARDED_BY(mRecursiveMutex);
+
   nsCString mOrigin MOZ_GUARDED_BY(mRecursiveMutex);
   ParsedMethodType mParsedMethod MOZ_GUARDED_BY(mRecursiveMutex){kMethod_Get};
   bool mHTTPS MOZ_GUARDED_BY(mRecursiveMutex){false};
@@ -154,4 +160,4 @@ class nsHttpRequestHead {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpRequestHead_h__
+#endif  // nsHttpRequestHead_h_

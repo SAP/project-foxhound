@@ -22,8 +22,8 @@ static const char kSanitizedChar = '+';
 namespace mozilla {
 
 static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
-                             int32_t aPort, bool aForeignByAncestorContext,
-                             bool aUseSite, nsAString& aTopLevelInfo) {
+                             bool aForeignByAncestorContext, bool aUseSite,
+                             nsAString& aTopLevelInfo) {
   if (!aUseSite) {
     aTopLevelInfo.Assign(NS_ConvertUTF8toUTF16(aHost));
     return;
@@ -37,10 +37,6 @@ static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
   site.Append(aScheme);
   site.Append(",");
   site.Append(aHost);
-  if (aPort != -1) {
-    site.Append(",");
-    site.AppendInt(aPort);
-  }
   if (aForeignByAncestorContext) {
     site.Append(",f");
   }
@@ -49,18 +45,11 @@ static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
   aTopLevelInfo.Assign(NS_ConvertUTF8toUTF16(site));
 }
 
-static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
-                             bool aForeignByAncestorContext, bool aUseSite,
-                             nsAString& aTopLevelInfo) {
-  MakeTopLevelInfo(aScheme, aHost, -1, aForeignByAncestorContext, aUseSite,
-                   aTopLevelInfo);
-}
-
 static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
                                         nsIURI* aURI,
                                         bool aForeignByAncestorContext,
                                         bool aIsFirstPartyEnabled, bool aForced,
-                                        bool aUseSite, bool aIgnorePort,
+                                        bool aUseSite,
                                         nsString OriginAttributes::* aTarget,
                                         OriginAttributes& aOriginAttributes) {
   nsresult rv;
@@ -144,14 +133,6 @@ static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
   bool isIpAddress = (rv == NS_ERROR_HOST_IS_IP_ADDRESS);
   bool isInsufficientDomainLevels = (rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS);
 
-  int32_t port;
-  if (aIgnorePort) {
-    port = -1;
-  } else {
-    rv = uri->GetPort(&port);
-    NS_ENSURE_SUCCESS_VOID(rv);
-  }
-
   nsAutoCString host;
   rv = uri->GetHost(host);
   NS_ENSURE_SUCCESS_VOID(rv);
@@ -171,14 +152,13 @@ static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
     } else {
       ipAddr = host;
     }
-
-    MakeTopLevelInfo(scheme, ipAddr, port, aForeignByAncestorContext, aUseSite,
+    MakeTopLevelInfo(scheme, ipAddr, aForeignByAncestorContext, aUseSite,
                      topLevelInfo);
     return;
   }
 
   if (aUseSite) {
-    MakeTopLevelInfo(scheme, host, port, aForeignByAncestorContext, aUseSite,
+    MakeTopLevelInfo(scheme, host, aForeignByAncestorContext, aUseSite,
                      topLevelInfo);
     return;
   }
@@ -187,7 +167,7 @@ static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
     nsAutoCString publicSuffix;
     rv = tldService->GetPublicSuffix(uri, publicSuffix);
     if (NS_SUCCEEDED(rv)) {
-      MakeTopLevelInfo(scheme, publicSuffix, port, aForeignByAncestorContext,
+      MakeTopLevelInfo(scheme, publicSuffix, aForeignByAncestorContext,
                        aUseSite, topLevelInfo);
       return;
     }
@@ -198,7 +178,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
                                            nsIURI* aURI, bool aForced) {
   PopulateTopLevelInfoFromURI(
       aIsTopLevelDocument, aURI, false, IsFirstPartyEnabled(), aForced,
-      StaticPrefs::privacy_firstparty_isolate_use_site(), false,
+      StaticPrefs::privacy_firstparty_isolate_use_site(),
       &OriginAttributes::mFirstPartyDomain, *this);
 }
 
@@ -224,7 +204,6 @@ void OriginAttributes::SetPartitionKey(nsIURI* aURI,
       false /* aIsTopLevelDocument */, aURI, aForeignByAncestorContext,
       IsFirstPartyEnabled(), true /* aForced */,
       StaticPrefs::privacy_dynamic_firstparty_use_site(),
-      !StaticPrefs::privacy_dynamic_firstparty_use_site_include_port(),
       &OriginAttributes::mPartitionKey, *this);
 }
 

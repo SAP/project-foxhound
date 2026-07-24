@@ -9,6 +9,7 @@
 
 
 interface Principal;
+interface nsICookieJarSettings;
 
 typedef (Request or UTF8String) RequestInfo;
 typedef unsigned long nsContentPolicyType;
@@ -94,6 +95,14 @@ dictionary RequestInit {
   // processes.
   [ChromeOnly]
   boolean neverTaint;
+
+  // This allows setting the cookieJarSettings for the request. We might not
+  // be able to acquire the cookieJarSettings from the global object if the
+  // global object is not a window global nor a worker global. This can happen
+  // if the request is made from the reporting API. In this case, we can this
+  // field to set the cookieJarSettings for the request.
+  [ChromeOnly]
+  nsICookieJarSettings cookieJarSettings;
 
   AbortSignal? signal;
 

@@ -518,6 +518,88 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
 
+    it("Additional button with disabled: hasActiveMultiSelect property", () => {
+      // All of the above should apply to AdditionalCTA as well
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          tiles: {
+            type: "multiselect",
+            data: [
+              {
+                id: "checkbox-1",
+                label: "Option 1",
+              },
+              {
+                id: "checkbox-2",
+                label: "Option 2",
+              },
+            ],
+          },
+          additional_button: {
+            label: "test additional button",
+            disabled: "hasActiveMultiSelect",
+          },
+        },
+        setScreenMultiSelects: sandbox.stub(),
+        setActiveMultiSelect: sandbox.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(
+        wrapper.find("button.additional-cta").prop("disabled"),
+        "Button is disabled when activeMultiSelect is null"
+      );
+
+      // should be enabled when activeMultiSelect has selections
+      wrapper.setProps({
+        activeMultiSelect: { "tile-0": ["checkbox-1"] },
+      });
+      wrapper.update();
+      assert.isFalse(
+        wrapper.find("button.additional-cta").prop("disabled"),
+        "enabled when checkboxes are selected"
+      );
+    });
+
+    it("Additional button with disabled: hasTextInput property", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          tiles: {
+            type: "textarea",
+            data: {
+              id: "text-input-test",
+              character_limit: 20,
+            },
+          },
+          additional_button: {
+            label: "test additional button",
+            disabled: "hasTextInput",
+          },
+        },
+        setTextInput: sandbox.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(
+        wrapper.find("button.additional-cta").prop("disabled"),
+        "Button is disabled when textInputs is empty"
+      );
+
+      // should be enabled when textInputs has input
+      wrapper.setProps({
+        textInputs: {
+          "text-input-test": { value: "Some input", isValid: true },
+        },
+      });
+      wrapper.update();
+      assert.isFalse(
+        wrapper.find("button.additional-cta").prop("disabled"),
+        "enabled when textInputs has input"
+      );
+    });
+
     it("should not render a progress bar if there is 1 step", () => {
       const SCREEN_PROPS = {
         content: {
@@ -825,6 +907,195 @@ describe("MultiStageAboutWelcomeProton module", () => {
         "Second child is ProtonScreenActionButtons"
       );
     });
+
+    it("should render action buttons after tiles by default when no position is configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Confirm and continue" },
+          tiles_header: { title: "Title" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Option 1" },
+              { id: "checkbox-2", label: "Option 2" },
+            ],
+          },
+        },
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const mainInner = wrapper.find(".main-content-inner");
+      const lastChild = mainInner.children().last();
+      assert.strictEqual(
+        lastChild.type(),
+        ProtonScreenActionButtons,
+        "Last child is ProtonScreenActionButtons"
+      );
+    });
+
+    it("should render action buttons after subtitle when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          subtitle: "Test subtitle",
+          action_buttons_position: "after_subtitle",
+          primary_button: { label: "Get started" },
+        },
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists(), "Screen renders");
+
+      // Find the welcome text container
+      const welcomeTextEl = wrapper.find(".welcome-text");
+      assert.isTrue(welcomeTextEl.exists(), "Welcome text exists");
+
+      const subtitleEl = welcomeTextEl.find("h2");
+      assert.ok(subtitleEl.exists(), "Subtitle exists");
+      const nextEl = subtitleEl.getDOMNode().nextElementSibling;
+      assert.isTrue(
+        nextEl.classList.contains("action-buttons"),
+        "Next element is action-buttons"
+      );
+    });
+
+    it("should render action buttons after supporting content but before tiles when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Welcome to Firefox",
+          action_buttons_position: "after_supporting_content",
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          primary_button: { label: "Confirm and continue" },
+          tiles_container: { position: "after_supporting_content" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.equal(legalParagraphEl.exists(), true, "Legal paragraph renders");
+
+      const nextEl = legalParagraphEl.getDOMNode().nextElementSibling;
+      assert.isTrue(
+        nextEl.classList.contains("action-buttons"),
+        "Next element after legal paragraph should be action buttons"
+      );
+
+      const afterButtonsEl = nextEl.nextElementSibling;
+      assert.isTrue(
+        afterButtonsEl.classList.contains("content-tile"),
+        "Next element after action buttons should be content tile"
+      );
+    });
+
+    it("should render tiles before 'above_button_content' by default", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Continue" },
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const tilesEl = wrapper.find(".content-tile");
+      assert.isTrue(tilesEl.exists(), "Content tiles found");
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.isTrue(
+        legalParagraphEl.exists(),
+        "above_button_content legal paragraph element found"
+      );
+
+      assert.isTrue(
+        tilesEl
+          .getDOMNode()
+          .nextElementSibling.classList.contains("legal-paragraph"),
+        "the next element after tiles should be legal paragraph (above_button_content)"
+      );
+    });
+
+    it("should render tiles after 'above_button_content' when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Continue" },
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          tiles_container: { position: "after_supporting_content" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const tilesEl = wrapper.find(".content-tile");
+      assert.isTrue(tilesEl.exists(), "Content tiles found");
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.isTrue(
+        legalParagraphEl.exists(),
+        "above_button_content legal paragraph element found"
+      );
+
+      assert.isTrue(
+        legalParagraphEl
+          .getDOMNode()
+          .nextElementSibling.classList.contains("content-tile"),
+        "the next element after legal paragraph (above_button_content) should be tiles"
+      );
+    });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
@@ -864,7 +1135,12 @@ describe("MultiStageAboutWelcomeProton module", () => {
         );
     });
     it("should have a multi action primary button by default", async () => {
-      const data = await prepConfig({}, ["AW_WELCOME_BACK", "RETURN_TO_AMO"]);
+      const data = await prepConfig({}, [
+        "AW_WELCOME_BACK",
+        "RETURN_TO_AMO",
+        "AW_BACKUP_RESTORE_EMBEDDED_BACKUP_FOUND",
+        "AW_BACKUP_RESTORE_EMBEDDED_MULTIPLE_BACKUPS_FOUND",
+      ]);
       assert.propertyVal(
         data.screens[0].content.primary_button.action,
         "type",
@@ -872,7 +1148,11 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
     it("should have a FxA button", async () => {
-      const data = await prepConfig({}, ["AW_WELCOME_BACK"]);
+      const data = await prepConfig({}, [
+        "AW_WELCOME_BACK",
+        "AW_BACKUP_RESTORE_EMBEDDED_BACKUP_FOUND",
+        "AW_BACKUP_RESTORE_EMBEDDED_MULTIPLE_BACKUPS_FOUND",
+      ]);
 
       assert.notProperty(data, "skipFxA");
       assert.property(data.screens[0].content, "secondary_button_top");
@@ -1099,7 +1379,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
     const SCREEN_PROP = {
       content: {
         title: "test title",
-        contentTilesContainer: {
+        tiles_container: {
           style: {
             flexDirection: "row",
             marginBlock: "16px",
@@ -1154,6 +1434,45 @@ describe("MultiStageAboutWelcomeProton module", () => {
         wrapper.find("#content-tiles-container").getDOMNode().style.cssText,
         expectedStyles
       );
+    });
+  });
+
+  describe("Multiple secondary_top buttons", () => {
+    const SCREEN_PROPS = {
+      content: {
+        title: "test title",
+        tiles: {
+          type: "migration-wizard",
+        },
+        secondary_button_top: [
+          {
+            label: {
+              raw: "test button 1",
+            },
+            action: {
+              navigate: true,
+            },
+          },
+          {
+            label: {
+              raw: "test button 2",
+            },
+            action: {
+              navigate: true,
+            },
+          },
+        ],
+      },
+      setScreenMultiSelects: sinon.stub(),
+      setActiveMultiSelect: sinon.stub(),
+    };
+
+    it("should render both buttons in a container", async () => {
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find(".secondary-buttons-top-container").exists());
+      assert.isTrue(wrapper.find("#secondary_button_0").exists());
+      assert.isTrue(wrapper.find("#secondary_button_1").exists());
     });
   });
 });

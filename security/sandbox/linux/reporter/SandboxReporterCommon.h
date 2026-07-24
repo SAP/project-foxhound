@@ -8,7 +8,6 @@
 #define mozilla_SandboxReporterCommon_h
 
 #include "mozilla/IntegerTypeTraits.h"
-#include "mozilla/Types.h"
 
 #include <sys/types.h>
 

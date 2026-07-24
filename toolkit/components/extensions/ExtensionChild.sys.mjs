@@ -743,7 +743,7 @@ export class ChildLocalAPIImplementation extends LocalAPIImplementation {
    */
   callAndLog(callable, args) {
     this.context.logActivity("api_call", this.fullname, { args });
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     try {
       return callable();
     } finally {

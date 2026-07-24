@@ -9,25 +9,21 @@ loader.lazyRequireGetter(
   "WebConsole",
   "resource://devtools/client/webconsole/webconsole.js"
 );
-loader.lazyGetter(this, "EventEmitter", () =>
-  require("resource://devtools/shared/event-emitter.js")
-);
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 /**
  * A DevToolPanel that controls the Web Console.
  */
-function WebConsolePanel(iframeWindow, toolbox, commands) {
-  this._frameWindow = iframeWindow;
-  this._toolbox = toolbox;
-  this._commands = commands;
-  EventEmitter.decorate(this);
-}
+class WebConsolePanel extends EventEmitter {
+  constructor(iframeWindow, toolbox, commands) {
+    super();
 
-exports.WebConsolePanel = WebConsolePanel;
+    this._frameWindow = iframeWindow;
+    this._toolbox = toolbox;
+    this._commands = commands;
+  }
 
-WebConsolePanel.prototype = {
-  hud: null,
-
+  hud = null;
   /**
    * Called by the WebConsole's onkey command handler.
    * If the WebConsole is opened, check if the JSTerm's input line has focus.
@@ -35,7 +31,7 @@ WebConsolePanel.prototype = {
    */
   focusInput() {
     this.hud.jsterm.focus();
-  },
+  }
 
   /**
    * Open is effectively an asynchronous constructor.
@@ -86,11 +82,11 @@ WebConsolePanel.prototype = {
     }
 
     return this;
-  },
+  }
 
   get currentTarget() {
     return this._toolbox.target;
-  },
+  }
 
   destroy() {
     if (!this._toolbox) {
@@ -101,5 +97,7 @@ WebConsolePanel.prototype = {
     this._frameWindow = null;
     this._toolbox = null;
     this.emit("destroyed");
-  },
-};
+  }
+}
+
+exports.WebConsolePanel = WebConsolePanel;

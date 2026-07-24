@@ -9,8 +9,9 @@
 #include "EMEUtils.h"
 #include "GMPUtils.h"
 #include "KeySystemNames.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "nsPrintfCString.h"
 
 #ifdef XP_WIN
@@ -32,10 +33,15 @@ namespace mozilla {
 /* static */
 bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
 #ifdef MOZ_WIDGET_ANDROID
-  // No GMP on Android, check if we can use MediaDrm for this keysystem.
+  // Check if we can use MediaDrm for this keysystem.
   if (mozilla::java::MediaDrmProxy::IsSchemeSupported(
           NS_ConvertUTF16toUTF8(aKeySystem))) {
     return true;
+  }
+  // Check if we can use our bundled Clearkey plugin.
+  if (IsClearkeyKeySystem(aKeySystem)) {
+    return HaveGMPFor(nsCString(CHROMIUM_CDM_API),
+                      {NS_ConvertUTF16toUTF8(aKeySystem)});
   }
 #else
 #  ifdef MOZ_WMF_CDM
@@ -313,8 +319,6 @@ void KeySystemConfig::GetGMPKeySystemConfigs(dom::Promise* aPromise) {
             info->mKeySystemName = config.mKeySystem;
             info->mCapabilities = config.GetDebugInfo();
             info->mClearlead = DoesKeySystemSupportClearLead(config.mKeySystem);
-            // TODO : ask real CDM for HDCP
-            info->mIsHDCP22Compatible = false;
             // GMP-based CDM doesn't support hardware decryption.
             info->mIsHardwareDecryption = false;
           }
@@ -368,7 +372,6 @@ nsString KeySystemConfig::GetDebugInfo() const {
   debugInfo.AppendLiteral(" WEBM={");
   debugInfo.Append(NS_ConvertUTF8toUTF16(mWebM.GetDebugInfo()));
   debugInfo.AppendLiteral("}");
-  debugInfo.AppendPrintf(" isHDCP22Compatible=%d", mIsHDCP22Compatible);
   return debugInfo;
 }
 

@@ -19,7 +19,6 @@
 #include "mozilla/CondVar.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorNames.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
@@ -43,7 +42,6 @@
 #include "SQLCollations.h"
 #include "FileSystemModule.h"
 #include "mozStorageHelper.h"
-#include "sqlite3_static_ext.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
@@ -462,7 +460,7 @@ class AsyncVacuumEvent final : public Runnable {
     if (IsOnCurrentSerialEventTarget(mConnection->eventTargetOpenedOn)) {
       // Send the completion event.
       if (mCallback) {
-        mozilla::Unused << mCallback->Complete(mStatus, nullptr);
+        (void)mCallback->Complete(mStatus, nullptr);
       }
       return NS_OK;
     }
@@ -470,8 +468,8 @@ class AsyncVacuumEvent final : public Runnable {
     // Ensure to invoke the callback regardless of errors.
     auto guard = MakeScopeExit([&]() {
       mConnection->mIsStatementOnHelperThreadInterruptible = false;
-      mozilla::Unused << mConnection->eventTargetOpenedOn->Dispatch(
-          this, NS_DISPATCH_NORMAL);
+      (void)mConnection->eventTargetOpenedOn->Dispatch(this,
+                                                       NS_DISPATCH_NORMAL);
     });
 
     // Get list of attached databases.
@@ -867,7 +865,7 @@ NS_IMETHODIMP_(MozExternalRefCountType) Connection::Release(void) {
         // This could cause SpinningSynchronousClose() to be invoked and AddRef
         // triggered for AsyncCloseConnection's strong ref if the conn was ever
         // use for async purposes.  (Main-thread only, though.)
-        Unused << synchronousClose();
+        (void)synchronousClose();
       } else {
         nsCOMPtr<nsIRunnable> event =
             NewRunnableMethod("storage::Connection::synchronousClose", this,
@@ -881,7 +879,7 @@ NS_IMETHODIMP_(MozExternalRefCountType) Connection::Release(void) {
           // automatic cleanup, but not a Connection.)
           MOZ_ASSERT(false,
                      "Leaked Connection::synchronousClose(), ownership fail.");
-          Unused << synchronousClose();
+          (void)synchronousClose();
         }
       }
 
@@ -1259,10 +1257,10 @@ nsresult Connection::initializeInternal() {
   // accordingly to their needs.
 #if defined(ANDROID)
   // Android prefers synchronous = OFF for performance reasons.
-  Unused << ExecuteSimpleSQL("PRAGMA synchronous = OFF;"_ns);
+  (void)ExecuteSimpleSQL("PRAGMA synchronous = OFF;"_ns);
 #else
   // Normal is the suggested value for WAL journals.
-  Unused << ExecuteSimpleSQL("PRAGMA synchronous = NORMAL;"_ns);
+  (void)ExecuteSimpleSQL("PRAGMA synchronous = NORMAL;"_ns);
 #endif
 
   // Initialization succeeded, we can stop guarding for failures.
@@ -1282,7 +1280,7 @@ nsresult Connection::initializeOnAsyncThread(nsIFile* aStorageFile) {
     nsCOMPtr<nsIRunnable> event =
         NewRunnableMethod("Connection::shutdownAsyncThread", this,
                           &Connection::shutdownAsyncThread);
-    Unused << NS_DispatchToMainThread(event);
+    (void)NS_DispatchToMainThread(event);
   }
   return rv;
 }
@@ -1423,7 +1421,7 @@ nsresult Connection::ensureOperationSupported(
 #ifdef DEBUG
     if (NS_IsMainThread()) {
       nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-      Unused << xpc->DebugDumpJSStack(false, false, false);
+      (void)xpc->DebugDumpJSStack(false, false, false);
     }
 #endif
     MOZ_ASSERT(false,
@@ -1738,7 +1736,7 @@ nsresult Connection::synchronousClose() {
 #ifdef DEBUG
     if (NS_IsMainThread()) {
       nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-      Unused << xpc->DebugDumpJSStack(false, false, false);
+      (void)xpc->DebugDumpJSStack(false, false, false);
     }
 #endif
     MOZ_ASSERT(false,
@@ -1746,7 +1744,7 @@ nsresult Connection::synchronousClose() {
                "statements. "
                "Should have used asyncClose().");
     // Try to close the database regardless, to free up resources.
-    Unused << SpinningSynchronousClose();
+    (void)SpinningSynchronousClose();
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -1868,7 +1866,7 @@ Connection::AsyncClose(mozIStorageCompletionCallback* aCallback) {
       // Closing the database is more important than returning an error code
       // about a failure to dispatch, especially because all existing native
       // callers ignore our return value.
-      Unused << NS_DispatchToMainThread(completeEvent.forget());
+      (void)NS_DispatchToMainThread(completeEvent.forget());
     }
     MOZ_ALWAYS_SUCCEEDS(synchronousClose());
     // Return a success inconditionally here, since Close() is unlikely to fail

@@ -30,7 +30,6 @@
 #endif
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Compiler.h"
 #include "mozilla/Fuzzing.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MacroArgs.h"
@@ -97,11 +96,11 @@ MOZ_END_EXTERN_C
 MOZ_BEGIN_EXTERN_C
 
 #if defined(ANDROID) && defined(MOZ_DUMP_ASSERTION_STACK)
-MOZ_MAYBE_UNUSED static void MOZ_ReportAssertionFailurePrintFrame(
+[[maybe_unused]] static void MOZ_ReportAssertionFailurePrintFrame(
     const char* aBuf) {
   __android_log_print(ANDROID_LOG_FATAL, "MOZ_Assert", "%s", aBuf);
 }
-MOZ_MAYBE_UNUSED static void MOZ_CrashPrintFrame(const char* aBuf) {
+[[maybe_unused]] static void MOZ_CrashPrintFrame(const char* aBuf) {
   __android_log_print(ANDROID_LOG_FATAL, "MOZ_Crash", "%s", aBuf);
 }
 #endif
@@ -115,7 +114,7 @@ MOZ_MAYBE_UNUSED static void MOZ_CrashPrintFrame(const char* aBuf) {
  * for use in implementing release-build assertions.
  */
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void
+[[maybe_unused]] static MOZ_COLD MOZ_NEVER_INLINE void
 MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename,
                            int aLine) MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {
   MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_ASSERT", aFilename, aLine, aStr);
@@ -144,7 +143,7 @@ MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename,
 #endif
 }
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
+[[maybe_unused]] static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
     const char* aStr, const char* aFilename,
     int aLine) MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {
 #ifdef ANDROID
@@ -179,17 +178,7 @@ MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
  * should use MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE because it has extra
  * asserts.
  */
-#if defined(__clang__) || defined(__GNUC__)
-#  define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
-#elif defined(_MSC_VER)
-#  define MOZ_ASSUME_UNREACHABLE_MARKER() __assume(0)
-#else
-#  ifdef __cplusplus
-#    define MOZ_ASSUME_UNREACHABLE_MARKER() ::abort()
-#  else
-#    define MOZ_ASSUME_UNREACHABLE_MARKER() abort()
-#  endif
-#endif
+#define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
 
 /**
  * MOZ_REALLY_CRASH is used in the implementation of MOZ_CRASH().  You should
@@ -218,8 +207,8 @@ MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
  * by MSVC, so doing it this way reduces complexity.)
  */
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NORETURN MOZ_NEVER_INLINE void
-MOZ_NoReturn(int aLine) {
+[[maybe_unused, noreturn]] static MOZ_COLD MOZ_NEVER_INLINE void MOZ_NoReturn(
+    int aLine) {
   *((volatile int*)NULL) = aLine;
   TerminateProcess(GetCurrentProcess(), 3);
   MOZ_ASSUME_UNREACHABLE_MARKER();
@@ -371,7 +360,12 @@ static inline void MOZ_CrashSequence(void* aAddress, intptr_t aLine) {
  * to crash-stats and are publicly visible. Firefox data stewards must do data
  * review on usages of this macro.
  */
-static MOZ_ALWAYS_INLINE_EVEN_DEBUG MOZ_COLD MOZ_NORETURN void MOZ_Crash(
+#ifdef __cplusplus
+[[noreturn]]
+#else
+_Noreturn
+#endif
+static MOZ_ALWAYS_INLINE_EVEN_DEBUG MOZ_COLD void MOZ_Crash(
     const char* aFilename, int aLine, const char* aReason) {
   MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_CRASH", aFilename, aLine, aReason);
 #if defined(DEBUG) || defined(MOZ_ASAN) || defined(FUZZING)
@@ -413,37 +407,6 @@ MFBT_API MOZ_COLD MOZ_NEVER_INLINE MOZ_FORMAT_PRINTF(1, 2) const
   } while (false)
 
 MOZ_END_EXTERN_C
-
-/*
- * MOZ_CRASH_UNSAFE_FMT(format, arg1 [, args]) can be used when more
- * information is desired than a string literal can supply. The caller provides
- * a {fmt}-style format string and arguments. A regular MOZ_CRASH() is preferred
- * wherever possible, as passing arbitrary strings to format from a potentially
- * compromised process is not without risk.
- *
- * @note This macro causes data collection because crash strings are annotated
- * to crash-stats and are publicly visible. Firefox data stewards must do data
- * review on usages of this macro.
- */
-#ifdef __cplusplus
-
-namespace mozilla::detail {
-template <typename... Args>
-const char* CrashFmtImpl(const char* format, Args&&... args);
-}
-
-#  define MOZ_CRASH_UNSAFE_FMT(format, ...)                              \
-    do {                                                                 \
-      static_assert(MOZ_ARG_COUNT(__VA_ARGS__) > 0,                      \
-                    "Did you forget arguments to MOZ_CRASH_UNSAFE_FMT? " \
-                    "Or maybe you want MOZ_CRASH instead?");             \
-      MOZ_Crash(__FILE__, __LINE__,                                      \
-                mozilla::detail::CrashFmtImpl("" format, __VA_ARGS__));  \
-    } while (false)
-#else
-#  define MOZ_CRASH_UNSAFE_FMT(...) \
-    static_assert(false, "MOZ_CRASH_UNSAFE_FMT requires C++")
-#endif
 
 /*
  * MOZ_ASSERT(expr [, explanation-string]) asserts that |expr| must be truthy in
@@ -529,7 +492,7 @@ struct AssertionConditionType {
 #  define MOZ_VALIDATE_ASSERT_CONDITION_TYPE(x)
 #endif
 
-#if defined(DEBUG) || defined(MOZ_ASAN)
+#if defined(DEBUG) || defined(MOZ_ASAN) || defined(FUZZING)
 #  define MOZ_REPORT_ASSERTION_FAILURE(...) \
     MOZ_ReportAssertionFailure(__VA_ARGS__)
 #else
@@ -785,7 +748,7 @@ struct AssertionConditionType {
  */
 #ifdef __cplusplus
 namespace mozilla::detail {
-MFBT_API MOZ_NORETURN MOZ_COLD void InvalidArrayIndex_CRASH(size_t aIndex,
+[[noreturn]] MFBT_API MOZ_COLD void InvalidArrayIndex_CRASH(size_t aIndex,
                                                             size_t aLength);
 }  // namespace mozilla::detail
 #endif  // __cplusplus
@@ -816,5 +779,7 @@ static inline T MakeCompilerAssumeUnreachableFakeValue() {
 }
 }  // namespace mozilla
 #endif  // __cplusplus
+
+#undef MOZ_GET_PID
 
 #endif /* mozilla_Assertions_h */

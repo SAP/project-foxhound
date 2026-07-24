@@ -12,13 +12,6 @@
 
 namespace mozilla {
 
-#ifdef LOG
-#  undef LOG
-#endif
-#ifdef LOG_TEST
-#  undef LOG_TEST
-#endif
-
 extern LazyLogModule gMediaTrackGraphLog;
 #define LOG(type, msg) MOZ_LOG(gMediaTrackGraphLog, type, msg)
 #define LOG_TEST(type) MOZ_LOG_TEST(gMediaTrackGraphLog, type)
@@ -43,11 +36,23 @@ UniquePtr<CrossGraphPort> CrossGraphPort::Connect(
   RefPtr<MediaInputPort> port =
       aStreamTrack->ForwardTrackContentsTo(transmitter);
 
+  LOG(LogLevel::Verbose,
+      ("Created CrossGraphPort transmitter %p (rate %u, from AudioStreamTrack "
+       "%p) and receiver %p (rate %u) between graphs %p and %p",
+       transmitter.get(), transmitter->mSampleRate, aStreamTrack.get(),
+       receiver.get(), receiver->mSampleRate, aStreamTrack->Graph(),
+       aPartnerGraph));
+
   return WrapUnique(new CrossGraphPort(std::move(port), std::move(transmitter),
                                        std::move(receiver)));
 }
 
 CrossGraphPort::~CrossGraphPort() {
+  LOG(LogLevel::Verbose,
+      ("Destroying CrossGraphPort transmitter %p (rate %u) and receiver %p "
+       "(rate %u) between graphs %p and %p",
+       mTransmitter.get(), mTransmitter->mSampleRate, mReceiver.get(),
+       mReceiver->mSampleRate, mTransmitter->Graph(), mReceiver->Graph()));
   mTransmitter->Destroy();
   mReceiver->Destroy();
   mTransmitterPort->Destroy();
@@ -110,7 +115,7 @@ void CrossGraphTransmitter::ProcessInput(GraphTime aFrom, GraphTime aTo,
   mStartTime = aTo;
 
   for (AudioSegment::ChunkIterator iter(audio); !iter.IsEnded(); iter.Next()) {
-    Unused << mReceiver->EnqueueAudio(*iter);
+    (void)mReceiver->EnqueueAudio(*iter);
   }
 }
 
@@ -136,7 +141,7 @@ void CrossGraphReceiver::ProcessInput(GraphTime aFrom, GraphTime aTo,
   AudioSegment transmittedAudio;
   while (mCrossThreadFIFO.AvailableRead()) {
     AudioChunk chunk;
-    Unused << mCrossThreadFIFO.Dequeue(&chunk, 1);
+    (void)mCrossThreadFIFO.Dequeue(&chunk, 1);
     transmittedAudio.AppendAndConsumeChunk(std::move(chunk));
     mTransmitterHasStarted = true;
   }
@@ -161,3 +166,6 @@ int CrossGraphReceiver::EnqueueAudio(AudioChunk& aChunk) {
 }
 
 }  // namespace mozilla
+
+#undef LOG
+#undef LOG_TEST

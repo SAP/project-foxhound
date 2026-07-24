@@ -6,11 +6,21 @@
 #ifndef GPU_RenderBundleEncoder_H_
 #define GPU_RenderBundleEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
 #include "CanvasContext.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
+
+namespace mozilla::dom {
+struct GPURenderBundleEncoderDescriptor;
+struct GPURenderBundleDescriptor;
+enum class GPUIndexFormat : uint8_t;
+}  // namespace mozilla::dom
 
 namespace mozilla::webgpu {
+class BindGroup;
+class Buffer;
+class RenderPipeline;
+
 namespace ffi {
 struct WGPURenderBundleEncoder;
 }  // namespace ffi
@@ -22,17 +32,18 @@ struct ffiWGPURenderBundleEncoderDeleter {
   void operator()(ffi::WGPURenderBundleEncoder*);
 };
 
-class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
+class RenderBundleEncoder final : public nsWrapperCache,
+                                  public ObjectBase,
+                                  public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(RenderBundleEncoder)
   GPU_DECL_JS_WRAP(RenderBundleEncoder)
 
-  RenderBundleEncoder(Device* const aParent, WebGPUChild* const aBridge,
+  RenderBundleEncoder(Device* const aParent, RawId aId,
                       const dom::GPURenderBundleEncoderDescriptor& aDesc);
 
  private:
-  ~RenderBundleEncoder();
-  void Cleanup();
+  virtual ~RenderBundleEncoder();
 
   std::unique_ptr<ffi::WGPURenderBundleEncoder,
                   ffiWGPURenderBundleEncoderDeleter>
@@ -48,9 +59,11 @@ class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
 
   // programmable pass encoder
  private:
+  bool mValid = true;
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
-                    uint64_t aDynamicOffsetsLength);
+                    size_t aDynamicOffsetsLength);
 
  public:
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,

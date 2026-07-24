@@ -31,7 +31,6 @@ class DependencyParseError(Exception):
 
 
 class SiteDependencyExtractor:
-
     def __init__(self, site_name: str, sites_dir: Path, topsrcdir: Path) -> None:
         self.site_file = sites_dir / f"{site_name}.txt"
         if not self.site_file.is_file():
@@ -49,6 +48,7 @@ class SiteDependencyExtractor:
             "pypi-optional": self._handle_pypi,
             "vendored": self._handle_vendored,
             "vendored-fallback": self._handle_vendored_fallback,
+            "requirements-txt": self._handle_requirements_txt,
         }
 
         for raw in self.site_file.read_text().splitlines():
@@ -120,6 +120,24 @@ class SiteDependencyExtractor:
         if not version:
             raise DependencyParseError(f"Missing version in pypi spec: '{pkg_spec}'")
         self.dependencies.append(Dependency(name=name, version=version, path=None))
+
+    def _handle_requirements_txt(self, rest: str) -> None:
+        requirements_txt_path = Path(self.topsrcdir) / rest
+        if not requirements_txt_path.exists():
+            raise DependencyParseError(
+                f"requirements.txt file not found: {requirements_txt_path}"
+            )
+
+        with requirements_txt_path.open(encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+
+                if not line or line.startswith("#") or line.startswith("-"):
+                    continue
+
+                pypi_requirement_spec = line.split("\\")[0].strip().rstrip()
+                if pypi_requirement_spec:
+                    self._handle_pypi(pypi_requirement_spec)
 
     def _version_from_metadata_files(self, path: Path) -> Optional[str]:
         def _extract_version(file_path: Path) -> Optional[str]:

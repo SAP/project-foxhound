@@ -163,7 +163,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
                 {
                     "action": "store",
                     "dest": "subsuite",
-                    "default": "marionette",
+                    "default": "marionette-integration",
                     "help": "Selects test paths from test-manifests.active",
                 },
             ],
@@ -175,7 +175,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
     repos = []
 
     def __init__(self, require_config_file=False):
-        super(MarionetteTest, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "clobber",
@@ -216,7 +216,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
             self.parser_class = TestSummaryOutputParserHelper
 
     def _pre_config_lock(self, rw_config):
-        super(MarionetteTest, self)._pre_config_lock(rw_config)
+        super()._pre_config_lock(rw_config)
         if not self.config.get("emulator") and not self.config.get(
             "marionette_address"
         ):
@@ -234,7 +234,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(MarionetteTest, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         dirs = {}
         dirs["abs_test_install_dir"] = os.path.join(abs_dirs["abs_work_dir"], "tests")
         dirs["abs_marionette_dir"] = os.path.join(
@@ -286,7 +286,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
         return f"{testsuite}_{platform}"
 
     def download_and_extract(self):
-        super(MarionetteTest, self).download_and_extract()
+        super().download_and_extract()
 
         if self.config.get("emulator"):
             dirs = self.query_abs_dirs()
@@ -305,7 +305,7 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin, CodeCoverageM
         if self.config.get("emulator"):
             self.info("Emulator tests; skipping.")
         else:
-            super(MarionetteTest, self).install()
+            super().install()
 
     def run_tests(self):
         """

@@ -6,7 +6,7 @@
 
 #include "RegisteredThread.h"
 
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 
 namespace mozilla {
 namespace baseprofiler {

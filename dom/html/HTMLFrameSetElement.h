@@ -8,8 +8,9 @@
 #define HTMLFrameSetElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/Span.h"
 #include "nsGenericHTMLElement.h"
+#include "nsTArray.h"
 
 /**
  * The nsFramesetUnit enum is used to denote the type of each entry
@@ -47,8 +48,6 @@ class HTMLFrameSetElement final : public nsGenericHTMLElement {
   explicit HTMLFrameSetElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)),
-        mNumRows(0),
-        mNumCols(0),
         mCurrentRowColHint(NS_STYLE_HINT_REFLOW) {
     SetHasWeirdParserInsertionMode();
   }
@@ -81,7 +80,7 @@ class HTMLFrameSetElement final : public nsGenericHTMLElement {
   WINDOW_EVENT_HELPER(name_, EventHandlerNonNull)
 #define BEFOREUNLOAD_EVENT(name_, id_, type_, struct_) \
   WINDOW_EVENT_HELPER(name_, OnBeforeUnloadEventHandlerNonNull)
-#include "mozilla/EventNameList.h"  // IWYU pragma: keep
+#include "mozilla/EventNameList.inc"  // IWYU pragma: keep
 #undef BEFOREUNLOAD_EVENT
 #undef WINDOW_EVENT
 #undef WINDOW_EVENT_HELPER
@@ -89,27 +88,23 @@ class HTMLFrameSetElement final : public nsGenericHTMLElement {
 
   /**
    * GetRowSpec is used to get the "rows" spec.
-   * @param out int32_t aNumValues The number of row sizes specified.
-   * @param out nsFramesetSpec* aSpecs The array of size specifications.
-            This is _not_ owned by the caller, but by the nsFrameSetElement
-            implementation.  DO NOT DELETE IT.
+   * @return The span of size specifications, owned by the
+   *        nsFrameSetElement implementation.
    */
-  nsresult GetRowSpec(int32_t* aNumValues, const nsFramesetSpec** aSpecs);
+  Span<const nsFramesetSpec> GetRowSpec() MOZ_LIFETIME_BOUND;
   /**
-   * GetColSpec is used to get the "cols" spec
-   * @param out int32_t aNumValues The number of row sizes specified.
-   * @param out nsFramesetSpec* aSpecs The array of size specifications.
-            This is _not_ owned by the caller, but by the nsFrameSetElement
-            implementation.  DO NOT DELETE IT.
+   * GetColSpec is used to get the "cols" spec.
+   * @return The span of size specifications, owned by the
+   *        nsFrameSetElement implementation.
    */
-  nsresult GetColSpec(int32_t* aNumValues, const nsFramesetSpec** aSpecs);
+  Span<const nsFramesetSpec> GetColSpec() MOZ_LIFETIME_BOUND;
 
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
@@ -122,17 +117,9 @@ class HTMLFrameSetElement final : public nsGenericHTMLElement {
                      const nsAttrValue* aValue, bool aNotify) override;
 
  private:
-  nsresult ParseRowCol(const nsAttrValue& aValue, int32_t& aNumSpecs,
-                       UniquePtr<nsFramesetSpec[]>* aSpecs);
+  nsresult ParseRowCol(const nsAttrValue& aValue,
+                       nsTArray<nsFramesetSpec>& aSpecs);
 
-  /**
-   * The number of size specs in our "rows" attr
-   */
-  int32_t mNumRows;
-  /**
-   * The number of size specs in our "cols" attr
-   */
-  int32_t mNumCols;
   /**
    * The style hint to return for the rows/cols attrs in
    * GetAttributeChangeHint
@@ -141,11 +128,11 @@ class HTMLFrameSetElement final : public nsGenericHTMLElement {
   /**
    * The parsed representation of the "rows" attribute
    */
-  UniquePtr<nsFramesetSpec[]> mRowSpecs;  // parsed, non-computed dimensions
+  nsTArray<nsFramesetSpec> mRowSpecs;  // parsed, non-computed dimensions
   /**
    * The parsed representation of the "cols" attribute
    */
-  UniquePtr<nsFramesetSpec[]> mColSpecs;  // parsed, non-computed dimensions
+  nsTArray<nsFramesetSpec> mColSpecs;  // parsed, non-computed dimensions
 };
 
 }  // namespace mozilla::dom

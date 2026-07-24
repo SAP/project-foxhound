@@ -11,7 +11,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("Security Modules and Devices", "certSelection");
+  await evaluateSearchResults("Security Modules and Devices", "certificates");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -22,6 +22,6 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("Use system proxy settings", "connectionGroup");
+  await evaluateSearchResults("Use system proxy settings", "networkProxy");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

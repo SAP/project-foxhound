@@ -30,7 +30,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/IOUtilsBinding.h"
@@ -1025,7 +1024,7 @@ already_AddRefed<Promise> IOUtils::GetWindowsAttributes(GlobalObject& aGlobal,
 /* static */
 already_AddRefed<Promise> IOUtils::SetWindowsAttributes(
     GlobalObject& aGlobal, const nsAString& aPath,
-    const WindowsFileAttributes& aAttrs, ErrorResult& aError) {
+    const WindowsFileAttributes& aAttrs, bool aRecursive, ErrorResult& aError) {
   return WithPromiseAndState(
       aGlobal, aError, [&](Promise* promise, auto& state) {
         nsCOMPtr<nsIFile> file = new nsLocalFile();
@@ -1063,8 +1062,9 @@ already_AddRefed<Promise> IOUtils::SetWindowsAttributes(
 
         DispatchAndResolve<Ok>(
             state->mEventQueue, promise,
-            [file = std::move(file), setAttrs, clearAttrs]() {
-              return SetWindowsAttributesSync(file, setAttrs, clearAttrs);
+            [file = std::move(file), setAttrs, clearAttrs, aRecursive]() {
+              return SetWindowsAttributesSync(file, setAttrs, clearAttrs,
+                                              aRecursive);
             });
       });
 }
@@ -1445,6 +1445,18 @@ Result<uint32_t, IOUtils::IOError> IOUtils::WriteSync(
 
   if (tempFile) {
     writeFile = tempFile;
+
+    // We must copy the file so that we can append it before copying it back.
+    if (aOptions.mMode == WriteMode::Append) {
+      if (auto result = CopySync(aFile, tempFile, /* aNoOverwrite = */ false,
+                                 /* aRecursive = */ false);
+          result.isErr()) {
+        return Err(IOError::WithCause(
+            result.unwrapErr(),
+            "Could not write to `%s': failed to copy for append",
+            aFile->HumanReadablePath().get()));
+      }
+    }
   } else {
     writeFile = aFile;
   }
@@ -1763,17 +1775,14 @@ Result<Ok, IOUtils::IOError> IOUtils::RemoveSync(nsIFile* aFile,
       return Err(IOError(rv, "Could not remove `%s': file does not exist",
                          aFile->HumanReadablePath().get()));
     }
-    if (rv == NS_ERROR_FILE_DIR_NOT_EMPTY) {
-      return Err(IOError(rv,
-                         "Could not remove `%s': the directory is not empty",
-                         aFile->HumanReadablePath().get()));
-    }
 
 #ifdef XP_WIN
-
-    if (rv == NS_ERROR_FILE_ACCESS_DENIED && aRetryReadonly) {
-      if (auto result =
-              SetWindowsAttributesSync(aFile, 0, FILE_ATTRIBUTE_READONLY);
+    // If aRetryReadonly && aRecursive then we will try recursively removing
+    // read-only status and then delete again.
+    if (aRetryReadonly && (rv == NS_ERROR_FILE_ACCESS_DENIED ||
+                           (rv == NS_ERROR_FILE_DIR_NOT_EMPTY && aRecursive))) {
+      if (auto result = SetWindowsAttributesSync(
+              aFile, 0, FILE_ATTRIBUTE_READONLY, aRecursive);
           result.isErr()) {
         return Err(IOError::WithCause(
             result.unwrapErr(),
@@ -1783,8 +1792,13 @@ Result<Ok, IOUtils::IOError> IOUtils::RemoveSync(nsIFile* aFile,
       return RemoveSync(aFile, aIgnoreAbsent, aRecursive,
                         /* aRetryReadonly = */ false);
     }
-
 #endif
+
+    if (rv == NS_ERROR_FILE_DIR_NOT_EMPTY) {
+      return Err(IOError(rv,
+                         "Could not remove `%s': the directory is not empty",
+                         aFile->HumanReadablePath().get()));
+    }
 
     return Err(
         IOError(rv, "Could not remove `%s'", aFile->HumanReadablePath().get()));
@@ -2197,16 +2211,37 @@ Result<uint32_t, IOUtils::IOError> IOUtils::GetWindowsAttributesSync(
 }
 
 Result<Ok, IOUtils::IOError> IOUtils::SetWindowsAttributesSync(
-    nsIFile* aFile, const uint32_t aSetAttrs, const uint32_t aClearAttrs) {
+    nsIFile* aFile, const uint32_t aSetAttrs, const uint32_t aClearAttrs,
+    bool aRecursive) {
   MOZ_ASSERT(!NS_IsMainThread());
 
   nsCOMPtr<nsILocalFileWin> file = do_QueryInterface(aFile);
   MOZ_ASSERT(file);
 
-  if (nsresult rv = file->SetWindowsFileAttributes(aSetAttrs, aClearAttrs);
+  nsresult rv;
+  if (rv = file->SetWindowsFileAttributes(aSetAttrs, aClearAttrs);
       NS_FAILED(rv)) {
     return Err(IOError(rv, "Could not set Windows file attributes for `%s'",
                        aFile->HumanReadablePath().get()));
+  }
+
+  if (!aRecursive) {
+    return Ok{};
+  }
+
+  auto fileInfo = MOZ_TRY(StatSync(aFile));
+  if (fileInfo.mType != FileType::Directory) {
+    return Ok{};
+  }
+
+  auto entries = MOZ_TRY(GetChildrenSync(aFile, /* ignoreAbsent = */ false));
+  for (const auto& entry : entries) {
+    nsCOMPtr<nsIFile> file = new nsLocalFile();
+    rv = PathUtils::InitFileWithPath(file, entry);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+    MOZ_TRY(SetWindowsAttributesSync(file, aSetAttrs, aClearAttrs, aRecursive));
   }
 
   return Ok{};
@@ -2685,7 +2720,7 @@ NS_IMETHODIMP IOUtilsShutdownBlocker::BlockShutdown(
       MOZ_RELEASE_ASSERT(mPhase == ShutdownPhase::XpcomWillShutdown);
       MOZ_RELEASE_ASSERT(!state->mEventQueue);
 
-      Unused << NS_WARN_IF(NS_FAILED(aBarrierClient->RemoveBlocker(this)));
+      (void)NS_WARN_IF(NS_FAILED(aBarrierClient->RemoveBlocker(this)));
       mParentClient = nullptr;
 
       return NS_OK;
@@ -2706,7 +2741,7 @@ NS_IMETHODIMP IOUtilsShutdownBlocker::BlockShutdown(
     //
     // Likewise, if waiting on the barrier failed, we are going to make our best
     // attempt to clean up.
-    Unused << Done();
+    (void)Done();
   }
 
   return NS_OK;
@@ -3031,7 +3066,7 @@ static nsCString FromUnixString(const IOUtils::UnixString& aString) {
   }
   if (aString.IsUint8Array()) {
     nsCString data;
-    Unused << aString.GetAsUint8Array().AppendDataTo(data);
+    (void)aString.GetAsUint8Array().AppendDataTo(data);
     return data;
   }
   MOZ_CRASH("unreachable");

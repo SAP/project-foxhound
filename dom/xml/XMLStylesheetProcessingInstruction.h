@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_XMLStylesheetProcessingInstruction_h
 #define mozilla_dom_XMLStylesheetProcessingInstruction_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "nsIURI.h"
@@ -38,8 +36,9 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
                                            ProcessingInstruction)
 
   // nsINode
-  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    mozilla::ErrorResult& aError) override;
+  virtual void SetNodeValueInternal(
+      const nsAString& aNodeValue, mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
 
   // nsIContent
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
@@ -57,13 +56,14 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
   // LinkStyle
   void GetCharset(nsAString& aCharset) override;
 
-  virtual void SetData(const nsAString& aData,
-                       mozilla::ErrorResult& rv) override {
-    CharacterData::SetData(aData, rv);
+  virtual void SetDataInternal(const nsAString& aData,
+                               MutationEffectOnScript aMutationEffectOnScript,
+                               mozilla::ErrorResult& rv) override {
+    CharacterData::SetDataInternal(aData, aMutationEffectOnScript, rv);
     if (rv.Failed()) {
       return;
     }
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
   }
 
  protected:

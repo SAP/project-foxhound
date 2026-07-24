@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ThirdPartyUtil_h__
-#define ThirdPartyUtil_h__
+#ifndef ThirdPartyUtil_h_
+#define ThirdPartyUtil_h_
 
-#include <cstdint>
 #include "ErrorList.h"
 #include "mozIThirdPartyUtil.h"
 #include "mozilla/RefPtr.h"

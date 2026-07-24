@@ -72,7 +72,9 @@ tags = "capturestream"
 ["test_bug972678.html"]
 
 ["test_bug1027864.html"]
-skip-if = ["true"] #Bug 1650930
+skip-if = [
+  "true", # Bug 1650930
+]
 
 ["test_bug1056032.html"]
 

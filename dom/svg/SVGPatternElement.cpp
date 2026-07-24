@@ -6,12 +6,11 @@
 
 #include "mozilla/dom/SVGPatternElement.h"
 
+#include "DOMSVGAnimatedTransformList.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGPatternElementBinding.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
-#include "DOMSVGAnimatedTransformList.h"
 #include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Pattern)
@@ -29,13 +28,13 @@ JSObject* SVGPatternElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGPatternElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGElement::EnumInfo SVGPatternElement::sEnumInfo[2] = {
@@ -89,10 +88,8 @@ SVGPatternElement::PatternContentUnits() {
 
 already_AddRefed<DOMSVGAnimatedTransformList>
 SVGPatternElement::PatternTransform() {
-  // We're creating a DOM wrapper, so we must tell GetAnimatedTransformList
-  // to allocate the DOMSVGAnimatedTransformList if it hasn't already done so:
   return DOMSVGAnimatedTransformList::GetDOMWrapper(
-      GetAnimatedTransformList(DO_ALLOCATE), this);
+      GetOrCreateAnimatedTransformList(), this);
 }
 
 already_AddRefed<DOMSVGAnimatedLength> SVGPatternElement::X() {
@@ -112,7 +109,8 @@ already_AddRefed<DOMSVGAnimatedLength> SVGPatternElement::Height() {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGPatternElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -120,10 +118,10 @@ already_AddRefed<DOMSVGAnimatedString> SVGPatternElement::Href() {
 //----------------------------------------------------------------------
 // SVGElement methods
 
-SVGAnimatedTransformList* SVGPatternElement::GetAnimatedTransformList(
-    uint32_t aFlags) {
-  if (!mPatternTransform && (aFlags & DO_ALLOCATE)) {
-    mPatternTransform = MakeUnique<SVGAnimatedTransformList>();
+SVGAnimatedTransformList*
+SVGPatternElement::GetOrCreateAnimatedTransformList() {
+  if (!mPatternTransform) {
+    mPatternTransform = std::make_unique<SVGAnimatedTransformList>();
   }
   return mPatternTransform.get();
 }

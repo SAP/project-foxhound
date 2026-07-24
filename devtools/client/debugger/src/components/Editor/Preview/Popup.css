@@ -22,9 +22,13 @@
   /* Because of tracer header, we can't put a padding on the popup */
   /* Nor can we put a margin on the .tree or .objectBox which causes overflows */
   &.preview-type-tracer {
-    padding-bottom: 5px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     .tree {
-      padding: 0 5px;
+      padding: 5px;
+      overflow: auto;
+      flex: 1;
     }
   }
 }
@@ -64,10 +68,6 @@
   background-color: var(--theme-inline-preview-label-trace-background);
   border-block-end: 1px solid oklch(from var(--theme-inline-preview-label-trace-color) l c h / 0.25);
 
-  /* Make sure the header is always visible */
-  position: sticky;
-  top: 0;
-  z-index: 1;
   /* Add a bit more padding on the end to balance the icon, especially when have a small primitive value in preview */
   padding-inline-end: 10px !important;
 }
@@ -77,7 +77,6 @@
   --icon-color: currentColor;
   background-color: var(--theme-body-alternate-emphasized-background);
   border-bottom: 1px solid var(--theme-splitter-color);
-  margin-bottom: 5px;
 }
 
 .preview-tracer-header,
@@ -212,7 +211,7 @@
   align-items: center;
 }
 
-.exception-message .arrow {
+.exception-message .dbg-img-arrow {
   margin-inline-end: 4px;
 }
 

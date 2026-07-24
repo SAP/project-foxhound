@@ -21,7 +21,9 @@
 #include "mozilla/css/ImageLoader.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/SVGFEImageElement.h"
 #include "mozilla/dom/SVGGeometryElement.h"
+#include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGMPathElement.h"
 #include "mozilla/dom/SVGTextPathElement.h"
 #include "mozilla/dom/SVGUseElement.h"
@@ -135,7 +137,7 @@ class SVGReferenceHashKey : public PLDHashEntryHdr {
 
     nsAutoCString urlSpec, referrerSpec;
     // nsURIHashKey ignores GetSpec() failures, so we do too:
-    Unused << aKey->GetURI()->GetSpec(urlSpec);
+    (void)aKey->GetURI()->GetSpec(urlSpec);
     return AddToHash(
         HashString(aKey->GetLocalRef()), HashString(urlSpec),
         static_cast<ReferrerInfo*>(aKey->GetReferrerInfo())->Hash());
@@ -191,7 +193,7 @@ static already_AddRefed<SVGReference> ResolveURLUsingLocalRef(
   }
 
   nsCOMPtr<nsIURI> uri;
-  Unused << NS_NewURI(getter_AddRefs(uri), aURL, WrapNotNull(encoding), base);
+  (void)NS_NewURI(getter_AddRefs(uri), aURL, WrapNotNull(encoding), base);
   if (!uri) {
     return nullptr;
   }
@@ -238,16 +240,13 @@ struct SVGFrameReferenceFromProperty {
 };
 
 void SVGRenderingObserver::StartObserving() {
-  Element* target = GetReferencedElementWithoutObserving();
-  if (target) {
+  if (Element* target = GetReferencedElementWithoutObserving()) {
     target->AddMutationObserver(this);
   }
 }
 
 void SVGRenderingObserver::StopObserving() {
-  Element* target = GetReferencedElementWithoutObserving();
-
-  if (target) {
+  if (Element* target = GetReferencedElementWithoutObserving()) {
     target->RemoveMutationObserver(this);
     if (mInObserverSet) {
       SVGObserverUtils::RemoveRenderingObserver(target, this);
@@ -276,8 +275,7 @@ nsIFrame* SVGRenderingObserver::GetAndObserveReferencedFrame() {
 
 nsIFrame* SVGRenderingObserver::GetAndObserveReferencedFrame(
     LayoutFrameType aFrameType, bool* aOK) {
-  nsIFrame* frame = GetAndObserveReferencedFrame();
-  if (frame) {
+  if (nsIFrame* frame = GetAndObserveReferencedFrame()) {
     if (frame->Type() == aFrameType) {
       return frame;
     }
@@ -299,8 +297,7 @@ void SVGRenderingObserver::NotifyEvictedFromRenderingObserverSet() {
 
 void SVGRenderingObserver::AttributeChanged(dom::Element* aElement,
                                             int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType,
+                                            nsAtom* aAttribute, AttrModType,
                                             const nsAttrValue* aOldValue) {
   if (aElement->IsInNativeAnonymousSubtree()) {
     // Don't observe attribute changes in native-anonymous subtrees like
@@ -397,7 +394,7 @@ class SVGIDRenderingObserver : public SVGRenderingObserver {
     }());
   }
 
-  Element* GetReferencedElementWithoutObserving() final {
+  Element* GetReferencedElementWithoutObserving() const final {
     return mTargetIsValid ? mObservedElementTracker.get() : nullptr;
   }
 
@@ -502,8 +499,7 @@ void SVGIDRenderingObserver::OnRenderingChange() {
 // (AsElement itself isn't callable on null pointers.)
 static Element* GetFrameContentAsElement(nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame, "Expecting a non-null frame");
-  auto* content = aFrame->GetContent();
-  if (content) {
+  if (auto* content = aFrame->GetContent()) {
     return content->AsElement();
   }
   return nullptr;
@@ -606,6 +602,39 @@ void SVGTextPathObserver::OnRenderingChange() {
   }
 }
 
+static bool IsSVGGraphicsElement(const Element& aObserved) {
+  return aObserved.IsSVGGraphicsElement();
+}
+
+class SVGFEImageObserver final : public SVGIDRenderingObserver {
+ public:
+  NS_DECL_ISUPPORTS
+
+  SVGFEImageObserver(SVGReference* aReference, SVGFEImageElement* aElement)
+      : SVGIDRenderingObserver(aReference, aElement,
+                               /* aReferenceImage = */ false,
+                               kAttributeChanged | kContentAppended |
+                                   kContentInserted | kContentWillBeRemoved,
+                               IsSVGGraphicsElement) {}
+
+ protected:
+  virtual ~SVGFEImageObserver() = default;  // non-public
+
+  void OnRenderingChange() override;
+};
+
+NS_IMPL_ISUPPORTS(SVGFEImageObserver, nsIMutationObserver)
+
+void SVGFEImageObserver::OnRenderingChange() {
+  SVGIDRenderingObserver::OnRenderingChange();
+
+  if (!mTargetIsValid) {
+    return;
+  }
+  auto* element = static_cast<SVGFEImageElement*>(mObservingElement.get());
+  element->NotifyImageContentChanged();
+}
+
 class SVGMPathObserver final : public SVGIDRenderingObserver {
  public:
   NS_DECL_ISUPPORTS
@@ -661,7 +690,7 @@ void SVGMarkerObserver::OnRenderingChange() {
   // Because mRect for SVG frames includes the bounds of any markers
   // (see the comment for nsIFrame::GetRect), the referencing frame must be
   // reflowed for any marker changes.
-  if (!frame->HasAnyStateBits(NS_FRAME_IN_REFLOW)) {
+  if (!SVGUtils::OuterSVGIsCallingReflowSVG(frame)) {
     // XXXjwatt: We need to unify SVG into standard reflow so we can just use
     // nsChangeHint_NeedReflow | nsChangeHint_NeedDirtyReflow here.
     // XXXSDL KILL THIS!!!
@@ -711,7 +740,7 @@ class SVGMozElementObserver final : public SVGPaintingProperty {
   // to implement observing of arbitrary elements (including HTML elements)
   // that may require us to repaint if the referenced element is reflowed.
   // Bug 1496065 has been filed to remove that support though.
-  bool ObservesReflow() override { return true; }
+  bool ObservesReflow() const override { return true; }
 };
 
 /**
@@ -740,7 +769,7 @@ class BackgroundClipRenderingObserver : public SVGRenderingObserver {
   // are the same element (and because we could crash - see bug 1556441).
   virtual ~BackgroundClipRenderingObserver() = default;
 
-  Element* GetReferencedElementWithoutObserving() final {
+  Element* GetReferencedElementWithoutObserving() const final {
     return mFrame->GetContent()->AsElement();
   }
 
@@ -751,7 +780,7 @@ class BackgroundClipRenderingObserver : public SVGRenderingObserver {
    * to the text content could cause it to reflow, and we need to invalidate
    * for that.
    */
-  bool ObservesReflow() final { return true; }
+  bool ObservesReflow() const final { return true; }
 
   // The observer and observee!
   nsIFrame* mFrame;
@@ -1080,7 +1109,7 @@ void SVGMaskObserverList::ResolveImage(uint32_t aIndex) {
   const_cast<StyleImage&>(image).ResolveImage(*doc, nullptr);
   if (imgRequestProxy* req = image.GetImageRequest()) {
     // FIXME(emilio): What disassociates this request?
-    doc->StyleImageLoader()->AssociateRequestToFrame(req, mFrame);
+    doc->EnsureStyleImageLoader().AssociateRequestToFrame(req, mFrame);
   }
 }
 
@@ -1155,23 +1184,18 @@ class SVGRenderingObserverSet {
   void Add(SVGRenderingObserver* aObserver) { mObservers.Insert(aObserver); }
   void Remove(SVGRenderingObserver* aObserver) { mObservers.Remove(aObserver); }
 #ifdef DEBUG
-  bool Contains(SVGRenderingObserver* aObserver) {
+  bool Contains(const SVGRenderingObserver* aObserver) const {
     return mObservers.Contains(aObserver);
   }
 #endif
-  bool IsEmpty() { return mObservers.IsEmpty(); }
+  bool IsEmpty() const { return mObservers.IsEmpty(); }
 
   /**
    * Drop all our observers, and notify them that we have changed and dropped
-   * our reference to them.
+   * our reference to them. If aFrameInReflow is true then only observers that
+   * observe reflow will be dropped.
    */
-  void InvalidateAll();
-
-  /**
-   * Drop all observers that observe reflow, and notify them that we have
-   * changed and dropped our reference to them.
-   */
-  void InvalidateAllForReflow();
+  void InvalidateAll(bool aFrameInReflow);
 
   /**
    * Drop all our observers, and notify them that we have dropped our reference
@@ -1183,42 +1207,33 @@ class SVGRenderingObserverSet {
   nsTHashSet<SVGRenderingObserver*> mObservers;
 };
 
-void SVGRenderingObserverSet::InvalidateAll() {
+void SVGRenderingObserverSet::InvalidateAll(bool aFrameInReflow) {
   if (mObservers.IsEmpty()) {
     return;
   }
 
-  const auto observers = std::move(mObservers);
+  auto ExtractObserversForReflow = [this]() {
+    nsTHashSet<SVGRenderingObserver*> observers;
 
-  // We've moved all the observers from mObservers, effectively
-  // evicting them so we need to notify all observers of eviction
-  // before we process any rendering changes. In short, don't
-  // try to merge these loops.
+    for (auto it = mObservers.cbegin(), end = mObservers.cend(); it != end;
+         ++it) {
+      SVGRenderingObserver* obs = *it;
+      if (obs->ObservesReflow()) {
+        observers.Insert(obs);
+        mObservers.Remove(it);
+      }
+    }
+    return observers;
+  };
+
+  const auto observers =
+      aFrameInReflow ? ExtractObserversForReflow() : std::move(mObservers);
+
+  // We need to notify all observers of eviction before we process
+  // any rendering changes. In short, don't try to merge these loops.
   for (const auto& observer : observers) {
     observer->NotifyEvictedFromRenderingObserverSet();
   }
-  for (const auto& observer : observers) {
-    observer->OnNonDOMMutationRenderingChange();
-  }
-}
-
-void SVGRenderingObserverSet::InvalidateAllForReflow() {
-  if (mObservers.IsEmpty()) {
-    return;
-  }
-
-  AutoTArray<SVGRenderingObserver*, 10> observers;
-
-  for (auto it = mObservers.cbegin(), end = mObservers.cend(); it != end;
-       ++it) {
-    SVGRenderingObserver* obs = *it;
-    if (obs->ObservesReflow()) {
-      observers.AppendElement(obs);
-      mObservers.Remove(it);
-      obs->NotifyEvictedFromRenderingObserverSet();
-    }
-  }
-
   for (const auto& observer : observers) {
     observer->OnNonDOMMutationRenderingChange();
   }
@@ -1235,16 +1250,19 @@ void SVGRenderingObserverSet::RemoveAll() {
 }
 
 static SVGRenderingObserverSet* GetObserverSet(Element* aElement) {
+  if (!aElement->HasDirectRenderingObservers()) {
+    return nullptr;
+  }
   return static_cast<SVGRenderingObserverSet*>(
       aElement->GetProperty(nsGkAtoms::renderingobserverset));
 }
 
 #ifdef DEBUG
 // Defined down here because we need SVGRenderingObserverSet's definition.
-void SVGRenderingObserver::DebugObserverSet() {
-  Element* referencedElement = GetReferencedElementWithoutObserving();
-  if (referencedElement) {
-    SVGRenderingObserverSet* observers = GetObserverSet(referencedElement);
+void SVGRenderingObserver::DebugObserverSet() const {
+  if (Element* referencedElement = GetReferencedElementWithoutObserving()) {
+    const SVGRenderingObserverSet* observers =
+        GetObserverSet(referencedElement);
     bool inObserverSet = observers && observers->Contains(this);
     MOZ_ASSERT(inObserverSet == mInObserverSet,
                "failed to track whether we're in our referenced element's "
@@ -1324,7 +1342,7 @@ static already_AddRefed<SVGReference> GetMarkerURI(
 }
 
 bool SVGObserverUtils::GetAndObserveMarkers(nsIFrame* aMarkedFrame,
-                                            SVGMarkerFrame* (*aFrames)[3]) {
+                                            SVGMarkerFrames* aFrames) {
   MOZ_ASSERT(!aMarkedFrame->GetPrevContinuation() &&
                  aMarkedFrame->IsSVGGeometryFrame() &&
                  static_cast<SVGGeometryElement*>(aMarkedFrame->GetContent())
@@ -1344,7 +1362,7 @@ bool SVGObserverUtils::GetAndObserveMarkers(nsIFrame* aMarkedFrame,
                           LayoutFrameType::SVGMarker, nullptr)              \
                     : nullptr;                                              \
   foundMarker = foundMarker || bool(marker);                                \
-  (*aFrames)[SVGMark::e##type] = static_cast<SVGMarkerFrame*>(marker);
+  (*aFrames)[SVGMark::Type::type] = static_cast<SVGMarkerFrame*>(marker);
 
   GET_MARKER(Start)
   GET_MARKER(Mid)
@@ -1398,13 +1416,13 @@ static SVGObserverUtils::ReferenceState GetAndObserveFilters(
     ISVGFilterObserverList* aObserverList,
     nsTArray<SVGFilterFrame*>* aFilterFrames) {
   if (!aObserverList) {
-    return SVGObserverUtils::eHasNoRefs;
+    return SVGObserverUtils::ReferenceState::HasNoRefs;
   }
 
   const nsTArray<RefPtr<SVGFilterObserver>>& observers =
       aObserverList->GetObservers();
   if (observers.IsEmpty()) {
-    return SVGObserverUtils::eHasNoRefs;
+    return SVGObserverUtils::ReferenceState::HasNoRefs;
   }
 
   for (const auto& observer : observers) {
@@ -1413,14 +1431,14 @@ static SVGObserverUtils::ReferenceState GetAndObserveFilters(
       if (aFilterFrames) {
         aFilterFrames->Clear();
       }
-      return SVGObserverUtils::eHasRefsSomeInvalid;
+      return SVGObserverUtils::ReferenceState::HasRefsSomeInvalid;
     }
     if (aFilterFrames) {
       aFilterFrames->AppendElement(filter);
     }
   }
 
-  return SVGObserverUtils::eHasRefsAllValid;
+  return SVGObserverUtils::ReferenceState::HasRefsAllValid;
 }
 
 SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveFilters(
@@ -1473,7 +1491,7 @@ SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveClipPath(
   }
   SVGPaintingProperty* observers = GetOrCreateClipPathObserver(aClippedFrame);
   if (!observers) {
-    return eHasNoRefs;
+    return ReferenceState::HasNoRefs;
   }
   bool frameTypeOK = true;
   SVGClipPathFrame* frame =
@@ -1482,12 +1500,12 @@ SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveClipPath(
   // Note that, unlike for filters, a reference to an ID that doesn't exist
   // is not invalid for clip-path or mask.
   if (!frameTypeOK) {
-    return eHasRefsSomeInvalid;
+    return ReferenceState::HasRefsSomeInvalid;
   }
   if (aClipPathFrame) {
     *aClipPathFrame = frame;
   }
-  return frame ? eHasRefsAllValid : eHasNoRefs;
+  return frame ? ReferenceState::HasRefsAllValid : ReferenceState::HasNoRefs;
 }
 
 static SVGRenderingObserverProperty* GetOrCreateGeometryObserver(
@@ -1547,16 +1565,16 @@ SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveMasks(
     nsIFrame* aMaskedFrame, nsTArray<SVGMaskFrame*>* aMaskFrames) {
   SVGMaskObserverList* observerList = GetOrCreateMaskObserverList(aMaskedFrame);
   if (!observerList) {
-    return eHasNoRefs;
+    return ReferenceState::HasNoRefs;
   }
 
   const nsTArray<RefPtr<SVGPaintingProperty>>& observers =
       observerList->GetObservers();
   if (observers.IsEmpty()) {
-    return eHasNoRefs;
+    return ReferenceState::HasNoRefs;
   }
 
-  ReferenceState state = eHasRefsAllValid;
+  ReferenceState state = ReferenceState::HasRefsAllValid;
 
   for (size_t i = 0; i < observers.Length(); i++) {
     bool frameTypeOK = true;
@@ -1573,7 +1591,7 @@ SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveMasks(
       //
       // Hand it over to the style image.
       observerList->ResolveImage(i);
-      state = eHasRefsSomeInvalid;
+      state = ReferenceState::HasRefsSomeInvalid;
     }
     if (aMaskFrames) {
       aMaskFrames->AppendElement(maskFrame);
@@ -1613,6 +1631,38 @@ SVGGeometryElement* SVGObserverUtils::GetAndObserveTextPathsPath(
       property->GetAndObserveReferencedElement());
 }
 
+SVGGraphicsElement* SVGObserverUtils::GetAndObserveFEImageContent(
+    SVGFEImageElement* aSVGFEImageElement) {
+  if (!aSVGFEImageElement->mImageContentObserver) {
+    nsAutoString href;
+    aSVGFEImageElement->HrefAsString(href);
+    if (href.IsEmpty()) {
+      return nullptr;  // no URL
+    }
+
+    RefPtr<SVGReference> target =
+        ResolveURLUsingLocalRef(aSVGFEImageElement, href);
+
+    aSVGFEImageElement->mImageContentObserver =
+        new SVGFEImageObserver(target, aSVGFEImageElement);
+  }
+
+  return SVGGraphicsElement::FromNodeOrNull(
+      static_cast<SVGFEImageObserver*>(
+          aSVGFEImageElement->mImageContentObserver.get())
+          ->GetAndObserveReferencedElement());
+}
+
+void SVGObserverUtils::TraverseFEImageObserver(
+    SVGFEImageElement* aSVGFEImageElement,
+    nsCycleCollectionTraversalCallback* aCB) {
+  if (aSVGFEImageElement->mImageContentObserver) {
+    static_cast<SVGFEImageObserver*>(
+        aSVGFEImageElement->mImageContentObserver.get())
+        ->Traverse(aCB);
+  }
+}
+
 SVGGeometryElement* SVGObserverUtils::GetAndObserveMPathsPath(
     SVGMPathElement* aSVGMPathElement) {
   if (!aSVGMPathElement->mMPathObserver) {
@@ -1646,13 +1696,12 @@ void SVGObserverUtils::TraverseMPathObserver(
 void SVGObserverUtils::InitiateResourceDocLoads(nsIFrame* aFrame) {
   // We create observer objects and attach them to aFrame, but we do not
   // make aFrame start observing the referenced frames.
-  Unused << GetOrCreateFilterObserverListForCSS(
-      aFrame, StyleFilterType::BackdropFilter);
-  Unused << GetOrCreateFilterObserverListForCSS(aFrame,
-                                                StyleFilterType::Filter);
-  Unused << GetOrCreateClipPathObserver(aFrame);
-  Unused << GetOrCreateGeometryObserver(aFrame);
-  Unused << GetOrCreateMaskObserverList(aFrame);
+  (void)GetOrCreateFilterObserverListForCSS(aFrame,
+                                            StyleFilterType::BackdropFilter);
+  (void)GetOrCreateFilterObserverListForCSS(aFrame, StyleFilterType::Filter);
+  (void)GetOrCreateClipPathObserver(aFrame);
+  (void)GetOrCreateGeometryObserver(aFrame);
+  (void)GetOrCreateMaskObserverList(aFrame);
 }
 
 void SVGObserverUtils::RemoveTextPathObserver(nsIFrame* aTextPathFrame) {
@@ -1828,8 +1877,7 @@ void SVGObserverUtils::AddRenderingObserver(Element* aElement,
 
 void SVGObserverUtils::RemoveRenderingObserver(
     Element* aElement, SVGRenderingObserver* aObserver) {
-  SVGRenderingObserverSet* observers = GetObserverSet(aElement);
-  if (observers) {
+  if (SVGRenderingObserverSet* observers = GetObserverSet(aElement)) {
     NS_ASSERTION(observers->Contains(aObserver),
                  "removing observer from an element we're not observing?");
     observers->Remove(aObserver);
@@ -1862,7 +1910,7 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   aFrame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
 
   if (auto* observers = GetObserverSet(element)) {
-    observers->InvalidateAll();
+    observers->InvalidateAll(aFrame->HasAnyStateBits(NS_FRAME_IN_REFLOW));
     return;
   }
 
@@ -1876,7 +1924,7 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
        f = f->GetParent()) {
     if (auto* element = Element::FromNode(f->GetContent())) {
       if (auto* observers = GetObserverSet(element)) {
-        observers->InvalidateAll();
+        observers->InvalidateAll(f->HasAnyStateBits(NS_FRAME_IN_REFLOW));
         return;
       }
     }
@@ -1887,28 +1935,21 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
 }
 
 void SVGObserverUtils::InvalidateDirectRenderingObservers(
-    Element* aElement, uint32_t aFlags /* = 0 */) {
-  if (!(aFlags & INVALIDATE_DESTROY)) {
-    if (nsIFrame* frame = aElement->GetPrimaryFrame()) {
-      // If the rendering has changed, the bounds may well have changed too:
-      frame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
-    }
+    Element* aElement, InvalidationFlags aFlags) {
+  nsIFrame* frame = aElement->GetPrimaryFrame();
+  if (frame && !aFlags.contains(InvalidationFlag::FrameBeingDestroyed)) {
+    // If the rendering has changed, the bounds may well have changed too:
+    frame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
   }
 
-  if (aElement->HasDirectRenderingObservers()) {
-    SVGRenderingObserverSet* observers = GetObserverSet(aElement);
-    if (observers) {
-      if (aFlags & INVALIDATE_REFLOW) {
-        observers->InvalidateAllForReflow();
-      } else {
-        observers->InvalidateAll();
-      }
-    }
+  if (SVGRenderingObserverSet* observers = GetObserverSet(aElement)) {
+    observers->InvalidateAll(frame &&
+                             frame->HasAnyStateBits(NS_FRAME_IN_REFLOW));
   }
 }
 
 void SVGObserverUtils::InvalidateDirectRenderingObservers(
-    nsIFrame* aFrame, uint32_t aFlags /* = 0 */) {
+    nsIFrame* aFrame, InvalidationFlags aFlags) {
   if (auto* element = Element::FromNodeOrNull(aFrame->GetContent())) {
     InvalidateDirectRenderingObservers(element, aFlags);
   }

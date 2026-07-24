@@ -6,18 +6,18 @@
 
 #include "DataTransferItemList.h"
 
-#include "nsContentUtils.h"
-#include "nsIGlobalObject.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptContext.h"
-#include "nsQueryObject.h"
-#include "nsVariant.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/storage/Variant.h"
 #include "mozilla/dom/DataTransferItemListBinding.h"
+#include "mozilla/storage/Variant.h"
+#include "nsContentUtils.h"
+#include "nsIGlobalObject.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsQueryObject.h"
+#include "nsVariant.h"
 
 namespace mozilla::dom {
 

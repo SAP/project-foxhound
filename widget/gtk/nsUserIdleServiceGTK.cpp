@@ -22,7 +22,6 @@
 #  include "AsyncDBus.h"
 #  include "WakeLockListener.h"
 #  include "nsIObserverService.h"
-#  include "mozilla/UniquePtrExtensions.h"
 #endif
 
 using mozilla::LogLevel;

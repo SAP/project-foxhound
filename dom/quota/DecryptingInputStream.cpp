@@ -5,8 +5,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DecryptingInputStream.h"
-#include "DecryptingInputStream_impl.h"
 
+#include "DecryptingInputStream_impl.h"
 #include "nsStreamUtils.h"
 
 namespace mozilla::dom::quota {

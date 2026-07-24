@@ -7,8 +7,11 @@
   :host {
     --button-size-icon: var(--tab-min-height);
     --button-min-height: var(--button-size-icon);
-    --button-border-radius: var(--border-radius-medium);
   }
+}
+
+[hidden] {
+  display: none !important;
 }
 
 :host {
@@ -68,7 +71,6 @@
 .actions-list {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
   align-items: start;
   max-width: 100%;
   overflow: hidden;
@@ -95,6 +97,10 @@
     &::part(button) {
       background-color: var(--toolbarbutton-active-background);
     }
+  }
+
+  &.overflow-button {
+    flex-shrink: 0;
   }
 }
 
@@ -126,8 +132,35 @@
       width: unset;
     }
 
-    :host(:not([sidebar-ongoing-animations])) &[overflowing="true"] {
-      padding-block: 0;
+    &[overflowing="true"] {
+      padding-inline-end: 0;
+      flex-wrap: nowrap;
+    }
+  }
+}
+
+.buttons-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  justify-content: space-between;
+  min-height: calc(var(--button-min-height) + (var(--space-small) * 2));
+  overflow: hidden;
+
+  :host([expanded]) & {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.visibility", "expand-on-hover") {
+    /* We need these rules to apply at all times when the sidebar.visibility
+    pref is set to "expand-on-hover" as opposed to when the "sidebar-expand-on-hover" attribute
+    has not been added to root. There are certain scenarios when that attribute is temporarily
+    removed from root such as when toggling the sidebar to expand with the toolbar button. */
+    :host(:not([expanded])) & {
+      grid-template-rows: 1fr;
+      padding-block-end: var(--space-small);
     }
   }
 }
@@ -141,11 +174,6 @@
     opacity: 0;
     transition: opacity 300ms ease-in-out;
   }
-}
-
-.tools-and-extensions {
-  align-self: start;
-  width: 100%;
 }
 
 .bottom-actions {

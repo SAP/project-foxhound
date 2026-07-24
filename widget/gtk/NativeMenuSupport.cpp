@@ -21,16 +21,21 @@ void NativeMenuSupport::CreateNativeMenuBar(nsIWidget* aParent,
 #ifdef MOZ_ENABLE_DBUS
   if (aMenuBarElement && StaticPrefs::widget_gtk_global_menu_enabled() &&
       DBusMenuFunctions::Init()) {
-    static_cast<nsWindow*>(aParent)->SetDBusMenuBar(
-        DBusMenuBar::Create(aMenuBarElement));
+    if (auto window = nsWindow::FromWidget(aParent)) {
+      window->SetDBusMenuBar(DBusMenuBar::Create(aMenuBarElement));
+    }
   }
 #endif
 }
 
-already_AddRefed<NativeMenu> NativeMenuSupport::CreateNativeContextMenu(
+already_AddRefed<NativeMenu> NativeMenuSupport::CreateNativePopupMenu(
     dom::Element* aPopup) {
   return MakeAndAddRef<NativeMenuGtk>(aPopup);
 }
+
+bool NativeMenuSupport::ShouldUseNativeAnchoredMenus() { return false; }
+
+bool NativeMenuSupport::ShouldUseNativeAnchoredMenulists() { return false; }
 
 bool NativeMenuSupport::ShouldUseNativeContextMenus() {
   return NativeMenuGtk::CanUse();

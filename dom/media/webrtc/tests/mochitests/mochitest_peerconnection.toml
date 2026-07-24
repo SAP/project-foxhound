@@ -1,4 +1,7 @@
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 tags = "mtg webrtc"
 subsuite = "media"
 scheme = "https"
@@ -68,44 +71,62 @@ prefs = [
 ["test_peerConnection_audioSynchronizationSourcesUnidirectional.html"]
 
 ["test_peerConnection_basicAV1Video.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_peerConnection_basicAudio.html"]
 
 ["test_peerConnection_basicAudioDynamicPtMissingRtpmap.html"]
 
 ["test_peerConnection_basicAudioNATRelay.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioNATRelayTCP.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioNATRelayTCPWithStun300.html"]
 scheme = "http"
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 
 ["test_peerConnection_basicAudioNATRelayTLS.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioNATRelayWithStun300.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioNATSrflx.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioNoisyUDPBlock.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioPcmaPcmuOnly.html"]
 
 ["test_peerConnection_basicAudioRelayPolicy.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_basicAudioRequireEOC.html"]
@@ -139,7 +160,7 @@ scheme = "http"
 ["test_peerConnection_basicScreenshare.html"]
 skip-if = [
   "os == 'android'", # no screenshare on android
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929420
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929420
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1929420
 ]
 
@@ -150,8 +171,8 @@ skip-if = [
 ["test_peerConnection_basicWindowshare.html"]
 skip-if = [
   "os == 'android'", # no screenshare on android
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1929420
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt && socketprocess_e10s", # Bug 1929420
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1929420
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt && socketprocess_e10s", # Bug 1929420
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1929420
 ]
 
@@ -174,7 +195,9 @@ scheme = "http"
 scheme = "http"
 
 ["test_peerConnection_bug1512281.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_peerConnection_bug1773067.html"]
 
@@ -191,7 +214,9 @@ scheme = "http"
 
 ["test_peerConnection_capturedVideo.html"]
 tags = "capturestream"
-skip-if = ["os == 'android'"] # Cannot capture a video element on android (bug 1526207)
+skip-if = [
+  "os == 'android'", # Cannot capture a video element on android (bug 1526207)
+]
 
 ["test_peerConnection_certificates.html"]
 
@@ -218,31 +243,42 @@ scheme = "http"
 ["test_peerConnection_forwarding_basicAudioVideoCombined.html"]
 
 ["test_peerConnection_gatherWithSetConfiguration.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_gatherWithStun300.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
 scheme = "http"
 
 ["test_peerConnection_gatherWithStun300IPv6.html"]
+scheme = "http"
 skip-if = [
   "os == 'android'", # websockets don't work on android (bug 1266217)
-  "os == 'mac'", # no ipv6 support on OS X testers (bug 1710706)
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # no ipv6 support on OS X testers (bug 1710706)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # no ipv6 support on OS X testers (bug 1710706)
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # no ipv6 support on OS X testers (bug 1710706)
   "os == 'win'", # no ipv6 support on windows testers (bug 1710706)
 ]
-scheme = "http"
 
 ["test_peerConnection_getParameters.html"]
 
 ["test_peerConnection_glean.html"]
 
 ["test_peerConnection_iceCandidateSelection.html"]
-skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_e10s", # Bug 1937254
+]
 scheme = "http"
 
 ["test_peerConnection_iceFailure.html"]
-skip-if = ["true"] # Bug 1180388
+skip-if = [
+  "true", # Bug 1180388
+]
 scheme = "http"
 
 ["test_peerConnection_insertDTMF.html"]
@@ -250,6 +286,12 @@ scheme = "http"
 ["test_peerConnection_localReofferRollback.html"]
 
 ["test_peerConnection_localRollback.html"]
+
+["test_peerConnection_localhostPolicy.html"]
+skip-if = [
+  "os == 'android'", # websockets don't work on android (bug 1266217)
+]
+scheme = "http"
 
 ["test_peerConnection_maxFsConstraint.html"]
 
@@ -282,6 +324,9 @@ disabled = "bug 1612063 # test is racy"
 ["test_peerConnection_remoteReofferRollback.html"]
 
 ["test_peerConnection_remoteRollback.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1883535
+]
 
 ["test_peerConnection_removeAudioTrack.html"]
 
@@ -305,10 +350,14 @@ scheme = "http"
 ["test_peerConnection_replaceTrack.html"]
 
 ["test_peerConnection_replaceTrack_camera.html"]
-skip-if = ["os == 'android'"] # Bug 1614460
+skip-if = [
+  "os == 'android'", # Bug 1614460
+]
 
 ["test_peerConnection_replaceTrack_disabled.html"]
-skip-if = ["os == 'android'"] # Bug 1614460
+skip-if = [
+  "os == 'android'", # Bug 1614460
+]
 
 ["test_peerConnection_replaceTrack_microphone.html"]
 
@@ -399,15 +448,21 @@ skip-if = [
 ]
 
 ["test_peerConnection_stats.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1780717
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1780717
+]
 
 ["test_peerConnection_stats_jitter.html"]
 
 ["test_peerConnection_stats_oneway.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_e10s"] # Bug 1798188
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_e10s", # Bug 1798188
+]
 
 ["test_peerConnection_stats_relayProtocol.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 scheme = "http"
 
 ["test_peerConnection_stereoFmtpPref.html"]
@@ -424,7 +479,9 @@ scheme = "http"
 scheme = "http"
 
 ["test_peerConnection_trackDisabling.html"]
-skip-if = ["os == 'android'"] # Bug 1614460
+skip-if = [
+  "os == 'android'", # Bug 1614460
+]
 
 ["test_peerConnection_trackDisabling_clones.html"]
 
@@ -445,21 +502,25 @@ skip-if = ["os == 'android'"] # Bug 1614460
 ["test_peerConnection_twoVideoTracksInOneStream.html"]
 
 ["test_peerConnection_verifyAudioAfterRenegotiation.html"]
-skip-if = ["os == 'android' && processor == 'x86_64' && !debug"] # Bug 1783287
+skip-if = [
+  "os == 'android' && arch == 'x86_64' && opt", # Bug 1783287
+]
 
 ["test_peerConnection_verifyDescriptions.html"]
 
 ["test_peerConnection_verifyNonEmptyFmtp.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_peerConnection_verifyVideoAfterRenegotiation.html"]
 
 ["test_peerConnection_videoCodecs.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1974205
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && opt", # 1974205
-  "os == 'win' && os_version == '11.26100' && processor == 'x86' && debug", # Bug 1974205
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # 1974205
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # 1974205
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # 1974205
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1974205
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # 1974205
 ]
 
 ["test_peerConnection_videoRenegotiationInactiveAnswer.html"]

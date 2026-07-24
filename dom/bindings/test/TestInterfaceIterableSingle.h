@@ -8,8 +8,8 @@
 #define mozilla_dom_TestInterfaceIterableSingle_h
 
 #include "nsCOMPtr.h"
-#include "nsWrapperCache.h"
 #include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 

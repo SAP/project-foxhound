@@ -77,10 +77,10 @@ function bulkOperationHelper(
  * Helper to wrap some IDBObjectStore operations into a promise.
  *
  * @param {IDBDatabase} db
- * @param {String|String[]} storeNames - either a string or an array of strings.
- * @param {String} mode
+ * @param {string | string[]} storeNames - either a string or an array of strings.
+ * @param {string} mode
  * @param {function} callback
- * @param {String} description of the operation for error handling purposes.
+ * @param {string} description of the operation for error handling purposes.
  */
 function executeIDB(db, storeNames, mode, callback, desc) {
   if (!Array.isArray(storeNames)) {

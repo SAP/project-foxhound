@@ -8,26 +8,20 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.recentlyclosed.db.RecentlyClosedTabDao
 import mozilla.components.feature.recentlyclosed.db.RecentlyClosedTabEntity
 import mozilla.components.feature.recentlyclosed.db.RecentlyClosedTabsDatabase
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class RecentlyClosedTabDaoTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
@@ -45,7 +39,7 @@ class RecentlyClosedTabDaoTest {
     }
 
     @Test
-    fun testAddingTabs() = runTestOnMain {
+    fun testAddingTabs() = runTest {
         val tab1 = RecentlyClosedTabEntity(
             title = "RecentlyClosedTab One",
             url = "https://www.mozilla.org",
@@ -73,7 +67,7 @@ class RecentlyClosedTabDaoTest {
     }
 
     @Test
-    fun testRemovingTab() = runTestOnMain {
+    fun testRemovingTab() = runTest {
         val tab1 = RecentlyClosedTabEntity(
             title = "RecentlyClosedTab One",
             url = "https://www.mozilla.org",
@@ -102,7 +96,7 @@ class RecentlyClosedTabDaoTest {
     }
 
     @Test
-    fun testRemovingAllTabs() = runTestOnMain {
+    fun testRemovingAllTabs() = runTest {
         RecentlyClosedTabEntity(
             title = "RecentlyClosedTab One",
             url = "https://www.mozilla.org",

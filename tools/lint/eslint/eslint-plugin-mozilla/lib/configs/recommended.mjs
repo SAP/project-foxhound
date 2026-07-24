@@ -2,8 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import globals from "globals";
 import js from "@eslint/js";
 import helpers from "../helpers.mjs";
+import privileged from "../environments/privileged.mjs";
+import specific from "../environments/specific.mjs";
+import sysmjs from "../environments/sysmjs.mjs";
+import sjs from "../environments/sjs.mjs";
 
 const { allFileExtensions } = helpers;
 
@@ -39,214 +44,234 @@ const { allFileExtensions } = helpers;
  *     - This doesn't reveal any actual errors, and is a lot of work to address.
  */
 
-const coreRules = {
-  // When adding items to this file please check for effects on all of toolkit
-  // and browser
-  rules: {
-    // This may conflict with prettier, so we turn it off.
-    "arrow-body-style": "off",
+import noUnsanitizedPlugin from "eslint-plugin-no-unsanitized";
+import promisePlugin from "eslint-plugin-promise";
 
-    // Warn about cyclomatic complexity in functions.
-    // XXX Get this down to 20?
-    complexity: ["error", 34],
-
-    // Functions must always return something or nothing
-    "consistent-return": "error",
-
-    // Encourage the use of dot notation whenever possible.
-    "dot-notation": "error",
-
-    // Maximum depth callbacks can be nested.
-    "max-nested-callbacks": ["error", 10],
-
-    "mozilla/avoid-removeChild": "error",
-    "mozilla/import-browser-window-globals": "error",
-    "mozilla/import-globals": "error",
-    "mozilla/no-compare-against-boolean-literals": "error",
-    "mozilla/no-cu-reportError": "error",
-    "mozilla/no-define-cc-etc": "error",
-    "mozilla/no-throw-cr-literal": "error",
-    "mozilla/no-useless-parameters": "error",
-    "mozilla/no-useless-removeEventListener": "error",
-    "mozilla/prefer-boolean-length-check": "error",
-    "mozilla/prefer-formatValues": "error",
-    "mozilla/reject-addtask-only": "error",
-    "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
-    "mozilla/reject-multiple-await": "error",
-    "mozilla/reject-multiple-getters-calls": "error",
-    "mozilla/reject-scriptableunicodeconverter": "warn",
-    "mozilla/rejects-requires-await": "error",
-    "mozilla/use-cc-etc": "error",
-    "mozilla/use-chromeutils-generateqi": "error",
-    "mozilla/use-console-createInstance": "error",
-    "mozilla/use-default-preference-values": "error",
-    "mozilla/use-includes-instead-of-indexOf": "error",
-    "mozilla/use-isInstance": "error",
-    "mozilla/use-ownerGlobal": "error",
-    "mozilla/use-returnValue": "error",
-    "mozilla/use-services": "error",
-    "mozilla/valid-lazy": "error",
-    "mozilla/valid-services": "error",
-
-    // Use [] instead of Array()
-    "no-array-constructor": "error",
-
-    // Disallow use of arguments.caller or arguments.callee.
-    "no-caller": "error",
-
-    // Disallow the use of console, except for errors and warnings.
-    "no-console": ["error", { allow: ["createInstance", "error", "warn"] }],
-
-    // Disallows expressions where the operation doesn't affect the value.
-    // TODO: This is enabled by default in ESLint's v9 recommended configuration.
-    "no-constant-binary-expression": "error",
-
-    // If an if block ends with a return no need for an else block
-    "no-else-return": "error",
-
-    // No empty statements
-    "no-empty": ["error", { allowEmptyCatch: true }],
-
-    // Disallow empty static blocks.
-    // This rule will be a recommended rule in ESLint v9 so may be removed
-    // when we upgrade to that.
-    "no-empty-static-block": "error",
-
-    // Disallow eval and setInteral/setTimeout with strings
-    "no-eval": "error",
-
-    // Disallow unnecessary calls to .bind()
-    "no-extra-bind": "error",
-
-    // Disallow fallthrough of case statements
-    "no-fallthrough": [
-      "error",
-      {
-        // The eslint rule doesn't allow for case-insensitive regex option.
-        // The following pattern allows for a dash between "fall through" as
-        // well as alternate spelling of "fall thru". The pattern also allows
-        // for an optional "s" at the end of "fall" ("falls through").
-        commentPattern:
-          "[Ff][Aa][Ll][Ll][Ss]?[\\s-]?([Tt][Hh][Rr][Oo][Uu][Gg][Hh]|[Tt][Hh][Rr][Uu])",
-      },
-    ],
-
-    // Disallow eval and setInteral/setTimeout with strings
-    "no-implied-eval": "error",
-
-    // See explicit decisions at top of file.
-    "no-inner-declarations": "off",
-
-    // Disallow the use of the __iterator__ property
-    "no-iterator": "error",
-
-    // No labels
-    "no-labels": "error",
-
-    // Disallow unnecessary nested blocks
-    "no-lone-blocks": "error",
-
-    // No single if block inside an else block
-    "no-lonely-if": "error",
-
-    // Nested ternary statements are confusing
-    "no-nested-ternary": "error",
-
-    // Disallow new operators with global non-constructor functions.
-    // This rule will be a recommended rule in ESLint v9 so may be removed
-    // when we upgrade to that.
-    "no-new-native-nonconstructor": "error",
-
-    // Disallow use of new wrappers
-    "no-new-wrappers": "error",
-
-    // Use {} instead of new Object(), unless arguments are passed.
-    "no-object-constructor": "error",
-
-    // We don't want this, see bug 1551829
-    "no-prototype-builtins": "off",
-
-    // Disable builtinGlobals for no-redeclare as this conflicts with our
-    // globals declarations especially for browser window.
-    "no-redeclare": ["error", { builtinGlobals: false }],
-
-    // Disallow use of event global.
-    "no-restricted-globals": ["error", "event"],
-
-    // No unnecessary comparisons
-    "no-self-compare": "error",
-
-    // No comma sequenced statements
-    "no-sequences": "error",
-
-    // No declaring variables from an outer scope
-    "no-shadow": "error",
-
-    // Disallow throwing literals (eg. throw "error" instead of
-    // throw new Error("error")).
-    "no-throw-literal": "error",
-
-    // Disallow the use of Boolean literals in conditional expressions.
-    "no-unneeded-ternary": "error",
-
-    // No unsanitized use of innerHTML=, document.write() etc.
-    // cf. https://github.com/mozilla/eslint-plugin-no-unsanitized#rule-details
-    "no-unsanitized/method": "error",
-    "no-unsanitized/property": "error",
-
-    // Disallow unused private class members.
-    // This rule will be a recommended rule in ESLint v9 so may be removed
-    // when we upgrade to that.
-    "no-unused-private-class-members": "error",
-
-    // No declaring variables that are never used
-    "no-unused-vars": [
-      "error",
-      {
-        argsIgnorePattern: "^_",
-        caughtErrors: "none",
-        vars: "local",
-      },
-    ],
-
-    // No using variables before defined
-    // "no-use-before-define": ["error", "nofunc"],
-
-    // Disallow unnecessary .call() and .apply()
-    "no-useless-call": "error",
-
-    // Don't concatenate string literals together (unless they span multiple
-    // lines)
-    "no-useless-concat": "error",
-
-    // See explicit decisions at top of file.
-    "no-useless-escape": "off",
-
-    // Disallow redundant return statements
-    "no-useless-return": "error",
-
-    // Require object-literal shorthand with ES6 method syntax
-    "object-shorthand": ["error", "always", { avoidQuotes: true }],
-
-    // This may conflict with prettier, so turn it off.
-    "prefer-arrow-callback": "off",
-
-    // Not passing anything to .catch/.then doesn't work, error:
-    "promise/valid-params": "error",
-  },
-};
-
-const extraRules = [
+export default [
   {
-    // System mjs files files are not loaded in the browser scope,
-    // so we turn that off for those. Though we do have our own special
-    // environment for them.
-    env: {
-      "mozilla/privileged": true,
-      "mozilla/specific": true,
-      "mozilla/sysmjs": true,
+    files: [`**/*.{${allFileExtensions.join(",")}}`],
+
+    languageOptions: {
+      // If this changes, ensure the version in `legacyConfig` is updated, as well
+      // as the return value of `helpers.getECMAVersion()`.
+      ecmaVersion: "latest",
+      globals: {
+        // Temporal is currently a stage 3 ECMA proposal, and won't be in the
+        // "latest" ecmaVersion in ESLint until it reaches stage 4.
+        Temporal: "readonly",
+      },
     },
+
+    name: "mozilla/recommended/main-rules",
+
+    plugins: { "no-unsanitized": noUnsanitizedPlugin, promise: promisePlugin },
+
+    rules: {
+      ...js.configs.recommended.rules,
+      // This may conflict with prettier, so we turn it off.
+      "arrow-body-style": "off",
+
+      // Warn about cyclomatic complexity in functions.
+      // XXX Get this down to 20?
+      complexity: ["error", 34],
+
+      // Functions must always return something or nothing
+      "consistent-return": "error",
+
+      // Encourage the use of dot notation whenever possible.
+      "dot-notation": "error",
+
+      // Maximum depth callbacks can be nested.
+      "max-nested-callbacks": ["error", 10],
+
+      "mozilla/avoid-removeChild": "error",
+      "mozilla/import-browser-window-globals": "error",
+      "mozilla/import-globals": "error",
+      "mozilla/no-compare-against-boolean-literals": "error",
+      "mozilla/no-cu-reportError": "error",
+      "mozilla/no-define-cc-etc": "error",
+      "mozilla/no-throw-cr-literal": "error",
+      "mozilla/no-useless-parameters": "error",
+      "mozilla/no-useless-removeEventListener": "error",
+      "mozilla/prefer-boolean-length-check": "error",
+      "mozilla/prefer-formatValues": "error",
+      "mozilla/reject-addtask-only": "error",
+      "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
+      "mozilla/reject-multiple-await": "error",
+      "mozilla/reject-multiple-getters-calls": "error",
+      "mozilla/reject-scriptableunicodeconverter": "warn",
+      "mozilla/rejects-requires-await": "error",
+      "mozilla/use-cc-etc": "error",
+      "mozilla/use-chromeutils-generateqi": "error",
+      "mozilla/use-console-createInstance": "error",
+      "mozilla/use-default-preference-values": "error",
+      "mozilla/use-includes-instead-of-indexOf": "error",
+      "mozilla/use-isInstance": "error",
+      "mozilla/use-ownerGlobal": "error",
+      "mozilla/use-returnValue": "error",
+      "mozilla/use-services": "error",
+      "mozilla/valid-lazy": "error",
+      "mozilla/valid-services": "error",
+
+      // Use [] instead of Array()
+      "no-array-constructor": "error",
+
+      // Disallow use of arguments.caller or arguments.callee.
+      "no-caller": "error",
+
+      // Disallow the use of console, except for errors and warnings.
+      "no-console": ["error", { allow: ["createInstance", "error", "warn"] }],
+
+      // Disallows expressions where the operation doesn't affect the value.
+      // TODO: This is enabled by default in ESLint's v9 recommended configuration.
+      "no-constant-binary-expression": "error",
+
+      // If an if block ends with a return no need for an else block
+      "no-else-return": "error",
+
+      // No empty statements
+      "no-empty": ["error", { allowEmptyCatch: true }],
+
+      // Disallow empty static blocks.
+      // This rule will be a recommended rule in ESLint v9 so may be removed
+      // when we upgrade to that.
+      "no-empty-static-block": "error",
+
+      // Disallow eval and setInteral/setTimeout with strings
+      "no-eval": "error",
+
+      // Disallow unnecessary calls to .bind()
+      "no-extra-bind": "error",
+
+      // Disallow fallthrough of case statements
+      "no-fallthrough": [
+        "error",
+        {
+          // The eslint rule doesn't allow for case-insensitive regex option.
+          // The following pattern allows for a dash between "fall through" as
+          // well as alternate spelling of "fall thru". The pattern also allows
+          // for an optional "s" at the end of "fall" ("falls through").
+          commentPattern:
+            "[Ff][Aa][Ll][Ll][Ss]?[\\s-]?([Tt][Hh][Rr][Oo][Uu][Gg][Hh]|[Tt][Hh][Rr][Uu])",
+        },
+      ],
+
+      // Disallow eval and setInteral/setTimeout with strings
+      "no-implied-eval": "error",
+
+      // See explicit decisions at top of file.
+      "no-inner-declarations": "off",
+
+      // Disallow the use of the __iterator__ property
+      "no-iterator": "error",
+
+      // No labels
+      "no-labels": "error",
+
+      // Disallow unnecessary nested blocks
+      "no-lone-blocks": "error",
+
+      // No single if block inside an else block
+      "no-lonely-if": "error",
+
+      // Nested ternary statements are confusing
+      "no-nested-ternary": "error",
+
+      // Disallow new operators with global non-constructor functions.
+      // This rule will be a recommended rule in ESLint v9 so may be removed
+      // when we upgrade to that.
+      "no-new-native-nonconstructor": "error",
+
+      // Disallow use of new wrappers
+      "no-new-wrappers": "error",
+
+      // Use {} instead of new Object(), unless arguments are passed.
+      "no-object-constructor": "error",
+
+      // We don't want this, see bug 1551829
+      "no-prototype-builtins": "off",
+
+      // Disable builtinGlobals for no-redeclare as this conflicts with our
+      // globals declarations especially for browser window.
+      "no-redeclare": ["error", { builtinGlobals: false }],
+
+      // Disallow use of event global.
+      "no-restricted-globals": ["error", "event"],
+
+      // No unnecessary comparisons
+      "no-self-compare": "error",
+
+      // No comma sequenced statements
+      "no-sequences": "error",
+
+      // No declaring variables from an outer scope
+      "no-shadow": "error",
+
+      // Disallow throwing literals (eg. throw "error" instead of
+      // throw new Error("error")).
+      "no-throw-literal": "error",
+
+      // Disallow the use of Boolean literals in conditional expressions.
+      "no-unneeded-ternary": "error",
+
+      // No unsanitized use of innerHTML=, document.write() etc.
+      // cf. https://github.com/mozilla/eslint-plugin-no-unsanitized#rule-details
+      "no-unsanitized/method": "error",
+      "no-unsanitized/property": "error",
+
+      // Disallow unused private class members.
+      // This rule will be a recommended rule in ESLint v9 so may be removed
+      // when we upgrade to that.
+      "no-unused-private-class-members": "error",
+
+      // No declaring variables that are never used
+      "no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          caughtErrors: "none",
+          vars: "local",
+        },
+      ],
+
+      // No using variables before defined
+      // "no-use-before-define": ["error", "nofunc"],
+
+      // Disallow unnecessary .call() and .apply()
+      "no-useless-call": "error",
+
+      // Don't concatenate string literals together (unless they span multiple
+      // lines)
+      "no-useless-concat": "error",
+
+      // See explicit decisions at top of file.
+      "no-useless-escape": "off",
+
+      // Disallow redundant return statements
+      "no-useless-return": "error",
+
+      // Require object-literal shorthand with ES6 method syntax
+      "object-shorthand": ["error", "always", { avoidQuotes: true }],
+
+      // This may conflict with prettier, so turn it off.
+      "prefer-arrow-callback": "off",
+
+      // Not passing anything to .catch/.then doesn't work, error:
+      "promise/valid-params": "error",
+    },
+  },
+  {
     files: ["**/*.sys.mjs"],
+    languageOptions: {
+      globals: {
+        // System mjs files files are not loaded in the browser scope,
+        // so we don't use that environment. Though we do have our own special
+        // environment for them.
+        ...privileged.globals,
+        ...specific.globals,
+        ...sysmjs.globals,
+      },
+    },
     name: "mozilla/recommended/system-modules",
     rules: {
       "mozilla/lazy-getter-object-name": "error",
@@ -295,10 +320,12 @@ const extraRules = [
   },
   {
     files: ["**/*.mjs", "**/*.jsx"],
-    name: "mozilla/recommended/module-only",
-    parserOptions: {
-      sourceType: "module",
+    languageOptions: {
+      parserOptions: {
+        sourceType: "module",
+      },
     },
+    name: "mozilla/recommended/module-only",
     rules: {
       "mozilla/use-static-import": "error",
       // This rule defaults to not allowing "use strict" in module files since
@@ -307,10 +334,10 @@ const extraRules = [
     },
   },
   {
-    env: {
-      "mozilla/sjs": true,
-    },
     files: ["**/*.sjs"],
+    languageOptions: {
+      globals: { ...sjs.globals },
+    },
     name: "mozilla/recommended/sjs",
     rules: {
       // For sjs files, reject everything as we should update the sandbox
@@ -319,46 +346,27 @@ const extraRules = [
     },
   },
   {
-    env: {
-      worker: true,
-    },
     files: [
       // Most files should use the `.worker.` format to be consistent with
       // other items like `.sys.mjs`, but we allow simply calling the file
       // "worker" as well.
       "**/?(*.)worker.?(m)js",
     ],
+    languageOptions: {
+      globals: { ...globals.worker },
+    },
     name: "mozilla/recommended/worker",
   },
   {
-    env: {
-      serviceworker: true,
-    },
     files: [
       // Most files should use the `.serviceworker.` format to be consistent
       // with other items like `.sys.mjs`, but we allow simply calling the file
       // "serviceworker" as well.
       "**/?(*.)serviceworker.?(m)js",
     ],
+    languageOptions: {
+      globals: { ...globals.serviceworker },
+    },
     name: "mozilla/recommended/serviceworker",
   },
-];
-
-export default [
-  // Note: plugins are added in the top-level index.js file. This is to avoid
-  // needing to import them multiple times for different configs.
-  {
-    files: [`**/*.{${allFileExtensions.join(",")}}`],
-    languageOptions: {
-      // If this changes, ensure the version in `legacyConfig` is updated, as well
-      // as the return value of `helpers.getECMAVersion()`.
-      ecmaVersion: "latest",
-    },
-    name: "mozilla/recommended/main-rules",
-    rules: {
-      ...js.configs.recommended.rules,
-      ...coreRules.rules,
-    },
-  },
-  ...structuredClone(extraRules),
 ];

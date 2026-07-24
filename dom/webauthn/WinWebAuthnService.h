@@ -8,7 +8,6 @@
 #define mozilla_dom_WinWebAuthnService_h
 
 #include "mozilla/dom/PWebAuthnTransaction.h"
-#include "mozilla/Tainting.h"
 #include "nsIWebAuthnService.h"
 
 namespace mozilla::dom {

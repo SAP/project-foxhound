@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AudioDecoder.h"
-#include "mozilla/dom/AudioDecoderBinding.h"
-#include "mozilla/dom/TypedArray.h"
 
 #include "DecoderTraits.h"
 #include "MediaContainerType.h"
@@ -16,12 +14,13 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/AudioDataBinding.h"
+#include "mozilla/dom/AudioDecoderBinding.h"
 #include "mozilla/dom/EncodedAudioChunk.h"
 #include "mozilla/dom/EncodedAudioChunkBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebCodecsUtils.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
@@ -363,7 +362,7 @@ AudioDecoder::AudioDecoder(nsIGlobalObject* aParent,
 
 AudioDecoder::~AudioDecoder() {
   LOG("AudioDecoder %p dtor", this);
-  Unused << ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+  (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
 JSObject* AudioDecoder::WrapObject(JSContext* aCx,

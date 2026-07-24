@@ -34,6 +34,9 @@ js::jit::JitActivation::JitActivation(JSContext* cx)
     : Activation(cx, Jit),
       packedExitFP_(nullptr),
       encodedWasmExitReason_(0),
+#ifdef ENABLE_WASM_JSPI
+      wasmExitSuspender_(cx, nullptr),
+#endif
       prevJitActivation_(cx->jitActivation),
       ionRecovery_(cx),
       bailoutData_(nullptr),
@@ -62,6 +65,20 @@ js::jit::JitActivation::~JitActivation() {
   // Rematerialized frames must have been removed by either the bailout code or
   // the exception handler.
   MOZ_ASSERT_IF(rematerializedFrames_, rematerializedFrames_->empty());
+}
+
+void js::jit::JitActivation::trace(JSTracer* trc) {
+  if (rematerializedFrames_) {
+    for (RematerializedFrameTable::Enum e(*rematerializedFrames_); !e.empty();
+         e.popFront()) {
+      e.front().value().trace(trc);
+    }
+  }
+
+  for (RInstructionResults* it = ionRecovery_.begin(); it != ionRecovery_.end();
+       it++) {
+    it->trace(trc);
+  }
 }
 
 void js::jit::JitActivation::setBailoutData(
@@ -178,16 +195,6 @@ void js::jit::JitActivation::removeRematerializedFramesFromDebugger(
   }
 }
 
-void js::jit::JitActivation::traceRematerializedFrames(JSTracer* trc) {
-  if (!rematerializedFrames_) {
-    return;
-  }
-  for (RematerializedFrameTable::Enum e(*rematerializedFrames_); !e.empty();
-       e.popFront()) {
-    e.front().value().trace(trc);
-  }
-}
-
 bool js::jit::JitActivation::registerIonFrameRecovery(
     RInstructionResults&& results) {
   // Check that there is no entry in the vector yet.
@@ -220,13 +227,6 @@ void js::jit::JitActivation::removeIonFrameRecovery(JitFrameLayout* fp) {
   ionRecovery_.erase(elem);
 }
 
-void js::jit::JitActivation::traceIonRecovery(JSTracer* trc) {
-  for (RInstructionResults* it = ionRecovery_.begin(); it != ionRecovery_.end();
-       it++) {
-    it->trace(trc);
-  }
-}
-
 void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
                                            const wasm::TrapSite& trapSite,
                                            const wasm::RegisterState& state) {
@@ -246,7 +246,11 @@ void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
   const wasm::Code& code = wasm::GetNearestEffectiveInstance(fp)->code();
   MOZ_RELEASE_ASSERT(&code == wasm::LookupCode(pc));
 
-  setWasmExitFP(fp);
+  wasm::SuspenderObject* suspender = nullptr;
+#ifdef ENABLE_WASM_JSPI
+  suspender = cx()->wasm().findSuspenderForStackAddress(fp);
+#endif
+  setWasmExitFP(fp, suspender);
   wasmTrapData_.emplace();
   wasmTrapData_->resumePC =
       ((uint8_t*)state.pc) + jit::WasmTrapInstructionLength;
@@ -269,9 +273,17 @@ void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
   MOZ_ASSERT(isWasmTrapping());
 }
 
-void js::jit::JitActivation::finishWasmTrap() {
+void js::jit::JitActivation::finishWasmTrap(bool isResuming) {
+  MOZ_ASSERT(hasWasmExitFP());
   MOZ_ASSERT(isWasmTrapping());
-  packedExitFP_ = nullptr;
   wasmTrapData_.reset();
+  packedExitFP_ = nullptr;
+  // Don't clear the exit suspender if we're resuming, or else the trap stub
+  // won't know that it needs to switch back to the main stack.
+#ifdef ENABLE_WASM_JSPI
+  if (!isResuming) {
+    wasmExitSuspender_ = nullptr;
+  }
+#endif
   MOZ_ASSERT(!isWasmTrapping());
 }

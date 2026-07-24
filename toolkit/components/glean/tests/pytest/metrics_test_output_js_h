@@ -20,6 +20,30 @@ class nsISupports;
 
 namespace mozilla::glean {
 
+enum MetricTypeId {
+  BOOLEAN = 1,
+  COUNTER = 2,
+  CUSTOM_DISTRIBUTION = 3,
+  DATETIME = 4,
+  DENOMINATOR = 5,
+  DUAL_LABELED_COUNTER = 6,
+  EVENT = 7,
+  LABELED_BOOLEAN = 8,
+  LABELED_COUNTER = 9,
+  LABELED_STRING = 10,
+  MEMORY_DISTRIBUTION = 11,
+  NUMERATOR = 12,
+  OBJECT = 13,
+  QUANTITY = 14,
+  RATE = 15,
+  STRING = 16,
+  STRING_LIST = 17,
+  TEXT = 18,
+  TIMESPAN = 19,
+  TIMING_DISTRIBUTION = 20,
+  UUID = 21,
+};
+
 // The category lookup table's entry type
 using category_entry_t = uint32_t;
 // The metric lookup table's entry type
@@ -69,7 +93,7 @@ Maybe<uint32_t> MetricByNameLookup(const nsACString&);
 Maybe<uint32_t> CategoryByNameLookup(const nsACString&);
 
 extern const category_entry_t sCategoryByNameLookupEntries[4];
-extern const metric_entry_t sMetricByNameLookupEntries[57];
+extern const metric_entry_t sMetricByNameLookupEntries[58];
 
 } // namespace mozilla::glean
 #endif // mozilla_GleanJSMetricsLookup_h

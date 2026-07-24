@@ -8,9 +8,9 @@
 #define DOM_SVG_SVGAELEMENT_H_
 
 #include "Link.h"
-#include "nsDOMTokenList.h"
 #include "SVGAnimatedString.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
+#include "nsDOMTokenList.h"
 
 nsresult NS_NewSVGAElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -26,7 +26,7 @@ using SVGAElementBase = SVGGraphicsElement;
 
 class SVGAElement final : public SVGAElementBase, public Link {
  protected:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
   explicit SVGAElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   friend nsresult(::NS_NewSVGAElement(

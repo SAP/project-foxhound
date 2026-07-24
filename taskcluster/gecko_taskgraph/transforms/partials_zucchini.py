@@ -4,31 +4,38 @@
 """
 Transform the partials task into an actual task description.
 """
+
+import json
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
 
+from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.partials import get_builds
 from gecko_taskgraph.util.platforms import architecture
+from gecko_taskgraph.util.scriptworker import (
+    get_devedition_signing_type,
+    get_signing_type,
+)
 
 transforms = TransformSequence()
 
 
-# TODO: Add cert verify
-# def identify_desired_signing_keys(project, product):
-#     if project in ["mozilla-central", "comm-central", "larch", "pine", "maple"]:
-#         return "nightly"
-#     if project == "mozilla-beta":
-#         if product == "devedition":
-#             return "nightly"
-#         return "release"
-#     if (
-#         project in ["mozilla-release", "comm-release", "comm-beta"]
-#         or project.startswith("mozilla-esr")
-#         or project.startswith("comm-esr")
-#     ):
-#         return "release"
-#     return "dep1"
+def identify_desired_signing_keys(config):
+    """
+    Determine the signing certificate type to use for MAR validation.
+    It identifies the appropriate signing type based on the release product
+    and configuration parameters, handling special logic for devedition releases.
+
+    Args:
+        config: The task graph configuration object containing:
+    Returns:
+        str: The signing type (defined in util/scriptworker.py)
+    """
+    if config.params["release_product"] == "devedition":
+        return get_devedition_signing_type(config=config)
+    return get_signing_type(config=config)
 
 
 @transforms.add
@@ -40,9 +47,7 @@ def make_task_description(config, tasks):
         dep_task = get_primary_dependency(config, task)
         assert dep_task
 
-        # attributes = copy_attributes_from_dependent_job(dep_job)
         locale = task["attributes"].get("locale")
-
         build_locale = locale or "en-US"
 
         build_platform = task["attributes"]["build_platform"]
@@ -55,6 +60,8 @@ def make_task_description(config, tasks):
         if not builds:
             continue
 
+        mar_channel_id = task["attributes"]["mar-channel-id"]
+
         locale_suffix = ""
         if locale:
             locale_suffix = f"{locale}/"
@@ -63,39 +70,53 @@ def make_task_description(config, tasks):
         # Fetches from upstream repackage task
         task["fetches"][dep_task.kind] = [artifact_path]
 
-        extra_params = [f"--target=/builds/worker/artifacts/{locale_suffix}"]
+        cert_type = identify_desired_signing_keys(config).replace("-signing", "")
 
+        from_data = []
+        update_number = 1
         for build in sorted(builds):
-            url = builds[build]["mar_url"]
-            extra_params.append(f"--from_url={url}")
+            partial_info = {
+                "url": builds[build]["mar_url"],
+                "update_number": update_number,
+                "dest_mar": build,
+            }
+            if "previousVersion" in builds[build]:
+                partial_info["previousVersion"] = builds[build]["previousVersion"]
+            from_data.append(partial_info)
+        from_mars_json = json.dumps(from_data, separators=(",", ":"))
 
-        to_mar_path = None
+        extra_params = [
+            f"--arch={architecture(build_platform)}",
+            f"--locale={build_locale}",
+            f"--target=/builds/worker/artifacts/{locale_suffix}",
+            f"--from-mars-json='{from_mars_json}'",
+            f"--mar-channel-id='{mar_channel_id}'",
+            f"--branch={config.params['project']}",
+            f"--cert-path=/builds/worker/workspace/keys/{cert_type}.pubkey",
+        ]
+
+        if release_level(config.params) == "staging":
+            extra_params.append("--allow-staging-urls")
+
         for artifact in dep_task.attributes["release_artifacts"]:
             if artifact.endswith(".complete.mar"):
-                to_mar_path = artifact
+                extra_params.append(f"--to-mar-url=<{dep_task.kind}/{artifact}>")
                 break
 
-        task["worker"]["env"]["TO_MAR_TASK_ID"] = {
-            "task-reference": f"<{dep_task.kind}>"
-        }
-        extra_params.extend(
-            [
-                f"--arch={architecture(build_platform)}",
-                f"--locale={build_locale}",
-                # This isn't a great approach to resolving the source URL of to_mar, but it's the same as
-                # It's only being used to fill manifest.json information, the actual file is downloaded via run-task
-                f"--to_mar_url=https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/$TO_MAR_TASK_ID/artifacts/{to_mar_path}",
-            ]
+        full_cmd = (
+            task["run"]["command"]["artifact-reference"] + "\n" + " ".join(extra_params)
         )
-        # Add a space from the last command + list of extra_params
-        task["run"]["command"] += " " + " ".join(extra_params)
+        # remove all whitespace from the command
+        full_cmd = " ".join([line.strip() for line in full_cmd.splitlines()])
+        task["run"]["command"]["artifact-reference"] = full_cmd
 
         task["description"] = (
             f"Partials task for locale '{build_locale}' for build '{build_platform}'"
         )
 
         task["treeherder"] = inherit_treeherder_from_dep(task, dep_task)
+        # TODO: Reset this to tier 1 once D272679 is landed
+        task["treeherder"]["tier"] = 3
         task["treeherder"]["symbol"] = f"pz({locale or 'N'})"
 
-        task["worker"]["env"]["MAR_CHANNEL_ID"] = task["attributes"]["mar-channel-id"]
         yield task

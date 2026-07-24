@@ -23,7 +23,6 @@
 #include "mozilla/ProfileBufferControlledChunkManager.h"
 #include "mozilla/ProfilerBufferSize.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Unused.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 
@@ -492,7 +491,7 @@ void ProfileBufferGlobalController::HandleChunkManagerNonFinalUpdate(
       ProfilerParentTracker::ForChild(
           oldest.mProcessId,
           [timestamp = oldest.mTimeStamp](ProfilerParent* profilerParent) {
-            Unused << profilerParent->SendDestroyReleasedChunksAtOrBefore(
+            (void)profilerParent->SendDestroyReleasedChunksAtOrBefore(
                 timestamp);
           });
     }
@@ -718,13 +717,13 @@ void ProfilerParent::Init() {
         ipcParams.filters().AppendElement(filter);
       }
 
-      Unused << SendEnsureStarted(ipcParams);
+      (void)SendEnsureStarted(ipcParams);
       RequestChunkManagerUpdate();
       return;
     }
   }
 
-  Unused << SendStop();
+  (void)SendStop();
 }
 #endif  // MOZ_GECKO_PROFILER
 
@@ -983,7 +982,7 @@ void ProfilerParent::ClearAllPages() {
   }
 
   ProfilerParentTracker::Enumerate([](ProfilerParent* profilerParent) {
-    Unused << profilerParent->SendClearAllPages();
+    (void)profilerParent->SendClearAllPages();
   });
 }
 

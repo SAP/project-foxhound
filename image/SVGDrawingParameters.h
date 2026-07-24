@@ -11,7 +11,6 @@
 #include "ImageRegion.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Types.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/SVGImageContext.h"
 #include "nsSize.h"
 

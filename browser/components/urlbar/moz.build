@@ -9,7 +9,7 @@ DIRS += [
     "unitconverters",
 ]
 
-EXTRA_JS_MODULES += [
+MOZ_SRC_FILES += [
     "ActionsProvider.sys.mjs",
     "ActionsProviderContextualSearch.sys.mjs",
     "ActionsProviderQuickActions.sys.mjs",
@@ -18,13 +18,14 @@ EXTRA_JS_MODULES += [
     "QuickActionsLoaderDefault.sys.mjs",
     "QuickSuggest.sys.mjs",
     "SearchModeSwitcher.sys.mjs",
+    "SmartbarMentionsPanelSearch.sys.mjs",
     "UrlbarController.sys.mjs",
     "UrlbarEventBufferer.sys.mjs",
-    "UrlbarInput.sys.mjs",
     "UrlbarMuxerStandard.sys.mjs",
     "UrlbarPrefs.sys.mjs",
     "UrlbarProviderAboutPages.sys.mjs",
     "UrlbarProviderActionsSearchMode.sys.mjs",
+    "UrlbarProviderAiChat.sys.mjs",
     "UrlbarProviderAliasEngines.sys.mjs",
     "UrlbarProviderAutofill.sys.mjs",
     "UrlbarProviderBookmarkKeywords.sys.mjs",
@@ -63,25 +64,31 @@ EXTRA_JS_MODULES += [
     "UrlbarView.sys.mjs",
 ]
 
-EXTRA_JS_MODULES["urlbar/private"] += [
+MOZ_SRC_FILES += [
     "private/AddonSuggestions.sys.mjs",
     "private/AmpSuggestions.sys.mjs",
     "private/DynamicSuggestions.sys.mjs",
-    "private/FakespotSuggestions.sys.mjs",
+    "private/FlightStatusSuggestions.sys.mjs",
     "private/GeolocationUtils.sys.mjs",
+    "private/ImportantDatesSuggestions.sys.mjs",
     "private/ImpressionCaps.sys.mjs",
+    "private/MarketSuggestions.sys.mjs",
     "private/MDNSuggestions.sys.mjs",
     "private/MLSuggest.sys.mjs",
+    "private/RealtimeSuggestProvider.sys.mjs",
+    "private/SportsSuggestions.sys.mjs",
     "private/SuggestBackendMerino.sys.mjs",
     "private/SuggestBackendMl.sys.mjs",
     "private/SuggestBackendRust.sys.mjs",
     "private/SuggestFeature.sys.mjs",
     "private/WeatherSuggestions.sys.mjs",
     "private/WikipediaSuggestions.sys.mjs",
+    "private/YelpRealtimeSuggestions.sys.mjs",
     "private/YelpSuggestions.sys.mjs",
 ]
 
 TESTING_JS_MODULES += [
+    "tests/quicksuggest/GeolocationTestUtils.sys.mjs",
     "tests/quicksuggest/MerinoTestUtils.sys.mjs",
     "tests/quicksuggest/QuickSuggestTestUtils.sys.mjs",
     "tests/quicksuggest/RemoteSettingsServer.sys.mjs",
@@ -93,6 +100,7 @@ BROWSER_CHROME_MANIFESTS += [
     "tests/browser-updateResults/browser.toml",
     "tests/browser/browser.toml",
     "tests/browser/browserSidebarRevamp.toml",
+    "tests/browser/searchbar/browser.toml",
     "tests/engagementTelemetry/browser/browser.toml",
     "tests/quicksuggest/browser/browser.toml",
 ]
@@ -102,3 +110,5 @@ XPCSHELL_TESTS_MANIFESTS += [
 ]
 
 SPHINX_TREES["/browser/urlbar"] = "docs"
+
+JAR_MANIFESTS += ["jar.mn"]

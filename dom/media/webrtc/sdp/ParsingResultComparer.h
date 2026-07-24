@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _PARSINGRESULTCOMPARER_H_
-#define _PARSINGRESULTCOMPARER_H_
+#ifndef PARSINGRESULTCOMPARER_H_
+#define PARSINGRESULTCOMPARER_H_
+
+#include <string>
 
 #include "sdp/SdpParser.h"
 #include "sdp/SdpPref.h"
-
-#include <string>
 
 namespace mozilla {
 
@@ -54,4 +54,4 @@ class ParsingResultComparer {
 
 }  // namespace mozilla
 
-#endif  // _PARSINGRESULTCOMPARER_H_
+#endif  // PARSINGRESULTCOMPARER_H_

@@ -54,8 +54,7 @@ def set_test_verify_chunks(config, tasks):
             # >30 tests changed, this is probably an import of external tests,
             # or a patch renaming/moving files in bulk
             maximum_number_verify_chunks = 3
-            if task["chunks"] > maximum_number_verify_chunks:
-                task["chunks"] = maximum_number_verify_chunks
+            task["chunks"] = min(task["chunks"], maximum_number_verify_chunks)
 
         yield task
 
@@ -127,6 +126,7 @@ def set_test_manifests(config, tasks):
             remaining_manifests = []
 
             # if we have web-platform tests incoming, just yield task
+            found_wpt = False
             for m in input_paths:
                 if m.startswith("testing/web-platform/tests/"):
                     found_subsuite = [
@@ -142,7 +142,10 @@ def set_test_manifests(config, tasks):
                         if not isinstance(loader, DefaultLoader):
                             task["chunks"] = "dynamic"
                         yield task
+                    found_wpt = True
                     break
+            if found_wpt:
+                continue
 
             # input paths can exist in other directories (i.e. [../../dir/test.js])
             # we need to look for all [active] manifests that include tests in the path
@@ -280,15 +283,15 @@ def split_chunks(config, tasks):
                 and manifests["active"]
                 and "skipped" in manifests
             ):
-                chunked_manifests[0].extend(
-                    [m for m in manifests["skipped"] if not m.endswith(".list")]
-                )
-
+                chunked_manifests[0].extend([
+                    m for m in manifests["skipped"] if not m.endswith(".list")
+                ])
+        last_chunk = task["chunks"]
         for i in range(task["chunks"]):
             this_chunk = i + 1
 
             # copy the test and update with the chunk number
-            chunked = deepcopy(task)
+            chunked = deepcopy(task) if this_chunk != last_chunk else task
             chunked["this-chunk"] = this_chunk
 
             if chunked_manifests is not None:

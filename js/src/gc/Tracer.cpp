@@ -92,11 +92,14 @@ void js::gc::TraceIncomingCCWs(JSTracer* trc,
 
 // This function is used by the Cycle Collector (CC) to trace through -- or in
 // CC parlance, traverse -- a Shape. The CC does not care about Shapes,
-// BaseShapes or PropMaps, only the JSObjects held live by them. Thus, we only
-// report non-Shape things.
+// BaseShapes or PropMaps themselves, only things held live by them that can
+// participate in cycles.
 void gc::TraceCycleCollectorChildren(JS::CallbackTracer* trc, Shape* shape) {
   shape->base()->traceChildren(trc);
-  // Don't trace the PropMap because the CC doesn't care about PropertyKey.
+
+  // TODO: Trace symbols reachable from |shape|. Shapes can entrain symbols via
+  // their propmaps, and these can now participate in cycles. Not doing this
+  // means there are some cycles that the CC will not be able to collect.
 }
 
 /*** Traced Edge Printer ****************************************************/

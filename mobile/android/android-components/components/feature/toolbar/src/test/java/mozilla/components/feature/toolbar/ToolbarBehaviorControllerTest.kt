@@ -7,6 +7,7 @@ package mozilla.components.feature.toolbar
 import android.os.Looper.getMainLooper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.isActive
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -14,6 +15,7 @@ import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.toolbar.Toolbar
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -34,12 +36,10 @@ class ToolbarBehaviorControllerTest {
     fun `Controller should check the status of the provided custom tab id`() {
         val customTabContent: ContentState = mock()
         val normalTabContent: ContentState = mock()
-        val state = spy(
-            BrowserState(
-                tabs = listOf(TabSessionState("123", normalTabContent)),
-                customTabs = listOf(CustomTabSessionState("ct", customTabContent, config = mock())),
-                selectedTabId = "123",
-            ),
+        val state = BrowserState(
+            tabs = listOf(TabSessionState("123", normalTabContent)),
+            customTabs = listOf(CustomTabSessionState("ct", customTabContent, config = mock())),
+            selectedTabId = "123",
         )
         val store = BrowserStore(state)
         val controller = ToolbarBehaviorController(mock(), store, "ct")
@@ -58,12 +58,10 @@ class ToolbarBehaviorControllerTest {
     fun `Controller should check the status of the currently selected tab if not initialized with a custom tab id`() {
         val customTabContent: ContentState = mock()
         val normalTabContent: ContentState = mock()
-        val state = spy(
-            BrowserState(
-                tabs = listOf(TabSessionState("123", normalTabContent)),
-                customTabs = listOf(CustomTabSessionState("ct", customTabContent, config = mock())),
-                selectedTabId = "123",
-            ),
+        val state = BrowserState(
+            tabs = listOf(TabSessionState("123", normalTabContent)),
+            customTabs = listOf(CustomTabSessionState("ct", customTabContent, config = mock())),
+            selectedTabId = "123",
         )
         val store = BrowserStore(state)
         val controller = ToolbarBehaviorController(mock(), store)
@@ -127,7 +125,7 @@ class ToolbarBehaviorControllerTest {
     @Test
     fun `Controller should disable toolbar scrolling when disableScrolling is called`() {
         val toolbar: Toolbar = mock()
-        val controller = spy(ToolbarBehaviorController(toolbar, mock()))
+        val controller = spy(ToolbarBehaviorController(toolbar, BrowserStore()))
 
         controller.disableScrolling()
 
@@ -137,7 +135,7 @@ class ToolbarBehaviorControllerTest {
     @Test
     fun `Controller should enable toolbar scrolling when enableScrolling is called`() {
         val toolbar: Toolbar = mock()
-        val controller = spy(ToolbarBehaviorController(toolbar, mock()))
+        val controller = spy(ToolbarBehaviorController(toolbar, BrowserStore()))
 
         controller.enableScrolling()
 
@@ -147,21 +145,25 @@ class ToolbarBehaviorControllerTest {
     @Test
     fun `Controller should expand the toolbar and set showToolbarAsExpanded to false when showToolbarAsExpanded is true`() {
         val normalTabContent = ContentState("url", showToolbarAsExpanded = true)
-        val store = spy(
-            BrowserStore(
-                BrowserState(
-                    tabs = listOf(TabSessionState("123", normalTabContent)),
-                    selectedTabId = "123",
-                ),
+        val captureActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(TabSessionState("123", normalTabContent)),
+                selectedTabId = "123",
             ),
+            middleware = listOf(captureActionsMiddleware),
         )
+
         val controller = spy(ToolbarBehaviorController(mock(), store))
 
         controller.start()
         shadowOf(getMainLooper()).idle()
 
         verify(controller).expandToolbar()
-        verify(store).dispatch(ContentAction.UpdateExpandedToolbarStateAction("123", false))
+        captureActionsMiddleware.assertFirstAction(ContentAction.UpdateExpandedToolbarStateAction::class) { action ->
+            assert(action.sessionId == "123")
+            assert(!action.expanded)
+        }
     }
 
     @Test

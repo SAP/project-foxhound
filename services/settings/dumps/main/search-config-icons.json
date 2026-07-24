@@ -1,6 +1,74 @@
 {
   "data": [
     {
+      "schema": 1771977606099,
+      "imageSize": 96,
+      "attachment": {
+        "hash": "04dc1979cf7b962c95ca5c2b009208035017f1fb4128eabd7c775f6f49fb96ca",
+        "size": 4488,
+        "filename": "logo_googleg_gradient_round_color_1x_web_96dp.png",
+        "location": "main-workspace/search-config-icons/32165abf-ea41-426e-be93-d5e408f06aae.png",
+        "mimetype": "image/png"
+      },
+      "engineIdentifiers": [
+        "google"
+      ],
+      "filter_expression": "env.appinfo.OS == \"iOS\" || env.appinfo.OS == \"Android\"",
+      "id": "7edaf4fe-a8a0-432b-86d2-bf75ebe80851",
+      "last_modified": 1772466505212
+    },
+    {
+      "schema": 1771342005440,
+      "imageSize": 16,
+      "attachment": {
+        "hash": "1658dba5cc1e8acdee34d58496f90e7473375a2012f3a6147bb16777add1c581",
+        "size": 6478,
+        "filename": "duckduckgo.pdf",
+        "location": "main-workspace/search-config-icons/b9f8a8d5-3086-4b98-90f5-a29f577e3014.pdf",
+        "mimetype": "application/pdf"
+      },
+      "engineIdentifiers": [
+        "ddg"
+      ],
+      "filter_expression": "env.appinfo.OS == \"iOS\"",
+      "id": "b50c3e3d-7bd0-4118-856f-19b26b21d01f",
+      "last_modified": 1771343611639
+    },
+    {
+      "schema": 1771200005877,
+      "imageSize": 16,
+      "attachment": {
+        "hash": "6df9691adea0a28299e4392ae2eeb9816182f3bcb2e1820700ab918a3b98bc0c",
+        "size": 3197,
+        "filename": "duckduckgo.svg",
+        "location": "main-workspace/search-config-icons/e668474b-ca25-49f8-b555-d32f7b57c0b7.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "engineIdentifiers": [
+        "ddg"
+      ],
+      "filter_expression": "env.appinfo.OS != \"iOS\"",
+      "id": "a06dc3fd-4bdb-41f3-2ebc-4cbed06a9bd3",
+      "last_modified": 1771343611635
+    },
+    {
+      "schema": 1762992360903,
+      "imageSize": 16,
+      "attachment": {
+        "hash": "69e0131f3e85657f827eb4ad3f01c25cf17540fe2db15c7e756f4dcfc1853dd2",
+        "size": 5733,
+        "filename": "perplexity-16.pdf",
+        "location": "main-workspace/search-config-icons/15ae2412-8d7e-4086-b94b-9fa9ea6934f5.pdf",
+        "mimetype": "application/pdf"
+      },
+      "engineIdentifiers": [
+        "perplexity"
+      ],
+      "filter_expression": "env.appinfo.OS == \"iOS\"",
+      "id": "f943d7bc-872e-4a81-810f-94d26465da69",
+      "last_modified": 1763049497744
+    },
+    {
       "schema": 1746437702969,
       "imageSize": 16,
       "attachment": {
@@ -150,23 +218,6 @@
       "filter_expression": "env.appinfo.OS == \"iOS\" || env.appinfo.OS == \"Android\"",
       "id": "6644f26f-28ea-4222-929d-5d43a02dae05",
       "last_modified": 1744118264964
-    },
-    {
-      "schema": 1743687938695,
-      "imageSize": 96,
-      "attachment": {
-        "hash": "3426b5100a6bdb45f8039f0c71a6b68193750ba7bae5b36e5ed31b2b7f372cda",
-        "size": 1357,
-        "filename": "azerdict_mobile.png",
-        "location": "main-workspace/search-config-icons/1229ffe4-7a6f-46d7-b664-5596df0aa730.png",
-        "mimetype": "image/png"
-      },
-      "engineIdentifiers": [
-        "azerdict"
-      ],
-      "filter_expression": "env.appinfo.OS == \"iOS\" || env.appinfo.OS == \"Android\"",
-      "id": "95ed201d-4ab8-4cb8-831d-454f53cab0f8",
-      "last_modified": 1744118264962
     },
     {
       "schema": 1743687936599,
@@ -439,23 +490,6 @@
       "filter_expression": "env.appinfo.OS == \"iOS\" || env.appinfo.OS == \"Android\"",
       "id": "71f41a0c-5b70-4116-b30f-e62089083522",
       "last_modified": 1744118264921
-    },
-    {
-      "schema": 1743687930970,
-      "imageSize": 96,
-      "attachment": {
-        "hash": "27541cb376bdda829a6cf9cefd13da112728881e3daa4ac3c1178d4ce15f1e8b",
-        "size": 1571,
-        "filename": "google_mobile.png",
-        "location": "main-workspace/search-config-icons/d9917c97-4593-4596-8ef0-cf0635e8aa36.png",
-        "mimetype": "image/png"
-      },
-      "engineIdentifiers": [
-        "google"
-      ],
-      "filter_expression": "env.appinfo.OS == \"iOS\" || env.appinfo.OS == \"Android\"",
-      "id": "7edaf4fe-a8a0-432b-86d2-bf75ebe80851",
-      "last_modified": 1744118264918
     },
     {
       "schema": 1743687923256,
@@ -1007,22 +1041,6 @@
       "last_modified": 1744118264847
     },
     {
-      "schema": 1743687735700,
-      "imageSize": 16,
-      "attachment": {
-        "hash": "d994f806b1e4225b50be5ab681b2cecf845cc216a19a432d878cea3cb815bafd",
-        "size": 2799,
-        "filename": "ddg-16-firefox.ico",
-        "location": "main-workspace/search-config-icons/c6ae7df5-0396-4892-b76a-b35a00044a13.ico",
-        "mimetype": "image/x-icon"
-      },
-      "engineIdentifiers": [
-        "ddg"
-      ],
-      "id": "a06dc3fd-4bdb-41f3-2ebc-4cbed06a9bd3",
-      "last_modified": 1744118264845
-    },
-    {
       "schema": 1743687839798,
       "imageSize": 16,
       "attachment": {
@@ -1123,23 +1141,6 @@
       "last_modified": 1744118264833
     },
     {
-      "schema": 1743687843227,
-      "imageSize": 16,
-      "attachment": {
-        "hash": "24daa27a3234d01b5add42e027b0a34000d0ab47c17fe3924c2ca267b7b61c19",
-        "size": 5430,
-        "filename": "azerdict-16-firefox.ico",
-        "location": "main-workspace/search-config-icons/4d6f988d-8905-4aa7-aeea-5b04a6197767.ico",
-        "mimetype": "image/x-icon"
-      },
-      "engineIdentifiers": [
-        "azerdict"
-      ],
-      "filter_expression": "env.appinfo.OS != \"iOS\" && env.appinfo.OS != \"Android\"",
-      "id": "7bbe6c5c-fdb8-2845-a4f4-e1382e708a0e",
-      "last_modified": 1744118264831
-    },
-    {
       "schema": 1743687843968,
       "imageSize": 16,
       "attachment": {
@@ -1189,5 +1190,5 @@
       "last_modified": 1744118264825
     }
   ],
-  "timestamp": 1746562822691
+  "timestamp": 1772466505212
 }

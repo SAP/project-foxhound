@@ -11,15 +11,15 @@ add_task(async function () {
   // We need a heuristic provider that the Muxer will prefer over other
   // heuristics and that will return results after the first onQueryResults.
   // Luckily TEST providers come first in the heuristic group!
-  let result = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    { url: "https://example.com/1", title: "example" }
-  );
-  result.heuristic = true;
-  // To ensure the selectedElement is removed, we use this special property that
-  // asks the view to generate new content for the row.
-  result.testForceNewContent = true;
+  let result = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    heuristic: true,
+    // To ensure the selectedElement is removed, we use this special property
+    // that asks the view to generate new content for the row.
+    testForceNewContent: true,
+    payload: { url: "https://example.com/1", title: "example" },
+  });
 
   let receivedResults = false;
   let firstSelectedElement;
@@ -51,9 +51,10 @@ add_task(async function () {
     results: [result],
     type: UrlbarUtils.PROVIDER_TYPE.HEURISTIC,
   });
-  UrlbarProvidersManager.registerProvider(delayedHeuristicProvider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(delayedHeuristicProvider);
   registerCleanupFunction(async function () {
-    UrlbarProvidersManager.unregisterProvider(delayedHeuristicProvider);
+    providersManager.unregisterProvider(delayedHeuristicProvider);
     await UrlbarTestUtils.promisePopupClose(window);
     gURLBar.handleRevert();
   });

@@ -53,7 +53,7 @@ add_task(async function test_delete_last_profile() {
 
   profile = profiles[0];
 
-  let expected = ["-url", "about:newprofile"];
+  let expected = ["-new-tab", "about:newprofile"];
 
   await TestUtils.waitForCondition(
     () => sendCommandLine.callCount > 1,

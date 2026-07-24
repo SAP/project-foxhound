@@ -14,7 +14,6 @@
 #include "HTMLFormControlAccessible.h"
 
 #include "nsCocoaUtils.h"
-#include "mozilla/FloatingPoint.h"
 
 using namespace mozilla::a11y;
 

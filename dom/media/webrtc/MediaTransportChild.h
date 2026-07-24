@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MTRANSPORTCHILD_H__
-#define _MTRANSPORTCHILD_H__
+#ifndef MTRANSPORTCHILD_H_
+#define MTRANSPORTCHILD_H_
 
-#include "mozilla/dom/PMediaTransportChild.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/PMediaTransportChild.h"
 
 namespace mozilla {
 class MediaTransportHandlerIPC;

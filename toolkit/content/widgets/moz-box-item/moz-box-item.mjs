@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html } from "../vendor/lit.all.mjs";
+import { html, classMap } from "../vendor/lit.all.mjs";
 import { MozBoxBase } from "../lit-utils.mjs";
 import { GROUP_TYPES } from "chrome://global/content/elements/moz-box-group.mjs";
 
@@ -28,7 +28,7 @@ const NAVIGATION_DIRECTIONS = {
  * @property {string} label - Label for the button.
  * @property {string} description - Descriptive text for the button.
  * @property {string} iconSrc - The src for an optional icon shown next to the label.
- * @property {string} layout - Layout style for the box content, either "default" or "large-icon".
+ * @property {"default"|"medium-icon"|"large-icon"} layout - Layout style for the box content.
  * @slot default - Slot for the box item's content, which overrides label and description.
  * @slot actions - Slot for the actions positioned at the end of the component container.
  * @slot actions-start - Slot for the actions positioned at the start of the component container.
@@ -38,6 +38,7 @@ export default class MozBoxItem extends MozBoxBase {
 
   static properties = {
     layout: { type: String, reflect: true },
+    supportPage: { type: String, attribute: "support-page" },
   };
 
   static queries = {
@@ -104,10 +105,12 @@ export default class MozBoxItem extends MozBoxBase {
   }
 
   get isDraggable() {
+    const reorderableParent = this.closest("moz-box-group");
     return (
-      this.parentElement?.type == GROUP_TYPES.reorderable &&
+      reorderableParent?.type == GROUP_TYPES.reorderable &&
       this.slot != "header" &&
-      this.slot != "footer"
+      this.slot != "footer" &&
+      !this.slot.includes("static")
     );
   }
 
@@ -157,6 +160,50 @@ export default class MozBoxItem extends MozBoxBase {
     `;
   }
 
+  textTemplate() {
+    if (this.supportPage) {
+      return this.supportTextTemplate();
+    }
+    return super.textTemplate();
+  }
+
+  supportTextTemplate() {
+    return html`<div
+      class=${classMap({
+        "text-content": true,
+        "has-icon": this.iconSrc,
+        "has-description": this.description,
+        "has-support-page": this.supportPage,
+      })}
+    >
+      <span class="label-wrapper">
+        ${this.iconTemplate()}<span>
+          ${this.labelTemplate()}${!this.description
+            ? this.supportPageTemplate()
+            : ""}
+        </span>
+      </span>
+      <span class="description-wrapper">
+        ${this.descriptionTemplate()}${this.description
+          ? this.supportPageTemplate()
+          : ""}
+      </span>
+    </div>`;
+  }
+
+  supportPageTemplate() {
+    if (this.supportPage) {
+      return html`<a
+        class="support-page"
+        is="moz-support-link"
+        support-page=${this.supportPage}
+        part="support-link"
+        aria-describedby=${this.description ? "description" : "label"}
+      ></a>`;
+    }
+    return "";
+  }
+
   render() {
     return html`
       ${this.stylesTemplate()}
@@ -166,7 +213,7 @@ export default class MozBoxItem extends MozBoxBase {
           : ""}
         ${this.slotTemplate("actions-start")}
         <div class="box-content">
-          ${this.label ? super.textTemplate() : html`<slot></slot>`}
+          ${this.label ? this.textTemplate() : html`<slot></slot>`}
         </div>
         ${this.slotTemplate("actions")}
       </div>

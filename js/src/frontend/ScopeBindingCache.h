@@ -18,10 +18,13 @@
 
 #include "js/Utility.h"  // AutoEnterOOMUnsafeRegion
 
-#include "vm/Scope.h"       // AbstractBaseScopeData
 #include "vm/StringType.h"  // JSAtom
 
 namespace js {
+
+template <typename NameT>
+class AbstractBaseScopeData;
+
 namespace frontend {
 
 struct CompilationAtomCache;

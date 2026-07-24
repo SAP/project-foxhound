@@ -7,15 +7,14 @@
 #ifndef mozilla_dom_nsQueryContentEventResult_h
 #define mozilla_dom_nsQueryContentEventResult_h
 
-#include "nsIQueryContentEventResult.h"
-#include "nsString.h"
-#include "nsRect.h"
-#include "nsTArray.h"
 #include "Units.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/widget/IMEData.h"
+#include "nsIQueryContentEventResult.h"
+#include "nsRect.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 class nsIWidget;
 

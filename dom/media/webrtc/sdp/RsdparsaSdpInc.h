@@ -3,14 +3,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _RUSTSDPINC_H_
-#define _RUSTSDPINC_H_
+#ifndef RUSTSDPINC_H_
+#define RUSTSDPINC_H_
+
+#include <stdbool.h>
+#include <stdint.h>
 
 #include "nsError.h"
-#include "mozilla/Maybe.h"
-
-#include <stdint.h>
-#include <stdbool.h>
 
 struct BandwidthVec;
 struct RustSdpSession;

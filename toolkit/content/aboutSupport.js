@@ -125,10 +125,12 @@ var snapshotFormatters = {
         Ci.nsIFile
       ).path;
     }
-    $("profile-dir-box").textContent = Services.dirsvc.get(
-      "ProfD",
-      Ci.nsIFile
-    ).path;
+    if (AppConstants.platform != "android") {
+      $("profile-dir-box").textContent = Services.dirsvc.get(
+        "ProfD",
+        Ci.nsIFile
+      ).path;
+    }
 
     try {
       let launcherStatusTextId = "launcher-process-status-unknown";
@@ -274,11 +276,11 @@ var snapshotFormatters = {
       }
     } catch (e) {}
     if (!reportURL) {
-      $("crashes-noConfig").style.display = "block";
+      $("crashes-noConfig").hidden = false;
       $("crashes-noConfig").classList.remove("no-copy");
       return;
     }
-    $("crashes-allReports").style.display = "block";
+    $("crashes-allReports").hidden = false;
 
     if (data.pending > 0) {
       document.l10n.setAttributes(
@@ -408,10 +410,11 @@ var snapshotFormatters = {
     if (!AppConstants.MOZ_PLACES) {
       return;
     }
+    const { prefs } = data;
     const statsBody = $("place-database-stats-tbody");
     $.append(
       statsBody,
-      data.map(function (entry) {
+      prefs.map(function (entry) {
         return $.new("tr", [
           $.new("td", entry.entity),
           $.new("td", entry.count),
@@ -422,25 +425,64 @@ var snapshotFormatters = {
         ]);
       })
     );
-    statsBody.style.display = "none";
+    statsBody.hidden = true;
     $("place-database-stats-toggle").addEventListener(
       "click",
       function (event) {
-        if (statsBody.style.display === "none") {
+        if (statsBody.hidden) {
           document.l10n.setAttributes(
             event.target,
             "place-database-stats-hide"
           );
-          statsBody.style.display = "";
+          statsBody.hidden = false;
         } else {
           document.l10n.setAttributes(
             event.target,
             "place-database-stats-show"
           );
-          statsBody.style.display = "none";
+          statsBody.hidden = true;
         }
       }
     );
+
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+    });
+
+    const maintenanceDateElement = $(
+      "place-database-last-idle-maintenance-data"
+    );
+    if (data.lastMaintenanceDate) {
+      maintenanceDateElement.textContent = formatter.format(
+        new Date(data.lastMaintenanceDate)
+      );
+    } else {
+      document.l10n.setAttributes(maintenanceDateElement, "missing");
+    }
+
+    const vacuumDateElement = $("place-database-last-vacuum-date");
+    if (data.lastVacuumDate) {
+      vacuumDateElement.textContent = formatter.format(
+        new Date(data.lastVacuumDate)
+      );
+    } else {
+      document.l10n.setAttributes(vacuumDateElement, "missing");
+    }
+
+    const integrityCorruptionDateElement = $(
+      "place-database-last-integrity-corruption-date"
+    );
+    if (data.lastIntegrityCorruptionDate) {
+      integrityCorruptionDateElement.textContent = formatter.format(
+        new Date(data.lastIntegrityCorruptionDate)
+      );
+    } else {
+      document.l10n.setAttributes(integrityCorruptionDateElement, "missing");
+    }
   },
 
   printingPreferences(data) {
@@ -629,7 +671,7 @@ var snapshotFormatters = {
       }
       delete data.failures;
     } else {
-      $("graphics-failures-tbody").style.display = "none";
+      $("graphics-failures-tbody").hidden = true;
     }
 
     // Add a new row to the table, and take the key (or keys) out of data.
@@ -711,7 +753,6 @@ var snapshotFormatters = {
       "webgl2DriverExtensions",
       "webgl2Extensions",
       ["supportsHardwareH264", "hardware-h264"],
-      ["direct2DEnabled", "#Direct2D"],
       ["windowProtocol", "graphics-window-protocol"],
       ["desktopEnvironment", "graphics-desktop-environment"],
       "targetFrameRate",
@@ -772,7 +813,7 @@ var snapshotFormatters = {
       }
 
       if (!trs.length) {
-        $("graphics-" + id + "-tbody").style.display = "none";
+        $("graphics-" + id + "-tbody").hidden = true;
         return;
       }
 
@@ -854,7 +895,7 @@ var snapshotFormatters = {
         addRow("decisions", "#" + feature.name, [$.new("table", trs)]);
       }
     } else {
-      $("graphics-decisions-tbody").style.display = "none";
+      $("graphics-decisions-tbody").hidden = true;
     }
 
     if (featureLog.fallbacks.length) {
@@ -864,7 +905,7 @@ var snapshotFormatters = {
         ]);
       }
     } else {
-      $("graphics-workarounds-tbody").style.display = "none";
+      $("graphics-workarounds-tbody").hidden = true;
     }
 
     let crashGuards = data.crashGuards;
@@ -885,7 +926,7 @@ var snapshotFormatters = {
         addRow("crashguards", guard.type + "CrashGuard", [resetButton]);
       }
     } else {
-      $("graphics-crashguards-tbody").style.display = "none";
+      $("graphics-crashguards-tbody").hidden = true;
     }
 
     // Now that we're done, grab any remaining keys in data and drop them into
@@ -1004,7 +1045,7 @@ var snapshotFormatters = {
       if (
         !Services.prefs.getBoolPref("media.mediacapabilities.from-database")
       ) {
-        $("media-capabilities-tbody").style.display = "none";
+        $("media-capabilities-tbody").hidden = true;
         return;
       }
       let button = $("enumerate-database-button");
@@ -1037,7 +1078,7 @@ var snapshotFormatters = {
               });
           }
 
-          $("enumerate-database-result").style.display = "block";
+          $("enumerate-database-result").hidden = false;
           $("enumerate-database-result").classList.remove("no-copy");
           $("enumerate-database-result").textContent = "";
 
@@ -1136,9 +1177,8 @@ var snapshotFormatters = {
         $.new("td", cdmInfo.keySystemName),
         $.new("td", getVideoRobustness(rvArray)),
         $.new("td", getAudioRobustness(rvArray)),
-        $.new("td", getCapabilities(rvArray), null, { colspan: "4" }),
+        $.new("td", getCapabilities(rvArray), null, { colspan: "5" }),
         $.new("td", cdmInfo.clearlead ? "Yes" : "No"),
-        $.new("td", cdmInfo.isHDCP22Compatible ? "Yes" : "No"),
       ]);
     }
 
@@ -1403,6 +1443,9 @@ var snapshotFormatters = {
   },
 
   contentAnalysis(data) {
+    if (AppConstants.platform == "android") {
+      return;
+    }
     $("content-analysis-active").textContent = data.active;
     if (data.active) {
       $("content-analysis-connected-to-agent").textContent = data.connected;
@@ -1458,9 +1501,8 @@ var snapshotFormatters = {
     let userJSFile = Services.dirsvc.get("PrefD", Ci.nsIFile);
     userJSFile.append("user.js");
     $("prefs-user-js-link").href = Services.io.newFileURI(userJSFile).spec;
-    $("prefs-user-js-section").style.display = "";
-    // Clear the no-copy class
-    $("prefs-user-js-section").className = "";
+    $("prefs-user-js-section").hidden = false;
+    $("prefs-user-js-section").classList.remove("no-copy");
   },
 
   sandbox(data) {
@@ -1571,10 +1613,9 @@ var snapshotFormatters = {
     const { isSynchronizationBroken, lastCheck, localTimestamp, history } =
       data;
 
-    $("support-remote-settings-status-ok").style.display =
-      isSynchronizationBroken ? "none" : "block";
-    $("support-remote-settings-status-broken").style.display =
-      isSynchronizationBroken ? "block" : "none";
+    $("support-remote-settings-status-ok").hidden = isSynchronizationBroken;
+    $("support-remote-settings-status-broken").hidden =
+      !isSynchronizationBroken;
     $("support-remote-settings-last-check").textContent = lastCheck;
     $("support-remote-settings-local-timestamp").textContent = localTimestamp;
     $.append(
@@ -1870,7 +1911,7 @@ Serializer.prototype = {
   },
 
   _isHiddenSubHeading(th) {
-    return th.parentNode.parentNode.style.display == "none";
+    return th.parentNode.parentNode.hidden;
   },
 
   _serializeTable(table) {
@@ -1989,10 +2030,10 @@ function openProfileDirectory() {
  */
 function populateActionBox() {
   if (ResetProfile.resetSupported()) {
-    $("reset-box").style.display = "block";
+    $("reset-box").hidden = false;
   }
   if (!Services.appinfo.inSafeMode && AppConstants.platform !== "android") {
-    $("safe-mode-box").style.display = "block";
+    $("safe-mode-box").hidden = false;
 
     if (Services.policies && !Services.policies.isAllowed("safeMode")) {
       $("restart-in-safe-mode-button").setAttribute("disabled", "true");
@@ -2115,7 +2156,7 @@ function setupEventListeners() {
           let prefix = value.succeeded ? "+ " : "- ";
           logs = logs.concat(value.logs.map(m => `${prefix}${m}`));
         }
-        $("verify-place-result").style.display = "block";
+        $("verify-place-result").hidden = false;
         $("verify-place-result").classList.remove("no-copy");
         $("verify-place-result").textContent = logs.join("\n");
       });
@@ -2128,9 +2169,11 @@ function setupEventListeners() {
   $("copy-to-clipboard").addEventListener("click", function () {
     copyContentsToClipboard();
   });
-  $("profile-dir-button").addEventListener("click", function () {
-    openProfileDirectory();
-  });
+  if (AppConstants.platform != "android") {
+    $("profile-dir-button").addEventListener("click", function () {
+      openProfileDirectory();
+    });
+  }
 }
 
 /**

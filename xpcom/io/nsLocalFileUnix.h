@@ -60,9 +60,6 @@ class nsLocalFile final
   ~nsLocalFile() = default;
 
  protected:
-  // This stat cache holds the *last stat* - it does not invalidate.
-  // Call "FillStatCache" whenever you want to stat our file.
-  struct STAT mCachedStat;
   nsCString mPath;
 
   void LocateNativeLeafName(nsACString::const_iterator&,
@@ -74,7 +71,7 @@ class nsLocalFile final
                                    const nsACString& aNewName,
                                    nsACString& aResult);
 
-  bool FillStatCache();
+  nsresult StatFile(struct STAT* statInfo);
 
   nsresult CreateAndKeepOpen(uint32_t aType, int aFlags, uint32_t aPermissions,
                              bool aSkipAncestors, PRFileDesc** aResult);

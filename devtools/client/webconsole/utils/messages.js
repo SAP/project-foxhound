@@ -114,9 +114,9 @@ function prepareMessage(resource, idGenerator, persistLogs) {
 /**
  * Transforms a resource given its type.
  *
- * @param {Object} resource: This can be either a simple RDP packet or an object emitted
+ * @param {object} resource: This can be either a simple RDP packet or an object emitted
  *                           by the Resource API.
- * @param {Boolean} persistLogs: Value of the "Persist logs" setting
+ * @param {boolean} persistLogs: Value of the "Persist logs" setting
  */
 function transformResource(resource, persistLogs) {
   switch (resource.resourceType || resource.type) {
@@ -182,7 +182,7 @@ function transformConsoleAPICallResource(
       ];
       break;
     case "count":
-    case "countReset":
+    case "countReset": {
       // Chrome RDP doesn't have a special type for count.
       type = MESSAGE_TYPE.LOG;
       const { counter } = consoleMessageResource;
@@ -202,6 +202,7 @@ function transformConsoleAPICallResource(
         parameters = null;
       }
       break;
+    }
     case "timeStamp":
       type = MESSAGE_TYPE.NULL_MESSAGE;
       break;
@@ -276,6 +277,7 @@ function transformConsoleAPICallResource(
     ? {
         source: consoleMessageResource.filename,
         sourceId: consoleMessageResource.sourceId,
+        // Both line and column are 1-based
         line: consoleMessageResource.lineNumber,
         column: consoleMessageResource.columnNumber,
       }
@@ -344,6 +346,7 @@ function transformPageErrorResource(pageErrorResource, override = {}) {
     ? {
         source: pageError.sourceName,
         sourceId: pageError.sourceId,
+        // Both line and column are 1-based
         line: pageError.lineNumber,
         column: pageError.columnNumber,
       }
@@ -622,7 +625,7 @@ function transformEvaluationResultPacket(packet) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 // eslint-disable-next-line complexity
 function areMessagesSimilar(message1, message2) {
@@ -672,7 +675,7 @@ function areMessagesSimilar(message1, message2) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 // eslint-disable-next-line complexity
 function areMessagesParametersSimilar(message1, message2) {
@@ -734,7 +737,7 @@ function areMessagesParametersSimilar(message1, message2) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function areMessagesStacktracesSimilar(message1, message2) {
   const message1StackLength = message1.stacktrace?.length;
@@ -855,7 +858,7 @@ function createSimpleTableMessage(columns, items, timeStamp) {
  * The resource at “<URL>” was blocked because Enhanced Tracking Protection is enabled
  *
  * @param {ConsoleMessage} firstMessage
- * @returns {String} The computed label
+ * @returns {string} The computed label
  */
 function getWarningGroupLabel(firstMessage) {
   if (
@@ -881,9 +884,9 @@ function getWarningGroupLabel(firstMessage) {
  * Replace any URL in the provided text by the provided replacement text, or an empty
  * string.
  *
- * @param {String} text
- * @param {String} replacementText
- * @returns {String}
+ * @param {string} text
+ * @param {string} replacementText
+ * @returns {string}
  */
 function replaceURL(text, replacementText = "") {
   let result = "";
@@ -925,8 +928,9 @@ function replaceURL(text, replacementText = "") {
 
 /**
  * Get the warningGroup type in which the message could be in.
+ *
  * @param {ConsoleMessage} message
- * @returns {String|null} null if the message can't be part of a warningGroup.
+ * @returns {string | null} null if the message can't be part of a warningGroup.
  */
 function getWarningGroupType(message) {
   // We got report that this can be called with `undefined` (See Bug 1801462 and Bug 1810109).
@@ -972,7 +976,7 @@ function getWarningGroupType(message) {
  *
  * @param {ConsoleMessage} type: the message type, from MESSAGE_TYPE.
  * @param {Integer} innerWindowID: the message innerWindowID.
- * @returns {String}
+ * @returns {string}
  */
 function getParentWarningGroupMessageId(message) {
   const warningGroupType = getWarningGroupType(message);
@@ -985,8 +989,9 @@ function getParentWarningGroupMessageId(message) {
 
 /**
  * Returns true if the message is a warningGroup message (i.e. the "Header").
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isWarningGroup(message) {
   return (
@@ -1001,8 +1006,9 @@ function isWarningGroup(message) {
 
 /**
  * Returns true if the message is an Enhanced Tracking Protection message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isEnhancedTrackingProtectionMessage(message) {
   const { category } = message;
@@ -1016,8 +1022,9 @@ function isEnhancedTrackingProtectionMessage(message) {
 
 /**
  * Returns true if the message is a storage isolation message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isStorageIsolationMessage(message) {
   const { category } = message;
@@ -1026,8 +1033,9 @@ function isStorageIsolationMessage(message) {
 
 /**
  * Returns true if the message is a tracking protection message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isTrackingProtectionMessage(message) {
   const { category } = message;
@@ -1036,8 +1044,9 @@ function isTrackingProtectionMessage(message) {
 
 /**
  * Returns true if the message is a cookie message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isCookieMessage(message) {
   const { category } = message;
@@ -1051,8 +1060,9 @@ function isCookieMessage(message) {
 
 /**
  * Returns true if the message is a Content Security Policy (CSP) message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isCSPMessage(message) {
   const { category } = message;

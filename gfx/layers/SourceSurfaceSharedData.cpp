@@ -8,11 +8,11 @@
 
 #include "mozilla/Likely.h"
 #include "mozilla/StaticPrefs_image.h"
-#include "mozilla/Types.h"  // for decltype
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "mozilla/layers/SharedSurfacesChild.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "nsDebug.h"  // for NS_ABORT_OOM
+#include "mozilla/image/SurfaceCache.h"
 
 #include "base/process_util.h"
 
@@ -46,7 +46,7 @@ void SourceSurfaceSharedDataWrapper::Init(
     MOZ_CRASH("Invalid shared memory handle!");
   }
 
-  bool mapped = EnsureMapped(len);
+  bool mapped = EnsureMapped();
   if ((sizeof(uintptr_t) <= 4 ||
        StaticPrefs::image_mem_shared_unmap_force_enabled_AtStartup()) &&
       len / 1024 >
@@ -77,8 +77,17 @@ void SourceSurfaceSharedDataWrapper::Init(SourceSurfaceSharedData* aSurface) {
   mBuf = aSurface->mBuf;
 }
 
-bool SourceSurfaceSharedDataWrapper::EnsureMapped(size_t aLength) {
+bool SourceSurfaceSharedDataWrapper::EnsureMapped() {
   MOZ_ASSERT(!GetData());
+
+  auto computedStride =
+      CheckedInt<int32_t>(mSize.width) * BytesPerPixel(mFormat);
+  if (mSize.width < 0 || mSize.height < 0 || mStride < 0 ||
+      !computedStride.isValid() || mStride < computedStride.value() ||
+      !image::SurfaceCache::IsLegalSize(mSize) ||
+      mBufHandle.Size() < GetAlignedDataLength()) {
+    return false;
+  }
 
   auto mapping = mBufHandle.Map();
   while (!mapping) {
@@ -114,9 +123,8 @@ bool SourceSurfaceSharedDataWrapper::Map(MapType aMapType,
         SharedSurfacesParent::RemoveTracking(this);
       }
       if (!dataPtr) {
-        size_t len = GetAlignedDataLength();
-        if (!EnsureMapped(len)) {
-          NS_ABORT_OOM(len);
+        if (!EnsureMapped()) {
+          NS_ABORT_OOM(GetAlignedDataLength());
         }
         dataPtr = GetData();
       }

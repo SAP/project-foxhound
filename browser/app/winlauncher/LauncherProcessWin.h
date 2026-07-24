@@ -23,8 +23,7 @@ struct StaticXREAppData;
  * process, or in the event of a launcher process failure, return Nothing, thus
  * indicating that we should continue on the original startup code path.
  */
-Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
-                        const StaticXREAppData& aAppData);
+Maybe<int> LauncherMain(int& argc, wchar_t* argv[]);
 
 enum class LauncherFlags : uint32_t {
   eNone = 0,

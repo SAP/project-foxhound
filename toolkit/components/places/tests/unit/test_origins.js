@@ -9,7 +9,12 @@
 // Visiting a URL with a new origin should immediately update moz_origins.
 add_task(async function visit() {
   await checkDB([]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
   await PlacesUtils.history.remove("http://example.com/");
   await checkDB([]);
@@ -20,9 +25,21 @@ add_task(async function visit() {
 // moz_origins (with the correct frecency).
 add_task(async function visitRepeatedly() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://example.com/" },
-    { uri: "http://example.com/" },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
   ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
   await PlacesUtils.history.remove("http://example.com/");
@@ -32,11 +49,29 @@ add_task(async function visitRepeatedly() {
 
 // Same as previous, but visits are added sequentially.
 add_task(async function visitRepeatedlySequential() {
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
   await PlacesUtils.history.remove("http://example.com/");
   await checkDB([]);
@@ -46,10 +81,20 @@ add_task(async function visitRepeatedlySequential() {
 // After removing an origin's URLs, visiting a URL with the origin should
 // immediately update moz_origins.
 add_task(async function vistAfterDelete() {
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await PlacesUtils.history.remove("http://example.com/");
   await checkDB([]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/"]]]);
   await PlacesUtils.history.remove("http://example.com/");
   await checkDB([]);
@@ -60,9 +105,21 @@ add_task(async function vistAfterDelete() {
 // moz_origins.frecency should be the sum of the URL frecencies.
 add_task(async function visitDifferentURLsSameOrigin() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/1" },
-    { uri: "http://example.com/2" },
-    { uri: "http://example.com/3" },
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
   ]);
   await checkDB([
     [
@@ -88,9 +145,21 @@ add_task(async function visitDifferentURLsSameOrigin() {
 
 // Same as previous, but visits are added sequentially.
 add_task(async function visitDifferentURLsSameOriginSequential() {
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/1" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/1"]]]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/2" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -98,7 +167,13 @@ add_task(async function visitDifferentURLsSameOriginSequential() {
       ["http://example.com/1", "http://example.com/2"],
     ],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/3" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -126,12 +201,36 @@ add_task(async function visitDifferentURLsSameOriginSequential() {
 // the sum of the URL frecencies.
 add_task(async function visitDifferentURLsSameOriginRepeatedly() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/1" },
-    { uri: "http://example.com/1" },
-    { uri: "http://example.com/1" },
-    { uri: "http://example.com/2" },
-    { uri: "http://example.com/2" },
-    { uri: "http://example.com/3" },
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
   ]);
   await checkDB([
     [
@@ -158,9 +257,18 @@ add_task(async function visitDifferentURLsSameOriginRepeatedly() {
 // Visiting URLs with different origins should update moz_origins.
 add_task(async function visitDifferentOrigins() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example1.com/" },
-    { uri: "http://example2.com/" },
-    { uri: "http://example3.com/" },
+    {
+      uri: "http://example1.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://example2.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://example3.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example1.com", ["http://example1.com/"]],
@@ -181,14 +289,29 @@ add_task(async function visitDifferentOrigins() {
 
 // Same as previous, but visits are added sequentially.
 add_task(async function visitDifferentOriginsSequential() {
-  await PlacesTestUtils.addVisits([{ uri: "http://example1.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example1.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([["http://", "example1.com", ["http://example1.com/"]]]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example2.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example2.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([
     ["http://", "example1.com", ["http://example1.com/"]],
     ["http://", "example2.com", ["http://example2.com/"]],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example3.com/" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example3.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([
     ["http://", "example1.com", ["http://example1.com/"]],
     ["http://", "example2.com", ["http://example2.com/"]],
@@ -210,12 +333,35 @@ add_task(async function visitDifferentOriginsSequential() {
 // (with the correct frecencies).
 add_task(async function visitDifferentOriginsRepeatedly() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example1.com/" },
-    { uri: "http://example1.com/" },
-    { uri: "http://example1.com/" },
-    { uri: "http://example2.com/" },
-    { uri: "http://example2.com/" },
-    { uri: "http://example3.com/" },
+    {
+      uri: "http://example1.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example1.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example1.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example2.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example2.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example3.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example1.com", ["http://example1.com/"]],
@@ -238,12 +384,36 @@ add_task(async function visitDifferentOriginsRepeatedly() {
 // update moz_origins.
 add_task(async function visitDifferentOriginsDifferentURLs() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example1.com/1" },
-    { uri: "http://example1.com/2" },
-    { uri: "http://example1.com/3" },
-    { uri: "http://example2.com/1" },
-    { uri: "http://example2.com/2" },
-    { uri: "http://example3.com/1" },
+    {
+      uri: "http://example1.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example1.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example1.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example2.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example2.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example3.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
   ]);
   await checkDB([
     [
@@ -308,9 +478,21 @@ add_task(async function visitDifferentOriginsDifferentURLs() {
 
 // Same as previous, but visits are added sequentially.
 add_task(async function visitDifferentOriginsDifferentURLsSequential() {
-  await PlacesTestUtils.addVisits([{ uri: "http://example1.com/1" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example1.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+  ]);
   await checkDB([["http://", "example1.com", ["http://example1.com/1"]]]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example1.com/2" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example1.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -318,7 +500,13 @@ add_task(async function visitDifferentOriginsDifferentURLsSequential() {
       ["http://example1.com/1", "http://example1.com/2"],
     ],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example1.com/3" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example1.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -330,7 +518,13 @@ add_task(async function visitDifferentOriginsDifferentURLsSequential() {
       ],
     ],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example2.com/1" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example2.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -343,7 +537,13 @@ add_task(async function visitDifferentOriginsDifferentURLsSequential() {
     ],
     ["http://", "example2.com", ["http://example2.com/1"]],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example2.com/2" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example2.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -360,7 +560,13 @@ add_task(async function visitDifferentOriginsDifferentURLsSequential() {
       ["http://example2.com/1", "http://example2.com/2"],
     ],
   ]);
-  await PlacesTestUtils.addVisits([{ uri: "http://example3.com/1" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example3.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -426,19 +632,71 @@ add_task(async function visitDifferentOriginsDifferentURLsSequential() {
 // should update moz_origins (with the correct frecencies).
 add_task(async function visitDifferentOriginsDifferentURLsRepeatedly() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example1.com/1" },
-    { uri: "http://example1.com/1" },
-    { uri: "http://example1.com/1" },
-    { uri: "http://example1.com/2" },
-    { uri: "http://example1.com/2" },
-    { uri: "http://example1.com/3" },
-    { uri: "http://example2.com/1" },
-    { uri: "http://example2.com/1" },
-    { uri: "http://example2.com/1" },
-    { uri: "http://example2.com/2" },
-    { uri: "http://example2.com/2" },
-    { uri: "http://example3.com/1" },
-    { uri: "http://example3.com/1" },
+    {
+      uri: "http://example1.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example1.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example1.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example1.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example1.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example1.com/3",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example2.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example2.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+    {
+      uri: "http://example2.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(2),
+    },
+    {
+      uri: "http://example2.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(3),
+    },
+    {
+      uri: "http://example2.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(4),
+    },
+    {
+      uri: "http://example3.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(0),
+    },
+    {
+      uri: "http://example3.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
   ]);
   await checkDB([
     [
@@ -505,9 +763,18 @@ add_task(async function visitDifferentOriginsDifferentURLsRepeatedly() {
 // as different origins.  Makes sure removing one doesn't remove the others.
 add_task(async function www1() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://www.example.com/" },
-    { uri: "http://www.www.example.com/" },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example.com", ["http://example.com/"]],
@@ -531,9 +798,18 @@ add_task(async function www1() {
 // Same as www1, but removes URIs in a different order.
 add_task(async function www2() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://www.example.com/" },
-    { uri: "http://www.www.example.com/" },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example.com", ["http://example.com/"]],
@@ -556,8 +832,14 @@ add_task(async function www2() {
 // with a port.
 add_task(async function ports1() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://example.com:8888/" },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example.com", ["http://example.com/"]],
@@ -576,8 +858,14 @@ add_task(async function ports1() {
 // without a port.
 add_task(async function ports2() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://example.com:8888/" },
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await checkDB([
     ["http://", "example.com", ["http://example.com/"]],
@@ -593,15 +881,38 @@ add_task(async function ports2() {
 // Makes sure multiple URIs with the same origin don't create duplicate origins.
 add_task(async function duplicates() {
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://www.example.com/" },
-    { uri: "http://www.www.example.com/" },
-    { uri: "https://example.com/" },
-    { uri: "ftp://example.com/" },
-    { uri: "foo://example.com/" },
-    { uri: "bar:example.com/" },
-    { uri: "http://example.com:8888/" },
-
+    {
+      uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://www.www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "ftp://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "foo://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "bar:example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
     { uri: "http://example.com/dupe" },
     { uri: "http://www.example.com/dupe" },
     { uri: "http://www.www.example.com/dupe" },
@@ -924,11 +1235,21 @@ add_task(async function moreOriginFrecencyStats() {
   await checkDB([]);
 
   // Add a URL 0 visit.
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/0" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/0",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([["http://", "example.com", ["http://example.com/0"]]]);
 
   // Add a URL 1 visit.
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/1" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -938,7 +1259,12 @@ add_task(async function moreOriginFrecencyStats() {
   ]);
 
   // Add a URL 2 visit.
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/2" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -948,7 +1274,12 @@ add_task(async function moreOriginFrecencyStats() {
   ]);
 
   // Add another URL 2 visit.
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/2" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await checkDB([
     [
       "http://",
@@ -1007,7 +1338,12 @@ add_task(async function moreOriginFrecencyStats() {
 
 add_task(async function test_cutoff() {
   // Add first page with visit.
-  await PlacesTestUtils.addVisits([{ uri: "http://example.com/0" }]);
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/0",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   // Add a second page last visited before the cutoff, it should be ignored.
   let visitDate = PlacesUtils.toPRTime(
     new Date(
@@ -1019,7 +1355,10 @@ add_task(async function test_cutoff() {
   await PlacesTestUtils.addVisits([{ uri: "http://example.com/1", visitDate }]);
   // Add a third page with visit both before and after the cutoff, should count.
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/2" },
+    {
+      uri: "http://example.com/2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
     { uri: "http://example.com/2", visitDate },
   ]);
   await checkDB([
@@ -1033,38 +1372,97 @@ add_task(async function test_cutoff() {
 });
 
 /**
- * Returns the expected frecency of the origin of the given URLs, i.e., the sum
- * of their frecencies.  Each URL is expected to have the same origin.
+ * Returns the expected frecency of the origin of the given URLs.
+ * Each URL is expected to have the same origin.
  *
- * @param  urls
- *         An array of URL strings.
- * @return The expected origin frecency.
+ * @param {(string|nsIURL|URL)[]} urls
+ *   An array of URL strings.
+ * @returns {number}
+ *   The expected origin frecency.
  */
 async function expectedOriginFrecency(urls) {
-  let value = 0;
-  for (let url of urls) {
-    let v = Math.max(
-      (await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
-        url,
-        last_visit_date: [">", 0],
-      })) ?? 0,
-      0
-    );
-    value += v;
+  if (!urls.length) {
+    return 1.0;
   }
-  return value || 1.0;
+
+  // Calculate cutoff: start of today minus N days, in microseconds.
+  let cutOffDays = Services.prefs.getIntPref(
+    "places.frecency.originsFrecencyCutOffDays",
+    90
+  );
+  let cutOff = new Date();
+  cutOff.setHours(0, 0, 0, 0);
+  cutOff.setDate(cutOff.getDate() - cutOffDays);
+  let cutOffMicroseconds = cutOff.getTime() * 1000;
+
+  let db = await PlacesUtils.promiseDBConnection();
+
+  let distinctDays = new Set();
+
+  let weightedSum = 0;
+  let totalTypedVisits = 0;
+
+  for (let url of urls) {
+    let frecency = await PlacesTestUtils.getDatabaseValue(
+      "moz_places",
+      "frecency",
+      { url, last_visit_date: [">", cutOffMicroseconds] }
+    );
+    if (frecency === undefined) {
+      continue;
+    }
+
+    let rows = await db.executeCached(
+      `
+      SELECT v.visit_date
+      FROM moz_places h
+      JOIN moz_historyvisits v ON v.place_id = h.id
+      WHERE h.url = :url
+        AND v.visit_type = :typed
+        AND v.visit_date > :cutoff
+    `,
+      {
+        url,
+        typed: PlacesUtils.history.TRANSITION_TYPED,
+        cutoff: cutOffMicroseconds,
+      }
+    );
+
+    if (!rows) {
+      continue;
+    }
+
+    totalTypedVisits += rows.length;
+    weightedSum += frecency * rows.length;
+
+    for (let row of rows) {
+      let visitDate = row.getResultByName("visit_date"); // microseconds
+      // SQL: date(visit_date/1e6, 'unixepoch') => UTC day
+      let day = new Date(visitDate / 1000).toISOString().slice(0, 10);
+      distinctDays.add(day);
+    }
+  }
+
+  if (!totalTypedVisits || !distinctDays.size) {
+    return 1.0;
+  }
+
+  let average = weightedSum / totalTypedVisits;
+  let total = Math.trunc(average * distinctDays.size);
+
+  return total || 1.0;
 }
 
 /**
  * Asserts that the moz_origins table and the origin frecency stats are correct.
  *
- * @param expectedOrigins
- *        An array of expected origins.  Each origin in the array is itself an
- *        array that looks like this:
- *          [prefix, host, [url1, url2, ..., urln]]
- *        The element at index 2 is an array of all the URLs with the origin.
- *        If you don't care about checking frecencies and origin frecency stats,
- *        this element can be `undefined`.
+ * @param {[string, string, (string|nsIURI|URL)[]]} expectedOrigins
+ *   An array of expected origins.  Each origin in the array is itself an
+ *   array that looks like this:
+ *     [prefix, host, [url1, url2, ..., urln]]
+ *   The element at index 2 is an array of all the URLs with the origin.
+ *   If you don't care about checking frecencies and origin frecency stats,
+ *   this element can be `undefined`.
  */
 async function checkDB(expectedOrigins) {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
@@ -1103,8 +1501,8 @@ async function checkDB(expectedOrigins) {
 /**
  * Asserts that the origin frecency threshold is correct.
  *
- * @param expectedOriginFrecencies
- *        An array of expected origin frecencies.
+ * @param {number[]} expectedOriginFrecencies
+ *   An array of expected origin frecencies.
  */
 async function checkThreshold(expectedOriginFrecencies) {
   const DEFAULT_THRESHOLD = 2.0;
@@ -1113,12 +1511,25 @@ async function checkThreshold(expectedOriginFrecencies) {
     DEFAULT_THRESHOLD
   );
 
+  // The origin frecency threshold is calculated by first filtering results
+  // above 1. Then we look for the midpoint value of the sorted set.
+  // If none is found, we default to the default threshold.
+  //
+  // This approximates median() which we'll likely use in the future, but
+  // differs in two ways:
+  // - We filter values starting with 1 because it likely means we deliberately
+  //   gave it a very low frecency.
+  // - With even-length arrays we use the lower of the two middle values
+  //   instead of their average.
+  let filteredResults = expectedOriginFrecencies.filter(value => value > 1);
+  filteredResults.sort((a, b) => a - b);
+  let middle = Math.ceil(filteredResults.length / 2);
+  let maxOfLowerGroup = filteredResults.at(middle - 1);
+
   Assert.equal(
     threshold,
-    expectedOriginFrecencies.length
-      ? expectedOriginFrecencies.reduce((a, b) => a + b, 0) /
-          expectedOriginFrecencies.length
-      : DEFAULT_THRESHOLD
+    maxOfLowerGroup ?? DEFAULT_THRESHOLD,
+    "Threshold is equal."
   );
 }
 

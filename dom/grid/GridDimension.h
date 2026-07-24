@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_GridDimension_h
 #define mozilla_dom_GridDimension_h
 
-#include "nsWrapperCache.h"
 #include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

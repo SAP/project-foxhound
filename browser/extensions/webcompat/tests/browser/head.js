@@ -54,47 +54,87 @@ const WebCompatExtension = new (class WebCompatExtension {
     );
   }
 
-  async interventionsReady() {
+  async resetInterventionsAndShimsToDefaults() {
     return this.#run(async function () {
-      await content.wrappedJSObject.interventions.ready();
+      await content.wrappedJSObject._downgradeForTesting();
+    }).catch(_ => {});
+  }
+
+  async availableInterventions() {
+    return this.#run(async function () {
+      const available =
+        content.wrappedJSObject.interventions.getAvailableInterventions();
+      // structured cloning won't work, so get the interesting bits for tests.
+      return JSON.parse(JSON.stringify(available));
+    });
+  }
+
+  async availableShims() {
+    return this.#run(async function () {
+      // structured cloning won't work, so get the interesting bits for tests.
+      const available = [];
+      for (let shim of content.wrappedJSObject.shims.shims.values()) {
+        const final = {};
+        for (let [name, value] of Object.entries(shim)) {
+          if (name !== "manager" && !name.startsWith("_")) {
+            final[name] = value;
+          }
+        }
+        final.enabled = shim.enabled;
+        available.push(final);
+      }
+      return JSON.parse(JSON.stringify(available));
+    });
+  }
+
+  async promiseUpdateReceived(_version) {
+    return this.#run(async function (version) {
+      await new Promise(updated => {
+        const updateCheck = content.setInterval(() => {
+          if (content.wrappedJSObject.latestReceivedUpdate == version) {
+            content.clearInterval(updateCheck);
+            updated();
+          }
+        }, 100);
+      });
+    }, _version);
+  }
+
+  async interventionsSettled() {
+    return this.#run(async function () {
+      await content.wrappedJSObject.interventions.allSettled();
     });
   }
 
   async overrideFirefoxVersion(_ver) {
     this.#run(async function (ver) {
-      content.wrappedJSObject.interventions.versionForTesting = ver;
+      content.wrappedJSObject.interventions.appVersionOverride = ver
+        ? parseFloat(ver)
+        : undefined;
     }, _ver);
-  }
-
-  async noOngoingInterventionChanges() {
-    return this.#run(async function () {
-      await new Promise(lock1 => {
-        return new Promise(lock2 => {
-          content.wrappedJSObject.navigator.locks.request(
-            "pref_check_lock",
-            lock2
-          );
-        }).then(() =>
-          content.wrappedJSObject.navigator.locks.request(
-            "intervention_lock",
-            lock1
-          )
-        );
-      });
-    });
   }
 
   async getInterventionById(_id) {
     return this.#run(function (id) {
-      return content.wrappedJSObject.interventions._availableInterventions.find(
-        i => i.id === id
-      );
+      return content.wrappedJSObject.interventions.getInterventionsByIds(
+        Cu.cloneInto([id], content)
+      )[0];
     }, _id);
   }
 
   getCheckableGlobalPrefs() {
-    return this.extension.experimentAPIManager.global.aboutConfigPrefs
-      .ALLOWED_GLOBAL_PREFS;
+    return this.#run(async function () {
+      return content.wrappedJSObject.browser.aboutConfigPrefs.getCheckableGlobalPrefs();
+    });
+  }
+
+  async updateShims(_shims) {
+    return this.#run(async function (shims) {
+      await content.wrappedJSObject.shims.ready();
+      await content.wrappedJSObject.shims._updateShims(
+        Cu.cloneInto(shims, content)
+      );
+    }, _shims);
   }
 
   async shimsReady() {
@@ -115,12 +155,8 @@ const WebCompatExtension = new (class WebCompatExtension {
 
   async disableInterventions(_ids) {
     return this.#run(async function (ids) {
-      const which =
-        content.wrappedJSObject.interventions._availableInterventions.filter(
-          i => ids.includes(i.id)
-        );
       return await content.wrappedJSObject.interventions.disableInterventions(
-        Cu.cloneInto(which, content)
+        Cu.cloneInto(ids, content)
       );
     }, _ids);
   }
@@ -134,12 +170,19 @@ const WebCompatExtension = new (class WebCompatExtension {
   }
 })();
 
+registerCleanupFunction(async () => {
+  await WebCompatExtension.overrideFirefoxVersion(undefined);
+  await WebCompatExtension.resetInterventionsAndShimsToDefaults();
+});
+
 async function testShimRuns(
   testPage,
   frame,
   trackersAllowed = true,
   expectOptIn = true
 ) {
+  await WebCompatExtension.shimsReady();
+
   const tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: testPage,
@@ -209,6 +252,8 @@ async function testShimDoesNotRun(
   trackersAllowed = false,
   testPage = SHIMMABLE_TEST_PAGE
 ) {
+  await WebCompatExtension.shimsReady();
+
   const tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: testPage,
@@ -244,8 +289,14 @@ async function testShimDoesNotRun(
   await BrowserTestUtils.removeTab(tab);
 }
 
+function panelId() {
+  return Services.prefs.getBoolPref("browser.urlbar.trustPanel.featureGate")
+    ? "trustpanel-popup"
+    : "protections-popup";
+}
+
 async function closeProtectionsPanel(win = window) {
-  let protectionsPopup = win.document.getElementById("protections-popup");
+  let protectionsPopup = win.document.getElementById(panelId());
   if (!protectionsPopup) {
     return;
   }
@@ -263,10 +314,14 @@ async function openProtectionsPanel(win = window) {
     win,
     "popupshown",
     true,
-    e => e.target.id == "protections-popup"
+    e => e.target.id == panelId()
   );
 
-  win.gProtectionsHandler.showProtectionsPopup();
+  if (Services.prefs.getBoolPref("browser.urlbar.trustPanel.featureGate")) {
+    win.gTrustPanelHandler.showPopup();
+  } else {
+    win.gProtectionsHandler.showProtectionsPopup();
+  }
 
   await popupShownPromise;
 }
@@ -294,7 +349,7 @@ async function clickOnPagePlaceholder(tab) {
     window,
     "popupshown",
     true,
-    e => e.target.id == "protections-popup"
+    e => e.target.id == panelId()
   );
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
@@ -335,4 +390,117 @@ async function clickOnPagePlaceholder(tab) {
 
   // If this await finished, then protections panel is open
   return popupShownPromise;
+}
+
+async function generateTestShims() {
+  await WebCompatExtension.updateShims([
+    {
+      id: "MochitestShim",
+      platform: "all",
+      branch: ["all:ignoredOtherPlatform"],
+      name: "Test shim for Mochitests",
+      bug: "mochitest",
+      file: "mochitest-shim-1.js",
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test.js",
+      ],
+      needsShimHelpers: ["getOptions", "optIn"],
+      options: {
+        simpleOption: true,
+        complexOption: { a: 1, b: "test" },
+        branchValue: { value: true, branches: [] },
+        platformValue: { value: true, platform: "neverUsed" },
+      },
+      unblocksOnOptIn: ["*://trackertest.org/*"],
+    },
+    {
+      disabled: true,
+      id: "MochitestShim2",
+      platform: "all",
+      name: "Test shim for Mochitests (disabled by default)",
+      bug: "mochitest",
+      file: "mochitest-shim-2.js",
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test_2.js",
+      ],
+      needsShimHelpers: ["getOptions", "optIn"],
+      options: {
+        simpleOption: true,
+        complexOption: { a: 1, b: "test" },
+        branchValue: { value: true, branches: [] },
+        platformValue: { value: true, platform: "neverUsed" },
+      },
+      unblocksOnOptIn: ["*://trackertest.org/*"],
+    },
+    {
+      id: "MochitestShim3",
+      platform: "all",
+      name: "Test shim for Mochitests (host)",
+      bug: "mochitest",
+      file: "mochitest-shim-3.js",
+      notHosts: ["example.com"],
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test_3.js",
+      ],
+    },
+    {
+      id: "MochitestShim4",
+      platform: "all",
+      name: "Test shim for Mochitests (notHost)",
+      bug: "mochitest",
+      file: "mochitest-shim-3.js",
+      hosts: ["example.net"],
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test_3.js",
+      ],
+    },
+    {
+      id: "MochitestShim5",
+      platform: "all",
+      name: "Test shim for Mochitests (branch)",
+      bug: "mochitest",
+      file: "mochitest-shim-3.js",
+      branches: ["never matches"],
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test_3.js",
+      ],
+    },
+    {
+      id: "MochitestShim6",
+      platform: "never matches",
+      name: "Test shim for Mochitests (platform)",
+      bug: "mochitest",
+      file: "mochitest-shim-3.js",
+      matches: [
+        "*://example.com/browser/browser/extensions/webcompat/tests/browser/shims_test_3.js",
+      ],
+    },
+    {
+      id: "EmbedTestShim",
+      platform: "desktop",
+      name: "Test shim for smartblock embed unblocking",
+      bug: "1892175",
+      runFirst: "embed-test-shim.js",
+      // Blank stub file just so we run the script above when the matched script
+      // files get blocked.
+      file: "empty-script.js",
+      matches: [
+        "https://itisatracker.org/browser/browser/extensions/webcompat/tests/browser/embed_test.js",
+      ],
+      // Use instagram logo as an example
+      logos: ["instagram.svg"],
+      needsShimHelpers: [
+        "embedClicked",
+        "smartblockEmbedReplaced",
+        "smartblockGetFluentString",
+        "shouldShowEmbedContentInPlaceholders",
+      ],
+      isSmartblockEmbedShim: true,
+      onlyIfBlockedByETP: true,
+      unblocksOnOptIn: ["*://itisatracker.org/*"],
+    },
+  ]);
+  registerCleanupFunction(async () => {
+    await WebCompatExtension.resetInterventionsAndShimsToDefaults();
+  });
 }

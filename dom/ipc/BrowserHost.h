@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_BrowserHost_h
 #define mozilla_dom_BrowserHost_h
 
-#include "nsIRemoteTab.h"
-#include "mozilla/dom/RemoteBrowser.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/RemoteBrowser.h"
+#include "nsIRemoteTab.h"
 
 class nsPIDOMWindowOuter;
 

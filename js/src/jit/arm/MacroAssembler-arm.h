@@ -865,17 +865,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void unboxObject(const BaseIndex& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
-  void unboxObjectOrNull(const ValueOperand& src, Register dest) {
-    // Due to Spectre mitigation logic (see Value.h), if the value is an Object
-    // then this yields the object; otherwise it yields zero (null), as desired.
-    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
-  }
-  void unboxObjectOrNull(const Address& src, Register dest) {
-    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
-  }
-  void unboxObjectOrNull(const BaseIndex& src, Register dest) {
-    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
-  }
   void unboxDouble(const ValueOperand& src, FloatRegister dest);
   void unboxDouble(const Address& src, FloatRegister dest);
   void unboxDouble(const BaseIndex& src, FloatRegister dest);
@@ -885,6 +874,11 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   // See comment in MacroAssembler-x64.h.
   void unboxGCThingForGCBarrier(const Address& src, Register dest) {
     load32(ToPayload(src), dest);
+  }
+  void unboxGCThingForGCBarrier(const ValueOperand& src, Register dest) {
+    if (src.payloadReg() != dest) {
+      ma_mov(src.payloadReg(), dest);
+    }
   }
 
   void unboxWasmAnyRefGCThingForGCBarrier(const Address& src, Register dest) {
@@ -911,6 +905,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   // Boxing code.
   void boxDouble(FloatRegister src, const ValueOperand& dest, FloatRegister);
   void boxNonDouble(JSValueType type, Register src, const ValueOperand& dest);
+  void boxNonDouble(Register type, Register src, const ValueOperand& dest);
 
   // Extended unboxing API. If the payload is already in a register, returns
   // that register. Otherwise, provides a move to the given scratch register,
@@ -970,21 +965,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
       loadInt32OrDouble(address.base, address.index, dest.fpu(), address.scale);
     } else {
       load32(address, dest.gpr());
-    }
-  }
-
-  template <typename T>
-  void storeUnboxedPayload(ValueOperand value, T address, size_t nbytes,
-                           JSValueType) {
-    switch (nbytes) {
-      case 4:
-        storePtr(value.payloadReg(), address);
-        return;
-      case 1:
-        store8(value.payloadReg(), address);
-        return;
-      default:
-        MOZ_CRASH("Bad payload width");
     }
   }
 
@@ -1107,7 +1087,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   // don't support unaligned accesses).
   void loadUnalignedValue(const Address& src, ValueOperand dest);
 
-  void tagValue(JSValueType type, Register payload, ValueOperand dest);
+  void tagValue(JSValueType type, Register payload, ValueOperand dest) {
+    boxNonDouble(type, payload, dest);
+  }
 
   void pushValue(ValueOperand val);
   void popValue(ValueOperand val);
@@ -1347,6 +1329,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   // The message will be printed at the stopping point.
   // (On non-simulator builds, does nothing.)
   void simulatorStop(const char* msg);
+
+  void minMax32(Register lhs, Register rhs, Register dest, bool isMax);
+  void minMax32(Register lhs, Imm32 rhs, Register dest, bool isMax);
 
   // Evaluate srcDest = minmax<isMax>{Float32,Double}(srcDest, other).
   // Checks for NaN if canBeNaN is true.

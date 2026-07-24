@@ -32,7 +32,6 @@ class NimbusBranchesStoreTest {
         val selectedBranch = "control"
 
         nimbusBranchesStore.dispatch(NimbusBranchesAction.UpdateBranches(branches, selectedBranch))
-            .join()
 
         assertEquals(branches, nimbusBranchesStore.state.branches)
         assertEquals(selectedBranch, nimbusBranchesStore.state.selectedBranch)
@@ -45,7 +44,7 @@ class NimbusBranchesStoreTest {
 
         val selectedBranch = "control"
 
-        nimbusBranchesStore.dispatch(NimbusBranchesAction.UpdateSelectedBranch(selectedBranch)).join()
+        nimbusBranchesStore.dispatch(NimbusBranchesAction.UpdateSelectedBranch(selectedBranch))
 
         assertEquals(selectedBranch, nimbusBranchesStore.state.selectedBranch)
     }

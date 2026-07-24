@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <vector>
 
-#include <stdarg.h>
 #include <windef.h>
 #include <winbase.h>
 #include <wingdi.h>
@@ -30,7 +29,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIObserverService.h"
-#include "nsIWindowsRegKey.h"
 #include "nsServiceManagerUtils.h"
 #include "nsNetAddr.h"
 #include "nsNotifyAddrListener.h"
@@ -44,6 +42,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/widget/WinRegistry.h"
 #include "../LinkServiceCommon.h"
 #include <iptypes.h>
 #include <iphlpapi.h>
@@ -596,28 +595,17 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
     // found and successfully parsed, then it returns true. Otherwise it
     // returns false.
     auto checkRegistry = [&dnsSuffixList](const nsAString& aRegPath) -> bool {
-      nsresult rv;
-      nsCOMPtr<nsIWindowsRegKey> regKey =
-          do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
-      if (NS_FAILED(rv)) {
-        LOG(("  creating nsIWindowsRegKey failed\n"));
-        return false;
-      }
-      rv = regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE, aRegPath,
-                        nsIWindowsRegKey::ACCESS_READ);
-      if (NS_FAILED(rv)) {
-        LOG(("  opening registry key failed\n"));
-        return false;
-      }
       nsAutoString wideSuffixString;
-      rv = regKey->ReadStringValue(u"SearchList"_ns, wideSuffixString);
-      if (NS_FAILED(rv)) {
-        LOG(("  reading registry string value failed\n"));
+      if (!mozilla::widget::WinRegistry::GetString(
+              HKEY_LOCAL_MACHINE, nsString(aRegPath), u"SearchList"_ns,
+              wideSuffixString)) {
+        LOG(("  reading registry key %s failed\n",
+             NS_ConvertUTF16toUTF8(aRegPath).get()));
         return false;
       }
 
       // Normally the key should not contain whitespace, but editing the
-      // registry manually or through gpedit doesn't alway enforce this.
+      // registry manually or through gpedit doesn't always enforce this.
       nsAutoCString list = NS_ConvertUTF16toUTF8(wideSuffixString);
       list.StripWhitespace();
       for (const nsACString& suffix : list.Split(',')) {
@@ -632,7 +620,7 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
     };
 
     // The Local group policy overrides the user set suffix list, so we must
-    // first check the registry key that is sets by gpedit, and if that fails we
+    // first check the registry key that is set by gpedit, and if that fails we
     // fall back to the one that is set by the user.
     if (!checkRegistry(nsLiteralString(
             u"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient"))) {
@@ -642,27 +630,15 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
   }
 
   auto registryChildCount = [](const nsAString& aRegPath) -> uint32_t {
-    nsresult rv;
-    nsCOMPtr<nsIWindowsRegKey> regKey =
-        do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
-    if (NS_FAILED(rv)) {
-      LOG(("  creating nsIWindowsRegKey failed\n"));
+    mozilla::widget::WinRegistry::Key key(
+        HKEY_LOCAL_MACHINE, nsString(aRegPath),
+        mozilla::widget::WinRegistry::KeyMode::Read);
+    if (!key) {
+      LOG(("  opening registry key %s failed\n",
+           NS_ConvertUTF16toUTF8(aRegPath).get()));
       return 0;
     }
-    rv = regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE, aRegPath,
-                      nsIWindowsRegKey::ACCESS_READ);
-    if (NS_FAILED(rv)) {
-      LOG(("  opening registry key failed\n"));
-      return 0;
-    }
-
-    uint32_t count = 0;
-    rv = regKey->GetChildCount(&count);
-    if (NS_FAILED(rv)) {
-      return 0;
-    }
-
-    return count;
+    return key.GetChildCount();
   };
 
   if (StaticPrefs::network_notify_checkForProxies()) {

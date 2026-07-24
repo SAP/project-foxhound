@@ -6,8 +6,6 @@
 
 #include "mozilla/HangAnnotations.h"
 
-#include <vector>
-
 #include "MainThreadUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "nsXULAppAPI.h"

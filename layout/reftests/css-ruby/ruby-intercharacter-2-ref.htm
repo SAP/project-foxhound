@@ -5,18 +5,19 @@ Reftest 2 for Bug 1395777 (reference file)
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
+<link rel="stylesheet" href="common.css">
 <style>
 html {
-  font-size: xx-large;
-}
-ruby {
-  width: 1.4em;
+  font: 50px/1 Ahem;
 }
 rtc {
   display: inline-block;
   writing-mode: vertical-rl;
   text-orientation: upright;
   vertical-align: text-top;
+}
+rtc:lang(zh-TW) {
+  font-size: 50%;
 }
 </style>
 </head>

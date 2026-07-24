@@ -9,7 +9,6 @@
 // HTTP/2 - RFC7540
 // https://www.rfc-editor.org/rfc/rfc7540.txt
 
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsAHttpTransaction.h"
@@ -207,6 +206,8 @@ class Http2StreamBase : public nsISupports,
     }
   }
 
+  bool Closed() const { return mClosed; }
+
  protected:
   virtual ~Http2StreamBase();
   friend class DeleteHttp2StreamBase;
@@ -300,8 +301,10 @@ class Http2StreamBase : public nsISupports,
   // close by setting this to the max value.
   int64_t mRequestBodyLenRemaining{0};
 
+  bool mClosed{false};
+
  private:
-  friend class mozilla::DefaultDelete<Http2StreamBase>;
+  friend mozilla::DefaultDelete<Http2StreamBase>;
 
   [[nodiscard]] nsresult ParseHttpRequestHeaders(const char*, uint32_t,
                                                  uint32_t*);

@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_MIDIPortParent_h
 #define mozilla_dom_MIDIPortParent_h
 
-#include "mozilla/dom/PMIDIPortParent.h"
 #include "mozilla/dom/MIDIPortBinding.h"
 #include "mozilla/dom/MIDIPortInterface.h"
+#include "mozilla/dom/PMIDIPortParent.h"
 
 // Header file contents
 namespace mozilla::dom {

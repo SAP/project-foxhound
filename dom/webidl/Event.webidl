@@ -69,6 +69,7 @@ partial interface Event {
   const long META_MASK    = 0x00000008;
 
   /** The original target of the event, before any retargetings. */
+  [NeedsCallerType]
   readonly attribute EventTarget? originalTarget;
   /**
    * The explicit original target of the event.  If the event was retargeted

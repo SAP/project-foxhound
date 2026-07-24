@@ -7,6 +7,7 @@
 BROWSER_CHROME_MANIFESTS += [
     "test/browser-telemetry-startup.toml",
     "test/browser.toml",
+    "test/browser_destroying_iframes.toml",
     "test/metrics/browser_metrics.toml",
     "test/metrics/browser_metrics_debugger.toml",
     "test/metrics/browser_metrics_inspector.toml",

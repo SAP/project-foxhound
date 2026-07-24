@@ -6,13 +6,11 @@
 
 package org.mozilla.gecko;
 
-import android.annotation.TargetApi;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Point;
-import android.os.Build;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.DragEvent;
@@ -21,7 +19,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import org.mozilla.gecko.annotation.WrapForJNI;
 
-@TargetApi(Build.VERSION_CODES.N)
 public class GeckoDragAndDrop {
   private static final String LOGTAG = "GeckoDragAndDrop";
   private static final boolean DEBUG = false;

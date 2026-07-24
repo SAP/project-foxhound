@@ -9,8 +9,8 @@
 
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStreamDefaultReaderBinding.h"
-#include "nsISupports.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupports.h"
 
 namespace mozilla::dom {
 

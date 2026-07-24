@@ -8,10 +8,10 @@
 #define mozilla_dom_TestInterfaceAsyncIterableSingle_h
 
 #include "IterableIterator.h"
-#include "nsCOMPtr.h"
-#include "nsWrapperCache.h"
-#include "nsTArray.h"
 #include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
+#include "nsCOMPtr.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 

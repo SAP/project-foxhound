@@ -441,7 +441,7 @@ add_task(async function test_createASRouterEvent_call_correctPolicy() {
     );
     let sandbox = sinon.createSandbox();
     let instance = new ASRouterTelemetry();
-    sandbox.stub(instance, expectedPolicyFnName);
+    sandbox.spy(instance, expectedPolicyFnName);
 
     let action = { type: msg.AS_ROUTER_TELEMETRY_USER_EVENT, data };
     await instance.createASRouterEvent(action);
@@ -453,78 +453,40 @@ add_task(async function test_createASRouterEvent_call_correctPolicy() {
     sandbox.restore();
   };
 
-  testCallCorrectPolicy("applyCFRPolicy", {
+  await testCallCorrectPolicy("applyCFRPolicy", {
     action: "cfr_user_event",
     event: "IMPRESSION",
     message_id: "cfr_message_01",
   });
 
-  testCallCorrectPolicy("applyToolbarBadgePolicy", {
+  await testCallCorrectPolicy("applyToolbarBadgePolicy", {
     action: "badge_user_event",
     event: "IMPRESSION",
     message_id: "badge_message_01",
   });
 
-  testCallCorrectPolicy("applyMomentsPolicy", {
+  await testCallCorrectPolicy("applyMomentsPolicy", {
     action: "moments_user_event",
     event: "CLICK_BUTTON",
     message_id: "moments_message_01",
   });
 
-  testCallCorrectPolicy("applySpotlightPolicy", {
+  await testCallCorrectPolicy("applySpotlightPolicy", {
     action: "spotlight_user_event",
     event: "CLICK",
     message_id: "SPOTLIGHT_MESSAGE_93",
   });
 
-  testCallCorrectPolicy("applyToastNotificationPolicy", {
+  await testCallCorrectPolicy("applyToastNotificationPolicy", {
     action: "toast_notification_user_event",
     event: "IMPRESSION",
     message_id: "TEST_TOAST_NOTIFICATION1",
   });
 
-  testCallCorrectPolicy("applyUndesiredEventPolicy", {
+  await testCallCorrectPolicy("applyUndesiredEventPolicy", {
     action: "asrouter_undesired_event",
     event: "UNDESIRED_EVENT",
   });
-});
-
-add_task(async function test_createASRouterEvent_stringify_event_context() {
-  info(
-    "ASRouterTelemetry.createASRouterEvent should stringify event_context if " +
-      "it is an Object"
-  );
-  let instance = new ASRouterTelemetry();
-  let action = {
-    type: msg.AS_ROUTER_TELEMETRY_USER_EVENT,
-    data: {
-      action: "asrouter_undesired_event",
-      event: "UNDESIRED_EVENT",
-      event_context: { foo: "bar" },
-    },
-  };
-  let { ping } = await instance.createASRouterEvent(action);
-
-  Assert.equal(ping.event_context, JSON.stringify({ foo: "bar" }));
-});
-
-add_task(async function test_createASRouterEvent_not_stringify_event_context() {
-  info(
-    "ASRouterTelemetry.createASRouterEvent should not stringify event_context " +
-      "if it is a String"
-  );
-  let instance = new ASRouterTelemetry();
-  let action = {
-    type: msg.AS_ROUTER_TELEMETRY_USER_EVENT,
-    data: {
-      action: "asrouter_undesired_event",
-      event: "UNDESIRED_EVENT",
-      event_context: "foo",
-    },
-  };
-  let { ping } = await instance.createASRouterEvent(action);
-
-  Assert.equal(ping.event_context, "foo");
 });
 
 add_task(async function test_onAction_calls_handleASRouterUserEvent() {

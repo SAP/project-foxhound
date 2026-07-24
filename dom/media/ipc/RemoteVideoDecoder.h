@@ -6,8 +6,8 @@
 #ifndef include_dom_media_ipc_RemoteVideoDecoderChild_h
 #define include_dom_media_ipc_RemoteVideoDecoderChild_h
 #include "RemoteDecoderChild.h"
-#include "RemoteMediaManagerChild.h"
 #include "RemoteDecoderParent.h"
+#include "RemoteMediaManagerChild.h"
 
 namespace mozilla::layers {
 class BufferRecycleBin;
@@ -41,7 +41,7 @@ class RemoteVideoDecoderChild : public RemoteDecoderChild {
            const CreateDecoderParams::OptionSet& aOptions,
            mozilla::Maybe<layers::TextureFactoryIdentifier> aIdentifier,
            const Maybe<uint64_t>& aMediaEngineId,
-           const Maybe<TrackingId>& aTrackingId);
+           const Maybe<TrackingId>& aTrackingId, PRemoteCDMActor* aCDM);
 
   MediaResult ProcessOutput(DecodedOutputIPDL&& aDecodedData) override;
 
@@ -56,7 +56,8 @@ class RemoteVideoDecoderParent final : public RemoteDecoderParent {
       float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
       const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
       nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
-      const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId);
+      const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId,
+      RemoteCDMParent* aCDM);
 
  protected:
   IPCResult RecvConstruct(ConstructResolver&& aResolver) override;

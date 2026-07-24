@@ -17,7 +17,10 @@ import androidx.core.view.forEach
 /**
  * Adjust the colors of the [Toolbar] on the top of the screen.
  */
-fun Toolbar.setToolbarColors(@ColorInt foreground: Int, @ColorInt background: Int) {
+fun Toolbar.setToolbarColors(
+    @ColorInt foreground: Int,
+    @ColorInt background: Int,
+) {
     apply {
         setBackgroundColor(background)
         setTitleTextColor(foreground)

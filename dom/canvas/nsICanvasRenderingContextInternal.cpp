@@ -5,17 +5,22 @@
 
 #include "nsICanvasRenderingContextInternal.h"
 
+#include "mozilla/ErrorResult.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/CanvasUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/DrawTargetRecording.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/PresShell.h"
 #include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
+#include "nsRFPService.h"
 #include "nsRefreshDriver.h"
+#include "nsThreadUtils.h"
+
+static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
 
 nsICanvasRenderingContextInternal::nsICanvasRenderingContextInternal() =
     default;
@@ -38,6 +43,89 @@ nsIGlobalObject* nsICanvasRenderingContextInternal::GetParentObject() const {
     return mOffscreenCanvas->GetParentObject();
   }
   return nullptr;
+}
+
+class RecordCanvasUsageRunnable final
+    : public mozilla::dom::WorkerMainThreadRunnable {
+ public:
+  RecordCanvasUsageRunnable(mozilla::dom::WorkerPrivate* aWorkerPrivate,
+                            const mozilla::CanvasUsage& aUsage)
+      : WorkerMainThreadRunnable(aWorkerPrivate,
+                                 "RecordCanvasUsageRunnable"_ns),
+        mUsage(aUsage) {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+  }
+
+ protected:
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool MainThreadRun() override {
+    mozilla::AssertIsOnMainThread();
+    RefPtr<mozilla::dom::Document> doc;
+    if (!mWorkerRef) {
+      MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Error,
+              ("RecordCanvasUsageRunnable::MainThreadRun - null mWorkerRef"));
+      return false;
+    }
+    auto* priv = mWorkerRef->Private();
+    if (!priv) {
+      MOZ_LOG(
+          gFingerprinterDetection, mozilla::LogLevel::Error,
+          ("RecordCanvasUsageRunnable::MainThreadRun - null worker private"));
+      return false;
+    }
+    doc = priv->GetDocument();
+    if (!doc) {
+      MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Error,
+              ("RecordCanvasUsageRunnable::MainThreadRun - null document"));
+      return false;
+    }
+    doc->RecordCanvasUsage(mUsage);
+    return true;
+  }
+
+ private:
+  mozilla::CanvasUsage mUsage;
+};
+
+void nsICanvasRenderingContextInternal::RecordCanvasUsage(
+    mozilla::CanvasExtractionAPI aAPI, mozilla::CSSIntSize size) const {
+  mozilla::dom::CanvasContextType contextType;
+  if (mCanvasElement) {
+    contextType = mCanvasElement->GetCurrentContextType();
+    auto usage =
+        mozilla::CanvasUsage::CreateUsage(false, contextType, aAPI, size, this);
+    mCanvasElement->OwnerDoc()->RecordCanvasUsage(usage);
+  }
+  if (mOffscreenCanvas) {
+    contextType = mOffscreenCanvas->GetContextType();
+    auto usage =
+        mozilla::CanvasUsage::CreateUsage(true, contextType, aAPI, size, this);
+    if (NS_IsMainThread()) {
+      nsIGlobalObject* global = mOffscreenCanvas->GetOwnerGlobal();
+      if (global) {
+        if (nsPIDOMWindowInner* inner = global->GetAsInnerWindow()) {
+          if (mozilla::dom::Document* doc = inner->GetExtantDoc()) {
+            doc->RecordCanvasUsage(usage);
+          }
+        }
+      }
+    } else {
+      mozilla::dom::WorkerPrivate* workerPrivate =
+          mozilla::dom::GetCurrentThreadWorkerPrivate();
+      if (workerPrivate) {
+        RefPtr<RecordCanvasUsageRunnable> runnable =
+            new RecordCanvasUsageRunnable(workerPrivate, usage);
+        mozilla::ErrorResult rv;
+        runnable->Dispatch(workerPrivate, mozilla::dom::WorkerStatus::Canceling,
+                           rv);
+        if (rv.Failed()) {
+          rv.SuppressException();
+          MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Error,
+                  ("RecordCanvasUsageRunnable dispatch failed"));
+        }
+      }
+    }
+  }
 }
 
 nsIPrincipal* nsICanvasRenderingContextInternal::PrincipalOrNull() const {

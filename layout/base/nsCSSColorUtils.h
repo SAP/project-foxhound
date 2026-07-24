@@ -6,8 +6,8 @@
 
 /* functions that manipulate colors */
 
-#ifndef __nsCSSColorUtils_h
-#define __nsCSSColorUtils_h
+#ifndef _nsCSSColorUtils_h
+#define _nsCSSColorUtils_h
 
 #include "nsColor.h"
 

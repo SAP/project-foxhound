@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
+
 #include "StreamUtils.h"
 #include "mozilla/dom/BufferSourceBinding.h"
 #include "mozilla/dom/BufferSourceBindingFwd.h"

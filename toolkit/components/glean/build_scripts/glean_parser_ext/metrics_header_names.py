@@ -39,9 +39,7 @@ def convert_yaml_path_to_header_name(filepath):
         path_components = ["geckoview", "metrics"]
 
     path_components = "_".join(path_components).split("_")
-    return "".join(
-        [
-            path_component[0].upper() + path_component[1:]
-            for path_component in path_components
-        ]
-    )
+    return "".join([
+        path_component[0].upper() + path_component[1:]
+        for path_component in path_components
+    ])

@@ -86,14 +86,25 @@ async function getContextMenuPanelListForCard(card) {
 }
 
 async function openContextMenuForItem(tabItem, card) {
+  const root = card.shadowRoot;
+  // Wait for <panel-list> "shown" inside shadowRoot and return live node
+  const shownPromise = BrowserTestUtils.waitForEvent(root, "shown", true, e => {
+    const panelList = e
+      .composedPath()
+      .find(node => node?.localName === "panel-list");
+    if (panelList && panelList.isConnected) {
+      e._panelList = panelList;
+      return true;
+    }
+    return false;
+  });
   // click on the item's button element (more menu)
   // and wait for the panel list to be shown
   tabItem.secondaryButtonEl.click();
   // NOTE: menu must populate with devices data before it can be rendered
   // so the creation of the panel-list can be async
-  let panelList = await getContextMenuPanelListForCard(card);
-  await BrowserTestUtils.waitForEvent(panelList, "shown");
-  return panelList;
+  const event = await shownPromise;
+  return event._panelList || (await getContextMenuPanelListForCard(card));
 }
 
 async function moreMenuSetup() {
@@ -337,7 +348,7 @@ add_task(async function test_send_device_submenu() {
     let panelList = await openContextMenuForItem(firstTab, cards[0]);
 
     let sendTabPanelItem = panelList.querySelector(
-      "panel-item[data-l10n-id=fxviewtabrow-send-tab]"
+      "panel-item[data-l10n-id=fxviewtabrow-send-to-device]"
     );
 
     ok(sendTabPanelItem, "Send tabs to device submenu panel item exists");

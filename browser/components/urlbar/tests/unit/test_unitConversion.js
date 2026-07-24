@@ -10,7 +10,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderUnitConversion:
-    "resource:///modules/UrlbarProviderUnitConversion.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderUnitConversion.sys.mjs",
 });
 
 const TEST_DATA = [
@@ -491,6 +491,7 @@ add_task(async function () {
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("browser.urlbar.unitConversion.enabled");
   });
+  let provider = new UrlbarProviderUnitConversion();
 
   for (const { category, cases } of TEST_DATA) {
     for (const { queryString, timezone, expected, assertResult } of cases) {
@@ -502,11 +503,11 @@ add_task(async function () {
       }
 
       const context = createContext(queryString);
-      const isActive = await UrlbarProviderUnitConversion.isActive(context);
+      const isActive = await provider.isActive(context);
       Assert.equal(isActive, !!expected || !!assertResult);
 
       if (isActive) {
-        UrlbarProviderUnitConversion.startQuery(context, (module, result) => {
+        provider.startQuery(context, (module, result) => {
           Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.DYNAMIC);
           Assert.equal(result.source, UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL);
           Assert.equal(result.suggestedIndex, 1);

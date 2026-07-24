@@ -9,6 +9,7 @@
 #include "mozilla/FloatingPoint.h"
 
 #include <cfloat>  // for FLT_MAX
+#include <cmath>
 
 namespace mozilla {
 

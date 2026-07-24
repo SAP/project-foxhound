@@ -54,7 +54,7 @@ class BaseVersionProducer:
 class DesktopVersionProducer(BaseVersionProducer):
     def get_binary_version(self, binary, **kwargs):
         try:
-            return super(DesktopVersionProducer, self).get_binary_version(binary)
+            return super().get_binary_version(binary)
         except Exception:
             pass
 
@@ -75,7 +75,7 @@ class DesktopVersionProducer(BaseVersionProducer):
             elif "linux" in platform.system().lower():
                 command = [binary, "--version"]
                 proc = subprocess.run(
-                    command, timeout=10, capture_output=True, text=True
+                    command, check=True, timeout=10, capture_output=True, text=True
                 )
 
                 bmeta = proc.stdout.split("\n")
@@ -118,9 +118,7 @@ class DesktopVersionProducer(BaseVersionProducer):
 class MobileVersionProducer(BaseVersionProducer):
     def get_binary_version(self, binary, apk_path=None, **kwargs):
         try:
-            return super(MobileVersionProducer, self).get_binary_version(
-                apk_path or binary
-            )
+            return super().get_binary_version(apk_path or binary)
         except Exception:
             pass
 

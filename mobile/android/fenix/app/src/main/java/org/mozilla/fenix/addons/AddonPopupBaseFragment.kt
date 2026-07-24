@@ -13,6 +13,7 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.preference.PreferenceManager
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.state.CustomTabSessionState
@@ -38,8 +39,10 @@ import org.mozilla.fenix.downloads.DownloadService
 import org.mozilla.fenix.downloads.dialog.createDownloadAppDialog
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.theme.ThemeManager
+import mozilla.components.feature.downloads.R as downloadsR
 
 /**
  * Provides shared functionality to our fragments for add-on settings and
@@ -102,19 +105,19 @@ abstract class AddonPopupBaseFragment : Fragment(), EngineSession.Observer, User
                         R.attr.textOnColorPrimary,
                         requireContext(),
                     ),
-                    positiveButtonRadius = (resources.getDimensionPixelSize(R.dimen.tab_corner_radius)).toFloat(),
+                    positiveButtonRadius = pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
                 ),
-                onDownloadStartedListener = {
+                onDownloadStartedListener = { downloadId ->
                     requireComponents.appStore.dispatch(
                         AppAction.DownloadAction.DownloadInProgress(
-                            session?.id,
+                             downloadId,
                         ),
                     )
                 },
                 onNeedToRequestPermissions = { permissions ->
                     requestPermissions(permissions, REQUEST_CODE_DOWNLOAD_PERMISSIONS)
                 },
-                customFirstPartyDownloadDialog = { filename, contentSize, positiveAction, negativeAction ->
+                customFirstPartyDownloadDialog = { filename, contentSize, _, positiveAction, negativeAction, _ ->
                     run {
                         if (downloadDialog == null) {
                             val title = if (contentSize.value > 0L) {
@@ -123,23 +126,27 @@ abstract class AddonPopupBaseFragment : Fragment(), EngineSession.Observer, User
                                         contentSize.value,
                                     )
                                 getString(
-                                    R.string.mozac_feature_downloads_dialog_title_3,
+                                    downloadsR.string.mozac_feature_downloads_dialog_title_3,
                                     contentSizeInBytes,
                                 )
                             } else {
-                                getString(R.string.mozac_feature_downloads_dialog_title_with_unknown_size)
+                                getString(downloadsR.string.mozac_feature_downloads_dialog_title_with_unknown_size)
                             }
 
-                            downloadDialog = AlertDialog.Builder(requireContext())
+                            downloadDialog = MaterialAlertDialogBuilder(requireContext())
                                 .setTitle(title)
                                 .setMessage(filename.value)
-                                .setPositiveButton(R.string.mozac_feature_downloads_dialog_download) { dialog, _ ->
-                                    positiveAction.value.invoke()
-                                    dialog.dismiss()
+                                .setPositiveButton(
+                                    downloadsR.string.mozac_feature_downloads_dialog_download,
+                                ) { dialog, _ ->
+                                        positiveAction.value.invoke()
+                                        dialog.dismiss()
                                 }
-                                .setNegativeButton(R.string.mozac_feature_downloads_dialog_cancel) { dialog, _ ->
-                                    negativeAction.value.invoke()
-                                    dialog.dismiss()
+                                .setNegativeButton(
+                                    downloadsR.string.mozac_feature_downloads_dialog_cancel,
+                                ) { dialog, _ ->
+                                        negativeAction.value.invoke()
+                                        dialog.dismiss()
                                 }.setOnDismissListener {
                                     downloadDialog = null
                                     requireContext().components.analytics.crashReporter.recordCrashBreadcrumb(
@@ -322,6 +329,7 @@ abstract class AddonPopupBaseFragment : Fragment(), EngineSession.Observer, User
             if (downloadState.openInApp && downloadJobStatus == Status.COMPLETED) {
                 val fileWasOpened = AbstractFetchDownloadService.openFile(
                     applicationContext = safeContext.applicationContext,
+                    packageName = safeContext.applicationContext.packageName,
                     downloadFileName = downloadState.fileName,
                     downloadFilePath = downloadState.filePath,
                     downloadContentType = downloadState.contentType,

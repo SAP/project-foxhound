@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ku ts\'áaik ti\' kaambalil.</p> <p>Meyajt bey jump\'éel navegador privado: <ul> <li>Kaxant yéetel navegar tu tojile\' ti\' le ka\'anatako\'ob</li> <li>Bloquear le rastreadores (wa actualizar configuración utia\'al u permitir le rastreadores)</li> <li>Borrar utia\'al u tselik le cookies bey xan le historial xookilo\' yéetel navegación</li> </ul> </p> <p>%1$s ku beeta\'al tumen Mozilla. K meyaje\' leti\' u yantal jump\'éel Internet toj yéetel je\'ek\'ab.<br/> <a href=\"%2$s\">Kaanbal asab</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ku ts\'áaik ti\' kaambalil.</p>\n<p>Meyajt bey jump\'éel navegador privado:\n<ul>\n<li>Kaxant yéetel navegar tu tojile\' ti\' le ka\'anatako\'ob</li>\n<li>Bloquear le rastreadores (wa actualizar configuración utia\'al u permitir le rastreadores)</li>\n<li>Borrar utia\'al u tselik le cookies bey xan le historial xookilo\' yéetel navegación</li>\n</ul> </p>\n<p>%1$s ku beeta\'al tumen Mozilla. K meyaje\' leti\' u yantal jump\'éel Internet toj yéetel je\'ek\'ab.<br/>\n<a href=\"%2$s\">Kaanbal asab</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ta wóok’sal yéetel Jeets’el óol</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -842,13 +849,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s ku yilik u meyajtik jump\'éel conexión HTTPS ken u páajtal uti\'al u yantal asab seguridad. <a href=\"%2$s\">Kaanbal asab</a> <br/><br/> K\'ex le configuración ti\' Configuración > Yojeta\'al mixba\'al &amp; Seguridad > Seguridad.]]></string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s ku yilik u meyajtik jump\'éel conexión HTTPS ken u páajtal uti\'al u yantal asab seguridad. <a href=\"%2$s\">Kaanbal asab</a> <br/><br/>\nK\'ex le configuración ti\' Configuración > Yojeta\'al mixba\'al &amp; Seguridad > Seguridad.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Conexión ma\' segura</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Le je\'ela\' je\'el u páajtal u jump\'éel talamil yéetel u configuración le servidor, wa je\'el u páajtal u yaantal máax táan u yilik u beetik bey le servidor. <br/><br/> Wa ts\'o\'ok a conectar ti\' le servidor belal ti\' le pasado, le ba\'alo\' je\'el u páajtal u temporal.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Le je\'ela\' je\'el u páajtal u jump\'éel talamil yéetel u configuración le servidor, wa je\'el u páajtal u yaantal máax táan u yilik u beetik bey le servidor. <br/><br/>\nWa ts\'o\'ok a conectar ti\' le servidor belal ti\' le pasado, le ba\'alo\' je\'el u páajtal u temporal.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Yaan máax je\'el u páajtal u yilik u beetik bey le ts\'ono\'oto\' yéetel u seguer u beetik je\'el u yantal riesgo.</label> <br><br> <label>%1$s ma\' u k\'ubik u yóol ti\' <b>%2$s</b> tumen ma\' k\'ajóolta\'an máax ts\'áaik u certificado, le certificado ku firmarta\'al tu juunal, wa le servidor ma\' táan u túuxtik le certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Yaan máax je\'el u páajtal u yilik u beetik bey le ts\'ono\'oto\' yéetel u seguer u beetik je\'el u yantal riesgo.</label> <br><br>\n<label>%1$s ma\' u k\'ubik u yóol ti\' <b>%2$s</b> tumen ma\' k\'ajóolta\'an máax ts\'áaik u certificado, le certificado ku firmarta\'al tu juunal, wa le servidor ma\' táan u túuxtik le certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

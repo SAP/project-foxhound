@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_NameSpaceConstants_h__
-#define mozilla_dom_NameSpaceConstants_h__
+#ifndef mozilla_dom_NameSpaceConstants_h_
+#define mozilla_dom_NameSpaceConstants_h_
 
 #include <stdint.h>
 
@@ -29,4 +29,4 @@ static const int32_t kNameSpaceID_None = 0;
 #define kNameSpaceID_disabled_SVG 11
 #define kNameSpaceID_LastBuiltin 11  // last 'built-in' namespace
 
-#endif  // mozilla_dom_NameSpaceConstants_h__
+#endif  // mozilla_dom_NameSpaceConstants_h_

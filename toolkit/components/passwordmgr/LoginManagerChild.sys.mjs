@@ -62,7 +62,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gFormFillService",
   "@mozilla.org/satchel/form-fill-controller;1",
-  "nsIFormFillController"
+  Ci.nsIFormFillController
 );
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -150,7 +150,7 @@ const observer = {
         this.handleKeydown(aEvent, field, loginManagerChild, ownerDocument);
         break;
 
-      case "focus":
+      case "focusin":
         this.handleFocus(field, docState, aEvent.target);
         break;
 
@@ -534,14 +534,14 @@ export class LoginFormState {
    * field AND whether the username is still filled in with the username AND
    * whether the associated password field has the matching password.
    *
-   * @note This could possibly be unified with getFieldContext but they have
+   * Note: This could possibly be unified with getFieldContext but they have
    * slightly different use cases. getFieldContext looks up recipes whereas this
    * method doesn't need to since it's only returning a boolean based upon the
    * recipes used for the last fill (in _fillForm).
    *
    * @param {HTMLInputElement} aUsernameField element contained in a LoginForm
    *                                          cached in LoginFormFactory.
-   * @returns {Boolean} whether the username and password fields still have the
+   * @returns {boolean} whether the username and password fields still have the
    *                    last-filled values, if previously filled.
    */
   #isLoginAlreadyFilled(aUsernameField) {
@@ -616,7 +616,7 @@ export class LoginFormState {
     this.generatedPasswordFields.add(passwordField);
 
     // blur/focus: listen for focus changes to we can mask/unmask generated passwords
-    for (let eventType of ["blur", "focus"]) {
+    for (let eventType of ["blur", "focusin"]) {
       passwordField.addEventListener(eventType, observer, {
         capture: true,
         mozSystemGroup: true,
@@ -668,7 +668,7 @@ export class LoginFormState {
     this.generatedPasswordFields.delete(passwordField);
 
     // Remove all the event listeners added in _passwordEditedOrGenerated
-    for (let eventType of ["blur", "focus"]) {
+    for (let eventType of ["blur", "focusin"]) {
       passwordField.removeEventListener(eventType, observer, {
         capture: true,
         mozSystemGroup: true,
@@ -692,6 +692,7 @@ export class LoginFormState {
 
   /**
    * Focus event handler for username fields to decide whether to show autocomplete.
+   *
    * @param {HTMLInputElement} focusedField
    */
   #onUsernameFocus(focusedField) {
@@ -738,7 +739,8 @@ export class LoginFormState {
     lazy.gFormFillService.showPopup();
   }
 
-  /** Remove login field highlight when its value is cleared or overwritten.
+  /**
+   * Remove login field highlight when its value is cleared or overwritten.
    */
   static #removeFillFieldHighlight(event) {
     event.target.autofillState = "";
@@ -746,6 +748,7 @@ export class LoginFormState {
 
   /**
    * Highlight login fields on autocomplete or autofill on page load.
+   *
    * @param {Node} element that needs highlighting.
    */
   static _highlightFilledField(element) {
@@ -777,7 +780,7 @@ export class LoginFormState {
    *
    * @param {FormLike} form
    *                  the form to check.
-   * @param {Object}  recipe=null
+   * @param {object}  recipe=null
    *                  A relevant field override recipe to use.
    * @returns {Element} The username field or null (if the form is not a
    *                    username-only form).
@@ -822,11 +825,11 @@ export class LoginFormState {
 
   /**
    * @param {LoginForm} form - the LoginForm to look for password fields in.
-   * @param {Object} options
+   * @param {object} options
    * @param {bool} [options.skipEmptyFields=false] - Whether to ignore password fields with no value.
    *                                                 Used at capture time since saving empty values isn't
    *                                                 useful.
-   * @param {Object} [options.fieldOverrideRecipe=null] - A relevant field override recipe to use.
+   * @param {object} [options.fieldOverrideRecipe=null] - A relevant field override recipe to use.
    * @return {Array|null} Array of password field elements for the specified form.
    *                      If no pw fields are found, or if more than 5 are found, then null
    *                      is returned.
@@ -981,10 +984,10 @@ export class LoginFormState {
    * @param {LoginForm} form
    * @param {bool} isSubmission
    * @param {Set} recipes
-   * @param {Object} options
+   * @param {object} options
    * @param {bool} [options.ignoreConnect] - Whether to ignore checking isConnected
    *                                         of the element.
-   * @return {Object} {usernameField, newPasswordField, oldPasswordField, confirmPasswordField}
+   * @return {object} {usernameField, newPasswordField, oldPasswordField, confirmPasswordField}
    *
    * usernameField may be null.
    * newPasswordField may be null. If null, this is a username-only form.
@@ -1269,7 +1272,7 @@ export class LoginFormState {
    * @param {Element} aField
    *                  A form field we want to verify.
    *
-   * @returns {Object} an object with information about the
+   * @returns {object} an object with information about the
    *                   LoginForm username and password field
    *                   or null if the passed field is invalid.
    */
@@ -1340,15 +1343,14 @@ export class LoginManagerChild extends JSWindowActorChild {
   #deferredPasswordAddedTasksByRootElement = new WeakMap();
 
   /**
-   * WeakMap of a document to the array of callbacks to execute when it becomes visible
+   * WeakMap of a document to the array of callbacks to execute when the document becomes visible and loaded.
    *
-   * This is used to defer handling DOMFormHasPassword and onDOMInputPasswordAdded events when the
-   * containing document is hidden.
-   * When the document first becomes visible, any queued events will be handled as normal.
+   * This is used to defer handling DOMFormHasPassword, onDOMInputPasswordAdded, and
+   * onDOMFormHasPossibleUsernameInputAdded events until the document is visible and loaded.
    *
    * @type {WeakMap}
    */
-  #visibleTasksByDocument = new WeakMap();
+  #pendingTaskByDocument = new WeakMap();
 
   /**
    * Maps all DOM content documents in this content process, including those in
@@ -1394,26 +1396,26 @@ export class LoginManagerChild extends JSWindowActorChild {
         break;
       }
       case "PasswordManager:formIsPending": {
-        return this.#visibleTasksByDocument.has(this.document);
+        return this.#pendingTaskByDocument.has(this.document);
       }
       case "PasswordManager:formProcessed": {
         this.notifyObserversOfFormProcessed(msg.data.formid);
         break;
       }
       case "PasswordManager:OnFieldAutoComplete": {
-        const { focusedElement } = lazy.gFormFillService;
+        const { controlledElement } = lazy.gFormFillService;
         const login = lazy.LoginHelper.vanillaObjectToLogin(msg.data);
-        this.onFieldAutoComplete(focusedElement, login);
+        this.onFieldAutoComplete(controlledElement, login);
         break;
       }
       case "PasswordManager:FillGeneratedPassword": {
-        const { focusedElement } = lazy.gFormFillService;
-        this.filledWithGeneratedPassword(focusedElement);
+        const { controlledElement } = lazy.gFormFillService;
+        this.filledWithGeneratedPassword(controlledElement);
         break;
       }
       case "PasswordManager:FillRelayUsername": {
-        const { focusedElement } = lazy.gFormFillService;
-        this.fillRelayUsername(focusedElement, msg.data);
+        const { controlledElement } = lazy.gFormFillService;
+        this.fillRelayUsername(controlledElement, msg.data);
         break;
       }
     }
@@ -1428,7 +1430,7 @@ export class LoginManagerChild extends JSWindowActorChild {
       return;
     }
 
-    if (inputElement != lazy.gFormFillService.focusedElement) {
+    if (inputElement != lazy.gFormFillService.controlledElement) {
       lazy.log("Could not open popup on input that's no longer focused.");
       return;
     }
@@ -1470,7 +1472,7 @@ export class LoginManagerChild extends JSWindowActorChild {
 
     switch (event.type) {
       case "DOMFormHasPassword": {
-        this.#onDOMFormHasPassword(event, this.document.defaultView);
+        this.#onDOMFormHasPassword(event);
         let formLike = lazy.LoginFormFactory.createFromForm(
           event.originalTarget
         );
@@ -1510,7 +1512,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    * Get relevant logins and recipes from the parent
    *
    * @param {HTMLFormElement} form - form to get login data for
-   * @param {Object} options
+   * @param {object} options
    * @param {boolean} options.guid - guid of a login to retrieve
    * @param {boolean} options.showPrimaryPassword - whether to show a primary password prompt
    */
@@ -1666,46 +1668,123 @@ export class LoginManagerChild extends JSWindowActorChild {
     }
   }
 
-  onDocumentVisibilityChange(event) {
-    if (!event.isTrusted) {
-      return;
-    }
-    let document = event.target;
-    let onVisibleTasks = this.#visibleTasksByDocument.get(document);
-    if (!onVisibleTasks) {
-      return;
-    }
-    for (let task of onVisibleTasks) {
-      lazy.log("onDocumentVisibilityChange: executing queued task.");
-      task();
-    }
-    this.#visibleTasksByDocument.delete(document);
+  #runPendingTasksByDocument(document) {
+    const tasks = this.#pendingTaskByDocument.get(document) ?? [];
+    tasks.forEach(task => task());
+    this.#pendingTaskByDocument.delete(document);
   }
 
-  _deferHandlingEventUntilDocumentVisible(event, document, fn) {
+  /**
+   * Defers the handling of an event until the associated document is ready for autofill(
+   * `visibilityState` is "visible" and `readyState` is "interactive" or "complete").
+   *
+   * If tasks are already pending for the document, the new task is queued.
+   * Otherwise, it registers `visibilitychange` and `DOMContentLoaded` listeners
+   * to detect when the document becomes ready, and executes all queued tasks.
+   *
+   * @param {Event} event - The triggering event, used for logging and validation.
+   * @param {Document} document The document whose visibility and load state are monitored.
+   * @param {Function} fn The task function to defer until the document is ready and visible.
+   */
+  #handleEventOnceReady(event, document, fn) {
     lazy.log(
-      `Defer handling event, document.visibilityState: ${document.visibilityState}, defer handling ${event.type}.`
+      `Defer handling event, document.visibilityState: ${document.visibilityState}, ` +
+        `readyState: ${document.readyState}, defer handling ${event.type}.`
     );
-    let onVisibleTasks = this.#visibleTasksByDocument.get(document);
-    if (!onVisibleTasks) {
+
+    if (this.#isReadyForAutofill(document) || this.#getIsPrimaryPasswordSet()) {
+      fn();
+      return;
+    }
+
+    const pendingTasks = this.#pendingTaskByDocument.get(document);
+    if (pendingTasks) {
+      pendingTasks.push(fn);
+      return;
+    }
+    this.#pendingTaskByDocument.set(document, [fn]);
+
+    // TODO: Bug 1983533 - Add a chrome-only event that fires after DCL, first paint,
+    // and when the tab is visible to simplify this logic.
+    const waitForPaintAndVisible = () => {
       lazy.log(
-        "Defer handling first queued event and register the visibilitychange handler."
+        "Defer handling first queued event and register the `MozAfterPaint` listener."
       );
-      onVisibleTasks = [];
-      this.#visibleTasksByDocument.set(document, onVisibleTasks);
+
+      const waitForVisible = () => {
+        if (document.visibilityState != "visible") {
+          /*
+           * We might receive 'MozAfterPaint' before the document becomes visible,
+           * for example, when user hovers over the tab and we show tab warming.
+           * In this case, we register a listener for 'visibilitychange' because we
+           * don't want to execute the queued task when the tab is in the background.
+           */
+          const onVisibleStateChange = event => {
+            if (!event.isTrusted || document.visibilityState != "visible") {
+              return;
+            }
+            document.removeEventListener(
+              "visibilitychange",
+              onVisibleStateChange
+            );
+
+            lazy.log(
+              "The document is painted and becomes visible: executing queued task."
+            );
+            this.#runPendingTasksByDocument(document);
+          };
+          document.addEventListener("visibilitychange", onVisibleStateChange);
+          return;
+        }
+
+        lazy.log("The document is painted: executing queued task.");
+        this.#runPendingTasksByDocument(document);
+      };
+
+      if (lazy.LoginHelper.testOnlyNotWaitForPaint) {
+        waitForVisible();
+        return;
+      }
+
+      this.contentWindow.windowRoot.addEventListener(
+        "MozAfterPaint",
+        waitForVisible,
+        { once: true }
+      );
+    };
+
+    if (
+      document.readyState == "interactive" ||
+      document.readyState == "complete"
+    ) {
+      waitForPaintAndVisible();
+    } else {
+      lazy.log(
+        "Defer handling first queued event and register the `DOMContentLoaded` listener."
+      );
       document.addEventListener(
-        "visibilitychange",
-        event => {
-          this.onDocumentVisibilityChange(event);
+        "DOMContentLoaded",
+        () => {
+          lazy.log("Receive DOMContentLoaded event");
+          waitForPaintAndVisible();
         },
         { once: true }
       );
     }
-    onVisibleTasks.push(fn);
   }
 
   #getIsPrimaryPasswordSet() {
     return Services.cpmm.sharedData.get("isPrimaryPasswordSet");
+  }
+
+  /**
+   * This function is used to determine if the document is ready for processing DOM events
+   * to fetch logins and fill forms. Currently, we wait until the document is visible
+   */
+  #isReadyForAutofill(document) {
+    return (
+      document.visibilityState == "visible" && document.readyState == "complete"
+    );
   }
 
   #onDOMFormHasPassword(event) {
@@ -1723,47 +1802,44 @@ export class LoginManagerChild extends JSWindowActorChild {
     }
     this.#ensureDocumentRestoredListenerRegistered();
 
-    const isPrimaryPasswordSet = this.#getIsPrimaryPasswordSet();
-    let document = event.target.ownerDocument;
+    const form = event.target;
+    const document = form.ownerDocument;
 
     // don't attempt to defer handling when a primary password is set
     // Showing the MP modal as soon as possible minimizes its interference with tab interactions
     // See bug 1539091 and bug 1538460.
     lazy.log(
-      `#onDOMFormHasPassword: visibilityState: ${document.visibilityState}, isPrimaryPasswordSet: ${isPrimaryPasswordSet}.`
+      `#onDOMFormHasPassword: visibilityState: ${document.visibilityState}, ` +
+        `readyState: ${document.readyState}, isPrimaryPasswordSet: ${this.#getIsPrimaryPasswordSet()}.`
     );
 
-    if (document.visibilityState == "visible" || isPrimaryPasswordSet) {
-      this._processDOMFormHasPasswordEvent(event);
-    } else {
-      // wait until the document becomes visible before handling this event
-      this._deferHandlingEventUntilDocumentVisible(event, document, () => {
-        this._processDOMFormHasPasswordEvent(event);
-      });
-    }
+    // wait until the document becomes visible before handling this event
+    this.#handleEventOnceReady(event, document, () =>
+      this.#processDOMFormHasPasswordEvent(form)
+    );
   }
 
-  _processDOMFormHasPasswordEvent(event) {
-    let form = event.target;
-    let formLike = lazy.LoginFormFactory.createFromForm(form);
-    this._fetchLoginsFromParentAndFillForm(formLike);
+  #processDOMFormHasPasswordEvent(form) {
+    const formLike = lazy.LoginFormFactory.createFromForm(form);
+    this.#fetchLoginsFromParentAndFillForm(formLike);
   }
 
   #onDOMPossibleUsernameInputAdded(event) {
     if (!event.isTrusted) {
       return;
     }
-    const isPrimaryPasswordSet = this.#getIsPrimaryPasswordSet();
 
+    const target = event.target;
     let document;
-    if (HTMLFormElement.isInstance(event.target)) {
-      document = event.target.ownerDocument;
+    if (HTMLFormElement.isInstance(target)) {
+      document = target.ownerDocument;
     } else {
-      document = event.target;
+      document = target;
     }
 
     lazy.log(
-      `#onDomPossibleUsernameInputAdded: visibilityState: ${document.visibilityState}, isPrimaryPasswordSet: ${isPrimaryPasswordSet}.`
+      `#onDomPossibleUsernameInputAdded: visibilityState: ${document.visibilityState}, ` +
+        `readyState: ${document.readyState}, isPrimaryPasswordSet: ${this.#getIsPrimaryPasswordSet()}.`
     );
 
     // For simplicity, the result of the telemetry is stacked. This means if a
@@ -1780,25 +1856,22 @@ export class LoginManagerChild extends JSWindowActorChild {
       return;
     }
 
-    if (document.visibilityState == "visible" || isPrimaryPasswordSet) {
-      this._processDOMPossibleUsernameInputAddedEvent(event);
-    } else {
-      // wait until the document becomes visible before handling this event
-      this._deferHandlingEventUntilDocumentVisible(event, document, () => {
-        this._processDOMPossibleUsernameInputAddedEvent(event);
-      });
-    }
+    // wait until the document becomes visible before handling this event
+    this.#handleEventOnceReady(event, document, () =>
+      this.#processDOMPossibleUsernameInputAddedEvent(target)
+    );
   }
 
-  _processDOMPossibleUsernameInputAddedEvent(event) {
+  #processDOMPossibleUsernameInputAddedEvent(target) {
     let formLike;
-    if (HTMLFormElement.isInstance(event.target)) {
-      formLike = lazy.LoginFormFactory.createFromForm(event.target);
+    if (HTMLFormElement.isInstance(target)) {
+      formLike = lazy.LoginFormFactory.createFromForm(target);
     } else {
       formLike = lazy.LoginFormFactory.createFromDocumentRoot(
-        event.target.documentElement
+        target.documentElement
       );
     }
+
     // If the form contains a passoword field, `getUsernameFieldFromUsernameOnlyForm` returns
     // null, so we don't trigger autofill for those forms here. In this function,
     // we only care about username-only forms. For forms contain a password, they'll be handled
@@ -1807,8 +1880,8 @@ export class LoginManagerChild extends JSWindowActorChild {
     // We specifically set the recipe to empty here to avoid loading site recipes during page loads.
     // This is okay because if we end up finding a username-only form that should be ignore by
     // the site recipe, the form will be skipped while autofilling later.
-    let docState = this.stateForDocument(formLike.ownerDocument);
-    let usernameField = docState.getUsernameFieldFromUsernameOnlyForm(
+    const docState = this.stateForDocument(formLike.ownerDocument);
+    const usernameField = docState.getUsernameFieldFromUsernameOnlyForm(
       formLike,
       {}
     );
@@ -1816,7 +1889,7 @@ export class LoginManagerChild extends JSWindowActorChild {
     if (usernameField) {
       // Autofill the username-only form.
       lazy.log("A username-only form is found.");
-      this._fetchLoginsFromParentAndFillForm(formLike);
+      this.#fetchLoginsFromParentAndFillForm(formLike);
     }
 
     Glean.pwmgr.isUsernameOnlyForm[usernameField ? "true" : "false"].add();
@@ -1837,41 +1910,32 @@ export class LoginManagerChild extends JSWindowActorChild {
     }
     this.#ensureDocumentRestoredListenerRegistered();
 
-    let pwField = event.originalTarget;
+    const pwField = event.originalTarget;
     if (pwField.form) {
       // Fill is handled by onDOMFormHasPassword which is already throttled.
       return;
     }
 
-    let document = pwField.ownerDocument;
-    const isPrimaryPasswordSet = this.#getIsPrimaryPasswordSet();
+    const document = pwField.ownerDocument;
     lazy.log(
-      `#onDOMInputPasswordAdded, visibilityState: ${document.visibilityState}, isPrimaryPasswordSet: ${isPrimaryPasswordSet}.`
+      `#onDOMInputPasswordAdded, visibilityState: ${document.visibilityState}, ` +
+        `readyState: ${document.readyState}, isPrimaryPasswordSet: ${this.#getIsPrimaryPasswordSet()}.`
     );
 
-    // don't attempt to defer handling when a primary password is set
-    // Showing the MP modal as soon as possible minimizes its interference with tab interactions
-    // See bug 1539091 and bug 1538460.
-    if (document.visibilityState == "visible" || isPrimaryPasswordSet) {
-      this._processDOMInputPasswordAddedEvent(event);
-    } else {
-      // wait until the document becomes visible before handling this event
-      this._deferHandlingEventUntilDocumentVisible(event, document, () => {
-        this._processDOMInputPasswordAddedEvent(event);
-      });
-    }
+    this.#handleEventOnceReady(event, document, () =>
+      this.#processDOMInputPasswordAddedEvent(pwField)
+    );
   }
 
-  _processDOMInputPasswordAddedEvent(event) {
-    let pwField = event.originalTarget;
-    let formLike = lazy.LoginFormFactory.createFromField(pwField);
+  #processDOMInputPasswordAddedEvent(pwField) {
+    const formLike = lazy.LoginFormFactory.createFromField(pwField);
 
     let deferredTask = this.#deferredPasswordAddedTasksByRootElement.get(
       formLike.rootElement
     );
     if (!deferredTask) {
       lazy.log(
-        "Creating a DeferredTask to call _fetchLoginsFromParentAndFillForm soon."
+        "Creating a DeferredTask to call #fetchLoginsFromParentAndFillForm soon."
       );
       lazy.LoginFormFactory.setForRootElement(formLike.rootElement, formLike);
 
@@ -1879,14 +1943,14 @@ export class LoginManagerChild extends JSWindowActorChild {
         () => {
           // Get the updated LoginForm instead of the one at the time of creating the DeferredTask via
           // a closure since it could be stale since LoginForm.elements isn't live.
-          let formLike2 = lazy.LoginFormFactory.getForRootElement(
+          const formLike2 = lazy.LoginFormFactory.getForRootElement(
             formLike.rootElement
           );
           lazy.log("Running deferred processing of onDOMInputPasswordAdded.");
           this.#deferredPasswordAddedTasksByRootElement.delete(
             formLike2.rootElement
           );
-          this._fetchLoginsFromParentAndFillForm(formLike2);
+          this.#fetchLoginsFromParentAndFillForm(formLike2);
         },
         PASSWORD_INPUT_ADDED_COALESCING_THRESHOLD_MS,
         0
@@ -1898,30 +1962,16 @@ export class LoginManagerChild extends JSWindowActorChild {
       );
     }
 
-    let window = pwField.ownerGlobal;
     if (deferredTask.isArmed) {
       lazy.log("DeferredTask is already armed so just updating the LoginForm.");
       // We update the LoginForm so it (most important .elements) is fresh when the task eventually
       // runs since changes to the elements could affect our field heuristics.
       lazy.LoginFormFactory.setForRootElement(formLike.rootElement, formLike);
-    } else if (
-      ["interactive", "complete"].includes(window.document.readyState)
-    ) {
+    } else {
       lazy.log(
-        "Arming the DeferredTask we just created since document.readyState == 'interactive' or 'complete'."
+        "Arming the DeferredTask we just created since document.readyState == 'complete'."
       );
       deferredTask.arm();
-    } else {
-      window.addEventListener(
-        "DOMContentLoaded",
-        function () {
-          lazy.log(
-            "Arming the onDOMInputPasswordAdded DeferredTask due to DOMContentLoaded."
-          );
-          deferredTask.arm();
-        },
-        { once: true }
-      );
     }
   }
 
@@ -1930,7 +1980,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    *
    * @param {LoginForm} form to fetch the logins for then try autofill.
    */
-  _fetchLoginsFromParentAndFillForm(form) {
+  #fetchLoginsFromParentAndFillForm(form) {
     if (!lazy.LoginHelper.enabled) {
       return;
     }
@@ -2184,7 +2234,7 @@ export class LoginManagerChild extends JSWindowActorChild {
       }
 
       let formLike = lazy.LoginFormFactory.getForRootElement(formRoot);
-      this._fetchLoginsFromParentAndFillForm(formLike);
+      this.#fetchLoginsFromParentAndFillForm(formLike);
     }
   }
 
@@ -2261,7 +2311,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    *        generated password being filled into a form-like element.
    * @param {boolean?} options.ignoreConnect Whether to ignore isConnected attribute of a element.
    *
-   * @returns {Boolean} whether the message is sent to the parent process.
+   * @returns {boolean} whether the message is sent to the parent process.
    */
   _maybeSendFormInteractionMessage(
     form,
@@ -2495,6 +2545,7 @@ export class LoginManagerChild extends JSWindowActorChild {
       if (messageName == "PasswordManager:ShowDoorhanger") {
         docState.captureLoginTimeStamp = doc.lastUserGestureTimeStamp;
       }
+
       this.sendAsyncMessage(messageName, detail);
     } catch (ex) {
       console.error(ex);
@@ -2531,6 +2582,7 @@ export class LoginManagerChild extends JSWindowActorChild {
   /**
    * The password field has been filled with a generated password, ensure the
    * field is handled accordingly.
+   *
    * @param {HTMLInputElement} passwordField
    */
   filledWithGeneratedPassword(passwordField) {
@@ -2562,6 +2614,7 @@ export class LoginManagerChild extends JSWindowActorChild {
   /**
    * Notify the parent that a generated password was filled into a field or
    * edited so that it can potentially be saved.
+   *
    * @param {HTMLInputElement} passwordField
    */
   _passwordEditedOrGenerated(
@@ -2604,6 +2657,7 @@ export class LoginManagerChild extends JSWindowActorChild {
 
   /**
    * Filter logins for exact origin/formActionOrigin and dedupe on usernamematche
+   *
    * @param {nsILoginInfo[]} logins an array of nsILoginInfo that could be
    *        used for the form, including ones with a different form action origin
    *        which are only used when the fill is userTriggered
@@ -2658,7 +2712,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    *        which are only used when the fill is userTriggered
    * @param {Set} recipes a set of recipes that could be used to affect how the
    *        form is filled
-   * @param {Object} [options = {}] a list of options for this method
+   * @param {object} [options = {}] a list of options for this method
    * @param {HTMLInputElement} [options.inputElement = null] an optional target
    *        input element we want to fill
    * @param {bool} [options.autofillForm = false] denotes if we should fill the
@@ -3041,9 +3095,9 @@ export class LoginManagerChild extends JSWindowActorChild {
         Glean.pwmgr.formAutofillResult[autofillResult].add(1);
 
         if (usernameField) {
-          let focusedElement = lazy.gFormFillService.focusedElement;
+          let controlledElement = lazy.gFormFillService.controlledElement;
           if (
-            usernameField == focusedElement &&
+            usernameField == controlledElement &&
             ![
               AUTOFILL_RESULT.FILLED,
               AUTOFILL_RESULT.FILLED_USERNAME_ONLY_FORM,
@@ -3059,7 +3113,7 @@ export class LoginManagerChild extends JSWindowActorChild {
 
       if (usernameField) {
         lazy.log("Attaching event listeners to usernameField.");
-        usernameField.addEventListener("focus", observer);
+        usernameField.addEventListener("focusin", observer);
         usernameField.addEventListener("mousedown", observer);
       }
 

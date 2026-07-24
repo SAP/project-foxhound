@@ -5,7 +5,6 @@
 
 #include <windows.h>
 #include <unknwn.h>
-#include <stdio.h>
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
 #include "mozilla/gtest/MozAssertions.h"

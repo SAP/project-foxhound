@@ -1,0 +1,30 @@
+[package]
+name = "rc_crypto"
+version = "0.1.0"
+authors = ["Sync Team <sync-team@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+base64 = "0.21"
+hex = "0.4"
+thiserror = "2"
+error-support = { path = "../error" }
+nss = { path = "nss" }
+hawk = { version = "5", default-features = false, optional = true }
+ece = { version = "2.3", default-features = false, features = ["serializable-keys"], optional = true }
+
+[dev-dependencies]
+
+[dev-dependencies.ece]
+version = "2.0"
+default-features = false
+features = ["serializable-keys", "backend-test-helper"]
+
+[features]
+default = []
+gecko = ["nss/gecko"]
+backtrace = ["error-support/backtrace"]

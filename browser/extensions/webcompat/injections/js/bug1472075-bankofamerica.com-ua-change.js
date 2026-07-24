@@ -14,11 +14,9 @@
  * as Firefox on Windows in those cases.
  */
 
-/* globals exportFunction */
-
 if (!navigator.platform.includes("Win")) {
   console.info(
-    "The user agent has been overridden for compatibility reasons. See https://webcompat.com/issues/2787 for details."
+    "The user agent has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1472075 for details."
   );
 
   const WINDOWS_UA = navigator.userAgent.replace(
@@ -26,17 +24,17 @@ if (!navigator.platform.includes("Win")) {
     "(Windows NT 10.0; Win64; x64; rv:"
   );
 
-  const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
+  const nav = Object.getPrototypeOf(navigator);
 
   const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
-  ua.get = exportFunction(() => WINDOWS_UA, window);
+  ua.get = () => WINDOWS_UA;
   Object.defineProperty(nav, "userAgent", ua);
 
   const appVersion = Object.getOwnPropertyDescriptor(nav, "appVersion");
-  appVersion.get = exportFunction(() => "appVersion", window);
+  appVersion.get = () => "appVersion";
   Object.defineProperty(nav, "appVersion", appVersion);
 
   const platform = Object.getOwnPropertyDescriptor(nav, "platform");
-  platform.get = exportFunction(() => "Win64", window);
+  platform.get = () => "Win64";
   Object.defineProperty(nav, "platform", platform);
 }

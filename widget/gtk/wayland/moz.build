@@ -9,6 +9,7 @@ with Files("**"):
 
 SOURCES += [
     "color-management-v1-protocol.c",
+    "color-representation-v1-protocol.c",
     "fractional-scale-v1-protocol.c",
     "idle-inhibit-unstable-v1-protocol.c",
     "kde-appmenu-protocol.c",
@@ -25,6 +26,7 @@ SOURCES += [
 
 EXPORTS.mozilla.widget += [
     "color-management-v1-client-protocol.h",
+    "color-representation-v1-client-protocol.h",
     "fractional-scale-v1-client-protocol.h",
     "idle-inhibit-unstable-v1-client-protocol.h",
     "kde-appmenu-client-protocol.h",

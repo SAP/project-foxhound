@@ -507,7 +507,7 @@ impl WindowRenderer {
         }
     }
 
-    pub fn child_renderer(&self, window: HWND) -> WindowChildRenderer {
+    pub fn child_renderer(&self, window: HWND) -> WindowChildRenderer<'_> {
         WindowChildRenderer {
             renderer: &self.inner,
             window,
@@ -557,7 +557,7 @@ struct WindowChildRenderer<'a> {
 }
 
 impl<'a> WindowChildRenderer<'a> {
-    fn add_child<W: window::WindowClass>(&mut self, class: W) -> WindowBuilder<W> {
+    fn add_child<W: window::WindowClass>(&mut self, class: W) -> WindowBuilder<'_, W> {
         let builder = class
             .builder(self.renderer.module)
             .style(win::WS_CHILD | win::WS_VISIBLE)
@@ -567,7 +567,7 @@ impl<'a> WindowChildRenderer<'a> {
         builder
     }
 
-    fn add_window<W: window::WindowClass>(&mut self, class: W) -> WindowBuilder<W> {
+    fn add_window<W: window::WindowClass>(&mut self, class: W) -> WindowBuilder<'_, W> {
         class
             .builder(self.renderer.module)
             .style(win::WS_OVERLAPPEDWINDOW)

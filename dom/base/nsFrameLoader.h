@@ -13,6 +13,7 @@
 #define nsFrameLoader_h_
 
 #include <cstdint>
+
 #include "ErrorList.h"
 #include "Units.h"
 #include "js/RootingAPI.h"
@@ -22,6 +23,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MessageManagerCallback.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
@@ -31,7 +33,6 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDocShell.h"
-#include "mozilla/dom/MessageManagerCallback.h"
 #include "nsID.h"
 #include "nsIFrame.h"
 #include "nsIMutationObserver.h"
@@ -271,7 +272,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
                                           bool aRunInGlobalScope) override;
   virtual nsresult DoSendAsyncMessage(
       const nsAString& aMessage,
-      mozilla::dom::ipc::StructuredCloneData& aData) override;
+      mozilla::NotNull<mozilla::dom::ipc::StructuredCloneData*> aData) override;
 
   /**
    * Called from the layout frame associated with this frame loader;
@@ -364,18 +365,17 @@ class nsFrameLoader final : public nsStubMutationObserver,
   mozilla::dom::Element* GetOwnerContent() { return mOwnerContent; }
 
   /**
-   * Stashes a detached nsIFrame on the frame loader. We do this when we're
-   * destroying the nsSubDocumentFrame. If the nsSubdocumentFrame is
-   * being reframed we'll restore the detached nsIFrame when it's recreated,
-   * otherwise we'll discard the old presentation and set the detached
-   * subdoc nsIFrame to null.
+   * Stashes a list of detached pres shells on the frame loader. We do this when
+   * we're destroying the nsSubDocumentFrame. If the nsSubdocumentFrame is being
+   * reframed we'll restore the detached shells when they're recreated,
+   * otherwise we'll discard the old presentation and clear these.
    */
-  void SetDetachedSubdocFrame(nsIFrame* aDetachedFrame);
-
-  /**
-   * Retrieves the detached nsIFrame as set by SetDetachedSubdocFrame().
-   */
-  nsIFrame* GetDetachedSubdocFrame(bool* aOutIsSet = nullptr) const;
+  using WeakPresShellArray = nsTArray<nsWeakPtr>;
+  void SetDetachedSubdocs(WeakPresShellArray&&);
+  WeakPresShellArray TakeDetachedSubdocs();
+  const WeakPresShellArray& GetDetachedSubdocs() const {
+    return mDetachedSubdocs;
+  }
 
   /**
    * Applies a new set of sandbox flags. These are merged with the sandbox
@@ -507,9 +507,9 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // our <browser> element.
   RefPtr<mozilla::dom::Element> mOwnerContentStrong;
 
-  // Stores the root frame of the subdocument while the subdocument is being
-  // reframed. Used to restore the presentation after reframing.
-  WeakFrame mDetachedSubdocFrame;
+  // Stores the detached pres shells of subdocuments.
+  // Used to restore the presentation after reframing.
+  WeakPresShellArray mDetachedSubdocs;
 
   // When performing a process switch, this value is used rather than mURIToLoad
   // to identify the process-switching load which should be resumed in the

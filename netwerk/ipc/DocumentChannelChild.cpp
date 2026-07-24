@@ -166,7 +166,7 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
 
   mIsPending = true;
   mWasOpened = true;
-  mListener = listener;
+  mListener = std::move(listener);
 
   return NS_OK;
 }
@@ -282,6 +282,9 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
 
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel)) {
     rv = httpChannel->SetChannelId(aArgs.channelId());
+    if (aArgs.referrerInfo()) {
+      rv = httpChannel->SetReferrerInfo(aArgs.referrerInfo());
+    }
   }
   if (NS_FAILED(rv)) {
     return IPC_OK();

@@ -4,7 +4,6 @@
 
 "use strict";
 
-const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   getCurrentZoom,
   setIgnoreLayoutChanges,
@@ -33,7 +32,10 @@ class RulersHighlighter {
     this.env = highlighterEnv;
     this.markup = new CanvasFrameAnonymousContentHelper(
       highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-rulers",
+      }
     );
     this.isReady = this.markup.initialize();
 
@@ -42,11 +44,7 @@ class RulersHighlighter {
     pageListenerTarget.addEventListener("pagehide", this);
   }
 
-  ID_CLASS_PREFIX = "rulers-highlighter-";
-
   _buildMarkup() {
-    const prefix = this.ID_CLASS_PREFIX;
-
     const createRuler = (axis, size) => {
       let width, height;
       let isHorizontal = true;
@@ -67,10 +65,9 @@ class RulersHighlighter {
       const g = this.markup.createSVGNode({
         nodeType: "g",
         attributes: {
-          id: `${axis}-axis`,
+          id: `rulers-highlighter-${axis}-axis`,
         },
         parent: svg,
-        prefix,
       });
 
       this.markup.createSVGNode({
@@ -86,42 +83,40 @@ class RulersHighlighter {
       const gRule = this.markup.createSVGNode({
         nodeType: "g",
         attributes: {
-          id: `${axis}-axis-ruler`,
+          id: `rulers-highlighter-${axis}-axis-ruler`,
         },
         parent: g,
-        prefix,
       });
 
       const pathGraduations = this.markup.createSVGNode({
         nodeType: "path",
         attributes: {
-          class: "ruler-graduations",
+          class: "rulers-highlighter-ruler-graduations",
           width,
           height,
         },
         parent: gRule,
-        prefix,
       });
 
       const pathMarkers = this.markup.createSVGNode({
         nodeType: "path",
         attributes: {
-          class: "ruler-markers",
+          class: "rulers-highlighter-ruler-markers",
           width,
           height,
         },
         parent: gRule,
-        prefix,
       });
 
       const gText = this.markup.createSVGNode({
         nodeType: "g",
         attributes: {
-          id: `${axis}-axis-text`,
-          class: (isHorizontal ? "horizontal" : "vertical") + "-labels",
+          id: `rulers-highlighter-${axis}-axis-text`,
+          class: isHorizontal
+            ? "rulers-highlighter-horizontal-labels"
+            : "rulers-highlighter-vertical-labels",
         },
         parent: g,
-        prefix,
       });
 
       let dGraduations = "";
@@ -173,23 +168,21 @@ class RulersHighlighter {
     const root = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
-        class: "root",
+        id: "rulers-highlighter-root",
+        class: "rulers-highlighter-root",
       },
-      prefix,
     });
 
     const svg = this.markup.createSVGNode({
       nodeType: "svg",
       parent: root,
       attributes: {
-        id: "elements",
-        class: "elements",
+        id: "rulers-highlighter-elements",
+        class: "rulers-highlighter-elements",
         width: "100%",
         height: "100%",
         hidden: "true",
       },
-      prefix,
     });
 
     createRuler("x", RULERS_MAX_X_AXIS);
@@ -214,20 +207,19 @@ class RulersHighlighter {
   }
 
   _onScroll(event) {
-    const prefix = this.ID_CLASS_PREFIX;
     const { scrollX, scrollY } = event.view;
 
     this.markup
-      .getElement(`${prefix}x-axis-ruler`)
+      .getElement(`rulers-highlighter-x-axis-ruler`)
       .setAttribute("transform", `translate(${-scrollX})`);
     this.markup
-      .getElement(`${prefix}x-axis-text`)
+      .getElement(`rulers-highlighter-x-axis-text`)
       .setAttribute("transform", `translate(${-scrollX})`);
     this.markup
-      .getElement(`${prefix}y-axis-ruler`)
+      .getElement(`rulers-highlighter-y-axis-ruler`)
       .setAttribute("transform", `translate(0, ${-scrollY})`);
     this.markup
-      .getElement(`${prefix}y-axis-text`)
+      .getElement(`rulers-highlighter-y-axis-text`)
       .setAttribute("transform", `translate(0, ${-scrollY})`);
   }
 
@@ -269,7 +261,7 @@ class RulersHighlighter {
     const strokeWidth = Math.min(minWidth, minWidth / this._zoom);
 
     this.markup
-      .getElement(this.ID_CLASS_PREFIX + "root")
+      .getElement("rulers-highlighter-root")
       .setAttribute("style", `stroke-width:${strokeWidth};`);
   }
 
@@ -284,13 +276,11 @@ class RulersHighlighter {
     }
 
     this.markup.destroy();
-
-    EventEmitter.emit(this, "destroy");
   }
 
   show() {
     this.markup.removeAttributeForElement(
-      this.ID_CLASS_PREFIX + "elements",
+      "rulers-highlighter-elements",
       "hidden"
     );
 
@@ -301,7 +291,7 @@ class RulersHighlighter {
 
   hide() {
     this.markup.setAttributeForElement(
-      this.ID_CLASS_PREFIX + "elements",
+      "rulers-highlighter-elements",
       "hidden",
       "true"
     );

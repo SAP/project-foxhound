@@ -6,8 +6,8 @@
 #include "WebGLChild.h"
 
 #include "ClientWebGLContext.h"
-#include "mozilla/StaticPrefs_webgl.h"
 #include "WebGLMethodDispatcher.h"
+#include "mozilla/StaticPrefs_webgl.h"
 
 namespace mozilla::dom {
 

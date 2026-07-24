@@ -5,21 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebTransportParent.h"
+
 #include "Http3WebTransportSession.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/WebTransportBinding.h"
 #include "mozilla/dom/WebTransportLog.h"
-#include "mozilla/net/WebTransportHash.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/net/WebTransportHash.h"
 #include "nsIEventTarget.h"
 #include "nsIOService.h"
 #include "nsIPrincipal.h"
 #include "nsIWebTransport.h"
-#include "nsStreamUtils.h"
 #include "nsIWebTransportStream.h"
+#include "nsStreamUtils.h"
 
 using IPCResult = mozilla::ipc::IPCResult;
 
@@ -35,6 +35,7 @@ WebTransportParent::~WebTransportParent() {
 
 void WebTransportParent::Create(
     const nsAString& aURL, nsIPrincipal* aPrincipal,
+    const uint64_t& aBrowsingContextID,
     const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
     const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
     nsTArray<WebTransportHash>&& aServerCertHashes,
@@ -52,13 +53,6 @@ void WebTransportParent::Create(
                       (uint32_t)dom::WebTransportCongestionControl::Low_latency
                   ? "Low-Latency"
                   : "Default")));
-
-  if (!StaticPrefs::network_webtransport_enabled()) {
-    aResolver(ResolveType(
-        NS_ERROR_DOM_NOT_ALLOWED_ERR,
-        static_cast<uint8_t>(WebTransportReliabilityMode::Pending)));
-    return;
-  }
 
   if (!aParentEndpoint.IsValid()) {
     aResolver(ResolveType(
@@ -99,13 +93,14 @@ void WebTransportParent::Create(
       [self = RefPtr{this}, uri = std::move(uri),
        dedicated = true /* aDedicated, see BUG 1915735.*/,
        nsServerCertHashes = std::move(nsServerCertHashes),
-       principal = RefPtr{aPrincipal},
+       principal = RefPtr{aPrincipal}, browsingContextID = aBrowsingContextID,
        flags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
        clientInfo = aClientInfo] {
         LOG(("WebTransport %p AsyncConnect", self.get()));
         if (NS_FAILED(self->mWebTransport->AsyncConnectWithClient(
-                uri, dedicated, std::move(nsServerCertHashes), principal, flags,
-                self, clientInfo, nsIWebTransport::HTTPVersion::h3))) {
+                uri, dedicated, std::move(nsServerCertHashes), principal,
+                browsingContextID, flags, self, clientInfo,
+                nsIWebTransport::HTTPVersion::h3))) {
           LOG(("AsyncConnect failure; we should get OnSessionClosed"));
         }
       });
@@ -252,7 +247,7 @@ NS_IMETHODIMP BidiReceiveStream::OnBidirectionalStreamReady(
   }
 
   uint64_t id;
-  Unused << aStream->GetStreamId(&id);
+  (void)aStream->GetStreamId(&id);
   nsCOMPtr<nsIAsyncInputStream> inputStream;
   aStream->GetInputStream(getter_AddRefs(inputStream));
   MOZ_ASSERT(inputStream);
@@ -337,7 +332,7 @@ UniReceiveStream::OnUnidirectionalStreamReady(
   }
 
   uint64_t id;
-  Unused << aStream->GetStreamId(&id);
+  (void)aStream->GetStreamId(&id);
   nsCOMPtr<nsIAsyncOutputStream> outputStream;
   aStream->GetOutputStream(getter_AddRefs(outputStream));
   MOZ_ASSERT(outputStream);
@@ -588,8 +583,7 @@ NS_IMETHODIMP WebTransportParent::OnStopSending(uint64_t aStreamId,
     mBidiStreamCallbackMap.Remove(aStreamId);
   }
   if (CanSend()) {
-    Unused << SendOnStreamResetOrStopSending(aStreamId,
-                                             StopSendingError(aError));
+    (void)SendOnStreamResetOrStopSending(aStreamId, StopSendingError(aError));
   }
   return NS_OK;
 }
@@ -607,7 +601,7 @@ NS_IMETHODIMP WebTransportParent::OnResetReceived(uint64_t aStreamId,
     mBidiStreamCallbackMap.Remove(aStreamId);
   }
   if (CanSend()) {
-    Unused << SendOnStreamResetOrStopSending(aStreamId, ResetError(aError));
+    (void)SendOnStreamResetOrStopSending(aStreamId, ResetError(aError));
   }
   return NS_OK;
 }
@@ -620,7 +614,7 @@ void WebTransportParent::NotifyRemoteClosed(bool aCleanly, uint32_t aErrorCode,
       __func__, [self = RefPtr{this}, aErrorCode, reason = nsCString{aReason},
                  aCleanly]() {
         // Tell the content side we were closed by the server
-        Unused << self->SendRemoteClosed(aCleanly, aErrorCode, reason);
+        (void)self->SendRemoteClosed(aCleanly, aErrorCode, reason);
         // Let the other end shut down the IPC channel after RecvClose()
       }));
 }
@@ -656,8 +650,8 @@ WebTransportParent::OnIncomingUnidirectionalStreamAvailable(
   LOG(("%p Sending UnidirectionalStream pipe to content", this));
   // pass the DataPipeReceiver to the content process
   uint64_t id;
-  Unused << aStream->GetStreamId(&id);
-  Unused << SendIncomingUnidirectionalStream(id, receiver);
+  (void)aStream->GetStreamId(&id);
+  (void)SendIncomingUnidirectionalStream(id, receiver);
 
   return NS_OK;
 }
@@ -713,8 +707,8 @@ WebTransportParent::OnIncomingBidirectionalStreamAvailable(
   LOG(("%p Sending BidirectionalStream pipe to content", this));
   // pass the DataPipeSender to the content process
   uint64_t id;
-  Unused << aStream->GetStreamId(&id);
-  Unused << SendIncomingBidirectionalStream(id, inputReceiver, outputSender);
+  (void)aStream->GetStreamId(&id);
+  (void)SendIncomingBidirectionalStream(id, inputReceiver, outputSender);
   return NS_OK;
 }
 
@@ -733,6 +727,16 @@ WebTransportParent::OnIncomingBidirectionalStreamAvailable(
   return IPC_OK();
 }
 
+::mozilla::ipc::IPCResult WebTransportParent::RecvGetHttpChannelID(
+    GetHttpChannelIDResolver&& aResolver) {
+  LOG(("WebTransportParent Channel ID"));
+  MOZ_ASSERT(mWebTransport);
+  uint64_t aHttpChannelId;
+  mWebTransport->GetHttpChannelID(&aHttpChannelId);
+  aResolver(aHttpChannelId);
+  return IPC_OK();
+}
+
 // The promise sent in this request will be resolved
 // in OnOutgoingDatagramOutCome which is called synchronously from
 // WebTransportSessionProxy::SendDatagram
@@ -743,7 +747,7 @@ WebTransportParent::OnIncomingBidirectionalStreamAvailable(
   MOZ_ASSERT(mSocketThread->IsOnCurrentThread());
   MOZ_ASSERT(mWebTransport);
 
-  Unused << aExpirationTime;
+  (void)aExpirationTime;
 
   MOZ_ASSERT(!mOutgoingDatagramResolver);
   mOutgoingDatagramResolver = std::move(aResolver);
@@ -758,7 +762,7 @@ WebTransportParent::OnIncomingBidirectionalStreamAvailable(
   static uint64_t sDatagramId = 1;
   LOG_VERBOSE(("Sending datagram %" PRIu64 ", length %zu", sDatagramId,
                aData.Length()));
-  Unused << mWebTransport->SendDatagram(aData, sDatagramId++);
+  (void)mWebTransport->SendDatagram(aData, sDatagramId++);
 
   return IPC_OK();
 }
@@ -771,7 +775,7 @@ NS_IMETHODIMP WebTransportParent::OnDatagramReceived(
   LOG(("WebTransportParent received datagram length = %zu", aData.Length()));
 
   TimeStamp ts = TimeStamp::Now();
-  Unused << SendIncomingDatagram(aData, ts);
+  (void)SendIncomingDatagram(aData, ts);
 
   return NS_OK;
 }
@@ -782,8 +786,8 @@ WebTransportParent::OnOutgoingDatagramOutCome(
   MOZ_ASSERT(mSocketThread->IsOnCurrentThread());
   // XXX - do we need better error mappings for failures?
   nsresult result = NS_ERROR_FAILURE;
-  Unused << result;
-  Unused << aId;
+  (void)result;
+  (void)aId;
 
   if (aOutCome == WebTransportSessionEventListener::DatagramOutcome::SENT) {
     result = NS_OK;

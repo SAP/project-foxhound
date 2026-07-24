@@ -286,6 +286,7 @@ BasePromiseWorker.prototype = {
           // worker.
           deferred.reject(new WorkerError(data.fail));
         }
+        this._deferredJobs.delete(messageId);
         return;
       }
 
@@ -457,6 +458,7 @@ BasePromiseWorker.prototype = {
  * An error that has been serialized by the worker.
  *
  * @class
+ * @param {object} data
  */
 function WorkerError(data) {
   this.data = data;

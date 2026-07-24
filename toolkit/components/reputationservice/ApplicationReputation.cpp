@@ -27,7 +27,6 @@
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/ErrorNames.h"
@@ -1425,7 +1424,7 @@ nsresult PendingLookup::DoLookupInternal() {
   resource->set_type(ClientDownloadRequest::DOWNLOAD_URL);
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
-  mozilla::Unused << mQuery->GetReferrerInfo(getter_AddRefs(referrerInfo));
+  (void)mQuery->GetReferrerInfo(getter_AddRefs(referrerInfo));
   nsCOMPtr<nsIURI> referrer;
   // It is quite possible that referrer header is omitted due to security reason
   // (for example navigation from https-> http). Hence we should use the
@@ -1700,7 +1699,7 @@ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(mChannel, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
-  mozilla::Unused << httpChannel;
+  (void)httpChannel;
 
   // Upload the protobuf to the application reputation service.
   nsCOMPtr<nsIUploadChannel2> uploadChannel = do_QueryInterface(mChannel, &rv);

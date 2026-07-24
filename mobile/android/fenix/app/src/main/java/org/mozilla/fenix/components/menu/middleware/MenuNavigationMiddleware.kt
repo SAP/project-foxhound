@@ -21,7 +21,7 @@ import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.pwa.WebAppUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.service.fxa.manager.AccountState.Authenticated
 import mozilla.components.service.fxa.manager.AccountState.Authenticating
 import mozilla.components.service.fxa.manager.AccountState.AuthenticationProblem
@@ -37,9 +37,7 @@ import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
 import org.mozilla.fenix.components.menu.toFenixFxAEntryPoint
 import org.mozilla.fenix.ext.nav
-import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.AMO_HOMEPAGE_FOR_ANDROID
-import org.mozilla.fenix.settings.SupportUtils.SumoTopic
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.webcompat.WEB_COMPAT_REPORTER_URL
 import org.mozilla.fenix.webcompat.WebCompatReporterMoreInfoSender
@@ -76,9 +74,9 @@ class MenuNavigationMiddleware(
     private val webCompatReporterMoreInfoSender: WebCompatReporterMoreInfoSender,
 ) : Middleware<MenuState, MenuAction> {
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<MenuState, MenuAction>,
+        store: Store<MenuState, MenuAction>,
         next: (MenuAction) -> Unit,
         action: MenuAction,
     ) {
@@ -86,7 +84,7 @@ class MenuNavigationMiddleware(
         // This is to ensure that any navigation action will be using correct
         // state properties before they are modified due to other actions being
         // dispatched and processes.
-        val currentState = context.state
+        val currentState = store.state
 
         next(action)
 
@@ -145,10 +143,6 @@ class MenuNavigationMiddleware(
                 is MenuAction.Navigate.Passwords -> navController.nav(
                     R.id.menuDialogFragment,
                     MenuDialogFragmentDirections.actionMenuDialogFragmentToLoginsListFragment(),
-                )
-
-                is MenuAction.Navigate.ReleaseNotes -> openToBrowser(
-                    BrowserNavigationParams(url = SupportUtils.WHATS_NEW_URL),
                 )
 
                 is MenuAction.Navigate.EditBookmark -> {
@@ -254,10 +248,6 @@ class MenuNavigationMiddleware(
                     BrowserNavigationParams(url = AMO_HOMEPAGE_FOR_ANDROID),
                 )
 
-                is MenuAction.Navigate.ExtensionsLearnMore -> openToBrowser(
-                    BrowserNavigationParams(sumoTopic = SumoTopic.FIND_INSTALL_ADDONS),
-                )
-
                 is MenuAction.Navigate.AddonDetails -> navController.nav(
                     R.id.menuDialogFragment,
                     MenuDialogFragmentDirections.actionMenuDialogFragmenToAddonDetailsFragment(
@@ -292,6 +282,17 @@ class MenuNavigationMiddleware(
                             )
                         }
                     }
+                }
+
+                is MenuAction.Navigate.Summarizer -> {
+                    navController.nav(
+                        id = R.id.menuDialogFragment,
+                        directions = MenuDialogFragmentDirections
+                            .actionMenuDialogFragmentToSummarizationFragment(),
+                        navOptions = NavOptions.Builder()
+                            .setPopUpTo(R.id.browserFragment, false)
+                            .build(),
+                    )
                 }
 
                 is MenuAction.Navigate.Back -> {

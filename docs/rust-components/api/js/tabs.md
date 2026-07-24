@@ -15,6 +15,10 @@
     :members:
     :exclude-members: SyncError
 ```
+```{js:autoclass} RustTabs.sys.TabGroup
+    :members:
+    :exclude-members: TabGroup
+```
 ```{js:autoclass} RustTabs.sys.TabsBridgedEngine
     :members:
     :exclude-members: TabsBridgedEngine

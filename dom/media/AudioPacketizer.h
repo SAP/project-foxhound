@@ -6,10 +6,10 @@
 #ifndef AudioPacketizer_h_
 #define AudioPacketizer_h_
 
-#include <mozilla/PodOperations.h>
-#include <mozilla/Assertions.h>
-#include <mozilla/UniquePtr.h>
 #include <AudioSampleFormat.h>
+#include <mozilla/Assertions.h>
+#include <mozilla/PodOperations.h>
+#include <mozilla/UniquePtr.h>
 
 // Enable this to warn when `Output` has been called but not enough data was
 // buffered.

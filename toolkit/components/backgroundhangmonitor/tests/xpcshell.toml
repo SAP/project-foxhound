@@ -2,16 +2,17 @@
 
 ["test_BHRObserver.js"]
 # BHR is disabled outside of nightly
+run-sequentially = [
+  "os == 'win'", # almost perma-fail in parallel on Windows
+  "os == 'linux'", # almost perma-fail in parallel on Linux
+]
 support-files = ["child_cause_hang.js"]
-run-sequentially = "very high failure rate in parallel"
 skip-if = [
   "debug",
-  "os == 'android' && processor == 'armeabi-v7a'", # Bug 1969481
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1417723
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1417723
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1417723
+  "os == 'android' && arch == 'armeabi-v7a'", # Bug 1969481
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1417723
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1417723
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1417723
   "os == 'win' && msix",
   "release_or_beta",
-  "win11_2009 && bits == 32", # Bug 1760134
 ]

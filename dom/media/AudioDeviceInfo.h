@@ -6,9 +6,8 @@
 #ifndef MOZILLA_AudioDeviceInfo_H
 #define MOZILLA_AudioDeviceInfo_H
 
-#include "nsIAudioDeviceInfo.h"
 #include "CubebUtils.h"
-#include "mozilla/Maybe.h"
+#include "nsIAudioDeviceInfo.h"
 
 // This is mapped to the cubeb_device_info.
 class AudioDeviceInfo final : public nsIAudioDeviceInfo {

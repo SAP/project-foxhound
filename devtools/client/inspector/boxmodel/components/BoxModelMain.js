@@ -222,7 +222,7 @@ class BoxModelMain extends PureComponent {
    *
    * @param  {Element} target
    *         Node to be observed
-   * @param  {Boolean} shiftKey
+   * @param  {boolean} shiftKey
    *         Determines if shiftKey was pressed
    */
   moveFocus({ target, shiftKey }) {

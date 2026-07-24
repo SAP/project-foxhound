@@ -175,8 +175,8 @@ add_task(async function testCookiesWithCrossSiteServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;
@@ -260,8 +260,8 @@ add_task(async function testPartitionedCookiesWithCrossSiteServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;
@@ -360,8 +360,8 @@ add_task(async function testCookiesWithABAServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;
@@ -376,8 +376,8 @@ add_task(async function testCookiesWithABAServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;
@@ -465,8 +465,8 @@ add_task(async function testCookiesWithABAServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;
@@ -481,8 +481,8 @@ add_task(async function testCookiesWithABAServiceWorker() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       return ifr.browsingContext;

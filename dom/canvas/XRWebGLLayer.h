@@ -7,13 +7,12 @@
 #ifndef mozilla_dom_XRWebGLLayer_h_
 #define mozilla_dom_XRWebGLLayer_h_
 
+#include "WebGLTypes.h"
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "mozilla/dom/XRSession.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "WebGLTypes.h"
-
-#include "gfxVR.h"
 
 namespace mozilla {
 class WebGLFramebufferJS;

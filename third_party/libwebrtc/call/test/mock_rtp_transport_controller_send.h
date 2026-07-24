@@ -50,7 +50,7 @@ class MockRtpTransportControllerSend
                const RtpSenderObservers&,
                std::unique_ptr<FecController>,
                const RtpSenderFrameEncryptionConfig&,
-               rtc::scoped_refptr<FrameTransformerInterface>),
+               scoped_refptr<FrameTransformerInterface>),
               (override));
   MOCK_METHOD(void,
               DestroyRtpVideoSender,
@@ -87,7 +87,7 @@ class MockRtpTransportControllerSend
               (override));
   MOCK_METHOD(void,
               OnNetworkRouteChanged,
-              (absl::string_view, const rtc::NetworkRoute&),
+              (absl::string_view, const webrtc::NetworkRoute&),
               (override));
   MOCK_METHOD(void, OnNetworkAvailability, (bool), (override));
   MOCK_METHOD(NetworkLinkRtcpObserver*, GetRtcpObserver, (), (override));
@@ -97,7 +97,7 @@ class MockRtpTransportControllerSend
               (),
               (const, override));
   MOCK_METHOD(void, EnablePeriodicAlrProbing, (bool), (override));
-  MOCK_METHOD(void, OnSentPacket, (const rtc::SentPacket&), (override));
+  MOCK_METHOD(void, OnSentPacket, (const SentPacketInfo&), (override));
   MOCK_METHOD(void,
               SetSdpBitrateParameters,
               (const BitrateConstraints&),
@@ -119,11 +119,14 @@ class MockRtpTransportControllerSend
               EnableCongestionControlFeedbackAccordingToRfc8888,
               (),
               (override));
-  MOCK_METHOD(int,
+  MOCK_METHOD(std::optional<int>,
               ReceivedCongestionControlFeedbackCount,
               (),
               (const, override));
-  MOCK_METHOD(int, ReceivedTransportCcFeedbackCount, (), (const, override));
+  MOCK_METHOD(std::optional<int>,
+              ReceivedTransportCcFeedbackCount,
+              (),
+              (const, override));
 };
 }  // namespace webrtc
 #endif  // CALL_TEST_MOCK_RTP_TRANSPORT_CONTROLLER_SEND_H_

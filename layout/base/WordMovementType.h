@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WordMovementType_h___
-#define WordMovementType_h___
+#ifndef WordMovementType_h_
+#define WordMovementType_h_
 
 namespace mozilla {
 

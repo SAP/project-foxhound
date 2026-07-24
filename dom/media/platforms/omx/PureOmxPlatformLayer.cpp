@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "PureOmxPlatformLayer.h"
+
+#include "OmxCoreLibLinker.h"
 #include "OmxDataDecoder.h"
 #include "OmxPromiseLayer.h"
-#include "PureOmxPlatformLayer.h"
-#include "OmxCoreLibLinker.h"
 
 #ifdef LOG
 #  undef LOG
@@ -24,7 +25,7 @@
 namespace mozilla {
 
 #define OMX_FUNC(func) extern typeof(func)* func;
-#include "OmxFunctionList.h"
+#include "OmxFunctionList.inc"
 #undef OMX_FUNC
 
 PureOmxBufferData::PureOmxBufferData(

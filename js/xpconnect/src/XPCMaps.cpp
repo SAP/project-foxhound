@@ -6,7 +6,6 @@
 
 /* Private maps (hashtables). */
 
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "xpcprivate.h"
 #include "XPCMaps.h"

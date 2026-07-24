@@ -8,6 +8,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.os.Build
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.test.espresso.Espresso
 import androidx.test.espresso.Espresso.onView
@@ -24,7 +25,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.CoreMatchers.containsString
 import org.mozilla.fenix.R
@@ -45,13 +46,13 @@ class SettingsSubMenuAboutRobot {
         verifyVersionNumber()
         verifyProductCompany()
         verifyCurrentTimestamp()
-        verifyTheLinksList()
     }
 
     fun verifyVersionNumber() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-        val packageInfo = context.packageManager.getPackageInfoCompat(context.packageName, 0)
+        val packageInfo =
+            context.packageManagerCompatHelper.getPackageInfoCompat(context.packageName, 0)
         val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo).toString()
         val buildNVersion = "${packageInfo.versionName} (Build #$versionCode)\n"
         val geckoVersion =
@@ -99,7 +100,7 @@ class SettingsSubMenuAboutRobot {
         Log.i(TAG, "verifyAboutToolbar: Verified that the \"About $appName\" toolbar title is visible")
     }
 
-    fun verifyWhatIsNewInFirefoxLink() {
+    fun verifyWhatIsNewInFirefoxLink(composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyWhatIsNewInFirefoxLink: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifyWhatIsNewInFirefoxLink: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -111,8 +112,12 @@ class SettingsSubMenuAboutRobot {
         Log.i(TAG, "verifyWhatIsNewInFirefoxLink: Trying to click the \"What’s new in $firefox\" link")
         onView(withText("What’s new in $firefox")).perform(click())
         Log.i(TAG, "verifyWhatIsNewInFirefoxLink: Clicked the \"What’s new in $firefox\" link")
+
+        browserScreen(composeTestRule) {
+            verifyWhatsNewURL()
+        }
     }
-    fun verifySupportLink() {
+    fun verifySupportLink(composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifySupport: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifySupport: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -123,16 +128,12 @@ class SettingsSubMenuAboutRobot {
         onView(withText("Support")).perform(click())
         Log.i(TAG, "verifySupport: Clicked the \"Support\" link")
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyHelpUrl()
         }
     }
 
     fun verifyCrashesLink() {
-        navigationToolbar {
-        }.openThreeDotMenu {
-        }.openSettings {
-        }.openAboutFirefoxPreview {}
         Log.i(TAG, "verifyCrashesLink: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifyCrashesLink: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -152,7 +153,7 @@ class SettingsSubMenuAboutRobot {
         }
     }
 
-    fun verifyPrivacyNoticeLink() {
+    fun verifyPrivacyNoticeLink(composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyPrivacyNoticeLink: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifyPrivacyNoticeLink: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -163,12 +164,12 @@ class SettingsSubMenuAboutRobot {
         onView(withText("Privacy notice")).perform(click())
         Log.i(TAG, "verifyPrivacyNoticeLink: Clicked the \"Privacy notice\" link")
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyUrl("/privacy/firefox")
         }
     }
 
-    fun verifyKnowYourRightsLink() {
+    fun verifyKnowYourRightsLink(composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyKnowYourRightsLink: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifyKnowYourRightsLink: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -179,12 +180,12 @@ class SettingsSubMenuAboutRobot {
         onView(withText("Know your rights")).perform(click())
         Log.i(TAG, "verifyKnowYourRightsLink: Clicked the \"Know your rights\" link")
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyUrl(SupportUtils.SumoTopic.YOUR_RIGHTS.topicStr)
         }
     }
 
-    fun verifyLicensingInformationLink() {
+    fun verifyLicensingInformationLink(composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyLicensingInformationLink: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
         aboutMenuList.scrollToEnd(LISTS_MAXSWIPES)
         Log.i(TAG, "verifyLicensingInformationLink: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the about list")
@@ -195,7 +196,7 @@ class SettingsSubMenuAboutRobot {
         onView(withText("Licensing information")).perform(click())
         Log.i(TAG, "verifyLicensingInformationLink: Clicked the \"Licensing information\" link")
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyUrl("about:license")
         }
     }
@@ -231,22 +232,6 @@ class SettingsSubMenuAboutRobot {
         Log.i(TAG, "verifyTheLibrariesListNotEmpty: Verify that the OSS Libraries list has more then 10 items.")
     }
 
-    fun verifyTheLinksList() {
-        verifyAboutToolbar()
-        verifyWhatIsNewInFirefoxLink()
-        navigateBackToAboutPage()
-        verifySupportLink()
-        verifyCrashesLink()
-        navigateBackToAboutPage()
-        verifyPrivacyNoticeLink()
-        navigateBackToAboutPage()
-        verifyKnowYourRightsLink()
-        navigateBackToAboutPage()
-        verifyLicensingInformationLink()
-        navigateBackToAboutPage()
-        verifyLibrariesUsedLink()
-    }
-
     class Transition {
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {
             Log.i(TAG, "goBack: Trying to click the navigate up button")
@@ -259,10 +244,10 @@ class SettingsSubMenuAboutRobot {
     }
 }
 
-private fun navigateBackToAboutPage() {
-    navigationToolbar {
+private fun navigateBackToAboutPage(composeTestRule: ComposeTestRule) {
+    browserScreen(composeTestRule) {
     }.openThreeDotMenu {
-    }.openSettings {
+    }.clickSettingsButton {
     }.openAboutFirefoxPreview {
     }
 }

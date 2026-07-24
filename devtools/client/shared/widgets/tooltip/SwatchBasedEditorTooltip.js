@@ -26,9 +26,9 @@ loader.lazyRequireGetter(
  *        toolbox document
  */
 
-class SwatchBasedEditorTooltip {
+class SwatchBasedEditorTooltip extends EventEmitter {
   constructor(document) {
-    EventEmitter.decorate(this);
+    super();
 
     // This one will consume outside clicks as it makes more sense to let the user
     // close the tooltip by clicking out
@@ -63,8 +63,8 @@ class SwatchBasedEditorTooltip {
       event.preventDefault();
     });
 
-    // All target swatches are kept in a map, indexed by swatch DOM elements
-    this.swatches = new Map();
+    // All target swatches are kept in a WeakMap, indexed by swatch DOM elements
+    this.swatches = new WeakMap();
 
     // When a swatch is clicked, and for as long as the tooltip is shown, the
     // activeSwatch property will hold the reference to the swatch DOM element
@@ -78,7 +78,7 @@ class SwatchBasedEditorTooltip {
   /**
    * Reports if the tooltip is currently shown
    *
-   * @return {Boolean} True if the tooltip is displayed.
+   * @return {boolean} True if the tooltip is displayed.
    */
   isVisible() {
     return this.tooltip.isVisible();
@@ -87,7 +87,7 @@ class SwatchBasedEditorTooltip {
   /**
    * Reports if the tooltip is currently editing the targeted value
    *
-   * @return {Boolean} True if the tooltip is editing.
+   * @return {boolean} True if the tooltip is editing.
    */
   isEditing() {
     return this.isVisible();
@@ -259,7 +259,6 @@ class SwatchBasedEditorTooltip {
   }
 
   destroy() {
-    this.swatches.clear();
     this.activeSwatch = null;
     this.tooltip.off("keydown", this._onTooltipKeydown);
     this.tooltip.destroy();

@@ -16,28 +16,22 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
-import org.mozilla.fenix.distributions.DistributionIdManager
 import org.mozilla.fenix.helpers.lifecycle.TestLifecycleOwner
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
 import org.mozilla.fenix.utils.Settings
 
 @RunWith(AndroidJUnit4::class)
 class MarketingPageRemovalManagerTest {
-    @get:Rule
-    val mainCoroutineRule = MainCoroutineRule()
 
     private lateinit var pages: MutableList<OnboardingPageUiData>
     private lateinit var settings: Settings
     private lateinit var mockedLifecycleOwner: TestLifecycleOwner
-    private lateinit var distributionIdManager: DistributionIdManager
     private lateinit var prefKey: String
 
     @Before
@@ -68,19 +62,16 @@ class MarketingPageRemovalManagerTest {
         }
         settings = Settings(testContext)
         mockedLifecycleOwner = TestLifecycleOwner(Lifecycle.State.CREATED)
-        distributionIdManager = mockk(relaxed = true)
         prefKey = testContext.getString(R.string.pref_key_should_show_marketing_onboarding)
     }
 
     @Test
-    fun `we should show marketing AND there is not a partnership`() = runTest {
-        every { distributionIdManager.isPartnershipDistribution() } returns false
-
+    fun `we should show marketing`() = runTest {
         val removePage = MarketingPageRemovalSupport(
             prefKey = prefKey,
             pagesToDisplay = pages,
-            distributionIdManager = distributionIdManager,
             settings = settings,
+            mainContext = testScheduler,
             ioContext = testScheduler,
             lifecycleOwner = mockedLifecycleOwner,
         )
@@ -94,56 +85,12 @@ class MarketingPageRemovalManagerTest {
     }
 
     @Test
-    fun `we should show marketing AND there is a partnership`() = runTest {
-        every { distributionIdManager.isPartnershipDistribution() } returns true
-
+    fun `we should not show marketing`() = runTest {
         val removePage = MarketingPageRemovalSupport(
             prefKey = prefKey,
             pagesToDisplay = pages,
-            distributionIdManager = distributionIdManager,
             settings = settings,
-            ioContext = testScheduler,
-            lifecycleOwner = mockedLifecycleOwner,
-        )
-        settings.shouldShowMarketingOnboarding = true
-
-        removePage.start()
-
-        testScheduler.advanceUntilIdle()
-
-        assertTrue(pages.size == 2)
-    }
-
-    @Test
-    fun `we should not show marketing AND there is a partnership`() = runTest {
-        every { distributionIdManager.isPartnershipDistribution() } returns true
-
-        val removePage = MarketingPageRemovalSupport(
-            prefKey = prefKey,
-            pagesToDisplay = pages,
-            distributionIdManager = distributionIdManager,
-            settings = settings,
-            ioContext = testScheduler,
-            lifecycleOwner = mockedLifecycleOwner,
-        )
-        settings.shouldShowMarketingOnboarding = false
-
-        removePage.start()
-
-        testScheduler.advanceUntilIdle()
-
-        assertTrue(pages.size == 2)
-    }
-
-    @Test
-    fun `we should not show marketing AND there is not a partnership`() = runTest {
-        every { distributionIdManager.isPartnershipDistribution() } returns false
-
-        val removePage = MarketingPageRemovalSupport(
-            prefKey = prefKey,
-            pagesToDisplay = pages,
-            distributionIdManager = distributionIdManager,
-            settings = settings,
+            mainContext = testScheduler,
             ioContext = testScheduler,
             lifecycleOwner = mockedLifecycleOwner,
         )
@@ -210,7 +157,7 @@ class MarketingPageRemovalManagerTest {
 
         val results = mutableListOf<Boolean>()
         val job = launch {
-            prefs.flowScopedBooleanPreference(lifecycleOwner, "my_key", false)
+            prefs.flowScopedBooleanPreference(lifecycleOwner, testScheduler, "my_key", false)
                 .toList(results)
         }
 
@@ -233,7 +180,7 @@ class MarketingPageRemovalManagerTest {
 
         val results = mutableListOf<Boolean>()
         val job = launch {
-            prefs.flowScopedBooleanPreference(lifecycleOwner, "my_key", false)
+            prefs.flowScopedBooleanPreference(lifecycleOwner, testScheduler, "my_key", false)
                 .toList(results)
         }
 

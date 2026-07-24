@@ -10,36 +10,6 @@
 <script type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
-var gScript = SpecialPowers.loadChromeScript(SimpleTest.getTestFileURL('file_1331680.js'));
-gScript.addMessageListener("cookieName", confirmCookieName);
-gScript.addMessageListener("removeObserver:return", finishTest);
-gScript.sendAsyncMessage('createObserver');
-
-// Confirm the notify which represents the cookie is updating.
-var testsNum = 0;
-function confirmCookieName(name) {
-  testsNum++;
-  switch(testsNum) {
-    case 1:
-      is(name, "testXHR1=xhr_val1", "The cookie which names " + name + " is update to db");
-      break;
-    case 2:
-      document.cookie = "testXHR2=xhr_val2; path=/";
-      break;
-    case 3:
-      is(document.cookie, "testXHR2=xhr_val2", "Confirm the cookie string");
-      document.cookie = "testXHR1=; path=/; expires=Thu, 01-Jan-1970 00:00:01 GMT";
-      document.cookie = "testXHR2=; path=/; expires=Thu, 01-Jan-1970 00:00:01 GMT";
-      gScript.sendAsyncMessage('removeObserver');
-      break;
-  }
-}
-
-function finishTest() {
-  SpecialPowers.clearUserPref("network.cookie.sameSite.laxByDefault");
-  SimpleTest.finish();
-}
-
 function createXHR(url) {
   return new Promise(function (resolve, reject) {
     var xhr = new XMLHttpRequest();
@@ -65,24 +35,46 @@ function createXHR(url) {
 }
 
 
-/* Test XHR
- * 1. Create two XHR.
- * 2. One of the XHR create a cookie names "set_cookie", and other one create a http-only cookie names "modify_cookie".
- * 3. Child process only set testXHR1 to cookies hash table.
- * 4. Child process only can get the testXHR1 cookie from cookies hash table.
- */
 SpecialPowers.pushPrefEnv({
   // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
   set: [["network.cookie.sameSite.laxByDefault", false]],
-}).then(_ => createXHR('reset_cookie_xhr.sjs?set_cookie'))
-  .then(_ => createXHR('reset_cookie_xhr.sjs?modify_cookie'));
+})
+
+// 1. Create one XHR to set a non-http-only cookie (testXHR1)
+.then(_ => createXHR('reset_cookie_xhr.sjs?set_cookie'))
+
+// 2. Check the visibility of that cookie
+.then(_ => is(document.cookie, "testXHR1=xhr_val1", "Confirm the cookie"))
+
+// 3. Create a second cookie via document.cookie (testXHR2) and check the
+//    visibility of those 2 cookies
+.then(_ => {
+  document.cookie = "testXHR2=xhr_val2; path=/";
+  is(document.cookie, "testXHR1=xhr_val1; testXHR2=xhr_val2", "Confirm the two cookies");
+})
+
+// 4. Create one XHR to modify the first cookie and make it http-only
+.then(_ => createXHR('reset_cookie_xhr.sjs?modify_cookie'))
+
+// 5. Child process only can get the testXHR1 cookie.
+.then(_ => {
+  is(document.cookie, "testXHR2=xhr_val2", "Confirm the first cookie is gone");
+})
+
+// 6. Try to override the first cookie.
+.then(_ => {
+  document.cookie = "testXHR1=xhr_val3; path=/";
+  is(document.cookie, "testXHR2=xhr_val2", "Still one cookie");
+})
+
+// 7. Cleanup && Shutdown
+.finally(_ => {
+  document.cookie = "testXHR2=; path=/; expires=Thu, 01-Jan-1970 00:00:01 GMT";
+  SimpleTest.finish();
+});
 
 </script>
 </head>
 <body>
-<p id="display"></p>
-<div id="content" style="display: none"></div>
-<pre id="test">
-</pre>
 </body>
 </html>

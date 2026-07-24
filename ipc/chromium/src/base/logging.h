@@ -8,7 +8,6 @@
 #define BASE_LOGGING_H_
 
 #include <string>
-#include <cstring>
 
 #include "base/basictypes.h"
 #include "mozilla/Attributes.h"

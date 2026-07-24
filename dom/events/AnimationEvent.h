@@ -7,8 +7,8 @@
 #define mozilla_dom_AnimationEvent_h_
 
 #include "mozilla/EventForwards.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/dom/AnimationEventBinding.h"
+#include "mozilla/dom/Event.h"
 #include "nsStringFwd.h"
 
 namespace mozilla::dom {

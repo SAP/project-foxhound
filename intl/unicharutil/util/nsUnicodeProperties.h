@@ -14,15 +14,6 @@
 #include "nsUGenCategory.h"
 #include "harfbuzz/hb.h"
 
-struct nsCharProps2 {
-  // Currently only 2 bits are defined here, so 6 more could be added without
-  // affecting the storage requirements for this struct. Or we could pack two
-  // records per byte, at the cost of a slightly more complex accessor.
-  unsigned char mIdType : 2;
-};
-
-const nsCharProps2& GetCharProps2(uint32_t aCh);
-
 namespace mozilla {
 
 namespace unicode {
@@ -44,9 +35,7 @@ enum PairedBracketType {
   PAIRED_BRACKET_TYPE_CLOSE = 2
 };
 
-/* Flags for Unicode security IdentifierType.txt attributes. Only a subset
-   of these are currently checked by Gecko, so we only define flags for the
-   ones we need. */
+/* This values must match the values by UIdentifierStatus by ICU */
 enum IdentifierType {
   IDTYPE_RESTRICTED = 0,
   IDTYPE_ALLOWED = 1,
@@ -152,7 +141,8 @@ inline VerticalOrientation GetVerticalOrientation(uint32_t aCh) {
 }
 
 inline IdentifierType GetIdentifierType(uint32_t aCh) {
-  return IdentifierType(GetCharProps2(aCh).mIdType);
+  return IdentifierType(intl::UnicodeProperties::GetIntPropertyValue(
+      aCh, intl::UnicodeProperties::IntProperty::IdentifierStatus));
 }
 
 uint32_t GetFullWidth(uint32_t aCh);

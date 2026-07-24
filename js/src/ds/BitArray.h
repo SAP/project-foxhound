@@ -8,7 +8,6 @@
 #define ds_BitArray_h
 
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/TemplateLib.h"
 
 #include <limits.h>
 #include <string.h>

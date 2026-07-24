@@ -65,13 +65,103 @@ impl ProcessReader {
             .map(|line| parse_proc_maps_line(&line))
             .filter_map(Result::ok)
             .find_map(|(name, address)| {
-                if name.is_some_and(|name| name.eq(module_name)) {
-                    Some(address)
-                } else {
-                    None
+                let name = name?;
+                if name == module_name {
+                    return Some(address);
                 }
+                // Check whether the SO_NAME matches the module name.
+                //
+                // For now, only check the SO_NAME of Android APKS, because libraries may be mapped
+                // directly from within an APK. See bug 1982902.
+                (cfg!(target_os = "android")
+                    && name.ends_with(".apk")
+                    && self.so_name_eq(address, module_name))
+                .then_some(address)
             })
             .ok_or(ProcessReaderError::ModuleNotFound)
+    }
+
+    fn read_elf_program_headers(
+        &self,
+        module_address: usize,
+    ) -> Result<(goblin::container::Ctx, Vec<ProgramHeader>), ProcessReaderError> {
+        let header_bytes = self.copy_array(module_address, size_of::<elf::Header>())?;
+        let elf_header = Elf::parse_header(&header_bytes)?;
+        let elf = Elf::lazy_parse(elf_header)?;
+
+        let program_header_bytes = self.copy_array(
+            module_address + (elf_header.e_phoff as usize),
+            (elf_header.e_phnum as usize) * (elf_header.e_phentsize as usize),
+        )?;
+
+        let context = goblin::container::Ctx {
+            container: elf.header.container()?,
+            le: elf.header.endianness()?,
+        };
+
+        let headers = ProgramHeader::parse(
+            &program_header_bytes,
+            0,
+            elf_header.e_phnum as usize,
+            context,
+        )?;
+        Ok((context, headers))
+    }
+
+    fn so_name_eq(&self, module_address: usize, target_module_name: &str) -> bool {
+        let name = match self.read_so_name(module_address) {
+            Ok(n) => n,
+            Err(e) => {
+                log::debug!("error reading SO_NAME: {e}");
+                return false;
+            }
+        };
+        if name
+            .to_str()
+            .map(|s| s == target_module_name)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        false
+    }
+
+    fn read_so_name(&self, module_address: usize) -> Result<std::ffi::CString, ProcessReaderError> {
+        let (context, program_headers) = self.read_elf_program_headers(module_address)?;
+
+        for program_header in program_headers {
+            if program_header.p_type == elf::program_header::PT_DYNAMIC {
+                // The dynamic segment contains SONAME information
+                let dyn_address = module_address + program_header.p_vaddr as usize;
+                let dyn_size = program_header.p_memsz as usize;
+                let dyn_segment = self.copy_array(dyn_address, dyn_size)?;
+
+                let mut soname_strtab_offset = None;
+                let mut strtab_addr = None;
+                let mut strtab_size = None;
+                for dyn_ in dyn_iter::DynIter::new(&dyn_segment, context) {
+                    let dyn_ = dyn_?;
+                    match dyn_.d_tag {
+                        elf::dynamic::DT_SONAME => soname_strtab_offset = Some(dyn_.d_val),
+                        elf::dynamic::DT_STRTAB => strtab_addr = Some(dyn_.d_val),
+                        elf::dynamic::DT_STRSZ => strtab_size = Some(dyn_.d_val),
+                        _ => (),
+                    }
+                }
+
+                if let (Some(offset), Some(addr), Some(size)) =
+                    (soname_strtab_offset, strtab_addr, strtab_size)
+                {
+                    if offset < size {
+                        return self
+                            .copy_null_terminated_string(module_address + (addr + offset) as usize)
+                            .map_err(|e| e.into());
+                    }
+                }
+            }
+        }
+
+        Err(ProcessReaderError::SoNameNotFound)
     }
 
     pub fn find_program_note(
@@ -81,47 +171,9 @@ impl ProcessReader {
         note_size: usize,
         note_name: &str,
     ) -> Result<usize, ProcessReaderError> {
-        let header_bytes = self.copy_array(module_address, size_of::<elf::Header>())?;
-        let elf_header = Elf::parse_header(&header_bytes)?;
+        let (context, program_headers) = self.read_elf_program_headers(module_address)?;
 
-        let program_header_bytes = self.copy_array(
-            module_address + (elf_header.e_phoff as usize),
-            (elf_header.e_phnum as usize) * (elf_header.e_phentsize as usize),
-        )?;
-
-        let mut elf = Elf::lazy_parse(elf_header)?;
-        let context = goblin::container::Ctx {
-            container: elf.header.container()?,
-            le: elf.header.endianness()?,
-        };
-
-        elf.program_headers = ProgramHeader::parse(
-            &program_header_bytes,
-            0,
-            elf_header.e_phnum as usize,
-            context,
-        )?;
-
-        self.find_note_in_headers(
-            &elf,
-            module_address,
-            note_type,
-            note_size,
-            note_name,
-            context,
-        )
-    }
-
-    fn find_note_in_headers(
-        &self,
-        elf: &Elf,
-        address: usize,
-        note_type: u32,
-        note_size: usize,
-        note_name: &str,
-        context: goblin::container::Ctx,
-    ) -> Result<usize, ProcessReaderError> {
-        for program_header in elf.program_headers.iter() {
+        for program_header in program_headers {
             // We're looking for a note in the program headers, it needs to be
             // readable and it needs to be at least as large as the
             // requested size.
@@ -130,7 +182,7 @@ impl ProcessReader {
                     && (program_header.p_memsz as usize >= note_size))
             {
                 // Iterate over the notes
-                let notes_address = address + program_header.p_offset as usize;
+                let notes_address = module_address + program_header.p_offset as usize;
                 let mut notes_offset = 0;
                 let notes_size = program_header.p_memsz as usize;
                 let notes_bytes = self.copy_array(notes_address, notes_size)?;
@@ -203,6 +255,45 @@ impl ProcessReader {
 impl Drop for ProcessReader {
     fn drop(&mut self) {
         let _ignored = ptrace_detach(self.process);
+    }
+}
+
+mod dyn_iter {
+    use goblin::container::Ctx;
+    use goblin::elf::dynamic::{Dyn, DT_NULL};
+    use goblin::error::Error;
+    use scroll::Pread;
+
+    pub struct DynIter<'a> {
+        data: &'a [u8],
+        offset: usize,
+        ctx: Ctx,
+    }
+
+    impl<'a> DynIter<'a> {
+        pub fn new(data: &'a [u8], ctx: Ctx) -> Self {
+            DynIter {
+                data,
+                offset: 0,
+                ctx,
+            }
+        }
+    }
+
+    impl Iterator for DynIter<'_> {
+        type Item = Result<Dyn, Error>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let dyn_: Dyn = match self.data.gread_with(&mut self.offset, self.ctx) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            if dyn_.d_tag == DT_NULL {
+                None
+            } else {
+                Some(Ok(dyn_))
+            }
+        }
     }
 }
 

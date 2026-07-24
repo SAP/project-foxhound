@@ -41,8 +41,9 @@ class ThemeDrawing {
     return std::min(aRect.width, aRect.height) / aSize;
   }
 
-  static LayoutDeviceIntCoord SnapBorderWidth(const CSSCoord& aCssWidth,
-                                              const DPIRatio& aDpiRatio);
+  static LayoutDeviceIntCoord SnapBorderWidth(CSSCoord aCssWidth,
+                                              DPIRatio aDpiRatio);
+  static LayoutDeviceIntCoord SnapBorderWidth(LayoutDeviceCoord);
 
   static void PaintArrow(DrawTarget&, const LayoutDeviceRect&,
                          const float aArrowPolygonX[],

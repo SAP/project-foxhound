@@ -7,14 +7,14 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import { lengthBubble } from "resource://devtools/client/shared/components/reps/shared/grip-length-bubble.mjs";
+import { lengthBubble } from "../shared/grip-length-bubble.mjs";
 import {
   interleave,
   getGripType,
   wrapRender,
   ellipsisElement,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+} from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
 
 const DEFAULT_TITLE = "Array";
 

@@ -7,8 +7,6 @@
 "use strict";
 
 function ChromeTask_ChromeScript() {
-  /* eslint-env mozilla/chrome-script */
-
   "use strict";
 
   const { Assert: AssertCls } = ChromeUtils.importESModule(
@@ -111,10 +109,8 @@ var ChromeTask = {
    *          the remote browser to be executed. Unlike Task.spawn, this
    *          argument may not be an iterator as it will be serialized and
    *          sent to the remote browser.
-   * @return A promise object where you can register completion callbacks to be
-   *         called when the task terminates.
-   * @resolves With the final returned value of the task if it executes
-   *           successfully.
+   * @return {Promise}
+   *   Resolves when the task finishes without errors.
    * @rejects An error message if execution fails.
    */
   spawn: function ChromeTask_spawn(arg, task) {

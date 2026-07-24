@@ -49,7 +49,7 @@ int nr_stun_server_ctx_create(char *label, nr_stun_server_ctx **ctxp)
     if ((r=nr_stun_startup()))
       ABORT(r);
 
-    if(!(ctx=RCALLOC(sizeof(nr_stun_server_ctx))))
+    if(!(ctx=R_NEW(nr_stun_server_ctx)))
       ABORT(R_NO_MEMORY);
 
     if(!(ctx->label=r_strdup(label)))
@@ -86,12 +86,12 @@ int nr_stun_server_ctx_destroy(nr_stun_server_ctx **ctxp)
     return(0);
   }
 
-static int nr_stun_server_client_create(nr_stun_server_ctx *ctx, char *client_label, char *user, Data *pass, nr_stun_server_cb cb, void *cb_arg, nr_stun_server_client **clntp)
+static int nr_stun_server_client_create(nr_stun_server_ctx *ctx, const char *client_label, char *user, Data *pass, nr_stun_server_cb cb, void *cb_arg, nr_stun_server_client **clntp)
   {
     nr_stun_server_client *clnt=0;
     int r,_status;
 
-    if(!(clnt=RCALLOC(sizeof(nr_stun_server_client))))
+    if(!(clnt=R_NEW(nr_stun_server_client)))
       ABORT(R_NO_MEMORY);
 
     if(!(clnt->label=r_strdup(client_label)))
@@ -353,21 +353,6 @@ int nr_stun_server_process_request(nr_stun_server_ctx *ctx, nr_socket *sock, cha
         r_log(NR_LOG_STUN,LOG_ERR,"STUN-SERVER(label=%s): Failed sending response (my_addr=%s,peer_addr=%s)",ctx->label,my_addr.as_string,peer_addr->as_string);
         _status = R_FAILED;
     }
-
-#if 0
-    /* EKR: suppressed these checks because if you have an error when
-       you are sending an error, things go wonky */
-#ifdef SANITY_CHECKS
-    if (_status == R_ALREADY) {
-        assert(NR_STUN_GET_TYPE_CLASS(res->header.type) == NR_CLASS_ERROR_RESPONSE);
-        assert(nr_stun_message_has_attribute(res, NR_STUN_ATTR_ERROR_CODE, 0));
-    }
-    else {
-        assert(NR_STUN_GET_TYPE_CLASS(res->header.type) == NR_CLASS_RESPONSE);
-        assert(!nr_stun_message_has_attribute(res, NR_STUN_ATTR_ERROR_CODE, 0));
-    }
-#endif /* SANITY_CHECKS */
-#endif
 
     if (0) {
   skip_response:

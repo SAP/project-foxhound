@@ -306,7 +306,7 @@ static void ActivateResultID(
       // 'open in a new tab'-mechanism as a fallback.
       nsresult rv;
       nsCOMPtr<nsIOpenTabsProvider> provider = do_ImportESModule(
-          "resource:///modules/OpenTabsProvider.sys.mjs", &rv);
+          "moz-src:///browser/components/shell/OpenTabsProvider.sys.mjs", &rv);
       if (NS_SUCCEEDED(rv)) {
         rv = provider->SwitchToOpenTab(uri);
         if (NS_SUCCEEDED(rv)) {

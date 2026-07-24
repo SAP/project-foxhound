@@ -43,9 +43,9 @@ const TERM_ENCODED = "c%3B%2C%3F%3A%40%26%3D%2B%24-_.!~*'()%23+d%C3%A8f";
 
 add_setup(async function () {
   SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
-  await Services.search.init();
+  await SearchService.init();
 
-  defaultEngine = Services.search.getEngineByName("Test Engine With Purposes");
+  defaultEngine = SearchService.getEngineByName("Test Engine With Purposes");
 });
 
 add_task(async function test_searchTermFromResult() {
@@ -55,7 +55,7 @@ add_task(async function test_searchTermFromResult() {
     keyword: "idn_addParam",
     search_url: "https://www.xn--bcher-kva.ch/search",
   });
-  let engineEscapedIDN = Services.search.getEngineByName("idn_addParam");
+  let engineEscapedIDN = SearchService.getEngineByName("idn_addParam");
 
   // Setup server for french engine.
   await useHttpServer("");
@@ -72,7 +72,7 @@ add_task(async function test_searchTermFromResult() {
     encoding: "windows-1252",
     search_url: "https://www.bacon.test/find",
   });
-  let engineWinCharset = Services.search.getEngineByName("bacon_addParam");
+  let engineWinCharset = SearchService.getEngineByName("bacon_addParam");
 
   // For providers with non-encoded characters in their path.
   await SearchTestUtils.installSearchExtension({
@@ -80,7 +80,7 @@ add_task(async function test_searchTermFromResult() {
     keyword: "characters_with_accents_in_path",
     search_url: "https://fr.example.org/âêîôû:ÂÊÎÔÛ",
   });
-  let engineWithAccentsInPath = Services.search.getEngineByName(
+  let engineWithAccentsInPath = SearchService.getEngineByName(
     "characters_with_accents_in_path"
   );
 
@@ -267,9 +267,7 @@ add_task(async function test_searchTermFromResult_paramsInSearchUrl() {
     search_url: "https://example.com/?q={searchTerms}&pc=firefox",
     search_url_get_params: "",
   });
-  let testEngine = Services.search.getEngineByName(
-    "engine_params_in_search_url"
-  );
+  let testEngine = SearchService.getEngineByName("engine_params_in_search_url");
   let url = `https://example.com/?q=${TERM_ENCODED}&pc=firefox`;
   Assert.equal(
     getTerm(url, testEngine),
@@ -289,7 +287,7 @@ add_task(async function test_searchTermFromResult_paramsInSearchUrl() {
     search_url: "https://example.com/q={searchTerms}",
     search_url_get_params: "",
   });
-  testEngine = Services.search.getEngineByName(
+  testEngine = SearchService.getEngineByName(
     "engine_params_in_search_url_without_delimiter"
   );
   url = `https://example.com/?q=${TERM_ENCODED}&pc=firefox&page=1`;

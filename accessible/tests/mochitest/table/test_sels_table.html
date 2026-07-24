@@ -25,10 +25,10 @@
 
       var cellsArray =
       [
-        [false, false,       false,       kColSpanned, false, false,       false, false],
-        [false, false,       false,       false,       false, false,       false, kRowSpanned],
-        [false, false,       kColSpanned, false,       false, false,       false, kRowSpanned],
-        [false, kRowSpanned, kSpanned,    false,       false, kRowSpanned, false, kRowSpanned],
+        [undefined, undefined, undefined, kColSpanned, undefined, undefined, undefined, undefined],
+        [undefined, undefined, undefined, undefined,   undefined, undefined, undefined, kRowSpanned],
+        [undefined, undefined, kColSpanned, undefined, undefined, undefined, undefined, kRowSpanned],
+        [undefined, kRowSpanned, kSpanned, undefined,  undefined, kRowSpanned, undefined, kRowSpanned],
       ];
 
       testTableSelection("table", cellsArray);
@@ -41,11 +41,11 @@
 
       cellsArray =
       [
-        [false,       false, false,       -1,          -1],
-        [false,       false, false,       -1,          -1],
-        [false,       false, kColSpanned, kColSpanned, -1],
-        [kRowSpanned, false, false,       -1,          -1],
-        [kRowSpanned, false, kRowSpanned, false,       false],
+        [undefined,   undefined, undefined, -1,          -1],
+        [undefined,   undefined, undefined, -1,          -1],
+        [undefined,   undefined, kColSpanned, kColSpanned, -1],
+        [kRowSpanned, undefined, undefined, -1,          -1],
+        [kRowSpanned, undefined, kRowSpanned, undefined, undefined],
       ];
 
       testTableSelection("tableinsane", cellsArray);

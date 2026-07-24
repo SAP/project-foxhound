@@ -10,17 +10,27 @@
 
 #include "modules/audio_processing/aec3/residual_echo_estimator.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <memory>
 #include <numeric>
+#include <optional>
+#include <tuple>
+#include <vector>
 
+#include "api/array_view.h"
 #include "api/audio/echo_canceller3_config.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
-#include "modules/audio_processing/aec3/aec3_fft.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/aec3/aec_state.h"
+#include "modules/audio_processing/aec3/block.h"
+#include "modules/audio_processing/aec3/delay_estimate.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
+#include "modules/audio_processing/aec3/subtractor_output.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "rtc_base/random.h"
-#include "rtc_base/strings/string_builder.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -39,7 +49,10 @@ class ResidualEchoEstimatorTest {
       : num_render_channels_(num_render_channels),
         num_capture_channels_(num_capture_channels),
         config_(config),
-        estimator_(env_, config_, num_render_channels_),
+        estimator_(env_,
+                   config_,
+                   num_render_channels_,
+                   /*neural_residual_echo_estimator=*/nullptr),
         aec_state_(env_, config_, num_capture_channels_),
         render_delay_buffer_(RenderDelayBuffer::Create(config_,
                                                        kSampleRateHz,
@@ -56,8 +69,10 @@ class ResidualEchoEstimatorTest {
            std::vector<float>(
                GetTimeDomainLength(config_.filter.refined.length_blocks),
                0.0f)),
+        e_(num_capture_channels_),
         random_generator_(42U),
-        output_(num_capture_channels_) {
+        output_(num_capture_channels_),
+        y_(num_capture_channels_) {
     for (auto& H2_ch : H2_) {
       for (auto& H2_k : H2_ch) {
         H2_k.fill(0.01f);
@@ -70,7 +85,9 @@ class ResidualEchoEstimatorTest {
       subtractor_output.Reset();
       subtractor_output.s_refined.fill(100.f);
     }
-    y_.fill(0.f);
+    for (auto& y : y_) {
+      y.fill(0.f);
+    }
 
     constexpr float kLevel = 10.f;
     for (auto& E2_refined_ch : E2_refined_) {
@@ -92,15 +109,20 @@ class ResidualEchoEstimatorTest {
     }
     render_delay_buffer_->PrepareCaptureProcessing();
 
+    for (size_t ch = 0; ch < num_capture_channels_; ++ch) {
+      std::copy(output_[ch].e_refined.begin(), output_[ch].e_refined.end(),
+                e_[ch].begin());
+    }
     aec_state_.Update(delay_estimate_, H2_, h_,
                       *render_delay_buffer_->GetRenderBuffer(), E2_refined_,
                       Y2_, output_);
 
     estimator_.Estimate(aec_state_, *render_delay_buffer_->GetRenderBuffer(),
-                        S2_linear_, Y2_, dominant_nearend, R2_, R2_unbounded_);
+                        y_, e_, S2_linear_, Y2_, E2_refined_, dominant_nearend,
+                        R2_, R2_unbounded_);
   }
 
-  rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> R2() const {
+  ArrayView<const std::array<float, kFftLengthBy2Plus1>> R2() const {
     return R2_;
   }
 
@@ -120,9 +142,10 @@ class ResidualEchoEstimatorTest {
   Block x_;
   std::vector<std::vector<std::array<float, kFftLengthBy2Plus1>>> H2_;
   std::vector<std::vector<float>> h_;
+  std::vector<std::array<float, kBlockSize>> e_;
   Random random_generator_;
   std::vector<SubtractorOutput> output_;
-  std::array<float, kBlockSize> y_;
+  std::vector<std::array<float, kBlockSize>> y_;
   std::optional<DelayEstimate> delay_estimate_;
   bool first_frame_ = true;
 };

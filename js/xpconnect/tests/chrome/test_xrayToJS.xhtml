@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
   <script type="application/javascript">
   <![CDATA[
 
-  /** Test for ES constructors on Xrayed globals. **/
+  /** Test for ES constructors on Xrayed globals. */
   SimpleTest.waitForExplicitFinish();
   let global = Cu.getGlobalForObject.bind(Cu);
 
@@ -299,9 +299,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
 
   gPrototypeProperties.Promise =
     ["constructor", "catch", "then", "finally", Symbol.toStringTag];
+
   gConstructorProperties.Promise =
-    constructorProps(["resolve", "reject", "all", "allSettled", "any", "race", "try",
-                      "withResolvers", Symbol.species]);
+      constructorProps(["resolve", "reject", "all", "allSettled", "any", "race", "try",
+                        "withResolvers", Symbol.species]);
 
   gPrototypeProperties.ArrayBuffer =
     ["constructor", "byteLength", "detached", "slice", Symbol.toStringTag, "transfer", "transferToFixedLength", "maxByteLength", "resizable", "resize"];
@@ -314,7 +315,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
   gStatefulProperties.SharedArrayBuffer = ["transfer", "transferToFixedLength"]
 
   gPrototypeProperties.Map =
-    ["constructor", "size", Symbol.toStringTag, "get", "has", "set", "delete",
+    ["constructor", "size", Symbol.toStringTag, "get", "getOrInsert", "getOrInsertComputed", "has", "set", "delete",
      "keys", "values", "clear", "forEach", "entries", Symbol.iterator];
   gConstructorProperties.Map =
     constructorProps(["groupBy", Symbol.species]);
@@ -328,7 +329,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     constructorProps([Symbol.species]);
 
   gPrototypeProperties.WeakMap =
-    ["constructor", Symbol.toStringTag, "get", "has", "set", "delete"];
+    ["constructor", Symbol.toStringTag, "get", "getOrInsert", "getOrInsertComputed", "has", "set", "delete"];
   gConstructorProperties.WeakMap =
     constructorProps([]);
 

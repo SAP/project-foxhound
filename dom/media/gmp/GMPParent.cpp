@@ -7,16 +7,16 @@
 
 #include "CDMStorageIdProvider.h"
 #include "ChromiumCDMAdapter.h"
-#include "GeckoProfiler.h"
 #include "GMPContentParent.h"
 #include "GMPLog.h"
 #include "GMPTimerParent.h"
+#include "GeckoProfiler.h"
 #include "MediaResult.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Casting.h"
+#include "mozilla/FOGIPC.h"
 #include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/dom/WidevineCDMManifestBinding.h"
-#include "mozilla/FOGIPC.h"
 #include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -24,34 +24,33 @@
 #  include "mozilla/SandboxInfo.h"
 #  include "mozilla/ipc/SharedMemoryHandle.h"
 #endif
-#include "mozilla/Services.h"
+#include "ProfilerParent.h"
 #include "mozilla/SSE.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
+#include "mozilla/glean/IpcMetrics.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIRunnable.h"
 #include "nsIObserverService.h"
+#include "nsIRunnable.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
-#include "ProfilerParent.h"
 #include "runnable_utils.h"
 #ifdef XP_WIN
-#  include "mozilla/FileUtilsWin.h"
-#  include "mozilla/WinDllServices.h"
 #  include "PDMFactory.h"
 #  include "WMFDecoderModule.h"
+#  include "mozilla/FileUtilsWin.h"
+#  include "mozilla/WinDllServices.h"
 #endif
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/java/GeckoProcessManagerWrappers.h"
 #  include "mozilla/java/GeckoProcessTypeWrappers.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
 #if defined(XP_MACOSX)
-#  include "nsMacUtilsImpl.h"
 #  include "base/process_util.h"
+#  include "nsMacUtilsImpl.h"
 #endif  // defined(XP_MACOSX)
 
 using mozilla::ipc::GeckoChildProcessHost;
@@ -94,7 +93,7 @@ GMPParent::~GMPParent() {
 
 void GMPParent::CloneFrom(const GMPParent* aOther) {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
-  MOZ_ASSERT(aOther->mDirectory && aOther->mService, "null plugin directory");
+  MOZ_ASSERT(aOther->mService);
 
   mService = aOther->mService;
   mDirectory = aOther->mDirectory;
@@ -165,6 +164,29 @@ nsresult GMPParent::GetPluginFileArch(nsIFile* aPluginDir,
   return NS_OK;
 }
 #endif  // defined(XP_WIN) || defined(XP_MACOSX)
+
+#ifdef MOZ_WIDGET_ANDROID
+void GMPParent::InitForClearkey(GeckoMediaPluginServiceParent* aService) {
+  MOZ_ASSERT(aService);
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+
+  mService = aService;
+  mName = u"clearkey"_ns;
+  mDisplayName = "clearkey"_ns;
+  mVersion = "0.1"_ns;
+  mDescription = "ClearKey Gecko Media Plugin"_ns;
+  mPluginType = GMPPluginType::Clearkey;
+  mAdapter = u"chromium"_ns;
+
+  mCapabilities.SetCapacity(1);
+  auto& video = *mCapabilities.AppendElement();
+  video.mAPIName = nsLiteralCString(CHROMIUM_CDM_API);
+  video.mAPITags.SetCapacity(2);
+  video.mAPITags.AppendElement(nsCString{kClearKeyKeySystemName});
+  video.mAPITags.AppendElement(
+      nsCString{kClearKeyWithProtectionQueryKeySystemName});
+}
+#endif
 
 RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
                                        nsIFile* aPluginDir) {
@@ -285,7 +307,7 @@ RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
 
 void GMPParent::Crash() {
   if (mState != GMPState::NotLoaded) {
-    Unused << SendCrashPluginNow();
+    (void)SendCrashPluginNow();
   }
 }
 
@@ -343,7 +365,6 @@ class NotifyGMPProcessLoadedTask : public Runnable {
 };
 
 nsresult GMPParent::LoadProcess() {
-  MOZ_ASSERT(mDirectory, "Plugin directory cannot be NULL!");
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   MOZ_ASSERT(mState == GMPState::NotLoaded);
 
@@ -354,9 +375,16 @@ nsresult GMPParent::LoadProcess() {
   }
 
   nsAutoString path;
-  if (NS_WARN_IF(NS_FAILED(mDirectory->GetPath(path)))) {
+#ifdef MOZ_WIDGET_ANDROID
+  // We need to bundle any CDMs with the APK, so we can just supply the library
+  // name to the child process.
+  path = mName;
+#else
+  if (NS_WARN_IF(!mDirectory) ||
+      NS_WARN_IF(NS_FAILED(mDirectory->GetPath(path)))) {
     return NS_ERROR_FAILURE;
   }
+#endif
   GMP_PARENT_LOG_DEBUG("%s: for %s", __FUNCTION__,
                        NS_ConvertUTF16toUTF8(path).get());
 
@@ -441,7 +469,7 @@ void GMPParent::OnPreferenceChange(const mozilla::dom::Pref& aPref) {
     return;
   }
 
-  Unused << SendPreferenceUpdate(aPref);
+  (void)SendPreferenceUpdate(aPref);
 }
 
 mozilla::ipc::IPCResult GMPParent::RecvPGMPContentChildDestroyed() {
@@ -536,7 +564,7 @@ void GMPParent::CloseActive(bool aDieWhenUnloaded) {
     mState = GMPState::Unloading;
   }
   if (mState != GMPState::NotLoaded && IsUsed()) {
-    Unused << SendCloseActive();
+    (void)SendCloseActive();
     CloseIfUnused();
   }
 }
@@ -657,13 +685,11 @@ void GMPParent::DeleteProcess() {
             self->DeleteProcess();
           },
           [self](const ipc::ResponseRejectReason&) {
+            // We crashed during shutdown, ActorDestroy will perform cleanup.
             GMP_LOG_DEBUG(
                 "GMPParent[%p|childPid=%d] DeleteProcess: Shutdown handshake "
                 "error.",
                 self.get(), self->mChildPid);
-            self->mState = GMPState::Closed;
-            self->Close();
-            self->DeleteProcess();
           });
       return;
     }

@@ -126,11 +126,11 @@ this.VideoControlsWidget = class {
    * media.videocontrols.picture-in-picture.video-toggle.always-show pref, which
    * is mostly used for testing.
    *
-   * @param {Object} prefs
+   * @param {object} prefs
    *   The preferences set that was passed to the UAWidget.
    * @param {Element} someVideo
    *   The <video> to test.
-   * @param {Object} reflowedDimensions
+   * @param {object} reflowedDimensions
    *   An object representing the reflowed dimensions of the <video>. Properties
    *   are:
    *
@@ -140,7 +140,7 @@ this.VideoControlsWidget = class {
    *     videoHeight (Number):
    *       The height of the video in pixels.
    *
-   * @return {Boolean}
+   * @return {boolean}
    */
   static shouldShowPictureInPictureToggle(
     prefs,
@@ -193,13 +193,13 @@ this.VideoControlsWidget = class {
    * that they're being used. It also will enable the appropriate stylesheet for
    * the preferred toggle experiment.
    *
-   * @param {Object} prefs
+   * @param {object} prefs
    *   The preferences set that was passed to the UAWidget.
    * @param {ShadowRoot} shadowRoot
    *   The shadowRoot of the <video> element where the video controls are.
    * @param {Element} toggle
    *   The toggle element.
-   * @param {Object} reflowedDimensions
+   * @param {object} reflowedDimensions
    *   An object representing the reflowed dimensions of the <video>. Properties
    *   are:
    *
@@ -912,11 +912,12 @@ this.VideoControlsImplWidget = class {
               case this.controlsSpacer:
                 this.clickToPlayClickHandler(aEvent);
                 break;
-              case this.textTrackList:
+              case this.textTrackList: {
                 const index = +aEvent.originalTarget.getAttribute("index");
                 this.changeTextTrack(index);
                 this.closedCaptionButton.focus();
                 break;
+              }
               case this.videocontrols:
                 // Prevent any click event within media controls from dispatching through to video.
                 aEvent.stopPropagation();
@@ -926,7 +927,7 @@ this.VideoControlsImplWidget = class {
           case "dblclick":
             this.toggleFullscreen();
             break;
-          case "resizevideocontrols":
+          case "resizevideocontrols": {
             // Since this event come from the layout, this is the only place
             // we are sure of that probing into layout won't trigger or force
             // reflow.
@@ -951,6 +952,7 @@ this.VideoControlsImplWidget = class {
             }
             this.updatePictureInPictureToggleDisplay();
             break;
+          }
           case "fullscreenchange":
             this.onFullscreenChange();
             break;

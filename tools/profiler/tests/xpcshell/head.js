@@ -21,11 +21,13 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+add_setup(ProfilerTestUtils.assertProfilerInactive);
+
 /**
  * This function takes a thread, and a sample tuple from the "data" array, and
  * inflates the frame to be an array of strings.
  *
- * @param {Object} thread - The thread from the profile.
+ * @param {object} thread - The thread from the profile.
  * @param {Array} sample - The tuple from the thread.samples.data array.
  * @returns {Array<string>} An array of function names.
  */

@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebrtcImageBuffer_h__
-#define WebrtcImageBuffer_h__
+#ifndef WebrtcImageBuffer_h_
+#define WebrtcImageBuffer_h_
 
+#include "ImageContainer.h"
 #include "common_video/include/video_frame_buffer.h"
 #include "mozilla/RefPtr.h"
-#include "ImageContainer.h"
 
 namespace mozilla {
 namespace layers {
@@ -21,7 +21,7 @@ class ImageBuffer : public webrtc::VideoFrameBuffer {
   explicit ImageBuffer(RefPtr<layers::Image>&& aImage)
       : mImage(std::move(aImage)) {}
 
-  rtc::scoped_refptr<webrtc::I420BufferInterface> ToI420() override {
+  webrtc::scoped_refptr<webrtc::I420BufferInterface> ToI420() override {
     RefPtr<layers::PlanarYCbCrImage> image = mImage->AsPlanarYCbCrImage();
     MOZ_ASSERT(image);
     if (!image) {
@@ -29,7 +29,7 @@ class ImageBuffer : public webrtc::VideoFrameBuffer {
       return nullptr;
     }
     const layers::PlanarYCbCrData* data = image->GetData();
-    rtc::scoped_refptr<webrtc::I420BufferInterface> buf =
+    webrtc::scoped_refptr<webrtc::I420BufferInterface> buf =
         webrtc::WrapI420Buffer(
             data->mPictureRect.width, data->mPictureRect.height,
             data->mYChannel, data->mYStride, data->mCbChannel,
@@ -52,4 +52,4 @@ class ImageBuffer : public webrtc::VideoFrameBuffer {
 
 }  // namespace mozilla
 
-#endif  // WebrtcImageBuffer_h__
+#endif  // WebrtcImageBuffer_h_

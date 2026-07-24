@@ -1,27 +1,28 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
-
 #include "AudioGenerator.h"
-#include "libwebrtcglue/SystemTime.h"
-#include "libwebrtcglue/WebrtcEnvironmentWrapper.h"
 #include "MediaEngineWebRTCAudio.h"
 #include "MediaTrackGraphImpl.h"
 #include "PrincipalHandle.h"
-#include "mozilla/Attributes.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "libwebrtcglue/SystemTime.h"
+#include "libwebrtcglue/WebrtcEnvironmentWrapper.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsTArray.h"
 
 using namespace mozilla;
 using testing::NiceMock;
 using testing::Return;
+
+template <class T>
+AudioChunk CreateAudioChunk(uint32_t aFrames, uint32_t aChannels,
+                            AudioSampleFormat aSampleFormat);
 
 class MockGraph : public MediaTrackGraphImpl {
  public:
@@ -48,6 +49,16 @@ class MockGraph : public MediaTrackGraphImpl {
     // no tracks are created and destroyed.
     mDriver = nullptr;
   }
+
+  void ForceOutputDeviceForAEC(CubebUtils::AudioDeviceID aID) {
+    mOutputDeviceForAEC = aID;
+  }
+
+  void ForceDefaultOutputDevice(CubebUtils::AudioDeviceID aID) {
+    mDefaultOutputDeviceID = aID;
+  }
+
+  void UpdateEnumeratorDefaultDeviceTracking() override {}
 
   MOCK_CONST_METHOD0(OnGraphThread, bool());
 
@@ -719,5 +730,103 @@ TEST(TestAudioInputProcessing, PlatformProcessing)
   EXPECT_FALSE(aip->IsPassThrough(graph));
 
   aip->Stop(graph);
+  graph->Destroy();
+}
+
+TEST(TestAudioInputProcessing, PlatformProcessingSetSinkId)
+{
+  const TrackRate rate = 44100;
+  const uint32_t channels = 1;
+  auto graph = MakeRefPtr<NiceMock<MockGraph>>(rate);
+  graph->ForceDefaultOutputDevice(CubebUtils::AudioDeviceID(1));
+  graph->ForceOutputDeviceForAEC(CubebUtils::AudioDeviceID(2));
+  graph->Init(channels);
+  ASSERT_EQ(graph->PrimaryOutputDeviceID(), nullptr);
+
+  RefPtr track = AudioProcessingTrack::Create(graph);
+  auto aip = MakeRefPtr<AudioInputProcessing>(channels);
+  aip->SetEnvironmentWrapper(track, WebrtcEnvironmentWrapper::Create(
+                                        dom::RTCStatsTimestampMaker::Create()));
+  track->ConnectDeviceInput(nullptr, aip, PRINCIPAL_HANDLE_NONE);
+
+  MediaEnginePrefs settings;
+  settings.mUsePlatformProcessing = true;
+  settings.mAecOn = true;
+  settings.mAgcOn = true;
+  settings.mAgc2Forced = true;
+  settings.mNoiseOn = true;
+  settings.mChannels = channels;
+  aip->ApplySettings(graph, nullptr, settings);
+  aip->Start(graph);
+
+  webrtc::AudioProcessing::Config echoOnlyConfig;
+  echoOnlyConfig.echo_canceller.enabled = true;
+  webrtc::AudioProcessing::Config allConfig;
+  allConfig.echo_canceller.enabled = allConfig.noise_suppression.enabled =
+      allConfig.gain_controller2.enabled = true;
+
+  constexpr cubeb_input_processing_params PROCESSING_PARAM_ALL =
+      CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION |
+      CUBEB_INPUT_PROCESSING_PARAM_AUTOMATIC_GAIN_CONTROL |
+      CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION;
+
+  // Config is applied, and platform processing requested.
+  EXPECT_EQ(aip->RequestedInputProcessingParams(graph), PROCESSING_PARAM_ALL);
+  EXPECT_EQ(aip->AppliedConfig(graph), allConfig);
+  EXPECT_FALSE(aip->IsPassThrough(graph));
+
+  // No other constraint requests present.
+  aip->NotifySetRequestedInputProcessingParams(graph, 1, PROCESSING_PARAM_ALL);
+  EXPECT_EQ(aip->AppliedConfig(graph), allConfig);
+  EXPECT_FALSE(aip->IsPassThrough(graph));
+
+  // Platform processing params successfully applied.
+  aip->NotifySetRequestedInputProcessingParamsResult(graph, 1,
+                                                     PROCESSING_PARAM_ALL);
+  // Because setSinkId is used, AEC (only) is still applied.
+  EXPECT_EQ(aip->AppliedConfig(graph), echoOnlyConfig);
+  EXPECT_FALSE(aip->IsPassThrough(graph));
+
+  // Changing to primary device for AEC should enable passthrough.
+  const GraphTime frames = MediaTrackGraphImpl::RoundUpToEndOfAudioBlock(100);
+  AudioGenerator<AudioDataValue> generator(channels, rate);
+
+  graph->ForceOutputDeviceForAEC(CubebUtils::AudioDeviceID(1));
+  GraphTime processedTime = 0, nextTime = 0;
+  {
+    AudioSegment input, output;
+    processedTime = nextTime;
+    nextTime += frames;
+    generator.Generate(input, frames);
+    aip->Process(track, processedTime, nextTime, &input, &output);
+    for (AudioSegment::ConstChunkIterator it(output); !it.IsEnded();
+         it.Next()) {
+      aip->ProcessOutputData(track, *it);
+    }
+  }
+  EXPECT_EQ(aip->RequestedInputProcessingParams(graph), PROCESSING_PARAM_ALL);
+  EXPECT_EQ(aip->AppliedConfig(graph), webrtc::AudioProcessing::Config());
+  EXPECT_TRUE(aip->IsPassThrough(graph));
+
+  // Changing to non-primary device for AEC should turn on AEC again.
+  graph->ForceOutputDeviceForAEC(CubebUtils::AudioDeviceID(2));
+  {
+    AudioSegment input, output;
+    processedTime = nextTime;
+    nextTime += frames;
+    generator.Generate(input, frames);
+    aip->Process(track, processedTime, nextTime, &input, &output);
+    for (AudioSegment::ConstChunkIterator it(output); !it.IsEnded();
+         it.Next()) {
+      aip->ProcessOutputData(track, *it);
+    }
+  }
+  EXPECT_EQ(aip->RequestedInputProcessingParams(graph), PROCESSING_PARAM_ALL);
+  EXPECT_EQ(aip->AppliedConfig(graph), echoOnlyConfig);
+  EXPECT_FALSE(aip->IsPassThrough(graph));
+
+  aip->Stop(graph);
+  track->DisconnectDeviceInput();
+  track->Destroy();
   graph->Destroy();
 }

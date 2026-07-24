@@ -29,7 +29,6 @@ static mozilla::LazyLogModule sLog("Windows11LimitedAccessFeatures");
 
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Base64.h"
-#  include "mozilla/Char16.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
 #  include "WinUtils.h"
 

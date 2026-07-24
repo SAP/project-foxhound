@@ -16,7 +16,7 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
-const { maybeSubmitBackgroundUpdatePing } = ChromeUtils.importESModule(
+const { Actions } = ChromeUtils.importESModule(
   "resource://gre/modules/backgroundtasks/BackgroundTask_backgroundupdate.sys.mjs"
 );
 
@@ -26,7 +26,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "UpdateService",
   "@mozilla.org/updates/update-service;1",
-  "nsIApplicationUpdateService"
+  Ci.nsIApplicationUpdateService
 );
 
 add_setup(function test_setup() {
@@ -94,7 +94,7 @@ add_task(async function test_record_update_environment() {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 });
@@ -135,7 +135,7 @@ async function do_readTargeting(content, beforeNextSubmitCallback) {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 }

@@ -229,11 +229,11 @@ struct BreadthFirst {
     Queue() : head(), tail(), frontIndex(0) {}
     bool empty() { return frontIndex >= head.length(); }
     T& front() {
-      MOZ_ASSERT(!empty());
+      MOZ_RELEASE_ASSERT(!empty());
       return head[frontIndex];
     }
     void popFront() {
-      MOZ_ASSERT(!empty());
+      MOZ_RELEASE_ASSERT(!empty());
       frontIndex++;
       if (frontIndex >= head.length()) {
         head.clearAndFree();

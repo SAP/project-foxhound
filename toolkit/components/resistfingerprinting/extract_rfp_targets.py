@@ -39,7 +39,7 @@ def write_defaults(output, defaults_base, defaults_fpp):
 
 
 def parse_targets(path):
-    pattern = re.compile(r"ITEM_VALUE\((.+),[\s]+(.+)\)")
+    pattern = re.compile(r"ITEM_VALUE\((.+),[\s]*(.+)\)")
 
     contents = ""
     with open(path) as f:

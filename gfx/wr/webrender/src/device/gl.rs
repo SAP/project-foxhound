@@ -117,6 +117,96 @@ pub struct VertexAttribute {
     pub kind: VertexAttributeKind,
 }
 
+impl VertexAttribute {
+    pub const fn quad_instance_vertex() -> Self {
+        VertexAttribute {
+            name: "aPosition",
+            count: 2,
+            kind: VertexAttributeKind::U8Norm,
+        }
+    }
+
+    pub const fn gpu_buffer_address(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 1,
+            kind: VertexAttributeKind::I32,
+        }
+    }
+
+    pub const fn f32x4(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 4,
+            kind: VertexAttributeKind::F32,
+        }
+    }
+
+    pub const fn f32x3(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 3,
+            kind: VertexAttributeKind::F32,
+        }
+    }
+
+    pub const fn f32x2(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 2,
+            kind: VertexAttributeKind::F32,
+        }
+    }
+
+    pub const fn f32(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 1,
+            kind: VertexAttributeKind::F32,
+        }
+    }
+
+    pub const fn i32x4(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 4,
+            kind: VertexAttributeKind::I32,
+        }
+    }
+
+    pub const fn i32x2(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 2,
+            kind: VertexAttributeKind::I32,
+        }
+    }
+
+    pub const fn i32(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 1,
+            kind: VertexAttributeKind::I32,
+        }
+    }
+
+    pub const fn u16(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 1,
+            kind: VertexAttributeKind::U16,
+        }
+    }
+
+    pub const fn u16x2(name: &'static str) -> Self {
+        VertexAttribute {
+            name,
+            count: 2,
+            kind: VertexAttributeKind::U16,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct VertexDescriptor {
     pub vertex_attributes: &'static [VertexAttribute],
@@ -1436,6 +1526,20 @@ fn is_mali_valhall(renderer_name: &str) -> bool {
     // Bifrost models (of which we don't expect any new ones to be released)
     renderer_name.starts_with("Mali-G") && !is_mali_bifrost(renderer_name)
 }
+#[inline(never)]
+fn gl_error_string(code: u32) -> &'static str {
+    match code {
+        gl::INVALID_ENUM => "GL_INVALID_ENUM",
+        gl::INVALID_VALUE => "GL_INVALID_VALUE",
+        gl::INVALID_OPERATION => "GL_INVALID_OPERATION",
+        gl::STACK_OVERFLOW => "GL_STACK_OVERFLOW",
+        gl::STACK_UNDERFLOW => "GL_STACK_UNDERFLOW",
+        gl::OUT_OF_MEMORY => "GL_OUT_OF_MEMORY",
+        gl::INVALID_FRAMEBUFFER_OPERATION => "GL_INVALID_FRAMEBUFFER_OPERATION",
+        0x507 => "GL_CONTEXT_LOST",
+        _ => "(unknown error code)",
+    }
+}
 
 impl Device {
     pub fn new(
@@ -1491,8 +1595,9 @@ impl Device {
                 if supports_khr_debug {
                     Self::log_driver_messages(gl);
                 }
-                error!("Caught GL error {:x} at {}", code, name);
-                panic!("Caught GL error {:x} at {}", code, name);
+                let err_name = gl_error_string(code);
+                error!("Caught GL error 0x{:x} {} at {}", code, err_name, name);
+                panic!("Caught GL error 0x{:x} {} at {}", code, err_name, name);
             });
         }
 
@@ -1711,8 +1816,12 @@ impl Device {
         // On the android emulator, and possibly some Mali devices, glShaderSource
         // can crash if the source strings are not null-terminated.
         // See bug 1591945 and bug 1799722.
+        // Likewise on Lenovo devices with Adreno 750 GPUs we have seen glCompileShader
+        // failures and subsequent crashes due to glGetShaderInfoLog returning invalid
+        // UTF-8. See bug 2014925.
         let requires_null_terminated_shader_source = is_emulator || renderer_name == "Mali-T628"
-            || renderer_name == "Mali-T720" || renderer_name == "Mali-T760";
+            || renderer_name == "Mali-T720" || renderer_name == "Mali-T760"
+            || renderer_name == "Mali-G57" || renderer_name == "Adreno (TM) 750";
 
         // The android emulator gets confused if you don't explicitly unbind any texture
         // from GL_TEXTURE_EXTERNAL_OES before binding another to GL_TEXTURE_2D. See bug 1636085.
@@ -1758,10 +1867,12 @@ impl Device {
 
         // We have encountered several issues when only partially updating render targets on a
         // variety of Mali GPUs. As a precaution avoid doing so on all Midgard and Bifrost GPUs.
-        // Valhall (eg Mali-Gx7 onwards) appears to be unnaffected. See bug 1691955, bug 1558374,
+        // Valhall (eg Mali-Gx7 onwards) appears to be unaffected. See bug 1691955, bug 1558374,
         // and bug 1663355.
-        let supports_render_target_partial_update =
-            !is_mali_midgard(&renderer_name) && !is_mali_bifrost(&renderer_name);
+        // We have Additionally encountered issues on PowerVR D-Series. See bug 2005312.
+        let supports_render_target_partial_update = !is_mali_midgard(&renderer_name)
+            && !is_mali_bifrost(&renderer_name)
+            && !renderer_name.starts_with("PowerVR D-Series");
 
         let supports_shader_storage_object = match gl.get_type() {
             // see https://www.g-truc.net/post-0734.html

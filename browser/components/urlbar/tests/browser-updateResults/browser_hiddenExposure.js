@@ -11,20 +11,21 @@
 add_task(async function rowCanUpdateToResult() {
   // Create a provider that returns two non-hidden results.
   let provider = new UrlbarTestUtils.TestProvider({ priority: Infinity });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   registerCleanupFunction(() => {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   });
 
   for (let i = 0; i < 2; i++) {
     provider.results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: {
           url: "https://example.com/" + i,
-        }
-      )
+        },
+      })
     );
   }
 
@@ -54,18 +55,14 @@ add_task(async function rowCanUpdateToResult() {
   // check so that it can replace the non-hidden result in the first row. So
   // make sure the two results are the exact same type.
   provider.results = [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
-          url: "https://example.com/hidden-exposure",
-        }
-      ),
-      {
-        exposureTelemetry: UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN,
-      }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      exposureTelemetry: UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN,
+      payload: {
+        url: "https://example.com/hidden-exposure",
+      },
+    }),
   ];
 
   // Do another search without closing the view first. Since the only result is
@@ -84,5 +81,5 @@ add_task(async function rowCanUpdateToResult() {
   await UrlbarTestUtils.promisePopupClose(window);
   gURLBar.handleRevert();
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 });

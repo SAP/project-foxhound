@@ -98,6 +98,9 @@ pub struct BitsRequest {
     // Stores an ErrorType if the request has failed, or None to represent the
     // success state.
     download_status_error_type: Cell<Option<ErrorType>>,
+    // Stores the error code if the request has failed, using None
+    // to represent no error, or Some(i32) for BITS HRESULT errors.
+    download_status_error_code: Cell<Option<i32>>,
     // This option will be None only after OnStopRequest has been fired.
     monitor_thread: Cell<Option<RefPtr<nsIThread>>>,
     monitor_timeout_ms: u32,
@@ -151,6 +154,7 @@ impl BitsRequest {
             download_pending: Cell::new(true),
             download_status_nsresult: Cell::new(NS_OK),
             download_status_error_type: Cell::new(None),
+            download_status_error_code: Cell::new(None),
             monitor_thread: Cell::new(Some(monitor_thread.clone())),
             monitor_timeout_ms,
             observer,
@@ -249,12 +253,12 @@ impl BitsRequest {
     /// observer.OnStopRequest exactly once, though the call may be delayed to
     /// resolve a race condition.
     ///
-    /// The status values, if passed, will be stored in download_status_nsresult
-    /// and download_status_error_type, unless they have been overridden by a
-    /// cancel action.
+    /// The status values, if passed, will be stored in download_status_nsresult,
+    /// download_status_error_type, and download_status_error_code, unless they
+    /// have been overridden by a cancel action.
     ///
     /// See the documentation for CancelAction for details.
-    pub fn on_stop(&self, maybe_status: Option<(nsresult, Option<ErrorType>)>) {
+    pub fn on_stop(&self, maybe_status: Option<(nsresult, Option<ErrorType>, Option<i32>)>) {
         if !self.has_monitor_thread() {
             // If the request has already stopped, don't stop it again
             return;
@@ -263,9 +267,10 @@ impl BitsRequest {
         match self.cancel_action.get() {
             CancelAction::InProgress(saved_status)
             | CancelAction::RequestEndedWhileInProgress(saved_status) => {
-                if let Some((status, result)) = maybe_status {
+                if let Some((status, result, error_code)) = maybe_status {
                     self.download_status_nsresult.set(status);
                     self.download_status_error_type.set(result);
+                    self.download_status_error_code.set(error_code);
                 }
 
                 info!("Deferring OnStopRequest until Cancel Task completes");
@@ -274,9 +279,10 @@ impl BitsRequest {
                 return;
             }
             CancelAction::NotInProgress => {
-                if let Some((status, result)) = maybe_status {
+                if let Some((status, result, error_code)) = maybe_status {
                     self.download_status_nsresult.set(status);
                     self.download_status_error_type.set(result);
+                    self.download_status_error_code.set(error_code);
                 }
             }
             CancelAction::RequestEndPending => {
@@ -330,6 +336,14 @@ impl BitsRequest {
             Some(error_type) => error_type.bits_code(),
         };
         Ok(error_type)
+    }
+
+    xpcom_method!(
+        get_bits_transfer_error_code_nsIBitsRequest => GetTransferErrorCode() -> i32
+    );
+    #[allow(non_snake_case)]
+    fn get_bits_transfer_error_code_nsIBitsRequest(&self) -> Result<i32, nsresult> {
+        Ok(self.download_status_error_code.get().unwrap_or(0))
     }
 
     xpcom_method!(

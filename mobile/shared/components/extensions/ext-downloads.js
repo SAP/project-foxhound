@@ -9,8 +9,6 @@ ChromeUtils.defineESModuleGetters(this, {
   DownloadTracker: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
 });
 
-Cu.importGlobalProperties(["PathUtils"]);
-
 var { ignoreEvent } = ExtensionCommon;
 
 const REQUEST_DOWNLOAD_MESSAGE = "GeckoView:WebExtension:Download";

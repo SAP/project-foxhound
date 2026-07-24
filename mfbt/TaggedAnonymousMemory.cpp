@@ -13,6 +13,7 @@
 #  include <sys/prctl.h>
 #  include <sys/syscall.h>
 #  include <unistd.h>
+#  include <stdint.h>
 
 #  include "mozilla/Assertions.h"
 

@@ -23,8 +23,7 @@ const { BLACKBOXING } = SUPPORTED_DATA;
  * will be forwarded to the WatcherActor to populate the shared session data available to
  * all DevTools targets.
  *
- * @constructor
- *
+ * @class
  */
 class BlackboxingActor extends Actor {
   constructor(watcherActor) {
@@ -36,7 +35,7 @@ class BlackboxingActor extends Actor {
    * Request to blackbox a new JS file either completely if no range is passed.
    * Or only a precise subset of lines described by range attribute.
    *
-   * @param {String} url
+   * @param {string} url
    *                 Mandatory argument to mention what URL of JS file should be blackboxed.
    * @param {Array<Objects>} ranges
    *                 The whole file will be blackboxed if this array is empty.

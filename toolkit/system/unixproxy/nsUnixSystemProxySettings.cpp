@@ -9,13 +9,14 @@
 #include "nsArrayUtils.h"
 #include "prnetdb.h"
 #include "prenv.h"
-#include "nsInterfaceHashtable.h"
+#include "nsClassHashtable.h"
 #include "nsHashtablesFwd.h"
 #include "nsHashKeys.h"
 #include "nsNetUtil.h"
 #include "nsISupportsPrimitives.h"
-#include "nsIGSettingsService.h"
+#include "mozilla/widget/GSettings.h"
 #include "nsReadableUtils.h"
+#include "ProxyUtils.h"
 
 using namespace mozilla;
 
@@ -25,20 +26,18 @@ class nsUnixSystemProxySettings final : public nsISystemProxySettings {
   NS_DECL_NSISYSTEMPROXYSETTINGS
 
   nsUnixSystemProxySettings() : mSchemeProxySettings(4) {}
-  void Init();
 
  private:
   ~nsUnixSystemProxySettings() = default;
 
-  nsCOMPtr<nsIGSettingsService> mGSettings;
-  nsCOMPtr<nsIGSettingsCollection> mProxySettings;
-  nsInterfaceHashtable<nsCStringHashKey, nsIGSettingsCollection>
+  widget::GSettings::Collection mProxySettings{"org.gnome.system.proxy"_ns};
+  nsClassHashtable<nsCStringHashKey, widget::GSettings::Collection>
       mSchemeProxySettings;
   nsresult GetProxyFromGSettings(const nsACString& aScheme,
                                  const nsACString& aHost, int32_t aPort,
                                  nsACString& aResult);
-  nsresult SetProxyResultFromGSettings(const char* aKeyBase, const char* aType,
-                                       nsACString& aResult);
+  nsresult SetProxyResultFromGSettings(const nsCString& aSchema,
+                                       const char* aType, nsACString& aResult);
 };
 
 NS_IMPL_ISUPPORTS(nsUnixSystemProxySettings, nsISystemProxySettings)
@@ -51,82 +50,19 @@ nsUnixSystemProxySettings::GetMainThreadOnly(bool* aMainThreadOnly) {
   return NS_OK;
 }
 
-void nsUnixSystemProxySettings::Init() {
-  mGSettings = do_GetService(NS_GSETTINGSSERVICE_CONTRACTID);
-  if (mGSettings) {
-    mGSettings->GetCollectionForSchema("org.gnome.system.proxy"_ns,
-                                       getter_AddRefs(mProxySettings));
-  }
-}
-
 nsresult nsUnixSystemProxySettings::GetPACURI(nsACString& aResult) {
   if (mProxySettings) {
-    nsCString proxyMode;
+    nsAutoCString proxyMode;
     // Check if mode is auto
-    nsresult rv = mProxySettings->GetString("mode"_ns, proxyMode);
-    if (rv == NS_OK && proxyMode.EqualsLiteral("auto")) {
-      return mProxySettings->GetString("autoconfig-url"_ns, aResult);
+    mProxySettings.GetString("mode"_ns, proxyMode);
+    if (proxyMode.EqualsLiteral("auto")) {
+      mProxySettings.GetString("autoconfig-url"_ns, aResult);
+      return NS_OK;
     }
   }
-
   // Return an empty string when auto mode is not set.
   aResult.Truncate();
   return NS_OK;
-}
-
-static bool IsInNoProxyList(const nsACString& aHost, int32_t aPort,
-                            const char* noProxyVal) {
-  NS_ASSERTION(aPort >= 0, "Negative port?");
-
-  nsAutoCString noProxy(noProxyVal);
-  if (noProxy.EqualsLiteral("*")) return true;
-
-  noProxy.StripWhitespace();
-
-  nsReadingIterator<char> pos;
-  nsReadingIterator<char> end;
-  noProxy.BeginReading(pos);
-  noProxy.EndReading(end);
-  while (pos != end) {
-    nsReadingIterator<char> last = pos;
-    nsReadingIterator<char> nextPos;
-    if (FindCharInReadable(',', last, end)) {
-      nextPos = last;
-      ++nextPos;
-    } else {
-      last = end;
-      nextPos = end;
-    }
-
-    nsReadingIterator<char> colon = pos;
-    int32_t port = -1;
-    if (FindCharInReadable(':', colon, last)) {
-      ++colon;
-      nsDependentCSubstring portStr(colon, last);
-      nsAutoCString portStr2(
-          portStr);  // We need this for ToInteger. String API's suck.
-      nsresult err;
-      port = portStr2.ToInteger(&err);
-      if (NS_FAILED(err)) {
-        port = -2;  // don't match any port, so we ignore this pattern
-      }
-      --colon;
-    } else {
-      colon = last;
-    }
-
-    if (port == -1 || port == aPort) {
-      nsDependentCSubstring hostStr(pos, colon);
-      // By using StringEndsWith instead of an equality comparator, we can
-      // include sub-domains
-      if (StringEndsWith(aHost, hostStr, nsCaseInsensitiveCStringComparator))
-        return true;
-    }
-
-    pos = nextPos;
-  }
-
-  return false;
 }
 
 static void SetProxyResult(const char* aType, const nsACString& aHost,
@@ -144,93 +80,24 @@ static void SetProxyResultDirect(nsACString& aResult) {
   aResult.AssignLiteral("DIRECT");
 }
 
-static const char* GetEnvRetryUppercase(const nsCString& aEnv) {
-  nsAutoCString env(aEnv);
-  const char* proxyVal = PR_GetEnv(env.get());
-  if (proxyVal) {
-    return proxyVal;
-  }
-  ToUpperCase(env);
-  proxyVal = PR_GetEnv(env.get());
-  return proxyVal;
-}
-
-static nsresult GetProxyFromEnvironment(const nsACString& aScheme,
-                                        const nsACString& aHost, int32_t aPort,
-                                        nsACString& aResult) {
-  nsAutoCString envVar;
-  envVar.Append(aScheme);
-  envVar.AppendLiteral("_proxy");
-  const char* proxyVal = GetEnvRetryUppercase(envVar);
-  if (!proxyVal && aScheme == "ws") {
-    proxyVal = GetEnvRetryUppercase("http_proxy"_ns);
-  } else if (!proxyVal && aScheme == "wss") {
-    proxyVal = GetEnvRetryUppercase("https_proxy"_ns);
-  }
-  if (!proxyVal) {
-    proxyVal = GetEnvRetryUppercase("all_proxy"_ns);
-    if (!proxyVal) {
-      // Return failure so that the caller can detect the failure and
-      // fall back to other proxy detection (e.g., WPAD)
-      return NS_ERROR_FAILURE;
-    }
-  }
-
-  const char* noProxyVal = GetEnvRetryUppercase("no_proxy"_ns);
-  if (noProxyVal && IsInNoProxyList(aHost, aPort, noProxyVal)) {
-    SetProxyResultDirect(aResult);
-    return NS_OK;
-  }
-
-  // Use our URI parser to crack the proxy URI
-  nsCOMPtr<nsIURI> proxyURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(proxyURI), proxyVal);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Is there a way to specify "socks://" or something in these environment
-  // variables? I can't find any documentation.
-  if (!proxyURI->SchemeIs("http")) {
-    return NS_ERROR_UNKNOWN_PROTOCOL;
-  }
-
-  nsAutoCString proxyHost;
-  rv = proxyURI->GetHost(proxyHost);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  int32_t proxyPort;
-  rv = proxyURI->GetPort(&proxyPort);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  SetProxyResult("PROXY", proxyHost, proxyPort, aResult);
-  return NS_OK;
-}
-
 nsresult nsUnixSystemProxySettings::SetProxyResultFromGSettings(
-    const char* aKeyBase, const char* aType, nsACString& aResult) {
-  nsDependentCString key(aKeyBase);
-
-  nsCOMPtr<nsIGSettingsCollection> proxy_settings =
-      mSchemeProxySettings.Get(key);
-  nsresult rv;
-  if (!proxy_settings) {
-    rv =
-        mGSettings->GetCollectionForSchema(key, getter_AddRefs(proxy_settings));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    mSchemeProxySettings.InsertOrUpdate(key, proxy_settings);
-  }
+    const nsCString& aSchema, const char* aType, nsACString& aResult) {
+  auto& settings = mSchemeProxySettings.LookupOrInsertWith(aSchema, [&] {
+    return MakeUnique<widget::GSettings::Collection>(aSchema);
+  });
 
   nsAutoCString host;
-  rv = proxy_settings->GetString("host"_ns, host);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (host.IsEmpty()) return NS_ERROR_FAILURE;
+  settings->GetString("host"_ns, host);
+  if (host.IsEmpty()) {
+    return NS_ERROR_FAILURE;
+  }
 
-  int32_t port;
-  rv = proxy_settings->GetInt("port"_ns, &port);
-  NS_ENSURE_SUCCESS(rv, rv);
+  int32_t port = settings->GetInt("port"_ns).valueOr(0);
 
-  /* When port is 0, proxy is not considered as enabled even if host is set. */
-  if (port == 0) return NS_ERROR_FAILURE;
+  // When port is 0, proxy is not considered as enabled even if host is set.
+  if (port == 0) {
+    return NS_ERROR_FAILURE;
+  }
 
   SetProxyResult(aType, host, port, aResult);
   return NS_OK;
@@ -290,12 +157,17 @@ static bool ConvertToIPV6Addr(const nsACString& aName, PRIPv6Addr* aAddr,
 
 static bool HostIgnoredByProxy(const nsACString& aIgnore,
                                const nsACString& aHost) {
-  if (aIgnore.Equals(aHost, nsCaseInsensitiveCStringComparator)) return true;
-
+  if (aIgnore.IsEmpty()) {
+    return false;
+  }
+  if (aIgnore.Equals(aHost, nsCaseInsensitiveCStringComparator)) {
+    return true;
+  }
   if (aIgnore.First() == '*' &&
       StringEndsWith(aHost, nsDependentCSubstring(aIgnore, 1),
-                     nsCaseInsensitiveCStringComparator))
+                     nsCaseInsensitiveCStringComparator)) {
     return true;
+  }
 
   int32_t mask = 128;
   nsReadingIterator<char> start;
@@ -321,8 +193,9 @@ static bool HostIgnoredByProxy(const nsACString& aIgnore,
   nsDependentCSubstring ignoreStripped(start, slash);
   PRIPv6Addr ignoreAddr, hostAddr;
   if (!ConvertToIPV6Addr(ignoreStripped, &ignoreAddr, &mask) ||
-      !ConvertToIPV6Addr(aHost, &hostAddr, nullptr))
+      !ConvertToIPV6Addr(aHost, &hostAddr, nullptr)) {
     return false;
+  }
 
   proxy_MaskIPv6Addr(ignoreAddr, mask);
   proxy_MaskIPv6Addr(hostAddr, mask);
@@ -334,50 +207,39 @@ nsresult nsUnixSystemProxySettings::GetProxyFromGSettings(
     const nsACString& aScheme, const nsACString& aHost, int32_t aPort,
     nsACString& aResult) {
   nsCString proxyMode;
-  nsresult rv = mProxySettings->GetString("mode"_ns, proxyMode);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  mProxySettings.GetString("mode"_ns, proxyMode);
   // return NS_ERROR_FAILURE when no proxy is set
   if (!proxyMode.EqualsLiteral("manual")) {
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIArray> ignoreList;
-  if (NS_SUCCEEDED(mProxySettings->GetStringList("ignore-hosts"_ns,
-                                                 getter_AddRefs(ignoreList))) &&
-      ignoreList) {
-    uint32_t len = 0;
-    ignoreList->GetLength(&len);
-    for (uint32_t i = 0; i < len; ++i) {
-      nsCOMPtr<nsISupportsCString> str = do_QueryElementAt(ignoreList, i);
-      if (str) {
-        nsCString s;
-        if (NS_SUCCEEDED(str->GetData(s)) && !s.IsEmpty()) {
-          if (HostIgnoredByProxy(s, aHost)) {
-            SetProxyResultDirect(aResult);
-            return NS_OK;
-          }
-        }
-      }
+  nsTArray<nsCString> ignoreList;
+  mProxySettings.GetStringList("ignore-hosts"_ns, ignoreList);
+  for (auto& s : ignoreList) {
+    if (HostIgnoredByProxy(s, aHost)) {
+      SetProxyResultDirect(aResult);
+      return NS_OK;
     }
   }
 
+  nsresult rv = NS_OK;
   if (aScheme.LowerCaseEqualsLiteral("http")) {
-    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.http", "PROXY",
+    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.http"_ns, "PROXY",
                                      aResult);
   } else if (aScheme.LowerCaseEqualsLiteral("https")) {
-    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.https", "PROXY",
+    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.https"_ns, "PROXY",
                                      aResult);
     /* Try to use HTTP proxy when HTTPS proxy is not explicitly defined */
-    if (rv != NS_OK)
-      rv = SetProxyResultFromGSettings("org.gnome.system.proxy.http", "PROXY",
-                                       aResult);
+    if (rv != NS_OK) {
+      rv = SetProxyResultFromGSettings("org.gnome.system.proxy.http"_ns,
+                                       "PROXY", aResult);
+    }
   } else {
     rv = NS_ERROR_FAILURE;
   }
   if (rv != NS_OK) {
     /* If proxy for scheme is not specified, use SOCKS proxy for all schemes */
-    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.socks", "SOCKS",
+    rv = SetProxyResultFromGSettings("org.gnome.system.proxy.socks"_ns, "SOCKS",
                                      aResult);
   }
 
@@ -400,12 +262,18 @@ nsresult nsUnixSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
                                                    const nsACString& aHost,
                                                    const int32_t aPort,
                                                    nsACString& aResult) {
+  nsresult rv = mozilla::toolkit::system::GetProxyFromEnvironment(
+      aScheme, aHost, aPort, aResult);
+  if (NS_SUCCEEDED(rv)) {
+    return rv;
+  }
+
   if (mProxySettings) {
-    nsresult rv = GetProxyFromGSettings(aScheme, aHost, aPort, aResult);
+    rv = GetProxyFromGSettings(aScheme, aHost, aPort, aResult);
     if (NS_SUCCEEDED(rv)) return rv;
   }
 
-  return GetProxyFromEnvironment(aScheme, aHost, aPort, aResult);
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -416,6 +284,5 @@ nsUnixSystemProxySettings::GetSystemWPADSetting(bool* aSystemWPADSetting) {
 
 NS_IMPL_COMPONENT_FACTORY(nsUnixSystemProxySettings) {
   auto result = MakeRefPtr<nsUnixSystemProxySettings>();
-  result->Init();
   return result.forget().downcast<nsISupports>();
 }

@@ -92,9 +92,8 @@ def lint(paths, config, fix=None, **lintargs):
                             "lineno": i + 1,
                         }
                         results.append(result.from_config(config, **res))
-                else:
-                    if fix:
-                        content_to_write.append(line)
+                elif fix:
+                    content_to_write.append(line)
             if hasFix:
                 # Only update the file when we found a change to make
                 with open(f, "wb") as open_file_to_write:

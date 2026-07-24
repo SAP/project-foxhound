@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.doctolib.de - site blocks Firefox for Android
+ * Bug #1998361 - https://bugzilla.mozilla.org/show_bug.cgi?id=1998361
+ * WebCompat issue #186920 - https://github.com/webcompat/web-bugs/issues/186920
+ *
+ * The site blocks Firefox on Android, and if we bypass the block they show a
+ * "use the app, or use Chrome" button. We might as well hide that, too.
+ */
+.MuiDrawer-root:has(#app_description) {
+  display: none !important;
+}

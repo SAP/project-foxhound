@@ -45,6 +45,7 @@ function getClosedTabGroupsById() {
 export var RecentlyClosedTabsAndWindowsMenuUtils = {
   /**
    * Builds up a document fragment of UI items for the recently closed tabs.
+   *
    * @param   {Window} aWindow
    *          The window that the tabs were closed in.
    * @param   {"menuitem"|"toolbarbutton"} aTagName
@@ -141,6 +142,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Builds up a document fragment of UI items for the recently closed windows.
+   *
    * @param   {Window} aWindow
    *          A window that can be used to create the elements and document fragment.
    * @param   {"menuitem"|"toolbarbutton"} aTagName
@@ -179,6 +181,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Handle a command event to re-open all closed tabs
+   *
    * @param aEvent
    *        The command event when the user clicks the restore all menu item
    */
@@ -246,6 +249,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Handle a command event to re-open all closed windows
+   *
    * @param aEvent
    *        The command event when the user clicks the restore all menu item
    */
@@ -259,6 +263,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
   /**
    * Re-open a closed tab and put it to the end of the tab strip.
    * Used for a middle click.
+   *
    * @param aEvent
    *        The event when the user clicks the menu item
    */
@@ -465,6 +470,7 @@ function createTabGroupSubpanel(
 
 /**
  * Create a UI entry for a recently closed tab, tab group, or window.
+ *
  * @param {"menuitem"|"toolbarbutton"} aTagName
  *        the tag name that will be used when creating the UI entry
  * @param {boolean} aIsWindowsFragment
@@ -494,7 +500,7 @@ function createEntry(
   element.setAttribute("label", aMenuLabel);
   if (aClosedTab.image) {
     const iconURL = lazy.PlacesUIUtils.getImageURL(aClosedTab.image);
-    element.setAttribute("image", iconURL);
+    element.setAttribute("image", ChromeUtils.encodeURIForSrcset(iconURL));
   }
 
   if (aIsWindowsFragment) {

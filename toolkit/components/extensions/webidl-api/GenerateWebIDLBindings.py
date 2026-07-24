@@ -130,6 +130,7 @@ def run_diff(
                 right_file.flush()
                 diff_output = subprocess.run(
                     [diff_cmd, "-u", left_file.name, right_file.name],
+                    check=False,
                     capture_output=True,
                 ).stdout.decode("utf-8")
 
@@ -479,12 +480,10 @@ class WebIDLHelpers:
             if group and group not in api_event.schema_groups:
                 return ""
             attrs = ["Replaceable", "SameObject"]
-            return "\n".join(
-                [
-                    "  [%s]" % ", ".join(attrs),
-                    "  readonly attribute ExtensionEventManager %s;" % api_event.name,
-                ]
-            )
+            return "\n".join([
+                "  [%s]" % ", ".join(attrs),
+                "  readonly attribute ExtensionEventManager %s;" % api_event.name,
+            ])
 
         if schema_group is not None:
             return generate_webidl(schema_group)
@@ -509,12 +508,10 @@ class WebIDLHelpers:
             lines = []
             for fn_params in api_fun.iter_multiple_webidl_signatures_params(group):
                 params = ", ".join(cls.webidl_method_params(api_fun, group, fn_params))
-                lines.extend(
-                    [
-                        "  [%s]" % ", ".join(attrs),
-                        "  %s %s(%s);" % (retval_type, api_fun.name, params),
-                    ]
-                )
+                lines.extend([
+                    "  [%s]" % ", ".join(attrs),
+                    "  %s %s(%s);" % (retval_type, api_fun.name, params),
+                ])
             return "\n".join(lines)
 
         if schema_group is not None:
@@ -856,9 +853,8 @@ class APIEntry:
                 return []
             if "allowedContexts" in self.schema_data_by_group[schema_group]:
                 return self.schema_data_by_group[schema_group]["allowedContexts"]
-        else:
-            if "allowedContexts" in self.schema_data_list[0]:
-                return self.schema_data_list[0]["allowedContexts"]
+        elif "allowedContexts" in self.schema_data_list[0]:
+            return self.schema_data_list[0]["allowedContexts"]
 
         if self.parent:
             return self.parent.default_contexts
@@ -1318,16 +1314,18 @@ class APINamespace:
     def get_boilerplate_cpp_header(self):
         template = self.root.jinja_env.get_template("ExtensionAPI.h.in")
         webidl_props = WebIDLHelpers.to_template_props(self)
-        return template.render(
-            {"webidl_name": webidl_props["webidl_name"], "api_namespace": self.name}
-        )
+        return template.render({
+            "webidl_name": webidl_props["webidl_name"],
+            "api_namespace": self.name,
+        })
 
     def get_boilerplate_cpp(self):
         template = self.root.jinja_env.get_template("ExtensionAPI.cpp.in")
         webidl_props = WebIDLHelpers.to_template_props(self)
-        return template.render(
-            {"webidl_name": webidl_props["webidl_name"], "api_namespace": self.name}
-        )
+        return template.render({
+            "webidl_name": webidl_props["webidl_name"],
+            "api_namespace": self.name,
+        })
 
     def dump(self, schema_group=None):
         """

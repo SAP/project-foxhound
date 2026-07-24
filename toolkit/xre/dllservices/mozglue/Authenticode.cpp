@@ -6,7 +6,6 @@
 
 #include "Authenticode.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/ScopeExit.h"

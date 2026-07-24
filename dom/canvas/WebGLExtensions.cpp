@@ -6,12 +6,12 @@
 #include "WebGLExtensions.h"
 
 #include "GLContext.h"
-#include "mozilla/Casting.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_webgl.h"
 #include "WebGLContext.h"
 #include "WebGLFormats.h"
+#include "mozilla/Casting.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
 
 namespace mozilla {
 

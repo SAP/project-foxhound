@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceStorageWorker.h"
+
 #include "Performance.h"
 #include "PerformanceResourceTiming.h"
 #include "PerformanceTiming.h"
@@ -118,7 +119,7 @@ void PerformanceStorageWorker::AddEntry(nsIHttpChannel* aChannel,
 
   RefPtr<PerformanceEntryAdder> r =
       new PerformanceEntryAdder(workerPrivate, this, std::move(data));
-  Unused << NS_WARN_IF(!r->Dispatch(workerPrivate));
+  (void)NS_WARN_IF(!r->Dispatch(workerPrivate));
 }
 
 void PerformanceStorageWorker::AddEntry(

@@ -7,11 +7,10 @@
 #include "mozilla/WindowsOleAut32Initialization.h"
 
 #include <windows.h>
+#include <wchar.h>
 #include <oleauto.h>
 
 #pragma comment(lib, "oleaut32")
-
-#include <cstdio>
 
 // This test fails by crashing the process with a heap corruption, which occurs
 // if VariantClear has its default behavior but should not occur after a call

@@ -9,10 +9,10 @@
  */
 
 #include "nsGkAtoms.h"
-#include "txIXPathContext.h"
-#include "txXSLTFunctions.h"
 #include "txExecutionState.h"
+#include "txIXPathContext.h"
 #include "txURIUtils.h"
+#include "txXSLTFunctions.h"
 
 /*
  * Creates a new DocumentFunctionCall.

@@ -784,7 +784,7 @@ cairo_font_face_t* ScaledFontMac::CreateCairoFontFace(
 
 already_AddRefed<UnscaledFont> UnscaledFontMac::CreateFromFontDescriptor(
     const uint8_t* aData, uint32_t aDataLength, uint32_t aIndex) {
-  if (aDataLength == 0) {
+  if (aDataLength == 0 || aIndex > aDataLength) {
     gfxWarning() << "Mac font descriptor is truncated.";
     return nullptr;
   }

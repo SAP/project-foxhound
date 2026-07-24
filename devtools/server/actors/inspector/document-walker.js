@@ -28,7 +28,7 @@ class DocumentWalker {
    *
    * @param {DOMNode} node
    * @param {Window} rootWin
-   * @param {Object}
+   * @param {object}
    *        - {Function} filter
    *          A custom filter function Taking in a DOMNode and returning an Int. See
    *          WalkerActor.nodeFilter for an example.

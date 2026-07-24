@@ -5,14 +5,13 @@
 
 #include "WebGL2Context.h"
 
-#include "mozilla/StaticPrefs_webgl.h"
 #include "GLContext.h"
-#include "mozilla/dom/WebGL2RenderingContextBinding.h"
-#include "mozilla/ArrayUtils.h"
-#include "nsPrintfCString.h"
 #include "WebGLBuffer.h"
 #include "WebGLFormats.h"
 #include "WebGLTransformFeedback.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/dom/WebGL2RenderingContextBinding.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 

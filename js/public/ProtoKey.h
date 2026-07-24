@@ -109,19 +109,18 @@
   REAL(Set, OCLASP(Set))                                                     \
   REAL(DataView, OCLASP(FixedLengthDataView))                                \
   REAL(Symbol, OCLASP(Symbol))                                               \
-  REAL(ShadowRealm, OCLASP(ShadowRealm))                                     \
   REAL(SharedArrayBuffer, OCLASP(FixedLengthSharedArrayBuffer))              \
-  REAL_IF_INTL(Intl, CLASP(Intl))                                            \
-  REAL_IF_INTL(Collator, OCLASP(Collator))                                   \
-  REAL_IF_INTL(DateTimeFormat, OCLASP(DateTimeFormat))                       \
-  REAL_IF_INTL(DisplayNames, OCLASP(DisplayNames))                           \
-  REAL_IF_INTL(DurationFormat, OCLASP(DurationFormat))                       \
-  REAL_IF_INTL(ListFormat, OCLASP(ListFormat))                               \
-  REAL_IF_INTL(Locale, OCLASP(Locale))                                       \
-  REAL_IF_INTL(NumberFormat, OCLASP(NumberFormat))                           \
-  REAL_IF_INTL(PluralRules, OCLASP(PluralRules))                             \
-  REAL_IF_INTL(RelativeTimeFormat, OCLASP(RelativeTimeFormat))               \
-  REAL_IF_INTL(Segmenter, OCLASP(Segmenter))                                 \
+  REAL_IF_INTL(Intl, CLASP(intl::Intl))                                      \
+  REAL_IF_INTL(Collator, OCLASP(intl::Collator))                             \
+  REAL_IF_INTL(DateTimeFormat, OCLASP(intl::DateTimeFormat))                 \
+  REAL_IF_INTL(DisplayNames, OCLASP(intl::DisplayNames))                     \
+  REAL_IF_INTL(DurationFormat, OCLASP(intl::DurationFormat))                 \
+  REAL_IF_INTL(ListFormat, OCLASP(intl::ListFormat))                         \
+  REAL_IF_INTL(Locale, OCLASP(intl::Locale))                                 \
+  REAL_IF_INTL(NumberFormat, OCLASP(intl::NumberFormat))                     \
+  REAL_IF_INTL(PluralRules, OCLASP(intl::PluralRules))                       \
+  REAL_IF_INTL(RelativeTimeFormat, OCLASP(intl::RelativeTimeFormat))         \
+  REAL_IF_INTL(Segmenter, OCLASP(intl::Segmenter))                           \
   REAL(Reflect, CLASP(Reflect))                                              \
   REAL(WeakSet, OCLASP(WeakSet))                                             \
   REAL(TypedArray, &js::TypedArrayObject::sharedTypedArrayPrototypeClass)    \
@@ -159,6 +158,15 @@
   REAL_IF_INTL(PlainTime, OCLASP(temporal::PlainTime))                       \
   REAL_IF_INTL(TemporalNow, OCLASP(temporal::TemporalNow))                   \
   REAL_IF_INTL(ZonedDateTime, OCLASP(temporal::ZonedDateTime))
+// DO NOT ADD CONDITIONAL ENTRIES TO THIS LIST! (As in, do not add entries
+// guarded by #ifdef.) It will break binary compatibility. Instead, create an
+// IF_<feature> macro and add it to the parameter list below and add a
+// corresponding parameter to JS_FOR_PROTOTYPES_ above.
+//
+// Note that entries may be freely added to or removed from this list, even in
+// the middle. The only invariant that must be upheld is that the offsets in the
+// list do not change depending on configuration settings of the same version of
+// the source.
 
 #define JS_FOR_PROTOTYPES(REAL, IMAGINARY)                      \
   JS_FOR_PROTOTYPES_(REAL, IMAGINARY, IF_INTL(REAL, IMAGINARY), \

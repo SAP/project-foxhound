@@ -91,9 +91,11 @@ already_AddRefed<TextureHost> VideoBridgeParent::LookupTextureAsync(
     const dom::ContentParentId& aContentId, uint64_t aSerial) {
   MonitorAutoLock lock(mMonitor);
 
-  // We raced shutting down the actor.
+  // We raced shutting down the actor. This can happen when another thread is
+  // keeping the VideoBridgeParent object alive, by waiting for a texture lookup
+  // to complete. While the lookup should fail quickly, it may not release the
+  // actor in time to have removed it from the singleton array.
   if (NS_WARN_IF(!mCompositorThreadHolder)) {
-    MOZ_ASSERT_UNREACHABLE("Called on destroyed VideoBridgeParent actor!");
     return nullptr;
   }
 

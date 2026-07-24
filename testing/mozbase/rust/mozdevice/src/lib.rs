@@ -590,7 +590,7 @@ impl Device {
         activity: &str,
         am_start_args: &[T],
     ) -> Result<bool> {
-        let mut am_start = format!("am start -W -n {}/{}", package, activity);
+        let mut am_start = format!("am start -S -W -n {}/{}", package, activity);
 
         for arg in am_start_args {
             am_start.push(' ');

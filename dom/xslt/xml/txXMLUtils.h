@@ -10,8 +10,8 @@
 #ifndef MITRE_XMLUTILS_H
 #define MITRE_XMLUTILS_H
 
-#include "txCore.h"
 #include "nsDependentSubstring.h"
+#include "txCore.h"
 #include "txXPathNode.h"
 
 #define kExpatSeparatorChar 0xFFFF

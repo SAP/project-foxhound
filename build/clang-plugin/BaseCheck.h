@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef BaseCheck_h__
-#define BaseCheck_h__
+#ifndef BaseCheck_h_
+#define BaseCheck_h_
 
 class MozContext {};
 typedef MozContext ContextType;

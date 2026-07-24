@@ -7,6 +7,9 @@
 // components. The appropriate headers for those types cannot be included in
 // the generated static component code directly.
 
+#ifndef WIDGET_COCOA_NSWIDGETFACTORY_H_
+#define WIDGET_COCOA_NSWIDGETFACTORY_H_
+
 #include "nsID.h"
 
 namespace mozilla {
@@ -42,3 +45,5 @@ nsresult nsAppShellConstructor(const nsIID&, void**);
 
 void nsWidgetCocoaModuleCtor();
 void nsWidgetCocoaModuleDtor();
+
+#endif  // WIDGET_COCOA_NSWIDGETFACTORY_H_

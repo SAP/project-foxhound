@@ -5,6 +5,7 @@
 package org.mozilla.fenix.components
 
 import android.content.Context
+import mozilla.appservices.remotesettings.RemoteSettingsService
 import mozilla.components.service.nimbus.NimbusApi
 import mozilla.components.service.nimbus.messaging.FxNimbusMessaging
 import mozilla.components.service.nimbus.messaging.NimbusMessagingController
@@ -21,14 +22,15 @@ import org.mozilla.fenix.perf.lazyMonitored
 /**
  * Component group for access to Nimbus and other Nimbus services.
  */
-class NimbusComponents(private val context: Context) {
+class NimbusComponents(private val context: Context, remoteSettingsService: RemoteSettingsService?) {
 
     /**
      * The main entry point for the Nimbus SDK. Note that almost all access to feature configuration
      * should be mediated through a FML generated class, e.g. [FxNimbus].
      */
     val sdk: NimbusApi by lazyMonitored {
-        createNimbus(context, BuildConfig.NIMBUS_ENDPOINT)
+        @org.mozilla.geckoview.ExperimentalGeckoViewApi
+        createNimbus(context, BuildConfig.NIMBUS_ENDPOINT, remoteSettingsService)
     }
 
     /**

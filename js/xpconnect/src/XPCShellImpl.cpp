@@ -21,7 +21,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -54,6 +53,10 @@
 #ifdef ANDROID
 #  include <android/log.h>
 #  include "XREShellData.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoThreadWrappers.h"
 #endif
 
 #ifdef XP_WIN
@@ -172,7 +175,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
 #  endif
 
     nsCOMPtr<nsIFile> location;
-    Unused << NS_NewLocalFile(filenameString, getter_AddRefs(location));
+    (void)NS_NewLocalFile(filenameString, getter_AddRefs(location));
 
     if (!location && gWorkingDirectory) {
       // could be a relative path, try appending it to the cwd
@@ -180,7 +183,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
       nsAutoString absolutePath(*gWorkingDirectory);
       absolutePath.Append(filenameString);
 
-      Unused << NS_NewLocalFile(absolutePath, getter_AddRefs(location));
+      (void)NS_NewLocalFile(absolutePath, getter_AddRefs(location));
     }
 
     if (location) {
@@ -1375,6 +1378,12 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       if (obs) {
         obs->Observe(nullptr, "quit-application-forced", nullptr);
       }
+
+#ifdef MOZ_WIDGET_ANDROID
+      MOZ_ASSERT(jni::IsAvailable());
+      java::GeckoThread::CheckAndSetState(java::GeckoThread::State::RUNNING(),
+                                          java::GeckoThread::State::EXITING());
+#endif
 
       JS_DropPrincipals(cx, gJSPrincipals);
       JS_SetAllNonReservedSlotsToUndefined(glob);

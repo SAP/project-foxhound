@@ -5,10 +5,8 @@
 package mozilla.components.feature.autofill.response.fill
 
 import android.content.Context
-import android.os.Build
 import android.service.autofill.FillResponse
 import android.widget.inline.InlinePresentationSpec
-import androidx.annotation.RequiresApi
 import mozilla.components.concept.storage.Login
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.feature.autofill.response.dataset.LoginDatasetBuilder
@@ -19,7 +17,6 @@ import mozilla.components.feature.autofill.structure.ParsedStructure
  * [FillResponseBuilder] implementation that creates a [FillResponse] containing logins for
  * autofilling.
  */
-@RequiresApi(Build.VERSION_CODES.O)
 internal data class LoginFillResponseBuilder(
     val parsedStructure: ParsedStructure,
     val logins: List<Login>,

@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerEventTarget.h"
+
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
-
 #include "mozilla/Logging.h"
 #include "mozilla/dom/ReferrerInfo.h"
 
@@ -149,16 +149,18 @@ void WorkerEventTarget::ForgetWorkerPrivate(WorkerPrivate* aWorkerPrivate) {
 }
 
 NS_IMETHODIMP
-WorkerEventTarget::DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) {
+WorkerEventTarget::DispatchFromScript(nsIRunnable* aRunnable,
+                                      DispatchFlags aFlags) {
   LOGV(("WorkerEventTarget::DispatchFromScript [%p] aRunnable: %p", this,
         aRunnable));
-  nsCOMPtr<nsIRunnable> runnable(aRunnable);
-  return Dispatch(runnable.forget(), aFlags);
+  return Dispatch(do_AddRef(aRunnable), aFlags);
 }
 
 NS_IMETHODIMP
 WorkerEventTarget::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                            uint32_t aFlags) {
+                            DispatchFlags aFlags) {
+  // NOTE: This dispatch implementation does not leak even if
+  // `NS_DISPATCH_FALLIBLE` is not set.
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
   LOGV(
       ("WorkerEventTarget::Dispatch [%p] aRunnable: %p", this, runnable.get()));
@@ -249,6 +251,10 @@ WorkerEventTarget::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   }
 
   return mWorkerPrivate->UnregisterShutdownTask(aTask);
+}
+
+nsIEventTarget::FeatureFlags WorkerEventTarget::GetFeatures() {
+  return SUPPORTS_SHUTDOWN_TASK_DISPATCH | SUPPORTS_SHUTDOWN_TASKS;
 }
 
 NS_IMETHODIMP_(bool)

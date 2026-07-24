@@ -13,13 +13,13 @@ add_task(async function test_interactions_pushState() {
   await Interactions.reset();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     await ContentTask.spawn(browser, TEST_URL2, url => {
       content.history.pushState(null, "", url);
     });
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
   });
 
   await assertDatabaseValues([
@@ -38,13 +38,13 @@ add_task(async function test_interactions_pushState_sameUrl() {
   await Interactions.reset();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     await ContentTask.spawn(browser, TEST_URL, url => {
       content.history.pushState(null, "", url);
     });
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
   });
 
   await assertDatabaseValues([
@@ -59,13 +59,13 @@ add_task(async function test_interactions_replaceState() {
   await Interactions.reset();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     await ContentTask.spawn(browser, TEST_URL2, url => {
       content.history.replaceState(null, "", url);
     });
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
   });
 
   await assertDatabaseValues([
@@ -84,13 +84,13 @@ add_task(async function test_interactions_replaceState_sameUrl() {
   await Interactions.reset();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     await ContentTask.spawn(browser, TEST_URL, url => {
       content.history.replaceState(null, "", url);
     });
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
   });
 
   await assertDatabaseValues([
@@ -105,13 +105,13 @@ add_task(async function test_interactions_hashchange() {
   await Interactions.reset();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     await ContentTask.spawn(browser, TEST_URL + "#foo", url => {
       content.location = url;
     });
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
   });
 
   await assertDatabaseValues([

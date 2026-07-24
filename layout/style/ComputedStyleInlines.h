@@ -17,8 +17,8 @@
 #include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/Unused.h"
 #include "nsStyleStructInlines.h"
+#include "nsStyleStructList.h"
 
 namespace mozilla {
 
@@ -40,8 +40,8 @@ void TriggerImageLoads(dom::Document& aDocument, const ComputedStyle* aOldStyle,
     auto* current = const_cast<T*>((aStyle->*Method)());
     current->TriggerImageLoads(aDocument, old);
   } else {
-    Unused << aOldStyle;
-    Unused << aStyle;
+    (void)aOldStyle;
+    (void)aStyle;
   }
 }
 
@@ -51,11 +51,11 @@ void ComputedStyle::StartImageLoads(dom::Document& aDocument,
                                     const ComputedStyle* aOldStyle) {
   MOZ_ASSERT(NS_IsMainThread());
 
-#define STYLE_STRUCT(name_)                                                \
+#define TRIGGER_IMAGE_LOADS(name_)                                         \
   detail::TriggerImageLoads<nsStyle##name_, &ComputedStyle::Style##name_>( \
       aDocument, aOldStyle, this);
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(TRIGGER_IMAGE_LOADS, TRIGGER_IMAGE_LOADS)
+#undef TRIGGER_IMAGE_LOADS
 }
 
 StylePointerEvents ComputedStyle::PointerEvents() const {

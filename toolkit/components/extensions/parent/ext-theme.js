@@ -66,34 +66,13 @@ class Theme {
       // In this case we would still be using the old interpretation instead of
       // the new one, until the user disables and re-enables/installs the theme.
       this.lwtData = startupData.lwtData;
-      this.lwtStyles = startupData.lwtStyles;
-      this.lwtDarkStyles = startupData.lwtDarkStyles;
-      this.experiment = startupData.experiment;
+      this.experiment = startupData.lwtData.experiment;
     } else {
       // lwtData will be populated by load().
       this.lwtData = null;
-      // TODO(ntim): clean this in bug 1550090
-      this.lwtStyles = {};
-      this.lwtDarkStyles = darkDetails ? {} : null;
       this.experiment = null;
       if (experiment) {
         if (extension.canUseThemeExperiment()) {
-          this.lwtStyles.experimental = {
-            colors: {},
-            images: {},
-            properties: {},
-          };
-          if (this.lwtDarkStyles) {
-            this.lwtDarkStyles.experimental = {
-              colors: {},
-              images: {},
-              properties: {},
-            };
-          }
-          const { baseURI } = this.extension;
-          if (experiment.stylesheet) {
-            experiment.stylesheet = baseURI.resolve(experiment.stylesheet);
-          }
           this.experiment = experiment;
         } else {
           const { logger } = this.extension;
@@ -112,20 +91,15 @@ class Theme {
   load() {
     // this.lwtData is usually null, unless populated from startupData.
     if (!this.lwtData) {
-      this.loadDetails(this.details, this.lwtStyles);
-      if (this.darkDetails) {
-        this.loadDetails(this.darkDetails, this.lwtDarkStyles);
-      }
-
-      this.lwtData = {
-        theme: this.lwtStyles,
-        darkTheme: this.lwtDarkStyles,
-      };
-
-      if (this.experiment) {
-        this.lwtData.experiment = this.experiment;
-      }
-
+      this.lwtData = LightweightThemeManager.themeDataFrom(
+        this.details,
+        this.darkDetails,
+        this.experiment,
+        this.extension.baseURI,
+        this.extension.id,
+        this.extension.version,
+        this.extension.logger
+      );
       if (this.extension.type === "theme") {
         // Store the parsed theme in startupData, so it is available early at
         // browser startup, to use as LightweightThemeManager.fallbackThemeData,
@@ -133,9 +107,6 @@ class Theme {
         // this ext-theme.js file to be loaded.
         this.extension.startupData = {
           lwtData: this.lwtData,
-          lwtStyles: this.lwtStyles,
-          lwtDarkStyles: this.lwtDarkStyles,
-          experiment: this.experiment,
         };
         this.extension.saveStartupData();
       }
@@ -156,256 +127,6 @@ class Theme {
       this.lwtData,
       "lightweight-theme-styling-update"
     );
-  }
-
-  /**
-   * @param {object} details Details
-   * @param {object} styles Styles object in which to store the colors.
-   */
-  loadDetails(details, styles) {
-    if (details.colors) {
-      this.loadColors(details.colors, styles);
-    }
-
-    if (details.images) {
-      this.loadImages(details.images, styles);
-    }
-
-    if (details.properties) {
-      this.loadProperties(details.properties, styles);
-    }
-
-    this.loadMetadata(this.extension, styles);
-  }
-
-  /**
-   * Helper method for loading colors found in the extension's manifest.
-   *
-   * @param {object} colors Dictionary mapping color properties to values.
-   * @param {object} styles Styles object in which to store the colors.
-   */
-  loadColors(colors, styles) {
-    for (let color of Object.keys(colors)) {
-      let val = colors[color];
-
-      if (!val) {
-        continue;
-      }
-
-      let cssColor = val;
-      if (Array.isArray(val)) {
-        cssColor =
-          "rgb" + (val.length > 3 ? "a" : "") + "(" + val.join(",") + ")";
-      }
-
-      switch (color) {
-        case "frame":
-          styles.accentcolor = cssColor;
-          break;
-        case "frame_inactive":
-          styles.accentcolorInactive = cssColor;
-          break;
-        case "tab_background_text":
-          styles.textcolor = cssColor;
-          break;
-        case "toolbar":
-          styles.toolbarColor = cssColor;
-          break;
-        case "toolbar_text":
-        case "bookmark_text":
-          styles.toolbar_text = cssColor;
-          break;
-        case "icons":
-          styles.icon_color = cssColor;
-          break;
-        case "icons_attention":
-          styles.icon_attention_color = cssColor;
-          break;
-        case "tab_background_separator":
-        case "tab_loading":
-        case "tab_text":
-        case "tab_line":
-        case "tab_selected":
-        case "toolbar_field":
-        case "toolbar_field_text":
-        case "toolbar_field_border":
-        case "toolbar_field_focus":
-        case "toolbar_field_text_focus":
-        case "toolbar_field_border_focus":
-        case "toolbar_top_separator":
-        case "toolbar_bottom_separator":
-        case "toolbar_vertical_separator":
-        case "button_background_hover":
-        case "button_background_active":
-        case "popup":
-        case "popup_text":
-        case "popup_border":
-        case "popup_highlight":
-        case "popup_highlight_text":
-        case "ntp_background":
-        case "ntp_card_background":
-        case "ntp_text":
-        case "sidebar":
-        case "sidebar_border":
-        case "sidebar_text":
-        case "sidebar_highlight":
-        case "sidebar_highlight_text":
-        case "toolbar_field_highlight":
-        case "toolbar_field_highlight_text":
-          styles[color] = cssColor;
-          break;
-        default:
-          if (
-            this.experiment &&
-            this.experiment.colors &&
-            color in this.experiment.colors
-          ) {
-            styles.experimental.colors[color] = cssColor;
-          } else {
-            const { logger } = this.extension;
-            logger.warn(`Unrecognized theme property found: colors.${color}`);
-          }
-          break;
-      }
-    }
-  }
-
-  /**
-   * Helper method for loading images found in the extension's manifest.
-   *
-   * @param {object} images Dictionary mapping image properties to values.
-   * @param {object} styles Styles object in which to store the colors.
-   */
-  loadImages(images, styles) {
-    const { baseURI, logger } = this.extension;
-
-    for (let image of Object.keys(images)) {
-      let val = images[image];
-
-      if (!val) {
-        continue;
-      }
-
-      switch (image) {
-        case "additional_backgrounds": {
-          let backgroundImages = val.map(img => baseURI.resolve(img));
-          styles.additionalBackgrounds = backgroundImages;
-          break;
-        }
-        case "theme_frame": {
-          let resolvedURL = baseURI.resolve(val);
-          styles.headerURL = resolvedURL;
-          break;
-        }
-        default: {
-          if (
-            this.experiment &&
-            this.experiment.images &&
-            image in this.experiment.images
-          ) {
-            styles.experimental.images[image] = baseURI.resolve(val);
-          } else {
-            logger.warn(`Unrecognized theme property found: images.${image}`);
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  /**
-   * Helper method for preparing properties found in the extension's manifest.
-   * Properties are commonly used to specify more advanced behavior of colors,
-   * images or icons.
-   *
-   * @param {object} properties Dictionary mapping properties to values.
-   * @param {object} styles Styles object in which to store the colors.
-   */
-  loadProperties(properties, styles) {
-    let additionalBackgroundsCount =
-      (styles.additionalBackgrounds && styles.additionalBackgrounds.length) ||
-      0;
-    const assertValidAdditionalBackgrounds = (property, valueCount) => {
-      const { logger } = this.extension;
-      if (!additionalBackgroundsCount) {
-        logger.warn(
-          `The '${property}' property takes effect only when one ` +
-            `or more additional background images are specified using the 'additional_backgrounds' property.`
-        );
-        return false;
-      }
-      if (additionalBackgroundsCount !== valueCount) {
-        logger.warn(
-          `The amount of values specified for '${property}' ` +
-            `(${valueCount}) is not equal to the amount of additional background ` +
-            `images (${additionalBackgroundsCount}), which may lead to unexpected results.`
-        );
-      }
-      return true;
-    };
-
-    for (let property of Object.getOwnPropertyNames(properties)) {
-      let val = properties[property];
-
-      if (!val) {
-        continue;
-      }
-
-      switch (property) {
-        case "additional_backgrounds_alignment": {
-          if (!assertValidAdditionalBackgrounds(property, val.length)) {
-            break;
-          }
-
-          styles.backgroundsAlignment = val.join(",");
-          break;
-        }
-        case "additional_backgrounds_tiling": {
-          if (!assertValidAdditionalBackgrounds(property, val.length)) {
-            break;
-          }
-
-          let tiling = [];
-          for (let i = 0, l = styles.additionalBackgrounds.length; i < l; ++i) {
-            tiling.push(val[i] || "no-repeat");
-          }
-          styles.backgroundsTiling = tiling.join(",");
-          break;
-        }
-        case "color_scheme":
-        case "content_color_scheme": {
-          styles[property] = val;
-          break;
-        }
-        default: {
-          if (
-            this.experiment &&
-            this.experiment.properties &&
-            property in this.experiment.properties
-          ) {
-            styles.experimental.properties[property] = val;
-          } else {
-            const { logger } = this.extension;
-            logger.warn(
-              `Unrecognized theme property found: properties.${property}`
-            );
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  /**
-   * Helper method for loading extension metadata required by downstream
-   * consumers.
-   *
-   * @param {object} extension Extension object.
-   * @param {object} styles Styles object in which to store the colors.
-   */
-  loadMetadata(extension, styles) {
-    styles.id = extension.id;
-    styles.version = extension.version;
   }
 
   static unload(browserWindow) {

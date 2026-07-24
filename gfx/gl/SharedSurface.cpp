@@ -20,7 +20,6 @@
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/TextureForwarder.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/Unused.h"
 #include "VRManagerChild.h"
 
 #ifdef XP_WIN
@@ -141,7 +140,7 @@ UniquePtr<SurfaceFactory> SurfaceFactory::Create(
   }
 
   // Silence a warning.
-  Unused << gl;
+  (void)gl;
 
   return nullptr;
 }

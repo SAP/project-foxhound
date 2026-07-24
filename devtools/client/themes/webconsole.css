@@ -538,7 +538,7 @@ html #webconsole-notificationbox {
 }
 
 /* CodeMirror-powered JsTerm */
-.jsterm-input-container > .CodeMirror {
+.jsterm-input-container > :is(.CodeMirror, .cm-editor) {
   /* aim for a 32px left space (a descendent has 4px padding) */
   padding-inline-start: calc(var(--console-inline-start-gutter) - 4px);
   /* Create a new stacking context */
@@ -552,6 +552,7 @@ html #webconsole-notificationbox {
   background-size: 12px 12px;
   -moz-context-properties: fill;
   fill: var(--theme-icon-dimmed-color);
+  outline: none;
 }
 
 /* We don't want to change the color in High Contrast Mode. A proper focus indicator
@@ -594,7 +595,6 @@ html #webconsole-notificationbox {
 }
 
 .cm-s-mozilla a[class] {
-  font-style: italic;
   text-decoration: underline;
   text-decoration-skip-ink: none;
 }

@@ -77,6 +77,14 @@ add_task(function test_text_processing() {
     text.repeat(6).trim(),
     "restrict to 6 sentences"
   );
+
+  Assert.equal(
+    LinkPreviewModel.preprocessText(
+      "This is a test sentence with an emoji \ud83e\udd14."
+    ),
+    "This is a test sentence with an emoji .",
+    "emoji should be removed from the sentence"
+  );
 });
 
 /**

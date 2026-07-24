@@ -9,7 +9,7 @@
 
 #include "mozilla/Assertions.h"
 
-#include <stddef.h>
+#include <cstddef>
 #include <utility>
 
 namespace mozilla {

@@ -6,7 +6,6 @@
 #include "DBusMenu.h"
 #include "prlink.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ArrayUtils.h"
 
 namespace mozilla::widget {
 

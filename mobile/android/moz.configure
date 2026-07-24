@@ -40,6 +40,25 @@ set_config("MOZ_ANDROID_CONTENT_SERVICE_COUNT", num_content_services)
 set_define("MOZ_ANDROID_CONTENT_SERVICE_COUNT", num_content_services)
 
 option(
+    "--enable-isolated-zygote-process",
+    env="MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE",
+    help="Enable generating content process services with app Zygote preloading and isolated processes",
+    default=False,
+)
+
+isIsolatedAppZygoteProcessEnabled = depends_if(
+    "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE"
+)(lambda _: True)
+set_config(
+    "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE",
+    isIsolatedAppZygoteProcessEnabled,
+)
+set_define(
+    "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE",
+    isIsolatedAppZygoteProcessEnabled,
+)
+
+option(
     "--enable-isolated-process",
     env="MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS",
     help="Enable generating content process services with isolatedProcess=true",
@@ -120,6 +139,20 @@ imply_option("MOZ_APP_VENDOR", "Mozilla")
 imply_option("MOZ_APP_ID", "{aa3c5121-dab2-40e2-81ca-7ea25febc110}")
 imply_option("BROWSER_CHROME_URL", "chrome://geckoview/content/geckoview.xhtml")
 
+option(
+    "--enable-appservices-in-tree",
+    help="Enables building from an in-tree app-services",
+)
+
+
+@depends("--enable-appservices-in-tree")
+def enable_appservices_in_tree(value):
+    if value:
+        return True
+
+
+set_config("MOZ_APPSERVICES_IN_TREE", enable_appservices_in_tree)
+
 
 @depends(target)
 def check_target(target):
@@ -145,11 +178,54 @@ include("gradle.configure")
 option(
     env="MOZ_ANDROID_FAT_AAR_ARCHITECTURES",
     nargs="*",
-    choices=("armeabi-v7a", "arm64-v8a", "x86", "x86_64"),
-    help='Comma-separated list of Android CPU architectures like "armeabi-v7a,arm64-v8a,x86,x86_64"',
+    choices=("armeabi-v7a", "arm64-v8a", "x86_64"),
+    help='Comma-separated list of Android CPU architectures like "armeabi-v7a,arm64-v8a,x86_64"',
 )
 
 set_config(
     "MOZ_ANDROID_FAT_AAR_ARCHITECTURES",
     depends("MOZ_ANDROID_FAT_AAR_ARCHITECTURES")(lambda x: x),
 )
+
+
+# Template to check for a build-time host/bin program that is either produced as
+# part of the build or is fetched from a toolchain artifact.  Also allows
+# `--without-{prog}` to disable checking.
+#
+# Such compiled programs are "part of the build" but need special accommodations
+# to distribute to artifact builds: they are distributed as toolchain builds
+# rather than extracted from a package or a test package.  In addition, these
+# compiled programs may not be needed for very unusual jobs, in particular
+# `android-gradle-dependencies` jobs, so they can be disabled entirely.
+#
+# - `var` is the name of the variable that will be set with `set_config` when
+#   the program is found, like "A_PROG".
+# - `prog` is the name of the program, like "a-prog".
+# - `toolchain` is the name of the toolchain (defaults to `prog`).
+@template
+def check_host_bin_prog(var, prog, toolchain=None):
+    option(f"--without-{prog}", help="Disable building with {prog}")
+
+    with only_when(f"--with-{prog}"):
+        with only_when(compile_environment):
+            # Produced at build-time.  Look in `$DIST/host/bin`.
+            set_config(
+                var,
+                depends(build_environment.dist, bin_suffix(host))(
+                    lambda dist, bin_suffix: f"{dist}/host/bin/{prog}{bin_suffix}"
+                ),
+            )
+
+        with only_when(~compile_environment):
+            # Fetched at configure-time.  Look in `~/.mozbuild` locally or
+            # `$MOZ_FETCH_DIR` in automation.
+            check_prog(
+                var,
+                [prog],
+                what=prog,
+                bootstrap=toolchain or prog,
+            )
+
+
+check_host_bin_prog("EMBEDDED_UNIFFI_BINDGEN", "embedded-uniffi-bindgen")
+check_host_bin_prog("NIMBUS_FML", "nimbus-fml")

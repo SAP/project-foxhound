@@ -30,6 +30,7 @@ include PTabContext;
 include PBackgroundSharedTypes;
 
 include "mozilla/AntiTrackingIPCUtils.h";
+include "mozilla/nsRFPIPCUtils.h";
 include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/PolicyContainerMessageUtils.h";
@@ -89,7 +90,7 @@ using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
 using struct mozilla::DimensionRequest from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
-[MoveOnly=data] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
+[RefCounted] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 using mozilla::EventMessage from "mozilla/EventForwards.h";
 using nsEventStatus from "mozilla/EventForwards.h";
@@ -103,7 +104,7 @@ using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
-using mozilla::ContentBlockingNotifier::CanvasFingerprinter from "mozilla/ContentBlockingNotifier.h";
+using mozilla::CanvasFingerprintingEvent from "nsRFPService.h";
 using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
 using mozilla::IntrinsicSize from "nsIFrame.h";
@@ -205,7 +206,7 @@ struct PrintPreviewResultInfo
     manages PVsync;
 
 both:
-    async AsyncMessage(nsString aMessage, ClonedMessageData aData);
+    async AsyncMessage(nsString aMessage, StructuredCloneData aData);
 
 parent:
 #ifdef ACCESSIBILITY
@@ -249,7 +250,7 @@ parent:
      */
     async DropLinks(nsString[] aLinks);
 
-    sync SyncMessage(nsString aMessage, ClonedMessageData aData)
+    sync SyncMessage(nsString aMessage, StructuredCloneData aData)
       returns (StructuredCloneData[] retval);
 
     /**
@@ -546,8 +547,7 @@ parent:
                                      bool aBlocked, nsCString aTrackingOrigin,
                                      nsCString[] aTrackingFullHashes,
                                      StorageAccessPermissionGrantedReason? aReason,
-                                     CanvasFingerprinter? aCanvasFingerprinter,
-                                     bool? aCanvasFingerprinterKnownText);
+                                     CanvasFingerprintingEvent? aCanvasFingerprintingEvent);
 
     async NavigationFinished();
 
@@ -630,8 +630,9 @@ parent:
     // the compositor of the widget that will render those layers. Note that
     // this is sync so we can ensure that messages to the window compositor
     // arrive before the BrowserChild attempts to use its cross-process compositor
-    // bridge.
-    sync EnsureLayersConnected() returns (CompositorOptions compositorOptions);
+    // bridge. Returns Nothing if layers were unable to be connected, for example
+    // during shutdown.
+    sync EnsureLayersConnected() returns (CompositorOptions? compositorOptions);
 
     /**
      * This function is used to notify the parent that it should display a
@@ -937,6 +938,12 @@ child:
      * sync requests from the child to the parent.
      */
     async UIResolutionChanged(float dpi, int32_t rounding, double scale);
+
+    /**
+     * Tell the child that whether it's allowed to render transparent has
+     * changed. See also ParentShowInfo::isTransparent.
+     */
+    async TransparencyChanged(bool transparent);
 
     /**
      * Tell the child that the safe area of widget has changed.

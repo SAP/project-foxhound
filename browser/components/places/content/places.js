@@ -1345,7 +1345,7 @@ var ViewMenu = {
       splitter = null;
     }
 
-    const isChecked = element.getAttribute("checked") == "true";
+    const isChecked = element.hasAttribute("checked");
     column.hidden = !isChecked;
     if (splitter) {
       splitter.hidden = !isChecked;

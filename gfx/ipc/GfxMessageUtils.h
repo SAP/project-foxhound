@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __GFXMESSAGEUTILS_H__
-#define __GFXMESSAGEUTILS_H__
+#ifndef GFXMESSAGEUTILS_H_
+#define GFXMESSAGEUTILS_H_
 
 #include "FilterSupport.h"
 #include "ImageTypes.h"
@@ -30,7 +30,6 @@
 #include "nsRegion.h"
 #include "mozilla/Array.h"
 #include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/ShmemMessageUtils.h"
@@ -585,6 +584,41 @@ struct ParamTraits<mozilla::gfx::IntRectTyped<T>> {
                    ReadParam(reader, &w) && ReadParam(reader, &h));
     result->SetRect(x, y, w, h);
     return retVal;
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::gfx::RectCornerRadii> {
+  typedef mozilla::gfx::RectCornerRadii paramType;
+
+  static void Write(MessageWriter* writer, const paramType& param) {
+    for (const auto& i : param.radii) {
+      WriteParam(writer, i);
+    }
+  }
+
+  static bool Read(MessageReader* reader, paramType* result) {
+    for (auto& i : result->radii) {
+      if (!ReadParam(reader, &i)) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::gfx::RoundedRect> {
+  typedef mozilla::gfx::RoundedRect paramType;
+
+  static void Write(MessageWriter* writer, const paramType& param) {
+    WriteParam(writer, param.rect);
+    WriteParam(writer, param.corners);
+  }
+
+  static bool Read(MessageReader* reader, paramType* result) {
+    return ReadParam(reader, &result->rect) &&
+           ReadParam(reader, &result->corners);
   }
 };
 
@@ -1170,6 +1204,17 @@ struct ParamTraits<gfxSparseBitSet> {
 };
 
 template <>
+struct ParamTraits<gfxSparseBitSet::BlockIndex> {
+  typedef gfxSparseBitSet::BlockIndex paramType;
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mIndex);
+  }
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mIndex);
+  }
+};
+
+template <>
 struct ParamTraits<gfxSparseBitSet::Block> {
   typedef gfxSparseBitSet::Block paramType;
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
@@ -1203,20 +1248,19 @@ struct ParamTraits<mozilla::fontlist::Pointer> {
   }
 };
 
-}  // namespace IPC
-
-namespace mozilla {
-namespace ipc {
-
 template <>
-struct IPDLParamTraits<gfx::PaintFragment> {
+struct ParamTraits<mozilla::gfx::PaintFragment> {
   typedef mozilla::gfx::PaintFragment paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam) {
-    Shmem shmem;
+  static void Write(IPC::MessageWriter* aWriter, paramType&& aParam) {
+    if (!aWriter->GetActor()) {
+      aWriter->FatalError("Need an actor");
+      return;
+    }
+
+    mozilla::ipc::Shmem shmem;
     if (aParam.mSize.IsEmpty() ||
-        !aActor->AllocShmem(aParam.mRecording.mLen, &shmem)) {
-      WriteParam(aWriter, gfx::IntSize(0, 0));
+        !aWriter->GetActor()->AllocShmem(aParam.mRecording.mLen, &shmem)) {
+      WriteParam(aWriter, mozilla::gfx::IntSize(0, 0));
       return;
     }
 
@@ -1224,57 +1268,59 @@ struct IPDLParamTraits<gfx::PaintFragment> {
            aParam.mRecording.mLen);
 
     WriteParam(aWriter, aParam.mSize);
-    WriteIPDLParam(aWriter, aActor, std::move(shmem));
+    WriteParam(aWriter, std::move(shmem));
     WriteParam(aWriter, aParam.mDependencies);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
+  static bool Read(IPC::MessageReader* aReader, paramType* aResult) {
+    if (!aReader->GetActor()) {
+      return false;
+    }
     if (!ReadParam(aReader, &aResult->mSize)) {
       return false;
     }
     if (aResult->mSize.IsEmpty()) {
       return true;
     }
-    Shmem shmem;
-    if (!ReadIPDLParam(aReader, aActor, &shmem) ||
+    mozilla::ipc::Shmem shmem;
+    if (!ReadParam(aReader, &shmem) ||
         !ReadParam(aReader, &aResult->mDependencies)) {
-      aActor->DeallocShmem(shmem);
+      aReader->GetActor()->DeallocShmem(shmem);
       return false;
     }
 
     if (!aResult->mRecording.Allocate(shmem.Size<uint8_t>())) {
       aResult->mSize.SizeTo(0, 0);
-      aActor->DeallocShmem(shmem);
+      aReader->GetActor()->DeallocShmem(shmem);
       return true;
     }
 
     memcpy(aResult->mRecording.mData, shmem.get<uint8_t>(),
            shmem.Size<uint8_t>());
-    aActor->DeallocShmem(shmem);
+    aReader->GetActor()->DeallocShmem(shmem);
     return true;
   }
 };
 
 template <>
-struct IPDLParamTraits<gfx::FileHandleWrapper*> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    gfx::FileHandleWrapper* aParam) {
+struct ParamTraits<mozilla::gfx::FileHandleWrapper*> {
+  static void Write(MessageWriter* aWriter,
+                    mozilla::gfx::FileHandleWrapper* aParam) {
     if (!aParam) {
-      WriteIPDLParam(aWriter, aActor, false);
+      WriteParam(aWriter, false);
       return;
     }
-    WriteIPDLParam(aWriter, aActor, true);
+    WriteParam(aWriter, true);
 
     mozilla::ipc::FileDescriptor desc(aParam->GetHandle());
-    WriteIPDLParam(aWriter, aActor, desc);
+    WriteParam(aWriter, desc);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RefPtr<gfx::FileHandleWrapper>* aResult) {
+  static bool Read(MessageReader* aReader,
+                   RefPtr<mozilla::gfx::FileHandleWrapper>* aResult) {
     *aResult = nullptr;
     bool notnull = false;
-    if (!ReadIPDLParam(aReader, aActor, &notnull)) {
+    if (!ReadParam(aReader, &notnull)) {
       return false;
     }
 
@@ -1283,17 +1329,16 @@ struct IPDLParamTraits<gfx::FileHandleWrapper*> {
     }
 
     mozilla::ipc::FileDescriptor desc;
-    if (!ReadIPDLParam(aReader, aActor, &desc)) {
+    if (!ReadParam(aReader, &desc)) {
       return false;
     }
-    auto wrapper =
-        MakeRefPtr<gfx::FileHandleWrapper>(desc.TakePlatformHandle());
+    auto wrapper = mozilla::MakeRefPtr<mozilla::gfx::FileHandleWrapper>(
+        desc.TakePlatformHandle());
     *aResult = std::move(wrapper);
     return true;
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
-#endif /* __GFXMESSAGEUTILS_H__ */
+#endif /* GFXMESSAGEUTILS_H_ */

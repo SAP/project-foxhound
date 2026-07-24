@@ -4,10 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIMemoryReporter.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsISupportsImpl.h"
 #include "mozilla/gfx/2D.h"
@@ -22,7 +19,6 @@
 #include "gfxRect.h"
 
 #include "cairo.h"
-#include <algorithm>
 
 #ifdef CAIRO_HAS_WIN32_SURFACE
 #  include "gfxWindowsSurface.h"

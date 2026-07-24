@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_idbresult_h__
-#define mozilla_dom_indexeddb_idbresult_h__
+#ifndef mozilla_dom_indexeddb_idbresult_h_
+#define mozilla_dom_indexeddb_idbresult_h_
+
+#include <type_traits>
+#include <utility>
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Variant.h"
-
-#include <type_traits>
-#include <utility>
 
 namespace mozilla::dom::indexedDB {
 
@@ -46,12 +46,11 @@ struct IsSortedSet;
 template <IDBSpecialValue First, IDBSpecialValue Second,
           IDBSpecialValue... Rest>
 struct IsSortedSet<First, Second, Rest...>
-    : std::integral_constant<bool, IsSortedSet<First, Second>::value &&
-                                       IsSortedSet<Second, Rest...>::value> {};
+    : std::conjunction<IsSortedSet<First, Second>,
+                       IsSortedSet<Second, Rest...>> {};
 
 template <IDBSpecialValue First, IDBSpecialValue Second>
-struct IsSortedSet<First, Second>
-    : std::integral_constant<bool, (First < Second)> {};
+struct IsSortedSet<First, Second> : std::bool_constant<(First < Second)> {};
 
 template <IDBSpecialValue First>
 struct IsSortedSet<First> : std::true_type {};
@@ -155,4 +154,4 @@ detail::IDBError<Special> IDBError(detail::SpecialConstant<Special> aResult) {
 
 }  // namespace mozilla::dom::indexedDB
 
-#endif  // mozilla_dom_indexeddb_idbresult_h__
+#endif  // mozilla_dom_indexeddb_idbresult_h_

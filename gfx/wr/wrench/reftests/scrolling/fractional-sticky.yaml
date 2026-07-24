@@ -1,0 +1,27 @@
+# Verify that fractional scroll offsets are correctly snapped before
+# being included in nested sticky frames.
+root:
+  items:
+    - type: scroll-frame
+      id: 2
+      bounds: [0, 0, 1000, 1000]
+      content-size: [1000, 8000]
+      scroll-offset: [0, 1000.7]
+      items:
+        - type: rect
+          bounds: [0, 0, 200, 800.6667]
+          color: blue
+        - type: rect
+          bounds: [0, 800.6667, 400, 600]
+          color: black
+        - type: sticky-frame
+          bounds: [0, 818.1667, 20, 20]
+          margin-top: 399
+          vertical-offset-bounds: [0, 561.5]
+          items:
+            - type: rect
+              bounds: [0, 819.1667, 20, 20]
+              color: green
+        - type: rect
+          bounds: [0, 1400.6667, 20, 20]
+          color: red

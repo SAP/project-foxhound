@@ -47,7 +47,7 @@ parent:
   // intended to be used by the main thread in the content process to block
   // reading without having to block on the worker thread that owns the context
   // instance.
-  sync GetSnapshot(uint32_t aManagerId, ActorId aProtocolId, RemoteTextureOwnerId? ownerId, RawId? commandEncoderId) returns (FrontBufferSnapshotIpc ret);
+  sync GetSnapshot(uint32_t aManagerId, ActorId aProtocolId, RemoteTextureOwnerId? ownerId, RawId? commandEncoderId, RawId? commandBufferId) returns (FrontBufferSnapshotIpc ret);
 };
 
 } // gfx

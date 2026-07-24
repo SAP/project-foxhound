@@ -53,12 +53,12 @@ export class MigrationWizard extends HTMLElement {
             <h1 class="migration-wizard-header" data-l10n-id="migration-wizard-selection-header" part="header"></h1>
             <p class="migration-wizard-subheader" part="subheader" hidden=""></p>
             <button id="browser-profile-selector" aria-haspopup="menu" aria-labelledby="migrator-name profile-name">
-              <span class="migrator-icon" role="img"></span>
+              <span class="migrator-icon" role="presentation"></span>
               <div class="migrator-description" role="presentation">
                 <div id="migrator-name">&nbsp;</div>
-                <div id="profile-name" class="deemphasized-text"></div>
+                <div id="profile-name" class="text-deemphasized"></div>
               </div>
-              <span class="dropdown-icon" role="img"></span>
+              <span class="dropdown-icon" role="presentation"></span>
             </button>
             <div class="no-resources-found error-message">
               <span class="error-icon" role="img"></span>
@@ -78,11 +78,11 @@ export class MigrationWizard extends HTMLElement {
               </ol>
             </div>
 
-            <div data-l10n-id="migration-wizard-selection-list" class="resource-selection-preamble deemphasized-text hide-on-error"></div>
+            <div data-l10n-id="migration-wizard-selection-list" class="resource-selection-preamble text-deemphasized hide-on-error"></div>
             <details class="resource-selection-details hide-on-error">
               <summary id="resource-selection-summary">
                 <div class="selected-data-header" data-l10n-id="migration-all-available-data-label"></div>
-                <div class="selected-data deemphasized-text">&nbsp;</div>
+                <div class="selected-data text-deemphasized">&nbsp;</div>
                 <span class="expand-collapse-icon" role="img"></span>
               </summary>
               <fieldset id="resource-type-list">
@@ -129,65 +129,65 @@ export class MigrationWizard extends HTMLElement {
               <div data-resource-type="BOOKMARKS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span default-data-l10n-id="migration-bookmarks-option-label" ie-edge-data-l10n-id="migration-favorites-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="PASSWORDS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="HISTORY" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-history-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="EXTENSIONS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-extensions-option-label"></span>
-                <a id="extensions-success-link" href="about:addons" class="message-text deemphasized-text"></a>
-                <span class="message-text deemphasized-text"></span>
-                <a class="support-text deemphasized-text"></a>
+                <a id="extensions-success-link" href="about:addons" class="message-text text-deemphasized"></a>
+                <span class="message-text text-deemphasized"></span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="FORMDATA" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-form-autofill-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="PAYMENT_METHODS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-payment-methods-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="COOKIES" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-cookies-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="SESSION" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-session-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
 
               <div data-resource-type="OTHERDATA" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-otherdata-option-label"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
-                <a class="support-text deemphasized-text"></a>
+                <span class="message-text text-deemphasized">&nbsp;</span>
+                <a class="support-text text-deemphasized"></a>
               </div>
             </div>
             <moz-button-group class="buttons" part="buttons">
@@ -203,25 +203,25 @@ export class MigrationWizard extends HTMLElement {
               <div data-resource-type="PASSWORDS_FROM_FILE" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-from-file"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
+                <span class="message-text text-deemphasized">&nbsp;</span>
               </div>
 
               <div data-resource-type="PASSWORDS_NEW" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-new"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
+                <span class="message-text text-deemphasized">&nbsp;</span>
               </div>
 
               <div data-resource-type="PASSWORDS_UPDATED" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-updated"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
+                <span class="message-text text-deemphasized">&nbsp;</span>
               </div>
 
               <div data-resource-type="BOOKMARKS_FROM_FILE" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-bookmarks-from-file"></span>
-                <span class="message-text deemphasized-text">&nbsp;</span>
+                <span class="message-text text-deemphasized">&nbsp;</span>
               </div>
             </div>
             <moz-button-group class="buttons" part="buttons">
@@ -484,6 +484,16 @@ export class MigrationWizard extends HTMLElement {
    */
   #onBrowserProfileSelectionChanged(panelItem) {
     this.#browserProfileSelector.selectedPanelItem = panelItem;
+    if (this.#browserProfileSelectorList.selectedPanelItem) {
+      this.#browserProfileSelectorList.selectedPanelItem.classList.remove(
+        "selected"
+      );
+    }
+    this.#browserProfileSelectorList.selectedPanelItem = panelItem;
+    this.#browserProfileSelectorList.selectedPanelItem.classList.add(
+      "selected"
+    );
+
     this.#browserProfileSelector.querySelector("#migrator-name").textContent =
       panelItem.displayName;
     this.#browserProfileSelector.querySelector("#profile-name").textContent =

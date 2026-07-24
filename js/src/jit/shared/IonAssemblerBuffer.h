@@ -11,6 +11,7 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <compare>  // std::strong_ordering
 
 #include "jit/ProcessExecutableMemory.h"
 #include "jit/shared/Assembler-shared.h"
@@ -25,7 +26,7 @@ class BufferOffset {
  public:
   friend BufferOffset nextOffset();
 
-  BufferOffset() : offset(INT_MIN) {}
+  constexpr BufferOffset() : offset(INT_MIN) {}
 
   explicit BufferOffset(int offset_) : offset(offset_) {
     MOZ_ASSERT(offset >= 0);
@@ -59,31 +60,9 @@ class BufferOffset {
     }
     return BOffImm(offset - other->offset());
   }
+
+  constexpr auto operator<=>(const BufferOffset& other) const = default;
 };
-
-inline bool operator<(BufferOffset a, BufferOffset b) {
-  return a.getOffset() < b.getOffset();
-}
-
-inline bool operator>(BufferOffset a, BufferOffset b) {
-  return a.getOffset() > b.getOffset();
-}
-
-inline bool operator<=(BufferOffset a, BufferOffset b) {
-  return a.getOffset() <= b.getOffset();
-}
-
-inline bool operator>=(BufferOffset a, BufferOffset b) {
-  return a.getOffset() >= b.getOffset();
-}
-
-inline bool operator==(BufferOffset a, BufferOffset b) {
-  return a.getOffset() == b.getOffset();
-}
-
-inline bool operator!=(BufferOffset a, BufferOffset b) {
-  return a.getOffset() != b.getOffset();
-}
 
 template <int SliceSize>
 class BufferSlice {

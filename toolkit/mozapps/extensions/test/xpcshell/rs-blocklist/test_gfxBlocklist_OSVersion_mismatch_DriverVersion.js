@@ -50,7 +50,7 @@ async function run_test() {
 
   function checkBlocklist() {
     if (Services.appinfo.OS == "WINNT") {
-      var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+      var status = gfxInfo.getFeatureStatusStr("DX_NV12");
       Assert.equal(status, "STATUS_OK");
     } else if (Services.appinfo.OS == "Darwin") {
       status = gfxInfo.getFeatureStatusStr("OPENGL_LAYERS");

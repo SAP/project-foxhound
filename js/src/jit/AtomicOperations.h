@@ -7,8 +7,6 @@
 #ifndef jit_AtomicOperations_h
 #define jit_AtomicOperations_h
 
-#include "mozilla/Types.h"
-
 #include <string.h>
 
 #include "jit/AtomicOperationsGenerated.h"

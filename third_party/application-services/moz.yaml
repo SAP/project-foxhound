@@ -1,0 +1,107 @@
+# Vendoring configuration for application-services as used by Desktop builds.
+#
+# To update to latest nightly version, use:
+#   `./mach vendor third_party/application-services/moz.yaml`
+#
+# To update to a specific git revision, use this command:
+#   `./mach vendor third_party/application-services/moz.yaml -r <app-svc-git-revision>`
+#
+# After vendoring, you must still vendor rust to bring in transitive dependencies:
+#   `./mach vendor rust`
+#
+# Next you must ensure your app-svc environment is setup with NSS variables defined:
+#   `pushd ../application-services; libs/verify-desktop-environment.sh; popd`
+#
+# And finally, you must regenerated UniFFI JS bindings for desktop builds:
+#   `./mach uniffi generate`
+
+schema: 1
+
+bugzilla:
+  product: "Application Services"
+  component: "General"
+
+origin:
+  name: "application-services"
+  description: "A collection of Rust Components for Firefox"
+  url: "https://github.com/mozilla/application-services"
+
+  license:
+    - "MPL-2.0"
+    - "ISC"
+  license-file: "LICENSE"
+
+  # Automatically managed by vendor process
+  release: 3e3e15e6c861ef4492aa4e1b87551949b9a0d587 (2026-02-10T00:52:21Z).
+  revision: 3e3e15e6c861ef4492aa4e1b87551949b9a0d587
+
+vendoring:
+  # Canonical repository is on GitHub
+  url: https://github.com/mozilla/application-services
+  source-hosting: github
+
+  # While we are vendoring from the external repository use the 'third_party'
+  # folder. When application-services eventually moves entirely in tree we will
+  # stop vendoring and it will live in a new home (with history import).
+  vendor-directory: third_party/application-services
+
+  # To maintain consistency with existing application-services workflow, we
+  # only import the same files that were previously vendored for desktop
+  # builds. This will be gradually relaxed as we approach monorepo migration.
+  exclude:
+    # Ignore directories other than components/
+    - .cargo/**
+    - .circleci/**
+    - .github/**
+    - .vscode/**
+    - automation/**
+    - build-scripts/**
+    - docs/**
+    - examples/**
+    - gradle/**
+    - libs/**
+    - megazords/**
+    - taskcluster/**
+    - testing/**
+    - tools/**
+
+    # Ignore loose files not otherwise listed in includes
+    - "*"
+    - components/*
+
+    # Ignore components that are not used on desktop
+    - components/ads-client/**
+    - components/as-ohttp-client/**
+    - components/autofill/**
+    - components/crashtest/**
+    - components/example/**
+    - components/fxa-client/**
+    - components/merino/**
+    - components/nimbus/**
+    - components/places/**
+    - components/push/**
+    - components/relay/**
+    - components/suggest/suggest-bench/**
+    - components/support/nimbus-cli/**
+    - components/support/nimbus-fml/**
+    - components/support/rand_rccrypto/**
+    - components/support/rate-limiter/**
+    - components/support/restmail-client/**
+    - components/support/rust-log-forwarder/**
+    - components/support/text-table/**
+    - components/support/find-places-db/**
+    - components/support/viaduct-dev/**
+    - components/support/viaduct-hyper/**
+    - components/support/viaduct-reqwest/**
+    - components/sync_manager/**
+
+    # Ignore directories we wouldn't publish with crate
+    - components/**/android/**
+    - components/**/ios/**
+
+    # Exclusions within specific components
+    - components/support/error/tests/**
+    - components/webext-storage/ffi/**
+
+  include:
+    - LICENSE

@@ -59,6 +59,7 @@ add_task(async function test_refreshState_signedin() {
 
   const now = new Date().toString();
   Services.prefs.setStringPref("services.sync.lastSync", now);
+  Services.prefs.setStringPref("services.sync.username", "foo@bar.com");
   UIStateInternal.syncing = false;
 
   UIStateInternal.fxAccounts = {
@@ -71,6 +72,10 @@ add_task(async function test_refreshState_signedin() {
         avatar: "https://foo/bar",
       }),
     hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      canGetKeyForScope: () => Promise.resolve(true),
+      hasKeysForScope: () => Promise.resolve(true),
+    },
   };
 
   let state = await UIState.refresh();
@@ -82,8 +87,10 @@ add_task(async function test_refreshState_signedin() {
   equal(state.avatarURL, "https://foo/bar");
   equal(state.lastSync, now);
   equal(state.syncing, false);
+  equal(state.hasSyncKeys, true);
 
   UIStateInternal.fxAccounts = fxAccountsOrig;
+  Services.prefs.clearUserPref("services.sync.username");
 });
 
 add_task(async function test_refreshState_syncButNoFxA() {
@@ -127,6 +134,10 @@ add_task(async function test_refreshState_signedin_profile_unavailable() {
     getSignedInUser: () =>
       Promise.resolve({ verified: true, uid: "123", email: "foo@bar.com" }),
     hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      canGetKeyForScope: () => Promise.resolve(true),
+      hasKeysForScope: () => Promise.resolve(true),
+    },
     _internal: {
       profile: {
         getProfile: () => {
@@ -159,6 +170,9 @@ add_task(async function test_refreshState_unverified() {
     getSignedInUser: () =>
       Promise.resolve({ verified: false, uid: "123", email: "foo@bar.com" }),
     hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      hasKeysForScope: () => Promise.resolve(true),
+    },
   };
 
   let state = await UIState.refresh();
@@ -181,6 +195,9 @@ add_task(async function test_refreshState_unverified_nosession() {
     getSignedInUser: () =>
       Promise.resolve({ verified: false, uid: "123", email: "foo@bar.com" }),
     hasLocalSession: () => Promise.resolve(false),
+    keys: {
+      hasKeysForScope: () => Promise.resolve(true),
+    },
   };
 
   let state = await UIState.refresh();
@@ -206,6 +223,10 @@ add_task(async function test_refreshState_loginFailed() {
   UIStateInternal.fxAccounts = {
     getSignedInUser: () =>
       Promise.resolve({ verified: true, uid: "123", email: "foo@bar.com" }),
+    keys: {
+      canGetKeyForScope: () => Promise.resolve(true),
+      hasKeysForScope: () => Promise.resolve(true),
+    },
   };
 
   let state = await UIState.refresh();
@@ -258,6 +279,10 @@ async function configureUIState(syncing, lastSync = new Date()) {
     getSignedInUser: () =>
       Promise.resolve({ verified: true, uid: "123", email: "foo@bar.com" }),
     hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      canGetKeyForScope: () => Promise.resolve(true),
+      hasKeysForScope: () => Promise.resolve(true),
+    },
   };
   await UIState.refresh();
   UIStateInternal.fxAccounts = fxAccountsOrig;
@@ -310,6 +335,68 @@ add_task(async function test_syncError() {
   const newState = Object.assign({}, UIState.get());
   ok(!newState.syncing);
   deepEqual(newState.lastSync, oldState.lastSync);
+});
+
+add_task(async function test_refreshState_signedin_with_synckeys() {
+  UIState.reset();
+  const fxAccountsOrig = UIStateInternal.fxAccounts;
+
+  Services.prefs.setStringPref("services.sync.username", "test@test.com");
+
+  UIStateInternal.fxAccounts = {
+    getSignedInUser: () =>
+      Promise.resolve({
+        verified: true,
+        uid: "123",
+        email: "foo@bar.com",
+        displayName: "Foo Bar",
+      }),
+    hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      canGetKeyForScope: () => Promise.resolve(true),
+      hasKeysForScope: () => Promise.resolve(true),
+    },
+  };
+
+  let state = await UIState.refresh();
+
+  equal(state.status, UIState.STATUS_SIGNED_IN);
+  equal(state.syncEnabled, true);
+  equal(state.uid, "123");
+  equal(state.email, "foo@bar.com");
+
+  UIStateInternal.fxAccounts = fxAccountsOrig;
+  Services.prefs.clearUserPref("services.sync.username");
+});
+
+// Testing third-party auth does not enable sync (should be impossible without keys)
+add_task(async function test_refreshState_third_party_auth_no_sync() {
+  UIState.reset();
+  const fxAccountsOrig = UIStateInternal.fxAccounts;
+
+  // Mock signing in but NO keys (third-party auth)
+  UIStateInternal.fxAccounts = {
+    getSignedInUser: () =>
+      Promise.resolve({
+        verified: true,
+        uid: "123",
+        email: "foo@bar.com",
+      }),
+    hasLocalSession: () => Promise.resolve(true),
+    keys: {
+      hasKeysForScope: () => Promise.resolve(false),
+    },
+  };
+
+  let state = await UIState.refresh();
+
+  equal(state.status, UIState.STATUS_SIGNED_IN);
+  equal(state.syncEnabled, false);
+  equal(state.hasSyncKeys, false);
+  equal(state.uid, "123");
+  equal(state.email, "foo@bar.com");
+
+  UIStateInternal.fxAccounts = fxAccountsOrig;
 });
 
 function observeUIUpdate() {

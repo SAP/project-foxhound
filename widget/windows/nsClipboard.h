@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsClipboard_h__
-#define nsClipboard_h__
+#ifndef nsClipboard_h_
+#define nsClipboard_h_
 
 #include "nsBaseClipboard.h"
 #include "nsIObserver.h"
@@ -117,4 +117,4 @@ class nsClipboard final : public nsBaseClipboard, public nsIObserver {
     (fe).tymed = med;                           \
   }
 
-#endif  // nsClipboard_h__
+#endif  // nsClipboard_h_

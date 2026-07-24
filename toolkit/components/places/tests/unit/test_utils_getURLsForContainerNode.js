@@ -248,12 +248,12 @@ add_task(async function test_getURLsForContainerNode_query_excludeQueries() {
  * query's results.  To correctly test a container ensure that the query will
  * return only your container in the first level.
  *
- * @param  aQuery
- *         nsINavHistoryQuery object defining the query
- * @param  aOptions
- *         nsINavHistoryQueryOptions object defining the query's options
- * @param  aExpectedURINodes
- *         number of expected uri nodes
+ * @param {nsINavHistoryQuery} aQuery
+ *   Object defining the query
+ * @param {nsINavHistoryQueryOptions} aOptions
+ *   Object defining the query's options
+ * @param {number} aExpectedURINodes
+ *   Number of expected uri nodes
  */
 function check_uri_nodes(aQuery, aOptions, aExpectedURINodes) {
   var result = hs.executeQuery(aQuery, aOptions);

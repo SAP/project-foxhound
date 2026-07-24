@@ -8,7 +8,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.HomeActivityTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
@@ -38,9 +38,9 @@ class SettingsPrivacyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2092698
     @Test
     fun settingsPrivacyItemsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifySettingsToolbar()
             verifyPrivacyHeading()
             verifyPrivateBrowsingButton()
@@ -62,7 +62,10 @@ class SettingsPrivacyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243362
     @Test
     fun verifyDataCollectionSettingsTest() {
-        homeScreen {}.openThreeDotMenu {}.openSettings {}.openSettingsSubMenuDataCollection {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openSettingsSubMenuDataCollection {
             // Studies depends on the telemetry switch,  if telemetry is off studies will be
             // turned off as well, and will require the app to be restarted.
             // Daily usage ping should default to telemetry pref value
@@ -72,7 +75,7 @@ class SettingsPrivacyTest : TestSetup() {
                 isDailyUsagePingEnabled = true,
                 studiesSummary = "On",
             )
-            clickUsageAndTechnicalDataToggle()
+            clickUsageAndTechnicalDataToggle(composeTestRule)
             verifyDataCollectionView(
                 composeTestRule,
                 isSendTechnicalDataEnabled = false,
@@ -85,7 +88,7 @@ class SettingsPrivacyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1024594
     @Test
     fun allowAppToSendNotifications() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         // Clear all existing notifications
         notificationShade {
@@ -93,21 +96,72 @@ class SettingsPrivacyTest : TestSetup() {
             clearNotifications()
         }
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.togglePrivateBrowsingMode()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openNotificationShade {
             verifySystemNotificationExists("Close private tabs?")
-        }.closeNotificationTray {
+        }.closeNotificationTray(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifySettingsOptionSummary("Notifications", "Allowed")
         }.openSettingsSubMenuNotifications {
             verifyAllSystemNotificationsToggleState(true)
             verifyPrivateBrowsingSystemNotificationsToggleState(true)
             exitMenu(DURATION_MS_TRANSLATIONS)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939287
+    @Test
+    fun verifyTheDailyUsagePingCanBeEnabledAndDisabledTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openSettingsSubMenuDataCollection {
+            verifyDailyUsagePingToggle(composeTestRule, isChecked = true)
+            clickDailyUsagePingToggle(composeTestRule)
+            verifyDailyUsagePingToggle(composeTestRule, isChecked = false)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3215044
+    @Test
+    fun verifyTheCrashReportsOptionsTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openSettingsSubMenuDataCollection {
+            verifyTheCrashReportsSection(composeTestRule)
+            verifyTheCrashReportOptionStates(
+                composeTestRule,
+                isAskBeforeSendingCrashReportsEnabled = true,
+                isAutomaticallySendCrashReportsEnabled = false,
+                isNeverSendCrashReportsEnabled = false,
+            )
+            clickTheCrashReportsRadioButton(composeTestRule, "Send automatically")
+            verifyTheCrashReportOptionStates(
+                composeTestRule,
+                isAskBeforeSendingCrashReportsEnabled = false,
+                isAutomaticallySendCrashReportsEnabled = true,
+                isNeverSendCrashReportsEnabled = false,
+            )
+            clickTheCrashReportsRadioButton(composeTestRule, "Never send")
+            verifyTheCrashReportOptionStates(
+                composeTestRule,
+                isAskBeforeSendingCrashReportsEnabled = false,
+                isAutomaticallySendCrashReportsEnabled = false,
+                isNeverSendCrashReportsEnabled = true,
+            )
+            clickTheCrashReportsRadioButton(composeTestRule, "Ask before sending")
+            verifyTheCrashReportOptionStates(
+                composeTestRule,
+                isAskBeforeSendingCrashReportsEnabled = true,
+                isAutomaticallySendCrashReportsEnabled = false,
+                isNeverSendCrashReportsEnabled = false,
+            )
         }
     }
 }

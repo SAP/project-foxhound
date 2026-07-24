@@ -6,7 +6,6 @@
 // and translating the uri into a relative filesytem path where the file may be
 // found when running within the Karma / Mocha test framework.
 
-/* eslint-env node */
 const path = require("path");
 
 module.exports = {

@@ -4,21 +4,21 @@
 
 package org.mozilla.fenix.translations.preferences.automatic
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import mozilla.components.concept.engine.translate.Language
 import org.mozilla.fenix.R
@@ -26,6 +26,8 @@ import org.mozilla.fenix.compose.InfoCard
 import org.mozilla.fenix.compose.InfoType
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 import java.util.Locale
 
 /**
@@ -41,12 +43,7 @@ fun AutomaticTranslationPreference(
     hasLanguageError: Boolean = false,
     onItemClick: (AutomaticTranslationItemPreference) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .background(
-                color = FirefoxTheme.colors.layer1,
-            ),
-    ) {
+    Surface {
         LazyColumn {
             item {
                 TextListItem(
@@ -75,6 +72,7 @@ fun AutomaticTranslationPreference(
                 ) {
                     description = stringResource(item.automaticTranslationOptionPreference.titleId)
                 }
+
                 item.language.localizedDisplayName?.let {
                     TextListItem(
                         label = it,
@@ -140,12 +138,28 @@ internal fun getAutomaticTranslationListPreferences(): List<AutomaticTranslation
     }
 }
 
+@Preview
 @Composable
-@PreviewLightDark
-private fun AutomaticTranslationPreferencePreview() {
-    FirefoxTheme {
+private fun AutomaticTranslationPreferencePreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         AutomaticTranslationPreference(
             automaticTranslationListPreferences = getAutomaticTranslationListPreferences(),
+            onItemClick = {},
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun AutomaticTranslationPreferenceErrorPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        AutomaticTranslationPreference(
+            automaticTranslationListPreferences = getAutomaticTranslationListPreferences(),
+            hasLanguageError = true,
             onItemClick = {},
         )
     }

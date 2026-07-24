@@ -5,24 +5,26 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.uiautomator.UiSelector
-import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertItemTextEquals
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
+import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.click
+import mozilla.components.feature.sitepermissions.R as sitepermissionsR
 
-class SitePermissionsRobot {
+class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
     fun verifyMicrophonePermissionPrompt(host: String) {
         try {
             assertUIObjectExists(itemWithText("Allow $host to use your microphone?"))
@@ -30,9 +32,9 @@ class SitePermissionsRobot {
             assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
         } catch (e: AssertionError) {
             Log.i(TAG, "verifyMicrophonePermissionPrompt: AssertionError caught, executing fallback methods")
-            browserScreen {
+            browserScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.refreshPage {
+            }.clickRefreshButton {
             }.clickStartMicrophoneButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your microphone?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -48,9 +50,9 @@ class SitePermissionsRobot {
             assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
         } catch (e: AssertionError) {
             Log.i(TAG, "verifyCameraPermissionPrompt: AssertionError caught, executing fallback methods")
-            browserScreen {
+            browserScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.refreshPage {
+            }.clickRefreshButton {
             }.clickStartCameraButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your camera?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -72,15 +74,21 @@ class SitePermissionsRobot {
             assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
         } catch (e: AssertionError) {
             Log.i(TAG, "verifyLocationPermissionPrompt: AssertionError caught, executing fallback methods")
-            browserScreen {
+            browserScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.refreshPage {
+            }.clickRefreshButton {
             }.clickGetLocationButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your location?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
                 assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
             }
         }
+    }
+
+    fun verifyDoNotAskAgainIsHidden() {
+        Log.i(TAG, "verifyDoNotAskAgainIsHidden: asserting that the \"Remember decision for this site\" check box does not exist")
+        assertUIObjectIsGone(doNotAskAgainCheckBox())
+        Log.i(TAG, "verifyDoNotAskAgainIsHidden: asserted that the \"Remember decision for this site\" check box does not exist")
     }
 
     fun verifyNotificationsPermissionPrompt(host: String, blocked: Boolean = false) {
@@ -91,9 +99,9 @@ class SitePermissionsRobot {
                 assertItemTextEquals(allowPagePermissionButton(), expectedText = "Always")
             } catch (e: AssertionError) {
                 Log.i(TAG, "verifyNotificationsPermissionPrompt: AssertionError caught, executing fallback methods")
-                browserScreen {
+                browserScreen(composeTestRule) {
                 }.openThreeDotMenu {
-                }.refreshPage {
+                }.clickRefreshButton {
                 }.clickOpenNotificationButton {
                     assertUIObjectExists(itemWithText("Allow $host to send notifications?"))
                     assertItemTextEquals(denyPagePermissionButton(), expectedText = "Never")
@@ -114,9 +122,9 @@ class SitePermissionsRobot {
             assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
         } catch (e: AssertionError) {
             Log.i(TAG, "verifyPersistentStoragePermissionPrompt: AssertionError caught, executing fallback methods")
-            browserScreen {
+            browserScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.refreshPage {
+            }.clickRefreshButton {
             }.clickRequestPersistentStorageAccessButton {
                 assertUIObjectExists(itemWithText("Allow $host to store data in persistent storage?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -132,9 +140,9 @@ class SitePermissionsRobot {
             assertItemTextEquals(allowPagePermissionButton(), expectedText = "Allow")
         } catch (e: AssertionError) {
             Log.i(TAG, "verifyDRMContentPermissionPrompt: AssertionError caught, executing fallback methods")
-            browserScreen {
+            browserScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.refreshPage {
+            }.clickRefreshButton {
             }.clickRequestDRMControlledContentAccessButton {
                 assertUIObjectExists(itemWithText("Allow $host to play DRM-controlled content?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -152,7 +160,7 @@ class SitePermissionsRobot {
         onView(ViewMatchers.withText("Allow $originHost to use its cookies on $currentHost?")).check(matches(isDisplayed()))
         Log.i(TAG, "verifyCrossOriginCookiesPermissionPrompt: Verified that the the storage access permission prompt title is displayed")
         Log.i(TAG, "verifyCrossOriginCookiesPermissionPrompt: Trying to verify that the storage access permission prompt message is displayed")
-        onView(ViewMatchers.withText(getStringResource(R.string.mozac_feature_sitepermissions_storage_access_message, originHost))).check(matches(isDisplayed()))
+        onView(ViewMatchers.withText(getStringResource(sitepermissionsR.string.mozac_feature_sitepermissions_storage_access_message, originHost))).check(matches(isDisplayed()))
         Log.i(TAG, "verifyCrossOriginCookiesPermissionPrompt: Verified that the storage access permission prompt message is displayed")
         Log.i(TAG, "verifyCrossOriginCookiesPermissionPrompt: Trying to verify that the storage access permission prompt learn more link is displayed")
         onView(ViewMatchers.withText("Learn more")).check(matches(isDisplayed()))
@@ -171,13 +179,24 @@ class SitePermissionsRobot {
             .waitForExists(waitingTime)
         Log.i(TAG, "selectRememberPermissionDecision: Waited for $waitingTime ms for the \"Remember decision for this site\" check box to exist")
         Log.i(TAG, "selectRememberPermissionDecision: Trying to click the \"Remember decision for this site\" check box")
-        onView(withId(R.id.do_not_ask_again))
+        onView(withId(sitepermissionsR.id.do_not_ask_again))
             .check(matches(isDisplayed()))
             .click()
         Log.i(TAG, "selectRememberPermissionDecision: Clicked the \"Remember decision for this site\" check box")
     }
 
-    class Transition {
+    class Transition(private val composeTestRule: ComposeTestRule) {
+
+        fun clickLearnMore(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            Log.i(TAG, "clickLearnMore: Waiting for $waitingTime ms for the Learn more link to exist")
+            learnMoreText().waitForExists(waitingTime)
+            Log.i(TAG, "clickLearnMore: Waited for $waitingTime ms for the Learn more link to exist")
+            Log.i(TAG, "clickLearnMore: Trying to click the Learn more link")
+            learnMoreText().click()
+            Log.i(TAG, "clickLearnMore: Clicked the Learn more link")
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
+        }
         fun clickPagePermissionButton(allow: Boolean, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             if (allow) {
                 Log.i(TAG, "clickPagePermissionButton: Waiting for $waitingTime ms for the \"Allow\" prompt button to exist")
@@ -213,8 +232,8 @@ class SitePermissionsRobot {
                 Log.i(TAG, "clickPagePermissionButton: Waited for $waitingTime ms for the \"Don’t allow\" prompt button to be gone")
             }
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
     }
 }
@@ -225,3 +244,9 @@ private fun allowPagePermissionButton() =
 
 private fun denyPagePermissionButton() =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/deny_button"))
+
+private fun learnMoreText() =
+    mDevice.findObject(UiSelector().resourceId("$packageName:id/learn_more"))
+
+private fun doNotAskAgainCheckBox() =
+    mDevice.findObject(UiSelector().resourceId("$packageName:id/do_not_ask_again"))

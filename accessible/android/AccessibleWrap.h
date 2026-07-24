@@ -30,7 +30,7 @@ class AccessibleWrap : public LocalAccessible {
   static Accessible* ExploreByTouch(Accessible* aAccessible, float aX,
                                     float aY);
 
-  static uint32_t GetFlags(role aRole, uint64_t aState, uint8_t aActionCount);
+  static uint32_t GetFlags(Accessible* aAccessible);
 
   static int32_t GetInputType(const nsString& aInputTypeAttr);
 

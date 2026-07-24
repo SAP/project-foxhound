@@ -4,13 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPContentChild.h"
-#include "GMPChild.h"
-#include "GMPVideoDecoderChild.h"
-#include "GMPVideoEncoderChild.h"
+
 #include "ChromiumCDMChild.h"
 #include "ChromiumCDMCompat.h"
-#include "base/task.h"
+#include "GMPChild.h"
 #include "GMPUtils.h"
+#include "GMPVideoDecoderChild.h"
+#include "GMPVideoEncoderChild.h"
+#include "base/task.h"
 
 namespace mozilla::gmp {
 

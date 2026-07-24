@@ -17,11 +17,11 @@
 #include <set>
 
 #include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "p2p/test/nat_server.h"
 #include "p2p/test/nat_types.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
@@ -41,40 +41,39 @@ namespace webrtc {
 // Packs the given socketaddress into the buffer in buf, in the quasi-STUN
 // format that the natserver uses.
 // Returns 0 if an invalid address is passed.
-size_t PackAddressForNAT(char* buf,
-                         size_t buf_size,
-                         const SocketAddress& remote_addr) {
+void PackAddressForNAT(const SocketAddress& remote_addr, Buffer& buf) {
+  RTC_DCHECK_GE(buf.capacity(), 4);
   const IPAddress& ip = remote_addr.ipaddr();
   int family = ip.family();
   buf[0] = 0;
   buf[1] = family;
   // Writes the port.
-  *(reinterpret_cast<uint16_t*>(&buf[2])) =
-      webrtc::HostToNetwork16(remote_addr.port());
+  *(reinterpret_cast<uint16_t*>(&buf[2])) = HostToNetwork16(remote_addr.port());
   if (family == AF_INET) {
-    RTC_DCHECK(buf_size >= kNATEncodedIPv4AddressSize);
+    RTC_DCHECK_GE(buf.capacity(), kNATEncodedIPv4AddressSize);
     in_addr v4addr = ip.ipv4_address();
     memcpy(&buf[4], &v4addr, kNATEncodedIPv4AddressSize - 4);
-    return kNATEncodedIPv4AddressSize;
+    buf.SetSize(kNATEncodedIPv4AddressSize);
   } else if (family == AF_INET6) {
-    RTC_DCHECK(buf_size >= kNATEncodedIPv6AddressSize);
+    RTC_DCHECK_GE(buf.capacity(), kNATEncodedIPv6AddressSize);
     in6_addr v6addr = ip.ipv6_address();
     memcpy(&buf[4], &v6addr, kNATEncodedIPv6AddressSize - 4);
-    return kNATEncodedIPv6AddressSize;
+    buf.SetSize(kNATEncodedIPv6AddressSize);
+  } else {
+    buf.SetSize(0);
   }
-  return 0U;
 }
 
 // Decodes the remote address from a packet that has been encoded with the nat's
 // quasi-STUN format. Returns the length of the address (i.e., the offset into
 // data where the original packet starts).
-size_t UnpackAddressFromNAT(rtc::ArrayView<const uint8_t> buf,
+size_t UnpackAddressFromNAT(ArrayView<const uint8_t> buf,
                             SocketAddress* remote_addr) {
   RTC_CHECK(buf.size() >= 8);
   RTC_DCHECK(buf.data()[0] == 0);
   int family = buf[1];
-  uint16_t port = webrtc::NetworkToHost16(
-      *(reinterpret_cast<const uint16_t*>(&buf.data()[2])));
+  uint16_t port =
+      NetworkToHost16(*(reinterpret_cast<const uint16_t*>(&buf.data()[2])));
   if (family == AF_INET) {
     const in_addr* v4addr = reinterpret_cast<const in_addr*>(&buf.data()[4]);
     *remote_addr = SocketAddress(IPAddress(*v4addr), port);
@@ -121,7 +120,7 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
     // If we're not already bound (meaning `socket_` is null), bind to ANY
     // address.
     if (!socket_) {
-      result = BindInternal(SocketAddress(webrtc::GetAnyIP(family_), 0));
+      result = BindInternal(SocketAddress(GetAnyIP(family_), 0));
       if (result < 0) {
         return result;
       }
@@ -153,12 +152,12 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
       return socket_->SendTo(data, size, addr);
     }
     // This array will be too large for IPv4 packets, but only by 12 bytes.
-    std::unique_ptr<char[]> buf(new char[size + kNATEncodedIPv6AddressSize]);
-    size_t addrlength =
-        PackAddressForNAT(buf.get(), size + kNATEncodedIPv6AddressSize, addr);
-    size_t encoded_size = size + addrlength;
-    memcpy(buf.get() + addrlength, data, size);
-    int result = socket_->SendTo(buf.get(), encoded_size, server_addr_);
+    Buffer buf(/*size=*/size + kNATEncodedIPv6AddressSize);
+    PackAddressForNAT(addr, buf);
+    size_t addrlength = buf.size();
+    buf.AppendData(static_cast<const uint8_t*>(data), size);
+    size_t encoded_size = buf.size();
+    int result = socket_->SendTo(buf.data(), buf.size(), server_addr_);
     if (result >= 0) {
       RTC_DCHECK(result == static_cast<int>(encoded_size));
       result = result - static_cast<int>(addrlength);
@@ -253,7 +252,7 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
     RTC_DCHECK(socket == socket_);
     if (server_addr_.IsNil()) {
       connected_ = true;
-      SignalConnectEvent(this);
+      NotifyConnectEvent(this);
     } else {
       SendConnectRequest();
     }
@@ -273,7 +272,7 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
   }
   void OnCloseEvent(Socket* socket, int error) {
     RTC_DCHECK(socket == socket_);
-    SignalCloseEvent(this, error);
+    NotifyCloseEvent(this, error);
   }
 
  private:
@@ -284,10 +283,13 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
     socket_ = sf_->CreateInternalSocket(family_, type_, addr, &server_addr_);
     result = (socket_) ? socket_->Bind(addr) : -1;
     if (result >= 0) {
-      socket_->SignalConnectEvent.connect(this, &NATSocket::OnConnectEvent);
+      socket_->SubscribeConnectEvent(
+          [this](Socket* socket) { OnConnectEvent(socket); });
       socket_->SignalReadEvent.connect(this, &NATSocket::OnReadEvent);
       socket_->SignalWriteEvent.connect(this, &NATSocket::OnWriteEvent);
-      socket_->SignalCloseEvent.connect(this, &NATSocket::OnCloseEvent);
+      socket_->SubscribeCloseEvent(this, [this](Socket* socket, int error) {
+        OnCloseEvent(socket, error);
+      });
     } else {
       server_addr_.Clear();
       delete socket_;
@@ -299,9 +301,9 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
 
   // Sends the destination address to the server to tell it to connect.
   void SendConnectRequest() {
-    char buf[kNATEncodedIPv6AddressSize];
-    size_t length = PackAddressForNAT(buf, arraysize(buf), remote_addr_);
-    socket_->Send(buf, length);
+    Buffer buf(kNATEncodedIPv6AddressSize);
+    PackAddressForNAT(remote_addr_, buf);
+    socket_->Send(buf.data(), buf.size());
   }
 
   // Handles the byte sent back from the server and fires the appropriate event.
@@ -310,10 +312,10 @@ class NATSocket : public Socket, public sigslot::has_slots<> {
     socket_->Recv(&code, sizeof(code), nullptr);
     if (code == 0) {
       connected_ = true;
-      SignalConnectEvent(this);
+      NotifyConnectEvent(this);
     } else {
       Close();
-      SignalCloseEvent(this, code);
+      NotifyCloseEvent(this, code);
     }
   }
 
@@ -363,6 +365,7 @@ NATSocketServer::Translator* NATSocketServer::GetTranslator(
 }
 
 NATSocketServer::Translator* NATSocketServer::AddTranslator(
+    const Environment& env,
     const SocketAddress& ext_ip,
     const SocketAddress& int_ip,
     NATType type) {
@@ -370,8 +373,8 @@ NATSocketServer::Translator* NATSocketServer::AddTranslator(
   if (nats_.Get(ext_ip))
     return nullptr;
 
-  return nats_.Add(
-      ext_ip, new Translator(this, type, int_ip, *msg_queue_, server_, ext_ip));
+  return nats_.Add(ext_ip, new Translator(env, this, type, int_ip, *msg_queue_,
+                                          server_, ext_ip));
 }
 
 void NATSocketServer::RemoveTranslator(const SocketAddress& ext_ip) {
@@ -412,7 +415,8 @@ Socket* NATSocketServer::CreateInternalSocket(int family,
 }
 
 // NATSocketServer::Translator
-NATSocketServer::Translator::Translator(NATSocketServer* server,
+NATSocketServer::Translator::Translator(const Environment& env,
+                                        NATSocketServer* server,
                                         NATType type,
                                         const SocketAddress& int_ip,
                                         Thread& external_socket_thread,
@@ -425,7 +429,7 @@ NATSocketServer::Translator::Translator(NATSocketServer* server,
   internal_server_ = std::make_unique<VirtualSocketServer>();
   internal_server_->SetMessageQueue(server_->queue());
   nat_server_ = std::make_unique<NATServer>(
-      type, *server->queue(), internal_server_.get(), int_ip, int_ip,
+      env, type, *server->queue(), internal_server_.get(), int_ip, int_ip,
       external_socket_thread, ext_factory, ext_ip);
 }
 
@@ -439,6 +443,7 @@ NATSocketServer::Translator* NATSocketServer::Translator::GetTranslator(
 }
 
 NATSocketServer::Translator* NATSocketServer::Translator::AddTranslator(
+    const Environment& env,
     const SocketAddress& ext_ip,
     const SocketAddress& int_ip,
     NATType type) {
@@ -447,7 +452,7 @@ NATSocketServer::Translator* NATSocketServer::Translator::AddTranslator(
     return nullptr;
 
   AddClient(ext_ip);
-  return nats_.Add(ext_ip, new Translator(server_, type, int_ip,
+  return nats_.Add(ext_ip, new Translator(env, server_, type, int_ip,
                                           *server_->queue(), server_, ext_ip));
 }
 void NATSocketServer::Translator::RemoveTranslator(

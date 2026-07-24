@@ -30,7 +30,6 @@ EXPORTS += [
     "nsIConstraintValidation.h",
     "nsIFormControl.h",
     "nsIHTMLCollection.h",
-    "nsIRadioVisitor.h",
 ]
 
 EXPORTS.mozilla += [
@@ -47,7 +46,6 @@ EXPORTS.mozilla.dom += [
     "HTMLAllCollection.h",
     "HTMLAnchorElement.h",
     "HTMLAreaElement.h",
-    "HTMLAudioElement.h",
     "HTMLBodyElement.h",
     "HTMLBRElement.h",
     "HTMLButtonElement.h",
@@ -78,7 +76,6 @@ EXPORTS.mozilla.dom += [
     "HTMLLinkElement.h",
     "HTMLMapElement.h",
     "HTMLMarqueeElement.h",
-    "HTMLMediaElement.h",
     "HTMLMenuElement.h",
     "HTMLMetaElement.h",
     "HTMLMeterElement.h",
@@ -111,16 +108,10 @@ EXPORTS.mozilla.dom += [
     "HTMLTextAreaElement.h",
     "HTMLTimeElement.h",
     "HTMLTitleElement.h",
-    "HTMLTrackElement.h",
     "HTMLUnknownElement.h",
-    "HTMLVideoElement.h",
     "ImageDocument.h",
     "MediaDocument.h",
-    "MediaError.h",
-    "PlayPromise.h",
     "RadioNodeList.h",
-    "TextTrackManager.h",
-    "TimeRanges.h",
     "ValidityState.h",
 ]
 
@@ -132,7 +123,6 @@ UNIFIED_SOURCES += [
     "HTMLAllCollection.cpp",
     "HTMLAnchorElement.cpp",
     "HTMLAreaElement.cpp",
-    "HTMLAudioElement.cpp",
     "HTMLBodyElement.cpp",
     "HTMLBRElement.cpp",
     "HTMLButtonElement.cpp",
@@ -144,6 +134,7 @@ UNIFIED_SOURCES += [
     "HTMLDivElement.cpp",
     "HTMLDNSPrefetch.cpp",
     "HTMLElement.cpp",
+    "HTMLElementFactory.cpp",
     "HTMLEmbedElement.cpp",
     "HTMLFieldSetElement.cpp",
     "HTMLFontElement.cpp",
@@ -163,7 +154,6 @@ UNIFIED_SOURCES += [
     "HTMLLinkElement.cpp",
     "HTMLMapElement.cpp",
     "HTMLMarqueeElement.cpp",
-    "HTMLMediaElement.cpp",
     "HTMLMenuElement.cpp",
     "HTMLMetaElement.cpp",
     "HTMLMeterElement.cpp",
@@ -196,24 +186,16 @@ UNIFIED_SOURCES += [
     "HTMLTextAreaElement.cpp",
     "HTMLTimeElement.cpp",
     "HTMLTitleElement.cpp",
-    "HTMLTrackElement.cpp",
     "HTMLUnknownElement.cpp",
-    "HTMLVideoElement.cpp",
     "ImageDocument.cpp",
     "MediaDocument.cpp",
-    "MediaError.cpp",
     "nsDOMStringMap.cpp",
     "nsGenericHTMLElement.cpp",
     "nsGenericHTMLFrameElement.cpp",
-    "nsHTMLContentSink.cpp",
     "nsHTMLDocument.cpp",
     "nsIConstraintValidation.cpp",
-    "nsRadioVisitor.cpp",
-    "PlayPromise.cpp",
     "RadioNodeList.cpp",
     "TextControlState.cpp",
-    "TextTrackManager.cpp",
-    "TimeRanges.cpp",
     "ValidityState.cpp",
     "VideoDocument.cpp",
 ]
@@ -221,12 +203,12 @@ UNIFIED_SOURCES += [
 include("/ipc/chromium/chromium-config.mozbuild")
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "/caps",
     "/docshell/base",
     "/dom/base",
     "/dom/canvas",
     "/dom/html/input",
-    "/dom/media",
     "/dom/security",
     "/dom/xul",
     "/image",
@@ -235,13 +217,7 @@ LOCAL_INCLUDES += [
     "/layout/style",
     "/layout/tables",
     "/layout/xul",
-    "/netwerk/base",
     "/parser/htmlparser",
-    "/third_party/abseil-cpp",
-    "/third_party/libwebrtc",
 ]
 
 FINAL_LIBRARY = "xul"
-
-if CONFIG["MOZ_ANDROID_HLS_SUPPORT"]:
-    DEFINES["MOZ_ANDROID_HLS_SUPPORT"] = True

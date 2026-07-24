@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test module imports with the same sub modules</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script>
+  SimpleTest.waitForExplicitFinish();
+  // eslint-disable-next-line no-unused-vars
+  function testLoaded() {
+    ok(true);
+    SimpleTest.finish();
+  }
+</script>
+<script type="module" src="./bug_1820594_module2-1.mjs"> </script>
+<script type="module" src="./bug_1820594_module2-2.mjs"> </script>
+<script type="module" src="./bug_1820594_module1.mjs"> </script>
+<body onload='testLoaded()'></body>

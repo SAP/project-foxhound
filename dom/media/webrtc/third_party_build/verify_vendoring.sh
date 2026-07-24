@@ -32,7 +32,7 @@ echo "repo type: $MOZ_REPO"
 # we grab the entire firstline description for convenient logging
 if [ "x$MOZ_REPO" == "xgit" ]; then
 LAST_PATCHSTACK_UPDATE_COMMIT=`git log --max-count 1 --oneline \
-    third_party/libwebrtc/moz-patch-stack/*.patch`
+    'third_party/libwebrtc/moz-patch-stack/*.patch'`
 else
 # note: we reverse the output and use tail -1 rather than using head -1
 # because head fails in this context.
@@ -47,8 +47,8 @@ echo "LAST_PATCHSTACK_UPDATE_COMMIT_SHA: $LAST_PATCHSTACK_UPDATE_COMMIT_SHA"
 
 # grab the oldest, non "Vendor from libwebrtc" line
 if [ "x$MOZ_REPO" == "xgit" ]; then
-CANDIDATE_COMMITS=`git log --format='%h' --invert-grep \
-    --grep="Vendor libwebrtc" c28df994cbbd..HEAD -- third_party/libwebrtc \
+CANDIDATE_COMMITS=`git log --reverse --format='%h' --invert-grep \
+    --grep="Vendor libwebrtc" $LAST_PATCHSTACK_UPDATE_COMMIT_SHA..HEAD -- third_party/libwebrtc \
     | awk 'BEGIN { ORS=" " }; { print $1; }'`
 else
 CANDIDATE_COMMITS=`hg log --template "{node|short} {desc|firstline}\n" \

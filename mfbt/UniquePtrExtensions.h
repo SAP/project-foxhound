@@ -225,9 +225,18 @@ using UniqueFileHandle =
 
 #ifndef __wasm__
 // WASI does not have `dup`
+// On Unix, these set the close-on-exec flag for the new fd.
 MFBT_API UniqueFileHandle DuplicateFileHandle(detail::FileHandleType aFile);
 inline UniqueFileHandle DuplicateFileHandle(const UniqueFileHandle& aFile) {
   return DuplicateFileHandle(aFile.get());
+}
+#endif  // not wasm
+
+#ifdef XP_UNIX
+// For systems that don't have the full set of POSIX atomic cloexec APIs.
+MFBT_API void SetCloseOnExec(detail::FileHandleType aFile);
+inline void SetCloseOnExec(const UniqueFileHandle& aFile) {
+  SetCloseOnExec(aFile.get());
 }
 #endif
 
@@ -255,38 +264,31 @@ inline UniqueMachSendRight RetainMachSendRight(mach_port_t aPort) {
 
 namespace detail {
 
-struct HasReceiverTypeHelper {
-  template <class U>
-  static double Test(...);
-  template <class U>
-  static char Test(typename U::receiver* = 0);
+template <typename T, typename D, typename = void>
+struct PointerType {
+  using type = T*;
 };
 
-template <class T>
-class HasReceiverType
-    : public std::integral_constant<bool, sizeof(HasReceiverTypeHelper::Test<T>(
-                                              0)) == 1> {};
-
-template <class T, class D, bool = HasReceiverType<D>::value>
-struct ReceiverTypeImpl {
-  using Type = typename D::receiver;
+template <typename T, typename D>
+struct PointerType<T, D,
+                   std::void_t<typename std::remove_reference_t<D>::pointer>> {
+  using type = typename std::remove_reference_t<D>::pointer;
 };
 
-template <class T, class D>
-struct ReceiverTypeImpl<T, D, false> {
-  using Type = typename PointerType<T, D>::Type;
-};
+template <typename T, typename D, typename = void>
+struct ReceiverType : PointerType<T, D> {};
 
-template <class T, class D>
-struct ReceiverType {
-  using Type = typename ReceiverTypeImpl<T, std::remove_reference_t<D>>::Type;
+template <typename T, typename D>
+struct ReceiverType<
+    T, D, std::void_t<typename std::remove_reference_t<D>::receiver>> {
+  using type = typename std::remove_reference_t<D>::receiver;
 };
 
 template <typename T, typename D>
 class MOZ_TEMPORARY_CLASS UniquePtrGetterTransfers {
  public:
   using Ptr = UniquePtr<T, D>;
-  using Receiver = typename detail::ReceiverType<T, D>::Type;
+  using Receiver = typename ReceiverType<T, D>::type;
 
   explicit UniquePtrGetterTransfers(Ptr& p)
       : mPtr(p), mReceiver(typename Ptr::pointer(nullptr)) {}
@@ -297,8 +299,8 @@ class MOZ_TEMPORARY_CLASS UniquePtrGetterTransfers {
 
   // operator void** is conditionally enabled if `Receiver` is a pointer.
   template <typename U = Receiver,
-            std::enable_if_t<
-                std::is_pointer_v<U> && std::is_same_v<U, Receiver>, int> = 0>
+            typename = std::enable_if_t<
+                std::is_pointer_v<U> && std::is_same_v<U, Receiver>, void>>
   operator void**() {
     return reinterpret_cast<void**>(&mReceiver);
   }

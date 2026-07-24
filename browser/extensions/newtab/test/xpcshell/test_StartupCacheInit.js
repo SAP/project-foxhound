@@ -173,6 +173,8 @@ add_task(async function test_onAction_DISCOVERY_STREAM_SPOCS_UPDATE() {
         spocs: {
           data: ["spoc1", "spoc2"],
           lastUpdated: "lastUpdated",
+          onDemand: { enabled: false },
+          cacheUpdateTime: 30 * 60 * 1000,
         },
       },
       Prefs: {
@@ -207,6 +209,8 @@ add_task(async function test_onAction_DISCOVERY_STREAM_SPOCS_UPDATE() {
           data: {
             spocs: ["spoc1", "spoc2"],
             lastUpdated: "lastUpdated",
+            spocsOnDemand: false,
+            spocsCacheUpdateTime: 30 * 60 * 1000,
           },
         },
         "fromTarget"

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NS_CERTTREE_H_
-#define _NS_CERTTREE_H_
+#ifndef NS_CERTTREE_H_
+#define NS_CERTTREE_H_
 
 #include "nsCOMPtr.h"
 #include "nsICertTree.h"
@@ -12,7 +12,6 @@
 #include "nsNSSComponent.h"
 #include "nsTArray.h"
 #include "PLDHashTable.h"
-#include "mozilla/Attributes.h"
 
 /* Disable the "base class XXX should be explicitly initialized
    in the copy constructor" warning. */
@@ -34,19 +33,12 @@
 
 typedef struct treeArrayElStr treeArrayEl;
 
-struct CompareCacheHashEntry {
+struct CompareCacheEntry {
   enum { max_criterions = 3 };
-  CompareCacheHashEntry();
+  CompareCacheEntry();
 
-  void* key;  // no ownership
   bool mCritInit[max_criterions];
   nsString mCrit[max_criterions];
-};
-
-struct CompareCacheHashEntryPtr : PLDHashEntryHdr {
-  CompareCacheHashEntryPtr();
-  ~CompareCacheHashEntryPtr();
-  CompareCacheHashEntry* entry;
 };
 
 class nsCertTreeDispInfo : public nsICertTreeItem {
@@ -62,7 +54,7 @@ class nsCertTreeDispInfo : public nsICertTreeItem {
   nsCOMPtr<nsIX509Cert> mCert;
 };
 
-class nsCertTree : public nsICertTree {
+class nsCertTree final : public nsICertTree {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSICERTTREE
@@ -80,29 +72,35 @@ class nsCertTree : public nsICertTree {
     sort_None
   };
 
- protected:
+ private:
   virtual ~nsCertTree();
 
   void ClearCompareHash();
-  void RemoveCacheEntry(void* key);
+  void RemoveCacheEntry(nsIX509Cert* key);
 
-  typedef int (*nsCertCompareFunc)(void*, nsIX509Cert* a, nsIX509Cert* b);
+  using CompareCache =
+      nsTHashMap<nsIX509Cert*, std::unique_ptr<CompareCacheEntry>>;
 
-  static CompareCacheHashEntry* getCacheEntry(void* cache, void* aCert);
-  static void CmpInitCriterion(nsIX509Cert* cert, CompareCacheHashEntry* entry,
+  using nsCertCompareFunc = int (*)(CompareCache*, nsIX509Cert* a,
+                                    nsIX509Cert* b);
+
+  static CompareCacheEntry* getCacheEntry(CompareCache* cache,
+                                          nsIX509Cert* aCert);
+  static void CmpInitCriterion(nsIX509Cert* cert, CompareCacheEntry* entry,
                                sortCriterion crit, int32_t level);
-  static int32_t CmpByCrit(nsIX509Cert* a, CompareCacheHashEntry* ace,
-                           nsIX509Cert* b, CompareCacheHashEntry* bce,
+  static int32_t CmpByCrit(nsIX509Cert* a, CompareCacheEntry* ace,
+                           nsIX509Cert* b, CompareCacheEntry* bce,
                            sortCriterion crit, int32_t level);
-  static int32_t CmpBy(void* cache, nsIX509Cert* a, nsIX509Cert* b,
+  static int32_t CmpBy(CompareCache* cache, nsIX509Cert* a, nsIX509Cert* b,
                        sortCriterion c0, sortCriterion c1, sortCriterion c2);
-  static int32_t CmpCACert(void* cache, nsIX509Cert* a, nsIX509Cert* b);
-  static int32_t CmpUserCert(void* cache, nsIX509Cert* a, nsIX509Cert* b);
-  static int32_t CmpEmailCert(void* cache, nsIX509Cert* a, nsIX509Cert* b);
+  static int32_t CmpCACert(CompareCache* cache, nsIX509Cert* a, nsIX509Cert* b);
+  static int32_t CmpUserCert(CompareCache* cache, nsIX509Cert* a,
+                             nsIX509Cert* b);
+  static int32_t CmpEmailCert(CompareCache* cache, nsIX509Cert* a,
+                              nsIX509Cert* b);
   nsCertCompareFunc GetCompareFuncFromCertType(uint32_t aType);
   int32_t CountOrganizations();
 
- private:
   static const uint32_t kInitialCacheLength = 64;
 
   nsTArray<RefPtr<nsCertTreeDispInfo>> mDispInfo;
@@ -111,7 +109,7 @@ class nsCertTree : public nsICertTree {
   treeArrayEl* mTreeArray;
   int32_t mNumOrgs;
   int32_t mNumRows;
-  PLDHashTable mCompareCache;
+  CompareCache mCompareCache;
 
   treeArrayEl* GetThreadDescAtIndex(int32_t _index);
   already_AddRefed<nsIX509Cert> GetCertAtIndex(
@@ -123,9 +121,9 @@ class nsCertTree : public nsICertTree {
 
   nsresult GetCertsByTypeFromCertList(
       const nsTArray<RefPtr<nsIX509Cert>>& aCertList, uint32_t aWantedType,
-      nsCertCompareFunc aCertCmpFn, void* aCertCmpFnArg);
+      nsCertCompareFunc aCertCmpFn, CompareCache* aCertCmpFnArg);
 
   nsCOMPtr<nsIMutableArray> mCellText;
 };
 
-#endif /* _NS_CERTTREE_H_ */
+#endif /* NS_CERTTREE_H_ */

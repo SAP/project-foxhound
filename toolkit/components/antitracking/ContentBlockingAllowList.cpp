@@ -104,7 +104,7 @@ ContentBlockingAllowList::ComputeContentBlockingAllowListPrincipal(
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
 
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
 
   return ContentBlockingAllowList::Check(cookieJarSettings);
 }

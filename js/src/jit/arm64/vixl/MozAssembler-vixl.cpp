@@ -444,7 +444,7 @@ BufferOffset Assembler::Logical(const Register& rd, const Register& rn,
   } else {
     VIXL_ASSERT(operand.IsShiftedRegister());
     VIXL_ASSERT(operand.reg().size() == rd.size());
-    Instr dp_op = static_cast<Instr>(op | LogicalShiftedFixed);
+    Instr dp_op = static_cast<Instr>(static_cast<Instr>(op) | LogicalShiftedFixed);
     return DataProcShiftedRegister(rd, rn, operand, LeaveFlags, dp_op);
   }
 }

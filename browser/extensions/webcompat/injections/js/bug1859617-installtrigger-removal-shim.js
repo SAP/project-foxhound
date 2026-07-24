@@ -10,12 +10,10 @@
  * This interventions shims window.InstallTrigger to undefine it.
  */
 
-/* globals exportFunction */
-
 if (typeof window.InstallTrigger !== "undefined") {
   console.info(
     "window.InstallTrigger has been undefined for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1859617 for details."
   );
 
-  delete window.wrappedJSObject.InstallTrigger;
+  delete window.InstallTrigger;
 }

@@ -8,14 +8,12 @@
 #define DOM_SVG_DOMSVGPOINT_H_
 
 #include "DOMSVGPointList.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsDebug.h"
 #include "SVGPoint.h"
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/gfx/2D.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDebug.h"
+#include "nsWrapperCache.h"
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 29
 

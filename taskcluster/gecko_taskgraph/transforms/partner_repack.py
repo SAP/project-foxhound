@@ -6,6 +6,7 @@ Transform the partner repack task into an actual task description.
 """
 
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_dependencies
 from taskgraph.util.schema import resolve_keyed_by
 
 from gecko_taskgraph.util.attributes import release_level
@@ -71,7 +72,7 @@ def populate_repack_manifests_url(config, tasks):
                 task,
                 property,
                 property,
-                **{"release-level": release_level(config.params["project"])},
+                **{"release-level": release_level(config.params)},
             )
 
         if task["worker"]["env"]["REPACK_MANIFESTS_URL"].startswith("git@"):
@@ -127,10 +128,37 @@ def add_command_arguments(config, tasks):
         # task-reference's to resolve dependencies, but the string handling of MOZHARNESS_OPTIONS
         # blocks that. It's space-separated string of ids in the end.
         task["worker"]["env"]["UPSTREAM_TASKIDS"] = {
-            "task-reference": " ".join([f"<{dep}>" for dep in task["dependencies"]])
+            # We only want signing related tasks here, not build (used by mac builds for signing artifact resolution)
+            "task-reference": " ".join([
+                f"<{dep}>"
+                for dep in task["dependencies"]
+                if ("signing" in dep or "notarization" in dep)
+            ])
         }
 
         # Forward the release type for bouncer product construction
         task["worker"]["env"]["RELEASE_TYPE"] = config.params["release_type"]
 
+        yield task
+
+
+@transforms.add
+def add_macos_signing_artifacts(config, tasks):
+    for task in tasks:
+        if "macosx" not in task["name"]:
+            yield task
+            continue
+        build_dep = None
+        for dep_task in get_dependencies(config, task):
+            if dep_task.kind == "build":
+                build_dep = dep_task
+                break
+        assert build_dep, f"repackage job {task['name']} has no build dependency"
+        for path, artifact in build_dep.task["payload"]["artifacts"].items():
+            if path.startswith("public/build/security/"):
+                task["worker"].setdefault("artifacts", []).append({
+                    "name": path,
+                    "path": artifact["path"],
+                    "type": "file",
+                })
         yield task

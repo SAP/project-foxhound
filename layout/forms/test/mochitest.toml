@@ -9,8 +9,8 @@ support-files = [
 
 ["test_bug287446.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug345267.html"]
@@ -18,7 +18,9 @@ skip-if = [
 ["test_bug346043.html"]
 
 ["test_bug348236.html"]
-skip-if = ["true"] # mac(select form control popup behavior is different)
+skip-if = [
+  "true", # mac(select form control popup behavior is different)
+]
 
 ["test_bug353539.html"]
 
@@ -38,8 +40,8 @@ skip-if = ["true"] # mac(select form control popup behavior is different)
 
 ["test_bug477700.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug534785.html"]
@@ -53,15 +55,21 @@ skip-if = [
 ["test_bug563642.html"]
 
 ["test_bug564115.html"]
-skip-if = ["os == 'android'"] #TIMED_OUT
+skip-if = [
+  "os == 'android'", # TIMED_OUT
+]
 
 ["test_bug571352.html"]
-skip-if = ["os == 'android'"] #TIMED_OUT
+skip-if = [
+  "os == 'android'", # TIMED_OUT
+]
 
 ["test_bug572406.html"]
 
 ["test_bug572649.html"]
-skip-if = ["os == 'android'"] # Bug 1635771
+skip-if = [
+  "os == 'android'", # Bug 1635771
+]
 
 ["test_bug595310.html"]
 
@@ -76,7 +84,9 @@ skip-if = ["os == 'android'"] # Bug 1635771
 ["test_bug717878_input_scroll.html"]
 
 ["test_bug903715.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_bug935876.html"]
 
@@ -87,7 +97,9 @@ skip-if = ["true"]
 ["test_bug1111995.html"]
 
 ["test_bug1301290.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug1305282.html"]
 
@@ -100,7 +112,11 @@ skip-if = ["os == 'android'"]
 ["test_readonly.html"]
 
 ["test_select_collapsed_page_keys.html"]
-skip-if = ["os == 'mac'"] # select control keyboard behavior is different
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # select control keyboard behavior is different
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # select control keyboard behavior is different
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # select control keyboard behavior is different
+]
 
 ["test_select_key_navigation_bug961363.html"]
 
@@ -111,9 +127,13 @@ skip-if = ["os == 'mac'"] # select control keyboard behavior is different
 ["test_select_reframe.html"]
 
 ["test_select_vertical.html"]
-skip-if = ["true"] # Bug 1170129, # <select> elements don't use an in-page popup on Android
+skip-if = [
+  "true", # Bug 1170129, # <select> elements don't use an in-page popup on Android
+]
 
 ["test_textarea_resize.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_unstyled_control_height.html"]

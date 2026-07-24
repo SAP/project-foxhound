@@ -8,9 +8,9 @@
 #define DOM_LOCKS_LOCKREQUESTCHILD_H_
 
 #include "LockManagerChild.h"
-#include "mozilla/dom/locks/PLockRequestChild.h"
 #include "mozilla/dom/Lock.h"
 #include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/locks/PLockRequestChild.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom::locks {

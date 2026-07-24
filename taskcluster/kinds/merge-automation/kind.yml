@@ -9,6 +9,9 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     merge-automation:
         name: merge-automation
@@ -116,9 +119,6 @@ tasks:
                                   - filename: "mobile/android/version.txt"
                                     new-suffix: 'b1'
                               replacements:
-                                  - - browser/config/mozconfigs/linux32/l10n-mozconfig
-                                    - ac_add_options --with-branding=browser/branding/nightly
-                                    - ac_add_options --enable-official-branding
                                   - - browser/config/mozconfigs/linux64/l10n-mozconfig
                                     - ac_add_options --with-branding=browser/branding/nightly
                                     - ac_add_options --enable-official-branding
@@ -151,8 +151,6 @@ tasks:
                                             - macosx64
                                             - macosx64-devedition
                                         ja-JP-mac:
-                                            - linux
-                                            - linux-devedition
                                             - linux64
                                             - linux64-aarch64
                                             - linux64-devedition
@@ -165,8 +163,6 @@ tasks:
                                             - win64-aarch64-devedition
                                     platform-configs: [{
                                         "platforms": [
-                                            "linux",
-                                            "linux-devedition",
                                             "linux64",
                                             "linux64-aarch64",
                                             "linux64-devedition",

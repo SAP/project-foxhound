@@ -10,10 +10,15 @@
 
 #include "modules/audio_processing/aec3/alignment_mixer.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <string>
 
 #include "api/array_view.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/block.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -155,7 +160,7 @@ TEST(AlignmentMixer, FixedMode) {
                       /*adaptive_selection*/ false, /*excitation_limit*/ 1.f,
                       /*prefer_first_two_channels*/ false);
 
-    Block x(/*num_band=*/1, num_channels);
+    Block x(/*num_bands=*/1, num_channels);
     const auto channel_value = [](int frame_index, int channel_index) {
       return static_cast<float>(frame_index + channel_index);
     };

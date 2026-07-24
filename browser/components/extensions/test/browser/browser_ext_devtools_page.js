@@ -90,10 +90,11 @@ add_task(async function test_devtools_page_runtime_api_messaging() {
         case "content_script.send_message":
           browser.runtime.sendMessage("content_script_message");
           break;
-        case "content_script.connect_port":
+        case "content_script.connect_port": {
           const port = browser.runtime.connect();
           port.disconnect();
           break;
+        }
         default:
           browser.test.fail(
             `Unexpected message ${msg} received by content script`
@@ -219,10 +220,11 @@ add_task(async function test_devtools_page_and_extension_tab_messaging() {
         case "extension_tab.send_message":
           browser.runtime.sendMessage("content_script_message");
           break;
-        case "extension_tab.connect_port":
+        case "extension_tab.connect_port": {
           const port = browser.runtime.connect();
           port.disconnect();
           break;
+        }
         default:
           browser.test.fail(
             `Unexpected message ${msg} received by content script`

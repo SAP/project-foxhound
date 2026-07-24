@@ -10,6 +10,10 @@
 #include "mozilla/css/Rule.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsICSSDeclaration.h"
+// The following include provides nsCSSProps::PropertyIDLName(), used by
+// generated CSSPositionTryDescriptorsBinding.cpp
+// TODO: Ideally it would only be included from there.
+#include "nsCSSProps.h"
 
 namespace mozilla {
 class DeclarationBlock;
@@ -79,6 +83,8 @@ class CSSPositionTryRule final : public css::Rule {
 #endif
 
   JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
+
+  const StyleLockedDeclarationBlock* RawStyle() const;
 
  private:
   ~CSSPositionTryRule() = default;

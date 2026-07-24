@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaStreamAudioDestinationNode.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/MediaStreamAudioDestinationNodeBinding.h"
+
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
 #include "AudioStreamTrack.h"
 #include "DOMMediaStream.h"
 #include "ForwardedInputTrack.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MediaStreamAudioDestinationNodeBinding.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {

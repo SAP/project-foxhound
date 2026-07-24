@@ -5,26 +5,26 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 const RESULT_MENU_COMMANDS = {
   DISMISS: "dismiss",
 };
-const CLIPBOARD_IMPRESSION_LIMIT = 2;
+export const CLIPBOARD_IMPRESSION_LIMIT = 2;
 
 /**
  * A provider that returns a suggested url to the user based
  * on a valid URL stored in the clipboard.
  */
-class ProviderClipboard extends UrlbarProvider {
+export class UrlbarProviderClipboard extends UrlbarProvider {
   #previousClipboard = {
     value: "",
     impressionsLeft: CLIPBOARD_IMPRESSION_LIMIT,
@@ -32,10 +32,6 @@ class ProviderClipboard extends UrlbarProvider {
 
   constructor() {
     super();
-  }
-
-  get name() {
-    return "UrlbarProviderClipboard";
   }
 
   /**
@@ -66,12 +62,12 @@ class ProviderClipboard extends UrlbarProvider {
     if (
       !textFromClipboard ||
       textFromClipboard.length > 2048 ||
-      lazy.UrlbarTokenizer.REGEXP_SPACES.test(textFromClipboard)
+      lazy.UrlUtils.REGEXP_SPACES.test(textFromClipboard)
     ) {
       return false;
     }
     textFromClipboard =
-      controller.input.sanitizeTextFromClipboard(textFromClipboard);
+      UrlbarUtils.sanitizeTextFromClipboard(textFromClipboard);
     const validUrl = this.#validUrl(textFromClipboard);
     if (!validUrl) {
       return false;
@@ -110,23 +106,27 @@ class ProviderClipboard extends UrlbarProvider {
     return 1;
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     // If the query was started, isActive should have cached a url already.
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-        fallbackTitle: [
-          UrlbarUtils.prepareUrlForDisplay(this.#previousClipboard.value, {
-            trimURL: false,
-          }),
-          UrlbarUtils.HIGHLIGHT.NONE,
-        ],
-        url: [this.#previousClipboard.value, UrlbarUtils.HIGHLIGHT.NONE],
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      payload: {
+        title: UrlbarUtils.prepareUrlForDisplay(this.#previousClipboard.value, {
+          trimURL: false,
+        }),
+        url: this.#previousClipboard.value,
         icon: "chrome://global/skin/icons/clipboard.svg",
         isBlockable: true,
-      })
-    );
+      },
+    });
 
     addCallback(this, result);
   }
@@ -154,6 +154,3 @@ class ProviderClipboard extends UrlbarProvider {
     }
   }
 }
-
-const UrlbarProviderClipboard = new ProviderClipboard();
-export { UrlbarProviderClipboard, CLIPBOARD_IMPRESSION_LIMIT };

@@ -37,8 +37,11 @@ export const TaskbarTabsPageAction = {
   init(aWindow) {
     let isPopupWindow = !aWindow.toolbar.visible;
     let isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(aWindow);
+    let isWin32 = AppConstants.platform === "win";
+    let isMsix =
+      isWin32 && Services.sysinfo.getProperty("hasWinPackageId", false); // Bug 1979190
 
-    if (isPopupWindow || isPrivate || AppConstants.platform != "win") {
+    if (isPopupWindow || isPrivate || !isWin32 || isMsix) {
       lazy.logConsole.info("Not initializing Taskbar Tabs Page Action.");
       return;
     }
@@ -47,6 +50,13 @@ export const TaskbarTabsPageAction = {
 
     let taskbarTabsButton = aWindow.document.getElementById(kWidgetId);
     taskbarTabsButton.addEventListener("click", this, true);
+
+    if (lazy.TaskbarTabsUtils.isTaskbarTabWindow(aWindow)) {
+      taskbarTabsButton.setAttribute(
+        "data-l10n-id",
+        "taskbar-tab-urlbar-button-close"
+      );
+    }
 
     initVisibilityChanges(aWindow, taskbarTabsButton);
   },
@@ -85,19 +95,7 @@ export const TaskbarTabsPageAction = {
 
       if (!isTaskbarTabWindow) {
         lazy.logConsole.info("Opening new Taskbar Tab via Page Action.");
-
-        // Move tab to a Taskbar Tabs window.
-        let browser = currentTab.linkedBrowser;
-        let url = browser.currentURI;
-        let userContextId =
-          browser.contentPrincipal.originAttributes.userContextId;
-
-        let taskbarTab = await lazy.TaskbarTabs.findOrCreateTaskbarTab(
-          url,
-          userContextId
-        );
-
-        await lazy.TaskbarTabs.replaceTabWithWindow(taskbarTab, currentTab);
+        await lazy.TaskbarTabs.moveTabIntoTaskbarTab(currentTab);
       } else {
         lazy.logConsole.info("Closing Taskbar Tab via Page Action.");
 
@@ -128,8 +126,23 @@ function initVisibilityChanges(aWindow, aElement) {
   // Filled in at the end; memoized to avoid performance failures.
   let isTaskbarTabsEnabled = false;
 
-  const shouldHide = aLocation =>
-    !(aLocation.scheme.startsWith("http") && isTaskbarTabsEnabled);
+  const shouldHide = aLocation => {
+    if (!isTaskbarTabsEnabled) {
+      return true;
+    }
+
+    // Forcefully initialize Taskbar Tabs. At some point, this will also affect
+    // the page action; in the meantime, ensures that telemetry info is
+    // prepared whenever the pref is enabled.
+    //
+    // This is a promise, but we don't care when it finishes. It's a no-op if
+    // TaskbarTabs already initialized.
+    lazy.TaskbarTabs.waitUntilReady();
+
+    return (
+      !(aLocation instanceof Ci.nsIURL) && !aLocation.scheme.startsWith("http")
+    );
+  };
 
   aWindow.gBrowser.addProgressListener({
     onLocationChange(aWebProgress, aRequest, aLocation) {

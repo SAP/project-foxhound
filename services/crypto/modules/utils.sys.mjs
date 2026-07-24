@@ -36,7 +36,8 @@ export var CryptoUtils = {
 
   /**
    * Generate a string of random bytes.
-   * @returns {String} Octet string
+   *
+   * @returns {string} Octet string
    */
   generateRandomBytesLegacy(length) {
     let bytes = CryptoUtils.generateRandomBytes(length);
@@ -123,7 +124,7 @@ export var CryptoUtils = {
    * @param {string} ikm IKM as an octet string.
    * @param {string} salt Salt as an Hex string.
    * @param {string} info Info as a regular string.
-   * @param {Number} len Desired output length in bytes.
+   * @param {number} len Desired output length in bytes.
    */
   async hkdfLegacy(ikm, xts, info, len) {
     ikm = CommonUtils.byteStringToArrayBuffer(ikm);
@@ -155,7 +156,7 @@ export var CryptoUtils = {
    * @param {ArrayBuffer} ikm
    * @param {ArrayBuffer} salt
    * @param {ArrayBuffer} info
-   * @param {Number} len Desired output length in bytes.
+   * @param {number} len Desired output length in bytes.
    * @returns {Uint8Array}
    */
   async hkdf(ikm, salt, info, len) {

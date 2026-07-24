@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_threadlocal_h__
-#define mozilla_dom_indexeddb_threadlocal_h__
+#ifndef mozilla_dom_indexeddb_threadlocal_h_
+#define mozilla_dom_indexeddb_threadlocal_h_
 
 #include "IDBTransaction.h"
-#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "ProfilerHelpers.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 
 namespace mozilla::dom {
 
@@ -18,7 +18,7 @@ class IDBFactory;
 namespace indexedDB {
 
 class ThreadLocal {
-  friend class DefaultDelete<ThreadLocal>;
+  friend DefaultDelete<ThreadLocal>;
   friend IDBFactory;
 
   LoggingInfo mLoggingInfo;
@@ -91,4 +91,4 @@ class ThreadLocal {
 }  // namespace indexedDB
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_indexeddb_threadlocal_h__
+#endif  // mozilla_dom_indexeddb_threadlocal_h_

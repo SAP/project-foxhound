@@ -61,10 +61,10 @@ struct MemoryCtxInfo {
 };
 
 struct MemoryCtxPatch {
-    MemoryCtxInfo info;
-
-    void* backup;  // Remembers context->pixels so we can restore it
     std::byte scratch[kMaxScratchPerPatch];
+
+    MemoryCtxInfo info;
+    void* backup;  // Remembers context->pixels so we can restore it
 };
 
 struct GatherCtx {

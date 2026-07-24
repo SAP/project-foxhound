@@ -6,8 +6,8 @@
 
 #include "XPathGenerator.h"
 
-#include "nsGkAtoms.h"
 #include "Element.h"
+#include "nsGkAtoms.h"
 #include "nsTArray.h"
 
 /**

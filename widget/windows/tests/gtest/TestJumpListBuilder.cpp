@@ -5,7 +5,6 @@
 #include <objectarray.h>
 #include <shobjidl.h>
 #include <windows.h>
-#include <string.h>
 #include <propvarutil.h>
 #include <propkey.h>
 

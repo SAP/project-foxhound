@@ -46,12 +46,63 @@ add_task(async function go_back() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function go_back_to_newtab() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:newtab",
+    false
+  );
+
+  let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
+    SearchService.defaultEngine,
+    SEARCH_STRING
+  );
+  let browserLoadedPromise = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    expectedSearchUrl
+  );
+
+  gURLBar.focus();
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus,
+    value: SEARCH_STRING,
+    fireInputEvent: true,
+    selectionStart: 0,
+    selectionEnd: SEARCH_STRING.length - 1,
+  });
+  EventUtils.synthesizeKey("KEY_Enter");
+  await browserLoadedPromise;
+
+  Assert.equal(
+    gURLBar.value,
+    SEARCH_STRING,
+    "Search string should be in the address bar after loading the search results page."
+  );
+
+  let pageShowPromise = BrowserTestUtils.waitForContentEvent(
+    tab.linkedBrowser,
+    "pageshow"
+  );
+  tab.linkedBrowser.goBack(false);
+  await pageShowPromise;
+
+  Assert.equal(
+    gURLBar.value,
+    "",
+    "Search string should be blank after going back to about:newtab."
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
 // Manually loading a url that matches a search query url
 // should show the search term in the Urlbar.
 add_task(async function load_url() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
   let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
@@ -174,7 +225,7 @@ add_task(async function focus_after_top_sites() {
   }
 
   let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   await UrlbarTestUtils.promiseAutocompleteResultPopup({

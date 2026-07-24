@@ -40,7 +40,7 @@ class AuthCustomTabActivityTest {
         val activity = spyk(AuthCustomTabActivity())
         val navHostController: NavController = mockk()
 
-        activity.navigateToHome(navHostController, true)
+        activity.navigateToHome(navHostController)
         verify { navHostController wasNot Called }
     }
 

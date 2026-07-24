@@ -9,23 +9,24 @@
  *
  * Ref: https://www.kernel.org/doc/html/latest/input/gamepad.html
  */
-#include <algorithm>
-#include <unordered_map>
-#include <cstddef>
-
 #include <glib.h>
 #include <linux/input.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include "nscore.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <unordered_map>
+
+#include "mozilla/Sprintf.h"
+#include "mozilla/Tainting.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GamepadHandle.h"
 #include "mozilla/dom/GamepadPlatformService.h"
 #include "mozilla/dom/GamepadRemapping.h"
-#include "mozilla/Tainting.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Sprintf.h"
+#include "nscore.h"
 #include "udev.h"
 
 #define BITS_PER_LONG ((sizeof(unsigned long)) * 8)

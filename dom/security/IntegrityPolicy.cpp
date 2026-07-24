@@ -6,17 +6,16 @@
 
 #include "IntegrityPolicy.h"
 
+#include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/SFVService.h"
 #include "nsCOMPtr.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsString.h"
-
-#include "mozilla/dom/RequestBinding.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Logging.h"
-#include "mozilla/net/SFVService.h"
-#include "mozilla/StaticPrefs_security.h"
 
 using namespace mozilla;
 
@@ -74,33 +73,25 @@ IntegrityPolicy::ContentTypeToDestinationType(nsContentPolicyType aType) {
       ContentTypeToDestination(aType));
 }
 
-nsresult GetStringsFromInnerList(nsISFVInnerList* aList, bool aIsToken,
-                                 nsTArray<nsCString>& aStrings) {
+// https://w3c.github.io/webappsec-subresource-integrity/#integrity-policy-section
+// The headers' value is a Dictionary [RFC9651], with every member-value being
+// an inner list of tokens.
+nsresult GetTokenValuesFromInnerList(nsISFVInnerList* aList,
+                                     nsTArray<nsCString>& aValues) {
   nsTArray<RefPtr<nsISFVItem>> items;
-  nsresult rv = aList->GetItems(items);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aList->GetItems(items));
 
   for (auto& item : items) {
     nsCOMPtr<nsISFVBareItem> value;
-    rv = item->GetValue(getter_AddRefs(value));
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(item->GetValue(getter_AddRefs(value)));
 
-    nsAutoCString itemStr;
-    if (aIsToken) {
-      nsCOMPtr<nsISFVToken> itemToken(do_QueryInterface(value));
-      NS_ENSURE_TRUE(itemToken, NS_ERROR_FAILURE);
+    nsCOMPtr<nsISFVToken> token(do_QueryInterface(value));
+    NS_ENSURE_TRUE(token, NS_ERROR_FAILURE);
 
-      rv = itemToken->GetValue(itemStr);
-      NS_ENSURE_SUCCESS(rv, rv);
-    } else {
-      nsCOMPtr<nsISFVString> itemString(do_QueryInterface(value));
-      NS_ENSURE_TRUE(itemString, NS_ERROR_FAILURE);
+    nsAutoCString tokenValue;
+    MOZ_TRY(token->GetValue(tokenValue));
 
-      rv = itemString->GetValue(itemStr);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    aStrings.AppendElement(itemStr);
+    aValues.AppendElement(tokenValue);
   }
 
   return NS_OK;
@@ -124,7 +115,7 @@ Result<IntegrityPolicy::Sources, nsresult> ParseSources(
   NS_ENSURE_TRUE(il, Err(NS_ERROR_FAILURE));
 
   nsTArray<nsCString> sources;
-  rv = GetStringsFromInnerList(il, true, sources);
+  rv = GetTokenValuesFromInnerList(il, sources);
   NS_ENSURE_SUCCESS(rv, Err(rv));
 
   IntegrityPolicy::Sources result;
@@ -157,7 +148,7 @@ Result<IntegrityPolicy::Destinations, nsresult> ParseDestinations(
   NS_ENSURE_TRUE(il, Err(NS_ERROR_FAILURE));
 
   nsTArray<nsCString> destinations;
-  rv = GetStringsFromInnerList(il, true, destinations);
+  rv = GetTokenValuesFromInnerList(il, destinations);
   NS_ENSURE_SUCCESS(rv, Err(rv));
 
   IntegrityPolicy::Destinations result;
@@ -191,7 +182,7 @@ Result<nsTArray<nsCString>, nsresult> ParseEndpoints(nsISFVDictionary* aDict) {
   nsCOMPtr<nsISFVInnerList> il(do_QueryInterface(iil));
   NS_ENSURE_TRUE(il, Err(NS_ERROR_FAILURE));
   nsTArray<nsCString> endpoints;
-  rv = GetStringsFromInnerList(il, true, endpoints);
+  rv = GetTokenValuesFromInnerList(il, endpoints);
   NS_ENSURE_SUCCESS(rv, Err(rv));
 
   return endpoints;
@@ -307,6 +298,16 @@ void IntegrityPolicy::PolicyContains(DestinationType aDestination,
   if (mReportOnly && mReportOnly->mDestinations.contains(aDestination) &&
       mReportOnly->mSources.contains(SourceType::Inline)) {
     *aROContains = true;
+  }
+}
+
+void IntegrityPolicy::Endpoints(nsTArray<nsCString>& aEnforcement,
+                                nsTArray<nsCString>& aReportOnly) const {
+  if (mEnforcement) {
+    aEnforcement = mEnforcement->mEndpoints.Clone();
+  }
+  if (mReportOnly) {
+    aReportOnly = mReportOnly->mEndpoints.Clone();
   }
 }
 

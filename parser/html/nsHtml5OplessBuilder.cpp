@@ -26,7 +26,6 @@ void nsHtml5OplessBuilder::Finish() {
   mScriptLoader = nullptr;
   mDocument = nullptr;
   mNodeInfoManager = nullptr;
-  mCSSLoader = nullptr;
   mDocumentURI = nullptr;
   mDocShell = nullptr;
   if (mOwnedElements.Length() <= kRecyclableLength) {

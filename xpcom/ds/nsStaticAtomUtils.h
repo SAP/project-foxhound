@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 #include "nsAtom.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
 
 // This class holds basic operations on arrays of static atoms.

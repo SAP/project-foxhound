@@ -79,7 +79,8 @@ class ASpdySession : public nsAHttpTransaction {
             code == NS_BINDING_ABORTED || code == NS_BINDING_REDIRECTED ||
             code == NS_ERROR_INVALID_CONTENT_ENCODING ||
             code == NS_BINDING_RETARGETED ||
-            code == NS_ERROR_CORRUPTED_CONTENT);
+            code == NS_ERROR_CORRUPTED_CONTENT ||
+            code == NS_ERROR_NET_TIMEOUT_EXTERNAL);
   }
 
   virtual void SetCleanShutdown(bool) = 0;

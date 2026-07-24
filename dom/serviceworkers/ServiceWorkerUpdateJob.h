@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_serviceworkerupdatejob_h
 #define mozilla_dom_serviceworkerupdatejob_h
 
-#include "mozilla/dom/ServiceWorkerLifetimeExtension.h"
 #include "ServiceWorkerJob.h"
 #include "ServiceWorkerRegistration.h"
-
+#include "mozilla/dom/ServiceWorkerLifetimeExtension.h"
 #include "nsIRequest.h"
 
 namespace mozilla::dom {

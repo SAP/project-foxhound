@@ -2,12 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@file:Suppress("MagicNumber", "TooManyFunctions")
-
 package org.mozilla.fenix.home.recenttabs.view
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -17,15 +14,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -62,6 +57,8 @@ import org.mozilla.fenix.compose.Image
 import org.mozilla.fenix.compose.TabThumbnail
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.recenttabs.RecentTab
+import org.mozilla.fenix.home.topsites.ui.HomepageCard
+import org.mozilla.fenix.home.topsites.ui.homepageCardImageShape
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private const val THUMBNAIL_SIZE = 108
@@ -74,12 +71,11 @@ private const val THUMBNAIL_SIZE = 108
  * @param backgroundColor The background [Color] of each item.
  * @param onRecentTabClick Invoked when the user clicks on a recent tab.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun RecentTabs(
     recentTabs: List<RecentTab>,
     menuItems: List<RecentTabMenuItem>,
-    backgroundColor: Color = FirefoxTheme.colors.layer2,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
     onRecentTabClick: (String) -> Unit = {},
 ) {
     Column(
@@ -114,10 +110,6 @@ fun RecentTabs(
  * @param backgroundColor The background [Color] of the item.
  * @param onRecentTabClick Invoked when the user clicks on a recent tab.
  */
-@OptIn(
-    ExperimentalFoundationApi::class,
-    ExperimentalComposeUiApi::class,
-)
 @Composable
 @Suppress("LongMethod")
 private fun RecentTabItem(
@@ -128,34 +120,39 @@ private fun RecentTabItem(
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
 
-    Card(
+    HomepageCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp)
+            .wrapContentHeight()
             .combinedClickable(
                 enabled = true,
                 onClick = { onRecentTabClick(tab.state.id) },
                 onLongClick = { isMenuExpanded = true },
             ),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        backgroundColor = backgroundColor,
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(
+                start = FirefoxTheme.layout.space.static50,
+                top = FirefoxTheme.layout.space.static50,
+                bottom = FirefoxTheme.layout.space.static50,
+                end = FirefoxTheme.layout.space.static100,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             RecentTabImage(
                 tab = tab,
                 modifier = Modifier
                     .size(108.dp, 80.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop,
+                    .clip(homepageCardImageShape),
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static100))
 
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
@@ -164,13 +161,13 @@ private fun RecentTabItem(
                         testTagsAsResourceId = true
                         testTag = "recent.tab.title"
                     },
-                    color = FirefoxTheme.colors.textPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 14.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     RecentTabIcon(
                         url = tab.state.content.url,
                         modifier = Modifier
@@ -188,7 +185,7 @@ private fun RecentTabItem(
                             testTagsAsResourceId = true
                             testTag = "recent.tab.url"
                         },
-                        color = FirefoxTheme.colors.textSecondary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         overflow = TextOverflow.Ellipsis,
                         maxLines = 1,
@@ -216,13 +213,11 @@ private fun RecentTabItem(
  *
  * @param tab [RecentTab] that was recently viewed.
  * @param modifier [Modifier] used to draw the image content.
- * @param contentScale [ContentScale] used to draw image content.
  */
 @Composable
 fun RecentTabImage(
     tab: RecentTab.Tab,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.FillWidth,
 ) {
     val previewImageUrl = tab.state.content.previewImageUrl
 
@@ -236,18 +231,16 @@ fun RecentTabImage(
                 fallback = {
                     TabThumbnail(
                         tab = tab.state,
-                        size = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
+                        thumbnailSizePx = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
                         modifier = modifier,
-                        contentScale = contentScale,
                     )
                 },
             )
         }
         else -> TabThumbnail(
             tab = tab.state,
-            size = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
+            thumbnailSizePx = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
             modifier = modifier,
-            contentScale = contentScale,
         )
     }
 }
@@ -323,15 +316,21 @@ private fun PlaceHolderTabIcon(modifier: Modifier) {
 @Composable
 private fun RecentTabsPreview() {
     FirefoxTheme {
-        RecentTabs(
-            recentTabs = FakeHomepagePreview.recentTabs(),
-            menuItems = listOf(
-                RecentTabMenuItem(
-                    title = "Menu item",
-                    onClick = {},
-                ),
-            ),
-            onRecentTabClick = {},
-        )
+        Surface {
+            Column(
+                modifier = Modifier.padding(all = FirefoxTheme.layout.space.static200),
+            ) {
+                RecentTabs(
+                    recentTabs = FakeHomepagePreview.recentTabs(),
+                    menuItems = listOf(
+                        RecentTabMenuItem(
+                            title = "Menu item",
+                            onClick = {},
+                        ),
+                    ),
+                    onRecentTabClick = {},
+                )
+            }
+        }
     }
 }

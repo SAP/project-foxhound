@@ -13,6 +13,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsNSSCallbacks.h"
 #include "nsNSSComponent.h"
 #include "nsProxyRelease.h"
@@ -53,7 +54,7 @@ NSSSocketControl::NSSSocketControl(
       mSocketCreationTimestamp(TimeStamp::Now()),
       mPlaintextBytesRead(0),
       mClaimed(!(providerFlags & nsISocketProvider::IS_SPECULATIVE_CONNECTION)),
-      mPendingSelectClientAuthCertificate(nullptr),
+      mClientAuthCertificateRequest(Nothing()),
       mBrowserId(0) {}
 
 NS_IMETHODIMP
@@ -170,7 +171,7 @@ void NSSSocketControl::SetHandshakeCompleted() {
 
   if (mTlsHandshakeCallback) {
     auto callback = std::move(mTlsHandshakeCallback);
-    Unused << callback->HandshakeDone();
+    (void)callback->HandshakeDone();
   }
 }
 
@@ -407,7 +408,6 @@ void NSSSocketControl::SetCertVerificationWaiting() {
 // callbacks.
 void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-  SetUsedPrivateDNS(GetProviderFlags() & nsISocketProvider::USED_PRIVATE_DNS);
   MOZ_ASSERT(mCertVerificationState == WaitingForCertVerification,
              "Invalid state transition to AfterCertVerification");
 
@@ -444,7 +444,7 @@ void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
 
   mCertVerificationState = AfterCertVerification;
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->CertVerificationDone();
+    (void)mTlsHandshakeCallback->CertVerificationDone();
   }
 }
 
@@ -482,7 +482,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
         if (cert) {
           if (CERT_AddCertToListTail(mClientCertChain.get(), cert.get()) ==
               SECSuccess) {
-            Unused << cert.release();
+            (void)cert.release();
           }
         }
       }
@@ -495,7 +495,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
     glean::security::client_auth_cert_usage.Get("sent"_ns).Add(1);
   }
 
-  Unused << SSL_ClientCertCallbackComplete(
+  (void)SSL_ClientCertCallbackComplete(
       mFd, sendingClientAuthCert ? SECSuccess : SECFailure,
       sendingClientAuthCert ? key.release() : nullptr,
       sendingClientAuthCert ? cert.release() : nullptr);
@@ -504,7 +504,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
           ("[%p] ClientAuthCertificateSelected mTlsHandshakeCallback=%p",
            (void*)mFd, mTlsHandshakeCallback.get()));
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->ClientAuthCertificateSelected();
+    (void)mTlsHandshakeCallback->ClientAuthCertificateSelected();
   }
 }
 
@@ -535,7 +535,7 @@ NSSSocketControl::SetHandshakeCallbackListener(
 PRStatus NSSSocketControl::CloseSocketAndDestroy() {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
 
-  mPendingSelectClientAuthCertificate = nullptr;
+  mClientAuthCertificateRequest.reset();
 
   PRFileDesc* popped = PR_PopIOLayer(mFd, PR_TOP_IO_LAYER);
   MOZ_ASSERT(
@@ -701,43 +701,47 @@ nsresult NSSSocketControl::SetResumptionTokenFromExternalCache(PRFileDesc* fd) {
     return NS_OK;
   }
 
-  nsTArray<uint8_t> token;
   nsAutoCString peerId;
   nsresult rv = GetPeerId(peerId);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  uint64_t tokenId = 0;
-  mozilla::net::SessionCacheInfo info;
-  rv = mozilla::net::SSLTokensCache::Get(peerId, token, info, &tokenId);
-  if (NS_FAILED(rv)) {
-    if (rv == NS_ERROR_NOT_AVAILABLE) {
-      // It's ok if we can't find the token.
+  uint32_t maxAttempts =
+      mozilla::StaticPrefs::network_ssl_tokens_cache_records_per_entry();
+  for (uint32_t attempt = 0; attempt < maxAttempts; ++attempt) {
+    nsTArray<uint8_t> token;
+    uint64_t tokenId = 0;
+    mozilla::net::SessionCacheInfo info;
+    rv = mozilla::net::SSLTokensCache::Get(peerId, token, info, &tokenId);
+    if (NS_FAILED(rv)) {
+      if (rv == NS_ERROR_NOT_AVAILABLE) {
+        // It's ok if we can't find the token.
+        return NS_OK;
+      }
+
+      return rv;
+    }
+
+    SECStatus srv =
+        SSL_SetResumptionToken(fd, token.Elements(), token.Length());
+    if (srv == SECSuccess) {
+      SetSessionCacheInfo(std::move(info));
       return NS_OK;
     }
 
-    return rv;
-  }
-
-  SECStatus srv = SSL_SetResumptionToken(fd, token.Elements(), token.Length());
-  if (srv == SECFailure) {
     PRErrorCode error = PR_GetError();
     mozilla::net::SSLTokensCache::Remove(peerId, tokenId);
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("Setting token failed with NSS error %d [id=%s]", error,
-             PromiseFlatCString(peerId).get()));
-    // We don't consider SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR as a hard error,
-    // since this error means this token is just expired or can't be decoded
-    // correctly.
+            ("Setting token failed with NSS error %d [id=%s, attempt=%u]",
+             error, PromiseFlatCString(peerId).get(), attempt));
+
     if (error == SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR) {
-      return NS_OK;
+      continue;
     }
 
     return NS_ERROR_FAILURE;
   }
-
-  SetSessionCacheInfo(std::move(info));
 
   return NS_OK;
 }
@@ -752,6 +756,19 @@ void NSSSocketControl::SetPreliminaryHandshakeInfo(
   mSignatureSchemeName.emplace(getSignatureName(channelInfo.signatureScheme));
   mIsDelegatedCredential.emplace(channelInfo.peerDelegCred);
   mIsAcceptedEch.emplace(channelInfo.echAccepted);
+}
+
+void NSSSocketControl::MaybeSelectClientAuthCertificate() {
+  COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+  if (!IsWaitingForCertVerification() && mClaimed &&
+      mClientAuthCertificateRequest.isSome()) {
+    MOZ_LOG(gPIPNSSLog, mozilla::LogLevel::Debug,
+            ("[%p] selecting client auth certificate", (void*)mFd));
+    ClientAuthCertificateRequest request(
+        mClientAuthCertificateRequest.extract());
+    DoSelectClientAuthCertificate(this, std::move(request.mServerCertificate),
+                                  std::move(request.mCANames));
+  }
 }
 
 NS_IMETHODIMP NSSSocketControl::Claim() {

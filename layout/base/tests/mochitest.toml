@@ -43,7 +43,9 @@ support-files = ["border_radius_hit_testing_iframe.html"]
 ["test_bug332655-2.html"]
 
 ["test_bug369950.html"]
-skip-if = ["true"] # Bug 492575
+skip-if = [
+  "true", # Bug 492575
+]
 support-files = ["bug369950-subframe.xml"]
 
 ["test_bug370436.html"]
@@ -53,7 +55,9 @@ support-files = ["bug369950-subframe.xml"]
 ["test_bug388019.html"]
 
 ["test_bug394057.html"]
-skip-if = ["os == 'android'"] # Bug 1355817
+skip-if = [
+  "os == 'android'", # Bug 1355817
+]
 
 ["test_bug399284.html"]
 
@@ -74,7 +78,9 @@ skip-if = ["os == 'android'"] # Bug 1355817
 ["test_bug449781.html"]
 
 ["test_bug450930.xhtml"]
-skip-if = ["true"] # bug 934301
+skip-if = [
+  "true", # bug 934301
+]
 support-files = ["bug450930.xhtml"]
 
 ["test_bug469170.html"]
@@ -111,7 +117,9 @@ support-files = [
 ["test_bug588174.html"]
 
 ["test_bug603550.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_bug607529.html"]
 support-files = [
@@ -120,7 +128,9 @@ support-files = [
 ]
 
 ["test_bug629838.html"]
-skip-if = ["os == 'android'"] # android: Requires plugin support
+skip-if = [
+  "os == 'android'", # android: Requires plugin support
+]
 
 ["test_bug644768.html"]
 
@@ -159,14 +169,20 @@ support-files = ["file_bug842853-frame.html"]
 ["test_bug849219.html"]
 
 ["test_bug851445.html"]
-skip-if = ["os == 'android'"] # Bug 1355821
+skip-if = [
+  "os == 'android'", # Bug 1355821
+]
 support-files = ["bug851445_helper.html"]
 
 ["test_bug851485.html"]
-skip-if = ["os == 'android'"]  # Bug 1355821
+skip-if = [
+  "os == 'android'", # Bug 1355821
+]
 
 ["test_bug858459.html"]
-skip-if = ["os == 'android'"] # Bug 1355822
+skip-if = [
+  "os == 'android'", # Bug 1355822
+]
 
 ["test_bug970964.html"]
 support-files = [
@@ -199,7 +215,9 @@ support-files = ["bug1080361_inner.html"]
 support-files = ["bug1093686_inner.html"]
 
 ["test_bug1120705.html"]
-run-if = ["os == 'mac'"] # android/linux/mac does not have clickable scrollbars (depending on theme)
+run-if = [
+  "os == 'mac'", # android/linux/mac does not have clickable scrollbars (depending on theme)
+]
 
 ["test_bug1153130.html"]
 support-files = ["bug1153130_inner.html"]
@@ -221,7 +239,9 @@ support-files = ["bug1226904.html"]
 
 ["test_bug1448730.html"]
 support-files = ["bug1448730.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1781401
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1781401
+]
 
 ["test_bug1515822.html"]
 
@@ -236,7 +256,9 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["test_caretPositionFromPoint_insertAnonymousContent.html"]
 
 ["test_caret_browsing_around_form_controls.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_dynamic_toolbar_max_height.html"]
 support-files = ["file_dynamic_toolbar_max_height.html"]
@@ -250,7 +272,7 @@ support-files = ["file_dynamic_toolbar_max_height.html"]
 ["test_event_target_radius.html"]
 support-files = ["helper_bug1733509.html"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968682
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968682
   "xorigin", # JavaScript error: resource://specialpowers/SpecialPowersChild.sys.mjs, line 73: SecurityError: Permission denied to access property "windowUtils" on cross-origin object
 ]
 
@@ -275,10 +297,14 @@ support-files = [
 ["test_getClientRects_emptytext.html"]
 
 ["test_interactive_widget.html"]
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]
 
 ["test_mozPaintCount.html"]
-skip-if = ["os == 'android'"] # android: Requires plugin support
+skip-if = [
+  "os == 'android'", # android: Requires plugin support
+]
 
 ["test_partialbg.html"]
 support-files = [
@@ -286,8 +312,8 @@ support-files = [
   "partial.png",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_preserve3d_sorting_hit_testing.html"]
@@ -296,10 +322,18 @@ support-files = ["preserve3d_sorting_hit_testing_iframe.html"]
 ["test_preserve3d_sorting_hit_testing2.html"]
 support-files = ["preserve3d_sorting_hit_testing2_iframe.html"]
 
+["test_re_enable_apz_on_blur.html"]
+support-files = ["helper_re_enable_apz_on_blur.html"]
+skip-if = [
+  "os == 'win'",
+]
+
 ["test_refreshDriver_hasPendingTick.html"]
 
 ["test_reftests_with_caret.html"]
-skip-if = ["tsan"]  # Bug 1612707
+skip-if = [
+  "tsan", # Bug 1612707
+]
 support-files = [
   "bug106855-1.html",
   "bug106855-2.html",
@@ -368,10 +402,6 @@ support-files = [
   "bug923376-ref.html",
   "bug956530-1.html",
   "bug956530-1-ref.html",
-  "bug966992-1.html",
-  "bug966992-1-ref.html",
-  "bug966992-2.html",
-  "bug966992-2-ref.html",
   "bug989012-1.html",
   "bug989012-1-ref.html",
   "bug989012-2.html",
@@ -581,7 +611,9 @@ support-files = ["resize_flush_iframe.html"]
 ["test_scroll_event_ordering.html"]
 
 ["test_scroll_selection_into_view.html"]
-skip-if = ["os == 'android'"] # Bug 1355844
+skip-if = [
+  "os == 'android'", # Bug 1355844
+]
 support-files = [
   "scroll_selection_into_view_window.html",
   "scroll_selection_into_view_window_frame.html",
@@ -602,7 +634,7 @@ support-files = [
 ["test_transformed_scrolling_repaints.html"]
 
 ["test_transformed_scrolling_repaints_2.html"]
-skip-if = ["headless && os == 'mac'"] # Headless Bug 1414103
+# Headless Bug 1414103 (mac isn't tested headless)
 
 ["test_transformed_scrolling_repaints_3.html"]
 support-files = [

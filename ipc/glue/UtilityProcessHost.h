@@ -108,10 +108,8 @@ class UtilityProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   void DestroyProcess();
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
-  static bool sLaunchWithMacSandbox;
-
-  // Sandbox the Utility process at launch for all instances
-  bool IsMacSandboxLaunchEnabled() override { return sLaunchWithMacSandbox; }
+  // Sandbox utility processes based on IsUtilitySandboxEnabled()
+  bool IsMacSandboxLaunchEnabled() override { return mDisableOSActivityMode; }
 
   // Override so we can turn on Utility process-specific sandbox logging
   bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;

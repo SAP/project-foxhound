@@ -4,10 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/layers/KnowsCompositor.h"
 #if !defined(GMPVideoDecoder_h_)
 #  define GMPVideoDecoder_h_
-
 #  include "GMPVideoDecoderProxy.h"
 #  include "ImageContainer.h"
 #  include "MediaDataDecoderProxy.h"
@@ -17,6 +15,7 @@
 #  include "ReorderQueue.h"
 #  include "mozIGeckoMediaPluginService.h"
 #  include "mozilla/StaticString.h"
+#  include "mozilla/layers/KnowsCompositor.h"
 #  include "nsClassHashtable.h"
 
 namespace mozilla {

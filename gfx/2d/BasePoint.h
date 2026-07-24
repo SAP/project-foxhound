@@ -11,7 +11,6 @@
 #include <ostream>
 #include <type_traits>
 #include "mozilla/Attributes.h"
-#include "mozilla/FloatingPoint.h"
 #include "Coord.h"
 
 namespace mozilla {

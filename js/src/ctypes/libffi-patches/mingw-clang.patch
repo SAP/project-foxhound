@@ -1,9 +1,9 @@
 https://github.com/libffi/libffi/pull/579
 
-diff --git a/js/src/ctypes/libffi/src/x86/sysv.S b/js/src/ctypes/libffi/src/x86/sysv.S
+diff --git a/src/x86/sysv.S b/src/x86/sysv.S
 index 7c9598c93c984..b73492795d6d0 100644
---- a/js/src/ctypes/libffi/src/x86/sysv.S
-+++ b/js/src/ctypes/libffi/src/x86/sysv.S
+--- a/src/x86/sysv.S
++++ b/src/x86/sysv.S
 @@ -51,18 +51,18 @@
  #ifdef __ELF__
  # define ENDF(X)  .type	X,@function; .size X, . - X

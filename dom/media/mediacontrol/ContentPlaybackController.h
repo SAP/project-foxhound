@@ -6,8 +6,8 @@
 #define DOM_MEDIA_MEDIACONTROL_CONTENTPLAYBACKCONTROLLER_H_
 
 #include "MediaControlKeySource.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 

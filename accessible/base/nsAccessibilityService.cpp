@@ -30,6 +30,7 @@
 #include "nsCRT.h"
 #include "nsEventShell.h"
 #include "nsGkAtoms.h"
+#include "nsIAccessibleAnnouncementEvent.h"
 #include "nsIFrameInlines.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTextFormatter.h"
@@ -60,7 +61,7 @@
 #include "nsTreeBodyFrame.h"
 #include "nsTreeUtils.h"
 #include "mozilla/a11y/AccTypes.h"
-#include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/ARIANotifyMixinBinding.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/EventTarget.h"
@@ -243,8 +244,7 @@ static bool MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument) {
 
     // If the given ID is referred by relation attribute then create an
     // Accessible for it.
-    nsAutoString id;
-    if (nsCoreUtils::GetID(aContent, id) && !id.IsEmpty()) {
+    if (nsAtom* id = aContent->GetID()) {
       return aDocument->IsDependentID(aContent->AsElement(), id);
     }
   }
@@ -341,7 +341,7 @@ static RefPtr<LocalAccessible> MaybeCreateSVGAccessible(
 }
 
 /**
- * Used by XULMap.h to map both menupopup and popup elements
+ * Used by XULMap.inc to map both menupopup and popup elements
  */
 LocalAccessible* CreateMenupopupAccessible(Element* aElement,
                                            LocalAccessible* aContext) {
@@ -412,11 +412,11 @@ static int32_t sPlatformDisabledState = 0;
   {nsGkAtoms::atom, new_func, static_cast<a11y::role>(r), {__VA_ARGS__}},
 
 static const MarkupMapInfo sHTMLMarkupMapList[] = {
-#include "HTMLMarkupMap.h"
+#include "HTMLMarkupMap.inc"
 };
 
 static const MarkupMapInfo sMathMLMarkupMapList[] = {
-#include "MathMLMarkupMap.h"
+#include "MathMLMarkupMap.inc"
 };
 
 #undef MARKUPMAP
@@ -431,7 +431,7 @@ static const MarkupMapInfo sMathMLMarkupMapList[] = {
       })
 
 static const XULMarkupMapInfo sXULMarkupMapList[] = {
-#include "XULMap.h"
+#include "XULMap.inc"
 };
 
 #undef XULMAP_TYPE
@@ -603,13 +603,14 @@ void nsAccessibilityService::NotifyOfPossibleBoundsChange(
   if (IPCAccessibilityActive()) {
     document->QueueCacheUpdate(accessible, CacheDomain::Bounds);
   }
-  if (accessible->IsTextLeaf() &&
+  MOZ_ASSERT(!aContent->IsText() || accessible->IsTextLeaf(),
+             "A DOM Text node should only ever have a TextLeafAccessible");
+  if (aContent->IsText() && accessible->IsTextLeaf() &&
       accessible->AsTextLeaf()->Text().EqualsLiteral(" ")) {
     // This space might be becoming invisible, even though it still has a frame.
     // In this case, the frame will have 0 width. Unfortunately, we can't check
     // the frame width here because layout isn't ready yet, so we need to defer
     // this until the refresh driver tick.
-    MOZ_ASSERT(aContent->IsText());
     document->UpdateText(aContent);
   }
 }
@@ -674,6 +675,68 @@ void nsAccessibilityService::NotifyOfDevPixelRatioChange(
   }
 }
 
+void nsAccessibilityService::NotifyAnchorPositionedRemoved(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  const nsIFrame* anchorFrame =
+      nsCoreUtils::GetAnchorForPositionedFrame(aPresShell, aFrame);
+  if (!anchorFrame) {
+    return;
+  }
+
+  if (LocalAccessible* anchorAcc =
+          document->GetAccessible(anchorFrame->GetContent())) {
+    document->QueueCacheUpdate(anchorAcc, CacheDomain::Relations);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorRemoved(mozilla::PresShell* aPresShell,
+                                                 nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  nsIFrame* positionedFrame =
+      nsCoreUtils::GetPositionedFrameForAnchor(aPresShell, aFrame);
+  if (!positionedFrame) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(positionedFrame->GetContent())) {
+    // If the anchor was removed, its positioned element may now have a 1:1
+    // relation with another anchor, and they would get a description a11y
+    // relation. So we need to go one level deeper here and refresh the cache of
+    // any potential anchors that remain on the positioned element.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorPositionedScrollUpdate(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(aFrame->GetContent())) {
+    // Refresh relations before reflow to notify current anchor.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+
+    // Refresh relations after next tick when reflow updated to the
+    // new anchor state.
+    document->Controller()->ScheduleNotification<DocAccessible>(
+        document, &DocAccessible::RefreshAnchorRelationCacheForTarget,
+        positionedAcc);
+  }
+}
+
 void nsAccessibilityService::NotifyAttrElementWillChange(
     mozilla::dom::Element* aElement, nsAtom* aAttr) {
   mozilla::dom::Document* doc = aElement->OwnerDoc();
@@ -689,6 +752,26 @@ void nsAccessibilityService::NotifyAttrElementChanged(
   MOZ_ASSERT(doc);
   if (DocAccessible* docAcc = GetDocAccessible(doc)) {
     docAcc->AttrElementChanged(aElement, aAttr);
+  }
+}
+
+void nsAccessibilityService::AriaNotify(
+    nsINode* aNode, const nsAString& aAnnouncement,
+    const mozilla::dom::AriaNotificationOptions& aOptions) {
+  Document* doc = aNode->GetUncomposedDoc();
+  if (!doc) {
+    return;
+  }
+  DocAccessible* docAcc = GetDocAccessible(doc);
+  if (!docAcc) {
+    return;
+  }
+  LocalAccessible* acc = docAcc->GetAccessible(aNode);
+  if (acc) {
+    acc->Announce(aAnnouncement,
+                  aOptions.mPriority == dom::AriaNotifyPriority::High
+                      ? nsIAccessibleAnnouncementEvent::ASSERTIVE
+                      : nsIAccessibleAnnouncementEvent::POLITE);
   }
 }
 
@@ -802,6 +885,19 @@ void nsAccessibilityService::TableLayoutGuessMaybeChanged(
   }
 }
 
+void nsAccessibilityService::ComboboxValueChanged(nsIContent* aSelect) {
+  DocAccessible* document =
+      GetDocAccessible(aSelect->OwnerDoc()->GetPresShell());
+  if (!document) {
+    return;
+  }
+  if (LocalAccessible* accessible = document->GetAccessible(aSelect);
+      accessible && accessible->IsCombobox()) {
+    document->FireDelayedEvent(nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE,
+                               accessible);
+  }
+}
+
 void nsAccessibilityService::ComboboxOptionMaybeChanged(
     PresShell* aPresShell, nsIContent* aMutatingNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -849,6 +945,18 @@ void nsAccessibilityService::RangeValueChanged(PresShell* aPresShell,
     LocalAccessible* accessible = document->GetAccessible(aContent);
     if (accessible) {
       document->FireDelayedEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
+                                 accessible);
+    }
+  }
+}
+
+void nsAccessibilityService::ColorValueChanged(PresShell* aPresShell,
+                                               nsIContent* aContent) {
+  DocAccessible* document = GetDocAccessible(aPresShell);
+  if (document) {
+    LocalAccessible* accessible = document->GetAccessible(aContent);
+    if (accessible) {
+      document->FireDelayedEvent(nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE,
                                  accessible);
     }
   }
@@ -913,7 +1021,7 @@ void nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString) {
     return;
 
   switch (aRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       aString.AssignLiteral("unknown");
       return;
@@ -1130,7 +1238,7 @@ void nsAccessibilityService::GetStringRelationType(uint32_t aRelationType,
 
   RelationType relationType = static_cast<RelationType>(aRelationType);
   switch (relationType) {
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
     default:
       aString.AssignLiteral("unknown");
       return;
@@ -1293,10 +1401,14 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     nsIFrame::RenderedText text = frame->GetRenderedText(
         0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
         nsIFrame::TrailingWhitespace::DontTrim);
+    auto cssAlt = CssAltContent(content);
     // Ignore not rendered text nodes and whitespace text nodes between table
     // cells.
     if (text.mString.IsEmpty() ||
-        nsCoreUtils::IsTrimmedWhitespaceBeforeHardLineBreak(frame) ||
+        (nsCoreUtils::IsTrimmedWhitespaceBeforeHardLineBreak(frame) &&
+         // If there is CSS alt text, it's okay if the text itself is just
+         // whitespace; e.g. content: " " / "alt"
+         !cssAlt) ||
         (aContext->IsTableRow() &&
          nsCoreUtils::IsWhitespaceString(text.mString))) {
       if (aIsSubtreeHidden) *aIsSubtreeHidden = true;
@@ -1307,7 +1419,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     newAcc = CreateAccessibleByFrameType(frame, content, aContext);
     MOZ_ASSERT(newAcc, "Accessible not created for text node!");
     document->BindToDocument(newAcc, nullptr);
-    if (auto cssAlt = CssAltContent(content)) {
+    if (cssAlt) {
       nsAutoString text;
       cssAlt.AppendToString(text);
       newAcc->AsTextLeaf()->SetText(text);
@@ -1404,7 +1516,9 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
   }
 
   // XUL accessibles.
-  if (!newAcc && content->IsXULElement()) {
+  // We don't support XUL in remote docs, so if this isn't the top process,
+  // don't create XUL accessible for it.
+  if (!newAcc && content->IsXULElement() && !IPCAccessibilityActive()) {
     if (content->IsXULElement(nsGkAtoms::panel)) {
       // We filter here instead of in the XUL map because
       // if we filter there and return null, we still end up
@@ -1468,6 +1582,17 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
       if (aIsSubtreeHidden) {
         *aIsSubtreeHidden = true;
       }
+    } else if (auto cssAlt = CssAltContent(content)) {
+      // This is a pseudo-element without children that has CSS alt text. This
+      // only happens when there is alt text with an empty content string; e.g.
+      // content: "" / "alt"
+      // In this case, we need to expose the alt text on the pseudo-element
+      // itself, since we don't have a child to use. We create a
+      // TextLeafAccessible with the pseudo-element as the backing DOM node.
+      newAcc = new TextLeafAccessible(content, document);
+      nsAutoString text;
+      cssAlt.AppendToString(text);
+      newAcc->AsTextLeaf()->SetText(text);
     }
   }
 
@@ -1707,7 +1832,11 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       newAcc = new HTMLSelectListAccessible(aContent, document);
       break;
     case eHTMLMediaType:
-      newAcc = new EnumRoleAccessible<roles::GROUPING>(aContent, document);
+      // The video Accessible can have TextLeafAccessibles as direct children;
+      // e.g. if there are captions. Therefore, it must be a
+      // HyperTextAccessible.
+      newAcc =
+          new EnumRoleHyperTextAccessible<roles::GROUPING>(aContent, document);
       break;
     case eHTMLRadioButtonType:
       newAcc = new HTMLRadioButtonAccessible(aContent, document);

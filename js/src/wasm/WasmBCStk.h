@@ -82,6 +82,8 @@ struct Stk {
 
   static const Kind MemLast = MemRef;
   static const Kind LocalLast = LocalRef;
+  static const Kind RegFirst = RegisterI32;
+  static const Kind RegLast = RegisterRef;
 
   union {
     RegI32 i32reg_;
@@ -168,6 +170,7 @@ struct Stk {
 
   Kind kind() const { return kind_; }
   bool isMem() const { return kind_ <= MemLast; }
+  bool isReg() const { return kind_ >= RegFirst && kind_ <= RegLast; }
 
   RegI32 i32reg() const {
     MOZ_ASSERT(kind_ == RegisterI32);

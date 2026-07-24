@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGTitleElement.h"
-#include "mozilla/dom/SVGTitleElementBinding.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGTitleElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Title)
 

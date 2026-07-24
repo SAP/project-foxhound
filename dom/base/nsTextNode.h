@@ -11,7 +11,6 @@
  * Implementation of DOM Core's Text node.
  */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Text.h"
 #include "nsDebug.h"
 

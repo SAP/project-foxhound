@@ -185,14 +185,14 @@ add_task(async function () {
         tabpanel.querySelector(".data-label").textContent ==
           L10N.getStr("paramsPostPayload") &&
         tabpanel.querySelector(
-          ".panel-container .editor-row-container .CodeMirror-code"
+          ".panel-container .editor-row-container .cm-content"
         )
     );
 
     // Check that the expected header lines are included in the codemirror
     // text.
     const actualText = tabpanel.querySelector(
-      ".panel-container .editor-row-container .CodeMirror-code"
+      ".panel-container .editor-row-container .cm-content"
     ).textContent;
     const requestPayloadIsCorrect = expected.requestPanelPayload.every(
       content => actualText.includes(content)

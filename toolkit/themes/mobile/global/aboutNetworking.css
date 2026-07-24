@@ -47,7 +47,7 @@
 }
 
 .category[selected] {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 /** Content area **/

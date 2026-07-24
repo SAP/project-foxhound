@@ -11,6 +11,13 @@ EXPORTS.mozilla.dom += [
     "URLPattern.h",
 ]
 
+if CONFIG["FUZZING"]:
+    if CONFIG["FUZZING_INTERFACES"]:
+        TEST_DIRS += ["fuzztest"]
+
+# Add libFuzzer configuration directives
+include("/tools/fuzzing/libfuzzer-config.mozbuild")
+
 UNIFIED_SOURCES += ["URLPattern.cpp"]
 
 FINAL_LIBRARY = "xul"

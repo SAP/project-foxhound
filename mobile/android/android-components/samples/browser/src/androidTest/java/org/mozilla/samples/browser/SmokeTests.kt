@@ -24,6 +24,8 @@ import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.TimeUnit
+import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.feature.tabs.R as tabsR
 
 private const val INITIAL_WAIT_SECONDS = 5L
 private const val WAIT_FOR_WEB_CONTENT_SECONDS = 15L
@@ -47,48 +49,42 @@ class SmokeTests {
 
     @Test
     fun loadWebsiteTest() {
-        // Disable on API21 - https://github.com/mozilla-mobile/android-components/issues/6482
-        if (android.os.Build.VERSION.SDK_INT > android.os.Build.VERSION_CODES.LOLLIPOP) {
-            waitForIdle()
+        waitForIdle()
 
-            enterUrl(webserverRule.url())
+        enterUrl(webserverRule.url())
 
-            verifyWebsiteContent("Hello World!")
-            verifyUrlInToolbar(webserverRule.url())
-        }
+        verifyWebsiteContent("Hello World!")
+        verifyUrlInToolbar(webserverRule.url())
     }
 
     @Ignore("Intermittent: https://bugzilla.mozilla.org/show_bug.cgi?id=1794873")
     @Test
     fun loadWebsitesInMultipleTabsTest() {
-        // Disable on API21 - https://github.com/mozilla-mobile/android-components/issues/6482
-        if (android.os.Build.VERSION.SDK_INT > android.os.Build.VERSION_CODES.LOLLIPOP) {
-            waitForIdle()
+        waitForIdle()
 
-            enterUrl(webserverRule.url())
+        enterUrl(webserverRule.url())
 
-            verifyWebsiteContent("Hello World!")
-            verifyUrlInToolbar(webserverRule.url())
+        verifyWebsiteContent("Hello World!")
+        verifyUrlInToolbar(webserverRule.url())
 
-            navigateToTabsTray()
-            openNewTabInTabsTray()
+        navigateToTabsTray()
+        openNewTabInTabsTray()
 
-            enterUrl(webserverRule.url())
+        enterUrl(webserverRule.url())
 
-            verifyWebsiteContent("Hello World!")
-            verifyUrlInToolbar(webserverRule.url())
+        verifyWebsiteContent("Hello World!")
+        verifyUrlInToolbar(webserverRule.url())
 
-            navigateToTabsTray()
-            openNewTabInTabsTray()
+        navigateToTabsTray()
+        openNewTabInTabsTray()
 
-            enterUrl(webserverRule.url())
+        enterUrl(webserverRule.url())
 
-            verifyWebsiteContent("Hello World!")
-            verifyUrlInToolbar(webserverRule.url())
+        verifyWebsiteContent("Hello World!")
+        verifyUrlInToolbar(webserverRule.url())
 
-            navigateToTabsTray()
-            openNewTabInTabsTray()
-        }
+        navigateToTabsTray()
+        openNewTabInTabsTray()
     }
 }
 
@@ -100,7 +96,7 @@ private fun waitForIdle() {
 }
 
 private fun navigateToTabsTray() {
-    onView(withContentDescription(mozilla.components.feature.tabs.R.string.mozac_feature_tabs_toolbar_tabs_button))
+    onView(withContentDescription(tabsR.string.mozac_feature_tabs_toolbar_tabs_button))
         .perform(click())
 }
 
@@ -110,15 +106,15 @@ private fun openNewTabInTabsTray() {
 }
 
 private fun enterUrl(url: String) {
-    onView(withId(mozilla.components.browser.toolbar.R.id.mozac_browser_toolbar_url_view))
+    onView(withId(toolbarR.id.mozac_browser_toolbar_url_view))
         .perform(click())
 
-    onView(withId(mozilla.components.browser.toolbar.R.id.mozac_browser_toolbar_edit_url_view))
+    onView(withId(toolbarR.id.mozac_browser_toolbar_edit_url_view))
         .perform(replaceText(url), pressImeActionButton())
 }
 
 private fun verifyUrlInToolbar(url: String) {
-    onView(withId(mozilla.components.browser.toolbar.R.id.mozac_browser_toolbar_url_view))
+    onView(withId(toolbarR.id.mozac_browser_toolbar_url_view))
         .check(matches(withText(url)))
 }
 

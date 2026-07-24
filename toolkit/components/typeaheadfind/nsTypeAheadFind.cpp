@@ -24,13 +24,13 @@
 #include "nsIFrame.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
-#include "nsTextFragment.h"
 #include "nsIEditor.h"
 
 #include "nsIDocShellTreeItem.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIObserverService.h"
 #include "nsFocusManager.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
@@ -518,20 +518,33 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
                       getter_AddRefs(mFoundLink));
       }
 
-      // Change selection color to ATTENTION and scroll to it.  Careful: we
-      // must wait until after we goof with focus above before changing to
-      // ATTENTION, or when we MoveFocus() and the selection is not on a
-      // link, we'll blur, which will lose the ATTENTION.
+      // Change selection color to ATTENTION.  Careful: we must wait until
+      // after we goof with focus above before changing to ATTENTION, or when
+      // we MoveFocus() and the selection is not on a link, we'll blur, which
+      // will lose the ATTENTION.
       if (selectionController) {
-        // Beware! This may flush notifications via synchronous
-        // ScrollSelectionIntoView.
         SetSelectionModeAndRepaint(nsISelectionController::SELECTION_ATTENTION);
-        selectionController->ScrollSelectionIntoView(
-            SelectionType::eNormal,
-            nsISelectionController::SELECTION_WHOLE_SELECTION,
-            ScrollAxis(WhereToScroll::Center), ScrollAxis(), ScrollFlags::None,
-            SelectionScrollMode::SyncFlush);
       }
+
+      NS_DispatchToMainThread(NS_NewRunnableFunction(
+          "AncestorRevealingAlgorithm",
+          [self = RefPtr{this}, returnRange = RefPtr{returnRange},
+           selectionController = nsCOMPtr{selectionController}]()
+              MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+                // Reveal hidden-until-found and closed details elements.
+                // https://html.spec.whatwg.org/#interaction-with-details-and-hidden=until-found
+                if (RefPtr startNode = returnRange->GetStartContainer()) {
+                  startNode->AncestorRevealingAlgorithm(IgnoreErrors());
+                }
+                // Scroll to the selection.
+                if (selectionController) {
+                  selectionController->ScrollSelectionIntoView(
+                      SelectionType::eNormal,
+                      nsISelectionController::SELECTION_WHOLE_SELECTION,
+                      ScrollAxis(WhereToScroll::Center), ScrollAxis(),
+                      ScrollFlags::None, SelectionScrollMode::SyncFlush);
+                }
+              }));
 
       SetCurrentWindow(window);
       *aResult = hasWrapped ? FIND_WRAPPED : FIND_FOUND;
@@ -580,7 +593,7 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
     }
 
     if (continueLoop) {
-      Unused << GetSearchContainers(
+      (void)GetSearchContainers(
           currentContainer, nullptr, aIsFirstVisiblePreferred, findPrev,
           getter_AddRefs(presShell), getter_AddRefs(presContext));
       continue;
@@ -647,22 +660,10 @@ nsresult nsTypeAheadFind::GetSearchContainers(
 
   if (!doc) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIContent> rootContent;
-  if (doc->IsHTMLOrXHTML()) {
-    rootContent = doc->GetBody();
-  }
-
-  if (!rootContent) {
-    rootContent = doc->GetRootElement();
-    if (!rootContent) {
-      return NS_ERROR_FAILURE;
-    }
-  }
-
   if (!mSearchRange) {
     mSearchRange = nsRange::Create(doc);
   }
-  nsCOMPtr<nsINode> searchRootNode(rootContent);
+  nsCOMPtr<nsINode> searchRootNode(doc);
 
   mSearchRange->SelectNodeContents(*searchRootNode, IgnoreErrors());
 
@@ -699,11 +700,11 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     mEndPointRange->Collapse(false);
   } else {
     if (aFindPrev) {
-      Unused << mEndPointRange->SetStartAndEnd(
-          currentSelectionRange->StartRef(), currentSelectionRange->StartRef());
+      (void)mEndPointRange->SetStartAndEnd(currentSelectionRange->StartRef(),
+                                           currentSelectionRange->StartRef());
     } else {
-      Unused << mStartPointRange->SetStartAndEnd(
-          currentSelectionRange->EndRef(), currentSelectionRange->EndRef());
+      (void)mStartPointRange->SetStartAndEnd(currentSelectionRange->EndRef(),
+                                             currentSelectionRange->EndRef());
     }
   }
 
@@ -736,12 +737,14 @@ void nsTypeAheadFind::RangeStartsInsideLink(nsRange* aRange,
       startContent = childContent;
     }
   } else if (startOffset > 0) {
-    const nsTextFragment* textFrag = startContent->GetText();
-    if (textFrag) {
+    const CharacterDataBuffer* characterDataBuffer =
+        startContent->GetCharacterDataBuffer();
+    if (characterDataBuffer) {
       // look for non whitespace character before start offset
       for (uint32_t index = 0; index < startOffset; index++) {
         // FIXME: take content language into account when deciding whitespace.
-        if (!mozilla::dom::IsSpaceCharacter(textFrag->CharAt(index))) {
+        if (!mozilla::dom::IsSpaceCharacter(
+                characterDataBuffer->CharAt(index))) {
           *aIsStartingLink = false;  // not at start of a node
           break;
         }
@@ -958,23 +961,30 @@ nsresult nsTypeAheadFind::FindInternal(uint32_t aMode,
 void nsTypeAheadFind::GetSelection(PresShell* aPresShell,
                                    nsISelectionController** aSelCon,
                                    Selection** aDOMSel) {
-  if (!aPresShell) return;
-
-  // if aCurrentNode is nullptr, get selection for document
+  *aSelCon = nullptr;
   *aDOMSel = nullptr;
 
-  nsPresContext* presContext = aPresShell->GetPresContext();
-
-  nsIFrame* frame = aPresShell->GetRootFrame();
-
-  if (presContext && frame) {
-    frame->GetSelectionController(presContext, aSelCon);
-    if (*aSelCon) {
-      RefPtr<Selection> sel =
-          (*aSelCon)->GetSelection(nsISelectionController::SELECTION_NORMAL);
-      sel.forget(aDOMSel);
-    }
+  if (MOZ_UNLIKELY(!aPresShell)) {
+    return;
   }
+
+  nsPresContext* const presContext = aPresShell->GetPresContext();
+  if (MOZ_UNLIKELY(!presContext)) {
+    return;
+  }
+
+  nsIFrame* const frame = aPresShell->GetRootFrame();
+  if (MOZ_UNLIKELY(!frame)) {
+    return;
+  }
+
+  nsCOMPtr<nsISelectionController> selCon = frame->GetSelectionController();
+  RefPtr<Selection> sel;
+  if (selCon) {
+    sel = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
+  }
+  selCon.forget(aSelCon);
+  sel.forget(aDOMSel);
 }
 
 NS_IMETHODIMP
@@ -1019,8 +1029,7 @@ bool nsTypeAheadFind::IsRangeVisible(nsRange* aRange, bool aMustBeInViewPort,
   // Detect if we are _inside_ a text control, or something else with its own
   // selection controller.
   if (aUsesIndependentSelection) {
-    *aUsesIndependentSelection =
-        frame->HasAnyStateBits(NS_FRAME_INDEPENDENT_SELECTION);
+    *aUsesIndependentSelection = frame->IsInsideTextControl();
   }
 
   return aMustBeInViewPort ? IsRangeRendered(aRange) : true;

@@ -160,7 +160,7 @@ add_task(async function onPermissionChange() {
   );
 
   // Change the permission state in the UI.
-  doc.getElementsByAttribute("value", SitePermissions.BLOCK)[0].click();
+  doc.getElementsByAttribute("value", SitePermissions.BLOCK)[0].doCommand();
 
   Assert.equal(
     PermissionTestUtils.getPermissionObject(URI, "desktop-notification")
@@ -586,12 +586,13 @@ add_task(async function testTabBehaviour() {
 
 add_task(async function addSpeakerPermission() {
   let enabled = Services.prefs.getBoolPref("media.setsinkid.enabled", false);
-  let speakerRow =
-    gBrowser.contentDocument.getElementById("speakerSettingsRow");
+  let speakerButton = gBrowser.contentDocument.getElementById(
+    "speakerSettingsButton"
+  );
   Assert.equal(
-    BrowserTestUtils.isVisible(speakerRow),
+    BrowserTestUtils.isVisible(speakerButton),
     enabled,
-    "speakerRow visible"
+    "speakerButton visible"
   );
   if (!enabled) {
     return;
@@ -634,6 +635,54 @@ add_task(async function addSpeakerPermission() {
   PermissionTestUtils.remove(URI, "speaker");
 
   doc.querySelector("dialog").getButton("cancel").click();
+});
+
+add_task(async function testLocalNetworkAccessPermissionVisibility() {
+  let enabled = Services.prefs.getBoolPref("network.lna.blocking", false);
+  let localHostSettingsButton = gBrowser.contentDocument.getElementById(
+    "localHostSettingsButton"
+  );
+  let localNetworkSettingsButton = gBrowser.contentDocument.getElementById(
+    "localNetworkSettingsButton"
+  );
+
+  Assert.equal(
+    BrowserTestUtils.isVisible(localNetworkSettingsButton),
+    enabled,
+    "localhost permissions visible"
+  );
+  Assert.equal(
+    BrowserTestUtils.isVisible(localHostSettingsButton),
+    enabled,
+    "localhost permissions visible"
+  );
+
+  let changeLocalHostButton = waitForSettingControlChange(
+    localHostSettingsButton
+  );
+  let changeLocalNetworkButton = waitForSettingControlChange(
+    localNetworkSettingsButton
+  );
+
+  enabled = !enabled;
+  Services.prefs.setBoolPref("network.lna.blocking", enabled);
+
+  await changeLocalHostButton;
+  await changeLocalNetworkButton;
+
+  Assert.equal(
+    BrowserTestUtils.isVisible(localHostSettingsButton),
+    enabled,
+    "localhost permissions toggle"
+  );
+
+  Assert.equal(
+    BrowserTestUtils.isVisible(localNetworkSettingsButton),
+    enabled,
+    "localhost permissions toggle"
+  );
+
+  Services.prefs.setBoolPref("network.lna.blocking", !enabled);
 });
 
 add_task(async function removeTab() {

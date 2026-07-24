@@ -28,7 +28,7 @@ export class WebDriverDocumentInsertedChild extends JSProcessActorChild {
         return;
       }
       const context = window.browsingContext;
-      const url = window.location.href;
+      const url = window.document.URL;
       const payload = {
         contextDetails: lazy.getBrowsingContextDetails(context),
         url,

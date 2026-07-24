@@ -3,11 +3,55 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.importESModule(
-  "resource://gre/modules/AppConstants.sys.mjs"
-);
-
 const TEST_PASSWORD = "This is some test password.";
+const TEST_PASSWORD_ALT = "mozilla.org";
+
+/**
+ * Creates a backup with this backup service and checks whether it can be
+ * decrypted with the given password. This ensures that encryption is
+ * enabled/disabled as needed, and that the backup service will actually use
+ * the given password if applicable.
+ *
+ * @param {BackupService} bs
+ *   The BackupService to use.
+ * @param {string} profilePath
+ *   The path to the current profile.
+ * @param {string?} password
+ *   The expected password, or null if it should not be encrypted.
+ * @returns {boolean}
+ *   True if the password matched, false if something went wrong.
+ */
+async function backupServiceUsesPassword(bs, profilePath, password = null) {
+  try {
+    const backup = await bs.createBackup({ profilePath });
+    let dest = await IOUtils.createUniqueFile(
+      PathUtils.parent(backup.archivePath),
+      "extracted-" + PathUtils.filename(backup.archivePath)
+    );
+
+    let { isEncrypted } = await bs.sampleArchive(backup.archivePath);
+    let shouldBeEncrypted = password != null;
+    Assert.equal(
+      isEncrypted,
+      shouldBeEncrypted,
+      `Archive is ${shouldBeEncrypted ? "" : "not "}encrypted`
+    );
+
+    // This should throw if the password is incorrect.
+    await bs.extractCompressedSnapshotFromArchive(
+      backup.archivePath,
+      dest,
+      password
+    );
+
+    await IOUtils.remove(backup.archivePath);
+    await IOUtils.remove(dest);
+    return true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
 
 add_setup(async () => {
   // Much of this setup is copied from toolkit/profile/xpcshell/head.js. It is
@@ -121,27 +165,6 @@ add_task(async function test_disabled_encryption() {
 });
 
 /**
- * Tests that encryption cannot be disabled if it's already disabled.
- */
-add_task(async function test_already_disabled_encryption() {
-  let bs = new BackupService();
-
-  Assert.ok(
-    !bs.state.encryptionEnabled,
-    "State should indicate that encryption is disabled."
-  );
-
-  let encState = await bs.loadEncryptionState();
-  Assert.ok(!encState, "Should not find an ArchiveEncryptionState.");
-
-  await Assert.rejects(
-    bs.disableEncryption(),
-    /already disabled/,
-    "It should not be possible to disable encryption if it's already disabled"
-  );
-});
-
-/**
  * Tests that if encryption is enabled from a non-enabled state, that an
  * ArchiveEncryptionState is created, and state is written to the profile
  * directory. Also tests that this allows BackupResource's with
@@ -239,9 +262,10 @@ add_task(async function test_enable_encryption() {
 });
 
 /**
- * Tests that encryption cannot be enabled if it's already enabled.
+ * Tests that enabling encryption while it is already enabled changes the
+ * password.
  */
-add_task(async function test_already_enabled_encryption() {
+add_task(async function test_change_encryption_password() {
   let bs = new BackupService();
 
   let testProfilePath = await IOUtils.createUniqueDirectory(
@@ -254,11 +278,18 @@ add_task(async function test_already_enabled_encryption() {
 
   let encState = await bs.loadEncryptionState(testProfilePath);
   Assert.ok(encState, "ArchiveEncryptionState is available.");
+  Assert.ok(
+    await backupServiceUsesPassword(bs, testProfilePath, TEST_PASSWORD),
+    "BackupService is using TEST_PASSWORD"
+  );
 
-  await Assert.rejects(
-    bs.enableEncryption(TEST_PASSWORD, testProfilePath),
-    /already enabled/,
-    "It should not be possible to enable encryption if it's already enabled"
+  // Change the password.
+  await bs.enableEncryption(TEST_PASSWORD_ALT, testProfilePath);
+  encState = await bs.loadEncryptionState(testProfilePath);
+  Assert.ok(encState, "ArchiveEncryptionState is still available.");
+  Assert.ok(
+    await backupServiceUsesPassword(bs, testProfilePath, TEST_PASSWORD_ALT),
+    "BackupService is using TEST_PASSWORD_ALT"
   );
 
   await IOUtils.remove(testProfilePath, { recursive: true });
@@ -316,6 +347,10 @@ add_task(async function test_disabling_encryption() {
       )
     )),
     "Encryption state file should have been removed."
+  );
+  Assert.ok(
+    await backupServiceUsesPassword(bs, testProfilePath, null),
+    "BackupService should not use encryption."
   );
 
   await IOUtils.remove(testProfilePath, { recursive: true });

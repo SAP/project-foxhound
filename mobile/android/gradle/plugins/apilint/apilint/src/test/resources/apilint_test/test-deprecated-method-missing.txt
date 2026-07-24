@@ -1,0 +1,7 @@
+import test.DeprecationSchedule;
+
+package test {
+  public class TestClass {
+    ctor @DeprecationSchedule(version=64, id="test-deprecation") TestClass();
+  }
+}

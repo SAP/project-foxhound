@@ -6,8 +6,8 @@
 #ifndef GMPProcessChild_h_
 #define GMPProcessChild_h_
 
-#include "mozilla/ipc/ProcessChild.h"
 #include "GMPChild.h"
+#include "mozilla/ipc/ProcessChild.h"
 
 namespace mozilla::gmp {
 

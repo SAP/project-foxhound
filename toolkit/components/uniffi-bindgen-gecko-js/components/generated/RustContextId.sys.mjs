@@ -303,7 +303,7 @@ export class FfiConverterTypeContextIdCallback extends FfiConverter {
     }
 
     static lift(handleId) {
-        return uniffiCallbackHandlerContextIdContextIdCallback.getCallbackObj(handleId)
+        return uniffiCallbackHandlerContextIdContextIdCallback.takeCallbackObj(handleId)
     }
 
     static read(dataStream) {

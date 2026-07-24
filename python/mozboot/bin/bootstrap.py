@@ -444,7 +444,7 @@ def main(args):
         "--no-system-changes",
         dest="no_system_changes",
         action="store_true",
-        help="Only executes actions that leave the system " "configuration alone.",
+        help="Only executes actions that leave the system configuration alone.",
     )
 
     options, leftover = parser.parse_args(args)

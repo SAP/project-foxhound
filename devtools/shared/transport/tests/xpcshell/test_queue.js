@@ -24,7 +24,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 var test_transport = async function (transportFactory) {
   let clientResolve;
@@ -153,7 +153,7 @@ var test_transport = async function (transportFactory) {
   return Promise.all([clientDeferred, serverDeferred]);
 };
 
-/** * Test Utils ***/
+/*** Test Utils ***/
 
 function verify() {
   const reallyLong = really_long();

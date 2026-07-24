@@ -4,9 +4,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebMWriter.h"
+
 #include "EbmlComposer.h"
-#include "mozilla/ProfilerLabels.h"
 #include "OpusTrackEncoder.h"
+#include "mozilla/ProfilerLabels.h"
 
 namespace mozilla {
 

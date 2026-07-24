@@ -26,6 +26,7 @@ async function fillTestPage(
 }
 
 function withTestPage(aTaskFn) {
+  const formProcessedPromise = listenForTestNotification("FormProcessed");
   return BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -33,6 +34,7 @@ function withTestPage(aTaskFn) {
     },
     async function (aBrowser) {
       info("tab opened");
+      await formProcessedPromise;
       await fillTestPage(aBrowser);
       await aTaskFn(aBrowser);
 
@@ -46,13 +48,19 @@ function withTestPage(aTaskFn) {
 }
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.trustPanel.featureGate", false]],
+  });
   await SimpleTest.promiseFocus(window);
 });
 
 add_task(async function test_urlbar_new_URL() {
   await withTestPage(async aBrowser => {
     gURLBar.value = "";
-    let focusPromise = BrowserTestUtils.waitForEvent(gURLBar, "focus");
+    let focusPromise = BrowserTestUtils.waitForEvent(
+      gURLBar.inputField,
+      "focus"
+    );
     gURLBar.focus();
     await focusPromise;
     info("focused");
@@ -80,6 +88,8 @@ add_task(async function test_backButton_forwardButton() {
   await withTestPage(async aBrowser => {
     info("Loading formless_basic.html?second");
     // Load a new page in the tab so we can test going back
+
+    let formProcessedPromise = listenForTestNotification("FormProcessed");
     BrowserTestUtils.startLoadingURIString(
       aBrowser,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
@@ -89,16 +99,20 @@ add_task(async function test_backButton_forwardButton() {
       false,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
     );
+    await formProcessedPromise;
+
     info("Loaded formless_basic.html?second");
     await fillTestPage(aBrowser, "my_username", "password_2");
 
     info("formless_basic.html?second form is filled, clicking back");
+    formProcessedPromise = listenForTestNotification("FormProcessed");
     let backPromise = BrowserTestUtils.browserStopped(aBrowser);
     EventUtils.synthesizeMouseAtCenter(
       document.getElementById("back-button"),
       {}
     );
     await backPromise;
+    await formProcessedPromise;
 
     // Give a chance for the doorhanger to appear
     await new Promise(resolve => SimpleTest.executeSoon(resolve));
@@ -139,6 +153,7 @@ add_task(async function test_reloadButton() {
 add_task(async function test_back_keyboard_shortcut() {
   await withTestPage(async aBrowser => {
     // Load a new page in the tab so we can test going back
+    const formProcessedPromise = listenForTestNotification("FormProcessed");
     BrowserTestUtils.startLoadingURIString(
       aBrowser,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
@@ -148,6 +163,7 @@ add_task(async function test_back_keyboard_shortcut() {
       false,
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html?second"
     );
+    await formProcessedPromise;
     await fillTestPage(aBrowser);
 
     let backPromise = BrowserTestUtils.browserStopped(aBrowser);

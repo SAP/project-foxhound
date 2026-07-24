@@ -11,6 +11,8 @@
 //!
 //! The terms "layer" and "stacking context" can be used interchangeably
 //! in the context of coordinate systems.
+//!
+//! See also webrender/doc/coordinate-spaces.md
 
 pub use app_units::Au;
 use euclid::{Length, Rect, Scale, Size2D, Transform3D, Translation2D};
@@ -190,6 +192,15 @@ impl TexelRect {
             uv0: DevicePoint::new(-1.0, -1.0),
             uv1: DevicePoint::new(-1.0, -1.0),
         }
+    }
+
+    pub fn to_array(&self) -> [f32; 4] {
+        [
+            self.uv0.x,
+            self.uv0.y,
+            self.uv1.x,
+            self.uv1.y,
+        ]
     }
 }
 

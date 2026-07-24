@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EventSourceEventService.h"
+
+#include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "nsISupportsPrimitives.h"
 #include "nsIObserverService.h"
-#include "nsXULAppAPI.h"
+#include "nsISupportsPrimitives.h"
 #include "nsSocketTransportService2.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Services.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::dom {
 

@@ -9,20 +9,22 @@
 
 #include "mozilla/Base64.h"
 #include "mozilla/dom/MimeType.h"
+#include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/NeckoCommon.h"
 #include "nsDataHandler.h"
 #include "nsIInputStream.h"
 #include "nsEscape.h"
 #include "nsISupports.h"
 #include "nsStringStream.h"
 #include "nsIObserverService.h"
-#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentChild.h"
 #include "../protocol/http/nsHttpHandler.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
 
 NS_IMPL_ISUPPORTS_INHERITED(nsDataChannel, nsBaseChannel, nsIDataChannel,
-                            nsIIdentChannel)
+                            nsIIdentChannel, nsIChildChannel)
 
 /**
  * Helper for performing a fallible unescape.
@@ -126,8 +128,7 @@ nsresult nsDataChannel::Init() {
   NS_ENSURE_STATE(mLoadInfo);
 
   RefPtr<nsHttpHandler> handler = nsHttpHandler::GetInstance();
-  MOZ_ALWAYS_SUCCEEDS(handler->NewChannelId(mChannelId));
-
+  mChannelId = handler->NewChannelId();
   return NS_OK;
 }
 
@@ -176,4 +177,28 @@ NS_IMETHODIMP
 nsDataChannel::SetChannelId(uint64_t aChannelId) {
   mChannelId = aChannelId;
   return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
+// nsDataChannel::nsIChildChannel
+
+NS_IMETHODIMP
+nsDataChannel::ConnectParent(uint32_t aId) {
+  if (!IsNeckoChild()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  mozilla::dom::ContentChild* cc =
+      static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
+  if (cc->IsShuttingDown()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  gNeckoChild->SendConnectBaseChannel(aId);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDataChannel::CompleteRedirectSetup(nsIStreamListener* aListener) {
+  return AsyncOpen(aListener);
 }

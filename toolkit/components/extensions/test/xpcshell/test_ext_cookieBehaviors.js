@@ -70,7 +70,10 @@ add_task(async function test_ext_page_allowed_storage() {
 
       await new Promise((resolve, reject) => {
         const begin = indexedDB.open("door");
-        begin.onsuccess = resolve;
+        begin.onsuccess = () => {
+          begin.result.close();
+          resolve();
+        };
         begin.onerror = err => reject(err.target);
       });
 
@@ -140,7 +143,10 @@ add_task(async function test_ext_page_allowed_storage() {
           try {
             const begin = indexedDB.open("door");
             begin.onerror = err => reject(err.target);
-            begin.onsuccess = onOpenSuccess;
+            begin.onsuccess = () => {
+              begin.result.close();
+              onOpenSuccess();
+            };
           } catch (err) {
             reject(err);
           }
@@ -189,6 +195,8 @@ add_task(async function test_ext_page_allowed_storage() {
   );
 
   for (const behavior of cookieBehaviors) {
+    const markerName = "task - Cookie Behavior Test";
+    const behaviorTestStart = ChromeUtils.now();
     info(
       `Test extension page access to indexedDB & localStorage with ${behavior}`
     );
@@ -196,6 +204,7 @@ add_task(async function test_ext_page_allowed_storage() {
       behavior in Ci.nsICookieService,
       `${behavior} is a valid CookieBehavior`
     );
+
     Services.prefs.setIntPref(
       "network.cookie.cookieBehavior",
       Ci.nsICookieService[behavior]
@@ -204,15 +213,27 @@ add_task(async function test_ext_page_allowed_storage() {
     // Create a new extension to ensure that the cookieBehavior just set is going to be
     // used for the requests triggered by the extension page.
     const { extension, EXT_BASE_URL } = await createExtension();
+    const contentPageStart = ChromeUtils.now();
     const extPage = await ExtensionTestUtils.loadContentPage("about:blank", {
       extension,
       remote: extension.extension.remote,
     });
+    ChromeUtils.addProfilerMarker(
+      markerName,
+      { startTime: contentPageStart, category: "Test" },
+      `Loaded content page`
+    );
 
     info("Test from a top level extension page");
+    const topLevelTestStart = ChromeUtils.now();
     await extPage.loadURL(`${EXT_BASE_URL}page.html`);
 
     let testedFromURL = await extension.awaitMessage("test-storage:done");
+    ChromeUtils.addProfilerMarker(
+      markerName,
+      { startTime: topLevelTestStart, category: "Test" },
+      `Top level storage test for ${behavior}`
+    );
     equal(
       testedFromURL,
       `${EXT_BASE_URL}page.html`,
@@ -220,17 +241,35 @@ add_task(async function test_ext_page_allowed_storage() {
     );
 
     info("Test from a sub frame extension page");
+    const subframeTestStart = ChromeUtils.now();
     await extPage.loadURL(`${EXT_BASE_URL}page_with_subframe.html`);
 
     testedFromURL = await extension.awaitMessage("test-storage:done");
+    ChromeUtils.addProfilerMarker(
+      markerName,
+      { startTime: subframeTestStart, category: "Test" },
+      `Subframe storage test`
+    );
     equal(
       testedFromURL,
       `${EXT_BASE_URL}page_subframe.html`,
       "Got the results from the expected url"
     );
 
+    const cleanupStart = ChromeUtils.now();
     await extPage.close();
     await extension.unload();
+    ChromeUtils.addProfilerMarker(
+      markerName,
+      { startTime: cleanupStart, category: "Test" },
+      `Cleanup`
+    );
+
+    ChromeUtils.addProfilerMarker(
+      markerName,
+      { startTime: behaviorTestStart, category: "Test" },
+      behavior
+    );
   }
 });
 

@@ -7,10 +7,10 @@
 #ifndef MOZILLA_SOURCEBUFFERRESOURCE_H_
 #define MOZILLA_SOURCEBUFFERRESOURCE_H_
 
-#include "mozilla/AbstractThread.h"
-#include "mozilla/Logging.h"
 #include "MediaResource.h"
 #include "ResourceQueue.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/Logging.h"
 
 #define UNIMPLEMENTED()                               \
   { /* Logging this is too spammy to do by default */ \
@@ -42,13 +42,19 @@ class SourceBufferResource final
   bool ShouldCacheReads() override { return false; }
   void Pin() override { UNIMPLEMENTED(); }
   void Unpin() override { UNIMPLEMENTED(); }
-  int64_t GetLength() override { return mInputBuffer.GetLength(); }
+  int64_t GetLength() override {
+    if (mEnded) {
+      return mInputBuffer.GetLength();
+    } else {
+      return -1;
+    }
+  }
   int64_t GetNextCachedData(int64_t aOffset) override {
     MOZ_ASSERT(OnThread());
     MOZ_ASSERT(aOffset >= 0);
     if (uint64_t(aOffset) < mInputBuffer.GetOffset()) {
       return mInputBuffer.GetOffset();
-    } else if (aOffset == GetLength()) {
+    } else if (static_cast<uint64_t>(aOffset) == mInputBuffer.GetLength()) {
       return -1;
     }
     return aOffset;
@@ -57,11 +63,11 @@ class SourceBufferResource final
     MOZ_ASSERT(OnThread());
     MOZ_ASSERT(aOffset >= 0);
     if (uint64_t(aOffset) < mInputBuffer.GetOffset() ||
-        aOffset >= GetLength()) {
+        static_cast<uint64_t>(aOffset) >= mInputBuffer.GetLength()) {
       // aOffset is outside of the buffered range.
       return aOffset;
     }
-    return GetLength();
+    return mInputBuffer.GetLength();
   }
   bool IsDataCachedToEndOfResource(int64_t aOffset) override { return false; }
   nsresult ReadFromCache(char* aBuffer, int64_t aOffset,

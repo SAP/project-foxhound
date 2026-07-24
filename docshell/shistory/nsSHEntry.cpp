@@ -847,6 +847,24 @@ nsSHEntry::SetDocshellID(const nsID& aID) {
 }
 
 NS_IMETHODIMP
+nsSHEntry::GetNavigationKey(nsID& aNavigationKey) {
+  aNavigationKey.Clear();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetNavigationKey(const nsID& aNavigationKey) { return NS_OK; }
+
+NS_IMETHODIMP
+nsSHEntry::GetNavigationId(nsID& aNavigationId) {
+  aNavigationId.Clear();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetNavigationId(const nsID& aNavigationId) { return NS_OK; }
+
+NS_IMETHODIMP
 nsSHEntry::GetLastTouched(uint32_t* aLastTouched) {
   *aLastTouched = mShared->mLastTouched;
   return NS_OK;

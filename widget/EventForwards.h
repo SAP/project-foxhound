@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_EventForwards_h__
-#define mozilla_EventForwards_h__
+#ifndef mozilla_EventForwards_h_
+#define mozilla_EventForwards_h_
 
 #include <stdint.h>
 
@@ -54,7 +54,7 @@ enum class SystemGroupOnly { eYes, eNo };
  * Event messages
  */
 
-typedef uint16_t EventMessageType;
+using EventMessageType = uint16_t;
 
 enum EventMessage : EventMessageType {
 
@@ -102,19 +102,20 @@ const char* ToChar(EventMessage aEventMessage);
  * Event class IDs
  */
 
-typedef uint8_t EventClassIDType;
+using EventClassIDType = uint8_t;
 
 enum EventClassID : EventClassIDType {
 // The event class name will be:
 //   eBasicEventClass for WidgetEvent
 //   eFooEventClass for WidgetFooEvent or InternalFooEvent
-#define NS_ROOT_EVENT_CLASS(aPrefix, aName) eBasic##aName##Class
-#define NS_EVENT_CLASS(aPrefix, aName) , e##aName##Class
+#define NS_ROOT_EVENT_CLASS(aPrefix, aName) eBasic##aName##Class,
+#define NS_EVENT_CLASS(aPrefix, aName) e##aName##Class,
 
-#include "mozilla/EventClassList.h"
+#include "mozilla/EventClassList.inc"
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
+  eEventClassID_MaxValue
 };
 
 const char* ToChar(EventClassID aEventClassID);
@@ -123,9 +124,8 @@ typedef uint16_t Modifiers;
 
 #define NS_DEFINE_KEYNAME(aCPPName, aDOMKeyName) KEY_NAME_INDEX_##aCPPName,
 
-typedef uint16_t KeyNameIndexType;
-enum KeyNameIndex : KeyNameIndexType {
-#include "mozilla/KeyNameList.h"
+enum KeyNameIndex : uint16_t {
+#include "mozilla/KeyNameList.inc"
   // If a DOM keyboard event is synthesized by script, this is used.  Then,
   // specified key name should be stored and use it as .key value.
   KEY_NAME_INDEX_USE_STRING
@@ -138,9 +138,8 @@ const nsCString ToString(KeyNameIndex aKeyNameIndex);
 #define NS_DEFINE_PHYSICAL_KEY_CODE_NAME(aCPPName, aDOMCodeName) \
   CODE_NAME_INDEX_##aCPPName,
 
-typedef uint8_t CodeNameIndexType;
-enum CodeNameIndex : CodeNameIndexType {
-#include "mozilla/PhysicalKeyCodeNameList.h"
+enum CodeNameIndex : uint8_t {
+#include "mozilla/PhysicalKeyCodeNameList.inc"
   // If a DOM keyboard event is synthesized by script, this is used.  Then,
   // specified code name should be stored and use it as .code value.
   CODE_NAME_INDEX_USE_STRING
@@ -154,7 +153,7 @@ const nsCString ToString(CodeNameIndex aCodeNameIndex);
 
 using EditorInputTypeType = uint8_t;
 enum class EditorInputType : EditorInputTypeType {
-#include "mozilla/InputTypeList.h"
+#include "mozilla/InputTypeList.inc"
   // If a DOM input event is synthesized by script, this is used.  Then,
   // specified input type should be stored as string and use it as .inputType
   // value.
@@ -170,7 +169,7 @@ enum class EditorInputType : EditorInputTypeType {
 inline const std::ostream& operator<<(std::ostream& aStream,
                                       const EditorInputType& aInputType) {
   switch (aInputType) {
-#include "mozilla/InputTypeList.h"
+#include "mozilla/InputTypeList.inc"
     case EditorInputType::eUnknown:
       return aStream << "EditorInputType::eUnknown";
   }
@@ -400,7 +399,7 @@ typedef uint8_t CommandInt;
 enum class Command : CommandInt {
   DoNothing
 
-#include "mozilla/CommandList.h"
+#include "mozilla/CommandList.inc"
 };
 #undef NS_DEFINE_COMMAND
 #undef NS_DEFINE_COMMAND_WITH_PARAM
@@ -420,7 +419,7 @@ const char* ToChar(Command aCommand);
  *                              additional parameter and sets this to nullptr,
  *                              will return Command::DoNothing with warning.
  */
-Command GetInternalCommand(const char* aCommandName,
+Command GetInternalCommand(const nsACString& aCommandName,
                            const nsCommandParams* aCommandParams = nullptr);
 
 }  // namespace mozilla
@@ -441,7 +440,7 @@ class StaticRange;
 #define NS_EVENT_CLASS(aPrefix, aName) class aPrefix##aName;
 #define NS_ROOT_EVENT_CLASS(aPrefix, aName) NS_EVENT_CLASS(aPrefix, aName)
 
-#include "mozilla/EventClassList.h"
+#include "mozilla/EventClassList.inc"
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
@@ -523,6 +522,8 @@ inline MouseButtonsFlag MouseButtonsFlagToChange(MouseButton aMouseButton) {
   }
 }
 
+nsCString InputSourceToString(uint16_t aInputSource);
+
 enum class TextRangeType : RawTextRangeType;
 
 // IMEData.h
@@ -534,4 +535,4 @@ class OffsetAndData;
 
 }  // namespace mozilla
 
-#endif  // mozilla_EventForwards_h__
+#endif  // mozilla_EventForwards_h_

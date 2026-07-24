@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPersistentProperties_h___
-#define nsPersistentProperties_h___
+#ifndef nsPersistentProperties_h_
+#define nsPersistentProperties_h_
 
 #include "nsIPersistentProperties2.h"
-#include "PLDHashTable.h"
+#include "nsTHashMap.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "mozilla/ArenaAllocator.h"
-#include "mozilla/Attributes.h"
 
 class nsIUnicharInputStream;
 
@@ -30,7 +29,7 @@ class nsPersistentProperties final : public nsIPersistentProperties {
  protected:
   nsCOMPtr<nsIUnicharInputStream> mIn;
 
-  PLDHashTable mTable;
+  nsTHashMap<nsDepCharHashKey, const char16_t*> mTable;
   mozilla::ArenaAllocator<2048, 4> mArena;
 };
 
@@ -54,4 +53,4 @@ class nsPropertyElement final : public nsIPropertyElement {
   nsString mValue;
 };
 
-#endif /* nsPersistentProperties_h___ */
+#endif /* nsPersistentProperties_h_ */

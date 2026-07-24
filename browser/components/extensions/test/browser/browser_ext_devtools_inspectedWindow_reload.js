@@ -336,16 +336,38 @@ add_task(
 
         await closeToolboxForTab(tab);
 
-        // XXX: This is needed at the moment since Navigator.cpp retrieves the UserAgent from the
-        // headers (when there's no custom user agent). And here, since we reloaded the page once
-        // we set the custom user agent, the header was set accordingly and still holds the custom
-        // user agent value. This should be fixed by Bug 1705326.
         is(
           gBrowser.selectedBrowser.browsingContext.customUserAgent,
           "",
           "The flag on the browsing context was reset"
         );
-        await checkUserAgent(CUSTOM_USER_AGENT);
+
+        // We can not use `checkUserAgent` here because `wrappedJSObject.initialUserAgent` and
+        // `wrappedJSObject.userAgentHeader` are not updated, since there was no reload
+        // after resetting the override.
+        const contexts =
+          gBrowser.selectedBrowser.browsingContext.getAllBrowsingContextsInSubtree();
+
+        for (const context of contexts) {
+          const url = context.currentURI?.spec?.replace(
+            context.currentURI?.query,
+            "…"
+          );
+          info(
+            `Checking user agent on ${url} (remoteType: ${context.currentRemoteType}), (${context.id})`
+          );
+          await SpecialPowers.spawn(
+            context,
+            [initialUserAgent],
+            async _expectedUA => {
+              is(
+                content.navigator.userAgent,
+                _expectedUA,
+                `expected navigator.userAgent value`
+              );
+            }
+          );
+        }
         await BrowserTestUtils.reloadTab(tab, {
           includeSubFrames: true,
         });

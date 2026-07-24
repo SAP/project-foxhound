@@ -4,19 +4,14 @@
 // server xpcshell tests.
 
 export const Match = (function () {
-  function Pattern(template) {
-    // act like a constructor even as a function
-    if (!(this instanceof Pattern)) {
-      return new Pattern(template);
+  class Pattern {
+    constructor(template) {
+      this.template = template;
     }
 
-    this.template = template;
-  }
-
-  Pattern.prototype = {
     match(act) {
       return match(act, this.template);
-    },
+    }
 
     matches(act) {
       try {
@@ -27,7 +22,7 @@ export const Match = (function () {
         }
       }
       return false;
-    },
+    }
 
     assert(act, message) {
       try {
@@ -38,10 +33,12 @@ export const Match = (function () {
         }
       }
       return false;
-    },
+    }
 
-    toString: () => "[object Pattern]",
-  };
+    toString() {
+      return "[object Pattern]";
+    }
+  }
 
   Pattern.ANY = new Pattern();
   Pattern.ANY.template = Pattern.ANY;
@@ -62,15 +59,14 @@ export const Match = (function () {
 
   const quote = uneval;
 
-  function MatchError(msg) {
-    this.message = msg;
-  }
-
-  MatchError.prototype = {
+  class MatchError {
+    constructor(msg) {
+      this.message = msg;
+    }
     toString() {
       return "match error: " + this.message;
-    },
-  };
+    }
+  }
 
   function isAtom(x) {
     return (

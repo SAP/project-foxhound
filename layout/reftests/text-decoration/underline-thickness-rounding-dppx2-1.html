@@ -1,0 +1,28 @@
+<!doctype html>
+<html reftest-zoom="2.0">
+<meta charset="utf-8">
+<title>Underline thickness upward rounding test at effective 2x zoom (0.6px should equal 1px =&gt; 2 device px)</title>
+<!--
+  High-DPI (2.0 dppx) underline thickness rounding test.
+  DPR 2.0 is forced via reftest-zoom.
+  0.6 CSS px -> 1.2 device px at 2.0 dppx, which should floor to 1 (matching 1 dev px).
+-->
+<style>
+  html, body { margin: 0; background: white; }
+  .test {
+    font: 40px/1 sans-serif;
+    color: black;
+    text-decoration-line: underline;
+    text-decoration-style: solid;
+    text-decoration-color: black;
+    text-decoration-skip-ink: none;
+    /* 0.6 CSS px -> 1.2 device px at 2.0 dppx; should floor to 1 device px */
+    text-decoration-thickness: 0.6px;
+  }
+  .pad { height: 40px; }
+</style>
+<div style="width:240px">
+  <div class="pad"></div>
+  <div class="test">TEST TEST TEST</div>
+  </div>
+</html>

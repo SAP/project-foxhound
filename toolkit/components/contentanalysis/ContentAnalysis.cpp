@@ -11,7 +11,6 @@
 #include "base/process_util.h"
 #include "GMPUtils.h"  // ToHexString
 #include "MainThreadUtils.h"
-#include "mozilla/Array.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
@@ -1354,17 +1353,26 @@ NS_IMPL_ISUPPORTS(ContentAnalysis, nsIContentAnalysis, nsIObserver,
                   ContentAnalysis);
 
 ContentAnalysis::ContentAnalysis()
-    : mThreadPool(new nsThreadPool()),
-      mRequestTokenToBasicRequestInfoMap(
+    : mRequestTokenToBasicRequestInfoMap(
           "ContentAnalysis::mRequestTokenToBasicRequestInfoMap"),
-      mCaClientPromise(
-          new ClientPromise::Private("ContentAnalysis::ContentAnalysis")),
       mSetByEnterprise(false) {
   // Limit one per process
   [[maybe_unused]] static bool sCreated = false;
   MOZ_ASSERT(!sCreated);
   sCreated = true;
 
+  nsCOMPtr<nsIObserverService> obsServ =
+      mozilla::services::GetObserverService();
+  if (!obsServ) {
+    // We must be shutting down so don't init anything.
+    return;
+  }
+  obsServ->AddObserver(this, "xpcom-shutdown-threads", false);
+
+  mCaClientPromise =
+      new ClientPromise::Private("ContentAnalysis::ContentAnalysis");
+
+  mThreadPool = new nsThreadPool();
   MOZ_ALWAYS_SUCCEEDS(
       mThreadPool->SetName(nsAutoCString("ContentAnalysisAgentIO")));
 
@@ -1398,10 +1406,6 @@ ContentAnalysis::ContentAnalysis()
       kIdleContentAnalysisAgentTimeoutMs));
   MOZ_ALWAYS_SUCCEEDS(mThreadPool->SetIdleThreadMaximumTimeout(
       kMaxIdleContentAnalysisAgentTimeoutMs));
-
-  nsCOMPtr<nsIObserverService> obsServ =
-      mozilla::services::GetObserverService();
-  obsServ->AddObserver(this, "xpcom-shutdown-threads", false);
 }
 
 ContentAnalysis::~ContentAnalysis() {
@@ -1437,7 +1441,9 @@ void ContentAnalysis::Close() {
 
   nsCOMPtr<nsIObserverService> obsServ =
       mozilla::services::GetObserverService();
-  obsServ->RemoveObserver(this, "xpcom-shutdown-threads");
+  if (obsServ) {
+    obsServ->RemoveObserver(this, "xpcom-shutdown-threads");
+  }
 
   // Reject the promise to avoid assertions when it gets destroyed
   // Note that if the promise has already been resolved or rejected this is a
@@ -2095,7 +2101,7 @@ nsresult ContentAnalysis::RunAnalyzeRequestTask(
   nsCOMPtr<nsIObserverService> obsServ =
       mozilla::services::GetObserverService();
   // Avoid serializing the string here if no one is observing this message
-  if (obsServ->HasObservers("dlp-request-sent-raw")) {
+  if (obsServ && obsServ->HasObservers("dlp-request-sent-raw")) {
     std::string requestString = pbRequest.SerializeAsString();
     nsTArray<char16_t> requestArray;
     requestArray.SetLength(requestString.size() + 1);
@@ -2269,7 +2275,7 @@ void ContentAnalysis::HandleResponseFromAgent(
         // serializing the string here if no one is observing this message.
         // This message is only really useful if we're in a timeout
         // situation, otherwise dlp-response is fine.
-        if (obsServ->HasObservers("dlp-response-received-raw")) {
+        if (obsServ && obsServ->HasObservers("dlp-response-received-raw")) {
           std::string responseString = aResponse.SerializeAsString();
           nsTArray<char16_t> responseArray;
           responseArray.SetLength(responseString.size() + 1);
@@ -2350,8 +2356,11 @@ void ContentAnalysis::NotifyResponseObservers(
 
   nsCOMPtr<nsIObserverService> obsServ =
       mozilla::services::GetObserverService();
-  obsServ->NotifyObservers(static_cast<nsIContentAnalysisResponse*>(aResponse),
-                           "dlp-response", nullptr);
+  if (obsServ) {
+    obsServ->NotifyObservers(
+        static_cast<nsIContentAnalysisResponse*>(aResponse), "dlp-response",
+        nullptr);
+  }
 }
 
 void ContentAnalysis::IssueResponse(ContentAnalysisResponse* aResponse,
@@ -3429,7 +3438,9 @@ NS_IMETHODIMP ContentAnalysis::AnalyzeContentRequestPrivate(
   // an error the JS will handle it correctly.
   nsCOMPtr<nsIObserverService> obsServ =
       mozilla::services::GetObserverService();
-  obsServ->NotifyObservers(aRequest, "dlp-request-made", nullptr);
+  if (obsServ) {
+    obsServ->NotifyObservers(aRequest, "dlp-request-made", nullptr);
+  }
 
   bool isActive;
   nsresult rv = GetIsActive(&isActive);
@@ -3587,6 +3598,13 @@ ContentAnalysis::ShowBlockedRequestDialog(nsIContentAnalysisRequest* aRequest) {
     return NS_OK;
   }
 
+  nsCOMPtr<nsIObserverService> obsServ =
+      mozilla::services::GetObserverService();
+  if (!obsServ) {
+    // We must be shutting down, so we can't show a blocked request dialog.
+    return NS_OK;
+  }
+
   nsCString token;
   MOZ_ALWAYS_SUCCEEDS(aRequest->GetRequestToken(token));
   if (token.IsEmpty()) {
@@ -3601,8 +3619,6 @@ ContentAnalysis::ShowBlockedRequestDialog(nsIContentAnalysisRequest* aRequest) {
     aRequest->SetUserActionId(userActionId);
   }
 
-  nsCOMPtr<nsIObserverService> obsServ =
-      mozilla::services::GetObserverService();
   obsServ->NotifyObservers(aRequest, "dlp-request-made", nullptr);
   auto response = MakeRefPtr<ContentAnalysisResponse>(
       nsIContentAnalysisResponse::Action::eBlock, std::move(token),
@@ -3796,7 +3812,7 @@ ContentAnalysis::PrintToPDFToDetermineIfPrintAllowed(
                   nsresult rv = contentAnalysis->GetIsActive(&isActive);
                   // Should not be called if content analysis is not active
                   MOZ_ASSERT(isActive);
-                  Unused << NS_WARN_IF(NS_FAILED(rv));
+                  (void)NS_WARN_IF(NS_FAILED(rv));
                   AutoTArray<RefPtr<nsIContentAnalysisRequest>, 1> requests{
                       contentAnalysisRequest};
                   rv = contentAnalysis->AnalyzeContentRequestsCallback(
@@ -4308,8 +4324,11 @@ nsresult ContentAnalysis::RunAcknowledgeTask(
       mozilla::services::GetObserverService();
   // Do an early check here to avoid an extra dispatch to the main
   // thread if no one is observing the message
-  bool rawMessageHasObserver =
-      obsServ->HasObservers("dlp-acknowledgement-sent-raw");
+  bool rawMessageHasObserver = false;
+  if (obsServ) {
+    rawMessageHasObserver =
+        obsServ->HasObservers("dlp-acknowledgement-sent-raw");
+  }
 
   // The content analysis connection is synchronous so run in the background.
   LOGD("RunAcknowledgeTask dispatching acknowledge task");
@@ -4338,6 +4357,11 @@ nsresult ContentAnalysis::RunAcknowledgeTask(
               __func__, [owner, pbAck = std::move(pbAck)]() {
                 nsCOMPtr<nsIObserverService> obsServ =
                     mozilla::services::GetObserverService();
+                if (!obsServ) {
+                  // Shutting down.  We don't have a connection to the agent
+                  // anymore so sending acknowledgement would fail anyway.
+                  return;
+                }
                 std::string acknowledgementString = pbAck.SerializeAsString();
                 nsTArray<char16_t> acknowledgementArray;
                 acknowledgementArray.SetLength(acknowledgementString.size() +

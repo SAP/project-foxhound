@@ -199,28 +199,22 @@ class TestStructuredLogging(unittest.TestCase):
             connection, self.logger, message_callback=self.message_callback, timeout=0.5
         )
 
-        message_string_one = json.dumps(
-            {
-                "_message": "socket message one",
-                "action": "test_message",
-                "_level": "DEBUG",
-            }
-        )
-        message_string_two = json.dumps(
-            {
-                "_message": "socket message two",
-                "action": "test_message",
-                "_level": "DEBUG",
-            }
-        )
+        message_string_one = json.dumps({
+            "_message": "socket message one",
+            "action": "test_message",
+            "_level": "DEBUG",
+        })
+        message_string_two = json.dumps({
+            "_message": "socket message two",
+            "action": "test_message",
+            "_level": "DEBUG",
+        })
 
-        message_string_three = json.dumps(
-            {
-                "_message": "socket message three",
-                "action": "test_message",
-                "_level": "DEBUG",
-            }
-        )
+        message_string_three = json.dumps({
+            "_message": "socket message three",
+            "action": "test_message",
+            "_level": "DEBUG",
+        })
 
         message_string = (
             message_string_one

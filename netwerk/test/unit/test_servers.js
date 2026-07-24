@@ -7,7 +7,6 @@
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
 
 // We don't normally allow localhost channels to be proxied, but this
 // is easier than updating all the certs and/or domains.
@@ -19,6 +18,15 @@ registerCleanupFunction(() => {
 const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
+const {
+  NodeHTTPServer,
+  NodeHTTPSServer,
+  NodeHTTP2Server,
+  NodeHTTPProxyServer,
+  NodeHTTPSProxyServer,
+  NodeHTTP2ProxyServer,
+  with_node_servers,
+} = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
 
 function makeChan(uri) {
   let chan = NetUtil.newChannel({
@@ -52,7 +60,19 @@ function regiisterServerNamePathHandler(server, path) {
   });
 }
 
+function verifyGleanValues(aDescription, aExpected) {
+  info(aDescription);
+
+  let metric = Glean.networking.connectionAddressType;
+  Assert.equal(metric[aExpected.metricKey].testGetValue(), aExpected.value);
+}
+
+add_setup(async function setup() {
+  Services.fog.initializeFOG();
+});
+
 add_task(async function test_dual_stack() {
+  Services.fog.testResetFOG();
   let httpserv = new HttpServer();
   let content = "ok";
   httpserv.registerPathHandler("/", function handler(metadata, response) {
@@ -68,6 +88,15 @@ add_task(async function test_dual_stack() {
   chan = makeChan(`http://[::1]:${httpserv.identity.primaryPort}/`);
   [, response] = await channelOpenPromise(chan);
   Assert.equal(response, content);
+
+  verifyGleanValues("Check HTTP/1 IPv4", {
+    metricKey: "http_1_ipv4",
+    value: 1,
+  });
+  verifyGleanValues("Check HTTP/1 IPv6", {
+    metricKey: "http_1_ipv6",
+    value: 1,
+  });
   await new Promise(resolve => httpserv.stop(resolve));
 });
 
@@ -97,11 +126,6 @@ add_task(async function test_http() {
 });
 
 add_task(async function test_https() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
-
   let server = new NodeHTTPSServer();
   await server.start();
   registerCleanupFunction(async () => {
@@ -126,10 +150,7 @@ add_task(async function test_https() {
 });
 
 add_task(async function test_http2() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+  Services.fog.testResetFOG();
 
   let server = new NodeHTTP2Server();
   await server.start();
@@ -151,15 +172,15 @@ add_task(async function test_http2() {
   equal(req.QueryInterface(Ci.nsIHttpChannel).responseStatus, 200);
   equal(req.QueryInterface(Ci.nsIHttpChannel).protocolVersion, "h2");
 
+  verifyGleanValues("Check HTTP/2 IPv4", {
+    metricKey: "http_2_ipv4",
+    value: 1,
+  });
+
   await server.stop();
 });
 
 add_task(async function test_http1_proxy() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
-
   let proxy = new NodeHTTPProxyServer();
   await proxy.start();
   registerCleanupFunction(async () => {
@@ -200,12 +221,6 @@ add_task(async function test_http1_proxy() {
 });
 
 add_task(async function test_https_proxy() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
-  addCertFromFile(certdb, "proxy-ca.pem", "CTu,u,u");
-
   let proxy = new NodeHTTPSProxyServer();
   await proxy.start();
   registerCleanupFunction(async () => {
@@ -241,12 +256,6 @@ add_task(async function test_https_proxy() {
 });
 
 add_task(async function test_http2_proxy() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
-  addCertFromFile(certdb, "proxy-ca.pem", "CTu,u,u");
-
   let proxy = new NodeHTTP2ProxyServer();
   await proxy.start();
   registerCleanupFunction(async () => {
@@ -281,11 +290,6 @@ add_task(async function test_http2_proxy() {
 });
 
 add_task(async function test_proxy_with_redirects() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
-
   let proxies = [
     NodeHTTPProxyServer,
     NodeHTTPSProxyServer,
@@ -328,4 +332,62 @@ add_task(async function test_proxy_with_redirects() {
     );
     await proxy.stop();
   }
+});
+
+add_task(async function test_async_event() {
+  let server = new NodeHTTP2Server();
+  await server.start();
+  registerCleanupFunction(async () => {
+    await server.stop();
+  });
+
+  await server.execute(`new Promise(r => setTimeout(r, 500))`);
+
+  await server.stop();
+});
+
+add_task(async function test_async_state_management() {
+  let server = new NodeHTTP2Server();
+  await server.start();
+  registerCleanupFunction(async () => {
+    await server.stop();
+  });
+
+  await server.execute(`global.asyncResults = [];`);
+
+  await server.execute(`
+    global.asyncCounter = 0;
+    global.performAsyncOperation = function(delay, value) {
+      return new Promise(resolve => {
+        setTimeout(() => {
+          global.asyncCounter++;
+          global.asyncResults.push({ counter: global.asyncCounter, value });
+          resolve({ counter: global.asyncCounter, value });
+        }, delay);
+      });
+    };
+  `);
+
+  let op1 = server.execute(`performAsyncOperation(100, "first")`);
+  let op2 = server.execute(`performAsyncOperation(50, "second")`);
+
+  let result1 = await op1;
+  let result2 = await op2;
+  // This ran after 100 ms, so it comes in second
+  equal(result1.counter, 2);
+  equal(result1.value, "first");
+
+  // this rand after 50 ms, so it comes in first.
+  equal(result2.counter, 1);
+  equal(result2.value, "second");
+
+  let results = await server.execute(`global.asyncResults`);
+  equal(results.length, 2);
+  equal(results[0].value, "second");
+  equal(results[1].value, "first");
+
+  let counter = await server.execute(`global.asyncCounter`);
+  equal(counter, 2);
+
+  await server.stop();
 });

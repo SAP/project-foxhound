@@ -11,8 +11,8 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
-#include <iterator>
 
+#include "jit/arm64/vixl/Cpu-Features-vixl.h"
 #include "jit/arm64/vixl/Instructions-vixl.h"
 #include "jit/shared/Architecture-shared.h"
 
@@ -180,7 +180,7 @@ class Registers {
   static const SetType ArgRegMask =
       (1 << Registers::x0) | (1 << Registers::x1) | (1 << Registers::x2) |
       (1 << Registers::x3) | (1 << Registers::x4) | (1 << Registers::x5) |
-      (1 << Registers::x6) | (1 << Registers::x7) | (1 << Registers::x8);
+      (1 << Registers::x6) | (1 << Registers::x7);
 
   static const SetType VolatileMask =
       (1 << Registers::x0) | (1 << Registers::x1) | (1 << Registers::x2) |
@@ -746,6 +746,43 @@ FloatRegister::LiveAsIndexableSet<RegTypeName::Any>(SetType set) {
   return set;
 }
 
+class ARM64Flags final {
+  // List of enabled CPU features. Initialized once |Init()|.
+  static inline vixl::CPUFeatures features{};
+
+  // List of disabled CPU features. Must be set before calling |Init()|.
+  static inline vixl::CPUFeatures disabledFeatures{};
+
+ public:
+  ARM64Flags() = delete;
+
+  // ARM64Flags::Init is called from the JitContext constructor to read the
+  // hardware flags. This method must only be called exactly once.
+  static void Init();
+
+  static bool IsInitialized() { return features != vixl::CPUFeatures::None(); }
+
+  static vixl::CPUFeatures GetCPUFeatures() {
+    MOZ_ASSERT(IsInitialized());
+    return features;
+  }
+
+  // Disable CPU features for testing. Can be called repeatedly to disable
+  // additional features. Must be called before |Init()|.
+  static void DisableCPUFeatures(vixl::CPUFeatures features) {
+    MOZ_ASSERT(!IsInitialized());
+    disabledFeatures.Combine(features);
+  }
+
+  static uint32_t GetFlags() {
+    MOZ_ASSERT(IsInitialized());
+
+    // TODO: vixl::CPUFeatures supports more than 32 values, so it can't be used
+    // directly for GetFlags.
+    return 0;
+  }
+};
+
 // ARM/D32 has double registers that cannot be treated as float32.
 // Luckily, ARMv8 doesn't have the same misfortune.
 inline bool hasUnaliasedDouble() { return false; }
@@ -754,7 +791,8 @@ inline bool hasUnaliasedDouble() { return false; }
 // Again, ARMv8 is in the clear.
 inline bool hasMultiAlias() { return false; }
 
-uint32_t GetARM64Flags();
+// Retrieve the ARM64 hardware flags as a bitmask. They must have been set.
+inline uint32_t GetARM64Flags() { return ARM64Flags::GetFlags(); }
 
 bool CanFlushICacheFromBackgroundThreads();
 

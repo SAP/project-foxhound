@@ -12,6 +12,7 @@
 #include "mozilla/UniquePtr.h"
 
 #include <stddef.h>
+#include <string_view>
 
 #include "js/AllocPolicy.h"
 #include "js/GCAPI.h"
@@ -30,6 +31,18 @@ namespace js {
 class ArrayObject;
 
 namespace intl {
+
+enum class AvailableLocaleKind {
+  Collator,
+  DateTimeFormat,
+  DisplayNames,
+  DurationFormat,
+  ListFormat,
+  NumberFormat,
+  PluralRules,
+  RelativeTimeFormat,
+  Segmenter,
+};
 
 /**
  * This deleter class exists so that mozilla::intl::DateTimePatternGenerator
@@ -66,14 +79,14 @@ class SharedIntlData {
       }
     }
 
-    LinearStringLookup(const char* chars, size_t length)
-        : isLatin1(true), length(length) {
-      latin1Chars = reinterpret_cast<const JS::Latin1Char*>(chars);
+    explicit LinearStringLookup(std::string_view string)
+        : isLatin1(true), length(string.length()) {
+      latin1Chars = reinterpret_cast<const JS::Latin1Char*>(string.data());
     }
 
-    LinearStringLookup(const char16_t* chars, size_t length)
-        : isLatin1(false), length(length) {
-      twoByteChars = chars;
+    explicit LinearStringLookup(std::u16string_view string)
+        : isLatin1(false), length(string.length()) {
+      twoByteChars = string.data();
     }
   };
 
@@ -108,8 +121,8 @@ class SharedIntlData {
   struct AvailableTimeZoneHasher {
     struct Lookup : LinearStringLookup {
       explicit Lookup(const JSLinearString* timeZone);
-      Lookup(const char* chars, size_t length);
-      Lookup(const char16_t* chars, size_t length);
+      explicit Lookup(std::string_view timeZone);
+      explicit Lookup(std::u16string_view timeZone);
     };
 
     static js::HashNumber hash(const Lookup& lookup) { return lookup.hash; }
@@ -250,7 +263,7 @@ class SharedIntlData {
   struct LocaleHasher {
     struct Lookup : LinearStringLookup {
       explicit Lookup(const JSLinearString* locale);
-      Lookup(const char* chars, size_t length);
+      explicit Lookup(std::string_view locale);
     };
 
     static js::HashNumber hash(const Lookup& lookup) { return lookup.hash; }
@@ -259,7 +272,7 @@ class SharedIntlData {
 
   using LocaleSet = GCHashSet<Locale, LocaleHasher, SystemAllocPolicy>;
 
-  // Set of supported locales for all Intl service constructors except Collator,
+  // Set of available locales for all Intl service constructors except Collator,
   // which uses its own set.
   //
   // UDateFormat:
@@ -273,13 +286,13 @@ class SharedIntlData {
   // UListFormatter, UPluralRules, and URelativeDateTimeFormatter:
   // We're going to use ULocale availableLocales as per ICU recommendation:
   // https://unicode-org.atlassian.net/browse/ICU-12756
-  LocaleSet supportedLocales;
+  LocaleSet availableLocales;
 
   // ucol_[count,get]Available() return different results compared to
-  // uloc_[count,get]Available(), we can't use |supportedLocales| here.
-  LocaleSet collatorSupportedLocales;
+  // uloc_[count,get]Available(), we can't use |availableLocales| here.
+  LocaleSet collatorAvailableLocales;
 
-  bool supportedLocalesInitialized = false;
+  bool availableLocalesInitialized = false;
 
   // CountAvailable and GetAvailable describe the signatures used for ICU API
   // to determine available locales for various functionality.
@@ -293,33 +306,21 @@ class SharedIntlData {
   /**
    * Precomputes the available locales sets.
    */
-  bool ensureSupportedLocales(JSContext* cx);
+  bool ensureAvailableLocales(JSContext* cx);
 
  public:
-  enum class SupportedLocaleKind {
-    Collator,
-    DateTimeFormat,
-    DisplayNames,
-    DurationFormat,
-    ListFormat,
-    NumberFormat,
-    PluralRules,
-    RelativeTimeFormat,
-    Segmenter,
-  };
-
   /**
-   * Sets |supported| to true if |locale| is supported by the requested Intl
-   * service constructor. Otherwise sets |supported| to false.
+   * Sets |available| to true if |locale| is supported by the requested Intl
+   * service constructor. Otherwise sets |available| to false.
    */
-  [[nodiscard]] bool isSupportedLocale(JSContext* cx, SupportedLocaleKind kind,
-                                       JS::Handle<JSString*> locale,
-                                       bool* supported);
+  [[nodiscard]] bool isAvailableLocale(JSContext* cx, AvailableLocaleKind kind,
+                                       JS::Handle<JSLinearString*> locale,
+                                       bool* available);
 
   /**
    * Returns all available locales for |kind|.
    */
-  ArrayObject* availableLocalesOf(JSContext* cx, SupportedLocaleKind kind);
+  ArrayObject* availableLocalesOf(JSContext* cx, AvailableLocaleKind kind);
 
  private:
   /**
@@ -361,7 +362,7 @@ class SharedIntlData {
    * Sets |isUpperFirst| to true if |locale| sorts upper-case characters
    * before lower-case characters.
    */
-  bool isUpperCaseFirst(JSContext* cx, JS::Handle<JSString*> locale,
+  bool isUpperCaseFirst(JSContext* cx, JS::Handle<JSLinearString*> locale,
                         bool* isUpperFirst);
 
  private:
@@ -380,7 +381,7 @@ class SharedIntlData {
   /**
    * Sets |ignorePunctuation| to true if |locale| ignores punctuation.
    */
-  bool isIgnorePunctuation(JSContext* cx, JS::Handle<JSString*> locale,
+  bool isIgnorePunctuation(JSContext* cx, JS::Handle<JSLinearString*> locale,
                            bool* ignorePunctuation);
 
  private:

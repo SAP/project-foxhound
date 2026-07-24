@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUrlClassifierGTestCommon_h__
-#define nsUrlClassifierGTestCommon_h__
+#ifndef nsUrlClassifierGTestCommon_h_
+#define nsUrlClassifierGTestCommon_h_
 
 #include "Entries.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -144,4 +144,4 @@ RefPtr<Classifier> GetClassifier();
 nsresult BuildLookupCache(const RefPtr<Classifier>& aClassifier,
                           const nsACString& aTable, _PrefixArray& aPrefixArray);
 
-#endif  // nsUrlClassifierGTestCommon_h__
+#endif  // nsUrlClassifierGTestCommon_h_

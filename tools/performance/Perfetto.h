@@ -10,7 +10,6 @@
 #ifdef MOZ_PERFETTO
 #  include "mozilla/BaseProfilerMarkers.h"
 #  include "mozilla/Flow.h"
-#  include "mozilla/Span.h"
 #  include "mozilla/TimeStamp.h"
 #  include "nsString.h"
 #  include "nsPrintfCString.h"

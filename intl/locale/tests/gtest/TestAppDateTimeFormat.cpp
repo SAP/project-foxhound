@@ -267,7 +267,7 @@ TEST(AppDateTimeFormat, DateFormatSelectorsForeign)
     nsresult rv =
         AppDateTimeFormat::Format(components, &prExplodedTime, formattedTime);
     ASSERT_NS_SUCCEEDED(rv);
-    ASSERT_STREQ("01.1970", NS_ConvertUTF16toUTF8(formattedTime).get());
+    ASSERT_STREQ("01/1970", NS_ConvertUTF16toUTF8(formattedTime).get());
   }
   {
     ComponentsBag components{};

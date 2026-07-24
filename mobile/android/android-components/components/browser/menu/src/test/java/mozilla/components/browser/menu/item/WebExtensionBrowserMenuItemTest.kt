@@ -20,13 +20,11 @@ import mozilla.components.concept.engine.webextension.Action
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.notNull
@@ -36,10 +34,6 @@ import androidx.appcompat.R as appcompatR
 
 @RunWith(AndroidJUnit4::class)
 class WebExtensionBrowserMenuItemTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val dispatcher = coroutinesTestRule.testDispatcher
 
     @Test
     fun `web extension menu item is visible by default`() {
@@ -84,7 +78,7 @@ class WebExtensionBrowserMenuItemTest {
 
         val action = WebExtensionBrowserMenuItem(browserAction, {})
         action.bind(mock(), view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         assertFalse(view.isEnabled)
     }
@@ -115,9 +109,9 @@ class WebExtensionBrowserMenuItemTest {
             badgeBackgroundColor = Color.BLUE,
         ) {}
 
-        val action = WebExtensionBrowserMenuItem(browserAction, {})
+        val action = WebExtensionBrowserMenuItem(browserAction, {}, uiScope = this)
         action.bind(mock(), view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         val iconCaptor = argumentCaptor<BitmapDrawable>()
         verify(imageView).setImageDrawable(iconCaptor.capture())
@@ -157,14 +151,14 @@ class WebExtensionBrowserMenuItemTest {
 
         val action = WebExtensionBrowserMenuItem(browserAction, {})
         action.bind(mock(), view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(badgeView).setBadgeText(badgeText)
         assertEquals(View.INVISIBLE, badgeView.visibility)
     }
 
     @Test
-    fun fallbackToDefaultIcon() {
+    fun fallbackToDefaultIcon() = runTest {
         val imageView: ImageView = mock()
         val badgeView: TextView = mock()
         val labelView: TextView = mock()
@@ -186,15 +180,15 @@ class WebExtensionBrowserMenuItemTest {
             badgeBackgroundColor = Color.BLUE,
         ) {}
 
-        val action = WebExtensionBrowserMenuItem(browserAction, {})
+        val action = WebExtensionBrowserMenuItem(browserAction, {}, uiScope = this)
         action.bind(mock(), view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(imageView).setImageDrawable(notNull())
     }
 
     @Test
-    fun `clicking item view invokes callback and dismisses menu`() {
+    fun `clicking item view invokes callback and dismisses menu`() = runTest {
         var callbackInvoked = false
 
         val icon: Bitmap = mock()
@@ -224,7 +218,7 @@ class WebExtensionBrowserMenuItemTest {
         val menu: WebExtensionBrowserMenu = mock()
 
         item.bind(menu, view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         container.performClick()
 
@@ -261,7 +255,7 @@ class WebExtensionBrowserMenuItemTest {
         val menu: WebExtensionBrowserMenu = mock()
 
         item.bind(menu, view)
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(labelView).text = "title"
         verify(badgeView).text = "badgeText"

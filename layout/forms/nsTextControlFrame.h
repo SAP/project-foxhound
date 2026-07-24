@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTextControlFrame_h___
-#define nsTextControlFrame_h___
+#ifndef nsTextControlFrame_h_
+#define nsTextControlFrame_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/TextControlElement.h"
@@ -119,9 +119,6 @@ class nsTextControlFrame : public nsContainerFrame,
   nsFrameSelection* GetOwnedFrameSelection() {
     return ControlElement()->GetIndependentFrameSelection();
   }
-  nsISelectionController* GetSelectionController() {
-    return ControlElement()->GetSelectionController();
-  }
 
   void PlaceholderChanged(const nsAttrValue* aOld, const nsAttrValue* aNew);
 
@@ -145,7 +142,7 @@ class nsTextControlFrame : public nsContainerFrame,
 
   /** handler for attribute changes to mContent */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult AttributeChanged(
-      int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType) override;
+      int32_t aNameSpaceID, nsAtom* aAttribute, AttrModType aModType) override;
   void ElementStateChanged(mozilla::dom::ElementState aStates) override;
 
   nsresult PeekOffset(mozilla::PeekOffsetStruct* aPos) override;
@@ -248,8 +245,7 @@ class nsTextControlFrame : public nsContainerFrame,
    * value. This should only be called when we have no editor yet.
    * @throws NS_ERROR_UNEXPECTED if the div has no text content
    */
-  nsresult UpdateValueDisplay(bool aNotify, bool aBeforeEditorInit = false,
-                              const nsAString* aValue = nullptr);
+  nsresult UpdateValueDisplay(bool aNotify);
 
   /**
    * Find out whether an attribute exists on the content or not.

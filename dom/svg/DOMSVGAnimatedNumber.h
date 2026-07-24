@@ -7,9 +7,8 @@
 #ifndef DOM_SVG_DOMSVGANIMATEDNUMBER_H_
 #define DOM_SVG_DOMSVGANIMATEDNUMBER_H_
 
-#include "nsWrapperCache.h"
-
 #include "SVGElement.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

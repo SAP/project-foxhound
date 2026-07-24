@@ -28,17 +28,6 @@ fn response_header_103() -> &'static Vec<Header> {
     HEADERS.get_or_init(|| vec![Header::new(":status", "103"), Header::new("link", "...")])
 }
 
-fn exchange_packets(client: &mut Http3Client, server: &mut Http3Server) {
-    let mut out = None;
-    loop {
-        out = client.process(out, now()).dgram();
-        out = server.process(out, now()).dgram();
-        if out.is_none() {
-            break;
-        }
-    }
-}
-
 fn receive_request(server: &Http3Server) -> Option<Http3OrWebTransportStream> {
     while let Some(event) = server.next_event() {
         if let Http3ServerEvent::Headers {
@@ -137,31 +126,41 @@ fn process_client_events_no_data(conn: &mut Http3Client) {
     assert!(fin_received);
 }
 
-fn connect_send_and_receive_request() -> (Http3Client, Http3Server, Http3OrWebTransportStream) {
+fn connect() -> (Http3Client, Http3Server) {
     let mut hconn_c = default_http3_client();
     let mut hconn_s = default_http3_server();
 
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     let authentication_needed = |e| matches!(e, Http3ClientEvent::AuthenticationNeeded);
     assert!(hconn_c.events().any(authentication_needed));
     hconn_c.authenticated(AuthenticationStatus::Ok, now());
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
 
+    (hconn_c, hconn_s)
+}
+
+fn send_and_receive_request(
+    hconn_c: &mut Http3Client,
+    hconn_s: &mut Http3Server,
+) -> Http3OrWebTransportStream {
     let req = hconn_c
         .fetch(
             now(),
             "GET",
-            &("https", "something.com", "/"),
+            ("https", "something.com", "/"),
             &[],
             Priority::default(),
         )
         .unwrap();
-    assert_eq!(req, 0);
-    hconn_c.stream_close_send(req).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    hconn_c.stream_close_send(req, now()).unwrap();
+    exchange_packets(hconn_c, hconn_s, false, None);
 
-    let request = receive_request(&hconn_s).unwrap();
+    receive_request(hconn_s).unwrap()
+}
 
+fn connect_send_and_receive_request() -> (Http3Client, Http3Server, Http3OrWebTransportStream) {
+    let (mut hconn_c, mut hconn_s) = connect();
+    let request = send_and_receive_request(&mut hconn_c, &mut hconn_s);
     (hconn_c, hconn_s, request)
 }
 
@@ -169,10 +168,10 @@ fn connect_send_and_receive_request() -> (Http3Client, Http3Server, Http3OrWebTr
 fn response_trailers1() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
+    request.send_data(RESPONSE_DATA, now()).unwrap();
     send_trailers(&request).unwrap();
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -180,11 +179,11 @@ fn response_trailers1() {
 fn response_trailers2() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     send_trailers(&request).unwrap();
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -192,12 +191,12 @@ fn response_trailers2() {
 fn response_trailers3() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     send_trailers(&request).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -205,11 +204,11 @@ fn response_trailers3() {
 fn response_trailers_no_data() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     request.send_headers(response_header_no_data()).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     send_trailers(&request).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events_no_data(&mut hconn_c);
 }
 
@@ -217,15 +216,15 @@ fn response_trailers_no_data() {
 fn multiple_response_trailers() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     send_trailers(&request).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
 
     assert_eq!(send_trailers(&request), Err(Error::InvalidInput));
 
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -233,15 +232,18 @@ fn multiple_response_trailers() {
 fn data_after_trailer() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     send_trailers(&request).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
 
-    assert_eq!(request.send_data(RESPONSE_DATA), Err(Error::InvalidInput));
+    assert_eq!(
+        request.send_data(RESPONSE_DATA, now()),
+        Err(Error::InvalidInput)
+    );
 
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -249,12 +251,12 @@ fn data_after_trailer() {
 fn trailers_after_close() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    request.stream_close_send().unwrap();
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    request.stream_close_send(now()).unwrap();
 
     assert_eq!(send_trailers(&request), Err(Error::InvalidStreamId));
 
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -268,8 +270,8 @@ fn multiple_response_headers() {
         Err(Error::InvalidHeader)
     );
 
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events_no_data(&mut hconn_c);
 }
 
@@ -283,8 +285,8 @@ fn informational_after_response_headers() {
         Err(Error::InvalidHeader)
     );
 
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events_no_data(&mut hconn_c);
 }
 
@@ -293,12 +295,15 @@ fn data_after_informational() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_informational_headers(&request).unwrap();
 
-    assert_eq!(request.send_data(RESPONSE_DATA), Err(Error::InvalidInput));
+    assert_eq!(
+        request.send_data(RESPONSE_DATA, now()),
+        Err(Error::InvalidInput)
+    );
 
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
@@ -306,27 +311,50 @@ fn data_after_informational() {
 fn non_trailers_headers_after_data() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
 
     assert_eq!(
         request.send_headers(response_header_no_data()),
         Err(Error::InvalidHeader)
     );
 
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
 }
 
 #[test]
 fn data_before_headers() {
     let (mut hconn_c, mut hconn_s, request) = connect_send_and_receive_request();
-    assert_eq!(request.send_data(RESPONSE_DATA), Err(Error::InvalidInput));
+    assert_eq!(
+        request.send_data(RESPONSE_DATA, now()),
+        Err(Error::InvalidInput)
+    );
 
     send_headers(&request).unwrap();
-    request.send_data(RESPONSE_DATA).unwrap();
-    request.stream_close_send().unwrap();
-    exchange_packets(&mut hconn_c, &mut hconn_s);
+    request.send_data(RESPONSE_DATA, now()).unwrap();
+    request.stream_close_send(now()).unwrap();
+    exchange_packets(&mut hconn_c, &mut hconn_s, false, None);
     process_client_events(&mut hconn_c);
+}
+
+#[test]
+fn server_send_single_udp_datagram() {
+    let (mut hconn_c, mut hconn_s, request_1) = connect_send_and_receive_request();
+
+    send_headers(&request_1).unwrap();
+    request_1.send_data(RESPONSE_DATA, now()).unwrap();
+
+    let request_2 = send_and_receive_request(&mut hconn_c, &mut hconn_s);
+
+    // Request 1 has no pending data. This call goes straight to the QUIC layer.
+    request_1.stream_close_send(now()).unwrap();
+    // This adds pending data to request 2 on the HTTP/3 layer.
+    send_headers(&request_2).unwrap();
+
+    // Expect server to pack request 1 close frame and request 2 data frame into
+    // single UDP datagram.
+    hconn_s.process_output(now()).dgram().unwrap();
+    assert_eq!(hconn_s.process_output(now()).dgram(), None);
 }

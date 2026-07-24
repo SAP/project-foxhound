@@ -10,6 +10,8 @@
 #ifndef SANDBOX_WIN_SRC_SANDBOX_POLICY_DIAGNOSTIC_H_
 #define SANDBOX_WIN_SRC_SANDBOX_POLICY_DIAGNOSTIC_H_
 
+#include "sandbox/win/src/sandbox.h"
+
 #include "mozilla/Assertions.h"
 
 namespace sandbox {
@@ -18,12 +20,14 @@ class PolicyBase;
 
 class PolicyDiagnostic final : public PolicyInfo {
  public:
+
+  PolicyDiagnostic(const PolicyDiagnostic&) = delete;
+  PolicyDiagnostic& operator=(const PolicyDiagnostic&) = delete;
+
   PolicyDiagnostic(PolicyBase*) {}
   ~PolicyDiagnostic() override = default;
   const char* JsonString() override { MOZ_CRASH(); }
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(PolicyDiagnostic);
 };
 
 }  // namespace sandbox

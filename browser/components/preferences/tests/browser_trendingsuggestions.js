@@ -9,7 +9,7 @@ const MAIN_PREF = "browser.search.suggest.enabled";
 const URLBAR_PREF = "browser.urlbar.suggest.searches";
 const TRENDING_PREF = "browser.urlbar.trending.featureGate";
 
-const TRENDING_CHECKBOX_ID = "showTrendingSuggestions";
+const TRENDING_CHECKBOX_ID = "showTrendingSuggestionsCheckbox";
 const SUGGESTIONED_CHECKBOX_ID = "suggestionsInSearchFieldsCheckbox";
 
 SearchTestUtils.init(this);
@@ -28,12 +28,12 @@ add_setup(async function () {
     search_url: "https://example.com/engine1",
     search_url_get_params: "search={searchTerms}",
   });
-  const defaultEngine = await Services.search.getDefault();
+  const defaultEngine = await SearchService.getDefault();
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       defaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   });
 });
@@ -48,8 +48,7 @@ add_task(async function testSuggestionsDisabled() {
   Assert.ok(!trendingCheckbox.disabled, "Checkbox should not be disabled");
 
   // Disable search suggestions.
-  suggestionsCheckbox.checked = false;
-  suggestionsCheckbox.doCommand();
+  suggestionsCheckbox.click();
 
   await BrowserTestUtils.waitForCondition(
     () => trendingCheckbox.disabled,
@@ -63,11 +62,8 @@ add_task(async function testSuggestionsDisabled() {
 
 add_task(async function testNonTrendingEngine() {
   // Set engine that does not support trending suggestions as default.
-  const engine1 = Services.search.getEngineByName("engine1");
-  Services.search.setDefault(
-    engine1,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  const engine1 = SearchService.getEngineByName("engine1");
+  SearchService.setDefault(engine1, SearchService.CHANGE_REASON.UNKNOWN);
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let trendingCheckbox = doc.getElementById(TRENDING_CHECKBOX_ID);
@@ -80,11 +76,8 @@ add_task(async function testNonTrendingEngine() {
 });
 
 add_task(async function testEnabledTrendingEngine() {
-  const engine1 = Services.search.getEngineByName("Google");
-  Services.search.setDefault(
-    engine1,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  const engine1 = SearchService.getEngineByName("Google");
+  SearchService.setDefault(engine1, SearchService.CHANGE_REASON.UNKNOWN);
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let trendingCheckbox = doc.getElementById(TRENDING_CHECKBOX_ID);

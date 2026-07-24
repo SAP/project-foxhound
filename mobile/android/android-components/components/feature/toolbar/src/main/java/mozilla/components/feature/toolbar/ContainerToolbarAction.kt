@@ -52,7 +52,6 @@ class ContainerToolbarAction(
         imageView.setImageDrawable(getIcon(view.context, container))
     }
 
-    @Suppress("ComplexMethod")
     internal fun getIcon(context: Context, container: ContainerState): Drawable {
         @ColorInt val tint = getTint(context, container.color)
 

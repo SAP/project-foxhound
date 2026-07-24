@@ -114,7 +114,7 @@ for (let metric of METRICS) {
   });
 }
 
-requestLongerTimeout(120);
+requestLongerTimeout(10);
 
 async function runEngineWithMetrics(
   engineInstance,

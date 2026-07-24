@@ -17,20 +17,18 @@ def inline(title):
 
 class TestTaskbarTabSessionState(SessionStoreTestCase):
     def setUp(self):
-        super(TestTaskbarTabSessionState, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=False,
             taskbartabs_enable=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     """

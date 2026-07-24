@@ -1,4 +1,4 @@
-.. _basics:
+.. _webextensions-api-basics:
 
 API Implementation Basics
 =========================

@@ -54,15 +54,22 @@ integration.
    needed by `clangd` server will not be refreshed. This is a known `bug <https://github.com/clangd/vscode-clangd/issues/42>`__
    in `clangd-vscode` extension
 
-Ignore Files in Mercurial Repositories
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
+
+   The combination of rust-analyzer and clangd can be memory-intensive with the Firefox codebase.
+   If you experience OOM issues or hangs, consider increasing swap space (e.g., to 16 GiB) or
+   closing memory-heavy applications. On Linux, consider using `EarlyOOM <https://github.com/rfjakob/earlyoom>`__
+   to mitigate the impact on your system.
+
+Ignore Files in VCS Repositories
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. note::
 
    This is automatically done when running ``./mach ide vscode`` but may be
    changed manually.
 
-When using Mercurial in mozilla-central, VS Code will treat your build directories as ordinary directories by default, causing some undesirable behavior including long indexing times, Go to Definition will open files in the build directory instead of the source tree, and Search Files by Name will find duplicate files from the source tree and the build directory (note: when using Git, VS Code will not do this since it reads ``.gitignore``). You can follow these directions to have VS Code largely ignore your build directories:
+When using Git in mozilla-central, VS Code will treat your build directories as ordinary directories by default, causing some undesirable behavior including long indexing times, Go to Definition will open files in the build directory instead of the source tree, and Search Files by Name will find duplicate files from the source tree and the build directory (note: when using Git, VS Code will not do this since it reads ``.gitignore``). You can follow these directions to have VS Code largely ignore your build directories:
 
 #. Go to Preferences -> Settings
 #. Search "exclude" in the Settings
@@ -87,12 +94,11 @@ Recommended Preferences
    * This sets the default formatter to prettier using the recommended prettier
      extension.
 
-``*.jsm`` and ``*.sjs`` file extensions should also be associated with JavaScript:
+The ``*.sjs`` file extension should also be associated with JavaScript:
 
 .. code::
 
    "files.associations": {
-      "*.jsm": "javascript",
       "*.sjs": "javascript",
    },
 

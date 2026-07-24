@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.90.0"
 name = "wgpu-hal"
-version = "26.0.0"
+version = "28.0.0"
 authors = ["gfx-rs developers"]
 build = "build.rs"
 autolib = false
@@ -28,11 +28,9 @@ keywords = ["graphics"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gfx-rs/wgpu"
 
-[package.metadata.cargo-machete]
-ignored = ["cfg_aliases"]
-
 [package.metadata.docs.rs]
 features = [
+    "metal",
     "vulkan",
     "gles",
     "renderdoc",
@@ -48,8 +46,10 @@ targets = [
     "wasm32-unknown-unknown",
 ]
 
+[package.metadata.cargo-machete]
+ignored = ["cfg_aliases"]
+
 [features]
-cargo-clippy = []
 device_lost_panic = []
 dx12 = [
     "naga/hlsl-out",
@@ -60,11 +60,14 @@ dx12 = [
     "dep:libloading",
     "dep:log",
     "dep:ordered-float",
+    "dep:once_cell",
     "dep:parking_lot",
     "dep:profiling",
     "dep:range-alloc",
     "dep:windows-core",
+    "dep:gpu-allocator",
     "gpu-allocator/d3d12",
+    "windows/Win32_Devices_DeviceAndDriverInstallation",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D_Dxc",
     "windows/Win32_Graphics_Direct3D",
@@ -88,10 +91,11 @@ gles = [
     "dep:hashbrown",
     "dep:js-sys",
     "dep:khronos-egl",
+    "dep:wayland-sys",
     "dep:libloading",
     "dep:log",
     "dep:ndk-sys",
-    "dep:objc",
+    "dep:objc2",
     "dep:parking_lot",
     "dep:profiling",
     "dep:wasm-bindgen",
@@ -106,15 +110,19 @@ internal_error_panic = []
 metal = [
     "naga/msl-out",
     "dep:arrayvec",
-    "dep:block",
-    "dep:core-graphics-types",
+    "dep:block2",
     "dep:hashbrown",
     "dep:libc",
     "dep:log",
-    "dep:metal",
-    "dep:objc",
+    "dep:objc2",
+    "dep:objc2-core-foundation",
+    "dep:objc2-foundation",
+    "dep:objc2-metal",
+    "dep:objc2-quartz-core",
     "dep:parking_lot",
     "dep:profiling",
+    "dep:smallvec",
+    "dep:raw-window-metal",
 ]
 portable-atomic = [
     "dep:portable-atomic",
@@ -133,7 +141,6 @@ vulkan = [
     "dep:arrayvec",
     "dep:ash",
     "dep:bytemuck",
-    "dep:gpu-alloc",
     "dep:gpu-descriptor",
     "dep:hashbrown",
     "dep:libc",
@@ -142,8 +149,10 @@ vulkan = [
     "dep:ordered-float",
     "dep:parking_lot",
     "dep:profiling",
+    "dep:raw-window-metal",
     "dep:smallvec",
     "dep:windows",
+    "gpu-allocator/vulkan",
     "windows/Win32",
 ]
 
@@ -189,7 +198,7 @@ version = "0.16"
 optional = true
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 features = [
     "default-hasher",
     "inline-more",
@@ -202,11 +211,11 @@ version = "0.4.21"
 optional = true
 
 [dependencies.naga]
-version = "26.0.0"
+version = "28.0.0"
 path = "../naga"
 
 [dependencies.ordered-float]
-version = ">=3, <=5.0"
+version = ">=3, <6.0"
 optional = true
 default-features = false
 
@@ -223,17 +232,12 @@ default-features = false
 version = "0.6.2"
 default-features = false
 
-[dependencies.rustc-hash]
-version = "1.1"
-optional = true
-default-features = false
-
 [dependencies.thiserror]
-version = "2.0.3"
+version = "2.0.12"
 default-features = false
 
 [dependencies.wgpu-types]
-version = "26.0.0"
+version = "28.0.0"
 path = "../wgpu-types"
 default-features = false
 
@@ -242,10 +246,13 @@ version = "0.11"
 default-features = false
 
 [dev-dependencies.glam]
-version = "0.30"
+version = "0.30.7"
+
+[dev-dependencies.log]
+version = "0.4.21"
 
 [dev-dependencies.naga]
-version = "26.0.0"
+version = "28.0.0"
 path = "../naga"
 features = [
     "wgsl-in",
@@ -280,7 +287,7 @@ features = [
 optional = true
 default-features = false
 
-[target.'cfg(all(windows, not(target_arch = "aarch64")))'.dependencies.mach-dxcompiler-rs]
+[target.'cfg(all(windows, not(target_arch = "aarch64"), target_env = "msvc"))'.dependencies.mach-dxcompiler-rs]
 version = "0.1.4"
 optional = true
 default-features = false
@@ -324,9 +331,11 @@ features = [
 version = "0.38"
 optional = true
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.gpu-alloc]
-version = "0.6"
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.gpu-allocator]
+version = "0.28"
+features = ["hashbrown"]
 optional = true
+default-features = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.gpu-descriptor]
 version = "0.3.2"
@@ -346,7 +355,7 @@ version = "1"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.smallvec]
-version = "1.9"
+version = "1.14"
 features = ["union"]
 optional = true
 
@@ -375,26 +384,102 @@ optional = true
 version = "0.8"
 optional = true
 
-[target.'cfg(target_vendor = "apple")'.dependencies.block]
-version = "0.1.6"
+[target.'cfg(target_vendor = "apple")'.dependencies.block2]
+version = "0.6.2"
 optional = true
 
-[target.'cfg(target_vendor = "apple")'.dependencies.core-graphics-types]
-version = "0.2"
+[target.'cfg(target_vendor = "apple")'.dependencies.objc2]
+version = "0.6.3"
 optional = true
 
-[target.'cfg(target_vendor = "apple")'.dependencies.metal]
-version = "0.32"
+[target.'cfg(target_vendor = "apple")'.dependencies.objc2-core-foundation]
+version = "0.3.2"
+features = [
+    "std",
+    "CFCGTypes",
+]
 optional = true
+default-features = false
 
-[target.'cfg(target_vendor = "apple")'.dependencies.objc]
-version = "0.2.5"
+[target.'cfg(target_vendor = "apple")'.dependencies.objc2-foundation]
+version = "0.3.2"
+features = [
+    "std",
+    "NSError",
+    "NSProcessInfo",
+    "NSRange",
+    "NSString",
+]
+optional = true
+default-features = false
+
+[target.'cfg(target_vendor = "apple")'.dependencies.objc2-metal]
+version = "0.3.2"
+features = [
+    "std",
+    "block2",
+    "MTLAllocation",
+    "MTLBlitCommandEncoder",
+    "MTLBlitPass",
+    "MTLBuffer",
+    "MTLCaptureManager",
+    "MTLCaptureScope",
+    "MTLCommandBuffer",
+    "MTLCommandEncoder",
+    "MTLCommandQueue",
+    "MTLComputeCommandEncoder",
+    "MTLComputePass",
+    "MTLComputePipeline",
+    "MTLCounters",
+    "MTLDepthStencil",
+    "MTLDevice",
+    "MTLDrawable",
+    "MTLEvent",
+    "MTLLibrary",
+    "MTLPipeline",
+    "MTLPixelFormat",
+    "MTLRenderCommandEncoder",
+    "MTLRenderPass",
+    "MTLRenderPipeline",
+    "MTLResource",
+    "MTLSampler",
+    "MTLStageInputOutputDescriptor",
+    "MTLTexture",
+    "MTLTypes",
+    "MTLVertexDescriptor",
+]
+optional = true
+default-features = false
+
+[target.'cfg(target_vendor = "apple")'.dependencies.objc2-quartz-core]
+version = "0.3.2"
+features = [
+    "std",
+    "objc2-core-foundation",
+    "CALayer",
+    "CAMetalLayer",
+    "objc2-metal",
+]
+optional = true
+default-features = false
+
+[target.'cfg(target_vendor = "apple")'.dependencies.raw-window-metal]
+version = "1.0"
 optional = true
 
 [target."cfg(unix)".dependencies.libc]
-version = "0.2.168"
+version = "0.2.172"
 optional = true
 default-features = false
+
+[target."cfg(unix)".dependencies.wayland-sys]
+version = "0.31.3"
+features = [
+    "client",
+    "dlopen",
+    "egl",
+]
+optional = true
 
 [target."cfg(windows)".dependencies.bit-set]
 version = "0.8"
@@ -405,8 +490,8 @@ default-features = false
 version = "0.6"
 optional = true
 
-[target."cfg(windows)".dependencies.gpu-allocator]
-version = "0.27"
+[target."cfg(windows)".dependencies.once_cell]
+version = "1.21"
 optional = true
 default-features = false
 
@@ -415,16 +500,19 @@ version = "0.1"
 optional = true
 
 [target."cfg(windows)".dependencies.windows]
-version = "0.58"
+version = "0.62"
 optional = true
 default-features = false
 
 [target."cfg(windows)".dependencies.windows-core]
-version = "0.58"
+version = "0.62"
 optional = true
 default-features = false
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(web_sys_unstable_apis)"]
+check-cfg = [
+    'cfg(feature, values("cargo-clippy"))',
+    "cfg(web_sys_unstable_apis)",
+]

@@ -44,6 +44,11 @@ Quality
    considering the expense of computing and recording log output.
    [Fennec: Checking for log levels is expensive unless you're using
    Logger.]
+-  Error messages that appear in web platform environments should
+   explain the reason for the error, and use web platform terminology
+   (as opposed to internal Firefox terminology). More details can be
+   found in the :ref:`helpful error messages guide
+   <Helpful error messages for web developers>`.
 
 
 Style

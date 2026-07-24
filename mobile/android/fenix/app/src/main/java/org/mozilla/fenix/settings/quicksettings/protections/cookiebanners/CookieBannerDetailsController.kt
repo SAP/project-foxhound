@@ -9,6 +9,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,7 +68,7 @@ interface CookieBannerDetailsController {
 class DefaultCookieBannerDetailsController(
     private val context: Context,
     private val fragment: Fragment,
-    private val ioScope: CoroutineScope,
+    private val scope: CoroutineScope,
     internal val sessionId: String,
     private val browserStore: BrowserStore,
     internal val protectionsStore: ProtectionsStore,
@@ -79,38 +80,39 @@ class DefaultCookieBannerDetailsController(
     private val reload: SessionUseCases.ReloadUrlUseCase,
     private val engine: Engine = context.components.core.engine,
     private val publicSuffixList: PublicSuffixList = context.components.publicSuffixList,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CookieBannerDetailsController {
 
     override fun handleBackPressed() {
         getCurrentTab()?.let { tab ->
             context.components.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
-                ioScope.launch {
-                    val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
-                        tab = tab,
-                        isFeatureEnabledInPrivateMode = context.settings().shouldUseCookieBannerPrivateMode,
-                        publicSuffixList = publicSuffixList,
-                    )
-                    withContext(Dispatchers.Main) {
-                        fragment.runIfFragmentIsAttached {
-                            navController().popBackStack()
-                            val isTrackingProtectionEnabled =
-                                tab.trackingProtection.enabled && !contains
-                            val directions =
-                                BrowserFragmentDirections.actionGlobalQuickSettingsSheetDialogFragment(
-                                    sessionId = tab.id,
-                                    url = tab.content.url,
-                                    title = tab.content.title,
-                                    isLocalPdf = tab.content.url.isContentUrl(),
-                                    isSecured = tab.content.securityInfo.secure,
-                                    sitePermissions = sitePermissions,
-                                    gravity = gravity,
-                                    certificateName = tab.content.securityInfo.issuer,
-                                    permissionHighlights = tab.content.permissionHighlights,
-                                    isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                    cookieBannerUIMode = cookieBannerUIMode,
-                                )
-                            navController().navigate(directions)
-                        }
+                scope.launch {
+                    val cookieBannerUIMode = withContext(ioDispatcher) {
+                        cookieBannersStorage.getCookieBannerUIMode(
+                            tab = tab,
+                            isFeatureEnabledInPrivateMode = context.settings().shouldUseCookieBannerPrivateMode,
+                            publicSuffixList = publicSuffixList,
+                        )
+                    }
+                    fragment.runIfFragmentIsAttached {
+                        navController().popBackStack()
+                        val isTrackingProtectionEnabled =
+                            tab.trackingProtection.enabled && !contains
+                        val directions =
+                            BrowserFragmentDirections.actionGlobalQuickSettingsSheetDialogFragment(
+                                sessionId = tab.id,
+                                url = tab.content.url,
+                                title = tab.content.title,
+                                isLocalPdf = tab.content.url.isContentUrl(),
+                                isSecured = tab.content.securityInfo.isSecure,
+                                sitePermissions = sitePermissions,
+                                gravity = gravity,
+                                certificateName = tab.content.securityInfo.issuer,
+                                permissionHighlights = tab.content.permissionHighlights,
+                                isTrackingProtectionEnabled = isTrackingProtectionEnabled,
+                                cookieBannerUIMode = cookieBannerUIMode,
+                            )
+                        navController().navigate(directions)
                     }
                 }
             }
@@ -121,21 +123,25 @@ class DefaultCookieBannerDetailsController(
         val tab = requireNotNull(browserStore.state.findTabOrCustomTab(sessionId)) {
             "A session is required to update the cookie banner mode"
         }
-        ioScope.launch {
+        scope.launch {
             val cookieBannerUIMode: CookieBannerUIMode
             if (isEnabled) {
-                cookieBannersStorage.removeException(
-                    uri = tab.content.url,
-                    privateBrowsing = tab.content.private,
-                )
+                withContext(ioDispatcher) {
+                    cookieBannersStorage.removeException(
+                        uri = tab.content.url,
+                        privateBrowsing = tab.content.private,
+                    )
+                }
                 CookieBanners.exceptionRemoved.record(NoExtras())
                 cookieBannerUIMode = CookieBannerUIMode.ENABLE
             } else {
                 clearSiteData(tab)
-                cookieBannersStorage.addException(
-                    uri = tab.content.url,
-                    privateBrowsing = tab.content.private,
-                )
+                withContext(ioDispatcher) {
+                    cookieBannersStorage.addException(
+                        uri = tab.content.url,
+                        privateBrowsing = tab.content.private,
+                    )
+                }
                 CookieBanners.exceptionAdded.record(NoExtras())
                 cookieBannerUIMode = CookieBannerUIMode.DISABLE
             }
@@ -153,28 +159,26 @@ class DefaultCookieBannerDetailsController(
             "A session is required to report site domain"
         }
         CookieBanners.reportDomainSiteButton.record(NoExtras())
-        ioScope.launch {
+        scope.launch {
             val siteDomain = getTabDomain(tab)
             siteDomain?.let { domain ->
-                withContext(Dispatchers.Main) {
-                    protectionsStore.dispatch(ProtectionsAction.RequestReportSiteDomain(domain))
-                    CookieBanners.reportSiteDomain.set(domain)
-                    Pings.cookieBannerReportSite.submit()
-                    protectionsStore.dispatch(
-                        ProtectionsAction.UpdateCookieBannerMode(
-                            cookieBannerUIMode = CookieBannerUIMode.REQUEST_UNSUPPORTED_SITE_SUBMITTED,
-                        ),
+                protectionsStore.dispatch(ProtectionsAction.RequestReportSiteDomain(domain))
+                CookieBanners.reportSiteDomain.set(domain)
+                Pings.cookieBannerReportSite.submit()
+                protectionsStore.dispatch(
+                    ProtectionsAction.UpdateCookieBannerMode(
+                        cookieBannerUIMode = CookieBannerUIMode.REQUEST_UNSUPPORTED_SITE_SUBMITTED,
+                    ),
+                )
+                fragment.activity?.getRootView()?.let { view ->
+                    showSnackBar(
+                        view,
+                        context.getString(R.string.cookie_banner_handling_report_site_snack_bar_text_2),
+                        SnackbarState.Duration.Preset.Long,
                     )
-                    fragment.activity?.getRootView()?.let { view ->
-                        showSnackBar(
-                            view,
-                            context.getString(R.string.cookie_banner_handling_report_site_snack_bar_text_2),
-                            SnackbarState.Duration.Preset.Long,
-                        )
-                    }
-                    withContext(Dispatchers.IO) {
-                        cookieBannersStorage.saveSiteDomain(domain)
-                    }
+                }
+                withContext(ioDispatcher) {
+                    cookieBannersStorage.saveSiteDomain(domain)
                 }
             }
         }
@@ -183,15 +187,13 @@ class DefaultCookieBannerDetailsController(
     @VisibleForTesting
     internal suspend fun clearSiteData(tab: SessionState) {
         val domain = getTabDomain(tab)
-        withContext(Dispatchers.Main) {
-            engine.clearData(
-                host = domain,
-                data = Engine.BrowsingData.select(
-                    Engine.BrowsingData.AUTH_SESSIONS,
-                    Engine.BrowsingData.ALL_SITE_DATA,
-                ),
-            )
-        }
+        engine.clearData(
+            host = domain,
+            data = Engine.BrowsingData.select(
+                Engine.BrowsingData.AUTH_SESSIONS,
+                Engine.BrowsingData.ALL_SITE_DATA,
+            ),
+        )
     }
 
     @VisibleForTesting

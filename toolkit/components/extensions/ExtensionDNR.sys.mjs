@@ -7,6 +7,10 @@
 // occasionally modify their rules (e.g. via the updateSessionRules API).
 const gRuleManagers = [];
 
+import { setTimeout, clearTimeout } from "resource://gre/modules/Timer.sys.mjs";
+
+let gInvalidateResourceCacheTimer = null;
+
 /**
  * Whenever a request occurs, the rules of each RuleManager are matched against
  * the request to determine the final action to take. The RequestEvaluator class
@@ -79,6 +83,18 @@ const lazy = XPCOMUtils.declareLazy({
   gMatchRequestsFromOtherExtensions: {
     pref: "extensions.dnr.match_requests_from_other_extensions",
     default: false,
+  },
+
+  // The timeout value the resource invalidation gets coalesced for successive
+  // modifications of DNR rules, in milliseconds.
+  // A negative value disables the invalidation.
+  gInvalidateCacheTimeout: {
+    pref: "extensions.dnr.invalidateCacheTimeout",
+    default: 100,
+  },
+
+  gNavigationCache: {
+    pref: "dom.script_loader.experimental.navigation_cache",
   },
 });
 
@@ -1960,7 +1976,7 @@ function isRestrictedPrincipalURI(uri) {
   // moz-extension: is not restricted because an extension always has permission
   // to its own moz-extension:-origin. The caller is expected to verify that an
   // extension can only access its own URI.
-  if (uri.schemeIs("moz-extension")) {
+  if (ExtensionUtils.isExtensionUrl(uri)) {
     return false;
   }
 
@@ -2154,6 +2170,49 @@ const NetworkIntegration = {
   },
 };
 
+// When rules are modified, the process in-memory resource cache should be
+// invalidated, in order to make the subsequent request reach the observer
+// notifications inside the network handling.
+//
+// Given that many rules can be modified at once, and performing
+// invalidateResourceCache for each is costly, as it requires IPC to all
+// processes, coalesce calls within a short span of time into one delayed
+// call.
+function invalidateResourceCacheSoon() {
+  if (Services.startup.shuttingDown) {
+    return;
+  }
+
+  if (!lazy.gNavigationCache) {
+    return;
+  }
+
+  let timeout = lazy.gInvalidateCacheTimeout;
+  if (timeout < 0) {
+    return;
+  }
+
+  if (!gInvalidateResourceCacheTimer) {
+    // If there was no recent call, just invalidate the cache immediately,
+    // but the subsequent calls within a short span of time should be
+    // delayed.
+    ChromeUtils.invalidateResourceCache();
+
+    gInvalidateResourceCacheTimer = setTimeout(() => {
+      gInvalidateResourceCacheTimer = null;
+    }, timeout);
+  } else {
+    clearTimeout(gInvalidateResourceCacheTimer);
+    gInvalidateResourceCacheTimer = setTimeout(() => {
+      gInvalidateResourceCacheTimer = null;
+      if (Services.startup.shuttingDown) {
+        return;
+      }
+      ChromeUtils.invalidateResourceCache();
+    }, timeout);
+  }
+}
+
 class RuleManager {
   constructor(extension) {
     this.extension = extension;
@@ -2206,21 +2265,35 @@ class RuleManager {
   setSessionRules(validatedSessionRules) {
     let oldRulesCount = this.sessionRules.rules.length;
     let newRulesCount = validatedSessionRules.length;
+
+    if (!oldRulesCount && !newRulesCount) {
+      // Nothing changed.
+      return;
+    }
+
     this.sessionRules.rules = validatedSessionRules;
     this.totalRulesCount += newRulesCount - oldRulesCount;
     this.hasRulesWithTabIds = !!this.sessionRules.rules.find(rule => {
       return rule.condition.tabIds || rule.condition.excludedTabIds;
     });
     this.#updateAllowAllRequestRules();
+    invalidateResourceCacheSoon();
     NetworkIntegration.maybeUpdateTabIdChecker();
   }
 
   setDynamicRules(validatedDynamicRules) {
     let oldRulesCount = this.dynamicRules.rules.length;
     let newRulesCount = validatedDynamicRules.length;
+
+    if (!oldRulesCount && !newRulesCount) {
+      // Nothing changed.
+      return;
+    }
+
     this.dynamicRules.rules = validatedDynamicRules;
     this.totalRulesCount += newRulesCount - oldRulesCount;
     this.#updateAllowAllRequestRules();
+    invalidateResourceCacheSoon();
   }
 
   /**
@@ -2253,6 +2326,7 @@ class RuleManager {
     this.enabledStaticRules = rulesets;
     this.totalRulesCount += newRulesCount - oldRulesCount;
     this.#updateAllowAllRequestRules();
+    invalidateResourceCacheSoon();
   }
 
   /**
@@ -2324,7 +2398,10 @@ function getRuleManager(extension, createIfMissing = true) {
 function clearRuleManager(extension) {
   let i = gRuleManagers.findIndex(rm => rm.extension === extension);
   if (i !== -1) {
-    gRuleManagers.splice(i, 1);
+    const [ruleManager] = gRuleManagers.splice(i, 1);
+    if (ruleManager.getRulesCount()) {
+      invalidateResourceCacheSoon();
+    }
     NetworkIntegration.maybeUpdateTabIdChecker();
     if (gRuleManagers.length === 0) {
       // The last DNR registration.
@@ -2366,7 +2443,8 @@ function getMatchedRulesForRequest(request, extension) {
   // for consistency.
   if (
     !lazy.gMatchRequestsFromOtherExtensions &&
-    initiatorURI?.schemeIs("moz-extension")
+    initiatorURI &&
+    ExtensionUtils.isExtensionUrl(initiatorURI)
   ) {
     const extUuid = initiatorURI.host;
     ruleManagers = ruleManagers.filter(rm => rm.extension.uuid === extUuid);

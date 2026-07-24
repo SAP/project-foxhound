@@ -72,7 +72,7 @@ VideoDecoderFactory::CodecSupport InternalDecoderFactory::QueryCodecSupport(
   if (reference_scaling) {
     VideoCodecType codec = PayloadStringToCodecType(format.name);
     if (codec != kVideoCodecVP9 && codec != kVideoCodecAV1) {
-      return {/*is_supported=*/false, /*is_power_efficient=*/false};
+      return {.is_supported = false, .is_power_efficient = false};
     }
   }
 
@@ -90,15 +90,14 @@ std::unique_ptr<VideoDecoder> InternalDecoderFactory::Create(
     return nullptr;
   }
 
-  if (absl::EqualsIgnoreCase(format.name, cricket::kVp8CodecName))
+  if (absl::EqualsIgnoreCase(format.name, kVp8CodecName))
     return CreateVp8Decoder(env);
-  if (absl::EqualsIgnoreCase(format.name, cricket::kVp9CodecName))
+  if (absl::EqualsIgnoreCase(format.name, kVp9CodecName))
     return VP9Decoder::Create();
-  if (absl::EqualsIgnoreCase(format.name, cricket::kH264CodecName))
+  if (absl::EqualsIgnoreCase(format.name, kH264CodecName))
     return H264Decoder::Create();
 
-  if (absl::EqualsIgnoreCase(format.name, cricket::kAv1CodecName) &&
-      kDav1dIsIncluded) {
+  if (absl::EqualsIgnoreCase(format.name, kAv1CodecName) && kDav1dIsIncluded) {
     return CreateDav1dDecoder(env);
   }
 

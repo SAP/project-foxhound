@@ -7,13 +7,11 @@
 #ifndef mozilla_dom_PushNotifier_h
 #define mozilla_dom_PushNotifier_h
 
-#include "nsIPushNotifier.h"
-
+#include "mozilla/Maybe.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIPrincipal.h"
+#include "nsIPushNotifier.h"
 #include "nsString.h"
-
-#include "mozilla/Maybe.h"
 
 namespace mozilla::dom {
 
@@ -76,14 +74,14 @@ class MOZ_STACK_CLASS PushDispatcher {
  */
 class PushNotifier final : public nsIPushNotifier {
  public:
-  PushNotifier();
+  PushNotifier() = default;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(PushNotifier, nsIPushNotifier)
   NS_DECL_NSIPUSHNOTIFIER
 
  private:
-  ~PushNotifier();
+  ~PushNotifier() = default;
 
   nsresult Dispatch(PushDispatcher& aDispatcher);
 };

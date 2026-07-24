@@ -13,11 +13,9 @@ extern "C" {
 #include "transport_addr.h"
 }
 
-#include "stun_msg.h"
-
 #include "dummysocket.h"
-
 #include "nr_socket_prsock.h"
+#include "stun_msg.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"

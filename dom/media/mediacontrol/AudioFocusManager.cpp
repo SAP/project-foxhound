@@ -4,12 +4,12 @@
 
 #include "AudioFocusManager.h"
 
-#include "MediaController.h"
-#include "MediaControlUtils.h"
 #include "MediaControlService.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "MediaControlUtils.h"
+#include "MediaController.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "nsThreadUtils.h"
 
 #undef LOG

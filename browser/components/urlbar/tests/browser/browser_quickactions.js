@@ -11,8 +11,13 @@ ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   UpdateService: "resource://gre/modules/UpdateService.sys.mjs",
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
 });
+
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser-tips/head.js",
+  this
+);
 
 const DUMMY_PAGE =
   "https://example.com/browser/browser/base/content/test/general/dummy_page.html";
@@ -206,6 +211,20 @@ async function doAlertDialogTest({ input, dialogContentURI }) {
 }
 
 add_task(async function test_refresh() {
+  // Refresh should be disabled because we are not in a named profile yet
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "refresh",
+  });
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(window),
+    1,
+    "We did not match anything"
+  );
+
+  // Make this a named profile so we can refresh
+  makeProfileResettable();
+
   await doAlertDialogTest({
     input: "refresh",
     dialogContentURI: "chrome://global/content/resetProfile.xhtml",
@@ -213,15 +232,9 @@ add_task(async function test_refresh() {
 });
 
 add_task(async function test_clear() {
-  let useOldClearHistoryDialog = Services.prefs.getBoolPref(
-    "privacy.sanitize.useOldClearHistoryDialog"
-  );
-  let dialogURL = useOldClearHistoryDialog
-    ? "chrome://browser/content/sanitize.xhtml"
-    : "chrome://browser/content/sanitize_v2.xhtml";
   await doAlertDialogTest({
     input: "clear",
-    dialogContentURI: dialogURL,
+    dialogContentURI: "chrome://browser/content/sanitize_v2.xhtml",
   });
 });
 

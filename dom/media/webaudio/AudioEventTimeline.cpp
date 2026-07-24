@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioEventTimeline.h"
-#include "AudioNodeTrack.h"
 
+#include "AudioNodeTrack.h"
 #include "mozilla/ErrorResult.h"
 
 using mozilla::Span;

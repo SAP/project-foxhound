@@ -7,12 +7,12 @@
 #ifndef DOM_SVG_SVGTRANSFORMABLEELEMENT_H_
 #define DOM_SVG_SVGTRANSFORMABLEELEMENT_H_
 
+#include <memory>
+
 #include "gfxMatrix.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGAnimatedTransformList.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/gfx/Matrix.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla::dom {
 
@@ -36,12 +36,16 @@ class SVGTransformableElement : public SVGElement {
   // SVGElement overrides
   bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
-  const gfx::Matrix* GetAnimateMotionTransform() const override;
+  const gfx::Matrix* GetAnimateMotionTransform() const override {
+    return mAnimateMotionTransform.get();
+  }
   void SetAnimateMotionTransform(const gfx::Matrix* aMatrix) override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  SVGAnimatedTransformList* GetAnimatedTransformList(
-      uint32_t aFlags = 0) override;
+  SVGAnimatedTransformList* GetExistingAnimatedTransformList() const override {
+    return mTransforms.get();
+  }
+  SVGAnimatedTransformList* GetOrCreateAnimatedTransformList() override;
   nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::transform;
   }
@@ -49,10 +53,10 @@ class SVGTransformableElement : public SVGElement {
   bool IsTransformable() override { return true; }
 
  protected:
-  UniquePtr<SVGAnimatedTransformList> mTransforms;
+  std::unique_ptr<SVGAnimatedTransformList> mTransforms;
 
   // XXX maybe move this to property table, to save space on un-animated elems?
-  UniquePtr<gfx::Matrix> mAnimateMotionTransform;
+  std::unique_ptr<gfx::Matrix> mAnimateMotionTransform;
 };
 
 }  // namespace mozilla::dom

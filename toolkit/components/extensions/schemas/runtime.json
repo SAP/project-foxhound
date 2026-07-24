@@ -192,6 +192,7 @@
           "aarch64",
           "arm",
           "ppc64",
+          "riscv64",
           "s390x",
           "sparc64",
           "x86-32",
@@ -511,7 +512,7 @@
         ],
         "returns": {
           "$ref": "Port",
-          "description": "Port through which messages can be sent and received. The port's $(ref:runtime.Port onDisconnect) event is fired if the extension/app does not exist. "
+          "description": "Port through which messages can be sent and received. The port's $(ref:runtime.Port.onDisconnect) event is fired if the extension/app does not exist. "
         }
       },
       {

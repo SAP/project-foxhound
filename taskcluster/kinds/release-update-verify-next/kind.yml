@@ -19,11 +19,12 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: update-verify-next
     run-on-projects: []  # to make sure this never runs as part of CI
     run-on-releases: [esr140]
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         artifacts:
             - name: 'public/build/diff-summary.log'
@@ -54,12 +55,6 @@ tasks:
         shipping-product: firefox
         attributes:
             build_platform: linux64-shippable
-
-    firefox-next-linux:
-        description: linux esr-next update verify
-        shipping-product: firefox
-        attributes:
-            build_platform: linux-shippable
 
     firefox-next-win64:
         description: win64 esr-next update verify

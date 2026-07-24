@@ -207,7 +207,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
 });
 
-…
+// ...
 // Static call example
 lazy.TranslationsParent.getIsTranslationsEngineSupported()
 

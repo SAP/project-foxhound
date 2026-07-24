@@ -1,0 +1,32 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  --ai-window-sidebar-width-default: 412px;
+}
+
+/* Hide AI window sidebar on about:newtab, about:home, firstrun, and AI Window URL */
+:root[hide-ai-sidebar] {
+  #ai-window-box,
+  #ai-window-splitter {
+    display: none;
+  }
+}
+
+.ai-window-right-sidebar {
+  width: var(--ai-window-sidebar-width-default);
+}
+
+/* Splitter styling to match the left sidebar */
+#ai-window-splitter {
+  width: var(--splitter-width);
+  border: 0;
+  background-color: transparent;
+  position: relative;
+  z-index: var(--browser-area-z-index-sidebar-splitter);
+}
+
+#ai-window-splitter:hover {
+  background-color: var(--toolbarbutton-hover-background);
+}

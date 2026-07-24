@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ScrollbarActivity_h___
-#define ScrollbarActivity_h___
+#ifndef ScrollbarActivity_h_
+#define ScrollbarActivity_h_
 
 #include "mozilla/Assertions.h"
 #include "nsCOMPtr.h"
@@ -103,4 +103,4 @@ class ScrollbarActivity final : public nsIDOMEventListener {
 }  // namespace layout
 }  // namespace mozilla
 
-#endif /* ScrollbarActivity_h___ */
+#endif /* ScrollbarActivity_h_ */

@@ -5,7 +5,7 @@
 package mozilla.components.browser.storage.sync
 
 import android.content.Context
-import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -31,17 +31,14 @@ import java.util.concurrent.Executors
 abstract class PlacesStorage(
     context: Context,
     val crashReporter: CrashReporting? = null,
+    readDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    writeDispatcher: CoroutineDispatcher = Executors.newSingleThreadExecutor(
+        NamedThreadFactory("PlacesStorageWriteScope"),
+    ).asCoroutineDispatcher(),
 ) : Storage, SyncableStore, StorageMaintenanceRegistry {
-    internal var writeScope =
-        CoroutineScope(
-            Executors.newSingleThreadExecutor(
-                NamedThreadFactory("PlacesStorageWriteScope"),
-            ).asCoroutineDispatcher(),
-        )
-        @VisibleForTesting internal set
+    internal val writeScope = CoroutineScope(writeDispatcher)
 
-    internal var readScope = CoroutineScope(Dispatchers.IO)
-        @VisibleForTesting internal set
+    internal val readScope = CoroutineScope(readDispatcher)
     private val storageDir by lazy { context.filesDir }
 
     /**

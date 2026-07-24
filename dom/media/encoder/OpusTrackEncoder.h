@@ -6,8 +6,9 @@
 #ifndef OpusTrackEncoder_h_
 #define OpusTrackEncoder_h_
 
-#include <stdint.h>
 #include <speex/speex_resampler.h>
+#include <stdint.h>
+
 #include "TimeUnits.h"
 #include "TrackEncoder.h"
 

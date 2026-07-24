@@ -31,6 +31,7 @@
 #include "js/AllocationRecording.h"
 #include "js/BuildId.h"  // JS::BuildIdOp
 #include "js/Context.h"
+#include "js/DOMEventDispatch.h"
 #include "js/experimental/CTypes.h"     // JS::CTypesActivityCallback
 #include "js/friend/StackLimits.h"      // js::ReportOverRecursed
 #include "js/friend/UsageStatistics.h"  // JSAccumulateTelemetryDataCallback
@@ -41,7 +42,6 @@
 #include "js/Modules.h"  // JS::Module{DynamicImport,Metadata,Resolve}Hook
 #include "js/ScriptPrivate.h"
 #include "js/shadow/Zone.h"
-#include "js/ShadowRealmCallbacks.h"
 #include "js/Stack.h"
 #include "js/StreamConsumer.h"
 #include "js/Symbol.h"
@@ -57,7 +57,8 @@
 #include "vm/JSScript.h"
 #include "vm/Logging.h"
 #include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
-#include "vm/SharedScriptDataTableHolder.h"   // js::SharedScriptDataTableHolder
+#include "vm/RuntimeFuses.h"
+#include "vm/SharedScriptDataTableHolder.h"  // js::SharedScriptDataTableHolder
 #include "vm/Stack.h"
 #include "wasm/WasmTypeDecls.h"
 
@@ -300,31 +301,6 @@ class Metrics {
 #undef DECLARE_METRIC_HELPER
 };
 
-class HasSeenObjectEmulateUndefinedFuse : public js::InvalidatingRuntimeFuse {
-  virtual const char* name() override {
-    return "HasSeenObjectEmulateUndefinedFuse";
-  }
-  virtual bool checkInvariant(JSContext* cx) override {
-    // Without traversing the GC heap I don't think it's possible to assert
-    // this invariant directly.
-    return true;
-  }
-
- public:
-  virtual void popFuse(JSContext* cx) override;
-};
-
-class HasSeenArrayExceedsInt32LengthFuse : public js::InvalidatingRuntimeFuse {
-  virtual const char* name() override {
-    return "HasSeenArrayExceedsInt32LengthFuse";
-  }
-
-  virtual bool checkInvariant(JSContext* cx) override { return true; }
-
- public:
-  virtual void popFuse(JSContext* cx) override;
-};
-
 }  // namespace js
 
 struct JSRuntime {
@@ -458,9 +434,6 @@ struct JSRuntime {
   bool getHostDefinedData(JSContext* cx,
                           JS::MutableHandle<JSObject*> data) const;
 
-  bool enqueuePromiseJob(JSContext* cx, js::HandleFunction job,
-                         js::HandleObject promise,
-                         js::HandleObject hostDefinedData);
   void addUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
   void removeUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
 
@@ -482,6 +455,9 @@ struct JSRuntime {
   /* Compartment memory reporting callback. */
   js::MainThreadData<JSSizeOfIncludingThisCompartmentCallback>
       sizeOfIncludingThisCompartmentCallback;
+
+  /* DOM event dispatch callback for testing. */
+  js::MainThreadData<JS::DispatchDOMEventCallback> dispatchDOMEventCallback;
 
   /* Callback for creating ubi::Nodes representing DOM node objects. Set by
    * JS::ubi::SetConstructUbiNodeForDOMObjectCallback. Refer to
@@ -596,6 +572,9 @@ struct JSRuntime {
   void setTrustedPrincipals(const JSPrincipals* p) { trustedPrincipals_ = p; }
   const JSPrincipals* trustedPrincipals() const { return trustedPrincipals_; }
 
+  void commitPendingWrapperPreservations();
+  void commitPendingWrapperPreservations(JS::Zone* zone);
+
   js::MainThreadData<const JSWrapObjectCallbacks*> wrapObjectCallbacks;
   js::MainThreadData<js::PreserveWrapperCallback> preserveWrapperCallback;
   js::MainThreadData<js::HasReleasedWrapperCallback> hasReleasedWrapperCallback;
@@ -603,6 +582,21 @@ struct JSRuntime {
   js::MainThreadData<js::ScriptEnvironmentPreparer*> scriptEnvironmentPreparer;
 
   js::MainThreadData<JS::CTypesActivityCallback> ctypesActivityCallback;
+
+ private:
+  // Script sources to compress off-thread. Only accessed by the main thread or
+  // off-thread GC sweeping (GCRuntime::sweepCompressionTasks).
+  using PendingCompressions =
+      js::Vector<js::PendingSourceCompressionEntry, 4, js::SystemAllocPolicy>;
+  js::MainThreadOrGCTaskData<PendingCompressions> pendingCompressions_;
+
+ public:
+  [[nodiscard]] bool addPendingCompressionEntry(js::ScriptSource* source) {
+    return pendingCompressions().emplaceBack(this, source);
+  }
+  PendingCompressions& pendingCompressions() {
+    return pendingCompressions_.ref();
+  }
 
  private:
   js::WriteOnceData<const JSClass*> windowProxyClass_;
@@ -627,6 +621,9 @@ struct JSRuntime {
 
   template <typename T>
   struct GlobalObjectWatchersLinkAccess {
+    static const mozilla::DoublyLinkedListElement<T>& Get(const T* aThis) {
+      return aThis->onNewGlobalObjectWatchersLink;
+    }
     static mozilla::DoublyLinkedListElement<T>& Get(T* aThis) {
       return aThis->onNewGlobalObjectWatchersLink;
     }
@@ -634,6 +631,9 @@ struct JSRuntime {
 
   template <typename T>
   struct GarbageCollectionWatchersLinkAccess {
+    static const mozilla::DoublyLinkedListElement<T>& Get(const T* aThis) {
+      return aThis->onGarbageCollectionWatchersLink;
+    }
     static mozilla::DoublyLinkedListElement<T>& Get(T* aThis) {
       return aThis->onGarbageCollectionWatchersLink;
     }
@@ -756,6 +756,10 @@ struct JSRuntime {
   [[nodiscard]] bool createJitRuntime(JSContext* cx);
   js::jit::JitRuntime* jitRuntime() const { return jitRuntime_.ref(); }
   bool hasJitRuntime() const { return !!jitRuntime_; }
+  static constexpr size_t offsetOfJitRuntime() {
+    return offsetof(JSRuntime, jitRuntime_) +
+           js::UnprotectedData<js::jit::JitRuntime*>::offsetOfValue();
+  }
 
  private:
   // Used to generate random keys for hash tables.
@@ -814,8 +818,16 @@ struct JSRuntime {
   /* Reset the default locale to OS defaults. */
   void resetDefaultLocale();
 
-  /* Gets current default locale. String remains owned by context. */
+  /* Gets current default locale. String remains owned by runtime. */
   const char* getDefaultLocale();
+
+  /*
+   * Gets current default locale or nullptr if not initialized.
+   * String remains owned by runtime.
+   */
+  const char* getDefaultLocaleIfInitialized() const {
+    return defaultLocale.ref().get();
+  }
 
   /* Garbage collector state. */
   js::gc::GCRuntime gc;
@@ -977,7 +989,7 @@ struct JSRuntime {
   js::MainThreadData<JS::AfterWaitCallback> afterWaitCallback;
 
  public:
-  void reportAllocationOverflow() {
+  void reportAllocOverflow() {
     js::ReportAllocationOverflow(static_cast<JSContext*>(nullptr));
   }
 
@@ -1086,26 +1098,24 @@ struct JSRuntime {
   // threads for purposes of wasm::InterruptRunningCode().
   js::ExclusiveData<js::wasm::InstanceVector> wasmInstances;
 
-  // A counter used when recording the order in which modules had their
-  // AsyncEvaluation field set to true. This is used to order queued
-  // evaluations. This is reset when the last module that was async evaluating
-  // is finished.
+  // The [[ModuleAsyncEvaluationCount]] field of agent records
   //
-  // See https://tc39.es/ecma262/#sec-async-module-execution-fulfilled step 10
-  // for use.
+  // See https://tc39.es/ecma262/#sec-agents.
   js::MainThreadData<uint32_t> moduleAsyncEvaluatingPostOrder;
 
-  // The implementation-defined abstract operation HostResolveImportedModule.
-  js::MainThreadData<JS::ModuleResolveHook> moduleResolveHook;
+  // A counter used to detect when there are no pending async modules, so
+  // that we can reset [[ModuleAsyncEvaluationCount]] to 0.
+  //
+  // See the note in
+  // https://tc39.es/ecma262/#sec-IncrementModuleAsyncEvaluationCount for use.
+  js::MainThreadData<uint32_t> pendingAsyncModuleEvaluations;
+
+  // The implementation-defined abstract operation HostLoadImportedModule.
+  js::MainThreadData<JS::ModuleLoadHook> moduleLoadHook;
 
   // A hook that implements the abstract operations
   // HostGetImportMetaProperties and HostFinalizeImportMeta.
   js::MainThreadData<JS::ModuleMetadataHook> moduleMetadataHook;
-
-  // A hook that implements the abstract operation
-  // HostImportModuleDynamically. This is also used to enable/disable dynamic
-  // module import and can accessed by off-thread parsing.
-  mozilla::Atomic<JS::ModuleDynamicImportHook> moduleDynamicImportHook;
 
   // Hooks called when script private references are created and destroyed.
   js::MainThreadData<JS::ScriptPrivateReferenceHook> scriptPrivateAddRefHook;
@@ -1145,78 +1155,13 @@ struct JSRuntime {
 #endif  // defined(NIGHTLY_BUILD)
 
  public:
-  JS::GlobalInitializeCallback getShadowRealmInitializeGlobalCallback() {
-    return shadowRealmInitializeGlobalCallback;
-  }
-
-  JS::GlobalCreationCallback getShadowRealmGlobalCreationCallback() {
-    return shadowRealmGlobalCreationCallback;
-  }
-
-  js::MainThreadData<JS::GlobalInitializeCallback>
-      shadowRealmInitializeGlobalCallback;
-
-  js::MainThreadData<JS::GlobalCreationCallback>
-      shadowRealmGlobalCreationCallback;
-
-  js::MainThreadData<js::HasSeenObjectEmulateUndefinedFuse>
-      hasSeenObjectEmulateUndefinedFuse;
-
-  js::MainThreadData<js::HasSeenArrayExceedsInt32LengthFuse>
-      hasSeenArrayExceedsInt32LengthFuse;
+  js::MainThreadData<js::RuntimeFuses> runtimeFuses;
 };
 
 namespace js {
 
 void Metrics::addTelemetry(JSMetric id, uint32_t sample) {
   rt_->addTelemetry(id, sample);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Value* vec, size_t len) {
-  // Don't PodZero here because JS::Value is non-trivial.
-  for (size_t i = 0; i < len; i++) {
-    vec[i].setDouble(+0.0);
-  }
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Value* beg, Value* end) {
-  MakeRangeGCSafe(beg, end - beg);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(jsid* beg, jsid* end) {
-  std::fill(beg, end, PropertyKey::Int(0));
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(jsid* vec, size_t len) {
-  MakeRangeGCSafe(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Shape** beg, Shape** end) {
-  std::fill(beg, end, nullptr);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Shape** vec, size_t len) {
-  MakeRangeGCSafe(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToUndefined(Value* beg, Value* end) {
-  for (Value* v = beg; v != end; ++v) {
-    v->setUndefined();
-  }
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToUndefined(Value* vec, size_t len) {
-  SetValueRangeToUndefined(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToNull(Value* beg, Value* end) {
-  for (Value* v = beg; v != end; ++v) {
-    v->setNull();
-  }
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToNull(Value* vec, size_t len) {
-  SetValueRangeToNull(vec, vec + len);
 }
 
 extern const JSSecurityCallbacks NullSecurityCallbacks;

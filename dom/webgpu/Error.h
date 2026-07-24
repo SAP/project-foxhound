@@ -6,11 +6,10 @@
 #ifndef GPU_Error_H_
 #define GPU_Error_H_
 
+#include "ObjectModel.h"
 #include "js/Value.h"
-#include "mozilla/WeakPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsString.h"
-#include "ObjectModel.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -19,7 +18,7 @@ class GlobalObject;
 }  // namespace dom
 namespace webgpu {
 
-class Error : public nsWrapperCache, public SupportsWeakPtr {
+class Error : public nsWrapperCache {
  protected:
   nsCOMPtr<nsIGlobalObject> mGlobal;
   nsString mMessage;
@@ -32,7 +31,6 @@ class Error : public nsWrapperCache, public SupportsWeakPtr {
 
  protected:
   virtual ~Error() = default;
-  virtual void Cleanup() {}
 
  public:
   void GetMessage(nsAString& aMessage) const { aMessage = mMessage; }

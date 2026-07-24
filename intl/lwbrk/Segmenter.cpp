@@ -496,11 +496,7 @@ UniquePtr<SegmentIteratorUtf16> Segmenter::Segment(
     case SegmenterGranularity::Grapheme:
       return MakeUnique<GraphemeClusterBreakIteratorUtf16>(aText);
     case SegmenterGranularity::Sentence:
-      if (StaticPrefs::intl_icu4x_segmenter_enabled()) {
-        return MakeUnique<SentenceBreakIteratorUtf16>(aText);
-      }
-      MOZ_ASSERT_UNREACHABLE("Unimplemented yet!");
-      return nullptr;
+      return MakeUnique<SentenceBreakIteratorUtf16>(aText);
     case SegmenterGranularity::Word:
       return MakeUnique<WordBreakIteratorUtf16>(aText);
     case SegmenterGranularity::Line:

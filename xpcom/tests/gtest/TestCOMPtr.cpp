@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 
 #include "mozilla/gtest/MozAssertions.h"
-#include "mozilla/Unused.h"
 
 #define NS_IFOO_IID \
   {0x6f7652e0, 0xee43, 0x11d1, {0x9c, 0xc3, 0x00, 0x60, 0x08, 0x8c, 0xa6, 0xb3}}
@@ -246,7 +245,7 @@ TEST(COMPtr, AddRefAndRelease)
 
   {
     nsCOMPtr<IFoo> foop(do_QueryInterface(static_cast<nsISupports*>(new IBar)));
-    mozilla::Unused << foop;
+    (void)foop;
   }
 
   ASSERT_EQ(IBar::total_destructions_, 1);

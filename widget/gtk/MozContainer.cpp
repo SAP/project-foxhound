@@ -59,7 +59,7 @@ GType moz_container_get_type(void) {
     };
 
     moz_container_type =
-        g_type_register_static(GTK_TYPE_CONTAINER, "MozContainer",
+        g_type_register_static(GTK_TYPE_WIDGET, "MozContainer",
                                &moz_container_info, static_cast<GTypeFlags>(0));
   }
 
@@ -189,19 +189,27 @@ void moz_container_realize(GtkWidget* widget) {
   attributes.visual = gtk_widget_get_visual(widget);
 
   window = gdk_window_new(parent, &attributes, attributes_mask);
+  auto w = moz_container_get_nsWindow(container);
 
-  LOGCONTAINER(("moz_container_realize() [%p] GdkWindow %p\n",
-                (void*)moz_container_get_nsWindow(container), (void*)window));
+  LOGCONTAINER(
+      ("moz_container_realize() [%p] GdkWindow %p\n", (void*)w, (void*)window));
 
   gtk_widget_register_window(widget, window);
   gtk_widget_set_window(widget, window);
+
+  MOZ_DIAGNOSTIC_ASSERT(w);
+  w->SetGdkWindow(window);
 }
 
 void moz_container_unrealize(GtkWidget* widget) {
   GdkWindow* window = gtk_widget_get_window(widget);
-  LOGCONTAINER(("moz_container_unrealize() [%p] GdkWindow %p\n",
-                (void*)moz_container_get_nsWindow(MOZ_CONTAINER(widget)),
+  auto w = moz_container_get_nsWindow(MOZ_CONTAINER(widget));
+
+  LOGCONTAINER(("moz_container_unrealize() [%p] GdkWindow %p\n", (void*)w,
                 (void*)window));
+
+  MOZ_DIAGNOSTIC_ASSERT(w);
+  w->SetGdkWindow(nullptr);
 
   if (gtk_widget_get_mapped(widget)) {
     gtk_widget_unmap(widget);

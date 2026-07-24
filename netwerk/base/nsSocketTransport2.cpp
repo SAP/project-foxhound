@@ -13,7 +13,6 @@
 #include "NSSErrorsService.h"
 #include "NetworkDataCountLayer.h"
 #include "QuicSocketControl.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/glean/NetwerkMetrics.h"
@@ -82,7 +81,7 @@ static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
 namespace mozilla {
 namespace net {
 
-class nsSocketEvent : public Runnable {
+class nsSocketEvent : public Runnable, public nsIRunnablePriority {
  public:
   nsSocketEvent(nsSocketTransport* transport, uint32_t type,
                 nsresult status = NS_OK, nsISupports* param = nullptr,
@@ -94,12 +93,17 @@ class nsSocketEvent : public Runnable {
         mParam(param),
         mTask(std::move(task)) {}
 
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIRUNNABLEPRIORITY
+
   NS_IMETHOD Run() override {
     mTransport->OnSocketEvent(mType, mStatus, mParam, std::move(mTask));
     return NS_OK;
   }
 
  private:
+  virtual ~nsSocketEvent() = default;
+
   RefPtr<nsSocketTransport> mTransport;
 
   uint32_t mType;
@@ -107,6 +111,18 @@ class nsSocketEvent : public Runnable {
   nsCOMPtr<nsISupports> mParam;
   std::function<void()> mTask;
 };
+
+NS_IMPL_ISUPPORTS_INHERITED(nsSocketEvent, Runnable, nsIRunnablePriority)
+
+NS_IMETHODIMP
+nsSocketEvent::GetPriority(uint32_t* aPriority) {
+  if (mTransport->IsTRRConnection()) {
+    *aPriority = nsIRunnablePriority::PRIORITY_MEDIUMHIGH;
+  } else {
+    *aPriority = nsIRunnablePriority::PRIORITY_NORMAL;
+  }
+  return NS_OK;
+}
 
 //-----------------------------------------------------------------------------
 
@@ -1233,7 +1249,7 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
   return rv;
 }
 
-static bool ShouldBlockAddress(const NetAddr& aAddr) {
+static bool ShouldBlockAddress(const NetAddr& aAddr, const nsCString& aHost) {
   if (!xpc::AreNonLocalConnectionsDisabled()) {
     return false;
   }
@@ -1242,8 +1258,26 @@ static bool ShouldBlockAddress(const NetAddr& aAddr) {
   bool hasOverride = FindNetAddrOverride(aAddr, overrideAddr);
   const NetAddr& addrToCheck = hasOverride ? overrideAddr : aAddr;
 
-  return !(addrToCheck.IsIPAddrAny() || addrToCheck.IsIPAddrLocal() ||
-           addrToCheck.IsIPAddrShared() || addrToCheck.IsLoopbackAddr());
+  if (addrToCheck.IsIPAddrAny() || addrToCheck.IsIPAddrLocal() ||
+      addrToCheck.IsIPAddrShared() || addrToCheck.IsLoopbackAddr()) {
+    return false;
+  }
+
+  nsAutoCString allowlist;
+  {
+    const auto prefLock =
+        mozilla::StaticPrefs::network_socket_allowed_nonlocal_domains();
+    allowlist = *prefLock;
+  }
+
+  for (const nsACString& host :
+       nsCCharSeparatedTokenizer(allowlist, ',').ToRange()) {
+    if (aHost == host) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 nsresult nsSocketTransport::InitiateSocket() {
@@ -1262,16 +1296,9 @@ nsresult nsSocketTransport::InitiateSocket() {
   // we need to disable access to 0.0.0.0 for non-test purposes
   if (mNetAddr.IsIPAddrAny() && !mProxyTransparentResolvesHost) {
     if (StaticPrefs::network_socket_ip_addr_any_disabled()) {
-      mozilla::glean::networking::http_ip_addr_any_count
-          .Get("blocked_requests"_ns)
-          .Add(1);
       SOCKET_LOG(("connection refused NS_ERROR_CONNECTION_REFUSED\n"));
       return NS_ERROR_CONNECTION_REFUSED;
     }
-
-    mozilla::glean::networking::http_ip_addr_any_count
-        .Get("not_blocked_requests"_ns)
-        .Add(1);
   }
 
   if (gIOService->IsOffline()) {
@@ -1287,7 +1314,7 @@ nsresult nsSocketTransport::InitiateSocket() {
     }
 #endif
 
-    if (NS_SUCCEEDED(mCondition) && ShouldBlockAddress(mNetAddr)) {
+    if (NS_SUCCEEDED(mCondition) && ShouldBlockAddress(mNetAddr, mHost)) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1703,8 +1730,8 @@ bool nsSocketTransport::RecoverFromError() {
   // time we will use a different address if available.
   // NS_BASE_STREAM_CLOSED is not an actual connection failure, so don't report
   // to DNS.
-  if ((mState == STATE_CONNECTING || mState == STATE_TRANSFERRING) &&
-      mDNSRecord && mCondition != NS_BASE_STREAM_CLOSED) {
+  if (mState == STATE_CONNECTING && mDNSRecord &&
+      mCondition != NS_BASE_STREAM_CLOSED) {
     mDNSRecord->ReportUnusable(SocketPort());
   }
 
@@ -2131,6 +2158,8 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
 uint64_t nsSocketTransport::ByteCountReceived() { return mInput->ByteCount(); }
 
 uint64_t nsSocketTransport::ByteCountSent() { return mOutput->ByteCount(); }
+
+bool nsSocketTransport::IsTRRConnection() { return mIsTRRConnection; }
 
 //-----------------------------------------------------------------------------
 // socket handler impl
@@ -2911,6 +2940,12 @@ nsSocketTransport::SetIsPrivate(bool aIsPrivate) {
 }
 
 NS_IMETHODIMP
+nsSocketTransport::SetIsTRRConnection(bool aIsTRRConnection) {
+  mIsTRRConnection = aIsTRRConnection;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsSocketTransport::GetTlsFlags(uint32_t* value) {
   *value = mTlsFlags;
   return NS_OK;
@@ -3442,6 +3477,12 @@ nsSocketTransport::GetStatus(nsresult* aStatus) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   *aStatus = mCondition;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::GetIsTRRConnection(bool* aIsTRRConnection) {
+  *aIsTRRConnection = mIsTRRConnection;
   return NS_OK;
 }
 

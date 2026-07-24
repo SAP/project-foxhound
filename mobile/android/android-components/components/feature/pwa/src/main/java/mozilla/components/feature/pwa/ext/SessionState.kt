@@ -20,7 +20,7 @@ import mozilla.components.concept.engine.manifest.WebAppManifest.DisplayMode.BRO
  */
 fun SessionState.installableManifest(): WebAppManifest? {
     val manifest = content.webAppManifest ?: return null
-    return if (content.securityInfo.secure && manifest.display != BROWSER && manifest.hasLargeIcons()) {
+    return if (content.securityInfo.isSecure && manifest.display != BROWSER && manifest.hasLargeIcons()) {
         manifest
     } else {
         null

@@ -21,7 +21,6 @@
 #include <string.h>
 #include <getopt.h>
 #include <stdint.h>
-#include <stdarg.h>
 
 #if defined(MOZ_ASAN) || defined(FUZZING)
 #  include <signal.h>

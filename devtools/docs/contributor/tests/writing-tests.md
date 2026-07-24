@@ -61,13 +61,13 @@ async function checkSomethingElse(view) {
 
 ### Referencing the new file
 
-For your test to be run, it needs to be referenced in the `browser.ini` file that you'll find in the same directory. For example: `browser/devtools/debugger/test/browser.ini`
+For your test to be run, it needs to be referenced in the `browser.toml` file that you'll find in the same directory. For example: `browser/devtools/debugger/test/browser.toml`
 
 Add a line with your file name between square brackets, and make sure that the list of files **is always sorted by alphabetical order** (some lists can be really long, so the alphabetical order helps in finding and reasoning about things).
 
-For example, if you were to add the test from the previous section, you'd add this to `browser.ini`:
+For example, if you were to add the test from the previous section, you'd add this to `browser.toml`:
 
-```ini
+```toml
 [browser_ruleview_completion-existing-property_01.js]
 ```
 
@@ -76,13 +76,13 @@ For example, if you were to add the test from the previous section, you'd add th
 Sometimes your test may need to open an HTML file in a tab, and it may also need to load CSS or JavaScript. For this to work, you'll need to...
 
 1. place these files in the same directory, and also
-2. reference them in the `browser.ini` file.
+2. reference them in the `browser.toml` file.
 
 There's a naming convention for support files: `doc_<support-some-test>.html`
 
 But again, often names do not follow this convention, so try to follow the style of the other support files currently in the same test directory.
 
-To reference your new support file, add its filename in the `support-files` section of `browser.ini`, also making sure this section is in alphabetical order.
+To reference your new support file, add its filename in the `support-files` section of `browser.toml`, also making sure this section is in alphabetical order.
 
 Support files can be accessed via a local server that is started while tests are running. This server is accessible at [http://example.com/browser/](http://example.com/browser/). See the `head.js section` below for more information.
 
@@ -228,7 +228,7 @@ In some cases, you may want to extract some common code from your test to use it
 * If this is common code specific to a given tool, then add it to the corresponding `head.js` file.
 * If it isn't common enough to live in `head.js`, then it may be a good idea to create a helper file to avoid duplication anyway. Here's how to create a helper file:
  * Create a new file in your test director. The naming convention should be `helper_<description_of_the_helper>.js`
- * Add it to the browser.ini support-files section, making sure it is sorted alphabetically
+ * Add it to the `browser.toml` `support-files` section, making sure it is sorted alphabetically
  * Load the helper file in the tests
  * `browser/devtools/markupview/test/head.js` has a handy `loadHelperScript(fileName)` function that you can use.
  * The file will be loaded in the test global scope, so any global function or variables it defines will be available (just like `head.js`).

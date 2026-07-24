@@ -8,6 +8,8 @@ EXPORTS.mozilla.dom += [
     "JSActor.h",
     "JSActorManager.h",
     "JSActorService.h",
+    "JSActorTypeUtils.h",
+    "JSIPCValueUtils.h",
     "JSProcessActorChild.h",
     "JSProcessActorParent.h",
     "JSProcessActorProtocol.h",
@@ -24,6 +26,8 @@ UNIFIED_SOURCES += [
     "JSActor.cpp",
     "JSActorManager.cpp",
     "JSActorService.cpp",
+    "JSActorTypeUtils.cpp",
+    "JSIPCValueUtils.cpp",
     "JSProcessActorChild.cpp",
     "JSProcessActorParent.cpp",
     "JSProcessActorProtocol.cpp",
@@ -35,6 +39,10 @@ UNIFIED_SOURCES += [
 LOCAL_INCLUDES += [
     "/js/xpconnect/loader",
     "/js/xpconnect/src",
+]
+
+IPDL_SOURCES += [
+    "JSIPCValue.ipdlh",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

@@ -7,11 +7,10 @@
 #ifndef mozilla_ChaosMode_h
 #define mozilla_ChaosMode_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/EnumSet.h"
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <cstdint>
 
 namespace mozilla {
 

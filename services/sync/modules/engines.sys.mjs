@@ -169,7 +169,7 @@ Tracker.prototype = {
    * Starts or stops listening for changes depending on the associated engine's
    * enabled state.
    *
-   * @param {Boolean} engineEnabled Whether the engine was enabled.
+   * @param {boolean} engineEnabled Whether the engine was enabled.
    */
   async onEngineEnabledChanged(engineEnabled) {
     if (engineEnabled == this._isTracking) {
@@ -775,8 +775,14 @@ export function SyncEngine(name, service) {
     beforeSave: () => this._beforeSaveMetadata(),
   });
 
-  this._previousFailedStorage = new JSONFile({
+  this._previousFailedInStorage = new JSONFile({
     path: Utils.jsonFilePath("failed", this.name),
+    dataPostProcessor: json => this._metadataPostProcessor(json),
+    beforeSave: () => this._beforeSaveMetadata(),
+  });
+
+  this._previousFailedOutStorage = new JSONFile({
+    path: Utils.jsonFilePath("failedOut", this.name),
     dataPostProcessor: json => this._metadataPostProcessor(json),
     beforeSave: () => this._beforeSaveMetadata(),
   });
@@ -853,7 +859,8 @@ SyncEngine.prototype = {
 
   async _beforeSaveMetadata() {
     await ensureDirectory(this._toFetchStorage.path);
-    await ensureDirectory(this._previousFailedStorage.path);
+    await ensureDirectory(this._previousFailedInStorage.path);
+    await ensureDirectory(this._previousFailedOutStorage.path);
   },
 
   // A relative priority to use when computing an order
@@ -875,7 +882,8 @@ SyncEngine.prototype = {
 
   async initialize() {
     await this._toFetchStorage.load();
-    await this._previousFailedStorage.load();
+    await this._previousFailedInStorage.load();
+    await this._previousFailedOutStorage.load();
     Services.prefs.addObserver(
       `${PREFS_BRANCH}engine.${this.prefName}`,
       this.asyncObserver,
@@ -1082,19 +1090,34 @@ SyncEngine.prototype = {
     this._toFetchStorage.saveSoon();
   },
 
-  get previousFailed() {
-    this._previousFailedStorage.ensureDataReady();
-    return this._previousFailedStorage.data.ids;
+  get previousFailedIn() {
+    this._previousFailedInStorage.ensureDataReady();
+    return this._previousFailedInStorage.data.ids;
   },
 
-  set previousFailed(ids) {
+  set previousFailedIn(ids) {
     if (ids.constructor.name != "SerializableSet") {
       throw new Error(
-        "Bug: Attempted to set previousFailed to something that isn't a SerializableSet"
+        "Bug: Attempted to set previousFailedIn to something that isn't a SerializableSet"
       );
     }
-    this._previousFailedStorage.data = { ids };
-    this._previousFailedStorage.saveSoon();
+    this._previousFailedInStorage.data = { ids };
+    this._previousFailedInStorage.saveSoon();
+  },
+
+  get previousFailedOut() {
+    this._previousFailedOutStorage.ensureDataReady();
+    return this._previousFailedOutStorage.data.ids;
+  },
+
+  set previousFailedOut(ids) {
+    if (ids.constructor.name != "SerializableSet") {
+      throw new Error(
+        "Bug: Attempted to set previousFailedOut to something that isn't a SerializableSet"
+      );
+    }
+    this._previousFailedOutStorage.data = { ids };
+    this._previousFailedOutStorage.saveSoon();
   },
 
   /*
@@ -1335,7 +1358,7 @@ SyncEngine.prototype = {
     // decrypt or apply during the last sync. We only backfill up to the
     // download limit, to prevent a large backlog for one engine from blocking
     // the others. We'll keep processing the backlog on subsequent engine syncs.
-    let failedInPreviousSync = this.previousFailed;
+    let failedInPreviousSync = this.previousFailedIn;
     let idsToBackfill = Array.from(
       Utils.setAddAll(
         Utils.subsetOfSize(this.toFetch, downloadLimit),
@@ -1347,7 +1370,7 @@ SyncEngine.prototype = {
     // Records that fail to decrypt or apply in two consecutive syncs are likely
     // corrupt; we remove them from the list because retrying and failing on
     // every subsequent sync just adds noise.
-    this.previousFailed = failedInCurrentSync;
+    this.previousFailedIn = failedInCurrentSync;
 
     let backfilledItems = this.itemSource();
 
@@ -1399,8 +1422,8 @@ SyncEngine.prototype = {
         count.applied += backfilledRecordsToApply.length;
 
         this.toFetch = Utils.setDeleteAll(this.toFetch, ids);
-        this.previousFailed = Utils.setAddAll(
-          this.previousFailed,
+        this.previousFailedIn = Utils.setAddAll(
+          this.previousFailedIn,
           failedInBackfill
         );
 
@@ -1412,13 +1435,13 @@ SyncEngine.prototype = {
     }
 
     count.newFailed = 0;
-    for (let item of this.previousFailed) {
+    for (let item of this.previousFailedIn) {
       // Anything that failed in the current sync that also failed in
       // the previous sync means there is likely something wrong with
       // the record, we remove it from trying again to prevent
       // infinitely syncing corrupted records
       if (failedInPreviousSync.has(item)) {
-        this.previousFailed.delete(item);
+        this.previousFailedIn.delete(item);
       } else {
         // otherwise it's a new failed and we count it as so
         ++count.newFailed;
@@ -1871,8 +1894,19 @@ SyncEngine.prototype = {
           countTelemetry.addOutgoingFailedReason(message);
         });
 
+        for (const id of failed) {
+          // Retry once.
+          if (this.previousFailedOut.has(id)) {
+            this._modified.delete(id);
+            this.previousFailedOut.delete(id);
+          } else {
+            this.previousFailedOut.add(id);
+          }
+        }
+
         for (let id of successful) {
           this._modified.delete(id);
+          this.previousFailedOut.delete(id);
         }
 
         await this._onRecordsWritten(
@@ -2120,7 +2154,7 @@ SyncEngine.prototype = {
     return changes;
   },
 
-  /*
+  /**
    * Returns a changeset containing entries for all currently tracked items.
    * The default implementation returns a changeset with timestamps indicating
    * when the item was added to the tracker.
@@ -2154,7 +2188,8 @@ SyncEngine.prototype = {
   async _resetClient() {
     await this.resetLastSync();
     this.hasSyncedThisSession = false;
-    this.previousFailed = new SerializableSet();
+    this.previousFailedIn = new SerializableSet();
+    this.previousFailedOut = new SerializableSet();
     this.toFetch = new SerializableSet();
   },
 
@@ -2191,7 +2226,8 @@ SyncEngine.prototype = {
     await this.asyncObserver.promiseObserversComplete();
     await this._tracker.finalize();
     await this._toFetchStorage.finalize();
-    await this._previousFailedStorage.finalize();
+    await this._previousFailedInStorage.finalize();
+    await this._previousFailedOutStorage.finalize();
   },
 
   // Returns a new watchdog. Exposed for tests.

@@ -101,7 +101,7 @@ export class TargetingContext {
    * Wrap each property of context[key] with a Proxy that captures errors and
    * timeouts
    *
-   * @param {Object.<string, TargetingGetters> | TargetingGetters} context
+   * @param {{[key: string]: TargetingGetters} | TargetingGetters} context
    * @param {string} key Namespace value found in `context` param
    * @returns {TargetingGetters} Wrapped context where getter report errors and timeouts
    */
@@ -146,8 +146,8 @@ export class TargetingContext {
   /**
    * Merge all evaluation contexts and wrap the getters with timeouts
    *
-   * @param {Object.<string, TargetingGetters>[]} contexts
-   * @returns {Object.<string, TargetingGetters>} Object that follows the pattern of `namespace: getters`
+   * @param {{[key: string]: TargetingGetters}[]} contexts
+   * @returns {{[key: string]: TargetingGetters}} Object that follows the pattern of `namespace: getters`
    */
   mergeEvaluationContexts(contexts) {
     let context = {};
@@ -195,7 +195,7 @@ export class TargetingContext {
    * ); // true
    *
    * @param {string} expression JEXL expression
-   * @param {Object.<string, TargetingGetters>[]} ...contexts Additional custom context
+   * @param {{[key: string]: TargetingGetters}[]} ...contexts Additional custom context
    *        objects where the keys act as namespaces for the different getters
    *
    * @returns {promise} Evaluation result

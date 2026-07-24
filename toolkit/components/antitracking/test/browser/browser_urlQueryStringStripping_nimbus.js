@@ -33,6 +33,7 @@ async function waitForListServiceInit(strippingEnabled) {
 
 /**
  * Set a list of prefs on the default branch and restore the original values on test end.
+ *
  * @param {*} prefs - Key value pairs in an array.
  */
 function setDefaultPrefs(prefs) {

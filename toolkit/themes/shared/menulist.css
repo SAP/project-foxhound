@@ -47,7 +47,7 @@
   }
 }
 
-:host([native][disabled="true"]) {
+:host([native][disabled]) {
   color: GrayText;
 }
 
@@ -55,7 +55,7 @@
   appearance: none;
   background-color: var(--button-background-color);
   color: var(--button-text-color);
-  border-radius: 4px;
+  border-radius: var(--button-border-radius);
   padding-block: 4px;
   padding-inline: 12px 8px;
   margin: 5px 2px 3px;
@@ -91,7 +91,7 @@
   justify-content: center;
 
   :host(:not([native])) & {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 }
 

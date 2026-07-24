@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SpeechSynthesis.h"
-#include "nsSynthVoiceRegistry.h"
 #include "mozilla/dom/SpeechSynthesisVoiceBinding.h"
+#include "nsSynthVoiceRegistry.h"
 
 namespace mozilla::dom {
 

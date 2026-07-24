@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - openh264-plugin
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     openh264-signing:
         from-deps:

@@ -136,14 +136,14 @@ nsresult FetchPageInfo(const RefPtr<Database>& aDB, PageData& _page) {
       // The page is not bookmarked.  Since updating the icon with a disabled
       // history would be a privacy leak, bail out as if the page did not exist.
       return NS_ERROR_NOT_AVAILABLE;
-    } else {
-      // The page, or a redirect to it, is bookmarked.  If the bookmarked spec
-      // is different from the requested one, use it.
-      if (!_page.bookmarkedSpec.Equals(_page.spec)) {
-        _page.spec = _page.bookmarkedSpec;
-        rv = FetchPageInfo(aDB, _page);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
+    }
+
+    // The page, or a redirect to it, is bookmarked.  If the bookmarked spec
+    // is different from the requested one, use it.
+    if (!_page.bookmarkedSpec.Equals(_page.spec)) {
+      _page.spec = _page.bookmarkedSpec;
+      rv = FetchPageInfo(aDB, _page);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
   }
 
@@ -301,11 +301,11 @@ nsresult SetIconInfo(const RefPtr<Database>& aDB, IconData& aIcon,
   return NS_OK;
 }
 
-nsresult FetchMostFrecentSubPageIcon(const RefPtr<Database>& aDB,
+nsresult FetchMostFrecentSubPageIcon(const UniquePtr<ConnectionAdapter>& aConn,
                                      const nsACString& aPageRoot,
                                      const nsACString& aPageHost,
                                      IconData& aIconData) {
-  nsCOMPtr<mozIStorageStatement> stmt = aDB->GetStatement(
+  nsCOMPtr<mozIStorageStatement> stmt = aConn->GetStatement(
       "SELECT i.icon_url, i.id, i.expire_ms, i.data, i.width, i.root "
       "FROM moz_pages_w_icons pwi "
       "JOIN moz_icons_to_pages itp ON pwi.id = itp.page_id "
@@ -314,7 +314,7 @@ nsresult FetchMostFrecentSubPageIcon(const RefPtr<Database>& aDB,
       "WHERE p.rev_host = get_unreversed_host(:pageHost || '.') || '.' "
       "AND p.url BETWEEN :pageRoot AND :pageRoot || X'FFFF' "
       "ORDER BY p.frecency DESC, i.width DESC "
-      "LIMIT 1");
+      "LIMIT 1"_ns);
   NS_ENSURE_STATE(stmt);
   mozStorageStatementScoper scoperFallback(stmt);
 
@@ -380,7 +380,7 @@ nsresult FetchMostFrecentSubPageIcon(const RefPtr<Database>& aDB,
  * @param _icon
  *        Icon that should be fetched.
  */
-nsresult FetchIconInfo(const RefPtr<Database>& aDB,
+nsresult FetchIconInfo(const UniquePtr<ConnectionAdapter>& aConn,
                        const nsCOMPtr<nsIURI>& aPageURI,
                        uint16_t aPreferredWidth, IconData& _icon) {
   if (_icon.status & ICON_STATUS_CACHED) {
@@ -399,7 +399,7 @@ nsresult FetchIconInfo(const RefPtr<Database>& aDB,
 
   nsAutoCString pageHostAndPort;
   // It's expected that some URIs may not have a host/port.
-  Unused << aPageURI->GetHostPort(pageHostAndPort);
+  (void)aPageURI->GetHostPort(pageHostAndPort);
 
   const uint16_t THRESHOLD_WIDTH = 64;
 
@@ -435,7 +435,7 @@ nsresult FetchIconInfo(const RefPtr<Database>& aDB,
       // Prefer non-rich icons for small sizes (<= 64px).
       aPreferredWidth <= THRESHOLD_WIDTH ? "isRich ASC, " : "");
 
-  nsCOMPtr<mozIStorageStatement> stmt = aDB->GetStatement(query);
+  nsCOMPtr<mozIStorageStatement> stmt = aConn->GetStatement(query);
 
   NS_ENSURE_STATE(stmt);
   mozStorageStatementScoper scoper(stmt);
@@ -606,7 +606,7 @@ nsresult FetchIconInfo(const RefPtr<Database>& aDB,
       (void)aPageURI->GetPrePath(pagePrePath);
 
       if (!pageHost.IsEmpty() && !pagePrePath.IsEmpty()) {
-        rv = FetchMostFrecentSubPageIcon(aDB, pagePrePath, pageHost, _icon);
+        rv = FetchMostFrecentSubPageIcon(aConn, pagePrePath, pageHost, _icon);
         NS_ENSURE_SUCCESS(rv, rv);
       }
     }
@@ -645,9 +645,9 @@ class Favicon final : public nsIFavicon {
   }
 
   NS_IMETHOD GetRawData(nsTArray<uint8_t>& aRawData) override {
-    Unused << aRawData.ReplaceElementsAt(0, aRawData.Length(),
-                                         TO_INTBUFFER(mRawData),
-                                         mRawData.Length(), fallible);
+    (void)aRawData.ReplaceElementsAt(0, aRawData.Length(),
+                                     TO_INTBUFFER(mRawData), mRawData.Length(),
+                                     fallible);
     return NS_OK;
   }
 
@@ -690,14 +690,12 @@ AsyncAssociateIconToPage::Run() {
   MOZ_ASSERT(mPage.canAddToHistory || !mPage.bookmarkedSpec.IsEmpty(),
              "The page should be addable to history or a bookmark");
 
-  bool shouldUpdateIcon = mIcon.status & ICON_STATUS_CHANGED;
-  if (!shouldUpdateIcon) {
-    for (const auto& payload : mIcon.payloads) {
-      // If the entry is missing from the database, we should add it.
-      if (payload.id == 0) {
-        shouldUpdateIcon = true;
-        break;
-      }
+  bool shouldUpdateIcon = false;
+  for (const auto& payload : mIcon.payloads) {
+    // If the entry is missing from the database, we should add it.
+    if (payload.id == 0) {
+      shouldUpdateIcon = true;
+      break;
     }
   }
 
@@ -708,7 +706,7 @@ AsyncAssociateIconToPage::Run() {
       DB->MainConn(), false, mozIStorageConnection::TRANSACTION_IMMEDIATE);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   nsresult rv;
   if (shouldUpdateIcon) {
@@ -787,10 +785,9 @@ AsyncAssociateIconToPage::Run() {
     stmt = DB->GetStatement(
         "INSERT INTO moz_icons_to_pages (page_id, icon_id, expire_ms) "
         "VALUES ((SELECT id from moz_pages_w_icons WHERE page_url_hash = "
-        "hash(:page_url) AND page_url = :page_url), "
-        ":icon_id, :expire) "
+        "  hash(:page_url) AND page_url = :page_url), :icon_id, :expire) "
         "ON CONFLICT(page_id, icon_id) DO "
-        "UPDATE SET expire_ms = :expire ");
+        "  UPDATE SET expire_ms = :expire ");
     NS_ENSURE_STATE(stmt);
 
     // For some reason using BindingParamsArray here fails execution, so we must
@@ -832,7 +829,7 @@ AsyncAssociateIconToPage::Run() {
     if (DB && NS_SUCCEEDED(FetchPageInfo(DB, bookmarkedPage))) {
       RefPtr<AsyncAssociateIconToPage> event =
           new AsyncAssociateIconToPage(mIcon, bookmarkedPage);
-      Unused << event->Run();
+      (void)event->Run();
     }
   }
 
@@ -887,12 +884,13 @@ AsyncSetIconForPage::Run() {
 
 AsyncGetFaviconForPageRunnable::AsyncGetFaviconForPageRunnable(
     const nsCOMPtr<nsIURI>& aPageURI, uint16_t aPreferredWidth,
-    const RefPtr<FaviconPromise::Private>& aPromise)
+    const RefPtr<FaviconPromise::Private>& aPromise, bool aOnConcurrentConn)
     : Runnable("places::AsyncGetFaviconForPage"),
       mPageURI(aPageURI),
       mPreferredWidth(aPreferredWidth == 0 ? UINT16_MAX : aPreferredWidth),
       mPromise(new nsMainThreadPtrHolder<FaviconPromise::Private>(
-          "AsyncGetFaviconForPageRunnable::Promise", aPromise, false)) {
+          "AsyncGetFaviconForPageRunnable::Promise", aPromise, false)),
+      mOnConcurrentConn(aOnConcurrentConn) {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -921,13 +919,36 @@ AsyncGetFaviconForPageRunnable::Run() {
     mPromise->Resolve(favicon.forget(), __func__);
   });
 
-  RefPtr<Database> DB = Database::GetDatabase();
-  NS_ENSURE_STATE(DB);
+  UniquePtr<ConnectionAdapter> adapter;
+  if (!mOnConcurrentConn) {
+    RefPtr<Database> DB = Database::GetDatabase();
+    MOZ_ASSERT(DB);
+    adapter = MakeUnique<ConnectionAdapter>(DB);
+  } else {
+    auto conn = ConcurrentConnection::GetInstance();
+    MOZ_ASSERT(conn);
+    if (conn.isSome()) {
+      adapter = MakeUnique<ConnectionAdapter>(conn.value());
+    }
+  }
+  // In certain circumstances, like when ConcurrentConnection is initialized
+  // during shutdown, we may not have a connection.
+  if (!adapter) {
+    return (rv = NS_ERROR_UNEXPECTED);
+  }
 
-  rv = FetchIconInfo(DB, mPageURI, mPreferredWidth, iconData);
+  rv = FetchIconInfo(adapter, mPageURI, mPreferredWidth, iconData);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
+}
+
+AsyncGetFaviconForPageRunnable::~AsyncGetFaviconForPageRunnable() {
+  // If the promise is not fulfilled yet we must reject it to avoid assertions,
+  // otherwise this is a no-op.
+  // This may happen for example when the runnable is enqueued in
+  // ConcurrentConnection and it skips unnecessary work on shutdown.
+  mPromise->Reject(NS_ERROR_ABORT, __func__);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -973,8 +994,8 @@ NS_IMETHODIMP AsyncTryCopyFaviconsRunnable::Run() {
 
   RefPtr<Database> DB = Database::GetDatabase();
   NS_ENSURE_STATE(DB);
-
-  rv = FetchIconInfo(DB, mFromPageURI, UINT16_MAX, fromIconData);
+  UniquePtr<ConnectionAdapter> adapter = MakeUnique<ConnectionAdapter>(DB);
+  rv = FetchIconInfo(adapter, mFromPageURI, UINT16_MAX, fromIconData);
   NS_ENSURE_SUCCESS(rv, rv);
   if (fromIconData.payloads.IsEmpty()) {
     // There's nothing to copy.
@@ -1012,11 +1033,13 @@ NS_IMETHODIMP AsyncTryCopyFaviconsRunnable::Run() {
 
   // Create the relations.
   nsCOMPtr<mozIStorageStatement> stmt = DB->GetStatement(
-      "INSERT OR IGNORE INTO moz_icons_to_pages (page_id, icon_id, expire_ms) "
+      "INSERT INTO moz_icons_to_pages (page_id, icon_id, expire_ms) "
       "SELECT :id, icon_id, expire_ms "
       "FROM moz_icons_to_pages "
-      "WHERE page_id = (SELECT id FROM moz_pages_w_icons WHERE page_url_hash = "
-      "hash(:url) AND page_url = :url) ");
+      "WHERE page_id = (SELECT id FROM moz_pages_w_icons "
+      "                 WHERE page_url_hash = hash(:url) AND page_url = :url) "
+      "ON CONFLICT (page_id, icon_id) DO "
+      "  UPDATE SET expire_ms = max(excluded.expire_ms, :min_expiration_ms)");
   NS_ENSURE_STATE(stmt);
   mozStorageStatementScoper scoper(stmt);
   rv = stmt->BindInt64ByName("id"_ns, toPageData.id);
@@ -1024,6 +1047,9 @@ NS_IMETHODIMP AsyncTryCopyFaviconsRunnable::Run() {
   nsAutoCString fromPageSpec;
   mFromPageURI->GetSpec(fromPageSpec);
   rv = URIBinder::Bind(stmt, "url"_ns, fromPageSpec);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = stmt->BindInt64ByName("min_expiration_ms"_ns,
+                             (PR_Now() + MIN_FAVICON_EXPIRATION) / 1000);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = stmt->Execute();
   NS_ENSURE_SUCCESS(rv, rv);

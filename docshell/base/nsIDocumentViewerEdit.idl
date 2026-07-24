@@ -8,27 +8,27 @@
 
 webidl Node;
 
-[scriptable, uuid(e39a0c2a-5b31-4d57-a971-66ba07fab614)]
+[builtinclass, scriptable, uuid(e39a0c2a-5b31-4d57-a971-66ba07fab614)]
 interface nsIDocumentViewerEdit : nsISupports
 {
   void clearSelection();
   void selectAll();
 
   void copySelection();
-  readonly attribute boolean copyable;
+  [infallible] readonly attribute boolean copyable;
 
   void copyLinkLocation();
-  readonly attribute boolean inLink;
+  [infallible] readonly attribute boolean inLink;
 
   const long COPY_IMAGE_TEXT = 0x0001;
   const long COPY_IMAGE_HTML = 0x0002;
   const long COPY_IMAGE_DATA = 0x0004;
   const long COPY_IMAGE_ALL = -1;
   void copyImage(in long aCopyFlags);
-  readonly attribute boolean inImage;
+  [infallible] readonly attribute boolean inImage;
 
   AString getContents(in string aMimeType, in boolean aSelectionOnly);
-  readonly attribute boolean canGetContents;
+  [infallible] readonly attribute boolean canGetContents;
 
   // Set the node that will be the subject of the editing commands above.
   // Usually this will be the node that was context-clicked.

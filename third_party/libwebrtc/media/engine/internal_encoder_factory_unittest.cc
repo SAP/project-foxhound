@@ -40,9 +40,11 @@ constexpr bool kH264Enabled = false;
 constexpr bool kH265Enabled = false;
 
 constexpr VideoEncoderFactory::CodecSupport kSupported = {
-    /*is_supported=*/true, /*is_power_efficient=*/false};
+    .is_supported = true,
+    .is_power_efficient = false};
 constexpr VideoEncoderFactory::CodecSupport kUnsupported = {
-    /*is_supported=*/false, /*is_power_efficient=*/false};
+    .is_supported = false,
+    .is_power_efficient = false};
 
 MATCHER_P(Support, expected, "") {
   return arg.is_supported == expected.is_supported &&
@@ -63,9 +65,8 @@ TEST(InternalEncoderFactoryTest, Vp9Profile0) {
         factory.Create(CreateEnvironment(), SdpVideoFormat::VP9Profile0());
     EXPECT_TRUE(encoder);
   } else {
-    EXPECT_THAT(
-        factory.GetSupportedFormats(),
-        Not(Contains(Field(&SdpVideoFormat::name, cricket::kVp9CodecName))));
+    EXPECT_THAT(factory.GetSupportedFormats(),
+                Not(Contains(Field(&SdpVideoFormat::name, kVp9CodecName))));
   }
 }
 
@@ -76,21 +77,19 @@ TEST(InternalEncoderFactoryTest, H264) {
         factory.Create(CreateEnvironment(), SdpVideoFormat::H264());
     EXPECT_TRUE(encoder);
   } else {
-    EXPECT_THAT(
-        factory.GetSupportedFormats(),
-        Not(Contains(Field(&SdpVideoFormat::name, cricket::kH264CodecName))));
+    EXPECT_THAT(factory.GetSupportedFormats(),
+                Not(Contains(Field(&SdpVideoFormat::name, kH264CodecName))));
   }
 }
 
 // At current stage H.265 is not supported by internal encoder factory.
 TEST(InternalEncoderFactoryTest, H265IsNotEnabled) {
   InternalEncoderFactory factory;
-  std::unique_ptr<VideoEncoder> encoder = factory.Create(
-      CreateEnvironment(), SdpVideoFormat(cricket::kH265CodecName));
+  std::unique_ptr<VideoEncoder> encoder =
+      factory.Create(CreateEnvironment(), SdpVideoFormat(kH265CodecName));
   EXPECT_EQ(static_cast<bool>(encoder), kH265Enabled);
-  EXPECT_THAT(
-      factory.GetSupportedFormats(),
-      Not(Contains(Field(&SdpVideoFormat::name, cricket::kH265CodecName))));
+  EXPECT_THAT(factory.GetSupportedFormats(),
+              Not(Contains(Field(&SdpVideoFormat::name, kH265CodecName))));
 }
 
 TEST(InternalEncoderFactoryTest, QueryCodecSupportWithScalabilityMode) {
@@ -116,7 +115,7 @@ TEST(InternalEncoderFactoryTest, QueryCodecSupportWithScalabilityMode) {
 TEST(InternalEncoderFactoryTest, Av1) {
   InternalEncoderFactory factory;
   EXPECT_THAT(factory.GetSupportedFormats(),
-              Contains(Field(&SdpVideoFormat::name, cricket::kAv1CodecName)));
+              Contains(Field(&SdpVideoFormat::name, kAv1CodecName)));
   EXPECT_TRUE(
       factory.Create(CreateEnvironment(), SdpVideoFormat::AV1Profile0()));
 }

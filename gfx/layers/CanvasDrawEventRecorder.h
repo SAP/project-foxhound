@@ -98,6 +98,8 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
   bool Init(TextureType aTextureType, TextureType aWebglTextureType,
             gfx::BackendType aBackendType, UniquePtr<Helpers> aHelpers);
 
+  using DrawEventRecorderPrivate::RecordEvent;
+
   /**
    * Record an event for processing by the CanvasParent's CanvasTranslator.
    * @param aEvent the event to record

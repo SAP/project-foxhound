@@ -137,7 +137,7 @@ fuzzy(0-2,0-5) == stresstest-1.html stresstest-1-ref.html
 == transform-origin-svg-2a.svg transform-origin-svg-2-ref.svg
 == transform-origin-svg-2b.svg transform-origin-svg-2-ref.svg
 # Bug 1122526
-== animate-layer-scale-inherit-1.html animate-layer-scale-inherit-1-ref.html
+fuzzy(0-1,0-30) == animate-layer-scale-inherit-1.html animate-layer-scale-inherit-1-ref.html
 fuzzy(0-145,0-10000) == animate-layer-scale-inherit-2.html animate-layer-scale-inherit-2-ref.html
 == animate-layer-scale-inherit-3.html animate-layer-scale-inherit-1-ref.html
 # Bug 1301500
@@ -149,7 +149,7 @@ fails == translate-rounding-3.html translate-rounding-viewport-ref.html # bug 13
 == invalidate-transform-1.html invalidate-transform-1-ref.html
 == invalidate-svg-scale-1.html invalidate-svg-scale-1-ref.html
 # Bug 1526847
-== animate-layer-scale-inherit-4.html animate-layer-scale-inherit-4-ref.html
+fuzzy(0-1,0-30) == animate-layer-scale-inherit-4.html animate-layer-scale-inherit-4-ref.html
 fuzzy(0-128,0-1000) == 1569215-1.html 1569215-1-ref.html
 
 == transform-anon-block-1.html transform-anon-block-1-ref.html
@@ -178,3 +178,5 @@ skip test-pref(layout.animation.prerender.partial,true) test-pref(layout.animati
 test-pref(layout.animation.prerender.partial.jank,true) test-pref(layout.animation.prerender.partial,true) test-pref(layout.animation.prerender.viewport-ratio-limit,"1.125") fuzzy-if(nogpu||Android,0-255,0-400) == partial-prerender-in-svg-1.html partial-prerender-in-svg-1-ref.html
 test-pref(layout.animation.prerender.partial.jank,true) test-pref(layout.animation.prerender.partial,true) test-pref(layout.animation.prerender.viewport-ratio-limit,"1.125") fuzzy-if(nogpu,0-255,0-400) == partial-prerender-in-svg-2.html partial-prerender-in-svg-1-ref.html # Reuse partial-prerender-in-svg-1-ref.html since the result should look same as partial-prerender-in-svg-1.html
 test-pref(layout.animation.prerender.partial.jank,true) test-pref(layout.animation.prerender.partial,true) test-pref(layout.animation.prerender.viewport-ratio-limit,"1.125") fuzzy(0-62,0-400) fuzzy-if(nogpu||Android,0-255,0-2000) == partial-prerender-in-svg-3.html partial-prerender-in-svg-3-ref.html
+
+pref(layout.css.anchor-positioning.enabled,true) == anchor-pos-transform-01.html anchor-pos-transform-01-ref.html

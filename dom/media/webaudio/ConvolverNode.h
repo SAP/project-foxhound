@@ -7,8 +7,8 @@
 #ifndef ConvolverNode_h_
 #define ConvolverNode_h_
 
-#include "AudioNode.h"
 #include "AudioBuffer.h"
+#include "AudioNode.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla::dom {

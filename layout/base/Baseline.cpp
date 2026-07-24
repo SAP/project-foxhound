@@ -42,47 +42,46 @@ enum class BoxType { Border, Padding, Content };
 
 template <BoxType aType>
 static nscoord SynthesizeBOffsetFromInnerBox(const nsIFrame* aFrame,
-                                             WritingMode aWM,
+                                             WritingMode aCBWM,
                                              BaselineSharingGroup aGroup) {
   WritingMode wm = aFrame->GetWritingMode();
-  MOZ_ASSERT_IF(aType != BoxType::Border, !aWM.IsOrthogonalTo(wm));
-  const nscoord borderBoxSize = MOZ_UNLIKELY(aWM.IsOrthogonalTo(wm))
-                                    ? aFrame->ISize(aWM)
-                                    : aFrame->BSize(aWM);
+  MOZ_ASSERT_IF(aType != BoxType::Border, !aCBWM.IsOrthogonalTo(wm));
+  const nscoord borderBoxSize = aFrame->BSize(aCBWM);
   const LogicalMargin bp = ([&] {
     switch (aType) {
       case BoxType::Border:
-        return LogicalMargin(aWM);
+        return LogicalMargin(aCBWM);
       case BoxType::Padding:
         return aFrame->GetLogicalUsedBorder(wm)
             .ApplySkipSides(aFrame->GetLogicalSkipSides())
-            .ConvertTo(aWM, wm);
+            .ConvertTo(aCBWM, wm);
       case BoxType::Content:
         return aFrame->GetLogicalUsedBorderAndPadding(wm)
             .ApplySkipSides(aFrame->GetLogicalSkipSides())
-            .ConvertTo(aWM, wm);
+            .ConvertTo(aCBWM, wm);
     }
     MOZ_CRASH();
   })();
-  if (MOZ_UNLIKELY(aWM.IsCentralBaseline())) {
-    nscoord boxBSize = borderBoxSize - bp.BStartEnd(aWM);
+  if (MOZ_UNLIKELY(aCBWM.IsCentralBaseline())) {
+    nscoord boxBSize = borderBoxSize - bp.BStartEnd(aCBWM);
     if (aGroup == BaselineSharingGroup::First) {
-      return boxBSize / 2 + bp.BStart(aWM);
+      return boxBSize / 2 + bp.BStart(aCBWM);
     }
     // Return the same center position as for ::First, but as offset from end:
     nscoord halfBoxBSize = (boxBSize / 2) + (boxBSize % 2);
-    return halfBoxBSize + bp.BEnd(aWM);
+    return halfBoxBSize + bp.BEnd(aCBWM);
   }
   if (aGroup == BaselineSharingGroup::First) {
     // First baseline for inverted-line content is the block-start content
     // edge, as the frame is in effect "flipped" for alignment purposes.
-    return MOZ_UNLIKELY(aWM.IsLineInverted()) ? bp.BStart(aWM)
-                                              : borderBoxSize - bp.BEnd(aWM);
+    return MOZ_UNLIKELY(aCBWM.IsLineInverted())
+               ? bp.BStart(aCBWM)
+               : borderBoxSize - bp.BEnd(aCBWM);
   }
   // Last baseline for inverted-line content is the block-start content edge,
   // as the frame is in effect "flipped" for alignment purposes.
-  return MOZ_UNLIKELY(aWM.IsLineInverted()) ? borderBoxSize - bp.BStart(aWM)
-                                            : bp.BEnd(aWM);
+  return MOZ_UNLIKELY(aCBWM.IsLineInverted()) ? borderBoxSize - bp.BStart(aCBWM)
+                                              : bp.BEnd(aCBWM);
 }
 
 nscoord Baseline::SynthesizeBOffsetFromContentBox(const nsIFrame* aFrame,

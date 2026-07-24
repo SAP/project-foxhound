@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGPATHSEGMENT_H_
 #define DOM_SVG_SVGPATHSEGMENT_H_
 
-#include "nsWrapperCache.h"
 #include "SVGPathSegUtils.h"
 #include "mozilla/dom/SVGPathElement.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 
@@ -42,6 +42,8 @@ class SVGPathSegment final : public nsWrapperCache {
   RefPtr<SVGPathElement> mSVGPathElement;
   nsString mCommand;
   nsTArray<float> mValues;
+  void AppendEndPoint(const StyleEndPoint<StyleCSSFloat>& point);
+  void AppendControlPoint(const StyleCurveControlPoint<StyleCSSFloat>& point);
 };
 
 }  // namespace mozilla::dom

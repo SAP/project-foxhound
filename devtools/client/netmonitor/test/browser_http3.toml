@@ -1,7 +1,9 @@
 [DEFAULT]
 tags = "devtools"
 subsuite = "devtools"
-run-if = ["http3"]
+run-if = [
+  "http3",
+]
 support-files = [
   "head.js",
   "!/devtools/client/shared/test/shared-head.js",

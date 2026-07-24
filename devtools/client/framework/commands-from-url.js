@@ -41,7 +41,6 @@ const {
  * - id:
  *      {Number} the process id to debug. Default to 0, which is the parent process.
  *
- *
  * @param {URL} url
  *        The url to fetch query params from.
  *

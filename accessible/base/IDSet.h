@@ -11,7 +11,6 @@
 #ifndef MOZILLA_A11Y_IDSet_h_
 #define MOZILLA_A11Y_IDSet_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/SplayTree.h"
 

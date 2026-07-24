@@ -10,14 +10,20 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.lib.crash.runtimetagproviders.BuildRuntimeTagProvider
+import mozilla.components.lib.crash.runtimetagproviders.EnvironmentRuntimeProvider
+import mozilla.components.lib.crash.runtimetagproviders.ExperimentDataRuntimeTagProvider
+import mozilla.components.lib.crash.runtimetagproviders.VersionInfoProvider
 import mozilla.components.lib.crash.sentry.SentryService
+import mozilla.components.lib.crash.sentry.eventprocessors.CrashMetadataEventProcessor
 import mozilla.components.lib.crash.service.CrashReporterService
 import mozilla.components.lib.crash.service.GleanCrashReporterService
-import mozilla.components.lib.crash.service.MozillaSocorroService
+import mozilla.components.lib.crash.service.socorro.MozillaSocorroService
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.support.ktx.android.content.isMainProcess
 import mozilla.components.support.utils.BrowsersCache
 import mozilla.components.support.utils.RunWhenReadyQueue
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.HomeActivity
@@ -32,6 +38,7 @@ import org.mozilla.fenix.components.metrics.InstallReferrerMetricsService
 import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.metrics.MetricsStorage
 import org.mozilla.fenix.crashes.CrashFactCollector
+import org.mozilla.fenix.crashes.NimbusExperimentDataProvider
 import org.mozilla.fenix.crashes.ReleaseRuntimeTagProvider
 import org.mozilla.fenix.crashes.crashReportOption
 import org.mozilla.fenix.ext.settings
@@ -46,6 +53,7 @@ import org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
  */
 class Analytics(
     private val context: Context,
+    private val nimbusComponents: NimbusComponents,
     private val runWhenReadyQueue: RunWhenReadyQueue,
 ) {
     val crashReporter: CrashReporter by lazyMonitored {
@@ -71,6 +79,7 @@ class Analytics(
                 sendEventForNativeCrashes = false, // Do not send native crashes to Sentry
                 sendCaughtExceptions = shouldSendCaughtExceptions,
                 sentryProjectUrl = getSentryProjectUrl(),
+                crashMetadataEventProcessor = CrashMetadataEventProcessor(),
             )
 
             // We only want to initialize Sentry on startup on the main process.
@@ -88,8 +97,6 @@ class Analytics(
         val socorroService = MozillaSocorroService(
             context,
             appName = "Fenix",
-            version = MOZ_APP_VERSION,
-            buildId = MOZ_APP_BUILDID,
             vendor = MOZ_APP_VENDOR,
             releaseChannel = MOZ_UPDATE_CHANNEL,
             distributionId = distributionId,
@@ -131,8 +138,17 @@ class Analytics(
             nonFatalCrashIntent = pendingIntent,
             useLegacyReporting =
                 context.settings().crashReportOption() != CrashReportOption.Auto &&
-                !context.settings().useNewCrashReporterDialog,
-            runtimeTagProviders = listOf(ReleaseRuntimeTagProvider()),
+                !context.settings().useNewCrashReporterFlow,
+            runtimeTagProviders = listOf(
+                ReleaseRuntimeTagProvider(),
+                BuildRuntimeTagProvider(context.versionInfoProvider),
+                EnvironmentRuntimeProvider(),
+                ExperimentDataRuntimeTagProvider(
+                    NimbusExperimentDataProvider(
+                        nimbusApi = lazyMonitored { nimbusComponents.sdk },
+                    ),
+                ),
+            ),
         )
     }
 
@@ -181,3 +197,12 @@ private fun getSentryProjectUrl(): String? {
         else -> null
     }
 }
+
+private val Context.versionInfoProvider: VersionInfoProvider
+    get() {
+        val packageInfo = applicationContext.packageManagerCompatHelper.getPackageInfoCompat(
+            applicationContext.packageName,
+            0,
+        )
+        return VersionInfoProvider.fromPackageInfo(packageInfo)
+    }

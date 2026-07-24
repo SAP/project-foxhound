@@ -130,7 +130,7 @@ def update_json_if_necessary():
     if os.path.exists(SOURCE_JSON) and os.path.exists(TARGET_JSON):
         result = subprocess.run(["cmp", "-s", SOURCE_JSON, TARGET_JSON], check=False)
         if result.returncode != 0:  # Files differ
-            subprocess.run(["cp", SOURCE_JSON, TARGET_JSON], check=False)
+            subprocess.run(["cp", SOURCE_JSON, TARGET_JSON], check=True)
             return True
     return False
 

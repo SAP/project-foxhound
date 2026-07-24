@@ -8,7 +8,6 @@
 #define DOM_MEDIA_CUBEBINPUTSTREAM_H_
 
 #include "CubebUtils.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsISupportsImpl.h"
@@ -62,6 +61,7 @@ class CubebInputStream final {
     void operator()(cubeb_stream* aStream) const;
   };
   CubebInputStream(already_AddRefed<Listener>&& aListener,
+                   already_AddRefed<CubebUtils::CubebHandle>&& aCubeb,
                    UniquePtr<cubeb_stream, CubebDestroyPolicy>&& aStream);
 
   void Init();

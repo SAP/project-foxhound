@@ -3,7 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef BROWSER_COMPONENTS_SHELL_NSSHELLSERVICE_H_
+#define BROWSER_COMPONENTS_SHELL_NSSHELLSERVICE_H_
+
 #define PREF_CHECKDEFAULTBROWSER "browser.shell.checkDefaultBrowser"
 #define PREF_DEFAULTBROWSERCHECKCOUNT "browser.shell.defaultBrowserCheckCount"
 
 #define BRAND_PROPERTIES "chrome://branding/locale/brand.properties"
+
+#endif  // BROWSER_COMPONENTS_SHELL_NSSHELLSERVICE_H_

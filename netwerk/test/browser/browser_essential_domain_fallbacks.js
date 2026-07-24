@@ -12,6 +12,13 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://gre/modules/EssentialDomainsRemoteSettings.sys.mjs",
 });
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  AddonSettings: "resource://gre/modules/addons/AddonSettings.sys.mjs",
+  CertUtils: "resource://gre/modules/CertUtils.sys.mjs",
+  ServiceRequest: "resource://gre/modules/ServiceRequest.sys.mjs",
+});
+
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
@@ -19,6 +26,8 @@ const { sinon } = ChromeUtils.importESModule(
 const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
+
+const EXPECTED_RESPONSE = "<html><body>\n</body></html>\n";
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
@@ -28,6 +37,7 @@ add_setup(async function () {
     ],
   });
 
+  // Pretend this domain blocked at the DNS layer.
   override.addIPOverride("aus5.mozilla.org", "N/A");
   registerCleanupFunction(async () => {
     override.clearOverrides();
@@ -37,6 +47,14 @@ add_setup(async function () {
     "@mozilla.org/network/network-connectivity-service;1"
   ].getService(Ci.nsINetworkConnectivityService);
   ncs.IPv4 = Ci.nsINetworkConnectivityService.OK;
+
+  const settings = await RemoteSettings(ESSENTIAL_DOMAINS_REMOTE_BUCKET);
+  let stub = sinon.stub(settings, "get").returns(newData);
+  registerCleanupFunction(async function () {
+    stub.restore();
+  });
+
+  await RemoteSettings(ESSENTIAL_DOMAINS_REMOTE_BUCKET).emit("sync", {});
 });
 
 let newData = [
@@ -101,17 +119,7 @@ function openChannelPromise(url, options = { loadUsingSystemPrincipal: true }) {
   });
 }
 
-add_task(async function test_fallback_on_dns() {
-  const settings = await RemoteSettings(ESSENTIAL_DOMAINS_REMOTE_BUCKET);
-  let stub = sinon.stub(settings, "get").returns(newData);
-  registerCleanupFunction(async function () {
-    stub.restore();
-  });
-
-  await RemoteSettings(ESSENTIAL_DOMAINS_REMOTE_BUCKET).emit("sync", {});
-
-  const EXPECTED_RESPONSE = "<html><body>\n</body></html>\n";
-
+add_task(async function test_channel_fallback_on_dns() {
   // The host should be replaced with test1.example.com
   // if the original channel fails and it's in the remote settings payload.
   let { req, buf } = await openChannelPromise(
@@ -119,6 +127,50 @@ add_task(async function test_fallback_on_dns() {
   );
   Assert.equal(buf, EXPECTED_RESPONSE);
   Assert.equal(req.URI.host, "test1.example.com");
+});
 
-  stub.restore();
+add_task(async function test_service_request_fallback() {
+  let request = await new Promise((resolve, reject) => {
+    let request = new lazy.ServiceRequest({ mozAnon: true });
+    request.open(
+      "GET",
+      `https://aus5.mozilla.org/browser/netwerk/cookie/test/browser/file_empty.html`,
+      true
+    );
+    request.channel.notificationCallbacks = new lazy.CertUtils.BadCertHandler(
+      !lazy.AddonSettings.UPDATE_REQUIREBUILTINCERTS
+    );
+    request.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+    // Prevent the request from writing to cache.
+    request.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
+    request.overrideMimeType("text/plain");
+    request.timeout = 5000;
+    request.addEventListener("load", () => resolve(request));
+    request.addEventListener("error", reject);
+    request.addEventListener("timeout", reject);
+    request.send(null);
+  });
+  Assert.equal(request.responseText, "<html><body>\n</body></html>\n");
+  Assert.equal(
+    request.responseURL,
+    "https://test1.example.com/browser/netwerk/cookie/test/browser/file_empty.html"
+  );
+});
+
+add_task(async function test_fetch_request_fallback() {
+  let response = await fetch(
+    "https://aus5.mozilla.org/browser/netwerk/cookie/test/browser/file_empty.html",
+    {
+      method: "GET",
+      cache: "no-store", // prevent caching, similar to LOAD_BYPASS_CACHE
+    }
+  );
+
+  let text = await response.text();
+
+  Assert.equal(text, "<html><body>\n</body></html>\n");
+  Assert.equal(
+    response.url,
+    "https://test1.example.com/browser/netwerk/cookie/test/browser/file_empty.html"
+  );
 });

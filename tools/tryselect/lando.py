@@ -20,7 +20,7 @@ from dataclasses import (
     field,
 )
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 import requests
 from mach.util import get_state_dir
@@ -49,7 +49,7 @@ def convert_bytes_patch_to_base64(patch_bytes: bytes) -> str:
     return base64.b64encode(patch_bytes).decode("ascii")
 
 
-def load_token_from_disk() -> Optional[dict]:
+def load_token_from_disk() -> dict | None:
     """Load and validate an existing Auth0 token from disk.
 
     Return the token as a `dict` if it can be validated, or return `None`
@@ -69,7 +69,7 @@ def load_token_from_disk() -> Optional[dict]:
 
 
 def get_stack_info(
-    vcs: SupportedVcsRepository, head: Optional[str]
+    vcs: SupportedVcsRepository, head: str | None
 ) -> tuple[str, str, list[str]]:
     """Retrieve information about the current stack for submission via Lando.
 
@@ -168,7 +168,7 @@ class Auth0Config:
 
         return response.json()
 
-    def validate_token(self, user_token: dict) -> Optional[dict]:
+    def validate_token(self, user_token: dict) -> dict | None:
         """Verify the given user token is valid.
 
         Validate the ID token, and validate the access token's expiration claim.
@@ -311,7 +311,7 @@ class Auth0Config:
 class LandoAPIException(Exception):
     """Raised when Lando throws an exception."""
 
-    def __init__(self, detail: Optional[str] = None):
+    def __init__(self, detail: str | None = None):
         super().__init__(detail or "")
 
 
@@ -321,6 +321,7 @@ class LandoAPI:
 
     access_token: str
     api_url: str
+    verify_tls: bool = True
 
     @property
     def lando_try_api_url(self) -> str:
@@ -365,11 +366,14 @@ class LandoAPI:
         return LandoAPI(
             api_url=parser.get(section, "api_domain"),
             access_token=token["access_token"],
+            verify_tls=parser.getboolean(section, "verify_tls", fallback=True),
         )
 
     def post(self, url: str, body: dict) -> dict:
         """Make a POST request to Lando."""
-        response = requests.post(url, headers=self.api_headers, json=body)
+        response = requests.post(
+            url, headers=self.api_headers, json=body, verify=self.verify_tls
+        )
 
         try:
             response_json = response.json()
@@ -415,9 +419,10 @@ class LandoAPI:
 
 
 def push_to_lando_try(
-    vcs: SupportedVcsRepository, commit_message: str, changed_files: dict
+    vcs: SupportedVcsRepository, commit_message: str, changed_files: dict, metrics
 ):
     """Push a set of patches to Lando's try endpoint."""
+    metrics.mach_try.vcs_prep.start()
     # Map `Repository` subclasses to the `patch_format` value Lando expects.
     PATCH_FORMAT_STRING_MAPPING = {
         GitRepository: "git-format-patch",
@@ -429,10 +434,9 @@ def push_to_lando_try(
         # Other VCS types (namely `src`) are unsupported.
         raise ValueError(f"Try push via Lando is not supported for `{vcs.name}`.")
 
-    # Use Lando Prod unless the `LANDO_TRY_USE_DEV` environment variable is defined.
-    lando_config_section = (
-        "lando-prod" if not os.getenv("LANDO_TRY_USE_DEV") else "lando-dev"
-    )
+    # Use LANDO_TRY_CONFIG so select which configuration section from .lando.ini to use.
+    # Default to using `lando-prod`.
+    lando_config_section = os.getenv("LANDO_TRY_CONFIG", "lando-prod")
 
     # Load Auth0 config from `.lando.ini`.
     lando_ini_path = Path(vcs.path) / ".lando.ini"
@@ -441,35 +445,46 @@ def push_to_lando_try(
     # Get the time when the push was initiated, not including Auth0 login time.
     push_start_time = time.perf_counter()
 
-    with vcs.try_commit(commit_message, changed_files) as head:
-        try:
-            base_commit, base_commit_vcs, patches = get_stack_info(vcs, head)
-        except ValueError as exc:
-            error_msg = "abort: error gathering patches for submission."
-            print(error_msg)
-            print(str(exc))
-            build.notify(error_msg)
-            return
+    head, cleanup_fn = vcs.prepare_try_push(commit_message, changed_files)
 
-        try:
-            # Make the try request to Lando.
-            response_json = lando_api.post_try_push_patches(
-                patches, patch_format, base_commit, base_commit_vcs
-            )
-        except LandoAPIException as exc:
-            error_msg = "abort: error submitting patches to Lando."
-            print(error_msg)
-            print(str(exc))
-            build.notify(error_msg)
-            return
+    def cleanup():
+        metrics.mach_try.vcs_cleanup.start()
+        cleanup_fn()
+        metrics.mach_try.vcs_cleanup.stop()
 
+    try:
+        base_commit, base_commit_vcs, patches = get_stack_info(vcs, head)
+    except ValueError as exc:
+        metrics.mach_try.vcs_prep.stop()
+        error_msg = "abort: error gathering patches for submission."
+        print(error_msg)
+        print(str(exc))
+        build.notify(error_msg)
+        cleanup()
+        return
+
+    metrics.mach_try.vcs_prep.stop()
+    try:
+        metrics.mach_try.vcs_push.start()
+        # Make the try request to Lando.
+        response_json = lando_api.post_try_push_patches(
+            patches, patch_format, base_commit, base_commit_vcs
+        )
+    except LandoAPIException as exc:
+        metrics.mach_try.vcs_push.stop()
+        error_msg = "abort: error submitting patches to Lando."
+        print(error_msg)
+        print(str(exc))
+        build.notify(error_msg)
+        cleanup()
+        return
+
+    metrics.mach_try.vcs_push.stop()
+    cleanup()
     duration = time.perf_counter() - push_start_time
 
     job_id = response_json["id"]
-    success_msg = (
-        f"Lando try submission success, took {duration:.1f} seconds. "
-        f"Landing job id: {job_id}."
-    )
+    success_msg = f"Lando try submission success, took {duration:.1f} seconds. Landing job id: {job_id}."
     print(success_msg)
 
     lando_api_status_url = lando_api.lando_try_status_api_url(job_id)

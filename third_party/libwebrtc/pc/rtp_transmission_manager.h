@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "api/environment/environment.h"
 #include "api/media_stream_interface.h"
 #include "api/media_types.h"
@@ -28,6 +29,7 @@
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "media/base/media_channel.h"
+#include "media/base/media_engine.h"
 #include "pc/codec_vendor.h"
 #include "pc/connection_context.h"
 #include "pc/legacy_stats_collector_interface.h"
@@ -73,7 +75,7 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
   RtpTransmissionManager(const Environment& env,
                          bool is_unified_plan,
                          ConnectionContext* context,
-                         cricket::CodecLookupHelper* codec_lookup_helper,
+                         CodecLookupHelper* codec_lookup_helper,
                          UsagePattern* usage_pattern,
                          PeerConnectionObserver* observer,
                          LegacyStatsCollectorInterface* legacy_stats,
@@ -90,53 +92,52 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
   void OnSetStreams() override;
 
   // Add a new track, creating transceiver if required.
-  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
-      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+  RTCErrorOr<scoped_refptr<RtpSenderInterface>> AddTrack(
+      scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids,
       const std::vector<RtpEncodingParameters>* init_send_encodings);
 
   // Create a new RTP sender. Does not associate with a transceiver.
-  rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
-  CreateSender(webrtc::MediaType media_type,
-               const std::string& id,
-               rtc::scoped_refptr<MediaStreamTrackInterface> track,
-               const std::vector<std::string>& stream_ids,
-               const std::vector<RtpEncodingParameters>& send_encodings);
+  scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> CreateSender(
+      webrtc::MediaType media_type,
+      const std::string& id,
+      scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids,
+      const std::vector<RtpEncodingParameters>& send_encodings);
 
   // Create a new RTP receiver. Does not associate with a transceiver.
-  rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
+  scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
   CreateReceiver(webrtc::MediaType media_type, const std::string& receiver_id);
 
   // Create a new RtpTransceiver of the given type and add it to the list of
   // registered transceivers.
-  rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+  scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   CreateAndAddTransceiver(
-      rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> sender,
-      rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
+      scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> sender,
+      scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
           receiver);
 
   // Returns the first RtpTransceiver suitable for a newly added track, if such
   // transceiver is available.
-  rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+  scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   FindFirstTransceiverForAddedTrack(
-      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<RtpEncodingParameters>* init_send_encodings);
 
   // Returns the list of senders currently associated with some
   // registered transceiver
-  std::vector<rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>>
+  std::vector<scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>>
   GetSendersInternal() const;
 
   // Returns the list of receivers currently associated with a transceiver
-  std::vector<
-      rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>>
+  std::vector<scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>>
   GetReceiversInternal() const;
 
   // Plan B: Get the transceiver containing all audio senders and receivers
-  rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+  scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   GetAudioTransceiver() const;
   // Plan B: Get the transceiver containing all video senders and receivers
-  rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+  scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   GetVideoTransceiver() const;
 
   // Add an audio track, reusing or creating the sender.
@@ -188,15 +189,15 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
                                       const std::string& sender_id) const;
 
   // Return the RtpSender with the given track attached.
-  rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
+  scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
   FindSenderForTrack(MediaStreamTrackInterface* track) const;
 
   // Return the RtpSender with the given id, or null if none exists.
-  rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
-  FindSenderById(const std::string& sender_id) const;
+  scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> FindSenderById(
+      const std::string& sender_id) const;
 
   // Return the RtpReceiver with the given id, or null if none exists.
-  rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
+  scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
   FindReceiverById(const std::string& receiver_id) const;
 
   TransceiverList* transceivers() { return &transceivers_; }
@@ -204,12 +205,10 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
 
   // Plan B helpers for getting the voice/video media channels for the single
   // audio/video transceiver, if it exists.
-  cricket::VoiceMediaSendChannelInterface* voice_media_send_channel() const;
-  cricket::VideoMediaSendChannelInterface* video_media_send_channel() const;
-  cricket::VoiceMediaReceiveChannelInterface* voice_media_receive_channel()
-      const;
-  cricket::VideoMediaReceiveChannelInterface* video_media_receive_channel()
-      const;
+  VoiceMediaSendChannelInterface* voice_media_send_channel() const;
+  VideoMediaSendChannelInterface* video_media_send_channel() const;
+  VoiceMediaReceiveChannelInterface* voice_media_receive_channel() const;
+  VideoMediaReceiveChannelInterface* video_media_receive_channel() const;
 
  private:
   Thread* signaling_thread() const { return context_->signaling_thread(); }
@@ -220,13 +219,13 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
   }
 
   // AddTrack implementation when Unified Plan is specified.
-  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrackUnifiedPlan(
-      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+  RTCErrorOr<scoped_refptr<RtpSenderInterface>> AddTrackUnifiedPlan(
+      scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids,
       const std::vector<RtpEncodingParameters>* init_send_encodings);
   // AddTrack implementation when Plan B is specified.
-  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrackPlanB(
-      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+  RTCErrorOr<scoped_refptr<RtpSenderInterface>> AddTrackPlanB(
+      scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids,
       const std::vector<RtpEncodingParameters>* init_send_encodings);
 
@@ -239,13 +238,14 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
   void CreateVideoReceiver(MediaStreamInterface* stream,
                            const RtpSenderInfo& remote_sender_info)
       RTC_RUN_ON(signaling_thread());
-  rtc::scoped_refptr<RtpReceiverInterface> RemoveAndStopReceiver(
+  scoped_refptr<RtpReceiverInterface> RemoveAndStopReceiver(
       const RtpSenderInfo& remote_sender_info) RTC_RUN_ON(signaling_thread());
 
-  PeerConnectionObserver* Observer() const;
+  void RunWithObserver(
+      absl::AnyInvocable<void(webrtc::PeerConnectionObserver*) &&>);
   void OnNegotiationNeeded();
 
-  cricket::MediaEngineInterface* media_engine() const;
+  const MediaEngineInterface* media_engine() const;
 
   UniqueRandomIdGenerator* ssrc_generator() const {
     return context_->ssrc_generator();
@@ -267,7 +267,7 @@ class RtpTransmissionManager : public RtpSenderBase::SetStreamsObserver {
   bool closed_ = false;
   bool const is_unified_plan_;
   ConnectionContext* context_;
-  cricket::CodecLookupHelper* codec_lookup_helper_;
+  CodecLookupHelper* codec_lookup_helper_;
   UsagePattern* usage_pattern_;
   PeerConnectionObserver* observer_;
   LegacyStatsCollectorInterface* const legacy_stats_;

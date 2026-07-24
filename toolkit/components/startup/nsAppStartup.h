@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppStartup_h__
-#define nsAppStartup_h__
+#ifndef nsAppStartup_h_
+#define nsAppStartup_h_
 
 #include "nsIAppStartup.h"
 #include "nsIWindowCreator.h"
@@ -12,7 +12,6 @@
 #include "nsWeakReference.h"
 
 #include "nsIAppShell.h"
-#include "mozilla/Attributes.h"
 
 #if defined(XP_WIN)
 // XPerf-backed probes
@@ -69,4 +68,4 @@ class nsAppStartup final : public nsIAppStartup,
 #endif
 };
 
-#endif  // nsAppStartup_h__
+#endif  // nsAppStartup_h_

@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MozAccessible_H_
-#define _MozAccessible_H_
+#ifndef MozAccessible_H_
+#define MozAccessible_H_
 
 #include "AccessibleWrap.h"
 #include "RemoteAccessible.h"
@@ -88,12 +88,10 @@ enum CheckedState {
 // filtered out in Platform::PlatformEvent or AccessibleWrap::HandleAccEvent!
 - (void)handleAccessibleEvent:(uint32_t)eventType;
 
-- (void)handleAccessibleTextChangeEvent:(NSString*)change
-                               inserted:(BOOL)isInserted
-                            inContainer:(mozilla::a11y::Accessible*)container
-                                     at:(int32_t)start;
-
 - (void)maybePostValidationErrorChanged;
+
+- (void)handleAnnouncementEvent:(NSString*)announcement
+                       priority:(uint16_t)priority;
 
 // internal method to retrieve a child at a given index.
 - (id)childAt:(uint32_t)i;
@@ -183,6 +181,12 @@ enum CheckedState {
 
 // override
 - (NSString*)moxHelp;
+
+// override
+- (NSArray*)moxCustomContent;
+
+// override
+- (NSArray*)moxCustomActions;
 
 // override
 - (NSNumber*)moxEnabled;

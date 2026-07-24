@@ -126,12 +126,7 @@ specialize qw/av1_dr_prediction_z3 sse4_1 avx2 neon/;
 
 # FILTER_INTRA predictor functions
 add_proto qw/void av1_filter_intra_predictor/, "uint8_t *dst, ptrdiff_t stride, TX_SIZE tx_size, const uint8_t *above, const uint8_t *left, int mode";
-# TODO(aomedia:349436249): enable NEON for armv7 after SIGBUS is fixed.
-if (aom_config("AOM_ARCH_ARM") eq "yes" && aom_config("AOM_ARCH_AARCH64") eq "") {
-  specialize qw/av1_filter_intra_predictor sse4_1/;
-} else {
-  specialize qw/av1_filter_intra_predictor sse4_1 neon/;
-}
+specialize qw/av1_filter_intra_predictor sse4_1 neon/;
 
 # High bitdepth functions
 
@@ -441,7 +436,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/av1_wedge_compute_delta_squares sse2 avx2 neon/;
 
   # hash
-  add_proto qw/uint32_t av1_get_crc32c_value/, "void *crc_calculator, uint8_t *p, size_t length";
+  add_proto qw/uint32_t av1_get_crc32c_value/, "void *crc_calculator, const uint8_t *p, size_t length";
   specialize qw/av1_get_crc32c_value sse4_2 arm_crc32/;
 
   if (aom_config("CONFIG_REALTIME_ONLY") ne "yes") {
@@ -557,6 +552,9 @@ specialize qw/av1_resize_horz_dir sse2 avx2/;
 if ((aom_config("CONFIG_REALTIME_ONLY") ne "yes") || (aom_config("CONFIG_AV1_DECODER") eq "yes")) {
   add_proto qw/void av1_warp_affine/, "const int32_t *mat, const uint8_t *ref, int width, int height, int stride, uint8_t *pred, int p_col, int p_row, int p_width, int p_height, int p_stride, int subsampling_x, int subsampling_y, ConvolveParams *conv_params, int16_t alpha, int16_t beta, int16_t gamma, int16_t delta";
   specialize qw/av1_warp_affine sse4_1 avx2 neon neon_i8mm sve/;
+  if (aom_config("CONFIG_HIGHWAY") eq "yes") {
+    specialize qw/av1_warp_affine avx512/;
+  }
 }
 
 # LOOP_RESTORATION functions
@@ -619,12 +617,12 @@ if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
     specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon sve2/;
     specialize qw/av1_highbd_dist_wtd_convolve_y sse4_1 avx2 neon sve2/;
     specialize qw/av1_highbd_dist_wtd_convolve_2d_copy sse4_1 avx2 neon/;
-    specialize qw/av1_highbd_convolve_2d_sr ssse3 avx2 neon sve2/;
-    specialize qw/av1_highbd_convolve_2d_sr_intrabc neon/;
-    specialize qw/av1_highbd_convolve_x_sr ssse3 avx2 neon sve2/;
-    specialize qw/av1_highbd_convolve_x_sr_intrabc neon/;
-    specialize qw/av1_highbd_convolve_y_sr ssse3 avx2 neon sve2/;
-    specialize qw/av1_highbd_convolve_y_sr_intrabc neon/;
+    specialize qw/av1_highbd_convolve_2d_sr ssse3 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_convolve_2d_sr_intrabc neon rvv/;
+    specialize qw/av1_highbd_convolve_x_sr ssse3 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_convolve_x_sr_intrabc neon rvv/;
+    specialize qw/av1_highbd_convolve_y_sr ssse3 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_convolve_y_sr_intrabc neon rvv/;
     specialize qw/av1_highbd_convolve_2d_scale sse4_1 neon/;
   }
 

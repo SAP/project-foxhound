@@ -81,8 +81,9 @@ class MOZ_CAPABILITY("event target") EventTargetCapability final {
   T* GetEventTarget() const { return mTarget; }
 
   // Helper to simplify dispatching to mTarget.
-  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                    uint32_t aFlags = NS_DISPATCH_NORMAL) const {
+  nsresult Dispatch(
+      already_AddRefed<nsIRunnable> aRunnable,
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL) const {
     return mTarget->Dispatch(std::move(aRunnable), aFlags);
   }
 

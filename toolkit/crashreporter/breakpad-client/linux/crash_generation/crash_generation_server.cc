@@ -53,8 +53,6 @@
 #  include "mozilla/toolkit/crashreporter/rust_minidump_writer_linux_ffi_generated.h"
 #endif // defined(MOZ_OXIDIZED_BREAKPAD)
 
-#include "mozilla/Alignment.h"
-
 static const char kCommandQuit = 'x';
 
 namespace google_breakpad {
@@ -223,7 +221,7 @@ CrashGenerationServer::ClientEvent(short revents)
 
   struct msghdr msg = {0};
   struct iovec iov[1];
-  MOZ_ALIGNED_DECL(16, char crash_context[kCrashContextSize]);
+  alignas(16) char crash_context[kCrashContextSize];
   char control[kControlMsgSize];
   const ssize_t expected_msg_size = sizeof(crash_context);
 

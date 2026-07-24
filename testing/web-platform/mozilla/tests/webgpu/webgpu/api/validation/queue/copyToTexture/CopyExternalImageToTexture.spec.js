@@ -12,7 +12,11 @@ textures.
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { raceWithRejectOnTimeout, unreachable, assert } from '../../../../../common/util/util.js';
 import { kTextureUsages } from '../../../../capability_info.js';
-import { kAllTextureFormats, kValidTextureFormatsForCopyE2T } from '../../../../format_info.js';
+import { GPUConst } from '../../../../constants.js';
+import {
+  kAllTextureFormats,
+  isTextureFormatUsableWithCopyExternalImageToTexture } from
+'../../../../format_info.js';
 import { kResourceStates, AllFeaturesMaxLimitsGPUTest } from '../../../../gpu_test.js';
 import {
 
@@ -567,6 +571,10 @@ desc(
 params((u) =>
 u //
 .combine('usage', kTextureUsages).
+unless(({ usage }) => {
+  // TRANSIENT_ATTACHMENT is only valid when combined with RENDER_ATTACHMENT.
+  return usage === GPUConst.TextureUsage.TRANSIENT_ATTACHMENT;
+}).
 beginSubcases().
 combine('copySize', [
 { width: 0, height: 0, depthOrArrayLayers: 0 },
@@ -688,7 +696,7 @@ fn(async (t) => {
   });
   void t.device.popErrorScope();
 
-  const success = kValidTextureFormatsForCopyE2T.includes(format);
+  const success = isTextureFormatUsableWithCopyExternalImageToTexture(t.device.features, format);
 
   t.runTest({ source: imageBitmap }, { texture: dstTexture }, copySize, success);
 });

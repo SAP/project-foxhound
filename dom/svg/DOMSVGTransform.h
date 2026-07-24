@@ -7,15 +7,15 @@
 #ifndef DOM_SVG_DOMSVGTRANSFORM_H_
 #define DOM_SVG_DOMSVGTRANSFORM_H_
 
+#include <memory>
+
 #include "DOMSVGTransformList.h"
+#include "SVGTransform.h"
 #include "gfxMatrix.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsID.h"
-#include "SVGTransform.h"
 #include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 31  // supports > 2 billion list items
 
@@ -170,7 +170,7 @@ class DOMSVGTransform final : public nsWrapperCache {
   // with any particular list and thus, no internal SVGTransform object. In
   // that case we allocate an SVGTransform object on the heap to store the
   // data.
-  UniquePtr<SVGTransform> mTransform;
+  std::unique_ptr<SVGTransform> mTransform;
 };
 
 }  // namespace mozilla::dom

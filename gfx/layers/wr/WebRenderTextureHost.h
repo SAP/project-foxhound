@@ -21,7 +21,7 @@ class SurfaceDescriptor;
 // Compositor related code path in this class. Furthermore, the RendererOGL runs
 // at RenderThead instead of Compositor thread. This class is also creating the
 // corresponding RenderXXXTextureHost used by RendererOGL at RenderThread.
-class WebRenderTextureHost : public TextureHost {
+class WebRenderTextureHost final : public TextureHost {
  public:
   WebRenderTextureHost(TextureFlags aFlags, TextureHost* aTexture,
                        const wr::ExternalImageId& aExternalImageId);
@@ -49,6 +49,8 @@ class WebRenderTextureHost : public TextureHost {
   gfx::ColorDepth GetColorDepth() const override;
   gfx::YUVColorSpace GetYUVColorSpace() const override;
   gfx::ColorRange GetColorRange() const override;
+
+  bool NeedsYFlip() const override;
 
   gfx::IntSize GetSize() const override;
 
@@ -101,11 +103,7 @@ class WebRenderTextureHost : public TextureHost {
 
   bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
 
-  void SetAcquireFence(UniqueFileHandle&& aFenceFd) override;
-
-  void SetReleaseFence(UniqueFileHandle&& aFenceFd) override;
-
-  UniqueFileHandle GetAndResetReleaseFence() override;
+  void SetReadFence(Fence* aReadFence) override;
 
   AndroidHardwareBuffer* GetAndroidHardwareBuffer() const override;
 

@@ -1,11 +1,15 @@
 [DEFAULT]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 support-files = [
   "head.js",
 ]
 
 ["browser_clipboard_content_analysis.js"]
-skip-if = ["os == 'win' && os_version == '11.26100' && opt"] # Bug 1948449
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && opt", # Bug 1948449
+]
 
 ["browser_clipboard_paste_changingclipboardexternal_content_analysis.js"]
 support-files = [
@@ -69,9 +73,8 @@ support-files = [
   "!/dom/events/test/browser_dragdrop_outer.html",
 ]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1936521
-  "os == 'mac' && os_version == '15.00' && processor == 'aarch64' && opt && socketprocess_networking", # Bug 1936521
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1936521
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt && socketprocess_networking", # Bug 1936521
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1936521
 ]
 
 ["browser_content_analysis_dnd_same_origin.js"]
@@ -90,7 +93,9 @@ support-files = [
   "!/dom/events/test/browser_dragdrop_shadow_inner.html",
   "!/dom/events/test/browser_dragdrop_shadow_outer.html",
 ]
-skip-if = ["true"] # bug 1932955
+skip-if = [
+  "true", # bug 1932955
+]
 
 ["browser_content_analysis_policies.js"]
 
@@ -126,7 +131,6 @@ support-files = [
   "!/toolkit/components/printing/tests/longerArticle.html",
   "!/toolkit/components/printing/tests/simplifyArticleSample.html",
 ]
-skip-if = ["win11_2009"] # Bug 1890792
 
 ["browser_print_iframe_content_analysis.js"]
 support-files = [

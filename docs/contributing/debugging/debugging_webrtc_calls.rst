@@ -975,9 +975,13 @@ provided below to help one navigate.
      - Signalling
      - This is the JSEP state engine implementation
      -
-   * - `media/webrtc/libwebrtcglue <https://searchfox.org/mozilla-central/source/dom/media/webrtc/libwebrtcglue>`__
+   * - `dom/media/webrtc/libwebrtcglue <https://searchfox.org/mozilla-central/source/dom/media/webrtc/libwebrtcglue>`__
      - WebRTC (various)
      - This is the glue code between libwebrtc and Firefox
+     -
+   * - `dom/media/webrtc/libwebrtc_overrides <https://searchfox.org/mozilla-central/source/dom/media/webrtc/libwebrtc_overrides>`__
+     - WebRTC (various)
+     - Firefox-specific overrides for libwebrtc components
      -
    * - `dom/media/webrtc/sdp <https://searchfox.org/mozilla-central/source/dom/media/webrtc/sdp>`__
      - Signalling
@@ -994,6 +998,10 @@ provided below to help one navigate.
    * - `dom/media/webrtc/transport <https://searchfox.org/mozilla-central/source/dom/media/webrtc/transport>`__
      - Network
      - This contains the ICE implementation, the MDNS implementation, and transport code
+     -
+   * - `dom/media/webrtc/transport/ipc <https://searchfox.org/mozilla-central/source/dom/media/webrtc/transport/ipc>`__
+     - Network
+     - IPDL protocols for WebRTC transport, including STUN address requests and WebRTC TCP sockets
      -
    * - `dom/media/webrtc/transportbridge <https://searchfox.org/mozilla-central/source/dom/media/webrtc/transportbridge>`__
      - WebRTC
@@ -1019,6 +1027,46 @@ provided below to help one navigate.
      - Media Capture
      - GetUserMedia and related classes are here
      - There are many other unrelated media source files here
+   * - `dom/media/systemservices <https://searchfox.org/mozilla-central/source/dom/media/systemservices>`__
+     - Media Capture
+     - System services for media capture including camera/microphone access
+     - Contains CamerasChild, CamerasParent, VideoEngine, and platform-specific implementations
+   * - `dom/media/encoder <https://searchfox.org/mozilla-central/source/dom/media/encoder>`__
+     - Media Encoding
+     - Media encoders for recording, including Opus and VP8 track encoders
+     -
+   * - `dom/media/gmp <https://searchfox.org/mozilla-central/source/dom/media/gmp>`__
+     - Media Codecs
+     - Gecko Media Plugin (GMP) framework for sandboxed codec plugins
+     - Used by WebRTC for H.264 codec support
+   * - `dom/media/platforms <https://searchfox.org/mozilla-central/source/dom/media/platforms>`__
+     - Media Codecs
+     - Platform-specific encoder/decoder implementations (Apple, Android, FFmpeg, WMF)
+     - Contains PlatformEncoderModule and EncoderConfig used by WebRTC
+   * - `netwerk/sctp/datachannel <https://searchfox.org/mozilla-central/source/netwerk/sctp/datachannel>`__
+     - Data Channels
+     - SCTP-based data channel implementation
+     -
+   * - `browser/components/webrtc <https://searchfox.org/mozilla-central/source/browser/components/webrtc>`__
+     - Browser UI
+     - Browser-level WebRTC UI components including permission prompts and indicators
+     -
+   * - `toolkit/content/aboutwebrtc <https://searchfox.org/mozilla-central/source/toolkit/content/aboutwebrtc>`__
+     - Debugging
+     - Implementation of the about:webrtc debugging page
+     -
+   * - `media/webrtc/signaling <https://searchfox.org/mozilla-central/source/media/webrtc/signaling>`__
+     - Signalling
+     - WebRTC signaling implementation and GTests
+     -
+   * - `browser/base/content/test/webrtc <https://searchfox.org/mozilla-central/source/browser/base/content/test/webrtc>`__
+     - Tests
+     - Browser chrome tests for WebRTC getUserMedia and getDisplayMedia
+     -
+   * - `testing/web-platform/tests/webrtc <https://searchfox.org/mozilla-central/source/testing/web-platform/tests/webrtc>`__
+     - Tests
+     - Web Platform Tests for WebRTC conformance
+     - Also includes webrtc-encoded-transform, webrtc-extensions, webrtc-ice, webrtc-identity, webrtc-priority, webrtc-stats, webrtc-svc
    * - `dom/webidl <https://searchfox.org/mozilla-central/source/dom/webidl>`__
      - WebIDL (JS API)
      - This contains the WebIDL definitions for the WebRTC JS API amongst many other WebIDL definitions
@@ -1051,3 +1099,720 @@ send side to play out on receive side to be
 ::
 
    25ms + (272ms / 2) = 161ms
+
+.. _glossary:
+
+Appendix: WebRTC Glossary
+-------------------------
+
+Session Management Terms
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Offer** An SDP document created by one peer to initiate a connection,
+proposing media parameters and capabilities.
+
+**Answer** An SDP document created in response to an offer, accepting or
+rejecting the proposed media parameters.
+
+**Pranswer (Provisional Answer)** A preliminary answer that may be
+modified before the final answer is accepted, allowing for early media
+establishment.
+
+**Rollback** The action of reverting to a previous stable session state,
+typically used when negotiation fails or needs to be cancelled. During
+offer/answer negotiation, the ICE agent automatically initiates rollback
+when an offer collision occurs (e.g., receiving an offer while in
+have-local-offer state). Learn more about `perfect
+negotiation <https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Perfect_negotiation>`__
+on MDN and RFC 9429
+`§4.1.10.2 <https://www.rfc-editor.org/rfc/rfc9429#section-4.1.10.2>`__
+and `§5.7 <https://www.rfc-editor.org/rfc/rfc9429#section-5.7>`__.
+
+**Perfect Negotiation** A design pattern for WebRTC signaling that
+handles offer collisions gracefully using rollback, allowing both peers
+to attempt to be the offerer simultaneously without complex glare
+handling logic. Learn more about `perfect
+negotiation <https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Perfect_negotiation>`__
+on MDN.
+
+**Signaling State** The current state of the offer/answer negotiation
+process (``stable``, ``have-local-offer``, ``have-remote-offer``,
+``have-local-pranswer``, ``have-remote-pranswer``, ``closed``). Learn
+more about
+`signalingState <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/signalingState>`__
+on MDN and RFC 9429
+`§3.2 <https://www.rfc-editor.org/rfc/rfc9429#section-3.2>`__.
+
+**Pending Description** An offer or answer that has been created or set
+but not yet matched with a corresponding answer or offer. Learn more
+about
+`pendingLocalDescription <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/pendingLocalDescription>`__
+and
+`pendingRemoteDescription <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/pendingRemoteDescription>`__
+on MDN and RFC 9429
+`§4.1.14 <https://www.rfc-editor.org/rfc/rfc9429#section-4.1.14>`__ and
+`§4.1.16 <https://www.rfc-editor.org/rfc/rfc9429#section-4.1.16>`__.
+
+**Current Description** The currently active local or remote session
+description after successful negotiation. Learn more about
+`currentLocalDescription <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/currentLocalDescription>`__
+and
+`currentRemoteDescription <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/currentRemoteDescription>`__
+on MDN and RFC 9429
+`§4.1.13 <https://www.rfc-editor.org/rfc/rfc9429#section-4.1.13>`__ and
+`§4.1.15 <https://www.rfc-editor.org/rfc/rfc9429#section-4.1.15>`__.
+
+Transport and Bundle Terms
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Bundle Policy** Controls how multiple media tracks are combined onto a
+single transport (``balanced``, ``max-compat``, ``max-bundle``). Learn
+more about
+`transports <https://developer.mozilla.org/en-US/docs/Web/API/RTCDtlsTransport#allocation_of_dtls_transports>`__
+and `bundle
+configuration <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection#bundlepolicy>`__
+on MDN.
+
+**Bundle Level** The m-line index of the media section that provides the
+transport for bundled media.
+
+**Transport ID** A unique identifier for a transport used to carry media
+or data.
+
+**ICE Restart** The process of restarting ICE candidate gathering and
+connectivity checks, typically to recover from network changes.
+
+**ICE Trickle** A technique where ICE candidates are incrementally sent
+to the remote peer as they are gathered, rather than waiting for all
+candidates to be collected before beginning negotiation. Learn more
+about
+`connectivity <https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Connectivity>`__
+on MDN and `trickle
+detection <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/canTrickleIceCandidates>`__
+on in the JSEP spec.
+
+**ICE Credentials (ufrag/pwd)** Username fragment and password used for
+ICE connectivity checks.
+
+**DTLS Fingerprint** A cryptographic hash of the DTLS certificate used
+to verify the identity of the peer. Learn more about `RTCCertificate
+fingerprints <https://developer.mozilla.org/en-US/docs/Web/API/RTCCertificate/getFingerprints>`__
+on MDN and RFC 8122
+`§5 <https://www.rfc-editor.org/rfc/rfc8122#section-5>`__ and RFC 4572
+`§1 <https://www.rfc-editor.org/rfc/rfc4572#section-1>`__.
+
+**ICE Lite** A simplified ICE implementation that only acts as a
+controlled agent, used by servers. Learn more about ICE Lite in RFC 8445
+`§3 <https://www.rfc-editor.org/rfc/rfc8445#section-3>`__.
+
+**ICE Controlling** The ICE agent role that makes the final decision on
+which candidate pair to use.
+
+**Candidate** An ICE candidate describing the protocols and routing
+needed for WebRTC to communicate with a remote device. Each candidate
+specifies network connectivity information including IP address, port,
+transport protocol, and candidate type (host, srflx, prflx, relay).
+Candidates are gathered during connection establishment and exchanged
+between peers. Learn more about
+`RTCIceCandidate <https://developer.mozilla.org/en-US/docs/Web/API/RTCIceCandidate>`__
+on MDN and RFC 8445
+`§2 <https://www.rfc-editor.org/rfc/rfc8445#section-2>`__.
+
+**Candidate Pair** A pairing of a local and remote ICE candidate that
+together describe a viable connection path between two WebRTC endpoints.
+During ICE connectivity checks, candidate pairs are tested to determine
+which provides the best connection. The selected candidate pair is used
+for media and data transport. Learn more about
+`RTCIceCandidatePair <https://developer.mozilla.org/en-US/docs/Web/API/RTCIceCandidatePair>`__
+and `candidate pair
+stats <https://developer.mozilla.org/en-US/docs/Web/API/RTCIceCandidatePairStats>`__
+on MDN and RFC 8445
+`§2 <https://www.rfc-editor.org/rfc/rfc8445#section-2>`__.
+
+Codec and Media Encoding Terms
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Payload Type (PT)** A numeric identifier (0-127) in RTP packets that
+identifies the codec being used. Payload types 0-95 are statically
+assigned for common codecs, while 96-127 are dynamically assigned and
+negotiated via SDP. Learn more about `RTP
+parameters <https://www.iana.org/assignments/rtp-parameters>`__ via the
+IANA registry where many of the relevant RFCs for specific formats are
+linked.
+
+**FMTP (Format Parameters)** SDP attribute containing codec-specific
+parameters like profile, level, or packetization mode.
+
+**RTX (Retransmission)** A mechanism for retransmitting lost RTP
+packets, using a separate payload type.
+
+**RED (Redundant Encoding)** A mechanism for including redundant data in
+RTP packets to help with packet loss recovery.
+
+**ULPFEC (Uneven Level Protection Forward Error Correction)** Forward
+error correction mechanism for protecting video streams against packet
+loss. Learn more about ULPFEC in RFC 5109
+`§1 <https://datatracker.ietf.org/doc/html/rfc5109#section-1>`__.
+
+**FEC (Forward Error Correction)** Technique of adding redundancy to
+transmitted data to allow recovery from errors without retransmission.
+
+**Opus** A versatile audio codec widely used in WebRTC, supporting both
+voice and music at various bitrates. Learn more about
+`Opus <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#opus>`__
+on MDN.
+
+**VP8** An open video codec developed by Google, mandatory for WebRTC
+implementations. Learn more about
+`VP8 <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#vp8>`__
+on MDN.
+
+**VP9** An improved successor to VP8, offering better compression
+efficiency.
+
+**AV1** A modern open video codec offering significant compression
+improvements over VP9. Learn more about
+`AV1 <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#av1>`__
+on MDN.
+
+**H.264/AVC (Advanced Video Coding)** A widely-used video codec,
+mandatory for WebRTC implementations. Learn more about
+`AVC/H.264 <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#avc_h.264>`__
+on MDN.
+
+**H.265/HEVC (High Efficiency Video Coding)** A successor to H.264
+offering improved compression efficiency, with hardware-dependent
+support in modern browsers. Chrome 136+ and Safari support H.265 in
+WebRTC when available via hardware. Learn more about `video
+codecs <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Video_codecs>`__
+on MDN.
+
+**G.722** A wideband audio codec operating at 64 kbit/s. Learn more
+about
+`G.722 <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Audio_codecs#g.722_64_kbps_7_khz_audio_coding>`__
+on MDN.
+
+**PCMU/PCMA** G.711 audio codecs (μ-law and A-law) offering basic audio
+quality, mandatory for WebRTC. Learn more about
+`G.711 <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#g.711>`__
+on MDN.
+
+RTP Header Extensions and Features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**RTP Extension (extmap)** RTP header extensions that carry additional
+metadata like audio levels or video orientation.
+
+**SSRC (Synchronization Source)** A 32-bit identifier for a single
+source of RTP packets within an RTP session.
+
+**CNAME (Canonical Name)** A persistent identifier for an RTP source
+that remains constant across SSRCs.
+
+**RID (Restriction Identifier)** An identifier used in simulcast to
+distinguish between different encodings of the same source.
+
+**MID (Media Identification)** An identifier that associates an RTP
+stream with a specific m-line in the SDP.
+
+**MSID (Media Stream Identification)** An identifier that associates an
+RTP stream with a MediaStream and track.
+
+Common RTP Header Extensions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RTP header extensions carry additional metadata in RTP packets using the
+framework defined in RFC 8285. All extensions must be negotiated via SDP
+before use.
+
+**Audio Level (Client-to-Mixer)** Indicates the audio level of the RTP
+packet payload in -dBov, allowing servers to identify active speakers
+without decoding audio. URI:
+``urn:ietf:params:rtp-hdrext:ssrc-audio-level``. Learn more about `audio
+level
+indication <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpSender/getParameters#headerextensions>`__
+on MDN and RFC 6464
+`§1 <https://www.rfc-editor.org/rfc/rfc6464#section-1>`__.
+
+**Audio Level (Mixer-to-Client)** Indicates audio levels of contributing
+sources in a mixed audio stream. URI:
+``urn:ietf:params:rtp-hdrext:csrc-audio-level``. Learn more in RFC 6465
+`§1 <https://www.rfc-editor.org/rfc/rfc6465#section-1>`__.
+
+**Video Orientation (CVO)** Indicates the rotation needed for video
+frames (0, 90, 180, 270 degrees) to support orientation changes. URI:
+``urn:3gpp:video-orientation``. Learn more in 3GPP TS 26.114 and RFC
+8285 `§1 <https://www.rfc-editor.org/rfc/rfc8285#section-1>`__.
+
+**Transport-Wide Sequence Number** Provides sequence numbers for
+transport-wide congestion control feedback. URI:
+``http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions``.
+Learn more in draft-holmer-rmcat-transport-wide-cc-extensions
+`§2 <https://datatracker.ietf.org/doc/html/draft-holmer-rmcat-transport-wide-cc-extensions#section-2>`__.
+
+**MID Header Extension** Carries the media identification tag in RTP
+packets for bundle multiplexing. URI:
+``urn:ietf:params:rtp-hdrext:sdes:mid``. Learn more in RFC 9143
+`§1 <https://www.rfc-editor.org/rfc/rfc9143#section-1>`__.
+
+**RID Header Extension** Identifies RTP streams in simulcast scenarios.
+URI: ``urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id``. Learn more in
+RFC 8852 `§1 <https://www.rfc-editor.org/rfc/rfc8852#section-1>`__.
+
+**Absolute Capture Time** Timestamps packets with NTP time when media
+was captured, enabling audio-video synchronization across hops. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time``. Learn
+more in draft-ietf-avtcore-abs-capture-time
+`§1 <https://www.ietf.org/archive/id/draft-ietf-avtcore-abs-capture-time-00.html#section-1>`__.
+
+**Transmission Time Offset** Communicates the offset between RTP
+timestamp and actual transmission time, useful for handling
+retransmissions and buffering. URI:
+``urn:ietf:params:rtp-hdrext:toffset``. Learn more in RFC 5450
+`§1 <https://www.rfc-editor.org/rfc/rfc5450#section-1>`__.
+
+**Absolute Send Time** Timestamps packets with departure time from the
+sender, providing precise timing for bandwidth estimation. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time``. Learn
+more in the `abs-send-time
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/abs-send-time/>`__.
+
+**Video Content Type** Indicates whether video is screenshare or camera
+content, enabling optimized rendering. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/video-content-type``.
+Learn more in the `video-content-type
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/video-content-type/>`__.
+
+**Video Timing** Provides per-frame timing information including encode
+start/finish, packetization, and pacer timestamps for performance
+analysis. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/video-timing``. Learn
+more in the `video-timing
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/video-timing/>`__.
+
+**Playout Delay** Allows sender to specify minimum and maximum playout
+delay ranges, enabling latency control for different use cases (gaming,
+streaming, conferencing). URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/playout-delay``. Learn
+more in the `playout-delay
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/playout-delay/>`__.
+
+**Color Space** Communicates color space information and HDR metadata
+for proper video rendering. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/color-space``. Learn more
+in the `color-space
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/color-space/>`__.
+
+**Video Frame Tracking ID** Propagates VideoFrame ID field through RTP
+packets for frame tracking. URI:
+``http://www.webrtc.org/experiments/rtp-hdrext/video-frame-tracking-id``.
+This is only for quality testing purposes and should not be used in
+production. Learn more in the `video-frame-tracking-id
+specification <https://webrtc.googlesource.com/src/+/refs/heads/main/docs/native-code/rtp-hdrext/video-frame-tracking-id/>`__.
+
+**Dependency Descriptor** Conveys information about video frames and
+their dependencies in a codec-agnostic way, enabling selective
+forwarding without decoding. Designed for AV1 but useful for other
+codecs. URI:
+``https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension``.
+Learn more in the `AV1 RTP
+specification <https://aomediacodec.github.io/av1-rtp-spec/>`__.
+
+**SDES Items in RTP Headers** Allows rapid delivery of RTCP Source
+Description items (like CNAME) via RTP header extensions. Learn more in
+RFC 7941 `§1 <https://www.rfc-editor.org/rfc/rfc7941#section-1>`__.
+
+Simulcast and Encoding Terms
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Simulcast** Simultaneously sending multiple encoded versions of the
+same video source at different qualities. Codecs may have optimizations
+that improve performance when encoding the same frame at different
+resolutions.
+
+**SVC (Scalable Video Coding)** A video coding technique that encodes a
+single bitstream that can be decoded at different resolutions, frame rates,
+or quality levels to adapt to varying network conditions and receiver
+capabilities. Unlike simulcast which sends multiple independent streams, WebRTC
+SVC produces one encoded stream on a single SSRC. Scalability modes use **L**
+for spatial layers (resolution scalability) and **T** for temporal layers
+(frame rate scalability), such as L1T2 or L3T3. SVC is particularly useful
+for Selective Forwarding Units (SFUs) which can selectively forward layers
+to adapt to varying network conditions without re-encoding. Learn more about
+`scalability modes
+<https://developer.mozilla.org/en-US/docs/Web/API/RTCOutboundRtpStreamStats/scalabilityMode>`__
+on MDN and in the W3C `Scalable Video Coding (SVC) Extension
+<https://www.w3.org/TR/webrtc-svc/>`__ specification.
+
+**Encoding** A single encoded representation of media, identified by an
+SSRC or RID.
+
+**Send Track / Recv Track** Internal representation of media direction -
+tracks for sending media and tracks for receiving media.
+
+**Transceiver** A pairing of a sender and receiver that share a common
+mid value, managing bidirectional media.
+
+**Negotiated Details** The final agreed-upon parameters for a track
+after offer/answer negotiation completes.
+
+SDP Attributes and Parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**M-line (Media Description Line)** An SDP line beginning with ``m=``
+that defines a media stream, specifying the media type (audio, video,
+etc.), port, transport protocol, and codec format. The interpretation of
+the format is dependent on the selected protocol. Each m-line starts a
+new media section that continues until the next m-line or end of the
+SDP. Learn more about
+`SDP <https://developer.mozilla.org/en-US/docs/Glossary/SDP>`__ on MDN
+and RFC 8866
+`§5.14 <https://www.rfc-editor.org/rfc/rfc8866#section-5.14>`__.
+
+**Direction Attribute** SDP attribute indicating media stream direction
+(``sendrecv``, ``sendonly``, ``recvonly``, ``inactive``).
+
+**Setup Role** DTLS role in the connection (``active``, ``passive``,
+``actpass``) determining who initiates the handshake.
+
+**TIAS (Transport Independent Application Specific Maximum)** Bandwidth
+constraint indicating maximum bitrate in bits per second. Learn more
+about
+`maxBitrate <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpSender/setParameters#maxbitrate>`__
+on MDN and RFC 3890
+`§6.2.2 <https://datatracker.ietf.org/doc/html/rfc3890#section-6.2.2>`__.
+
+H.264 Format Parameters
+~~~~~~~~~~~~~~~~~~~~~~~
+
+**H.264 Profile Level ID** H.264-specific parameter indicating the codec
+profile (baseline, main, high) and level (capability). Signaled in SDP
+via the ``profile-level-id`` FMTP parameter. Learn more about `H.264
+profile-level-id <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#profile-level-id>`__
+on MDN and RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Max-FS (Maximum Frame Size)** Video codec parameter limiting the
+maximum number of macroblocks in a frame. Signaled in SDP via the
+``max-fs`` FMTP parameter for H.264. Learn more about
+`max-fs <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#max-fs>`__
+on MDN and RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Max-FR (Maximum Frame Rate)** Video codec parameter limiting the
+maximum frame rate in frames per second. Signaled in SDP via the
+``max-fr`` FMTP parameter for H.264. Learn more about
+`maxFramerate <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpSender/setParameters#maxframerate>`__
+on MDN and RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Max-BR (Maximum Bitrate)** Video codec parameter limiting the
+maximum bitrate. Signaled in SDP via the ``max-br`` FMTP parameter for
+H.264. Learn more about
+`maxBitrate <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpSender/setParameters#maxbitrate>`__
+on MDN and RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Max-MBPS (Maximum Macroblocks Per Second)** H.264 parameter
+limiting the processing rate. Signaled in SDP via the ``max-mbps`` FMTP
+parameter. Learn more about
+`max-mbps <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#max-mbps>`__
+on MDN and RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Sprop-parameter-sets** H.264 parameter containing SPS/PPS data
+for decoder initialization. Signaled in SDP via the
+``sprop-parameter-sets`` FMTP parameter. Learn more in RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**H.264 Packetization Mode** H.264 parameter specifying the
+packetization method for RTP packets. Mode 0 uses single NAL unit
+packets, while Mode 1 allows for more efficient fragmentation and
+aggregation of NAL units. Signaled in SDP via the ``packetization-mode``
+FMTP parameter. Learn more in RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+VP8 Format Parameters
+~~~~~~~~~~~~~~~~~~~~~
+
+**VP8 Max-FS (Maximum Frame Size)** VP8 parameter limiting the maximum
+frame size in units of macroblocks that the decoder can decode. The
+decoder can handle frame widths and heights up to int(sqrt(max-fs \* 8))
+macroblocks. For example, max-fs=1200 supports up to 640x480 resolution
+(97 macroblocks width/height, or 1552 pixels). Signaled in SDP via the
+``max-fs`` FMTP parameter. Learn more in RFC 7741
+`§6.1 <https://www.rfc-editor.org/rfc/rfc7741#section-6.1>`__.
+
+**VP8 Max-FR (Maximum Frame Rate)** VP8 parameter limiting the maximum
+frame rate in frames per second that the decoder can decode. Signaled in
+SDP via the ``max-fr`` FMTP parameter. Learn more in RFC 7741
+`§6.1 <https://www.rfc-editor.org/rfc/rfc7741#section-6.1>`__.
+
+VP9 Format Parameters
+~~~~~~~~~~~~~~~~~~~~~
+
+**VP9 Profile-ID** VP9 parameter indicating the codec profile (0-3).
+Profile 0 supports 8-bit 4:2:0 only, Profile 1 adds 8-bit 4:2:2/4:4:4,
+Profile 2 adds 10/12-bit 4:2:0, and Profile 3 adds 10/12-bit
+4:2:2/4:4:4. When not present, a value of 0 is inferred. Signaled in SDP
+via the ``profile-id`` FMTP parameter. Learn more in RFC 9628
+`§6 <https://www.rfc-editor.org/rfc/rfc9628#section-6>`__.
+
+**VP9 Max-FS (Maximum Frame Size)** VP9 parameter limiting the maximum
+frame size in units of macroblocks that the decoder can decode. Signaled
+in SDP via the ``max-fs`` FMTP parameter. Learn more in RFC 9628
+`§6 <https://www.rfc-editor.org/rfc/rfc9628#section-6>`__.
+
+**VP9 Max-FR (Maximum Frame Rate)** VP9 parameter limiting the maximum
+frame rate in frames per second that the decoder can decode. Signaled in
+SDP via the ``max-fr`` FMTP parameter. Learn more in RFC 9628
+`§6 <https://www.rfc-editor.org/rfc/rfc9628#section-6>`__.
+
+AV1 Format Parameters
+~~~~~~~~~~~~~~~~~~~~~
+
+**AV1 Profile** AV1 parameter indicating the codec profile (Main, High,
+or Professional). The profile determines the supported bit depths and
+chroma subsampling formats. Signaled in SDP via the ``profile``
+parameter. Learn more in the `AV1 RTP
+specification <https://aomediacodec.github.io/av1-rtp-spec/#sdp-parameters>`__.
+
+**AV1 Level-IDX** AV1 parameter indicating the level, which defines the
+decoder’s maximum processing capabilities including resolution, frame
+rate, and bitrate. Signaled in SDP via the ``level-idx`` parameter.
+Learn more in the `AV1 RTP
+specification <https://aomediacodec.github.io/av1-rtp-spec/#sdp-parameters>`__.
+
+**AV1 Tier** AV1 parameter indicating the tier (Main or High), which
+determines the maximum bitrate for a given level. High tier allows
+roughly 2x the bitrate of Main tier. Signaled in SDP via the ``tier``
+parameter. Learn more in the `AV1 RTP
+specification <https://aomediacodec.github.io/av1-rtp-spec/#sdp-parameters>`__.
+
+H.265/HEVC Format Parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**H.265 Profile-ID** H.265 parameter indicating the codec profile along
+with profile-space. Profiles include Main, Main 10, Main Still Picture,
+and others that determine supported bit depths and features. Signaled in
+SDP via the ``profile-id`` FMTP parameter. Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Level-ID** H.265 parameter indicating the level, which defines
+the decoder’s maximum processing capabilities including resolution,
+frame rate, and bitrate. Signaled in SDP via the ``level-id`` FMTP
+parameter. Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Tier-Flag** H.265 parameter indicating the tier (Main=0 or
+High=1), which determines the maximum bitrate for a given level. High
+tier supports higher bitrates than Main tier at the same level. Signaled
+in SDP via the ``tier-flag`` FMTP parameter. Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Max-LSR (Maximum Luma Sample Rate)** H.265 parameter indicating
+the maximum processing rate in units of luma samples per second,
+allowing receivers to signal capabilities beyond the base level
+requirements. Signaled in SDP via the ``max-lsr`` FMTP parameter. Learn
+more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Max-FPS (Maximum Frame Rate)** H.265 parameter indicating the
+maximum picture rate in units of pictures per 100 seconds, used to
+signal a constraint that lowers the maximum picture rate. Signaled in
+SDP via the ``max-fps`` FMTP parameter. Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Max-BR (Maximum Bitrate)** H.265 parameter indicating the
+maximum bitrate capability of the receiver, extending beyond the base
+level requirements. Signaled in SDP via the ``max-br`` FMTP parameter.
+Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Max-CPB (Maximum Coded Picture Buffer)** H.265 parameter
+indicating the maximum coded picture buffer size capability, allowing
+receivers to signal support for larger buffers than required by the base
+level. Signaled in SDP via the ``max-cpb`` FMTP parameter. Learn more in
+RFC 7798 `§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+**H.265 Sprop-VPS/SPS/PPS** H.265 parameters containing VPS (Video
+Parameter Set), SPS (Sequence Parameter Set), and PPS (Picture Parameter
+Set) data for out-of-band decoder initialization. Signaled in SDP via
+the ``sprop-vps``, ``sprop-sps``, and ``sprop-pps`` FMTP parameters.
+Learn more in RFC 7798
+`§7.1 <https://www.rfc-editor.org/rfc/rfc7798#section-7.1>`__.
+
+RTCP Feedback Types
+~~~~~~~~~~~~~~~~~~~
+
+**RTCP Feedback (rtcp-fb)** Mechanisms for providing rapid feedback
+about media quality and requests.
+
+**NACK (Negative Acknowledgment)** RTCP feedback requesting
+retransmission of lost packets.
+
+**PLI (Picture Loss Indication)** RTCP feedback requesting a full
+intra-frame when video decoding fails. Learn more about PLI in RFC 4585
+`§6.3.1 <https://www.rfc-editor.org/rfc/rfc4585.html#section-6.3.1>`__.
+
+**FIR (Full Intra Request)** RTCP feedback requesting a full intra-frame
+for decoder refresh. Learn more about FIR in RFC 2032
+`§5.2.1 <https://www.rfc-editor.org/rfc/rfc2032#section-5.2.1>`__.
+
+**TMMBR (“timber”, Temporary Maximum Media Stream Bitrate Request)**
+RTCP feedback for requesting bitrate reduction. Learn more about TMMBR
+in RFC 5104
+`§3.5.4 <https://datatracker.ietf.org/doc/html/rfc5104#section-3.5.4>`__.
+
+**REMB (Receiver Estimated Maximum Bitrate)** RTCP feedback
+communicating receiver’s bandwidth estimate to the sender. Learn more
+about REMB in draft-alvestrand-rmcat-remb
+`§2 <https://datatracker.ietf.org/doc/html/draft-alvestrand-rmcat-remb#section-2>`__.
+
+**Transport-CC (Transport-wide Congestion Control)** Mechanism for
+gathering packet arrival times to estimate available bandwidth. Learn
+more about transport-cc in
+draft-holmer-rmcat-transport-wide-cc-extensions
+`§2 <https://datatracker.ietf.org/doc/html/draft-holmer-rmcat-transport-wide-cc-extensions#section-2>`__.
+
+**FlexFEC** Flexible forward error correction mechanism for RTP streams
+that can protect against packet loss by sending redundant recovery
+packets. Uses a separate RTP stream for FEC packets, allowing flexible
+configuration of protection levels. Learn more about FlexFEC in RFC 8627
+`§1 <https://datatracker.ietf.org/doc/html/rfc8627#section-1>`__.
+
+Audio-Specific Terms
+~~~~~~~~~~~~~~~~~~~~
+
+**DTX (Discontinuous Transmission)** Not transmitting audio packets
+during silence to save bandwidth. Signaled in SDP via the ``usedtx``
+FMTP parameter for Opus. Learn more about DTX in `supported audio
+codecs <https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#supported_audio_codecs>`__
+on MDN and RFC 7587
+`§6.1 <https://www.rfc-editor.org/rfc/rfc7587#section-6.1>`__.
+
+**In-band FEC** Opus-specific forward error correction included within
+the audio stream. Signaled in SDP via the ``useinbandfec`` FMTP
+parameter. Learn more in RFC 7587
+`§6.1 <https://www.rfc-editor.org/rfc/rfc7587#section-6.1>`__.
+
+**Stereo** Two-channel audio encoding. Stereo can either be
+independently encoded or, in some codecs like Opus, joint encoded.
+
+**Ptime (Packet Time)** The duration of media represented in a single
+RTP packet, in milliseconds. Learn more about ptime in RFC 8866
+`§6.4 <https://datatracker.ietf.org/doc/html/rfc8866#section-6.4>`__.
+
+**Maxptime (Maximum Packet Time)** The maximum acceptable ptime value.
+Learn more about maxptime in RFC 8866
+`§6.4 <https://www.rfc-editor.org/rfc/rfc8866#section-6.4>`__.
+
+**CBR (Constant Bitrate)** Encoding mode where bitrate remains constant
+regardless of content complexity. For Opus, signaled in SDP via the
+``cbr`` FMTP parameter. Learn more in RFC 7587
+`§6.1 <https://www.rfc-editor.org/rfc/rfc7587#section-6.1>`__.
+
+**VBR (Variable Bitrate)** Encoding mode where bitrate varies based on
+content complexity, allowing more efficient compression. This is the
+default mode for many codecs like Opus.
+
+**ABR (Adaptive Bitrate)** Encoding mode that dynamically adjusts
+bitrate in real-time based on network conditions and receiver feedback.
+In WebRTC, ABR uses bandwidth estimation algorithms (like Transport-CC)
+to continuously monitor connection quality and adapt the encoding
+bitrate to maintain optimal quality while preventing congestion. This
+differs from VBR which adapts to content complexity but not network
+conditions. Learn more about `bandwidth
+estimation <https://developer.mozilla.org/en-US/docs/Web/API/RTCIceCandidatePairStats/availableOutgoingBitrate>`__
+on MDN.
+
+Data Channel Terms
+~~~~~~~~~~~~~~~~~~
+
+**SCTP (Stream Control Transmission Protocol)** Protocol used for WebRTC
+data channels, providing reliable or unreliable delivery. Learn more
+about
+`RTCSctpTransport <https://developer.mozilla.org/en-US/docs/Web/API/RTCSctpTransport>`__
+on MDN and RFC 9260
+`§1 <https://datatracker.ietf.org/doc/html/rfc9260#section-1>`__.
+
+**Data Channel** A bidirectional data transport for arbitrary
+application data over WebRTC. Learn more about
+`RTCDataChannel <https://developer.mozilla.org/en-US/docs/Web/API/RTCDataChannel>`__
+on MDN and RFC 8831
+`§6.4 <https://datatracker.ietf.org/doc/html/rfc8831#name-data-channel-definition>`__.
+
+**SCTP Port** The port number used for SCTP associations in data
+channels.
+
+**Max Message Size** The maximum size of a single message that can be
+sent over a data channel.
+
+Session State and Lifecycle
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Associated** A transceiver that has been assigned a mid value during
+negotiation.
+
+**Negotiated** A transceiver that has completed offer/answer exchange
+and has agreed parameters.
+
+**Stopped** A transceiver that has been permanently stopped and cannot
+be reused.
+
+**Receptive** A transceiver’s ability to receive media based on the
+local description.
+
+**Add Track Magic** Special negotiation behavior where transceivers
+created via ``addTrack()`` can be reused during negotiation, unlike
+those created with ``addTransceiver()``. When applying a remote offer,
+``addTrack()``-created transceivers may be “stolen” to match incoming
+m-lines, while ``addTransceiver()``-created transceivers are never
+reused. Learn more about
+`addTrack <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/addTrack>`__
+and
+`addTransceiver <https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/addTransceiver>`__
+on MDN.
+
+Advanced Terms
+~~~~~~~~~~~~~~
+
+**Subprofile** H.264 profiles like Constrained Baseline, Baseline, Main,
+High, etc. Signaled in SDP via the ``profile-level-id`` FMTP parameter.
+Learn more in RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**Level Asymmetry Allowed** H.264 parameter allowing different encoding
+levels in each direction. Signaled in SDP via the
+``level-asymmetry-allowed`` FMTP parameter. Learn more in RFC 6184
+`§8.1 <https://www.rfc-editor.org/rfc/rfc6184#section-8.1>`__.
+
+**Unique Receive Payload Types** Payload types that can be uniquely
+identified for SSRC-to-PT matching.
+
+**Preferred Codecs** User-specified codec ordering that overrides
+defaults. See Codec Preferences.
+
+**Codec Preferences** Settings controlling which codecs are enabled and
+their configurations, specified as an array of ``RTCRtpCodecCapability``
+objects in order of decreasing preference. Set via
+``setCodecPreferences()`` on an ``RTCRtpTransceiver`` to control which
+codecs are used during negotiation. Codecs not included in the
+preferences are excluded from negotiation. An empty list resets to user
+agent defaults. Learn more about
+`setCodecPreferences <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpTransceiver/setCodecPreferences>`__
+on MDN.
+
+**RTCRtpScriptTransform** An interface that enables custom processing of
+encoded audio and video frames in WebRTC by inserting transform streams into
+sender and receiver pipelines. The transform runs in a Worker thread and
+receives encoded frames through a TransformStream, allowing real-time frame
+manipulation, encryption, analytics, or bandwidth optimization. Developers
+assign transforms to ``RTCRtpSender.transform`` for outgoing frames or
+``RTCRtpReceiver.transform`` for incoming frames. The worker receives an
+``rtctransform`` event with a ``transformer`` object containing readable and
+writable streams for processing. Learn more about
+`RTCRtpScriptTransform <https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpScriptTransform>`__
+and `Using WebRTC Encoded Transforms
+<https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_Encoded_Transforms>`__
+on MDN.

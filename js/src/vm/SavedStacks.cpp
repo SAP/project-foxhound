@@ -16,9 +16,8 @@
 #include <utility>
 
 #include "jsapi.h"
-#include "jsmath.h"
-#include "jsnum.h"
 
+#include "builtin/Number.h"
 #include "gc/GCContext.h"
 #include "gc/HashUtil.h"
 #include "js/CharacterEncoding.h"
@@ -31,6 +30,7 @@
 #include "js/Stack.h"
 #include "js/Vector.h"
 #include "util/DifferentialTesting.h"
+#include "util/RandomSeed.h"
 #include "util/StringBuilder.h"
 #include "vm/Compartment.h"
 #include "vm/FrameIter.h"
@@ -2022,10 +2022,10 @@ JSObject* SavedStacks::MetadataBuilder::build(
 const SavedStacks::MetadataBuilder SavedStacks::metadataBuilder;
 
 /* static */
-MOZ_CONSTINIT ReconstructedSavedFramePrincipals
+constinit ReconstructedSavedFramePrincipals
     ReconstructedSavedFramePrincipals::IsSystem;
 /* static */
-MOZ_CONSTINIT ReconstructedSavedFramePrincipals
+constinit ReconstructedSavedFramePrincipals
     ReconstructedSavedFramePrincipals::IsNotSystem;
 
 UniqueChars BuildUTF8StackString(JSContext* cx, JSPrincipals* principals,

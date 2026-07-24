@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
+    "AttrTooltipHelper.js",
     "css-compatibility-tooltip-helper.js",
     "css-query-container-tooltip-helper.js",
     "css-selector-warnings-tooltip-helper.js",

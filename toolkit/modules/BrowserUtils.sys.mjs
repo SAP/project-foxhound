@@ -246,8 +246,36 @@ export var BrowserUtils = {
     }
   },
 
+  /**
+   * Show a URI in the UI in a user-friendly (but security-sensitive) way.
+   *
+   * @param {nsIURI} uri
+   * @param {object} [options={}]
+   * @param {boolean} [options.showInsecureHTTP=false]
+   *        Whether to show "http://" for insecure HTTP URLs.
+   * @param {boolean} [options.showWWW=false]
+   *        Whether to show "www." for URLs that have it.
+   * @param {boolean} [options.onlyBaseDomain=false]
+   *        Whether to show only the base domain (eTLD+1) for HTTP(S) URLs.
+   * @param {boolean} [options.showFilenameForLocalURIs=false]
+   *        If false (default), will show a protocol-specific label for local
+   *        URIs (file:, chrome:, resource:, moz-src:, jar:).
+   *        Otherwise, will show the filename for such URIs. Only use 'true' if
+   *        the context in which the URI is being represented is not security-
+   *        critical.
+   */
   formatURIForDisplay(uri, options = {}) {
-    let { showInsecureHTTP = false } = options;
+    let {
+      showInsecureHTTP = false,
+      showWWW = false,
+      onlyBaseDomain = false,
+      showFilenameForLocalURIs = false,
+    } = options;
+    // For moz-icon and jar etc. which wrap nsIURLs, if we want to show the
+    // actual filename, unwrap:
+    if (uri && uri instanceof Ci.nsINestedURI && showFilenameForLocalURIs) {
+      return this.formatURIForDisplay(uri.innermostURI, options);
+    }
     switch (uri.scheme) {
       case "view-source": {
         let innerURI = uri.spec.substring("view-source:".length);
@@ -257,8 +285,14 @@ export var BrowserUtils = {
       // Fall through.
       case "https": {
         let host = uri.displayHostPort;
-        if (!showInsecureHTTP && host.startsWith("www.")) {
+        let removeSubdomains =
+          !showInsecureHTTP &&
+          (onlyBaseDomain || (!showWWW && host.startsWith("www.")));
+        if (removeSubdomains) {
           host = Services.eTLD.getSchemelessSite(uri);
+          if (uri.port != -1) {
+            host += ":" + uri.port;
+          }
         }
         if (showInsecureHTTP && uri.scheme == "http") {
           return "http://" + host;
@@ -269,7 +303,7 @@ export var BrowserUtils = {
         return "about:" + uri.filePath;
       case "blob":
         try {
-          let url = new URL(uri.specIgnoringRef);
+          let url = URL.fromURI(uri);
           // _If_ we find a non-null origin, report that.
           if (url.origin && url.origin != "null") {
             return this.formatURIStringForDisplay(url.origin, options);
@@ -291,8 +325,22 @@ export var BrowserUtils = {
       }
       case "chrome":
       case "resource":
+      case "moz-icon":
+      case "moz-src":
       case "jar":
       case "file":
+        if (!showFilenameForLocalURIs) {
+          if (uri.scheme == "file") {
+            return lazy.gLocalization.formatValueSync(
+              "browser-utils-file-scheme"
+            );
+          }
+          return lazy.gLocalization.formatValueSync(
+            "browser-utils-url-scheme",
+            { scheme: uri.scheme }
+          );
+        }
+      // Otherwise, fall through to show filename...
       default:
         try {
           let url = uri.QueryInterface(Ci.nsIURL);
@@ -318,7 +366,7 @@ export var BrowserUtils = {
           console.error(ex);
         }
     }
-    return uri.asciiHost || uri.spec;
+    return uri.spec;
   },
 
   // Given a URL returns a (possibly transformed) URL suitable for sharing, or null if
@@ -522,6 +570,8 @@ export var BrowserUtils = {
    *        order to do custom failure handling.
    * @param {...any} args
    *        Arguments to pass to the consumers.
+   * @returns {Promise}
+   *   A Promise that resolves when all consumers have settled.
    */
   callModulesFromCategory(
     {
@@ -536,7 +586,7 @@ export var BrowserUtils = {
     // Note that we deliberately don't await at the top level, so we
     // can guarantee all consumers get run/queued.
     let callSingleListener = async fn => {
-      let startTime = profilerMarker ? Cu.now() : 0;
+      let startTime = profilerMarker ? ChromeUtils.now() : 0;
       try {
         await fn(...args);
       } catch (ex) {
@@ -565,15 +615,25 @@ export var BrowserUtils = {
       }
     };
 
+    let allTasks = [];
+
     for (let listener of lazy.CatManListenerManager.getListeners(
       categoryName
     )) {
       if (idleDispatch) {
-        ChromeUtils.idleDispatch(() => callSingleListener(listener));
+        allTasks.push(
+          new Promise(resolve => {
+            ChromeUtils.idleDispatch(() => {
+              resolve(callSingleListener(listener));
+            });
+          })
+        );
       } else {
-        callSingleListener(listener);
+        allTasks.push(callSingleListener(listener));
       }
     }
+
+    return Promise.allSettled(allTasks);
   },
 
   /**

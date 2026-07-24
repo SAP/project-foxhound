@@ -24,6 +24,7 @@ gcloud:
     - notPackage org.mozilla.fenix.syncintegration
     - notPackage org.mozilla.fenix.experimentintegration
     - notPackage org.mozilla.fenix.ui.efficiency.tests
+    - notPackage org.mozilla.fenix.ui.efficiency.examples
 
   device:
     - model: MediumPhone.arm

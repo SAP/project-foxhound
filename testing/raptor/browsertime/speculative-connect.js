@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env node */
-
 const { logTest } = require("./utils/profiling");
 
 module.exports = logTest(
@@ -22,7 +20,17 @@ module.exports = logTest(
     const script = `
     var URI = Services.io.newURI("${url}");
     var principal = Services.scriptSecurityManager.createContentPrincipal(URI, {});
-    Services.io.QueryInterface(Ci.nsISpeculativeConnect).speculativeConnect(URI, principal, null, false);
+    var browsingContext = gBrowser.selectedBrowser.browsingContext;
+    var callbacks = {
+      QueryInterface: ChromeUtils.generateQI(["nsIInterfaceRequestor"]),
+      getInterface(iid) {
+        if (iid.equals(Ci.nsILoadContext)) {
+          return browsingContext;
+        }
+        throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
+      },
+    };
+    Services.io.speculativeConnect(URI, principal, callbacks, false);
   `;
 
     commands.js.runPrivileged(script);

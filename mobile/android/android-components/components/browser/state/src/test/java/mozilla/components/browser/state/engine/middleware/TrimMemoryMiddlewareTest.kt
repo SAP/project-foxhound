@@ -5,6 +5,8 @@
 package mozilla.components.browser.state.engine.middleware
 
 import android.content.ComponentCallbacks2
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import mozilla.components.browser.state.action.SystemAction
 import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.selector.findTab
@@ -15,23 +17,17 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSessionState
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class TrimMemoryMiddlewareTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val dispatcher = coroutinesTestRule.testDispatcher
-    private val scope = coroutinesTestRule.scope
+    private val dispatcher = StandardTestDispatcher()
+    private val scope = TestScope(dispatcher)
 
     private lateinit var engineSessionReddit: EngineSession
     private lateinit var engineSessionTheVerge: EngineSession
@@ -132,9 +128,8 @@ class TrimMemoryMiddlewareTest {
             SystemAction.LowMemoryAction(
                 level = ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN,
             ),
-        ).joinBlocking()
+        )
 
-        store.waitUntilIdle()
         dispatcher.scheduler.advanceUntilIdle()
 
         store.state.findTab("theverge")!!.engineState.apply {
@@ -198,9 +193,8 @@ class TrimMemoryMiddlewareTest {
             SystemAction.LowMemoryAction(
                 level = ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
             ),
-        ).joinBlocking()
+        )
 
-        store.waitUntilIdle()
         dispatcher.scheduler.advanceUntilIdle()
 
         store.state.findTab("theverge")!!.engineState.apply {

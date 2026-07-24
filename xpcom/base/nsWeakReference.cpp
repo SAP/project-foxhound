@@ -6,8 +6,6 @@
 
 // nsWeakReference.cpp
 
-#include "mozilla/Attributes.h"
-
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"

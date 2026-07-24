@@ -92,10 +92,9 @@ NS_IMETHODIMP ClearDataCallback::OnDataDeleted(uint32_t aFailedFlags) {
   if (aFailedFlags) {
     mPromise->Reject(aFailedFlags, __func__);
   } else {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Cleared host: %s, bounceTime: %" PRIu64, __FUNCTION__,
-             PromiseFlatCString(mEntry->SiteHostRef()).get(),
-             mEntry->TimeStampRef()));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: Cleared host: {}, bounceTime: {}", __FUNCTION__,
+                mEntry->SiteHostRef(), mEntry->TimeStampRef());
 
     mEntry->PurgeTimeRef() = PR_Now();
     mPromise->Resolve(mEntry, __func__);

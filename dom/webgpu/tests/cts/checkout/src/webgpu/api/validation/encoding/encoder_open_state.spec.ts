@@ -98,6 +98,7 @@ const kRenderPassEncoderCommandInfo: {
   setScissorRect: {},
   setBlendConstant: {},
   setStencilReference: {},
+  setImmediates: {},
   beginOcclusionQuery: {},
   endOcclusionQuery: {},
   executeBundles: {},
@@ -122,6 +123,7 @@ const kRenderBundleEncoderCommandInfo: {
   setBindGroup: {},
   setIndexBuffer: {},
   setVertexBuffer: {},
+  setImmediates: {},
   pushDebugGroup: {},
   popDebugGroup: {},
   insertDebugMarker: {},
@@ -139,6 +141,7 @@ const kComputePassEncoderCommandInfo: {
 } = {
   setBindGroup: {},
   setPipeline: {},
+  setImmediates: {},
   dispatchWorkgroups: {},
   dispatchWorkgroupsIndirect: {},
   pushDebugGroup: {},
@@ -275,15 +278,24 @@ g.test('render_pass_commands')
     Test that functions of GPURenderPassEncoder generate a validation error if the encoder or the
     pass is already finished.
 
-    - TODO: Consider testing: nothing before command, end before command, end+finish before command.
+    TODO(https://github.com/gpuweb/gpuweb/issues/5207): Resolve whether the error condition
+    \`finishBeforeCommand !== 'no'\` is correct, or should be changed to
+    \`finishBeforeCommand === 'encoder'\`.
   `
   )
   .params(u =>
     u
       .combine('command', kRenderPassEncoderCommands)
       .beginSubcases()
-      .combine('finishBeforeCommand', [false, true])
+      .combine('finishBeforeCommand', ['no', 'pass', 'encoder'])
   )
+  .beforeAllSubcases(t => {
+    // MAINTENANCE_TODO: Remove when setImmediates is added to spec.
+    t.skipIf(
+      t.params.command === 'setImmediates' && !('setImmediates' in GPURenderPassEncoder.prototype),
+      'setImmediates not supported'
+    );
+  })
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
     if (command === 'multiDrawIndirect' || command === 'multiDrawIndexedIndirect') {
@@ -305,8 +317,10 @@ g.test('render_pass_commands')
 
     const bindGroup = t.createBindGroupForTest();
 
-    if (finishBeforeCommand) {
+    if (finishBeforeCommand !== 'no') {
       renderPass.end();
+    }
+    if (finishBeforeCommand === 'encoder') {
       encoder.finish();
     }
 
@@ -404,23 +418,23 @@ g.test('render_pass_commands')
           break;
         case 'pushDebugGroup':
           {
-            encoder.pushDebugGroup('group');
+            renderPass.pushDebugGroup('group');
           }
           break;
         case 'popDebugGroup':
           {
-            encoder.popDebugGroup();
+            renderPass.popDebugGroup();
           }
           break;
         case 'insertDebugMarker':
           {
-            encoder.insertDebugMarker('marker');
+            renderPass.insertDebugMarker('marker');
           }
           break;
         default:
           unreachable();
       }
-    }, finishBeforeCommand);
+    }, finishBeforeCommand !== 'no');
   });
 
 g.test('render_bundle_commands')
@@ -436,6 +450,14 @@ g.test('render_bundle_commands')
       .beginSubcases()
       .combine('finishBeforeCommand', [false, true])
   )
+  .beforeAllSubcases(t => {
+    // MAINTENANCE_TODO: Remove when setImmediates is added to spec.
+    t.skipIf(
+      t.params.command === 'setImmediates' &&
+        !('setImmediates' in GPURenderBundleEncoder.prototype),
+      'setImmediates not supported'
+    );
+  })
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
 
@@ -451,6 +473,11 @@ g.test('render_bundle_commands')
     const bundleEncoder = t.device.createRenderBundleEncoder({
       colorFormats: ['rgba8unorm'],
     });
+
+    t.skipIf(
+      command === 'setImmediates' && !('setImmediates' in bundleEncoder),
+      'setImmediates not supported'
+    );
 
     if (finishBeforeCommand) {
       bundleEncoder.finish();
@@ -525,15 +552,24 @@ g.test('compute_pass_commands')
     Test that functions of GPUComputePassEncoder generate a validation error if the encoder or the
     pass is already finished.
 
-    - TODO: Consider testing: nothing before command, end before command, end+finish before command.
+    TODO(https://github.com/gpuweb/gpuweb/issues/5207): Resolve whether the error condition
+    \`finishBeforeCommand !== 'no'\` is correct, or should be changed to
+    \`finishBeforeCommand === 'encoder'\`.
   `
   )
   .params(u =>
     u
       .combine('command', kComputePassEncoderCommands)
       .beginSubcases()
-      .combine('finishBeforeCommand', [false, true])
+      .combine('finishBeforeCommand', ['no', 'pass', 'encoder'])
   )
+  .beforeAllSubcases(t => {
+    // MAINTENANCE_TODO: Remove when setImmediates is added to spec.
+    t.skipIf(
+      t.params.command === 'setImmediates' && !('setImmediates' in GPUComputePassEncoder.prototype),
+      'setImmediates not supported'
+    );
+  })
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
 
@@ -549,8 +585,10 @@ g.test('compute_pass_commands')
 
     const bindGroup = t.createBindGroupForTest();
 
-    if (finishBeforeCommand) {
+    if (finishBeforeCommand !== 'no') {
       computePass.end();
+    }
+    if (finishBeforeCommand === 'encoder') {
       encoder.finish();
     }
 
@@ -594,5 +632,5 @@ g.test('compute_pass_commands')
         default:
           unreachable();
       }
-    }, finishBeforeCommand);
+    }, finishBeforeCommand !== 'no');
   });

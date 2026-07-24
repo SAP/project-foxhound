@@ -69,13 +69,9 @@ bool RDDChild::Init() {
   SendInit(updates, brokerFd, Telemetry::CanRecordReleaseData(),
            isReadyForBackgroundProcessing);
 
-  Unused << SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
+  (void)SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
 
   gfxVars::AddReceiver(this);
-  auto* gpm = gfx::GPUProcessManager::Get();
-  if (gpm) {
-    gpm->AddListener(this);
-  }
 
   return true;
 }
@@ -110,13 +106,20 @@ bool RDDChild::SendRequestMemoryReport(const uint32_t& aGeneration,
 }
 
 void RDDChild::OnCompositorUnexpectedShutdown() {
-  auto* rddm = RDDProcessManager::Get();
-  if (rddm) {
-    rddm->CreateVideoBridge();
+  if (!CanSend()) {
+    return;
+  }
+
+  if (RDDProcessManager* rddpm = RDDProcessManager::Get()) {
+    if (auto* gpm = GPUProcessManager::Get()) {
+      gpm->CreateRddVideoBridge(rddpm, this);
+    }
   }
 }
 
-void RDDChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
+void RDDChild::OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) {
+  SendUpdateVar(aVar);
+}
 
 mozilla::ipc::IPCResult RDDChild::RecvAddMemoryReport(
     const MemoryReport& aReport) {
@@ -205,8 +208,7 @@ void RDDChild::ActorDestroy(ActorDestroyReason aWhy) {
     GenerateCrashReport();
   }
 
-  auto* gpm = gfx::GPUProcessManager::Get();
-  if (gpm) {
+  if (auto* gpm = gfx::GPUProcessManager::Get()) {
     // Note: the manager could have shutdown already.
     gpm->RemoveListener(this);
   }

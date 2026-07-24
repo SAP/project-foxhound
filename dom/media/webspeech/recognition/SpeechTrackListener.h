@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_SpeechStreamListener_h
 #define mozilla_dom_SpeechStreamListener_h
 
+#include "AudioSegment.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include "AudioSegment.h"
 #include "mozilla/MozPromise.h"
 
 namespace mozilla {

@@ -20,8 +20,8 @@ async function insertSubFrame(browser, url, id) {
     ifr.setAttribute("id", id);
 
     let loaded = ContentTaskUtils.waitForEvent(ifr, "load", false);
-    content.document.body.appendChild(ifr);
     ifr.src = url;
+    content.document.body.appendChild(ifr);
     await loaded;
   });
 }

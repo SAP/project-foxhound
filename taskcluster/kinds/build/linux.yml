@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
 
 linux64/opt:
     description: "Linux64 Opt"
@@ -35,6 +35,7 @@ linux64/opt:
         tooltool-downloads: public
     run-on-projects: ['integration']
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -140,6 +141,7 @@ linux64-non-unified/plain:
     worker:
         max-run-time: 7200
         env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
     run:
         using: mozharness
@@ -152,7 +154,9 @@ linux64-non-unified/plain:
         tooltool-downloads: public
         extra-config:
             disable_package_metrics: true
-        mozconfig-variant: non-unified
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
+        mozconfig-variant: nightly
     run-on-projects: ['integration']
     use-sccache: true
     fetches:
@@ -375,6 +379,7 @@ linux64/debug:
         mozconfig-variant: debug
         tooltool-downloads: public
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -402,6 +407,7 @@ linux64-non-unified/debug:
     worker:
         max-run-time: 7200
         env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
     run:
         using: mozharness
@@ -415,8 +421,9 @@ linux64-non-unified/debug:
         extra-config:
             disable_package_metrics: true
             extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
                 - ac_add_options --enable-debug
-        mozconfig-variant: non-unified
+        mozconfig-variant: nightly
     run-on-projects: ['integration']
     use-sccache: true
     fetches:
@@ -488,7 +495,7 @@ linux64-devedition/opt:
     treeherder:
         platform: linux64-devedition/opt
         symbol: B
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 7200
         env:
@@ -526,402 +533,6 @@ linux64-devedition/opt:
             - sysroot-wasm32-wasi
             - onnxruntime-x86_64-linux-gnu
 
-linux/opt:
-    description: "Linux32 Opt"
-    index:
-        product: firefox
-        job-name: linux-opt
-    attributes:
-        enable-build-signing: true
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: linux32/opt
-        symbol: B
-    worker:
-        max-run-time: 7200
-        env:
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        tooltool-downloads: public
-    run-on-projects:
-        - 'mozilla-beta'
-        - 'mozilla-release'
-        - 'mozilla-esr140'
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-sccache
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-
-linux-fuzzing/debug:
-    description: "Linux32 Fuzzing Debug"
-    index:
-        product: firefox
-        job-name: linux-fuzzing-debug
-    attributes:
-        # The gtest libxul contains libFuzzer targets
-        skip-verify-test-packaging: true
-    treeherder:
-        platform: linux32/debug
-        symbol: Bf
-    worker:
-        max-run-time: 5400
-        env:
-            PERFHERDER_EXTRA_OPTIONS: fuzzing
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        custom-build-variant-cfg: fuzzing-debug
-        mozconfig-variant: debug-fuzzing
-        tooltool-downloads: public
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux32-llvm-symbolizer
-            - linux64-sccache
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-    optimization:
-        skip-unless-expanded: null
-
-linux/debug:
-    description: "Linux32 Debug"
-    index:
-        product: firefox
-        job-name: linux-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: linux32/debug
-        symbol: B
-    worker:
-        max-run-time: 5400
-        env:
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        custom-build-variant-cfg: debug
-        mozconfig-variant: debug
-        tooltool-downloads: public
-    run-on-projects: ['release']
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-sccache
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-
-linux-rusttests/opt:
-    description: "Linux32 Rust Tests Opt"
-    index:
-        product: firefox
-        job-name: linux-rusttests-opt
-    treeherder:
-        platform: linux32/opt
-        symbol: BR
-        tier: 1
-    worker:
-        max-run-time: 2700
-        env:
-            PERFHERDER_EXTRA_OPTIONS: rusttests
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        custom-build-variant-cfg: rusttests
-        mozconfig-variant: rusttests
-        tooltool-downloads: public
-        keep-artifacts: false
-    run-on-projects: ['mozilla-central']
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-sccache
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-    optimization:
-        test-inclusive: [rusttests]
-
-linux-rusttests/debug:
-    description: "Linux32 Rust Tests Debug"
-    index:
-        product: firefox
-        job-name: linux-rusttests-debug
-    treeherder:
-        platform: linux32/debug
-        symbol: BR
-        tier: 1
-    worker:
-        max-run-time: 2700
-        env:
-            PERFHERDER_EXTRA_OPTIONS: rusttests
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        custom-build-variant-cfg: rusttests-debug
-        mozconfig-variant: rusttests-debug
-        tooltool-downloads: public
-        keep-artifacts: false
-    run-on-projects: ['mozilla-central']
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-sccache
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-    optimization:
-        test-inclusive: [rusttests]
-
-linux-devedition/opt:
-    description: "Linux32 devedition (shippable)"
-    use-pgo: linux-shippable/opt
-    attributes:
-        shippable: true
-        enable-full-crashsymbols: true
-    shipping-phase: build
-    shipping-product: devedition
-    index:
-        product: devedition
-        job-name: linux-opt
-        type: shippable
-    treeherder:
-        platform: linux32-devedition/opt
-        symbol: B
-    worker-type: b-linux-xlarge-amd
-    worker:
-        max-run-time: 7200
-        env:
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-            - taskcluster_nightly.py
-        extra-config:
-            stage_platform: linux-devedition
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        tooltool-downloads: public
-        mozconfig-variant: devedition
-    run-on-projects: ['mozilla-beta']
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-
-linux-shippable/opt:
-    description: "Linux32 Shippable"
-    use-pgo: true
-    attributes:
-        shippable: true
-        enable-full-crashsymbols: true
-    shipping-phase: build
-    shipping-product: firefox
-    index:
-        product: firefox
-        job-name: linux-opt
-        type: shippable
-    treeherder:
-        platform: linux32-shippable/opt
-        symbol: Bpgo(B)
-    worker:
-        max-run-time: 9000
-        env:
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-            - taskcluster_nightly.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        tooltool-downloads: public
-    run-on-projects: ['release']
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-
-linux-reproduced/opt:
-    description: "Linux32 Reproduced"
-    use-pgo: linux-shippable/opt
-    shipping-phase: build
-    shipping-product: firefox
-    index:
-        product: firefox
-        job-name: linux-reproduced-opt
-    treeherder:
-        platform: linux32-shippable/opt
-        symbol: Bpgo(repr)
-    worker:
-        max-run-time: 9000
-        env:
-            PERFHERDER_EXTRA_OPTIONS: repr
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-            - taskcluster_nightly.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        tooltool-downloads: public
-    # Original comment: Limited to trunk until bug 1596350 is fixed.
-    # Addendum: Do not run on autoland, Bug 1599197
-    run-on-projects: ['mozilla-central', 'comm-central']
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-
-linux-asan-fuzzing/opt:
-    description: "Linux32 Fuzzing Opt ASAN"
-    index:
-        product: firefox
-        job-name: linux-fuzzing-asan-opt
-    attributes:
-        # The gtest libxul contains libFuzzer targets
-        skip-verify-test-packaging: true
-    treeherder:
-        platform: linux32/asan
-        symbol: Bof
-    worker:
-        env:
-            PERFHERDER_EXTRA_OPTIONS: asan-fuzzing
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-        max-run-time: 5400
-    run:
-        using: mozharness
-        actions: [get-secrets, build]
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_32_builds.py
-        script: "mozharness/scripts/fx_desktop_build.py"
-        secrets: true
-        custom-build-variant-cfg: fuzzing-asan-tc
-        mozconfig-variant: nightly-fuzzing-asan
-        tooltool-downloads: public
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust
-            - linux64-rust-size
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux32-llvm-symbolizer
-            - linux64-sccache
-            - linux64-nasm
-            - linux64-node
-            - linux64-pkgconf
-            - sysroot-i686-linux-gnu
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-    optimization:
-        skip-unless-expanded: null
-
 linux64-reproduced/opt:
     description: "Linux64 Reproduced"
     use-pgo: linux64-shippable/opt
@@ -933,7 +544,7 @@ linux64-reproduced/opt:
     treeherder:
         platform: linux64-shippable/opt
         symbol: Bpgo(repr)
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -1499,7 +1110,7 @@ linux64-fuzzing-ccov/opt:
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-llvm-symbolizer
-            - linux64-rust-1.83
+            - linux64-rust-dev
             - linux64-rust-size
             - linux64-sccache
             - linux64-nasm
@@ -1527,7 +1138,7 @@ linux64-asan-reporter-shippable/opt:
         platform: linux64-asan-reporter/opt
         symbol: BoR
     run-on-projects: ['mozilla-central']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-reporter
@@ -1624,7 +1235,7 @@ linux64-shippable/opt:
         platform: linux64-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -1671,7 +1282,7 @@ linux64-nightlyasrelease/opt:
         platform: linux64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
     run-on-projects: [trunk-only]
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -1866,7 +1477,7 @@ linux64-ccov/opt:
     fetches:
         toolchain:
             - linux64-clang
-            - linux64-rust-1.83
+            - linux64-rust-dev
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
@@ -1907,7 +1518,7 @@ linux64-ccov/debug:
     fetches:
         toolchain:
             - linux64-clang
-            - linux64-rust-1.83
+            - linux64-rust-dev
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
@@ -2060,7 +1671,7 @@ linux64-aarch64-shippable/opt:
     treeherder:
         platform: linux64-aarch64-shippable/opt
         symbol: Bpgo(B)
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -2112,7 +1723,7 @@ linux64-aarch64-devedition/opt:
     treeherder:
         platform: linux64-aarch64-devedition/opt
         symbol: Bpgo(B)
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 9000
         env:

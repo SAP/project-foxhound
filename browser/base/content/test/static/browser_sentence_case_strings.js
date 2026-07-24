@@ -22,7 +22,7 @@ const { AppMenuNotifications } = ChromeUtils.importESModule(
 // These are brand names, proper names, or other things that we expect to
 // not abide exactly to sentence case. NAMES is for single words, and PHRASES
 // is for words in a specific order.
-const NAMES = new Set(["Mozilla", "Nightly", "Firefox"]);
+const NAMES = new Set(["Mozilla", "Nightly", "Firefox", "AI"]);
 const PHRASES = new Set(["Troubleshoot Mode…"]);
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
@@ -86,7 +86,7 @@ function checkToolbarButtons(view) {
       toolbarbutton.label,
       toolbarbutton.textContent,
       toolbarbutton.toolTipText,
-      GetDynamicShortcutTooltipText(toolbarbutton.id),
+      DynamicShortcutTooltip.getText(toolbarbutton.id),
     ];
     info("Checking toolbarbutton " + toolbarbutton.id);
     for (let string of strings) {
@@ -138,8 +138,8 @@ async function checkUpdateBanner(view) {
 /**
  * Asserts whether or not a string matches sentence case.
  *
- * @param {String} string The string to check for sentence case.
- * @param {String} elementID The ID of the element being tested. This is
+ * @param {string} string The string to check for sentence case.
+ * @param {string} elementID The ID of the element being tested. This is
  *        mainly used for the assertion message to make it easier to debug
  *        failures, but items without IDs will not be checked (as these are
  *        likely using dynamic strings, like bookmarked page titles).
@@ -185,9 +185,9 @@ function checkSentenceCase(string, elementID) {
  * to see if the word is indeed part of the phrase in context.
  *
  * @param {Array} words The full array of words being checked by the caller.
- * @param {Number} wordIndex The index of the word being checked within the
+ * @param {number} wordIndex The index of the word being checked within the
  *        words array.
- * @return {Boolean}
+ * @return {boolean}
  */
 function isPartOfPhrase(words, wordIndex) {
   let word = words[wordIndex];

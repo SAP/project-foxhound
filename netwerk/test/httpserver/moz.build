@@ -18,4 +18,5 @@ EXTRA_COMPONENTS += [
 
 TESTING_JS_MODULES += [
     "httpd.sys.mjs",
+    "NodeServer.sys.mjs",
 ]

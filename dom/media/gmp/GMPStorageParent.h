@@ -6,8 +6,8 @@
 #ifndef GMPStorageParent_h_
 #define GMPStorageParent_h_
 
-#include "mozilla/gmp/PGMPStorageParent.h"
 #include "GMPStorage.h"
+#include "mozilla/gmp/PGMPStorageParent.h"
 
 namespace mozilla::gmp {
 

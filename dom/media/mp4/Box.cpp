@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Box.h"
+
+#include <algorithm>
+
 #include "ByteStream.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/Unused.h"
-#include <algorithm>
 
 namespace mozilla {
 
@@ -39,8 +40,13 @@ static uint32_t BoxOffset(AtomType aType) {
 
 Box::Box(BoxContext* aContext, uint64_t aOffset, const Box* aParent)
     : mContext(aContext), mParent(aParent) {
-  uint8_t header[8];
+  // Default error code for early returns if ranges are not as expected
+  mInitStatus = NS_ERROR_DOM_MEDIA_RANGE_ERR;
+  // Set start offset for Offset() even when the box is unavailable.
+  // The empty range indicates !IsAvailable(), overwritten below on success.
+  mRange = MediaByteRange(aOffset, aOffset);
 
+  uint8_t header[8];
   if (aOffset > INT64_MAX - sizeof(header)) {
     return;
   }
@@ -63,9 +69,16 @@ Box::Box(BoxContext* aContext, uint64_t aOffset, const Box* aParent)
   }
 
   size_t bytes;
-  if (!mContext->mSource->CachedReadAt(aOffset, header, sizeof(header),
-                                       &bytes) ||
-      bytes != sizeof(header)) {
+  nsresult rv =
+      mContext->mSource->CachedReadAt(aOffset, header, sizeof(header), &bytes);
+  if (NS_FAILED(rv)) {
+    mInitStatus = rv;
+    return;
+  }
+  if (bytes != sizeof(header)) {
+    // CachedReadAt() would usually return an error if the read cannot
+    // complete, but BlockingStream can return fewer bytes on end of stream or
+    // after a network error has occurred.
     return;
   }
 
@@ -78,10 +91,16 @@ Box::Box(BoxContext* aContext, uint64_t aOffset, const Box* aParent)
     MediaByteRange bigLengthRange(headerRange.mEnd,
                                   headerRange.mEnd + sizeof(bigLength));
     if ((mParent && !mParent->mRange.Contains(bigLengthRange)) ||
-        !byteRange->Contains(bigLengthRange) ||
-        !mContext->mSource->CachedReadAt(aOffset + sizeof(header), bigLength,
-                                         sizeof(bigLength), &bytes) ||
-        bytes != sizeof(bigLength)) {
+        !byteRange->Contains(bigLengthRange)) {
+      return;
+    }
+    rv = mContext->mSource->CachedReadAt(aOffset + sizeof(header), bigLength,
+                                         sizeof(bigLength), &bytes);
+    if (NS_FAILED(rv)) {
+      mInitStatus = rv;
+      return;
+    }
+    if (bytes != sizeof(bigLength)) {
       return;
     }
     size = BigEndian::readUint64(bigLength);
@@ -113,6 +132,7 @@ Box::Box(BoxContext* aContext, uint64_t aOffset, const Box* aParent)
     return;
   }
 
+  mInitStatus = NS_OK;
   mRange = boxRange;
 }
 
@@ -137,8 +157,8 @@ nsTArray<uint8_t> Box::ReadCompleteBox() const {
   nsTArray<uint8_t> out(length);
   out.SetLength(length);
   size_t bytesRead = 0;
-  if (!mContext->mSource->CachedReadAt(mRange.mStart, out.Elements(), length,
-                                       &bytesRead) ||
+  if (NS_FAILED(mContext->mSource->CachedReadAt(mRange.mStart, out.Elements(),
+                                                length, &bytesRead)) ||
       bytesRead != length) {
     // Byte ranges are being reported incorrectly
     NS_WARNING("Read failed in mozilla::Box::ReadCompleteBox()");
@@ -149,7 +169,7 @@ nsTArray<uint8_t> Box::ReadCompleteBox() const {
 
 nsTArray<uint8_t> Box::Read() const {
   nsTArray<uint8_t> out;
-  Unused << Read(&out, mRange);
+  (void)Read(&out, mRange);
   return out;
 }
 
@@ -164,8 +184,8 @@ bool Box::Read(nsTArray<uint8_t>* aDest, const MediaByteRange& aRange) const {
   }
   aDest->SetLength(length);
   size_t bytes;
-  if (!mContext->mSource->CachedReadAt(mChildOffset, aDest->Elements(),
-                                       aDest->Length(), &bytes) ||
+  if (NS_FAILED(mContext->mSource->CachedReadAt(mChildOffset, aDest->Elements(),
+                                                aDest->Length(), &bytes)) ||
       bytes != aDest->Length()) {
     // Byte ranges are being reported incorrectly
     NS_WARNING("Read failed in mozilla::Box::Read()");
@@ -175,7 +195,7 @@ bool Box::Read(nsTArray<uint8_t>* aDest, const MediaByteRange& aRange) const {
   return true;
 }
 
-ByteSlice Box::ReadAsSlice() {
+ByteSlice Box::ReadAsSlice() const {
   if (!mContext || mRange.IsEmpty()) {
     return ByteSlice{nullptr, 0};
   }
@@ -198,7 +218,8 @@ ByteSlice Box::ReadAsSlice() {
 
   uint8_t* p = mContext->mAllocator.Allocate(size_t(length));
   size_t bytes;
-  if (!mContext->mSource->CachedReadAt(mChildOffset, p, length, &bytes) ||
+  if (NS_FAILED(
+          mContext->mSource->CachedReadAt(mChildOffset, p, length, &bytes)) ||
       bytes != length) {
     // Byte ranges are being reported incorrectly
     NS_WARNING("Read failed in mozilla::Box::ReadAsSlice()");

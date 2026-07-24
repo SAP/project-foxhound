@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPingListener_h__
-#define nsPingListener_h__
+#ifndef nsPingListener_h_
+#define nsPingListener_h_
 
 #include "nsIStreamListener.h"
 #include "nsIReferrerInfo.h"
@@ -45,4 +45,4 @@ class nsPingListener final : public nsIStreamListener {
   nsCOMPtr<nsITimer> mTimer;
 };
 
-#endif /* nsPingListener_h__ */
+#endif /* nsPingListener_h_ */

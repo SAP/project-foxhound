@@ -251,11 +251,12 @@ export class SpecialPowersChild extends JSWindowActorChild {
         }
         break;
 
-      case "Spawn":
+      case "Spawn": {
         let { task, args, caller, taskId, imports } = message.data;
         return this._spawnTask(task, args, caller, taskId, imports);
+      }
 
-      case "EnsureFocus":
+      case "EnsureFocus": {
         // Ensure that the focus is in this child document. Returns a browsing
         // context of a child frame if a subframe should be focused or undefined
         // otherwise.
@@ -300,6 +301,7 @@ export class SpecialPowersChild extends JSWindowActorChild {
           });
         }
         break;
+      }
 
       case "Assert":
         {
@@ -529,7 +531,7 @@ export class SpecialPowersChild extends JSWindowActorChild {
       throw new Error(
         `Error while executing chrome script '${aUrl}':\n` +
           "The script doesn't exist. Ensure you have registered it in " +
-          "'support-files' in your mochitest.ini."
+          "'support-files' in your mochitest.toml."
       );
     }
 
@@ -736,6 +738,12 @@ export class SpecialPowersChild extends JSWindowActorChild {
     crashDumpFiles.forEach(function (aFilename) {
       self._unexpectedCrashDumpFiles[aFilename] = true;
     });
+    // The value is an Array of strings. Export into the scope of the window to
+    // allow the caller to read its value without wrapper. Callers of
+    // findUnexpectedCrashDumpFiles will automatically get a wrapper; call
+    // SpecialPowers.unwrap() on its return value to access the raw value that
+    // we are returning here (see bug 2007587 for context).
+    crashDumpFiles = Cu.cloneInto(crashDumpFiles, this.contentWindow);
     return crashDumpFiles;
   }
 

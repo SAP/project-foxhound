@@ -12,13 +12,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
-#include <numeric>
+#include <optional>
 #include <tuple>
+#include <vector>
 
+#include "api/audio/audio_processing.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "modules/audio_processing/agc2/agc2_testing_common.h"
+#include "modules/audio_processing/agc2/cpu_features.h"
+#include "modules/audio_processing/agc2/input_volume_controller.h"
+#include "modules/audio_processing/agc2/vad_wrapper.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/test/audio_buffer_tools.h"
 #include "modules/audio_processing/test/bitexactness_tools.h"
@@ -49,7 +56,7 @@ float RunAgc2WithConstantInput(GainController2& agc2,
                                int sample_rate_hz,
                                int num_channels = 1,
                                int applied_initial_volume = 0) {
-  const int num_samples = rtc::CheckedDivExact(sample_rate_hz, 100);
+  const int num_samples = CheckedDivExact(sample_rate_hz, 100);
   AudioBuffer ab(sample_rate_hz, num_channels, sample_rate_hz, num_channels,
                  sample_rate_hz, num_channels);
 

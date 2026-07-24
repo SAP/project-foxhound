@@ -17,16 +17,15 @@ import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import mozilla.components.support.base.android.Padding
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doAnswer
@@ -43,9 +42,6 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ViewTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     fun `showKeyboard should request focus`() {
@@ -141,7 +137,7 @@ class ViewTest {
     }
 
     @Test
-    fun `can dispatch coroutines to view scope`() {
+    fun `can dispatch coroutines to view scope`() = runTest {
         val activity = Robolectric.buildActivity(Activity::class.java).create().get()
         val view = View(testContext)
         activity.windowManager.addView(view, WindowManager.LayoutParams(100, 100))
@@ -149,15 +145,13 @@ class ViewTest {
 
         assertTrue(view.isAttachedToWindow)
 
-        val latch = CountDownLatch(1)
         var coroutineExecuted = false
 
         view.toScope().launch {
             coroutineExecuted = true
-            latch.countDown()
         }
 
-        latch.await(10, TimeUnit.SECONDS)
+        shadowOf(getMainLooper()).idle()
 
         assertTrue(coroutineExecuted)
     }

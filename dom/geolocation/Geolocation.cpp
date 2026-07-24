@@ -10,26 +10,25 @@
 #include "GeolocationSystem.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/GeolocationPositionError.h"
-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
-#include "mozilla/glean/DomGeolocationMetrics.h"
-#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_geo.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/EventStateManager.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/GeolocationPositionError.h"
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/glean/DomGeolocationMetrics.h"
+#include "mozilla/ipc/MessageChannel.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "mozilla/dom/Document.h"
 #include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "nsIPromptService.h"
@@ -46,9 +45,9 @@ class nsIPrincipal;
 #endif
 
 #ifdef MOZ_ENABLE_DBUS
-#  include "mozilla/WidgetUtilsGtk.h"
 #  include "GeoclueLocationProvider.h"
 #  include "PortalLocationProvider.h"
+#  include "mozilla/WidgetUtilsGtk.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -460,6 +459,11 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
   }
 
   if (canUseCache) {
+    glean::geolocation::geolocation_cache_hit
+        .EnumGet(
+            glean::geolocation::GeolocationCacheHitLabel::eNsgeolocationrequest)
+        .Add();
+
     // okay, we can return a cached position
     // getCurrentPosition requests serviced by the cache
     // will now be owned by the RequestSendLocationEvent
@@ -469,7 +473,6 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
     if (!mIsWatchPositionRequest) {
       return NS_OK;
     }
-
   } else {
     // if it is not a watch request and timeout is 0,
     // invoke the errorCallback (if present) with TIMEOUT code
@@ -1146,7 +1149,7 @@ void Geolocation::RemoveRequest(nsGeolocationRequest* aRequest) {
   bool requestWasKnown = (mPendingCallbacks.RemoveElement(aRequest) !=
                           mWatchingCallbacks.RemoveElement(aRequest));
 
-  Unused << requestWasKnown;
+  (void)requestWasKnown;
 }
 
 NS_IMETHODIMP

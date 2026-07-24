@@ -39,7 +39,7 @@ function getWasmText(subject, data) {
  * Creates wasm formatter function used to generate the hexadecimal number
  * displayed in the line gutter
  *
- * @param {Object} subject - An object which decribes the source, it is comprised of the sourceId
+ * @param {object} subject - An object which decribes the source, it is comprised of the sourceId
  * @returns {Function}
  */
 function getWasmLineNumberFormatter(subject) {
@@ -78,8 +78,8 @@ function getWasmLineNumberFormatter(subject) {
  * Checks if the specified source exists in the cache.
  * This is used to determine if the source is a WASM source
  *
- * @param {Object} subject
- * @returns {Boolean}
+ * @param {object} subject
+ * @returns {boolean}
  */
 function isWasm(subject) {
   return wasmStates.has(subject);
@@ -88,13 +88,13 @@ function isWasm(subject) {
 /**
  * Converts the source (decimal) line to its WASM offset
  *
- * @param {Object} subject
- * @param {Number} line
- * @param {Boolean} findNextOffset
+ * @param {object} subject
+ * @param {number} line
+ * @param {boolean} findNextOffset
  *        There are scenarios (e.g are empty lines) where we might want to find the next best offset match.
  *        Every line will usually have offsets assigned except empty lines (which could be between functions
  *        or some declarations).
- * @returns {Number}
+ * @returns {number}
  */
 function lineToWasmOffset(subject, line, findNextOffset = false) {
   const wasmState = wasmStates.get(subject);
@@ -114,9 +114,9 @@ function lineToWasmOffset(subject, line, findNextOffset = false) {
 /**
  * Converts the WASM offset to the source line
  *
- * @param {Object} subject
- * @param {Number} offset
- * @returns {Number}
+ * @param {object} subject
+ * @param {number} offset
+ * @returns {number}
  */
 function wasmOffsetToLine(subject, offset) {
   const wasmState = wasmStates.get(subject);

@@ -3,41 +3,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/WebGPUBinding.h"
 #include "BindGroup.h"
-#include "ipc/WebGPUChild.h"
 
 #include "Device.h"
+#include "ExternalTexture.h"
+#include "ipc/WebGPUChild.h"
+#include "mozilla/dom/WebGPUBinding.h"
 
 namespace mozilla::webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(BindGroup, mParent)
+GPU_IMPL_CYCLE_COLLECTION(BindGroup, mParent, mExternalTextures)
 GPU_IMPL_JS_WRAP(BindGroup)
 
 BindGroup::BindGroup(Device* const aParent, RawId aId,
-                     CanvasContextArray&& aCanvasContexts)
-    : ChildOf(aParent),
-      mId(aId),
-      mUsedCanvasContexts(std::move(aCanvasContexts)) {
-  MOZ_RELEASE_ASSERT(aId);
-}
+                     CanvasContextArray&& aCanvasContexts,
+                     nsTArray<RefPtr<ExternalTexture>>&& aExternalTextures)
+    : ObjectBase(aParent->GetChild(), aId, ffi::wgpu_client_drop_bind_group),
+      ChildOf(aParent),
+      mUsedCanvasContexts(std::move(aCanvasContexts)),
+      mExternalTextures(std::move(aExternalTextures)) {}
 
-BindGroup::~BindGroup() { Cleanup(); }
-
-void BindGroup::Cleanup() {
-  if (!mValid) {
-    return;
-  }
-  mValid = false;
-
-  auto bridge = mParent->GetBridge();
-  if (!bridge) {
-    return;
-  }
-
-  ffi::wgpu_client_drop_bind_group(bridge->GetClient(), mId);
-
-  wgpu_client_free_bind_group_id(bridge->GetClient(), mId);
-}
+BindGroup::~BindGroup() = default;
 
 }  // namespace mozilla::webgpu

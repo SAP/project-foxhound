@@ -6,8 +6,9 @@
 
 #include "FakeVideoSource.h"
 
-#include "mozilla/SyncRunnable.h"
 #include "ImageContainer.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/gfx/Tools.h"
 
 #ifdef MOZ_WEBRTC
 #  include "common/YuvStamper.h"
@@ -54,7 +55,7 @@ int32_t FakeVideoSource::StartCapture(int32_t aWidth, int32_t aHeight,
         capturer->GenerateImage();
       },
       this, aFrameInterval, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
-      "FakeVideoSource::GenerateFrame");
+      "FakeVideoSource::GenerateFrame"_ns);
 
   return 0;
 }
@@ -105,11 +106,11 @@ void FakeVideoSource::SetTrackingId(uint32_t aTrackingIdProcId) {
 
 static bool AllocateSolidColorFrame(layers::PlanarYCbCrData& aData, int aWidth,
                                     int aHeight, int aY, int aCb, int aCr) {
-  MOZ_ASSERT(!(aWidth & 1));
-  MOZ_ASSERT(!(aHeight & 1));
   // Allocate a single frame with a solid color
-  int yLen = aWidth * aHeight;
-  int cbLen = yLen >> 2;
+  int yStride = GetAlignedStride<2>(aWidth, 1);
+  int yLen = yStride * aHeight;
+  int cbcrStride = yStride / 2;
+  int cbLen = cbcrStride * GetAlignedStride<2>(aHeight, 1) / 2;
   int crLen = cbLen;
   uint8_t* frame = (uint8_t*)malloc(yLen + cbLen + crLen);
   if (!frame) {
@@ -120,8 +121,8 @@ static bool AllocateSolidColorFrame(layers::PlanarYCbCrData& aData, int aWidth,
   memset(frame + yLen + cbLen, aCr, crLen);
 
   aData.mYChannel = frame;
-  aData.mYStride = aWidth;
-  aData.mCbCrStride = aWidth >> 1;
+  aData.mYStride = yStride;
+  aData.mCbCrStride = cbcrStride;
   aData.mCbChannel = frame + yLen;
   aData.mCrChannel = aData.mCbChannel + cbLen;
   aData.mPictureRect = IntRect(0, 0, aWidth, aHeight);
@@ -137,6 +138,8 @@ static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
 
 void FakeVideoSource::GenerateImage() {
   mTarget.AssertOnCurrentThread();
+
+  const TimeStamp now = TimeStamp::Now();
 
   if (mTrackingId) {
     mCaptureRecorder.Start(0, "FakeVideoSource"_ns, *mTrackingId, mWidth,
@@ -192,7 +195,7 @@ void FakeVideoSource::GenerateImage() {
     return;
   }
 
-  mGeneratedImageEvent.Notify(ycbcr_image);
+  mGeneratedImageEvent.Notify(ycbcr_image, now);
   mCaptureRecorder.Record(0);
 }
 

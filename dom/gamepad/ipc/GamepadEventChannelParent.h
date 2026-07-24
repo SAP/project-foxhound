@@ -3,10 +3,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "mozilla/dom/PGamepadEventChannelParent.h"
 
 #ifndef mozilla_dom_GamepadEventChannelParent_h_
-#  define mozilla_dom_GamepadEventChannelParent_h_
+#define mozilla_dom_GamepadEventChannelParent_h_
+#include "mozilla/dom/PGamepadEventChannelParent.h"
 
 namespace mozilla::dom {
 
@@ -48,4 +48,4 @@ class GamepadEventChannelParent final : public PGamepadEventChannelParent {
 
 }  // namespace mozilla::dom
 
-#endif
+#endif  // mozilla_dom_GamepadEventChannelParent_h_

@@ -54,30 +54,7 @@ function openViewSourceForBrowser(browser) {
  * @returns the new tab which shows the source.
  */
 async function openViewSource() {
-  let contentAreaContextMenuPopup = document.getElementById(
-    "contentAreaContextMenu"
-  );
-  let popupShownPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenuPopup,
-    "popupshown"
-  );
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "body",
-    { type: "contextmenu", button: 2 },
-    gBrowser.selectedBrowser
-  );
-  await popupShownPromise;
-
-  return waitForViewSourceTab(async () => {
-    let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-      contentAreaContextMenuPopup,
-      "popuphidden"
-    );
-    contentAreaContextMenuPopup.activateItem(
-      document.getElementById("context-viewsource")
-    );
-    await popupHiddenPromise;
-  });
+  return openViewSourceForBrowser(gBrowser.selectedBrowser);
 }
 
 /**

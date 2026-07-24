@@ -15,12 +15,14 @@
 // These pointers must be traced using TraceOffthreadGCPtr.
 template <typename T>
 class OffthreadGCPtr {
-  // Note: no pre-barrier is needed because after being initialized
-  // this is a constant. No post-barrier is needed because the value
-  // is always tenured.
-  T ptr_;
+  // Note: no pre-barrier is needed because after being initialized to a
+  // non-empty OffthreadGCPtr this is a constant. No post-barrier is needed
+  // because the value is always tenured.
+  T ptr_ = JS::SafelyInitialized<T>::create();
 
  public:
+  constexpr OffthreadGCPtr() = default;
+
   explicit OffthreadGCPtr(const T& ptr) : ptr_(ptr) {
     MOZ_ASSERT(JS::GCPolicy<T>::isTenured(ptr),
                "OffthreadSnapshot pointers must be tenured");
@@ -39,7 +41,6 @@ class OffthreadGCPtr {
   }
 
  private:
-  OffthreadGCPtr() = delete;
   void operator=(OffthreadGCPtr<T>& other) = delete;
 };
 

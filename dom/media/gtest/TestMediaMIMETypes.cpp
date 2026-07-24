@@ -1,11 +1,11 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
 #include "MediaMIMETypes.h"
-#include "mozilla/Unused.h"
+#include "gtest/gtest.h"
 
 using namespace mozilla;
 
@@ -93,7 +93,7 @@ TEST(MediaMIMETypes, MediaCodecs)
   int iterations = 0;
   for (const auto& codec : empty.Range()) {
     ++iterations;
-    Unused << codec;
+    (void)codec;
   }
   EXPECT_EQ(0, iterations);
 
@@ -281,4 +281,23 @@ TEST(MediaMIMETypes, MediaExtendedMIMEType)
   EXPECT_EQ(60, *type->GetFramerate());
   EXPECT_TRUE(!!type->GetBitrate());
   EXPECT_EQ(100000, *type->GetBitrate());
+  EXPECT_EQ(5ul, type->GetParameterCount());
+
+  // Test parameter count variations
+  type = MakeMediaExtendedMIMEType("video/mp4");
+  EXPECT_EQ(0ul, type->GetParameterCount());
+
+  type = MakeMediaExtendedMIMEType("video/mp4; codecs=\"a,b\"");
+  EXPECT_EQ(1ul, type->GetParameterCount());
+
+  type = MakeMediaExtendedMIMEType("video/mp4; codecs=\"a,b\"; width=1024");
+  EXPECT_EQ(2ul, type->GetParameterCount());
+
+  type = MakeMediaExtendedMIMEType(
+      "video/mp4; codecs=\"a,b\"; width=1024; Height=768");
+  EXPECT_EQ(3ul, type->GetParameterCount());
+
+  type = MakeMediaExtendedMIMEType(
+      "video/mp4; codecs=\"a,b\"; width=1024; Height=768; FrameRate=60");
+  EXPECT_EQ(4ul, type->GetParameterCount());
 }

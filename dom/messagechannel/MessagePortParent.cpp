@@ -5,10 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MessagePortParent.h"
+
 #include "MessagePortService.h"
 #include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -38,7 +38,7 @@ bool MessagePortParent::Entangle(const nsID& aDestinationUUID,
 }
 
 mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (!mService) {
     NS_WARNING("PostMessages is called after a shutdown!");
     // This implies most probably that CloseAndDelete() has been already called
@@ -52,22 +52,12 @@ mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
     return IPC_FAIL(this, "RecvPostMessages not entangled");
   }
 
-  // This converts the object in a data struct where we have BlobImpls.
-  FallibleTArray<RefPtr<SharedMessageBody>> messages;
-  if (NS_WARN_IF(!SharedMessageBody::FromMessagesToSharedParent(aMessages,
-                                                                messages))) {
-    // FromMessagesToSharedParent() returns false only if the array allocation
-    // failed.
-    // See bug 1750497 for further discussion if this is the wanted behavior.
-    return IPC_FAIL(this, "SharedMessageBody::FromMessagesToSharedParent");
-  }
-
-  if (messages.IsEmpty()) {
+  if (aMessages.IsEmpty()) {
     // An empty payload can be safely ignored.
     return IPC_OK();
   }
 
-  if (!mService->PostMessages(this, std::move(messages))) {
+  if (!mService->PostMessages(this, std::move(aMessages))) {
     // TODO: Verify if all failure conditions of PostMessages() merit an
     // IPC_FAIL. See bug 1750499.
     return IPC_FAIL(this, "RecvPostMessages->PostMessages");
@@ -76,7 +66,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
 }
 
 mozilla::ipc::IPCResult MessagePortParent::RecvDisentangle(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (!mService) {
     NS_WARNING("Entangle is called after a shutdown!");
     // This implies most probably that CloseAndDelete() has been already called
@@ -90,15 +80,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvDisentangle(
     return IPC_FAIL(this, "RecvDisentangle not entangled");
   }
 
-  // This converts the object in a data struct where we have BlobImpls.
-  FallibleTArray<RefPtr<SharedMessageBody>> messages;
-  if (NS_WARN_IF(!SharedMessageBody::FromMessagesToSharedParent(aMessages,
-                                                                messages))) {
-    // TODO: Verify if failed allocations merit an IPC_FAIL. See bug 1750497.
-    return IPC_FAIL(this, "SharedMessageBody::FromMessagesToSharedParent");
-  }
-
-  if (!mService->DisentanglePort(this, std::move(messages))) {
+  if (!mService->DisentanglePort(this, std::move(aMessages))) {
     // TODO: Verify if all failure conditions of DisentanglePort() merit an
     // IPC_FAIL. See bug 1750501.
     return IPC_FAIL(this, "RecvDisentangle->DisentanglePort");
@@ -114,7 +96,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvStopSendingData() {
   }
 
   mCanSendData = false;
-  Unused << SendStopSendingDataConfirmed();
+  (void)SendStopSendingDataConfirmed();
   return IPC_OK();
 }
 
@@ -131,7 +113,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvClose() {
 
   MOZ_ASSERT(!mEntangled);
 
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -144,7 +126,8 @@ void MessagePortParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-bool MessagePortParent::Entangled(nsTArray<MessageData>&& aMessages) {
+bool MessagePortParent::Entangled(
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   MOZ_ASSERT(!mEntangled);
   mEntangled = true;
   return SendEntangled(aMessages);
@@ -152,7 +135,7 @@ bool MessagePortParent::Entangled(nsTArray<MessageData>&& aMessages) {
 
 void MessagePortParent::CloseAndDelete() {
   Close();
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 void MessagePortParent::Close() {

@@ -7,7 +7,6 @@
 #ifndef mozilla_interceptor_RangeMap_h
 #define mozilla_interceptor_RangeMap_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/Span.h"

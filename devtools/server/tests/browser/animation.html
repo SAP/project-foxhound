@@ -131,6 +131,10 @@
     height: 100px;
   }
 
+  .button-animation {
+    animation: glow 5s infinite alternate;
+  }
+
   @keyframes move {
     100% {
       transform: translateY(100px);
@@ -160,6 +164,8 @@
 <div class="delayed-multiple-animations"></div>
 <div class="multiple-animations-2"></div>
 <div class="all-transitions"></div>
+<!-- We need this to be a button to assert fix for Bug 2001562 -->
+<button class="button-animation"></button>
 <script type="text/javascript">
   "use strict";
   // Get the transitions started when the page loads

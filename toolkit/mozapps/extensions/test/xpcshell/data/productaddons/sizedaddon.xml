@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<updates>
+  <addons>
+    <addon id="openh264-plugin-no-at-symbol" URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip" hashFunction="sha256" size="42" hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="1.1"/>
+  </addons>
+</updates>

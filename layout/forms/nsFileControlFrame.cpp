@@ -23,7 +23,6 @@
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/HTMLButtonElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "nsCOMPtr.h"
@@ -91,7 +90,7 @@ static already_AddRefed<Element> MakeAnonButton(
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   button->SetIsNativeAnonymousRoot();
-  button->SetPseudoElementType(PseudoStyleType::fileSelectorButton);
+  button->SetPseudoElementType(PseudoStyleType::FileSelectorButton);
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
@@ -134,8 +133,8 @@ nsresult nsFileControlFrame::CreateAnonymousContent(
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   mTextContent->SetIsNativeAnonymousRoot();
-  RefPtr<nsTextNode> text =
-      new (doc->NodeInfoManager()) nsTextNode(doc->NodeInfoManager());
+  mTextContent->SetPseudoElementType(PseudoStyleType::MozFileContent);
+  RefPtr<nsTextNode> text = doc->CreateEmptyTextNode();
   mTextContent->AppendChildTo(text, false, IgnoreErrors());
 
   aElements.AppendElement(mTextContent);

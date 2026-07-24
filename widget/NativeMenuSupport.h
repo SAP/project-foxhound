@@ -6,7 +6,7 @@
 #ifndef mozilla_widget_NativeMenuSupport_h
 #define mozilla_widget_NativeMenuSupport_h
 
-#include "mozilla/RefPtr.h"
+#include "mozilla/AlreadyAddRefed.h"
 
 class nsIWidget;
 
@@ -33,9 +33,15 @@ class NativeMenuSupport final {
                                   dom::Element* aMenuBarElement);
 
   // Given a menupopup DOM node, create a NativeMenu instance that can be shown
-  // as a native context menu.
-  static already_AddRefed<NativeMenu> CreateNativeContextMenu(
+  // as a native popup menu.
+  static already_AddRefed<NativeMenu> CreateNativePopupMenu(
       dom::Element* aPopup);
+
+  // Whether or not native anchored menus are enabled.
+  static bool ShouldUseNativeAnchoredMenus();
+
+  // Whether or not native anchored menulists are enabled.
+  static bool ShouldUseNativeAnchoredMenulists();
 
   // Whether or not native context menus are enabled.
   static bool ShouldUseNativeContextMenus();

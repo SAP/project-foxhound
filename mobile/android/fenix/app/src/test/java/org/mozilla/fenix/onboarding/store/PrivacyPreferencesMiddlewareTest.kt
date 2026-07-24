@@ -6,7 +6,6 @@ package org.mozilla.fenix.onboarding.store
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import junit.framework.TestCase.assertEquals
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.support.test.mock
 import org.junit.Before
 import org.junit.Test
@@ -20,9 +19,6 @@ class PrivacyPreferencesMiddlewareTest {
 
     @Mock
     private lateinit var repository: PrivacyPreferencesRepository
-
-    @Mock
-    private lateinit var context: MiddlewareContext<PrivacyPreferencesState, PrivacyPreferencesAction>
 
     private lateinit var middleware: PrivacyPreferencesMiddleware
 
@@ -47,7 +43,7 @@ class PrivacyPreferencesMiddlewareTest {
         )
 
         val updatedDataUsageEnabled = !dataUsageEnabled
-        middleware.invoke(context, {}, PrivacyPreferencesAction.UsageDataPreferenceUpdatedTo(enabled = updatedDataUsageEnabled))
+        middleware.invoke(store = mock(), {}, PrivacyPreferencesAction.UsageDataPreferenceUpdatedTo(enabled = updatedDataUsageEnabled))
 
         assertEquals(updatedDataUsageEnabled, dataUsageEnabled)
     }
@@ -66,7 +62,7 @@ class PrivacyPreferencesMiddlewareTest {
         )
 
         val updatedCrashReportEnabled = !crashReportEnabled
-        middleware.invoke(context, {}, PrivacyPreferencesAction.UsageDataPreferenceUpdatedTo(enabled = updatedCrashReportEnabled))
+        middleware.invoke(store = mock(), {}, PrivacyPreferencesAction.UsageDataPreferenceUpdatedTo(enabled = updatedCrashReportEnabled))
 
         assertEquals(updatedCrashReportEnabled, crashReportEnabled)
     }
@@ -74,7 +70,7 @@ class PrivacyPreferencesMiddlewareTest {
     @Test
     fun `GIVEN usage data learn more called WHEN middleware is invoked THEN the repo is unchanged`() {
         val action = PrivacyPreferencesAction.UsageDataUserLearnMore
-        middleware.invoke(context, {}, action)
+        middleware.invoke(store = mock(), {}, action)
 
         verifyNoInteractions(repository)
     }
@@ -82,7 +78,7 @@ class PrivacyPreferencesMiddlewareTest {
     @Test
     fun `GIVEN crash reporting learn more called WHEN middleware is invoked THEN the repo is unchanged`() {
         val action = PrivacyPreferencesAction.CrashReportingLearnMore
-        middleware.invoke(context, {}, action)
+        middleware.invoke(store = mock(), {}, action)
 
         verifyNoInteractions(repository)
     }

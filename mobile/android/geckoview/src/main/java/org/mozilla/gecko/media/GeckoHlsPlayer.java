@@ -47,8 +47,6 @@ import org.mozilla.thirdparty.com.google.android.exoplayer2.util.Util;
 @ReflectionTarget
 public class GeckoHlsPlayer implements BaseHlsPlayer, ExoPlayer.EventListener {
   private static final String LOGTAG = "GeckoHlsPlayer";
-  private static final DefaultBandwidthMeter BANDWIDTH_METER =
-      new DefaultBandwidthMeter.Builder(null).build();
   private static final int MAX_TIMELINE_ITEM_LINES = 3;
   private static final boolean DEBUG = !BuildConfig.MOZILLA_OFFICIAL;
 
@@ -688,6 +686,9 @@ public class GeckoHlsPlayer implements BaseHlsPlayer, ExoPlayer.EventListener {
     return enabled ? "[X]" : "[ ]";
   }
 
+  private final DefaultBandwidthMeter mBandwidthMeter =
+      new DefaultBandwidthMeter.Builder(null).build();
+
   // Called on GeckoHlsPlayerThread
   private void createExoPlayer(final String url) {
     assertTrue(isPlayerThread());
@@ -699,7 +700,7 @@ public class GeckoHlsPlayer implements BaseHlsPlayer, ExoPlayer.EventListener {
 
     // Prepare trackSelector
     final TrackSelection.Factory videoTrackSelectionFactory =
-        new AdaptiveTrackSelection.Factory(BANDWIDTH_METER);
+        new AdaptiveTrackSelection.Factory(mBandwidthMeter);
     mTrackSelector = new DefaultTrackSelector(videoTrackSelectionFactory);
 
     // Prepare customized renderer
@@ -727,7 +728,7 @@ public class GeckoHlsPlayer implements BaseHlsPlayer, ExoPlayer.EventListener {
     mPlayer.addListener(this);
 
     final Uri uri = Uri.parse(url);
-    mMediaSource = buildDataSourceFactory(ctx, BANDWIDTH_METER).createMediaSource(uri);
+    mMediaSource = buildDataSourceFactory(ctx, mBandwidthMeter).createMediaSource(uri);
     mSourceEventListener = new SourceEventListener();
     mMediaSource.addEventListener(mMainHandler, mSourceEventListener);
     if (DEBUG) {

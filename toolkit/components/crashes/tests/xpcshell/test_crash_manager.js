@@ -3,6 +3,9 @@
 
 "use strict";
 
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 const { CrashManager } = ChromeUtils.importESModule(
   "resource://gre/modules/CrashManager.sys.mjs"
 );
@@ -14,6 +17,9 @@ const { configureLogging, getManager, sleep } = ChromeUtils.importESModule(
 );
 const { TelemetryEnvironment } = ChromeUtils.importESModule(
   "resource://gre/modules/TelemetryEnvironment.sys.mjs"
+);
+const { makeFakeAppDir } = ChromeUtils.importESModule(
+  "resource://testing-common/AppData.sys.mjs"
 );
 
 const DUMMY_DATE = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
@@ -28,7 +34,16 @@ function run_test() {
   TelemetryArchiveTesting.setup();
   // Initialize FOG for glean tests
   Services.fog.initializeFOG();
-  run_next_test();
+
+  // We need a UAppData directory for the glean store.
+  //
+  // We use `do_test_pending()`/`do_test_finished()` because `run_test()` must
+  // not return until all tests are complete.
+  do_test_pending();
+  makeFakeAppDir().then(() => {
+    run_next_test();
+    do_test_finished();
+  });
 }
 
 add_task(async function test_constructor_ok() {
@@ -438,29 +453,35 @@ add_task(async function test_multiline_crash_id_rejected() {
 });
 
 // Main process crashes should be remembered beyond the high water mark.
-add_task(async function test_high_water_mark() {
-  let m = await getManager();
+add_task(
+  {
+    // Bug 2012641 will remove this skip
+    skip_if: () => AppConstants.platform === "macosx" && !AppConstants.DEBUG,
+  },
+  async function test_high_water_mark() {
+    let m = await getManager();
 
-  let store = await m._getStore();
+    let store = await m._getStore();
 
-  for (let i = 0; i < store.HIGH_WATER_DAILY_THRESHOLD + 1; i++) {
-    await m.createEventsFile(
-      "m" + i,
-      "crash.main.3",
-      DUMMY_DATE,
-      "m" + i,
-      "{}"
-    );
+    for (let i = 0; i < store.HIGH_WATER_DAILY_THRESHOLD + 1; i++) {
+      await m.createEventsFile(
+        "m" + i,
+        "crash.main.3",
+        DUMMY_DATE,
+        "m" + i,
+        "{}"
+      );
+    }
+
+    let count = await m.aggregateEventsFiles();
+    Assert.equal(count, store.HIGH_WATER_DAILY_THRESHOLD + 1);
+
+    // Need to fetch again in case the first one was garbage collected.
+    store = await m._getStore();
+
+    Assert.equal(store.crashesCount, store.HIGH_WATER_DAILY_THRESHOLD + 1);
   }
-
-  let count = await m.aggregateEventsFiles();
-  Assert.equal(count, store.HIGH_WATER_DAILY_THRESHOLD + 1);
-
-  // Need to fetch again in case the first one was garbage collected.
-  store = await m._getStore();
-
-  Assert.equal(store.crashesCount, store.HIGH_WATER_DAILY_THRESHOLD + 1);
-});
+);
 
 add_task(async function test_addCrash() {
   let m = await getManager();
@@ -793,21 +814,9 @@ add_task(async function test_child_process_crash_ping() {
 
 add_task(async function test_glean_crash_ping() {
   let m = await getManager();
+  m._disableGleanPing = false;
 
   let id = await m.createDummyDump();
-
-  // Test bare minumum (with missing optional fields)
-  let submitted = false;
-  GleanPings.crash.testBeforeNextSubmit(_ => {
-    const MINUTES = new Date(DUMMY_DATE);
-    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
-    Assert.equal(
-      Glean.crash.processType.testGetValue(),
-      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT]
-    );
-    Assert.equal(Glean.crash.startup.testGetValue(), null);
-    submitted = true;
-  });
 
   await m.addCrash(
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
@@ -816,270 +825,12 @@ add_task(async function test_glean_crash_ping() {
     DUMMY_DATE,
     {}
   );
+  Assert.ok(m._gleanPingPromise);
+  await m._gleanPingPromise;
 
-  Assert.ok(submitted);
-
-  // Test with all additional fields
-  let fullStackTraces = {
-    status: "OK",
-    crash_info: {
-      type: "main",
-      address: "0xf001ba11",
-      crashing_thread: 1,
-    },
-    main_module: 0,
-    modules: [
-      {
-        base_addr: "0x00000000",
-        end_addr: "0x00004000",
-        code_id: "8675309",
-        debug_file: "",
-        debug_id: "18675309",
-        filename: "foo.exe",
-        version: "1.0.0",
-      },
-      {
-        base_addr: "0x00004000",
-        end_addr: "0x00008000",
-        code_id: "42",
-        debug_file: "foo.pdb",
-        debug_id: "43",
-        filename: "foo.dll",
-        version: "1.1.0",
-      },
-    ],
-    threads: [
-      {
-        frames: [
-          { module_index: 0, ip: "0x10", trust: "context" },
-          { module_index: 0, ip: "0x20", trust: "cfi" },
-        ],
-      },
-      {
-        frames: [
-          { module_index: 1, ip: "0x4010", trust: "context" },
-          { module_index: 0, ip: "0x30", trust: "cfi" },
-        ],
-      },
-    ],
-  };
-  // The Glean shape is slightly different
-  let fullStackTracesGlean = {
-    crash_type: "main",
-    crash_address: "0xf001ba11",
-    crash_thread: 1,
-    main_module: 0,
-    modules: [
-      {
-        base_address: "0x00000000",
-        end_address: "0x00004000",
-        code_id: "8675309",
-        debug_file: "",
-        debug_id: "18675309",
-        filename: "foo.exe",
-        version: "1.0.0",
-      },
-      {
-        base_address: "0x00004000",
-        end_address: "0x00008000",
-        code_id: "42",
-        debug_file: "foo.pdb",
-        debug_id: "43",
-        filename: "foo.dll",
-        version: "1.1.0",
-      },
-    ],
-    threads: [
-      {
-        frames: [
-          { module_index: 0, ip: "0x10", trust: "context" },
-          { module_index: 0, ip: "0x20", trust: "cfi" },
-        ],
-      },
-      {
-        frames: [
-          { module_index: 1, ip: "0x4010", trust: "context" },
-          { module_index: 0, ip: "0x30", trust: "cfi" },
-        ],
-      },
-    ],
-  };
-
-  submitted = false;
-  GleanPings.crash.testBeforeNextSubmit(() => {
-    const MINUTES = new Date(DUMMY_DATE_2);
-    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
-    Assert.equal(
-      Glean.crash.processType.testGetValue(),
-      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT]
-    );
-    Assert.deepEqual(
-      Glean.crash.stackTraces.testGetValue(),
-      fullStackTracesGlean
-    );
-    Assert.equal(Glean.crash.minidumpSha256Hash.testGetValue(), sha256Hash);
-    Assert.equal(Glean.crash.startup.testGetValue(), true);
-    Assert.equal(Glean.crash.appChannel.testGetValue(), "release");
-    Assert.equal(Glean.crash.appDisplayVersion.testGetValue(), "123");
-    Assert.equal(Glean.crash.appBuild.testGetValue(), "20230930101112");
-    Assert.deepEqual(Glean.crash.asyncShutdownTimeout.testGetValue(), {
-      phase: "AddonManager: Waiting to start provider shutdown.",
-      conditions: JSON.stringify([
-        {
-          name: "AddonRepository Background Updater",
-          state: "(none)",
-          filename: "resource://gre/modules/addons/AddonRepository.sys.mjs",
-          lineNumber: 576,
-          stack: [
-            "resource://gre/modules/addons/AddonRepository.sys.mjs:backgroundUpdateCheck:576",
-            "resource://gre/modules/AddonManager.sys.mjs:backgroundUpdateCheck/buPromise<:1269",
-          ],
-        },
-      ]),
-      broken_add_blockers: [
-        "JSON store: writing data for 'creditcards' - IOUtils: waiting for profileBeforeChange IO to complete finished",
-        "StorageSyncService: shutdown - profile-change-teardown finished",
-      ],
-    });
-    Assert.equal(Glean.crash.backgroundTaskName.testGetValue(), "task_name");
-    Assert.equal(Glean.crash.eventLoopNestingLevel.testGetValue(), 5);
-    Assert.equal(Glean.crash.fontName.testGetValue(), "Helvetica");
-    Assert.equal(Glean.crash.gpuProcessLaunch.testGetValue(), 10);
-    Assert.equal(Glean.crash.ipcChannelError.testGetValue(), "ipc errors");
-    Assert.equal(Glean.crash.isGarbageCollecting.testGetValue(), true);
-    Assert.equal(
-      Glean.crash.mainThreadRunnableName.testGetValue(),
-      "main thread name"
-    );
-    Assert.equal(Glean.crash.mozCrashReason.testGetValue(), "MOZ CRASH reason");
-    Assert.equal(
-      Glean.crash.profilerChildShutdownPhase.testGetValue(),
-      "profiler shutdown"
-    );
-    Assert.deepEqual(Glean.crash.quotaManagerShutdownTimeout.testGetValue(), [
-      "foo",
-      "bar",
-      "baz",
-    ]);
-    Assert.equal(Glean.crash.remoteType.testGetValue(), "remote");
-    Assert.equal(
-      Glean.crash.shutdownProgress.testGetValue(),
-      "shutdown progress"
-    );
-    Assert.equal(Glean.crashWindows.errorReporting.testGetValue(), true);
-    Assert.equal(Glean.crashWindows.fileDialogErrorCode.testGetValue(), "42");
-    Assert.deepEqual(Glean.dllBlocklist.list.testGetValue(), [
-      "Foo.dll",
-      "bar.dll",
-      "rawr.dll",
-    ]);
-    Assert.equal(Glean.dllBlocklist.initFailed.testGetValue(), true);
-    Assert.equal(Glean.dllBlocklist.user32LoadedBefore.testGetValue(), true);
-    Assert.equal(Glean.environment.headlessMode.testGetValue(), true);
-    Assert.deepEqual(Glean.environment.nimbusEnrollments.testGetValue(), [
-      "foo:control",
-      "bar:treatment-a",
-    ]);
-    Assert.equal(Glean.environment.uptime.testGetValue(), 3601000);
-    Assert.equal(Glean.memory.availableCommit.testGetValue(), 100);
-    Assert.equal(Glean.memory.availablePhysical.testGetValue(), 200);
-    Assert.equal(Glean.memory.availableSwap.testGetValue(), 300);
-    Assert.equal(Glean.memory.availableVirtual.testGetValue(), 400);
-    Assert.equal(Glean.memory.lowPhysical.testGetValue(), 500);
-    Assert.equal(Glean.memory.oomAllocationSize.testGetValue(), 600);
-    Assert.equal(Glean.memory.purgeablePhysical.testGetValue(), 700);
-    Assert.equal(Glean.memory.systemUsePercentage.testGetValue(), 50);
-    Assert.equal(Glean.memory.texture.testGetValue(), 800);
-    Assert.equal(Glean.memory.totalPageFile.testGetValue(), 900);
-    Assert.equal(Glean.memory.totalPhysical.testGetValue(), 1000);
-    Assert.equal(Glean.memory.totalVirtual.testGetValue(), 1100);
-    Assert.equal(Glean.windows.packageFamilyName.testGetValue(), "Windows 10");
-    submitted = true;
-  });
-
-  await m.addCrash(
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
-    m.CRASH_TYPE_CRASH,
-    id,
-    DUMMY_DATE_2,
-    {
-      StackTraces: fullStackTraces,
-      MinidumpSha256Hash: sha256Hash,
-      StartupCrash: "1",
-      ReleaseChannel: "release",
-      Version: "123",
-      BuildID: "20230930101112",
-      AsyncShutdownTimeout: `{"phase":"AddonManager: Waiting to start provider shutdown.","conditions":[{"name":"AddonRepository Background Updater","state":"(none)","filename":"resource://gre/modules/addons/AddonRepository.sys.mjs","lineNumber":576,"stack":["resource://gre/modules/addons/AddonRepository.sys.mjs:backgroundUpdateCheck:576","resource://gre/modules/AddonManager.sys.mjs:backgroundUpdateCheck/buPromise<:1269"]}],"brokenAddBlockers":["JSON store: writing data for 'creditcards' - IOUtils: waiting for profileBeforeChange IO to complete finished","StorageSyncService: shutdown - profile-change-teardown finished"]}`,
-      AvailablePageFile: 100,
-      AvailablePhysicalMemory: 200,
-      AvailableSwapMemory: 300,
-      AvailableVirtualMemory: 400,
-      BackgroundTaskName: "task_name",
-      BlockedDllList: "Foo.dll;bar.dll;rawr.dll",
-      BlocklistInitFailed: "1",
-      EventLoopNestingLevel: 5,
-      FontName: "Helvetica",
-      GPUProcessLaunchCount: 10,
-      HeadlessMode: "1",
-      ipc_channel_error: "ipc errors",
-      IsGarbageCollecting: "1",
-      LowPhysicalMemoryEvents: 500,
-      MainThreadRunnableName: "main thread name",
-      MozCrashReason: "MOZ CRASH reason",
-      NimbusEnrollments: "foo:control,bar:treatment-a",
-      OOMAllocationSize: 600,
-      ProfilerChildShutdownPhase: "profiler shutdown",
-      PurgeablePhysicalMemory: 700,
-      QuotaManagerShutdownTimeout: "foo\nbar\nbaz",
-      RemoteType: "remote",
-      ShutdownProgress: "shutdown progress",
-      SystemMemoryUsePercentage: 50,
-      TextureUsage: 800,
-      TotalPageFile: 900,
-      TotalPhysicalMemory: 1000,
-      TotalVirtualMemory: 1100,
-      UptimeTS: 3601,
-      User32BeforeBlocklist: "1",
-      WindowsErrorReporting: "1",
-      WindowsFileDialogErrorCode: 42,
-      WindowsPackageFamilyName: "Windows 10",
-    }
-  );
-
-  Assert.ok(submitted);
-});
-
-add_task(async function test_glean_crash_ping_utility() {
-  let m = await getManager();
-
-  let id = await m.createDummyDump();
-
-  let submitted = false;
-  GleanPings.crash.testBeforeNextSubmit(() => {
-    const MINUTES = new Date(DUMMY_DATE_2);
-    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
-    Assert.equal(
-      Glean.crash.processType.testGetValue(),
-      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY]
-    );
-    Assert.deepEqual(Glean.crash.utilityActorsName.testGetValue(), [
-      "audio-decoder-generic",
-      "js-oracle",
-    ]);
-    submitted = true;
-  });
-
-  await m.addCrash(
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY],
-    m.CRASH_TYPE_CRASH,
-    id,
-    DUMMY_DATE_2,
-    {
-      UtilityActorsName: "audio-decoder-generic,js-oracle",
-    }
-  );
-
-  Assert.ok(submitted);
+  // Tests for all fields are in the crashping crate. We forward the
+  // annotations directly to the crash reporter to submit using the crashping
+  // crate.
 });
 
 add_task(async function test_generateSubmissionID() {
@@ -1270,6 +1021,7 @@ add_task(async function test_telemetryHistogram() {
 // the crash reporter already sends it using Telemetry).
 add_task(async function test_crash_reporter_ping_with_uuid() {
   let m = await getManager();
+  m._disableGleanPing = false;
 
   let id = await m.createDummyDump();
 
@@ -1278,11 +1030,7 @@ add_task(async function test_crash_reporter_ping_with_uuid() {
   // for it regardless of where it is called.
   let metadata = { CrashPingUUID: "bff6bde4-f96c-4859-8c56-6b3f40878c26" };
 
-  // Glean hooks
-  let glean_submitted = false;
-  GleanPings.crash.testBeforeNextSubmit(_ => {
-    glean_submitted = true;
-  });
+  const oldGleanPingPromise = m._gleanPingPromise;
 
   await m.addCrash(
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
@@ -1293,7 +1041,9 @@ add_task(async function test_crash_reporter_ping_with_uuid() {
   );
 
   // Ping promise is only set if the Telemetry ping is submitted.
-  let telemetry_submitted = !!m._pingPromise;
+  const telemetry_submitted = !!m._pingPromise;
+  // Glean ping promise is updated when a new Glean ping is submitted.
+  const glean_submitted = m._gleanPingPromise !== oldGleanPingPromise;
 
   Assert.ok(glean_submitted);
   Assert.ok(!telemetry_submitted);

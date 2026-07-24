@@ -50,7 +50,7 @@
   --button-icon-stroke: currentColor;
 
   /* Scale up 16x16 icon (12x12 + 4x4 padding) to 24px for normal display size */
-  --icon-size-default: 24px;
+  --icon-size: 24px;
 }
 
 #avatar-selector {
@@ -75,7 +75,7 @@
   align-items: center;
   padding-bottom: var(--space-large);
   border-bottom: var(--card-border);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 
   #back-button {
     margin-inline-end: auto;
@@ -216,8 +216,8 @@
   }
 
   .mover {
-    background-color: #fff;
-    border-radius: 50%;
+    background-color: white;
+    border-radius: var(--border-radius-circle);
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
     transition: transform 125ms cubic-bezier(0.07, 0.95, 0, 1);
     position: relative;

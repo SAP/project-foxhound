@@ -21,12 +21,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "content_decryption_module.h"
-
 #include "ClearKeyDecryptionManager.h"
 #include "ClearKeyPersistence.h"
 #include "ClearKeyStorage.h"
 #include "ClearKeyUtils.h"
+#include "content_decryption_module.h"
 #include "psshparser/PsshParser.h"
 
 using namespace cdm;

@@ -126,9 +126,9 @@ add_task(async function test_page_action_panel_touch() {
   await BrowserTestUtils.withNewTab("https://example.com", async function () {
     // The page actions button is not normally visible, so we must
     // unhide it.
-    BrowserPageActions.mainButtonNode.style.visibility = "visible";
+    BrowserPageActions.mainButtonNode.style.display = "flex";
     registerCleanupFunction(() => {
-      BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+      BrowserPageActions.mainButtonNode.style.removeProperty("display");
     });
     let target = document.getElementById("pageActionButton");
     await openAndCheckLazyMenu("pageActionPanel", target);

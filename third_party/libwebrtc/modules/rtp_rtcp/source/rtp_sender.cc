@@ -38,7 +38,6 @@
 #include "modules/rtp_rtcp/source/rtp_packet_history.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
@@ -92,8 +91,8 @@ constexpr RtpExtensionSize kVideoExtensionSizes[] = {
     CreateMaxExtensionSize<RepairedRtpStreamId>(),
     CreateMaxExtensionSize<RtpMid>(),
     CreateMaxExtensionSize<CorruptionDetectionExtension>(),
-    {RtpGenericFrameDescriptorExtension00::kId,
-     RtpGenericFrameDescriptorExtension00::kMaxSizeBytes},
+    {.type = RtpGenericFrameDescriptorExtension00::kId,
+     .value_size = RtpGenericFrameDescriptorExtension00::kMaxSizeBytes},
 };
 
 // Size info for header extensions that might be used in audio packets.
@@ -207,19 +206,16 @@ RTPSender::~RTPSender() {
   // to understand performance attributes and possibly remove locks.
 }
 
-rtc::ArrayView<const RtpExtensionSize> RTPSender::FecExtensionSizes() {
-  return rtc::MakeArrayView(kFecOrPaddingExtensionSizes,
-                            arraysize(kFecOrPaddingExtensionSizes));
+ArrayView<const RtpExtensionSize> RTPSender::FecExtensionSizes() {
+  return kFecOrPaddingExtensionSizes;
 }
 
-rtc::ArrayView<const RtpExtensionSize> RTPSender::VideoExtensionSizes() {
-  return rtc::MakeArrayView(kVideoExtensionSizes,
-                            arraysize(kVideoExtensionSizes));
+ArrayView<const RtpExtensionSize> RTPSender::VideoExtensionSizes() {
+  return kVideoExtensionSizes;
 }
 
-rtc::ArrayView<const RtpExtensionSize> RTPSender::AudioExtensionSizes() {
-  return rtc::MakeArrayView(kAudioExtensionSizes,
-                            arraysize(kAudioExtensionSizes));
+ArrayView<const RtpExtensionSize> RTPSender::AudioExtensionSizes() {
+  return kAudioExtensionSizes;
 }
 
 void RTPSender::SetExtmapAllowMixed(bool extmap_allow_mixed) {
@@ -525,7 +521,7 @@ size_t RTPSender::ExpectedPerPacketOverhead() const {
 }
 
 std::unique_ptr<RtpPacketToSend> RTPSender::AllocatePacket(
-    rtc::ArrayView<const uint32_t> csrcs) {
+    ArrayView<const uint32_t> csrcs) {
   MutexLock lock(&send_mutex_);
   RTC_DCHECK_LE(csrcs.size(), kRtpCsrcSize);
   if (csrcs.size() > max_num_csrcs_) {
@@ -661,9 +657,9 @@ static void CopyHeaderAndExtensionsToRtxPacket(const RtpPacketToSend& packet,
       continue;
     }
 
-    rtc::ArrayView<const uint8_t> source = packet.FindExtension(extension);
+    ArrayView<const uint8_t> source = packet.FindExtension(extension);
 
-    rtc::ArrayView<uint8_t> destination =
+    ArrayView<uint8_t> destination =
         rtx_packet->AllocateExtension(extension, source.size());
 
     // Could happen if any:

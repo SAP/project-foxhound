@@ -192,38 +192,30 @@ async function testIframeNavigation() {
       onAvailable: resources => documentEvents.push(...resources),
     }
   );
-  let iframeTarget;
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    is(
-      documentEvents.length,
-      6,
-      "With fission/EFT, we get two targets and two sets of events: dom-loading, dom-interactive, dom-complete"
-    );
-    [, iframeTarget] = await commands.targetCommand.getAllTargets([
-      commands.targetCommand.TYPES.FRAME,
-    ]);
-    // Filter out each target events as their order to be random between the two targets
-    const topTargetEvents = documentEvents.filter(
-      r => r.targetFront == commands.targetCommand.targetFront
-    );
-    const iframeTargetEvents = documentEvents.filter(
-      r => r.targetFront != commands.targetCommand.targetFront
-    );
-    assertEvents({
-      commands,
-      documentEvents: [null /* no will-navigate */, ...topTargetEvents],
-    });
-    assertEvents({
-      commands,
-      documentEvents: [null /* no will-navigate */, ...iframeTargetEvents],
-      expectedTargetFront: iframeTarget,
-    });
-  } else {
-    assertEvents({
-      commands,
-      documentEvents: [null /* no will-navigate */, ...documentEvents],
-    });
-  }
+  is(
+    documentEvents.length,
+    6,
+    "We get two targets and two sets of events: dom-loading, dom-interactive, dom-complete"
+  );
+  const [, iframeTarget] = await commands.targetCommand.getAllTargets([
+    commands.targetCommand.TYPES.FRAME,
+  ]);
+  // Filter out each target events as their order to be random between the two targets
+  const topTargetEvents = documentEvents.filter(
+    r => r.targetFront == commands.targetCommand.targetFront
+  );
+  const iframeTargetEvents = documentEvents.filter(
+    r => r.targetFront != commands.targetCommand.targetFront
+  );
+  assertEvents({
+    commands,
+    documentEvents: [null /* no will-navigate */, ...topTargetEvents],
+  });
+  assertEvents({
+    commands,
+    documentEvents: [null /* no will-navigate */, ...iframeTargetEvents],
+    expectedTargetFront: iframeTarget,
+  });
 
   info("Navigate the iframe to another process (if fission is enabled)");
   documentEvents = [];
@@ -236,33 +228,22 @@ async function testIframeNavigation() {
     }
   );
 
-  // We are switching to a new target only when fission is enabled...
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    await waitFor(() => documentEvents.length >= 3);
-    is(
-      documentEvents.length,
-      3,
-      "With fission/EFT, we switch to a new target and get: dom-loading, dom-interactive, dom-complete (but no will-navigate as that's only for the top BrowsingContext)"
-    );
-    const [, newIframeTarget] = await commands.targetCommand.getAllTargets([
-      commands.targetCommand.TYPES.FRAME,
-    ]);
-    assertEvents({
-      commands,
-      targetBeforeNavigation: iframeTarget,
-      documentEvents: [null /* no will-navigate */, ...documentEvents],
-      expectedTargetFront: newIframeTarget,
-      expectedNewURI: secondPageUrl,
-    });
-  } else {
-    // Wait for some time in order to let a chance to receive some unexpected events
-    await wait(250);
-    is(
-      documentEvents.length,
-      0,
-      "If fission is disabled, we navigate within the same process, we get no new target and no new resource"
-    );
-  }
+  await waitFor(() => documentEvents.length >= 3);
+  is(
+    documentEvents.length,
+    3,
+    "We switch to a new target and get: dom-loading, dom-interactive, dom-complete (but no will-navigate as that's only for the top BrowsingContext)"
+  );
+  const [, newIframeTarget] = await commands.targetCommand.getAllTargets([
+    commands.targetCommand.TYPES.FRAME,
+  ]);
+  assertEvents({
+    commands,
+    targetBeforeNavigation: iframeTarget,
+    documentEvents: [null /* no will-navigate */, ...documentEvents],
+    expectedTargetFront: newIframeTarget,
+    expectedNewURI: secondPageUrl,
+  });
 
   await commands.destroy();
 }
@@ -309,11 +290,7 @@ async function testBfCacheNavigation() {
   const targetBeforeNavigation = commands.targetCommand.targetFront;
   gBrowser.goBack();
 
-  // We are switching to a new target only when fission/EFT is enabled...
-  if (
-    (isFissionEnabled() || isEveryFrameTargetEnabled()) &&
-    isBfCacheInParentEnabled()
-  ) {
+  if (isBfCacheInParentEnabled()) {
     await onSwitched;
   }
 
@@ -425,11 +402,7 @@ async function testCrossOriginNavigation() {
   const targetBeforeNavigation = commands.targetCommand.targetFront;
   BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, netUrl);
   await onLoaded;
-
-  // We are switching to a new target only when fission is enabled...
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    await onSwitched;
-  }
+  await onSwitched;
 
   info(
     "Wait for will-navigate, dom-loading, dom-interactive and dom-complete events"

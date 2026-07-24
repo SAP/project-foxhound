@@ -17,7 +17,7 @@ pub(crate) trait DotAttributes {
         out: &mut W,
     ) -> io::Result<()>
     where
-        W: io::Write;
+        W: Write;
 }
 
 /// Write a graphviz dot file containing our IR.
@@ -41,7 +41,7 @@ where
             if is_allowlisted { "black" } else { "gray" }
         )?;
         item.dot_attributes(ctx, &mut dot_file)?;
-        writeln!(&mut dot_file, r#"</table> >];"#)?;
+        writeln!(&mut dot_file, "</table> >];")?;
 
         item.trace(
             ctx,
@@ -52,10 +52,9 @@ where
 
                 match writeln!(
                     &mut dot_file,
-                    "{} -> {} [label={:?}, color={}];",
+                    "{} -> {} [label={edge_kind:?}, color={}];",
                     id.as_usize(),
                     sub_id.as_usize(),
-                    edge_kind,
                     if is_allowlisted { "black" } else { "gray" }
                 ) {
                     Ok(_) => {}

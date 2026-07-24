@@ -8,6 +8,7 @@ module.exports = {
   FILTER_ACCEPT: 1,
   FILTER_REJECT: 2,
   FILTER_SKIP: 3,
+  FILTER_ACCEPT_CHILDREN: 4,
 
   SHOW_ALL: 0xffffffff,
   SHOW_ELEMENT: 0x00000001,

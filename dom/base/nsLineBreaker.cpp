@@ -5,18 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLineBreaker.h"
-#include "nsContentUtils.h"
+
 #include "gfxTextRun.h"  // for the gfxTextRun::CompressedGlyph::FLAG_BREAK_TYPE_* values
-#include "nsHyphenationManager.h"
-#include "nsHyphenator.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/LineBreaker.h"  // for LineBreaker::ComputeBreakPositions
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/UnicodeProperties.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_intl.h"
+#include "nsContentUtils.h"
+#include "nsHyphenationManager.h"
+#include "nsHyphenator.h"
 
 using mozilla::AutoRestore;
 using mozilla::intl::LineBreaker;

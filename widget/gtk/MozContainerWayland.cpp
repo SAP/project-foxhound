@@ -83,7 +83,7 @@ using namespace mozilla;
 using namespace mozilla::widget;
 
 static bool moz_container_wayland_ensure_surface(
-    MozContainer* container, gfx::IntPoint* aPosition = nullptr);
+    MozContainer* container, DesktopIntPoint* aPosition = nullptr);
 
 // Invalidate gtk wl_surface to commit changes to wl_subsurface.
 // wl_subsurface changes are effective when parent surface is commited.
@@ -97,11 +97,6 @@ static void moz_container_wayland_invalidate(MozContainer* container) {
     return;
   }
   gdk_window_invalidate_rect(window, nullptr, true);
-}
-
-void moz_container_wayland_add_or_fire_initial_draw_callback(
-    MozContainer* container, const std::function<void(void)>& initial_draw_cb) {
-  MOZ_WL_SURFACE(container)->AddOrFireReadyToDrawCallback(initial_draw_cb);
 }
 
 void moz_container_wayland_unmap(GtkWidget* widget) {
@@ -143,23 +138,9 @@ gboolean moz_container_wayland_map_event(GtkWidget* widget,
   // below.
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
-  // Set waiting_to_show flag. It means the mozcontainer is cofigured/mapped
-  // and it's supposed to be visible. *But* it's really visible when we get
-  // moz_container_wayland_add_or_fire_initial_draw_callback() which means
-  // wayland compositor makes it live.
-  MOZ_WL_CONTAINER(widget)->waiting_to_show = true;
-  MozContainer* container = MOZ_CONTAINER(widget);
-  MOZ_WL_SURFACE(container)->AddOrFireReadyToDrawCallback(
-      [container]() -> void {
-        LOGCONTAINER(
-            "[%p] moz_container_wayland_add_or_fire_initial_draw_callback set "
-            "visible",
-            moz_container_get_nsWindow(container));
-        moz_container_wayland_clear_waiting_to_show_flag(container);
-      });
-
   // Don't create wl_subsurface in map_event when it's already created or
   // if we create it for the first time.
+  MozContainer* container = MOZ_CONTAINER(widget);
   if (MOZ_WL_SURFACE(container)->IsMapped() ||
       MOZ_WL_CONTAINER(container)->before_first_size_alloc) {
     return false;
@@ -195,14 +176,14 @@ void moz_container_wayland_size_allocate(GtkWidget* widget,
     // We need to position our subsurface according to GdkWindow
     // when offset changes (GdkWindow is maximized for instance).
     // see gtk-clutter-embed.c for reference.
-    gfx::IntPoint position(allocation->x, allocation->y);
-    moz_container_wayland_ensure_surface(MOZ_CONTAINER(widget), &position);
+    auto pos = DesktopIntPoint(allocation->x, allocation->y);
+    moz_container_wayland_ensure_surface(MOZ_CONTAINER(widget), &pos);
     MOZ_WL_CONTAINER(widget)->before_first_size_alloc = false;
   }
 }
 
 static bool moz_container_wayland_ensure_surface(MozContainer* container,
-                                                 gfx::IntPoint* aPosition) {
+                                                 DesktopIntPoint* aPosition) {
   WaylandSurface* surface = MOZ_WL_SURFACE(container);
   WaylandSurfaceLock lock(surface);
 
@@ -232,16 +213,8 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
   nsWindow* window = moz_container_get_nsWindow(container);
   MOZ_RELEASE_ASSERT(window);
 
-  // Try to guess subsurface offset to avoid potential flickering.
-  gfx::IntPoint subsurfacePosition;
-  if (aPosition) {
-    subsurfacePosition = *aPosition;
-  } else {
-    auto gdkPoint = window->GetCsdOffsetInGdkCoords();
-    subsurfacePosition = gfx::IntPoint(gdkPoint.x, gdkPoint.y);
-  }
-
-  if (!surface->MapLocked(lock, parentSurface, subsurfacePosition)) {
+  if (!surface->MapLocked(lock, parentSurface,
+                          aPosition ? *aPosition : DesktopIntPoint())) {
     return false;
   }
 
@@ -259,11 +232,12 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
   }
 
   bool fractionalScale = false;
-  if (StaticPrefs::widget_wayland_fractional_scale_enabled_AtStartup()) {
+  if (StaticPrefs::widget_wayland_fractional_scale_enabled()) {
     fractionalScale = surface->EnableFractionalScaleLocked(
         lock,
         [win = RefPtr{window}]() {
-          win->RefreshScale(/* aRefreshScreen */ true);
+          win->RefreshScale(/* aRefreshScreen */ true,
+                            /* aForceRefresh */ true);
         },
         /* aManageViewport */ true);
   }
@@ -284,46 +258,7 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
   return true;
 }
 
-struct wl_egl_window* moz_container_wayland_get_egl_window(
-    MozContainer* container) {
-  LOGCONTAINER("%s [%p] mapped %d eglwindow %d", __FUNCTION__,
-               (void*)moz_container_get_nsWindow(container),
-               MOZ_WL_SURFACE(container)->IsMapped(),
-               MOZ_WL_SURFACE(container)->HasEGLWindow());
-
-  if (!MOZ_WL_SURFACE(container)->IsMapped()) {
-    return nullptr;
-  }
-
-  // TODO: Get size from bounds instead of GdkWindow?
-  // We may be in rendering/compositor thread here.
-  GdkWindow* window = gtk_widget_get_window(GTK_WIDGET(container));
-  nsIntSize unscaledSize(gdk_window_get_width(window),
-                         gdk_window_get_height(window));
-  return MOZ_WL_SURFACE(container)->GetEGLWindow(unscaledSize);
-}
-
-void moz_container_wayland_update_opaque_region(MozContainer* container) {
-  nsWindow* window = moz_container_get_nsWindow(container);
-  MOZ_WL_SURFACE(container)->SetOpaqueRegion(
-      window->GetOpaqueRegion().ToUnknownRegion());
-}
-
-gboolean moz_container_wayland_can_draw(MozContainer* container) {
-  return MOZ_WL_SURFACE(container)->IsReadyToDraw();
-}
-
 double moz_container_wayland_get_scale(MozContainer* container) {
   nsWindow* window = moz_container_get_nsWindow(container);
   return window ? window->FractionalScaleFactor() : 1.0;
-}
-
-bool moz_container_wayland_is_waiting_to_show(MozContainer* container) {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-  return MOZ_WL_CONTAINER(container)->waiting_to_show;
-}
-
-void moz_container_wayland_clear_waiting_to_show_flag(MozContainer* container) {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-  MOZ_WL_CONTAINER(container)->waiting_to_show = false;
 }

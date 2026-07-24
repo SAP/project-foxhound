@@ -8,8 +8,8 @@
   --page-nav-button-gap: var(--space-xsmall);
   --page-nav-border-color: var(--border-color-transparent);
   --page-nav-focus-outline-inset: var(--focus-outline-inset);
-  --page-nav-heading-logo-size: calc(var(--icon-size-default) + var(--space-small));
-  --page-nav-hr-color: #cfcfd8;
+  --page-nav-heading-logo-size: calc(var(--icon-size) + var(--space-small));
+  --page-nav-hr-color: var(--border-color);
 
   margin-inline-start: 42px;
   position: sticky;
@@ -54,7 +54,7 @@ nav {
     background-size: auto;
     background-size: var(--page-nav-heading-logo-size);
     /* heading logo should be centered above button icons */
-    margin-inline-start: calc(var(--space-medium) - ((var(--page-nav-heading-logo-size) - var(--icon-size-default)) / 2));
+    margin-inline-start: calc(var(--space-medium) - ((var(--page-nav-heading-logo-size) - var(--icon-size)) / 2));
 
     @media (max-width: 52rem) {
       margin-inline-start: 4px;
@@ -63,7 +63,7 @@ nav {
 
   > .page-nav-heading {
     font-size: var(--font-size-xlarge);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     margin-block: 0;
 
     @media (max-width: 52rem) {

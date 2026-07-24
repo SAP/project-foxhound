@@ -7,12 +7,12 @@
 #ifndef nsFakeSynthServices_h
 #define nsFakeSynthServices_h
 
-#include "nsTArray.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/StaticPtr.h"
 #include "nsIObserver.h"
 #include "nsISpeechService.h"
 #include "nsRefPtrHashtable.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Monitor.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

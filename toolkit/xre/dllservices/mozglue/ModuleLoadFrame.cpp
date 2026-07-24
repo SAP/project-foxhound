@@ -9,8 +9,6 @@
 #include "mozilla/UniquePtr.h"
 #include "NtLoaderAPI.h"
 
-#include <string.h>
-
 #include "WindowsFallbackLoaderAPI.h"
 
 static bool IsNullTerminated(PCUNICODE_STRING aStr) {

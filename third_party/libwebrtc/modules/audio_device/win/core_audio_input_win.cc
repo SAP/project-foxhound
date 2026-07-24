@@ -10,13 +10,24 @@
 
 #include "modules/audio_device/win/core_audio_input_win.h"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 
+#include "api/array_view.h"
+#include "api/audio/audio_device.h"
+#include "api/environment/environment.h"
+#include "api/sequence_checker.h"
+#include "api/units/time_delta.h"
 #include "modules/audio_device/audio_device_buffer.h"
 #include "modules/audio_device/fine_audio_buffer.h"
+#include "modules/audio_device/win/core_audio_base_win.h"
+#include "modules/audio_device/win/core_audio_utility_win.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/zero_memory.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -27,8 +38,9 @@ enum AudioDeviceMessageType : uint32_t {
   kMessageInputStreamDisconnected,
 };
 
-CoreAudioInput::CoreAudioInput(bool automatic_restart)
+CoreAudioInput::CoreAudioInput(const Environment& env, bool automatic_restart)
     : CoreAudioBase(
+          env,
           CoreAudioBase::Direction::kInput,
           automatic_restart,
           [this](uint64_t freq) { return OnDataCallback(freq); },
@@ -143,7 +155,7 @@ int CoreAudioInput::InitRecording() {
   qpc_to_100ns_.reset();
   if (::QueryPerformanceFrequency(&ticks_per_sec)) {
     double qpc_ticks_per_second =
-        rtc::dchecked_cast<double>(ticks_per_sec.QuadPart);
+        webrtc::dchecked_cast<double>(ticks_per_sec.QuadPart);
     qpc_to_100ns_ = 10000000.0 / qpc_ticks_per_second;
   }
 
@@ -349,15 +361,15 @@ bool CoreAudioInput::OnDataCallback(uint64_t device_frequency) {
     // Treat all of the data in the packet as silence and ignore the actual
     // data values when AUDCLNT_BUFFERFLAGS_SILENT is set.
     if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-      rtc::ExplicitZeroMemory(audio_data,
-                              format_.Format.nBlockAlign * num_frames_to_read);
+      webrtc::ExplicitZeroMemory(
+          audio_data, format_.Format.nBlockAlign * num_frames_to_read);
       RTC_DLOG(LS_WARNING) << "Captured audio is replaced by silence";
     } else {
       // Copy recorded audio in `audio_data` to the WebRTC sink using the
       // FineAudioBuffer object.
       fine_audio_buffer_->DeliverRecordedData(
-          rtc::MakeArrayView(reinterpret_cast<const int16_t*>(audio_data),
-                             format_.Format.nChannels * num_frames_to_read),
+          webrtc::MakeArrayView(reinterpret_cast<const int16_t*>(audio_data),
+                                format_.Format.nChannels * num_frames_to_read),
 
           latency_ms_);
     }

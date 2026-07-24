@@ -8,7 +8,7 @@
 #define mozilla_dom_RequestCallbackManager_h
 
 #include <limits>
-#include "mozilla/HashTable.h"
+
 #include "mozilla/RefPtr.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -30,7 +30,8 @@ struct RequestCallbackEntry {
   bool operator<(uint32_t aHandle) const { return mHandle < aHandle; }
 
   RefPtr<RequestCallback> mCallback;
-  uint32_t mHandle;
+  const uint32_t mHandle;
+  bool mCancelled = false;
 };
 
 template <typename RequestCallback>
@@ -38,6 +39,8 @@ class RequestCallbackManager {
  public:
   RequestCallbackManager() = default;
   ~RequestCallbackManager() = default;
+
+  using CallbackList = nsTArray<RequestCallbackEntry<RequestCallback>>;
 
   nsresult Schedule(RequestCallback& aCallback, uint32_t* aHandle) {
     if (mCallbackCounter == std::numeric_limits<uint32_t>::max()) {
@@ -57,21 +60,40 @@ class RequestCallbackManager {
     if (mCallbacks.RemoveElementSorted(aHandle)) {
       return true;
     }
-
-    Unused << mCanceledCallbacks.put(aHandle);
+    for (auto* callbacks : mFiringCallbacksOnStack) {
+      auto index = callbacks->mList.BinaryIndexOf(aHandle);
+      if (index != CallbackList::NoIndex) {
+        callbacks->mList.ElementAt(index).mCancelled = true;
+      }
+    }
     return false;
   }
 
   bool IsEmpty() const { return mCallbacks.IsEmpty(); }
 
-  bool IsCanceled(uint32_t aHandle) const {
-    return !mCanceledCallbacks.empty() && mCanceledCallbacks.has(aHandle);
-  }
+  // FiringCallbacks takes care of:
+  //  * Stealing (and thus "freezing") the current callback list, in preparation
+  //    for firing them.
+  //  * Registering and unregistering in mFiringCallbacksOnStack, to deal with
+  //    cancellation of in-flight callbacks in cases like the first callback on
+  //    the list calling cancelAnimationFrame(secondCallbackId) or so.
+  // mList is guaranteed not to reallocate once stolen. Instead if a callback is
+  // cancelled mid-firing, the mCancelled bit is set, see Cancel().
+  struct MOZ_NON_MEMMOVABLE MOZ_STACK_CLASS FiringCallbacks {
+    explicit FiringCallbacks(RequestCallbackManager& aManager)
+        : mManager(aManager) {
+      mList = std::move(aManager.mCallbacks);
+      aManager.mFiringCallbacksOnStack.AppendElement(this);
+    }
 
-  void Take(nsTArray<RequestCallbackEntry<RequestCallback>>& aCallbacks) {
-    aCallbacks = std::move(mCallbacks);
-    mCanceledCallbacks.clear();
-  }
+    ~FiringCallbacks() {
+      MOZ_ASSERT(mManager.mFiringCallbacksOnStack.LastElement() == this);
+      mManager.mFiringCallbacksOnStack.RemoveLastElement();
+    }
+
+    RequestCallbackManager& mManager;
+    CallbackList mList;
+  };
 
   void Unlink() { mCallbacks.Clear(); }
 
@@ -84,15 +106,14 @@ class RequestCallbackManager {
   }
 
  private:
-  nsTArray<RequestCallbackEntry<RequestCallback>> mCallbacks;
+  CallbackList mCallbacks;
 
-  // The set of frame request callbacks that were canceled but which we failed
-  // to find in mRequestCallbacks.
-  HashSet<uint32_t> mCanceledCallbacks;
+  // The current lists of callbacks that are executing. Used to deal with
+  // cancellation within the same frame. Note this is a list to deal reasonably
+  // with event loop spinning.
+  AutoTArray<FiringCallbacks*, 1> mFiringCallbacksOnStack;
 
-  /**
-   * The current frame request callback handle
-   */
+  // The current frame request callback handle.
   uint32_t mCallbackCounter = 0;
 };
 

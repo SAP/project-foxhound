@@ -8,13 +8,13 @@
 
 #include <dlfcn.h>
 
+#include "AOMDecoder.h"
 #include "AppleATDecoder.h"
 #include "AppleVTDecoder.h"
 #include "H265.h"
 #include "MP4Decoder.h"
-#include "VideoUtils.h"
 #include "VPXDecoder.h"
-#include "AOMDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -24,8 +24,6 @@ extern "C" {
 // Only exists from MacOS 11
 extern void VTRegisterSupplementalVideoDecoderIfAvailable(
     CMVideoCodecType codecType) __attribute__((weak_import));
-extern Boolean VTIsHardwareDecodeSupported(CMVideoCodecType codecType)
-    __attribute__((weak_import));
 }
 
 namespace mozilla {
@@ -239,11 +237,7 @@ bool AppleDecoderModule::IsVideoSupported(
 /* static */
 bool AppleDecoderModule::CanCreateHWDecoder(const MediaCodec& aCodec) {
   // Check whether HW decode should even be enabled
-  if (!gfx::gfxVars::CanUseHardwareVideoDecoding()) {
-    return false;
-  }
-
-  if (!VTIsHardwareDecodeSupported) {
+  if (!gfx::gfxVars::CanUseHardwareVideoDecoding() || XRE_IsUtilityProcess()) {
     return false;
   }
 

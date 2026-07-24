@@ -11,7 +11,6 @@
 #include "ssl.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/RefPtr.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gmock/gmock.h"
@@ -7982,6 +7981,25 @@ TEST_F(JsepSessionTest, ExtmapAllowMixedCheckDoNotDefaultToSessionLevel) {
 
   ASSERT_FALSE(ExtmapAllowMixed(*mSessionOff));
   ASSERT_FALSE(ExtmapAllowMixed(*mSessionAns));
+}
+
+TEST_F(JsepSessionTest, NoExtmapAllowMixedInDatachannel) {
+  AddTracks(*mSessionOff, "datachannel");
+  AddTracks(*mSessionAns, "datachannel");
+
+  std::string offer;
+  mSessionOff->CreateOffer(JsepOfferOptions(), &offer);
+
+  mSessionOff->SetLocalDescription(kJsepSdpOffer, offer);
+  mSessionAns->SetRemoteDescription(kJsepSdpOffer, offer);
+
+  std::string answer;
+  mSessionAns->CreateAnswer(JsepAnswerOptions(), &answer);
+
+  ASSERT_EQ(std::string::npos, offer.find("a=extmap-allow-mixed"))
+    << "Data channel msection should not contain a=extmap-allow-mixed";
+  ASSERT_EQ(std::string::npos, answer.find("a=extmap-allow-mixed"))
+    << "Data channel msection should not contain a=extmap-allow-mixed";
 }
 
 }  // namespace mozilla

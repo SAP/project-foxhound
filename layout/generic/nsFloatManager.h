@@ -9,7 +9,6 @@
 #ifndef nsFloatManager_h_
 #define nsFloatManager_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"

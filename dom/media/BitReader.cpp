@@ -6,7 +6,6 @@
 
 #include "BitReader.h"
 
-#include "mozilla/Unused.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
@@ -24,8 +23,6 @@ BitReader::BitReader(const uint8_t* aBuffer, size_t aBits)
       mSize((aBits + 7) / 8),
       mReservoir(0),
       mNumBitsLeft(0) {}
-
-BitReader::~BitReader() = default;
 
 uint32_t BitReader::ReadBits(size_t aNum) {
   MOZ_ASSERT(aNum <= 32);
@@ -208,7 +205,7 @@ size_t BitReader::AdvanceBits(size_t aNum) {
   while (temp > 0) {
     uint32_t readBits = temp > 32 ? 32 : temp;
     // TODO : return error if reading less bits than expectation in bug 1972401.
-    Unused << ReadBits(readBits);
+    (void)ReadBits(readBits);
     temp -= readBits;
   }
   return advanceBits;

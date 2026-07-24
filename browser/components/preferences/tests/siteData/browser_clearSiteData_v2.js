@@ -52,8 +52,11 @@ async function testClearData(clearSiteData, clearCache) {
     gBrowser.selectedBrowser,
     [],
     async function () {
-      let sizeLabel = content.document.getElementById("totalSiteDataSize");
-      return sizeLabel.textContent;
+      let siteDataSizeItem = content.document.getElementById("siteDataSize");
+      // The <strong> element contains the data size.
+      let usage = siteDataSizeItem.querySelector("strong");
+      let siteDataSizeText = usage.textContent;
+      return siteDataSizeText;
     }
   );
 
@@ -62,7 +65,7 @@ async function testClearData(clearSiteData, clearCache) {
 
   let url = "chrome://browser/content/sanitize_v2.xhtml";
   let dialogOpened = promiseLoadSubDialog(url);
-  clearSiteDataButton.doCommand();
+  clearSiteDataButton.click();
   let dialogWin = await dialogOpened;
 
   // Convert the usage numbers in the same way the UI does it to assert
@@ -166,11 +169,13 @@ async function testClearData(clearSiteData, clearCache) {
       gBrowser.selectedBrowser,
       [{ initialSizeLabelValue }],
       async function (opts) {
-        let sizeLabel = content.document.getElementById("totalSiteDataSize");
-        await ContentTaskUtils.waitForCondition(
-          () => sizeLabel.textContent != opts.initialSizeLabelValue,
-          "Site data size label should have updated."
-        );
+        let siteDataSizeItem = content.document.getElementById("siteDataSize");
+        // The <strong> element contains the data size.
+        let usage = siteDataSizeItem.querySelector("strong");
+        let siteDataSizeText = usage.textContent;
+        await ContentTaskUtils.waitForCondition(() => {
+          return siteDataSizeText != opts.initialSizeLabelValue;
+        }, "Site data size label should have updated.");
       }
     );
   }
@@ -190,10 +195,6 @@ async function testClearData(clearSiteData, clearCache) {
 }
 
 add_setup(function () {
-  SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
-
   // The tests in this file all test specific interactions with the new clear
   // history dialog and can't be split up.
   requestLongerTimeout(2);
@@ -234,7 +235,7 @@ add_task(async function testPersistentStorage() {
 
   let url = "chrome://browser/content/sanitize_v2.xhtml";
   let dialogOpened = promiseLoadSubDialog(url);
-  clearSiteDataButton.doCommand();
+  clearSiteDataButton.click();
   let dialogWin = await dialogOpened;
   let dialogClosed = BrowserTestUtils.waitForEvent(dialogWin, "unload");
 

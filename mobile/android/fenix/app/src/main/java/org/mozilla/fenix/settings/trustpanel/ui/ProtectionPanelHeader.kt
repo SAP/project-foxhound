@@ -15,19 +15,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.settings.trustpanel.store.WebsiteInfoState
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
 private val ICON_SIZE = 16.dp
@@ -37,11 +42,12 @@ private val INNER_ICON_SHAPE = RoundedCornerShape(0.dp)
 
 @Composable
 internal fun ProtectionPanelHeader(
-    icon: Bitmap?,
     websiteInfoState: WebsiteInfoState,
+    icon: Bitmap?,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -51,22 +57,33 @@ internal fun ProtectionPanelHeader(
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(
-            modifier = Modifier
-                .weight(1f),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
-                text = websiteInfoState.websiteTitle,
-                color = FirefoxTheme.colors.textSecondary,
+                text = websiteInfoState.websiteTitle.ifEmpty {
+                    websiteInfoState.websiteUrl.tryGetHostFromUrl()
+                },
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 style = FirefoxTheme.typography.headline7,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics {
+                    testTagsAsResourceId = true
+                    testTag = "unified.trust.panel.website"
+                },
             )
 
-            Text(
-                text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
-                color = FirefoxTheme.colors.textSecondary,
-                style = FirefoxTheme.typography.body2,
-            )
+            if (websiteInfoState.websiteTitle.isNotEmpty()) {
+                Text(
+                    text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = FirefoxTheme.typography.body2,
+                    modifier = Modifier.semantics {
+                        testTagsAsResourceId = true
+                        testTag = "unified.trust.panel.website.url"
+                    },
+                )
+            }
         }
     }
 }
@@ -82,7 +99,7 @@ private fun ProtectionPanelIcon(
             contentDescription = null,
             modifier = Modifier
                 .background(
-                    color = FirefoxTheme.colors.layer2,
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     shape = OUTER_ICON_SHAPE,
                 )
                 .padding(all = ICON_PADDING)
@@ -93,54 +110,50 @@ private fun ProtectionPanelIcon(
             url = url,
             modifier = Modifier
                 .background(
-                    color = FirefoxTheme.colors.layer2,
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     shape = OUTER_ICON_SHAPE,
                 )
                 .padding(all = ICON_PADDING),
             size = ICON_SIZE,
-            roundedCornerShape = INNER_ICON_SHAPE,
+            shape = INNER_ICON_SHAPE,
         )
-    }
-}
-
-@PreviewLightDark
-@Composable
-private fun ProtectionPanelHeaderPreview() {
-    FirefoxTheme {
-        Column(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1),
-        ) {
-            ProtectionPanelHeader(
-                icon = null,
-                websiteInfoState = WebsiteInfoState(
-                    isSecured = true,
-                    websiteUrl = "https://www.mozilla.org",
-                    websiteTitle = "Mozilla",
-                    certificateName = "",
-                ),
-            )
-        }
     }
 }
 
 @Preview
 @Composable
-private fun ProtectionPanelHeaderPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
-        Column(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3),
-        ) {
-            ProtectionPanelHeader(
-                icon = null,
-                websiteInfoState = WebsiteInfoState(
-                    isSecured = false,
-                    websiteUrl = "https://www.mozilla.org",
-                    websiteTitle = "Mozilla",
-                    certificateName = "",
-                ),
-            )
-        }
+private fun ProtectionPanelHeaderPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        ProtectionPanelHeader(
+            websiteInfoState = WebsiteInfoState(
+                isSecured = true,
+                websiteUrl = "https://www.mozilla.org",
+                websiteTitle = "Mozilla",
+                certificate = null,
+            ),
+            icon = null,
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surface),
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun ProtectionPanelHeaderUrlAsTitlePreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        ProtectionPanelHeader(
+            websiteInfoState = WebsiteInfoState(
+                isSecured = true,
+                websiteUrl = "https://www.mozilla.org",
+                websiteTitle = "",
+                certificate = null,
+            ),
+            icon = null,
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surface),
+        )
     }
 }

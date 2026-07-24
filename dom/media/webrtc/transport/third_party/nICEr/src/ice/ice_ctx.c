@@ -50,6 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "nr_crypto.h"
 #include "async_timer.h"
 #include "util.h"
+#include "addrs.h"
 #include "nr_socket_local.h"
 
 #define ICE_UFRAG_LEN 8
@@ -57,7 +58,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 int LOG_ICE = 0;
 
-static int nr_ice_random_string(char *str, int len);
 static int nr_ice_fetch_stun_servers(int ct, nr_ice_stun_server **out);
 #ifdef USE_TURN
 static int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out);
@@ -82,7 +82,7 @@ int nr_ice_fetch_stun_servers(int ct, nr_ice_stun_server **out)
     UINT2 port;
     in_addr_t addr_int;
 
-    if(!(servers=RCALLOC(sizeof(nr_ice_stun_server)*ct)))
+    if(!(servers=R_NEW_CNT(nr_ice_stun_server, ct)))
       ABORT(R_NO_MEMORY);
 
     for(i=0;i<ct;i++){
@@ -128,7 +128,7 @@ int nr_ice_ctx_set_stun_servers(nr_ice_ctx *ctx,nr_ice_stun_server *servers,int 
     }
 
     if (ct) {
-      if(!(ctx->stun_servers_cfg=RCALLOC(sizeof(nr_ice_stun_server)*ct)))
+      if(!(ctx->stun_servers_cfg=R_NEW_CNT(nr_ice_stun_server, ct)))
         ABORT(R_NO_MEMORY);
 
       memcpy(ctx->stun_servers_cfg,servers,sizeof(nr_ice_stun_server)*ct);
@@ -155,7 +155,7 @@ int nr_ice_ctx_set_turn_servers(nr_ice_ctx *ctx,nr_ice_turn_server *servers,int 
     }
 
     if(ct) {
-      if(!(ctx->turn_servers_cfg=RCALLOC(sizeof(nr_ice_turn_server)*ct)))
+      if(!(ctx->turn_servers_cfg=R_NEW_CNT(nr_ice_turn_server, ct)))
         ABORT(R_NO_MEMORY);
 
       memcpy(ctx->turn_servers_cfg,servers,sizeof(nr_ice_turn_server)*ct);
@@ -164,31 +164,6 @@ int nr_ice_ctx_set_turn_servers(nr_ice_ctx *ctx,nr_ice_turn_server *servers,int 
 
     _status=0;
  abort:
-    return(_status);
-  }
-
-int nr_ice_ctx_copy_turn_servers(nr_ice_ctx *ctx, nr_ice_turn_server *servers, int ct)
-  {
-    int _status, i, r;
-
-    if (r = nr_ice_ctx_set_turn_servers(ctx, servers, ct)) {
-      ABORT(r);
-    }
-
-    // make copies of the username and password so they aren't freed twice
-    for (i = 0; i < ct; ++i) {
-      if (!(ctx->turn_servers_cfg[i].username = r_strdup(servers[i].username))) {
-        ABORT(R_NO_MEMORY);
-      }
-      if (r = r_data_create(&ctx->turn_servers_cfg[i].password,
-                            servers[i].password->data,
-                            servers[i].password->len)) {
-        ABORT(r);
-      }
-    }
-
-    _status=0;
-   abort:
     return(_status);
   }
 
@@ -203,7 +178,7 @@ static int nr_ice_ctx_set_local_addrs(nr_ice_ctx *ctx,nr_local_addr *addrs,int c
     }
 
     if (ct) {
-      if(!(ctx->local_addrs=RCALLOC(sizeof(nr_local_addr)*ct)))
+      if(!(ctx->local_addrs=R_NEW_CNT(nr_local_addr, ct)))
         ABORT(R_NO_MEMORY);
 
       for (i=0;i<ct;++i) {
@@ -267,7 +242,7 @@ int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out)
     in_addr_t addr_int;
     Data data={0};
 
-    if(!(servers=RCALLOC(sizeof(nr_ice_turn_server)*ct)))
+    if(!(servers=R_NEW_CNT(nr_ice_turn_server, ct)))
       ABORT(R_NO_MEMORY);
 
     for(i=0;i<ct;i++){
@@ -301,7 +276,7 @@ int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out)
           ABORT(r);
       }
       else {
-        servers[i].password=RCALLOC(sizeof(*servers[i].password));
+        servers[i].password=R_NEW(Data);
         if(!servers[i].password)
           ABORT(R_NO_MEMORY);
         servers[i].password->data = data.data;
@@ -334,7 +309,7 @@ int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out)
     if(r=r_log_register("ice", &LOG_ICE))
       ABORT(r);
 
-    if(!(ctx=RCALLOC(sizeof(nr_ice_ctx))))
+    if(!(ctx=R_NEW(nr_ice_ctx)))
       ABORT(R_NO_MEMORY);
 
     ctx->flags=flags;
@@ -493,7 +468,7 @@ int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out)
 void nr_ice_gather_finished_cb(NR_SOCKET s, int h, void *cb_arg)
   {
     int r;
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
     nr_ice_ctx *ctx;
     nr_ice_media_stream *stream;
     int component_id;
@@ -746,7 +721,9 @@ int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
     }
 
     // removes duplicates and, based on prefs, loopback and link_local addrs
-    if (r=nr_stun_filter_local_addresses(local_addrs, &addr_ct)) {
+    if (r = nr_stun_filter_addrs(
+            local_addrs, !(ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK),
+            !(ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL), &addr_ct)) {
       ABORT(r);
     }
 
@@ -847,7 +824,7 @@ int nr_ice_set_target_for_default_local_address_lookup(nr_ice_ctx *ctx, const ch
       ctx->target_for_default_local_address_lookup=0;
     }
 
-    if (!(ctx->target_for_default_local_address_lookup=RCALLOC(sizeof(nr_transport_addr))))
+    if (!(ctx->target_for_default_local_address_lookup=R_NEW(nr_transport_addr)))
       ABORT(R_NO_MEMORY);
 
     if ((r=nr_str_port_to_transport_addr(target_ip, target_port, IPPROTO_UDP, ctx->target_for_default_local_address_lookup))) {
@@ -868,7 +845,7 @@ int nr_ice_set_target_for_default_local_address_lookup(nr_ice_ctx *ctx, const ch
     int stun_addr_ct;
 
     if (!ctx->local_addrs) {
-      if((r=nr_stun_find_local_addresses(stun_addrs,MAXADDRS,&stun_addr_ct))) {
+      if((r=nr_stun_get_addrs(stun_addrs,MAXADDRS,&stun_addr_ct))) {
         ABORT(r);
       }
       if((r=nr_ice_set_local_addresses(ctx,stun_addrs,stun_addr_ct))) {
@@ -953,28 +930,6 @@ int nr_ice_get_global_attributes(nr_ice_ctx *ctx,char ***attrsp, int *attrctp)
     return(0);
   }
 
-static int nr_ice_random_string(char *str, int len)
-  {
-    unsigned char bytes[100];
-    size_t needed;
-    int r,_status;
-
-    if(len%2) ABORT(R_BAD_ARGS);
-    needed=len/2;
-
-    if(needed>sizeof(bytes)) ABORT(R_BAD_ARGS);
-
-    if(r=nr_crypto_random_bytes(bytes,needed))
-      ABORT(r);
-
-    if(r=nr_bin2hex(bytes,needed,(unsigned char *)str))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    return(_status);
-  }
-
 /* This is incredibly annoying: we now have a datagram but we don't
    know which peer it's from, and we need to be able to tell the
    API user. So, offer it to each peer and if one bites, assume
@@ -1020,7 +975,7 @@ int nr_ice_ctx_remember_id(nr_ice_ctx *ctx, nr_stun_message *msg)
     int _status;
     nr_ice_stun_id *xid;
 
-    xid = RCALLOC(sizeof(*xid));
+    xid = R_NEW(nr_ice_stun_id);
     if (!xid)
         ABORT(R_NO_MEMORY);
 
@@ -1036,38 +991,6 @@ int nr_ice_ctx_remember_id(nr_ice_ctx *ctx, nr_stun_message *msg)
   abort:
     return(_status);
 }
-
-
-/* Clean up some of the resources (mostly file descriptors) used
-   by candidates we didn't choose. Note that this still leaves
-   a fair amount of non-system stuff floating around. This gets
-   cleaned up when you destroy the ICE ctx */
-int nr_ice_ctx_finalize(nr_ice_ctx *ctx, nr_ice_peer_ctx *pctx)
-  {
-    nr_ice_media_stream *lstr,*rstr;
-
-    r_log(LOG_ICE,LOG_DEBUG,"Finalizing ICE ctx %s, peer=%s",ctx->label,pctx->label);
-    /*
-       First find the peer stream, if any
-    */
-    lstr=STAILQ_FIRST(&ctx->streams);
-    while(lstr){
-      rstr=STAILQ_FIRST(&pctx->peer_streams);
-
-      while(rstr){
-        if(rstr->local_stream==lstr)
-          break;
-
-        rstr=STAILQ_NEXT(rstr,entry);
-      }
-
-      nr_ice_media_stream_finalize(lstr,rstr);
-
-      lstr=STAILQ_NEXT(lstr,entry);
-    }
-
-    return(0);
-  }
 
 
 int nr_ice_ctx_set_trickle_cb(nr_ice_ctx *ctx, nr_ice_trickle_candidate_cb cb, void *cb_arg)
@@ -1096,40 +1019,3 @@ int nr_ice_ctx_hide_candidate(nr_ice_ctx *ctx, nr_ice_candidate *cand)
     return 0;
   }
 
-int nr_ice_get_new_ice_ufrag(char** ufrag)
-  {
-    int r,_status;
-    char buf[ICE_UFRAG_LEN+1];
-
-    if(r=nr_ice_random_string(buf,ICE_UFRAG_LEN))
-      ABORT(r);
-    if(!(*ufrag=r_strdup(buf)))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    if(_status) {
-      RFREE(*ufrag);
-      *ufrag = 0;
-    }
-    return(_status);
-  }
-
-int nr_ice_get_new_ice_pwd(char** pwd)
-  {
-    int r,_status;
-    char buf[ICE_PWD_LEN+1];
-
-    if(r=nr_ice_random_string(buf,ICE_PWD_LEN))
-      ABORT(r);
-    if(!(*pwd=r_strdup(buf)))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    if(_status) {
-      RFREE(*pwd);
-      *pwd = 0;
-    }
-    return(_status);
-  }

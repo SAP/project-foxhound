@@ -13,6 +13,7 @@ figma.connect(
       }),
       layout: figma.enum("Type", {
         "Large icon": "large-icon",
+        "Medium icon": "medium-icon",
       }),
       startActions: figma.enum("Type", {
         "Actions preset": html`<moz-button

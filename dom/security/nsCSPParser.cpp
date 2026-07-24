@@ -4,25 +4,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
+#include "nsCSPParser.h"
+
+#include <cstdint>
+#include <utility>
+
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsCOMPtr.h"
-#include "nsContentUtils.h"
-#include "nsCSPParser.h"
 #include "nsCSPUtils.h"
+#include "nsContentUtils.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUnicharUtils.h"
-
-#include <cstdint>
-#include <utility>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -92,9 +91,12 @@ bool isGroupDelim(char16_t aSymbol) {
           aSymbol == '\\' || aSymbol == ']' || aSymbol == '"');
 }
 
-static bool isValidBase64Value(const char16_t* cur, const char16_t* end) {
+bool nsCSPParser::isValidBase64Value(const nsAString& aValue) {
   // Using grammar at
   // https://w3c.github.io/webappsec-csp/#grammardef-nonce-source
+
+  const char16_t* cur = aValue.BeginReading();
+  const char16_t* end = aValue.EndReading();
 
   // May end with one or two =
   if (end > cur && *(end - 1) == EQUALS) end--;
@@ -469,6 +471,11 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
+  if (StaticPrefs::dom_security_trusted_types_enabled() &&
+      CSP_IsKeyword(mCurToken, CSP_TRUSTED_TYPES_EVAL)) {
+    return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
+  }
+
   return nullptr;
 }
 
@@ -560,8 +567,7 @@ nsCSPNonceSrc* nsCSPParser::nonceSource() {
   if (dashIndex < 0) {
     return nullptr;
   }
-  if (!isValidBase64Value(expr.BeginReading() + dashIndex + 1,
-                          expr.EndReading())) {
+  if (!isValidBase64Value(Substring(expr, dashIndex + 1))) {
     return nullptr;
   }
 
@@ -590,8 +596,7 @@ nsCSPHashSrc* nsCSPParser::hashSource() {
     return nullptr;
   }
 
-  if (!isValidBase64Value(expr.BeginReading() + dashIndex + 1,
-                          expr.EndReading())) {
+  if (!isValidBase64Value(Substring(expr, dashIndex + 1))) {
     return nullptr;
   }
 
@@ -1074,16 +1079,10 @@ nsCSPDirective* nsCSPParser::directiveName() {
 
   // special case handling for block-all-mixed-content
   if (directive == nsIContentSecurityPolicy::BLOCK_ALL_MIXED_CONTENT) {
-    // If mixed content upgrade is enabled for all types block-all-mixed-content
-    // is obsolete
+    // If mixed content upgrade is enabled for display content, then
+    // block-all-mixed-content is obsolete.
     if (mozilla::StaticPrefs::
-            security_mixed_content_upgrade_display_content() &&
-        mozilla::StaticPrefs::
-            security_mixed_content_upgrade_display_content_image() &&
-        mozilla::StaticPrefs::
-            security_mixed_content_upgrade_display_content_audio() &&
-        mozilla::StaticPrefs::
-            security_mixed_content_upgrade_display_content_video()) {
+            security_mixed_content_upgrade_display_content()) {
       // log to the console that if mixed content display upgrading is enabled
       // block-all-mixed-content is obsolete.
       AutoTArray<nsString, 1> params = {mCurToken};
@@ -1272,8 +1271,10 @@ void nsCSPParser::MaybeWarnAboutIgnoredSources(
       nsAutoString srcStr;
       aSrcs[i]->toString(srcStr);
       // Hashes and nonces continue to apply with 'strict-dynamic', as well as
-      // 'unsafe-eval', 'wasm-unsafe-eval' and 'unsafe-hashes'.
+      // 'unsafe-eval', 'wasm-unsafe-eval', 'trusted-types-eval' and
+      // 'unsafe-hashes'.
       if (!aSrcs[i]->isKeyword(CSP_STRICT_DYNAMIC) &&
+          !aSrcs[i]->isKeyword(CSP_TRUSTED_TYPES_EVAL) &&
           !aSrcs[i]->isKeyword(CSP_UNSAFE_EVAL) &&
           !aSrcs[i]->isKeyword(CSP_WASM_UNSAFE_EVAL) &&
           !aSrcs[i]->isKeyword(CSP_UNSAFE_HASHES) && !aSrcs[i]->isNonce() &&

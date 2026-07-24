@@ -6,14 +6,14 @@
 
 #include "mozilla/dom/ObservableArrayProxyHandler.h"
 
-#include "jsapi.h"
-#include "js/friend/ErrorMessages.h"
 #include "js/Conversions.h"
 #include "js/Object.h"
+#include "js/friend/ErrorMessages.h"
+#include "jsapi.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/ProxyHandlerUtils.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/ErrorResult.h"
 #include "nsDebug.h"
 #include "nsJSUtils.h"
 
@@ -275,6 +275,9 @@ bool ObservableArrayProxyHandler::GetBackingListObject(
     JS::Rooted<JSObject*> newBackingListObj(aCx);
     newBackingListObj.set(JS::NewArrayObject(aCx, 0));
     if (NS_WARN_IF(!newBackingListObj)) {
+      return false;
+    }
+    if (NS_WARN_IF(!JS_SetPrototype(aCx, newBackingListObj, nullptr))) {
       return false;
     }
     slotValue = JS::ObjectValue(*newBackingListObj);

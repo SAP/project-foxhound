@@ -7,12 +7,13 @@ package org.mozilla.fenix.compose
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.support.images.compose.loader.Fallback
 import mozilla.components.support.images.compose.loader.ImageLoaderScope
@@ -62,11 +63,15 @@ internal fun DefaultImagePlaceholder(
     modifier: Modifier,
     contentDescription: String? = null,
 ) {
-    Image(ColorPainter(FirefoxTheme.colors.layer2), contentDescription, modifier)
+    Image(
+        painter = ColorPainter(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentDescription = contentDescription,
+        modifier = modifier,
+    )
 }
 
 @Composable
-@Preview
+@PreviewLightDark
 private fun DefaultImagePlaceholderPreview() {
     FirefoxTheme {
         DefaultImagePlaceholder(

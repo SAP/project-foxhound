@@ -4,6 +4,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(
+    clippy::allow_attributes,
+    clippy::unwrap_in_result,
+    reason = "OK in tests."
+)]
+
 use std::{
     cell::RefCell,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -24,13 +30,13 @@ use super::{
     CountingConnectionIdGenerator,
 };
 use crate::{
-    cid::LOCAL_ACTIVE_CID_LIMIT,
+    cid::ConnectionIdManager,
     connection::tests::{
         assert_path_challenge_min_len, connect, send_something_paced, send_with_extra,
     },
     frame::FrameType,
     packet,
-    path::MAX_PATH_PROBES,
+    path::Path,
     pmtud::Pmtud,
     stats::FrameStats,
     tparams::{PreferredAddress, TransportParameter, TransportParameterId},
@@ -158,7 +164,7 @@ fn rebind(
 
     // The client should process the ACK and go idle.
     let delay = client.process(Some(s4_reb), now).callback();
-    assert_eq!(delay, ConnectionParameters::default().get_idle_timeout());
+    assert_eq!(delay, ConnectionParameters::DEFAULT_IDLE_TIMEOUT);
 
     let client_uses_zero_len_cid = client
         .paths
@@ -174,7 +180,7 @@ fn rebind(
         match server.process_output(now) {
             Output::Callback(t) => {
                 total_delay += t;
-                if total_delay == ConnectionParameters::default().get_idle_timeout() {
+                if total_delay == ConnectionParameters::DEFAULT_IDLE_TIMEOUT {
                     // Server should only hit the idle timeout here when the client uses a zero-len
                     // CID.
                     assert!(client_uses_zero_len_cid);
@@ -492,7 +498,7 @@ fn migrate_immediate_fail() {
     assert_path_challenge_min_len(&client, &probe, now);
 
     // -1 because first PATH_CHALLENGE already sent above
-    for _ in 0..MAX_PATH_PROBES * 2 - 1 {
+    for _ in 0..Path::MAX_PROBES * 2 - 1 {
         let cb = client.process_output(now).callback();
         assert_ne!(cb, Duration::new(0, 0));
         now += cb;
@@ -572,7 +578,7 @@ fn migrate_same_fail() {
     assert_path_challenge_min_len(&client, &probe, now);
 
     // -1 because first PATH_CHALLENGE already sent above
-    for _ in 0..MAX_PATH_PROBES - 1 {
+    for _ in 0..Path::MAX_PROBES * 2 - 1 {
         let cb = client.process_output(now).callback();
         assert_ne!(cb, Duration::new(0, 0));
         now += cb;
@@ -1053,7 +1059,7 @@ impl crate::connection::test_internal::FrameWriter for RetireAll {
             .encode_varint(SEQNO)
             .encode_varint(SEQNO) // Retire Prior To
             .encode_vec(1, &cid)
-            .encode(&[0x7f; 16]);
+            .encode([0x7f; 16]);
     }
 }
 
@@ -1087,7 +1093,7 @@ fn retire_all() {
     );
     assert_eq!(
         client.stats().frame_tx.retire_connection_id,
-        retire_cid_before + LOCAL_ACTIVE_CID_LIMIT
+        retire_cid_before + ConnectionIdManager::ACTIVE_LIMIT
     );
 
     assert_ne!(get_cid(&retire), original_cid);

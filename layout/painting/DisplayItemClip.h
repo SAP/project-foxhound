@@ -7,7 +7,7 @@
 #ifndef DISPLAYITEMCLIP_H_
 #define DISPLAYITEMCLIP_H_
 
-#include "mozilla/RefPtr.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "nsRect.h"
 #include "nsTArray.h"
 
@@ -45,7 +45,7 @@ class DisplayItemClip {
   struct RoundedRect {
     nsRect mRect;
     // Indices into mRadii are the HalfCorner values in gfx/2d/Types.h
-    nscoord mRadii[8];
+    nsRectCornerRadii mRadii;
 
     RoundedRect operator+(const nsPoint& aOffset) const {
       RoundedRect r = *this;
@@ -56,11 +56,8 @@ class DisplayItemClip {
       if (!mRect.IsEqualInterior(aOther.mRect)) {
         return false;
       }
-
-      for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
-        if (mRadii[corner] != aOther.mRadii[corner]) {
-          return false;
-        }
+      if (mRadii != aOther.mRadii) {
+        return false;
       }
       return true;
     }
@@ -73,9 +70,9 @@ class DisplayItemClip {
   DisplayItemClip() : mHaveClipRect(false) {}
 
   void SetTo(const nsRect& aRect);
-  void SetTo(const nsRect& aRect, const nscoord* aRadii);
+  void SetTo(const nsRect& aRect, const nsRectCornerRadii* aRadii);
   void SetTo(const nsRect& aRect, const nsRect& aRoundedRect,
-             const nscoord* aRadii);
+             const nsRectCornerRadii* aRadii);
   void IntersectWith(const DisplayItemClip& aOther);
 
   // Apply this |DisplayItemClip| to the given gfxContext.  Any saving of state

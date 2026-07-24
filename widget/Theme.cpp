@@ -9,7 +9,6 @@
 
 #include "ThemeDrawing.h"
 #include "Units.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLMeterElement.h"
@@ -29,6 +28,7 @@
 #include "nsLayoutUtils.h"
 #include "nsRangeFrame.h"
 #include "PathHelpers.h"
+#include "nsComboboxControlFrame.h"
 #include "ScrollbarDrawingAndroid.h"
 #include "ScrollbarDrawingCocoa.h"
 #include "ScrollbarDrawingGTK.h"
@@ -560,18 +560,19 @@ void Theme::PaintCircleShadow(WebRenderBackendData& aWrData,
   const LayoutDeviceCoord stdDev = aShadowBlurStdDev * aDpiRatio;
   const LayoutDevicePoint shadowOffset = aShadowOffset * aDpiRatio;
   const IntSize inflation =
-      gfxAlphaBoxBlur::CalculateBlurRadius(gfxPoint(stdDev, stdDev));
+      gfxGaussianBlur::CalculateBlurRadius(gfxPoint(stdDev, stdDev));
   LayoutDeviceRect shadowRect = aBoxRect;
   shadowRect.MoveBy(shadowOffset);
   shadowRect.Inflate(inflation.width, inflation.height);
   const auto boxRect = wr::ToLayoutRect(aBoxRect);
+  const auto borderRadius =
+      wr::ToBorderRadius(gfx::RectCornerRadii(aBoxRect.Size().width));
   aWrData.mBuilder.PushBoxShadow(
       wr::ToLayoutRect(shadowRect), wr::ToLayoutRect(aClipRect),
       kBackfaceIsVisible, boxRect,
       wr::ToLayoutVector2D(aShadowOffset * aDpiRatio),
       wr::ToColorF(DeviceColor(0.0f, 0.0f, 0.0f, aShadowAlpha)), stdDev,
-      /* aSpread = */ 0.0f,
-      wr::ToBorderRadius(gfx::RectCornerRadii(aBoxRect.Size().width)),
+      /* aSpread = */ 0.0f, borderRadius, borderRadius,
       wr::BoxShadowClipMode::Outset);
 }
 
@@ -592,7 +593,7 @@ void Theme::PaintCircleShadow(DrawTarget& aDrawTarget,
   blurFilter->SetAttribute(ATT_GAUSSIAN_BLUR_STD_DEVIATION, stdDev);
 
   IntSize inflation =
-      gfxAlphaBoxBlur::CalculateBlurRadius(gfxPoint(stdDev, stdDev));
+      gfxGaussianBlur::CalculateBlurRadius(gfxPoint(stdDev, stdDev));
   Rect inflatedRect = aBoxRect.ToUnknownRect();
   inflatedRect.Inflate(inflation.width, inflation.height);
   Rect sourceRectInFilterSpace =
@@ -601,6 +602,9 @@ void Theme::PaintCircleShadow(DrawTarget& aDrawTarget,
 
   IntSize dtSize = RoundedToInt(aBoxRect.Size().ToUnknownSize());
   if (dtSize.IsEmpty()) {
+    return;
+  }
+  if (!aDrawTarget.CanCreateSimilarDrawTarget(dtSize, SurfaceFormat::A8)) {
     return;
   }
   RefPtr<DrawTarget> ellipseDT = aDrawTarget.CreateSimilarDrawTargetForFilter(
@@ -631,26 +635,29 @@ void Theme::PaintRadioControl(PaintBackendData& aPaintData,
                               DPIRatio aDpiRatio) {
   auto [backgroundColor, borderColor, checkColor] =
       ComputeCheckboxColors(aState, StyleAppearance::Radio, aColors);
+  const bool isChecked = aState.HasState(ElementState::CHECKED);
   {
-    CSSCoord borderWidth = kCheckboxRadioBorderWidth;
-    if (backgroundColor == borderColor) {
-      borderWidth = 0.0f;
+    CSSCoord outerBorderWidth = kCheckboxRadioBorderWidth;
+    auto effectiveBackground = isChecked ? checkColor : backgroundColor;
+    if (effectiveBackground == borderColor) {
+      outerBorderWidth = 0.0f;
     }
-    PaintStrokedCircle(aPaintData, aRect, backgroundColor, borderColor,
-                       borderWidth, aDpiRatio);
+    PaintStrokedCircle(aPaintData, aRect, effectiveBackground, borderColor,
+                       outerBorderWidth, aDpiRatio);
   }
 
-  if (aState.HasState(ElementState::CHECKED)) {
-    // See bug 1951930 and bug 1941755 for some discussion on this chunk of
-    // code.
-    const CSSCoord kOuterBorderWidth = 1.0f;
-    const CSSCoord kInnerBorderWidth = 2.0f;
-    LayoutDeviceRect rect(aRect);
-    auto width = LayoutDeviceCoord(
-        ThemeDrawing::SnapBorderWidth(kOuterBorderWidth, aDpiRatio));
-    rect.Deflate(width);
-    PaintStrokedCircle(aPaintData, rect, backgroundColor, checkColor,
-                       kInnerBorderWidth, aDpiRatio);
+  if (isChecked) {
+    // See bug 1951930 / bug 1941755 for discussion on this chunk of code.
+    constexpr CSSCoord kInnerBorderWidth = 2.0f;
+    LayoutDeviceRect innerCircleBounds(aRect);
+    // It's important that these are two different calls so that the snapping of
+    // the inner rect matches the one PaintStrokedCircle above does.
+    innerCircleBounds.Deflate(
+        ThemeDrawing::SnapBorderWidth(kCheckboxRadioBorderWidth, aDpiRatio));
+    innerCircleBounds.Deflate(
+        ThemeDrawing::SnapBorderWidth(kInnerBorderWidth, aDpiRatio));
+    PaintStrokedCircle(aPaintData, innerCircleBounds, backgroundColor,
+                       sTransparent, 0.0f, aDpiRatio);
   }
 
   if (aState.HasState(ElementState::FOCUSRING)) {
@@ -1231,21 +1238,18 @@ bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
     case StyleAppearance::ScrollbarbuttonDown:
     case StyleAppearance::ScrollbarbuttonLeft:
     case StyleAppearance::ScrollbarbuttonRight: {
-      // For scrollbar-width:thin, we don't display the buttons.
-      if (!ScrollbarDrawing::IsScrollbarWidthThin(aFrame)) {
-        if constexpr (std::is_same_v<PaintBackendData, WebRenderBackendData>) {
-          // TODO: Need to figure out how to best draw this using WR.
-          return false;
-        } else {
-          bool isHorizontal =
-              aAppearance == StyleAppearance::ScrollbarbuttonLeft ||
-              aAppearance == StyleAppearance::ScrollbarbuttonRight;
-          auto kind = ComputeScrollbarKind(aFrame, isHorizontal);
-          GetScrollbarDrawing().PaintScrollbarButton(
-              aPaintData, aAppearance, devPxRect, kind, aFrame,
-              *nsLayoutUtils::StyleForScrollbar(aFrame), elementState, colors,
-              dpiRatio);
-        }
+      if constexpr (std::is_same_v<PaintBackendData, WebRenderBackendData>) {
+        // TODO: Need to figure out how to best draw this using WR.
+        return false;
+      } else {
+        bool isHorizontal =
+            aAppearance == StyleAppearance::ScrollbarbuttonLeft ||
+            aAppearance == StyleAppearance::ScrollbarbuttonRight;
+        auto kind = ComputeScrollbarKind(aFrame, isHorizontal);
+        GetScrollbarDrawing().PaintScrollbarButton(
+            aPaintData, aAppearance, devPxRect, kind, aFrame,
+            *nsLayoutUtils::StyleForScrollbar(aFrame), elementState, colors,
+            dpiRatio);
       }
       break;
     }
@@ -1287,11 +1291,11 @@ void Theme::PaintAutoStyleOutline(nsIFrame* aFrame,
                                   const LayoutDeviceRect& aRect,
                                   const Colors& aColors, DPIRatio aDpiRatio) {
   const nscoord a2d = aFrame->PresContext()->AppUnitsPerDevPixel();
-  const auto cssOffset = aFrame->StyleOutline()->mOutlineOffset.ToAppUnits();
+  const auto cssOffset = aFrame->StyleOutline()->mOutlineOffset;
 
   LayoutDeviceRect rect(aRect);
   auto devOffset = LayoutDevicePixel::FromAppUnits(cssOffset, a2d);
-  nscoord cssRadii[8] = {0};
+  nsRectCornerRadii cssRadii;
   if (!aFrame->GetBorderRadii(cssRadii)) {
     // The goal of this code is getting a 0px inner radius, but 2px outer
     // radius.
@@ -1301,9 +1305,7 @@ void Theme::PaintAutoStyleOutline(nsIFrame* aFrame,
     auto twoDevPixels = CSSCoord(2) * aDpiRatio;
     rect.Inflate(devOffset + twoDevPixels);
     devOffset = -twoDevPixels;
-    for (auto& r : cssRadii) {
-      r = radius;
-    }
+    cssRadii = nsRectCornerRadii(radius);
   }
 
   RectCornerRadii innerRadii;
@@ -1344,9 +1346,11 @@ void Theme::PaintAutoStyleOutline(
   auto DrawRect = [&](const sRGBColor& aColor) {
     RectCornerRadii outerRadii;
     if constexpr (std::is_same_v<PaintBackendData, WebRenderBackendData>) {
-      const Float widths[4] = {strokeWidth + aOffset, strokeWidth + aOffset,
-                               strokeWidth + aOffset, strokeWidth + aOffset};
-      nsCSSBorderRenderer::ComputeOuterRadii(aInnerRadii, widths, &outerRadii);
+      const LayoutDeviceMargin widths(
+          strokeWidth + aOffset, strokeWidth + aOffset, strokeWidth + aOffset,
+          strokeWidth + aOffset);
+      nsCSSBorderRenderer::ComputeOuterRadii(
+          aInnerRadii, widths.ToUnknownMargin(), &outerRadii);
       const auto dest = wr::ToLayoutRect(rect);
       const auto side =
           wr::ToBorderSide(ToDeviceColor(aColor), StyleBorderStyle::Solid);
@@ -1359,9 +1363,10 @@ void Theme::PaintAutoStyleOutline(
                                      {sides, 4}, wrRadius);
     } else {
       const LayoutDeviceCoord halfWidth = strokeWidth * 0.5f;
-      const Float widths[4] = {halfWidth + aOffset, halfWidth + aOffset,
-                               halfWidth + aOffset, halfWidth + aOffset};
-      nsCSSBorderRenderer::ComputeOuterRadii(aInnerRadii, widths, &outerRadii);
+      const LayoutDeviceMargin widths(halfWidth + aOffset, halfWidth + aOffset,
+                                      halfWidth + aOffset, halfWidth + aOffset);
+      nsCSSBorderRenderer::ComputeOuterRadii(
+          aInnerRadii, widths.ToUnknownMargin(), &outerRadii);
       LayoutDeviceRect dest(rect);
       dest.Deflate(halfWidth);
       RefPtr<Path> path =
@@ -1517,6 +1522,10 @@ LayoutDeviceIntSize Theme::GetMinimumWidgetSize(nsPresContext* aPresContext,
   LayoutDeviceIntSize result;
   switch (aAppearance) {
     case StyleAppearance::MozMenulistArrowButton:
+      if (nsComboboxControlFrame* cf = do_QueryFrame(aFrame->GetParent());
+          cf && !cf->HasDropDownButton()) {
+        break;
+      }
       result.width = (kMinimumDropdownArrowButtonWidth * dpiRatio).Rounded();
       break;
     case StyleAppearance::SpinnerUpbutton:
@@ -1545,18 +1554,8 @@ nsITheme::Transparency Theme::GetWidgetTransparency(
 
 bool Theme::WidgetAttributeChangeRequiresRepaint(StyleAppearance aAppearance,
                                                  nsAtom* aAttribute) {
-  // Check the attribute to see if it's relevant.
-  // TODO(emilio): The non-native theme doesn't use these attributes. Other
-  // themes do, but not all of them (and not all of the ones they check are
-  // here).
-  return aAttribute == nsGkAtoms::disabled ||
-         aAttribute == nsGkAtoms::checked ||
-         aAttribute == nsGkAtoms::selected ||
-         aAttribute == nsGkAtoms::visuallyselected ||
-         aAttribute == nsGkAtoms::menuactive ||
-         aAttribute == nsGkAtoms::sortDirection ||
-         aAttribute == nsGkAtoms::focused ||
-         aAttribute == nsGkAtoms::_default || aAttribute == nsGkAtoms::open;
+  return aAttribute == nsGkAtoms::_default ||  // Used in IsDefaultButton()
+         aAttribute == nsGkAtoms::open;        // Used in GetContentState()
 }
 
 bool Theme::WidgetAppearanceDependsOnWindowFocus(StyleAppearance aAppearance) {
@@ -1601,17 +1600,6 @@ bool Theme::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
       return !IsWidgetStyled(aPresContext, aFrame, aAppearance);
     default:
       return false;
-  }
-}
-
-bool Theme::WidgetIsContainer(StyleAppearance aAppearance) {
-  switch (aAppearance) {
-    case StyleAppearance::MozMenulistArrowButton:
-    case StyleAppearance::Radio:
-    case StyleAppearance::Checkbox:
-      return false;
-    default:
-      return true;
   }
 }
 

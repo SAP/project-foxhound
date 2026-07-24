@@ -4,20 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewContentChannel_h__
-#define GeckoViewContentChannel_h__
+#ifndef GeckoViewContentChannel_h_
+#define GeckoViewContentChannel_h_
 
 #include "nsBaseChannel.h"
 
-class GeckoViewContentChannel final : public nsBaseChannel {
+class GeckoViewContentChannel : public nsBaseChannel {
  public:
   explicit GeckoViewContentChannel(nsIURI* aUri);
 
- private:
-  ~GeckoViewContentChannel() = default;
+ protected:
+  virtual ~GeckoViewContentChannel() = default;
 
   nsresult OpenContentStream(bool async, nsIInputStream** result,
                              nsIChannel** channel) override;
 };
 
-#endif  // !GeckoViewContentChannel_h__
+#endif  // !GeckoViewContentChannel_h_

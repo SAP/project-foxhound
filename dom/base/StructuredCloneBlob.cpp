@@ -10,13 +10,14 @@
 #include <cstdint>
 #include <new>
 #include <utility>
+
 #include "js/StructuredClone.h"
 #include "js/Value.h"
 #include "js/Wrapper.h"
 #include "jsapi.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -110,7 +111,7 @@ void StructuredCloneBlob::Deserialize(JSContext* aCx,
   {
     JSAutoRealm ar(aCx, scope);
 
-    mHolder->Read(xpc::NativeGlobal(scope), aCx, aResult, aRv);
+    mHolder->Read(aCx, aResult, aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -173,7 +174,8 @@ bool StructuredCloneBlob::Holder::ReadStructuredCloneInternal(
       return false;
     }
 #endif
-    BlobImpls().AppendElements(&aHolder->BlobImpls()[blobOffset], blobCount);
+    BlobImpls().AppendElements(
+        Span(aHolder->BlobImpls()).Subspan(blobOffset, blobCount));
   }
 
   JSStructuredCloneData data(mStructuredCloneScope);

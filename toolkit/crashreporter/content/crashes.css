@@ -27,7 +27,7 @@ th {
 
 th,
 td {
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 th,

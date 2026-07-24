@@ -69,7 +69,7 @@ class RemoteWorkerManager final {
 
   void LaunchInternal(RemoteWorkerController* aController,
                       RemoteWorkerServiceParent* aTargetActor,
-                      UniqueThreadsafeContentParentKeepAlive aKeepAlive,
+                      UniqueThreadsafeContentParentKeepAlive&& aKeepAlive,
                       const RemoteWorkerData& aData);
 
   using LaunchProcessPromise =

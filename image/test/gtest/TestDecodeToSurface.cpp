@@ -125,6 +125,20 @@ TEST_F(ImageDecodeToSurface, AnimatedPNG) {
   RunDecodeToSurface(GreenFirstFrameAnimatedPNGTestCase());
 }
 
+TEST_F(ImageDecodeToSurface, AnimatedWebP) {
+  RunDecodeToSurface(GreenFirstFrameAnimatedWebPTestCase());
+}
+
+TEST_F(ImageDecodeToSurface, AnimatedAVIF) {
+  RunDecodeToSurface(GreenFirstFrameAnimatedAVIFTestCase());
+}
+
+#ifdef MOZ_JXL
+TEST_F(ImageDecodeToSurface, AnimatedJXL) {
+  RunDecodeToSurface(GreenFirstFrameAnimatedJXLTestCase());
+}
+#endif
+
 TEST_F(ImageDecodeToSurface, Corrupt) {
   ImageTestCase testCase = CorruptTestCase();
 

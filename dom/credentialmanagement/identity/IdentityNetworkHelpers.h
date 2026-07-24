@@ -8,13 +8,13 @@
 #define mozilla_dom_IdentityNetworkHelpers_h
 
 #include "mozilla/Components.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/IdentityCredentialBinding.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/dom/IdentityCredentialBinding.h"
 #include "nsICredentialChooserService.h"
 
 namespace mozilla::dom {

@@ -10,8 +10,6 @@
 
 #include "nsMemoryReporterManager.h"
 
-#include <cstdio>
-#include <cstring>
 #include <unistd.h>
 
 #include <sys/sysctl.h>
@@ -27,6 +25,24 @@ static void GetTimeBase(mach_timebase_info_data_t* timebase) {
 }
 
 namespace mozilla {
+
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  if (!aResult) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  task_vm_info_data_t info;
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+
+  kern_return_t kr = task_info(mach_task_self(), TASK_VM_INFO,
+                               reinterpret_cast<task_info_t>(&info), &count);
+
+  if (kr != KERN_SUCCESS) {
+    return NS_ERROR_FAILURE;
+  }
+  // phys_footprint matches Activity Monitor’s “Memory” column on macOS 10.11+
+  *aResult = info.phys_footprint;
+  return NS_OK;
+}
 
 nsresult GetCpuTimeSinceProcessStartInMs(uint64_t* aResult) {
   task_power_info_data_t task_power_info;
@@ -82,6 +98,7 @@ ProcInfoPromise::ResolveOrRejectValue GetProcInfoSync(
     info.windows = std::move(request.windowInfo);
     info.utilityActors = std::move(request.utilityInfo);
 
+#ifdef XP_MACOSX
     mach_port_t selectedTask;
     // If we did not get a task from a child process, we use mach_task_self()
     if (request.childTask == MACH_PORT_NULL) {
@@ -173,6 +190,7 @@ ProcInfoPromise::ResolveOrRejectValue GetProcInfoSync(
       thread->name.AssignASCII(threadInfoData.pth_name);
       thread->tid = identifierInfo.thread_id;
     }
+#endif
 
     if (!gathered.put(request.pid, std::move(info))) {
       result.SetReject(NS_ERROR_OUT_OF_MEMORY);

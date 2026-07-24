@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
+#include "ClearKeySession.h"
+
 #include <assert.h>
-#include <string.h>
 
 #include "BigEndian.h"
 #include "ClearKeyDecryptionManager.h"
-#include "ClearKeySession.h"
 #include "ClearKeyStorage.h"
 #include "ClearKeyUtils.h"
 #include "psshparser/PsshParser.h"

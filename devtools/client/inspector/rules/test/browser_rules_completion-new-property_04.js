@@ -42,7 +42,7 @@ add_task(async function () {
   info("Select the background-color suggestion with a mouse click.");
   const onSuggest = editor.once("after-suggest");
   const node = editor.popup.elements.get(bgcItem);
-  EventUtils.synthesizeMouseAtCenter(node, {}, editor.popup._window);
+  EventUtils.synthesizeMouseAtCenter(node, {}, node.ownerGlobal);
 
   await onSuggest;
   is(editor.input.value, "background-color", "Correct value is autocompleted");

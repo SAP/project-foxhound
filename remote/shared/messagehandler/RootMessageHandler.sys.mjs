@@ -8,12 +8,16 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NavigationManager: "chrome://remote/content/shared/NavigationManager.sys.mjs",
+  registerWebDriverWorkerListenerActor:
+    "chrome://remote/content/shared/js-process-actors/WebDriverWorkerListenerActor.sys.mjs",
   RootTransport:
     "chrome://remote/content/shared/messagehandler/transports/RootTransport.sys.mjs",
   SessionData:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   SessionDataMethod:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
+  unregisterWebDriverWorkerListenerActor:
+    "chrome://remote/content/shared/js-process-actors/WebDriverWorkerListenerActor.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
 });
@@ -69,7 +73,11 @@ export class RootMessageHandler extends MessageHandler {
     this.#navigationManager = new lazy.NavigationManager();
     this.#navigationManager.startMonitoring();
 
-    // Map with inner window ids as keys, and sets of realm ids, assosiated with
+    // Register js process actors to monitor worker creation and destruction in
+    // all processes.
+    lazy.registerWebDriverWorkerListenerActor();
+
+    // Map with inner window ids as keys, and sets of realm ids, associated with
     // this window as values.
     this.#realms = new Map();
     // In the general case, we don't get notified that realms got destroyed,
@@ -95,6 +103,8 @@ export class RootMessageHandler extends MessageHandler {
     this.#sessionData.destroy();
     this.#navigationManager.destroy();
 
+    lazy.unregisterWebDriverWorkerListenerActor();
+
     Services.obs.removeObserver(this, "window-global-destroyed");
     this.#realms = null;
 
@@ -114,7 +124,7 @@ export class RootMessageHandler extends MessageHandler {
     return this.updateSessionData([sessionData]);
   }
 
-  emitEvent(name, eventPayload, contextInfo) {
+  emitEvent(name, eventPayload, relatedContexts) {
     // Intercept realm created and destroyed events to update internal map.
     if (name === "realm-created") {
       this.#onRealmCreated(eventPayload);
@@ -127,7 +137,7 @@ export class RootMessageHandler extends MessageHandler {
       );
     }
 
-    super.emitEvent(name, eventPayload, contextInfo);
+    super.emitEvent(name, eventPayload, relatedContexts);
   }
 
   /**
@@ -214,11 +224,11 @@ export class RootMessageHandler extends MessageHandler {
     }
 
     realms.forEach(realm => {
-      this.#realms.get(innerWindowId).delete(realm);
+      realms.delete(realm.realm);
 
       this.emitEvent("realm-destroyed", {
         context,
-        realm,
+        realm: realm.realm,
       });
     });
 
@@ -232,6 +242,8 @@ export class RootMessageHandler extends MessageHandler {
       this.#realms.set(innerWindowId, new Set());
     }
 
-    this.#realms.get(innerWindowId).add(realmInfo.realm);
+    this.#realms
+      .get(innerWindowId)
+      .add({ realm: realmInfo.realm, sandbox: realmInfo.sandbox });
   };
 }

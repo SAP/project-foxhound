@@ -39,7 +39,7 @@ The tool is built to be conservative about the number of tests to run, so if you
                             Binary Path, or Intents required change at all relative to the
                             existing GeckoView, and Fenix tasks, then you will need to make
                             fixes in the associated taskcluster files (e.g.
-                            taskcluster/kinds/test/browsertime-mobile.yml). Alternatively, set
+                            taskcluster/kinds/browsertime/mobile.yml). Alternatively, set
                             MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path to an APK, and then run
                             the command with --browsertime-upload-apk firefox-android. This
                             option will only copy the APK for browsertime, see --mozperftest-
@@ -102,7 +102,7 @@ The tool is built to be conservative about the number of tests to run, so if you
                             Comma-separated list of threads to sample.
       paths                 Run tasks containing tests under the specified
                             path(s).
-      --rebuild [2-20]      Rebuild all selected tasks the specified number of
+      --rebuild [1-20]      Rebuild all selected tasks the specified number of
                             times.
 
 
@@ -143,7 +143,7 @@ Then, click the rotating arrow icon in the task action bar, or press 'r' on your
     :width: 300
 
 
-Additionally, you can add the flag ``--rebuild=2-20`` to the try perf command to specify how many times you want to run the tests. If you want to learn more about retriggering please `visit this page <../treeherder-try/index.html#retrigger-r>`__.
+Additionally, you can add the flag ``--rebuild=1-20`` to the try perf command to specify how many times you want to run the tests. If you want to learn more about retriggering please `visit this page <../treeherder-try/index.html#retrigger-r>`__.
 
 
 Add new jobs (mass retriggers)

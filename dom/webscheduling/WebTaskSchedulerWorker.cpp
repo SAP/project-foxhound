@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebTaskSchedulerWorker.h"
-#include "mozilla/dom/WorkerScope.h"
+
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WorkerScope.h"
 
 namespace mozilla::dom {
 WebTaskWorkerRunnable::WebTaskWorkerRunnable(

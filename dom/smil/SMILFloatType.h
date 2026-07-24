@@ -7,7 +7,6 @@
 #ifndef DOM_SMIL_SMILFLOATTYPE_H_
 #define DOM_SMIL_SMILFLOATTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
 
 namespace mozilla {

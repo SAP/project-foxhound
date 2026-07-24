@@ -174,15 +174,13 @@ def download_coverage_mapping(base_revision):
             r.raw.decode_content = True
             shutil.copyfileobj(r.raw, f)
 
-        subprocess.check_call(
-            [
-                "tar",
-                "-xJf",
-                CHUNK_MAPPING_ARCHIVE,
-                "-C",
-                os.path.dirname(CHUNK_MAPPING_FILE),
-            ]
-        )
+        subprocess.check_call([
+            "tar",
+            "-xJf",
+            CHUNK_MAPPING_ARCHIVE,
+            "-C",
+            os.path.dirname(CHUNK_MAPPING_FILE),
+        ])
         os.remove(CHUNK_MAPPING_ARCHIVE)
         assert os.path.isfile(CHUNK_MAPPING_FILE)
         with open(CHUNK_MAPPING_TAG_FILE, "w") as f:
@@ -354,10 +352,10 @@ def filter_tasks_by_chunks(tasks, chunks):
             ):
                 continue
 
-            assert (
-                selected_task is None
-            ), "Only one task should be selected for a given platform-chunk couple ({} - {}), {} and {} were selected".format(  # noqa
-                platform, chunk, selected_task, task
+            assert selected_task is None, (
+                "Only one task should be selected for a given platform-chunk couple ({} - {}), {} and {} were selected".format(  # noqa
+                    platform, chunk, selected_task, task
+                )
             )
             selected_task = task
 
@@ -377,6 +375,7 @@ def is_opt_task(task):
 
 
 def run(
+    metrics,
     try_config_params={},
     full=False,
     parameters=None,
@@ -386,6 +385,7 @@ def run(
     closed_tree=False,
     push_to_vcs=False,
 ):
+    metrics.mach_try.remote_data_fetching_duration.start()
     setup_globals()
     download_coverage_mapping(vcs.base_ref)
 
@@ -395,14 +395,21 @@ def run(
         print("ERROR Could not find any tests or chunks to run.")
         return 1
 
+    metrics.mach_try.remote_data_fetching_duration.stop()
+
+    metrics.mach_try.taskgraph_generation_duration.start()
     tg = generate_tasks(parameters, full)
     all_tasks = tg.tasks
+    metrics.mach_try.taskgraph_generation_duration.stop()
 
+    metrics.mach_try.task_filtering_duration.start()
     tasks_by_chunks = filter_tasks_by_chunks(all_tasks, test_chunks)
     tasks_by_path = filter_tasks_by_paths(all_tasks, test_files)
     tasks = filter(is_opt_task, set(tasks_by_path) | set(tasks_by_chunks))
     tasks = list(tasks)
+    metrics.mach_try.task_filtering_duration.stop()
 
+    metrics.mach_try.task_config_generation_duration.start()
     if not tasks:
         print("ERROR Did not find any matching tasks after filtering.")
         return 1
@@ -425,11 +432,13 @@ def run(
         path_env
     )
 
+    metrics.mach_try.task_config_generation_duration.stop()
     # Build commit message.
     msg = "try coverage - " + test_count_message
     return push_to_try(
         "coverage",
         message.format(msg=msg),
+        metrics,
         try_task_config=generate_try_task_config("coverage", tasks, try_config_params),
         stage_changes=stage_changes,
         dry_run=dry_run,

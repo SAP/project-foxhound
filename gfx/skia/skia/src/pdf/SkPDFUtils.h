@@ -9,6 +9,7 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
@@ -30,7 +31,6 @@ class SkPDFDict;
 class SkPath;
 class SkShader;
 enum class SkBlendMode;
-enum class SkPathFillType;
 struct SkRect;
 
 namespace SkPDF { struct DateTime; }
@@ -83,7 +83,7 @@ void ApplyPattern(int objectIndex, SkWStream* content);
 size_t ColorToDecimal(uint8_t value, char result[5]);
 
 static constexpr unsigned kFloatColorDecimalCount = 4;
-size_t ColorToDecimalF(float value, char result[kFloatColorDecimalCount + 2]);
+size_t ColorToDecimalF(float value, char (&result)[kFloatColorDecimalCount + 2]);
 inline void AppendColorComponent(uint8_t value, SkWStream* wStream) {
     char buffer[5];
     size_t len = SkPDFUtils::ColorToDecimal(value, buffer);

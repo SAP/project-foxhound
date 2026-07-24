@@ -7,9 +7,9 @@
 #include "AgnosticDecoderModule.h"
 
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "VideoUtils.h"
 
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"

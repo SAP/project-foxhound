@@ -8,7 +8,9 @@
 #include "unicode/uenum.h"
 #include "unicode/utypes.h"
 #include "mozilla/Buffer.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
@@ -315,12 +317,9 @@ template <typename Buffer>
 
   if constexpr (std::is_same_v<typename Buffer::CharType, char> ||
                 std::is_same_v<typename Buffer::CharType, unsigned char>) {
-    if (utf16Span.Length() & mozilla::tl::MulOverflowMask<3>::value) {
-      // Tripling the size of the buffer overflows the size_t.
-      return false;
-    }
-
-    if (!targetBuffer.reserve(3 * utf16Span.Length())) {
+    auto targetSize = CheckedInt<size_t>(utf16Span.Length()) * 3;
+    if (MOZ_UNLIKELY(!targetSize.isValid() ||
+                     !targetBuffer.reserve(targetSize.value()))) {
       return false;
     }
 

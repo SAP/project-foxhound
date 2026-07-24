@@ -16,8 +16,6 @@
 #include "mozilla/_ipdltest/PTestEndpointOpensOpenedChild.h"
 #include "mozilla/_ipdltest/PTestEndpointOpensOpenedParent.h"
 
-#include <memory>
-
 using namespace mozilla::ipc;
 
 namespace mozilla::_ipdltest {

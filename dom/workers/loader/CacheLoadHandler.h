@@ -4,14 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_CacheLoadHandler_h__
-#define mozilla_dom_workers_CacheLoadHandler_h__
-
-#include "nsIContentPolicy.h"
-#include "nsIInputStreamPump.h"
-#include "nsIStreamLoader.h"
-#include "nsStringFwd.h"
-#include "nsStreamUtils.h"
+#ifndef mozilla_dom_workers_CacheLoadHandler_h_
+#define mozilla_dom_workers_CacheLoadHandler_h_
 
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/CacheBinding.h"
@@ -19,12 +13,16 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ScriptLoadHandler.h"
-#include "mozilla/dom/cache/Cache.h"
-#include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
-
+#include "mozilla/dom/cache/Cache.h"
+#include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/workerinternals/ScriptLoader.h"
+#include "nsIContentPolicy.h"
+#include "nsIInputStreamPump.h"
+#include "nsIStreamLoader.h"
+#include "nsStreamUtils.h"
+#include "nsStringFwd.h"
 
 using mozilla::dom::cache::Cache;
 using mozilla::dom::cache::CacheStorage;
@@ -99,12 +97,14 @@ class CacheLoadHandler final : public PromiseNativeHandler,
  private:
   ~CacheLoadHandler() { AssertIsOnMainThread(); }
 
-  nsresult DataReceivedFromCache(const uint8_t* aString, uint32_t aStringLen,
-                                 const mozilla::dom::ChannelInfo& aChannelInfo,
-                                 UniquePtr<PrincipalInfo> aPrincipalInfo,
-                                 const nsACString& aCSPHeaderValue,
-                                 const nsACString& aCSPReportOnlyHeaderValue,
-                                 const nsACString& aReferrerPolicyHeaderValue);
+  nsresult DataReceivedFromCache(
+      const uint8_t* aString, uint32_t aStringLen,
+      const mozilla::dom::ChannelInfo& aChannelInfo,
+      UniquePtr<PrincipalInfo> aPrincipalInfo,
+      const nsACString& aCSPHeaderValue,
+      const nsACString& aCSPReportOnlyHeaderValue,
+      const nsACString& aReferrerPolicyHeaderValue,
+      const nsACString& aReportingEndpointsHeaderValue);
   nsresult DataReceived();
 
   RefPtr<ThreadSafeRequestHandle> mRequestHandle;
@@ -121,6 +121,7 @@ class CacheLoadHandler final : public PromiseNativeHandler,
   nsCString mCSPHeaderValue;
   nsCString mCSPReportOnlyHeaderValue;
   nsCString mReferrerPolicyHeaderValue;
+  nsCString mReportingEndpointsHeaderValue;
   nsCOMPtr<nsISerialEventTarget> mMainThreadEventTarget;
 };
 
@@ -218,4 +219,4 @@ class CachePromiseHandler final : public PromiseNativeHandler {
 }  // namespace workerinternals::loader
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_workers_CacheLoadHandler_h__ */
+#endif /* mozilla_dom_workers_CacheLoadHandler_h_ */

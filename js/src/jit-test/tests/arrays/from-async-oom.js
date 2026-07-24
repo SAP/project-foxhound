@@ -20,5 +20,6 @@ function test() {
     drainJobQueue();
 }
 
+ignoreUnhandledRejections();
 oomTest(test);
 

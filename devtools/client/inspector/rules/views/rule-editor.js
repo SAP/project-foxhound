@@ -9,7 +9,7 @@ const {
   PSEUDO_CLASSES,
 } = require("resource://devtools/shared/css/constants.js");
 const {
-  style: { ELEMENT_STYLE },
+  style: { ELEMENT_STYLE, PRES_HINTS },
 } = require("resource://devtools/shared/constants.js");
 const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
 const {
@@ -39,6 +39,12 @@ loader.lazyRequireGetter(
   "resource://devtools/client/definitions.js",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "PluralForm",
+  "resource://devtools/shared/plural-form.js",
+  true
+);
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
@@ -52,6 +58,7 @@ loader.lazyGetter(this, "NEW_PROPERTY_NAME_INPUT_LABEL", function () {
   return STYLE_INSPECTOR_L10N.getStr("rule.newPropertyName.label");
 });
 
+const UNUSED_CSS_PROPERTIES_HIDE_THRESHOLD = 10;
 const INDENT_SIZE = 2;
 const INDENT_STR = " ".repeat(INDENT_SIZE);
 
@@ -60,82 +67,107 @@ const INDENT_STR = " ".repeat(INDENT_SIZE);
  *   Owns a Rule object and creates a list of TextPropertyEditors
  *     for its TextProperties.
  *   Manages creation of new text properties.
- *
- * @param {CssRuleView} ruleView
- *        The CssRuleView containg the document holding this rule editor.
- * @param {Rule} rule
- *        The Rule object we're editing.
- * @param {Object} options
- * @param {Set} options.elementsWithPendingClicks
  */
-function RuleEditor(ruleView, rule, options = {}) {
-  EventEmitter.decorate(this);
+class RuleEditor extends EventEmitter {
+  /**
+   * @param {CssRuleView} ruleView
+   *        The CssRuleView containg the document holding this rule editor.
+   * @param {Rule} rule
+   *        The Rule object we're editing.
+   * @param {object} options
+   * @param {Set} options.elementsWithPendingClicks
+   * @param {Function} options.onShowUnusedCustomCssProperties
+   * @param {boolean} options.shouldHideUnusedCustomCssProperties
+   */
+  constructor(ruleView, rule, options = {}) {
+    super();
 
-  this.ruleView = ruleView;
-  this.doc = this.ruleView.styleDocument;
-  this.toolbox = this.ruleView.inspector.toolbox;
-  this.telemetry = this.toolbox.telemetry;
-  this.rule = rule;
-  this.options = options;
+    this.ruleView = ruleView;
+    this.doc = this.ruleView.styleDocument;
+    this.toolbox = this.ruleView.inspector.toolbox;
+    this.telemetry = this.toolbox.telemetry;
+    this.rule = rule;
+    this.options = options;
 
-  this.isEditable = !rule.isSystem;
-  // Flag that blocks updates of the selector and properties when it is
-  // being edited
-  this.isEditing = false;
+    this.isEditable = rule.isEditable();
+    // Flag that blocks updates of the selector and properties when it is
+    // being edited
+    this.isEditing = false;
 
-  this._onNewProperty = this._onNewProperty.bind(this);
-  this._newPropertyDestroy = this._newPropertyDestroy.bind(this);
-  this._onSelectorDone = this._onSelectorDone.bind(this);
-  this._locationChanged = this._locationChanged.bind(this);
-  this.updateSourceLink = this.updateSourceLink.bind(this);
-  this._onToolChanged = this._onToolChanged.bind(this);
-  this._updateLocation = this._updateLocation.bind(this);
-  this._onSourceClick = this._onSourceClick.bind(this);
+    this.#abortController = new this.doc.defaultView.AbortController();
+    const { signal } = this.#abortController;
+    const baseEventConfig = { signal };
+    this.rule.domRule.on(
+      "location-changed",
+      this.#locationChanged,
+      baseEventConfig
+    );
+    this.toolbox.on("tool-registered", this.#onToolChanged, baseEventConfig);
+    this.toolbox.on("tool-unregistered", this.#onToolChanged, baseEventConfig);
 
-  this.rule.domRule.on("location-changed", this._locationChanged);
-  this.toolbox.on("tool-registered", this._onToolChanged);
-  this.toolbox.on("tool-unregistered", this._onToolChanged);
+    this.#create();
+  }
 
-  this._create();
-}
+  #abortController;
+  #unusedCssVariableDeclarations;
+  #showUnusedCustomCssPropertiesButton;
+  #unsubscribeSourceMap;
+  #ruleViewIsEditing;
 
-RuleEditor.prototype = {
   destroy() {
-    this.rule.domRule.off("location-changed");
-    this.toolbox.off("tool-registered", this._onToolChanged);
-    this.toolbox.off("tool-unregistered", this._onToolChanged);
-
-    if (this._unsubscribeSourceMap) {
-      this._unsubscribeSourceMap();
+    for (const prop of this.rule.textProps) {
+      prop.editor?.destroy();
     }
-  },
 
+    this.#unusedCssVariableDeclarations = null;
+
+    if (this.#showUnusedCustomCssPropertiesButton) {
+      this.#nullifyShowUnusedCustomCssProperties({ removeFromDom: false });
+    }
+
+    this.#abortController.abort();
+
+    if (this.#unsubscribeSourceMap) {
+      this.#unsubscribeSourceMap();
+    }
+  }
+
+  #sourceMapURLService;
   get sourceMapURLService() {
-    if (!this._sourceMapURLService) {
+    if (!this.#sourceMapURLService) {
       // sourceMapURLService is a lazy getter in the toolbox.
-      this._sourceMapURLService = this.toolbox.sourceMapURLService;
+      this.#sourceMapURLService = this.toolbox.sourceMapURLService;
     }
 
-    return this._sourceMapURLService;
-  },
+    return this.#sourceMapURLService;
+  }
 
   get isSelectorEditable() {
-    const trait =
+    return (
       this.isEditable &&
       this.rule.domRule.type !== ELEMENT_STYLE &&
-      this.rule.domRule.type !== CSSRule.KEYFRAME_RULE;
+      this.rule.domRule.type !== CSSRule.KEYFRAME_RULE &&
+      this.rule.domRule.className !== "CSSPositionTryRule"
+    );
+  }
 
-    // Do not allow editing anonymousselectors until we can
-    // detect mutations on  pseudo elements in Bug 1034110.
-    return trait && !this.rule.elementStyle.element.isAnonymous;
-  },
+  get showSelectorHighlighterButton() {
+    return (
+      this.rule.domRule.type !== CSSRule.KEYFRAME_RULE &&
+      this.rule.domRule.className !== "CSSPositionTryRule"
+    );
+  }
 
-  _create() {
+  #create() {
     this.element = this.doc.createElement("div");
-    this.element.className = "ruleview-rule devtools-monospace";
+    this.element.className =
+      "ruleview-rule devtools-monospace" +
+      (this.rule.inherited ? " ruleview-rule-inherited" : "");
     this.element.dataset.ruleId = this.rule.domRule.actorID;
     this.element.setAttribute("uneditable", !this.isEditable);
     this.element.setAttribute("unmatched", this.rule.isUnmatched);
+
+    // This is used by tests
     this.element._ruleEditor = this;
 
     // Give a relative position for the inplace editor's measurement
@@ -144,17 +176,20 @@ RuleEditor.prototype = {
 
     // Add the source link for supported rules. inline style and pres hints are not visible
     // in the StyleEditor, so don't show anything for such rule.
-    if (this.rule.domRule.type !== ELEMENT_STYLE) {
+    if (
+      this.rule.domRule.type !== ELEMENT_STYLE &&
+      this.rule.domRule.type !== PRES_HINTS
+    ) {
       this.source = createChild(this.element, "div", {
         class: "ruleview-rule-source theme-link",
       });
-      this.source.addEventListener("click", this._onSourceClick);
+      this.source.addEventListener("click", this.#onSourceClick);
 
       const sourceLabel = this.doc.createElement("a");
       sourceLabel.classList.add("ruleview-rule-source-label");
       this.source.appendChild(sourceLabel);
     }
-    this.updateSourceLink();
+    this.#updateSourceLink();
 
     if (this.rule.domRule.ancestorData.length) {
       const ancestorsFrag = this.doc.createDocumentFragment();
@@ -185,9 +220,7 @@ RuleEditor.prototype = {
 
           createChild(selectorContainer, "span", {
             class: "container-query-declaration",
-            textContent: `@container${
-              ancestorData.containerName ? " " + ancestorData.containerName : ""
-            }`,
+            textContent: `@container${ancestorData.containerName ? " " + ancestorData.containerName : ""}`,
           });
 
           const jumpToNodeButton = createChild(selectorContainer, "button", {
@@ -285,7 +318,7 @@ RuleEditor.prototype = {
               textContent: selector,
             });
 
-            const warningsContainer = this._createWarningsElementForSelector(
+            const warningsContainer = this.#createWarningsElementForSelector(
               i,
               ancestorData.selectorWarnings
             );
@@ -315,11 +348,11 @@ RuleEditor.prototype = {
       this.ancestorDataEl.append(ancestorsFrag);
     }
 
-    const code = createChild(this.element, "div", {
+    this.ruleviewCodeEl = createChild(this.element, "div", {
       class: "ruleview-code",
     });
 
-    const header = createChild(code, "div", {});
+    const header = createChild(this.ruleviewCodeEl, "div", {});
 
     createChild(header, "span", {
       class: "ruleview-rule-indent",
@@ -331,6 +364,13 @@ RuleEditor.prototype = {
       tabindex: this.isSelectorEditable ? "0" : "-1",
     });
 
+    if (
+      this.rule.domRule.type === ELEMENT_STYLE ||
+      this.rule.domRule.type === PRES_HINTS
+    ) {
+      this.selectorText.classList.add("alternative-selector");
+    }
+
     if (this.isSelectorEditable) {
       this.selectorText.addEventListener("click", event => {
         // Clicks within the selector shouldn't propagate any further.
@@ -339,7 +379,7 @@ RuleEditor.prototype = {
 
       editableField({
         element: this.selectorText,
-        done: this._onSelectorDone,
+        done: this.#onSelectorDone,
         cssProperties: this.rule.cssProperties,
         // (Shift+)Tab will move the focus to the previous/next editable field (so property name,
         // or new property of the previous rule).
@@ -351,6 +391,8 @@ RuleEditor.prototype = {
         // devtools.inspector.rule-view.focusNextOnEnter set to true
         stopOnReturn: this.ruleView.inplaceEditorFocusNextOnEnter !== true,
       });
+    } else {
+      this.selectorText.classList.add("uneditable-selector");
     }
 
     if (this.rule.domRule.type !== CSSRule.KEYFRAME_RULE) {
@@ -362,18 +404,20 @@ RuleEditor.prototype = {
         // be computed on demand when the highlighter is requested.
       }
 
-      const isHighlighted =
-        this.ruleView.isSelectorHighlighted(computedSelector);
-      // Handling of click events is delegated to CssRuleView.handleEvent()
-      createChild(header, "button", {
-        class:
-          "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
-          (isHighlighted ? " highlighted" : ""),
-        "aria-pressed": isHighlighted,
-        // This is used in rules.js for the selector highlighter
-        "data-computed-selector": computedSelector,
-        title: l10n("rule.selectorHighlighter.tooltip"),
-      });
+      if (this.showSelectorHighlighterButton) {
+        const isHighlighted =
+          this.ruleView.isSelectorHighlighted(computedSelector);
+        // Handling of click events is delegated to CssRuleView.handleEvent()
+        createChild(header, "button", {
+          class:
+            "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
+            (isHighlighted ? " highlighted" : ""),
+          "aria-pressed": isHighlighted,
+          // This is used in rules.js for the selector highlighter
+          "data-computed-selector": computedSelector,
+          title: l10n("rule.selectorHighlighter.tooltip"),
+        });
+      }
     }
 
     this.openBrace = createChild(header, "span", {
@@ -383,14 +427,14 @@ RuleEditor.prototype = {
 
     // We can't use a proper "ol" as it will mess with selection copy text,
     // adding spaces on list item instead of the one we craft (.ruleview-rule-indent)
-    this.propertyList = createChild(code, "div", {
+    this.propertyList = createChild(this.ruleviewCodeEl, "div", {
       class: "ruleview-propertylist",
       role: "list",
     });
 
     this.populate();
 
-    this.closeBrace = createChild(code, "div", {
+    this.closeBrace = createChild(this.ruleviewCodeEl, "div", {
       class: "ruleview-ruleclose",
       tabindex: this.isEditable ? "0" : "-1",
     });
@@ -411,7 +455,7 @@ RuleEditor.prototype = {
         }
         closingBracketsText += "}\n";
       }
-      createChild(code, "div", {
+      createChild(this.ruleviewCodeEl, "div", {
         class: "ruleview-ancestor-ruleclose",
         textContent: closingBracketsText,
       });
@@ -421,19 +465,19 @@ RuleEditor.prototype = {
       // A newProperty editor should only be created when no editor was
       // previously displayed. Since the editors are cleared on blur,
       // check this.ruleview.isEditing on mousedown
-      this._ruleViewIsEditing = false;
+      this.#ruleViewIsEditing = false;
 
-      code.addEventListener("mousedown", () => {
-        this._ruleViewIsEditing = this.ruleView.isEditing;
+      this.ruleviewCodeEl.addEventListener("mousedown", () => {
+        this.#ruleViewIsEditing = this.ruleView.isEditing;
       });
 
-      code.addEventListener("click", () => {
+      this.ruleviewCodeEl.addEventListener("click", () => {
         const selection = this.doc.defaultView.getSelection();
-        if (selection.isCollapsed && !this._ruleViewIsEditing) {
+        if (selection.isCollapsed && !this.#ruleViewIsEditing) {
           this.newProperty();
         }
-        // Cleanup the _ruleViewIsEditing flag
-        this._ruleViewIsEditing = false;
+        // Cleanup the #ruleViewIsEditing flag
+        this.#ruleViewIsEditing = false;
       });
 
       this.element.addEventListener("mousedown", () => {
@@ -445,7 +489,7 @@ RuleEditor.prototype = {
         this.newProperty();
       });
     }
-  },
+  }
 
   /**
    * Returns the selector warnings element, or null if selector at selectorIndex
@@ -453,12 +497,12 @@ RuleEditor.prototype = {
    *
    * @param {Integer} selectorIndex: The index of the selector we want to create the
    *        warnings for
-   * @param {Array<Object>} selectorWarnings: An array of object of the following shape:
+   * @param {Array<object>} selectorWarnings: An array of object of the following shape:
    *        - {Integer} index: The index of the selector this applies to
    *        - {String} kind: Identifies the warning
    * @returns {Element|null}
    */
-  _createWarningsElementForSelector(selectorIndex, selectorWarnings) {
+  #createWarningsElementForSelector(selectorIndex, selectorWarnings) {
     if (!selectorWarnings) {
       return null;
     }
@@ -491,12 +535,12 @@ RuleEditor.prototype = {
     }
 
     return warningsContainer;
-  },
+  }
 
   /**
    * Called when a tool is registered or unregistered.
    */
-  _onToolChanged() {
+  #onToolChanged = () => {
     if (!this.source) {
       return;
     }
@@ -509,17 +553,17 @@ RuleEditor.prototype = {
     } else {
       this.source.setAttribute("unselectable", "true");
     }
-  },
+  };
 
   /**
    * Event handler called when a property changes on the
    * StyleRuleActor.
    */
-  _locationChanged() {
-    this.updateSourceLink();
-  },
+  #locationChanged = () => {
+    this.#updateSourceLink();
+  };
 
-  _onSourceClick(e) {
+  #onSourceClick = e => {
     e.preventDefault();
     if (this.source.hasAttribute("unselectable")) {
       return;
@@ -533,17 +577,17 @@ RuleEditor.prototype = {
         this.rule.ruleColumn
       );
     }
-  },
+  };
 
   /**
    * Update the text of the source link to reflect whether we're showing
    * original sources or not.  This is a callback for
    * SourceMapURLService.subscribeByID, which see.
    *
-   * @param {Object | null} originalLocation
+   * @param {object | null} originalLocation
    *        The original position object (url/line/column) or null.
    */
-  _updateLocation(originalLocation) {
+  #updateLocation = originalLocation => {
     let displayURL = this.rule.sheet?.href;
     const constructed = this.rule.sheet?.constructed;
     let line = this.rule.ruleLine;
@@ -573,9 +617,9 @@ RuleEditor.prototype = {
     sourceLabel.setAttribute("title", title);
     sourceLabel.setAttribute("href", displayURL);
     sourceLabel.textContent = sourceTextContent;
-  },
+  };
 
-  updateSourceLink() {
+  #updateSourceLink() {
     if (this.source) {
       if (this.rule.isSystem) {
         const sourceLabel = this.element.querySelector(
@@ -585,53 +629,56 @@ RuleEditor.prototype = {
         sourceLabel.textContent = uaLabel + " " + this.rule.title;
         sourceLabel.setAttribute("href", this.rule.sheet?.href);
       } else {
-        this._updateLocation(null);
+        this.#updateLocation(null);
       }
 
       if (this.rule.sheet && !this.rule.isSystem) {
         // Only get the original source link if the rule isn't a system
         // rule and if it isn't an inline rule.
-        if (this._unsubscribeSourceMap) {
-          this._unsubscribeSourceMap();
+        if (this.#unsubscribeSourceMap) {
+          this.#unsubscribeSourceMap();
         }
-        this._unsubscribeSourceMap = this.sourceMapURLService.subscribeByID(
+        this.#unsubscribeSourceMap = this.sourceMapURLService.subscribeByID(
           this.rule.sheet.resourceId,
           this.rule.ruleLine,
           this.rule.ruleColumn,
-          this._updateLocation
+          this.#updateLocation
         );
       }
       // Set "unselectable" appropriately.
-      this._onToolChanged();
+      this.#onToolChanged();
     }
 
     Promise.resolve().then(() => {
       this.emit("source-link-updated");
     });
-  },
+  }
 
   /**
    * Update the rule editor with the contents of the rule.
    *
-   * @param {Boolean} reset
+   * @param {boolean} reset
    *        True to completely reset the rule editor before populating.
    */
   populate(reset) {
     // Clear out existing viewers.
-    while (this.selectorText.hasChildNodes()) {
-      this.selectorText.removeChild(this.selectorText.lastChild);
-    }
+    this.selectorText.replaceChildren();
 
     // If selector text comes from a css rule, highlight selectors that
     // actually match.  For custom selector text (such as for the 'element'
     // style, just show the text directly.
-    if (this.rule.domRule.type === ELEMENT_STYLE) {
+    if (
+      this.rule.domRule.type === ELEMENT_STYLE ||
+      this.rule.domRule.type === PRES_HINTS
+    ) {
       this.selectorText.textContent = this.rule.selectorText;
     } else if (this.rule.domRule.type === CSSRule.KEYFRAME_RULE) {
       this.selectorText.textContent = this.rule.domRule.keyText;
+    } else if (this.rule.domRule.className === "CSSPositionTryRule") {
+      this.selectorText.textContent = this.rule.domRule.name;
     } else {
       this.rule.domRule.selectors.forEach((selector, i) => {
-        this._populateSelector(selector, i);
+        this.#populateSelector(selector, i);
       });
     }
 
@@ -644,12 +691,30 @@ RuleEditor.prototype = {
         focusedElSelector = CssLogic.findCssSelector(this.doc.activeElement);
       }
 
-      while (this.propertyList.hasChildNodes()) {
-        this.propertyList.removeChild(this.propertyList.lastChild);
-      }
+      this.propertyList.replaceChildren();
+    }
+
+    this.#unusedCssVariableDeclarations =
+      this.#getUnusedCssVariableDeclarations();
+    const hideUnusedCssVariableDeclarations =
+      this.#unusedCssVariableDeclarations.size >=
+      // If the button was already displayed, hide unused variables if we have at least
+      // one, even if it's less than the threshold
+      (this.#showUnusedCustomCssPropertiesButton
+        ? 1
+        : UNUSED_CSS_PROPERTIES_HIDE_THRESHOLD);
+
+    // If we won't hide any variable, clear the Set of unused variables as it's used in
+    // updateUnusedCssVariables and we might do unnecessary computation if we still
+    // track variables which are actually visible.
+    if (!hideUnusedCssVariableDeclarations) {
+      this.#unusedCssVariableDeclarations.clear();
     }
 
     for (const prop of this.rule.textProps) {
+      if (hideUnusedCssVariableDeclarations && prop.isUnusedVariable) {
+        continue;
+      }
       if (!prop.editor && !prop.invisible) {
         const editor = new TextPropertyEditor(this, prop, {
           elementsWithPendingClicks: this.options.elementsWithPendingClicks,
@@ -662,7 +727,32 @@ RuleEditor.prototype = {
       }
     }
 
-    if (focusedElSelector) {
+    if (hideUnusedCssVariableDeclarations) {
+      if (!this.#showUnusedCustomCssPropertiesButton) {
+        this.#showUnusedCustomCssPropertiesButton =
+          this.doc.createElement("button");
+        this.#showUnusedCustomCssPropertiesButton.classList.add(
+          "devtools-button",
+          "devtools-button-standalone",
+          "ruleview-show-unused-custom-css-properties"
+        );
+        this.#showUnusedCustomCssPropertiesButton.addEventListener(
+          "click",
+          this.#onShowUnusedCustomCssPropertiesButtonClick
+        );
+      }
+      this.ruleviewCodeEl.insertBefore(
+        this.#showUnusedCustomCssPropertiesButton,
+        this.closeBrace
+      );
+      this.#updateShowUnusedCustomCssPropertiesButtonText();
+    } else if (this.#showUnusedCustomCssPropertiesButton) {
+      this.#nullifyShowUnusedCustomCssProperties();
+    }
+
+    // Set focus if the focus is still in the current document (avoid stealing
+    // the focus, see Bug 1911627).
+    if (this.doc.hasFocus() && focusedElSelector) {
       const elementToFocus = this.doc.querySelector(focusedElSelector);
       if (elementToFocus && this.element.contains(elementToFocus)) {
         // We need to wait for a tick for the focus to be properly set
@@ -672,15 +762,184 @@ RuleEditor.prototype = {
         }, 0);
       }
     }
-  },
+  }
+
+  updateUnusedCssVariables() {
+    if (
+      !this.#unusedCssVariableDeclarations ||
+      !this.#unusedCssVariableDeclarations.size
+    ) {
+      return;
+    }
+
+    // Store the list of what used to be unused
+    const previouslyUnused = Array.from(this.#unusedCssVariableDeclarations);
+    // Then compute the list of unused variables again
+    this.#unusedCssVariableDeclarations =
+      this.#getUnusedCssVariableDeclarations();
+
+    for (const prop of previouslyUnused) {
+      if (this.#unusedCssVariableDeclarations.has(prop)) {
+        continue;
+      }
+
+      // The prop wasn't used, but now is, so let's show it
+      this.showUnusedCssVariable(prop, {
+        updateButton: false,
+      });
+    }
+
+    this.#updateShowUnusedCustomCssPropertiesButtonText();
+  }
+
+  /**
+   * Create a TextPropertyEditor for TextProperty representing an unused CSS variable.
+   *
+   * @param {TextProperty} prop
+   * @param {object} options
+   * @param {boolean} options.updateButton
+   * @returns {TextPropertyEditor|null} Returns null if passed TextProperty isn't found
+   *          in the list of unused css variables
+   */
+  showUnusedCssVariable(prop, { updateButton = true } = {}) {
+    if (prop.editor) {
+      return null;
+    }
+
+    this.#unusedCssVariableDeclarations.delete(prop);
+
+    const editor = new TextPropertyEditor(this, prop, {
+      elementsWithPendingClicks: this.options.elementsWithPendingClicks,
+    });
+    const declarationIndex = this.rule.textProps.indexOf(prop);
+    // We need to insert the editor according to its index in the list of declarations.
+    // So let's try to find the prop which is placed higher and is visible
+    let nextSibling;
+    for (let i = declarationIndex + 1; i < this.rule.textProps.length; i++) {
+      const currentProp = this.rule.textProps[i];
+      if (currentProp.editor) {
+        nextSibling = currentProp.editor.element;
+        break;
+      }
+    }
+    // If we couldn't find nextSibling, that means that no declaration with higher index
+    // is visible, so we can put the newly visible property at the end
+    this.propertyList.insertBefore(editor.element, nextSibling || null);
+
+    if (updateButton) {
+      this.#updateShowUnusedCustomCssPropertiesButtonText();
+    }
+
+    return editor;
+  }
+
+  /**
+   * Returns a Set containing the list of unused CSS variable TextProperty which shouldn't
+   * be visible.
+   *
+   * @returns {Set<TextProperty>}
+   */
+  #getUnusedCssVariableDeclarations() {
+    const unusedCssVariableDeclarations = new Set();
+
+    // No need to go through the declarations if we shouldn't hide unused custom properties
+    if (!this.options.shouldHideUnusedCustomCssProperties) {
+      return unusedCssVariableDeclarations;
+    }
+
+    // Compute a list of variables that will be visible, as there might be unused variables
+    // that will be visible (e.g. if the user added one in the rules view)
+    for (const prop of this.rule.textProps) {
+      if (prop.isUnusedVariable) {
+        unusedCssVariableDeclarations.add(prop);
+      }
+    }
+
+    return unusedCssVariableDeclarations;
+  }
+
+  /**
+   * Handle click on "Show X unused custom CSS properties" button
+   *
+   * @param {Event} e
+   */
+  #onShowUnusedCustomCssPropertiesButtonClick = e => {
+    e.stopPropagation();
+
+    this.#nullifyShowUnusedCustomCssProperties();
+
+    for (const prop of this.#unusedCssVariableDeclarations) {
+      if (!prop.invisible) {
+        const editor = new TextPropertyEditor(this, prop, {
+          elementsWithPendingClicks: this.options.elementsWithPendingClicks,
+        });
+        // Insert at the original declaration index
+        this.propertyList.insertBefore(
+          editor.element,
+          this.propertyList.childNodes[this.rule.textProps.indexOf(prop)] ||
+            null
+        );
+      }
+    }
+    if (typeof this.options.onShowUnusedCustomCssProperties === "function") {
+      this.options.onShowUnusedCustomCssProperties();
+    }
+  };
+
+  /**
+   * Update the text for the "Show X unused custom CSS properties" button, or remove it
+   * if there's no hidden custom properties anymore
+   */
+  #updateShowUnusedCustomCssPropertiesButtonText() {
+    if (!this.#showUnusedCustomCssPropertiesButton) {
+      return;
+    }
+
+    const unusedVariablesCount = this.#unusedCssVariableDeclarations.size;
+    if (!unusedVariablesCount) {
+      this.#nullifyShowUnusedCustomCssProperties();
+      return;
+    }
+
+    const label = PluralForm.get(
+      unusedVariablesCount,
+      STYLE_INSPECTOR_L10N.getStr("rule.showUnusedCssVariable")
+    ).replace("#1", unusedVariablesCount);
+
+    this.#showUnusedCustomCssPropertiesButton.replaceChildren(label);
+  }
+
+  /**
+   * Nullify this.#showUnusedCustomCssPropertiesButton, remove its click event handler
+   * and remove it from the DOM if `removeFromDom` is set to true.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.removeFromDom]
+   *        Should the button be removed from the DOM (defaults to true)
+   */
+  #nullifyShowUnusedCustomCssProperties({ removeFromDom = true } = {}) {
+    if (!this.#showUnusedCustomCssPropertiesButton) {
+      return;
+    }
+
+    this.#showUnusedCustomCssPropertiesButton.removeEventListener(
+      "click",
+      this.#onShowUnusedCustomCssPropertiesButtonClick
+    );
+
+    if (removeFromDom) {
+      this.#showUnusedCustomCssPropertiesButton.remove();
+    }
+    this.#showUnusedCustomCssPropertiesButton = null;
+  }
 
   /**
    * Render a given rule selector in this.selectorText element
    *
-   * @param {String} selector: The selector text to display
-   * @param {Number} selectorIndex: Its index in the rule
+   * @param {string} selector: The selector text to display
+   * @param {number} selectorIndex: Its index in the rule
    */
-  _populateSelector(selector, selectorIndex) {
+  #populateSelector(selector, selectorIndex) {
     if (selectorIndex !== 0) {
       createChild(this.selectorText, "span", {
         class: "ruleview-selector-separator",
@@ -688,16 +947,11 @@ RuleEditor.prototype = {
       });
     }
 
-    let containerClass = "ruleview-selector ";
-
-    // Only add matched/unmatched class when the rule does have some matched
-    // selectors. We don't always have some (e.g. rules for pseudo elements)
-
-    if (this.rule.matchedSelectorIndexes.length) {
-      containerClass += this.rule.matchedSelectorIndexes.includes(selectorIndex)
+    const containerClass =
+      "ruleview-selector " +
+      (this.rule.matchedSelectorIndexes.includes(selectorIndex)
         ? "matched"
-        : "unmatched";
-    }
+        : "unmatched");
 
     let selectorContainerTitle;
     if (
@@ -750,25 +1004,25 @@ RuleEditor.prototype = {
       });
     }
 
-    const warningsContainer = this._createWarningsElementForSelector(
+    const warningsContainer = this.#createWarningsElementForSelector(
       selectorIndex,
       this.rule.domRule.selectorWarnings
     );
     if (warningsContainer) {
       selectorContainer.append(warningsContainer);
     }
-  },
+  }
 
   /**
    * Programatically add a new property to the rule.
    *
-   * @param {String} name
+   * @param {string} name
    *        Property name.
-   * @param {String} value
+   * @param {string} value
    *        Property value.
-   * @param {String} priority
+   * @param {string} priority
    *        Property priority.
-   * @param {Boolean} enabled
+   * @param {boolean} enabled
    *        True if the property should be enabled.
    * @param {TextProperty} siblingProp
    *        Optional, property next to which the new property will be added.
@@ -799,7 +1053,7 @@ RuleEditor.prototype = {
     );
 
     return prop;
-  },
+  }
 
   /**
    * Programatically add a list of new properties to the rule.  Focus the UI
@@ -840,7 +1094,7 @@ RuleEditor.prototype = {
     } else {
       this.newProperty();
     }
-  },
+  }
 
   /**
    * Create a text input for a property name.  If a non-empty property
@@ -853,10 +1107,15 @@ RuleEditor.prototype = {
       return;
     }
 
-    // While we're editing a new property, it doesn't make sense to
-    // start a second new property editor, so disable focusing the
-    // close brace for now.
+    // While we're editing a new property, it doesn't make sense to start a second new
+    // property editor, so disable focusing the close brace for now.
     this.closeBrace.removeAttribute("tabindex");
+    // We also need to make the "Show Unused Variables" button non-focusable so hitting
+    // Tab while focused in the new property editor will move the focus to the next rule
+    // selector editor.
+    if (this.#showUnusedCustomCssPropertiesButton) {
+      this.#showUnusedCustomCssPropertiesButton.setAttribute("tabindex", "-1");
+    }
 
     this.newPropItem = createChild(this.propertyList, "div", {
       class: "ruleview-property ruleview-newproperty",
@@ -872,11 +1131,11 @@ RuleEditor.prototype = {
 
     this.editor = new InplaceEditor({
       element: this.newPropSpan,
-      done: this._onNewProperty,
+      done: this.#onNewProperty,
       // (Shift+)Tab will move the focus to the previous/next editable field
       focusEditableFieldAfterApply: true,
       focusEditableFieldContainerSelector: ".ruleview-rule",
-      destroy: this._newPropertyDestroy,
+      destroy: this.#newPropertyDestroy,
       advanceChars: ":",
       contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
       popup: this.ruleView.popup,
@@ -891,17 +1150,17 @@ RuleEditor.prototype = {
       "paste",
       blurOnMultipleProperties(this.rule.cssProperties)
     );
-  },
+  }
 
   /**
    * Called when the new property input has been dismissed.
    *
-   * @param {String} value
+   * @param {string} value
    *        The value in the editor.
-   * @param {Boolean} commit
+   * @param {boolean} commit
    *        True if the value should be committed.
    */
-  _onNewProperty(value, commit) {
+  #onNewProperty = (value, commit) => {
     if (!value || !commit) {
       return;
     }
@@ -916,11 +1175,11 @@ RuleEditor.prototype = {
     );
 
     // Blur the editor field now and deal with adding declarations later when
-    // the field gets destroyed (see _newPropertyDestroy)
+    // the field gets destroyed (see #newPropertyDestroy)
     this.editor.input.blur();
 
     this.telemetry.recordEvent("edit_rule", "ruleview");
-  },
+  };
 
   /**
    * Called when the new property editor is destroyed.
@@ -928,9 +1187,12 @@ RuleEditor.prototype = {
    * added, since we want to wait until after the inplace editor `destroy`
    * event has been fired to keep consistent UI state.
    */
-  _newPropertyDestroy() {
-    // We're done, make the close brace focusable again.
+  #newPropertyDestroy = () => {
+    // We're done, make the close brace and "Show unused variable" button focusable again.
     this.closeBrace.setAttribute("tabindex", "0");
+    if (this.#showUnusedCustomCssPropertiesButton) {
+      this.#showUnusedCustomCssPropertiesButton.removeAttribute("tabindex");
+    }
 
     this.propertyList.removeChild(this.newPropItem);
     delete this.newPropItem;
@@ -942,21 +1204,21 @@ RuleEditor.prototype = {
     if (this.multipleAddedProperties && this.multipleAddedProperties.length) {
       this.addProperties(this.multipleAddedProperties);
     }
-  },
+  };
 
   /**
    * Called when the selector's inplace editor is closed.
    * Ignores the change if the user pressed escape, otherwise
    * commits it.
    *
-   * @param {String} value
+   * @param {string} value
    *        The value contained in the editor.
-   * @param {Boolean} commit
+   * @param {boolean} commit
    *        True if the change should be applied.
-   * @param {Number} direction
+   * @param {number} direction
    *        The move focus direction number.
    */
-  async _onSelectorDone(value, commit, direction) {
+  #onSelectorDone = async (value, commit, direction) => {
     if (
       !commit ||
       this.isEditing ||
@@ -967,7 +1229,7 @@ RuleEditor.prototype = {
     }
 
     const ruleView = this.ruleView;
-    const elementStyle = ruleView._elementStyle;
+    const elementStyle = ruleView.elementStyle;
     const element = elementStyle.element;
 
     this.isEditing = true;
@@ -984,6 +1246,11 @@ RuleEditor.prototype = {
     try {
       const response = await this.rule.domRule.modifySelector(element, value);
 
+      // Modifying the selector might have removed the element (e.g. for pseudo element)
+      if (!element.actorID) {
+        return;
+      }
+
       // We recompute the list of applied styles, because editing a
       // selector might cause this rule's position to change.
       const applied = await elementStyle.pageStyle.getApplied(element, {
@@ -991,6 +1258,11 @@ RuleEditor.prototype = {
         matchedSelectors: true,
         filter: elementStyle.showUserAgentStyles ? "ua" : undefined,
       });
+
+      // The element might have been removed while we were trying to get the applied declarations
+      if (!element.actorID) {
+        return;
+      }
 
       this.isEditing = false;
 
@@ -1019,7 +1291,7 @@ RuleEditor.prototype = {
       // Remove the old rule and insert the new rule.
       rules.splice(oldIndex, 1);
       rules.splice(newRuleIndex, 0, newRule);
-      elementStyle._changed();
+      elementStyle.notifyChanged();
       elementStyle.onRuleUpdated();
 
       // We install the new editor in place of the old -- you might
@@ -1033,20 +1305,20 @@ RuleEditor.prototype = {
       // will be useless as this specific code will usually happen later (and the focused
       // element might be replaced).
       // Because of this, we need to handle setting the focus ourselves from here.
-      editor._moveSelectorFocus(direction);
+      editor.#moveSelectorFocus(direction);
     } catch (err) {
       this.isEditing = false;
       promiseWarn(err);
     }
-  },
+  };
 
   /**
    * Handle moving the focus change after a Tab keypress in the selector inplace editor.
    *
-   * @param {Number} direction
+   * @param {number} direction
    *        The move focus direction number.
    */
-  _moveSelectorFocus(direction) {
+  #moveSelectorFocus(direction) {
     if (!direction || direction === Services.focus.MOVEFOCUS_BACKWARD) {
       return;
     }
@@ -1056,7 +1328,7 @@ RuleEditor.prototype = {
     } else {
       this.propertyList.click();
     }
-  },
-};
+  }
+}
 
 module.exports = RuleEditor;

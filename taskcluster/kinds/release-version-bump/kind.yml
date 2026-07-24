@@ -15,6 +15,7 @@ kind-dependencies:
     - push-bundle
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Release Promotion version bump/tag
     run-on-projects: []
     shipping-phase: ship
@@ -32,7 +33,6 @@ task-defaults:
                     by-release-type:
                         beta: staging-firefox-beta
                         release: staging-firefox-release
-                        release-rc: staging-firefox-release
                         esr115: staging-firefox-esr115
                         esr128: staging-firefox-esr128
                         esr140: staging-firefox-esr140

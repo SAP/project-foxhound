@@ -6,35 +6,35 @@
 
 #include "Key.h"
 
+#include <stdint.h>  // for UINT32_MAX, uintptr_t
+
 #include <algorithm>
 #include <cstdint>
-#include <stdint.h>    // for UINT32_MAX, uintptr_t
+
+#include "ReportInternalError.h"
 #include "js/Array.h"  // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{IsArrayBufferObject,NewArrayBuffer{,WithContents}}
 #include "js/Date.h"
-#include "js/experimental/TypedData.h"  // JS::ArrayBufferOrView
 #include "js/MemoryFunctions.h"
 #include "js/Object.h"              // JS::GetBuiltinClass
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_GetProperty, JS_GetPropertyById, JS_HasOwnProperty, JS_HasOwnPropertyById
 #include "js/Value.h"
+#include "js/experimental/TypedData.h"  // JS::ArrayBufferOrView
 #include "jsfriendapi.h"
+#include "mozIStorageStatement.h"
+#include "mozIStorageValueArray.h"
 #include "mozilla/Casting.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/intl/Collator.h"
 #include "mozilla/ResultExtensions.h"
-#include "mozilla/ReverseIterator.h"
+#include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/indexedDB/IDBResult.h"
 #include "mozilla/dom/indexedDB/Key.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozIStorageStatement.h"
-#include "mozIStorageValueArray.h"
+#include "mozilla/intl/Collator.h"
 #include "nsJSUtils.h"
 #include "nsTStringRepr.h"
-#include "ReportInternalError.h"
 #include "xpcpublic.h"
 
 namespace mozilla::dom::indexedDB {
@@ -585,19 +585,34 @@ void Key::ReserveAutoIncrementKey(bool aFirstOfArray) {
   mozilla::BigEndian::writeUint64(buffer, UINT64_MAX);
 }
 
-void Key::MaybeUpdateAutoIncrementKey(int64_t aKey) {
+Result<Ok, nsresult> Key::MaybeUpdateAutoIncrementKey(int64_t aKey) {
   if (mAutoIncrementKeyOffsets.IsEmpty()) {
-    return;
+    return Ok{};
   }
 
+  static constexpr auto maxOffset =
+      KEY_MAXIMUM_BUFFER_LENGTH - sizeof(double) - 1;
+
   for (uint32_t offset : mAutoIncrementKeyOffsets) {
+    if (offset > maxOffset) {
+      return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
+    }
+
     char* buffer;
-    MOZ_ALWAYS_TRUE(mBuffer.GetMutableData(&buffer));
+    const auto capacity = mBuffer.GetMutableData(&buffer);
+    MOZ_ALWAYS_TRUE(capacity);
+
+    if (offset + sizeof(double) > capacity) {
+      return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
+    }
+
     buffer += offset;
     WriteDoubleToUint64(buffer, double(aKey));
   }
 
   TrimBuffer();
+
+  return Ok{};
 }
 
 void Key::WriteDoubleToUint64(char* aBuffer, double aValue) {

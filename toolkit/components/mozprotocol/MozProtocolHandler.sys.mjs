@@ -21,7 +21,7 @@ MozProtocolHandler.prototype = {
   protocolFlags: Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
 
   newChannel(uri, loadInfo) {
-    const kCanada = "https://www.mozilla.org/contact/communities/canada/";
+    const kCanada = "https://community.mozilla.org/groups/?country=CA";
     let realURL = NetUtil.newURI(
       uri && uri.spec == "moz://eh" ? kCanada : this.urlToLoad
     );

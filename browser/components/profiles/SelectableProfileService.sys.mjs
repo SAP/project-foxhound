@@ -17,10 +17,11 @@ const PROFILES_PREF_NAME = "browser.profiles.enabled";
 const GROUPID_PREF_NAME = "toolkit.telemetry.cachedProfileGroupID";
 const DEFAULT_THEME_ID = "default-theme@mozilla.org";
 const PROFILES_CREATED_PREF_NAME = "browser.profiles.created";
+const DAU_GROUPID_PREF_NAME = "datareporting.dau.cachedUsageProfileGroupID";
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
-  CryptoUtils: "resource://services-crypto/utils.sys.mjs",
+  CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
@@ -56,50 +57,6 @@ const COMMAND_LINE_ACTIVATE = "profiles-activate";
 
 const gSupportsBadging = "nsIMacDockSupport" in Ci || "nsIWinTaskbar" in Ci;
 
-class ChannelListener {
-  #request = null;
-  #imageListener = null;
-  #rejector = null;
-
-  constructor(rejector) {
-    this.#rejector = rejector;
-  }
-
-  setImageListener(imageListener) {
-    this.#imageListener = imageListener;
-    if (this.#request) {
-      this.#imageListener.onStartRequest(this.#request);
-    }
-  }
-
-  onStartRequest(request) {
-    this.#request = request;
-    if (this.#imageListener) {
-      this.#imageListener.onStartRequest(request);
-    }
-  }
-
-  onStopRequest(request, status) {
-    if (this.#imageListener) {
-      this.#imageListener.onStopRequest(request, status);
-    }
-
-    if (!Components.isSuccessCode(status)) {
-      this.#rejector(new Components.Exception("Image loading failed", status));
-    }
-
-    this.#imageListener = null;
-    this.#rejector = null;
-    this.#request = null;
-  }
-
-  onDataAvailable(request, inputStream, offset, count) {
-    if (this.#imageListener) {
-      this.#imageListener.onDataAvailable(request, inputStream, offset, count);
-    }
-  }
-}
-
 async function loadImage(profile) {
   let uri;
 
@@ -119,37 +76,7 @@ async function loadImage(profile) {
     Ci.nsIContentPolicy.TYPE_IMAGE
   );
 
-  return new Promise((resolve, reject) => {
-    let imageTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
-
-    // Despite the docs it is fine to pass null here, we then just get a global loader.
-    let imageLoader = imageTools.getImgLoaderForDocument(null);
-    let observer = imageTools.createScriptedObserver({
-      decodeComplete() {
-        request.cancel(Cr.NS_BINDING_ABORTED);
-        resolve(request.image);
-      },
-    });
-
-    let channelListener = new ChannelListener(reject);
-    channel.asyncOpen(channelListener);
-
-    let streamListener = {};
-    let request = imageLoader.loadImageWithChannelXPCOM(
-      channel,
-      observer,
-      null,
-      streamListener
-    );
-    // Force image decoding to start when the container is available.
-    request.startDecoding(Ci.imgIContainer.FLAG_ASYNC_NOTIFY);
-
-    // If the request is coming from the cache then there will be no listener
-    // and the channel will have been automatically cancelled.
-    if (streamListener.value) {
-      channelListener.setImageListener(streamListener.value);
-    }
-  });
+  return ChromeUtils.fetchDecodedImage(uri, channel);
 }
 
 /**
@@ -182,7 +109,8 @@ class SelectableProfileServiceClass extends EventEmitter {
     "app.shield.optoutstudies.enabled",
     "browser.crashReports.unsubmittedCheck.autoSubmit2",
     "browser.discovery.enabled",
-    "browser.urlbar.quicksuggest.dataCollection.enabled",
+    "browser.shell.checkDefaultBrowser",
+    DAU_GROUPID_PREF_NAME,
     "datareporting.healthreport.uploadEnabled",
     "datareporting.policy.currentPolicyVersion",
     "datareporting.policy.dataSubmissionEnabled",
@@ -193,6 +121,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     "datareporting.policy.minimumPolicyVersion.channel-beta",
     "datareporting.usage.uploadEnabled",
     "termsofuse.acceptedDate",
+    "termsofuse.firstAcceptedDate",
     "termsofuse.acceptedVersion",
     "termsofuse.bypassNotification",
     "termsofuse.currentVersion",
@@ -203,6 +132,7 @@ class SelectableProfileServiceClass extends EventEmitter {
   // Preferences that were previously shared but should now be ignored.
   static ignoredSharedPrefs = [
     "browser.profiles.enabled",
+    "browser.urlbar.quicksuggest.dataCollection.enabled",
     "toolkit.profiles.storeID",
   ];
 
@@ -225,6 +155,14 @@ class SelectableProfileServiceClass extends EventEmitter {
       () => this.updateEnabledState(),
       "profile-after-change"
     );
+
+    Services.prefs.addObserver(PROFILES_CREATED_PREF_NAME, () =>
+      Services.obs.notifyObservers(
+        null,
+        "sps-profile-created",
+        lazy.PROFILES_CREATED ? "true" : "false"
+      )
+    );
   }
 
   // Migrate any early users who created profiles before the datastore service
@@ -234,6 +172,10 @@ class SelectableProfileServiceClass extends EventEmitter {
     if (this.groupToolkitProfile?.storeID && !lazy.PROFILES_CREATED) {
       Services.prefs.setBoolPref(PROFILES_CREATED_PREF_NAME, true);
     }
+  }
+
+  hasCreatedSelectableProfiles() {
+    return Services.prefs.getBoolPref(PROFILES_CREATED_PREF_NAME, false);
   }
 
   #getEnabledState() {
@@ -263,6 +205,35 @@ class SelectableProfileServiceClass extends EventEmitter {
 
   get isEnabled() {
     return this.#isEnabled;
+  }
+
+  #setOverlayIcon({ win }) {
+    if (!this.#badge || !("nsIWinTaskbar" in Ci)) {
+      return;
+    }
+
+    let iconController = null;
+    if (!TASKBAR_ICON_CONTROLLERS.has(win)) {
+      iconController = Cc["@mozilla.org/windows-taskbar;1"]
+        .getService(Ci.nsIWinTaskbar)
+        .getOverlayIconController(win.docShell);
+      TASKBAR_ICON_CONTROLLERS.set(win, iconController);
+    } else {
+      iconController = TASKBAR_ICON_CONTROLLERS.get(win);
+    }
+
+    if (this.#currentProfile.hasCustomAvatar) {
+      iconController?.setOverlayIcon(
+        this.#badge.image,
+        this.#badge.description
+      );
+    } else {
+      iconController?.setOverlayIcon(
+        this.#badge.image,
+        this.#badge.description,
+        this.#badge.iconPaintContext
+      );
+    }
   }
 
   async #attemptFlushProfileService() {
@@ -440,6 +411,9 @@ class SelectableProfileServiceClass extends EventEmitter {
     if (this.#currentProfile) {
       // Assume that settings in the database may have changed while we weren't running.
       await this.databaseChanged("startup");
+
+      // We only need to migrate if we are in an existing profile group.
+      await this.#maybeAddDAUGroupIDToDB();
     }
   }
 
@@ -448,9 +422,10 @@ class SelectableProfileServiceClass extends EventEmitter {
       return;
     }
 
-    try {
-      Services.obs.removeObserver(this, "lightweight-theme-styling-update");
-    } catch (e) {}
+    Services.obs.removeObserver(
+      this.themeObserver,
+      "lightweight-theme-styling-update"
+    );
 
     lazy.NimbusFeatures.selectableProfiles.offUpdate(this.onNimbusUpdate);
 
@@ -471,18 +446,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     lazy.EveryWindow.registerCallback(
       this.#everyWindowCallbackId,
       window => {
-        if (this.#badge && "nsIWinTaskbar" in Ci) {
-          let iconController = Cc["@mozilla.org/windows-taskbar;1"]
-            .getService(Ci.nsIWinTaskbar)
-            .getOverlayIconController(window.docShell);
-          TASKBAR_ICON_CONTROLLERS.set(window, iconController);
-
-          iconController.setOverlayIcon(
-            this.#badge.image,
-            this.#badge.description,
-            this.#badge.iconPaintContext
-          );
-        }
+        this.#setOverlayIcon({ win: window });
 
         // Update the window title because the currentProfile, needed in the
         // .*-with-profile titles, didn't exist when the title was initially set.
@@ -512,15 +476,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     switch (event.type) {
       case "activate": {
         this.#windowActivated.arm();
-        if ("nsIWinTaskbar" in Ci && this.#badge) {
-          let iconController = TASKBAR_ICON_CONTROLLERS.get(event.target);
-
-          iconController?.setOverlayIcon(
-            this.#badge.image,
-            this.#badge.description,
-            this.#badge.iconPaintContext
-          );
-        }
+        this.#setOverlayIcon({ win: event.target });
         break;
       }
     }
@@ -599,13 +555,17 @@ class SelectableProfileServiceClass extends EventEmitter {
    * Launch a new Firefox instance using the given selectable profile.
    *
    * @param {SelectableProfile} aProfile The profile to launch
-   * @param {string} aUrl A url to open in launched profile
+   * @param {Array<string>} aUrls An array of urls to open in launched profile
    */
-  launchInstance(aProfile, aUrl) {
+  launchInstance(aProfile, aUrls) {
     let args = [];
 
-    if (aUrl) {
-      args.push("-url", aUrl);
+    if (aUrls?.length) {
+      // See https://wiki.mozilla.org/Firefox/CommandLineOptions#-url_URL
+      // Use '-new-tab' instead of '-url' because when opening multiple URLs,
+      // Firefox always opens them as tabs in a new window and we want to
+      // attempt opening these tabs in an existing window.
+      args.push(...aUrls.flatMap(url => ["-new-tab", url]));
     } else {
       args.push(`--${COMMAND_LINE_ACTIVATE}`);
     }
@@ -671,23 +631,7 @@ class SelectableProfileServiceClass extends EventEmitter {
             .setBadgeImage(this.#badge.image, this.#badge.iconPaintContext);
         } else if ("nsIWinTaskbar" in Ci) {
           for (let win of lazy.EveryWindow.readyWindows) {
-            let iconController = Cc["@mozilla.org/windows-taskbar;1"]
-              .getService(Ci.nsIWinTaskbar)
-              .getOverlayIconController(win.docShell);
-            TASKBAR_ICON_CONTROLLERS.set(win, iconController);
-
-            if (this.#currentProfile.hasCustomAvatar) {
-              iconController.setOverlayIcon(
-                this.#badge.image,
-                this.#badge.description
-              );
-            } else {
-              iconController.setOverlayIcon(
-                this.#badge.image,
-                this.#badge.description,
-                this.#badge.iconPaintContext
-              );
-            }
+            this.#setOverlayIcon({ win });
           }
         }
       } else if (count <= 1 && this.#badge) {
@@ -761,7 +705,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     let themeBgColor = computedStyles.getPropertyValue("--toolbar-bgcolor");
 
     let bg = window.InspectorUtils.colorToRGBA(themeBgColor);
-    let themeBg = `rgba(${bg.r}, ${bg.r}, ${bg.b}, ${bg.a})`;
+    let themeBg = `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${bg.a})`;
 
     let fg = window.InspectorUtils.colorToRGBA(themeFgColor);
     let themeFg = `rgba(${fg.r}, ${fg.g}, ${fg.b}, ${fg.a})`;
@@ -891,6 +835,69 @@ class SelectableProfileServiceClass extends EventEmitter {
   }
 
   /**
+   * The "datareporting.dau.cachedUsageProfileGroupID" pref is different in
+   * every profile before this migration was created. We now need the entire
+   * group of profiles to share one group id. To migrate to one shared
+   * group id, we need to get the pref into the db for existing group. This
+   * function handles this by adding the pref to the db if it doesn't
+   * already exist OR if our pref value is better than the value from the db.
+   * Consolidation on one group id is also handled in `#maybeSetDAUGroupID`
+   * where we overwrite the pref value if the db value is better.
+   *
+   * New profile groups will automatically start tracking this pref and keep
+   * the UUID from the original profile. We need to migrate because the db in
+   * existing profile groups will not contain the pref and every profile will
+   * have a different group id.
+   */
+  async #maybeAddDAUGroupIDToDB() {
+    let writeToDB = false;
+    let prefValue = Services.prefs.getStringPref(DAU_GROUPID_PREF_NAME, "");
+    try {
+      let dbValue = await this.getDBPref(DAU_GROUPID_PREF_NAME);
+
+      // We found a DAU group id in the db. If our pref value is smaller
+      // alphanumerically, we will overwrite the db value.
+      if (prefValue < dbValue) {
+        // Pref value is smaller alphanumerically so overwrite the db.
+        writeToDB = true;
+      }
+    } catch {
+      // The pref is not in the db
+      writeToDB = true;
+    } finally {
+      if (writeToDB) {
+        // The pref is not in the db
+        // OR
+        // our pref value is better so overwrite the db.
+        this.#setDBPref(DAU_GROUPID_PREF_NAME, prefValue);
+      }
+    }
+  }
+
+  /**
+   * To consolidate on one group id, we compare the pref value from the db and
+   * this profiles pref value alphanumerically to converge on the smallest
+   * alphanumeric UUID. The `#maybeAddDAUGroupIDToDB` function handles the
+   * initial tracking of the "datareporting.dau.cachedUsageProfileGroupID" pref
+   * for an existing profile group. New profile groups will keep the original
+   * profiles group id.
+   *
+   * @param {string} dbValue The pref value of
+   *   "datareporting.dau.cachedUsageProfileGroupID" from the db
+   */
+  async #maybeSetDAUGroupID(dbValue) {
+    if (dbValue < Services.prefs.getStringPref(DAU_GROUPID_PREF_NAME, "")) {
+      try {
+        // The value from the db is better so we overwrite our group id.
+        await lazy.ClientID.setUsageProfileGroupID(dbValue); // Sets the pref for us.
+      } catch (e) {
+        // This may throw if the group ID is invalid. This happens in some tests.
+        console.error(e);
+      }
+    }
+  }
+
+  /**
    * Fetch all prefs from the DB and write to the current instance.
    */
   async loadSharedPrefsFromDatabase() {
@@ -917,6 +924,14 @@ class SelectableProfileServiceClass extends EventEmitter {
           // This may throw if the group ID is invalid. This happens in some tests.
           console.error(e);
         }
+        continue;
+      }
+
+      if (name === DAU_GROUPID_PREF_NAME) {
+        await this.#maybeSetDAUGroupID(value);
+
+        Services.prefs.addObserver(name, this.prefObserver);
+        this.#observedPrefs.add(name);
         continue;
       }
 
@@ -1055,40 +1070,49 @@ class SelectableProfileServiceClass extends EventEmitter {
       "prefs.js",
       0o600
     );
+    await IOUtils.writeUTF8(prefsJsFilePath, Services.prefs.prefsJsPreamble);
 
+    await this.addSelectableProfilePrefs(profileDir.path);
+  }
+
+  /**
+   * Adds the preferences needed for a selectable profile to work as intended.
+   *
+   * @param {string} profileDirPath
+   */
+  async addSelectableProfilePrefs(profileDirPath) {
     const sharedPrefs = await this.getAllDBPrefs();
 
-    const LINEBREAK = AppConstants.platform === "win" ? "\r\n" : "\n";
+    const filteredPrefs = sharedPrefs.filter(
+      pref =>
+        !SelectableProfileServiceClass.ignoredSharedPrefs.includes(pref.name)
+    );
 
-    const prefsJs = [
-      "// Mozilla User Preferences",
-      LINEBREAK,
-      "// DO NOT EDIT THIS FILE.",
-      "//",
-      "// If you make changes to this file while the application is running,",
-      "// the changes will be overwritten when the application exits.",
-      "//",
-      "// To change a preference value, you can either:",
-      "// - modify it via the UI (e.g. via about:config in the browser); or",
-      "// - set it within a user.js file in your profile.",
-      LINEBREAK,
-      'user_pref("browser.profiles.profile-name.updated", false);',
-    ];
-
-    for (let pref of sharedPrefs) {
-      prefsJs.push(
+    const prefsToAdd = [];
+    for (let pref of filteredPrefs) {
+      prefsToAdd.push(
         `user_pref("${pref.name}", ${
           pref.type === "string" ? `"${pref.value}"` : `${pref.value}`
         });`
       );
     }
 
-    // Preferences that must be set in newly created profiles.
-    prefsJs.push(`user_pref("browser.profiles.enabled", true);`);
-    prefsJs.push(`user_pref("browser.profiles.created", true);`);
-    prefsJs.push(`user_pref("toolkit.profiles.storeID", "${this.storeID}");`);
+    // Preferences that must be set for selectable profiles.
+    prefsToAdd.push(`user_pref("browser.profiles.enabled", true);`);
+    prefsToAdd.push(`user_pref("browser.profiles.created", true);`);
+    prefsToAdd.push(
+      `user_pref("toolkit.profiles.storeID", "${this.storeID}");`
+    );
+    prefsToAdd.push(
+      `user_pref("${DAU_GROUPID_PREF_NAME}", "${await this.getDBPref(DAU_GROUPID_PREF_NAME)}");`
+    );
 
-    await IOUtils.writeUTF8(prefsJsFilePath, prefsJs.join(LINEBREAK));
+    const LINEBREAK = AppConstants.platform === "win" ? "\r\n" : "\n";
+    await IOUtils.writeUTF8(
+      PathUtils.join(profileDirPath, "prefs.js"),
+      prefsToAdd.join(LINEBREAK) + LINEBREAK,
+      { mode: "appendOrCreate" }
+    );
   }
 
   /**
@@ -1141,7 +1165,7 @@ class SelectableProfileServiceClass extends EventEmitter {
       avatar: this.#defaultAvatars[randomIndex],
       themeId: DEFAULT_THEME_ID,
       themeFg: isDark ? "rgb(255,255,255)" : "rgb(21,20,26)",
-      themeBg: isDark ? "rgb(28, 27, 34)" : "rgb(240, 240, 244)",
+      themeBg: isDark ? "rgb(28,27,34)" : "rgb(240,240,244)",
     };
 
     let path =
@@ -1226,18 +1250,23 @@ class SelectableProfileServiceClass extends EventEmitter {
     });
     if (missing.length) {
       throw new Error(
-        "Unable to insertProfile due to missing keys: ",
-        missing.join(",")
+        `Unable to insertProfile due to missing keys: ${missing.join(",")}`
       );
     }
-    await this.#connection.execute(
-      `INSERT INTO Profiles VALUES (NULL, :path, :name, :avatar, :themeId, :themeFg, :themeBg);`,
+    const rows = await this.#connection.execute(
+      `INSERT INTO Profiles
+       VALUES (NULL, :path, :name, :avatar, :themeId, :themeFg, :themeBg)
+       RETURNING id;`,
       profileData
     );
+    const profileId = rows[0].getResultByName("id");
+    if (!profileId) {
+      throw new Error(`Unable to insertProfile with values: ${profileData}`);
+    }
 
     ProfilesDatastoreService.notify();
 
-    return this.getProfileByName(profileData.name);
+    return this.getProfile(profileId);
   }
 
   async deleteProfile(aProfile) {
@@ -1248,7 +1277,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     }
 
     // First attempt to remove the profile's directories. This will attempt to
-    // local the directories and so will throw an exception if the profile is
+    // locate the directories and so will throw an exception if the profile is
     // currently in use.
     await this.#profileService.removeProfileFilesByPath(
       await aProfile.rootDir,
@@ -1281,6 +1310,8 @@ class SelectableProfileServiceClass extends EventEmitter {
     let newDefault = profiles.find(p => p.id !== this.currentProfile.id);
     await this.setDefaultProfileForGroup(newDefault);
 
+    await this.currentProfile.removeDesktopShortcut();
+
     await this.#connection.executeBeforeShutdown(
       "SelectableProfileService: deleteCurrentProfile",
       async db => {
@@ -1293,6 +1324,13 @@ class SelectableProfileServiceClass extends EventEmitter {
         // profile deletion.
         await db.execute(
           "DELETE FROM NimbusEnrollments WHERE profileId = :profileId;",
+          {
+            profileId: lazy.ExperimentAPI.profileId,
+          }
+        );
+
+        await db.execute(
+          "DELETE FROM NimbusSyncTimestamps WHERE profileId = :profileId;",
           {
             profileId: lazy.ExperimentAPI.profileId,
           }
@@ -1321,7 +1359,7 @@ class SelectableProfileServiceClass extends EventEmitter {
    * @param {SelectableProfile} aSelectableProfile The SelectableProfile to be updated
    */
   async updateProfile(aSelectableProfile) {
-    let profileObj = await aSelectableProfile.toDbObject();
+    let profileObj = aSelectableProfile.toDbObject();
 
     await this.#connection.execute(
       `UPDATE Profiles
@@ -1351,15 +1389,17 @@ class SelectableProfileServiceClass extends EventEmitter {
    *
    * @param {boolean} [launchProfile=true] Whether or not this should launch
    * the newly created profile.
+   * @param {nsIFile} [existingProfilePath=null] Optional path to use for the
+   * profile instead of creating new directories in the default location.
    *
    * @returns {SelectableProfile} The profile just created.
    */
-  async createNewProfile(launchProfile = true) {
+  async createNewProfile(launchProfile = true, existingProfilePath = null) {
     await this.maybeSetupDataStore();
 
-    let profile = await this.#createProfile();
+    let profile = await this.#createProfile(existingProfilePath);
     if (launchProfile) {
-      this.launchInstance(profile, "about:newprofile");
+      this.launchInstance(profile, ["about:newprofile"]);
     }
     return profile;
   }
@@ -1523,6 +1563,14 @@ class SelectableProfileServiceClass extends EventEmitter {
     return this.getPrefValueFromRow(rows[0]);
   }
 
+  async setDBPref(aPrefName, aPrefValue) {
+    if (!Cu.isInAutomation) {
+      return;
+    }
+
+    await this.#setDBPref(aPrefName, aPrefValue);
+  }
+
   /**
    * Insert or update a pref value in the database, then notify() other running instances.
    *
@@ -1545,6 +1593,14 @@ class SelectableProfileServiceClass extends EventEmitter {
   // Starts tracking a new shared pref across the profiles.
   async trackPref(aPrefName) {
     await this.flushSharedPrefToDatabase(aPrefName);
+  }
+
+  async deleteDBPref(aPrefName) {
+    if (!Cu.isInAutomation) {
+      return;
+    }
+
+    await this.#deleteDBPref(aPrefName);
   }
 
   /**
@@ -1587,10 +1643,9 @@ export class CommandLineHandler {
   async findDefaultProfilePath() {
     try {
       let profilesRoot =
-        ProfilesDatastoreService.constructor.getDirectory("DefProfRt").parent
-          .path;
+        ProfilesDatastoreService.constructor.getDirectory("UAppData");
 
-      let iniPath = PathUtils.join(profilesRoot, "profiles.ini");
+      let iniPath = PathUtils.join(profilesRoot.path, "profiles.ini");
 
       let iniData = await IOUtils.readUTF8(iniPath);
 
@@ -1621,7 +1676,11 @@ export class CommandLineHandler {
 
           let isRelative = iniParser.getString(section, "IsRelative") == "1";
           if (isRelative) {
-            path = PathUtils.joinRelative(profilesRoot, path);
+            let profileDir = Cc["@mozilla.org/file/local;1"].createInstance(
+              Ci.nsIFile
+            );
+            profileDir.setRelativeDescriptor(profilesRoot, path);
+            path = profileDir.path;
           }
 
           return path;
@@ -1637,10 +1696,58 @@ export class CommandLineHandler {
     return null;
   }
 
+  /**
+   * Attempts to parse the arguments expected when opening URLs from other
+   * applications on macOS.
+   *
+   * @param {Array<string>} args The command line arguments.
+   * @returns {boolean} True if the arguments matched the expected form.
+   */
+  openUrls(args) {
+    // Arguments are expected to be in pairs of "-url" "<url>".
+    if (args.length % 2 != 0) {
+      return false;
+    }
+
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] != "-url") {
+        return false;
+      }
+    }
+
+    // Now the arguments are verified to only be "-url" arguments we can pass
+    // them directly to the only handler for those arguments.
+    let workingDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    let cmdLine = Cu.createCommandLine(
+      args,
+      workingDir,
+      Ci.nsICommandLine.STATE_REMOTE_EXPLICIT
+    );
+
+    try {
+      let handler = Cc["@mozilla.org/browser/final-clh;1"].createInstance(
+        Ci.nsICommandLineHandler
+      );
+      handler.handle(cmdLine);
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+
+    return true;
+  }
+
   async redirectCommandLine(args) {
     let defaultPath = await this.findDefaultProfilePath();
 
     if (defaultPath) {
+      if (
+        defaultPath == SelectableProfileService.currentProfile?.path &&
+        this.openUrls(args)
+      ) {
+        return;
+      }
+
       // Attempt to use the remoting service to send the arguments to any
       // existing instance of this profile (this even works for the current
       // instance on macOS which is the only platform we call this for).
@@ -1675,7 +1782,7 @@ export class CommandLineHandler {
       cmdLine.handleFlag(COMMAND_LINE_ACTIVATE, true) &&
       cmdLine.state != Ci.nsICommandLine.STATE_INITIAL_LAUNCH
     ) {
-      let win = Services.wm.getMostRecentWindow(null);
+      let win = Services.wm.getMostRecentBrowserWindow();
       if (win) {
         win.focus();
         cmdLine.preventDefault = true;

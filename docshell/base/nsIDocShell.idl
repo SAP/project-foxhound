@@ -312,7 +312,7 @@ interface nsIDocShell : nsIDocShellTreeItem
   /*
    * returns true if the docshell is being destroyed, false otherwise
    */
-  boolean isBeingDestroyed();
+  [infallible] boolean isBeingDestroyed();
 
   /*
    * Returns true if the docshell is currently executing the onLoad Handler

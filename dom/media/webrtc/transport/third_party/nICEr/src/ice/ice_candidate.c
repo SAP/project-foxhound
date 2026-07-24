@@ -85,8 +85,8 @@ void nr_ice_candidate_compute_codeword(nr_ice_candidate *cand)
     nr_ice_compute_codeword(as_string,strlen(as_string),cand->codeword);
   }
 
-char *nr_ice_candidate_type_names[]={0,"host","srflx","prflx","relay",0};
-char *nr_ice_candidate_tcp_type_names[]={0,"active","passive","so",0};
+const char *nr_ice_candidate_type_names[]={0,"host","srflx","prflx","relay",0};
+const char *nr_ice_candidate_tcp_type_names[]={0,"active","passive","so",0};
 
 static const char *nr_ctype_name(nr_ice_candidate_type ctype) {
   assert(ctype<CTYPE_MAX && ctype>0);
@@ -121,7 +121,7 @@ int nr_ice_candidate_create(nr_ice_ctx *ctx,nr_ice_component *comp,nr_ice_socket
     int r,_status;
     char label[512];
 
-    if(!(cand=RCALLOC(sizeof(nr_ice_candidate))))
+    if(!(cand=R_NEW(nr_ice_candidate)))
       ABORT(R_NO_MEMORY);
     cand->state=NR_ICE_CAND_STATE_CREATED;
     cand->ctx=ctx;
@@ -215,13 +215,13 @@ int nr_ice_candidate_create(nr_ice_ctx *ctx,nr_ice_component *comp,nr_ice_socket
 
 
 /* Create a peer reflexive candidate */
-int nr_ice_peer_peer_rflx_candidate_create(nr_ice_ctx *ctx,char *label, nr_ice_component *comp,nr_transport_addr *addr, nr_ice_candidate **candp)
+int nr_ice_peer_peer_rflx_candidate_create(nr_ice_ctx *ctx, const char *label, nr_ice_component *comp,nr_transport_addr *addr, nr_ice_candidate **candp)
   {
     nr_ice_candidate *cand=0;
     nr_ice_candidate_type ctype=PEER_REFLEXIVE;
     int r,_status;
 
-    if(!(cand=RCALLOC(sizeof(nr_ice_candidate))))
+    if(!(cand=R_NEW(nr_ice_candidate)))
       ABORT(R_NO_MEMORY);
     if(!(cand->label=r_strdup(label)))
       ABORT(R_NO_MEMORY);
@@ -395,7 +395,7 @@ static int nr_ice_get_foundation(nr_ice_ctx *ctx,nr_ice_candidate *cand)
       i++;
     }
 
-    if(!(foundation=RCALLOC(sizeof(nr_ice_foundation))))
+    if(!(foundation=R_NEW(nr_ice_foundation)))
       ABORT(R_NO_MEMORY);
     nr_transport_addr_copy(&foundation->addr,&cand->base);
     foundation->type=cand->type;
@@ -567,7 +567,7 @@ int nr_ice_candidate_compute_priority(nr_ice_candidate *cand)
 
 static void nr_ice_candidate_fire_ready_cb(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_candidate *cand = cb_arg;
+    nr_ice_candidate *cand = (nr_ice_candidate*)cb_arg;
 
     cand->ready_cb_timer = 0;
     cand->ready_cb(0, 0, cand->ready_cb_arg);
@@ -591,6 +591,37 @@ static int nr_ice_candidate_use_nr_resolver(nr_transport_addr *addr)
     return use;
   }
 
+  static int nr_ice_candidate_check_stun_turn_address(
+      const nr_ice_candidate* cand, const nr_transport_addr* addr) {
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK) &&
+        nr_transport_addr_is_loopback(addr)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because it is on a loopback address "
+            "%s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL) &&
+        nr_transport_addr_is_link_local(addr)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because it is on a link-local "
+            "address %s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    if (nr_transport_addr_check_compatibility(addr, &cand->base)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because of link local mis-match for "
+            "candidate %s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    return 1;
+  }
+
 int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, void *cb_arg)
   {
     int r,_status;
@@ -612,7 +643,7 @@ int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, vo
 #ifdef USE_TURN
       case RELAYED:
         protocol=NR_RESOLVE_PROTOCOL_TURN;
-        /* Fall through */
+        [[fallthrough]];
 #endif
       case SERVER_REFLEXIVE:
         if (nr_transport_addr_cmp(&cand->base, &cand->stun_server->addr,
@@ -674,6 +705,11 @@ int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, vo
             ABORT(r);
           }
         } else {
+          if (!nr_ice_candidate_check_stun_turn_address(
+                  cand, &cand->stun_server->addr)) {
+            ABORT(R_NOT_FOUND);
+          }
+
           /* No nr_resolver for this, just copy the address and finish init */
           if (r = nr_transport_addr_copy(&cand->stun_server_addr,
                                          &cand->stun_server->addr)) {
@@ -698,10 +734,9 @@ int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, vo
     return(_status);
   }
 
-
 static int nr_ice_candidate_resolved_cb(void *cb_arg, nr_transport_addr *addr)
   {
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
     int r,_status;
 
     cand->resolver_handle=0;
@@ -716,8 +751,7 @@ static int nr_ice_candidate_resolved_cb(void *cb_arg, nr_transport_addr *addr)
       ABORT(R_NOT_FOUND);
     }
 
-    if (nr_transport_addr_check_compatibility(addr, &cand->base)) {
-      r_log(LOG_ICE,LOG_WARNING,"ICE(%s): Skipping STUN server because of link local mis-match for candidate %s",cand->ctx->label,cand->label);
+    if (!nr_ice_candidate_check_stun_turn_address(cand, addr)) {
       ABORT(R_NOT_FOUND);
     }
 
@@ -776,7 +810,7 @@ static int nr_ice_candidate_initialize2(nr_ice_candidate *cand)
 
 static void nr_ice_srvrflx_start_stun_timer_cb(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
     int r,_status;
 
     cand->delay_timer=0;
@@ -804,11 +838,18 @@ static void nr_ice_srvrflx_start_stun_timer_cb(NR_SOCKET s, int how, void *cb_ar
 static int nr_ice_srvrflx_start_stun(nr_ice_candidate *cand)
   {
     int r,_status;
+    int flags = NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD;
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK;
+    }
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LINK_LOCAL;
+    }
 
     assert(!cand->delay_timer);
-    if(r=nr_stun_client_ctx_create(cand->label, cand->isock->sock,
-      &cand->stun_server_addr, cand->stream->ctx->gather_rto,
-      &cand->u.srvrflx.stun))
+    if (r = nr_stun_client_ctx_create(
+            cand->label, cand->isock->sock, &cand->stun_server_addr,
+            cand->stream->ctx->gather_rto, flags, &cand->u.srvrflx.stun))
       ABORT(r);
 
     NR_ASYNC_TIMER_SET(cand->stream->ctx->stun_delay,nr_ice_srvrflx_start_stun_timer_cb,cand,&cand->delay_timer);
@@ -822,7 +863,7 @@ static int nr_ice_srvrflx_start_stun(nr_ice_candidate *cand)
 #ifdef USE_TURN
 static void nr_ice_start_relay_turn_timer_cb(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
     int r,_status;
 
     cand->delay_timer=0;
@@ -869,7 +910,7 @@ static int nr_ice_start_relay_turn(nr_ice_candidate *cand)
 static void nr_ice_srvrflx_stun_finished_cb(NR_SOCKET sock, int how, void *cb_arg)
   {
     int _status;
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
 
     r_log(LOG_ICE,LOG_DEBUG,"ICE(%s)/CAND(%s): %s",cand->ctx->label,cand->label,__FUNCTION__);
 
@@ -909,7 +950,7 @@ static void nr_ice_srvrflx_stun_finished_cb(NR_SOCKET sock, int how, void *cb_ar
 static void nr_ice_turn_allocated_cb(NR_SOCKET s, int how, void *cb_arg)
   {
     int r,_status;
-    nr_ice_candidate *cand=cb_arg;
+    nr_ice_candidate *cand=(nr_ice_candidate*)cb_arg;
     nr_turn_client_ctx *turn=cand->u.relayed.turn;
     char *label;
     nr_transport_addr relay_addr;

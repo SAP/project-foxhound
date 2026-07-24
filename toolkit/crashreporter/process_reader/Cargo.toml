@@ -9,6 +9,7 @@ license = "MPL-2.0"
 
 [dependencies]
 goblin = { version = "0.9", features = ["elf32", "elf64", "pe32", "pe64"] }
+log = "0.4"
 memoffset = "0.9"
 thiserror = "2"
 

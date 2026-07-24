@@ -74,7 +74,7 @@ class FocusDialogDownloadFragment : DownloadDialogFragment() {
         val url = arguments?.getString(KEY_URL)
         val contentLength = arguments?.getString(KEY_CONTENT_LENGTH)
 
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
         builder.setCancelable(true)
         builder.setTitle(getString(R.string.download_dialog_title))
 

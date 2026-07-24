@@ -27,9 +27,6 @@ static void GetPageSize(void) {
 #  if defined AIX || defined LINUX || defined __GNU__ || defined __GLIBC__ || \
       defined FREEBSD || defined NETBSD || defined OPENBSD || defined DARWIN
   _pr_pageSize = getpagesize();
-#  elif defined(HPUX)
-  /* I have no idea. Don't get me started. --Rob */
-  _pr_pageSize = sysconf(_SC_PAGE_SIZE);
 #  else
   _pr_pageSize = sysconf(_SC_PAGESIZE);
 #  endif

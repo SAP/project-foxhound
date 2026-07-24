@@ -12,7 +12,6 @@
 #include "plstr.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
-#include "CNavDTD.h"
 #include "prenv.h"
 #include "prlock.h"
 #include "prcvar.h"
@@ -25,9 +24,7 @@
 #include "nsMimeTypes.h"
 #include "nsCharsetSource.h"
 #include "nsThreadUtils.h"
-#include "nsIHTMLContentSink.h"
 
-#include "mozilla/BinarySearch.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/Encoding.h"
@@ -55,16 +52,12 @@ scheduling of the continue events will proceed until either:
   1) All of the remaining data can be processed without interrupting
   2) The parser has been cancelled.
 
-
-This capability is currently used in CNavDTD and nsHTMLContentSink. The
-nsHTMLContentSink is notified by CNavDTD when a chunk of tokens is going to be
-processed and when each token is processed. The nsHTML content sink records
-the time when the chunk has started processing and will return
-NS_ERROR_HTMLPARSER_INTERRUPTED if the token processing time has exceeded a
-threshold called max tokenizing processing time. This allows the content sink
-to limit how much data is processed in a single chunk which in turn gates how
-much time is spent away from the event loop. Processing smaller chunks of data
-also reduces the time spent in subsequent reflows.
+The nsContentSink records the time when the chunk has started processing and
+will return NS_ERROR_HTMLPARSER_INTERRUPTED if the token processing time has
+exceeded a threshold called max tokenizing processing time. This allows the
+content sink to limit how much data is processed in a single chunk which in
+turn gates how much time is spent away from the event loop. Processing smaller
+chunks of data also reduces the time spent in subsequent reflows.
 
 This capability is most apparent when loading large documents. If the maximum
 token processing time is set small enough the application will remain
@@ -77,13 +70,7 @@ when all of the document has been tokenized and there aren't any pending
 nsParserContinueEvents. This can cause problems if the application assumes
 that it can monitor the load requests to determine when the document load has
 been completed. This is what happens in Mozilla. The document is considered
-completely loaded when all of the load requests have been satisfied. To delay
-the document load until all of the parsing has been completed the
-nsHTMLContentSink adds a dummy parser load request which is not removed until
-the nsHTMLContentSink's DidBuildModel is called. The CNavDTD will not call
-DidBuildModel until the final chunk of data has been passed to the parser
-through the OnDataAvailable and there aren't any pending
-nsParserContineEvents.
+completely loaded when all of the load requests have been satisfied.
 
 Currently the parser is ignores requests to be interrupted during the
 processing of script.  This is because a document.write followed by JavaScript
@@ -127,7 +114,6 @@ void nsParser::Initialize() {
 
   mProcessingNetworkData = false;
   mOnStopPending = false;
-  mIsAboutBlank = false;
 }
 
 void nsParser::Cleanup() {
@@ -140,13 +126,13 @@ void nsParser::Cleanup() {
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsParser)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsParser)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDTD)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mExpatDriver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSink)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsParser)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDTD)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExpatDriver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSink)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -253,10 +239,6 @@ nsParser::SetContentSink(nsIContentSink* aSink) {
 
   if (mSink) {
     mSink->SetParser(this);
-    nsCOMPtr<nsIHTMLContentSink> htmlSink = do_QueryInterface(mSink);
-    if (htmlSink) {
-      mIsAboutBlank = true;
-    }
   }
 }
 
@@ -288,13 +270,8 @@ nsresult nsParser::WillBuildModel() {
   if (eUnknownDetect != mParserContext->mAutoDetectStatus) return NS_OK;
 
   if (eDTDMode_autodetect == mParserContext->mDTDMode) {
-    if (mIsAboutBlank) {
-      mParserContext->mDTDMode = eDTDMode_quirks;
-      mParserContext->mDocType = eHTML_Quirks;
-    } else {
-      mParserContext->mDTDMode = eDTDMode_full_standards;
-      mParserContext->mDocType = eXML;
-    }
+    mParserContext->mDTDMode = eDTDMode_full_standards;
+    mParserContext->mDocType = eXML;
   }  // else XML fragment with nested parser context
 
   // We always find a DTD.
@@ -305,19 +282,13 @@ nsresult nsParser::WillBuildModel() {
              "The old parser is not supposed to be used for View Source "
              "anymore.");
 
-  // Now see if we're parsing XML or HTML (which, as far as we're concerned,
-  // simply means "not XML").
-  if (mParserContext->mDocType == eXML) {
-    RefPtr<nsExpatDriver> expat = new nsExpatDriver();
-    nsresult rv = expat->Initialize(mParserContext->mScanner.GetURI(), mSink);
-    NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<nsExpatDriver> expat = new nsExpatDriver();
+  nsresult rv = expat->Initialize(mParserContext->mScanner.GetURI(), mSink);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-    mDTD = expat.forget();
-  } else {
-    mDTD = new CNavDTD();
-  }
+  mExpatDriver = expat.forget();
 
-  return mSink->WillBuildModel(mParserContext->mDTDMode);
+  return mSink->WillBuildModel();
 }
 
 /**
@@ -328,8 +299,8 @@ void nsParser::DidBuildModel() {
     // Let sink know if we're about to end load because we've been terminated.
     // In that case we don't want it to run deferred scripts.
     bool terminated = mInternalState == NS_ERROR_HTMLPARSER_STOPPARSING;
-    if (mDTD && mSink) {
-      mDTD->DidBuildModel();
+    if (mExpatDriver && mSink) {
+      mExpatDriver->DidBuildModel();
       mSink->DidBuildModel(terminated);
     }
 
@@ -368,8 +339,8 @@ nsParser::Terminate(void) {
     mFlags &= ~NS_PARSER_FLAG_PENDING_CONTINUE_EVENT;
   }
 
-  if (mDTD) {
-    mDTD->Terminate();
+  if (mExpatDriver) {
+    mExpatDriver->Terminate();
     DidBuildModel();
   } else if (mSink) {
     // We have no parser context or no DTD yet (so we got terminated before we
@@ -513,6 +484,8 @@ void nsParser::DecrementScriptNestingLevel() {}
 bool nsParser::HasNonzeroScriptNestingLevel() const { return false; }
 
 bool nsParser::IsScriptCreated() { return false; }
+
+bool nsParser::IsAboutBlankMode() { return false; }
 
 /**
  *  This is the main controlling routine in the parsing process.
@@ -711,7 +684,7 @@ nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
       return result;
     }
 
-    if (mDTD) {
+    if (mExpatDriver) {
       mSink->WillResume();
       bool theIterationIsOk = true;
 
@@ -732,9 +705,8 @@ nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
           mParserContext->mScanner.Mark();
           if (mParserContext->mDocType == eXML &&
               mParserContext->mParserCommand != eViewSource) {
-            nsExpatDriver* expat = static_cast<nsExpatDriver*>(mDTD.get());
-            theTokenizerResult =
-                expat->ResumeParse(mParserContext->mScanner, aIsFinalChunk);
+            theTokenizerResult = mExpatDriver->ResumeParse(
+                mParserContext->mScanner, aIsFinalChunk);
             if (NS_FAILED(theTokenizerResult)) {
               mParserContext->mScanner.RewindToMark();
               if (NS_ERROR_HTMLPARSER_STOPPARSING == theTokenizerResult) {
@@ -752,7 +724,7 @@ nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
           theTokenizerResult = NS_OK;
         }
 
-        result = mDTD->BuildModel(mSink);
+        result = mExpatDriver->BuildModel();
         if (result == NS_ERROR_HTMLPARSER_INTERRUPTED && aIsFinalChunk) {
           PostContinueEvent();
         }
@@ -822,7 +794,7 @@ nsresult nsParser::OnStartRequest(nsIRequest* request) {
   mParserContext->mAutoDetectStatus = eUnknownDetect;
   mParserContext->mRequest = request;
 
-  mDTD = nullptr;
+  mExpatDriver = nullptr;
 
   nsresult rv;
   nsAutoCString contentType;
@@ -923,14 +895,6 @@ inline char GetNextChar(nsACString::const_iterator& aStart,
   return (++aStart != aEnd) ? *aStart : '\0';
 }
 
-static nsresult NoOpParserWriteFunc(nsIInputStream* in, void* closure,
-                                    const char* fromRawSegment,
-                                    uint32_t toOffset, uint32_t count,
-                                    uint32_t* writeCount) {
-  *writeCount = count;
-  return NS_OK;
-}
-
 typedef struct {
   bool mNeedCharsetCheck;
   nsParser* mParser;
@@ -1012,16 +976,6 @@ nsresult nsParser::OnDataAvailable(nsIRequest* request,
              "Must have a buffered input stream");
 
   nsresult rv = NS_OK;
-
-  if (mIsAboutBlank) {
-    MOZ_ASSERT(false, "Must not get OnDataAvailable for about:blank");
-    // ... but if an extension tries to feed us data for about:blank in a
-    // release build, silently ignore the data.
-    uint32_t totalRead;
-    rv = pIStream->ReadSegments(NoOpParserWriteFunc, nullptr, aLength,
-                                &totalRead);
-    return rv;
-  }
 
   if (mParserContext->mRequest == request) {
     mParserContext->mStreamListenerState = eOnDataAvail;

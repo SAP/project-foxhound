@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+#ifndef SECURITY_SANDBOX_COMMON_TEST_SANDBOXTESTINGCHILDTESTS_H_
+#define SECURITY_SANDBOX_COMMON_TEST_SANDBOXTESTINGCHILDTESTS_H_
+
 #include "SandboxTestingChild.h"
 
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
@@ -14,7 +17,9 @@
 #  include <netdb.h>
 #  ifdef XP_LINUX
 #    include <arpa/inet.h>
+#    include <linux/memfd.h>
 #    include <linux/mempolicy.h>
+#    include <linux/mman.h>
 #    include <sched.h>
 #    include <sys/ioctl.h>
 #    include <sys/mman.h>
@@ -29,7 +34,6 @@
 #    include <sys/utsname.h>
 #    include <termios.h>
 #    include "mozilla/ProcInfo_linux.h"
-#    include "mozilla/UniquePtrExtensions.h"
 #    ifdef MOZ_X11
 #      include "X11/Xlib.h"
 #      include "X11UndefineNone.h"
@@ -51,9 +55,16 @@
 #  include <CoreFoundation/CoreFoundation.h>
 #  include <CoreGraphics/CoreGraphics.h>
 #  include <AudioToolbox/AudioToolbox.h>
+#  include <dirent.h>
+#  include <fcntl.h>
+#  include <limits.h>
+#  include <sys/stat.h>
+#  include <sys/sysctl.h>
+#  include <unistd.h>
 namespace ApplicationServices {
 #  include <ApplicationServices/ApplicationServices.h>
 }
+extern "C" int sandbox_check(pid_t pid, const char* operation, int type, ...);
 #endif
 
 #ifdef XP_WIN
@@ -73,6 +84,22 @@ namespace ApplicationServices {
 // Added in 5.7.
 #  ifndef MREMAP_DONTUNMAP
 #    define MREMAP_DONTUNMAP 4
+#  endif
+// Added in 4.14.
+#  ifndef MFD_HUGETLB
+#    define MFD_HUGETLB 4U
+#    define MFD_HUGE_2MB (21U << 26)
+#  endif
+// (MAP_HUGE_* is from 3.8.  MAP_HUGETLB is 2.6.32.)
+//
+// This constant is ancient, but the kernel header for it conflicts
+// with glibc's fcntl.h:
+#  ifndef F_LINUX_SPECIFIC_BASE
+#    define F_LINUX_SPECIFIC_BASE 1024
+#  endif
+// Added in 6.10:
+#  ifndef F_DUPFD_QUERY
+#    define F_DUPFD_QUERY (F_LINUX_SPECIFIC_BASE + 3)
 #  endif
 #endif
 
@@ -141,6 +168,23 @@ static void RunGenericTests(SandboxTestingChild* child, bool aIsGMP = false) {
       flags = fcntl(fds[0], F_GETFL);
       MOZ_RELEASE_ASSERT(flags >= 0);
       MOZ_RELEASE_ASSERT(flags & O_NONBLOCK);
+    }
+  }
+
+  if (!aIsGMP) {
+    constexpr auto name = "fcntl_dupfd_query"_ns;
+    int rv = fcntl(0, F_DUPFD_QUERY, 0);
+    // Expected:
+    // * success with rv == 1 (new kernel)
+    // * failure with EINVAL (old kernel)
+    // Rejected:
+    // * failure with ENOSYS or any other error
+    // * success with rv == 0 (shouldn't be possible)
+    MOZ_RELEASE_ASSERT(rv != 0);
+    if (rv > 0) {
+      child->PosixTest(name, true, 0);
+    } else {  // (rv < 0), errno unchanged since fcntl
+      child->PosixTest(name, false, errno, Some(EINVAL));
     }
   }
 #endif  // XP_LINUX
@@ -568,6 +612,23 @@ void RunTestsContent(SandboxTestingChild* child) {
     return send(0, &c, 1, MSG_CONFIRM);
   });
 
+  child->ErrnoValueTest("mmap_huge"_ns, ENOSYS, [] {
+    void* ptr =
+        mmap(nullptr, 1 << 21, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
+    return ptr == MAP_FAILED ? -1 : 0;
+  });
+
+  child->ErrnoValueTest("memfd_huge"_ns, ENOSYS, [] {
+    int fd = syscall(__NR_memfd_create, "hugemem",
+                     MFD_CLOEXEC | MFD_HUGETLB | MFD_HUGE_2MB);
+    if (fd >= 0) {
+      close(fd);
+    }
+    // Returning a closed fd is fine; it's just going to be tested for >= 0.
+    return fd;
+  });
+
 #  endif  // XP_LINUX
 
 #  ifdef XP_MACOSX
@@ -970,11 +1031,16 @@ void RunTestsGenericUtility(SandboxTestingChild* child) {
     return rv;
   });
 
-  struct rusage res;
   child->ErrnoTest("getrusage"_ns, true, [&] {
-    int rv = getrusage(RUSAGE_SELF, &res);
-    return rv;
+    struct rusage res;
+    return getrusage(RUSAGE_SELF, &res);
   });
+
+  child->ErrnoTest("uname"_ns, true, [&] {
+    struct utsname uts;
+    return uname(&uts);
+  });
+
 #  elif XP_MACOSX  // XP_LINUX
   RunMacTestLaunchProcess(child);
   RunMacTestWindowServer(child);
@@ -1061,9 +1127,230 @@ void RunTestsGPU(SandboxTestingChild* child) {
            u"shader-cache\\sandboxTest.txt"_ns,
            FILE_GENERIC_READ | FILE_GENERIC_WRITE, true, child);
 
+#elif defined(XP_MACOSX)
+
+  // Check if the GPU process sandbox has been started
+  bool isSandboxStarted = sandbox_check(getpid(), NULL, 0) == 1;
+  nsCString gpuSandboxCheckMessage;
+  if (isSandboxStarted) {
+    gpuSandboxCheckMessage.AppendLiteral(
+        "sandbox_check() indicates GPU process sandbox is running");
+  } else {
+    gpuSandboxCheckMessage.AppendLiteral(
+        "sandbox_check() indicates GPU process sandbox is not running");
+  }
+  child->SendReportTestResults("sandbox_check()"_ns, isSandboxStarted,
+                               gpuSandboxCheckMessage);
+
+  // Home directory tests
+  const char* home = getenv("HOME");
+  if (home) {
+    // Test write to home directory
+    nsCString testFile(home);
+    testFile.Append("/gpu_sbox_writetest.tmp");
+
+    child->ErrnoTest("write denied ($HOME)"_ns, false,
+                     [p = std::string(testFile.get())] {
+                       int fd = open(p.c_str(), O_CREAT | O_WRONLY, 0600);
+                       if (fd >= 0) {
+                         close(fd);
+                       }
+                       return fd;
+                     });
+
+    // Test reading from home directory - file already created by parent process
+    nsCString testReadFile(home);
+    testReadFile.Append("/.mozilla_gpu_sandbox_read_test");
+    std::string path = std::string(testReadFile.get());
+    if (access(path.c_str(), F_OK) == 0) {
+      child->ErrnoTest("read denied (home test file)"_ns, false, [path] {
+        int fd = open(path.c_str(), O_RDONLY);
+        if (fd >= 0) {
+          close(fd);
+        }
+        return fd;
+      });
+    } else {
+      child->SendReportTestResults(
+          "read denied (home test file)"_ns, false,
+          "Test file does not exist, test setup failure"_ns);
+    }
+  } else {
+    child->SendReportTestResults("HOME check"_ns, false,
+                                 "HOME environment variable not set"_ns);
+  }
+
+  // System directory
+  child->ErrnoTest("write denied (/tmp)"_ns, false, [] {
+    int fd = open("/tmp/gpu_sandbox_test_file.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+      close(fd);
+    }
+    return fd;
+  });
+
+  child->ErrnoTest("write denied (/private/tmp)"_ns, false, [] {
+    int fd = open("/private/tmp/sandboxTest.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+      close(fd);
+    }
+    return fd;
+  });
+
+  // Shader cache tests
+  char buf[PATH_MAX];
+  if (confstr(_CS_DARWIN_USER_CACHE_DIR, buf, sizeof(buf)) > 0) {
+    nsCString cache(buf);
+
+    // Can't create directories at the cache root.
+    nsCString subdir = cache + "/mozilla-gpu-sbox-test"_ns;
+    child->ErrnoTest("mkdir denied (cache root subdir)"_ns, false,
+                     [s = std::string(subdir.get())] {
+                       int rv = mkdir(s.c_str(), 0700);
+                       if (rv == 0) {
+                         rmdir(s.c_str());  // cleanup if somehow created
+                       }
+                       return rv;
+                     });
+
+    // Can't write files at the cache root.
+    nsCString file = cache + "/gpu_test_file.txt"_ns;
+    child->ErrnoTest("write denied (cache root)"_ns, false,
+                     [f = std::string(file.get())] {
+                       int fd = open(f.c_str(), O_CREAT | O_WRONLY, 0600);
+                       if (fd >= 0) {
+                         close(fd);
+                         unlink(f.c_str());
+                       }
+                       return fd;
+                     });
+
+    // Can't create a fake GPU bundle cache directory.
+    nsCString fakeGpuDir = cache + "/org.mozilla.firefox-fake-gpu"_ns;
+    child->ErrnoTest("mkdir denied (fake GPU cache dir)"_ns, false,
+                     [dir = std::string(fakeGpuDir.get())] {
+                       int rv = mkdir(dir.c_str(), 0700);
+                       if (rv == 0) {
+                         rmdir(dir.c_str());  // cleanup if somehow created
+                       }
+                       return rv;
+                     });
+
+    // Actual GPU bundle cache directory
+    nsCString actualGpuCacheDir =
+        cache + "/"_ns + nsCString(MOZ_GPU_PROCESS_BUNDLEID);
+
+    // Allowed to write a regular file in the GPU bundle cache.
+    nsCString legitGpuFile = actualGpuCacheDir + "/gpu_test.cache"_ns;
+    child->ErrnoTest("write allowed (GPU bundle cache)"_ns, true,
+                     [f = std::string(legitGpuFile.get())] {
+                       int fd = open(f.c_str(), O_CREAT | O_WRONLY, 0600);
+                       if (fd >= 0) {
+                         close(fd);
+                         unlink(f.c_str());  // cleanup
+                         return 0;
+                       }
+                       return fd;
+                     });
+
+    // Symlink test inside the GPU bundle cache.
+    nsCString symlinkInGpuCache = actualGpuCacheDir + "/bad_symlink"_ns;
+    child->ErrnoTest("symlink denied (GPU bundle cache)"_ns, false,
+                     [s = std::string(symlinkInGpuCache.get())] {
+                       int rv = symlink("/etc/passwd", s.c_str());
+                       if (rv == 0) {  // cleanup if somehow created
+                         int fd = open(s.c_str(), O_RDONLY);
+                         if (fd >= 0) {
+                           close(fd);
+                         }
+                         unlink(s.c_str());
+                       }
+                       return rv;
+                     });
+
+  } else {
+    child->SendReportTestResults("cache dir check"_ns, false,
+                                 "Could not get user cache directory"_ns);
+  }
+
+  // Test read permissions
+  child->ErrnoTest(
+      "read allowed (/System/.../SystemVersion.plist)"_ns, true, [] {
+        int fd =
+            open("/System/Library/CoreServices/SystemVersion.plist", O_RDONLY);
+        if (fd >= 0) {
+          close(fd);
+          return 0;
+        }
+        return fd;
+      });
+
+  // Test directory listing permissions
+  child->ErrnoTest("list allowed (/Library/ColorSync/Profiles)"_ns, true, [] {
+    DIR* d = opendir("/Library/ColorSync/Profiles");
+    if (!d) return -1;
+    struct dirent* entry = readdir(d);
+    closedir(d);
+    return entry ? 0 : -1;
+  });
+
+  child->ErrnoTest("list allowed (/private/var/db/CVMS)"_ns, true, [] {
+    DIR* d = opendir("/private/var/db/CVMS");
+    if (!d) return -1;
+    struct dirent* entry = readdir(d);
+    closedir(d);
+    return entry ? 0 : -1;
+  });
+
+  // Test sysctl permissions
+  child->ErrnoTest("sysctl allowed (kern.ostype)"_ns, true, [] {
+    char buf[256];
+    size_t sz = sizeof(buf);
+    int rv = sysctlbyname("kern.ostype", buf, &sz, nullptr, 0);
+    return rv;
+  });
+
+  child->ErrnoTest("sysctl allowed (hw.memsize)"_ns, true, [] {
+    uint64_t mem = 0;
+    size_t sz = sizeof(mem);
+    int rv = sysctlbyname("hw.memsize", &mem, &sz, nullptr, 0);
+    return rv;
+  });
+
+  // System directory write
+  child->ErrnoTest("write denied (root)"_ns, false, [] {
+    int fd = open("/gpu_root_test.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+      close(fd);
+    }
+    return fd;
+  });
+
+  child->ErrnoTest("write denied (/usr/local)"_ns, false, [] {
+    int fd = open("/usr/local/gpu_bad_test.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+      close(fd);
+    }
+    return fd;
+  });
+
+  child->ErrnoTest("write denied (/etc)"_ns, false, [] {
+    int fd = open("/etc/gpu_bad_test.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+      close(fd);
+    }
+    return fd;
+  });
+
+  RunMacTestLaunchProcess(child, EPERM);
+  RunMacTestAudioAPI(child);
+  RunMacTestWindowServer(child, true);
+
 #else   // defined(XP_WIN)
-  child->ReportNoTests();
+    child->ReportNoTests();
 #endif  // defined(XP_WIN)
 }
 
 }  // namespace mozilla
+
+#endif  // SECURITY_SANDBOX_COMMON_TEST_SANDBOXTESTINGCHILDTESTS_H_

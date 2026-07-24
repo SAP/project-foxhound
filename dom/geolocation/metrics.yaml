@@ -74,3 +74,111 @@ geolocation:
     notification_emails:
       - krosylight@mozilla.com
     expires: never
+  geolocation_service:
+    type: labeled_counter
+    description: >
+      How many geolocation requests were issued to the system provider, the
+      network wifi-lookup provider, the network ip-lookup provider, and the
+      Linux GeoClue service?  Wifi and IP currently use the same provider.
+    labels:
+      - system
+      - network_wifi_and_ip
+      - network_ip
+      - geoclue
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
+  geolocation_cache_hit:
+    type: labeled_counter
+    description: >
+      How many times was a geolocation request serviced by the given cache.
+    labels:
+      - nsGeolocationRequest
+      - NetworkGeolocationProvider
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
+  macos_error_code:
+    type: labeled_counter
+    description: >
+      Records the error code when MacOS CoreLocation geolocation fails.
+      The CoreLocation error domain is kCLErrorDomain and can usually be used
+      to get a human readable error for these values.  Records up to 16 codes.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
+  geoclue_error_code:
+    type: labeled_counter
+    description: >
+      Records the error code when Linux GeoClue geolocation fails.
+      The GeoClue DBUS error domain is G_DBUS_ERROR and can usually be used
+      to get a human readable error for these values.  Records up to 16 codes.
+      Note that errors G_DBUS_ERROR_LIMITS_EXCEEDED (8),
+      G_DBUS_ERROR_ACCESS_DENIED(9), and G_DBUS_ERROR_AUTH_FAILED (10) are
+      considered by Firefox to mean that permission is not granted, as opposed
+      to an internal error.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
+  linux_portal_error:
+    type: labeled_counter
+    description: >
+      Records the reason for failures in the PortalLocationProvider.
+    labels:
+      - empty_response
+      - cant_read_response
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
+  windows_failure:
+    type: dual_labeled_counter
+    description: >
+      Records the reason the WindowsLocationChild reported failure to
+      get location.
+    dual_labels:
+      key:
+        description: >
+          Is this for the WindowsLegacy or WindowsRuntime (winrt) implementation?
+        labels:
+          - legacy
+          - winrt
+      category:
+        description: >
+          Reason for the failure
+        labels:
+          - permission denied
+          - geoservice error
+          - not supported
+          - creation error
+          - requestpermissions denied
+          - requestpermissions canceled
+          - not registered
+          - failed to register
+          - unexpected error
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010958
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never

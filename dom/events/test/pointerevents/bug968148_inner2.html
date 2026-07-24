@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=968148
 <head>
   <title>Test for Bug 968148</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
   .test {
@@ -27,7 +28,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=968148
 /**
  * Test for Bug 968148, test orignally copied from test_bug582771.html.
  * Mouse functionality converted to pointer and all steps duplicated in order to run them in parallel for two different pointer Id's
-**/
+*/
 
 function ok(condition, msg) {
   parent.ok(condition, msg);
@@ -61,7 +62,6 @@ var ry = 1;
 var angle = 0;
 var force = 1;
 var modifiers = 0;
-var utils = SpecialPowers.getDOMWindowUtils(window);
 
 function log(s) {
   document.getElementById("l").textContent += s + "\n";
@@ -192,20 +192,44 @@ function runTests() {
 
   // This shouldn't enable capturing, since we're not in a right kind of
   // event listener.
-  utils.sendTouchEvent('touchstart', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchstart",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
-  utils.sendTouchEvent('touchmove', [test1PointerId, test2PointerId],
-                       [left1d2, left2d2], [top1d2, top2d2], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d2, left2d2], [top1d2, top2d2], {
+    type: "touchmove",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
-  utils.sendTouchEvent('touchend', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchend",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   // Implicitly pointer capture. pointermove should be dispatched to 1d1, 2d1
   is(test1d1pointermovecount, 1, "1d1 should have got pointermove");
@@ -217,15 +241,31 @@ function runTests() {
   test1d1.addEventListener("pointerdown", test1d1CapturePointer, {capture: true, once: true});
   test2d1.addEventListener("pointerdown", test2d1CapturePointer, {capture: true, once: true});
 
-  utils.sendTouchEvent('touchstart', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchstart",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
-  utils.sendTouchEvent('touchmove', [test1PointerId, test2PointerId],
-                       [left1d2, left2d2], [top1d2, top2d2], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d2, left2d2], [top1d2, top2d2], {
+    type: "touchmove",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   // Explicitly capture pointer to 1d1, 2d1. pointermove, gotpointercapture
   // should be dispatched to 1d1, 2d1
@@ -239,10 +279,18 @@ function runTests() {
   is(test2d2pointermovecount, 0, "2d2 shouldn't have got pointermove");
   is(test2d2pointergotcapture, 0, "2d2 shouldn't have got pointergotcapture");
 
-  utils.sendTouchEvent('touchend', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchend",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   // Explicitly capture pointer to 1d1, 2d1 when pointerdown
   test1d1.addEventListener("pointerdown", test1d1CapturePointer, {capture: true, once: true});
@@ -252,22 +300,46 @@ function runTests() {
   test1d1.addEventListener("pointermove", test1d2CapturePointer, {capture: true, once: true});
   test2d1.addEventListener("pointermove", test2d2CapturePointer, {capture: true, once: true});
 
-  utils.sendTouchEvent('touchstart', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchstart",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   // This should send pointer event to test1d1, test2d1.
-  utils.sendTouchEvent('touchmove', [test1PointerId, test2PointerId],
-                       [left1d1 + 5, left2d1 + 5], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1 + 5, left2d1 + 5], [top1d1, top2d1], {
+    type: "touchmove",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   // This should send pointer event to test1d2, test2d2.
-  utils.sendTouchEvent('touchmove', [test1PointerId, test2PointerId],
-                       [left1d1 + 5, left2d1 + 5], [top1d1 + 5, top2d1 + 5], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1 + 5, left2d1 + 5], [top1d1 + 5, top2d1 + 5], {
+    type: "touchmove",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   is(test1d1pointermovecount, 3, "1d1 shouldn't have got pointermove");
   is(test1d1pointergotcapture, 3, "1d1 should have got pointergotcapture");
@@ -279,10 +351,18 @@ function runTests() {
   is(test2d2pointermovecount, 1, "2d2 should have got pointermove");
   is(test2d2pointergotcapture, 1, "2d2 should have got pointergotcapture");
 
-  utils.sendTouchEvent('touchend', [test1PointerId, test2PointerId],
-                       [left1d1, left2d1], [top1d1, top2d1], [rx, rx], [ry, ry],
-                       [angle, angle], [force, force], [0, 0], [0, 0],
-                       [0, 0], modifiers);
+  synthesizeTouchAtPoint([left1d1, left2d1], [top1d1, top2d1], {
+    type: "touchend",
+    id: [test1PointerId, test2PointerId],
+    rx: [rx, rx],
+    ry: [ry, ry],
+    angle: [angle, angle],
+    force: [force, force],
+    tiltX: [0, 0],
+    tiltY: [0, 0],
+    twist: [0, 0],
+    modifiers,
+  });
 
   finishTest();
 }

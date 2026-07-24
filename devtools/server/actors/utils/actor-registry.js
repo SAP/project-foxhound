@@ -17,6 +17,7 @@ const ActorRegistry = {
 
   /**
    * Register a CommonJS module with the devtools server.
+   *
    * @param id string
    *        The ID of a CommonJS module.
    *        The actor is going to be registered immediately, but loaded only
@@ -225,11 +226,6 @@ const ActorRegistry = {
     this.registerModule("devtools/server/actors/accessibility/accessibility", {
       prefix: "accessibility",
       constructor: "AccessibilityActor",
-      type: { target: true },
-    });
-    this.registerModule("devtools/server/actors/changes", {
-      prefix: "changes",
-      constructor: "ChangesActor",
       type: { target: true },
     });
     this.registerModule("devtools/server/actors/manifest", {

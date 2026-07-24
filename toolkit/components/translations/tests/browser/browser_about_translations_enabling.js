@@ -3,149 +3,164 @@
 
 "use strict";
 
-// runInPage calls ContentTask.spawn, which injects ContentTaskUtils in the
-// scope of the callback. Eslint doesn't know about that.
-/* global ContentTaskUtils */
+const AI_PREFS = [
+  ["browser.translations.enable", false],
+  ["browser.ai.control.default", "blocked"],
+  ["browser.ai.control.translations", "blocked"],
+];
+
+const HIDDEN_UI = {
+  pageHeader: false,
+  mainUserInterface: false,
+  sourceLanguageSelector: false,
+  targetLanguageSelector: false,
+  copyButton: false,
+  swapLanguagesButton: false,
+  sourceSectionTextArea: false,
+  targetSectionTextArea: false,
+  unsupportedInfoMessage: false,
+  languageLoadErrorMessage: false,
+};
+
+const VISIBLE_UI = {
+  pageHeader: true,
+  mainUserInterface: true,
+  sourceLanguageSelector: true,
+  targetLanguageSelector: true,
+  copyButton: true,
+  swapLanguagesButton: true,
+  sourceSectionTextArea: true,
+  targetSectionTextArea: true,
+  unsupportedInfoMessage: false,
+  languageLoadErrorMessage: false,
+};
 
 /**
- * Checks that the page renders without issue, and that the expected elements
- * are there.
+ * Checks the about:translations UI updates with AIFeature enable/disable starting from disabled.
  */
-add_task(async function test_about_translations_enabled() {
-  const { runInPage, cleanup } = await openAboutTranslations({
-    autoDownloadFromRemoteSettings: true,
-  });
-
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        const trElement = document.querySelector(selectors.translationResult);
-        const trBlankElement = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility: trVisibility } = window.getComputedStyle(trElement);
-        const { visibility: trBlankVisibility } =
-          window.getComputedStyle(trBlankElement);
-        return trVisibility === "hidden" && trBlankVisibility === "visible";
-      },
-      `Waiting for placeholder text to be visible."`,
-      100,
-      200
+add_task(
+  async function test_about_translations_ai_feature_toggle_from_disabled() {
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        disabled: true,
+        autoDownloadFromRemoteSettings: true,
+        prefs: [
+          ["browser.translations.enable", false],
+          ["browser.ai.control.default", "blocked"],
+          ["browser.ai.control.translations", "blocked"],
+        ],
+      }
     );
 
-    function checkElementIsVisible(expectVisible, name) {
-      const expected = expectVisible ? "visible" : "hidden";
-      const element = document.querySelector(selectors[name]);
-      ok(Boolean(element), `Element ${name} was found.`);
-      const { visibility } = window.getComputedStyle(element);
-      is(
-        visibility,
-        expected,
-        `Element ${name} was not ${expected} but should be.`
-      );
-    }
+    await aboutTranslationsTestUtils.assertIsVisible(HIDDEN_UI);
 
-    checkElementIsVisible(true, "pageHeader");
-    checkElementIsVisible(true, "fromLanguageSelect");
-    checkElementIsVisible(true, "toLanguageSelect");
-    checkElementIsVisible(true, "translationTextarea");
-    checkElementIsVisible(true, "translationResultBlank");
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.EnabledStateChanged,
+            { enabled: true },
+          ],
+        ],
+      },
+      async () => {
+        await TranslationsParent.AIFeature.enable();
+      }
+    );
+    await aboutTranslationsTestUtils.assertIsVisible(VISIBLE_UI);
 
-    checkElementIsVisible(false, "translationResult");
-  });
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.EnabledStateChanged,
+            { enabled: false },
+          ],
+        ],
+      },
+      async () => {
+        await TranslationsParent.AIFeature.disable();
+      }
+    );
+    await aboutTranslationsTestUtils.assertIsVisible(HIDDEN_UI);
 
-  await cleanup();
-});
+    await cleanup();
+  }
+);
 
 /**
- * Checks that the page does not show the content when disabled.
+ * Checks the about:translations UI updates with AIFeature disable/enable starting from enabled.
  */
-add_task(async function test_about_translations_disabled() {
-  const { runInPage, cleanup } = await openAboutTranslations({
-    disabled: true,
-    autoDownloadFromRemoteSettings: true,
-  });
-
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        const element = document.querySelector(selectors.translationResult);
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "hidden";
-      },
-      `Waiting for translated text to be hidden."`,
-      100,
-      200
+add_task(
+  async function test_about_translations_ai_feature_toggle_from_enabled() {
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        disabled: false,
+        autoDownloadFromRemoteSettings: true,
+        prefs: [
+          ["browser.translations.enable", true],
+          ["browser.ai.control.default", "available"],
+          ["browser.ai.control.translations", "default"],
+        ],
+      }
     );
 
-    function checkElementIsInvisible(name) {
-      const element = document.querySelector(selectors[name]);
-      ok(Boolean(element), `Element ${name} was found.`);
-      const { visibility } = window.getComputedStyle(element);
-      is(visibility, "hidden", `Element ${name} was invisible.`);
-    }
+    await aboutTranslationsTestUtils.assertIsVisible(VISIBLE_UI);
 
-    checkElementIsInvisible("pageHeader");
-    checkElementIsInvisible("fromLanguageSelect");
-    checkElementIsInvisible("toLanguageSelect");
-    checkElementIsInvisible("translationTextarea");
-    checkElementIsInvisible("translationResult");
-    checkElementIsInvisible("translationResultBlank");
-  });
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.EnabledStateChanged,
+            { enabled: false },
+          ],
+        ],
+      },
+      async () => {
+        await TranslationsParent.AIFeature.disable();
+      }
+    );
+    await aboutTranslationsTestUtils.assertIsVisible(HIDDEN_UI);
 
-  await cleanup();
-});
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.EnabledStateChanged,
+            { enabled: true },
+          ],
+        ],
+      },
+      async () => {
+        await TranslationsParent.AIFeature.enable();
+      }
+    );
+    await aboutTranslationsTestUtils.assertIsVisible(VISIBLE_UI);
+
+    await cleanup();
+  }
+);
 
 /**
- * Test that the page is properly disabled when the engine isn't supported.
+ * Checks that the page loads correctly when the global Translations pref is enabled.
  */
-add_task(async function test_about_translations_disabling() {
-  const { runInPage, cleanup } = await openAboutTranslations({
+add_task(async function test_about_translations_engine_unsupported() {
+  const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations({
+    autoDownloadFromRemoteSettings: true,
     prefs: [["browser.translations.simulateUnsupportedEngine", true]],
-    autoDownloadFromRemoteSettings: true,
   });
 
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-
-    info('Checking for the "no support" message.');
-    await ContentTaskUtils.waitForCondition(
-      () => document.querySelector(selectors.noSupportMessage),
-      'Waiting for the "no support" message.',
-      100,
-      200
-    );
-
-    /** @type {HTMLSelectElement} */
-    const fromSelect = document.querySelector(selectors.fromLanguageSelect);
-    /** @type {HTMLSelectElement} */
-    const toSelect = document.querySelector(selectors.toLanguageSelect);
-    /** @type {HTMLTextAreaElement} */
-    const translationTextarea = document.querySelector(
-      selectors.translationTextarea
-    );
-
-    ok(fromSelect.disabled, "The from select is disabled");
-    ok(toSelect.disabled, "The to select is disabled");
-    ok(translationTextarea.disabled, "The textarea is disabled");
-
-    function checkElementIsVisible(expectVisible, name) {
-      const expected = expectVisible ? "visible" : "hidden";
-      const element = document.querySelector(selectors[name]);
-      ok(Boolean(element), `Element ${name} was found.`);
-      const { visibility } = window.getComputedStyle(element);
-      is(
-        visibility,
-        expected,
-        `Element ${name} was not ${expected} but should be.`
-      );
-    }
-
-    checkElementIsVisible(true, "translationInfo");
+  await aboutTranslationsTestUtils.assertIsVisible({
+    pageHeader: true,
+    unsupportedInfoMessage: true,
+    mainUserInterface: false,
+    sourceLanguageSelector: false,
+    targetLanguageSelector: false,
+    copyButton: false,
+    swapLanguagesButton: false,
+    sourceSectionTextArea: false,
+    targetSectionTextArea: false,
+    languageLoadErrorMessage: false,
   });
 
   await cleanup();

@@ -1,0 +1,122 @@
+<!DOCTYPE HTML>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test for Bug 1966443</title>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+</head>
+
+<body>
+  <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1966443">Mozilla Bug 1966443 Clipboard Test</a>
+  <textarea id="source"></textarea>
+  <input type="text" id="target" />
+  <script type="application/javascript">
+    SimpleTest.waitForExplicitFinish();
+    const {AppConstants} = SpecialPowers.ChromeUtils.importESModule(
+      "resource://gre/modules/AppConstants.sys.mjs"
+    );
+    const { AppInfo } = SpecialPowers.ChromeUtils.importESModule(
+      "chrome://remote/content/shared/AppInfo.sys.mjs"
+    );
+
+    // copied from clipboard_helper.js
+    async function getWindowProtocol() {
+      return await SpecialPowers.spawnChrome([], () => {
+        try {
+          return Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo)
+            .windowProtocol;
+        } catch {
+          return "";
+        }
+      });
+    }
+
+    const isAndroid = AppConstants.platform == "android";
+    const isWayland = getWindowProtocol() === "wayland";
+
+    const kNothingCopied = "<nothing copied...>";
+    const kNothingPasted = "<nothing pasted...>";
+    const Ci = SpecialPowers.Ci;
+    let sourceElt = document.getElementById("source");
+    let targetElt = document.getElementById("target");
+
+    function copyToClipboard(actual) {
+      // First, perform a copy that should always succeed so that we know the
+      // clipboard contents before setting them to 'actual'.  This not only
+      // keeps prior checks from influencing this one but also is required
+      // to detect "empty" copies (like "\0") that won't update the
+      // clipboard.
+      sourceElt.textContent = kNothingCopied;
+      sourceElt.focus();
+      sourceElt.select();
+      SpecialPowers.wrap(document).execCommand("copy", false, null);
+
+      sourceElt.textContent = actual;
+      sourceElt.select();
+      SpecialPowers.wrap(document).execCommand("copy", false, null);
+    }
+
+    function pasteFromClipboard() {
+      targetElt.value = kNothingPasted;
+      targetElt.focus();
+      // Select contents so that paste replaces them
+      targetElt.select();
+      SpecialPowers.wrap(document).execCommand("paste", false, null);
+    }
+
+    async function test(actual, expected, paste_is_todo, read_is_todo) {
+      info(`setting and copying: '${actual}'`);
+      copyToClipboard(actual);
+
+      let readTest = read_is_todo ? todo_is : is;
+      readTest(
+        SpecialPowers.getClipboardData("text/plain"), expected,
+        "clipboard read data is correct");
+
+      info(`pasting: '${sourceElt.textContent}'`);
+      pasteFromClipboard();
+
+      let pasteTest = paste_is_todo ? todo_is : is;
+      pasteTest(targetElt.value, expected, `Pasted string is correct`);
+    }
+
+    async function runTests() {
+      for (let currentTest of tests) {
+        await test(currentTest.actual, currentTest.expected, currentTest.paste_is_todo, currentTest.read_is_todo);
+      }
+      SimpleTest.finish();
+    }
+
+    // actual is the string sent to the clipboard.
+    // expected is the result of reading or pasting the clipboard.
+    // paste_is_todo means a paste check is a todo.
+    // read_is_todo means the clipboard read check is a todo.
+    //
+    // At present, pasting a string with only NULs does nothing, even
+    // though clipboard reads report it as the empty string.  Note that an
+    // empty string *without* NULs cannot be copied to the clipboard (in
+    // Gecko).
+    //
+    // Android and Wayland don't allow copying empty strings in either case.
+    let tests = [
+      { actual: "abc", expected: "abc"},
+      { actual: "\0", expected: "", paste_is_todo: true, read_is_todo: isAndroid || isWayland},
+      { actual: " \0", expected: " "},
+      { actual: "\0 ", expected: " "},
+      { actual: " \0 ", expected: "  "},
+      { actual: "\0\0", expected: "", paste_is_todo: true, read_is_todo: isAndroid || isWayland},
+      { actual: " \0\0", expected: " "},
+      { actual: "\0\0 ", expected: " "},
+      { actual: " \0\0 ", expected: "  "},
+      { actual: " \0 \0 ", expected: "   "},
+      { actual: "a\0b\0c", expected: "abc"},
+    ];
+
+    runTests();
+  </script>
+</body>
+</html>

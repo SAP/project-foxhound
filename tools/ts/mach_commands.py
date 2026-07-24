@@ -74,13 +74,14 @@ def build(ctx, lib):
     if lib == "dom":
         # Same as above, get all *.webidl files for now.
         dir = mozpath.join(ctx.topsrcdir, "dom")
+        objdir_webidl = mozpath.join(ctx.topobjdir, "dom", "bindings")
         files = []
         for subdir in ["webidl", "chrome-webidl"]:
             for file in os.listdir(mozpath.join(dir, subdir)):
                 if file.endswith(".webidl"):
                     files.append(subdir + "/" + file)
 
-        return node(ctx, "build_dom", lib_dts, dir, *files)
+        return node(ctx, "build_dom", lib_dts, dir, objdir_webidl, *files)
 
     raise ValueError(f"Unknown typelib: {lib}")
 
@@ -88,8 +89,10 @@ def build(ctx, lib):
 @SubCommand("ts", "check", description="Check types in a project using tsc.")
 @CommandArgument("paths", nargs="+", help="Path to a (dir with) tsconfig.json.")
 def check(ctx, paths):
+    maybe_setup(ctx)
+
     for p in paths:
-        rv = node(ctx, "node_modules/typescript/bin/tsc", "--project", p)
+        rv = tsc(ctx, "--project", p)
         if rv:
             return rv
     return 0
@@ -153,7 +156,15 @@ def subs(ctx):
     for file in processed:
         path = mozpath.join(ctx.topobjdir, file)
         print(f"[INFO] {path} -> {subs_dir}/{mozpath.basename(path)}")
-        node(ctx, "node_modules/typescript/bin/tsc", *args, subs_dir, path)
+        tsc(ctx, *args, subs_dir, path)
+
+
+def tsc(ctx, *args):
+    return ctx._sub_mach([
+        "node",
+        os.path.join("node_modules", "typescript", "bin", "tsc"),
+        *args,
+    ])
 
 
 def node(ctx, script, *args):
@@ -165,13 +176,16 @@ def node(ctx, script, *args):
 def maybe_setup(ctx):
     sys.path.append(mozpath.join(ctx.topsrcdir, "tools", "lint", "eslint"))
     import setup_helper
+    from mozbuild.nodeutil import check_node_executables_valid
 
-    if not setup_helper.check_node_executables_valid():
+    if not check_node_executables_valid():
         return 1
+
+    setup_helper.eslint_maybe_setup(package_name="TypeScript")
 
     """Check if npm modules are installed, and run setup if needed."""
     dir = mozpath.dirname(__file__)
-    setup_helper.eslint_maybe_setup(dir, "TypeScript")
+    setup_helper.eslint_maybe_setup(dir, "TypeScript support modules")
 
 
 def build_required(lib, item):

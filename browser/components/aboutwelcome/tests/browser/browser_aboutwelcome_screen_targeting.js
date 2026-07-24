@@ -1,5 +1,9 @@
 "use strict";
 
+const { AWScreenUtils } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs"
+);
+
 const TEST_DEFAULT_CONTENT = [
   {
     id: "AW_STEP1",

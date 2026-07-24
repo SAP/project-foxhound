@@ -66,6 +66,8 @@ class RemoteTextureHostWrapper : public TextureHost {
 
   void NotifyNotUsed() override;
 
+  void SetReadFence(Fence* aReadFence) override;
+
   RemoteTextureHostWrapper* AsRemoteTextureHostWrapper() override {
     return this;
   }

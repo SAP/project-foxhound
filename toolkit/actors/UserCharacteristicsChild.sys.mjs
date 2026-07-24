@@ -20,7 +20,7 @@ export class UserCharacteristicsChild extends JSWindowActorChild {
   /**
    * A placeholder for the collected data.
    *
-   * @typedef {Object} userDataDetails
+   * @typedef {object} userDataDetails
    *   @property {string} debug - The debug messages.
    *   @property {Array<string>} gamepads - The user characteristics data for gamepads.
    *   @property {Map<string, number | string | boolean>} output - The user characteristics data.

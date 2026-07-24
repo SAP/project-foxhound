@@ -7,8 +7,6 @@
 #ifndef jit_none_MacroAssembler_none_h
 #define jit_none_MacroAssembler_none_h
 
-#include <iterator>
-
 #include "jit/MoveResolver.h"
 #include "jit/none/Assembler-none.h"
 #include "jit/shared/IonAssemblerBuffer.h"
@@ -340,6 +338,7 @@ class MacroAssemblerNone : public Assembler {
 
   void boxDouble(FloatRegister, ValueOperand, FloatRegister) { MOZ_CRASH(); }
   void boxNonDouble(JSValueType, Register, ValueOperand) { MOZ_CRASH(); }
+  void boxNonDouble(Register, Register, ValueOperand) { MOZ_CRASH(); }
   template <typename T>
   void boxDouble(FloatRegister src, const T& dest) {
     MOZ_CRASH();
@@ -391,10 +390,6 @@ class MacroAssemblerNone : public Assembler {
 
   void getWasmAnyRefGCThingChunk(Register, Register) { MOZ_CRASH(); }
 
-  template <typename T>
-  void unboxObjectOrNull(const T& src, Register dest) {
-    MOZ_CRASH();
-  }
   void notBoolean(ValueOperand) { MOZ_CRASH(); }
   [[nodiscard]] Register extractObject(Address, Register) { MOZ_CRASH(); }
   [[nodiscard]] Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
@@ -444,10 +439,6 @@ class MacroAssemblerNone : public Assembler {
   }
   template <typename T>
   void storeUnboxedValue(const ConstantOrRegister&, MIRType, T) {
-    MOZ_CRASH();
-  }
-  template <typename T>
-  void storeUnboxedPayload(ValueOperand value, T, size_t, JSValueType) {
     MOZ_CRASH();
   }
 

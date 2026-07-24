@@ -10,7 +10,6 @@
 #include "mozilla/StateMirroring.h"
 #include "mozilla/SynchronizedEventQueue.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"
 #include "VideoUtils.h"

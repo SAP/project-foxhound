@@ -77,7 +77,7 @@ nsresult SVGAnimatedLengthList::SetAnimValue(const SVGLengthList& aNewAnimValue,
     domWrapper->InternalAnimValListWillChangeTo(aNewAnimValue);
   }
   if (!mAnimVal) {
-    mAnimVal = MakeUnique<SVGLengthList>();
+    mAnimVal = std::make_unique<SVGLengthList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aNewAnimValue);
   if (NS_FAILED(rv)) {
@@ -106,12 +106,11 @@ void SVGAnimatedLengthList::ClearAnimValue(SVGElement* aElement,
   aElement->DidAnimateLengthList(aAttrEnum);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedLengthList::ToSMILAttr(SVGElement* aSVGElement,
-                                                      uint8_t aAttrEnum,
-                                                      uint8_t aAxis,
-                                                      bool aCanZeroPadList) {
-  return MakeUnique<SMILAnimatedLengthList>(this, aSVGElement, aAttrEnum, aAxis,
-                                            aCanZeroPadList);
+std::unique_ptr<SMILAttr> SVGAnimatedLengthList::ToSMILAttr(
+    SVGElement* aSVGElement, uint8_t aAttrEnum, SVGLength::Axis aAxis,
+    bool aCanZeroPadList) {
+  return std::make_unique<SMILAnimatedLengthList>(this, aSVGElement, aAttrEnum,
+                                                  aAxis, aCanZeroPadList);
 }
 
 nsresult SVGAnimatedLengthList::SMILAnimatedLengthList::ValueFromString(

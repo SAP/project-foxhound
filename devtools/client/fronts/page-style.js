@@ -35,6 +35,10 @@ class PageStyleFront extends FrontClassWithSpec(pageStyleSpec) {
     return this.inspector.walker;
   }
 
+  get traits() {
+    return this._form.traits;
+  }
+
   get supportsFontStretchLevel4() {
     return this._form.traits && this._form.traits.fontStretchLevel4;
   }
@@ -71,11 +75,11 @@ class PageStyleFront extends FrontClassWithSpec(pageStyleSpec) {
   /**
    * Get an array of existing attribute values in a node document, given an attribute type.
    *
-   * @param {String} search: A string to filter attribute value on.
-   * @param {String} attributeType: The type of attribute we want to retrieve the values.
+   * @param {string} search: A string to filter attribute value on.
+   * @param {string} attributeType: The type of attribute we want to retrieve the values.
    * @param {Element} node: The element we want to get possible attributes for. This will
    *        be used to get the document where the search is happening.
-   * @returns {Array<String>} An array of strings
+   * @returns {Array<string>} An array of strings
    */
   async getAttributesInOwnerDocument(search, attributeType, node) {
     if (!attributeType) {
@@ -119,5 +123,4 @@ class PageStyleFront extends FrontClassWithSpec(pageStyleSpec) {
   }
 }
 
-exports.PageStyleFront = PageStyleFront;
 registerFront(PageStyleFront);

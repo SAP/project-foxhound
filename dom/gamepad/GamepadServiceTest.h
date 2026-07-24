@@ -8,10 +8,10 @@
 #define mozilla_dom_GamepadServiceTest_h_
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadHandle.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/WeakPtr.h"
 
 namespace mozilla::dom {
 

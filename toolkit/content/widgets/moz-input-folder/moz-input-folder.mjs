@@ -81,6 +81,17 @@ export default class MozInputFolder extends MozInputText {
   }
 
   async getFolderFromPath(path) {
+    if (
+      Cu.isInAutomation &&
+      Services.appinfo.OS === "WINNT" &&
+      path.includes("/")
+    ) {
+      console.error(
+        `moz-input-folder: path contains forward slashes: "${path}"`,
+        new Error().stack
+      );
+    }
+
     let folder = null;
     try {
       folder = await IOUtils.getDirectory(path);
@@ -116,7 +127,7 @@ export default class MozInputFolder extends MozInputText {
     folderPicker.init(window.browsingContext, this.dialogTitle, mode);
     folderPicker.appendFilters(Ci.nsIFilePicker.filterAll);
 
-    if (this.#folder) {
+    if (this.#folder && (await IOUtils.exists(this.#folder.path))) {
       folderPicker.displayDirectory = this.#folder;
     }
 
@@ -165,6 +176,7 @@ export default class MozInputFolder extends MozInputText {
         <moz-button
           id="choose-folder-button"
           data-l10n-id="choose-folder-button"
+          data-l10n-attrs="accesskey"
           ?disabled=${this.disabled || this.parentDisabled}
           @click=${this.openFolderPicker}
         ></moz-button>

@@ -6,20 +6,22 @@
 
 #include "IntegrityPolicyService.h"
 
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/IntegrityPolicy.h"
+#include "mozilla/dom/IntegrityViolationReportBody.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/ReportingUtils.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/net/SFVService.h"
 #include "nsContentSecurityManager.h"
+#include "nsContentSecurityUtils.h"
 #include "nsContentUtils.h"
 #include "nsILoadInfo.h"
 #include "nsString.h"
-
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/IntegrityPolicy.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/dom/RequestBinding.h"
-#include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/Logging.h"
-#include "mozilla/net/SFVService.h"
-#include "mozilla/StaticPrefs_security.h"
 
 using namespace mozilla;
 
@@ -158,7 +160,7 @@ bool IntegrityPolicyService::ShouldRequestBeBlocked(nsIURI* aContentLocation,
   // Our IntegrityPolicy struct contains both the enforcement and
   // report-only policies.
   RefPtr<IntegrityPolicy> policy = IntegrityPolicy::Cast(
-      PolicyContainer::Cast(policyContainer)->IntegrityPolicy());
+      PolicyContainer::Cast(policyContainer)->GetIntegrityPolicy());
   if (!policy) {
     // 7. If both policy and reportPolicy are empty integrity policy structs,
     // return "Allowed".
@@ -175,9 +177,14 @@ bool IntegrityPolicyService::ShouldRequestBeBlocked(nsIURI* aContentLocation,
   bool roContains = false;
   policy->PolicyContains(*destination, &contains, &roContains);
 
-  // TODO: 14. If block is true or reportBlock is true, then report violation
+  // 14. If block is true or reportBlock is true, then report violation
   // with request, block, reportBlock, policy and reportPolicy.
-  MaybeReport(aContentLocation, aLoadInfo, *destination, contains, roContains);
+  if (contains || roContains) {
+    ReportToConsole(aContentLocation, aLoadInfo, *destination, contains,
+                    roContains);
+    ReportViolation(aContentLocation, aLoadInfo, *destination, policy, contains,
+                    roContains);
+  }
 
   // 15. If block is true, then return "Blocked"; otherwise "Allowed".
   return contains;
@@ -199,14 +206,10 @@ const char* GetReportMessageKey(bool aEnforcing,
   }
 }
 
-void IntegrityPolicyService::MaybeReport(
+void IntegrityPolicyService::ReportToConsole(
     nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
     IntegrityPolicy::DestinationType aDestination, bool aEnforce,
-    bool aReportOnly) {
-  if (!aEnforce && !aReportOnly) {
-    return;
-  }
-
+    bool aReportOnly) const {
   if (nsContentUtils::IsPreloadType(aLoadInfo->InternalContentPolicyType())) {
     return;  // Don't report for preloads.
   }
@@ -229,6 +232,140 @@ void IntegrityPolicyService::MaybeReport(
       localizedMsg,
       aEnforce ? nsIScriptError::errorFlag : nsIScriptError::warningFlag,
       "Security"_ns, windowID);
+}
+
+// https://w3c.github.io/webappsec-subresource-integrity/#report-violation
+void dom::IntegrityPolicyService::ReportViolation(
+    nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
+    IntegrityPolicy::DestinationType aDestination,
+    const IntegrityPolicy* aPolicy, bool aEnforce, bool aReportOnly) const {
+  // 1. Assert: request’s client is not null.
+  // 2. Let settingsObject be request’s client.
+  // 3. Let global be settingsObject’s global object.
+  nsCOMPtr<nsISupports> loadingContext = aLoadInfo->GetLoadingContext();
+  RefPtr<Document> doc;
+  if (nsCOMPtr<nsINode> node = do_QueryInterface(loadingContext)) {
+    doc = node->OwnerDoc();
+  } else if (nsCOMPtr<nsPIDOMWindowOuter> window =
+                 do_QueryInterface(loadingContext)) {
+    doc = window->GetDoc();
+  }
+
+  if (NS_WARN_IF(!doc)) {
+    return;
+  }
+
+  nsPIDOMWindowInner* window = doc->GetInnerWindow();
+  if (NS_WARN_IF(!window)) {
+    return;
+  }
+  nsCOMPtr<nsIGlobalObject> global = window->AsGlobal();
+
+  // 4. Assert: global is a Window or a WorkerGlobalScope.
+
+  // 5. Let url be null.
+  // 6. If global is a Window, set url to global’s associated Document’s URL.
+  nsCOMPtr<nsIURI> uri = doc->GetDocumentURI();  // XXX Maybe not the right URL?
+
+  // 7. If global is a WorkerGlobalScope, set url to global’s URL.
+  // TODO(bug 1969279): Worker support.
+
+  // 8. Assert: url is a URL.
+  if (NS_WARN_IF(!uri)) {
+    return;
+  }
+
+  // 9. Let documentURL be the result of strip URL for use in reports on url.
+  nsAutoCString documentURL;
+  ReportingUtils::StripURL(uri, documentURL);
+  NS_ConvertUTF8toUTF16 documentURLUTF16(documentURL);
+
+  // 10. Let blockedURL be the result of strip URL for use in reports on
+  // request’s URL.
+  nsAutoCString blockedURL;
+  ReportingUtils::StripURL(aContentLocation, blockedURL);
+
+  nsAutoCString destination;
+  switch (aDestination) {
+    case IntegrityPolicy::DestinationType::Script:
+      destination = "script"_ns;
+      break;
+    case IntegrityPolicy::DestinationType::Style:
+      destination = "style"_ns;
+      break;
+  }
+
+  nsTArray<nsCString> enforcementEndpoints;
+  nsTArray<nsCString> reportOnlyEndpoints;
+  aPolicy->Endpoints(enforcementEndpoints, reportOnlyEndpoints);
+
+  // 11. If block is true, for each endpoint in policy’s endpoints:
+  if (aEnforce) {
+    for (const nsCString& endpoint : enforcementEndpoints) {
+      // 11.1. Let body be a new IntegrityViolationReportBody, initialized as
+      // follows:
+      //
+      // documentURL
+      //     documentURL
+      // blockedURL
+      //     blockedURL
+      // destination
+      //    request’s destination
+      // reportOnly
+      //    false
+      RefPtr<IntegrityViolationReportBody> body =
+          new IntegrityViolationReportBody(global, documentURL, blockedURL,
+                                           destination, false);
+
+      // 11.2. Generate and queue a report with the following arguments:
+      //
+      // context
+      //      settingsObject
+      // type
+      //      "integrity-violation"
+      // destination
+      //      endpoint
+      // data
+      //      body
+      ReportingUtils::Report(global, nsGkAtoms::integrity_violation,
+                             NS_ConvertUTF8toUTF16(endpoint), documentURLUTF16,
+                             body);
+    }
+  }
+
+  // 11. If reportBlock is true, for each endpoint in reportPolicy’s endpoints:
+  if (aReportOnly) {
+    for (const nsCString& endpoint : reportOnlyEndpoints) {
+      // 11.1. Let reportBody be a new IntegrityViolationReportBody, initialized
+      // as follows:
+      //
+      // documentURL
+      //     documentURL
+      // blockedURL
+      //     blockedURL
+      // destination
+      //    request’s destination
+      // reportOnly
+      //    true
+      RefPtr<IntegrityViolationReportBody> reportBody =
+          new IntegrityViolationReportBody(global, documentURL, blockedURL,
+                                           destination, true);
+
+      // 11.2. Generate and queue a report with the following arguments:
+      //
+      // context
+      //      settingsObject
+      // type
+      //      "integrity-violation"
+      // destination
+      //      endpoint
+      // data
+      //      reportBody
+      ReportingUtils::Report(global, nsGkAtoms::integrity_violation,
+                             NS_ConvertUTF8toUTF16(endpoint), documentURLUTF16,
+                             reportBody);
+    }
+  }
 }
 
 NS_IMPL_ISUPPORTS(IntegrityPolicyService, nsIContentPolicy)

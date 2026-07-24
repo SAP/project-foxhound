@@ -54,8 +54,7 @@ dom::HTMLInputElement& ListMutationObserver::InputElement() const {
 
 void ListMutationObserver::AttributeChanged(dom::Element* aElement,
                                             int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType,
+                                            nsAtom* aAttribute, AttrModType,
                                             const nsAttrValue* aOldValue) {
   if (aAttribute == nsGkAtoms::value && aNameSpaceID == kNameSpaceID_None &&
       aElement->IsHTMLElement(nsGkAtoms::option)) {

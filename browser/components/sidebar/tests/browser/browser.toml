@@ -9,14 +9,21 @@ prefs = [
 ["browser_adopt_sidebar_from_opener.js"]
 
 ["browser_customize_sidebar.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968564
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968564
+]
 
 ["browser_domfullscreen_sidebar.js"]
 
 ["browser_extensions_sidebar.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1894409
+]
 
 ["browser_glean_sidebar.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks"] # Bug 1972456
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1972456
+]
 
 ["browser_hide_sidebar_on_popup.js"]
 
@@ -26,8 +33,7 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 
 ["browser_resize_sidebar.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1946263
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1946263
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1946263
 ]
 
 ["browser_sidebar_collapsed_close_tab_button.js"]
@@ -37,10 +43,14 @@ skip-if = [
 ["browser_sidebar_expand_on_hover.js"]
 
 ["browser_sidebar_macmenu.js"]
-run-if = ["os == 'mac'"] # Mac only feature
+run-if = [
+  "os == 'mac'", # Mac only feature
+]
 
 ["browser_sidebar_max_width.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking"] # Bug 1935442
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1935442
+]
 
 ["browser_sidebar_menubar_item_commands.js"]
 
@@ -50,6 +60,8 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 
 ["browser_sidebar_panel_states.js"]
 
+["browser_sidebar_pinned_tabs.js"]
+
 ["browser_sidebar_position.js"]
 
 ["browser_sidebar_prefs.js"]
@@ -57,22 +69,27 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_syncedtabs_sidebar.js"]
 
 ["browser_toolbar_sidebar_button.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt && a11y_checks && swgl && verify-standalone",
+]
 
 ["browser_tools_migration.js"]
 
 ["browser_tools_overflow.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1971922
+]
 
 ["browser_verticalTabs_widget_placements.js"]
 
 ["browser_vertical_tabs.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1968564
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1922718
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1968564
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1922718
 ]
 
 ["browser_vertical_tabs_cui_reset.js"]
 
 ["browser_vertical_tabs_stacking_context.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a11y_checks"] # Bug 1922725
 
 ["browser_view_sidebar_menu.js"]

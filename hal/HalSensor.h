@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __HAL_SENSOR_H_
-#define __HAL_SENSOR_H_
+#ifndef HAL_SENSOR_H_
+#define HAL_SENSOR_H_
 
 #include "mozilla/Observer.h"
 
@@ -53,4 +53,4 @@ struct ParamTraits<mozilla::hal::SensorType>
                                       mozilla::hal::NUM_SENSOR_TYPE> {};
 }  // namespace IPC
 
-#endif /* __HAL_SENSOR_H_ */
+#endif /* HAL_SENSOR_H_ */

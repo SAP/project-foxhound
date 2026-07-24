@@ -914,13 +914,20 @@ CoderResult CodeNameSection(Coder<mode>& coder,
 }
 
 template <CoderMode mode>
+CoderResult CodeTableType(Coder<mode>& coder, CoderArg<mode, TableType> type) {
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::TableType, 48);
+  MOZ_TRY(CodeRefType(coder, &type->elemType));
+  MOZ_TRY(CodePod(coder, &type->limits));
+  return Ok();
+}
+
+template <CoderMode mode>
 CoderResult CodeTableDesc(Coder<mode>& coder, CoderArg<mode, TableDesc> item) {
   WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::TableDesc, 144);
-  MOZ_TRY(CodeRefType(coder, &item->elemType));
+  MOZ_TRY(CodeTableType(coder, &item->type));
   MOZ_TRY(CodePod(coder, &item->isImported));
   MOZ_TRY(CodePod(coder, &item->isExported));
   MOZ_TRY(CodePod(coder, &item->isAsmJS));
-  MOZ_TRY(CodePod(coder, &item->limits));
   MOZ_TRY(
       (CodeMaybe<mode, InitExpr, &CodeInitExpr<mode>>(coder, &item->initExpr)));
   return Ok();
@@ -1019,14 +1026,15 @@ CoderResult CodeCompileArgs(Coder<mode>& coder,
 // WasmGC.h
 
 CoderResult CodeStackMap(Coder<MODE_DECODE>& coder,
-                         CoderArg<MODE_DECODE, wasm::StackMap*> item) {
+                         CoderArg<MODE_DECODE, wasm::StackMap*> item,
+                         wasm::StackMaps* stackMaps) {
   WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::StackMap, 12);
   // Decode the stack map header
   StackMapHeader header;
   MOZ_TRY(CodePod(coder, &header));
 
   // Allocate a stack map for the header
-  StackMap* map = StackMap::create(header);
+  StackMap* map = stackMaps->create(header);
   if (!map) {
     return Err(OutOfMemory());
   }
@@ -1055,7 +1063,7 @@ CoderResult CodeStackMap(Coder<mode>& coder,
 
 CoderResult CodeStackMaps(Coder<MODE_DECODE>& coder,
                           CoderArg<MODE_DECODE, wasm::StackMaps> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::StackMaps, 40);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::StackMaps, 200);
   // Decode the amount of stack maps
   size_t length;
   MOZ_TRY(CodePod(coder, &length));
@@ -1067,10 +1075,10 @@ CoderResult CodeStackMaps(Coder<MODE_DECODE>& coder,
 
     // Decode the stack map
     StackMap* map;
-    MOZ_TRY(CodeStackMap(coder, &map));
+    MOZ_TRY(CodeStackMap(coder, &map, item));
 
     // Add it to the map
-    if (!item->add(codeOffset, map)) {
+    if (!item->finalize(codeOffset, map)) {
       return Err(OutOfMemory());
     }
   }
@@ -1081,14 +1089,15 @@ CoderResult CodeStackMaps(Coder<MODE_DECODE>& coder,
 template <CoderMode mode>
 CoderResult CodeStackMaps(Coder<mode>& coder,
                           CoderArg<mode, wasm::StackMaps> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::StackMaps, 40);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::StackMaps, 200);
   STATIC_ASSERT_ENCODING_OR_SIZING;
 
   // Encode the amount of stack maps
   size_t length = item->length();
   MOZ_TRY(CodePod(coder, &length));
 
-  for (auto iter = item->mapping_.iter(); !iter.done(); iter.next()) {
+  for (auto iter = item->codeOffsetToStackMap_.iter(); !iter.done();
+       iter.next()) {
     uint32_t codeOffset = iter.get().key();
 
     // Encode the offset
@@ -1299,7 +1308,7 @@ CoderResult CodeFuncToCodeRangeMap(
 CoderResult CodeCodeBlock(Coder<MODE_DECODE>& coder,
                           wasm::UniqueCodeBlock* item,
                           const wasm::LinkData& linkData) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::CodeBlock, 2624);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::CodeBlock, 2784);
   *item = js::MakeUnique<CodeBlock>(CodeBlock::kindFromTier(Tier::Serialized));
   if (!*item) {
     return Err(OutOfMemory());
@@ -1340,7 +1349,7 @@ template <CoderMode mode>
 CoderResult CodeCodeBlock(Coder<mode>& coder,
                           CoderArg<mode, wasm::CodeBlock> item,
                           const wasm::LinkData& linkData) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::CodeBlock, 2624);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::CodeBlock, 2784);
   STATIC_ASSERT_ENCODING_OR_SIZING;
   MOZ_TRY(Magic(coder, Marker::CodeBlock));
 

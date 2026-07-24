@@ -16,25 +16,37 @@ support-files = [
 ["browser_boxmodel.js"]
 
 ["browser_boxmodel_edit-position-visible-position-change.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_editablemodel.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_editablemodel_allproperties.js"]
 disabled = "too many intermittent failures (bug 1009322)"
 
 ["browser_boxmodel_editablemodel_bluronclick.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_editablemodel_border.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_editablemodel_pseudo.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_editablemodel_stylerules.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_guides.js"]
 
@@ -43,7 +55,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_boxmodel_layout-accordion-state.js"]
 
 ["browser_boxmodel_navigation.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_offsetparent.js"]
 
@@ -58,14 +72,15 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_boxmodel_show-tooltip-for-unassociated-rule.js"]
 
 ["browser_boxmodel_sync.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_boxmodel_tooltips.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1336198
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1336198
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1336198
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1336198
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1336198
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1336198
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1336198
 ]
 
 ["browser_boxmodel_update-after-navigation.js"]

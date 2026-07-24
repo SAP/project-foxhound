@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageDecoderReadRequest.h"
+
 #include "MediaResult.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/ImageDecoder.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/image/SourceBuffer.h"
-#include "mozilla/Logging.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 

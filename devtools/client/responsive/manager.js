@@ -56,13 +56,12 @@ loader.lazyRequireGetter(
  * ResponsiveUIManager is the external API for the browser UI, etc. to use when
  * opening and closing the responsive UI.
  */
-class ResponsiveUIManager {
+class ResponsiveUIManager extends EventEmitter {
   constructor() {
+    super();
     this.activeTabs = new Map();
 
     this.handleMenuCheck = this.handleMenuCheck.bind(this);
-
-    EventEmitter.decorate(this);
   }
 
   get telemetry() {
@@ -272,7 +271,7 @@ class ResponsiveUIManager {
 
     const menu = window.document.getElementById("menu_responsiveUI");
     if (menu) {
-      menu.setAttribute("checked", this.isActiveForTab(tab));
+      menu.toggleAttribute("checked", this.isActiveForTab(tab));
     }
   }
 

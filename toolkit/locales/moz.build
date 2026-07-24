@@ -7,9 +7,6 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox Build System", "General")
 
-if CONFIG["MOZ_BUILD_APP"] == "mobile/android":
-    DEFINES["MOZ_FENNEC"] = True
-
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     DEFINES["MOZ_GTK"] = True
 

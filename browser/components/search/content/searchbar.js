@@ -16,9 +16,14 @@
       "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
     BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+    SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
     SearchSuggestionController:
       "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   });
+
+  /**
+   * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+   */
 
   /**
    * Defines the search bar element.
@@ -49,14 +54,12 @@
 
     constructor() {
       super();
-
       MozXULElement.insertFTLIfNeeded("browser/search.ftl");
 
-      this.destroy = this.destroy.bind(this);
       this._setupEventListeners();
       let searchbar = this;
       this.observer = {
-        observe(aEngine, aTopic) {
+        observe(_aSubject, aTopic, aData) {
           if (aTopic == "browser-search-engine-modified") {
             // Make sure the engine list is refetched next time it's needed
             searchbar._engines = null;
@@ -64,10 +67,29 @@
             // Update the popup header and update the display after any modification.
             searchbar._textbox.popup.updateHeader();
             searchbar.updateDisplay();
+          } else if (
+            aData == "browser.search.widget.new" &&
+            searchbar.isConnected
+          ) {
+            if (Services.prefs.getBoolPref("browser.search.widget.new")) {
+              searchbar.disconnectedCallback();
+            } else {
+              searchbar.connectedCallback();
+            }
           }
         },
         QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
       };
+
+      Services.prefs.addObserver("browser.search.widget.new", this.observer);
+
+      window.addEventListener("unload", () => {
+        this.destroy();
+        Services.prefs.removeObserver(
+          "browser.search.widget.new",
+          this.observer
+        );
+      });
 
       this._ignoreFocus = false;
       this._engines = null;
@@ -75,8 +97,11 @@
     }
 
     connectedCallback() {
-      // Don't initialize if this isn't going to be visible
-      if (this.closest("#BrowserToolbarPalette")) {
+      // Don't initialize if this isn't going to be visible.
+      if (
+        this.closest("#BrowserToolbarPalette") ||
+        Services.prefs.getBoolPref("browser.search.widget.new")
+      ) {
         return;
       }
 
@@ -108,16 +133,13 @@
       this._setupTextboxEventListeners();
       this._initTextbox();
 
-      window.addEventListener("unload", this.destroy);
-
       Services.obs.addObserver(this.observer, "browser-search-engine-modified");
 
       this._initialized = true;
 
       (window.delayedStartupPromise || Promise.resolve()).then(() => {
         window.requestIdleCallback(() => {
-          Services.search
-            .init()
+          lazy.SearchService.init()
             .then(() => {
               // Bail out if the binding's been destroyed
               if (!this._initialized) {
@@ -167,21 +189,21 @@
 
     async getEngines() {
       if (!this._engines) {
-        this._engines = await Services.search.getVisibleEngines();
+        this._engines = await lazy.SearchService.getVisibleEngines();
       }
       return this._engines;
     }
 
     set currentEngine(val) {
       if (PrivateBrowsingUtils.isWindowPrivate(window)) {
-        Services.search.setDefaultPrivate(
+        lazy.SearchService.setDefaultPrivate(
           val,
-          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR
+          lazy.SearchService.CHANGE_REASON.USER_SEARCHBAR
         );
       } else {
-        Services.search.setDefault(
+        lazy.SearchService.setDefault(
           val,
-          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR
+          lazy.SearchService.CHANGE_REASON.USER_SEARCHBAR
         );
       }
     }
@@ -189,9 +211,9 @@
     get currentEngine() {
       let currentEngine;
       if (PrivateBrowsingUtils.isWindowPrivate(window)) {
-        currentEngine = Services.search.defaultPrivateEngine;
+        currentEngine = lazy.SearchService.defaultPrivateEngine;
       } else {
-        currentEngine = Services.search.defaultEngine;
+        currentEngine = lazy.SearchService.defaultEngine;
       }
       // Return a dummy engine if there is no currentEngine
       return currentEngine || { name: "", uri: null };
@@ -207,6 +229,13 @@
       return this._textbox;
     }
 
+    /**
+     * Textbox alias for API compatibility with UrlbarInput.
+     */
+    get inputField() {
+      return this.textbox;
+    }
+
     set value(val) {
       this._textbox.value = val;
     }
@@ -218,7 +247,6 @@
     destroy() {
       if (this._initialized) {
         this._initialized = false;
-        window.removeEventListener("unload", this.destroy);
 
         Services.obs.removeObserver(
           this.observer,
@@ -496,7 +524,7 @@
      *
      * @param {event} aEvent
      *        The event causing the searchForm to be opened.
-     * @param {nsISearchEngine} [aEngine]
+     * @param {SearchEngine} [aEngine]
      *        The search engine or undefined to use the current engine.
      * @param {string} where
      *        Where the search form should be opened.
@@ -785,8 +813,7 @@
         let searchIcon = document.querySelector(".searchbar-search-button");
         searchIcon.setAttribute("aria-expanded", popup.popupOpen);
         if (popup.popupOpen) {
-          let suggestionsHidden =
-            popup.richlistbox.getAttribute("collapsed") == "true";
+          let suggestionsHidden = popup.richlistbox.hasAttribute("collapsed");
           let numItems = suggestionsHidden ? 0 : popup.matchCount;
           return popup.oneOffButtons.handleKeyDown(aEvent, numItems, true);
         } else if (aEvent.keyCode == KeyEvent.DOM_VK_ESCAPE) {

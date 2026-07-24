@@ -52,26 +52,41 @@ async function loadErrorPage() {
 add_task(async function exceptionButtonTRROnly() {
   let browser = await loadErrorPage();
 
-  await SpecialPowers.spawn(browser, [], function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
       "Should be showing error page"
     );
 
-    const titleEl = doc.querySelector(".title-text");
-    const actualDataL10nID = titleEl.getAttribute("data-l10n-id");
+    let titleEl;
+    let actualDataL10nID;
+
+    const netErrorCard = doc.querySelector("net-error-card");
+    if (netErrorCard) {
+      const card = netErrorCard.wrappedJSObject;
+      await card.getUpdateComplete();
+
+      titleEl = card.netErrorTitleText;
+    } else {
+      titleEl = doc.querySelector(".title-text");
+
+      const trrExceptionButton = await ContentTaskUtils.waitForCondition(
+        () => doc.getElementById("trrExceptionButton"),
+        "Waiting for trrExceptionButton"
+      );
+      Assert.equal(
+        trrExceptionButton.hidden,
+        true,
+        "Exception button should be hidden for TRR service failures"
+      );
+    }
+
+    actualDataL10nID = titleEl.getAttribute("data-l10n-id");
     is(
       actualDataL10nID,
-      "dnsNotFound-title",
+      "neterror-dns-not-found-title",
       "Correct error page title is set"
-    );
-
-    let trrExceptionButton = doc.getElementById("trrExceptionButton");
-    Assert.equal(
-      trrExceptionButton.hidden,
-      true,
-      "Exception button should be hidden for TRR service failures"
     );
   });
 
@@ -121,14 +136,47 @@ add_task(async function TRROnlyExceptionButtonTelemetry() {
     },
   ]);
 
-  await SpecialPowers.spawn(browser, [], function () {
+  let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    "about:preferences#privacy-doh"
+  );
+
+  await SpecialPowers.spawn(browser, [], async function () {
     const doc = content.document;
-    let buttons = ["neterrorTryAgainButton", "trrSettingsButton"];
-    for (let buttonId of buttons) {
-      let button = doc.getElementById(buttonId);
-      button.click();
+
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => doc.querySelector("net-error-card")?.wrappedJSObject
+    );
+    if (netErrorCard) {
+      await netErrorCard.getUpdateComplete();
+      const trrSettingsButton = await ContentTaskUtils.waitForCondition(
+        () => netErrorCard.shadowRoot.getElementById("trrSettingsButton"),
+        "Waiting for trrSettingsButton"
+      );
+      trrSettingsButton.click();
+
+      const tryAgainButton = await ContentTaskUtils.waitForCondition(
+        () => netErrorCard.tryAgainButton,
+        "Waiting for tryAgainButton"
+      );
+      tryAgainButton.click();
+    } else {
+      let buttons = ["neterrorTryAgainButton", "trrSettingsButton"];
+      for (let buttonId of buttons) {
+        let button = await ContentTaskUtils.waitForCondition(
+          () => doc.getElementById(buttonId),
+          `Waiting for button ${buttonId}`
+        );
+        button.click();
+      }
+    }
+  }).catch(e => {
+    // Expected: clicking settings button opens a new tab which can destroy the actor
+    if (!e.message.includes("Actor 'SpecialPowers' destroyed")) {
+      throw e;
     }
   });
+  await tabOpenPromise;
 
   // Since we click TryAgain, make sure the error page is loaded again.
   await BrowserTestUtils.waitForErrorPage(browser);
@@ -159,7 +207,7 @@ add_task(async function TRROnlyExceptionButtonTelemetry() {
   Assert.deepEqual(firstEvent, [
     "security.doh.neterror",
     "click",
-    "try_again_button",
+    "settings_button",
     "TRROnlyFailure",
     {
       mode: "3",
@@ -173,7 +221,7 @@ add_task(async function TRROnlyExceptionButtonTelemetry() {
   Assert.deepEqual(secondEvent, [
     "security.doh.neterror",
     "click",
-    "settings_button",
+    "try_again_button",
     "TRROnlyFailure",
     {
       mode: "3",

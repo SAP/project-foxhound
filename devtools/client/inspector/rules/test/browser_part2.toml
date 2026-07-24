@@ -55,24 +55,26 @@ support-files = [
   "!/devtools/client/shared/test/highlighter-test-actor.js",
   "!/devtools/client/webconsole/test/browser/shared-head.js",
 ]
-prefs = [
-  # This pref has to be set for all tests since calls to InspectorUtils.getCSSPseudoElementNames
-  # is cached and the cache is populated by other tests before the one that is checking ::details-content
-  "layout.css.details-content.enabled=true",
-]
 
 ["browser_rules_css-compatibility-add-rename-rule.js"]
+tags = "devtools-compat-data"
 
 ["browser_rules_css-compatibility-check-add-fix.js"]
+tags = "devtools-compat-data"
 
 ["browser_rules_css-compatibility-learn-more-link.js"]
+tags = "devtools-compat-data"
 
 ["browser_rules_css-compatibility-toggle-rules.js"]
+tags = "devtools-compat-data"
 
 ["browser_rules_css-compatibility-tooltip-telemetry.js"]
+tags = "devtools-compat-data"
 
 ["browser_rules_filtereditor-appears-on-swatch-click.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_filtereditor-commit-on-ENTER.js"]
 
@@ -129,8 +131,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_gridline-names-autocomplete.js"]
 
 ["browser_rules_guessIndentation.js"]
-
-["browser_rules_highlight-element-rule.js"]
 
 ["browser_rules_highlight-property.js"]
 
@@ -193,7 +193,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_lineNumbers.js"]
 
 ["browser_rules_linear-easing-swatch.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_livepreview.js"]
 
@@ -214,6 +216,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_mark_overridden_08.js"]
 
 ["browser_rules_mark_overridden_layers.js"]
+
+["browser_rules_mark_overridden_refresh.js"]
 
 ["browser_rules_mathml-element.js"]
 
@@ -240,10 +244,16 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_non_ascii.js"]
 
 ["browser_rules_original-source-link.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_original-source-link2.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_rules_position-try.js"]
 
 ["browser_rules_preview-tooltips-sizes.js"]
 
@@ -268,7 +278,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_refresh-on-style-change.js"]
 
 ["browser_rules_refresh-on-stylesheet-change.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_registered-custom-properties.js"]
 
@@ -333,7 +345,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_selector_highlight.js"]
 
 ["browser_rules_selector_warnings.js"]
-skip-if = ["os == 'win' && os_version == '11.26100' && processor == 'x86_64'"] # Bug 1945519, perma failing on windows.
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1945519, perma failing on windows.
+]
 
 ["browser_rules_shadowdom_slot_rules.js"]
 
@@ -366,7 +380,9 @@ skip-if = ["os == 'win' && os_version == '11.26100' && processor == 'x86_64'"] #
 ["browser_rules_strict-search-filter_03.js"]
 
 ["browser_rules_style-editor-link.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_update_mask_image_cors.js"]
 

@@ -321,7 +321,8 @@ class MOZ_NON_PARAM Val : public LitVal {
   // Read from `loc` which is in the heap.
   void readFromHeapLocation(const void* loc);
   // Write to `loc` which is in the heap and must be barriered.
-  void writeToHeapLocation(void* loc) const;
+  void writeToHeapLocation(gc::Cell* owner, void* loc) const;
+  void writeToTenuredHeapLocation(void* loc) const;
 
   // See the comment for `ToWebAssemblyValue` below.
   static bool fromJSValue(JSContext* cx, ValType targetType, HandleValue val,
@@ -405,6 +406,11 @@ extern bool ToJSValue(JSContext* cx, const void* src, ValType type,
                       CoercionLevel level = CoercionLevel::Spec);
 template <typename Debug = NoDebug>
 extern bool ToJSValueMayGC(ValType type);
+
+#ifdef DEBUG
+void AssertEdgeSourceNotInsideNursery(void* vp);
+#endif
+
 }  // namespace wasm
 
 template <>
@@ -420,6 +426,13 @@ struct InternalBarrierMethods<wasm::AnyRef> {
   static MOZ_ALWAYS_INLINE void postBarrier(wasm::AnyRef* vp,
                                             const wasm::AnyRef prev,
                                             const wasm::AnyRef next) {
+    // This assumes that callers have already checked that |vp| is in the
+    // tenured heap. Don't use GCPtr<AnyRef> for things that could be in the
+    // nursery!
+#ifdef DEBUG
+    AssertEdgeSourceNotInsideNursery(vp);
+#endif
+
     // If the target needs an entry, add it.
     gc::StoreBuffer* sb;
     if (next.isGCThing() && (sb = next.toGCThing()->storeBuffer())) {
@@ -430,7 +443,7 @@ struct InternalBarrierMethods<wasm::AnyRef> {
       if (prev.isGCThing() && prev.toGCThing()->storeBuffer()) {
         return;
       }
-      sb->putWasmAnyRef(vp);
+      sb->putWasmAnyRefEdgeFromTenured(vp);
       return;
     }
     // Remove the prev entry if the new value does not need it.
@@ -500,7 +513,9 @@ struct InternalBarrierMethods<wasm::Val> {
 
 template <>
 struct JS::SafelyInitialized<js::wasm::AnyRef> {
-  static js::wasm::AnyRef create() { return js::wasm::AnyRef::null(); }
+  static constexpr js::wasm::AnyRef create() {
+    return js::wasm::AnyRef::null();
+  }
 };
 
 #endif  // wasm_val_h

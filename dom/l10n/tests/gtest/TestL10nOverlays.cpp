@@ -4,11 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "mozilla/dom/L10nOverlays.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/L10nOverlaysBinding.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/L10nOverlays.h"
+#include "mozilla/dom/L10nOverlaysBinding.h"
 #include "nsNetUtil.h"
 
 using mozilla::NullPrincipal;
@@ -20,14 +20,15 @@ static already_AddRefed<Document> SetUpDocument() {
   nsCOMPtr<nsIPrincipal> principal =
       NullPrincipal::CreateWithoutOriginAttributes();
   nsCOMPtr<Document> document;
-  nsresult rv = NS_NewDOMDocument(getter_AddRefs(document),
-                                  u""_ns,   // aNamespaceURI
-                                  u""_ns,   // aQualifiedName
-                                  nullptr,  // aDoctype
-                                  uri, uri, principal,
-                                  false,    // aLoadedAsData
-                                  nullptr,  // aEventObject
-                                  DocumentFlavor::HTML);
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(document),
+                        u""_ns,   // aNamespaceURI
+                        u""_ns,   // aQualifiedName
+                        nullptr,  // aDoctype
+                        uri, uri, principal,
+                        mozilla::dom::LoadedAsData::No,  // aLoadedAsData
+                        nullptr,                         // aEventObject
+                        DocumentFlavor::HTML);
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;

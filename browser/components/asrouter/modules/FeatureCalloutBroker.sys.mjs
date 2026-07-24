@@ -9,16 +9,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 /**
- * @typedef {Object} FeatureCalloutOptions
+ * @typedef {object} FeatureCalloutOptions
  * @property {Window} win window in which messages will be rendered.
- * @property {{name: String, defaultValue?: String}} [pref] optional pref used
+ * @property {{name: string, defaultValue?: string}} [pref] optional pref used
  *   to track progress through a given feature tour. for example:
  *   {
  *     name: "browser.pdfjs.feature-tour",
  *     defaultValue: '{ screen: "FEATURE_CALLOUT_1", complete: false }',
  *   }
  *   or { name: "browser.pdfjs.feature-tour" } (defaultValue is optional)
- * @property {String} [location] string to pass as the page when requesting
+ * @property {string} [location] string to pass as the page when requesting
  *   messages from ASRouter and sending telemetry.
  * @property {MozBrowser} [browser] <browser> element responsible for the
  *   feature callout. for content pages, this is the browser element that the
@@ -31,10 +31,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /** @typedef {import("resource:///modules/asrouter/FeatureCallout.sys.mjs").FeatureCalloutTheme} FeatureCalloutTheme */
 
 /**
- * @typedef {Object} FeatureCalloutItem
+ * @typedef {object} FeatureCalloutItem
  * @property {lazy.FeatureCallout} callout instance of FeatureCallout.
  * @property {Function} [cleanup] cleanup callback.
- * @property {Boolean} showing whether the callout is currently showing.
+ * @property {boolean} showing whether the callout is currently showing.
  */
 
 export class _FeatureCalloutBroker {
@@ -42,6 +42,7 @@ export class _FeatureCalloutBroker {
    * Make a new FeatureCallout instance and store it in the callout map. Also
    * add an unload listener to the window to clean up the callout when the
    * window is unloaded.
+   *
    * @param {FeatureCalloutOptions} config
    */
   makeFeatureCallout(config) {
@@ -73,10 +74,11 @@ export class _FeatureCalloutBroker {
   /**
    * Show a feature callout message. For use by ASRouter, to be invoked when a
    * trigger has matched to a feature_callout message.
+   *
    * @param {MozBrowser} browser <browser> element associated with the trigger.
-   * @param {Object} message feature_callout message from ASRouter.
+   * @param {object} message feature_callout message from ASRouter.
    *   @see {@link FeatureCalloutMessages.sys.mjs}
-   * @returns {Promise<Boolean>} whether the callout was shown.
+   * @returns {Promise<boolean>} whether the callout was shown.
    */
   async showFeatureCallout(browser, message) {
     // Only show one callout at a time, across all windows.
@@ -150,8 +152,9 @@ export class _FeatureCalloutBroker {
    * callout is already in progress. This allows the PDF.js feature tour, which
    * simulates content, to be shown in the chrome window without interfering
    * with chrome feature callouts.
+   *
    * @param {FeatureCalloutOptions} config
-   * @param {Object} message feature_callout message from ASRouter.
+   * @param {object} message feature_callout message from ASRouter.
    *   @see {@link FeatureCalloutMessages.sys.mjs}
    * @returns {FeatureCalloutItem|null} the callout item, if one was created.
    */
@@ -194,16 +197,17 @@ export class _FeatureCalloutBroker {
 
   handleFeatureCalloutCallback(win, event) {
     switch (event) {
-      case "end":
+      case "end": {
         const item = this.#calloutMap.get(win);
         if (item) {
           item.showing = false;
         }
         break;
+      }
     }
   }
 
-  /** @returns {Boolean} whether a callout is currently showing. */
+  /** @returns {boolean} whether a callout is currently showing. */
   get isCalloutShowing() {
     return [...this.#calloutMap.values()].some(({ showing }) => showing);
   }

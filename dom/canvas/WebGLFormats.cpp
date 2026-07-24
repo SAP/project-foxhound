@@ -7,8 +7,8 @@
 
 #include "GLContext.h"
 #include "GLDefs.h"
-#include "mozilla/gfx/Logging.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/gfx/Logging.h"
 
 namespace mozilla::webgl {
 

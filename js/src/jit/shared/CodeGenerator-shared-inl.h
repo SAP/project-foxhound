@@ -228,6 +228,17 @@ static inline ValueOperand ToValue(const LBoxAllocation& a) {
 #endif
 }
 
+static inline ValueOperand ToValue(const LBoxDefinition& a) {
+#if defined(JS_NUNBOX32)
+  return ValueOperand(ToRegister(a.pointerType()),
+                      ToRegister(a.pointerPayload()));
+#elif defined(JS_PUNBOX64)
+  return ValueOperand(ToRegister(a.pointer()));
+#else
+#  error "Unknown"
+#endif
+}
+
 // For argument construction for calls. Argslots are Value-sized.
 Address CodeGeneratorShared::AddressOfPassedArg(uint32_t slot) const {
   MOZ_ASSERT(masm.framePushed() == frameSize());
@@ -312,11 +323,10 @@ Address CodeGeneratorShared::ToAddress(const LInt64Allocation& a) const {
 // static
 Address CodeGeneratorShared::ToAddress(Register elements,
                                        const LAllocation* index,
-                                       Scalar::Type type,
-                                       int32_t offsetAdjustment) {
+                                       Scalar::Type type) {
   int32_t idx = ToInt32(index);
   int32_t offset;
-  MOZ_ALWAYS_TRUE(ArrayOffsetFitsInInt32(idx, type, offsetAdjustment, &offset));
+  MOZ_ALWAYS_TRUE(ArrayOffsetFitsInInt32(idx, type, &offset));
   return Address(elements, offset);
 }
 
@@ -359,9 +369,9 @@ void CodeGeneratorShared::restoreLiveVolatile(LInstruction* ins) {
 }
 
 inline bool CodeGeneratorShared::isGlobalObject(JSObject* object) {
-  // Calling object->is<GlobalObject>() is racy because this relies on
-  // checking the group and this can be changed while we are compiling off the
-  // main thread. Note that we only check for the script realm's global here.
+  // Calling object->is<GlobalObject>() is racy because it reads object->shape
+  // and that can change while we are compiling off the main thread. Note that
+  // we only check for the script realm's global here.
   return object == gen->realm->maybeGlobal();
 }
 

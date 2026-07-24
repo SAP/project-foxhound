@@ -55,11 +55,11 @@ class SMILTimeValue {
  public:
   // Creates an unresolved time value
   SMILTimeValue()
-      : mMilliseconds(kUnresolvedMillis), mState(STATE_UNRESOLVED) {}
+      : mMilliseconds(kUnresolvedMillis), mState(State::Unresolved) {}
 
   // Creates a resolved time value
   explicit SMILTimeValue(SMILTime aMillis)
-      : mMilliseconds(aMillis), mState(STATE_DEFINITE) {}
+      : mMilliseconds(aMillis), mState(State::Definite) {}
 
   // Named constructor to create an indefinite time value
   static SMILTimeValue Indefinite() {
@@ -70,32 +70,32 @@ class SMILTimeValue {
 
   static SMILTimeValue Zero() { return SMILTimeValue(SMILTime(0L)); }
 
-  bool IsIndefinite() const { return mState == STATE_INDEFINITE; }
+  bool IsIndefinite() const { return mState == State::Indefinite; }
   void SetIndefinite() {
-    mState = STATE_INDEFINITE;
+    mState = State::Indefinite;
     mMilliseconds = kUnresolvedMillis;
   }
 
-  bool IsResolved() const { return mState != STATE_UNRESOLVED; }
+  bool IsResolved() const { return mState != State::Unresolved; }
   void SetUnresolved() {
-    mState = STATE_UNRESOLVED;
+    mState = State::Unresolved;
     mMilliseconds = kUnresolvedMillis;
   }
 
-  bool IsDefinite() const { return mState == STATE_DEFINITE; }
+  bool IsDefinite() const { return mState == State::Definite; }
   SMILTime GetMillis() const {
-    MOZ_ASSERT(mState == STATE_DEFINITE,
+    MOZ_ASSERT(mState == State::Definite,
                "GetMillis() called for unresolved or indefinite time");
 
-    return mState == STATE_DEFINITE ? mMilliseconds : kUnresolvedMillis;
+    return mState == State::Definite ? mMilliseconds : kUnresolvedMillis;
   }
 
   bool IsZero() const {
-    return mState == STATE_DEFINITE ? mMilliseconds == 0 : false;
+    return mState == State::Definite ? mMilliseconds == 0 : false;
   }
 
   void SetMillis(SMILTime aMillis) {
-    mState = STATE_DEFINITE;
+    mState = State::Definite;
     mMilliseconds = aMillis;
   }
 
@@ -137,7 +137,7 @@ class SMILTimeValue {
   static const SMILTime kUnresolvedMillis;
 
   SMILTime mMilliseconds;
-  enum { STATE_DEFINITE, STATE_INDEFINITE, STATE_UNRESOLVED } mState;
+  enum class State : uint8_t { Definite, Indefinite, Unresolved } mState;
 };
 
 }  // namespace mozilla

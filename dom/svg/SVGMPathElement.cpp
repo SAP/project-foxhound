@@ -6,15 +6,14 @@
 
 #include "mozilla/dom/SVGMPathElement.h"
 
-#include "nsDebug.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGAnimateMotionElement.h"
 #include "mozilla/dom/SVGGeometryElement.h"
-#include "nsContentUtils.h"
-#include "nsIReferrerInfo.h"
 #include "mozilla/dom/SVGMPathElementBinding.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsIReferrerInfo.h"
 #include "nsIURI.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(MPath)
@@ -60,7 +59,8 @@ SVGMPathElement::SVGMPathElement(
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGMPathElement)
 
 already_AddRefed<DOMSVGAnimatedString> SVGMPathElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }

@@ -7,11 +7,9 @@
 #ifndef mozilla_dom_HTMLMeterElement_h
 #define mozilla_dom_HTMLMeterElement_h
 
-#include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
-#include <algorithm>
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 

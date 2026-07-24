@@ -8,8 +8,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "mozilla/RefPtr.h"
-
 namespace mozilla {
 class Runnable;
 }
@@ -36,7 +34,11 @@ class Runnable;
                    atScreenPosition:(NSPoint)aPosition
                             forView:(NSView*)aView
                      withAppearance:(NSAppearance*)aAppearance
-                      asContextMenu:(BOOL)aIsContextMenu;
+                      asContextMenu:(BOOL)aIsContextMenu
+                     asAnchoredMenu:(BOOL)aIsAnchoredMenu
+                         anchorRect:(NSRect)aAnchorRect
+                         anchorEdge:(NSRectEdge)aAnchorEdge
+                          pullsDown:(BOOL)aPullsDown;
 
 // If the menu opening request for aHandle hasn't been processed yet, cancel it.
 // Can only be called on the main thread.

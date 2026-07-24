@@ -6,7 +6,6 @@
 #include <functional>
 #include "unicode/udat.h"
 
-#include "mozilla/Assertions.h"
 #include "mozilla/intl/ICU4CGlue.h"
 #include "mozilla/intl/ICUError.h"
 
@@ -16,8 +15,6 @@
 #include "mozilla/Span.h"
 #include "mozilla/Try.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Utf8.h"
-#include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 
 /*
@@ -212,18 +209,6 @@ class DateTimeFormat final {
     ShortGeneric,
     LongGeneric,
   };
-
-  /**
-   * Get static strings representing the enums. These match ECMA-402's resolved
-   * options.
-   * https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.resolvedoptions
-   */
-  static const char* ToString(DateTimeFormat::HourCycle aHourCycle);
-  static const char* ToString(DateTimeFormat::Style aStyle);
-  static const char* ToString(DateTimeFormat::Numeric aNumeric);
-  static const char* ToString(DateTimeFormat::Text aText);
-  static const char* ToString(DateTimeFormat::Month aMonth);
-  static const char* ToString(DateTimeFormat::TimeZoneName aTimeZoneName);
 
   /**
    * A components bag specifies the components used to display a DateTime. Each

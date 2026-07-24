@@ -14,7 +14,9 @@ support-files = [
 ["browser_fullscreen-api-keys.js"]
 
 ["browser_fullscreen-bug-1798219.js"]
-skip-if = ["!nightly_build"] # Bug 1818608
+skip-if = [
+  "!nightly_build", # Bug 1818608
+]
 support-files = [
   "file_fullscreen-bug-1798219.html",
   "file_fullscreen-bug-1798219-2.html",
@@ -39,20 +41,18 @@ support-files = [
 ["browser_fullscreen-navigation.js"]
 
 ["browser_fullscreen-newtab.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt"] # Bug 1494843
 
 ["browser_fullscreen-popup.js"]
 
 ["browser_fullscreen-sizemode.js"]
 
 ["browser_fullscreen-tab-close-race.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug"] # Bug 1877642
 
 ["browser_fullscreen-tab-close.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug"] # Bug 1809365
 
 ["browser_fullscreen-window-open-race.js"]
-run-if = ["os != 'mac'"] # test is checking for synchronous fullscreen completion
+run-if = [
+  "os != 'mac'", # test is checking for synchronous fullscreen completion
+]
 
 ["browser_fullscreen_exit_on_external_protocol.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt"] # Bug 1910580

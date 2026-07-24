@@ -110,6 +110,9 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   This is what it looks like to create a simple HTTP server:
 
   ```js
+  const {
+    NodeHTTPServer,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   let server = new NodeHTTPServer();
   await server.start();
   registerCleanupFunction(async () => {
@@ -121,14 +124,18 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   });
   ```
 
-  We can also create a `HTTP/2` server easily by replacing `NodeHTTPServer` with `NodeHTTP2Server` and adding the server certification.
+  We can also create a `HTTP/2` server easily by replacing `NodeHTTPServer` with `NodeHTTP2Server`.
 
   ```js
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+  // Normally HTTPS servers require us adding the certificate to the
+  // certDB, but that happens automatically in BaseNodeServer.installCert
+  // which is called from server.start.
+  // But the test does need to call do_get_profile(); for this to work.
+  const {
+    NodeHTTP2Server,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   let server = new NodeHTTP2Server();
+  await server.start();
   ```
 
 - Code at client side
@@ -154,6 +161,9 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   This is what it looks like to put everything together:
 
   ```js
+  const {
+    NodeHTTPServer,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   add_task(async function test_http() {
     let server = new NodeHTTPServer();
     await server.start();

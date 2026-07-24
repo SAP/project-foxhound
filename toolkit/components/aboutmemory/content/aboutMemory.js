@@ -1407,9 +1407,9 @@ function appendAboutMemoryMain(
         if (!u) {
           u = new TreeNode(unsafeName, aUnits, isDegenerate);
           if (!t._kids) {
-            t._kids = [];
+            t._kids = new Map();
           }
-          t._kids.push(u);
+          t._kids.set(unsafeName, u);
         }
         t = u;
       }
@@ -1724,16 +1724,17 @@ function TreeNode(aUnsafeName, aUnits, aIsDegenerate) {
   // - _description
   // - _hideKids (only defined if true)
   // - _maxAbsDescendant (on-demand, only when gIsDiff is set)
+  //
+  // NOTE: The _kids property is collected as a Map while loading the report,
+  // for efficient lookup by name; then during sortTreeAndInsertAggregateNodes(),
+  // it is converted into an array that is sorted by (decreasing) _amount, for
+  // displaying the report.
 }
 
 TreeNode.prototype = {
   findKid(aUnsafeName) {
     if (this._kids) {
-      for (let kid of this._kids) {
-        if (kid._unsafeName === aUnsafeName) {
-          return kid;
-        }
-      }
+      return this._kids.get(aUnsafeName);
     }
     return undefined;
   },
@@ -1757,7 +1758,7 @@ TreeNode.prototype = {
 
     // Compute the maximum absolute value of all descendants.
     let max = Math.abs(this._amount);
-    for (let kid of this._kids) {
+    for (let kid of this._kids.values()) {
       max = Math.max(max, kid.maxAbsDescendant());
     }
     this._maxAbsDescendant = max;
@@ -1818,10 +1819,10 @@ function fillInTree(aRoot) {
   function fillInNonLeafNodes(aT) {
     if (!aT._kids) {
       // Leaf node.  Has already been filled in.
-    } else if (aT._kids.length === 1 && aT != aRoot) {
+    } else if (aT._kids.size === 1 && aT != aRoot) {
       // Non-root, non-leaf node with one child.  Merge the child with the node
       // to avoid redundant entries.
-      let kid = aT._kids[0];
+      let kid = aT._kids.values().next().value;
       let kidBytes = fillInNonLeafNodes(kid);
       aT._unsafeName += "/" + kid._unsafeName;
       if (kid._kids) {
@@ -1839,7 +1840,7 @@ function fillInTree(aRoot) {
       // Non-leaf node with multiple children.  Derive its _amount and
       // _description entirely from its children...
       let kidsBytes = 0;
-      for (let kid of aT._kids) {
+      for (let kid of aT._kids.values()) {
         kidsBytes += fillInNonLeafNodes(kid);
       }
 
@@ -1857,7 +1858,7 @@ function fillInTree(aRoot) {
         let fake = new TreeNode("(fake child)", aT._units);
         fake._presence = DReport.ADDED_FOR_BALANCE;
         fake._amount = aT._amount - kidsBytes;
-        aT._kids.push(fake);
+        aT._kids.set(fake._unsafeName, fake);
         delete aT._presence;
       } else {
         assert(
@@ -1906,7 +1907,7 @@ function addHeapUnclassifiedNode(aT, aHeapAllocatedNode, aHeapTotal) {
     "Memory not classified by a more specific report. This includes " +
     "slop bytes due to internal fragmentation in the heap allocator " +
     "(caused when the allocator rounds up request sizes).";
-  aT._kids.push(heapUnclassifiedT);
+  aT._kids.set(heapUnclassifiedT._unsafeName, heapUnclassifiedT);
   aT._amount += heapUnclassifiedT._amount;
   return true;
 }
@@ -1938,35 +1939,37 @@ function sortTreeAndInsertAggregateNodes(aTotalBytes, aT) {
     return;
   }
 
-  aT._kids.sort(TreeNode.compareAmounts);
+  let sortedKids = aT._kids.values().toArray();
+  sortedKids.sort(TreeNode.compareAmounts);
 
   // If the first child is insignificant, they all are, and there's no point
   // creating an aggregate node that lacks siblings.  Just set the parent's
   // _hideKids property and process all children.
-  if (isInsignificant(aT._kids[0])) {
+  if (isInsignificant(sortedKids[0])) {
     aT._hideKids = true;
-    for (let kid of aT._kids) {
+    for (let kid of sortedKids) {
       sortTreeAndInsertAggregateNodes(aTotalBytes, kid);
     }
+    aT._kids = sortedKids;
     return;
   }
 
   // Look at all children except the last one.
   let i;
-  for (i = 0; i < aT._kids.length - 1; i++) {
-    if (isInsignificant(aT._kids[i])) {
+  for (i = 0; i < sortedKids.length - 1; i++) {
+    if (isInsignificant(sortedKids[i])) {
       // This child is below the significance threshold.  If there are other
       // (smaller) children remaining, move them under an aggregate node.
       let i0 = i;
-      let nAgg = aT._kids.length - i0;
+      let nAgg = sortedKids.length - i0;
       // Create an aggregate node.  Inherit units from the parent;  everything
       // in the tree should have the same units anyway (we test this later).
       let aggT = new TreeNode(`(${nAgg} tiny)`, aT._units);
       aggT._kids = [];
       let aggBytes = 0;
-      for (; i < aT._kids.length; i++) {
-        aggBytes += aT._kids[i]._amount;
-        aggT._kids.push(aT._kids[i]);
+      for (; i < sortedKids.length; i++) {
+        aggBytes += sortedKids[i]._amount;
+        aggT._kids.push(sortedKids[i]);
       }
       aggT._hideKids = true;
       aggT._amount = aggBytes;
@@ -1975,23 +1978,27 @@ function sortTreeAndInsertAggregateNodes(aTotalBytes, aT) {
         " sub-trees that are below the " +
         kSignificanceThresholdPerc +
         "% significance threshold.";
-      aT._kids.splice(i0, nAgg, aggT);
-      aT._kids.sort(TreeNode.compareAmounts);
+      sortedKids.splice(i0, nAgg, aggT);
+      sortedKids.sort(TreeNode.compareAmounts);
 
       // Process the moved children.
-      for (let kid of aggT._kids) {
+      for (let kid of aggT._kids.values()) {
         sortTreeAndInsertAggregateNodes(aTotalBytes, kid);
       }
+      aT._kids = sortedKids;
       return;
     }
 
-    sortTreeAndInsertAggregateNodes(aTotalBytes, aT._kids[i]);
+    sortTreeAndInsertAggregateNodes(aTotalBytes, sortedKids[i]);
   }
 
   // The first n-1 children were significant.  Don't consider if the last child
   // is significant;  there's no point creating an aggregate node that only has
   // one child.  Just process it.
-  sortTreeAndInsertAggregateNodes(aTotalBytes, aT._kids[i]);
+  sortTreeAndInsertAggregateNodes(aTotalBytes, sortedKids[i]);
+
+  // Replace the hashmap of kids with the sorted array.
+  aT._kids = sortedKids;
 }
 
 // Global variable indicating if we've seen any invalid values for this
@@ -2276,7 +2283,7 @@ function formatPercentage(aPerc100x) {
   return formatNum(aPerc100x / 10000, kPercFormatter);
 }
 
-/*
+/**
  * Converts a tree fraction to an appropriate string representation.
  *
  * @param aNum
@@ -2597,7 +2604,8 @@ function appendTreeElements(aP, aRoot, aProcess, aPadText) {
       d.setAttribute("role", "list");
 
       let tlThisForMost, tlKidsForMost;
-      if (aT._kids.length > 1) {
+      let kidCount = aT._kids.length;
+      if (kidCount > 1) {
         tlThisForMost = aTlKids + "├──";
         tlKidsForMost = aTlKids + "│  ";
       }
@@ -2605,7 +2613,7 @@ function appendTreeElements(aP, aRoot, aProcess, aPadText) {
       let tlKidsForLast = aTlKids + "   ";
 
       for (let [i, kid] of aT._kids.entries()) {
-        let isLast = i == aT._kids.length - 1;
+        let isLast = i == kidCount - 1;
         aUnsafeNames.push(kid._unsafeName);
         appendTreeElements2(
           d,

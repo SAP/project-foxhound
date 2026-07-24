@@ -36,7 +36,7 @@ add_task(async function () {
       // manually so that we get output that's a bit more readable.
       Assert.ok(
         syncManager.isOtherInstanceRunning(),
-        "child process has the lock"
+        "child process has the lock: " + String(_e)
       );
     });
 
@@ -48,7 +48,7 @@ add_task(async function () {
     ).catch(_e => {
       Assert.ok(
         !syncManager.isOtherInstanceRunning(),
-        "child process has released the lock"
+        "child process has released the lock: " + String(_e)
       );
     });
   }

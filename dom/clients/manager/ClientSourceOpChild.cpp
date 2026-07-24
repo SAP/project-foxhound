@@ -9,7 +9,6 @@
 #include "ClientSource.h"
 #include "ClientSourceChild.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -32,7 +31,7 @@ void ClientSourceOpChild::DoSourceOp(Method aMethod, Args&&... aArgs) {
     if (!source) {
       CopyableErrorResult rv;
       rv.ThrowAbortError("Unknown Client");
-      Unused << PClientSourceOpChild::Send__delete__(this, rv);
+      (void)PClientSourceOpChild::Send__delete__(this, rv);
       return;
     }
 
@@ -61,11 +60,11 @@ void ClientSourceOpChild::DoSourceOp(Method aMethod, Args&&... aArgs) {
           target, __func__,
           [this, promise](const mozilla::dom::ClientOpResult& aResult) {
             mPromiseRequestHolder.Complete();
-            Unused << PClientSourceOpChild::Send__delete__(this, aResult);
+            (void)PClientSourceOpChild::Send__delete__(this, aResult);
           },
           [this, promise](const CopyableErrorResult& aRv) {
             mPromiseRequestHolder.Complete();
-            Unused << PClientSourceOpChild::Send__delete__(this, aRv);
+            (void)PClientSourceOpChild::Send__delete__(this, aRv);
           })
       ->Track(mPromiseRequestHolder);
 }

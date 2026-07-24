@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// @ts-nocheck - TODO - Remove this to type check this file.
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(
@@ -18,7 +20,7 @@ ChromeUtils.defineESModuleGetters(
 /**
  * The actual MLEngine lives here in a worker.
  */
-class MLEngineWorker {
+export class MLEngineWorker {
   #pipeline;
   #sessionId;
 
@@ -45,7 +47,7 @@ class MLEngineWorker {
     if (key.startsWith("NO_LOCAL")) {
       return null;
     }
-    let res = await this.getModelFile(key);
+    let res = await this.getModelFile({ url: key });
     if (res.fail) {
       return null;
     }
@@ -54,10 +56,9 @@ class MLEngineWorker {
     return lazy.OPFS.toResponse(res.ok[2], res.ok[1]);
   }
 
-  async getModelFile(...args) {
+  async getModelFile(args) {
     let result = await self.callMainThread("getModelFile", [
-      ...args,
-      this.#sessionId,
+      { sessionId: this.#sessionId, ...args },
     ]);
     return result;
   }
@@ -135,7 +136,19 @@ class MLEngineWorker {
     self.callMainThread = worker.callMainThread.bind(worker);
     self.addEventListener("message", msg => worker.handleMessage(msg));
     self.addEventListener("unhandledrejection", function (error) {
-      throw error.reason?.fail ?? error.reason;
+      const reason =
+        error?.reason?.fail ??
+        error?.reason ??
+        new Error("MLEngine.worker.mjs had an unhandled error.");
+
+      if (reason) {
+        // The PromiseWorker message passing doesn't properly expose the call stack of
+        // errors which makes it really hard to debug code. Log the error here to
+        // ensure that nice call stacks are preserved.
+        console.error("MLEngine.worker.mjs had an unhandled error.", reason);
+      }
+
+      throw reason;
     });
   }
 }

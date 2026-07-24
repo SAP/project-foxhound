@@ -16,10 +16,8 @@
 #include "EditorForwards.h"
 #include "EditorUtils.h"  // for CaretPoint
 
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ContentIterator.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/Result.h"
@@ -54,30 +52,39 @@ enum class BlockInlineCheck : uint8_t {
   // * Looking for whether a padding <br> is required
   // * Looking for a caret position
   UseComputedDisplayStyle,
+  // UseComputedDisplayOutsideStyle if referring siblings or children.
+  // UseComputedDisplayStyle if referring ancestors.
+  Auto,
 };
 
-/**
- * Even if the caller wants block boundary caused by display-inline: flow-root
- * like inline-block, because it's required only when scanning from in it.
- * I.e., if scanning needs to go to siblings, we don't want to treat
- * inline-block siblings as inline.
- */
-[[nodiscard]] inline BlockInlineCheck IgnoreInsideBlockBoundary(
+[[nodiscard]] inline BlockInlineCheck PreferDisplayOutsideIfUsingDisplay(
     BlockInlineCheck aBlockInlineCheck) {
   return aBlockInlineCheck == BlockInlineCheck::UseComputedDisplayStyle
              ? BlockInlineCheck::UseComputedDisplayOutsideStyle
              : aBlockInlineCheck;
 }
 
-[[nodiscard]] inline BlockInlineCheck RespectChildBlockBoundary(
-    BlockInlineCheck aBlockInlineCheck) {
-  return IgnoreInsideBlockBoundary(aBlockInlineCheck);
-}
-
-[[nodiscard]] inline BlockInlineCheck RespectParentBlockBoundary(
+[[nodiscard]] inline BlockInlineCheck PreferDisplayIfUsingDisplayOutside(
     BlockInlineCheck aBlockInlineCheck) {
   return aBlockInlineCheck == BlockInlineCheck::UseComputedDisplayOutsideStyle
              ? BlockInlineCheck::UseComputedDisplayStyle
+             : aBlockInlineCheck;
+}
+
+[[nodiscard]] inline BlockInlineCheck UseComputedDisplayStyleIfAuto(
+    BlockInlineCheck aBlockInlineCheck) {
+  return aBlockInlineCheck == BlockInlineCheck::Auto
+             // Treat flow-root as a block such as inline-block.
+             ? BlockInlineCheck::UseComputedDisplayStyle
+             : aBlockInlineCheck;
+}
+
+[[nodiscard]] inline BlockInlineCheck UseComputedDisplayOutsideStyleIfAuto(
+    BlockInlineCheck aBlockInlineCheck) {
+  return aBlockInlineCheck == BlockInlineCheck::Auto
+             // Use display-outside for checking a sibling or child element as a
+             // block.
+             ? BlockInlineCheck::UseComputedDisplayOutsideStyle
              : aBlockInlineCheck;
 }
 
@@ -185,7 +192,8 @@ class MOZ_STACK_CLASS MoveNodeResult final : public CaretPoint,
     return MoveNodeResult(aNextInsertionPoint, false);
   }
   static MoveNodeResult IgnoredResult(EditorDOMPoint&& aNextInsertionPoint) {
-    return MoveNodeResult(std::move(aNextInsertionPoint), false);
+    return MoveNodeResult(std::forward<EditorDOMPoint>(aNextInsertionPoint),
+                          false);
   }
 
   /*****************************************************************************
@@ -199,7 +207,8 @@ class MOZ_STACK_CLASS MoveNodeResult final : public CaretPoint,
   }
 
   static MoveNodeResult HandledResult(EditorDOMPoint&& aNextInsertionPoint) {
-    return MoveNodeResult(std::move(aNextInsertionPoint), true);
+    return MoveNodeResult(std::forward<EditorDOMPoint>(aNextInsertionPoint),
+                          true);
   }
 
   static MoveNodeResult HandledResult(const EditorDOMPoint& aNextInsertionPoint,
@@ -209,18 +218,34 @@ class MOZ_STACK_CLASS MoveNodeResult final : public CaretPoint,
 
   static MoveNodeResult HandledResult(EditorDOMPoint&& aNextInsertionPoint,
                                       const EditorDOMPoint& aPointToPutCaret) {
-    return MoveNodeResult(std::move(aNextInsertionPoint), aPointToPutCaret);
+    return MoveNodeResult(std::forward<EditorDOMPoint>(aNextInsertionPoint),
+                          aPointToPutCaret);
   }
 
   static MoveNodeResult HandledResult(const EditorDOMPoint& aNextInsertionPoint,
                                       EditorDOMPoint&& aPointToPutCaret) {
-    return MoveNodeResult(aNextInsertionPoint, std::move(aPointToPutCaret));
+    return MoveNodeResult(aNextInsertionPoint,
+                          std::forward<EditorDOMPoint>(aPointToPutCaret));
   }
 
   static MoveNodeResult HandledResult(EditorDOMPoint&& aNextInsertionPoint,
                                       EditorDOMPoint&& aPointToPutCaret) {
-    return MoveNodeResult(std::move(aNextInsertionPoint),
-                          std::move(aPointToPutCaret));
+    return MoveNodeResult(std::forward<EditorDOMPoint>(aNextInsertionPoint),
+                          std::forward<EditorDOMPoint>(aPointToPutCaret));
+  }
+  // A factory method when consecutive siblings are moved once.
+  static MoveNodeResult HandledResult(const nsIContent& aFirstMovedContent,
+                                      EditorDOMPoint&& aNextInsertionPoint) {
+    return MoveNodeResult(aFirstMovedContent,
+                          std::forward<EditorDOMPoint>(aNextInsertionPoint));
+  }
+  // A factory method when consecutive siblings are moved once.
+  static MoveNodeResult HandledResult(const nsIContent& aFirstMovedContent,
+                                      EditorDOMPoint&& aNextInsertionPoint,
+                                      EditorDOMPoint&& aPointToPutCaret) {
+    return MoveNodeResult(aFirstMovedContent,
+                          std::forward<EditorDOMPoint>(aNextInsertionPoint),
+                          std::forward<EditorDOMPoint>(aPointToPutCaret));
   }
 
  private:
@@ -259,7 +284,7 @@ class MOZ_STACK_CLASS MoveNodeResult final : public CaretPoint,
   }
   explicit MoveNodeResult(const EditorDOMPoint& aNextInsertionPoint,
                           EditorDOMPoint&& aPointToPutCaret)
-      : CaretPoint(std::move(aPointToPutCaret)),
+      : CaretPoint(std::forward<EditorDOMPoint>(aPointToPutCaret)),
         EditActionResult(false, aNextInsertionPoint.IsSet()),
         mNextInsertionPoint(aNextInsertionPoint) {
     if (Handled()) {
@@ -268,11 +293,47 @@ class MOZ_STACK_CLASS MoveNodeResult final : public CaretPoint,
   }
   explicit MoveNodeResult(EditorDOMPoint&& aNextInsertionPoint,
                           EditorDOMPoint&& aPointToPutCaret)
-      : CaretPoint(std::move(aPointToPutCaret)),
+      : CaretPoint(std::forward<EditorDOMPoint>(aPointToPutCaret)),
         EditActionResult(false, aNextInsertionPoint.IsSet()),
-        mNextInsertionPoint(std::move(aNextInsertionPoint)) {
+        mNextInsertionPoint(std::forward<EditorDOMPoint>(aNextInsertionPoint)) {
     if (Handled()) {
       mMovedContentRange = EditorDOMRange(mNextInsertionPoint);
+    }
+  }
+  explicit MoveNodeResult(const nsIContent& aFirstMovedContent,
+                          EditorDOMPoint&& aNextInsertionPoint)
+      : EditActionResult(false, aNextInsertionPoint.IsSet()),
+        mNextInsertionPoint(std::forward<EditorDOMPoint>(aNextInsertionPoint)) {
+    if (Handled()) {
+      EditorDOMPoint pointAfterFirstMovedContent =
+          EditorDOMPoint::After(aFirstMovedContent);
+      if (MOZ_LIKELY(pointAfterFirstMovedContent.EqualsOrIsBefore(
+              mNextInsertionPoint))) {
+        mMovedContentRange = EditorDOMRange(
+            std::move(pointAfterFirstMovedContent), mNextInsertionPoint);
+      } else {
+        mMovedContentRange = EditorDOMRange(
+            mNextInsertionPoint, std::move(pointAfterFirstMovedContent));
+      }
+    }
+  }
+  explicit MoveNodeResult(const nsIContent& aFirstMovedContent,
+                          EditorDOMPoint&& aNextInsertionPoint,
+                          EditorDOMPoint&& aPointToPutCaret)
+      : CaretPoint(std::forward<EditorDOMPoint>(aPointToPutCaret)),
+        EditActionResult(false, aNextInsertionPoint.IsSet()),
+        mNextInsertionPoint(std::forward<EditorDOMPoint>(aNextInsertionPoint)) {
+    if (Handled()) {
+      EditorDOMPoint pointAfterFirstMovedContent =
+          EditorDOMPoint::After(aFirstMovedContent);
+      if (MOZ_LIKELY(pointAfterFirstMovedContent.EqualsOrIsBefore(
+              mNextInsertionPoint))) {
+        mMovedContentRange = EditorDOMRange(
+            std::move(pointAfterFirstMovedContent), mNextInsertionPoint);
+      } else {
+        mMovedContentRange = EditorDOMRange(
+            mNextInsertionPoint, std::move(pointAfterFirstMovedContent));
+      }
     }
   }
 

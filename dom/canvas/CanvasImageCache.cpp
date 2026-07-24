@@ -4,16 +4,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasImageCache.h"
-#include "nsIImageLoadingContent.h"
-#include "nsExpirationTracker.h"
+
+#include "gfx2DGlue.h"
 #include "imgIRequest.h"
-#include "mozilla/dom/Element.h"
-#include "nsTHashtable.h"
-#include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/gfx/2D.h"
-#include "gfx2DGlue.h"
+#include "nsContentUtils.h"
+#include "nsExpirationTracker.h"
+#include "nsIImageLoadingContent.h"
+#include "nsTHashtable.h"
 
 namespace mozilla {
 
@@ -230,7 +231,8 @@ class CanvasImageCacheShutdownObserver final : public nsIObserver {
 };
 
 ImageCache::ImageCache()
-    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS, "ImageCache") {
+    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS,
+                                                  "ImageCache"_ns) {
   mImageCacheObserver = new ImageCacheObserver(this);
   MOZ_RELEASE_ASSERT(mImageCacheObserver,
                      "GFX: Can't alloc ImageCacheObserver");

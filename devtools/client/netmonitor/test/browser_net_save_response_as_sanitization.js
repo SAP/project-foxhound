@@ -53,7 +53,7 @@ add_task(async function () {
 
   info("Reload the browser to show the 2 requests for the page");
   const networkEvent = waitForNetworkEvents(monitor, 3);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await networkEvent;
 
   // Create the folder the gzip file will be saved into

@@ -15,13 +15,14 @@ import androidx.annotation.StringRes
 import androidx.annotation.StyleRes
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.support.ktx.util.PromptAbuserDetector
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 
 /**
  * This is the default implementation of the [RedirectDialogFragment].
  *
- * It provides an [AlertDialog] giving the user the choice to allow or deny the opening of a
+ * It provides an [MaterialAlertDialogBuilder] giving the user the choice to allow or deny the opening of a
  * third party app.
  *
  * Intents passed are guaranteed to be openable by a non-browser app.
@@ -38,9 +39,13 @@ class SimpleRedirectDialogFragment(
     internal var testingContext: Context? = null
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        fun getBuilder(themeID: Int): AlertDialog.Builder {
+        fun getBuilder(themeID: Int): MaterialAlertDialogBuilder {
             val context = testingContext ?: requireContext()
-            return if (themeID == 0) AlertDialog.Builder(context) else AlertDialog.Builder(context, themeID)
+            return if (themeID == 0) {
+                MaterialAlertDialogBuilder(context)
+            } else {
+                MaterialAlertDialogBuilder(context, themeID)
+            }
         }
 
         promptAbuserDetector.updateJSDialogAbusedState()
@@ -65,6 +70,11 @@ class SimpleRedirectDialogFragment(
                 )
                 id = VIEW_ID
                 setText(checkboxText)
+                val verticalPadding =
+                    resources.getDimensionPixelSize(
+                        R.dimen.mozac_feature_applinks_confirm_dialog_checkbox_vertical_padding,
+                    )
+                setPadding(0, verticalPadding, 0, verticalPadding)
             }
 
             val dialog = getBuilder(themeResId).apply {

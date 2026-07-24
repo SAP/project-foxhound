@@ -7,8 +7,8 @@
 #ifndef dom_tabs_ContentThread_h
 #define dom_tabs_ContentThread_h 1
 
-#include "mozilla/ipc/ProcessChild.h"
 #include "ContentChild.h"
+#include "mozilla/ipc/ProcessChild.h"
 #include "nsXREDirProvider.h"
 
 #if defined(XP_WIN)

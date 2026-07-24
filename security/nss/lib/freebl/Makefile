@@ -112,9 +112,9 @@ endif
 # NSS_X64 means the target is a 64-bits 64 CPU architecture
 # NSS_X86_OR_X64 means the target is either x86 or x64
 ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
-        DEFINES += -DNSS_X86_OR_X64
-        EXTRA_SRCS += gcm-x86.c aes-x86.c
-$(OBJDIR)/gcm-x86.o: CFLAGS += -mpclmul -maes
+        DEFINES += -DNSS_X86_OR_X64 -DHAVE_PLATFORM_GHASH
+        EXTRA_SRCS += ghash-x86.c aes-x86.c
+$(OBJDIR)/ghash-x86.o: CFLAGS += -mpclmul -maes
 $(OBJDIR)/aes-x86.o: CFLAGS += -mpclmul -maes
 ifneq (,$(USE_64)$(USE_X32))
         DEFINES += -DNSS_X64
@@ -138,26 +138,27 @@ endif
 endif
 ifeq ($(CPU_ARCH),aarch64)
     ifdef CC_IS_CLANG
-        DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2
-        EXTRA_SRCS += aes-armv8.c gcm-aarch64.c sha1-armv8.c sha256-armv8.c
+        DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2 -DHAVE_PLATFORM_GHASH
+        EXTRA_SRCS += aes-armv8.c ghash-aarch64.c sha1-armv8.c sha256-armv8.c
     else ifeq (1,$(CC_IS_GCC))
         # GCC versions older than 4.9 don't support ARM AES. The check
         # is done in two parts, first allows "major.minor" == "4.9",
         # and then rejects any major versions prior to 5. Note that
         # there has been no GCC 4.10, as it was renamed to GCC 5.
         ifneq (,$(filter 4.9,$(word 1,$(GCC_VERSION)).$(word 2,$(GCC_VERSION))))
-            DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2
-            EXTRA_SRCS += aes-armv8.c gcm-aarch64.c sha1-armv8.c sha256-armv8.c
+            DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2 -DHAVE_PLATFORM_GHASH
+            EXTRA_SRCS += aes-armv8.c ghash-aarch64.c sha1-armv8.c sha256-armv8.c
         endif
         ifeq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
-            DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2
-            EXTRA_SRCS += aes-armv8.c gcm-aarch64.c sha1-armv8.c sha256-armv8.c
+            DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2 -DHAVE_PLATFORM_GHASH
+            EXTRA_SRCS += aes-armv8.c ghash-aarch64.c sha1-armv8.c sha256-armv8.c
         endif
     endif
 endif
 ifeq ($(CPU_ARCH),arm)
 ifndef NSS_DISABLE_ARM32_NEON
-    EXTRA_SRCS += gcm-arm32-neon.c
+    DEFINES += -DHAVE_PLATFORM_GHASH
+    EXTRA_SRCS += ghash-arm32-neon.c
 endif
     ifdef CC_IS_CLANG
         DEFINES += -DUSE_HW_AES -DUSE_HW_SHA1 -DUSE_HW_SHA2
@@ -201,11 +202,11 @@ else
     # The Intel AES assembly code requires Visual C++ 2010.
     # if $(_MSC_VER) >= 1600 (Visual C++ 2010)
     ifeq ($(firstword $(sort $(_MSC_VER) 1600)),1600)
-	DEFINES += -DUSE_HW_AES -DINTEL_GCM
+	DEFINES += -DUSE_HW_AES -DHAVE_PLATFORM_GCM
 	ASFILES += intel-aes-x86-masm.asm intel-gcm-x86-masm.asm
 	EXTRA_SRCS += intel-gcm-wrap.c
 	ifeq ($(CLANG_CL),1)
-	    INTEL_GCM_CLANG_CL = 1
+	    INTEL_GCM = 1
 	endif
     endif
     # The Intel SHA extenstion requires Visual C++ 2015.
@@ -215,8 +216,6 @@ else
     endif
 endif
 else
-    # -DMP_NO_MP_WORD
-    DEFINES += -DMP_IS_LITTLE_ENDIAN
 ifdef NS_USE_GCC
 # Ideally, we should use amd64 assembly code, but it's not yet mingw-w64
 # compatible.
@@ -232,11 +231,11 @@ ifeq ($(CPU_ARCH),x86_64)
     # The Intel AES assembly code requires Visual C++ 2010 (10.0). The _xgetbv
     # compiler intrinsic function requires Visual C++ 2010 (10.0) SP1.
     ifeq ($(_MSC_VER_GE_10SP1),1)
-	DEFINES += -DUSE_HW_AES -DINTEL_GCM
+	DEFINES += -DUSE_HW_AES -DHAVE_PLATFORM_GCM
 	ASFILES += intel-aes-x64-masm.asm intel-gcm-x64-masm.asm
 	EXTRA_SRCS += intel-gcm-wrap.c
 	ifeq ($(CLANG_CL),1)
-	    INTEL_GCM_CLANG_CL = 1
+	    INTEL_GCM = 1
 	endif
     endif
     # The Intel SHA extenstion requires Visual C++ 2015.
@@ -253,7 +252,7 @@ endif
 ifeq ($(OS_TARGET),Darwin)
 ifeq ($(CPU_ARCH),x86_64)
     ASFILES  = mpi_amd64_common.s
-    DEFINES += -DMPI_AMD64 -DMP_IS_LITTLE_ENDIAN
+    DEFINES += -DMPI_AMD64
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DNSS_USE_COMBA
     MPI_SRCS += mpi_amd64.c mp_comba.c
 else ifeq ($(CPU_ARCH),x86)
@@ -271,10 +270,9 @@ ifeq ($(CPU_ARCH),x86_64)
     ASFLAGS += -fPIC -Wa,--noexecstack
     DEFINES += -DNSS_BEVAND_ARCFOUR -DMPI_AMD64 -DMP_ASSEMBLY_MULTIPLY
     DEFINES += -DNSS_USE_COMBA
-    DEFINES += -DMP_IS_LITTLE_ENDIAN
 #   DEFINES += -DMPI_AMD64_ADD
     # comment the next four lines to turn off Intel HW acceleration.
-    DEFINES += -DUSE_HW_AES -DINTEL_GCM
+    DEFINES += -DUSE_HW_AES -DHAVE_PLATFORM_GCM
     ASFILES += intel-aes.s intel-gcm.s
     EXTRA_SRCS += intel-gcm-wrap.c
     INTEL_GCM = 1
@@ -284,7 +282,6 @@ ifeq ($(CPU_ARCH),x86)
     ASFILES  = mpi_x86.s
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE
     DEFINES += -DMP_ASSEMBLY_DIV_2DX1D -DMP_USE_UINT_DIGIT
-    DEFINES += -DMP_IS_LITTLE_ENDIAN
 endif
 ifeq ($(CPU_ARCH),arm)
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE
@@ -293,16 +290,17 @@ ifeq ($(CPU_ARCH),arm)
     MPI_SRCS += mpi_arm.c
 endif
 ifeq ($(CPU_ARCH),ppc)
-    EXTRA_SRCS += gcm-ppc.c
+    DEFINES += -DHAVE_PLATFORM_GHASH
+    EXTRA_SRCS += ghash-ppc.c
 ifdef USE_64
     DEFINES += -DNSS_NO_INIT_SUPPORT
     PPC_ABI := $(shell $(CC) -dM -E - < /dev/null | awk '$$2 == "_CALL_ELF" {print $$3}')
     ifeq ($(PPC_ABI),2)
         ASFILES += sha512-p8.s
     ifeq ($(OS_TEST),ppc64le)
-        DEFINES += -DPPC_GCM
         EXTRA_SRCS += chacha20poly1305-ppc.c ppc-gcm-wrap.c
         ASFILES += chacha20-ppc64le.s ppc-gcm.s
+        DEFINES += -DHAVE_PLATFORM_GCM
     endif # ppc64le
     endif
 endif # USE_64
@@ -519,10 +517,10 @@ else
 	    ASFLAGS += -march=opteron -m64 -fPIC
 	    MPI_SRCS += mp_comba.c
 	    # comment the next four lines to turn off Intel HW acceleration
-	    ASFILES += intel-gcm.s
+	    ASFILES += intel-gcm.S
 	    EXTRA_SRCS += intel-gcm-wrap.c
+	    DEFINES += -DHAVE_PLATFORM_GCM
 	    INTEL_GCM = 1
-	    DEFINES += -DINTEL_GCM
 	else
 	    ASFILES  = arcfour-amd64-sun.s mpi_amd64_sun.s sha-fast-amd64-sun.s
 		ASFILES += mp_comba_amd64_sun.s mpcpucache_amd64.s
@@ -533,7 +531,7 @@ else
 	    # Intel acceleration for GCM does not build currently with Studio
 	endif
 	DEFINES += -DNSS_BEVAND_ARCFOUR -DMPI_AMD64 -DMP_ASSEMBLY_MULTIPLY
-	DEFINES += -DNSS_USE_COMBA -DMP_IS_LITTLE_ENDIAN
+	DEFINES += -DNSS_USE_COMBA
 	# comment the next two lines to turn off Intel HW acceleration
 	DEFINES += -DUSE_HW_AES
 	ASFILES += intel-aes.s
@@ -599,7 +597,11 @@ ifndef NSS_DISABLE_CHACHAPOLY
     VERIFIED_SRCS += Hacl_Poly1305_32.c Hacl_Chacha20.c Hacl_Chacha20Poly1305_32.c
 endif # NSS_DISABLE_CHACHAPOLY
 
-VERIFIED_SRCS += Hacl_Hash_SHA3.c Hacl_P256.c Hacl_P384.c Hacl_P521.c libcrux_mlkem768_portable.c libcrux_mlkem_portable.c libcrux_core.c
+ifndef NSS_DISABLE_KYBER
+KYBER_PQCRYSTALS = kyber-pqcrystals-ref.c
+endif
+
+VERIFIED_SRCS += Hacl_Hash_SHA3.c Hacl_P256.c Hacl_P384.c Hacl_P521.c libcrux_sha3_portable.c libcrux_mlkem768_portable.c libcrux_mlkem1024_portable.c libcrux_mlkem_portable.c libcrux_core.c
 VERIFIED_SRCS += Hacl_Ed25519.c
 VERIFIED_SRCS += Hacl_Curve25519_51.c
 
@@ -737,22 +739,6 @@ ifdef INTEL_GCM
 # GCM binary needs -mssse3
 #
 $(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
-
-# The integrated assembler in Clang 3.2 does not support % in the
-# expression of a .set directive. intel-gcm.s uses .set to give
-# symbolic names to registers, for example,
-#     .set  Htbl, %rdi
-# So we can't use Clang's integrated assembler with intel-gcm.s.
-ifdef CC_IS_CLANG
-$(OBJDIR)/$(PROG_PREFIX)intel-gcm$(OBJ_SUFFIX): CFLAGS += -no-integrated-as
-endif
-endif
-
-ifdef INTEL_GCM_CLANG_CL
-#
-# clang-cl needs -mssse3
-#
-$(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
 endif
 
 $(OBJDIR)/$(PROG_PREFIX)sha256-x86$(OBJ_SUFFIX): CFLAGS += -msha -mssse3 -msse4.1
@@ -766,13 +752,13 @@ $(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=c
 $(OBJDIR)/$(PROG_PREFIX)sha1-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=crypto-neon-fp-armv8$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
 $(OBJDIR)/$(PROG_PREFIX)sha256-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=crypto-neon-fp-armv8$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
 ifndef NSS_DISABLE_ARM32_NEON
-$(OBJDIR)/$(PROG_PREFIX)gcm-arm32-neon$(OBJ_SUFFIX): CFLAGS += -mfpu=neon$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
+$(OBJDIR)/$(PROG_PREFIX)ghash-arm32-neon$(OBJ_SUFFIX): CFLAGS += -mfpu=neon$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
 endif
 endif
 
 ifeq ($(CPU_ARCH),aarch64)
 $(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
-$(OBJDIR)/$(PROG_PREFIX)gcm-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
+$(OBJDIR)/$(PROG_PREFIX)ghash-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 $(OBJDIR)/$(PROG_PREFIX)sha1-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 $(OBJDIR)/$(PROG_PREFIX)sha256-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 endif
@@ -780,14 +766,14 @@ endif
 ifeq ($(CPU_ARCH),ppc)
 $(OBJDIR)/$(PROG_PREFIX)sha512$(OBJ_SUFFIX): CFLAGS += -funroll-loops -fpeel-loops
 ifneq ($(NSS_DISABLE_ALTIVEC),1)
-$(OBJDIR)/$(PROG_PREFIX)gcm-ppc$(OBJ_SUFFIX): CFLAGS += -maltivec
+$(OBJDIR)/$(PROG_PREFIX)ghash-ppc$(OBJ_SUFFIX): CFLAGS += -maltivec
 $(OBJDIR)/$(PROG_PREFIX)gcm$(OBJ_SUFFIX): CFLAGS += -maltivec
 $(OBJDIR)/$(PROG_PREFIX)rijndael$(OBJ_SUFFIX): CFLAGS += -maltivec
 $(OBJDIR)/$(PROG_PREFIX)sha512$(OBJ_SUFFIX): CFLAGS += -maltivec
 $(OBJDIR)/$(PROG_PREFIX)chacha20poly1305-ppc$(OBJ_SUFFIX): CFLAGS += -maltivec
 endif
 ifneq ($(NSS_DISABLE_CRYPTO_VSX),1)
-$(OBJDIR)/$(PROG_PREFIX)gcm-ppc$(OBJ_SUFFIX): CFLAGS += -mcrypto -mvsx
+$(OBJDIR)/$(PROG_PREFIX)ghash-ppc$(OBJ_SUFFIX): CFLAGS += -mcrypto -mvsx
 $(OBJDIR)/$(PROG_PREFIX)gcm$(OBJ_SUFFIX): CFLAGS += -mcrypto -mvsx
 $(OBJDIR)/$(PROG_PREFIX)rijndael$(OBJ_SUFFIX): CFLAGS += -mcrypto -mvsx
 $(OBJDIR)/$(PROG_PREFIX)sha512$(OBJ_SUFFIX): CFLAGS += -mcrypto -mvsx

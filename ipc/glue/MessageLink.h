@@ -12,7 +12,6 @@
 #include "base/message_loop.h"
 #include "mojo/core/ports/node.h"
 #include "mojo/core/ports/port_ref.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/ScopedPort.h"
 

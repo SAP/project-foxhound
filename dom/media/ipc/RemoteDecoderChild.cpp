@@ -6,7 +6,6 @@
 #include "RemoteDecoderChild.h"
 
 #include "RemoteMediaManagerChild.h"
-
 #include "mozilla/RemoteDecodeUtils.h"
 
 namespace mozilla {
@@ -15,10 +14,11 @@ RemoteDecoderChild::RemoteDecoderChild(RemoteMediaIn aLocation)
     : ShmemRecycleAllocator(this),
       mLocation(aLocation),
       mThread(GetCurrentSerialEventTarget()) {
-  MOZ_DIAGNOSTIC_ASSERT(
-      RemoteMediaManagerChild::GetManagerThread() &&
-          RemoteMediaManagerChild::GetManagerThread()->IsOnCurrentThread(),
-      "Must be created on the manager thread");
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  MOZ_DIAGNOSTIC_ASSERT(managerThread);
+  MOZ_DIAGNOSTIC_ASSERT(managerThread->IsOnCurrentThread());
+#endif
 }
 
 RemoteDecoderChild::~RemoteDecoderChild() = default;
@@ -76,6 +76,9 @@ RefPtr<MediaDataDecoder::InitPromise> RemoteDecoderChild::Init() {
             mConversion = initResponse.conversion();
             mShouldDecoderAlwaysBeRecycled =
                 initResponse.shouldDecoderAlwaysBeRecycled();
+            for (auto p : initResponse.decodeProperties()) {
+              mDecodeProperties[p.name()] = Some(p.value());
+            }
             // Either the promise has not yet been resolved or the handler has
             // been disconnected and we can't get here.
             mInitPromise.Resolve(initResponse.type(), __func__);
@@ -259,7 +262,7 @@ nsCString RemoteDecoderChild::GetCodecName() const {
 
 void RemoteDecoderChild::SetSeekThreshold(const media::TimeUnit& aTime) {
   AssertOnManagerThread();
-  Unused << SendSetSeekThreshold(aTime);
+  (void)SendSetSeekThreshold(aTime);
 }
 
 MediaDataDecoder::ConversionRequired RemoteDecoderChild::NeedsConversion()

@@ -6,16 +6,18 @@
 
 #include "AOMDecoder.h"
 
-#include <algorithm>
-
-#include "BitWriter.h"
-#include "BitReader.h"
-#include "ImageContainer.h"
-#include "MediaResult.h"
-#include "TimeUnits.h"
 #include <aom/aom_image.h>
 #include <aom/aomdx.h>
 #include <stdint.h>
+
+#include <algorithm>
+
+#include "BitReader.h"
+#include "BitWriter.h"
+#include "ImageContainer.h"
+#include "MediaResult.h"
+#include "TimeUnits.h"
+#include "VideoUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
 #include "mozilla/PodOperations.h"
@@ -24,7 +26,6 @@
 #include "nsError.h"
 #include "nsThreadUtils.h"
 #include "prsystem.h"
-#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -101,6 +102,7 @@ AOMDecoder::~AOMDecoder() = default;
 RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
   RefPtr<AOMDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
+    AUTO_PROFILER_LABEL("AOMDecoder::Shutdown", MEDIA_PLAYBACK);
     auto res = aom_codec_destroy(&self->mCodec);
     if (res != AOM_CODEC_OK) {
       LOGEX_RESULT(self.get(), res, "aom_codec_destroy");
@@ -110,6 +112,7 @@ RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
 }
 
 RefPtr<MediaDataDecoder::InitPromise> AOMDecoder::Init() {
+  AUTO_PROFILER_LABEL("AOMDecoder::Init", MEDIA_PLAYBACK);
   MediaResult rv = InitContext(*this, &mCodec, mInfo);
   if (NS_FAILED(rv)) {
     return AOMDecoder::InitPromise::CreateAndReject(rv, __func__);
@@ -120,6 +123,7 @@ RefPtr<MediaDataDecoder::InitPromise> AOMDecoder::Init() {
 
 RefPtr<MediaDataDecoder::FlushPromise> AOMDecoder::Flush() {
   return InvokeAsync(mTaskQueue, __func__, [this, self = RefPtr(this)]() {
+    AUTO_PROFILER_LABEL("AOMDecoder::Flush", MEDIA_PLAYBACK);
     mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return FlushPromise::CreateAndResolve(true, __func__);
   });
@@ -132,6 +136,7 @@ struct AomImageFree {
 
 RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::ProcessDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("AOMDecoder::ProcessDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
 #if defined(DEBUG)
@@ -301,6 +306,7 @@ RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Decode(
 
 RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Drain() {
   return InvokeAsync(mTaskQueue, __func__, [] {
+    AUTO_PROFILER_LABEL("AOMDecoder::Drain", MEDIA_PLAYBACK);
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
   });
 }
@@ -308,6 +314,17 @@ RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Drain() {
 /* static */
 bool AOMDecoder::IsAV1(const nsACString& aMimeType) {
   return aMimeType.EqualsLiteral("video/av1");
+}
+
+/* static */
+bool AOMDecoder::IsMainProfile(const MediaByteBuffer* aBox) {
+  if (!aBox || aBox->IsEmpty()) {
+    return false;
+  }
+  AV1SequenceInfo av1Info;
+  MediaResult seqHdrResult;
+  TryReadAV1CBox(aBox, av1Info, seqHdrResult);
+  return seqHdrResult.Code() == NS_OK && av1Info.mProfile == 0;
 }
 
 /* static */

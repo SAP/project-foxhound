@@ -7,9 +7,9 @@
 #include "ServiceWorkerInfo.h"
 
 #include "ServiceWorkerManager.h"
-#include "ServiceWorkerUtils.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerScriptCache.h"
+#include "ServiceWorkerUtils.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/Promise.h"
@@ -232,16 +232,15 @@ void ServiceWorkerInfo::UpdateState(ServiceWorkerState aState) {
   }
 }
 
-ServiceWorkerInfo::ServiceWorkerInfo(nsIPrincipal* aPrincipal,
-                                     const nsACString& aScope,
-                                     uint64_t aRegistrationId,
-                                     uint64_t aRegistrationVersion,
-                                     const nsACString& aScriptSpec,
-                                     const nsAString& aCacheName,
-                                     nsLoadFlags aImportsLoadFlags)
+ServiceWorkerInfo::ServiceWorkerInfo(
+    nsIPrincipal* aPrincipal, const nsACString& aScope, const WorkerType& aType,
+    uint64_t aRegistrationId, uint64_t aRegistrationVersion,
+    const nsACString& aScriptSpec, const nsAString& aCacheName,
+    nsLoadFlags aImportsLoadFlags)
     : mPrincipal(aPrincipal),
       mDescriptor(GetNextID(), aRegistrationId, aRegistrationVersion,
-                  aPrincipal, aScope, aScriptSpec, ServiceWorkerState::Parsed),
+                  aPrincipal, aScope, aType, aScriptSpec,
+                  ServiceWorkerState::Parsed),
       mCacheName(aCacheName),
       mWorkerPrivateId(ComputeWorkerPrivateId()),
       mImportsLoadFlags(aImportsLoadFlags),
@@ -281,7 +280,7 @@ uint64_t ServiceWorkerInfo::GetNextID() const {
   return ++gServiceWorkerInfoCurrentID;
 }
 
-void ServiceWorkerInfo::PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
+void ServiceWorkerInfo::PostMessage(ipc::StructuredCloneData* aData,
                                     const PostMessageSource& aSource) {
   RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
   if (NS_WARN_IF(!swm)) {
@@ -305,7 +304,7 @@ void ServiceWorkerInfo::PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
       return;
   }
 
-  mServiceWorkerPrivate->SendMessageEvent(std::move(aData), lifetime, aSource);
+  mServiceWorkerPrivate->SendMessageEvent(aData, lifetime, aSource);
 }
 
 Maybe<ClientInfo> ServiceWorkerInfo::GetClientInfo() {

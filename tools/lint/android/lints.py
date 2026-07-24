@@ -162,9 +162,10 @@ def fenix_format(_paths, config, fix=None, **lintargs):
         config,
         fix,
         os.path.join("mobile", "android", "fenix"),
+        project_name="fenix",
         lint_tasks=[
-            "fenix:lint",
-            "fenix:lintFenixDebug",
+            ":fenix:lint",
+            ":fenix:lintDebug",
         ],
         **lintargs,
     )
@@ -175,7 +176,8 @@ def ac_format(_paths, config, fix=None, **lintargs):
         config,
         fix,
         os.path.join("mobile", "android", "android-components"),
-        lint_tasks=["lint-a-c"],
+        project_name="android-components",
+        lint_tasks=[":android-components:lint"],
         **lintargs,
     )
 
@@ -185,19 +187,20 @@ def focus_format(_paths, config, fix=None, **lintargs):
         config,
         fix,
         os.path.join("mobile", "android", "focus-android"),
-        lint_tasks=["focus-android:lint"],
+        project_name="focus-android",
+        lint_tasks=[":focus-android:lint"],
         **lintargs,
     )
 
 
-def report_gradlew(config, fix, subdir, lint_tasks=[], **lintargs):
+def report_gradlew(config, fix, subdir, project_name, lint_tasks=[], **lintargs):
     topsrcdir = lintargs["root"]
     topobjdir = lintargs["topobjdir"]
 
     if fix:
-        tasks = ["ktlintFormat", "detekt"]
+        tasks = [f":{project_name}:ktlintFormat", f":{project_name}:detekt"]
     else:
-        tasks = ["ktlint", "detekt"]
+        tasks = [f":{project_name}:ktlint", f":{project_name}:detekt"]
 
     extra_args = lintargs.get("extra_args") or []
 
@@ -206,7 +209,7 @@ def report_gradlew(config, fix, subdir, lint_tasks=[], **lintargs):
         topsrcdir=topsrcdir,
         topobjdir=topobjdir,
         tasks=tasks,
-        extra_args=extra_args + ["-p", os.path.join(topsrcdir, subdir), "--continue"],
+        extra_args=extra_args + ["--continue"],
     )
 
     reports = os.path.join(topsrcdir, subdir, "build", "reports")
@@ -367,11 +370,9 @@ def javadoc(_paths, config, **lintargs):
             issues = json.load(f)
 
             for issue in issues:
-                # We want warnings to be errors for linting purposes.
-                # TODO: Bug 1316188 - resolve missing javadoc comments
-                issue["level"] = (
-                    "error" if issue["message"] != ": no comment" else "warning"
-                )
+                # We want all warnings to be errors for linting purposes.
+                # This ensures javadoc warnings can no longer be ignored.
+                issue["level"] = "error"
                 results.append(result.from_config(config, **issue))
 
     return results
@@ -456,9 +457,7 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
                 open(
                     os.path.join(reports, "lint", file),
                 )
-            ).get(
-                "runs", [{}]
-            )[0]
+            ).get("runs", [{}])[0]
 
             issues = data.get("results", [])
             rules = data.get("tool", {}).get("driver", {}).get("rules", [])

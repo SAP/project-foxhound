@@ -5,19 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MLSGroupView.h"
-#include "mozilla/dom/MLSBinding.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/Promise.h"
-#include "nsTArray.h"
-#include "mozilla/dom/MLSTransactionChild.h"
-#include "mozilla/dom/MLSTransactionMessage.h"
+
+#include "MLSTypeUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/BasePrincipal.h"
-#include "nsTArray.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Span.h"
+#include "mozilla/dom/MLSBinding.h"
+#include "mozilla/dom/MLSTransactionChild.h"
+#include "mozilla/dom/MLSTransactionMessage.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsDebug.h"
-#include "MLSTypeUtils.h"
+#include "nsTArray.h"
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(MLSGroupView, (mMLS),

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsLayoutUtils_h__
-#define nsLayoutUtils_h__
+#ifndef nsLayoutUtils_h_
+#define nsLayoutUtils_h_
 
 #include <algorithm>
 #include <limits>
@@ -13,7 +13,6 @@
 #include "LayoutConstants.h"
 #include "Units.h"
 #include "gfxPoint.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/LayoutStructs.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
@@ -250,6 +249,12 @@ class nsLayoutUtils {
   static void NotifyPaintSkipTransaction(ViewID aScrollId);
 
   /**
+   * Similar to above NotifyPaintSkipTransaction, but scroll offset is being
+   * sent to APZ in a full transaction.
+   */
+  static void NotifyApzTransaction(ViewID aScrollId);
+
+  /**
    * Use heuristics to figure out the child list that
    * aChildFrame is currently in.
    */
@@ -288,6 +293,12 @@ class nsLayoutUtils {
    */
   static nsIFrame* GetMarkerFrame(const nsIContent* aContent);
 
+  /**
+   * Returns the ::backdrop pseudo-element for aContent, if any.
+   */
+  static mozilla::dom::Element* GetBackdropPseudo(const nsIContent* aContent);
+  static nsIFrame* GetBackdropFrame(const nsIContent* aContent);
+
 #ifdef ACCESSIBILITY
   /**
    * Set aText to the spoken text for the given ::marker content (aContent)
@@ -303,12 +314,17 @@ class nsLayoutUtils {
    * @param aFrame the frame to start at
    * @param aFrameType the frame type to look for
    * @param aStopAt a frame to stop at after we checked it
-   * @return a frame of the given type or nullptr if no
-   *         such ancestor exists
+   * @return a frame of the given type or nullptr if no such ancestor exists
+   *
+   * Note: prefer the const overload if possible; the non-const wrapper exists
+   * for legacy callers.
    */
+  static const nsIFrame* GetClosestFrameOfType(
+      const nsIFrame* aFrame, mozilla::LayoutFrameType aFrameType,
+      const nsIFrame* aStopAt = nullptr);
   static nsIFrame* GetClosestFrameOfType(nsIFrame* aFrame,
                                          mozilla::LayoutFrameType aFrameType,
-                                         nsIFrame* aStopAt = nullptr);
+                                         const nsIFrame* aStopAt = nullptr);
 
   /**
    * Given a frame, search up the frame tree until we find an
@@ -319,6 +335,7 @@ class nsLayoutUtils {
    *         such ancestor exists
    */
   static nsIFrame* GetPageFrame(nsIFrame* aFrame);
+  static const nsIFrame* GetPageFrame(const nsIFrame* aFrame);
 
   /**
    * Given a frame which is the primary frame for an element,
@@ -388,7 +405,7 @@ class nsLayoutUtils {
 
   static int32_t CompareTreePosition(
       const nsIFrame* aFrame1, const nsIFrame* aFrame2,
-      nsTArray<const nsIFrame*>& aFrame2Ancestors,
+      const nsTArray<const nsIFrame*>& aFrame2Ancestors,
       const nsIFrame* aCommonAncestor = nullptr) {
     return DoCompareTreePosition(aFrame1, aFrame2, aFrame2Ancestors,
                                  aCommonAncestor);
@@ -403,7 +420,7 @@ class nsLayoutUtils {
                                        const nsIFrame* aCommonAncestor);
   static int32_t DoCompareTreePosition(
       const nsIFrame* aFrame1, const nsIFrame* aFrame2,
-      nsTArray<const nsIFrame*>& aFrame2Ancestors,
+      const nsTArray<const nsIFrame*>& aFrame2Ancestors,
       const nsIFrame* aCommonAncestor);
 
   /**
@@ -463,6 +480,17 @@ class nsLayoutUtils {
                                     const nsIFrame* aCommonAncestor = nullptr);
 
   /**
+   * IsProperAncestorFrameConsideringContinuations checks whether aAncestorFrame
+   * or a continuation of it is an ancestor of aFrame and not equal to aFrame.
+   * @param aCommonAncestor nullptr, or a common ancestor of aFrame and
+   * aAncestorFrame. If non-null, this can bound the search and speed up
+   * the function
+   */
+  static bool IsProperAncestorFrameConsideringContinuations(
+      const nsIFrame* aAncestorFrame, const nsIFrame* aFrame,
+      const nsIFrame* aCommonAncestor = nullptr);
+
+  /**
    * Like IsProperAncestorFrame, but looks across document boundaries.
    *
    * Just like IsAncestorFrameCrossDoc, except that it returns false when
@@ -517,6 +545,10 @@ class nsLayoutUtils {
    * another an iframe document domain B, such as A1 -> B1 ->A2 document tree.
    */
   static bool IsAncestorFrameCrossDocInProcess(
+      const nsIFrame* aAncestorFrame, const nsIFrame* aFrame,
+      const nsIFrame* aCommonAncestor = nullptr);
+
+  static bool IsAncestorFrameCrossDocInProcessConsideringContinuations(
       const nsIFrame* aAncestorFrame, const nsIFrame* aFrame,
       const nsIFrame* aCommonAncestor = nullptr);
 
@@ -713,7 +745,7 @@ class nsLayoutUtils {
   enum class GetPopupFrameForPointFlags : uint8_t {
     OnlyReturnFramesWithWidgets = 0x1,
   };
-  static nsIFrame* GetPopupFrameForPoint(
+  static nsMenuPopupFrame* GetPopupFrameForPoint(
       nsPresContext* aRootPresContext, nsIWidget* aWidget,
       const mozilla::LayoutDeviceIntPoint& aPoint,
       GetPopupFrameForPointFlags aFlags = GetPopupFrameForPointFlags(0));
@@ -734,34 +766,11 @@ class nsLayoutUtils {
                                            nsIContent** aContainer,
                                            int32_t* aOffset);
 
-  /**
-   * Translate from widget coordinates to the view's coordinates
-   * @param aPresContext the PresContext for the view
-   * @param aWidget the widget
-   * @param aPt the point relative to the widget
-   * @param aView  view to which returned coordinates are relative
-   * @return the point in the view's coordinates
-   */
-  static nsPoint TranslateWidgetToView(nsPresContext* aPresContext,
-                                       nsIWidget* aWidget,
-                                       const mozilla::LayoutDeviceIntPoint& aPt,
-                                       nsView* aView);
-
-  /**
-   * Translate from view coordinates to the widget's coordinates.
-   * @param aPresContext the PresContext for the view
-   * @param aView the view
-   * @param aPt the point relative to the view
-   * @param aViewportType whether the point is in visual or layout coordinates
-   * @param aWidget the widget to which returned coordinates are relative
-   * @return the point in the view's coordinates
-   */
-  static mozilla::LayoutDeviceIntPoint TranslateViewToWidget(
-      nsPresContext* aPresContext, nsView* aView, nsPoint aPt,
-      ViewportType aViewportType, nsIWidget* aWidget);
-
   static mozilla::LayoutDeviceIntPoint WidgetToWidgetOffset(
       nsIWidget* aFromWidget, nsIWidget* aToWidget);
+
+  static mozilla::Maybe<nsPoint> FrameToWidgetOffset(const nsIFrame* aFrame,
+                                                     nsIWidget* aWidget);
 
   enum class FrameForPointOption {
     /**
@@ -1097,12 +1106,25 @@ class nsLayoutUtils {
   static nsRect RoundGfxRectToAppRect(const T& aRect, const float aFactor);
 
   /**
+   * Like the above but slightly different scale and round behaviour. First
+   * scales, then constrains to nscoord, then rounds each component (x, y,
+   * width, height) individually.
+   *
+   * @param aRect The graphics rect to round outward.
+   * @param aFactor The number of app units per graphics unit.
+   * @return The rounaded rectangle in app space.
+   */
+  template <typename T>
+  static nsRect ScaleThenRoundGfxRectToAppRect(const T& aRect,
+                                               const float aFactor);
+
+  /**
    * Returns a subrectangle of aContainedRect that is entirely inside the
    * rounded rect. Complex cases are handled conservatively by returning a
    * smaller rect than necessary.
    */
   static nsRegion RoundedRectIntersectRect(const nsRect& aRoundedRect,
-                                           const nscoord aRadii[8],
+                                           const nsRectCornerRadii&,
                                            const nsRect& aContainedRect);
   static nsIntRegion RoundedRectIntersectIntRect(
       const nsIntRect& aRoundedRect, const RectCornerRadii& aCornerRadii,
@@ -1114,7 +1136,7 @@ class nsLayoutUtils {
    * enum HalfCorner constants in gfx/2d/Types.h). This is precise.
    */
   static bool RoundedRectIntersectsRect(const nsRect& aRoundedRect,
-                                        const nscoord aRadii[8],
+                                        const nsRectCornerRadii&,
                                         const nsRect& aTestRect);
 
   enum class PaintFrameFlags : uint32_t {
@@ -1285,6 +1307,7 @@ class nsLayoutUtils {
     UseMarginBox,
     // Similar to UseMarginBox, but the 'auto' margins are resolved as zero.
     UseMarginBoxWithAutoResolvedAsZero,
+    UseInkOverflowAsBox
   };
   using GetAllInFlowRectsFlags = mozilla::EnumSet<GetAllInFlowRectsFlag>;
   static void GetAllInFlowRects(nsIFrame* aFrame, const nsIFrame* aRelativeTo,
@@ -1393,6 +1416,14 @@ class nsLayoutUtils {
                                                  nsIFrame* aDescendantFrame);
 
   /**
+   * Returns true if aFrame or any of its descendants have absolutely
+   * positioned children. This is used in a fragmented context to determine
+   * whether a measuring reflow is required for computing unfragmented
+   * positions of absolutely positioned elements.
+   */
+  static bool HasAbsolutelyPositionedDescendants(const nsIFrame* aFrame);
+
+  /**
    * Find the nearest ancestor that's a block
    */
   static nsBlockFrame* FindNearestBlockAncestor(nsIFrame* aFrame);
@@ -1495,7 +1526,6 @@ class nsLayoutUtils {
   enum {
     IGNORE_PADDING = 0x01,
     BAIL_IF_REFLOW_NEEDED = 0x02,  // returns NS_INTRINSIC_ISIZE_UNKNOWN if so
-    MIN_INTRINSIC_ISIZE = 0x04,  // use min-width/height instead of width/height
   };
   static nscoord IntrinsicForAxis(
       mozilla::PhysicalAxis aAxis, gfxContext* aRenderingContext,
@@ -1656,7 +1686,7 @@ class nsLayoutUtils {
    *   internally work with variables that unconditionally represent a
    *   content-box size, regardless of the 'box-sizing' value; and for those
    *   cases, it would be appropriate to unconditionally pass
-   *   StyleBoxSizing::Content to this function, or to just use the
+   *   StyleBoxSizing::ContentBox to this function, or to just use the
    *   convenience-wrapper that has "ContentBox" in the function name.
    */
   static inline nscoord ComputeStretchBSize(
@@ -1666,7 +1696,7 @@ class nsLayoutUtils {
                  "We don't handle situations with unconstrained "
                  "aSizeToFill; caller should handle that!");
     nscoord stretchSize = aSizeToFill - aMargin;
-    if (aBoxSizing == mozilla::StyleBoxSizing::Content) {
+    if (aBoxSizing == mozilla::StyleBoxSizing::ContentBox) {
       stretchSize -= aBorderPadding;
     }
     return std::max(0, stretchSize);
@@ -1676,7 +1706,7 @@ class nsLayoutUtils {
                                                       nscoord aMargin,
                                                       nscoord aBorderPadding) {
     return ComputeStretchBSize(aSizeToFill, aMargin, aBorderPadding,
-                               mozilla::StyleBoxSizing::Content);
+                               mozilla::StyleBoxSizing::ContentBox);
   }
   // Similar to the above convenience-wrapper, but now for inline-axis.
   // TODO(dholbert): would it be useful to add a box-sizing-aware version of
@@ -2161,8 +2191,8 @@ class nsLayoutUtils {
    *   @return a value suitable for passing to SetWindowTranslucency.
    */
   using TransparencyMode = mozilla::widget::TransparencyMode;
-  static TransparencyMode GetFrameTransparency(nsIFrame* aBackgroundFrame,
-                                               nsIFrame* aCSSRootFrame);
+  static TransparencyMode GetFrameTransparency(const nsIFrame* aBackgroundFrame,
+                                               const nsIFrame* aCSSRootFrame);
 
   /**
    * A frame is a popup if it has its own floating window. Menus, panels
@@ -2489,7 +2519,7 @@ class nsLayoutUtils {
    * not overridden by !important rules.
    */
   static bool HasEffectiveAnimation(const nsIFrame* aFrame,
-                                    nsCSSPropertyID aProperty);
+                                    NonCustomCSSPropertyId aProperty);
 
   /**
    * Returns true if |aFrame| has an animation where at least one of the
@@ -2879,6 +2909,11 @@ class nsLayoutUtils {
   static FrameMetrics CalculateBasicFrameMetrics(
       mozilla::ScrollContainerFrame* aScrollContainerFrame);
 
+  /**
+   * Follows the async scrollable ancestor chain of scroll frames to find
+   * scroll frames that WantAsyncScroll(). This is used when activating scroll
+   * frames and finding APZCs.
+   */
   static mozilla::ScrollContainerFrame* GetAsyncScrollableAncestorFrame(
       nsIFrame* aTarget);
 
@@ -3040,7 +3075,7 @@ class nsLayoutUtils {
    *   assigned to first frame on the next line if such a next line exists, null
    *   otherwise.
    */
-  static bool IsInvisibleBreak(nsINode* aNode,
+  static bool IsInvisibleBreak(const nsINode* aNode,
                                nsIFrame** aNextLineFrame = nullptr);
 
   static nsRect ComputeSVGOriginBox(mozilla::dom::SVGViewportElement*);
@@ -3166,6 +3201,27 @@ class nsLayoutUtils {
    */
   static void RecomputeSmoothScrollDefault();
 
+  struct CombinedFragments {
+    // Previous continuation, if exists, that got skipped due to being on a
+    // different page, or a different containing block continuation.
+    const nsIFrame* mSkippedPrevContinuation = nullptr;
+    // Same as above, but next continuation.
+    const nsIFrame* mSkippedNextContinuation = nullptr;
+    // The overall frame rect formed by unioning the frame's fragment rects.
+    nsRect mRect;
+  };
+  /**
+   * Get the union of the rects of aFrame and its continuations (but not if the
+   * context is paginated and they're on a different page, as it doesn't make
+   * sense to "merge" their rects in that case).
+   *
+   * @param aFrame The target frame whose combined fragments are wanted.
+   * @param aContainingBlock If provided, union fragments only up to its
+   * fragmentation boundary.
+   */
+  static CombinedFragments GetCombinedFragmentRects(
+      const nsIFrame* aFrame, const nsIFrame* aContainingBlock = nullptr);
+
  private:
   /**
    * Helper function for LogTestDataForPaint().
@@ -3176,8 +3232,9 @@ class nsLayoutUtils {
 
   static bool IsAPZTestLoggingEnabled();
 
-  static void ConstrainToCoordValues(gfxFloat& aStart, gfxFloat& aSize);
-  static void ConstrainToCoordValues(float& aStart, float& aSize);
+  // doubles only because nscoord_max and nscoord_min cannot be represented
+  // exactly by floats.
+  static void ConstrainToCoordValues(double& aStart, double& aSize);
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsLayoutUtils::PaintFrameFlags)
@@ -3230,21 +3287,66 @@ nsRect nsLayoutUtils::RoundGfxRectToAppRect(const T& aRect,
   T scaledRect = aRect;
   scaledRect.ScaleRoundOut(aFactor);
 
+  nsRect retval;
+
+  double start = double(scaledRect.x);
+  double size = double(scaledRect.width);
   // We now need to constrain our results to the max and min values for coords.
-  ConstrainToCoordValues(scaledRect.x, scaledRect.width);
-  ConstrainToCoordValues(scaledRect.y, scaledRect.height);
+  ConstrainToCoordValues(start, size);
+  // ConstrainToCoordValues ensures casting to nscoord is safe.
+  retval.x = nscoord(start);
+  retval.width = nscoord(size);
+
+  start = double(scaledRect.y);
+  size = double(scaledRect.height);
+  ConstrainToCoordValues(start, size);
+  retval.y = nscoord(start);
+  retval.height = nscoord(size);
 
   if (!aRect.Width()) {
-    scaledRect.SetWidth(0);
+    retval.SetWidth(0);
   }
 
   if (!aRect.Height()) {
-    scaledRect.SetHeight(0);
+    retval.SetHeight(0);
   }
 
-  // Now typecast everything back.  This is guaranteed to be safe.
-  return nsRect(nscoord(scaledRect.X()), nscoord(scaledRect.Y()),
-                nscoord(scaledRect.Width()), nscoord(scaledRect.Height()));
+  return retval;
+}
+
+template <typename T>
+nsRect nsLayoutUtils::ScaleThenRoundGfxRectToAppRect(const T& aRect,
+                                                     const float aFactor) {
+  // Get a new Rect whose units are app units by scaling by the specified
+  // factor.
+  T scaledRect = aRect;
+  scaledRect.Scale(aFactor);
+
+  nsRect retval;
+
+  double start = double(scaledRect.x);
+  double size = double(scaledRect.width);
+  // We now need to constrain our results to the max and min values for coords.
+  ConstrainToCoordValues(start, size);
+  // ConstrainToCoordValues ensures converting to nscoord is safe.
+  retval.x = NSToCoordRoundWithClamp(start);
+  retval.width = NSToCoordRoundWithClamp(size);
+
+  start = double(scaledRect.y);
+  size = double(scaledRect.height);
+  ConstrainToCoordValues(start, size);
+  retval.y = NSToCoordRoundWithClamp(start);
+  retval.height = NSToCoordRoundWithClamp(size);
+
+  if (!aRect.Width()) {
+    retval.SetWidth(0);
+  }
+
+  if (!aRect.Height()) {
+    retval.SetHeight(0);
+  }
+
+  return retval;
 }
 
 namespace mozilla {
@@ -3359,4 +3461,4 @@ class MOZ_RAII SetAndNullOnExit {
   T** mVariable;
 };
 
-#endif  // nsLayoutUtils_h__
+#endif  // nsLayoutUtils_h_

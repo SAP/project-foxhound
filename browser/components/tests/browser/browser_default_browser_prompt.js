@@ -18,12 +18,12 @@ const { SpecialMessageActions } = ChromeUtils.importESModule(
 );
 const CHECK_PREF = "browser.shell.checkDefaultBrowser";
 
-function showAndWaitForModal(callback) {
+async function showAndWaitForModal(callback) {
   const promise = BrowserTestUtils.promiseAlertDialog(null, undefined, {
     callback,
     isSubDialog: true,
   });
-  DefaultBrowserCheck.prompt(BrowserWindowTracker.getTopWindow());
+  await DefaultBrowserCheck.prompt(BrowserWindowTracker.getTopWindow());
   return promise;
 }
 

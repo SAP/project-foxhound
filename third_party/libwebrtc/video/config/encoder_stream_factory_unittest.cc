@@ -10,24 +10,37 @@
 
 #include "video/config/encoder_stream_factory.h"
 
+#include <cstddef>
+#include <optional>
+#include <string>
 #include <tuple>
+#include <vector>
 
+#include "absl/strings/string_view.h"
+#include "api/field_trials.h"
+#include "api/field_trials_view.h"
+#include "api/make_ref_counted.h"
+#include "api/video/resolution.h"
+#include "api/video/video_codec_type.h"
 #include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "rtc_base/experiments/min_video_bitrate_experiment.h"
-#include "test/explicit_key_value_config.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "video/config/video_encoder_config.h"
 
 namespace webrtc {
 namespace {
-using ::cricket::EncoderStreamFactory;
-using test::ExplicitKeyValueConfig;
 using ::testing::Combine;
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 using ::testing::Not;
 using ::testing::SizeIs;
+using ::testing::TestWithParam;
 using ::testing::Values;
 
 struct CreateVideoStreamParams {
@@ -71,7 +84,7 @@ std::vector<VideoStream> CreateEncoderStreams(
     std::optional<VideoSourceRestrictions> restrictions = std::nullopt) {
   VideoEncoder::EncoderInfo encoder_info;
   auto factory =
-      rtc::make_ref_counted<EncoderStreamFactory>(encoder_info, restrictions);
+      make_ref_counted<EncoderStreamFactory>(encoder_info, restrictions);
   return factory->CreateEncoderStreams(field_trials, resolution.width,
                                        resolution.height, encoder_config);
 }
@@ -79,7 +92,7 @@ std::vector<VideoStream> CreateEncoderStreams(
 }  // namespace
 
 TEST(EncoderStreamFactory, SinglecastScaleResolutionDownTo) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoEncoderConfig encoder_config;
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(1);
@@ -89,13 +102,12 @@ TEST(EncoderStreamFactory, SinglecastScaleResolutionDownTo) {
       field_trials, {.width = 1280, .height = 720}, encoder_config);
   EXPECT_EQ(streams[0].scale_resolution_down_to,
             (Resolution{.width = 640, .height = 360}));
-  EXPECT_EQ(GetStreamResolutions(streams), (std::vector<Resolution>{
-                                               {.width = 640, .height = 360},
-                                           }));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 640, .height = 360}));
 }
 
 TEST(EncoderStreamFactory, SinglecastScaleResolutionDownToWithAdaptation) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoSourceRestrictions restrictions(
       /* max_pixels_per_frame= */ (320 * 320),
       /* target_pixels_per_frame= */ std::nullopt,
@@ -110,13 +122,12 @@ TEST(EncoderStreamFactory, SinglecastScaleResolutionDownToWithAdaptation) {
                            encoder_config, restrictions);
   EXPECT_EQ(streams[0].scale_resolution_down_to,
             (Resolution{.width = 640, .height = 360}));
-  EXPECT_EQ(GetStreamResolutions(streams), (std::vector<Resolution>{
-                                               {.width = 320, .height = 180},
-                                           }));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 320, .height = 180}));
 }
 
 TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToUnrestricted) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoEncoderConfig encoder_config;
   encoder_config.number_of_streams = 3;
   encoder_config.simulcast_layers.resize(3);
@@ -128,15 +139,14 @@ TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToUnrestricted) {
                                                                  .height = 720};
   auto streams = CreateEncoderStreams(
       field_trials, {.width = 1280, .height = 720}, encoder_config);
-  std::vector<Resolution> stream_resolutions = GetStreamResolutions(streams);
-  ASSERT_THAT(stream_resolutions, SizeIs(3));
-  EXPECT_EQ(stream_resolutions[0], (Resolution{.width = 320, .height = 180}));
-  EXPECT_EQ(stream_resolutions[1], (Resolution{.width = 640, .height = 360}));
-  EXPECT_EQ(stream_resolutions[2], (Resolution{.width = 1280, .height = 720}));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 320, .height = 180},
+                          Resolution{.width = 640, .height = 360},
+                          Resolution{.width = 1280, .height = 720}));
 }
 
 TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToWith360pRestriction) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoSourceRestrictions restrictions(
       /* max_pixels_per_frame= */ (640 * 360),
       /* target_pixels_per_frame= */ std::nullopt,
@@ -153,15 +163,14 @@ TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToWith360pRestriction) {
   auto streams =
       CreateEncoderStreams(field_trials, {.width = 1280, .height = 720},
                            encoder_config, restrictions);
-  std::vector<Resolution> stream_resolutions = GetStreamResolutions(streams);
   // 720p layer is dropped due to 360p restrictions.
-  ASSERT_THAT(stream_resolutions, SizeIs(2));
-  EXPECT_EQ(stream_resolutions[0], (Resolution{.width = 320, .height = 180}));
-  EXPECT_EQ(stream_resolutions[1], (Resolution{.width = 640, .height = 360}));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 320, .height = 180},
+                          Resolution{.width = 640, .height = 360}));
 }
 
 TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToWith90pRestriction) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoSourceRestrictions restrictions(
       /* max_pixels_per_frame= */ (160 * 90),
       /* target_pixels_per_frame= */ std::nullopt,
@@ -178,16 +187,15 @@ TEST(EncoderStreamFactory, SimulcastScaleResolutionDownToWith90pRestriction) {
   auto streams =
       CreateEncoderStreams(field_trials, {.width = 1280, .height = 720},
                            encoder_config, restrictions);
-  std::vector<Resolution> stream_resolutions = GetStreamResolutions(streams);
-  ASSERT_THAT(stream_resolutions, SizeIs(1));
   // 90p restriction means all but the first layer (180p) is dropped. The one
   // and only layer is downsized to 90p.
-  EXPECT_EQ(stream_resolutions[0], (Resolution{.width = 160, .height = 90}));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 160, .height = 90}));
 }
 
 TEST(EncoderStreamFactory,
      ReverseSimulcastScaleResolutionDownToWithRestriction) {
-  ExplicitKeyValueConfig field_trials("");
+  FieldTrials field_trials = CreateTestFieldTrials();
   VideoSourceRestrictions restrictions(
       /* max_pixels_per_frame= */ (640 * 360),
       /* target_pixels_per_frame= */ std::nullopt,
@@ -205,14 +213,156 @@ TEST(EncoderStreamFactory,
   auto streams =
       CreateEncoderStreams(field_trials, {.width = 1280, .height = 720},
                            encoder_config, restrictions);
-  std::vector<Resolution> stream_resolutions = GetStreamResolutions(streams);
   // The layer dropping that is performed for lower-to-higher ordered simulcast
   // streams is not applicable when higher-to-lower order is used. In this case
   // the 360p restriction is applied to all layers.
-  ASSERT_THAT(stream_resolutions, SizeIs(3));
-  EXPECT_EQ(stream_resolutions[0], (Resolution{.width = 640, .height = 360}));
-  EXPECT_EQ(stream_resolutions[1], (Resolution{.width = 640, .height = 360}));
-  EXPECT_EQ(stream_resolutions[2], (Resolution{.width = 320, .height = 180}));
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 640, .height = 360},
+                          Resolution{.width = 640, .height = 360},
+                          Resolution{.width = 320, .height = 180}));
+}
+
+TEST(EncoderStreamFactory,
+     SinglecastScaleResolutionDownToTakesPrecedenceOverBy) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 1;
+  encoder_config.simulcast_layers.resize(1);
+  encoder_config.simulcast_layers[0].scale_resolution_down_to = {.width = 960,
+                                                                 .height = 650};
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 2;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 1280, .height = 720}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 960, .height = 540}));
+}
+
+TEST(EncoderStreamFactory, ScaleResolutionDownBy) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 1;
+  encoder_config.simulcast_layers.resize(1);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 2;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 1280, .height = 720}, encoder_config);
+  EXPECT_EQ(streams[0].scale_resolution_down_by, 2);
+  EXPECT_EQ(GetStreamResolutions(streams), (std::vector<Resolution>{
+                                               {.width = 640, .height = 360},
+                                           }));
+}
+
+TEST(EncoderStreamFactory, ScaleResolutionDownByWithZeroScaleFactor) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 1;
+  encoder_config.simulcast_layers.resize(1);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 0;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 1280, .height = 720}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 1280, .height = 720}));
+}
+
+TEST(EncoderStreamFactory, ScaleResolutionDownByWithNegativeScaleFactor) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 1;
+  encoder_config.simulcast_layers.resize(1);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = -2;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 1280, .height = 720}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 1280, .height = 720}));
+}
+
+TEST(EncoderStreamFactory, ScaleResolutionDownByWithPartiallySetScaleFactors) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 2;
+  encoder_config.simulcast_layers.resize(2);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 2;
+  encoder_config.simulcast_layers[1].scale_resolution_down_by = -1;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 1280, .height = 720}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 640, .height = 360},
+                          Resolution{.width = 1280, .height = 720}));
+}
+
+TEST(EncoderStreamFactory, ScaleDownByWithUnalignResolutionDyadicScaling) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 2;
+  encoder_config.simulcast_layers.resize(2);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 1;
+  encoder_config.simulcast_layers[1].scale_resolution_down_by = 2;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 513, .height = 1025}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 512, .height = 1024},
+                          Resolution{.width = 256, .height = 512}));
+}
+
+TEST(EncoderStreamFactory, ScaleDownByWithUnalignResolutionNonDyadicScaling) {
+  // Keeps resolution unchanged if any of `scale_resolution_down_by` is not a
+  // power of two number.
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 2;
+  encoder_config.simulcast_layers.resize(2);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 1;
+  encoder_config.simulcast_layers[1].scale_resolution_down_by = 3;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 513, .height = 1025}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 513, .height = 1025},
+                          Resolution{.width = 171, .height = 342}));
+}
+
+TEST(EncoderStreamFactory, ScaleDownByWithUnalignedResolutionLargeScaleFactor) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 1;
+  encoder_config.simulcast_layers.resize(1);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 1024;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 513, .height = 1025}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 16, .height = 32}));
+}
+
+TEST(EncoderStreamFactory, ScaleDownByWithUnalignedResolutionWithoutScaling) {
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 2;
+  encoder_config.simulcast_layers.resize(2);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 1;
+  encoder_config.simulcast_layers[1].scale_resolution_down_by = 1;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 513, .height = 1025}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 513, .height = 1025},
+                          Resolution{.width = 513, .height = 1025}));
+}
+
+TEST(EncoderStreamFactory, ScaleDownByNormalizesResolutionUpToMaxScaleFactor) {
+  // Without `scale_resolution_down_by` resolution normalization assumes 1/2
+  // scaling. When three streams are requested, resolution is normalized to be
+  // multiple of 8. With `scale_resolution_down_by` resolution is normalized
+  // to be multiple of the maximum scale factor.
+  FieldTrials field_trials = CreateTestFieldTrials();
+  VideoEncoderConfig encoder_config;
+  encoder_config.number_of_streams = 3;
+  encoder_config.simulcast_layers.resize(3);
+  encoder_config.simulcast_layers[0].scale_resolution_down_by = 1;
+  encoder_config.simulcast_layers[1].scale_resolution_down_by = 1;
+  encoder_config.simulcast_layers[2].scale_resolution_down_by = 2;
+  auto streams = CreateEncoderStreams(
+      field_trials, {.width = 511, .height = 1027}, encoder_config);
+  EXPECT_THAT(GetStreamResolutions(streams),
+              ElementsAre(Resolution{.width = 510, .height = 1026},
+                          Resolution{.width = 510, .height = 1026},
+                          Resolution{.width = 255, .height = 513}));
 }
 
 TEST(EncoderStreamFactory, BitratePriority) {
@@ -222,8 +372,8 @@ TEST(EncoderStreamFactory, BitratePriority) {
   encoder_config.simulcast_layers.resize(encoder_config.number_of_streams);
   encoder_config.bitrate_priority = kBitratePriority;
   auto streams = CreateEncoderStreams(
-      /*field_trials=*/ExplicitKeyValueConfig(""),
-      {.width = 640, .height = 360}, encoder_config);
+      /*field_trials=*/CreateTestFieldTrials(), {.width = 640, .height = 360},
+      encoder_config);
   ASSERT_THAT(streams, SizeIs(2));
   EXPECT_EQ(streams[0].bitrate_priority, kBitratePriority);
   EXPECT_FALSE(streams[1].bitrate_priority);
@@ -231,11 +381,11 @@ TEST(EncoderStreamFactory, BitratePriority) {
 
 TEST(EncoderStreamFactory, SetsMinBitrateToDefaultValue) {
   VideoEncoder::EncoderInfo encoder_info;
-  auto factory = rtc::make_ref_counted<EncoderStreamFactory>(encoder_info);
+  auto factory = make_ref_counted<EncoderStreamFactory>(encoder_info);
   VideoEncoderConfig encoder_config;
   encoder_config.number_of_streams = 2;
   encoder_config.simulcast_layers.resize(encoder_config.number_of_streams);
-  auto streams = factory->CreateEncoderStreams(ExplicitKeyValueConfig(""), 1920,
+  auto streams = factory->CreateEncoderStreams(CreateTestFieldTrials(), 1920,
                                                1080, encoder_config);
   ASSERT_THAT(streams, Not(IsEmpty()));
   EXPECT_EQ(streams[0].min_bitrate_bps, kDefaultMinVideoBitrateBps);
@@ -243,12 +393,12 @@ TEST(EncoderStreamFactory, SetsMinBitrateToDefaultValue) {
 
 TEST(EncoderStreamFactory, SetsMinBitrateToExperimentalValue) {
   VideoEncoder::EncoderInfo encoder_info;
-  auto factory = rtc::make_ref_counted<EncoderStreamFactory>(encoder_info);
+  auto factory = make_ref_counted<EncoderStreamFactory>(encoder_info);
   VideoEncoderConfig encoder_config;
   encoder_config.number_of_streams = 2;
   encoder_config.simulcast_layers.resize(encoder_config.number_of_streams);
   auto streams = factory->CreateEncoderStreams(
-      ExplicitKeyValueConfig("WebRTC-Video-MinVideoBitrate/Enabled,br:1kbps/"),
+      CreateTestFieldTrials("WebRTC-Video-MinVideoBitrate/Enabled,br:1kbps/"),
       1920, 1080, encoder_config);
   ASSERT_THAT(streams, Not(IsEmpty()));
   EXPECT_NE(streams[0].min_bitrate_bps, kDefaultMinVideoBitrateBps);
@@ -278,7 +428,7 @@ std::vector<Resolution> CreateStreamResolutions(
     encoder_config.legacy_conference_mode = true;
   }
   return GetStreamResolutions(
-      CreateEncoderStreams(ExplicitKeyValueConfig(test_params.field_trials),
+      CreateEncoderStreams(CreateTestFieldTrials(test_params.field_trials),
                            test_params.resolution, encoder_config));
 }
 
@@ -368,11 +518,10 @@ struct OverrideStreamSettingsTestParams {
   std::vector<VideoStream> expected_streams;
 };
 
-class EncoderStreamFactoryOverrideStreamSettinsTest
-    : public ::testing::TestWithParam<
-          std::tuple<OverrideStreamSettingsTestParams, VideoCodecType>> {};
+using EncoderStreamFactoryOverrideStreamSettingsTest =
+    TestWithParam<std::tuple<OverrideStreamSettingsTestParams, VideoCodecType>>;
 
-TEST_P(EncoderStreamFactoryOverrideStreamSettinsTest, OverrideStreamSettings) {
+TEST_P(EncoderStreamFactoryOverrideStreamSettingsTest, OverrideStreamSettings) {
   OverrideStreamSettingsTestParams test_params = std::get<0>(GetParam());
   VideoEncoderConfig encoder_config;
   encoder_config.codec_type = std::get<1>(GetParam());
@@ -380,7 +529,7 @@ TEST_P(EncoderStreamFactoryOverrideStreamSettinsTest, OverrideStreamSettings) {
   encoder_config.simulcast_layers = test_params.requested_streams;
   encoder_config.content_type = test_params.content_type;
   auto streams =
-      CreateEncoderStreams(ExplicitKeyValueConfig(test_params.field_trials),
+      CreateEncoderStreams(CreateTestFieldTrials(test_params.field_trials),
                            test_params.input_resolution, encoder_config);
   ASSERT_EQ(streams.size(), test_params.expected_streams.size());
   for (size_t i = 0; i < streams.size(); ++i) {
@@ -397,8 +546,8 @@ TEST_P(EncoderStreamFactoryOverrideStreamSettinsTest, OverrideStreamSettings) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Screencast,
-    EncoderStreamFactoryOverrideStreamSettinsTest,
+    Vp8H264Screencast,
+    EncoderStreamFactoryOverrideStreamSettingsTest,
     Combine(Values(OverrideStreamSettingsTestParams{
                 .input_resolution = {.width = 1920, .height = 1080},
                 .content_type = VideoEncoderConfig::ContentType::kScreen,
@@ -431,20 +580,61 @@ INSTANTIATE_TEST_SUITE_P(
                           .max_bitrate_bps = 2'500'000,
                           .scalability_mode = ScalabilityMode::kL1T2})}}),
             Values(VideoCodecType::kVideoCodecVP8,
-                   VideoCodecType::kVideoCodecAV1)));
+                   VideoCodecType::kVideoCodecH264)));
+
+INSTANTIATE_TEST_SUITE_P(
+    Av1Vp9H265Screencast,
+    EncoderStreamFactoryOverrideStreamSettingsTest,
+    Combine(Values(OverrideStreamSettingsTestParams{
+                .input_resolution = {.width = 1920, .height = 1080},
+                .content_type = VideoEncoderConfig::ContentType::kScreen,
+                .requested_streams =
+                    {CreateVideoStream(
+                         {.max_framerate_fps = 5,
+                          .max_bitrate_bps = 420'000,
+                          .scale_resolution_down_by = 1,
+                          .scalability_mode = ScalabilityMode::kL1T2}),
+                     CreateVideoStream(
+                         {.max_framerate_fps = 30,
+                          .max_bitrate_bps = 2'500'000,
+                          .scale_resolution_down_by = 1,
+                          .scalability_mode = ScalabilityMode::kL1T2})},
+                .expected_streams =
+                    {CreateVideoStream(
+                         {.width = 1920,
+                          .height = 1080,
+                          .max_framerate_fps = 5,
+                          .min_bitrate_bps = 30'000,
+                          .target_bitrate_bps = 420'000,
+                          .max_bitrate_bps = 420'000,
+                          .scalability_mode = ScalabilityMode::kL1T2}),
+                     CreateVideoStream(
+                         {.width = 1920,
+                          .height = 1080,
+                          .max_framerate_fps = 30,
+                          .min_bitrate_bps = 769'000,
+                          .target_bitrate_bps = 2'500'000,
+                          .max_bitrate_bps = 2'500'000,
+                          .scalability_mode = ScalabilityMode::kL1T2})}}),
+            Values(
+#ifdef RTC_ENABLE_H265
+                kVideoCodecH265,
+#endif
+                VideoCodecType::kVideoCodecAV1,
+                VideoCodecType::kVideoCodecVP9)));
 
 TEST(EncoderStreamFactory, VP9TemporalLayerCountTransferToStreamSettings) {
   VideoEncoderConfig encoder_config;
   VideoCodecVP9 vp9_settings = VideoEncoder::GetDefaultVp9Settings();
   encoder_config.encoder_specific_settings =
-      rtc::make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(
+      make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(
           vp9_settings);
   encoder_config.codec_type = VideoCodecType::kVideoCodecVP9;
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(1);
   encoder_config.simulcast_layers[0].num_temporal_layers = 3;
-  auto streams = CreateEncoderStreams(ExplicitKeyValueConfig(""), {1280, 720},
-                                      encoder_config);
+  auto streams = CreateEncoderStreams(
+      CreateTestFieldTrials(), {.width = 1280, .height = 720}, encoder_config);
   ASSERT_THAT(streams, SizeIs(1));
   EXPECT_EQ(streams[0].num_temporal_layers, 3);
 }
@@ -455,8 +645,8 @@ TEST(EncoderStreamFactory, AV1TemporalLayerCountTransferToStreamSettings) {
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(1);
   encoder_config.simulcast_layers[0].num_temporal_layers = 3;
-  auto streams = CreateEncoderStreams(ExplicitKeyValueConfig(""), {1280, 720},
-                                      encoder_config);
+  auto streams = CreateEncoderStreams(
+      CreateTestFieldTrials(), {.width = 1280, .height = 720}, encoder_config);
   ASSERT_THAT(streams, SizeIs(1));
   EXPECT_EQ(streams[0].num_temporal_layers, 3);
 }
@@ -467,8 +657,8 @@ TEST(EncoderStreamFactory, H264TemporalLayerCountTransferToStreamSettings) {
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(1);
   encoder_config.simulcast_layers[0].num_temporal_layers = 3;
-  auto streams = CreateEncoderStreams(ExplicitKeyValueConfig(""), {1280, 720},
-                                      encoder_config);
+  auto streams = CreateEncoderStreams(
+      CreateTestFieldTrials(), {.width = 1280, .height = 720}, encoder_config);
   ASSERT_THAT(streams, SizeIs(1));
   EXPECT_EQ(streams[0].num_temporal_layers, std::nullopt);
 }
@@ -480,8 +670,8 @@ TEST(EncoderStreamFactory, H265TemporalLayerCountTransferToStreamSettings) {
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(1);
   encoder_config.simulcast_layers[0].num_temporal_layers = 3;
-  auto streams = CreateEncoderStreams(ExplicitKeyValueConfig(""), {1280, 720},
-                                      encoder_config);
+  auto streams = CreateEncoderStreams(
+      CreateTestFieldTrials(), {.width = 1280, .height = 720}, encoder_config);
   ASSERT_THAT(streams, SizeIs(1));
   EXPECT_EQ(streams[0].num_temporal_layers, 3);
 }
@@ -491,14 +681,14 @@ TEST(EncoderStreamFactory, VP9SetsMaxBitrateToConfiguredEncodingValue) {
   VideoEncoderConfig encoder_config;
   VideoCodecVP9 vp9_settings = VideoEncoder::GetDefaultVp9Settings();
   encoder_config.encoder_specific_settings =
-      rtc::make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(
+      make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(
           vp9_settings);
   encoder_config.codec_type = VideoCodecType::kVideoCodecVP9;
   encoder_config.number_of_streams = 1;
   encoder_config.simulcast_layers.resize(3);
   encoder_config.simulcast_layers[0].max_bitrate_bps = 5000000;
-  auto streams = CreateEncoderStreams(ExplicitKeyValueConfig(""), {1280, 720},
-                                      encoder_config);
+  auto streams = CreateEncoderStreams(
+      CreateTestFieldTrials(), {.width = 1280, .height = 720}, encoder_config);
   ASSERT_THAT(streams, SizeIs(1));
   EXPECT_EQ(streams[0].max_bitrate_bps, 5000000);
 }

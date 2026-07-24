@@ -14,7 +14,13 @@ function checkCertTabs() {
   Assert.equal(certificatePages, 1, "Do not open repeated certificate pages!");
 }
 
-add_task(async function testBadCert() {
+// Security CertError Felt Privacy set to false
+add_task(async function testBadCert_feltPrivacyToFalse() {
+  // This will set the correct preference and automatically handle cleanup
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
+
   info("Testing bad cert");
 
   let tab = await openErrorPage();
@@ -47,6 +53,7 @@ add_task(async function testBadCert() {
 
   gBrowser.removeCurrentTab(); // closes about:certificate
   gBrowser.removeCurrentTab(); // closes https://expired.example.com/
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function testGoodCert() {
@@ -84,6 +91,82 @@ add_task(async function testGoodCert() {
   gBrowser.removeCurrentTab();
 });
 
+// Security CertError Felt Privacy set to true
+add_task(async function testBadCert_feltPrivacyToTrue() {
+  // This will set the correct preference and automatically handle cleanup
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", true]],
+  });
+
+  info("Testing bad cert");
+
+  let tab = await openErrorPage();
+  let loaded = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
+
+  for (let i = 0; i < 2; i++) {
+    gBrowser.selectedTab = tab;
+    // try opening two certificates that are the same
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+      const netErrorCard =
+        content.document.querySelector("net-error-card").wrappedJSObject;
+      await netErrorCard.getUpdateComplete();
+
+      Assert.ok(
+        netErrorCard.advancedButton,
+        "The advanced button should exist."
+      );
+
+      // Click the advancedButton to show the advanced section if it is not
+      // already showing
+      if (!netErrorCard.advancedShowing) {
+        EventUtils.synthesizeMouseAtCenter(
+          netErrorCard.advancedButton,
+          {},
+          content
+        );
+      }
+
+      await ContentTaskUtils.waitForCondition(
+        () =>
+          netErrorCard.viewCertificate &&
+          ContentTaskUtils.isVisible(netErrorCard.viewCertificate),
+        "Wait for the viewCertificate link."
+      );
+
+      Assert.ok(
+        netErrorCard.advancedShowing,
+        "Advanced showing attribute should be true"
+      );
+
+      Assert.ok(
+        netErrorCard.viewCertificate,
+        "The viewCertificate button should exist."
+      );
+
+      EventUtils.synthesizeMouseAtCenter(
+        netErrorCard.viewCertificate,
+        {},
+        content
+      );
+    });
+
+    let certTab = await loaded;
+
+    Assert.equal(
+      gBrowser.selectedTab,
+      certTab,
+      "The selected tab should be the about:certificate tab."
+    );
+  }
+
+  checkCertTabs();
+
+  gBrowser.removeCurrentTab(); // closes about:certificate
+  gBrowser.removeCurrentTab(); // closes https://expired.example.com/
+  await SpecialPowers.popPrefEnv();
+});
+
+// Works for both Security CertError Felt Privacy set to true and false
 add_task(async function testPreferencesCert() {
   info("Testing preferences cert");
   let url = "about:preferences#privacy";

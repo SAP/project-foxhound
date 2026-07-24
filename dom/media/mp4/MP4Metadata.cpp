@@ -2,21 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "MP4Metadata.h"
+
+#include <stdint.h>
+
+#include "ByteStream.h"
+#include "MoofParser.h"
+#include "VideoUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "VideoUtils.h"
-#include "MoofParser.h"
-#include "MP4Metadata.h"
-#include "ByteStream.h"
 #include "mp4parse.h"
-
-#include <limits>
-#include <stdint.h>
-#include <vector>
 
 using mozilla::media::TimeUnit;
 
@@ -59,14 +56,15 @@ static const char* TrackTypeToString(mozilla::TrackInfo::TrackType aType) {
   }
 }
 
-bool StreamAdaptor::Read(uint8_t* buffer, uintptr_t size, size_t* bytes_read) {
+nsresult StreamAdaptor::Read(uint8_t* buffer, uintptr_t size,
+                             size_t* bytes_read) {
   if (!mOffset.isValid()) {
     MOZ_LOG(gMP4MetadataLog, LogLevel::Error,
             ("Overflow in source stream offset"));
-    return false;
+    return NS_ERROR_DOM_MEDIA_OVERFLOW_ERR;
   }
-  bool rv = mSource->ReadAt(mOffset.value(), buffer, size, bytes_read);
-  if (rv) {
+  nsresult rv = mSource->ReadAt(mOffset.value(), buffer, size, bytes_read);
+  if (NS_SUCCEEDED(rv)) {
     mOffset += *bytes_read;
   }
   return rv;
@@ -79,8 +77,8 @@ static intptr_t read_source(uint8_t* buffer, uintptr_t size, void* userdata) {
 
   auto source = reinterpret_cast<StreamAdaptor*>(userdata);
   size_t bytes_read = 0;
-  bool rv = source->Read(buffer, size, &bytes_read);
-  if (!rv) {
+  nsresult rv = source->Read(buffer, size, &bytes_read);
+  if (NS_FAILED(rv)) {
     MOZ_LOG(gMP4MetadataLog, LogLevel::Warning, ("Error reading source data"));
     return -1;
   }
@@ -239,6 +237,21 @@ Maybe<uint32_t> MP4Metadata::TrackTypeToGlobalTrackIndex(
       continue;
     }
     if (TrackTypeEqual(aType, track_info.track_type)) {
+      bool skip = false;
+      if (track_info.track_type == MP4PARSE_TRACK_TYPE_AUDIO) {
+        Mp4parseTrackAudioInfo audio;
+        auto rv = mp4parse_get_track_audio_info(mParser.get(), i, &audio);
+        skip = rv != MP4PARSE_STATUS_OK || audio.sample_info_count == 0 ||
+               audio.sample_info[0].codec_type == MP4PARSE_CODEC_UNKNOWN;
+      } else if (track_info.track_type == MP4PARSE_TRACK_TYPE_VIDEO) {
+        Mp4parseTrackVideoInfo video;
+        auto rv = mp4parse_get_track_video_info(mParser.get(), i, &video);
+        skip = rv != MP4PARSE_STATUS_OK || video.sample_info_count == 0 ||
+               video.sample_info[0].codec_type == MP4PARSE_CODEC_UNKNOWN;
+      }
+      if (skip) {
+        continue;
+      }
       if (perType == aTrackNumber) {
         return Some(i);
       }
@@ -296,6 +309,9 @@ MP4Metadata::ResultAndTrackInfo MP4Metadata::GetTrackInfo(
         break;
       case MP4PARSE_CODEC_AAC:
         codecString = "aac";
+        break;
+      case MP4PARSE_CODEC_XHEAAC:
+        codecString = "xhe-aac";
         break;
       case MP4PARSE_CODEC_OPUS:
         codecString = "opus";

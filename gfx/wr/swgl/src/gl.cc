@@ -2247,10 +2247,6 @@ void VertexAttribDivisor(GLuint index, GLuint divisor) {
 
 void BufferData(GLenum target, GLsizeiptr size, void* data,
                 UNUSED GLenum usage) {
-  if (size < 0) {
-    assert(0);
-    return;
-  }
   Buffer& b = ctx->buffers[ctx->get_binding(target)];
   if (size != b.size) {
     if (!b.allocate(size)) {
@@ -2265,14 +2261,15 @@ void BufferData(GLenum target, GLsizeiptr size, void* data,
 
 void BufferSubData(GLenum target, GLintptr offset, GLsizeiptr size,
                    void* data) {
-  if (offset < 0 || size < 0) {
+  if (offset < 0) {
     assert(0);
     return;
   }
+  GLsizeiptr uOffset = offset;
   Buffer& b = ctx->buffers[ctx->get_binding(target)];
-  assert(offset < b.size && size <= b.size - offset);
-  if (data && b.buf && offset < b.size && size <= b.size - offset) {
-    memcpy(&b.buf[offset], data, size);
+  assert(uOffset < b.size && size <= b.size - uOffset);
+  if (data && b.buf && uOffset < b.size && size <= b.size - uOffset) {
+    memcpy(&b.buf[uOffset], data, size);
   }
 }
 
@@ -2284,11 +2281,16 @@ void* MapBuffer(GLenum target, UNUSED GLbitfield access) {
 void* MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length,
                      UNUSED GLbitfield access) {
   Buffer& b = ctx->buffers[ctx->get_binding(target)];
-  if (b.buf && offset >= 0 && length > 0 && offset < b.size &&
-      length <= b.size - offset) {
-    return b.buf + offset;
+  if (!b.buf || offset < 0 || length == 0) {
+      return nullptr;
   }
-  return nullptr;
+
+  GLsizeiptr uOffset = offset;
+  if (uOffset >= b.size || length > b.size - uOffset) {
+      return nullptr;
+  }
+
+  return b.buf + offset;
 }
 
 GLboolean UnmapBuffer(GLenum target) {

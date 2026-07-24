@@ -2,8 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 // Common code snippet of background script in this test.
 function background() {
   globalThis.onsecuritypolicyviolation = event => {

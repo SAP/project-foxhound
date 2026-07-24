@@ -159,7 +159,6 @@ export const GeckoViewTabBridge = {
   /**
    * Request the GeckoView App to close a tab (GeckoSession).
    *
-   *
    * @param {object} options
    * @param {Window} options.window The window owning the tab to close
    * @param {string} options.extensionId

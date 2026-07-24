@@ -22,10 +22,8 @@
 #include "mozilla/RDDChild.h"
 #include "mozilla/RDDParent.h"
 #include "mozilla/RDDProcessManager.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
 #include "ModuleEvaluator.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
@@ -191,15 +189,15 @@ NS_IMETHODIMP UntrustedModulesProcessor::Observe(nsISupports* aSubject,
       nsTArray<dom::ContentParent*> contentProcesses;
       dom::ContentParent::GetAll(contentProcesses);
       for (auto* proc : contentProcesses) {
-        Unused << proc->SendUnblockUntrustedModulesThread();
+        (void)proc->SendUnblockUntrustedModulesThread();
       }
       if (RefPtr<net::SocketProcessParent> proc =
               net::SocketProcessParent::GetSingleton()) {
-        Unused << proc->SendUnblockUntrustedModulesThread();
+        (void)proc->SendUnblockUntrustedModulesThread();
       }
       if (auto* rddMgr = RDDProcessManager::Get()) {
         if (auto* proc = rddMgr->GetRDDChild()) {
-          Unused << proc->SendUnblockUntrustedModulesThread();
+          (void)proc->SendUnblockUntrustedModulesThread();
         }
       }
       if (RefPtr<gmp::GeckoMediaPluginServiceParent> gmps =
@@ -707,7 +705,7 @@ void UntrustedModulesProcessor::ProcessModuleLoadQueue() {
       return;
     }
 
-    Unused << processedStacks.emplaceBack(std::move(processedStack));
+    (void)processedStacks.emplaceBack(std::move(processedStack));
     processedEvents.insertBack(
         new ProcessedModuleLoadEventContainer(std::move(event)));
   }
@@ -966,7 +964,7 @@ void UntrustedModulesProcessor::CompleteProcessing(
       Telemetry::ProcessedStack processedStack =
           stackProcessor.GetStackAndModules(backtrace);
 
-      Unused << processedStacks.emplaceBack(std::move(processedStack));
+      (void)processedStacks.emplaceBack(std::move(processedStack));
       processedEvents.insertBack(
           new ProcessedModuleLoadEventContainer(std::move(event)));
     }

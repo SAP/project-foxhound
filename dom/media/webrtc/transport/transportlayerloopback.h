@@ -6,18 +6,16 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef transportlayerloopback_h__
-#define transportlayerloopback_h__
-
-#include "prlock.h"
+#ifndef transportlayerloopback_h_
+#define transportlayerloopback_h_
 
 #include <queue>
 
+#include "m_cpp_utils.h"
 #include "nsCOMPtr.h"
 #include "nsINamed.h"
 #include "nsITimer.h"
-
-#include "m_cpp_utils.h"
+#include "prlock.h"
 #include "transportlayer.h"
 
 // A simple loopback transport layer that is used for testing.

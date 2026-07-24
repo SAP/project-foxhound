@@ -7,6 +7,7 @@ package org.mozilla.fenix.ui.robots
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.intent.Intents
@@ -17,11 +18,14 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import org.hamcrest.Matchers.allOf
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.AppAndSystemHelper.forceCloseApp
+import org.mozilla.fenix.helpers.AppAndSystemHelper.isPackageInstalled
+import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
@@ -32,6 +36,7 @@ import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.ext.waitNotNull
 
 class ShareOverlayRobot {
@@ -93,6 +98,30 @@ class ShareOverlayRobot {
         mDevice.waitNotNull(Until.findObject(By.res("android:id/resolver_list")))
     }
 
+    fun expandAndroidShareLayout(appName: String) {
+        for (i in 1..RETRY_COUNT) {
+            Log.i(TAG, "expandAndroidShareLayout: Started try #$i")
+            try {
+                assertUIObjectExists(itemWithResId("android:id/chooser_header"))
+                Log.i(TAG, "expandAndroidShareLayout: Trying to expand the Android share layout")
+                mDevice.findObject(By.res("android:id/chooser_header")).swipe(Direction.UP, 1.0f, 500)
+                Log.i(TAG, "expandAndroidShareLayout: Expanded the Android share layout")
+                assertUIObjectExists(itemContainingText(appName))
+
+                break
+            } catch (e: AssertionError) {
+                Log.i(TAG, "expandAndroidShareLayout: AssertionError caught, executing fallback methods")
+                if (i == RETRY_COUNT) {
+                    throw e
+                } else {
+                    Log.i(TAG, "expandAndroidShareLayout: Waiting for $waitingTime for device to be idle")
+                    mDevice.waitForIdle(waitingTime)
+                    Log.i(TAG, "expandAndroidShareLayout: Waited for $waitingTime for device to be idle")
+                }
+            }
+        }
+    }
+
     fun verifySharingWithSelectedApp(appName: String, content: String, subject: String) {
         val sharingApp = mDevice.findObject(UiSelector().text(appName))
         Log.i(TAG, "verifySharingWithSelectedApp: Trying to verify that sharing app: $appName exists")
@@ -146,24 +175,34 @@ class ShareOverlayRobot {
         Log.i(TAG, "verifyShareLinkIntent: Verified that the share intent for link: $url was launched")
     }
 
+    fun clickSharingApp(appName: String, appPackageName: String) {
+            val sharingApp = itemContainingText(appName)
+            if (isPackageInstalled(appPackageName)) {
+                assertUIObjectExists(sharingApp)
+                Log.i(TAG, "clickSharingApp: Trying to click sharing app: $appName and wait for a new window")
+                sharingApp.clickAndWaitForNewWindow()
+                Log.i(TAG, "clickSharingApp: Clicked sharing app: $appName and waited for a new window")
+        }
+    }
+
     class Transition {
-        fun clickSaveAsPDF(interact: DownloadRobot.() -> Unit): DownloadRobot.Transition {
+        fun clickSaveAsPDF(composeTestRule: ComposeTestRule, interact: DownloadRobot.() -> Unit): DownloadRobot.Transition {
             Log.i(TAG, "clickSaveAsPDF: Trying to click the \"SAVE AS PDF\" share overlay button")
             itemContainingText("Save as PDF").click()
             Log.i(TAG, "clickSaveAsPDF: Clicked the \"SAVE AS PDF\" share overlay button")
 
-            DownloadRobot().interact()
-            return DownloadRobot.Transition()
+            DownloadRobot(composeTestRule).interact()
+            return DownloadRobot.Transition(composeTestRule)
         }
 
-        fun clickPrintButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickPrintButton(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             itemWithText("Print").waitForExists(waitingTime)
             Log.i(TAG, "clickPrintButton: Trying to click the \"Print\" share overlay button")
             itemWithText("Print").click()
             Log.i(TAG, "clickPrintButton: Clicked the \"Print\" share overlay button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
     }
 }

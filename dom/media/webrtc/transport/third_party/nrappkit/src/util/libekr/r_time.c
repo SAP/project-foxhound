@@ -113,26 +113,6 @@ int r_timeval_diff(
     return(0);
   }
 
-int r_timeval_add(struct timeval *t1, struct timeval *t2, struct timeval *sum)
-  {
-    long tv_sec,tv_usec,d;
-
-    tv_sec=t1->tv_sec + t2->tv_sec;
-
-    d=t1->tv_usec + t2->tv_usec;
-    if(d>1000000){
-      tv_sec++;
-      tv_usec=d-1000000;
-    }
-    else{
-      tv_usec=d;
-    }
-
-    sum->tv_sec=tv_sec;
-    sum->tv_usec=tv_usec;
-
-    return(0);
-  }
 
 int r_timeval_cmp(struct timeval *t1, struct timeval *t2)
   {

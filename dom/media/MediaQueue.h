@@ -8,12 +8,11 @@
 
 #  include <type_traits>
 
-#  include "mozilla/RecursiveMutex.h"
-#  include "mozilla/TaskQueue.h"
-
-#  include "nsDeque.h"
 #  include "MediaEventSource.h"
 #  include "TimeUnits.h"
+#  include "mozilla/RecursiveMutex.h"
+#  include "mozilla/TaskQueue.h"
+#  include "nsDeque.h"
 
 namespace mozilla {
 

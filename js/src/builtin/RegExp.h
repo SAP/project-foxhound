@@ -117,7 +117,8 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
 
 [[nodiscard]] extern bool RegExpCreate(JSContext* cx, HandleValue pattern,
                                        HandleValue flags,
-                                       MutableHandleValue rval);
+                                       MutableHandleValue rval,
+                                       HandleObject newTarget);
 
 [[nodiscard]] extern bool IsRegExpPrototypeOptimizable(JSContext* cx,
                                                        unsigned argc,
@@ -167,7 +168,7 @@ extern const JSFunctionSpec regexp_static_methods[];
 extern const JSPropertySpec regexp_properties[];
 extern const JSFunctionSpec regexp_methods[];
 
-// Used in RegExpObject::isOriginalFlagGetter.
+// Used in OptimizeRegExpPrototypeFuse::checkInvariant.
 [[nodiscard]] extern bool regexp_hasIndices(JSContext* cx, unsigned argc,
                                             JS::Value* vp);
 [[nodiscard]] extern bool regexp_global(JSContext* cx, unsigned argc,

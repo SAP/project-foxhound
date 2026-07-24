@@ -16,6 +16,10 @@ const SPEAKER_SELECTION_ENABLED = Services.prefs.getBoolPref(
   "media.setsinkid.enabled"
 );
 
+const LOCAL_NETWORK_ACCESS_ENABLED = Services.prefs.getBoolPref(
+  "network.lna.blocking"
+);
+
 add_task(async function testPermissionsListing() {
   let expectedPermissions = [
     "autoplay-media",
@@ -48,6 +52,10 @@ add_task(async function testPermissionsListing() {
   }
   if (SPEAKER_SELECTION_ENABLED) {
     expectedPermissions.push("speaker");
+  }
+  if (LOCAL_NETWORK_ACCESS_ENABLED) {
+    expectedPermissions.push("localhost");
+    expectedPermissions.push("local-network");
   }
   Assert.deepEqual(
     SitePermissions.listPermissions().sort(),
@@ -86,6 +94,23 @@ add_task(async function testGetAllByPrincipal() {
     SitePermissions.ALLOW,
     SitePermissions.SCOPE_SESSION
   );
+
+  Services.prefs.setBoolPref("network.lna.blocking", true);
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "localhost",
+    SitePermissions.ALLOW,
+    SitePermissions.SCOPE_SESSION
+  );
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "local-network",
+    SitePermissions.ALLOW,
+    SitePermissions.SCOPE_SESSION
+  );
+
   SitePermissions.setForPrincipal(
     principal,
     "desktop-notification",
@@ -104,6 +129,16 @@ add_task(async function testGetAllByPrincipal() {
       scope: SitePermissions.SCOPE_SESSION,
     },
     {
+      id: "localhost",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    },
+    {
+      id: "local-network",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    },
+    {
       id: "desktop-notification",
       state: SitePermissions.BLOCK,
       scope: SitePermissions.SCOPE_PERSISTENT,
@@ -118,6 +153,16 @@ add_task(async function testGetAllByPrincipal() {
       scope: SitePermissions.SCOPE_PERSISTENT,
     },
     {
+      id: "localhost",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    },
+    {
+      id: "local-network",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    },
+    {
       id: "desktop-notification",
       state: SitePermissions.BLOCK,
       scope: SitePermissions.SCOPE_PERSISTENT,
@@ -126,6 +171,9 @@ add_task(async function testGetAllByPrincipal() {
 
   SitePermissions.removeFromPrincipal(principal, "camera");
   SitePermissions.removeFromPrincipal(principal, "desktop-notification");
+  SitePermissions.removeFromPrincipal(principal, "localhost");
+  SitePermissions.removeFromPrincipal(principal, "local-network");
+
   Assert.deepEqual(SitePermissions.getAllByPrincipal(principal), []);
 
   Assert.equal(Services.prefs.getIntPref("permissions.default.shortcuts"), 0);
@@ -147,6 +195,7 @@ add_task(async function testGetAllByPrincipal() {
 
   SitePermissions.removeFromPrincipal(principal, "shortcuts");
   Services.prefs.clearUserPref("permissions.default.shortcuts");
+  Services.prefs.clearUserPref("network.lna.blocking");
 });
 
 add_task(async function testGetAvailableStates() {
@@ -195,6 +244,8 @@ add_task(async function testExactHostMatch() {
     "desktop-notification",
     "focus-tab-by-prompt",
     "camera",
+    "localhost",
+    "local-network",
     "microphone",
     "screen",
     "geo",
@@ -304,6 +355,19 @@ add_task(async function testDefaultPrefs() {
     scope: SitePermissions.SCOPE_PERSISTENT,
   });
 
+  Assert.deepEqual(SitePermissions.getForPrincipal(principal, "localhost"), {
+    state: SitePermissions.UNKNOWN,
+    scope: SitePermissions.SCOPE_PERSISTENT,
+  });
+
+  Assert.deepEqual(
+    SitePermissions.getForPrincipal(principal, "local-network"),
+    {
+      state: SitePermissions.UNKNOWN,
+      scope: SitePermissions.SCOPE_PERSISTENT,
+    }
+  );
+
   // Check that the default return value changed after changing the pref.
   Services.prefs.setIntPref(
     "permissions.default.camera",
@@ -373,6 +437,88 @@ add_task(async function testCanvasPermission() {
     "privacy.resistFingerprinting",
     resistFingerprinting
   );
+});
+
+add_task(async function testLocalHostPermission() {
+  let lnaEnabled = Services.prefs.getBoolPref("network.lna.blocking", false);
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://example.com"
+    );
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "localhost",
+    SitePermissions.ALLOW
+  );
+
+  Services.prefs.setBoolPref("network.lna.blocking", false);
+  Assert.ok(
+    !SitePermissions.listPermissions().includes("localhost"),
+    "No 'localhost' permission should be present"
+  );
+  Assert.ok(
+    !SitePermissions.getAllByPrincipal(principal).some(
+      permission => permission.id === "localhost"
+    ),
+    "No 'localhost' permission should be present"
+  );
+
+  Services.prefs.setBoolPref("network.lna.blocking", true);
+  Assert.ok(
+    SitePermissions.listPermissions().includes("localhost"),
+    "'localhost' should be in listPermissions when blocking is enabled"
+  );
+  Assert.ok(
+    SitePermissions.getAllByPrincipal(principal).some(
+      permission => permission.id === "localhost"
+    ),
+    "'localhost' permission should be present for principal when blocking is enabled"
+  );
+
+  SitePermissions.removeFromPrincipal(principal, "localhost");
+  Services.prefs.setBoolPref("network.lna.blocking", lnaEnabled);
+});
+
+add_task(async function testLocalNetworkPermission() {
+  let lnaEnabled = Services.prefs.getBoolPref("network.lna.blocking", false);
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://example.com"
+    );
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "local-network",
+    SitePermissions.ALLOW
+  );
+
+  Services.prefs.setBoolPref("network.lna.blocking", false);
+  Assert.ok(
+    !SitePermissions.listPermissions().includes("local-network"),
+    "'local-network' should not be in listPermissions when blocking is disabled"
+  );
+  Assert.ok(
+    !SitePermissions.getAllByPrincipal(principal).some(
+      permission => permission.id === "local-network"
+    ),
+    "'local-network' permission should not be present for principal when blocking is disabled"
+  );
+
+  Services.prefs.setBoolPref("network.lna.blocking", true);
+  Assert.ok(
+    SitePermissions.listPermissions().includes("local-network"),
+    "'local-network' should be in listPermissions when blocking is enabled"
+  );
+  Assert.ok(
+    SitePermissions.getAllByPrincipal(principal).some(
+      permission => permission.id === "local-network"
+    ),
+    "'local-network' permission should be present for principal when blocking is enabled"
+  );
+
+  SitePermissions.removeFromPrincipal(principal, "local-network");
+  Services.prefs.setBoolPref("network.lna.blocking", lnaEnabled);
 });
 
 add_task(async function testFilePermissions() {

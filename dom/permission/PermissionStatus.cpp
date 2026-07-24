@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/PermissionStatus.h"
 
+#include "PermissionStatusSink.h"
+#include "PermissionUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Permission.h"
 #include "mozilla/Services.h"
-#include "nsIPermissionManager.h"
-#include "PermissionUtils.h"
-#include "PermissionStatusSink.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIPermissionManager.h"
 
 namespace mozilla::dom {
 

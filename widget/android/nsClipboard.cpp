@@ -124,7 +124,8 @@ nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
     if (!text) {
       return nsCOMPtr<nsISupports>{};
     }
-    nsString buffer = text->ToString();
+    nsAutoString buffer(text->ToString());
+    buffer.StripChar(char16_t(0));
     if (buffer.IsEmpty()) {
       return nsCOMPtr<nsISupports>{};
     }

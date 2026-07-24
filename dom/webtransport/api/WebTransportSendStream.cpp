@@ -7,9 +7,9 @@
 #include "mozilla/dom/WebTransportSendStream.h"
 
 #include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
-#include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WebTransport.h"
 #include "mozilla/dom/WebTransportSendReceiveStreamBinding.h"
+#include "mozilla/dom/WritableStream.h"
 #include "mozilla/ipc/DataPipe.h"
 
 using namespace mozilla::ipc;

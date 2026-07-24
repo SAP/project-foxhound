@@ -321,6 +321,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
       };
 
       const expectedProperties = {

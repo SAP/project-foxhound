@@ -8,7 +8,6 @@
 #define mozilla_dom_TextClause_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPIDOMWindow.h"

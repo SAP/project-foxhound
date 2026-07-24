@@ -8,12 +8,11 @@
 #define mozilla_dom_fetch_IPCUtils_h
 
 #include "ipc/EnumSerializer.h"
-
 #include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/dom/FetchDriver.h"
 #include "mozilla/dom/HeadersBinding.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/ResponseBinding.h"
-#include "mozilla/dom/FetchDriver.h"
 
 namespace IPC {
 template <>

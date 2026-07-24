@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
   PageActions: "resource:///modules/PageActions.sys.mjs",
   PanelPopup: "resource:///modules/ExtensionPopups.sys.mjs",
+  isGloballyBlockingOpenPopup: "resource:///modules/ExtensionPopups.sys.mjs",
 });
 
 var { DefaultWeakMap } = ExtensionUtils;
@@ -45,6 +46,14 @@ class PageAction extends PageActionBase {
       return tabTracker.getTab(tabId);
     }
     return null;
+  }
+
+  isPanelShownBlockingOpenPopup(window) {
+    const panel = this.buttonDelegate.popupNode?.panel;
+    if (isGloballyBlockingOpenPopup(window)) {
+      return true;
+    }
+    return panel && panel.ownerGlobal === window && panel.state !== "closed";
   }
 }
 
@@ -236,7 +245,7 @@ this.pageAction = class extends ExtensionAPIPersistent {
 
   handleEvent(event) {
     switch (event.type) {
-      case "popupshowing":
+      case "popupshowing": {
         const menu = event.target;
         const trigger = menu.triggerNode;
         const getActionId = () => {
@@ -274,6 +283,7 @@ this.pageAction = class extends ExtensionAPIPersistent {
           });
         }
         break;
+      }
     }
   }
 
@@ -375,6 +385,7 @@ this.pageAction = class extends ExtensionAPIPersistent {
 
         openPopup: () => {
           let window = windowTracker.topWindow;
+          action.throwIfOpenPopupIsBlockedByAnyAction(window);
           this.triggerAction(window);
         },
       },

@@ -11,74 +11,70 @@
 
 // Interface headers
 #include "imgLoader.h"
-#include "nsIClassOfService.h"
-#include "nsIConsoleService.h"
-#include "nsIDocShell.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
+#include "nsError.h"
+#include "nsIAppShell.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIClassOfService.h"
+#include "nsIConsoleService.h"
+#include "nsIDocShell.h"
 #include "nsIExternalProtocolHandler.h"
-#include "nsIPermissionManager.h"
 #include "nsIHttpChannel.h"
 #include "nsINestedURI.h"
-#include "nsScriptSecurityManager.h"
-#include "nsIURILoader.h"
+#include "nsIPermissionManager.h"
 #include "nsIScriptChannel.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIAppShell.h"
 #include "nsIScriptError.h"
+#include "nsIURILoader.h"
+#include "nsScriptSecurityManager.h"
 #include "nsSubDocumentFrame.h"
-
-#include "nsError.h"
 
 // Util headers
 #include "mozilla/Logging.h"
-
+#include "mozilla/Preferences.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShellLoadState.h"
 #include "nsGkAtoms.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
 #include "nsMimeTypes.h"
-#include "nsStyleUtil.h"
-#include "mozilla/Preferences.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
+#include "nsStyleUtil.h"
+#include "nsThreadUtils.h"
 
 // Concrete classes
-#include "nsFrameLoader.h"
-
-#include "nsObjectLoadingContent.h"
-
-#include "nsWidgetsCID.h"
+#include "ReferrerInfo.h"
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Components.h"
-#include "mozilla/LoadInfo.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IMEStateManager.h"
-#include "mozilla/widget/IMEData.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/HTMLEmbedElement.h"
-#include "mozilla/dom/HTMLObjectElementBinding.h"
-#include "mozilla/dom/HTMLObjectElement.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/net/DocumentChannel.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/HTMLEmbedElement.h"
+#include "mozilla/dom/HTMLObjectElement.h"
+#include "mozilla/dom/HTMLObjectElementBinding.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/net/DocumentChannel.h"
+#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/widget/IMEData.h"
 #include "nsChannelClassifier.h"
 #include "nsFocusManager.h"
-#include "ReferrerInfo.h"
+#include "nsFrameLoader.h"
 #include "nsIEffectiveTLDService.h"
+#include "nsObjectLoadingContent.h"
+#include "nsWidgetsCID.h"
 
 #ifdef XP_WIN
 // Thanks so much, Microsoft! :(
@@ -702,7 +698,6 @@ nsObjectLoadingContent::UpdateObjectParameters() {
 
   nsresult rv;
   nsAutoCString newMime;
-  nsAutoString typeAttr;
   nsCOMPtr<nsIURI> newURI;
   nsCOMPtr<nsIURI> newBaseURI;
   ObjectType newType;
@@ -730,7 +725,6 @@ nsObjectLoadingContent::UpdateObjectParameters() {
       el->HasNonEmptyAttr(nsGkAtoms::classid)) {
     // We don't support class ID plugin references, so we should always treat
     // having class Ids as attributes as invalid, and fallback accordingly.
-    newMime.Truncate();
     stateInvalid = true;
   }
 
@@ -758,16 +752,6 @@ nsObjectLoadingContent::UpdateObjectParameters() {
   // If we failed to build a valid URI, use the document's base URI
   if (!newBaseURI) {
     newBaseURI = docBaseURI;
-  }
-
-  nsAutoString rawTypeAttr;
-  el->GetAttr(nsGkAtoms::type, rawTypeAttr);
-  if (!rawTypeAttr.IsEmpty()) {
-    typeAttr = rawTypeAttr;
-    nsAutoString params;
-    nsAutoString mime;
-    nsContentUtils::SplitMimeType(rawTypeAttr, mime, params);
-    CopyUTF16toUTF8(mime, newMime);
   }
 
   ///
@@ -801,6 +785,41 @@ nsObjectLoadingContent::UpdateObjectParameters() {
 
     if (NS_FAILED(rv)) {
       stateInvalid = true;
+    }
+  }
+
+  ///
+  /// type
+  ///
+  nsAutoString rawTypeAttr;
+  el->GetAttr(nsGkAtoms::type, rawTypeAttr);
+  // YouTube embeds might be using type="application/x-shockwave-flash"
+  // which needs to be allowed, but must not override the text/html MIME set
+  // above.
+  if (!mRewrittenYoutubeEmbed && !rawTypeAttr.IsEmpty()) {
+    nsAutoString params;
+    nsAutoString mime;
+    nsContentUtils::SplitMimeType(rawTypeAttr, mime, params);
+
+    if (!StaticPrefs::dom_object_embed_type_hint_enabled()) {
+      NS_ConvertUTF16toUTF8 mimeUTF8(mime);
+      if (imgLoader::SupportImageWithMimeType(mimeUTF8)) {
+        // Normally the type attribute should not be used as a hint, but for
+        // images it does seem to happen in Chrome and Safari. Images generally
+        // don't lead to code execution and we don't use
+        // AcceptedMimeTypes::IMAGES_AND_DOCUMENTS above.
+        newMime = mimeUTF8;
+      } else if (GetTypeOfContent(mimeUTF8) != ObjectType::Document) {
+        LOG(
+            ("OBJLC [%p]: MIME '%s' from type attribute is not supported, "
+             "forcing fallback.",
+             this, mimeUTF8.get()));
+        stateInvalid = true;
+      }
+
+      // Don't use the type attribute as a Content-Type hint in other cases.
+    } else {
+      CopyUTF16toUTF8(mime, newMime);
     }
   }
 
@@ -1385,11 +1404,17 @@ nsresult nsObjectLoadingContent::CloseChannel() {
 
 bool nsObjectLoadingContent::IsAboutBlankLoadOntoInitialAboutBlank(
     nsIURI* aURI, bool aInheritPrincipal, nsIPrincipal* aPrincipalToInherit) {
-  return NS_IsAboutBlank(aURI) && aInheritPrincipal &&
-         (!mFrameLoader || !mFrameLoader->GetExistingDocShell() ||
-          mFrameLoader->GetExistingDocShell()
-              ->IsAboutBlankLoadOntoInitialAboutBlank(aURI, aInheritPrincipal,
-                                                      aPrincipalToInherit));
+  if (!NS_IsAboutBlankAllowQueryAndFragment(aURI) || !aInheritPrincipal) {
+    return false;
+  }
+
+  if (!mFrameLoader || !mFrameLoader->GetExistingDocShell()) {
+    return false;
+  }
+
+  RefPtr<nsDocShellLoadState> dummyLoadState = new nsDocShellLoadState(mURI);
+  return mFrameLoader->GetExistingDocShell()->ShouldDoInitialAboutBlankSyncLoad(
+      aURI, dummyLoadState, aPrincipalToInherit);
 }
 
 nsresult nsObjectLoadingContent::OpenChannel() {
@@ -1544,7 +1569,7 @@ nsresult nsObjectLoadingContent::OpenChannel() {
   rv = chan->AsyncOpen(shim);
   NS_ENSURE_SUCCESS(rv, rv);
   LOG(("OBJLC [%p]: Channel opened", this));
-  mChannel = chan;
+  mChannel = std::move(chan);
   return NS_OK;
 }
 
@@ -1865,7 +1890,7 @@ void nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() {
   }
 
   if (ContentChild* cc = ContentChild::GetSingleton()) {
-    Unused << cc->SendSetContainerFeaturePolicy(
+    (void)cc->SendSetContainerFeaturePolicy(
         browsingContext, Some(mFeaturePolicy->ToFeaturePolicyInfo()));
   }
 }

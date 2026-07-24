@@ -10,7 +10,7 @@ import mozilla.components.browser.engine.gecko.GeckoEngineView
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.ui.widgets.behavior.EngineViewClippingBehavior
-import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
+import mozilla.components.ui.widgets.behavior.EngineViewScrollingGesturesBehavior
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -42,7 +42,7 @@ internal class BrowserToolbarTest {
 
         toolbar.enableDynamicBehavior(testContext, engineView)
 
-        assertTrue((toolbar.layoutParams as? CoordinatorLayout.LayoutParams)?.behavior is EngineViewScrollingBehavior)
+        assertTrue((toolbar.layoutParams as? CoordinatorLayout.LayoutParams)?.behavior is EngineViewScrollingGesturesBehavior)
         assertTrue((engineView.layoutParams as? CoordinatorLayout.LayoutParams)?.behavior is EngineViewClippingBehavior)
         assertEquals(0, (engineView.layoutParams as? CoordinatorLayout.LayoutParams)?.topMargin)
         verify(engineView).setDynamicToolbarMaxHeight(toolbarHeight)

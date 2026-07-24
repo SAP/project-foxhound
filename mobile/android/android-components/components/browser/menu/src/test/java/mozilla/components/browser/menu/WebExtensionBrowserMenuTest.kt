@@ -41,7 +41,6 @@ import org.junit.runner.RunWith
 import mozilla.components.support.base.facts.Action as FactsAction
 
 @RunWith(AndroidJUnit4::class)
-@kotlinx.coroutines.ExperimentalCoroutinesApi
 class WebExtensionBrowserMenuTest {
 
     @get:Rule

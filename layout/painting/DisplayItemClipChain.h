@@ -84,10 +84,15 @@ struct DisplayItemClipChain {
   {
   }
 
+  bool IsDisplayportClip() const { return mKind == ClipKind::Displayport; }
+
+  enum class ClipKind : uint8_t { Displayport, Other };
+
   DisplayItemClip mClip;
   const ActiveScrolledRoot* mASR;
   RefPtr<const DisplayItemClipChain> mParent;
   uint32_t mRefCount = 0;
+  ClipKind mKind = ClipKind::Other;
   DisplayItemClipChain* mNextClipChainToDestroy;
 #if defined(DEBUG) || defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   bool mOnStack;

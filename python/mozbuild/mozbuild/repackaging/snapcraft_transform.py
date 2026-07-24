@@ -158,7 +158,7 @@ class SnapDesktopFile:
             "PKG_NAME": appname,
             "DBusActivatable": "false",
             "Icon": "/default256.png",
-            "StartupWMClass": wmclass,
+            "REMOTING_NAME": wmclass,
         }
 
         from fluent.runtime.fallback import FluentLocalization, FluentResourceLoader

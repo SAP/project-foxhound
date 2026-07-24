@@ -10,15 +10,14 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
+#include "ServiceWorkerManager.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/RefPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsThreadUtils.h"
-#include "ServiceWorkerManager.h"
-
-#include "mozilla/Assertions.h"
-#include "mozilla/RefPtr.h"
 
 namespace mozilla::dom {
 

@@ -30,7 +30,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * `${feed_pref_name}.options`.
  */
 
-const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
+const BUILT_IN_SECTIONS = () => ({
   "feeds.section.topstories": options => ({
     id: "topstories",
     pref: {
@@ -52,16 +52,6 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
                   "home-prefs-recommended-by-option-sponsored-stories",
                 icon: "icon-info",
                 eventSource: "POCKET_SPOCS",
-              },
-            ]
-          : []),
-        ...(pocketNewtab.recentSavesEnabled
-          ? [
-              {
-                name: "showRecentSaves",
-                titleString: "home-prefs-recommended-by-option-recent-saves",
-                icon: "icon-info",
-                eventSource: "POCKET_RECENT_SAVES",
               },
             ]
           : []),

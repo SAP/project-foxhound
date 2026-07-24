@@ -7,7 +7,6 @@
 #include "nsDebug.h"
 #include "nsString.h"
 #include "nsCUPSShim.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Logging.h"
 #include "prlink.h"
 

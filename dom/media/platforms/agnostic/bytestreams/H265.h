@@ -406,6 +406,11 @@ class H265 final {
   static already_AddRefed<mozilla::MediaByteBuffer> CreateNewExtraData(
       const HVCCConfig& aConfig, const nsTArray<H265NALU>& aNALUs);
 
+  // Return true if the given sample is a keyframe. Return error if we can't
+  // determine the result.
+  static Result<bool, nsresult> IsKeyFrame(
+      const mozilla::MediaRawData* aSample);
+
  private:
   // Return RAW BYTE SEQUENCE PAYLOAD (rbsp) from NAL content.
   static already_AddRefed<mozilla::MediaByteBuffer> DecodeNALUnit(

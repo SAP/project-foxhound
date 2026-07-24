@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryUserInteractionInfo_h__
-#define TelemetryUserInteractionInfo_h__
+#ifndef TelemetryUserInteractionInfo_h_
+#define TelemetryUserInteractionInfo_h_
 
 #include "TelemetryCommon.h"
 
@@ -27,4 +27,4 @@ struct UserInteractionInfo {
 
 }  // namespace
 
-#endif  // TelemetryUserInteractionInfo_h__
+#endif  // TelemetryUserInteractionInfo_h_

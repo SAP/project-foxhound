@@ -92,5 +92,5 @@ void nsRepeatService::InitTimerCallback(uint32_t aInitialDelay) {
 
         rs->InitTimerCallback(REPEAT_DELAY);
       },
-      nullptr, aInitialDelay, nsITimer::TYPE_ONE_SHOT, mCallbackName.Data());
+      nullptr, aInitialDelay, nsITimer::TYPE_ONE_SHOT, mCallbackName);
 }

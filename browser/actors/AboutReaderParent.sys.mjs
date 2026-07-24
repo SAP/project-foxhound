@@ -173,7 +173,7 @@ export class AboutReaderParent extends JSWindowActorParent {
       menuitem.hidden = false;
       doc.l10n.setAttributes(menuitem, "menu-view-close-readerview");
 
-      key.setAttribute("disabled", false);
+      key.removeAttribute("disabled");
 
       Services.obs.notifyObservers(null, "reader-mode-available");
     } else {
@@ -184,7 +184,7 @@ export class AboutReaderParent extends JSWindowActorParent {
       menuitem.hidden = !browser.isArticle;
       doc.l10n.setAttributes(menuitem, "menu-view-enter-readerview");
 
-      key.setAttribute("disabled", !browser.isArticle);
+      key.toggleAttribute("disabled", !browser.isArticle);
 
       if (browser.isArticle) {
         Services.obs.notifyObservers(null, "reader-mode-available");
@@ -258,9 +258,9 @@ export class AboutReaderParent extends JSWindowActorParent {
    * Gets an article for a given URL. This method will download and parse a document.
    *
    * @param url The article URL.
-   * @param browser The browser where the article is currently loaded.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
+   * @return {Promise<?object>}
+   *   Resolves to the JS object representing the article, or null if no article
+   *   is found.
    */
   async _getArticle(url) {
     return lazy.ReaderMode.downloadAndParseDocument(url).catch(e => {

@@ -9,10 +9,9 @@
 
 #include <cstdint>
 #include <ostream>
+
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
@@ -169,8 +168,7 @@ class AbstractRange : public nsISupports,
    */
   bool IsInAnySelection() const { return !mSelections.IsEmpty(); }
 
-  MOZ_CAN_RUN_SCRIPT void RegisterSelection(
-      mozilla::dom::Selection& aSelection);
+  void RegisterSelection(mozilla::dom::Selection& aSelection);
 
   void UnregisterSelection(const mozilla::dom::Selection& aSelection,
                            IsUnlinking aIsUnlinking = IsUnlinking::No);
@@ -189,6 +187,13 @@ class AbstractRange : public nsISupports,
    * Return true if aRoot is a UA shadow root.
    */
   static bool IsRootUAWidget(const nsINode* aRoot);
+
+  /**
+   * Return a shrunken range computed by
+   * SelectionMoveUtils::GetFirstVisiblePointAtLeaf() and
+   * SelectionMoveUtils::GetLastVisiblePointAtLeaf().
+   */
+  already_AddRefed<StaticRange> GetShrunkenRangeToVisibleLeaves() const;
 
  protected:
   template <typename SPT, typename SRT, typename EPT, typename ERT,

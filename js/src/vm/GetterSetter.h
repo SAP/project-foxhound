@@ -8,7 +8,7 @@
 #define vm_GetterSetter_h
 
 #include "gc/Barrier.h"  // js::GCPtr<JSObject*>
-#include "gc/Cell.h"     // js::gc::TenuredCellWithGCPointer
+#include "gc/Cell.h"     // js::gc::CellWithGCPointer
 
 #include "js/TypeDecls.h"  // JS::HandleObject
 #include "js/UbiNode.h"    // JS::ubi::TracerConcrete
@@ -54,7 +54,7 @@ namespace js {
 // This means CacheIR does not have to guard on the GetterSetter slot for
 // accessors on the prototype chain until the first time an accessor property is
 // mutated or deleted.
-class GetterSetter : public gc::TenuredCellWithGCPointer<JSObject> {
+class GetterSetter : public gc::CellWithGCPointer<JSObject> {
   friend class gc::CellAllocator;
 
  public:
@@ -72,12 +72,17 @@ class GetterSetter : public gc::TenuredCellWithGCPointer<JSObject> {
   GetterSetter(HandleObject getter, HandleObject setter);
 
  public:
-  static GetterSetter* create(JSContext* cx, HandleObject getter,
-                              HandleObject setter);
+  static GetterSetter* create(JSContext* cx, Handle<NativeObject*> owner,
+                              HandleObject getter, HandleObject setter);
 
   JSObject* setter() const { return setter_; }
 
   static const JS::TraceKind TraceKind = JS::TraceKind::GetterSetter;
+
+  js::gc::AllocKind getAllocKind() const {
+    return js::gc::AllocKind::GETTER_SETTER;
+  }
+  void fixupAfterMovingGC() {}
 
   static constexpr size_t offsetOfGetter() { return offsetOfHeaderPtr(); }
   static constexpr size_t offsetOfSetter() {

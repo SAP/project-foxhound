@@ -12,11 +12,14 @@
 #define API_AUDIO_BUILTIN_AUDIO_PROCESSING_BUILDER_H_
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/base/nullability.h"
 #include "api/audio/audio_processing.h"
+#include "api/audio/echo_canceller3_config.h"
 #include "api/audio/echo_control.h"
+#include "api/audio/neural_residual_echo_estimator.h"
 #include "api/environment/environment.h"
 #include "api/scoped_refptr.h"
 #include "rtc_base/system/rtc_export.h"
@@ -38,6 +41,18 @@ class RTC_EXPORT BuiltinAudioProcessingBuilder
   BuiltinAudioProcessingBuilder& SetConfig(
       const AudioProcessing::Config& config) {
     config_ = config;
+    return *this;
+  }
+
+  // Sets an echo canceller config to inject when APM is created. If a custom
+  // EchoControlFactory is also specified, this config has no effect.
+  // `echo_canceller_multichannel_config` is an optional config that, if
+  // specified, is applied for non-mono content.
+  BuiltinAudioProcessingBuilder& SetEchoCancellerConfig(
+      const EchoCanceller3Config& echo_canceller_config,
+      std::optional<EchoCanceller3Config> echo_canceller_multichannel_config) {
+    echo_canceller_config_ = echo_canceller_config;
+    echo_canceller_multichannel_config_ = echo_canceller_multichannel_config;
     return *this;
   }
 
@@ -64,7 +79,7 @@ class RTC_EXPORT BuiltinAudioProcessingBuilder
 
   // Sets the echo detector to inject when APM is created.
   BuiltinAudioProcessingBuilder& SetEchoDetector(
-      rtc::scoped_refptr<EchoDetector> echo_detector) {
+      scoped_refptr<EchoDetector> echo_detector) {
     echo_detector_ = std::move(echo_detector);
     return *this;
   }
@@ -76,19 +91,31 @@ class RTC_EXPORT BuiltinAudioProcessingBuilder
     return *this;
   }
 
+  // The BuiltinAudioProcessingBuilder takes ownership of the
+  // neural_residual_echo_estimator.
+  BuiltinAudioProcessingBuilder& SetNeuralResidualEchoEstimator(
+      std::unique_ptr<NeuralResidualEchoEstimator>
+          neural_residual_echo_estimator) {
+    neural_residual_echo_estimator_ = std::move(neural_residual_echo_estimator);
+    return *this;
+  }
+
   // Creates an APM instance with the specified config or the default one if
   // unspecified. Injects the specified components transferring the ownership
   // to the newly created APM instance.
-  absl::Nullable<scoped_refptr<AudioProcessing>> Build(
+  absl_nullable scoped_refptr<AudioProcessing> Build(
       const Environment& env) override;
 
  private:
   AudioProcessing::Config config_;
+  std::optional<EchoCanceller3Config> echo_canceller_config_;
+  std::optional<EchoCanceller3Config> echo_canceller_multichannel_config_;
   std::unique_ptr<EchoControlFactory> echo_control_factory_;
   std::unique_ptr<CustomProcessing> capture_post_processing_;
   std::unique_ptr<CustomProcessing> render_pre_processing_;
   scoped_refptr<EchoDetector> echo_detector_;
   std::unique_ptr<CustomAudioAnalyzer> capture_analyzer_;
+  std::unique_ptr<NeuralResidualEchoEstimator> neural_residual_echo_estimator_;
 };
 
 }  // namespace webrtc

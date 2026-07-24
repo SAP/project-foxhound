@@ -13,7 +13,6 @@
 #include "SVGTransformListSMILType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
@@ -108,7 +107,7 @@ nsresult SVGAnimatedTransformList::SetAnimValue(const SVGTransformList& aValue,
     domWrapper->InternalAnimValListWillChangeLengthTo(aValue.Length());
   }
   if (!mAnimVal) {
-    mAnimVal = MakeUnique<SVGTransformList>();
+    mAnimVal = std::make_unique<SVGTransformList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aValue);
   if (NS_FAILED(rv)) {
@@ -117,14 +116,8 @@ nsresult SVGAnimatedTransformList::SetAnimValue(const SVGTransformList& aValue,
     ClearAnimValue(aElement);
     return rv;
   }
-  int32_t modType;
-  if (prevSet) {
-    modType = MutationEvent_Binding::MODIFICATION;
-  } else {
-    modType = MutationEvent_Binding::ADDITION;
-  }
-  mCreatedOrRemovedOnLastChange = modType == MutationEvent_Binding::ADDITION;
-  aElement->DidAnimateTransformList(modType);
+  mCreatedOrRemovedOnLastChange = !prevSet;
+  aElement->DidAnimateTransformList();
   return NS_OK;
 }
 
@@ -140,14 +133,9 @@ void SVGAnimatedTransformList::ClearAnimValue(SVGElement* aElement) {
     domWrapper->InternalAnimValListWillChangeLengthTo(mBaseVal.Length());
   }
   mAnimVal = nullptr;
-  int32_t modType;
-  if (HasTransform() || aElement->GetAnimateMotionTransform()) {
-    modType = MutationEvent_Binding::MODIFICATION;
-  } else {
-    modType = MutationEvent_Binding::REMOVAL;
-  }
-  mCreatedOrRemovedOnLastChange = modType == MutationEvent_Binding::REMOVAL;
-  aElement->DidAnimateTransformList(modType);
+  mCreatedOrRemovedOnLastChange =
+      !HasTransform() && !aElement->GetAnimateMotionTransform();
+  aElement->DidAnimateTransformList();
 }
 
 bool SVGAnimatedTransformList::IsExplicitlySet() const {
@@ -165,9 +153,9 @@ bool SVGAnimatedTransformList::IsExplicitlySet() const {
   return mIsBaseSet || !mBaseVal.IsEmpty() || mAnimVal;
 }
 
-UniquePtr<SMILAttr> SVGAnimatedTransformList::ToSMILAttr(
+std::unique_ptr<SMILAttr> SVGAnimatedTransformList::ToSMILAttr(
     SVGElement* aSVGElement) {
-  return MakeUnique<SMILAnimatedTransformList>(this, aSVGElement);
+  return std::make_unique<SMILAnimatedTransformList>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(

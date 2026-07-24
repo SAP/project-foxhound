@@ -13,16 +13,13 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "pkcs11db",
   "@mozilla.org/security/pkcs11moduledb;1",
-  "nsIPKCS11ModuleDB"
+  Ci.nsIPKCS11ModuleDB
 );
-
-// eslint-disable-next-line mozilla/reject-importGlobalProperties
-Cu.importGlobalProperties(["PathUtils"]);
 
 var { DefaultMap } = ExtensionUtils;
 
-const findModuleByPath = function (path) {
-  for (let module of pkcs11db.listModules()) {
+const findModuleByPath = async function (path) {
+  for (let module of await pkcs11db.listModules()) {
     if (module && module.libName === path) {
       return module;
     }
@@ -90,7 +87,7 @@ this.pkcs11 = class extends ExtensionAPI {
          */
         async isModuleInstalled(name) {
           let manifest = await manifestCache.get(name);
-          return findModuleByPath(manifest.path) !== null;
+          return (await findModuleByPath(manifest.path)) !== null;
         },
         /**
          * Install a PKCS#11 module
@@ -111,7 +108,12 @@ this.pkcs11 = class extends ExtensionAPI {
               message: `The description field in the manifest for PKCS#11 module ${name} must have a value`,
             });
           }
-          pkcs11db.addModule(manifest.description, manifest.path, flags, 0);
+          await pkcs11db.addModule(
+            manifest.description,
+            manifest.path,
+            flags,
+            0
+          );
         },
         /**
          * Uninstall a PKCS#11 module
@@ -125,13 +127,13 @@ this.pkcs11 = class extends ExtensionAPI {
          */
         async uninstallModule(name) {
           let manifest = await manifestCache.get(name);
-          let module = findModuleByPath(manifest.path);
+          let module = await findModuleByPath(manifest.path);
           if (!module) {
             return Promise.reject({
               message: `The PKCS#11 module ${name} is not loaded`,
             });
           }
-          pkcs11db.deleteModule(module.name);
+          await pkcs11db.deleteModule(module.name);
         },
         /**
          * Get a list of slots for a given PKCS#11 module, with
@@ -154,7 +156,7 @@ this.pkcs11 = class extends ExtensionAPI {
          */
         async getModuleSlots(name) {
           let manifest = await manifestCache.get(name);
-          let module = findModuleByPath(manifest.path);
+          let module = await findModuleByPath(manifest.path);
           if (!module) {
             return Promise.reject({
               message: `The module ${name} is not installed`,

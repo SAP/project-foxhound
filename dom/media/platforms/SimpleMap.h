@@ -83,9 +83,33 @@ class SimpleMap {
     }
     return Nothing();
   }
+  // Find the value matching aKey, call the function F, remove it from the map.
+  template <typename F>
+  bool Take(const K& aKey, F&& aCallback) {
+    Policy guard(mLock);
+    for (uint32_t i = 0; i < mMap.Length(); i++) {
+      ElementType& element = mMap[i];
+      if (element.first == aKey) {
+        aCallback(element.second);
+        mMap.RemoveElementAt(i);
+        return true;
+      }
+    }
+    return false;
+  }
   // Remove all elements of the map.
   void Clear() {
     Policy guard(mLock);
+    mMap.Clear();
+  }
+  // Iterate through all elements of the map and call the function F. After,
+  // remove all elements of the map.
+  template <typename F>
+  void Clear(F&& aCallback) {
+    Policy guard(mLock);
+    for (const auto& element : mMap) {
+      aCallback(element.first, element.second);
+    }
     mMap.Clear();
   }
   // Iterate through all elements of the map and call the function F.

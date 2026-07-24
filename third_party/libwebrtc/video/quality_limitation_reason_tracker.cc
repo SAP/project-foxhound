@@ -10,9 +10,13 @@
 
 #include "video/quality_limitation_reason_tracker.h"
 
+#include <cstdint>
+#include <map>
 #include <utility>
 
+#include "common_video/include/quality_limitation_reason.h"
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 
@@ -47,6 +51,12 @@ QualityLimitationReasonTracker::DurationsMs() const {
   it->second +=
       clock_->TimeInMilliseconds() - current_reason_updated_timestamp_ms_;
   return total_durations_ms;
+}
+
+void QualityLimitationReasonTracker::SetDurationMs(
+    std::map<QualityLimitationReason, int64_t>
+        quality_limitation_durations_ms) {
+  durations_ms_ = quality_limitation_durations_ms;
 }
 
 }  // namespace webrtc

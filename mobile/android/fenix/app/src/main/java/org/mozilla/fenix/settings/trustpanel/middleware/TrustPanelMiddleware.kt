@@ -16,12 +16,9 @@ import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.ktx.kotlin.getOrigin
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.PermissionStorage
-import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.settings.toggle
 import org.mozilla.fenix.settings.trustpanel.store.AutoplayValue
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelAction
@@ -36,7 +33,6 @@ import org.mozilla.fenix.utils.Settings
  * [Middleware] implementation for handling [TrustPanelAction] and managing the [TrustPanelState] for the menu
  * dialog.
  *
- * @param appStore The [AppStore] used to dispatch actions to display a snackbar.
  * @param engine The browser [Engine] used to clear site data.
  * @param publicSuffixList The [PublicSuffixList] used to obtain the base domain of the current site.
  * @param sessionUseCases [SessionUseCases] used to reload the page after toggling tracking protection.
@@ -51,7 +47,6 @@ import org.mozilla.fenix.utils.Settings
  */
 @Suppress("LongParameterList")
 class TrustPanelMiddleware(
-    private val appStore: AppStore,
     private val engine: Engine,
     private val publicSuffixList: PublicSuffixList,
     private val sessionUseCases: SessionUseCases,
@@ -60,16 +55,15 @@ class TrustPanelMiddleware(
     private val permissionStorage: PermissionStorage,
     private val requestPermissionsLauncher: ActivityResultLauncher<Array<String>>,
     private val onDismiss: suspend () -> Unit,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : Middleware<TrustPanelState, TrustPanelAction> {
 
     override fun invoke(
-        context: MiddlewareContext<TrustPanelState, TrustPanelAction>,
+        store: Store<TrustPanelState, TrustPanelAction>,
         next: (TrustPanelAction) -> Unit,
         action: TrustPanelAction,
     ) {
-        val currentState = context.state
-        val store = context.store
+        val currentState = store.state
 
         when (action) {
             is TrustPanelAction.ClearSiteData -> clearSiteData(currentState)
@@ -136,8 +130,6 @@ class TrustPanelMiddleware(
                     Engine.BrowsingData.ALL_SITE_DATA,
                 ),
             )
-
-            appStore.dispatch(AppAction.SiteDataCleared)
         }
 
         onDismiss()

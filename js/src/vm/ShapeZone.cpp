@@ -106,10 +106,6 @@ void ShapeZone::purgeShapeCaches(JS::GCContext* gcx) {
 }
 
 bool ShapeZone::useDictionaryModeTeleportation() {
-  if (!JS::Prefs::experimental_dictionary_teleporting()) {
-    return false;
-  }
-
   if (reshapeCounter > RESHAPE_MAX) {
     return false;
   }

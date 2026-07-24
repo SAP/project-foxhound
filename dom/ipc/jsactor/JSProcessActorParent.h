@@ -8,7 +8,6 @@
 #define mozilla_dom_JSProcessActorParent_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/JSActor.h"
@@ -47,8 +46,8 @@ class JSProcessActorParent final : public JSActor {
   // message metadata |aMetadata|. The underlying transport should call the
   // |ReceiveMessage| method on the other side asynchronously.
   virtual void SendRawMessage(const JSActorMessageMeta& aMetadata,
-                              Maybe<ipc::StructuredCloneData>&& aData,
-                              Maybe<ipc::StructuredCloneData>&& aStack,
+                              JSIPCValue&& aData,
+                              ipc::StructuredCloneData* aStack,
                               ErrorResult& aRv) override;
 
  private:

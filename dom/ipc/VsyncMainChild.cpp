@@ -28,7 +28,7 @@ void VsyncMainChild::AddChildRefreshTimer(VsyncObserver* aVsyncObserver) {
   }
 
   if (mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendObserve();
+    (void)PVsyncChild::SendObserve();
   }
   mObservers.AppendElement(std::move(aVsyncObserver));
 }
@@ -40,7 +40,7 @@ void VsyncMainChild::RemoveChildRefreshTimer(VsyncObserver* aVsyncObserver) {
   }
 
   if (mObservers.RemoveElement(aVsyncObserver) && mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendUnobserve();
+    (void)PVsyncChild::SendUnobserve();
   }
 }
 
@@ -50,7 +50,7 @@ void VsyncMainChild::ActorDestroy(ActorDestroyReason aActorDestroyReason) {
   mIsShutdown = true;
 
   if (!mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendUnobserve();
+    (void)PVsyncChild::SendUnobserve();
   }
   mObservers.Clear();
 }

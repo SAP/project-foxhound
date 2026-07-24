@@ -35,7 +35,7 @@ function run_test() {
   runHttpTests(tests, done);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

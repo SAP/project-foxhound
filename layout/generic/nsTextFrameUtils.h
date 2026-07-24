@@ -158,21 +158,36 @@ class nsTextFrameUtils {
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsTextFrameUtils::Flags)
 
+/**
+ * nsSkipCharsRunIterator is a layout-oriented convenience wrapper over
+ * gfxSkipCharsIterator, which iterates over runs in the string. Each run
+ * consists entirely of either "unskipped" or "skipped" characters.
+ *
+ * By default, calling NextRun() iterates over only unskipped runs. Call
+ * SetVisitSkipped() to let NextRun() also iterates over skipped runs where
+ * IsSkipped() is true.
+ */
 class nsSkipCharsRunIterator {
  public:
+  // Indicates whether the constructor's aRemainingLength counts only unskipped
+  // characters, or unskipped + skipped characters.
   enum LengthMode {
     LENGTH_UNSKIPPED_ONLY = false,
     LENGTH_INCLUDES_SKIPPED = true
   };
   nsSkipCharsRunIterator(const gfxSkipCharsIterator& aStart,
-                         LengthMode aLengthIncludesSkipped, uint32_t aLength)
+                         LengthMode aLengthIncludesSkipped,
+                         uint32_t aRemainingLength)
       : mIterator(aStart),
-        mRemainingLength(aLength),
+        mRemainingLength(aRemainingLength),
         mRunLength(0),
         mSkipped(false),
         mVisitSkipped(false),
         mLengthIncludesSkipped(aLengthIncludesSkipped) {}
+
+  // Include skipped runs in iteration results.
   void SetVisitSkipped() { mVisitSkipped = true; }
+
   void SetOriginalOffset(int32_t aOffset) {
     mIterator.SetOriginalOffset(aOffset);
   }
@@ -180,11 +195,16 @@ class nsSkipCharsRunIterator {
     mIterator.SetSkippedOffset(aOffset);
   }
 
-  // guaranteed to return only positive-length runs
+  // Advance to the next run. Return false when no runs remain. On success,
+  // GetRunLength() is guaranteed to return positive length.
   bool NextRun();
+
+  // Return true if the current run consists of skipped characters.
   bool IsSkipped() const { return mSkipped; }
-  // Always returns something > 0
+
+  // Length of the current run. The return value is always positive.
   int32_t GetRunLength() const { return mRunLength; }
+
   const gfxSkipCharsIterator& GetPos() const { return mIterator; }
   int32_t GetOriginalOffset() const { return mIterator.GetOriginalOffset(); }
   uint32_t GetSkippedOffset() const { return mIterator.GetSkippedOffset(); }

@@ -25,7 +25,6 @@
 #include "nsXPCOMCIDInternal.h"
 
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Unused.h"
 
 #include "nsIObserverService.h"
 #include "mozilla/AppShutdown.h"
@@ -451,7 +450,7 @@ static void SendManifestEntry(const ChromeRegistryItem& aItem) {
   if (!parents.Length()) return;
 
   for (uint32_t i = 0; i < parents.Length(); i++) {
-    Unused << parents[i]->SendRegisterChromeItem(aItem);
+    (void)parents[i]->SendRegisterChromeItem(aItem);
   }
 }
 

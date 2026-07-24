@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Controller for managing device orientation changes. */
 public class OrientationController {
   private OrientationDelegate mDelegate;
 

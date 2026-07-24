@@ -118,6 +118,22 @@ EnterprisePoliciesManager.prototype = {
       return;
     }
 
+    // Because security.enterprise_roots.enabled is true by default, we can
+    // ignore attempts by Antivirus to try to set it via policy.
+    // We have to explicitly check for true or 1 because this happens before
+    // policy is parsed against the schema, so the value could be coming
+    // from the registry.
+    if (
+      Object.keys(provider.policies).length === 1 &&
+      provider.policies.Certificates &&
+      Object.keys(provider.policies.Certificates).length === 1 &&
+      (provider.policies.Certificates.ImportEnterpriseRoots === true ||
+        provider.policies.Certificates.ImportEnterpriseRoots === 1)
+    ) {
+      this.status = Ci.nsIEnterprisePolicies.INACTIVE;
+      return;
+    }
+
     this.status = Ci.nsIEnterprisePolicies.ACTIVE;
     this._parsedPolicies = {};
     this._activatePolicies(provider.policies);
@@ -233,12 +249,12 @@ EnterprisePoliciesManager.prototype = {
     this._callbacks[timing].push(callback);
   },
 
-  _runPoliciesCallbacks(timing) {
+  async _runPoliciesCallbacks(timing) {
     let callbacks = this._callbacks[timing];
     while (callbacks.length) {
       let callback = callbacks.shift();
       try {
-        callback();
+        await callback();
       } catch (ex) {
         lazy.log.error("Error running ", callback, `for ${timing}:`, ex);
       }
@@ -470,11 +486,8 @@ EnterprisePoliciesManager.prototype = {
       // As we migrate folks to ESR for other reasons (deprecating an OS),
       // we need to add checks here for distribution IDs.
       (AppConstants.IS_ESR && !excludedDistributionIDs.includes(distroId)) ||
-      // If there are multiple policies then its enterprise.
-      policiesLength > 1 ||
-      // If ImportEnterpriseRoots isn't the only policy then it's enterprise.
-      (!!policiesLength &&
-        !this._parsedPolicies.Certificates?.ImportEnterpriseRoots);
+      // If there are policies then its enterprise.
+      policiesLength > 0;
 
     return isEnterprise;
   },

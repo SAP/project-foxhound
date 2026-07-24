@@ -18,6 +18,7 @@
 #include "IDBTransaction.h"
 #include "IndexedDatabaseManager.h"
 #include "ReportInternalError.h"
+#include "ThreadLocal.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/EventDispatcher.h"
@@ -34,7 +35,6 @@
 #include "nsIScriptContext.h"
 #include "nsJSUtils.h"
 #include "nsString.h"
-#include "ThreadLocal.h"
 
 namespace mozilla::dom {
 

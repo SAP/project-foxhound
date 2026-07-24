@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.mozilla.gecko.GeckoEditableChild;
 import org.mozilla.gecko.IGeckoEditableChild;
 import org.mozilla.gecko.IGeckoEditableParent;
-import org.mozilla.gecko.InputMethods;
+import org.mozilla.gecko.MozLog;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.ThreadUtils.AssertBehavior;
@@ -63,7 +63,10 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     implements InvocationHandler, Editable, SessionTextInput.EditableClient {
 
   private static final boolean DEBUG = false;
+  private static final boolean LOGGING = BuildConfig.NIGHTLY_BUILD;
   private static final String LOGTAG = "GeckoEditable";
+  private static final String MOZLOGTAG = "IMEHandler";
+
   private static final long DISMISS_VKB_DELAY_MS = 100;
 
   // Filters to implement Editable's filtering functionality
@@ -109,6 +112,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
   private String mIMEAutocapitalize = ""; // Used by IC thread.
   private boolean mIMEAutocorrect = false; // Used by IC thread.
   @IMEContextFlags private int mIMEFlags; // Used by IC thread.
+  private volatile boolean mIsNewICCreated = false; // Used by IC and UI
 
   private boolean mIgnoreSelectionChange; // Used by Gecko thread
   // Combined offsets from the previous batch of onTextChange calls; valid
@@ -192,6 +196,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
         unicodeChar >= ' '
             ? unicodeChar
             : unmodifiedMetaState != metaState ? unmodifiedUnicodeChar : 0;
+    final boolean waitingReply = GeckoInputConnection.isMediaKeyEvent(event);
 
     // If a modifier (e.g. meta key) caused a different character to be entered, we
     // drop that modifier from the metastate for the generated keypress event.
@@ -219,6 +224,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
         event.getRepeatCount(),
         event.getFlags(),
         isSynthesizedImeKey,
+        waitingReply,
         event);
   }
 
@@ -575,7 +581,11 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
   private void icOfferAction(final Action action) {
     if (DEBUG) {
       assertOnIcThread();
-      Log.d(LOGTAG, "offer: Action(" + getConstantName(Action.class, "TYPE_", action.mType) + ")");
+    }
+    if (LOGGING) {
+      final StringBuilder sb = new StringBuilder("offer: Action(");
+      sb.append(getConstantName(Action.class, "TYPE_", action.mType)).append(")");
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
 
     switch (action.mType) {
@@ -950,10 +960,10 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
       throws RemoteException {
     if (DEBUG) {
       assertOnIcThread();
+    }
+    if (LOGGING) {
       final StringBuilder sb = new StringBuilder("icSendComposition(");
-      sb.append("\"")
-          .append(text)
-          .append("\"")
+      debugAppend(sb, text)
           .append(", range = ")
           .append(composingStart)
           .append("-")
@@ -963,7 +973,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
           .append("-")
           .append(selEnd)
           .append(")");
-      Log.d(LOGTAG, sb.toString());
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
 
     if (selEnd >= composingStart && selEnd <= composingEnd) {
@@ -1000,8 +1010,14 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
       }
       final CharacterStyle[] styleSpans = text.getSpans(rangeStart, rangeEnd, CharacterStyle.class);
 
-      if (DEBUG) {
-        Log.d(LOGTAG, " found " + styleSpans.length + " spans @ " + rangeStart + "-" + rangeEnd);
+      if (LOGGING) {
+        final StringBuilder sb = new StringBuilder(" found ");
+        sb.append(styleSpans.length)
+            .append(" spans @ ")
+            .append(rangeStart)
+            .append("-")
+            .append(rangeEnd);
+        MozLog.d(MOZLOGTAG, sb.toString());
       }
 
       if (styleSpans.length == 0) {
@@ -1018,12 +1034,18 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
         for (final CharacterStyle span : styleSpans) {
           span.updateDrawState(tp);
         }
-        int tpUnderlineColor = 0;
-        float tpUnderlineThickness = 0.0f;
 
-        // These TextPaint fields only exist on Android ICS+ and are not in the SDK.
-        tpUnderlineColor = (Integer) getField(tp, "underlineColor", 0);
-        tpUnderlineThickness = (Float) getField(tp, "underlineThickness", 0.0f);
+        final int tpUnderlineColor;
+        final float tpUnderlineThickness;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          tpUnderlineColor = tp.underlineColor;
+          tpUnderlineThickness = tp.underlineThickness;
+        } else {
+          // These TextPaint fields only exist on Android ICS+ and are not in the SDK.
+          tpUnderlineColor = (Integer) getField(tp, "underlineColor", 0);
+          tpUnderlineThickness = (Float) getField(tp, "underlineThickness", 0.0f);
+        }
         if (tpUnderlineColor != 0) {
           rangeStyles |= IME_RANGE_UNDERLINE | IME_RANGE_LINECOLOR;
           rangeLineColor = tpUnderlineColor;
@@ -1061,17 +1083,16 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
           rangeLineColor);
       rangeStart = rangeEnd;
 
-      if (DEBUG) {
-        Log.d(
-            LOGTAG,
-            " added "
-                + rangeType
-                + " : "
-                + Integer.toHexString(rangeStyles)
-                + " : "
-                + Integer.toHexString(rangeForeColor)
-                + " : "
-                + Integer.toHexString(rangeBackColor));
+      if (LOGGING) {
+        final StringBuilder sb = new StringBuilder(" added ");
+        sb.append(rangeType)
+            .append(" : ")
+            .append(Integer.toHexString(rangeStyles))
+            .append(" : ")
+            .append(Integer.toHexString(rangeForeColor))
+            .append(" : ")
+            .append(Integer.toHexString(rangeBackColor));
+        MozLog.d(MOZLOGTAG, sb.toString());
       }
     } while (rangeStart < composingEnd);
   }
@@ -1117,7 +1138,11 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
   private void sendKeyEvent(final @NonNull KeyEvent event, final int action, final int metaState) {
     if (DEBUG) {
       assertOnIcThread();
-      Log.d(LOGTAG, "sendKeyEvent(" + event + ", " + action + ", " + metaState + ")");
+    }
+    if (LOGGING) {
+      final StringBuilder sb = new StringBuilder("sendKeyEvent(");
+      sb.append(event).append(", ").append(action).append(", ").append(metaState).append(")");
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
     /*
        We are actually sending two events to Gecko here,
@@ -1440,8 +1465,10 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
       Log.w(LOGTAG, "Mismatched reply");
       return;
     }
-    if (DEBUG) {
-      Log.d(LOGTAG, "reply: Action(" + getConstantName(Action.class, "TYPE_", action.mType) + ")");
+    if (LOGGING) {
+      final StringBuilder sb = new StringBuilder("reply: Action(");
+      sb.append(getConstantName(Action.class, "TYPE_", action.mType)).append(")");
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
     switch (action.mType) {
       case Action.TYPE_REPLACE_TEXT:
@@ -1818,9 +1845,20 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
         new Runnable() {
           @Override
           public void run() {
-            if (DEBUG) {
-              Log.d(LOGTAG, "restartInput(" + reason + ", " + toggleSoftInput + ')');
+            if (LOGGING) {
+              final StringBuilder sb = new StringBuilder("restartInput(reason=");
+              sb.append(
+                      getConstantName(
+                          GeckoSession.TextInputDelegate.class, "RESTART_REASON_", reason))
+                  .append(", toggleSoftInput=")
+                  .append(toggleSoftInput)
+                  .append(")");
+              MozLog.d(MOZLOGTAG, sb.toString());
             }
+
+            // Avoid multiple toggleSoftInput call. If this becomes true, onCreateInputConnection is
+            // called.
+            mIsNewICCreated = false;
 
             final GeckoSession session = mSession.get();
             if (session != null) {
@@ -1841,7 +1879,22 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
                       // mIMEState is not up-to-date here and we need to override it.
                       state = SessionTextInput.EditableListener.IME_STATE_DISABLED;
                     }
-                    toggleSoftInput(/* force */ false, state);
+                    if (state != SessionTextInput.EditableListener.IME_STATE_DISABLED
+                        && mIsNewICCreated) {
+                      // If state isn't disabled, and new InputConnection is created during
+                      // icRestartInput, we don't call toggleSoftInput twice.
+                      return;
+                    }
+
+                    // Unnecessary to track onCreateInputConnection.
+                    mIsNewICCreated = true;
+
+                    // GeckoSession and mFocusedChild would be null due to navigating away or blur.
+                    // So we should set force flag to dismiss software keyboard.
+                    final boolean force =
+                        reason == GeckoSession.TextInputDelegate.RESTART_REASON_BLUR
+                            && state == SessionTextInput.EditableListener.IME_STATE_DISABLED;
+                    toggleSoftInput(force, state);
                   }
                 });
           }
@@ -1856,6 +1909,9 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     final String autocapitalize = mIMEAutocapitalize;
     boolean autocorrect = mIMEAutocorrect;
     final int flags = mIMEFlags;
+
+    // New InputConnection is created.
+    mIsNewICCreated = true;
 
     // Some keyboards require us to fill out outAttrs even if we return null.
     outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE;
@@ -1963,10 +2019,10 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
     }
 
     if ((flags & SessionTextInput.EditableListener.IME_FLAG_PRIVATE_BROWSING) != 0) {
-      outAttrs.imeOptions |= InputMethods.IME_FLAG_NO_PERSONALIZED_LEARNING;
+      outAttrs.imeOptions |= EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
     }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1 && typeHint.length() == 0) {
+    if (typeHint.length() == 0) {
       // contenteditable allows image insertion.
       outAttrs.contentMimeTypes = new String[] {"image/gif", "image/jpeg", "image/png"};
     }
@@ -2076,7 +2132,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
   public void onSelectionChange(
       final IBinder token, final int start, final int end, final boolean causedOnlyByComposition) {
     // On Gecko or binder thread.
-    if (DEBUG) {
+    if (LOGGING) {
       final StringBuilder sb = new StringBuilder("onSelectionChange(");
       sb.append(start)
           .append(", ")
@@ -2084,11 +2140,17 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
           .append(", ")
           .append(causedOnlyByComposition)
           .append(")");
-      Log.d(LOGTAG, sb.toString());
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
 
     if (!binderCheckToken(token, /* allowNull */ false)) {
       return;
+    }
+
+    if (start != end && !causedOnlyByComposition) {
+      // selection isn't collapsed. This change is caused by web content side.
+      // So we have to update the selection in Java side.
+      mIgnoreSelectionChange = false;
     }
 
     if (mIgnoreSelectionChange) {
@@ -2134,7 +2196,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
       final int unboundedOldEnd,
       final boolean causedOnlyByComposition) {
     // On Gecko or binder thread.
-    if (DEBUG) {
+    if (LOGGING) {
       final StringBuilder sb = new StringBuilder("onTextChange(");
       debugAppend(sb, text)
           .append(", ")
@@ -2142,7 +2204,7 @@ import org.mozilla.geckoview.SessionTextInput.EditableListener.IMEState;
           .append(", ")
           .append(unboundedOldEnd)
           .append(")");
-      Log.d(LOGTAG, sb.toString());
+      MozLog.d(MOZLOGTAG, sb.toString());
     }
 
     if (!binderCheckToken(token, /* allowNull */ false)) {

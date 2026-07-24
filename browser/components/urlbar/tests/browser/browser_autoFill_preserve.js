@@ -26,8 +26,14 @@ add_setup(async function () {
 
 add_task(async function origin() {
   await PlacesTestUtils.addVisits([
-    "http://example.com/",
-    "http://mozilla.org/example",
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://mozilla.org/example",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -52,8 +58,14 @@ add_task(async function origin() {
 
 add_task(async function originPort() {
   await PlacesTestUtils.addVisits([
-    "http://example.com:8888/",
-    "http://mozilla.org/example",
+    {
+      url: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://mozilla.org/example",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -78,8 +90,14 @@ add_task(async function originPort() {
 
 add_task(async function originScheme() {
   await PlacesTestUtils.addVisits([
-    "http://example.com/",
-    "http://mozilla.org/example",
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://mozilla.org/example",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -104,8 +122,14 @@ add_task(async function originScheme() {
 
 add_task(async function originPortScheme() {
   await PlacesTestUtils.addVisits([
-    "http://example.com:8888/",
-    "http://mozilla.org/example",
+    {
+      url: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://mozilla.org/example",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -130,9 +154,18 @@ add_task(async function originPortScheme() {
 
 add_task(async function url() {
   await PlacesTestUtils.addVisits([
-    "http://example.com/foo",
-    "http://example.com/foo",
-    "http://example.com/fff",
+    {
+      url: "http://example.com/foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com/foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com/fff",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -157,9 +190,18 @@ add_task(async function url() {
 
 add_task(async function urlPort() {
   await PlacesTestUtils.addVisits([
-    "http://example.com:8888/foo",
-    "http://example.com:8888/foo",
-    "http://example.com:8888/fff",
+    {
+      url: "http://example.com:8888/foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com:8888/foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com:8888/fff",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -205,9 +247,18 @@ add_task(async function tokenAlias() {
 // autofilled substring and checks that autofill is *not* preserved.
 add_task(async function backspaceNoAutofill() {
   await PlacesTestUtils.addVisits([
-    "http://example.com/",
-    "http://example.com/",
-    "http://mozilla.org/example",
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://mozilla.org/example",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,

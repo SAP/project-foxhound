@@ -23,7 +23,7 @@ class IDBEncryptionPBM(QuotaTestCase):
     """
 
     def setUp(self):
-        super(IDBEncryptionPBM, self).setUp()
+        super().setUp()
 
         self.testHTML = "dom/indexedDB/basicIDB_PBM.html"
         self.IDBName = "IDBTest"
@@ -41,7 +41,7 @@ class IDBEncryptionPBM(QuotaTestCase):
         self.marionette.set_pref(QM_TESTING_PREF, True)
 
     def tearDown(self):
-        super(IDBEncryptionPBM, self).tearDown()
+        super().tearDown()
 
         self.marionette.set_pref(INDEXED_DB_PBM_PREF, self.defaultIDBPrefValue)
         self.marionette.set_pref(QM_TESTING_PREF, self.defaultQMPrefValue)

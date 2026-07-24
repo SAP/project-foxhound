@@ -251,7 +251,7 @@ void XULTreeGridRowAccessible::Shutdown() {
 
 role XULTreeGridRowAccessible::NativeRole() const { return roles::ROW; }
 
-ENameValueFlag XULTreeGridRowAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeGridRowAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   // XXX: the row name sholdn't be a concatenation of cell names (bug 664384).
@@ -400,7 +400,7 @@ void XULTreeGridCellAccessible::Shutdown() {
 
 Accessible* XULTreeGridCellAccessible::FocusedChild() { return nullptr; }
 
-ENameValueFlag XULTreeGridCellAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeGridCellAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   if (!mTreeView) return eNameOK;
@@ -455,7 +455,7 @@ nsRect XULTreeGridCellAccessible::BoundsInAppUnits() const {
 bool XULTreeGridCellAccessible::HasPrimaryAction() const {
   return mColumn->Cycler() ||
          (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-          IsEditable());
+          IsEditableCell());
 }
 
 void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
@@ -469,7 +469,7 @@ void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
 
   if (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-      IsEditable()) {
+      IsEditableCell()) {
     nsAutoString value;
     mTreeView->GetCellValue(mRow, mColumn, value);
     if (value.EqualsLiteral("true")) {
@@ -647,7 +647,7 @@ void XULTreeGridCellAccessible::DispatchClickEvent(
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridCellAccessible: protected implementation
 
-bool XULTreeGridCellAccessible::IsEditable() const {
+bool XULTreeGridCellAccessible::IsEditableCell() const {
   // XXX: logic corresponds to tree.xml, it's preferable to have interface
   // method to check it.
   bool isEditable = false;

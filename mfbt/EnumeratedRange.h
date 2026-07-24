@@ -33,7 +33,7 @@ namespace detail {
 template <typename EnumTypeT>
 class EnumeratedIterator {
  public:
-  typedef typename std::underlying_type<EnumTypeT>::type IntTypeT;
+  typedef std::underlying_type_t<EnumTypeT> IntTypeT;
 
   template <typename EnumType>
   constexpr explicit EnumeratedIterator(EnumType aCurrent)
@@ -68,64 +68,37 @@ class EnumeratedIterator {
 
   /* Comparison operators */
 
-  template <typename EnumType>
-  friend bool operator==(const EnumeratedIterator<EnumType>& aIter1,
-                         const EnumeratedIterator<EnumType>& aIter2);
-  template <typename EnumType>
-  friend bool operator!=(const EnumeratedIterator<EnumType>& aIter1,
-                         const EnumeratedIterator<EnumType>& aIter2);
-  template <typename EnumType>
-  friend bool operator<(const EnumeratedIterator<EnumType>& aIter1,
-                        const EnumeratedIterator<EnumType>& aIter2);
-  template <typename EnumType>
-  friend bool operator<=(const EnumeratedIterator<EnumType>& aIter1,
-                         const EnumeratedIterator<EnumType>& aIter2);
-  template <typename EnumType>
-  friend bool operator>(const EnumeratedIterator<EnumType>& aIter1,
-                        const EnumeratedIterator<EnumType>& aIter2);
-  template <typename EnumType>
-  friend bool operator>=(const EnumeratedIterator<EnumType>& aIter1,
-                         const EnumeratedIterator<EnumType>& aIter2);
+  friend bool operator==(const EnumeratedIterator<EnumTypeT>& aIter1,
+                         const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent == aIter2.mCurrent;
+  }
+
+  friend bool operator!=(const EnumeratedIterator<EnumTypeT>& aIter1,
+                         const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent != aIter2.mCurrent;
+  }
+
+  friend bool operator<(const EnumeratedIterator<EnumTypeT>& aIter1,
+                        const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent < aIter2.mCurrent;
+  }
+
+  friend bool operator<=(const EnumeratedIterator<EnumTypeT>& aIter1,
+                         const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent <= aIter2.mCurrent;
+  }
+  friend bool operator>(const EnumeratedIterator<EnumTypeT>& aIter1,
+                        const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent > aIter2.mCurrent;
+  }
+  friend bool operator>=(const EnumeratedIterator<EnumTypeT>& aIter1,
+                         const EnumeratedIterator<EnumTypeT>& aIter2) {
+    return aIter1.mCurrent >= aIter2.mCurrent;
+  }
 
  private:
   EnumTypeT mCurrent;
 };
-
-template <typename EnumType>
-bool operator==(const EnumeratedIterator<EnumType>& aIter1,
-                const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent == aIter2.mCurrent;
-}
-
-template <typename EnumType>
-bool operator!=(const EnumeratedIterator<EnumType>& aIter1,
-                const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent != aIter2.mCurrent;
-}
-
-template <typename EnumType>
-bool operator<(const EnumeratedIterator<EnumType>& aIter1,
-               const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent < aIter2.mCurrent;
-}
-
-template <typename EnumType>
-bool operator<=(const EnumeratedIterator<EnumType>& aIter1,
-                const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent <= aIter2.mCurrent;
-}
-
-template <typename EnumType>
-bool operator>(const EnumeratedIterator<EnumType>& aIter1,
-               const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent > aIter2.mCurrent;
-}
-
-template <typename EnumType>
-bool operator>=(const EnumeratedIterator<EnumType>& aIter1,
-                const EnumeratedIterator<EnumType>& aIter2) {
-  return aIter1.mCurrent >= aIter2.mCurrent;
-}
 
 template <typename EnumTypeT>
 class EnumeratedRange {
@@ -189,7 +162,7 @@ constexpr detail::EnumeratedRange<EnumType> MakeEnumeratedRange(EnumType aEnd) {
 template <typename EnumType>
 constexpr detail::EnumeratedRange<EnumType> MakeInclusiveEnumeratedRange(
     EnumType aBegin, EnumType aEnd) {
-  using EnumUnderlyingType = typename std::underlying_type_t<EnumType>;
+  using EnumUnderlyingType = std::underlying_type_t<EnumType>;
   const auto end = static_cast<EnumUnderlyingType>(aEnd);
 
   MOZ_ASSERT(end != std::numeric_limits<EnumUnderlyingType>::max(),

@@ -8,7 +8,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerTypeTraits.h"
 
-#include <iterator>
+#include <type_traits>
 
 #include "jit/ABIFunctions.h"
 #include "jit/IonAnalysis.h"
@@ -290,11 +290,54 @@ using ArgsFillBits_t = std::integer_sequence<uint64_t, FillBits<Args>()...>;
 // interpret the value which are given as arguments.
 template <typename Type>
 constexpr ABIType TypeToABIType() {
-  if constexpr (std::is_same_v<Type, float>) {
-    return ABIType::Float32;
-  } else if constexpr (std::is_same_v<Type, double>) {
-    return ABIType::Float64;
-  } else {
+  // We support the following C++ types in ABI calls.
+  //
+  // 1. Arithmetic types (integral or floating point)
+  // 2. Pointer and reference types.
+  // 3. Enum types.
+  // 4. Class and union types.
+  // 5. The void type
+
+  if constexpr (std::is_integral_v<Type>) {
+    // Integral types.
+    if constexpr (sizeof(Type) <= sizeof(intptr_t)) {
+      // Register-sized integer types are passed as |ABIType::General|,
+      // including int32. |ABIType::Int32| is not used for int32!
+      return ABIType::General;
+    } else if constexpr (sizeof(Type) == sizeof(int64_t)) {
+      return ABIType::Int64;
+    }
+  } else if constexpr (std::is_floating_point_v<Type>) {
+    // Floating point types.
+    if constexpr (std::is_same_v<Type, float>) {
+      return ABIType::Float32;
+    } else if constexpr (std::is_same_v<Type, double>) {
+      return ABIType::Float64;
+    }
+  } else if constexpr (std::is_pointer_v<Type> || std::is_reference_v<Type>) {
+    // Pointer and reference types.
+    return ABIType::General;
+  } else if constexpr (std::is_enum_v<Type>) {
+    // Compute the ABIType from the underlying type.
+    return TypeToABIType<std::underlying_type_t<Type>>();
+  } else if constexpr (std::is_class_v<Type> || std::is_union_v<Type>) {
+    // Class and union types are supported if they can be passed by-value in a
+    // single register.
+    //
+    // Use trivially-copyable to test for by-value copyable types.
+    if constexpr (std::is_trivially_copyable_v<Type>) {
+      if constexpr (sizeof(Type) <= sizeof(intptr_t)) {
+        // TODO: This is wrong for classes consisting of a single floating point
+        // type. Using std::is_layout_compatible may help to support this use
+        // case, but that requires C++20.
+        return ABIType::General;
+      }
+    }
+  } else if constexpr (std::is_void_v<Type>) {
+    // Void type.
+    //
+    // The void type is represented using |ABIType::General|. |ABIType::Void| is
+    // not used here!
     return ABIType::General;
   }
 }
@@ -461,7 +504,20 @@ template <uint64_t... Off, ABIType... Type>
 static void passABIArgs(MacroAssembler& masm, Register base,
                         std::integer_sequence<uint64_t, Off...>,
                         ABITypeSequence<Type...>) {
-  (masm.passABIArg(MoveOperand(base, size_t(Off)), Type), ...);
+  [[maybe_unused]] auto passABIArg = [&](uint64_t off, ABIType type) {
+    if (type == ABIType::Int64) {
+#ifdef JS_64BIT
+      masm.passABIArg(MoveOperand(base, size_t(off)), ABIType::General);
+#else
+      masm.passABIArg(MoveOperand(base, size_t(off)), ABIType::General);
+      masm.passABIArg(MoveOperand(base, size_t(off) + sizeof(intptr_t)),
+                      ABIType::General);
+#endif
+    } else {
+      masm.passABIArg(MoveOperand(base, size_t(off)), type);
+    }
+  };
+  (passABIArg(Off, Type), ...);
 }
 
 // For each function type given as a parameter, create a few functions with the
@@ -656,7 +712,7 @@ class JitABICall final : public JSAPIRuntimeTest, public DefineCheckArgs<Sig> {
     Register base = r8;
     regs.take(base);
 #elif defined(JS_CODEGEN_MIPS64)
-    Register base = t1;
+    Register base = t5;
     regs.take(base);
 #elif defined(JS_CODEGEN_LOONG64)
     Register base = t0;

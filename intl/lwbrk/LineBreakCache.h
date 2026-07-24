@@ -3,14 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_intl_LineBreakCache_h__
-#define mozilla_intl_LineBreakCache_h__
+#ifndef mozilla_intl_LineBreakCache_h_
+#define mozilla_intl_LineBreakCache_h_
 
 #include "nsIObserver.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/MruCache.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/intl/Segmenter.h"
@@ -96,4 +95,4 @@ class LineBreakCache : public MruCache<detail::LBCacheKey, detail::LBCacheEntry,
 }  // namespace intl
 }  // namespace mozilla
 
-#endif /* mozilla_intl_LineBreakCache_h__ */
+#endif /* mozilla_intl_LineBreakCache_h_ */

@@ -34,7 +34,7 @@ EXPORTS += [
     "gfxFontEntry.h",
     "gfxFontFeatures.h",
     "gfxFontInfoLoader.h",
-    "gfxFontPrefLangList.h",
+    "gfxFontPrefLangList.inc",
     "gfxFontSrcPrincipal.h",
     "gfxFontSrcURI.h",
     "gfxFontUtils.h",

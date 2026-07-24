@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWinRemoteClient_h__
-#define nsWinRemoteClient_h__
+#ifndef nsWinRemoteClient_h_
+#define nsWinRemoteClient_h_
 
 #include "nscore.h"
 #include "nsRemoteClient.h"
@@ -22,4 +22,4 @@ class nsWinRemoteClient : public nsRemoteClient {
                            bool aRaise) override;
 };
 
-#endif  // nsWinRemoteClient_h__
+#endif  // nsWinRemoteClient_h_

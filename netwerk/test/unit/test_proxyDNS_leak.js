@@ -16,6 +16,10 @@ const gDashboard = Cc["@mozilla.org/network/dashboard;1"].getService(
 );
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
 
+const { NodeProxyFilter } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 add_task(async function setup() {
   Services.prefs.setBoolPref("network.dns.native_https_query", true);
   Services.prefs.setBoolPref("network.dns.native_https_query_win10", true);

@@ -6,7 +6,6 @@
 #ifndef NativeKeyBindings_h
 #define NativeKeyBindings_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "nsTHashMap.h"
 #include "nsIWidget.h"

@@ -49,7 +49,7 @@ add_task(async function () {
   idRuleEditor = getRuleViewRuleEditor(view, 2);
   editor = await focusEditableField(view, idRuleEditor.selectorText);
 
-  is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
+  is(view.elementStyle.rules.length, 2, "Should have 2 rules.");
   ok(getRuleViewRule(view, "pre"), "Rule with pre selector exists.");
   is(
     getRuleViewRuleEditor(view, 2).element.getAttribute("unmatched"),
@@ -68,7 +68,7 @@ add_task(async function () {
   EventUtils.synthesizeKey("KEY_Enter");
   await onRuleViewChanged;
 
-  is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
+  is(view.elementStyle.rules.length, 2, "Should have 2 rules.");
   ok(getRuleViewRule(view, "span"), "Rule with span selector exists.");
   is(
     getRuleViewRuleEditor(view, 2).element.getAttribute("unmatched"),

@@ -1,7 +1,7 @@
 {
   "data": [
     {
-      "schema": 1754878540963,
+      "schema": 1771804812409,
       "subframes": [],
       "components": [
         {
@@ -68,6 +68,15 @@
                 "selector": "a"
               }
             ]
+          }
+        },
+        {
+          "type": "refined_search_buttons",
+          "topDown": true,
+          "included": {
+            "parent": {
+              "selector": "a.nPDzT"
+            }
           }
         },
         {
@@ -302,11 +311,11 @@
         "url"
       ],
       "id": "635a3325-1995-42d6-be09-dbe4b2a95453",
-      "last_modified": 1754960964129
+      "last_modified": 1772656186787
     },
     {
       "isSPA": true,
-      "schema": 1754273750939,
+      "schema": 1756952145762,
       "subframes": [],
       "components": [
         {
@@ -359,6 +368,8 @@
         "inspectRegexpInSERP": true
       },
       "taggedCodes": [
+        "ff_android",
+        "ff_ios",
         "brz-moz",
         "firefoxqwant"
       ],
@@ -431,7 +442,7 @@
         "^https://fdn\\.qwant\\.com/v3/r/"
       ],
       "id": "19c434a3-d173-4871-9743-290ac92a3f6b",
-      "last_modified": 1754676198505
+      "last_modified": 1757010621729
     },
     {
       "schema": 1753236937989,
@@ -974,5 +985,5 @@
       "last_modified": 1741781945955
     }
   ],
-  "timestamp": 1754960964129
+  "timestamp": 1772656186787
 }

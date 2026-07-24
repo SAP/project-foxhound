@@ -244,7 +244,7 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
 
   index_t startOffset = ConvertMagicOffset(aStartOffset);
   index_t endOffset = ConvertMagicOffset(aEndOffset);
-  if (!startOffset.IsValid() || startOffset >= endOffset) {
+  if (!startOffset.IsValid() || startOffset > endOffset) {
     return LayoutDeviceIntRect();
   }
 
@@ -257,12 +257,8 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
     return LayoutDeviceIntRect();
   }
 
-  if (endPoint == startPoint) {
-    result = startPoint.CharBounds();
-  } else {
-    TextLeafRange range(startPoint, endPoint);
-    result = range.Bounds();
-  }
+  TextLeafRange range(startPoint, endPoint);
+  result = range.Bounds();
 
   // Calls to TextLeafRange::Bounds() will construct screen coordinates.
   // Perform any additional conversions here.
@@ -644,12 +640,21 @@ int32_t HyperTextAccessibleBase::CaretLineNumber() {
     return -1;
   }
 
-  TextLeafPoint firstPointInThis = TextLeafPoint(Acc(), 0);
-  int32_t lineNumber = 1;
-  for (TextLeafPoint line = point; line && firstPointInThis < line;
+  // Walk forward by line from the start of the container.
+  TextLeafPoint line = TextLeafPoint(Acc(), 0);
+  int32_t lineNumber = 0;
+  for (; line && line < point;
        line = line.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_START,
-                                eDirPrevious)) {
-    lineNumber++;
+                                eDirNext)) {
+    ++lineNumber;
+  }
+  // The caret might be right at the start of a line, in which case we should
+  // increment the line number. We shouldn't do that if the caret is at the end
+  // of a line or container, though.
+  if (line == point && !point.mIsEndOfLineInsertionPoint &&
+      point.mOffset <
+          static_cast<int32_t>(nsAccUtils::TextLength(point.mAcc))) {
+    ++lineNumber;
   }
 
   return lineNumber;

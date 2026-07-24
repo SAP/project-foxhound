@@ -4,33 +4,40 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef nsCSSVisitedDependentPropList_h_
+#define nsCSSVisitedDependentPropList_h_
+
 /* a list of style struct's member variables which can be visited-dependent */
 
-/* This file contains the list of all style structs and fields that can
- * be visited-dependent. Each entry is defined as a STYLE_STRUCT macro
- * with the following parameters:
+/* High-order macro that applies MACRO to all visited-dependent style structs
+ * and their fields. Each invocation passes:
  * - 'name_' the name of the style struct
  * - 'fields_' the list of member variables in the style struct that can
  *   be visited-dependent
  *
- * Users of this list should define a macro STYLE_STRUCT(name_, fields_)
- * before including this file.
+ * Usage:
+ *   #define MY_MACRO(name_, fields_) ...
+ *   FOR_EACH_VISITED_DEPENDENT_STYLE_STRUCT(MY_MACRO)
+ *   #undef MY_MACRO
  *
  * Note that, currently, there is a restriction that all fields in a
  * each entry must have the same type, otherwise you need two entries.
  */
 
-STYLE_STRUCT(Background, (mBackgroundColor))
-STYLE_STRUCT(Border, (mBorderTopColor,
-                      mBorderRightColor,
-                      mBorderBottomColor,
-                      mBorderLeftColor))
-STYLE_STRUCT(Outline, (mOutlineColor))
-STYLE_STRUCT(Column, (mColumnRuleColor))
-STYLE_STRUCT(Text, (mColor))
-STYLE_STRUCT(Text, (mTextEmphasisColor,
-                    mWebkitTextFillColor,
-                    mWebkitTextStrokeColor))
-STYLE_STRUCT(TextReset, (mTextDecorationColor))
-STYLE_STRUCT(SVG, (mFill, mStroke))
-STYLE_STRUCT(UI, (mCaretColor))
+#define FOR_EACH_VISITED_DEPENDENT_STYLE_STRUCT(MACRO) \
+  MACRO(Background, (mBackgroundColor)) \
+  MACRO(Border, (mBorderTopColor, \
+                 mBorderRightColor, \
+                 mBorderBottomColor, \
+                 mBorderLeftColor)) \
+  MACRO(Outline, (mOutlineColor)) \
+  MACRO(Column, (mColumnRuleColor)) \
+  MACRO(Text, (mColor)) \
+  MACRO(Text, (mTextEmphasisColor, \
+               mWebkitTextFillColor, \
+               mWebkitTextStrokeColor)) \
+  MACRO(TextReset, (mTextDecorationColor)) \
+  MACRO(SVG, (mFill, mStroke)) \
+  MACRO(UI, (mCaretColor))
+
+#endif // nsCSSVisitedDependentPropList_h_

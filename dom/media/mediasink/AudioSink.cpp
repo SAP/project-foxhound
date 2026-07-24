@@ -5,18 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioSink.h"
+
 #include "AudioConverter.h"
 #include "AudioDeviceInfo.h"
 #include "MediaQueue.h"
+#include "Tracing.h"
 #include "VideoUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/ProfilerMarkerTypes.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsPrintfCString.h"
-#include "Tracing.h"
 
 namespace mozilla {
 

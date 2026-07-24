@@ -3,14 +3,15 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::cmp::Ordering;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::{create_dir_all, File, OpenOptions};
-use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::{fs, mem};
 
 use chrono::{DateTime, FixedOffset, Utc};
 
@@ -99,13 +100,23 @@ pub struct EventDatabase {
     pub path: PathBuf,
     /// The in-memory list of events
     event_stores: RwLock<HashMap<String, Vec<StoredEvent>>>,
+    event_store_files: RwLock<HashMap<String, Arc<File>>>,
     /// A lock to be held when doing operations on the filesystem
     file_lock: Mutex<()>,
 }
 
 impl MallocSizeOf for EventDatabase {
     fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
-        self.event_stores.read().unwrap().size_of(ops)
+        let mut n = 0;
+        n += self.event_stores.read().unwrap().size_of(ops);
+
+        let map = self.event_store_files.read().unwrap();
+        for store_name in map.keys() {
+            n += store_name.size_of(ops);
+            // `File` doesn't allocate, but `Arc` puts it on the heap.
+            n += mem::size_of::<File>();
+        }
+        n
     }
 }
 
@@ -123,6 +134,7 @@ impl EventDatabase {
         Ok(Self {
             path,
             event_stores: RwLock::new(HashMap::new()),
+            event_store_files: RwLock::new(HashMap::new()),
             file_lock: Mutex::new(()),
         })
     }
@@ -333,6 +345,25 @@ impl EventDatabase {
         }
     }
 
+    fn get_event_store(&self, store_name: &str) -> Result<Arc<File>, io::Error> {
+        // safe unwrap, only error case is poisoning
+        let mut map = self.event_store_files.write().unwrap();
+        let entry = map.entry(store_name.to_string());
+
+        match entry {
+            Entry::Occupied(entry) => Ok(Arc::clone(entry.get())),
+            Entry::Vacant(entry) => {
+                let file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(self.path.join(store_name))?;
+                let file = Arc::new(file);
+                let entry = entry.insert(file);
+                Ok(Arc::clone(entry))
+            }
+        }
+    }
+
     /// Writes an event to a single store on disk.
     ///
     /// # Arguments
@@ -341,12 +372,16 @@ impl EventDatabase {
     /// * `event_json` - The event content, as a single-line JSON-encoded string.
     fn write_event_to_disk(&self, store_name: &str, event_json: &str) {
         let _lock = self.file_lock.lock().unwrap(); // safe unwrap, only error case is poisoning
-        if let Err(err) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(self.path.join(store_name))
-            .and_then(|mut file| writeln!(file, "{}", event_json))
-        {
+
+        let write_res = (|| {
+            let mut file = self.get_event_store(store_name)?;
+            file.write_all(event_json.as_bytes())?;
+            file.write_all(b"\n")?;
+            file.flush()?;
+            Ok::<(), std::io::Error>(())
+        })();
+
+        if let Err(err) = write_res {
             log::warn!("IO error writing event to store '{}': {}", store_name, err);
         }
     }
@@ -525,6 +560,22 @@ impl EventDatabase {
                 // Let's fix cur_ec up and hope this isn't a sign something big is broken.
                 cur_ec = execution_counter;
             }
+
+            // event timestamp is a `u64`, but BigQuery uses `i64` (signed!) everywhere. Let's clamp the value to make
+            // sure we stay within bounds.
+            if event.event.timestamp > i64::MAX as u64 {
+                glean
+                    .additional_metrics
+                    .event_timestamp_clamped
+                    .add_sync(glean, 1);
+                log::warn!(
+                    "Calculated event timestamp was too high. Got: {}, max: {}",
+                    event.event.timestamp,
+                    i64::MAX,
+                );
+                event.event.timestamp = event.event.timestamp.clamp(0, i64::MAX as u64);
+            }
+
             if highest_ts > event.event.timestamp {
                 // Even though we sorted everything, something in the
                 // execution_counter or glean.startup.date math went awry.
@@ -589,6 +640,10 @@ impl EventDatabase {
                 .write()
                 .unwrap() // safe unwrap, only error case is poisoning
                 .remove(&store_name.to_string());
+            self.event_store_files
+                .write()
+                .unwrap() // safe unwrap, only error case is poisoning
+                .remove(&store_name.to_string());
 
             let _lock = self.file_lock.lock().unwrap(); // safe unwrap, only error case is poisoning
             if let Err(err) = fs::remove_file(self.path.join(store_name)) {
@@ -608,6 +663,7 @@ impl EventDatabase {
     pub fn clear_all(&self) -> Result<()> {
         // safe unwrap, only error case is poisoning
         self.event_stores.write().unwrap().clear();
+        self.event_store_files.write().unwrap().clear();
 
         // safe unwrap, only error case is poisoning
         let _lock = self.file_lock.lock().unwrap();
@@ -992,9 +1048,10 @@ mod test {
         let timestamps = [20, 40, 200, 12];
         let ecs = [0, 1];
         let some_hour = 16;
-        let startup_date = FixedOffset::east(0)
-            .ymd(2022, 11, 24)
-            .and_hms(some_hour, 29, 0); // TimeUnit::Minute -- don't put seconds
+        let startup_date = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2022, 11, 24, some_hour, 29, 0) // TimeUnit::Minute -- don't put seconds
+            .unwrap();
         let glean_start_time = startup_date.with_hour(some_hour - 1);
         let restarted_ts = 2;
         let mut store = vec![
@@ -1117,9 +1174,10 @@ mod test {
         let timestamps = [20, 40, 12, 200];
         let ecs = [0, 1];
         let some_hour = 10;
-        let startup_date = FixedOffset::east(0)
-            .ymd(2022, 11, 25)
-            .and_hms(some_hour, 37, 0); // TimeUnit::Minute -- don't put seconds
+        let startup_date = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2022, 11, 25, some_hour, 37, 0) // TimeUnit::Minute -- don't put seconds
+            .unwrap();
         let glean_start_time = startup_date.with_hour(some_hour + 1);
         let restarted_ts = 2;
         let mut store = vec![
@@ -1314,5 +1372,51 @@ mod test {
             ErrorType::InvalidValue
         )
         .is_err());
+    }
+
+    #[test]
+    fn normalize_store_clamps_timestamp() {
+        let (glean, _dir) = new_glean(None);
+
+        let store_name = "store-name";
+        let event = RecordedEvent {
+            category: "category".into(),
+            name: "name".into(),
+            ..Default::default()
+        };
+
+        let timestamps = [
+            0,
+            (i64::MAX / 2) as u64,
+            i64::MAX as _,
+            (i64::MAX as u64) + 1,
+        ];
+        let mut store = timestamps
+            .into_iter()
+            .map(|timestamp| StoredEvent {
+                event: RecordedEvent {
+                    timestamp,
+                    ..event.clone()
+                },
+                execution_counter: None,
+            })
+            .collect();
+
+        let glean_start_time = glean.start_time();
+        glean
+            .event_storage()
+            .normalize_store(&glean, store_name, &mut store, glean_start_time);
+        assert_eq!(4, store.len());
+
+        assert_eq!(0, store[0].event.timestamp);
+        assert_eq!((i64::MAX / 2) as u64, store[1].event.timestamp);
+        assert_eq!((i64::MAX as u64), store[2].event.timestamp);
+        assert_eq!((i64::MAX as u64), store[3].event.timestamp);
+
+        let error_count = glean
+            .additional_metrics
+            .event_timestamp_clamped
+            .get_value(&glean, "health");
+        assert_eq!(Some(1), error_count);
     }
 }

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WindowDbg_h__
-#define WindowDbg_h__
+#ifndef WindowDbg_h_
+#define WindowDbg_h_
 
 /*
  * nsWindowDbg - Debug related utilities for nsWindow.
@@ -34,6 +34,8 @@ class MOZ_RAII AutoProfilerMessageMarker {
                                      UINT msg, WPARAM wParam, LPARAM lParam);
 
   ~AutoProfilerMessageMarker();
+
+  WPARAM WParam() const { return mWParam; }
 
  protected:
   Maybe<MarkerOptions> mOptions;
@@ -105,7 +107,7 @@ struct EnumValueAndName {
 // 0, and it must come last in the flagsAndNames array.
 // Returns whether any info was appended to str.
 bool AppendFlagsInfo(nsCString& str, uint64_t flags,
-                     const nsTArray<EnumValueAndName>& flagsAndNames,
+                     Span<const EnumValueAndName> flagsAndNames,
                      const char* name);
 
 nsAutoCString WmSizeParamInfo(uint64_t wParam, uint64_t lParam, bool isPreCall);
@@ -150,4 +152,4 @@ bool is_vk_down(int vk);
 #  define IS_VK_DOWN(a) (GetKeyState(a) < 0)
 #endif  // defined(DEBUG_VK)
 
-#endif /* WindowDbg_h__ */
+#endif /* WindowDbg_h_ */

@@ -1,0 +1,34 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  /* Arrowpanel */
+  --arrowpanel-background: Field;
+  --arrowpanel-border-color: ThreeDShadow;
+  --arrowpanel-border-radius: var(--border-radius-medium);
+  --arrowpanel-color: FieldText;
+  --arrowpanel-padding: var(--dimension-16);
+  --arrowpanel-shadow-margin: var(--dimension-4);
+  --arrowpanel-dimmed: color-mix(in srgb, currentColor 17%, transparent);
+  --arrowpanel-dimmed-further: color-mix(in srgb, currentColor 30%, transparent);
+
+  /* Arrowpanel Header */
+  --arrowpanel-header-info-icon-padding: var(--dimension-4);
+  --arrowpanel-header-info-icon-full-width: calc(var(--icon-size-small) + (2 * var(--arrowpanel-header-info-icon-padding)));
+
+  /* Arrowpanel Menuitem */
+  --arrowpanel-menuitem-border-radius: var(--border-radius-small);
+  --arrowpanel-menuitem-margin-block: 0px;
+  --arrowpanel-menuitem-margin-inline: var(--dimension-8);
+  --arrowpanel-menuitem-margin: var(--arrowpanel-menuitem-margin-block) var(--arrowpanel-menuitem-margin-inline);
+  --arrowpanel-menuitem-padding-block: var(--dimension-8);
+  --arrowpanel-menuitem-padding-inline: var(--dimension-8);
+  --arrowpanel-menuitem-padding: var(--arrowpanel-menuitem-padding-block) var(--arrowpanel-menuitem-padding-inline);
+
+  /* Compact mode */
+  &[uidensity="compact"] {
+    --arrowpanel-menuitem-margin-inline: var(--dimension-4);
+    --arrowpanel-menuitem-padding-block: var(--dimension-4);
+  }
+}

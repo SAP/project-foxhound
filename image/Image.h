@@ -7,11 +7,9 @@
 #define mozilla_image_Image_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SizeOfState.h"
-#include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/TimeStamp.h"
 
 #include "gfx2DGlue.h"

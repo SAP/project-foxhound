@@ -4,17 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Components.h"
+#include "nsHTTPSOnlyUtils.h"
+
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/Components.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/net/DNS.h"
 #include "nsContentUtils.h"
 #include "nsDNSPrefetch.h"
-#include "nsHTTPSOnlyUtils.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
@@ -104,7 +105,7 @@ void nsHTTPSOnlyUtils::PotentiallyFireHttpRequestToShortenTimout(
 
   // if it's not a GET method, then there is nothing to do here either.
   nsAutoCString method;
-  mozilla::Unused << httpChannel->GetRequestMethod(method);
+  (void)httpChannel->GetRequestMethod(method);
   if (!method.EqualsLiteral("GET")) {
     return;
   }
@@ -774,7 +775,7 @@ bool nsHTTPSOnlyUtils::HttpsUpgradeUnrelatedErrorCode(nsresult aError) {
          NS_ERROR_UNKNOWN_HOST == aError || NS_ERROR_PHISHING_URI == aError ||
          NS_ERROR_MALWARE_URI == aError || NS_ERROR_UNWANTED_URI == aError ||
          NS_ERROR_HARMFUL_URI == aError || NS_ERROR_CONTENT_CRASHED == aError ||
-         NS_ERROR_FRAME_CRASHED == aError || NS_ERROR_SUPERFLUOS_AUTH == aError;
+         NS_ERROR_FRAME_CRASHED == aError;
 }
 
 /* ------ Logging ------ */
@@ -1050,7 +1051,7 @@ TestHTTPAnswerRunnable::OnStartRequest(nsIRequest* aRequest) {
     nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal =
         do_QueryInterface(httpsOnlyChannel);
     bool isAuthChannel = false;
-    mozilla::Unused << httpChannelInternal->GetIsAuthChannel(&isAuthChannel);
+    (void)httpChannelInternal->GetIsAuthChannel(&isAuthChannel);
     // some server configurations need a long time to respond to an https
     // connection, but also redirect any http connection to the https version of
     // it. If the top-level load has not started yet, but the http background
@@ -1118,7 +1119,7 @@ TestHTTPAnswerRunnable::Run() {
         do_QueryInterface(origChannel);
     uint32_t caps;
     if (NS_SUCCEEDED(internalChannel->GetCaps(&caps))) {
-      mozilla::Unused << resolver->FetchHTTPSSVC(
+      (void)resolver->FetchHTTPSSVC(
           caps & NS_HTTP_REFRESH_DNS, false,
           [self = RefPtr{this}](nsIDNSHTTPSSVCRecord* aRecord) {
             self->mHasHTTPSRR = (aRecord != nullptr);

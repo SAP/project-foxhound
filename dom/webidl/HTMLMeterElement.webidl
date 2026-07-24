@@ -28,5 +28,6 @@ interface HTMLMeterElement : HTMLElement {
            attribute double high;
            [CEReactions, SetterThrows]
            attribute double optimum;
+           [BinaryName=labelsForBindings]
            readonly attribute NodeList labels;
 };

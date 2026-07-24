@@ -7,12 +7,11 @@
 #ifndef mozilla_dom_XRsystem_h_
 #define mozilla_dom_XRsystem_h_
 
+#include "VRManagerChild.h"
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "nsContentPermissionHelper.h"
-#include "VRManagerChild.h"
-
-#include "gfxVR.h"
 
 namespace mozilla::dom {
 

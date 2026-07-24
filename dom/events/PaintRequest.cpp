@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/PaintRequest.h"
 
+#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/PaintRequestBinding.h"
 #include "mozilla/dom/PaintRequestListBinding.h"
-#include "mozilla/dom/DOMRect.h"
 
 namespace mozilla::dom {
 

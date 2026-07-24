@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PipelineError.h"
+
 #include "mozilla/RefPtr.h"
 #include "nsIGlobalObject.h"
 

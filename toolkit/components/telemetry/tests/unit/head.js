@@ -141,8 +141,9 @@ const PingServer = {
 
 /**
  * Decode the payload of an HTTP request into a ping.
- * @param {Object} request The data representing an HTTP request (nsIHttpRequest).
- * @return {Object} The decoded ping payload.
+ *
+ * @param {object} request The data representing an HTTP request (nsIHttpRequest).
+ * @return {object} The decoded ping payload.
  */
 function decodeRequestPayload(request) {
   let s = request.bodyInputStream;
@@ -593,6 +594,17 @@ if (runningInParent) {
       true
     );
   }
+
+  // Disable TOU pre-onboarding in xpcshell so Telemetry isn't gated on Browser
+  // UI.
+  const TOS_ENABLED_PREF = "browser.preonboarding.enabled";
+  const previous = Services.prefs.getBoolPref(TOS_ENABLED_PREF, false);
+
+  Services.prefs.setBoolPref(TOS_ENABLED_PREF, false);
+
+  registerCleanupFunction(() => {
+    Services.prefs.setBoolPref(TOS_ENABLED_PREF, previous);
+  });
 
   fakePingSendTimer(
     callback => {

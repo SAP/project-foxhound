@@ -8,67 +8,64 @@
 #include "mozilla/layers/WebRenderMessageUtils.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 
-namespace mozilla {
-namespace ipc {
+using namespace mozilla::layers;
 
-void IPDLParamTraits<mozilla::layers::DisplayListData>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor, paramType&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mIdNamespace);
-  WriteIPDLParam(aWriter, aActor, aParam.mRect);
-  WriteIPDLParam(aWriter, aActor, aParam.mCommands);
-  WriteIPDLParam(aWriter, aActor, std::move(aParam.mDLItems));
-  WriteIPDLParam(aWriter, aActor, std::move(aParam.mDLCache));
-  WriteIPDLParam(aWriter, aActor, std::move(aParam.mDLSpatialTree));
-  WriteIPDLParam(aWriter, aActor, aParam.mDLDesc);
-  WriteIPDLParam(aWriter, aActor, aParam.mResourceUpdates);
-  WriteIPDLParam(aWriter, aActor, aParam.mSmallShmems);
-  WriteIPDLParam(aWriter, aActor, std::move(aParam.mLargeShmems));
-  WriteIPDLParam(aWriter, aActor, aParam.mScrollData);
+namespace IPC {
+
+void ParamTraits<DisplayListData>::Write(IPC::MessageWriter* aWriter,
+                                         paramType&& aParam) {
+  WriteParam(aWriter, aParam.mIdNamespace);
+  WriteParam(aWriter, aParam.mRect);
+  WriteParam(aWriter, aParam.mCommands);
+  WriteParam(aWriter, std::move(aParam.mDLItems));
+  WriteParam(aWriter, std::move(aParam.mDLCache));
+  WriteParam(aWriter, std::move(aParam.mDLSpatialTree));
+  WriteParam(aWriter, aParam.mDLDesc);
+  WriteParam(aWriter, aParam.mResourceUpdates);
+  WriteParam(aWriter, aParam.mSmallShmems);
+  WriteParam(aWriter, std::move(aParam.mLargeShmems));
+  WriteParam(aWriter, aParam.mScrollData);
 }
 
-bool IPDLParamTraits<mozilla::layers::DisplayListData>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor, paramType* aResult) {
-  if (ReadIPDLParam(aReader, aActor, &aResult->mIdNamespace) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mRect) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mCommands) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mDLItems) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mDLCache) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mDLSpatialTree) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mDLDesc) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mResourceUpdates) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mSmallShmems) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mLargeShmems) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mScrollData)) {
-    return true;
-  }
-  return false;
+bool ParamTraits<DisplayListData>::Read(IPC::MessageReader* aReader,
+                                        paramType* aResult) {
+  return ReadParam(aReader, &aResult->mIdNamespace) &&
+         ReadParam(aReader, &aResult->mRect) &&
+         ReadParam(aReader, &aResult->mCommands) &&
+         ReadParam(aReader, &aResult->mDLItems) &&
+         ReadParam(aReader, &aResult->mDLCache) &&
+         ReadParam(aReader, &aResult->mDLSpatialTree) &&
+         ReadParam(aReader, &aResult->mDLDesc) &&
+         ReadParam(aReader, &aResult->mResourceUpdates) &&
+         ReadParam(aReader, &aResult->mSmallShmems) &&
+         ReadParam(aReader, &aResult->mLargeShmems) &&
+         ReadParam(aReader, &aResult->mScrollData);
 }
 
-void WriteScrollUpdates(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                        layers::ScrollUpdatesMap& aParam) {
+static void WriteScrollUpdates(IPC::MessageWriter* aWriter,
+                               ScrollUpdatesMap& aParam) {
   // ICK: we need to manually serialize this map because
   // nsTHashMap doesn't support it (and other maps cause other issues)
-  WriteIPDLParam(aWriter, aActor, aParam.Count());
+  WriteParam(aWriter, aParam.Count());
   for (auto it = aParam.ConstIter(); !it.Done(); it.Next()) {
-    WriteIPDLParam(aWriter, aActor, it.Key());
-    WriteIPDLParam(aWriter, aActor, it.Data());
+    WriteParam(aWriter, it.Key());
+    WriteParam(aWriter, it.Data());
   }
 }
 
-bool ReadScrollUpdates(IPC::MessageReader* aReader, IProtocol* aActor,
-                       layers::ScrollUpdatesMap* aResult) {
+static bool ReadScrollUpdates(IPC::MessageReader* aReader,
+                              ScrollUpdatesMap* aResult) {
   // Manually deserialize mScrollUpdates as a stream of K,V pairs
   uint32_t count;
-  if (!ReadIPDLParam(aReader, aActor, &count)) {
+  if (!ReadParam(aReader, &count)) {
     return false;
   }
 
-  layers::ScrollUpdatesMap map(count);
+  ScrollUpdatesMap map(count);
   for (size_t i = 0; i < count; ++i) {
-    layers::ScrollableLayerGuid::ViewID key;
+    ScrollableLayerGuid::ViewID key;
     nsTArray<mozilla::ScrollPositionUpdate> data;
-    if (!ReadIPDLParam(aReader, aActor, &key) ||
-        !ReadIPDLParam(aReader, aActor, &data)) {
+    if (!ReadParam(aReader, &key) || !ReadParam(aReader, &data)) {
       return false;
     }
     map.InsertOrUpdate(key, std::move(data));
@@ -79,30 +76,26 @@ bool ReadScrollUpdates(IPC::MessageReader* aReader, IProtocol* aActor,
   return true;
 }
 
-void IPDLParamTraits<mozilla::layers::TransactionData>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor, paramType&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mIdNamespace);
-  WriteIPDLParam(aWriter, aActor, aParam.mCommands);
-  WriteIPDLParam(aWriter, aActor, aParam.mResourceUpdates);
-  WriteIPDLParam(aWriter, aActor, aParam.mSmallShmems);
-  WriteIPDLParam(aWriter, aActor, std::move(aParam.mLargeShmems));
-  WriteScrollUpdates(aWriter, aActor, aParam.mScrollUpdates);
-  WriteIPDLParam(aWriter, aActor, aParam.mPaintSequenceNumber);
+void ParamTraits<TransactionData>::Write(IPC::MessageWriter* aWriter,
+                                         paramType&& aParam) {
+  WriteParam(aWriter, aParam.mIdNamespace);
+  WriteParam(aWriter, aParam.mCommands);
+  WriteParam(aWriter, aParam.mResourceUpdates);
+  WriteParam(aWriter, aParam.mSmallShmems);
+  WriteParam(aWriter, std::move(aParam.mLargeShmems));
+  WriteScrollUpdates(aWriter, aParam.mScrollUpdates);
+  WriteParam(aWriter, aParam.mPaintSequenceNumber);
 }
 
-bool IPDLParamTraits<mozilla::layers::TransactionData>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor, paramType* aResult) {
-  if (ReadIPDLParam(aReader, aActor, &aResult->mIdNamespace) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mCommands) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mResourceUpdates) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mSmallShmems) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mLargeShmems) &&
-      ReadScrollUpdates(aReader, aActor, &aResult->mScrollUpdates) &&
-      ReadIPDLParam(aReader, aActor, &aResult->mPaintSequenceNumber)) {
-    return true;
-  }
-  return false;
+bool ParamTraits<TransactionData>::Read(IPC::MessageReader* aReader,
+                                        paramType* aResult) {
+  return ReadParam(aReader, &aResult->mIdNamespace) &&
+         ReadParam(aReader, &aResult->mCommands) &&
+         ReadParam(aReader, &aResult->mResourceUpdates) &&
+         ReadParam(aReader, &aResult->mSmallShmems) &&
+         ReadParam(aReader, &aResult->mLargeShmems) &&
+         ReadScrollUpdates(aReader, &aResult->mScrollUpdates) &&
+         ReadParam(aReader, &aResult->mPaintSequenceNumber);
 }
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC

@@ -7,18 +7,18 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/HTMLEmbedElement.h"
-#include "mozilla/dom/HTMLEmbedElementBinding.h"
-#include "mozilla/dom/ElementInlines.h"
 
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
-#include "nsObjectLoadingContent.h"
-#include "nsThreadUtils.h"
-#include "nsIWidget.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/HTMLEmbedElementBinding.h"
 #include "nsContentUtils.h"
 #include "nsFrameLoader.h"
+#include "nsIWidget.h"
+#include "nsObjectLoadingContent.h"
 #include "nsTaintingUtils.h"
+#include "nsThreadUtils.h"
 #ifdef XP_MACOSX
 #  include "mozilla/EventDispatcher.h"
 #  include "mozilla/dom/Event.h"

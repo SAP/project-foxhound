@@ -34,6 +34,9 @@ SimplePrograms(
     ]
 )
 
+if CONFIG["OS_ARCH"] == "WINNT":
+    SimplePrograms(["test_file_change_mtime", "test_file_hold_open"])
+
 LOCAL_INCLUDES += [
     "/toolkit/mozapps/update",
     "/toolkit/mozapps/update/common",
@@ -103,6 +106,8 @@ FINAL_TARGET_FILES += [
     "data/partial_removed-files",
     "data/partial_removed-files_mac",
     "data/partial_update_manifest",
+    "data/partial_zucchini.mar",
+    "data/partial_zucchini_mac.mar",
     "data/replace_log_success",
     "data/simple.mar",
     "data/syncManagerTestChild.js",

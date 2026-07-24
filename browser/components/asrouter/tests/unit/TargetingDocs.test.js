@@ -74,6 +74,7 @@ describe("ASRTargeting docs", () => {
       "messageImpressions",
       "screenImpressions",
       "browserIsSelected",
+      "isAIWindow",
     ];
     for (const targetingParam of DOCS_TARGETING_HEADINGS.filter(
       doc => !allow.includes(doc)

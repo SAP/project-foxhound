@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SystemGlobal_h__
-#define SystemGlobal_h__
+#ifndef SystemGlobal_h_
+#define SystemGlobal_h_
 
 #include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/BasePrincipal.h"
@@ -107,4 +107,4 @@ class SystemGlobal final : public nsIGlobalObject,
   RefPtr<JS::loader::ModuleLoaderBase> mModuleLoader;
 };
 
-#endif  // SystemGlobal_h__
+#endif  // SystemGlobal_h_

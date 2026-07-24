@@ -11,7 +11,6 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "nsISupportsImpl.h"
 
 using namespace mozilla;
@@ -89,7 +88,7 @@ struct DtorTracker {
 template <typename FunctionType>
 void RunOnTaskQueue(TaskQueue* aQueue, FunctionType aFun) {
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction("RunOnTaskQueue", aFun);
-  Unused << aQueue->Dispatch(r.forget());
+  (void)aQueue->Dispatch(r.forget());
 }
 
 // std::function can't come soon enough. :-(
@@ -181,11 +180,11 @@ TEST(MozPromise, AsyncResolve)
         new DelayedResolveOrReject(queue, p, RRValue::MakeReject(32.0), 7);
 
     nsCOMPtr<nsIRunnable> ref = a.get();
-    Unused << queue->Dispatch(ref.forget());
+    (void)queue->Dispatch(ref.forget());
     ref = b.get();
-    Unused << queue->Dispatch(ref.forget());
+    (void)queue->Dispatch(ref.forget());
     ref = c.get();
-    Unused << queue->Dispatch(ref.forget());
+    (void)queue->Dispatch(ref.forget());
 
     p->Then(
         queue, __func__,
@@ -227,7 +226,7 @@ TEST(MozPromise, CompletionPromises)
                   new TestPromise::Private(__func__);
               nsCOMPtr<nsIRunnable> resolver = new DelayedResolveOrReject(
                   queue, p, RRValue::MakeResolve(aVal - 8), 10);
-              Unused << queue->Dispatch(resolver.forget());
+              (void)queue->Dispatch(resolver.forget());
               return RefPtr<TestPromise>(p);
             },
             DO_FAIL)

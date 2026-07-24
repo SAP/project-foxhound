@@ -4,7 +4,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://www.w3.org/TR/SVG2/
+ * https://www.w3.org/TR/SVG11/
+ * SVG 2 proposes that it be removed but see
+ * https://github.com/w3c/svgwg/issues/706
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -26,8 +28,8 @@ interface SVGMatrix {
   [SetterThrows]
   attribute float f;
 
-  [NewObject]
-  SVGMatrix multiply(SVGMatrix secondMatrix);
+  [NewObject, Throws]
+  SVGMatrix multiply(optional DOMMatrix2DInit secondMatrix = {});
   [NewObject, Throws]
   SVGMatrix inverse();
   [NewObject]

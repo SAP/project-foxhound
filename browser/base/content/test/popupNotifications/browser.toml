@@ -3,103 +3,125 @@ support-files = ["head.js"]
 
 ["browser_displayURI.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_2.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && debug", # bug 1251135
-  "os == 'linux' && asan", # bug 1251135
-  "os == 'linux' && bits == 64 && os_version == '18.04'", # bug 1251135
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # bug 1251135
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # bug 1251135
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # bug 1251135
 ]
 
 ["browser_popupNotification_3.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+  "verify-standalone",
 ]
 
 ["browser_popupNotification_4.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_5.js"]
-skip-if = ["true"] # bug 1332646
+skip-if = [
+  "true", # bug 1332646
+]
 
 ["browser_popupNotification_accesskey.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
-  "os == 'mac'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["browser_popupNotification_checkbox.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
   "a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Try, passes on Autoland)
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_hide_after_identity_panel.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_hide_after_protections_panel.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_keyboard.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_learnmore.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_no_anchors.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_queue.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_security_delay.js"]
+skip-if = [
+   "os == 'win' && arch == 'x86'", # Bug 1882452
+]
 
 ["browser_popupNotification_selection_required.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["browser_popupNotification_swapBrowser.js"]
 
 ["browser_reshow_in_background.js"]
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'linux' && asan",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]

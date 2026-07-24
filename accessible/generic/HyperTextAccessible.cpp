@@ -33,7 +33,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/HTMLEditor.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/SelectionMovementUtils.h"
@@ -77,20 +76,13 @@ uint64_t HyperTextAccessible::NativeState() const {
   }
 
   nsIFrame* frame = GetFrame();
-  if ((states & states::EDITABLE) || (frame && frame->IsSelectable(nullptr))) {
+  if ((states & states::EDITABLE) || (frame && frame->IsSelectable())) {
     // If the accessible is editable the layout selectable state only disables
     // mouse selection, but keyboard (shift+arrow) selection is still possible.
     states |= states::SELECTABLE_TEXT;
   }
 
   return states;
-}
-
-bool HyperTextAccessible::IsEditable() const {
-  if (!mContent) {
-    return false;
-  }
-  return mContent->AsElement()->State().HasState(dom::ElementState::READWRITE);
 }
 
 uint32_t HyperTextAccessible::DOMPointToOffset(nsINode* aNode,
@@ -317,7 +309,7 @@ void HyperTextAccessible::SetMathMLXMLRoles(AccAttributes* aAttributes) {
           if (mathMLFrame) {
             nsEmbellishData embellishData;
             mathMLFrame->GetEmbellishData(embellishData);
-            if (NS_MATHML_EMBELLISH_IS_FENCE(embellishData.flags)) {
+            if (embellishData.flags.contains(MathMLEmbellishFlag::Fence)) {
               if (!LocalPrevSibling()) {
                 aAttributes->SetAttribute(nsGkAtoms::xmlroles,
                                           nsGkAtoms::open_fence);
@@ -326,7 +318,7 @@ void HyperTextAccessible::SetMathMLXMLRoles(AccAttributes* aAttributes) {
                                           nsGkAtoms::close_fence);
               }
             }
-            if (NS_MATHML_EMBELLISH_IS_SEPARATOR(embellishData.flags)) {
+            if (embellishData.flags.contains(MathMLEmbellishFlag::Separator)) {
               aAttributes->SetAttribute(nsGkAtoms::xmlroles,
                                         nsGkAtoms::separator);
             }
@@ -861,18 +853,7 @@ ENameValueFlag HyperTextAccessible::NativeName(nsString& aName) const {
     if (!aName.IsEmpty()) return eNameOK;
   }
 
-  ENameValueFlag nameFlag = AccessibleWrap::NativeName(aName);
-  if (!aName.IsEmpty()) return nameFlag;
-
-  // Get name from title attribute for HTML abbr and acronym elements making it
-  // a valid name from markup. Otherwise their name isn't picked up by recursive
-  // name computation algorithm. See NS_OK_NAME_FROM_TOOLTIP.
-  if (IsAbbreviation() && mContent->AsElement()->GetAttr(
-                              kNameSpaceID_None, nsGkAtoms::title, aName)) {
-    aName.CompressWhitespace();
-  }
-
-  return eNameOK;
+  return AccessibleWrap::NativeName(aName);
 }
 
 void HyperTextAccessible::Shutdown() {
@@ -896,6 +877,16 @@ bool HyperTextAccessible::InsertChildAt(uint32_t aIndex,
   }
 
   return AccessibleWrap::InsertChildAt(aIndex, aChild);
+}
+
+void HyperTextAccessible::RelocateChild(uint32_t aNewIndex,
+                                        LocalAccessible* aChild) {
+  const int32_t smallestChildIndex =
+      std::min(aChild->IndexInParent(), static_cast<int32_t>(aNewIndex));
+  if (smallestChildIndex < static_cast<int32_t>(mOffsets.Length())) {
+    mOffsets.RemoveLastElements(mOffsets.Length() - smallestChildIndex);
+  }
+  AccessibleWrap::RelocateChild(aNewIndex, aChild);
 }
 
 Relation HyperTextAccessible::RelationByType(RelationType aType) const {

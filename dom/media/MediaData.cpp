@@ -6,21 +6,23 @@
 
 #include "MediaData.h"
 
+#include <stdint.h>
+
 #include <functional>
 
 #include "ImageContainer.h"
 #include "MediaInfo.h"
 #include "MediaResult.h"
 #include "PerformanceRecorder.h"
+#include "PlatformDecoderModule.h"
 #include "VideoUtils.h"
 #include "YCbCrUtils.h"
 #include "libyuv.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/KnowsCompositor.h"
 #include "mozilla/layers/SharedRGBImage.h"
-
-#include <stdint.h>
 
 #ifdef XP_WIN
 #  include "mozilla/gfx/DeviceManagerDx.h"
@@ -31,7 +33,11 @@
 #  include "mozilla/gfx/gfxVars.h"
 #endif
 
+#define LOG(level, msg, ...) \
+  MOZ_LOG_FMT(sPDMLog, level, "%s: " msg, __func__, ##__VA_ARGS__)
 namespace mozilla {
+
+extern LazyLogModule sPDMLog;
 
 using namespace mozilla::gfx;
 using layers::BufferRecycleBin;
@@ -190,6 +196,19 @@ static bool ValidatePlane(const VideoData::YCbCrBuffer::Plane& aPlane) {
 
 static MediaResult ValidateBufferAndPicture(
     const VideoData::YCbCrBuffer& aBuffer, const IntRect& aPicture) {
+  // mChromaSubsampling describes the relationship between plane sizes.
+  if (aBuffer.mChromaSubsampling == ChromaSubsampling::FULL) {
+    MOZ_ASSERT(aBuffer.mPlanes[1].mWidth == aBuffer.mPlanes[0].mWidth);
+  } else {
+    MOZ_ASSERT(aBuffer.mPlanes[1].mWidth ==
+               (aBuffer.mPlanes[0].mWidth + 1) / 2);
+  }
+  if (aBuffer.mChromaSubsampling == ChromaSubsampling::HALF_WIDTH_AND_HEIGHT) {
+    MOZ_ASSERT(aBuffer.mPlanes[1].mHeight ==
+               (aBuffer.mPlanes[0].mHeight + 1) / 2);
+  } else {
+    MOZ_ASSERT(aBuffer.mPlanes[1].mHeight == aBuffer.mPlanes[0].mHeight);
+  }
   // The following situation should never happen unless there is a bug
   // in the decoder
   if (aBuffer.mPlanes[1].mWidth != aBuffer.mPlanes[2].mWidth ||
@@ -197,7 +216,6 @@ static MediaResult ValidateBufferAndPicture(
     return MediaResult(NS_ERROR_INVALID_ARG,
                        "Chroma planes with different sizes");
   }
-
   // The following situations could be triggered by invalid input
   if (aPicture.width <= 0 || aPicture.height <= 0) {
     return MediaResult(NS_ERROR_INVALID_ARG, "Empty picture rect");
@@ -207,7 +225,12 @@ static MediaResult ValidateBufferAndPicture(
       !ValidatePlane(aBuffer.mPlanes[2])) {
     return MediaResult(NS_ERROR_INVALID_ARG, "Invalid plane size");
   }
-
+  // ConstructPlanarYCbCrData() and ConvertI420AlphaToARGB() assume Chroma
+  // planes have equal strides.
+  if (aBuffer.mPlanes[1].mStride != aBuffer.mPlanes[2].mStride) {
+    return MediaResult(NS_ERROR_INVALID_ARG,
+                       "Chroma planes with different strides");
+  }
   // Ensure the picture size specified in the headers can be extracted out of
   // the frame we've been supplied without indexing out of bounds.
   CheckedUint32 xLimit = aPicture.x + CheckedUint32(aPicture.width);
@@ -295,6 +318,7 @@ PlanarYCbCrData ConstructPlanarYCbCrData(const VideoInfo& aInfo,
   data.mYSkip = AssertedCast<int32_t>(Y.mSkip);
   data.mCbChannel = Cb.mData;
   data.mCrChannel = Cr.mData;
+  MOZ_ASSERT(Cb.mStride == Cr.mStride);
   data.mCbCrStride = AssertedCast<int32_t>(Cb.mStride);
   data.mCbSkip = AssertedCast<int32_t>(Cb.mSkip);
   data.mCrSkip = AssertedCast<int32_t>(Cr.mSkip);
@@ -411,6 +435,22 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
   if (MediaResult r = ValidateBufferAndPicture(aBuffer, aPicture);
       NS_FAILED(r)) {
     NS_ERROR(r.Message().get());
+    return nullptr;
+  }
+  if (!ValidatePlane(aAlphaPlane)) {
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Warning, "Invalid alpha plane");
+    return nullptr;
+  }
+  // The alpha plane is expected to be the same size as the luma plane.
+  // See Method 1 at https://wiki.webmproject.org/alpha-channel
+  if (aBuffer.mPlanes[0].mWidth != aAlphaPlane.mWidth ||
+      aBuffer.mPlanes[0].mHeight != aAlphaPlane.mHeight) {
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Warning, "luma and alpha sizes differ");
+    return nullptr;
+  }
+  // ConvertI420AlphaToARGB() expects equal strides for luma and alpha
+  if (aBuffer.mPlanes[0].mStride != aAlphaPlane.mStride) {
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Warning, "luma and alpha strides differ");
     return nullptr;
   }
 
@@ -582,8 +622,16 @@ void VideoData::QuantizableBuffer::AllocateRecyclableData(size_t aLength) {
   MOZ_ASSERT(!m8bpcPlanes, "Should not allocate more than once.");
   MOZ_ASSERT(aLength > 0, "Zero-length allocation!");
 
-  m8bpcPlanes = mRecycleBin->GetBuffer(aLength);
-  mAllocatedLength = aLength;
+  CheckedInt<uint32_t> checkedLength(aLength);
+  if (!checkedLength.isValid()) {
+    NS_WARNING("Fail to allocate 8-bit conversion buffer: size too large!");
+    return;
+  }
+
+  m8bpcPlanes = mRecycleBin->GetBuffer(checkedLength.value());
+  if (m8bpcPlanes) {
+    mAllocatedLength = aLength;
+  }
 }
 
 VideoData::QuantizableBuffer::~QuantizableBuffer() {
@@ -726,3 +774,4 @@ CryptoScheme StringToCryptoScheme(const nsAString& aString) {
 }
 
 }  // namespace mozilla
+#undef LOG

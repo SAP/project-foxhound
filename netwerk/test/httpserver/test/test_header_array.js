@@ -18,7 +18,7 @@ function run_test() {
   runHttpTests(tests, testComplete(srv));
 }
 
-/** **********
+/************
  * HANDLERS *
  ************/
 
@@ -40,7 +40,7 @@ function pathHandler(request, response) {
   response.setHeader("X-Single-Header-Merge", "Single 2", true);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

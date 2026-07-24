@@ -10,16 +10,20 @@
 
 #include "modules/video_capture/video_capture_factory.h"
 
+#include "api/scoped_refptr.h"
+#include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_impl.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 
-rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
+scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
     [[maybe_unused]] const char* deviceUniqueIdUTF8) {
-  return videocapturemodule::VideoCaptureImpl::Create(deviceUniqueIdUTF8);
+  return videocapturemodule::VideoCaptureImpl::Create(
+      Clock::GetRealTimeClockRaw(), deviceUniqueIdUTF8);
 }
 
-rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
+scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
     [[maybe_unused]] VideoCaptureOptions* options,
     [[maybe_unused]] const char* deviceUniqueIdUTF8) {
 // This is only implemented on pure Linux and WEBRTC_LINUX is defined for
@@ -27,8 +31,8 @@ rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
 #if (!defined(WEBRTC_LINUX) && !defined(WEBRTC_BSD)) || defined(WEBRTC_ANDROID)
   return nullptr;
 #else
-  return videocapturemodule::VideoCaptureImpl::Create(options,
-                                                      deviceUniqueIdUTF8);
+  return videocapturemodule::VideoCaptureImpl::Create(
+      Clock::GetRealTimeClockRaw(), options, deviceUniqueIdUTF8);
 #endif
 }
 

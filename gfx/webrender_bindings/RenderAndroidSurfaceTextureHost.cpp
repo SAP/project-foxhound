@@ -153,6 +153,14 @@ void RenderAndroidSurfaceTextureHost::PrepareForUse() {
 void RenderAndroidSurfaceTextureHost::NotifyForUse() {
   MOZ_ASSERT(RenderThread::IsInRenderThread());
 
+  if (mPrepareStatus == STATUS_NONE) {
+    // This happens either for RemoteTextureHost or when we lose a race to call
+    // PrepareForUse with a GPUVideoTextureHost when the content process
+    // attempts to use said texture host before the decoding process has setup
+    // the underlying SurfaceTextureHost. See bug 1986472.
+    PrepareForUse();
+  }
+
   if (mPrepareStatus == STATUS_MIGHT_BE_USED_BY_WR) {
     // This happens when SurfaceTexture of video is rendered on WebRender.
     // There is a case that SurfaceTexture is not rendered on WebRender, instead
@@ -198,12 +206,7 @@ void RenderAndroidSurfaceTextureHost::NotifyNotUsed() {
 void RenderAndroidSurfaceTextureHost::UpdateTexImageIfNecessary() {
   if (mIsRemoteTexture) {
     EnsureAttachedToGLContext();
-    if (mPrepareStatus == STATUS_NONE) {
-      PrepareForUse();
-    }
-    if (mPrepareStatus == STATUS_MIGHT_BE_USED_BY_WR) {
-      NotifyForUse();
-    }
+    NotifyForUse();
   }
 
   if (mContinuousUpdate) {

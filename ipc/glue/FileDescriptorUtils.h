@@ -7,7 +7,6 @@
 #ifndef mozilla_ipc_FileDescriptorUtils_h
 #define mozilla_ipc_FileDescriptorUtils_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "nsThreadUtils.h"
 #include <stdio.h>

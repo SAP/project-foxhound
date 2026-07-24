@@ -26,7 +26,6 @@ import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationPageSettings
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.BottomSheetHandle
-import org.mozilla.fenix.theme.FirefoxTheme
 
 private const val BOTTOM_SHEET_HANDLE_WIDTH_PERCENT = 0.1f
 
@@ -36,8 +35,7 @@ internal fun TranslationDialogBottomSheet(
     content: @Composable () -> Unit,
 ) {
     Surface(
-        color = FirefoxTheme.colors.layer1,
-        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         modifier = Modifier.nestedScroll(rememberNestedScrollInteropConnection())
             .verticalScroll(rememberScrollState()),
     ) {

@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.mygeha.com - location section is laid out incorrectly.
+ * Bug #1981995 - https://bugzilla.mozilla.org/show_bug.cgi?id=1981995
+ * WebCompat issue #167933 - https://github.com/webcompat/web-bugs/issues/167933
+ *
+ * The site seems to be using display:ruby-text in a strange way to lay their
+ * location section in a specific way. Using display:flex works just as well.
+ */
+.allign_location {
+  display: flex;
+}

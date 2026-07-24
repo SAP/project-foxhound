@@ -58,6 +58,8 @@ prefs=["privacy.restrict3rdpartystorage.heuristic.window_open=false"]
 
 ["test_anchor_scroll_after_document_open.html"]
 
+["test_animations_playback_rate_multiplier.html"]
+
 ["test_bfcache_plus_hash.html"]
 
 ["test_bug385434.html"]
@@ -66,14 +68,16 @@ prefs=["privacy.restrict3rdpartystorage.heuristic.window_open=false"]
 
 ["test_bug402210.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug404548.html"]
 
 ["test_bug413310.html"]
-skip-if = ["true"] # Disabled for too many intermittent failures (bug 719186)
+skip-if = [
+  "true", # Disabled for too many intermittent failures (bug 719186)
+]
 
 ["test_bug475636.html"]
 
@@ -83,8 +87,8 @@ skip-if = ["true"] # Disabled for too many intermittent failures (bug 719186)
 
 ["test_bug529119-2.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug530396.html"]
@@ -93,12 +97,14 @@ support-files = [
   "bug530396-subframe.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug540462.html"]
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+  "os == 'android' && debug",
+]
 
 ["test_bug551225.html"]
 
@@ -112,8 +118,8 @@ skip-if = ["os == 'android' && debug"]
 
 ["test_bug634834.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug637644.html"]
@@ -170,8 +176,8 @@ support-files = [
 ["test_bug1645781.html"]
 support-files = ["form_submit.sjs"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1729662.html"]
@@ -186,7 +192,9 @@ support-files = [
 
 ["test_bug1741132.html"]
 support-files = ["file_bug1741132.html"]
-skip-if = ["os == 'android' && !sessionHistoryInParent"]
+skip-if = [
+  "os == 'android' && !sessionHistoryInParent",
+]
 
 ["test_bug1742865.html"]
 support-files = [
@@ -194,8 +202,8 @@ support-files = [
   "file_bug1742865_outer.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1743353.html"]
@@ -204,8 +212,9 @@ support-files = ["file_bug1743353.html"]
 ["test_bug1747033.html"]
 support-files = ["file_bug1747033.sjs"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "verify-standalone",
 ]
 
 ["test_bug1773192.html"]
@@ -234,8 +243,8 @@ support-files = [
   "file_content_javascript_loads_frame.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_double_submit.html"]
@@ -244,14 +253,14 @@ support-files = [
   "double_submit.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_forceinheritprincipal_overrule_owner.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_form_restoration.html"]
@@ -263,15 +272,17 @@ support-files = [
 ["test_framedhistoryframes.html"]
 support-files = ["file_framedhistoryframes.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_iframe_srcdoc_to_remote.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
+
+["test_initial_blank_doc_principal.html"]
 
 ["test_javascript_sandboxed_popup.html"]
 
@@ -280,12 +291,14 @@ support-files = ["file_load_during_reload.html"]
 
 ["test_navigate_after_pagehide.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_popup_unknown_protocol.html"]
-skip-if = ["os == 'android'"] # Android handles external protocols and error pages differently, so this test doesn't make sense to run on that platform.
+skip-if = [
+  "os == 'android'", # Android handles external protocols and error pages differently, so this test doesn't make sense to run on that platform.
+]
 
 ["test_pushState_after_document_open.html"]
 
@@ -295,19 +308,21 @@ support-files = [
   "form_submit_redirect.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
+
+["test_remove_iframe_during_append.html"]
 
 ["test_triggeringprincipal_location_seturi.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_windowedhistoryframes.html"]
 skip-if = [
-  "!debug && os == 'android'", # Bug 1573892
-  "http3",
   "http2",
+  "http3",
+  "os == 'android' && opt", # Bug 1573892
 ]

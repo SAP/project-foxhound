@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_RemoteWorkerServiceChild_h
 #define mozilla_dom_RemoteWorkerServiceChild_h
 
-#include "mozilla/dom/PRemoteWorkerServiceChild.h"
 #include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerChild.h"
+#include "mozilla/dom/PRemoteWorkerServiceChild.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {

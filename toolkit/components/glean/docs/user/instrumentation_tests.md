@@ -68,7 +68,8 @@ version of those metrics and pings that was current at the time the artifacts we
 
 This isn't a problem unless:
 * You are changing a metric or ping that is used in instrumentation in the compiled code, or
-* You are using `testBeforeNextSubmit` in JavaScript for a ping submitted in the compiled code.
+* You are using `testSubmission` or
+  `testBeforeNextSubmit` in JavaScript for a ping submitted in the compiled code.
 
 When in doubt, simply test your new test in artifact mode
 (by e.g. passing `--enable-artifact-builds` to `mach try`)
@@ -93,6 +94,15 @@ add_task(function () {
   }
   // ... your test ...
 });
+```
+* Skipping an entire test file
+  (doesn't catch all cases when FOG's artifact build support is enabled,
+  but anyone setting the pref outside of artifact mode will understand) :
+```toml
+[my_test_name.js]
+skip-if = [
+  "artifact", # Bug 1836686 - Known limitation of FOG ping test APIs
+]
 ```
 
 ## The Usual Test Format
@@ -221,7 +231,16 @@ for updates on a better design and implementation for ping tests. ))
 
 `browser-chrome`-flavoured mochitests can be tested very similarly to `xpcshell`,
 though you do not need to request a profile or initialize FOG.
-`plain`-flavoured mochitests can use [`GleanTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/GleanTest.js).
+
+### mochitest-plain (partial asynchronous support)
+
+`plain`-flavoured mochitests can't actually reach the `Glean` global objects,
+so you may wish to prefer `browser-chrome`-flavoured mochitests instead.
+
+If you wish to continue with `plain`-flavoured mochitests,
+you will need to use
+[`GleanTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/GleanTest.js)
+to gain access to testing APIs.
 It doesn't support all the features, only the `testResetFOG`,
 `testFlushAllChildren` (as `flush`), and `testGetValue` functions.
 
@@ -258,9 +277,9 @@ their results as they make the trip over IPC and back again.
 </html>
 ```
 
-If you're testing in `mochitest`, your instrumentation (or your test)
-might not be running in the parent process.
-This means you get to learn the IPC test APIs.
+If you have ideas for how to improve instrumentation testing in
+`plain`-flavoured mochitests, please comment in
+[bug 1799977](https://bugzilla.mozilla.org/show_bug.cgi?id=1799977).
 
 ### IPC
 

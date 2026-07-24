@@ -6,6 +6,9 @@ support-files = [
   "head.js"
 ]
 
+["browser_302_redirect_set_cookie_content_process.js"]
+support-files = ["redirect_with_cookie.sjs"]
+
 ["browser_3pcb_expection.js"]
 support-files = ["setFetchCookie.sjs"]
 
@@ -43,8 +46,14 @@ support-files = ["oversize.sjs"]
 ["browser_partitionedConsole.js"]
 support-files = ["partitioned.sjs"]
 
-["browser_partitioned_telemetry.js"]
-support-files = ["partitioned.sjs"]
+["browser_redirect_ABA_chips.js"]
+support-files = [
+  "redirect_301.sjs",
+  "serviceWorker.js",
+  "set_cookie_cors.html",
+  "set_cookie_cors.html^headers^",
+  "sw_fetch.js"
+]
 
 ["browser_sameSiteConsole.js"]
 support-files = ["sameSite.sjs"]

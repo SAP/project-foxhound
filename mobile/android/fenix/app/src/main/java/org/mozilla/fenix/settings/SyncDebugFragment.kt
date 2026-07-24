@@ -36,6 +36,17 @@ class SyncDebugFragment : PreferenceFragmentCompat() {
         showToolbar(getString(R.string.preferences_sync_debug))
     }
 
+    override fun onDisplayPreferenceDialog(preference: Preference) {
+        val handled = showCustomEditTextPreferenceDialog(preference) {
+            hasChanges = true
+            updateMenu()
+        }
+
+        if (!handled) {
+            super.onDisplayPreferenceDialog(preference)
+        }
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.sync_debug_preferences, rootKey)
         requirePreference<EditTextPreference>(R.string.pref_key_override_fxa_server).let { pref ->

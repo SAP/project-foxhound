@@ -1,0 +1,78 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.sw-prompts-container {
+  display: flex;
+  padding-block: var(--space-xlarge);
+  gap: var(--space-medium);
+}
+
+/* Fullpage mode: row */
+:host([mode="fullpage"]) .sw-prompts-container {
+  flex-direction: row;
+  justify-content: center;
+}
+
+/* Sidebar mode: column */
+:host([mode="sidebar"]) .sw-prompts-container {
+  flex-direction: column;
+  align-items: flex-end;
+  margin-inline: var(--space-medium);
+}
+
+:host([mode="followup"]) .sw-prompts-container {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-block-start: 0;
+  padding-block-end: var(--space-large);
+}
+
+:host([mode="followup"]) moz-button.sw-prompt-button::part(button) {
+  justify-content: start;
+}
+
+moz-button.sw-prompt-button {
+  --button-background-color: light-dark(var(--color-violet-0), var(--color-gray-80));
+  --button-background-color-active: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-background-color-disabled: var(--color-gray-20);
+  --button-background-color-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+  --button-background-color-selected: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-border-radius: var(--border-radius-circle);
+  /* Font-sizing keeps computing to 16px regardless of size attribute on the button */
+  --button-font-size: var(--space-medium);
+  --button-font-weight: var(--font-weight);
+  --button-padding: var(--space-small);
+  --button-text-color: var(--smartwindow-brand-accent);
+  --button-text-color-hover: var(--smartwindow-brand-accent);
+  --button-text-color-active: var(--smartwindow-brand-accent);
+}
+
+moz-button.sw-prompt-button::part(button) {
+  position: relative;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: var(--smartwindow-shadow);
+}
+
+/* stylelint-disable stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+moz-button.sw-prompt-button::part(button)::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 1px;
+  background: light-dark(
+    linear-gradient(
+      180deg,
+      var(--color-white-alpha-20) 0%,
+      color-mix(in srgb, var(--color-violet-110) 5%, transparent) 31.73%,
+      color-mix(in srgb, var(--color-violet-110) 15%, transparent) 100%
+    ),
+    linear-gradient(180deg, var(--color-black-alpha-30) 0%, var(--color-violet-50) 100%)
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  z-index: -1;
+}

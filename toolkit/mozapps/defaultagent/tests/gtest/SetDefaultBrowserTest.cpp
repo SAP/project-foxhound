@@ -6,7 +6,6 @@
 #include "gtest/gtest.h"
 
 #include <windows.h>
-#include "mozilla/UniquePtr.h"
 #include "WindowsUserChoice.h"
 
 #include "SetDefaultBrowser.h"

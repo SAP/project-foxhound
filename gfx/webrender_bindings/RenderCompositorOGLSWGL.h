@@ -58,6 +58,11 @@ class RenderCompositorOGLSWGL : public RenderCompositorLayersSWGL {
                      const wr::ImageFormat& aReadbackFormat,
                      const Range<uint8_t>& aReadbackBuffer,
                      bool* aNeedsYFlip) override;
+#ifdef MOZ_WIDGET_ANDROID
+  bool MaybeCaptureScreenPixels(
+      const gfx::IntRect& aSourceRect,
+      RefPtr<layers::AndroidHardwareBuffer> aHardwareBuffer) override;
+#endif
 
  private:
   void HandleExternalImage(RenderTextureHost* aExternalImage,

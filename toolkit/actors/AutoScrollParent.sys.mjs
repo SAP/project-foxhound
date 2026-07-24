@@ -28,7 +28,7 @@ export class AutoScrollParent extends JSWindowActorParent {
           return Promise.resolve({ autoscrollEnabled: false, usingAPZ: false });
         }
         return Promise.resolve(browser.startScroll(data));
-      case "Autoscroll:MaybeStartInParent":
+      case "Autoscroll:MaybeStartInParent": {
         // Don't start autoscroll if the tab has already been a background tab.
         if (!requestedInForegroundTab) {
           return Promise.resolve({ autoscrollEnabled: false, usingAPZ: false });
@@ -39,6 +39,7 @@ export class AutoScrollParent extends JSWindowActorParent {
           actor.sendAsyncMessage("Autoscroll:MaybeStart", data);
         }
         break;
+      }
       case "Autoscroll:Cancel":
         browser.cancelScroll();
         break;

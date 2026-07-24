@@ -7,9 +7,9 @@
 #ifndef mozilla_OriginTrialsIPCUtils_h
 #define mozilla_OriginTrialsIPCUtils_h
 
-#include "mozilla/OriginTrials.h"
-#include "mozilla/EnumTypeTraits.h"
 #include "ipc/EnumSerializer.h"
+#include "mozilla/EnumTypeTraits.h"
+#include "mozilla/OriginTrials.h"
 
 namespace mozilla {
 template <>

@@ -16,7 +16,6 @@
 #include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/HTMLOptionElement.h"
 #include "mozilla/dom/HTMLSelectElement.h"
-#include "mozilla/HashTable.h"
 #include "mozilla/RustRegex.h"
 #include "nsContentUtils.h"
 #include "nsIFrame.h"
@@ -1026,7 +1025,7 @@ bool FormAutofillImpl::IsExpirationMonthLikely(Element& aElement) {
 Element* FormAutofillImpl::FindRootForField(Element* aElement) {
   if (const auto* control =
           nsGenericHTMLFormControlElement::FromNode(aElement)) {
-    if (Element* form = control->GetForm()) {
+    if (Element* form = control->GetFormInternal()) {
       return form;
     }
   }
@@ -1150,7 +1149,7 @@ void FormAutofillImpl::GetFormAutofillConfidences(
       if (NS_WARN_IF(!label)) {
         continue;
       }
-      auto* control = label->GetControl();
+      auto* control = label->GetLabeledElementInternal();
       if (!control) {
         continue;
       }

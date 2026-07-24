@@ -8,20 +8,18 @@
 #define mozilla_dom_Fetch_h
 
 #include "mozilla/Attributes.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
-#include "nsProxyRelease.h"
-#include "nsString.h"
-
-#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BodyConsumer.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/FetchStreamReader.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReaderBinding.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/workerinternals/RuntimeService.h"
+#include "nsCOMPtr.h"
+#include "nsError.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
 
 class nsIGlobalObject;
 class nsIEventTarget;

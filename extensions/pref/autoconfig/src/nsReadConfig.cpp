@@ -8,6 +8,7 @@
 
 #include "mozilla/Logging.h"
 #include "mozilla/Components.h"
+#include "mozilla/HelperMacros.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIAppStartup.h"
 #include "nsIChannel.h"
@@ -144,8 +145,8 @@ nsresult nsReadConfig::readConfigFile() {
   bool sandboxEnabled =
       channel.EqualsLiteral("beta") || channel.EqualsLiteral("release");
 
-  mozilla::Unused << defaultPrefBranch->GetBoolPref(
-      "general.config.sandbox_enabled", &sandboxEnabled);
+  (void)defaultPrefBranch->GetBoolPref("general.config.sandbox_enabled",
+                                       &sandboxEnabled);
 
   rv = defaultPrefBranch->GetCharPref("general.config.filename", lockFileName);
 

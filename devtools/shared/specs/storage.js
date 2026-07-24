@@ -59,6 +59,7 @@ types.addDictType("cookieobject", {
   isSecure: "boolean",
   isHttpOnly: "boolean",
   creationTime: "number",
+  updateTime: "number",
   lastAccessed: "number",
   expires: "number",
 });

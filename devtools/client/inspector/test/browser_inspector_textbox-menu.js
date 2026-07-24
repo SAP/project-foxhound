@@ -6,6 +6,8 @@
 // the toolbox's context menu (copy/cut/paste/selectAll/Undo).
 
 add_task(async function () {
+  await pushPref("devtools.inspector.three-pane-enabled", false);
+
   await addTab(`data:text/html;charset=utf-8,
                 <style>h1 { color: red; }</style>
                 <h1 id="title">textbox context menu test</h1>`);
@@ -64,7 +66,7 @@ add_task(async function () {
 
   info("Switching to the layout-view");
   const onBoxModelUpdated = inspector.once("boxmodel-view-updated");
-  selectLayoutView(inspector);
+  await selectLayoutView(inspector);
   await onBoxModelUpdated;
 
   info("Testing the box-model region");

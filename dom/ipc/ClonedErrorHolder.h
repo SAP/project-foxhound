@@ -7,14 +7,13 @@
 #ifndef mozilla_dom_ClonedErrorHolder_h
 #define mozilla_dom_ClonedErrorHolder_h
 
-#include "mozilla/dom/NonRefcountedDOMObject.h"
-#include "nsISupportsImpl.h"
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/ErrorReport.h"
 #include "js/TypeDecls.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/Attributes.h"
+#include "nsISupportsImpl.h"
 
 class nsIGlobalObject;
 class nsQueryActorChild;

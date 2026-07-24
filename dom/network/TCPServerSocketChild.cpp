@@ -5,13 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TCPServerSocketChild.h"
-#include "TCPSocketChild.h"
+
 #include "TCPServerSocket.h"
-#include "mozilla/net/NeckoChild.h"
-#include "mozilla/dom/PBrowserChild.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "nsJSUtils.h"
+#include "TCPSocketChild.h"
 #include "jsfriendapi.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/PBrowserChild.h"
+#include "mozilla/net/NeckoChild.h"
+#include "nsJSUtils.h"
 
 using mozilla::net::gNeckoChild;
 

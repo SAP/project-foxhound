@@ -27,11 +27,10 @@
 #ifndef WEBGL_VALIDATE_STRINGS_H_
 #define WEBGL_VALIDATE_STRINGS_H_
 
-#include "WebGLTypes.h"
-
-#include "mozilla/Maybe.h"
-
 #include <string>
+
+#include "WebGLTypes.h"
+#include "mozilla/Maybe.h"
 
 namespace mozilla {
 

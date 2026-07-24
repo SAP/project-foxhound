@@ -7,13 +7,12 @@
 #include "ContentIterator.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/Result.h"
-
+#include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "nsContentUtils.h"
 #include "nsElementTable.h"
 #include "nsIContent.h"
@@ -475,7 +474,7 @@ ContentIteratorBase<NodeType>::Initializer::DetermineLastNode() const {
         if (result && result != mIterator.mFirst &&
             NS_WARN_IF(!NodeIsInTraversalRange(
                 result, mIterator.mOrder == Order::Pre,
-                RawRangeBoundary(mIterator.mFirst, 0u), mEnd))) {
+                RawRangeBoundary::StartOfParent(*mIterator.mFirst), mEnd))) {
           return nullptr;
         }
 
@@ -618,13 +617,11 @@ nsIContent* ContentIteratorBase<NodeType>::GetDeepLastChild(
   nsIContent* node = aRoot;
 
   while (HTMLSlotElement* slot = HTMLSlotElement::FromNode(node)) {
+    auto assigned = slot->AssignedNodes();
     // The deep last child of a slot should be the last slotted element of it
-    if (!slot->AssignedNodes().IsEmpty()) {
-      if (nsIContent* content =
-              nsIContent::FromNode(slot->AssignedNodes().LastElement())) {
-        node = content;
-        continue;
-      }
+    if (!assigned.IsEmpty()) {
+      node = assigned[assigned.Length() - 1]->AsContent();
+      continue;
     }
     break;
   }
@@ -672,13 +669,10 @@ nsIContent* ContentIteratorBase<NodeType>::GetNextSibling(
       }
 
       // Next sibling of a slotted node should be the next slotted node
-      auto currentIndex = slot->AssignedNodes().IndexOf(aNode);
-      if (currentIndex < slot->AssignedNodes().Length() - 1) {
-        nsINode* nextSlottedNode =
-            slot->AssignedNodes().ElementAt(currentIndex + 1);
-        if (nextSlottedNode->IsContent()) {
-          return nextSlottedNode->AsContent();
-        }
+      auto assigned = slot->AssignedNodes();
+      auto cur = assigned.IndexOf(aNode);
+      if (cur != assigned.npos && cur + 1 < assigned.Length()) {
+        return assigned[cur + 1]->AsContent();
       }
       // Move on to assigned slot's next sibling
       aNode = slot;
@@ -740,13 +734,10 @@ nsIContent* ContentIteratorBase<NodeType>::GetPrevSibling(
         break;
       }
       // prev sibling of a slotted node should be the prev slotted node
-      auto currentIndex = slot->AssignedNodes().IndexOf(aNode);
-      if (currentIndex > 0) {
-        nsINode* prevSlottedNode =
-            slot->AssignedNodes().ElementAt(currentIndex - 1);
-        if (prevSlottedNode->IsContent()) {
-          return prevSlottedNode->AsContent();
-        }
+      auto assigned = slot->AssignedNodes();
+      auto cur = assigned.IndexOf(aNode);
+      if (cur != assigned.npos && cur != 0) {
+        return assigned[cur - 1]->AsContent();
       }
       aNode = slot;
     }
@@ -1074,12 +1065,7 @@ nsIContent* ContentSubtreeIterator::DetermineCandidateForFirstContent() const {
     const auto& startRef = IterAllowCrossShadowBoundary()
                                ? mRange->MayCrossShadowBoundaryStartRef()
                                : mRange->StartRef();
-    const uint32_t startOffset = ShadowDOMSelectionHelpers::StartOffset(
-        mRange, mAllowCrossShadowBoundary);
-    MOZ_ASSERT(child ==
-               (startRef.GetTreeKind() == TreeKind::Flat
-                    ? startContainer->GetChildAtInFlatTree(startOffset)
-                    : startContainer->GetChildAt_Deprecated(startOffset)));
+    MOZ_ASSERT(startRef.IsSetAndValid());
 #endif
     if (!child) {
       // offset after last child
@@ -1153,10 +1139,7 @@ nsIContent* ContentSubtreeIterator::DetermineCandidateForLastContent() const {
     const auto& endRef = IterAllowCrossShadowBoundary()
                              ? mRange->MayCrossShadowBoundaryEndRef()
                              : mRange->EndRef();
-    MOZ_ASSERT(lastCandidate ==
-               (endRef.GetTreeKind() == TreeKind::Flat
-                    ? endContainer->GetChildAtInFlatTree(offset - 1)
-                    : endContainer->GetChildAt_Deprecated(offset - 1)));
+    MOZ_ASSERT(endRef.IsSetAndValid());
 #endif
     NS_ASSERTION(lastCandidate,
                  "tree traversal trouble in ContentSubtreeIterator::Init");
@@ -1184,24 +1167,21 @@ nsresult ContentSubtreeIterator::InitWithRange() {
   mClosestCommonInclusiveAncestor =
       mRange->GetClosestCommonInclusiveAncestor(mAllowCrossShadowBoundary);
 
-  nsINode* startContainer = ShadowDOMSelectionHelpers::GetStartContainer(
-      mRange, mAllowCrossShadowBoundary);
-  const int32_t startOffset =
-      ShadowDOMSelectionHelpers::StartOffset(mRange, mAllowCrossShadowBoundary);
-  nsINode* endContainer = ShadowDOMSelectionHelpers::GetEndContainer(
-      mRange, mAllowCrossShadowBoundary);
-  const int32_t endOffset =
-      ShadowDOMSelectionHelpers::EndOffset(mRange, mAllowCrossShadowBoundary);
-  MOZ_ASSERT(mClosestCommonInclusiveAncestor && startContainer && endContainer);
+  const RawRangeBoundary startRef =
+      ShadowDOMSelectionHelpers::StartRef(mRange, mAllowCrossShadowBoundary);
+  const RawRangeBoundary endRef =
+      ShadowDOMSelectionHelpers::EndRef(mRange, mAllowCrossShadowBoundary);
+  MOZ_ASSERT(mClosestCommonInclusiveAncestor && startRef.IsSet() &&
+             endRef.IsSet());
   // Bug 767169
-  MOZ_ASSERT(uint32_t(startOffset) <= startContainer->Length() &&
-             uint32_t(endOffset) <= endContainer->Length());
+  MOZ_ASSERT(startRef.IsSetAndValid());
+  MOZ_ASSERT(endRef.IsSetAndValid());
 
   // short circuit when start node == end node
-  if (startContainer == endContainer) {
-    nsINode* child = startContainer->GetFirstChild();
+  if (startRef.GetContainer() == endRef.GetContainer()) {
+    nsINode* child = startRef.GetContainer()->GetFirstChild();
 
-    if (!child || startOffset == endOffset) {
+    if (!child || startRef == endRef) {
       // Text node, empty container, or collapsed
       SetEmpty();
       return NS_OK;

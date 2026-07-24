@@ -6,17 +6,17 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef transportflow_h__
-#define transportflow_h__
+#ifndef transportflow_h_
+#define transportflow_h_
 
 #include <deque>
 #include <string>
 
-#include "nscore.h"
-#include "nsISupportsImpl.h"
-#include "mozilla/UniquePtr.h"
-#include "transportlayer.h"
 #include "m_cpp_utils.h"
+#include "mozilla/UniquePtr.h"
+#include "nsISupportsImpl.h"
+#include "nscore.h"
+#include "transportlayer.h"
 
 // A stack of transport layers acts as a flow.
 // Generally, one reads and writes to the top layer.

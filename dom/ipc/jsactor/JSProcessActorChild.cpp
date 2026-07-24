@@ -4,11 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/JSProcessActorBinding.h"
 #include "mozilla/dom/JSProcessActorChild.h"
+
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/InProcessParent.h"
+#include "mozilla/dom/JSIPCValue.h"
+#include "mozilla/dom/JSIPCValueUtils.h"
+#include "mozilla/dom/JSProcessActorBinding.h"
 
 namespace mozilla::dom {
 
@@ -25,9 +28,10 @@ JSObject* JSProcessActorChild::WrapObject(JSContext* aCx,
   return JSProcessActorChild_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void JSProcessActorChild::SendRawMessage(
-    const JSActorMessageMeta& aMeta, Maybe<ipc::StructuredCloneData>&& aData,
-    Maybe<ipc::StructuredCloneData>&& aStack, ErrorResult& aRv) {
+void JSProcessActorChild::SendRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         ipc::StructuredCloneData* aStack,
+                                         ErrorResult& aRv) {
   if (NS_WARN_IF(!CanSend() || !mManager || !mManager->GetCanSend())) {
     aRv.ThrowInvalidStateError("JSProcessActorChild cannot send at the moment");
     return;
@@ -44,27 +48,7 @@ void JSProcessActorChild::SendRawMessage(
   }
 
   // Cross-process case - send data over ContentChild to other side.
-  Maybe<ClonedMessageData> msgData;
-  if (aData) {
-    msgData.emplace();
-    if (NS_WARN_IF(!aData->BuildClonedMessageData(*msgData))) {
-      aRv.ThrowDataCloneError(
-          nsPrintfCString("JSProcessActorChild serialization error: cannot "
-                          "clone, in actor '%s'",
-                          PromiseFlatCString(aMeta.actorName()).get()));
-      return;
-    }
-  }
-
-  Maybe<ClonedMessageData> stackData;
-  if (aStack) {
-    stackData.emplace();
-    if (!aStack->BuildClonedMessageData(*stackData)) {
-      stackData.reset();
-    }
-  }
-
-  if (NS_WARN_IF(!contentChild->SendRawMessage(aMeta, msgData, stackData))) {
+  if (NS_WARN_IF(!contentChild->SendRawMessage(aMeta, aData, aStack))) {
     aRv.ThrowOperationError(
         nsPrintfCString("JSProcessActorChild send error in actor '%s'",
                         PromiseFlatCString(aMeta.actorName()).get()));
@@ -76,7 +60,9 @@ void JSProcessActorChild::Init(const nsACString& aName,
                                nsIDOMProcessChild* aManager) {
   MOZ_ASSERT(!mManager, "Cannot Init() a JSProcessActorChild twice!");
   mManager = aManager;
-  JSActor::Init(aName);
+  bool sendTyped =
+      !!mManager->AsContentChild() && JSActorSupportsTypedSend(aName);
+  JSActor::Init(aName, sendTyped);
 }
 
 void JSProcessActorChild::ClearManager() { mManager = nullptr; }

@@ -7,22 +7,20 @@
 #ifndef mozilla_dom_FetchDriver_h
 #define mozilla_dom_FetchDriver_h
 
+#include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AbortSignal.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "nsIChannelEventSink.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "mozilla/ConsoleReportCollector.h"
-#include "mozilla/dom/AbortSignal.h"
-#include "mozilla/dom/SafeRefPtr.h"
-#include "mozilla/dom/SerializedStackHolder.h"
-#include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/UniquePtr.h"
-
-#include "mozilla/DebugOnly.h"
 
 class nsIConsoleReportCollector;
 class nsICookieJarSettings;

@@ -39,7 +39,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gCaptivePortalDetector",
   "@mozilla.org/toolkit/captive-detector;1",
-  "nsICaptivePortalDetector"
+  Ci.nsICaptivePortalDetector
 );
 
 const kCanonicalSitePath = "/canonicalSite.html";

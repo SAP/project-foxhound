@@ -35,7 +35,9 @@ support-files = [
 ["browser_antitracking_subiframes.js"]
 
 ["browser_devtools_serviceworker_interception.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_download.js"]
 
@@ -56,7 +58,9 @@ skip-if = ["true"]
 ["browser_remote_type_process_swap.js"]
 
 ["browser_storage_permission.js"]
-skip-if = ["true"] # Crashes: @ mozilla::dom::ServiceWorkerManagerService::PropagateUnregister(unsigned long, mozilla::ipc::PrincipalInfo const&, nsTSubstring<char16_t> const&), #Bug 1578337
+skip-if = [
+  "true", # Crashes: @ mozilla::dom::ServiceWorkerManagerService::PropagateUnregister(unsigned long, mozilla::ipc::PrincipalInfo const&, nsTSubstring<char16_t> const&), #Bug 1578337
+]
 
 ["browser_storage_recovery.js"]
 

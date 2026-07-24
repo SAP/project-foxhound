@@ -15,6 +15,10 @@ LOCAL_INCLUDES += [
     '/media/libwebp',
 ]
 
+# Note the defines in this file for cpu instruction sets are mostly overridden
+# and enabled by what src/dsp/cpu.h does. So just removing the defines here may do
+# nothing.
+
 if CONFIG['TARGET_CPU'] == 'arm' and CONFIG['BUILD_ARM_NEON']:
     SOURCES += [
         'sharpyuv_neon.c',

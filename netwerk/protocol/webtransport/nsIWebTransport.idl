@@ -55,6 +55,7 @@ interface nsIWebTransport : nsISupports {
                     in boolean aDedicated,
                     in Array<nsIWebTransportHash> aServerCertHashes,
                     in nsIPrincipal aLoadingPrincipal,
+                    in uint64_t aBrowsingContextID,
                     in unsigned long aSecurityFlags,
                     in WebTransportSessionEventListener aListener,
                     in const_MaybeClientInfoRef aClientInfo,
@@ -74,6 +75,8 @@ interface nsIWebTransport : nsISupports {
   void sendDatagram(in Array<uint8_t> aData, in uint64_t aTrackingId);
 
   void getMaxDatagramSize();
+
+  uint64_t getHttpChannelID();
 
   // This can be only called after onSessionReady().
   // After this point, we can retarget the underlying WebTransportSessionProxy

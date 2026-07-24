@@ -35,16 +35,11 @@ add_task(async function test_iframe_autocomplete() {
   let iframeBC = browser.browsingContext.children[1];
   await openPopupOnSubframe(browser, iframeBC, "#street-address");
 
-  // Highlight the first item in the list. We want to verify
-  // that the warning text is correct to ensure that the preview is
-  // performed properly.
-
+  // Highlight the first item in the list.
   await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, iframeBC);
-  await expectWarningText(browser, "Autofills address");
 
   // Highlight and select the second item in the list
   await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, iframeBC);
-  await expectWarningText(browser, "Also autofills organization, email");
 
   EventUtils.synthesizeKey("VK_RETURN", {});
 
@@ -125,8 +120,6 @@ add_task(async function test_iframe_autocomplete_preferences() {
   let browser = tab.linkedBrowser;
   let iframeBC = browser.browsingContext.children[1];
   await openPopupOnSubframe(browser, iframeBC, "#organization");
-
-  await expectWarningText(browser, "Also autofills address, phone, email");
 
   const prefTabPromise = BrowserTestUtils.waitForNewTab(
     gBrowser,

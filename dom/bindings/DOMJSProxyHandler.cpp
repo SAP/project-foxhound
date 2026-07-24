@@ -5,17 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/DOMJSProxyHandler.h"
-#include "xpcpublic.h"
-#include "xpcprivate.h"
-#include "XPCWrapper.h"
-#include "WrapperFactory.h"
-#include "nsWrapperCacheInlines.h"
-#include "mozilla/dom/BindingUtils.h"
 
-#include "jsapi.h"
-#include "js/friend/DOMProxy.h"  // JS::DOMProxyShadowsResult, JS::ExpandoAndGeneration, JS::SetDOMProxyInformation
-#include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById
+#include "WrapperFactory.h"
+#include "XPCWrapper.h"
 #include "js/Object.h"              // JS::GetCompartment
+#include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById
+#include "js/friend/DOMProxy.h"  // JS::DOMProxyShadowsResult, JS::ExpandoAndGeneration, JS::SetDOMProxyInformation
+#include "jsapi.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "nsWrapperCacheInlines.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
 
 using namespace JS;
 

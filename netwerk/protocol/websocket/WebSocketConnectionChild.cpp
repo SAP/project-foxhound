@@ -50,8 +50,8 @@ void WebSocketConnectionChild::Init(uint32_t aListenerId) {
           "SendInitWebSocketConnection",
           [aListenerId, endpoint = std::move(parentEndpoint)](
               SocketProcessBackgroundChild* aActor) mutable {
-            Unused << aActor->SendInitWebSocketConnection(std::move(endpoint),
-                                                          aListenerId);
+            (void)aActor->SendInitWebSocketConnection(std::move(endpoint),
+                                                      aListenerId);
           }))) {
     return;
   }
@@ -77,7 +77,7 @@ WebSocketConnectionChild::OnTransportAvailable(
     return mSocketThread->Dispatch(
         NS_NewRunnableFunction("WebSocketConnectionChild::OnTransportAvailable",
                                [self, transport, inputStream, outputStream]() {
-                                 Unused << self->OnTransportAvailable(
+                                 (void)self->OnTransportAvailable(
                                      transport, inputStream, outputStream);
                                }),
         NS_DISPATCH_NORMAL);
@@ -101,13 +101,13 @@ WebSocketConnectionChild::OnTransportAvailable(
       new WebSocketConnection(aTransport, aSocketIn, aSocketOut);
   nsresult rv = connection->Init(this);
   if (NS_FAILED(rv)) {
-    Unused << OnUpgradeFailed(rv);
+    (void)OnUpgradeFailed(rv);
     return NS_OK;
   }
 
   mConnection = std::move(connection);
 
-  Unused << SendOnTransportAvailable(securityInfo);
+  (void)SendOnTransportAvailable(securityInfo);
   return NS_OK;
 }
 
@@ -120,7 +120,7 @@ WebSocketConnectionChild::OnUpgradeFailed(nsresult aReason) {
   }
 
   if (CanSend()) {
-    Unused << SendOnUpgradeFailed(aReason);
+    (void)SendOnUpgradeFailed(aReason);
   }
   return NS_OK;
 }
@@ -185,7 +185,7 @@ void WebSocketConnectionChild::OnError(nsresult aStatus) {
   LOG(("WebSocketConnectionChild::OnError %p\n", this));
 
   if (CanSend()) {
-    Unused << SendOnError(aStatus);
+    (void)SendOnError(aStatus);
   }
 }
 
@@ -193,7 +193,7 @@ void WebSocketConnectionChild::OnTCPClosed() {
   LOG(("WebSocketConnectionChild::OnTCPClosed %p\n", this));
 
   if (CanSend()) {
-    Unused << SendOnTCPClosed();
+    (void)SendOnTCPClosed();
   }
 }
 
@@ -204,7 +204,7 @@ nsresult WebSocketConnectionChild::OnDataReceived(uint8_t* aData,
   if (CanSend()) {
     nsTArray<uint8_t> data;
     data.AppendElements(aData, aCount);
-    Unused << SendOnDataReceived(data);
+    (void)SendOnDataReceived(data);
   }
 
   return NS_OK;

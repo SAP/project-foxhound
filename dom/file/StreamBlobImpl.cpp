@@ -4,19 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "StreamBlobImpl.h"
+
 #include "EmptyBlobImpl.h"
+#include "js/GCAPI.h"
 #include "mozilla/InputStreamLengthWrapper.h"
 #include "mozilla/SlicedInputStream.h"
-#include "StreamBlobImpl.h"
-#include "nsNetCID.h"
-#include "nsServiceManagerUtils.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsICloneableInputStream.h"
 #include "nsIEventTarget.h"
 #include "nsIPipe.h"
-#include "js/GCAPI.h"
+#include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 namespace mozilla::dom {
 

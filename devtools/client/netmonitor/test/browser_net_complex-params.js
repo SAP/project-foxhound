@@ -20,7 +20,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   // Execute requests.
-  await performRequests(monitor, tab, 12);
+  await performRequests(monitor, tab, 13);
 
   const requestListItems = document.querySelectorAll(
     ".network-monitor .request-list-item"
@@ -49,7 +49,7 @@ add_task(async function () {
   await testRequestWithFormattedView(
     monitor,
     requestListItems[2],
-    "?foo",
+    "foo",
     "bar=123=xyz",
     "?foo=bar=123=xyz",
     1
@@ -90,6 +90,14 @@ add_task(async function () {
     '{ "foo": "bar" }',
     "",
     '{ "foo": "bar" }',
+    1
+  );
+  await testRequestWithFormattedView(
+    monitor,
+    requestListItems[12],
+    "__proto__",
+    "evil_value",
+    "__proto__=evil_value",
     1
   );
 
@@ -146,7 +154,7 @@ async function testRequestWithFormattedView(
     "The request params box should be displayed."
   );
   Assert.strictEqual(
-    tabpanel.querySelector(".CodeMirror-code"),
+    tabpanel.querySelector(".cm-content"),
     null,
     "The request post data editor should not be displayed."
   );
@@ -172,7 +180,7 @@ async function testRequestWithFormattedView(
   );
 
   // Toggle the raw data display. This should hide the formatted display.
-  waitForContent = waitForDOM(document, "#request-panel .CodeMirror-code");
+  waitForContent = waitForDOM(document, "#request-panel .cm-content");
   let rawDataToggle = document.querySelector(
     "#request-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -197,7 +205,7 @@ async function testRequestWithFormattedView(
     "The formatted display should be hidden."
   );
   is(
-    tabpanel.querySelector(".CodeMirror-code") !== null,
+    tabpanel.querySelector(".cm-content") !== null,
     true,
     "The raw payload data display is shown."
   );
@@ -236,10 +244,7 @@ async function testRequestWithOnlyRawDataView(
 
   // Wait for header and CodeMirror editor to be displayed
   const wait = waitForDOM(document, "#request-panel .data-header");
-  const waitForContent = waitForDOM(
-    document,
-    "#request-panel .CodeMirror-code"
-  );
+  const waitForContent = waitForDOM(document, "#request-panel .cm-content");
   EventUtils.sendMouseEvent({ type: "mousedown" }, requestListItem);
   await Promise.all([wait, waitForContent]);
 
@@ -262,7 +267,7 @@ async function testRequestWithOnlyRawDataView(
     "The formatted display should be hidden."
   );
   is(
-    tabpanel.querySelector(".CodeMirror-code") !== null,
+    tabpanel.querySelector(".cm-content") !== null,
     true,
     "The raw payload data display is shown."
   );
@@ -301,7 +306,7 @@ async function testRequestWithoutRequestData(monitor, requestListItem) {
     "The formatted display should be hidden."
   );
   is(
-    tabpanel.querySelector(".CodeMirror-code") === null,
+    tabpanel.querySelector(".cm-content") === null,
     true,
     "The raw payload data display should be hidden."
   );

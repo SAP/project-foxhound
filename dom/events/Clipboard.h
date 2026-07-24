@@ -7,12 +7,10 @@
 #ifndef mozilla_dom_Clipboard_h_
 #define mozilla_dom_Clipboard_h_
 
-#include "nsString.h"
-#include "nsStringFwd.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Logging.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
 
 class nsIClipboardDataSnapshot;
 
@@ -43,13 +41,6 @@ class Clipboard : public DOMEventTargetHelper {
                                       ErrorResult& aRv);
 
   static LogModule* GetClipboardLog();
-
-  // Check if the Clipboard.readText API should be enabled for this context.
-  // This API is only enabled for Extension and System contexts, as there is no
-  // way to request the required permission for web content. If the clipboard
-  // API testing pref is enabled, ReadText is enabled for web content for
-  // testing purposes.
-  static bool ReadTextEnabled(JSContext* aCx, JSObject* aGlobal);
 
   static Span<const nsLiteralCString> MandatoryDataTypes();
 

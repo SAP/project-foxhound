@@ -566,13 +566,14 @@ class BaseRustProgram(Linkable):
     __slots__ = (
         "name",
         "cargo_file",
+        "features",
         "location",
         "SUFFIX_VAR",
         "KIND",
         "TARGET_SUBST_VAR",
     )
 
-    def __init__(self, context, name, cargo_file):
+    def __init__(self, context, name, cargo_file, features):
         Linkable.__init__(self, context)
         self.name = name
         self.cargo_file = cargo_file
@@ -586,18 +587,21 @@ class BaseRustProgram(Linkable):
         cargo_dir = cargo_output_directory(context, self.TARGET_SUBST_VAR)
         exe_file = "%s%s" % (name, context.config.substs.get(self.SUFFIX_VAR, ""))
         self.location = mozpath.join(cargo_dir, exe_file)
+        self.features = features
 
 
 class RustProgram(BaseRustProgram):
     SUFFIX_VAR = "BIN_SUFFIX"
     KIND = "target"
     TARGET_SUBST_VAR = "RUST_TARGET"
+    FEATURES_VAR = "RUST_PROGRAM_FEATURES"
 
 
 class HostRustProgram(BaseRustProgram):
     SUFFIX_VAR = "HOST_BIN_SUFFIX"
     KIND = "host"
     TARGET_SUBST_VAR = "RUST_HOST_TARGET"
+    FEATURES_VAR = "HOST_RUST_PROGRAM_FEATURES"
 
 
 class RustTests(ContextDerived):
@@ -608,6 +612,15 @@ class RustTests(ContextDerived):
         self.names = names
         self.features = features
         self.output_category = "rusttests"
+
+
+class LegacyRunTests(ContextDerived):
+    __slots__ = ("tests", "output_category")
+
+    def __init__(self, context, tests):
+        ContextDerived.__init__(self, context)
+        self.tests = tests
+        self.output_category = "runtests"
 
 
 class BaseLibrary(Linkable):
@@ -1324,7 +1337,6 @@ class GeneratedFile(ContextDerived):
         "required_during_compile",
         "localized",
         "force",
-        "py2",
     )
 
     def __init__(
@@ -1337,7 +1349,6 @@ class GeneratedFile(ContextDerived):
         flags=(),
         localized=False,
         force=False,
-        py2=False,
         required_during_compile=None,
     ):
         ContextDerived.__init__(self, context)
@@ -1348,12 +1359,16 @@ class GeneratedFile(ContextDerived):
         self.flags = flags
         self.localized = localized
         self.force = force
-        self.py2 = py2
 
         if self.config.substs.get("MOZ_WIDGET_TOOLKIT") == "android":
-            # In GeckoView builds we process Jinja files during pre-export
+            # In GeckoView builds, the gradle build is done during export to
+            # extract JNI wrapping details, so make sure generated Java and
+            # Android manifest files are created during pre-export.
             self.required_before_export = [
-                f for f in self.inputs if f.endswith(".jinja")
+                f
+                for f in self.outputs
+                if f.endswith((".java", ".kt"))
+                or mozpath.match(f, "**/AndroidManifest*.xml")
             ]
         else:
             self.required_before_export = False
@@ -1388,9 +1403,18 @@ class GeneratedFile(ContextDerived):
             self.required_during_compile = [
                 f
                 for f in self.outputs
-                if f.endswith(
-                    (".asm", ".c", ".cpp", ".inc", ".m", ".mm", ".def", "symverscript")
-                )
+                if f.endswith((
+                    ".asm",
+                    ".c",
+                    ".cpp",
+                    ".inc",
+                    ".m",
+                    ".mm",
+                    ".def",
+                    ".s",
+                    ".S",
+                    "symverscript",
+                ))
             ]
         else:
             self.required_during_compile = required_during_compile

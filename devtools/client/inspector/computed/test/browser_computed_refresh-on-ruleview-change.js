@@ -54,10 +54,9 @@ add_task(async function () {
 
   info("Select the rule view");
   const ruleView = inspector.getPanel("ruleview").view;
-  const onRuleViewReady = ruleView.once("ruleview-refreshed");
-  const onSidebarSelect = inspector.sidebar.once("select");
-  inspector.sidebar.select("ruleview");
-  await Promise.all([onSidebarSelect, onRuleViewReady]);
+  const onRuleViewReady = inspector.once("rule-view-refreshed");
+  await inspector.sidebar.select("ruleview");
+  await onRuleViewReady;
 
   info(
     "Prepare the counter which counts how many times computed view is refreshed"

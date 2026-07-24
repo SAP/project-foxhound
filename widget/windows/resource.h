@@ -2,6 +2,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#ifndef WIDGET_WINDOWS_RESOURCE_H_
+#define WIDGET_WINDOWS_RESOURCE_H_
+
 #define IDC_GRAB 4101
 #define IDC_GRABBING 4102
 #define IDC_CELL 4103
@@ -14,3 +17,5 @@
 #define IDC_VERTICALTEXT 4110
 #define IDC_DUMMY_CE_MENUBAR 4111
 #define IDC_NONE 4112
+
+#endif  // WIDGET_WINDOWS_RESOURCE_H_

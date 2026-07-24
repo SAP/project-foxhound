@@ -6,8 +6,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _GeckoTextMarker_H_
-#define _GeckoTextMarker_H_
+#ifndef GeckoTextMarker_H_
+#define GeckoTextMarker_H_
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <Foundation/Foundation.h>

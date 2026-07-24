@@ -12,8 +12,8 @@
 #include "ServiceWorkerParent.h"
 #include "ServiceWorkerRegistrationChild.h"
 #include "ServiceWorkerRegistrationParent.h"
-#include "mozilla/dom/WorkerRef.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/dom/WorkerRef.h"
 
 namespace mozilla::dom {
 

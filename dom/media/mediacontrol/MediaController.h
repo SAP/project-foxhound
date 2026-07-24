@@ -11,9 +11,9 @@
 #include "MediaPlaybackStatus.h"
 #include "MediaStatusManager.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/dom/MediaControllerBinding.h"
 #include "mozilla/dom/MediaSession.h"
-#include "mozilla/LinkedList.h"
 #include "nsISupportsImpl.h"
 #include "nsITimer.h"
 

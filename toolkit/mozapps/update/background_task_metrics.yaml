@@ -82,6 +82,42 @@ background_update:
       - events
       - baseline
 
+  days_since_last_browsed:
+    type: quantity
+    unit: days
+    description: >
+      The number of days since the default profile was last used for browsing,
+      i.e., since `environment.currentDate` of the default profile's serialized
+      targeting snapshot.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+
+  debounced:
+    type: counter
+    description: >
+      The number of debounced background task invocations between this
+      invocation and the last invocation that was not debounced.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+
   exit_code_exception:
     type: boolean
     description: >
@@ -267,6 +303,40 @@ background_update:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1795467
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1795467
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+
+  throttled:
+    type: boolean
+    description: >
+      True if this invocation of the background task was throttled and did not
+      attempt to actually update.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921111
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+
+  throttling_prevented_updates:
+    type: counter
+    description: >
+      The number of times an update was available and we prevented installation
+      due to throttling.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972105
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972105
     data_sensitivity:
       - technical
     notification_emails:

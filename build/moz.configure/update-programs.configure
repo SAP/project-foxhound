@@ -265,19 +265,29 @@ option(
 
 set_config("MOZ_NOTIFICATION_SERVER", True, when="--enable-notification-server")
 
-# Zucchini support (in progress, Windows-only)
-# ============================================
+# Supported patch formats for the updater
+# =======================================
 
-with only_when(
-    depends("--enable-updater", target)(
-        lambda updater, target: updater and target.os != "Android"
-    )
-):
-    option(
-        "--enable-zucchini",
-        when=depends(target)(lambda target: target.os == "WINNT"),
-        help="Enable zucchini support",
-    )
+with only_when("--enable-updater"):
+    include("zucchini.configure")
 
-set_config("MOZ_ZUCCHINI", True, when="--enable-zucchini")
-set_define("MOZ_ZUCCHINI", True, when="--enable-zucchini")
+    with only_when(~zucchini_is_available):
+        set_config("MOZ_BSPATCH", True)
+        set_define("MOZ_BSPATCH", True)
+
+    with only_when(zucchini_is_available):
+        option(
+            "--disable-bspatch",
+            help="Disable bspatch support",
+        )
+
+        set_config("MOZ_BSPATCH", True, when="--enable-bspatch")
+        set_define("MOZ_BSPATCH", True, when="--enable-bspatch")
+
+        @depends("--enable-bspatch", "--enable-zucchini")
+        def check_at_least_one_patch_format(bspatch, zucchini):
+            if not bspatch and not zucchini:
+                die(
+                    "You must enable at least one patch format when --enable-updater "
+                    "is used. Use --enable-bspatch or --enable-zucchini."
+                )

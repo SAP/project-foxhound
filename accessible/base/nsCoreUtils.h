@@ -347,6 +347,31 @@ class nsCoreUtils {
    * will return true for the latter node.
    */
   static bool IsTrimmedWhitespaceBeforeHardLineBreak(nsIFrame* aFrame);
+
+  static bool IsPseudoElement(nsIContent* aContent) {
+    return aContent->IsGeneratedContentContainerForBefore() ||
+           aContent->IsGeneratedContentContainerForAfter() ||
+           aContent->IsGeneratedContentContainerForMarker();
+  }
+
+  /**
+   * Return the anchor frame for the given CSS positioned frame, or null if:
+   * 1. there is none,
+   * 2. there is more than one anchor,
+   * 3. or, there is one or more anchor used for sizing/margin only.
+   */
+  static const nsIFrame* GetAnchorForPositionedFrame(
+      const PresShell* aPresShell, const nsIFrame* aPositionedFrame);
+
+  /**
+   * Return the CSS positioned frame for the given anchor frame, or null if:
+   * 1. there is none,
+   * 2. the anchor has more than one positioned frame,
+   * 3. or, there is one or more positioned frame using this anchor for
+   * sizing/margin only.
+   */
+  static nsIFrame* GetPositionedFrameForAnchor(const PresShell* aPresShell,
+                                               const nsIFrame* aAnchorFrame);
 };
 
 #endif

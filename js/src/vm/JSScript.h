@@ -53,8 +53,10 @@ class SourceText;
 
 namespace js {
 
+class Compressor;
 class FrontendContext;
 class ScriptSource;
+class SourceLocationIterator;
 
 class VarScope;
 class LexicalScope;
@@ -79,7 +81,7 @@ class JitScript;
 
 class ModuleObject;
 class RegExpObject;
-class SourceCompressionTask;
+class SourceCompressionTaskEntry;
 class Shape;
 class SrcNote;
 class DebugScript;
@@ -376,6 +378,11 @@ struct SourceTypeTraits<char16_t> {
 [[nodiscard]] extern bool SynchronouslyCompressSource(
     JSContext* cx, JS::Handle<BaseScript*> script);
 
+// Variant return type for ScriptSource::substringChars to support both UTF-8
+// and UTF-16.
+using SubstringCharsResult =
+    mozilla::Variant<JS::UniqueChars, JS::UniqueTwoByteChars>;
+
 // [SMDOC] ScriptSource
 //
 // This class abstracts over the source we used to compile from. The current
@@ -389,7 +396,8 @@ class ScriptSource {
   // modified by the main thread, and all members are always safe to access
   // on the main thread.
 
-  friend class SourceCompressionTask;
+  friend class PendingSourceCompressionEntry;
+  friend class SourceCompressionTaskEntry;
   friend bool SynchronouslyCompressSource(JSContext* cx,
                                           JS::Handle<BaseScript*> script);
 
@@ -420,7 +428,10 @@ class ScriptSource {
     const Unit* units_;
 
    public:
-    PinnedUnits(JSContext* cx, ScriptSource* source,
+    // If maybeCx is nullptr, compressed sources will still be decompressed but
+    // the result will not be cached. This allows off-main-thread use without
+    // a JSContext.
+    PinnedUnits(JSContext* maybeCx, ScriptSource* source,
                 UncompressedSourceCache::AutoHoldEntry& holder, size_t begin,
                 size_t len);
 
@@ -620,8 +631,13 @@ class ScriptSource {
   // How many ids have been handed out to sources.
   static mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> idCount_;
 
+  // Decompress and return the specified chunk of source code.
+  // If maybeCx is nullptr, decompression still works but the uncompressed
+  // result will not be cached. This allows off-main-thread callers to
+  // decompress source without a JSContext, at the cost of potentially
+  // decompressing the same chunk multiple times.
   template <typename Unit>
-  const Unit* chunkUnits(JSContext* cx,
+  const Unit* chunkUnits(JSContext* maybeCx,
                          UncompressedSourceCache::AutoHoldEntry& holder,
                          size_t chunk);
 
@@ -630,9 +646,13 @@ class ScriptSource {
   //
   // Warning: this is *not* GC-safe! Any chars to be handed out must use
   // PinnedUnits. See comment below.
+  //
+  // If maybeCx is nullptr, compressed sources will still be decompressed but
+  // the result will not be cached. See chunkUnits comment above.
   template <typename Unit>
-  const Unit* units(JSContext* cx, UncompressedSourceCache::AutoHoldEntry& asp,
-                    size_t begin, size_t len);
+  const Unit* units(JSContext* maybeCx,
+                    UncompressedSourceCache::AutoHoldEntry& asp, size_t begin,
+                    size_t len);
 
   template <typename Unit>
   const Unit* uncompressedUnits(size_t begin, size_t len);
@@ -668,7 +688,9 @@ class ScriptSource {
                                                   UniqueTwoByteChars&& str);
 
  private:
+  class LoadSourceMatcherBase;
   class LoadSourceMatcher;
+  class SourcePropertiesGetter;
 
  public:
   // Attempt to load usable source for |ss| -- source text on which substring
@@ -676,6 +698,16 @@ class ScriptSource {
   // |*loaded| to indicate whether usable source could be loaded; otherwise
   // return false.
   static bool loadSource(JSContext* cx, ScriptSource* ss, bool* loaded);
+
+  // This is similar to loadSource, but it is designed to be used outside of the
+  // main thread. This is done by removing the need of JSContext for the
+  // Retrievable sources that require sourceHook. For retrievable cases, it
+  // sets retrievable to true and sets the isUT16 depending on the encoding.
+  //
+  // *loaded indicates whether source text is available, *retrievable indicates
+  // whether the source can be retrieved later via source hook.
+  static void getSourceProperties(ScriptSource* ss, bool* hasSourceText,
+                                  bool* retrievable);
 
   // Assign source data from |srcBuf| to this recently-created |ScriptSource|.
   template <typename Unit>
@@ -889,6 +921,18 @@ class ScriptSource {
   JSLinearString* substring(JSContext* cx, size_t start, size_t stop);
   JSLinearString* substringDontDeflate(JSContext* cx, size_t start,
                                        size_t stop);
+  // Get substring characters without creating a JSString. Returns a variant
+  // containing either UniqueChars (UTF-8) or UniqueTwoByteChars (UTF-16).
+  //
+  // IMPORTANT: The returned buffer is NOT null-terminated. Callers must track
+  // the length separately (stop - start). This is designed for consumers that
+  // store length explicitly (e.g., ProfilerJSSourceData).
+  //
+  // Callers must handle empty sources before calling this (the function asserts
+  // non-empty length). Returns nullptr only on allocation failures. Designed
+  // for off-main-thread use where JSContext is not available for error
+  // reporting.
+  SubstringCharsResult substringChars(size_t start, size_t stop);
 
   [[nodiscard]] bool appendSubstring(JSContext* cx, js::StringBuilder& buf,
                                      size_t start, size_t stop);
@@ -897,8 +941,26 @@ class ScriptSource {
     parameterListEnd_ = parameterListEnd;
   }
 
-  bool isFunctionBody() { return parameterListEnd_ != 0; }
+  bool isFunctionBody() const { return parameterListEnd_ != 0; }
   JSLinearString* functionBodyString(JSContext* cx);
+
+  // Returns the function body substring. Unlike substringChars, this can return
+  // an empty result (nullptr with *outLength == 0) for empty function bodies.
+  // The caller doesn't need to check the length before calling.
+  SubstringCharsResult functionBodyStringChars(size_t* outLength);
+
+  // Returns true if this source should display only the function body.
+  // In case of DOM event handler like <div onclick="foo()" the JS code is
+  // wrapped into
+  //   function onclick() {foo()}
+  // We want to only return `foo()` here.
+  // But only for event handlers, for `new Function("foo()")`, we want to
+  // return:
+  //   function anonymous() {foo()}
+  bool shouldUnwrapEventHandlerBody() const {
+    return hasIntroductionType() &&
+           strcmp(introductionType(), "eventHandler") == 0 && isFunctionBody();
+  }
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               JS::ScriptSourceInfo* info) const;
@@ -955,7 +1017,7 @@ class ScriptSource {
       size_t sourceLength);
 
  private:
-  void performTaskWork(SourceCompressionTask* task);
+  void performTaskWork(SourceCompressionTaskEntry* task, Compressor& comp);
 
   struct TriggerConvertToCompressedSourceFromTask {
     ScriptSource* const source_;
@@ -1132,10 +1194,10 @@ class ScriptSourceObject : public NativeObject {
 #endif
 
   enum {
-    SOURCE_SLOT = 0,
+    PRIVATE_SLOT = 0,  // Must be first slot for JSCLASS_SLOT0_IS_NSISUPPORTS.
+    SOURCE_SLOT,
     ELEMENT_PROPERTY_SLOT,
     INTRODUCTION_SCRIPT_SLOT,
-    PRIVATE_SLOT,
     STENCILS_SLOT,
     RESERVED_SLOTS
   };
@@ -1326,13 +1388,8 @@ static_assert(sizeof(ScriptWarmUpData) == sizeof(uintptr_t),
 //
 // Accessing this array just requires calling the appropriate public
 // Span-computing function.
-//
-// This class doesn't use the GC barrier wrapper classes. BaseScript::swapData
-// performs a manual pre-write barrier when detaching PrivateScriptData from a
-// script.
 class alignas(uintptr_t) PrivateScriptData final
     : public TrailingArray<PrivateScriptData> {
- private:
   uint32_t ngcthings = 0;
 
   // Note: This is only defined for scripts with an enclosing scope. This
@@ -1342,7 +1399,6 @@ class alignas(uintptr_t) PrivateScriptData final
 
   // End of fields.
 
- private:
   // Layout helpers
   Offset gcThingsOffset() { return offsetOfGCThings(); }
   Offset endOffset() const {
@@ -1350,10 +1406,10 @@ class alignas(uintptr_t) PrivateScriptData final
     return offsetOfGCThings() + size;
   }
 
+ public:
   // Initialize header and PackedSpans
   explicit PrivateScriptData(uint32_t ngcthings);
 
- public:
   static constexpr size_t offsetOfGCThings() {
     return sizeof(PrivateScriptData);
   }
@@ -1390,6 +1446,37 @@ class alignas(uintptr_t) PrivateScriptData final
   // PrivateScriptData has trailing data so isn't copyable or movable.
   PrivateScriptData(const PrivateScriptData&) = delete;
   PrivateScriptData& operator=(const PrivateScriptData&) = delete;
+};
+
+// An entry in the runtime's pendingCompressions_ list for a single
+// ScriptSource.
+//
+// It is not desirable to eagerly compress: if lazy functions that are tied to
+// the ScriptSource were to be executed relatively soon after parsing, they
+// would need to block on decompression, which hurts responsiveness.
+//
+// To this end, script sources are enqueued in a pending list by
+// ScriptSource::tryCompressOffThread. When a major GC occurs, we allocate and
+// submit SourceCompressionTasks for them. Currently, a script source is
+// considered ready 2 major GCs after being enqueued.
+class PendingSourceCompressionEntry {
+  // The major GC number of the runtime when the entry was enqueued.
+  uint64_t majorGCNumber_;
+
+  // The source to be compressed.
+  RefPtr<ScriptSource> source_;
+
+ public:
+  PendingSourceCompressionEntry(JSRuntime* rt, ScriptSource* source);
+
+  ScriptSource* source() const { return source_.get(); }
+  uint64_t majorGCNumber() const { return majorGCNumber_; }
+  bool shouldCancel() const {
+    // If the refcount is exactly 1, then nothing else is holding on to the
+    // ScriptSource, so no reason to compress it and we should cancel the
+    // compression.
+    return source_->refs == 1;
+  }
 };
 
 // [SMDOC] Script Representation (js::BaseScript)
@@ -1619,8 +1706,10 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
 
   bool hasPrivateScriptData() const { return data_ != nullptr; }
 
-  // Update data_ pointer while also informing GC MemoryUse tracking.
-  void swapData(UniquePtr<PrivateScriptData>& other);
+  // Update data_ pointer and trigger barriers.
+  void swapData(MutableHandleBuffer<PrivateScriptData> other);
+
+  void freeData();
 
   mozilla::Span<const JS::GCCellPtr> gcthings() const {
     return data_ ? data_->gcthings() : mozilla::Span<JS::GCCellPtr>();
@@ -1664,11 +1753,10 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
   static const JS::TraceKind TraceKind = JS::TraceKind::Script;
 
   void traceChildren(JSTracer* trc);
+  void traceChildrenConcurrently(JSTracer* trc, bool* skippedJitScript);
   void finalize(JS::GCContext* gcx);
 
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
-    return mallocSizeOf(data_);
-  }
+  size_t sizeOfExcludingThis();
 
   inline JSScript* asJSScript();
 
@@ -1695,6 +1783,9 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dumpStringContent(js::GenericPrinter& out) const;
 #endif
+
+ private:
+  void traceChildrenCommon(JSTracer* trc);
 };
 
 extern void SweepScriptData(JSRuntime* rt);
@@ -2057,6 +2148,8 @@ class JSScript : public js::BaseScript {
     return immutableScriptData()->notes() + numNotes();
   }
 
+  js::SourceLocationIterator sourceLocationIter() const;
+
   JSString* getString(js::GCThingIndex index) const {
     return &gcthings()[index].as<JSString>();
   }
@@ -2298,6 +2391,27 @@ extern unsigned PCToNextLineNumber(
     unsigned startLine, JS::LimitedColumnNumberOneOrigin startCol,
     SrcNote* notes, SrcNote* notesEnd, jsbytecode* code, jsbytecode* pc,
     JS::LimitedColumnNumberOneOrigin* columnp = nullptr);
+
+// Iterator over SrcNote array that tracks bytecode offset and line/column.
+class SourceLocationIterator {
+  SrcNoteIterator iter_;
+  ptrdiff_t offset_;
+  unsigned line_;
+  JS::LimitedColumnNumberOneOrigin column_;
+  unsigned startLine_;
+  jsbytecode* code_;
+
+ public:
+  SourceLocationIterator(unsigned startLine,
+                         JS::LimitedColumnNumberOneOrigin startCol,
+                         SrcNote* notes, SrcNote* notesEnd, jsbytecode* code);
+
+  // Advance the iterator to the given PC, updating line and column.
+  void advanceToPC(const jsbytecode* pc);
+
+  unsigned line() const { return line_; }
+  JS::LimitedColumnNumberOneOrigin column() const { return column_; }
+};
 
 /*
  * This function returns the file and line number of the script currently

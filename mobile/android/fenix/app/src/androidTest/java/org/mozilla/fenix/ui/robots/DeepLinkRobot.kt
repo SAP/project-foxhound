@@ -11,7 +11,7 @@ import androidx.core.net.toUri
 import androidx.test.platform.app.InstrumentationRegistry
 import org.mozilla.fenix.BuildConfig.DEEP_LINK_SCHEME
 
-class DeepLinkRobot {
+class DeepLinkRobot(private val composeTestRule: ComposeTestRule) {
     private fun openDeepLink(url: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent().apply {
@@ -35,20 +35,20 @@ class DeepLinkRobot {
             .build()
             .toString()
         openDeepLink(deepLink)
-        return browserScreen(interact)
+        return browserScreen(composeTestRule, interact)
     }
 
     fun openHomeScreen(interact: HomeScreenRobot.() -> Unit) =
-        openDeepLink("home").run { homeScreen(interact) }
+        openDeepLink("home").run { homeScreen(composeTestRule, interact) }
 
     fun openBookmarks(composeTestRule: ComposeTestRule, interact: BookmarksRobot.() -> Unit) =
         openDeepLink("urls_bookmarks").run { composeBookmarksMenu(composeTestRule, interact) }
 
     fun openHistory(interact: HistoryRobot.() -> Unit) =
-        openDeepLink("urls_history").run { historyMenu(interact) }
+        openDeepLink("urls_history").run { historyMenu(composeTestRule, interact) }
 
     fun openCollections(interact: HomeScreenRobot.() -> Unit) =
-        openDeepLink("home_collections").run { homeScreen(interact) }
+        openDeepLink("home_collections").run { homeScreen(composeTestRule, interact) }
 
     fun openSettings(interact: SettingsRobot.() -> Unit) =
         openDeepLink("settings").run { settings(interact) }

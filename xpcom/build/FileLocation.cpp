@@ -8,8 +8,6 @@
 #include "nsZipArchive.h"
 #include "nsURLHelper.h"
 
-#include "mozilla/UniquePtrExtensions.h"
-
 namespace mozilla {
 
 FileLocation::FileLocation() = default;

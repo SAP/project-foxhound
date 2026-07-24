@@ -170,5 +170,6 @@ if CONFIG["OS_ARCH"] == "Linux" and "lib64" in CONFIG["libdir"]:
 LOCAL_INCLUDES += [
     "!..",
     "../build",
+    "/toolkit/xre",
 ]
 

@@ -26,7 +26,7 @@ add_setup(async () => {
   });
 
   let cleanup = await installPersistTestEngines();
-  testEngine = Services.search.getEngineByName("Example");
+  testEngine = SearchService.getEngineByName("Example");
 
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
@@ -125,7 +125,7 @@ add_task(async function search_after_search() {
   await SearchUITestUtils.assertSAPTelemetry({
     engineId: "Example",
     engineName: "Example",
-    source: "urlbar-persisted",
+    source: "urlbar_persisted",
     count: 1,
   });
 
@@ -158,7 +158,7 @@ add_task(async function switch_to_tab_and_search() {
   await SearchUITestUtils.assertSAPTelemetry({
     engineId: "Example",
     engineName: "Example",
-    source: "urlbar-persisted",
+    source: "urlbar_persisted",
     count: 1,
   });
 
@@ -195,7 +195,7 @@ add_task(async function search_and_go_back_and_search_again() {
   await SearchUITestUtils.assertSAPTelemetry({
     engineId: "Example",
     engineName: "Example",
-    source: "urlbar-persisted",
+    source: "urlbar_persisted",
     count: 1,
   });
 

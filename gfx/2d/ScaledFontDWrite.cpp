@@ -7,12 +7,10 @@
 #include "ScaledFontDWrite.h"
 #include "gfxDWriteCommon.h"
 #include "UnscaledFontDWrite.h"
-#include "PathD2D.h"
 #include "gfxFont.h"
 #include "Logging.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "HelpersD2D.h"
 #include "StackArray.h"
 
 #include "dwrite_3.h"
@@ -95,23 +93,6 @@ ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
   }
 }
 
-already_AddRefed<Path> ScaledFontDWrite::GetPathForGlyphs(
-    const GlyphBuffer& aBuffer, const DrawTarget* aTarget) {
-  RefPtr<PathBuilder> pathBuilder = aTarget->CreatePathBuilder();
-
-  if (pathBuilder->GetBackendType() != BackendType::DIRECT2D &&
-      pathBuilder->GetBackendType() != BackendType::DIRECT2D1_1) {
-    return ScaledFontBase::GetPathForGlyphs(aBuffer, aTarget);
-  }
-
-  PathBuilderD2D* pathBuilderD2D =
-      static_cast<PathBuilderD2D*>(pathBuilder.get());
-
-  CopyGlyphsToSink(aBuffer, pathBuilderD2D->GetSink());
-
-  return pathBuilder->Finish();
-}
-
 SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
   RefPtr<IDWriteFactory> factory = Factory::GetDWriteFactory();
   if (!factory) {
@@ -136,9 +117,15 @@ SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
     clearTypeLevel = 1.0f;
   }
 
-  return SkCreateTypefaceFromDWriteFont(factory, mFontFace, mStyle,
-                                        (int)settings.RenderingMode(), gamma,
-                                        contrast, clearTypeLevel);
+  IDWriteFont* font =
+      static_cast<UnscaledFontDWrite*>(mUnscaledFont.get())->GetFont();
+  RefPtr<IDWriteFontFamily> family;
+  if (font) {
+    font->GetFontFamily(getter_AddRefs(family));
+  }
+  return SkCreateTypefaceFromDWriteFont(factory, mFontFace, font, family,
+                                        mStyle, (int)settings.RenderingMode(),
+                                        gamma, contrast, clearTypeLevel);
 }
 
 void ScaledFontDWrite::SetupSkFontDrawOptions(SkFont& aFont) {
@@ -153,51 +140,6 @@ void ScaledFontDWrite::SetupSkFontDrawOptions(SkFont& aFont) {
 
 bool ScaledFontDWrite::MayUseBitmaps() {
   return ForceGDIMode() || UseEmbeddedBitmaps();
-}
-
-void ScaledFontDWrite::CopyGlyphsToBuilder(const GlyphBuffer& aBuffer,
-                                           PathBuilder* aBuilder,
-                                           const Matrix* aTransformHint) {
-  BackendType backendType = aBuilder->GetBackendType();
-  if (backendType != BackendType::DIRECT2D &&
-      backendType != BackendType::DIRECT2D1_1) {
-    ScaledFontBase::CopyGlyphsToBuilder(aBuffer, aBuilder, aTransformHint);
-    return;
-  }
-
-  PathBuilderD2D* pathBuilderD2D = static_cast<PathBuilderD2D*>(aBuilder);
-
-  if (pathBuilderD2D->IsFigureActive()) {
-    gfxCriticalNote
-        << "Attempting to copy glyphs to PathBuilderD2D with active figure.";
-  }
-
-  CopyGlyphsToSink(aBuffer, pathBuilderD2D->GetSink());
-}
-
-void ScaledFontDWrite::CopyGlyphsToSink(const GlyphBuffer& aBuffer,
-                                        ID2D1SimplifiedGeometrySink* aSink) {
-  std::vector<UINT16> indices;
-  std::vector<FLOAT> advances;
-  std::vector<DWRITE_GLYPH_OFFSET> offsets;
-  indices.resize(aBuffer.mNumGlyphs);
-  advances.resize(aBuffer.mNumGlyphs);
-  offsets.resize(aBuffer.mNumGlyphs);
-
-  memset(&advances.front(), 0, sizeof(FLOAT) * aBuffer.mNumGlyphs);
-  for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {
-    indices[i] = aBuffer.mGlyphs[i].mIndex;
-    offsets[i].advanceOffset = aBuffer.mGlyphs[i].mPosition.x;
-    offsets[i].ascenderOffset = -aBuffer.mGlyphs[i].mPosition.y;
-  }
-
-  HRESULT hr = mFontFace->GetGlyphRunOutline(
-      mSize, &indices.front(), &advances.front(), &offsets.front(),
-      aBuffer.mNumGlyphs, FALSE, FALSE, aSink);
-  if (FAILED(hr)) {
-    gfxCriticalNote << "Failed to copy glyphs to geometry sink. Code: "
-                    << hexa(hr);
-  }
 }
 
 bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
@@ -496,7 +438,7 @@ bool ScaledFontDWrite::GetWRFontInstanceOptions(
     default:
       break;
   }
-  if (Factory::GetBGRSubpixelOrder()) {
+  if (Factory::GetSubpixelOrder() == SubpixelOrder::BGR) {
     options.flags |= wr::FontInstanceFlags::SUBPIXEL_BGR;
   }
   options.synthetic_italics =

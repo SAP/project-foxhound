@@ -23,7 +23,6 @@
 #include "mozilla/Mutex.h"
 #include "nsRegion.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
 #include "nsString.h"

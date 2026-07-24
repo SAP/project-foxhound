@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HostRecordQueue_h__
-#define HostRecordQueue_h__
+#ifndef HostRecordQueue_h_
+#define HostRecordQueue_h_
 
 #include <functional>
 #include "mozilla/Mutex.h"
@@ -34,6 +34,11 @@ class HostRecordQueue final {
       nsHostRecord* aRec, uint32_t aMaxCacheEntries,
       nsRefPtrHashtable<nsGenericHashKey<nsHostKey>, nsHostRecord>& aDB,
       const MutexAutoLock& aProofOfLock);
+
+  // Move aRec to the tail of mEvictionQ (the most-recently-used end).
+  void MoveToEvictionQueueTail(nsHostRecord* aRec,
+                               const MutexAutoLock& aProofOfLock);
+
   // Called for removing the record from mEvictionQ. When this function is
   // called, the record should be either in mEvictionQ or not in any queue.
   void MaybeRenewHostRecord(nsHostRecord* aRec,
@@ -69,4 +74,4 @@ class HostRecordQueue final {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // HostRecordQueue_h__
+#endif  // HostRecordQueue_h_

@@ -4,7 +4,7 @@
 
 import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
-import AccessibleImage from "../AccessibleImage";
+import DebuggerImage from "../DebuggerImage";
 import { CommandBarButton } from "./index";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
@@ -48,8 +48,8 @@ class PaneToggleButton extends PureComponent {
         onClick: () => handleClick(position, !collapsed),
         title: this.label(position, collapsed),
       },
-      React.createElement(AccessibleImage, {
-        className: collapsed ? "pane-expand" : "pane-collapse",
+      React.createElement(DebuggerImage, {
+        name: collapsed ? "pane-expand" : "pane-collapse",
       })
     );
   }

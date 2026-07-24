@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_ConstraintValidition_h___
-#define mozilla_dom_ConstraintValidition_h___
+#ifndef mozilla_dom_ConstraintValidition_h_
+#define mozilla_dom_ConstraintValidition_h_
 
 #include "nsIConstraintValidation.h"
 #include "nsString.h"
@@ -45,4 +45,4 @@ class ConstraintValidation : public nsIConstraintValidation {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_ConstraintValidition_h___
+#endif  // mozilla_dom_ConstraintValidition_h_

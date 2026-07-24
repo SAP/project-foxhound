@@ -5,17 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Storage.h"
-#include "StorageNotifierService.h"
 
-#include "mozilla/dom/StorageBinding.h"
-#include "mozilla/dom/StorageEvent.h"
-#include "mozilla/dom/StorageEventBinding.h"
+#include "StorageNotifierService.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/dom/StorageBinding.h"
+#include "mozilla/dom/StorageEvent.h"
+#include "mozilla/dom/StorageEventBinding.h"
 #include "nsIObserverService.h"
 #include "nsPIDOMWindow.h"
 
@@ -147,7 +147,7 @@ void Storage::NotifyChange(Storage* aStorage, nsIPrincipal* aPrincipal,
       new StorageNotifierRunnable(event, aStorageType, aIsPrivate);
 
   if (aImmediateDispatch) {
-    Unused << r->Run();
+    (void)r->Run();
   } else {
     SchedulerGroup::Dispatch(r.forget());
   }

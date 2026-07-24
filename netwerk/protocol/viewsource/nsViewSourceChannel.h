@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsViewSourceChannel_h___
-#define nsViewSourceChannel_h___
+#ifndef nsViewSourceChannel_h_
+#define nsViewSourceChannel_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "nsCOMPtr.h"
 #include "nsICachingChannel.h"
@@ -95,4 +94,4 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   bool mIsSrcdocChannel{false};
 };
 
-#endif /* nsViewSourceChannel_h___ */
+#endif /* nsViewSourceChannel_h_ */

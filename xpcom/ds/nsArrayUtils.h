@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsArrayUtils_h__
-#define nsArrayUtils_h__
+#ifndef nsArrayUtils_h_
+#define nsArrayUtils_h_
 
 #include "nsCOMPtr.h"
 #include "nsIArray.h"
@@ -31,4 +31,4 @@ inline const nsQueryArrayElementAt do_QueryElementAt(nsIArray* aArray,
   return nsQueryArrayElementAt(aArray, aIndex, aErrorPtr);
 }
 
-#endif  // nsArrayUtils_h__
+#endif  // nsArrayUtils_h_

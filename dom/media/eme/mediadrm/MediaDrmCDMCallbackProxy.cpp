@@ -5,13 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDrmCDMCallbackProxy.h"
-#include "MediaDrmCDMProxy.h"
-#include "nsString.h"
-#include "mozilla/dom/MediaKeys.h"
-#include "mozilla/dom/MediaKeySession.h"
-#include "nsServiceManagerUtils.h"
+
 #include "MainThreadUtils.h"
+#include "MediaDrmCDMProxy.h"
 #include "mozilla/EMEUtils.h"
+#include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeys.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -71,7 +72,9 @@ void MediaDrmCDMCallbackProxy::SessionClosed(const nsCString& aSessionId) {
   if (keyStatusesChange) {
     mProxy->OnKeyStatusesChange(NS_ConvertUTF8toUTF16(aSessionId));
   }
-  mProxy->OnSessionClosed(NS_ConvertUTF8toUTF16(aSessionId));
+  mProxy->OnSessionClosed(
+      NS_ConvertUTF8toUTF16(aSessionId),
+      dom::MediaKeySessionClosedReason::Closed_by_application);
 }
 
 void MediaDrmCDMCallbackProxy::SessionError(const nsCString& aSessionId,

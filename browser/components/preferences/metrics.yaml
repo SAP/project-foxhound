@@ -144,6 +144,7 @@ intl.ui.browser_language:
       - https://bugzil.la/1861299
       - https://bugzil.la/1911321
       - https://bugzil.la/1928262
+      - https://bugzil.la/1999880
     data_reviews: &intl_ui_browserLanguage_manage_data_reviews
       - https://bugzil.la/1486507
       - https://bugzil.la/1553311
@@ -154,11 +155,13 @@ intl.ui.browser_language:
       - https://bugzil.la/1861299
       - https://bugzil.la/1911321
       - https://bugzil.la/1928262
+      - https://bugzil.la/1999880
     notification_emails: &intl_ui_browserLanguage_manage_emails
+      - bolsson@mozilla.com
       - earo@mozilla.com
       - flod@mozilla.com
       - mstriemer@mozilla.com
-    expires: 148
+    expires: 161
     extra_keys: &intl_ui_browserLanguage_manage_extra
       value:
         description: >
@@ -181,7 +184,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Search_Dialog
 
@@ -199,7 +202,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Search_Main
 
@@ -217,7 +220,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys:
       value:
         description: >
@@ -244,7 +247,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Remove_Dialog
 
@@ -262,7 +265,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Reorder_Dialog
 
@@ -280,7 +283,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     telemetry_mirror: IntlUiBrowserlanguage_Reorder_Main
 
   apply_main:
@@ -297,7 +300,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     telemetry_mirror: IntlUiBrowserlanguage_Apply_Main
 
   accept_dialog:
@@ -314,7 +317,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Accept_Dialog
 
@@ -332,7 +335,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_Cancel_Dialog
 
@@ -350,7 +353,7 @@ intl.ui.browser_language:
     bugs: *intl_ui_browserLanguage_manage_bugs
     data_reviews: *intl_ui_browserLanguage_manage_data_reviews
     notification_emails: *intl_ui_browserLanguage_manage_emails
-    expires: 148
+    expires: 161
     extra_keys: *intl_ui_browserLanguage_manage_extra
     telemetry_mirror: IntlUiBrowserlanguage_SetFallback_Dialog
 
@@ -411,3 +414,47 @@ aboutpreferences:
     telemetry_mirror: Aboutpreferences_Show_Hash
     no_lint:
       - COMMON_PREFIX
+
+security.preferences.warnings:
+  warnings_shown:
+    type: event
+    description: >
+      Recorded when the security warnings card is possibly added to the page
+      in about:preferences#privacy. This tracks the count of visible
+      security warning items to understand how many issues users are seeing.
+      This only fires once per time the settings page is loaded.
+    bugs:
+      - https://bugzilla.mozilla.org/2007918
+    data_reviews:
+      - https://bugzilla.mozilla.org/2007918
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: never
+    extra_keys:
+      count:
+        description: The number of visible security warning items in the card
+        type: quantity
+  warning_fixed:
+    type: event
+    description: >
+      Recorded when the user interacts with the "fix" button in the issue box
+      item.
+    bugs:
+      - https://bugzilla.mozilla.org/2007918
+    data_reviews:
+      - https://bugzilla.mozilla.org/2007918
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: never
+  warning_dismissed:
+    type: event
+    description: >
+      Recorded when the user interacts with the dismiss button in the issue box
+      item.
+    bugs:
+      - https://bugzilla.mozilla.org/2007918
+    data_reviews:
+      - https://bugzilla.mozilla.org/2007918
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: never

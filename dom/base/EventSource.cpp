@@ -4,15 +4,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/EventSource.h"
+
+#include "ReferrerInfo.h"
 #include "mozilla/Components.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/LoadInfo.h"
-#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/GlobalFreezeObserver.h"
-#include "mozilla/dom/EventSource.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/Try.h"
 #include "mozilla/dom/EventSourceBinding.h"
+#include "mozilla/dom/EventSourceEventService.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -20,39 +26,31 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/EventSourceEventService.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Try.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIThreadRetargetableStreamListener.h"
-#include "nsNetUtil.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
+#include "nsIConsoleService.h"
 #include "nsIHttpChannel.h"
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsMimeTypes.h"
 #include "nsIPromptFactory.h"
+#include "nsIScriptError.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsIStringBundle.h"
+#include "nsIThreadRetargetableRequest.h"
+#include "nsIThreadRetargetableStreamListener.h"
 #include "nsIWindowWatcher.h"
+#include "nsJSUtils.h"
+#include "nsMimeTypes.h"
+#include "nsNetUtil.h"
 #include "nsPresContext.h"
 #include "nsProxyRelease.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIStringBundle.h"
-#include "nsIConsoleService.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsJSUtils.h"
-#include "nsIThreadRetargetableRequest.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIScriptError.h"
-#include "nsContentUtils.h"
-#include "xpcpublic.h"
 #include "nsWrapperCacheInlines.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "nsError.h"
-#include "mozilla/Encoding.h"
-#include "ReferrerInfo.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 
@@ -559,7 +557,7 @@ nsresult EventSourceImpl::ParseURL(const nsAString& aURL) {
     auto lock = mSharedData.Lock();
     lock->mEventSource->mOriginalURL = NS_ConvertUTF8toUTF16(spec);
   }
-  mSrc = srcURI;
+  mSrc = std::move(srcURI);
   mOrigin = origin;
   return NS_OK;
 }
@@ -966,7 +964,7 @@ void EventSourceImpl::SetupHttpChannel() {
             ("SetupHttpChannel. rv=%x (%s)", uint32_t(rv), eventId.get()));
   }
 #endif
-  Unused << rv;
+  (void)rv;
 }
 
 nsresult EventSourceImpl::SetupReferrerInfo(
@@ -1048,6 +1046,15 @@ nsresult EventSourceImpl::InitChannelAndRequestEventSource(
                        nullptr,     // loadGroup
                        nullptr,     // aCallbacks
                        loadFlags);  // aLoadFlags
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    auto workerRef = mWorkerRef.Lock();
+
+    if (*workerRef) {
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      loadInfo->SetIsInThirdPartyContext(
+          (*workerRef)->Private()->IsThirdPartyContext());
+    }
   }
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1186,7 +1193,13 @@ void EventSourceImpl::ReestablishConnection() {
     return;
   }
 
-  rv = GetEventSource()->CheckCurrentGlobalCorrectness();
+  RefPtr<EventSource> source = GetEventSource();
+  if (!source) {
+    NS_WARNING("Event source is null");
+    return;
+  }
+
+  rv = source->CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1195,7 +1208,7 @@ void EventSourceImpl::ReestablishConnection() {
   ResetDecoder();
   // We can't hold the mutex while dispatching the event because the mutex is
   // not reentrant, and content might call back into our code.
-  rv = GetEventSource()->CreateAndDispatchSimpleEvent(u"error"_ns);
+  rv = source->CreateAndDispatchSimpleEvent(u"error"_ns);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to dispatch the error event!!!");
     return;
@@ -1833,17 +1846,19 @@ void EventSourceImpl::ReleaseWorkerRef() {
 // EventSourceImpl::nsIEventTarget
 //-----------------------------------------------------------------------------
 NS_IMETHODIMP
-EventSourceImpl::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
+EventSourceImpl::DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   return Dispatch(event.forget(), aFlags);
 }
 
 NS_IMETHODIMP
 EventSourceImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                          uint32_t aFlags) {
+                          DispatchFlags aFlags) {
+  // FIXME: This dispatch implementation has inconsistent leaking behaviour when
+  // `NS_DISPATCH_FALLIBLE` is not specified.
   nsCOMPtr<nsIRunnable> event_ref(aEvent);
   if (mIsMainThread) {
-    return NS_DispatchToMainThread(event_ref.forget());
+    return NS_DispatchToMainThread(event_ref.forget(), aFlags);
   }
 
   if (mIsShutDown) {
@@ -1883,6 +1898,10 @@ EventSourceImpl::RegisterShutdownTask(nsITargetShutdownTask*) {
 NS_IMETHODIMP
 EventSourceImpl::UnregisterShutdownTask(nsITargetShutdownTask*) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+nsIEventTarget::FeatureFlags EventSourceImpl::GetFeatures() {
+  return SUPPORTS_BASE;
 }
 
 //-----------------------------------------------------------------------------

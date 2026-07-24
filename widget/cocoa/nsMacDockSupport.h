@@ -3,6 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef mozilla_widget_nsMacDockSupport_h
+#define mozilla_widget_nsMacDockSupport_h
+
 #include "nsIMacDockSupport.h"
 #include "nsIStandaloneNativeMenu.h"
 #include "nsITaskbarProgress.h"
@@ -36,3 +39,5 @@ class nsMacDockSupport : public nsIMacDockSupport, public nsITaskbarProgress {
   void BuildDockTile();
   nsresult UpdateDockTile();
 };
+
+#endif  // mozilla_widget_nsMacDockSupport_h

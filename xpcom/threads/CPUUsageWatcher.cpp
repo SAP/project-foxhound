@@ -163,13 +163,11 @@ Result<Ok, CPUUsageWatcherError> CPUUsageWatcher::Init() {
   mExternalUsageThreshold =
       std::max(1.0f - 1.0f / (float)mNumCPUs, kTolerableExternalCPUUsageFloor);
 
-  CPUStats processTimes;
-  MOZ_TRY_VAR(processTimes, GetProcessCPUStats(mNumCPUs));
+  CPUStats processTimes = MOZ_TRY(GetProcessCPUStats(mNumCPUs));
   mProcessUpdateTime = processTimes.updateTime;
   mProcessUsageTime = processTimes.usageTime;
 
-  CPUStats globalTimes;
-  MOZ_TRY_VAR(globalTimes, GetGlobalCPUStats());
+  CPUStats globalTimes = MOZ_TRY(GetGlobalCPUStats());
   mGlobalUpdateTime = globalTimes.updateTime;
   mGlobalUsageTime = globalTimes.usageTime;
 
@@ -197,10 +195,8 @@ Result<Ok, CPUUsageWatcherError> CPUUsageWatcher::CollectCPUUsage() {
 
   mExternalUsageRatio = 0.0f;
 
-  CPUStats processTimes;
-  MOZ_TRY_VAR(processTimes, GetProcessCPUStats(mNumCPUs));
-  CPUStats globalTimes;
-  MOZ_TRY_VAR(globalTimes, GetGlobalCPUStats());
+  CPUStats processTimes = MOZ_TRY(GetProcessCPUStats(mNumCPUs));
+  CPUStats globalTimes = MOZ_TRY(GetGlobalCPUStats());
 
   uint64_t processUsageDelta = processTimes.usageTime - mProcessUsageTime;
   uint64_t processUpdateDelta = processTimes.updateTime - mProcessUpdateTime;

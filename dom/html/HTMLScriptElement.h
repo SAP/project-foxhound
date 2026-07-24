@@ -10,8 +10,8 @@
 #ifndef mozilla_dom_HTMLScriptElement_h
 #define mozilla_dom_HTMLScriptElement_h
 
-#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/ScriptElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStringFwd.h"
@@ -30,7 +30,7 @@ class TrustedScriptURLOrUSVString;
 class HTMLScriptElement final : public nsGenericHTMLElement,
                                 public ScriptElement {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
   HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                     FromParser aFromParser);
@@ -185,9 +185,10 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
   [[nodiscard]] static bool Supports(const GlobalObject& aGlobal,
                                      const nsAString& aType);
 
-  virtual void SetTextContentInternal(const nsAString& aTextContent,
-                                      nsIPrincipal* aSubjectPrincipal,
-                                      ErrorResult& aError) override;
+  virtual void SetTextContentInternal(
+      const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+      mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
  protected:
   virtual ~HTMLScriptElement();
 

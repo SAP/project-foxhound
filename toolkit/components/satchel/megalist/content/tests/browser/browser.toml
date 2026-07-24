@@ -1,9 +1,6 @@
 [DEFAULT]
-run-if = ["!release_or_beta"]
-
 prefs = [
   "sidebar.revamp=true",
-  "signon.management.page.os-auth.locked.enabled=true",
 ]
 
 support-files = [
@@ -11,6 +8,14 @@ support-files = [
 ]
 
 ["browser_passwords_create_login.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1974508
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1974508
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1974508
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1974508
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1974508
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1974508
+]
 
 ["browser_passwords_delete_login.js"]
 
@@ -24,13 +29,15 @@ support-files = [
 
 ["browser_passwords_multiple_windows.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1974557
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1974557
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1974557
   "os == 'win' && os_version == '11.26100' && opt", # Bug 1974557
 ]
 
 ["browser_passwords_primary_password.js"]
-skip-if = ["tsan"] # Bug 1949014
+skip-if = [
+  "tsan", # Bug 1949014
+]
 
 ["browser_passwords_remove_all_notification.js"]
 
@@ -39,9 +46,8 @@ skip-if = ["tsan"] # Bug 1949014
 ["browser_passwords_sidebar_import_from_csv.js"]
 
 ["browser_passwords_update_login.js"]
-skip-if = [
-  "os == 'win' && debug", # Can not test OsAuth on debug builds
-  "os == 'mac' && debug", # Can not test OsAuth on debug builds
+run-if = [
+  "opt", # Can not test OsAuth on debug builds
 ]
 
 ["browser_viewmodel.js"]

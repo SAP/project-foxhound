@@ -15,9 +15,6 @@
 #include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 
-#include <type_traits>
-#include <utility>
-
 #include "frontend/Parser.h"
 #include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin
 

@@ -7,7 +7,6 @@
 #ifndef MOZILLA_LAYERS_BUFFERETEXTURE
 #define MOZILLA_LAYERS_BUFFERETEXTURE
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/layers/TextureClient.h"
@@ -38,7 +37,7 @@ class BufferTextureData : public TextureData {
 
   bool Lock(OpenMode aMode) override { return true; }
 
-  void Unlock() override {}
+  void Unlock() override { mIsClear = false; }
 
   void FillInfo(TextureData::Info& aInfo) const override;
 
@@ -93,13 +92,16 @@ class BufferTextureData : public TextureData {
   virtual uint8_t* GetBuffer() = 0;
 
   BufferTextureData(const BufferDescriptor& aDescriptor,
-                    gfx::BackendType aMoz2DBackend)
-      : mDescriptor(aDescriptor), mMoz2DBackend(aMoz2DBackend) {}
+                    gfx::BackendType aMoz2DBackend, bool aIsClear = false)
+      : mDescriptor(aDescriptor),
+        mMoz2DBackend(aMoz2DBackend),
+        mIsClear(aIsClear) {}
 
   ~BufferTextureData() override = default;
 
   BufferDescriptor mDescriptor;
   gfx::BackendType mMoz2DBackend;
+  bool mIsClear = false;
 };
 
 template <typename ShmemAllocator>

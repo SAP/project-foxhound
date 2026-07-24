@@ -17,16 +17,15 @@ object FeatureFlags {
     val customExtensionCollectionFeature = Config.channel.isNightlyOrDebug || Config.channel.isBeta
 
     /**
+     * Controls whether the "Choose download location" feature is enabled or not.
+     */
+    val downloadsDefaultLocation = Config.channel.isDebug
+
+    /**
      * Pull-to-refresh allows you to pull the web content down far enough to have the page to
      * reload.
      */
     const val PULL_TO_REFRESH_ENABLED = true
-
-    /**
-     * Enables new search settings UI with two extra fragments, for managing the default engine
-     * and managing search shortcuts in the quick search menu.
-     */
-    const val UNIFIED_SEARCH_SETTINGS = true
 
     /**
      * Allows users to enable Firefox Suggest.
@@ -39,11 +38,6 @@ object FeatureFlags {
     const val META_ATTRIBUTION_ENABLED = true
 
     /**
-     * Enables the Unified Trust Panel.
-     */
-    const val UNIFIED_TRUST_PANEL = false
-
-    /**
      * Disables the Onboarding feature for debug builds by default. Set this to `true` if you need
      * to access the Onboarding feature for development purposes.
      *
@@ -52,17 +46,12 @@ object FeatureFlags {
     val onboardingFeatureEnabled = !Config.channel.isDebug
 
     /**
-     * Determines whether to show live downloads in progress in the UI.
+     * Enables the "Discover more" stories screen.
      */
-    val showLiveDownloads = Config.channel.isNightlyOrDebug
+    const val DISCOVER_MORE_STORIES = true
 
     /**
-     * Enables the custom review pre-prompt.
+     * Enables Firefox Labs.
      */
-    const val CUSTOM_REVIEW_PROMPT_ENABLED = true
-
-    /**
-     * Enables the feature that allows the user to set an alternative app icon.
-     */
-    val alternativeAppIconFeatureEnabled = Config.channel.isDebug
+    const val FIREFOX_LABS = false
 }

@@ -15,9 +15,9 @@
 #ifndef mozilla_dom_AncestorIterator_h
 #define mozilla_dom_AncestorIterator_h
 
-#include "nsINode.h"
-#include "nsIContentInlines.h"
 #include "FilteredNodeIterator.h"
+#include "nsIContentInlines.h"
+#include "nsINode.h"
 
 namespace mozilla::dom {
 

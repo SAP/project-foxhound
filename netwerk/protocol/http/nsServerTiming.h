@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsServerTiming_h__
-#define nsServerTiming_h__
+#ifndef nsServerTiming_h_
+#define nsServerTiming_h_
 
 #include "nsITimedChannel.h"
 #include "nsString.h"

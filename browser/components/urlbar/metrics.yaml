@@ -24,7 +24,7 @@ urlbar:
         description: >
           `sap` is the meaning of `search access point`. It records where the
           user started the search action from. The possible values are: `urlbar`
-          , `handoff`, `urlbar_newtab` and `urlbar_addonpage`.
+          , `handoff`, `urlbar_newtab`, `urlbar_addonpage`, and `searchbar`.
         type: string
       interaction:
         description: >
@@ -84,8 +84,8 @@ urlbar:
           group names are: `heuristic`, `adaptive_history`, `search_history`,
           `search_suggest`, `search_suggest_rich`, `trending_search`,
           `trending_search_rich`, `top_pick`, `top_site`, `remote_tab`,
-          `addon`, `general`, `suggest`, `about_page`, `suggested_index`, and
-          `restrict_keyword`.
+          `addon`, `general`, `suggest`, `about_page`, `suggested_index`,
+          `restrict_keyword`, `ai`.
           If the group did not fall into any of these,
           this will be `unknown` and a bug should be filed to investigate it.
         type: string
@@ -96,16 +96,22 @@ urlbar:
           possible types are:
           `action`,
           `addon`,
+          `ai_chat`,
           `autofill_about`,
           `autofill_adaptive`,
           `autofill_origin`,
           `autofill_unknown`,
           `autofill_url`,
           `bookmark`,
+          `bookmark_adaptive`,
+          `bookmark_adaptive_serp`,
+          `bookmark_serp`,
           `calc`,
           `clipboard`,
           `fxsuggest_data_sharing_opt_in`,
           `history`,
+          `history_adaptive`,
+          `history_adaptive_serp`,
           `history_semantic`,
           `history_semantic_serp`,
           `history_serp`,
@@ -116,6 +122,7 @@ urlbar:
           `keyword`,
           `merino_adm_sponsored`,
           `merino_amo`,
+          `merino_market`,
           `merino_top_picks`,
           `merino_wikipedia`,
           `ml_yelp`,
@@ -129,10 +136,8 @@ urlbar:
           `rust_adm_sponsored`,
           `rust_amo`,
           `rust_exposure`,
-          `rust_fakespot_amazon`,
-          `rust_fakespot_bestbuy`,
-          `rust_fakespot_other`,
-          `rust_fakespot_walmart`,
+          `rust_important_dates`,
+          `rust_market_opt_in`,
           `rust_mdn`,
           `rust_yelp`,
           `search_engine`,
@@ -140,6 +145,8 @@ urlbar:
           `search_suggest`,
           `search_suggest_rich`,
           `tab`,
+          `tab_adaptive`,
+          `tab_adaptive_serp`,
           `tab_semantic`,
           `tab_semantic_serp`,
           `tab_serp`,
@@ -176,11 +183,13 @@ urlbar:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1917992
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2003067
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800414#c2
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1917992
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2003067
     data_sensitivity:
       - interaction
     notification_emails:
@@ -195,7 +204,7 @@ urlbar:
         description: >
           `sap` is the meaning of `search access point`. It records where the
           user started the search action from. The possible values are: `urlbar`
-          , `handoff`, `urlbar_newtab` and `urlbar_addonpage`.
+          , `handoff`, `urlbar_newtab`, `urlbar_addonpage`, and `searchbar`.
         type: string
       interaction:
         description: >
@@ -316,7 +325,7 @@ urlbar:
         description: >
           `sap` is the meaning of `search access point`. It records where the
           user started the search action from. The possible values are: `urlbar`
-          , `handoff`, `urlbar_newtab` and `urlbar_addonpage`.
+          , `handoff`, `urlbar_newtab`, `urlbar_addonpage`, and `searchbar`.
         type: string
       interaction:
         description: >
@@ -404,7 +413,7 @@ urlbar:
         description: >
           `sap` is the meaning of `search access point`. It records where the
           user started the search action from. The possible values are: `urlbar`
-          , `handoff`, `urlbar_newtab` and `urlbar_addonpage`.
+          , `handoff`, `urlbar_newtab`, `urlbar_addonpage`, and `searchbar`.
         type: string
       interaction:
         description: >
@@ -462,17 +471,23 @@ urlbar:
           not occur and indicates a bug. The possible types are:
           `action`,
           `addon`,
+          `ai_chat`,
           `autofill_about`,
           `autofill_adaptive`,
           `autofill_origin`,
           `autofill_unknown`,
           `autofill_url`,
           `bookmark`,
+          `bookmark_adaptive`,
+          `bookmark_adaptive_serp`,
+          `bookmark_serp`,
           `calc`,
           `clipboard`,
           `experimental_addon`,
           `fxsuggest_data_sharing_opt_in`,
           `history`,
+          `history_adaptive`,
+          `history_adaptive_serp`,
           `history_semantic`,
           `history_semantic_serp`,
           `history_serp`,
@@ -484,6 +499,7 @@ urlbar:
           `keyword`,
           `merino_adm_sponsored`,
           `merino_amo`,
+          `merino_market`,
           `merino_top_picks`,
           `merino_wikipedia`,
           `ml_yelp`,
@@ -497,10 +513,8 @@ urlbar:
           `rust_adm_sponsored`,
           `rust_amo`,
           `rust_exposure`,
-          `rust_fakespot_amazon`,
-          `rust_fakespot_bestbuy`,
-          `rust_fakespot_other`,
-          `rust_fakespot_walmart`,
+          `rust_important_dates`,
+          `rust_market_opt_in`,
           `rust_mdn`,
           `rust_yelp`,
           `search_engine`,
@@ -510,6 +524,8 @@ urlbar:
           `search_suggest_rich`,
           `site_specific_contextual_search`,
           `tab`,
+          `tab_adaptive`,
+          `tab_adaptive_serp`,
           `tab_semantic`,
           `tab_semantic_serp`,
           `tab_serp`,
@@ -555,6 +571,7 @@ urlbar:
       engagement_type:
         description: >
           Records how the user selected the result. The possible values are:
+          `ask_button`,
           `click`,
           `dismiss`,
           `drop_go`,
@@ -563,9 +580,13 @@ urlbar:
           `help`,
           `inaccurate_location`,
           `manage`,
+          `navigate_button`,
           `not_interested`,
+          `not_now`,
           `not_relevant`,
+          `opt_in`,
           `paste_go`,
+          `search_button`,
           `show_less_frequently`
         type: string
       groups:
@@ -577,7 +598,7 @@ urlbar:
           `search_suggest`, `search_suggest_rich`, `trending_search`,
           `trending_search_rich`, `top_pick`, `top_site`, `recent_search`,
           `remote_tab`, `addon`, `general`, `suggest`, `about_page`,
-          `suggested_index`, and `restrict_keyword`.
+          `suggested_index`, `restrict_keyword`, `ai`.
           If the group did not fall into any of these, this will be `unknown`
           and a bug should be filed to investigate it. If engagement_type is
           `drop_go` or `paste_go`, this  will be empty string because no results
@@ -590,16 +611,22 @@ urlbar:
           possible types are:
           `action`,
           `addon`,
+          `ai_chat`,
           `autofill_about`,
           `autofill_adaptive`,
           `autofill_origin`,
           `autofill_unknown`,
           `autofill_url`,
           `bookmark`,
+          `bookmark_adaptive`,
+          `bookmark_adaptive_serp`,
+          `bookmark_serp`,
           `calc`,
           `clipboard`,
           `fxsuggest_data_sharing_opt_in`,
           `history`,
+          `history_adaptive`,
+          `history_adaptive_serp`,
           `history_semantic`,
           `history_semantic_serp`,
           `history_serp`,
@@ -610,6 +637,7 @@ urlbar:
           `keyword`,
           `merino_adm_sponsored`,
           `merino_amo`,
+          `merino_market`,
           `merino_top_picks`,
           `merino_wikipedia`,
           `ml_yelp`,
@@ -623,10 +651,8 @@ urlbar:
           `rust_adm_sponsored`,
           `rust_amo`,
           `rust_exposure`,
-          `rust_fakespot_amazon`,
-          `rust_fakespot_bestbuy`,
-          `rust_fakespot_other`,
-          `rust_fakespot_walmart`,
+          `rust_important_dates`,
+          `rust_market_opt_in`,
           `rust_mdn`,
           `rust_yelp`,
           `search_engine`,
@@ -634,6 +660,8 @@ urlbar:
           `search_suggest`,
           `search_suggest_rich`,
           `tab`,
+          `tab_adaptive`,
+          `tab_adaptive_serp`,
           `tab_semantic`,
           `tab_semantic_serp`,
           `tab_serp`,
@@ -669,37 +697,14 @@ urlbar:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2003067
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008925
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-
-  fakespot_engagement:
-    type: event
-    description: >
-      Recorded when the user engages with a Fakespot suggestion.
-    extra_keys:
-      grade:
-        description: >
-          The Fakespot grade: "A", "B", etc.
-        type: string
-      rating:
-        description: >
-          The Fakespot rating: "4.1", "5.0", etc.
-        type: string
-      provider:
-        description: >
-          The product provider: "amazon", "bestbuy", "walmart"
-        type: string
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907990
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907990
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2003067
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008925
     data_sensitivity:
       - interaction
     notification_emails:
@@ -791,40 +796,6 @@ urlbar:
     send_in_pings:
       - urlbar-keyword-exposure
 
-  quick_suggest_contextual_opt_in:
-    type: event
-    description: >
-      Recorded when the contextual opt-in UI is shown or interacted with.
-    extra_keys:
-      interaction:
-        description: >
-          The type of interaction. Possible values: `impression`, `dismiss`,
-          `allow`, `learn_more`.
-        type: string
-      top_position:
-        description: >
-          Whether the opt-in result appeared at the very top of results or at
-          the bottom, after one-off buttons.
-        type: boolean
-      say_hello:
-        description: >
-          Whether the alternative copy was used for the opt-in result.
-        type: boolean
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852058
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1958147
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852058#c2
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866204#c8
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892377#c2
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1912174#c8
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1933863#c5
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: 147
-
   pref_max_results:
     lifetime: application
     type: quantity
@@ -834,6 +805,7 @@ urlbar:
       Corresponds to the value of the `browser.urlbar.maxRichResults` pref.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
     data_sensitivity:
@@ -843,20 +815,20 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+      - metrics
 
-  pref_suggest_data_collection:
+  pref_suggest_all:
     lifetime: application
     type: boolean
     description: >
-      Whether the user has opted in to data collection for Firefox Suggest,
-      i.e., online suggestions served from Merino.
+      Whether Suggest results are shown in the urlbar.
       Corresponds to the value of the
-      `browser.urlbar.quicksuggest.dataCollection.enabled` pref.
+      `browser.urlbar.suggest.quicksuggest.all` pref.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1849726
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995574
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995574
     data_sensitivity:
       - interaction
     notification_emails:
@@ -864,19 +836,22 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+      - metrics
 
-  pref_suggest_nonsponsored:
+  pref_suggest_online_available:
     lifetime: application
     type: boolean
     description: >
-      Whether non-sponsored quick suggest results are shown in the urlbar.
-      Corresponds to the value of the
-      `browser.urlbar.suggest.quicksuggest.nonsponsored` pref.
+      Whether online Suggest is available to the user.
+      Corresponds to the Nimbus variable `quickSuggestOnlineAvailable` and its
+      fallback pref `browser.urlbar.quicksuggest.online.available`.
+      NOTE: "Online Suggest" in this context means the new version of online
+      Suggest introduced in 146 with Terms of Use and OHTTP.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1849726
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
     data_sensitivity:
       - interaction
     notification_emails:
@@ -884,6 +859,31 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+      - metrics
+
+  pref_suggest_online_enabled:
+    lifetime: application
+    type: boolean
+    description: >
+      This pref is true for all users by default! You probably want to use this
+      in conjunction with pref_suggest_online_available and/or restrict your
+      analysis to user populations where you know online Suggest is available.
+      Corresponds to `browser.urlbar.quicksuggest.online.enabled`.
+      NOTE: "Online Suggest" in this context means the new version of online
+      Suggest introduced in 146 with Terms of Use and OHTTP.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - events
+      - metrics
 
   pref_suggest_sponsored:
     lifetime: application
@@ -895,6 +895,7 @@ urlbar:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849726
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847855
     data_sensitivity:
@@ -904,6 +905,7 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+      - metrics
 
   pref_suggest_topsites:
     lifetime: application
@@ -913,6 +915,7 @@ urlbar:
       Corresponds to the value of the `browser.urlbar.suggest.topsites` pref.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014318
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
     data_sensitivity:
@@ -922,6 +925,7 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+      - metrics
 
   autofill_deletion:
     type: counter
@@ -1122,11 +1126,13 @@ quick_suggest:
   improve_suggest_experience:
     type: boolean
     description: >
-      Whether the "Improve Suggest Experience" checkbox is checked.
+      Whether online Suggest is available to the user and enabled.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
     data_sensitivity:
       - interaction
     notification_emails:
@@ -1262,7 +1268,6 @@ suggest:
       - mdn-suggestions
       - weather
       - configuration
-      - fakespot-suggestions
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908397
     data_reviews:
@@ -1287,7 +1292,6 @@ suggest:
       - mdn-suggestions
       - weather
       - configuration
-      - fakespot-suggestions
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908397
     data_reviews:
@@ -1310,7 +1314,6 @@ suggest:
       - yelp
       - mdn
       - weather
-      - fakespot
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908397
     data_reviews:
@@ -1341,7 +1344,7 @@ suggest_relevance:
     notification_emails:
       - disco-team@mozilla.com
       - najiang@mozilla.com
-    expires: 147
+    expires: 153
     data_sensitivity:
       - technical
   outcome:
@@ -1361,7 +1364,7 @@ suggest_relevance:
     notification_emails:
       - disco-team@mozilla.com
       - najiang@mozilla.com
-    expires: 147
+    expires: 153
     data_sensitivity:
       - technical
 

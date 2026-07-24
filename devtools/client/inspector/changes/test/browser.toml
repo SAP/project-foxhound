@@ -38,6 +38,8 @@ support-files = [
 
 ["browser_changes_declaration_rename.js"]
 
+["browser_changes_iframes.js"]
+
 ["browser_changes_nested_rules.js"]
 
 ["browser_changes_rule_add.js"]

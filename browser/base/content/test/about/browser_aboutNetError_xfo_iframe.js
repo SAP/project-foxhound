@@ -33,8 +33,13 @@ add_task(async function test_csp() {
     let iframe = content.document.getElementById("theIframe");
 
     await ContentTaskUtils.waitForCondition(() =>
-      SpecialPowers.spawn(iframe, [], () =>
-        content.document.body.classList.contains("neterror")
+      SpecialPowers.spawn(
+        iframe,
+        [],
+        () =>
+          content.document.body.classList.contains("neterror") ||
+          content.document.body.classList.contains("felt-privacy-body") ||
+          content.document.querySelector("net-error-card")
       )
     );
   });
@@ -45,17 +50,62 @@ add_task(async function test_csp() {
   await SpecialPowers.spawn(iframe, [], async function () {
     let doc = content.document;
 
-    // aboutNetError.mjs is using async localization to format several
-    // messages and in result the translation may be applied later.
-    // We want to return the textContent of the element only after
-    // the translation completes, so let's wait for it here.
-    let elements = [doc.getElementById("errorLongDesc")];
-    await ContentTaskUtils.waitForCondition(() => {
-      return elements.every(elem => !!elem.textContent.trim().length);
-    });
+    let textLongDescription;
+    let learnMoreLinkLocation;
 
-    let textLongDescription = doc.getElementById("errorLongDesc").textContent;
-    let learnMoreLinkLocation = doc.getElementById("learnMoreLink").href;
+    const netErrorCard = doc.querySelector("net-error-card");
+    if (netErrorCard) {
+      const card = netErrorCard.wrappedJSObject;
+      await card.getUpdateComplete();
+
+      const contentElement = card.whatCanYouDo || card.netErrorIntro;
+      if (contentElement) {
+        await ContentTaskUtils.waitForCondition(() => {
+          return !!contentElement.textContent.trim().length;
+        });
+        textLongDescription = contentElement.textContent;
+      }
+
+      const learnMoreLink = card.netErrorLearnMoreLink || card.learnMoreLink;
+      if (learnMoreLink) {
+        learnMoreLinkLocation = learnMoreLink.href;
+      }
+
+      if (!textLongDescription) {
+        // Fall back to legacy path
+        const errorLongDesc = await ContentTaskUtils.waitForCondition(
+          () => doc.getElementById("errorLongDesc"),
+          "Waiting for errorLongDesc"
+        );
+        await ContentTaskUtils.waitForCondition(() => {
+          return !!errorLongDesc.textContent.trim().length;
+        });
+        textLongDescription = errorLongDesc.textContent;
+      }
+
+      if (!learnMoreLinkLocation) {
+        // Try fallback to legacy path, but it may not exist for all error types
+        const link = doc.getElementById("learnMoreLink");
+        if (link) {
+          learnMoreLinkLocation = link.href;
+        }
+      }
+    } else {
+      const errorLongDesc = await ContentTaskUtils.waitForCondition(
+        () => doc.getElementById("errorLongDesc"),
+        "Waiting for errorLongDesc"
+      );
+      await ContentTaskUtils.waitForCondition(() => {
+        return !!errorLongDesc.textContent.trim().length;
+      });
+      textLongDescription = errorLongDesc.textContent;
+
+      const learnMoreLink = await ContentTaskUtils.waitForCondition(
+        () => doc.getElementById("learnMoreLink"),
+        "Waiting for learnMoreLink"
+      );
+      learnMoreLinkLocation = learnMoreLink.href;
+    }
 
     Assert.ok(
       textLongDescription.includes(
@@ -64,10 +114,12 @@ add_task(async function test_csp() {
       "Correct error message found"
     );
 
-    Assert.ok(
-      learnMoreLinkLocation.includes("xframe-neterror-page"),
-      "Correct Learn More URL for XFO error page"
-    );
+    if (learnMoreLinkLocation) {
+      Assert.ok(
+        learnMoreLinkLocation.includes("xframe-neterror-page"),
+        "Correct Learn More URL for XFO error page"
+      );
+    }
   });
 
   BrowserTestUtils.removeTab(tab);

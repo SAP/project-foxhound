@@ -19,7 +19,7 @@ function run_test() {
   file.append("'÷1");
   Services.env.set("XPCSHELL_TEST_PROFILE_DIR", file.path);
 
-  let profile = do_get_profile(); // must be called before getting nsIX509CertDB
+  let profile = do_get_profile(); // must be called before initializing NSS
   Assert.ok(
     /[^\x20-\x7f]/.test(profile.path),
     "the profile path should contain a non-ASCII character"
@@ -33,10 +33,13 @@ function run_test() {
   let pkcs11modDBFile = do_get_file(`test_broken_fips/${pkcs11modDBName}`);
   pkcs11modDBFile.copyTo(profile, pkcs11modDBName);
 
-  let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
-    Ci.nsIPKCS11ModuleDB
+  // Initialize NSS.
+  Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
+
+  const fipsUtils = Cc["@mozilla.org/security/fipsutils;1"].getService(
+    Ci.nsIFIPSUtils
   );
-  ok(!moduleDB.isFIPSEnabled, "FIPS should not be enabled");
+  ok(!fipsUtils.isFIPSEnabled, "FIPS should not be enabled");
 
   let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
     Ci.nsISecretDecoderRing

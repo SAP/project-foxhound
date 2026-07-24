@@ -130,12 +130,15 @@ class JitZone {
   mozilla::LinkedList<JitScript> jitScripts_;
 
   // The following two fields are a pair of associated scripts. If they are
-  // non-null, the child has been inlined into the parent, and we have bailed
-  // out due to a MonomorphicInlinedStubFolding bailout. If it wasn't
-  // trial-inlined, we need to track for the parent if we attach a new case to
-  // the corresponding folded stub which belongs to the child.
-  WeakHeapPtr<JSScript*> lastStubFoldingBailoutChild_;
-  WeakHeapPtr<JSScript*> lastStubFoldingBailoutParent_;
+  // non-null, we have bailed out from MGuardMultipleShapes. The inner and outer
+  // scripts are either the same script (when no inlining happened) or else the
+  // inner script was inlined into the outer script.
+  //
+  // This is used to distinguish a bailout from MGuardShapeList vs
+  // MGuardMultipleShapes, and for monomorphic inlining we need to track the
+  // outer script that inlined the inner script.
+  WeakHeapPtr<JSScript*> lastStubFoldingBailoutInner_;
+  WeakHeapPtr<JSScript*> lastStubFoldingBailoutOuter_;
 
   // The JitZone stores stubs to concatenate strings inline and perform RegExp
   // calls inline. These bake in zone specific pointers and can't be stored in
@@ -227,22 +230,22 @@ class JitZone {
     inlinedCompilations_.remove(inlined);
   }
 
-  void noteStubFoldingBailout(JSScript* child, JSScript* parent) {
-    lastStubFoldingBailoutChild_ = child;
-    lastStubFoldingBailoutParent_ = parent;
+  void noteStubFoldingBailout(JSScript* inner, JSScript* outer) {
+    lastStubFoldingBailoutInner_ = inner;
+    lastStubFoldingBailoutOuter_ = outer;
   }
-  bool hasStubFoldingBailoutData(JSScript* child) const {
-    return lastStubFoldingBailoutChild_ &&
-           lastStubFoldingBailoutChild_.get() == child &&
-           lastStubFoldingBailoutParent_;
+  bool hasStubFoldingBailoutData(JSScript* inner) const {
+    return lastStubFoldingBailoutInner_ &&
+           lastStubFoldingBailoutInner_.get() == inner &&
+           lastStubFoldingBailoutOuter_;
   }
-  JSScript* stubFoldingBailoutParent() const {
-    MOZ_ASSERT(lastStubFoldingBailoutChild_);
-    return lastStubFoldingBailoutParent_.get();
+  JSScript* stubFoldingBailoutOuter() const {
+    MOZ_ASSERT(lastStubFoldingBailoutInner_);
+    return lastStubFoldingBailoutOuter_.get();
   }
   void clearStubFoldingBailoutData() {
-    lastStubFoldingBailoutChild_ = nullptr;
-    lastStubFoldingBailoutParent_ = nullptr;
+    lastStubFoldingBailoutInner_ = nullptr;
+    lastStubFoldingBailoutOuter_ = nullptr;
   }
 
   void registerJitScript(JitScript* script) { jitScripts_.insertBack(script); }

@@ -9,8 +9,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.browser.engine.gecko.await
 import mozilla.components.concept.engine.mediasession.MediaSession
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.Image.ImageProcessingException
 import org.mozilla.geckoview.MediaSession as GeckoViewMediaSession
 
 private const val ARTWORK_RETRIEVE_TIMEOUT = 1000L
@@ -39,12 +39,11 @@ internal class GeckoMediaSessionDelegate(
     ) {
         val getArtwork: (suspend () -> Bitmap?)? = metaData.artwork?.let {
             {
-                try {
-                    withTimeoutOrNull(ARTWORK_RETRIEVE_TIMEOUT) {
-                        it.getBitmap(ARTWORK_IMAGE_SIZE).await()
-                    }
-                } catch (e: ImageProcessingException) {
-                    null
+                withTimeoutOrNull(ARTWORK_RETRIEVE_TIMEOUT) {
+                    it.getBitmap(ARTWORK_IMAGE_SIZE).then(
+                        { GeckoResult.fromValue(it) },
+                        { GeckoResult.fromValue(null) },
+                    ).await()
                 }
             }
         }

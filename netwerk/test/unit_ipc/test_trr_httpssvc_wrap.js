@@ -1,88 +1,55 @@
 "use strict";
 
-let h2Port;
-let prefs;
+const { NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
-function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
-
+add_setup(async function setup() {
   // Set to allow the cert presented by our H2 server
   do_get_profile();
-  prefs = Services.prefs;
 
-  prefs.setBoolPref("network.security.esni.enabled", false);
-  prefs.setBoolPref("network.http.http2.enabled", true);
-  // the TRR server is on 127.0.0.1
-  prefs.setCharPref("network.trr.bootstrapAddr", "127.0.0.1");
+  trr_test_setup();
 
-  // make all native resolve calls "secretly" resolve localhost instead
-  prefs.setBoolPref("network.dns.native-is-localhost", true);
+  Services.prefs.setBoolPref("network.security.esni.enabled", false);
 
-  // 0 - off, 1 - race, 2 TRR first, 3 TRR only, 4 shadow
-  prefs.setIntPref("network.trr.mode", 3); // TRR first
-  prefs.setBoolPref("network.trr.wait-for-portal", false);
-  // don't confirm that TRR is working, just go!
-  prefs.setCharPref("network.trr.confirmationNS", "skip");
+  // The child will set up the TRR server, but it's not allowed
+  // to install the cert, so we do it from here.
+  await NodeHTTPSServer.installCert("http2-ca.pem");
 
-  // So we can change the pref without clearing the cache to check a pushed
-  // record with a TRR path that fails.
-  prefs.setBoolPref("network.trr.clear-cache-on-pref-change", false);
-
-  // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
-  // so add that cert to the trust list as a signing cert.  // the foo.example.com domain name.
-  const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "../unit/http2-ca.pem", "CTu,u,u");
-}
-
-setup();
-registerCleanupFunction(() => {
-  prefs.clearUserPref("network.security.esni.enabled");
-  prefs.clearUserPref("network.http.http2.enabled");
-  prefs.clearUserPref("network.dns.localDomains");
-  prefs.clearUserPref("network.dns.native-is-localhost");
-  prefs.clearUserPref("network.trr.mode");
-  prefs.clearUserPref("network.trr.uri");
-  prefs.clearUserPref("network.trr.credentials");
-  prefs.clearUserPref("network.trr.wait-for-portal");
-  prefs.clearUserPref("network.trr.allow-rfc1918");
-  prefs.clearUserPref("network.trr.useGET");
-  prefs.clearUserPref("network.trr.confirmationNS");
-  prefs.clearUserPref("network.trr.bootstrapAddr");
-  prefs.clearUserPref("network.trr.temp_blocklist_duration_sec");
-  prefs.clearUserPref("network.trr.request-timeout");
-  prefs.clearUserPref("network.trr.clear-cache-on-pref-change");
-  prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
+  registerCleanupFunction(async () => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.security.esni.enabled");
+  });
 });
 
-function run_test() {
-  prefs.setIntPref("network.trr.mode", 3);
-  prefs.setCharPref(
-    "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/httpssvc"
-  );
+add_task(function run_test() {
+  let ipcListener = {
+    receiveMessage(message) {
+      if (message.name == "set-trr-uri") {
+        Services.prefs.setCharPref("network.trr.uri", message.data);
+        Services.prefs.setIntPref("network.trr.mode", 3);
+      } else if (message.name == "clearCache") {
+        Services.dns.clearCache(true);
+      }
+      do_send_remote_message(`${message.name}-done`);
+    },
+  };
 
-  do_await_remote_message("mode3-port").then(port => {
-    prefs.setIntPref("network.trr.mode", 3);
-    prefs.setCharPref(
-      "network.trr.uri",
-      `https://foo.example.com:${port}/dns-query`
-    );
-    do_send_remote_message("mode3-port-done");
-  });
-
-  do_await_remote_message("clearCache").then(() => {
-    Services.dns.clearCache(true);
-    do_send_remote_message("clearCache-done");
-  });
+  let mm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
+  mm.addMessageListener("set-trr-uri", ipcListener);
+  mm.addMessageListener("clearCache", ipcListener);
 
   do_await_remote_message("set-port-prefixed-pref").then(() => {
-    prefs.setBoolPref("network.dns.port_prefixed_qname_https_rr", true);
+    Services.prefs.setBoolPref(
+      "network.dns.port_prefixed_qname_https_rr",
+      true
+    );
     do_send_remote_message("set-port-prefixed-pref-done");
   });
 
-  run_test_in_child("../unit/test_trr_httpssvc.js");
-}
+  run_test_in_child("../unit/test_trr_httpssvc.js", () => {
+    mm.removeMessageListener("set-trr-uri", ipcListener);
+    mm.removeMessageListener("clearCache", ipcListener);
+    do_test_finished();
+  });
+});

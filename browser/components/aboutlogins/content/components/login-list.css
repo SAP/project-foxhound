@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  border-inline-end: 1px solid var(--in-content-border-color);
+  border-inline-end: 1px solid var(--border-color);
   background-color: var(--background-color-box);
   display: flex;
   flex-direction: column;
@@ -14,7 +14,7 @@
   display: flex;
   align-items: center;
   padding: 0 16px 16px;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
   background-color: var(--background-color-box);
 }
 
@@ -26,11 +26,12 @@
   --logical-padding: 0px;
   margin: 0;
   background-color: transparent;
-  color: var(--in-content-text-color) !important;
+  color: var(--button-text-color-ghost);
 }
 
 #login-sort:hover:not([disabled]) {
-  background-color: var(--in-content-button-background);
+  color: var(--button-text-color-ghost-hover);
+  background-color: var(--button-background-color-ghost-hover);
 }
 
 #login-sort > option {
@@ -76,7 +77,7 @@
   padding: 1em;
   max-width: 50ch; /* This should be kept in sync with login-list-item username and title max-width */
   flex-grow: 1;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .empty-search-message span,
@@ -85,7 +86,7 @@
 }
 
 ol {
-  outline-offset: var(--in-content-focus-outline-inset);
+  outline-offset: var(--focus-outline-inset);
   margin-block: 0;
   padding-inline-start: 0;
   overflow: hidden auto;
@@ -107,36 +108,36 @@ ol {
   position: sticky;
   top: 0;
   font-size: 0.85em;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   padding: 4px 16px;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
   background-color: var(--background-color-box);
   margin-block-start: 2px;
   margin-inline: 2px;
 }
 
 .login-list-item:not(.selected):hover {
-  background-color: var(--in-content-button-background-hover);
-  color: var(--in-content-button-text-color-hover);
+  background-color: var(--button-background-color-hover);
+  color: var(--button-text-color-hover);
 }
 
 .login-list-item:not(.selected):hover:active {
-  background-color: var(--in-content-button-background-active);
-  color: var(--in-content-button-text-color-active);
+  background-color: var(--button-background-color-active);
+  color: var(--button-text-color-active);
 }
 
 .login-list-item.keyboard-selected {
-  border-inline-start-color: var(--in-content-border-color);
-  background-color: var(--in-content-button-background-hover);
+  border-inline-start-color: var(--border-color);
+  background-color: var(--button-background-color-hover);
 }
 
 .login-list-item.selected {
-  border-inline-start-color: var(--color-accent-primary);
-  background-color: var(--in-content-page-background);
+  border-inline-start-color: var(--border-color-selected);
+  background-color: var(--background-color-canvas);
 }
 
 .login-list-item.selected .title {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 .labels {

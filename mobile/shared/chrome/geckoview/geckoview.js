@@ -60,6 +60,9 @@ var ModuleManager = {
     this._settings = initData.settings;
     this._frozenSettings = Object.freeze(Object.assign({}, this._settings));
 
+    // Promise resolvers set during applink navigation, used to defer extension startup.
+    this._applinkNavigation = null;
+
     const self = this;
     this._modules = new Map(
       (function* () {
@@ -167,6 +170,24 @@ var ModuleManager = {
     return this.browser.browsingContext.currentWindowGlobal?.getActor(
       aActorName
     );
+  },
+
+  // Defer a notification callback if an applink navigation is in progress,
+  // waiting for the navigation to complete (or a timeout) before idle-
+  // dispatching the callback. Fires immediately if no applink is pending.
+  _maybeDeferForApplink(notifyFn, timeoutMs = 5000) {
+    const applinkNav = this._applinkNavigation;
+    if (applinkNav) {
+      const timeoutPromise = new Promise(resolve => {
+        setTimeout(resolve, timeoutMs);
+      });
+      Promise.race([applinkNav.promise, timeoutPromise]).then(() => {
+        this._applinkNavigation = null;
+        Services.tm.idleDispatchToMainThread(notifyFn);
+      });
+    } else {
+      notifyFn();
+    }
   },
 
   // Ensures that session history has been flushed before changing remoteness
@@ -856,6 +877,12 @@ function startup() {
         resource: "resource://gre/modules/GeckoViewTranslations.sys.mjs",
       },
     },
+    {
+      name: "GeckoViewPageExtractor",
+      onInit: {
+        resource: "resource://gre/modules/GeckoViewPageExtractor.sys.mjs",
+      },
+    },
   ]);
 
   if (!Services.appinfo.sessionHistoryInParent) {
@@ -896,7 +923,9 @@ function startup() {
     // Let the extension code know it can start loading things that were delayed
     // while GeckoView started up.
     InitLater(() => {
-      Services.obs.notifyObservers(window, "extensions-late-startup");
+      window.moduleManager._maybeDeferForApplink(() => {
+        Services.obs.notifyObservers(window, "extensions-late-startup");
+      });
     });
 
     InitLater(() => {
@@ -949,7 +978,7 @@ function startup() {
   // so things like text selection can work properly.
   browser.focus();
 
-  InitializationTracker.onInitialized(performance.now());
+  InitializationTracker.onInitialized(ChromeUtils.now());
 }
 
 window.addEventListener("DOMContentLoaded", startup, { once: true });

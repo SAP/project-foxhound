@@ -17,6 +17,7 @@ UNIFIED_SOURCES += [
     "testArrayBufferOrViewAPI.cpp",
     "testArrayBufferView.cpp",
     "testArrayBufferWithUserOwnedContents.cpp",
+    "testAssemblerCodeGen.cpp",
     "testAtomicOperations.cpp",
     "testAtomizeUtf8NonAsciiLatin1CodePoint.cpp",
     "testAtomizeWithoutActiveZone.cpp",
@@ -47,6 +48,7 @@ UNIFIED_SOURCES += [
     "testException.cpp",
     "testExecuteInJSMEnvironment.cpp",
     "testExternalStrings.cpp",
+    "testFifo.cpp",
     "testFindSCCs.cpp",
     "testForceLexicalInitialization.cpp",
     "testForOfIterator.cpp",
@@ -106,6 +108,7 @@ UNIFIED_SOURCES += [
     "testParserAtom.cpp",
     "testPersistentRooted.cpp",
     "testPreserveJitCode.cpp",
+    "testPrinter.cpp",
     "testPrintf.cpp",
     "testPrivateGCThingValue.cpp",
     "testProfileStrings.cpp",
@@ -142,6 +145,7 @@ UNIFIED_SOURCES += [
     "testThreadingMutex.cpp",
     "testThreadingThread.cpp",
     "testToSignedOrUnsignedInteger.cpp",
+    "testTraceableFifoValue.cpp",
     "testTypedArrays.cpp",
     "testUbiNode.cpp",
     "testUncaughtSymbol.cpp",
@@ -206,6 +210,9 @@ LOCAL_INCLUDES += [
 USE_LIBS += [
     "static:js",
 ]
+
+if CONFIG["MOZ_LTO_FAT"]:
+    LDFLAGS += ["-fno-lto"]
 
 DEFINES["topsrcdir"] = "%s/js/src" % TOPSRCDIR
 OBJDIR_PP_FILES.js.src["jsapi-tests"] += ["jsapi-tests-gdb.py.in"]

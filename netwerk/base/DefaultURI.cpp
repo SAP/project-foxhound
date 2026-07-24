@@ -52,7 +52,6 @@ NS_INTERFACE_TABLE_HEAD(DefaultURI)
   if (aIID.Equals(kDefaultURICID)) {
     foundInterface = static_cast<nsIURI*>(this);
   } else
-    NS_INTERFACE_MAP_ENTRY(nsISizeOf)
 NS_INTERFACE_MAP_END
 
 //----------------------------------------------------------------------------
@@ -67,18 +66,6 @@ NS_IMETHODIMP DefaultURI::Read(nsIObjectInputStream* aInputStream) {
 NS_IMETHODIMP DefaultURI::Write(nsIObjectOutputStream* aOutputStream) {
   nsAutoCString spec(mURL->Spec());
   return aOutputStream->WriteStringZ(spec.get());
-}
-
-//----------------------------------------------------------------------------
-// nsISizeOf
-//----------------------------------------------------------------------------
-
-size_t DefaultURI::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
-  return mURL->SizeOf();
-}
-
-size_t DefaultURI::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
-  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }
 
 //----------------------------------------------------------------------------
@@ -295,6 +282,10 @@ void DefaultURI::Serialize(ipc::URIParams& aParams) {
   ipc::DefaultURIParams params;
   params.spec() = mURL->Spec();
   aParams = params;
+}
+
+size_t DefaultURI::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
+  return aMallocSizeOf(this) + mURL->SizeOf();
 }
 
 //----------------------------------------------------------------------------

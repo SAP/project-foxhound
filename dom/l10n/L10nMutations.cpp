@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "L10nMutations.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "nsRefreshDriver.h"
+
 #include "DOMLocalization.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/intl/Localization.h"
+#include "nsRefreshDriver.h"
 #include "nsThreadManager.h"
 
 using namespace mozilla;
@@ -47,7 +48,7 @@ L10nMutations::~L10nMutations() {
 }
 
 void L10nMutations::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   if (!mObserving) {
     return;

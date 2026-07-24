@@ -7,11 +7,11 @@
 #ifndef mozilla_GraphRunner_h
 #define mozilla_GraphRunner_h
 
+#include <thread>
+
 #include "GraphDriver.h"
 #include "MediaSegment.h"
 #include "mozilla/Monitor.h"
-
-#include <thread>
 
 struct PRThread;
 
@@ -35,7 +35,7 @@ class GraphRunner final : public Runnable {
    * Signals one iteration of mGraph. Hands state over to mThread and runs
    * the iteration there.
    */
-  IterationResult OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
+  IterationResult OneIteration(GraphTime aStateTime,
                                MixerCallbackReceiver* aMixerReceiver);
 
   /**
@@ -63,18 +63,13 @@ class GraphRunner final : public Runnable {
 
   class IterationState {
     GraphTime mStateTime;
-    GraphTime mIterationEnd;
     MixerCallbackReceiver* MOZ_NON_OWNING_REF mMixerReceiver;
 
    public:
-    IterationState(GraphTime aStateTime, GraphTime aIterationEnd,
-                   MixerCallbackReceiver* aMixerReceiver)
-        : mStateTime(aStateTime),
-          mIterationEnd(aIterationEnd),
-          mMixerReceiver(aMixerReceiver) {}
+    IterationState(GraphTime aStateTime, MixerCallbackReceiver* aMixerReceiver)
+        : mStateTime(aStateTime), mMixerReceiver(aMixerReceiver) {}
     IterationState& operator=(const IterationState& aOther) = default;
     GraphTime StateTime() const { return mStateTime; }
-    GraphTime IterationEnd() const { return mIterationEnd; }
     MixerCallbackReceiver* MixerReceiver() const { return mMixerReceiver; }
   };
 

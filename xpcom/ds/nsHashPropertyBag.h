@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHashPropertyBag_h___
-#define nsHashPropertyBag_h___
+#ifndef nsHashPropertyBag_h_
+#define nsHashPropertyBag_h_
 
 #include "nsIVariant.h"
 #include "nsIWritablePropertyBag.h"
@@ -77,4 +77,4 @@ inline nsISupports* ToSupports(nsHashPropertyBagBase* aPropertyBag) {
   return static_cast<nsIWritablePropertyBag*>(aPropertyBag);
 }
 
-#endif /* nsHashPropertyBag_h___ */
+#endif /* nsHashPropertyBag_h_ */

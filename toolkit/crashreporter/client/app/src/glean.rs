@@ -5,60 +5,71 @@
 //! Glean telemetry integration.
 
 use crate::config::{buildid, Config};
-use glean::{ClientInfoMetrics, Configuration, ConfigurationBuilder};
 
-const APP_ID: &str = if cfg!(mock) {
-    "firefox.crashreporter.mock"
-} else {
-    "firefox.crashreporter"
-};
 const APP_DISPLAY_VERSION: &str = env!("CARGO_PKG_VERSION");
-const TELEMETRY_SERVER: &str = if cfg!(mock) {
-    "https://incoming.glean.example.com"
-} else {
-    "https://incoming.telemetry.mozilla.org"
-};
 
-/// Initialize glean based on the given configuration.
-///
-/// When mocking, this should be called on a thread where the mock data is present.
-#[cfg_attr(test, allow(dead_code))]
-pub fn init(cfg: &Config) {
-    // Since Glean v63.0.0, custom pings are required to be instantiated prior to Glean init
-    // in order to ensure they are enabled and able to collect data. This is due to the data
-    // collection state being determined at the ping level now instead of just by the global
-    // Glean collection enabled flag. See Bug 1934931 for more information.
-    _ = &*crash;
-
-    glean::initialize(config(cfg), client_info_metrics(cfg));
+/// Glean initialization options.
+pub struct InitOptions {
+    pub data_dir: ::std::path::PathBuf,
+    pub locale: Option<String>,
 }
 
-fn config(cfg: &Config) -> Configuration {
-    ConfigurationBuilder::new(true, glean_data_dir(cfg), APP_ID)
-        .with_server_endpoint(TELEMETRY_SERVER)
-        .with_use_core_mps(false)
-        .with_internal_pings(false)
-        .with_uploader(uploader::Uploader::new())
-        .build()
-}
+impl InitOptions {
+    /// Initialize glean based on the given configuration.
+    pub fn from_config(cfg: &Config) -> Self {
+        let locale = cfg.strings.as_ref().map(|s| s.locale());
+        let data_dir = cfg.data_dir().to_owned();
+        #[cfg(mock)]
+        let data_dir = (&data_dir).into();
+        InitOptions { data_dir, locale }
+    }
 
-#[cfg(not(mock))]
-fn glean_data_dir(cfg: &Config) -> ::std::path::PathBuf {
-    cfg.data_dir().join("glean")
-}
+    /// Initialize glean.
+    ///
+    /// When mocking, this should be called on a thread where the mock data is present.
+    pub fn init(self) -> std::io::Result<crashping::GleanHandle> {
+        self.init_glean().initialize()
+    }
 
-#[cfg(mock)]
-fn glean_data_dir(_cfg: &Config) -> ::std::path::PathBuf {
-    // Use a (non-mocked) temp directory since glean won't access our mocked API.
-    ::std::env::temp_dir().join("crashreporter-mock/glean")
-}
+    /// Initialize glean for tests.
+    #[cfg(test)]
+    fn test_init(self) {
+        self.init_glean().test_reset_glean(true)
+    }
 
-fn client_info_metrics(cfg: &Config) -> ClientInfoMetrics {
-    glean::ClientInfoMetrics {
-        app_build: buildid().unwrap_or(APP_DISPLAY_VERSION).into(),
-        app_display_version: APP_DISPLAY_VERSION.into(),
-        channel: None,
-        locale: cfg.strings.as_ref().map(|s| s.locale()),
+    fn init_glean(self) -> crashping::InitGlean {
+        let mut data_dir = if cfg!(mock) {
+            // Use a (non-mocked) temp directory since glean won't access our mocked API.
+            ::std::env::temp_dir().join("crashreporter-mock")
+        } else {
+            self.data_dir
+        };
+        data_dir.push("glean");
+
+        let app_id = format!(
+            "{}.crashreporter{}",
+            mozbuild::config::MOZ_APP_NAME,
+            cfg!(mock).then_some(".mock").unwrap_or_default()
+        );
+
+        let mut init_glean = crashping::InitGlean::new(
+            data_dir,
+            &app_id,
+            crashping::ClientInfoMetrics {
+                app_build: buildid().unwrap_or(APP_DISPLAY_VERSION).into(),
+                app_display_version: APP_DISPLAY_VERSION.into(),
+                channel: None,
+                locale: self.locale,
+            },
+        );
+        init_glean.configuration.uploader = Some(Box::new(uploader::Uploader::new()));
+
+        if cfg!(mock) {
+            init_glean.configuration.server_endpoint =
+                Some("https://incoming.glean.example.com".to_owned());
+        }
+
+        init_glean
     }
 }
 
@@ -131,14 +142,7 @@ mod test {
             static GLOBAL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
             let lock = GLOBAL_LOCK.lock().unwrap();
-
-            // Since Glean v63.0.0, custom pings are required to be instantiated prior to Glean init
-            // in order to ensure they are enabled and able to collect data. This is due to the data
-            // collection state being determined at the ping level now instead of just by the global
-            // Glean collection enabled flag. See Bug 1934931 for more information.
-            _ = &*crash;
-
-            glean::test_reset_glean(config(cfg), client_info_metrics(cfg), true);
+            InitOptions::from_config(cfg).test_init();
             GleanTest { _guard: lock }
         }
     }
@@ -149,7 +153,8 @@ mod test {
             // `test_reset_glean` does not do the same (found by source inspection).
             glean::shutdown();
             glean::test_reset_glean(
-                ConfigurationBuilder::new(false, ::std::env::temp_dir(), "none.none").build(),
+                glean::ConfigurationBuilder::new(false, ::std::env::temp_dir(), "none.none")
+                    .build(),
                 glean::ClientInfoMetrics::unknown(),
                 true,
             );
@@ -159,6 +164,3 @@ mod test {
 
 #[cfg(test)]
 pub use test::test_init;
-
-// Env variable set to the file generated by generate_glean.py (by build.rs).
-include!(env!("GLEAN_METRICS_FILE"));

@@ -58,7 +58,7 @@ When an object is logged to the console it has a right-pointing triangle next to
   :class: border
 
 
-Starting with Firefox 67 (available now in Firefox Developer) you can use the arrow keys on your keyboard to navigate through objects displayed in the console. The right-arrow key opens the details of an object and the left-arrow key closes open objects.
+You can use the arrow keys on your keyboard to navigate through objects displayed in the console. The right-arrow key opens the details of an object and the left-arrow key closes open objects.
 
 
 .. _web_console_rich_output_examining_request_details:

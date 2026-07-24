@@ -132,7 +132,6 @@ const NO_FLAGS = 0;
 const CRLiteModeDisabledPrefValue = 0;
 const CRLiteModeTelemetryOnlyPrefValue = 1;
 const CRLiteModeEnforcePrefValue = 2;
-const CRLiteModeConfirmRevocationsValue = 3;
 
 // Convert a string to an array of bytes consisting of the char code at each
 // index.
@@ -166,8 +165,8 @@ function arrayToString(a) {
 // PEM to the format that nsIX509CertDB requires.
 function pemToBase64(pem) {
   return pem
-    .replace(/-----BEGIN CERTIFICATE-----/, "")
-    .replace(/-----END CERTIFICATE-----/, "")
+    .replace(/-----BEGIN (CERTIFICATE|(EC )?PRIVATE KEY)-----/, "")
+    .replace(/-----END (CERTIFICATE|(EC )?PRIVATE KEY)-----/, "")
     .replace(/[\r\n]/g, "");
 }
 
@@ -219,6 +218,17 @@ function readFile(file) {
     available > 0 ? NetUtil.readInputStreamToString(fstream, available) : "";
   fstream.close();
   return data;
+}
+
+function readBinaryFile(file) {
+  let fstream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
+  fstream.init(file, -1, 0, 0);
+  let available = fstream.available();
+  let bytes = NetUtil.readInputStream(fstream, available);
+  fstream.close();
+  return new Uint8Array(bytes);
 }
 
 function addCertFromFile(certdb, filename, trustString) {
@@ -295,7 +305,8 @@ function checkCertErrorGenericAtTime(
   time,
   /* optional */ isEVExpected,
   /* optional */ hostname,
-  /* optional */ flags = NO_FLAGS
+  /* optional */ flags = NO_FLAGS,
+  /* optional */ sctsFromTls = []
 ) {
   return new Promise(resolve => {
     let result = new CertVerificationExpectedErrorResult(
@@ -304,7 +315,15 @@ function checkCertErrorGenericAtTime(
       isEVExpected,
       resolve
     );
-    certdb.asyncVerifyCertAtTime(cert, usage, flags, hostname, time, result);
+    certdb.asyncVerifyCertAtTime(
+      cert,
+      usage,
+      flags,
+      hostname,
+      time,
+      sctsFromTls,
+      result
+    );
   });
 }
 
@@ -374,6 +393,7 @@ function checkRootOfBuiltChain(
       flags,
       hostname,
       time,
+      [],
       result
     );
   });
@@ -519,7 +539,9 @@ function run_test() {
 
 function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
   add_test(function () {
-    _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot);
+    asyncStartTLSTestServer(serverBinName, certsPath, addDefaultRoot).then(
+      run_next_test
+    );
   });
 }
 
@@ -717,17 +739,10 @@ function _getBinaryUtil(binaryUtilName) {
   return utilBin;
 }
 
-// Do not call this directly; use add_tls_server_setup
-function _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot) {
-  asyncStartTLSTestServer(serverBinName, certsPath, addDefaultRoot).then(
-    run_next_test
-  );
-}
-
 async function asyncStartTLSTestServer(
   serverBinName,
   certsPath,
-  addDefaultRoot
+  addDefaultRoot = true
 ) {
   let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
     Ci.nsIX509CertDB
@@ -1074,7 +1089,7 @@ function asyncTestCertificateUsages(certdb, cert, expectedUsages) {
         resolve
       );
       let flags = Ci.nsIX509CertDB.FLAG_LOCAL_ONLY;
-      certdb.asyncVerifyCertAtTime(cert, usage, flags, null, now, result);
+      certdb.asyncVerifyCertAtTime(cert, usage, flags, null, now, [], result);
     });
     promises.push(promise);
   });
@@ -1097,15 +1112,19 @@ function asyncTestCertificateUsages(certdb, cert, expectedUsages) {
  *                  otherwise, so failure to automatically unload the test
  *                  module gets reported.
  */
-function loadPKCS11Module(libraryFile, moduleName, expectModuleUnloadToFail) {
+async function loadPKCS11Module(
+  libraryFile,
+  moduleName,
+  expectModuleUnloadToFail
+) {
   ok(libraryFile.exists(), "The PKCS11 module file should exist");
 
   let pkcs11ModuleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
     Ci.nsIPKCS11ModuleDB
   );
-  registerCleanupFunction(() => {
+  registerCleanupFunction(async () => {
     try {
-      pkcs11ModuleDB.deleteModule(moduleName);
+      await pkcs11ModuleDB.deleteModule(moduleName);
     } catch (e) {
       Assert.ok(
         expectModuleUnloadToFail,
@@ -1113,7 +1132,7 @@ function loadPKCS11Module(libraryFile, moduleName, expectModuleUnloadToFail) {
       );
     }
   });
-  pkcs11ModuleDB.addModule(moduleName, libraryFile.path, 0, 0);
+  await pkcs11ModuleDB.addModule(moduleName, libraryFile.path, 0, 0);
 }
 
 /**
@@ -1151,13 +1170,17 @@ function writeLinesAndClose(lines, outputStream) {
  *        A unique substring of name of the dynamic library file of the module
  *        that should not be loaded.
  */
-function checkPKCS11ModuleNotPresent(moduleName, libraryName = "undefined") {
+async function checkPKCS11ModuleNotPresent(
+  moduleName,
+  libraryName = "undefined"
+) {
   let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
     Ci.nsIPKCS11ModuleDB
   );
-  let modules = moduleDB.listModules();
-  ok(
-    modules.hasMoreElements(),
+  let modules = await moduleDB.listModules();
+  Assert.greater(
+    modules.length,
+    1,
     "One or more modules should be present with test module not present"
   );
   for (let module of modules) {
@@ -1187,13 +1210,14 @@ function checkPKCS11ModuleNotPresent(moduleName, libraryName = "undefined") {
  * @returns {nsIPKCS11Module}
  *          The test module.
  */
-function checkPKCS11ModuleExists(moduleName, libraryName = "undefined") {
+async function checkPKCS11ModuleExists(moduleName, libraryName = "undefined") {
   let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
     Ci.nsIPKCS11ModuleDB
   );
-  let modules = moduleDB.listModules();
-  ok(
-    modules.hasMoreElements(),
+  let modules = await moduleDB.listModules();
+  Assert.greater(
+    modules.length,
+    1,
     "One or more modules should be present with test module present"
   );
   let testModule = null;
@@ -1302,6 +1326,7 @@ function append_line_to_data_storage_file(
 }
 
 // Helper constants for setting security.pki.certificate_transparency.mode.
+const CT_MODE_DISABLE = 0;
 const CT_MODE_COLLECT_TELEMETRY = 1;
 const CT_MODE_ENFORCE = 2;
 

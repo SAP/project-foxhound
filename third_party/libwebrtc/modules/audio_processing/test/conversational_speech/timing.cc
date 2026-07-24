@@ -13,9 +13,13 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/string_encode.h"
+#include "rtc_base/string_to_number.h"
 
 namespace webrtc {
 namespace test {
@@ -30,7 +34,7 @@ bool Turn::operator==(const Turn& b) const {
 std::vector<Turn> LoadTiming(absl::string_view timing_filepath) {
   // Line parser.
   auto parse_line = [](absl::string_view line) {
-    std::vector<absl::string_view> fields = rtc::split(line, ' ');
+    std::vector<absl::string_view> fields = split(line, ' ');
     RTC_CHECK_GE(fields.size(), 3);
     RTC_CHECK_LE(fields.size(), 4);
     int gain = 0;
@@ -58,7 +62,7 @@ std::vector<Turn> LoadTiming(absl::string_view timing_filepath) {
 }
 
 void SaveTiming(absl::string_view timing_filepath,
-                rtc::ArrayView<const Turn> timing) {
+                ArrayView<const Turn> timing) {
   std::ofstream outfile(std::string{timing_filepath});
   RTC_CHECK(outfile.is_open());
   for (const Turn& turn : timing) {

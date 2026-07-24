@@ -46,7 +46,8 @@ export class ChannelMap {
     /**
      * WeakMap from nsIChannel instances to objects which encapsulate ChannelMap
      * values with the following structure:
-     * @property {Object} value
+     *
+     * @property {object} value
      *     The actual value stored in this ChannelMap entry, which should relate
      *     to this channel.
      * @property {WeakRef} ref
@@ -91,7 +92,7 @@ export class ChannelMap {
    * @param {nsIChannel} channel
    *     The key to delete from the ChannelMap.
    *
-   * @return {Object|null}
+   * @return {object | null}
    *     The value held for the provided channel.
    *     Null if the channel did not match any known key.
    */
@@ -110,7 +111,7 @@ export class ChannelMap {
    *
    * @param {nsIChannel} channel
    *     The key of the entry to add or update.
-   * @param {Object} value
+   * @param {object} value
    *     The value to add or update.
    */
   set(channel, value) {

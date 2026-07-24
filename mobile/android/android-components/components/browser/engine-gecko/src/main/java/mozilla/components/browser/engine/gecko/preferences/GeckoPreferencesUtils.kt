@@ -6,10 +6,12 @@ package mozilla.components.browser.engine.gecko.preferences
 import androidx.annotation.OptIn
 import mozilla.components.concept.engine.preferences.Branch
 import mozilla.components.concept.engine.preferences.BrowserPreference
+import mozilla.components.concept.engine.preferences.SetBrowserPreference
 import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_BRANCH_DEFAULT
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_BRANCH_USER
+import org.mozilla.geckoview.GeckoPreferenceController.SetGeckoPreference
 
 /**
  * Utility file for preferences functions related to the Gecko implementation.
@@ -42,4 +44,43 @@ object GeckoPreferencesUtils {
             hasUserChangedValue = this.hasUserChangedValue,
         )
     }
+
+    /**
+     * Convenience method for mapping an Android Component [SetBrowserPreference] into
+     * a GeckoView [SetGeckoPreference]. May throw under unexpected conditions.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    fun SetBrowserPreference<*>.intoSetGeckoPreference(): SetGeckoPreference<*> =
+        when (this.value) {
+            is String -> {
+                 SetGeckoPreference.setStringPref(
+                    this.pref,
+                    this.value as String,
+                    this.branch.intoGeckoBranch(),
+                )
+            }
+
+            is Int -> {
+                 SetGeckoPreference.setIntPref(
+                    this.pref,
+                    this.value as Int,
+                    this.branch.intoGeckoBranch(),
+                )
+            }
+
+            is Boolean -> {
+                SetGeckoPreference.setBoolPref(
+                    this.pref,
+                    this.value as Boolean,
+                    this.branch.intoGeckoBranch(),
+                )
+            }
+            else -> {
+                // [SetBrowserPreference] should restrict this from ever actually occurring.
+                throw UnsupportedOperationException(
+                    "Should only ever set browser preferences of type String, Int, and Boolean! " +
+                    "Trying to set a Float preference? Convert it to a String first.",
+                )
+            }
+        }
 }

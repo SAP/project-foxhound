@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.bindings
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -18,11 +20,14 @@ import org.mozilla.fenix.components.appstate.AppState
  *
  * @param appStore The [AppStore] used to observe [AppState.showFindInPage].
  * @param onFindInPageLaunch Invoked when the find in page feature should be launched.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class FindInPageBinding(
     private val appStore: AppStore,
     private val onFindInPageLaunch: () -> Unit,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
 
     override suspend fun onState(flow: Flow<AppState>) {
         flow.map { state -> state.showFindInPage }

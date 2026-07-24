@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef XULMenuBarElement_h__
-#define XULMenuBarElement_h__
+#ifndef XULMenuBarElement_h_
+#define XULMenuBarElement_h_
 
+#include "XULMenuParentElement.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "nsINode.h"
 #include "nsISupports.h"
-#include "XULMenuParentElement.h"
 
 namespace mozilla::dom {
 

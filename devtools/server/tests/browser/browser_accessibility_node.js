@@ -134,6 +134,7 @@ add_task(async function () {
       "margin-right": "0px",
       display: "inline-block",
       "explicit-name": "true",
+      "details-from": "aria-details",
     },
   });
 

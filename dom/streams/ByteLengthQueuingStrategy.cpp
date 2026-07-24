@@ -5,13 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ByteLengthQueuingStrategy.h"
+
+#include "js/PropertyAndElement.h"
+#include "js/TypeDecls.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
-
-#include "js/TypeDecls.h"
-#include "js/PropertyAndElement.h"
 
 namespace mozilla::dom {
 

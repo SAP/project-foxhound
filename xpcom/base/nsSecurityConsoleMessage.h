@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSecurityConsoleMessage_h__
-#define nsSecurityConsoleMessage_h__
+#ifndef nsSecurityConsoleMessage_h_
+#define nsSecurityConsoleMessage_h_
 #include "nsISecurityConsoleMessage.h"
 #include "nsString.h"
 
@@ -26,4 +26,4 @@ class nsSecurityConsoleMessage final : public nsISecurityConsoleMessage {
 
 #define NS_SECURITY_CONSOLE_MESSAGE_CID \
   {0x43ebf210, 0x8a7b, 0x4ddb, {0xa8, 0x3d, 0xb8, 0x7c, 0x51, 0xa0, 0x58, 0xdb}}
-#endif  // nsSecurityConsoleMessage_h__
+#endif  // nsSecurityConsoleMessage_h_

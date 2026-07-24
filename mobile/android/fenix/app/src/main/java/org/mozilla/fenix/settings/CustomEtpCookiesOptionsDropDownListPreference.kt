@@ -7,7 +7,6 @@ package org.mozilla.fenix.settings
 import android.content.Context
 import android.util.AttributeSet
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
 
 /**
  * Custom [DropDownListPreference] that automatically builds the list of available options for the
@@ -18,30 +17,23 @@ class CustomEtpCookiesOptionsDropDownListPreference @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : DropDownListPreference(context, attrs) {
     init {
-        with(context) {
-            entries = arrayOf(
-                getString(R.string.preference_enhanced_tracking_protection_custom_cookies_1),
-                getString(R.string.preference_enhanced_tracking_protection_custom_cookies_2),
-                getString(R.string.preference_enhanced_tracking_protection_custom_cookies_3),
-                getString(R.string.preference_enhanced_tracking_protection_custom_cookies_4),
-            )
+        entries = arrayOf(
+            context.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_5),
+            context.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_1),
+            context.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_2),
+            context.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_3),
+            context.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_4),
+        )
 
-            entryValues = arrayOf(
-                getString(R.string.social),
-                getString(R.string.unvisited),
-                getString(R.string.third_party),
-                getString(R.string.all),
-            )
+        entryValues = arrayOf(
+            context.getString(R.string.total_protection),
+            context.getString(R.string.social),
+            context.getString(R.string.unvisited),
+            context.getString(R.string.third_party),
+            context.getString(R.string.all),
+        )
 
-            @Suppress("UNCHECKED_CAST")
-            if (context.settings().enabledTotalCookieProtection) {
-                // If the new "Total cookie protection" should be shown it must be first item.
-                entries = arrayOf(getString(R.string.preference_enhanced_tracking_protection_custom_cookies_5)) +
-                    entries as Array<String>
-                entryValues = arrayOf(getString(R.string.total_protection)) + entryValues as Array<String>
-            }
-        }
-
+        // Default to first (Total Cookie Protection)
         setDefaultValue(entryValues.first())
     }
 }

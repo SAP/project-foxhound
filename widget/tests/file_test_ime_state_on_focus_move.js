@@ -144,7 +144,7 @@ class IMEStateOnFocusMoveTester {
             }, IME should receive a focus notification after IME state is updated`
           );
           break;
-        case "notify-blur":
+        case "notify-blur": {
           info(aNotificationType);
           const changingStatus = !(
             aExpectedData.containerIsEditable &&
@@ -178,6 +178,7 @@ class IMEStateOnFocusMoveTester {
             );
           }
           break;
+        }
       }
     };
 

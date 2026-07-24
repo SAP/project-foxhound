@@ -7,37 +7,37 @@
 #ifndef mozilla_dom_BrowserChild_h
 #define mozilla_dom_BrowserChild_h
 
-#include "mozilla/dom/ContentFrameMessageManager.h"
-#include "mozilla/dom/PBrowserChild.h"
-#include "nsIWebNavigation.h"
-#include "nsCOMPtr.h"
-#include "nsIWebBrowserChrome.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIWindowProvider.h"
-#include "nsIDocShell.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsWeakReference.h"
-#include "nsIBrowserChild.h"
-#include "nsITooltipListener.h"
-#include "nsIWebProgressListener.h"
+#include "PuppetWidget.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/TabContext.h"
-#include "mozilla/dom/CoalescedMouseData.h"
-#include "mozilla/dom/CoalescedTouchData.h"
-#include "mozilla/dom/CoalescedWheelData.h"
-#include "mozilla/dom/MessageManagerCallback.h"
-#include "mozilla/dom/VsyncMainChild.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/CoalescedMouseData.h"
+#include "mozilla/dom/CoalescedTouchData.h"
+#include "mozilla/dom/CoalescedWheelData.h"
+#include "mozilla/dom/ContentFrameMessageManager.h"
+#include "mozilla/dom/MessageManagerCallback.h"
+#include "mozilla/dom/PBrowserChild.h"
+#include "mozilla/dom/TabContext.h"
+#include "mozilla/dom/VsyncMainChild.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/GeckoContentControllerTypes.h"
-#include "mozilla/dom/ipc/IdType.h"
-#include "PuppetWidget.h"
+#include "nsCOMPtr.h"
 #include "nsDeque.h"
+#include "nsIBrowserChild.h"
+#include "nsIDocShell.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
 #include "nsIRemoteTab.h"
+#include "nsITooltipListener.h"
+#include "nsIWebBrowserChrome.h"
+#include "nsIWebNavigation.h"
+#include "nsIWebProgressListener.h"
+#include "nsIWindowProvider.h"
+#include "nsWeakReference.h"
 
 class nsBrowserStatusFilter;
 class nsIDOMWindow;
@@ -48,6 +48,7 @@ class nsIWebProgress;
 class nsPIDOMWindowInner;
 class nsWebBrowser;
 class nsDocShellLoadState;
+class nsIOpenWindowInfo;
 
 template <typename T>
 class nsTHashtable;
@@ -78,7 +79,6 @@ namespace dom {
 class BrowserChild;
 class BrowsingContext;
 class TabGroup;
-class ClonedMessageData;
 class CoalescedMouseData;
 class CoalescedWheelData;
 class SessionStoreChild;
@@ -140,7 +140,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                            public nsITooltipListener,
                            public mozilla::ipc::IShmemAllocator {
   using PuppetWidget = mozilla::widget::PuppetWidget;
-  using ClonedMessageData = mozilla::dom::ClonedMessageData;
   using CoalescedMouseData = mozilla::dom::CoalescedMouseData;
   using CoalescedWheelData = mozilla::dom::CoalescedWheelData;
   using APZEventState = mozilla::layers::APZEventState;
@@ -168,7 +167,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                bool aIsTopLevel);
 
   MOZ_CAN_RUN_SCRIPT nsresult Init(mozIDOMWindowProxy* aParent,
-                                   WindowGlobalChild* aInitialWindowChild);
+                                   WindowGlobalChild* aInitialWindowChild,
+                                   nsIOpenWindowInfo* aOpenWindowInfo);
 
   /** Return a BrowserChild with the given attributes. */
   static already_AddRefed<BrowserChild> Create(
@@ -223,11 +223,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
    * MessageManagerCallback methods that we override.
    */
   virtual bool DoSendBlockingMessage(
-      const nsAString& aMessage, StructuredCloneData& aData,
-      nsTArray<StructuredCloneData>* aRetVal) override;
+      const nsAString& aMessage, NotNull<ipc::StructuredCloneData*> aData,
+      nsTArray<NotNull<RefPtr<ipc::StructuredCloneData>>>* aRetVal) override;
 
-  virtual nsresult DoSendAsyncMessage(const nsAString& aMessage,
-                                      StructuredCloneData& aData) override;
+  virtual nsresult DoSendAsyncMessage(
+      const nsAString& aMessage,
+      NotNull<ipc::StructuredCloneData*> aData) override;
 
   bool DoUpdateZoomConstraints(const uint32_t& aPresShellId,
                                const ViewID& aViewId,
@@ -427,7 +428,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                                const bool& aRunInGlobalScope);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsAString& aMessage,
-                                           const ClonedMessageData& aData);
+                                           NotNull<StructuredCloneData*> aData);
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
       const IPCTabContext& aContext);
 
@@ -522,6 +523,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvUIResolutionChanged(const float& aDpi,
                                                   const int32_t& aRounding,
                                                   const double& aScale);
+
+  mozilla::ipc::IPCResult RecvTransparencyChanged(const bool& aIsTransparent);
 
   mozilla::ipc::IPCResult RecvHandleAccessKey(const WidgetKeyboardEvent& aEvent,
                                               nsTArray<uint32_t>&& aCharCodes);
@@ -700,9 +703,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
-      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-          aCanvasFingerprinter,
-      const Maybe<bool> aCanvasFingerprinterKnownText);
+      const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent);
 
   already_AddRefed<nsIDragSession> GetDragSession();
   void SetDragSession(nsIDragSession* aSession);

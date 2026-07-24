@@ -216,6 +216,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         count: Expect.number(),
         domainLookupStart: Expect.number(),
         domainLookupEnd: Expect.number(),
@@ -241,6 +242,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         redirectType: "Internal",
         isHttpToHttpsRedirect: false,
       };

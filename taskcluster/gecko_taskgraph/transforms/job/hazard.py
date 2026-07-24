@@ -5,8 +5,7 @@
 Support for running hazard jobs via dedicated scripts
 """
 
-
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
@@ -16,23 +15,21 @@ from gecko_taskgraph.transforms.job.common import (
     setup_secrets,
 )
 
-haz_run_schema = Schema(
-    {
-        Required("using"): "hazard",
-        # The command to run within the task image (passed through to the worker)
-        Required("command"): str,
-        # The mozconfig to use; default in the script is used if omitted
-        Optional("mozconfig"): str,
-        # The set of secret names to which the task has access; these are prefixed
-        # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.   Setting
-        # this will enable any worker features required and set the task's scopes
-        # appropriately.  `true` here means ['*'], all secrets.  Not supported on
-        # Windows
-        Optional("secrets"): Any(bool, [str]),
-        # Base work directory used to set up the task.
-        Optional("workdir"): str,
-    }
-)
+haz_run_schema = LegacySchema({
+    Required("using"): "hazard",
+    # The command to run within the task image (passed through to the worker)
+    Required("command"): str,
+    # The mozconfig to use; default in the script is used if omitted
+    Optional("mozconfig"): str,
+    # The set of secret names to which the task has access; these are prefixed
+    # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.   Setting
+    # this will enable any worker features required and set the task's scopes
+    # appropriately.  `true` here means ['*'], all secrets.  Not supported on
+    # Windows
+    Optional("secrets"): Any(bool, [str]),
+    # Base work directory used to set up the task.
+    Optional("workdir"): str,
+})
 
 
 @run_job_using("docker-worker", "hazard", schema=haz_run_schema)
@@ -50,12 +47,10 @@ def docker_worker_hazard(config, job, taskdesc):
     setup_secrets(config, job, taskdesc)
 
     env = worker["env"]
-    env.update(
-        {
-            "MOZ_BUILD_DATE": config.params["moz_build_date"],
-            "MOZ_SCM_LEVEL": config.params["level"],
-        }
-    )
+    env.update({
+        "MOZ_BUILD_DATE": config.params["moz_build_date"],
+        "MOZ_SCM_LEVEL": config.params["level"],
+    })
 
     # script parameters
     if run.get("mozconfig"):

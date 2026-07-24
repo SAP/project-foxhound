@@ -156,7 +156,7 @@ void jit::AttachFinishedCompilations(JSContext* cx) {
 static UniquePtr<LifoAlloc> FreeIonCompileTask(IonCompileTask* task) {
   // To correctly free compilation dependencies, which may have virtual
   // destructors we need to explicitly empty the MIRGenerator's list here.
-  task->mirGen().tracker.reset();
+  task->mirGen().cleanup();
 
   // The task is allocated into its LifoAlloc, so destroying that will
   // destroy the task and all other data accumulated during compilation,

@@ -8,7 +8,7 @@ import re
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 from mach.util import to_optional_path
 from mozfile import which
@@ -366,6 +366,12 @@ class Repository(abc.ABC):
         `changed_files` may contain a dict of file paths and their contents,
         see `stage_changes`.
         """
+
+    @abc.abstractmethod
+    def prepare_try_push(
+        self, commit_message: str, changed_files: Optional[dict[str, str]] = None
+    ) -> tuple[Optional[str], Callable]:
+        pass
 
     def stage_changes(self, changed_files: dict[str, str]):
         """Stage a set of file changes

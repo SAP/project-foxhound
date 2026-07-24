@@ -44,8 +44,8 @@ static inline void profiler_lookup_async_signal_dump_directory() {}
 
 #else  // !MOZ_GECKO_PROFILER
 
-#  include "BaseProfiler.h"
 #  include "mozilla/Attributes.h"
+#  include "mozilla/BaseProfiler.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/PowerOfTwo.h"

@@ -9,7 +9,6 @@
 #include "PKCS11ModuleDB.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsIMutableArray.h"
 #include "nsNSSCertHelper.h"
@@ -33,7 +32,7 @@ nsPKCS11Slot::nsPKCS11Slot(PK11SlotInfo* slot) {
       PK11_IsInternal(mSlot.get()) && !PK11_IsInternalKeySlot(mSlot.get());
   mIsInternalKeySlot = PK11_IsInternalKeySlot(mSlot.get());
   mSeries = PK11_GetSlotSeries(slot);
-  mozilla::Unused << refreshSlotInfo();
+  (void)refreshSlotInfo();
 }
 
 nsresult nsPKCS11Slot::refreshSlotInfo() {

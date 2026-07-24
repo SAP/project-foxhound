@@ -7,8 +7,8 @@
 #include <mfapi.h>
 #include <mferror.h>
 
-#include "MFMediaSource.h"
 #include "MFMediaEngineUtils.h"
+#include "MFMediaSource.h"
 #include "WMF.h"
 
 namespace mozilla {

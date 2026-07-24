@@ -10,7 +10,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper.TestAsset
-import org.mozilla.fenix.helpers.TestAssetHelper.getGPCTestAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.gcpTestAsset
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.homeScreen
@@ -24,7 +24,7 @@ class GlobalPrivacyControlTest : TestSetup() {
     private lateinit var gpcPage: TestAsset
 
     @get:Rule(order = 0)
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(
                 skipOnboarding = true,
@@ -37,24 +37,24 @@ class GlobalPrivacyControlTest : TestSetup() {
     @Before
     override fun setUp() {
         super.setUp()
-        gpcPage = getGPCTestAsset(mockWebServer)
+        gpcPage = mockWebServer.gcpTestAsset
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2429327
     @Test
     fun testGPCinNormalBrowsing() {
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(gpcPage.url) {
             verifyPageContent("GPC not enabled.")
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             scrollToGCPSettings()
             verifyGPCTextWithSwitchWidget()
             verifyGPCSwitchEnabled(false)
             switchGPCToggle()
         }.goBack {
-        }.goBackToBrowser {
+        }.goBackToBrowser(composeTestRule) {
             verifyPageContent("GPC is enabled.")
         }
     }
@@ -62,19 +62,21 @@ class GlobalPrivacyControlTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2429364
     @Test
     fun testGPCinPrivateBrowsing() {
-        homeScreen { }.togglePrivateBrowsingMode()
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode()
+
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(gpcPage.url) {
             verifyPageContent("GPC is enabled.")
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             scrollToGCPSettings()
             verifyGPCTextWithSwitchWidget()
             verifyGPCSwitchEnabled(false)
             switchGPCToggle()
         }.goBack {
-        }.goBackToBrowser {
+        }.goBackToBrowser(composeTestRule) {
             verifyPageContent("GPC is enabled.")
         }
     }

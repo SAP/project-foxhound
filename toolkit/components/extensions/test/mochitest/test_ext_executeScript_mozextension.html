@@ -1,0 +1,439 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests tabs/scripting.executeScript() on moz-extension pages</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+
+"use strict";
+
+add_setup(async function () {
+  // Make sure the restriction is enabled while running this test file,
+  //
+  // TODO(Bug 2015559): Remove this once pref flip along with letting the restriction to
+  // to be riding the release train.
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextensions.allow_executeScript_in_moz_extension", false]],
+  })
+});
+
+async function testExecuteScript({ manifest_version, activeTabPermission }) {
+  const TEST_SUBFRAME_URL = "https://example.com/?test=mozExtIframe";
+  const EXPECTED_ERROR_MESSAGE = "Missing host permission for the tab";
+  const EXPECTED_SUCCESS_RESULT = `Executed successfully on ${TEST_SUBFRAME_URL}`;
+
+  let permissions = {};
+  if (activeTabPermission) {
+    permissions =
+      manifest_version === 3
+        ? { permissions: ["scripting", "activeTab"], action: {} }
+        : { permissions: ["scripting", "activeTab"], browser_action: {} };
+  } else {
+    // host_permissions is merged into permissions as part of
+    // ExtensionTestCommon's internal normalization if the
+    // test extension is an manifest_version 2 extension.
+    permissions = {
+      permissions: ["scripting"],
+      host_permissions: ["https://example.com/*"],
+    };
+  }
+
+  const web_accessible_resources =
+    manifest_version === 3
+      ? [
+          {
+            resources: ["extpage.html", "extpage-sandboxed.html"],
+            matches: ["*://*/*"],
+          },
+        ]
+      : ["extpage.html", "extpage-sandboxed.html"];
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version,
+      content_scripts: [
+        {
+          js: ["createSubFrame.js"],
+          matches: [TEST_SUBFRAME_URL],
+        },
+      ],
+      web_accessible_resources,
+      ...permissions,
+    },
+    background() {
+      function contentScript() {
+        return `Executed successfully on ${window.location}`;
+      }
+
+      function tabsExecuteScript({ allFrames = false }) {
+        return browser.tabs.executeScript({
+          code: `(${contentScript})()`,
+          allFrames,
+        });
+      }
+
+      async function scriptingExecuteScript({ allFrames = false }) {
+        const [tab] = await browser.tabs.query({ active: true });
+        return browser.scripting.executeScript({
+          target: { tabId: tab.id, allFrames },
+          func: contentScript,
+        });
+      }
+
+      browser.test.onMessage.addListener(async (msg, opts = {}) => {
+        const { assertion, activeTabPermission } = opts;
+        const runTestCase = async () => {
+          try {
+            let res;
+            switch (msg) {
+              case "tabs.executeScript":
+                res = await tabsExecuteScript(opts);
+                break;
+              case "scripting.executeScript":
+                res = await scriptingExecuteScript(opts);
+                res = res
+                  .map(r => (r.error ? { ...r, error: r.error.message } : r))
+                  .map(r =>
+                    // Replace non-zero frameIds for an easier assertion.
+                    r.frameId === 0 ? r : { ...r, frameId: "non-zero" }
+                  );
+                break;
+              default:
+                browser.test.fail(`Got unexpected test message: ${msg}`);
+                browser.test.sendMessage(`${msg}:done`);
+                return;
+            }
+            browser.test.assertDeepEq(
+              assertion.expected,
+              { success: res },
+              assertion.message
+            );
+            browser.test.sendMessage(`${msg}:done`);
+          } catch (err) {
+            browser.test.assertDeepEq(
+              assertion.expected,
+              { error: `${err.message}` },
+              assertion.message
+            );
+            browser.test.sendMessage(`${msg}:done`);
+          }
+        };
+        if (activeTabPermission) {
+          const actionAPI = browser.action ?? browser.browserAction;
+          actionAPI.onClicked.addListener(async function runOnActionClicked () {
+            actionAPI.onClicked.removeListener(runOnActionClicked);
+            await runTestCase();
+          });
+          browser.test.sendMessage("bgpage:action-listener-registered");
+        } else {
+          await runTestCase();
+        }
+
+      });
+      browser.test.sendMessage("bgpage:ready");
+    },
+    files: {
+      "extpage.html": `<script src='extpage.js'><\/script>`,
+      "extpage.js": function () {
+        browser.test.sendMessage("extpage:ready");
+      },
+      "extpage-sandboxed.html": `<h1>sandboxed iframe</h1>`,
+      "createSubFrame.js": function () {
+        const iframeExt = document.createElement("iframe");
+        iframeExt.src = browser.runtime.getURL("extpage.html");
+        const iframeExtSandboxed = document.createElement("iframe");
+        iframeExtSandboxed.src = browser.runtime.getURL(
+          "extpage-sandboxed.html"
+        );
+        iframeExtSandboxed.setAttribute("sandbox", "allow-scripts");
+        const promiseSandboxFrameLoaded = new Promise(
+          resolve => iframeExtSandboxed.addEventListener("load", resolve, { once: true })
+        );
+        document.body.append(iframeExtSandboxed);
+        document.body.append(iframeExt);
+        promiseSandboxFrameLoaded.then(
+          () => browser.test.sendMessage("sandboxed-subframe:ready")
+        );
+      },
+    },
+  });
+
+  const activateActiveTabPermission = async () => {
+    info("Clicking on the browser action to activate the activeTab permission");
+    await extension.awaitMessage("bgpage:action-listener-registered");
+    await AppTestDelegate.clickBrowserAction(window, extension);
+  };
+
+  await extension.startup();
+
+  await extension.awaitMessage("bgpage:ready");
+
+  info("Test on top-level moz-extension page");
+
+  const testTopLevelMozExtTab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    `moz-extension://${extension.uuid}/extpage.html`
+  );
+  await extension.awaitMessage("extpage:ready");
+
+  if (manifest_version < 3) {
+    extension.sendMessage("tabs.executeScript", {
+      activeTabPermission,
+      assertion: {
+        expected: { error: EXPECTED_ERROR_MESSAGE },
+        message:
+          "tabs.executeScript should reject on top-level moz-extension page",
+      },
+    });
+
+    if (activeTabPermission) {
+      await activateActiveTabPermission();
+    }
+    await extension.awaitMessage("tabs.executeScript:done");
+  }
+
+  extension.sendMessage("scripting.executeScript", {
+    activeTabPermission,
+    assertion: {
+      expected: { error: EXPECTED_ERROR_MESSAGE },
+      message:
+        "scripting.executeScript should reject on top-level moz-extension page",
+    },
+  });
+
+  if (activeTabPermission) {
+    // NOTE: the activeTab permission may have been granted at this point
+    // if it was already granted right above for tabs.executeScript and
+    // the tab has not been navigated.
+    await activateActiveTabPermission();
+  }
+  await extension.awaitMessage("scripting.executeScript:done");
+
+  await AppTestDelegate.removeTab(window, testTopLevelMozExtTab);
+
+  info("Test on sub-frame moz-extension page");
+
+  const testSubFrameMozExtTab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    TEST_SUBFRAME_URL,
+    true
+  );
+  info("Wait for the extension subframe to be loaded");
+  await extension.awaitMessage("extpage:ready");
+  info("Wait for the sandboxed subframe to be loaded")
+  await extension.awaitMessage("sandboxed-subframe:ready");
+
+  if (manifest_version < 3) {
+    extension.sendMessage("tabs.executeScript", {
+      activeTabPermission,
+      allFrames: true,
+      assertion: {
+        expected: { success: [EXPECTED_SUCCESS_RESULT] },
+        message:
+          "tabs.executeScript should ignore and omit moz-extension sub-frames",
+      },
+    });
+
+    if (activeTabPermission) {
+      await activateActiveTabPermission();
+    }
+    await extension.awaitMessage("tabs.executeScript:done");
+  }
+
+  extension.sendMessage("scripting.executeScript", {
+    activeTabPermission,
+    allFrames: true,
+    assertion: {
+      expected: {
+        success: [
+          {
+            frameId: 0,
+            result: EXPECTED_SUCCESS_RESULT,
+          },
+        ],
+      },
+      message:
+        "scripting.executeScript should ignore and omit moz-extension sub-frames"
+    },
+  });
+
+  if (activeTabPermission) {
+    // NOTE: the activeTab permission may have been granted at this point
+    // if it was already granted right above for tabs.executeScript and
+    // the tab has not been navigated.
+    await activateActiveTabPermission();
+  }
+  await extension.awaitMessage("scripting.executeScript:done");
+
+  await AppTestDelegate.removeTab(window, testSubFrameMozExtTab);
+
+  await extension.unload();
+}
+
+add_task(function testExecuteScript_manifestV2() {
+  return testExecuteScript({ manifest_version: 2 });
+});
+
+add_task(function testExecuteScript_manifestV2_activeTabPermission() {
+  return testExecuteScript({ manifest_version: 2, activeTabPermission: true });
+});
+
+add_task(function testExecuteScript_manifestV3() {
+  return testExecuteScript({ manifest_version: 3 });
+});
+
+add_task(function testExecuteScript_manifestV2_activeTabPermission() {
+  return testExecuteScript({ manifest_version: 3, activeTabPermission: true });
+});
+
+add_task(async function testContentScriptsAndUserScriptsRegister() {
+  const extensionMV2 = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 2,
+      user_scripts: {},
+    },
+    files: {
+      "content-script.js": function() {},
+    },
+    background() {
+      browser.test.assertThrows(
+        () => browser.contentScripts.register({
+          js: [{ file: "content-script.js" }],
+          matches: ["moz-extension://*/*",],
+        }),
+        /Error processing matches\.0: Value "moz-extension:\/\/\*\/\*" must either/,
+        "MV2 contentScripts.register should throw on invalid moz-extension:// matches"
+      );
+      browser.test.assertThrows(
+        () => browser.userScripts.register({
+          js: [{ file: "content-script.js" }],
+          matches: ["moz-extension://*/*",],
+        }),
+        /Error processing matches\.0: Value "moz-extension:\/\/\*\/\*" must either/,
+        "MV2 userScripts.register should throw on invalid moz-extension:// matches"
+      );
+      browser.test.sendMessage("bgpage:test-done");
+    },
+  });
+  await extensionMV2.startup();
+  await extensionMV2.awaitMessage("bgpage:test-done");
+  await extensionMV2.unload();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.webextOptionalPermissionPrompts", false],
+    ]
+  });
+  const extensionMV3 = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      optional_permissions: ["userScripts"],
+    },
+    files: {
+      "content-script.js": function() {},
+    },
+    async background() {
+      // NOTE: manually wrapping the call to withHandlingUserInput in a promise
+      // because it does not return the value that the callback returns.
+      let granted = await new Promise(resolve =>
+        browser.test.withHandlingUserInput(
+          () => browser.permissions.request({
+            permissions: ["userScripts"],
+          }).then(resolve)
+        )
+      );
+      browser.test.assertTrue(
+        granted,
+        "Expect browser.permissions.request to be successful"
+      );
+      browser.test.assertTrue(
+        await browser.permissions.contains({
+          permissions: ["userScripts"],
+        }),
+        "Expect userScripts permission to be granted"
+      );
+      await browser.test.assertThrows(
+        () => browser.userScripts.register([{
+          id: "",
+          js: [{ file: "content-script.js" }],
+          matches: ["moz-extension://*/*",],
+        }]),
+        /Error processing 0\.matches\.0: Value "moz-extension:\/\/\*\/\*" must either/,
+        "MV3 userScripts.register should throw on invalid moz-extension:// matches"
+      );
+      await browser.permissions.remove({ permissions: ["userScripts"] });
+      browser.test.sendMessage("bgpage:test-done");
+    }
+  });
+  await extensionMV3.startup();
+  await extensionMV3.awaitMessage("bgpage:test-done");
+  await extensionMV3.unload();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function testScriptingRegister() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["scripting"],
+    },
+    files: {
+      "content-script.js": function contentScript() {
+        browser.test.fail(
+          `Script executed on ${window.location} (${document.readyState})`
+        );
+      },
+      "extpage.html": `<h1>TestExtPage</h1>`,
+    },
+    async background() {
+      await browser.scripting.registerContentScripts([
+        {
+          id: "test-mozextension-cs-matching",
+          js: ["content-script.js"],
+          // Registering the script to be executed on document start
+          // so that by the time the extension page had been fully
+          // loaded we expect the content script to have been already
+          // detected and blocked.
+          runAt: "document_start",
+          matches: [
+            "moz-extension://*/*",
+          ],
+        }
+      ]);
+      browser.test.sendMessage(
+        "bgpage:script-registered",
+        browser.runtime.getURL("extpage.html")
+      );
+    }
+  });
+
+  await extension.startup();
+  const extPageURL = await extension.awaitMessage(
+    "bgpage:script-registered"
+  );
+
+  info("Open an extension page in a new tab");
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    extPageURL,
+    true
+  );
+  // NOTE: using an assertion here to make sure the test
+  // doesn't hit failue due to no checks being detected
+  // by the test harness when executed on its own.
+  ok(true, "Extension page load completed");
+
+  await AppTestDelegate.removeTab(window, tab);
+  await extension.unload();
+});
+
+</script>
+
+</body>
+</html>

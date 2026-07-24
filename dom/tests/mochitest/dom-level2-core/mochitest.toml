@@ -42,8 +42,6 @@ support-files = [
 
 ["test_createAttributeNS02.html"]
 
-["test_createAttributeNS03.html"]
-
 ["test_createAttributeNS04.html"]
 
 ["test_createAttributeNS05.html"]
@@ -64,10 +62,6 @@ support-files = [
 
 ["test_createDocument07.html"]
 
-["test_createDocumentType01.html"]
-
-["test_createDocumentType02.html"]
-
 ["test_createDocumentType03.html"]
 
 ["test_createElementNS01.html"]
@@ -85,10 +79,6 @@ support-files = [
 ["test_documentcreateattributeNS01.html"]
 
 ["test_documentcreateattributeNS02.html"]
-
-["test_documentcreateattributeNS03.html"]
-
-["test_documentcreateattributeNS04.html"]
 
 ["test_documentcreateattributeNS05.html"]
 
@@ -178,8 +168,6 @@ skip-if = [
 
 ["test_domimplementationcreatedocumenttype02.html"]
 
-["test_domimplementationcreatedocumenttype04.html"]
-
 ["test_domimplementationfeaturecore.html"]
 
 ["test_domimplementationfeaturexmlversion2.html"]
@@ -233,8 +221,6 @@ skip-if = [
 ["test_elementsetattributens02.html"]
 
 ["test_elementsetattributens03.html"]
-
-["test_elementsetattributens04.html"]
 
 ["test_elementsetattributens05.html"]
 
@@ -469,8 +455,6 @@ skip-if = [
 ["test_removeNamedItemNS02.html"]
 
 ["test_removeNamedItemNS03.html"]
-
-["test_setAttributeNS01.html"]
 
 ["test_setAttributeNS02.html"]
 

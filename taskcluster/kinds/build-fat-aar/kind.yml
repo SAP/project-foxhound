@@ -13,17 +13,17 @@ transforms:
     - gecko_taskgraph.transforms.build_attrs:transforms
     - gecko_taskgraph.transforms.build_schedules:transforms
     - gecko_taskgraph.transforms.build_lints:transforms
-    - gecko_taskgraph.transforms.build_fat_aar:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.artifact:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         artifact_map: taskcluster/gecko_taskgraph/manifests/fennec_geckoview.yml
     index:
         product: mobile
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     use-python: default
     worker:
         docker-image: {in-tree: android-build}
@@ -32,14 +32,17 @@ task-defaults:
             # Online in order to download the per-architecture AARs.
             GRADLE_USER_HOME: "/builds/worker/checkouts/build/gecko/mobile/android/gradle/dotgradle-online"
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            MOZ_ANDROID_FAT_AAR_ARCHITECTURES: "armeabi-v7a,arm64-v8a,x86,x86_64"
+            MOZ_ANDROID_FAT_AAR_ARCHITECTURES: "armeabi-v7a,arm64-v8a,x86_64"
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+            MOZ_ANDROID_FAT_AAR_ARMEABI_V7A: "/builds/worker/fetches/armeabi-v7a/target.maven.zip"
+            MOZ_ANDROID_FAT_AAR_ARM64_V8A: "/builds/worker/fetches/arm64-v8a/target.maven.zip"
+            MOZ_ANDROID_FAT_AAR_X86_64: "/builds/worker/fetches/x86_64/target.maven.zip"
         artifacts:
             - name: public/build/maven
               path: /builds/worker/workspace/obj-build/gradle/maven/
               type: directory
-            - name: public/build/target.maven.tar.xz
-              path: /builds/worker/workspace/obj-build/gradle/target.maven.tar.xz
+            - name: public/build/target.maven.zip
+              path: /builds/worker/workspace/obj-build/gradle/target.maven.zip
               type: file
             - name: public/build
               path: /builds/worker/artifacts/
@@ -72,7 +75,7 @@ task-defaults:
         mozconfig-variant:
             by-release-type:
                 beta: beta
-                release.*: release
+                release: release
                 esr.*: release
                 default: nightly
         tooltool-downloads: internal
@@ -86,17 +89,20 @@ task-defaults:
                 nightly-larch: nightly-larch
                 nightly-oak: nightly-oak
                 nightly-pine: nightly-pine
+                nightly-cypress: nightly-cypress
                 beta:
                     by-shipping-product:
                         devedition: aurora
                         default: beta
-                release.*: release
+                release: release
                 esr.*: esr
                 default: null
     fetches:
         toolchain:
             - android-ndk-linux
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-clang
             - linux64-jdk
             - linux64-rust-android
@@ -107,6 +113,19 @@ task-defaults:
             - linux64-node
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - terser
+        armeabi-v7a:
+            - artifact: target.maven.zip
+              dest: armeabi-v7a
+              extract: false
+        arm64-v8a:
+            - artifact: target.maven.zip
+              dest: arm64-v8a
+              extract: false
+        x86_64:
+            - artifact: target.maven.zip
+              dest: x86_64
+              extract: false
 
 tasks:
     android-geckoview-fat-aar-shippable/opt:
@@ -126,11 +145,10 @@ tasks:
             platform: android-5-0-geckoview-fat-aar-shippable/opt
             symbol: B
         dependencies:
-            android-x86-shippable: build-android-x86-shippable/opt
-            android-x86_64-shippable: build-android-x86_64-shippable/opt
-            android-arm-shippable: build-android-arm-shippable/opt
-            android-aarch64-shippable: build-android-aarch64-shippable/opt
-        worker-type: b-linux-xlarge-amd
+            x86_64: build-android-x86_64-shippable/opt
+            armeabi-v7a: build-android-arm-shippable/opt
+            arm64-v8a: build-android-aarch64-shippable/opt
+        worker-type: b-linux-docker-xlarge-amd
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly
@@ -164,11 +182,10 @@ tasks:
             platform: android-5-0-geckoview-fat-aar-shippable/opt
             symbol: Bl
         dependencies:
-            android-x86-shippable-lite: build-android-x86-shippable-lite/opt
-            android-x86_64-shippable-lite: build-android-x86_64-shippable-lite/opt
-            android-arm-shippable-lite: build-android-arm-shippable-lite/opt
-            android-aarch64-shippable-lite: build-android-aarch64-shippable-lite/opt
-        worker-type: b-linux-xlarge-amd
+            x86_64: build-android-x86_64-shippable-lite/opt
+            armeabi-v7a: build-android-arm-shippable-lite/opt
+            arm64-v8a: build-android-aarch64-shippable-lite/opt
+        worker-type: b-linux-docker-xlarge-amd
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly-lite
@@ -195,15 +212,14 @@ tasks:
             platform: android-5-0-geckoview-fat-aar/opt
             symbol: B
         dependencies:
-            android-x86-opt: build-android-x86/opt
-            android-x86_64-opt: build-android-x86_64/opt
-            android-arm-opt: build-android-arm/opt
-            android-aarch64-opt: build-android-aarch64/opt
+            x86_64: build-android-x86_64/opt
+            armeabi-v7a: build-android-arm/opt
+            arm64-v8a: build-android-aarch64/opt
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-opt
                 USE_ARTIFACT: '1'
-                MOZ_ARTIFACT_TASK: {task-reference: '<android-arm-opt>'}
+                MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
             actions: [get-secrets, build]
             config: ["builds/releng_base_android_64_builds.py"]

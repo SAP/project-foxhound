@@ -35,7 +35,6 @@ abstract class BaseFragment : Fragment() {
         view?.isInvisible = requireComponents.appStore.state.screen == Screen.Locked()
     }
 
-    @Suppress("SwallowedException")
     override fun onCreateAnimation(transit: Int, enter: Boolean, nextAnim: Int): Animation? {
         var animation = super.onCreateAnimation(transit, enter, nextAnim)
         if (animation == null && nextAnim != 0) {

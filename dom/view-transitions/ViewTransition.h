@@ -7,11 +7,11 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
-#include "nsRect.h"
-#include "nsWrapperCache.h"
 #include "nsAtomHashKeys.h"
 #include "nsClassHashtable.h"
+#include "nsRect.h"
 #include "nsRefPtrHashtable.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 class nsITimer;
@@ -34,6 +34,7 @@ class IpcResourceUpdateQueue;
 
 namespace dom {
 
+class ViewTransitionTypeSet;
 extern LazyLogModule gViewTransitionsLog;
 
 #define VT_LOG(...)                                                    \
@@ -63,6 +64,9 @@ enum class SkipTransitionReason : uint8_t {
   PseudoUpdateFailure,
   Resize,
   PageSwap,
+  // Can happen due to various recoverable internal errors such as GPU process
+  // crashes or GPU device resets.
+  ResetRendering,
 };
 
 // https://drafts.csswg.org/css-view-transitions-1/#viewtransition-phase
@@ -70,24 +74,31 @@ enum class ViewTransitionPhase : uint8_t {
   PendingCapture = 0,
   UpdateCallbackCalled,
   Animating,
+  PendingDone,
   Done,
 };
 
 class ViewTransition final : public nsISupports, public nsWrapperCache {
  public:
   using Phase = ViewTransitionPhase;
+  using TypeList = nsTArray<RefPtr<nsAtom>>;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ViewTransition)
 
-  ViewTransition(Document&, ViewTransitionUpdateCallback*);
+  ViewTransition(Document&, ViewTransitionUpdateCallback*, TypeList&&);
 
   Promise* GetUpdateCallbackDone(ErrorResult&);
   Promise* GetReady(ErrorResult&);
   Promise* GetFinished(ErrorResult&);
+  ViewTransitionTypeSet* Types();
+  const TypeList& GetTypeList() const { return mTypeList; }
+  TypeList& GetTypeList() { return mTypeList; }
 
   void SkipTransition(SkipTransitionReason = SkipTransitionReason::JS);
   MOZ_CAN_RUN_SCRIPT void PerformPendingOperations();
+
+  void FinishDone();
 
   // Get the snapshot containing block, which is the top-layer for rendering the
   // view transition tree.
@@ -97,9 +108,15 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   // Get ::view-transition pseudo element, which is the view transition tree
   // root. We find the pseudo element of this tree from this node.
   Element* GetViewTransitionTreeRoot() const;
+  // Get all currently captured element frames if accessible.
+  void GetCapturedFrames(nsTArray<nsIFrame*>& aCapturedFrames) const;
 
-  Maybe<nsSize> GetOldSize(nsAtom* aName) const;
-  Maybe<nsSize> GetNewSize(nsAtom* aName) const;
+  Maybe<nsRect> GetOldInkOverflowRect(nsAtom* aName) const;
+  Maybe<nsRect> GetNewInkOverflowRect(nsAtom* aName) const;
+  Maybe<nsSize> GetOldBorderBoxSize(nsAtom* aName) const;
+  Maybe<nsSize> GetNewBorderBoxSize(nsAtom* aName) const;
+  Maybe<nsRect> GetOldActiveRect(nsAtom* aName) const;
+  Maybe<nsRect> GetNewActiveRect(nsAtom* aName) const;
   // Use this to generate the old state image key for use in a stacking context.
   // Do not use the returned image key in an image display item, use
   // ReadOldImageKey instead.
@@ -117,6 +134,9 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   const wr::ImageKey* GetImageKeyForCapturedFrame(
       nsIFrame* aFrame, layers::RenderRootStateManager*,
       wr::IpcResourceUpdateQueue&) const;
+  void UpdateActiveRectForCapturedFrame(
+      nsIFrame* capturedFrame, const gfx::MatrixScales& aInheritedScale,
+      nsRect& aOutCapturedRect);
 
   Element* FindPseudo(const PseudoStyleRequest&) const;
 
@@ -137,6 +157,7 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   struct CapturedElement;
 
   static nsRect SnapshotContainingBlockRect(nsPresContext*);
+  static nsRect CapturedInkOverflowRectForFrame(nsIFrame*, bool aIsRoot);
   MOZ_CAN_RUN_SCRIPT void CallUpdateCallback(ErrorResult&);
 
  private:
@@ -178,6 +199,11 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   // auto-generated for this view transition.
   AutoTArray<RefPtr<nsAtom>, 8> mNames;
 
+  using OldCaptureFramesArray =
+      AutoTArray<std::pair<nsIFrame*, RefPtr<nsAtom>>, 32>;
+  // Short lived array pointer used to mark old captures for DL building.
+  OldCaptureFramesArray* mOldCaptureElements = nullptr;
+
   // The element identifier for the elements which need the auto-generated
   // view-transition-name. The lifetime of those element identifiers is
   // element’s node document’s active view transition.
@@ -194,6 +220,9 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   RefPtr<Promise> mUpdateCallbackDonePromise;
   RefPtr<Promise> mReadyPromise;
   RefPtr<Promise> mFinishedPromise;
+
+  TypeList mTypeList;
+  RefPtr<ViewTransitionTypeSet> mTypes;
 
   static void TimeoutCallback(nsITimer*, void*);
   RefPtr<nsITimer> mTimeoutTimer;

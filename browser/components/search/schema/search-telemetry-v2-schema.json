@@ -118,6 +118,15 @@
         }
       }
     },
+    "searchMode": {
+      "type": "object",
+      "title": "Search Mode Param Mapping",
+      "description": "A map of param names to search modes, e.g. image_search. Default if not specified is 'normal_search'.",
+      "properties": {},
+      "additionalProperties": {
+        "enum": ["image_search"]
+      }
+    },
     "extraAdServersRegexps": {
       "type": "array",
       "title": "Extra Ad Server Regular Expressions",
@@ -272,6 +281,7 @@
     "shoppingTab": {
       "type": "object",
       "title": "Shopping Tab",
+      "description": "Deprecated in Firefox 149.",
       "properties": {
         "selector": {
           "type": "string",
@@ -416,6 +426,70 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/subframe"
+      }
+    },
+    "impressionAttributes": {
+      "type": "array",
+      "title": "Impression Attributes",
+      "description": "An array of attributes to check and record for SERP impressions. Only supported in Firefox 149 onwards.",
+      "items": {
+        "type": "object",
+        "required": ["key"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The identifier for this impression attribute."
+          },
+          "url": {
+            "type": "object",
+            "description": "URL-based matching.",
+            "properties": {
+              "regexp": {
+                "type": "string",
+                "description": "A regular expression to match against the page URL."
+              }
+            }
+          },
+          "element": {
+            "type": "object",
+            "description": "DOM element-based matching criteria.",
+            "properties": {
+              "selector": {
+                "type": "string",
+                "description": "The CSS selector to use querySelectorAll from the context of the SERP."
+              },
+              "attributeName": {
+                "type": "string",
+                "description": "The attribute name to inspect on the selected elements. If not provided, the presence of the element is used."
+              },
+              "regexp": {
+                "type": "string",
+                "description": "A regular expression to match against the attribute's value."
+              },
+              "component": {
+                "type": "object",
+                "description": "Component information for the element.",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "The type of component the element belongs to.",
+                    "pattern": "^[a-z](?:_?[a-z])*$"
+                  },
+                  "countImpressions": {
+                    "type": "boolean",
+                    "description": "Whether to count impressions for this component when the element is found."
+                  }
+                },
+                "required": ["type"]
+              }
+            },
+            "required": ["selector"]
+          },
+          "value": {
+            "type": "string",
+            "description": "A value to set for the attribute automatically. Useful if the attribute isn't available for the provider."
+          }
+        }
       }
     }
   },

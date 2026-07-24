@@ -20,16 +20,24 @@ generated-files = "xpcomtest.xpt"
 
 ["test_bug476919.js"]
 # Creating a symlink requires admin or developer mode on Windows.
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win'",
+]
 # Bug 676998: test fails consistently on Android
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["test_bug478086.js"]
 
 ["test_bug745466.js"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win'",
+]
 # Bug 676998: test fails consistently on Android
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["test_bug1434856.js"]
 
@@ -47,27 +55,37 @@ prefs = [
 ["test_file_renameTo.js"]
 
 ["test_getTimers.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_hidden_files.js"]
 
 ["test_home.js"]
 # Bug 676998: test fails consistently on Android
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["test_iniParser.js"]
+
+["test_invalidGrayBits.js"]
 
 ["test_ioutil.js"]
 
 ["test_localfile.js"]
 
 ["test_logFromPreference.js"]
-skip-if = ["(os == 'android' && release_or_beta)"] # bug 1841818
+skip-if = [
+  "os == 'android' && release_or_beta", # bug 1841818
+]
 
 ["test_mac_bundle.js"]
 
 ["test_mac_xattrs.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_notxpcom_scriptable.js"]
 
@@ -75,15 +93,16 @@ run-if = ["os == 'mac'"]
 
 ["test_nsIProcess.js"]
 skip-if = [
-  "os == 'win'", # Bug 1325609
-  "os == 'linux'", # Bug 676998
   "os == 'android'", # Bug 1631671
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 676998
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 676998
+  "os == 'win'", # Bug 1325609
 ]
 
 ["test_nsIProcess_stress.js"]
 skip-if = [
-  "os == 'win'", # bug 676412, test isn't needed on windows and runs really slowly
   "ccov", # bug 1394989
+  "os == 'win'", # bug 676412, test isn't needed on windows and runs really slowly
 ]
 
 ["test_pipe.js"]
@@ -91,7 +110,9 @@ skip-if = [
 ["test_process_directives.js"]
 
 ["test_process_directives_child.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_seek_multiplex.js"]
 
@@ -103,17 +124,31 @@ skip-if = ["os == 'android'"]
 
 ["test_symlinks.js"]
 # Creating a symlink requires admin or developer mode on Windows.
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win'",
+]
 # Bug 676998: test fails consistently on Android
-fail-if = ["os == 'android'"]
 
 ["test_systemInfo.js"]
 
 ["test_versioncomparator.js"]
-skip-if = ["os == 'win' && asan"] # Bug 1763002
+skip-if = [
+  "os == 'win' && asan", # Bug 1763002
+]
 
 ["test_windows_cmdline_file.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
+
+["test_windows_onedrive_registry.js"]
+run-if = [
+  "os == 'win'",
+]
+run-sequentially = ["true"] # Mock Windows registry interferes with normal operations
 
 ["test_windows_registry.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
+run-sequentially = ["true"] # Mock Windows registry interferes with normal operations

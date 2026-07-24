@@ -123,10 +123,46 @@ static void ReplaceAllUsesWith(MDefinition* from, MDefinition* to) {
   MOZ_ASSERT(!to->isDiscarded(),
              "GVN replaces an instruction by a removed instruction");
 
-  // Update the node's wasm ref type to the LUB of the two nodes being combined.
+  // Update the node's wasm ref type to the GLB of the two nodes being combined.
   // This ensures that any type-based optimizations downstream remain correct.
-  to->setWasmRefType(wasm::MaybeRefType::leastUpperBound(from->wasmRefType(),
-                                                         to->wasmRefType()));
+  //
+  // We use the GLB instead of the LUB because if two nodes have different ref
+  // types, but are determined to represent the same value, then it is safe to
+  // choose the most precise type available, which is the GLB.
+  //
+  // By comparison, consider MPhi::computeWasmRefType, which takes the LUB of
+  // all operands. This is necessary because each operand is a different value,
+  // and we must conservatively choose a type that can represent all values.
+  // However, this case is different: when two nodes are congruentTo each other,
+  // they are the *same value*, and anything we know to be true of one is true
+  // of the other. Therefore, we can safely choose the GLB.
+  //
+  // For example, if we had two WasmNullConstants with types (ref null i31) and
+  // (ref null struct), it would still be valid to mark these nulls as
+  // congruent. The type of the resulting null constant could safely be (ref
+  // null none), the GLB, rather than (ref null eq), the LUB. (This example is
+  // somewhat moot because we directly set WasmNullConstants to have type (ref
+  // null none) anyway, but it demonstrates the principle.)
+  //
+  // However, nulls can also trigger strange GVN situations downstream. For
+  // example, consider this test case that we exercise in wasm/gc/ref-gvn.js:
+  //
+  // ```
+  // ref.null $s1
+  // struct.get $s1 0
+  // ref.null $s2
+  // struct.get $s2 0
+  // ```
+  //
+  // The nulls may be combined by GVN, and then the struct.gets may also be
+  // combined because they have the same input and offset. GVN needs some kind
+  // of type for the new struct.get, and the input types may be anything
+  // depending on the struct's field types, so a general GLB is the natural
+  // solution. Does it make sense to find the common ref type between `(field
+  // i31ref)` and `(field structref)`, potentially? Not really, but since
+  // struct.get will trap on a null input anyway, it doesn't really matter.
+  to->setWasmRefType(wasm::MaybeRefType::greatestLowerBound(from->wasmRefType(),
+                                                            to->wasmRefType()));
 
   // We don't need the extra setting of ImplicitlyUsed flags that the regular
   // replaceAllUsesWith does because we do it ourselves.

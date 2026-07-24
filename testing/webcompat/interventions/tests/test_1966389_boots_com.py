@@ -16,12 +16,21 @@ async def are_key_elements_same_width(client):
     return len(list(set(unique_widths))) == 1
 
 
+@pytest.mark.enable_webkit_fill_available
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
     assert await are_key_elements_same_width(client)
 
 
+@pytest.mark.disable_webkit_fill_available
+@pytest.mark.asyncio
+@pytest.mark.with_interventions
+async def test_enabled2(client):
+    assert await are_key_elements_same_width(client)
+
+
+@pytest.mark.disable_webkit_fill_available
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):

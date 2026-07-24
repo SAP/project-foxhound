@@ -100,7 +100,7 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
     // ReflowInput::Flags::mSpecialBSizeReflow.
     const nscoord cbBSize = NS_UNCONSTRAINEDSIZE;
     const nscoord contentEdgeToBoxSizingBSize =
-        stylePos->mBoxSizing == StyleBoxSizing::Border
+        stylePos->mBoxSizing == StyleBoxSizing::BorderBox
             ? aFrame->IntrinsicBSizeOffsets().BorderPadding()
             : 0;
     const nscoord cellBSize = nsIFrame::ComputeBSizeValueAsPercentageBasis(
@@ -123,10 +123,10 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
 
     // XXX Should we ignore percentage padding?
     nsIFrame::IntrinsicSizeOffsetData offsets = aFrame->IntrinsicISizeOffsets();
-    if (stylePos->mBoxSizing == StyleBoxSizing::Content) {
+    if (stylePos->mBoxSizing == StyleBoxSizing::ContentBox) {
       boxSizingToBorderEdge = offsets.padding + offsets.border;
     } else {
-      // StyleBoxSizing::Border
+      // StyleBoxSizing::BorderBox
       minCoord += offsets.padding + offsets.border;
       prefCoord += offsets.padding + offsets.border;
     }

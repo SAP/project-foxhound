@@ -31,10 +31,9 @@ https_first_disabled = true
 
 ["browser_accessibility_panel_toolbar_pref_scroll.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1674060
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1674060
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1674060
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1674060
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1674060
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1674060
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1674060
 ]
 
 ["browser_accessibility_print_to_json.js"]
@@ -50,12 +49,6 @@ skip-if = [
 ["browser_accessibility_sidebar_dom_nodes.js"]
 
 ["browser_accessibility_simulation.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1674060
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1674060
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1674060
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1674060
-]
 
 ["browser_accessibility_tabbing_order_highlighter.js"]
 

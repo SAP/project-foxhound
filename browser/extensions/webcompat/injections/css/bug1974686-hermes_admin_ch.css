@@ -1,0 +1,17 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * hermes.admin.ch - table cells overlap
+ * Bug #1974686 - https://bugzilla.mozilla.org/show_bug.cgi?id=1974686
+ *
+ * The page sets a 1px height on its table cells, which has interop issues.
+ * We can unset that and adjust their other CSS to improve the situation.
+ */
+.hermespjm-projektuebersicht-row {
+  height: unset;
+}
+.hermespjm-projektuebersicht-cell-verantwortlicher {
+  position: static;
+}

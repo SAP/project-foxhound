@@ -1,0 +1,6 @@
+[ChildProc=any]
+protocol Parray_Maybe {
+child:
+  async Msg1(int?[] aa);
+  async Msg2(int?[]?[]?[]?[]?[]? aa);
+};

@@ -7,11 +7,9 @@
 #ifndef ADTS_DEMUXER_H_
 #define ADTS_DEMUXER_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
+#include "Adts.h"
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
-#include "Adts.h"
 
 namespace mozilla {
 

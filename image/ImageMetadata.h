@@ -8,7 +8,6 @@
 #define mozilla_image_ImageMetadata_h
 
 #include <stdint.h>
-#include <utility>
 #include "FrameTimeout.h"
 #include "Orientation.h"
 #include "mozilla/Maybe.h"

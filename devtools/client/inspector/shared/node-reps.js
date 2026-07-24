@@ -35,7 +35,7 @@ loader.lazyRequireGetter(
  *
  * @param {NodeFront} nodeFront
  *        The node front to create the element for.
- * @param {Object} props
+ * @param {object} props
  *        Props to pass to the rep.
  */
 function getNodeRep(nodeFront, props = {}) {

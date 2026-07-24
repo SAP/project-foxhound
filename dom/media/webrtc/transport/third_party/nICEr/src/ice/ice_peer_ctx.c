@@ -51,7 +51,7 @@ int nr_ice_peer_ctx_create(nr_ice_ctx *ctx, nr_ice_handler *handler,char *label,
     int r,_status;
     nr_ice_peer_ctx *pctx=0;
 
-    if(!(pctx=RCALLOC(sizeof(nr_ice_peer_ctx))))
+    if(!(pctx=R_NEW(nr_ice_peer_ctx)))
       ABORT(R_NO_MEMORY);
 
     pctx->state = NR_ICE_PEER_STATE_UNPAIRED;
@@ -359,7 +359,7 @@ int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_
 
 static void nr_ice_peer_ctx_trickle_wait_cb(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_peer_ctx *pctx=cb_arg;
+    nr_ice_peer_ctx *pctx=(nr_ice_peer_ctx*)cb_arg;
     nr_ice_media_stream *stream;
     nr_ice_component *comp;
 
@@ -460,30 +460,6 @@ int nr_ice_peer_ctx_pair_new_trickle_candidate(nr_ice_ctx *ctx, nr_ice_peer_ctx 
     _status=0;
  abort:
     return _status;
-  }
-
-int nr_ice_peer_ctx_disable_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *lstream, int component_id)
-  {
-    int r, _status;
-    nr_ice_media_stream *pstream;
-    nr_ice_component *component;
-
-    if ((r=nr_ice_peer_ctx_find_pstream(pctx, lstream, &pstream)))
-      ABORT(r);
-
-    /* We shouldn't be calling this after we have started pairing */
-    if (pstream->ice_state != NR_ICE_MEDIA_STREAM_UNPAIRED)
-      ABORT(R_FAILED);
-
-    if ((r=nr_ice_media_stream_find_component(pstream, component_id,
-                                              &component)))
-      ABORT(r);
-
-    component->state = NR_ICE_COMPONENT_DISABLED;
-
-    _status=0;
- abort:
-    return(_status);
   }
 
   void nr_ice_peer_ctx_destroy(nr_ice_peer_ctx** pctxp) {
@@ -643,19 +619,6 @@ void nr_ice_peer_ctx_stream_started_checks(nr_ice_peer_ctx *pctx, nr_ice_media_s
     }
   }
 
-void nr_ice_peer_ctx_dump_state(nr_ice_peer_ctx *pctx, int log_level)
-  {
-    nr_ice_media_stream *stream;
-
-    r_log(LOG_ICE,log_level,"PEER %s STATE DUMP",pctx->label);
-    r_log(LOG_ICE,log_level,"==========================================");
-    stream=STAILQ_FIRST(&pctx->peer_streams);
-    while(stream){
-      nr_ice_media_stream_dump_state(pctx,stream,log_level);
-    }
-    r_log(LOG_ICE,log_level,"==========================================");
-  }
-
 void nr_ice_peer_ctx_refresh_consent_all_streams(nr_ice_peer_ctx *pctx)
   {
     nr_ice_media_stream *str;
@@ -716,7 +679,7 @@ void nr_ice_peer_ctx_connected(nr_ice_peer_ctx *pctx)
 
 static void nr_ice_peer_ctx_fire_connected(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_peer_ctx *pctx=cb_arg;
+    nr_ice_peer_ctx *pctx=(nr_ice_peer_ctx*)cb_arg;
 
     pctx->connected_cb_timer=0;
 

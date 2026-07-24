@@ -5,15 +5,11 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  Log: "chrome://remote/content/shared/Log.sys.mjs",
+  error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
 });
-
-ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
 
 const CONTEXT_2D = "2d";
 const BG_COLOUR = "rgb(255,255,255)";
-const MAX_CANVAS_DIMENSION = 32767;
-const MAX_CANVAS_AREA = 472907776;
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 /**
@@ -78,73 +74,47 @@ capture.canvas = async function (
   let canvasHeight = height * scale;
   let canvasWidth = width * scale;
 
-  // Cap the screenshot size for width and height at 2^16 pixels,
-  // which is the maximum allowed canvas size. Higher dimensions will
-  // trigger exceptions in Gecko.
-  if (canvasWidth > MAX_CANVAS_DIMENSION) {
-    lazy.logger.warn(
-      "Limiting screen capture width to maximum allowed " +
-        MAX_CANVAS_DIMENSION +
-        " pixels"
-    );
-    width = Math.floor(MAX_CANVAS_DIMENSION / scale);
-    canvasWidth = width * scale;
-  }
-
-  if (canvasHeight > MAX_CANVAS_DIMENSION) {
-    lazy.logger.warn(
-      "Limiting screen capture height to maximum allowed " +
-        MAX_CANVAS_DIMENSION +
-        " pixels"
-    );
-    height = Math.floor(MAX_CANVAS_DIMENSION / scale);
-    canvasHeight = height * scale;
-  }
-
-  // If the area is larger, reduce the height to keep the full width.
-  if (canvasWidth * canvasHeight > MAX_CANVAS_AREA) {
-    lazy.logger.warn(
-      "Limiting screen capture area to maximum allowed " +
-        MAX_CANVAS_AREA +
-        " pixels"
-    );
-    height = Math.floor(MAX_CANVAS_AREA / (canvasWidth * scale));
-    canvasHeight = height * scale;
-  }
-
-  if (canvas === null) {
-    canvas = win.document.createElementNS(XHTML_NS, "canvas");
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-  }
-
-  const ctx = canvas.getContext(CONTEXT_2D);
-
-  if (readback) {
-    if (flags === null) {
-      flags =
-        ctx.DRAWWINDOW_DRAW_CARET |
-        ctx.DRAWWINDOW_DRAW_VIEW |
-        ctx.DRAWWINDOW_USE_WIDGET_LAYERS;
+  try {
+    if (canvas === null) {
+      canvas = win.document.createElementNS(XHTML_NS, "canvas");
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
     }
 
-    // drawWindow doesn't take scaling into account.
-    ctx.scale(scale, scale);
-    ctx.drawWindow(win, left + dX, top + dY, width, height, BG_COLOUR, flags);
-  } else {
-    let rect = new DOMRect(left, top, width, height);
-    let snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
-      rect,
-      scale,
-      BG_COLOUR
+    const ctx = canvas.getContext(CONTEXT_2D);
+
+    if (readback) {
+      if (flags === null) {
+        flags =
+          ctx.DRAWWINDOW_DRAW_CARET |
+          ctx.DRAWWINDOW_DRAW_VIEW |
+          ctx.DRAWWINDOW_USE_WIDGET_LAYERS;
+      }
+
+      // drawWindow doesn't take scaling into account.
+      ctx.scale(scale, scale);
+      ctx.drawWindow(win, left + dX, top + dY, width, height, BG_COLOUR, flags);
+    } else {
+      let rect = new DOMRect(left, top, width, height);
+      let snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
+        rect,
+        scale,
+        BG_COLOUR
+      );
+
+      ctx.drawImage(snapshot, 0, 0);
+
+      // Bug 1574935 - Huge dimensions can trigger an OOM because multiple copies
+      // of the bitmap will exist in memory. Force the removal of the snapshot
+      // because it is no longer needed.
+      snapshot.close();
+    }
+  } catch (e) {
+    // If we failed to create the canvas or draw the snapshot (likely due to OOM
+    // or excessive dimensions), we treat this as an unsupported operation.
+    throw new lazy.error.UnsupportedOperationError(
+      `Unable to capture screenshot: ${e.message}`
     );
-
-    ctx.drawImage(snapshot, 0, 0);
-
-    // Bug 1574935 - Huge dimensions can trigger an OOM because multiple copies
-    // of the bitmap will exist in memory. Force the removal of the snapshot
-    // because it is no longer needed.
-    snapshot.close();
   }
 
   return canvas;

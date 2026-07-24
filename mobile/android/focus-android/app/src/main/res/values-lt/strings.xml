@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -118,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>„%1$s“ suteikia jums kontrolę.</p> <p>Naudokite ją kaip privačią naršyklę: <ul> <li>Ieškokite ir naršykite pačioje programoje</li> <li>Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)</li> <li>Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus</li> </ul> </p> <p>„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.<br/> <a href=\"%2$s\">Sužinoti daugiau</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>„%1$s“ suteikia jums kontrolę.</p>\n<p>Naudokite ją kaip privačią naršyklę:\n<ul>\n<li>Ieškokite ir naršykite pačioje programoje</li>\n<li>Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)</li>\n<li>Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus</li>\n</ul> </p>\n<p>„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.<br/>\n<a href=\"%2$s\">Sužinoti daugiau</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privatumas ir saugumas</string>
   <!-- Preference summary for settings related to privacy and security -->

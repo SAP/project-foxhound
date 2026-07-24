@@ -16,9 +16,10 @@ namespace widget {
 class CompositorWidgetParent final : public PCompositorWidgetParent,
                                      public GtkCompositorWidget {
  public:
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(CompositorWidgetParent, CompositorWidget)
+
   explicit CompositorWidgetParent(const CompositorWidgetInitData& aInitData,
                                   const layers::CompositorOptions& aOptions);
-  ~CompositorWidgetParent() override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override {}
 
@@ -29,10 +30,9 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
       const LayoutDeviceIntSize& aClientSize) override;
 
   mozilla::ipc::IPCResult RecvCleanupResources() override;
-  mozilla::ipc::IPCResult RecvSetRenderingSurface(
-      const uintptr_t& aXWindow) override;
 
  private:
+  ~CompositorWidgetParent() override;
   RefPtr<VsyncObserver> mVsyncObserver;
 };
 

@@ -12,6 +12,10 @@ const { PlacesTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
+const { ImageTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ImageTestUtils.sys.mjs"
+);
+
 const FIRST_PARTY_ONE = "example.com";
 const FIRST_PARTY_TWO = "example.org";
 const THIRD_PARTY = "example.net";
@@ -30,7 +34,7 @@ const FAVICON_URI = TEST_DIRECTORY + "file_favicon.png";
 const TEST_FAVICON_CACHE_URI = TEST_DIRECTORY + "file_favicon_cache.png";
 
 const ICON_DATA =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABH0lEQVRYw2P8////f4YBBEwMAwxGHcBCUMX/91DGOSj/BpT/DkpzQChGBSjfBErLQsVZhmoI/L8LpRdD6X1QietQGhYy7FB5aAgwmkLpBKi4BZTPMThDgBGjHIDF+f9mKD0fKvGBRKNdoF7sgPL1saaJwZgGDkJ9vpZMn8PAHqg5G9FyifBgD4H/W9HyOWrU/f+DIzHhkoeZxxgzZEIAVtJ9RxX+Q6DAxCmP3byhXxkxshAs5odqbcioAY3UC1CBLyTGOTqAmsfAOWRCwBvqxV0oIUB2OQAzDy3/D+a6wB7q8mCU2vD/nw94GziYIQOtDRn9oXz+IZMGBKGMbCjNh9Ii+v8HR4uIAUeLiEEbb9twELaIRlqrmHG0bzjiHQAA1LVfww8jwM4AAAAASUVORK5CYII=";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABDElEQVRYR+2WsUoDQRRF31uEiG1qIVVaQRRs7PwQm9T5glRp8hcWFlr6BSljZ6tNGj9ALVIm+wK59zUjo+6CvFnYU+wZGNg9zA6zq2ZmEoj2AeUH2CcHL5C9wfJBH0M6guWCPoX0CM5QcICt6Xt6Ccsr7WEDmgF6Sd/CcgUpQxMKDPAltzl9B8sX/VduoGoByxmUvJISA57gegrLO90SndG8nw5hUmBAPYHtEZbN4eorZ1s4JT9/DlUPsI5hUmDA7pqDZ3pHt+UEqlawcjOS7gbklzylcwGZTdieppswPCBzEP225Nn5xgdRfMDPHyN/UMq3B7f/GEUHOGE/JE54gBP2U+qEB/wzfUB4wB7D3yOwzNKs4AAAAABJRU5ErkJggg==";
 
 let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
@@ -222,14 +226,19 @@ async function generateCookies(aThirdParty) {
   return cookies;
 }
 
-function assertIconIsData(item) {
+async function assertIconIsData(item) {
   let icon = item.getAttribute("image");
   is(
     icon.substring(0, 5),
     "data:",
     "Expected the image element to be a data URI"
   );
-  is(icon, ICON_DATA, "Expected to see the correct data.");
+  await ImageTestUtils.assertEqualImage(
+    window,
+    icon,
+    ICON_DATA,
+    "Expected to see the correct data."
+  );
 }
 
 async function doTest(aTestPage, aExpectedCookies, aFaviconURL) {
@@ -255,7 +264,7 @@ async function doTest(aTestPage, aExpectedCookies, aFaviconURL) {
   // Waiting until favicon loaded.
   await promiseFaviconLoaded;
 
-  assertIconIsData(tabInfo.tab);
+  await assertIconIsData(tabInfo.tab);
 
   BrowserTestUtils.removeTab(tabInfo.tab);
   // FIXME: We need to wait for the next event tick here to avoid observing
@@ -300,7 +309,7 @@ async function doTestForAllTabsFavicon(
   // Waiting until the favicon loaded.
   await promiseFaviconLoaded;
 
-  assertIconIsData(tabInfo.tab);
+  await assertIconIsData(tabInfo.tab);
 
   gTabsPanel.init();
 
@@ -313,7 +322,7 @@ async function doTestForAllTabsFavicon(
   gTabsPanel.showAllTabsPanel();
   await allTabsPopupShownPromise;
 
-  assertIconIsData(
+  await assertIconIsData(
     gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
   );
 
@@ -341,7 +350,7 @@ async function doTestForAllTabsFavicon(
   // Wait until the favicon is fully loaded.
   await promiseFaviconLoaded;
 
-  assertIconIsData(tabInfo.tab);
+  await assertIconIsData(tabInfo.tab);
 
   // Make the popup of allTabs showing up again.
   allTabsPopupShownPromise = BrowserTestUtils.waitForEvent(
@@ -351,7 +360,7 @@ async function doTestForAllTabsFavicon(
   gTabsPanel.showAllTabsPanel();
   await allTabsPopupShownPromise;
 
-  assertIconIsData(
+  await assertIconIsData(
     gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
   );
 

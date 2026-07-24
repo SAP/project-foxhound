@@ -79,7 +79,7 @@ static int nr_tcp_socket_ctx_create(nr_socket *nrsock, int is_framed,
     nr_tcp_socket_ctx *sock = 0;
     nr_socket *tcpsock;
 
-    if (!(sock = RCALLOC(sizeof(nr_tcp_socket_ctx)))) {
+    if (!(sock = R_NEW(nr_tcp_socket_ctx))) {
       nr_socket_destroy(&nrsock);
       ABORT(R_NO_MEMORY);
     }
@@ -231,7 +231,7 @@ int nr_socket_multi_tcp_create(struct nr_ice_ctx_ *ctx,
     nr_tcp_socket_ctx *tcp_socket_ctx;
     nr_socket * nrsock;
 
-    if (!(sock = RCALLOC(sizeof(nr_socket_multi_tcp))))
+    if (!(sock = R_NEW(nr_socket_multi_tcp)))
       ABORT(R_NO_MEMORY);
 
     TAILQ_INIT(&sock->sockets);

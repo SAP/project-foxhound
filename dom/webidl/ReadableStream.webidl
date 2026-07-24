@@ -33,7 +33,7 @@ interface ReadableStream {
   sequence<ReadableStream> tee();
 
   [GenerateReturnMethod]
-  async iterable<any>(optional ReadableStreamIteratorOptions options = {});
+  async_iterable<any>(optional ReadableStreamIteratorOptions options = {});
 };
 
 enum ReadableStreamReaderMode { "byob" };

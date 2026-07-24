@@ -6,6 +6,7 @@
 
 :host {
   --input-folder-space-inline: var(--space-medium);
+  --input-text-icon-size: var(--icon-size);
   width: 100%;
 }
 
@@ -18,4 +19,8 @@
   display: flex;
   align-items: flex-end;
   gap: var(--input-folder-space-inline);
+}
+
+#choose-folder-button {
+  white-space: nowrap;
 }

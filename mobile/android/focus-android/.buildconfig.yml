@@ -75,8 +75,6 @@ variants:
     fileName: app-focus-arm64-v8a-debug.apk
   - abi: armeabi-v7a
     fileName: app-focus-armeabi-v7a-debug.apk
-  - abi: x86
-    fileName: app-focus-x86-debug.apk
   - abi: x86_64
     fileName: app-focus-x86_64-debug.apk
   build_type: debug
@@ -86,8 +84,6 @@ variants:
     fileName: app-klar-arm64-v8a-debug.apk
   - abi: armeabi-v7a
     fileName: app-klar-armeabi-v7a-debug.apk
-  - abi: x86
-    fileName: app-klar-x86-debug.apk
   - abi: x86_64
     fileName: app-klar-x86_64-debug.apk
   build_type: debug
@@ -97,8 +93,6 @@ variants:
     fileName: app-focus-arm64-v8a-release-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-focus-armeabi-v7a-release-unsigned.apk
-  - abi: x86
-    fileName: app-focus-x86-release-unsigned.apk
   - abi: x86_64
     fileName: app-focus-x86_64-release-unsigned.apk
   build_type: release
@@ -108,8 +102,6 @@ variants:
     fileName: app-klar-arm64-v8a-release-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-klar-armeabi-v7a-release-unsigned.apk
-  - abi: x86
-    fileName: app-klar-x86-release-unsigned.apk
   - abi: x86_64
     fileName: app-klar-x86_64-release-unsigned.apk
   build_type: release
@@ -119,8 +111,6 @@ variants:
     fileName: app-focus-arm64-v8a-beta-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-focus-armeabi-v7a-beta-unsigned.apk
-  - abi: x86
-    fileName: app-focus-x86-beta-unsigned.apk
   - abi: x86_64
     fileName: app-focus-x86_64-beta-unsigned.apk
   build_type: beta
@@ -130,8 +120,6 @@ variants:
     fileName: app-klar-arm64-v8a-beta-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-klar-armeabi-v7a-beta-unsigned.apk
-  - abi: x86
-    fileName: app-klar-x86-beta-unsigned.apk
   - abi: x86_64
     fileName: app-klar-x86_64-beta-unsigned.apk
   build_type: beta
@@ -141,8 +129,6 @@ variants:
     fileName: app-focus-arm64-v8a-nightly-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-focus-armeabi-v7a-nightly-unsigned.apk
-  - abi: x86
-    fileName: app-focus-x86-nightly-unsigned.apk
   - abi: x86_64
     fileName: app-focus-x86_64-nightly-unsigned.apk
   build_type: nightly
@@ -152,8 +138,6 @@ variants:
     fileName: app-klar-arm64-v8a-nightly-unsigned.apk
   - abi: armeabi-v7a
     fileName: app-klar-armeabi-v7a-nightly-unsigned.apk
-  - abi: x86
-    fileName: app-klar-x86-nightly-unsigned.apk
   - abi: x86_64
     fileName: app-klar-x86_64-nightly-unsigned.apk
   build_type: nightly

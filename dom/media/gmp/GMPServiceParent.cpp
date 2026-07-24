@@ -5,13 +5,10 @@
 
 #include "GMPServiceParent.h"
 
-#include <limits>
-
 #include "GMPDecoderModule.h"
 #include "GMPLog.h"
 #include "GMPParent.h"
 #include "GMPVideoDecoderParent.h"
-#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "base/task.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
@@ -19,6 +16,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/Endpoint.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "nsFmtString.h"
 #include "nsThreadUtils.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -30,7 +28,6 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/Unused.h"
 #if defined(XP_WIN)
 #  include "mozilla/UntrustedModulesData.h"
 #endif
@@ -38,12 +35,12 @@
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
-#include "nsNetUtil.h"
 #include "nsHashKeys.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"
 #include "nsIXULRuntime.h"
 #include "nsNativeCharsetUtils.h"
+#include "nsNetUtil.h"
 #include "nsXPCOMPrivate.h"
 #include "prio.h"
 #include "runnable_utils.h"
@@ -491,7 +488,7 @@ void GeckoMediaPluginServiceParent::UnloadPlugins() {
     std::swap(plugins, mPlugins);
 
     for (GMPServiceParent* parent : mServiceParents) {
-      Unused << parent->SendBeginShutdown();
+      (void)parent->SendBeginShutdown();
     }
 
     GMP_LOG_DEBUG("%s::%s plugins:%zu", __CLASS__, __FUNCTION__,
@@ -532,6 +529,19 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::LoadFromEnvironment() {
   if (!thread) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  if (RefPtr<GMPParent> clearkeyGmp = CreateGMPParent()) {
+    clearkeyGmp->InitForClearkey(this);
+
+    {
+      MutexAutoLock lock(mMutex);
+      mPlugins.AppendElement(std::move(clearkeyGmp));
+    }
+
+    UpdateContentProcessGMPCapabilities();
+  }
+#endif
 
   const char* env = PR_GetEnv("MOZ_GMP_PATH");
   if (!env || !*env) {
@@ -643,8 +653,11 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
       }
 #ifdef MOZ_WMF_CDM
       if (name.Equals("gmp-widevinecdm-l1")) {
-        nsCOMPtr<nsIFile> pluginFile = gmp->GetDirectory();
-        MFCDMService::UpdateWidevineL1Path(pluginFile);
+        if (nsCOMPtr<nsIFile> pluginFile = gmp->GetDirectory()) {
+          MFCDMService::UpdateWidevineL1Path(pluginFile);
+        } else {
+          MOZ_ASSERT_UNREACHABLE("Missing directory for Widevine L1 plugin!");
+        }
       }
 #endif
       caps.AppendElement(std::move(x));
@@ -652,12 +665,12 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
   }
 
   if (aContentProcess) {
-    Unused << aContentProcess->SendGMPsChanged(caps);
+    (void)aContentProcess->SendGMPsChanged(caps);
     return;
   }
 
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    Unused << cp->SendGMPsChanged(caps);
+    (void)cp->SendGMPsChanged(caps);
   }
 
   // For non-e10s, we must fire a notification so that any MediaKeySystemAccess
@@ -853,7 +866,7 @@ NS_IMETHODIMP
 GeckoMediaPluginServiceParent::AddPluginDirectory(const nsAString& aDirectory) {
   MOZ_ASSERT(NS_IsMainThread());
   RefPtr<GenericPromise> p = AsyncAddPluginDirectory(aDirectory);
-  Unused << p;
+  (void)p;
   return NS_OK;
 }
 
@@ -917,8 +930,12 @@ GeckoMediaPluginServiceParent::FindPluginDirectoryForAPI(
     size_t index = 0;
     RefPtr<GMPParent> gmp = FindPluginForAPIFrom(index, api, aTags, &index);
     if (gmp) {
-      nsCOMPtr<nsIFile> dir = gmp->GetDirectory();
-      dir.forget(aDirectory);
+      if (nsCOMPtr<nsIFile> dir = gmp->GetDirectory()) {
+        dir.forget(aDirectory);
+      } else {
+        NS_WARNING("Found plugin but missing directory.");
+        return NS_ERROR_FAILURE;
+      }
     }
   }
 
@@ -1016,7 +1033,7 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::SelectPluginForAPI(
   return nullptr;
 }
 
-static already_AddRefed<GMPParent> CreateGMPParent() {
+already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::CreateGMPParent() {
   // Should run on the GMP thread.
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (!SandboxInfo::Get().CanSandboxMedia()) {
@@ -1123,7 +1140,8 @@ void GeckoMediaPluginServiceParent::RemoveOnGMPThread(
   for (size_t i = mPlugins.Length(); i-- > 0;) {
     nsCOMPtr<nsIFile> pluginpath = mPlugins[i]->GetDirectory();
     bool equals;
-    if (NS_FAILED(directory->Equals(pluginpath, &equals)) || !equals) {
+    if (!pluginpath || NS_FAILED(directory->Equals(pluginpath, &equals)) ||
+        !equals) {
       continue;
     }
 
@@ -1182,11 +1200,14 @@ void GeckoMediaPluginServiceParent::PluginTerminated(
 
   if (aPlugin->IsMarkedForDeletion()) {
     nsString path;
-    RefPtr<nsIFile> dir = aPlugin->GetDirectory();
-    nsresult rv = dir->GetPath(path);
-    NS_ENSURE_SUCCESS_VOID(rv);
-    if (mPluginsWaitingForDeletion.Contains(path)) {
-      RemoveOnGMPThread(path, true /* delete */, true /* can defer */);
+    if (RefPtr<nsIFile> dir = aPlugin->GetDirectory()) {
+      nsresult rv = dir->GetPath(path);
+      NS_ENSURE_SUCCESS_VOID(rv);
+      if (mPluginsWaitingForDeletion.Contains(path)) {
+        RemoveOnGMPThread(path, true /* delete */, true /* can defer */);
+      }
+    } else {
+      MOZ_ASSERT_UNREACHABLE("Plugin without directory marked for deletion?");
     }
   }
 }

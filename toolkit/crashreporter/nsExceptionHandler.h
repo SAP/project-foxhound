@@ -9,8 +9,8 @@
 // from this header you must update both implementations otherwise you'll break
 // builds that disable the crash reporter.
 
-#ifndef nsExceptionHandler_h__
-#define nsExceptionHandler_h__
+#ifndef nsExceptionHandler_h_
+#define nsExceptionHandler_h_
 
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
@@ -36,6 +36,10 @@ struct DirectAuxvDumpInfo;
 #endif    // defined(XP_LINUX)
 
 class nsIFile;
+
+namespace mozilla::geckoargs {
+struct ChildProcessArgs;
+}
 
 namespace CrashReporter {
 
@@ -270,13 +274,12 @@ using CrashPipeType = mozilla::UniqueFileHandle;
 void SetCrashHelperPipes(FileHandle breakpadFd, FileHandle crashHelperFd);
 #endif
 CrashPipeType GetChildNotificationPipe();
-mozilla::UniqueFileHandle RegisterChildIPCChannel();
+bool RegisterChildIPCChannel(mozilla::geckoargs::ChildProcessArgs& aArgs);
 
 // Child-side API
-MOZ_EXPORT bool SetRemoteExceptionHandler(
-    CrashPipeType aCrashPipe, mozilla::UniqueFileHandle aCrashHelperPipe);
+MOZ_EXPORT bool SetRemoteExceptionHandler(int& aArgc, char** aArgv);
 bool UnsetRemoteExceptionHandler(bool wasSet = true);
 
 }  // namespace CrashReporter
 
-#endif /* nsExceptionHandler_h__ */
+#endif /* nsExceptionHandler_h_ */

@@ -11,19 +11,21 @@ import kotlinx.coroutines.launch
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.service.pocket.ext.getCurrentFlightImpressions
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.GleanMetrics.Pocket
+import org.mozilla.fenix.GleanMetrics.StoriesLibrary
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.home.pocket.PocketImpression
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
+import org.mozilla.fenix.home.pocket.interactor.PocketStoriesInteractor
 import org.mozilla.fenix.utils.Settings
 import java.lang.ref.WeakReference
 
@@ -64,6 +66,16 @@ interface PocketStoriesController {
      * of the clicked story.
      */
     fun handleStoryClicked(storyClicked: PocketStory, storyPosition: Triple<Int, Int, Int>)
+
+    /**
+     * Callback for when the user clicks on the "Discover more" button.
+     */
+    fun handleDiscoverMoreClicked()
+
+    /**
+     * @see [PocketStoriesInteractor.onDiscoverMoreScreenViewed]
+     */
+    fun handleDiscoverMoreScreenViewed()
 }
 
 /**
@@ -105,18 +117,6 @@ internal class DefaultPocketStoriesController(
         )
 
         when (storyShown) {
-            is PocketSponsoredStory -> {
-                Pocket.homeRecsSpocShown.record(
-                    Pocket.HomeRecsSpocShownExtra(
-                        spocId = storyShown.id.toString(),
-                        position = "${storyPosition.first}x${storyPosition.second}",
-                        timesShown = storyShown.getCurrentFlightImpressions().size.inc().toString(),
-                    ),
-                )
-                Pocket.spocShim.set(storyShown.shim.impression)
-                Pings.spoc.submit(Pings.spocReasonCodes.impression)
-            }
-
             is SponsoredContent -> {
                 Pocket.homeRecsSpocShown.record(
                     Pocket.HomeRecsSpocShownExtra(
@@ -213,18 +213,6 @@ internal class DefaultPocketStoriesController(
                 )
             }
 
-            is PocketSponsoredStory -> {
-                Pocket.homeRecsSpocClicked.record(
-                    Pocket.HomeRecsSpocClickedExtra(
-                        spocId = storyClicked.id.toString(),
-                        position = "${storyPosition.first}x${storyPosition.second}",
-                        timesShown = storyClicked.getCurrentFlightImpressions().size.inc().toString(),
-                    ),
-                )
-                Pocket.spocShim.set(storyClicked.shim.click)
-                Pings.spoc.submit(Pings.spocReasonCodes.click)
-            }
-
             is ContentRecommendation -> {
                 appStore.dispatch(
                     ContentRecommendationsAction.ContentRecommendationClicked(
@@ -246,6 +234,21 @@ internal class DefaultPocketStoriesController(
                     marsUseCases.recordInteraction(storyClicked.callbacks.clickUrl)
                 }
             }
+
+            else -> {
+                // no-op
+            }
         }
+    }
+
+    override fun handleDiscoverMoreClicked() {
+        navController.nav(
+            R.id.homeFragment,
+            HomeFragmentDirections.actionHomeFragmentToStoriesFragment(),
+        )
+    }
+
+    override fun handleDiscoverMoreScreenViewed() {
+        StoriesLibrary.viewed.record(NoExtras())
     }
 }

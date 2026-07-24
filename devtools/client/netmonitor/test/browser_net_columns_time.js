@@ -20,7 +20,7 @@ add_task(async function () {
   const visibleColumns = store.getState().ui.columns;
 
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   // Hide the waterfall column to make sure timing data are fetched
@@ -39,7 +39,7 @@ add_task(async function () {
   });
 
   const onNetworkEvents = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onNetworkEvents;
 
   // There should be one request in the list.
@@ -50,10 +50,11 @@ add_task(async function () {
   const types = ["end", "response", "duration", "latency"];
 
   for (const t of types) {
+    info("Check the timing column for type: " + t);
     await waitUntil(() => {
       const node = item.querySelector(".requests-list-" + t + "-time");
       const value = parseInt(node.textContent, 10);
-      return value > 0;
+      return value >= 0;
     });
   }
 

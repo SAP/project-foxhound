@@ -6,8 +6,8 @@
 
 // This file was shamelessly copied from mozilla/xpinstall/wizard/unix/src2
 
-#ifndef nsINIParser_h__
-#define nsINIParser_h__
+#ifndef nsINIParser_h_
+#define nsINIParser_h_
 
 #ifdef MOZILLA_INTERNAL_API
 #  define nsINIParser nsINIParser_internal
@@ -16,8 +16,6 @@
 #include "nscore.h"
 #include "nsClassHashtable.h"
 #include "mozilla/UniquePtr.h"
-
-#include <stdio.h>
 
 class nsIFile;
 
@@ -159,4 +157,4 @@ class nsINIParser {
   bool IsValidValue(const char* aValue);
 };
 
-#endif /* nsINIParser_h__ */
+#endif /* nsINIParser_h_ */

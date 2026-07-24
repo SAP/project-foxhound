@@ -156,6 +156,8 @@ support-files = [
   "file_report_for_import_server.sjs",
   "file_service_worker.html",
   "file_service_worker.js",
+  "file_bug2021482_sw.js",
+  "file_bug2021482_check.js",
   "file_child-src_iframe.html",
   "file_child-src_inner_frame.html",
   "file_child-src_worker.html",
@@ -251,57 +253,56 @@ support-files = [
 ]
 prefs = [
   "security.mixed_content.upgrade_display_content=false",
-  "javascript.options.experimental.shadow_realms=true",
 ]
 
 ["test_301_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_302_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_303_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_307_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_CSP.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_allow_https_schemes.html"]
 
 ["test_base-uri.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blob_data_schemes.html"]
 
 ["test_blob_uri_blocks_modals.html"]
 skip-if = [
-  "xorigin",
-  "os == 'linux'",
   "asan", # alert should be blocked by CSP - got false, expected true
-  "tsan", # alert should be blocked by CSP - got false, expected true
-  "http3",
   "http2",
+  "http3",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "tsan", # alert should be blocked by CSP - got false, expected true
+  "xorigin",
 ]
 
 ["test_block_all_mixed_content.html"]
@@ -310,14 +311,14 @@ tags = "mcb"
 ["test_block_all_mixed_content_frame_navigation.html"]
 tags = "mcb"
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blocked_uri_in_reports.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blocked_uri_in_violation_event_after_redirects.html"]
@@ -326,8 +327,8 @@ support-files = [
   "file_blocked_uri_in_violation_event_after_redirects.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blocked_uri_redirect_frame_src.html"]
@@ -337,23 +338,28 @@ support-files = [
   "file_blocked_uri_redirect_frame_src_server.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug663567.html"]
-skip-if = ["fission && xorigin && debug && os == 'win'"]  # Bug 1716406 - New fission platform triage
+skip-if = [
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+]
 
 ["test_bug802872.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug836922_npolicies.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "verify-standalone",
 ]
 
 ["test_bug885433.html"]
@@ -365,19 +371,23 @@ skip-if = [
 ["test_bug909029.html"]
 
 ["test_bug910139.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+]
 
 ["test_bug941404.html"]
 
 ["test_bug1229639.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1242019.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1312272.html"]
@@ -385,7 +395,9 @@ skip-if = [
 ["test_bug1452037.html"]
 
 ["test_bug1505412.html"]
-skip-if = ["!debug"]
+skip-if = [
+  "opt",
+]
 
 ["test_bug1579094.html"]
 
@@ -403,37 +415,40 @@ support-files = [
 
 ["test_bug1777572.html"]
 support-files = ["file_bug1777572.html"]
-skip-if = ["os == 'android'"] # This unusual window.close/open test times out on Android.
+skip-if = [
+  "os == 'android'", # This unusual window.close/open test times out on Android.
+]
+
+["test_bug2021482.html"]
 
 ["test_child-src_iframe.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_child-src_worker-redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_child-src_worker.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_child-src_worker_data.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_connect-src.html"]
 
 ["test_csp_error_messages.html"]
 support-files = ["file_csp_error_messages.html"]
-skip-if = ["os == 'android' && android_version == '24' && processor == 'x86_64' && debug"] # Bug 1915293
 
 ["test_csp_frame_ancestors_about_blank.html"]
 support-files = [
@@ -451,8 +466,8 @@ support-files = [
   "main_csp_worker.html^headers^",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_data_csp_inheritance.html"]
@@ -481,8 +496,8 @@ skip-if = [
 
 ["test_frame_ancestors_ro.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_frame_src.html"]
@@ -493,49 +508,55 @@ support-files = [
   "file_frame_src_inner.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_frameancestors.html"]
 skip-if = [
-  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
-  "http3",
   "http2",
+  "http3",
+  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
 ]
 
 ["test_frameancestors_userpass.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_hash_source.html"]
-skip-if = ["fission && xorigin && debug"]  # Bug 1716406 - New fission platform triage
+skip-if = [
+  "debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+]
 
 ["test_iframe_sandbox.html"]
 skip-if = [
-  "os == 'win' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
-  "os == 'linux' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
-  "http3",
   "http2",
+  "http3",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+  "os == 'win' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
 ]
 
 ["test_iframe_sandbox_srcdoc.html"]
-skip-if = ["os == 'win' && debug && fission && xorigin"] # Bug 1716406 - New fission platform triage
+skip-if = [
+  "os == 'win' && debug && fission && xorigin", # Bug 1716406 - New fission platform triage
+]
 
 ["test_iframe_sandbox_top_1.html"]
 
 ["test_iframe_srcdoc.html"]
 
 ["test_ignore_unsafe_inline.html"]
-skip-if = ["xorigin"] # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object, [Child 3789, Main Thread] WARNING: NS_ENSURE_TRUE(request) failed: file /builds/worker/checkouts/gecko/netwerk/base/nsLoadGroup.cpp, line 591
+skip-if = [
+  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object, [Child 3789, Main Thread] WARNING: NS_ENSURE_TRUE(request) failed: file /builds/worker/checkouts/gecko/netwerk/base/nsLoadGroup.cpp, line 591
+]
 
 ["test_ignore_xfo.html"]
 skip-if = [
-  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
-  "http3",
   "http2",
+  "http3",
+  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
 ]
 
 ["test_image_document.html"]
@@ -556,8 +577,8 @@ support-files = [
 
 ["test_leading_wildcard.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_link_rel_preload.html"]
@@ -575,8 +596,8 @@ support-files = ["file_link_rel_preload.html"]
 
 ["test_multipartchannel.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_nonce_redirects.html"]
@@ -586,14 +607,14 @@ support-files = ["file_nonce_snapshot.sjs"]
 
 ["test_nonce_source.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_null_baseuri.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_object_inherit.html"]
@@ -607,66 +628,72 @@ support-files = [
 
 ["test_path_matching.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_path_matching_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_ping.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_policyuri_regression_from_multipolicy.html"]
 
 ["test_punycode_host_src.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_redirects.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_report.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_report_font_cache.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_report_for_import.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_report_uri_missing_in_report_only_header.html"]
 
 ["test_reporting_api_disabled.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_sandbox.html"]
-skip-if = ["true"] # Bug 1657934
+skip-if = [
+  "true", # Bug 1657934
+]
 
 ["test_sandbox_allow_scripts.html"]
 support-files = [
@@ -676,8 +703,8 @@ support-files = [
 
 ["test_scheme_relative_sources.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_script_template.html"]
@@ -696,20 +723,20 @@ support-files = [
 
 ["test_strict_dynamic.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_strict_dynamic_default_src.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_strict_dynamic_parser_inserted.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_subframe_run_js_if_allowed.html"]
@@ -729,8 +756,8 @@ support-files = [
   "file_uir_top_nav_dummy.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_uir_windowwatcher.html"]
@@ -742,20 +769,20 @@ support-files = [
   "file_windowwatcher_win_open.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_upgrade_insecure.html"]
 skip-if = [
-  "os == 'linux' && bits == 64", # Bug 1620516
   "os == 'android'", # Bug 1777028
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1620516
 ]
 
 ["test_upgrade_insecure_cors.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_upgrade_insecure_docwrite_iframe.html"]
@@ -764,8 +791,8 @@ skip-if = [
 
 ["test_upgrade_insecure_navigation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_upgrade_insecure_navigation_redirect.html"]
@@ -775,34 +802,34 @@ support-files = [
   "file_upgrade_insecure_navigation_redirect_cross_origin.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_upgrade_insecure_report_only.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_upgrade_insecure_reporting.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_websocket_localhost.html"]
 skip-if = [
-  "os == 'android'", # no websocket support Bug 982828
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # no websocket support Bug 982828
 ]
 
 ["test_websocket_self.html"]
 skip-if = [
-  "os == 'android'", # no websocket support Bug 982828
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # no websocket support Bug 982828
 ]
 
 ["test_win_open_blocked.html"]
@@ -818,8 +845,8 @@ support-files = [
   "file_spawn_service_worker.js",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_xslt_inherits_csp.html"]

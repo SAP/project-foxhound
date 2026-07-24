@@ -58,6 +58,7 @@ SETUP = {
         jj config set --repo user.name "Testing McTesterson"
         jj config set --repo user.email "test@example.org"
         jj describe --reset-author --no-edit
+        jj abandon
         """,
         """
         jj git remote add upstream ../remoterepo
@@ -98,7 +99,7 @@ def shell(cmd, working_dir):
 @pytest.fixture(params=["git", "hg", "jj", "src"])
 def repo(request):
     if request.param == "jj":
-        if os.getenv("MOZ_AUTOMATION") == 1:
+        if os.getenv("MOZ_AUTOMATION") == "1":
             fetches_dir = os.environ.get("MOZ_FETCHES_DIR", "")
             jj_dir = Path(fetches_dir) / "jj"
             if jj_dir.is_dir():
@@ -113,6 +114,10 @@ def repo(request):
             subprocess.call(["jj", "--version"], stdout=subprocess.DEVNULL)
         except OSError:
             pytest.skip("jj unavailable")
+
+        # Isolate jj tests from user's local config
+        os.environ["JJ_CONFIG"] = ""
+
     vcs = request.param
     # Use tempfile since pytest's tempdir is too long for jj on Windows
     td = tempfile.TemporaryDirectory(prefix=f"{vcs}-repo")

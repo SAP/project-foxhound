@@ -15,6 +15,8 @@ import mozilla.components.support.utils.ManufacturerChecker
 private const val FCQN_EDM_STORAGE_PROVIDER_BASE = "com.android.server.enterprise.storage.EdmStorageProviderBase"
 private const val IDS_CONTROLLER_CLASS = "android.app.IdsController"
 private const val INSTRUMENTED_HOOKS_CLASS = "com.android.tools.deploy.instrument.InstrumentationHooks"
+private const val ACTIVITY_MANAGER_SERVICE_CLASS = "com.android.server.am.ActivityManagerService"
+private const val IN_MEMORY_DEX_CLASS_LOADER_CLASS = "dalvik.system.InMemoryDexClassLoader"
 
 /**
  * A [StrictMode.OnThreadViolationListener] that recreates
@@ -50,8 +52,10 @@ class ThreadPenaltyDeathWithIgnoresListener(
 
     private fun shouldViolationBeIgnored(violation: Violation): Boolean =
         isSamsungLgEdmStorageProviderStartupViolation(violation) ||
-            containsInstrumentedHooksClass(violation) ||
-            isSamsungIdsController(violation)
+                containsInstrumentedHooksClass(violation) ||
+                isSamsungIdsController(violation) ||
+                isFinishAttachApplication(violation) ||
+                containsInMemoryDexClassLoader(violation)
 
     private fun isSamsungIdsController(violation: Violation): Boolean {
         // See https://bugzilla.mozilla.org/show_bug.cgi?id=1806469
@@ -85,6 +89,16 @@ class ThreadPenaltyDeathWithIgnoresListener(
         return violation.stackTrace.any { it.className == FCQN_EDM_STORAGE_PROVIDER_BASE }
     }
 
+    private fun isFinishAttachApplication(violation: Violation): Boolean {
+        // On recent Android versions, the epilogue of [ActivityThread.handleBindApplication]
+        // makes a Binder call that looks up settings from disk. This happens as we return
+        // from our [Application.onCreate] method.
+        return violation.stackTrace.any {
+            it.className == ACTIVITY_MANAGER_SERVICE_CLASS &&
+                    it.methodName == "finishAttachApplication"
+        }
+    }
+
     private fun containsInstrumentedHooksClass(violation: Violation): Boolean {
         // See https://github.com/mozilla-mobile/fenix/issues/21695
         // When deploying debug builds from Android Studio then we may hit a DiskReadViolation
@@ -92,5 +106,12 @@ class ThreadPenaltyDeathWithIgnoresListener(
         // still seems to be affected.
         // https://cs.android.com/android-studio/platform/tools/base/+/abbbe67087626460e0127d3f5377f9cf896e9941
         return violation.stackTrace.any { it.className == INSTRUMENTED_HOOKS_CLASS }
+    }
+
+    private fun containsInMemoryDexClassLoader(violation: Violation): Boolean {
+        // Using some types of breakpoints in a debugger may cause DEX rewriting which
+        // injects the [dalvik.system.InMemoryDexClassLoader] into call stacks leading
+        // to StrictMode violations if it happens on main thread.
+        return violation.stackTrace.any { it.className == IN_MEMORY_DEX_CLASS_LOADER_CLASS }
     }
 }

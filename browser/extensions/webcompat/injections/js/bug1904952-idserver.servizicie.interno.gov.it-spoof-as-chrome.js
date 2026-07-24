@@ -10,22 +10,28 @@
  * This site is checking for Chrome in navigator.userAgent, navigatorvendor and window.chrome, so let's spoof those.
  */
 
-/* globals exportFunction, UAHelpers */
+if (!window.chrome) {
+  console.info(
+    "navigator.userAgent, navigator.platform and window.chrome are being shimmed for compatibility reasons. https://bugzilla.mozilla.org/show_bug.cgi?id=1904952 for details."
+  );
 
-console.info(
-  "navigator.userAgent, navigator.platform and window.chrome are being shimmed for compatibility reasons. https://bugzilla.mozilla.org/show_bug.cgi?id=1904952 for details."
-);
+  window.chrome = {};
 
-window.wrappedJSObject.chrome = new window.wrappedJSObject.Object();
+  const userAgent = navigator.userAgent;
+  const androidVer = userAgent.match(/Android [0-9.]+/) || "Android 6.0";
+  const device = userAgent.includes("Mobile")
+    ? "Nexus 5 Build/MRA58N"
+    : "Nexus 7 Build/JSS15Q";
+  const osSegment = `Linux; ${androidVer}; ${device}`;
+  const CHROME_UA = `Mozilla/5.0 (${osSegment}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36`;
 
-const CHROME_UA = UAHelpers.addChrome();
+  const nav = Object.getPrototypeOf(navigator);
 
-const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
+  const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
+  ua.get = () => CHROME_UA;
+  Object.defineProperty(nav, "userAgent", ua);
 
-const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
-ua.get = exportFunction(() => CHROME_UA, window);
-Object.defineProperty(nav, "userAgent", ua);
-
-const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
-vendor.get = exportFunction(() => "Google Inc.", window);
-Object.defineProperty(nav, "vendor", vendor);
+  const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
+  vendor.get = () => "Google Inc.";
+  Object.defineProperty(nav, "vendor", vendor);
+}

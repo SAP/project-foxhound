@@ -5,7 +5,7 @@
 
 #include <windows.h>
 
-#include "SharedLibraries.h"
+#include "mozilla/SharedLibraries.h"
 
 #include "mozilla/glue/WindowsUnicode.h"
 #include "mozilla/NativeNt.h"

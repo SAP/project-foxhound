@@ -11,6 +11,7 @@
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "nsFocusManager.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom::notification {
 

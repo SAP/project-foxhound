@@ -122,13 +122,12 @@ def main():
         extensionDir = os.path.join(
             os.getcwd(), "..", "..", "services", "sync", "tps", "extensions"
         )
-    else:
-        if sys.platform == "win32":
-            # replace msys-style paths with proper Windows paths
-            m = re.match(r"^\/\w\/", extensionDir)
-            if m:
-                extensionDir = "%s:/%s" % (m.group(0)[1:2], extensionDir[3:])
-                extensionDir = extensionDir.replace("/", "\\")
+    elif sys.platform == "win32":
+        # replace msys-style paths with proper Windows paths
+        m = re.match(r"^\/\w\/", extensionDir)
+        if m:
+            extensionDir = "%s:/%s" % (m.group(0)[1:2], extensionDir[3:])
+            extensionDir = extensionDir.replace("/", "\\")
     if sys.platform == "darwin":
         # Needed to avoid tab crashes on mac due to level 3 sandboxing
         sourceRoot = os.path.join(extensionDir, "..", "..", "..", "..")

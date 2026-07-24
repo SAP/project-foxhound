@@ -9,11 +9,11 @@
 #ifndef mozilla_MappedDeclarationsBuilder_h
 #define mozilla_MappedDeclarationsBuilder_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/dom/Element.h"
-#include "nsCSSPropertyID.h"
 #include "nsCSSValue.h"
 #include "nsColor.h"
 
@@ -46,36 +46,37 @@ class MOZ_STACK_CLASS MappedDeclarationsBuilder final {
   }
 
   // Check if we already contain a certain longhand
-  bool PropertyIsSet(nsCSSPropertyID aId) const {
+  bool PropertyIsSet(NonCustomCSSPropertyId aId) const {
     return mDecls && Servo_DeclarationBlock_PropertyIsSet(mDecls, aId);
   }
 
   // Set a property to an identifier (string)
-  void SetIdentStringValue(nsCSSPropertyID aId, const nsString& aValue) {
+  void SetIdentStringValue(NonCustomCSSPropertyId aId, const nsString& aValue) {
     RefPtr<nsAtom> atom = NS_AtomizeMainThread(aValue);
     SetIdentAtomValue(aId, atom);
   }
 
-  void SetIdentStringValueIfUnset(nsCSSPropertyID aId, const nsString& aValue) {
+  void SetIdentStringValueIfUnset(NonCustomCSSPropertyId aId,
+                                  const nsString& aValue) {
     if (!PropertyIsSet(aId)) {
       SetIdentStringValue(aId, aValue);
     }
   }
 
-  void SetIdentAtomValue(nsCSSPropertyID aId, nsAtom* aValue);
+  void SetIdentAtomValue(NonCustomCSSPropertyId aId, nsAtom* aValue);
 
-  void SetIdentAtomValueIfUnset(nsCSSPropertyID aId, nsAtom* aValue) {
+  void SetIdentAtomValueIfUnset(NonCustomCSSPropertyId aId, nsAtom* aValue) {
     if (!PropertyIsSet(aId)) {
       SetIdentAtomValue(aId, aValue);
     }
   }
 
   // Set a property to a keyword (usually NS_STYLE_* or StyleFoo::*)
-  void SetKeywordValue(nsCSSPropertyID aId, int32_t aValue) {
+  void SetKeywordValue(NonCustomCSSPropertyId aId, int32_t aValue) {
     Servo_DeclarationBlock_SetKeywordValue(&EnsureDecls(), aId, aValue);
   }
 
-  void SetKeywordValueIfUnset(nsCSSPropertyID aId, int32_t aValue) {
+  void SetKeywordValueIfUnset(NonCustomCSSPropertyId aId, int32_t aValue) {
     if (!PropertyIsSet(aId)) {
       SetKeywordValue(aId, aValue);
     }
@@ -83,21 +84,21 @@ class MOZ_STACK_CLASS MappedDeclarationsBuilder final {
 
   template <typename T,
             typename = typename std::enable_if<std::is_enum<T>::value>::type>
-  void SetKeywordValue(nsCSSPropertyID aId, T aValue) {
+  void SetKeywordValue(NonCustomCSSPropertyId aId, T aValue) {
     static_assert(EnumTypeFitsWithin<T, int32_t>::value,
                   "aValue must be an enum that fits within 32 bits");
     SetKeywordValue(aId, static_cast<int32_t>(aValue));
   }
   template <typename T,
             typename = typename std::enable_if<std::is_enum<T>::value>::type>
-  void SetKeywordValueIfUnset(nsCSSPropertyID aId, T aValue) {
+  void SetKeywordValueIfUnset(NonCustomCSSPropertyId aId, T aValue) {
     static_assert(EnumTypeFitsWithin<T, int32_t>::value,
                   "aValue must be an enum that fits within 32 bits");
     SetKeywordValueIfUnset(aId, static_cast<int32_t>(aValue));
   }
 
   // Set a property to an integer value
-  void SetIntValue(nsCSSPropertyID aId, int32_t aValue) {
+  void SetIntValue(NonCustomCSSPropertyId aId, int32_t aValue) {
     Servo_DeclarationBlock_SetIntValue(&EnsureDecls(), aId, aValue);
   }
 
@@ -120,61 +121,61 @@ class MOZ_STACK_CLASS MappedDeclarationsBuilder final {
   }
 
   // Set a property to a pixel value
-  void SetPixelValue(nsCSSPropertyID aId, float aValue) {
+  void SetPixelValue(NonCustomCSSPropertyId aId, float aValue) {
     Servo_DeclarationBlock_SetPixelValue(&EnsureDecls(), aId, aValue);
   }
 
-  void SetPixelValueIfUnset(nsCSSPropertyID aId, float aValue) {
+  void SetPixelValueIfUnset(NonCustomCSSPropertyId aId, float aValue) {
     if (!PropertyIsSet(aId)) {
       SetPixelValue(aId, aValue);
     }
   }
 
-  void SetLengthValue(nsCSSPropertyID aId, const nsCSSValue& aValue) {
+  void SetLengthValue(NonCustomCSSPropertyId aId, const nsCSSValue& aValue) {
     MOZ_ASSERT(aValue.IsLengthUnit());
     Servo_DeclarationBlock_SetLengthValue(
         &EnsureDecls(), aId, aValue.GetFloatValue(), aValue.GetUnit());
   }
 
   // Set a property to a percent value
-  void SetPercentValue(nsCSSPropertyID aId, float aValue) {
+  void SetPercentValue(NonCustomCSSPropertyId aId, float aValue) {
     Servo_DeclarationBlock_SetPercentValue(&EnsureDecls(), aId, aValue);
   }
 
-  void SetPercentValueIfUnset(nsCSSPropertyID aId, float aValue) {
+  void SetPercentValueIfUnset(NonCustomCSSPropertyId aId, float aValue) {
     if (!PropertyIsSet(aId)) {
       SetPercentValue(aId, aValue);
     }
   }
 
   // Set a property to `auto`
-  void SetAutoValue(nsCSSPropertyID aId) {
+  void SetAutoValue(NonCustomCSSPropertyId aId) {
     Servo_DeclarationBlock_SetAutoValue(&EnsureDecls(), aId);
   }
 
-  void SetAutoValueIfUnset(nsCSSPropertyID aId) {
+  void SetAutoValueIfUnset(NonCustomCSSPropertyId aId) {
     if (!PropertyIsSet(aId)) {
       SetAutoValue(aId);
     }
   }
 
   // Set a property to `currentcolor`
-  void SetCurrentColor(nsCSSPropertyID aId) {
+  void SetCurrentColor(NonCustomCSSPropertyId aId) {
     Servo_DeclarationBlock_SetCurrentColor(&EnsureDecls(), aId);
   }
 
-  void SetCurrentColorIfUnset(nsCSSPropertyID aId) {
+  void SetCurrentColorIfUnset(NonCustomCSSPropertyId aId) {
     if (!PropertyIsSet(aId)) {
       SetCurrentColor(aId);
     }
   }
 
   // Set a property to an RGBA nscolor value
-  void SetColorValue(nsCSSPropertyID aId, nscolor aValue) {
+  void SetColorValue(NonCustomCSSPropertyId aId, nscolor aValue) {
     Servo_DeclarationBlock_SetColorValue(&EnsureDecls(), aId, aValue);
   }
 
-  void SetColorValueIfUnset(nsCSSPropertyID aId, nscolor aValue) {
+  void SetColorValueIfUnset(NonCustomCSSPropertyId aId, nscolor aValue) {
     if (!PropertyIsSet(aId)) {
       SetColorValue(aId, aValue);
     }

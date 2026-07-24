@@ -170,7 +170,7 @@ class ContextTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP, Build.VERSION_CODES.P])
+    @Config(sdk = [Build.VERSION_CODES.O, Build.VERSION_CODES.P])
     fun `shareMedia will not show a thumbnail prior to Android 10`() {
         val context = spy(testContext)
         val argCaptor = argumentCaptor<Intent>()

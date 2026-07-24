@@ -29,6 +29,11 @@ namespace FuzzingFunctions {
   undefined crash(optional DOMString reason = "");
 
   /**
+   * Gracefully kill the GPU process
+   */
+  undefined killGPUProcess();
+
+  /**
    * Synchronously perform a cycle collection.
    */
   undefined cycleCollect();
@@ -65,7 +70,7 @@ namespace FuzzingFunctions {
    *                           events, you need to set one of key values
    *                           defined by "UI Events KeyboardEvent key Values".
    *                           You can check our current support values in
-   *                           dom/events/KeyNameList.h
+   *                           dom/events/KeyNameList.inc
    *                           If you want to synthesize printable key events,
    *                           you can set any string value including empty
    *                           string.
@@ -80,7 +85,7 @@ namespace FuzzingFunctions {
    *                           string or known code value defined by "UI Events
    *                           KeyboardEvent code Values".  You can check our
    *                           current support values in
-   *                           dom/events/PhysicalKeyCodeNameList.h.
+   *                           dom/events/PhysicalKeyCodeNameList.inc.
    *                           If |keyCode| is omitted or 0, this guesses
    *                           proper keyCode value in US-English keyboard.
    *                           If |location| is omitted or 0, this assumes

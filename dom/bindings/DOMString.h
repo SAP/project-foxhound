@@ -10,13 +10,13 @@
 #ifndef mozilla_dom_DOMString_h
 #define mozilla_dom_DOMString_h
 
-#include "nsString.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StringBuffer.h"
-#include "nsDOMString.h"
 #include "nsAtom.h"
+#include "nsDOMString.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

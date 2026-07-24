@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AltServiceParent_h__
-#define AltServiceParent_h__
+#ifndef AltServiceParent_h_
+#define AltServiceParent_h_
 
 #include "mozilla/net/PAltServiceParent.h"
 
@@ -37,4 +37,4 @@ class AltServiceParent final : public PAltServiceParent {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // AltServiceParent_h__
+#endif  // AltServiceParent_h_

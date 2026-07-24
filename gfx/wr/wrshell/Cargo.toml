@@ -1,0 +1,26 @@
+[package]
+name = "wrshell"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+
+[workspace]
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = [ "blocking" ] }
+webrender = { path = "../webrender", features = [ "debugger", "replay" ] }
+webrender_api = { path = "../webrender_api", features = [ "debugger" ] }
+tungstenite = "0.27.0"
+argh = "0.1"
+serde = { version="1", features = ["derive"] }
+serde_json = "1"
+strprox = "0.3.3"
+repl-ng = "0.3"
+ron = "0.11.0"
+png = "0.16"
+
+egui = "0.33"
+egui_tiles = { version = "0.14", features = ["serde"] }
+eframe = "0.33"
+winit = "0.30"
+confy = "1.0.0"

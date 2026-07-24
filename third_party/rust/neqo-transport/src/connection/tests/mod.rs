@@ -28,7 +28,7 @@ use crate::{
     packet,
     pmtud::Pmtud,
     recovery::ACK_ONLY_SIZE_LIMIT,
-    stats::{FrameStats, Stats, MAX_PTO_COUNTS},
+    stats::{FrameStats, Stats},
     tparams::TransportParameterId::*,
     ConnectionIdDecoder, ConnectionIdGenerator, ConnectionParameters, EmptyConnectionIdGenerator,
     Error, StreamId, StreamType, Version, MIN_INITIAL_PACKET_SIZE,
@@ -45,6 +45,7 @@ mod idle;
 mod keys;
 mod migration;
 mod null;
+mod pmtud;
 mod priority;
 mod recovery;
 mod resumption;
@@ -187,13 +188,16 @@ impl test_internal::FrameWriter for PingWriter {
 }
 
 /// Drive the handshake between the client and server.
-fn handshake_with_modifier(
+fn handshake_with_modifier<F>(
     client: &mut Connection,
     server: &mut Connection,
     now: Instant,
     rtt: Duration,
-    modifier: fn(Datagram) -> Option<Datagram>,
-) -> Instant {
+    mut modifier: F,
+) -> Instant
+where
+    F: FnMut(Datagram) -> Option<Datagram>,
+{
     let mut a = client;
     let mut b = server;
     let mut now = now;
@@ -227,7 +231,7 @@ fn handshake_with_modifier(
             a.test_frame_writer = None;
             did_ping[a.role()] = true;
         }
-        input = output.and_then(modifier);
+        input = output.and_then(&mut modifier);
         qtrace!("handshake: t += {:?}", rtt / 2);
         now += rtt / 2;
         mem::swap(&mut a, &mut b);
@@ -258,13 +262,16 @@ fn connect_fail(
     assert_error(server, &CloseReason::Transport(server_error));
 }
 
-fn connect_with_rtt_and_modifier(
+fn connect_with_rtt_and_modifier<F>(
     client: &mut Connection,
     server: &mut Connection,
     now: Instant,
     rtt: Duration,
-    modifier: fn(Datagram) -> Option<Datagram>,
-) -> Instant {
+    modifier: F,
+) -> Instant
+where
+    F: FnMut(Datagram) -> Option<Datagram>,
+{
     fn check_rtt(stats: &Stats, rtt: Duration) {
         assert_eq!(stats.rtt, rtt);
         // Validate that rttvar has been computed correctly based on the number of RTT updates.
@@ -329,18 +336,21 @@ fn assert_idle(client: &mut Connection, server: &mut Connection, rtt: Duration, 
     // Client started its idle period half an RTT before now.
     assert_eq!(
         client.process_output(now),
-        Output::Callback(idle_timeout - rtt / 2)
+        Output::Callback(idle_timeout.checked_sub(rtt / 2).unwrap())
     );
     assert_eq!(server.process_output(now), Output::Callback(idle_timeout));
 }
 
 /// Connect with an RTT and then force both peers to be idle.
-fn connect_rtt_idle_with_modifier(
+fn connect_rtt_idle_with_modifier<F>(
     client: &mut Connection,
     server: &mut Connection,
     rtt: Duration,
-    modifier: fn(Datagram) -> Option<Datagram>,
-) -> Instant {
+    modifier: F,
+) -> Instant
+where
+    F: FnMut(Datagram) -> Option<Datagram>,
+{
     let now = connect_with_rtt_and_modifier(client, server, now(), rtt, modifier);
     assert_idle(client, server, rtt, now);
     // Drain events from both as well.
@@ -504,7 +514,7 @@ fn induce_persistent_congestion(
     qtrace!("[{client}] induce_persistent_congestion");
     now += AT_LEAST_PTO;
 
-    let mut pto_counts = [0; MAX_PTO_COUNTS];
+    let mut pto_counts = [0; Stats::MAX_PTO_COUNTS];
     assert_eq!(client.stats.borrow().pto_counts, pto_counts);
 
     qtrace!("[{client}] first PTO");
@@ -709,8 +719,8 @@ fn create_client() {
     assert!(matches!(client.state(), State::Init));
     let stats = client.stats();
     assert_default_stats(&stats);
-    assert_eq!(stats.rtt, crate::rtt::INITIAL_RTT);
-    assert_eq!(stats.rttvar, crate::rtt::INITIAL_RTT / 2);
+    assert_eq!(stats.rtt, crate::DEFAULT_INITIAL_RTT);
+    assert_eq!(stats.rttvar, crate::DEFAULT_INITIAL_RTT / 2);
 }
 
 #[test]

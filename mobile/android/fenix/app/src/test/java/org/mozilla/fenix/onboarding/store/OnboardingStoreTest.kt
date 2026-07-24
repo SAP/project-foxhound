@@ -1,6 +1,5 @@
 package org.mozilla.fenix.onboarding.store
 
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mozilla.fenix.onboarding.view.ThemeOptionType
@@ -12,7 +11,7 @@ class OnboardingStoreTest {
     fun `WHEN init action is dispatched THEN state is updated as expected`() {
         val store = OnboardingStore()
 
-        store.dispatch(OnboardingAction.Init).joinBlocking()
+        store.dispatch(OnboardingAction.Init)
 
         val expected = OnboardingState(
             toolbarOptionSelected = ToolbarOptionType.TOOLBAR_TOP,
@@ -25,11 +24,11 @@ class OnboardingStoreTest {
         val store = OnboardingStore()
 
         store.dispatch(OnboardingAction.OnboardingToolbarAction.UpdateSelected(ToolbarOptionType.TOOLBAR_BOTTOM))
-            .joinBlocking()
+
         assertEquals(ToolbarOptionType.TOOLBAR_BOTTOM, store.state.toolbarOptionSelected)
 
         store.dispatch(OnboardingAction.OnboardingToolbarAction.UpdateSelected(ToolbarOptionType.TOOLBAR_TOP))
-            .joinBlocking()
+
         assertEquals(ToolbarOptionType.TOOLBAR_TOP, store.state.toolbarOptionSelected)
     }
 
@@ -38,15 +37,15 @@ class OnboardingStoreTest {
         val store = OnboardingStore()
 
         store.dispatch(OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_SYSTEM))
-            .joinBlocking()
+
         assertEquals(ThemeOptionType.THEME_SYSTEM, store.state.themeOptionSelected)
 
         store.dispatch(OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_LIGHT))
-            .joinBlocking()
+
         assertEquals(ThemeOptionType.THEME_LIGHT, store.state.themeOptionSelected)
 
         store.dispatch(OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_DARK))
-            .joinBlocking()
+
         assertEquals(ThemeOptionType.THEME_DARK, store.state.themeOptionSelected)
     }
 }

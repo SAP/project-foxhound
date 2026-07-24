@@ -94,7 +94,7 @@ The scaffold command will generate the following files:
 ```
 
 It will also make modifications to `toolkit/content/jar.mn` to add `chrome://`
-URLs for the new files, and to `toolkit/content/tests/widgets/chrome.ini` to
+URLs for the new files, and to `toolkit/content/tests/widgets/chrome.toml` to
 enable running the newly added test.
 
 After running the scaffold command you can start Storybook and you will see

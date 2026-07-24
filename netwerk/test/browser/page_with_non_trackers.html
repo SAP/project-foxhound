@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Non-tracker LNA Test</title>
+</head>
+<body>
+<script type="text/javascript">
+  var results = {};
+  window.addEventListener('load', function () {
+    let params = new URLSearchParams(location.search);
+
+    // Handle navigation test - navigate to localhost after a short delay
+    if (params.get("isTopLevelNavigation") === "true") {
+      console.log("Skipping tracker script load for navigation test");
+      // Trigger navigation to localhost after page loads
+      setTimeout(() => {
+        console.log("Navigating to localhost");
+        window.location.href = "http://localhost:21555/?type=navigation&test=top-level";
+      }, 100);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://example.com/browser/netwerk/test/browser/fetch_from_tracker.sjs?test=${params.get("test")}&rand=${params.get("rand")}`;
+    script.type = 'text/javascript';
+    script.onerror = () => {
+      console.error('Failed to load the external script.');
+    };
+    document.body.appendChild(script);
+  });
+</script>
+</body>
+</html>

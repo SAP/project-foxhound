@@ -6,13 +6,13 @@
 
 #include "DAV1DDecoder.h"
 
-#include "gfxUtils.h"
 #include "ImageContainer.h"
+#include "PerformanceRecorder.h"
+#include "VideoUtils.h"
+#include "gfxUtils.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "nsThreadUtils.h"
-#include "PerformanceRecorder.h"
-#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -79,6 +79,7 @@ DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
 DAV1DDecoder::~DAV1DDecoder() = default;
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
+  AUTO_PROFILER_LABEL("DAV1DDecoder::Init", MEDIA_PLAYBACK);
   Dav1dSettings settings;
   dav1d_default_settings(&settings);
   if (mLowLatency) {
@@ -142,12 +143,13 @@ void DAV1DDecoder::ReleaseDataBuffer(const uint8_t* buf) {
     nsresult rv = mTaskQueue->Dispatch(NS_NewRunnableFunction(
         "DAV1DDecoder::ReleaseDataBuffer", std::move(releaseBuffer)));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::InvokeDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("DAV1DDecoder::InvokeDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   MOZ_ASSERT(aSample);
 
@@ -370,6 +372,7 @@ Result<already_AddRefed<VideoData>, MediaResult> DAV1DDecoder::ConstructImage(
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self, this] {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Drain", MEDIA_PLAYBACK);
     DecodedData results;
     while (true) {
       Result<already_AddRefed<VideoData>, MediaResult> r = GetPicture();
@@ -393,6 +396,7 @@ RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
 RefPtr<MediaDataDecoder::FlushPromise> DAV1DDecoder::Flush() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [this, self]() {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Flush", MEDIA_PLAYBACK);
     dav1d_flush(self->mContext);
     mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return FlushPromise::CreateAndResolve(true, __func__);
@@ -402,6 +406,7 @@ RefPtr<MediaDataDecoder::FlushPromise> DAV1DDecoder::Flush() {
 RefPtr<ShutdownPromise> DAV1DDecoder::Shutdown() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Shutdown", MEDIA_PLAYBACK);
     dav1d_close(&self->mContext);
     return self->mTaskQueue->BeginShutdown();
   });

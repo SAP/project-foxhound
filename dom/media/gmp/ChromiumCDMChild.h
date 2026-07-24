@@ -6,10 +6,10 @@
 #ifndef ChromiumCDMChild_h_
 #define ChromiumCDMChild_h_
 
-#include "content_decryption_module.h"
-#include "mozilla/gmp/PChromiumCDMChild.h"
 #include "SimpleMap.h"
 #include "WidevineVideoFrame.h"
+#include "content_decryption_module.h"
+#include "mozilla/gmp/PChromiumCDMChild.h"
 
 namespace mozilla::gmp {
 

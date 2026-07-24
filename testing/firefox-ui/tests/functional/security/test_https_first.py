@@ -16,9 +16,8 @@ from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 
 class TestHTTPSFirst(WindowManagerMixin, MarionetteTestCase):
-
     def setUp(self):
-        super(TestHTTPSFirst, self).setUp()
+        super().setUp()
 
         self.http_url = "http://example.org/"
         self.https_url = "https://example.org/"
@@ -30,7 +29,7 @@ class TestHTTPSFirst(WindowManagerMixin, MarionetteTestCase):
         with self.marionette.using_context("chrome"):
             self.marionette.execute_script("Services.perms.removeAll();")
 
-        super(TestHTTPSFirst, self).tearDown()
+        super().tearDown()
 
     def test_no_upgrade_with_http_only_site(self):
         self.navigate_in_urlbar(self.http_only_url)

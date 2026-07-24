@@ -1099,6 +1099,8 @@ config("disallow_unstable_features") {
 }
 
 config("libcxx_hardening") {
+# Mozilla - these settings come from third_party/chromium/build/config/compiler/BUILD.gn
+if (false) {
   # Normally, this would be defined in the `runtime_library` config but NaCl
   # saigo libc++ does not use the custom hermetic libc++. Unfortunately, there
   # isn't really a better config to add this define for the define to
@@ -1118,6 +1120,7 @@ config("libcxx_hardening") {
   if (use_safe_libstdcxx) {
     defines += [ "_GLIBCXX_ASSERTIONS=1" ]
   }
+}
 }
 
 # The BUILDCONFIG file sets this config on targets by default, which means when

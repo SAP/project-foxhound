@@ -10,6 +10,7 @@ if CONFIG["JS_BUNDLED_EDITLINE"]:
     USE_LIBS += ["editline"]
 USE_LIBS += ["static:js"]
 
+include("../js-compileflags.mozbuild")
 include("../js-config.mozbuild")
 include("../js-cxxflags.mozbuild")
 include("../js-standalone.mozbuild")

@@ -9,8 +9,8 @@
 
 #include "SVGAnimatedString.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/dom/ScriptElement.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/ScriptElement.h"
 
 nsresult NS_NewSVGScriptElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,

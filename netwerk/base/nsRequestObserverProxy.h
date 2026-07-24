@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsRequestObserverProxy_h__
-#define nsRequestObserverProxy_h__
+#ifndef nsRequestObserverProxy_h_
+#define nsRequestObserverProxy_h_
 
 #include "nsIRequestObserver.h"
 #include "nsIRequestObserverProxy.h"
@@ -53,4 +53,4 @@ class nsARequestObserverEvent : public Runnable {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsRequestObserverProxy_h__
+#endif  // nsRequestObserverProxy_h_

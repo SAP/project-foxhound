@@ -5,12 +5,12 @@
 
 #include "WebGLParent.h"
 
+#include "HostWebGLContext.h"
+#include "ImageContainer.h"
 #include "WebGLChild.h"
+#include "WebGLMethodDispatcher.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
-#include "ImageContainer.h"
-#include "HostWebGLContext.h"
-#include "WebGLMethodDispatcher.h"
 
 namespace mozilla::dom {
 

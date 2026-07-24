@@ -7,9 +7,10 @@
 #define MOZILLA_AUDIOSEGMENT_H_
 
 #include <speex/speex_resampler.h>
-#include "MediaSegment.h"
-#include "AudioSampleFormat.h"
+
 #include "AudioChannelFormat.h"
+#include "AudioSampleFormat.h"
+#include "MediaSegment.h"
 #include "SharedBuffer.h"
 #include "WebAudioUtils.h"
 #include "mozilla/ScopeExit.h"

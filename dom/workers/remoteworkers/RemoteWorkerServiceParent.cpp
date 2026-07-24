@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerServiceParent.h"
+
 #include "RemoteWorkerManager.h"
 #include "RemoteWorkerParent.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"

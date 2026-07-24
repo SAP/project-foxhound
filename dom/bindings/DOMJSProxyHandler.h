@@ -7,12 +7,10 @@
 #ifndef mozilla_dom_DOMJSProxyHandler_h
 #define mozilla_dom_DOMJSProxyHandler_h
 
+#include "js/Proxy.h"
+#include "jsapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
-
-#include "jsapi.h"
-#include "js/Object.h"  // JS::GetClass
-#include "js/Proxy.h"
 
 namespace mozilla::dom {
 

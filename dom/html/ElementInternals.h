@@ -7,17 +7,17 @@
 #ifndef mozilla_dom_ElementInternals_h
 #define mozilla_dom_ElementInternals_h
 
+#include "AttrArray.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/CustomStateSet.h"
 #include "mozilla/dom/ElementInternalsBinding.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/CustomStateSet.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGkAtoms.h"
 #include "nsIConstraintValidation.h"
 #include "nsIFormControl.h"
 #include "nsWrapperCache.h"
-#include "AttrArray.h"
-#include "nsGkAtoms.h"
 
 #define ARIA_REFLECT_ATTR(method, attr)                             \
   void Get##method(nsAString& aValue) const {                       \
@@ -77,7 +77,7 @@ class ElementInternals final : public nsIFormControl,
   void SetFormValue(const Nullable<FileOrUSVStringOrFormData>& aValue,
                     const Optional<Nullable<FileOrUSVStringOrFormData>>& aState,
                     ErrorResult& aRv);
-  mozilla::dom::HTMLFormElement* GetForm(ErrorResult& aRv) const;
+  mozilla::dom::Element* GetFormForBindings(ErrorResult& aRv) const;
   void SetValidity(const ValidityStateFlags& aFlags,
                    const Optional<nsAString>& aMessage,
                    const Optional<NonNull<nsGenericHTMLElement>>& aAnchor,
@@ -96,7 +96,10 @@ class ElementInternals final : public nsIFormControl,
   mozilla::dom::HTMLFieldSetElement* GetFieldSet() override {
     return mFieldSet;
   }
-  mozilla::dom::HTMLFormElement* GetForm() const override { return mForm; }
+  mozilla::dom::Element* GetFormForBindings() const override;
+  mozilla::dom::HTMLFormElement* GetFormInternal() const override {
+    return mForm;
+  }
   void SetForm(mozilla::dom::HTMLFormElement* aForm) override;
   void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) override;
   NS_IMETHOD Reset() override;
@@ -193,7 +196,7 @@ class ElementInternals final : public nsIFormControl,
 
   nsresult SetAttr(nsAtom* aName, const nsAString& aValue);
 
-  bool GetAttrElements(nsAtom* aAttr, nsTArray<Element*>& aElements);
+  Maybe<nsTArray<RefPtr<Element>>> GetAttrElements(nsAtom* aAttr);
 
   const AttrArray& GetAttrs() const { return mAttrs; }
 

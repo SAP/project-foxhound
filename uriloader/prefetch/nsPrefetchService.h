@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPrefetchService_h__
-#define nsPrefetchService_h__
+#ifndef nsPrefetchService_h_
+#define nsPrefetchService_h_
 
 #include "nsIObserver.h"
 #include "nsIInterfaceRequestor.h"
@@ -16,7 +16,6 @@
 #include "nsIURI.h"
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 #include <deque>
 
 class nsPrefetchService;
@@ -123,4 +122,4 @@ class nsPrefetchNode final : public nsIStreamListener,
   bool mShouldFireLoadEvent;
 };
 
-#endif  // !nsPrefetchService_h__
+#endif  // !nsPrefetchService_h_

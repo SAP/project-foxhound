@@ -22,10 +22,10 @@ add_setup(async function () {
 });
 
 async function searchWithNonDefaultSearchMode(tab) {
-  let engine = Services.search.getEngineByName("MochiSearch");
+  let engine = SearchService.getEngineByName("MochiSearch");
   Assert.notEqual(
     engine.name,
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "Engine is non-default."
   );
 
@@ -80,10 +80,10 @@ add_task(async function different_search_mode_from_default_serp() {
   await TestUtils.waitForCondition(() => window.gURLBar.focused);
 
   info("Enter search mode.");
-  let engine = Services.search.getEngineByName("MochiSearch");
+  let engine = SearchService.getEngineByName("MochiSearch");
   Assert.notEqual(
     engine.name,
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "Engine is non-default."
   );
   await UrlbarTestUtils.enterSearchMode(window, {
@@ -305,7 +305,7 @@ add_task(async function search_mode_switch_tab_to_default() {
     window,
     value: SEARCH_STRING,
   });
-  let engine = Services.search.getEngineByName("MochiSearch");
+  let engine = SearchService.getEngineByName("MochiSearch");
   await UrlbarTestUtils.enterSearchMode(window, {
     engineName: engine.name,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -332,7 +332,7 @@ add_task(async function search_mode_switch_tab_to_non_default() {
     window,
     value: SEARCH_STRING,
   });
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
   await UrlbarTestUtils.enterSearchMode(window, {
     engineName: engine.name,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,

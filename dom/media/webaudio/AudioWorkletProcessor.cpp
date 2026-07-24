@@ -6,9 +6,9 @@
 
 #include "AudioWorkletProcessor.h"
 
+#include "mozilla/dom/AudioWorkletGlobalScope.h"
 #include "mozilla/dom/AudioWorkletNodeBinding.h"
 #include "mozilla/dom/AudioWorkletProcessorBinding.h"
-#include "mozilla/dom/AudioWorkletGlobalScope.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "nsIGlobalObject.h"

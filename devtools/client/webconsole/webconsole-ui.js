@@ -54,11 +54,12 @@ const PREF_BROWSERTOOLBOX_SCOPE = "devtools.browsertoolbox.scope";
  * The WebConsoleUI is responsible for the actual Web Console UI
  * implementation.
  */
-class WebConsoleUI {
-  /*
+class WebConsoleUI extends EventEmitter {
+  /**
    * @param {WebConsole} hud: The WebConsole owner object.
    */
   constructor(hud) {
+    super();
     this.hud = hud;
     this.hudId = this.hud.hudId;
     this.isBrowserConsole = this.hud.isBrowserConsole;
@@ -85,13 +86,12 @@ class WebConsoleUI {
         this._onScopePrefChanged
       );
     }
-
-    EventEmitter.decorate(this);
   }
 
   /**
    * Initialize the WebConsoleUI instance.
-   * @return object
+   *
+   * @return {object}
    *         A promise object that resolves once the frame is ready to use.
    */
   init() {
@@ -210,10 +210,10 @@ class WebConsoleUI {
    *
    * This method emits the "messages-cleared" notification.
    *
-   * @param boolean clearStorage
+   * @param {boolean} clearStorage
    *        True if you want to clear the console messages storage associated to
    *        this Web Console.
-   * @param object event
+   * @param {object} event
    *        If the event exists, calls preventDefault on it.
    */
   async clearOutput(clearStorage, event) {
@@ -305,7 +305,7 @@ class WebConsoleUI {
    * Connect to the server using the remote debugging protocol.
    *
    * @private
-   * @return object
+   * @return {object}
    *         A promise object that is resolved/reject based on the proxies connections.
    */
   async _attachTargets() {
@@ -435,7 +435,7 @@ class WebConsoleUI {
   /**
    * Handler for when the page is done loading.
    *
-   * @param Boolean hasNativeConsoleAPI
+   * @param {boolean} hasNativeConsoleAPI
    *        True if the `console` object is the native one and hasn't been overloaded by a custom
    *        object by the page itself.
    */
@@ -678,20 +678,9 @@ class WebConsoleUI {
       window: this.window,
     });
 
-    let clearShortcut;
-    if (lazy.AppConstants.platform === "macosx") {
-      const alternativaClearShortcut = l10n.getStr(
-        "webconsole.clear.alternativeKeyOSX"
-      );
-      shortcuts.on(alternativaClearShortcut, event =>
-        this.clearOutput(true, event)
-      );
-      clearShortcut = l10n.getStr("webconsole.clear.keyOSX");
-    } else {
-      clearShortcut = l10n.getStr("webconsole.clear.key");
+    for (const clearShortcut of this.getClearKeyShortcuts()) {
+      shortcuts.on(clearShortcut, event => this.clearOutput(true, event));
     }
-
-    shortcuts.on(clearShortcut, event => this.clearOutput(true, event));
 
     if (this.isBrowserConsole) {
       // Make sure keyboard shortcuts work immediately after opening
@@ -722,8 +711,26 @@ class WebConsoleUI {
   }
 
   /**
+   * Returns system-specific key shortcuts for clearing the console.
+   *
+   * @return {string[]}
+   *         An array of key shortcut strings.
+   */
+  getClearKeyShortcuts() {
+    if (lazy.AppConstants.platform === "macosx") {
+      return [
+        l10n.getStr("webconsole.clear.alternativeKeyOSX"),
+        l10n.getStr("webconsole.clear.keyOSX"),
+      ];
+    }
+
+    return [l10n.getStr("webconsole.clear.key")];
+  }
+
+  /**
    * Sets the focus to JavaScript input field when the web console tab is
    * selected or when there is a split console present.
+   *
    * @private
    */
   _onPanelSelected() {

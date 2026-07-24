@@ -18,7 +18,8 @@ interface HTMLOutputElement : HTMLElement {
 
   [PutForwards=value, Constant]
   readonly attribute DOMTokenList htmlFor;
-  readonly attribute HTMLFormElement? form;
+  [BinaryName=formForBindings]
+  readonly attribute Element? form;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString name;
 
@@ -37,5 +38,6 @@ interface HTMLOutputElement : HTMLElement {
   boolean reportValidity();
   undefined setCustomValidity(DOMString error);
 
+  [BinaryName=labelsForBindings]
   readonly attribute NodeList labels;
 };

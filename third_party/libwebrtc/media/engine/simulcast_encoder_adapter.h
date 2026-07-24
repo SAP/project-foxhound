@@ -41,7 +41,7 @@
 namespace webrtc {
 
 // SimulcastEncoderAdapter implements simulcast support by creating multiple
-// webrtc::VideoEncoder instances with the given VideoEncoderFactory.
+// VideoEncoder instances with the given VideoEncoderFactory.
 // The object is created and destroyed on the worker thread, but all public
 // interfaces should be called from the encoder task queue.
 class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
@@ -50,8 +50,8 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   // `fallback_factory`, if non-null, is used to create fallback encoder that
   // will be used if InitEncode() fails for the primary encoder.
   SimulcastEncoderAdapter(const Environment& env,
-                          absl::Nonnull<VideoEncoderFactory*> primary_factory,
-                          absl::Nullable<VideoEncoderFactory*> fallback_factory,
+                          VideoEncoderFactory* absl_nonnull primary_factory,
+                          VideoEncoderFactory* absl_nullable fallback_factory,
                           const SdpVideoFormat& format);
 
   ~SimulcastEncoderAdapter() override;
@@ -81,7 +81,8 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
     EncoderContext(std::unique_ptr<VideoEncoder> encoder,
                    bool prefer_temporal_support,
                    VideoEncoder::EncoderInfo primary_info,
-                   VideoEncoder::EncoderInfo fallback_info);
+                   VideoEncoder::EncoderInfo fallback_info,
+                   SdpVideoFormat video_format);
     EncoderContext& operator=(EncoderContext&&) = delete;
 
     VideoEncoder& encoder() { return *encoder_; }
@@ -92,11 +93,14 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
 
     const VideoEncoder::EncoderInfo& FallbackInfo() { return fallback_info_; }
 
+    const SdpVideoFormat& video_format() { return video_format_; }
+
    private:
     std::unique_ptr<VideoEncoder> encoder_;
     bool prefer_temporal_support_;
     const VideoEncoder::EncoderInfo primary_info_;
     const VideoEncoder::EncoderInfo fallback_info_;
+    const SdpVideoFormat video_format_;
   };
 
   class StreamContext : public EncodedImageCallback {
@@ -156,13 +160,14 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   // `cached_encoder_contexts_`. It's const because it's used from
   // const GetEncoderInfo().
   std::unique_ptr<EncoderContext> FetchOrCreateEncoderContext(
-      bool is_lowest_quality_stream) const;
+      bool is_lowest_quality_stream,
+      std::optional<int> stream_idx) const;
 
-  webrtc::VideoCodec MakeStreamCodec(const webrtc::VideoCodec& codec,
-                                     int stream_idx,
-                                     uint32_t start_bitrate_kbps,
-                                     bool is_lowest_quality_stream,
-                                     bool is_highest_quality_stream);
+  VideoCodec MakeStreamCodec(const VideoCodec& codec,
+                             int stream_idx,
+                             uint32_t start_bitrate_kbps,
+                             bool is_lowest_quality_stream,
+                             bool is_highest_quality_stream);
 
   EncodedImageCallback::Result OnEncodedImage(
       size_t stream_idx,
@@ -196,6 +201,7 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   const bool boost_base_layer_quality_;
   const bool prefer_temporal_support_on_base_layer_;
   const bool per_layer_pli_;
+  const bool drop_unaligned_resolution_;
 
   const SimulcastEncoderAdapterEncoderInfoSettings encoder_info_override_;
 };

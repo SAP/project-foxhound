@@ -15,11 +15,9 @@
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT, MOZ_ASSERT_HELPER2
 #include "mozilla/Attributes.h"               // for MOZ_NON_OWNING_REF
 #include "mozilla/RefPtr.h"                   // for RefPtr
-#include "mozilla/StaticPrefs_apz.h"          // for apz_test_logging_enabled
 #include "mozilla/TimeStamp.h"                // for TimeStamp
 #include "mozilla/gfx/Point.h"                // for IntSize
 #include "mozilla/gfx/Types.h"                // for SurfaceFormat
-#include "mozilla/layers/APZTestData.h"       // for APZTestData
 #include "mozilla/layers/CompositorTypes.h"   // for TextureFactoryIdentifier
 #include "mozilla/layers/DisplayItemCache.h"  // for DisplayItemCache
 #include "mozilla/layers/FocusTarget.h"       // for FocusTarget
@@ -46,6 +44,7 @@ struct ActiveScrolledRoot;
 
 namespace layers {
 
+class APZTestData;
 class CompositorBridgeChild;
 class KnowsCompositor;
 class Layer;
@@ -57,6 +56,8 @@ class LayerUserData;
 
 class WebRenderLayerManager final : public WindowRenderer {
   typedef nsTHashSet<RefPtr<WebRenderUserData>> WebRenderUserDataRefTable;
+
+  NS_INLINE_DECL_REFCOUNTING(WebRenderLayerManager, final)
 
  public:
   explicit WebRenderLayerManager(nsIWidget* aWidget);
@@ -145,19 +146,12 @@ class WebRenderLayerManager final : public WindowRenderer {
   // See equivalent function in ClientLayerManager
   void LogTestDataForCurrentPaint(ScrollableLayerGuid::ViewID aScrollId,
                                   const std::string& aKey,
-                                  const std::string& aValue) {
-    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
-    mApzTestData.LogTestDataForPaint(mPaintSequenceNumber, aScrollId, aKey,
-                                     aValue);
-  }
+                                  const std::string& aValue);
   void LogAdditionalTestData(const std::string& aKey,
-                             const std::string& aValue) {
-    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
-    mApzTestData.RecordAdditionalData(aKey, aValue);
-  }
+                             const std::string& aValue);
 
   // See equivalent function in ClientLayerManager
-  const APZTestData& GetAPZTestData() const { return mApzTestData; }
+  const APZTestData& GetAPZTestData() const { return *mApzTestData.get(); }
 
   WebRenderCommandBuilder& CommandBuilder() { return mWebRenderCommandBuilder; }
   WebRenderUserDataRefTable* GetWebRenderUserDataTable() {
@@ -212,8 +206,7 @@ class WebRenderLayerManager final : public WindowRenderer {
         mUserData.Get(static_cast<gfx::UserDataKey*>(aKey)));
   }
 
-  std::unordered_set<ScrollableLayerGuid::ViewID>
-  ClearPendingScrollInfoUpdate();
+  void ClearAndNotifyOfFullTransactionPendingScrollInfoUpdate();
 
 #ifdef DEBUG
   gfxContext* GetTarget() const { return mTarget; }
@@ -267,7 +260,7 @@ class WebRenderLayerManager final : public WindowRenderer {
   // See equivalent field in ClientLayerManager
   uint32_t mPaintSequenceNumber;
   // See equivalent field in ClientLayerManager
-  APZTestData mApzTestData;
+  const std::unique_ptr<APZTestData> mApzTestData;
 
   TimeStamp mTransactionStart;
   nsCString mURL;

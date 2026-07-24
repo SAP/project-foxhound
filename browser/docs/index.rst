@@ -2,11 +2,12 @@
 Firefox Front-end
 =================
 
-This is the nascent documentation of the Firefox front-end code.
+This is the documentation for the code powering the Firefox Desktop front-end.
 
 .. toctree::
    :maxdepth: 2
 
+   how_to/index
    urlbar/index
    BrowserUsageTelemetry
    FrontendCodeReviewBestPractices
@@ -15,6 +16,7 @@ This is the nascent documentation of the Firefox front-end code.
    CategoryManagerIndirection
    components/customizableui/docs/index
    components/enterprisepolicies/docs/index
+   components/taskbartabs/docs/index
    extensions/formautofill/docs/index
    extensions/newtab/docs/index
    components/aboutwelcome/docs/index
@@ -26,6 +28,7 @@ This is the nascent documentation of the Firefox front-end code.
    places/index
    components/asrouter/docs/index
    search/index
+   ipprotection/index
    base/tabbrowser/index
    touchbar/index
    components/uitour/docs/index

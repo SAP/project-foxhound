@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XULMenuElement.h"
+
 #include "mozilla/StaticAnalysisFunctions.h"
+#include "mozilla/dom/KeyboardEvent.h"
+#include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/XULButtonElement.h"
 #include "mozilla/dom/XULMenuElementBinding.h"
 #include "mozilla/dom/XULPopupElement.h"
-#include "mozilla/dom/KeyboardEvent.h"
-#include "mozilla/dom/KeyboardEventBinding.h"
-#include "nsXULPopupManager.h"
 #include "nsMenuPopupFrame.h"
+#include "nsXULPopupManager.h"
 
 namespace mozilla::dom {
 

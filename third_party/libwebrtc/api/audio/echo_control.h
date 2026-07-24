@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "absl/base/nullability.h"
+#include "api/audio/neural_residual_echo_estimator.h"
 #include "api/environment/environment.h"
 
 namespace webrtc {
@@ -67,12 +68,23 @@ class EchoControlFactory {
  public:
   virtual ~EchoControlFactory() = default;
 
-  virtual absl::Nonnull<std::unique_ptr<EchoControl>> Create(
+  virtual absl_nonnull std::unique_ptr<EchoControl> Create(
       const Environment& env,
       int sample_rate_hz,
       int num_render_channels,
       int num_capture_channels) = 0;
+
+  virtual absl_nonnull std::unique_ptr<EchoControl> Create(
+      const Environment& env,
+      int sample_rate_hz,
+      int num_render_channels,
+      int num_capture_channels,
+      NeuralResidualEchoEstimator* neural_residual_echo_estimator) {
+    return Create(env, sample_rate_hz, num_render_channels,
+                  num_capture_channels);
+  }
 };
+
 }  // namespace webrtc
 
 #endif  // API_AUDIO_ECHO_CONTROL_H_

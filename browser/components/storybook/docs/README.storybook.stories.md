@@ -40,8 +40,8 @@ site in a local build of Firefox, just run:
 This single command will first install any missing dependencies then start the
 local Storybook server. It will also start your local browser and point it to
 `http://localhost:5703` while enabling certain preferences to ensure components
-display as expected (specifically `svg.context-properties.content.enabled` and
-`layout.css.light-dark.enabled`).
+display as expected (specifically `svg.context-properties.content.enabled`,
+`layout.forms.input-type-search.enabled`, and `layout.forms.reveal-password-button.enabled`).
 
 It's necessary to use your local build to test in Storybook since `chrome://`
 URLs are currently being pulled from the running browser, so any changes to

@@ -9,12 +9,13 @@
  */
 
 #include "nsTextNode.h"
+
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/TextBinding.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
-#include "nsThreadUtils.h"
 #include "nsStubMutationObserver.h"
-#include "mozilla/IntegerPrintfMacros.h"
+#include "nsThreadUtils.h"
 #ifdef MOZ_DOM_LIST
 #  include "nsRange.h"
 #endif
@@ -34,7 +35,6 @@ class nsAttributeTextNode final : public nsTextNode,
                       int32_t aNameSpaceID, nsAtom* aAttrName,
                       nsAtom* aFallback)
       : nsTextNode(std::move(aNodeInfo)),
-        mGrandparent(nullptr),
         mNameSpaceID(aNameSpaceID),
         mAttrName(aAttrName),
         mFallback(aFallback) {
@@ -54,7 +54,7 @@ class nsAttributeTextNode final : public nsTextNode,
         new (aNodeInfo->NodeInfoManager()) nsAttributeTextNode(
             do_AddRef(aNodeInfo), mNameSpaceID, mAttrName, mFallback);
     if (aCloneText) {
-      it->mText = mText;
+      it->mBuffer = mBuffer;
     }
 
     return it.forget();
@@ -65,7 +65,7 @@ class nsAttributeTextNode final : public nsTextNode,
 
  private:
   virtual ~nsAttributeTextNode() {
-    NS_ASSERTION(!mGrandparent, "We were not unbound!");
+    NS_ASSERTION(!mOriginatingElement, "We were not unbound!");
   }
 
   // Update our text to our parent's current attr value
@@ -75,7 +75,7 @@ class nsAttributeTextNode final : public nsTextNode,
   // while we're bound to the document tree, and it points to an ancestor
   // so the ancestor must be bound to the document tree the whole time
   // and can't be deleted.
-  Element* mGrandparent;
+  Element* mOriginatingElement = nullptr;
   // What attribute we're showing
   int32_t mNameSpaceID;
   RefPtr<nsAtom> mAttrName;
@@ -98,7 +98,7 @@ already_AddRefed<CharacterData> nsTextNode::CloneDataNode(
   RefPtr<nsTextNode> it =
       new (aNodeInfo->NodeInfoManager()) nsTextNode(do_AddRef(aNodeInfo));
   if (aCloneText) {
-    it->mText = mText;
+    it->mBuffer = mBuffer;
   }
 
   return it.forget();
@@ -109,8 +109,8 @@ nsresult nsTextNode::AppendTextForNormalize(const char16_t* aBuffer,
                                             nsIContent* aNextSibling) {
   CharacterDataChangeInfo::Details details = {
       CharacterDataChangeInfo::Details::eMerge, aNextSibling};
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, aTaint,
-                         &details);
+  return SetTextInternal(mBuffer.GetLength(), 0, aBuffer, aLength, aNotify, aTaint,
+                         MutationEffectOnScript::KeepTrustWorthiness, &details);
 }
 
 #ifdef MOZ_DOM_LIST
@@ -130,7 +130,7 @@ void nsTextNode::List(FILE* out, int32_t aIndent) const {
   fprintf(out, " refcount=%" PRIuPTR "<", mRefCnt.get());
 
   nsAutoString tmp;
-  ToCString(tmp, 0, mText.GetLength());
+  ToCString(tmp, 0, mBuffer.GetLength());
   fputs(NS_LossyConvertUTF16toASCII(tmp).get(), out);
 
   fputs(">\n", out);
@@ -142,7 +142,7 @@ void nsTextNode::DumpContent(FILE* out, int32_t aIndent, bool aDumpAll) const {
     for (index = aIndent; --index >= 0;) fputs("  ", out);
 
     nsAutoString tmp;
-    ToCString(tmp, 0, mText.GetLength());
+    ToCString(tmp, 0, mBuffer.GetLength());
 
     if (!tmp.EqualsLiteral("\\n")) {
       fputs(NS_LossyConvertUTF16toASCII(tmp).get(), out);
@@ -182,9 +182,13 @@ nsresult nsAttributeTextNode::BindToTree(BindContext& aContext,
   nsresult rv = nsTextNode::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_ASSERTION(!mGrandparent, "We were already bound!");
-  mGrandparent = aParent.GetParent()->AsElement();
-  mGrandparent->AddMutationObserver(this);
+  NS_ASSERTION(!mOriginatingElement, "We were already bound!");
+  mOriginatingElement = aParent.GetParent()->AsElement();
+  while (PseudoStyle::IsPseudoElement(
+      mOriginatingElement->GetPseudoElementType())) {
+    mOriginatingElement = mOriginatingElement->GetParent()->AsElement();
+  }
+  mOriginatingElement->AddMutationObserver(this);
 
   // Note that there is no need to notify here, since we have no
   // frame yet at this point.
@@ -195,25 +199,25 @@ nsresult nsAttributeTextNode::BindToTree(BindContext& aContext,
 
 void nsAttributeTextNode::UnbindFromTree(UnbindContext& aContext) {
   // UnbindFromTree can be called anytime so we have to be safe.
-  if (mGrandparent) {
+  if (mOriginatingElement) {
     // aContext might not be true here, but we want to remove the
     // mutation observer anyway since we only need it while we're
     // in the document.
-    mGrandparent->RemoveMutationObserver(this);
-    mGrandparent = nullptr;
+    mOriginatingElement->RemoveMutationObserver(this);
+    mOriginatingElement = nullptr;
   }
   nsTextNode::UnbindFromTree(aContext);
 }
 
 void nsAttributeTextNode::AttributeChanged(Element* aElement,
                                            int32_t aNameSpaceID,
-                                           nsAtom* aAttribute, int32_t aModType,
+                                           nsAtom* aAttribute, AttrModType,
                                            const nsAttrValue* aOldValue) {
   if (aNameSpaceID == mNameSpaceID && aAttribute == mAttrName &&
-      aElement == mGrandparent) {
+      aElement == mOriginatingElement) {
     // Since UpdateText notifies, do it when it's safe to run script.  Note
     // that if we get unbound while the event is up that's ok -- we'll just
-    // have no grandparent when it fires, and will do nothing.
+    // have no originating element when it fires, and will do nothing.
     void (nsAttributeTextNode::*update)() = &nsAttributeTextNode::UpdateText;
     nsContentUtils::AddScriptRunner(NewRunnableMethod(
         "nsAttributeTextNode::AttributeChanged", this, update));
@@ -221,15 +225,16 @@ void nsAttributeTextNode::AttributeChanged(Element* aElement,
 }
 
 void nsAttributeTextNode::NodeWillBeDestroyed(nsINode* aNode) {
-  NS_ASSERTION(aNode == static_cast<nsINode*>(mGrandparent), "Wrong node!");
-  mGrandparent = nullptr;
+  NS_ASSERTION(aNode == static_cast<nsINode*>(mOriginatingElement),
+               "Wrong node!");
+  mOriginatingElement = nullptr;
 }
 
 void nsAttributeTextNode::UpdateText(bool aNotify) {
-  if (mGrandparent) {
+  if (mOriginatingElement) {
     nsAutoString attrValue;
 
-    if (!mGrandparent->GetAttr(mNameSpaceID, mAttrName, attrValue)) {
+    if (!mOriginatingElement->GetAttr(mNameSpaceID, mAttrName, attrValue)) {
       // Attr value does not exist, use fallback instead
       mFallback->ToString(attrValue);
     }

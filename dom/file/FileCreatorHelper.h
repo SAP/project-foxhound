@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_FileCreatorHelper_h
 #define mozilla_dom_FileCreatorHelper_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"
 
 // Undefine the macro of CreateFile to avoid FileCreatorHelper#CreateFile being

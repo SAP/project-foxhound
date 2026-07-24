@@ -44,7 +44,7 @@ function checkException(fun, err, msg) {
   do_throw(msg);
 }
 
-/** ***************
+/*****************
  * PATH HANDLERS *
  *****************/
 
@@ -132,7 +132,7 @@ function handleSeizeAfterAsync(request, response) {
   });
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

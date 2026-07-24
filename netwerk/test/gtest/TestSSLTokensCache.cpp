@@ -11,6 +11,7 @@
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
 #include "nsServiceManagerUtils.h"
+#include "prtime.h"
 #include "sslproto.h"
 
 static already_AddRefed<CommonSocketControl> createDummySocketControl() {
@@ -52,8 +53,10 @@ static auto MakeTestData(const size_t aDataSize) {
 static void putToken(const nsACString& aKey, uint32_t aSize) {
   RefPtr<CommonSocketControl> socketControl = createDummySocketControl();
   nsTArray<uint8_t> token = MakeTestData(aSize);
-  nsresult rv = mozilla::net::SSLTokensCache::Put(aKey, token.Elements(), aSize,
-                                                  socketControl, aSize);
+  PRTime now = PR_Now();
+  nsresult rv = mozilla::net::SSLTokensCache::Put(
+      aKey, token.Elements(), aSize, socketControl,
+      now + (aSize * PR_USEC_PER_SEC));
   ASSERT_EQ(rv, NS_OK);
 }
 
@@ -151,4 +154,43 @@ TEST(TestTokensCache, Eviction)
   putToken("anon:www.example3.com:443"_ns, 500);
   // The one has expiration time "400" was evicted, so we get "500".
   getAndCheckResult("anon:www.example2.com:443"_ns, 500);
+}
+
+TEST(TestTokensCache, ExpiredTokens)
+{
+  mozilla::net::SSLTokensCache::Clear();
+  mozilla::Preferences::SetInt("network.ssl_tokens_cache_records_per_entry", 3);
+
+  PRTime now = PR_Now();
+  RefPtr<CommonSocketControl> socketControl = createDummySocketControl();
+
+  nsTArray<uint8_t> expiredToken1 = MakeTestData(100);
+  nsTArray<uint8_t> expiredToken2 = MakeTestData(200);
+  nsTArray<uint8_t> validToken = MakeTestData(300);
+
+  nsresult rv = mozilla::net::SSLTokensCache::Put(
+      "anon:www.example.com:443"_ns, expiredToken1.Elements(), 100,
+      socketControl, now - (PRTime(100) * PRTime(PR_USEC_PER_SEC)));
+  ASSERT_EQ(rv, NS_OK);
+
+  rv = mozilla::net::SSLTokensCache::Put(
+      "anon:www.example.com:443"_ns, expiredToken2.Elements(), 200,
+      socketControl, now - (PRTime(50) * PRTime(PR_USEC_PER_SEC)));
+  ASSERT_EQ(rv, NS_OK);
+
+  rv = mozilla::net::SSLTokensCache::Put(
+      "anon:www.example.com:443"_ns, validToken.Elements(), 300, socketControl,
+      now + (PRTime(3600) * PRTime(PR_USEC_PER_SEC)));
+  ASSERT_EQ(rv, NS_OK);
+
+  nsTArray<uint8_t> result;
+  mozilla::net::SessionCacheInfo unused;
+  rv = mozilla::net::SSLTokensCache::Get("anon:www.example.com:443"_ns, result,
+                                         unused);
+  ASSERT_EQ(rv, NS_OK);
+  ASSERT_EQ(result.Length(), (size_t)300);
+
+  rv = mozilla::net::SSLTokensCache::Get("anon:www.example.com:443"_ns, result,
+                                         unused);
+  ASSERT_EQ(rv, NS_ERROR_NOT_AVAILABLE);
 }

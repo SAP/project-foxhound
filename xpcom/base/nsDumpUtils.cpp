@@ -12,10 +12,9 @@
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Unused.h"
 #include "SpecialSystemDirectory.h"
 
-#ifdef XP_UNIX  // {
+#if defined(XP_UNIX) && !defined(XP_IOS)  // {
 #  include "mozilla/Preferences.h"
 #  include <fcntl.h>
 #  include <unistd.h>
@@ -53,7 +52,8 @@ static void DumpSignalHandler(int aSignum) {
 
   if (sDumpPipeWriteFd != -1) {
     uint8_t signum = static_cast<int>(aSignum);
-    Unused << write(sDumpPipeWriteFd, &signum, sizeof(signum));
+    [[maybe_unused]] ssize_t r =
+        write(sDumpPipeWriteFd, &signum, sizeof(signum));
   }
 }
 
@@ -393,7 +393,7 @@ void FifoWatcher::OnFileCanReadWithoutBlocking(int aFd) {
   LOG("Got unexpected value from fifo; ignoring it.");
 }
 
-#endif  // XP_UNIX }
+#endif  // XP_UNIX && !XP_IOS }
 
 // In Android case, this function will open a file named aFilename under
 // /data/local/tmp/"aFoldername".
@@ -406,8 +406,7 @@ nsresult nsDumpUtils::OpenTempFile(const nsACString& aFilename, nsIFile** aFile,
   // rather than the temp directory which is not.
   if (!*aFile) {
     if (char* env = PR_GetEnv("DOWNLOADS_DIRECTORY")) {
-      Unused << NS_WARN_IF(
-          NS_FAILED(NS_NewNativeLocalFile(nsCString(env), aFile)));
+      (void)NS_WARN_IF(NS_FAILED(NS_NewNativeLocalFile(nsCString(env), aFile)));
     }
   }
 #endif
@@ -437,7 +436,7 @@ nsresult nsDumpUtils::OpenTempFile(const nsACString& aFilename, nsIFile** aFile,
 
     // It's OK if this fails; that probably just means that the directory
     // already exists.
-    Unused << (*aFile)->Create(nsIFile::DIRECTORY_TYPE, 0777);
+    (void)(*aFile)->Create(nsIFile::DIRECTORY_TYPE, 0777);
 
     nsAutoCString dirPath;
     rv = (*aFile)->GetNativePath(dirPath);

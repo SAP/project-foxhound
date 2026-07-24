@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te pone al control.</p> <p>Úsalo como un navegador privado: <ul> <li>Busca y navega directo desde la app</li> <li>Bloquea rastreadores (o cambia los ajustes para permitirlos)</li> <li>Mantente libre de cookies y del historial de búsqueda y navegación</li> </ul> </p> <p>%1$s es producido por Mozilla. Nuestra misión es fomentar un Internet sano y abierto.<br/> <a href=\"%2$s\">Aprender más</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te pone al control.</p>\n<p>Úsalo como un navegador privado:\n<ul>\n<li>Busca y navega directo desde la app</li>\n<li>Bloquea rastreadores (o cambia los ajustes para permitirlos)</li>\n<li>Mantente libre de cookies y del historial de búsqueda y navegación</li>\n</ul> </p>\n<p>%1$s es producido por Mozilla. Nuestra misión es fomentar un Internet sano y abierto.<br/>\n<a href=\"%2$s\">Aprender más</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Aprender más</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -321,7 +328,7 @@
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Aprender más</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla se esfuerza por recolectar solo lo que necesitama para proporcionar y mejorar %1$s para todos.</string>
+  <string name="preference_mozilla_telemetry_summary2">Mozilla se esfuerza por recolectar solo lo que necesita para proporcionar y mejorar %1$s para todos.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping de uso diario</string>
   <string name="preference_daily_usage_ping_description">Esto ayuda a Mozilla a estimar los usuarios activos.</string>
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Al continuar, aceptas los %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Al continuar, aceptas los %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Condiciones de uso de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Condiciones de uso de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox se preocupa por tu privacidad. Aprende más en nuestra %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se preocupa por tu privacidad. Aprende más en nuestra %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Política de privacidad.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Política de privacidad</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Eliminar historial de navegación</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Cerrar las otras pestañas</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Añadir nueva pestaña</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Esto podría deberse a un problema con la configuración del servidor, o podría ser alguien intentando hacerse pasar por el servidor.<br/><br/> Si ha conectado a este servidor con éxito en el pasado, el error podría ser temporal.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando hacerse pasar por el sitio y continuar podría ser riesgoso.</label> <br><br> <label>%1$s no confía en <b>%2$s</b> porque el emisor de su certificado es desconocido, el certificado fue auto-firmado o el servidor no está enviando los certificados intermediarios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando hacerse pasar por el sitio y continuar podría ser riesgoso.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor de su certificado es desconocido, el certificado fue auto-firmado o el servidor no está enviando los certificados intermediarios correctos.</label>]]></string>
   <!--
     Sessions List
 

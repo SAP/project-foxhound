@@ -7,13 +7,13 @@
 #ifndef DOM_SVG_SVGANIMATEDENUMERATION_H_
 #define DOM_SVG_SVGANIMATEDENUMERATION_H_
 
+#include <memory>
+
 #include "DOMSVGAnimatedEnumeration.h"
+#include "mozilla/SMILAttr.h"
+#include "mozilla/dom/SVGElement.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/SVGElement.h"
 
 class nsAtom;
 
@@ -38,6 +38,7 @@ class SVGAnimatedEnumeration {
   using SVGElement = dom::SVGElement;
 
   void Init(uint8_t aAttrEnum, uint16_t aValue) {
+    MOZ_ASSERT(aAttrEnum < (2 << 6), "aAttrEnum is too large");
     mAnimVal = mBaseVal = uint8_t(aValue);
     mAttrEnum = aAttrEnum;
     mIsAnimated = false;
@@ -58,14 +59,16 @@ class SVGAnimatedEnumeration {
   already_AddRefed<dom::DOMSVGAnimatedEnumeration> ToDOMAnimatedEnum(
       SVGElement* aSVGElement);
 
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
   SVGEnumValue mAnimVal;
   SVGEnumValue mBaseVal;
-  uint8_t mAttrEnum;  // element specified tracking for attribute
-  bool mIsAnimated;
-  bool mIsBaseSet;
+  // Needs to be big enough to index into the largest mEnumAttributes array.
+  // Currently that's 0-3 for textPath elements.
+  uint8_t mAttrEnum : 6;  // element specified tracking for attribute
+  bool mIsAnimated : 1;
+  bool mIsBaseSet : 1;
 
   const SVGEnumMapping* GetMapping(SVGElement* aSVGElement);
 

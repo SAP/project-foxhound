@@ -36,7 +36,7 @@ const lazy = XPCOMUtils.declareLazy({
   BulkKeyBundle: "resource://services-sync/keys.sys.mjs",
   CollectionKeyManager: "resource://services-sync/record.sys.mjs",
   CommonUtils: "resource://services-common/utils.sys.mjs",
-  CryptoUtils: "resource://services-crypto/utils.sys.mjs",
+  CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.sys.mjs",
   FirefoxAdapter: "resource://services-common/kinto-storage-adapter.sys.mjs",
   Kinto: "resource://services-common/kinto-offline-client.sys.mjs",
@@ -54,7 +54,7 @@ const lazy = XPCOMUtils.declareLazy({
   },
   WeaveCrypto() {
     let { WeaveCrypto } = ChromeUtils.importESModule(
-      "resource://services-crypto/WeaveCrypto.sys.mjs"
+      "moz-src:///services/crypto/modules/WeaveCrypto.sys.mjs"
     );
     return new WeaveCrypto();
   },
@@ -1192,6 +1192,23 @@ export class ExtensionStorageSyncKinto {
   getCollection(extension, context) {
     this.registerInUse(extension, context);
     return openCollection(extension);
+  }
+
+  /**
+   * Get the keys for a collection
+   *
+   * @param {Extension} extension
+   *                    The extension for which we are seeking
+   *                    a collection.
+   * @param {BaseContext} context
+   *                  The context of the extension, so that we can
+   *                  stop syncing the collection when the extension ends.
+   * @returns {Promise<string[]>}
+   */
+  async getKeys(extension, context) {
+    const coll = await this.getCollection(extension, context);
+    const res = await coll.list();
+    return res.data.map(record => record.key);
   }
 
   async set(extension, items, context) {

@@ -16,3 +16,9 @@
 .goog-menu.apps-menu-hide-mnemonics {
   margin-inline-start: -20px;
 }
+
+/* sort options on recent docs page (bz2009417) */
+.docsshared-menu-bubble [class="goog-menu goog-menu-vertical"],
+.goog-menu.apps-menu-hide-mnemonics {
+  margin-inline-start: auto;
+}

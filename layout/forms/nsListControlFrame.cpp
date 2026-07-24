@@ -41,12 +41,8 @@ using namespace mozilla::dom;
 //---------------------------------------------------------
 nsListControlFrame* NS_NewListControlFrame(PresShell* aPresShell,
                                            ComputedStyle* aStyle) {
-  nsListControlFrame* it =
-      new (aPresShell) nsListControlFrame(aStyle, aPresShell->GetPresContext());
-
-  it->AddStateBits(NS_FRAME_INDEPENDENT_SELECTION);
-
-  return it;
+  return new (aPresShell)
+      nsListControlFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsListControlFrame)
@@ -55,9 +51,6 @@ nsListControlFrame::nsListControlFrame(ComputedStyle* aStyle,
                                        nsPresContext* aPresContext)
     : ScrollContainerFrame(aStyle, aPresContext, kClassID, false),
       mChangesSinceDragStart(false),
-      mIsAllContentHere(false),
-      mIsAllFramesHere(false),
-      mHasBeenInitialized(false),
       mNeedToReset(true),
       mPostChildrenLoadedReset(false),
       mMightNeedSecondPass(false),
@@ -83,22 +76,6 @@ void nsListControlFrame::Destroy(DestroyContext& aContext) {
   ScrollContainerFrame::Destroy(aContext);
 }
 
-void nsListControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                          const nsDisplayListSet& aLists) {
-  // We allow visibility:hidden <select>s to contain visible options.
-
-  // Don't allow painting of list controls when painting is suppressed.
-  // XXX why do we need this here? we should never reach this. Maybe
-  // because these can have widgets? Hmm
-  if (aBuilder->IsBackgroundOnly()) {
-    return;
-  }
-
-  DO_GLOBAL_REFLOW_COUNT_DSP("nsListControlFrame");
-
-  ScrollContainerFrame::BuildDisplayList(aBuilder, aLists);
-}
-
 HTMLOptionElement* nsListControlFrame::GetCurrentOption() const {
   return mEventListener->GetCurrentOption();
 }
@@ -107,69 +84,9 @@ bool nsListControlFrame::IsFocused() const {
   return Select().State().HasState(ElementState::FOCUS);
 }
 
-/**
- * This is called by the SelectsAreaFrame, which is the same
- * as the frame returned by GetOptionsContainer. It's the frame which is
- * scrolled by us.
- * @param aPt the offset of this frame, relative to the rendering reference
- * frame
- */
-void nsListControlFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
-  if (!IsFocused()) {
-    return;
-  }
-
-  nsIFrame* containerFrame = GetOptionsContainer();
-  if (!containerFrame) {
-    return;
-  }
-
-  nsIFrame* childframe = nullptr;
-  nsCOMPtr<nsIContent> focusedContent = GetCurrentOption();
-  if (focusedContent) {
-    childframe = focusedContent->GetPrimaryFrame();
-  }
-
-  nsRect fRect;
-  if (childframe) {
-    // get the child rect
-    fRect = childframe->GetRect();
-    // get it into our coordinates
-    fRect.MoveBy(childframe->GetParent()->GetOffsetTo(this));
-  } else {
-    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
-    fRect.x = fRect.y = 0;
-    if (GetWritingMode().IsVertical()) {
-      fRect.width = GetScrollPortRect().width;
-      fRect.height = CalcFallbackRowBSize(inflation);
-    } else {
-      fRect.width = CalcFallbackRowBSize(inflation);
-      fRect.height = GetScrollPortRect().height;
-    }
-    fRect.MoveBy(containerFrame->GetOffsetTo(this));
-  }
-  fRect += aPt;
-
-  const auto* domOpt = HTMLOptionElement::FromNodeOrNull(focusedContent);
-  const bool isSelected = domOpt && domOpt->Selected();
-
-  // Set up back stop colors and then ask L&F service for the real colors
-  nscolor color =
-      LookAndFeel::Color(isSelected ? LookAndFeel::ColorID::Selecteditemtext
-                                    : LookAndFeel::ColorID::Selecteditem,
-                         this);
-
-  nsCSSRendering::PaintFocus(PresContext(), aDrawTarget, fRect, color);
-}
-
-void nsListControlFrame::InvalidateFocus() {
-  if (nsIFrame* containerFrame = GetOptionsContainer()) {
-    containerFrame->InvalidateFrame();
-  }
-}
+void nsListControlFrame::InvalidateFocus() { InvalidateFrame(); }
 
 NS_QUERYFRAME_HEAD(nsListControlFrame)
-  NS_QUERYFRAME_ENTRY(nsISelectControlFrame)
   NS_QUERYFRAME_ENTRY(nsListControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(ScrollContainerFrame)
 
@@ -220,7 +137,8 @@ nscoord nsListControlFrame::CalcBSizeOfARow() {
   // fonts, etc.
   nscoord rowBSize(0);
   if (GetContainSizeAxes().mBContained ||
-      !GetMaxRowBSize(GetOptionsContainer(), GetWritingMode(), &rowBSize)) {
+      !GetMaxRowBSize(GetContentInsertionFrame(), GetWritingMode(),
+                      &rowBSize)) {
     // We don't have any <option>s or <optgroup> labels with a frame.
     // (Or we're size-contained in block axis, which has the same outcome for
     // our sizing.)
@@ -259,17 +177,6 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
   const bool hadPendingInterrupt = aPresContext->HasPendingInterrupt();
 
   SchedulePaint();
-
-  // If all the content and frames are here
-  // then initialize it before reflow
-  if (mIsAllContentHere && !mHasBeenInitialized) {
-    if (!mIsAllFramesHere) {
-      CheckIfAllFramesHere();
-    }
-    if (mIsAllFramesHere && !mHasBeenInitialized) {
-      mHasBeenInitialized = true;
-    }
-  }
 
   MarkInReflow();
   // Due to the fact that our intrinsic block size depends on the block
@@ -330,15 +237,16 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
 
   ScrollContainerFrame::Reflow(aPresContext, aDesiredSize, state, aStatus);
 
+  mBSizeOfARow = CalcBSizeOfARow();
+
   if (!mMightNeedSecondPass) {
-    NS_ASSERTION(!autoBSize || BSizeOfARow() == oldBSizeOfARow,
-                 "How did our BSize of a row change if nothing was dirty?");
-    NS_ASSERTION(!autoBSize || !HasAnyStateBits(NS_FRAME_FIRST_REFLOW) ||
-                     usingContainBSize,
+    NS_ASSERTION(
+        !autoBSize || usingContainBSize || BSizeOfARow() == oldBSizeOfARow,
+        "How did our BSize of a row change if nothing was dirty?");
+    NS_ASSERTION(!autoBSize || usingContainBSize ||
+                     !HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
                  "How do we not need a second pass during initial reflow at "
                  "auto BSize?");
-    NS_ASSERTION(!IsScrollbarUpdateSuppressed(),
-                 "Shouldn't be suppressing if we don't need a second pass!");
     if (!autoBSize || usingContainBSize) {
       // Update our mNumDisplayRows based on our new row block size now
       // that we know it.  Note that if autoBSize and we landed in this
@@ -361,12 +269,9 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
 
   // Now see whether we need a second pass.  If we do, our
   // nsSelectsAreaFrame will have suppressed the scrollbar update.
-  if (!IsScrollbarUpdateSuppressed()) {
-    // All done.  No need to do more reflow.
+  if (mBSizeOfARow == oldBSizeOfARow) {
     return;
   }
-
-  SetSuppressScrollbarUpdate(false);
 
   // Gotta reflow again.
   // XXXbz We're just changing the block size here; do we need to dirty
@@ -393,11 +298,6 @@ void nsListControlFrame::Reflow(nsPresContext* aPresContext,
 
 bool nsListControlFrame::ShouldPropagateComputedBSizeToScrolledContent() const {
   return true;
-}
-
-//---------------------------------------------------------
-nsContainerFrame* nsListControlFrame::GetContentInsertionFrame() {
-  return GetOptionsContainer()->GetContentInsertionFrame();
 }
 
 //---------------------------------------------------------
@@ -646,20 +546,6 @@ nsresult nsListControlFrame::HandleEvent(nsPresContext* aPresContext,
   return ScrollContainerFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
 }
 
-//---------------------------------------------------------
-void nsListControlFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList&& aChildList) {
-  if (aListID == FrameChildListID::Principal) {
-    // First check to see if all the content has been added
-    mIsAllContentHere = Select().IsDoneAddingChildren();
-    if (!mIsAllContentHere) {
-      mIsAllFramesHere = false;
-      mHasBeenInitialized = false;
-    }
-  }
-  ScrollContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
-}
-
 bool nsListControlFrame::GetMultiple() const {
   return mContent->AsElement()->HasAttr(nsGkAtoms::multiple);
 }
@@ -692,20 +578,17 @@ dom::HTMLOptionElement* nsListControlFrame::GetOption(uint32_t aIndex) const {
   return Select().Item(aIndex);
 }
 
-NS_IMETHODIMP
-nsListControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected) {
+void nsListControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected) {
   if (aSelected) {
     ScrollToIndex(aIndex);
   }
-  return NS_OK;
 }
 
 void nsListControlFrame::OnContentReset() { ResetList(true); }
 
 void nsListControlFrame::ResetList(bool aAllowScrolling) {
-  // if all the frames aren't here
-  // don't bother reseting
-  if (!mIsAllFramesHere) {
+  // if all the frames aren't here don't bother reseting
+  if (!Select().IsDoneAddingChildren()) {
     return;
   }
 
@@ -760,59 +643,15 @@ uint32_t nsListControlFrame::GetNumberOfOptions() {
   return options->Length();
 }
 
-//----------------------------------------------------------------------
-// nsISelectControlFrame
-//----------------------------------------------------------------------
-bool nsListControlFrame::CheckIfAllFramesHere() {
-  // XXX Need to find a fail proof way to determine that
-  // all the frames are there
-  mIsAllFramesHere = true;
+void nsListControlFrame::DoneAddingChildren() { ResetList(true); }
 
-  // now make sure we have a frame each piece of content
-
-  return mIsAllFramesHere;
-}
-
-NS_IMETHODIMP
-nsListControlFrame::DoneAddingChildren(bool aIsDone) {
-  mIsAllContentHere = aIsDone;
-  if (mIsAllContentHere) {
-    // Here we check to see if all the frames have been created
-    // for all the content.
-    // If so, then we can initialize;
-    if (!mIsAllFramesHere) {
-      // if all the frames are now present we can initialize
-      if (CheckIfAllFramesHere()) {
-        mHasBeenInitialized = true;
-        ResetList(true);
-      }
-    }
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsListControlFrame::AddOption(int32_t aIndex) {
-  if (!mIsAllContentHere) {
-    mIsAllContentHere = Select().IsDoneAddingChildren();
-    if (!mIsAllContentHere) {
-      mIsAllFramesHere = false;
-      mHasBeenInitialized = false;
-    } else {
-      mIsAllFramesHere =
-          (aIndex == static_cast<int32_t>(GetNumberOfOptions() - 1));
-    }
-  }
-
+void nsListControlFrame::AddOption(int32_t aIndex) {
   // Make sure we scroll to the selected option as needed
   mNeedToReset = true;
 
-  if (!mHasBeenInitialized) {
-    return NS_OK;
+  if (Select().IsDoneAddingChildren()) {
+    mPostChildrenLoadedReset = true;
   }
-
-  mPostChildrenLoadedReset = mIsAllContentHere;
-  return NS_OK;
 }
 
 static int32_t DecrementAndClamp(int32_t aSelectionIndex, int32_t aLength) {
@@ -820,8 +659,7 @@ static int32_t DecrementAndClamp(int32_t aSelectionIndex, int32_t aLength) {
                       : std::max(0, aSelectionIndex - 1);
 }
 
-NS_IMETHODIMP
-nsListControlFrame::RemoveOption(int32_t aIndex) {
+void nsListControlFrame::RemoveOption(int32_t aIndex) {
   MOZ_ASSERT(aIndex >= 0, "negative <option> index");
 
   // Need to reset if we're a dropdown
@@ -849,7 +687,6 @@ nsListControlFrame::RemoveOption(int32_t aIndex) {
   }
 
   InvalidateFocus();
-  return NS_OK;
 }
 
 //---------------------------------------------------------
@@ -892,20 +729,18 @@ bool nsListControlFrame::ToggleOptionSelectedFromFrame(int32_t aIndex) {
 
 // Dispatch event and such
 bool nsListControlFrame::UpdateSelection() {
-  if (mIsAllFramesHere) {
+  if (Select().IsDoneAddingChildren()) {
     // if it's a combobox, display the new text. Note that after
     // FireOnInputAndOnChange we might be dead, as that can run script.
     AutoWeakFrame weakFrame(this);
-    if (mIsAllContentHere) {
-      RefPtr listener = mEventListener;
-      listener->FireOnInputAndOnChange();
-    }
+    RefPtr listener = mEventListener;
+    listener->FireOnInputAndOnChange();
     return weakFrame.IsAlive();
   }
   return true;
 }
 
-NS_IMETHODIMP_(void)
+void
 nsListControlFrame::OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) {
 #ifdef ACCESSIBILITY
   nsCOMPtr<nsIContent> prevOption = GetCurrentOption();
@@ -926,10 +761,6 @@ nsListControlFrame::OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) {
   }
 #endif
 }
-
-//----------------------------------------------------------------------
-// End nsISelectControlFrame
-//----------------------------------------------------------------------
 
 class AsyncReset final : public Runnable {
  public:

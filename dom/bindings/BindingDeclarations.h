@@ -10,26 +10,22 @@
  * include anywhere without running into include hell like we do with
  * BindingUtils.h
  */
-#ifndef mozilla_dom_BindingDeclarations_h__
-#define mozilla_dom_BindingDeclarations_h__
-
-#include "js/RootingAPI.h"
-#include "js/TypeDecls.h"
-
-#include "mozilla/Maybe.h"
-
-#include "mozilla/dom/DOMString.h"
-
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsTArray.h"
+#ifndef mozilla_dom_BindingDeclarations_h_
+#define mozilla_dom_BindingDeclarations_h_
 
 #include <type_traits>
 
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "mozilla/CycleCollectedUniquePtr.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RootedOwningNonNull.h"
 #include "mozilla/RootedRefPtr.h"
+#include "mozilla/dom/DOMString.h"
+#include "nsCOMPtr.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 class nsIPrincipal;
 class nsWrapperCache;
@@ -88,17 +84,6 @@ inline std::enable_if_t<is_dom_dictionary<T>, void> ImplCycleCollectionTraverse(
   aDictionary.TraverseForCC(aCallback, aFlags);
 }
 
-template <typename T>
-inline std::enable_if_t<is_dom_dictionary<T>, void> ImplCycleCollectionTraverse(
-    nsCycleCollectionTraversalCallback& aCallback, UniquePtr<T>& aDictionary,
-    const char* aName, uint32_t aFlags = 0) {
-  if (aDictionary) {
-    ImplCycleCollectionTraverse(aCallback, *aDictionary, aName, aFlags);
-  }
-}
-// Struct that serves as a base class for all typed arrays and array buffers and
-// array buffer views.  Particularly useful so we can use std::is_base_of to
-// detect typed array/buffer/view template arguments.
 struct AllTypedArraysBase {};
 
 template <class T>
@@ -584,4 +569,4 @@ class ReflectedHTMLAttributeSlots;
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_BindingDeclarations_h__
+#endif  // mozilla_dom_BindingDeclarations_h_

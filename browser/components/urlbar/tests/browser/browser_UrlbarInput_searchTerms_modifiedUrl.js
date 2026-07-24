@@ -25,7 +25,7 @@ add_task(async function history_push_state() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
@@ -65,7 +65,7 @@ add_task(async function history_push_state() {
 add_task(async function url_with_additional_query_params() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
   let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   // Add a query param

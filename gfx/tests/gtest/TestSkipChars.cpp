@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 
 #include "gfxSkipChars.h"
-#include "mozilla/ArrayUtils.h"
 
 static bool TestConstructor() {
   gfxSkipChars skipChars;

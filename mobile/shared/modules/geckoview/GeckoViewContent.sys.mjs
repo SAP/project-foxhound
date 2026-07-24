@@ -14,6 +14,7 @@ export class GeckoViewContent extends GeckoViewModule {
       "GeckoView:HasCookieBannerRuleForBrowsingContextTree",
       "GeckoView:RestoreState",
       "GeckoView:ContainsFormData",
+      "GeckoView:ProcessBackPressed",
       "GeckoView:ScrollBy",
       "GeckoView:ScrollTo",
       "GeckoView:SetActive",
@@ -289,6 +290,9 @@ export class GeckoViewContent extends GeckoViewModule {
         break;
       case "GeckoView:HasCookieBannerRuleForBrowsingContextTree":
         this._hasCookieBannerRuleForBrowsingContextTree(aCallback);
+        break;
+      case "GeckoView:ProcessBackPressed":
+        this._processBackPressed(aCallback);
         break;
     }
   }
@@ -631,6 +635,15 @@ export class GeckoViewContent extends GeckoViewModule {
     }
     const linksOnly = this._finderListener.response.linksOnly;
     finder.highlight(true, finder.searchString, linksOnly, !!aData.drawOutline);
+  }
+
+  _processBackPressed(aCallback) {
+    if (!this.browser?.hasActiveCloseWatcher) {
+      aCallback.onSuccess(false);
+      return;
+    }
+    this.browser.processCloseRequest();
+    aCallback.onSuccess(true);
   }
 }
 

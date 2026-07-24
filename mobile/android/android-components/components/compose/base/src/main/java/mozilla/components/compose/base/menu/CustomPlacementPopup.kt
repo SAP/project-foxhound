@@ -352,7 +352,7 @@ private fun computePopupYCoord(
  * @param contentOffset The vertical offset of the popup from the anchor.
  * @param layoutDirection The layout direction of the anchor layout.
  */
-@Suppress("ComplexMethod", "ReturnCount")
+@Suppress("CyclomaticComplexMethod", "ReturnCount", "CognitiveComplexMethod")
 private fun computePopupXCoord(
     wantedAlignment: Alignment.Horizontal,
     windowSize: IntSize,

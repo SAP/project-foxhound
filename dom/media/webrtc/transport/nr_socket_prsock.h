@@ -42,34 +42,32 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Implementation of nICEr/nr_socket that is tied to the Gecko
 // SocketTransportService.
 
-#ifndef nr_socket_prsock__
-#define nr_socket_prsock__
+#ifndef nr_socket_prsock_
+#define nr_socket_prsock_
 
 #include <memory>
 #include <queue>
 
-#include "nspr.h"
-#include "prio.h"
-
-#include "nsCOMPtr.h"
+#include "m_cpp_utils.h"
+#include "mediapacket.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ReentrantMonitor.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
 #include "nsASocketHandler.h"
-#include "nsXPCOM.h"
+#include "nsCOMPtr.h"
 #include "nsIEventTarget.h"
 #include "nsIUDPSocketChild.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
-
-#include "mediapacket.h"
-#include "m_cpp_utils.h"
-#include "mozilla/ReentrantMonitor.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/ClearOnShutdown.h"
+#include "nsXPCOM.h"
+#include "nspr.h"
+#include "prio.h"
 
 // nICEr includes
 extern "C" {
-#include "transport_addr.h"
 #include "async_wait.h"
+#include "transport_addr.h"
 }
 
 // Stub declaration for nICEr type

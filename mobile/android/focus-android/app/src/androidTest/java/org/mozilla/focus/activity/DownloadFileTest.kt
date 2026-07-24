@@ -19,7 +19,7 @@ import org.mozilla.focus.helpers.MainActivityIntentsTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
 import org.mozilla.focus.helpers.StringsHelper.GOOGLE_PHOTOS
-import org.mozilla.focus.helpers.TestAssetHelper.getImageTestAsset
+import org.mozilla.focus.helpers.TestAssetHelper.imageTestAsset
 import org.mozilla.focus.helpers.TestHelper.assertNativeAppOpens
 import org.mozilla.focus.helpers.TestHelper.getTargetContext
 import org.mozilla.focus.helpers.TestHelper.mDevice
@@ -69,7 +69,7 @@ class DownloadFileTest : TestSetup() {
     @SmokeTest
     @Test
     fun downloadNotificationTest() {
-        val downloadPageUrl = getImageTestAsset(webServer).url
+        val downloadPageUrl = webServer.imageTestAsset.url
         downloadFileName = "download.jpg"
 
         notificationTray {
@@ -100,7 +100,7 @@ class DownloadFileTest : TestSetup() {
     @SmokeTest
     @Test
     fun cancelDownloadTest() {
-        val downloadPageUrl = getImageTestAsset(webServer).url
+        val downloadPageUrl = webServer.imageTestAsset.url
 
         searchScreen {
         }.loadPage(downloadPageUrl) { }
@@ -119,7 +119,7 @@ class DownloadFileTest : TestSetup() {
     @SmokeTest
     @Test
     fun downloadAndOpenJpgFileTest() {
-        val downloadPageUrl = getImageTestAsset(webServer).url
+        val downloadPageUrl = webServer.imageTestAsset.url
         downloadFileName = "download.jpg"
 
         // Load website with service worker

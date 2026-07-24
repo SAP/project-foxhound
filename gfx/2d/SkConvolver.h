@@ -7,7 +7,6 @@
 #ifndef MOZILLA_GFX_SKCONVOLVER_H_
 #define MOZILLA_GFX_SKCONVOLVER_H_
 
-#include "mozilla/Assertions.h"
 #include <cfloat>
 #include <cmath>
 #include "mozilla/Vector.h"

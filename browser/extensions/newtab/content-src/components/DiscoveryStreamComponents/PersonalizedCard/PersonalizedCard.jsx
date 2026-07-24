@@ -13,8 +13,7 @@ export const PersonalizedCard = ({
   handleBlock,
   messageData,
 }) => {
-  const wavingFox =
-    "chrome://newtab/content/data/content/assets/waving-fox.svg";
+  const kitFox = "chrome://newtab/content/data/content/assets/kit.png";
 
   const onDismiss = useCallback(() => {
     handleDismiss();
@@ -37,11 +36,11 @@ export const PersonalizedCard = ({
           type="icon ghost"
           iconSrc="chrome://global/skin/icons/close.svg"
           onClick={onDismiss}
-          data-l10n-id="newtab-toast-dismiss-button"
+          data-l10n-id="newtab-card-dismiss-button"
         ></moz-button>
       </div>
       <div className="personalized-card-inner">
-        <img src={wavingFox} alt="" />
+        <img src={kitFox} alt="" />
         <h2>{messageData.content.cardTitle}</h2>
         <p>{messageData.content.cardMessage}</p>
         <div className="personalized-card-cta-wrapper">

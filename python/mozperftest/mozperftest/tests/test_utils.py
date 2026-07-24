@@ -87,15 +87,13 @@ def test_install_package():
     vem.bin_path = "someplace"
     with mock.patch("subprocess.check_call") as mock_check_call:
         assert install_package(vem, "foo")
-        mock_check_call.assert_called_once_with(
-            [
-                vem.python_path,
-                "-m",
-                "pip",
-                "install",
-                "foo",
-            ]
-        )
+        mock_check_call.assert_called_once_with([
+            vem.python_path,
+            "-m",
+            "pip",
+            "install",
+            "foo",
+        ])
 
 
 def test_install_requirements_file():
@@ -105,19 +103,17 @@ def test_install_requirements_file():
         "mozperftest.utils.os"
     ):
         assert install_requirements_file(vem, "foo")
-        mock_check_call.assert_called_once_with(
-            [
-                vem.python_path,
-                "-m",
-                "pip",
-                "install",
-                "-r",
-                "foo",
-                "--no-index",
-                "--find-links",
-                "https://pypi.pub.build.mozilla.org/pub/",
-            ]
-        )
+        mock_check_call.assert_called_once_with([
+            vem.python_path,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "foo",
+            "--no-index",
+            "--find-links",
+            "https://pypi.pub.build.mozilla.org/pub/",
+        ])
 
 
 @mock.patch("pip._internal.req.constructors.install_req_from_line", new=_req)
@@ -138,10 +134,12 @@ def test_install_package_failures():
 
 @mock.patch("mozperftest.utils.requests.get", requests_content())
 def test_build_test_list():
-    tests = [EXAMPLE_TESTS_DIR, "https://some/location/perftest_one.js"]
+    http_filename = "perftest_one.js"
+    tests = [EXAMPLE_TESTS_DIR, f"https://some/location/{http_filename}"]
     try:
         files, tmp_dir = build_test_list(tests)
-        assert len(files) == 2
+        assert any(f.startswith(str(EXAMPLE_TESTS_DIR)) for f in files)
+        assert any(http_filename in Path(f).name for f in files)
     finally:
         shutil.rmtree(tmp_dir)
 

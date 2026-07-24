@@ -7,10 +7,8 @@
 #ifndef mozilla_dom_MIDIAccess_h
 #define mozilla_dom_MIDIAccess_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Observer.h"
-#include "mozilla/WeakPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 

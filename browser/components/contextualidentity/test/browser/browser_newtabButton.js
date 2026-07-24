@@ -105,7 +105,7 @@ add_task(async function test_containers_with_left_click() {
       gBrowser.tabContainer,
       "TabOpen"
     );
-    EventUtils.synthesizeMouseAtCenter(contextIdItem, {});
+    popup.activateItem(contextIdItem);
 
     let tabEvent = await waitForTabPromise;
     let tab = tabEvent.target;

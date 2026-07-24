@@ -29,10 +29,32 @@ function checkForPrompt(prefVal) {
       promptFired = true;
       return doc.defaultView.CONFIRM_RESTART_PROMPT_RESTART_NOW;
     };
+
     // Tick the checkbox and pretend the user did it:
-    let checkbox = doc.getElementById("privateBrowsingAutoStart");
-    checkbox.checked = prefVal;
-    checkbox.doCommand();
+    let checkbox = gBrowser.contentWindow.document.querySelector(
+      "setting-group[groupid='history'] #privateBrowsingAutoStart"
+    );
+
+    ok(checkbox, "the privateBrowsingAutoStart checkbox should exist");
+    is_element_visible(
+      checkbox,
+      "the privateBrowsingAutoStart checkbox should be visible"
+    );
+
+    // No need to click if we're already in the desired state.
+    if (checkbox.checked === prefVal) {
+      return;
+    }
+
+    // Scroll into view for click to succeed.
+    checkbox.scrollIntoView();
+
+    // Toggle the state.
+    await EventUtils.synthesizeMouseAtCenter(
+      checkbox,
+      {},
+      checkbox.ownerGlobal
+    );
 
     // Now the prompt should have shown.
     ok(

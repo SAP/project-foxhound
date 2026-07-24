@@ -22,9 +22,6 @@ const TEST_PROVIDER_INFO = [
     adServerAttributes: ["mozAttr"],
     nonAdsLinkRegexps: [],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad/],
-    shoppingTab: {
-      selector: "#shopping",
-    },
     // The search telemetry entry responsible for targeting the specific results.
     domainExtraction: {
       ads: [],
@@ -39,6 +36,18 @@ const TEST_PROVIDER_INFO = [
       {
         type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         default: true,
+      },
+    ],
+    impressionAttributes: [
+      {
+        key: "shopping_tab_displayed",
+        element: {
+          selector: "#shopping",
+          component: {
+            type: "shopping_tab",
+            countImpressions: true,
+          },
+        },
       },
     ],
   },
@@ -87,14 +96,7 @@ add_task(
     assertSERPTelemetry([
       {
         impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
           shopping_tab_displayed: "true",
-          is_signed_in: "false",
         },
         adImpressions: [
           {

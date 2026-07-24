@@ -6,14 +6,14 @@
 
 /*
  * This file contains common code that is loaded before each test file(s).
- * See https://developer.mozilla.org/en-US/docs/Mozilla/QA/Writing_xpcshell-based_unit_tests
+ * See https://firefox-source-docs.mozilla.org/testing/xpcshell/index.html
  * for more information.
  */
 
 /* defined by the harness */
 /* globals _HEAD_FILES, _HEAD_JS_PATH, _JSDEBUGGER_PORT, _JSCOV_DIR,
     _MOZINFO_JS_PATH, _TEST_FILE, _TEST_NAME, _TEST_CWD, _TESTING_MODULES_DIR:true,
-    _PREFS_FILE */
+    _PREFS_FILE, _EXPECTED */
 
 /* defined by XPCShellImpl.cpp */
 /* globals load, sendCommand, changeTestShellDir */
@@ -264,7 +264,7 @@ void Cc["@mozilla.org/widget/transferable;1"].createInstance();
  * This behaviour would cause random failures and slowdown tests execution,
  * for example by running database vacuum or cleanups for each test.
  *
- * @note Idle service is overridden by default.  If a test requires it, it will
+ * Note: Idle service is overridden by default.  If a test requires it, it will
  *       have to call do_get_idle() function at least once before use.
  */
 var _fakeIdleService = {
@@ -335,6 +335,7 @@ var _fakeIdleService = {
 
 /**
  * Restores the idle service factory if needed and returns the service's handle.
+ *
  * @return A handle to the idle service.
  */
 function do_get_idle() {
@@ -516,6 +517,38 @@ function _initDebugging(port) {
   info("Debugger connected, starting test execution");
 }
 
+function _do_upload_profile() {
+  let name = _TEST_NAME.replace(/.*\//, "");
+  let filename = `profile_${name}.json`;
+  let path = Services.env.get("MOZ_UPLOAD_DIR");
+  let profilePath = PathUtils.join(path, filename);
+  let done = false;
+  (async function _save_profile() {
+    const { profile } =
+      await Services.profiler.getProfileDataAsGzippedArrayBuffer();
+    await IOUtils.write(profilePath, new Uint8Array(profile));
+    _testLogger.testStatus(
+      _TEST_NAME,
+      "Found unexpected failures during the test; profile uploaded in " +
+        filename,
+      "FAIL"
+    );
+  })()
+    .catch(e => {
+      // If the profile is large, we may encounter out of memory errors.
+      _testLogger.error(
+        "Found unexpected failures during the test; failed to upload profile: " +
+          e
+      );
+    })
+    .then(() => (done = true));
+  _Services.tm.spinEventLoopUntil(
+    "Test(xpcshell/head.js:_save_profile)",
+    () => done
+  );
+}
+
+// eslint-disable-next-line complexity
 function _execute_test() {
   if (typeof _TEST_CWD != "undefined") {
     try {
@@ -571,7 +604,7 @@ function _execute_test() {
     coverageCollector = new _CoverageCollector(_JSCOV_DIR);
   }
 
-  let startTime = Cu.now();
+  let startTime = ChromeUtils.now();
 
   // _HEAD_FILES is dynamically defined by <runxpcshelltests.py>.
   _load_files(_HEAD_FILES);
@@ -590,6 +623,30 @@ function _execute_test() {
 
   if (runningInParent) {
     PerTestCoverageUtils.beforeTestSync();
+  }
+
+  let timer;
+  if (
+    // Services.profiler is missing on some tier3 platforms where
+    // MOZ_GECKO_PROFILER is not set.
+    Services.profiler?.IsActive() &&
+    !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
+    Services.env.exists("MOZ_UPLOAD_DIR") &&
+    Services.env.exists("MOZ_TEST_TIMEOUT_INTERVAL")
+  ) {
+    timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    timer.initWithCallback(
+      function upload_test_timeout_profile() {
+        ChromeUtils.addProfilerMarker(
+          "xpcshell-test",
+          { category: "Test", startTime },
+          _TEST_NAME
+        );
+        _do_upload_profile();
+      },
+      parseInt(Services.env.get("MOZ_TEST_TIMEOUT_INTERVAL")) * 1000 * 0.9, // Keep 10% of the time to gather the profile.
+      timer.TYPE_ONE_SHOT
+    );
   }
 
   try {
@@ -664,7 +721,7 @@ function _execute_test() {
   };
 
   let complete = !_cleanupFunctions.length;
-  let cleanupStartTime = complete ? 0 : Cu.now();
+  let cleanupStartTime = complete ? 0 : ChromeUtils.now();
   (async () => {
     for (let func of _cleanupFunctions.reverse()) {
       try {
@@ -737,6 +794,28 @@ function _execute_test() {
     _PromiseTestUtils.uninit();
   }
 
+  if (timer) {
+    timer.cancel();
+  }
+
+  // If MOZ_PROFILER_SHUTDOWN is set, the profiler got started from --profiler
+  // and a profile will be shown even if there's no test failure.
+  if (
+    !_passed &&
+    runningInParent &&
+    Services.env.exists("MOZ_UPLOAD_DIR") &&
+    !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
+    Services.profiler.IsActive()
+  ) {
+    if (_EXPECTED != "pass") {
+      _testLogger.error(
+        "Not uploading the profile as the test is expected to fail."
+      );
+    } else {
+      _do_upload_profile();
+    }
+  }
+
   // Skip the normal shutdown path for optimized builds that don't do leak checking.
   if (
     runningInParent &&
@@ -758,7 +837,7 @@ function _execute_test() {
 function _load_files(aFiles) {
   function load_file(element) {
     try {
-      let startTime = Cu.now();
+      let startTime = ChromeUtils.now();
       load(element);
       ChromeUtils.addProfilerMarker(
         "load_file",
@@ -833,6 +912,7 @@ function executeSoon(callback, aName) {
             _exception_message(e),
             stack
           );
+          _passed = false;
           _do_quit();
         }
       } finally {
@@ -1350,6 +1430,31 @@ function do_get_profile(notifyProfileAfterChange = false) {
         "profile-after-change",
         "xpcshell-do-get-profile"
       );
+
+      // The "profile-after-change" dispatch above does not reach services that
+      // listen for the message via nsICategoryManager. These services register
+      // their observer via `components.conf`. The message for these services
+      // gets dispatched separately. So we have to do the same in testing.
+
+      // TODO: Bug 1995259: Not all tests / services expect this behavior yet,
+      // use an allow-list to determine which services to initialize on
+      // synthetic PAC.
+      let filterServices = new Set([
+        "@mozilla.org/profile-after-change-gate;1",
+      ]);
+
+      for (let entry of Services.catMan.enumerateCategory(
+        "profile-after-change"
+      )) {
+        if (!filterServices.has(entry.value)) {
+          continue;
+        }
+        try {
+          Cc[entry.value]
+            ?.getService(Ci.nsIObserver)
+            ?.observe(null, "profile-after-change", "");
+        } catch (e) {}
+      }
     }
   }
 
@@ -1511,6 +1616,7 @@ function do_send_remote_message(name, data) {
 
 /**
  * Schedules and awaits a precise GC, and forces CC, `maxCount` number of times.
+ *
  * @param maxCount
  *        How many times GC and CC should be scheduled.
  */
@@ -1766,7 +1872,7 @@ function run_next_test() {
         } else {
           _gTaskRunning = true;
         }
-        let startTime = Cu.now();
+        let startTime = ChromeUtils.now();
         (async () => _gRunningTest())().then(
           result => {
             _gTaskRunning = _gSetupRunning = false;
@@ -1819,7 +1925,7 @@ function run_next_test() {
         );
       } else {
         // Exceptions do not kill asynchronous tests, so they'll time out.
-        let startTime = Cu.now();
+        let startTime = ChromeUtils.now();
         try {
           _gRunningTest();
         } catch (e) {
@@ -1883,7 +1989,7 @@ try {
   // We only need to run this in the parent process.
   // We only want to run this for local developer builds (which should have a "default" update channel).
   if (runningInParent && _AppConstants.MOZ_UPDATE_CHANNEL == "default") {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     let { TelemetryController: _TelemetryController } =
       ChromeUtils.importESModule(
         "resource://gre/modules/TelemetryController.sys.mjs"

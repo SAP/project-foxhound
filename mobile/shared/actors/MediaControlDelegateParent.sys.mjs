@@ -4,5 +4,18 @@
 
 import { GeckoViewActorParent } from "resource://gre/modules/GeckoViewActorParent.sys.mjs";
 
-// For this.eventDispatcher in the child
-export class MediaControlDelegateParent extends GeckoViewActorParent {}
+export class MediaControlDelegateParent extends GeckoViewActorParent {
+  async receiveMessage({ name, data }) {
+    switch (name) {
+      case "GeckoView:MediaSession:Fullscreen": {
+        return this.eventDispatcher.sendRequestForResult({
+          ...data,
+          type: "GeckoView:MediaSession:Fullscreen",
+        });
+      }
+      default: {
+        return super.receiveMessage({ name, data });
+      }
+    }
+  }
+}

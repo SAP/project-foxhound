@@ -41,7 +41,7 @@ int nr_resolver_create_int(void *obj, nr_resolver_vtbl *vtbl, nr_resolver **reso
   int _status;
   nr_resolver *resolver=0;
 
-  if (!(resolver=RCALLOC(sizeof(nr_resolver))))
+  if (!(resolver=R_NEW(nr_resolver)))
     ABORT(R_NO_MEMORY);
 
   resolver->obj=obj;

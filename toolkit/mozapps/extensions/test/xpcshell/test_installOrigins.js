@@ -17,10 +17,8 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
 // This pref is not set in Thunderbird, and needs to be true for the test to pass.
 Services.prefs.setBoolPref("extensions.postDownloadThirdPartyPrompt", true);
-
 let server = AddonTestUtils.createHttpServer({
   hosts: ["example.com", "example.org", "amo.example.com", "github.io"],
 });

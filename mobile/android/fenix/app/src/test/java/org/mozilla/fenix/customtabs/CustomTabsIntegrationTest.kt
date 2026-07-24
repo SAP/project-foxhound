@@ -17,11 +17,9 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.HomeActivity
@@ -34,9 +32,6 @@ import org.mozilla.fenix.utils.Settings
 
 @RunWith(AndroidJUnit4::class)
 class CustomTabsIntegrationTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
     private val sessionId = "sessionId"
     private lateinit var browserStore: BrowserStore
     private lateinit var appStore: AppStore
@@ -168,7 +163,6 @@ class CustomTabsIntegrationTest {
         toolbar: BrowserToolbar = this.toolbar,
     ): CustomTabsIntegration {
         return CustomTabsIntegration(
-            context = testContext,
             store = browserStore,
             interactor = mockk(),
             useCases = mockk(),
@@ -176,9 +170,7 @@ class CustomTabsIntegrationTest {
             sessionId = sessionId,
             activity = activity,
             isPrivate = false,
-            shouldReverseItems = false,
             isSandboxCustomTab = false,
-            isMenuRedesignEnabled = false,
         )
     }
 }

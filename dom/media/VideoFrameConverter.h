@@ -11,15 +11,15 @@
 #include "Pacer.h"
 #include "PerformanceRecorder.h"
 #include "VideoSegment.h"
-#include "nsISupportsImpl.h"
-#include "nsThreadUtils.h"
+#include "api/video/video_frame.h"
+#include "common_video/include/video_frame_buffer.h"
+#include "common_video/include/video_frame_buffer_pool.h"
 #include "jsapi/RTCStatsReport.h"
+#include "media/base/adapted_video_track_source.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
-#include "api/video/video_frame.h"
-#include "common_video/include/video_frame_buffer_pool.h"
-#include "common_video/include/video_frame_buffer.h"
-#include "media/base/adapted_video_track_source.h"
+#include "nsISupportsImpl.h"
+#include "nsThreadUtils.h"
 
 // The number of frame buffers VideoFrameConverter may create before returning
 // errors.
@@ -44,10 +44,10 @@ enum class FrameDroppingPolicy {
 //
 // Input is typically a MediaTrackListener driven by MediaTrackGraph.
 //
-// Output is exposed through rtc::AdaptedVideoTrackSource, which implements
-// rtc::VideoSourceInterface<webrtc::VideoFrame>.
+// Output is exposed through webrtc::AdaptedVideoTrackSource, which implements
+// webrtc::VideoSourceInterface<webrtc::VideoFrame>.
 template <FrameDroppingPolicy DropPolicy = FrameDroppingPolicy::Allowed>
-class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
+class VideoFrameConverterImpl : public webrtc::AdaptedVideoTrackSource {
  protected:
   explicit VideoFrameConverterImpl(
       already_AddRefed<nsISerialEventTarget> aTarget,
@@ -92,8 +92,8 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
   }
 
  public:
-  using rtc::VideoSourceInterface<webrtc::VideoFrame>::AddOrUpdateSink;
-  using rtc::VideoSourceInterface<webrtc::VideoFrame>::RemoveSink;
+  using webrtc::VideoSourceInterface<webrtc::VideoFrame>::AddOrUpdateSink;
+  using webrtc::VideoSourceInterface<webrtc::VideoFrame>::RemoveSink;
 
   void QueueVideoChunk(const VideoChunk& aChunk, bool aForceBlack) {
     gfx::IntSize size = aChunk.mFrame.GetIntrinsicSize();
@@ -328,8 +328,9 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
   void ProcessVideoFrame(const FrameToProcess& aFrame) {
     MOZ_ASSERT(mTarget->IsOnCurrentThread());
 
-    auto convert = [this, &aFrame]() -> rtc::scoped_refptr<webrtc::I420Buffer> {
-      rtc::scoped_refptr<webrtc::I420Buffer> buffer =
+    auto convert = [this,
+                    &aFrame]() -> webrtc::scoped_refptr<webrtc::I420Buffer> {
+      webrtc::scoped_refptr<webrtc::I420Buffer> buffer =
           mConversionPool.CreateI420Buffer(aFrame.mSize.width,
                                            aFrame.mSize.height);
       if (!buffer) {
@@ -366,11 +367,11 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
 
     auto cropAndScale =
         [this, &aFrame](
-            const rtc::scoped_refptr<webrtc::I420BufferInterface>& aSrc,
+            const webrtc::scoped_refptr<webrtc::I420BufferInterface>& aSrc,
             int aCrop_x, int aCrop_y, int aCrop_w, int aCrop_h, int aOut_width,
             int aOut_height)
-        -> rtc::scoped_refptr<webrtc::I420BufferInterface> {
-      rtc::scoped_refptr<webrtc::I420Buffer> buffer =
+        -> webrtc::scoped_refptr<webrtc::I420BufferInterface> {
+      webrtc::scoped_refptr<webrtc::I420Buffer> buffer =
           mScalingPool.CreateI420Buffer(aOut_width, aOut_height);
       if (!buffer) {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -466,7 +467,7 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
 
     if (aFrame.mForceBlack) {
       // Send a black image.
-      rtc::scoped_refptr<webrtc::I420Buffer> buffer =
+      webrtc::scoped_refptr<webrtc::I420Buffer> buffer =
           mScalingPool.CreateI420Buffer(out_width, out_height);
       if (!buffer) {
         MOZ_DIAGNOSTIC_CRASH(
@@ -502,7 +503,7 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
 
     MOZ_ASSERT(aFrame.mImage->GetSize() == aFrame.mSize);
 
-    rtc::scoped_refptr<webrtc::I420BufferInterface> srcFrame;
+    webrtc::scoped_refptr<webrtc::I420BufferInterface> srcFrame;
     RefPtr<layers::PlanarYCbCrImage> image =
         aFrame.mImage->AsPlanarYCbCrImage();
     if (image) {
@@ -546,8 +547,8 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
       return;
     }
 
-    if (rtc::scoped_refptr<webrtc::I420BufferInterface> buffer =
-            cropAndScale(rtc::scoped_refptr(srcFrame), crop_x, crop_y,
+    if (webrtc::scoped_refptr<webrtc::I420BufferInterface> buffer =
+            cropAndScale(webrtc::scoped_refptr(srcFrame), crop_x, crop_y,
                          crop_width, crop_height, out_width, out_height)) {
       VideoFrameConverted(webrtc::VideoFrame::Builder()
                               .set_video_frame_buffer(buffer)
@@ -584,13 +585,13 @@ class VideoFrameConverterImpl : public rtc::AdaptedVideoTrackSource {
 };
 
 class VideoFrameConverter
-    : public rtc::RefCountedObject<
+    : public webrtc::RefCountedObject<
           VideoFrameConverterImpl<FrameDroppingPolicy::Allowed>> {
  protected:
   VideoFrameConverter(already_AddRefed<nsISerialEventTarget> aTarget,
                       const dom::RTCStatsTimestampMaker& aTimestampMaker,
                       bool aLockScaling)
-      : rtc::RefCountedObject<VideoFrameConverterImpl>(
+      : webrtc::RefCountedObject<VideoFrameConverterImpl>(
             std::move(aTarget), aTimestampMaker, aLockScaling) {}
 
  public:

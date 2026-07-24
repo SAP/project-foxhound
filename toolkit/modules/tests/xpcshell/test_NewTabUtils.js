@@ -13,6 +13,14 @@ const { PlacesUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PlacesUtils.sys.mjs"
 );
 
+// 0 days ago, 1 visit. This is to mimic the expectation of the original test,
+// which is that a single visit should not be filtered when running tests.
+const FRECENCY_THRESHOLD = PlacesUtils.history.pageFrecencyThreshold(
+  0,
+  1,
+  false
+);
+
 // const SEARCH_SHORTCUTS_EXPERIMENT_PREF =
 //   "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts";
 // Services.prefs.setBoolPref(SEARCH_SHORTCUTS_EXPERIMENT_PREF, false);
@@ -91,6 +99,22 @@ function getHistorySize() {
   return NewTabUtils.activityStreamProvider.executePlacesQuery(
     "SELECT count(*) FROM moz_places WHERE hidden = 0 AND last_visit_date NOT NULL"
   );
+}
+
+async function getFrecencyForUrl(url) {
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.executeCached(
+    `
+    SELECT frecency
+    FROM moz_places
+    WHERE url = :url
+    `,
+    {
+      url,
+    }
+  );
+  Assert.equal(rows?.length, 1, "Should have found a result.");
+  return rows[0].getResultByName("frecency");
 }
 
 add_task(async function validCacheMidPopulation() {
@@ -550,36 +574,9 @@ add_task(async function addFavicons() {
     links[0].mimeType,
     "Got the same mime type"
   );
-
-  // Check that we do not collect favicons for pocket items
-  const pocketItems = [
-    { url: links[0].url },
-    { url: "https://mozilla1.com", type: "pocket" },
-  ];
-  await provider._addFavicons(pocketItems);
-  Assert.equal(
-    provider._faviconBytesToDataURI(pocketItems)[0].favicon,
-    base64URL,
-    "Added favicon data only to the non-pocket item"
-  );
-  Assert.equal(
-    pocketItems[1].favicon,
-    null,
-    "Did not add a favicon to the pocket item"
-  );
-  Assert.equal(
-    pocketItems[1].mimeType,
-    null,
-    "Did not add mimeType to the pocket item"
-  );
-  Assert.equal(
-    pocketItems[1].faviconSize,
-    null,
-    "Did not add a faviconSize to the pocket item"
-  );
 });
 
-add_task(async function getHighlightsWithoutPocket() {
+add_task(async function getHighlights() {
   const addMetadata = url =>
     PlacesUtils.history.update({
       description: "desc",
@@ -743,217 +740,13 @@ add_task(async function getHighlightsWithoutPocket() {
   Assert.equal(links[2].favicon, null, "Link 3 has no favicon data");
 });
 
-add_task(async function getHighlightsWithPocketSuccess() {
-  await setUpActivityStreamTest();
-
-  // Add a bookmark
-  let bookmark = {
-    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    title: "foo",
-    description: "desc",
-    preview_image_url: "foo.com/img.png",
-    url: "https://mozilla1.com/",
-  };
-
-  const fakeResponse = {
-    list: {
-      123: {
-        time_added: "123",
-        image: { src: "foo.com/img.png" },
-        excerpt: "A description for foo",
-        resolved_title: "A title for foo",
-        resolved_url: "http://www.foo.com",
-        item_id: "123",
-        open_url: "http://www.getpocket.com/itemID",
-        status: "0",
-      },
-      456: {
-        item_id: "456",
-        status: "2",
-      },
-    },
-  };
-
-  await PlacesUtils.bookmarks.insert(bookmark);
-  await PlacesTestUtils.addVisits(bookmark.url);
-
-  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = () => fakeResponse;
-  let provider = NewTabUtils.activityStreamLinks;
-
-  // Force a cache invalidation
-  NewTabUtils.activityStreamLinks._pocketLastUpdated =
-    Date.now() - 70 * 60 * 1000;
-  NewTabUtils.activityStreamLinks._pocketLastLatest = -1;
-  let links = await provider.getHighlights();
-
-  // We should have 1 bookmark followed by 1 pocket story in highlights
-  // We should not have stored the second pocket item since it was deleted
-  Assert.equal(links.length, 2, "Should have 2 links in highlights");
-
-  // First highlight should be a bookmark
-  Assert.equal(links[0].url, bookmark.url, "The first link is the bookmark");
-
-  // Second highlight should be a Pocket item with the correct fields to display
-  let pocketItem = fakeResponse.list["123"];
-  let currentLink = links[1];
-  Assert.equal(currentLink.url, pocketItem.resolved_url, "Correct Pocket item");
-  Assert.equal(currentLink.type, "pocket", "Attached the correct type");
-  Assert.equal(
-    currentLink.preview_image_url,
-    pocketItem.image.src,
-    "Correct preview image was added"
-  );
-  Assert.equal(
-    currentLink.title,
-    pocketItem.resolved_title,
-    "Correct title was added"
-  );
-  Assert.equal(
-    currentLink.description,
-    pocketItem.excerpt,
-    "Correct description was added"
-  );
-  Assert.equal(
-    currentLink.pocket_id,
-    pocketItem.item_id,
-    "item_id was preserved"
-  );
-  Assert.equal(
-    currentLink.open_url,
-    `${pocketItem.open_url}?src=fx_new_tab`,
-    "open_url was preserved"
-  );
-  Assert.equal(
-    currentLink.date_added,
-    pocketItem.time_added * 1000,
-    "date_added was added to pocket item"
-  );
-
-  NewTabUtils.activityStreamLinks._savedPocketStories = null;
-});
-
-add_task(async function getHighlightsWithPocketCached() {
-  await setUpActivityStreamTest();
-
-  let fakeResponse = {
-    list: {
-      123: {
-        time_added: "123",
-        image: { src: "foo.com/img.png" },
-        excerpt: "A description for foo",
-        resolved_title: "A title for foo",
-        resolved_url: "http://www.foo.com",
-        item_id: "123",
-        open_url: "http://www.getpocket.com/itemID",
-        status: "0",
-      },
-      456: {
-        item_id: "456",
-        status: "2",
-      },
-    },
-  };
-
-  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = () => fakeResponse;
-  let provider = NewTabUtils.activityStreamLinks;
-
-  let links = await provider.getHighlights();
-  Assert.equal(
-    links.length,
-    1,
-    "Sanity check that we got 1 link back for highlights"
-  );
-  Assert.equal(
-    links[0].url,
-    fakeResponse.list["123"].resolved_url,
-    "Sanity check that it was the pocket story"
-  );
-
-  // Update what the response would be
-  fakeResponse.list["789"] = {
-    time_added: "123",
-    image: { src: "bar.com/img.png" },
-    excerpt: "A description for bar",
-    resolved_title: "A title for bar",
-    resolved_url: "http://www.bar.com",
-    item_id: "789",
-    open_url: "http://www.getpocket.com/itemID",
-    status: "0",
-  };
-
-  // Call getHighlights again - this time we should get the cached links since we just updated
-  links = await provider.getHighlights();
-  Assert.equal(links.length, 1, "We still got 1 link back for highlights");
-  Assert.equal(
-    links[0].url,
-    fakeResponse.list["123"].resolved_url,
-    "It was still the same pocket story"
-  );
-
-  // Now force a cache invalidation and call getHighlights again
-  NewTabUtils.activityStreamLinks._pocketLastUpdated =
-    Date.now() - 70 * 60 * 1000;
-  NewTabUtils.activityStreamLinks._pocketLastLatest = -1;
-  links = await provider.getHighlights();
-  Assert.equal(
-    links.length,
-    2,
-    "This time we got fresh links with the new response"
-  );
-  Assert.equal(
-    links[0].url,
-    fakeResponse.list["123"].resolved_url,
-    "First link is unchanged"
-  );
-  Assert.equal(
-    links[1].url,
-    fakeResponse.list["789"].resolved_url,
-    "Second link is the new link"
-  );
-
-  NewTabUtils.activityStreamLinks._savedPocketStories = null;
-});
-
-add_task(async function getHighlightsWithPocketFailure() {
-  await setUpActivityStreamTest();
-
-  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = function () {
-    throw new Error();
-  };
-  let provider = NewTabUtils.activityStreamLinks;
-
-  // Force a cache invalidation
-  NewTabUtils.activityStreamLinks._pocketLastUpdated =
-    Date.now() - 70 * 60 * 1000;
-  NewTabUtils.activityStreamLinks._pocketLastLatest = -1;
-  let links = await provider.getHighlights();
-  Assert.equal(links.length, 0, "Return empty links if we reject the promise");
-});
-
-add_task(async function getHighlightsWithPocketNoData() {
-  await setUpActivityStreamTest();
-
-  NewTabUtils.activityStreamProvider.fetchSavedPocketItems = () => {};
-
-  let provider = NewTabUtils.activityStreamLinks;
-
-  // Force a cache invalidation
-  NewTabUtils.activityStreamLinks._pocketLastUpdated =
-    Date.now() - 70 * 60 * 1000;
-  NewTabUtils.activityStreamLinks._pocketLastLatest = -1;
-  let links = await provider.getHighlights();
-  Assert.equal(
-    links.length,
-    0,
-    "Return empty links if we got no data back from the response"
-  );
-});
-
 add_task(async function getTopFrecentSites() {
   await setUpActivityStreamTest();
 
   let provider = NewTabUtils.activityStreamLinks;
-  let links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let links = await provider.getTopSites({
+    topsiteFrecency: FRECENCY_THRESHOLD,
+  });
   Assert.equal(links.length, 0, "empty history yields empty links");
 
   // add a visit
@@ -967,7 +760,7 @@ add_task(async function getTopFrecentSites() {
     "adding a single visit doesn't exceed default threshold"
   );
 
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "adding a visit yields a link");
   Assert.equal(links[0].url, testURI, "added visit corresponds to added url");
 });
@@ -990,7 +783,9 @@ add_task(
     await PlacesTestUtils.addVisits(testURI);
 
     let provider = NewTabUtils.activityStreamLinks;
-    let links = await provider.getTopSites({ topsiteFrecency: 100 });
+    let links = await provider.getTopSites({
+      topsiteFrecency: FRECENCY_THRESHOLD,
+    });
     Assert.equal(
       links.length,
       1,
@@ -1010,7 +805,9 @@ add_task(async function getTopFrecentSites_no_dedup() {
   await setUpActivityStreamTest();
 
   let provider = NewTabUtils.activityStreamLinks;
-  let links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let links = await provider.getTopSites({
+    topsiteFrecency: FRECENCY_THRESHOLD,
+  });
   Assert.equal(links.length, 0, "empty history yields empty links");
 
   // Add a visits in reverse order they will be returned in when not deduped.
@@ -1027,7 +824,7 @@ add_task(async function getTopFrecentSites_no_dedup() {
     "adding a single visit doesn't exceed default threshold"
   );
 
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "adding a visit yields a link");
   // Plain domain is returned when deduped.
   Assert.equal(
@@ -1037,7 +834,7 @@ add_task(async function getTopFrecentSites_no_dedup() {
   );
 
   links = await provider.getTopSites({
-    topsiteFrecency: 100,
+    topsiteFrecency: FRECENCY_THRESHOLD,
     onePerDomain: false,
   });
   Assert.equal(links.length, 2, "adding a visit yields a link");
@@ -1058,55 +855,67 @@ add_task(async function getTopFrecentSites_dedupeWWW() {
 
   let provider = NewTabUtils.activityStreamLinks;
 
-  let links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let links = await provider.getTopSites({
+    topsiteFrecency: FRECENCY_THRESHOLD,
+  });
   Assert.equal(links.length, 0, "empty history yields empty links");
 
   // add a visit without www
-  let testURI = "http://mozilla.com";
+  let testURI = "http://mozilla.com/";
   await PlacesTestUtils.addVisits(testURI);
+  let frecency1 = await getFrecencyForUrl(testURI);
 
   // add a visit with www
-  testURI = "http://www.mozilla.com";
+  testURI = "http://www.mozilla.com/";
   await PlacesTestUtils.addVisits(testURI);
+  let frecency2 = await getFrecencyForUrl(testURI);
 
   // Test combined frecency score
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "adding both www. and no-www. yields one link");
-  Assert.equal(links[0].frecency, 200, "frecency scores are combined");
+  Assert.equal(
+    links[0].frecency,
+    frecency1 + frecency2,
+    "frecency scores are combined"
+  );
 
   // add another page visit with www and without www
   let noWWW = "http://mozilla.com/page";
   await PlacesTestUtils.addVisits(noWWW);
+  let noWWWFrecency = await getFrecencyForUrl(noWWW);
   let withWWW = "http://www.mozilla.com/page";
   await PlacesTestUtils.addVisits(withWWW);
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let withWWWFrecency = await getFrecencyForUrl(withWWW);
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "adding both www. and no-www. yields one link");
   Assert.equal(
     links[0].frecency,
-    200,
+    noWWWFrecency + withWWWFrecency,
     "frecency scores are combined ignoring extra pages"
   );
 
   // add another visit with www
   await PlacesTestUtils.addVisits(withWWW);
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  withWWWFrecency = await getFrecencyForUrl(withWWW);
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "still yields one link");
   Assert.equal(links[0].url, withWWW, "more frecent www link is used");
   Assert.equal(
     links[0].frecency,
-    300,
+    noWWWFrecency + withWWWFrecency,
     "frecency scores are combined ignoring extra pages"
   );
 
   // add a couple more visits to the no-www page
   await PlacesTestUtils.addVisits(noWWW);
   await PlacesTestUtils.addVisits(noWWW);
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  noWWWFrecency = await getFrecencyForUrl(noWWW);
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "still yields one link");
   Assert.equal(links[0].url, noWWW, "now more frecent no-www link is used");
   Assert.equal(
     links[0].frecency,
-    500,
+    noWWWFrecency + withWWWFrecency,
     "frecency scores are combined ignoring extra pages"
   );
 });
@@ -1123,7 +932,9 @@ add_task(async function getTopFrencentSites_maxLimit() {
     await PlacesTestUtils.addVisits(testURI);
   }
 
-  let links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let links = await provider.getTopSites({
+    topsiteFrecency: FRECENCY_THRESHOLD,
+  });
   Assert.less(
     links.length,
     MANY_LINKS,
@@ -1141,21 +952,23 @@ add_task(async function getTopFrencentSites_allowedProtocols() {
   let testURI = "file:///some/file/path.png";
   await PlacesTestUtils.addVisits(testURI);
 
-  let links = await provider.getTopSites({ topsiteFrecency: 100 });
+  let links = await provider.getTopSites({
+    topsiteFrecency: FRECENCY_THRESHOLD,
+  });
   Assert.equal(links.length, 0, "don't get sites with the file:// protocol");
 
   // now add a site with an allowed protocol
   testURI = "http://www.mozilla.com";
   await PlacesTestUtils.addVisits(testURI);
 
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(links.length, 1, "http:// is an allowed protocol");
 
   // and just to be sure, add a visit to a site with ftp:// protocol
   testURI = "ftp://bad/example";
   await PlacesTestUtils.addVisits(testURI);
 
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(
     links.length,
     1,
@@ -1166,7 +979,7 @@ add_task(async function getTopFrencentSites_allowedProtocols() {
   testURI = "https://https";
   await PlacesTestUtils.addVisits(testURI);
 
-  links = await provider.getTopSites({ topsiteFrecency: 100 });
+  links = await provider.getTopSites({ topsiteFrecency: FRECENCY_THRESHOLD });
   Assert.equal(
     links.length,
     2,
@@ -1348,7 +1161,7 @@ add_task(async function getTopFrecentSites_hideWithSearchParam() {
             JSON.stringify(hideWithSearchParam)
         );
 
-        let options = { topsiteFrecency: 100 };
+        let options = { topsiteFrecency: FRECENCY_THRESHOLD };
         if (hideWithSearchParam !== undefined) {
           options = { ...options, hideWithSearchParam };
         }

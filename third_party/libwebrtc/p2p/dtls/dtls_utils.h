@@ -13,23 +13,59 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
+#include <memory>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "api/array_view.h"
+#include "rtc_base/buffer.h"
 
-namespace cricket {
+namespace webrtc {
 
 const size_t kDtlsRecordHeaderLen = 13;
 const size_t kMaxDtlsPacketLen = 2048;
 
-bool IsDtlsPacket(rtc::ArrayView<const uint8_t> payload);
-bool IsDtlsClientHelloPacket(rtc::ArrayView<const uint8_t> payload);
-bool IsDtlsHandshakePacket(rtc::ArrayView<const uint8_t> payload);
+bool IsDtlsPacket(ArrayView<const uint8_t> payload);
+bool IsDtlsClientHelloPacket(ArrayView<const uint8_t> payload);
+bool IsDtlsHandshakePacket(ArrayView<const uint8_t> payload);
 
-std::optional<std::vector<uint16_t>> GetDtlsHandshakeAcks(
-    rtc::ArrayView<const uint8_t> dtls_packet);
+uint32_t ComputeDtlsPacketHash(ArrayView<const uint8_t> dtls_packet);
 
-}  // namespace cricket
+class PacketStash {
+ public:
+  PacketStash() {}
+
+  void Add(ArrayView<const uint8_t> packet);
+  bool AddIfUnique(ArrayView<const uint8_t> packet);
+  void Prune(const absl::flat_hash_set<uint32_t>& packet_hashes);
+  void Prune(uint32_t max_size);
+  ArrayView<const uint8_t> GetNext();
+
+  void clear() {
+    packets_.clear();
+    pos_ = 0;
+  }
+  bool empty() const { return packets_.empty(); }
+  int size() const { return packets_.size(); }
+
+  static uint32_t Hash(ArrayView<const uint8_t> packet) {
+    return ComputeDtlsPacketHash(packet);
+  }
+
+ private:
+  struct StashedPacket {
+    uint32_t hash;
+    std::unique_ptr<Buffer> buffer;
+  };
+
+  // This vector will only contain very few items,
+  // so it is appropriate to use a vector rather than
+  // e.g. a hash map.
+  uint32_t pos_ = 0;
+  std::vector<StashedPacket> packets_;
+};
+
+}  //  namespace webrtc
+
 
 #endif  // P2P_DTLS_DTLS_UTILS_H_

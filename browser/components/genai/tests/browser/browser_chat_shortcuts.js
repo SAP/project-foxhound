@@ -38,6 +38,7 @@ add_task(async function test_show_shortcuts() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.ml.chat.shortcuts", true],
+      ["browser.ml.chat.shortcut.onboardingMouseoverCount", 0],
       ["browser.ml.chat.provider", "http://localhost:8080"],
     ],
   });
@@ -73,15 +74,83 @@ add_task(async function test_show_shortcuts() {
     const popup = document.getElementById("chat-shortcuts-options-panel");
     Assert.equal(popup.state, "closed", "Popup is closed");
 
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      0,
+      "Pref should start at 0"
+    );
+
     EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
     await BrowserTestUtils.waitForEvent(popup, "popupshown");
-
-    Assert.equal(popup.state, "open", "Popup is open");
-    events = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
-    Assert.equal(events.length, 1, "One shortcuts opened");
-    Assert.equal(events[0].extra.selection, 2, "Selected hi");
     Assert.equal(
-      events[0].extra.warning,
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      1,
+      "Pref should be 1 after mouseover"
+    );
+    Assert.equal(
+      popup.state,
+      "open",
+      "Popup is open with mouseover the first time"
+    );
+    const hidePopup = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+    popup.hidePopup();
+    await hidePopup;
+
+    EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      2,
+      "Pref should be 2 after second mouseover"
+    );
+
+    Assert.equal(
+      popup.state,
+      "open",
+      "Popup is open with mouseover the second time"
+    );
+    const hidePopupSecondTime = BrowserTestUtils.waitForEvent(
+      popup,
+      "popuphidden"
+    );
+    popup.hidePopup();
+    await hidePopupSecondTime;
+
+    EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      2,
+      "Pref should still be 2 after third mouseover"
+    );
+    Assert.equal(
+      popup.state,
+      "closed",
+      "Popup doesn't open with mouseover after the second time"
+    );
+
+    let beforeClick = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
+    shortcuts.click();
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+    Assert.equal(popup.state, "open", "Popup open with click");
+
+    let afterClick = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
+    Assert.equal(
+      afterClick.length,
+      beforeClick.length + 1,
+      "One shortcuts opened"
+    );
+    const lastEvent = afterClick[afterClick.length - 1];
+    Assert.equal(lastEvent.extra.selection, 2, "Selected hi");
+    Assert.equal(
+      lastEvent.extra.warning,
       "false",
       "Warning lable value is correct"
     );
@@ -145,7 +214,7 @@ add_task(async function test_show_shortcuts_second_tab() {
       const stub = sandbox.stub(GenAI, "addAskChatItems");
 
       const shortcuts = document.querySelector("#ai-action-button");
-      EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+      shortcuts.click();
 
       Assert.equal(stub.callCount, 1, "Shortcuts added on select");
       Assert.equal(stub.firstCall.args[0], browser, "Got correct browser");
@@ -201,8 +270,9 @@ add_task(async function test_show_warning_label() {
         8192,
         "Selected enough text"
       );
-      // Hover button
-      EventUtils.sendMouseEvent({ type: "mouseover" }, aiActionButton);
+
+      // Click button
+      aiActionButton.click();
 
       const chatShortcutsOptionsPanel = document.getElementById(
         "chat-shortcuts-options-panel"

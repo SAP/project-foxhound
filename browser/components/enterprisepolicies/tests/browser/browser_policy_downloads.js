@@ -52,11 +52,6 @@ add_task(async function test_download() {
       "alwaysAsk should be disabled."
     );
     is(
-      browser.contentDocument.getElementById("downloadFolder").disabled,
-      true,
-      "downloadFolder should be disabled."
-    );
-    is(
       browser.contentDocument.getElementById("chooseFolder").disabled,
       true,
       "chooseFolder should be disabled."

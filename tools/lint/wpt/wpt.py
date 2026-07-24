@@ -37,7 +37,7 @@ def lint(files, config, **kwargs):
 
     if files == [tests_dir]:
         print(
-            "No specific files specified, running the full wpt lint" " (this is slow)",
+            "No specific files specified, running the full wpt lint (this is slow)",
             file=sys.stderr,
         )
         files = ["--all"]

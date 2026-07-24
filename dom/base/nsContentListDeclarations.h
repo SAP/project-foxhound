@@ -8,6 +8,7 @@
 #define nsContentListDeclarations_h
 
 #include <stdint.h>
+
 #include "nsCOMPtr.h"
 #include "nsStringFwd.h"
 

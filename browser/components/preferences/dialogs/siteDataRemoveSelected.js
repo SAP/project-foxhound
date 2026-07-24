@@ -8,7 +8,7 @@
 /**
  * This dialog will ask the user to confirm that they really want to delete all
  * site data for a number of hosts.
- **/
+ */
 window.addEventListener("load", () => {
   document.addEventListener("dialogaccept", function () {
     window.arguments[0].allowed = true;

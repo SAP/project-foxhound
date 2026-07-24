@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "imgTools",
   "@mozilla.org/image/tools;1",
-  "imgITools"
+  Ci.imgITools
 );
 
 const Transferable = Components.Constructor(

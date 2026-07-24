@@ -37,13 +37,20 @@ interface nsITransportSecurityInfo : nsISupports {
      */
 
     /**
-     * If certificate verification failed, this will be the peer certificate
-     * chain provided in the handshake, so it can be used for error reporting.
-     * If verification succeeded, this will be empty.
+     * The list of certificates provided by the server during the TLS
+     * handshake.
      */
-    readonly attribute Array<nsIX509Cert> failedCertChain;
+    readonly attribute Array<nsIX509Cert> handshakeCertificates;
 
+    /**
+     * The server certificate (also called "end-entity certificate").
+     */
     readonly attribute nsIX509Cert serverCert;
+
+    /**
+     * If the server certificate verified successfully, this will consist of
+     * the verified path from the end-entity to the trust-anchor.
+     */
     readonly attribute Array<nsIX509Cert> succeededCertChain;
 
     [must_use]

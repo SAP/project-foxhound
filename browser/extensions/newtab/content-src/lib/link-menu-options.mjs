@@ -79,7 +79,7 @@ export const LinkMenuOptions = {
         referrer: site.referrer,
         typedBonus: site.typedBonus,
         url: site.url,
-        sponsored_tile_id: site.sponsored_tile_id,
+        is_sponsored: !!site.sponsored_tile_id,
         event_source: "CONTEXT_MENU",
         topic: site.topic,
         firstVisibleTimestamp: site.firstVisibleTimestamp,
@@ -92,7 +92,6 @@ export const LinkMenuOptions = {
         format: site.format,
         ...(site.flight_id ? { flight_id: site.flight_id } : {}),
         is_pocket_card: site.type === "CardGrid",
-        is_list_card: site.is_list_card,
         ...(site.section
           ? {
               section: site.section,
@@ -148,7 +147,6 @@ export const LinkMenuOptions = {
         position: pos,
         ...(site.sponsored_tile_id ? { tile_id: site.sponsored_tile_id } : {}),
         is_pocket_card: site.type === "CardGrid",
-        is_list_card: site.is_list_card,
         ...(site.format ? { format: site.format } : {}),
         ...(site.section
           ? {
@@ -324,93 +322,6 @@ export const LinkMenuOptions = {
       : LinkMenuOptions.PinTopSite(site, index),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) =>
     isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem(),
-  ChangeWeatherLocation: () => ({
-    id: "newtab-weather-menu-change-location",
-    action: ac.BroadcastToContent({
-      type: at.WEATHER_SEARCH_ACTIVE,
-      data: true,
-    }),
-  }),
-  ChangeWeatherDisplaySimple: () => ({
-    id: "newtab-weather-menu-change-weather-display-simple",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "weather.display",
-        value: "simple",
-      },
-    }),
-  }),
-  ChangeWeatherDisplayDetailed: () => ({
-    id: "newtab-weather-menu-change-weather-display-detailed",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "weather.display",
-        value: "detailed",
-      },
-    }),
-  }),
-  ChangeTempUnitFahrenheit: () => ({
-    id: "newtab-weather-menu-change-temperature-units-fahrenheit",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "weather.temperatureUnits",
-        value: "f",
-      },
-    }),
-  }),
-  ChangeTempUnitCelsius: () => ({
-    id: "newtab-weather-menu-change-temperature-units-celsius",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "weather.temperatureUnits",
-        value: "c",
-      },
-    }),
-  }),
-  HideWeather: () => ({
-    id: "newtab-weather-menu-hide-weather",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "showWeather",
-        value: false,
-      },
-    }),
-  }),
-  OpenLearnMoreURL: site => ({
-    id: "newtab-weather-menu-learn-more",
-    action: ac.OnlyToMain({
-      type: at.OPEN_LINK,
-      data: { url: site.url },
-    }),
-  }),
-  FakespotDismiss: () => ({
-    id: "newtab-menu-dismiss",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "discoverystream.contextualContent.fakespot.enabled",
-        value: false,
-      },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.FAKESPOT_DISMISS,
-    }),
-  }),
-  AboutFakespot: site => ({
-    id: "newtab-menu-about-fakespot",
-    action: ac.OnlyToMain({
-      type: at.OPEN_LINK,
-      data: { url: site.url },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.OPEN_ABOUT_FAKESPOT,
-    }),
-  }),
   SectionBlock: ({
     sectionPersonalization,
     sectionKey,
@@ -472,7 +383,7 @@ export const LinkMenuOptions = {
     id: "newtab-menu-section-unfollow",
     action: ac.AlsoToMain({
       type: at.SECTION_PERSONALIZATION_SET,
-      data: (({ sectionKey: _sectionKey, ...remaining }) => remaining)(
+      data: (({ [sectionKey]: _sectionKey, ...remaining }) => remaining)(
         sectionPersonalization
       ),
     }),
@@ -490,12 +401,21 @@ export const LinkMenuOptions = {
     action: ac.OnlyToMain({ type: at.SETTINGS_OPEN }),
     userEvent: "OPEN_NEWTAB_PREFS",
   }),
-  OurSponsorsAndYourPrivacy: () => ({
+  // eslint-disable-next-line max-params
+  OurSponsorsAndYourPrivacy: (
+    site,
+    index,
+    source,
+    isPrivateBrowsingEnabled,
+    siteInfo,
+    platform,
+    privacyInfoUrl
+  ) => ({
     id: "newtab-menu-our-sponsors-and-your-privacy",
     action: ac.OnlyToMain({
       type: at.OPEN_LINK,
       data: {
-        url: "https://support.mozilla.org/kb/pocket-sponsored-stories-new-tabs",
+        url: privacyInfoUrl,
       },
     }),
     userEvent: "CLICK_PRIVACY_INFO",
@@ -533,33 +453,4 @@ export const LinkMenuOptions = {
       }),
     };
   },
-  TrendingSearchLearnMore: site => ({
-    id: "newtab-trending-searches-learn-more",
-    action: ac.OnlyToMain({
-      type: at.OPEN_LINK,
-      data: { url: site.url },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.TRENDING_SEARCH_LEARN_MORE,
-      data: {
-        variant: site.variant,
-      },
-    }),
-  }),
-  TrendingSearchDismiss: site => ({
-    id: "newtab-trending-searches-dismiss",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "trendingSearch.enabled",
-        value: false,
-      },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.TRENDING_SEARCH_DISMISS,
-      data: {
-        variant: site.variant,
-      },
-    }),
-  }),
 };

@@ -81,7 +81,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=509055
         sheTitle = sh.legacySHistory.getEntryAtIndex(sh.index).title;
       } else {
         let chromeScript = SpecialPowers.loadChromeScript(() => {
-          /* eslint-env mozilla/chrome-script */
           addMessageListener("getTitle", browsingContext => {
             // eslint-disable-next-line no-shadow
             let sh = browsingContext.sessionHistory;

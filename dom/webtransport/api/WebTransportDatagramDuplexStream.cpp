@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebTransportDatagramDuplexStream.h"
+
 #include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebTransportLog.h"
 
 namespace mozilla::dom {
@@ -279,7 +280,7 @@ already_AddRefed<Promise> OutgoingDatagramStreamAlgorithms::WriteCallbackImpl(
   // (mDatagrams is transport.[[Datagrams]])
 
   nsTArray<uint8_t> data;
-  Unused << AppendTypedArrayDataTo(arrayBuffer, data);
+  (void)AppendTypedArrayDataTo(arrayBuffer, data);
 
   // Step 4: If datagrams.[[OutgoingMaxDatagramSize]] is less than data’s
   // [[ByteLength]], return a promise resolved with undefined.

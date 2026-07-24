@@ -7,6 +7,9 @@
 #include "PostMessageEvent.h"
 
 #include "MessageEvent.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/DocGroup.h"
@@ -14,9 +17,6 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
@@ -166,18 +166,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
   nsCOMPtr<mozilla::dom::EventTarget> eventTarget =
       do_QueryObject(targetWindow);
 
-  JS::CloneDataPolicy cloneDataPolicy;
-
   MOZ_DIAGNOSTIC_ASSERT(targetWindow);
-  if (mCallerAgentClusterId.isSome() && targetWindow->GetDocGroup() &&
-      targetWindow->GetDocGroup()->AgentClusterId().Equals(
-          mCallerAgentClusterId.ref())) {
-    cloneDataPolicy.allowIntraClusterClonableSharedObjects();
-  }
-
-  if (targetWindow->IsSharedMemoryAllowed()) {
-    cloneDataPolicy.allowSharedMemoryObjects();
-  }
 
   if (mHolder.empty()) {
     DispatchError(cx, targetWindow, eventTarget);
@@ -186,16 +175,27 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
 
   StructuredCloneHolder* holder;
   if (mHolder.constructed<StructuredCloneHolder>()) {
-    mHolder.ref<StructuredCloneHolder>().Read(
-        targetWindow->AsGlobal(), cx, &messageData, cloneDataPolicy, rv);
     holder = &mHolder.ref<StructuredCloneHolder>();
   } else {
-    MOZ_ASSERT(mHolder.constructed<ipc::StructuredCloneData>());
-    mHolder.ref<ipc::StructuredCloneData>().Read(cx, &messageData, rv);
-    holder = &mHolder.ref<ipc::StructuredCloneData>();
+    holder = mHolder.ref<RefPtr<ipc::StructuredCloneData>>().get();
   }
+
+  JS::CloneDataPolicy cloneDataPolicy;
+  if (holder->CloneScope() != JS::StructuredCloneScope::DifferentProcess) {
+    // Only enable cloning shared memory, etc. when in-process.
+    if (mCallerAgentClusterId.isSome() && targetWindow->GetDocGroup() &&
+        targetWindow->GetDocGroup()->AgentClusterId().Equals(
+            mCallerAgentClusterId.ref())) {
+      cloneDataPolicy.allowIntraClusterClonableSharedObjects();
+    }
+
+    if (targetWindow->IsSharedMemoryAllowed()) {
+      cloneDataPolicy.allowSharedMemoryObjects();
+    }
+  }
+
+  holder->Read(cx, &messageData, cloneDataPolicy, rv);
   if (NS_WARN_IF(rv.Failed())) {
-    JS_ClearPendingException(cx);
     DispatchError(cx, targetWindow, eventTarget);
     return NS_OK;
   }

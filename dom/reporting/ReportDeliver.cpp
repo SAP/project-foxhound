@@ -4,16 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ReportDeliver.h"
+
 #include <algorithm>
 
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/EndpointForReportChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReportBody.h"
-#include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/Response.h"
@@ -65,19 +66,21 @@ class ReportFetchHandler final : public PromiseNativeHandler {
       }
 
       if (response->Status() == 410) {
-        mozilla::ipc::PBackgroundChild* actorChild =
-            mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
-
-        for (const auto& report : mReports) {
-          mozilla::ipc::PrincipalInfo principalInfo;
-          nsresult rv =
-              PrincipalToPrincipalInfo(report.mPrincipal, &principalInfo);
-          if (NS_WARN_IF(NS_FAILED(rv))) {
-            continue;
+        if (XRE_IsContentProcess()) {
+          for (const auto& report : mReports) {
+            gReportDeliver->EndpointRespondedWithRemove(report.mGlobalKey,
+                                                        report.mGroupName);
           }
-
-          actorChild->SendRemoveEndpoint(report.mGroupName, report.mEndpointURL,
-                                         principalInfo);
+        } else {
+          // Crash Reports will end up here, because they're not sent from with
+          // a content process. The endpoints used for crash reporting and NEL
+          // are parsed using the ReportingHeader::ReportingFromChannel, since
+          // these two variants of Reporting API strictly should run in the
+          // parent process
+          for (const auto& report : mReports) {
+            ReportingHeader::RemoveEndpoint(
+                report.mGroupName, report.mEndpointURL, report.mPrincipal);
+          }
         }
       }
     }
@@ -88,7 +91,7 @@ class ReportFetchHandler final : public PromiseNativeHandler {
     if (gReportDeliver) {
       for (auto& report : mReports) {
         ++report.mFailures;
-        gReportDeliver->AppendReportData(report);
+        gReportDeliver->EnqueueReport(report);
       }
     }
   }
@@ -220,6 +223,11 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   // TODO: internalRequest->SetContentPolicyType(TYPE_REPORT);
   internalRequest->SetMode(RequestMode::Cors);
   internalRequest->SetCredentialsMode(RequestCredentials::Same_origin);
+  internalRequest->SetUnsafeRequest();
+
+  if (aReports[0].mCookieJarSettings) {
+    internalRequest->SetCookieJarSettings(aReports[0].mCookieJarSettings);
+  }
 
   RefPtr<Request> request =
       new Request(globalObject, std::move(internalRequest), nullptr);
@@ -231,10 +239,10 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   RefPtr<Promise> promise = FetchRequest(globalObject, fetchInput, requestInit,
                                          CallerType::NonSystem, error);
   if (error.Failed()) {
-    for (auto& report : aReports) {
-      ++report.mFailures;
-      if (gReportDeliver) {
-        gReportDeliver->AppendReportData(report);
+    if (gReportDeliver) {
+      for (auto& report : aReports) {
+        ++report.mFailures;
+        gReportDeliver->EnqueueReport(report);
       }
     }
     return;
@@ -247,13 +255,23 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
 }  // namespace
 
 /* static */
-void ReportDeliver::Record(nsPIDOMWindowInner* aWindow, const nsAString& aType,
-                           const nsAString& aGroupName, const nsAString& aURL,
-                           ReportBody* aBody) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aWindow);
-  MOZ_ASSERT(aBody);
+void ReportDeliver::AttemptDelivery(nsIGlobalObject* aGlobal,
+                                    const nsAString& aType,
+                                    const nsAString& aGroupName,
+                                    const nsAString& aURL, ReportBody* aBody) {
+  MOZ_ASSERT(aGlobal && aBody);
 
+  if (NS_WARN_IF(!gReportDeliver)) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = aGlobal->PrincipalOrNull();
+  if (NS_WARN_IF(!principal)) {
+    return;
+  }
+
+  // We have to serialize aBody here because the thread we're sending
+  // this to, sometimes isn't not the owner, which doesn't work for RefPtr.
   JSONStringWriteFunc<nsAutoCString> reportBodyJSON;
   ReportJSONWriter w(reportBodyJSON);
 
@@ -261,69 +279,80 @@ void ReportDeliver::Record(nsPIDOMWindowInner* aWindow, const nsAString& aType,
   aBody->ToJSON(w);
   w.End();
 
-  nsCOMPtr<nsIPrincipal> principal =
-      nsGlobalWindowInner::Cast(aWindow)->GetPrincipal();
-  if (NS_WARN_IF(!principal)) {
-    return;
+  RefPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+      "ReportDeliver::AttemptDelivery",
+      [aGlobalKey = reinterpret_cast<uintptr_t>(aGlobal),
+       type = nsString{aType}, group = nsString{aGroupName},
+       reportUrl = nsString{aURL},
+       reportBody = std::move(reportBodyJSON).StringRRef(),
+       principal]() mutable {
+        ReportData data;
+
+        // https://w3c.github.io/reporting/#report-delivery
+        // 2.1 If there exists an endpoint (endpoint) in context’s endpoints
+        // list whose name is report’s destination:
+        // 2.1.1 Append report to
+        // endpoint map’s list of reports for endpoint.
+        nsIURI* endpointURI =
+            gReportDeliver->GetEndpointURLFor(aGlobalKey, group);
+        if (!endpointURI) {
+          return;
+        }
+        endpointURI->GetSpec(data.mEndpointURL);
+
+        data.mType = std::move(type);
+        data.mGroupName = std::move(group);
+        data.mURL = std::move(reportUrl);
+        data.mCreationTime = TimeStamp::Now();
+        data.mReportBodyJSON = std::move(reportBody);
+        data.mPrincipal = std::move(principal);
+        data.mFailures = 0;
+        gReportDeliver->SetGlobalAndUserAgentData(data, aGlobalKey);
+        ReportDeliver::Fetch(data);
+      });
+
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(runnable.forget());
+  } else {
+    runnable->Run();
   }
-
-  mozilla::ipc::PrincipalInfo principalInfo;
-  nsresult rv = PrincipalToPrincipalInfo(principal, &principalInfo);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  mozilla::ipc::PBackgroundChild* actorChild =
-      mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
-
-  PEndpointForReportChild* actor =
-      actorChild->SendPEndpointForReportConstructor(nsString(aGroupName),
-                                                    principalInfo);
-  if (NS_WARN_IF(!actor)) {
-    return;
-  }
-
-  ReportData data;
-  data.mType = aType;
-  data.mGroupName = aGroupName;
-  data.mURL = aURL;
-  data.mCreationTime = TimeStamp::Now();
-  data.mReportBodyJSON = std::move(reportBodyJSON).StringRRef();
-  data.mPrincipal = principal;
-  data.mFailures = 0;
-
-  Navigator* navigator = aWindow->Navigator();
-  MOZ_ASSERT(navigator);
-
-  IgnoredErrorResult error;
-  navigator->GetUserAgent(data.mUserAgent, CallerType::NonSystem, error);
-  if (NS_WARN_IF(error.Failed())) {
-    return;
-  }
-
-  static_cast<EndpointForReportChild*>(actor)->Initialize(data);
 }
 
-/* static */
-void ReportDeliver::Fetch(const ReportData& aReportData) {
-  if (!gReportDeliver) {
-    RefPtr<ReportDeliver> rd = new ReportDeliver();
-
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    if (NS_WARN_IF(!obs)) {
-      return;
-    }
-
-    obs->AddObserver(rd, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
-    gReportDeliver = rd;
+void ReportDeliver::SetGlobalAndUserAgentData(
+    ReportDeliver::ReportData& aReportData, uintptr_t aGlobalKey) {
+  // Will be null for workers
+  aReportData.mGlobalKey = aGlobalKey;
+  if (auto reportingGlobal = mGlobalsEndpointLists.Lookup(aGlobalKey)) {
+    aReportData.mUserAgent = reportingGlobal->mUserAgentData;
+    aReportData.mCookieJarSettings = reportingGlobal->mCookieJarSettings;
   }
-
-  gReportDeliver->AppendReportData(aReportData);
 }
 
-void ReportDeliver::AppendReportData(const ReportData& aReportData) {
-  if (aReportData.mFailures >
-      StaticPrefs::dom_reporting_delivering_maxFailures()) {
+void ReportDeliver::ScheduleFetch() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mPendingDelivery) {
+    return;
+  }
+
+  mPendingDelivery = true;
+  nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+      "ReportDeliver::CallNotify",
+      [self = RefPtr<ReportDeliver>{gReportDeliver}]() { self->Notify(); });
+
+  NS_DispatchToCurrentThreadQueue(
+      runnable.forget(), StaticPrefs::dom_reporting_delivering_timeout() * 1000,
+      EventQueuePriority::Idle);
+}
+
+void ReportDeliver::EnqueueReport(const ReportData& aReportData) {
+  MOZ_ASSERT(NS_IsMainThread());
+  // If this is failed report, and queue is full, don't remove potentially
+  // non-tried reports, instead discard this one.
+  if ((aReportData.mFailures > 0 &&
+       mReportQueue.Length() >
+           StaticPrefs::dom_reporting_delivering_maxReports()) ||
+      aReportData.mFailures >=
+          StaticPrefs::dom_reporting_delivering_maxFailures()) {
     return;
   }
 
@@ -336,18 +365,129 @@ void ReportDeliver::AppendReportData(const ReportData& aReportData) {
     mReportQueue.RemoveElementAt(0);
   }
 
-  RefPtr<ReportDeliver> self{this};
-  nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
-      "ReportDeliver::CallNotify", [self]() { self->Notify(); });
+  ScheduleFetch();
+}
 
-  NS_DispatchToCurrentThreadQueue(
-      runnable.forget(), StaticPrefs::dom_reporting_delivering_timeout() * 1000,
-      EventQueuePriority::Idle);
+void ReportDeliver::Initialize() {
+  if (!gReportDeliver) {
+    RefPtr<ReportDeliver> rd = new ReportDeliver();
+
+    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+    if (NS_WARN_IF(!obs)) {
+      return;
+    }
+
+    obs->AddObserver(rd, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
+    gReportDeliver = rd;
+  }
+}
+
+/* static */
+void ReportDeliver::WorkerInitializeReportingEndpoints(
+    uintptr_t aGlobalKey, nsIURI* aResourceURI, nsCString aHeaderContents,
+    bool aShouldResistFingerprinting,
+    nsICookieJarSettings* aCookieJarSettings) {
+  MOZ_ASSERT(!NS_IsMainThread());
+  if (NS_WARN_IF(!aResourceURI) || aHeaderContents.IsEmpty() ||
+      aHeaderContents.IsVoid()) {
+    return;
+  }
+
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "ReportDeliver::DispatchInitializeReportingEndpoints",
+      [aGlobalKey, uri = RefPtr{aResourceURI},
+       header = std::move(aHeaderContents), aShouldResistFingerprinting,
+       cookieJarSettings = nsCOMPtr{aCookieJarSettings}]() mutable {
+        EndpointsList list;
+        ReportingHeader::ParseReportingEndpointsHeader(
+            header, uri,
+            [&list](const nsAString& aEndpointName,
+                    nsCOMPtr<nsIURI> aEndpointURL) {
+              list.mData.EmplaceBack(ReportingHeader::Endpoint::Create(
+                  aEndpointURL.forget(), aEndpointName));
+            });
+
+        nsString userAgent;
+        mozilla::dom::Navigator::GetUserAgent(
+            nullptr, nullptr, Some(aShouldResistFingerprinting), userAgent);
+
+        gReportDeliver->mGlobalsEndpointLists.InsertOrUpdate(
+            aGlobalKey,
+            GlobalReportingData{std::move(userAgent), std::move(list),
+                                cookieJarSettings});
+      }));
+}
+
+/** static */
+void ReportDeliver::WindowInitializeReportingEndpoints(
+    nsIGlobalObject* aGlobal, mozilla::dom::EndpointsList aEndpointList) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsString userAgentData;
+  if (aEndpointList.mData.IsEmpty()) {
+    return;
+  }
+
+  nsPIDOMWindowInner* win = aGlobal->GetAsInnerWindow();
+  RefPtr<Document> doc;
+  if (win) {
+    doc = win->GetExtantDoc();
+  }
+
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  if (doc) {
+    cookieJarSettings = doc->CookieJarSettings();
+  }
+
+  (void)mozilla::dom::Navigator::GetUserAgent(
+      win, doc,
+      mozilla::Some(
+          aGlobal->ShouldResistFingerprinting(RFPTarget::NavigatorUserAgent)),
+      userAgentData);
+  gReportDeliver->mGlobalsEndpointLists.InsertOrUpdate(
+      reinterpret_cast<uintptr_t>(aGlobal),
+      GlobalReportingData{std::move(userAgentData), std::move(aEndpointList),
+                          std::move(cookieJarSettings)});
+}
+
+nsIURI* ReportDeliver::GetEndpointURLFor(uintptr_t aGlobalKey,
+                                         const nsAString& aGroupName) {
+  MOZ_ASSERT(NS_IsMainThread());
+  auto reportingGlobal = mGlobalsEndpointLists.Lookup(aGlobalKey);
+  if (!reportingGlobal) {
+    return nullptr;
+  }
+
+  if (ReportingHeader::Endpoint* endpoint =
+          reportingGlobal->mEndpoints.GetEndpointWithName(aGroupName)) {
+    return endpoint->mUrl;
+  }
+  return nullptr;
+}
+
+void ReportDeliver::EndpointRespondedWithRemove(
+    uint64_t aGlobalKey, const nsAString& aEndpointName) {
+  auto reportingGlobal = mGlobalsEndpointLists.Lookup(aGlobalKey);
+  if (!reportingGlobal) {
+    return;
+  }
+  reportingGlobal->mEndpoints.RemoveEndpoint(aEndpointName);
+}
+
+/* static */
+void ReportDeliver::Fetch(const ReportData& aReportData) {
+  if (aReportData.mFailures >
+      StaticPrefs::dom_reporting_delivering_maxFailures()) {
+    return;
+  }
+
+  gReportDeliver->EnqueueReport(aReportData);
 }
 
 void ReportDeliver::Notify() {
+  MOZ_ASSERT(NS_IsMainThread());
+  mPendingDelivery = false;
   nsTArray<ReportData> reports = std::move(mReportQueue);
-
   // group reports by endpoint and nsIPrincipal
   std::map<std::pair<nsCString, nsCOMPtr<nsIPrincipal>>, nsTArray<ReportData>>
       reportsByPrincipal;

@@ -214,7 +214,8 @@ void MemoryTelemetry::Poke() {
     RefPtr<MemoryTelemetry> self(this);
     auto res = NS_NewTimerWithCallback(
         [self](nsITimer* aTimer) { self->GatherReports(); }, delay,
-        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "MemoryTelemetry::GatherReports");
+        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
+        "MemoryTelemetry::GatherReports"_ns);
 
     if (res.isOk()) {
       // Errors are ignored, if there was an error then we just don't get
@@ -266,6 +267,8 @@ nsresult MemoryTelemetry::GatherReports(
   RECORD_OUTER(metric, glean::memory::id.AccumulateSingleSample(amt);)
 #define RECORD_BYTES(id, metric) \
   RECORD_OUTER(metric, glean::memory::id.Accumulate(amt / 1024);)
+#define RECORD_BYTES_PER_PROCESS(id, metric) \
+  RECORD_OUTER(metric, glean::memory::id.ProcessGet().Accumulate(amt / 1024);)
 #define RECORD_PERCENTAGE(id, metric) \
   RECORD_OUTER(metric, glean::memory::id.AccumulateSingleSample(amt / 100);)
 #define RECORD_COUNT_CUMULATIVE(id, metric)                               \
@@ -312,7 +315,7 @@ nsresult MemoryTelemetry::GatherReports(
 
   // Collect cheap or main-thread only metrics synchronously, on the main
   // thread.
-  RECORD_BYTES(js_gc_heap, JSMainRuntimeGCHeap);
+  RECORD_BYTES_PER_PROCESS(js_gc_heap, JSMainRuntimeGCHeap);
   RECORD_COUNT(js_compartments_system, JSMainRuntimeCompartmentsSystem);
   RECORD_COUNT(js_compartments_user, JSMainRuntimeCompartmentsUser);
   RECORD_COUNT(js_realms_system, JSMainRuntimeRealmsSystem);
@@ -357,12 +360,12 @@ nsresult MemoryTelemetry::GatherReports(
 #if !defined(HAVE_64BIT_BUILD) || !defined(XP_WIN)
         RECORD_BYTES(vsize_max_contiguous, VsizeMaxContiguous);
 #endif
-        RECORD_BYTES(resident_fast, ResidentFast);
-        RECORD_BYTES(resident_peak, ResidentPeak);
+        RECORD_BYTES_PER_PROCESS(resident_fast, ResidentFast);
+        RECORD_BYTES_PER_PROCESS(resident_peak, ResidentPeak);
 // Although we can measure unique memory on MacOS we choose not to, because
 // doing so is too slow for telemetry.
 #ifndef XP_MACOSX
-        RECORD_BYTES(unique, ResidentUnique);
+        RECORD_BYTES_PER_PROCESS(unique, ResidentUnique);
 #endif
 
         if (completionRunnable) {
@@ -504,8 +507,7 @@ nsresult MemoryTelemetry::FinishGatheringTotalMemory(
   }
 
   if (aChildSizes.Length() > 1) {
-    int32_t tabsCount;
-    MOZ_TRY_VAR(tabsCount, GetOpenTabsCount());
+    int32_t tabsCount = MOZ_TRY(GetOpenTabsCount());
 
     nsCString key;
     if (tabsCount <= 10) {

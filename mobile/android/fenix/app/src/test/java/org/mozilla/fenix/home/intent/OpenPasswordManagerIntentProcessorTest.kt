@@ -63,7 +63,7 @@ class OpenPasswordManagerIntentProcessorTest {
     }
 
     @Test
-    fun `GIVEN an intent with correct action and extra boolean WHEN it is processed THEN navigate should be called`() {
+    fun `GIVEN an intent with correct action and extra boolean WHEN it is processed THEN navigates to password list fragment`() {
         val intent = Intent().apply {
             action = PasswordManagerIntentProcessor.Companion.ACTION_OPEN_PASSWORD_MANAGER
             putExtra(HomeActivity.OPEN_PASSWORD_MANAGER, true)
@@ -71,7 +71,7 @@ class OpenPasswordManagerIntentProcessorTest {
 
         assertTrue(processor.process(intent, navController, out, settings))
 
-        verify { navController.navigate(NavGraphDirections.actionGlobalSavedLoginsAuthFragment(), null) }
+        verify { navController.navigate(NavGraphDirections.actionLoginsListFragment(), null) }
         verify { out.removeExtra(HomeActivity.OPEN_PASSWORD_MANAGER) }
     }
 

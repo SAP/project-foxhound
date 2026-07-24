@@ -17,7 +17,7 @@ const ruleTester = new RuleTester();
 function invalidCode(code) {
   return {
     code,
-    errors: [{ messageId: "useOwnerGlobal", type: "MemberExpression" }],
+    errors: [{ messageId: "useOwnerGlobal" }],
   };
 }
 

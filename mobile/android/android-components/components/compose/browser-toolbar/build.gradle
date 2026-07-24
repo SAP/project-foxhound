@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -10,19 +11,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         viewBinding = true
         compose = true
@@ -32,36 +20,44 @@ android {
 }
 
 dependencies {
-    api project(":components:ui-autocomplete")
     api project(":components:concept-toolbar")
-    implementation project(":components:compose-base")
-    implementation project(":components:concept-engine")
-    implementation project(":components:concept-menu")
+    api project(":components:ui-autocomplete")
+
     implementation project(":components:browser-menu2")
     implementation project(":components:browser-state")
+    implementation project(":components:compose-base")
+    implementation project(":components:compose-cfr")
+    implementation project(":components:concept-engine")
+    implementation project(":components:concept-menu")
     implementation project(":components:feature-session")
     implementation project(":components:lib-state")
-    implementation project(":components:ui-icons")
-    implementation project(":components:ui-tabcounter")
     implementation project(":components:support-ktx")
     implementation project(":components:support-utils")
+    implementation project(":components:ui-icons")
+    implementation project(":components:ui-tabcounter")
+
     implementation libs.accompanist.drawablepainter
-    implementation libs.androidx.compose.ui
-    implementation libs.androidx.compose.ui.tooling.preview
+    implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.material3
+    implementation libs.androidx.compose.material3.adaptive
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.tooling.preview
     implementation libs.androidx.constraintlayout
+    implementation libs.androidx.window.core
     implementation libs.google.material
 
     debugImplementation libs.androidx.compose.ui.tooling
 
     testImplementation project(':components:support-test')
+
     testImplementation libs.androidx.compose.ui.test
+    testImplementation libs.androidx.compose.ui.test.manifest
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

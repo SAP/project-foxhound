@@ -2,7 +2,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include <numeric>
 #include <vector>
 #include <algorithm>
 
@@ -752,7 +751,7 @@ void nsNetworkLinkService::DNSConfigChanged(uint32_t aDelayMs) {
           self->mDNSConfigChangedTimers.RemoveElement(aTimer);
         },
         TimeDuration::FromMilliseconds(aDelayMs), nsITimer::TYPE_ONE_SHOT,
-        "nsNetworkLinkService::GetDnsSuffixListInternal", target));
+        "nsNetworkLinkService::GetDnsSuffixListInternal"_ns, target));
     mDNSConfigChangedTimers.AppendElement(timer);
   } else {
     MOZ_ALWAYS_SUCCEEDS(target->Dispatch(NS_NewRunnableFunction(

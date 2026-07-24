@@ -11,7 +11,7 @@
 #include "mozilla/HashFunctions.h"  // For HashNumber, AddToHash
 #include "mozilla/HashTable.h"      // For DefaultHasher, PointerHasher
 #include "mozilla/Maybe.h"
-#include "mozilla/PseudoStyleType.h"  // For PseudoStyleRequest
+#include "mozilla/PseudoStyleRequest.h"
 #include "mozilla/RefPtr.h"
 
 class nsAtom;

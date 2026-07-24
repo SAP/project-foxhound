@@ -8,6 +8,7 @@
 #define mozilla_SIMD_h
 
 #include "mozilla/Types.h"
+#include <cstdint>
 
 namespace mozilla {
 // A collection of SIMD-implemented algorithms. Some of these exist in the CRT.

@@ -29,7 +29,6 @@
 #include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/ScopeExit.h"
 
 #if defined(HAVE_RES_NINIT)
 #  include <netinet/in.h>

@@ -66,7 +66,9 @@ pub extern "C" fn fuzz_rkv_db_name(raw_data: *const u8, size: libc::size_t) -> l
     println!("Checking string: '{:?}'", name);
     // Some strings are invalid database names, and are handled as store errors.
     // Ignore those errors, but not others.
-    let store = env.open_single(name.as_ref(), rkv::StoreOptions::create()).unwrap();
+    let store = env
+        .open_single(name.as_ref(), rkv::StoreOptions::create())
+        .unwrap();
     let reader = env.read().unwrap();
     store.get(&reader, &[0]).unwrap();
 

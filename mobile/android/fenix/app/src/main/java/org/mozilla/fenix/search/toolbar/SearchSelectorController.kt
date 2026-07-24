@@ -4,8 +4,8 @@
 
 package org.mozilla.fenix.search.toolbar
 
+import android.app.Activity
 import androidx.navigation.NavController
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserAnimator
@@ -25,7 +25,7 @@ interface SearchSelectorController {
  * The default implementation of [SearchSelectorController].
  */
 class DefaultSearchSelectorController(
-    private val activity: HomeActivity,
+    private val activity: Activity,
     private val navController: NavController,
 ) : SearchSelectorController {
 

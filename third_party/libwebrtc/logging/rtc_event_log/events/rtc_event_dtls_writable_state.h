@@ -50,7 +50,7 @@ class RtcEventDtlsWritableState : public RtcEvent {
 
   bool writable() const { return writable_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -64,7 +64,7 @@ class RtcEventDtlsWritableState : public RtcEvent {
   }
 
  private:
-  RtcEventDtlsWritableState(const RtcEventDtlsWritableState& other);
+  RtcEventDtlsWritableState(const RtcEventDtlsWritableState&) = default;
 
   const bool writable_;
 };

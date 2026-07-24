@@ -44,7 +44,7 @@ class ScrollAnimationBezierPhysics final : public ScrollAnimationPhysics {
   nsPoint PositionAt(const TimeStamp& aTime) override;
 
   bool IsFinished(const TimeStamp& aTime) override {
-    return aTime > mStartTime + mDuration;
+    return mDuration.IsZero() || aTime > mStartTime + mDuration;
   }
 
  protected:

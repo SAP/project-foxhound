@@ -34,6 +34,12 @@ let gBrowserBrowser;
 let gIframeView;
 let gIframeIframe;
 let gToggle;
+let gMozButton;
+let gMozButtonSubviewNav;
+let gComponentView;
+let gShadowRoot;
+let gShadowRootButtonA;
+let gShadowRootButtonB;
 
 async function openPopup() {
   let shown = BrowserTestUtils.waitForEvent(gMainView, "ViewShown");
@@ -89,6 +95,7 @@ add_setup(async function () {
   gMainView.id = "testMainView";
   gPanelMultiView.appendChild(gMainView);
   gMainContext = document.createXULElement("menupopup");
+  gMainContext.setAttribute("native", "false");
   gMainContext.id = "gMainContext";
   gMainView.appendChild(gMainContext);
   gMainContext.appendChild(document.createXULElement("menuitem"));
@@ -102,6 +109,7 @@ add_setup(async function () {
   gMainMenulist.id = "gMainMenulist";
   gMainView.appendChild(gMainMenulist);
   let menuPopup = document.createXULElement("menupopup");
+  menuPopup.setAttribute("native", "false");
   gMainMenulist.appendChild(menuPopup);
   let item = document.createXULElement("menuitem");
   item.setAttribute("value", "1");
@@ -153,6 +161,15 @@ add_setup(async function () {
   gToggle = document.createElement("moz-toggle");
   gToggle.label = "Test label";
   gMainView.appendChild(gToggle);
+  gMozButton = document.createElement("moz-button");
+  gMozButton.label = "gMozButton";
+  gMozButton.id = "gMozButton";
+  gMainView.appendChild(gMozButton);
+  gMozButtonSubviewNav = document.createElement("moz-button");
+  gMozButtonSubviewNav.label = "gMozButtonSubviewNav";
+  gMozButtonSubviewNav.id = "gMozButtonSubviewNav";
+  gMozButtonSubviewNav.classList.add("moz-button-subviewbutton-nav");
+  gMainView.appendChild(gMozButtonSubviewNav);
 
   gMainTabOrder = [
     gMainButton1,
@@ -165,6 +182,8 @@ add_setup(async function () {
     gNamespacedLink,
     gLink,
     gToggle,
+    gMozButton,
+    gMozButtonSubviewNav,
   ];
   gMainArrowOrder = [
     gMainButton1,
@@ -174,6 +193,8 @@ add_setup(async function () {
     gNamespacedLink,
     gLink,
     gToggle,
+    gMozButton,
+    gMozButtonSubviewNav,
   ];
 
   gSubView = document.createXULElement("panelview");
@@ -206,6 +227,24 @@ add_setup(async function () {
   gIframeIframe.id = "gIframeIframe";
   gIframeIframe.setAttribute("src", kEmbeddedDocUrl);
   gIframeView.appendChild(gIframeIframe);
+
+  gComponentView = document.createXULElement("panelview");
+  gComponentView.id = "testComponentView";
+  gPanelMultiView.appendChild(gComponentView);
+  // Shadow root that delegates focus with multiple buttons
+  gShadowRoot = document.createElement("section");
+  gShadowRoot.id = "gShadowRoot";
+  gShadowRoot.dataset.navigableWithTabOnly = "true";
+  gShadowRoot.attachShadow({ mode: "open", delegatesFocus: true });
+  gShadowRootButtonA = document.createElement("moz-button");
+  gShadowRootButtonA.id = "gShadowRootButtonA";
+  gShadowRootButtonA.label = "Button A";
+  gShadowRootButtonB = document.createElement("moz-button");
+  gShadowRootButtonB.id = "gShadowRootButtonB";
+  gShadowRootButtonB.label = "Button B";
+  gShadowRoot.shadowRoot.appendChild(gShadowRootButtonA);
+  gShadowRoot.shadowRoot.appendChild(gShadowRootButtonB);
+  gComponentView.appendChild(gShadowRoot);
 
   registerCleanupFunction(() => {
     gAnchor.remove();
@@ -425,6 +464,48 @@ add_task(async function testLeftArrowTextarea() {
   await hidePopup();
 });
 
+add_task(async function testRightArrow() {
+  await openPopup();
+
+  // Ensure non moz-button-subviewbutton-navs respond to the right arrow
+  let clicked = false;
+  let assertNoClick = () => {
+    clicked = true;
+  };
+  gMozButton.addEventListener("click", assertNoClick);
+  // Focus using the arrow keys so PanelMultiView#selectedElement is set
+  for (let i = 0; i < gMainTabOrder.length; i++) {
+    EventUtils.synthesizeKey("KEY_ArrowUp");
+    if (document.activeElement == gMozButton) {
+      break;
+    }
+  }
+  is(document.activeElement, gMozButton, "gMozButton focused");
+  EventUtils.synthesizeKey("KEY_ArrowRight");
+  ok(!clicked, "click handler should not be triggered for regular button");
+  EventUtils.synthesizeKey(" ");
+  ok(clicked, "click handler triggered on space");
+  gMozButton.removeEventListener("click", assertNoClick);
+
+  // Ensure moz-button-subviewbutton-nav gets click on right arrow
+  gMozButtonSubviewNav.addEventListener(
+    "click",
+    () => gPanelMultiView.showSubView(gSubView, gMozButtonSubviewNav),
+    { once: true }
+  );
+  let shown = BrowserTestUtils.waitForEvent(gSubView, "ViewShown");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  is(
+    document.activeElement,
+    gMozButtonSubviewNav,
+    "gMozButtonSubviewNav focused"
+  );
+  EventUtils.synthesizeKey("KEY_ArrowRight");
+  await shown;
+  ok(true, "Triggered moz-button-subviewbutton-nav on right arrow");
+  await hidePopup();
+});
+
 // Test navigation to a button which is initially disabled and later enabled.
 add_task(async function testDynamicButton() {
   gMainButton2.disabled = true;
@@ -578,5 +659,30 @@ add_task(async function testMozToggle() {
   EventUtils.synthesizeKey("KEY_Enter");
   await gToggle.updateComplete;
   is(gToggle.pressed, false, "Toggle pressed state changes via enter.");
+  await hidePopup();
+});
+
+// Test that tab key is not overridden in elements that capture focus.
+add_task(async function testTabCapturesFocus() {
+  await openPopup();
+  await showSubView(gComponentView);
+
+  let backButton = gComponentView.querySelector(".subviewbutton-back");
+  backButton.id = "shadowBack";
+  await expectFocusAfterKey("Tab", backButton);
+
+  // Only Button A can be navigated to before looping to back button.
+  await expectFocusAfterKey("Tab", gShadowRootButtonA);
+
+  await expectFocusAfterKey("Tab", backButton);
+
+  gShadowRoot.dataset.capturesFocus = "true";
+
+  // Both buttons can be focused before looping.
+  await expectFocusAfterKey("Tab", gShadowRootButtonA);
+  await expectFocusAfterKey("Tab", gShadowRootButtonB);
+
+  await expectFocusAfterKey("Tab", backButton);
+
   await hidePopup();
 });

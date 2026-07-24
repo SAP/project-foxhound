@@ -1,6 +1,5 @@
 use alloc::{format, string::String};
 
-use super::validate_atomic_compare_exchange_struct;
 use super::{
     analyzer::{UniformityDisruptor, UniformityRequirements},
     ExpressionError, FunctionInfo, ModuleInfo,
@@ -213,10 +212,22 @@ pub enum FunctionError {
     WorkgroupUniformLoadInvalidPointer(Handle<crate::Expression>),
     #[error("Subgroup operation is invalid")]
     InvalidSubgroup(#[from] SubgroupError),
+    #[error("Invalid target type for a cooperative store")]
+    InvalidCooperativeStoreTarget(Handle<crate::Expression>),
+    #[error("Cooperative load/store data pointer has invalid type")]
+    InvalidCooperativeDataPointer(Handle<crate::Expression>),
     #[error("Emit statement should not cover \"result\" expressions like {0:?}")]
     EmitResult(Handle<crate::Expression>),
     #[error("Expression not visited by the appropriate statement")]
     UnvisitedExpression(Handle<crate::Expression>),
+    #[error("Expression {0:?} in mesh shader intrinsic call should be `u32` (is the expression a signed integer?)")]
+    InvalidMeshFunctionCall(Handle<crate::Expression>),
+    #[error("Mesh output types differ from {0:?} to {1:?}")]
+    ConflictingMeshOutputTypes(Handle<crate::Expression>, Handle<crate::Expression>),
+    #[error("Task payload variables differ from {0:?} to {1:?}")]
+    ConflictingTaskPayloadVariables(Handle<crate::Expression>, Handle<crate::Expression>),
+    #[error("Mesh shader output at {0:?} is not a user-defined struct")]
+    InvalidMeshShaderOutputType(Handle<crate::Expression>),
 }
 
 bitflags::bitflags! {
@@ -509,7 +520,7 @@ impl super::Validator {
                         | crate::AtomicFunction::Subtract
                         | crate::AtomicFunction::Exchange { compare: None }
                 ) {
-                    log::error!("Float32 atomic operation {:?} is not supported", fun);
+                    log::error!("Float32 atomic operation {fun:?} is not supported");
                     return Err(AtomicError::InvalidOperator(*fun)
                         .with_span_handle(value, context.expressions)
                         .into_other());
@@ -576,7 +587,7 @@ impl super::Validator {
                             .with_span_handle(result, context.expressions)
                             .into_other());
                     };
-                    if !validate_atomic_compare_exchange_struct(
+                    if !super::validate_atomic_compare_exchange_struct(
                         context.types,
                         members,
                         |ty: &crate::TypeInner| *ty == crate::TypeInner::Scalar(pointer_scalar),
@@ -639,7 +650,7 @@ impl super::Validator {
             crate::TypeInner::Scalar(scalar) => (true, scalar),
             crate::TypeInner::Vector { scalar, .. } => (false, scalar),
             _ => {
-                log::error!("Subgroup operand type {:?}", argument_inner);
+                log::error!("Subgroup operand type {argument_inner:?}");
                 return Err(SubgroupError::InvalidOperand(argument)
                     .with_span_handle(argument, context.expressions)
                     .into_other());
@@ -654,7 +665,7 @@ impl super::Validator {
             (sk::Sint | sk::Uint, sg::And | sg::Or | sg::Xor) => {}
 
             (_, _) => {
-                log::error!("Subgroup operand type {:?}", argument_inner);
+                log::error!("Subgroup operand type {argument_inner:?}");
                 return Err(SubgroupError::InvalidOperand(argument)
                     .with_span_handle(argument, context.expressions)
                     .into_other());
@@ -714,8 +725,7 @@ impl super::Validator {
                     crate::TypeInner::Scalar(crate::Scalar::U32) => {}
                     _ => {
                         log::error!(
-                            "Subgroup gather index type {:?}, expected unsigned int",
-                            index_ty
+                            "Subgroup gather index type {index_ty:?}, expected unsigned int"
                         );
                         return Err(SubgroupError::InvalidOperand(argument)
                             .with_span_handle(index, context.expressions)
@@ -740,7 +750,7 @@ impl super::Validator {
             crate::TypeInner::Scalar ( scalar, .. ) | crate::TypeInner::Vector { scalar, .. }
             if matches!(scalar.kind, crate::ScalarKind::Uint | crate::ScalarKind::Sint | crate::ScalarKind::Float)
         ) {
-            log::error!("Subgroup gather operand type {:?}", argument_inner);
+            log::error!("Subgroup gather operand type {argument_inner:?}");
             return Err(SubgroupError::InvalidOperand(argument)
                 .with_span_handle(argument, context.expressions)
                 .into_other());
@@ -797,7 +807,9 @@ impl super::Validator {
                             | Ex::As { .. }
                             | Ex::ArrayLength(_)
                             | Ex::RayQueryGetIntersection { .. }
-                            | Ex::RayQueryVertexPositions { .. } => {
+                            | Ex::RayQueryVertexPositions { .. }
+                            | Ex::CooperativeLoad { .. }
+                            | Ex::CooperativeMultiplyAdd { .. } => {
                                 self.emit_expression(handle, context)?
                             }
                             Ex::CallResult(_)
@@ -1007,7 +1019,7 @@ impl super::Validator {
                     stages &= super::ShaderStages::FRAGMENT;
                 }
                 S::ControlBarrier(barrier) | S::MemoryBarrier(barrier) => {
-                    stages &= super::ShaderStages::COMPUTE;
+                    stages &= super::ShaderStages::COMPUTE_LIKE;
                     if barrier.contains(crate::Barrier::SUB_GROUP) {
                         if !self.capabilities.contains(
                             super::Capabilities::SUBGROUP | super::Capabilities::SUBGROUP_BARRIER,
@@ -1436,7 +1448,7 @@ impl super::Validator {
                     }
                 }
                 S::WorkGroupUniformLoad { pointer, result } => {
-                    stages &= super::ShaderStages::COMPUTE;
+                    stages &= super::ShaderStages::COMPUTE_LIKE;
                     let pointer_inner =
                         context.resolve_type_inner(pointer, &self.valid_expression_set)?;
                     match *pointer_inner {
@@ -1467,7 +1479,23 @@ impl super::Validator {
                         base: ty,
                         space: AddressSpace::WorkGroup,
                     };
-                    if !expected_pointer_inner.non_struct_equivalent(pointer_inner, context.types) {
+                    // workgroupUniformLoad on atomic<T> returns T, not atomic<T>.
+                    // Verify the pointer's atomic scalar matches the result scalar.
+                    let atomic_specialization_ok = match *pointer_inner {
+                        Ti::Pointer {
+                            base: pointer_base,
+                            space: AddressSpace::WorkGroup,
+                        } => match (&context.types[pointer_base].inner, &context.types[ty].inner) {
+                            (&Ti::Atomic(pointer_scalar), &Ti::Scalar(result_scalar)) => {
+                                pointer_scalar == result_scalar
+                            }
+                            _ => false,
+                        },
+                        _ => false,
+                    };
+                    if !expected_pointer_inner.non_struct_equivalent(pointer_inner, context.types)
+                        && !atomic_specialization_ok
+                    {
                         return Err(FunctionError::WorkgroupUniformLoadInvalidPointer(pointer)
                             .with_span_static(span, "WorkGroupUniformLoad"));
                     }
@@ -1567,8 +1595,7 @@ impl super::Validator {
                             crate::TypeInner::Scalar(crate::Scalar::BOOL,)
                         ) {
                             log::error!(
-                                "Subgroup ballot predicate type {:?} expected bool",
-                                predicate_inner
+                                "Subgroup ballot predicate type {predicate_inner:?} expected bool"
                             );
                             return Err(SubgroupError::InvalidOperand(predicate)
                                 .with_span_handle(predicate, context.expressions)
@@ -1620,6 +1647,37 @@ impl super::Validator {
                     }
                     self.validate_subgroup_gather(mode, argument, result, context)?;
                 }
+                S::CooperativeStore { target, ref data } => {
+                    stages &= super::ShaderStages::COMPUTE;
+
+                    let target_scalar =
+                        match *context.resolve_type_inner(target, &self.valid_expression_set)? {
+                            Ti::CooperativeMatrix { scalar, .. } => scalar,
+                            ref other => {
+                                log::error!("Target operand type: {other:?}");
+                                return Err(FunctionError::InvalidCooperativeStoreTarget(target)
+                                    .with_span_handle(target, context.expressions));
+                            }
+                        };
+
+                    let ptr_ty = context.resolve_pointer_type(data.pointer);
+                    let ptr_scalar = ptr_ty
+                        .pointer_base_type()
+                        .and_then(|tr| tr.inner_with(context.types).scalar());
+                    if ptr_scalar != Some(target_scalar) {
+                        return Err(FunctionError::InvalidCooperativeDataPointer(data.pointer)
+                            .with_span_handle(data.pointer, context.expressions));
+                    }
+
+                    let ptr_space = ptr_ty.pointer_space().unwrap_or(AddressSpace::Handle);
+                    if !ptr_space.access().contains(crate::StorageAccess::STORE) {
+                        return Err(FunctionError::InvalidStorePointer(data.pointer)
+                            .with_span_static(
+                                context.expressions.get_span(data.pointer),
+                                "writing to this location is not permitted",
+                            ));
+                    }
+                }
             }
         }
         Ok(BlockInfo { stages })
@@ -1645,7 +1703,7 @@ impl super::Validator {
         fun_info: &FunctionInfo,
         local_expr_kind: &crate::proc::ExpressionKindTracker,
     ) -> Result<(), LocalVariableError> {
-        log::debug!("var {:?}", var);
+        log::debug!("var {var:?}");
         let type_info = self
             .types
             .get(var.ty.index())

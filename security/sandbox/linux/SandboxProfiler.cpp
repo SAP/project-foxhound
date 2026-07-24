@@ -4,7 +4,6 @@
 
 #include <time.h>
 #include <unistd.h>
-#include <cstring>
 
 #include "SandboxInfo.h"
 
@@ -66,11 +65,11 @@ void SandboxProfiler::Create() {
   }
 
   if (!gSyscallsQueue) {
-    gSyscallsQueue = new SandboxProfilerQueue(15);
+    gSyscallsQueue = new SandboxProfilerQueue();
   }
 
   if (!gLogsQueue) {
-    gLogsQueue = new SandboxProfilerQueue(15);
+    gLogsQueue = new SandboxProfilerQueue();
   }
 
   if (!gProfiler) {

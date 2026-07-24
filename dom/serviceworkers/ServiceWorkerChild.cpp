@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerChild.h"
+
 #include "ServiceWorker.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
@@ -63,7 +64,7 @@ void ServiceWorkerChild::MaybeStartTeardown() {
     return;
   }
   mTeardownStarted = true;
-  Unused << SendTeardown();
+  (void)SendTeardown();
 }
 
 }  // namespace mozilla::dom

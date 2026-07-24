@@ -3,9 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 // fxr-fullScreen.js is a provisional, stripped-down clone of
 //   browser\base\content\browser-fullScreenAndPointerLock.js
 // that is adapted for Firefox Reality on Desktop.

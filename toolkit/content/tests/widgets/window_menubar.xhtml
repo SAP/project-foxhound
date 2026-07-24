@@ -15,28 +15,28 @@
   <hbox style="margin-left: 275px; margin-top: 275px">
     <menubar id="menubar">
       <menu id="filemenu" label="File" accesskey="F">
-        <menupopup id="filepopup">
+        <menupopup id="filepopup" native="false">
           <menuitem id="item1" label="Open" accesskey="O" />
           <menuitem id="item2" label="Save" accesskey="S" />
           <menuitem id="item3" label="Close" accesskey="C" />
         </menupopup>
       </menu>
       <menu id="secretmenu" label="Secret Menu" accesskey="S" disabled="true">
-        <menupopup>
+        <menupopup native="false">
           <menuitem label="Secret Command" accesskey="S" />
         </menupopup>
       </menu>
       <menu id="editmenu" label="Edit" accesskey="E">
-        <menupopup id="editpopup">
+        <menupopup id="editpopup" native="false">
           <menuitem id="cut" label="Cut" accesskey="t" disabled="true" />
           <menuitem id="copy" label="Copy" accesskey="C" />
           <menuitem id="paste" label="Paste" accesskey="P" />
         </menupopup>
       </menu>
       <menu id="viewmenu" label="View" accesskey="V">
-        <menupopup id="viewpopup">
+        <menupopup id="viewpopup" native="false">
           <menu id="toolbar" label="Toolbar" accesskey="T">
-            <menupopup id="toolbarpopup">
+            <menupopup id="toolbarpopup" native="false">
               <menuitem
                 id="navigation"
                 label="Navigation"
@@ -48,7 +48,7 @@
           </menu>
           <menuitem label="Status Bar" accesskey="S" />
           <menu label="Sidebar" accesskey="d">
-            <menupopup>
+            <menupopup native="false">
               <menuitem label="Bookmarks" accesskey="B" />
               <menuitem label="History" accesskey="H" />
             </menupopup>
@@ -56,7 +56,7 @@
         </menupopup>
       </menu>
       <menu id="helpmenu" label="Help" accesskey="H">
-        <menupopup id="helppopup">
+        <menupopup id="helppopup" native="false">
           <label value="Unselectable" />
           <menuitem id="contents" label="Contents" accesskey="C" />
           <menuitem label="More Info" accesskey="I" />
@@ -64,7 +64,7 @@
           <menuitem label="Another Menu" />
           <menuitem id="one" label="One" />
           <menu id="only" label="Only Menu">
-            <menupopup>
+            <menupopup native="false">
               <menuitem label="Test Submenu" />
             </menupopup>
           </menu>

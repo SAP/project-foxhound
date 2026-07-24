@@ -141,7 +141,7 @@ export class SyncedTabsController {
       const { switchToTabHavingURI } =
         event.view.browsingContext.topChromeWindow;
       switchToTabHavingURI(event.composedTarget.href, true, {
-        ignoreFragment: true,
+        ignoreFragment: "whenComparingAndReplace",
       });
     }
   }

@@ -83,6 +83,12 @@ interface nsIBrowserDOMWindow : nsISupports
    * corresponding to this nsIBrowserDOMWindow.
    */
   const short OPEN_NEWTAB_FOREGROUND = 6;
+  /**
+   * Open in a new content tab in the toplevel browser window
+   * corresponding to this nsIBrowserDOMWindow. The new content
+   * will be created immediately after the active tab in that window.
+   */
+  const short OPEN_NEWTAB_AFTER_CURRENT = 7;
 
   /**
    * Values for createContentWindow's and openURI's aFlags parameter.

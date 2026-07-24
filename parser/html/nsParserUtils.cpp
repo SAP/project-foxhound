@@ -5,7 +5,6 @@
 
 #include "nsParserUtils.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptLoader.h"
@@ -17,7 +16,6 @@
 #include "nsHtml5Module.h"
 #include "nsIContent.h"
 #include "nsIContentSink.h"
-#include "nsIDTD.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDocumentEncoder.h"
 #include "nsIFragmentContentSink.h"
@@ -54,12 +52,12 @@ static nsresult SanitizeWith(const nsAString& aInput, nsAString& aOutput,
   aDoSanitize(document.get());
 
   nsCOMPtr<nsIDocumentEncoder> encoder = do_createDocumentEncoder("text/html");
-  encoder->NativeInit(document, u"text/html"_ns,
-                      nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration |
-                          nsIDocumentEncoder::OutputNoScriptContent |
-                          nsIDocumentEncoder::OutputEncodeBasicEntities |
-                          nsIDocumentEncoder::OutputLFLineBreak |
-                          nsIDocumentEncoder::OutputRaw);
+  encoder->Init(document, u"text/html"_ns,
+                nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration |
+                    nsIDocumentEncoder::OutputNoScriptContent |
+                    nsIDocumentEncoder::OutputEncodeBasicEntities |
+                    nsIDocumentEncoder::OutputLFLineBreak |
+                    nsIDocumentEncoder::OutputRaw);
   return encoder->EncodeToString(aOutput);
 }
 
@@ -92,11 +90,14 @@ nsParserUtils::ParseFragment(const nsAString& aFragment, uint32_t aFlags,
 
   nsAutoScriptBlockerSuppressNodeRemoved autoBlocker;
 
+  bool scripts_enabled = false;
   // stop scripts
-  RefPtr<ScriptLoader> loader = document->ScriptLoader();
-  bool scripts_enabled = loader->GetEnabled();
-  if (scripts_enabled) {
-    loader->SetEnabled(false);
+  RefPtr<ScriptLoader> loader = document->GetScriptLoader();
+  if (loader) {
+    scripts_enabled = loader->GetEnabled();
+    if (scripts_enabled) {
+      loader->SetEnabled(false);
+    }
   }
 
   // Wrap things in a div or body for parsing, but it won't show up in

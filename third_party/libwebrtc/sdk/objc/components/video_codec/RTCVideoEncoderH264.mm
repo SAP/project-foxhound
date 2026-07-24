@@ -28,6 +28,7 @@
 #import "components/video_frame_buffer/RTCCVPixelBuffer.h"
 #import "helpers.h"
 
+#include "api/video/video_timing.h"
 #include "api/video_codecs/h264_profile_level_id.h"
 #include "common_video/h264/h264_bitstream_parser.h"
 #include "common_video/include/bitrate_adjuster.h"
@@ -494,7 +495,7 @@ NSUInteger GetMaxSampleRate(
   }
 
   CMTime presentationTimeStamp =
-      CMTimeMake(frame.timeStampNs / rtc::kNumNanosecsPerMillisec, 1000);
+      CMTimeMake(frame.timeStampNs / webrtc::kNumNanosecsPerMillisec, 1000);
   CFDictionaryRef frameProperties = nullptr;
   if (isKeyframeRequired) {
     CFTypeRef keys[] = {kVTEncodeFrameOptionKey_ForceKeyFrame};
@@ -503,14 +504,14 @@ NSUInteger GetMaxSampleRate(
   }
 
   std::unique_ptr<RTCFrameEncodeParams> encodeParams;
-  encodeParams.reset(
-      new RTCFrameEncodeParams(self,
-                               codecSpecificInfo,
-                               _width,
-                               _height,
-                               frame.timeStampNs / rtc::kNumNanosecsPerMillisec,
-                               frame.timeStamp,
-                               frame.rotation));
+  encodeParams.reset(new RTCFrameEncodeParams(
+      self,
+      codecSpecificInfo,
+      _width,
+      _height,
+      frame.timeStampNs / webrtc::kNumNanosecsPerMillisec,
+      frame.timeStamp,
+      frame.rotation));
   encodeParams->codecSpecificInfo.packetizationMode = _packetizationMode;
 
   // Update the bitrate if needed.
@@ -849,7 +850,8 @@ NSUInteger GetMaxSampleRate(
     RTC_LOG(LS_INFO) << "Generated keyframe";
   }
 
-  __block std::unique_ptr<rtc::Buffer> buffer = std::make_unique<rtc::Buffer>();
+  __block std::unique_ptr<webrtc::Buffer> buffer =
+      std::make_unique<webrtc::Buffer>();
   if (!webrtc::H264CMSampleBufferToAnnexBBuffer(
           sampleBuffer, isKeyframe, buffer.get())) {
     return;

@@ -12,6 +12,7 @@
 #include "nsINetworkInterceptController.h"
 #include "nsIInputStream.h"
 #include "nsICacheInfoChannel.h"
+#include "nsInputStreamPump.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
 
@@ -319,6 +320,16 @@ class InterceptedHttpChannel final
   void DoNotifyListenerCleanup() override;
 
   void DoAsyncAbort(nsresult aStatus) override;
+
+  NS_IMETHOD GetDecompressDictionary(
+      DictionaryCacheEntry** aDictionary) override {
+    *aDictionary = nullptr;
+    return NS_OK;
+  }
+  NS_IMETHOD SetDecompressDictionary(
+      DictionaryCacheEntry* aDictionary) override {
+    return NS_OK;
+  }
 };
 
 }  // namespace mozilla::net

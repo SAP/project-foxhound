@@ -9,18 +9,22 @@ from marionette_driver.wait import Wait
 from marionette_harness import MarionetteTestCase
 
 
+def get_update_server_response(update_url, force: int):
+    response = requests.get(f"{update_url}?force={force}")
+    if response.status_code != 200:
+        raise Exception(
+            f"Tried to fetch update.xml but got response code {response.status_code}"
+        )
+
+    return ET.fromstring(response.text)
+
+
 def get_possible_target_versions(update_url):
     """If throttled to a lower target version, return both possible versions"""
     versions = []
     for n in range(2):
-        response = requests.get(f"{update_url}?force={n}")
-        if response.status_code != 200:
-            raise Exception(
-                f"Tried to fetch update.xml but got response code {response.status_code}"
-            )
-
         # Get the target version
-        root = ET.fromstring(response.text)
+        root = get_update_server_response(update_url, n)
         versions.append(root[0].get("appVersion"))
 
     return list(set(versions))
@@ -63,12 +67,28 @@ class TestBackgroundUpdate(MarionetteTestCase):
                     fh.write(f"Target version options: {', '.join(target_vers)}\n")
 
         # Wait for the background update to be ready by checking for popup
+        # Long timeouts are a known issue - Bug 2000040
         Wait(self.marionette, timeout=100).until(
             lambda _: self.marionette.find_elements(By.ID, "appMenu-notification-popup")
         )
 
+        # Try runs build unsigned updates, releases can't update on unsigned MARs
+        # ...so we're just going to check that balrog gives a reasonably-named file that exists
+        # We run the code here to maximize what gets run in try.
+        if environ.get("BALROG_STAGING"):
+            root = get_update_server_response(update_url, 1)
+            patch_url = root[0][0].get("URL")
+            assert f"/{target_vers[-1]}-candidates" in patch_url, (
+                f'"/{target_vers[-1]}-candidates not in patch url: {patch_url}'
+            )
+            patch_response = requests.get(patch_url)
+            patch_response.raise_for_status()
+            return True
+
         # Dismiss the popup
+        self.marionette.find_element(By.ID, "urlbar-input").click()
         self.marionette.find_element(By.ID, "PanelUI-menu-button").click()
+        self.marionette.find_element(By.ID, "urlbar-input").click()
         self.marionette.find_element(By.ID, "PanelUI-menu-button").click()
 
         # Check that there is a green badge on hamburger menu
@@ -124,5 +144,4 @@ class TestBackgroundUpdate(MarionetteTestCase):
         )
 
     def tearDown(self):
-
         MarionetteTestCase.tearDown(self)

@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union, overload
 
 from packaging.version import Version
 
@@ -34,6 +34,30 @@ VCS_CLASSES: dict[str, type] = {
     "jj": JujutsuRepository,
     "src": SrcRepository,
 }
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["git"]
+) -> GitRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["hg"]
+) -> HgRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["jj"]
+) -> JujutsuRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["src"]
+) -> SrcRepository: ...
 
 
 def get_specific_repository_object(path: Optional[Union[str, Path]], vcs: str):

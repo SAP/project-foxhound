@@ -5,8 +5,6 @@
 package org.mozilla.fenix.tabstray
 
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,8 +18,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode.selectedTabs.isEmpty())
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
 
@@ -29,8 +25,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
         store.dispatch(TabsTrayAction.EnterSelectMode)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.mode.selectedTabs.isEmpty())
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
@@ -42,13 +36,9 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.mode is TabsTrayState.Mode.Normal)
     }
@@ -58,8 +48,6 @@ class TabsTrayStoreTest {
         val store = TabsTrayStore()
 
         store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab1")))
-
-        store.waitUntilIdle()
 
         assertEquals("tab1", store.state.mode.selectedTabs.take(1).first().id)
     }
@@ -72,13 +60,9 @@ class TabsTrayStoreTest {
         store.dispatch(TabsTrayAction.AddSelectTab(tabForRemoval))
         store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab2")))
 
-        store.waitUntilIdle()
-
         assertEquals(2, store.state.mode.selectedTabs.size)
 
         store.dispatch(TabsTrayAction.RemoveSelectTab(tabForRemoval))
-
-        store.waitUntilIdle()
 
         assertEquals(1, store.state.mode.selectedTabs.size)
         assertEquals("tab2", store.state.mode.selectedTabs.take(1).first().id)
@@ -99,18 +83,23 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.PageSelected(Page.SyncedTabs))
 
-        store.waitUntilIdle()
-
         assertEquals(Page.SyncedTabs, store.state.selectedPage)
     }
 
     @Test
     fun `WHEN position is converted to page THEN page is correct`() {
-        assert(Page.positionToPage(0) == Page.PrivateTabs)
-        assert(Page.positionToPage(1) == Page.NormalTabs)
-        assert(Page.positionToPage(2) == Page.SyncedTabs)
-        assert(Page.positionToPage(3) == Page.SyncedTabs)
-        assert(Page.positionToPage(-1) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = 0) == Page.PrivateTabs)
+        assert(Page.positionToPage(position = 1) == Page.NormalTabs)
+        assert(Page.positionToPage(position = 2) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = 3) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = -1) == Page.SyncedTabs)
+    }
+
+    @Test
+    fun `WHEN Page is converted to an index THEN the index is correct`() {
+        assert(Page.pageToPosition(page = Page.PrivateTabs) == 0)
+        assert(Page.pageToPosition(page = Page.NormalTabs) == 1)
+        assert(Page.pageToPosition(page = Page.SyncedTabs) == 2)
     }
 
     @Test
@@ -120,8 +109,6 @@ class TabsTrayStoreTest {
         assertFalse(store.state.syncing)
 
         store.dispatch(TabsTrayAction.SyncNow)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.syncing)
     }
@@ -134,8 +121,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.SyncCompleted)
 
-        store.waitUntilIdle()
-
         assertFalse(store.state.syncing)
     }
 
@@ -146,8 +131,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.UpdateSelectedTabId(tabId = expected))
 
-        store.waitUntilIdle()
-
         assertEquals(expected, store.state.selectedTabId)
     }
 
@@ -157,7 +140,7 @@ class TabsTrayStoreTest {
 
         assertFalse(tabsTrayStore.state.inactiveTabsExpanded)
 
-        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true)).joinBlocking()
+        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true))
 
         assertTrue(tabsTrayStore.state.inactiveTabsExpanded)
     }

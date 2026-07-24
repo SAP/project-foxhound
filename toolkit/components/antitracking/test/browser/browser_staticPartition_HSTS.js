@@ -44,12 +44,6 @@ function cleanupHSTS(aUseSite) {
   }
 }
 
-function promiseTabLoadEvent(aTab, aURL, aFinalURL) {
-  info("Wait for load tab event");
-  BrowserTestUtils.startLoadingURIString(aTab.linkedBrowser, aURL);
-  return BrowserTestUtils.browserLoaded(aTab.linkedBrowser, false, aFinalURL);
-}
-
 function waitFor(host, type) {
   return new Promise(resolve => {
     const observer = channel => {
@@ -78,14 +72,26 @@ add_task(async function () {
     let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
 
     // Let's load the secureURL as first-party in order to activate HSTS.
-    await promiseTabLoadEvent(tab, secureURL, secureURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: secureURL,
+      finalURI: secureURL,
+    });
 
     // Let's test HSTS: unsecure -> secure.
-    await promiseTabLoadEvent(tab, unsecureURL, secureURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: unsecureURL,
+      finalURI: secureURL,
+    });
     ok(true, "unsecure -> secure, first-party works!");
 
     // Let's load a first-party.
-    await promiseTabLoadEvent(tab, unsecureEmptyURL, unsecureEmptyURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: unsecureEmptyURL,
+      finalURI: unsecureEmptyURL,
+    });
 
     let finalURL = waitFor(
       "example.com",
@@ -117,7 +123,11 @@ add_task(async function test_subresource() {
     let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
 
     // Load a secure page as first party.
-    await promiseTabLoadEvent(tab, secureEmptyURL, secureEmptyURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: secureEmptyURL,
+      finalURI: secureEmptyURL,
+    });
 
     let loadPromise = waitFor(
       "example.com",
@@ -136,7 +146,11 @@ add_task(async function test_subresource() {
     await loadPromise;
 
     // Reload the secure page as first party.
-    await promiseTabLoadEvent(tab, secureEmptyURL, secureEmptyURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: secureEmptyURL,
+      finalURI: secureEmptyURL,
+    });
 
     let finalURL = waitFor(
       "example.com",
@@ -157,11 +171,11 @@ add_task(async function test_subresource() {
     is(await finalURL, unsecureImgURL, "HSTS isn't set for 3rd parties");
 
     // Load the secure page with a different origin as first party.
-    await promiseTabLoadEvent(
-      tab,
-      secureAnotherEmptyURL,
-      secureAnotherEmptyURL
-    );
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: secureAnotherEmptyURL,
+      finalURI: secureAnotherEmptyURL,
+    });
 
     finalURL = waitFor("example.com", Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE);
 
@@ -195,10 +209,18 @@ add_task(async function test_includeSubDomains() {
     let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
 
     // Load a secure page as first party to activate HSTS.
-    await promiseTabLoadEvent(tab, secureIncludeSubURL, secureIncludeSubURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: secureIncludeSubURL,
+      finalURI: secureIncludeSubURL,
+    });
 
     // Load a unsecure sub-domain page as first party to see if it's upgraded.
-    await promiseTabLoadEvent(tab, unsecureSubEmptyURL, secureSubEmptyURL);
+    await BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: unsecureSubEmptyURL,
+      finalURI: secureSubEmptyURL,
+    });
 
     // Load a sub domain page which will trigger the cert error page.
     let certErrorLoaded = BrowserTestUtils.waitForErrorPage(tab.linkedBrowser);

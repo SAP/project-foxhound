@@ -119,17 +119,15 @@ def test_buffering_on(get_message_logger, assert_actions):
 
     # test end, it failed! All previsouly buffered messages are now logged.
     ml.fake_message("test_end", status="FAIL")
-    assert_actions(
-        [
-            "log",  # "Buffered messages logged"
-            "test_status",
-            "log",
-            "test_status",
-            "log",
-            "log",  # "Buffered messages finished"
-            "test_end",
-        ]
-    )
+    assert_actions([
+        "log",  # "Buffered messages logged"
+        "test_status",
+        "log",
+        "test_status",
+        "log",
+        "log",  # "Buffered messages finished"
+        "test_end",
+    ])
 
     # enabling buffering outside of a test has no affect
     ml.fake_message("buffering_on")

@@ -8,12 +8,17 @@
   --visual-picker-item-border-color: var(--border-color-interactive);
 
   cursor: default;
+  display: flex;
 }
 
 .picker-item {
+  --visual-picker-item-border-radius-inner: calc(var(--visual-picker-item-border-radius) - var(--visual-picker-item-border-width));
+
+  overflow: hidden;
   border: var(--visual-picker-item-border-width) solid var(--visual-picker-item-border-color);
   border-radius: var(--visual-picker-item-border-radius);
   margin: 2px;
+  flex: 1;
 
   &:focus {
     outline: none;
@@ -26,17 +31,52 @@
 
   &[checked] {
     --visual-picker-item-border-width: 3px;
-    border-color: var(--color-accent-primary);
+    border-color: var(--border-color-selected);
     margin: 0;
   }
 
   ::slotted(:first-child) {
-    --visual-picker-item-child-border-radius: calc(var(--visual-picker-item-border-radius) - var(--visual-picker-item-border-width));
+    --visual-picker-item-child-border-radius: var(--visual-picker-item-border-radius-inner);
     border-radius: var(--visual-picker-item-child-border-radius);
+  }
+
+  .text-content:has(.label, .description) {
+    padding: var(--space-small) var(--space-medium) var(--space-medium);
+    text-align: center;
   }
 
   .label {
     margin: 0;
-    padding: var(--space-small);
+  }
+
+  .description {
+    margin: 0;
+    font-size: var(--font-size-small);
+    color: var(--text-color-deemphasized);
+  }
+
+  .label + .description {
+    margin-block-start: var(--space-xsmall);
+  }
+
+  img {
+    display: block;
+    width: 100%;
+  }
+}
+
+.image-item {
+  background-color: var(--background-color-box);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  &:hover {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:hover:active {
+    background-color: var(--button-background-color-active);
   }
 }

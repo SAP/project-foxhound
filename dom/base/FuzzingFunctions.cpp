@@ -6,24 +6,20 @@
 
 #include "FuzzingFunctions.h"
 
-#include "nsJSEnvironment.h"
 #include "js/GCAPI.h"
-#include "mozilla/dom/KeyboardEvent.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Fuzzing.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextInputProcessor.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/KeyboardEvent.h"
 #include "nsFocusManager.h"
 #include "nsIAccessibilityService.h"
+#include "nsITimer.h"
+#include "nsJSEnvironment.h"
 #include "nsPIDOMWindow.h"
 #include "xpcAccessibilityService.h"
-#include "mozilla/SpinEventLoopUntil.h"
-#include "nsITimer.h"
-
-#ifdef FUZZING_SNAPSHOT
-#  include "mozilla/dom/ContentChild.h"
-#endif
 
 namespace mozilla::dom {
 
@@ -50,6 +46,11 @@ void FuzzingFunctions::Crash(const GlobalObject& aGlobalObject,
     strcpy(&msgbuf[sizeof(msgbuf) - 4], "...");
   }
   MOZ_CRASH_UNSAFE_PRINTF("%s", msgbuf);
+}
+
+/* static */
+void FuzzingFunctions::KillGPUProcess(const GlobalObject&) {
+  ContentChild::GetSingleton()->SendKillGPUProcess();
 }
 
 /* static */
@@ -86,25 +87,26 @@ struct ModifierKey final {
   KeyNameIndex mKeyNameIndex;
   bool mLockable;
 
-  ModifierKey(Modifier aModifier, KeyNameIndex aKeyNameIndex, bool aLockable)
+  constexpr ModifierKey(Modifier aModifier, KeyNameIndex aKeyNameIndex,
+                        bool aLockable)
       : mModifier(aModifier),
         mKeyNameIndex(aKeyNameIndex),
         mLockable(aLockable) {}
 };
 
-MOZ_RUNINIT static const ModifierKey kModifierKeys[] = {
-    ModifierKey(MODIFIER_ALT, KEY_NAME_INDEX_Alt, false),
-    ModifierKey(MODIFIER_ALTGRAPH, KEY_NAME_INDEX_AltGraph, false),
-    ModifierKey(MODIFIER_CONTROL, KEY_NAME_INDEX_Control, false),
-    ModifierKey(MODIFIER_FN, KEY_NAME_INDEX_Fn, false),
-    ModifierKey(MODIFIER_META, KEY_NAME_INDEX_Meta, false),
-    ModifierKey(MODIFIER_SHIFT, KEY_NAME_INDEX_Shift, false),
-    ModifierKey(MODIFIER_SYMBOL, KEY_NAME_INDEX_Symbol, false),
-    ModifierKey(MODIFIER_CAPSLOCK, KEY_NAME_INDEX_CapsLock, true),
-    ModifierKey(MODIFIER_FNLOCK, KEY_NAME_INDEX_FnLock, true),
-    ModifierKey(MODIFIER_NUMLOCK, KEY_NAME_INDEX_NumLock, true),
-    ModifierKey(MODIFIER_SCROLLLOCK, KEY_NAME_INDEX_ScrollLock, true),
-    ModifierKey(MODIFIER_SYMBOLLOCK, KEY_NAME_INDEX_SymbolLock, true),
+static constexpr ModifierKey kModifierKeys[] = {
+    {MODIFIER_ALT, KEY_NAME_INDEX_Alt, false},
+    {MODIFIER_ALTGRAPH, KEY_NAME_INDEX_AltGraph, false},
+    {MODIFIER_CONTROL, KEY_NAME_INDEX_Control, false},
+    {MODIFIER_FN, KEY_NAME_INDEX_Fn, false},
+    {MODIFIER_META, KEY_NAME_INDEX_Meta, false},
+    {MODIFIER_SHIFT, KEY_NAME_INDEX_Shift, false},
+    {MODIFIER_SYMBOL, KEY_NAME_INDEX_Symbol, false},
+    {MODIFIER_CAPSLOCK, KEY_NAME_INDEX_CapsLock, true},
+    {MODIFIER_FNLOCK, KEY_NAME_INDEX_FnLock, true},
+    {MODIFIER_NUMLOCK, KEY_NAME_INDEX_NumLock, true},
+    {MODIFIER_SCROLLLOCK, KEY_NAME_INDEX_ScrollLock, true},
+    {MODIFIER_SYMBOLLOCK, KEY_NAME_INDEX_SymbolLock, true},
 };
 
 /* static */
@@ -399,7 +401,7 @@ void FuzzingFunctions::SpinEventLoopFor(const GlobalObject&,
   nsCOMPtr<nsITimer> timer = NS_NewTimer();
   nsresult rv = timer->InitWithNamedFuncCallback(
       SpinEventLoopForCallback, &didRun, aMilliseconds, nsITimer::TYPE_ONE_SHOT,
-      "FuzzingFunctions::SpinEventLoopFor");
+      "FuzzingFunctions::SpinEventLoopFor"_ns);
   if (NS_FAILED(rv)) {
     return;
   }

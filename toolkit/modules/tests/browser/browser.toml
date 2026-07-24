@@ -11,16 +11,19 @@ support-files = [
 ["browser_BrowserUtils.js"]
 
 ["browser_CreditCard.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
 tags = "bleedover"
 
 ["browser_Finder.js"]
 
 ["browser_FinderHighlighter.js"]
-skip-if = ["true"] # bug 1831518 covers re-enabling
+skip-if = [
+  "true", # bug 1831518 covers re-enabling
+]
 
 ["browser_FinderHighlighter2.js"]
-skip-if = ["true"] # bug 1831518 covers re-enabling
+skip-if = [
+  "true", # bug 1831518 covers re-enabling
+]
 
 ["browser_FinderSound.js"]
 
@@ -49,7 +52,9 @@ skip-if = ["true"] # bug 1831518 covers re-enabling
 ["browser_LayoutUtils.js"]
 
 ["browser_Troubleshoot.js"]
-skip-if = ["os == 'win' && os_version == '11.26100' && bits == 64 && asan"] # Bug 1863166
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1863166
+]
 
 ["browser_web_channel.js"]
 https_first_disabled = true

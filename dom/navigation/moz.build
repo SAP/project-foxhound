@@ -12,6 +12,7 @@ EXPORTS.mozilla.dom += [
     "NavigationActivation.h",
     "NavigationDestination.h",
     "NavigationHistoryEntry.h",
+    "NavigationPrecommitController.h",
     "NavigationTransition.h",
     "NavigationUtils.h",
     "UserNavigationInvolvement.h",
@@ -22,6 +23,7 @@ UNIFIED_SOURCES += [
     "NavigationActivation.cpp",
     "NavigationDestination.cpp",
     "NavigationHistoryEntry.cpp",
+    "NavigationPrecommitController.cpp",
     "NavigationTransition.cpp",
     "NavigationUtils.cpp",
 ]

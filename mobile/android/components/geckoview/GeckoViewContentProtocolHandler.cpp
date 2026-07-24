@@ -6,13 +6,12 @@
 
 #include "GeckoViewContentProtocolHandler.h"
 #include "GeckoViewContentChannel.h"
+#include "GeckoViewContentChannelChild.h"
 #include "nsStandardURL.h"
 #include "nsURLHelper.h"
 #include "nsIURIMutator.h"
 
 #include "nsNetUtil.h"
-
-#include "mozilla/ResultExtensions.h"
 
 //-----------------------------------------------------------------------------
 
@@ -34,14 +33,21 @@ NS_IMETHODIMP
 GeckoViewContentProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                                             nsIChannel** result) {
   nsresult rv;
-  RefPtr<GeckoViewContentChannel> chan = new GeckoViewContentChannel(uri);
+  RefPtr<nsBaseChannel> channel;
 
-  rv = chan->SetLoadInfo(aLoadInfo);
+  if (XRE_IsParentProcess()) {
+    channel = new GeckoViewContentChannel(uri);
+  } else {
+    channel = new mozilla::net::GeckoViewContentChannelChild(uri);
+  }
+
+  rv = channel->SetLoadInfo(aLoadInfo);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  chan.forget(result);
+  *result = channel.forget().take();
+
   return NS_OK;
 }
 

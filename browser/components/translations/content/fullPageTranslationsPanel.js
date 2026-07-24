@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 /* eslint-disable jsdoc/valid-types */
 /**
  * @typedef {import("../../../../toolkit/components/translations/translations").LangTags} LangTags
@@ -739,23 +737,14 @@ var FullPageTranslationsPanel = new (class {
         (await TranslationsParent.getTopPreferredSupportedToLang());
 
     for (const menuitem of alwaysOfferTranslationsMenuItems) {
-      menuitem.setAttribute(
-        "checked",
-        alwaysOfferTranslations ? "true" : "false"
-      );
+      menuitem.toggleAttribute("checked", alwaysOfferTranslations);
     }
     for (const menuitem of alwaysTranslateMenuItems) {
-      menuitem.setAttribute(
-        "checked",
-        alwaysTranslateLanguage ? "true" : "false"
-      );
+      menuitem.toggleAttribute("checked", alwaysTranslateLanguage);
       menuitem.disabled = shouldDisable;
     }
     for (const menuitem of neverTranslateMenuItems) {
-      menuitem.setAttribute(
-        "checked",
-        neverTranslateLanguage ? "true" : "false"
-      );
+      menuitem.toggleAttribute("checked", neverTranslateLanguage);
       menuitem.disabled = shouldDisable;
     }
   }
@@ -774,7 +763,7 @@ var FullPageTranslationsPanel = new (class {
     ).shouldNeverTranslateSite();
 
     for (const menuitem of neverTranslateSiteMenuItems) {
-      menuitem.setAttribute("checked", neverTranslateSite ? "true" : "false");
+      menuitem.toggleAttribute("checked", neverTranslateSite);
     }
   }
 
@@ -1262,9 +1251,11 @@ var FullPageTranslationsPanel = new (class {
   /**
    * A handler for opening the settings context menu.
    */
-  openSettingsPopup(button) {
-    this.#updateSettingsMenuLanguageCheckboxStates();
-    this.#updateSettingsMenuSiteCheckboxStates();
+  async openSettingsPopup(button) {
+    await Promise.all([
+      this.#updateSettingsMenuLanguageCheckboxStates(),
+      this.#updateSettingsMenuSiteCheckboxStates(),
+    ]);
     const popup = button.ownerDocument.getElementById(
       "full-page-translations-panel-settings-menupopup"
     );
@@ -1286,11 +1277,11 @@ var FullPageTranslationsPanel = new (class {
     } = this.elements;
 
     const alwaysTranslateLanguage =
-      alwaysTranslateLanguageMenuItem.getAttribute("checked") === "true";
+      alwaysTranslateLanguageMenuItem.hasAttribute("checked");
     const neverTranslateLanguage =
-      neverTranslateLanguageMenuItem.getAttribute("checked") === "true";
+      neverTranslateLanguageMenuItem.hasAttribute("checked");
     const neverTranslateSite =
-      neverTranslateSiteMenuItem.getAttribute("checked") === "true";
+      neverTranslateSiteMenuItem.hasAttribute("checked");
 
     return new CheckboxPageAction(
       this.#isTranslationsActive(),
@@ -1427,8 +1418,18 @@ var FullPageTranslationsPanel = new (class {
    * @param {tabbrowser} browser
    */
   onLocationChange(browser) {
+    if (browser !== gBrowser.selectedBrowser) {
+      // If the given browser is not for the active tab, we should not process it right now.
+      // Its state will be processed accordingly whenever that tab becomes active.
+      return;
+    }
+
     if (browser.currentURI.spec.startsWith("about:reader")) {
       // Hide the translations button when entering reader mode.
+      this.buttonElements.button.hidden = true;
+    } else if (!TranslationsParent.AIFeature.isEnabled) {
+      // When the Translations feature is disabled, no actor instance is created, therefore no
+      // event will be dispatched to update button visibility. We need to handle it here instead.
       this.buttonElements.button.hidden = true;
     }
   }
@@ -1580,15 +1581,17 @@ var FullPageTranslationsPanel = new (class {
         }
 
         if (
+          // Only show the button if the Translations feature is enabled.
+          TranslationsParent.AIFeature.isEnabled &&
           // We've already requested to translate this page, so always show the icon.
-          requestedLanguagePair ||
-          // There was an error translating, so always show the icon. This can happen
-          // when a user manually invokes the translation and we wouldn't normally show
-          // the icon.
-          error ||
-          // Finally check that we can translate this language.
-          (hasSupportedLanguage &&
-            TranslationsParent.getIsTranslationsEngineSupported())
+          (requestedLanguagePair ||
+            // There was an error translating, so always show the icon. This can happen
+            // when a user manually invokes the translation and we wouldn't normally show
+            // the icon.
+            error ||
+            // Finally check that we can translate this language.
+            (hasSupportedLanguage &&
+              TranslationsParent.getIsTranslationsEngineSupported()))
         ) {
           // Keep track if the button was originally hidden, because it will be shown now.
           const wasButtonHidden = button.hidden;

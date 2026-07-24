@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_GeolocationPosition_h
 #define mozilla_dom_GeolocationPosition_h
 
-#include "nsIDOMGeoPositionCoords.h"
-#include "nsIDOMGeoPosition.h"
+#include "js/TypeDecls.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIDOMGeoPosition.h"
+#include "nsIDOMGeoPositionCoords.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
 
 ////////////////////////////////////////////////////
 // nsGeoPositionCoords

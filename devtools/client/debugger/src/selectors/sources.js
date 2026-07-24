@@ -4,12 +4,11 @@
 
 import { createSelector } from "devtools/client/shared/vendor/reselect";
 
-import { getPrettySourceURL, isPretty, isJavaScript } from "../utils/source";
+import { getPrettySourceURL, isJavaScript } from "../utils/source";
 
 import { findPosition } from "../utils/breakpoint/breakpointPositions";
 import { isFulfilled } from "../utils/async-value";
 
-import { originalToGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { prefs } from "../utils/prefs";
 import { UNDEFINED_LOCATION, NO_LOCATION } from "../reducers/sources";
 
@@ -19,7 +18,10 @@ import {
   getBreakableLinesForSourceActors,
   isSourceActorWithSourceMap,
 } from "./source-actors";
-import { getSourceTextContent } from "./sources-content";
+import {
+  getSourceTextContentForLocation,
+  getSourceTextContentForSource,
+} from "./sources-content";
 
 export function hasSource(state, id) {
   return state.sources.mutableSources.has(id);
@@ -33,6 +35,7 @@ export function getSourceFromId(state, id) {
   const source = getSource(state, id);
   if (!source) {
     console.warn(`source ${id} does not exist`);
+    dump(`>> ${new Error().stack}\n`);
   }
   return source;
 }
@@ -66,18 +69,6 @@ function getOriginalSourceByURL(state, url) {
 
 export function getGeneratedSourceByURL(state, url) {
   return getSpecificSourceByURL(state, url, false);
-}
-
-export function getGeneratedSource(state, source) {
-  if (!source) {
-    return null;
-  }
-
-  if (!source.isOriginal) {
-    return source;
-  }
-
-  return getSourceFromId(state, originalToGeneratedId(source.id));
 }
 
 export function getPendingSelectedLocation(state) {
@@ -153,14 +144,14 @@ export function getSelectedMappedSource(state) {
     return null;
   }
 
-  const mappedSource = getGeneratedSource(state, selectedLocation.source);
-  // getGeneratedSource will return the exact same source object on sources
-  // that don't map to any original source. In this case, return null
-  // as that's most likely a regular source, not using source maps.
-  if (mappedSource == selectedLocation.source) {
+  // For non original source, which don't have selectedOriginalLocation provided,
+  // don't try to map to anything.
+  if (!selectedLocation.source.isOriginal) {
     return null;
   }
-  return mappedSource || null;
+
+  // Otherwise, for original source, simply map to their related generated source
+  return selectedLocation.source.generatedSource;
 }
 
 /**
@@ -206,13 +197,12 @@ export function getShouldScrollToSelectedLocation(state) {
  * Gets the first source actor for the source and/or thread
  * provided.
  *
- * @param {Object} state
- * @param {String} sourceId
+ * @param {object} state
+ * @param {string} sourceId
  *         The source used
- * @param {String} [threadId]
+ * @param {string} [threadId]
  *         The thread to check, this is optional.
- * @param {Object} sourceActor
- *
+ * @param {object} sourceActor
  */
 export function getFirstSourceActorForGeneratedSource(
   state,
@@ -225,7 +215,7 @@ export function getFirstSourceActorForGeneratedSource(
     return null;
   }
   if (source.isOriginal) {
-    source = getSource(state, originalToGeneratedId(source.id));
+    source = source.generatedSource;
   }
   const actors = getSourceActorsForSource(state, source.id);
   if (threadId) {
@@ -237,10 +227,10 @@ export function getFirstSourceActorForGeneratedSource(
 /**
  * Get the source actor of the source
  *
- * @param {Object} state
- * @param {String} id
+ * @param {object} state
+ * @param {string} id
  *        The source id
- * @return {Array<Object>}
+ * @return {Array<object>}
  *         List of source actors
  */
 export function getSourceActorsForSource(state, id) {
@@ -252,19 +242,17 @@ export function isSourceWithMap(state, id) {
   return actors.some(actor => isSourceActorWithSourceMap(state, actor.id));
 }
 
-export function canPrettyPrintSource(state, location) {
-  const sourceId = location.source.id;
-  const source = getSource(state, sourceId);
+export function canPrettyPrintSource(state, source, sourceActor) {
   if (
     !source ||
-    isPretty(source) ||
+    source.isPrettyPrinted ||
     source.isOriginal ||
-    (prefs.clientSourceMapsEnabled && isSourceWithMap(state, sourceId))
+    (prefs.clientSourceMapsEnabled && isSourceWithMap(state, source.id))
   ) {
     return false;
   }
 
-  const content = getSourceTextContent(state, location);
+  const content = getSourceTextContentForSource(state, source, sourceActor);
   const sourceContent = content && isFulfilled(content) ? content.value : null;
 
   if (
@@ -283,8 +271,8 @@ export function getPrettyPrintMessage(state, location) {
     return L10N.getStr("sourceTabs.prettyPrint");
   }
 
-  if (isPretty(source)) {
-    return L10N.getStr("sourceFooter.prettyPrint.isPrettyPrintedMessage");
+  if (source.isPrettyPrinted) {
+    return L10N.getStr("sourceTabs.removePrettyPrint");
   }
 
   if (source.isOriginal) {
@@ -295,7 +283,7 @@ export function getPrettyPrintMessage(state, location) {
     return L10N.getStr("sourceFooter.prettyPrint.hasSourceMapMessage");
   }
 
-  const content = getSourceTextContent(state, location);
+  const content = getSourceTextContentForLocation(state, location);
 
   const sourceContent = content && isFulfilled(content) ? content.value : null;
   if (!sourceContent) {
@@ -379,9 +367,9 @@ export function isSourceOverridden(toolboxState, source) {
  * Compute the list of source actors and source objects to be removed
  * when removing a given target/thread.
  *
- * @param {String} threadActorID
+ * @param {string} threadActorID
  *        The thread to be removed.
- * @return {Object}
+ * @return {object}
  *         An object with two arrays:
  *         - actors: list of source actor objects to remove
  *         - sources: list of source objects to remove

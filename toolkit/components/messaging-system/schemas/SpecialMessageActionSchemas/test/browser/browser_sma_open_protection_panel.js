@@ -3,6 +3,12 @@
 
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.trustPanel.featureGate", false]],
+  });
+});
+
 add_task(async function test_OPEN_PROTECTION_PANEL() {
   await BrowserTestUtils.withNewTab(EXAMPLE_URL, async () => {
     const popupshown = BrowserTestUtils.waitForEvent(

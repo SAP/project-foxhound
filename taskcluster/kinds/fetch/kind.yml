@@ -10,6 +10,9 @@ transforms:
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks-from:
     - benchmarks.yml
     - browsertime.yml

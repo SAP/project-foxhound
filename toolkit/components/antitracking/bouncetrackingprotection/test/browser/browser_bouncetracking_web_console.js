@@ -10,6 +10,7 @@ let btpGracePeriodSec = Services.prefs.getIntPref(
 /**
  * Registers a console listener and waits for the bounce tracker classified or
  * purged warning message to be logged.
+ *
  * @returns {Promise} - Promise which resolves once the message has been logged.
  */
 async function waitForBTPConsoleMessage(type, siteHost) {

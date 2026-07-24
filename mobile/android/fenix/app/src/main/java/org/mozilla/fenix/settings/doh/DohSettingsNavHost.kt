@@ -5,13 +5,13 @@
 package org.mozilla.fenix.settings.doh
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.settings.doh.addexception.AddExceptionScreen
 import org.mozilla.fenix.settings.doh.exceptionslist.ExceptionsListScreen
@@ -39,7 +39,7 @@ internal fun DohSettingsNavHost(
         startDestination = startDestination,
     ) {
         composable(route = DohSettingsDestinations.ROOT) {
-            val state by store.observeAsState(store.state) { it }
+            val state by store.stateFlow.collectAsState()
             DohSettingsScreen(
                 state = state,
                 onLearnMoreClicked = { url ->
@@ -136,7 +136,7 @@ internal fun DohSettingsNavHost(
         }
 
         composable(route = DohSettingsDestinations.EXCEPTIONS_LIST) {
-            val state by store.observeAsState(store.state) { it }
+            val state by store.stateFlow.collectAsState()
             ExceptionsListScreen(
                 state = state,
                 onAddExceptionsClicked = {
@@ -158,7 +158,7 @@ internal fun DohSettingsNavHost(
         }
 
         composable(route = DohSettingsDestinations.ADD_EXCEPTION) {
-            val state by store.observeAsState(store.state) { it }
+            val state by store.stateFlow.collectAsState()
             AddExceptionScreen(
                 state = state,
                 onSaveClicked = { url ->

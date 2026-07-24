@@ -7,7 +7,9 @@
 #ifndef jit_shared_Assembler_shared_h
 #define jit_shared_Assembler_shared_h
 
-#include "mozilla/CheckedInt.h"
+#if JS_BITS_PER_WORD == 32
+#  include "mozilla/CheckedInt.h"
+#endif
 #include "mozilla/DebugOnly.h"
 
 #include <limits.h>
@@ -791,8 +793,104 @@ class ABIArgGeneratorShared {
   explicit ABIArgGeneratorShared(ABIKind kind);
 
  public:
+  ABIKind abi() const { return kind_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
 };
+
+// [SMDOC] ABI special registers
+//
+// There are a number of special registers that can be used for different
+// purposes during "ABI calls". These are defined per-architecture in their
+// Assembler-XYZ.h header. The documentation for them is centralized here to
+// keep them all in-sync.
+//
+// The WebAssembly and System ABI's are similar but distinct, and so some of
+// these can be used in both contexts and others only in one. This is
+// unfortunate and should be formalized better. See "The WASM ABIs" in
+// WasmFrame.h for documentation on the Wasm ABI.
+//
+// The relevant similarities/differences for ABI registers are that:
+//   1. Wasm functions have special InstanceReg/HeapReg registers.
+//   2. Wasm functions do not have non-volatile registers.
+//   3. Wasm and System ABI have the same integer argument and return registers.
+//   4. Wasm and System ABI may have different FP argument and return registers.
+//      (notably ARM32 softfp and x87 FP are different).
+//
+// TODO: understand and describe the relationship with the various
+// MacroAssembler scratch registers. It looks like all of these must be
+// distinct from the MacroAssembler scratch registers.
+//
+// # InstanceReg
+//
+// Instance pointer argument register for WebAssembly functions in the
+// WebAssembly ABI.
+//
+// This must not alias any other register used for passing function arguments
+// or return values. Preserved by WebAssembly functions.
+//
+// The register must be non-volatile in the system ABI, as some code relies on
+// this to avoid reloading the register.
+//
+// See "The WASM ABIs" in WasmFrame.h for more information.
+//
+// # HeapReg
+//
+// Pointer to the base of (memory 0) for WebAssembly functions in the
+// WebAssembly ABI.
+//
+// This must not alias any other register used for passing function arguments
+// or return values. Preserved by WebAssembly functions.
+//
+// The register must be non-volatile in the system ABI, as some code relies on
+// this to avoid reloading the register.
+//
+// This register is not available on all architectures. It is notably absent
+// from x86.
+//
+// See "The WASM ABIs" in WasmFrame.h for more information.
+//
+// # ABINonArgReg (4 available)
+//
+// A register that can be clobbered in the prologue of a function.
+//
+// They are each distinct and have the following guarantees:
+//   - Will not be a System/Wasm ABI argument register.
+//   - Will not be the InstanceReg or HeapReg.
+//   - Could be a System/Wasm ABI result register.
+//   - Could be a System ABI non-volatile register.
+//
+// # ABINonArgDoubleReg (1 available)
+//
+// A floating-point register that can be clobbered in the prologue of a
+// function. May be volatile or non-volatile.
+//
+// # ABINonArgReturnReg (2 available)
+//
+// A register that can be clobbered in the prologue or epilogue of a function.
+//
+// They are each distinct and have the following guarantees:
+//   - All the guarantees of ABINonArgReg.
+//   - Will not be a System/Wasm ABI return register.
+//   - Will be distinct from ABINonVolatileReg (see below).
+//
+// There are only two of these, and the constraint is x86.
+//
+// # ABINonVolatileReg (1 available)
+//
+// A register that is:
+//   - Non-volatile in the System ABI
+//   - (implied by above) Not an argument or return register.
+//   - Distinct from the ABINonArgReturnReg.
+//
+// # ABINonArgReturnVolatileReg (1 available)
+//
+// A register that can be clobbered in the prologue or epilogue of a system ABI
+// function.
+//
+// They are each distinct and have the following guarantees:
+//   - All the guarantees of ABINonArgReturnReg.
+//   - Will be a volatile register in the System ABI.
+//
 
 }  // namespace jit
 }  // namespace js

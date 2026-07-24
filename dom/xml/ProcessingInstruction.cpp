@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsGkAtoms.h"
-#include "nsUnicharUtils.h"
-#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ProcessingInstruction.h"
+
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ProcessingInstructionBinding.h"
 #include "mozilla/dom/XMLStylesheetProcessingInstruction.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsUnicharUtils.h"
 
 already_AddRefed<mozilla::dom::ProcessingInstruction>
 NS_NewXMLProcessingInstruction(nsNodeInfoManager* aNodeInfoManager,
@@ -52,9 +53,9 @@ ProcessingInstruction::ProcessingInstruction(
              "Bad NodeType in aNodeInfo");
 
   // Foxhound: pass taint information.
-  SetTextInternal(0, mText.GetLength(),
-                  aData.BeginReading(), aData.Length(),
-                  false, aData.Taint());  // Don't notify (bug 420429).
+  SetTextInternal(0, mBuffer.GetLength(), aData.BeginReading(), aData.Length(),
+                  false, aData.Taint(),
+                  MutationEffectOnScript::DropTrustWorthiness);  // Don't notify (bug 420429).
 }
 
 ProcessingInstruction::~ProcessingInstruction() = default;
@@ -95,7 +96,7 @@ void ProcessingInstruction::List(FILE* out, int32_t aIndent) const {
   fprintf(out, "Processing instruction refcount=%" PRIuPTR "<", mRefCnt.get());
 
   nsAutoString tmp;
-  ToCString(tmp, 0, mText.GetLength());
+  ToCString(tmp, 0, mBuffer.GetLength());
   tmp.Insert(nsDependentAtomString(NodeInfo()->GetExtraName()).get(), 0);
   fputs(NS_LossyConvertUTF16toASCII(tmp).get(), out);
 

@@ -6,11 +6,11 @@
 #ifndef include_dom_media_ipc_RemoteMediaDataEncoderParent_h
 #define include_dom_media_ipc_RemoteMediaDataEncoderParent_h
 
+#include <map>
+
+#include "PlatformEncoderModule.h"
 #include "mozilla/PRemoteEncoderParent.h"
 #include "mozilla/ShmemRecycleAllocator.h"
-#include "PlatformEncoderModule.h"
-
-#include <map>
 
 namespace mozilla {
 namespace layers {

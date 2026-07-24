@@ -29,6 +29,7 @@ class ColumnTime extends Component {
 
   /**
    * Format a DOMHighResTimeStamp (in microseconds) as HH:mm:ss.SSS
+   *
    * @param {number} highResTimeStamp
    */
   formatTime(highResTimeStamp) {

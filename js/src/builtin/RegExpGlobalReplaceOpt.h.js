@@ -191,7 +191,9 @@ function FUNC_NAME(
         originalSource ||
       UnsafeGetInt32FromReservedSlot(rx, REGEXP_FLAGS_SLOT) !== originalFlags
     ) {
-      rx = RegExpConstructRaw(originalSource, originalFlags);
+      var legacy = !!(originalFlags & REGEXP_LEGACY_FEATURES_ENABLED_FLAG);
+      var newFlags = originalFlags & ~REGEXP_LEGACY_FEATURES_ENABLED_FLAG;
+      rx = RegExpConstructRaw(originalSource, newFlags, legacy);
     }
 #endif
   }

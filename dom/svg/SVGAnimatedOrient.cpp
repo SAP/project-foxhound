@@ -12,14 +12,13 @@
 #include "DOMSVGAnimatedAngle.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGOrientSMILType.h"
-#include "mozilla/ArrayUtils.h"
+#include "mozAutoDocUpdate.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGMarkerElement.h"
-#include "mozAutoDocUpdate.h"
 #include "nsContentUtils.h"
-#include "nsTextFormatter.h"
 #include "nsPrintfCString.h"
+#include "nsTextFormatter.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGAngle_Binding;
@@ -27,14 +26,14 @@ using namespace mozilla::dom::SVGMarkerElement_Binding;
 
 namespace mozilla {
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient,
-                                         DOMSVGAnimatedEnumeration>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient,
+                                     DOMSVGAnimatedEnumeration>
     sSVGAnimatedEnumTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAnimatedAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAnimatedAngle>
     sSVGAnimatedAngleTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
     sBaseSVGAngleTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
     sAnimSVGAngleTearoffTable;
 
 /* Helper functions */
@@ -51,14 +50,14 @@ class MOZ_RAII AutoChangeOrientNotifier {
     MOZ_ASSERT(mOrient, "Expecting non-null orient");
     if (mSVGElement && mDoSetAttr) {
       mUpdateBatch.emplace(mSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue = mSVGElement->WillChangeOrient(mUpdateBatch.ref());
+      mSVGElement->WillChangeOrient(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeOrientNotifier() {
     if (mSVGElement) {
       if (mDoSetAttr) {
-        mSVGElement->DidChangeOrient(mEmptyOrOldValue, mUpdateBatch.ref());
+        mSVGElement->DidChangeOrient(mUpdateBatch.ref());
       }
       if (mOrient->mIsAnimated) {
         mSVGElement->AnimationNeedsResample();
@@ -70,11 +69,10 @@ class MOZ_RAII AutoChangeOrientNotifier {
   Maybe<mozAutoDocUpdate> mUpdateBatch;
   SVGAnimatedOrient* const mOrient;
   SVGElement* const mSVGElement;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
-const unsigned short SVG_ANGLETYPE_TURN = 5;
+constexpr uint16_t SVG_ANGLETYPE_TURN = 5;
 
 static void GetAngleUnitString(nsAString& aUnit, uint16_t aUnitType) {
   switch (aUnitType) {
@@ -155,7 +153,7 @@ bool SVGAnimatedOrient::GetValueFromString(const nsAString& aString,
 }
 
 /* static */
-float SVGAnimatedOrient::GetDegreesPerUnit(uint8_t aUnit) {
+float SVGAnimatedOrient::GetDegreesPerUnit(uint16_t aUnit) {
   switch (aUnit) {
     case SVG_ANGLETYPE_UNSPECIFIED:
     case SVG_ANGLETYPE_DEG:
@@ -333,7 +331,7 @@ void SVGAnimatedOrient::GetAnimAngleValueString(
   GetAngleValueString(aValueAsString, mAnimVal, mAnimValUnit);
 }
 
-void SVGAnimatedOrient::SetBaseValue(float aValue, uint8_t aUnit,
+void SVGAnimatedOrient::SetBaseValue(float aValue, uint16_t aUnit,
                                      SVGElement* aSVGElement, bool aDoSetAttr) {
   float valueInSpecifiedUnits = aValue / GetDegreesPerUnit(aUnit);
   if (aUnit == mBaseValUnit && mBaseVal == valueInSpecifiedUnits &&
@@ -376,7 +374,7 @@ void SVGAnimatedOrient::SetBaseType(SVGEnumValue aValue,
   aRv.ThrowTypeError(err);
 }
 
-void SVGAnimatedOrient::SetAnimValue(float aValue, uint8_t aUnit,
+void SVGAnimatedOrient::SetAnimValue(float aValue, uint16_t aUnit,
                                      SVGElement* aSVGElement) {
   if (mIsAnimated && mAnimVal == aValue && mAnimValUnit == aUnit &&
       mAnimType == SVG_MARKER_ORIENT_ANGLE) {
@@ -433,9 +431,10 @@ SVGAnimatedOrient::DOMAnimatedEnum::~DOMAnimatedEnum() {
   sSVGAnimatedEnumTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedOrient::ToSMILAttr(SVGElement* aSVGElement) {
+std::unique_ptr<SMILAttr> SVGAnimatedOrient::ToSMILAttr(
+    SVGElement* aSVGElement) {
   if (aSVGElement->IsSVGElement(nsGkAtoms::marker)) {
-    return MakeUnique<SMILOrient>(this, aSVGElement);
+    return std::make_unique<SMILOrient>(this, aSVGElement);
   }
   // SMILOrient would not be useful for general angle attributes (also,
   // "orient" is the only animatable <angle>-valued attribute in SVG 1.1).

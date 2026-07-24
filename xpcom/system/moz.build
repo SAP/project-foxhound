@@ -10,7 +10,6 @@ XPIDL_SOURCES += [
     "nsIDeviceSensors.idl",
     "nsIGeolocationProvider.idl",
     "nsIGIOService.idl",
-    "nsIGSettingsService.idl",
     "nsIHapticFeedback.idl",
     "nsIPlatformInfo.idl",
     "nsISystemInfo.idl",

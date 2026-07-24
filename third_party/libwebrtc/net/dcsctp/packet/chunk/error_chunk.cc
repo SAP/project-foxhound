@@ -9,17 +9,16 @@
  */
 #include "net/dcsctp/packet/chunk/error_chunk.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "api/array_view.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
-#include "net/dcsctp/packet/error_cause/error_cause.h"
-#include "net/dcsctp/packet/tlv_trait.h"
+#include "net/dcsctp/packet/parameter/parameter.h"
 
 namespace dcsctp {
 
@@ -34,10 +33,9 @@ namespace dcsctp {
 //  /                    one or more Error Causes                   /
 //  \                                                               \
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-constexpr int ErrorChunk::kType;
 
 std::optional<ErrorChunk> ErrorChunk::Parse(
-    rtc::ArrayView<const uint8_t> data) {
+    webrtc::ArrayView<const uint8_t> data) {
   std::optional<BoundedByteReader<kHeaderSize>> reader = ParseTLV(data);
   if (!reader.has_value()) {
     return std::nullopt;
@@ -51,7 +49,7 @@ std::optional<ErrorChunk> ErrorChunk::Parse(
 }
 
 void ErrorChunk::SerializeTo(std::vector<uint8_t>& out) const {
-  rtc::ArrayView<const uint8_t> error_causes = error_causes_.data();
+  webrtc::ArrayView<const uint8_t> error_causes = error_causes_.data();
   BoundedByteWriter<kHeaderSize> writer = AllocateTLV(out, error_causes.size());
   writer.CopyToVariableData(error_causes);
 }

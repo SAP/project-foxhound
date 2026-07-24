@@ -222,9 +222,6 @@ void nsNetShutdown() {
 
   // Release global state used by the URL helper module.
   net_ShutdownURLHelper();
-#ifdef XP_MACOSX
-  net_ShutdownURLHelperOSX();
-#endif
 
   // Release DNS service reference.
   nsDNSPrefetch::Shutdown();

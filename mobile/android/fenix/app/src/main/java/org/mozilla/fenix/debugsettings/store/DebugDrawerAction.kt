@@ -5,6 +5,7 @@
 package org.mozilla.fenix.debugsettings.store
 
 import mozilla.components.lib.state.Action
+import org.mozilla.fenix.debugsettings.autofill.AutofillTools
 import org.mozilla.fenix.debugsettings.gleandebugtools.ui.GleanDebugToolsScreen
 import org.mozilla.fenix.debugsettings.ui.DebugDrawerHome
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools as AddressesScreen
@@ -54,6 +55,16 @@ sealed class DebugDrawerAction : Action {
         data object Addresses : NavigateTo()
 
         /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [CreditCardsTools].
+         */
+        data object CreditCards : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [AutofillTools].
+         */
+        object Autofill : NavigateTo()
+
+        /**
          * [NavigateTo] action fired when the debug drawer needs to navigate to [CfrToolsScreen].
          */
         object CfrTools : NavigateTo()
@@ -72,6 +83,21 @@ sealed class DebugDrawerAction : Action {
          * [NavigateTo] action fired when the debug drawer needs to navigate to [AddonsDebugToolsScreen].
          */
         object AddonsDebugTools : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [CrashTools].
+         */
+        object CrashDebugTools : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [IntegrityTools].
+         */
+        object IntegrityDebugTools : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [LlmTools].
+         */
+        object LlmDebugTools : NavigateTo()
     }
 
     /**

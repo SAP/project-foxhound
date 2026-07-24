@@ -1,0 +1,41 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  --chat-assistant-loader-size: var(--size-item-small);
+  --chat-assistant-loader-light-pink: color-mix(in srgb, var(--color-blue-40) 38.74%, var(--color-purple-10) 61.26%);
+  --chat-assistant-loader-dark-pink: var(--color-purple-60);
+}
+
+.chat-assistant-loader {
+  display: flex;
+  gap: calc(var(--space-xxsmall) + var(--space-xsmall));
+}
+
+.chat-assistant-loader__spinner {
+  animation: 0.9s spinLoader infinite linear;
+  background-image: url("chrome://browser/content/aiwindow/assets/loader.svg");
+  background-size: var(--chat-assistant-loader-size);
+  height: var(--chat-assistant-loader-size);
+  width: var(--chat-assistant-loader-size);
+  will-change: transform;
+}
+
+@keyframes spinLoader {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.chat-assistant-loader__text {
+  background-image: linear-gradient(90deg, var(--chat-assistant-loader-light-pink) 14.17%, var(--chat-assistant-loader-dark-pink) 91.21%);
+  background-clip: text;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: transparent;
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}

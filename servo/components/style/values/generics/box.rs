@@ -4,7 +4,9 @@
 
 //! Generic types for box properties.
 
+use crate::derives::*;
 use crate::values::animated::ToAnimatedZero;
+use crate::Zero;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
@@ -24,23 +26,29 @@ use style_traits::{CssWriter, ToCss};
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 #[allow(missing_docs)]
-pub enum VerticalAlignKeyword {
-    Baseline,
+pub enum BaselineShiftKeyword {
+    /// Lower by the offset appropriate for subscripts of the parent’s box. The UA may use the
+    /// parent’s font metrics to find this offset; otherwise it defaults to dropping by one
+    /// fifth of the parent’s used font-size.
     Sub,
+    /// Raise by the offset appropriate for superscripts of the parent’s box. The UA may use the
+    /// parent’s font metrics to find this offset; otherwise it defaults to raising by one third
+    /// of the parent’s used font-size.
     Super,
+    /// Align the line-over edge of the aligned subtree with the line-over edge of the line box.
     Top,
-    TextTop,
-    Middle,
+    /// Align the center of the aligned subtree with the center of the line box.
+    Center,
+    /// Align the line-under edge of the aligned subtree with the line-under edge of the line box.
     Bottom,
-    TextBottom,
-    #[cfg(feature = "gecko")]
-    MozMiddleWithBaseline,
 }
 
-/// A generic value for the `vertical-align` property.
+/// A generic value for the `baseline-shift` property.
+/// https://drafts.csswg.org/css-inline-3/#baseline-shift
 #[derive(
     Animate,
     Clone,
@@ -55,26 +63,28 @@ pub enum VerticalAlignKeyword {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
-pub enum GenericVerticalAlign<LengthPercentage> {
-    /// One of the vertical-align keywords.
-    Keyword(VerticalAlignKeyword),
-    /// `<length-percentage>`
+#[typed_value(derive_fields)]
+pub enum GenericBaselineShift<LengthPercentage> {
+    /// One of the baseline-shift keywords
+    Keyword(BaselineShiftKeyword),
+    /// Raise (positive value) or lower (negative value) by the specified length or specified percentage of the line-height.
     Length(LengthPercentage),
 }
 
-pub use self::GenericVerticalAlign as VerticalAlign;
+pub use self::GenericBaselineShift as BaselineShift;
 
-impl<L> VerticalAlign<L> {
-    /// Returns `baseline`.
+impl<L: Zero> BaselineShift<L> {
+    /// Returns the initial `0` value.
     #[inline]
-    pub fn baseline() -> Self {
-        VerticalAlign::Keyword(VerticalAlignKeyword::Baseline)
+    pub fn zero() -> Self {
+        BaselineShift::Length(Zero::zero())
     }
 }
 
-impl<L> ToAnimatedZero for VerticalAlign<L> {
+impl<L> ToAnimatedZero for BaselineShift<L> {
     fn to_animated_zero(&self) -> Result<Self, ()> {
         Err(())
     }
@@ -94,6 +104,7 @@ impl<L> ToAnimatedZero for VerticalAlign<L> {
     ToAnimatedZero,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[value_info(other_values = "auto")]
 #[repr(C, u8)]
@@ -145,6 +156,7 @@ impl<L: ToCss> ToCss for ContainIntrinsicSize<L> {
     ToAnimatedZero,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 #[value_info(other_values = "none")]
@@ -152,7 +164,7 @@ pub struct GenericLineClamp<I>(pub I);
 
 pub use self::GenericLineClamp as LineClamp;
 
-impl<I: crate::Zero> LineClamp<I> {
+impl<I: Zero> LineClamp<I> {
     /// Returns the `none` value.
     pub fn none() -> Self {
         Self(crate::Zero::zero())
@@ -164,7 +176,7 @@ impl<I: crate::Zero> LineClamp<I> {
     }
 }
 
-impl<I: crate::Zero + ToCss> ToCss for LineClamp<I> {
+impl<I: Zero + ToCss> ToCss for LineClamp<I> {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
@@ -193,8 +205,10 @@ impl<I: crate::Zero + ToCss> ToCss for LineClamp<I> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
+#[typed_value(derive_fields)]
 pub enum GenericPerspective<NonNegativeLength> {
     /// A non-negative length.
     Length(NonNegativeLength),
@@ -224,6 +238,7 @@ impl<L> Perspective<L> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -239,5 +254,89 @@ impl PositionProperty {
     /// Is the box absolutely positioned?
     pub fn is_absolutely_positioned(self) -> bool {
         matches!(self, Self::Absolute | Self::Fixed)
+    }
+}
+
+/// https://drafts.csswg.org/css-overflow-4/#overflow-clip-margin's <visual-box>. Note that the
+/// spec has special behavior for the omitted keyword, but that's rather odd, see:
+/// https://github.com/w3c/csswg-drafts/issues/13185
+#[allow(missing_docs)]
+#[derive(
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    Parse,
+    SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+pub enum OverflowClipMarginBox {
+    ContentBox,
+    PaddingBox,
+    BorderBox,
+}
+
+/// https://drafts.csswg.org/css-overflow-4/#overflow-clip-margin
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToComputedValue,
+    ToAnimatedZero,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(C)]
+pub struct GenericOverflowClipMargin<L> {
+    /// The offset of the clip.
+    pub offset: L,
+    /// The box that we're clipping to.
+    #[animation(constant)]
+    pub visual_box: OverflowClipMarginBox,
+}
+
+pub use self::GenericOverflowClipMargin as OverflowClipMargin;
+
+impl<L: Zero> GenericOverflowClipMargin<L> {
+    /// Returns the `none` value.
+    pub fn zero() -> Self {
+        Self {
+            offset: Zero::zero(),
+            visual_box: OverflowClipMarginBox::PaddingBox,
+        }
+    }
+}
+
+impl<L: Zero + ToCss> ToCss for OverflowClipMargin<L> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.visual_box == OverflowClipMarginBox::PaddingBox {
+            return self.offset.to_css(dest);
+        }
+        self.visual_box.to_css(dest)?;
+        if !self.offset.is_zero() {
+            dest.write_char(' ')?;
+            self.offset.to_css(dest)?;
+        }
+        Ok(())
     }
 }

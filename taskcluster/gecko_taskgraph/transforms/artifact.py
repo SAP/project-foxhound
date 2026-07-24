@@ -4,6 +4,7 @@
 """
 Apply different expiration dates to different artifacts based on a manifest file (artifacts.yml)
 """
+
 import logging
 import os
 import sys
@@ -70,12 +71,12 @@ def set_artifact_expiration(config, jobs):
                 plat = platform.lower()
                 if "plain" in plat or "ccov" in plat or "rusttest" in plat:
                     art_dict = None
-                elif (
-                    plat == "toolchain-wasm32-wasi-compiler-rt-trunk"
-                    or plat == "toolchain-linux64-x64-compiler-rt-trunk"
-                    or plat == "toolchain-linux64-x86-compiler-rt-trunk"
-                    or plat == "android-geckoview-docs"
-                ):
+                elif plat in {
+                    "toolchain-wasm32-wasi-compiler-rt-trunk",
+                    "toolchain-linux64-x64-compiler-rt-trunk",
+                    "toolchain-linux64-x86-compiler-rt-trunk",
+                    "android-geckoview-docs",
+                }:
                     art_dict = None
                 elif plat.startswith("win"):
                     art_dict = manifest["win"]

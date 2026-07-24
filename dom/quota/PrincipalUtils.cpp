@@ -6,9 +6,10 @@
 
 #include "mozilla/dom/quota/PrincipalUtils.h"
 
+#include "OriginParser.h"
 #include "mozilla/SystemPrincipal.h"
-#include "mozilla/dom/quota/Constants.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/Constants.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -16,7 +17,6 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
-#include "OriginParser.h"
 
 namespace mozilla::dom::quota {
 

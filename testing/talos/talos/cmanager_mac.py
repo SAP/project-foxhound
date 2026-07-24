@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """CounterManager for Mac OSX"""
+
 import subprocess
 import sys
 

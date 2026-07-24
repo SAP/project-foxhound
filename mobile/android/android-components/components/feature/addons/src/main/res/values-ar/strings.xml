@@ -1,39 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://schemas.android.com/apk/res-auto">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
-  <string name="mozac_feature_addons_permissions_one_site_description">الوصول إلى بياناتك لموقع %1$s</string>
+  <string name="mozac_feature_addons_permissions_one_site_description">تمكين وصول بياناتك لـ %1$s</string>
   <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
-  <string name="mozac_feature_addons_permissions_sites_in_domain_description">الوصول إلى بياناتك للمواقع في النطاق %1$s</string>
+  <string name="mozac_feature_addons_permissions_sites_in_domain_description">تمكين وصول بياناتك للمواقع في نطاق %1$s</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 5 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 1 other site". This entry it's for the singular case, when the add-on is only accessing one extra site.
+    then we will show another collapsed entry saying "Access your data on another site".
   -->
-  <string name="mozac_feature_addons_permissions_one_extra_site_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">الوصول إلى بياناتك في مواقع أخرى (1)</string>
+  <string name="mozac_feature_addons_permissions_one_extra_site_description_2">الوصول إلى بياناتك في موقع آخر</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 6 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 2 other sites". This entry it's for the plural case, when the add-on is accessing more than one extra site.
-    %1$d will be replaced by an integer indicating the number of additional hosts for which this web extension is requesting permission.
+    then we will show another collapsed entry saying "Access your data on other sites".
   -->
-  <string name="mozac_feature_addons_permissions_extra_sites_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">الوصول إلى بياناتك في مواقع أخرى (%1$d)</string>
+  <string name="mozac_feature_addons_permissions_extra_sites_description_2">الوصول إلى بياناتك في مواقع أخرى</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 5 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 1 other domain". This entry it's for the singular case, when the add-on is only accessing one extra domain.
+    then we will show another collapsed entry saying "Access your data on another domain.
   -->
-  <string name="mozac_feature_addons_permissions_one_extra_domain_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">الوصول إلى بياناتك في نطاقات أخرى (1)</string>
+  <string name="mozac_feature_addons_permissions_one_extra_domain_description_2">الوصول إلى بياناتك في نطاق آخر</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 6 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 2 other domains". This entry it's for the plural case, when the add-on is accessing more than one extra domain.
-    %1$d will be replaced by an integer indicating the number of additional domains for which this web extension is requesting permission.
+    then we will show another collapsed entry saying "Access your data on other domains".
   -->
-  <string name="mozac_feature_addons_permissions_extra_domains_description_plural" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">الوصول إلى بياناتك في نطاقات أخرى (%1$d)</string>
+  <string name="mozac_feature_addons_permissions_extra_domains_description_plural_2">الوصول إلى بياناتك في نطاقات أخرى</string>
+  <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
+  <string name="mozac_feature_addons_permissions_all_domain_count_description" moz:removedIn="148" tools:ignore="PluralsCandidate">الوصول إلى بياناتك للمواقع في %1$d نطاقات</string>
+  <plurals name="mozac_feature_addons_permissions_all_domain_count_description_2">
+    <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
+    <item quantity="zero">الوصول إلى بياناتك في مواقع ضمن %1$d نطاق</item>
+    <item quantity="one">الوصول إلى بياناتك في مواقع ضمن نطاق واحد</item>
+    <item quantity="two">الوصول إلى بياناتك في مواقع ضمن نطاقين</item>
+    <item quantity="few">الوصول إلى بياناتك في مواقع ضمن %1$d نطاقات</item>
+    <item quantity="many">الوصول إلى بياناتك في مواقع ضمن %1$d نطاقًا</item>
+    <item quantity="other">الوصول إلى بياناتك في مواقع ضمن %1$d نطاق</item>
+  </plurals>
   <!-- Content description for a permission item, for an installed add-on details page. %1$s will be replaced with the permission text name, %2$d will be replaced with the permission position in the list and %3$d will be replaced with the total number of permissions in the list.Taking as an example "Read and modify privacy settings" the whole text will read Read and modify privacy settings, 2 of 6. -->
   <string name="mozac_feature_addons_permissions_content_description_item">%1$s، %2$d، من %3$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_privacy_description">قراءة إعدادات الخصوصية وتعديلها</string>
+  <string name="mozac_feature_addons_permissions_privacy_description">إطّلع على إعدادات الخصوصية و عدّلها</string>
   <!-- Description for the "<all_urls>" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_all_urls_description">الوصول إلى بياناتك في المواقع كافة</string>
+  <string name="mozac_feature_addons_permissions_all_urls_description">الوصول إلى بياناتك على جميع المواقع</string>
   <!-- Description for the "tabs" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_tabs_description">الوصول إلى ألسنة المتصفح</string>
+  <string name="mozac_feature_addons_permissions_tabs_description">الوصول إلى تبويبات المتصفح</string>
   <!-- Description for the "webNavigation" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_web_navigation_description">الوصول إلى نشاط المتصفح أثناء التنقل</string>
   <!-- Description for the "bookmarks" WebExtensions API permission. -->
@@ -41,47 +57,185 @@
   <!-- Description for the "browserSettings" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_browser_setting_description">قراءة إعدادات المتصفح وتعديلها</string>
   <!-- Description for the "browsingData" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_browser_data_description">مسح تأريخ التصفح الحديث و الكعكات و البيانات المتعلقة بها</string>
+  <string name="mozac_feature_addons_permissions_browser_data_description">مسح تأريخ التصفح الحديث و ملفات تعريف الارتباط و البيانات المتعلقة بها</string>
   <!-- Description for the "clipboardRead" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_clipboard_read_description">جلب البيانات من الحافظة</string>
   <!-- Description for the "clipboardWrite" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_clipboard_write_description">إدخال البيانات في الحافظة</string>
   <!-- Description for the "declarativeNetRequest" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_declarative_net_request_description">احجب المحتوى في أي صفحة</string>
+  <string name="mozac_feature_addons_permissions_declarative_net_request_description">حجب المحتوى في أي صفحة</string>
   <!-- Description for the "declarativeNetRequestFeedback" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_declarative_net_request_feedback_description">اقرأ تأريخ التصفح</string>
+  <string name="mozac_feature_addons_permissions_declarative_net_request_feedback_description">عرض سِجل التصفّح</string>
   <!-- Description for the "downloads" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_downloads_description">تنزيل الملفات و قراءة تأريخ تنزيل المتصفح و تعديله</string>
+  <string name="mozac_feature_addons_permissions_downloads_description">نزّل الملفات واقرأ وعدّل سِجل تنزيلات المتصفّح</string>
   <!-- Description for the "downloads.open" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_downloads_open_description">فتح الملفات المنزّلة على الجهاز</string>
   <!-- Description for the "find" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_find_description">قراءة نصوص الألسنة المفتوحة</string>
+  <string name="mozac_feature_addons_permissions_find_description">قراءة نصوص التبويبات المفتوحة</string>
   <!-- Description for the "geolocation" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_geolocation_description">معرفة مكانك</string>
+  <string name="mozac_feature_addons_permissions_geolocation_description">الوصول إلى موقعك</string>
   <!-- Description for the "history" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_history_description">الوصول إلى تأريخ التصفح</string>
+  <string name="mozac_feature_addons_permissions_history_description">الوصول إلى سِجل التصفّح</string>
   <!-- Description for the "management" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_management_description">إدارة استخدام الامتدادات وإدارة السمات</string>
   <!-- Description for the "nativeMessaging" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_native_messaging_description">تبادل الرسائل مع تطبيقات أخرى غير هذا</string>
   <!-- Description for the "notifications" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_notifications_description">عرض التنبيهات</string>
+  <string name="mozac_feature_addons_permissions_notifications_description">عرض الإشعارات</string>
   <!-- Description for the "pkcs11" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_pkcs11_description">توفير خدمات استيثاق معمّاة</string>
+  <string name="mozac_feature_addons_permissions_pkcs11_description">توفير خدمات المصادقة المشفرة</string>
   <!-- Description for the "proxy" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_proxy_description">التحكم بإعدادات الوسيط للمتصفح</string>
   <!-- Description for the "sessions" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_sessions_description">الوصول إلى الألسنة المغلقة حديثًا</string>
+  <string name="mozac_feature_addons_permissions_sessions_description">الوصول إلى التبويبات المغلقة حديثًا</string>
   <!-- Description for the "tabHide" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_tab_hide_description">إخفاء و إظهار ألسنة المتصفح</string>
+  <string name="mozac_feature_addons_permissions_tab_hide_description">إخفاء و إظهار تبويبات المتصفّح</string>
   <!-- Description for the "topSites" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_top_sites_description">الوصول إلى تأريخ التصفح</string>
+  <string name="mozac_feature_addons_permissions_top_sites_description">الوصول إلى سجل التصفّح</string>
   <!-- Description for the "trialML" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_trial_ml_description">تنزيل نماذج الذكاء الاصطناعي وتشغيلها على جهازك</string>
   <!-- Description for the "userScripts" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_user_scripts_description">السماح لسكربتات الطرف الثالثة غير الموثوقة بالوصول إلى بياناتك</string>
+  <string name="mozac_feature_addons_permissions_user_scripts_description">السماح لسكربتات الطرف الثالث غير الموثوقة بالوصول إلى بياناتك</string>
   <!-- Description for the "devtools" WebExtensions API permission. -->
-  <string name="mozac_feature_addons_permissions_devtools_description">توسيع أدوات المطورين للوصول إلى بياناتك في الألسنة المفتوحة</string>
+  <string name="mozac_feature_addons_permissions_devtools_description">توسيع أدوات المطورين للوصول إلى بياناتك في التبويبات المفتوحة</string>
+  <!-- Description for the "privacy" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_privacy_description_for_update">قراءة إعدادات الخصوصية وتعديلها.</string>
+  <!-- Description for the "<all_urls>" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_all_urls_description_for_update">الوصول إلى بياناتك لكل المواقع.</string>
+  <!-- Description for the "tabs" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_tabs_description_for_update">الوصول إلى تبويبات المتصفّح.</string>
+  <!-- Description for the "webNavigation" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_web_navigation_description_for_update">الوصول إلى نشاط المتصفح أثناء التصفح.</string>
+  <!-- Description for the "bookmarks" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_bookmarks_description_for_update">قراءة وتعديل العلامات.</string>
+  <!-- Description for the "browserSettings" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_browser_settings_description_for_update">قراءة وتعديل إعدادات المتصفح.</string>
+  <!-- Description for the "browsingData" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_browsing_data_description_for_update">مسح سجل التصفح الأخير وملفات تعريف الارتباط والبيانات ذات الصلة.</string>
+  <!-- Description for the "clipboardRead" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_clipboard_read_description_for_update">الحصول على البيانات من الحافظة.</string>
+  <!-- Description for the "clipboardWrite" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_clipboard_write_description_for_update">إدخال البيانات إلى الحافظة.</string>
+  <!-- Description for the "declarativeNetRequest" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_declarative_net_request_description_for_update">حجب المحتوى في أي صفحة.</string>
+  <!-- Description for the "declarativeNetRequestFeedback" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_declarative_net_request_feedback_description_for_update">عرض سِجل تصفحك.</string>
+  <!-- Description for the "downloads" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_downloads_description_for_update">نزّل الملفات واقرأ وعدّل سِجل تنزيلات المتصفّح.</string>
+  <!-- Description for the "downloads.open" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_downloads_open_description_for_update">فتح الملفات المنزّلة على جهازك.</string>
+  <!-- Description for the "find" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_find_description_for_update">عرض محتوى جميع التبويبات المفتوحة.</string>
+  <!-- Description for the "geolocation" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_geolocation_description_for_update">الوصول إلى موقعك الجغرافي.</string>
+  <!-- Description for the "history" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_history_description_for_update">الوصول إلى سِجل التصفّح.</string>
+  <!-- Description for the "management" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_management_description_for_update">مراقبة استخدام الامتدادات وإدارة السمات.</string>
+  <!-- Description for the "nativeMessaging" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_native_messaging_description_for_update">تبادل الرسائل مع تطبيقات أخرى غير هذا التطبيق.</string>
+  <!-- Description for the "notifications" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_notifications_description_for_update">عرض الإشعارات.</string>
+  <!-- Description for the "pkcs11" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_pkcs11_description_for_update">توفير خدمات المصادقة المشفرة.</string>
+  <!-- Description for the "proxy" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_proxy_description_for_update">التحكم في إعدادات وسيط المتصفح.</string>
+  <!-- Description for the "sessions" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_sessions_description_for_update">الوصول إلى التبويبات المغلقة حديثًا.</string>
+  <!-- Description for the "tabHide" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_tab_hide_description_for_update">إخفاء وإظهار تبويبات المتصفح.</string>
+  <!-- Description for the "topSites" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_top_sites_description_for_update">الوصول إلى سجل التصفح.</string>
+  <!-- Description for the "trialML" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_trial_ml_description_for_update">تنزيل نماذج الذكاء الاصطناعي وتشغيلها على جهازك.</string>
+  <!-- Description for the "userScripts" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_user_scripts_description_for_update">السماح لسكربتات الطرف الثالث غير الموثوقة بالوصول إلى بياناتك.</string>
+  <!-- Description for the "devtools" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_devtools_description_for_update">توسيع أدوات المطورين للوصول إلى بياناتك في التبويبات المفتوحة.</string>
+  <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
+  <string name="mozac_feature_addons_permissions_one_site_description_for_update">الوصول إلى بياناتك لـ %1$s.</string>
+  <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
+  <string name="mozac_feature_addons_permissions_sites_in_domain_description_for_update">الوصول إلى بياناتك للمواقع ضمن النطاق %1$s.</string>
+  <!--
+    When an add-on requires access to more than 2 domains, for example the add-on requires access for 3 domains. We will show the first 2 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description_for_update,
+    then we will show another collapsed entry saying "Access your data on another domain.".
+  -->
+  <string name="mozac_feature_addons_permissions_one_extra_domain_description_for_update">الوصول إلى بياناتك في نطاق آخر.</string>
+  <!--
+    When an add-on requires access to more than 2 domains, for example the add-on requires access for 4 domains. We will show the first 2 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description_for_update,
+    then we will show another collapsed entry saying "Access your data on other domains.".
+  -->
+  <string name="mozac_feature_addons_permissions_extra_domains_description_plural_for_update">الوصول إلى بياناتك في نطاقات أخرى.</string>
+  <!--
+    When an add-on requires access to more than 2 sites, for example the add-on requires access for 3 sites. We will show the first 2 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description_for_update,
+    then we will show another collapsed entry saying "Access your data on another site.".
+  -->
+  <string name="mozac_feature_addons_permissions_one_extra_site_description_for_update">الوصول إلى بياناتك في موقع آخر.</string>
+  <!--
+    When an add-on requires access to more than 2 sites, for example the add-on requires access for 4 sites. We will show the first 2 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description_for_update,
+    then we will show another collapsed entry saying "Access your data on other sites.".
+  -->
+  <string name="mozac_feature_addons_permissions_extra_sites_description_for_update">الوصول إلى بياناتك في مواقع أخرى.</string>
+  <!-- The text shown when an extension requests the userScripts permission, near the usual description of the userScripts permission -->
+  <string name="mozac_feature_addons_permissions_user_scripts_extra_warning">قد تُشكّل السكربتات غير الموثوقة مخاطر على الأمن والخصوصية. شغّل السكربتات فقط من الامتدادات أو المصادر التي تثق بها.</string>
+  <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
+  <string name="mozac_feature_addons_permissions_required_data_collection_description_2">يقول المطور أن هذا الامتداد يجمع: %1$s</string>
+  <!-- The sentence used when the developer of an extension has explicitly stated that they do not collect any data collection. -->
+  <string name="mozac_feature_addons_permissions_none_required_data_collection_description">يقول المطور أن هذا الامتداد لا يتطلب جمع البيانات.</string>
+  <!-- The sentence used when the extension requests new data collection permissions. %1$s is a formatted list of permissions. -->
+  <string name="mozac_feature_addons_permissions_data_collection_optional_description">يقول المطور أن الامتداد يريد جمع: %1$s</string>
+  <!-- Description for text button that expands the list of domain permissions -->
+  <string name="mozac_feature_addons_permissions_show_all_sites">إظهار جميع المواقع</string>
+  <!-- Description for text button that hides the majority of the list of domain permissions -->
+  <string name="mozac_feature_addons_permissions_show_fewer_sites">إظهار مواقع أقل</string>
+  <!-- Short description for the authenticationInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_authenticationInfo_short_description">معلومات المصادقة</string>
+  <!-- Short description for the bookmarksInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_bookmarksInfo_short_description">العلامات</string>
+  <!-- Short description for the browsingActivity data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_browsingActivity_short_description">نشاط التصفح</string>
+  <!-- Short description for the financialAndPaymentInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_financialAndPaymentInfo_short_description">المعلومات المالية ومعلومات الدفع</string>
+  <!-- Short description for the healthInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_healthInfo_short_description">المعلومات الصحية</string>
+  <!-- Short description for the locationInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_locationInfo_short_description">الموقع الجغرافي</string>
+  <!-- Short description for the personalCommunications data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_personalCommunications_short_description">الاتصالات الشخصية</string>
+  <!-- Short description for the personallyIdentifyingInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_personallyIdentifyingInfo_short_description">معلومات التعريف الشخصية</string>
+  <!-- Short description for the searchTerms data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_searchTerms_short_description">مصطلحات البحث</string>
+  <!-- Short description for the technicalAndInteraction data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_technicalAndInteraction_short_description">البيانات الفنية والتفاعلية</string>
+  <!-- Short description for the websiteActivity data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_websiteActivity_short_description">نشاط الموقع</string>
+  <!-- Short description for the websiteContent data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_websiteContent_short_description">محتوى الموقع</string>
+  <!-- Long description for the authenticationInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_authenticationInfo_long_description">مشاركة بيانات المصادقة مع مطوّر الامتداد</string>
+  <!-- Long description for the bookmarksInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_bookmarksInfo_long_description">مشاركة معلومات العلامات مع مطور الامتداد</string>
+  <!-- Long description for the browsingActivity data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_browsingActivity_long_description">مشاركة نشاط التصفح مع مطور الامتداد</string>
+  <!-- Long description for the financialAndPaymentInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_financialAndPaymentInfo_long_description">مشاركة المعلومات المالية ومعلومات الدفع مع مطور الامتداد</string>
+  <!-- Long description for the healthInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_healthInfo_long_description">مشاركة معلوماتك الصحية مع مطور الامتداد</string>
+  <!-- Long description for the locationInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_locationInfo_long_description">مشاركة معلومات الموقع الجغرافي مع مطور الامتداد</string>
+  <!-- Long description for the personalCommunications data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_personalCommunications_long_description">مشاركة الاتصالات الشخصية مع مطور الامتداد</string>
+  <!-- Long description for the personallyIdentifyingInfo data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_personallyIdentifyingInfo_long_description">مشاركة معلومات التعريف الشخصية مع مطور الامتداد</string>
+  <!-- Long description for the searchTerms data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_searchTerms_long_description">مشاركة مصطلحات البحث مع مطور الامتداد</string>
+  <!-- Long description for the technicalAndInteraction data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_technicalAndInteraction_long_description">مشاركة البيانات الفنية والتفاعلية مع مطور الامتداد</string>
+  <!-- Long description for the websiteActivity data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_websiteActivity_long_description">مشاركة نشاط التصفح مع مطور الامتداد</string>
+  <!-- Long description for the websiteContent data collection permission -->
+  <string name="mozac_feature_addons_permissions_data_collection_websiteContent_long_description">مشاركة محتوى الموقع الإلكتروني مع مطور الامتداد</string>
   <!-- The version on of add-on. -->
   <string name="mozac_feature_addons_version">النسخة</string>
   <!-- The author of an add-on. -->
@@ -91,7 +245,7 @@
   <!-- The developer website (Homepage) of the add-on. -->
   <string name="mozac_feature_addons_home_page">الصفحة الرئيسية</string>
   <!-- A link where users can find more information about add-ons permissions. -->
-  <string name="mozac_feature_addons_learn_more">اطّلع على المزيد عن التصاريح</string>
+  <string name="mozac_feature_addons_learn_more">معرفة المزيد عن الأذونات</string>
   <!-- The rating of the add-on. -->
   <string name="mozac_feature_addons_rating">التقييم</string>
   <!-- A link that points to the detail page of the extension. -->
@@ -101,15 +255,15 @@
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_settings_on">مفعّلة</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
-  <string name="mozac_feature_addons_settings_allow_in_private_browsing" moz:removedIn="141" tools:ignore="UnusedResources">اسمح بها في التصفّح الخاص</string>
+  <string name="mozac_feature_addons_settings_allow_in_private_browsing_2">السماح بتشغيل الامتداد في وضع التصفّح الخاص</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
-  <string name="mozac_feature_addons_settings_run_in_private_browsing">تعمل في التصفّح الخاص</string>
+  <string name="mozac_feature_addons_settings_run_in_private_browsing">التشغيل في التصفّح الخاص</string>
   <!-- This is displayed when the add-on is not allowed to run in private browsing. -->
-  <string name="mozac_feature_addons_not_allowed_in_private_browsing">ليس مسموحًا بأن تعمل في النوافذ الخاصة</string>
+  <string name="mozac_feature_addons_not_allowed_in_private_browsing">لا تعمل في التصفّح الخاص</string>
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_enabled">مفعّلة</string>
   <!-- This is displayed in a page where the user can see the installed and recommended(not installed yet) add-ons, this string indicates the installed section. -->
-  <string name="mozac_feature_addons_installed_section">منصّبة</string>
+  <string name="mozac_feature_addons_installed_section">مثبّت</string>
   <!-- This is displayed in a page where the user can see the installed and recommended(not installed yet) add-ons, this string indicates the recommended section. -->
   <string name="mozac_feature_addons_recommended_section">موصى به</string>
   <!-- This is displayed in a page where the user can see the installed and recommended(not installed yet) add-ons, this string indicates the not yet supported section. -->
@@ -121,35 +275,45 @@
   <!-- Displays a page with all the details of an add-on. -->
   <string name="mozac_feature_addons_details">التفاصيل</string>
   <!-- Displays a page with all the permissions of an add-on. -->
-  <string name="mozac_feature_addons_permissions">التصاريح</string>
+  <string name="mozac_feature_addons_permissions">الأذونات</string>
   <!-- This is a button to remove (i.e. uninstall) an add-on. -->
-  <string name="mozac_feature_addons_remove">أزِل</string>
+  <string name="mozac_feature_addons_remove">إزالة</string>
   <!-- This is a button to report an add-on. -->
-  <string name="mozac_feature_addons_report">أبلِغ</string>
+  <string name="mozac_feature_addons_report">الإبلاغ</string>
   <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_permissions_dialog_title" moz:removedIn="141" tools:ignore="UnusedResources">أتريد إضافة %1$s؟</string>
+  <string name="mozac_feature_addons_permissions_dialog_title_2">إضافة %1$s</string>
   <!-- This is the title of a dialog that asks the users to grant optional permissions. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">يطلب %1$s صلاحيات إضافية.</string>
-  <!-- This is the subtitle of a dialog that asks the users if they want to install or not an add-on, the subtitle lists the permissions that this add-on requires, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_permissions_dialog_subtitle" moz:removedIn="141" tools:ignore="UnusedResources">يحتاج الصلاحيات التالية:</string>
-  <!-- This is the subtitle of a dialog that asks the users to grant optional permissions, the subtitle lists the permissions that this add-on requests, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_subtitle" moz:removedIn="142" tools:ignore="UnusedResources">تُريدُ:</string>
+  <string name="mozac_feature_addons_optional_permissions_with_data_collection_dialog_title">يتطلب %1$s إعدادات إضافية</string>
+  <!-- This is the title of a dialog that asks the users to grant optional data collection permissions only. %1$s is the add-on name. -->
+  <string name="mozac_feature_addons_optional_permissions_with_data_collection_only_dialog_title">يتطلب %1$s جمع بيانات إضافية</string>
+  <!-- Heading for the permissions section in the add-on install dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_heading_required_permissions">الأذونات المطلوبة:</string>
+  <!-- Heading for the data collection permissions section in the add-on install dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_heading_required_data_collection">تجميع البيانات المطلوبة:</string>
+  <!-- Heading for the optional settings section in the add-on install dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_heading_optional_settings">إعدادات اختيارية:</string>
+  <!-- Heading for the permissions section in the optional permissions request dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_heading_optional_permissions">الأذونات الجديدة:</string>
+  <!-- Heading for the data collection permissions section in the optional permissions request dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_heading_optional_data_collection">تجميع بيانات جديدة:</string>
   <!-- This is a button to add (install) an add-on . -->
-  <string name="mozac_feature_addons_permissions_dialog_add">أضِف</string>
+  <string name="mozac_feature_addons_permissions_dialog_add">إضافة</string>
   <!-- This is a button to allow the optional permissions requested by an add-on . -->
-  <string name="mozac_feature_addons_permissions_dialog_allow">اسمح</string>
+  <string name="mozac_feature_addons_permissions_dialog_allow">السماح</string>
   <!-- This is a button to deny the optional permissions requested by an add-on . -->
-  <string name="mozac_feature_addons_permissions_dialog_deny">ارفض</string>
+  <string name="mozac_feature_addons_permissions_dialog_deny">الرفض</string>
   <!-- Text link to learn more about permission requests on the add-on permissions dialog . -->
-  <string name="mozac_feature_addons_permissions_dialog_learn_more">اطلع على المزيد</string>
+  <string name="mozac_feature_addons_permissions_dialog_learn_more">اطلّع على المزيد</string>
+  <!-- This is the text for the "technical and interaction" checkbox shown in the add-on permissions dialog. -->
+  <string name="mozac_feature_addons_permissions_dialog_technical_and_interaction_data">مشاركة البيانات الفنية والتفاعلية مع مطور الامتداد</string>
   <!-- This is a button to cancel the add-on installation . -->
-  <string name="mozac_feature_addons_permissions_dialog_cancel">ألغِ</string>
+  <string name="mozac_feature_addons_permissions_dialog_cancel">إلغاء</string>
   <!-- Accessibility content description to install add-on button. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_install_addon_content_description_2">قم بتثبيت %1$s</string>
+  <string name="mozac_feature_addons_install_addon_content_description_2">تثبيت %1$s</string>
   <!-- This is the label of a button to cancel an ongoing add-on installation. -->
-  <string name="mozac_feature_addons_install_addon_dialog_cancel">ألغِ</string>
+  <string name="mozac_feature_addons_install_addon_dialog_cancel">إلغاء</string>
   <!-- Indicates how many users have rated an add-on. %1$s will be replaced with number of reviews -->
-  <string name="mozac_feature_addons_user_rating_count_2">المراجعات: %1$s</string>
+  <string name="mozac_feature_addons_user_rating_count_2">التقييمات: %1$s</string>
   <!-- Accessibility content description for the amount of stars that add-on has, where %1$.02f will be the amount of stars. -->
   <string name="mozac_feature_addons_rating_content_description_2">التقييم: %1$.02f من أصل 5</string>
   <!-- This is the title of page where all the add-ons are listed -->
@@ -159,73 +323,71 @@
   <!-- The title of the "crash" notification in the extensions manager -->
   <string name="mozac_feature_extensions_manager_notification_title_text">تم ايقاف الإمتدادات مؤقتًا</string>
   <!-- The content of the "crash" notification in the extensions manager -->
-  <string name="mozac_feature_extensions_manager_notification_content_text">توقف أحد الإضافات (أو أكثر) عن العمل، مما يجعل نظامك غير مستقر.</string>
+  <string name="mozac_feature_extensions_manager_notification_content_text">توقفت إحدى الامتدادات أو أكثر عن العمل، مما يجعل نظامك غير ثابت.</string>
   <!-- Button to re-enable the extensions in the "crash" notification -->
-  <string name="mozac_feature_extensions_manager_notification_restart_button">إعادة تشغيل الإمتدادات</string>
+  <string name="mozac_feature_extensions_manager_notification_restart_button">إعادة تشغيل الامتدادات</string>
   <!-- Button in the extensions manager that opens AMO in a tab -->
-  <string name="mozac_feature_addons_find_more_extensions_button_text">ابحث عن امتدادات أكثر</string>
-  <!-- The label of the allow button, this will be shown to the user when an add-on needs new permissions, with the button the user will indicate that they want to accept the new permissions and update the add-on -->
-  <string name="mozac_feature_addons_updater_notification_allow_button" moz:removedIn="142" tools:ignore="UnusedResources">اسمح</string>
-  <!-- The label of the deny button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
-  <string name="mozac_feature_addons_updater_notification_deny_button" moz:removedIn="142" tools:ignore="UnusedResources">ارفض</string>
-  <!-- The tile of the notification, this will be shown to the user when an add-on needs new permissions, to be updated. %1$s is the name of the add-ons -->
-  <string name="mozac_feature_addons_updater_notification_title" moz:removedIn="142" tools:ignore="UnusedResources">تملك %1$s تحديثًا جديدًا</string>
-  <!-- The content of the notification, this will be shown when an add-on needs new permissions, to be updated. %1$d is the amount of new permissions -->
-  <string name="mozac_feature_addons_updater_notification_content" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">مطلوبة تصاريح جديدة (%1$d)</string>
-  <!-- The content of the notification displayed when an add-on needs a new permission -->
-  <string name="mozac_feature_addons_updater_notification_content_singular" moz:removedIn="142" tools:ignore="UnusedResources">مطلوب تصريح جديد</string>
+  <string name="mozac_feature_addons_find_more_extensions_button_text">البحث عن المزيد من الامتدادات</string>
+  <!-- The label of the update button on the system notification shown to the user when an add-on has an update that requires the user to accept new permissions. -->
+  <string name="mozac_feature_addons_updater_notification_update_button">تحديث</string>
+  <!-- The label of the cancel button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
+  <string name="mozac_feature_addons_updater_notification_cancel_button">إلغاء</string>
+  <!-- The title of the system notification shown to the user when an add-on has a new update that requires new permissions. %1$s is the name of the add-on. -->
+  <string name="mozac_feature_addons_updater_notification_title_2">لدى إضافة %1$s تحديث جديد</string>
+  <!-- A short explanation shown in the notification displayed when an add-on has a new update that requires new permissions. -->
+  <string name="mozac_feature_addons_updater_notification_short_intro">يٌرجى الإلغاء للاحتفاظ بالإصدار والإعدادات الحالية.</string>
+  <!-- The heading for the permissions section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of sentences. -->
+  <string name="mozac_feature_addons_updater_notification_heading_permissions">الأذونات الجديدة المطلوبة: %1$s</string>
+  <!-- The heading for the data collection permission section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of permissions. -->
+  <string name="mozac_feature_addons_updater_notification_heading_data_collection_permissions">تجميع البيانات المطلوبة الجديدة: يُصرّح المُطور أن الامتداد سيجمع %1$s.</string>
   <!-- Name of the "notification channel" used for displaying a notification for updating an extension. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_addons_updater_notification_channel_2">تحديثات الامتداد</string>
   <!-- Name of the "notification channel" used for displaying a notification for new supported add-ons. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_addons_supported_checker_notification_channel" tools:ignore="UnusedResources">أداة فحص الإضافات المدعومة</string>
   <!-- The tile of the notification, this will be shown to the user when one newly supported add-on is available. -->
-  <string name="mozac_feature_addons_supported_checker_notification_title" tools:ignore="UnusedResources">تتوفّر إضافة جديدة</string>
+  <string name="mozac_feature_addons_supported_checker_notification_title" tools:ignore="UnusedResources">إضافة جديدة متوفرة</string>
   <!-- The tile of the notification, this will be shown to the user when more than one newly supported add-ons are available. -->
-  <string name="mozac_feature_addons_supported_checker_notification_title_plural" tools:ignore="UnusedResources">تتوفّر إضافات جديدة</string>
+  <string name="mozac_feature_addons_supported_checker_notification_title_plural" tools:ignore="UnusedResources">إضافات جديدة متوفرة</string>
   <!-- The content of the notification, this will be shown to the user when one newly supported add-on is available. %1$s is the add-on name and %2$s is the app name (in most cases Firefox). -->
-  <string name="mozac_feature_addons_supported_checker_notification_content_one">أضِف %1$s إلى %2$s</string>
+  <string name="mozac_feature_addons_supported_checker_notification_content_one">إضافة %1$s إلى %2$s</string>
   <!-- The content of the notification, this will be shown to the user when two newly supported add-ons are available. %1$s is the first add-on name. %2$s is the second add-on name. %3$s is the app name (in most cases Firefox). -->
-  <string name="mozac_feature_addons_supported_checker_notification_content_two">أضِف %1$s و%2$s إلى %3$s</string>
+  <string name="mozac_feature_addons_supported_checker_notification_content_two">إضافة %1$s و%2$s إلى %3$s</string>
   <!-- The content of the notification, this will be shown to the user when more than two newly supported add-ons are available. %1$s is the app name (in most cases Firefox). -->
-  <string name="mozac_feature_addons_supported_checker_notification_content_more_than_two">أضِفها إلى %1$s</string>
+  <string name="mozac_feature_addons_supported_checker_notification_content_more_than_two">الإضافة إلى %1$s</string>
   <!-- This is the caption for not yet supported screen caption -->
   <string name="mozac_feature_addons_not_yet_supported_caption2">نعمل الآن على تقديم الدعم لمجموعة أولية منتقاة من الامتدادات المختارة.</string>
   <!-- This is the caption for the extension installation progress overlay -->
-  <string name="mozac_extension_install_progress_caption">يجرى تنزيل الامتداد والتحقق منه…</string>
+  <string name="mozac_extension_install_progress_caption">يجري تنزيل الامتداد والتحقق منه…</string>
   <!-- Error shown when something unexpected happened while trying to get the extension list from the server -->
-  <string name="mozac_feature_addons_failed_to_query_extensions">فشل استعلام الامدادات!</string>
+  <string name="mozac_feature_addons_failed_to_query_extensions">فشل استعلام الامتدادات!</string>
   <!-- Error shown when unable to find a translation for an add-on field. %1$s is the locale of the user and %2$s is the default language of the add-on -->
-  <string name="mozac_feature_addons_failed_to_translate">لم تُوجد الترجمة لا للمحلية %1$s ولا للغة المبدئية %2$s</string>
+  <string name="mozac_feature_addons_failed_to_translate">لم يتم العثور على ترجمة، لا للغة %1$s ولا للغة الافتراضية %2$s</string>
   <!-- Text shown after successfully installed an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_successfully_installed">نجح تثبيت %1$s</string>
   <!-- Text shown after failing to install an add-on (when add-on type isn't supported or an unknown has errored). %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_install">فشل تثبيت %1$s</string>
   <!-- Text shown after failing to install an extension for which we don't have its name (when add-on type isn't supported or an unknown has errored). -->
-  <string name="mozac_feature_addons_extension_failed_to_install">فشل في تثبيت هذا الامتداد.</string>
+  <string name="mozac_feature_addons_extension_failed_to_install">فشل تثبيت هذا الامتداد.</string>
   <!-- Text shown when installing an add-on has failed. -->
   <string name="mozac_feature_addons_cant_install_extension">لا يمكن تثبيت الإضافة</string>
   <!-- Text shown when attempting to install an extension and a network error happened. -->
   <string name="mozac_feature_addons_extension_failed_to_install_network_error">تعذر تنزيل الامتداد بسبب فشل في الاتصال.</string>
   <!-- Text shown when attempting to install an extension and the downloaded file is corrupted. -->
-  <string name="mozac_feature_addons_extension_failed_to_install_corrupt_error">تعذر تنصيب هذا الامتداد لأنها تبدو تالفة.</string>
+  <string name="mozac_feature_addons_extension_failed_to_install_corrupt_error">تعذر تثبيت هذا الامتداد لأنه يبدو تالفًا.</string>
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was not signed. -->
-  <string name="mozac_feature_addons_extension_failed_to_install_not_signed_error">تعذر تنصيب هذا الامتداد إذ لم يُتحقق منها.</string>
+  <string name="mozac_feature_addons_extension_failed_to_install_not_signed_error">تعذر تثبيت هذا الامتداد إذ لم يُتحقق منه.</string>
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
-  <string name="mozac_feature_addons_failed_to_install_incompatible_error">تعذر تنصيب الإضافة %1$s لأنها غير متوافقة مع %2$s‏ %3$s.</string>
+  <string name="mozac_feature_addons_failed_to_install_incompatible_error">تعذر ثبيت الإضافة %1$s لأنها غير متوافقة مع %2$s‏ %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
   <string name="mozac_feature_addons_blocklisted_2">ينتهك %1$s سياسات موزيلا ولا يمكن تثبيته على %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">لم يتم تثبيت %1$s لأنه لا يمكن تثبيته إلا بواسطة منظمة تستخدم سياسات المؤسسة، وهو أمر غير مدعوم على هذه المنصة.</string>
-  <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_enabled" tools:ignore="UnusedResources" moz:removedIn="142">نجح تفعيل %1$s</string>
+  <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
+  <string name="mozac_feature_addons_soft_blocked_2">%1$s مُقيّد ولا يمكن تثبيته على %2$s.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">فشل تفعيل %1$s</string>
-  <!-- Text shown after successfully disabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_disabled" tools:ignore="UnusedResources" moz:removedIn="142">نجح تعطيل %1$s</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_disable">فشل تعطيل %1$s</string>
-  <!-- Text shown after successfully uninstalled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_uninstalled" tools:ignore="UnusedResources" moz:removedIn="142">نجحت إزالة %1$s</string>
   <!-- Text shown after failed to uninstall an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_uninstall">فشلت إزالة %1$s</string>
   <!-- Text shown after successfully removed an add-on. %1$s is the add-on name. -->
@@ -233,7 +395,7 @@
   <!-- Text shown after failed to remove an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_remove" tools:ignore="UnusedResources">فشلت إزالة %1$s</string>
   <!-- Label shown to indicate that the add-on was migrated from a previous version of the app. %1$s is the app name most of the case it will be Firefox. -->
-  <string name="mozac_feature_addons_migrated_from_a_previous_version_label" tools:ignore="UnusedResources">رُحّلت هذه الإضافة من إصدارة سابقة من %1$s</string>
+  <string name="mozac_feature_addons_migrated_from_a_previous_version_label" tools:ignore="UnusedResources">رُحّلت هذه الإضافة من إصدار سابق من %1$s</string>
   <!-- Text shown in not yet supported add-ons section. -->
   <string name="mozac_feature_addons_unsupported_caption_2">1 امتداد</string>
   <!-- Text shown in not yet supported add-ons section - plural. %1$s is the number of unsupported extensions. -->
@@ -252,22 +414,26 @@
   <string name="mozac_feature_addons_updater_dialog_last_attempt">آخر محاولة:</string>
   <!-- Displayed in the "Status" field for the updater when an add-on has been correctly updated -->
   <string name="mozac_feature_addons_updater_dialog_status">الحالة:</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">أُضيفت %1$s إلى %2$s</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_description_2" moz:removedIn="142" tools:ignore="UnusedResources">دخول %1$s من قائمة %2$s.</string>
+  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. -->
+  <string name="mozac_feature_addons_installed_dialog_title_2">تمت إضافة %1$s</string>
+  <!-- Used as text for the link in the description of the post-installation dialog. -->
+  <string name="mozac_feature_addons_installed_dialog_description_link_text">إعدادات الامتداد</string>
+  <!-- Text shown in the dialog when add-on installation is completed. %1$s is replaced by an active link, using mozac_feature_addons_installed_dialog_description_link_text as text ("extension settings"). -->
+  <string name="mozac_feature_addons_installed_dialog_description_3">يمكنك تحديث الأذونات وتفضيلات البيانات في أي وقت في %1$s.</string>
   <!-- Confirmation button text for the dialog when add-on installation is completed. -->
-  <string name="mozac_feature_addons_installed_dialog_okay_button_2">حسنا</string>
+  <string name="mozac_feature_addons_installed_dialog_okay_button_2">حسنًا</string>
   <!-- "Learn more" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_learn_more">اطّلع على المزيد</string>
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">عرض التفاصيل</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
+  <string name="mozac_feature_addons_status_blocklisted_1">حُظِر هذا الامتداد بسبب انتهاكه لسياسات Mozilla وتم تعطيله.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
-  <string name="mozac_feature_addons_status_softblocked_1">حُظر هذا الامتداد بسبب انتهاكه لسياسات موزيلا وعُطّل. يمكنك تمكينه، ولكن هذا قد يكون محفوفًا بالمخاطر.</string>
+  <string name="mozac_feature_addons_status_softblocked_2">قٌيّد هذا الامتداد وتم تعطيله. يمكنك تفعيله، ولكن قد يشكل هذا خطرًا عليك.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
-  <string name="mozac_feature_addons_status_softblocked_re_enabled">هذا الامتداد ينتهك سياسات موزيلا. قد يكون من الخطر استخدامه.</string>
+  <string name="mozac_feature_addons_status_softblocked_re_enabled_2">هذا الامتداد مُقيد، واستخدامه قد يكون خطيرًا.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_unsigned">تعذّر التحقق من أمان %1$s ولذا عُطّل.</string>
+  <string name="mozac_feature_addons_status_unsigned">تعذّر التحقق من أمان %1$s، لذلك تم تعطيله.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_status_incompatible">%1$s غير متوافق مع إصدارك من %2$s (النسخة %3$s).</string>
 </resources>

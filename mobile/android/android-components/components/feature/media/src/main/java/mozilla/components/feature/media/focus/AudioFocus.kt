@@ -5,7 +5,6 @@
 package mozilla.components.feature.media.focus
 
 import android.media.AudioManager
-import android.os.Build
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.mediasession.MediaSession
@@ -25,11 +24,7 @@ internal class AudioFocus(
     private var resumeOnFocusGain = false
     private var sessionId: String? = null
 
-    private val audioFocusController = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        AudioFocusControllerV26(audioManager, this)
-    } else {
-        AudioFocusControllerV21(audioManager, this)
-    }
+    private val audioFocusController = AudioFocusControllerV26(audioManager, this)
 
     @Synchronized
     fun request(tabId: String?) {
@@ -75,7 +70,6 @@ internal class AudioFocus(
     }
 
     @Synchronized
-    @Suppress("ComplexMethod")
     override fun onAudioFocusChange(focusChange: Int) {
         logger.debug("onAudioFocusChange($focusChange)")
         val sessionState = sessionId?.let {

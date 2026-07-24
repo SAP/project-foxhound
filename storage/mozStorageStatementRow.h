@@ -7,7 +7,6 @@
 #ifndef MOZSTORAGESTATEMENTROW_H
 #define MOZSTORAGESTATEMENTROW_H
 
-#include "mozilla/Attributes.h"
 #include "nsPIDOMWindow.h"
 #include "nsWrapperCache.h"
 

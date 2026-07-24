@@ -5,18 +5,19 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRWebGLLayer.h"
-#include "mozilla/dom/XRSession.h"
-#include "mozilla/dom/XRView.h"
-#include "mozilla/dom/XRViewport.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
+
+#include "ClientWebGLContext.h"
+#include "GLContext.h"
+#include "MozFramebuffer.h"
+#include "ScopedGLHelpers.h"
+#include "VRDisplayClient.h"
 #include "WebGLFramebuffer.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "GLContext.h"
-#include "ScopedGLHelpers.h"
-#include "MozFramebuffer.h"
-#include "VRDisplayClient.h"
-#include "ClientWebGLContext.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "mozilla/dom/XRSession.h"
+#include "mozilla/dom/XRView.h"
+#include "mozilla/dom/XRViewport.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 

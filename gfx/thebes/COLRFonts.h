@@ -7,7 +7,6 @@
 #define COLR_FONTS_H
 
 #include "mozilla/gfx/2D.h"
-#include "mozilla/UniquePtr.h"
 #include "nsAtom.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"

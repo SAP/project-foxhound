@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef XPCOM_IO_FILEPREFERENCES_H_
+#define XPCOM_IO_FILEPREFERENCES_H_
+
 #include "nsAString.h"
 
 namespace mozilla {
@@ -38,3 +41,5 @@ bool NormalizePath(nsAString const& aPath, nsAString& aNormalized);
 
 }  // namespace FilePreferences
 }  // namespace mozilla
+
+#endif  // XPCOM_IO_FILEPREFERENCES_H_

@@ -5,6 +5,7 @@
 #include "ForwardedInputTrack.h"
 
 #include <algorithm>
+
 #include "AudioChannelService.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeExternalInputTrack.h"
@@ -14,17 +15,14 @@
 #include "GeckoProfiler.h"
 #include "ImageContainer.h"
 #include "MediaTrackGraph.h"
-#include "mozilla/Attributes.h"
+#include "Tracing.h"
+#include "VideoSegment.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWidgetsCID.h"
 #include "prerror.h"
-#include "Tracing.h"
-#include "VideoSegment.h"
 #include "webaudio/MediaStreamAudioDestinationNode.h"
 
 using namespace mozilla::layers;

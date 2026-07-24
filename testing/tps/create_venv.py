@@ -133,9 +133,11 @@ def main():
     activate(target)
 
     # Install TPS in environment
-    subprocess.check_call(
-        [os.path.join(target, python_env), os.path.join(here, "setup.py"), "install"]
-    )
+    subprocess.check_call([
+        os.path.join(target, python_env),
+        os.path.join(here, "setup.py"),
+        "install",
+    ])
 
     # Get the path to tests and extensions directory by checking check where
     # the tests and extensions directories are located

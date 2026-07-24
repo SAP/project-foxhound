@@ -5,22 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPProcessParent.h"
+
 #include "GMPUtils.h"
 #include "nsIRunnable.h"
 #ifdef XP_WIN
 #  include "WinUtils.h"
 #endif
+#include <string>
+
 #include "GMPLog.h"
+#include "base/process_util.h"
+#include "base/string_util.h"
 #include "mozilla/GeckoArgs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "nsFmtString.h"
-
-#include "base/string_util.h"
-#include "base/process_util.h"
-
-#include <string>
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Omnijar.h"
@@ -235,8 +235,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   // any overriding, and it only lives on the stack.
   bool launched = SyncLaunch(std::move(args), aTimeoutMs);
   if (launched) {
-    nsFmtString name{FMT_STRING(u"GMPProcessParent {}"),
-                     static_cast<void*>(this)};
+    nsFmtString name{u"GMPProcessParent {}", static_cast<void*>(this)};
     mShutdownBlocker = media::ShutdownBlockingTicket::Create(
         name, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__);
   }
@@ -244,7 +243,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
 }
 
 void GMPProcessParent::Delete(nsCOMPtr<nsIRunnable> aCallback) {
-  mDeletedCallback = aCallback;
+  mDeletedCallback = std::move(aCallback);
   XRE_GetAsyncIOEventTarget()->Dispatch(NewNonOwningRunnableMethod(
       "gmp::GMPProcessParent::DoDelete", this, &GMPProcessParent::DoDelete));
 }
@@ -325,7 +324,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
       return false;
     }
     nsCString repoDirPath;
-    Unused << repoDir->GetNativePath(repoDirPath);
+    (void)repoDir->GetNativePath(repoDirPath);
     aInfo.testingReadPath1 = repoDirPath.get();
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "
@@ -341,7 +340,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
       return false;
     }
     nsCString objDirPath;
-    Unused << objDir->GetNativePath(objDirPath);
+    (void)objDir->GetNativePath(objDirPath);
     aInfo.testingReadPath2 = objDirPath.get();
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "

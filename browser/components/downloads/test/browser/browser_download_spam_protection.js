@@ -6,7 +6,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  DownloadSpamProtection: "resource:///modules/DownloadSpamProtection.sys.mjs",
+  DownloadSpamProtection:
+    "moz-src:///browser/components/downloads/DownloadSpamProtection.sys.mjs",
   PermissionTestUtils: "resource://testing-common/PermissionTestUtils.sys.mjs",
 });
 

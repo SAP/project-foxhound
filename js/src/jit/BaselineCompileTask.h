@@ -105,6 +105,10 @@ class BaselineCompileTask final : public HelperThreadTask {
 #endif
   }
 
+  static bool OffThreadBaselineCompilationAvailable(JSContext* cx,
+                                                    JSScript* script,
+                                                    bool isEager = false);
+
   ThreadType threadType() override { return THREAD_TYPE_BASELINE; }
   void runTask();
   void runHelperThreadTask(AutoLockHelperThreadState& locked) override;

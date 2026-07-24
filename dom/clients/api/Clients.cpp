@@ -8,6 +8,8 @@
 
 #include "Client.h"
 #include "ClientDOMUtil.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientsBinding.h"
@@ -17,11 +19,9 @@
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/StaticPrefs_privacy.h"
 #include "nsIGlobalObject.h"
-#include "nsString.h"
 #include "nsReadableUtils.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

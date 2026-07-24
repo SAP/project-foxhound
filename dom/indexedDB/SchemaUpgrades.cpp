@@ -8,20 +8,21 @@
 
 // local includes
 #include "ActorsParentCommon.h"
+#include "DBSchema.h"
 #include "DatabaseFileInfo.h"
 #include "DatabaseFileManager.h"
-#include "DBSchema.h"
+#include "IndexedDBCommon.h"
 #include "IndexedDatabase.h"
 #include "IndexedDatabaseInlines.h"
-#include "IndexedDBCommon.h"
 #include "ReportInternalError.h"
 
 // global includes
 #include <stdlib.h>
+
 #include <algorithm>
 #include <tuple>
-#include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
 #include "SafeRefPtr.h"
@@ -36,13 +37,12 @@
 #include "mozStorageHelper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/OriginAttributes.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/indexedDB/IDBResult.h"
 #include "mozilla/dom/indexedDB/Key.h"
@@ -53,7 +53,6 @@
 #include "mozilla/fallible.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/mozalloc.h"
-#include "mozilla/ProfilerLabels.h"
 #include "mozilla/storage/Variant.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"

@@ -9,14 +9,12 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
-#include "nsError.h"
-#include "nsThreadUtils.h"
-
 #include "ServiceWorkerPrivate.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/PFetchEventOpChild.h"
+#include "nsError.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -153,7 +151,7 @@ void RemoteWorkerControllerChild::MaybeSendDelete() {
       GetCurrentSerialEventTarget(), __func__,
       [self = std::move(self)](const ShutdownPromise::ResolveOrRejectValue&) {
         if (self->mIPCActive) {
-          Unused << self->Send__delete__(self);
+          (void)self->Send__delete__(self);
         }
       });
 }

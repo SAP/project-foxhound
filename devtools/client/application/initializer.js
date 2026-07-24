@@ -26,6 +26,9 @@ const {
   bindActionCreators,
 } = require("resource://devtools/client/shared/vendor/redux.js");
 const {
+  START_IGNORE_ACTION,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
+const {
   l10n,
 } = require("resource://devtools/client/application/src/modules/l10n.js");
 
@@ -93,6 +96,33 @@ window.Application = {
       }
     );
 
+    if (
+      Services.prefs.getBoolPref(
+        "devtools.application.sessionHistory.enabled",
+        false
+      )
+    ) {
+      // TODO: This should be moved to a resource (see Bug 2014064)
+      this._sessionHistory = BrowsingContext.get(
+        this._commands.targetCommand.targetFront.browsingContextID
+      ).sessionHistory;
+      this.actions.updateSessionHistory(this._sessionHistory);
+      this._sessionHistoryListener = {
+        QueryInterface: ChromeUtils.generateQI([
+          "nsISHistoryListener",
+          "nsISupportsWeakReference",
+        ]),
+        OnHistoryCommit: () => {
+          this.actions.updateSessionHistory(this._sessionHistory);
+        },
+        OnEntryTitleUpdated: entry => {
+          this.actions.updateSessionHistoryEntry(entry);
+        },
+      };
+
+      this._sessionHistory.addSHistoryListener(this._sessionHistoryListener);
+    }
+
     // Render the root Application component.
     this.mount = document.querySelector("#mount");
     const app = App({
@@ -132,12 +162,21 @@ window.Application = {
   },
 
   destroy() {
+    // Prevents any further action from being dispatched
+    this.store.dispatch(START_IGNORE_ACTION);
+
     this.workersListener.removeListener();
 
     this._commands.resourceCommand.unwatchResources(
       [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
       { onAvailable: this.onResourceAvailable }
     );
+
+    if (this._sessionHistory) {
+      this._sessionHistory.removeSHistoryListener(this._sessionHistoryListener);
+      this._sessionHistory = null;
+      this._sessionHistoryListener;
+    }
 
     unmountComponentAtNode(this.mount);
     this.mount = null;

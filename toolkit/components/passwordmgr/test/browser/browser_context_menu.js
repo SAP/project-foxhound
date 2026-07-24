@@ -600,8 +600,9 @@ async function assertContextMenuFill(
 
 /**
  * Check if every login that matches the page origin are available at the context menu.
+ *
  * @param {Element} contextMenu
- * @param {Number} expectedCount - Number of logins expected in the context menu. Used to ensure
+ * @param {number} expectedCount - Number of logins expected in the context menu. Used to ensure
  *                                  we continue testing something useful.
  */
 function checkMenu(contextMenu, expectedCount) {

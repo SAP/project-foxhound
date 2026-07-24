@@ -48,12 +48,13 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
 
     private val args by navArgs<ExternalAppBrowserFragmentArgs>()
 
+    override val isSandboxCustomTab: Boolean get() = args.isSandboxCustomTab
+
     private val customTabsIntegration = ViewBoundFeatureWrapper<CustomTabsIntegration>()
     private val customTabColorsBinding = ViewBoundFeatureWrapper<CustomTabColorsBinding>()
     private val windowFeature = ViewBoundFeatureWrapper<CustomTabWindowFeature>()
-    private val hideToolbarFeature = ViewBoundFeatureWrapper<WebAppHideToolbarFeature>()
 
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
         super.initializeUI(view, tab)
 
@@ -70,7 +71,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
             is BrowserToolbarView -> {
                 customTabsIntegration.set(
                     feature = CustomTabsIntegration(
-                        context = requireContext(),
                         store = requireComponents.core.store,
                         useCases = requireComponents.useCases.customTabsUseCases,
                         browserToolbar = browserToolbarView.toolbar,
@@ -78,9 +78,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                         activity = activity,
                         interactor = browserToolbarInteractor,
                         isPrivate = tab.content.private,
-                        shouldReverseItems = !activity.settings().shouldUseBottomToolbar,
-                        isSandboxCustomTab = args.isSandboxCustomTab,
-                        isMenuRedesignEnabled = requireContext().settings().enableMenuRedesign,
+                        isSandboxCustomTab = isSandboxCustomTab,
                     ),
                     owner = this,
                     view = view,
@@ -201,20 +199,35 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                 )
                 withContext(Dispatchers.Main) {
                     runIfFragmentIsAttached {
-                        val directions = ExternalAppBrowserFragmentDirections
-                            .actionGlobalQuickSettingsSheetDialogFragment(
+                        val directions = if (requireContext().settings().enableUnifiedTrustPanel) {
+                            ExternalAppBrowserFragmentDirections.actionGlobalTrustPanelFragment(
                                 sessionId = tab.id,
                                 url = tab.content.url,
                                 title = tab.content.title,
                                 isLocalPdf = tab.content.url.isContentUrl(),
-                                isSecured = tab.content.securityInfo.secure,
+                                isSecured = tab.content.securityInfo.isSecure,
                                 sitePermissions = sitePermissions,
-                                gravity = getAppropriateLayoutGravity(),
-                                certificateName = tab.content.securityInfo.issuer,
+                                certificate = tab.content.securityInfo.certificate,
                                 permissionHighlights = tab.content.permissionHighlights,
                                 isTrackingProtectionEnabled = tab.trackingProtection.enabled && !contains,
                                 cookieBannerUIMode = cookieBannerUIMode,
                             )
+                        } else {
+                            ExternalAppBrowserFragmentDirections
+                                .actionGlobalQuickSettingsSheetDialogFragment(
+                                    sessionId = tab.id,
+                                    url = tab.content.url,
+                                    title = tab.content.title,
+                                    isLocalPdf = tab.content.url.isContentUrl(),
+                                    isSecured = tab.content.securityInfo.isSecure,
+                                    sitePermissions = sitePermissions,
+                                    gravity = getAppropriateLayoutGravity(),
+                                    certificateName = tab.content.securityInfo.issuer,
+                                    permissionHighlights = tab.content.permissionHighlights,
+                                    isTrackingProtectionEnabled = tab.trackingProtection.enabled && !contains,
+                                    cookieBannerUIMode = cookieBannerUIMode,
+                                )
+                        }
                         nav(R.id.externalAppBrowserFragment, directions)
                     }
                 }

@@ -4,18 +4,15 @@
 
 use std::mem;
 use smallvec::SmallVec;
-use api::{ImageFormat, ImageBufferKind, DebugFlags};
+use api::{ImageFormat, ImageBufferKind, DebugFlags, TextureCacheCategory};
 use api::units::*;
 use crate::device::TextureFilter;
 use crate::internal_types::{
-    CacheTextureId, TextureUpdateList, Swizzle, TextureCacheAllocInfo, TextureCacheCategory,
+    CacheTextureId, TextureUpdateList, Swizzle, TextureCacheAllocInfo,
     TextureSource, FrameStamp, FrameId,
 };
 use crate::profiler::{self, TransactionProfile};
-use crate::gpu_types::{ImageSource, UvRectKind};
-use crate::gpu_cache::{GpuCache, GpuCacheHandle};
 use crate::freelist::{FreeList, FreeListHandle, WeakFreeListHandle};
-
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -35,32 +32,10 @@ use std::cmp;
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PictureCacheEntry {
-    /// Size of the requested tile.
-    pub size: DeviceIntSize,
     /// The last frame this item was requested for rendering.
-    // TODO(gw): This stamp is only used for picture cache tiles, and some checks
-    //           in the glyph cache eviction code. We could probably remove it
-    //           entirely in future (or move to EntryDetails::Picture).
     pub last_access: FrameStamp,
-    /// Handle to the resource rect in the GPU cache.
-    pub uv_rect_handle: GpuCacheHandle,
     /// The actual device texture ID this is part of.
     pub texture_id: CacheTextureId,
-}
-
-impl PictureCacheEntry {
-    fn update_gpu_cache(&mut self, gpu_cache: &mut GpuCache) {
-        if let Some(mut request) = gpu_cache.request(&mut self.uv_rect_handle) {
-            let origin = DeviceIntPoint::zero();
-            let image_source = ImageSource {
-                p0: origin.to_f32(),
-                p1: (origin + self.size).to_f32(),
-                uv_rect_kind: UvRectKind::Rect,
-                user_data: [0.0; 4],
-            };
-            image_source.write_gpu_blocks(&mut request);
-        }
-    }
 }
 
 /// The textures used to hold picture cache tiles.
@@ -130,7 +105,6 @@ impl PictureTextures {
         &mut self,
         tile_size: DeviceIntSize,
         handle: &mut Option<PictureCacheTextureHandle>,
-        gpu_cache: &mut GpuCache,
         next_texture_id: &mut CacheTextureId,
         pending_updates: &mut TextureUpdateList,
     ) {
@@ -155,15 +129,7 @@ impl PictureTextures {
             *handle = Some(new_handle);
         }
 
-        if let Some(handle) = handle {
-            // Upload the resource rect and texture array layer.
-            self.cache_entries
-                .get_opt_mut(handle)
-                .expect("BUG: handle must be valid now")
-                .update_gpu_cache(gpu_cache);
-        } else {
-            panic!("The handle should be valid picture cache handle now")
-        }
+        assert!(handle.is_some(), "The handle should be valid picture cache handle now");
     }
 
     pub fn get_or_allocate_tile(
@@ -217,9 +183,7 @@ impl PictureTextures {
         });
 
         let cache_entry = PictureCacheEntry {
-            size: tile_size,
             last_access: self.now,
-            uv_rect_handle: GpuCacheHandle::new(),
             texture_id,
         };
 
@@ -229,7 +193,7 @@ impl PictureTextures {
 
         self.cache_handles.push(strong_handle);
 
-        new_handle        
+        new_handle
     }
 
     pub fn free_tile(
@@ -264,14 +228,13 @@ impl PictureTextures {
         }
     }
 
-    pub fn request(&mut self, handle: &PictureCacheTextureHandle, gpu_cache: &mut GpuCache) -> bool {
+    pub fn request(&mut self, handle: &PictureCacheTextureHandle) -> bool {
         let entry = self.cache_entries.get_opt_mut(handle);
         let now = self.now;
         entry.map_or(true, |entry| {
             // If an image is requested that is already in the cache,
             // refresh the GPU cache data associated with this item.
             entry.last_access = now;
-            entry.update_gpu_cache(gpu_cache);
             false
         })
     }

@@ -9,8 +9,8 @@
 #include "GMPService.h"
 #include "GMPUtils.h"
 #include "GMPVideoEncoder.h"
-#include "MediaDataEncoderProxy.h"
 #include "MP4Decoder.h"
+#include "MediaDataEncoderProxy.h"
 
 using mozilla::media::EncodeSupport;
 using mozilla::media::EncodeSupportSet;

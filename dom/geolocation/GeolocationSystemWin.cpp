@@ -4,17 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <windows.security.authorization.appcapabilityaccess.h>
+#include <windows.system.h>
+#include <wrl.h>
+
 #include "GeolocationSystem.h"
 #include "mozilla/Components.h"
-#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "nsIGeolocationUIUtilsWin.h"
 #include "nsIWifiListener.h"
 #include "nsIWifiMonitor.h"
-
-#include <windows.system.h>
-#include <windows.security.authorization.appcapabilityaccess.h>
-#include <wrl.h>
 
 namespace mozilla::dom::geolocation {
 

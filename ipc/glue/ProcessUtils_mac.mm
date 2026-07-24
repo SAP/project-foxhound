@@ -17,11 +17,16 @@ namespace ipc {
 static void* sApplicationASN = NULL;
 static void* sApplicationInfoItem = NULL;
 
+//
+// Sets the process name to the concatenation of the bundlekCFBundleNameKey
+// value and the 'aProcessName' argument. If aProcessName is the empty string,
+// the process name will be set to just the kCFBundleNameKey value.
+//
 void SetThisProcessName(const char* aProcessName) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
   nsAutoreleasePool localPool;
 
-  if (!aProcessName || strcmp(aProcessName, "") == 0) {
+  if (!aProcessName) {
     return;
   }
 
@@ -29,8 +34,12 @@ void SetThisProcessName(const char* aProcessName) {
       objectForKey:(NSString*)kCFBundleNameKey];
 
   char formattedName[1024];
-  SprintfLiteral(formattedName, "%s %s", [currentName UTF8String],
-                 aProcessName);
+  if (strcmp(aProcessName, "") == 0) {
+    SprintfLiteral(formattedName, "%s", [currentName UTF8String]);
+  } else {
+    SprintfLiteral(formattedName, "%s %s", [currentName UTF8String],
+                   aProcessName);
+  }
 
   aProcessName = formattedName;
 

@@ -54,6 +54,16 @@ object MatcherHelper {
         return mDevice.findObject(UiSelector().resourceId(resourceId).index(index))
     }
 
+    fun itemWithTextAndIndex(itemText: String, index: Int): UiObject {
+        Log.i(TAG, "Looking for item with text: $itemText and index: $index")
+        return mDevice.findObject(UiSelector().text(itemText).index(index))
+    }
+
+    fun itemWithClassNameAndContainingDescription(className: String, description: String): UiObject {
+        Log.i(TAG, "Looking for item with class name: $className and description: $description")
+        return mDevice.findObject(UiSelector().className(className).descriptionContains(description))
+    }
+
     fun itemWithClassNameAndIndex(className: String, index: Int): UiObject {
         Log.i(TAG, "Looking for item with class name: $className and index: $index")
         return mDevice.findObject(UiSelector().className(className).index(index))

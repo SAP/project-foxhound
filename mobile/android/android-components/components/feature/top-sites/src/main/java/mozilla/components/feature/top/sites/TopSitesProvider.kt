@@ -21,5 +21,5 @@ interface TopSitesProvider {
     /**
      * Refreshes the cache with the latest top sites response if the cache is expired.
      */
-    suspend fun refreshTopSitesIfCacheExpired()
+    suspend fun refreshTopSitesIfCacheExpired() = Unit
 }

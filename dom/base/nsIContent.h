@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIContent_h___
-#define nsIContent_h___
+#ifndef nsIContent_h_
+#define nsIContent_h_
 
 #include "mozilla/FlushType.h"
 #include "nsINode.h"
@@ -12,7 +12,6 @@
 
 // Forward declarations
 class nsIURI;
-class nsTextFragment;
 class nsIFrame;
 
 namespace mozilla {
@@ -22,6 +21,7 @@ class HTMLEditor;
 struct URLExtraData;
 namespace dom {
 struct BindContext;
+class CharacterDataBuffer;
 struct UnbindContext;
 class ShadowRoot;
 class HTMLSlotElement;
@@ -114,7 +114,8 @@ class nsIContent : public nsINode {
    * @note This method is safe to call on nodes that are not bound to a tree.
    */
   virtual void UnbindFromTree(UnbindContext&) = 0;
-  void UnbindFromTree();
+  void UnbindFromTree(nsINode* aNewParent = nullptr,
+                      const BatchRemovalState* aBatchState = nullptr);
 
   enum {
     /**
@@ -227,7 +228,8 @@ class nsIContent : public nsINode {
    * NOTE: For elements this is *not* the concatenation of all text children,
    * it is simply null;
    */
-  virtual const nsTextFragment* GetText() = 0;
+  virtual const mozilla::dom::CharacterDataBuffer* GetCharacterDataBuffer()
+      const = 0;
 
   /**
    * Get the length of the text content.
@@ -301,20 +303,13 @@ class nsIContent : public nsINode {
   virtual IMEState GetDesiredIMEState();
 
   /**
-   * Gets the ShadowRoot binding for this element.
-   *
-   * @return The ShadowRoot currently bound to this element.
-   */
-  inline mozilla::dom::ShadowRoot* GetShadowRoot() const;
-
-  /**
    * Gets the root of the node tree for this content if it is in a shadow tree.
    *
    * @return The ShadowRoot that is the root of the node tree.
    */
   mozilla::dom::ShadowRoot* GetContainingShadow() const {
     const nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
-    return slots ? slots->mContainingShadow.get() : nullptr;
+    return slots ? slots->mContainingShadow : nullptr;
   }
 
   /**
@@ -408,7 +403,7 @@ class nsIContent : public nsINode {
    * element (through createElement() or cloneNode() generally) then add a
    * uint32_t aFromParser to the NS_NewXXX() constructor for your element and
    * have the parser pass the appropriate flags. See HTMLInputElement.cpp and
-   * nsHTMLContentSink::MakeContentObject().
+   * nsHtml5TreeBuilder::elementPopped().
    *
    * DO NOT USE THIS METHOD to get around the fact that it's hard to deal with
    * attributes dynamically.  If you make attributes affect your element from
@@ -430,7 +425,7 @@ class nsIContent : public nsINode {
    * element (through createElement() or cloneNode() generally) then add a
    * boolean aFromParser to the NS_NewXXX() constructor for your element and
    * have the parser pass true.  See HTMLInputElement.cpp and
-   * nsHTMLContentSink::MakeContentObject().
+   * nsHtml5TreeBuilder::elementPopped().
    *
    * @param aHaveNotified Whether there has been a
    *        ContentInserted/ContentAppended notification for this content node
@@ -538,6 +533,21 @@ class nsIContent : public nsINode {
    */
   nsIFrame* GetPrimaryFrame(mozilla::FlushType aType);
 
+  /**
+   * Return true if the related frame is selectable or we need to treat the
+   * content as selectable (e.g., an editable node, a text control).  If the
+   * content does not have primary frame due to e.g., `display:contents`,
+   * `display:none`, `ShadowRoot`, etc, this refers the computed `user-select`
+   * style of this node.  If the `user-select` is `auto`, referring the same
+   * things of closest ancestor elements or shadow DOM host.
+   * NOTE: If this is a generated content like ::before or ::after or not
+   * connected to a Document, this returns false.  I.e., this returns false for
+   * DocumentFragment.
+   * NOTE: Returning true does NOT mean that the content is selectable with a
+   * user's operation.  E.g., can be selectable but invisible.
+   */
+  [[nodiscard]] bool IsSelectable() const;
+
   // Defined in nsIContentInlines.h because it needs nsIFrame.
   inline void SetPrimaryFrame(nsIFrame* aFrame);
 
@@ -555,7 +565,7 @@ class nsIContent : public nsINode {
    * host content.  When the content is in designMode, this returns its body
    * element.  Also, when the content isn't editable, this returns null.
    */
-  mozilla::dom::Element* GetEditingHost();
+  mozilla::dom::Element* GetEditingHost() const;
 
   bool SupportsLangAttr() const {
     return IsHTMLElement() || IsSVGElement() || IsXULElement();
@@ -640,8 +650,9 @@ class nsIContent : public nsINode {
 
     /**
      * @see nsIContent::GetContainingShadow
+     * This is a weak pointer maintained by BindToTree() / UnbindFromTree().
      */
-    RefPtr<mozilla::dom::ShadowRoot> mContainingShadow;
+    mozilla::dom::ShadowRoot* mContainingShadow = nullptr;
 
     /**
      * @see nsIContent::GetAssignedSlot
@@ -657,7 +668,11 @@ class nsIContent : public nsINode {
 
     ~nsContentSlots() {
       if (!(mExtendedSlots & sNonOwningExtendedSlotsFlag)) {
-        delete GetExtendedContentSlots();
+        nsExtendedContentSlots* extSlots = GetExtendedContentSlots();
+        if (extSlots) {
+          extSlots->~nsExtendedContentSlots();
+          free(extSlots);
+        }
       }
     }
 
@@ -700,7 +715,7 @@ class nsIContent : public nsINode {
   };
 
   // Override from nsINode
-  nsContentSlots* CreateSlots() override { return new nsContentSlots(); }
+  nsContentSlots* CreateSlots() override;
 
   nsContentSlots* ContentSlots() {
     return static_cast<nsContentSlots*>(Slots());
@@ -714,9 +729,7 @@ class nsIContent : public nsINode {
     return static_cast<nsContentSlots*>(GetExistingSlots());
   }
 
-  virtual nsExtendedContentSlots* CreateExtendedSlots() {
-    return new nsExtendedContentSlots();
-  }
+  virtual nsExtendedContentSlots* CreateExtendedSlots();
 
   const nsExtendedContentSlots* GetExistingExtendedContentSlots() const {
     const nsContentSlots* slots = GetExistingContentSlots();
@@ -774,4 +787,4 @@ class nsIContent : public nsINode {
 
 NON_VIRTUAL_ADDREF_RELEASE(nsIContent)
 
-#endif /* nsIContent_h___ */
+#endif /* nsIContent_h_ */

@@ -25,6 +25,8 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_STORAGE_ACCESS
@@ -67,6 +69,8 @@ sealed class GeckoPermissionRequest constructor(
                 PERMISSION_PERSISTENT_STORAGE to Permission.ContentPersistentStorage(),
                 PERMISSION_MEDIA_KEY_SYSTEM_ACCESS to Permission.ContentMediaKeySystemAccess(),
                 PERMISSION_STORAGE_ACCESS to Permission.ContentCrossOriginStorageAccess(),
+                PERMISSION_LOCAL_DEVICE_ACCESS to Permission.ContentLocalDeviceAccess(),
+                PERMISSION_LOCAL_NETWORK_ACCESS to Permission.ContentLocalNetworkAccess(),
             )
         }
 
@@ -75,7 +79,7 @@ sealed class GeckoPermissionRequest constructor(
 
         override fun grant(permissions: List<Permission>) {
             if (!isCompleted) {
-                geckoResults.forEach {
+                geckoResults.toList().forEach {
                     it.complete(VALUE_ALLOW)
                 }
             }
@@ -84,7 +88,7 @@ sealed class GeckoPermissionRequest constructor(
 
         override fun reject() {
             if (!isCompleted) {
-                geckoResults.forEach {
+                geckoResults.toList().forEach {
                     it.complete(VALUE_DENY)
                 }
             }
@@ -149,13 +153,13 @@ sealed class GeckoPermissionRequest constructor(
         }
 
         override fun grant(permissions: List<Permission>) {
-            callbacks.forEach {
+            callbacks.toList().forEach {
                 it.grant()
             }
         }
 
         override fun reject() {
-            callbacks.forEach {
+            callbacks.toList().forEach {
                 it.reject()
             }
         }
@@ -220,7 +224,7 @@ sealed class GeckoPermissionRequest constructor(
                 else -> Permission.Generic(mediaSource.id, mediaSource.name)
             }
 
-            @Suppress("ComplexMethod", "SwitchIntDef")
+            @Suppress("SwitchIntDef")
             private fun mapVideoPermission(mediaSource: MediaSource) = when (mediaSource.source) {
                 SOURCE_CAMERA -> Permission.ContentVideoCamera(mediaSource.id, mediaSource.name)
                 SOURCE_SCREEN -> Permission.ContentVideoScreen(mediaSource.id, mediaSource.name)

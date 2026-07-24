@@ -98,9 +98,9 @@ class Location:
 
     def isEqual(self, location):
         """compare scheme://host:port, but ignore options"""
-        return len(
-            [i for i in self.attrs if getattr(self, i) == getattr(location, i)]
-        ) == len(self.attrs)
+        return len([
+            i for i in self.attrs if getattr(self, i) == getattr(location, i)
+        ]) == len(self.attrs)
 
     __eq__ = isEqual
 
@@ -242,9 +242,10 @@ class Permissions:
                 user_prefs.append(("network.trr.uri", trrUri))
                 user_prefs.append(("network.trr.bootstrapAddr", "127.0.0.1"))
                 user_prefs.append(("network.dns.force_use_https_rr", True))
-                user_prefs.append(
-                    ("network.dns.https_rr.check_record_with_cname", False)
-                )
+                user_prefs.append((
+                    "network.dns.https_rr.check_record_with_cname",
+                    False,
+                ))
             else:
                 user_prefs = self.pac_prefs(proxy)
         else:

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __IPC_GLUE_ENUMSERIALIZER_H__
-#define __IPC_GLUE_ENUMSERIALIZER_H__
+#ifndef IPC_GLUE_ENUMSERIALIZER_H_
+#define IPC_GLUE_ENUMSERIALIZER_H_
 
 #include "CrashAnnotations.h"
 #include "chrome/common/ipc_message_utils.h"
@@ -185,4 +185,4 @@ struct BitFlagsEnumSerializer
 
 } /* namespace IPC */
 
-#endif /* __IPC_GLUE_ENUMSERIALIZER_H__ */
+#endif /* IPC_GLUE_ENUMSERIALIZER_H_ */

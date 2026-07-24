@@ -5,12 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SharedWorkerParent.h"
+
 #include "SharedWorkerManager.h"
 #include "SharedWorkerService.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -63,7 +63,7 @@ IPCResult SharedWorkerParent::RecvClose() {
     mWorkerManagerWrapper = nullptr;
   }
 
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -158,7 +158,7 @@ void SharedWorkerParent::ErrorPropagation(nsresult aError) {
     return;
   }
 
-  Unused << SendError(aError);
+  (void)SendError(aError);
 }
 
 void SharedWorkerParent::MismatchOptionsErrorPropagation() {
@@ -170,7 +170,7 @@ void SharedWorkerParent::MismatchOptionsErrorPropagation() {
     return;
   }
 
-  Unused << SendError(ErrorMismatchOptions());
+  (void)SendError(ErrorMismatchOptions());
 }
 
 }  // namespace dom

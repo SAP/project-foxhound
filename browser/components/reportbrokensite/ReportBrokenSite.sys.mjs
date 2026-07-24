@@ -14,9 +14,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const gDescriptionCheckRE = /\S/;
 
-class ViewState {
+export class ViewState {
   #doc;
   #mainView;
+  #previewView;
   #reportSentView;
   #formElement;
   #reasonOptions;
@@ -30,6 +31,10 @@ class ViewState {
     this.#mainView = doc.ownerGlobal.PanelMultiView.getViewNode(
       this.#doc,
       "report-broken-site-popup-mainView"
+    );
+    this.#previewView = doc.ownerGlobal.PanelMultiView.getViewNode(
+      this.#doc,
+      "report-broken-site-popup-previewView"
     );
     this.#reportSentView = doc.ownerGlobal.PanelMultiView.getViewNode(
       this.#doc,
@@ -53,6 +58,10 @@ class ViewState {
   }
 
   get mainPanelview() {
+    return this.#mainView;
+  }
+
+  get previewPanelview() {
     return this.#mainView;
   }
 
@@ -94,6 +103,12 @@ class ViewState {
 
   static REASON_CHOICES_ID_PREFIX = "report-broken-site-popup-reason-";
 
+  get blockedTrackersCheckbox() {
+    return this.#mainView.querySelector(
+      "#report-broken-site-popup-blocked-trackers-checkbox"
+    );
+  }
+
   get reasonInput() {
     return this.#mainView.querySelector("#report-broken-site-popup-reason");
   }
@@ -104,6 +119,14 @@ class ViewState {
       ""
     );
     return reason == "choose" ? undefined : reason;
+  }
+
+  get reasonText() {
+    const { reasonInput } = this;
+    if (!reasonInput.selectedIndex) {
+      return "";
+    }
+    return reasonInput.selectedOptions[0]?.label;
   }
 
   set reason(value) {
@@ -159,6 +182,8 @@ class ViewState {
   reset() {
     this.currentTabWebcompatDetailsPromise = undefined;
     this.form.reset();
+    this.blockedTrackersCheckbox.checked = false;
+    delete this.cachedPreviewData;
 
     this.resetURLToCurrentTab();
   }
@@ -193,6 +218,10 @@ class ViewState {
     );
   }
 
+  createElement(name) {
+    return this.#doc.createElement(name);
+  }
+
   #focusMainViewElement(toFocus) {
     const panelview = this.#doc.ownerGlobal.PanelView.forNode(this.#mainView);
     panelview.selectedElement = toFocus;
@@ -208,6 +237,12 @@ class ViewState {
     } else if (!this.isDescriptionValid) {
       this.#focusMainViewElement(this.descriptionInput);
     }
+  }
+
+  get learnMoreLink() {
+    return this.#mainView.querySelector(
+      "#report-broken-site-popup-learn-more-link"
+    );
   }
 
   get sendMoreInfoLink() {
@@ -265,6 +300,30 @@ class ViewState {
       "#report-broken-site-popup-okay-button"
     );
   }
+
+  get previewCancelButton() {
+    return this.#previewView.querySelector(
+      "#report-broken-site-popup-preview-cancel-button"
+    );
+  }
+
+  get previewSendButton() {
+    return this.#previewView.querySelector(
+      "#report-broken-site-popup-preview-send-button"
+    );
+  }
+
+  get previewBox() {
+    return this.#previewView.querySelector(
+      "#report-broken-site-panel-preview-items"
+    );
+  }
+
+  get previewButton() {
+    return this.#mainView.querySelector(
+      "#report-broken-site-popup-preview-button"
+    );
+  }
 }
 
 export var ReportBrokenSite = new (class ReportBrokenSite {
@@ -297,6 +356,7 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
 
   static MAIN_PANELVIEW_ID = "report-broken-site-popup-mainView";
   static SENT_PANELVIEW_ID = "report-broken-site-popup-reportSentView";
+  static PREVIEW_PANELVIEW_ID = "report-broken-site-popup-previewView";
 
   #_enabled = false;
   get enabled() {
@@ -381,6 +441,7 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
     const state = ViewState.get(document);
 
     this.#initMainView(state);
+    this.#initPreviewView(state);
     this.#initReportSentView(state);
 
     for (const id of ["menu_HelpPopup", "appMenu-popup"]) {
@@ -428,11 +489,7 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
         } else {
           const tabbrowser = e.target.ownerGlobal.gBrowser;
           state.resetURLToCurrentTab();
-          state.currentTabWebcompatDetailsPromise = this.#queryActor(
-            "GetWebCompatInfo",
-            undefined,
-            tabbrowser.selectedBrowser
-          );
+          this.promiseWebCompatInfo(state, tabbrowser.selectedBrowser);
           this.#openWebCompatTab(tabbrowser)
             .catch(err => {
               console.error("Report Broken Site: unexpected error", err);
@@ -458,11 +515,7 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
     const allowedByPolicy = Services.policies.isAllowed(
       "DisableFeedbackCommands"
     );
-    if (allowedByPolicy) {
-      cmd.setAttribute("hidden", "false"); // see bug 805653
-    } else {
-      cmd.setAttribute("hidden", "true");
-    }
+    cmd.toggleAttribute("hidden", !allowedByPolicy);
     const app = document.ownerGlobal.PanelMultiView.getViewNode(
       document,
       "appMenu-report-broken-site-button"
@@ -524,7 +577,9 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
         return;
       }
       const multiview = event.target.closest("panelmultiview");
-      this.#recordGleanEvent("send");
+      this.#recordGleanEvent("send", {
+        sent_with_blocked_trackers: !!state.blockedTrackersCheckbox.checked,
+      });
       await this.#sendReportAsGleanPing(state);
       multiview.showSubView("report-broken-site-popup-reportSentView");
       state.reset();
@@ -541,6 +596,73 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
       this.#recordGleanEvent("sendMoreInfo");
       event.target.ownerGlobal.CustomizableUI.hidePanelForNode(event.target);
       await this.#openWebCompatTab(tabbrowser);
+      state.reset();
+    });
+
+    state.learnMoreLink.addEventListener("click", async event => {
+      this.#recordGleanEvent("learnMore");
+      event.target.ownerGlobal.requestAnimationFrame(() => {
+        event.target.ownerGlobal.CustomizableUI.hidePanelForNode(event.target);
+      });
+    });
+
+    state.previewButton.addEventListener("click", event => {
+      state.currentTabWebcompatDetailsPromise
+        ?.catch(_ => {})
+        .then(info => {
+          this.generatePreviewMarkup(state, info);
+
+          // Update the live data on the preview which the user can edit in the reporter.
+          const { description, previewBox, reasonText } = state;
+          if (state.cachedPreviewData) {
+            state.cachedPreviewData.basic.description = description;
+            state.cachedPreviewData.basic.reason = reasonText;
+          }
+          previewBox.querySelector(
+            ".preview_description"
+          ).nextSibling.innerText = JSON.stringify(description);
+          previewBox.querySelector(".preview_reason").nextSibling.innerText =
+            JSON.stringify(reasonText ?? "");
+
+          const multiview = event.target.closest("panelmultiview");
+          multiview.showSubView(
+            ReportBrokenSite.PREVIEW_PANELVIEW_ID,
+            event.target
+          );
+          this.#recordGleanEvent("previewed");
+        });
+    });
+  }
+
+  #initPreviewView(state) {
+    state.previewSendButton.addEventListener("command", event => {
+      // If the user has not entered a reason yet, then the form's validity
+      // check will bring up the reason dropdown, despite it being out of view
+      // (since we're looking at the preview panel, not the main one). This is
+      // confusing, so we instead go back to the main view first if there is a
+      // validity check failure (we also have to be careful to avoid possibly
+      // racing with the user if they close the popup during this sequence, so
+      // we don't leak any event listeners and world with them).
+      if (!state.form.checkValidity()) {
+        const view = event.target.closest("panelview").panelMultiView;
+        const { document } = event.target.ownerGlobal;
+        const listener = event => {
+          document.removeEventListener("popuphiding", listener);
+          view.removeEventListener("ViewShown", listener);
+          if (event.type == "ViewShown") {
+            state.form.requestSubmit();
+          }
+        };
+        document.addEventListener("popuphiding", listener);
+        view.addEventListener("ViewShown", listener);
+        view.goBack();
+      } else {
+        state.form.requestSubmit();
+      }
+    });
+
+    state.previewCancelButton.addEventListener("command", ({ target }) => {
+      target.ownerGlobal.CustomizableUI.hidePanelForNode(target);
       state.reset();
     });
   }
@@ -590,14 +712,88 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
     this.#recordGleanEvent("opened", { source });
 
     if (didReset || !state.currentTabWebcompatDetailsPromise) {
-      state.currentTabWebcompatDetailsPromise = this.#queryActor(
-        "GetWebCompatInfo",
-        undefined,
-        selectedBrowser
-      ).catch(err => {
-        console.error("Report Broken Site: unexpected error", err);
-        state.currentTabWebcompatDetailsPromise = undefined;
-      });
+      this.promiseWebCompatInfo(state, selectedBrowser);
+    }
+  }
+
+  promiseWebCompatInfo(state, selectedBrowser) {
+    state.currentTabWebcompatDetailsPromise = this.#queryActor(
+      "GetBrokenSiteReport",
+      undefined,
+      selectedBrowser
+    ).catch(err => {
+      console.error("Report Broken Site: unexpected error", err);
+      state.currentTabWebcompatDetailsPromise = undefined;
+    });
+  }
+
+  cachePreviewData(state, brokenSiteReportData) {
+    const { blockedTrackersCheckbox, description, reasonText, url } = state;
+
+    const previewData = Object.assign({
+      basic: {
+        description,
+        reason: reasonText,
+        url,
+      },
+    });
+
+    if (brokenSiteReportData) {
+      for (const [category, values] of Object.entries(brokenSiteReportData)) {
+        previewData[category] = Object.fromEntries(
+          Object.entries(values)
+            .filter(([_, { do_not_preview }]) => !do_not_preview)
+            .map(([name, { value }]) => [name, value])
+        );
+      }
+    }
+
+    if (!blockedTrackersCheckbox.checked && previewData.antitracking) {
+      delete previewData.antitracking.blockedOrigins;
+    }
+
+    state.cachedPreviewData = previewData;
+    return previewData;
+  }
+
+  generatePreviewMarkup(state, reportData) {
+    // If we have already cached preview data, we have already generated the markup as well.
+    if (this.cachedPreviewData) {
+      return;
+    }
+    const previewData = this.cachePreviewData(state, reportData);
+    const preview = state.previewBox;
+    preview.innerHTML = "";
+    for (const [name, value] of Object.entries(previewData)) {
+      const details = state.createElement("details");
+
+      const summary = state.createElement("summary");
+      summary.innerText = name;
+      summary.dataset.capturesFocus = "true";
+      details.appendChild(summary);
+
+      const info = state.createElement("div");
+      info.className = "data";
+      for (const [k, v] of Object.entries(value)) {
+        const div = state.createElement("div");
+        div.className = "entry";
+        const span_name = state.createElement("span");
+        const span_value = state.createElement("span");
+        span_name.className = `preview_${k}`;
+        span_name.innerText = `${k}:`;
+        // Add some extra word-wrapping opportunities to the data by adding spaces,
+        // so users don't have to horizontally scroll as much.
+        span_value.innerText = JSON.stringify(v)?.replace(/[,:]/g, "$& ") ?? "";
+        div.append(span_name, span_value);
+        info.appendChild(div);
+      }
+      details.appendChild(info);
+
+      preview.appendChild(details);
+    }
+    const first = preview.querySelector("details");
+    if (first) {
+      first.setAttribute("open", "");
     }
   }
 
@@ -655,20 +851,13 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
   }
 
   async #sendReportAsGleanPing({
+    blockedTrackersCheckbox,
     currentTabWebcompatDetailsPromise,
     description,
     reason,
     url,
   }) {
     const gBase = Glean.brokenSiteReport;
-    const gTabInfo = Glean.brokenSiteReportTabInfo;
-    const gAntitracking = Glean.brokenSiteReportTabInfoAntitracking;
-    const gFrameworks = Glean.brokenSiteReportTabInfoFrameworks;
-    const gBrowserInfo = Glean.brokenSiteReportBrowserInfo;
-    const gApp = Glean.brokenSiteReportBrowserInfoApp;
-    const gGraphics = Glean.brokenSiteReportBrowserInfoGraphics;
-    const gPrefs = Glean.brokenSiteReportBrowserInfoPrefs;
-    const gSystem = Glean.brokenSiteReportBrowserInfoSystem;
 
     if (reason) {
       gBase.breakageCategory.set(reason);
@@ -684,86 +873,31 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
       return;
     }
 
-    const {
-      antitracking,
-      browser,
-      devicePixelRatio,
-      frameworks,
-      languages,
-      userAgent,
-    } = details;
-
-    gTabInfo.languages.set(languages);
-    gTabInfo.useragentString.set(userAgent);
-    gGraphics.devicePixelRatio.set(devicePixelRatio);
-
-    for (const [name, value] of Object.entries(antitracking)) {
-      gAntitracking[name].set(value);
+    if (!blockedTrackersCheckbox.checked) {
+      delete details.antitracking.blockedOrigins;
     }
 
-    for (const [name, value] of Object.entries(frameworks)) {
-      gFrameworks[name].set(value);
-    }
-
-    const {
-      addons,
-      app,
-      experiments,
-      graphics,
-      locales,
-      platform,
-      prefs,
-      security,
-    } = browser;
-
-    gBrowserInfo.addons.set(addons);
-    gBrowserInfo.experiments.set(experiments);
-
-    gApp.defaultLocales.set(locales);
-    gApp.defaultUseragentString.set(app.defaultUserAgent);
-
-    const { fissionEnabled, isTablet, memoryMB } = platform;
-    gApp.fissionEnabled.set(fissionEnabled);
-    gSystem.isTablet.set(isTablet ?? false);
-    gSystem.memory.set(memoryMB);
-
-    gPrefs.cookieBehavior.set(prefs["network.cookie.cookieBehavior"]);
-    gPrefs.forcedAcceleratedLayers.set(
-      prefs["layers.acceleration.force-enabled"]
-    );
-    gPrefs.globalPrivacyControlEnabled.set(
-      prefs["privacy.globalprivacycontrol.enabled"]
-    );
-    gPrefs.installtriggerEnabled.set(
-      prefs["extensions.InstallTrigger.enabled"]
-    );
-    gPrefs.opaqueResponseBlocking.set(prefs["browser.opaqueResponseBlocking"]);
-    gPrefs.resistFingerprintingEnabled.set(
-      prefs["privacy.resistFingerprinting"]
-    );
-    gPrefs.softwareWebrender.set(prefs["gfx.webrender.software"]);
-    gPrefs.thirdPartyCookieBlockingEnabled.set(
-      prefs["network.cookie.cookieBehavior.optInPartitioning"]
-    );
-    gPrefs.thirdPartyCookieBlockingEnabledInPbm.set(
-      prefs["network.cookie.cookieBehavior.optInPartitioning.pbmode"]
-    );
-
-    if (security) {
-      for (const [name, value] of Object.entries(security)) {
-        if (value?.length) {
-          Glean.brokenSiteReportBrowserInfoSecurity[name].set(value);
+    for (const categoryItems of Object.values(details)) {
+      for (let [name, { glean, json, value }] of Object.entries(
+        categoryItems
+      )) {
+        if (!glean) {
+          continue;
         }
+        // Transform glean=xx.yy.zz to brokenSiteReportXxYyZz.
+        glean =
+          "brokenSiteReport" +
+          glean
+            .split(".")
+            .map(v => `${v[0].toUpperCase()}${v.substr(1)}`)
+            .join("");
+        if (json) {
+          name = `${name}Json`;
+          value = JSON.stringify(value);
+        }
+        Glean[glean][name].set(value);
       }
     }
-
-    const { devices, drivers, features, hasTouchScreen, monitors } = graphics;
-
-    gGraphics.devicesJson.set(JSON.stringify(devices));
-    gGraphics.driversJson.set(JSON.stringify(drivers));
-    gGraphics.featuresJson.set(JSON.stringify(features));
-    gGraphics.hasTouchScreen.set(hasTouchScreen);
-    gGraphics.monitorsJson.set(JSON.stringify(monitors));
 
     GleanPings.brokenSiteReport.submit();
   }

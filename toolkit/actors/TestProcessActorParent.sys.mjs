@@ -24,9 +24,17 @@ export class TestProcessActorParent extends JSProcessActorParent {
         aMessage.data.toParent = true;
         this.sendAsyncMessage("done", aMessage.data);
         break;
-      case "asyncMul":
+      case "asyncMul": {
         let { a, b } = aMessage.data;
         return { result: a * b };
+      }
+      case "RequestInputStream": {
+        let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+          Ci.nsIStringInputStream
+        );
+        stream.setUTF8Data("Oh boy here we go.");
+        return stream;
+      }
     }
 
     return undefined;

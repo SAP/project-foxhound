@@ -31,9 +31,9 @@ disabled = "Bug 1437204"
 
 ["test_midi_permission_gated.html"]
 skip-if = [
-  "os == 'android'", # Bug 1747637
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1747637
 ]
 
 ["test_midi_permission_prompt.html"]

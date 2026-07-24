@@ -6,17 +6,15 @@
 
 #include "DOMSVGTransform.h"
 
+#include "SVGAnimatedTransformList.h"
+#include "SVGAttrTearoffTable.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/DOMMatrixBinding.h"
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGTransformBinding.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/Maybe.h"
 #include "nsError.h"
-#include "SVGAnimatedTransformList.h"
-#include "SVGAttrTearoffTable.h"
 
 namespace {
 const double kRadPerDegree = 2.0 * M_PI / 360.0;
@@ -142,17 +140,15 @@ void DOMSVGTransform::SetMatrix(const DOMMatrix2DInit& aMatrix,
     aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
     return;
   }
-  RefPtr<DOMMatrixReadOnly> matrix =
-      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aMatrix, aRv);
+  auto matrix2D = DOMMatrixReadOnly::ToValidatedMatrixDouble(aMatrix, aRv);
   if (aRv.Failed()) {
     return;
   }
-  const gfxMatrix* matrix2D = matrix->GetInternal2D();
-  if (!matrix2D->IsFinite()) {
+  if (!matrix2D.IsFinite()) {
     aRv.ThrowTypeError<MSG_NOT_FINITE>("Matrix setter");
     return;
   }
-  SetMatrix(*matrix2D);
+  SetMatrix(matrix2D);
 }
 
 void DOMSVGTransform::SetTranslate(float tx, float ty, ErrorResult& aRv) {
@@ -265,13 +261,14 @@ void DOMSVGTransform::RemovingFromList() {
   MOZ_ASSERT(!mTransform,
              "Item in list also has another non-list value associated with it");
 
-  mTransform = MakeUnique<SVGTransform>(InternalItem());
+  mTransform = std::make_unique<SVGTransform>(InternalItem());
   mList = nullptr;
   mIsAnimValItem = false;
 }
 
 SVGTransform& DOMSVGTransform::InternalItem() {
-  SVGAnimatedTransformList* alist = Element()->GetAnimatedTransformList();
+  SVGAnimatedTransformList* alist =
+      Element()->GetExistingAnimatedTransformList();
   return mIsAnimValItem && alist->mAnimVal ? (*alist->mAnimVal)[mListIndex]
                                            : alist->mBaseVal[mListIndex];
 }
@@ -282,7 +279,8 @@ const SVGTransform& DOMSVGTransform::InternalItem() const {
 
 #ifdef DEBUG
 bool DOMSVGTransform::IndexIsValid() {
-  SVGAnimatedTransformList* alist = Element()->GetAnimatedTransformList();
+  SVGAnimatedTransformList* alist =
+      Element()->GetExistingAnimatedTransformList();
   return (mIsAnimValItem && mListIndex < alist->GetAnimValue().Length()) ||
          (!mIsAnimValItem && mListIndex < alist->GetBaseValue().Length());
 }

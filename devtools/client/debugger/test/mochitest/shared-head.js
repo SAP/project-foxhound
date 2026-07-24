@@ -68,9 +68,9 @@ const DEBUGGER_L10N = new LocalizationHelper(
 /**
  * Waits for `predicate()` to be true. `state` is the redux app state.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {Function} predicate
- * @param {String} msg
+ * @param {string} msg
  * @return {Promise}
  */
 function waitForState(dbg, predicate, msg = "") {
@@ -105,7 +105,7 @@ function waitForState(dbg, predicate, msg = "") {
  * Waits for sources to be loaded.
  *
  * @memberof mochitest/waits
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {Array} sources
  * @return {Promise}
  * @static
@@ -136,8 +136,8 @@ async function waitForSources(dbg, ...sources) {
  * Waits for a source to be loaded.
  *
  * @memberof mochitest/waits
- * @param {Object} dbg
- * @param {String} source
+ * @param {object} dbg
+ * @param {string} source
  * @return {Promise}
  * @static
  */
@@ -159,9 +159,9 @@ async function waitForElement(dbg, name, ...args) {
  * Wait for a count of given elements to be rendered on screen.
  *
  * @param {DebuggerPanel} dbg
- * @param {String} name
+ * @param {string} name
  * @param {Integer} count: Number of elements to match. Defaults to 1.
- * @param {Boolean} countStrictlyEqual: When set to true, will wait until the exact number
+ * @param {boolean} countStrictlyEqual: When set to true, will wait until the exact number
  *                  of elements is displayed on screen. When undefined or false, will wait
  *                  until there's at least `${count}` elements on screen (e.g. if count
  *                  is 1, it will resolve if there are 2 elements rendered).
@@ -232,7 +232,7 @@ async function waitForSelectedLocation(dbg, line, column) {
  * Wait for a given source to be selected and ready.
  *
  * @memberof mochitest/waits
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {null|string|Source} sourceOrUrl Optional. Either a source URL (string) or a source object (typically fetched via `findSource`)
  * @return {Promise}
  * @static
@@ -262,7 +262,11 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
         // or a Source object.
         if (typeof sourceOrUrl == "string") {
           const url = location.source.url;
-          if (typeof url != "string" || !url.includes(encodeURI(sourceOrUrl))) {
+          if (
+            typeof url != "string" ||
+            (!url.includes(encodeURI(sourceOrUrl)) &&
+              !url.includes(sourceOrUrl))
+          ) {
             return false;
           }
         } else if (location.source.id != sourceOrUrl.id) {
@@ -339,9 +343,9 @@ async function assertLineIsBreakable(dbg, file, line, shouldBeBreakable) {
  * Assert that the debugger is highlighting the correct location.
  *
  * @memberof mochitest/asserts
- * @param {Object} dbg
- * @param {String} source
- * @param {Number} line
+ * @param {object} dbg
+ * @param {string} source
+ * @param {number} line
  * @static
  */
 function assertHighlightLocation(dbg, source, line) {
@@ -443,10 +447,10 @@ async function _assertDebugLine(dbg, line, column) {
 /**
  * Make sure the debugger is paused at a certain source ID and line.
  *
- * @param {Object} dbg
- * @param {String} expectedSourceId
- * @param {Number} expectedLine
- * @param {Number} [expectedColumn]
+ * @param {object} dbg
+ * @param {string} expectedSourceId
+ * @param {number} expectedLine
+ * @param {number} [expectedColumn]
  */
 async function assertPausedAtSourceAndLine(
   dbg,
@@ -549,7 +553,7 @@ function waitForBreakpointRemoved(dbg, url, line) {
 /**
  * Returns boolean for whether the debugger is paused.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  */
 function isPaused(dbg) {
   return dbg.selectors.getIsCurrentThreadPaused();
@@ -558,8 +562,8 @@ function isPaused(dbg) {
 /**
  * Assert that the debugger is not currently paused.
  *
- * @param {Object} dbg
- * @param {String} msg
+ * @param {object} dbg
+ * @param {string} msg
  *        Optional assertion message
  */
 function assertNotPaused(dbg, msg = "client is not paused") {
@@ -569,7 +573,7 @@ function assertNotPaused(dbg, msg = "client is not paused") {
 /**
  * Assert that the debugger is currently paused.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  */
 function assertPaused(dbg, msg = "client is paused") {
   ok(isPaused(dbg), msg);
@@ -578,10 +582,10 @@ function assertPaused(dbg, msg = "client is paused") {
 /**
  * Waits for the debugger to be fully paused.
  *
- * @param {Object} dbg
- * @param {String} url
+ * @param {object} dbg
+ * @param {string} url
  *        Optional URL of the script we should be pausing on.
- * @param {Object} options
+ * @param {object} options
  *         {Boolean} shouldWaitForLoadScopes
  *        When paused in original files with original variable mapping disabled, scopes are
  *        not going to exist, lets not wait for it. defaults to true
@@ -669,9 +673,9 @@ function isSelectedFrameSelected(dbg) {
 /**
  * Checks to see if the frame is selected and the displayed title is correct.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {DOM Node} frameElement
- * @param {String} expectedTitle
+ * @param {string} expectedTitle
  */
 function assertFrameIsSelected(dbg, frameElement, expectedTitle) {
   const selectedFrame = dbg.selectors.getSelectedFrame();
@@ -692,9 +696,9 @@ function assertFrameIsSelected(dbg, frameElement, expectedTitle) {
 /**
  * Checks to see if the frame is  not selected.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {DOM Node} frameElement
- * @param {String} expectedTitle
+ * @param {string} expectedTitle
  */
 function assertFrameIsNotSelected(dbg, frameElement, expectedTitle) {
   const selectedFrame = dbg.selectors.getSelectedFrame();
@@ -711,7 +715,7 @@ function assertFrameIsNotSelected(dbg, frameElement, expectedTitle) {
  */
 async function clearDebuggerPreferences(prefs = []) {
   resetSchemaVersion();
-  asyncStorage.clear();
+  await asyncStorage.clear();
   Services.prefs.clearUserPref("devtools.debugger.alphabetize-outline");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-caught-exceptions");
@@ -732,7 +736,7 @@ async function clearDebuggerPreferences(prefs = []) {
  * Intilializes the debugger.
  *
  * @memberof mochitest
- * @param {String} url
+ * @param {string} url
  * @return {Promise} dbg
  * @static
  */
@@ -762,15 +766,15 @@ async function initPane(url, pane, prefs) {
  * Returns a source that matches a given filename, or a URL.
  * This also accept a source as input argument, in such case it just returns it.
  *
- * @param {Object} dbg
- * @param {String} filenameOrUrlOrSource
+ * @param {object} dbg
+ * @param {string} filenameOrUrlOrSource
  *        The typical case will be to pass only a filename,
  *        but you may also pass a full URL to match sources without filesnames like data: URL
  *        or pass the source itself, which is just returned.
- * @param {Object} options
- * @param {Boolean} options.silent
+ * @param {object} options
+ * @param {boolean} options.silent
  *        If true, won't throw if the source is missing.
- * @return {Object} source
+ * @return {object} source
  */
 function findSource(
   dbg,
@@ -853,12 +857,12 @@ function waitForLoadedSource(dbg, url) {
   );
 }
 
-/*
+/**
  * Selects the source node for a specific source
  * from the source tree.
  *
- * @param {Object} dbg
- * @param {String} filename - The filename for the specific source
+ * @param {object} dbg
+ * @param {string} filename - The filename for the specific source
  */
 async function selectSourceFromSourceTree(dbg, fileName) {
   info(`Selecting '${fileName}' source from source tree`);
@@ -892,13 +896,13 @@ async function selectSourceFromSourceTreeWithIndex(
   );
 }
 
-/*
+/**
  * Trigger a context menu in the debugger source tree
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {Obejct} sourceTreeNode - The node in the source tree which the context menu
  *                                  item needs to be triggered on.
- * @param {String} contextMenuItem - The id for the context menu item to be selected
+ * @param {string} contextMenuItem - The id for the context menu item to be selected
  */
 async function triggerSourceTreeContextMenu(
   dbg,
@@ -919,10 +923,10 @@ async function triggerSourceTreeContextMenu(
  * Selects the source.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {String} url
- * @param {Number} line
- * @param {Number} column
+ * @param {object} dbg
+ * @param {string} url
+ * @param {number} line
+ * @param {number} column
  * @return {Promise}
  * @static
  */
@@ -936,19 +940,22 @@ async function selectSource(dbg, url, line, column) {
 }
 
 async function closeTab(dbg, url) {
-  await dbg.actions.closeTab(findSource(dbg, url));
+  const source = findSource(dbg, url);
+  await dbg.actions.closeTabForSource(source);
 }
 
 function countTabs(dbg) {
-  return findElement(dbg, "sourceTabs").children.length;
+  // The sourceTabs elements won't be rendered if there is no source.
+  const sourceTabs = findElement(dbg, "sourceTabs");
+  return sourceTabs ? sourceTabs.children.length : 0;
 }
 
 /**
  * Steps over.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {Object} pauseOptions
+ * @param {object} dbg
+ * @param {object} pauseOptions
  * @return {Promise}
  * @static
  */
@@ -963,7 +970,7 @@ async function stepOver(dbg, pauseOptions) {
  * Steps in.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
+ * @param {object} dbg
  * @return {Promise}
  * @static
  */
@@ -978,7 +985,7 @@ async function stepIn(dbg) {
  * Steps out.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
+ * @param {object} dbg
  * @return {Promise}
  * @static
  */
@@ -993,7 +1000,7 @@ async function stepOut(dbg) {
  * Resumes.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
+ * @param {object} dbg
  * @return {Promise}
  * @static
  */
@@ -1014,13 +1021,13 @@ function deleteExpression(dbg, input) {
  * Reloads the debuggee.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {Array} sources
  * @return {Promise}
  * @static
  */
 async function reload(dbg, ...sources) {
-  await reloadBrowser();
+  await reloadSelectedTab();
   return waitForSources(dbg, ...sources);
 }
 
@@ -1055,8 +1062,8 @@ async function reloadWhenPausedBeforePageLoaded(dbg, ...sources) {
  * Navigates the debuggee to another url.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {String} url
+ * @param {object} dbg
+ * @param {string} url
  * @param {Array} sources
  * @return {Promise}
  * @static
@@ -1069,8 +1076,8 @@ async function navigate(dbg, url, ...sources) {
  * Navigates the debuggee to another absolute url.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {String} url
+ * @param {object} dbg
+ * @param {string} url
  * @param {Array} sources
  * @return {Promise}
  * @static
@@ -1115,10 +1122,10 @@ function getBreakpointForLocation(dbg, location) {
  * Adds a breakpoint to a source at line/col.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {String} source
- * @param {Number} line
- * @param {Number} col
+ * @param {object} dbg
+ * @param {string} source
+ * @param {number} line
+ * @param {number} col
  * @return {Promise}
  * @static
  */
@@ -1273,9 +1280,15 @@ async function invokeWithBreakpoint(
   await invokeResult;
 }
 
-function prettyPrint(dbg) {
+async function togglePrettyPrint(dbg) {
   const source = dbg.selectors.getSelectedSource();
-  return dbg.actions.prettyPrintAndSelectSource(source);
+  clickElement(dbg, "prettyPrintButton");
+  if (source.isPrettyPrinted) {
+    await waitForSelectedSource(dbg, source.generatedSource);
+  } else {
+    const prettyURL = source.url ? source.url : source.id.split("/").at(-1);
+    await waitForSelectedSource(dbg, prettyURL + ":formatted");
+  }
 }
 
 async function expandAllScopes(dbg) {
@@ -1332,10 +1345,10 @@ function findSourceNodeWithText(dbg, text) {
 /**
  * Assert the icon type used in the SourceTree for a given source
  *
- * @param {Object} dbg
- * @param {String} sourceName
+ * @param {object} dbg
+ * @param {string} sourceName
  *        Name of the source displayed in the source tree
- * @param {String} icon
+ * @param {string} icon
  *        Expected icon CSS classname
  */
 function assertSourceIcon(dbg, sourceName, icon) {
@@ -1343,7 +1356,7 @@ function assertSourceIcon(dbg, sourceName, icon) {
   ok(sourceItem, `Found the source item for ${sourceName}`);
   is(
     sourceItem.querySelector(".source-icon").className,
-    `img source-icon ${icon}`,
+    `dbg-img dbg-img-${icon} source-icon`,
     `The icon for ${sourceName} is correct`
   );
 }
@@ -1368,10 +1381,10 @@ async function expandAllSourceNodes(dbg, treeNode) {
  * Removes a breakpoint from a source at line/col.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {String} source
- * @param {Number} line
- * @param {Number} col
+ * @param {object} dbg
+ * @param {string} source
+ * @param {number} line
+ * @param {number} col
  * @return {Promise}
  * @static
  */
@@ -1392,9 +1405,9 @@ function removeBreakpoint(dbg, sourceId, line, column) {
  * Toggles the Pause on exceptions feature in the debugger.
  *
  * @memberof mochitest/actions
- * @param {Object} dbg
- * @param {Boolean} pauseOnExceptions
- * @param {Boolean} pauseOnCaughtExceptions
+ * @param {object} dbg
+ * @param {boolean} pauseOnExceptions
+ * @param {boolean} pauseOnCaughtExceptions
  * @return {Promise}
  * @static
  */
@@ -1415,7 +1428,7 @@ async function togglePauseOnExceptions(
  * Invokes a global function in the debuggee tab.
  *
  * @memberof mochitest/helpers
- * @param {String} fnc The name of a global function on the content window to
+ * @param {string} fnc The name of a global function on the content window to
  *                     call. This is applied to structured clones of the
  *                     remaining arguments to invokeInTab.
  * @param {Any} ...args Remaining args to serialize and pass to fnc.
@@ -1519,8 +1532,8 @@ const keyMappings = {
  * Simulates a key press in the debugger window.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {String} keyName
+ * @param {object} dbg
+ * @param {string} keyName
  * @return {Promise}
  * @static
  */
@@ -1535,11 +1548,11 @@ function type(dbg, string) {
   string.split("").forEach(char => EventUtils.synthesizeKey(char, {}, dbg.win));
 }
 
-/*
+/**
  * Checks to see if the inner element is visible inside the editor.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {HTMLElement} inner element
  * @return {boolean}
  * @static
@@ -1549,7 +1562,7 @@ function isVisibleInEditor(dbg, element) {
   return isVisible(findElement(dbg, "codeMirror"), element);
 }
 
-/*
+/**
  * Checks to see if the inner element is visible inside the
  * outer element.
  *
@@ -1606,8 +1619,9 @@ async function scrollAndGetEditorLineGutterElement(dbg, line) {
 
 /**
  * Gets node at a specific line in the editor
+ *
  * @param {*} dbg
- * @param {Number} line
+ * @param {number} line
  * @returns {Element} DOM Element
  */
 async function getNodeAtEditorLine(dbg, line) {
@@ -1617,8 +1631,9 @@ async function getNodeAtEditorLine(dbg, line) {
 
 /**
  * Gets node at a specific line in the gutter
+ *
  * @param {*} dbg
- * @param {Number} line
+ * @param {number} line
  * @returns {Element} DOM Element
  */
 async function getNodeAtEditorGutterLine(dbg, line) {
@@ -1642,10 +1657,11 @@ async function waitForConditionalPanelFocus(dbg) {
 /**
  * Opens the debugger editor context menu in either codemirror or the
  * the debugger gutter.
- * @param {Object} dbg
- * @param {String} elementName
+ *
+ * @param {object} dbg
+ * @param {string} elementName
  *                  The element to select
- * @param {Number} line
+ * @param {number} line
  *                  The line to open the context menu on.
  */
 async function openContextMenuInDebugger(dbg, elementName, line) {
@@ -1657,9 +1673,10 @@ async function openContextMenuInDebugger(dbg, elementName, line) {
 
 /**
  * Select a range of lines in the editor and open the contextmenu
- * @param {Object} dbg
- * @param {Object} lines
- * @param {String} elementName
+ *
+ * @param {object} dbg
+ * @param {object} lines
+ * @param {string} elementName
  * @returns
  */
 async function selectEditorLinesAndOpenContextMenu(
@@ -1674,8 +1691,9 @@ async function selectEditorLinesAndOpenContextMenu(
 
 /**
  * Asserts that the styling for ignored lines are applied
- * @param {Object} dbg
- * @param {Object} options
+ *
+ * @param {object} dbg
+ * @param {object} options
  *                 lines {null | Number[]} [lines] Line(s) to assert.
  *                   - If null is passed, the assertion is on all the blackboxed lines
  *                   - If an array of one item (start line) is passed, the assertion is on the specified line
@@ -1716,9 +1734,9 @@ async function assertIgnoredStyleInSourceLines(
  * Assert the text content on the line matches what is
  * expected.
  *
- * @param {Object} dbg
- * @param {Number} line
- * @param {String} expectedTextContent
+ * @param {object} dbg
+ * @param {number} line
+ * @param {string} expectedTextContent
  */
 function assertTextContentOnLine(dbg, line, expectedTextContent) {
   const lineInfo = getCMEditor(dbg).lineInfo(line);
@@ -1726,13 +1744,13 @@ function assertTextContentOnLine(dbg, line, expectedTextContent) {
   is(textContent, expectedTextContent, `Expected text content on line ${line}`);
 }
 
-/*
+/**
  * Assert that no breakpoint is set on a given line of
  * the currently selected source in the editor.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {Number} line Line where to check for a breakpoint in the editor
+ * @param {object} dbg
+ * @param {number} line Line where to check for a breakpoint in the editor
  * @static
  */
 async function assertNoBreakpoint(dbg, line) {
@@ -1742,13 +1760,13 @@ async function assertNoBreakpoint(dbg, line) {
   ok(!exists, `Breakpoint doesn't exists on line ${line}`);
 }
 
-/*
+/**
  * Assert that a regular breakpoint is set in the currently
  * selected source in the editor. (no conditional, nor log breakpoint)
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {Number} line Line where to check for a breakpoint
+ * @param {object} dbg
+ * @param {number} line Line where to check for a breakpoint
  * @static
  */
 async function assertBreakpoint(dbg, line) {
@@ -1768,12 +1786,12 @@ async function assertBreakpoint(dbg, line) {
   ok(!hasLogClass, `Regular breakpoint doesn't have log on line ${line}`);
 }
 
-/*
+/**
  * Assert that a conditionnal breakpoint is set.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {Number} line Line where to check for a breakpoint
+ * @param {object} dbg
+ * @param {number} line Line where to check for a breakpoint
  * @static
  */
 async function assertConditionBreakpoint(dbg, line) {
@@ -1794,12 +1812,12 @@ async function assertConditionBreakpoint(dbg, line) {
   );
 }
 
-/*
+/**
  * Assert that a log breakpoint is set.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {Number} line Line where to check for a breakpoint
+ * @param {object} dbg
+ * @param {number} line Line where to check for a breakpoint
  * @static
  */
 async function assertLogBreakpoint(dbg, line) {
@@ -1904,6 +1922,8 @@ const selectors = {
   sourceTreeThreads: '.sources-list .tree-node[aria-level="1"]',
   sourceTreeGroups: '.sources-list .tree-node[aria-level="2"]',
   sourceTreeFiles: ".sources-list .tree-node[data-expandable=false]",
+  sourceTreeFilesElement: i =>
+    `.sources-list .tree-node[data-expandable=false]:nth-child(${i})`,
   threadSourceTree: i => `.threads-list .sources-pane:nth-child(${i})`,
   sourceDirectoryLabel: i => `.sources-list .tree-node:nth-child(${i}) .label`,
   resultItems: ".result-list .result-item",
@@ -1922,10 +1942,11 @@ const selectors = {
   conditionalBreakpointInSecPane: ".breakpoint.is-conditional",
   logPointPanel: ".conditional-breakpoint-panel.log-point",
   logPointInSecPane: ".breakpoint.is-log",
+  tracePanel: ".trace-panel",
   searchField: ".search-field",
   blackbox: ".action.black-box",
   projectSearchSearchInput: ".project-text-search .search-field input",
-  projectSearchCollapsed: ".project-text-search .arrow:not(.expanded)",
+  projectSearchCollapsed: ".project-text-search .dbg-img-arrow:not(.expanded)",
   projectSearchExpandedResults: ".project-text-search .result",
   projectSearchFileResults: ".project-text-search .file-result",
   projectSearchModifiersCaseSensitive:
@@ -1953,8 +1974,8 @@ const selectors = {
   previewPopupObjectFunction: ".preview-popup .objectBox-function",
   previewPopupObjectFunctionJumpToDefinition:
     ".preview-popup .objectBox-function .jump-definition",
-  sourceTreeRootNode: ".sources-panel .node .window",
-  sourceTreeFolderNode: ".sources-panel .node .folder",
+  sourceTreeRootNode: ".sources-panel .node .dbg-img-window",
+  sourceTreeFolderNode: ".sources-panel .node .dbg-img-folder",
   excludePatternsInput: ".project-text-search .exclude-patterns-field input",
   fileSearchInput: ".search-bar input",
   fileSearchSummary: ".search-bar .search-field-summary",
@@ -2004,8 +2025,8 @@ function getSourceNodeLabel(dbg, index) {
  * Simulates a mouse click in the debugger DOM.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {String} elementName
+ * @param {object} dbg
+ * @param {string} elementName
  * @param {Array} args
  * @return {Promise}
  * @static
@@ -2128,8 +2149,8 @@ async function waitForContextMenu(dbg) {
  * Closes and open context menu popup.
  *
  * @memberof mochitest/helpers
- * @param {Object} dbg
- * @param {String} popup - The currently opened popup returned by
+ * @param {object} dbg
+ * @param {string} popup - The currently opened popup returned by
  *                         `waitForContextMenu`.
  * @return {Promise}
  */
@@ -2314,7 +2335,7 @@ function getEditorContent(dbg) {
  * "conditionalPanelInput" to retrieve the codemirror instances specific to
  * those panels.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {string} panelName
  * @returns {CodeMirror}
  *     The codemirror instance corresponding to the provided debugger and panel name.
@@ -2329,25 +2350,41 @@ function getCodeMirrorInstance(dbg, panelName = null) {
   return dbg.win.codeMirrorSourceEditorTestInstance.codeMirror;
 }
 
+async function waitForCursorPosition(dbg, expectedLine) {
+  return waitFor(() => {
+    const cursorPosition = findElementWithSelector(dbg, ".cursor-position");
+    if (!cursorPosition) {
+      return false;
+    }
+    const { innerText } = cursorPosition;
+    // Cursor position text has the following shape: (L, C)
+    // where L is the line number, and C the column number
+    const line = innerText.substring(1, innerText.indexOf(","));
+    return parseInt(line, 10) == expectedLine;
+  });
+}
+
 /**
  * Set the cursor  at a specific location in the editor
+ *
  * @param {*} dbg
- * @param {Number} line
- * @param {Number} column
- * @returns
+ * @param {number} line
+ * @param {number} column
+ * @returns {Promise}
  */
-function setEditorCursorAt(dbg, line, column) {
-  scrollEditorIntoView(dbg, line, 0);
-  return getCMEditor(dbg).setCursorAt(line, column);
+async function setEditorCursorAt(dbg, line, column) {
+  const cursorSet = waitForCursorPosition(dbg, line);
+  await getCMEditor(dbg).setCursorAt(line, column);
+  return cursorSet;
 }
 
 /**
  * Scrolls a specific line and column into view in the editor
  *
  * @param {*} dbg
- * @param {Number} line
- * @param {Number} column
- * @param {String|null} yAlign
+ * @param {number} line
+ * @param {number} column
+ * @param {string | null} yAlign
  * @returns
  */
 async function scrollEditorIntoView(dbg, line, column, yAlign) {
@@ -2363,8 +2400,8 @@ async function scrollEditorIntoView(dbg, line, column, yAlign) {
  * Wrapper around source editor api to check if a scrolled position is visible
  *
  * @param {*} dbg
- * @param {Number} line 1-based
- * @param {Number} column
+ * @param {number} line 1-based
+ * @param {number} column
  * @returns
  */
 function isScrolledPositionVisible(dbg, line, column = 0) {
@@ -2405,8 +2442,8 @@ async function getTokenFromPosition(dbg, { line, column = 0 }) {
  * Waits for the currently triggered scroll to complete
  *
  * @param {*} dbg
- * @param {Object} options
- * @param {Boolean} options.useTimeoutFallback - defaults to true. When set to false
+ * @param {object} options
+ * @param {boolean} options.useTimeoutFallback - defaults to true. When set to false
  *                                               a scroll must happen for the wait for scrolling to complete
  * @returns
  */
@@ -2496,10 +2533,10 @@ function hoverToken(tokenEl) {
 /**
  * Helper to close a variable preview popup.
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {DOM Element} tokenEl
  *        The DOM element on which we hovered to display the popup.
- * @param {String} previewType
+ * @param {string} previewType
  *        Based on the actual JS value being hovered we may have two different kinds
  *        of popups: popup (for js objects) or previewPopup (for primitives)
  */
@@ -2569,7 +2606,7 @@ async function closePreviewForToken(
  * @param {Debugger} dbg
  * @param {Integer} line: The line we want to hover over
  * @param {Integer} column: The column we want to hover over
- * @param {String} elementName: "Selector" string that will be passed to waitForElement,
+ * @param {string} elementName: "Selector" string that will be passed to waitForElement,
  *                              describing the element that should be displayed on hover.
  * @returns Promise<{element, tokenEl}>
  *          element is the DOM element matching the passed elementName
@@ -2593,10 +2630,10 @@ async function tryHovering(dbg, line, column, elementName) {
  * CodeMirror internal method for this (and which might suffer from bugs / outdated internal state)
  *
  * @param {Debugger} dbg
- * @param {String} expression: The text of the token we want to hover
+ * @param {string} expression: The text of the token we want to hover
  * @param {Integer} line: The line the token should be at
  * @param {Integer} column: The column the token should be at
- * @param {String} elementName: "Selector" string that will be passed to waitForElement,
+ * @param {string} elementName: "Selector" string that will be passed to waitForElement,
  *                              describing the element that should be displayed on hover.
  * @returns Promise<{element, tokenEl}>
  *          element is the DOM element matching the passed elementName
@@ -2633,7 +2670,7 @@ async function tryHoverToken(dbg, tokenEl, elementName) {
  * Retrieve the token element matching `expression` at line `line`, from the DOM.
  *
  * @param {Debugger} dbg
- * @param {String} expression: The text of the token we want to hover
+ * @param {string} expression: The text of the token we want to hover
  * @param {Integer} line: The line the token should be at
  * @param {Integer} column: The column the token should be at
  * @returns {Element} the token element, or null if not found
@@ -2660,6 +2697,7 @@ async function getTokenElAtLine(dbg, expression, line, column = 0) {
 
 /**
  * Wait for a few ms and assert that a tooltip preview was not displayed.
+ *
  * @param {*} dbg
  */
 async function assertNoTooltip(dbg) {
@@ -2670,13 +2708,14 @@ async function assertNoTooltip(dbg) {
 
 /**
  * Hovers and asserts tooltip previews with simple text expressions (i.e numbers and strings)
+ *
  * @param {*} dbg
- * @param {Number} line
- * @param {Number} column
- * @param {Object} options
- * @param {String}  options.result - Expected text shown in the preview
- * @param {String}  options.expression - The expression hovered over
- * @param {Boolean} options.doNotClose - Set to true to not close the tooltip
+ * @param {number} line
+ * @param {number} column
+ * @param {object} options
+ * @param {string}  options.result - Expected text shown in the preview
+ * @param {string}  options.expression - The expression hovered over
+ * @param {boolean} options.doNotClose - Set to true to not close the tooltip
  */
 async function assertPreviewTextValue(
   dbg,
@@ -2710,6 +2749,7 @@ async function assertPreviewTextValue(
 
 /**
  * Asserts multiple previews
+ *
  * @param {*} dbg
  * @param {Array} previews
  */
@@ -2790,11 +2830,12 @@ async function assertPreviews(dbg, previews) {
 
 /**
  * Asserts the inline expression preview value
+ *
  * @param {*} dbg
- * @param {Number} line
- * @param {Number} column
- * @param {Object} options
- * @param {String}  options.result - Expected text shown in the preview
+ * @param {number} line
+ * @param {number} column
+ * @param {object} options
+ * @param {string}  options.result - Expected text shown in the preview
  * @param {Array}  options.fields - The expected stacktrace information
  */
 async function assertInlineExceptionPreview(
@@ -2814,7 +2855,7 @@ async function assertInlineExceptionPreview(
   info("Wait for top level node to expand and child nodes to load");
   await waitForElementWithSelector(
     dbg,
-    ".exception-popup .exception-message .arrow.expanded"
+    ".exception-popup .exception-message .dbg-img-arrow.expanded"
   );
 
   is(
@@ -2851,8 +2892,9 @@ async function assertInlineExceptionPreview(
 
 /**
  * Wait until a preview popup containing the given result is shown
+ *
  * @param {*} dbg
- * @param {String} result
+ * @param {string} result
  */
 async function waitForPreviewWithResult(dbg, result) {
   info(`Wait for preview popup with result ${result}`);
@@ -2864,8 +2906,9 @@ async function waitForPreviewWithResult(dbg, result) {
 
 /**
  * Expand or collapse a node in the preview popup
+ *
  * @param {*} dbg
- * @param {Number} index
+ * @param {number} index
  */
 async function toggleExpanded(dbg, index) {
   let initialNodesLength;
@@ -2971,7 +3014,7 @@ async function waitForSourcesInSourceTree(
     );
   } catch (e) {
     // Craft a custom error message to help understand what's wrong with the Source Tree content
-    const displayedSources = getDisplayedSources();
+    const displayedSources = getDisplayedSources(dbg);
     let msg = "Invalid Source Tree Content.\n";
     const missingElements = [];
     for (const source of sources) {
@@ -3014,6 +3057,7 @@ async function assertNodeIsFocused(dbg, index) {
 /**
  * Asserts that the debugger is paused and the debugger tab is
  * highlighted.
+ *
  * @param {*} toolbox
  * @returns
  */
@@ -3064,9 +3108,9 @@ async function editExpression(dbg, input) {
 /**
  * Get the text representation of a watch expression label given its position in the panel
  *
- * @param {Object} dbg
- * @param {Number} index: Position in the panel of the expression we want the label of
- * @returns {String}
+ * @param {object} dbg
+ * @param {number} index: Position in the panel of the expression we want the label of
+ * @returns {string}
  */
 function getWatchExpressionLabel(dbg, index) {
   return findElement(dbg, "expressionNode", index).innerText;
@@ -3075,9 +3119,9 @@ function getWatchExpressionLabel(dbg, index) {
 /**
  * Get the text representation of a watch expression value given its position in the panel
  *
- * @param {Object} dbg
- * @param {Number} index: Position in the panel of the expression we want the value of
- * @returns {String}
+ * @param {object} dbg
+ * @param {number} index: Position in the panel of the expression we want the value of
+ * @returns {string}
  */
 function getWatchExpressionValue(dbg, index) {
   return findElement(dbg, "expressionValue", index).innerText;
@@ -3266,8 +3310,8 @@ async function toggleSourcesTreeSettingsMenuItem(
  * and wait for its context menu to be rendered before clicking
  * on one menuitem of it.
  *
- * @param {Object} dbg
- * @param {String} className
+ * @param {object} dbg
+ * @param {string} className
  *        The class name of the menuitem to click in the context menu.
  */
 async function clickOnSourceMapMenuItem(dbg, className) {
@@ -3321,8 +3365,8 @@ async function setLogPoint(dbg, index, value, showStacktrace = false) {
 /**
  * Opens the project search panel
  *
- * @param {Object} dbg
- * @return {Boolean} The project search is open
+ * @param {object} dbg
+ * @return {boolean} The project search is open
  */
 function openProjectSearch(dbg) {
   info("Opening the project search panel");
@@ -3333,9 +3377,9 @@ function openProjectSearch(dbg) {
 /**
  * Starts a project search based on the specified search term
  *
- * @param {Object} dbg
- * @param {String} searchTerm - The test to search for
- * @param {Number} expectedResults - The expected no of results to wait for.
+ * @param {object} dbg
+ * @param {string} searchTerm - The test to search for
+ * @param {number} expectedResults - The expected no of results to wait for.
  *                                   This is the number of file results and not the numer of matches in all files.
  *                                   When falsy value is passed, expects no match.
  * @return {Array} List of search results element nodes
@@ -3350,8 +3394,8 @@ async function doProjectSearch(dbg, searchTerm, expectedResults) {
 /**
  * Waits for the search results node to render
  *
- * @param {Object} dbg
- * @param {Number} expectedResults - The expected no of results to wait for
+ * @param {object} dbg
+ * @param {number} expectedResults - The expected no of results to wait for
  *                                   This is the number of file results and not the numer of matches in all files.
  * @return (Array) List of search result element nodes
  */
@@ -3383,8 +3427,8 @@ async function waitForSearchResults(dbg, expectedResults) {
 /**
  * Get the no of expanded search results
  *
- * @param {Object} dbg
- * @return {Number} No of expanded results
+ * @param {object} dbg
+ * @return {number} No of expanded results
  */
 function getExpandedResultsCount(dbg) {
   return findAllElements(dbg, "projectSearchExpandedResults").length;
@@ -3412,8 +3456,9 @@ if (protocolHandler.hasSubstitution("testing-common")) {
 
 /**
  * Selects the specific black box context menu item
- * @param {Object} dbg
- * @param {String} itemName
+ *
+ * @param {object} dbg
+ * @param {string} itemName
  *                  The name of the context menu item.
  */
 async function selectBlackBoxContextMenuItem(dbg, itemName) {
@@ -3484,8 +3529,8 @@ function findFooterNotificationMessage(dbg) {
 /**
  * Toggle a JavaScript Tracer settings via the toolbox toolbar button's context menu.
  *
- * @param {Object} dbg
- * @param {String} selector
+ * @param {object} dbg
+ * @param {string} selector
  *        Selector for the menu item of the settings defined in devtools/client/framework/definitions.js.
  */
 async function toggleJsTracerMenuItem(dbg, selector) {
@@ -3502,19 +3547,28 @@ async function toggleJsTracerMenuItem(dbg, selector) {
 }
 
 /**
- * Asserts that the contents of the inline previews and the lines
- * that they are displayed on are accurate
+ * Asserts that the number of displayed inline previews, the contents of the inline previews and the lines
+ * that they are displayed on, are accurate
  *
- * @param {Object} dbg
+ * @param {object} dbg
  * @param {Array} expectedInlinePreviews
- * @param {String} fnName
+ * @param {string} fnName
  */
 async function assertInlinePreviews(dbg, expectedInlinePreviews, fnName) {
-  await waitForAllElements(
+  // Accumulate all the previews over the various lines
+  let expectedNumberOfInlinePreviews = 0;
+  for (const { previews } of expectedInlinePreviews) {
+    expectedNumberOfInlinePreviews += previews.length;
+  }
+
+  const inlinePreviews = await waitForAllElements(
     dbg,
     "visibleInlinePreviews",
-    expectedInlinePreviews.length
+    expectedNumberOfInlinePreviews,
+    true
   );
+
+  ok(true, `Displayed ${inlinePreviews.length} inline previews`);
 
   for (const expectedInlinePreview of expectedInlinePreviews) {
     const { previews, line } = expectedInlinePreview;

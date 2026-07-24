@@ -7,8 +7,8 @@
 #ifndef mozilla_OriginTrials_h
 #define mozilla_OriginTrials_h
 
-#include "mozilla/origin_trials_ffi_generated.h"
 #include "mozilla/EnumSet.h"
+#include "mozilla/origin_trials_ffi_generated.h"
 #include "nsStringFwd.h"
 
 class nsIPrincipal;

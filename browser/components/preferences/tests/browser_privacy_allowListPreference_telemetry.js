@@ -67,11 +67,12 @@ add_task(async function test_baseline_telemetry() {
     "Baseline telemetry should be true when ETP strict mode is selected"
   );
 
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
 
   info("Sending idle-daily");
@@ -171,11 +172,12 @@ add_task(async function test_convenience_telemetry() {
     "Convenience telemetry should be true when strict convenience checkbox is checked"
   );
 
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
 
   info("Sending idle-daily");
@@ -206,13 +208,6 @@ add_task(async function test_convenience_telemetry() {
     doc,
     CUSTOM_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    true
-  );
-
-  await clickCheckboxAndWaitForPrefChange(
-    doc,
-    CUSTOM_CONVENIENCE_CHECKBOX_ID,
-    CONVENIENCE_PREF,
     true
   );
 

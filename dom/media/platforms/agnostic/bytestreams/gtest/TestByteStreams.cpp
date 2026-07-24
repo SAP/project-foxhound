@@ -4,14 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "AnnexB.h"
 #include "BufferReader.h"
 #include "ByteWriter.h"
 #include "H264.h"
 #include "H265.h"
-#include "mozilla/Types.h"
+#include "gtest/gtest.h"
 
 namespace mozilla {
 
@@ -206,7 +204,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
         << "AnnexB sample should be the same size as the AVCC sample -- the 4 "
            "byte NAL length data (AVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB)";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
 
@@ -223,7 +221,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
            "byte NAL length data (AVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB) and SPS data is not added as the frame is not a "
            "keyframe";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
 
@@ -237,7 +235,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
     EXPECT_GT(rawDataClone->Size(), rawData->Size())
         << "AnnexB sample should be larger than the AVCC sample because we've "
            "added SPS data";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
     // We could verify the SPS and PPS data we add, but we don't have great
     // tooling to do so. Consider doing so in future.
@@ -275,7 +273,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
     EXPECT_EQ(rawCryptoDataClone->mCrypto.mEncryptedSizes[0],
               rawCryptoData->mCrypto.mEncryptedSizes[0])
         << "Conversion should not affect encrypted sizes";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawCryptoDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawCryptoDataClone))
         << "The sample should be AnnexB following conversion";
   }
 }
@@ -293,7 +291,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
         << "AnnexB sample should be the same size as the HVCC sample -- the 4 "
            "byte NAL length data (HVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB)";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
   {
@@ -309,7 +307,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
            "byte NAL length data (HVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB) and SPS data is not added as the frame is not a "
            "keyframe";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
   {
@@ -322,7 +320,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
     EXPECT_GT(rawDataClone->Size(), rawData->Size())
         << "AnnexB sample should be larger than the HVCC sample because we've "
            "added SPS data";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
     // We could verify the SPS and PPS data we add, but we don't have great
     // tooling to do so. Consider doing so in future.
@@ -359,7 +357,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
     EXPECT_EQ(rawCryptoDataClone->mCrypto.mEncryptedSizes[0],
               rawCryptoData->mCrypto.mEncryptedSizes[0])
         << "Conversion should not affect encrypted sizes";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawCryptoDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawCryptoDataClone))
         << "The sample should be AnnexB following conversion";
   }
 }
@@ -875,6 +873,39 @@ TEST(H264, CreateNewExtraData)
   EXPECT_TRUE(res.isErr());
 }
 
+TEST(H264, AnnexBExtractExtraDataForAVCC)
+{
+  // First create an AnnexB config
+  const uint8_t annexBBytesBuffer[]{// AnnexB delimiter
+                                    0x00, 0x00, 0x00, 0x01,
+                                    // SPS NAL unit
+                                    0x67, 0x64, 0x00, 0x1F,
+                                    // AnnexB delimiter
+                                    0x00, 0x00, 0x00, 0x01,
+                                    // PPS NAL unit
+                                    0x68, 0xCE};
+  auto annexBExtradata = MakeRefPtr<mozilla::MediaByteBuffer>();
+  annexBExtradata->AppendElements(annexBBytesBuffer,
+                                  std::size(annexBBytesBuffer));
+
+  // Extract the AVCC extradata from the AnnexB bytestream
+  auto avccExtradata = AnnexB::ExtractExtraDataForAVCC(*annexBExtradata);
+  ASSERT_TRUE(!!avccExtradata);
+
+  // Now parse that extradata to make sure it matches the original AnnexB
+  auto res = AVCCConfig::Parse(avccExtradata);
+  ASSERT_TRUE(res.isOk());
+  auto avcc = res.unwrap();
+  EXPECT_EQ(avcc.NumSPS(), 1u);
+  EXPECT_EQ(avcc.NumSPSExt(), 0u);
+  EXPECT_EQ(avcc.NumPPS(), 1u);
+  EXPECT_EQ(avcc.NALUSize(), 4);
+  EXPECT_EQ(avcc.mConfigurationVersion, 1u);
+  EXPECT_EQ(avcc.mAVCProfileIndication, 100u);
+  EXPECT_EQ(avcc.mProfileCompatibility, 0u);
+  EXPECT_EQ(avcc.mAVCLevelIndication, 31u);
+}
+
 TEST(H265, HVCCParsingSuccess)
 {
   {
@@ -1173,7 +1204,7 @@ TEST(H265, AnnexBToHVCC)
   Result<Ok, nsresult> result =
       AnnexB::ConvertHVCCSampleToAnnexB(rawDataClone, /* aAddSps */ false);
   EXPECT_TRUE(result.isOk()) << "HVCC to AnnexB Conversion should succeed";
-  EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+  EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
       << "The sample should be AnnexB following conversion";
 
   auto rv = AnnexB::ConvertSampleToHVCC(rawDataClone);

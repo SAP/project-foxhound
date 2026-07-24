@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_BodyConsumer_h
 #define mozilla_dom_BodyConsumer_h
 
-#include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/GlobalFreezeObserver.h"
+#include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/dom/AbortFollower.h"
 #include "mozilla/dom/MutableBlobStorage.h"
 #include "nsIInputStreamPump.h"

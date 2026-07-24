@@ -43,13 +43,6 @@
 #  include <dbus/dbus.h>
 #endif
 
-#define MIN_GTK_MAJOR_VERSION 2
-#define MIN_GTK_MINOR_VERSION 10
-#define UNSUPPORTED_GTK_MSG \
-  "We're sorry, this application requires a version of the GTK+ library that is not installed on your computer.\n\n\
-You have GTK+ %d.%d.\nThis application requires GTK+ %d.%d or newer.\n\n\
-Please upgrade your GTK+ library if you wish to use this application."
-
 #if MOZ_X11
 #  undef IceSetIOErrorHandler
 #  undef IceAddConnectionWatch

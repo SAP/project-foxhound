@@ -1,0 +1,98 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+#current {
+  text-decoration: underline;
+  color: var(--theme-selection-color);
+  background-color: var(--theme-selection-background);
+}
+
+#diagram-container {
+  margin: 10px 0 0 10px;
+}
+
+#diagram-container table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  border: 1px solid;
+}
+
+#diagram-container thead th {
+  border: 1px solid var(--theme-body-color);
+  cursor: default;
+  width: 95px;
+}
+
+#diagram-container td {
+  border: 1px solid;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 4px;
+}
+
+#diagram-container td.same-document-nav {
+  border-inline-start-style: dotted;
+}
+
+#diagram-container td:has(+ td.same-document-nav) {
+  border-inline-end-style: dotted;
+}
+
+#diagram-container td button {
+  border: 0 solid;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  width: 95px;
+}
+
+td:has(:popover-open) button {
+  background-color: var(--theme-selection-background);
+  color: var(--theme-selection-color);
+}
+
+td:has(:popover-open) {
+  anchor-name: --selected-session-history-entry-info;
+}
+
+.no-text-cursor {
+  cursor: default;
+}
+
+td div[popover] {
+  position: absolute;
+  position-anchor: --selected-session-history-entry-info;
+  background-color: var(--theme-body-alternate-emphasized-background);
+  inset-block-start: anchor(end);
+  inset-inline-start: anchor(start);
+  position-try: --session-history-entry-bottom-end;
+  /* override the default auto margin */
+  margin: 0;
+  border-width: 1px;
+
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 10px;
+    padding: 0 5px;
+    margin: 0;
+    user-select: text;
+
+    dt {
+      font-weight: bold;
+      cursor: default;
+    }
+
+    dd {
+      margin: 0;
+    }
+  }
+}
+
+@position-try --session-history-entry-bottom-end {
+  inset: auto;
+  inset-block-start: anchor(end);
+  inset-inline-end: anchor(end);
+}

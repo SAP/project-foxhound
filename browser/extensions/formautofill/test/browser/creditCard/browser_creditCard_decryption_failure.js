@@ -1,5 +1,11 @@
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+});
+
 add_task(async function test_fill_creditCard_with_failed_decryption() {
   if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
     todo(
@@ -73,7 +79,7 @@ add_task(async function test_fill_creditCard_with_failed_decryption() {
   await Services.fog.testFlushAllChildren();
   let testEvents = Glean.creditcard.osKeystoreDecrypt.testGetValue();
   is(testEvents.length, 1, "Event was recorded");
-  is(testEvents[0].extra.trigger, "autofill", "Trigger was correct");
+  is(testEvents[0].extra.trigger, "formautofill_cc", "Trigger was correct");
   is(
     testEvents[0].extra.isDecryptSuccess,
     "false",

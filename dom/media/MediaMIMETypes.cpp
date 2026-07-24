@@ -6,8 +6,9 @@
 
 #include "MediaMIMETypes.h"
 
-#include "nsContentTypeParser.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
+#include "mozilla/dom/MimeType.h"
+#include "nsContentTypeParser.h"
 
 namespace mozilla {
 
@@ -243,6 +244,16 @@ Maybe<MediaExtendedMIMEType> MakeMediaExtendedMIMEType(
       channels,
       aConfig.mSamplerate.WasPassed() ? aConfig.mSamplerate.Value() : 48000,
       aConfig.mBitrate.WasPassed() ? aConfig.mBitrate.Value() : 131072));
+}
+
+size_t MediaExtendedMIMEType::GetParameterCount() const {
+  if (mNumParamsCached) {
+    return mNumParams;
+  }
+  mNumParamsCached = true;
+  RefPtr<CMimeType> parsed = CMimeType::Parse(mOriginalString);
+  mNumParams = parsed ? parsed->GetParameterCount() : 0;
+  return mNumParams;
 }
 
 size_t MediaExtendedMIMEType::SizeOfExcludingThis(

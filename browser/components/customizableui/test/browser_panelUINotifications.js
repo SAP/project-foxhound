@@ -229,7 +229,7 @@ add_task(async function testInteractionWithBadges() {
     // Remove the fxa toolbar button from the navbar to ensure the notification
     // is displayed on the app menu button.
     let { CustomizableUI } = ChromeUtils.importESModule(
-      "resource:///modules/CustomizableUI.sys.mjs"
+      "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
     );
     CustomizableUI.removeWidgetFromArea("fxa-toolbar-menu-button");
 

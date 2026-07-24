@@ -4,22 +4,19 @@
 
 package org.mozilla.fenix.home.recentvisits.view
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowColumn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -27,7 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -38,7 +34,6 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import mozilla.components.compose.base.menu.DropdownMenu
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.modifier.thenConditional
@@ -50,7 +45,9 @@ import org.mozilla.fenix.compose.list.IconListItem
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryGroup
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryHighlight
+import org.mozilla.fenix.home.topsites.ui.HomepageCard
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 // Number of recently visited items per column.
 private const val VISITS_PER_COLUMN = 3
@@ -70,12 +67,12 @@ private val contentPadding = 16.dp
  * the [RecentlyVisitedItem] that was clicked and the second parameter is the "page" or column number
  * the item resides in.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
+@Suppress("CognitiveComplexMethod")
 fun RecentlyVisited(
     recentVisits: List<RecentlyVisitedItem>,
     menuItems: List<RecentVisitMenuItem>,
-    backgroundColor: Color = FirefoxTheme.colors.layer2,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
     onRecentVisitClick: (RecentlyVisitedItem, pageNumber: Int) -> Unit = { _, _ -> },
 ) {
     val isSingleColumn by remember(recentVisits) { derivedStateOf { recentVisits.size <= VISITS_PER_COLUMN } }
@@ -92,11 +89,9 @@ fun RecentlyVisited(
                 vertical = 8.dp,
             ),
     ) {
-        Card(
+        HomepageCard(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = backgroundColor),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            backgroundColor = backgroundColor,
         ) {
             FlowColumn(
                 modifier = Modifier.fillMaxWidth(),
@@ -137,7 +132,7 @@ fun RecentlyVisited(
                         }
 
                         if (showDivider) {
-                            Divider(
+                            HorizontalDivider(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .padding(horizontal = contentPadding),
@@ -157,10 +152,6 @@ fun RecentlyVisited(
  * @param menuItems List of [RecentVisitMenuItem] to display in a recent visit dropdown menu.
  * @param onRecentVisitClick Invoked when the user clicks on a recent visit.
  */
-@OptIn(
-    ExperimentalFoundationApi::class,
-    ExperimentalComposeUiApi::class,
-)
 @Composable
 private fun RecentlyVisitedHistoryGroup(
     recentVisit: RecentHistoryGroup,
@@ -182,7 +173,7 @@ private fun RecentlyVisitedHistoryGroup(
                     onClick = { onRecentVisitClick(recentVisit) },
                     onLongClick = { isMenuExpanded = true },
                 ),
-            beforeIconPainter = painterResource(R.drawable.ic_multiple_tabs),
+            beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_tab_tray_24),
             description = stringResource(id = captionId, recentVisit.historyMetadata.size),
         )
 
@@ -207,10 +198,6 @@ private fun RecentlyVisitedHistoryGroup(
  * @param menuItems List of [RecentVisitMenuItem] to display in a recent visit dropdown menu.
  * @param onRecentVisitClick Invoked when the user clicks on a recent visit.
  */
-@OptIn(
-    ExperimentalFoundationApi::class,
-    ExperimentalComposeUiApi::class,
-)
 @Composable
 private fun RecentlyVisitedHistoryHighlight(
     recentVisit: RecentHistoryHighlight,
@@ -248,11 +235,7 @@ private fun RecentlyVisitedHistoryHighlight(
 @PreviewLightDark
 private fun RecentlyVisitedMultipleColumnsPreview() {
     FirefoxTheme {
-        Box(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1)
-                .padding(vertical = contentPadding),
-        ) {
+        Surface {
             RecentlyVisited(
                 recentVisits = listOf(
                     RecentHistoryGroup(title = "running shoes"),
@@ -271,11 +254,7 @@ private fun RecentlyVisitedMultipleColumnsPreview() {
 @PreviewLightDark
 private fun RecentlyVisitedSingleColumnPreview() {
     FirefoxTheme {
-        Box(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1)
-                .padding(vertical = contentPadding),
-        ) {
+        Surface {
             RecentlyVisited(
                 recentVisits = listOf(
                     RecentHistoryGroup(title = "running shoes"),

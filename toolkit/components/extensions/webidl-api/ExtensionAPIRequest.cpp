@@ -6,6 +6,7 @@
 #include "ExtensionAPIRequest.h"
 
 #include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/ipc/BackgroundUtils.h"  // PrincipalInfoToPrincipal
 

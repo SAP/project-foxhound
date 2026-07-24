@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  /** Test for Bug 464620 (injection on DOM node insertion) **/
+  /** Test for Bug 464620 (injection on DOM node insertion) */
 
   waitForExplicitFinish();
 

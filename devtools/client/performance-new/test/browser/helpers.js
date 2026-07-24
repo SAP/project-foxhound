@@ -14,6 +14,7 @@ function tick() {
  * It can be confusing when waiting for something asynchronously. This function
  * logs out a message periodically (every 1 second) in order to create helpful
  * log messages.
+ *
  * @param {string} message
  * @returns {Function}
  */
@@ -45,6 +46,7 @@ function createPeriodicLogger() {
 
 /**
  * Wait until a condition is fullfilled.
+ *
  * @param {Function} condition
  * @param {string?} logMessage
  * @return The truthy result of the condition.
@@ -89,6 +91,7 @@ function getElementByTooltip(container, tooltip) {
 
 /**
  * This function will select a node from the XPath.
+ *
  * @returns {HTMLElement?}
  */
 function getElementByXPath(document, path) {
@@ -127,6 +130,7 @@ async function getElementFromDocumentByText(document, text) {
 /**
  * This function is similar to getElementFromDocumentByText, but it immediately
  * returns and does not wait for an element to exist.
+ *
  * @param {HTMLDocument} document
  * @param {string} text
  * @returns {HTMLElement?}
@@ -209,6 +213,7 @@ function waitForProfilerPopupEvent(window, eventName) {
  *
  * This function toggles the profiler menu button, and then uses user gestures
  * to click it open. It waits a tick to make sure it has a chance to initialize.
+ *
  * @param {Window} window
  * @return {Promise<void>}
  */
@@ -247,6 +252,7 @@ async function _toggleOpenProfilerPopup(window) {
  * Do not use this directly in a test. Prefer withPopupOpen.
  *
  * This function uses a keyboard shortcut to close the profiler popup.
+ *
  * @param {Window} window
  * @return {Promise<void>}
  */
@@ -264,6 +270,7 @@ async function _closePopup(window) {
 
 /**
  * Perform some action on the popup, and close it afterwards.
+ *
  * @param {Window} window
  * @param {() => Promise<void>} callback
  */
@@ -319,6 +326,7 @@ function setProfilerFrontendUrl(origin, pathname) {
  * test harness. This function runs in a loop every requestAnimationFrame, and
  * checks for a sucess title. In addition, an "initialTitle" and "errorTitle"
  * can be specified for nicer test output.
+ *
  * @param {object}
  *   {
  *     initialTitle: string,
@@ -362,6 +370,7 @@ async function checkTabLoadedProfile({
  * requestAnimationFrame, and checks for a initialTitle. Asserts as soon as it
  * finds that title. We don't have to look for success title or error title
  * since we only care about the url.
+ *
  * @param {{
  *     initialTitle: string,
  *     successTitle: string,
@@ -406,6 +415,7 @@ async function waitForTabUrl({
 /**
  * This function checks the document title of a tab as an easy way to pass
  * messages from a content page to the mochitest.
+ *
  * @param {string} title
  */
 async function waitForTabTitle(title) {
@@ -511,7 +521,7 @@ async function withDevToolsPanel(url, callback, aWindow = window) {
  * interactions, since the about:profiling page does not include buttons to control
  * the recording.
  *
- * @returns {Object}
+ * @returns {object}
  */
 function getActiveConfiguration() {
   const BackgroundJSM = ChromeUtils.importESModule(
@@ -606,6 +616,7 @@ async function devToolsActiveConfigurationHasFeature(document, feature) {
 /**
  * This adapts the expectation using the current build's available profiler
  * features.
+ *
  * @param {string} fixture It can be either already trimmed or untrimmed.
  * @returns {string}
  */
@@ -628,6 +639,7 @@ function _adaptCustomPresetExpectationToCustomBuild(fixture) {
 
 /**
  * Get the content of the preset description.
+ *
  * @param {Element} devtoolsDocument
  * @returns {string}
  */
@@ -639,6 +651,7 @@ function getDevtoolsCustomPresetContent(devtoolsDocument) {
 /**
  * This checks if the content of the preset description equals the fixture in
  * string form.
+ *
  * @param {Element} devtoolsDocument
  * @param {string} fixture
  */
@@ -752,6 +765,7 @@ async function makeSureProfilerPopupIsDisabled() {
 /**
  * Open the WebChannel test document, that will enable the profiler popup via
  * WebChannel.
+ *
  * @param {Function} callback
  */
 function withWebChannelTestDocument(callback) {

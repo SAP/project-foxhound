@@ -192,7 +192,7 @@ function fetchFile(uri) {
  * Returns whether or not a word (presumably in en-US) is capitalized per
  * expectations.
  *
- * @param {String} word The single word to check.
+ * @param {string} word The single word to check.
  * @param {boolean} expectCapitalized True if the word should be capitalized.
  * @returns {boolean} True if the word matches the expected capitalization.
  */

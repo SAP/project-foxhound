@@ -10,8 +10,10 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.concept.storage.DocumentType
 import mozilla.components.concept.storage.HistoryHighlight
@@ -19,14 +21,10 @@ import mozilla.components.concept.storage.HistoryHighlightWeights
 import mozilla.components.concept.storage.HistoryMetadata
 import mozilla.components.concept.storage.HistoryMetadataKey
 import mozilla.components.concept.storage.HistoryMetadataStorage
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
@@ -38,30 +36,25 @@ import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItemInternal.HistoryHi
 import org.mozilla.fenix.utils.Settings
 import kotlin.random.Random
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class RecentVisitsFeatureTest {
 
-    private lateinit var historyHightlightsStorage: PlacesHistoryStorage
+    private lateinit var historyHighlightsStorage: PlacesHistoryStorage
     private lateinit var historyMetadataStorage: HistoryMetadataStorage
 
     private val middleware = CaptureActionsMiddleware<AppState, AppAction>()
     private val appStore = AppStore(middlewares = listOf(middleware))
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val testDispatcher = coroutinesTestRule.testDispatcher
-    private val scope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
-        historyHightlightsStorage = mockk(relaxed = true)
+        historyHighlightsStorage = mockk(relaxed = true)
         historyMetadataStorage = mockk(relaxed = true)
         Settings.searchGroupMinimumSites = 1
     }
 
     @Test
     fun `GIVEN no recent visits WHEN feature starts THEN fetch history metadata and highlights then notify store`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val historyEntry = HistoryMetadata(
                 key = HistoryMetadataKey("http://www.mozilla.com", "mozilla", null),
                 title = "mozilla",
@@ -82,11 +75,11 @@ class RecentVisitsFeatureTest {
                     historyEntry,
                 )
             }
-            coEvery { historyHightlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
+            coEvery { historyHighlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
                 listOf(highlightEntry)
             }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(listOf(recentHistoryGroup, recentHistoryHighlight), it.recentHistory)
@@ -95,14 +88,14 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `WHEN asking for history highlights THEN use a specific query`() {
-        runTestOnMain {
+        runTest(testDispatcher) {
             val highlightWeights = slot<HistoryHighlightWeights>()
             val highlightsAskedForNumber = slot<Int>()
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             coVerify {
-                historyHightlightsStorage.getHistoryHighlights(
+                historyHighlightsStorage.getHistoryHighlights(
                     capture(highlightWeights),
                     capture(highlightsAskedForNumber),
                 )
@@ -116,7 +109,7 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN groups containing history metadata items with the same url WHEN they are added to store THEN entries are deduped`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val historyEntry1 = HistoryMetadata(
                 key = HistoryMetadataKey("http://www.mozilla.com", "mozilla", null),
                 title = "mozilla",
@@ -167,7 +160,7 @@ class RecentVisitsFeatureTest {
                 )
             }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(listOf(expectedHistoryGroup), it.recentHistory)
@@ -176,7 +169,7 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN different groups containing history metadata items with the same url WHEN they are added to store THEN entries are not deduped`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val now = System.currentTimeMillis()
             val historyEntry1 = HistoryMetadata(
                 key = HistoryMetadataKey("http://www.mozilla.com", "mozilla", null),
@@ -226,7 +219,7 @@ class RecentVisitsFeatureTest {
                 )
             }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(listOf(expectedHistoryGroup1, expectedHistoryGroup2), it.recentHistory)
@@ -235,7 +228,7 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN history groups WHEN they are added to store THEN they are sorted descending by last updated timestamp`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val now = System.currentTimeMillis()
             val historyEntry1 = HistoryMetadata(
                 key = HistoryMetadataKey("http://www.mozilla.com", "mozilla", null),
@@ -285,7 +278,7 @@ class RecentVisitsFeatureTest {
                 )
             }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(listOf(expectedHistoryGroup2, expectedHistoryGroup1), it.recentHistory)
@@ -294,7 +287,7 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN multiple groups exist but no highlights WHEN they are added to store THEN only MAX_RESULTS_TOTAL are sent`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val visitsFromSearch = getSearchFromHistoryMetadataItems(10)
             val expectedRecentHistoryGroups = visitsFromSearch
                 // Expect to only have the last accessed 9 groups.
@@ -302,7 +295,7 @@ class RecentVisitsFeatureTest {
                 .toIndividualRecentHistoryGroups()
             coEvery { historyMetadataStorage.getHistoryMetadataSince(any()) }.coAnswers { visitsFromSearch }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(
@@ -315,15 +308,15 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN multiple highlights exist but no history groups WHEN they are added to store THEN only MAX_RESULTS_TOTAL are sent`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val highlights = getHistoryHighlightsItems(10)
             val expectedRecentHighlights = highlights
                 // Expect to only have 9 highlights
                 .subList(0, 9)
                 .toRecentHistoryHighlights()
-            coEvery { historyHightlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers { highlights }
+            coEvery { historyHighlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers { highlights }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(
@@ -335,7 +328,7 @@ class RecentVisitsFeatureTest {
 
     @Test
     fun `GIVEN multiple history highlights and history groups WHEN they are added to store THEN only last accessed are added`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val visitsFromSearch = getSearchFromHistoryMetadataItems(10)
             val directVisits = getDirectVisitsHistoryMetadataItems(10)
             val expectedRecentHistoryGroups = visitsFromSearch
@@ -347,11 +340,11 @@ class RecentVisitsFeatureTest {
                 listOf(it.first, it.second)
             }.take(9)
             coEvery { historyMetadataStorage.getHistoryMetadataSince(any()) }.coAnswers { visitsFromSearch + directVisits }
-            coEvery { historyHightlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
+            coEvery { historyHighlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
                 directVisits.toHistoryHighlights()
             }
 
-            startRecentVisitsFeature()
+            startRecentVisitsFeature(scope = this)
 
             middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
                 assertEquals(expectedItems, it.recentHistory)
@@ -359,7 +352,7 @@ class RecentVisitsFeatureTest {
         }
 
     @Test
-    fun `GIVEN history highlights exist as history metadata WHEN they are added to store THEN don't add highlight dupes`() {
+    fun `GIVEN history highlights exist as history metadata WHEN they are added to store THEN don't add highlight dupes`() = runTest(testDispatcher) {
         // To know if a highlight appears in a search group each visit's url should be checked.
         val visitsFromSearch = getSearchFromHistoryMetadataItems(10)
         val directDistinctVisits = getDirectVisitsHistoryMetadataItems(10).takeLast(2)
@@ -380,11 +373,11 @@ class RecentVisitsFeatureTest {
         coEvery { historyMetadataStorage.getHistoryMetadataSince(any()) }.coAnswers {
             visitsFromSearch + directDistinctVisits + directDupeVisits
         }
-        coEvery { historyHightlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
+        coEvery { historyHighlightsStorage.getHistoryHighlights(any(), any()) }.coAnswers {
             directDistinctVisits.toHistoryHighlights() + directDupeVisits.toHistoryHighlights()
         }
 
-        startRecentVisitsFeature()
+        startRecentVisitsFeature(scope = this)
 
         middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
             assertEquals(expectedItems, it.recentHistory)
@@ -398,7 +391,6 @@ class RecentVisitsFeatureTest {
         every { feature.getCombinedHistory(any(), any()) } returns expected
 
         feature.updateState(emptyList(), emptyList())
-        appStore.waitUntilIdle()
 
         middleware.assertLastAction(AppAction.RecentHistoryChange::class) {
             assertEquals(expected, it.recentHistory)
@@ -648,11 +640,12 @@ class RecentVisitsFeatureTest {
         result.forEach { assertEquals("https://mozilla.org", it.historyHighlight.url) }
     }
 
-    private fun startRecentVisitsFeature() {
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
+    private fun startRecentVisitsFeature(scope: CoroutineScope) {
         val feature = RecentVisitsFeature(
             appStore,
             historyMetadataStorage,
-            lazy { historyHightlightsStorage },
+            lazy { historyHighlightsStorage },
             scope,
             testDispatcher,
         )
@@ -660,9 +653,7 @@ class RecentVisitsFeatureTest {
         assertEquals(emptyList<RecentHistoryGroup>(), appStore.state.recentHistory)
 
         feature.start()
-
-        scope.advanceUntilIdle()
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify {
             historyMetadataStorage.getHistoryMetadataSince(any())

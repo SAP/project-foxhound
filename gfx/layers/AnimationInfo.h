@@ -129,8 +129,9 @@ class AnimationInfo final {
   bool AddAnimationsForProperty(
       nsIFrame* aFrame, const EffectSet* aEffects,
       const nsTArray<RefPtr<dom::Animation>>& aCompositorAnimations,
-      const Maybe<TransformData>& aTransformData, nsCSSPropertyID aProperty,
-      Send aSendFlag, WebRenderLayerManager* aLayerManager);
+      const Maybe<TransformData>& aTransformData,
+      NonCustomCSSPropertyId aProperty, Send aSendFlag,
+      WebRenderLayerManager* aLayerManager);
 
   void AddNonAnimatingTransformLikePropertiesStyles(
       const nsCSSPropertyIDSet& aNonAnimatingProperties, nsIFrame* aFrame,

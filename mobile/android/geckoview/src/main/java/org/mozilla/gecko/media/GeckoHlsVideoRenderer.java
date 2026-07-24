@@ -471,6 +471,11 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
         maxPixels = ((format.width + 15) / 16) * ((format.height + 15) / 16) * 16 * 16;
         minCompressionRatio = 2;
         break;
+      // See Exoplayer MediaCodecVideoRenderer.getCodecMaxInputSize().
+      case MimeTypes.VIDEO_H265:
+        maxPixels = format.width * format.height;
+        minCompressionRatio = 4;
+        break;
       default:
         // Leave the default max input size.
         return Format.NO_VALUE;

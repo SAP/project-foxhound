@@ -293,8 +293,7 @@ namespace pbl {
 // Trampoline invoked by EnterJit that sets up PBL state and invokes
 // the main interpreter loop.
 bool PortableBaselineTrampoline(JSContext* cx, size_t argc, Value* argv,
-                                size_t numActuals, size_t numFormals,
-                                jit::CalleeToken calleeToken,
+                                size_t numFormals, jit::CalleeToken calleeToken,
                                 JSObject* envChain, Value* result);
 
 // Predicate: are all conditions satisfied to allow execution within

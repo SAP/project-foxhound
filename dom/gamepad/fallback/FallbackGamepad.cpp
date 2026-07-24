@@ -5,8 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <stdint.h>
-#include "mozilla/dom/GamepadHandle.h"
+
 #include "mozilla/Tainting.h"
+#include "mozilla/dom/GamepadHandle.h"
 
 namespace mozilla {
 namespace dom {

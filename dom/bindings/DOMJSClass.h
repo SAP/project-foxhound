@@ -7,15 +7,14 @@
 #ifndef mozilla_dom_DOMJSClass_h
 #define mozilla_dom_DOMJSClass_h
 
-#include "jsapi.h"
-#include "jsfriendapi.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "js/Wrapper.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/OriginTrials.h"
 #include "mozilla/Likely.h"
-
+#include "mozilla/OriginTrials.h"
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
 #include "mozilla/dom/WebIDLPrefs.h"    // auto-generated
 
@@ -111,9 +110,8 @@ static const uint32_t ServiceWorkerGlobalScope = 1u << 3;
 static const uint32_t WorkerDebuggerGlobalScope = 1u << 4;
 static const uint32_t AudioWorkletGlobalScope = 1u << 5;
 static const uint32_t PaintWorkletGlobalScope = 1u << 6;
-static const uint32_t ShadowRealmGlobalScope = 1u << 7;
 
-static constexpr uint32_t kCount = 8;
+static constexpr uint32_t kCount = 7;
 }  // namespace GlobalNames
 
 struct PrefableDisablers {

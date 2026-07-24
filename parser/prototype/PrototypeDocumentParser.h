@@ -88,6 +88,8 @@ class PrototypeDocumentParser final : public nsIParser,
 
   virtual bool IsScriptCreated() override { return false; }
 
+  virtual bool IsAboutBlankMode() override { return false; }
+
   // End nsIParser
 
  private:

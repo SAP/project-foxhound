@@ -7,8 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef StringBuffer_h__
-#define StringBuffer_h__
+#ifndef StringBuffer_h_
+#define StringBuffer_h_
 
 #include <atomic>
 #include <cstring>

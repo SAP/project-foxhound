@@ -7,11 +7,16 @@ package org.mozilla.fenix.onboarding
 import io.mockk.mockk
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+
+private const val TIME_IN_MILLIS = 1759926358L
 
 @RunWith(RobolectricTestRunner::class)
 class DefaultOnboardingTermsOfServiceEventHandlerTest {
@@ -21,6 +26,11 @@ class DefaultOnboardingTermsOfServiceEventHandlerTest {
     private lateinit var openLink: (String) -> Unit
     private lateinit var showManagePrivacyPreferencesDialog: () -> Unit
     private lateinit var settings: Settings
+    private var startGlean: () -> Unit = {
+        gleanStarted = true
+    }
+
+    private var gleanStarted = false
 
     @Before
     fun setup() {
@@ -34,7 +44,13 @@ class DefaultOnboardingTermsOfServiceEventHandlerTest {
             openLink = openLink,
             showManagePrivacyPreferencesDialog = showManagePrivacyPreferencesDialog,
             settings = settings,
+            startGlean = startGlean,
         )
+    }
+
+    @After
+    fun tearDown() {
+        gleanStarted = false
     }
 
     @Test
@@ -79,12 +95,15 @@ class DefaultOnboardingTermsOfServiceEventHandlerTest {
 
     @Test
     fun onAcceptTermsButtonClicked() {
-        eventHandler.onAcceptTermsButtonClicked()
+        eventHandler.onAcceptTermsButtonClicked(nowMillis = TIME_IN_MILLIS)
 
         verify {
             telemetryRecorder.onTermsOfServiceManagerAcceptTermsButtonClick()
         }
 
         assert(settings.hasAcceptedTermsOfService)
+        assertEquals(5, settings.termsOfUseAcceptedVersion)
+        assertEquals(TIME_IN_MILLIS, settings.termsOfUseAcceptedTimeInMillis)
+        assertTrue(gleanStarted)
     }
 }

@@ -2,19 +2,12 @@ import {
   _CardGrid as CardGrid,
   // eslint-disable-next-line no-shadow
   IntersectionObserver,
-  RecentSavesContainer,
-  OnboardingExperience,
-  DSSubHeader,
 } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { combineReducers, createStore } from "redux";
 import { INITIAL_STATE, reducers } from "common/Reducers.sys.mjs";
 import { Provider } from "react-redux";
-import {
-  DSCard,
-  PlaceholderDSCard,
-} from "content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
+import { DSCard } from "content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
 import { TopicsWidget } from "content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget";
-import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import React from "react";
 import { shallow, mount } from "enzyme";
 
@@ -67,37 +60,6 @@ describe("<CardGrid>", () => {
     assert.ok(wrapper.find(".ds-card-grid-hide-background").exists());
   });
 
-  it("should render sub header in the middle of the card grid for both regular and compact", () => {
-    const commonProps = {
-      essentialReadsHeader: true,
-      editorsPicksHeader: true,
-      items: 12,
-      data: {
-        recommendations: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
-      },
-      Prefs: INITIAL_STATE.Prefs,
-      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
-    };
-    wrapper = mount(
-      <WrapWithProvider>
-        <CardGrid {...commonProps} />
-      </WrapWithProvider>
-    );
-
-    assert.ok(wrapper.find(DSSubHeader).exists());
-
-    wrapper.setProps({
-      compact: true,
-    });
-    wrapper = mount(
-      <WrapWithProvider>
-        <CardGrid {...commonProps} compact={true} />
-      </WrapWithProvider>
-    );
-
-    assert.ok(wrapper.find(DSSubHeader).exists());
-  });
-
   it("should add/hide description classname to card grid", () => {
     wrapper.setProps({
       data: { recommendations: [{}, {}] },
@@ -125,41 +87,6 @@ describe("<CardGrid>", () => {
     });
 
     assert.ok(wrapper.find(TopicsWidget).exists());
-  });
-
-  it("should create a list feed", () => {
-    const commonProps = {
-      essentialReadsHeader: true,
-      editorsPicksHeader: true,
-      items: 12,
-      data: {
-        recommendations: [
-          { feedName: "foo" },
-          { feedName: "foo" },
-          { feedName: "foo" },
-          { feedName: "foo" },
-          { feedName: "foo" },
-          { feedName: "foo" },
-        ],
-      },
-      Prefs: {
-        ...INITIAL_STATE.Prefs,
-        values: {
-          ...INITIAL_STATE.Prefs.values,
-          "discoverystream.contextualContent.enabled": true,
-          "discoverystream.contextualContent.selectedFeed": "foo",
-        },
-      },
-      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
-    };
-
-    wrapper = mount(
-      <WrapWithProvider>
-        <CardGrid {...commonProps} />
-      </WrapWithProvider>
-    );
-
-    assert.ok(wrapper.find(".list-feed").exists());
   });
 
   it("should render AdBanner if enabled", () => {
@@ -201,76 +128,125 @@ describe("<CardGrid>", () => {
     assert.ok(wrapper.find(".ad-banner-wrapper").exists());
   });
 
-  it("should render TrendingSearch if enabled", () => {
-    const commonProps = {
-      spocPositions: [{ index: 1 }, { index: 5 }, { index: 7 }],
-      items: 12,
-      data: {
-        recommendations: [
-          {},
-          { format: "spoc" },
-          {},
-          {},
-          {},
-          {},
-          {},
-          {},
-          {},
-          {},
-          {},
-          {},
-        ],
-      },
-      Prefs: {
-        ...INITIAL_STATE.Prefs,
-        values: {
-          ...INITIAL_STATE.Prefs.values,
-          "trendingSearch.enabled": true,
-          "system.trendingSearch.enabled": true,
-          "trendingSearch.variant": "b",
-          "trendingSearch.defaultSearchEngine": "Google",
+  describe("Keyboard navigation", () => {
+    beforeEach(() => {
+      const commonProps = {
+        items: 3,
+        data: {
+          recommendations: [{}, {}, {}],
         },
-      },
-      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
-    };
+        Prefs: INITIAL_STATE.Prefs,
+        DiscoveryStream: INITIAL_STATE.DiscoveryStream,
+      };
 
-    wrapper = mount(
-      <WrapWithProvider
-        state={{
-          ...INITIAL_STATE,
-          Prefs: {
-            ...INITIAL_STATE.Prefs,
-            values: {
-              ...INITIAL_STATE.Prefs.values,
-              "trendingSearch.variant": "b",
-            },
-          },
-          TrendingSearch: {
-            suggestions: [
-              {
-                suggestion: "foo",
-                searchUrl: "foo",
-                lowerCaseSuggestion: "foo",
-              },
-              {
-                suggestion: "bar",
-                searchUrl: "bar",
-                lowerCaseSuggestion: "foo",
-              },
-            ],
-          },
-        }}
-      >
-        <CardGrid {...commonProps} />
-      </WrapWithProvider>
-    );
+      wrapper = mount(
+        <WrapWithProvider>
+          <CardGrid {...commonProps} />
+        </WrapWithProvider>
+      );
+    });
 
-    assert.ok(wrapper.find(".trending-searches-list-view").exists());
-    const grid = wrapper.find(".ds-card-grid").first();
-    // assert that the spoc has been placed in the correct position
-    assert.equal(grid.childAt(1).prop("format"), "spoc");
-    // confrim that the next child is the trending search widget
-    assert.ok(grid.childAt(2).find(".trending-searches-list-view").exists());
+    afterEach(() => {
+      wrapper.unmount();
+    });
+
+    it("should pass tabIndex={0} to the first card and tabIndex={-1} to other cards", () => {
+      const firstCard = wrapper.find(DSCard).at(0);
+      const secondCard = wrapper.find(DSCard).at(1);
+      const thirdCard = wrapper.find(DSCard).at(2);
+
+      assert.equal(firstCard.prop("tabIndex"), 0);
+      assert.equal(secondCard.prop("tabIndex"), -1);
+      assert.equal(thirdCard.prop("tabIndex"), -1);
+    });
+
+    it("should update focused index when onFocus is called", () => {
+      const secondCard = wrapper.find(DSCard).at(1);
+      const onFocus = secondCard.prop("onFocus");
+
+      onFocus();
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+    });
+
+    describe("handleCardKeyDown", () => {
+      let sandbox;
+      let grid;
+      let mockLink;
+      let mockTargetCard;
+      let mockCurrentCard;
+      let mockEvent;
+
+      beforeEach(() => {
+        sandbox = sinon.createSandbox();
+        grid = wrapper.find(".ds-card-grid");
+
+        mockLink = { focus: sandbox.spy() };
+        mockTargetCard = {
+          matches: sandbox.stub().returns(true),
+          querySelector: sandbox.stub().returns(mockLink),
+        };
+        mockCurrentCard = {};
+        mockEvent = {
+          preventDefault: sandbox.spy(),
+          target: {
+            closest: sandbox.stub().returns(mockCurrentCard),
+          },
+        };
+      });
+
+      afterEach(() => {
+        sandbox.restore();
+      });
+
+      it("should navigate to next card with ArrowRight", () => {
+        mockEvent.key = "ArrowRight";
+        mockCurrentCard.nextElementSibling = mockTargetCard;
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledOnce(mockTargetCard.querySelector);
+        assert.calledWith(mockTargetCard.querySelector, "a.ds-card-link");
+        assert.calledOnce(mockLink.focus);
+      });
+
+      it("should navigate to previous card with ArrowLeft", () => {
+        mockEvent.key = "ArrowLeft";
+        mockCurrentCard.previousElementSibling = mockTargetCard;
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledOnce(mockTargetCard.querySelector);
+        assert.calledWith(mockTargetCard.querySelector, "a.ds-card-link");
+        assert.calledOnce(mockLink.focus);
+      });
+
+      it("should return early if no current card found", () => {
+        mockEvent.key = "ArrowRight";
+        mockEvent.target.closest.returns(null);
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.notCalled(mockTargetCard.querySelector);
+      });
+
+      it("should handle case where no matching sibling card is found", () => {
+        mockEvent.key = "ArrowRight";
+        mockCurrentCard.nextElementSibling = {
+          matches: sandbox.stub().returns(false),
+        };
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.notCalled(mockLink.focus);
+      });
+    });
   });
 });
 
@@ -318,181 +294,5 @@ describe("<IntersectionObserver>", () => {
       />
     );
     assert.calledOnce(onIntersecting);
-  });
-});
-
-describe("<RecentSavesContainer>", () => {
-  let wrapper;
-  let fakeWindow;
-  let intersectEntries;
-  let dispatch;
-
-  beforeEach(() => {
-    dispatch = sinon.stub();
-    intersectEntries = [{ isIntersecting: true }];
-    fakeWindow = {
-      IntersectionObserver: buildIntersectionObserver(intersectEntries),
-    };
-    wrapper = mount(
-      <WrapWithProvider
-        state={{
-          DiscoveryStream: {
-            isUserLoggedIn: true,
-            recentSavesData: [
-              {
-                resolved_id: "resolved_id",
-                top_image_url: "top_image_url",
-                title: "title",
-                resolved_url: "https://resolved_url",
-                domain: "domain",
-                excerpt: "excerpt",
-              },
-            ],
-            experimentData: {
-              utmSource: "utmSource",
-              utmContent: "utmContent",
-              utmCampaign: "utmCampaign",
-            },
-          },
-        }}
-      >
-        <RecentSavesContainer
-          gridClassName="ds-card-grid"
-          windowObj={fakeWindow}
-          dispatch={dispatch}
-        />
-      </WrapWithProvider>
-    ).find(RecentSavesContainer);
-  });
-
-  it("should render an IntersectionObserver when not visible", () => {
-    intersectEntries = [{ isIntersecting: false }];
-    fakeWindow = {
-      IntersectionObserver: buildIntersectionObserver(intersectEntries),
-    };
-    wrapper = mount(
-      <WrapWithProvider>
-        <RecentSavesContainer windowObj={fakeWindow} dispatch={dispatch} />
-      </WrapWithProvider>
-    ).find(RecentSavesContainer);
-
-    assert.ok(wrapper.exists());
-    assert.ok(wrapper.find(IntersectionObserver).exists());
-  });
-
-  it("should render nothing if visible until we log in", () => {
-    assert.ok(!wrapper.find(IntersectionObserver).exists());
-    assert.calledOnce(dispatch);
-    assert.calledWith(
-      dispatch,
-      ac.AlsoToMain({
-        type: at.DISCOVERY_STREAM_POCKET_STATE_INIT,
-      })
-    );
-  });
-
-  it("should render a grid if visible and logged in", () => {
-    assert.lengthOf(wrapper.find(".ds-card-grid"), 1);
-    assert.lengthOf(wrapper.find(DSSubHeader), 1);
-    assert.lengthOf(wrapper.find(PlaceholderDSCard), 2);
-    assert.lengthOf(wrapper.find(DSCard), 3);
-  });
-
-  it("should render a my list link with proper utm params", () => {
-    assert.equal(
-      wrapper.find(".section-sub-link").at(0).prop("url"),
-      "https://getpocket.com/a?utm_source=utmSource&utm_content=utmContent&utm_campaign=utmCampaign"
-    );
-  });
-
-  it("should fire a UserEvent for my list clicks", () => {
-    wrapper.find(".section-sub-link").at(0).simulate("click");
-    assert.calledWith(
-      dispatch,
-      ac.DiscoveryStreamUserEvent({
-        event: "CLICK",
-        source: `CARDGRID_RECENT_SAVES_VIEW_LIST`,
-      })
-    );
-  });
-});
-
-describe("<OnboardingExperience>", () => {
-  let wrapper;
-  let fakeWindow;
-  let intersectEntries;
-  let dispatch;
-  let resizeCallback;
-
-  let fakeResizeObserver = class {
-    constructor(callback) {
-      resizeCallback = callback;
-    }
-
-    observe() {}
-
-    unobserve() {}
-
-    disconnect() {}
-  };
-
-  beforeEach(() => {
-    dispatch = sinon.stub();
-    intersectEntries = [{ isIntersecting: true, intersectionRatio: 1 }];
-    fakeWindow = {
-      ResizeObserver: fakeResizeObserver,
-      IntersectionObserver: buildIntersectionObserver(intersectEntries),
-      document: {
-        visibilityState: "visible",
-        addEventListener: () => {},
-        removeEventListener: () => {},
-      },
-    };
-    wrapper = mount(
-      <WrapWithProvider state={{}}>
-        <OnboardingExperience windowObj={fakeWindow} dispatch={dispatch} />
-      </WrapWithProvider>
-    ).find(OnboardingExperience);
-  });
-
-  it("should render a ds-onboarding", () => {
-    assert.ok(wrapper.exists());
-    assert.lengthOf(wrapper.find(".ds-onboarding"), 1);
-  });
-
-  it("should dismiss on dismiss click", () => {
-    wrapper.find(".ds-dismiss-button").simulate("click");
-
-    assert.calledWith(
-      dispatch,
-      ac.DiscoveryStreamUserEvent({
-        event: "BLOCK",
-        source: "POCKET_ONBOARDING",
-      })
-    );
-    assert.calledWith(
-      dispatch,
-      ac.SetPref("discoverystream.onboardingExperience.dismissed", true)
-    );
-    assert.equal(wrapper.getDOMNode().style["max-height"], "0px");
-    assert.equal(wrapper.getDOMNode().style.opacity, "0");
-  });
-
-  it("should update max-height on resize", () => {
-    sinon
-      .stub(wrapper.find(".ds-onboarding-ref").getDOMNode(), "offsetHeight")
-      .get(() => 123);
-    resizeCallback();
-    assert.equal(wrapper.getDOMNode().style["max-height"], "123px");
-  });
-
-  it("should fire intersection events", () => {
-    assert.calledWith(
-      dispatch,
-      ac.DiscoveryStreamUserEvent({
-        event: "IMPRESSION",
-        source: "POCKET_ONBOARDING",
-      })
-    );
   });
 });

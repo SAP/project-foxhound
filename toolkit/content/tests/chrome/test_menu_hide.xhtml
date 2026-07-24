@@ -10,9 +10,9 @@
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <menu id="menu">
-  <menupopup onpopuphidden="if (event.target == this) done()">
+  <menupopup onpopuphidden="if (event.target == this) done()" native="false">
     <menu id="submenu" label="One">
-      <menupopup onpopupshown="submenuOpened();">
+      <menupopup onpopupshown="submenuOpened();" native="false">
         <menuitem label="Two"/>
       </menupopup>
     </menu>

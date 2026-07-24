@@ -100,19 +100,19 @@ async function testWithNoTouch(ui) {
 
     // Assuming that this test runs on devices having no touch screen device.
     ok(
-      !content.document.defaultView.matchMedia("(pointer: coarse)").matches,
+      !content.matchMedia("(pointer: coarse)").matches,
       "pointer: coarse shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(hover: none)").matches,
+      !content.matchMedia("(hover: none)").matches,
       "hover: none shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(any-pointer: coarse)").matches,
+      !content.matchMedia("(any-pointer: coarse)").matches,
       "any-pointer: coarse shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(any-hover: none)").matches,
+      !content.matchMedia("(any-hover: none)").matches,
       "any-hover: none shouldn't be matched"
     );
   });
@@ -192,19 +192,19 @@ async function testWithTouch(ui) {
     );
 
     ok(
-      content.document.defaultView.matchMedia("(pointer: coarse)").matches,
+      content.matchMedia("(pointer: coarse)").matches,
       "pointer: coarse should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(hover: none)").matches,
+      content.matchMedia("(hover: none)").matches,
       "hover: none should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(any-pointer: coarse)").matches,
+      content.matchMedia("(any-pointer: coarse)").matches,
       "any-pointer: coarse should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(any-hover: none)").matches,
+      content.matchMedia("(any-hover: none)").matches,
       "any-hover: none should be matched"
     );
   });

@@ -6,7 +6,6 @@
 
 #include "BounceTrackingRecord.h"
 #include "mozilla/Logging.h"
-#include "nsPrintfCString.h"
 
 namespace mozilla {
 
@@ -32,28 +31,8 @@ void BounceTrackingRecord::AddBounceHost(const nsACString& aHost) {
   MOZ_ASSERT(!aHost.IsEmpty());
 
   mBounceHosts.Insert(aHost);
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: %s", __FUNCTION__, Describe().get()));
-}
-
-// static
-nsCString BounceTrackingRecord::DescribeSet(
-    const nsTHashSet<nsCStringHashKey>& set) {
-  nsAutoCString setStr;
-
-  setStr.AppendLiteral("[");
-
-  if (!set.IsEmpty()) {
-    for (const nsACString& host : set) {
-      setStr.Append(host);
-      setStr.AppendLiteral(",");
-    }
-    setStr.Truncate(setStr.Length() - 1);
-  }
-
-  setStr.AppendLiteral("]");
-
-  return std::move(setStr);
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug, "{}: {}",
+              __FUNCTION__, *this);
 }
 
 void BounceTrackingRecord::AddStorageAccessHost(const nsACString& aHost) {
@@ -81,15 +60,6 @@ BounceTrackingRecord::GetStorageAccessHosts() const {
 const nsTHashSet<nsCStringHashKey>&
 BounceTrackingRecord::GetUserActivationHosts() const {
   return mUserActivationHosts;
-}
-
-nsCString BounceTrackingRecord::Describe() {
-  return nsPrintfCString(
-      "{mInitialHost:%s, mFinalHost:%s, mBounceHosts:%s, "
-      "mStorageAccessHosts:%s, mUserActivationHosts:%s}",
-      mInitialHost.get(), mFinalHost.get(), DescribeSet(mBounceHosts).get(),
-      DescribeSet(mStorageAccessHosts).get(),
-      DescribeSet(mUserActivationHosts).get());
 }
 
 }  // namespace mozilla

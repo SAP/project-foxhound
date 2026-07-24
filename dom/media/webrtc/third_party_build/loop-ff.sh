@@ -59,14 +59,21 @@ HANDLE_NOOP_COMMIT=""
 # * o pipefail: All stages of all pipes should succeed.
 set -eEuo pipefail
 
+find_repo_type
+echo "repo type: $MOZ_REPO"
+
 # start a new log with every run of this script
 rm -f $LOOP_OUTPUT_LOG
 # make sure third_party/libwebrtc/README.mozilla.last-vendor is the committed version
 # so we properly determine MOZ_LIBWEBRTC_BASE and MOZ_LIBWEBRTC_NEXT_BASE
 # in the loop below
-hg revert -C third_party/libwebrtc/README.mozilla.last-vendor &> /dev/null
+if [ "x$MOZ_REPO" == "xgit" ]; then
+  git restore third_party/libwebrtc/README.mozilla.last-vendor &> /dev/null
+else
+  hg revert -C third_party/libwebrtc/README.mozilla.last-vendor &> /dev/null
+fi
 
-# check for a resume situation from fast-forward-libwebrtc.sh
+# check for a resume situation from fast_forward_libwebrtc.py
 RESUME_FILE=$STATE_DIR/fast_forward.resume
 RESUME=""
 if [ -f $RESUME_FILE ]; then
@@ -107,7 +114,7 @@ in bash:
 You may resume running this script with the following command:
     bash $SCRIPT_DIR/loop-ff.sh
 "
-# if we're not in the resume situation from fast-forward-libwebrtc.sh
+# if we're not in the resume situation from fast_forward_libwebrtc.py
 if [ "x$RESUME" = "x" ]; then
   # start off by verifying the vendoring process to make sure no changes have
   # been added to elm to fix bugs.
@@ -159,11 +166,27 @@ if [ -f $STATE_DIR/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg ]; then
 fi
 
 echo_log "Moving from moz-libwebrtc commit $MOZ_LIBWEBRTC_BASE to $MOZ_LIBWEBRTC_NEXT_BASE"
-bash $SCRIPT_DIR/fast-forward-libwebrtc.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
+./mach python $SCRIPT_DIR/fast_forward_libwebrtc.py \
+    --commit-bug-number $MOZ_FASTFORWARD_BUG \
+    --branch $MOZ_LIBWEBRTC_BRANCH \
+    --log-path $LOG_DIR \
+    --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
+    --repo-path $MOZ_LIBWEBRTC_SRC \
+    --state-path $STATE_DIR \
+    --tmp-path $TMP_DIR \
+    --script-path $SCRIPT_DIR \
+    --target-path third_party/libwebrtc 2>&1| tee -a $LOOP_OUTPUT_LOG
 
-MOZ_CHANGED=`hg diff -c tip --stat \
-   | egrep -ve "README.mozilla.last-vendor|README.mozilla|files changed," \
-   | wc -l | tr -d " " || true`
+
+if [ "x$MOZ_REPO" == "xgit" ]; then
+  MOZ_CHANGED=`git show --format='' --name-status \
+    | grep -E -ve "README.mozilla.last-vendor|README.mozilla" \
+    | wc -l | tr -d " " || true`
+else
+  MOZ_CHANGED=`hg diff -c tip --stat \
+     | grep -E -ve "README.mozilla.last-vendor|README.mozilla|files changed," \
+     | wc -l | tr -d " " || true`
+fi
 GIT_CHANGED=`./mach python $SCRIPT_DIR/filter_git_changes.py \
    --repo-path $MOZ_LIBWEBRTC_SRC --commit-sha $MOZ_LIBWEBRTC_NEXT_BASE \
    | wc -l | tr -d " "`
@@ -239,8 +262,13 @@ if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   ./mach python build/gn_processor.py \
       $SCRIPT_DIR/gn-configs/webrtc.json 2>&1| tee -a $LOOP_OUTPUT_LOG
 
-  MOZ_BUILD_CHANGE_CNT=`hg status third_party/libwebrtc \
-      --include 'third_party/libwebrtc/**moz.build' | wc -l | tr -d " "`
+  if [ "x$MOZ_REPO" == "xgit" ]; then
+    MOZ_BUILD_CHANGE_CNT=`git status --porcelain 'third_party/libwebrtc/**moz.build' \
+        | wc -l | tr -d " "`
+  else
+    MOZ_BUILD_CHANGE_CNT=`hg status third_party/libwebrtc \
+        --include 'third_party/libwebrtc/**moz.build' | wc -l | tr -d " "`
+  fi
   if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
     echo_log "Detected modified moz.build files, commiting"
     bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
@@ -265,6 +293,10 @@ ERROR_HELP=""
 # If we've committed moz.build changes, spin up try builds.
 if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
   TRY_FUZZY_QUERY_STRING="^build-"
+  PUSH_TO_VCS="--push-to-vcs"
+  if [ "x$MOZ_REPO" == "xgit" ]; then
+    PUSH_TO_VCS=""
+  fi
   CURRENT_TIME=`date`
   echo_log "Detected modified moz.build files, starting try builds with"
   echo_log "'$TRY_FUZZY_QUERY_STRING' at $CURRENT_TIME"
@@ -275,7 +307,7 @@ if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
   # Show the time used for this command, and don't let it fail if the
   # command times out so the script continues running.  This command
   # can take quite long, occasionally 10min.
-  (time ./mach try fuzzy --push-to-vcs --full -q $TRY_FUZZY_QUERY_STRING) 2>&1| tee -a $LOOP_OUTPUT_LOG || true
+  (time ./mach try fuzzy $PUSH_TO_VCS --full -q $TRY_FUZZY_QUERY_STRING) 2>&1| tee -a $LOOP_OUTPUT_LOG || true
 fi
 
 if [ ! "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then

@@ -8,6 +8,7 @@ COOKIES_CSS = "#wcpConsentBannerCtrl"
 SEARCH_CSS = "#search"
 INPUT_CSS = "#cli_shellHeaderSearchInput"
 SUGGESTION_CSS = ".m-auto-suggest a.f-product"
+SELECTED_PRODUCT_LINK_CSS = ".c-menu-item[data-selected=true] a.f-product"
 
 
 async def does_enter_work(client):
@@ -21,10 +22,13 @@ async def does_enter_work(client):
 
     # We now wait for the search suggestions to appear, press Down twice,
     # and Enter once. This should begin a navigation if things are working.
-    nav = await client.promise_navigation_begins(url="microsoft", timeout=2)
     client.await_css(SUGGESTION_CSS, is_displayed=True)
+    await client.stall(1)
     client.keyboard.key_down("\ue05b").perform()  # Down arrow
     client.keyboard.key_down("\ue05b").perform()  # Down arrow
+    selected_product = client.await_css(SELECTED_PRODUCT_LINK_CSS, is_displayed=True)
+    expected_url = client.get_element_attribute(selected_product, "href")
+    nav = await client.promise_navigation_begins(url=expected_url, timeout=2)
     client.keyboard.key_down("\ue007").perform()  # Enter
     try:
         await nav

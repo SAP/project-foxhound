@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -29,18 +29,18 @@ assert.throws(TypeError, () => Temporal.ZonedDateTime.from({
   calendar: "iso8601",
 }), "era and eraYear cannot replace year for calendar not using eras (iso8601)");
 
-const resultHebrew = Temporal.ZonedDateTime.from({
+const resultChinese = Temporal.ZonedDateTime.from({
   era: "foobar",
   eraYear: 1,
-  year: 5730,
-  monthCode: "M04",
-  day: 23,
+  year: 1969,
+  monthCode: "M11",
+  day: 24,
   timeZone: "UTC",
-  calendar: "hebrew",
+  calendar: "chinese",
 });
-assert.sameValue(resultHebrew.epochNanoseconds, 0n,
-  "era and eraYear are ignored for calendar not using eras (Hebrew)");
-assert.sameValue(resultHebrew.calendarId, "hebrew");
+assert.sameValue(resultChinese.epochNanoseconds, 0n,
+  "era and eraYear are ignored for calendar not using eras (Chinese)");
+assert.sameValue(resultChinese.calendarId, "chinese");
 
 assert.throws(TypeError, () => Temporal.ZonedDateTime.from({
   era: "foobar",
@@ -48,7 +48,7 @@ assert.throws(TypeError, () => Temporal.ZonedDateTime.from({
   monthCode: "M01",
   day: 1,
   timeZone: "UTC",
-  calendar: "hebrew",
-}), "era and eraYear cannot replace year for calendar not using eras (Hebrew)");
+  calendar: "chinese",
+}), "era and eraYear cannot replace year for calendar not using eras (Chinese)");
 
 reportCompare(0, 0);

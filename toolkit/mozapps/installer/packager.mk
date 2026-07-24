@@ -32,6 +32,7 @@ stage-package: multilocale.txt locale-manifest.in $(MOZ_PKG_MANIFEST) $(MOZ_PKG_
 		$(if $(MOZ_PACKAGER_MINIFY_JS),--minify-js \
 		  $(addprefix --js-binary ,$(JS_BINARY)) \
 		) \
+		$(if $(MOZ_PACKAGER_MINIFY_PDFJS),--minify-pdfjs) \
 		$(addprefix --jarlog ,$(wildcard $(JARLOG_FILE_AB_CD))) \
 		$(addprefix --compress ,$(JAR_COMPRESSION)) \
 		$(MOZ_PKG_MANIFEST) '$(DIST)' '$(DIST)'/$(MOZ_PKG_DIR)$(if $(MOZ_PKG_MANIFEST),,$(_BINPATH:%=/%)) \
@@ -55,14 +56,14 @@ ifdef MOZ_PACKAGE_JSSHELL
 endif # MOZ_PACKAGE_JSSHELL
 ifdef MOZ_AUTOMATION
 ifdef MOZ_ARTIFACT_BUILD_SYMBOLS
-	@echo 'Packaging existing crashreporter symbols from artifact build...'
-	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
-	cd $(DIST)/crashreporter-symbols && \
-          zip -r5D '../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' . -i '*.sym' -i '*.txt'
+	@echo 'Checking for crashreporter symbols from artifact build...'
+ifeq ($(wildcard $(UPLOAD_DIR)/$(SYMBOL_ARCHIVE_BASENAME).zip),)
+$(error Expected symbol archive $(UPLOAD_DIR)/$(SYMBOL_ARCHIVE_BASENAME).zip not found. This should have been created by artifacts.py during artifact installation. Check that UPLOAD_DIR is set correctly and that symbols were downloaded.)
+endif
 ifeq ($(MOZ_ARTIFACT_BUILD_SYMBOLS),full)
-	$(call py_action,symbols_archive $(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
-                                     $(abspath $(DIST)/crashreporter-symbols) \
-                                     --full-archive)
+ifeq ($(wildcard $(UPLOAD_DIR)/$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst),)
+$(error Expected full symbol archive $(UPLOAD_DIR)/$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst not found. This should have been created by artifacts.py during artifact installation. Check that UPLOAD_DIR is set correctly and that full symbols were downloaded.)
+endif
 endif
 endif # MOZ_ARTIFACT_BUILD_SYMBOLS
 endif # MOZ_AUTOMATION
@@ -85,14 +86,14 @@ ifdef ENABLE_MOZSEARCH_PLUGIN
 	cd $(topobjdir)/ && cp _build_manifests/install/dist_include '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map'
 	@echo 'Generating mozsearch scip index...'
 	$(RM) $(MOZSEARCH_SCIP_INDEX_BASENAME).zip
-	cp $(topsrcdir)/.cargo/config.toml.in $(topsrcdir)/.cargo/config.toml
 	cd $(topsrcdir)/ && \
+          $(PYTHON3) $(topsrcdir)/mach rust-analyzer-config -o rust-analyzer.json && \
           CARGO=$(MOZ_FETCHES_DIR)/rustc/bin/cargo \
           RUSTC=$(MOZ_FETCHES_DIR)/rustc/bin/rustc \
-          $(MOZ_FETCHES_DIR)/rustc/bin/rust-analyzer scip . && \
+          $(MOZ_FETCHES_DIR)/rustc/bin/rust-analyzer scip . --config-path rust-analyzer.json && \
           zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_SCIP_INDEX_BASENAME).zip' \
           index.scip
-	rm $(topsrcdir)/.cargo/config.toml
+	rm $(topsrcdir)/rust-analyzer.json
 ifeq ($(MOZ_BUILD_APP),mobile/android)
 	@echo 'Generating mozsearch java/kotlin semanticdb tarball...'
 	$(RM) $(MOZSEARCH_JAVA_INDEX_BASENAME).zip

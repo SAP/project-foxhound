@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpConnectionUDP_h__
-#define HttpConnectionUDP_h__
+#ifndef HttpConnectionUDP_h_
+#define HttpConnectionUDP_h_
 
 #include "HttpConnectionBase.h"
 #include "nsHttpConnectionInfo.h"
@@ -64,6 +64,11 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   [[nodiscard]] nsresult Init(nsHttpConnectionInfo* info,
                               nsIDNSRecord* dnsRecord, nsresult status,
                               nsIInterfaceRequestor* callbacks, uint32_t caps);
+  [[nodiscard]] nsresult InitWithSocket(nsHttpConnectionInfo* info,
+                                        nsIUDPSocket* aSocket,
+                                        NetAddr aPeerAddr,
+                                        nsIInterfaceRequestor* callbacks,
+                                        uint32_t caps);
 
   friend class HttpConnectionUDPForceIO;
 
@@ -89,10 +94,26 @@ class HttpConnectionUDP final : public HttpConnectionBase,
 
   Http3Stats GetStats();
 
+  void ResetTransaction(nsHttpTransaction* aHttpTransaction);
+
+  void HandleTunnelResponse(nsHttpTransaction* aHttpTransaction,
+                            uint16_t responseStatus, bool* reset);
+
+  nsresult CreateTunnelStream(nsAHttpTransaction* httpTransaction,
+                              HttpConnectionBase** aHttpConnection,
+                              bool aIsExtendedCONNECT = false) override;
+
+  void OnConnected();
+
  private:
+  nsresult InitCommon(nsIUDPSocket* aSocket, const NetAddr& aPeerAddr,
+                      nsIInterfaceRequestor* callbacks, uint32_t caps,
+                      bool isInTunnel);
   [[nodiscard]] nsresult OnTransactionDone(nsresult reason);
   nsresult RecvData();
   nsresult SendData();
+  already_AddRefed<nsIInputStream> CreateProxyConnectStream(
+      nsAHttpTransaction* trans);
 
  private:
   RefPtr<nsHttpHandler> mHttpHandler;  // keep gHttpHandler alive
@@ -103,6 +124,7 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   bool mDontReuse = false;
   bool mIsReused = false;
   bool mLastTransactionExpectedNoContent = false;
+  bool mConnected = false;
 
   int32_t mPriority = nsISupportsPriority::PRIORITY_NORMAL;
 
@@ -126,9 +148,13 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   // Http3
   RefPtr<Http3Session> mHttp3Session;
   nsCString mAlpnToken;
+  bool mIsInTunnel = false;
+  bool mProxyConnectSucceeded = false;
+  nsTArray<RefPtr<nsHttpTransaction>> mQueuedHttpConnectTransaction;
+  nsTArray<RefPtr<nsHttpTransaction>> mQueuedConnectUdpTransaction;
 };
 
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // HttpConnectionUDP_h__
+#endif  // HttpConnectionUDP_h_

@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_idbfactory_h__
-#define mozilla_dom_idbfactory_h__
+#ifndef mozilla_dom_idbfactory_h_
+#define mozilla_dom_idbfactory_h_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
@@ -212,4 +211,4 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_idbfactory_h__
+#endif  // mozilla_dom_idbfactory_h_

@@ -4,10 +4,10 @@
 
 package org.mozilla.fenix.components
 
-import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationManagerCompat
 import com.google.android.play.core.review.ReviewManagerFactory
@@ -18,7 +18,15 @@ import mozilla.components.feature.addons.update.DefaultAddonUpdater
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.CrashMiddleware
+import mozilla.components.lib.integrity.googleplay.GooglePlayIntegrityClient
+import mozilla.components.lib.integrity.googleplay.GoogleProjectNumber
+import mozilla.components.lib.integrity.googleplay.IntegrityManagerProvider
+import mozilla.components.lib.integrity.googleplay.RequestHashProvider
+import mozilla.components.lib.integrity.googleplay.TokenProviderFactory
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
+import mozilla.components.service.fxrelay.eligibility.RelayEligibilityStore
+import mozilla.components.service.fxrelay.eligibility.middlewares.ClearLastUsedMiddleware
+import mozilla.components.support.base.android.DefaultProcessInfoProvider
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.remotesettings.DefaultRemoteSettingsSyncScheduler
@@ -27,6 +35,7 @@ import mozilla.components.support.remotesettings.RemoteSettingsService
 import mozilla.components.support.remotesettings.into
 import mozilla.components.support.utils.BuildManufacturerChecker
 import mozilla.components.support.utils.ClipboardHandler
+import mozilla.components.support.utils.ext.packageManagerWrapper
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
@@ -34,6 +43,8 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.autofill.AutofillConfirmActivity
 import org.mozilla.fenix.autofill.AutofillSearchActivity
 import org.mozilla.fenix.autofill.AutofillUnlockActivity
+import org.mozilla.fenix.browser.relay.ErrorMessages
+import org.mozilla.fenix.browser.relay.RelayFeatureIntegration
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
@@ -46,30 +57,32 @@ import org.mozilla.fenix.distributions.DefaultDistributionBrowserStoreProvider
 import org.mozilla.fenix.distributions.DefaultDistributionProviderChecker
 import org.mozilla.fenix.distributions.DefaultDistributionSettings
 import org.mozilla.fenix.distributions.DistributionIdManager
-import org.mozilla.fenix.distributions.LegacyDistributionProviderChecker
 import org.mozilla.fenix.ext.asRecentTabs
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.filterState
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.sort
-import org.mozilla.fenix.home.PocketUpdatesMiddleware
+import org.mozilla.fenix.home.PocketMiddleware
+import org.mozilla.fenix.home.SettingsBackedPocketSettings
 import org.mozilla.fenix.home.blocklist.BlocklistHandler
 import org.mozilla.fenix.home.blocklist.BlocklistMiddleware
 import org.mozilla.fenix.home.middleware.HomeTelemetryMiddleware
 import org.mozilla.fenix.home.setup.store.DefaultSetupChecklistRepository
 import org.mozilla.fenix.home.setup.store.SetupChecklistPreferencesMiddleware
 import org.mozilla.fenix.home.setup.store.SetupChecklistTelemetryMiddleware
-import org.mozilla.fenix.lifecycle.DefaultPrivateBrowsingLockStorage
-import org.mozilla.fenix.lifecycle.PrivateBrowsingLockFeature
 import org.mozilla.fenix.messaging.state.MessagingMiddleware
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.FenixOnboarding
+import org.mozilla.fenix.perf.AppLinkIntentLaunchTypeProvider
 import org.mozilla.fenix.perf.AppStartReasonProvider
 import org.mozilla.fenix.perf.StartupActivityLog
 import org.mozilla.fenix.perf.StartupStateProvider
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.reviewprompt.ReviewPromptMiddleware
+import org.mozilla.fenix.settings.settingssearch.DefaultFenixSettingsIndexer
+import org.mozilla.fenix.termsofuse.TermsOfUseManager
+import org.mozilla.fenix.termsofuse.store.DefaultTermsOfUsePromptRepository
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import org.mozilla.fenix.wifi.WifiConnectionMonitor
@@ -100,21 +113,25 @@ class Components(private val context: Context) {
         )
     }
     val services by lazyMonitored { Services(context, core.store, backgroundServices.accountManager) }
-    val core by lazyMonitored { Core(context, analytics.crashReporter, strictMode) }
+    val core by lazyMonitored {
+        Core(context, analytics.crashReporter, strictMode, performance.visualCompletenessQueue)
+    }
 
     val useCases by lazyMonitored {
         UseCases(
-            context,
-            lazyMonitored { core.engine },
-            lazyMonitored { core.store },
-            lazyMonitored { core.webAppShortcutManager },
-            lazyMonitored { core.topSitesStorage },
-            lazyMonitored { core.bookmarksStorage },
-            lazyMonitored { core.historyStorage },
-            lazyMonitored { backgroundServices.syncedTabsCommands },
-            lazyMonitored { appStore },
-            lazyMonitored { core.client },
-            lazyMonitored { strictMode },
+            context = context,
+            crashReporter = lazyMonitored { analytics.crashReporter },
+            engine = lazyMonitored { core.engine },
+            store = lazyMonitored { core.store },
+            shortcutManager = lazyMonitored { core.webAppShortcutManager },
+            topSitesStorage = lazyMonitored { core.topSitesStorage },
+            bookmarksStorage = lazyMonitored { core.bookmarksStorage },
+            historyStorage = lazyMonitored { core.historyStorage },
+            syncedTabsCommands = lazyMonitored { backgroundServices.syncedTabsCommands },
+            adsClientProvider = ads.lazyAdsClientProvider,
+            appStore = lazyMonitored { appStore },
+            client = lazyMonitored { core.client },
+            strictMode = lazyMonitored { strictMode },
         )
     }
 
@@ -191,25 +208,40 @@ class Components(private val context: Context) {
         AddonManager(core.store, core.engine, addonsProvider, addonUpdater)
     }
 
-    val analytics by lazyMonitored { Analytics(context, performance.visualCompletenessQueue.queue) }
-    val nimbus by lazyMonitored { NimbusComponents(context) }
+    val analytics by lazyMonitored { Analytics(context, nimbus, performance.visualCompletenessQueue) }
+
+    val remoteSettingsService = lazyMonitored {
+        RemoteSettingsService(
+            context,
+            if (context.settings().useProductionRemoteSettingsServer) {
+                RemoteSettingsServer.Prod.into()
+            } else {
+                RemoteSettingsServer.Stage.into()
+            },
+            channel = BuildConfig.BUILD_TYPE,
+            // Need to send this value separately, since `isLargeScreenSize()` is a fenix extension
+            isLargeScreenSize = context.isLargeScreenSize(),
+        )
+    }
+    val nimbus by lazyMonitored {
+        NimbusComponents(
+            context = context,
+            remoteSettingsService = remoteSettingsService.value.remoteSettingsService,
+        )
+    }
     val publicSuffixList by lazyMonitored { PublicSuffixList(context) }
     val clipboardHandler by lazyMonitored { ClipboardHandler(context) }
     val performance by lazyMonitored { PerformanceComponent() }
     val push by lazyMonitored { Push(context, analytics.crashReporter) }
     val wifiConnectionMonitor by lazyMonitored { WifiConnectionMonitor(context as Application) }
-    val strictMode by lazyMonitored { StrictModeManager(Config, this, BuildManufacturerChecker()) }
-    val privateBrowsingLockFeature by lazyMonitored {
-        PrivateBrowsingLockFeature(
-            appStore = appStore,
-            browserStore = core.store,
-            storage = DefaultPrivateBrowsingLockStorage(
-                preferences = settings.preferences,
-                privateBrowsingLockPrefKey = context.getString(R.string.pref_key_private_browsing_locked),
-            ),
+
+    val strictMode by lazyMonitored {
+        StrictModeManager(
+            Config.channel.isDebug,
+            this,
+            BuildManufacturerChecker(),
         )
     }
-
     val settings by lazyMonitored { Settings(context) }
     val fenixOnboarding by lazyMonitored { FenixOnboarding(context) }
 
@@ -220,7 +252,6 @@ class Components(private val context: Context) {
         )
     }
 
-    @delegate:SuppressLint("NewApi")
     val autofillConfiguration by lazyMonitored {
         AutofillConfiguration(
             storage = core.passwordsStorage,
@@ -233,9 +264,15 @@ class Components(private val context: Context) {
         )
     }
 
-    val appStartReasonProvider by lazyMonitored { AppStartReasonProvider() }
+    val appStartReasonProvider by lazyMonitored {
+        AppStartReasonProvider(
+            processInfoProvider = DefaultProcessInfoProvider(),
+        )
+    }
     val startupActivityLog by lazyMonitored { StartupActivityLog() }
     val startupStateProvider by lazyMonitored { StartupStateProvider(startupActivityLog, appStartReasonProvider) }
+
+    val appLinkIntentLaunchTypeProvider by lazyMonitored { AppLinkIntentLaunchTypeProvider(appStartReasonProvider) }
 
     val appStore by lazyMonitored {
         val blocklistHandler = BlocklistHandler(settings)
@@ -259,16 +296,23 @@ class Components(private val context: Context) {
                 setupChecklistState = setupChecklistState(),
             ).run { filterState(blocklistHandler) },
             middlewares = listOf(
+                ProfileMarkerMiddleware(markerName = "AppStore", profiler = core.engine.profiler),
+                LogMiddleware(tag = "AppStore", shouldIncludeDetailedData = { Config.channel.isDebug }),
                 BlocklistMiddleware(blocklistHandler),
-                PocketUpdatesMiddleware(
+                PocketMiddleware(
                     lazyMonitored { core.pocketStoriesService },
                     context.pocketStoriesSelectedCategoriesDataStore,
+                    SettingsBackedPocketSettings(settings),
+                    performance.visualCompletenessQueue,
                 ),
                 MessagingMiddleware(
                     controller = nimbus.messaging,
                     settings = settings,
                 ),
-                MetricsMiddleware(metrics = analytics.metrics),
+                MetricsMiddleware(
+                    metrics = analytics.metrics,
+                    nimbusEventStore = nimbus.events,
+                ),
                 CrashReportingAppMiddleware(
                     CrashMiddleware(
                         cache = SettingsCrashReportCache(settings),
@@ -279,7 +323,15 @@ class Components(private val context: Context) {
                 HomeTelemetryMiddleware(),
                 SetupChecklistPreferencesMiddleware(DefaultSetupChecklistRepository(context)),
                 SetupChecklistTelemetryMiddleware(),
-                ReviewPromptMiddleware(settings),
+                ReviewPromptMiddleware(
+                    shouldUseNewTriggerCriteria = { settings.newReviewPromptTriggerCriteriaEnabled },
+                    shouldShowCustomPrompt = { settings.customReviewPromptUiEnabled && settings.isTelemetryEnabled },
+                    createJexlHelper = nimbus::createJexlHelper,
+                    nimbusEventStore = nimbus.events,
+                ).also {
+                    settings.migrateLastReviewPromptTimePrefIfNeeded(nimbus.events)
+                },
+                AppVisualCompletenessMiddleware(performance.visualCompletenessQueue),
             ),
         ).also {
             it.dispatch(AppAction.SetupChecklistAction.Init)
@@ -300,31 +352,62 @@ class Components(private val context: Context) {
         null
     }
 
-    val remoteSettingsService = lazyMonitored {
-        RemoteSettingsService(
-            context,
-            if (context.settings().useProductionRemoteSettingsServer) {
-                RemoteSettingsServer.Prod.into()
-            } else {
-                RemoteSettingsServer.Stage.into()
-            },
-            channel = BuildConfig.BUILD_TYPE,
-            // Need to send this value separately, since `isLargeScreenSize()` is a fenix extension
-            isLargeScreenSize = context.isLargeScreenSize(),
-        )
-    }
-
     val fxSuggest by lazyMonitored { FxSuggest(context, remoteSettingsService.value) }
 
     val distributionIdManager by lazyMonitored {
         DistributionIdManager(
-            context = context,
+            packageManager = context.packageManagerWrapper,
             browserStoreProvider = DefaultDistributionBrowserStoreProvider(core.store),
             distributionProviderChecker = DefaultDistributionProviderChecker(context),
-            legacyDistributionProviderChecker = LegacyDistributionProviderChecker(context),
             distributionSettings = DefaultDistributionSettings(settings),
+            metricController = analytics.metrics,
         )
     }
+
+    val integrityClient by lazyMonitored {
+        GooglePlayIntegrityClient(
+            TokenProviderFactory.create(
+                IntegrityManagerProvider.create(context),
+                GoogleProjectNumber.create(BuildConfig.GPS_INTEGRITY_TOKEN),
+            ),
+            RequestHashProvider.randomHashProvider(),
+        )
+    }
+
+    val termsOfUsePromptRepository by lazyMonitored {
+        DefaultTermsOfUsePromptRepository(settings)
+    }
+
+    val termsOfUseManager by lazyMonitored {
+        TermsOfUseManager(termsOfUsePromptRepository)
+    }
+
+    val settingsIndexer by lazyMonitored {
+        DefaultFenixSettingsIndexer(context)
+    }
+
+    val ads by lazyMonitored {
+        Ads(context = context)
+    }
+
+    val relayEligibilityStore by lazyMonitored {
+        RelayEligibilityStore(middleware = listOf(ClearLastUsedMiddleware()))
+    }
+
+    val relayFeatureIntegration by lazyMonitored {
+        RelayFeatureIntegration(
+            engine = core.engine,
+            accountManager = backgroundServices.accountManager,
+            store = relayEligibilityStore,
+            appStore = appStore,
+            errorMessages = ErrorMessages(
+                maxMasksReached = context.getString(R.string.email_masks_max_free_tier_reached),
+                errorRetrievingMasks = context.getString(R.string.email_masks_error_retrieving_masks),
+            ),
+        )
+    }
+
+    val llm: Llm by lazyMonitored { Llm(core.client) }
 }
 
 /**
@@ -332,4 +415,5 @@ class Components(private val context: Context) {
  */
 val components: Components
     @Composable
+    @ReadOnlyComposable
     get() = LocalContext.current.components

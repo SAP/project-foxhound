@@ -78,7 +78,7 @@ NS_IMETHODIMP
 TemporaryAccessGrantObserver::Observe(nsISupports* aSubject, const char* aTopic,
                                       const char16_t* aData) {
   if (strcmp(aTopic, NS_TIMER_CALLBACK_TOPIC) == 0) {
-    Unused << mPM->RemoveFromPrincipal(mPrincipal, mType);
+    (void)mPM->RemoveFromPrincipal(mPrincipal, mType);
 
     MOZ_ASSERT(sObservers);
     sObservers->Remove(std::make_pair(mPrincipal, mType));

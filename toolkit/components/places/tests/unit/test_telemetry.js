@@ -36,13 +36,10 @@ const scalars = {
 /**
  * Forces an expiration run.
  *
- * @param [optional] aLimit
- *        Limit for the expiration.  Pass -1 for unlimited.
- *        Any other non-positive value will just expire orphans.
- *
- * @return {Promise}
- * @resolves When expiration finishes.
- * @rejects Never.
+ * @param {number} [aLimit]
+ *   Limit for the expiration. Pass -1 for unlimited. Any other non-positive
+ *   value will just expire orphans.
+ * @returns {Promise<[string, string]>}
  */
 function promiseForceExpirationStep(aLimit) {
   let promise = promiseTopicObserved(PlacesUtils.TOPIC_EXPIRATION_FINISHED);
@@ -56,10 +53,11 @@ function promiseForceExpirationStep(aLimit) {
 /**
  * Returns a PRTime in the past usable to add expirable visits.
  *
- * param [optional] daysAgo
- *       Expiration ignores any visit added in the last 7 days, so by default
- *       this will be set to 7.
- * @note to be safe against DST issues we go back one day more.
+ * @param {number} [daysAgo]
+ * Expiration ignores any visit added in the last 7 days, so by default
+ * this will be set to 7.
+ *
+ * Note: to be safe against DST issues we go back one day more.
  */
 function getExpirablePRTime(daysAgo = 7) {
   let dateObj = new Date();

@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGElementFactory.h"
-#include "nsGkAtoms.h"
-#include "nsIContent.h"
-#include "mozilla/dom/NodeInfo.h"
+
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FromParser.h"
-#include "mozilla/StaticPtr.h"
-#include "nsTHashMap.h"
+#include "mozilla/dom/NodeInfo.h"
+#include "nsGkAtoms.h"
 #include "nsHashKeys.h"
+#include "nsIContent.h"
+#include "nsTHashMap.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -36,7 +37,7 @@ StaticAutoPtr<TagAtomTable> sTagAtomTable;
 
 #define SVG_FROM_PARSER_TAG(_tag, _classname)
 
-#include "SVGTagList.h"
+#include "SVGTagList.inc"
 #undef SVG_TAG
 #undef SVG_FROM_PARSER_TAG
 
@@ -46,7 +47,7 @@ nsresult NS_NewSVGElement(Element** aResult,
 enum SVGTag {
 #define SVG_TAG(_tag, _classname) eSVGTag_##_tag,
 #define SVG_FROM_PARSER_TAG(_tag, _classname) eSVGTag_##_tag,
-#include "SVGTagList.h"
+#include "SVGTagList.inc"
 #undef SVG_TAG
 #undef SVG_FROM_PARSER_TAG
   eSVGTag_Count
@@ -63,7 +64,7 @@ void SVGElementFactory::Init() {
   sTagAtomTable->InsertOrUpdate(              \
       nsGkAtoms::_tag,                        \
       SVGContentCreatorFunction(NS_NewSVG##_classname##Element));
-#include "SVGTagList.h"
+#include "SVGTagList.inc"
 #undef SVG_TAG
 #undef SVG_FROM_PARSER_TAG
 }

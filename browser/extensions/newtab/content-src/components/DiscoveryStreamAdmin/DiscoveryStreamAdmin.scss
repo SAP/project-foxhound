@@ -32,10 +32,8 @@
 }
 
 .discoverystream-admin {
-  $border-color: var(--newtab-border-color);
   $monospace: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono',
     'Source Code Pro', monospace;
-  $sidebar-width: 240px;
 
   position: fixed;
   inset-block-start: 0;
@@ -52,29 +50,6 @@
     display: none;
   }
 
-  .sidebar {
-    inset-inline-start: 0;
-    position: fixed;
-    width: $sidebar-width;
-    padding: var(--space-xxlarge) var(--space-xlarge);
-
-    ul {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    li a {
-      padding: var(--space-medium) var(--space-xxlarge);
-      display: block;
-      color: inherit;
-
-      &:hover {
-        background: var(--newtab-background-color-secondary);
-      }
-    }
-  }
-
   h1 {
     font-size: var(--font-size-xxlarge);
   }
@@ -85,39 +60,6 @@
     padding: var(--space-xsmall) var(--space-medium);
     margin-inline-start: var(--space-xsmall);
     margin-block-end: 0;
-  }
-
-  .general-textarea {
-    direction: ltr;
-    width: 740px;
-    height: 500px;
-    overflow: auto;
-    resize: none;
-    border-radius: var(--border-radius-small);
-    display: flex;
-  }
-
-  .wnp-textarea {
-    direction: ltr;
-    width: 740px;
-    height: 500px;
-    overflow: auto;
-    resize: none;
-    border-radius: var(--border-radius-small);
-    display: flex;
-  }
-
-  .json-button {
-    display: inline-flex;
-    font-size: var(--font-size-small);
-    padding: var(--space-xsmall) var(--space-medium);
-    margin-block-end: var(--space-xsmall);
-    margin-inline-end: var(--space-xsmall);
-
-    &:hover {
-      background-color: var(--newtab-element-hover-color);
-      box-shadow: none;
-    }
   }
 
   .toggle-wrapper {
@@ -139,7 +81,7 @@
 
     &.minimal-table {
       border-collapse: collapse;
-      border: 1px solid $border-color;
+      border: 1px solid var(--border-color);
 
       td {
         padding: var(--space-small);
@@ -175,26 +117,15 @@
     overflow-y: scroll;
   }
 
-  .sourceLabel {
-    background: var(--newtab-background-color-secondary);
-    padding: var(--space-xxsmall) var(--space-xsmall);
-    border-radius: var(--border-radius-small);
-
-    &.isDisabled {
-      background: $email-input-invalid;
-      color: var(--newtab-status-error);
-    }
-  }
-
   .message-item {
     &:first-child td {
-      border-top: 1px solid $border-color;
+      border-block-start: 1px solid var(--border-color);
     }
 
     td {
       vertical-align: top;
       padding: var(--space-small);
-      border-bottom: 1px solid $border-color;
+      border-block-end: 1px solid var(--border-color);
 
       &.min {
         width: 1%;
@@ -210,11 +141,11 @@
       }
 
       &:first-child {
-        border-inline-start: 1px solid $border-color;
+        border-inline-start: 1px solid var(--border-color);
       }
 
       &:last-child {
-        border-inline-end: 1px solid $border-color;
+        border-inline-end: 1px solid var(--border-color);
       }
     }
 
@@ -235,10 +166,6 @@
     }
   }
 
-  .providerUrl {
-    font-size: var(--font-size-small);
-  }
-
   pre {
     background: var(--newtab-background-color-secondary);
     margin: 0;
@@ -247,10 +174,6 @@
     max-width: 750px;
     overflow: auto;
     font-family: $monospace;
-  }
-
-  .errorState {
-    border: $input-error-border;
   }
 
   .helpLink {
@@ -274,21 +197,6 @@
     margin-block-end: var(--space-large);
   }
 
-  .modalOverlayInner {
-    height: 80%;
-  }
-
-  .clearButton {
-    border: 0;
-    padding: var(--space-xsmall);
-    border-radius: var(--border-radius-small);
-    display: flex;
-
-    &:hover {
-      background: var(--newtab-element-hover-color);
-    }
-  }
-
   .collapsed {
     display: none;
   }
@@ -305,52 +213,6 @@
       opacity: 0.5;
       cursor: unset;
       box-shadow: none;
-    }
-  }
-
-  .impressions-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-large);
-
-    .impressions-item {
-      display: flex;
-      flex-flow: column nowrap;
-      padding: var(--space-small);
-      border: 1px solid $border-color;
-      border-radius: var(--border-radius-small);
-
-      .impressions-inner-box {
-        display: flex;
-        flex-flow: row nowrap;
-        gap: var(--space-small);
-      }
-
-      .impressions-category {
-        font-size: var(--font-size-large);
-        white-space: nowrap;
-        flex-grow: 0.1;
-      }
-
-      .impressions-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-small);
-
-        button {
-          margin: 0;
-        }
-      }
-
-      .impressions-editor {
-        display: flex;
-        flex-grow: 1.5;
-
-        .general-textarea {
-          width: auto;
-          flex-grow: 1;
-        }
-      }
     }
   }
 

@@ -11,8 +11,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/KeySystemConfig.h"
-#include "mozilla/media/MediaUtils.h"
 #include "mozilla/MFCDMChild.h"
+#include "mozilla/media/MediaUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 

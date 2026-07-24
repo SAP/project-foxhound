@@ -7,7 +7,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"

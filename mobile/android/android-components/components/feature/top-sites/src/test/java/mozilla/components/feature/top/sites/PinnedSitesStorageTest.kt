@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.top.sites
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.top.sites.db.PinnedSiteDao
 import mozilla.components.feature.top.sites.db.PinnedSiteEntity
@@ -16,7 +15,6 @@ import org.junit.Test
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
-@ExperimentalCoroutinesApi // for runTest
 class PinnedSitesStorageTest {
 
     @Test

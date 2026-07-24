@@ -7,11 +7,11 @@
 // Original author: ekr@rtfm.com
 
 #include "transportlayersrtp.h"
-#include "transportlayerdtls.h"
 
 #include "logging.h"
-#include "nsError.h"
 #include "mozilla/Assertions.h"
+#include "nsError.h"
+#include "transportlayerdtls.h"
 
 namespace mozilla {
 

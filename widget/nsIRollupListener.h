@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsIRollupListener_h__
-#define __nsIRollupListener_h__
+#ifndef _nsIRollupListener_h_
+#define _nsIRollupListener_h_
 
 #include "nsTArray.h"
 #include "nsPoint.h"
@@ -16,14 +16,11 @@ class nsIWidget;
 
 class nsIRollupListener {
  public:
-  enum class FlushViews : bool { No, Yes };
   enum class AllowAnimations : bool { No, Yes };
   struct RollupOptions {
     // aCount is the number of popups in a chain to close. If this is
     // zero, then all popups are closed.
     uint32_t mCount = 0;
-    // If this is true, then views should be flushed after the rollup.
-    FlushViews mFlush = FlushViews::No;
     // This is the mouse pointer position where the event that triggered the
     // rollup occurred, which may be nullptr.
     const mozilla::LayoutDeviceIntPoint* mPoint = nullptr;
@@ -78,4 +75,4 @@ class nsIRollupListener {
   virtual bool RollupNativeMenu() { return false; }
 };
 
-#endif /* __nsIRollupListener_h__ */
+#endif /* _nsIRollupListener_h_ */

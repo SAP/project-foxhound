@@ -1,0 +1,106 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.activation-window-message {
+  --image-size-small: 60px;
+  --image-size-medium: 90px;
+  --image-size-large: 120px;
+
+  background-color: var(--background-color-canvas);
+  border: 2px solid var(--border-color-card);
+  color: var(--text-color);
+  padding: var(--space-large);
+  border-radius: var(--border-radius-medium);
+  margin-block: 0 var(--space-xlarge);
+  margin-inline: auto;
+  position: relative;
+
+  @media (min-width: $break-point-medium) {
+    width: $searchbar-width-medium;
+  }
+
+  @media (min-width: $break-point-large) {
+    width: 510px;
+  }
+
+  @media (min-width: $break-point-widest) {
+    width: 720px;
+  }
+
+  .activation-window-message-dismiss {
+    position: absolute;
+    inset-inline-end: var(--space-medium);
+    inset-block-start: var(--space-medium);
+  }
+
+  .activation-window-message-inner {
+    display: flex;
+    gap: var(--space-medium);
+    align-items: flex-start;
+    flex-direction: column;
+
+    img {
+      max-width: var(--image-size-small);
+      max-height: var(--image-size-small);
+      object-fit: contain;
+      align-self: start;
+    }
+
+    > div {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding-inline-end: var(--space-xxlarge);
+
+      moz-button-group {
+        margin-block-start: var(--space-xlarge);
+      }
+    }
+
+    h2 {
+      margin: 0;
+      font-size: var(--font-size-large);
+      font-weight: var(--heading-font-weight);
+    }
+
+    p {
+      margin-block: var(--space-medium) 0;
+      color: var(--text-color-deemphasized);
+    }
+  }
+
+  @media (min-width: $break-point-large) {
+    .activation-window-message-inner {
+      flex-direction: row;
+      gap: var(--space-xlarge);
+
+      img {
+        max-width: var(--image-size-medium);
+        max-height: var(--image-size-medium);
+      }
+    }
+
+    &.no-buttons .activation-window-message-inner img {
+      max-width: var(--image-size-medium);
+      max-height: var(--image-size-medium);
+    }
+  }
+
+  @media (min-width: $break-point-widest) {
+    .activation-window-message-inner img {
+      max-width: var(--image-size-large);
+      max-height: var(--image-size-large);
+    }
+  }
+
+  moz-button-group {
+    display: flex;
+    gap: var(--space-small);
+    justify-content: start;
+  }
+
+  moz-button {
+    min-width: fit-content;
+  }
+}

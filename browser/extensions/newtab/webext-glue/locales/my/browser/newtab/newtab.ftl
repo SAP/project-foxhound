@@ -45,9 +45,6 @@ newtab-confirm-delete-history-p1 = ယခုစာမျက်နှာနှင
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = ယခုလုပ်ဆောင်မှုသည် နောက်ပြန်ဆုတ်၍မရသော လုပ်ဆောင်မှု ဖြစ်သည်။
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -70,12 +67,6 @@ newtab-menu-unpin = တွယ်ဖြုတ်ရန်
 newtab-menu-delete-history = မှတ်တမ်းမှ ဖျက်ပါ
 newtab-menu-save-to-pocket = { -pocket-brand-name } သို့ သိမ်းရန်
 newtab-menu-delete-pocket = { -pocket-brand-name } မှ ပယ်ဖျက်ပါ
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -120,9 +111,6 @@ newtab-section-menu-move-up = အပေါ်သို့ ရွှေ့ပါ
 newtab-section-menu-move-down = အောက်သို့ ရွှေ့ပါ
 newtab-section-menu-privacy-notice = ကိုယ်ရေးကာကွယ်မှု သတိပေးချက်
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = အများဆုံးသုံးဆိုက်များ
@@ -134,9 +122,6 @@ newtab-section-header-pocket = { $provider } က အကြံပြုထား�
 
 newtab-empty-section-highlights = စတင် ချိတ်ဆက် လည်ပတ်လိုက်၊ သိပ်ကောင်းတဲ့ ဆောင်းပါးတွေ၊ ဗီဒီယိုတွေ နဲ့ ဒီတစ်လော သွားလည်ပတ်ထားတာ  သို့မဟုတ် စာမှတ်မှာ သိမ်းထားတဲ့ စာမျက်နှာတွေကို ဒီမှာ ပြသပေးပါမည်။
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
@@ -144,68 +129,7 @@ newtab-pocket-read-more = လူကြိုက်များခေါင်း
 newtab-pocket-more-recommendations = ပိုများသောအကြံပြုချက်များ
 newtab-pocket-cta-button = { -pocket-brand-name } ကို ရယူပါ
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-refresh-link = ထပ်ကြိုးစားရန် စာမျက်နှာကို ပြန်တင်ပါ
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

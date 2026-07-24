@@ -11,13 +11,17 @@ import androidx.annotation.AnyThread;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
 import androidx.annotation.UiThread;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.ArrayList;
+import java.util.List;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.ThreadUtils;
 
 /**
  * The Autocomplete API provides a way to leverage Gecko's input form handling for autocompletion.
@@ -103,6 +107,7 @@ public class Autocomplete {
   private static final String LOGTAG = "Autocomplete";
   private static final boolean DEBUG = false;
 
+  /** Protected constructor for Autocomplete. */
   protected Autocomplete() {}
 
   /** Holds credit card information for a specific entry. */
@@ -128,7 +133,7 @@ public class Autocomplete {
     /** The expiration year. */
     public final @NonNull String expirationYear;
 
-    // For tests only.
+    /** Protected constructor for tests only. */
     @AnyThread
     protected CreditCard() {
       guid = null;
@@ -138,8 +143,13 @@ public class Autocomplete {
       expirationYear = "";
     }
 
+    /**
+     * Package-visible constructor that creates a CreditCard from a GeckoBundle.
+     *
+     * @param bundle The bundle containing credit card data
+     */
     @AnyThread
-    /* package */ CreditCard(final @NonNull GeckoBundle bundle) {
+    CreditCard(final @NonNull GeckoBundle bundle) {
       guid = bundle.getString(GUID_KEY);
       name = bundle.getString(NAME_KEY, "");
       number = bundle.getString(NUMBER_KEY, "");
@@ -166,8 +176,13 @@ public class Autocomplete {
       return builder.toString();
     }
 
+    /**
+     * Converts this CreditCard to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the credit card data
+     */
     @AnyThread
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(7);
       bundle.putString(GUID_KEY, guid);
@@ -183,16 +198,22 @@ public class Autocomplete {
       return bundle;
     }
 
+    /** Builder for constructing CreditCard instances. */
     public static class Builder {
       private final GeckoBundle mBundle;
 
+      /**
+       * Package-visible constructor that creates a Builder from a GeckoBundle.
+       *
+       * @param bundle The bundle containing credit card data
+       */
       @AnyThread
-      /* package */ Builder(final @NonNull GeckoBundle bundle) {
+      Builder(final @NonNull GeckoBundle bundle) {
         mBundle = new GeckoBundle(bundle);
       }
 
+      /** Default constructor for Builder. */
       @AnyThread
-      @SuppressWarnings("checkstyle:javadocmethod")
       public Builder() {
         mBundle = new GeckoBundle(7);
       }
@@ -331,7 +352,7 @@ public class Autocomplete {
     /** The email address. */
     public final @NonNull String email;
 
-    // For tests only.
+    /** Protected constructor for tests only. */
     @AnyThread
     protected Address() {
       guid = null;
@@ -350,8 +371,13 @@ public class Autocomplete {
       email = "";
     }
 
+    /**
+     * Package-visible constructor that creates an Address from a GeckoBundle.
+     *
+     * @param bundle The bundle containing address data
+     */
     @AnyThread
-    /* package */ Address(final @NonNull GeckoBundle bundle) {
+    Address(final @NonNull GeckoBundle bundle) {
       guid = bundle.getString(GUID_KEY);
       name = bundle.getString(NAME_KEY, "");
       givenName = bundle.getString(GIVEN_NAME_KEY, "");
@@ -403,8 +429,13 @@ public class Autocomplete {
       return builder.toString();
     }
 
+    /**
+     * Converts this Address to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the address data
+     */
     @AnyThread
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(bundleCapacity);
       bundle.putString(GUID_KEY, guid);
@@ -425,16 +456,22 @@ public class Autocomplete {
       return bundle;
     }
 
+    /** Builder for constructing Address instances. */
     public static class Builder {
       private final GeckoBundle mBundle;
 
+      /**
+       * Package-visible constructor that creates a Builder from a GeckoBundle.
+       *
+       * @param bundle The bundle containing address data
+       */
       @AnyThread
-      /* package */ Builder(final @NonNull GeckoBundle bundle) {
+      Builder(final @NonNull GeckoBundle bundle) {
         mBundle = new GeckoBundle(bundle);
       }
 
+      /** Default constructor for Builder. */
       @AnyThread
-      @SuppressWarnings("checkstyle:javadocmethod")
       public Builder() {
         mBundle = new GeckoBundle(bundleCapacity);
       }
@@ -619,6 +656,230 @@ public class Autocomplete {
     }
   }
 
+  /**
+   * Address structure coordinates runtime messaging between the form autofill toolkit utils and
+   * GeckoView.
+   */
+  public static class AddressStructure {
+    private static final String GET_ADDRESS_STRUCTURE = "GeckoView:Autofill:GetAddressStructure";
+    private static final String FIELD_ID_KEY = "fieldId";
+    private static final String L10N_ID_KEY = "l10nId";
+
+    /** Private constructor for AddressStructure */
+    private AddressStructure() {}
+
+    /**
+     * Returns a list of Fields in order for a given country.
+     *
+     * @param countryCode The country you want an address structure for.
+     * @return a GeckoResult with a list of Fields for the given country or an exception.
+     */
+    @HandlerThread
+    public static @NonNull GeckoResult<List<Field>> getAddressStructure(
+        @NonNull final String countryCode) {
+      ThreadUtils.assertOnHandlerThread();
+      final GeckoBundle param = new GeckoBundle();
+      param.putString("country", countryCode);
+      return EventDispatcher.getInstance()
+          .queryBundle(GET_ADDRESS_STRUCTURE, param)
+          .map(AddressStructure::fromBundle);
+    }
+
+    @NonNull
+    private static List<Field> fromBundle(final GeckoBundle bundle) {
+      if (bundle == null)
+        throw new IllegalStateException(
+            "AddressStructure.fromBundle expects non-null bundle, " + "but got null value");
+
+      final List<Field> fields = new ArrayList<>();
+
+      GeckoBundle[] bundleFields = bundle.getBundleArray("fields");
+      if (bundleFields == null) {
+        bundleFields = new GeckoBundle[] {};
+      }
+      for (final GeckoBundle field : bundleFields) {
+        final Field addressField = Field.fromBundle(field);
+        fields.add(addressField);
+      }
+
+      return fields;
+    }
+
+    /** Describes how UI clients should render a single row (field) in an address */
+    public interface Field {
+      /**
+       * The ID for the field. Maps 1:1 to a field on an Address.
+       *
+       * @return the id.
+       */
+      @NonNull
+      @AnyThread
+      default String getId() {
+        return "";
+      }
+
+      /**
+       * Returns the localization key used to obtain a human-readable label for this field.
+       *
+       * <p>This key allows the embedding application to look up the display string in its own
+       * resources (e.g., `autofill-address-name`). It is not a user-visible string.
+       *
+       * @return the localization key.
+       */
+      @NonNull
+      @AnyThread
+      default String getLocalizationKey() {
+        return "";
+      }
+
+      @NonNull
+      private static Field fromBundle(final GeckoBundle bundle) {
+        if (bundle.containsKey("options")) {
+          return SelectField.fromBundle(bundle);
+        } else {
+          return TextField.fromBundle(bundle);
+        }
+      }
+
+      /** A simple text input field (e.g., name, city). */
+      final class TextField implements Field {
+        private final String mId;
+        private final String mLocalizationKey;
+
+        /**
+         * Constructor for TextField.
+         *
+         * @param id The id for this field
+         * @param localizationKey The localization key for this field
+         */
+        public TextField(final String id, final String localizationKey) {
+          this.mId = id;
+          this.mLocalizationKey = localizationKey;
+        }
+
+        @Override
+        @NonNull
+        public String getId() {
+          return mId;
+        }
+
+        @Override
+        @NonNull
+        public String getLocalizationKey() {
+          return mLocalizationKey;
+        }
+
+        @NonNull
+        static TextField fromBundle(final GeckoBundle bundle) {
+          return new TextField(
+              bundle.getString(AddressStructure.FIELD_ID_KEY),
+              bundle.getString(AddressStructure.L10N_ID_KEY));
+        }
+      }
+
+      /**
+       * A select (dropdown) input field with a constrained set of options (e.g., state, country).
+       */
+      class SelectField implements Field {
+        private final String mId;
+        private final String mLocalizationKey;
+
+        /** The default value to use if one has not already been selected */
+        @NonNull public final String defaultValue;
+
+        /** The default value to use if one has not already been selected */
+        @NonNull public final List<Option> options;
+
+        /**
+         * Constructor for SelectField.
+         *
+         * @param id The id for this field
+         * @param localizationKey The localization key for this field
+         * @param defaultValue The default value to use if the user hasn't selected an option
+         * @param options a list of Options that a user can select
+         */
+        public SelectField(
+            final String id,
+            final String localizationKey,
+            @NonNull final String defaultValue,
+            @NonNull final List<Option> options) {
+          this.mId = id;
+          this.mLocalizationKey = localizationKey;
+          this.defaultValue = defaultValue;
+          this.options = options;
+        }
+
+        @Override
+        @NonNull
+        public String getId() {
+          return mId;
+        }
+
+        @Override
+        @NonNull
+        public String getLocalizationKey() {
+          return mLocalizationKey;
+        }
+
+        @NonNull
+        private static SelectField fromBundle(final GeckoBundle bundle) {
+          final String id = bundle.getString(AddressStructure.FIELD_ID_KEY);
+          final String localizationKey = bundle.getString(AddressStructure.L10N_ID_KEY);
+          final String defaultValue = bundle.getString("value", "");
+
+          final List<Option> options = new ArrayList<>();
+          GeckoBundle[] bundleOptions = bundle.getBundleArray("options");
+          if (bundleOptions == null) bundleOptions = new GeckoBundle[] {};
+
+          for (final GeckoBundle bundleOption : bundleOptions) {
+            options.add(Option.fromBundle(bundleOption));
+          }
+
+          return new SelectField(id, localizationKey, defaultValue, options);
+        }
+
+        /** A single option in a SelectField. */
+        public static class Option {
+          /** The key of the option */
+          @NonNull public final String key;
+
+          /** The value of the option */
+          @NonNull public final String value;
+
+          /**
+           * Constructor for Option.
+           *
+           * @param key The key for this option
+           * @param value The value for this option
+           */
+          public Option(@NonNull final String key, @NonNull final String value) {
+            this.key = key;
+            this.value = value;
+          }
+
+          @Nullable
+          private static Option fromBundle(final GeckoBundle bundle) {
+            if (bundle == null) return null;
+            try {
+              final String text = bundle.getString("text", "");
+              final String value = bundle.getString("value", "");
+
+              if (text.isEmpty() || value.isEmpty()) {
+                throw new IllegalStateException(
+                    "AddressFieldOption text or value should not be null");
+              }
+
+              return new Option(value, text);
+            } catch (final Exception e) {
+              Log.e(LOGTAG, "Could not deserialize AddressFieldOption: " + e);
+              return null;
+            }
+          }
+        }
+      }
+    }
+  }
+
   /** Holds login information for a specific entry. */
   public static class LoginEntry {
     private static final String GUID_KEY = "guid";
@@ -653,7 +914,7 @@ public class Autocomplete {
     /** The password for this login entry. */
     public final @NonNull String password;
 
-    // For tests only.
+    /** Protected constructor for tests only. */
     @AnyThread
     protected LoginEntry() {
       guid = null;
@@ -664,8 +925,13 @@ public class Autocomplete {
       password = "";
     }
 
+    /**
+     * Package-visible constructor that creates a LoginEntry from a GeckoBundle.
+     *
+     * @param bundle The bundle containing login data
+     */
     @AnyThread
-    /* package */ LoginEntry(final @NonNull GeckoBundle bundle) {
+    LoginEntry(final @NonNull GeckoBundle bundle) {
       guid = bundle.getString(GUID_KEY);
       origin = bundle.getString(ORIGIN_KEY, "");
       formActionOrigin = bundle.getString(FORM_ACTION_ORIGIN_KEY);
@@ -695,8 +961,13 @@ public class Autocomplete {
       return builder.toString();
     }
 
+    /**
+     * Converts this LoginEntry to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the login data
+     */
     @AnyThread
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(6);
       bundle.putString(GUID_KEY, guid);
@@ -709,16 +980,22 @@ public class Autocomplete {
       return bundle;
     }
 
+    /** Builder for constructing LoginEntry instances. */
     public static class Builder {
       private final GeckoBundle mBundle;
 
+      /**
+       * Package-visible constructor that creates a Builder from a GeckoBundle.
+       *
+       * @param bundle The bundle containing login data
+       */
       @AnyThread
-      /* package */ Builder(final @NonNull GeckoBundle bundle) {
+      Builder(final @NonNull GeckoBundle bundle) {
         mBundle = new GeckoBundle(bundle);
       }
 
+      /** Default constructor for Builder. */
       @AnyThread
-      @SuppressWarnings("checkstyle:javadocmethod")
       public Builder() {
         mBundle = new GeckoBundle(6);
       }
@@ -807,6 +1084,7 @@ public class Autocomplete {
     }
   }
 
+  /** Login storage used field definitions for tracking which fields were used. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
@@ -819,6 +1097,7 @@ public class Autocomplete {
     /** The password field of a login entry. */
     public static final int PASSWORD = 1;
 
+    /** Protected constructor for UsedField. */
     protected UsedField() {}
   }
 
@@ -926,21 +1205,35 @@ public class Autocomplete {
     /* package */ static final String VALUE_KEY = "value";
     /* package */ static final String HINT_KEY = "hint";
 
+    /** The value for this option. */
     public final @NonNull T value;
+
+    /** The hint for this option. */
     public final int hint;
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Constructor for Option.
+     *
+     * @param value The value for this option
+     * @param hint The hint for this option
+     */
     public Option(final @NonNull T value, final int hint) {
       this.value = value;
       this.hint = hint;
     }
 
+    /**
+     * Converts this Option to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the option data
+     */
     @AnyThread
-    /* package */ abstract @NonNull GeckoBundle toBundle();
+    abstract @NonNull GeckoBundle toBundle();
   }
 
   /** Abstract base class for saving options. Extended by {@link Autocomplete.LoginSaveOption}. */
   public abstract static class SaveOption<T> extends Option<T> {
+    /** Save option hint definitions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         flag = true,
@@ -949,6 +1242,7 @@ public class Autocomplete {
 
     /** Hint types for login saving requests. */
     public static class Hint {
+      /** No hint specified. */
       public static final int NONE = 0;
 
       /** Auto-generated password. Notify but do not prompt the user for saving. */
@@ -961,10 +1255,16 @@ public class Autocomplete {
        */
       public static final int LOW_CONFIDENCE = 1 << 1;
 
+      /** Protected constructor for Hint. */
       protected Hint() {}
     }
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Constructor for SaveOption.
+     *
+     * @param value The value for this save option
+     * @param hint The hint for this save option
+     */
     public SaveOption(final @NonNull T value, final int hint) {
       super(value, hint);
     }
@@ -972,7 +1272,9 @@ public class Autocomplete {
 
   /** Abstract base class for saving options. Extended by {@link Autocomplete.LoginSelectOption}. */
   public abstract static class SelectOption<T> extends Option<T> {
+    /** Select option hint definitions. */
     @Retention(RetentionPolicy.SOURCE)
+    @OptIn(markerClass = ExperimentalGeckoViewApi.class)
     @IntDef(
         flag = true,
         value = {
@@ -980,12 +1282,14 @@ public class Autocomplete {
           Hint.GENERATED,
           Hint.INSECURE_FORM,
           Hint.DUPLICATE_USERNAME,
-          Hint.MATCHING_ORIGIN
+          Hint.MATCHING_ORIGIN,
+          Hint.FIREFOX_RELAY
         })
     public @interface SelectOptionHint {}
 
     /** Hint types for selection requests. */
     public static class Hint {
+      /** No hint specified. */
       public static final int NONE = 0;
 
       /**
@@ -1012,9 +1316,21 @@ public class Autocomplete {
        * origin it is being requested for, rather than for a subdomain.
        */
       public static final int MATCHING_ORIGIN = 1 << 3;
+
+      /**
+       * This synthetic entry indicates that the Gecko autocomplete system thinks that Firefox Relay
+       * features should be offered. This is marked experimental since the heuristics are still
+       * implementation details and subject to change.
+       */
+      @ExperimentalGeckoViewApi public static final int FIREFOX_RELAY = 1 << 4;
     }
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Constructor for SelectOption.
+     *
+     * @param value The value for this select option
+     * @param hint The hint for this select option
+     */
     public SelectOption(final @NonNull T value, final int hint) {
       super(value, hint);
     }
@@ -1035,7 +1351,7 @@ public class Autocomplete {
      * @param value The {@link LoginEntry} login entry to be saved.
      * @param hint The {@link Hint} detailing the type of the option.
      */
-    /* package */ LoginSaveOption(final @NonNull LoginEntry value, final @SaveOptionHint int hint) {
+    LoginSaveOption(final @NonNull LoginEntry value, final @SaveOptionHint int hint) {
       super(value, hint);
     }
 
@@ -1048,8 +1364,13 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
+    /**
+     * Converts this LoginSaveOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the save option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1066,7 +1387,7 @@ public class Autocomplete {
      * @param value The {@link Address} address entry to be saved.
      * @param hint The {@link Hint} detailing the type of the option.
      */
-    /* package */ AddressSaveOption(final @NonNull Address value, final @SaveOptionHint int hint) {
+    AddressSaveOption(final @NonNull Address value, final @SaveOptionHint int hint) {
       super(value, hint);
     }
 
@@ -1079,8 +1400,13 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
+    /**
+     * Converts this AddressSaveOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the save option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1097,8 +1423,7 @@ public class Autocomplete {
      * @param value The {@link CreditCard} credit card entry to be saved.
      * @param hint The {@link Hint} detailing the type of the option.
      */
-    /* package */ CreditCardSaveOption(
-        final @NonNull CreditCard value, final @SaveOptionHint int hint) {
+    CreditCardSaveOption(final @NonNull CreditCard value, final @SaveOptionHint int hint) {
       super(value, hint);
     }
 
@@ -1111,8 +1436,13 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
+    /**
+     * Converts this CreditCardSaveOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the save option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1142,15 +1472,26 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
-    /* package */ static @NonNull LoginSelectOption fromBundle(final @NonNull GeckoBundle bundle) {
+    /**
+     * Creates a LoginSelectOption from a GeckoBundle.
+     *
+     * @param bundle The bundle containing the login select option data
+     * @return A new LoginSelectOption
+     */
+    static @NonNull LoginSelectOption fromBundle(final @NonNull GeckoBundle bundle) {
       final int hint = bundle.getInt("hint");
       final LoginEntry value = new LoginEntry(bundle.getBundle("value"));
 
       return new LoginSelectOption(value, hint);
     }
 
+    /**
+     * Converts this LoginSelectOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the select option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1161,6 +1502,7 @@ public class Autocomplete {
 
   /** Holds information required to process credit card selection requests. */
   public static class CreditCardSelectOption extends SelectOption<CreditCard> {
+    /** Credit card selection hint definitions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         flag = true,
@@ -1169,6 +1511,7 @@ public class Autocomplete {
 
     /** Hint types for credit card selection requests. */
     public static class Hint {
+      /** No hint specified. */
       public static final int NONE = 0;
 
       /**
@@ -1184,8 +1527,7 @@ public class Autocomplete {
      * @param value The {@link LoginEntry} credit card entry selection option.
      * @param hint The {@link Hint} detailing the type of the option.
      */
-    /* package */ CreditCardSelectOption(
-        final @NonNull CreditCard value, final @CreditCardSelectHint int hint) {
+    CreditCardSelectOption(final @NonNull CreditCard value, final @CreditCardSelectHint int hint) {
       super(value, hint);
     }
 
@@ -1198,16 +1540,26 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
-    /* package */ static @NonNull CreditCardSelectOption fromBundle(
-        final @NonNull GeckoBundle bundle) {
+    /**
+     * Creates a CreditCardSelectOption from a GeckoBundle.
+     *
+     * @param bundle The bundle containing the credit card select option data
+     * @return A new CreditCardSelectOption
+     */
+    static @NonNull CreditCardSelectOption fromBundle(final @NonNull GeckoBundle bundle) {
       final int hint = bundle.getInt("hint");
       final CreditCard value = new CreditCard(bundle.getBundle("value"));
 
       return new CreditCardSelectOption(value, hint);
     }
 
+    /**
+     * Converts this CreditCardSelectOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the select option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1218,6 +1570,7 @@ public class Autocomplete {
 
   /** Holds information required to process address selection requests. */
   public static class AddressSelectOption extends SelectOption<Address> {
+    /** Address selection hint definitions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         flag = true,
@@ -1226,6 +1579,7 @@ public class Autocomplete {
 
     /** Hint types for credit card selection requests. */
     public static class Hint {
+      /** No hint specified. */
       public static final int NONE = 0;
 
       /**
@@ -1241,8 +1595,7 @@ public class Autocomplete {
      * @param value The {@link LoginEntry} credit card entry selection option.
      * @param hint The {@link Hint} detailing the type of the option.
      */
-    /* package */ AddressSelectOption(
-        final @NonNull Address value, final @AddressSelectHint int hint) {
+    AddressSelectOption(final @NonNull Address value, final @AddressSelectHint int hint) {
       super(value, hint);
     }
 
@@ -1255,16 +1608,26 @@ public class Autocomplete {
       this(value, Hint.NONE);
     }
 
-    /* package */ static @NonNull AddressSelectOption fromBundle(
-        final @NonNull GeckoBundle bundle) {
+    /**
+     * Creates an AddressSelectOption from a GeckoBundle.
+     *
+     * @param bundle The bundle containing the address select option data
+     * @return A new AddressSelectOption
+     */
+    static @NonNull AddressSelectOption fromBundle(final @NonNull GeckoBundle bundle) {
       final int hint = bundle.getInt("hint");
       final Address value = new Address(bundle.getBundle("value"));
 
       return new AddressSelectOption(value, hint);
     }
 
+    /**
+     * Converts this AddressSelectOption to a GeckoBundle for internal use.
+     *
+     * @return A GeckoBundle containing the select option data
+     */
     @Override
-    /* package */ @NonNull
+    @NonNull
     GeckoBundle toBundle() {
       final GeckoBundle bundle = new GeckoBundle(2);
       bundle.putBundle(VALUE_KEY, value.toBundle());
@@ -1284,8 +1647,10 @@ public class Autocomplete {
 
     private @Nullable StorageDelegate mDelegate;
 
+    /** Default constructor for StorageProxy. */
     public StorageProxy() {}
 
+    /** Registers the event listener for storage delegate events. */
     private void registerListener() {
       EventDispatcher.getInstance().dispatch("GeckoView:StorageDelegate:Attached", null);
       EventDispatcher.getInstance()
@@ -1300,6 +1665,7 @@ public class Autocomplete {
               USED_LOGIN_EVENT);
     }
 
+    /** Unregisters the event listener for storage delegate events. */
     private void unregisterListener() {
       EventDispatcher.getInstance()
           .unregisterUiThreadListener(
@@ -1313,6 +1679,11 @@ public class Autocomplete {
               USED_LOGIN_EVENT);
     }
 
+    /**
+     * Sets the storage delegate.
+     *
+     * @param delegate The storage delegate to set
+     */
     public synchronized void setDelegate(final @Nullable StorageDelegate delegate) {
       if (mDelegate == delegate) {
         return;
@@ -1328,6 +1699,11 @@ public class Autocomplete {
       }
     }
 
+    /**
+     * Gets the current storage delegate.
+     *
+     * @return The current storage delegate or null if none is set
+     */
     public synchronized @Nullable StorageDelegate getDelegate() {
       return mDelegate;
     }

@@ -51,6 +51,7 @@ class QrFeatureTest {
         }
     }
 
+    @Test
     fun `scanning is in progress if the scanning fragment is shown`() {
         val feature = QrFeature(testContext, fragmentManager)
 

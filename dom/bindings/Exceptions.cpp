@@ -6,24 +6,24 @@
 
 #include "mozilla/dom/Exceptions.h"
 
+#include "WorkerPrivate.h"
+#include "XPCWrapper.h"
 #include "js/ColumnNumber.h"  // JS::TaggedColumnNumberOneOrigin
 #include "js/RootingAPI.h"
+#include "js/SavedFrameAPI.h"
 #include "js/TypeDecls.h"
 #include "jsapi.h"
-#include "js/SavedFrameAPI.h"
-#include "xpcpublic.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "nsContentUtils.h"
 #include "nsJSPrincipals.h"
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-#include "XPCWrapper.h"
-#include "WorkerPrivate.h"
-#include "nsContentUtils.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 

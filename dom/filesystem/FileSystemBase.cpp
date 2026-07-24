@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/FileSystemBase.h"
 
+#include "OSFileSystem.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "nsIFile.h"
-#include "OSFileSystem.h"
 
 namespace mozilla::dom {
 

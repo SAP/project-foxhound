@@ -27,7 +27,8 @@ class BroadcastChannelChild final : public PBroadcastChannelChild {
 
   void SetParent(BroadcastChannel* aBC) { mBC = aBC; }
 
-  virtual mozilla::ipc::IPCResult RecvNotify(const MessageData& aData) override;
+  virtual mozilla::ipc::IPCResult RecvNotify(
+      NotNull<SharedMessageBody*> aData) override;
 
   virtual mozilla::ipc::IPCResult RecvRefMessageDelivered(
       const nsID& aMessageID, const uint32_t& aOtherBCs) override;

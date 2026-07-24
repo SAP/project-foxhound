@@ -6,10 +6,11 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
 });
 
 const MAX_RESULT_COUNT = 10;
@@ -36,7 +37,8 @@ add_setup(async function () {
   Services.fog.testResetFOG();
 
   gProvider = new TestProvider();
-  UrlbarProvidersManager.registerProvider(gProvider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(gProvider);
 
   // This test specifically checks the view's behavior before and after it
   // removes stale rows, so it needs to control when that occurs. There are two
@@ -49,7 +51,7 @@ add_setup(async function () {
 
   registerCleanupFunction(() => {
     UrlbarView.removeStaleRowsTimeout = originalRemoveStaleRowsTimeout;
-    UrlbarProvidersManager.unregisterProvider(gProvider);
+    providersManager.unregisterProvider(gProvider);
   });
 });
 
@@ -84,14 +86,14 @@ async function do_noExposure(showExposureResults) {
   gProvider.results = [];
   for (let i = 0; i < MAX_RESULT_COUNT; i++) {
     gProvider.results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+        payload: {
           suggestion: "suggestion " + i,
-          engine: Services.search.defaultEngine.name,
-        }
-      )
+          engine: SearchService.defaultEngine.name,
+        },
+      })
     );
   }
 
@@ -111,16 +113,16 @@ async function do_noExposure(showExposureResults) {
   let historyUrl = "https://example.com/history";
   let bookmarkUrl = "https://example.com/bookmark";
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: historyUrl }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: bookmarkUrl }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: historyUrl },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: bookmarkUrl },
+    }),
   ];
 
   // When the provider's `startQuery()` is called, let it add its results but
@@ -292,19 +294,19 @@ async function do_exposure_append_underfilled({
   let newSuggestion = "new suggestion";
   let bookmarkUrl = "https://example.com/bookmark";
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      {
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      payload: {
         suggestion: newSuggestion,
-        engine: Services.search.defaultEngine.name,
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: bookmarkUrl }
-    ),
+        engine: SearchService.defaultEngine.name,
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: bookmarkUrl },
+    }),
   ];
 
   // When the provider's `startQuery()` is called, let it add its results but
@@ -409,14 +411,14 @@ async function do_exposure_replace({ showExposureResults, cancelSecondQuery }) {
 
   // Make the provider return a search suggestion.
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      {
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      payload: {
         suggestion: "suggestion",
-        engine: Services.search.defaultEngine.name,
-      }
-    ),
+        engine: SearchService.defaultEngine.name,
+      },
+    }),
   ];
 
   // Do the first query to show the suggestion.
@@ -445,19 +447,19 @@ async function do_exposure_replace({ showExposureResults, cancelSecondQuery }) {
   let newSuggestion = "new suggestion";
   let bookmarkUrl = "https://example.com/bookmark";
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      {
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      payload: {
         suggestion: newSuggestion,
-        engine: Services.search.defaultEngine.name,
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: bookmarkUrl }
-    ),
+        engine: SearchService.defaultEngine.name,
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: bookmarkUrl },
+    }),
   ];
 
   // When the provider's `startQuery()` is called, let it add its results but
@@ -568,14 +570,14 @@ async function do_exposure_append_full(showExposureResults) {
   gProvider.results = [];
   for (let i = 0; i < MAX_RESULT_COUNT; i++) {
     gProvider.results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+        payload: {
           suggestion: "suggestion " + i,
-          engine: Services.search.defaultEngine.name,
-        }
-      )
+          engine: SearchService.defaultEngine.name,
+        },
+      })
     );
   }
 
@@ -595,16 +597,16 @@ async function do_exposure_append_full(showExposureResults) {
   let historyUrl = "https://example.com/history";
   let bookmarkUrl = "https://example.com/bookmark";
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: historyUrl }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: bookmarkUrl }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: historyUrl },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: bookmarkUrl },
+    }),
   ];
 
   // When the provider's `startQuery()` is called, let it add its results but
@@ -794,14 +796,14 @@ async function do_exposure_append_full_twice(showExposureResults) {
   gProvider.results = [];
   for (let i = 0; i < MAX_RESULT_COUNT; i++) {
     gProvider.results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+        payload: {
           suggestion: "suggestion " + i,
-          engine: Services.search.defaultEngine.name,
-        }
-      )
+          engine: SearchService.defaultEngine.name,
+        },
+      })
     );
   }
 
@@ -822,21 +824,21 @@ async function do_exposure_append_full_twice(showExposureResults) {
   let tabUrl = "https://example.com/tab";
   let bookmarkUrl = "https://example.com/bookmark";
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: historyUrl }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-      UrlbarUtils.RESULT_SOURCE.TABS,
-      { url: tabUrl }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      { url: bookmarkUrl }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: historyUrl },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      source: UrlbarUtils.RESULT_SOURCE.TABS,
+      payload: { url: tabUrl },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      payload: { url: bookmarkUrl },
+    }),
   ];
 
   // When the provider's `startQuery()` is called, let it add its results but
@@ -944,11 +946,11 @@ async function do_exposure_append_full_twice(showExposureResults) {
 
   // Now make the provider return only a history result.
   gProvider.results = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: historyUrl }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: historyUrl },
+    }),
   ];
 
   // Without waiting for the second query to finish (i.e., before stale rows are

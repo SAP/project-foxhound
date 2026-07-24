@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsError.h"
+#include "sdp/RsdparsaSdpParser.h"
 
 #include "mozilla/UniquePtr.h"
-
-#include "sdp/Sdp.h"
+#include "nsError.h"
 #include "sdp/RsdparsaSdp.h"
-#include "sdp/RsdparsaSdpParser.h"
-#include "sdp/RsdparsaSdpInc.h"
 #include "sdp/RsdparsaSdpGlue.h"
+#include "sdp/RsdparsaSdpInc.h"
+#include "sdp/Sdp.h"
 
 namespace mozilla {
 

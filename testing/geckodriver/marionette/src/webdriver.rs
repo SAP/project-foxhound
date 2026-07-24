@@ -201,6 +201,12 @@ pub struct UserVerificationParameters {
     pub is_user_verified: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalPrivacyControlParameters {
+    pub gpc: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScreenshotOptions {
     pub id: Option<String>,
@@ -354,6 +360,10 @@ pub enum Command {
     SwitchToWindow(Window),
     #[serde(rename = "WebDriver:TakeScreenshot")]
     TakeScreenshot(ScreenshotOptions),
+    #[serde(rename = "GPC:GetGlobalPrivacyControl")]
+    GPCGetGlobalPrivacyControl,
+    #[serde(rename = "GPC:SetGlobalPrivacyControl")]
+    GPCSetGlobalPrivacyControl(GlobalPrivacyControlParameters),
     #[serde(rename = "WebAuthn:AddVirtualAuthenticator")]
     WebAuthnAddVirtualAuthenticator(AuthenticatorParameters),
     #[serde(rename = "WebAuthn:RemoveVirtualAuthenticator")]

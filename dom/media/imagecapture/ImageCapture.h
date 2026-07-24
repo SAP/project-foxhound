@@ -8,8 +8,8 @@
 #define IMAGECAPTURE_H
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/ImageCaptureBinding.h"
 #include "mozilla/Logging.h"
+#include "mozilla/dom/ImageCaptureBinding.h"
 
 namespace mozilla {
 

@@ -28,7 +28,7 @@ BEGIN_TEST(testSparseBitmapBasics) {
 
   // Set some bits in the first block and check they are set.
   for (size_t i = 0; i < 100; i += 2) {
-    bitmap.setBit(i);
+    CHECK(bitmap.setBit(i));
   }
   for (size_t i = 0; i < 100; i++) {
     CHECK(bitmap.getBit(i) == ((i % 2) == 0));
@@ -36,7 +36,7 @@ BEGIN_TEST(testSparseBitmapBasics) {
 
   // Set some bits in different blocks and check they are set.
   for (size_t i = 0; i < 100; i += 2) {
-    bitmap.setBit(i * 1000);
+    CHECK(bitmap.setBit(i * 1000));
   }
   for (size_t i = 0; i < 100; i++) {
     CHECK(bitmap.getBit(i * 1000) == ((i % 2) == 0));
@@ -45,14 +45,14 @@ BEGIN_TEST(testSparseBitmapBasics) {
   // Create another bitmap with different bits set.
   SparseBitmap other;
   for (size_t i = 1; i < 100; i += 2) {
-    other.setBit(i * 1000);
+    CHECK(other.setBit(i * 1000));
   }
   for (size_t i = 0; i < 100; i++) {
     CHECK(other.getBit(i * 1000) == ((i % 2) != 0));
   }
 
   // OR some bits into this bitmap and check the result.
-  bitmap.bitwiseOrWith(other);
+  CHECK(bitmap.bitwiseOrWith(other));
   for (size_t i = 0; i < 100; i++) {
     CHECK(bitmap.getBit(i * 1000));
   }
@@ -79,7 +79,7 @@ BEGIN_TEST(testSparseBitmapExternalOR) {
   // Create a bitmap with one bit set per word so we can tell them apart.
   SparseBitmap bitmap;
   for (size_t i = 0; i < wordCount; i++) {
-    bitmap.setBit(i * JS_BITS_PER_WORD + i);
+    CHECK(bitmap.setBit(i * JS_BITS_PER_WORD + i));
   }
 
   // Copy a single word.
@@ -121,8 +121,8 @@ BEGIN_TEST(testSparseBitmapExternalAND) {
   // Create a bitmap with two bits set per word based on the word index.
   SparseBitmap bitmap;
   for (size_t i = 0; i < wordCount; i++) {
-    bitmap.setBit(i * JS_BITS_PER_WORD + i);
-    bitmap.setBit(i * JS_BITS_PER_WORD + i + 1);
+    CHECK(bitmap.setBit(i * JS_BITS_PER_WORD + i));
+    CHECK(bitmap.setBit(i * JS_BITS_PER_WORD + i + 1));
   }
 
   // Update a single word, clearing one of the bits.

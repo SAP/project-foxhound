@@ -71,10 +71,40 @@ gradle.settingsEvaluated {
 
 gradle.projectsLoaded { ->
     gradle.rootProject.allprojects {
-        // Allow local appservices substitution in each project.
-        if (gradle.hasProperty("localProperties.autoPublish.application-services.dir")) {
-            def appServicesSrcDir = gradle."localProperties.autoPublish.application-services.dir"
-            apply from: rootProject.file("${appServicesSrcDir}/build-scripts/substitute-local-appservices.gradle")
+        if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
+            // in tree, so we update our legacy "external" dep name to a local project.
+            // ie, `"${ApplicationServicesConfig.groupId}:syncmanager:${ApplicationServicesConfig.version}"`
+            // becomes `project(':syncmanager')`
+            configurations.all { config ->
+                if (config.isCanBeResolved()) {
+                    config.resolutionStrategy { strategy ->
+                        dependencySubstitution {
+                            all { dependency ->
+                                // We only care about substituting for a module, not a project.
+                                if (!(dependency.requested instanceof ModuleComponentSelector)) {
+                                    return
+                                }
+                                def group = dependency.requested.group
+                                if (group == 'org.mozilla.appservices' || group == 'org.mozilla.appservices.nightly') {
+                                    def name = dependency.requested.module
+                                    // What to do about full-megazord-libsForTests is tbd - it's a convenience;
+                                    // but we don't lose test coverage, just local test convience.
+                                    if (name == "full-megazord-libsForTests") {
+                                        name = "full-megazord"
+                                    }
+                                    dependency.useTarget(project(":${name}"))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Allow local appservices substitution in each project.
+            if (gradle.hasProperty("localProperties.autoPublish.application-services.dir")) {
+                def appServicesSrcDir = gradle."localProperties.autoPublish.application-services.dir"
+                apply from: rootProject.file("${appServicesSrcDir}/build-scripts/substitute-local-appservices.gradle")
+            }
         }
 
         // Allow local Glean substitution in each project.

@@ -6,14 +6,14 @@
 
 #include "XULPersist.h"
 
-#include "nsIXULStore.h"
-#include "nsIStringEnumerator.h"
-#include "nsServiceManagerUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "nsContentUtils.h"
 #include "nsIAppWindow.h"
+#include "nsIStringEnumerator.h"
+#include "nsIXULStore.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 
@@ -62,7 +62,7 @@ void XULPersist::DropDocumentReference() {
 }
 
 void XULPersist::AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
-                                  nsAtom* aAttribute, int32_t aModType,
+                                  nsAtom* aAttribute, AttrModType,
                                   const nsAttrValue* aOldValue) {
   NS_ASSERTION(aElement->OwnerDoc() == mDocument, "unexpected doc");
 
@@ -89,7 +89,7 @@ void XULPersist::Persist(Element* aElement, nsAtom* aAttribute) {
   if (!mDocument) {
     return;
   }
-  // For non-chrome documents, persistance is simply broken
+  // For non-chrome documents, persistence is simply broken
   if (!mDocument->NodePrincipal()->IsSystemPrincipal()) {
     return;
   }
@@ -171,13 +171,13 @@ nsresult XULPersist::ApplyPersistentAttributes() {
 
     // We want to hold strong refs to the elements while applying
     // persistent attributes, just in case.
-    const nsTArray<Element*>* allElements = mDocument->GetAllElementsForId(id);
-    if (!allElements) {
+    const Span allElements = mDocument->GetAllElementsForId(id);
+    if (allElements.IsEmpty()) {
       continue;
     }
     elements.Clear();
-    elements.SetCapacity(allElements->Length());
-    for (Element* element : *allElements) {
+    elements.SetCapacity(allElements.Length());
+    for (Element* element : allElements) {
       elements.AppendObject(element);
     }
 
@@ -234,9 +234,9 @@ nsresult XULPersist::ApplyPersistentAttributesToElements(
       }
 
       if (value == kMissingAttributeToken) {
-        Unused << element->UnsetAttr(kNameSpaceID_None, attr, true);
+        (void)element->UnsetAttr(kNameSpaceID_None, attr, true);
       } else {
-        Unused << element->SetAttr(kNameSpaceID_None, attr, value, true);
+        (void)element->SetAttr(kNameSpaceID_None, attr, value, true);
       }
     }
   }

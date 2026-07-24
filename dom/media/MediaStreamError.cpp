@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaStreamError.h"
+
 #include "mozilla/dom/MediaStreamErrorBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "nsContentUtils.h"
@@ -28,7 +29,7 @@ BaseMediaMgrError::BaseMediaMgrError(Name aName, const nsACString& aMessage,
                    "or the platform in the current context."),
       MAP_MEDIAERR(NotFoundError, "The object can not be found here."),
       MAP_MEDIAERR(NotReadableError, "The I/O read operation failed."),
-      MAP_MEDIAERR(OverconstrainedError, "Constraints could be not satisfied."),
+      MAP_MEDIAERR(OverconstrainedError, "Constraints could not be satisfied."),
       MAP_MEDIAERR(SecurityError, "The operation is insecure."),
       MAP_MEDIAERR(TypeError, ""),
   };

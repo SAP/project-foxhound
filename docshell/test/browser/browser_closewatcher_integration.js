@@ -17,8 +17,9 @@ const CLOSEWATCHER_PAGE =
 const runTest =
   (bool, baseURL = TEST_PAGE) =>
   async () => {
-    // Wait for the session data to be flushed before continuing the test
-    Services.prefs.setBoolPref("dom.closewatcher.enabled", true);
+    await SpecialPowers.pushPrefEnv({
+      set: [["dom.closewatcher.enabled", true]],
+    });
 
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, baseURL);
 
@@ -56,9 +57,57 @@ const runTest =
     );
 
     BrowserTestUtils.removeTab(tab);
-
-    Services.prefs.clearUserPref("dom.closewatcher.enabled");
   };
 
 add_task(runTest(false, TEST_PAGE));
 add_task(runTest(true, CLOSEWATCHER_PAGE));
+
+add_task(async function test_processCloseRequest_unfocused_tab() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.closewatcher.enabled", true]],
+  });
+
+  let cwTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    CLOSEWATCHER_PAGE
+  );
+  let cwBrowser = cwTab.linkedBrowser;
+
+  await new Promise(resolve => SessionStore.getSessionHistory(cwTab, resolve));
+
+  is(
+    cwBrowser.hasActiveCloseWatcher,
+    true,
+    "CloseWatcher tab reports an active close watcher"
+  );
+
+  // Open a second tab, which moves focus away from the CloseWatcher tab.
+  let otherTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    TEST_PAGE
+  );
+  isnot(
+    gBrowser.selectedTab,
+    cwTab,
+    "CloseWatcher tab is no longer the selected tab"
+  );
+
+  // Send processCloseRequest to the now-unfocused CloseWatcher tab.
+  cwBrowser.processCloseRequest();
+
+  // SpecialPowers.spawn performs an IPC roundtrip to the content process,
+  // which is ordered after the ProcessCloseRequest message. When it resolves
+  // we know the handler has already run.
+  await SpecialPowers.spawn(cwBrowser, [], () => {});
+
+  // The close watcher should still be active since the tab was not focused
+  // when the request was processed.
+  is(
+    cwBrowser.hasActiveCloseWatcher,
+    true,
+    "CloseWatcher is still active because tab was not focused"
+  );
+
+  BrowserTestUtils.removeTab(otherTab);
+  BrowserTestUtils.removeTab(cwTab);
+});

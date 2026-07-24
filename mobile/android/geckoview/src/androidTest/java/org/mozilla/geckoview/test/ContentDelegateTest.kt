@@ -128,6 +128,7 @@ class ContentDelegateTest : BaseSessionTest() {
     fun crashContent() {
         // TODO: bug 1710940
         assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
+        assumeThat(sessionRule.env.isAppZygoteProcess, equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
         mainSession.waitUntilCalled(object : ContentDelegate {
@@ -158,6 +159,7 @@ class ContentDelegateTest : BaseSessionTest() {
     fun crashContent_tapAfterCrash() {
         // TODO: bug 1710940
         assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
+        assumeThat(sessionRule.env.isAppZygoteProcess, equalTo(false))
 
         mainSession.delegateUntilTestEnd(object : ContentDelegate {
             override fun onCrash(session: GeckoSession) {
@@ -408,7 +410,8 @@ class ContentDelegateTest : BaseSessionTest() {
             override fun onCloseRequest(session: GeckoSession) {
             }
 
-            @AssertCalled(count = 1)
+            // (1) artificial from GeckoViewProgress._fireInitialLoad (2) about:blank load
+            @AssertCalled(count = 2)
             override fun onPageStop(session: GeckoSession, success: Boolean) {
             }
         })
@@ -665,6 +668,101 @@ class ContentDelegateTest : BaseSessionTest() {
         assertThat(
             "display-mode should be fullscreen",
             matches,
+            equalTo(true),
+        )
+    }
+
+    @Test fun closeWatcherForDialog() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.closewatcher.enabled" to true,
+            ),
+        )
+
+        mainSession.loadTestPath(DIALOG_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        sessionRule.waitForResult(mainSession.processBackPressed()).let {
+            assertThat(
+                "processBackPressed should be false due to no close watch request",
+                it,
+                equalTo(false),
+            )
+        }
+
+        // dialog has no open event.
+        mainSession.waitForJS(
+            """
+            new Promise(resolve => {
+                const dialog = document.querySelector('dialog');
+                dialog.showModal();
+                window.setTimeout(resolve, 500);
+            })
+            """,
+        )
+
+        val promise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                let cancel = false;
+                const dialog = document.querySelector('dialog');
+                dialog.addEventListener('cancel', () => { cancel = true; });
+                dialog.addEventListener('close', () => resolve(cancel));
+            })
+            """,
+        )
+
+        sessionRule.waitForResult(mainSession.processBackPressed()).let {
+            assertThat(
+                "processBackPressed should be true due to having close watch request",
+                it,
+                equalTo(true),
+            )
+        }
+        assertThat("processBackPressed fires cancel event", promise.value as Boolean, equalTo(true))
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test fun closeWatcherForPopover() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.closewatcher.enabled" to true,
+            ),
+        )
+
+        mainSession.loadTestPath(POPOVER_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        val promise1 = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                let popover = document.getElementById('mypopover');
+                popover.addEventListener('toggle', resolve, { once: true });
+            });
+            """,
+        )
+        mainSession.synthesizeTap(50, 50)
+        promise1.value
+
+        val promise2 = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                let popover = document.getElementById('mypopover');
+                popover.addEventListener('toggle', () => resolve(true), { once: true });
+            })
+            """,
+        )
+
+        sessionRule.waitForResult(mainSession.processBackPressed()).let {
+            assertThat(
+                "processBackPressed should be true due to having close watch request",
+                it,
+                equalTo(true),
+            )
+        }
+        assertThat(
+            "processBackPressed fires cancel event",
+            promise2.value as Boolean,
             equalTo(true),
         )
     }

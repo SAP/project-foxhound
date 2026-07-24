@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SDPENUM_H_
-#define _SDPENUM_H_
+#ifndef SDPENUM_H_
+#define SDPENUM_H_
 
 #include <ostream>
 

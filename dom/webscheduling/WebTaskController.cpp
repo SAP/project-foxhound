@@ -6,8 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebTaskController.h"
-#include "TaskSignal.h"
 
+#include "TaskSignal.h"
 #include "mozilla/dom/TaskPriorityChangeEvent.h"
 
 namespace mozilla::dom {

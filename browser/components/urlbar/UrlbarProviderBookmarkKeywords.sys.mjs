@@ -9,28 +9,19 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   KeywordUtils: "resource://gre/modules/KeywordUtils.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 /**
  * Class used to create the provider.
  */
-class ProviderBookmarkKeywords extends UrlbarProvider {
-  /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "BookmarkKeywords";
-  }
-
+export class UrlbarProviderBookmarkKeywords extends UrlbarProvider {
   /**
    * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
@@ -57,9 +48,9 @@ class ProviderBookmarkKeywords extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let keyword = queryContext.tokens[0]?.value;
@@ -94,21 +85,24 @@ class ProviderBookmarkKeywords extends UrlbarProvider {
       title = UrlbarUtils.prepareUrlForDisplay(url);
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.KEYWORD,
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-        title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
-        url: [url, UrlbarUtils.HIGHLIGHT.TYPED],
-        keyword: [keyword, UrlbarUtils.HIGHLIGHT.TYPED],
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.KEYWORD,
+      source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
+      heuristic: true,
+      payload: {
+        title,
+        url,
+        keyword,
         input: queryContext.searchString,
         postData,
         icon: UrlbarUtils.getIconForUrl(entry.url),
-      })
-    );
-    result.heuristic = true;
+      },
+      highlights: {
+        title: UrlbarUtils.HIGHLIGHT.TYPED,
+        url: UrlbarUtils.HIGHLIGHT.TYPED,
+        keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+      },
+    });
     addCallback(this, result);
   }
 }
-
-export var UrlbarProviderBookmarkKeywords = new ProviderBookmarkKeywords();

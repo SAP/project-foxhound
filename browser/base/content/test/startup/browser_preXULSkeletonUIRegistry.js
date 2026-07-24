@@ -26,10 +26,11 @@ function readRegKeyExtended(aRoot, aPath, aKey, aRegistryNode = 0) {
     if (registry.hasValue(aKey)) {
       let type = registry.getValueType(aKey);
       switch (type) {
-        case kRegMultiSz:
+        case kRegMultiSz: {
           // nsIWindowsRegKey doesn't support REG_MULTI_SZ type out of the box.
           let str = registry.readStringValue(aKey);
           return str.split("\0").filter(v => v);
+        }
         case Ci.nsIWindowsRegKey.TYPE_STRING:
           return registry.readStringValue(aKey);
         case Ci.nsIWindowsRegKey.TYPE_INT:

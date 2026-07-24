@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AccessibleCaret_h__
-#define AccessibleCaret_h__
+#ifndef AccessibleCaret_h_
+#define AccessibleCaret_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
@@ -227,4 +227,4 @@ std::ostream& operator<<(std::ostream& aStream,
 
 }  // namespace mozilla
 
-#endif  // AccessibleCaret_h__
+#endif  // AccessibleCaret_h_

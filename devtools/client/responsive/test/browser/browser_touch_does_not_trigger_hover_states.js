@@ -40,10 +40,9 @@ async function testButtonHoverState(ui, expected) {
         content
       );
       button = content.document.querySelector("button");
-      const win = content.document.defaultView;
 
       is(
-        win.getComputedStyle(button).getPropertyValue("background-color"),
+        content.getComputedStyle(button).getPropertyValue("background-color"),
         contentExpected,
         `Button background color is ${contentExpected}.`
       );
@@ -65,11 +64,10 @@ async function testDropDownHoverState(ui, expected) {
         { type: "mousemove", isSynthesized: false },
         content
       );
-      const win = content.document.defaultView;
       const menuItems = content.document.querySelector(".menu-items-list");
 
       is(
-        win.getComputedStyle(menuItems).getPropertyValue("display"),
+        content.getComputedStyle(menuItems).getPropertyValue("display"),
         contentExpected,
         `Menu items is display: ${contentExpected}.`
       );

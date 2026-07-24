@@ -29,7 +29,7 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  idleService: ["@mozilla.org/widget/useridleservice;1", "nsIUserIdleService"],
+  idleService: ["@mozilla.org/widget/useridleservice;1", Ci.nsIUserIdleService],
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -156,7 +156,7 @@ class _Interactions {
    *
    * @type {number}
    */
-  _pageViewStartTime = Cu.now();
+  _pageViewStartTime = ChromeUtils.now();
 
   /**
    * Stores interactions in the database, see the {@link InteractionsStore}
@@ -233,7 +233,7 @@ class _Interactions {
     lazy.logConsole.debug("Database reset");
     this.#interactions = new WeakMap();
     this.#userIsIdle = false;
-    this._pageViewStartTime = Cu.now();
+    this._pageViewStartTime = ChromeUtils.now();
     ChromeUtils.consumeInteractionData();
     await _Interactions.interactionUpdatePromise;
     await this.store.reset();
@@ -300,7 +300,7 @@ class _Interactions {
     // Only reset the time if this is being loaded in the active tab of the
     // active window.
     if (docInfo.isActive && browser.ownerGlobal == this.#activeWindow) {
-      this._pageViewStartTime = Cu.now();
+      this._pageViewStartTime = ChromeUtils.now();
     }
 
     this.#recentInteractions.set(browser, [
@@ -464,8 +464,8 @@ class _Interactions {
       return;
     }
 
-    interaction.totalViewTime += Cu.now() - pageViewStartTime;
-    Interactions._pageViewStartTime = Cu.now();
+    interaction.totalViewTime += ChromeUtils.now() - pageViewStartTime;
+    Interactions._pageViewStartTime = ChromeUtils.now();
 
     const interactionData = ChromeUtils.consumeInteractionData();
     const typing = interactionData.Typing;
@@ -509,7 +509,7 @@ class _Interactions {
     }
 
     this.#activeWindow = win;
-    this._pageViewStartTime = Cu.now();
+    this._pageViewStartTime = ChromeUtils.now();
   }
 
   /**
@@ -539,7 +539,7 @@ class _Interactions {
 
     this.#updateInteraction(previousBrowser);
 
-    this._pageViewStartTime = Cu.now();
+    this._pageViewStartTime = ChromeUtils.now();
 
     let browser = this.#activeWindow?.gBrowser.selectedBrowser;
     if (browser && this.#interactions.has(browser)) {
@@ -603,7 +603,7 @@ class _Interactions {
       case "active":
         lazy.logConsole.debug("User became active");
         this.#userIsIdle = false;
-        this._pageViewStartTime = Cu.now();
+        this._pageViewStartTime = ChromeUtils.now();
         break;
     }
   }

@@ -7,16 +7,17 @@
 #ifndef DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_MEDIACONDUITCONTROL_H_
 #define DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_MEDIACONDUITCONTROL_H_
 
-#include "jsapi/RTCDTMFSender.h"  // For DtmfEvent
-#include "mozilla/StateMirroring.h"
-#include "RtpRtcpConfig.h"
-#include <vector>
 #include <string>
-#include "mozilla/Maybe.h"
-#include "CodecConfig.h"                   // For Audio/VideoCodecConfig
+#include <vector>
+
+#include "CodecConfig.h"  // For Audio/VideoCodecConfig
+#include "FrameTransformerProxy.h"
+#include "RtpRtcpConfig.h"
 #include "api/rtp_parameters.h"            // For webrtc::RtpExtension
 #include "api/video_codecs/video_codec.h"  // For webrtc::VideoCodecMode
-#include "FrameTransformerProxy.h"
+#include "jsapi/RTCDTMFSender.h"           // For DtmfEvent
+#include "mozilla/Maybe.h"
+#include "mozilla/StateMirroring.h"
 #include "mozilla/dom/RTCRtpParametersBinding.h"
 
 namespace mozilla {

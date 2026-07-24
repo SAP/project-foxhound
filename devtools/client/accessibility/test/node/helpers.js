@@ -24,7 +24,8 @@ function setupStore({ preloadedState } = {}) {
 
 /**
  * Build a mock accessible object.
- * @param {Object} form
+ *
+ * @param {object} form
  *        Data similar to what accessible actor passes to accessible front.
  */
 function mockAccessible(form) {
@@ -41,7 +42,7 @@ function mockAccessible(form) {
  *
  * @param {DOMNode}
  *        DOMNode that corresponds to a menu item in a menu list
- * @param {Object}
+ * @param {object}
  *        Expected properties:
  *          - role:     optional ARIA role for the menu item
  *          - checked:  optional checked state for the menu item
@@ -79,7 +80,7 @@ function checkMenuItem(menuItem, expected) {
  *
  * @param {ReactWrapper}
  *        React wrapper for the top level check component.
- * @param {Object}
+ * @param {object}
  *        Expected audit properties:
  *          - score: audit score
  *          - issue: audit issue type
@@ -96,7 +97,7 @@ function testCustomCheck(wrapper, props) {
  *
  * @param {ReactWrapper}
  *        React wrapper for the check component.
- * @param {Object}
+ * @param {object}
  *        Expected audit properties:
  *          - score: audit score
  *          - issue: audit issue type

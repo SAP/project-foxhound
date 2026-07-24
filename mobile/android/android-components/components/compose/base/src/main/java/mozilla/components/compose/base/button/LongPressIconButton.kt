@@ -5,8 +5,6 @@
 package mozilla.components.compose.base.button
 
 import android.view.SoundEffectConstants
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -15,6 +13,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
@@ -64,7 +64,6 @@ private val RippleRadius = 24.dp
  * still happen internally.
  * @param content The content to be shown inside this button.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LongPressIconButton(
     onClick: () -> Unit,
@@ -72,8 +71,8 @@ fun LongPressIconButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     colors: IconButtonColors = IconButtonDefaults.iconButtonColors(
-        contentColor = AcornTheme.colors.iconPrimary,
-        disabledContentColor = AcornTheme.colors.iconDisabled,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
     ),
     onClickLabel: String? = null,
     onLongClickLabel: String? = null,
@@ -122,17 +121,17 @@ fun LongPressIconButton(
 @Composable
 private fun LongPressIconButtonPreview() {
     AcornTheme {
-        LongPressIconButton(
-            onClick = {},
-            onLongClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = AcornTheme.colors.iconButton),
-        ) {
-            Icon(
-                painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
-                contentDescription = null,
-            )
+        Surface {
+            LongPressIconButton(
+                onClick = {},
+                onLongClick = {},
+                contentDescription = "test",
+            ) {
+                Icon(
+                    painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                    contentDescription = null,
+                )
+            }
         }
     }
 }
@@ -141,14 +140,15 @@ private fun LongPressIconButtonPreview() {
 @Composable
 private fun LongPressTextButtonPreview() {
     AcornTheme {
-        LongPressIconButton(
-            onClick = {},
-            onLongClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = AcornTheme.colors.textPrimary),
-        ) {
-            Text(text = "button")
+        Surface {
+            LongPressIconButton(
+                onClick = {},
+                onLongClick = {},
+                contentDescription = "test",
+                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+            ) {
+                Text(text = "button")
+            }
         }
     }
 }

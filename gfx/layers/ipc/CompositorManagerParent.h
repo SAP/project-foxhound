@@ -9,7 +9,6 @@
 
 #include <map>
 #include <stdint.h>                 // for uint32_t
-#include "mozilla/Attributes.h"     // for override
 #include "mozilla/StaticPtr.h"      // for StaticRefPtr
 #include "mozilla/StaticMonitor.h"  // for StaticMonitor
 #include "mozilla/RefPtr.h"         // for already_AddRefed

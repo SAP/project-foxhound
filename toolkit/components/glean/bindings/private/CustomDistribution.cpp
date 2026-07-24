@@ -46,7 +46,8 @@ void CustomDistributionMetric::AccumulateSamples(
   fog_custom_distribution_accumulate_samples(mId, &aSamples);
 }
 
-void CustomDistributionMetric::AccumulateSingleSample(uint64_t aSample) const {
+void CustomDistributionStandalone::AccumulateSingleSample(
+    uint64_t aSample) const {
   auto hgramId = HistogramIdForMetric(mId);
   if (hgramId) {
     auto id = hgramId.extract();
@@ -87,7 +88,7 @@ void CustomDistributionMetric::AccumulateSamplesSigned(
   fog_custom_distribution_accumulate_samples_signed(mId, &aSamples);
 }
 
-void CustomDistributionMetric::AccumulateSingleSampleSigned(
+void CustomDistributionStandalone::AccumulateSingleSampleSigned(
     int64_t aSample) const {
   auto hgramId = HistogramIdForMetric(mId);
   if (hgramId) {

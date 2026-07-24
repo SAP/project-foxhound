@@ -6,6 +6,7 @@ package mozilla.components.feature.search.telemetry
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.support.test.any
@@ -35,6 +36,7 @@ class BaseSearchTelemetryTest {
 
     private val mockReadJson: () -> JSONObject = mock()
     private val mockRootStorageDirectory: File = mock()
+    private val testDispatcher = StandardTestDispatcher()
 
     private fun createMockProviderList(): List<SearchProviderModel> = listOf(
         SearchProviderModel(
@@ -82,7 +84,7 @@ class BaseSearchTelemetryTest {
     @Before
     fun setup() {
         baseTelemetry = spy(
-            object : BaseSearchTelemetry() {
+            object : BaseSearchTelemetry(testDispatcher) {
                 override suspend fun install(
                     engine: Engine,
                     store: BrowserStore,
@@ -103,7 +105,7 @@ class BaseSearchTelemetryTest {
     @Test
     fun `GIVEN an engine WHEN installWebExtension is called THEN the provided extension is installed in engine`() {
         val engine: Engine = mock()
-        val store: BrowserStore = mock()
+        val store = BrowserStore()
         val id = "id"
         val resourceUrl = "resourceUrl"
         val messageId = "messageId"

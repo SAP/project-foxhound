@@ -13,8 +13,6 @@
 
 #include "mozilla/Assertions.h"
 
-#include <stdint.h>
-
 #include "gc/Cell.h"
 
 namespace js {

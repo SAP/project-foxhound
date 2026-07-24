@@ -6,8 +6,8 @@
 
 /* constants for quirks mode, standards mode, and almost standards mode */
 
-#ifndef nsCompatibility_h___
-#define nsCompatibility_h___
+#ifndef nsCompatibility_h_
+#define nsCompatibility_h_
 
 enum nsCompatibility {
   eCompatibility_FullStandards = 1,
@@ -15,4 +15,4 @@ enum nsCompatibility {
   eCompatibility_NavQuirks = 3
 };
 
-#endif /* nsCompatibility_h___ */
+#endif /* nsCompatibility_h_ */

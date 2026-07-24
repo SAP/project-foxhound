@@ -3,12 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDirIndex_h__
-#define nsDirIndex_h__
+#ifndef nsDirIndex_h_
+#define nsDirIndex_h_
 
 #include "nsIDirIndex.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 class nsDirIndex final : public nsIDirIndex {
  private:

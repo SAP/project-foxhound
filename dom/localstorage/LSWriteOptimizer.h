@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <utility>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/UniquePtr.h"

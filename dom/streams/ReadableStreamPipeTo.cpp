@@ -6,21 +6,20 @@
 
 #include "ReadableStreamPipeTo.h"
 
+#include "js/Exception.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/AbortFollower.h"
 #include "mozilla/dom/AbortSignal.h"
+#include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/PromiseNativeHandler.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
-
-#include "js/Exception.h"
 
 namespace mozilla::dom {
 

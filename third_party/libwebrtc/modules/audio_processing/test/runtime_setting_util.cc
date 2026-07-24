@@ -10,12 +10,14 @@
 
 #include "modules/audio_processing/test/runtime_setting_util.h"
 
+#include "api/audio/audio_processing.h"
+#include "modules/audio_processing/test/protobuf_utils.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
 
 void ReplayRuntimeSetting(AudioProcessing* apm,
-                          const webrtc::audioproc::RuntimeSetting& setting) {
+                          const audioproc::RuntimeSetting& setting) {
   RTC_CHECK(apm);
   // TODO(bugs.webrtc.org/9138): Add ability to handle different types
   // of settings. Currently CapturePreGain, CaptureFixedPostGain and
@@ -39,8 +41,9 @@ void ReplayRuntimeSetting(AudioProcessing* apm,
   } else if (setting.has_playout_audio_device_change()) {
     apm->SetRuntimeSetting(
         AudioProcessing::RuntimeSetting::CreatePlayoutAudioDeviceChange(
-            {setting.playout_audio_device_change().id(),
-             setting.playout_audio_device_change().max_volume()}));
+            {.id = setting.playout_audio_device_change().id(),
+             .max_volume =
+                 setting.playout_audio_device_change().max_volume()}));
   } else if (setting.has_capture_output_used()) {
     apm->SetRuntimeSetting(
         AudioProcessing::RuntimeSetting::CreateCaptureOutputUsedSetting(

@@ -8,11 +8,12 @@ add_task(async function test_show_search_term_tooltip_in_subdialog() {
   let keyword = "organization";
   await runSearchInput(keyword);
 
-  let formAutofillGroupBox = gBrowser.contentDocument.getElementById(
-    "formAutofillGroupBox"
+  let addressesGroup = gBrowser.contentDocument.querySelector(
+    "setting-group[groupid=addresses]"
   );
-  let savedAddressesButton =
-    formAutofillGroupBox.querySelector(".accessory-button");
+  let savedAddressesButton = addressesGroup.querySelector(
+    "#savedAddressesButton"
+  );
 
   info("Clicking saved addresses button to open subdialog");
   savedAddressesButton.click();

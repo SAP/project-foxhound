@@ -50,31 +50,12 @@ fi
 # * o pipefail: All stages of all pipes should succeed.
 set -eEuo pipefail
 
-ERROR_HELP=$"
-Milestone $NEXT_MILESTONE is not found when attempting to lookup the
-libwebrtc branch-head used for the Chromium release.
-This may be because Chromium has not updated the info on page
-https://chromiumdash.appspot.com/branches
-"
-# check for a successful milestone-to-branch-head lookup to avoid
-# future potential errors
-./mach python dom/media/webrtc/third_party_build/lookup_branch_head.py $NEXT_MILESTONE
 
-ERROR_HELP=$"
-An error has occurred running $SCRIPT_DIR/write_default_config.py
-"
 MOZCONFIG=dom/media/webrtc/third_party_build/default_mozconfig \
   ./mach python $SCRIPT_DIR/write_default_config.py \
+  --script-path $SCRIPT_DIR \
   --prior-bug-number $MOZ_FASTFORWARD_BUG \
   --bug-number $NEW_BUG_NUMBER \
   --milestone $MOZ_NEXT_LIBWEBRTC_MILESTONE \
   --release-target $MOZ_NEXT_FIREFOX_REL_TARGET \
   --output-path $SCRIPT_DIR/default_config_env
-
-# source our newly updated default_config_env so we can use the new settings
-# to automatically commit the updated file.
-source $DEFAULT_CONFIG_PATH
-
-hg commit -m \
-  "Bug $MOZ_FASTFORWARD_BUG - updated default_config_env for v$MOZ_NEXT_LIBWEBRTC_MILESTONE" \
-  $DEFAULT_CONFIG_PATH

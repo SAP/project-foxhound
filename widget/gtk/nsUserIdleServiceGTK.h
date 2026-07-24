@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUserIdleServiceGTK_h__
-#define nsUserIdleServiceGTK_h__
+#ifndef nsUserIdleServiceGTK_h_
+#define nsUserIdleServiceGTK_h_
 
 #include "nsUserIdleService.h"
 #include "mozilla/AppShutdown.h"
@@ -75,4 +75,4 @@ class nsUserIdleServiceGTK : public nsUserIdleService {
   bool mIdleServiceInitialized = false;
 };
 
-#endif  // nsUserIdleServiceGTK_h__
+#endif  // nsUserIdleServiceGTK_h_

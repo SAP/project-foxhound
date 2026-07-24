@@ -9,11 +9,11 @@
 #include "DriftCompensation.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
+#include "VideoUtils.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RollingMean.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 

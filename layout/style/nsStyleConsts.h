@@ -6,8 +6,8 @@
 
 /* constants used in the style struct data provided by ComputedStyle */
 
-#ifndef nsStyleConsts_h___
-#define nsStyleConsts_h___
+#ifndef nsStyleConsts_h_
+#define nsStyleConsts_h_
 
 #include <inttypes.h>
 
@@ -55,7 +55,7 @@ enum class StyleBoxPack : uint8_t {
 };
 
 // box-sizing
-enum class StyleBoxSizing : uint8_t { Content, Border };
+enum class StyleBoxSizing : uint8_t { ContentBox, BorderBox };
 
 // box-shadow
 enum class StyleBoxShadowType : uint8_t {
@@ -242,6 +242,9 @@ enum class StyleMathVariant : uint8_t {
 // See nsStyleFont::mMathStyle
 enum class StyleMathStyle : uint8_t { Compact = 0, Normal = 1 };
 
+// See nsStyleFont::mMathShift
+enum class StyleMathShift : uint8_t { Compact = 0, Normal = 1 };
+
 enum class FrameBorderProperty : uint8_t { Yes, No, One, Zero };
 
 enum class ScrollingAttribute : uint8_t {
@@ -382,7 +385,7 @@ enum class StyleTextOrientation : uint8_t {
 
 // Whether flexbox visibility: collapse items use legacy -moz-box behavior or
 // not.
-enum class StyleMozBoxCollapse : uint8_t {
+enum class StyleBoxCollapse : uint8_t {
   Flex,
   Legacy,
 };
@@ -428,19 +431,6 @@ enum class StyleImeMode : uint8_t {
 enum class StyleWindowShadow : uint8_t {
   Auto,
   None,
-};
-
-// dominant-baseline
-enum class StyleDominantBaseline : uint8_t {
-  Auto,
-  Ideographic,
-  Alphabetic,
-  Hanging,
-  Mathematical,
-  Central,
-  Middle,
-  TextAfterEdge,
-  TextBeforeEdge,
 };
 
 // mask-type
@@ -533,4 +523,4 @@ enum class StyleScrollBehavior : uint8_t {
 
 }  // namespace mozilla
 
-#endif /* nsStyleConsts_h___ */
+#endif /* nsStyleConsts_h_ */

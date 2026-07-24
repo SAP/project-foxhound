@@ -33,7 +33,6 @@ class DeleteBrowsingDataOnQuitFragment : PreferenceFragmentCompat() {
         setPreferencesFromResource(R.xml.delete_browsing_data_quit_preferences, rootKey)
     }
 
-    @Suppress("ComplexMethod")
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.preferences_delete_browsing_data_on_quit))

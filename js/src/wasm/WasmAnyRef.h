@@ -21,8 +21,6 @@
 
 #include "mozilla/FloatingPoint.h"
 
-#include <utility>
-
 #include "js/HeapAPI.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -35,7 +33,7 @@ class JSString;
 
 namespace js {
 namespace gc {
-struct Cell;
+class Cell;
 };  // namespace gc
 
 namespace wasm {
@@ -106,7 +104,7 @@ class AnyRef {
   // Get the pointer tag stored in value_.
   AnyRefTag pointerTag() const { return GetUintptrTag(value_); }
 
-  explicit AnyRef(uintptr_t value) : value_(value) {}
+  explicit constexpr AnyRef(uintptr_t value) : value_(value) {}
 
   static constexpr uintptr_t TagUintptr(uintptr_t value, AnyRefTag tag) {
     MOZ_ASSERT(!(value & TagMask));
@@ -153,15 +151,15 @@ class AnyRef {
   // The inclusive minimum 31-bit signed integer, -2^30.
   static constexpr int32_t MinI31Value = -(2 << 29);
 
-  explicit AnyRef() : value_(NullRefValue) {}
-  MOZ_IMPLICIT AnyRef(std::nullptr_t) : value_(NullRefValue) {}
+  explicit constexpr AnyRef() : value_(NullRefValue) {}
+  MOZ_IMPLICIT constexpr AnyRef(std::nullptr_t) : value_(NullRefValue) {}
 
   // The null AnyRef value.
-  static AnyRef null() { return AnyRef(NullRefValue); }
+  static constexpr AnyRef null() { return AnyRef(NullRefValue); }
 
   // An invalid AnyRef cannot arise naturally from wasm and so can be used as
   // a sentinel value to indicate failure from an AnyRef-returning function.
-  static AnyRef invalid() { return AnyRef(InvalidRefValue); }
+  static constexpr AnyRef invalid() { return AnyRef(InvalidRefValue); }
 
   // Given a JSObject* that comes from JS, turn it into AnyRef.
   static AnyRef fromJSObjectOrNull(JSObject* objectOrNull) {
@@ -386,7 +384,7 @@ class WrappedPtrOperations<wasm::AnyRef, Wrapper> {
 // If the Value is a GC pointer type, call |f| with the pointer cast to that
 // type and return the result wrapped in a Maybe, otherwise return None().
 template <typename F>
-auto MapGCThingTyped(const wasm::AnyRef& val, F&& f) {
+inline auto MapGCThingTyped(const wasm::AnyRef& val, F&& f) {
   switch (val.kind()) {
     case wasm::AnyRefKind::Object:
       return mozilla::Some(f(&val.toJSObject()));

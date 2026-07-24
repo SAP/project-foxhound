@@ -4,6 +4,7 @@
 
 /**
  * Redux actions for the search state
+ *
  * @module actions/search
  */
 

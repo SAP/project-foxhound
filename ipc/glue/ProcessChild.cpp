@@ -30,7 +30,7 @@ namespace ipc {
 
 ProcessChild* ProcessChild::gProcessChild;
 StaticMutex ProcessChild::gIPCShutdownStateLock;
-MOZ_CONSTINIT nsCString ProcessChild::gIPCShutdownStateAnnotation;
+constinit nsCString ProcessChild::gIPCShutdownStateAnnotation;
 
 ProcessChild::ProcessChild(IPC::Channel::ChannelHandle aClientChannel,
                            ProcessId aParentPid, const nsID& aMessageChannelId)

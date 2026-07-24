@@ -4,25 +4,23 @@
 
 package org.mozilla.fenix.perf
 
+import android.os.Looper
 import android.os.StrictMode
 import androidx.fragment.app.FragmentManager
 import io.mockk.MockKAnnotations
 import io.mockk.confirmVerified
-import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import io.mockk.slot
-import io.mockk.unmockkStatic
+import io.mockk.spyk
 import io.mockk.verify
-import org.junit.After
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.fail
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.Config
-import org.mozilla.fenix.ReleaseChannel
 import org.mozilla.fenix.components.Components
 import org.robolectric.RobolectricTestRunner
 
@@ -35,39 +33,44 @@ class StrictModeManagerTest {
     @MockK(relaxUnitFun = true)
     private lateinit var fragmentManager: FragmentManager
 
+    @MockK(relaxed = true)
+    private lateinit var components: Components
+
     @Before
     fun setup() {
         MockKAnnotations.init(this)
-        mockkStatic(StrictMode::class)
 
-        val components: Components = mockk(relaxed = true)
+        debugManager = spyk(
+            StrictModeManager(true, components, mockk()),
+        )
 
-        // These tests log a warning that mockk couldn't set the backing field of Config.channel
-        // but it doesn't seem to impact their correctness so I'm ignoring it.
-        val debugConfig: Config = mockk { every { channel } returns ReleaseChannel.Debug }
-        debugManager = StrictModeManager(debugConfig, components, mockk())
-
-        val releaseConfig: Config = mockk { every { channel } returns ReleaseChannel.Release }
-        releaseManager = StrictModeManager(releaseConfig, components, mockk())
+        releaseManager = spyk(
+            StrictModeManager(false, components, mockk()),
+        )
     }
 
-    @After
-    fun teardown() {
-        unmockkStatic(StrictMode::class)
+    @Test
+    fun `GIVEN we're off-main-thread WHEN we enable strict mode THEN throw`() {
+        runBlocking(Dispatchers.Default) {
+            assertEquals(false, Looper.getMainLooper().isCurrentThread)
+            assertThrows(IllegalStateException::class.java) {
+                debugManager.enableStrictMode(false)
+            }
+        }
     }
 
     @Test
     fun `GIVEN we're in a release build WHEN we enable strict mode THEN we don't set policies`() {
         releaseManager.enableStrictMode(false)
-        verify(exactly = 0) { StrictMode.setThreadPolicy(any()) }
-        verify(exactly = 0) { StrictMode.setVmPolicy(any()) }
+        verify(exactly = 0) { releaseManager.applyThreadPolicy(any()) }
+        verify(exactly = 0) { releaseManager.applyVmPolicy(any()) }
     }
 
     @Test
     fun `GIVEN we're in a debug build WHEN we enable strict mode THEN we set policies`() {
         debugManager.enableStrictMode(false)
-        verify { StrictMode.setThreadPolicy(any()) }
-        verify { StrictMode.setVmPolicy(any()) }
+        verify { debugManager.applyThreadPolicy(any()) }
+        verify { debugManager.applyVmPolicy(any()) }
     }
 
     @Test
@@ -83,53 +86,63 @@ class StrictModeManagerTest {
     }
 
     @Test
-    fun `GIVEN we're in a release build WHEN resetAfter is called THEN we return the value from the function block`() {
+    fun `GIVEN we're in a release build WHEN allowViolation is called THEN we return the value from the function block`() {
         val expected = "Hello world"
-        val actual = releaseManager.resetAfter(StrictMode.allowThreadDiskReads()) { expected }
+        val actual = releaseManager.allowViolation(StrictMode::allowThreadDiskReads) { expected }
         assertEquals(expected, actual)
     }
 
     @Test
-    fun `GIVEN we're in a debug build WHEN resetAfter is called THEN we return the value from the function block`() {
+    fun `GIVEN we're in a debug build WHEN allowViolation is called THEN we return the value from the function block`() {
         val expected = "Hello world"
-        val actual = debugManager.resetAfter(StrictMode.allowThreadDiskReads()) { expected }
+        val actual = debugManager.allowViolation(StrictMode::allowThreadDiskReads) { expected }
         assertEquals(expected, actual)
     }
 
     @Test
-    fun `GIVEN we're in a release build WHEN resetAfter is called THEN the old policy is not set`() {
-        releaseManager.resetAfter(StrictMode.allowThreadDiskReads()) { "" }
-        verify(exactly = 0) { StrictMode.setThreadPolicy(any()) }
+    fun `GIVEN we're in a release build WHEN allowViolation is called THEN the old policy is not set`() {
+        releaseManager.allowViolation(StrictMode::allowThreadDiskReads) { }
+        verify(exactly = 0) { releaseManager.applyThreadPolicy(any()) }
     }
 
     @Test
-    fun `GIVEN we're in a debug build WHEN resetAfter is called THEN the old policy is set`() {
+    fun `GIVEN we're in a debug build WHEN allowViolation is called THEN the old policy is set`() {
         val expectedPolicy = StrictMode.allowThreadDiskReads()
-        debugManager.resetAfter(expectedPolicy) { "" }
-        verify { StrictMode.setThreadPolicy(expectedPolicy) }
+        debugManager.allowViolation({ expectedPolicy }) { }
+        verify { debugManager.applyThreadPolicy(expectedPolicy) }
     }
 
     @Test
-    fun `GIVEN we're in a debug build WHEN resetAfter is called and an exception is thrown from the function THEN the old policy is set`() {
+    fun `GIVEN we're in a debug build WHEN allowViolation is called and an exception is thrown from the function THEN the old policy is set`() {
         val expectedPolicy = StrictMode.allowThreadDiskReads()
-        try {
-            debugManager.resetAfter(expectedPolicy) {
+        assertThrows(IllegalStateException::class.java) {
+            debugManager.allowViolation({ expectedPolicy }) {
                 throw IllegalStateException()
             }
-
-            @Suppress("UNREACHABLE_CODE")
-            fail("Expected previous method to throw.")
-        } catch (e: IllegalStateException) {
-            // Expected
         }
+        verify { debugManager.applyThreadPolicy(expectedPolicy) }
+    }
 
-        verify { StrictMode.setThreadPolicy(expectedPolicy) }
+    @Test
+    fun `GIVEN we're in a debug build WHEN allowViolation is called THEN the allowFn should run`() {
+        var runs = 0
+        val allowFn = { runs += 1; StrictMode.allowThreadDiskReads() }
+        debugManager.allowViolation(allowFn) {}
+        assertEquals(1, runs)
+    }
+
+    @Test
+    fun `GIVEN we're in a release build WHEN allowViolation is called THEN the allowFn should not run`() {
+        var runs = 0
+        val allowFn = { runs += 1; StrictMode.allowThreadDiskReads() }
+        releaseManager.allowViolation(allowFn) {}
+        assertEquals(0, runs)
     }
 
     @Test
     fun `GIVEN we're in debug mode WHEN we suppress StrictMode THEN the suppressed count increases`() {
         assertEquals(0, debugManager.suppressionCount.get())
-        debugManager.resetAfter(StrictMode.allowThreadDiskReads()) { "" }
+        debugManager.allowViolation(StrictMode::allowThreadDiskReads) { }
         assertEquals(1, debugManager.suppressionCount.get())
     }
 }

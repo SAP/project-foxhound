@@ -84,12 +84,10 @@ class HTMLFormatter(base.BaseFormatter):
                 if version_info.get("application_repository"):
                     self.env["Gecko revision"] = html.a(
                         version_info.get("application_changeset"),
-                        href="/rev/".join(
-                            [
-                                version_info.get("application_repository"),
-                                version_info.get("application_changeset"),
-                            ]
-                        ),
+                        href="/rev/".join([
+                            version_info.get("application_repository"),
+                            version_info.get("application_changeset"),
+                        ]),
                         target="_blank",
                     )
 
@@ -218,14 +216,13 @@ class HTMLFormatter(base.BaseFormatter):
                 separator = line.startswith(" " * 10)
                 if separator:
                     log.append(line[:80])
+                elif (
+                    line.lower().find("error") != -1
+                    or line.lower().find("exception") != -1
+                ):
+                    log.append(html.span(raw(escape(line)), class_="error"))
                 else:
-                    if (
-                        line.lower().find("error") != -1
-                        or line.lower().find("exception") != -1
-                    ):
-                        log.append(html.span(raw(escape(line)), class_="error"))
-                    else:
-                        log.append(raw(escape(line)))
+                    log.append(raw(escape(line)))
                 log.append(html.br())
             additional_html.append(log)
 
@@ -312,20 +309,16 @@ class HTMLFormatter(base.BaseFormatter):
                     html.table(
                         [
                             html.thead(
-                                html.tr(
-                                    [
-                                        html.th(
-                                            "Result", class_="sortable", col="result"
-                                        ),
-                                        html.th("Test", class_="sortable", col="name"),
-                                        html.th(
-                                            "Duration",
-                                            class_="sortable numeric",
-                                            col="duration",
-                                        ),
-                                        html.th("Links"),
-                                    ]
-                                ),
+                                html.tr([
+                                    html.th("Result", class_="sortable", col="result"),
+                                    html.th("Test", class_="sortable", col="name"),
+                                    html.th(
+                                        "Duration",
+                                        class_="sortable numeric",
+                                        col="duration",
+                                    ),
+                                    html.th("Links"),
+                                ]),
                                 id="results-table-head",
                             ),
                             html.tbody(self.result_rows, id="results-table-body"),

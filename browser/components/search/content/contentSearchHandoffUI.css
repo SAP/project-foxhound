@@ -1,0 +1,414 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: flex;
+  width: 100%;
+  --content-search-handoff-ui-background-color: Field;
+  --content-search-handoff-ui-color: FieldText;
+  --content-search-handoff-ui-fill: FieldText;
+  --content-search-handoff-ui-caret-color: FieldText;
+  --content-search-handoff-ui-border-width: 1px;
+  --content-search-handoff-ui-unfocused-border-color: transparent;
+  --content-search-handoff-ui-fakefocus-border-color: SelectedItem;
+  --content-search-handoff-ui-fakefocus-box-shadow-inner: color-mix(in srgb, SelectedItem 25%, transparent);
+  --content-search-handoff-ui-fakefocus-box-shadow-outer: color-mix(in srgb, SelectedItem 25%, transparent);
+}
+
+.fake-editable {
+  height: 100%;
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+}
+
+.fake-editable:focus {
+  outline: none;
+  caret-color: transparent;
+}
+
+.fake-textbox {
+  opacity: 0.54;
+  text-align: start;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  margin-inline-start: var(--space-xsmall);
+
+  /**
+   * It's not clear to me why I need to do this, but for some reason I don't
+   * inherit the font-size through the shadow DOM...
+   */
+  font-size: var(--font-size-root);
+}
+
+.search-handoff-button {
+  position: relative;
+  background: var(--content-search-handoff-ui-background-color) var(--newtab-search-icon) 16px center no-repeat;
+  background-size: var(--size-item-medium);
+  padding-inline-start: calc(2 * var(--space-xlarge));
+  padding-inline-end: var(--space-small);
+  padding-block: 0;
+  width: 100%;
+  box-shadow: var(--box-shadow-level-3);
+  border: var(--content-search-handoff-ui-border-width) solid var(--content-search-handoff-ui-unfocused-border-color);
+  border-radius: var(--border-radius-medium);
+  color: var(--content-search-handoff-ui-color);
+  -moz-context-properties: fill;
+  fill: var(--content-search-handoff-ui-fill);
+
+  &:dir(rtl) {
+    background-position-x: right 16px;
+  }
+}
+
+@keyframes caret-animation {
+  to {
+    visibility: hidden;
+  }
+}
+
+.fake-caret {
+  /* To replicate the default caret blink rate of 567ms (https://searchfox.org/mozilla-central/source/widget/cocoa/nsLookAndFeel.mm#397):
+   - Multiply the blink time by 2 to cover both the visible and hidden states.
+   - Use steps(2, start) to divide the animation into 2 phases:
+     1. First 567ms (Step 1) → Caret is visible
+     2. Next 567ms (Step 2) → Caret is hidden
+  This gives a sharp ON/OFF effect instead of a smooth transition. */
+  animation: caret-animation var(--caret-blink-time, 1134ms) steps(2, start) var(--caret-blink-count, infinite);
+  background: var(--content-search-handoff-ui-caret-color);
+  display: none;
+  inset-inline-start: calc(2 * var(--space-xlarge));
+  width: 1px;
+  /**
+   * We use the negative margin trick here to overlap the same area as the
+   * fake-textbox.
+   */
+  height: 17px;
+  margin-top: -17px;
+}
+
+:host([fakefocus]:not([disabled])) .search-handoff-button {
+  border: var(--content-search-handoff-ui-border-width) solid var(--content-search-handoff-ui-fakefocus-border-color);
+  box-shadow:
+    0 0 0 2px var(--content-search-handoff-ui-fakefocus-box-shadow-inner),
+    0 0 0 4px var(--content-search-handoff-ui-fakefocus-box-shadow-outer);
+
+  .fake-caret {
+    display: block;
+  }
+}
+
+:host([disabled]) .search-handoff-button {
+  opacity: 0.5;
+}
+
+:host([nonhandoff]) {
+  .non-handoff-container {
+    display: flex;
+    flex: 1;
+  }
+
+  #newtab-search-text {
+    position: relative;
+    background: var(--content-search-handoff-ui-background-color) var(--newtab-search-icon) 16px center no-repeat;
+    background-size: var(--size-item-medium);
+    padding-inline-start: calc(2 * var(--space-xlarge));
+    padding-inline-end: calc(48px + var(--space-medium));
+    padding-block: 0;
+    width: 100%;
+    box-shadow: var(--box-shadow-level-3);
+    border: var(--content-search-handoff-ui-border-width) solid var(--content-search-handoff-ui-unfocused-border-color);
+    border-radius: var(--border-radius-medium);
+    color: var(--content-search-handoff-ui-color);
+    -moz-context-properties: fill;
+    fill: var(--content-search-handoff-ui-fill);
+
+    &:dir(rtl) {
+      background-position-x: right 16px;
+    }
+
+    &::-moz-search-clear-button {
+      display: none;
+    }
+  }
+
+  .contentSearchSuggestionTable {
+    background-color: hsla(0, 0%, 100%, 0.99);
+    color: black;
+    border: 1px solid hsla(0, 0%, 0%, 0.2);
+    border-top: none;
+    box-shadow: 0 5px 10px hsla(0, 0%, 0%, 0.1);
+    position: absolute;
+    inset-inline-start: 0;
+    z-index: 1001;
+    user-select: none;
+    cursor: default;
+  }
+
+  .contentSearchSuggestionsList {
+    border-bottom: 1px solid hsl(0, 0%, 92%);
+    width: 100%;
+    height: 100%;
+  }
+
+  .contentSearchSuggestionTable,
+  .contentSearchSuggestionsList {
+    border-spacing: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    text-align: start;
+  }
+
+  .contentSearchHeaderRow,
+  .contentSearchSuggestionRow {
+    margin: 0;
+    max-width: inherit;
+    padding: 0;
+  }
+
+  .contentSearchHeaderRow > td > img,
+  .contentSearchSuggestionRow > td > .historyIcon {
+    margin-inline-end: 8px;
+    margin-bottom: -3px;
+  }
+
+  .contentSearchSuggestionTable .historyIcon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    background-image: url("chrome://browser/skin/history.svg");
+    -moz-context-properties: fill;
+    fill: graytext;
+  }
+
+  .contentSearchSuggestionRow.selected > td > .historyIcon {
+    fill: HighlightText;
+  }
+
+  .contentSearchHeader > img {
+    height: 16px;
+    width: 16px;
+    margin: 0;
+    padding: 0;
+  }
+
+  .contentSearchSuggestionRow.remote > td > .historyIcon {
+    visibility: hidden;
+  }
+
+  .contentSearchSuggestionRow.selected {
+    background-color: SelectedItem;
+    color: SelectedItemText;
+  }
+
+  .contentSearchHeader,
+  .contentSearchSuggestionEntry {
+    margin: 0;
+    max-width: inherit;
+    overflow: hidden;
+    padding: 4px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 75%;
+  }
+
+  .contentSearchHeader {
+    background-color: hsl(0, 0%, 97%);
+    color: #666;
+    border-bottom: 1px solid hsl(0, 0%, 92%);
+  }
+
+  .contentSearchSuggestionsContainer {
+    margin: 0;
+    padding: 0;
+    border-spacing: 0;
+    width: 100%;
+  }
+
+  .contentSearchSearchWithHeaderSearchText {
+    white-space: pre;
+    font-weight: var(--font-weight-bold);
+  }
+
+  .contentSearchOneOffItem {
+    appearance: none;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAWCAYAAAABxvaqAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH3gofECQNNVW2/AAAABBJREFUGFdjOHPmzH8GehEA/KpKg9YTf4AAAAAASUVORK5CYII=");
+    background-repeat: no-repeat;
+    background-position: right center;
+  }
+
+  .contentSearchOneOffItem:dir(rtl) {
+    background-position-x: left;
+  }
+
+  .contentSearchOneOffItem > img {
+    width: 16px;
+    height: 16px;
+    margin-bottom: -2px;
+    pointer-events: none;
+  }
+
+  .contentSearchOneOffItem:not(.last-row) {
+    border-bottom: 1px solid hsl(0, 0%, 92%);
+  }
+
+  .contentSearchOneOffItem.end-of-row {
+    background-image: none;
+  }
+
+  .contentSearchOneOffItem.selected {
+    background-color: SelectedItem;
+    background-image: none;
+  }
+
+  .contentSearchOneOffsTable {
+    width: 100%;
+  }
+
+  .contentSearchSettingsButton {
+    margin: 0;
+    padding: 0;
+    height: 32px;
+    border: none;
+    border-top: 1px solid hsla(0, 0%, 0%, 0.08);
+    text-align: center;
+    width: 100%;
+  }
+
+  .contentSearchSettingsButton.selected {
+    background-color: hsl(0, 0%, 90%);
+  }
+
+  .contentSearchSettingsButton:active {
+    background-color: hsl(0, 0%, 85%);
+  }
+
+  /**
+   * These rules are a copy of newtab's customizations to the non-handoff
+   * table, but with the activity-stream variables replaced / inlined. This
+   * allows us to get the non-handoff mode to look correct in newtab without
+   * having to modify the newtab code itself. Notably, non-handoff mode is
+   * only expected to work on newtab.
+   */
+  .contentSearchSuggestionTable {
+    --newtab-background-color: light-dark(#f9f9fb, #2b2a33);
+    --newtab-background-color-secondary: light-dark(var(--color-white), #42414d);
+    --newtab-text-secondary-color: light-dark(color-mix(in srgb, var(--text-color) 70%, transparent), var(--text-color));
+    --newtab-border-color: light-dark(
+      color-mix(in srgb, var(--newtab-background-color) 75%, #000),
+      color-mix(in srgb, var(--newtab-background-color) 75%, #fff)
+    );
+    --newtab-element-hover-color: light-dark(
+      color-mix(in srgb, var(--newtab-background-color) 90%, #000),
+      color-mix(in srgb, var(--newtab-background-color) 80%, #fff)
+    );
+
+    border: 0;
+    box-shadow:
+      0 5px 10px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(0, 0, 0, 0.2);
+    transform: translateY(4px);
+    background-color: var(--newtab-background-color);
+
+    .contentSearchHeader {
+      color: var(--newtab-text-secondary-color);
+      background-color: var(--newtab-background-color-secondary);
+    }
+
+    .contentSearchHeader,
+    .contentSearchSettingsButton {
+      border-color: var(--newtab-border-color);
+    }
+
+    .contentSearchSuggestionsList {
+      color: var(--text-color);
+      border: 0;
+    }
+
+    .contentSearchOneOffsTable {
+      border-block-start: solid 1px var(--newtab-border-color);
+      background-color: var(--newtab-background-color);
+    }
+
+    .contentSearchSearchWithHeaderSearchText {
+      color: var(--text-color);
+    }
+
+    .contentSearchSuggestionRow.selected {
+      background: var(--newtab-element-hover-color);
+      color: var(--text-color);
+
+      &:active {
+        background: var(--newtab-element-active-color);
+      }
+
+      .historyIcon {
+        fill: var(--newtab-text-secondary-color);
+      }
+    }
+
+    & .contentSearchOneOffItem {
+      background-image: none;
+
+      /**
+       * We use a border-offset of 18% to make the border slightly shorter
+       */
+      border-image: linear-gradient(transparent 18%, var(--newtab-border-color) 18%, var(--newtab-border-color) 82%, transparent 82%) 1;
+      border-inline-end: 1px solid;
+      position: relative;
+
+      &.selected {
+        background: var(--newtab-element-hover-color);
+      }
+
+      &:active {
+        background: var(--newtab-element-active-color);
+      }
+    }
+
+    .contentSearchSettingsButton:hover {
+      background: var(--newtab-element-hover-color);
+      color: var(--text-color);
+    }
+  }
+
+  .contentSearchHeaderRow > td > img,
+  .contentSearchSuggestionRow > td > .historyIcon {
+    margin-inline-start: var(--space-small);
+    margin-inline-end: var(--space-large);
+  }
+
+  .search-button {
+    background: url("chrome://browser/skin/forward.svg") no-repeat center center;
+    background-size: 16px 16px;
+    border: 0;
+    border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
+    -moz-context-properties: fill;
+    fill: var(--newtab-text-secondary-color);
+    height: 100%;
+    inset-inline-end: 0;
+    position: absolute;
+    width: var(--size-item-xlarge);
+  }
+  .search-button:focus,
+  .search-button:hover {
+    background-color: var(--newtab-element-hover-color);
+    cursor: pointer;
+  }
+  .search-button:focus {
+    outline: 0;
+    box-shadow: 0 0 0 2px var(--newtab-primary-action-background-dimmed);
+    border: 1px solid var(--newtab-primary-action-background);
+    border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
+  }
+  .search-button:active {
+    background-color: var(--newtab-element-hover-color);
+  }
+}

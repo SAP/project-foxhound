@@ -8,10 +8,90 @@
 ---
 $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
-  - 'Core :: Machine Learning'
-
+  - "Core :: Machine Learning"
 
 firefox.ai.runtime:
+  session_start:
+    type: event
+    description: >
+      Marks the beginning of an ML inference session or workflow.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D270909
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - thasan@mozilla.com
+    expires: never
+    extra_keys:
+      flow_id: &flow_id
+        type: string
+        description: >
+          Unique identifier for this ML workflow session. Used to correlate all
+          events within this session across components.
+      feature_id:
+        type: string
+        description: >
+          The feature initiating this session
+      interaction:
+        type: string
+        description: >
+          The interaction type that initiated this session
+
+  session_end:
+    type: event
+    description: >
+      Marks the end of an ML inference session or workflow.
+      This event is recorded when the session completes successfully or is terminated.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D270909
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - thasan@mozilla.com
+    expires: never
+    extra_keys:
+      flow_id: *flow_id
+      feature_id:
+        type: string
+        description: >
+          The feature associated with this session.
+      duration:
+        type: quantity
+        description: >
+          Total session duration in milliseconds.
+      status:
+        type: string
+        description: >
+          Session completion status
+
+  engine_creation_success_flow:
+    type: event
+    description: >
+      Records a successful engine creation within a tracked flow
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D270909
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - thasan@mozilla.com
+    expires: never
+    extra_keys:
+      flow_id: *flow_id
+      engineId:
+        type: string
+        description: >
+          The Engine Id of the created inference engine
+      duration:
+        type: quantity
+        description: >
+          Engine creation time in milliseconds
+
   engine_creation_success:
     type: labeled_timing_distribution
     time_unit: millisecond
@@ -38,6 +118,7 @@ firefox.ai.runtime:
       - default-engine
       - smart-tab-embedding-engine
       - smart-tab-topic-engine
+      - smart-intent
 
   engine_creation_failure:
     type: event
@@ -45,14 +126,18 @@ firefox.ai.runtime:
       An inference engine has failed to create
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1891685
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
     data_reviews:
       - https://phabricator.services.mozilla.com/D238583
+      - https://phabricator.services.mozilla.com/D270909
     data_sensitivity:
       - interaction
     notification_emails:
       - tziade@mozilla.com
+      - tshasan@mozilla.com
     expires: never
     extra_keys:
+      flow_id: *flow_id
       modelId:
         type: string
         description: model id
@@ -75,14 +160,18 @@ firefox.ai.runtime:
       An inference run has failed
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1891685
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
     data_reviews:
       - https://phabricator.services.mozilla.com/D238583
+      - https://phabricator.services.mozilla.com/D270909
     data_sensitivity:
       - interaction
     notification_emails:
       - tziade@mozilla.com
+      - tshasan@mozilla.com
     expires: never
     extra_keys:
+      flow_id: *flow_id
       modelId:
         type: string
         description: model id
@@ -92,6 +181,57 @@ firefox.ai.runtime:
       engineId:
         description: Engine id
         type: string
+      error:
+        description: error class or message
+        type: string
+
+  run_inference_success_flow:
+    type: event
+    description: >
+      Records a successful inference run within a tracked flow
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D270909
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - thasan@mozilla.com
+    expires: never
+    extra_keys:
+      flow_id: *flow_id
+      tokenizing_time:
+        type: quantity
+        description: >
+          Time taken for tokenization (preprocessing) in milliseconds
+      inference_time:
+        type: quantity
+        description: >
+          Time taken for inference in milliseconds
+      decoding_time:
+        type: quantity
+        description: >
+          Time taken for decoding in milliseconds
+      input_tokens:
+        type: quantity
+        description: >
+          Number of tokens in the input prompt
+      output_tokens:
+        type: quantity
+        description: >
+          Number of tokens generated
+      time_to_first_token:
+        type: quantity
+        description: >
+          Time to first token in milliseconds (null if not applicable)
+      tokens_per_second:
+        type: quantity
+        description: >
+          Inference throughput in tokens per second (rounded integer)
+      time_per_output_token:
+        type: quantity
+        description: >
+          Average latency per output token in milliseconds (rounded integer)
 
   run_inference_success:
     type: labeled_timing_distribution
@@ -119,6 +259,7 @@ firefox.ai.runtime:
       - default-engine
       - smart-tab-embedding-engine
       - smart-tab-topic-engine
+      - smart-intent
 
   model_download:
     type: event
@@ -188,6 +329,65 @@ firefox.ai.runtime:
       error:
         description: error class
         type: string
+
+  engine_run:
+    type: event
+    description: >
+      The performance and memory characteristics of a single run of the inference engine.
+    extra_keys:
+      flow_id: *flow_id
+      cpu_milliseconds:
+        description: The combined milliseconds of every cpu core that was running.
+        type: quantity
+      wall_milliseconds:
+        description: The amount of wall time the run request took.
+        type: quantity
+      cores:
+        description: The number of cores on the machine.
+        type: quantity
+      cpu_utilization:
+        description: The percentage of the user's CPU used.
+        type: quantity
+      memory_bytes:
+        description: The number of RSS bytes for the inference process.
+        type: quantity
+      feature_id:
+        description: >
+          A unique id to describe the feature. e.g. pdfjs-alt-text, suggest-NER,
+          link-preview.
+        type: string
+      engine_id:
+        type: string
+        description: >
+          Similar to the feature id, but is used to ensure only one engine is created
+          under this name.
+      model_id:
+        type: string
+        description: >
+          The identifier for what model is being used by the engine,
+          e.g. Xenova/all-MiniLM-L6-v2
+      backend:
+        type: string
+        description: The backend that is being used, e.g. onnx, onnx-native, wllama
+      token_count:
+        description: The number of tokens generated for text generation tasks.
+        type: quantity
+      character_count:
+        description: The number of characters generated for text generation tasks.
+        type: quantity
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992779
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992779
+      - https://phabricator.services.mozilla.com/D270909
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - tziade@mozilla.com
+      - gtatum@mozilla.com
+      - thasan@mozilla.com
+    expires: never
 
 model_management:
   remove_initiated:

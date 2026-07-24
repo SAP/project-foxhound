@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_CryptoBuffer_h
 #define mozilla_dom_CryptoBuffer_h
 
-#include "nsTArray.h"
-#include "seccomon.h"
 #include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/dom/TypedArray.h"
+#include "nsTArray.h"
+#include "seccomon.h"
 
 namespace mozilla::dom {
 class CryptoBuffer : public FallibleTArray<uint8_t> {

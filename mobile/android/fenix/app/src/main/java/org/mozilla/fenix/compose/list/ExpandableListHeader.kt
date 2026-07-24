@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,10 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,6 +35,9 @@ import org.mozilla.fenix.theme.FirefoxTheme
  *
  * @param headerText The title of the header.
  * @param headerTextStyle The text style of the header.
+ * @param headerTextColor The [Color] of the [headerText].
+ * @param iconTint The [Color] of the expand/collapse icon.
+ * @param contentPadding The [PaddingValues] of the header.
  * @param expanded Indicates whether the section of content is expanded. If null, the Icon will be hidden.
  * @param expandActionContentDescription The content description for expanding the section.
  * @param collapseActionContentDescription The content description for collapsing the section.
@@ -42,6 +48,9 @@ import org.mozilla.fenix.theme.FirefoxTheme
 fun ExpandableListHeader(
     headerText: String,
     headerTextStyle: TextStyle = FirefoxTheme.typography.headline8,
+    headerTextColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     expanded: Boolean? = null,
     expandActionContentDescription: String? = null,
     collapseActionContentDescription: String? = null,
@@ -60,12 +69,12 @@ fun ExpandableListHeader(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(contentPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = headerText,
-                color = FirefoxTheme.colors.textPrimary,
+                color = headerTextColor,
                 style = headerTextStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -85,7 +94,7 @@ fun ExpandableListHeader(
                         expandActionContentDescription
                     },
                     modifier = Modifier.size(20.dp),
-                    tint = FirefoxTheme.colors.iconPrimary,
+                    tint = iconTint,
                 )
             }
         }
@@ -98,7 +107,7 @@ fun ExpandableListHeader(
 @Preview(uiMode = Configuration.UI_MODE_NIGHT_YES)
 private fun TextOnlyHeaderPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             ExpandableListHeader(headerText = "Section title")
         }
     }
@@ -108,7 +117,7 @@ private fun TextOnlyHeaderPreview() {
 @Preview(uiMode = Configuration.UI_MODE_NIGHT_YES)
 private fun CollapsibleHeaderPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             ExpandableListHeader(
                 headerText = "Collapsible section title",
                 expanded = true,
@@ -124,7 +133,7 @@ private fun CollapsibleHeaderPreview() {
 @Preview(uiMode = Configuration.UI_MODE_NIGHT_NO)
 private fun HeaderWithClickableIconPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             ExpandableListHeader(headerText = "Section title") {
                 Box(
                     modifier = Modifier
@@ -135,7 +144,7 @@ private fun HeaderWithClickableIconPreview() {
                         painter = painterResource(R.drawable.ic_delete),
                         contentDescription = "click me",
                         modifier = Modifier.size(20.dp),
-                        tint = FirefoxTheme.colors.iconPrimary,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -147,7 +156,7 @@ private fun HeaderWithClickableIconPreview() {
 @Preview(uiMode = Configuration.UI_MODE_NIGHT_NO)
 private fun CollapsibleHeaderWithClickableIconPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             ExpandableListHeader(
                 headerText = "Section title",
                 expanded = true,
@@ -161,7 +170,7 @@ private fun CollapsibleHeaderWithClickableIconPreview() {
                         painter = painterResource(R.drawable.ic_delete),
                         contentDescription = "click me",
                         modifier = Modifier.size(20.dp),
-                        tint = FirefoxTheme.colors.iconPrimary,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }

@@ -6,27 +6,26 @@
 
 #include "mozilla/dom/SVGUseElement.h"
 
-#include "mozilla/ArrayUtils.h"
+#include "SVGGeometryProperty.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUseFrame.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGSwitchElement.h"
 #include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIReferrerInfo.h"
 #include "nsIURI.h"
-#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -42,13 +41,13 @@ JSObject* SVGUseElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGUseElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGElement::StringInfo SVGUseElement::sStringInfo[2] = {
@@ -178,7 +177,8 @@ void SVGUseElement::UnbindFromTree(UnbindContext& aContext) {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGUseElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -213,7 +213,7 @@ void SVGUseElement::CharacterDataChanged(nsIContent* aContent,
 }
 
 void SVGUseElement::AttributeChanged(Element* aElement, int32_t aNamespaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   if (nsContentUtils::IsInSameAnonymousTree(mReferencedElementTracker.get(),
                                             aElement)) {
@@ -456,7 +456,7 @@ void SVGUseElement::UpdateShadowTree() {
     const bool isCrossDocument = targetElement->OwnerDoc() != OwnerDoc();
 
     nsNodeInfoManager* nodeInfoManager =
-        isCrossDocument ? OwnerDoc()->NodeInfoManager() : nullptr;
+        isCrossDocument ? NodeInfoManager() : nullptr;
 
     nsCOMPtr<nsINode> newNode =
         targetElement->Clone(true, nodeInfoManager, IgnoreErrors());
@@ -547,7 +547,7 @@ void SVGUseElement::SyncWidthOrHeight(nsAtom* aName) {
   // Our width/height attribute is now no longer explicitly set, so we
   // need to set the value to 100%
   SVGAnimatedLength length;
-  length.Init(SVGContentUtils::XY, 0xff, 100,
+  length.Init(SVGLength::Axis::XY, 0xff, 100,
               SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE);
   target->SetLength(aName, length);
 }
@@ -657,7 +657,8 @@ SVGUseElement::IsAttributeMapped(const nsAtom* name) const {
          SVGUseElementBase::IsAttributeMapped(name);
 }
 
-nsCSSPropertyID SVGUseElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
+NonCustomCSSPropertyId SVGUseElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:
       return eCSSProperty_x;

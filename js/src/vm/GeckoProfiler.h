@@ -20,8 +20,10 @@
 #include "js/AllocPolicy.h"
 #include "js/HashTable.h"
 #include "js/ProfilingCategory.h"
+#include "js/ProfilingSources.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
+#include "threading/ExclusiveData.h"
 #include "threading/ProtectedData.h"
 
 /*
@@ -112,6 +114,7 @@ namespace js {
 
 class BaseScript;
 class GeckoProfilerThread;
+class ScriptSource;
 
 // The `ProfileStringMap` weakly holds its `BaseScript*` keys and owns its
 // string values. Entries are removed when the `BaseScript` is finalized; see
@@ -119,14 +122,22 @@ class GeckoProfilerThread;
 using ProfileStringMap = HashMap<BaseScript*, JS::UniqueChars,
                                  DefaultHasher<BaseScript*>, SystemAllocPolicy>;
 
+using ProfilerScriptSourceSet =
+    HashSet<RefPtr<ScriptSource>, PointerHasher<ScriptSource*>,
+            SystemAllocPolicy>;
+
 class GeckoProfilerRuntime {
   JSRuntime* rt;
   MainThreadData<ProfileStringMap> strings_;
+  RWExclusiveData<ProfilerScriptSourceSet> scriptSources_;
   bool slowAssertions;
   uint32_t enabled_;
   void (*eventMarker_)(mozilla::MarkerCategory, const char*, const char*);
   void (*intervalMarker_)(mozilla::MarkerCategory, const char*,
                           mozilla::TimeStamp, const char*);
+  void (*flowMarker_)(mozilla::MarkerCategory, const char*, uint64_t);
+  void (*terminatingFlowMarker_)(mozilla::MarkerCategory, const char*,
+                                 uint64_t);
 
  public:
   explicit GeckoProfilerRuntime(JSRuntime* rt);
@@ -141,6 +152,10 @@ class GeckoProfilerRuntime {
                                  const char*));
   void setIntervalMarker(void (*fn)(mozilla::MarkerCategory, const char*,
                                     mozilla::TimeStamp, const char*));
+  void setFlowMarker(void (*fn)(mozilla::MarkerCategory, const char*,
+                                uint64_t));
+  void setTerminatingFlowMarker(void (*fn)(mozilla::MarkerCategory, const char*,
+                                           uint64_t));
 
   static JS::UniqueChars allocProfileString(JSContext* cx, BaseScript* script);
   const char* profileString(JSContext* cx, BaseScript* script);
@@ -155,11 +170,36 @@ class GeckoProfilerRuntime {
       const char* event, mozilla::TimeStamp start, const char* details,
       JS::ProfilingCategoryPair jsPair = JS::ProfilingCategoryPair::JS);
 
+  // Note that flowId will be added as a process-scoped id for both
+  // markFlow and markTerminatingFlow.
+  //
+  // See baseprofiler/public/Flow.h
+  void markFlow(
+      const char* markerName, uint64_t flowId,
+      JS::ProfilingCategoryPair jsPair = JS::ProfilingCategoryPair::JS);
+  void markTerminatingFlow(
+      const char* markerName, uint64_t flowId,
+      JS::ProfilingCategoryPair jsPair = JS::ProfilingCategoryPair::JS);
+
   ProfileStringMap& strings() { return strings_.ref(); }
 
   /* meant to be used for testing, not recommended to call in normal code */
   size_t stringsCount();
   void stringsReset();
+
+  bool insertScriptSource(ScriptSource* scriptSource) {
+    MOZ_ASSERT(scriptSource);
+    auto guard = scriptSources_.writeLock();
+    if (!enabled_) {
+      return true;
+    }
+
+    return guard->put(scriptSource);
+  }
+
+  js::ProfilerJSSources getProfilerScriptSources();
+
+  size_t scriptSourcesCount() { return scriptSources_.readLock()->count(); }
 
   const uint32_t* addressOfEnabled() const { return &enabled_; }
 

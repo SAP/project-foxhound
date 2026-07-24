@@ -3,29 +3,29 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MoofParser.h"
-#include "Box.h"
-#include "SinfParser.h"
-#include <limits>
-#include "MP4Interval.h"
 
+#include <limits>
+
+#include "Box.h"
+#include "MP4Interval.h"
+#include "MediaDataDemuxer.h"
+#include "SinfParser.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/HelperMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Try.h"
 
-extern mozilla::LogModule* GetDemuxerLog();
-
-#define LOG_ERROR(name, arg, ...)                \
-  MOZ_LOG(                                       \
-      GetDemuxerLog(), mozilla::LogLevel::Error, \
+#define LOG_ERROR(name, arg, ...)                 \
+  MOZ_LOG(                                        \
+      gMediaDemuxerLog, mozilla::LogLevel::Error, \
       (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define LOG_WARN(name, arg, ...)                   \
-  MOZ_LOG(                                         \
-      GetDemuxerLog(), mozilla::LogLevel::Warning, \
+#define LOG_WARN(name, arg, ...)                    \
+  MOZ_LOG(                                          \
+      gMediaDemuxerLog, mozilla::LogLevel::Warning, \
       (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define LOG_DEBUG(name, arg, ...)                \
-  MOZ_LOG(                                       \
-      GetDemuxerLog(), mozilla::LogLevel::Debug, \
+#define LOG_DEBUG(name, arg, ...)                 \
+  MOZ_LOG(                                        \
+      gMediaDemuxerLog, mozilla::LogLevel::Debug, \
       (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
@@ -63,23 +63,17 @@ bool MoofParser::RebuildFragmentedIndex(BoxContext& aContext) {
                                            : mTrackParseMode.as<uint32_t>());
   bool foundValidMoof = false;
 
-  for (Box box(&aContext, mOffset); box.IsAvailable(); box = box.Next()) {
+  for (Box box(&aContext, mOffset); box.IsAvailable();
+       mOffset = box.NextOffset(), box = box.Next()) {
     if (box.IsType("moov") && mInitRange.IsEmpty()) {
       mInitRange = MediaByteRange(0, box.Range().mEnd);
       ParseMoov(box);
     } else if (box.IsType("moof")) {
       Moof moof(box, mTrackParseMode, mTrex, mMvhd, mMdhd, mEdts, mSinf,
-                &mLastDecodeTime, mIsAudio, mTracksEndCts);
+                mIsAudio, &mLastDecodeTime, mTracksEndCts);
 
       if (!moof.IsValid()) {
-        if (!box.Next().IsAvailable()) {
-          // Abort search for now, without advancing mOffset so that parsing
-          // can be attempted again when more of the resource is available.
-          LOG_WARN(Moof, "Invalid moof. moof may not be complete yet.");
-          break;
-        }
-        // moof is complete but invalid.  Skip to next box.
-        continue;
+        continue;  // Skip to next box.
       }
 
       if (!mMoofs.IsEmpty()) {
@@ -102,7 +96,6 @@ bool MoofParser::RebuildFragmentedIndex(BoxContext& aContext) {
             mMediaRanges.LastElement().Span(box.Range());
       }
     }
-    mOffset = box.NextOffset();
   }
   MOZ_ASSERT(mTrackParseMode.is<ParseAllTracks>() ||
                  mTrex.mTrackId == mTrackParseMode.as<uint32_t>(),
@@ -129,6 +122,15 @@ MediaByteRange MoofParser::FirstCompleteMediaSegment() {
   return MediaByteRange();
 }
 
+const CencSampleEncryptionInfoEntry* MoofParser::GetSampleEncryptionEntry(
+    size_t aMoof, size_t aSample) const {
+  if (aMoof >= mMoofs.Length()) {
+    return nullptr;
+  }
+  return mMoofs[aMoof].GetSampleEncryptionEntry(
+      aSample, &mTrackSampleToGroupEntries, &mTrackSampleEncryptionInfoEntries);
+}
+
 DDLoggedTypeDeclNameAndBase(BlockingStream, ByteStream);
 
 class BlockingStream : public ByteStream,
@@ -138,13 +140,13 @@ class BlockingStream : public ByteStream,
     DDLINKCHILD("stream", aStream);
   }
 
-  bool ReadAt(int64_t offset, void* data, size_t size,
-              size_t* bytes_read) override {
+  nsresult ReadAt(int64_t offset, void* data, size_t size,
+                  size_t* bytes_read) override {
     return mStream->ReadAt(offset, data, size, bytes_read);
   }
 
-  bool CachedReadAt(int64_t offset, void* data, size_t size,
-                    size_t* bytes_read) override {
+  nsresult CachedReadAt(int64_t offset, void* data, size_t size,
+                        size_t* bytes_read) override {
     return mStream->ReadAt(offset, data, size, bytes_read);
   }
 
@@ -154,7 +156,7 @@ class BlockingStream : public ByteStream,
   RefPtr<ByteStream> mStream;
 };
 
-bool MoofParser::BlockingReadNextMoof() {
+nsresult MoofParser::BlockingReadNextMoof() {
   LOG_DEBUG(Moof, "Starting.");
   int64_t length = std::numeric_limits<int64_t>::max();
   mSource->Length(&length);
@@ -162,19 +164,23 @@ bool MoofParser::BlockingReadNextMoof() {
   MediaByteRangeSet byteRanges(MediaByteRange(0, length));
 
   BoxContext context(stream, byteRanges);
-  for (Box box(&context, mOffset); box.IsAvailable(); box = box.Next()) {
+  Box box(&context, mOffset);
+  for (; box.IsAvailable(); box = box.Next()) {
     if (box.IsType("moof")) {
       MediaByteRangeSet parseByteRanges(
           MediaByteRange(mOffset, box.Range().mEnd));
       BoxContext parseContext(stream, parseByteRanges);
       if (RebuildFragmentedIndex(parseContext)) {
-        LOG_DEBUG(Moof, "Succeeded on RebuildFragmentedIndex, returning true.");
-        return true;
+        LOG_DEBUG(Moof, "Succeeded on RebuildFragmentedIndex, returning NS_OK");
+        return NS_OK;
       }
     }
   }
-  LOG_DEBUG(Moof, "Couldn't read next moof, returning false.");
-  return false;
+  nsresult rv = box.Offset() == length ? NS_ERROR_DOM_MEDIA_END_OF_STREAM
+                                       : box.InitStatus();
+  LOG_DEBUG(Moof, "Couldn't read next moof, returning %s",
+            GetStaticErrorName(rv));
+  return rv;
 }
 
 void MoofParser::ScanForMetadata(mozilla::MediaByteRange& aMoov) {
@@ -218,9 +224,9 @@ already_AddRefed<mozilla::MediaByteBuffer> MoofParser::Metadata() {
 
   RefPtr<BlockingStream> stream = new BlockingStream(mSource);
   size_t read;
-  bool rv = stream->ReadAt(moov.mStart, metadata->Elements(),
-                           moovLength.value(), &read);
-  if (!rv || read != moovLength.value()) {
+  nsresult rv = stream->ReadAt(moov.mStart, metadata->Elements(),
+                               moovLength.value(), &read);
+  if (NS_FAILED(rv) || read != moovLength.value()) {
     LOG_WARN(Moof, "Failed to read moov while trying to parse Metadata.");
     return nullptr;
   }
@@ -253,7 +259,7 @@ bool MoofParser::ReachedEnd() {
   return mSource->Length(&length) && mOffset == length;
 }
 
-void MoofParser::ParseMoov(Box& aBox) {
+void MoofParser::ParseMoov(const Box& aBox) {
   LOG_DEBUG(Moof, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("mvhd")) {
@@ -267,7 +273,7 @@ void MoofParser::ParseMoov(Box& aBox) {
   LOG_DEBUG(Moof, "Done.");
 }
 
-void MoofParser::ParseTrak(Box& aBox) {
+void MoofParser::ParseTrak(const Box& aBox) {
   LOG_DEBUG(Trak, "Starting.");
   Tkhd tkhd;
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
@@ -287,7 +293,7 @@ void MoofParser::ParseTrak(Box& aBox) {
   LOG_DEBUG(Trak, "Done.");
 }
 
-void MoofParser::ParseMdia(Box& aBox) {
+void MoofParser::ParseMdia(const Box& aBox) {
   LOG_DEBUG(Mdia, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("mdhd")) {
@@ -299,7 +305,7 @@ void MoofParser::ParseMdia(Box& aBox) {
   LOG_DEBUG(Mdia, "Done.");
 }
 
-void MoofParser::ParseMvex(Box& aBox) {
+void MoofParser::ParseMvex(const Box& aBox) {
   LOG_DEBUG(Mvex, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("trex")) {
@@ -313,7 +319,7 @@ void MoofParser::ParseMvex(Box& aBox) {
   LOG_DEBUG(Mvex, "Done.");
 }
 
-void MoofParser::ParseMinf(Box& aBox) {
+void MoofParser::ParseMinf(const Box& aBox) {
   LOG_DEBUG(Minf, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("stbl")) {
@@ -323,7 +329,7 @@ void MoofParser::ParseMinf(Box& aBox) {
   LOG_DEBUG(Minf, "Done.");
 }
 
-void MoofParser::ParseStbl(Box& aBox) {
+void MoofParser::ParseStbl(const Box& aBox) {
   LOG_DEBUG(Stbl, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("stsd")) {
@@ -353,7 +359,7 @@ void MoofParser::ParseStbl(Box& aBox) {
   LOG_DEBUG(Stbl, "Done.");
 }
 
-void MoofParser::ParseStsd(Box& aBox) {
+void MoofParser::ParseStsd(const Box& aBox) {
   LOG_DEBUG(Stsd, "Starting.");
   if (mTrackParseMode.is<ParseAllTracks>()) {
     // It is not a sane operation to try and map sample description boxes from
@@ -396,7 +402,7 @@ void MoofParser::ParseStsd(Box& aBox) {
             numberEncryptedEntries, mSampleDescriptions.Length());
 }
 
-void MoofParser::ParseEncrypted(Box& aBox) {
+void MoofParser::ParseEncrypted(const Box& aBox) {
   LOG_DEBUG(Moof, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     // Some MP4 files have been found to have multiple sinf boxes in the same
@@ -423,10 +429,10 @@ class CtsComparator {
   }
 };
 
-Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
-           Mvhd& aMvhd, Mdhd& aMdhd, Edts& aEdts, Sinf& aSinf,
-           uint64_t* aDecodeTime, bool aIsAudio,
-           nsTArray<TrackEndCts>& aTracksEndCts)
+Moof::Moof(const Box& aBox, const TrackParseMode& aTrackParseMode,
+           const Trex& aTrex, const Mvhd& aMvhd, const Mdhd& aMdhd,
+           const Edts& aEdts, const Sinf& aSinf, const bool aIsAudio,
+           uint64_t* aDecodeTime, nsTArray<TrackEndCts>& aTracksEndCts)
     : mRange(aBox.Range()),
       mTfhd(aTrex),
       // Do not reporting discontuities less than 35ms
@@ -446,7 +452,7 @@ Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("traf")) {
       ParseTraf(box, aTrackParseMode, aTrex, aMvhd, aMdhd, aEdts, aSinf,
-                aDecodeTime, aIsAudio);
+                aIsAudio, aDecodeTime);
     }
     if (box.IsType("pssh")) {
       psshBoxes.AppendElement(box);
@@ -457,7 +463,7 @@ Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
   // file are dispatched to the media element in a single "encrypted" event.
   // So append contiguous boxes here.
   for (size_t i = 0; i < psshBoxes.Length(); ++i) {
-    Box box = psshBoxes[i];
+    const Box& box = psshBoxes[i];
     if (i == 0 || box.Offset() != psshBoxes[i - 1].NextOffset()) {
       mPsshes.AppendElement();
     }
@@ -523,7 +529,7 @@ Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
           ctsOrder.LastElement()->mCompositionRange.end -
           ctsOrder[0]->mCompositionRange.start;
       auto decodeOffset =
-          aMdhd.ToTimeUnit((int64_t)*aDecodeTime - aEdts.mMediaStart);
+          aMdhd.ToTimeUnit(CheckedInt64(*aDecodeTime) - aEdts.mMediaStart);
       auto offsetOffset = aMvhd.ToTimeUnit(aEdts.mEmptyOffset);
       TimeUnit endDecodeTime =
           (decodeOffset.isOk() && offsetOffset.isOk())
@@ -551,7 +557,11 @@ Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
           MP4Interval<TimeUnit>(ctsOrder[0]->mCompositionRange.start,
                                 ctsOrder.LastElement()->mCompositionRange.end);
     }
-    ProcessCencAuxInfo(aSinf.mDefaultEncryptionType);
+    // No need to retrieve auxiliary encryption data if we have a senc box: we
+    // won't use it in SampleIterator::GetNext()
+    if (!mSencValid) {
+      ProcessCencAuxInfo(aSinf.mDefaultEncryptionType);
+    }
   }
   LOG_DEBUG(Moof, "Done.");
 }
@@ -590,7 +600,7 @@ bool Moof::GetAuxInfo(AtomType aType,
       LOG_ERROR(Moof, "OOM");
       return false;
     }
-    uint64_t offset = mRange.mStart + saio->mOffsets[0];
+    uint64_t offset = mTfhd.mBaseDataOffset + saio->mOffsets[0];
     for (size_t i = 0; i < saiz->mSampleInfoSize.Length(); i++) {
       if (!aByteRanges->AppendElement(
               MediaByteRange(offset, offset + saiz->mSampleInfoSize[i]),
@@ -648,9 +658,77 @@ bool Moof::ProcessCencAuxInfo(AtomType aScheme) {
   return true;
 }
 
-void Moof::ParseTraf(Box& aBox, const TrackParseMode& aTrackParseMode,
-                     Trex& aTrex, Mvhd& aMvhd, Mdhd& aMdhd, Edts& aEdts,
-                     Sinf& aSinf, uint64_t* aDecodeTime, bool aIsAudio) {
+const CencSampleEncryptionInfoEntry* Moof::GetSampleEncryptionEntry(
+    size_t aSample,
+    const FallibleTArray<SampleToGroupEntry>* aTrackSampleToGroupEntries,
+    const FallibleTArray<CencSampleEncryptionInfoEntry>*
+        aTrackSampleEncryptionInfoEntries) const {
+  const SampleToGroupEntry* sampleToGroupEntry = nullptr;
+
+  // Default to using the sample to group entries for the fragment, otherwise
+  // fall back to the sample to group entries for the track.
+  const FallibleTArray<SampleToGroupEntry>* sampleToGroupEntries =
+      mFragmentSampleToGroupEntries.Length() != 0
+          ? &mFragmentSampleToGroupEntries
+          : aTrackSampleToGroupEntries;
+
+  if (!sampleToGroupEntries) {
+    return nullptr;
+  }
+
+  uint32_t seen = 0;
+
+  for (const SampleToGroupEntry& entry : *sampleToGroupEntries) {
+    if (seen + entry.mSampleCount > aSample) {
+      sampleToGroupEntry = &entry;
+      break;
+    }
+    seen += entry.mSampleCount;
+  }
+
+  // ISO-14496-12 Section 8.9.2.3 and 8.9.4 : group description index
+  // (1) ranges from 1 to the number of sample group entries in the track
+  // level SampleGroupDescription Box, or (2) takes the value 0 to
+  // indicate that this sample is a member of no group, in this case, the
+  // sample is associated with the default values specified in
+  // TrackEncryption Box, or (3) starts at 0x10001, i.e. the index value
+  // 1, with the value 1 in the top 16 bits, to reference fragment-local
+  // SampleGroupDescription Box.
+
+  // According to the spec, ISO-14496-12, the sum of the sample counts in this
+  // box should be equal to the total number of samples, and, if less, the
+  // reader should behave as if an extra SampleToGroupEntry existed, with
+  // groupDescriptionIndex 0.
+
+  if (!sampleToGroupEntry || sampleToGroupEntry->mGroupDescriptionIndex == 0) {
+    return nullptr;
+  }
+
+  const FallibleTArray<CencSampleEncryptionInfoEntry>* entries =
+      aTrackSampleEncryptionInfoEntries;
+
+  uint32_t groupIndex = sampleToGroupEntry->mGroupDescriptionIndex;
+
+  // If the first bit is set to a one, then we should use the sample group
+  // descriptions from the fragment.
+  if (groupIndex > SampleToGroupEntry::kFragmentGroupDescriptionIndexBase) {
+    groupIndex -= SampleToGroupEntry::kFragmentGroupDescriptionIndexBase;
+    entries = &mFragmentSampleEncryptionInfoEntries;
+  }
+
+  if (!entries) {
+    return nullptr;
+  }
+
+  // The group_index is one based.
+  return groupIndex > entries->Length() ? nullptr
+                                        : &entries->ElementAt(groupIndex - 1);
+}
+
+void Moof::ParseTraf(const Box& aBox, const TrackParseMode& aTrackParseMode,
+                     const Trex& aTrex, const Mvhd& aMvhd, const Mdhd& aMdhd,
+                     const Edts& aEdts, const Sinf& aSinf, const bool aIsAudio,
+                     uint64_t* aDecodeTime) {
   LOG_DEBUG(
       Traf,
       "Starting, aTrackParseMode=%s, track#=%" PRIu32
@@ -715,20 +793,36 @@ void Moof::ParseTraf(Box& aBox, const TrackParseMode& aTrackParseMode,
               mTfhd.mTrackId);
     return;
   }
-  // Now search for TRUN boxes.
+  // Second pass: search for trun boxes and senc boxes.
   uint64_t decodeTime =
       tfdt.IsValid() ? tfdt.mBaseMediaDecodeTime : *aDecodeTime;
+  Box sencBox;
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("trun")) {
-      if (ParseTrun(box, aMvhd, aMdhd, aEdts, &decodeTime, aIsAudio).isOk()) {
+      if (ParseTrun(box, aMvhd, aMdhd, aEdts, aIsAudio, &decodeTime).isOk()) {
         mValid = true;
       } else {
         LOG_WARN(Moof, "ParseTrun failed");
         mValid = false;
         return;
       }
+    } else if (box.IsType("senc")) {
+      LOG_DEBUG(Moof, "Found senc box");
+      sencBox = box;
     }
   }
+
+  // senc box found: parse it.
+  // We need to parse senc boxes in another pass because we need potential sgpd
+  // and sbgp boxes to have been parsed, as they might override the IV size and
+  // as such the size of senc entries.
+  // trun box shall have been parsed as well, so mIndex has been filled.
+  if (sencBox.IsAvailable()) {
+    if (ParseSenc(sencBox, aSinf).isErr()) [[unlikely]] {
+      LOG_WARN(Moof, "ParseSenc failed");
+    }
+  }
+
   *aDecodeTime = decodeTime;
   LOG_DEBUG(Traf, "Done, setting aDecodeTime=%." PRIu64 ".", decodeTime);
 }
@@ -740,9 +834,86 @@ void Moof::FixRounding(const Moof& aMoof) {
   }
 }
 
-Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
-                                     Edts& aEdts, uint64_t* aDecodeTime,
-                                     bool aIsAudio) {
+Result<Ok, nsresult> Moof::ParseSenc(const Box& aBox, const Sinf& aSinf) {
+  // If we already had a senc box, ignore following ones
+  // Not sure how likely this could be in real life
+  if (mSencValid) [[unlikely]] {
+    LOG_WARN(Moof, "Already found a valid senc box, ignoring new one");
+    return Ok();
+  }
+
+  BoxReader reader(aBox);
+  const uint8_t version = MOZ_TRY(reader->ReadU8());
+  const uint32_t flags = MOZ_TRY(reader->ReadU24());
+  const uint32_t sampleCount = MOZ_TRY(reader->ReadU32());
+  // ISO/IEC 23001-7 §7.2:
+  // "sample_count is the number of protected samples in the containing track or
+  // track fragment. This value SHALL be either zero (0) or the total number of
+  // samples in the track or track fragment."
+  if (sampleCount == 0) {
+    LOG_DEBUG(Moof, "senc box has 0 sample_count");
+    // Though having sample_count = 0 seems to be compliant, return without
+    // error but don't set mSencValid to true in case there is another senc box
+    // or saio/saiz auxiliary data
+    return Ok();
+  }
+  if (sampleCount != mIndex.Length()) {
+    LOG_ERROR(Moof, "Invalid sample count in senc box: expecting %zu, got %d\n",
+              mIndex.Length(), sampleCount);
+    return Err(NS_ERROR_FAILURE);
+  }
+
+  if (version == 0) {
+    for (size_t i = 0; i < sampleCount; ++i) {
+      Sample& sample = mIndex[i];
+      const CencSampleEncryptionInfoEntry* sampleInfo =
+          GetSampleEncryptionEntry(i);
+      uint8_t ivSize = sampleInfo ? sampleInfo->mIVSize : aSinf.mDefaultIVSize;
+      if (!reader->ReadArray(sample.mIV, ivSize)) {
+        return Err(MediaResult::Logged(
+            NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+            RESULT_DETAIL("sample InitializationVector error"),
+            gMediaDemuxerLog));
+      }
+      // Clear arrays, to be safe, in the (unlikely and invalid) case we started
+      // to parse a previous senc box but it failed halfway.
+      sample.mPlainSizes.Clear();
+      sample.mEncryptedSizes.Clear();
+      const bool useSubSampleEncryption = flags & 0x02;
+      if (useSubSampleEncryption) {
+        uint16_t subsampleCount = MOZ_TRY(reader->ReadU16());
+        for (uint16_t i = 0; i < subsampleCount; ++i) {
+          uint16_t bytesOfClearData = MOZ_TRY(reader->ReadU16());
+          uint32_t bytesOfProtectedData = MOZ_TRY(reader->ReadU32());
+          sample.mPlainSizes.AppendElement(bytesOfClearData);
+          sample.mEncryptedSizes.AppendElement(bytesOfProtectedData);
+        }
+      } else {
+        // No UseSubSampleEncryption flag means the entire sample is encrypted.
+        sample.mPlainSizes.AppendElement(0);
+        sample.mEncryptedSizes.AppendElement(sample.mByteRange.Length());
+      }
+    }
+  } else if (version == 1) {
+    // TODO
+    LOG_ERROR(Senc, "version %d not supported yet", version);
+    return Err(NS_ERROR_FAILURE);
+  } else if (version == 2) {
+    // TODO
+    LOG_ERROR(Senc, "version %d not supported yet", version);
+    return Err(NS_ERROR_FAILURE);
+  } else {
+    LOG_ERROR(Senc, "Unknown version %d", version);
+    return Err(NS_ERROR_FAILURE);
+  }
+  mSencValid = true;
+  return Ok();
+}
+
+Result<Ok, nsresult> Moof::ParseTrun(const Box& aBox, const Mvhd& aMvhd,
+                                     const Mdhd& aMdhd, const Edts& aEdts,
+                                     const bool aIsAudio,
+                                     uint64_t* aDecodeTime) {
   LOG_DEBUG(Trun, "Starting.");
   if (!mTfhd.IsValid() || !aMvhd.IsValid() || !aMdhd.IsValid() ||
       !aEdts.IsValid()) {
@@ -757,15 +928,13 @@ Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
     LOG_WARN(Moof, "Incomplete Box (missing flags)");
     return Err(NS_ERROR_FAILURE);
   }
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
 
   if (!reader->CanReadType<uint32_t>()) {
     LOG_WARN(Moof, "Incomplete Box (missing sampleCount)");
     return Err(NS_ERROR_FAILURE);
   }
-  uint32_t sampleCount;
-  MOZ_TRY_VAR(sampleCount, reader->ReadU32());
+  uint32_t sampleCount = MOZ_TRY(reader->ReadU32());
   if (sampleCount == 0) {
     LOG_DEBUG(Trun, "Trun with no samples, returning.");
     return Ok();
@@ -773,16 +942,20 @@ Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
 
   uint64_t offset = mTfhd.mBaseDataOffset;
   if (flags & 0x01) {
-    uint32_t tmp;
-    MOZ_TRY_VAR(tmp, reader->ReadU32());
-    offset += tmp;
+    offset += MOZ_TRY(reader->ReadU32());
   }
   uint32_t firstSampleFlags = mTfhd.mDefaultSampleFlags;
   if (flags & 0x04) {
-    MOZ_TRY_VAR(firstSampleFlags, reader->ReadU32());
+    firstSampleFlags = MOZ_TRY(reader->ReadU32());
   }
-  nsTArray<MP4Interval<TimeUnit>> timeRanges;
-  uint64_t decodeTime = *aDecodeTime;
+
+  // Bug 2004835: use CheckedInt to make sure we don't overflow.
+  // According to the spec, MP4 times shall be unsigned 64 bits integer,
+  // but we need signed integers here for the computation. So we aren't
+  // 100% compliant but we don't expect such big values anyway: we just
+  // need to handle potential high/invalid values correctly and not
+  // overflow in this case
+  CheckedInt64 decodeTime = *aDecodeTime;
 
   if (!mIndex.SetCapacity(mIndex.Length() + sampleCount, fallible)) {
     LOG_ERROR(Moof, "Out of Memory");
@@ -792,19 +965,19 @@ Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
   for (size_t i = 0; i < sampleCount; i++) {
     uint32_t sampleDuration = mTfhd.mDefaultSampleDuration;
     if (flags & 0x100) {
-      MOZ_TRY_VAR(sampleDuration, reader->ReadU32());
+      sampleDuration = MOZ_TRY(reader->ReadU32());
     }
     uint32_t sampleSize = mTfhd.mDefaultSampleSize;
     if (flags & 0x200) {
-      MOZ_TRY_VAR(sampleSize, reader->ReadU32());
+      sampleSize = MOZ_TRY(reader->ReadU32());
     }
     uint32_t sampleFlags = i ? mTfhd.mDefaultSampleFlags : firstSampleFlags;
     if (flags & 0x400) {
-      MOZ_TRY_VAR(sampleFlags, reader->ReadU32());
+      sampleFlags = MOZ_TRY(reader->ReadU32());
     }
     int32_t ctsOffset = 0;
     if (flags & 0x800) {
-      MOZ_TRY_VAR(ctsOffset, reader->Read32());
+      ctsOffset = MOZ_TRY(reader->Read32());
     }
 
     if (sampleSize) {
@@ -812,15 +985,14 @@ Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
       sample.mByteRange = MediaByteRange(offset, offset + sampleSize);
       offset += sampleSize;
 
-      TimeUnit decodeOffset, emptyOffset, startCts, endCts;
-      MOZ_TRY_VAR(decodeOffset,
-                  aMdhd.ToTimeUnit((int64_t)decodeTime - aEdts.mMediaStart));
-      MOZ_TRY_VAR(emptyOffset, aMvhd.ToTimeUnit(aEdts.mEmptyOffset));
+      TimeUnit decodeOffset =
+          MOZ_TRY(aMdhd.ToTimeUnit(decodeTime - aEdts.mMediaStart));
+      TimeUnit emptyOffset = MOZ_TRY(aMvhd.ToTimeUnit(aEdts.mEmptyOffset));
       sample.mDecodeTime = decodeOffset + emptyOffset;
-      MOZ_TRY_VAR(startCts, aMdhd.ToTimeUnit((int64_t)decodeTime + ctsOffset -
-                                             aEdts.mMediaStart));
-      MOZ_TRY_VAR(endCts, aMdhd.ToTimeUnit((int64_t)decodeTime + ctsOffset +
-                                           sampleDuration - aEdts.mMediaStart));
+      TimeUnit startCts =
+          MOZ_TRY(aMdhd.ToTimeUnit(decodeTime + ctsOffset - aEdts.mMediaStart));
+      TimeUnit endCts = MOZ_TRY(aMdhd.ToTimeUnit(
+          decodeTime + ctsOffset + sampleDuration - aEdts.mMediaStart));
       sample.mCompositionRange =
           MP4Interval<TimeUnit>(startCts + emptyOffset, endCts + emptyOffset);
       // Sometimes audio streams don't properly mark their samples as keyframes,
@@ -833,56 +1005,53 @@ Result<Ok, nsresult> Moof::ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
     }
     decodeTime += sampleDuration;
   }
-  TimeUnit roundTime;
-  MOZ_TRY_VAR(roundTime, aMdhd.ToTimeUnit(sampleCount));
+  TimeUnit roundTime = MOZ_TRY(aMdhd.ToTimeUnit(sampleCount));
   mMaxRoundingError = roundTime + mMaxRoundingError;
 
-  *aDecodeTime = decodeTime;
+  if (!decodeTime.isValid()) {
+    LOG_WARN(Moof, "Decode time overflow in ParseTrun");
+    return Err(NS_ERROR_FAILURE);
+  }
+  *aDecodeTime = decodeTime.value();
 
   LOG_DEBUG(Trun, "Done.");
   return Ok();
 }
 
-Tkhd::Tkhd(Box& aBox) : mTrackId(0) {
+Tkhd::Tkhd(const Box& aBox) : mTrackId(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Tkhd, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Tkhd::Parse(Box& aBox) {
+Result<Ok, nsresult> Tkhd::Parse(const Box& aBox) {
   BoxReader reader(aBox);
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   uint8_t version = flags >> 24;
   if (version == 0) {
-    uint32_t creationTime, modificationTime, reserved, duration;
-    MOZ_TRY_VAR(creationTime, reader->ReadU32());
-    MOZ_TRY_VAR(modificationTime, reader->ReadU32());
-    MOZ_TRY_VAR(mTrackId, reader->ReadU32());
-    MOZ_TRY_VAR(reserved, reader->ReadU32());
-    MOZ_TRY_VAR(duration, reader->ReadU32());
-
-    (void)reserved;
+    uint32_t creationTime = MOZ_TRY(reader->ReadU32());
+    uint32_t modificationTime = MOZ_TRY(reader->ReadU32());
+    mTrackId = MOZ_TRY(reader->ReadU32());
+    [[maybe_unused]] uint32_t reserved = MOZ_TRY(reader->ReadU32());
+    uint32_t duration = MOZ_TRY(reader->ReadU32());
     NS_ASSERTION(!reserved, "reserved should be 0");
 
     mCreationTime = creationTime;
     mModificationTime = modificationTime;
     mDuration = duration;
   } else if (version == 1) {
-    uint32_t reserved;
-    MOZ_TRY_VAR(mCreationTime, reader->ReadU64());
-    MOZ_TRY_VAR(mModificationTime, reader->ReadU64());
-    MOZ_TRY_VAR(mTrackId, reader->ReadU32());
-    MOZ_TRY_VAR(reserved, reader->ReadU32());
-    (void)reserved;
+    mCreationTime = MOZ_TRY(reader->ReadU64());
+    mModificationTime = MOZ_TRY(reader->ReadU64());
+    mTrackId = MOZ_TRY(reader->ReadU32());
+    [[maybe_unused]] uint32_t reserved = MOZ_TRY(reader->ReadU32());
     NS_ASSERTION(!reserved, "reserved should be 0");
-    MOZ_TRY_VAR(mDuration, reader->ReadU64());
+    mDuration = MOZ_TRY(reader->ReadU64());
   }
   return Ok();
 }
 
-Mvhd::Mvhd(Box& aBox)
+Mvhd::Mvhd(const Box& aBox)
     : mCreationTime(0), mModificationTime(0), mTimescale(0), mDuration(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
@@ -890,36 +1059,34 @@ Mvhd::Mvhd(Box& aBox)
   }
 }
 
-Result<Ok, nsresult> Mvhd::Parse(Box& aBox) {
+Result<Ok, nsresult> Mvhd::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   uint8_t version = flags >> 24;
 
   if (version == 0) {
-    uint32_t creationTime, modificationTime, duration;
-    MOZ_TRY_VAR(creationTime, reader->ReadU32());
-    MOZ_TRY_VAR(modificationTime, reader->ReadU32());
-    MOZ_TRY_VAR(mTimescale, reader->ReadU32());
-    MOZ_TRY_VAR(duration, reader->ReadU32());
+    uint32_t creationTime = MOZ_TRY(reader->ReadU32());
+    uint32_t modificationTime = MOZ_TRY(reader->ReadU32());
+    mTimescale = MOZ_TRY(reader->ReadU32());
+    uint32_t duration = MOZ_TRY(reader->ReadU32());
     mCreationTime = creationTime;
     mModificationTime = modificationTime;
     mDuration = duration;
   } else if (version == 1) {
-    MOZ_TRY_VAR(mCreationTime, reader->ReadU64());
-    MOZ_TRY_VAR(mModificationTime, reader->ReadU64());
-    MOZ_TRY_VAR(mTimescale, reader->ReadU32());
-    MOZ_TRY_VAR(mDuration, reader->ReadU64());
+    mCreationTime = MOZ_TRY(reader->ReadU64());
+    mModificationTime = MOZ_TRY(reader->ReadU64());
+    mTimescale = MOZ_TRY(reader->ReadU32());
+    mDuration = MOZ_TRY(reader->ReadU64());
   } else {
     return Err(NS_ERROR_FAILURE);
   }
   return Ok();
 }
 
-Mdhd::Mdhd(Box& aBox) : Mvhd(aBox) {}
+Mdhd::Mdhd(const Box& aBox) : Mvhd(aBox) {}
 
-Trex::Trex(Box& aBox)
+Trex::Trex(const Box& aBox)
     : mFlags(0),
       mTrackId(0),
       mDefaultSampleDescriptionIndex(0),
@@ -932,111 +1099,103 @@ Trex::Trex(Box& aBox)
   }
 }
 
-Result<Ok, nsresult> Trex::Parse(Box& aBox) {
+Result<Ok, nsresult> Trex::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  MOZ_TRY_VAR(mFlags, reader->ReadU32());
-  MOZ_TRY_VAR(mTrackId, reader->ReadU32());
-  MOZ_TRY_VAR(mDefaultSampleDescriptionIndex, reader->ReadU32());
-  MOZ_TRY_VAR(mDefaultSampleDuration, reader->ReadU32());
-  MOZ_TRY_VAR(mDefaultSampleSize, reader->ReadU32());
-  MOZ_TRY_VAR(mDefaultSampleFlags, reader->ReadU32());
+  mFlags = MOZ_TRY(reader->ReadU32());
+  mTrackId = MOZ_TRY(reader->ReadU32());
+  mDefaultSampleDescriptionIndex = MOZ_TRY(reader->ReadU32());
+  mDefaultSampleDuration = MOZ_TRY(reader->ReadU32());
+  mDefaultSampleSize = MOZ_TRY(reader->ReadU32());
+  mDefaultSampleFlags = MOZ_TRY(reader->ReadU32());
 
   return Ok();
 }
 
-Tfhd::Tfhd(Box& aBox, Trex& aTrex) : Trex(aTrex), mBaseDataOffset(0) {
+Tfhd::Tfhd(const Box& aBox, const Trex& aTrex)
+    : Trex(aTrex), mBaseDataOffset(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Tfhd, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Tfhd::Parse(Box& aBox) {
+Result<Ok, nsresult> Tfhd::Parse(const Box& aBox) {
   MOZ_ASSERT(aBox.IsType("tfhd"));
   MOZ_ASSERT(aBox.Parent()->IsType("traf"));
   MOZ_ASSERT(aBox.Parent()->Parent()->IsType("moof"));
 
   BoxReader reader(aBox);
 
-  MOZ_TRY_VAR(mFlags, reader->ReadU32());
-  MOZ_TRY_VAR(mTrackId, reader->ReadU32());
+  mFlags = MOZ_TRY(reader->ReadU32());
+  mTrackId = MOZ_TRY(reader->ReadU32());
   mBaseDataOffset = aBox.Parent()->Parent()->Offset();
   if (mFlags & 0x01) {
-    MOZ_TRY_VAR(mBaseDataOffset, reader->ReadU64());
+    mBaseDataOffset = MOZ_TRY(reader->ReadU64());
   }
   if (mFlags & 0x02) {
-    MOZ_TRY_VAR(mDefaultSampleDescriptionIndex, reader->ReadU32());
+    mDefaultSampleDescriptionIndex = MOZ_TRY(reader->ReadU32());
   }
   if (mFlags & 0x08) {
-    MOZ_TRY_VAR(mDefaultSampleDuration, reader->ReadU32());
+    mDefaultSampleDuration = MOZ_TRY(reader->ReadU32());
   }
   if (mFlags & 0x10) {
-    MOZ_TRY_VAR(mDefaultSampleSize, reader->ReadU32());
+    mDefaultSampleSize = MOZ_TRY(reader->ReadU32());
   }
   if (mFlags & 0x20) {
-    MOZ_TRY_VAR(mDefaultSampleFlags, reader->ReadU32());
+    mDefaultSampleFlags = MOZ_TRY(reader->ReadU32());
   }
 
   return Ok();
 }
 
-Tfdt::Tfdt(Box& aBox) : mBaseMediaDecodeTime(0) {
+Tfdt::Tfdt(const Box& aBox) : mBaseMediaDecodeTime(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Tfdt, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Tfdt::Parse(Box& aBox) {
+Result<Ok, nsresult> Tfdt::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   uint8_t version = flags >> 24;
   if (version == 0) {
-    uint32_t tmp;
-    MOZ_TRY_VAR(tmp, reader->ReadU32());
-    mBaseMediaDecodeTime = tmp;
+    mBaseMediaDecodeTime = MOZ_TRY(reader->ReadU32());
   } else if (version == 1) {
-    MOZ_TRY_VAR(mBaseMediaDecodeTime, reader->ReadU64());
+    mBaseMediaDecodeTime = MOZ_TRY(reader->ReadU64());
   }
   return Ok();
 }
 
-Edts::Edts(Box& aBox) : mMediaStart(0), mEmptyOffset(0) {
+Edts::Edts(const Box& aBox) : mMediaStart(0), mEmptyOffset(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Edts, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Edts::Parse(Box& aBox) {
+Result<Ok, nsresult> Edts::Parse(const Box& aBox) {
   Box child = aBox.FirstChild();
   if (!child.IsType("elst")) {
     return Err(NS_ERROR_FAILURE);
   }
 
   BoxReader reader(child);
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   uint8_t version = flags >> 24;
   bool emptyEntry = false;
-  uint32_t entryCount;
-  MOZ_TRY_VAR(entryCount, reader->ReadU32());
+  uint32_t entryCount = MOZ_TRY(reader->ReadU32());
   for (uint32_t i = 0; i < entryCount; i++) {
     uint64_t segment_duration;
     int64_t media_time;
     if (version == 1) {
-      MOZ_TRY_VAR(segment_duration, reader->ReadU64());
-      MOZ_TRY_VAR(media_time, reader->Read64());
+      segment_duration = MOZ_TRY(reader->ReadU64());
+      media_time = MOZ_TRY(reader->Read64());
     } else {
-      uint32_t tmp;
-      MOZ_TRY_VAR(tmp, reader->ReadU32());
-      segment_duration = tmp;
-      int32_t tmp2;
-      MOZ_TRY_VAR(tmp2, reader->Read32());
-      media_time = tmp2;
+      segment_duration = MOZ_TRY(reader->ReadU32());
+      media_time = MOZ_TRY(reader->Read32());
     }
     if (media_time == -1 && i) {
       LOG_WARN(Edts, "Multiple empty edit, not handled");
@@ -1061,7 +1220,7 @@ Result<Ok, nsresult> Edts::Parse(Box& aBox) {
   return Ok();
 }
 
-Saiz::Saiz(Box& aBox, AtomType aDefaultType)
+Saiz::Saiz(const Box& aBox, AtomType aDefaultType)
     : mAuxInfoType(aDefaultType), mAuxInfoTypeParameter(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
@@ -1069,19 +1228,16 @@ Saiz::Saiz(Box& aBox, AtomType aDefaultType)
   }
 }
 
-Result<Ok, nsresult> Saiz::Parse(Box& aBox) {
+Result<Ok, nsresult> Saiz::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   if (flags & 1) {
-    MOZ_TRY_VAR(mAuxInfoType, reader->ReadU32());
-    MOZ_TRY_VAR(mAuxInfoTypeParameter, reader->ReadU32());
+    mAuxInfoType = MOZ_TRY(reader->ReadU32());
+    mAuxInfoTypeParameter = MOZ_TRY(reader->ReadU32());
   }
-  uint8_t defaultSampleInfoSize;
-  MOZ_TRY_VAR(defaultSampleInfoSize, reader->ReadU8());
-  uint32_t count;
-  MOZ_TRY_VAR(count, reader->ReadU32());
+  uint8_t defaultSampleInfoSize = MOZ_TRY(reader->ReadU8());
+  uint32_t count = MOZ_TRY(reader->ReadU32());
   if (defaultSampleInfoSize) {
     if (!mSampleInfoSize.SetLength(count, fallible)) {
       LOG_ERROR(Saiz, "OOM");
@@ -1098,7 +1254,7 @@ Result<Ok, nsresult> Saiz::Parse(Box& aBox) {
   return Ok();
 }
 
-Saio::Saio(Box& aBox, AtomType aDefaultType)
+Saio::Saio(const Box& aBox, AtomType aDefaultType)
     : mAuxInfoType(aDefaultType), mAuxInfoTypeParameter(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
@@ -1106,69 +1262,59 @@ Saio::Saio(Box& aBox, AtomType aDefaultType)
   }
 }
 
-Result<Ok, nsresult> Saio::Parse(Box& aBox) {
+Result<Ok, nsresult> Saio::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   uint8_t version = flags >> 24;
   if (flags & 1) {
-    MOZ_TRY_VAR(mAuxInfoType, reader->ReadU32());
-    MOZ_TRY_VAR(mAuxInfoTypeParameter, reader->ReadU32());
+    mAuxInfoType = MOZ_TRY(reader->ReadU32());
+    mAuxInfoTypeParameter = MOZ_TRY(reader->ReadU32());
   }
 
-  size_t count;
-  MOZ_TRY_VAR(count, reader->ReadU32());
+  size_t count = MOZ_TRY(reader->ReadU32());
   if (!mOffsets.SetCapacity(count, fallible)) {
     LOG_ERROR(Saiz, "OOM");
     return Err(NS_ERROR_FAILURE);
   }
   if (version == 0) {
-    uint32_t offset;
     for (size_t i = 0; i < count; i++) {
-      MOZ_TRY_VAR(offset, reader->ReadU32());
+      uint32_t offset = MOZ_TRY(reader->ReadU32());
       MOZ_ALWAYS_TRUE(mOffsets.AppendElement(offset, fallible));
     }
   } else {
-    uint64_t offset;
     for (size_t i = 0; i < count; i++) {
-      MOZ_TRY_VAR(offset, reader->ReadU64());
+      uint64_t offset = MOZ_TRY(reader->ReadU64());
       MOZ_ALWAYS_TRUE(mOffsets.AppendElement(offset, fallible));
     }
   }
   return Ok();
 }
 
-Sbgp::Sbgp(Box& aBox) : mGroupingTypeParam(0) {
+Sbgp::Sbgp(const Box& aBox) : mGroupingTypeParam(0) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Sbgp, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Sbgp::Parse(Box& aBox) {
+Result<Ok, nsresult> Sbgp::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   const uint8_t version = flags >> 24;
 
-  uint32_t type;
-  MOZ_TRY_VAR(type, reader->ReadU32());
-  mGroupingType = type;
+  mGroupingType = MOZ_TRY(reader->ReadU32());
 
   if (version == 1) {
-    MOZ_TRY_VAR(mGroupingTypeParam, reader->ReadU32());
+    mGroupingTypeParam = MOZ_TRY(reader->ReadU32());
   }
 
-  uint32_t count;
-  MOZ_TRY_VAR(count, reader->ReadU32());
+  uint32_t count = MOZ_TRY(reader->ReadU32());
 
   for (uint32_t i = 0; i < count; i++) {
-    uint32_t sampleCount;
-    MOZ_TRY_VAR(sampleCount, reader->ReadU32());
-    uint32_t groupDescriptionIndex;
-    MOZ_TRY_VAR(groupDescriptionIndex, reader->ReadU32());
+    uint32_t sampleCount = MOZ_TRY(reader->ReadU32());
+    uint32_t groupDescriptionIndex = MOZ_TRY(reader->ReadU32());
 
     SampleToGroupEntry entry(sampleCount, groupDescriptionIndex);
     if (!mEntries.AppendElement(entry, mozilla::fallible)) {
@@ -1179,41 +1325,36 @@ Result<Ok, nsresult> Sbgp::Parse(Box& aBox) {
   return Ok();
 }
 
-Sgpd::Sgpd(Box& aBox) {
+Sgpd::Sgpd(const Box& aBox) {
   mValid = Parse(aBox).isOk();
   if (!mValid) {
     LOG_WARN(Sgpd, "Parse failed");
   }
 }
 
-Result<Ok, nsresult> Sgpd::Parse(Box& aBox) {
+Result<Ok, nsresult> Sgpd::Parse(const Box& aBox) {
   BoxReader reader(aBox);
 
-  uint32_t flags;
-  MOZ_TRY_VAR(flags, reader->ReadU32());
+  uint32_t flags = MOZ_TRY(reader->ReadU32());
   const uint8_t version = flags >> 24;
 
-  uint32_t type;
-  MOZ_TRY_VAR(type, reader->ReadU32());
-  mGroupingType = type;
+  mGroupingType = MOZ_TRY(reader->ReadU32());
 
   const uint32_t entrySize = sizeof(uint32_t) + kKeyIdSize;
   uint32_t defaultLength = 0;
 
   if (version == 1) {
-    MOZ_TRY_VAR(defaultLength, reader->ReadU32());
+    defaultLength = MOZ_TRY(reader->ReadU32());
     if (defaultLength < entrySize && defaultLength != 0) {
       return Err(NS_ERROR_FAILURE);
     }
   }
 
-  uint32_t count;
-  MOZ_TRY_VAR(count, reader->ReadU32());
+  uint32_t count = MOZ_TRY(reader->ReadU32());
 
   for (uint32_t i = 0; i < count; ++i) {
     if (version == 1 && defaultLength == 0) {
-      uint32_t descriptionLength;
-      MOZ_TRY_VAR(descriptionLength, reader->ReadU32());
+      uint32_t descriptionLength = MOZ_TRY(reader->ReadU32());
       if (descriptionLength < entrySize) {
         return Err(NS_ERROR_FAILURE);
       }
@@ -1236,16 +1377,14 @@ Result<Ok, nsresult> CencSampleEncryptionInfoEntry::Init(BoxReader& aReader) {
   // Skip a reserved byte.
   MOZ_TRY(aReader->ReadU8());
 
-  uint8_t pattern;
-  MOZ_TRY_VAR(pattern, aReader->ReadU8());
+  uint8_t pattern = MOZ_TRY(aReader->ReadU8());
   mCryptByteBlock = pattern >> 4;
   mSkipByteBlock = pattern & 0x0f;
 
-  uint8_t isEncrypted;
-  MOZ_TRY_VAR(isEncrypted, aReader->ReadU8());
+  uint8_t isEncrypted = MOZ_TRY(aReader->ReadU8());
   mIsEncrypted = isEncrypted != 0;
 
-  MOZ_TRY_VAR(mIVSize, aReader->ReadU8());
+  mIVSize = MOZ_TRY(aReader->ReadU8());
 
   // Read the key id.
   if (!mKeyId.SetLength(kKeyIdSize, fallible)) {
@@ -1253,7 +1392,7 @@ Result<Ok, nsresult> CencSampleEncryptionInfoEntry::Init(BoxReader& aReader) {
     return Err(NS_ERROR_FAILURE);
   }
   for (uint32_t i = 0; i < kKeyIdSize; ++i) {
-    MOZ_TRY_VAR(mKeyId.ElementAt(i), aReader->ReadU8());
+    mKeyId.ElementAt(i) = MOZ_TRY(aReader->ReadU8());
   }
 
   if (mIsEncrypted) {
@@ -1263,8 +1402,7 @@ Result<Ok, nsresult> CencSampleEncryptionInfoEntry::Init(BoxReader& aReader) {
   } else if (mIVSize != 0) {
     // Protected content with 0 sized IV indicates a constant IV is present.
     // This is used for the cbcs scheme.
-    uint8_t constantIVSize;
-    MOZ_TRY_VAR(constantIVSize, aReader->ReadU8());
+    uint8_t constantIVSize = MOZ_TRY(aReader->ReadU8());
     if (constantIVSize != 8 && constantIVSize != 16) {
       LOG_WARN(CencSampleEncryptionInfoEntry,
                "Unexpected constantIVSize: %" PRIu8, constantIVSize);
@@ -1275,7 +1413,7 @@ Result<Ok, nsresult> CencSampleEncryptionInfoEntry::Init(BoxReader& aReader) {
       return Err(NS_ERROR_FAILURE);
     }
     for (uint32_t i = 0; i < constantIVSize; ++i) {
-      MOZ_TRY_VAR(mConsantIV.ElementAt(i), aReader->ReadU8());
+      mConsantIV.ElementAt(i) = MOZ_TRY(aReader->ReadU8());
     }
   }
 

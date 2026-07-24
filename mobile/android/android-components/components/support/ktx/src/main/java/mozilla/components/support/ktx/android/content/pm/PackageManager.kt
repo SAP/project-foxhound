@@ -5,14 +5,14 @@
 package mozilla.components.support.ktx.android.content.pm
 
 import android.content.pm.PackageManager
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 
 /**
  * Check if a package is installed
  *
  * @param packageName The name of the package to check for.
  */
-fun PackageManager.isPackageInstalled(packageName: String): Boolean {
+fun PackageManagerCompatHelper.isPackageInstalled(packageName: String): Boolean {
     return try {
         // Turn off all the flags since we don't need the return value
         getPackageInfoCompat(packageName, 0)

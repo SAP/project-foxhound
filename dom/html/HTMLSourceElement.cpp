@@ -8,20 +8,19 @@
  */
 
 #include "mozilla/dom/HTMLSourceElement.h"
-#include "mozilla/dom/HTMLSourceElementBinding.h"
 
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/HTMLImageElement.h"
-#include "mozilla/dom/HTMLMediaElement.h"
-#include "mozilla/dom/ResponsiveImageSelector.h"
-#include "mozilla/dom/MediaList.h"
-#include "mozilla/dom/MediaSource.h"
-
-#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/AttributeStyles.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/Preferences.h"
-
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/HTMLImageElement.h"
+#include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/dom/HTMLSourceElementBinding.h"
+#include "mozilla/dom/MediaList.h"
+#include "mozilla/dom/MediaSource.h"
+#include "mozilla/dom/ResponsiveImageSelector.h"
+#include "nsAttrValueOrString.h"
 #include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Source)
@@ -69,7 +68,7 @@ void HTMLSourceElement::UpdateMediaList(const nsAttrValue* aValue) {
     return;
   }
 
-  NS_ConvertUTF16toUTF8 mediaStr(aValue->GetStringValue());
+  NS_ConvertUTF16toUTF8 mediaStr(nsAttrValueOrString(aValue).String());
   mMediaList = MediaList::Create(mediaStr);
 }
 
@@ -105,8 +104,7 @@ void HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                      bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::srcset) {
     mSrcsetTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-        this, aValue ? aValue->GetStringValue() : EmptyString(),
-        aMaybeScriptedPrincipal);
+        this, nsAttrValueOrString(aValue).String(), aMaybeScriptedPrincipal);
   }
   // If we are associated with a <picture> with a valid <img>, notify it of
   // responsive parameter changes
@@ -118,15 +116,15 @@ void HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       UpdateMediaList(aValue);
     }
 
-    nsString strVal = aValue ? aValue->GetStringValue() : EmptyString();
+    nsAttrValueOrString value(aValue);
     // Find all img siblings after this <source> and notify them of the change
     nsCOMPtr<nsIContent> sibling = AsContent();
     while ((sibling = sibling->GetNextSibling())) {
       if (auto* img = HTMLImageElement::FromNode(sibling)) {
         if (aName == nsGkAtoms::srcset) {
-          img->PictureSourceSrcsetChanged(this, strVal, aNotify);
+          img->PictureSourceSrcsetChanged(this, value.String(), aNotify);
         } else if (aName == nsGkAtoms::sizes) {
-          img->PictureSourceSizesChanged(this, strVal, aNotify);
+          img->PictureSourceSizesChanged(this, value.String(), aNotify);
         } else if (aName == nsGkAtoms::media || aName == nsGkAtoms::type) {
           img->PictureSourceMediaOrTypeChanged(this, aNotify);
         }
@@ -135,14 +133,13 @@ void HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   } else if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::media) {
     UpdateMediaList(aValue);
   } else if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
+    nsAttrValueOrString srcValue(aValue);
     mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-        this, aValue ? aValue->GetStringValue() : EmptyString(),
-        aMaybeScriptedPrincipal);
+        this, srcValue.String(), aMaybeScriptedPrincipal);
     mSrcMediaSource = nullptr;
     if (aValue) {
-      nsString srcStr = aValue->GetStringValue();
       nsCOMPtr<nsIURI> uri;
-      NewURIFromString(srcStr, getter_AddRefs(uri));
+      NewURIFromString(srcValue.String(), getter_AddRefs(uri));
       if (uri && IsMediaSourceURI(uri)) {
         NS_GetSourceForMediaSourceURI(uri, getter_AddRefs(mSrcMediaSource));
       }

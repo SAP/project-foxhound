@@ -7,8 +7,6 @@
 #ifndef jit_x64_Assembler_x64_h
 #define jit_x64_Assembler_x64_h
 
-#include <iterator>
-
 #include "jit/JitCode.h"
 #include "jit/shared/Assembler-shared.h"
 
@@ -99,7 +97,6 @@ struct ScratchRegisterScope : public AutoRegisterScope {
 };
 
 static constexpr Register ReturnReg = rax;
-static constexpr Register HeapReg = r15;
 static constexpr Register64 ReturnReg64(rax);
 static constexpr FloatRegister ReturnFloat32Reg =
     FloatRegister(X86Encoding::xmm0, FloatRegisters::Single);
@@ -198,33 +195,30 @@ class ABIArgGenerator : public ABIArgGeneratorShared {
   ABIArg& current() { return current_; }
 };
 
-// These registers may be volatile or nonvolatile.
+// See "ABI special registers" in Assembler-shared.h for more information.
 // Avoid r11, which is the MacroAssembler's ScratchReg.
 static constexpr Register ABINonArgReg0 = rax;
 static constexpr Register ABINonArgReg1 = rbx;
 static constexpr Register ABINonArgReg2 = r10;
 static constexpr Register ABINonArgReg3 = r12;
 
-// This register may be volatile or nonvolatile. Avoid xmm15 which is the
-// ScratchDoubleReg.
+// See "ABI special registers" in Assembler-shared.h for more information.
+// Avoid xmm15 which is the ScratchDoubleReg.
 static constexpr FloatRegister ABINonArgDoubleReg =
     FloatRegister(X86Encoding::xmm8, FloatRegisters::Double);
 
-// These registers may be volatile or nonvolatile.
-// Note: these three registers are all guaranteed to be different
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReturnReg0 = r10;
 static constexpr Register ABINonArgReturnReg1 = r12;
 static constexpr Register ABINonVolatileReg = r13;
 
-// This register is guaranteed to be clobberable during the prologue and
-// epilogue of an ABI call which must preserve both ABI argument, return
-// and non-volatile registers.
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReturnVolatileReg = r10;
 
-// Instance pointer argument register for WebAssembly functions. This must not
-// alias any other register used for passing function arguments or return
-// values. Preserved by WebAssembly functions.
+// See "ABI special registers" in Assembler-shared.h, and "The WASM ABIs" in
+// WasmFrame.h for more information.
 static constexpr Register InstanceReg = r14;
+static constexpr Register HeapReg = r15;
 
 // Registers used for asm.js/wasm table calls. These registers must be disjoint
 // from the ABI argument registers, InstanceReg and each other.
@@ -379,7 +373,7 @@ class Assembler : public AssemblerX86Shared {
   void push(const ImmWord ptr) {
     // We often end up with ImmWords that actually fit into int32.
     // Be aware of the sign extension behavior.
-    if (ptr.value <= INT32_MAX) {
+    if (intptr_t(ptr.value) == intptr_t(int32_t(ptr.value))) {
       push(Imm32(ptr.value));
     } else {
       movq(ptr, ScratchReg);
@@ -388,9 +382,14 @@ class Assembler : public AssemblerX86Shared {
   }
   void push(ImmPtr imm) { push(ImmWord(uintptr_t(imm.value))); }
   void push(FloatRegister src) {
-    MOZ_ASSERT(src.isDouble(), "float32 and simd128 not supported");
+    // We allocate space for double even when storing a float.
     subq(Imm32(sizeof(double)), StackPointer);
-    vmovsd(src, Address(StackPointer, 0));
+    if (src.isDouble()) {
+      vmovsd(src, Address(StackPointer, 0));
+    } else {
+      MOZ_ASSERT(src.isSingle(), "simd128 is not supported");
+      vmovss(src, Address(StackPointer, 0));
+    }
   }
   CodeOffset pushWithPatch(ImmWord word) {
     CodeOffset label = movWithPatch(word, ScratchReg);
@@ -399,8 +398,13 @@ class Assembler : public AssemblerX86Shared {
   }
 
   void pop(FloatRegister src) {
-    MOZ_ASSERT(src.isDouble(), "float32 and simd128 not supported");
-    vmovsd(Address(StackPointer, 0), src);
+    if (src.isDouble()) {
+      vmovsd(Address(StackPointer, 0), src);
+    } else {
+      MOZ_ASSERT(src.isSingle(), "simd128 is not supported");
+      vmovss(Address(StackPointer, 0), src);
+    }
+    // We free space for double even when storing a float.
     addq(Imm32(sizeof(double)), StackPointer);
   }
 
@@ -721,6 +725,11 @@ class Assembler : public AssemblerX86Shared {
     }
   }
 
+  void andnq(Register src1, Register src2, Register dest) {
+    MOZ_ASSERT(HasBMI1());
+    masm.andnq_rrr(src1.encoding(), src2.encoding(), dest.encoding());
+  }
+
   void addq(Imm32 imm, Register dest) {
     masm.addq_ir(imm.value, dest.encoding());
   }
@@ -947,6 +956,12 @@ class Assembler : public AssemblerX86Shared {
     masm.popcntq_rr(src.encoding(), dest.encoding());
   }
 
+  void imulq(Register multiplier) {
+    // Consumes rax as the other argument and clobbers rdx, as the result is in
+    // rdx:rax.
+    masm.imulq_r(multiplier.encoding());
+  }
+  void umulq(Register multiplier) { masm.mulq_r(multiplier.encoding()); }
   void imulq(Imm32 imm, Register src, Register dest) {
     masm.imulq_ir(imm.value, src.encoding(), dest.encoding());
   }
@@ -1027,6 +1042,9 @@ class Assembler : public AssemblerX86Shared {
       case Operand::MEM_SCALE:
         masm.leaq_mr(src.disp(), src.base(), src.index(), src.scale(),
                      dest.encoding());
+        break;
+      case Operand::MEM_SCALE_NOBASE:
+        masm.leaq_mr(src.disp(), src.index(), src.scale(), dest.encoding());
         break;
       default:
         MOZ_CRASH("unexepcted operand kind");

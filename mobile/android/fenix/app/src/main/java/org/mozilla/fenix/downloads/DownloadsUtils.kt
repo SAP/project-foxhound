@@ -6,21 +6,20 @@ package org.mozilla.fenix.downloads
 
 import android.content.Context
 import android.webkit.MimeTypeMap
-import mozilla.components.browser.state.state.content.DownloadState
-import org.mozilla.fenix.R
+import mozilla.components.feature.downloads.R as downloadsR
 
 /**
  * Generates a user-facing error message indicating that a downloaded file cannot be opened
  * because no application is available to handle its file type.
  *
  * @param context The Context used to access string resources.
- * @param download The [DownloadState] object representing the downloaded file.
+ * @param filePath The file path of the downloaded file.
  * @return A formatted string message. For example, "No app found to open .pdf files".
  */
-fun getCannotOpenFileErrorMessage(context: Context, download: DownloadState): String {
-    val fileExt = MimeTypeMap.getFileExtensionFromUrl(download.filePath)
+fun getCannotOpenFileErrorMessage(context: Context, filePath: String): String {
+    val fileExt = MimeTypeMap.getFileExtensionFromUrl(filePath)
     return context.getString(
-        R.string.mozac_feature_downloads_open_not_supported1,
+        downloadsR.string.mozac_feature_downloads_open_not_supported1,
         fileExt,
     )
 }

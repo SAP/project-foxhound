@@ -3,6 +3,7 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import fnmatch
+import functools
 import json
 import os
 import re
@@ -123,10 +124,11 @@ def build_docs(
 ):
     # TODO: Bug 1704891 - move the ESLint setup tools to a shared place.
     import setup_helper
+    from mozbuild.nodeutil import check_node_executables_valid
 
     setup_helper.set_project_root(command_context.topsrcdir)
 
-    if not setup_helper.check_node_executables_valid():
+    if not check_node_executables_valid():
         return 1
 
     setup_helper.eslint_maybe_setup()
@@ -197,10 +199,9 @@ def build_docs(
 
         [fatal_errors, known_errors] = _check_sphinx_warnings(warnings, docs_config)
 
-        if len(known_errors):
-            log_known_errors(known_errors)
+        log_results(fatal_errors, known_errors)
         if len(fatal_errors):
-            return die_with_test_failure(fatal_errors)
+            return 1
 
     # Upload the artifact containing the link to S3
     # This would be used by code-review to post the link to Phabricator
@@ -473,7 +474,7 @@ def _s3_upload(root, project, unique_id, version=None):
 def generate_telemetry_docs(command_context):
     args = [
         sys.executable,
-        "-m" "glean_parser",
+        "-mglean_parser",
         "translate",
         "-f",
         "markdown",
@@ -488,9 +489,9 @@ def generate_telemetry_docs(command_context):
         for handler in Registrar.command_handlers.values()
         if handler.metrics_path is not None
     ]
-    args.extend(
-        [os.path.join(command_context.topsrcdir, path) for path in set(metrics_paths)]
-    )
+    args.extend([
+        os.path.join(command_context.topsrcdir, path) for path in set(metrics_paths)
+    ])
     subprocess.check_call(args)
 
 
@@ -530,20 +531,83 @@ def die(msg, exit_code=1):
     return exit_code
 
 
-def die_with_test_failure(msgs, exit_code=1):
-    for m in msgs:
-        print(
-            "TEST-UNEXPECTED-FAILURE | %s %s | %s" % (sys.argv[0], sys.argv[1], m),
-            file=sys.stderr,
-        )
-    print("Failures: %d" % len(msgs))
-    return exit_code
+@functools.cache
+def transform_error_regexp():
+    # Lazily created, because we need to wait to get the staging_dir.
+
+    # This regexp matches a couple of styles of message:
+    #
+    # path/to/simpletest.rst: WARNING: document isn't included in any toctree
+    # path/to/index.rst:2: WARNING: Title underline too short.
+    #
+    # The distinction is that some of them give a line number and some of them don't.
+    # We need to replace the path, and split the text of the message so
+    # that we can insert a pipe for automation to detect.
+    return re.compile(
+        re.escape(os.path.join(manager().staging_dir, "")) + r"(.*?)(:[0-9]*)?:\s*(.*)"
+    )
 
 
-def log_known_errors(msgs):
-    for m in msgs:
-        print(
-            "TEST-KNOWN-FAILURE | %s %s | %s" % (sys.argv[0], sys.argv[1], m),
-            file=sys.stderr,
-        )
-    print("Known Failures: %d" % len(msgs))
+def transform_error(msg):
+    match = transform_error_regexp().match(msg)
+    if match:
+        filePath = match.group(1)
+        for staging_path, original_path in manager().trees.items():
+            if staging_path != os.path.dirname(filePath):
+                continue
+
+            return {
+                "linter": "source-test-doc-upload",
+                "path": os.path.join(
+                    str(manager().topsrcdir),
+                    filePath.replace(staging_path, original_path),
+                ),
+                "relpath": filePath.replace(staging_path, original_path),
+                # Remove the first character, as it'll be the :
+                "lineno": (
+                    int(match.group(2)[1:]) if match.group(2) is not None else None
+                ),
+                "message": match.group(3),
+            }
+
+    return {
+        "linter": "source-test-doc-upload",
+        "message": msg,
+    }
+
+
+def print_result_to_stderr(known_or_unexpected, result_details):
+    lineno = (
+        (f":{str(result_details['lineno'])}")
+        if "lineno" in result_details and result_details["lineno"] is not None
+        else ""
+    )
+    path = (
+        f"{result_details['relpath']}{lineno} |" if "relpath" in result_details else ""
+    )
+
+    print(
+        f"TEST-{known_or_unexpected}-FAIL | {sys.argv[0]} {sys.argv[1]} | {path} {result_details['message']}",
+        file=sys.stderr,
+    )
+
+
+def log_results(fatal_errors, known_errors):
+    """
+    This will always output to stdout, but optionally also dump messages
+    to error_file in the JSON format needed for the review bot.
+
+    Ideally we should reuse mozlint's logger here.
+    """
+
+    for m in known_errors:
+        result_details = transform_error(m)
+        print_result_to_stderr("KNOWN", result_details)
+
+    print(f"Known Failures: {len(known_errors)}")
+
+    for m in fatal_errors:
+        result_details = transform_error(m)
+        print_result_to_stderr("UNEXPECTED", result_details)
+
+    print(f"Failures: {len(fatal_errors)}")

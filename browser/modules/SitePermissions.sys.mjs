@@ -61,8 +61,9 @@ const TemporaryPermissions = {
   /**
    * Generate keys to store temporary permissions under. The strict key is
    * origin, non-strict is baseDomain.
+   *
    * @param {nsIPrincipal} principal - principal to derive keys from.
-   * @returns {Object} keys - Object containing the generated permission keys.
+   * @returns {object} keys - Object containing the generated permission keys.
    * @returns {string} keys.strict - Key to be used for strict matching.
    * @returns {string} keys.nonStrict - Key to be used for non-strict matching.
    * @throws {Error} - Throws if principal is undefined or no valid permission key can
@@ -74,6 +75,7 @@ const TemporaryPermissions = {
 
   /**
    * Sets a new permission for the specified browser.
+   *
    * @returns {boolean} whether the permission changed, effectively.
    */
   set(
@@ -159,6 +161,7 @@ const TemporaryPermissions = {
 
   /**
    * Removes a permission with the specified id for the specified browser.
+   *
    * @returns {boolean} whether the permission was removed.
    */
   remove(browser, id) {
@@ -264,8 +267,9 @@ const TemporaryPermissions = {
    * Clear temporary permissions for the specified browser. Unlike other
    * methods, this does NOT clear only for the currentURI but the whole browser
    * state.
+   *
    * @param {Browser} browser - Browser to clear permissions for.
-   * @param {Number} [filterState] - Only clear permissions with the given state
+   * @param {number} [filterState] - Only clear permissions with the given state
    * value. Defaults to all permissions.
    */
   clear(browser, filterState = null) {
@@ -552,7 +556,7 @@ export var SitePermissions = {
    * @param {Browser} browser
    *        The browser to fetch permission for.
    *
-   * @return {Array<Object>} a list of objects with the keys:
+   * @return {Array<object>} a list of objects with the keys:
    *           - id: the permissionID of the permission
    *           - state: a constant representing the current permission state
    *             (e.g. SitePermissions.ALLOW)
@@ -592,6 +596,7 @@ export var SitePermissions = {
 
   /**
    * Checks whether we support managing permissions for a specific scheme.
+   *
    * @param {string} scheme - Scheme to test.
    * @returns {boolean} Whether the scheme is supported.
    */
@@ -602,7 +607,7 @@ export var SitePermissions = {
   /**
    * Gets an array of all permission IDs.
    *
-   * @return {Array<String>} an array of all permission IDs.
+   * @return {Array<string>} an array of all permission IDs.
    */
   listPermissions() {
     if (this._permissionsArray === null) {
@@ -613,6 +618,7 @@ export var SitePermissions = {
 
   /**
    * Test whether a permission is managed by SitePermissions.
+   *
    * @param {string} type - Permission type.
    * @returns {boolean}
    */
@@ -721,12 +727,12 @@ export var SitePermissions = {
    *
    * @param {nsIPrincipal} principal
    *        The principal to check.
-   * @param {String} permissionID
+   * @param {string} permissionID
    *        The id of the permission.
    * @param {Browser} [browser] The browser object to check for temporary
    *        permissions.
    *
-   * @return {Object} an object with the keys:
+   * @return {object} an object with the keys:
    *           - state: The current state of the permission
    *             (e.g. SitePermissions.ALLOW)
    *           - scope: The scope of the permission
@@ -802,7 +808,7 @@ export var SitePermissions = {
    *        browser's contentPrincipal for permission keying. This can be
    *        helpful in situations where the browser has already navigated away
    *        from a site you want to set a permission for.
-   * @param {String} permissionID The id of the permission.
+   * @param {string} permissionID The id of the permission.
    * @param {SitePermissions state} state The state of the permission.
    * @param {SitePermissions scope} [scope] The scope of the permission.
    *        Defaults to SCOPE_PERSISTENT.
@@ -907,7 +913,7 @@ export var SitePermissions = {
    *
    * @param {nsIPrincipal} principal
    *        The principal to remove the permission for.
-   * @param {String} permissionID
+   * @param {string} permissionID
    *        The id of the permission.
    * @param {Browser} browser (optional)
    *        The browser object to remove temporary permissions on.
@@ -965,7 +971,7 @@ export var SitePermissions = {
    * @param {string} permissionID
    *        The permission to get the label for. May include second key.
    *
-   * @return {String} the localized label or null if none is available.
+   * @return {string} the localized label or null if none is available.
    */
   getPermissionLabel(permissionID) {
     let [id, key] = permissionID.split(this.PERM_KEY_DELIMITER);
@@ -1000,7 +1006,7 @@ export var SitePermissions = {
    * @param {SitePermissions state} state
    *        The state to get the label for.
    *
-   * @return {String|null} the localized label or null if an
+   * @return {string | null} the localized label or null if an
    *         unknown state was passed.
    */
   getMultichoiceStateLabel(permissionID, state) {
@@ -1040,7 +1046,7 @@ export var SitePermissions = {
    * @param {SitePermissions scope} scope (optional)
    *        The scope to get the label for.
    *
-   * @return {String|null} the localized label or null if an
+   * @return {string | null} the localized label or null if an
    *         unknown state was passed.
    */
   getCurrentStateLabel(state, id, scope = null) {
@@ -1207,6 +1213,20 @@ let gPermissions = {
       exactHostMatch: true,
     },
 
+    localhost: {
+      exactHostMatch: true,
+      get disabled() {
+        return !SitePermissions.localNetworkAccessPermissionsEnabled;
+      },
+    },
+
+    "local-network": {
+      exactHostMatch: true,
+      get disabled() {
+        return !SitePermissions.localNetworkAccessPermissionsEnabled;
+      },
+    },
+
     microphone: {
       exactHostMatch: true,
     },
@@ -1230,6 +1250,7 @@ let gPermissions = {
           ? SitePermissions.BLOCK
           : SitePermissions.ALLOW;
       },
+      labelID: "popup2",
       states: [SitePermissions.ALLOW, SitePermissions.BLOCK],
     },
 
@@ -1320,6 +1341,14 @@ XPCOMUtils.defineLazyPreferenceGetter(
   SitePermissions,
   "resistFingerprinting",
   "privacy.resistFingerprinting",
+  false,
+  SitePermissions.invalidatePermissionList.bind(SitePermissions)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SitePermissions,
+  "localNetworkAccessPermissionsEnabled",
+  "network.lna.blocking",
   false,
   SitePermissions.invalidatePermissionList.bind(SitePermissions)
 );

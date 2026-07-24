@@ -118,6 +118,11 @@ abstract class Settings {
     open var historyTrackingDelegate: HistoryTrackingDelegate? by UnsupportedSetting()
 
     /**
+     * Setting to provide a delegate for handling download requests initiated by the engine.
+     */
+    open var downloadDelegate: DownloadDelegate? by UnsupportedSetting()
+
+    /**
      * Setting to control the user agent string.
      */
     open var userAgentString: String? by UnsupportedSetting()
@@ -222,6 +227,11 @@ abstract class Settings {
      * Setting to control login autofill.
      */
     open var loginAutofillEnabled: Boolean by UnsupportedSetting()
+
+    /**
+     * Setting to control the Firefox Relay feature state.
+     */
+    open var firefoxRelay: Engine.FirefoxRelayMode? by UnsupportedSetting()
 
     /**
      * Setting to force the ability to scale the content
@@ -345,7 +355,7 @@ abstract class Settings {
     /**
      * Setting to control how Certificate Transparency information is processed.
      */
-    open var certificateTransparencyMode: Int by UnsupportedSetting()
+    open var certificateTransparencyMode: Int? by UnsupportedSetting()
 
     /**
      * Setting to control whether post-quantum key exchange mechanisms are used
@@ -362,6 +372,32 @@ abstract class Settings {
      * Comma-separated list of destination ports that the application should block connections to.
      */
     open var bannedPorts: String by UnsupportedSetting()
+
+    /**
+     * Setting to control the request blocking feature of Local Network / Device Access blocking
+     */
+    open var lnaBlockingEnabled: Boolean by UnsupportedSetting()
+
+    /**
+     * Setting to control the tracker blocking feature of Local Network / Device Access blocking
+     */
+    open var lnaTrackerBlockingEnabled: Boolean by UnsupportedSetting()
+
+    /**
+     * Setting to control the overall Local Network / Device Access blocking feature. This is a
+     * superset of [lnaBlockingEnabled] & [lnaTrackerBlockingEnabled]
+     */
+    open var lnaFeatureEnabled: Boolean by UnsupportedSetting()
+
+    /**
+     * Setting to control the CRLite certificate blocklist channel
+     */
+    open var crliteChannel: String? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether Safe Browsing V5 is enabled.
+     */
+    open var safeBrowsingV5Enabled: Boolean? by UnsupportedSetting()
 }
 
 /**
@@ -393,6 +429,7 @@ data class DefaultSettings(
     override var preferredColorScheme: PreferredColorScheme = PreferredColorScheme.System,
     override var testingModeEnabled: Boolean = false,
     override var suspendMediaWhenInactive: Boolean = false,
+    override var firefoxRelay: Engine.FirefoxRelayMode? = null,
     override var fontInflationEnabled: Boolean? = null,
     override var fontSizeFactor: Float? = null,
     override var forceUserScalableContent: Boolean = false,
@@ -430,10 +467,16 @@ data class DefaultSettings(
     val getDesktopMode: () -> Boolean = { false },
     override var cookieBehaviorOptInPartitioning: Boolean = false,
     override var cookieBehaviorOptInPartitioningPBM: Boolean = false,
-    override var certificateTransparencyMode: Int = 0,
+    override var certificateTransparencyMode: Int? = null,
     override var postQuantumKeyExchangeEnabled: Boolean? = null,
     override var dohAutoselectEnabled: Boolean = false,
     override var bannedPorts: String = "",
+    override var lnaBlockingEnabled: Boolean = false,
+    override var lnaTrackerBlockingEnabled: Boolean = false,
+    override var lnaFeatureEnabled: Boolean = false,
+    override var crliteChannel: String? = null,
+    override var safeBrowsingV5Enabled: Boolean? = null,
+    override var downloadDelegate: DownloadDelegate? = null,
 ) : Settings() {
     override val desktopModeEnabled: Boolean
         get() = getDesktopMode()

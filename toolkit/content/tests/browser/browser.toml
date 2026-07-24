@@ -12,6 +12,10 @@ support-files = [
   "file_nonAutoplayAudio.html",
   "file_redirect.html",
   "file_redirect_to.html",
+  "file_restricted.html",
+  "file_restricted_dynamic.html",
+  "file_restricted_frame.html",
+  "file_restricted_navigation.html",
   "file_silentAudioTrack.html",
   "file_webAudio.html",
   "gizmo.mp4",
@@ -21,38 +25,44 @@ support-files = [
   "silentAudioTrack.webm",
 ]
 
+["browser_about_glean.js"]
+
 ["browser_about_logging.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1804081 # Bug 1869961
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1804081 # Bug 1869961
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1804081 # Bug 1869961
 ]
 support-files = ["browser_about_logging_server.sjs"]
 
 ["browser_about_networking.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked #category-dns may not be focusable
-skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt && socketprocess_networking",
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked #category-dns may not be focusable
 ]
+
+["browser_about_restricted.js"]
 
 ["browser_autoscroll_disabled.js"]
 
 ["browser_autoscroll_disabled_on_editable_content.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked browser may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked browser may not be focusable
+]
 
 ["browser_autoscroll_disabled_on_links.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked browser may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked browser may not be focusable
+]
 
 ["browser_bug295977_autoscroll_overflow.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks && swgl", # Bug 1710788 # Bug 1869961
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1710788 # Bug 1869961
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1710788 # Bug 1869961
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug",
 ]
 
 ["browser_bug451286.js"]
-skip-if = ["true"] # bug 1399845 tracks re-enabling this test.
+skip-if = [
+  "true", # bug 1399845 tracks re-enabling this test.
+]
 
 ["browser_bug982298.js"]
 
@@ -67,22 +77,30 @@ support-files = ["file_document_open_audio.html"]
 ["browser_bug1693577.js"]
 
 ["browser_cancel_starting_autoscrolling_requested_by_background_tab.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked tabbrowser-tabpanels may not be accessible
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked tabbrowser-tabpanels may not be accessible
+]
 
 ["browser_charsetMenu_disable_on_ascii.js"]
 
 ["browser_charsetMenu_swapBrowsers.js"]
 
 ["browser_click_event_during_autoscrolling.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked browser may not be accessible
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked browser may not be accessible
+]
 
 ["browser_contentTitle.js"]
 
 ["browser_content_url_annotation.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_crash_previous_frameloader.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_default_audio_filename.js"]
 support-files = ["audio_file.txt"]
@@ -126,11 +144,22 @@ tags = "audiochannel"
 ["browser_delay_autoplay_webAudio.js"]
 tags = "audiochannel"
 
+["browser_error_registry.js"]
+
 ["browser_f7_caret_browsing.js"]
 
 ["browser_findbar.js"]
 
 ["browser_findbar_disabled_manual.js"]
+
+["browser_findbar_hidden_beforematch.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1995211
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1995211
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1995211
+]
+
+["browser_findbar_hidden_reveal.js"]
 
 ["browser_findbar_hiddenframes.js"]
 
@@ -141,7 +170,9 @@ tags = "audiochannel"
 ["browser_keyevents_during_autoscrolling.js"]
 
 ["browser_label_textlink.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked label#textlink-text may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked label#textlink-text may not be focusable
+]
 https_first_disabled = true
 
 ["browser_license_links.js"]
@@ -156,7 +187,6 @@ support-files = [
   "gizmo.mp4",
   "gizmo-noaudio.webm",
 ]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
 tags = "bleedover"
 
 ["browser_media_wakelock_PIP.js"]
@@ -166,6 +196,8 @@ support-files = [
 ]
 
 ["browser_media_wakelock_webaudio.js"]
+
+["browser_move_preserving_browser_element.js"]
 
 ["browser_moz_support_link_open_links_in_chrome.js"]
 
@@ -177,11 +209,8 @@ support-files = [
 
 ["browser_resume_bkg_video_on_tab_hover.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1775552
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1775552
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1775552
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775552
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1775552
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775552
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1775552
   "os == 'win' && os_version == '11.26100' && debug", # Bug 1775552
 ]
 
@@ -198,10 +227,14 @@ support-files = [
   "data/post_form_inner.sjs",
   "data/post_form_outer.sjs",
 ]
-skip-if = ["true"] # Bug ?????? - test directly manipulates content (gBrowser.contentDocument.getElementById("postForm").submit();)
+skip-if = [
+  "true", # Bug ?????? - test directly manipulates content (gBrowser.contentDocument.getElementById("postForm").submit();)
+]
 
 ["browser_starting_autoscroll_in_about_content.js"]
-fail-if = ["a11y_checks"] # Bug 1854538 clicked body.wide-container may not be accessible
+fail-if = [
+  "a11y_checks", # Bug 1854538 clicked body.wide-container may not be accessible
+]
 
 ["browser_suspend_videos_outside_viewport.js"]
 support-files = [

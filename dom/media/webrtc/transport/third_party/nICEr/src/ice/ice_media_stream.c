@@ -38,7 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ice_util.h"
 #include "ice_ctx.h"
 
-static char *nr_ice_media_stream_states[]={"INVALID",
+static const char *nr_ice_media_stream_states[]={"INVALID",
   "UNPAIRED","FROZEN","ACTIVE","CONNECTED","FAILED"
 };
 
@@ -51,7 +51,7 @@ int nr_ice_media_stream_create(nr_ice_ctx *ctx,const char *label,const char *ufr
     nr_ice_component *comp=0;
     int i;
 
-    if(!(stream=RCALLOC(sizeof(nr_ice_media_stream))))
+    if(!(stream=R_NEW(nr_ice_media_stream)))
       ABORT(R_NO_MEMORY);
 
     if(!(stream->label=r_strdup(label)))
@@ -85,7 +85,7 @@ int nr_ice_media_stream_create(nr_ice_ctx *ctx,const char *label,const char *ufr
     stream->l2r_user = 0;
     stream->flags = ctx->flags;
     if(ctx->stun_server_ct_cfg) {
-      if(!(stream->stun_servers=RCALLOC(sizeof(nr_ice_stun_server)*(ctx->stun_server_ct_cfg))))
+      if(!(stream->stun_servers=R_NEW_CNT(nr_ice_stun_server, ctx->stun_server_ct_cfg)))
         ABORT(R_NO_MEMORY);
 
       memcpy(stream->stun_servers,ctx->stun_servers_cfg,sizeof(nr_ice_stun_server)*(ctx->stun_server_ct_cfg));
@@ -93,7 +93,7 @@ int nr_ice_media_stream_create(nr_ice_ctx *ctx,const char *label,const char *ufr
     }
 
     if(ctx->turn_server_ct_cfg) {
-      if(!(stream->turn_servers=RCALLOC(sizeof(nr_ice_turn_server)*(ctx->turn_server_ct_cfg))))
+      if(!(stream->turn_servers=R_NEW_CNT(nr_ice_turn_server, ctx->turn_server_ct_cfg)))
         ABORT(R_NO_MEMORY);
 
       for(int i = 0; i < ctx->turn_server_ct_cfg; ++i) {
@@ -225,10 +225,10 @@ int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attr
     }
 
     /* Make the array we'll need */
-    if(!(attrs=RCALLOC(sizeof(char *)*attrct)))
+    if(!(attrs=R_NEW_CNT(char *, attrct)))
       ABORT(R_NO_MEMORY);
     for(index=0;index<attrct;index++){
-      if(!(attrs[index]=RMALLOC(NR_ICE_MAX_ATTRIBUTE_SIZE)))
+      if(!(attrs[index]=(char*)RMALLOC(NR_ICE_MAX_ATTRIBUTE_SIZE)))
         ABORT(R_NO_MEMORY);
     }
 
@@ -260,12 +260,12 @@ int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attr
     }
 
     /* Now, ufrag and pwd */
-    if(!(tmp=RMALLOC(100)))
+    if(!(tmp=(char*)RMALLOC(100)))
       ABORT(R_NO_MEMORY);
     snprintf(tmp,100,"ice-ufrag:%s",stream->ufrag);
     attrs[index++]=tmp;
 
-    if(!(tmp=RMALLOC(100)))
+    if(!(tmp=(char*)RMALLOC(100)))
       ABORT(R_NO_MEMORY);
     snprintf(tmp,100,"ice-pwd:%s",stream->pwd);
     attrs[index++]=tmp;
@@ -376,7 +376,7 @@ int nr_ice_media_stream_service_pre_answer_requests(nr_ice_peer_ctx *pctx, nr_ic
 static void nr_ice_media_stream_check_timer_cb(NR_SOCKET s, int h, void *cb_arg)
   {
     int r,_status;
-    nr_ice_media_stream *stream=cb_arg;
+    nr_ice_media_stream *stream=(nr_ice_media_stream*)cb_arg;
     nr_ice_cand_pair *pair = 0;
     int timer_multiplier=stream->pctx->active_streams ? stream->pctx->active_streams : 1;
     int timer_val=stream->pctx->ctx->Ta*timer_multiplier;
@@ -855,36 +855,6 @@ void nr_ice_media_stream_component_failed(nr_ice_media_stream *stream,nr_ice_com
     nr_ice_peer_ctx_check_if_connected(stream->pctx);
   }
 
-int nr_ice_media_stream_get_best_candidate(nr_ice_media_stream *str, int component, nr_ice_candidate **candp)
-  {
-    nr_ice_candidate *cand;
-    nr_ice_candidate *best_cand=0;
-    nr_ice_component *comp;
-    int r,_status;
-
-    if(r=nr_ice_media_stream_find_component(str,component,&comp))
-      ABORT(r);
-
-    cand=TAILQ_FIRST(&comp->candidates);
-    while(cand){
-      if(cand->state==NR_ICE_CAND_STATE_INITIALIZED){
-        if(!best_cand || (cand->priority>best_cand->priority))
-          best_cand=cand;
-
-      }
-      cand=TAILQ_NEXT(cand,entry_comp);
-    }
-
-    if(!best_cand)
-      ABORT(R_NOT_FOUND);
-
-    *candp=best_cand;
-
-    _status=0;
-  abort:
-    return(_status);
-  }
-
 
 /* OK, we have the stream the user created, but that reflects the base
    ICE ctx, not the peer_ctx. So, find the related stream in the pctx,
@@ -972,59 +942,6 @@ int nr_ice_media_stream_get_active(nr_ice_peer_ctx *pctx, nr_ice_media_stream *s
     _status=0;
   abort:
     return(_status);
-  }
-
-int nr_ice_media_stream_addrs(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component, nr_transport_addr *local, nr_transport_addr *remote)
-  {
-    int r,_status;
-    nr_ice_component *comp;
-
-    /* First find the peer component */
-    if(r=nr_ice_peer_ctx_find_component(pctx, str, component, &comp))
-      ABORT(r);
-
-    /* Do we have an active pair yet? We should... */
-    if(!comp->active)
-      ABORT(R_BAD_ARGS);
-
-    /* Use the socket on our local side */
-    if(r=nr_socket_getaddr(comp->active->local->osock,local))
-      ABORT(r);
-
-    /* Use the address on the remote side */
-    if(r=nr_transport_addr_copy(remote,&comp->active->remote->addr))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    return(_status);
-  }
-
-
-
-int nr_ice_media_stream_finalize(nr_ice_media_stream *lstr,nr_ice_media_stream *rstr)
-  {
-    nr_ice_component *lcomp,*rcomp;
-
-    r_log(LOG_ICE,LOG_DEBUG,"Finalizing media stream %s, peer=%s",lstr->label,
-      rstr?rstr->label:"NONE");
-
-    lcomp=STAILQ_FIRST(&lstr->components);
-    if(rstr)
-      rcomp=STAILQ_FIRST(&rstr->components);
-    else
-      rcomp=0;
-
-    while(lcomp){
-      nr_ice_component_finalize(lcomp,rcomp);
-
-      lcomp=STAILQ_NEXT(lcomp,entry);
-      if(rcomp){
-        rcomp=STAILQ_NEXT(rcomp,entry);
-      }
-    }
-
-    return(0);
   }
 
 int nr_ice_media_stream_pair_new_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, nr_ice_candidate *cand)

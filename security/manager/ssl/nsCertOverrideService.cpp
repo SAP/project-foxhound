@@ -13,7 +13,6 @@
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCRT.h"
@@ -682,8 +681,8 @@ nsCertOverrideService::
 
   {
     MutexAutoLock lock(mMutex);
-    mozilla::Unused << mUserContextIdsWithSecurityChecksOverride.put(
-        aUserContextId, aDisable);
+    (void)mUserContextIdsWithSecurityChecksOverride.put(aUserContextId,
+                                                        aDisable);
   }
 
   return NS_OK;

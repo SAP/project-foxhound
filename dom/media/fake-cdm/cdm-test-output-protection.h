@@ -4,12 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef DOM_MEDIA_FAKE_CDM_CDM_TEST_OUTPUT_PROTECTION_H_
+#define DOM_MEDIA_FAKE_CDM_CDM_TEST_OUTPUT_PROTECTION_H_
+
 #if defined(XP_WIN)
 #  include <d3d9.h>  // needed to prevent re-definition of enums
 #  include <stdio.h>
+#  include <windows.h>
+
 #  include <string>
 #  include <vector>
-#  include <windows.h>
 
 #  include "opmapi.h"
 #endif
@@ -124,3 +128,5 @@ static void TestOuputProtectionAPIs() {
 }
 
 }  // namespace mozilla::cdmtest
+
+#endif  // DOM_MEDIA_FAKE_CDM_CDM_TEST_OUTPUT_PROTECTION_H_

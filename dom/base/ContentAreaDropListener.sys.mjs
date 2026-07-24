@@ -56,18 +56,17 @@ ContentAreaDropListener.prototype = {
       if (types.contains(type)) {
         data = dt.mozGetDataAt(type, i);
         if (data) {
-          let lines = data.replace(/^\s+|\s+$/gm, "").split("\n");
-          if (!lines.length) {
-            return;
-          }
-
-          // For plain text, there are 2 cases:
+          // In plain text, lines starting with # are ignored completely.
+          // The remaining lines are classified as either URI or non-URI.
+          // There are 2 cases:
           //   * if there is at least one URI:
-          //       Add all URIs, ignoring non-URI lines, so that all URIs
-          //       are opened in tabs.
+          //       Add all URIs, ignoring non-URI lines, so that all URIs are
+          //       opened in tabs. Stop after finding maxNonUriLines non-URIs.
           //   * if there's no URI:
           //       Add the entire text as a single entry, so that the entire
           //       text is searched.
+          const maxNonUriLines = 50;
+          let numNonLinks = 0;
           let hasURI = false;
           // We don't care whether we are in a private context, because we are
           // only using fixedURI and thus there's no risk to use the wrong
@@ -75,17 +74,27 @@ ContentAreaDropListener.prototype = {
           let flags =
             Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
             Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
-          for (let line of lines) {
+          for (let line of data.split("\n")) {
+            line = line.trim();
+            if (!line || line.startsWith("#")) {
+              continue;
+            }
+
             let info = Services.uriFixup.getFixupURIInfo(line, flags);
             if (info.fixedURI) {
               // Use the original line here, and let the caller decide
               // whether to perform fixup or not.
               hasURI = true;
               this._addLink(links, line, line, type);
+            } else {
+              numNonLinks++;
+              if (numNonLinks > maxNonUriLines) {
+                break;
+              }
             }
           }
 
-          if (!hasURI) {
+          if (!hasURI && numNonLinks > 0) {
             this._addLink(links, data, data, type);
           }
           return;

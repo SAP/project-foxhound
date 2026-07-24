@@ -135,6 +135,9 @@ class JSTerm extends Component {
     };
   }
 
+  // AbortController to cancel all event listener on destroy.
+  #abortController = null;
+
   constructor(props) {
     super(props);
 
@@ -171,6 +174,7 @@ class JSTerm extends Component {
 
     /**
      * Last input value.
+     *
      * @type string
      */
     this.lastInputValue = "";
@@ -571,7 +575,7 @@ class JSTerm extends Component {
       this.resizeObserver.observe(this.node);
 
       // Update the character width needed for the popup offset calculations.
-      this._inputCharWidth = this._getInputCharWidth();
+      this._inputCharWidth = this.editor?.getInputCharWidth() || null;
       this.lastInputValue && this._setValue(this.lastInputValue);
     }
   }
@@ -588,13 +592,10 @@ class JSTerm extends Component {
     );
   }
 
-  // AbortController to cancel all event listener on destroy.
-  #abortController = null;
-
   /**
    * Do all the imperative work needed after a Redux store update.
    *
-   * @param {Object} nextProps: props passed from shouldComponentUpdate.
+   * @param {object} nextProps: props passed from shouldComponentUpdate.
    */
   imperativeUpdate(nextProps) {
     if (!nextProps) {
@@ -653,7 +654,7 @@ class JSTerm extends Component {
 
   /**
    *
-   * @param {Number|null} editorWidth: The width to set the node to. If null, removes any
+   * @param {number | null} editorWidth: The width to set the node to. If null, removes any
    *                                   `width` property on node style.
    */
   setEditorWidth(editorWidth) {
@@ -764,6 +765,7 @@ class JSTerm extends Component {
 
   /**
    * Gets the value from the input field
+   *
    * @returns string
    */
   _getValue() {
@@ -813,7 +815,7 @@ class JSTerm extends Component {
   }
 
   getSelectionStart() {
-    return this.getInputValueBeforeCursor().length;
+    return this.editor.getTextBeforeCursor().length;
   }
 
   getSelectedText() {
@@ -909,7 +911,7 @@ class JSTerm extends Component {
    * Fired after a key is handled through a key map.
    *
    * @param {CodeMirror} cm: codeMirror instance
-   * @param {String} key: The key that was handled
+   * @param {string} key: The key that was handled
    */
   _onEditorKeyHandled(cm, key) {
     // The autocloseBracket addon handle closing brackets keys when they're typed, but
@@ -1069,7 +1071,7 @@ class JSTerm extends Component {
    * Takes the data returned by the server and update the autocomplete popup state (i.e.
    * its visibility and items).
    *
-   * @param {Object} data
+   * @param {object} data
    *        The autocompletion data as returned by the webconsole actor's autocomplete
    *        service. Should be of the following shape:
    *        {
@@ -1091,7 +1093,7 @@ class JSTerm extends Component {
       return;
     }
 
-    const inputUntilCursor = this.getInputValueBeforeCursor();
+    const inputUntilCursor = this.editor.getTextBeforeCursor();
 
     const items = matches.map(label => {
       let preLabel = label.substring(0, matchProp.length);
@@ -1190,7 +1192,7 @@ class JSTerm extends Component {
       // If the user is performing an element access, we need to check if we should add
       // starting and ending quotes, as well as a closing bracket.
       if (isElementAccess) {
-        const inputBeforeCursor = this.getInputValueBeforeCursor();
+        const inputBeforeCursor = this.editor.getTextBeforeCursor();
         if (inputBeforeCursor.trim().endsWith("[")) {
           suffix = label;
         }
@@ -1216,6 +1218,7 @@ class JSTerm extends Component {
   /**
    * Clear the current completion information, cancel any pending autocompletion update
    * and close the autocomplete popup, if needed.
+   *
    * @fires autocomplete-updated
    */
   clearCompletion() {
@@ -1287,7 +1290,7 @@ class JSTerm extends Component {
    * current completion text. This is more than the current input + the completion text,
    * as there are special cases for element access and case-insensitive matches.
    *
-   * @return {Object}: An object of the following shape:
+   * @return {object}: An object of the following shape:
    *         - {String} expression: The complete expression
    *         - {String} completionText: the completion text only, which should be used
    *                    with the next property
@@ -1301,7 +1304,7 @@ class JSTerm extends Component {
    *                     quote and/or bracket.
    */
   getInputValueWithCompletionText() {
-    const inputBeforeCursor = this.getInputValueBeforeCursor();
+    const inputBeforeCursor = this.editor.getTextBeforeCursor();
     const inputAfterCursor = this._getValue().substring(
       inputBeforeCursor.length
     );
@@ -1376,14 +1379,6 @@ class JSTerm extends Component {
       numberOfCharsToMoveTheCursorForward,
       numberOfCharsToReplaceCharsBeforeCursor,
     };
-  }
-
-  getInputValueBeforeCursor() {
-    return this.editor
-      ? this.editor
-          .getDoc()
-          .getRange({ line: 0, ch: 0 }, this.editor.getCursor())
-      : null;
   }
 
   /**
@@ -1466,16 +1461,6 @@ class JSTerm extends Component {
     const lineContent = this.editor.getLine(line);
     const textAfterCursor = lineContent.substring(ch);
     return textAfterCursor === "";
-  }
-
-  /**
-   * Calculates and returns the width of a single character of the input box.
-   * This will be used in opening the popup at the correct offset.
-   *
-   * @returns {Number|null}: Width off the "x" char, or null if the input does not exist.
-   */
-  _getInputCharWidth() {
-    return this.editor ? this.editor.defaultCharWidth() : null;
   }
 
   onContextMenu(e) {

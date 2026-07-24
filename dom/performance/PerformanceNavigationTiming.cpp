@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PerformanceNavigationTiming.h"
-#include "mozilla/dom/PerformanceNavigationTimingBinding.h"
+
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/dom/PerformanceNavigationTimingBinding.h"
 
 using namespace mozilla::dom;
 

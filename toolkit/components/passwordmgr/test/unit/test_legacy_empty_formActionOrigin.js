@@ -69,12 +69,12 @@ add_task(async function test_addLogin_wildcard() {
  * that have an empty formActionOrigin in the store, even when a formActionOrigin is
  * specified.
  */
-add_task(function test_search_all_wildcard() {
+add_task(async function test_search_all_wildcard() {
   // Search a given formActionOrigin on any host.
-  let matchData = newPropertyBag({
+  const result = await Services.logins.searchLoginsAsync({
     formActionOrigin: "http://www.example.com",
   });
-  Assert.equal(Services.logins.searchLogins(matchData).length, 2);
+  Assert.equal(result.length, 2);
 
   Assert.equal(
     Services.logins.countLogins("", "http://www.example.com", null),
@@ -82,8 +82,11 @@ add_task(function test_search_all_wildcard() {
   );
 
   // Restrict the search to one host.
-  matchData.setProperty("origin", "http://any.example.com");
-  Assert.equal(Services.logins.searchLogins(matchData).length, 1);
+  const result2 = await Services.logins.searchLoginsAsync({
+    formActionOrigin: "http://www.example.com",
+    origin: "http://any.example.com",
+  });
+  Assert.equal(result2.length, 1);
 
   Assert.equal(
     Services.logins.countLogins(
@@ -99,10 +102,10 @@ add_task(function test_search_all_wildcard() {
  * Verifies that specifying an empty string for formActionOrigin in searchLogins
  * includes only logins that have an empty formActionOrigin in the store.
  */
-add_task(function test_searchLogins_wildcard() {
-  let logins = Services.logins.searchLogins(
-    newPropertyBag({ formActionOrigin: "" })
-  );
+add_task(async function test_searchLogins_wildcard() {
+  let logins = await Services.logins.searchLoginsAsync({
+    formActionOrigin: "",
+  });
 
   let loginInfo = TestData.formLogin({
     origin: "http://any.example.com",

@@ -75,6 +75,7 @@ class VideoProcessorD3D11 {
   gfx::IntSize mSize;
   RefPtr<ID3D11VideoProcessor> mVideoProcessor;
   RefPtr<ID3D11VideoProcessorEnumerator> mVideoProcessorEnumerator;
+  bool mContentIsHDR = false;
 };
 
 }  // namespace layers

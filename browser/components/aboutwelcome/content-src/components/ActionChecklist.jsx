@@ -80,7 +80,11 @@ export const ActionChecklistProgressBar = ({ progress }) => {
   );
 };
 
-export const ActionChecklist = ({ content, message_id }) => {
+export const ActionChecklist = ({
+  content,
+  message_id,
+  writeInMicrosurvey,
+}) => {
   const tiles = content.tiles.data;
   const [progressValue, setProgressValue] = useState(0);
   const [numberOfCompletedActions, setNumberOfCompletedActions] = useState(0);
@@ -119,7 +123,12 @@ export const ActionChecklist = ({ content, message_id }) => {
     setNumberOfCompletedActions(numberOfCompletedActions + 1);
 
     AboutWelcomeUtils.handleUserAction({ type, data });
-    AboutWelcomeUtils.sendActionTelemetry(message_id, source_id);
+    AboutWelcomeUtils.sendActionTelemetry(
+      message_id,
+      source_id,
+      "CLICK_BUTTON",
+      { writeInMicrosurvey }
+    );
   }
 
   return (

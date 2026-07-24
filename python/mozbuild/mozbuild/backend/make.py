@@ -3,9 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import mozpack.path as mozpath
+from mozshellutil import quote as shell_quote
 
 from mozbuild.frontend.data import GeneratedFile
-from mozbuild.shellutil import quote as shell_quote
 
 from .common import CommonBackend
 

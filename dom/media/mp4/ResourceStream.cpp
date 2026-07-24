@@ -16,8 +16,8 @@ ResourceStream::ResourceStream(mozilla::MediaResource* aResource)
 
 ResourceStream::~ResourceStream() { MOZ_ASSERT(mPinCount == 0); }
 
-bool ResourceStream::ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-                            size_t* aBytesRead) {
+nsresult ResourceStream::ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
+                                size_t* aBytesRead) {
   uint32_t sum = 0;
   uint32_t bytesRead = 0;
   do {
@@ -26,25 +26,25 @@ bool ResourceStream::ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
     uint32_t toRead = aCount - sum;
     nsresult rv = mResource.ReadAt(offset, buffer, toRead, &bytesRead);
     if (NS_FAILED(rv)) {
-      return false;
+      return rv;
     }
     sum += bytesRead;
   } while (sum < aCount && bytesRead > 0);
 
   *aBytesRead = sum;
-  return true;
+  return NS_OK;
 }
 
-bool ResourceStream::CachedReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-                                  size_t* aBytesRead) {
+nsresult ResourceStream::CachedReadAt(int64_t aOffset, void* aBuffer,
+                                      size_t aCount, size_t* aBytesRead) {
   nsresult rv = mResource.GetResource()->ReadFromCache(
       reinterpret_cast<char*>(aBuffer), aOffset, aCount);
   if (NS_FAILED(rv)) {
     *aBytesRead = 0;
-    return false;
+    return rv;
   }
   *aBytesRead = aCount;
-  return true;
+  return rv;
 }
 
 bool ResourceStream::Length(int64_t* aSize) {

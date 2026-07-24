@@ -24,22 +24,16 @@ support-files = [
 
 ["browser_download_spam_protection.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && swgl", # Bug 1743263
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1775779
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1775779
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && socketprocess_networking", # Bug 1743263
-  "os == 'win' && os_version == '11.2009' && opt", # Bug 1775779
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && asan", # Bug 1775779
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && ccov", # Bug 1775779
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && debug && socketprocess_networking", # Bug 1775779
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1775779
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1775779
 ]
 support-files = ["test_spammy_page.html"]
 
 ["browser_download_starts_in_tmp.js"]
 
 ["browser_download_succeeds_with_inaccessible_tmp.js"]
-run-if = ["os != 'win'"] # Due to chmod the test only makes sense on Unix-like.
+run-if = [
+  "os != 'win'", # Due to chmod the test only makes sense on Unix-like.
+]
 
 ["browser_downloads_autohide.js"]
 
@@ -52,8 +46,7 @@ run-if = ["os != 'win'"] # Due to chmod the test only makes sense on Unix-like.
 ["browser_downloads_jsonview.js"]
 support-files = ["cookies-json.sjs"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && socketprocess_networking", # Bug 1929561
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && socketprocess_networking", # Bug 1929561
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking", # Bug 1929561
 ]
 
 ["browser_downloads_keynav.js"]
@@ -61,7 +54,6 @@ skip-if = [
 ["browser_downloads_panel_block.js"]
 
 ["browser_downloads_panel_context_menu.js"]
-skip-if = ["os == 'win' && os_version == '11.2009' && processor == 'x86_64' && asan"] # Bug 1719949
 
 ["browser_downloads_panel_ctrl_click.js"]
 
@@ -84,6 +76,8 @@ support-files = [
 ]
 
 ["browser_downloads_pauseResume.js"]
+
+["browser_downloads_taskbar.js"]
 
 ["browser_first_download_panel.js"]
 

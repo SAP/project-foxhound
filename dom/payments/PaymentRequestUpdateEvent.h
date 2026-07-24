@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_PaymentRequestUpdateEvent_h
 #define mozilla_dom_PaymentRequestUpdateEvent_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/PaymentRequestUpdateEventBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"

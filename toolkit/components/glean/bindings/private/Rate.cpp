@@ -19,7 +19,7 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void RateMetric::AddToNumerator(int32_t aAmount) const {
+void RateStandalone::AddToNumerator(int32_t aAmount) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (scalarId && aAmount >= 0) {
     TelemetryScalar::Add(scalarId.extract(), u"numerator"_ns, aAmount);
@@ -27,7 +27,7 @@ void RateMetric::AddToNumerator(int32_t aAmount) const {
   fog_rate_add_to_numerator(mId, aAmount);
 }
 
-void RateMetric::AddToDenominator(int32_t aAmount) const {
+void RateStandalone::AddToDenominator(int32_t aAmount) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (scalarId && aAmount >= 0) {
     TelemetryScalar::Add(scalarId.extract(), u"denominator"_ns, aAmount);

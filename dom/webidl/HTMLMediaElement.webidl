@@ -120,13 +120,6 @@ partial interface HTMLMediaElement {
   [Func="IsChromeOrUAWidget"] attribute boolean mozAllowCasting;
   [Func="IsChromeOrUAWidget"] attribute boolean mozIsCasting;
 
-  // Mozilla extension: stream capture
-  [Throws]
-  MediaStream mozCaptureStream();
-  [Throws]
-  MediaStream mozCaptureStreamUntilEnded();
-  readonly attribute boolean mozAudioCaptured;
-
   // Mozilla extension: return embedded metadata from the stream as a
   // JSObject with key:value pairs for each tag. This can be used by
   // player interfaces to display the song title, artist, etc.
@@ -282,4 +275,17 @@ partial interface HTMLMediaElement {
 partial interface HTMLMediaElement {
   [Pref="media.allowed-to-play.enabled"]
   readonly attribute boolean allowedToPlay;
+};
+
+// https://w3c.github.io/mediacapture-fromelement/#html-media-element-media-capture-extensions
+partial interface HTMLMediaElement {
+  [Throws, Pref="media.captureStream.enabled"]
+  MediaStream captureStream();
+
+  // Non-spec compliant stream capture APIs. They will be deprecated.
+  [Throws]
+  MediaStream mozCaptureStream();
+  [Throws]
+  MediaStream mozCaptureStreamUntilEnded();
+  readonly attribute boolean mozAudioCaptured;
 };

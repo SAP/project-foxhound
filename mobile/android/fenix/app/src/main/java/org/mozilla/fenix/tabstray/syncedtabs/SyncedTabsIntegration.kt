@@ -18,7 +18,6 @@ import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.tabstray.TabsTrayAction
-import org.mozilla.fenix.tabstray.TabsTrayFab
 import org.mozilla.fenix.tabstray.TabsTrayStore
 import org.mozilla.fenix.tabstray.ext.toComposeList
 import org.mozilla.fenix.tabstray.ext.toSyncedTabsListItem
@@ -85,10 +84,11 @@ class SyncedTabsIntegration(
         store.dispatch(TabsTrayAction.UpdateSyncedTabs(listOf(error.toSyncedTabsListItem(context, navController))))
     }
 
-    /**
-     * Do nothing; the UI is handled with [TabsTrayFab].
-     */
-    override fun startLoading() = Unit
+    override fun startLoading() {
+        if (!store.state.syncing) {
+            store.dispatch(TabsTrayAction.SyncNow)
+        }
+    }
 
     override fun stopLoading() {
         store.dispatch(TabsTrayAction.SyncCompleted)

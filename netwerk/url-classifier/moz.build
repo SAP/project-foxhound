@@ -47,6 +47,8 @@ UNIFIED_SOURCES += [
     "UrlClassifierFeatureFactory.cpp",
     "UrlClassifierFeatureFingerprintingAnnotation.cpp",
     "UrlClassifierFeatureFingerprintingProtection.cpp",
+    "UrlClassifierFeatureGlobalCache.cpp",
+    "UrlClassifierFeatureHarmfulAddonProtection.cpp",
     "UrlClassifierFeaturePhishingProtection.cpp",
     "UrlClassifierFeatureResult.cpp",
     "UrlClassifierFeatureSocialTrackingAnnotation.cpp",
@@ -68,6 +70,7 @@ EXPORTS.mozilla.net += [
 LOCAL_INCLUDES += [
     "/netwerk/base",
     "/netwerk/protocol/http",
+    "/toolkit/components/content-classifier",
     "/toolkit/components/url-classifier",
 ]
 

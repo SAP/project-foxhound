@@ -16,7 +16,7 @@
  * we fallback to `HTMLElement.textContent`.
  *
  * @param {HTMLElement} el: The element we want the text of.
- * @returns {String|null} The text of the element, or null if el is falsy.
+ * @returns {string | null} The text of the element, or null if el is falsy.
  */
 function getElementText(el) {
   if (!el) {

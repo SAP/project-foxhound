@@ -183,4 +183,39 @@ TEST(Queue, PushPopSequence)
   }
 }
 
+TEST(Queue, Iterate)
+{
+  Queue<uint16_t, 8> queue;
+  for (uint16_t i = 0; i < 256; ++i) {
+    queue.Push(std::move(i));
+  }
+  uint16_t expected = 0;
+  queue.Iterate([&](uint16_t aItem) {
+    EXPECT_EQ(aItem, expected);
+    ++expected;
+  });
+  EXPECT_EQ(expected, 256u);
+}
+
+TEST(Queue, IterateWithNonZeroOffset)
+{
+  Queue<uint16_t, 8> queue;
+
+  // This will make the initial page start with index 1, while index 0 will
+  // still be filled after using up the last index, resulting:
+  // [7 1 2 3 4 5 6 pointer-to-next]
+  queue.Push(255);
+  queue.Pop();
+
+  for (uint16_t i = 0; i < 256; ++i) {
+    queue.Push(std::move(i));
+  }
+  uint16_t expected = 0;
+  queue.Iterate([&](uint16_t aItem) {
+    EXPECT_EQ(aItem, expected);
+    ++expected;
+  });
+  EXPECT_EQ(expected, 256u);
+}
+
 }  // namespace TestQueue

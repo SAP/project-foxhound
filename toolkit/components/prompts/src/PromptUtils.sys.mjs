@@ -74,7 +74,7 @@ export var EnableDelayHelper = function ({
   // While the user key-repeats, we want to renew the timer until keyup:
   this.focusTarget.addEventListener("keyup", this, true);
   this.focusTarget.addEventListener("keydown", this, true);
-  this.focusTarget.document.addEventListener("unload", this);
+  this.focusTarget.addEventListener("unload", this);
 
   // If we're not part of the active window, don't even start the timer yet.
   let topWin = focusTarget.browsingContext.top.window;
@@ -91,14 +91,6 @@ EnableDelayHelper.prototype = {
   },
 
   handleEvent(event) {
-    if (
-      !event.type.startsWith("key") &&
-      event.target != this.focusTarget &&
-      event.target != this.focusTarget.document
-    ) {
-      return;
-    }
-
     switch (event.type) {
       case "keyup":
         // As soon as any key goes up, we can stop treating keypresses
@@ -150,7 +142,7 @@ EnableDelayHelper.prototype = {
     this.focusTarget.removeEventListener("focus", this);
     this.focusTarget.removeEventListener("keyup", this, true);
     this.focusTarget.removeEventListener("keydown", this, true);
-    this.focusTarget.document.removeEventListener("unload", this);
+    this.focusTarget.removeEventListener("unload", this);
 
     if (this._focusTimer) {
       this._focusTimer.cancel();
@@ -187,6 +179,8 @@ function makeSafe(fn) {
     // which makes it likely that the given fn might throw.
     try {
       fn();
-    } catch (e) {}
+    } catch (e) {
+      console.error(e);
+    }
   };
 }

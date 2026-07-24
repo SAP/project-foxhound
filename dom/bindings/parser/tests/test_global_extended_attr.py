@@ -42,7 +42,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown for [Global] used on an interface with a " "named setter",
+        "Should have thrown for [Global] used on an interface with a named setter",
     )
 
     parser = parser.reset()
@@ -63,7 +63,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown for [Global] used on an interface with a " "named deleter",
+        "Should have thrown for [Global] used on an interface with a named deleter",
     )
 
     parser = parser.reset()
@@ -128,7 +128,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown for [Global] used on an interface with a " "descendant",
+        "Should have thrown for [Global] used on an interface with a descendant",
     )
 
     parser = parser.reset()

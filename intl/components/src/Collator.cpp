@@ -43,6 +43,28 @@ int32_t Collator::CompareStrings(Span<const char16_t> aSource,
   return 0;
 }
 
+Result<int32_t, ICUError> Collator::CompareStrings(
+    Span<const char> aSource, Span<const char> aTarget) const {
+  UErrorCode status = U_ZERO_ERROR;
+  UCollationResult result =
+      ucol_strcollUTF8(mCollator.GetConst(), aSource.data(),
+                       static_cast<int32_t>(aSource.size()), aTarget.data(),
+                       static_cast<int32_t>(aTarget.size()), &status);
+  if (U_FAILURE(status)) {
+    return Err(ToICUError(status));
+  }
+  switch (result) {
+    case UCOL_LESS:
+      return -1;
+    case UCOL_EQUAL:
+      return 0;
+    case UCOL_GREATER:
+      return 1;
+  }
+  MOZ_ASSERT_UNREACHABLE("ucol_strcollUTF8 returned bad UCollationResult");
+  return 0;
+}
+
 int32_t Collator::CompareSortKeys(Span<const uint8_t> aKey1,
                                   Span<const uint8_t> aKey2) const {
   size_t minLength = std::min(aKey1.Length(), aKey2.Length());

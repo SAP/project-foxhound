@@ -43,7 +43,7 @@ int nr_interface_prioritizer_create_int(void *obj,
     int _status;
     nr_interface_prioritizer *ifp=0;
 
-    if(!(ifp=RCALLOC(sizeof(nr_interface_prioritizer))))
+    if(!(ifp=R_NEW(nr_interface_prioritizer)))
       ABORT(R_NO_MEMORY);
 
     ifp->obj = obj;

@@ -55,7 +55,9 @@
 ["test_chrome_window_type.py"]
 
 ["test_cli_arguments.py"]
-skip-if = ["!manage_instance"]
+skip-if = [
+  "!manage_instance",
+]
 
 ["test_click.py"]
 
@@ -94,11 +96,15 @@ skip-if = ["asan", "!manage_instance"]
 expected = "fail"
 
 ["test_file_upload.py"]
-skip-if = ["os == 'win'"] # http://bugs.python.org/issue14574
+skip-if = [
+  "os == 'win'", # http://bugs.python.org/issue14574
+]
 
 ["test_findelement.py"]
 
 ["test_geckoinstance.py"]
+
+["test_generate_test_report.py"]
 
 ["test_get_computed_label.py"]
 
@@ -123,18 +129,26 @@ skip-if = ["os == 'win'"] # http://bugs.python.org/issue14574
 ["test_prefs.py"]
 
 ["test_prefs_enforce.py"]
-skip-if = ["!manage_instance"]
+skip-if = [
+  "!manage_instance",
+]
 
 ["test_profile_management.py"]
-skip-if = ["!manage_instance"]
+skip-if = [
+  "!manage_instance",
+]
 
 ["test_proxy.py"]
 
 ["test_quit_restart.py"]
-skip-if = ["!manage_instance"]
+skip-if = [
+  "!manage_instance",
+]
 
 ["test_reftest.py"]
-skip-if = ["os == 'mac'"] # bug 1674411
+skip-if = [
+  "os == 'mac'", # bug 1674411
+]
 
 ["test_rendered_element.py"]
 
@@ -180,11 +194,12 @@ skip-if = ["os == 'mac'"] # bug 1674411
 
 ["test_window_rect.py"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && !swgl", # Bug 1709584
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1709584
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1709584
 ]
 
 ["test_window_status.py"]
 
 ["test_windowless.py"]
-run-if = ["os == 'mac'"] # only supported on MacOS
+run-if = [
+  "os == 'mac'", # only supported on MacOS
+]

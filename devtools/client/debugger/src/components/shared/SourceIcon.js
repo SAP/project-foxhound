@@ -7,53 +7,50 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
-import AccessibleImage from "./AccessibleImage";
+import DebuggerImage from "./DebuggerImage";
 
 import { getSourceClassnames } from "../../utils/source";
-import { isSourceBlackBoxed, hasPrettyTab } from "../../selectors/index";
+import { isSourceBlackBoxed } from "../../selectors/index";
 
 class SourceIcon extends PureComponent {
   static get propTypes() {
     return {
+      className: PropTypes.string,
       modifier: PropTypes.func,
       location: PropTypes.object.isRequired,
-      iconClass: PropTypes.string,
-      forTab: PropTypes.bool,
+      iconName: PropTypes.string,
     };
   }
 
   render() {
-    const { modifier } = this.props;
-    let { iconClass } = this.props;
+    const { className, modifier } = this.props;
+    let { iconName } = this.props;
 
     if (modifier) {
-      const modified = modifier(iconClass);
+      const modified = modifier(iconName);
       if (!modified) {
         return null;
       }
-      iconClass = modified;
+      iconName = modified;
     }
-    return React.createElement(AccessibleImage, {
-      className: `source-icon ${iconClass}`,
+
+    return React.createElement(DebuggerImage, {
+      name: iconName,
+      // Append the optional className to the default "source-icon" class.
+      className: `source-icon${className ? ` ${className}` : ""}`,
     });
   }
 }
 
 export default connect((state, props) => {
-  const { forTab, location } = props;
+  const { location } = props;
   const isBlackBoxed = isSourceBlackBoxed(state, location.source);
-  // For the tab icon, we don't want to show the pretty icon for the non-pretty tab
-  const hasMatchingPrettyTab = !forTab && hasPrettyTab(state, location.source);
 
   // This is the key function that will compute the icon type,
   // In addition to the "modifier" implemented by each callsite.
-  const iconClass = getSourceClassnames(
-    location.source,
-    isBlackBoxed,
-    hasMatchingPrettyTab
-  );
+  const iconName = getSourceClassnames(location.source, isBlackBoxed);
 
   return {
-    iconClass,
+    iconName,
   };
 })(SourceIcon);

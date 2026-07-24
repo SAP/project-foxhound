@@ -7,7 +7,6 @@
 #include "Matrix.h"
 #include "Quaternion.h"
 #include "Tools.h"
-#include <algorithm>
 #include <ostream>
 #include <math.h>
 #include <float.h>  // for FLT_EPSILON

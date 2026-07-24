@@ -131,6 +131,20 @@ fx-suggest:
     - ttran@mozilla.com
     - najiang@mozilla.com
 
+fx-suggest-api:
+  description: |
+    A ping representing a single interaction event with Firefox Suggestions API.
+    Distinguishable by its `ping_type`.
+    Does not contain a `client_id`.
+  include_client_id: false
+  uploader_capabilities:
+    - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1984499
+  data_reviews: []
+  notification_emails:
+    - rmalicdem@mozilla.com
+
 fx-accounts:
   description: |
     A ping for information about Mozilla Account usage. Sent at the same cadence
@@ -277,3 +291,17 @@ nimbus:
   notification_emails:
     - chumphreys@mozilla.com
     - project-nimbus@mozilla.com
+
+onboarding:
+  description: |
+    This ping is submitted multiple times during onboarding: once after every card/screen is completed.
+    Usually (or always?) the first card/screen asks permission to submit metrics, so the first
+    `onboarding` ping is the logical negation of the `onboarding-opt-out` ping.
+  include_client_id: false
+  send_if_empty: true
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2010810
+  data_reviews:
+    - https://phabricator.services.mozilla.com/D280983
+  notification_emails:
+    - android-probes@mozilla.com

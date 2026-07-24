@@ -6,6 +6,10 @@
 
 #include "AutoplayPolicy.h"
 
+#include "mozilla/Components.h"
+#include "mozilla/Logging.h"
+#include "mozilla/MediaManager.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/AudioContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
@@ -14,10 +18,6 @@
 #include "mozilla/dom/NavigatorBinding.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/Logging.h"
-#include "mozilla/MediaManager.h"
-#include "mozilla/Components.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIAutoplay.h"

@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsArray_h__
-#define nsArray_h__
+#ifndef nsArray_h_
+#define nsArray_h_
 
 #include "nsIMutableArray.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
 
 // {35C66FD1-95E9-4e0a-80C5-C3BD2B375481}
 #define NS_ARRAY_CID \

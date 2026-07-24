@@ -9,7 +9,6 @@
  */
 
 const callback = (mutations, observer) => {
-  console.error(mutations, observer);
   const search = document.evaluate(
     "//*[text()[contains(., 'Chromeブラウザの最新版をご利用ください')]]",
     document,

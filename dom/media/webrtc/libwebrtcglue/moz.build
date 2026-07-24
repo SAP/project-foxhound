@@ -6,6 +6,7 @@
 include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "/dom/media/gmp",  # for GMPLog.h,
     "/dom/media/systemservices",
@@ -16,10 +17,6 @@ LOCAL_INCLUDES += [
     "/third_party/abseil-cpp",
     "/third_party/libsrtp/src/include",
     "/third_party/libwebrtc",
-]
-
-EXPORTS.mozilla.media.webrtc += [
-    "WebrtcLocation.h",
 ]
 
 UNIFIED_SOURCES += [

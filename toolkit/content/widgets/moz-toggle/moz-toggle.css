@@ -23,7 +23,7 @@
   --toggle-dot-margin: 1px;
   --toggle-dot-height: calc(var(--toggle-height) - 2 * var(--toggle-dot-margin) - 2 * var(--toggle-border-width));
   --toggle-dot-width: var(--toggle-dot-height);
-  --toggle-dot-transform-x: calc(var(--toggle-width) - 4 * var(--toggle-dot-margin) - var(--toggle-dot-width));
+  --toggle-dot-transform-x: calc(var(--toggle-width) - 2 * var(--toggle-dot-margin) - 2px - var(--toggle-dot-width));
   --input-width: var(--toggle-width);
 }
 
@@ -156,7 +156,7 @@
 }
 
 @media not (forced-colors) {
-  :host([disabled]) .toggle-button {
+  :host(:state(disabled)) .toggle-button {
     opacity: 0.4;
   }
 }

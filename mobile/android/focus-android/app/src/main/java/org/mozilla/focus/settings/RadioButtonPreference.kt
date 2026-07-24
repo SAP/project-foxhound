@@ -22,6 +22,7 @@ import androidx.preference.PreferenceViewHolder
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelative
 import org.mozilla.focus.R
+import androidx.preference.R as preferenceR
 
 interface GroupableRadioButton {
     fun updateRadioValue(isChecked: Boolean)
@@ -72,7 +73,7 @@ open class RadioButtonPreference @JvmOverloads constructor(
             R.styleable.RadioButtonPreference,
             getAttr(
                 context,
-                androidx.preference.R.attr.preferenceStyle,
+                preferenceR.attr.preferenceStyle,
                 android.R.attr.preferenceStyle,
             ),
             0,

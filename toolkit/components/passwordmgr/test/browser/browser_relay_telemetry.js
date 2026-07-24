@@ -5,13 +5,6 @@ Services.scriptloader.loadSubScript(
 
 const TEST_URL_PATH = `https://example.org${DIRECTORY_PATH}form_basic_signup.html`;
 
-const setupRelayScenario = async scenarioName => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["signon.firefoxRelay.feature", scenarioName]],
-  });
-  Services.telemetry.clearEvents();
-};
-
 const collectRelayTelemeryEvent = sameFlow => {
   const collectedEvents = TelemetryTestUtils.getEvents(
     { category: "relay_integration" },
@@ -263,7 +256,8 @@ add_task(async function test_popup_option_optin_disabled() {
 
 add_task(async function test_popup_option_fillusername() {
   await setupRelayScenario("enabled");
-  const rsSandbox = await stubRemoteSettingsAllowList();
+  const rsAllowSandbox = await stubRemoteSettingsAllowList();
+  const rsDenySandbox = await stubRemoteSettingsDenyList();
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -284,7 +278,8 @@ add_task(async function test_popup_option_fillusername() {
       ]);
     }
   );
-  rsSandbox.restore();
+  rsAllowSandbox.restore();
+  rsDenySandbox.restore();
 });
 
 add_task(async function test_fillusername_free_tier_limit() {

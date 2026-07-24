@@ -7,56 +7,55 @@
 #ifndef mozilla_dom_ScriptTrace_h
 #define mozilla_dom_ScriptTrace_h
 
-#include "mozilla/AsyncEventDispatcher.h"
+#include "js/loader/LoadedScript.h"       // JS::loader::LoadedScript
+#include "js/loader/ScriptLoadRequest.h"  // JS::loader::ScriptLoadRequest
 #include "mozilla/StaticPrefs_dom.h"
-#include "js/loader/ScriptLoadRequest.h"
-#include "mozilla/dom/ScriptLoadContext.h"
 
 // This macro is used to wrap a tracing mechanism which is scheduling events
 // which are then used by the JavaScript code of test cases to track the code
 // path to verify the optimizations are working as expected.
-#define TRACE_FOR_TEST(request, str)                 \
-  PR_BEGIN_MACRO                                     \
-  nsresult rv = NS_OK;                               \
-  rv = mozilla::dom::script::TestingDispatchEvent(   \
-      request, NS_LITERAL_STRING_FROM_CSTRING(str)); \
-  NS_ENSURE_SUCCESS(rv, rv);                         \
+#define TRACE_FOR_TEST(requestOrScript, str)                         \
+  PR_BEGIN_MACRO                                                     \
+  mozilla::dom::script::TestingNotifyObserver(requestOrScript, str); \
   PR_END_MACRO
 
-#define TRACE_FOR_TEST_BOOL(request, str)            \
-  PR_BEGIN_MACRO                                     \
-  nsresult rv = NS_OK;                               \
-  rv = mozilla::dom::script::TestingDispatchEvent(   \
-      request, NS_LITERAL_STRING_FROM_CSTRING(str)); \
-  NS_ENSURE_SUCCESS(rv, false);                      \
-  PR_END_MACRO
-
-#define TRACE_FOR_TEST_NONE(request, str)            \
-  PR_BEGIN_MACRO                                     \
-  mozilla::dom::script::TestingDispatchEvent(        \
-      request, NS_LITERAL_STRING_FROM_CSTRING(str)); \
+#define TRACE_FOR_TEST_0(str)                       \
+  PR_BEGIN_MACRO                                    \
+  mozilla::dom::script::TestingNotifyObserver(str); \
   PR_END_MACRO
 
 namespace mozilla::dom::script {
 
-static nsresult TestingDispatchEvent(JS::loader::ScriptLoadRequest* aRequest,
-                                     const nsAString& aEventType) {
+void TestingNotifyObserver(JS::loader::ScriptLoadRequest* aRequest,
+                           JS::loader::LoadedScript* aLoadedScript,
+                           const char* aEvent);
+
+inline void TestingNotifyObserver(JS::loader::LoadedScript* aLoadedScript,
+                                  const char* aEvent) {
   if (!StaticPrefs::dom_expose_test_interfaces()) {
-    return NS_OK;
+    return;
   }
 
-  nsIScriptElement* scriptElement =
-      aRequest->GetScriptLoadContext()->GetScriptElementForTrace();
-
-  nsCOMPtr<nsINode> target(do_QueryInterface(scriptElement));
-  if (!target) {
-    return NS_OK;
-  }
-
-  RefPtr<AsyncEventDispatcher> dispatcher = new AsyncEventDispatcher(
-      target, aEventType, CanBubble::eYes, ChromeOnlyDispatch::eNo);
-  return dispatcher->PostDOMEvent();
+  TestingNotifyObserver(nullptr, aLoadedScript, aEvent);
 }
+
+inline void TestingNotifyObserver(JS::loader::ScriptLoadRequest* aRequest,
+                                  const char* aEvent) {
+  if (!StaticPrefs::dom_expose_test_interfaces()) {
+    return;
+  }
+
+  TestingNotifyObserver(aRequest, aRequest->getLoadedScript(), aEvent);
+}
+
+inline void TestingNotifyObserver(const char* aEvent) {
+  if (!StaticPrefs::dom_expose_test_interfaces()) {
+    return;
+  }
+
+  TestingNotifyObserver(nullptr, nullptr, aEvent);
+}
+
 }  // namespace mozilla::dom::script
 
 #endif  // mozilla_dom_ScriptTrace_h

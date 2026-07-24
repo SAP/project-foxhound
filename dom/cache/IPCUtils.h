@@ -8,7 +8,6 @@
 #define mozilla_dom_cache_IPCUtils_h
 
 #include "ipc/EnumSerializer.h"
-
 #include "mozilla/dom/cache/Types.h"
 
 namespace IPC {

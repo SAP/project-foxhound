@@ -8,7 +8,6 @@
 #define mozjemalloc_stall_h
 
 #include <optional>
-#include <type_traits>
 
 #if defined(MOZ_MEMORY) && defined(XP_WIN)
 #  include "mozmemory_wrap.h"

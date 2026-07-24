@@ -4,25 +4,20 @@
 
 package mozilla.components.lib.state.helpers
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.TestAction
 import mozilla.components.lib.state.TestState
 import mozilla.components.lib.state.reducer
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Rule
 import org.junit.Test
 
-@ExperimentalCoroutinesApi
 class AbstractBindingTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    val testDispatcher = StandardTestDispatcher()
 
     @Test
     fun `binding onState is invoked when a flow is created`() {
@@ -32,10 +27,12 @@ class AbstractBindingTest {
         )
 
         val binding = TestBinding(store)
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(binding.invoked)
 
         binding.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(binding.invoked)
     }
@@ -48,10 +45,12 @@ class AbstractBindingTest {
         )
 
         val binding = TestBinding(store)
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(binding.invoked)
 
         binding.stop()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(binding.invoked)
     }
@@ -72,27 +71,29 @@ class AbstractBindingTest {
                 fail()
             }
         }
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         binding.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         binding.stop()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
     }
-}
 
-@ExperimentalCoroutinesApi
-class TestBinding(
-    store: Store<TestState, TestAction>,
-    private val onStateUpdated: (TestState) -> Unit = {},
-) : AbstractBinding<TestState>(store) {
-    var invoked = false
-    override suspend fun onState(flow: Flow<TestState>) {
-        invoked = true
-        flow.collect { onStateUpdated(it) }
+    inner class TestBinding(
+        store: Store<TestState, TestAction>,
+        private val onStateUpdated: (TestState) -> Unit = {},
+    ) : AbstractBinding<TestState>(store, testDispatcher) {
+        var invoked = false
+        override suspend fun onState(flow: Flow<TestState>) {
+            invoked = true
+            flow.collect { onStateUpdated(it) }
+        }
     }
 }

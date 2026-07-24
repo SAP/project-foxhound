@@ -6,39 +6,73 @@ prefs = [
   "browser.ml.linkPreview.optin=true",
   "browser.ml.linkPreview.prefetchOnEnable=false",
   "browser.ml.linkPreview.shiftAlt=true",
+  "browser.ml.pageAssist.enabled=true",
 ]
 
 ["browser_chat_contextmenu.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1904431
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1904431
+]
 
 ["browser_chat_nimbus.js"]
 
 ["browser_chat_page.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1975092
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1975092
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1975092
+  "verify-standalone",
+]
+
+["browser_chat_prompt.js"]
 
 ["browser_chat_request.js"]
+support-files = [
+  "file_chat-autosubmit.html",
+]
 
 ["browser_chat_shortcuts.js"]
 
 ["browser_chat_sidebar.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1992633
+]
+
+["browser_chat_sidebar_permissions.js"]
+support-files = [
+  "file_chat-webrtc.html",
+]
 
 ["browser_chat_telemetry.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1992527
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+]
 
 ["browser_genai_actors.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1992527
+]
 
 ["browser_genai_init.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1992527
+]
 
 ["browser_link_preview.js"]
 support-files = [
   "data/readableFr.html",
-  "data/readableEn.html"
+  "data/readableEn.html",
+  "data/encodingWithShiftJIS.html"
 ]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1996489
+]
+
+["browser_link_preview_aifeature_lifecycle.js"]
 
 ["browser_link_preview_nimbus.js"]
-
-["browser_link_preview_onboarding.js"]
-support-files = [
-  "data/readableFr.html",
-  "data/readableEn.html"
-]
 
 ["browser_link_preview_optin.js"]
 support-files = [
@@ -51,3 +85,10 @@ support-files = [
   "data/readableFr.html",
   "data/readableEn.html"
 ]
+
+["browser_page_assist_actors.js"]
+support-files = [
+  "data/readableEn.html"
+]
+
+["browser_page_assist_sidebar.js"]

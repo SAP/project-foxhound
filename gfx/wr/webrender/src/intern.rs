@@ -97,7 +97,7 @@ impl<S> UpdateList<S> {
 /// A globally, unique identifier
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
+#[derive(Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
 pub struct ItemUid {
     uid: u64,
 }
@@ -109,13 +109,30 @@ impl ItemUid {
     }
 }
 
+impl std::fmt::Debug for ItemUid {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "#{}", self.uid)
+    }
+}
+
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Hash, MallocSizeOf, PartialEq, Eq)]
+#[derive(Hash, MallocSizeOf, PartialEq, Eq)]
 pub struct Handle<I> {
     index: u32,
     epoch: Epoch,
     _marker: PhantomData<I>,
+}
+
+impl<I> std::fmt::Debug for Handle<I> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // PartialEq requires more trait bounds
+        if self.uid() == Self::INVALID.uid() {
+            write!(f, "<invalid>")
+        } else {
+            write!(f, "#{}:{}", self.index, self.epoch.0)
+        }
+    }
 }
 
 impl<I> Clone for Handle<I> {

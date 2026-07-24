@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HyperTextAccessible_h__
-#define mozilla_a11y_HyperTextAccessible_h__
+#ifndef mozilla_a11y_HyperTextAccessible_h_
+#define mozilla_a11y_HyperTextAccessible_h_
 
 #include "AccessibleWrap.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
@@ -55,12 +55,9 @@ class HyperTextAccessible : public AccessibleWrap,
   virtual void Shutdown() override;
   virtual bool RemoveChild(LocalAccessible* aAccessible) override;
   virtual bool InsertChildAt(uint32_t aIndex, LocalAccessible* aChild) override;
+  virtual void RelocateChild(uint32_t aNewIndex,
+                             LocalAccessible* aChild) override;
   virtual Relation RelationByType(RelationType aType) const override;
-
-  /**
-   * Return whether the associated content is editable.
-   */
-  bool IsEditable() const;
 
   // HyperTextAccessible (static helper method)
 

@@ -333,7 +333,7 @@ add_task(async function test_onPasswordEditedOrGenerated_generatedPassword() {
   LoginManagerParent._browsingContextGlobal.get.restore();
   restorePrompter();
   LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   Services.telemetry.clearEvents();
 });
 
@@ -421,7 +421,7 @@ add_task(
     LoginManagerParent._browsingContextGlobal.get.restore();
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
     Services.telemetry.clearEvents();
   }
 );
@@ -615,7 +615,7 @@ add_task(async function test_addUsernameBeforeAutoSaveEdit() {
   LoginHelper.getBrowserForPrompt.restore();
   restorePrompter();
   LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   Services.telemetry.clearEvents();
 });
 
@@ -747,7 +747,7 @@ add_task(async function test_editUsernameOfFilledSavedLogin() {
   LoginHelper.getBrowserForPrompt.restore();
   restorePrompter();
   LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   Services.telemetry.clearEvents();
 });
 
@@ -786,7 +786,7 @@ add_task(
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
     Services.logins.setLoginSavingEnabled("https://www.example.com", true);
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 );
 
@@ -872,7 +872,7 @@ add_task(
     LoginManagerParent._browsingContextGlobal.get.restore();
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
     Services.telemetry.clearEvents();
   }
 );
@@ -989,7 +989,7 @@ add_task(
     LoginManagerParent._browsingContextGlobal.get.restore();
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
     Services.telemetry.clearEvents();
   }
 );
@@ -1053,7 +1053,7 @@ add_task(
     LoginManagerParent._browsingContextGlobal.get.restore();
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 );
 
@@ -1114,6 +1114,6 @@ add_task(
     LoginManagerParent._browsingContextGlobal.get.restore();
     restorePrompter();
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 );

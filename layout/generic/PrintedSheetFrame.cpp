@@ -8,8 +8,6 @@
 
 #include "mozilla/PrintedSheetFrame.h"
 
-#include <tuple>
-
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "nsCSSFrameConstructor.h"

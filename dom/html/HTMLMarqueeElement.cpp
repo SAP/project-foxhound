@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLMarqueeElement.h"
+
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/HTMLMarqueeElementBinding.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStyleConsts.h"
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/HTMLMarqueeElementBinding.h"
-#include "mozilla/dom/CustomEvent.h"
 // This is to pick up the definition of FunctionStringCallback:
 #include "mozilla/dom/DataTransferItemBinding.h"
 #include "mozilla/dom/ShadowRoot.h"

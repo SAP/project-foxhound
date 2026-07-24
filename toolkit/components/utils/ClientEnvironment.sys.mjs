@@ -8,10 +8,12 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   TelemetryArchive: "resource://gre/modules/TelemetryArchive.sys.mjs",
   TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
@@ -144,7 +146,7 @@ export class ClientEnvironmentBase {
 
   static get searchEngine() {
     return (async () => {
-      const defaultEngineInfo = await Services.search.getDefault();
+      const defaultEngineInfo = await lazy.SearchService.getDefault();
       return defaultEngineInfo.telemetryId;
     })();
   }
@@ -242,6 +244,7 @@ export class ClientEnvironmentBase {
       /**
        * Gets the windows build number by querying the OS directly. The initial
        * version was copied from toolkit/components/telemetry/app/TelemetryEnvironment.sys.mjs
+       *
        * @returns {number | null} The build number, or null on non-Windows platform or if there is an error.
        */
       get windowsBuildNumber() {

@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/HTMLFieldSetElement.h"
+
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/CustomElementRegistry.h"
-#include "mozilla/dom/HTMLFieldSetElement.h"
 #include "mozilla/dom/HTMLFieldSetElementBinding.h"
 #include "nsContentList.h"
 #include "nsQueryObject.h"
@@ -106,9 +107,9 @@ nsIHTMLCollection* HTMLFieldSetElement::Elements() {
 
 nsresult HTMLFieldSetElement::Reset() { return NS_OK; }
 
-void HTMLFieldSetElement::InsertChildBefore(nsIContent* aChild,
-                                            nsIContent* aBeforeThis,
-                                            bool aNotify, ErrorResult& aRv) {
+void HTMLFieldSetElement::InsertChildBefore(
+    nsIContent* aChild, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+    nsINode* aOldParent, MutationEffectOnScript aMutationEffectOnScript) {
   bool firstLegendHasChanged = false;
 
   if (aChild->IsHTMLElement(nsGkAtoms::legend)) {
@@ -131,8 +132,8 @@ void HTMLFieldSetElement::InsertChildBefore(nsIContent* aChild,
     }
   }
 
-  nsGenericHTMLFormControlElement::InsertChildBefore(aChild, aBeforeThis,
-                                                     aNotify, aRv);
+  nsGenericHTMLFormControlElement::InsertChildBefore(
+      aChild, aBeforeThis, aNotify, aRv, aOldParent, aMutationEffectOnScript);
   if (aRv.Failed()) {
     return;
   }
@@ -142,8 +143,9 @@ void HTMLFieldSetElement::InsertChildBefore(nsIContent* aChild,
   }
 }
 
-void HTMLFieldSetElement::RemoveChildNode(nsIContent* aKid, bool aNotify,
-                                          const BatchRemovalState* aState) {
+void HTMLFieldSetElement::RemoveChildNode(
+    nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+    nsINode* aNewParent, MutationEffectOnScript aMutationEffectOnScript) {
   bool firstLegendHasChanged = false;
 
   if (mFirstLegend && aKid == mFirstLegend) {
@@ -160,7 +162,8 @@ void HTMLFieldSetElement::RemoveChildNode(nsIContent* aKid, bool aNotify,
     }
   }
 
-  nsGenericHTMLFormControlElement::RemoveChildNode(aKid, aNotify, aState);
+  nsGenericHTMLFormControlElement::RemoveChildNode(
+      aKid, aNotify, aState, aNewParent, aMutationEffectOnScript);
 
   if (firstLegendHasChanged) {
     NotifyElementsForFirstLegendChange(aNotify);

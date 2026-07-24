@@ -10,12 +10,12 @@
 
 #include "mozilla/dom/TreeWalker.h"
 
-#include "nsIContent.h"
-#include "nsError.h"
-#include "nsINode.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/TreeWalkerBinding.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIContent.h"
+#include "nsINode.h"
 
 namespace mozilla::dom {
 

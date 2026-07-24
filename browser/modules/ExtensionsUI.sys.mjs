@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -15,6 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   QuarantinedDomains: "resource://gre/modules/ExtensionPermissions.sys.mjs",
 });
@@ -223,18 +225,31 @@ export var ExtensionsUI = {
 
       info.unsigned =
         info.addon.signedState <= lazy.AddonManager.SIGNEDSTATE_MISSING;
+      // In local builds (or automation), when this pref is set, pretend the
+      // file is correctly signed even if it isn't so that the UI looks like
+      // what users would normally see.
       if (
         info.unsigned &&
-        Cu.isInAutomation &&
+        (Cu.isInAutomation || !AppConstants.MOZILLA_OFFICIAL) &&
         Services.prefs.getBoolPref(
-          "extensions.ui.showAddonIconForUnsigned",
+          "extensions.ui.disableUnsignedWarnings",
           false
         )
       ) {
         info.unsigned = false;
+        lazy.logConsole.warn(
+          `Add-on ${info.addon.id} is unsigned (${info.addon.signedState}), pretending that it *is* signed because of the extensions.ui.disableUnsignedWarnings pref.`
+        );
       }
 
-      let strings = this._buildStrings(info);
+      let strings;
+      try {
+        strings = this._buildStrings(info);
+      } catch (err) {
+        console.error(err);
+        info.reject();
+        return;
+      }
 
       // If this is an update with no promptable permissions, just apply it
       if (
@@ -284,7 +299,15 @@ export var ExtensionsUI = {
     } else if (topic == "webextension-update-permission-prompt") {
       let info = subject.wrappedJSObject;
       info.type = "update";
-      let strings = this._buildStrings(info);
+
+      let strings;
+      try {
+        strings = this._buildStrings(info);
+      } catch (err) {
+        console.error(err);
+        info.reject();
+        return;
+      }
 
       // If we don't prompt for any new permissions, just apply it
       if (!strings.msgs.length && !strings.dataCollectionPermissions?.msg) {
@@ -383,6 +406,11 @@ export var ExtensionsUI = {
     const strings = lazy.ExtensionData.formatPermissionStrings(info, {
       fullDomainsList: true,
     });
+    if (!strings) {
+      throw new Error(
+        "ExtensionData.formatPermissionStrings failed to return localized strings"
+      );
+    }
     strings.addonName = info.addon.name;
     return strings;
   },
@@ -413,8 +441,14 @@ export var ExtensionsUI = {
       !!strings.dataCollectionPermissions?.collectsTechnicalAndInteractionData;
 
     const incognitoPermissionName = "internal:privateBrowsingAllowed";
-    let grantPrivateBrowsingAllowed = false;
-    if (showIncognitoCheckbox) {
+    let grantPrivateBrowsingAllowed =
+      lazy.PrivateBrowsingUtils.permanentPrivateBrowsing;
+    if (
+      showIncognitoCheckbox &&
+      // Usually false, unless the user tries to install a XPI file whose ID
+      // matches an already-installed add-on.
+      (await lazy.AddonManager.getAddonByID(addon.id))
+    ) {
       let { permissions } = await lazy.ExtensionPermissions.get(addon.id);
       grantPrivateBrowsingAllowed = permissions.includes(
         incognitoPermissionName
@@ -792,7 +826,7 @@ export var ExtensionsUI = {
     if (state.allDomains) {
       let allDomains = doc.createXULElement("menuitem");
       allDomains.setAttribute("type", "radio");
-      allDomains.setAttribute("checked", state.hasAccess);
+      allDomains.toggleAttribute("checked", state.hasAccess);
       doc.l10n.setAttributes(allDomains, "origin-controls-option-all-domains");
       items.push(allDomains);
     }
@@ -800,7 +834,7 @@ export var ExtensionsUI = {
     if (state.whenClicked) {
       let whenClicked = doc.createXULElement("menuitem");
       whenClicked.setAttribute("type", "radio");
-      whenClicked.setAttribute("checked", !state.hasAccess);
+      whenClicked.toggleAttribute("checked", !state.hasAccess);
       doc.l10n.setAttributes(
         whenClicked,
         "origin-controls-option-when-clicked"
@@ -815,7 +849,7 @@ export var ExtensionsUI = {
     if (state.alwaysOn) {
       let alwaysOn = doc.createXULElement("menuitem");
       alwaysOn.setAttribute("type", "radio");
-      alwaysOn.setAttribute("checked", state.hasAccess);
+      alwaysOn.toggleAttribute("checked", state.hasAccess);
       doc.l10n.setAttributes(alwaysOn, "origin-controls-option-always-on", {
         domain: uri.host,
       });

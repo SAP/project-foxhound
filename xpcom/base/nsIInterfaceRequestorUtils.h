@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsInterfaceRequestorUtils_h
-#define __nsInterfaceRequestorUtils_h
+#ifndef _nsInterfaceRequestorUtils_h
+#define _nsInterfaceRequestorUtils_h
 
 #include "nsCOMPtr.h"
 
@@ -37,4 +37,4 @@ inline const nsGetInterface do_GetInterface(nsISupports* aSource,
   return nsGetInterface(aSource, aError);
 }
 
-#endif  // __nsInterfaceRequestorUtils_h
+#endif  // _nsInterfaceRequestorUtils_h

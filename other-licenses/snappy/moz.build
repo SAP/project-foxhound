@@ -4,6 +4,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+FINAL_LIBRARY = 'xul'
+
+# We allow warnings for third-party code that can be updated from upstream.
+AllowCompilerWarnings()
+
+# Suppress warnings in third-party code.
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    CXXFLAGS += [
+        '-Wno-sign-compare',
+        '-Wno-unused-function'
+    ]
+
 EXPORTS.snappy += [
     'snappy-stubs-public.h',
     'src/snappy-c.h',
@@ -17,17 +29,23 @@ UNIFIED_SOURCES += [
     'src/snappy.cc',
 ]
 
-# We allow warnings for third-party code that can be updated from upstream.
-AllowCompilerWarnings()
+DEFINES['HAVE_ATTRIBUTE_ALWAYS_INLINE'] = 1
+DEFINES['HAVE_BUILTIN_CTZ'] = 1
+DEFINES['HAVE_BUILTIN_EXPECT'] = 1
+DEFINES['HAVE_BUILTIN_PREFETCH'] = 1
 
-FINAL_LIBRARY = 'xul'
+if CONFIG["OS_TARGET"] == "WINNT":
+    DEFINES['HAVE_WINDOWS_H'] = 1
+else:
+    DEFINES['HAVE_SYS_MMAN_H'] = 1
+    DEFINES['HAVE_SYS_RESOURCE_H'] = 1
+    DEFINES['HAVE_SYS_TIME_H'] = 1
+    DEFINES['HAVE_SYS_UIO_H'] = 1
+    DEFINES['HAVE_UNISTD_H'] = 1
 
-# Suppress warnings in third-party code.
-if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += [
-        '-Wno-sign-compare',
-        '-Wno-unused-function'
-    ]
+if CONFIG['TARGET_CPU'] == 'aarch64':
+    DEFINES['SNAPPY_HAVE_NEON'] = 1
 
 if CONFIG['TARGET_ENDIANNESS'] == 'big':
     DEFINES['SNAPPY_IS_BIG_ENDIAN'] = 1
+

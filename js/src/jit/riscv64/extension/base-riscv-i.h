@@ -18,7 +18,7 @@ class AssemblerRISCVI : public AssemblerRiscvBase {
   void auipc(Register rd, int32_t imm20);
 
   // Jumps
-  void jal(Register rd, int32_t imm20);
+  CodeOffset jal(Register rd, int32_t imm20);
   BufferOffset jalr(Register rd, Register rs1, int16_t imm12);
 
   // Branches
@@ -163,72 +163,72 @@ class AssemblerRISCVI : public AssemblerRiscvBase {
   static bool IsSlli(Instr instr);
   static bool IsLw(Instr instr);
 
-  inline int32_t branch_offset(Label* L) {
-    return branch_offset_helper(L, OffsetSize::kOffset13);
+  inline int32_t branchOffset(Label* L) {
+    return branchOffsetHelper(L, OffsetSize::kOffset13);
   }
-  inline int32_t jump_offset(Label* L) {
-    return branch_offset_helper(L, OffsetSize::kOffset21);
+  inline int32_t jumpOffset(Label* L) {
+    return branchOffsetHelper(L, OffsetSize::kOffset21);
   }
 
   // Branches
   void beq(Register rs1, Register rs2, Label* L) {
-    beq(rs1, rs2, branch_offset(L));
+    beq(rs1, rs2, branchOffset(L));
   }
   void bne(Register rs1, Register rs2, Label* L) {
-    bne(rs1, rs2, branch_offset(L));
+    bne(rs1, rs2, branchOffset(L));
   }
   void blt(Register rs1, Register rs2, Label* L) {
-    blt(rs1, rs2, branch_offset(L));
+    blt(rs1, rs2, branchOffset(L));
   }
   void bge(Register rs1, Register rs2, Label* L) {
-    bge(rs1, rs2, branch_offset(L));
+    bge(rs1, rs2, branchOffset(L));
   }
   void bltu(Register rs1, Register rs2, Label* L) {
-    bltu(rs1, rs2, branch_offset(L));
+    bltu(rs1, rs2, branchOffset(L));
   }
   void bgeu(Register rs1, Register rs2, Label* L) {
-    bgeu(rs1, rs2, branch_offset(L));
+    bgeu(rs1, rs2, branchOffset(L));
   }
 
   void beqz(Register rs, int16_t imm13) { beq(rs, zero_reg, imm13); }
-  void beqz(Register rs1, Label* L) { beqz(rs1, branch_offset(L)); }
+  void beqz(Register rs1, Label* L) { beqz(rs1, branchOffset(L)); }
   void bnez(Register rs, int16_t imm13) { bne(rs, zero_reg, imm13); }
-  void bnez(Register rs1, Label* L) { bnez(rs1, branch_offset(L)); }
+  void bnez(Register rs1, Label* L) { bnez(rs1, branchOffset(L)); }
   void blez(Register rs, int16_t imm13) { bge(zero_reg, rs, imm13); }
-  void blez(Register rs1, Label* L) { blez(rs1, branch_offset(L)); }
+  void blez(Register rs1, Label* L) { blez(rs1, branchOffset(L)); }
   void bgez(Register rs, int16_t imm13) { bge(rs, zero_reg, imm13); }
-  void bgez(Register rs1, Label* L) { bgez(rs1, branch_offset(L)); }
+  void bgez(Register rs1, Label* L) { bgez(rs1, branchOffset(L)); }
   void bltz(Register rs, int16_t imm13) { blt(rs, zero_reg, imm13); }
-  void bltz(Register rs1, Label* L) { bltz(rs1, branch_offset(L)); }
+  void bltz(Register rs1, Label* L) { bltz(rs1, branchOffset(L)); }
   void bgtz(Register rs, int16_t imm13) { blt(zero_reg, rs, imm13); }
 
-  void bgtz(Register rs1, Label* L) { bgtz(rs1, branch_offset(L)); }
+  void bgtz(Register rs1, Label* L) { bgtz(rs1, branchOffset(L)); }
   void bgt(Register rs1, Register rs2, int16_t imm13) { blt(rs2, rs1, imm13); }
   void bgt(Register rs1, Register rs2, Label* L) {
-    bgt(rs1, rs2, branch_offset(L));
+    bgt(rs1, rs2, branchOffset(L));
   }
   void ble(Register rs1, Register rs2, int16_t imm13) { bge(rs2, rs1, imm13); }
   void ble(Register rs1, Register rs2, Label* L) {
-    ble(rs1, rs2, branch_offset(L));
+    ble(rs1, rs2, branchOffset(L));
   }
   void bgtu(Register rs1, Register rs2, int16_t imm13) {
     bltu(rs2, rs1, imm13);
   }
   void bgtu(Register rs1, Register rs2, Label* L) {
-    bgtu(rs1, rs2, branch_offset(L));
+    bgtu(rs1, rs2, branchOffset(L));
   }
   void bleu(Register rs1, Register rs2, int16_t imm13) {
     bgeu(rs2, rs1, imm13);
   }
   void bleu(Register rs1, Register rs2, Label* L) {
-    bleu(rs1, rs2, branch_offset(L));
+    bleu(rs1, rs2, branchOffset(L));
   }
 
-  void j(int32_t imm21) { jal(zero_reg, imm21); }
-  void j(Label* L) { j(jump_offset(L)); }
-  void b(Label* L) { j(L); }
-  void jal(int32_t imm21) { jal(ra, imm21); }
-  void jal(Label* L) { jal(jump_offset(L)); }
+  CodeOffset j(int32_t imm21) { return jal(zero_reg, imm21); }
+  CodeOffset j(Label* L) { return j(jumpOffset(L)); }
+  CodeOffset b(Label* L) { return j(L); }
+  CodeOffset jal(int32_t imm21) { return jal(ra, imm21); }
+  CodeOffset jal(Label* L) { return jal(jumpOffset(L)); }
   void jr(Register rs) { jalr(zero_reg, rs, 0); }
   void jr(Register rs, int32_t imm12) { jalr(zero_reg, rs, imm12); }
   void jalr(Register rs, int32_t imm12) { jalr(ra, rs, imm12); }

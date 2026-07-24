@@ -9,13 +9,11 @@
 
 #include "mozilla/dom/HTMLAreaElement.h"
 
-#include "mozilla/Attributes.h"
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLAreaElementBinding.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsWindowSizes.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Area)

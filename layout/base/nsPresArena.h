@@ -7,14 +7,11 @@
 
 /* arena allocation for the frame tree and closely-related objects */
 
-#ifndef nsPresArena_h___
-#define nsPresArena_h___
-
-#include <stdint.h>
+#ifndef nsPresArena_h_
+#define nsPresArena_h_
 
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/ArenaObjectID.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/MemoryChecking.h"  // Note: Do not remove this, needed for MOZ_HAVE_MEM_CHECKS below
 #include "mozilla/MemoryReporting.h"
 #include "nsHashKeys.h"

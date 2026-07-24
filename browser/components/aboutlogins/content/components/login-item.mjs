@@ -209,7 +209,11 @@ export default class LoginItem extends HTMLElement {
     if (!this._breachAlert.hidden) {
       const breachDetails = this._breachesMap.get(this._login.guid);
       const breachTimestamp = new Date(breachDetails.BreachDate ?? 0).getTime();
-      this.#updateBreachAlert(this._login.origin, breachTimestamp);
+      this.#updateBreachAlert(
+        this._login.origin,
+        breachTimestamp,
+        breachDetails.Name
+      );
     }
     this._vulnerableAlert.hidden =
       !this._vulnerableLoginsMap ||
@@ -667,6 +671,7 @@ export default class LoginItem extends HTMLElement {
   /**
    * Helper to show the "Discard changes" confirmation dialog and delay the
    * received event after confirmation.
+   *
    * @param {object} event The event to be delayed.
    * @param {object} login The login to be shown on confirmation.
    */
@@ -691,6 +696,7 @@ export default class LoginItem extends HTMLElement {
 
   /**
    * Shows a confirmation dialog.
+   *
    * @param {string} type The type of confirmation dialog to display.
    * @param {boolean} onConfirm Optional, the function to execute when the confirm button is clicked.
    */
@@ -969,13 +975,6 @@ export default class LoginItem extends HTMLElement {
   }
 
   _updatePasswordRevealState() {
-    if (
-      window.AboutLoginsUtils &&
-      window.AboutLoginsUtils.passwordRevealVisible === false
-    ) {
-      this._revealCheckbox.hidden = true;
-    }
-
     let { checked } = this._revealCheckbox;
     let inputType = checked ? "text" : "password";
     this._passwordInput.type = inputType;
@@ -986,6 +985,13 @@ export default class LoginItem extends HTMLElement {
     } else {
       this._passwordDisplayInput.setAttribute("tabindex", -1);
       this._revealCheckbox.hidden = false;
+    }
+
+    if (
+      window.AboutLoginsUtils &&
+      window.AboutLoginsUtils.passwordRevealVisible === false
+    ) {
+      this._revealCheckbox.hidden = true;
     }
 
     // Swap which <input> is in the document depending on whether we need the
@@ -1019,9 +1025,10 @@ export default class LoginItem extends HTMLElement {
   // in favour of updating the props themselves.
   // NOTE: Adding this method here instead of login-alert because this file will be
   // refactored soon.
-  #updateBreachAlert(hostname, date) {
+  #updateBreachAlert(hostname, date, breachName) {
     this._breachAlert.hostname = hostname;
     this._breachAlert.date = date;
+    this._breachAlert.breachName = breachName || "";
   }
 
   #updateVulnerablePasswordAlert(hostname) {

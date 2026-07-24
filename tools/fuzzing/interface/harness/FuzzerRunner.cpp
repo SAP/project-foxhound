@@ -33,18 +33,6 @@ MOZ_RUNINIT class _InitFuzzer {
 static void DeinitXPCOM() { InitLibFuzzer.DeinitXPCOM(); }
 
 int FuzzerRunner::Run(int* argc, char*** argv) {
-  /*
-   * libFuzzer uses exit() calls in several places instead of returning,
-   * so the destructor of ScopedXPCOM is not called in some cases.
-   * For fuzzing, this does not make a difference, but in debug builds
-   * when running a single testcase, this causes an assertion when destroying
-   * global linked lists. For this reason, we allocate ScopedXPCOM on the heap
-   * using the global InitLibFuzzer class, combined with an atexit call to
-   * destroy the ScopedXPCOM instance again.
-   */
-  InitLibFuzzer.InitXPCOM();
-  std::atexit(DeinitXPCOM);
-
   const char* fuzzerEnv = getenv("FUZZER");
 
   if (!fuzzerEnv) {
@@ -64,6 +52,18 @@ int FuzzerRunner::Run(int* argc, char*** argv) {
     exit(0);
   }
 
+  /*
+   * libFuzzer uses exit() calls in several places instead of returning,
+   * so the destructor of ScopedXPCOM is not called in some cases.
+   * For fuzzing, this does not make a difference, but in debug builds
+   * when running a single testcase, this causes an assertion when destroying
+   * global linked lists. For this reason, we allocate ScopedXPCOM on the heap
+   * using the global InitLibFuzzer class, combined with an atexit call to
+   * destroy the ScopedXPCOM instance again.
+   */
+  InitLibFuzzer.InitXPCOM();
+  std::atexit(DeinitXPCOM);
+
   FuzzerFunctions funcs =
       FuzzerRegistry::getInstance().getModuleFunctions(moduleNameStr);
   FuzzerInitFunc initFunc = funcs.first;
@@ -72,12 +72,14 @@ int FuzzerRunner::Run(int* argc, char*** argv) {
     int ret = initFunc(argc, argv);
     if (ret) {
       fprintf(stderr, "Fuzzing Interface: Error: Initialize callback failed\n");
+      InitLibFuzzer.DeinitXPCOM();
       exit(1);
     }
   }
 
   if (!testingFunc) {
     fprintf(stderr, "Fuzzing Interface: Error: No testing callback found\n");
+    InitLibFuzzer.DeinitXPCOM();
     exit(1);
   }
 

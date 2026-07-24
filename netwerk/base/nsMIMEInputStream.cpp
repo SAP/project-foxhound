@@ -10,8 +10,6 @@
 
 #include "nsMIMEInputStream.h"
 
-#include <utility>
-
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ipc/InputStreamUtils.h"

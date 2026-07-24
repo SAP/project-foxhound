@@ -44,6 +44,19 @@ nsDeviceContext::nsDeviceContext()
 
 nsDeviceContext::~nsDeviceContext() = default;
 
+int32_t nsDeviceContext::ComputeAppUnitsPerDevPixelForWidgetScale(
+    CSSToLayoutDeviceScale aScale) {
+  return std::max(1, NS_lround(AppUnitsPerCSSPixel() / aScale.scale));
+}
+
+int32_t nsDeviceContext::ApplyFullZoomToAPD(int32_t aUnzoomedAppUnits,
+                                            float aFullZoom) {
+  if (aFullZoom == 1.0f) {
+    return aUnzoomedAppUnits;
+  }
+  return std::max(1, NSToIntRound(float(aUnzoomedAppUnits) / aFullZoom));
+}
+
 void nsDeviceContext::SetDPI() {
   float dpi;
 
@@ -53,7 +66,8 @@ void nsDeviceContext::SetDPI() {
     mPrintingScale = mDeviceContextSpec->GetPrintingScale();
     mPrintingTranslate = mDeviceContextSpec->GetPrintingTranslate();
     mAppUnitsPerDevPixelAtUnitFullZoom =
-        NS_lround((AppUnitsPerCSSPixel() * 96) / dpi);
+        ComputeAppUnitsPerDevPixelForWidgetScale(
+            CSSToLayoutDeviceScale(dpi / 96.0));
   } else {
     // A value of -1 means use the maximum of 96 and the system DPI.
     // A value of 0 means use the system DPI. A positive value is used as the
@@ -76,7 +90,7 @@ void nsDeviceContext::SetDPI() {
         mWidget ? mWidget->GetDefaultScale() : CSSToLayoutDeviceScale(1.0);
     MOZ_ASSERT(scale.scale > 0.0);
     mAppUnitsPerDevPixelAtUnitFullZoom =
-        std::max(1, NS_lround(AppUnitsPerCSSPixel() / scale.scale));
+        ComputeAppUnitsPerDevPixelForWidgetScale(scale);
   }
 
   NS_ASSERTION(dpi != -1.0, "no dpi set");
@@ -284,7 +298,7 @@ nsresult nsDeviceContext::AbortDocument() {
   mIsCurrentlyPrintingDoc = false;
 
   if (mDeviceContextSpec) {
-    Unused << mDeviceContextSpec->EndDocument();
+    (void)mDeviceContextSpec->EndDocument();
   }
 
   mPrintTarget = nullptr;
@@ -365,22 +379,15 @@ bool nsDeviceContext::SetFullZoom(float aScale) {
   return oldAppUnitsPerDevPixel != mAppUnitsPerDevPixel;
 }
 
-static int32_t ApplyFullZoom(int32_t aUnzoomedAppUnits, float aFullZoom) {
-  if (aFullZoom == 1.0f) {
-    return aUnzoomedAppUnits;
-  }
-  return std::max(1, NSToIntRound(float(aUnzoomedAppUnits) / aFullZoom));
-}
-
 int32_t nsDeviceContext::AppUnitsPerDevPixelInTopLevelChromePage() const {
   // The only zoom that applies to chrome pages is the system zoom, if any.
-  return ApplyFullZoom(mAppUnitsPerDevPixelAtUnitFullZoom,
-                       LookAndFeel::SystemZoomSettings().mFullZoom);
+  return ApplyFullZoomToAPD(mAppUnitsPerDevPixelAtUnitFullZoom,
+                            LookAndFeel::SystemZoomSettings().mFullZoom);
 }
 
 void nsDeviceContext::UpdateAppUnitsForFullZoom() {
   mAppUnitsPerDevPixel =
-      ApplyFullZoom(mAppUnitsPerDevPixelAtUnitFullZoom, mFullZoom);
+      ApplyFullZoomToAPD(mAppUnitsPerDevPixelAtUnitFullZoom, mFullZoom);
   // adjust mFullZoom to reflect appunit rounding
   mFullZoom = float(mAppUnitsPerDevPixelAtUnitFullZoom) / mAppUnitsPerDevPixel;
 }

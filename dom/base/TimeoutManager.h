@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_TimeoutManager_h__
-#define mozilla_dom_TimeoutManager_h__
+#ifndef mozilla_dom_TimeoutManager_h_
+#define mozilla_dom_TimeoutManager_h_
 
 #include "mozilla/dom/Timeout.h"
-#include "nsTArray.h"
-#include "nsISerialEventTarget.h"
 #include "mozilla/dom/TimeoutBudgetManager.h"
+#include "nsISerialEventTarget.h"
+#include "nsTArray.h"
 
 class nsIEventTarget;
 class nsITimer;
@@ -30,7 +30,8 @@ class TimeoutManager final {
 
  public:
   TimeoutManager(nsIGlobalObject& aHandle, uint32_t aMaxIdleDeferMS,
-                 nsISerialEventTarget* aEventTarget);
+                 nsISerialEventTarget* aEventTarget,
+                 bool aIsChromeWorker = false);
   ~TimeoutManager();
   TimeoutManager(const TimeoutManager& rhs) = delete;
   void operator=(const TimeoutManager& rhs) = delete;
@@ -126,9 +127,7 @@ class TimeoutManager final {
   // get nsGlobalWindowInner
   // if the method returns nullptr, then we have a worker,
   // which should be handled differently according to TimeoutManager logic
-  nsGlobalWindowInner* GetInnerWindow() const {
-    return nsGlobalWindowInner::Cast(mGlobalObject.GetAsInnerWindow());
-  }
+  nsGlobalWindowInner* GetInnerWindow() const;
 
   // Return true if |aTimeout| needs to be reinserted into the timeout list.
   bool RescheduleTimeout(mozilla::dom::Timeout* aTimeout,
@@ -269,6 +268,8 @@ class TimeoutManager final {
   nsCOMPtr<nsISerialEventTarget> mEventTarget;
 
   const bool mIsWindow;
+
+  const bool mIsChromeWorker;
 
   uint32_t mNestingLevel{0};
 

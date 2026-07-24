@@ -272,7 +272,7 @@ class ModuleEntry:
 
         if len(self.interfaces) > 255:
             raise Exception(
-                "JS service %s may not have more than 255 " "interfaces" % self.js_name
+                "JS service %s may not have more than 255 interfaces" % self.js_name
             )
 
         self.interfaces_offset = len(interfaces)
@@ -322,8 +322,7 @@ class ModuleEntry:
             for prop in ("init_method", "legacy_constructor", "headers"):
                 if getattr(self, prop):
                     error(
-                        "JavaScript components may not specify a '%s' "
-                        "property" % prop
+                        "JavaScript components may not specify a '%s' property" % prop
                     )
         elif self.external:
             if self.constructor or self.legacy_constructor:
@@ -349,7 +348,7 @@ class ModuleEntry:
             )
 
         if self.overridable and not self.contract_ids:
-            error("Overridable components must specify at least one contract " "ID")
+            error("Overridable components must specify at least one contract ID")
 
     @property
     def contract_id(self):
@@ -940,7 +939,7 @@ def gen_substs(manifests):
         lower_entry=lambda entry: entry.to_cxx(),
         return_type="const StaticModule*",
         return_entry=(
-            "return entry.CID().Equals(aKey) && entry.Active()" " ? &entry : nullptr;"
+            "return entry.CID().Equals(aKey) && entry.Active() ? &entry : nullptr;"
         ),
         key_type="const nsID&",
         key_bytes="reinterpret_cast<const char*>(&aKey)",

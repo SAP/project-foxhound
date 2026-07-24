@@ -11,9 +11,9 @@
 #include "nsINamed.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
-#include "nsWeakReference.h"
-#include "nsTObserverArray.h"
 #include "nsString.h"
+#include "nsTObserverArray.h"
+#include "nsWeakReference.h"
 
 namespace mozilla::dom {
 

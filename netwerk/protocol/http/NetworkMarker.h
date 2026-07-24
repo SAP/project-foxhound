@@ -4,18 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NetworkMarker_h__
-#define NetworkMarker_h__
+#ifndef NetworkMarker_h_
+#define NetworkMarker_h_
 
 #include "mozilla/ProfilerMarkers.h"
 #include "nsHttp.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 
 namespace mozilla {
 namespace net {
 
 struct TimingStruct;
-enum CacheDisposition : uint8_t;
 
 enum class NetworkLoadType {
   LOAD_START,
@@ -28,9 +28,9 @@ void profiler_add_network_marker(
     nsIURI* aURI, const nsACString& aRequestMethod, int32_t aPriority,
     uint64_t aChannelId, NetworkLoadType aType, mozilla::TimeStamp aStart,
     mozilla::TimeStamp aEnd, int64_t aCount,
-    mozilla::net::CacheDisposition aCacheDisposition, uint64_t aInnerWindowID,
-    bool aIsPrivateBrowsing, unsigned long aClassOfServiceFlag,
-    nsresult aRequestStatus,
+    nsICacheInfoChannel::CacheDisposition aCacheDisposition,
+    uint64_t aInnerWindowID, bool aIsPrivateBrowsing,
+    nsIClassOfService* aClassOfService, nsresult aRequestStatus,
     const mozilla::net::TimingStruct* aTimings = nullptr,
     mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource = nullptr,
     const mozilla::Maybe<mozilla::net::HttpVersion> aHttpVersion =
@@ -43,4 +43,4 @@ void profiler_add_network_marker(
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // NetworkMarker_h__
+#endif  // NetworkMarker_h_

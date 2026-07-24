@@ -7,10 +7,10 @@
 #include "ConstantSourceNode.h"
 
 #include "AudioDestinationNode.h"
-#include "nsContentUtils.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
 #include "Tracing.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 

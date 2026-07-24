@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_WebAuthnTransactionParent_h
 #define mozilla_dom_WebAuthnTransactionParent_h
 
+#include "mozilla/RandomNum.h"
 #include "mozilla/dom/PWebAuthnTransactionParent.h"
 #include "mozilla/dom/WebAuthnPromiseHolder.h"
-#include "mozilla/RandomNum.h"
 #include "nsIWebAuthnService.h"
 
 /*

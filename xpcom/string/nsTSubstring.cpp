@@ -1209,6 +1209,13 @@ class nsTSubstringStdCollectionAdapter {
     // std::string.
   }
 
+  void push_back(T aChar) {
+    if (MOZ_UNLIKELY(mSize == mHandle.Length())) {
+      EnsureCapacity(mSize + 1);
+    }
+    mHandle.Elements()[mSize++] = aChar;
+  }
+
   T& operator[](size_t i) {
     MOZ_RELEASE_ASSERT(i < mSize);
     return mHandle.Elements()[i];

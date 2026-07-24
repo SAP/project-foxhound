@@ -43,7 +43,7 @@ add_task(async function () {
     `Map { null → "${rtlOverride}msg07" }`,
     `<div data-test="${rtlOverride}msg08">`,
     `<div data-${rtlOverride}="msg09">`,
-    `<div-${rtlOverride} msg10="">`,
+    `<div-${rtlOverride} msg10>`,
   ];
   for (let i = 0; i < texts.length; ++i) {
     const msgId = "msg" + String(i + 1).padStart(2, "0");

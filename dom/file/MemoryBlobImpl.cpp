@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MemoryBlobImpl.h"
-#include "mozilla/ipc/InputStreamUtils.h"
+
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SHA1.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 #include "nsIMemoryReporter.h"
 #include "nsPrintfCString.h"
 #include "nsRFPService.h"

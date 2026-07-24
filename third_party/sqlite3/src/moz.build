@@ -24,7 +24,6 @@ DIRS += [
 ]
 
 SOURCES += [
-    "../ext/misc/carray.c",
     "sqlite3.c",
 ]
 
@@ -138,3 +137,5 @@ DEFINES['SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT'] = 1572864
 if CONFIG["MOZ_THUNDERBIRD"] or CONFIG["MOZ_SUITE"]:
     DEFINES['SQLITE_ENABLE_FTS3'] = 1
 
+# The carray extension is part of the amalgamation but disabled by default.
+DEFINES['SQLITE_ENABLE_CARRAY'] = 1

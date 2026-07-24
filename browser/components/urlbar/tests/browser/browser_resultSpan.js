@@ -7,11 +7,11 @@
 // the view.
 
 const TEST_RESULTS = [
-  new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.HISTORY,
-    { url: "http://mozilla.org/1" }
-  ),
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "http://mozilla.org/1" },
+  }),
   makeTipResult(),
 ];
 
@@ -33,11 +33,11 @@ add_task(async function oneTip() {
   let results = Array.from(TEST_RESULTS);
   for (let i = TEST_RESULTS.length; i < MAX_RESULTS; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: `http://mozilla.org/${i}` }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: `http://mozilla.org/${i}` },
+      })
     );
   }
 
@@ -47,7 +47,8 @@ add_task(async function oneTip() {
   );
 
   let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
@@ -56,7 +57,7 @@ add_task(async function oneTip() {
 
   checkResults(context.results, expectedResults);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   gURLBar.view.close();
 });
 
@@ -68,11 +69,11 @@ add_task(async function threeTips() {
   }
   for (let i = 2; i < 15; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: `http://mozilla.org/${i}` }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: `http://mozilla.org/${i}` },
+      })
     );
   }
 
@@ -82,7 +83,8 @@ add_task(async function threeTips() {
   );
 
   let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
@@ -91,7 +93,7 @@ add_task(async function threeTips() {
 
   checkResults(context.results, expectedResults);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   gURLBar.view.close();
 });
 
@@ -100,11 +102,11 @@ add_task(async function oneTip_nonRestricting() {
   let results = Array.from(TEST_RESULTS);
   for (let i = 2; i < 15; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: `http://mozilla.org/${i}` }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: `http://mozilla.org/${i}` },
+      })
     );
   }
 
@@ -115,7 +117,7 @@ add_task(async function oneTip_nonRestricting() {
     type: UrlbarUtils.RESULT_TYPE.SEARCH,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     payload: {
-      engine: Services.search.defaultEngine.name,
+      engine: SearchService.defaultEngine.name,
       query: "test",
     },
   });
@@ -123,7 +125,8 @@ add_task(async function oneTip_nonRestricting() {
   expectedResults = expectedResults.slice(0, MAX_RESULTS - TIP_SPAN + 1);
 
   let provider = new UrlbarTestUtils.TestProvider({ results });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
@@ -132,7 +135,7 @@ add_task(async function oneTip_nonRestricting() {
 
   checkResults(context.results, expectedResults);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   gURLBar.view.close();
 });
 
@@ -144,11 +147,11 @@ add_task(async function threeTips_nonRestricting() {
   }
   for (let i = 2; i < 15; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: `http://mozilla.org/${i}` }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: `http://mozilla.org/${i}` },
+      })
     );
   }
 
@@ -159,7 +162,7 @@ add_task(async function threeTips_nonRestricting() {
     type: UrlbarUtils.RESULT_TYPE.SEARCH,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     payload: {
-      engine: Services.search.defaultEngine.name,
+      engine: SearchService.defaultEngine.name,
       query: "test",
     },
   });
@@ -167,7 +170,8 @@ add_task(async function threeTips_nonRestricting() {
   expectedResults = expectedResults.slice(0, MAX_RESULTS - 3 * (TIP_SPAN - 1));
 
   let provider = new UrlbarTestUtils.TestProvider({ results });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
@@ -176,7 +180,7 @@ add_task(async function threeTips_nonRestricting() {
 
   checkResults(context.results, expectedResults);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   gURLBar.view.close();
 });
 
@@ -184,21 +188,21 @@ add_task(async function customValue() {
   let results = [];
   for (let i = 0; i < 15; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: `http://mozilla.org/${i}` }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        resultSpan: i == 1 ? 5 : undefined,
+        payload: { url: `http://mozilla.org/${i}` },
+      })
     );
   }
-
-  results[1].resultSpan = 5;
 
   let expectedResults = Array.from(results);
   expectedResults = expectedResults.slice(0, 6);
 
   let provider = new UrlbarTestUtils.TestProvider({ results });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
@@ -207,7 +211,7 @@ add_task(async function customValue() {
 
   checkResults(context.results, expectedResults);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   gURLBar.view.close();
 });
 
@@ -236,10 +240,10 @@ function collectExpectedProperties(actualObj, expectedObj) {
 }
 
 function makeTipResult() {
-  return new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+  return new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TIP,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    payload: {
       helpUrl: "http://example.com/",
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
@@ -249,6 +253,6 @@ function makeTipResult() {
           l10n: { id: "urlbar-search-tips-confirm" },
         },
       ],
-    }
-  );
+    },
+  });
 }

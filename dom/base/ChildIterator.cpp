@@ -5,13 +5,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChildIterator.h"
-#include "nsContentUtils.h"
+
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsContentUtils.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsIFrame.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsLayoutUtils.h"
 
 namespace mozilla::dom {
@@ -59,10 +59,13 @@ Maybe<uint32_t> FlattenedChildIterator::GetIndexOf(
     const nsINode* aParent, const nsINode* aPossibleChild) {
   if (const auto* element = Element::FromNode(aParent)) {
     if (const auto* slot = HTMLSlotElement::FromNode(element)) {
-      const auto& assignedNodes = slot->AssignedNodes();
-      if (!assignedNodes.IsEmpty()) {
-        auto index = assignedNodes.IndexOf(aPossibleChild);
-        return index == assignedNodes.NoIndex ? Nothing() : Some(index);
+      const Span assigned = slot->AssignedNodes();
+      if (!assigned.IsEmpty()) {
+        auto index = assigned.IndexOf(aPossibleChild);
+        if (index == assigned.npos) {
+          return Nothing();
+        }
+        return Some(index);
       }
     } else if (auto* shadowRoot = element->GetShadowRoot()) {
       return shadowRoot->ComputeIndexOf(aPossibleChild);
@@ -74,8 +77,7 @@ Maybe<uint32_t> FlattenedChildIterator::GetIndexOf(
 nsIContent* FlattenedChildIterator::GetNextChild() {
   // If we're already in the inserted-children array, look there first
   if (mParentAsSlot) {
-    const nsTArray<RefPtr<nsINode>>& assignedNodes =
-        mParentAsSlot->AssignedNodes();
+    const Span assignedNodes = mParentAsSlot->AssignedNodes();
     if (mIsFirst) {
       mIsFirst = false;
       MOZ_ASSERT(mIndexInInserted == 0);
@@ -134,8 +136,7 @@ nsIContent* FlattenedChildIterator::GetPreviousChild() {
     return nullptr;
   }
   if (mParentAsSlot) {
-    const nsTArray<RefPtr<nsINode>>& assignedNodes =
-        mParentAsSlot->AssignedNodes();
+    const Span assignedNodes = mParentAsSlot->AssignedNodes();
     MOZ_ASSERT(mIndexInInserted <= assignedNodes.Length());
     if (mIndexInInserted == 0) {
       mIsFirst = true;
@@ -158,27 +159,33 @@ nsIContent* FlattenedChildIterator::GetPreviousChild() {
 
 nsIContent* AllChildrenIterator::Get() const {
   switch (mPhase) {
-    case eAtMarkerKid: {
+    case Phase::AtBackdropKid: {
+      Element* backdrop = nsLayoutUtils::GetBackdropPseudo(Parent());
+      MOZ_ASSERT(backdrop, "No content marker frame at AtBackdropKid phase");
+      return backdrop;
+    }
+
+    case Phase::AtMarkerKid: {
       Element* marker = nsLayoutUtils::GetMarkerPseudo(Parent());
-      MOZ_ASSERT(marker, "No content marker frame at eAtMarkerKid phase");
+      MOZ_ASSERT(marker, "No content marker frame at AtMarkerKid phase");
       return marker;
     }
 
-    case eAtBeforeKid: {
+    case Phase::AtBeforeKid: {
       Element* before = nsLayoutUtils::GetBeforePseudo(Parent());
-      MOZ_ASSERT(before, "No content before frame at eAtBeforeKid phase");
+      MOZ_ASSERT(before, "No content before frame at AtBeforeKid phase");
       return before;
     }
 
-    case eAtFlatTreeKids:
+    case Phase::AtFlatTreeKids:
       return FlattenedChildIterator::Get();
 
-    case eAtAnonKids:
+    case Phase::AtAnonKids:
       return mAnonKids[mAnonKidsIdx];
 
-    case eAtAfterKid: {
+    case Phase::AtAfterKid: {
       Element* after = nsLayoutUtils::GetAfterPseudo(Parent());
-      MOZ_ASSERT(after, "No content after frame at eAtAfterKid phase");
+      MOZ_ASSERT(after, "No content after frame at AtAfterKid phase");
       return after;
     }
 
@@ -188,35 +195,18 @@ nsIContent* AllChildrenIterator::Get() const {
 }
 
 bool AllChildrenIterator::Seek(const nsIContent* aChildToFind) {
-  if (mPhase == eAtBegin || mPhase == eAtMarkerKid) {
-    Element* markerPseudo = nsLayoutUtils::GetMarkerPseudo(Parent());
-    if (markerPseudo && markerPseudo == aChildToFind) {
-      mPhase = eAtMarkerKid;
+  while (mPhase != Phase::AtEnd) {
+    if (mPhase == Phase::AtFlatTreeKids) {
+      if (FlattenedChildIterator::Seek(aChildToFind)) {
+        return true;
+      }
+      mPhase = Phase::AtAnonKids;
+    }
+    if (GetNextChild() == aChildToFind) {
       return true;
     }
-    mPhase = eAtBeforeKid;
   }
-  if (mPhase == eAtBeforeKid) {
-    Element* beforePseudo = nsLayoutUtils::GetBeforePseudo(Parent());
-    if (beforePseudo && beforePseudo == aChildToFind) {
-      return true;
-    }
-    mPhase = eAtFlatTreeKids;
-  }
-
-  if (mPhase == eAtFlatTreeKids) {
-    if (FlattenedChildIterator::Seek(aChildToFind)) {
-      return true;
-    }
-    mPhase = eAtAnonKids;
-  }
-
-  nsIContent* child = nullptr;
-  do {
-    child = GetNextChild();
-  } while (child && child != aChildToFind);
-
-  return child == aChildToFind;
+  return false;
 }
 
 void AllChildrenIterator::AppendNativeAnonymousChildren() {
@@ -224,110 +214,114 @@ void AllChildrenIterator::AppendNativeAnonymousChildren() {
 }
 
 nsIContent* AllChildrenIterator::GetNextChild() {
-  if (mPhase == eAtBegin) {
-    mPhase = eAtMarkerKid;
-    if (Element* markerContent = nsLayoutUtils::GetMarkerPseudo(Parent())) {
-      return markerContent;
-    }
-  }
-
-  if (mPhase == eAtMarkerKid) {
-    mPhase = eAtBeforeKid;
-    if (Element* beforeContent = nsLayoutUtils::GetBeforePseudo(Parent())) {
-      return beforeContent;
-    }
-  }
-
-  if (mPhase == eAtBeforeKid) {
-    // Advance into our explicit kids.
-    mPhase = eAtFlatTreeKids;
-  }
-
-  if (mPhase == eAtFlatTreeKids) {
-    if (nsIContent* kid = FlattenedChildIterator::GetNextChild()) {
-      return kid;
-    }
-    mPhase = eAtAnonKids;
-  }
-
-  if (mPhase == eAtAnonKids) {
-    if (mAnonKids.IsEmpty()) {
-      MOZ_ASSERT(mAnonKidsIdx == UINT32_MAX);
-      AppendNativeAnonymousChildren();
-      mAnonKidsIdx = 0;
-    } else {
-      if (mAnonKidsIdx == UINT32_MAX) {
+  switch (mPhase) {
+    case Phase::AtBegin:
+      if (Element* backdropPseudo =
+              nsLayoutUtils::GetBackdropPseudo(Parent())) {
+        mPhase = Phase::AtBackdropKid;
+        return backdropPseudo;
+      }
+      [[fallthrough]];
+    case Phase::AtBackdropKid:
+      if (Element* markerContent = nsLayoutUtils::GetMarkerPseudo(Parent())) {
+        mPhase = Phase::AtMarkerKid;
+        return markerContent;
+      }
+      [[fallthrough]];
+    case Phase::AtMarkerKid:
+      if (Element* beforeContent = nsLayoutUtils::GetBeforePseudo(Parent())) {
+        mPhase = Phase::AtBeforeKid;
+        return beforeContent;
+      }
+      [[fallthrough]];
+    case Phase::AtBeforeKid:
+      [[fallthrough]];
+    case Phase::AtFlatTreeKids:
+      if (nsIContent* kid = FlattenedChildIterator::GetNextChild()) {
+        mPhase = Phase::AtFlatTreeKids;
+        return kid;
+      }
+      [[fallthrough]];
+    case Phase::AtAnonKids:
+      if (mAnonKids.IsEmpty()) {
+        MOZ_ASSERT(mAnonKidsIdx == UINT32_MAX);
+        AppendNativeAnonymousChildren();
+        mAnonKidsIdx = 0;
+      } else if (mAnonKidsIdx == UINT32_MAX) {
         mAnonKidsIdx = 0;
       } else {
         mAnonKidsIdx++;
       }
-    }
-
-    if (mAnonKidsIdx < mAnonKids.Length()) {
-      return mAnonKids[mAnonKidsIdx];
-    }
-
-    mPhase = eAtAfterKid;
-    if (Element* afterContent = nsLayoutUtils::GetAfterPseudo(Parent())) {
-      return afterContent;
-    }
+      if (mAnonKidsIdx < mAnonKids.Length()) {
+        mPhase = Phase::AtAnonKids;
+        return mAnonKids[mAnonKidsIdx];
+      }
+      if (Element* afterContent = nsLayoutUtils::GetAfterPseudo(Parent())) {
+        mPhase = Phase::AtAfterKid;
+        return afterContent;
+      }
+      [[fallthrough]];
+    case Phase::AtAfterKid:
+    case Phase::AtEnd:
+      break;
   }
 
-  mPhase = eAtEnd;
+  mPhase = Phase::AtEnd;
   return nullptr;
 }
 
 nsIContent* AllChildrenIterator::GetPreviousChild() {
-  if (mPhase == eAtEnd) {
-    MOZ_ASSERT(mAnonKidsIdx == mAnonKids.Length());
-    mPhase = eAtAnonKids;
-    Element* afterContent = nsLayoutUtils::GetAfterPseudo(Parent());
-    if (afterContent) {
-      mPhase = eAtAfterKid;
-      return afterContent;
-    }
+  switch (mPhase) {
+    case Phase::AtEnd:
+      if (Element* afterContent = nsLayoutUtils::GetAfterPseudo(Parent())) {
+        mPhase = Phase::AtAfterKid;
+        return afterContent;
+      }
+      [[fallthrough]];
+    case Phase::AtAfterKid:
+      MOZ_ASSERT(mAnonKidsIdx == mAnonKids.Length());
+      [[fallthrough]];
+    case Phase::AtAnonKids:
+      if (mAnonKids.IsEmpty()) {
+        AppendNativeAnonymousChildren();
+        mAnonKidsIdx = mAnonKids.Length();
+      }
+      // If 0 then it turns into UINT32_MAX, which indicates the iterator is
+      // before the anonymous children.
+      --mAnonKidsIdx;
+      if (mAnonKidsIdx < mAnonKids.Length()) {
+        mPhase = Phase::AtAnonKids;
+        return mAnonKids[mAnonKidsIdx];
+      }
+      [[fallthrough]];
+    case Phase::AtFlatTreeKids:
+      if (nsIContent* kid = FlattenedChildIterator::GetPreviousChild()) {
+        mPhase = Phase::AtFlatTreeKids;
+        return kid;
+      }
+      if (Element* beforeContent = nsLayoutUtils::GetBeforePseudo(Parent())) {
+        mPhase = Phase::AtBeforeKid;
+        return beforeContent;
+      }
+      [[fallthrough]];
+    case Phase::AtBeforeKid:
+      if (Element* markerContent = nsLayoutUtils::GetMarkerPseudo(Parent())) {
+        mPhase = Phase::AtMarkerKid;
+        return markerContent;
+      }
+      [[fallthrough]];
+    case Phase::AtMarkerKid:
+      if (Element* backdrop = nsLayoutUtils::GetBackdropPseudo(Parent())) {
+        mPhase = Phase::AtBackdropKid;
+        return backdrop;
+      }
+      [[fallthrough]];
+    case Phase::AtBackdropKid:
+    case Phase::AtBegin:
+      break;
   }
 
-  if (mPhase == eAtAfterKid) {
-    mPhase = eAtAnonKids;
-  }
-
-  if (mPhase == eAtAnonKids) {
-    if (mAnonKids.IsEmpty()) {
-      AppendNativeAnonymousChildren();
-      mAnonKidsIdx = mAnonKids.Length();
-    }
-
-    // If 0 then it turns into UINT32_MAX, which indicates the iterator is
-    // before the anonymous children.
-    --mAnonKidsIdx;
-    if (mAnonKidsIdx < mAnonKids.Length()) {
-      return mAnonKids[mAnonKidsIdx];
-    }
-    mPhase = eAtFlatTreeKids;
-  }
-
-  if (mPhase == eAtFlatTreeKids) {
-    if (nsIContent* kid = FlattenedChildIterator::GetPreviousChild()) {
-      return kid;
-    }
-
-    Element* beforeContent = nsLayoutUtils::GetBeforePseudo(Parent());
-    if (beforeContent) {
-      mPhase = eAtBeforeKid;
-      return beforeContent;
-    }
-  }
-
-  if (mPhase == eAtFlatTreeKids || mPhase == eAtBeforeKid) {
-    Element* markerContent = nsLayoutUtils::GetMarkerPseudo(Parent());
-    if (markerContent) {
-      mPhase = eAtMarkerKid;
-      return markerContent;
-    }
-  }
-
-  mPhase = eAtBegin;
+  mPhase = Phase::AtBegin;
   return nullptr;
 }
 

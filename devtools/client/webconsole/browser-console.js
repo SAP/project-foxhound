@@ -35,8 +35,8 @@ class BrowserConsole extends WebConsole {
   #bcInitializer = null;
   #bcDestroyer = null;
   #telemetry;
-  /*
-   * @constructor
+  /**
+   * @class
    * @param object commands
    *        The commands object with all interfaces defined from devtools/shared/commands/
    * @param nsIDOMWindow iframeWindow

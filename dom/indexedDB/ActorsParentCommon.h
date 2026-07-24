@@ -4,25 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_actorsparentcommon_h__
-#define mozilla_dom_indexeddb_actorsparentcommon_h__
+#ifndef mozilla_dom_indexeddb_actorsparentcommon_h_
+#define mozilla_dom_indexeddb_actorsparentcommon_h_
 
 // Declares functions and types used locally within IndexedDB, which are defined
 // in ActorsParent.cpp
 
 #include <stdint.h>
+
 #include <tuple>
 #include <utility>
+
 #include "ErrorList.h"
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/indexedDB/Key.h"
-#include "nscore.h"
 #include "nsISupports.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nscore.h"
 
 struct JSContext;
 class JSObject;
@@ -122,4 +123,4 @@ nsresult ExecuteSimpleSQLSequence(mozIStorageConnection& aConnection,
 
 }  // namespace mozilla::dom::indexedDB
 
-#endif  // mozilla_dom_indexeddb_actorsparent_h__
+#endif  // mozilla_dom_indexeddb_actorsparent_h_

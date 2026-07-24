@@ -1,0 +1,16 @@
+[DEFAULT]
+firefox-appdir = "browser"
+head = ["asserts.js"]
+run-if = [
+  "os != 'android'",
+]
+
+["test_ChatConversation.js"]
+
+["test_ChatMessage.js"]
+
+["test_ChatStore.js"]
+
+["test_chat-utils.js"]
+
+["theme_aiwindow.js"]

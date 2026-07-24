@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __DEFAULT_BROWSER_AGENT_EVENT_LOG_H__
-#define __DEFAULT_BROWSER_AGENT_EVENT_LOG_H__
+#ifndef DEFAULT_BROWSER_AGENT_EVENT_LOG_H_
+#define DEFAULT_BROWSER_AGENT_EVENT_LOG_H_
 
 #include "mozilla/Types.h"
 
@@ -21,4 +21,4 @@ MOZ_END_EXTERN_C
 #define LOG_ERROR_MESSAGE(format, ...) \
   MOZ_WIN_EVENT_LOG_ERROR_MESSAGE(gWinEventLogSourceName, format, __VA_ARGS__)
 
-#endif  // __DEFAULT_BROWSER_AGENT_EVENT_LOG_H__
+#endif  // DEFAULT_BROWSER_AGENT_EVENT_LOG_H_

@@ -125,7 +125,7 @@ public class AndroidGamepadManager {
   }
 
   @WrapForJNI(calledFrom = "ui")
-  private static native byte[] nativeAddGamepad();
+  private static native byte[] nativeAddGamepad(String aName);
 
   @WrapForJNI(calledFrom = "ui")
   private static native void nativeRemoveGamepad(byte[] aGamepadHandle);
@@ -357,7 +357,7 @@ public class AndroidGamepadManager {
 
   private static void addGamepad(final InputDevice device) {
     sPendingGamepads.put(device.getId(), new ArrayList<KeyEvent>());
-    final byte[] gamepadId = nativeAddGamepad();
+    final byte[] gamepadId = nativeAddGamepad(device.getName());
     ThreadUtils.runOnUiThread(
         new Runnable() {
           @Override

@@ -24,7 +24,7 @@ Please make sure to only run this once, as the feature itself does not check if 
 
 ### Providing the browser-XXX label for reports
 
-The `install` function has an optional second parameter, `productName`. This allows reports to be labelled using the correct broswer-XXX label on webcompat.com. For example,
+The `install` function has an optional second parameter, `productName`. This allows reports to be labelled using the correct browser-XXX label on webcompat.com. For example,
 
 ```
 WebCompatReporterFeature.install(engine, "fenix")

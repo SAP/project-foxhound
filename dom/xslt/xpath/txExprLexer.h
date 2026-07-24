@@ -6,8 +6,8 @@
 #ifndef MITREXSL_EXPRLEXER_H
 #define MITREXSL_EXPRLEXER_H
 
-#include "txCore.h"
 #include "nsString.h"
+#include "txCore.h"
 
 /**
  * A Token class for the ExprLexer.

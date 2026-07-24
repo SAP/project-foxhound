@@ -607,7 +607,7 @@ _ContextualIdentityService.prototype = {
         let frameLoader = tab.linkedBrowser.frameLoader;
 
         // We don't have remoteTab in non-e10s mode.
-        if (frameLoader.remoteTab) {
+        if (frameLoader?.remoteTab) {
           remoteTabIds.add(frameLoader.remoteTab.tabId);
         }
 

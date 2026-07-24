@@ -16,8 +16,6 @@
 
 #include "ClearKeyBase64.h"
 
-#include <algorithm>
-
 using std::string;
 using std::vector;
 

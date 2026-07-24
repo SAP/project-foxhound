@@ -7,15 +7,15 @@
 #ifndef mozilla_dom_JSActorService_h
 #define mozilla_dom_JSActorService_h
 
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/JSActor.h"
+#include "nsIDOMEventListener.h"
+#include "nsIObserver.h"
 #include "nsIURI.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/dom/JSActor.h"
-#include "nsIObserver.h"
-#include "nsIDOMEventListener.h"
-#include "mozilla/EventListenerManager.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -104,6 +104,13 @@ class JSActorProtocol : public nsISupports {
   virtual const Sided& Parent() const = 0;
   virtual const Sided& Child() const = 0;
   bool mLoadInDevToolsLoader = false;
+
+ protected:
+  explicit JSActorProtocol(const nsACString& aName) : mName(aName) {}
+  bool RemoteTypePrefixMatches(const nsACString& aRemoteType);
+
+  nsCString mName;
+  nsTArray<nsCString> mRemoteTypes;
 };
 
 }  // namespace dom

@@ -3,8 +3,6 @@
 
 "use strict";
 
-/* eslint-env browser */
-
 const { require } = ChromeUtils.importESModule(
   "resource://devtools/shared/loader/Loader.sys.mjs"
 );
@@ -154,6 +152,8 @@ function waitForDelayedStartupFinished(win) {
 
 /**
  * Helper to call the toggle devtools shortcut.
+ *
+ * @param {Window} win
  */
 function synthesizeToggleToolboxKey(win) {
   info("Trigger the toogle toolbox shortcut");

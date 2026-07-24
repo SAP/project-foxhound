@@ -9,9 +9,10 @@
 #ifndef mozilla_dom_UnionMember_h
 #define mozilla_dom_UnionMember_h
 
+#include <utility>
+
 #include "mozilla/Alignment.h"
 #include "mozilla/Attributes.h"
-#include <utility>
 
 namespace mozilla::dom {
 

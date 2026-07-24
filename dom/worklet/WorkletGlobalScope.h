@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_WorkletGlobalScope_h
 #define mozilla_dom_WorkletGlobalScope_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -73,6 +72,8 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
     TimeDuration duration = aTimeStamp - mCreationTimeStamp;
     return duration.ToMilliseconds();
   }
+
+  TimeStamp CreationTimeStamp() const { return mCreationTimeStamp; }
 
   void InitModuleLoader(loader::WorkletModuleLoader* aModuleLoader);
 

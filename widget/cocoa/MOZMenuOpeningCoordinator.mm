@@ -27,9 +27,19 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
 @property(retain) NSView* view;
 @property(retain) NSAppearance* appearance;
 @property BOOL isContextMenu;
+@property BOOL isAnchoredMenu;
+@property NSRect anchorRect;
+@property NSRectEdge anchorEdge;
+@property BOOL pullsDown;
 @end
 
 @implementation MOZMenuOpeningInfo
+- (void)dealloc {
+  [_menu release];
+  [_view release];
+  [_appearance release];
+  [super dealloc];
+}
 @end
 
 @implementation MOZMenuOpeningCoordinator {
@@ -65,7 +75,11 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
                    atScreenPosition:(NSPoint)aPosition
                             forView:(NSView*)aView
                      withAppearance:(NSAppearance*)aAppearance
-                      asContextMenu:(BOOL)aIsContextMenu {
+                      asContextMenu:(BOOL)aIsContextMenu
+                     asAnchoredMenu:(BOOL)aIsAnchoredMenu
+                         anchorRect:(NSRect)aAnchorRect
+                         anchorEdge:(NSRectEdge)aAnchorEdge
+                          pullsDown:(BOOL)aPullsDown {
   MOZ_RELEASE_ASSERT(!mPendingOpening,
                      "A menu is already waiting to open. Before opening the "
                      "next one, either wait "
@@ -80,8 +94,11 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
   info.view = aView;
   info.appearance = aAppearance;
   info.isContextMenu = aIsContextMenu;
-  mPendingOpening = [info retain];
-  [info release];
+  info.isAnchoredMenu = aIsAnchoredMenu;
+  info.anchorRect = aAnchorRect;
+  info.anchorEdge = aAnchorEdge;
+  info.pullsDown = aPullsDown;
+  mPendingOpening = info;
 
   if (!mRunMenuIsOnTheStack) {
     // Call _runMenu from the event loop, so that it doesn't block this call.
@@ -97,8 +114,7 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
   mRunMenuIsOnTheStack = YES;
 
   while (mPendingOpening) {
-    MOZMenuOpeningInfo* info = [mPendingOpening retain];
-    [mPendingOpening release];
+    MOZMenuOpeningInfo* info = mPendingOpening;
     mPendingOpening = nil;
 
     @try {
@@ -106,7 +122,11 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
           atScreenPosition:info.position
                    forView:info.view
             withAppearance:info.appearance
-             asContextMenu:info.isContextMenu];
+             asContextMenu:info.isContextMenu
+            asAnchoredMenu:info.isAnchoredMenu
+                anchorRect:info.anchorRect
+                anchorEdge:info.anchorEdge
+                 pullsDown:info.pullsDown];
     } @catch (NSException* exception) {
       nsObjCExceptionLog(exception);
     }
@@ -134,36 +154,11 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
     atScreenPosition:(NSPoint)aPosition
              forView:(NSView*)aView
       withAppearance:(NSAppearance*)aAppearance
-       asContextMenu:(BOOL)aIsContextMenu {
-  // There are multiple ways to display an NSMenu as a context menu.
-  //
-  //  1. We can return the NSMenu from -[ChildView menuForEvent:] and the NSView
-  //     will open it for us.
-  //  2. We can call +[NSMenu popUpContextMenu:withEvent:forView:] inside a
-  //     mouseDown handler with a real mouse down event.
-  //  3. We can call +[NSMenu popUpContextMenu:withEvent:forView:] at a later
-  //     time, with a real mouse event that we stored earlier.
-  //  4. We can call +[NSMenu popUpContextMenu:withEvent:forView:] at any time,
-  //     with a synthetic mouse event that we create just for that purpose.
-  //  5. We can call -[NSMenu popUpMenuPositioningItem:atLocation:inView:] and
-  //     it just takes a position, not an event.
-  //
-  // 1-4 look the same, 5 looks different: 5 is made for use with NSPopUpButton,
-  // where the selected item needs to be shown at a specific position. If a tall
-  // menu is opened with a position close to the bottom edge of the screen, 5
-  // results in a cropped menu with scroll arrows, even if the entire menu would
-  // fit on the screen, due to the positioning constraint. 1-2 only work if the
-  // menu contents are known synchronously during the call to menuForEvent or
-  // during the mouseDown event handler.
-  // NativeMenuMac::ShowAsContextMenu can be called at any time. It could be
-  // called during a menuForEvent call (during a "contextmenu" event handler),
-  // or during a mouseDown handler, or at a later time. The code below uses
-  // option 4 as the preferred option for context menus because it's the
-  // simplest: It works in all scenarios and it doesn't have the drawbacks of
-  // option 5. For popups that aren't context menus and that should be
-  // positioned as close as possible to the given screen position, we use
-  // option 5.
-
+       asContextMenu:(BOOL)aIsContextMenu
+      asAnchoredMenu:(BOOL)aIsAnchoredMenu
+          anchorRect:(NSRect)aAnchorRect
+          anchorEdge:(NSRectEdge)aAnchorEdge
+           pullsDown:(BOOL)aPullsDown {
   if (aAppearance) {
     if (@available(macOS 11.0, *)) {
       // By default, NSMenu inherits its appearance from the opening NSEvent's
@@ -172,8 +167,66 @@ static BOOL sNeedToUnwindForMenuClosing = NO;
       aMenu.appearance = aAppearance;
     }
   }
+  if (aView && aIsAnchoredMenu) {
+    // Create a NSPopUpButtonCell for our menu to anchor to.
+    NSPopUpButtonCell* cell =
+        [[NSPopUpButtonCell alloc] initTextCell:@"" pullsDown:aPullsDown];
+    if (aPullsDown) {
+      // Cocoa positions the menu relative to the button cell differently
+      // depending on bezel style and OS version. Using this bezel style causes
+      // Cocoa to place the menu as close to the button cell as possible across
+      // OS versions.
+      cell.bezelStyle = NSBezelStyleSmallSquare;
+    } else {
+      cell.altersStateOfSelectedItem = false;
+    }
+    cell.autoenablesItems = false;
+    cell.menu = aMenu;
+    cell.preferredEdge = aAnchorEdge;
 
-  if (aView) {
+    // Create the view that the menu will be anchored to
+    NSView* anchorView = [[NSView alloc] initWithFrame:aAnchorRect];
+    [aView addSubview:anchorView];
+    [cell attachPopUpWithFrame:[anchorView bounds] inView:anchorView];
+
+    // Invoke the popup
+    [cell performClickWithFrame:[anchorView bounds] inView:anchorView];
+
+    // Perform cleanup
+    [cell release];
+    [anchorView removeFromSuperview];
+    [anchorView release];
+  } else if (aView) {
+    // There are multiple ways to display an NSMenu as a context menu.
+    //
+    //  1. We can return the NSMenu from -[ChildView menuForEvent:] and the
+    //     NSView will open it for us.
+    //  2. We can call +[NSMenu popUpContextMenu:withEvent:forView:] inside a
+    //     mouseDown handler with a real mouse down event.
+    //  3. We can call +[NSMenu popUpContextMenu:withEvent:forView:] at a later
+    //     time, with a real mouse event that we stored earlier.
+    //  4. We can call +[NSMenu popUpContextMenu:withEvent:forView:] at any
+    //     time, with a synthetic mouse event that we create just for that
+    //     purpose.
+    //  5. We can call -[NSMenu popUpMenuPositioningItem:atLocation:inView:] and
+    //     it just takes a position, not an event.
+    //
+    // 1-4 look the same, 5 looks different: 5 is made for use with
+    // NSPopUpButton, where the selected item needs to be shown at a specific
+    // position. If a tall menu is opened with a position close to the bottom
+    // edge of the screen, 5 results in a cropped menu with scroll arrows, even
+    // if the entire menu would fit on the screen, due to the positioning
+    // constraint. 1-2 only work if the menu contents are known synchronously
+    // during the call to menuForEvent or during the mouseDown event handler.
+    // NativeMenuMac::ShowMenuAtPosition can be called at any time. It could be
+    // called during a menuForEvent call (during a "contextmenu" event handler),
+    // or during a mouseDown handler, or at a later time. The code below uses
+    // option 4 as the preferred option for context menus because it's the
+    // simplest: It works in all scenarios and it doesn't have the drawbacks of
+    // option 5. For popups that aren't context menus and that should be
+    // positioned as close as possible to the given screen position, we use
+    // option 5.
+
     NSWindow* window = aView.window;
     NSPoint locationInWindow =
         nsCocoaUtils::ConvertPointFromScreen(window, aPosition);

@@ -8,8 +8,8 @@ origin:
   name: WebGPU CTS
   description: WebGPU Compliance Test Suite
   url: https://gpuweb.github.io/cts/
-  release: eba794d873f4d1edba71cde7325066131db814db (2025-07-10T21:18:36Z).
-  revision: eba794d873f4d1edba71cde7325066131db814db
+  release: f93e7e2fe4c355d590866f47db63547fc65675ab (2026-02-12T23:04:43Z).
+  revision: f93e7e2fe4c355d590866f47db63547fc65675ab
   license: ['BSD-3-Clause']
 
 updatebot:
@@ -40,6 +40,33 @@ vendoring:
       pattern: "const { version } = require('../src/common/tools/version.ts');"
       with: "const version = '{revision}';"
 
+    # Apply patches from patch files.
+    #
+    # These must be applied prior to the `cargo run` step below, as it patches the original
+    # TypeScript sources. If we used `moz.yaml`'s `patches` mechanism, it would apply the patch to
+    # the TypeScript sources _after_ we have already processed them and written our tests to their
+    # final location.
+
+    # Patch the `baseResourcePath` used by the CTS so that the tests we
+    # generate are able to load resources correctly.
+    - action: run-command
+      cwd: '{yaml_dir}/checkout/'
+      command: patch
+      args:
+        - -p1
+        - -i
+        - ../patches/0001-base-resource-path.patch
+
+    # Patch the `serviceWorkerURL` used by the CTS so that the tests we generate are able to load
+    # resources correctly.
+    - action: run-command
+      cwd: '{yaml_dir}/checkout/'
+      command: patch
+      args:
+        - -p1
+        - -i
+        - ../patches/0002-service-worker-url.patch
+
     - action: run-command
       cwd: '{yaml_dir}/vendor/'
       command: cargo
@@ -50,10 +77,10 @@ vendoring:
         - '../checkout/'
 
     - action: delete-path
-      path: '../../../../../testing/web-platform/mozilla/tests/webgpu/'
+      path: '{topsrcdir}/testing/web-platform/mozilla/tests/webgpu/'
     - action: move-dir
       from: '{yaml_dir}/checkout/out-wpt/'
-      to: '../../../../../testing/web-platform/mozilla/tests/webgpu/'
+      to: '{topsrcdir}/testing/web-platform/mozilla/tests/webgpu/'
 
     - action: delete-path
       path: '{yaml_dir}/checkout/node_modules/'
@@ -64,4 +91,4 @@ vendoring:
     - action: delete-path
       path: '{yaml_dir}/checkout/deploy_key.enc'
     - action: vcs-add-remove-files
-      path: '../../../../../testing/web-platform/mozilla/tests/webgpu/'
+      path: '{topsrcdir}/testing/web-platform/mozilla/tests/webgpu/'

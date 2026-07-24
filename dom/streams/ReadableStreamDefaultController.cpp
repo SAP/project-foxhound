@@ -12,8 +12,8 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamControllerBase.h"
 #include "mozilla/dom/ReadableStreamDefaultControllerBinding.h"
@@ -296,6 +296,11 @@ void ReadableStreamDefaultControllerEnqueue(
       JS::Rooted<JS::Value> errorValue(aCx);
 
       JS_GetPendingException(aCx, &errorValue);
+
+      // Clear the pending exception before calling into
+      // ReadableStreamDefaultControllerError as it will try to do AutoJSAPI,
+      // which demands no pending exception.
+      JS_ClearPendingException(aCx);
 
       // Step 4.2.1
 

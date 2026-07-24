@@ -12,7 +12,7 @@
 
 <head>
   <!-- @CSP: We should remove 'unsafe-inline' from style-src, see Bug 1579160 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src chrome: moz-icon: https: blob: data:; style-src chrome: data: 'unsafe-inline'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src chrome: moz-icon: moz-remote-image: https: blob: data:; style-src chrome: data: 'unsafe-inline'; object-src 'none'" />
 
   <title data-l10n-id="settings-page-title"></title>
 
@@ -23,10 +23,6 @@
   <link
     rel="stylesheet"
     href="chrome://browser/skin/preferences/preferences.css"
-  />
-  <link
-    rel="stylesheet"
-    href="chrome://browser/skin/preferences/translations.css"
   />
   <link
     rel="stylesheet"
@@ -43,6 +39,8 @@
   />
   <link rel="stylesheet" href="chrome://browser/skin/preferences/privacy.css" />
   <link rel="stylesheet" href="chrome://browser/content/preferences/widgets/setting-group.css" />
+  <link rel="stylesheet" href="chrome://browser/content/preferences/widgets/setting-pane.css" />
+  <link rel="stylesheet" href="chrome://browser/content/preferences/widgets/setting-control.css" />
 
   <link rel="localization" href="branding/brand.ftl"/>
   <link rel="localization" href="browser/browser.ftl"/>
@@ -54,11 +52,14 @@
   <link rel="localization" href="toolkit/firefoxlabs/features.ftl"/>
 
   <!-- Temporary until localization is done -->
-  <link rel="localization" href="preview/linkPreview.ftl"/>
   <link rel="localization" href="preview/smartTabGroups.ftl"/>
+  <link rel="localization" href="preview/privacyPreferences.ftl"/>
+  <link rel="localization" href="browser/ipProtection.ftl"/>
+  <link rel="localization" href="preview/aiFeatures.ftl"/>
 
   <!-- Links below are only used for search-l10n-ids into subdialogs -->
   <link rel="localization" href="browser/aboutDialog.ftl"/>
+  <link rel="localization" href="browser/backupSettings.ftl"/>
   <link rel="localization" href="browser/genai.ftl"/>
   <link rel="localization" href="browser/search.ftl"/>
   <link rel="localization" href="browser/preferences/clearSiteData.ftl"/>
@@ -71,9 +72,7 @@
   <link rel="localization" href="browser/preferences/siteDataSettings.ftl"/>
   <link rel="localization" href="browser/sanitize.ftl"/>
   <link rel="localization" href="browser/translations.ftl"/>
-  <link rel="localization" href="preview/translations.ftl"/>
   <link rel="localization" href="preview/enUS-searchFeatures.ftl"/>
-  <link rel="localization" href="preview/backupSettings.ftl"/>
   <link rel="localization" href="security/certificates/certManager.ftl"/>
   <link rel="localization" href="security/certificates/deviceManager.ftl"/>
   <link rel="localization" href="toolkit/updates/history.ftl"/>
@@ -88,8 +87,17 @@
   <script src="chrome://browser/content/preferences/findInPage.js"/>
   <script src="chrome://browser/content/migration/migration-wizard.mjs" type="module"></script>
   <script type="module" src="chrome://browser/content/backup/backup-settings.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/dialog-button.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/placeholder-message.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/nav-notice.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/setting-pane.mjs"></script>
   <script type="module" src="chrome://browser/content/preferences/widgets/setting-group.mjs"></script>
   <script type="module" src="chrome://browser/content/preferences/widgets/setting-control.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/security-privacy-card.mjs"></script>
+  <script type="module" src="chrome://global/content/elements/moz-input-color.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/sync-device-name.mjs"></script>
+  <script type="module" src="chrome://browser/content/preferences/widgets/sync-engines-list.mjs"></script>
+  <script type="module" src="chrome://browser/content/ipprotection/bandwidth-usage.mjs"></script>
 </head>
 
 <html:body xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -157,6 +165,16 @@
           <label class="category-name" flex="1" data-l10n-id="pane-sync-title3"></label>
         </richlistitem>
 
+        <richlistitem id="category-ai-features"
+                      class="category"
+                      value="paneAi"
+                      data-l10n-id="category-ai-controls"
+                      data-l10n-attrs="tooltiptext"
+                      align="center">
+          <image class="category-icon"/>
+          <label class="category-name" flex="1" data-l10n-id="pane-ai-controls-title"></label>
+        </richlistitem>
+
         <richlistitem id="category-experimental"
                       class="category"
                       hidden="true"
@@ -189,6 +207,10 @@
         <richlistitem
                       class="category hidden-category"
                       value="paneContainers"/>
+
+        <richlistitem
+                      class="category hidden-category"
+                      value="paneProfiles"/>
 
         <richlistitem
                       class="category hidden-category"
@@ -241,7 +263,6 @@
 #include search.inc.xhtml
 #include privacy.inc.xhtml
 #include containers.inc.xhtml
-#include translations.inc.xhtml
 #include sync.inc.xhtml
 #include experimental.inc.xhtml
 #include moreFromMozilla.inc.xhtml

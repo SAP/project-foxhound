@@ -6,42 +6,40 @@
 
 #include "SpeechRecognition.h"
 
-#include "nsCOMPtr.h"
-#include "nsCycleCollectionParticipant.h"
+#include <algorithm>
 
-#include "mozilla/dom/AudioStreamTrack.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/SpeechRecognitionBinding.h"
-#include "mozilla/dom/MediaStreamTrackBinding.h"
-#include "mozilla/dom/MediaStreamError.h"
-#include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/SpeechGrammar.h"
+#include "AudioSegment.h"
+#include "MediaEnginePrefs.h"
+#include "SpeechTrackListener.h"
+#include "VideoUtils.h"
+#include "endpointer.h"
+#include "mozilla/AbstractThread.h"
 #include "mozilla/MediaManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/AbstractThread.h"
-#include "VideoUtils.h"
-#include "AudioSegment.h"
-#include "MediaEnginePrefs.h"
-#include "endpointer.h"
-
+#include "mozilla/dom/AudioStreamTrack.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/MediaStreamError.h"
+#include "mozilla/dom/MediaStreamTrackBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/SpeechGrammar.h"
+#include "mozilla/dom/SpeechRecognitionBinding.h"
 #include "mozilla/dom/SpeechRecognitionEvent.h"
+#include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIObserverService.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
-#include "nsServiceManagerUtils.h"
 #include "nsQueryObject.h"
-#include "nsGlobalWindowInner.h"
-#include "SpeechTrackListener.h"
-
-#include <algorithm>
+#include "nsServiceManagerUtils.h"
 
 // Undo the windows.h damage
 #if defined(XP_WIN) && defined(GetMessage)
@@ -430,7 +428,7 @@ uint32_t SpeechRecognition::ProcessAudioSegment(AudioSegment* aSegment,
       }));
 
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   return samples;
 }
 

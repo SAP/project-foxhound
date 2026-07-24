@@ -4,6 +4,7 @@
 
 //! Generic types for CSS values that are composed of four sides.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use cssparser::Parser;
 use std::fmt::{self, Write};
@@ -27,6 +28,7 @@ use style_traits::{CssWriter, ParseError, ToCss};
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct Rect<T>(pub T, pub T, pub T, pub T);

@@ -8,9 +8,9 @@
 #define mozilla_dom_AbortFollower_h
 
 #include "jsapi.h"
+#include "mozilla/WeakPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsTObserverArray.h"
-#include "mozilla/WeakPtr.h"
 
 namespace mozilla::dom {
 

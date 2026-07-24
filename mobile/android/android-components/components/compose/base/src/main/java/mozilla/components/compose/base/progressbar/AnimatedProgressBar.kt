@@ -10,18 +10,16 @@ import android.view.View
 import androidx.annotation.IntRange
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +39,9 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
@@ -78,7 +79,7 @@ private const val LIGHTEN_TRACK_COLOR_FACTOR = 0.2f
  * @param progressAnimSpec The animation behavior when values change. By default the change is shown instantly.
  */
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CognitiveComplexMethod")
 fun AnimatedProgressBar(
     @IntRange(from = 0, to = 100) progress: Int,
     modifier: Modifier = Modifier,
@@ -96,7 +97,7 @@ fun AnimatedProgressBar(
         view.announceProgressForAccessibility(progress)
     }
 
-    val backgroundColor = AcornTheme.colors.layer1
+    val backgroundColor = MaterialTheme.colorScheme.surface
     val trackBrush = remember(trackColor) {
         SolidColor(trackColor ?: backgroundColor.lighten(LIGHTEN_TRACK_COLOR_FACTOR))
     }
@@ -121,16 +122,11 @@ fun AnimatedProgressBar(
         animationSpec = progressAnimSpec,
     )
 
-    val infiniteTransition = rememberInfiniteTransition()
-    val offset by infiniteTransition.animateFloat(
-        initialValue = 0f,
+    val offset by animateFloatAsState(
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = gradientAnimationSpeed.inWholeMilliseconds.toInt(),
-                easing = LinearEasing,
-            ),
-            repeatMode = RepeatMode.Restart,
+        animationSpec = tween(
+            durationMillis = gradientAnimationSpeed.inWholeMilliseconds.toInt(),
+            easing = LinearEasing,
         ),
     )
 
@@ -159,7 +155,17 @@ fun AnimatedProgressBar(
         }
     }
 
-    Canvas(modifier.fillMaxWidth()) {
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = animatedProgress.toFloat(),
+                    range = 0f..100f,
+                    steps = 100,
+                )
+            },
+    ) {
         val width = this.size.width
         val height = this.size.height
 
@@ -224,25 +230,26 @@ private fun View.announceProgressForAccessibility(progress: Int) {
 @Suppress("MagicNumber")
 private fun AnimatedProgressBarPreview() {
     AcornTheme {
-        Column(
-            modifier = Modifier
-                .background(AcornTheme.colors.layer1)
-                .height(60.dp)
-                .fillMaxWidth(),
-        ) {
-            AnimatedProgressBar(25)
+        Surface {
+            Column(
+                modifier = Modifier
+                    .height(60.dp)
+                    .fillMaxWidth(),
+            ) {
+                AnimatedProgressBar(25)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(50)
+                AnimatedProgressBar(50)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(75)
+                AnimatedProgressBar(75)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(99)
+                AnimatedProgressBar(99)
+            }
         }
     }
 }
@@ -253,25 +260,26 @@ private fun AnimatedProgressBarPreview() {
 @Suppress("MagicNumber")
 private fun AnimatedProgressBarRTLPreview() {
     AcornTheme {
-        Column(
-            modifier = Modifier
-                .background(AcornTheme.colors.layer1)
-                .height(60.dp)
-                .fillMaxWidth(),
-        ) {
-            AnimatedProgressBar(25)
+        Surface {
+            Column(
+                modifier = Modifier
+                    .height(60.dp)
+                    .fillMaxWidth(),
+            ) {
+                AnimatedProgressBar(25)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(50)
+                AnimatedProgressBar(50)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(75)
+                AnimatedProgressBar(75)
 
-            HorizontalDivider(thickness = 20.dp)
+                HorizontalDivider(thickness = 20.dp)
 
-            AnimatedProgressBar(99)
+                AnimatedProgressBar(99)
+            }
         }
     }
 }

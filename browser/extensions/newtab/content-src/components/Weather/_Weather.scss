@@ -42,13 +42,6 @@
       inset-inline-end: var(--space-xxlarge);
     }
   }
-
-  .context-menu {
-    inset-inline-end: 100%;
-    inset-inline-start: auto;
-    margin-inline-end: var(--space-xsmall);
-  }
-
 }
 
 .weather-placeholder {
@@ -120,13 +113,6 @@
   }
 }
 
-// Edge case: users with weather enabled/search disabled
-.has-weather.no-search {
-  .outer-wrapper {
-    padding-block-start: var(--space-xlarge);
-  }
-}
-
 // Bug 1959189 - Show mobile QR code modal toggle next to weather widget
 .has-mobile-download-promo {
   --mobile-download-promo-width: var(--space-xxlarge);
@@ -151,10 +137,6 @@
 
 // Edge case: users with weather enabled/search enabled
 .has-weather.has-search {
-  .outer-wrapper:not(.only-search) {
-    padding-block-start: var(--space-xlarge);
-  }
-
   // Edge case: medium screens where we hide the weather icon and
   // detail info row for overlap issues
   .weatherDetailedSummaryRow {
@@ -235,7 +217,6 @@
   flex-wrap: nowrap;
   align-items: stretch;
   border-radius: var(--border-radius-medium);
-  overflow: hidden;
 
   &:hover, &:focus-within {
     ~ .weatherSponsorText {
@@ -243,8 +224,14 @@
     }
   }
 
-  &:focus-within {
-    overflow: visible;
+  &:has(.staticWeatherInfo) {
+    &:hover {
+      box-shadow: none;
+
+      ~ .weatherSponsorText {
+        visibility: hidden;
+      }
+    }
   }
 
   &:hover {
@@ -272,6 +259,90 @@
   }
 }
 
+.weatherOptIn {
+  position: absolute;
+  inset-block-end: calc(var(--space-medium) * -1.5);
+  inset-inline-start: calc(var(--space-xxlarge) * -9);
+
+  dialog {
+    background: var(--newtab-background-color-secondary);
+    border: 1px solid var(--border-color-card);
+    border-radius: var(--border-radius-medium);
+    box-shadow: var(--box-shadow-card);
+    display: flex;
+    width: 332px;
+
+    .weatherOptInImg {
+      -webkit-mask: url('chrome://browser/skin/weather/mostly-sunny.svg') no-repeat center;
+      mask: url('chrome://browser/skin/weather/mostly-sunny.svg') no-repeat center;
+      background-color: var(--button-icon-fill);
+      mask-size: cover;
+      margin-inline-end: var(--space-medium);
+      height: var(--icon-size-xlarge);
+      width: var(--icon-size-xlarge);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+
+      &::after {
+        border-block-end: var(--focus-outline);
+        border-inline-end: var(--focus-outline);
+      }
+    }
+  }
+
+  dialog .weatherOptInContent {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    h3 {
+      font-size: var(--button-font-size);
+      font-weight: var(--heading-font-weight);
+      margin-block: 0 var(--space-medium);
+    }
+
+    moz-button-group {
+      align-self: flex-end;
+
+      moz-button:first-of-type {
+        margin-inline-end: var(--space-small);
+      }
+    }
+  }
+
+  @media (min-width: $break-point-large) {
+    inset-block-end: calc(var(--space-medium) * -1);
+    inset-inline-start: calc(var(--space-xxlarge) * -5.5);
+  }
+}
+
+// Arrow pointed upwards from the right side of the dialog
+dialog {
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: -9%;
+    inset-inline-end: 5%;
+    transform: translateX(-50%) rotate(225deg);
+    height: 16px;
+    width: 16px;
+    background: var(--newtab-background-color-secondary);
+    box-shadow: 4px 4px 6px -2px var(--box-shadow-card);
+    border-inline-end: 1px solid var(--border-color-card);
+    border-block-end: 1px solid var(--border-color-card);
+  }
+
+  &:dir(rtl)::after {
+    border-inline-start: 1px solid var(--border-color-card);
+    border-block-end: 1px solid var(--border-color-card);
+    border-inline-end: none;
+    inset-inline-end: 10%;
+  }
+
+}
+
 .weatherInfoLink, .weatherButtonContextMenuWrapper {
   appearance: none;
   background-color: var(--background-color-ghost);
@@ -289,10 +360,6 @@
     &:active {
       background-color: var(--button-background-color-ghost-active);
     }
-  }
-
-  &:focus-visible {
-    outline: var(--focus-outline);
   }
 
   // Bug 1908010 - This overwrites the design system color because of a
@@ -319,18 +386,20 @@
   display: flex;
   gap: var(--space-medium);
   padding: var(--space-small) var(--space-medium);
-  border-start-start-radius: var(--border-radius-medium);
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-  border-end-start-radius: var(--border-radius-medium);
+  border-radius: var(--border-radius-medium);
   text-decoration: none;
-  color: var(--text-color);;
+  color: var(--text-color);
   min-width: 130px;
   max-width: 190px;
   text-overflow: ellipsis;
 
   @media(min-width: $break-point-medium) {
     min-width: unset;
+  }
+
+  @media(min-width: $break-point-large) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
   }
 
   &:hover ~.weatherButtonContextMenuWrapper {
@@ -341,12 +410,31 @@
 
   &:focus-visible {
     border-radius: var(--border-radius-medium);
+    outline: var(--focus-outline);
+    z-index: 1;
 
     ~ .weatherButtonContextMenuWrapper {
       &::after {
         background-color: transparent
       }
     }
+  }
+}
+
+.weatherInfoLink.staticWeatherInfo {
+  .weatherIcon {
+    filter: opacity(60%);
+  }
+
+  .weatherText {
+    color: var(--text-color-disabled)
+  }
+
+  &:hover,
+  &:active {
+    box-shadow: none;
+    cursor: default;
+    background-color: var(--newtab-weather-background-color);
   }
 }
 
@@ -380,8 +468,9 @@
     }
   }
 
-  &:focus-visible {
+  &:has(:focus-visible) {
     border-radius: var(--border-radius-medium);
+    outline: var(--focus-outline);
 
     &::after {
       background-color: transparent
@@ -403,6 +492,10 @@
   border: 0;
   appearance: none;
   min-width: var(--size-item-large);
+
+  &:focus {
+    outline: none;
+  }
 }
 
 .weatherText {
@@ -418,7 +511,7 @@
 
 .weatherForecastRow {
   text-transform: uppercase;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 .weatherCityRow {
@@ -486,22 +579,18 @@
 
   &.iconId1 {
     content: url('chrome://browser/skin/weather/sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId2 {
     content: url('chrome://browser/skin/weather/mostly-sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &:is(.iconId3, .iconId4, .iconId6) {
     content: url('chrome://browser/skin/weather/partly-sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId5 {
     content: url('chrome://browser/skin/weather/hazy-sunshine.svg');
-    // height: var(--size-item-large);
   }
 
   &:is(.iconId7, .iconId8) {
@@ -518,7 +607,6 @@
 
   &:is(.iconId13, .iconId14) {
     content: url('chrome://browser/skin/weather/mostly-cloudy-with-showers.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId15 {
@@ -638,10 +726,10 @@
     border-radius: var(--border-radius-medium);
     background-color: light-dark(var(--color-white), var(--newtab-background-color-secondary));
     padding: var(--space-small) var(--space-xxlarge);
-    border: $border-primary;
+    border: 1px solid var(--border-color);
 
     &:focus-visible {
-      outline: 2px solid var(--focus-outline-color);
+      outline: var(--focus-outline);
     }
   }
 }

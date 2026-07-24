@@ -249,11 +249,7 @@ add_task(async function test_clickData_MV2_eventpage() {
 });
 
 add_task(async function test_clickData_MV3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
   await test_clickData({ manifest_version: 3 });
-  await SpecialPowers.popPrefEnv();
 });
 
 add_task(function test_clickData_reset_MV2() {
@@ -261,9 +257,5 @@ add_task(function test_clickData_reset_MV2() {
 });
 
 add_task(async function test_clickData_reset_MV3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
   await test_clickData_reset({ manifest_version: 3 });
-  await SpecialPowers.popPrefEnv();
 });

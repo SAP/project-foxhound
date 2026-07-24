@@ -34,9 +34,7 @@ void FrontendErrors::clearErrors() {
 
 void FrontendErrors::clearWarnings() { warnings.clear(); }
 
-void FrontendAllocator::reportAllocationOverflow() {
-  fc_->onAllocationOverflow();
-}
+void FrontendAllocator::reportAllocOverflow() { fc_->onAllocationOverflow(); }
 
 void* FrontendAllocator::onOutOfMemory(AllocFunction allocFunc,
                                        arena_id_t arena, size_t nbytes,
@@ -208,9 +206,16 @@ bool FrontendContext::convertToRuntimeError(
   }
   if (warning == Warning::Report) {
     for (CompileError& error : warnings()) {
+#ifdef DEBUG
+      bool hadException = cx->isExceptionPending();
+#endif
       if (!error.throwError(cx)) {
         return false;
       }
+
+      // The warning reporter shouldn't clear the exception set by
+      // other errors.
+      MOZ_ASSERT_IF(hadException, cx->isExceptionPending());
     }
   }
   if (hadOverRecursed()) {

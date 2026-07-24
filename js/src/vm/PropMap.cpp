@@ -137,13 +137,6 @@ DictionaryPropMap* SharedPropMap::toDictionaryMap(JSContext* cx,
 static MOZ_ALWAYS_INLINE SharedPropMap* PropMapChildReadBarrier(
     SharedPropMap* parent, SharedPropMap* child) {
   JS::Zone* zone = child->zone();
-  if (zone->needsIncrementalBarrier()) {
-    // We need a read barrier for the map tree, since these are weak
-    // pointers.
-    ReadBarrier(child);
-    return child;
-  }
-
   if (MOZ_UNLIKELY(zone->isGCSweeping() &&
                    IsAboutToBeFinalizedUnbarriered(child))) {
     // The map we've found is unreachable and due to be finalized, so
@@ -153,9 +146,9 @@ static MOZ_ALWAYS_INLINE SharedPropMap* PropMapChildReadBarrier(
     return nullptr;
   }
 
-  // We don't yield to the mutator when the zone is in this state so we don't
-  // need to account for it here.
-  MOZ_ASSERT(!zone->isGCCompacting());
+  // We need a read barrier for the map tree, since these are weak
+  // pointers.
+  ReadBarrier(child);
 
   return child;
 }

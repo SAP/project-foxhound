@@ -167,7 +167,7 @@ ia2Accessible::role(long* aRole) {
   a11y::role geckoRole;
   geckoRole = acc->Role();
   switch (geckoRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       MOZ_CRASH("Unknown role.");
   }

@@ -15,7 +15,6 @@ import org.mozilla.focus.R
 import org.mozilla.focus.settings.permissions.AutoplayOption
 import org.mozilla.focus.settings.permissions.SitePermissionOption
 
-@Suppress("TooManyFunctions")
 class SitePermissionOptionsStorage(private val context: Context) {
 
     /**
@@ -179,6 +178,8 @@ class SitePermissionOptionsStorage(private val context: Context) {
         persistentStorage = SitePermissionsRules.Action.BLOCKED,
         mediaKeySystemAccess = getSitePermissionRules(SitePermission.MEDIA_KEY_SYSTEM_ACCESS),
         crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+        localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+        localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
     )
 
     private fun getSitePermissionRules(sitePermission: SitePermission): SitePermissionsRules.Action {

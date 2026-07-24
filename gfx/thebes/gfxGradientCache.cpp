@@ -125,7 +125,7 @@ class GradientCache final
   GradientCache()
       : ExpirationTrackerImpl<GradientCacheData, 4, GradientCacheMutex,
                               LockedInstance>(MAX_GENERATION_MS,
-                                              "GradientCache") {}
+                                              "GradientCache"_ns) {}
   static bool EnsureInstance() {
     LockedInstance lockedInstance(sInstanceMutex);
     return EnsureInstanceLocked(lockedInstance);

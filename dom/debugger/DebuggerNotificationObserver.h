@@ -8,8 +8,8 @@
 #define mozilla_dom_DebuggerNotificationObserver_h
 
 #include "DebuggerNotificationManager.h"
-#include "mozilla/dom/DebuggerNotificationObserverBinding.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/DebuggerNotificationObserverBinding.h"
 #include "nsTObserverArray.h"
 #include "nsWrapperCache.h"
 

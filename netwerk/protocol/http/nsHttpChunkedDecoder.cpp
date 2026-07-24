@@ -11,8 +11,6 @@
 #include <algorithm>
 #include <string.h>
 
-#include "mozilla/Unused.h"
-
 namespace mozilla {
 namespace net {
 
@@ -121,8 +119,8 @@ nsresult nsHttpChunkedDecoder::ParseChunkRemaining(char* buf, uint32_t count,
                 mTrailers->ParseHeaderLine(nsDependentCSubstring(buf, count),
                                            &hdr, &headerNameOriginal, &val))) {
           if (hdr == nsHttp::Server_Timing) {
-            Unused << mTrailers->SetHeaderFromNet(hdr, headerNameOriginal, val,
-                                                  true);
+            (void)mTrailers->SetHeaderFromNet(hdr, headerNameOriginal, val,
+                                              true);
           }
         }
       } else {

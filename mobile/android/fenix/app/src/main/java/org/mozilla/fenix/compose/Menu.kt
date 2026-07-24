@@ -37,9 +37,9 @@ import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
-import org.mozilla.fenix.R
+import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Root popup action dropdown menu.
@@ -52,7 +52,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * @param offset Offset to be added to the position of the menu.
  * @param onDismissRequest Invoked when user dismisses the menu or on orientation changes.
  */
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 private fun Menu(
     menuItems: List<MenuItem>,
@@ -83,7 +83,7 @@ private fun Menu(
             offset = offset,
             scrollState = ScrollState(with(localDensity) { columnHeightDp.toPx() * selectedItemIndex }.toInt()),
             modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer2)
+                .background(color = MaterialTheme.colorScheme.surfaceContainerLowest)
                 .then(modifier),
         ) {
             val hasCheckedItems = menuItems.any { it.isChecked }
@@ -105,11 +105,11 @@ private fun Menu(
                         selectedItemIndex = index
                         {
                             Icon(
-                                painter = painterResource(id = R.drawable.mozac_ic_checkmark_24),
+                                painter = painterResource(id = iconsR.drawable.mozac_ic_checkmark_24),
                                 modifier = Modifier
                                     .size(24.dp),
                                 contentDescription = null,
-                                tint = FirefoxTheme.colors.iconPrimary,
+                                tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                 } else {
@@ -120,9 +120,9 @@ private fun Menu(
                     text = {
                         Text(
                             text = item.title,
-                            color = item.color ?: FirefoxTheme.colors.textPrimary,
+                            color = item.color ?: MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            style = FirefoxTheme.typography.subtitle1,
+                            style = FirefoxTheme.typography.body1,
                         )
                     },
                     modifier = Modifier
@@ -207,7 +207,7 @@ private fun ContextualMenuPreview() {
     var showMenu by remember { mutableStateOf(false) }
     FirefoxTheme {
         Box(modifier = Modifier.size(400.dp)) {
-            PrimaryButton(
+            FilledButton(
                 text = "Show menu",
                 modifier = Modifier.fillMaxWidth(),
             ) {

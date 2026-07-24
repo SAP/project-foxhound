@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BroadcastChannelService.h"
+
 #include "BroadcastChannelParent.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
 #ifdef XP_WIN
@@ -24,27 +26,6 @@ namespace dom {
 namespace {
 
 BroadcastChannelService* sInstance = nullptr;
-
-ClonedMessageData CloneClonedMessageData(const ClonedMessageData& aOther) {
-  auto cloneData = SerializedStructuredCloneBuffer{};
-  cloneData.data.initScope(aOther.data().data.scope());
-  const bool res = cloneData.data.Append(aOther.data().data);
-  MOZ_RELEASE_ASSERT(res, "out of memory");
-  return {std::move(cloneData), aOther.blobs(), aOther.inputStreams(),
-          aOther.identifiers()};
-}
-
-MessageData CloneMessageData(const MessageData& aOther) {
-  switch (aOther.data().type()) {
-    case MessageDataType::TClonedMessageData:
-      return {aOther.agentClusterId(),
-              CloneClonedMessageData(aOther.data().get_ClonedMessageData())};
-    case MessageDataType::TRefMessageData:
-      return {aOther.agentClusterId(), aOther.data().get_RefMessageData()};
-    default:
-      MOZ_CRASH("Unexpected MessageDataType type");
-  }
-}
 
 }  // namespace
 
@@ -104,7 +85,7 @@ void BroadcastChannelService::UnregisterActor(
 }
 
 void BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
-                                          const MessageData& aData,
+                                          NotNull<SharedMessageBody*> aData,
                                           const nsAString& aOriginChannelKey) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
@@ -112,23 +93,6 @@ void BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
   nsTArray<BroadcastChannelParent*>* parents;
   if (!mAgents.Get(aOriginChannelKey, &parents)) {
     MOZ_CRASH("Invalid state");
-  }
-
-  // We need to keep the array alive for the life-time of this operation.
-  nsTArray<RefPtr<BlobImpl>> blobImpls;
-  if (aData.data().type() == MessageDataType::TClonedMessageData) {
-    const nsTArray<IPCBlob>& blobs =
-        aData.data().get_ClonedMessageData().blobs();
-    if (!blobs.IsEmpty()) {
-      blobImpls.SetCapacity(blobs.Length());
-
-      for (uint32_t i = 0, len = blobs.Length(); i < len; ++i) {
-        RefPtr<BlobImpl> impl = IPCBlobUtils::Deserialize(blobs[i]);
-
-        MOZ_ASSERT(impl);
-        blobImpls.AppendElement(impl);
-      }
-    }
   }
 
   uint32_t selectedActorsOnSamePid = 0;
@@ -146,31 +110,13 @@ void BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
       ++selectedActorsOnSamePid;
     }
 
-    // We need to have a copy of the data for this parent.
-    MessageData newData = CloneMessageData(aData);
-    MOZ_ASSERT(newData.data().type() == aData.data().type());
-
-    if (!blobImpls.IsEmpty()) {
-      nsTArray<IPCBlob>& newBlobImpls =
-          newData.data().get_ClonedMessageData().blobs();
-      MOZ_ASSERT(blobImpls.Length() == newBlobImpls.Length());
-
-      // Serialize Blob objects for this message.
-      for (uint32_t i = 0, len = blobImpls.Length(); i < len; ++i) {
-        nsresult rv = IPCBlobUtils::Serialize(blobImpls[i], newBlobImpls[i]);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return;
-        }
-      }
-    }
-
-    Unused << parent->SendNotify(newData);
+    (void)parent->SendNotify(aData);
   }
 
   // If this is a refMessageData, we need to know when it can be released.
-  if (aData.data().type() == MessageDataType::TRefMessageData) {
-    Unused << aParent->SendRefMessageDelivered(
-        aData.data().get_RefMessageData().uuid(), selectedActorsOnSamePid);
+  if (aData->GetRefDataId()) {
+    (void)aParent->SendRefMessageDelivered(*aData->GetRefDataId(),
+                                           selectedActorsOnSamePid);
   }
 }
 

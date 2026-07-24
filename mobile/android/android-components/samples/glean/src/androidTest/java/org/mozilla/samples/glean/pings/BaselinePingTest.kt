@@ -17,6 +17,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.samples.glean.MainActivity
@@ -106,6 +107,7 @@ class BaselinePingTest {
         return null
     }
 
+    @Ignore("Fails intermittently, see Bug 2003993")
     @Test
     fun validateBaselinePing() {
         // Wait for the app to be idle/ready.

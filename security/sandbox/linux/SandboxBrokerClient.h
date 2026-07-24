@@ -10,8 +10,6 @@
 #include "broker/SandboxBrokerCommon.h"
 #include "broker/SandboxBrokerUtils.h"
 
-#include "mozilla/Attributes.h"
-
 // This is the client for the sandbox broker described in
 // broker/SandboxBroker.h; its constructor takes the file descriptor
 // returned by SandboxBroker::Create, passed to the child over IPC.

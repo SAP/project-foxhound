@@ -11,7 +11,6 @@
 
 #include "mozilla/PodOperations.h"
 #include "mozilla/Printf.h"
-#include "mozilla/RangedPtr.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -499,6 +498,14 @@ void LSprinter::clear() {
   tail_ = nullptr;
   unused_ = 0;
   hadOOM_ = false;
+}
+
+void FixedBufferPrinter::put(const char* s, size_t len) {
+  snprintf(buffer_, size_, "%.*s", int(len), s);
+  size_t written = std::min(len, size_);
+  MOZ_ASSERT(size_ >= written);
+  size_ -= written;
+  buffer_ += written;
 }
 
 void LSprinter::put(const char* s, size_t len) {

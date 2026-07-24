@@ -4,6 +4,7 @@
 
 //! Specified types for SVG properties.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::generics::svg as generic;
 use crate::values::specified::color::Color;
@@ -136,6 +137,7 @@ pub const PAINT_ORDER_MASK: u8 = 0b11;
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct SVGPaintOrder(pub u8);
@@ -289,6 +291,7 @@ bitflags! {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct MozContextProperties {
@@ -368,6 +371,7 @@ impl Parse for MozContextProperties {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum DProperty {
@@ -418,6 +422,7 @@ impl Parse for DProperty {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(bitflags(single = "none", mixed = "non-scaling-stroke"))]
 #[repr(C)]

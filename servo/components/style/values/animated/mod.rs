@@ -9,9 +9,10 @@
 //! module's raison d'être is to ultimately contain all these types.
 
 use crate::color::AbsoluteColor;
-use crate::properties::{PropertyId, ComputedValues};
+use crate::properties::{ComputedValues, PropertyId};
 use crate::values::computed::url::ComputedUrl;
 use crate::values::computed::{Angle, Image, Length};
+use crate::values::generics::{ClampToNonNegative, NonNegative};
 use crate::values::specified::SVGPathData;
 use crate::values::CSSFloat;
 use app_units::Au;
@@ -231,6 +232,20 @@ where
     }
 }
 
+impl<T: ToAnimatedValue + ClampToNonNegative> ToAnimatedValue for NonNegative<T> {
+    type AnimatedValue = NonNegative<<T as ToAnimatedValue>::AnimatedValue>;
+
+    #[inline]
+    fn to_animated_value(self, cx: &crate::values::animated::Context) -> Self::AnimatedValue {
+        NonNegative(self.0.to_animated_value(cx))
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        Self(<T as ToAnimatedValue>::from_animated_value(animated.0).clamp_to_non_negative())
+    }
+}
+
 impl ToAnimatedValue for Au {
     type AnimatedValue = Length;
 
@@ -277,7 +292,9 @@ where
 
     #[inline]
     fn to_animated_value(self, context: &Context) -> Self::AnimatedValue {
-        self.into_iter().map(|v| v.to_animated_value(context)).collect()
+        self.into_iter()
+            .map(|v| v.to_animated_value(context))
+            .collect()
     }
 
     #[inline]
@@ -294,7 +311,9 @@ where
 
     #[inline]
     fn to_animated_value(self, context: &Context) -> Self::AnimatedValue {
-        self.into_iter().map(|v| v.to_animated_value(context)).collect()
+        self.into_iter()
+            .map(|v| v.to_animated_value(context))
+            .collect()
     }
 
     #[inline]
@@ -369,7 +388,9 @@ where
 
     #[inline]
     fn to_animated_value(self, context: &Context) -> Self::AnimatedValue {
-        self.into_iter().map(|v| v.to_animated_value(context)).collect()
+        self.into_iter()
+            .map(|v| v.to_animated_value(context))
+            .collect()
     }
 
     #[inline]

@@ -101,8 +101,9 @@ class StubPropertyProvider final : public gfxTextRun::PropertyProvider {
     NS_ERROR("This shouldn't be called because we never enable hyphens");
     return 60;
   }
-  void GetSpacing(gfxTextRun::Range aRange, Spacing* aSpacing) const override {
+  bool GetSpacing(gfxTextRun::Range aRange, Spacing* aSpacing) const override {
     NS_ERROR("This shouldn't be called because we never enable spacing");
+    return false;
   }
   gfx::ShapedTextFlags GetShapedTextFlags() const override {
     NS_ERROR("This shouldn't be called because we never enable hyphens");
@@ -163,6 +164,49 @@ void nsFontMetrics::Destroy() { mPresContext = nullptr; }
 // XXXTODO get rid of this macro
 #define ROUND_TO_TWIPS(x) (nscoord) floor(((x) * mP2A) + 0.5)
 #define CEIL_TO_TWIPS(x) (nscoord) ceil((x) * mP2A)
+
+static nscoord GetBaseline(const nsFontMetrics* aFontMetrics,
+                           gfxFont::Baseline aBaseline) {
+  RefPtr<gfxFont> font =
+      aFontMetrics->GetThebesFontGroup()->GetFirstValidFont();
+  return font->GetBaseline(aBaseline, aFontMetrics->Orientation());
+}
+
+nscoord nsFontMetrics::AlphabeticBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kAlphabetic));
+}
+
+nscoord nsFontMetrics::CentralBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kCentral));
+}
+
+nscoord nsFontMetrics::XMiddleBaseline() const {
+  return (AlphabeticBaseline() + XHeight()) / 2;
+}
+
+nscoord nsFontMetrics::IdeographicUnderBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kIdeographicUnder));
+}
+
+nscoord nsFontMetrics::IdeographicOverBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kIdeographicOver));
+}
+
+nscoord nsFontMetrics::IdeographicInkUnderBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kIdeographicInkUnder));
+}
+
+nscoord nsFontMetrics::IdeographicInkOverBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kIdeographicInkOver));
+}
+
+nscoord nsFontMetrics::HangingBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kHanging));
+}
+
+nscoord nsFontMetrics::MathBaseline() const {
+  return ROUND_TO_TWIPS(GetBaseline(this, gfxFont::kMath));
+}
 
 static const gfxFont::Metrics& GetMetrics(
     const nsFontMetrics* aFontMetrics,
@@ -233,12 +277,14 @@ nscoord nsFontMetrics::EmHeight() const {
   return ROUND_TO_TWIPS(GetMetrics(this).emHeight);
 }
 
-nscoord nsFontMetrics::EmAscent() const {
-  return ROUND_TO_TWIPS(GetMetrics(this).emAscent);
+nscoord nsFontMetrics::TrimmedAscent() const {
+  const auto& m = GetMetrics(this);
+  return ROUND_TO_TWIPS(std::max(0.0, m.maxAscent - m.internalLeading / 2));
 }
 
-nscoord nsFontMetrics::EmDescent() const {
-  return ROUND_TO_TWIPS(GetMetrics(this).emDescent);
+nscoord nsFontMetrics::TrimmedDescent() const {
+  const auto& m = GetMetrics(this);
+  return ROUND_TO_TWIPS(std::max(0.0, m.maxDescent - m.internalLeading / 2));
 }
 
 nscoord nsFontMetrics::MaxHeight() const {
@@ -277,6 +323,19 @@ nscoord nsFontMetrics::SpaceWidth() const {
                      ? eVertical
                      : eHorizontal)
           .spaceWidth);
+}
+
+nscoord nsFontMetrics::InterScriptSpacingWidth() const {
+  const auto& m = GetMetrics(this);
+  // If there is no advance measure of the CJK water ideograph, use 1em instead.
+  // https://drafts.csswg.org/css-values-4/#ic
+  LayoutDeviceDoubleCoord ic =
+      m.ideographicWidth >= 0.0 ? m.ideographicWidth : m.emHeight;
+
+  // The inter-script spacing is defined as 1/8 of the CJK advance measure, i.e.
+  // 0.125ic: https://drafts.csswg.org/css-text-4/#inter-script-spacing
+  constexpr double kFraction = 0.125;
+  return LayoutDevicePixel::ToAppUnits(ic * kFraction, AppUnitsPerDevPixel());
 }
 
 int32_t nsFontMetrics::GetMaxStringLength() const {

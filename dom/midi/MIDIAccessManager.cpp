@@ -5,18 +5,19 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIAccessManager.h"
+
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPrefs_midi.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDIManagerChild.h"
 #include "mozilla/dom/MIDIPermissionRequest.h"
-#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/Promise.h"
-#include "nsIGlobalObject.h"
-#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/StaticPrefs_midi.h"
+#include "nsIGlobalObject.h"
 
 using namespace mozilla::ipc;
 

@@ -8,11 +8,11 @@
 #define mozilla_dom_AnimationEffect_h
 
 #include "mozilla/ComputedTiming.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/TimingParams.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/ScrollTimeline.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/TimingParams.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 

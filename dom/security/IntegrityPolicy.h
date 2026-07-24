@@ -4,16 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef IntegrityPolicy_h___
-#define IntegrityPolicy_h___
-
-#include "nsIIntegrityPolicy.h"
-
-#include "nsIContentPolicy.h"
+#ifndef IntegrityPolicy_h_
+#define IntegrityPolicy_h_
 
 #include "mozilla/EnumSet.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/Maybe.h"
+#include "nsIContentPolicy.h"
+#include "nsIIntegrityPolicy.h"
 #include "nsTArray.h"
 
 #define NS_INTEGRITYPOLICY_CONTRACTID "@mozilla.org/integritypolicy;1"
@@ -49,6 +47,9 @@ class IntegrityPolicy : public nsIIntegrityPolicy {
 
   void PolicyContains(DestinationType aDestination, bool* aContains,
                       bool* aROContains) const;
+
+  void Endpoints(nsTArray<nsCString>& aEnforcement,
+                 nsTArray<nsCString>& aReportOnly) const;
 
   static Maybe<DestinationType> ContentTypeToDestinationType(
       nsContentPolicyType aType);
@@ -114,4 +115,4 @@ struct MaxEnumValue<dom::IntegrityPolicy::DestinationType> {
 
 }  // namespace mozilla
 
-#endif /* IntegrityPolicy_h___ */
+#endif /* IntegrityPolicy_h_ */

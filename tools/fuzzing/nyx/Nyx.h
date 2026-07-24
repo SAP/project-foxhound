@@ -31,7 +31,7 @@ class Nyx {
 
   void start(void);
   bool started(void);
-  bool is_enabled(const char* identifier);
+  bool is_enabled(const char* identifier, bool startswith = false);
   bool is_replay();
   uint32_t get_data(uint8_t* data, uint32_t size);
   uint32_t get_raw_data(uint8_t* data, uint32_t size);

@@ -121,6 +121,7 @@ impl Example for App {
                 blur_radius,
                 spread_radius,
                 BorderRadius::uniform(simple_border_radius),
+                BorderRadius::uniform(simple_border_radius - spread_radius),
                 box_shadow_type,
             );
         }

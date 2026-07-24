@@ -13,6 +13,7 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "AndroidDecoderModule.h"
 #  include "AndroidEncoderModule.h"
 #endif
 
@@ -25,11 +26,8 @@
 #endif
 
 #include "FFVPXRuntimeLinker.h"
-
 #include "GMPEncoderModule.h"
-
 #include "mozilla/RemoteEncoderModule.h"
-
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -236,7 +234,9 @@ void PEMFactory::InitContentPEMs() {
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-    mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+      mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+    }
 #endif
 
 #ifdef XP_WIN
@@ -295,7 +295,9 @@ void PEMFactory::InitDefaultPEMs() {
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+    mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+  }
 #endif
 
 #ifdef XP_WIN
@@ -387,7 +389,7 @@ PEMFactory::CheckAndMaybeCreateEncoder(const EncoderConfig& aConfig,
   return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
       MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                   nsPrintfCString("Error no encoder found for %s",
-                                  GetCodecTypeString(aConfig.mCodec))
+                                  EnumValueToString(aConfig.mCodec))
                       .get()),
       __func__);
 }
@@ -433,11 +435,11 @@ EncodeSupportSet PEMFactory::Supports(const EncoderConfig& aConfig) const {
     if (!supports.isEmpty()) {
       // TODO name
       LOG("Checking if %s supports codec %s: yes", m->GetName(),
-          GetCodecTypeString(aConfig.mCodec));
+          EnumValueToString(aConfig.mCodec));
       return supports;
     }
     LOG("Checking if %s supports codec %s: no", m->GetName(),
-        GetCodecTypeString(aConfig.mCodec));
+        EnumValueToString(aConfig.mCodec));
   }
   return EncodeSupportSet{};
 }

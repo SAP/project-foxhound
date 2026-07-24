@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package mozilla.components.feature.prompts.login
 
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -11,13 +12,14 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.concept.storage.Login
-import mozilla.components.support.test.any
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
-import org.junit.Assert
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito
+import org.mockito.Mockito.verify
 
 class StrongPasswordPromptViewListenerTest {
     private val suggestedPassword = "generatedPassword123#"
@@ -54,13 +56,13 @@ class StrongPasswordPromptViewListenerTest {
     private lateinit var suggestStrongPasswordBar: SuggestStrongPasswordBar
 
     private val onGeneratedPasswordPromptClick: () -> Unit = mock()
+    private val captureMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
 
     @Before
     fun setup() {
         state = mock()
-        store = mock()
+        store = BrowserStore(state, middleware = listOf(captureMiddleware))
         suggestStrongPasswordBar = mock()
-        whenever(store.state).thenReturn(state)
         suggestStrongPasswordPromptViewListener = StrongPasswordPromptViewListener(store, suggestStrongPasswordBar)
     }
 
@@ -80,7 +82,7 @@ class StrongPasswordPromptViewListenerTest {
         suggestStrongPasswordPromptViewListener = StrongPasswordPromptViewListener(store, suggestStrongPasswordBar)
         suggestStrongPasswordPromptViewListener.onGeneratedPasswordPromptClick = onGeneratedPasswordPromptClick
         suggestStrongPasswordPromptViewListener.handleSuggestStrongPasswordRequest()
-        Mockito.verify(suggestStrongPasswordBar).showPrompt()
+        verify(suggestStrongPasswordBar).showPrompt()
     }
 
     @Test
@@ -89,7 +91,7 @@ class StrongPasswordPromptViewListenerTest {
         suggestStrongPasswordPromptViewListener = StrongPasswordPromptViewListener(store, suggestStrongPasswordBar)
         suggestStrongPasswordPromptViewListener.onGeneratedPasswordPromptClick = onGeneratedPasswordPromptClick
         suggestStrongPasswordPromptViewListener.handleSuggestStrongPasswordRequest()
-        Mockito.verify(suggestStrongPasswordBar).showPrompt()
+        verify(suggestStrongPasswordBar).showPrompt()
     }
 
     @Test
@@ -98,13 +100,16 @@ class StrongPasswordPromptViewListenerTest {
         suggestStrongPasswordPromptViewListener =
             StrongPasswordPromptViewListener(store, suggestStrongPasswordBar, selectedSession.id)
 
-        Mockito.verify(store, Mockito.never()).dispatch(any())
+        captureMiddleware.assertNotDispatched(ContentAction.ConsumePromptRequestAction::class)
+
         suggestStrongPasswordPromptViewListener.dismissCurrentSuggestStrongPassword()
 
-        Assert.assertTrue(onDismissWasCalled)
-        Mockito.verify(store)
-            .dispatch(ContentAction.ConsumePromptRequestAction(selectedSession.id, request))
-        Mockito.verify(suggestStrongPasswordBar).hidePrompt()
+        assertTrue(onDismissWasCalled)
+
+        captureMiddleware.assertFirstAction(ContentAction.ConsumePromptRequestAction::class) { action ->
+            assertEquals(selectedSession.id, action.sessionId)
+            assertEquals(request, action.promptRequest)
+        }
     }
 
     @Test
@@ -113,13 +118,16 @@ class StrongPasswordPromptViewListenerTest {
         suggestStrongPasswordPromptViewListener =
             StrongPasswordPromptViewListener(store, suggestStrongPasswordBar, selectedSession.id)
 
-        Mockito.verify(store, Mockito.never()).dispatch(any())
+        captureMiddleware.assertNotDispatched(ContentAction.ConsumePromptRequestAction::class)
+
         suggestStrongPasswordPromptViewListener.dismissCurrentSuggestStrongPassword(request)
 
-        Assert.assertTrue(onDismissWasCalled)
-        Mockito.verify(store)
-            .dispatch(ContentAction.ConsumePromptRequestAction(selectedSession.id, request))
-        Mockito.verify(suggestStrongPasswordBar).hidePrompt()
+        assertTrue(onDismissWasCalled)
+
+        captureMiddleware.assertFirstAction(ContentAction.ConsumePromptRequestAction::class) { action ->
+            assertEquals(selectedSession.id, action.sessionId)
+            assertEquals(request, action.promptRequest)
+        }
     }
 
     private fun prepareSelectedSession(request: PromptRequest? = null): TabSessionState {

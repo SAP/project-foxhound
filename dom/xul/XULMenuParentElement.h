@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef XULMenuParentElement_h__
-#define XULMenuParentElement_h__
+#ifndef XULMenuParentElement_h_
+#define XULMenuParentElement_h_
 
 #include "mozilla/Attributes.h"
 #include "nsISupports.h"

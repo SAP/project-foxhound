@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryCommon_h__
-#define TelemetryCommon_h__
+#ifndef TelemetryCommon_h_
+#define TelemetryCommon_h_
 
 #include "PLDHashTable.h"
 #include "js/RootingAPI.h"
@@ -193,4 +193,4 @@ SupportedProduct GetCurrentProduct();
 }  // namespace Telemetry
 }  // namespace mozilla
 
-#endif  // TelemetryCommon_h__
+#endif  // TelemetryCommon_h_

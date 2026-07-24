@@ -22,11 +22,6 @@ JitRuntime::getCppEntryRegisters(JitFrameLayout* frameStackAddress) {
 
 void JitRuntime::generateInvalidator(MacroAssembler&, Label*) { MOZ_CRASH(); }
 
-void JitRuntime::generateArgumentsRectifier(MacroAssembler&,
-                                            ArgumentsRectifierKind kind) {
-  MOZ_CRASH();
-}
-
 void JitRuntime::generateBailoutHandler(MacroAssembler&, Label*) {
   MOZ_CRASH();
 }

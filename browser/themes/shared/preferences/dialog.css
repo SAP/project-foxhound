@@ -5,8 +5,8 @@
 window,
 dialog {
   appearance: none;
-  background-color: var(--in-content-page-background);
-  color: var(--in-content-page-color);
+  background-color: var(--background-color-canvas);
+  color: var(--text-color);
   margin: 0;
   padding: 0;
 }

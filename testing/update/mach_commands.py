@@ -2,11 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import json
 import logging
 import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
+from enum import Enum
 from os import environ, makedirs
 from pathlib import Path
 from shutil import copytree, unpack_archive
@@ -17,27 +20,124 @@ import requests
 from mach.decorators import Command, CommandArgument
 from mozbuild.base import BinaryNotFoundException
 from mozlog.structured import commandline
+from mozrelease.update_verify import UpdateVerifyConfig
 
-TEST_UPDATE_CHANNEL = "release-localtest"
-if TEST_UPDATE_CHANNEL.startswith("release"):
-    MAR_CHANNEL = "firefox-mozilla-release"
-elif TEST_UPDATE_CHANNEL.startswith("beta"):
-    MAR_CHANNEL = "firefox-mozilla-beta"
-else:
-    MAR_CHANNEL = "firefox-mozilla-central"
-FX_DOWNLOAD_DIR_URL = "https://archive.mozilla.org/pub/firefox/releases/"
-APP_DIR_NAME = "fx_test"
-MANIFEST_LOC = "testing/update/manifest.toml"
-DEFAULT_SOURCE_VERSION_POSITION = -3
-# Where in the list of allowable source versions should we default to testing
-DEFAULT_LOCALE = "en-US"
 
-if environ.get("UPLOAD_DIR"):
-    _ARTIFACT_DIR = Path(environ.get("UPLOAD_DIR"), "update-test")
-    makedirs(_ARTIFACT_DIR, exist_ok=True)
-    VERSION_INFO_FILENAME = Path(_ARTIFACT_DIR, environ.get("VERSION_LOG_FILENAME"))
-else:
-    VERSION_INFO_FILENAME = None
+class ReleaseType(Enum):
+    """Release type - duplicated from gecko_taskgraph.transforms.update_test
+    to avoid importing taskgraph dependencies at mach command load time."""
+
+    release = 0
+    beta = 1
+    esr = 2
+    other = 3
+
+
+STAGING_POLICY_PAYLOAD = {
+    "policies": {
+        "AppUpdateURL": "https://stage.balrog.nonprod.cloudops.mozgcp.net/update/6/Firefox/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml"
+    }
+}
+
+
+@dataclass
+class UpdateTestConfig:
+    """Track all needed test config"""
+
+    channel: str = "release-localtest"
+    mar_channel: str = "firefox-mozilla-release"
+    app_dir_name: str = "fx_test"
+    manifest_loc: str = "testing/update/manifest.toml"
+    # Where in the list of allowable source versions should we default to testing
+    source_version_position: int = -3
+    # How many major versions back can we test?
+    major_version_range: int = 3
+    locale: str = "en-US"
+    update_verify_file: str = "update-verify.cfg"
+    update_verify_config = None
+    config_source = None
+    release_type: ReleaseType = ReleaseType.release
+    esr_version = None
+    staging_update = False
+
+    def __post_init__(self):
+        if environ.get("UPLOAD_DIR"):
+            self.artifact_dir = Path(environ.get("UPLOAD_DIR"), "update-test")
+            makedirs(self.artifact_dir, exist_ok=True)
+            self.version_info_path = Path(
+                self.artifact_dir, environ.get("VERSION_LOG_FILENAME")
+            )
+
+        else:
+            self.version_info_path = None
+
+    def set_channel(self, new_channel, esr_version=None):
+        self.channel = new_channel
+        if self.channel.startswith("release"):
+            self.mar_channel = "firefox-mozilla-release"
+            self.release_type = ReleaseType.release
+        elif self.channel.startswith("beta"):
+            self.mar_channel = "firefox-mozilla-beta,firefox-mozilla-release"
+            self.release_type = ReleaseType.beta
+        elif self.channel.startswith("esr"):
+            self.mar_channel = "firefox-mozilla-esr,firefox-mozilla-release"
+            self.release_type = ReleaseType.esr
+            self.esr_version = esr_version
+        else:
+            self.mar_channel = "firefox-mozilla-central"
+            self.release_type = ReleaseType.other
+
+    def set_ftp_info(self):
+        """Get server URL and template for downloading application/installer"""
+        # The %release% string will be replaced by a version number later
+        platform, executable_name = get_fx_executable_name("%release%")
+        if self.update_verify_config:
+            full_info_release = next(
+                r for r in self.update_verify_config.releases if r.get("from")
+            )
+            executable_name = Path(full_info_release["from"]).name
+            release_number = full_info_release["from"].split("/")[3]
+            executable_name = executable_name.replace(release_number, "%release%")
+            executable_name = executable_name.replace(".bz2", ".xz")
+            executable_name = executable_name.replace(".pkg", ".dmg")
+            executable_name = executable_name.replace(".msi", ".exe")
+        template = (
+            f"https://archive.mozilla.org/pub/firefox/releases/%release%/{platform}/{self.locale}/"
+            + executable_name
+        )
+
+        self.ftp_server = template.split("%release%")[0]
+        self.url_template = template
+
+    def add_update_verify_config(self, filename=None):
+        """Parse update-verify.cfg. Obtain a copy if not found in dep/commandline"""
+        if not filename:
+            platform, _ = get_fx_executable_name("")
+            config_route = (
+                "https://firefox-ci-tc.services.mozilla.com/api/"
+                "index/v1/task/gecko.v2.mozilla-central.latest.firefox."
+                f"update-verify-config-firefox-{platform}-{self.channel}"
+                "/artifacts/public%2Fbuild%2Fupdate-verify.cfg"
+            )
+            resp = requests.get(config_route)
+            try:
+                resp.raise_for_status()
+                filename = Path(self.tempdir, self.update_verify_file)
+                with open(filename, "wb") as fh:
+                    fh.write(resp.content)
+                self.config_source = "route"
+            except requests.exceptions.HTTPError:
+                return None
+
+        uv_config = UpdateVerifyConfig()
+        uv_config.read(filename)
+        self.update_verify_config = uv_config
+        # Beta display version example "140.0 Beta 3", Release just like "140.0"
+        if "Beta" in uv_config.to_display_version:
+            major, beta = uv_config.to_display_version.split(" Beta ")
+            self.target_version = f"{major}b{beta}"
+        else:
+            self.target_version = uv_config.to_display_version
 
 
 def setup_update_argument_parser():
@@ -51,15 +151,17 @@ def setup_update_argument_parser():
 
 
 def get_fx_executable_name(version):
+    """Given a version string, get the expected downloadable name for the os"""
     if mozinfo.os == "mac":
         executable_platform = "mac"
         executable_name = f"Firefox {version}.dmg"
 
     if mozinfo.os == "linux":
         executable_platform = "linux-x86_64"
-        if int(version.split(".")[0]) < 135:
+        try:
+            assert int(version.split(".")[0]) < 135
             executable_name = f"firefox-{version}.tar.bz2"
-        else:
+        except (AssertionError, ValueError):
             executable_name = f"firefox-{version}.tar.xz"
 
     if mozinfo.os == "win":
@@ -74,81 +176,127 @@ def get_fx_executable_name(version):
     return executable_platform, executable_name.replace(" ", "%20")
 
 
-def fx_version_exists(version, locale):
-    platform, _ = get_fx_executable_name(version)
-    executable_url = rf"{FX_DOWNLOAD_DIR_URL}{version}/{platform}/{locale}/"
-    response = requests.get(executable_url)
-    try:
-        response.raise_for_status()
-    except requests.exceptions.HTTPError:
-        return False
-    return True
+def get_valid_source_versions(config):
+    """
+    Get a list of versions to update from, based on config.
+    For beta, this means a list of betas, not releases.
+    For ESR, this means a list of ESR versions where major version matches target.
+    """
+    ftp_content = requests.get(config.ftp_server).content.decode()
+    # All versions start with e.g. 140.0, so beta and release can be int'ed
+    ver_head, ver_tail = config.target_version.split(".", 1)
+    latest_version = int(ver_head)
+    latest_minor_str = ""
+    # Versions like 130.10.1 and 130.0 are possible, capture the minor number
+    for c in ver_tail:
+        try:
+            int(c)
+            latest_minor_str = latest_minor_str + c
+        except ValueError:
+            break
 
-
-def get_valid_source_versions(current_version, locale):
-    earliest_version = int(current_version.split(".")[0]) - 3
-
-    valid_versions = []
-    for major in range(earliest_version, earliest_version + 3):
-        minor_versions = [0]
-        for minor in range(1, 11):
-            if fx_version_exists(f"{major}.{minor}", locale):
+    valid_versions: list[str] = []
+    for major in range(latest_version - config.major_version_range, latest_version + 1):
+        minor_versions = []
+        if config.release_type == ReleaseType.esr and major != latest_version:
+            continue
+        for minor in range(0, 11):
+            if (
+                config.release_type == ReleaseType.release
+                and f"/{major}.{minor}/" in ftp_content
+            ):
+                if f"{major}.{minor}" == config.target_version:
+                    break
                 minor_versions.append(minor)
                 valid_versions.append(f"{major}.{minor}")
-            else:
-                break
+            elif config.release_type == ReleaseType.esr and re.compile(
+                rf"/{major}\.{minor}.*/"
+            ).search(ftp_content):
+                minor_versions.append(minor)
+                if f"/{major}.{minor}esr" in ftp_content:
+                    valid_versions.append(f"{major}.{minor}")
+            elif config.release_type == ReleaseType.beta and minor == 0:
+                # Release 1xx.0 is not available, but 1xx.0b1 is:
+                minor_versions.append(minor)
+
+        sep = "b" if config.release_type == ReleaseType.beta else "."
 
         for minor in minor_versions:
-            for dot in range(1, 15):
-                if fx_version_exists(f"{major}.{minor}.{dot}", locale):
-                    valid_versions.append(f"{major}.{minor}.{dot}")
+            for dot in range(0, 15):
+                if f"{major}.{minor}{sep}{dot}" == config.target_version:
+                    break
+                if config.release_type == ReleaseType.esr:
+                    if f"/{major}.{minor}{sep}{dot}esr/" in ftp_content:
+                        valid_versions.append(f"{major}.{minor}{sep}{dot}")
+                elif f"/{major}.{minor}{sep}{dot}/" in ftp_content:
+                    valid_versions.append(f"{major}.{minor}{sep}{dot}")
 
+    # Only test beta versions if channel is beta
+    if config.release_type == ReleaseType.beta:
+        valid_versions = [ver for ver in valid_versions if "b" in ver]
+    elif config.release_type == ReleaseType.esr:
+        valid_versions = [
+            f"{ver}esr" if not ver.endswith("esr") else ver for ver in valid_versions
+        ]
     valid_versions.sort()
+    while len(valid_versions) < 5:
+        valid_versions.insert(0, valid_versions[0])
     return valid_versions
 
 
-def get_binary_path(tempdir, **kwargs) -> str:
+def get_binary_path(config: UpdateTestConfig, **kwargs) -> str:
     # Install correct Fx and return executable location
-    source_locale = kwargs.get("source_locale") or DEFAULT_LOCALE
-    response = requests.get(
-        "https://product-details.mozilla.org/1.0/firefox_versions.json"
-    )
-    response.raise_for_status()
-    product_details = response.json()
+    if not config.source_version:
+        if config.update_verify_config:
+            # In future, we can modify this for watershed logic
+            source_versions = get_valid_source_versions(config)
+        else:
+            response = requests.get(
+                "https://product-details.mozilla.org/1.0/firefox_versions.json"
+            )
+            response.raise_for_status()
+            product_details = response.json()
+            if config.release_type == ReleaseType.beta:
+                target_channel = "LATEST_FIREFOX_RELEASED_DEVEL_VERSION"
+            elif config.release_type == ReleaseType.esr:
+                current_esr = product_details.get("FIREFOX_ESR").split(".")[0]
+                if config.esr_version == current_esr:
+                    target_channel = "FIREFOX_ESR"
+                else:
+                    target_channel = f"FIREFOX_ESR{config.esr_version}"
+            else:
+                target_channel = "LATEST_FIREFOX_VERSION"
 
-    source_versions = get_valid_source_versions(
-        product_details.get("LATEST_FIREFOX_VERSION"), source_locale
-    )
-    if kwargs.get("source_versions_back"):
+            target_version = product_details.get(target_channel)
+            config.target_version = target_version
+            source_versions = get_valid_source_versions(config)
+
         # NB below: value 0 will get you the oldest acceptable version, not the newest
-        source_version = source_versions[-int(kwargs.get("source_versions_back"))]
-    else:
-        source_version = (
-            kwargs.get("source_version")
-            or source_versions[DEFAULT_SOURCE_VERSION_POSITION]
-        )
-    platform, executable_name = get_fx_executable_name(source_version)
+        source_version = source_versions[config.source_version_position]
+        config.source_version = source_version
+    platform, executable_name = get_fx_executable_name(config.source_version)
 
     os_edition = f"{mozinfo.os} {mozinfo.os_version}"
-    if VERSION_INFO_FILENAME:
+    if config.version_info_path:
         # Only write the file on non-local runs
-        print(f"Writing source info to {VERSION_INFO_FILENAME.resolve()}...")
-        with VERSION_INFO_FILENAME.open("a") as fh:
+        print(f"Writing source info to {config.version_info_path.resolve()}...")
+        with config.version_info_path.open("a") as fh:
             fh.write(f"Test Type: {kwargs.get('test_type')}\n")
-            fh.write(f"Region: {source_locale}\n")
-            fh.write(f"Source Version: {source_version}\n")
+            fh.write(f"UV Config Source: {config.config_source}\n")
+            fh.write(f"Region: {config.locale}\n")
+            fh.write(f"Source Version: {config.source_version}\n")
             fh.write(f"Platform: {os_edition}\n")
-        with VERSION_INFO_FILENAME.open() as fh:
+        with config.version_info_path.open() as fh:
             print("".join(fh.readlines()))
     else:
         print(
-            f"Region: {source_locale}\nSource Version: {source_version}\nPlatform: {os_edition}"
+            f"Region: {config.locale}\nSource Version: {source_version}\nPlatform: {os_edition}"
         )
 
-    executable_url = rf"{FX_DOWNLOAD_DIR_URL}{source_version}/{platform}/{source_locale}/{executable_name}"
+    executable_url = config.url_template.replace("%release%", config.source_version)
 
-    installer_filename = Path(tempdir, Path(executable_url).name)
-    installed_app_dir = Path(tempdir, APP_DIR_NAME)
+    installer_filename = Path(config.tempdir, Path(executable_url).name)
+    installed_app_dir = Path(config.tempdir, config.app_dir_name)
     print(f"Downloading Fx from {executable_url}...")
     response = requests.get(executable_url)
     response.raise_for_status()
@@ -157,6 +305,25 @@ def get_binary_path(tempdir, **kwargs) -> str:
         fh.write(response.content)
     fx_location = mozinstall.install(installer_filename, installed_app_dir)
     print(f"Firefox installed to {fx_location}")
+
+    if config.staging_update:
+        print("Writing enterprise policy for update server")
+        fx_path = Path(fx_location)
+        policy_path = None
+        if mozinfo.os in ["linux", "win"]:
+            policy_path = fx_path / "distribution"
+        elif mozinfo.os == "mac":
+            policy_path = fx_path / "Contents" / "Resources" / "distribution"
+        else:
+            raise ValueError("Invalid OS.")
+        makedirs(policy_path)
+        policy_loc = policy_path / "policies.json"
+        print(f"Creating {policy_loc}...")
+        with policy_loc.open("w") as fh:
+            json.dump(STAGING_POLICY_PAYLOAD, fh, indent=2)
+        with policy_loc.open() as fh:
+            print(fh.read())
+
     return fx_location
 
 
@@ -175,18 +342,69 @@ def get_binary_path(tempdir, **kwargs) -> str:
     help="Update from the version of Fx $N releases before current",
 )
 @CommandArgument("--source-locale", help="Firefox build locale to update from")
+@CommandArgument("--channel", default="release-localtest", help="Update channel to use")
+@CommandArgument(
+    "--esr-version",
+    help="ESR version, if set with --channel=esr, will only update within ESR major version",
+)
+@CommandArgument("--uv-config-file", help="Update Verify config file")
+@CommandArgument(
+    "--use-balrog-staging", action="store_true", help="Update from staging, not prod"
+)
 def build(command_context, binary_path, **kwargs):
+    config = UpdateTestConfig()
+
+    fetches = environ.get("MOZ_FETCHES_DIR")
+    if fetches:
+        config_file = Path(fetches, config.update_verify_file)
+        if kwargs.get("uv_config_file"):
+            config.config_source = "commandline"
+        elif config_file.is_file():
+            kwargs["uv_config_file"] = config_file
+            config.config_source = "kind_dependency"
+
+    if not kwargs.get("uv_config_file"):
+        config.add_update_verify_config()
+    else:
+        config.add_update_verify_config(kwargs["uv_config_file"])
+        # TODO: update tests to check against config version, not update server resp
+        # kwargs["to_display_version"] = uv_config.to_display_version
+
+    if kwargs.get("source_locale"):
+        config.locale = kwargs["source_locale"]
+
+    if kwargs.get("source_versions_back"):
+        config.source_version_position = -int(kwargs["source_versions_back"])
+
+    if kwargs.get("source_version"):
+        config.source_version = kwargs["source_version"]
+    else:
+        config.source_version = None
+
+    config.set_ftp_info()
+
     tempdir = tempfile.TemporaryDirectory()
     # If we have a symlink to the tmp directory, resolve it
     tempdir_name = str(Path(tempdir.name).resolve())
+    config.tempdir = tempdir_name
     test_type = kwargs.get("test_type")
 
+    if kwargs.get("use_balrog_staging"):
+        config.staging_update = True
+
+    # Select update channel
+    if kwargs.get("channel"):
+        config.set_channel(kwargs["channel"], kwargs.get("esr_version"))
+        # if (config.beta and not config.update_verify_config):
+        #     logging.error("Non-release testing on local machines is not supported.")
+        #     sys.exit(1)
+
     # Run the specified test in the suite
-    with open(MANIFEST_LOC) as f:
+    with open(config.manifest_loc) as f:
         old_content = f.read()
 
-    with open(MANIFEST_LOC, "w") as f:
-        f.write("[DEFAULT]\n")
+    with open(config.manifest_loc, "w") as f:
+        f.write("[DEFAULT]\n\n")
         if test_type.lower() == "base":
             f.write('["test_apply_update.py"]')
         elif test_type.lower() == "background":
@@ -195,15 +413,18 @@ def build(command_context, binary_path, **kwargs):
             logging.ERROR("Invalid test type")
             sys.exit(1)
 
+    config.dir = command_context.topsrcdir
+
     if mozinfo.os == "win":
-        log_file = bits_pretest()
+        config.log_file_path = bits_pretest()
     try:
         kwargs["binary"] = set_up(
-            binary_path or get_binary_path(tempdir_name, **kwargs), tempdir=tempdir_name
+            binary_path or get_binary_path(config, **kwargs), config
         )
-        return run_tests(
-            topsrcdir=command_context.topsrcdir, tempdir=tempdir_name, **kwargs
-        )
+        # TODO: change tests to check against config, not update server response
+        # if not kwargs.get("to_display_version"):
+        #     kwargs["to_display_version"] = config.target_version
+        return run_tests(config, **kwargs)
     except BinaryNotFoundException as e:
         command_context.log(
             logging.ERROR,
@@ -214,20 +435,20 @@ def build(command_context, binary_path, **kwargs):
         command_context.log(logging.INFO, "update-test", {"help": e.help()}, "{help}")
         return 1
     finally:
-        with open(MANIFEST_LOC, "w") as f:
+        with open(config.manifest_loc, "w") as f:
             f.write(old_content)
         if mozinfo.os == "win":
-            bits_posttest(log_file)
+            bits_posttest(config)
         tempdir.cleanup()
 
 
-def run_tests(binary=None, topsrcdir=None, tempdir=None, **kwargs):
+def run_tests(config, **kwargs):
     from argparse import Namespace
 
     from marionette_harness.runtests import MarionetteHarness, MarionetteTestRunner
 
     args = Namespace()
-    args.binary = binary
+    args.binary = kwargs["binary"]
     args.logger = kwargs.pop("log", None)
     if not args.logger:
         args.logger = commandline.setup_logging(
@@ -239,8 +460,8 @@ def run_tests(binary=None, topsrcdir=None, tempdir=None, **kwargs):
 
     args.tests = [
         Path(
-            topsrcdir,
-            MANIFEST_LOC,
+            config.dir,
+            config.manifest_loc,
         )
     ]
     args.gecko_log = "-"
@@ -249,23 +470,23 @@ def run_tests(binary=None, topsrcdir=None, tempdir=None, **kwargs):
     parser.verify_usage(args)
 
     failed = MarionetteHarness(MarionetteTestRunner, args=vars(args)).run()
-    if VERSION_INFO_FILENAME:
-        with VERSION_INFO_FILENAME.open("a") as fh:
+    if config.version_info_path:
+        with config.version_info_path.open("a") as fh:
             fh.write(f"Status: {'failed' if failed else 'passed'}\n")
     if failed > 0:
         return 1
     return 0
 
 
-def copy_macos_channelprefs(tempdir) -> str:
+def copy_macos_channelprefs(config) -> str:
     # Copy ChannelPrefs.framework to the correct location on MacOS,
     # return the location of the Fx executable
-    installed_app_dir = Path(tempdir, APP_DIR_NAME)
+    installed_app_dir = Path(config.tempdir, config.app_dir_name)
 
     bz_channelprefs_link = "https://bugzilla.mozilla.org/attachment.cgi?id=9417387"
 
     resp = requests.get(bz_channelprefs_link)
-    download_target = Path(tempdir, "channelprefs.zip")
+    download_target = Path(config.tempdir, "channelprefs.zip")
     unpack_target = str(download_target).rsplit(".", 1)[0]
     with download_target.open("wb") as fh:
         fh.write(resp.content)
@@ -275,7 +496,7 @@ def copy_macos_channelprefs(tempdir) -> str:
         f"Downloaded channelprefs.zip to {download_target} and unpacked to {unpack_target}"
     )
 
-    src = Path(tempdir, "channelprefs", TEST_UPDATE_CHANNEL)
+    src = Path(config.tempdir, "channelprefs", config.channel)
     dst = Path(installed_app_dir, "Firefox.app", "Contents", "Frameworks")
 
     Path(installed_app_dir, "Firefox.app").chmod(455)  # rwx for all users
@@ -294,21 +515,21 @@ def copy_macos_channelprefs(tempdir) -> str:
     return str(fx_executable)
 
 
-def set_up(binary_path, tempdir):
+def set_up(binary_path, config):
     # Set channel prefs for all OS targets
     binary_path_str = mozinstall.get_binary(binary_path, "Firefox")
     print(f"Binary path: {binary_path_str}")
     binary_dir = Path(binary_path_str).absolute().parent
 
     if mozinfo.os == "mac":
-        return copy_macos_channelprefs(tempdir)
+        return copy_macos_channelprefs(config)
     else:
         with Path(binary_dir, "update-settings.ini").open("w") as f:
             f.write("[Settings]\n")
-            f.write(f"ACCEPTED_MAR_CHANNEL_IDS={MAR_CHANNEL}")
+            f.write(f"ACCEPTED_MAR_CHANNEL_IDS={config.mar_channel}")
 
         with Path(binary_dir, "defaults", "pref", "channel-prefs.js").open("w") as f:
-            f.write(f'pref("app.update.channel", "{TEST_UPDATE_CHANNEL}");')
+            f.write(f'pref("app.update.channel", "{config.channel}");')
 
     return binary_path_str
 
@@ -324,8 +545,11 @@ def bits_pretest():
     return log_file
 
 
-def bits_posttest(log_file):
-    log_file.close()
+def bits_posttest(config):
+    if config.staging_update:
+        # If we are in try, we didn't run the full test and BITS will fail.
+        return None
+    config.log_file_path.close()
     sys.stdout = sys.__stdout__
 
     failed = 0
@@ -336,7 +560,7 @@ def bits_posttest(log_file):
             r"Downloader:downloadUpdate - BITS download running. BITS ID: {.+}"
         )
 
-        with open(log_file.name, errors="ignore") as f:
+        with open(config.log_file_path.name, errors="ignore") as f:
             logs = f.read()
             assert re.search(downloader_regex, logs)
             assert re.search(bits_download_regex, logs)
@@ -350,12 +574,12 @@ def bits_posttest(log_file):
             )
     except (UnicodeDecodeError, AssertionError) as e:
         failed = 1
-        print(e)
+        logging.error(e.__traceback__)
     finally:
-        Path(log_file.name).unlink()
+        Path(config.log_file_path.name).unlink()
 
-    if VERSION_INFO_FILENAME:
-        with VERSION_INFO_FILENAME.open("a") as fh:
+    if config.version_info_path:
+        with config.version_info_path.open("a") as fh:
             fh.write(f"BITS: {'failed' if failed else 'passed'}\n")
 
     if failed:

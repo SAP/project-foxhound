@@ -11,11 +11,12 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: update-verify-config-next
     run-on-projects: []  # to make sure this never runs as part of CI
     run-on-releases: [esr140]
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         docker-image:
             in-tree: "update-verify"
@@ -67,14 +68,6 @@ tasks:
             platform: linux-aarch64
             last-watershed: "140.0esr"
 
-    firefox-next-linux:
-        shipping-product: firefox
-        treeherder:
-            platform: linux32-shippable/opt
-        attributes:
-            build_platform: linux-shippable
-        extra:
-            platform: linux-i686
     firefox-next-linux64:
         shipping-product: firefox
         treeherder:

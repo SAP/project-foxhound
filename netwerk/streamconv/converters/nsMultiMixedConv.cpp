@@ -13,7 +13,6 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsURLHelper.h"
 #include "nsIStreamConverterService.h"
-#include <algorithm>
 #include "nsContentSecurityManager.h"
 #include "nsHttp.h"
 #include "nsNetUtil.h"
@@ -502,7 +501,7 @@ nsMultiMixedConv::OnStartRequest(nsIRequest* request) {
     return NS_ERROR_CORRUPTED_CONTENT;
   }
   p.SkipWhites();
-  Unused << p.ReadUntil(Token::Char(';'), mBoundary);
+  (void)p.ReadUntil(Token::Char(';'), mBoundary);
   mBoundary.Trim(
       " \"");  // ignoring potential quoted string formatting violations
   if (mBoundary.IsEmpty()) {

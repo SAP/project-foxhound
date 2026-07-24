@@ -37,7 +37,7 @@ private class ColorParameterProvider : PreviewParameterProvider<Pair<AcornColors
 }
 
 @Suppress("LongMethod", "MagicNumber")
-@Preview(widthDp = CONTAINER_STACK_WIDTH * 4 + CONTAINER_GUTTER * 3 + 16)
+@Preview(widthDp = CONTAINER_STACK_WIDTH * 4 + CONTAINER_GUTTER * 3 + 16, heightDp = 1000)
 @Composable
 private fun AcornColorGrid(
     @PreviewParameter(ColorParameterProvider::class) colors: Pair<AcornColors, ColorScheme>,
@@ -99,6 +99,24 @@ private fun AcornColorGrid(
                         color2Name = colorScheme::onError.name,
                         color3Name = colorScheme::errorContainer.name,
                         color4Name = colorScheme::onErrorContainer.name,
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = colorScheme::primaryFixed.name,
+                        modifier = Modifier
+                            .fillMaxWidth(fraction = 0.25f)
+                            .colorGridItemShort(color = colorScheme.primaryFixed),
+                        color = colorScheme.onPrimaryFixed,
+                    )
+
+                    Text(
+                        text = colorScheme::onPrimaryFixed.name,
+                        modifier = Modifier
+                            .fillMaxWidth(fraction = 0.25f)
+                            .colorGridItemShort(color = colorScheme.onPrimaryFixed),
+                        color = colorScheme.primaryFixed,
                     )
                 }
 
@@ -268,14 +286,20 @@ private fun AcornColorGrid(
                     modifier = Modifier.width(CONTAINER_STACK_WIDTH.dp),
                 ) {
                     Text(
-                        text = colorScheme::surfaceDimVariant.name,
+                        text = "surfaceDimVariant",
                         modifier = Modifier.colorGridItemShort(color = colorScheme.surfaceDimVariant),
                         color = colorScheme.onSurface,
                     )
 
                     Text(
-                        text = colorScheme::information.name,
+                        text = "information",
                         modifier = Modifier.colorGridItemShort(color = colorScheme.information),
+                        color = colorScheme.onPrimary,
+                    )
+
+                    Text(
+                        text = "success",
+                        modifier = Modifier.colorGridItemShort(color = colorScheme.success),
                         color = colorScheme.onPrimary,
                     )
                 }

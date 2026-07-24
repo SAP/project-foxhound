@@ -1,9 +1,12 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 tags = "appupdate"
 head = "head_update.js"
 skip-if = [
-  "os == 'win' && ccov",
   "msix", # Our updater is disabled in MSIX builds
+  "os == 'win' && ccov",
 ]
 prefs = [
   "app.update.staging.enabled=false",
@@ -17,6 +20,12 @@ support-files = [
   "testConstants.js",
   "../data/simple.mar",
 ]
+
+["accessAndLockout.js"]
+run-if = [
+  "os == 'win'",
+]
+reason = "Testing mechanism is Windows-only as it relies on CreateFileW"
 
 ["ausReadStrings.js"]
 
@@ -33,37 +42,49 @@ support-files = [
 ["cleanupSuccessLogsFIFO.js"]
 
 ["disableBackgroundUpdatesBackgroundTask.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["disableBackgroundUpdatesNonBackgroundTask.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["downloadExtrasFirefox.js"]
 firefox-appdir = "browser"
 skip-if = [
+  "appname != 'firefox'",
   "socketprocess_networking", # Bug 1759035
-  "appname != 'firefox'"
 ]
 
 ["downloadExtrasNotFirefox.js"]
 skip-if = [
+  "appname == 'firefox'",
   "socketprocess_networking", # Bug 1759035
-  "appname == 'firefox'"
 ]
 
 ["downloadInterruptedNoRecovery.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["downloadInterruptedOffline.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["downloadInterruptedRecovery.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["downloadResumeForSameAppVersion.js"]
 
 ["ensureExperimentToRolloutTransitionPerformed.js"]
-run-if = ["os == 'win' && appname == 'firefox'"]
+run-if = [
+  "os == 'win' && appname == 'firefox'",
+]
 reason = "Feature is Firefox-specific and Windows-specific."
 
 ["initWithPendingUpdate.js"]
@@ -71,29 +92,47 @@ reason = "Feature is Firefox-specific and Windows-specific."
 ["initialStateValidation.js"]
 
 ["languagePackUpdates.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["mixedUnsupported.js"]
 
 ["multiUpdate.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["onlyDownloadUpdatesThisSession.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["perInstallationPrefs.js"]
 
 ["remoteUpdateXML.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
+
+["test_blocked_metric_recorded_when_downloads_blocked_by_waf.js"]
+firefox-appdir = "browser"
+run-if = [
+  "os == 'win'",
+]
 
 ["updateAutoPrefMigrate.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 reason = "Update pref migration is currently Windows only"
 
 ["updateCheckCombine.js"]
 
 ["updateDirectoryMigrate.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 reason = "Update directory migration is currently Windows only"
 
 ["updateEnabledTelemetry.js"]
@@ -105,4 +144,6 @@ reason = "Update directory migration is currently Windows only"
 ["updateSyncManager.js"]
 
 ["urlConstruction.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]

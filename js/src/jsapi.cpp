@@ -24,18 +24,16 @@
 #  include <dlfcn.h>
 #endif
 #include <iostream>
-#include <iterator>
 #include <stdarg.h>
 #include <string.h>
 
-#include "jsexn.h"
 #include "jsfriendapi.h"
-#include "jsmath.h"
 #include "jstypes.h"
 
 #include "builtin/AtomicsObject.h"
 #include "builtin/Eval.h"
 #include "builtin/JSON.h"
+#include "builtin/Math.h"
 #include "builtin/Promise.h"
 #include "builtin/Symbol.h"
 #include "frontend/FrontendContext.h"  // AutoReportFrontendContext
@@ -1565,6 +1563,10 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(
   SetNativeStackSize(cx, JS::StackForTrustedScript, trustedScriptStackSize);
   SetNativeStackSize(cx, JS::StackForUntrustedScript, untrustedScriptStackSize);
 
+  if (cx->runtime()->isMainRuntime()) {
+    js::gc::MapStack(systemCodeStackSize);
+  }
+
   cx->initJitStackLimit();
 }
 
@@ -1680,8 +1682,7 @@ JS_PUBLIC_API bool JS_InstanceOf(JSContext* cx, HandleObject obj,
   CHECK_THREAD(cx);
 #ifdef DEBUG
   if (args) {
-    cx->check(obj);
-    cx->check(args->thisv(), args->calleev());
+    cx->check(obj, args->thisv(), args->calleev());
   }
 #endif
   if (!obj || obj->getClass() != clasp) {
@@ -1779,21 +1780,40 @@ JS::RealmCreationOptions& JS::RealmCreationOptions::setCoopAndCoepEnabled(
   return *this;
 }
 
-JS::RealmCreationOptions& JS::RealmCreationOptions::setLocaleCopyZ(
-    const char* locale) {
-  const size_t size = strlen(locale) + 1;
+template <class RefCountedString>
+static RefCountedString* CopyStringZ(const char* str) {
+  MOZ_ASSERT(str);
+
+  const size_t size = strlen(str) + 1;
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
-  char* memoryPtr = js_pod_malloc<char>(sizeof(LocaleString) + size);
+  char* memoryPtr = js_pod_malloc<char>(sizeof(RefCountedString) + size);
   if (!memoryPtr) {
-    oomUnsafe.crash("RealmCreationOptions::setLocaleCopyZ");
+    oomUnsafe.crash("CopyStringZ");
   }
 
-  char* localePtr = memoryPtr + sizeof(LocaleString);
-  memcpy(localePtr, locale, size);
+  char* strPtr = memoryPtr + sizeof(RefCountedString);
+  memcpy(strPtr, str, size);
 
-  locale_ = new (memoryPtr) LocaleString(localePtr);
+  return new (memoryPtr) RefCountedString(strPtr);
+}
 
+JS::RealmBehaviors& JS::RealmBehaviors::setLocaleOverride(const char* locale) {
+  if (locale) {
+    localeOverride_ = CopyStringZ<JS::LocaleString>(locale);
+  } else {
+    localeOverride_ = nullptr;
+  }
+  return *this;
+}
+
+JS::RealmBehaviors& JS::RealmBehaviors::setTimeZoneOverride(
+    const char* timeZone) {
+  if (timeZone) {
+    timeZoneOverride_ = CopyStringZ<JS::TimeZoneString>(timeZone);
+  } else {
+    timeZoneOverride_ = nullptr;
+  }
   return *this;
 }
 
@@ -1803,6 +1823,14 @@ const JS::RealmBehaviors& JS::RealmBehaviorsRef(JS::Realm* realm) {
 
 const JS::RealmBehaviors& JS::RealmBehaviorsRef(JSContext* cx) {
   return cx->realm()->behaviors();
+}
+
+void JS::SetRealmLocaleOverride(Realm* realm, const char* locale) {
+  realm->setLocaleOverride(locale);
+}
+
+void JS::SetRealmTimezoneOverride(Realm* realm, const char* timezone) {
+  realm->setTimeZoneOverride(timezone);
 }
 
 void JS::SetRealmNonLive(Realm* realm) { realm->setNonLive(); }
@@ -2174,7 +2202,16 @@ JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JS::HandleObject obj) {
   }
 
   NativeObject& nobj = obj->as<NativeObject>();
-  MOZ_RELEASE_ASSERT(!Watchtower::watchesPropertyValueChange(&nobj));
+
+  // XPConnect calls this for global objects and global lexical environments
+  // that won't be used anymore. These objects can have an associated ObjectFuse
+  // but we can ignore them here because the objects are effectively dead (after
+  // clearing all slots below it'd be hard to execute JS code without breaking
+  // JS semantics).
+  MOZ_RELEASE_ASSERT(nobj.is<GlobalObject>() ||
+                     nobj.is<GlobalLexicalEnvironmentObject>() ||
+                     !Watchtower::watchesPropertyValueChange(&nobj));
+
   const JSClass* clasp = obj->getClass();
   unsigned numReserved = JSCLASS_RESERVED_SLOTS(clasp);
   unsigned numSlots = nobj.slotSpan();
@@ -2189,7 +2226,6 @@ JS_PUBLIC_API void JS_SetReservedSlot(JSObject* obj, uint32_t index,
   // objects. See NativeObject::getReservedSlotRef comment.
   NativeObject& nobj = obj->as<NativeObject>();
   MOZ_ASSERT(index < JSCLASS_RESERVED_SLOTS(obj->getClass()));
-  MOZ_ASSERT(!Watchtower::watchesPropertyValueChange(&nobj));
   nobj.setSlot(index, value);
 }
 
@@ -2603,6 +2639,10 @@ JS::CompileOptions::CompileOptions(JSContext* cx) {
   if (Realm* realm = cx->realm()) {
     alwaysUseFdlibm_ = realm->creationOptions().alwaysUseFdlibm();
     discardSource = realm->behaviors().discardSource();
+  }
+
+  if (cx->options().disableFilenameSecurityChecks()) {
+    skipFilenameValidation_ = true;
   }
 }
 
@@ -3144,11 +3184,18 @@ JS_PUBLIC_API JSObject* JS::GetWaitForAllPromise(
   return js::GetWaitForAllPromise(cx, promises);
 }
 
-JS_PUBLIC_API void JS::InitDispatchsToEventLoop(
-    JSContext* cx, JS::DispatchToEventLoopCallback callback,
-    JS::DelayedDispatchToEventLoopCallback delayCallback, void* closure) {
-  cx->runtime()->offThreadPromiseState.ref().init(callback, delayCallback,
-                                                  closure);
+JS_PUBLIC_API void JS::InitAsyncTaskCallbacks(
+    JSContext* cx, JS::DispatchToEventLoopCallback dispatchCallback,
+    JS::DelayedDispatchToEventLoopCallback delayedDispatchCallback,
+    JS::AsyncTaskStartedCallback asyncTaskStartedCallback,
+    JS::AsyncTaskFinishedCallback asyncTaskFinishedCallback, void* closure) {
+  cx->runtime()->offThreadPromiseState.ref().init(
+      dispatchCallback, delayedDispatchCallback, asyncTaskStartedCallback,
+      asyncTaskFinishedCallback, closure);
+}
+
+JS_PUBLIC_API void JS::CancelAsyncTasks(JSContext* cx) {
+  cx->runtime()->offThreadPromiseState.ref().cancelTasks(cx);
 }
 
 JS_PUBLIC_API void JS::ShutdownAsyncTasks(JSContext* cx) {
@@ -3171,7 +3218,7 @@ JS_PUBLIC_API void JS_RequestInterruptCallbackCanWait(JSContext* cx) {
 }
 
 JS::AutoSetAsyncStackForNewCalls::AutoSetAsyncStackForNewCalls(
-    JSContext* cx, HandleObject stack, const char* asyncCause,
+    JSContext* cx, JSObject* stack, const char* asyncCause,
     JS::AutoSetAsyncStackForNewCalls::AsyncCallKind kind)
     : cx(cx),
       oldAsyncStack(cx, cx->asyncStackForNewActivations()),
@@ -4123,12 +4170,12 @@ JS::AutoSaveExceptionState::~AutoSaveExceptionState() {
   }
 }
 
-JS_PUBLIC_API JSErrorReport* JS_ErrorFromException(JSContext* cx,
-                                                   HandleObject obj) {
+JS_PUBLIC_API bool JS_ErrorFromException(JSContext* cx, HandleObject obj,
+                                         JS::BorrowedErrorReport& errorReport) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   cx->check(obj);
-  return ErrorFromException(cx, obj);
+  return ErrorFromException(cx, obj, errorReport);
 }
 
 void JSErrorReport::initBorrowedLinebuf(const char16_t* linebufArg,
@@ -4550,16 +4597,6 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
-    case JSJITCOMPILER_REGEXP_DUPLICATE_NAMED_GROUPS:
-      jit::JitOptions.js_regexp_duplicate_named_groups = !!value;
-      break;
-
-#ifdef NIGHTLY_BUILD
-    case JSJITCOMPILER_REGEXP_MODIFIERS:
-      jit::JitOptions.js_regexp_modifiers = !!value;
-      break;
-#endif
-
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
       jit::JitOptions.fullDebugChecks = !!value;
@@ -5231,16 +5268,6 @@ JS_PUBLIC_API void JS::SetOutOfMemoryCallback(JSContext* cx,
                                               void* data) {
   cx->runtime()->oomCallback = cb;
   cx->runtime()->oomCallbackData = data;
-}
-
-JS_PUBLIC_API void JS::SetShadowRealmInitializeGlobalCallback(
-    JSContext* cx, JS::GlobalInitializeCallback callback) {
-  cx->runtime()->shadowRealmInitializeGlobalCallback = callback;
-}
-
-JS_PUBLIC_API void JS::SetShadowRealmGlobalCreationCallback(
-    JSContext* cx, JS::GlobalCreationCallback callback) {
-  cx->runtime()->shadowRealmGlobalCreationCallback = callback;
 }
 
 JS_PUBLIC_API bool JS::SetLoggingInterface(LoggingInterface& iface) {

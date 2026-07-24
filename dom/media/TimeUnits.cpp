@@ -4,19 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <cstdint>
-#include <cmath>
-#include <inttypes.h>
-#include <limits>
-#include <type_traits>
-
 #include "TimeUnits.h"
+
+#include <inttypes.h>
+
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
 #include "Intervals.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/TimeStamp.h"
 #include "nsDebug.h"
 #include "nsPrintfCString.h"
 #include "nsStringFwd.h"
@@ -80,7 +80,7 @@ TimeUnit TimeUnit::FromSeconds(double aValue, int64_t aBase) {
   // base -- we can keep this for some time until we're confident this is
   // stable.
   double inBase = aValue * static_cast<double>(aBase);
-  if (std::abs(inBase) >
+  if (std::abs(inBase) >=
       static_cast<double>(std::numeric_limits<int64_t>::max())) {
     NS_WARNING(
         nsPrintfCString("Warning: base %" PRId64
@@ -283,7 +283,7 @@ TimeUnit TimeUnit::operator+(const TimeUnit& aOther) const {
 
   double error;
   TimeUnit inBase = aOther.ToBase(mBase, error);
-  if (error == 0.0) {
+  if (error == 0.0 && inBase.IsValid()) {
     return *this + inBase;
   }
 
@@ -314,7 +314,7 @@ TimeUnit TimeUnit::operator-(const TimeUnit& aOther) const {
 
   double error = 0.0;
   TimeUnit inBase = aOther.ToBase(mBase, error);
-  if (error == 0) {
+  if (error == 0 && inBase.IsValid()) {
     return *this - inBase;
   }
 

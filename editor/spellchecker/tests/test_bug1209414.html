@@ -29,7 +29,7 @@ var elem_de;
 var editor_de;
 var script;
 
-/** Test for Bug 1209414 **/
+/** Test for Bug 1209414 */
 /*
  * All we want to do in this test is change the spelling using a right-click and selection from the menu.
  * This is necessary since all the other tests use setCurrentDictionaries() which doesn't reflect
@@ -43,7 +43,6 @@ let { maybeOnSpellCheck, onSpellCheck } = SpecialPowers.ChromeUtils.importESModu
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(async function() {
   script = SpecialPowers.loadChromeScript(function() {
-    /* eslint-env mozilla/chrome-script */
     var chromeWin = actorParent.rootFrameLoader
                     .ownerElement.ownerGlobal.browsingContext.topChromeWindow;
     var contextMenu = chromeWin.document.getElementById("contentAreaContextMenu");

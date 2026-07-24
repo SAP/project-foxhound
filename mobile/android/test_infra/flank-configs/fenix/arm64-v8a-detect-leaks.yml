@@ -20,9 +20,11 @@ gcloud:
   use-orchestrator: true
   environment-variables:
     clearPackageData: true
+    additionalTestOutputDir: /sdcard/Download
     detect-leaks: true # to enable memory leak checks
   directories-to-pull:
     - /sdcard/Android/data/org.mozilla.fenix.debug/minidumps
+    - /sdcard/Download/memory_leaks
   other-files:
     /data/local/tmp/org.mozilla.fenix.debug-geckoview-config.yaml: geckoview-configs/org.mozilla.fenix.debug-geckoview-config.yaml
   performance-metrics: true
@@ -31,6 +33,7 @@ gcloud:
     - notPackage org.mozilla.fenix.syncintegration
     - notPackage org.mozilla.fenix.experimentintegration
     - notPackage org.mozilla.fenix.ui.efficiency.tests
+    - notPackage org.mozilla.fenix.ui.efficiency.examples
     - notAnnotation org.mozilla.fenix.customannotations.SkipLeaks
 
   device:

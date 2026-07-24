@@ -4,17 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "sdp/Sdp.h"
 #include "sdp/ParsingResultComparer.h"
-#include "sdp/SipccSdpParser.h"
-#include "sdp/RsdparsaSdpParser.h"
 
-#include <string>
 #include <ostream>
 #include <regex>
+#include <string>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
+#include "sdp/RsdparsaSdpParser.h"
+#include "sdp/Sdp.h"
+#include "sdp/SipccSdpParser.h"
 
 using mozilla::LogLevel;
 static mozilla::LazyLogModule sSdpDiffLogger("sdpdiff_logger");

@@ -7,8 +7,10 @@
 #define mozilla_layers_NativeLayerMacSurfaceHandler_h
 
 #include "mozilla/Maybe.h"
+#include "mozilla/gfx/MacIOSurface.h"
 #include "mozilla/gfx/Types.h"
 
+#include "CFTypeRefPtr.h"
 #include "GLTypes.h"
 #include "nsISupportsImpl.h"
 #include "nsRegion.h"
@@ -44,7 +46,7 @@ struct SurfaceWithInvalidRegionAndCheckCount {
 class NativeLayerMacSurfaceHandler {
  public:
   NativeLayerMacSurfaceHandler(const gfx::IntSize& aSize,
-                                 SurfacePoolHandleCA* aSurfacePoolHandle);
+                               SurfacePoolHandleCA* aSurfacePoolHandle);
   ~NativeLayerMacSurfaceHandler();
 
   gfx::IntSize Size() { return mSize; }
@@ -151,9 +153,6 @@ class NativeLayerMacSurfaceHandler {
   void DiscardBackbuffers();
 
   Maybe<SurfaceWithInvalidRegion> FrontSurface() { return mFrontSurface; }
-  Maybe<SurfaceWithInvalidRegion> InProgressSurface() {
-    return mInProgressSurface;
-  }
   std::vector<SurfaceWithInvalidRegionAndCheckCount> Surfaces() {
     return mSurfaces;
   }

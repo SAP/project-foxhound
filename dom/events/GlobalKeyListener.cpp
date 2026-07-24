@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GlobalKeyListener.h"
-#include "ErrorList.h"
-#include "EventTarget.h"
 
 #include <utility>
 
+#include "ErrorList.h"
+#include "EventTarget.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/HTMLEditor.h"
@@ -418,6 +418,11 @@ GlobalKeyListener::WalkHandlersResult GlobalKeyListener::WalkHandlersAndExecute(
 
 bool GlobalKeyListener::IsReservedKey(WidgetKeyboardEvent* aKeyEvent,
                                       KeyEventHandler* aHandler) {
+  // If the event is a reply event, it means that we've already sent the event
+  // to the remote process because of not reserved.
+  if (aKeyEvent->IsHandledInRemoteProcess()) {
+    return false;
+  }
   ReservedKey reserved = aHandler->GetIsReserved();
   // reserved="true" means that the key is always reserved. reserved="false"
   // means that the key is never reserved. Otherwise, we check site-specific

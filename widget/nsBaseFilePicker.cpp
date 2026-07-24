@@ -298,7 +298,7 @@ NS_IMETHODIMP nsBaseFilePicker::SetDisplayDirectory(nsIFile* aDirectory) {
     return rv;
   }
 
-  mDisplayDirectory = directory;
+  mDisplayDirectory = std::move(directory);
   return NS_OK;
 }
 

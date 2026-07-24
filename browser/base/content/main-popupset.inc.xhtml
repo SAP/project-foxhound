@@ -11,9 +11,11 @@
       data-lazy-l10n-id="tab-context-move-tab-to-new-group"
       data-l10n-args='{"tabCount": 1}'
       hidden="true"/>
+    <menuitem id="context_moveSplitViewToNewGroup"
+      data-lazy-l10n-id="tab-context-move-split-view-to-new-group"
+      data-l10n-args='{"splitViewCount": 1}'
+      hidden="true"/>
     <menu id="context_moveTabToGroup"
-      data-lazy-l10n-id="tab-context-move-tab-to-group"
-      data-l10n-args='{"tabCount": 1}'
       hidden="true">
       <menupopup id="context_moveTabToGroupPopupMenu">
         <menuitem id="context_moveTabToGroupNewGroup"
@@ -31,6 +33,15 @@
     <menuitem id="context_ungroupTab"
       data-lazy-l10n-id="tab-context-ungroup-tab"
       data-l10n-args='{"groupCount": 1}'
+      hidden="true"/>
+     <menuitem id="context_ungroupSplitView"
+      data-lazy-l10n-id="tab-context-ungroup-tab"
+      data-l10n-args='{"groupCount": 1}'
+      hidden="true"/>
+    <menuitem id="context_moveTabToSplitView"
+      hidden="true"/>
+    <menuitem id="context_separateSplitView"
+      data-lazy-l10n-id="tab-context-separate-split-view"
       hidden="true"/>
     <menuseparator/>
     <menuitem id="context_reloadTab" data-lazy-l10n-id="reload-tab"/>
@@ -56,6 +67,16 @@
               data-lazy-l10n-id="bookmark-selected-tabs"/>
     <menuitem id="context_bookmarkTab"
               data-lazy-l10n-id="tab-context-bookmark-tab"/>
+    <menuitem id="context_addNote" hidden="true" data-lazy-l10n-id="tab-context-add-note" />
+    <menu id="context_updateNote"
+      hidden="true"
+      data-lazy-l10n-id="tab-context-update-note">
+      <menupopup id="tabUpdateOptionsMenu">
+        <menuitem id="context_editNote" data-lazy-l10n-id="tab-context-edit-note" />
+        <menuitem id="context_deleteNote" data-lazy-l10n-id="tab-context-delete-note" />
+      </menupopup>
+    </menu>
+
     <menu id="context_moveTabOptions"
           data-lazy-l10n-id="tab-context-move-tabs"
           data-l10n-args='{"tabCount": 1}'>
@@ -68,13 +89,8 @@
                   tbattr="tabbrowser-multiple-visible"/>
         <menuitem id="context_openTabInWindow" data-lazy-l10n-id="move-to-new-window"
                   tbattr="tabbrowser-multiple-visible"/>
+        <menuseparator id="moveTabSeparator" hidden="true"/>
       </menupopup>
-    </menu>
-    <menu id="context_sendTabToDevice"
-          class="sync-ui-item"
-          data-lazy-l10n-id="tab-context-send-tabs-to-device"
-          data-l10n-args='{"tabCount": 1}'>
-      <menupopup id="context_sendTabToDevicePopupMenu"/>
     </menu>
     <menu id="context_reopenInContainer"
           data-lazy-l10n-id="tab-context-open-in-new-container-tab"
@@ -83,6 +99,13 @@
     </menu>
     <menuitem id="context_selectAllTabs" data-lazy-l10n-id="select-all-tabs"/>
     <menuseparator/>
+    <menu id="context_sendTabToDevice"
+          class="sync-ui-item"
+          data-lazy-l10n-id="tab-context-send-to-device"
+          data-l10n-args='{"tabCount": 1}'>
+      <menupopup id="context_sendTabToDevicePopupMenu" class="sync-ui-item"/>
+    </menu>
+    <menuseparator id="context_sendTabToDeviceSeparator" class="sync-ui-item"/>
     <menuitem id="context_closeTab"
               data-lazy-l10n-id="tab-context-close-n-tabs"
               data-l10n-args='{"tabCount": 1}'/>
@@ -133,6 +156,7 @@
   <!-- for search and content formfill/pw manager -->
 
   <tabgroup-menu id="tab-group-editor"></tabgroup-menu>
+  <tabnote-menu id="tab-note-menu"></tabnote-menu>
 
   <!-- Starting point for sidebar tools overflow -->
   <panel id="sidebar-tools-overflow"
@@ -187,7 +211,7 @@
   </panel>
 
   <html:template id="screenshotsPagePanelTemplate">
-    <box id="screenshotsPagePanel" hidden="true">
+    <box class="screenshotsPagePanel" hidden="true">
       <screenshots-buttons></screenshots-buttons>
     </box>
   </html:template>
@@ -268,7 +292,8 @@
            noautofocus="true"
            noautohide="true"
            flip="none"
-           consumeoutsideclicks="false">
+           consumeoutsideclicks="false"
+           level="top">
       <box id="UITourHighlight"></box>
     </panel>
   </html:template>
@@ -330,8 +355,9 @@
   </menupopup>
 
   <menupopup id="sidebar-history-menu">
-    <html:h1 data-l10n-id="sidebar-history-sort-by-heading"
-             id="sidebar-history-sort-by-heading"/>
+    <menucaption data-l10n-id="sidebar-history-sort-by-heading-menucaption"
+                 id="sidebar-history-sort-by-heading"
+                 role="heading"/>
     <menuitem data-l10n-id="sidebar-history-sort-option-date"
               id="sidebar-history-sort-by-date"
               type="checkbox"/>
@@ -395,6 +421,16 @@
               id="sidebar-synced-tabs-context-bookmark-tab"/>
     <menuitem data-l10n-id="sidebar-context-menu-copy-link"
               id="sidebar-synced-tabs-context-copy-link"/>
+  </menupopup>
+
+  <menupopup id="split-view-menu">
+    <menuitem command="splitViewCmd_separateTabs"
+              data-l10n-id="split-view-menuitem-separate-tabs"/>
+    <menuitem command="splitViewCmd_reverseTabs"
+              data-l10n-id="split-view-menuitem-reverse-tabs"/>
+    <menuseparator/>
+    <menuitem command="splitViewCmd_closeTabs"
+              data-l10n-id="split-view-menuitem-close-both-tabs"/>
   </menupopup>
 
   <menupopup id="toolbar-context-menu">
@@ -488,10 +524,11 @@
   <menupopup id="blockedPopupOptions">
     <menuitem id="blockedPopupAllowSite"/>
     <menuitem id="blockedPopupEdit"
-              data-l10n-id="edit-popup-settings"/>
+              data-l10n-id="edit-popup-settings2"/>
     <menuitem id="blockedPopupDontShowMessage"
-              data-l10n-id="popups-infobar-dont-show-message"
+              data-l10n-id="popups-infobar-dont-show-message2"
               type="checkbox"/>
+    <menuseparator id="blockedRedirectSeparator"/>
     <menuseparator id="blockedPopupsSeparator"/>
   </menupopup>
 
@@ -515,7 +552,7 @@
     <hbox id="ctrlTab-showAll-container" pack="center"/>
   </panel>
 
-  <!-- TODO: create lazily? -->
+  <!-- TODO Bug 2008627: create lazily? -->
   <panel id="tab-preview-panel"
          type="arrow"
          orient="vertical"
@@ -523,16 +560,67 @@
          norolluponanchor="true"
          consumeoutsideclicks="false"
          role="tooltip">
-    <html:div class="tab-preview-text-container">
-      <html:div class="tab-preview-title"></html:div>
-      <html:div class="tab-preview-uri"></html:div>
-      <html:div class="tab-preview-pid-activeness">
-        <html:div class="tab-preview-pid"></html:div>
-        <html:div class="tab-preview-activeness"></html:div>
+    <html:div class="tab-preview-content-interactive"></html:div>
+    <html:div class="tab-preview-content-main">
+      <html:div class="tab-preview-thumbnail-container"></html:div>
+      <html:div class="tab-preview-text-container">
+        <html:div class="tab-preview-title"></html:div>
+        <html:div class="tab-preview-uri"></html:div>
+        <html:div class="tab-preview-pid-activeness">
+          <html:div class="tab-preview-pid"></html:div>
+          <html:div class="tab-preview-activeness"></html:div>
+        </html:div>
       </html:div>
     </html:div>
-    <html:div class="tab-preview-thumbnail-container"></html:div>
   </panel>
+
+  <!--
+    TODO Bug 2008627: put all of #tab-preview-panel in here, not just this button.
+    This is being lazy-loaded because otherwise it will eagerly load multiple svg
+    images on startup (see browser_startup_images.js).
+    -->
+  <html:template id="tabPreviewPanelTemplate">
+    <toolbarbutton
+      badged="true"
+      image="chrome://global/skin/icons/tab-notes.svg"
+      data-l10n-id="tab-context-add-note"
+      class="tab-preview-add-note subviewbutton subviewbutton-nav"
+    >
+      <html:moz-badge type="new" data-l10n-id="tab-note-panel-add-note-new-badge" move-after-stack="true" />
+    </toolbarbutton>
+  </html:template>
+
+  <panel id="tab-note-preview-panel"
+         type="arrow"
+         orient="vertical"
+         noautofocus="true"
+         norolluponanchor="true"
+         consumeoutsideclicks="false"
+         role="tooltip">
+    <html:div class="tab-note-preview-container">
+      <html:div class="tab-note-preview-text"></html:div>
+      <!-- Not using a real button here to avoid having to unset default styles -->
+      <html:div role="button" class="tab-note-preview-expand" data-l10n-id="tab-note-preview-expand"></html:div>
+    </html:div>
+  </panel>
+
+  <panel id="tabgroup-preview-panel"
+         role="menu"
+         data-l10n-id="tab-group-preview-name"
+         type="arrow"
+         class="toolbar-menupopup animatable-menupopup"
+         noautofocus="true"
+         norolluponanchor="true"
+         consumeoutsideclicks="false">
+        <arrowscrollbox id="tabgroup-panel-content"
+                        class="menupopup-arrowscrollbox"
+                        flex="1"
+                        orient="vertical"
+                        smoothscroll="false">
+        </arrowscrollbox>
+  </panel>
+
+
 
   <html:template id="pageActionPanelTemplate">
     <panel id="pageActionPanel"
@@ -740,26 +828,22 @@
     <menuitem class="always-offer-translations-menuitem"
               data-l10n-id="translations-panel-settings-always-offer-translation"
               type="checkbox"
-              checked="false"
               autocheck="false"
               id="translations-panel-settings-always-offer-translation"/>
     <menuitem class="always-translate-language-menuitem"
               data-l10n-id="translations-panel-settings-always-translate-unknown-language"
               type="checkbox"
-              checked="false"
               autocheck="false"
               id="translations-panel-settings-always-translate"/>
     <menuitem class="never-translate-language-menuitem"
               data-l10n-id="translations-panel-settings-never-translate-unknown-language"
               type="checkbox"
-              checked="false"
               autocheck="false"
               id="translations-panel-settings-never-translate"/>
     <menuseparator/>
     <menuitem class="never-translate-site-menuitem"
               data-l10n-id="translations-panel-settings-never-translate-site"
               type="checkbox"
-              checked="false"
               autocheck="false"
               id="translations-panel-settings-never-translate-site"/>
     <menuseparator/>

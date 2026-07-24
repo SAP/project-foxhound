@@ -20,6 +20,7 @@ class Document;
 class DocumentType;
 class Element;
 class ProcessingInstruction;
+class Text;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -39,11 +40,11 @@ class nsIContentSerializer : public nsISupports {
                   bool aIsWholeDocument, bool* aNeedsPerformatScanning,
                   nsAString& aOutput) = 0;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) = 0;
 
-  NS_IMETHOD AppendCDATASection(nsIContent* aCDATASection, int32_t aStartOffset,
-                                int32_t aEndOffset) = 0;
+  NS_IMETHOD AppendCDATASection(mozilla::dom::Text* aCDATASection,
+                                int32_t aStartOffset, int32_t aEndOffset) = 0;
 
   NS_IMETHOD AppendProcessingInstruction(
       mozilla::dom::ProcessingInstruction* aPI, int32_t aStartOffset,

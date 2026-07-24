@@ -363,9 +363,6 @@ def check(
         )
         return 0
 
-    # Escape the files from source
-    source = [re.escape(f) for f in source]
-
     cwd = command_context.topobjdir
 
     monitor = StaticAnalysisMonitor(
@@ -575,15 +572,14 @@ def _get_clang_tidy_command(
         + common_args
         # run-clang-tidy expects regexps, not paths, so we need to escape
         # backslashes.
-        + [os.path.normpath(s).replace("\\", "\\\\") for s in sources]
+        + [re.escape(os.path.normpath(s)) for s in sources]
     )
 
 
 @StaticAnalysisSubCommand(
     "static-analysis",
     "autotest",
-    "Run the auto-test suite in order to determine that"
-    " the analysis did not regress.",
+    "Run the auto-test suite in order to determine that the analysis did not regress.",
 )
 @CommandArgument(
     "--dump-results",
@@ -619,7 +615,6 @@ def autotest(
     # do this on a local trusted clang-tidy package.
     command_context._set_log_level(verbose)
     command_context.activate_virtualenv()
-    dump_results = dump_results
 
     force_download = not dump_results
 
@@ -1630,10 +1625,9 @@ def _generate_path_list(command_context, paths, verbose=True):
                     ):
                         # Supported extension and accepted path
                         path_list.append(f_in_dir)
-        else:
-            # Make sure that the file exists and it has a supported extension
-            if os.path.isfile(f) and f.endswith(extensions):
-                path_list.append(f)
+        # Make sure that the file exists and it has a supported extension
+        elif os.path.isfile(f) and f.endswith(extensions):
+            path_list.append(f)
 
     return path_list
 

@@ -21,8 +21,9 @@ kind-dependencies:
 
 # move this into the single job ??
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
-        build_platform: linux-shippable
+        build_platform: linux64-shippable
         build_type: opt
         artifact_prefix: releng/partner
         shippable: true
@@ -30,7 +31,7 @@ task-defaults:
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         artifacts:
             - name: releng/partner

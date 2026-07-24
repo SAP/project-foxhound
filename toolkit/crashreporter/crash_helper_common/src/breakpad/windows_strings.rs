@@ -9,7 +9,7 @@ use std::{
     os::windows::ffi::{OsStrExt, OsStringExt},
 };
 
-use crate::{errors::MessageError, BreakpadChar, BreakpadString};
+use crate::{messages::MessageError, BreakpadChar, BreakpadString};
 
 // BreakpadString trait implementation for Windows native UTF-16 strings
 impl BreakpadString for OsString {

@@ -61,7 +61,7 @@ add_task(async function () {
   let { inspector, toolbox } = await openInspectorForURL(TEST_URI);
 
   info("Selecting font inspector.");
-  inspector.sidebar.select("fontinspector");
+  await inspector.sidebar.select("fontinspector");
 
   is(
     inspector.sidebar.getCurrentTabID(),
@@ -73,7 +73,7 @@ add_task(async function () {
   const onCompatibilityViewInitialized = inspector.once(
     "compatibilityview-initialized"
   );
-  inspector.sidebar.select("compatibilityview");
+  await inspector.sidebar.select("compatibilityview");
   await onCompatibilityViewInitialized;
 
   is(
@@ -83,7 +83,7 @@ add_task(async function () {
   );
 
   info("Selecting computed view.");
-  inspector.sidebar.select("computedview");
+  await inspector.sidebar.select("computedview");
 
   is(
     inspector.sidebar.getCurrentTabID(),

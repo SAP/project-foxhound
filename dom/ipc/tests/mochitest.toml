@@ -8,23 +8,27 @@ skip-if = [
 
 ["test_bcg_processes.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_browsingcontext_currenturi.html"]
 support-files = ["file_broadcast_currenturi_onload.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_temporaryfile_stream.html"]
-skip-if = ["os == 'android'"]
+run-if = [
+  "os != 'android'",
+]
 support-files = [
   "blob_verify.sjs",
   "!/dom/canvas/test/captureStream_common.js",
 ]
 
 ["test_window_open_discarded_bc.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]

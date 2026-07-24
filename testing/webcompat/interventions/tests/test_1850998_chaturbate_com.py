@@ -9,7 +9,7 @@ VID_CSS = ".videoPlayerDiv"
 
 async def is_requestFullscreen_called(client):
     await client.navigate(URL)
-    client.await_css(AGREE_CSS, is_displayed=True).click()
+    client.await_css(AGREE_CSS, is_displayed=True, timeout=30).click()
     client.await_css(FIRST_ROOM_CSS, is_displayed=True).click()
     vid = client.await_css(VID_CSS, is_displayed=True)
     fs = client.await_css(FS_CSS, is_displayed=True)

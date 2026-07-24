@@ -11,10 +11,12 @@
 
     <!-- Lints that don't apply to our translation process -->
     <issue id="MissingTranslation" severity="ignore" />
+    <issue id="MissingQuantity" severity="ignore" />
     <issue id="PluralsCandidate" severity="ignore" />
     <issue id="StringFormatCount" severity="ignore" />
     <issue id="TypographyEllipsis" severity="ignore" />
     <issue id="ExtraTranslation" severity="ignore" />
+    <issue id="MissingDefaultResource" severity="ignore" />
     <issue id="BrandUsage" severity="error">
         <ignore path="**/values-*/strings.xml" />
         <ignore path="**/values-*/*_strings.xml" />
@@ -94,5 +96,6 @@
     <issue id="VectorPath" severity="ignore" />
 
     <!-- Correctness: checks with increased severity -->
+    <issue id="ModifierParameter" severity="error" />
     <issue id="PrivateResource" severity="error" />
 </lint>

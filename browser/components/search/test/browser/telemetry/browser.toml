@@ -1,11 +1,15 @@
 [DEFAULT]
 tags = "search-telemetry"
 support-files = ["head.js", "head-spa.js"]
-prefs = ["browser.search.log=true"]
+prefs = ["browser.search.log=true", "browser.search.widget.new=false"]
 
 ["browser_search_glean_serp_event_telemetry_categorization_enabled_by_pref.js"]
 support-files = ["searchTelemetryDomainCategorizationReporting.html"]
-skip-if = ["os == 'mac'"] # Bug 1943499 - Frequent intermittent failure on Mac.
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1943499 - Frequent intermittent failure on Mac.
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1943499 - Frequent intermittent failure on Mac.
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1943499 - Frequent intermittent failure on Mac.
+]
 
 ["browser_search_telemetry_abandonment.js"]
 support-files = [
@@ -13,8 +17,6 @@ support-files = [
   "searchTelemetryAd.html",
   "searchTelemetryAd_components_text.html",
 ]
-
-["browser_search_telemetry_aboutHome.js"]
 
 ["browser_search_telemetry_adImpression_component.js"]
 support-files = [
@@ -41,7 +43,9 @@ support-files = ["searchTelemetryAd_searchbox_with_content.html", "serp.css"]
 ["browser_search_telemetry_app_provided_and_overridden.js"]
 
 ["browser_search_telemetry_categorization_experiment_info.js"]
-skip-if = ["artifact"] # Bug 1883857 - experimentInfo object is not accessible in artifact builds
+skip-if = [
+  "artifact", # Bug 1883857 - experimentInfo object is not accessible in artifact builds
+]
 support-files = ["searchTelemetryDomainCategorizationReporting.html"]
 
 ["browser_search_telemetry_categorization_missing_impression.js"]
@@ -168,6 +172,8 @@ support-files = [
 ["browser_search_telemetry_engagement_target_after_load.js"]
 support-files = ["searchTelemetryAd_components_text.html", "serp.css"]
 
+["browser_search_telemetry_impressionAttributes.js"]
+
 ["browser_search_telemetry_new_window.js"]
 support-files = ["searchTelemetry.html", "searchTelemetryAd.html"]
 
@@ -183,7 +189,9 @@ support-files = [
   "telemetrySearchSuggestions.sjs",
   "telemetrySearchSuggestions.xml",
 ]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks"] # Bug 1873335
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1873335
+]
 
 
 ["browser_search_telemetry_searchform.js"]
@@ -195,9 +203,6 @@ support-files = ["searchTelemetryAd_shopping.html"]
 support-files = ["searchTelemetry.html"]
 
 ["browser_search_telemetry_sources.js"]
-support-files = ["searchTelemetry.html", "searchTelemetryAd.html"]
-
-["browser_search_telemetry_sources_about.js"]
 support-files = ["searchTelemetry.html", "searchTelemetryAd.html"]
 
 ["browser_search_telemetry_sources_ads.js"]
@@ -258,3 +263,11 @@ support-files = [
 ["browser_search_telemetry_visibility_helper_horizontal.js"]
 
 ["browser_search_telemetry_visibility_helper_vertical.js"]
+
+["browser_search_telemetry_visualSearch.js"]
+support-files = [
+  "searchTelemetry.html",
+  "../browser_contentContextMenu.xhtml",
+  "../ctxmenu-image.png",
+  "../search-glass.svg",
+]

@@ -56,7 +56,7 @@ add_task(async function () {
 
   let obs = new MutationObserver(handler);
 
-  obs.observe(gURLBar.textbox, { attributes: true });
+  obs.observe(gURLBar, { attributes: true });
   gURLBar.value = SLOW_PAGE;
   gURLBar.handleCommand();
 
@@ -279,7 +279,7 @@ add_task(async function testCorrectUrlBarAfterGoingBackDuringAnotherLoad() {
 
   let obs = new MutationObserver(handler);
 
-  obs.observe(gURLBar.textbox, { attributes: true });
+  obs.observe(gURLBar, { attributes: true });
   // Set the value of url bar to SLOW_PAGE
   gURLBar.value = SLOW_PAGE;
   gURLBar.handleCommand();
@@ -361,7 +361,7 @@ add_task(async function testCorrectUrlBarAfterReloadingDuringSlowPageLoad() {
 
   let obs = new MutationObserver(handler);
 
-  obs.observe(gURLBar.textbox, { attributes: true });
+  obs.observe(gURLBar, { attributes: true });
   // Start loading SLOW_PAGE3
   gURLBar.value = SLOW_PAGE3;
   gURLBar.handleCommand();
@@ -435,7 +435,7 @@ add_task(async function testCorrectUrlBarAfterStoppingTheLoad() {
 
   let obs = new MutationObserver(handler);
 
-  obs.observe(gURLBar.textbox, { attributes: true });
+  obs.observe(gURLBar, { attributes: true });
   // Start loading SLOW_PAGE
   gURLBar.value = SLOW_PAGE;
   gURLBar.handleCommand();

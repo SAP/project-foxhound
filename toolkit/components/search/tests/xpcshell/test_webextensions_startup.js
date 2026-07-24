@@ -44,12 +44,12 @@ add_task(async function test_startup_with_new_addon() {
   await extension.startup();
 
   let settingsWritten = promiseAfterSettings();
-  await Services.search.init();
+  await SearchService.init();
 
   await AddonTestUtils.waitForSearchProviderStartup(extension);
   await settingsWritten;
 
-  let engine = await Services.search.getEngineByName("startup");
+  let engine = await SearchService.getEngineByName("startup");
   Assert.ok(engine, "Should have loaded the engine");
   let submission = engine.getSubmission("foo");
   Assert.equal(
@@ -60,13 +60,13 @@ add_task(async function test_startup_with_new_addon() {
 });
 
 add_task(async function test_startup_with_existing_addon_from_settings() {
-  Services.search.wrappedJSObject.reset();
+  SearchService.reset();
 
   let settingsWritten = promiseAfterSettings();
-  await Services.search.init();
+  await SearchService.init();
   await settingsWritten;
 
-  let engine = await Services.search.getEngineByName("startup");
+  let engine = await SearchService.getEngineByName("startup");
   Assert.ok(engine, "Should have loaded the engine");
   let submission = engine.getSubmission("foo");
   Assert.equal(
@@ -84,15 +84,15 @@ add_task(
     // when the add-on is already there. The console check is handled by
     // TestUtils.listenForConsoleMessages() in head_search.js.
 
-    Services.search.wrappedJSObject.reset();
+    SearchService.reset();
 
-    await Services.search.addEnginesFromExtension(extension.extension);
+    await SearchService.addEnginesFromExtension(extension.extension);
 
     let settingsWritten = promiseAfterSettings();
-    await Services.search.init();
+    await SearchService.init();
     await settingsWritten;
 
-    let engine = await Services.search.getEngineByName("startup");
+    let engine = await SearchService.getEngineByName("startup");
     Assert.ok(engine, "Should have loaded the engine");
     let submission = engine.getSubmission("foo");
     Assert.equal(

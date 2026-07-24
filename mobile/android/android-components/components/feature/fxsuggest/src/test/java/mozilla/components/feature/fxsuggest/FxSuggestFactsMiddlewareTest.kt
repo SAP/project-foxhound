@@ -17,7 +17,6 @@ import mozilla.components.support.base.Component
 import mozilla.components.support.base.facts.Action
 import mozilla.components.support.base.facts.Facts
 import mozilla.components.support.base.facts.processor.CollectionProcessor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -46,7 +45,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertTrue(processor.facts.isEmpty())
     }
@@ -72,7 +71,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertTrue(processor.facts.isEmpty())
     }
@@ -115,7 +114,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = true)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = true))
 
         assertEquals(1, processor.facts.size)
         processor.facts[0].apply {
@@ -193,7 +192,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(1, processor.facts.size)
         processor.facts[0].apply {
@@ -272,7 +271,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(1, processor.facts.size)
         processor.facts[0].apply {
@@ -351,7 +350,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(2, processor.facts.size)
         processor.facts[0].apply {
@@ -476,7 +475,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(2, processor.facts.size)
         processor.facts[0].apply {
@@ -610,7 +609,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(2, processor.facts.size)
         processor.facts[0].apply {
@@ -744,7 +743,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(3, processor.facts.size)
         processor.facts[0].apply {
@@ -876,7 +875,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(1, processor.facts.size)
         processor.facts[0].apply {
@@ -943,7 +942,7 @@ class FxSuggestFactsMiddlewareTest {
             middleware = listOf(FxSuggestFactsMiddleware()),
         )
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false))
 
         assertEquals(2, processor.facts.size)
         processor.facts[0].apply {

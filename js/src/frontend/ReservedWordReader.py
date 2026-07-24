@@ -9,12 +9,15 @@ def read_reserved_word_list(filename, *args):
 
     enable_decorators = False
     enable_explicit_resource_management = False
+    enable_source_phase_imports = False
 
     for arg in args:
         if arg == "--enable-decorators":
             enable_decorators = True
         elif arg == "--enable-explicit-resource-management":
             enable_explicit_resource_management = True
+        elif arg == "--enable-source-phase-imports":
+            enable_source_phase_imports = True
         else:
             raise ValueError("Unknown argument: " + arg)
 
@@ -30,6 +33,8 @@ def read_reserved_word_list(filename, *args):
                 if reserved_word == "accessor" and not enable_decorators:
                     continue
                 if reserved_word == "using" and not enable_explicit_resource_management:
+                    continue
+                if reserved_word == "source" and not enable_source_phase_imports:
                     continue
                 reserved_word_list.append((index, reserved_word))
                 index += 1

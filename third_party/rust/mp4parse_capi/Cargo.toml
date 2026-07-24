@@ -54,6 +54,10 @@ name = "dump"
 path = "examples/dump.rs"
 
 [[test]]
+name = "test_afconvert"
+path = "tests/test_afconvert.rs"
+
+[[test]]
 name = "test_avis"
 path = "tests/test_avis.rs"
 
@@ -80,6 +84,10 @@ path = "tests/test_sample_table.rs"
 [[test]]
 name = "test_workaround_stsc"
 path = "tests/test_workaround_stsc.rs"
+
+[[test]]
+name = "test_xhe_aac"
+path = "tests/test_xhe_aac.rs"
 
 [dependencies]
 byteorder = "1.2.1"

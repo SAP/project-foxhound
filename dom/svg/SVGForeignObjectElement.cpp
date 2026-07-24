@@ -6,12 +6,11 @@
 
 #include "mozilla/dom/SVGForeignObjectElement.h"
 
+#include "SVGGeometryProperty.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGDocument.h"
 #include "mozilla/dom/SVGForeignObjectElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
-#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(ForeignObject)
 
@@ -24,13 +23,13 @@ JSObject* SVGForeignObjectElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGForeignObjectElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 //----------------------------------------------------------------------
@@ -108,7 +107,7 @@ SVGElement::LengthAttributesInfo SVGForeignObjectElement::GetLengthInfo() {
                               std::size(sLengthInfo));
 }
 
-nsCSSPropertyID SVGForeignObjectElement::GetCSSPropertyIdForAttrEnum(
+NonCustomCSSPropertyId SVGForeignObjectElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:

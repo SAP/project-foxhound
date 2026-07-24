@@ -1,0 +1,12 @@
+[package]
+name = "test-program-features"
+version = "0.1.0"
+authors = [
+  "The Mozilla Project Developers",
+]
+
+[[bin]]
+name = "test-program-features"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["test-program-features"], optional = true }

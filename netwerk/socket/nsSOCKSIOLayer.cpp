@@ -23,7 +23,6 @@
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 #include "mozilla/net/DNS.h"
-#include "mozilla/Unused.h"
 
 using mozilla::LogLevel;
 using namespace mozilla::net;
@@ -172,8 +171,8 @@ class nsSOCKSSocketInfo : public nsIDNSListener {
     strcpy(aProxyAddr->local.path, PromiseFlatCString(aLocalProxyPath).get());
     return NS_OK;
 #else
-    mozilla::Unused << aLocalProxyPath;
-    mozilla::Unused << aProxyAddr;
+    (void)aLocalProxyPath;
+    (void)aProxyAddr;
     return NS_ERROR_NOT_IMPLEMENTED;
 #endif
   }

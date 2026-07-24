@@ -7,8 +7,8 @@
 //
 // nsRepeatService
 //
-#ifndef nsRepeatService_h__
-#define nsRepeatService_h__
+#ifndef nsRepeatService_h_
+#define nsRepeatService_h_
 
 #include "nsCOMPtr.h"
 #include "nsITimer.h"

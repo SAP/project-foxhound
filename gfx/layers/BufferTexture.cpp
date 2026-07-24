@@ -49,8 +49,9 @@ class MemoryTextureData : public BufferTextureData {
 
   MemoryTextureData(const BufferDescriptor& aDesc,
                     gfx::BackendType aMoz2DBackend, uint8_t* aBuffer,
-                    size_t aBufferSize, bool aAutoDeallocate = false)
-      : BufferTextureData(aDesc, aMoz2DBackend),
+                    size_t aBufferSize, bool aAutoDeallocate = false,
+                    bool aIsClear = false)
+      : BufferTextureData(aDesc, aMoz2DBackend, aIsClear),
         mBuffer(aBuffer),
         mBufferSize(aBufferSize),
         mAutoDeallocate(aAutoDeallocate) {
@@ -96,8 +97,9 @@ class ShmemTextureData : public BufferTextureData {
   virtual void Deallocate(LayersIPCChannel* aAllocator) override;
 
   ShmemTextureData(const BufferDescriptor& aDesc,
-                   gfx::BackendType aMoz2DBackend, mozilla::ipc::Shmem aShmem)
-      : BufferTextureData(aDesc, aMoz2DBackend), mShmem(aShmem) {
+                   gfx::BackendType aMoz2DBackend, mozilla::ipc::Shmem aShmem,
+                   bool aIsClear = false)
+      : BufferTextureData(aDesc, aMoz2DBackend, aIsClear), mShmem(aShmem) {
     MOZ_ASSERT(mShmem.Size<uint8_t>());
   }
 
@@ -144,7 +146,9 @@ BufferTextureData* BufferTextureData::CreateInternal(
       return nullptr;
     }
 
-    return new ShmemTextureData(aDesc, aMoz2DBackend, shm);
+    bool isClear = aDesc.type() == BufferDescriptor::TRGBDescriptor &&
+                   !IsOpaque(aDesc.get_RGBDescriptor().format());
+    return new ShmemTextureData(aDesc, aMoz2DBackend, shm, isClear);
   }
 }
 
@@ -156,7 +160,8 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
     gfx::ColorRange aColorRange, gfx::ChromaSubsampling aSubsampling,
     TextureFlags aTextureFlags) {
   uint32_t bufSize = ImageDataSerializer::ComputeYCbCrBufferSize(
-      aYSize, aYStride, aCbCrSize, aCbCrStride);
+      aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride, aColorDepth,
+      aSubsampling);
   if (bufSize == 0) {
     return nullptr;
   }
@@ -249,14 +254,15 @@ already_AddRefed<gfx::DrawTarget> BufferTextureData::BorrowDrawTarget() {
   uint32_t stride = ImageDataSerializer::GetRGBStride(rgb);
   RefPtr<gfx::DrawTarget> dt;
   if (gfx::Factory::DoesBackendSupportDataDrawtarget(mMoz2DBackend)) {
-    dt = gfx::Factory::CreateDrawTargetForData(
-        mMoz2DBackend, GetBuffer(), rgb.size(), stride, rgb.format(), true);
+    dt = gfx::Factory::CreateDrawTargetForData(mMoz2DBackend, GetBuffer(),
+                                               rgb.size(), stride, rgb.format(),
+                                               true, mIsClear);
   }
   if (!dt) {
     // Fall back to supported platform backend.  Note that mMoz2DBackend
     // does not match the draw target type.
     dt = gfxPlatform::CreateDrawTargetForData(GetBuffer(), rgb.size(), stride,
-                                              rgb.format(), true);
+                                              rgb.format(), true, mIsClear);
   }
 
   if (!dt) {
@@ -274,11 +280,16 @@ bool BufferTextureData::BorrowMappedData(MappedTextureData& aData) {
 
   gfx::IntSize size = GetSize();
 
+  auto stride = ImageDataSerializer::ComputeRGBStride(GetFormat(), size.width);
+  if (stride == 0) {
+    return false;
+  }
+
   aData.data = GetBuffer();
   aData.size = size;
   aData.format = GetFormat();
-  aData.stride =
-      ImageDataSerializer::ComputeRGBStride(aData.format, size.width);
+  aData.stride = stride;
+  mIsClear = false;
 
   return true;
 }
@@ -377,6 +388,8 @@ bool BufferTextureData::UpdateFromSurface(gfx::SourceSurface* aSurface) {
   srcSurf->Unmap();
   surface->Unmap();
 
+  mIsClear = false;
+
   return true;
 }
 
@@ -447,8 +460,9 @@ MemoryTextureData* MemoryTextureData::Create(gfx::IntSize aSize,
   // Remote textures are not managed by a texture client, so we need to ensure
   // that memory is freed when the owning MemoryTextureData goes away.
   bool autoDeallocate = !!(aFlags & TextureFlags::REMOTE_TEXTURE);
+  bool isClear = (aAllocFlags & ALLOC_CLEAR_BUFFER) != 0;
   return new MemoryTextureData(descriptor, aMoz2DBackend, buf, bufSize,
-                               autoDeallocate);
+                               autoDeallocate, isClear);
 }
 
 void MemoryTextureData::Deallocate(LayersIPCChannel*) {
@@ -515,8 +529,8 @@ ShmemTextureData* ShmemTextureData::Create(gfx::IntSize aSize,
   }
 
   BufferDescriptor descriptor = RGBDescriptor(aSize, aFormat);
-
-  return new ShmemTextureData(descriptor, aMoz2DBackend, shm);
+  bool isClear = (aAllocFlags & ALLOC_CLEAR_BUFFER) || !IsOpaque(aFormat);
+  return new ShmemTextureData(descriptor, aMoz2DBackend, shm, isClear);
 }
 
 TextureData* ShmemTextureData::CreateSimilar(

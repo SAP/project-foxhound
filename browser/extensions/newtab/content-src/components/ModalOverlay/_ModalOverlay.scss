@@ -1,101 +1,10 @@
-// Variable for the about:welcome modal scrollbars
-$modal-scrollbar-z-index: 1100;
-
-.activity-stream {
-  &.modal-open {
-    overflow: hidden;
-  }
-}
-
 .modalOverlayOuter {
-  background: var(--newtab-overlay-color);
-  height: 100%;
-  position: fixed;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  width: 100%;
-  display: none;
-  z-index: $modal-scrollbar-z-index;
-  overflow: auto;
+  border: none;
+  box-shadow: var(--box-shadow-popup);
+  padding: 0;
+  border-radius: var(--border-radius-medium);
 
-  &.active {
-    display: flex;
-  }
-}
-
-.modalOverlayInner {
-  min-width: min-content;
-  width: 100%;
-  max-width: 960px;
-  position: relative;
-  margin: auto;
-  background: var(--newtab-background-color-secondary);
-  box-shadow: $shadow-large;
-  border-radius: var(--border-radius-small);
-  display: none;
-  z-index: $modal-scrollbar-z-index;
-
-  // modal takes over entire screen
-  @media(width <= 960px) {
-    height: 100%;
-    inset-block-start: 0;
-    inset-inline-start: 0;
-    box-shadow: none;
-    border-radius: 0;
-  }
-
-  &.active {
-    display: block;
-  }
-
-  h2 {
-    color: var(--newtab-text-primary-color);
-    text-align: center;
-    margin-block-start: var(--space-xxlarge);;
-    font-size: var(--font-size-xxlarge);
-
-    @media(width <= 960px) {
-      // Bug 1967304 - Large number (96px)
-      margin-block-start: calc(var(--space-xlarge) * 4);
-    }
-
-    @media(width <= 850px) {
-      margin-block-start: var(--space-xxlarge);
-    }
-  }
-
-  .footer {
-    border-top: $border-secondary;
-    border-radius: var(--border-radius-small);
-    height: 70px;
-    width: 100%;
-    position: absolute;
-    inset-block-end: 0;
-    text-align: center;
-    background-color: $white;
-
-    // if modal is short enough, footer becomes sticky
-    @media(width <= 850px) and (height <= 730px) {
-      position: sticky;
-    }
-
-    // if modal is narrow enough, footer becomes sticky
-    @media(width <= 650px) and (height <= 600px) {
-      position: sticky;
-    }
-
-    .modalButton {
-      margin-block-start: var(--space-large);
-      min-width: 150px;
-      height: 30px;
-      padding: var(--space-xsmall) var(--space-xxlarge);
-      font-size: inherit;
-
-      &:focus,
-      &.active,
-      &:hover {
-        @include fade-in-card;
-      }
-    }
+  &::backdrop {
+    background: var(--newtab-overlay-color);
   }
 }

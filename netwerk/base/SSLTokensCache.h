@@ -32,7 +32,7 @@ struct SessionCacheInfo {
   Maybe<nsTArray<nsTArray<uint8_t>>> mSucceededCertChainBytes;
   Maybe<bool> mIsBuiltCertChainRootBuiltInRoot;
   nsITransportSecurityInfo::OverridableErrorCategory mOverridableErrorCategory;
-  Maybe<nsTArray<nsTArray<uint8_t>>> mFailedCertChainBytes;
+  Maybe<nsTArray<nsTArray<uint8_t>>> mHandshakeCertificatesBytes;
 };
 
 class SSLTokensCache : public nsIMemoryReporter {
@@ -49,7 +49,7 @@ class SSLTokensCache : public nsIMemoryReporter {
                       uint32_t aTokenLen, CommonSocketControl* aSocketControl);
   static nsresult Put(const nsACString& aKey, const uint8_t* aToken,
                       uint32_t aTokenLen, CommonSocketControl* aSocketControl,
-                      PRUint32 aExpirationTime);
+                      PRTime aExpirationTime);
   static nsresult Get(const nsACString& aKey, nsTArray<uint8_t>& aToken,
                       SessionCacheInfo& aResult, uint64_t* aTokenId = nullptr);
   static nsresult Remove(const nsACString& aKey, uint64_t aId);
@@ -84,7 +84,7 @@ class SSLTokensCache : public nsIMemoryReporter {
     void Reset();
 
     nsCString mKey;
-    PRUint32 mExpirationTime = 0;
+    PRTime mExpirationTime = 0;
     nsTArray<uint8_t> mToken;
     SessionCacheInfo mSessionCacheInfo;
     // An unique id to identify the record. Mostly used when we want to remove a

@@ -30,30 +30,32 @@ support-files = [
 ["test_bug803225.html"]
 skip-if = [
   "headless", # Headless:bug 1405870
-  "tsan", # tsan:bug 1612707
-  "http3",
   "http2",
+  "http3",
+  "tsan", # tsan:bug 1612707
 ]
 
 ["test_bug1550792.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1551886.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_frameNavigation.html"]
-skip-if = ["true"]  # Bug 1424752
+skip-if = [
+  "true", # Bug 1424752
+]
 
 ["test_main.html"]
 skip-if = [
-  "true",
   "os == 'android'",
+  "true",
   "tsan", # Times out / Memory consumption, bug 1612707
 ]
 
@@ -61,4 +63,6 @@ skip-if = [
 
 ["test_windowOpen.html"]
 scheme = "https"
-skip-if = ["!debug"] # Bug 1855588
+skip-if = [
+  "opt", # Bug 1855588
+]

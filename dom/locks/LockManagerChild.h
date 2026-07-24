@@ -7,9 +7,9 @@
 #ifndef DOM_LOCKS_LOCKMANAGERCHILD_H_
 #define DOM_LOCKS_LOCKMANAGERCHILD_H_
 
-#include "mozilla/dom/locks/PLockManagerChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/locks/PLockManagerChild.h"
 #include "nsIUUIDGenerator.h"
 
 namespace mozilla::dom::locks {

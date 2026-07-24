@@ -3,12 +3,12 @@
 /* import-globals-from ../../../../../toolkit/profile/test/xpcshell/head.js */
 /* import-globals-from ../../../../../browser/components/profiles/tests/unit/head.js */
 
-const { sinon } = ChromeUtils.importESModule(
-  "resource://testing-common/Sinon.sys.mjs"
-);
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
+});
 
 const {
   _ExperimentFeature: ExperimentFeature,
@@ -23,11 +23,6 @@ const { NimbusEnrollments } = ChromeUtils.importESModule(
 const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-
-ChromeUtils.defineESModuleGetters(this, {
-  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
-  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
-});
 
 NimbusTestUtils.init(this);
 
@@ -80,4 +75,13 @@ function removePrefObservers(manager) {
 
   manager._prefs.clear();
   manager._prefsBySlug.clear();
+}
+
+/**
+ * Wait for the RemoteSettingsExperimentLoader to finish updating enrollments.
+ *
+ * @returns {Promise<void>}
+ */
+function promiseEnrollmentsUpdated() {
+  return TestUtils.topicObserved("nimbus:enrollments-updated");
 }

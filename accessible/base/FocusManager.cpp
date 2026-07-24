@@ -222,7 +222,7 @@ void FocusManager::ActiveItemChanged(LocalAccessible* aItem,
     if (browser) {
       a11y::DocAccessibleParent* dap = browser->GetTopLevelDocAccessible();
       if (dap) {
-        Unused << dap->SendRestoreFocus();
+        (void)dap->SendRestoreFocus();
       }
     }
   }

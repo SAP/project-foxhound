@@ -17,8 +17,9 @@ async function test() {
      "The initial_resolution is " + resolution + ", which is some sane value");
 
   // instant scroll down so the rect is roughly halfway down
+  const scrollDistance = document.documentElement.clientHeight * 3.5;
   window.scrollTo({
-    top: window.innerHeight * 3.5,
+    top: scrollDistance,
     left: 0,
     behavior: 'auto'
   });
@@ -26,11 +27,11 @@ async function test() {
   await promiseApzFlushedRepaints();
 
   let scrollPos = window.scrollY;
-  ok(scrollPos > window.innerHeight * 3.5 - 50, "window scrolled down");
+  ok(scrollPos > scrollDistance - 50, "window scrolled down");
 
   info("window.scrollY " + window.scrollY);
 
-  info("window.innerHeight " + window.innerHeight);
+  info("scrollDistance " + scrollDistance);
 
   info("document.documentElement.scrollHeight " + document.documentElement.scrollHeight);
 
@@ -50,7 +51,7 @@ async function test() {
     tolerance = 24;
   }
 
-  ok(window.scrollY > window.innerHeight * 3.5 - tolerance, "window is still scrolled down");
+  ok(window.scrollY > scrollDistance - tolerance, "window is still scrolled down");
   ok(Math.abs(window.scrollY - scrollPos) < tolerance, "window didnt scroll: " + Math.abs(window.scrollY - scrollPos));
   info("window.scrollY " + window.scrollY);
 
@@ -72,7 +73,7 @@ async function test() {
   }
   scrollPos -= amountToExpectScrollUp;
 
-  ok(window.scrollY > window.innerHeight * 3.5 - tolerance - amountToExpectScrollUp, "window is still scrolled down");
+  ok(window.scrollY > scrollDistance - tolerance - amountToExpectScrollUp, "window is still scrolled down");
   ok(Math.abs(window.scrollY - scrollPos) < tolerance, "window didnt scroll: " + Math.abs(window.scrollY - scrollPos));
   info("window.scrollY " + window.scrollY);
 }
@@ -83,6 +84,9 @@ waitUntilApzStable()
 
   </script>
   <style>
+    html {
+      scrollbar-width: none;
+    }
     .spacer {
       background-color: #eee;
       height: 800vh;

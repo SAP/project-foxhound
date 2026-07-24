@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGMatrix.h"
-#include "nsError.h"
+
 #include <math.h>
+
+#include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/SVGMatrixBinding.h"
-#include "mozilla/FloatingPoint.h"
+#include "nsError.h"
 
 const double radPerDegree = 2.0 * M_PI / 360.0;
 
@@ -89,8 +91,17 @@ void SVGMatrix::SetF(float aF, ErrorResult& aRv) {
   SetMatrix(mx);
 }
 
-already_AddRefed<SVGMatrix> SVGMatrix::Multiply(SVGMatrix& aMatrix) {
-  return do_AddRef(new SVGMatrix(aMatrix.GetMatrix() * GetMatrix()));
+already_AddRefed<SVGMatrix> SVGMatrix::Multiply(const DOMMatrix2DInit& aMatrix,
+                                                ErrorResult& aRv) {
+  auto matrix2D = DOMMatrixReadOnly::ToValidatedMatrixDouble(aMatrix, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  if (!matrix2D.IsFinite()) {
+    aRv.ThrowTypeError<MSG_NOT_FINITE>("SVGMatrix::Multiply matrix");
+    return nullptr;
+  }
+  return do_AddRef(new SVGMatrix(matrix2D * GetMatrix()));
 }
 
 already_AddRefed<SVGMatrix> SVGMatrix::Inverse(ErrorResult& aRv) {

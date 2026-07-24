@@ -117,6 +117,7 @@ data class LanguageModel(
          * @param newStatus What the new state should be based on the change.
          * @return The new state of the language models based on the information.
          */
+        @Suppress("CognitiveComplexMethod")
         fun determineNewLanguageModelState(
             appLanguage: String?,
             currentLanguageModels: List<LanguageModel>?,

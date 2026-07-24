@@ -9,11 +9,11 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/DataMutex.h"
+#include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsISupportsImpl.h"
-#include "mozilla/dom/RemoteWorkerTypes.h"
 
 class nsIThread;
 

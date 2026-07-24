@@ -7,7 +7,6 @@
 #ifndef MOZILLA_DOM_OFFSCREENCANVASRENDERINGCONTEXT2D_H_
 #define MOZILLA_DOM_OFFSCREENCANVASRENDERINGCONTEXT2D_H_
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 
 struct JSContext;

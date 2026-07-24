@@ -4,6 +4,7 @@
 
 //! Generic values for properties related to animations and transitions.
 
+use crate::derives::*;
 use crate::values::generics::length::GenericLengthPercentageOrAuto;
 use crate::values::specified::animation::{ScrollAxis, ScrollFunction, TimelineName};
 use crate::Zero;
@@ -14,14 +15,7 @@ use style_traits::{CssWriter, ToCss};
 ///
 /// https://drafts.csswg.org/css-animations-2/#animation-duration
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToShmem,
+    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToShmem,
 )]
 #[repr(C, u8)]
 pub enum GenericAnimationDuration<T> {

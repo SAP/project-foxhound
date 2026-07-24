@@ -26,7 +26,7 @@ const activateTab = tab =>
 
 const isMenuChecked = () => {
   const menu = document.getElementById("menu_responsiveUI");
-  return menu.getAttribute("checked") === "true";
+  return menu.hasAttribute("checked");
 };
 
 add_task(async function () {

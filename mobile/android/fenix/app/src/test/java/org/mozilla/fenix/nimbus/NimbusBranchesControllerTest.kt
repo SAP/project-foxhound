@@ -9,7 +9,6 @@ import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.verifyAll
 import mozilla.components.service.nimbus.NimbusApi
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -52,8 +51,6 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
         }
@@ -72,8 +69,6 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verify {
             experiments.optOut(experimentId)
         }
@@ -87,8 +82,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
@@ -114,8 +107,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verifyAll {
             experiments.getExperimentBranch(experimentId)
@@ -144,8 +135,6 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
         }
@@ -170,8 +159,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)

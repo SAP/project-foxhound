@@ -20,9 +20,6 @@ import mozilla.components.concept.fetch.isSuccess
 import mozilla.components.service.pocket.BuildConfig
 import mozilla.components.service.pocket.logger
 import mozilla.components.service.pocket.mars.api.MarsSpocsEndpointRaw.Companion.newInstance
-import mozilla.components.service.pocket.recommendations.api.ContentRecommendationEndpointRaw.Companion.newInstance
-import mozilla.components.service.pocket.recommendations.api.ContentRecommendationsEndpoint.Companion.newInstance
-import mozilla.components.service.pocket.stories.api.PocketEndpoint.Companion.newInstance
 import mozilla.components.support.base.ext.fetchBodyOrNull
 import org.json.JSONObject
 import java.io.IOException

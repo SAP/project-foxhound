@@ -1,0 +1,19 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * diadora.com - doubled scrollbars on the site's page selector.
+ *
+ * Bug #1936429 - https://bugzilla.mozilla.org/show_bug.cgi?id=1936429
+ *
+ * The site uses -webkit-scrollbar to hide extra scrollbars, rather than the
+ * standard CSS to do that. We can do it for them to improve UX on the site.
+ */
+.select2-results {
+  scrollbar-width: none;
+}
+.select2-container--default .select2-results > .select2-results__options {
+  scrollbar-width: thin;
+  overflow-x: hidden;
+}

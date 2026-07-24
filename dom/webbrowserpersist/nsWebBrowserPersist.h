@@ -4,31 +4,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWebBrowserPersist_h__
-#define nsWebBrowserPersist_h__
-
-#include "nsCOMPtr.h"
-#include "nsWeakReference.h"
-
-#include "nsIInterfaceRequestor.h"
-#include "nsIMIMEService.h"
-#include "nsIStreamListener.h"
-#include "nsIOutputStream.h"
-#include "nsIInputStream.h"
-#include "nsIChannel.h"
-#include "nsIProgressEventSink.h"
-#include "nsIFile.h"
-#include "nsIThreadRetargetableStreamListener.h"
-#include "nsIWebProgressListener2.h"
-#include "nsIWebBrowserPersist.h"
-#include "nsIWebBrowserPersistDocument.h"
+#ifndef nsWebBrowserPersist_h_
+#define nsWebBrowserPersist_h_
 
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsIChannel.h"
+#include "nsIFile.h"
+#include "nsIInputStream.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIMIMEService.h"
+#include "nsIOutputStream.h"
+#include "nsIProgressEventSink.h"
+#include "nsIStreamListener.h"
+#include "nsIThreadRetargetableStreamListener.h"
+#include "nsIWebBrowserPersist.h"
+#include "nsIWebBrowserPersistDocument.h"
+#include "nsIWebProgressListener2.h"
 #include "nsTArray.h"
+#include "nsWeakReference.h"
 
 class nsIStorageStream;
 class nsIWebBrowserPersistDocument;

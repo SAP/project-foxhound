@@ -13,7 +13,6 @@ The following links point to the latest *Fenix* (Firefox Preview) builds (Nightl
 * [ARM64/Aarch64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-production.latest/artifacts/public/build/arm64-v8a/geckoBeta/target.apk)
 * [ARM devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-production.latest/artifacts/public/build/armeabi-v7a/geckoBeta/target.apk)
 * [x86_64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-production.latest/artifacts/public/build/x86_64/geckoBeta/target.apk)
-* [x86 devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-production.latest/artifacts/public/build/x86/geckoBeta/target.apk)
 
 ## Beta
 
@@ -22,7 +21,6 @@ The following links point to the latest *Fenix* (Firefox Preview) builds (Nightl
 * [ARM64/Aarch64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-beta.latest/artifacts/public/build/arm64-v8a/geckoBeta/target.apk)
 * [ARM devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-beta.latest/artifacts/public/build/armeabi-v7a/geckoBeta/target.apk)
 * [x86_64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-beta.latest/artifacts/public/build/x86_64/geckoBeta/target.apk)
-* [x86 devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.mobile.fenix.v2.fennec-beta.latest/artifacts/public/build/x86/geckoBeta/target.apk)
 
 ## Nightly
 
@@ -31,7 +29,6 @@ The following links point to the latest *Fenix* (Firefox Preview) builds (Nightl
 * [ARM64/Aarch64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/mobile.v2.fenix.nightly.latest.arm64-v8a/artifacts/public/build/arm64-v8a/target.apk)
 * [ARM devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/mobile.v2.fenix.nightly.latest.armeabi-v7a/artifacts/public/build/armeabi-v7a/target.apk)
 * [x86_64 devices (64 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/mobile.v2.fenix.nightly.latest.x86_64/artifacts/public/build/x86_64/target.apk)
-* [x86 devices (32 bit; Android 5+)](https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/mobile.v2.fenix.nightly.latest.x86/artifacts/public/build/x86/target.apk)
 
 ## 📝 Changelog
 
@@ -55,7 +52,6 @@ Download the latest version of Fennec:
  - [ARM64/Aarch64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-aarch64/)
  - [ARM devices (32 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-api-16/)
  - [x86_64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-x86_64/)
- - [x86 devices (32 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-x86/)
 
 Strip out the original signature:
 
@@ -99,7 +95,7 @@ When working on migration code that lives in the [Android Components repository]
 
 Add the sharedUserId to the AndroidManifest.xml of sample browser:
 
-```XML
+```text
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:sharedUserId="org.mozilla.fennec_$USERNAME.sharedID"

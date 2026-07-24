@@ -4,16 +4,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_COMMON_IPC_MESSAGE_H__
-#define CHROME_COMMON_IPC_MESSAGE_H__
-
-#include <string>
+#ifndef CHROME_COMMON_IPC_MESSAGE_H_
+#define CHROME_COMMON_IPC_MESSAGE_H_
 
 #include "base/basictypes.h"
 #include "base/pickle.h"
 #include "mojo/core/ports/user_message.h"
 #include "mojo/core/ports/port_ref.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/ScopedPort.h"
@@ -66,6 +63,7 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
     VSYNC_PRIORITY = 2,
     MEDIUMHIGH_PRIORITY = 3,
     CONTROL_PRIORITY = 4,
+    LOW_PRIORITY = 5,
   };
 
   enum MessageCompression {
@@ -235,6 +233,8 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
 
   const char* name() const { return StringFromIPCMessageType(type()); }
 
+  bool has_any_attachments() const;
+
   uint32_t num_handles() const;
 
   bool is_relay() const { return header()->flags.IsRelay(); }
@@ -337,17 +337,16 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
                             mozilla::UniqueMachSendRight* port) const;
 
   uint32_t num_send_rights() const;
-#endif
 
-  uint32_t num_relayed_attachments() const {
-#if defined(XP_WIN)
-    return num_handles();
-#elif defined(XP_DARWIN)
-    return num_send_rights();
-#else
-    return 0;
+  bool WriteMachReceiveRight(mozilla::UniqueMachReceiveRight port);
+
+  // WARNING: This method is marked as `const` so it can be called when
+  // deserializing the message, but will mutate it, consuming the send rights.
+  bool ConsumeMachReceiveRight(PickleIterator* iter,
+                               mozilla::UniqueMachReceiveRight* port) const;
+
+  uint32_t num_receive_rights() const;
 #endif
-  }
 
 #ifdef FUZZING_SNAPSHOT
   bool IsFuzzMsg() const { return isFuzzMsg; }
@@ -362,6 +361,9 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
   }
 
   friend class Channel;
+  friend class ChannelMach;
+  friend class ChannelPosix;
+  friend class ChannelWin;
   friend class MessageReplyDeserializer;
   friend class SyncMessage;
   friend class mozilla::ipc::MiniTransceiver;
@@ -412,6 +414,17 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
   // Mutable, as this array can be mutated during `ConsumeMachSendRight` when
   // deserializing a message.
   mutable nsTArray<mozilla::UniqueMachSendRight> attached_send_rights_;
+
+  // The set of mach receive rights which are attached to this message.
+  //
+  // Mutable, as this array can be mutated during `ConsumeMachReceiveRight` when
+  // deserializing a message.
+  mutable nsTArray<mozilla::UniqueMachReceiveRight> attached_receive_rights_;
+
+  // Mach voucher handle. This is kept alive to indicate that this Message is
+  // being processed, which may be used by the system to temporarily boost the
+  // QoS for this process.
+  mozilla::UniqueMachSendRight mach_voucher_;
 #endif
 
   // Total size of buffers which should have been sent in shared memory, but had
@@ -436,4 +449,4 @@ enum SpecialRoutingIDs : IPC::Message::routeid_t {
   MSG_ROUTING_CONTROL = INT64_MAX
 };
 
-#endif  // CHROME_COMMON_IPC_MESSAGE_H__
+#endif  // CHROME_COMMON_IPC_MESSAGE_H_

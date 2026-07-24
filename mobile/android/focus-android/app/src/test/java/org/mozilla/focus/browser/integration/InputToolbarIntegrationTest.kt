@@ -7,7 +7,6 @@ package org.mozilla.focus.browser.integration
 import android.view.View
 import kotlinx.coroutines.isActive
 import mozilla.components.browser.toolbar.BrowserToolbar
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
@@ -60,7 +59,7 @@ class InputToolbarIntegrationTest {
 
     @Test
     fun `GIVEN app fresh install WHEN input toolbar integration is starting THEN start browsing scope is populated`() {
-        appStore.dispatch(AppAction.ShowStartBrowsingCfrChange(true)).joinBlocking()
+        appStore.dispatch(AppAction.ShowStartBrowsingCfrChange(true))
 
         assertNull(inputToolbarIntegration.startBrowsingCfrScope)
 

@@ -10,14 +10,13 @@
 
 #include "mozilla/dom/NodeIterator.h"
 
-#include "nsError.h"
-
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsContentUtils.h"
-#include "nsCOMPtr.h"
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/NodeIteratorBinding.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIContent.h"
 
 namespace mozilla::dom {
 

@@ -7,8 +7,6 @@
 #ifndef mozilla_a11y_xpcAccessibleTextRange_h_
 #define mozilla_a11y_xpcAccessibleTextRange_h_
 
-#include <utility>
-
 #include "TextRange.h"
 #include "nsIAccessibleTextRange.h"
 #include "xpcAccessibleHyperText.h"

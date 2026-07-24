@@ -7,12 +7,6 @@
  * This file contains tests for the "Add Engine" subdialog.
  */
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.update2.engineAliasRefresh", true]],
-  });
-});
-
 /**
  * Test for searching for the "Add Engine" subdialog.
  */

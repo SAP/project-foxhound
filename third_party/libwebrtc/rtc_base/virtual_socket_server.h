@@ -11,21 +11,33 @@
 #ifndef RTC_BASE_VIRTUAL_SOCKET_SERVER_H_
 #define RTC_BASE_VIRTUAL_SOCKET_SERVER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <list>
 #include <map>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "api/make_ref_counted.h"
 #include "api/ref_counted_base.h"
 #include "api/scoped_refptr.h"
-#include "api/task_queue/task_queue_base.h"
-#include "rtc_base/checks.h"
+#include "api/transport/ecn_marking.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/event.h"
 #include "rtc_base/fake_clock.h"
+#include "rtc_base/ip_address.h"
+#include "rtc_base/sigslot_trampoline.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/socket_address_pair.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -52,6 +64,7 @@ class VirtualSocket : public Socket, public sigslot::has_slots<> {
                size_t cb,
                SocketAddress* paddr,
                int64_t* timestamp) override;
+  int RecvFrom(ReceiveBuffer& buffer) override;
   int Listen(int backlog) override;
   VirtualSocket* Accept(SocketAddress* paddr) override;
 
@@ -104,10 +117,11 @@ class VirtualSocket : public Socket, public sigslot::has_slots<> {
     void SetNotAlive();
     bool IsAlive();
 
-    // Copies up to `size` bytes into buffer from the next received packet
-    // and fills `addr` with remote address of that received packet.
-    // Returns number of bytes copied or negative value on failure.
-    int RecvFrom(void* buffer, size_t size, SocketAddress& addr);
+    // Copies up to `buffer.payload.capacity()` bytes into `buffer.payload()`
+    // from the next received packet and fills `addr` with remote address of
+    // that received packet. Returns number of bytes copied or negative value on
+    // failure.
+    int RecvFrom(ReceiveBuffer& buffer);
 
     void Listen();
 
@@ -169,6 +183,7 @@ class VirtualSocket : public Socket, public sigslot::has_slots<> {
   void CompleteConnect(const SocketAddress& addr);
   int SendUdp(const void* pv, size_t cb, const SocketAddress& addr);
   int SendTcp(const void* pv, size_t cb);
+  int DoRecvFrom(ReceiveBuffer& buffer);
 
   void OnSocketServerReadyToSend();
 
@@ -359,6 +374,7 @@ class VirtualSocketServer : public SocketServer {
   int SendUdp(VirtualSocket* socket,
               const char* data,
               size_t data_size,
+              EcnMarking ecn,
               const SocketAddress& remote_addr);
 
   // Moves as much data as possible from the sender's buffer to the network
@@ -371,7 +387,13 @@ class VirtualSocketServer : public SocketServer {
   uint32_t SendDelay(uint32_t size) RTC_LOCKS_EXCLUDED(mutex_);
 
   // Sending was previously blocked, but now isn't.
+  // Deprecated interface
   sigslot::signal0<> SignalReadyToSend;
+  // New interface
+  void NotifyReadyToSend() { SignalReadyToSend(); }
+  void SubscribeReadyToSend(absl::AnyInvocable<void()> callback) {
+    ready_to_send_trampoline_.Subscribe(std::move(callback));
+  }
 
  protected:
   // Returns a new IP not used before in this network.
@@ -398,7 +420,8 @@ class VirtualSocketServer : public SocketServer {
                           const char* data,
                           size_t data_size,
                           size_t header_size,
-                          bool ordered);
+                          bool ordered,
+                          EcnMarking ecn);
 
   // If the delay has been set for the address of the socket, returns the set
   // delay. Otherwise, returns a random transit delay chosen from the
@@ -476,14 +499,11 @@ class VirtualSocketServer : public SocketServer {
   size_t max_udp_payload_ RTC_GUARDED_BY(mutex_) = 65507;
 
   bool sending_blocked_ RTC_GUARDED_BY(mutex_) = false;
+  SignalTrampoline<VirtualSocketServer, &VirtualSocketServer::SignalReadyToSend>
+      ready_to_send_trampoline_;
 };
 
 }  // namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::VirtualSocketServer;
-}
 
 #endif  // RTC_BASE_VIRTUAL_SOCKET_SERVER_H_

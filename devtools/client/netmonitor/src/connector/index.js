@@ -66,6 +66,16 @@ class Connector {
     TYPES.SERVER_SENT_EVENT,
   ];
 
+  get networkResources() {
+    const networkResources = Array.from(Connector.NETWORK_RESOURCES);
+    if (
+      Services.prefs.getBoolPref("devtools.netmonitor.features.webtransport")
+    ) {
+      networkResources.push(TYPES.WEBTRANSPORT);
+    }
+    return networkResources;
+  }
+
   get currentTarget() {
     return this.commands.targetCommand.targetFront;
   }
@@ -73,9 +83,9 @@ class Connector {
   /**
    * Connect to the backend.
    *
-   * @param {Object} connection object with e.g. reference to the Toolbox.
-   * @param {Object} actions (optional) is used to fire Redux actions to update store.
-   * @param {Object} getState (optional) is used to get access to the state.
+   * @param {object} connection object with e.g. reference to the Toolbox.
+   * @param {object} actions (optional) is used to fire Redux actions to update store.
+   * @param {object} getState (optional) is used to get access to the state.
    */
   async connect(connection, actions, getState) {
     this.actions = actions;
@@ -151,7 +161,6 @@ class Connector {
    * @param {boolean} options.isExplicitClear
    *     Set to true if the call to clear requests is explicitly requested by
    *     the user, to false if this is an automated clear, eg on navigation.
-   *
    */
   clear({ isExplicitClear }) {
     // Clear all the caches in the data provider
@@ -162,7 +171,7 @@ class Connector {
     if (isExplicitClear) {
       // Only clear the resources if the clear was initiated explicitly by the
       // UI, in other cases (eg navigation) the server handles the cleanup.
-      this.commands.resourceCommand.clearResources(Connector.NETWORK_RESOURCES);
+      this.commands.resourceCommand.clearResources(this.networkResources);
       this.emitForTests("clear-network-resources");
     }
 
@@ -172,7 +181,7 @@ class Connector {
 
   pause() {
     return this.commands.resourceCommand.unwatchResources(
-      Connector.NETWORK_RESOURCES,
+      this.networkResources,
       {
         onAvailable: this.onResourceAvailable,
         onUpdated: this.onResourceUpdated,
@@ -181,14 +190,11 @@ class Connector {
   }
 
   resume(ignoreExistingResources = true) {
-    return this.commands.resourceCommand.watchResources(
-      Connector.NETWORK_RESOURCES,
-      {
-        onAvailable: this.onResourceAvailable,
-        onUpdated: this.onResourceUpdated,
-        ignoreExistingResources,
-      }
-    );
+    return this.commands.resourceCommand.watchResources(this.networkResources, {
+      onAvailable: this.onResourceAvailable,
+      onUpdated: this.onResourceUpdated,
+      ignoreExistingResources,
+    });
   }
 
   async onResourceAvailable(resources, { areExistingResources }) {
@@ -486,6 +492,7 @@ class Connector {
 
   /**
    * Getter that returns the current toolbox instance.
+   *
    * @return {Toolbox} toolbox instance
    */
   getToolbox() {
@@ -494,6 +501,7 @@ class Connector {
 
   /**
    * Open a given source in Debugger
+   *
    * @param {string} sourceURL source url
    * @param {number} sourceLine source line number
    */
@@ -506,6 +514,7 @@ class Connector {
   /**
    * Fetch networkEventUpdate websocket message from back-end when
    * data provider is connected.
+   *
    * @param {object} request network request instance
    * @param {string} type NetworkEventUpdate type
    */

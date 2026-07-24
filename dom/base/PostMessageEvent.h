@@ -9,13 +9,13 @@
 
 #include "js/StructuredClone.h"
 #include "js/TypeDecls.h"
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "mozilla/dom/StructuredCloneHolder.h"
-#include "nsCOMPtr.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 
 class nsGlobalWindowOuter;
@@ -70,16 +70,10 @@ class PostMessageEvent final : public Runnable {
     mHolder.ref<StructuredCloneHolder>().Write(aCx, aMessage, aTransfer,
                                                aClonePolicy, aError);
   }
-  void UnpackFrom(const ClonedOrErrorMessageData& aMessageData) {
-    if (aMessageData.type() != ClonedOrErrorMessageData::TClonedMessageData) {
-      return;
+  void SetMessageData(ipc::StructuredCloneData* aMessageData) {
+    if (aMessageData) {
+      mHolder.construct<RefPtr<ipc::StructuredCloneData>>(aMessageData);
     }
-
-    mHolder.construct<ipc::StructuredCloneData>();
-    // FIXME Want to steal!
-    //       See https://bugzilla.mozilla.org/show_bug.cgi?id=1516349.
-    mHolder.ref<ipc::StructuredCloneData>().CopyFromClonedMessageData(
-        aMessageData);
   }
 
   void DispatchToTargetThread(ErrorResult& aError);
@@ -108,7 +102,7 @@ class PostMessageEvent final : public Runnable {
   // If the postMessage call was made on a WindowProxy whose Window lives in a
   // separate process then mHolder will contain a StructuredCloneData, else
   // it'll contain a StructuredCloneHolder.
-  MaybeOneOf<StructuredCloneHolder, ipc::StructuredCloneData> mHolder;
+  MaybeOneOf<StructuredCloneHolder, RefPtr<ipc::StructuredCloneData>> mHolder;
   uint64_t mCallerWindowID;
   const Maybe<nsID> mCallerAgentClusterId;
   nsCOMPtr<nsIURI> mCallerURI;

@@ -63,8 +63,6 @@ XPIDL_SOURCES += [
     "nsINetworkInfoService.idl",
     "nsINetworkInterceptController.idl",
     "nsINetworkLinkService.idl",
-    "nsINetworkPredictor.idl",
-    "nsINetworkPredictorVerifier.idl",
     "nsINullChannel.idl",
     "nsIParentChannel.idl",
     "nsIParentRedirectingChannel.idl",
@@ -134,6 +132,7 @@ EXPORTS += [
     "nsASocketHandler.h",
     "nsAsyncRedirectVerifyHelper.h",
     "nsBaseChannel.h",
+    "nsBaseParentChannel.h",
     "nsFileStreams.h",
     "nsInputStreamPump.h",
     "nsMIMEInputStream.h",
@@ -164,16 +163,14 @@ EXPORTS.mozilla.net += [
     "Dashboard.h",
     "DashboardTypes.h",
     "DefaultURI.h",
+    "ExecuteIfOnMainThreadEventTarget.h",
     "InterceptionInfo.h",
     "IPv4Parser.h",
-    "MemoryDownloader.h",
     "NetworkConnectivityService.h",
-    "Predictor.h",
     "PrivateBrowsingChannel.h",
     "ProtocolHandlerInfo.h",
     "RedirectChannelRegistrar.h",
     "RequestContextService.h",
-    "SimpleChannelParent.h",
     "SimpleURIUnknownSchemes.h",
     "SSLTokensCache.h",
     "ThrottleQueue.h",
@@ -187,11 +184,12 @@ UNIFIED_SOURCES += [
     "Dashboard.cpp",
     "DefaultURI.cpp",
     "EventTokenBucket.cpp",
+    "ExecuteIfOnMainThreadEventTarget.cpp",
     "InterceptionInfo.cpp",
     "IPv4Parser.cpp",
+    "LNAPermissionRequest.cpp",
     "LoadContextInfo.cpp",
     "LoadInfo.cpp",
-    "MemoryDownloader.cpp",
     "MockNetworkLayer.cpp",
     "MockNetworkLayerController.cpp",
     "NetworkConnectivityService.cpp",
@@ -202,6 +200,7 @@ UNIFIED_SOURCES += [
     "nsBase64Encoder.cpp",
     "nsBaseChannel.cpp",
     "nsBaseContentStream.cpp",
+    "nsBaseParentChannel.cpp",
     "nsBufferedStreams.cpp",
     "nsDirectoryIndexStream.cpp",
     "nsDNSPrefetch.cpp",
@@ -239,14 +238,12 @@ UNIFIED_SOURCES += [
     "nsTransportUtils.cpp",
     "nsUDPSocket.cpp",
     "PollableEvent.cpp",
-    "Predictor.cpp",
     "ProtocolHandlerInfo.cpp",
     "ProxyAutoConfig.cpp",
     "RedirectChannelRegistrar.cpp",
     "RequestContextService.cpp",
     "SimpleBuffer.cpp",
     "SimpleChannel.cpp",
-    "SimpleChannelParent.cpp",
     "SimpleURIUnknownSchemes.cpp",
     "SSLTokensCache.cpp",
     "SuspendableChannelWrapper.cpp",
@@ -266,16 +263,13 @@ if CONFIG["FUZZING"]:
 if CONFIG["FUZZING_INTERFACES"] and CONFIG["LIBFUZZER"]:
     include("/tools/fuzzing/libfuzzer-flags.mozbuild")
     SOURCES += [
-        "nsMediaFragmentURIParser.cpp",
         "nsURLHelper.cpp",
         "nsURLParsers.cpp",
     ]
-    SOURCES["nsMediaFragmentURIParser.cpp"].flags += libfuzzer_flags
     SOURCES["nsURLHelper.cpp"].flags += libfuzzer_flags
     SOURCES["nsURLParsers.cpp"].flags += libfuzzer_flags
 else:
     UNIFIED_SOURCES += [
-        "nsMediaFragmentURIParser.cpp",
         "nsURLHelper.cpp",
         "nsURLParsers.cpp",
     ]
@@ -285,10 +279,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     SOURCES += [
         "nsURLHelperWin.cpp",
         "ShutdownLayer.cpp",
-    ]
-elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
-    SOURCES += [
-        "nsURLHelperOSX.cpp",
     ]
 else:
     SOURCES += [
@@ -301,7 +291,14 @@ EXTRA_JS_MODULES += [
     "SimpleURIUnknownSchemesRemoteObserver.sys.mjs",
 ]
 
-DIRS += ["mozurl", "rust-helper", "http-sfv", "idna_glue", "urlpattern_glue"]
+DIRS += [
+    "mozurl",
+    "rust-helper",
+    "http-sfv",
+    "idna_glue",
+    "uritemplate_glue",
+    "urlpattern_glue",
+]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

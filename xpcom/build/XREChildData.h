@@ -7,8 +7,6 @@
 #ifndef XREChildData_h
 #define XREChildData_h
 
-#include "mozilla/UniquePtr.h"
-
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxing/loggingTypes.h"
 

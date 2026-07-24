@@ -2,49 +2,53 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
+    buildFeatures {
+        compose = true
     }
     namespace = 'mozilla.components.support.utils'
+    testFixtures {
+        enable = true
+    }
 }
 
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
+    // We expose the app-compat as API so that consumers get access to the Lifecycle classes automatically
+    api libs.androidx.appcompat
+
     implementation project(':components:support-base')
 
-    implementation libs.kotlin.coroutines
     implementation libs.androidx.activity
+    implementation libs.androidx.activity.compose
     implementation libs.androidx.annotation
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.runtime.saveable
+    implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.ui
     implementation libs.androidx.core
     implementation libs.androidx.core.ktx
-
-    // We expose the app-compat as API so that consumers get access to the Lifecycle classes automatically
-    api libs.androidx.appcompat
+    implementation libs.androidx.documentfile
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(":components:support-test")
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
+
+    testFixturesImplementation platform(libs.androidx.compose.bom)
+    testFixturesImplementation libs.androidx.compose.runtime.saveable
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

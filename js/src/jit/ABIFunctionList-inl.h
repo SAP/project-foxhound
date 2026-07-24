@@ -10,21 +10,20 @@
 #include "mozilla/MacroArgs.h"  // MOZ_CONCAT
 #include "mozilla/SIMD.h"       // mozilla::SIMD::memchr{,2x}{8,16}
 
-#include "jslibmath.h"  // js::NumberMod
-#include "jsmath.h"     // js::ecmaPow, js::ecmaHypot, js::hypot3, js::hypot4,
-                        // js::ecmaAtan2, js::UnaryMathFunctionType, js::powi
-#include "jsnum.h"      // js::StringToNumberPure, js::Int32ToStringPure,
-                        // js::NumberToStringPure
-
-#include "builtin/Array.h"             // js::ArrayShiftMoveElements
-#include "builtin/MapObject.h"         // js::MapIteratorObject::next,
-                                       // js::SetIteratorObject::next
-#include "builtin/Object.h"            // js::ObjectClassToString
-#include "builtin/RegExp.h"            // js::RegExpPrototypeOptimizableRaw,
-                                       // js::RegExpInstanceOptimizableRaw
-#include "builtin/Sorting.h"           // js::ArraySortData
+#include "builtin/Array.h"      // js::ArrayShiftMoveElements
+#include "builtin/MapObject.h"  // js::MapIteratorObject::next,
+                                // js::SetIteratorObject::next
+#include "builtin/Math.h"  // js::ecmaPow, js::ecmaHypot, js::hypot3, js::hypot4,
+                           // js::ecmaAtan2, js::UnaryMathFunctionType, js::powi
+#include "builtin/Number.h"   // js::StringToNumberPure, js::Int32ToStringPure,
+                              // js::NumberToStringPure
+#include "builtin/Object.h"   // js::ObjectClassToString
+#include "builtin/RegExp.h"   // js::RegExpPrototypeOptimizableRaw,
+                              // js::RegExpInstanceOptimizableRaw
+#include "builtin/Sorting.h"  // js::ArraySortData
 #include "builtin/TestingFunctions.h"  // js::FuzzilliHash*
-
+#include "builtin/WeakMapObject.h"     // js::WeakMapObject::{get,has}Object
+#include "builtin/WeakSetObject.h"     // js::WeakSetObject::hasObject
 #include "irregexp/RegExpAPI.h"
 // js::irregexp::CaseInsensitiveCompareNonUnicode,
 // js::irregexp::CaseInsensitiveCompareUnicode,
@@ -44,8 +43,8 @@
 // JSJitGetterOp, JSJitSetterOp, JSJitMethodOp
 #include "js/experimental/JitInfo.h"
 
-#include "proxy/Proxy.h"  // js::ProxyGetProperty
-
+#include "proxy/Proxy.h"          // js::ProxyGetProperty
+#include "util/PortableMath.h"    // js::NumberMod
 #include "vm/ArgumentsObject.h"   // js::ArgumentsObject::finishForIonPure
 #include "vm/Interpreter.h"       // js::TypeOfObject
 #include "vm/NativeObject.h"      // js::NativeObject
@@ -174,8 +173,10 @@ namespace jit {
   _(js::jit::PostGlobalWriteBarrier)                                           \
   _(js::jit::PostWriteBarrier)                                                 \
   _(js::jit::PostWriteElementBarrier)                                          \
+  _(js::jit::PreserveWrapper)                                                  \
   _(js::jit::Printf0)                                                          \
   _(js::jit::Printf1)                                                          \
+  _(js::jit::ReadBarrier)                                                      \
   _(js::jit::StringFromCharCodeNoGC)                                           \
   _(js::jit::StringTrimEndIndex)                                               \
   _(js::jit::StringTrimStartIndex)                                             \
@@ -194,8 +195,18 @@ namespace jit {
   _(js::RoundFloat16)                                                          \
   _(js::SetIteratorObject::next)                                               \
   _(js::StringToNumberPure)                                                    \
+  _(js::TypedArrayFillBigInt)                                                  \
+  _(js::TypedArrayFillDouble)                                                  \
+  _(js::TypedArrayFillFloat32)                                                 \
+  _(js::TypedArrayFillInt32)                                                   \
+  _(js::TypedArrayFillInt64)                                                   \
+  _(js::TypedArraySetFromSubarrayInfallible)                                   \
+  _(js::TypedArraySetInfallible)                                               \
   _(js::TypedArraySortFromJit)                                                 \
   _(js::TypeOfObject)                                                          \
+  _(js::WeakMapObject::getObject)                                              \
+  _(js::WeakMapObject::hasObject)                                              \
+  _(js::WeakSetObject::hasObject)                                              \
   _(mozilla::SIMD::memchr16)                                                   \
   _(mozilla::SIMD::memchr2x16)                                                 \
   _(mozilla::SIMD::memchr2x8)                                                  \

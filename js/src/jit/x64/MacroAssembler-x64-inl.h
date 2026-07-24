@@ -84,18 +84,28 @@ void MacroAssembler::notPtr(Register reg) { notq(reg); }
 
 void MacroAssembler::andPtr(Register src, Register dest) { andq(src, dest); }
 
-void MacroAssembler::andPtr(Imm32 imm, Register dest) { andq(imm, dest); }
+void MacroAssembler::andPtr(Imm32 imm, Register dest) {
+  if (imm.value >= 0) {
+    andl(imm, dest);
+  } else {
+    andq(imm, dest);
+  }
+}
 
 void MacroAssembler::andPtr(Imm32 imm, Register src, Register dest) {
   if (src != dest) {
     movq(src, dest);
   }
-  andq(imm, dest);
+  andPtr(imm, dest);
 }
 
 void MacroAssembler::and64(Imm64 imm, Register64 dest) {
   if (INT32_MIN <= int64_t(imm.value) && int64_t(imm.value) <= INT32_MAX) {
-    andq(Imm32(imm.value), dest.reg);
+    if (int32_t(imm.value) >= 0) {
+      andl(Imm32(imm.value), dest.reg);
+    } else {
+      andq(Imm32(imm.value), dest.reg);
+    }
   } else {
     ScratchRegisterScope scratch(*this);
     movq(ImmWord(uintptr_t(imm.value)), scratch);
@@ -288,6 +298,10 @@ void MacroAssembler::mulHighUnsigned32(Imm32 imm, Register src, Register dest) {
 
 void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
   imulq(rhs, srcDest);
+}
+
+void MacroAssembler::mulPtr(ImmWord rhs, Register srcDest) {
+  mul64(Imm64(rhs.value), Register64(srcDest));
 }
 
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest,
@@ -1216,6 +1230,38 @@ void MacroAssembler::fallibleUnboxPtr(const Address& src, Register dest,
 void MacroAssembler::fallibleUnboxPtr(const BaseIndex& src, Register dest,
                                       JSValueType type, Label* fail) {
   fallibleUnboxPtrImpl(Operand(src), dest, type, fail);
+}
+
+void MacroAssembler::min32(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::min32(Register lhs, Imm32 rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::max32(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::max32(Register lhs, Imm32 rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::minPtr(Register lhs, Register rhs, Register dest) {
+  minMaxPtr(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::minPtr(Register lhs, ImmWord rhs, Register dest) {
+  minMaxPtr(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::maxPtr(Register lhs, Register rhs, Register dest) {
+  minMaxPtr(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::maxPtr(Register lhs, ImmWord rhs, Register dest) {
+  minMaxPtr(lhs, rhs, dest, /* isMax = */ true);
 }
 
 //}}} check_macroassembler_style

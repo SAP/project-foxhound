@@ -105,6 +105,13 @@ void EarlyHintsService::EarlyHint(
           mOngoingEarlyHints, linkHeader, aBaseURI, principal,
           cookieJarSettings, aReferrerPolicy, aCSPHeader,
           loadInfo->GetBrowsingContextID(), aLoadingBrowsingContext, true);
+    } else if (linkHeader.mRel.LowerCaseEqualsLiteral(
+                   "compression-dictionary")) {
+      mLinkType |= dom::LinkStyle::eCOMPRESSION_DICTIONARY;
+      EarlyHintPreloader::MaybeCreateAndInsertPreload(
+          mOngoingEarlyHints, linkHeader, aBaseURI, principal,
+          cookieJarSettings, aReferrerPolicy, aCSPHeader,
+          loadInfo->GetBrowsingContextID(), aLoadingBrowsingContext, true);
     }
   }
 }

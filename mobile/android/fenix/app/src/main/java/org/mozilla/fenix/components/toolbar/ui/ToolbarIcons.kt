@@ -10,6 +10,7 @@ import mozilla.components.browser.toolbar.BrowserToolbar
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserFragment.Companion.SHARE_WEIGHT
 import org.mozilla.fenix.theme.ThemeManager
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Creates a share button for the [BrowserToolbar].
@@ -23,7 +24,7 @@ fun BrowserToolbar.Companion.createShareBrowserAction(
 ) = BrowserToolbar.Button(
     imageDrawable = AppCompatResources.getDrawable(
         context,
-        R.drawable.mozac_ic_share_android_24,
+        iconsR.drawable.mozac_ic_share_android_24,
     )!!,
     contentDescription = context.getString(R.string.browser_menu_share),
     weight = { SHARE_WEIGHT },

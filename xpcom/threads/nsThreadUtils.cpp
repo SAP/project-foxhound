@@ -7,8 +7,7 @@
 #include "nsThreadUtils.h"
 
 #include "chrome/common/ipc_message.h"  // for IPC::Message
-#include "LeakRefPtr.h"
-#include "mozilla/Attributes.h"
+#include "MaybeLeakRefPtr.h"
 #include "mozilla/Likely.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/TimeStamp.h"
@@ -43,6 +42,12 @@ static mozilla::LazyLogModule sEventDispatchAndRunLog("events");
   MOZ_LOG(sEventDispatchAndRunLog, mozilla::LogLevel::Error, args)
 #define LOG1_ENABLED() \
   MOZ_LOG_TEST(sEventDispatchAndRunLog, mozilla::LogLevel::Error)
+
+namespace mozilla {
+namespace net {
+bool OnSocketThread();
+}
+}  // namespace mozilla
 
 using namespace mozilla;
 
@@ -131,7 +136,7 @@ PrioritizableRunnable::GetName(nsACString& aName) {
 
 NS_IMETHODIMP
 PrioritizableRunnable::Run() {
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+  MOZ_RELEASE_ASSERT(NS_IsMainThread() || net::OnSocketThread());
   return mRunnable->Run();
 }
 
@@ -200,57 +205,46 @@ nsresult NS_GetMainThread(nsIThread** aResult) {
 }
 
 nsresult NS_DispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent) {
-  nsresult rv;
   nsCOMPtr<nsIRunnable> event(aEvent);
   // XXX: Consider using GetCurrentSerialEventTarget() to support TaskQueues.
   nsISerialEventTarget* thread = NS_GetCurrentThread();
   if (!thread) {
     return NS_ERROR_UNEXPECTED;
   }
-  // To keep us from leaking the runnable if dispatch method fails,
-  // we grab the reference on failures and release it.
-  nsIRunnable* temp = event.get();
-  rv = thread->Dispatch(event.forget(), NS_DISPATCH_NORMAL);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // Dispatch() leaked the reference to the event, but due to caller's
-    // assumptions, we shouldn't leak here. And given we are on the same
-    // thread as the dispatch target, it's mostly safe to do it here.
-    NS_RELEASE(temp);
-  }
-  return rv;
+  // To keep us from leaking the runnable if Dispatch fails, we pass in
+  // `NS_DISPATCH_FALLIBLE`. This is due to caller's existing assumptions that
+  // we do not leak when dispatching to the current thread.
+  return thread->Dispatch(event.forget(), NS_DISPATCH_FALLIBLE);
 }
 
 // It is common to call NS_DispatchToCurrentThread with a newly
 // allocated runnable with a refcount of zero. To keep us from leaking
 // the runnable if the dispatch method fails, we take a death grip.
 nsresult NS_DispatchToCurrentThread(nsIRunnable* aEvent) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return NS_DispatchToCurrentThread(event.forget());
+  return NS_DispatchToCurrentThread(do_AddRef(aEvent));
 }
 
 nsresult NS_DispatchToMainThread(already_AddRefed<nsIRunnable>&& aEvent,
-                                 uint32_t aDispatchFlags) {
-  LeakRefPtr<nsIRunnable> event(std::move(aEvent));
+                                 nsIEventTarget::DispatchFlags aDispatchFlags) {
+  MaybeLeakRefPtr<nsIRunnable> event(std::move(aEvent),
+                                     aDispatchFlags & NS_DISPATCH_FALLIBLE);
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_GetMainThread(getter_AddRefs(thread));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    NS_ASSERTION(false,
+    NS_ASSERTION(aDispatchFlags & NS_DISPATCH_FALLIBLE,
                  "Failed NS_DispatchToMainThread() in shutdown; leaking");
-    // NOTE: if you stop leaking here, adjust Promise::MaybeReportRejected(),
-    // which assumes a leak here, or split into leaks and no-leaks versions
     return rv;
   }
-  return thread->Dispatch(event.take(), aDispatchFlags);
+  return thread->Dispatch(event.forget(), aDispatchFlags);
 }
 
-// In the case of failure with a newly allocated runnable with a
-// refcount of zero, we intentionally leak the runnable, because it is
-// likely that the runnable is being dispatched to the main thread
-// because it owns main thread only objects, so it is not safe to
-// release them here.
-nsresult NS_DispatchToMainThread(nsIRunnable* aEvent, uint32_t aDispatchFlags) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return NS_DispatchToMainThread(event.forget(), aDispatchFlags);
+// NOTE: NS_DispatchToMainThread intentionally leaks the provided runnable
+// unless `NS_DISPATCH_FALLIBLE` is passed, because it is likely that the
+// runnable is being dispatch to the main thread because it owns main-thread
+// only objects, so it's not safe to release them here.
+nsresult NS_DispatchToMainThread(nsIRunnable* aEvent,
+                                 nsIEventTarget::DispatchFlags aDispatchFlags) {
+  return NS_DispatchToMainThread(do_AddRef(aEvent), aDispatchFlags);
 }
 
 nsresult NS_DelayedDispatchToCurrentThread(
@@ -269,24 +263,15 @@ nsresult NS_DelayedDispatchToCurrentThread(
 nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
                                   nsIThread* aThread,
                                   EventQueuePriority aQueue) {
-  nsresult rv;
   nsCOMPtr<nsIRunnable> event(aEvent);
   NS_ENSURE_TRUE(event, NS_ERROR_INVALID_ARG);
   if (!aThread) {
     return NS_ERROR_UNEXPECTED;
   }
-  // To keep us from leaking the runnable if dispatch method fails,
-  // we grab the reference on failures and release it.
-  nsIRunnable* temp = event.get();
-  rv = aThread->DispatchToQueue(event.forget(), aQueue);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // Dispatch() leaked the reference to the event, but due to caller's
-    // assumptions, we shouldn't leak here. And given we are on the same
-    // thread as the dispatch target, it's mostly safe to do it here.
-    NS_RELEASE(temp);
-  }
 
-  return rv;
+  // Callers assumptions require that we don't leak the runnable passed in here,
+  // which aligns with the behaviour of `nsIThread::DispatchToQueue`.
+  return aThread->DispatchToQueue(event.forget(), aQueue);
 }
 
 nsresult NS_DispatchToCurrentThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
@@ -297,10 +282,11 @@ nsresult NS_DispatchToCurrentThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
 
 extern nsresult NS_DispatchToMainThreadQueue(
     already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aQueue) {
+  nsCOMPtr<nsIRunnable> event(std::move(aEvent));
   nsCOMPtr<nsIThread> mainThread;
   nsresult rv = NS_GetMainThread(getter_AddRefs(mainThread));
   if (NS_SUCCEEDED(rv)) {
-    return NS_DispatchToThreadQueue(std::move(aEvent), mainThread, aQueue);
+    return NS_DispatchToThreadQueue(event.forget(), mainThread, aQueue);
   }
   return rv;
 }
@@ -341,6 +327,7 @@ class IdleRunnableWrapper final : public Runnable,
     RefPtr<IdleRunnableWrapper> runnable =
         static_cast<IdleRunnableWrapper*>(aClosure);
     LogRunnable::Run log(runnable);
+    AUTO_PROFILE_FOLLOWING_RUNNABLE(runnable);
     runnable->Run();
     runnable = nullptr;
   }
@@ -350,7 +337,7 @@ class IdleRunnableWrapper final : public Runnable,
     MOZ_ASSERT(!mTimer);
     NS_NewTimerWithFuncCallback(getter_AddRefs(mTimer), TimedOut, this, aDelay,
                                 nsITimer::TYPE_ONE_SHOT,
-                                "IdleRunnableWrapper::SetTimer", aTarget);
+                                "IdleRunnableWrapper::SetTimer"_ns, aTarget);
   }
 
 #ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
@@ -513,8 +500,9 @@ nsCString nsThreadPoolNaming::GetNextThreadName(const nsACString& aPoolName) {
   return name;
 }
 
-nsresult NS_DispatchBackgroundTask(already_AddRefed<nsIRunnable> aEvent,
-                                   uint32_t aDispatchFlags) {
+nsresult NS_DispatchBackgroundTask(
+    already_AddRefed<nsIRunnable> aEvent,
+    nsIEventTarget::DispatchFlags aDispatchFlags) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   return nsThreadManager::get().DispatchToBackgroundThread(event,
                                                            aDispatchFlags);
@@ -670,12 +658,14 @@ LogTaskBase<T>::Run::~Run() {
 
 template class LogTaskBase<nsIRunnable>;
 template class LogTaskBase<MicroTaskRunnable>;
+template class LogTaskBase<MustConsumeMicroTask>;
 template class LogTaskBase<IPC::Message>;
 template class LogTaskBase<nsTimerImpl>;
 template class LogTaskBase<Task>;
 template class LogTaskBase<PresShell>;
 template class LogTaskBase<dom::FrameRequestCallback>;
 template class LogTaskBase<dom::VideoFrameRequestCallback>;
+template class LogTaskBase<JSObject>;
 
 MOZ_THREAD_LOCAL(nsISerialEventTarget*)
 SerialEventTargetGuard::sCurrentThreadTLS;
@@ -724,13 +714,13 @@ bool NS_IsOnCurrentThread(nsIEventTarget* aTarget) {
   return aTarget->IsOnCurrentThread();
 }
 
-nsresult NS_DispatchBackgroundTask(nsIRunnable* aEvent,
-                                   uint32_t aDispatchFlags) {
+nsresult NS_DispatchBackgroundTask(
+    nsIRunnable* aEvent, nsIEventTarget::DispatchFlags aDispatchFlags) {
   return nsThreadManager::get().DispatchToBackgroundThread(aEvent,
                                                            aDispatchFlags);
 }
 
-nsresult NS_CreateBackgroundTaskQueue(const char* aName,
+nsresult NS_CreateBackgroundTaskQueue(mozilla::StaticString aName,
                                       nsISerialEventTarget** aTarget) {
   nsCOMPtr<nsISerialEventTarget> target =
       nsThreadManager::get().CreateBackgroundTaskQueue(aName);
@@ -758,10 +748,13 @@ nsresult NS_DispatchAndSpinEventLoopUntilComplete(
 
   RefPtr<nsThreadSyncDispatch> wrapper =
       new nsThreadSyncDispatch(current.forget(), std::move(aEvent));
-  nsresult rv = aEventTarget->Dispatch(do_AddRef(wrapper));
+
+  // NOTE: We use NS_DISPATCH_FALLIBLE here to avoid leaking the wrapper object.
+  // As nsThreadSyncDispatch internally holds aEvent with a MaybeLeakRefPtr, we
+  // will still leak the passed-in runnable on failure.
+  nsresult rv =
+      aEventTarget->Dispatch(do_AddRef(wrapper), NS_DISPATCH_FALLIBLE);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    // FIXME: Consider avoiding leaking the `nsThreadSyncDispatch` as well by
-    // using a fallible version of `Dispatch` once that is added.
     return rv;
   }
 

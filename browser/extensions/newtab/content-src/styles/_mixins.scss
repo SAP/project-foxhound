@@ -28,20 +28,20 @@
   @content;
 
   @include dark-theme-only {
-    border-top: 1px solid $grey-60;
+    border-block-start: 1px solid $grey-60;
   }
 
-  border-top: 1px solid $grey-30;
+  border-block-start: 1px solid $grey-30;
 }
 
 @mixin ds-border-bottom {
   @content;
 
   @include dark-theme-only {
-    border-bottom: 1px solid $grey-60;
+    border-block-end: 1px solid $grey-60;
   }
 
-  border-bottom: 1px solid $grey-30;
+  border-block-end: 1px solid $grey-30;
 }
 
 @mixin ds-fade-in($halo-color: $blue-50-30) {
@@ -72,5 +72,15 @@
     @media (min-width: $value) {
       outline: 1px solid #{$color};
     }
+  }
+}
+
+// Adds transparency and a hover effect to card background.
+@mixin newtab-card-style {
+  background: var(--newtab-background-card);
+  transition: opacity 0.2s ease;
+
+  &:hover {
+    background: var(--newtab-background-color-secondary);
   }
 }

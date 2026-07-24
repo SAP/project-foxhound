@@ -6,37 +6,35 @@
 
 #include "ServiceWorkerScriptCache.h"
 
+#include "ServiceWorkerManager.h"
 #include "js/Array.h"               // JS::GetArrayLength
 #include "js/PropertyAndElement.h"  // JS_GetElement
 #include "js/Utility.h"             // JS::FreePolicy
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CacheBinding.h"
-#include "mozilla/dom/cache/CacheStorage.h"
-#include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/cache/Cache.h"
+#include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_extensions.h"
+#include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsIInputStreamPump.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIUUIDGenerator.h"
 #include "nsIXPConnect.h"
-
-#include "nsIInputStreamPump.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsContentUtils.h"
 #include "nsNetUtil.h"
-#include "ServiceWorkerManager.h"
 #include "nsStringStream.h"
 
 using mozilla::dom::cache::Cache;
@@ -678,8 +676,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
     net::CookieJarSettings::Cast(cookieJarSettings)
         ->SetPartitionKey(aPrincipal->OriginAttributesRef().mPartitionKey);
   } else {
-    net::CookieJarSettings::Cast(cookieJarSettings)
-        ->SetPartitionKey(uri, false);
+    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
   }
 
   // Note that because there is no "serviceworker" RequestContext type, we can
@@ -896,6 +893,12 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
   nsresult rv = NS_ERROR_FAILURE;
   auto guard = MakeScopeExit([&] { NetworkFinish(rv); });
 
+  if (aLen > GetWorkerScriptMaxSizeInBytes()) {
+    rv = NS_ERROR_DOM_ABORT_ERR;  // This will make sure an exception gets
+                                  // thrown to the global.
+    return NS_OK;
+  }
+
   if (NS_WARN_IF(NS_FAILED(aStatus))) {
     rv = (aStatus == NS_ERROR_REDIRECT_LOOP) ? NS_ERROR_DOM_SECURITY_ERR
                                              : aStatus;
@@ -924,7 +927,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
 
   if (isExtension) {
     // NOTE: trying to register any moz-extension use that doesn't ends
-    // with .js/.jsm/.mjs seems to be already completing with an error
+    // with .js//.mjs seems to be already completing with an error
     // in aStatus and they never reach this point.
 
     // TODO: look into avoid duplicated parts that could be shared with the HTTP
@@ -1047,7 +1050,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     // Get the stringified numeric status code, not statusText which could be
     // something misleading like OK for a 404.
     uint32_t status = 0;
-    Unused << httpChannel->GetResponseStatus(
+    (void)httpChannel->GetResponseStatus(
         &status);  // don't care if this fails, use 0.
     nsAutoString statusAsText;
     statusAsText.AppendInt(status);
@@ -1063,8 +1066,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
 
   // Note: we explicitly don't check for the return value here, because the
   // absence of the header is not an error condition.
-  Unused << httpChannel->GetResponseHeader("Service-Worker-Allowed"_ns,
-                                           mMaxScope);
+  (void)httpChannel->GetResponseHeader("Service-Worker-Allowed"_ns, mMaxScope);
 
   // [9.2 Update]4.13, If response's cache state is not "local",
   // set registration's last update check time to the current time
@@ -1083,13 +1085,14 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     return rv;
   }
 
-  if (mimeType.IsEmpty() ||
-      !nsContentUtils::IsJavascriptMIMEType(NS_ConvertUTF8toUTF16(mimeType))) {
+  auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
+  if (mimeTypeUTF16.IsEmpty() ||
+      !(nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16) ||
+        nsContentUtils::IsJsonMimeType(mimeTypeUTF16))) {
     ServiceWorkerManager::LocalizeAndReportToAllClients(
         mRegistration->Scope(), "ServiceWorkerRegisterMimeTypeError2",
         nsTArray<nsString>{NS_ConvertUTF8toUTF16(mRegistration->Scope()),
-                           NS_ConvertUTF8toUTF16(mimeType),
-                           NS_ConvertUTF8toUTF16(mURL)});
+                           mimeTypeUTF16, NS_ConvertUTF8toUTF16(mURL)});
     rv = NS_ERROR_DOM_SECURITY_ERR;
     return rv;
   }

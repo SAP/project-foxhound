@@ -4,15 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XPathResult.h"
-#include "txExprResult.h"
-#include "txNodeSet.h"
-#include "nsError.h"
+
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/Element.h"
-#include "nsDOMString.h"
-#include "txXPathTreeWalker.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/XPathResultBinding.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "txExprResult.h"
+#include "txNodeSet.h"
+#include "txXPathTreeWalker.h"
 
 namespace mozilla::dom {
 
@@ -109,7 +110,7 @@ void XPathResult::CharacterDataChanged(nsIContent* aContent,
 }
 
 void XPathResult::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                   nsAtom* aAttribute, int32_t aModType,
+                                   nsAtom* aAttribute, AttrModType,
                                    const nsAttrValue* aOldValue) {
   Invalidate(aElement);
 }

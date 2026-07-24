@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = Ny genvej
 newtab-topsites-edit-topsites-header = Rediger mest besøgte webside
 newtab-topsites-edit-shortcut-header = Rediger genvej
 newtab-topsites-add-shortcut-label = Tilføj genvej
+newtab-topsites-add-shortcut-title =
+    .title = Tilføj genvej
+    .aria-label = Tilføj genvej
 newtab-topsites-title-label = Titel
 newtab-topsites-title-input =
     .placeholder = Indtast en titel
@@ -84,6 +87,14 @@ newtab-confirm-delete-history-p2 = Denne handling kan ikke fortrydes.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponsoreret
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (fastgjort)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -309,19 +320,32 @@ newtab-custom-pocket-subtitle = Interessant indhold udvalgt af { -pocket-brand-n
 newtab-custom-stories-toggle =
     .label = Anbefalede historier
     .description = Interessant indhold udvalgt af { -brand-product-name }-holdet
+newtab-custom-stories-personalized-toggle =
+    .label = Historier
+newtab-custom-stories-personalized-checkbox-label = Tilpassede historier baseret på din aktivitet
 newtab-custom-pocket-sponsored = Sponsorerede historier
 newtab-custom-pocket-show-recent-saves = Vis seneste gemte
 newtab-custom-recent-title = Seneste aktivitet
 newtab-custom-recent-subtitle = Et udvalg af seneste websteder og indhold
-newtab-custom-recent-toggle =
-    .label = Seneste aktivitet
-    .description = Et udvalg af seneste websteder og indhold
 newtab-custom-weather-toggle =
     .label = Vejr
     .description = Dagens vejrudsigt
-newtab-custom-trending-search-toggle =
-    .label = Populære søgninger
-    .description = Populære og ofte søgte emner
+newtab-custom-widget-weather-toggle =
+    .label = Vejr
+newtab-custom-widget-lists-toggle =
+    .label = Lister
+newtab-custom-widget-timer-toggle =
+    .label = Timer
+newtab-custom-widget-section-title = Widgets
+newtab-custom-widget-section-toggle =
+    .label = Widgets
+newtab-widget-manage-title = Widgets
+newtab-widget-manage-widget-button =
+    .label = Håndter widgets
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Luk
+    .aria-label = Luk menu
 newtab-custom-close-button = Luk
 newtab-custom-settings = Håndter flere indstillinger
 
@@ -334,6 +358,7 @@ newtab-wallpaper-custom-color = Vælg en farve
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Billedet overskrider grænsen for filstørrelse på { $file_size } MB. Prøv at uploade en mindre fil.
+newtab-wallpaper-error-upload-file-type = Vi kunne ikke uploade din fil. Prøv igen med en billedfil.
 newtab-wallpaper-error-file-type = Vi kunne ikke uploade din fil. Prøv igen med en anden filtype.
 newtab-wallpaper-light-red-panda = Rød panda
 newtab-wallpaper-light-mountain = Hvidt bjerg
@@ -383,7 +408,7 @@ newtab-wallpaper-abstract-purple-green = Gradient med lilla og grønt lys
 newtab-wallpaper-abstract-blue-purple-waves = Blå og lilla bølgeformer
 newtab-wallpaper-abstract-black-waves = Sorte bølgeformer
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografier
 newtab-wallpaper-beach-at-sunrise = Strand ved solopgang
@@ -413,6 +438,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -439,8 +468,9 @@ newtab-weather-menu-change-location = Skift sted
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Søg efter sted
     .aria-label = Søg efter sted
-newtab-weather-change-location-search-input = Søg efter sted
 newtab-weather-menu-weather-display = Visning af vejr
+newtab-weather-todays-forecast = Dagens vejrudsigt
+newtab-weather-see-full-forecast = Se hele vejrudsigten
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -453,10 +483,24 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenheit
 newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Skift til Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Skift til Celsius
+newtab-weather-menu-hide-weather-v2 = Skjul vejr
 newtab-weather-menu-hide-weather = Skjul vejr på Nyt faneblad
 newtab-weather-menu-learn-more = Læs mere
+newtab-weather-menu-detect-my-location = Registrer min placering
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Vejrdata er ikke tilgængelige lige nu.
+newtab-weather-opt-in-see-weather = Vil du se vejrudsigter for din placering?
+newtab-weather-opt-in-not-now =
+    .label = Ikke nu
+newtab-weather-opt-in-yes =
+    .label = Ja
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Se vejrudsigter på { $provider }
+    .aria-description = { $provider } ∙ Sponsoreret
 
 ## Topic Labels
 
@@ -540,6 +584,12 @@ newtab-custom-wallpaper-title = Nu kan du vælge din egen baggrund
 newtab-custom-wallpaper-subtitle = Upload din egen baggrund eller vælg en farve for at gøre { -brand-product-name } til din egen.
 newtab-custom-wallpaper-cta = Prøv det
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Vælg en baggrund for at gøre { -brand-product-name } til din egen
+newtab-new-user-custom-wallpaper-subtitle = Føl dig hjemme på alle nye faneblade med tilpassede baggrunde og farver.
+newtab-new-user-custom-wallpaper-cta = Prøv det nu
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Hent { -brand-product-name } til mobil
@@ -555,7 +605,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Dine favoritter lige ved hånden
 newtab-shortcuts-highlight-subtitle = Tilføj en genvej for at finde dine foretrukne websteder med et enkelt klik.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Hvorfor rapporterer du dette?
@@ -573,20 +623,108 @@ newtab-report-content-inappropriate-offensive =
     .label = Upassende eller stødende
 newtab-report-content-spam-misleading =
     .label = Spam eller vildledende
+newtab-report-content-requires-payment-subscription =
+    .label = Kræver betaling eller abonnement
+newtab-report-content-requires-payment-subscription-learn-more = Læs mere
 newtab-report-cancel = Annuller
 newtab-report-submit = Indsend
 newtab-toast-thanks-for-reporting =
     .message = Tak for at du rapporterer dette.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Populært på Google
-newtab-trending-searches-show-trending =
-    .title = Vis populære søgninger
-newtab-trending-searches-hide-trending =
-    .title = Skjul populære søgninger
-newtab-trending-searches-learn-more = Lær mere
-newtab-trending-searches-dismiss = Skjul populære søgninger
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Populære søgninger
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mulighederne er uendelige. Tilføj en.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Ny
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Afsluttede ({ $number })
+newtab-widget-task-list-menu-copy = Kopier
+newtab-widget-lists-menu-edit = Rediger listens navn
+newtab-widget-lists-menu-create = Opret en ny liste
+newtab-widget-lists-menu-delete = Slet denne liste
+newtab-widget-lists-menu-copy = Kopier liste til udklipsholderen
+newtab-widget-lists-menu-hide = Skjul alle lister
+newtab-widget-lists-menu-learn-more = Læs mere
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Tilføj et element
+newtab-widget-lists-input-error = Inkluder tekst for at tilføje et element.
+newtab-widget-lists-input-menu-open-link = Åbn link
+newtab-widget-lists-input-menu-move-up = Flyt op
+newtab-widget-lists-input-menu-move-down = Flyt ned
+newtab-widget-lists-input-menu-delete = Slet
+newtab-widget-lists-input-menu-edit = Rediger
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Opret en ny liste
+newtab-widget-lists-name-label-default =
+    .label = Opgaveliste
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Opgaveliste
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Ny liste
+newtab-widget-section-title = Widgets
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Skjul widgets
+    .aria-label = Skjul alle widgets
+newtab-widget-section-maximize =
+    .title = Udvid widgets
+    .aria-label = Udvid alle widgets til fuld størrelse
+newtab-widget-section-minimize =
+    .title = Minimer widgets
+    .aria-label = Sammenfold alle widgets til kompakt størrelse
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Timer
+newtab-widget-timer-notification-focus = Fokus-tiden er slut. Godt gået. Har du brug for en pause?
+newtab-widget-timer-notification-break = Pausen er slut. Klar til at tage fat igen?
+newtab-widget-timer-notification-warning = Notifikationer er slået fra
+newtab-widget-timer-mode-focus =
+    .label = Fokus
+newtab-widget-timer-mode-break =
+    .label = Pause
+newtab-widget-timer-label-play =
+    .label = Afspil
+newtab-widget-timer-label-pause =
+    .label = Pause
+newtab-widget-timer-reset =
+    .title = Nulstil
+newtab-widget-timer-menu-notifications = Slå notifikationer fra
+newtab-widget-timer-menu-notifications-on = Slå notifikationer til
+newtab-widget-timer-menu-hide = Skjul timer
+newtab-widget-timer-menu-learn-more = Læs mere
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Topoverskrifter
+newtab-daily-briefing-card-menu-dismiss = Afvis
+newtab-widget-message-title = Hold fokus med lister og den indbyggede timer
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Fra hurtige påmindelser til daglige opgaver — funktionen Fokus hjælper dig med at have styr på tingene og din tid.
+newtab-promo-card-title = Støt { -brand-product-name }
+newtab-promo-card-body = Vores sponsorer støtter vores mission om at bygge et bedre internet
+newtab-promo-card-cta = Lær mere
+newtab-promo-card-dismiss-button =
+    .title = Afvis
+    .aria-label = Afvis
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Afvis
+    .aria-label = Afvis
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Gør denne plads til din egen
+newtab-activation-window-message-customization-focus-message = Vælg en ny baggrund, tilføj genveje til dine foretrukne websteder, og hold dig opdateret med artikler, som interesserer dig.

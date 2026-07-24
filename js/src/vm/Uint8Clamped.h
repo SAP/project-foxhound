@@ -32,14 +32,7 @@ class uint8_clamped final {
   }
 
  public:
-  // The default constructor can be 'constexpr' when we switch to C++20.
-  //
-  // C++17 requires explicit initialization of all members when using a
-  // 'constexpr' default constructor. That means `val` needs to be initialized
-  // through a member initializer. But adding a member initializer makes the
-  // class no longer trivial, which breaks memcpy/memset optimizations.
-
-  /* constexpr */ uint8_clamped() = default;
+  constexpr uint8_clamped() = default;
   constexpr uint8_clamped(const uint8_clamped&) = default;
 
   constexpr explicit uint8_clamped(uint8_t x) : val(x) {}

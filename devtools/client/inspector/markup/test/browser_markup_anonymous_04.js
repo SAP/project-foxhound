@@ -21,7 +21,7 @@ add_task(async function () {
 
   info("Checking the input element");
   const child = nativeChildren.nodes[0];
-  ok(!child.isAnonymous, "<input type=file> is not anonymous");
+  ok(!child.isNativeAnonymous, "<input type=file> is not anonymous");
 
   const grandchildren = await inspector.walker.children(child);
   is(
@@ -31,8 +31,7 @@ add_task(async function () {
   );
 
   for (const node of grandchildren.nodes) {
-    ok(node.isAnonymous, "Child is anonymous");
-    ok(node._form.isNativeAnonymous, "Child is native anonymous");
+    ok(node.isNativeAnonymous, "Child is native anonymous");
     await isEditingMenuDisabled(node, inspector);
   }
 });

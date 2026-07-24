@@ -24,7 +24,8 @@
   height: 2px;
   justify-self: stretch;
   align-self: center;
-  background-color: var(--in-content-border-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+  background-color: var(--border-color);
   grid-row: 1;
 }
 
@@ -47,7 +48,7 @@
 .timeline > .point {
   width: 24px;
   height: 24px;
-  stroke: var(--in-content-border-color);
+  stroke: var(--border-color);
   stroke-width: 30px;
   justify-self: center;
 }

@@ -15,7 +15,6 @@
 #include "nsIFrame.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIContent.h"
-#include "nsViewManager.h"
 #include "nsINode.h"
 #include "nsPresContext.h"
 #include "nsIImageLoadingContent.h"
@@ -33,7 +32,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/TextControlElement.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -383,7 +381,7 @@ nsresult nsBaseDragSession::InvokeDragSession(
   }
 
   uint32_t length = 0;
-  mozilla::Unused << aTransferableArray->GetLength(&length);
+  (void)aTransferableArray->GetLength(&length);
   if (!length) {
     nsCOMPtr<nsIMutableArray> mutableArray =
         do_QueryInterface(aTransferableArray);
@@ -749,22 +747,22 @@ nsBaseDragSession::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
       LOGI(
           "[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | Delaying drag session "
           "end",
-          this, __FUNCTION__, GetBoolName(aDoneDrag), aKeyModifiers);
+          this, __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers);
       EndDragSessionData edsData = {aDoneDrag, aKeyModifiers};
       mEndDragSessionData = Some(edsData);
     }
     return NS_OK;
   }
   LOGI("[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | Ending drag session now",
-       this, __FUNCTION__, GetBoolName(aDoneDrag), aKeyModifiers);
+       this, __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers);
   return EndDragSessionImpl(aDoneDrag, aKeyModifiers);
 }
 
 nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
                                                uint32_t aKeyModifiers) {
   LOGD("[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | mDoingDrag %s", this,
-       __FUNCTION__, GetBoolName(aDoneDrag), aKeyModifiers,
-       GetBoolName(mDoingDrag));
+       __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers,
+       TrueOrFalse(mDoingDrag));
   if (!mDoingDrag || mEndingSession) {
     return NS_ERROR_FAILURE;
   }
@@ -792,8 +790,8 @@ nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
     if (NS_WARN_IF(!bp)) {
       continue;
     }
-    mozilla::Unused << bp->SendEndDragSession(
-        aDoneDrag, mUserCancelled, mEndDragPoint, aKeyModifiers, dropEffect);
+    (void)bp->SendEndDragSession(aDoneDrag, mUserCancelled, mEndDragPoint,
+                                 aKeyModifiers, dropEffect);
     // Continue sending input events with input priority when stopping the dnd
     // session.
     bp->Manager()->SetInputPriorityEventEnabled(true);
@@ -1150,7 +1148,8 @@ nsresult nsBaseDragSession::DrawDragForImage(
     ImgDrawResult res = imgContainer->Draw(
         &ctx, destSize, ImageRegion::Create(destSize),
         imgIContainer::FRAME_CURRENT, SamplingFilter::GOOD, SVGImageContext(),
-        imgIContainer::FLAG_SYNC_DECODE, 1.0);
+        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY,
+        1.0);
     if (res == ImgDrawResult::BAD_IMAGE || res == ImgDrawResult::BAD_ARGS ||
         res == ImgDrawResult::NOT_SUPPORTED) {
       return NS_ERROR_FAILURE;
@@ -1240,9 +1239,8 @@ static bool RemoveAllBrowsers(nsTArray<nsWeakPtr>& aBrowsers) {
     }
     LOGD("%s | removing PBrowser %p from drag session", __FUNCTION__,
          browser.get());
-    mozilla::Unused << browser->SendEndDragSession(
-        true, false, LayoutDeviceIntPoint(), 0,
-        nsIDragService::DRAGDROP_ACTION_NONE);
+    (void)browser->SendEndDragSession(true, false, LayoutDeviceIntPoint(), 0,
+                                      nsIDragService::DRAGDROP_ACTION_NONE);
   }
 
   aBrowsers.Clear();
@@ -1351,8 +1349,7 @@ void nsBaseDragSession::TakeSessionBrowserListFromService() {
 /* static */
 nsIWidget* nsBaseDragService::GetWidgetFromWidgetProvider(
     nsISupports* aWidgetProvider) {
-  nsCOMPtr<nsIWidget> widget = do_QueryObject(aWidgetProvider);
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = do_QueryObject(aWidgetProvider)) {
     return widget;
   }
 
@@ -1374,9 +1371,7 @@ nsIWidget* nsBaseDragService::GetWidgetFromWidgetProvider(
   NS_ENSURE_TRUE(docShell, nullptr);
   PresShell* presShell = docShell->GetPresShell();
   NS_ENSURE_TRUE(presShell, nullptr);
-  nsViewManager* vm = presShell->GetViewManager();
-  NS_ENSURE_TRUE(vm, nullptr);
-  return vm->GetRootWidget();
+  return presShell->GetRootWidget();
 }
 
 NS_IMETHODIMP
@@ -1391,10 +1386,9 @@ nsBaseDragSession::SendStoreDropTargetAndDelayEndDragSession(
   if (mDataTransfer) {
     dropEffect = mDataTransfer->DropEffectInt();
   }
-  Unused
-      << mDelayedDropBrowserParent->SendStoreDropTargetAndDelayEndDragSession(
-             aEvent->WidgetEventPtr()->mRefPoint, dropEffect, mDragAction,
-             mTriggeringPrincipal, mPolicyContainer);
+  (void)mDelayedDropBrowserParent->SendStoreDropTargetAndDelayEndDragSession(
+      aEvent->WidgetEventPtr()->mRefPoint, dropEffect, mDragAction,
+      mTriggeringPrincipal, mPolicyContainer);
   return NS_OK;
 }
 
@@ -1414,9 +1408,9 @@ nsBaseDragSession::SendDispatchToDropTargetAndResumeEndDragSession(
             this, __FUNCTION__, mDelayedDropBrowserParent.get(),
             GetStaticErrorName(rv) ? GetStaticErrorName(rv) : "<unknown>",
             static_cast<uint32_t>(rv));
-        Unused << mDelayedDropBrowserParent
-                      ->SendDispatchToDropTargetAndResumeEndDragSession(
-                          false /* aShouldDrop */, nsTHashSet<nsString>());
+        (void)mDelayedDropBrowserParent
+            ->SendDispatchToDropTargetAndResumeEndDragSession(
+                false /* aShouldDrop */, nsTHashSet<nsString>());
         mDelayedDropBrowserParent = nullptr;
         return rv;
       }
@@ -1427,10 +1421,10 @@ nsBaseDragSession::SendDispatchToDropTargetAndResumeEndDragSession(
       "[%p] %s | mDelayedDropBrowserParent: %p | aShouldDrop: %s | sending "
       "dispatch drop to child",
       this, __FUNCTION__, mDelayedDropBrowserParent.get(),
-      GetBoolName(aShouldDrop));
-  Unused << mDelayedDropBrowserParent
-                ->SendDispatchToDropTargetAndResumeEndDragSession(
-                    aShouldDrop, std::move(allowedFilePaths));
+      TrueOrFalse(aShouldDrop));
+  (void)mDelayedDropBrowserParent
+      ->SendDispatchToDropTargetAndResumeEndDragSession(
+          aShouldDrop, std::move(allowedFilePaths));
   mDelayedDropBrowserParent = nullptr;
   return NS_OK;
 }
@@ -1453,7 +1447,7 @@ nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
   MOZ_ASSERT(XRE_IsContentProcess());
   LOGI("[%p] %s | pt=(%d, %d) | shouldDrop: %s", this, __FUNCTION__,
        static_cast<int32_t>(aPt.x), static_cast<int32_t>(aPt.y),
-       GetBoolName(aShouldDrop));
+       TrueOrFalse(aShouldDrop));
 
   RefPtr<Element> delayedDropTarget = do_QueryReferent(mDelayedDropTarget);
   mDelayedDropTarget = nullptr;
@@ -1500,7 +1494,7 @@ nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
           }
           if (!aAllowedFilePaths.Contains(path)) {
             mDataTransfer->MozClearDataAt(u""_ns, idx, result);
-            Unused << NS_WARN_IF(NS_FAILED(result.StealNSResult()));
+            (void)NS_WARN_IF(NS_FAILED(result.StealNSResult()));
           }
         }
       }
@@ -1520,7 +1514,7 @@ nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
     LOGI(
         "[%p] %s | mDoneDrag: %s | mKeyModifiers: %u | Issuing delayed "
         "EndDragSession",
-        this, __FUNCTION__, GetBoolName(edsData->mDoneDrag),
+        this, __FUNCTION__, TrueOrFalse(edsData->mDoneDrag),
         edsData->mKeyModifiers);
     EndDragSession(edsData->mDoneDrag, edsData->mKeyModifiers);
   }

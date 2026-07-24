@@ -13,6 +13,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         cron: true
         # This enables uploading symbols.
@@ -25,7 +26,7 @@ task-defaults:
         platform: symbols/opt
         kind: other
         tier: 2
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
@@ -41,8 +42,8 @@ tasks:
             type: generic
         worker:
             env:
-                PROCESSED_PACKAGES_INDEX: gecko.v2.mozilla-central.latest.system-symbols.mac
                 PROCESSED_PACKAGES_PATH: public/build/processed-packages.gz
+                REPOSADO_METADATA_PATH: public/build/reposado-metadata.tar.gz
             artifacts:
                 - name: public/build
                   type: directory

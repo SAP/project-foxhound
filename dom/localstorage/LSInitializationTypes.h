@@ -7,8 +7,9 @@
 #ifndef DOM_LOCALSTORAGE_INITIALIZATIONTYPES_H_
 #define DOM_LOCALSTORAGE_INITIALIZATIONTYPES_H_
 
-#include "mozilla/TypedEnumBits.h"
 #include <mozilla/dom/quota/FirstInitializationAttempts.h>
+
+#include "mozilla/TypedEnumBits.h"
 #include "nsTHashMap.h"
 
 namespace mozilla {

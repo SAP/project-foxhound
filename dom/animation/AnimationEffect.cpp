@@ -5,13 +5,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AnimationEffect.h"
-#include "mozilla/dom/AnimationEffectBinding.h"
 
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h"
-#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/AnimationEffectBinding.h"
+#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "nsDOMMutationObserver.h"
 
 namespace mozilla::dom {
@@ -56,9 +56,9 @@ bool AnimationEffect::IsCurrent() const {
     return true;
   }
 
-  return (mAnimation->PlaybackRate() > 0 &&
+  return (mAnimation->PlaybackRateInternal() > 0 &&
           computedTiming.mPhase == ComputedTiming::AnimationPhase::Before) ||
-         (mAnimation->PlaybackRate() < 0 &&
+         (mAnimation->PlaybackRateInternal() < 0 &&
           computedTiming.mPhase == ComputedTiming::AnimationPhase::After);
 }
 
@@ -269,7 +269,8 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
 
 ComputedTiming AnimationEffect::GetComputedTiming(
     const TimingParams* aTiming, EndpointBehavior aEndpointBehavior) const {
-  const double playbackRate = mAnimation ? mAnimation->PlaybackRate() : 1;
+  const double playbackRate =
+      mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const auto progressTimelinePosition =
       mAnimation ? mAnimation->AtProgressTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
@@ -307,7 +308,7 @@ void AnimationEffect::GetComputedTimingAsDict(
   GetEffectTimingDictionary(SpecifiedTiming(), aRetVal);
 
   // Computed timing
-  double playbackRate = mAnimation ? mAnimation->PlaybackRate() : 1;
+  double playbackRate = mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const Nullable<TimeDuration> currentTime = GetLocalTime();
   const auto progressTimelinePosition =
       mAnimation ? mAnimation->AtProgressTimelineBoundary()

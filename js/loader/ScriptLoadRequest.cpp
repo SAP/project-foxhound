@@ -11,16 +11,13 @@
 #include "mozilla/dom/ScriptLoadContext.h"
 #include "mozilla/dom/WorkerLoadContext.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "js/SourceText.h"
 
 #include "ModuleLoadRequest.h"
 #include "nsContentUtils.h"
-#include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 #include "nsISupportsPriority.h"
 
@@ -32,17 +29,29 @@ namespace JS::loader {
 // ScriptFetchOptions
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mTriggeringPrincipal)
-
 ScriptFetchOptions::ScriptFetchOptions(
     mozilla::CORSMode aCORSMode, const nsAString& aNonce,
     mozilla::dom::RequestPriority aFetchPriority,
     const ParserMetadata aParserMetadata, nsIPrincipal* aTriggeringPrincipal)
     : mCORSMode(aCORSMode),
-      mNonce(aNonce),
       mFetchPriority(aFetchPriority),
       mParserMetadata(aParserMetadata),
-      mTriggeringPrincipal(aTriggeringPrincipal) {}
+      mTriggeringPrincipal(aTriggeringPrincipal),
+      mNonce(aNonce) {}
+
+void ScriptFetchOptions::SetTriggeringPrincipal(
+    nsIPrincipal* aTriggeringPrincipal) {
+  MOZ_ASSERT(!mTriggeringPrincipal);
+  mTriggeringPrincipal = aTriggeringPrincipal;
+}
+
+// static
+already_AddRefed<ScriptFetchOptions> ScriptFetchOptions::CreateDefault() {
+  RefPtr<ScriptFetchOptions> options = new ScriptFetchOptions(
+      mozilla::CORS_NONE, /* aNonce = */ u""_ns,
+      mozilla::dom::RequestPriority::Auto, ParserMetadata::NotParserInserted);
+  return options.forget();
+}
 
 ScriptFetchOptions::~ScriptFetchOptions() = default;
 
@@ -57,46 +66,45 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ScriptLoadRequest)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ScriptLoadRequest)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ScriptLoadRequest)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchOptions, mOriginPrincipal, mBaseURL,
-                                  mLoadedScript, mCacheInfo, mLoadContext)
-  tmp->mScriptForBytecodeEncoding = nullptr;
-  tmp->DropBytecodeCacheReferences();
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchOptions, mCacheInfo, mLoadContext,
-                                    mLoadedScript)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+// ScriptLoadRequest can be accessed from multiple threads.
+//
+// For instance, worker script loader passes the ScriptLoadRequest to
+// the main thread to perform the actual load.
+// Even while it's handled by the main thread, the ScriptLoadRequest is
+// the target of the worker thread's cycle collector.
+//
+// Fields that can be modified by the main thread shouldn't be touched by
+// the cycle collection.
+//
+// NOTE: nsIURI and nsIPrincipal doesn't have to be touched here because
+//       they cannot be a part of cycle.
+NS_IMPL_CYCLE_COLLECTION(ScriptLoadRequest, mLoadedScript, mLoadContext)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptForBytecodeEncoding)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-ScriptLoadRequest::ScriptLoadRequest(
-    ScriptKind aKind, nsIURI* aURI,
-    mozilla::dom::ReferrerPolicy aReferrerPolicy,
-    ScriptFetchOptions* aFetchOptions, const SRIMetadata& aIntegrity,
-    nsIURI* aReferrer, LoadContextBase* aContext)
+ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind,
+                                     const SRIMetadata& aIntegrity,
+                                     nsIURI* aReferrer,
+                                     LoadContextBase* aContext)
     : mKind(aKind),
       mState(State::CheckingCache),
       mFetchSourceOnly(false),
-      mReferrerPolicy(aReferrerPolicy),
-      mFetchOptions(aFetchOptions),
+      mHasSourceMapURL_(false),
+      mHasDirtyCache_(false),
+      mHadPostponed_(false),
+      mDiskCachingPlan(CachingPlan::Uninitialized),
+      mMemoryCachingPlan(CachingPlan::Uninitialized),
       mIntegrity(aIntegrity),
       mReferrer(aReferrer),
-      mURI(aURI),
       mLoadContext(aContext),
       mEarlyHintPreloaderId(0) {
-  MOZ_ASSERT(mFetchOptions);
   if (mLoadContext) {
     mLoadContext->SetRequest(this);
   }
 }
 
-ScriptLoadRequest::~ScriptLoadRequest() { DropJSObjects(this); }
+ScriptLoadRequest::~ScriptLoadRequest() {}
 
 void ScriptLoadRequest::SetReady() {
   MOZ_ASSERT(!IsFinished());
@@ -109,8 +117,6 @@ void ScriptLoadRequest::Cancel() {
     GetScriptLoadContext()->MaybeCancelOffThreadScript();
   }
 }
-
-void ScriptLoadRequest::DropBytecodeCacheReferences() { mCacheInfo = nullptr; }
 
 bool ScriptLoadRequest::HasScriptLoadContext() const {
   return HasLoadContext() && mLoadContext->IsWindowContext();
@@ -156,28 +162,37 @@ const ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() const {
   return static_cast<const ModuleLoadRequest*>(this);
 }
 
-bool ScriptLoadRequest::IsCacheable() const {
-  if (HasScriptLoadContext() && GetScriptLoadContext()->mIsInline) {
-    return false;
-  }
-
-  return !mExpirationTime.IsExpired();
-}
-
 void ScriptLoadRequest::CacheEntryFound(LoadedScript* aLoadedScript) {
   MOZ_ASSERT(IsCheckingCache());
-  MOZ_ASSERT(mURI);
 
-  MOZ_ASSERT(mFetchOptions->IsCompatible(aLoadedScript->GetFetchOptions()));
+  SetCacheEntry(aLoadedScript);
+}
 
+void ScriptLoadRequest::CacheEntryRevived(LoadedScript* aLoadedScript) {
+  MOZ_ASSERT(IsFetching());
+
+  SetCacheEntry(aLoadedScript);
+
+  // NOTE: The caller should keep using the "fetching" path, with the
+  //       cached stencil, and skip the compilation.
+  mState = State::Fetching;
+}
+
+void ScriptLoadRequest::SetCacheEntry(LoadedScript* aLoadedScript) {
   switch (mKind) {
     case ScriptKind::eClassic:
-    case ScriptKind::eImportMap:
       MOZ_ASSERT(aLoadedScript->IsClassicScript());
 
       mLoadedScript = aLoadedScript;
 
       // Classic scripts can be set ready once the script itself is ready.
+      mState = State::Ready;
+      break;
+    case ScriptKind::eImportMap:
+      MOZ_ASSERT(aLoadedScript->IsImportMapScript());
+
+      mLoadedScript = aLoadedScript;
+
       mState = State::Ready;
       break;
     case ScriptKind::eModule:
@@ -187,18 +202,8 @@ void ScriptLoadRequest::CacheEntryFound(LoadedScript* aLoadedScript) {
 
       mLoadedScript = ModuleScript::FromCache(*aLoadedScript);
 
-#ifdef DEBUG
-      {
-        bool equals = false;
-        mURI->Equals(mLoadedScript->GetURI(), &equals);
-        MOZ_ASSERT(equals);
-      }
-#endif
-
-      mBaseURL = mLoadedScript->BaseURL();
-
       // Modules need to wait for fetching dependencies before setting to
-      // Ready.  See also ModuleLoadRequest::DependenciesLoaded.
+      // Ready.
       mState = State::Fetching;
       break;
     case ScriptKind::eEvent:
@@ -207,19 +212,24 @@ void ScriptLoadRequest::CacheEntryFound(LoadedScript* aLoadedScript) {
   }
 }
 
-void ScriptLoadRequest::NoCacheEntryFound() {
+void ScriptLoadRequest::NoCacheEntryFound(
+    mozilla::dom::ReferrerPolicy aReferrerPolicy,
+    ScriptFetchOptions* aFetchOptions, nsIURI* aURI) {
   MOZ_ASSERT(IsCheckingCache());
-  MOZ_ASSERT(mURI);
-  // At the time where we check in the cache, the mBaseURL is not set, as this
-  // is resolved by the network. Thus we use the mURI, for checking the cache
-  // and later replace the mBaseURL using what the Channel->GetURI will provide.
+  // At the time where we check in the cache, the BaseURL() is not set, as this
+  // is resolved by the network. Thus we use the aURI passed by the consumer,
+  // which is the original URI used for the request, for checking the cache
+  // and later replace the BaseURL() using what the Channel->GetURI will
+  // provide.
   switch (mKind) {
     case ScriptKind::eClassic:
+      mLoadedScript = new ClassicScript(aReferrerPolicy, aFetchOptions, aURI);
+      break;
     case ScriptKind::eImportMap:
-      mLoadedScript = new ClassicScript(mReferrerPolicy, mFetchOptions, mURI);
+      mLoadedScript = new ImportMapScript(aReferrerPolicy, aFetchOptions, aURI);
       break;
     case ScriptKind::eModule:
-      mLoadedScript = new ModuleScript(mReferrerPolicy, mFetchOptions, mURI);
+      mLoadedScript = new ModuleScript(aReferrerPolicy, aFetchOptions, aURI);
       break;
     case ScriptKind::eEvent:
       MOZ_ASSERT_UNREACHABLE("EventScripts are not using ScriptLoadRequest");
@@ -227,60 +237,5 @@ void ScriptLoadRequest::NoCacheEntryFound() {
   }
   mState = State::Fetching;
 }
-
-void ScriptLoadRequest::SetPendingFetchingError() {
-  MOZ_ASSERT(IsCheckingCache());
-  mState = State::PendingFetchingError;
-}
-
-void ScriptLoadRequest::MarkScriptForBytecodeEncoding(JSScript* aScript) {
-  MOZ_ASSERT(!IsModuleRequest());
-  MOZ_ASSERT(!mScriptForBytecodeEncoding);
-  MarkForBytecodeEncoding();
-  mScriptForBytecodeEncoding = aScript;
-  HoldJSObjects(this);
-}
-
-static bool IsInternalURIScheme(nsIURI* uri) {
-  return uri->SchemeIs("moz-extension") || uri->SchemeIs("resource") ||
-         uri->SchemeIs("moz-src") || uri->SchemeIs("chrome");
-}
-
-void ScriptLoadRequest::SetBaseURLFromChannelAndOriginalURI(
-    nsIChannel* aChannel, nsIURI* aOriginalURI) {
-  // Fixup moz-extension: and resource: URIs, because the channel URI will
-  // point to file:, which won't be allowed to load.
-  if (aOriginalURI && IsInternalURIScheme(aOriginalURI)) {
-    mBaseURL = aOriginalURI;
-  } else {
-    aChannel->GetURI(getter_AddRefs(mBaseURL));
-  }
-}
-
-//////////////////////////////////////////////////////////////
-// ScriptLoadRequestList
-//////////////////////////////////////////////////////////////
-
-ScriptLoadRequestList::~ScriptLoadRequestList() { CancelRequestsAndClear(); }
-
-void ScriptLoadRequestList::CancelRequestsAndClear() {
-  while (!isEmpty()) {
-    RefPtr<ScriptLoadRequest> first = StealFirst();
-    first->Cancel();
-    // And just let it go out of scope and die.
-  }
-}
-
-#ifdef DEBUG
-bool ScriptLoadRequestList::Contains(ScriptLoadRequest* aElem) const {
-  for (const ScriptLoadRequest* req = getFirst(); req; req = req->getNext()) {
-    if (req == aElem) {
-      return true;
-    }
-  }
-
-  return false;
-}
-#endif  // DEBUG
 
 }  // namespace JS::loader

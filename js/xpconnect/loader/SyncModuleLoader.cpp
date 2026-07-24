@@ -60,35 +60,29 @@ SyncModuleLoader::SyncModuleLoader(SyncScriptLoader* aScriptLoader,
 
 SyncModuleLoader::~SyncModuleLoader() { MOZ_ASSERT(mLoadRequests.isEmpty()); }
 
-already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateStaticImport(
-    nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
-    const mozilla::dom::SRIMetadata& aSriMetadata) {
+already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateRequest(
+    JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+    JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+    bool aIsDynamicImport, ScriptFetchOptions* aOptions,
+    dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+    const dom::SRIMetadata& aSriMetadata) {
   RefPtr<SyncLoadContext> context = new SyncLoadContext();
+  JS::ModuleType moduleType = GetModuleRequestType(aCx, aModuleRequest);
+
+  ModuleLoadRequest::Kind kind;
+  ModuleLoadRequest* root = nullptr;
+  if (aIsDynamicImport) {
+    kind = ModuleLoadRequest::Kind::DynamicImport;
+  } else {
+    MOZ_ASSERT(!aHostDefined.isUndefined());
+    root = static_cast<ModuleLoadRequest*>(aHostDefined.toPrivate());
+    MOZ_ASSERT(root);
+    kind = ModuleLoadRequest::Kind::StaticImport;
+  }
+
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, aParent->ReferrerPolicy(), aParent->mFetchOptions,
-      dom::SRIMetadata(), aParent->mURI, context,
-      ModuleLoadRequest::Kind::StaticImport, this, aParent->mVisitedSet,
-      aParent->GetRootModule());
-  request->NoCacheEntryFound();
-  return request.forget();
-}
-
-already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateDynamicImport(
-    JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-    LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-    JS::Handle<JSObject*> aPromise) {
-  RefPtr<SyncLoadContext> context = new SyncLoadContext();
-  RefPtr<VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI, aModuleType);
-  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, aMaybeActiveScript->ReferrerPolicy(),
-      aMaybeActiveScript->GetFetchOptions(), dom::SRIMetadata(),
-      aMaybeActiveScript->BaseURL(), context,
-      ModuleLoadRequest::Kind::DynamicImport, this, visitedSet, nullptr);
-
-  request->SetDynamicImport(aMaybeActiveScript, aSpecifier, aPromise);
-  request->NoCacheEntryFound();
-
+      moduleType, dom::SRIMetadata(), aBaseURL, context, kind, this, root);
+  request->NoCacheEntryFound(aReferrerPolicy, aOptions, aURI);
   return request.forget();
 }
 
@@ -131,13 +125,13 @@ void SyncModuleLoader::OnDynamicImportStarted(ModuleLoadRequest* aRequest) {
 
 bool SyncModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
                                     nsresult* aRvOut) {
-  return nsContentSecurityUtils::IsTrustedScheme(aRequest->mURI);
+  return nsContentSecurityUtils::IsTrustedScheme(aRequest->URI());
 }
 
 nsresult SyncModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->HasLoadContext());
 
-  aRequest->mBaseURL = aRequest->mURI;
+  aRequest->SetBaseURL(aRequest->URI());
 
   // Loading script source and compilation are intertwined in
   // mozJSModuleLoader. Perform both operations here but only report load
@@ -159,7 +153,7 @@ nsresult SyncModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   bool threwException = jsapi.HasException();
   if (NS_FAILED(rv) && !threwException) {
     nsAutoCString uri;
-    nsresult rv2 = aRequest->mURI->GetSpec(uri);
+    nsresult rv2 = aRequest->URI()->GetSpec(uri);
     NS_ENSURE_SUCCESS(rv2, rv2);
 
     JS_ReportErrorUTF8(cx, "Failed to load %s", PromiseFlatCString(uri).get());

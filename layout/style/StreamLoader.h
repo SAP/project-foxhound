@@ -7,7 +7,6 @@
 #ifndef mozilla_css_StreamLoader_h
 #define mozilla_css_StreamLoader_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/css/SheetLoadData.h"
 #include "nsIChannelEventSink.h"
 #include "nsIInterfaceRequestor.h"
@@ -63,8 +62,6 @@ class StreamLoader : public nsIThreadRetargetableStreamListener,
   // flag to indicate that we can skip processing of data in OnStopRequest
   bool mOnStopProcessingDone{false};
   RefPtr<SheetLoadDataHolder> mMainThreadSheetLoadData;
-
-  mozilla::TimeStamp mOnDataFinishedTime;
 
 #ifdef NIGHTLY_BUILD
   bool mChannelOpenFailed = false;

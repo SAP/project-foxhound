@@ -332,50 +332,25 @@
     </template>
 
     <template name="addon-permissions-list">
-      <!-- Permissions -->
-      <div class="addon-permissions-required" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-required"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-      <div class="addon-permissions-optional" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-optional"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-
-      <!-- Data collection -->
-      <div class="addon-data-collection-permissions-required" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-required-data-collection"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-      <div class="addon-data-collection-permissions-optional" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-optional-data-collection"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-
-      <div
-        class="addon-detail-row addon-permissions-empty"
-        data-l10n-id="addon-permissions-empty2"
-        hidden
-      ></div>
-
-      <div class="addon-detail-row">
-        <a
-          is="moz-support-link"
-          support-page="extension-permissions"
-          data-l10n-id="addon-permissions-learnmore"
-        ></a>
+      <div class="addon-permissions-list-wrapper">
+        <h2 class="permission-header"></h2>
+        <em class="permission-subheader" hidden></em>
+        <div class="addon-permissions-required" hidden>
+          <div
+            class="permission-subsection"
+            data-l10n-id="addon-permissions-required-label"
+          ></div>
+          <ul class="addon-permissions-list"></ul>
+        </div>
+        <div class="addon-permissions-optional" hidden>
+          <div
+            class="permission-subsection"
+            data-l10n-id="addon-permissions-optional-label"
+          ></div>
+          <ul class="addon-permissions-list"></ul>
+        </div>
+        <div class="addon-permissions-empty" hidden></div>
+        <div class="addon-permissions-footer"></div>
       </div>
     </template>
 
@@ -740,6 +715,14 @@
           action="open-amo-colorway-collection"
           data-l10n-id="colorway-removal-notice-button"
         ></button>
+      </moz-message-bar>
+    </template>
+
+    <template name="forced-colors-notice">
+      <moz-message-bar
+        data-l10n-id="forced-colors-theme-notice"
+        data-l10n-attrs="message"
+      >
       </moz-message-bar>
     </template>
 

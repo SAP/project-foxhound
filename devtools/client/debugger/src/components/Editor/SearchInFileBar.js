@@ -224,7 +224,7 @@ class SearchInFileBar extends Component {
    * Update the state with the results and matches from the search.
    * This will also scroll to result's location in CodeMirror.
    *
-   * @param {Object} results
+   * @param {object} results
    * @param {Array} matches
    * @returns
    */
@@ -270,9 +270,9 @@ class SearchInFileBar extends Component {
    * Ensure showing the search result in CodeMirror editor,
    * and setting the cursor at the end of the matched string.
    *
-   * @param {Number} line
-   * @param {Number} ch
-   * @param {String} matchContent
+   * @param {number} line
+   * @param {number} ch
+   * @param {string} matchContent
    */
   setCursorLocation = (line, ch, matchContent) => {
     this.props.selectLocation(
@@ -342,7 +342,7 @@ class SearchInFileBar extends Component {
     }
 
     if (index == -1) {
-      const resultsSummaryString = L10N.getStr("sourceSearch.resultsSummary1");
+      const resultsSummaryString = L10N.getStr("sourceSearch.resultsSummary2");
       return PluralForm.get(count, resultsSummaryString).replace("#1", count);
     }
 

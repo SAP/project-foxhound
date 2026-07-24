@@ -8,10 +8,10 @@
 #define mozilla_SelectionChangeEventDispatcher_h
 
 #include "mozilla/Attributes.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsDirection.h"
+#include "nsTArray.h"
 
 class nsINode;
 class nsRange;

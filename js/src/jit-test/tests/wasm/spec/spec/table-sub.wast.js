@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/table-sub.wast
+// ./test/core/bulk-memory/table-sub.wast
 
-// ./test/core/table-sub.wast:1
+// ./test/core/bulk-memory/table-sub.wast:1
 let $0 = instantiate(`(module
   (type \$t (func))
   (table \$t1 10 (ref null func))
@@ -27,7 +27,7 @@ let $0 = instantiate(`(module
   )
 )`);
 
-// ./test/core/table-sub.wast:12
+// ./test/core/bulk-memory/table-sub.wast:12
 assert_invalid(
   () => instantiate(`(module
     (table \$t1 10 funcref)
@@ -39,7 +39,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table-sub.wast:23
+// ./test/core/bulk-memory/table-sub.wast:23
 assert_invalid(
   () => instantiate(`(module
     (table \$t 10 funcref)

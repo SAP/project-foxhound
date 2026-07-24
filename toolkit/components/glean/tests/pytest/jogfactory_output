@@ -282,7 +282,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = DatetimeMetric::new(BaseMetricId(metric_id), meta, time_unit.unwrap());
-            let metric32: u32 = (15 << 27) | metric_id;
+            let metric32: u32 = (4 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::DATETIME_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -299,7 +299,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = DenominatorMetric::new(BaseMetricId(metric_id), meta, numerators.unwrap());
-            let metric32: u32 = (17 << 27) | metric_id;
+            let metric32: u32 = (5 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::DENOMINATOR_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -316,7 +316,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = DualLabeledCounterMetric::new(BaseMetricId(metric_id), meta, keys, categories);
-            let metric32: u32 = (13 << 27) | metric_id;
+            let metric32: u32 = (6 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::DUAL_LABELED_COUNTER_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -333,7 +333,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = EventMetric::with_runtime_extra_keys(BaseMetricId(metric_id), meta, allowed_extra_keys.unwrap());
-            let metric32: u32 = (16 << 27) | metric_id;
+            let metric32: u32 = (7 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::EVENT_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -355,7 +355,7 @@ pub fn create_and_register_metric(
             } else {
                 LabeledMetric::new(BaseMetricId(metric_id), meta, labels)
             };
-            let metric32: u32 = (4 << 27) | metric_id;
+            let metric32: u32 = (8 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::LABELED_BOOLEAN_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -373,7 +373,7 @@ pub fn create_and_register_metric(
                     ..Default::default()
                 }
                 };            let metric = LabeledMetric::new(BaseMetricId(metric_id), meta, labels);
-            let metric32: u32 = (5 << 27) | metric_id;
+            let metric32: u32 = (9 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::LABELED_COUNTER_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -391,7 +391,7 @@ pub fn create_and_register_metric(
                     ..Default::default()
                 }
                 };            let metric = LabeledMetric::new(BaseMetricId(metric_id), meta, labels);
-            let metric32: u32 = (6 << 27) | metric_id;
+            let metric32: u32 = (10 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::LABELED_STRING_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -408,7 +408,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = MemoryDistributionMetric::new(BaseMetricId(metric_id), meta, memory_unit.unwrap());
-            let metric32: u32 = (7 << 27) | metric_id;
+            let metric32: u32 = (11 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::MEMORY_DISTRIBUTION_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -425,7 +425,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = NumeratorMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (20 << 27) | metric_id;
+            let metric32: u32 = (12 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::NUMERATOR_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -442,7 +442,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = ObjectMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (14 << 27) | metric_id;
+            let metric32: u32 = (13 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::OBJECT_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -458,8 +458,12 @@ pub fn create_and_register_metric(
                 disabled,
                 ..Default::default()
             };
-            let metric = QuantityMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (18 << 27) | metric_id;
+            let metric = if permit_non_commutative_operations_over_ipc.unwrap_or(false) {
+                QuantityMetric::with_unordered_ipc(BaseMetricId(metric_id), meta)
+            } else {
+                QuantityMetric::new(BaseMetricId(metric_id), meta)
+            };
+            let metric32: u32 = (14 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::QUANTITY_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -476,7 +480,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = RateMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (19 << 27) | metric_id;
+            let metric32: u32 = (15 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::RATE_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -493,7 +497,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = StringMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (9 << 27) | metric_id;
+            let metric32: u32 = (16 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::STRING_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -510,7 +514,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = StringListMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (8 << 27) | metric_id;
+            let metric32: u32 = (17 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::STRING_LIST_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -527,7 +531,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = TextMetric::new(BaseMetricId(metric_id), meta);
-            let metric32: u32 = (10 << 27) | metric_id;
+            let metric32: u32 = (18 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::TEXT_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -544,7 +548,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = TimespanMetric::new(BaseMetricId(metric_id), meta, time_unit.unwrap());
-            let metric32: u32 = (11 << 27) | metric_id;
+            let metric32: u32 = (19 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::TIMESPAN_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
@@ -561,7 +565,7 @@ pub fn create_and_register_metric(
                 ..Default::default()
             };
             let metric = TimingDistributionMetric::new(BaseMetricId(metric_id), meta, time_unit.unwrap());
-            let metric32: u32 = (12 << 27) | metric_id;
+            let metric32: u32 = (20 << 27) | metric_id;
             assert!(
                 __jog_metric_maps::TIMING_DISTRIBUTION_MAP.write()?.insert(BaseMetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."

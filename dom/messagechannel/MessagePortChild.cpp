@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MessagePortChild.h"
+
 #include "MessagePort.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -21,7 +22,7 @@ mozilla::ipc::IPCResult MessagePortChild::RecvStopSendingDataConfirmed() {
 }
 
 mozilla::ipc::IPCResult MessagePortChild::RecvEntangled(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (mPort) {
     mPort->Entangled(aMessages);
   }
@@ -29,7 +30,7 @@ mozilla::ipc::IPCResult MessagePortChild::RecvEntangled(
 }
 
 mozilla::ipc::IPCResult MessagePortChild::RecvReceiveData(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (mPort) {
     mPort->MessagesReceived(aMessages);
   }

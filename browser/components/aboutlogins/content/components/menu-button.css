@@ -23,8 +23,8 @@
   margin: 0;
   padding: 5px 0;
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   box-shadow: var(--box-shadow-popup);
   min-width: max-content;
   list-style-type: none;
@@ -59,7 +59,7 @@
 }
 
 .menuitem-button:focus-visible {
-  outline-offset: var(--in-content-focus-outline-inset);
+  outline-offset: var(--focus-outline-inset);
 }
 
 .menuitem-separator {

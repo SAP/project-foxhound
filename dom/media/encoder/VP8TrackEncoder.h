@@ -6,12 +6,11 @@
 #ifndef VP8TrackEncoder_h_
 #define VP8TrackEncoder_h_
 
-#include "TrackEncoder.h"
-
 #include <vpx/vpx_codec.h>
 
-#include "mozilla/RollingMean.h"
 #include "TimeUnits.h"
+#include "TrackEncoder.h"
+#include "mozilla/RollingMean.h"
 
 namespace mozilla {
 

@@ -9,7 +9,6 @@
 #ifndef mozilla_ResultVariant_h
 #define mozilla_ResultVariant_h
 
-#include "mozilla/MaybeStorageBase.h"
 #include "mozilla/Result.h"
 #include "mozilla/Variant.h"
 

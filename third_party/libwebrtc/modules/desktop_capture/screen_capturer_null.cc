@@ -8,13 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "modules/desktop_capture/desktop_capturer.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
 // static
 std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
     const DesktopCaptureOptions& options) {
+  RTC_LOG(LS_INFO)
+      << "video capture: DesktopCapturer::CreateRawScreenCapturer creates null "
+         "DesktopCapturer";
   return nullptr;
 }
 

@@ -18,8 +18,7 @@ const {
  * This actor manages all network functionality running
  * in the parent process.
  *
- * @constructor
- *
+ * @class
  */
 class NetworkParentActor extends Actor {
   constructor(watcherActor) {
@@ -127,7 +126,8 @@ class NetworkParentActor extends Actor {
 
   /**
    * Blocks the requests based on the filters
-   * @param {Object} filters
+   *
+   * @param {object} filters
    */
   blockRequest(filters) {
     if (!this.networkEventWatcher) {
@@ -138,7 +138,8 @@ class NetworkParentActor extends Actor {
 
   /**
    * Unblocks requests based on the filters
-   * @param {Object} filters
+   *
+   * @param {object} filters
    */
   unblockRequest(filters) {
     if (!this.networkEventWatcher) {

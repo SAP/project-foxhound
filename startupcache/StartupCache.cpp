@@ -87,9 +87,12 @@ static const uint8_t MAGIC[] = "startupcache0002";
 // debug builds as it should be stable. If we exceed this number we should
 // just increase it.
 static const size_t STARTUP_CACHE_RESERVE_CAPACITY = 450;
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
 // This is a hard limit which we will assert on, to ensure that we don't
 // have some bug causing runaway cache growth.
 static const size_t STARTUP_CACHE_MAX_CAPACITY = 5000;
+#endif
 
 // Not const because we change it for gtests.
 static uint8_t STARTUP_CACHE_WRITE_TIMEOUT = 60;
@@ -574,22 +577,21 @@ Result<Ok, nsresult> StartupCache::WriteToDisk() {
   for (auto& e : entries) {
     auto value = e.second;
     value->mOffset = offset;
-    Span<const char> result;
-    MOZ_TRY_VAR(result,
-                ctx.BeginCompressing(writeSpan).mapErr(MapLZ4ErrorToNsresult));
+    Span<const char> result =
+        MOZ_TRY(ctx.BeginCompressing(writeSpan).mapErr(MapLZ4ErrorToNsresult));
     MOZ_TRY(Write(fd, result.Elements(), result.Length()));
     offset += result.Length();
 
     for (size_t i = 0; i < value->mUncompressedSize; i += chunkSize) {
       size_t size = std::min(chunkSize, value->mUncompressedSize - i);
       char* uncompressed = value->mData.get() + i;
-      MOZ_TRY_VAR(result, ctx.ContinueCompressing(Span(uncompressed, size))
-                              .mapErr(MapLZ4ErrorToNsresult));
+      result = MOZ_TRY(ctx.ContinueCompressing(Span(uncompressed, size))
+                           .mapErr(MapLZ4ErrorToNsresult));
       MOZ_TRY(Write(fd, result.Elements(), result.Length()));
       offset += result.Length();
     }
 
-    MOZ_TRY_VAR(result, ctx.EndCompressing().mapErr(MapLZ4ErrorToNsresult));
+    result = MOZ_TRY(ctx.EndCompressing().mapErr(MapLZ4ErrorToNsresult));
     MOZ_TRY(Write(fd, result.Elements(), result.Length()));
     offset += result.Length();
     value->mCompressedSize = offset - value->mOffset;
@@ -690,7 +692,7 @@ void StartupCache::EnsureShutdownWriteComplete() {
   // have run before now.
 
   auto writeResult = WriteToDisk();
-  Unused << NS_WARN_IF(writeResult.isErr());
+  (void)NS_WARN_IF(writeResult.isErr());
   // We've had the lock, and `WriteToDisk()` sets mWrittenOnce and mDirty
   // when done, and checks for them when starting, so we don't need to do
   // anything else.
@@ -776,7 +778,7 @@ void StartupCache::MaybeWriteOffMainThread() {
       NS_NewRunnableFunction("StartupCache::Write", [self]() mutable {
         MutexAutoLock lock(self->mTableLock);
         auto result = self->WriteToDisk();
-        Unused << NS_WARN_IF(result.isErr());
+        (void)NS_WARN_IF(result.isErr());
       });
   NS_DispatchBackgroundTask(runnable.forget(), NS_DISPATCH_EVENT_MAY_BLOCK);
 }
@@ -834,7 +836,7 @@ nsresult StartupCache::ResetStartupWriteTimerCheckingReadCount() {
   // Wait for the specified timeout, then write out the cache.
   mTimer->InitWithNamedFuncCallback(
       StartupCache::WriteTimeout, this, STARTUP_CACHE_WRITE_TIMEOUT * 1000,
-      nsITimer::TYPE_ONE_SHOT, "StartupCache::WriteTimeout");
+      nsITimer::TYPE_ONE_SHOT, "StartupCache::WriteTimeout"_ns);
   return NS_OK;
 }
 
@@ -855,7 +857,7 @@ nsresult StartupCache::ResetStartupWriteTimer() {
   // Wait for the specified timeout, then write out the cache.
   mTimer->InitWithNamedFuncCallback(
       StartupCache::WriteTimeout, this, STARTUP_CACHE_WRITE_TIMEOUT * 1000,
-      nsITimer::TYPE_ONE_SHOT, "StartupCache::WriteTimeout");
+      nsITimer::TYPE_ONE_SHOT, "StartupCache::WriteTimeout"_ns);
   return NS_OK;
 }
 

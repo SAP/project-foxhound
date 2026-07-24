@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_MemoryReportRequest_h_
 #define mozilla_dom_MemoryReportRequest_h_
 
+#include <functional>
+
 #include "mozilla/dom/MemoryReportTypes.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "nsISupports.h"
-
-#include <functional>
 
 class nsMemoryReporterManager;
 

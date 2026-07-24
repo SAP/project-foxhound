@@ -72,7 +72,7 @@ export default [
       "guard-for-in": "error",
       "max-nested-callbacks": ["error", 4],
       "max-params": ["error", 6],
-      "max-statements": ["error", 50],
+      "max-statements": "off",
       "new-cap": ["error", { newIsCap: true, capIsNew: false }],
       "no-alert": "error",
       "no-div-regex": "error",

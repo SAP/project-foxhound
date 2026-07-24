@@ -39,7 +39,7 @@ add_task(async function test_search_terms_cleared_on_non_serp_host() {
     "Test URIs should have a different host."
   );
 
-  gURLBar.setURI(nonSerpUri);
+  gURLBar.setURI({ uri: nonSerpUri });
 
   Assert.ok(
     !gURLBar.hasAttribute("persistsearchterms"),
@@ -67,7 +67,7 @@ add_task(async function test_search_terms_cleared_on_non_serp_scheme() {
     "Test URIs should have the same host."
   );
 
-  gURLBar.setURI(nonSerpUri);
+  gURLBar.setURI({ uri: nonSerpUri });
 
   Assert.ok(
     !gURLBar.hasAttribute("persistsearchterms"),

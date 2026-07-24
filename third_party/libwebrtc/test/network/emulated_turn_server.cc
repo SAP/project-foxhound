@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "api/async_dns_resolver.h"
+#include "api/environment/environment.h"
 #include "api/packet_socket_factory.h"
 #include "api/sequence_checker.h"
 #include "api/test/network_emulation/network_emulation_interfaces.h"
@@ -35,10 +36,10 @@
 
 namespace {
 
-static const char kTestRealm[] = "example.org";
-static const char kTestSoftware[] = "TestTurnServer";
+const char kTestRealm[] = "example.org";
+const char kTestSoftware[] = "TestTurnServer";
 
-// A wrapper class for cricket::TurnServer to allocate sockets.
+// A wrapper class for webrtc::TurnServer to allocate sockets.
 class PacketSocketFactoryWrapper : public webrtc::PacketSocketFactory {
  public:
   explicit PacketSocketFactoryWrapper(
@@ -48,21 +49,24 @@ class PacketSocketFactoryWrapper : public webrtc::PacketSocketFactory {
 
   // This method is called from TurnServer when making a TURN ALLOCATION.
   // It will create a socket on the `peer_` endpoint.
-  webrtc::AsyncPacketSocket* CreateUdpSocket(
+  std::unique_ptr<webrtc::AsyncPacketSocket> CreateUdpSocket(
+      const webrtc::Environment& env,
       const webrtc::SocketAddress& address,
       uint16_t min_port,
       uint16_t max_port) override {
     return turn_server_->CreatePeerSocket();
   }
 
-  webrtc::AsyncListenSocket* CreateServerTcpSocket(
+  std::unique_ptr<webrtc::AsyncListenSocket> CreateServerTcpSocket(
+      const webrtc::Environment& env,
       const webrtc::SocketAddress& local_address,
       uint16_t min_port,
       uint16_t max_port,
       int opts) override {
     return nullptr;
   }
-  webrtc::AsyncPacketSocket* CreateClientTcpSocket(
+  std::unique_ptr<webrtc::AsyncPacketSocket> CreateClientTcpSocket(
+      const webrtc::Environment& env,
       const webrtc::SocketAddress& local_address,
       const webrtc::SocketAddress& remote_address,
       const webrtc::PacketSocketTcpOptions& tcp_options) override {
@@ -83,37 +87,37 @@ namespace webrtc {
 namespace test {
 
 // A wrapper class for copying data between an AsyncPacketSocket and a
-// EmulatedEndpoint. This is used by the cricket::TurnServer when
+// EmulatedEndpoint. This is used by the webrtc::TurnServer when
 // sending data back into the emulated network.
 class EmulatedTURNServer::AsyncPacketSocketWrapper : public AsyncPacketSocket {
  public:
-  AsyncPacketSocketWrapper(webrtc::test::EmulatedTURNServer* turn_server,
-                           webrtc::EmulatedEndpoint* endpoint,
+  AsyncPacketSocketWrapper(test::EmulatedTURNServer* turn_server,
+                           EmulatedEndpoint* endpoint,
                            uint16_t port)
       : turn_server_(turn_server),
         endpoint_(endpoint),
         local_address_(SocketAddress(endpoint_->GetPeerLocalAddress(), port)) {}
-  ~AsyncPacketSocketWrapper() { turn_server_->Unbind(local_address_); }
+  ~AsyncPacketSocketWrapper() override { turn_server_->Unbind(local_address_); }
 
   SocketAddress GetLocalAddress() const override { return local_address_; }
   SocketAddress GetRemoteAddress() const override { return SocketAddress(); }
   int Send(const void* pv,
            size_t cb,
-           const rtc::PacketOptions& options) override {
+           const AsyncSocketPacketOptions& options) override {
     RTC_CHECK(false) << "TCP not implemented";
     return -1;
   }
   int SendTo(const void* pv,
              size_t cb,
              const SocketAddress& addr,
-             const rtc::PacketOptions& options) override {
-    // Copy from rtc::AsyncPacketSocket to EmulatedEndpoint.
-    rtc::CopyOnWriteBuffer buf(reinterpret_cast<const char*>(pv), cb);
+             const AsyncSocketPacketOptions& options) override {
+    // Copy from webrtc::AsyncPacketSocket to EmulatedEndpoint.
+    CopyOnWriteBuffer buf(reinterpret_cast<const char*>(pv), cb);
     endpoint_->SendPacket(local_address_, addr, buf);
     return cb;
   }
   int Close() override { return 0; }
-  void NotifyPacketReceived(const rtc::ReceivedPacket& packet) {
+  void NotifyPacketReceived(const ReceivedIpPacket& packet) {
     AsyncPacketSocket::NotifyPacketReceived(packet);
   }
 
@@ -126,34 +130,34 @@ class EmulatedTURNServer::AsyncPacketSocketWrapper : public AsyncPacketSocket {
   void SetError(int error) override {}
 
  private:
-  webrtc::test::EmulatedTURNServer* const turn_server_;
-  webrtc::EmulatedEndpoint* const endpoint_;
+  test::EmulatedTURNServer* const turn_server_;
+  EmulatedEndpoint* const endpoint_;
   const SocketAddress local_address_;
 };
 
-EmulatedTURNServer::EmulatedTURNServer(const EmulatedTURNServerConfig& config,
+EmulatedTURNServer::EmulatedTURNServer(const Environment& env,
+                                       const EmulatedTURNServerConfig& config,
                                        std::unique_ptr<Thread> thread,
                                        EmulatedEndpoint* client,
                                        EmulatedEndpoint* peer)
     : thread_(std::move(thread)), client_(client), peer_(peer) {
   ice_config_.username = "keso";
   ice_config_.password = "keso";
-  SendTask(thread_.get(), [this, enable_permission_checks =
-                                     config.enable_permission_checks]() {
+  SendTask(thread_.get(), [&] {
     RTC_DCHECK_RUN_ON(thread_.get());
-    turn_server_ = std::make_unique<TurnServer>(thread_.get());
+    turn_server_ = std::make_unique<TurnServer>(env, thread_.get());
     turn_server_->set_realm(kTestRealm);
     turn_server_->set_realm(kTestSoftware);
     turn_server_->set_auth_hook(this);
-    turn_server_->set_enable_permission_checks(enable_permission_checks);
+    turn_server_->set_enable_permission_checks(config.enable_permission_checks);
 
-    auto client_socket = Wrap(client_);
-    turn_server_->AddInternalSocket(client_socket, cricket::PROTO_UDP);
+    std::unique_ptr<AsyncPacketSocket> client_socket = Wrap(client_);
+    client_address_ = client_socket->GetLocalAddress();
+    turn_server_->AddInternalSocket(std::move(client_socket), PROTO_UDP);
     turn_server_->SetExternalSocketFactory(new PacketSocketFactoryWrapper(this),
                                            SocketAddress());
-    client_address_ = client_socket->GetLocalAddress();
     char buf[256];
-    rtc::SimpleStringBuilder str(buf);
+    SimpleStringBuilder str(buf);
     str.AppendFormat("turn:%s?transport=udp",
                      client_address_.ToString().c_str());
     ice_config_.url = str.str();
@@ -174,22 +178,24 @@ EmulatedTURNServer::~EmulatedTURNServer() {
   });
 }
 
-AsyncPacketSocket* EmulatedTURNServer::Wrap(EmulatedEndpoint* endpoint) {
+std::unique_ptr<AsyncPacketSocket> EmulatedTURNServer::Wrap(
+    EmulatedEndpoint* endpoint) {
   RTC_DCHECK_RUN_ON(thread_.get());
   auto port = endpoint->BindReceiver(0, this).value();
-  auto socket = new AsyncPacketSocketWrapper(this, endpoint, port);
-  sockets_[SocketAddress(endpoint->GetPeerLocalAddress(), port)] = socket;
+  auto socket =
+      std::make_unique<AsyncPacketSocketWrapper>(this, endpoint, port);
+  sockets_[SocketAddress(endpoint->GetPeerLocalAddress(), port)] = socket.get();
   return socket;
 }
 
-void EmulatedTURNServer::OnPacketReceived(webrtc::EmulatedIpPacket packet) {
-  // Copy from EmulatedEndpoint to rtc::AsyncPacketSocket.
+void EmulatedTURNServer::OnPacketReceived(EmulatedIpPacket packet) {
+  // Copy from EmulatedEndpoint to webrtc::AsyncPacketSocket.
   thread_->PostTask([this, packet(std::move(packet))]() {
     RTC_DCHECK_RUN_ON(thread_.get());
     auto it = sockets_.find(packet.to);
     if (it != sockets_.end()) {
       it->second->NotifyPacketReceived(
-          rtc::ReceivedPacket(packet.data, packet.from, packet.arrival_time));
+          ReceivedIpPacket(packet.data, packet.from, packet.arrival_time));
     }
   });
 }

@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "usernameAutocompleteSearch",
   "@mozilla.org/autocomplete/search;1?name=login-doorhanger-username",
-  "nsIAutoCompleteSimpleSearch"
+  Ci.nsIAutoCompleteSimpleSearch
 );
 
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
@@ -108,8 +108,8 @@ export class LoginManagerPrompter {
    * @param {object?} possibleValues
    *                 Contains values from anything that we think, but are not sure, might be
    *                 a username or password.  Has two properties, 'usernames' and 'passwords'.
-   * @param {Set<String>} possibleValues.usernames
-   * @param {Set<String>} possibleValues.passwords
+   * @param {Set<string>} possibleValues.usernames
+   * @param {Set<string>} possibleValues.passwords
    */
   promptToSavePassword(
     aBrowser,
@@ -170,8 +170,8 @@ export class LoginManagerPrompter {
    * @param {object?} possibleValues
    *                 Contains values from anything that we think, but are not sure, might be
    *                 a username or password.  Has two properties, 'usernames' and 'passwords'.
-   * @param {Set<String>} possibleValues.usernames
-   * @param {Set<String>} possibleValues.passwords
+   * @param {Set<string>} possibleValues.usernames
+   * @param {Set<string>} possibleValues.passwords
    */
   static _showLoginCaptureDoorhanger(
     browser,
@@ -248,11 +248,8 @@ export class LoginManagerPrompter {
       }
     };
 
-    const updateButtonLabel = () => {
-      if (!currentNotification) {
-        console.error("updateButtonLabel, no currentNotification");
-      }
-      const foundLogins = lazy.LoginHelper.searchLoginsWithObject({
+    const updateButtonLabel = async () => {
+      const foundLogins = await Services.logins.searchLoginsAsync({
         formActionOrigin: login.formActionOrigin,
         origin: login.origin,
         httpRealm: login.httpRealm,
@@ -269,6 +266,11 @@ export class LoginManagerPrompter {
       // Update the label based on whether this will be a new login or not.
 
       const mainButton = this.getLabelAndAccessKey(messageIds.mainButton);
+
+      if (!currentNotification) {
+        console.error("updateButtonLabel, no currentNotification");
+        return;
+      }
 
       // Update the labels for the next time the panel is opened.
       currentNotification.mainAction.label = mainButton.label;
@@ -298,6 +300,7 @@ export class LoginManagerPrompter {
       );
       // Ensure the type is reset so the field is masked.
       passwordField.type = "password";
+      passwordField.revealPassword = false;
       passwordField.value = login.password;
 
       updateButtonLabel();
@@ -352,7 +355,7 @@ export class LoginManagerPrompter {
     };
 
     const persistData = async () => {
-      const foundLogins = lazy.LoginHelper.searchLoginsWithObject({
+      const foundLogins = await Services.logins.searchLoginsAsync({
         formActionOrigin: login.formActionOrigin,
         origin: login.origin,
         httpRealm: login.httpRealm,
@@ -418,7 +421,7 @@ export class LoginManagerPrompter {
       ) {
         // We only want to touch the login's use count and last used time.
         lazy.log.debug(`Touch matched login: ${loginToUpdate.guid}.`);
-        Services.logins.recordPasswordUse(
+        await Services.logins.recordPasswordUseAsync(
           loginToUpdate,
           PrivateBrowsingUtils.isBrowserPrivate(browser),
           loginToUpdate.username ? "FormPassword" : "FormLogin",
@@ -426,7 +429,7 @@ export class LoginManagerPrompter {
         );
       } else {
         lazy.log.debug(`Update matched login: ${loginToUpdate.guid}.`);
-        this._updateLogin(loginToUpdate, login);
+        await this._updateLogin(loginToUpdate, login);
         // notify that this auto-saved login has been merged
         if (loginToRemove && loginToRemove.guid == autoSavedLoginGuid) {
           Services.obs.notifyObservers(
@@ -438,7 +441,7 @@ export class LoginManagerPrompter {
 
       if (loginToRemove) {
         lazy.log.debug(`Removing login ${loginToRemove.guid}.`);
-        Services.logins.removeLogin(loginToRemove);
+        await Services.logins.removeLoginAsync(loginToRemove);
       }
     };
 
@@ -567,7 +570,7 @@ export class LoginManagerPrompter {
             guid: login.guid,
             origin: login.origin,
           });
-          Services.logins.removeLogin(matchingLogins[0]);
+          await Services.logins.removeLoginAsync(matchingLogins[0]);
           browser.focus();
           lazy.log.debug("Showing the ConfirmationHint");
           showConfirmation(browser, "confirmation-hint-password-removed");
@@ -750,8 +753,8 @@ export class LoginManagerPrompter {
    * @param {object?} possibleValues
    *                 Contains values from anything that we think, but are not sure, might be
    *                 a username or password.  Has two properties, 'usernames' and 'passwords'.
-   * @param {Set<String>} possibleValues.usernames
-   * @param {Set<String>} possibleValues.passwords
+   * @param {Set<string>} possibleValues.usernames
+   * @param {Set<string>} possibleValues.passwords
    */
   promptToChangePassword(
     aBrowser,
@@ -822,7 +825,7 @@ export class LoginManagerPrompter {
    *       function fills in .username and .usernameField with the values
    *       from the login selected by the user.
    */
-  promptToChangePasswordWithUsernames(browser, logins, aNewLogin) {
+  async promptToChangePasswordWithUsernames(browser, logins, aNewLogin) {
     lazy.log.debug(
       `Prompting user to change passowrd for username with count: ${logins.length}.`
     );
@@ -864,7 +867,10 @@ export class LoginManagerPrompter {
         selectedLogin.usernameField,
         aNewLogin.passwordField
       );
-      LoginManagerPrompter._updateLogin(selectedLogin, newLoginWithUsername);
+      await LoginManagerPrompter._updateLogin(
+        selectedLogin,
+        newLoginWithUsername
+      );
     }
   }
 
@@ -873,7 +879,7 @@ export class LoginManagerPrompter {
   /**
    * Helper method to update and persist an existing nsILoginInfo object with new property values.
    */
-  static _updateLogin(login, aNewLogin) {
+  static async _updateLogin(login, aNewLogin) {
     const now = Date.now();
     const propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
       Ci.nsIWritablePropertyBag
@@ -892,14 +898,15 @@ export class LoginManagerPrompter {
     // use in this case though that is normally correct since we would instead
     // record the save/update in a separate probe and recording it in both would
     // be wrong.
-    Services.logins.modifyLogin(login, propBag);
+
+    await Services.logins.modifyLoginAsync(login, propBag);
   }
 
   /**
    * Retrieves the message of the given id from fluent
    * and extracts the label and accesskey
    *
-   * @param {String} id message id
+   * @param {string} id message id
    * @returns label and accesskey
    */
   static getLabelAndAccessKey(id) {
@@ -951,7 +958,7 @@ export class LoginManagerPrompter {
    *                       login to use as filter.
    * @param {nsILoginInfo[]} aLoginList
    *                         Array of logins to filter.
-   * @param {String} includeGUID
+   * @param {string} includeGUID
    *                 guid value for login that not be filtered out
    * @returns {nsILoginInfo[]} the filtered array of logins.
    */
@@ -968,7 +975,7 @@ export class LoginManagerPrompter {
    * Set the values that will be used the next time the username autocomplete popup is opened.
    *
    * @param {nsILoginInfo} login - used only for its information about the current domain.
-   * @param {Set<String>?} possibleUsernames - values that we believe may be new/changed login usernames.
+   * @param {Set<string>?} possibleUsernames - values that we believe may be new/changed login usernames.
    */
   static async _setUsernameAutocomplete(login, possibleUsernames = new Set()) {
     const result = Cc[
@@ -999,7 +1006,7 @@ export class LoginManagerPrompter {
 
   /**
    * @param {nsILoginInfo} login - used only for its information about the current domain.
-   * @param {Set<String>?} possibleUsernames - values that we believe may be new/changed login usernames.
+   * @param {Set<string>?} possibleUsernames - values that we believe may be new/changed login usernames.
    *
    * @returns {object[]} an ordered list of usernames to be used the next time the username autocomplete popup is opened.
    */

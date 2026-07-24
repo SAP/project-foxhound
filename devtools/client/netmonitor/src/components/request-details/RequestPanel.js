@@ -124,30 +124,34 @@ class RequestPanel extends Component {
   }
 
   /**
-   * Mapping array to dict for TreeView usage.
-   * Since TreeView only support Object(dict) format.
-   * This function also deal with duplicate key case
-   * (for multiple selection and query params with same keys)
+   * This maps an array to a dictionary for TreeView usage,
+   * sincs the treeView only supports the Object(dict) format.
    *
-   * This function is not sorting result properties since it can
-   * results in unexpected order of params. See bug 1469533
+   * This function also deals with the duplicate key scenario
+   * (i.e multiple selections and query params with same keys)
    *
-   * @param {Object[]} arr - key-value pair array or form params
-   * @returns {Object} Rep compatible object
+   * Note: This is not sorting the result properties since it can
+   * result in an unexpected order of parameters. See bug 1469533
+   *
+   * @param {object[]} arrOfKeyValuePairs - An array of key-value pairs or form params.
+   * @param {string} arrOfKeyValuePairs[].name
+   * @param {string|Array} arrOfKeyValuePairs[].value
+   *
+   * @returns {object} Rep compatible object
    */
-  getProperties(arr) {
-    return arr.reduce((map, obj) => {
-      const value = map[obj.name];
-      if (value || value === "") {
-        if (typeof value !== "object") {
-          map[obj.name] = [value];
+  getProperties(arrOfKeyValuePairs) {
+    return arrOfKeyValuePairs.reduce((dict, { name, value }) => {
+      if (name in dict) {
+        const dictValue = dict[name];
+        if (!Array.isArray(dictValue)) {
+          dict[name] = [dictValue];
         }
-        map[obj.name].push(obj.value);
+        dict[name].push(value);
       } else {
-        map[obj.name] = obj.value;
+        dict[name] = value;
       }
-      return map;
-    }, {});
+      return dict;
+    }, Object.create(null));
   }
 
   toggleRawRequestPayload() {
@@ -189,7 +193,7 @@ class RequestPanel extends Component {
   render() {
     const { request, targetSearchResult } = this.props;
     const { filterText, rawRequestPayloadDisplayed } = this.state;
-    const { formDataSections, mimeType, requestPostData } = request;
+    const { formDataSections, mimeType, requestPostData, url } = request;
     const postData = requestPostData ? requestPostData.postData?.text : null;
 
     if ((!formDataSections || formDataSections.length === 0) && !postData) {
@@ -205,13 +209,13 @@ class RequestPanel extends Component {
 
     // Form Data section
     if (formDataSections && formDataSections.length) {
-      const sections = formDataSections.filter(str => /\S/.test(str)).join("&");
       component = PropertiesView;
       componentProps = {
-        object: this.getProperties(parseFormData(sections)),
+        object: this.getProperties(parseFormData(formDataSections)),
         filterText,
         targetSearchResult,
         defaultSelectFirstNode: false,
+        url,
       };
       requestPayloadLabel = REQUEST_FORM_DATA;
       hasFormattedDisplay = true;
@@ -224,7 +228,7 @@ class RequestPanel extends Component {
 
     // Check if the request post data has been truncated from the backend,
     // in which case no parse should be attempted.
-    if (postData && limit <= postData.length) {
+    if (postData && limit > 0 && limit <= postData.length) {
       error = REQUEST_TRUNCATED;
     }
     if (formDataSections && formDataSections.length === 0 && postData) {
@@ -242,6 +246,7 @@ class RequestPanel extends Component {
             filterText,
             targetSearchResult,
             defaultSelectFirstNode: false,
+            url,
           };
           requestPayloadLabel = JSON_SCOPE_NAME;
           hasFormattedDisplay = true;
@@ -256,8 +261,9 @@ class RequestPanel extends Component {
       component = SourcePreview;
       componentProps = {
         text: postData,
-        mode: mimeType?.replace(/;.+/, ""),
+        mimeType: mimeType?.replace(/;.+/, ""),
         targetSearchResult,
+        url,
       };
       requestPayloadLabel = REQUEST_POST_PAYLOAD;
     }

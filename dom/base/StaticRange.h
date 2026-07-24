@@ -21,6 +21,8 @@ namespace dom {
 
 class StaticRange : public AbstractRange {
  public:
+  enum class MutationObserved : bool { No, Yes };
+
   StaticRange() = delete;
   explicit StaticRange(const StaticRange& aOther) = delete;
 
@@ -54,9 +56,8 @@ class StaticRange : public AbstractRange {
                                               ErrorResult& aRv) {
     return StaticRange::Create(
         RawRangeBoundary(aStartContainer, aStartOffset,
-                         RangeBoundaryIsMutationObserved::No),
-        RawRangeBoundary(aEndContainer, aEndOffset,
-                         RangeBoundaryIsMutationObserved::No),
+                         RangeBoundarySetBy::Offset),
+        RawRangeBoundary(aEndContainer, aEndOffset, RangeBoundarySetBy::Offset),
         aRv);
   }
   template <typename SPT, typename SRT, typename EPT, typename ERT>
@@ -77,11 +78,10 @@ class StaticRange : public AbstractRange {
   bool mAreStartAndEndInSameTree = false;
 
   // Whether mutation is observed.
-  RangeBoundaryIsMutationObserved mIsMutationObserved;
+  MutationObserved mIsMutationObserved = MutationObserved::No;
 
  protected:
-  explicit StaticRange(nsINode* aNode,
-                       RangeBoundaryIsMutationObserved aIsMutationObserved,
+  explicit StaticRange(nsINode* aNode, MutationObserved aIsMutationObserved,
                        TreeKind aBoundaryTreeKind = TreeKind::DOM)
       : AbstractRange(aNode, /* aIsDynamicRange = */ false, aBoundaryTreeKind),
         mIsMutationObserved(aIsMutationObserved) {}
@@ -105,8 +105,10 @@ class StaticRange : public AbstractRange {
    */
   nsresult SetStartAndEnd(nsINode* aStartContainer, uint32_t aStartOffset,
                           nsINode* aEndContainer, uint32_t aEndOffset) {
-    return SetStartAndEnd(RawRangeBoundary(aStartContainer, aStartOffset),
-                          RawRangeBoundary(aEndContainer, aEndOffset));
+    return SetStartAndEnd(RawRangeBoundary(aStartContainer, aStartOffset,
+                                           RangeBoundarySetBy::Offset),
+                          RawRangeBoundary(aEndContainer, aEndOffset,
+                                           RangeBoundarySetBy::Offset));
   }
   template <typename SPT, typename SRT, typename EPT, typename ERT>
   nsresult SetStartAndEnd(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,

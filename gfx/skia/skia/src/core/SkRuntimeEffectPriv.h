@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "include/sksl/SkSLVersion.h"
 
@@ -160,6 +161,9 @@ public:
     static bool UsesColorTransform(const SkRuntimeEffect* effect) {
         return effect->usesColorTransform();
     }
+    static SkSL::SampleUsage ChildSampleUsage(const SkRuntimeEffect* effect, int child) {
+        return effect->fSampleUsages[child];
+    }
 };
 
 // These internal APIs for creating runtime effects vary from the public API in two ways:
@@ -216,7 +220,8 @@ public:
                      s.fDstColorType,
                      s.fDstCS,
                      SkColors::kTransparent,
-                     s.fSurfaceProps}
+                     s.fSurfaceProps,
+                     s.fDstBounds}
             , fMatrix(m)
             , fChildren(c)
             , fSampleUsages(u) {}

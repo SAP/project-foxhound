@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsUnixRemoteServer_h__
-#define __nsUnixRemoteServer_h__
+#ifndef _nsUnixRemoteServer_h_
+#define _nsUnixRemoteServer_h_
 
 #include "nsStringFwd.h"
 #include "mozilla/Span.h"

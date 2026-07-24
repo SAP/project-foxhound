@@ -5,18 +5,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TCPSocketParent.h"
+
+#include "TCPSocket.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "nsJSUtils.h"
-#include "mozilla/Unused.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/PNeckoParent.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "nsISocketTransport.h"
+#include "nsJSUtils.h"
 #include "nsNetUtil.h"
-#include "TCPSocket.h"
 
 namespace IPC {
 
@@ -69,7 +69,7 @@ void TCPSocketParentBase::AddIPDLReference() {
 NS_IMETHODIMP_(MozExternalRefCountType) TCPSocketParent::Release(void) {
   nsrefcnt refcnt = TCPSocketParentBase::Release();
   if (refcnt == 1 && mIPCOpen) {
-    mozilla::Unused << PTCPSocketParent::SendRequestDelete();
+    (void)PTCPSocketParent::SendRequestDelete();
     return 1;
   }
   return refcnt;
@@ -182,8 +182,8 @@ void TCPSocketParent::FireStringDataEvent(const nsACString& aData,
 void TCPSocketParent::SendEvent(const nsAString& aType, CallbackData aData,
                                 TCPReadyState aReadyState) {
   if (mIPCOpen) {
-    mozilla::Unused << PTCPSocketParent::SendCallback(
-        nsString(aType), aData, static_cast<uint32_t>(aReadyState));
+    (void)PTCPSocketParent::SendCallback(nsString(aType), aData,
+                                         static_cast<uint32_t>(aReadyState));
   }
 }
 
@@ -215,7 +215,7 @@ void TCPSocketParent::ActorDestroy(ActorDestroyReason why) {
 }
 
 mozilla::ipc::IPCResult TCPSocketParent::RecvRequestDelete() {
-  mozilla::Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 

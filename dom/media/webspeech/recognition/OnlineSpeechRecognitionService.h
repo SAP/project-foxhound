@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_OnlineRecognitionService_h
 #define mozilla_dom_OnlineRecognitionService_h
 
-#include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsISpeechRecognitionService.h"
-#include "speex/speex_resampler.h"
-#include "nsIStreamListener.h"
-#include "OpusTrackEncoder.h"
 #include "ContainerWriter.h"
+#include "OpusTrackEncoder.h"
+#include "nsCOMPtr.h"
+#include "nsISpeechRecognitionService.h"
+#include "nsIStreamListener.h"
+#include "nsTArray.h"
+#include "speex/speex_resampler.h"
 
 #define NS_ONLINE_SPEECH_RECOGNITION_SERVICE_CID \
   {0x0ff5ce56,                                   \

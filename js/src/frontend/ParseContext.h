@@ -599,9 +599,12 @@ class MOZ_STACK_CLASS ParseContext : public Nestable<ParseContext> {
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   bool isUsingSyntaxAllowed() {
-    bool isInSwitch = innermostStatement() &&
-                      innermostStatement()->kind() == StatementKind::Switch;
-    return (!atGlobalLevel() || atModuleTopLevel()) && !isInSwitch;
+    if (innermostStatement() &&
+        innermostStatement()->kind() == StatementKind::Switch) {
+      return false;
+    }
+
+    return innermostStatement_ || sc_->isFunction() || sc_->isModule();
   }
 #endif
 

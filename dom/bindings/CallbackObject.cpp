@@ -5,21 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CallbackObject.h"
+
+#include "WorkerPrivate.h"
+#include "WorkerScope.h"
+#include "js/ContextOptions.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "jsfriendapi.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptContext.h"
-#include "nsPIDOMWindow.h"
-#include "nsJSUtils.h"
-#include "xpcprivate.h"
-#include "WorkerPrivate.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "WorkerScope.h"
-#include "jsapi.h"
-#include "js/ContextOptions.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
 #include "nsJSPrincipals.h"
+#include "nsJSUtils.h"
+#include "nsPIDOMWindow.h"
+#include "xpcprivate.h"
 
 namespace mozilla::dom {
 
@@ -188,25 +189,148 @@ void CallbackObjectBase::GetDescription(nsACString& aOutString) {
   aOutString.Append(")");
 }
 
-CallbackObjectBase::CallSetup::CallSetup(CallbackObjectBase* aCallback,
-                                         ErrorResult& aRv,
-                                         const char* aExecutionReason,
-                                         ExceptionHandling aExceptionHandling,
-                                         JS::Realm* aRealm,
-                                         bool aIsJSImplementedWebIDL)
+// Get the global for this callback: Note that this can return nullptr
+// if it doesn't make sense to invoke the callback or global here .
+//
+// Note that for the case of JS-implemented WebIDL we never have a window here.
+nsIGlobalObject* CallSetup::GetActiveGlobalObjectForCall(
+    JS::Handle<JSObject*> callbackOrGlobal, bool aIsMainThread,
+    bool aIsJSImplementedWebIDL, ErrorResult& aRv) {
+  nsGlobalWindowInner* win = aIsMainThread && !aIsJSImplementedWebIDL
+                                 ? xpc::WindowGlobalOrNull(callbackOrGlobal)
+                                 : nullptr;
+  if (win) {
+    // We don't want to run script in windows that have been navigated away
+    // from.
+    if (!win->HasActiveDocument()) {
+      aRv.ThrowNotSupportedError(
+          "Refusing to execute function from window whose document is no "
+          "longer active.");
+      return nullptr;
+    }
+    return win;
+  }
+
+  // No DOM Window. Store the global.
+  auto* globalObject = xpc::NativeGlobal(callbackOrGlobal);
+  MOZ_ASSERT(globalObject);
+  return globalObject;
+}
+
+// Check that it's OK & possible to execute script in the given global, and if
+// not return false and fill in aRv.
+bool CallSetup::CheckBeforeExecution(nsIGlobalObject* aGlobalObject,
+                                     JSObject* aCallbackOrGlobal,
+                                     bool aIsJSImplementedWebIDL,
+                                     ErrorResult& aRv) {
+  if (aGlobalObject->IsScriptForbidden(aCallbackOrGlobal,
+                                       aIsJSImplementedWebIDL)) {
+    aRv.ThrowNotSupportedError(
+        "Refusing to execute function from global in which script is "
+        "disabled.");
+    return false;
+  }
+
+  // Bail out if there's no useful global.
+  if (!aGlobalObject->HasJSGlobal()) {
+    aRv.ThrowNotSupportedError(
+        "Refusing to execute function from global which is being torn down.");
+    return false;
+  }
+
+  return true;
+}
+
+void CallSetup::SetupForExecution(nsIGlobalObject* aGlobalObject,
+                                  nsIGlobalObject* aIncumbentGlobal,
+                                  JS::Handle<JSObject*> aCallbackOrGlobal,
+                                  JS::Handle<JSObject*> aCallbackGlobal,
+                                  JS::Handle<JSObject*> aCreationStack,
+                                  nsIPrincipal* aWebIDLCallerPrincipal,
+                                  const char* aExecutionReason,
+                                  ErrorResult& aRv) {
+  AutoAllowLegacyScriptExecution exemption;
+  mAutoEntryScript.emplace(aGlobalObject, aExecutionReason, mIsMainThread);
+  mAutoEntryScript->SetWebIDLCallerPrincipal(aWebIDLCallerPrincipal);
+
+  if (aIncumbentGlobal) {
+    // The callback object traces its incumbent JS global, so in general it
+    // should be alive here. However, it's possible that we could run afoul
+    // of the same IPC global weirdness described above, wherein the
+    // nsIGlobalObject has severed its reference to the JS global. Let's just
+    // be safe here, so that nobody has to waste a day debugging gaia-ui tests.
+    if (!aIncumbentGlobal->HasJSGlobal()) {
+      aRv.ThrowNotSupportedError(
+          "Refusing to execute function because our incumbent global is being "
+          "torn down.");
+      return;
+    }
+    mAutoIncumbentScript.emplace(aIncumbentGlobal);
+  }
+
+  JSContext* cx = mAutoEntryScript->cx();
+
+  // Unmark the callable (by invoking CallbackOrNull() and not the
+  // CallbackPreserveColor() variant), and stick it in a Rooted before it can
+  // go gray again.
+  // Nothing before us in this function can trigger a CC, so it's safe to wait
+  // until here it do the unmark. This allows us to construct mRootedCallable
+  // with the cx from mAutoEntryScript, avoiding the cost of finding another
+  // JSContext. (Rooted<> does not care about requests or compartments.)
+  mRootedCallable.emplace(cx, aCallbackOrGlobal);
+
+  if (aCreationStack) {
+    mAsyncStackSetter.emplace(cx, aCreationStack, aExecutionReason);
+  }
+
+  // Enter the realm of our callback, so we can actually work with it.
+  //
+  // Note that if the callback is a wrapper, this will not be the same
+  // realm that we ended up in with mAutoEntryScript above, because the
+  // entry point is based off of the unwrapped callback (realCallback).
+  mAr.emplace(cx, aCallbackGlobal);
+
+  // And now we're ready to go.
+  mCx = cx;
+
+  // We don't really have a good error message prefix to use for the
+  // BindingCallContext.
+  mCallContext.emplace(cx, nullptr);
+}
+
+// Private delegating constructor for common initialization
+CallSetup::CallSetup(ErrorResult& aRv,
+                     CallbackObjectBase::ExceptionHandling aExceptionHandling,
+                     JS::Realm* aRealm, bool aIsMainThread,
+                     CycleCollectedJSContext* aCCJS)
     : mCx(nullptr),
       mRealm(aRealm),
       mErrorResult(aRv),
       mExceptionHandling(aExceptionHandling),
-      mIsMainThread(NS_IsMainThread()) {
-  MOZ_ASSERT_IF(aExceptionHandling == eReportExceptions ||
-                    aExceptionHandling == eRethrowExceptions,
-                !aRealm);
+      mIsMainThread(aIsMainThread) {
+  MOZ_ASSERT(aCCJS);
+  aCCJS->EnterMicroTask();
+}
 
-  CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
-  if (ccjs) {
-    ccjs->EnterMicroTask();
-  }
+CallSetup::CallSetup(CallbackObjectBase* aCallback, ErrorResult& aRv,
+                     const char* aExecutionReason,
+                     CallbackObjectBase::ExceptionHandling aExceptionHandling,
+                     JS::Realm* aRealm, bool aIsJSImplementedWebIDL)
+    : CallSetup(aCallback, aRv, aExecutionReason, aExceptionHandling, aRealm,
+                aIsJSImplementedWebIDL, CycleCollectedJSContext::Get()) {}
+
+CallSetup::CallSetup(CallbackObjectBase* aCallback, ErrorResult& aRv,
+                     const char* aExecutionReason,
+                     CallbackObjectBase::ExceptionHandling aExceptionHandling,
+                     JS::Realm* aRealm, bool aIsJSImplementedWebIDL,
+                     CycleCollectedJSContext* aCCJS)
+    : CallSetup(aRv, aExceptionHandling, aRealm, NS_IsMainThread(), aCCJS) {
+  MOZ_ASSERT_IF(
+      aExceptionHandling == CallbackObjectBase::eReportExceptions ||
+          aExceptionHandling == CallbackObjectBase::eRethrowExceptions,
+      !aRealm);
+
+  JS::RootedTuple<JSObject*, JSObject*, JSObject*> roots(aCCJS->RootingCx());
 
   // Compute the caller's subject principal (if necessary) early, before we
   // do anything that might perturb the relevant state.
@@ -227,101 +351,72 @@ CallbackObjectBase::CallSetup::CallSetup(CallbackObjectBase* aCallback,
 
   {
     // First, find the real underlying callback.
-    JS::Rooted<JSObject*> realCallback(ccjs->RootingCx(),
-                                       js::UncheckedUnwrap(wrappedCallback));
+    JS::RootedField<JSObject*, 0> realCallback(
+        roots, js::UncheckedUnwrap(wrappedCallback));
 
-    // Get the global for this callback. Note that for the case of
-    // JS-implemented WebIDL we never have a window here.
-    nsGlobalWindowInner* win = mIsMainThread && !aIsJSImplementedWebIDL
-                                   ? xpc::WindowGlobalOrNull(realCallback)
-                                   : nullptr;
-    if (win) {
-      // We don't want to run script in windows that have been navigated away
-      // from.
-      if (!win->HasActiveDocument()) {
-        aRv.ThrowNotSupportedError(
-            "Refusing to execute function from window whose document is no "
-            "longer active.");
-        return;
-      }
-      globalObject = win;
-    } else {
-      // No DOM Window. Store the global.
-      globalObject = xpc::NativeGlobal(realCallback);
-      MOZ_ASSERT(globalObject);
+    globalObject = GetActiveGlobalObjectForCall(realCallback, mIsMainThread,
+                                                aIsJSImplementedWebIDL, aRv);
+    if (!globalObject) {
+      MOZ_ASSERT(aRv.Failed());
+      return;
     }
 
     // Make sure to use realCallback to get the global of the callback
     // object, not the wrapper.
-    if (globalObject->IsScriptForbidden(realCallback, aIsJSImplementedWebIDL)) {
-      aRv.ThrowNotSupportedError(
-          "Refusing to execute function from global in which script is "
-          "disabled.");
+    if (!CheckBeforeExecution(globalObject, realCallback,
+                              aIsJSImplementedWebIDL, aRv)) {
       return;
     }
   }
 
-  // Bail out if there's no useful global.
-  if (!globalObject->HasJSGlobal()) {
-    aRv.ThrowNotSupportedError(
-        "Refusing to execute function from global which is being torn down.");
+  nsIGlobalObject* incumbent = aCallback->IncumbentGlobalOrNull();
+
+  // Start the execution setup -- if it succeeds, this will set mCx
+  JS::RootedField<JSObject*, 0> rootedCallback(roots,
+                                               aCallback->CallbackOrNull());
+  JS::RootedField<JSObject*, 1> rootedCallbackGlobal(
+      roots, aCallback->CallbackGlobalOrNull());
+  JS::RootedField<JSObject*, 2> rootedCreationStack(
+      roots, aCallback->GetCreationStack());
+  SetupForExecution(globalObject, incumbent, rootedCallback,
+                    rootedCallbackGlobal, rootedCreationStack,
+                    webIDLCallerPrincipal, aExecutionReason, aRv);
+}
+
+CallSetup::CallSetup(JS::Handle<JSObject*> aCallbackGlobal,
+                     nsIGlobalObject* aIncumbentGlobal,
+                     JS::Handle<JSObject*> aCreationStack, ErrorResult& aRv,
+                     const char* aExecutionReason,
+                     CallbackObjectBase::ExceptionHandling aExceptionHandling,
+                     JS::Realm* aRealm)
+    : CallSetup(aRv, aExceptionHandling, aRealm, NS_IsMainThread(),
+                CycleCollectedJSContext::Get()) {
+  MOZ_ASSERT_IF(aExceptionHandling == CallbackFunction::eReportExceptions ||
+                    aExceptionHandling == CallbackFunction::eRethrowExceptions,
+                !aRealm);
+
+  MOZ_RELEASE_ASSERT(aCallbackGlobal);
+  nsIGlobalObject* globalObject = GetActiveGlobalObjectForCall(
+      aCallbackGlobal, mIsMainThread, /*aIsJSImplementedWebIDL=*/false, aRv);
+  if (!globalObject) {
+    MOZ_ASSERT(aRv.Failed());
     return;
   }
 
-  AutoAllowLegacyScriptExecution exemption;
-  mAutoEntryScript.emplace(globalObject, aExecutionReason, mIsMainThread);
-  mAutoEntryScript->SetWebIDLCallerPrincipal(webIDLCallerPrincipal);
-  nsIGlobalObject* incumbent = aCallback->IncumbentGlobalOrNull();
-  if (incumbent) {
-    // The callback object traces its incumbent JS global, so in general it
-    // should be alive here. However, it's possible that we could run afoul
-    // of the same IPC global weirdness described above, wherein the
-    // nsIGlobalObject has severed its reference to the JS global. Let's just
-    // be safe here, so that nobody has to waste a day debugging gaia-ui tests.
-    if (!incumbent->HasJSGlobal()) {
-      aRv.ThrowNotSupportedError(
-          "Refusing to execute function because our incumbent global is being "
-          "torn down.");
-      return;
-    }
-    mAutoIncumbentScript.emplace(incumbent);
+  // Initial Validation Pass
+  if (!CheckBeforeExecution(globalObject, aCallbackGlobal,
+                            /*aIsJSImplementedWebIDL=*/false, aRv)) {
+    return;
   }
 
-  JSContext* cx = mAutoEntryScript->cx();
-
-  // Unmark the callable (by invoking CallbackOrNull() and not the
-  // CallbackPreserveColor() variant), and stick it in a Rooted before it can
-  // go gray again.
-  // Nothing before us in this function can trigger a CC, so it's safe to wait
-  // until here it do the unmark. This allows us to construct mRootedCallable
-  // with the cx from mAutoEntryScript, avoiding the cost of finding another
-  // JSContext. (Rooted<> does not care about requests or compartments.)
-  mRootedCallable.emplace(cx, aCallback->CallbackOrNull());
-  mRootedCallableGlobal.emplace(cx, aCallback->CallbackGlobalOrNull());
-
-  mAsyncStack.emplace(cx, aCallback->GetCreationStack());
-  if (*mAsyncStack) {
-    mAsyncStackSetter.emplace(cx, *mAsyncStack, aExecutionReason);
-  }
-
-  // Enter the realm of our callback, so we can actually work with it.
-  //
-  // Note that if the callback is a wrapper, this will not be the same
-  // realm that we ended up in with mAutoEntryScript above, because the
-  // entry point is based off of the unwrapped callback (realCallback).
-  mAr.emplace(cx, *mRootedCallableGlobal);
-
-  // And now we're ready to go.
-  mCx = cx;
-
-  // We don't really have a good error message prefix to use for the
-  // BindingCallContext.
-  mCallContext.emplace(cx, nullptr);
+  // Start the execution setup -- if it succeeds, this will set mCx
+  SetupForExecution(globalObject, aIncumbentGlobal, aCallbackGlobal,
+                    aCallbackGlobal, aCreationStack,
+                    /*aWebIDLCallerPrincipal=*/nullptr, aExecutionReason, aRv);
 }
 
-bool CallbackObjectBase::CallSetup::ShouldRethrowException(
-    JS::Handle<JS::Value> aException) {
-  if (mExceptionHandling == eRethrowExceptions) {
+bool CallSetup::ShouldRethrowException(JS::Handle<JS::Value> aException) {
+  if (mExceptionHandling == CallbackObjectBase::eRethrowExceptions) {
     MOZ_ASSERT(!mRealm);
     return true;
   }
@@ -340,7 +435,7 @@ bool CallbackObjectBase::CallSetup::ShouldRethrowException(
   return js::GetNonCCWObjectRealm(obj) == mRealm;
 }
 
-CallbackObjectBase::CallSetup::~CallSetup() {
+CallSetup::~CallSetup() {
   // To get our nesting right we have to destroy our JSAutoRealm first.
   // In particular, we want to do this before we try reporting any exceptions,
   // so we end up reporting them while in the realm of our entry point,
@@ -352,8 +447,9 @@ CallbackObjectBase::CallSetup::~CallSetup() {
   // were told to re-throw them.
   if (mCx) {
     bool needToDealWithException = mAutoEntryScript->HasException();
-    if ((mRealm && mExceptionHandling == eRethrowContentExceptions) ||
-        mExceptionHandling == eRethrowExceptions) {
+    if ((mRealm &&
+         mExceptionHandling == CallbackObjectBase::eRethrowContentExceptions) ||
+        mExceptionHandling == CallbackObjectBase::eRethrowExceptions) {
       mErrorResult.MightThrowJSException();
       if (needToDealWithException) {
         JS::Rooted<JS::Value> exn(mCx);

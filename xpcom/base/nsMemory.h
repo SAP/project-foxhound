@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMemory_h__
-#define nsMemory_h__
+#ifndef nsMemory_h_
+#define nsMemory_h_
 
 #include "nsError.h"
 
@@ -59,4 +59,4 @@ nsresult HeapMinimize(bool aImmediate);
 bool IsLowMemoryPlatform();
 }  // namespace nsMemory
 
-#endif  // nsMemory_h__
+#endif  // nsMemory_h_

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_profilerhelpers_h__
-#define mozilla_dom_indexeddb_profilerhelpers_h__
+#ifndef mozilla_dom_indexeddb_profilerhelpers_h_
+#define mozilla_dom_indexeddb_profilerhelpers_h_
 
 // This file is not exported and is only meant to be included in IndexedDB
 // source files.
@@ -142,4 +142,4 @@ void MOZ_FORMAT_PRINTF(1, 3) MOZ_FORMAT_PRINTF(2, 3)
                            _conciseFmt, IDB_LOG_ID_STRING(),          \
                            _transactionSerialNumber, ##__VA_ARGS__)
 
-#endif  // mozilla_dom_indexeddb_profilerhelpers_h__
+#endif  // mozilla_dom_indexeddb_profilerhelpers_h_

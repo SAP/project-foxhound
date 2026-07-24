@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nswindowsshellserviceinternal_h____
-#define nswindowsshellserviceinternal_h____
+#ifndef nswindowsshellserviceinternal_h_
+#define nswindowsshellserviceinternal_h_
 
 #include "ErrorList.h"
 #include "nsStringFwd.h"
@@ -20,4 +20,4 @@ nsresult CreateShellLinkObject(nsIFile* aBinary,
                                const nsAString& aAppUserModelId,
                                IShellLinkW** aLink);
 
-#endif  // nswindowsshellserviceinternal_h____
+#endif  // nswindowsshellserviceinternal_h_

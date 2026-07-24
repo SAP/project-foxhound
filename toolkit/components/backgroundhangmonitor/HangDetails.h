@@ -13,7 +13,6 @@
 #include "mozilla/HangAnnotations.h"
 #include "mozilla/HangTypes.h"
 #include "mozilla/ProcessedStack.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/TimeStamp.h"
 #include "nsIFile.h"

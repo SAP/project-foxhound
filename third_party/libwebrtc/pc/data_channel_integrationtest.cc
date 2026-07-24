@@ -8,9 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stdint.h>
-
 #include <atomic>
+#include <cstdint>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
@@ -21,6 +20,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/match.h"
 #include "api/data_channel_interface.h"
 #include "api/dtls_transport_interface.h"
 #include "api/jsep.h"
@@ -34,6 +34,7 @@
 #include "api/units/time_delta.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
+#include "p2p/test/test_turn_server.h"
 #include "pc/media_session.h"
 #include "pc/session_description.h"
 #include "pc/test/fake_rtc_certificate_generator.h"
@@ -45,8 +46,10 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -59,6 +62,7 @@ namespace {
 using ::testing::Eq;
 using ::testing::IsTrue;
 using ::testing::Ne;
+using ::testing::NotNull;
 using ::testing::ValuesIn;
 
 // All tests in this file require SCTP support.
@@ -70,6 +74,13 @@ using ::testing::ValuesIn;
 #else
 #define DISABLED_ON_ANDROID(t) t
 #endif
+
+void VerifySctpState(PeerConnectionIntegrationWrapper* pc,
+                     SctpTransportState expected_state) {
+  auto sctp_transport = pc->pc()->GetSctpTransport();
+  ASSERT_TRUE(sctp_transport);
+  EXPECT_EQ(sctp_transport->Information().state(), expected_state);
+}
 
 class DataChannelIntegrationTest
     : public PeerConnectionIntegrationBaseTest,
@@ -130,7 +141,7 @@ void MakeOfferHaveActiveDtlsRole(
     std::unique_ptr<SessionDescriptionInterface>& desc) {
   auto& transport_infos = desc->description()->transport_infos();
   for (auto& transport_info : transport_infos) {
-    transport_info.description.connection_role = cricket::CONNECTIONROLE_ACTIVE;
+    transport_info.description.connection_role = CONNECTIONROLE_ACTIVE;
   }
 }
 
@@ -138,8 +149,7 @@ void MakeOfferHavePassiveDtlsRole(
     std::unique_ptr<SessionDescriptionInterface>& desc) {
   auto& transport_infos = desc->description()->transport_infos();
   for (auto& transport_info : transport_infos) {
-    transport_info.description.connection_role =
-        cricket::CONNECTIONROLE_PASSIVE;
+    transport_info.description.connection_role = CONNECTIONROLE_PASSIVE;
   }
 }
 
@@ -322,10 +332,10 @@ TEST_P(DataChannelIntegrationTest,
   caller()->data_channel()->Close();
 
   EXPECT_THAT(WaitUntil([&] { return caller()->data_observer()->state(); },
-                        Eq(webrtc::DataChannelInterface::kClosed)),
+                        Eq(DataChannelInterface::kClosed)),
               IsRtcOk());
   EXPECT_THAT(WaitUntil([&] { return callee()->data_observer()->state(); },
-                        Eq(webrtc::DataChannelInterface::kClosed)),
+                        Eq(DataChannelInterface::kClosed)),
               IsRtcOk());
 }
 
@@ -356,7 +366,7 @@ TEST_P(DataChannelIntegrationTest, EndToEndCallWithSctpDataChannelFullBuffer) {
 
   std::string data(256 * 1024, 'a');
   for (size_t queued_size = 0;
-       queued_size < webrtc::DataChannelInterface::MaxSendQueueSize();
+       queued_size < DataChannelInterface::MaxSendQueueSize();
        queued_size += data.size()) {
     caller()->data_channel()->SendAsync(DataBuffer(data), nullptr);
   }
@@ -430,7 +440,7 @@ TEST_P(DataChannelIntegrationTest,
   EXPECT_FALSE(caller()->data_observer()->messages().back().binary);
 
   // Sending empty binary data
-  rtc::CopyOnWriteBuffer empty_buffer;
+  CopyOnWriteBuffer empty_buffer;
   caller()->data_channel()->Send(DataBuffer(empty_buffer, true));
   EXPECT_THAT(
       WaitUntil(
@@ -947,7 +957,7 @@ TEST_P(DataChannelIntegrationTest, SctpDataChannelToAudioVideoUpgrade) {
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
-static void MakeSpecCompliantSctpOffer(
+void MakeSpecCompliantSctpOffer(
     std::unique_ptr<SessionDescriptionInterface>& desc) {
   SctpDataContentDescription* dcd_offer =
       GetFirstSctpDataContentDescription(desc->description());
@@ -1174,9 +1184,23 @@ TEST_P(DataChannelIntegrationTest,
               IsRtcOk());
 
   auto caller_report = caller()->NewGetStats();
+  ASSERT_THAT(caller_report, NotNull());
   EXPECT_EQ(1u, caller_report->GetStatsOfType<RTCTransportStats>().size());
   auto callee_report = callee()->NewGetStats();
+  ASSERT_THAT(callee_report, NotNull());
   EXPECT_EQ(1u, callee_report->GetStatsOfType<RTCTransportStats>().size());
+}
+
+TEST_P(DataChannelIntegrationTest, CreateDataChannelInvalidatesStatsCache) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  auto first_report = caller()->NewGetStats();
+  ASSERT_THAT(first_report, NotNull());
+  caller()->CreateDataChannel();
+  auto second_report = caller()->NewGetStats();
+  ASSERT_THAT(second_report, NotNull());
+
+  EXPECT_EQ(0u, first_report->GetStatsOfType<RTCDataChannelStats>().size());
+  EXPECT_EQ(1u, second_report->GetStatsOfType<RTCDataChannelStats>().size());
 }
 
 TEST_P(DataChannelIntegrationTest, QueuedPacketsGetDeliveredInReliableMode) {
@@ -1380,6 +1404,94 @@ TEST_P(DataChannelIntegrationTest,
             callee()->data_observer()->received_message_count());
 }
 
+TEST_P(DataChannelIntegrationTest, ChangingSctpPortIsNotAllowed) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  caller()->CreateDataChannel();
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_THAT(WaitUntil([&] { return SignalingStateStable(); }, IsTrue()),
+              IsRtcOk());
+  ASSERT_THAT(WaitUntil([&] { return callee()->data_channel(); }, Ne(nullptr)),
+              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return caller()->data_observer()->IsOpen(); }, IsTrue()),
+      IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return callee()->data_observer()->IsOpen(); }, IsTrue()),
+      IsRtcOk());
+
+  std::unique_ptr<SessionDescriptionInterface> answer;
+  caller()->SetReceivedSdpMunger(
+      [&answer](std::unique_ptr<SessionDescriptionInterface>& desc) {
+        // Change the SCTP port.
+        ContentInfo* sctp_content = GetFirstDataContent(desc->description());
+        ASSERT_TRUE(sctp_content);
+        auto sctp_description = sctp_content->media_description()->as_sctp();
+        ASSERT_TRUE(sctp_description);
+        sctp_description->set_port(sctp_description->port() + 1);
+
+        // Capture and suppress the answer.
+        answer.reset(desc.release());
+      });
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_THAT(answer, NotNull());
+
+  // Currently SRD succeeds.
+  EXPECT_TRUE(caller()->SetRemoteDescription(std::move(answer)));
+  // Check the state of the SCTP transport.
+  VerifySctpState(caller(), SctpTransportState::kClosed);
+}
+
+TEST_P(DataChannelIntegrationTest, ChangingSctpPortIsAllowedWithDtlsRestart) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  caller()->CreateDataChannel();
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_THAT(WaitUntil([&] { return SignalingStateStable(); }, IsTrue()),
+              IsRtcOk());
+  ASSERT_THAT(WaitUntil([&] { return callee()->data_channel(); }, Ne(nullptr)),
+              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return caller()->data_observer()->IsOpen(); }, IsTrue()),
+      IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return callee()->data_observer()->IsOpen(); }, IsTrue()),
+      IsRtcOk());
+
+  // Recreate the second peerconnection.
+  PeerConnectionDependencies dependencies(nullptr);
+  std::unique_ptr<FakeRTCCertificateGenerator> cert_generator(
+      new FakeRTCCertificateGenerator());
+  cert_generator->use_alternate_key();
+  dependencies.cert_generator = std::move(cert_generator);
+  SetCalleePcWrapperAndReturnCurrent(CreatePeerConnectionWrapper(
+      "Callee2", nullptr, {}, std::move(dependencies), nullptr,
+      /*reset_encoder_factory=*/false,
+      /*reset_decoder_factory=*/false,
+      /*create_media_engine=*/false));
+  ConnectFakeSignaling();
+
+  std::unique_ptr<SessionDescriptionInterface> answer;
+  caller()->SetReceivedSdpMunger(
+      [&answer](std::unique_ptr<SessionDescriptionInterface>& desc) {
+        // Change the SCTP port.
+        ContentInfo* sctp_content = GetFirstDataContent(desc->description());
+        ASSERT_TRUE(sctp_content);
+        auto sctp_description = sctp_content->media_description()->as_sctp();
+        ASSERT_TRUE(sctp_description);
+        sctp_description->set_port(sctp_description->port() + 1);
+
+        // Capture and suppress the answer.
+        answer.reset(desc.release());
+      });
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_THAT(answer, NotNull());
+
+  EXPECT_TRUE(caller()->SetRemoteDescription(std::move(answer)));
+  // Check the state of the SCTP transport.
+  VerifySctpState(caller(), SctpTransportState::kConnected);
+}
+
 INSTANTIATE_TEST_SUITE_P(DataChannelIntegrationTest,
                          DataChannelIntegrationTest,
                          Combine(Values(SdpSemantics::kPlanB_DEPRECATED,
@@ -1509,10 +1621,9 @@ class DataChannelIntegrationTestUnifiedPlanFieldTrials
       bool addTurn) {
     RTCConfiguration config;
     if (addTurn) {
-      static const rtc::SocketAddress turn_server_1_internal_address{
-          "192.0.2.1", 3478};
-      static const rtc::SocketAddress turn_server_1_external_address{
-          "192.0.3.1", 0};
+      static const SocketAddress turn_server_1_internal_address{"192.0.2.1",
+                                                                3478};
+      static const SocketAddress turn_server_1_external_address{"192.0.3.1", 0};
       TestTurnServer* turn_server_1 = CreateTurnServer(
           turn_server_1_internal_address, turn_server_1_external_address);
 
@@ -1623,15 +1734,30 @@ class DataChannelIntegrationTestUnifiedPlanFieldTrials
   }
 
   const char* CheckSupported() {
+    const bool callee_active = std::get<0>(GetParam());
+    const bool caller_has_dtls_in_stun = absl::StrContains(
+        std::get<1>(GetParam()), "WebRTC-IceHandshakeDtls/Enabled/");
+    const bool callee_has_dtls_in_stun = absl::StrContains(
+        std::get<2>(GetParam()), "WebRTC-IceHandshakeDtls/Enabled/");
+    const bool callee2_has_dtls_in_stun = absl::StrContains(
+        std::get<3>(GetParam()), "WebRTC-IceHandshakeDtls/Enabled/");
+    if (callee_active && (caller_has_dtls_in_stun || callee_has_dtls_in_stun ||
+                          callee2_has_dtls_in_stun)) {
+      return "dtls-in-stun when callee(s) are dtls clients";
+    }
+
     return nullptr;
   }
 };
 
-static const char* kTrialsVariants[] = {
+const char* kTrialsVariants[] = {
     "",
     "WebRTC-ForceDtls13/Enabled/",
     "WebRTC-IceHandshakeDtls/Enabled/",
+    "WebRTC-ForceDtls13/Enabled/WebRTC-EnableDtlsPqc/Enabled/",
     "WebRTC-ForceDtls13/Enabled/WebRTC-IceHandshakeDtls/Enabled/",
+    ("WebRTC-ForceDtls13/Enabled/WebRTC-IceHandshakeDtls/Enabled/"
+     "WebRTC-EnableDtlsPqc/Enabled/"),
 };
 
 INSTANTIATE_TEST_SUITE_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
@@ -1660,10 +1786,26 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
         // Capture offer so that it can be sent to Callee2 too.
         offer = sdp->Clone();
       });
+  callee2->SetReceivedSdpMunger(
+      [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
+        if (callee_active) {
+          MakeOfferHavePassiveDtlsRole(sdp);
+        } else {
+          MakeOfferHaveActiveDtlsRole(sdp);
+        }
+      });
   callee()->SetGeneratedSdpMunger(
       [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
         // Modify offer to kPrAnswer
         SetSdpType(sdp, SdpType::kPrAnswer);
+        if (callee_active) {
+          MakeOfferHaveActiveDtlsRole(sdp);
+        } else {
+          MakeOfferHavePassiveDtlsRole(sdp);
+        }
+      });
+  callee2->SetGeneratedSdpMunger(
+      [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
         if (callee_active) {
           MakeOfferHaveActiveDtlsRole(sdp);
         } else {
@@ -1702,6 +1844,9 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
   VerifyReceivedDcMessages(caller(), "KENT", callee2_sent_on_dc);
   VerifyReceivedDcMessages(callee2.get(), "KESO", caller_sent_on_dc);
   VerifyDtlsRoles(caller(), callee2.get());
+  VerifySctpState(caller(), SctpTransportState::kConnected);
+  VerifySctpState(callee(), SctpTransportState::kClosed);
+  VerifySctpState(callee2.get(), SctpTransportState::kConnected);
   ASSERT_FALSE(HasFailure());
 }
 
@@ -1724,10 +1869,26 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
         // Capture offer so that it can be sent to Callee2 too.
         offer = sdp->Clone();
       });
+  callee2->SetReceivedSdpMunger(
+      [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
+        if (callee_active) {
+          MakeOfferHavePassiveDtlsRole(sdp);
+        } else {
+          MakeOfferHaveActiveDtlsRole(sdp);
+        }
+      });
   callee()->SetGeneratedSdpMunger(
       [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
         // Modify offer to kPrAnswer
         SetSdpType(sdp, SdpType::kPrAnswer);
+        if (callee_active) {
+          MakeOfferHaveActiveDtlsRole(sdp);
+        } else {
+          MakeOfferHavePassiveDtlsRole(sdp);
+        }
+      });
+  callee2->SetGeneratedSdpMunger(
+      [&](std::unique_ptr<SessionDescriptionInterface>& sdp) {
         if (callee_active) {
           MakeOfferHaveActiveDtlsRole(sdp);
         } else {
@@ -1757,8 +1918,7 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
 
   // Forward turn ice candidate also to callee2.
   auto candidate = caller()->last_gathered_ice_candidate();
-  std::string ice_sdp;
-  EXPECT_TRUE(candidate->ToString(&ice_sdp));
+  std::string ice_sdp = candidate->ToString();
   callee2->ReceiveIceMessage(candidate->sdp_mid(), candidate->sdp_mline_index(),
                              ice_sdp);
 
@@ -1793,6 +1953,7 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
   ASSERT_THAT(answer, testing::Not(testing::IsNull()));
   std::string answer_sdp;
   EXPECT_TRUE(answer->ToString(&answer_sdp));
+
   caller()->ReceiveSdpMessage(SdpType::kAnswer, answer_sdp);
 
   EXPECT_EQ(caller()->pc()->signaling_state(),

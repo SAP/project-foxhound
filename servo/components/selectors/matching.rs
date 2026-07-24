@@ -9,7 +9,7 @@ use crate::attr::{
 use crate::bloom::{BloomFilter, BLOOM_HASH_MASK};
 use crate::kleene_value::KleeneValue;
 use crate::parser::{
-    AncestorHashes, Combinator, Component, MatchesFeaturelessHost, LocalName, NthSelectorData,
+    AncestorHashes, Combinator, Component, LocalName, MatchesFeaturelessHost, NthSelectorData,
     RelativeSelectorMatchHint,
 };
 use crate::parser::{
@@ -17,11 +17,11 @@ use crate::parser::{
 };
 use crate::relative_selector::cache::RelativeSelectorCachedMatch;
 use crate::tree::Element;
+use bitflags::bitflags;
+use debug_unreachable::debug_unreachable;
 use log::debug;
 use smallvec::SmallVec;
 use std::borrow::Borrow;
-use bitflags::bitflags;
-use debug_unreachable::debug_unreachable;
 
 pub use crate::context::*;
 
@@ -90,20 +90,20 @@ bitflags! {
 impl ElementSelectorFlags {
     /// Returns the subset of flags that apply to the element.
     pub fn for_self(self) -> ElementSelectorFlags {
-        self & (ElementSelectorFlags::HAS_EMPTY_SELECTOR |
-            ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR |
-            ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR_NON_SUBJECT |
-            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING |
-            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR)
+        self & (ElementSelectorFlags::HAS_EMPTY_SELECTOR
+            | ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR
+            | ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR_NON_SUBJECT
+            | ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING
+            | ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR)
     }
 
     /// Returns the subset of flags that apply to the parent.
     pub fn for_parent(self) -> ElementSelectorFlags {
-        self & (ElementSelectorFlags::HAS_SLOW_SELECTOR |
-            ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS |
-            ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH |
-            ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF |
-            ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR)
+        self & (ElementSelectorFlags::HAS_SLOW_SELECTOR
+            | ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS
+            | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH
+            | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF
+            | ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR)
     }
 }
 
@@ -236,9 +236,9 @@ impl From<SelectorMatchingResult> for KleeneValue {
         match value {
             SelectorMatchingResult::Matched => KleeneValue::True,
             SelectorMatchingResult::Unknown => KleeneValue::Unknown,
-            SelectorMatchingResult::NotMatchedAndRestartFromClosestLaterSibling |
-            SelectorMatchingResult::NotMatchedAndRestartFromClosestDescendant |
-            SelectorMatchingResult::NotMatchedGlobally => KleeneValue::False,
+            SelectorMatchingResult::NotMatchedAndRestartFromClosestLaterSibling
+            | SelectorMatchingResult::NotMatchedAndRestartFromClosestDescendant
+            | SelectorMatchingResult::NotMatchedGlobally => KleeneValue::False,
         }
     }
 }
@@ -249,7 +249,7 @@ impl From<SelectorMatchingResult> for KleeneValue {
 /// partial selectors (indexed from the right). We use this API design, rather
 /// than having the callers pass a SelectorIter, because creating a SelectorIter
 /// requires dereferencing the selector to get the length, which adds an
-/// unncessary cache miss for cases when we can fast-reject with AncestorHashes
+/// unnecessary cache miss for cases when we can fast-reject with AncestorHashes
 /// (which the caller can store inline with the selector pointer).
 #[inline(always)]
 pub fn matches_selector<E>(
@@ -265,7 +265,9 @@ where
     let result = matches_selector_kleene(selector, offset, hashes, element, context);
     if cfg!(debug_assertions) && result == KleeneValue::Unknown {
         debug_assert!(
-            context.matching_for_invalidation_comparison().unwrap_or(false),
+            context
+                .matching_for_invalidation_comparison()
+                .unwrap_or(false),
             "How did we return unknown?"
         );
     }
@@ -314,6 +316,37 @@ pub enum CompoundSelectorMatchingResult {
     Matched { next_combinator_offset: usize },
     /// The selector didn't match.
     NotMatched,
+}
+
+fn complex_selector_early_reject_by_local_name<E: Element>(
+    list: &SelectorList<E::Impl>,
+    element: &E,
+) -> bool {
+    list.slice()
+        .iter()
+        .all(|s| early_reject_by_local_name(s, 0, element))
+}
+
+/// Returns true if this compound would not match the given element by due
+/// to a local name selector (If one exists).
+pub fn early_reject_by_local_name<E: Element>(
+    selector: &Selector<E::Impl>,
+    from_offset: usize,
+    element: &E,
+) -> bool {
+    let iter = selector.iter_from(from_offset);
+    for component in iter {
+        if match component {
+            Component::LocalName(name) => !matches_local_name(element, name),
+            Component::Is(list) | Component::Where(list) => {
+                complex_selector_early_reject_by_local_name(list, element)
+            },
+            _ => continue,
+        } {
+            return true;
+        }
+    }
+    false
 }
 
 /// Matches a compound selector belonging to `selector`, starting at offset
@@ -384,7 +417,10 @@ where
 
     for component in iter {
         let result = matches_simple_selector(component, element, &mut local_context);
-        debug_assert!(result != KleeneValue::Unknown, "Returned unknown in non invalidation context?");
+        debug_assert!(
+            result != KleeneValue::Unknown,
+            "Returned unknown in non invalidation context?"
+        );
         if !result.to_bool(true) {
             return CompoundSelectorMatchingResult::NotMatched;
         }
@@ -459,15 +495,9 @@ fn matches_complex_selector_list<E: Element>(
     context: &mut MatchingContext<E::Impl>,
     rightmost: SubjectOrPseudoElement,
 ) -> KleeneValue {
-    KleeneValue::any(
-        list.iter(),
-        |selector| matches_complex_selector(
-            selector.iter(),
-            element,
-            context,
-            rightmost
-        )
-    )
+    KleeneValue::any(list.iter(), |selector| {
+        matches_complex_selector(selector.iter(), element, context, rightmost)
+    })
 }
 
 fn matches_relative_selector<E: Element>(
@@ -515,10 +545,10 @@ fn matches_relative_selector<E: Element>(
         debug_assert!(
             matches!(
                 relative_selector.match_hint,
-                RelativeSelectorMatchHint::InNextSibling |
-                    RelativeSelectorMatchHint::InNextSiblingSubtree |
-                    RelativeSelectorMatchHint::InSibling |
-                    RelativeSelectorMatchHint::InSiblingSubtree
+                RelativeSelectorMatchHint::InNextSibling
+                    | RelativeSelectorMatchHint::InNextSiblingSubtree
+                    | RelativeSelectorMatchHint::InSibling
+                    | RelativeSelectorMatchHint::InSiblingSubtree
             ),
             "Not descendant direction, but also not sibling direction?"
         );
@@ -614,9 +644,11 @@ fn match_relative_selectors<E: Element>(
             KleeneValue::from(!context.in_negation())
         };
     }
-    context.nest_for_relative_selector(element.opaque(), |context| {
-        do_match_relative_selectors(selectors, element, context, rightmost)
-    }).into()
+    context
+        .nest_for_relative_selector(element.opaque(), |context| {
+            do_match_relative_selectors(selectors, element, context, rightmost)
+        })
+        .into()
 }
 
 /// Matches a relative selector in a list of relative selectors.
@@ -711,8 +743,8 @@ fn hover_and_active_quirk_applies<Impl: SelectorImpl>(
 
     // This compound selector had a pseudo-element to the right that we
     // intentionally skipped.
-    if rightmost == SubjectOrPseudoElement::Yes &&
-        context.matching_mode() == MatchingMode::ForStatelessPseudoElement
+    if rightmost == SubjectOrPseudoElement::Yes
+        && context.matching_mode() == MatchingMode::ForStatelessPseudoElement
     {
         return false;
     }
@@ -770,7 +802,10 @@ struct NextElement<E> {
 impl<E> NextElement<E> {
     #[inline(always)]
     fn new(next_element: Option<E>, featureless: bool) -> Self {
-        Self { next_element, featureless }
+        Self {
+            next_element,
+            featureless,
+        }
     }
 }
 
@@ -784,10 +819,9 @@ where
     E: Element,
 {
     match combinator {
-        Combinator::NextSibling | Combinator::LaterSibling => NextElement::new(
-            element.prev_sibling_element(),
-            false,
-        ),
+        Combinator::NextSibling | Combinator::LaterSibling => {
+            NextElement::new(element.prev_sibling_element(), false)
+        },
         Combinator::Child | Combinator::Descendant => {
             if let Some(parent) = element.parent_element() {
                 return NextElement::new(Some(parent), false);
@@ -802,7 +836,9 @@ where
         },
         Combinator::Part => NextElement::new(host_for_part(element, context), false),
         Combinator::SlotAssignment => NextElement::new(assigned_slot(element, context), false),
-        Combinator::PseudoElement => NextElement::new(element.pseudo_element_originating_element(), false),
+        Combinator::PseudoElement => {
+            NextElement::new(element.pseudo_element_originating_element(), false)
+        },
     }
 }
 
@@ -821,31 +857,17 @@ where
         selector_iter, element
     );
 
-    let matches_compound_selector = {
-        let result = matches_compound_selector(&mut selector_iter, element, context, rightmost);
-        // We only care for unknown match in the first subject in compound - in the context of comparison
-        // invalidation, ancestors/previous sibling being an unknown match doesn't matter - we must
-        // invalidate to guarantee correctness.
-        if result == KleeneValue::Unknown && first_subject_compound == SubjectOrPseudoElement::No {
-            debug_assert!(
-                context
-                    .matching_for_invalidation_comparison()
-                    .unwrap_or(false),
-                "How did we return unknown?"
-            );
-            // Coerce the result to matched.
-            KleeneValue::from(!context.in_negation())
-        } else {
-            result
-        }
-    };
+    let matches_compound_selector =
+        matches_compound_selector(&mut selector_iter, element, context, rightmost);
 
     let Some(combinator) = selector_iter.next_sequence() else {
         return match matches_compound_selector {
             KleeneValue::True => SelectorMatchingResult::Matched,
             KleeneValue::Unknown => SelectorMatchingResult::Unknown,
-            KleeneValue::False => SelectorMatchingResult::NotMatchedAndRestartFromClosestLaterSibling,
-        }
+            KleeneValue::False => {
+                SelectorMatchingResult::NotMatchedAndRestartFromClosestLaterSibling
+            },
+        };
     };
 
     let is_pseudo_combinator = combinator.is_pseudo_element();
@@ -892,7 +914,10 @@ where
             visited_handling = VisitedHandlingMode::AllLinksUnvisited;
         }
 
-        let NextElement { next_element, featureless } = next_element_for_combinator(&element, combinator, &context);
+        let NextElement {
+            next_element,
+            featureless,
+        } = next_element_for_combinator(&element, combinator, &context);
         element = match next_element {
             None => return candidate_not_found,
             Some(e) => e,
@@ -913,14 +938,18 @@ where
         // Return the status immediately if it is one of the global states.
         match result {
             SelectorMatchingResult::Matched => {
-                debug_assert!(matches_compound_selector.to_bool(true), "Compound didn't match?");
+                debug_assert!(
+                    matches_compound_selector.to_bool(true),
+                    "Compound didn't match?"
+                );
                 if !matches_compound_selector.to_bool(false) {
                     return SelectorMatchingResult::Unknown;
                 }
                 return result;
             },
-            SelectorMatchingResult::Unknown |
-            SelectorMatchingResult::NotMatchedGlobally => return result,
+            SelectorMatchingResult::Unknown | SelectorMatchingResult::NotMatchedGlobally => {
+                return result
+            },
             _ => {},
         }
 
@@ -935,22 +964,28 @@ where
             Combinator::Child => {
                 // Upgrade the failure status to NotMatchedAndRestartFromClosestDescendant.
                 return SelectorMatchingResult::NotMatchedAndRestartFromClosestDescendant;
-            }
+            },
             Combinator::LaterSibling => {
                 // If the failure status is NotMatchedAndRestartFromClosestDescendant and combinator is
                 // LaterSibling, give up this LaterSibling matching and restart from the closest
                 // descendant combinator.
-                if matches!(result, SelectorMatchingResult::NotMatchedAndRestartFromClosestDescendant) {
+                if matches!(
+                    result,
+                    SelectorMatchingResult::NotMatchedAndRestartFromClosestDescendant
+                ) {
                     return result;
                 }
             },
-            Combinator::NextSibling | Combinator::PseudoElement | Combinator::Part | Combinator::SlotAssignment => {
+            Combinator::NextSibling
+            | Combinator::PseudoElement
+            | Combinator::Part
+            | Combinator::SlotAssignment => {
                 // NOTE(emilio): Conceptually, PseudoElement / Part / SlotAssignment should return
                 // `candidate_not_found`, but it doesn't matter in practice since they don't have
                 // sibling / descendant combinators to the right of them. This hopefully saves one
                 // branch.
                 return result;
-            }
+            },
         }
 
         if featureless {
@@ -1032,10 +1067,14 @@ where
     if host != element.opaque() {
         return KleeneValue::False;
     }
-    let Some(selector) = selector else { return KleeneValue::True };
-    context.nest(|context| context.with_featureless(false, |context| {
-        matches_complex_selector(selector.iter(), element, context, rightmost)
-    }))
+    let Some(selector) = selector else {
+        return KleeneValue::True;
+    };
+    context.nest(|context| {
+        context.with_featureless(false, |context| {
+            matches_complex_selector(selector.iter(), element, context, rightmost)
+        })
+    })
 }
 
 fn matches_slotted<E>(
@@ -1090,7 +1129,10 @@ where
 /// There are relatively few selectors in a given compound that may match a featureless element.
 /// Instead of adding a check to every selector that may not match, we handle it here in an out of
 /// line path.
-pub(crate) fn compound_matches_featureless_host<Impl: SelectorImpl>(iter: &mut SelectorIter<Impl>, scope_matches_featureless_host: bool) -> MatchesFeaturelessHost {
+pub(crate) fn compound_matches_featureless_host<Impl: SelectorImpl>(
+    iter: &mut SelectorIter<Impl>,
+    scope_matches_featureless_host: bool,
+) -> MatchesFeaturelessHost {
     let mut matches = MatchesFeaturelessHost::Only;
     for component in iter {
         match component {
@@ -1108,14 +1150,14 @@ pub(crate) fn compound_matches_featureless_host<Impl: SelectorImpl>(iter: &mut S
                     match selector.matches_featureless_host(scope_matches_featureless_host) {
                         MatchesFeaturelessHost::Never => {
                             any_no = true;
-                        }
+                        },
                         MatchesFeaturelessHost::Yes => {
                             any_yes = true;
                             any_no = true;
-                        }
+                        },
                         MatchesFeaturelessHost::Only => {
                             any_yes = true;
-                        }
+                        },
                     }
                 }
                 if !any_yes {
@@ -1131,7 +1173,9 @@ pub(crate) fn compound_matches_featureless_host<Impl: SelectorImpl>(iter: &mut S
                 // https://github.com/w3c/csswg-drafts/issues/10179 for existing resolutions that
                 // tweak this behavior.
                 for selector in l.slice() {
-                    if selector.matches_featureless_host(scope_matches_featureless_host) != MatchesFeaturelessHost::Only {
+                    if selector.matches_featureless_host(scope_matches_featureless_host)
+                        != MatchesFeaturelessHost::Only
+                    {
                         return MatchesFeaturelessHost::Never;
                     }
                 }
@@ -1154,7 +1198,12 @@ fn matches_compound_selector<E>(
 where
     E: Element,
 {
-    if context.featureless() && compound_matches_featureless_host(&mut selector_iter.clone(), /* scope_matches_featureless_host = */ true) == MatchesFeaturelessHost::Never {
+    if context.featureless()
+        && compound_matches_featureless_host(
+            &mut selector_iter.clone(),
+            /* scope_matches_featureless_host = */ true,
+        ) == MatchesFeaturelessHost::Never
+    {
         return KleeneValue::False;
     }
     let quirks_data = if context.quirks_mode() == QuirksMode::Quirks {
@@ -1167,14 +1216,9 @@ where
         rightmost,
         quirks_data,
     };
-    KleeneValue::any_false(
-        selector_iter,
-        |simple| matches_simple_selector(
-            simple,
-            element,
-            &mut local_context
-        )
-    )
+    KleeneValue::any_false(selector_iter, |simple| {
+        matches_simple_selector(simple, element, &mut local_context)
+    })
 }
 
 /// Determines whether the given element matches the given single selector.
@@ -1234,9 +1278,9 @@ where
         },
         Component::NonTSPseudoClass(ref pc) => {
             if let Some(ref iter) = context.quirks_data {
-                if pc.is_active_or_hover() &&
-                    !element.is_link() &&
-                    hover_and_active_quirk_applies(iter, context.shared, context.rightmost)
+                if pc.is_active_or_hover()
+                    && !element.is_link()
+                    && hover_and_active_quirk_applies(iter, context.shared, context.rightmost)
                 {
                     return KleeneValue::False;
                 }
@@ -1253,9 +1297,24 @@ where
         Component::Host(ref selector) => {
             return matches_host(element, selector.as_ref(), &mut context.shared, rightmost);
         },
-        Component::ParentSelector | Component::Scope | Component::ImplicitScope => match context.shared.scope_element {
+        Component::ParentSelector => match context.shared.scope_element {
             Some(ref scope_element) => element.opaque() == *scope_element,
             None => element.is_root(),
+        },
+        Component::Scope | Component::ImplicitScope => {
+            let matching_for_invalidation = context.shared.matching_for_invalidation_comparison();
+            if context.shared.matching_for_revalidation() || matching_for_invalidation.is_some() {
+                let may_return_unknown = matching_for_invalidation.unwrap_or(false);
+                return if may_return_unknown {
+                    KleeneValue::Unknown
+                } else {
+                    KleeneValue::from(!context.shared.in_negation())
+                };
+            }
+            match context.shared.scope_element {
+                Some(ref scope_element) => element.opaque() == *scope_element,
+                None => element.is_root(),
+            }
         },
         Component::Nth(ref nth_data) => {
             return matches_generic_nth_child(element, context.shared, nth_data, &[], rightmost);
@@ -1348,8 +1407,8 @@ where
         return KleeneValue::False;
     }
     let has_selectors = !selectors.is_empty();
-    let selectors_match = !has_selectors ||
-        matches_complex_selector_list(selectors, element, context, rightmost).to_bool(true);
+    let selectors_match = !has_selectors
+        || matches_complex_selector_list(selectors, element, context, rightmost).to_bool(true);
     if let Some(may_return_unknown) = context.matching_for_invalidation_comparison() {
         // Skip expensive indexing math in invalidation.
         return if selectors_match && may_return_unknown {
@@ -1374,8 +1433,8 @@ where
                 selectors,
                 rightmost,
             )
-            .to_bool(true) &&
-                matches_generic_nth_child(
+            .to_bool(true)
+                && matches_generic_nth_child(
                     element,
                     context,
                     &NthSelectorData::last(is_of_type),
@@ -1481,9 +1540,9 @@ where
     // siblings to the left checking the cache in the is_from_end case (this
     // matches what Gecko does). The indices-from-the-left is handled during the
     // regular look further below.
-    if check_cache &&
-        is_from_end &&
-        !context
+    if check_cache
+        && is_from_end
+        && !context
             .nth_index_cache(is_of_type, is_from_end, selectors)
             .is_empty()
     {

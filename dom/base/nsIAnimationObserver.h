@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIAnimationObserver_h___
-#define nsIAnimationObserver_h___
+#ifndef nsIAnimationObserver_h_
+#define nsIAnimationObserver_h_
 
 #include "nsIMutationObserver.h"
 
@@ -46,4 +46,4 @@ class nsIAnimationObserver : public nsIMutationObserver {
   NS_DECL_NSIANIMATIONOBSERVER_ANIMATIONREMOVED \
   NS_DECL_NSIMUTATIONOBSERVER
 
-#endif  // nsIAnimationObserver_h___
+#endif  // nsIAnimationObserver_h_

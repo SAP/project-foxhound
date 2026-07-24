@@ -22,7 +22,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "streamConv",
   "@mozilla.org/streamConverters;1",
-  "nsIStreamConverterService"
+  Ci.nsIStreamConverterService
 );
 const ArrayBufferInputStream = Components.Constructor(
   "@mozilla.org/io/arraybuffer-input-stream;1",

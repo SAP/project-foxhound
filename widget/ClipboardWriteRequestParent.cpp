@@ -32,8 +32,7 @@ nsresult ClipboardWriteRequestParent::Init(
     mozilla::dom::WindowContext* aSettingWindowContext) {
   nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID));
   if (!clipboard) {
-    Unused << PClipboardWriteRequestParent::Send__delete__(this,
-                                                           NS_ERROR_FAILURE);
+    (void)PClipboardWriteRequestParent::Send__delete__(this, NS_ERROR_FAILURE);
     return NS_ERROR_FAILURE;
   }
 
@@ -41,7 +40,7 @@ nsresult ClipboardWriteRequestParent::Init(
       clipboard->AsyncSetData(aClipboardType, aSettingWindowContext, this,
                               getter_AddRefs(mAsyncSetClipboardData));
   if (NS_FAILED(rv)) {
-    Unused << PClipboardWriteRequestParent::Send__delete__(this, rv);
+    (void)PClipboardWriteRequestParent::Send__delete__(this, rv);
     return rv;
   }
 
@@ -52,7 +51,7 @@ NS_IMETHODIMP ClipboardWriteRequestParent::OnComplete(nsresult aResult) {
   nsCOMPtr<nsIAsyncSetClipboardData> clipboardData =
       std::move(mAsyncSetClipboardData);
   if (clipboardData) {
-    Unused << PClipboardWriteRequestParent::Send__delete__(this, aResult);
+    (void)PClipboardWriteRequestParent::Send__delete__(this, aResult);
   }
   return NS_OK;
 }

@@ -6,8 +6,6 @@
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/CGLRenderers.h>
 
-#include "mozilla/ArrayUtils.h"
-
 #include "GfxInfo.h"
 #include "nsUnicharUtils.h"
 #include "nsExceptionHandler.h"
@@ -15,8 +13,6 @@
 #include "nsCocoaUtils.h"
 #include "mozilla/Preferences.h"
 #include "js/PropertyAndElement.h"  // JS_SetElement, JS_SetProperty
-
-#include <algorithm>
 
 #import <Foundation/Foundation.h>
 #import <IOKit/IOKitLib.h>
@@ -139,7 +135,7 @@ void GfxInfo::GetDeviceInfo() {
       }
     }
     IOObjectRelease(entry);
-    if (mNumGPUsDetected == 2) {
+    if (mNumGPUsDetected == kMaxGPUs) {
       break;
     }
   }
@@ -165,6 +161,9 @@ void GfxInfo::GetDeviceInfo() {
         ++mNumGPUsDetected;
       }
       IOObjectRelease(entry);
+      if (mNumGPUsDetected == kMaxGPUs) {
+        break;
+      }
     }
 
     IOObjectRelease(io_iter);
@@ -176,9 +175,30 @@ void GfxInfo::GetDeviceInfo() {
   }
 #endif
 
-  CFMutableDictionaryRef apv_dev_dict = IOServiceMatching("AppleParavirtGPU");
-  if (IOServiceGetMatchingServices(kIOMasterPortDefault, apv_dev_dict,
-                                   &io_iter) == kIOReturnSuccess) {
+  // "AppleParavirtGPU" is the class name in VMs that use the Apple
+  // Virtualization framework. But it's "AppleParavirtGPUControl" in VMware
+  // VMs (on Intel) that use VMware's "paravirtualized driver". Parallels
+  // Intel VMs have a "AppleParavirtGPUControl" service. But, like VMware
+  // VMs that don't use the "paravirtualized driver", they also have
+  // kClassCodeDisplayVGA devices. So these cases will have been dealt with
+  // above. On Apple Silicon, Parallels uses Apple's Virtualization
+  // framework. VMware doesn't support macOS guest VMs on Apple Silicon.
+  for (const char* className :
+       {"AppleParavirtGPU", "AppleParavirtGPUControl"}) {
+    CFMutableDictionaryRef apv_dev_dict = IOServiceMatching(className);
+    if (IOServiceGetMatchingServices(kIOMasterPortDefault, apv_dev_dict,
+                                     &io_iter) == kIOReturnSuccess) {
+      io_registry_entry_t entry = IOIteratorNext(io_iter);
+      if (entry != IO_OBJECT_NULL) {
+        IOObjectRelease(entry);
+        IOIteratorReset(io_iter);
+        break;
+      }
+      IOObjectRelease(io_iter);
+    }
+    io_iter = IO_OBJECT_NULL;
+  }
+  if (io_iter) {
     io_registry_entry_t entry = IO_OBJECT_NULL;
     while ((entry = IOIteratorNext(io_iter)) != IO_OBJECT_NULL) {
       CFTypeRef vendor_id_ref =
@@ -198,6 +218,9 @@ void GfxInfo::GetDeviceInfo() {
       }
       ++mNumGPUsDetected;
       IOObjectRelease(entry);
+      if (mNumGPUsDetected == kMaxGPUs) {
+        break;
+      }
     }
 
     IOObjectRelease(io_iter);
@@ -225,9 +248,6 @@ nsresult GfxInfo::Init() {
 
   return rv;
 }
-
-NS_IMETHODIMP
-GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
@@ -274,7 +294,7 @@ GfxInfo::GetAdapterDescription(nsAString& aAdapterDescription) {
 /* readonly attribute DOMString adapterDescription2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDescription2(nsAString& aAdapterDescription) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDescription.AssignLiteral("");
@@ -291,7 +311,7 @@ GfxInfo::GetAdapterRAM(uint32_t* aAdapterRAM) {
 /* readonly attribute DOMString adapterRAM2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterRAM2(uint32_t* aAdapterRAM) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   *aAdapterRAM = mAdapterRAM[1];
@@ -308,7 +328,7 @@ GfxInfo::GetAdapterDriver(nsAString& aAdapterDriver) {
 /* readonly attribute DOMString adapterDriver2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriver2(nsAString& aAdapterDriver) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriver.AssignLiteral("");
@@ -325,7 +345,7 @@ GfxInfo::GetAdapterDriverVendor(nsAString& aAdapterDriverVendor) {
 /* readonly attribute DOMString adapterDriverVendor2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVendor2(nsAString& aAdapterDriverVendor) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverVendor.AssignLiteral("");
@@ -342,7 +362,7 @@ GfxInfo::GetAdapterDriverVersion(nsAString& aAdapterDriverVersion) {
 /* readonly attribute DOMString adapterDriverVersion2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVersion2(nsAString& aAdapterDriverVersion) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverVersion.AssignLiteral("");
@@ -359,7 +379,7 @@ GfxInfo::GetAdapterDriverDate(nsAString& aAdapterDriverDate) {
 /* readonly attribute DOMString adapterDriverDate2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverDate2(nsAString& aAdapterDriverDate) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverDate.AssignLiteral("");
@@ -376,7 +396,7 @@ GfxInfo::GetAdapterVendorID(nsAString& aAdapterVendorID) {
 /* readonly attribute DOMString adapterVendorID2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterVendorID2(nsAString& aAdapterVendorID) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterVendorID = mAdapterVendorID[1];
@@ -393,7 +413,7 @@ GfxInfo::GetAdapterDeviceID(nsAString& aAdapterDeviceID) {
 /* readonly attribute DOMString adapterDeviceID2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDeviceID2(nsAString& aAdapterDeviceID) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDeviceID = mAdapterDeviceID[1];
@@ -468,12 +488,6 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         OperatingSystem::OSX, DeviceFamily::IntelWebRenderBlocked,
         nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_INTEL_GEN5_OR_OLDER");
-
-    // Intel HD3000 disabled due to bug 1661505
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::IntelSandyBridge,
-        nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        "FEATURE_FAILURE_INTEL_MAC_HD3000_NO_WEBRENDER");
   }
   return *sDriverInfo;
 }

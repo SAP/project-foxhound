@@ -125,7 +125,8 @@ class gfxCharacterMap : public gfxSparseBitSet {
     }
   }
 
-  gfxCharacterMap() = default;
+  explicit gfxCharacterMap(uint32_t aReserveBlocks)
+      : gfxSparseBitSet(aReserveBlocks) {}
 
   explicit gfxCharacterMap(const gfxSparseBitSet& aOther)
       : gfxSparseBitSet(aOther) {}
@@ -492,7 +493,8 @@ class gfxFontEntry {
 
   // Used for reporting on individual font entries in the user font cache,
   // which are not present in the platform font list.
-  size_t ComputedSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  virtual size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf);
 
   // Used when checking for complex script support, to mask off cmap ranges
   struct ScriptRange {
@@ -606,9 +608,10 @@ class gfxFontEntry {
 
   // bitvector of substitution space features per script, one each
   // for default and non-default features
-  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
-  uint32_t
-      mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
+  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                    32] MOZ_GUARDED_BY(mFeatureInfoLock);
+  uint32_t mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                       32] MOZ_GUARDED_BY(mFeatureInfoLock);
 
   mozilla::Atomic<uint32_t> mUVSOffset;
 
@@ -790,12 +793,6 @@ class gfxFontEntry {
   nsrefcnt mGrFaceRefCnt = 0;
 
   friend class gfxFontEntryCallbacks;
-
-  // For memory reporting: size of user-font data belonging to this entry.
-  // We record this in the font entry because the actual data block may be
-  // handed over to platform APIs, so that it would become difficult (and
-  // platform-specific) to measure it directly at report-gathering time.
-  uint32_t mComputedSizeOfUserFont = 0;
 
   // Font's unitsPerEm from the 'head' table, if available (will be set to
   // kInvalidUPEM for non-sfnt font formats)

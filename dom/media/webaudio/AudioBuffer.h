@@ -8,17 +8,16 @@
 #define AudioBuffer_h_
 
 #include "AudioSegment.h"
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StaticMutex.h"
-#include "nsTArray.h"
 #include "js/TypeDecls.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/TypedArray.h"
-#include "nsPIDOMWindow.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIWeakReferenceUtils.h"
+#include "nsPIDOMWindow.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

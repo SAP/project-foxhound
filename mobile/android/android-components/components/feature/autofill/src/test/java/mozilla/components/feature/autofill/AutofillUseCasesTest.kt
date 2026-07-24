@@ -27,17 +27,7 @@ class AutofillUseCasesTest {
         doReturn(autofillManager).`when`(context).getSystemService(AutofillManager::class.java)
         doReturn(true).`when`(autofillManager).isAutofillSupported
 
-        assertFalse(AutofillUseCases(sdkVersion = 21).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 22).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 23).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 24).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 25).isSupported(context))
-
-        assertTrue(AutofillUseCases(sdkVersion = 26).isSupported(context))
-        assertTrue(AutofillUseCases(sdkVersion = 27).isSupported(context))
-        assertTrue(AutofillUseCases(sdkVersion = 28).isSupported(context))
-        assertTrue(AutofillUseCases(sdkVersion = 29).isSupported(context))
-        assertTrue(AutofillUseCases(sdkVersion = 30).isSupported(context))
+        assertTrue(AutofillUseCases().isSupported(context))
     }
 
     @Test
@@ -47,16 +37,7 @@ class AutofillUseCasesTest {
         doReturn(autofillManager).`when`(context).getSystemService(AutofillManager::class.java)
         doReturn(false).`when`(autofillManager).isAutofillSupported
 
-        assertFalse(AutofillUseCases(sdkVersion = 21).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 22).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 23).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 24).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 25).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 26).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 27).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 28).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 29).isSupported(context))
-        assertFalse(AutofillUseCases(sdkVersion = 30).isSupported(context))
+        assertFalse(AutofillUseCases().isSupported(context))
     }
 
     @Test
@@ -66,17 +47,7 @@ class AutofillUseCasesTest {
         doReturn(autofillManager).`when`(context).getSystemService(AutofillManager::class.java)
         doReturn(true).`when`(autofillManager).hasEnabledAutofillServices()
 
-        assertFalse(AutofillUseCases(sdkVersion = 21).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 22).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 23).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 24).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 25).isEnabled(context))
-
-        assertTrue(AutofillUseCases(sdkVersion = 26).isEnabled(context))
-        assertTrue(AutofillUseCases(sdkVersion = 27).isEnabled(context))
-        assertTrue(AutofillUseCases(sdkVersion = 28).isEnabled(context))
-        assertTrue(AutofillUseCases(sdkVersion = 29).isEnabled(context))
-        assertTrue(AutofillUseCases(sdkVersion = 30).isEnabled(context))
+        assertTrue(AutofillUseCases().isEnabled(context))
     }
 
     @Test
@@ -86,59 +57,14 @@ class AutofillUseCasesTest {
         doReturn(autofillManager).`when`(context).getSystemService(AutofillManager::class.java)
         doReturn(false).`when`(autofillManager).hasEnabledAutofillServices()
 
-        assertFalse(AutofillUseCases(sdkVersion = 21).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 22).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 23).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 24).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 25).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 26).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 27).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 28).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 29).isEnabled(context))
-        assertFalse(AutofillUseCases(sdkVersion = 30).isEnabled(context))
+        assertFalse(AutofillUseCases().isEnabled(context))
     }
 
     @Test
     fun testEnable() {
         val context: Context = mock()
 
-        AutofillUseCases(sdkVersion = 21).enable(context)
-        verify(context, never()).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 22).enable(context)
-        verify(context, never()).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 23).enable(context)
-        verify(context, never()).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 24).enable(context)
-        verify(context, never()).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 25).enable(context)
-        verify(context, never()).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 26).enable(context)
-        verify(context).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 27).enable(context)
-        verify(context).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 28).enable(context)
-        verify(context).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 29).enable(context)
-        verify(context).startActivity(any())
-        reset(context)
-
-        AutofillUseCases(sdkVersion = 30).enable(context)
+        AutofillUseCases().enable(context)
         verify(context).startActivity(any())
         reset(context)
     }
@@ -149,43 +75,7 @@ class AutofillUseCasesTest {
         val autofillManager: AutofillManager = mock()
         doReturn(autofillManager).`when`(context).getSystemService(AutofillManager::class.java)
 
-        AutofillUseCases(sdkVersion = 21).disable(context)
-        verify(autofillManager, never()).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 22).disable(context)
-        verify(autofillManager, never()).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 23).disable(context)
-        verify(autofillManager, never()).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 24).disable(context)
-        verify(autofillManager, never()).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 25).disable(context)
-        verify(autofillManager, never()).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 26).disable(context)
-        verify(autofillManager).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 27).disable(context)
-        verify(autofillManager).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 28).disable(context)
-        verify(autofillManager).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 29).disable(context)
-        verify(autofillManager).disableAutofillServices()
-        reset(autofillManager)
-
-        AutofillUseCases(sdkVersion = 30).disable(context)
+        AutofillUseCases().disable(context)
         verify(autofillManager).disableAutofillServices()
         reset(autofillManager)
     }

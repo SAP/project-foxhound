@@ -1,3 +1,5 @@
+// |jit-test| test-also=-P wasm_compact_imports
+
 load(libdir + "wasm-binary.js");
 
 const { extractStackFrameFunction } = WasmHelpers;
@@ -95,14 +97,76 @@ wasmEval(moduleWithSections([v2vSigSection, declSection([0]), bodySection([v2vBo
 assertErrorMessage(() => wasmEval(moduleWithSections([v2vSigSection, declSection([0]), bodySection([v2vBody.concat(v2vBody)])])), CompileError, /byte size mismatch in code section/);
 
 assertThrowsInstanceOf(() => wasmEval(moduleWithSections([v2vSigSection, {name: importId, body:[]}])), CompileError);
-assertErrorMessage(() => wasmEval(moduleWithSections([importSection([{module:"a", item:"b", funcTypeIndex:0}])])), CompileError, /signature index out of range/);
-assertErrorMessage(() => wasmEval(moduleWithSections([v2vSigSection, importSection([{module:"a", item:"b", funcTypeIndex:1}])])), CompileError, /signature index out of range/);
+assertErrorMessage(() => wasmEval(moduleWithSections([importSection([{module:"a", item:"b", type: externtype({ funcTypeIndex:0 })}])])), CompileError, /signature index out of range/);
+assertErrorMessage(() => wasmEval(moduleWithSections([v2vSigSection, importSection([{module:"a", item:"b", type: externtype({ funcTypeIndex:1 })}])])), CompileError, /signature index out of range/);
 wasmEval(moduleWithSections([v2vSigSection, importSection([])]));
-wasmEval(moduleWithSections([v2vSigSection, importSection([{module:"a", item:"", funcTypeIndex:0}])]), {a:{"":()=>{}}});
+
+// Normal import encoding
+wasmEval(
+    moduleWithSections([v2vSigSection, importSection([
+        { module: "a", item: "b", type: externtype({ funcTypeIndex: 0 }) },
+        { module: "a", item: "c", type: externtype({ globalType: globalType({ valType: I32Code, mut: true }) }) },
+    ])]),
+    { a: { b: () => {}, c: new WebAssembly.Global({ value: "i32", mutable: true }) } },
+);
+
+// Compact import encodings
+if (wasmCompactImportsEnabled()) {
+    // Encoding 1: deduplicated module name
+    {
+        wasmEval(
+            moduleWithSections([v2vSigSection, importSection([{ module: "a", items: [
+                { item: "b", type: externtype({ funcTypeIndex: 0 }) },
+                { item: "c", type: externtype({ globalType: globalType({ valType: I32Code, mut: true }) }) },
+            ]}])]),
+            { a: { b: () => {}, c: new WebAssembly.Global({ value: "i32", mutable: true }) } },
+        );
+
+        // Zero-length sections are acceptable
+        wasmEval(
+            moduleWithSections([v2vSigSection, importSection([{ module: "a", items: []}])]),
+            { a: { b: () => {}, c: new WebAssembly.Global({ value: "i32", mutable: true }) } },
+        );
+    }
+
+    // Encoding 2: deduplicated module name and externtype
+    {
+        wasmEval(
+            moduleWithSections([v2vSigSection, importSection([{
+                module: "a",
+                type: externtype({ funcTypeIndex: 0 }),
+                items: ["b", "c"],
+            }])]),
+            { a: { b: () => {}, c: () => {} } },
+        );
+
+        // Zero-length sections are acceptable. There should not be any side
+        // effects from parsing the externtype before learning that there are
+        // zero items!
+        wasmEval(
+            moduleWithSections([v2vSigSection, importSection([{
+                module: "a",
+                type: externtype({ funcTypeIndex: 0 }),
+                items: [],
+            }])]),
+        );
+        assertErrorMessage(() => wasmEval(
+            moduleWithSections([
+                v2vSigSection,
+                importSection([{
+                    module: "a",
+                    type: externtype({ tableType: tableType(FuncRefCode, limits({ min: 0 })) }),
+                    items: [],
+                }]),
+                elemSection([{ mode: "active", table: 0, offset: 0, indices: [] }]),
+            ]),
+        ), WebAssembly.CompileError, /table index out of range|active elem segment requires a table/);
+    }
+}
 
 wasmEval(moduleWithSections([
     v2vSigSection,
-    importSection([{module:"a", item:"", funcTypeIndex:0}]),
+    importSection([{module:"a", item:"", type: externtype({ funcTypeIndex:0 })}]),
     declSection([0]),
     bodySection([v2vBody])
 ]), {a:{"":()=>{}}});
@@ -112,13 +176,13 @@ assertErrorMessage(() => wasmEval(moduleWithSections([ dataSection([{offset:1, e
 wasmEval(moduleWithSections([defaultTableSection(0)]));
 wasmEval(moduleWithSections([elemSection([])]));
 wasmEval(moduleWithSections([defaultTableSection(0), elemSection([])]));
-wasmEval(moduleWithSections([defaultTableSection(1), elemSection([{offset:1, elems:[]}])]));
-assertErrorMessage(() => wasmEval(moduleWithSections([defaultTableSection(1), elemSection([{offset:0, elems:[0]}])])), CompileError, /element index out of range/);
-wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(1), elemSection([{offset:0, elems:[0]}]), bodySection([v2vBody])]));
-wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(2), elemSection([{offset:0, elems:[0,0]}]), bodySection([v2vBody])]));
-assertErrorMessage(() => wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(2), elemSection([{offset:0, elems:[0,1]}]), bodySection([v2vBody])])), CompileError, /element index out of range/);
-wasmEval(moduleWithSections([v2vSigSection, declSection([0,0,0]), defaultTableSection(4), elemSection([{offset:0, elems:[0,1,0,2]}]), bodySection([v2vBody, v2vBody, v2vBody])]));
-wasmEval(moduleWithSections([sigSection([v2vSig,i2vSig]), declSection([0,0,1]), defaultTableSection(3), elemSection([{offset:0,elems:[0,1,2]}]), bodySection([v2vBody, v2vBody, v2vBody])]));
+wasmEval(moduleWithSections([defaultTableSection(1), elemSection([{ mode: "active", offset: 1, indices: [] }])]));
+assertErrorMessage(() => wasmEval(moduleWithSections([defaultTableSection(1), elemSection([{ mode: "active", offset: 0, indices: [0] }])])), CompileError, /element index out of range/);
+wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(1), elemSection([{ mode: "active", offset: 0, indices: [0] }]), bodySection([v2vBody])]));
+wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(2), elemSection([{ mode: "active", offset: 0, indices: [0, 0] }]), bodySection([v2vBody])]));
+assertErrorMessage(() => wasmEval(moduleWithSections([v2vSigSection, declSection([0]), defaultTableSection(2), elemSection([{ mode: "active", offset: 0, indices: [0, 1] }]), bodySection([v2vBody])])), CompileError, /element index out of range/);
+wasmEval(moduleWithSections([v2vSigSection, declSection([0,0,0]), defaultTableSection(4), elemSection([{ mode: "active", offset: 0, indices: [0, 1, 0, 2] }]), bodySection([v2vBody, v2vBody, v2vBody])]));
+wasmEval(moduleWithSections([sigSection([v2vSig,i2vSig]), declSection([0,0,1]), defaultTableSection(3), elemSection([{ mode: "active", offset: 0, indices: [0, 1, 2] }]), bodySection([v2vBody, v2vBody, v2vBody])]));
 
 wasmEval(moduleWithSections([tableSection0()]));
 
@@ -341,7 +405,7 @@ for (let prefix of [ThreadPrefix, MiscPrefix, SimdPrefix, MozPrefix]) {
 function runStackTraceTest(moduleName, funcNames, expectedName) {
     var sections = [
         sigSection([v2vSig]),
-        importSection([{module:"env", item:"callback", funcTypeIndex:0}]),
+        importSection([{module:"env", item:"callback", type: externtype({ funcTypeIndex:0 })}]),
         declSection([0]),
         exportSection([{funcIndex:1, name: "run"}]),
         bodySection([funcBody({locals: [], body: [CallCode, varU32(0)]})]),

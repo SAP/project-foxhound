@@ -1,0 +1,129 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for table selection</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1953174">Mozilla Bug 1953174</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container">
+  <table>
+    <caption><span>Title1</span></caption>
+    <thead>
+      <tr><th>First</th><th><span>Second</span></th><th><div>Third</div></th></tr>
+    </thead>
+    <tbody>
+      <tr><th>Colume1</th><td>Data11</td><td><span>Data12</span></td></tr>
+      <tr><th><span>Colume2</span></th><td><div>Data21</div></td></tr>
+      <tr><th><div>Colume3</div></th></tr>
+    </tbody>
+    <tfoot>
+      <tr><th>Footer</th><td>DataFooter</td></tr>
+    </tfoot>
+  </table>
+</div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const alwaysIncludeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
+
+const TESTS = [
+  {
+    selector: `caption`,
+    expectedResult: `<table><caption><span>Title1</span></caption></table>`,
+    expectedContext: `<html><body><div id="container"><table></table></div></body></html>`,
+  }, {
+    selector: `caption span`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<table><caption>` : ``}` +
+                    `<span>Title1</span>` +
+                    `${alwaysIncludeCommonAncestor ? `</caption></table>` : ``}`,
+    expectedContext: `<html><body><div id="container"><table>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<caption></caption>`}` +
+                     `</table></div></body></html>`,
+  }, {
+    selector: `thead th`,
+    expectedResult: `<table><thead><tr><th>First</th></tr></thead></table>`,
+    expectedContext: `<html><body><div id="container"><table><thead></thead></table></div></body></html>`,
+  }, {
+    selector: `thead th span`,
+    expectedResult: `<span>Second</span>`,
+    expectedContext: `<html><body><div id="container"><table><thead><tr><th></th></tr></thead></table></div></body></html>`,
+  }, {
+    selector: `thead th div`,
+    expectedResult: `<div>Third</div>`,
+    expectedContext: `<html><body><div id="container"><table><thead><tr><th></th></tr></thead></table></div></body></html>`,
+  }, {
+    selector: `tbody th`,
+    expectedResult: `<table><tbody><tr><th>Colume1</th></tr></tbody></table>`,
+    expectedContext: `<html><body><div id="container"><table><tbody></tbody></table></div></body></html>`,
+  }, {
+    selector: `tbody th span`,
+    expectedResult: `<span>Colume2</span>`,
+    expectedContext: `<html><body><div id="container"><table><tbody><tr><th></th></tr></tbody></table></div></body></html>`,
+  }, {
+    selector: `tbody th div`,
+    expectedResult: `<div>Colume3</div>`,
+    expectedContext: `<html><body><div id="container"><table><tbody><tr><th></th></tr></tbody></table></div></body></html>`,
+  }, {
+    selector: `tbody td`,
+    expectedResult: `<table><tbody><tr><td>Data11</td></tr></tbody></table>`,
+    expectedContext: `<html><body><div id="container"><table><tbody></tbody></table></div></body></html>`,
+  }, {
+    selector: `tbody td span`,
+    expectedResult: `<span>Data12</span>`,
+    expectedContext: `<html><body><div id="container"><table><tbody><tr><td></td></tr></tbody></table></div></body></html>`,
+  }, {
+    selector: `tbody td div`,
+    expectedResult: `<div>Data21</div>`,
+    expectedContext: `<html><body><div id="container"><table><tbody><tr><td></td></tr></tbody></table></div></body></html>`,
+  }, {
+    selector: `tfoot th`,
+    expectedResult: `<table><tfoot><tr><th>Footer</th></tr></tfoot></table>`,
+    expectedContext: `<html><body><div id="container"><table><tfoot></tfoot></table></div></body></html>`,
+  }, {
+    selector: `tfoot td`,
+    expectedResult: `<table><tfoot><tr><td>DataFooter</td></tr></tfoot></table>`,
+    expectedContext: `<html><body><div id="container"><table><tfoot></tfoot></table></div></body></html>`,
+  }
+];
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+
+TESTS.forEach(testCase => {
+  it(`Selector: ${testCase.selector}`, () => {
+    info("Select nodes");
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+
+    const range = document.createRange();
+    selection.addRange(range);
+
+    const target = document.querySelector(testCase.selector);
+    range.selectNode(target);
+
+    info("Initialize encoder");
+    encoder.init(document, "text/html", 0);
+    encoder.setSelection(selection);
+
+    info("Check result");
+    let htmlContext = { value: '' };
+    let htmlInfo = { value: '' };
+    is(encoder.encodeToStringWithContext(htmlContext, htmlInfo), testCase.expectedResult,
+       `Check serialized output`);
+    is(htmlContext.value, testCase.expectedContext, `Check serialized context`);
+    is(htmlInfo.value, `0,0`, `Check serialized info`);
+  });
+});
+
+</script>
+</body>
+</html>

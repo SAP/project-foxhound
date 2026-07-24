@@ -8,7 +8,7 @@ task-defaults:
 geckoview-junit:
     description: "Geckoview junit run"
     suite: geckoview-junit
-    variants: ["geckoview-fission", "no-fission", "geckoview-no-fission-no-ship"]
+    variants: ["geckoview-fission", "no-fission", "geckoview-no-fission-no-ship", "geckoview-zygote"]
     treeherder-symbol: gv-junit
     loopback-video: true
     target: geckoview-androidTest.apk
@@ -18,15 +18,16 @@ geckoview-junit:
             geckoview-fission: ['trunk']
             no-fission: built-projects
             geckoview-no-fission-no-ship: built-projects
+            geckoview-zygote: []
             default: []
     tier: default
     mozharness:
         script: android_emulator_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
         extra-options:
             - --test-suite=geckoview-junit
 
@@ -80,7 +81,7 @@ test-verify:
     built-projects-only: true
     target:
         by-test-platform:
-            android-em-7.*: geckoview-test_runner.apk
+            android-em.*: geckoview-test_runner.apk
             default: null
     optimization:
         test-verify: ["test-verify"]
@@ -92,9 +93,9 @@ test-verify:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - unittests/linux_dbus-python.py
@@ -108,12 +109,6 @@ test-verify:
     fetches:
         toolchain:
             by-test-platform:
-                linux1804.*:
-                    - linux64-node
-                    - linux64-minidump-stackwalk
-                    - linux64-fix-stacks
-                    - linux-python-dbusmock
-                    - linux64-1804-dbus-python
                 linux2204.*:
                     - linux64-node
                     - linux64-minidump-stackwalk
@@ -142,25 +137,20 @@ test-verify:
                     - win32-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
-                android-em-7.*:
+                android-em-14.*:
+                    - android34-system-image-x86_64-linux
+                    - android34-avd-x86_64-linux
                     - android-emulator-linux
-                    - android-system-image-x86_64-linux
-                    - android-avd-x86_64-linux
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
                     - linux64-hostutils
         fetch:
             - ort.jsep.wasm
-            - translations.inference
-            - translations.esen.lex
-            - translations.esen.model
-            - translations.esen.vocab
-
-    worker-type:
-        by-test-platform:
-            .*-wayland.*: t-linux-wayland-vm
-            default: default
+            - tr8ns.inference
+            - tr8ns.T.esen.lex
+            - tr8ns.T.esen.model
+            - tr8ns.T.esen.vocab
 
 test-verify-gpu:
     description: "Extra verification of tests modified on this push on gpu instances"
@@ -193,9 +183,9 @@ test-verify-gpu:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -206,10 +196,6 @@ test-verify-gpu:
         extra-options:
             - --verify
             - --gpu-required
-    worker-type:
-        by-test-platform:
-            .*-wayland.*: t-linux-wayland-vm
-            default: default
 
 test-coverage:
     description: "Per-test coverage"
@@ -231,9 +217,9 @@ test-coverage:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -266,10 +252,10 @@ test-coverage:
                     - win32-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
-                android-em-7.*:
+                android-em-14.*:
+                    - android34-system-image-x86_64-linux
+                    - android34-avd-x86_64-linux
                     - android-emulator-linux
-                    - android-system-image-x86_64-linux
-                    - android-avd-x86_64-linux
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
@@ -300,9 +286,9 @@ test-coverage-gpu:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py

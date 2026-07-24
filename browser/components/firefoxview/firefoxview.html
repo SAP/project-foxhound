@@ -18,34 +18,11 @@
     <link rel="localization" href="toolkit/global/textActions.ftl" />
     <link rel="localization" href="toolkit/branding/brandings.ftl" />
     <link rel="localization" href="browser/migrationWizard.ftl" />
+    <link rel="localization" href="preview/aiWindow.ftl" />
     <link
       rel="stylesheet"
       href="chrome://browser/content/firefoxview/firefoxview.css"
     />
-    <script
-      type="module"
-      src="chrome://browser/content/firefoxview/recentbrowsing.mjs"
-    ></script>
-    <script
-      type="module"
-      src="chrome://browser/content/firefoxview/history.mjs"
-    ></script>
-    <script
-      type="module"
-      src="chrome://browser/content/firefoxview/opentabs.mjs"
-    ></script>
-    <script
-      type="module"
-      src="chrome://browser/content/firefoxview/recentlyclosed.mjs"
-    ></script>
-    <script
-      type="module"
-      src="chrome://browser/content/firefoxview/syncedtabs.mjs"
-    ></script>
-    <script
-      type="module"
-      src="chrome://global/content/elements/moz-page-nav.mjs"
-    ></script>
     <script src="chrome://browser/content/contentTheme.js"></script>
   </head>
 
@@ -82,6 +59,14 @@
         iconSrc="chrome://browser/content/firefoxview/view-history.svg"
       >
       </moz-page-nav-button>
+      <moz-page-nav-button
+        view="chats"
+        id="firefoxview-chats-nav"
+        data-l10n-id="firefoxview-chats-nav"
+        iconSrc="chrome://browser/content/firefoxview/view-chats.svg"
+        hidden
+      >
+      </moz-page-nav-button>
     </moz-page-nav>
     <main id="pages" role="application" data-l10n-id="firefoxview-page-label">
       <div class="main-container">
@@ -111,9 +96,13 @@
             name="syncedtabs"
             type="page"
           ></view-syncedtabs>
+          <view-chats name="chats" type="page" hidden></view-chats>
         </named-deck>
       </div>
     </main>
-    <script src="chrome://browser/content/firefoxview/firefoxview.mjs"></script>
+    <script
+      src="chrome://browser/content/firefoxview/firefoxview.mjs"
+      type="module"
+    ></script>
   </body>
 </html>

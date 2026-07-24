@@ -7,11 +7,11 @@
 #ifndef DOM_SMIL_TIMEEVENT_H_
 #define DOM_SMIL_TIMEEVENT_H_
 
-#include "nsDocShell.h"
 #include "mozilla/dom/Event.h"
-#include "mozilla/dom/TimeEventBinding.h"
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/TimeEventBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "nsDocShell.h"
 
 class nsGlobalWindowInner;
 

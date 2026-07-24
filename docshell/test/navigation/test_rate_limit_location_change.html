@@ -18,7 +18,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1314912
   async function setup() {
     await SpecialPowers.pushPrefEnv({set: [
       ["dom.navigation.navigationRateLimit.count", RATE_LIMIT_COUNT],
-      ["dom.navigation.navigationRateLimit.timespan", RATE_LIMIT_TIME_SPAN]]});
+      ["dom.navigation.navigationRateLimit.timespan", RATE_LIMIT_TIME_SPAN],
+      ["dom.navigation.webidl.enabled", false]]});
   }
 
   let inc = 0;

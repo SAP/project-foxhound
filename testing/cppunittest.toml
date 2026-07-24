@@ -4,6 +4,11 @@
 
 ["TestAlgorithm"]
 
+["TestArm64Disassembler"]
+run-if = [
+  "os == 'win' && arch == 'aarch64'",
+]
+
 ["TestArray"]
 
 ["TestArrayUtils"]
@@ -13,7 +18,9 @@
 ["TestAtomics"]
 
 ["TestBaseProfiler"]
-skip-if = ["tsan"] # Bug 1804081
+skip-if = [
+  "tsan", # Bug 1804081
+]
 
 ["TestBinarySearch"]
 
@@ -36,20 +43,25 @@ skip-if = ["tsan"] # Bug 1804081
 ["TestCountZeroes"]
 
 ["TestCrossProcessWin"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestDefineEnum"]
 
 ["TestDllBlocklistAssumptions"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestDllInterceptor"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestDllInterceptorCrossProcess"]
 run-if = [
-  "os == 'win' && processor == 'x86'",
-  "os == 'win' && processor == 'x86_64'",
+  "os == 'win' && arch != 'aarch64'",
 ]
 
 ["TestDoublyLinkedList"]
@@ -73,10 +85,14 @@ run-if = [
 ["TestHashTable"]
 
 ["TestIATPatcher"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 skip-if = [
-  "win11_2009 && bits == 32", # fails on windows10x32
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # fails on win/x86
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # requires administrator permission on aarch64
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # requires administrator permission on aarch64
+  "os == 'win' && os_version == '11.26100' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # fails on win/x86
 ]
 
 ["TestIntegerPrintfMacros"]
@@ -86,12 +102,16 @@ skip-if = [
 ["TestJSONWriter"]
 
 ["TestLauncherRegistryInfo"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestLinkedList"]
 
 ["TestMMPolicy"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestMacroArgs"]
 
@@ -102,25 +122,43 @@ run-if = ["os == 'win'"]
 ["TestMaybe"]
 
 ["TestMemoryPressureWatcherLinux"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]
 
 ["TestMozCrash"]
-skip-if = ["os != 'linux'", "asan"]
+skip-if = [
+  "asan",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'aarch64'",
+]
 
 ["TestMozJemallocUtils"]
 
 ["TestNativeNt"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestNonDereferenceable"]
 
 ["TestNotNull"]
 
 ["TestOleAut32Initialization"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestPEExportSection"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestPoisonArea"]
 skip-if = [
@@ -147,10 +185,14 @@ skip-if = [
 ["TestSPSCQueue"]
 
 ["TestSafeThreadLocal"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestSameBinary"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestSaturate"]
 
@@ -158,29 +200,42 @@ run-if = ["os == 'win'"]
 
 ["TestSegmentedVector"]
 
+["TestSharedMappingCommit"]
+run-if = [
+  "os == 'win'",
+]
+
 ["TestSmallPointerArray"]
 
 ["TestSplayTree"]
 
 ["TestStackCookie"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestStackWalkInitialization"]
-run-if = ["os == 'win' && processor == 'x86_64'"]
+run-if = [
+  "os == 'win' && arch == 'x86_64'",
+]
 
 ["TestTextUtils"]
 
 ["TestThreadSafeWeakPtr"]
 
 ["TestTimeStampWin"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestTypedEnum"]
 
 ["TestUniquePtr"]
 
 ["TestUriValidation"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestUtf8"]
 
@@ -191,7 +246,9 @@ run-if = ["os == 'win'"]
 ["TestWeakPtr"]
 
 ["TestWinArchDefs"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["TestWrappingOperations"]
 

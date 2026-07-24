@@ -32,8 +32,6 @@ export class GeckoViewContentChild extends GeckoViewActorChild {
   }
 
   actorCreated() {
-    super.actorCreated();
-
     this.pageShow = new Promise(resolve => {
       this.receivedPageShow = resolve;
     });
@@ -156,11 +154,12 @@ export class GeckoViewContentChild extends GeckoViewActorChild {
         }
         break;
       }
-      case "GeckoView:DOMFullscreenExited":
+      case "GeckoView:DOMFullscreenExited": {
         // During fullscreen, window size is changed. So don't restore viewport size.
         const restoreViewSize = this.orientation() == this.lastOrientation;
         this.contentWindow?.windowUtils.exitFullscreen(!restoreViewSize);
         break;
+      }
       case "GeckoView:ZoomToInput": {
         const { contentWindow } = this;
         const dwu = contentWindow.windowUtils;
@@ -334,8 +333,7 @@ export class GeckoViewContentChild extends GeckoViewActorChild {
           aEvent.reason === "presscaret" ||
           aEvent.reason === "releasecaret"
         ) {
-          this.eventDispatcher.sendRequest({
-            type: "GeckoView:PinOnScreen",
+          this.sendAsyncMessage("GeckoView:PinOnScreen", {
             pinned: aEvent.reason === "presscaret",
           });
         }

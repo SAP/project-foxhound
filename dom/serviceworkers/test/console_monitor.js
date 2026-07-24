@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 let consoleListener;
 
 function ConsoleListener() {

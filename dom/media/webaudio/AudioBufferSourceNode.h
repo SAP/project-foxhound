@@ -7,8 +7,8 @@
 #ifndef AudioBufferSourceNode_h_
 #define AudioBufferSourceNode_h_
 
-#include "AudioScheduledSourceNode.h"
 #include "AudioBuffer.h"
+#include "AudioScheduledSourceNode.h"
 
 namespace mozilla::dom {
 

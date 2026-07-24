@@ -10,7 +10,6 @@
 #include <prio.h>
 #include "nsIFile.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "ErrorList.h"
 
 namespace mozilla {

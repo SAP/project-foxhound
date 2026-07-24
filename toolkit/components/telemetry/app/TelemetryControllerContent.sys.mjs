@@ -40,7 +40,8 @@ var Impl = {
 
   /**
    * This triggers basic telemetry initialization for content processes.
-   * @param {Boolean} [testing=false] True if we are in test mode, false otherwise.
+   *
+   * @param {boolean} [testing=false] True if we are in test mode, false otherwise.
    */
   setupContentTelemetry(testing = false) {
     this._testMode = testing;

@@ -7,7 +7,6 @@
 #include "ProxyConfigLookup.h"
 #include "ProxyConfigLookupChild.h"
 #include "mozilla/Components.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsICancelable.h"
 #include "nsIProtocolProxyService.h"

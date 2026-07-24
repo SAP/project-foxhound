@@ -5,7 +5,7 @@ If you want to test WebPush support for features like Send Tab or WebPush for we
 
 1. Download the XML credential file from the [Fenix team's Google Drive](https://drive.google.com/file/d/1DwgmqJTSKOY9vMuW2OmRNDXpIY69thTI/view?usp=drive_link).
 2. Place the file in the directory `fenix/app/src/debug/res/values/`.
-    * This will be compiled into the `fenixDebug` variant.
+    * This will be compiled into the `debug` variant.
 3. Run the app and verify you receive log messages in `adb logcat` like the ones below:
     ```
     Received a new registration token from push service.

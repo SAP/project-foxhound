@@ -6,7 +6,7 @@
 
 use std::ops::Deref;
 
-use neqo_common::{Buffer, Decoder, Encoder};
+use neqo_common::{qdebug, Buffer, Decoder, Encoder};
 use neqo_crypto::{ZeroRttCheckResult, ZeroRttChecker};
 
 use crate::{Error, Http3Parameters, Res};
@@ -28,6 +28,11 @@ const SETTINGS_H3_DATAGRAM_DRAFT04: SettingsType = 0x00ff_d277;
 
 const SETTINGS_H3_DATAGRAM: SettingsType = 0x33;
 
+/// Advertises support for HTTP Extended CONNECT.
+///
+/// See <https://www.rfc-editor.org/rfc/rfc9220#section-5>
+pub const SETTINGS_ENABLE_CONNECT_PROTOCOL: SettingsType = 0x08;
+
 pub const H3_RESERVED_SETTINGS: &[SettingsType] = &[0x2, 0x3, 0x4, 0x5];
 
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
@@ -37,6 +42,7 @@ pub enum HSettingType {
     BlockedStreams,
     EnableWebTransport,
     EnableH3Datagram,
+    EnableConnect,
 }
 
 const fn hsetting_default(setting_type: HSettingType) -> u64 {
@@ -45,7 +51,8 @@ const fn hsetting_default(setting_type: HSettingType) -> u64 {
         HSettingType::MaxTableCapacity
         | HSettingType::BlockedStreams
         | HSettingType::EnableWebTransport
-        | HSettingType::EnableH3Datagram => 0,
+        | HSettingType::EnableH3Datagram
+        | HSettingType::EnableConnect => 0,
     }
 }
 
@@ -88,6 +95,9 @@ impl HSettings {
 
     pub fn encode_frame_contents<B: Buffer>(&self, enc: &mut Encoder<B>) {
         enc.encode_vvec_with(|enc_inner| {
+            #[cfg(feature = "build-fuzzing-corpus")]
+            let start = enc_inner.len();
+
             for iter in &self.settings {
                 match iter.setting_type {
                     HSettingType::MaxHeaderListSize => {
@@ -114,8 +124,17 @@ impl HSettings {
                             enc_inner.encode_varint(iter.value);
                         }
                     }
+                    HSettingType::EnableConnect => {
+                        if iter.value == 1 {
+                            enc_inner.encode_varint(SETTINGS_ENABLE_CONNECT_PROTOCOL);
+                            enc_inner.encode_varint(iter.value);
+                        }
+                    }
                 }
             }
+
+            #[cfg(feature = "build-fuzzing-corpus")]
+            neqo_common::write_item_to_fuzzing_corpus("hsettings", &enc_inner.as_ref()[start..]);
         });
     }
 
@@ -123,6 +142,9 @@ impl HSettings {
     ///
     /// Returns an error if settings types are reserved of settings value are not permitted.
     pub fn decode_frame_contents(&mut self, dec: &mut Decoder) -> Res<()> {
+        #[cfg(feature = "build-fuzzing-corpus")]
+        neqo_common::write_item_to_fuzzing_corpus("hsettings", dec.as_ref());
+
         while dec.remaining() > 0 {
             let t = dec.decode_varint();
             let v = dec.decode_varint();
@@ -175,8 +197,16 @@ impl HSettings {
                             .push(HSetting::new(HSettingType::EnableH3Datagram, value));
                     }
                 }
-                // other supported settings here
-                (Some(_), Some(_)) => {} // ignore unknown setting, it is fine.
+                (Some(SETTINGS_ENABLE_CONNECT_PROTOCOL), Some(value)) => {
+                    if value > 1 {
+                        return Err(Error::HttpSettings);
+                    }
+                    self.settings
+                        .push(HSetting::new(HSettingType::EnableConnect, value));
+                }
+                (Some(t), Some(v)) => {
+                    qdebug!("Ignoring unknown setting type {t} with value {v}");
+                }
                 _ => return Err(Error::NotEnoughData),
             }
         }
@@ -211,6 +241,10 @@ impl From<&Http3Parameters> for HSettings {
                     setting_type: HSettingType::EnableH3Datagram,
                     value: u64::from(conn_param.get_http3_datagram()),
                 },
+                HSetting {
+                    setting_type: HSettingType::EnableConnect,
+                    value: u64::from(conn_param.get_connect()),
+                },
             ],
         }
     }
@@ -231,7 +265,7 @@ impl HttpZeroRttChecker {
     /// Save the settings that matter for 0-RTT.
     #[must_use]
     pub fn save(settings: &Http3Parameters) -> Vec<u8> {
-        let mut enc = Encoder::new();
+        let mut enc = Encoder::default();
         enc.encode_varint(SETTINGS_ZERO_RTT_VERSION)
             .encode_varint(SETTINGS_QPACK_MAX_TABLE_CAPACITY)
             .encode_varint(settings.get_max_table_size_decoder())
@@ -287,11 +321,158 @@ impl ZeroRttChecker for HttpZeroRttChecker {
                 let value = setting.value == 1;
                 self.settings.get_http3_datagram() || !value
             }
+            HSettingType::EnableConnect => {
+                if setting.value > 1 {
+                    return false;
+                }
+                let value = setting.value == 1;
+                self.settings.get_connect() || !value
+            }
             HSettingType::MaxHeaderListSize => true,
         }) {
             ZeroRttCheckResult::Accept
         } else {
             ZeroRttCheckResult::Reject
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_setting_type_ignored() {
+        let mut enc = Encoder::default();
+
+        // Add a known setting.
+        enc.encode_varint(SETTINGS_QPACK_MAX_TABLE_CAPACITY);
+        enc.encode_varint(1024u64);
+
+        // Add an unknown setting type.
+        let unknown_setting_type = u64::from(u32::MAX);
+        enc.encode_varint(unknown_setting_type);
+        enc.encode_varint(42u64);
+
+        // Add another known setting.
+        enc.encode_varint(SETTINGS_QPACK_BLOCKED_STREAMS);
+        enc.encode_varint(100u64);
+
+        let mut dec = enc.as_decoder();
+
+        let mut settings = HSettings::new(&[]);
+        settings
+            .decode_frame_contents(&mut dec)
+            .expect("succeeds despite unknown setting");
+
+        // Should only contain the known settings.
+        assert_eq!(settings.len(), 2);
+        assert_eq!(settings.get(HSettingType::MaxTableCapacity), 1024);
+        assert_eq!(settings.get(HSettingType::BlockedStreams), 100);
+    }
+
+    #[test]
+    fn not_enough_data_error() {
+        let mut enc = Encoder::default();
+
+        // Add a complete setting.
+        enc.encode_varint(SETTINGS_QPACK_MAX_TABLE_CAPACITY);
+        enc.encode_varint(1024u64);
+
+        // Add an incomplete setting.
+        enc.encode_varint(SETTINGS_QPACK_BLOCKED_STREAMS);
+
+        let mut dec = enc.as_decoder();
+
+        let mut settings = HSettings::new(&[]);
+        assert_eq!(
+            settings.decode_frame_contents(&mut dec),
+            Err(Error::NotEnoughData)
+        );
+    }
+
+    #[test]
+    fn datagram_settings() {
+        for setting in [SETTINGS_H3_DATAGRAM, SETTINGS_H3_DATAGRAM_DRAFT04] {
+            // Valid value accepted.
+            let mut enc = Encoder::default();
+            enc.encode_varint(setting).encode_varint(1u64);
+            let mut s = HSettings::new(&[]);
+            s.decode_frame_contents(&mut enc.as_decoder()).unwrap();
+            assert_eq!(s.get(HSettingType::EnableH3Datagram), 1);
+
+            // Invalid value rejected.
+            enc = Encoder::default();
+            enc.encode_varint(setting).encode_varint(2u64);
+            let mut s = HSettings::new(&[]);
+            assert_eq!(
+                s.decode_frame_contents(&mut enc.as_decoder()),
+                Err(Error::HttpSettings)
+            );
+        }
+
+        // Duplicate: first wins.
+        for (first, second, expected) in [
+            (SETTINGS_H3_DATAGRAM, SETTINGS_H3_DATAGRAM_DRAFT04, 1),
+            (SETTINGS_H3_DATAGRAM_DRAFT04, SETTINGS_H3_DATAGRAM, 0),
+        ] {
+            let mut enc = Encoder::default();
+            enc.encode_varint(first).encode_varint(expected);
+            enc.encode_varint(second).encode_varint(1 - expected);
+            let mut s = HSettings::new(&[]);
+            s.decode_frame_contents(&mut enc.as_decoder()).unwrap();
+            assert_eq!(s.get(HSettingType::EnableH3Datagram), expected);
+        }
+    }
+
+    fn make_0rtt_token(settings: &[(u64, u64)]) -> Vec<u8> {
+        let mut enc = Encoder::default();
+        enc.encode_varint(SETTINGS_ZERO_RTT_VERSION);
+        for (k, v) in settings {
+            enc.encode_varint(*k).encode_varint(*v);
+        }
+        enc.into()
+    }
+
+    #[test]
+    fn zero_rtt_checker() {
+        use neqo_crypto::{ZeroRttCheckResult, ZeroRttChecker as _};
+        use neqo_transport::ConnectionParameters;
+
+        use crate::Http3Parameters;
+
+        // Server with datagram enabled, connect disabled.
+        let params = Http3Parameters::default()
+            .connection_parameters(ConnectionParameters::default().datagram_size(1200));
+        let checker = HttpZeroRttChecker::new(params);
+
+        // Token requests datagram=1: accepted (server has it).
+        let token = make_0rtt_token(&[(SETTINGS_H3_DATAGRAM, 1)]);
+        assert_eq!(checker.check(&token), ZeroRttCheckResult::Accept);
+
+        // Token requests datagram=0: accepted (not requesting feature).
+        let token = make_0rtt_token(&[(SETTINGS_H3_DATAGRAM, 0)]);
+        assert_eq!(checker.check(&token), ZeroRttCheckResult::Accept);
+
+        // Token with invalid datagram value (>1): fails decode.
+        let token = make_0rtt_token(&[(SETTINGS_H3_DATAGRAM, 2)]);
+        assert_eq!(checker.check(&token), ZeroRttCheckResult::Fail);
+
+        // Token requests connect=1 but server doesn't have it: rejected.
+        let token = make_0rtt_token(&[(SETTINGS_ENABLE_CONNECT_PROTOCOL, 1)]);
+        assert_eq!(checker.check(&token), ZeroRttCheckResult::Reject);
+
+        // Server with connect enabled.
+        let params = Http3Parameters::default().connect(true);
+        let checker = HttpZeroRttChecker::new(params);
+        let token = make_0rtt_token(&[(SETTINGS_ENABLE_CONNECT_PROTOCOL, 1)]);
+        assert_eq!(checker.check(&token), ZeroRttCheckResult::Accept);
+
+        // Invalid token (truncated): rejected (remaining bytes interpreted as wrong version).
+        assert_eq!(checker.check(&token[1..]), ZeroRttCheckResult::Reject);
+
+        // Empty token: fails.
+        assert_eq!(checker.check(&[]), ZeroRttCheckResult::Fail);
     }
 }

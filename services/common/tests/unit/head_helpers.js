@@ -88,8 +88,9 @@ function do_check_throws_message(aFunc, aResult) {
  *
  * @param [arg0, arg1, arg2, ...]
  *        Any number of arguments to print out
- * @usage _("Hello World") -> prints "Hello World"
- * @usage _(1, 2, 3) -> prints "1 2 3"
+ * @example
+ * _("Hello World") -> prints "Hello World"
+ * _(1, 2, 3) -> prints "1 2 3"
  */
 var _ = function () {
   print(Array.from(arguments).join(" "));
@@ -249,19 +250,6 @@ function checkUptakeTelemetry(snapshot1, snapshot2, expectedIncrements) {
     const previous = snapshot1[status] || 0;
     const current = snapshot2[status] || previous;
     Assert.equal(expected, current - previous, `check events for ${status}`);
-  }
-}
-
-async function withFakeChannel(channel, f) {
-  const { Policy } = ChromeUtils.importESModule(
-    "resource://services-common/uptake-telemetry.sys.mjs"
-  );
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => channel;
-  try {
-    return await f();
-  } finally {
-    Policy.getChannel = oldGetChannel;
   }
 }
 

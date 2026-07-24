@@ -9,9 +9,9 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
+#include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsINode.h"
-#include "nsContentUtils.h"
 
 namespace mozilla {
 
@@ -26,11 +26,19 @@ class AbstractRange;
 struct ShadowDOMSelectionHelpers {
   ShadowDOMSelectionHelpers() = delete;
 
+  static RawRangeBoundary StartRef(
+      const AbstractRange* aRange,
+      AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
+
   static nsINode* GetStartContainer(
       const AbstractRange* aRange,
       AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 
   static uint32_t StartOffset(
+      const AbstractRange* aRange,
+      AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
+
+  static RawRangeBoundary EndRef(
       const AbstractRange* aRange,
       AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 
@@ -56,53 +64,6 @@ class RangeUtils final {
   using AbstractRange = dom::AbstractRange;
 
  public:
-  /**
-   * GetRawRangeBoundaryBefore() and GetRawRangeBoundaryAfter() retrieve
-   * RawRangeBoundary which points before or after aNode.
-   */
-  static const RawRangeBoundary GetRawRangeBoundaryAfter(nsINode* aNode) {
-    MOZ_ASSERT(aNode);
-
-    if (NS_WARN_IF(!aNode->IsContent())) {
-      return RawRangeBoundary();
-    }
-
-    nsINode* parentNode = aNode->GetParentNode();
-    if (!parentNode) {
-      return RawRangeBoundary();
-    }
-    RawRangeBoundary afterNode(parentNode, aNode->AsContent());
-    // If aNode isn't in the child nodes of its parent node, we hit this case.
-    // This may occur when we're called by a mutation observer while aNode is
-    // removed from the parent node.
-    if (NS_WARN_IF(
-            !afterNode.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets))) {
-      return RawRangeBoundary();
-    }
-    return afterNode;
-  }
-
-  static const RawRangeBoundary GetRawRangeBoundaryBefore(nsINode* aNode) {
-    MOZ_ASSERT(aNode);
-
-    if (NS_WARN_IF(!aNode->IsContent())) {
-      return RawRangeBoundary();
-    }
-
-    nsINode* parentNode = aNode->GetParentNode();
-    if (!parentNode) {
-      return RawRangeBoundary();
-    }
-    // If aNode isn't in the child nodes of its parent node, we hit this case.
-    // This may occur when we're called by a mutation observer while aNode is
-    // removed from the parent node.
-    const Maybe<uint32_t> indexInParent = parentNode->ComputeIndexOf(aNode);
-    if (MOZ_UNLIKELY(NS_WARN_IF(indexInParent.isNothing()))) {
-      return RawRangeBoundary();
-    }
-    return RawRangeBoundary(parentNode, *indexInParent);
-  }
-
   /**
    * Compute the root node of aNode for initializing range classes.
    * When aNode is in an anonymous subtree, this returns the shadow root or
@@ -139,8 +100,8 @@ class RangeUtils final {
   template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
                                         aKind == TreeKind::Flat>>
-  static Maybe<bool> IsNodeContainedInRange(nsINode& aNode,
-                                            AbstractRange* aAbstractRange);
+  static Maybe<bool> IsNodeContainedInRange(
+      const nsINode& aNode, const AbstractRange* aAbstractRange);
 
   /**
    * Utility routine to detect if a content node starts before a range and/or
@@ -150,8 +111,8 @@ class RangeUtils final {
   template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
                                         aKind == TreeKind::Flat>>
-  static nsresult CompareNodeToRange(nsINode* aNode,
-                                     AbstractRange* aAbstractRange,
+  static nsresult CompareNodeToRange(const nsINode* aNode,
+                                     const AbstractRange* aAbstractRange,
                                      bool* aNodeIsBeforeRange,
                                      bool* aNodeIsAfterRange);
 
@@ -160,7 +121,7 @@ class RangeUtils final {
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
                                         aKind == TreeKind::Flat>>
   static nsresult CompareNodeToRangeBoundaries(
-      nsINode* aNode, const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
+      const nsINode* aNode, const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       const RangeBoundaryBase<EPT, ERT>& aEndBoundary, bool* aNodeIsBeforeRange,
       bool* aNodeIsAfterRange);
 };

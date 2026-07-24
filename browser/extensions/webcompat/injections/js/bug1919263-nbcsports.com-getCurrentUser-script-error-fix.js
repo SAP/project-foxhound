@@ -12,19 +12,24 @@
  * can prevent this by changing async to false when they try to load mparticle.js.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1919263) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1919263", {
+    configurable: false,
+    value: true,
+  });
 
-console.info(
-  "mparticle.js is being kept from loading async. See https://bugzilla.mozilla.org/show_bug.cgi?id=1919263 for details."
-);
+  console.info(
+    "mparticle.js is being kept from loading async. See https://bugzilla.mozilla.org/show_bug.cgi?id=1919263 for details."
+  );
 
-const { prototype } = HTMLScriptElement.wrappedJSObject;
-const desc = Object.getOwnPropertyDescriptor(prototype, "src");
-const origSet = desc.set;
-desc.set = exportFunction(function (url) {
-  if (url?.includes("mparticle.js")) {
-    this.async = false;
-  }
-  return origSet.call(this, url);
-}, window);
-Object.defineProperty(prototype, "src", desc);
+  const { prototype } = HTMLScriptElement;
+  const desc = Object.getOwnPropertyDescriptor(prototype, "src");
+  const origSet = desc.set;
+  desc.set = function (url) {
+    if (url?.includes("mparticle.js")) {
+      this.async = false;
+    }
+    return origSet.call(this, url);
+  };
+  Object.defineProperty(prototype, "src", desc);
+}

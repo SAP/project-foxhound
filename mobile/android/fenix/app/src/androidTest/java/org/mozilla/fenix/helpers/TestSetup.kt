@@ -63,8 +63,8 @@ open class TestSetup {
             AppAndSystemHelper.clearDownloadsFolder()
             // Make sure the Wifi and Mobile Data connections are on.
 
-            // Disabled due to network connections problems encountered recently
-            // See https://bugzilla.mozilla.org/show_bug.cgi?id=1964989 for the disabled UI tests
+            // Currently disabled due to network connection problems encountered on Firebase
+            // despite having all UI tests that interact with network connection settings disabled
             // AppAndSystemHelper.setNetworkEnabled(true)
 
             // Make sure that the data saver system setting is disabled.

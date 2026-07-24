@@ -6,12 +6,12 @@
 
 #include "jit/RangeAnalysis.h"
 
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
 
-#include "jsmath.h"
-
+#include "builtin/Math.h"
 #include "jit/CompileInfo.h"
 #include "jit/IonAnalysis.h"
 #include "jit/JitSpewer.h"
@@ -21,7 +21,6 @@
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
-#include "util/CheckedArithmetic.h"
 #include "util/Unicode.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/Float16.h"
@@ -284,7 +283,7 @@ bool RangeAnalysis::addBetaNodes() {
         if (val->type() == MIRType::Int32) {
           int32_t intbound;
           if (NumberEqualsInt32(bound, &intbound) &&
-              SafeSub(intbound, 1, &intbound)) {
+              mozilla::SafeSub(intbound, 1, &intbound)) {
             bound = intbound;
           }
         }
@@ -303,7 +302,7 @@ bool RangeAnalysis::addBetaNodes() {
         if (val->type() == MIRType::Int32) {
           int32_t intbound;
           if (NumberEqualsInt32(bound, &intbound) &&
-              SafeAdd(intbound, 1, &intbound)) {
+              mozilla::SafeAdd(intbound, 1, &intbound)) {
             bound = intbound;
           }
         }
@@ -547,8 +546,12 @@ Range* Range::intersect(TempAllocator& alloc, const Range* lhs,
 
   FractionalPartFlag newCanHaveFractionalPart = FractionalPartFlag(
       lhs->canHaveFractionalPart_ && rhs->canHaveFractionalPart_);
+
+  // As 0.0 == -0.0, the intersection should include negative zero if any of the
+  // operands can be negative zero.
   NegativeZeroFlag newMayIncludeNegativeZero =
-      NegativeZeroFlag(lhs->canBeNegativeZero_ && rhs->canBeNegativeZero_);
+      NegativeZeroFlag((lhs->canBeNegativeZero_ && rhs->canBeZero()) ||
+                       (rhs->canBeNegativeZero_ && lhs->canBeZero()));
 
   uint16_t newExponent = std::min(lhs->max_exponent_, rhs->max_exponent_);
 
@@ -726,21 +729,31 @@ void Range::setDouble(double l, double h) {
   canHaveFractionalPart_ = ExcludesFractionalParts;
   canBeNegativeZero_ = ExcludesNegativeZero;
 
+  // If denormals are disabled, any value with exponent 0 will be immediately
+  // flushed to 0. This gives 2**53 bit patterns that compare equal to zero.
+  //
+  // Check whether the range [l .. h] can cross any of the 2^53 zeros. We have
+  // to be conservative as the main thread might not interpret doubles the same
+  // way as the compiler thread.
+  const double doubleMin = mozilla::BitwiseCast<double>(
+      mozilla::SpecificFloatingPointBits<double, 0, 1, 0>::value);
+  bool includesNegative = std::isnan(l) || l < doubleMin;
+  bool includesPositive = std::isnan(h) || h > -doubleMin;
+  bool crossesZero = includesNegative && includesPositive;
+
   // Infer the canHaveFractionalPart_ setting. We can have a
   // fractional part if the range crosses through the neighborhood of zero. We
   // won't have a fractional value if the value is always beyond the point at
   // which double precision can't represent fractional values.
   uint16_t minExp = std::min(lExp, hExp);
-  bool includesNegative = std::isnan(l) || l < 0;
-  bool includesPositive = std::isnan(h) || h > 0;
-  bool crossesZero = includesNegative && includesPositive;
   if (crossesZero || minExp < MaxTruncatableExponent) {
     canHaveFractionalPart_ = IncludesFractionalParts;
   }
 
-  // Infer the canBeNegativeZero_ setting. We can have a negative zero if
-  // either bound is zero.
-  if (!(l > 0) && !(h < 0)) {
+  // Infer a conservative value for canBeNegativeZero_ setting. We can have a
+  // negative zero value if the range crosses through the neighborhood of zero
+  // and the lower bound can have a sign bit.
+  if (crossesZero && (std::isnan(l) || mozilla::IsNegative(l))) {
     canBeNegativeZero_ = IncludesNegativeZero;
   }
 
@@ -749,14 +762,6 @@ void Range::setDouble(double l, double h) {
 
 void Range::setDoubleSingleton(double d) {
   setDouble(d, d);
-
-  // The above setDouble call is for comparisons, and treats negative zero
-  // as equal to zero. We're aiming for a minimum range, so we can clear the
-  // negative zero flag if the value isn't actually negative zero.
-  if (!IsNegativeZero(d)) {
-    canBeNegativeZero_ = ExcludesNegativeZero;
-  }
-
   assertInvariants();
 }
 
@@ -787,12 +792,23 @@ Range* Range::add(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
     e = Range::IncludesInfinityAndNaN;
   }
 
-  return new (alloc) Range(
-      l, h,
-      FractionalPartFlag(lhs->canHaveFractionalPart() ||
-                         rhs->canHaveFractionalPart()),
-      NegativeZeroFlag(lhs->canBeNegativeZero() && rhs->canBeNegativeZero()),
-      e);
+  FractionalPartFlag canHaveFractionalPart = FractionalPartFlag(
+      lhs->canHaveFractionalPart() || rhs->canHaveFractionalPart());
+
+  // Handle the case where -0 + -0 == -0.
+  NegativeZeroFlag canBeNegativeZero =
+      NegativeZeroFlag(lhs->canBeNegativeZero() && rhs->canBeNegativeZero());
+
+  // Except for operands which have a fractional part, in the corner case where
+  // denormals are disabled on the execution thread but not on the compiling
+  // thread.
+  //
+  // Example -0 + -1.11e-308 == -0 (denormals disabled)
+  if (l <= 0 && h >= 0 && canHaveFractionalPart) {
+    canBeNegativeZero = IncludesNegativeZero;
+  }
+
+  return new (alloc) Range(l, h, canHaveFractionalPart, canBeNegativeZero, e);
 }
 
 Range* Range::sub(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
@@ -818,11 +834,21 @@ Range* Range::sub(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
     e = Range::IncludesInfinityAndNaN;
   }
 
-  return new (alloc)
-      Range(l, h,
-            FractionalPartFlag(lhs->canHaveFractionalPart() ||
-                               rhs->canHaveFractionalPart()),
-            NegativeZeroFlag(lhs->canBeNegativeZero() && rhs->canBeZero()), e);
+  FractionalPartFlag canHaveFractionalPart = FractionalPartFlag(
+      lhs->canHaveFractionalPart() || rhs->canHaveFractionalPart());
+
+  // Handle the case where -0 - 0 == -0.
+  NegativeZeroFlag canBeNegativeZero =
+      NegativeZeroFlag(lhs->canBeNegativeZero() && rhs->canBeZero());
+
+  // Except for operands which have a fractional part, in the corner case where
+  // denormals are disabled on the execution thread but not on the compiling
+  // thread.
+  if (l <= 0 && h >= 0 && canHaveFractionalPart) {
+    canBeNegativeZero = IncludesNegativeZero;
+  }
+
+  return new (alloc) Range(l, h, canHaveFractionalPart, canBeNegativeZero, e);
 }
 
 Range* Range::and_(TempAllocator& alloc, const Range* lhs, const Range* rhs) {
@@ -1809,13 +1835,6 @@ void MArrayBufferViewByteOffset::computeRange(TempAllocator& alloc) {
   }
 }
 
-void MResizableTypedArrayByteOffsetMaybeOutOfBounds::computeRange(
-    TempAllocator& alloc) {
-  if constexpr (ArrayBufferObject::ByteLengthLimit <= INT32_MAX) {
-    setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
-  }
-}
-
 void MResizableTypedArrayLength::computeRange(TempAllocator& alloc) {
   if constexpr (ArrayBufferObject::ByteLengthLimit <= INT32_MAX) {
     setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
@@ -2080,7 +2099,7 @@ LoopIterationBound* RangeAnalysis::analyzeLoopIterationCount(
     MDefinition* temp = lhs.term;
     lhs.term = rhs;
     rhs = temp;
-    if (!SafeSub(0, lhs.constant, &lhs.constant)) {
+    if (!mozilla::SafeSub(0, lhs.constant, &lhs.constant)) {
       return nullptr;
     }
     lessEqual = !lessEqual;
@@ -2161,7 +2180,7 @@ LoopIterationBound* RangeAnalysis::analyzeLoopIterationCount(
     }
 
     int32_t lhsConstant;
-    if (!SafeSub(0, lhs.constant, &lhsConstant)) {
+    if (!mozilla::SafeSub(0, lhs.constant, &lhsConstant)) {
       return nullptr;
     }
     if (!iterationBound.add(lhsConstant)) {
@@ -2246,7 +2265,7 @@ void RangeAnalysis::analyzeLoopPhi(const LoopIterationBound* loopBound,
   }
 
   int32_t negativeConstant;
-  if (!SafeSub(0, modified.constant, &negativeConstant) ||
+  if (!mozilla::SafeSub(0, modified.constant, &negativeConstant) ||
       !limitSum.add(negativeConstant)) {
     return;
   }
@@ -2344,10 +2363,10 @@ bool RangeAnalysis::tryHoistBoundsCheck(const MBasicBlock* header,
   // lowerTerm >= -lowerConstant - indexConstant
 
   int32_t lowerConstant = 0;
-  if (!SafeSub(lowerConstant, index.constant, &lowerConstant)) {
+  if (!mozilla::SafeSub(lowerConstant, index.constant, &lowerConstant)) {
     return false;
   }
-  if (!SafeSub(lowerConstant, lower->sum.constant(), &lowerConstant)) {
+  if (!mozilla::SafeSub(lowerConstant, lower->sum.constant(), &lowerConstant)) {
     return false;
   }
 
@@ -2357,7 +2376,7 @@ bool RangeAnalysis::tryHoistBoundsCheck(const MBasicBlock* header,
   // upperTerm + upperConstant < boundsLength
 
   int32_t upperConstant = index.constant;
-  if (!SafeAdd(upper->sum.constant(), upperConstant, &upperConstant)) {
+  if (!mozilla::SafeAdd(upper->sum.constant(), upperConstant, &upperConstant)) {
     return false;
   }
 
@@ -2494,15 +2513,17 @@ bool RangeAnalysis::addRangeAssertions() {
 
       // Perform range checking for all numeric and numeric-like types.
       if (!IsNumberType(ins->type()) && ins->type() != MIRType::Boolean &&
-          ins->type() != MIRType::Value && ins->type() != MIRType::IntPtr) {
+          ins->type() != MIRType::Value) {
         continue;
       }
 
       // MIsNoIter is fused with the MTest that follows it and emitted as
       // LIsNoIterAndBranch. Similarly, MIteratorHasIndices is fused to
-      // become LIteratorHasIndicesAndBranch. Skip them to avoid complicating
-      // lowering.
-      if (ins->isIsNoIter() || ins->isIteratorHasIndices()) {
+      // become LIteratorHasIndicesAndBranch and IteratorsMatchAndHaveIndices
+      // becomes LIteratorsMatchAndHaveIndicesAndBranch. Skip them to avoid
+      // complicating lowering.
+      if (ins->isIsNoIter() || ins->isIteratorHasIndices() ||
+          ins->isIteratorsMatchAndHaveIndices()) {
         MOZ_ASSERT(ins->hasOneUse());
         continue;
       }
@@ -2836,6 +2857,12 @@ TruncateKind MStoreTypedArrayElementHole::operandTruncateKind(
     size_t index) const {
   // An integer store truncates the stored value.
   return (index == 3 && isIntegerWrite()) ? TruncateKind::Truncate
+                                          : TruncateKind::NoTruncate;
+}
+
+TruncateKind MTypedArrayFill::operandTruncateKind(size_t index) const {
+  // An integer store truncates the stored value.
+  return (index == 1 && isIntegerWrite()) ? TruncateKind::Truncate
                                           : TruncateKind::NoTruncate;
 }
 

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_widget_GfxDriverInfo_h__
-#define __mozilla_widget_GfxDriverInfo_h__
+#ifndef _mozilla_widget_GfxDriverInfo_h_
+#define _mozilla_widget_GfxDriverInfo_h_
 
 #include "nsString.h"
 #include "nsTArray.h"
@@ -51,15 +51,16 @@
       DriverVendor::All, devices, feature, featureStatus, driverComparator,  \
       driverVersion, ruleId)
 
-#define APPEND_TO_DRIVER_BLOCKLIST_REFRESH_RATE(                           \
-    os, devices, feature, featureStatus, refreshRateStatus,                \
-    minRefreshRateComparator, minRefreshRate, minRefreshRateMax,           \
-    maxRefreshRateComparator, maxRefreshRate, maxRefreshRateMax, ruleId,   \
-    suggestedVersion)                                                      \
-  sDriverInfo->AppendElement(MakeAndAddRef<GfxDriverInfo>(                 \
-      os, GfxDriverInfo::GetDeviceFamily(devices), feature, featureStatus, \
-      refreshRateStatus, minRefreshRateComparator, minRefreshRate,         \
-      minRefreshRateMax, maxRefreshRateComparator, maxRefreshRate,         \
+#define APPEND_TO_DRIVER_BLOCKLIST_REFRESH_RATE(                         \
+    os, devices, feature, featureStatus, refreshRateStatus,              \
+    minRefreshRateComparator, minRefreshRate, minRefreshRateMax,         \
+    maxRefreshRateComparator, maxRefreshRate, maxRefreshRateMax, ruleId, \
+    suggestedVersion)                                                    \
+  sDriverInfo->AppendElement(MakeAndAddRef<GfxDriverInfo>(               \
+      os, (nsAString&)GfxDriverInfo::GetDeviceVendor(devices),           \
+      GfxDriverInfo::GetDeviceFamily(devices), feature, featureStatus,   \
+      refreshRateStatus, minRefreshRateComparator, minRefreshRate,       \
+      minRefreshRateMax, maxRefreshRateComparator, maxRefreshRate,       \
       maxRefreshRateMax, ruleId, suggestedVersion))
 
 #define APPEND_TO_DRIVER_BLOCKLIST_RANGE_EXT(                                 \
@@ -123,14 +124,14 @@ namespace widget {
 enum class OperatingSystem : uint8_t {
   Unknown,
 #define GFXINFO_OS(id, name) id,
-#include "mozilla/widget/GfxInfoOperatingSystemDefs.h"
+#include "mozilla/widget/GfxInfoOperatingSystemDefs.inc"
 #undef GFXINFO_OS
   Count
 };
 
 enum VersionComparisonOp {
 #define GFXINFO_DRIVER_VERSION_CMP(id) DRIVER_##id,
-#include "mozilla/widget/GfxInfoDriverVersionCmpDefs.h"
+#include "mozilla/widget/GfxInfoDriverVersionCmpDefs.inc"
 #undef GFXINFO_DRIVER_VERSION_CMP
   DRIVER_COUNT
 };
@@ -185,28 +186,28 @@ enum class DeviceFamily : uint8_t {
 
 enum class DeviceVendor : uint8_t {
 #define GFXINFO_DEVICE_VENDOR(id, name) id,
-#include "mozilla/widget/GfxInfoDeviceVendorDefs.h"
+#include "mozilla/widget/GfxInfoDeviceVendorDefs.inc"
 #undef GFXINFO_DEVICE_VENDOR
   Max
 };
 
 enum DriverVendor : uint8_t {
 #define GFXINFO_DRIVER_VENDOR(id, name) id,
-#include "mozilla/widget/GfxInfoDriverVendorDefs.h"
+#include "mozilla/widget/GfxInfoDriverVendorDefs.inc"
 #undef GFXINFO_DRIVER_VENDOR
   Max
 };
 
 enum class WindowProtocol : uint8_t {
 #define GFXINFO_WINDOW_PROTOCOL(id, name) id,
-#include "mozilla/widget/GfxInfoWindowProtocolDefs.h"
+#include "mozilla/widget/GfxInfoWindowProtocolDefs.inc"
 #undef GFXINFO_WINDOW_PROTOCOL
   Max
 };
 
 enum class RefreshRateStatus {
 #define GFXINFO_REFRESH_RATE_STATUS(id, name) id,
-#include "mozilla/widget/GfxInfoRefreshRateStatusDefs.h"
+#include "mozilla/widget/GfxInfoRefreshRateStatusDefs.inc"
 #undef GFXINFO_REFRESH_RATE_STATUS
   Unknown,
   Count
@@ -352,7 +353,7 @@ class GfxDriverInfo final {
                 bool gpu2 = false);
 
   // For blocking on refresh rates rather than driver versions.
-  GfxDriverInfo(OperatingSystem os,
+  GfxDriverInfo(OperatingSystem os, const nsAString& vendor,
                 already_AddRefed<const GfxDeviceFamily> devices,
                 int32_t feature, int32_t featureStatus,
                 RefreshRateStatus refreshRateStatus,
@@ -567,4 +568,4 @@ inline bool ParseDriverVersion(const nsAString& aVersion,
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /*__mozilla_widget_GfxDriverInfo_h__ */
+#endif /*_mozilla_widget_GfxDriverInfo_h_ */

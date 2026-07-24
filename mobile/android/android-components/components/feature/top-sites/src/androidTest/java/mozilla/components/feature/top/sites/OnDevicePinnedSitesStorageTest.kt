@@ -10,7 +10,6 @@ import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.top.sites.db.Migrations
 import mozilla.components.feature.top.sites.db.TopSiteDatabase
@@ -26,7 +25,6 @@ import java.util.concurrent.Executors
 
 private const val MIGRATION_TEST_DB = "migration-test"
 
-@ExperimentalCoroutinesApi // for runTest
 @Suppress("LargeClass")
 class OnDevicePinnedSitesStorageTest {
     private lateinit var context: Context

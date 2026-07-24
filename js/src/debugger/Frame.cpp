@@ -6,24 +6,22 @@
 
 #include "debugger/Frame-inl.h"
 
-#include "mozilla/Assertions.h"   // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
-#include "mozilla/HashTable.h"    // for HashMapEntry
-#include "mozilla/Maybe.h"        // for Maybe
-#include "mozilla/Range.h"        // for Range
-#include "mozilla/RangedPtr.h"    // for RangedPtr
-#include "mozilla/Result.h"       // for Result
-#include "mozilla/ScopeExit.h"    // for ScopeExit
-#include "mozilla/ThreadLocal.h"  // for ThreadLocal
-#include "mozilla/Vector.h"       // for Vector
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
+#include "mozilla/HashTable.h"   // for HashMapEntry
+#include "mozilla/Maybe.h"       // for Maybe
+#include "mozilla/Range.h"       // for Range
+#include "mozilla/RangedPtr.h"   // for RangedPtr
+#include "mozilla/Result.h"      // for Result
+#include "mozilla/ScopeExit.h"   // for ScopeExit
+#include "mozilla/Vector.h"      // for Vector
 
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for int32_t
 #include <string.h>  // for strlen
 #include <utility>   // for std::move
 
-#include "jsnum.h"  // for Int32ToString
-
 #include "builtin/Array.h"      // for NewDenseCopiedArray
+#include "builtin/Number.h"     // for Int32ToString
 #include "debugger/Debugger.h"  // for Completion, Debugger
 #include "debugger/DebugScript.h"
 #include "debugger/Environment.h"       // for DebuggerEnvironment
@@ -1005,6 +1003,8 @@ static bool EvaluateInEnv(
 #endif
 
   cx->check(envArg, frame);
+
+  AutoSetBypassCSPForDebugger setFlag(cx, evalOptions.bypassCSP());
 
   CompileOptions options(cx);
   const char* filename =

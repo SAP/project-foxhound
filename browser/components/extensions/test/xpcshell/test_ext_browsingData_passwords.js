@@ -33,7 +33,7 @@ async function addLogin(host, timestamp) {
 async function setupPasswords() {
   // Remove all logins if any (included FxAccounts one in case one got captured in
   // a conditioned profile, see Bug 1853617).
-  Services.logins.removeAllLogins();
+  await Services.logins.removeAllLoginsAsync();
   await addLogin(FXA_HOST, REFERENCE_DATE);
   await addLogin(NEW_HOST, REFERENCE_DATE);
   await addLogin(OLD_HOST, REFERENCE_DATE - 10000);

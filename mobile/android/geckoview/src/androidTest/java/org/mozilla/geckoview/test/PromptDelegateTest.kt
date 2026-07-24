@@ -117,6 +117,82 @@ class PromptDelegateTest : BaseSessionTest(
         mainSession.waitForRoundTrip()
     }
 
+    @Test fun redirectTestAllow() {
+        // Ensure popup and redirect blocking is enabled for this test.
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to true))
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.security.framebusting_intervention.enabled" to true))
+
+        sessionRule.delegateDuringNextWait(object : PromptDelegate, NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onRedirectPrompt(session: GeckoSession, prompt: PromptDelegate.RedirectPrompt): GeckoResult<PromptDelegate.PromptResponse>? {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URL should not be null", prompt.targetUri, notNullValue())
+                assertThat("URL should match", prompt.targetUri, equalTo(FRAMEBUSTING_CHILD_URI))
+                return GeckoResult.fromValue(prompt.confirm(AllowOrDeny.ALLOW))
+            }
+
+            @AssertCalled(count = 2)
+            override fun onLocationChange(
+                session: GeckoSession,
+                url: String?,
+                perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean,
+            ) {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URL should not be null", url, notNullValue())
+                assertThat("URL should match", url, equalTo(forEachCall(FRAMEBUSTING_PARENT_URI, FRAMEBUSTING_CHILD_URI)))
+            }
+
+            @AssertCalled(count = 0)
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                Assert.fail("Should not call onNewSession")
+                return null
+            }
+        })
+
+        mainSession.loadUri(FRAMEBUSTING_PARENT_URI)
+        sessionRule.waitForPageStop()
+        mainSession.waitForRoundTrip()
+    }
+
+    @Test fun redirectTestBlock() {
+        // Ensure popup and redirect blocking is enabled for this test.
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to true))
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.security.framebusting_intervention.enabled" to true))
+
+        sessionRule.delegateUntilTestEnd(object : PromptDelegate, NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onRedirectPrompt(session: GeckoSession, prompt: PromptDelegate.RedirectPrompt): GeckoResult<PromptDelegate.PromptResponse>? {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URL should not be null", prompt.targetUri, notNullValue())
+                assertThat("URL should match", prompt.targetUri, equalTo(FRAMEBUSTING_CHILD_URI))
+                return GeckoResult.fromValue(prompt.confirm(AllowOrDeny.DENY))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onLocationChange(
+                session: GeckoSession,
+                url: String?,
+                perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean,
+            ) {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URL should not be null", url, notNullValue())
+                assertThat("URL should match", url, equalTo(FRAMEBUSTING_PARENT_URI))
+            }
+
+            @AssertCalled(count = 0)
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                Assert.fail("Should not call onNewSession")
+                return null
+            }
+        })
+
+        mainSession.loadUri(FRAMEBUSTING_PARENT_URI)
+        sessionRule.waitForPageStop()
+        mainSession.waitForRoundTrip()
+    }
+
     @Test
     fun alertTest() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
@@ -757,8 +833,8 @@ class PromptDelegateTest : BaseSessionTest(
             """.trimIndent(),
         )
 
-        mainSession.evaluateJS("document.addEventListener('click', () => this.c.click(), { once: true });")
-        mainSession.synthesizeTap(1, 1)
+        mainSession.notifyUserGestureActivation()
+        mainSession.evaluateJS("document.getElementById('colorexample').showPicker()")
 
         assertThat(
             "Value should match",
@@ -773,16 +849,9 @@ class PromptDelegateTest : BaseSessionTest(
         mainSession.loadTestPath(PROMPT_HTML_PATH)
         mainSession.waitForPageStop()
 
-        mainSession.evaluateJS(
-            """
-            document.documentElement.style.paddingTop = "50px";
-            document.addEventListener("click", () => {
-                document.getElementById('dateexample').showPicker();
-            });
-            """.trimIndent(),
-        )
+        mainSession.notifyUserGestureActivation()
+        mainSession.evaluateJS("document.getElementById('dateexample').showPicker()")
 
-        mainSession.synthesizeTap(1, 1) // Provides user activation.
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
             override fun onDateTimePrompt(session: GeckoSession, prompt: PromptDelegate.DateTimePrompt): GeckoResult<PromptDelegate.PromptResponse> {
@@ -1023,8 +1092,8 @@ class PromptDelegateTest : BaseSessionTest(
         mainSession.loadTestPath(PROMPT_HTML_PATH)
         mainSession.waitForPageStop()
 
-        mainSession.evaluateJS("document.addEventListener('click', () => document.getElementById('fileexample').click(), { once: true });")
-        mainSession.synthesizeTap(1, 1)
+        mainSession.notifyUserGestureActivation()
+        mainSession.evaluateJS("document.getElementById('fileexample').showPicker()")
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
@@ -1047,8 +1116,8 @@ class PromptDelegateTest : BaseSessionTest(
         mainSession.loadTestPath(PROMPT_HTML_PATH)
         mainSession.waitForPageStop()
 
-        mainSession.evaluateJS("document.addEventListener('click', () => document.getElementById('filemultipleexample').click(), { once: true });")
-        mainSession.synthesizeTap(1, 1)
+        mainSession.notifyUserGestureActivation()
+        mainSession.evaluateJS("document.getElementById('filemultipleexample').showPicker()")
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
@@ -1089,8 +1158,8 @@ class PromptDelegateTest : BaseSessionTest(
             }
         })
 
-        mainSession.evaluateJS("document.addEventListener('click', () => document.getElementById('direxample').click(), { once: true });")
-        mainSession.synthesizeTap(1, 1)
+        mainSession.notifyUserGestureActivation()
+        mainSession.evaluateJS("document.getElementById('direxample').showPicker()")
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)

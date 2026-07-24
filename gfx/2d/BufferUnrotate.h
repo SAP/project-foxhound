@@ -7,7 +7,7 @@
 #ifndef MOZILLA_GFX_BUFFER_UNROTATE_H
 #define MOZILLA_GFX_BUFFER_UNROTATE_H
 
-#include "mozilla/Types.h"
+#include <cstdint>
 
 namespace mozilla {
 namespace gfx {

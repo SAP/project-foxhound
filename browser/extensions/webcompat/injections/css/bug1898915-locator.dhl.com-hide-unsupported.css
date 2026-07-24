@@ -1,0 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * locator.dhl.com - Shows an 'unsupported browser' warning.
+ * Bug #1898915 - https://bugzilla.mozilla.org/show_bug.cgi?id=1898915
+ * WebCompat issue #128301 - https://github.com/webcompat/web-bugs/issues/128301
+ */
+[app-unsupported-browsers] {
+  display: none !important;
+}

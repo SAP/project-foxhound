@@ -22,4 +22,5 @@ CompiledModules(
     "SearchInFileBar.js",
     "Tab.js",
     "Tabs.js",
+    "TracePanel.js",
 )

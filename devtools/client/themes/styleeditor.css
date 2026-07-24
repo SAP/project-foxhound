@@ -65,6 +65,10 @@ li:hover > hgroup > .stylesheet-more > h3 > .stylesheet-saveButton {
     &::before {
       background-image: url(chrome://devtools/content/debugger/images/prettyPrint.svg);
     }
+    &.pretty::before {
+      -moz-context-properties: stroke;
+      stroke: var(--theme-icon-checked-color);
+    }
   }
 }
 
@@ -197,7 +201,7 @@ li.error > .stylesheet-info > .stylesheet-more > .stylesheet-error-message {
 }
 
 .media-condition-unmatched {
-  opacity: 0.4;
+  color: var(--theme-text-color-inactive);
 }
 
 .stylesheet-toggle {

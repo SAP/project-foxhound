@@ -40,9 +40,12 @@ def type_name(obj):
         generic = util.Camelize(obj.name) + "Object"
         tag = generic + "Tag"
         return f"ObjectMetric<{generic}, struct {tag}>"
+    suffix = "Metric"
+    if getattr(obj, "standalone", False):
+        suffix = "Standalone"
     if obj.type == "counter":
-        return "CounterMetric<impl::CounterType::eBaseOrLabeled>"
-    return util.Camelize(obj.type) + "Metric"
+        return f"Counter{suffix}<impl::CounterType::eBaseOrLabeled>"
+    return util.Camelize(obj.type) + suffix
 
 
 def extra_type_name(typ: str) -> str:

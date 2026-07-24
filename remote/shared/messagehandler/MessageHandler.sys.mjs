@@ -26,7 +26,7 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
  *     The type of context
  * @property {string=} id
  *     Unique id of a given context for the provided type.
- *     For ContextDescriptorType.All, id can be ommitted.
+ *     For ContextDescriptorType.All, id can be omitted.
  *     For ContextDescriptorType.TopBrowsingContext, the id should be the
  *     browserId corresponding to a top-level browsing context.
  *     For ContextDescriptorType.UserContext, the id should be the
@@ -155,6 +155,30 @@ export class MessageHandler extends EventEmitter {
   }
 
   /**
+   * Check if any of the provided contexts match the provided contextDescriptor.
+   *
+   * @param {Array<BrowsingContext>} browsingContexts
+   *     The browsing contexts to verify.
+   * @param {ContextDescriptor} contextDescriptor
+   *     The context descriptor to match.
+   *
+   * @returns {boolean}
+   *     Return "true" if any context matches the context descriptor,
+   *     "false" otherwise.
+   */
+  contextsMatchDescriptor(browsingContexts, contextDescriptor) {
+    return (
+      contextDescriptor.type === ContextDescriptorType.All ||
+      (contextDescriptor.type === ContextDescriptorType.TopBrowsingContext &&
+        browsingContexts.some(bc => contextDescriptor.id === bc.browserId)) ||
+      (contextDescriptor.type === ContextDescriptorType.UserContext &&
+        browsingContexts.some(
+          bc => contextDescriptor.id === bc.originAttributes.userContextId
+        ))
+    );
+  }
+
+  /**
    * Emit a message handler event.
    *
    * Such events should bubble up to the root of a MessageHandler network.
@@ -164,23 +188,24 @@ export class MessageHandler extends EventEmitter {
    *     form [module name].[event name].
    * @param {object} data
    *     The event's data.
-   * @param {ContextInfo=} contextInfo
-   *     The event's context info, used to identify the origin of the event.
+   * @param {Array<ContextInfo>=} relatedContexts
+   *     The event's related contexts info, used to identify the navigables
+   *     related to the event.
    *     If not provided, the context info of the current MessageHandler will be
-   *     used.
+   *     used as single related context info.
    */
-  emitEvent(name, data, contextInfo) {
-    // If no contextInfo field is provided on the event, extract it from the
+  emitEvent(name, data, relatedContexts) {
+    // If no relatedContexts field is provided on the event, extract it from the
     // MessageHandler instance.
-    contextInfo = contextInfo || this.#getContextInfo();
+    relatedContexts = relatedContexts || [this.#getContextInfo()];
 
     // Events are emitted both under their own name for consumers listening to
     // a specific and as `message-handler-event` for consumers which need to
     // catch all events.
-    this.emit(name, data, contextInfo);
+    this.emit(name, data, relatedContexts);
     this.emit("message-handler-event", {
       name,
-      contextInfo,
+      relatedContexts,
       data,
       sessionId: this.sessionId,
     });
@@ -268,7 +293,7 @@ export class MessageHandler extends EventEmitter {
   }
 
   /**
-   * Execute the required initialization steps, inlcluding apply the initial session data items
+   * Execute the required initialization steps, including apply the initial session data items
    * provided to this MessageHandler on startup. Implementation is specific to each MessageHandler class.
    *
    * By default the implementation is a no-op.

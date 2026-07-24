@@ -8,15 +8,14 @@
 
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/FormData.h"
-#include "mozilla/dom/HTMLTextAreaElementBinding.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresState.h"
 #include "mozilla/TextControlState.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FormData.h"
+#include "mozilla/dom/HTMLTextAreaElementBinding.h"
 #include "nsAttrValueInlines.h"
 #include "nsBaseCommandController.h"
 #include "nsContentCreatorFunctions.h"
@@ -24,11 +23,12 @@
 #include "nsFocusManager.h"
 #include "nsIConstraintValidation.h"
 #include "nsIControllers.h"
-#include "mozilla/dom/Document.h"
 #include "nsIFormControl.h"
 #include "nsIFrame.h"
+#include "nsIMutationObserver.h"
 #include "nsLayoutUtils.h"
 #include "nsLinebreakConverter.h"
+#include "nsPlainTextSerializer.h"
 #include "nsPresContext.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
@@ -129,6 +129,26 @@ void HTMLTextAreaElement::SelectAll() {
   }
 }
 
+enum class Wrap {
+  Off,
+  Hard,
+  Soft,
+};
+
+static Wrap WrapValue(const HTMLTextAreaElement& aElement) {
+  static mozilla::dom::Element::AttrValuesArray strings[] = {
+      nsGkAtoms::HARD, nsGkAtoms::OFF, nullptr};
+  switch (aElement.FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::wrap, strings,
+                                   eIgnoreCase)) {
+    case 0:
+      return Wrap::Hard;
+    case 1:
+      return Wrap::Off;
+    default:
+      return Wrap::Soft;
+  }
+}
+
 bool HTMLTextAreaElement::IsHTMLFocusable(IsFocusableFlags aFlags,
                                           bool* aIsFocusable,
                                           int32_t* aTabIndex) {
@@ -149,27 +169,20 @@ void HTMLTextAreaElement::GetType(nsAString& aType) {
 }
 
 void HTMLTextAreaElement::GetValue(nsAString& aValue) {
-  GetValueInternal(aValue, true);
+  GetValueInternal(aValue);
   Element::SetTaintSourceGetAttr(nsGkAtoms::value, aValue);
   MOZ_ASSERT(aValue.FindChar(static_cast<char16_t>('\r')) == -1);
 }
 
-void HTMLTextAreaElement::GetValueInternal(nsAString& aValue,
-                                           bool aIgnoreWrap) const {
+void HTMLTextAreaElement::GetValueInternal(nsAString& aValue) const {
   MOZ_ASSERT(mState);
-  mState->GetValue(aValue, aIgnoreWrap, /* aForDisplay = */ true);
-    MarkTaintSourceElement(aValue, "textarea.value", this);
-
+  mState->GetValue(aValue, /* aForDisplay = */ true);
+  MarkTaintSourceElement(aValue, "textarea.value", this);
 }
 
 void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
   Element::SetTaintSourceGetAttr(aName, aResult);
   if (nsGkAtoms::value->Equals(aName)) {
-    // Foxhound: input.value source
-    //
-    // This will taint *all* input types, including those where the actual values
-    // could be limited. Still, these inputs should still not change the syntax
-    // of any sink calls
     MarkTaintSourceElement(aResult, "textarea.value", this);
   }
 
@@ -179,11 +192,6 @@ void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, nsAStrin
 void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
   Element::SetTaintSourceGetAttr(aName, aResult);
   if (nsGkAtoms::value->Equals(aName)) {
-    // Foxhound: input.value source
-    //
-    // This will taint *all* input types, including those where the actual values
-    // could be limited. Still, these inputs should still not change the syntax
-    // of any sink calls
     MarkTaintSourceElement(aResult, "textarea.value", this);
   }
 
@@ -286,7 +294,7 @@ void HTMLTextAreaElement::SetValue(const nsAString& aValue,
   // NOTE: this is currently quite expensive work (too much string
   // manipulation). We should probably optimize that.
   nsAutoString currentValue;
-  GetValueInternal(currentValue, true);
+  GetValueInternal(currentValue);
 
   nsresult rv = SetValueInternal(
       aValue,
@@ -298,7 +306,7 @@ void HTMLTextAreaElement::SetValue(const nsAString& aValue,
   }
 
   if (mFocusedValue.Equals(currentValue)) {
-    GetValueInternal(mFocusedValue, true);
+    GetValueInternal(mFocusedValue);
   }
 }
 
@@ -393,7 +401,9 @@ void HTMLTextAreaElement::MapAttributesIntoRule(
     MappedDeclarationsBuilder& aBuilder) {
   // wrap=off
   const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::wrap);
-  if (value && value->Type() == nsAttrValue::eString &&
+  if (value &&
+      (value->Type() == nsAttrValue::eString ||
+       value->Type() == nsAttrValue::eAtom) &&
       value->Equals(nsGkAtoms::OFF, eIgnoreCase)) {
     // Equivalent to expanding `white-space; pre`
     aBuilder.SetKeywordValue(eCSSProperty_white_space_collapse,
@@ -407,15 +417,12 @@ void HTMLTextAreaElement::MapAttributesIntoRule(
 }
 
 nsChangeHint HTMLTextAreaElement::GetAttributeChangeHint(
-    const nsAtom* aAttribute, int32_t aModType) const {
+    const nsAtom* aAttribute, AttrModType aModType) const {
   nsChangeHint retval =
       nsGenericHTMLFormControlElementWithState::GetAttributeChangeHint(
           aAttribute, aModType);
 
-  const bool isAdditionOrRemoval =
-      aModType == MutationEvent_Binding::ADDITION ||
-      aModType == MutationEvent_Binding::REMOVAL;
-
+  const bool isAdditionOrRemoval = IsAdditionOrRemoval(aModType);
   if (aAttribute == nsGkAtoms::rows || aAttribute == nsGkAtoms::cols) {
     retval |= NS_STYLE_HINT_REFLOW;
   } else if (aAttribute == nsGkAtoms::wrap) {
@@ -483,7 +490,7 @@ nsresult HTMLTextAreaElement::PreHandleEvent(EventChainVisitor& aVisitor) {
 
 void HTMLTextAreaElement::FireChangeEventIfNeeded() {
   nsString value;
-  GetValueInternal(value, true);
+  GetValueInternal(value);
 
   // NOTE(emilio): This is not quite on the spec, but matches <input>, see
   // https://github.com/whatwg/html/issues/10011 and
@@ -507,7 +514,7 @@ nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
     mHandlingSelect = false;
   }
   if (aVisitor.mEvent->mMessage == eFocus) {
-    GetValueInternal(mFocusedValue, true);
+    GetValueInternal(mFocusedValue);
   }
   return NS_OK;
 }
@@ -641,7 +648,7 @@ void HTMLTextAreaElement::SetRangeText(const nsAString& aReplacement,
 }
 
 void HTMLTextAreaElement::GetValueFromSetRangeText(nsAString& aValue) {
-  GetValueInternal(aValue, false);
+  GetValueInternal(aValue);
 }
 
 nsresult HTMLTextAreaElement::SetValueFromSetRangeText(
@@ -674,15 +681,21 @@ HTMLTextAreaElement::SubmitNamesValues(FormData* aFormData) {
     return NS_OK;
   }
 
-  //
   // Get the value
-  //
   nsAutoString value;
-  GetValueInternal(value, false);
+  GetValueInternal(value);
+  if (WrapValue(*this) == Wrap::Hard) {
+    if (auto cols = GetWrapCols(); cols > 0) {
+      int32_t flags = nsIDocumentEncoder::OutputLFLineBreak |
+                      nsIDocumentEncoder::OutputPreformatted |
+                      nsIDocumentEncoder::OutputPersistNBSP |
+                      nsIDocumentEncoder::OutputBodyOnly |
+                      nsIDocumentEncoder::OutputWrap;
+      nsPlainTextSerializer::HardWrapString(value, cols, flags);
+    }
+  }
 
-  //
   // Submit name=value
-  //
   const nsresult rv = aFormData->AddNameValuePair(name, value);
   if (NS_FAILED(rv)) {
     return rv;
@@ -699,7 +712,7 @@ void HTMLTextAreaElement::SaveState() {
     state = GetPrimaryPresState();
     if (state) {
       nsAutoString value;
-      GetValueInternal(value, true);
+      GetValueInternal(value);
 
       if (NS_FAILED(nsLinebreakConverter::ConvertStringLineBreaks(
               value, nsLinebreakConverter::eLinebreakPlatform,
@@ -922,7 +935,7 @@ nsresult HTMLTextAreaElement::CopyInnerTo(Element* aDest) {
     auto* dest = static_cast<HTMLTextAreaElement*>(aDest);
 
     nsAutoString value;
-    GetValueInternal(value, true);
+    GetValueInternal(value);
 
     // SetValueInternal handles setting mValueChanged for us. dest is a fresh
     // element so setting its value can't really run script.
@@ -1070,13 +1083,9 @@ Maybe<int32_t> HTMLTextAreaElement::GetCols() {
 }
 
 int32_t HTMLTextAreaElement::GetWrapCols() {
-  nsHTMLTextWrap wrapProp;
-  TextControlElement::GetWrapPropertyEnum(this, wrapProp);
-  if (wrapProp == TextControlElement::eHTMLTextWrap_Off) {
-    // do not wrap when wrap=off
+  if (WrapValue(*this) == Wrap::Off) {
     return 0;
   }
-
   // Otherwise we just wrap at the given number of columns
   return GetColsOrDefault();
 }
@@ -1099,7 +1108,7 @@ bool HTMLTextAreaElement::ValueChanged() const { return mValueChanged; }
 
 void HTMLTextAreaElement::GetTextEditorValue(nsAString& aValue) const {
   MOZ_ASSERT(mState);
-  mState->GetValue(aValue, /* aIgnoreWrap = */ true, /* aForDisplay = */ true);
+  mState->GetValue(aValue, /* aForDisplay = */ true);
 }
 
 void HTMLTextAreaElement::InitializeKeyboardEventListeners() {

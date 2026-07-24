@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsHTTPSOnlyStreamListener.h"
+
 #include "NSSErrorsService.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozpkix/pkixnss.h"
 #include "nsCOMPtr.h"
-#include "nsHTTPSOnlyStreamListener.h"
 #include "nsHTTPSOnlyUtils.h"
 #include "nsIChannel.h"
 #include "nsIRequest.h"

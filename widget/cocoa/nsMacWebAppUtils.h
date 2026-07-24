@@ -1,8 +1,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _MAC_WEB_APP_UTILS_H_
-#define _MAC_WEB_APP_UTILS_H_
+#ifndef MAC_WEB_APP_UTILS_H_
+#define MAC_WEB_APP_UTILS_H_
 
 #include "nsIMacWebAppUtils.h"
 
@@ -19,4 +19,4 @@ class nsMacWebAppUtils : public nsIMacWebAppUtils {
   virtual ~nsMacWebAppUtils() {}
 };
 
-#endif  //_MAC_WEB_APP_UTILS_H_
+#endif  // MAC_WEB_APP_UTILS_H_

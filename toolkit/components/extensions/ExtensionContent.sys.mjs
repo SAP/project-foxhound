@@ -360,7 +360,7 @@ class Script {
    *        execution details. This is usually a plain WebExtensionContentScript
    *        except when the script is run via `tabs.executeScript` or
    *        `scripting.executeScript`. In this case, the object may have some
-   *        extra properties: wantReturnValue, removeCSS, cssOrigin
+   *        extra properties: wantReturnValue, removeCSS
    */
   constructor(extension, matcher) {
     this.scriptType = "content_script";
@@ -499,12 +499,13 @@ class Script {
     }
 
     try {
-      // In case of initial about:blank documents, inject immediately without
-      // awaiting the runAt logic in the blocks below, to avoid getting stuck
-      // due to https://bugzilla.mozilla.org/show_bug.cgi?id=1900222#c7
+      // In case of uncommitted initial about:blank documents, inject
+      // immediately without awaiting the runAt logic in the blocks below, to
+      // avoid getting stuck due to
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1900222#c7
       // This is only relevant for dynamic code execution because declarative
-      // content scripts do not run on initial about:blank - bug 1415539).
-      if (!window.document.isInitialDocument) {
+      // content scripts do not run on this about:blank - bug 1415539.
+      if (!window.document.isUncommittedInitialDocument) {
         if (this.runAt === "document_end") {
           await promiseDocumentReady(window.document);
         } else if (this.runAt === "document_idle") {
@@ -950,7 +951,17 @@ class UserScript extends Script {
       sandboxPrototype: contentWindow,
       sameZoneAs: contentWindow,
       wantXrays: true,
-      wantGlobalProperties: ["XMLHttpRequest", "fetch", "WebSocket"],
+      wantGlobalProperties: [
+        "XMLHttpRequest",
+        "fetch",
+        "WebSocket",
+        // The 'structuredClone' method in user scripts should clone within the
+        // user script global by default, rather than cloning into the target
+        // contentWindow.
+        //
+        // TODO(Bug 2022941): add explicit test coverage.
+        "structuredClone",
+      ],
       originAttributes: contentPrincipal.originAttributes,
       metadata: {
         "browser-id": context.browserId,
@@ -1038,16 +1049,20 @@ export class ContentScriptContextChild extends BaseContext {
         addonId: extensionPrincipal.addonId,
       };
 
+      // Within a content script, we want the 'structuredClone' method to clone
+      // the object within the content script's global, rather than cloning it
+      // into the the embedding scope. (see bug 2017797)
+      let wantGlobalProperties = ["structuredClone"];
+
       let isMV2 = extension.manifestVersion == 2;
-      let wantGlobalProperties;
       let sandboxContentSecurityPolicy;
       if (isMV2) {
         // In MV2, fetch/XHR support cross-origin requests.
         // WebSocket was also included to avoid CSP effects (bug 1676024).
-        wantGlobalProperties = ["XMLHttpRequest", "fetch", "WebSocket"];
+        wantGlobalProperties.push("XMLHttpRequest", "fetch", "WebSocket");
       } else {
         // In MV3, fetch/XHR have the same capabilities as the web page.
-        wantGlobalProperties = [];
+
         // In MV3, the base CSP is enforced for content scripts. Overrides are
         // currently not supported, but this was considered at some point, see
         // https://bugzilla.mozilla.org/show_bug.cgi?id=1581611#c10
@@ -1455,7 +1470,6 @@ export var ExtensionContent = {
     Object.assign(matcher, {
       wantReturnValue: options.wantReturnValue,
       removeCSS: options.removeCSS,
-      cssOrigin: options.cssOrigin,
     });
     let script = contentScripts.get(matcher);
 

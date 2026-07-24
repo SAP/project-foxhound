@@ -41,9 +41,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "nr_socket_tcp.h"
 
-#include "mozilla/ErrorNames.h"
-
 #include "WebrtcTCPSocketWrapper.h"
+#include "mozilla/ErrorNames.h"
 
 namespace mozilla {
 using namespace net;

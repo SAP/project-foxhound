@@ -7,7 +7,6 @@
 #define nsParserUtils_h
 
 #include "nsIParserUtils.h"
-#include "mozilla/Attributes.h"
 
 class nsParserUtils final : public nsIParserUtils {
   ~nsParserUtils() {}

@@ -2,13 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# mozharness configuration for Android x86 7.0 wrench tests
+# mozharness configuration for Android x86 14.0 wrench tests
 #
 # This configuration should be combined with suite definitions and other
 # mozharness configuration from android_common.py, or similar.
 
 config = {
-    "emulator_avd_name": "mozemulator-x86_64",
+    "emulator_avd_name": "mozemulator-android34-x86_64",
     "emulator_process_name": "qemu-system-x86_64",
     "emulator_extra_args": [
         "-gpu",

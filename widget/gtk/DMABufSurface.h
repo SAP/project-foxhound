@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DMABufSurface_h__
-#define DMABufSurface_h__
+#ifndef DMABufSurface_h_
+#define DMABufSurface_h_
 
 #include <functional>
 #include <stdint.h>
@@ -130,6 +130,7 @@ class DMABufSurface {
   };
   int32_t GetFOURCCFormat() const { return mFOURCCFormat; };
   virtual int GetTextureCount() = 0;
+  virtual bool HoldsTexture() = 0;
 
 #ifdef MOZ_LOGGING
   bool IsMapped(int aPlane = 0) { return (mMappedRegion[aPlane] != nullptr); };
@@ -230,6 +231,8 @@ class DMABufSurface {
 
   static void ReleaseSnapshotGLContext();
 
+  static void InitMemoryReporting();
+
   DMABufSurface(SurfaceType aSurfaceType);
 
  protected:
@@ -290,6 +293,8 @@ class DMABufSurface {
   RefPtr<mozilla::gfx::FileHandleWrapper> mSyncFd;
   EGLSyncKHR mSync;
   RefPtr<mozilla::gfx::FileHandleWrapper> mSemaphoreFd;
+  // mGL is tied to textures/eglimages created over dmabuf and it's null for
+  // dmabuf without textures/eglimages.
   RefPtr<mozilla::gl::GLContext> mGL;
 
   // Inter process properties, used to share DMABuf among various processes
@@ -364,6 +369,7 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
 #endif
 
   int GetTextureCount() override { return 1; };
+  bool HoldsTexture() override;
 
 #ifdef MOZ_LOGGING
   void DumpToFile(const char* pFile) override;
@@ -392,6 +398,8 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
   bool ImportSurfaceDescriptor(const mozilla::layers::SurfaceDescriptor& aDesc);
   bool OpenFileDescriptorForPlane(
       mozilla::widget::DMABufDeviceLock* aDeviceLock, int aPlane) override;
+
+  size_t GetUsedMemoryRGBA();
 
  private:
   int mWidth;
@@ -442,6 +450,7 @@ class DMABufSurfaceYUV final : public DMABufSurface {
   };
 
   int GetTextureCount() override;
+  bool HoldsTexture() override;
 
   void SetYUVColorSpace(mozilla::gfx::YUVColorSpace aColorSpace) {
     mColorSpace = aColorSpace;
@@ -460,6 +469,10 @@ class DMABufSurfaceYUV final : public DMABufSurface {
            (mTransferFunction == mozilla::gfx::TransferFunction::PQ ||
             mTransferFunction == mozilla::gfx::TransferFunction::HLG);
   }
+  void SetWPChromaLocation(uint32_t aWPChromaLocation) {
+    mWPChromaLocation = aWPChromaLocation;
+  }
+  uint32_t GetWPChromaLocation() { return mWPChromaLocation; }
 
   DMABufSurfaceYUV();
 
@@ -498,6 +511,9 @@ class DMABufSurfaceYUV final : public DMABufSurface {
   bool OpenFileDescriptorForPlane(
       mozilla::widget::DMABufDeviceLock* aDeviceLock, int aPlane) override;
 
+  static size_t GetUsedMemoryYUV(int32_t aFOURCCFormat, int aWidth,
+                                 int aHeight);
+
   int mWidth[DMABUF_BUFFER_PLANES];
   int mHeight[DMABUF_BUFFER_PLANES];
   // Aligned size of the surface imported from VADRMPRIMESurfaceDescriptor.
@@ -516,6 +532,9 @@ class DMABufSurfaceYUV final : public DMABufSurface {
       mozilla::gfx::ColorSpace2::UNKNOWN;
   mozilla::gfx::TransferFunction mTransferFunction =
       mozilla::gfx::TransferFunction::Default;
+  // Chroma location in wp_color_representation_surface_v1_chroma_location
+  // format.
+  uint32_t mWPChromaLocation = 0;
 };
 
 #endif

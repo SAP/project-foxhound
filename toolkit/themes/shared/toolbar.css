@@ -1,0 +1,76 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* ===== toolbar.css ====================================================
+  == Styles used by XUL toolbar-related elements.
+  ======================================================================= */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+toolbar {
+  min-width: 1px;
+  min-height: 20px;
+
+  /* TODO(emilio): Consider making this consistent across platforms. */
+  @media (-moz-platform: linux) {
+    background-color: -moz-headerbar;
+    color: -moz-headerbartext;
+    padding: 2px 0;
+
+    &:where(:-moz-window-inactive) {
+      background-color: -moz-headerbarinactive;
+      color: -moz-headerbarinactivetext;
+    }
+
+    &[type="menubar"] {
+      background-color: transparent;
+      padding: 1px 0;
+    }
+  }
+}
+
+toolbarseparator {
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  /* NOTE: we use padding + a pseudo-element, rather than margin, so that
+   * separators are draggable. This is useful for the personal bookmarks
+   * toolbar */
+  padding: 2px;
+
+  &::before {
+    content: "";
+    flex: 1;
+    display: block;
+    border-inline-start: 0.01px solid;
+  }
+
+  panel &::before {
+    /* TODO(emilio): This is a bit sketchy, maybe <panel> should use <html:hr>
+     * or something along those lines instead? */
+    border-inline-start: none;
+    border-block-start: 0.01px solid;
+  }
+}
+
+toolbarspacer {
+  width: 15px;
+}
+
+toolbarpaletteitem {
+  cursor: grab;
+}
+
+/* Drag and drop feedback */
+
+toolbarpaletteitem[place="toolbar"] {
+  margin-inline: -2px;
+  border-inline: 2px solid transparent;
+}
+
+toolbarpaletteitem[dragover="left"] {
+  border-left-color: #000000;
+}
+
+toolbarpaletteitem[dragover="right"] {
+  border-right-color: #000000;
+}

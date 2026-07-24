@@ -773,7 +773,7 @@ class ModuleEnvironmentObject : public EnvironmentObject {
   // `env` may be a DebugEnvironmentProxy, but not a hollow environment.
   static ModuleEnvironmentObject* find(JSObject* env);
 
-  uint32_t firstSyntheticValueSlot() { return RESERVED_SLOTS; }
+  uint32_t firstSyntheticValueSlot() { return RESERVED_SLOTS + 1; }
 
  private:
   static bool lookupProperty(JSContext* cx, HandleObject obj, HandleId id,
@@ -1470,7 +1470,8 @@ class DebugEnvironments {
   Zone* zone_;
 
   /* The map from (non-debug) environments to debug environments. */
-  ObjectWeakMap proxiedEnvs;
+  using ProxiedEnvironmentsMap = WeakMap<JSObject*, JSObject*, ZoneAllocPolicy>;
+  ProxiedEnvironmentsMap proxiedEnvs;
 
   /*
    * The map from live frames which have optimized-away environments to the
@@ -1495,7 +1496,7 @@ class DebugEnvironments {
   LiveEnvironmentMap liveEnvs;
 
  public:
-  DebugEnvironments(JSContext* cx, Zone* zone);
+  explicit DebugEnvironments(JSContext* cx);
   ~DebugEnvironments();
 
   Zone* zone() const { return zone_; }

@@ -6,8 +6,8 @@
 #ifndef MOZILLA_DOM_SCRIPT_NSISCRIPTLOADEROBSERVER_H_
 #define MOZILLA_DOM_SCRIPT_NSISCRIPTLOADEROBSERVER_H_
 
-#include "nsISupports.h"
 #include "js/GCAnnotations.h"
+#include "nsISupports.h"
 
 class nsIScriptElement;
 class nsIURI;

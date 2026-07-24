@@ -7,48 +7,62 @@ prefs = ["dom.security.https_first=false"] #Disable https-first because of expli
 ["test_cookie_behavior.js"]
 
 ["test_getPartitionKeyFromURL.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_purge_trackers.js"]
-run-sequentially = "very high failure rate in parallel"
+requesttimeoutfactor = 2  # Slow on Linux and Windows
+run-sequentially = ["os == 'mac'"] # frequent fail in parallel on Mac
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1760085
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov && !fission", # Bug 1760085
-  "win10_2009", # Bug 1718292
-  "win11_2009", # Bug 1797751
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov && !fission", # Bug 1760085
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1718292
 ]
 
 ["test_purge_trackers_telemetry.js"]
 
 ["test_staticPartition_authhttp.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_staticPartition_clientAuthRemember.js"]
 
 ["test_staticPartition_font.js"]
 support-files = ["data/font.woff"]
 skip-if = [
-  "win10_2009 && bits == 64 && !debug", # Bug 1652119
-  "win11_2009 && bits == 64 && !debug", # Bug 1652119
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1987229
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1652119
   "socketprocess_networking", # Bug 1759035
 ]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_staticPartition_image.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_staticPartition_prefetch.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_staticPartition_preload.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_tracking_db_service.js"]
-skip-if = ["os == 'android'"] # Bug 1697936
+skip-if = [
+  "os == 'android'", # Bug 1697936
+]
 
 ["test_url_classifier_allow_list_category_pref_migration.js"]
+
+["test_user_interaction_pref.js"]
 
 ["test_validate_strip_on_share_list.js"]
 
 ["test_view_source.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035 (not as common on win, perma on linux/osx)
+skip-if = [
+  "socketprocess_networking", # Bug 1759035 (not as common on win, perma on linux/osx)
+]

@@ -235,30 +235,46 @@ async function testContentBlocking(tab) {
   info("Testing with Tracking Protection ENABLED.");
 
   info("Load a test page not containing tracking elements");
-  await promiseTabLoadEvent(tab, BENIGN_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: BENIGN_PAGE,
+  });
   await testBenignPage();
 
   info(
     "Load a test page not containing tracking elements which has an exception."
   );
 
-  await promiseTabLoadEvent(tab, "https://example.org/?round=1");
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: "https://example.org/?round=1",
+  });
 
   ContentBlockingAllowList.add(tab.linkedBrowser);
   // Load another page from the same origin to ensure there is an onlocationchange
   // notification which would trigger an oncontentblocking notification for us.
-  await promiseTabLoadEvent(tab, "https://example.org/?round=2");
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: "https://example.org/?round=2",
+  });
 
   await testBenignPageWithException();
 
   ContentBlockingAllowList.remove(tab.linkedBrowser);
 
   info("Load a test page containing tracking elements");
-  await promiseTabLoadEvent(tab, gTrackingPageURL);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: gTrackingPageURL,
+  });
   await testTrackingPage(tab.ownerGlobal);
 
   info("Disable CB for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let reloadURI = tab.linkedBrowser.currentURI.spec;
+  let tabReloadPromise = BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: reloadURI,
+  });
   tab.ownerGlobal.gProtectionsHandler.disableForCurrentPage();
   await tabReloadPromise;
   let isPrivateBrowsing = PrivateBrowsingUtils.isWindowPrivate(tab.ownerGlobal);
@@ -266,7 +282,11 @@ async function testContentBlocking(tab) {
   await testTrackingPageUnblocked(blockedByTP, tab.ownerGlobal);
 
   info("Re-enable TP for the page (which reloads the page)");
-  tabReloadPromise = promiseTabLoadEvent(tab);
+  reloadURI = tab.linkedBrowser.currentURI.spec;
+  tabReloadPromise = BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: reloadURI,
+  });
   tab.ownerGlobal.gProtectionsHandler.enableForCurrentPage();
   await tabReloadPromise;
   await testTrackingPage(tab.ownerGlobal);

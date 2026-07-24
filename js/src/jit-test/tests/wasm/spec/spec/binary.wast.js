@@ -843,7 +843,7 @@ assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
       "\\05\\03\\01"                           ;; memory section with one entry
-      "\\08"                                 ;; malformed memory limits flag
+      "\\10"                                 ;; malformed memory limits flag
       "\\00"                                 ;; dummy byte
   )`),
   `malformed limits flags`,
@@ -1338,6 +1338,7 @@ assert_malformed(
 assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
+      "\\01\\04\\01\\60\\00\\00"        ;; Type section
       "\\03\\02\\01\\00"              ;; Function section
       "\\08\\01\\00"                 ;; Start section: function 0
       "\\07\\01\\00"                 ;; Export section with zero entries
@@ -1345,10 +1346,11 @@ assert_malformed(
   `unexpected content after last section`,
 );
 
-// ./test/core/binary.wast:1171
+// ./test/core/binary.wast:1172
 assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
+      "\\01\\04\\01\\60\\00\\00"        ;; Type section
       "\\03\\02\\01\\00"              ;; Function section
       "\\09\\01\\00"                 ;; Element section with zero entries
       "\\08\\01\\00"                 ;; Start section: function 0
@@ -1356,7 +1358,7 @@ assert_malformed(
   `unexpected content after last section`,
 );
 
-// ./test/core/binary.wast:1182
+// ./test/core/binary.wast:1184
 assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
@@ -1366,7 +1368,7 @@ assert_malformed(
   `unexpected content after last section`,
 );
 
-// ./test/core/binary.wast:1192
+// ./test/core/binary.wast:1194
 assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
@@ -1376,7 +1378,7 @@ assert_malformed(
   `unexpected content after last section`,
 );
 
-// ./test/core/binary.wast:1202
+// ./test/core/binary.wast:1204
 assert_malformed(
   () => instantiate(`(module binary
       "\\00asm" "\\01\\00\\00\\00"
@@ -1386,7 +1388,7 @@ assert_malformed(
   `unexpected content after last section`,
 );
 
-// ./test/core/binary.wast:1216
+// ./test/core/binary.wast:1218
 assert_malformed(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"

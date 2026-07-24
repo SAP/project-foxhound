@@ -21,6 +21,7 @@ class Addons:
     For example::
 
         from marionette_driver.addons import Addons
+
         addons = Addons(marionette)
         addons.install("/path/to/extension.xpi")
 

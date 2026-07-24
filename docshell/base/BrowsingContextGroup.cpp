@@ -13,6 +13,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentProcessManager.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ThrottledEventQueue.h"
@@ -229,8 +230,8 @@ void BrowsingContextGroup::Subscribe(ContentParent* aProcess) {
   }
 
   // Send all of our contexts to the target content process.
-  Unused << aProcess->SendRegisterBrowsingContextGroup(Id(), inits,
-                                                       useOriginAgentCluster);
+  (void)aProcess->SendRegisterBrowsingContextGroup(Id(), inits,
+                                                   useOriginAgentCluster);
 }
 
 void BrowsingContextGroup::Unsubscribe(ContentParent* aProcess) {
@@ -249,6 +250,90 @@ void BrowsingContextGroup::Unsubscribe(ContentParent* aProcess) {
 ContentParent* BrowsingContextGroup::GetHostProcess(
     const nsACString& aRemoteType) {
   return mHosts.GetWeak(aRemoteType);
+}
+
+bool BrowsingContextGroup::IsKnownForMessageReader(
+    IPC::MessageReader* aReader) {
+  if (!aReader->GetActor()) {
+    aReader->FatalError(
+        "No actor for BrowsingContextGroup::IsKnownForMessageReader");
+    return false;
+  }
+
+  mozilla::ipc::IToplevelProtocol* topActor =
+      aReader->GetActor()->ToplevelProtocol();
+  switch (topActor->GetProtocolId()) {
+    case PInProcessMsgStart:
+      // PInProcess always exists only within a single process, so we don't need
+      // to do any validation on it.
+      return true;
+
+    case PContentMsgStart:
+      // The process should only be able to name this BCG if it is
+      // subscribed, or if the BCG has been destroyed (and has therefore
+      // stopped tracking subscribers).
+      if (topActor->GetSide() == mozilla::ipc::ParentSide && !mDestroyed &&
+          !mSubscribers.Contains(static_cast<ContentParent*>(topActor))) {
+        aReader->FatalError(
+            "Process is not subscribed to this BrowsingContextGroup");
+        return false;
+      }
+      return true;
+
+    default:
+      aReader->FatalError(
+          "Unsupported toplevel actor for "
+          "BrowsingContextGroup::IsKnownForMessageReader");
+      return false;
+  }
+}
+
+bool BrowsingContextGroup::IsKnownForChildID(GeckoChildID aChildID) {
+  // If the origin process is unknown, deny synced contexts from it.
+  if (NS_WARN_IF(aChildID == kInvalidGeckoChildID)) {
+    MOZ_ASSERT_UNREACHABLE("Unknown ChildID for BrowsingContextGroup");
+    return false;
+  }
+
+  // Allow deserializing a synced context from the parent process (ID 0), or the
+  // current process by-default.
+  if (aChildID == 0 || aChildID == XRE_GetChildID()) {
+    return true;
+  }
+
+  // If we're not in the parent process, deny any other messages (we shouldn't
+  // be receiving a BrowsingContext directly from a peer process anyways).
+  if (NS_WARN_IF(!XRE_IsParentProcess())) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected peer ChildID for BrowsingContextGroup");
+    return false;
+  }
+
+  // Try to look up the ContentParent for this process.
+  // If we can't, be conservative and deny the request. (We should be
+  // deserializing StructuredCloneData instances containing BrowsingContexts
+  // before the process has a chance to go away)
+  ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+  if (NS_WARN_IF(!cpm)) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Unexpected cross-process deserialization late in shutdown");
+    return false;
+  }
+  RefPtr<ContentParent> contentParent =
+      cpm->GetContentProcessById(ContentParentId(aChildID));
+  if (NS_WARN_IF(!contentParent)) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ContentParent dead/missing when deserializing BrowsingContextGroup");
+    return false;
+  }
+
+  // The process should only be able to name this BCG if it is subscribed, or if
+  // the BCG has been destroyed (and has therefore stopped tracking subscribers)
+  if (NS_WARN_IF(!mDestroyed && !mSubscribers.Contains(contentParent))) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Process is not subscribed to this BrowsingContextGroup");
+    return false;
+  }
+  return true;
 }
 
 void BrowsingContextGroup::UpdateToplevelsSuspendedIfNeeded() {
@@ -296,8 +381,8 @@ void BrowsingContextGroup::Destroy() {
                              !sBrowsingContextGroups->Contains(Id()) ||
                                  *sBrowsingContextGroups->Lookup(Id()) != this);
   }
-  mDestroyed = true;
 #endif
+  mDestroyed = true;
 
   // Make sure to call `RemoveBrowsingContextGroup` for every entry in both
   // `mHosts` and `mSubscribers`. This will visit most entries twice, but
@@ -594,7 +679,7 @@ void BrowsingContextGroup::NotifyFocusedOrActiveBrowsingContextToProcess(
     }
 
     if (focused || active) {
-      Unused << aProcess->SendSetupFocusedAndActive(
+      (void)aProcess->SendSetupFocusedAndActive(
           focused, fm->GetActionIdForFocusedBrowsingContextInChrome(), active,
           fm->GetActionIdForActiveBrowsingContextInChrome());
     }
@@ -630,7 +715,7 @@ void BrowsingContextGroup::SetUseOriginAgentClusterFromNetwork(
       return;
     }
 
-    Unused << aContentParent->SendSetUseOriginAgentCluster(
+    (void)aContentParent->SendSetUseOriginAgentCluster(
         Id(), WrapNotNull(aPrincipal), aUseOriginAgentCluster);
   });
 }

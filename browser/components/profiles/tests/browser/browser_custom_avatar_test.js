@@ -535,6 +535,50 @@ add_task(async function test_edit_profile_custom_avatar_crop() {
             );
           }
 
+          const tl = avatarSelector.topLeftMover.getBoundingClientRect();
+          const br = avatarSelector.bottomRightMover.getBoundingClientRect();
+          const startX = tl.x + tl.width / 2;
+          const startY = tl.y + tl.height / 2;
+          const endX = br.x - 4;
+          const endY = br.y - 4;
+
+          EventUtils.synthesizeMouseAtPoint(
+            startX,
+            startY,
+            { type: "mousedown" },
+            content
+          );
+
+          await ContentTaskUtils.waitForCondition(
+            () => avatarSelector.state === "resizing",
+            "Waiting for avatar selector state to be resizing"
+          );
+
+          EventUtils.synthesizeMouseAtPoint(
+            endX,
+            endY,
+            { type: "mousemove" },
+            content
+          );
+
+          EventUtils.synthesizeMouseAtPoint(
+            endX,
+            endY,
+            { type: "mouseup" },
+            content
+          );
+
+          await ContentTaskUtils.waitForCondition(
+            () => avatarSelector.state === "selected",
+            "Waiting for avatar selector state to be selected"
+          );
+
+          Assert.greaterOrEqual(
+            avatarSelector.avatarRegion.dimensions.width,
+            48,
+            "drag path clamps selection to minimum size"
+          );
+
           let region = avatarSelector.avatarRegion.dimensions;
           let cropClientHeight =
             avatarSelector.customAvatarCropArea.clientHeight;
@@ -776,6 +820,16 @@ add_task(async function test_edit_profile_custom_avatar_keyboard_crop() {
           assertAvatarRegionDimensions(
             avatarSelector.avatarRegion.dimensions,
             expected
+          );
+
+          // Check that the avatar region is clamped to the minimum size
+          avatarSelector.topLeftMover.focus();
+          EventUtils.synthesizeKey("ArrowRight", { repeat: 400 }, content);
+          EventUtils.synthesizeKey("ArrowDown", { repeat: 400 }, content);
+          Assert.greaterOrEqual(
+            avatarSelector.avatarRegion.dimensions.width,
+            48,
+            "keyboard path clamps selection to minimum size"
           );
 
           let region = avatarSelector.avatarRegion.dimensions;

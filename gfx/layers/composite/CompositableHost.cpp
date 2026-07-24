@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositableHost.h"
-#include <map>        // for _Rb_tree_iterator, map, etc
-#include <utility>    // for pair
 #include "Effects.h"  // for EffectMask, Effect, etc
 #include "gfxUtils.h"
 #include "mozilla/gfx/gfxVars.h"

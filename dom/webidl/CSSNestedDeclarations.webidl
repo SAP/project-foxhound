@@ -10,5 +10,5 @@
 [Exposed=Window]
 interface CSSNestedDeclarations : CSSRule {
   // CSSStyleDeclaration instead of CSSStyleProperties for now, see bug 1919582.
-  [SameObject, PutForwards=cssText] readonly attribute CSSStyleDeclaration style;
+  [SameObject, PutForwards=cssText] readonly attribute CSSStyleProperties style;
 };

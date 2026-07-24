@@ -13,7 +13,6 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "nsContentPolicyUtils.h"
 #include "nsFontFaceLoader.h"
-#include "nsINetworkPredictor.h"
 #include "nsIWebNavigation.h"
 
 using namespace mozilla;
@@ -284,9 +283,6 @@ nsresult FontFaceSetWorkerImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
 
   mLoaders.PutEntry(fontLoader);
 
-  net::PredictorLearn(src.mURI->get(), mWorkerRef->Private()->GetBaseURI(),
-                      nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
-
   if (NS_SUCCEEDED(rv)) {
     fontLoader->StartedLoading(streamLoader);
     // let the font entry remember the loader, in case we need to cancel it
@@ -357,7 +353,11 @@ nsresult FontFaceSetWorkerImpl::CreateChannelForSyncLoadFontData(
                                         : nsIContentPolicy::TYPE_FONT);
 }
 
-nsPresContext* FontFaceSetWorkerImpl::GetPresContext() const { return nullptr; }
+FontVisibilityProvider* FontFaceSetWorkerImpl::GetFontVisibilityProvider()
+    const {
+  RecursiveMutexAutoLock lock(mMutex);
+  return mWorkerRef ? mWorkerRef->Private() : nullptr;
+}
 
 TimeStamp FontFaceSetWorkerImpl::GetNavigationStartTimeStamp() {
   RecursiveMutexAutoLock lock(mMutex);

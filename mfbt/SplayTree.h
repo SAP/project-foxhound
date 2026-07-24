@@ -13,7 +13,6 @@
 #define mozilla_SplayTree_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 

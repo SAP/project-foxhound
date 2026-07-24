@@ -7,12 +7,11 @@
 #ifndef DOM_SVG_SVGPRESERVEASPECTRATIO_H_
 #define DOM_SVG_SVGPRESERVEASPECTRATIO_H_
 
-#include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
 #include "mozilla/HashFunctions.h"  // for HashGeneric
-
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;

@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gDNSOverride",
   "@mozilla.org/network/native-dns-override;1",
-  "nsINativeDNSResolverOverride"
+  Ci.nsINativeDNSResolverOverride
 );
 
 const { CommonUtils } = ChromeUtils.importESModule(

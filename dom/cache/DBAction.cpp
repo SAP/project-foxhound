@@ -6,7 +6,12 @@
 
 #include "mozilla/dom/cache/DBAction.h"
 
+#include "mozIStorageConnection.h"
+#include "mozIStorageService.h"
+#include "mozStorageCID.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/dom/cache/Connection.h"
 #include "mozilla/dom/cache/DBSchema.h"
 #include "mozilla/dom/cache/FileUtils.h"
@@ -14,14 +19,10 @@
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/net/nsFileProtocolHandler.h"
-#include "mozilla/AppShutdown.h"
-#include "mozIStorageConnection.h"
-#include "mozIStorageService.h"
-#include "mozStorageCID.h"
 #include "nsIFile.h"
+#include "nsIFileURL.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
-#include "nsIFileURL.h"
 
 namespace mozilla::dom::cache {
 
@@ -145,6 +146,8 @@ void SyncDBAction::RunWithDBOnTarget(
 Result<nsCOMPtr<mozIStorageConnection>, nsresult> OpenDBConnection(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aDBFile,
     const Maybe<CipherKey>& aMaybeCipherKey) {
+  GECKO_TRACE_SCOPE("dom::cache", "OpenDBConnection");
+
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(aDirectoryMetadata.mDirectoryLockId >= -1);
   MOZ_DIAGNOSTIC_ASSERT_IF(aDirectoryMetadata.mIsPrivate, aMaybeCipherKey);

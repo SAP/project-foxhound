@@ -15,7 +15,6 @@
 #include "nsCRTGlue.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TextUtils.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"
 #include "nsTArray.h"
 #include "gtest/gtest.h"
@@ -1439,7 +1438,7 @@ TEST_F(Strings, bulk_write) {
     for (auto&& c : span) {
       c = 'a';
     }
-    mozilla::Unused << handle.RestartBulkWrite(2000, 500, false);
+    (void)handle.RestartBulkWrite(2000, 500, false);
     span = handle.AsSpan().From(500);
     for (auto&& c : span) {
       c = 'b';
@@ -1465,7 +1464,7 @@ TEST_F(Strings, bulk_write_fail) {
     EXPECT_TRUE(handleOrErr.isOk());
   }
   EXPECT_EQ(s.Length(), 3U);
-  EXPECT_TRUE(s.Equals(u8"\uFFFD"));
+  EXPECT_TRUE(s.Equals("\uFFFD"));
 }
 
 TEST_F(Strings, huge_capacity) {
@@ -1727,7 +1726,7 @@ TEST_F(Strings, Split) {
 
   counter = 0;
   for (const nsACString& token : empty.Split(',')) {
-    mozilla::Unused << token;
+    (void)token;
     counter++;
   }
   EXPECT_EQ(counter, (size_t)0);

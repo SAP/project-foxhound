@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIFragmentContentSink_h___
-#define nsIFragmentContentSink_h___
+#ifndef nsIFragmentContentSink_h_
+#define nsIFragmentContentSink_h_
 
 #include "nsISupports.h"
 
@@ -72,7 +72,6 @@ class nsIFragmentContentSink : public nsISupports {
   NS_IMETHOD SetPreventScriptExecution(bool aPreventScriptExecution) = 0;
 };
 
-nsresult NS_NewXMLFragmentContentSink(
-    nsIFragmentContentSink** aInstancePtrResult);
+nsresult NS_NewXMLFragmentContentSink(nsIFragmentContentSink** aResult);
 
 #endif

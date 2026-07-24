@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_devtools_DeserializedNode__
-#define mozilla_devtools_DeserializedNode__
+#ifndef mozilla_devtools_DeserializedNode_
+#define mozilla_devtools_DeserializedNode_
 
 #include <utility>
 
@@ -305,4 +305,4 @@ class ConcreteStackFrame<DeserializedStackFrame> : public BaseStackFrame {
 }  // namespace ubi
 }  // namespace JS
 
-#endif  // mozilla_devtools_DeserializedNode__
+#endif  // mozilla_devtools_DeserializedNode_

@@ -9,8 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 
-#include <string.h>
-
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit, js::GetNativeStackLimit
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowProxyIfWindow
@@ -869,9 +867,9 @@ void ProxyObject::traceEdgeToTarget(JSTracer* trc, ProxyObject* obj) {
 #ifdef DEBUG
 static inline void CheckProxyIsInCCWMap(ProxyObject* proxy) {
   if (proxy->zone()->isGCCompacting()) {
-    // Skip this check during compacting GC since objects' object groups may be
-    // forwarded. It's not impossible to make this work, but requires adding a
-    // parallel lookupWrapper() path for this one case.
+    // Skip this check during compacting GC since objects' shapes and base
+    // shapes may be forwarded. It's not impossible to make this work, but
+    // requires adding a parallel lookupWrapper() path for this one case.
     return;
   }
 

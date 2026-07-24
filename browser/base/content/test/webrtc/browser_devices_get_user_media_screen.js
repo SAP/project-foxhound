@@ -102,7 +102,7 @@ var gTests = [
         "the 'all windows will be shared' warning should be hidden while there's no selection"
       );
       ok(
-        document.getElementById("webRTC-preview").hidden,
+        document.getElementById("webRTC-preview-section").hidden,
         "the preview area is hidden"
       );
 
@@ -137,13 +137,13 @@ var gTests = [
         "the 'all windows will be shared' warning should now be visible"
       );
       await TestUtils.waitForCondition(
-        () => !document.getElementById("webRTC-preview").hidden,
+        () => !document.getElementById("webRTC-preview-section").hidden,
         "preview unhide",
         100,
         100
       );
       ok(
-        !document.getElementById("webRTC-preview").hidden,
+        !document.getElementById("webRTC-preview-section").hidden,
         "the preview area is visible"
       );
       ok(
@@ -159,7 +159,7 @@ var gTests = [
         "the 'all windows will be shared' warning should now be hidden"
       );
       ok(
-        document.getElementById("webRTC-preview").hidden,
+        document.getElementById("webRTC-preview-section").hidden,
         "the preview area is hidden"
       );
 
@@ -273,7 +273,7 @@ var gTests = [
         "the 'all windows will be shared' warning should be hidden while there's no selection"
       );
       ok(
-        document.getElementById("webRTC-preview").hidden,
+        document.getElementById("webRTC-preview-section").hidden,
         "the preview area is hidden"
       );
 
@@ -330,7 +330,7 @@ var gTests = [
           );
           try {
             await TestUtils.waitForCondition(
-              () => !document.getElementById("webRTC-preview").hidden,
+              () => !document.getElementById("webRTC-preview-section").hidden,
               "",
               100,
               100
@@ -344,7 +344,7 @@ var gTests = [
           }
         }
         ok(
-          !document.getElementById("webRTC-preview").hidden,
+          !document.getElementById("webRTC-preview-section").hidden,
           "the preview area is visible"
         );
         ok(
@@ -354,7 +354,7 @@ var gTests = [
         // Select the 'Select Window' item again, the preview should be hidden.
         menulist.getItemAtIndex(0).doCommand();
         ok(
-          document.getElementById("webRTC-preview").hidden,
+          document.getElementById("webRTC-preview-section").hidden,
           "the preview area is hidden"
         );
 
@@ -373,13 +373,13 @@ var gTests = [
           "the 'all windows will be shared' warning should still be hidden"
         );
         await TestUtils.waitForCondition(
-          () => !document.getElementById("webRTC-preview").hidden,
+          () => !document.getElementById("webRTC-preview-section").hidden,
           "preview unhide",
           100,
           100
         );
         ok(
-          !document.getElementById("webRTC-preview").hidden,
+          !document.getElementById("webRTC-preview-section").hidden,
           "the preview area is visible"
         );
         ok(
@@ -458,13 +458,13 @@ var gTests = [
         "the 'all windows will be shared' warning should now be visible"
       );
       await TestUtils.waitForCondition(
-        () => !document.getElementById("webRTC-preview").hidden,
+        () => !document.getElementById("webRTC-preview-section").hidden,
         "preview unhide",
         100,
         100
       );
       ok(
-        !document.getElementById("webRTC-preview").hidden,
+        !document.getElementById("webRTC-preview-section").hidden,
         "the preview area is visible"
       );
       ok(

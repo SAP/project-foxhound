@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScriptElement.h"
+
 #include "ScriptLoader.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -12,14 +13,17 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "nsContentUtils.h"
-#include "nsThreadUtils.h"
-#include "nsPresContext.h"
-#include "nsIParser.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
 #include "nsContentSink.h"
 #include "nsTaintingUtils.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsIMutationObserver.h"
+#include "nsIParser.h"
+#include "nsPresContext.h"
+#include "nsThreadUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -88,11 +92,11 @@ ScriptElement::ScriptEvaluated(nsresult aResult, nsIScriptElement* aElement,
 void ScriptElement::CharacterDataChanged(nsIContent* aContent,
                                          const CharacterDataChangeInfo& aInfo) {
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
-  MaybeProcessScript();
+  MaybeProcessScript(nullptr /* aParser */);
 }
 
 void ScriptElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType aModType,
                                      const nsAttrValue* aOldValue) {
   // https://html.spec.whatwg.org/#script-processing-model
   // When a script element el that is not parser-inserted experiences one of the
@@ -109,11 +113,10 @@ void ScriptElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
       (aNameSpaceID != kNameSpaceID_None || aAttribute != nsGkAtoms::src)) {
     return;
   }
-  if (mParserCreated == NOT_FROM_PARSER &&
-      aModType == MutationEvent_Binding::ADDITION) {
+  if (mParserCreated == NOT_FROM_PARSER && aModType == AttrModType::Addition) {
     auto* cont = GetAsContent();
     if (cont->IsInComposedDoc()) {
-      MaybeProcessScript();
+      MaybeProcessScript(nullptr /* aParser */);
     }
   }
 }
@@ -121,13 +124,13 @@ void ScriptElement::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
 void ScriptElement::ContentAppended(nsIContent* aFirstNewContent,
                                     const ContentAppendInfo& aInfo) {
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
-  MaybeProcessScript();
+  MaybeProcessScript(nullptr /* aParser */);
 }
 
 void ScriptElement::ContentInserted(nsIContent* aChild,
                                     const ContentInsertInfo& aInfo) {
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
-  MaybeProcessScript();
+  MaybeProcessScript(nullptr /* aParser */);
 }
 
 void ScriptElement::ContentWillBeRemoved(nsIContent* aChild,
@@ -135,35 +138,95 @@ void ScriptElement::ContentWillBeRemoved(nsIContent* aChild,
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
 }
 
-bool ScriptElement::MaybeProcessScript() {
+bool ScriptElement::MaybeProcessScript(nsCOMPtr<nsIParser> aParser) {
   nsIContent* cont = GetAsContent();
 
   NS_ASSERTION(cont->DebugGetSlots()->mMutationObservers.contains(this),
                "You forgot to add self as observer");
-
-  // https://html.spec.whatwg.org/#parsing-main-incdata
-  // An end tag whose tag name is "script"
-  //  - If the active speculative HTML parser is null and the JavaScript
-  // execution context stack is empty, then perform a microtask checkpoint.
-  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-      "ScriptElement::MaybeProcessScript", []() { nsAutoMicroTask mt; }));
 
   if (mAlreadyStarted || !mDoneAddingChildren || !cont->GetComposedDoc() ||
       mMalformed) {
     return false;
   }
 
-  bool hasScriptContent = HasExternalScriptContent() ||
-                          nsContentUtils::HasNonEmptyTextContent(cont);
-  if (!hasScriptContent) {
-    // In the case of an empty, non-external classic script, there is nothing
-    // to process. However, we must perform a microtask checkpoint afterwards,
-    // as per https://html.spec.whatwg.org/#clean-up-after-running-script
-    if (mKind == JS::loader::ScriptKind::eClassic && !mExternal) {
-      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-          "ScriptElement::MaybeProcessScript", []() { nsAutoMicroTask mt; }));
+  // https://html.spec.whatwg.org/#prepare-the-script-element
+  // The spec says we should calculate "source text" of inline scripts at the
+  // beginning of the "Prepare the script element" algorithm.
+  if (HasExternalScriptContent() || mIsTrusted ||
+      TrustedTypeUtils::CanSkipTrustedTypesEnforcement(
+          *GetAsContent()->AsElement())) {
+    // - If it is an inline script that is trusted, we will actually retrieve
+    // the "source text" lazily for performance reasons (see bug 1376651) so we
+    // just pass a void string to MaybeProcessScript().
+    // - If it is an external script, we actually don't need the "source text"
+    // and can similarly pass a void string to MaybeProcessScript().
+    bool block = MaybeProcessScript(VoidString());
+    if (block && aParser) {
+      aParser->BlockParser();
     }
-    return false;
+    return block;
+  }
+
+  // This is an inline script that is not trusted (i.e. we must execute the
+  // Trusted Type default policy callback to obtain a trusted "source text").
+  if (nsContentUtils::IsSafeToRunScript()) {
+    // - If it is safe to run script in this context, we run the default policy
+    // callback and pass the returned "source text" to MaybeProcessScript().
+    bool block =
+        ([self = RefPtr<nsIScriptElement>(this)]()
+             MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+               nsString sourceText;
+               self->GetTrustedTypesCompliantInlineScriptText(sourceText);
+               return static_cast<ScriptElement*>(self.get())
+                   ->MaybeProcessScript(sourceText);
+             })();
+    if (block && aParser) {
+      aParser->BlockParser();
+    }
+    return block;
+  }
+
+  // - The default policy callback must be wrapped in a script runner. So we
+  // need to block the parser at least until we can get the "source text".
+  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+      "ScriptElement::MaybeProcessScript",
+      [self = RefPtr<nsIScriptElement>(this), aParser]()
+          MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+            nsString sourceText;
+            self->GetTrustedTypesCompliantInlineScriptText(sourceText);
+            bool block = static_cast<ScriptElement*>(self.get())
+                             ->MaybeProcessScript(sourceText);
+            if (!block && aParser) {
+              aParser->UnblockParser();
+            }
+          }));
+  if (aParser) {
+    aParser->BlockParser();
+  }
+  return true;
+}
+
+bool ScriptElement::MaybeProcessScript(const nsAString& aSourceText) {
+  nsIContent* cont = GetAsContent();
+  if (!HasExternalScriptContent()) {
+    // If el has no src attribute, and source text is the empty string, then
+    // return (https://html.spec.whatwg.org/#prepare-the-script-element).
+    //
+    // A void aSourceText means we want to retrieve it lazily (bug 1376651), in
+    // that case we browse the subtree to try and find a non-empty text node.
+    bool hasInlineScriptContent =
+        aSourceText.IsVoid() ? nsContentUtils::HasNonEmptyTextContent(cont)
+                             : !aSourceText.IsEmpty();
+    if (!hasInlineScriptContent) {
+      // In the case of an empty, non-external classic script, there is nothing
+      // to process. However, we must perform a microtask checkpoint afterwards,
+      // as per https://html.spec.whatwg.org/#clean-up-after-running-script
+      if (mKind == JS::loader::ScriptKind::eClassic && !mExternal) {
+        nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+            "ScriptElement::MaybeProcessScript", []() { nsAutoMicroTask mt; }));
+      }
+      return false;
+    }
   }
 
   // Check the type attribute to determine language and version. If type exists,
@@ -220,8 +283,11 @@ bool ScriptElement::MaybeProcessScript() {
     }
   }
 
-  RefPtr<ScriptLoader> loader = ownerDoc->ScriptLoader();
-  return loader->ProcessScriptElement(this);
+  RefPtr<ScriptLoader> loader = ownerDoc->GetScriptLoader();
+  if (!loader) {
+    return false;
+  }
+  return loader->ProcessScriptElement(this, aSourceText);
 }
 
 bool ScriptElement::GetScriptType(nsAString& aType) {
@@ -254,6 +320,43 @@ void ScriptElement::UpdateTrustWorthiness(
     MutationEffectOnScript aMutationEffectOnScript) {
   if (aMutationEffectOnScript == MutationEffectOnScript::DropTrustWorthiness &&
       StaticPrefs::dom_security_trusted_types_enabled()) {
+    nsCOMPtr<nsIPrincipal> subjectPrincipal;
+    if (JSContext* cx = nsContentUtils::GetCurrentJSContext()) {
+      subjectPrincipal = nsContentUtils::SubjectPrincipal(cx);
+      if (auto* principal = BasePrincipal::Cast(subjectPrincipal)) {
+        if (principal->IsSystemPrincipal() ||
+            principal->ContentScriptAddonPolicyCore()) {
+          // This script was modified by a priviledged scripts, so continue to
+          // consider it as trusted.
+          return;
+        }
+      }
+    }
+
     mIsTrusted = false;
   }
+}
+
+nsresult ScriptElement::GetTrustedTypesCompliantInlineScriptText(
+    nsString& aSourceText) {
+  MOZ_ASSERT(!mIsTrusted);
+
+  RefPtr<Element> element = GetAsContent()->AsElement();
+  nsAutoString sourceText;
+  GetScriptText(sourceText);
+
+  MOZ_ASSERT(element->IsHTMLElement() || element->IsSVGElement());
+  Maybe<nsAutoString> compliantStringHolder;
+  constexpr nsLiteralString htmlSinkName = u"HTMLScriptElement text"_ns;
+  constexpr nsLiteralString svgSinkName = u"SVGScriptElement text"_ns;
+  ErrorResult error;
+
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantStringForTrustedScript(
+          sourceText, element->IsHTMLElement() ? htmlSinkName : svgSinkName,
+          kTrustedTypesOnlySinkGroup, *element, compliantStringHolder, error);
+  if (!error.Failed()) {
+    aSourceText.Assign(*compliantString);
+  }
+  return error.StealNSResult();
 }

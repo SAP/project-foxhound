@@ -6,9 +6,9 @@
 
 #include "frontend/Stencil.h"
 
-#include "mozilla/AlreadyAddRefed.h"        // already_AddRefed
 #include "mozilla/Assertions.h"             // MOZ_RELEASE_ASSERT
 #include "mozilla/CheckedInt.h"             // mozilla::CheckedInt
+#include "mozilla/glean/JsSrcMetrics.h"     // javascript_self_hosted_cache
 #include "mozilla/Maybe.h"                  // mozilla::Maybe
 #include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
 #include "mozilla/PodOperations.h"          // mozilla::PodCopy
@@ -32,11 +32,14 @@
 #include "frontend/StencilXdr.h"  // XDRStencilEncoder, XDRStencilDecoder
 #include "gc/AllocKind.h"         // gc::AllocKind
 #include "gc/Tracer.h"            // TraceNullableRoot
-#include "jit/BaselineJIT.h"      // jit::BaselineScript
-#include "jit/JitRuntime.h"       // jit::JitRuntime
-#include "jit/JitScript.h"        // AutoKeepJitScripts
-#include "js/CallArgs.h"          // JSNative
+#include "jit/BaselineCompileTask.h"  // BaselineCompileTask::OffThreadBaselineCompilationAvailable
+#include "jit/BaselineJIT.h"  // jit::BaselineScript, jit::CanBaselineInterpretScript
+#include "jit/JitContext.h"     // jit::MethodStatus
+#include "jit/JitRuntime.h"     // jit::JitRuntime
+#include "jit/JitScript.h"      // AutoKeepJitScripts
+#include "js/CallArgs.h"        // JSNative
 #include "js/CompileOptions.h"  // JS::DecodeOptions, JS::ReadOnlyDecodeOptions
+#include "js/DOMEventDispatch.h"            // TRACE_FOR_TEST_DOM
 #include "js/experimental/CompileScript.h"  // JS::PrepareForInstantiate
 #include "js/experimental/JSStencil.h"      // JS::Stencil
 #include "js/GCAPI.h"                       // JS::AutoCheckCannotGC
@@ -68,6 +71,7 @@
 #include "vm/StringType.h"    // JSAtom, js::CopyChars
 #include "wasm/AsmJS.h"       // InstantiateAsmJS
 
+#include "jit/JitHints-inl.h"          // JitHints::mightHaveEagerBaselineHint
 #include "jit/JitScript-inl.h"         // AutoKeepJitScripts constructor
 #include "vm/EnvironmentObject-inl.h"  // JSObject::enclosingEnvironment
 #include "vm/JSFunction-inl.h"         // JSFunction::create
@@ -75,6 +79,62 @@
 
 using namespace js;
 using namespace js::frontend;
+
+mozilla::Result<ScopeStencilRef, ScopeStencilRef::EnclosingFailure>
+ScopeStencilRef::enclosing() const {
+  auto& scope = this->scope();
+  if (scope.hasEnclosing()) {
+#ifdef DEBUG
+    // Assert that checking for the same stencil is equivalent to checking for
+    // being encoded in the initial stencil.
+    if (scriptIndex_ != 0) {
+      auto enclosingScript = script().enclosingScript();
+      bool same = context() == enclosingScript.context();
+      MOZ_ASSERT(same == script().isEagerlyCompiledInInitial());
+    }
+#endif
+
+    // By default we are walking the scope within the same function.
+    ScriptIndex scriptIndex = scriptIndex_;
+
+    // `scope.enclosing()` and `scope` would have the same scriptIndex unless
+    // `scope` is the first scope of the script. In which case, the returned
+    // enclosing scope index should be returned with the enclosing script index.
+    //
+    // This can only happen in the initial stencil, as only the initial stencil
+    // can have multiple scripts compiled in the same stencil.
+    if (script().isEagerlyCompiledInInitial()) {
+      auto gcThingsFromContext = script().gcThingsFromInitial();
+      if (gcThingsFromContext[0].toScope() == scopeIndex_) {
+        scriptIndex = script().enclosingScript().scriptIndex_;
+      }
+    }
+
+    return ScopeStencilRef{stencils_, scriptIndex, scope.enclosing()};
+  }
+
+  // By default the previous condition (scope.hasEnclosing()) should trigger,
+  // except when we are at the top-level of a delazification, in which case we
+  // have to find the enclosing script in the stencil of the enclosing script,
+  // to find the lazyFunctionEnclosingScopeIndex which is valid in the stencil
+  // of the enclosing script.
+  //
+  // Note, at one point the enclosing script would be the initial stencil.
+  if (!script().isEagerlyCompiledInInitial()) {
+    auto enclosing = script().enclosingScript();
+    auto& scriptData = script().scriptDataFromEnclosing();
+    MOZ_ASSERT(scriptData.hasLazyFunctionEnclosingScopeIndex());
+    return ScopeStencilRef{stencils_, enclosing.scriptIndex_,
+                           scriptData.lazyFunctionEnclosingScopeIndex()};
+  }
+
+  // The global scope is not known by the Stencil, while parsing inner functions
+  // from Stencils where they are known at the execution using the GlobalScope.
+  if (scope.kind() == ScopeKind::Module) {
+    return mozilla::Err(EnclosingFailure::ModuleScope);
+  }
+  return mozilla::Err(EnclosingFailure::GlobalScope);
+}
 
 // These 2 functions are used to write the same code with lambda using auto
 // arguments. The auto argument type is set by the Variant.match function of the
@@ -1148,7 +1208,7 @@ NameLocation ScopeContext::searchInEnclosingScopeWithCache(
   mozilla::Maybe<NameLocation> found;
 
   // Number of enclosing scope we walked over.
-  uint8_t hops = 0;
+  uint16_t hops = 0;
 
   for (InputScopeIter si(input.enclosingScope); si; si++) {
     MOZ_ASSERT(NameIsOnEnvironment(fc, parserAtoms, input.atomCache, si.scope(),
@@ -1217,8 +1277,8 @@ NameLocation ScopeContext::searchInEnclosingScopeNoCache(
   // NameLocation which contains relative locations to access `name`.
   mozilla::Maybe<NameLocation> result;
 
-  // Number of enclosing scoep we walked over.
-  uint8_t hops = 0;
+  // Number of enclosing scope we walked over.
+  uint16_t hops = 0;
 
   for (InputScopeIter si(input.enclosingScope); si; si++) {
     MOZ_ASSERT(NameIsOnEnvironment(fc, parserAtoms, input.atomCache, si.scope(),
@@ -2653,6 +2713,94 @@ CompilationStencil::CompilationStencil(
 #endif
 }
 
+// Instantiate JitScripts and eagerly baseline compile any potential
+// candidate functions.
+//
+// Return value indicates whether a failure occured. (i.e. allocation failure.)
+// There is no current indication of whether a function was actually dispatched
+// for eager baseline compilation.
+static bool MaybeDoEagerBaselineCompilations(JSContext* cx,
+                                             const CompilationStencil& stencil,
+                                             CompilationGCOutput& gcOutput,
+                                             bool doAggressive) {
+  if (!jit::IsBaselineInterpreterEnabled()) {
+    return true;
+  }
+
+  if (!cx->zone()->ensureJitZoneExists(cx)) {
+    return false;
+  }
+
+  jit::JitHintsMap* jitHints = nullptr;
+  if (!doAggressive) {
+    if (jit::JitOptions.disableJitHints ||
+        !cx->runtime()->jitRuntime()->hasJitHintsMap()) {
+      return true;
+    }
+    jitHints = cx->runtime()->jitRuntime()->getJitHintsMap();
+  }
+
+  jit::AutoKeepJitScripts keepJitScript(cx);
+  RootedScript script(cx);
+  Rooted<JSFunction*> fn(cx);
+  jit::BaselineCompileQueue& queue = cx->realm()->baselineCompileQueue();
+
+  for (auto item :
+       CompilationStencil::functionScriptStencils(stencil, gcOutput)) {
+    fn = item.function;
+    if (!fn->hasBytecode()) {
+      continue;
+    }
+
+    script = fn->nonLazyScript();
+
+    // Only eagerly baseline compile functions with hints unless aggressive
+    // strategy is set.
+    if (!doAggressive) {
+      if (!jitHints->mightHaveEagerBaselineHint(script)) {
+        continue;
+      }
+    }
+
+    if (script->baselineDisabled()) {
+      continue;
+    }
+
+    if (!jit::CanBaselineInterpretScript(script)) {
+      continue;
+    }
+
+    if (!jit::BaselineCompileTask::OffThreadBaselineCompilationAvailable(
+            cx, script, /* isEager = */ true)) {
+      continue;
+    }
+
+    // Add script to the baseline compile batch queue and dispatch if full.
+    if (queue.numQueued() >= jit::JitOptions.baselineQueueCapacity) {
+      if (!jit::DispatchOffThreadBaselineBatchEager(cx)) {
+        return false;
+      }
+      TRACE_FOR_TEST_DOM(cx, "omt_eager_baseline_dispatch");
+    }
+
+    // Add script to queue
+    if (!queue.enqueue(script)) {
+      return false;
+    }
+    TRACE_FOR_TEST_DOM(cx, "omt_eager_baseline_function", script);
+  }
+
+  // Dispatch any remaining scripts in the queue
+  if (queue.numQueued() > 0) {
+    if (!jit::DispatchOffThreadBaselineBatchEager(cx)) {
+      return false;
+    }
+    TRACE_FOR_TEST_DOM(cx, "omt_eager_baseline_dispatch");
+  }
+
+  return true;
+}
+
 /* static */
 bool CompilationStencil::instantiateStencils(JSContext* cx,
                                              CompilationInput& input,
@@ -2663,7 +2811,23 @@ bool CompilationStencil::instantiateStencils(JSContext* cx,
     return false;
   }
 
-  return instantiateStencilAfterPreparation(cx, input, stencil, gcOutput);
+  if (!instantiateStencilAfterPreparation(cx, input, stencil, gcOutput)) {
+    return false;
+  }
+
+  if (input.options.eagerBaselineStrategy() != JS::EagerBaselineOption::None) {
+    MOZ_ASSERT(!input.isDelazifying(),
+               "No current support for eager baseline during delazifications.");
+
+    bool doAggressive = input.options.eagerBaselineStrategy() ==
+                        JS::EagerBaselineOption::Aggressive;
+    if (!MaybeDoEagerBaselineCompilations(cx, stencil, gcOutput,
+                                          doAggressive)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* static */
@@ -2753,6 +2917,13 @@ bool CompilationStencil::instantiateStencilAfterPreparation(
     if (isInitialParse) {
       LinkEnclosingLazyScript(stencil, gcOutput);
     }
+  }
+
+  // Trigger the use counter for asm.js. This should fire even if asm.js
+  // optimizations are disabled, see the comment in FunctionBox::setUseAsm()
+  // for how we do that.
+  if (stencil.hasAsmJS()) {
+    cx->runtime()->setUseCounter(cx->global(), JSUseCounter::USE_ASM);
   }
 
   return true;
@@ -2972,6 +3143,8 @@ bool CompilationStencil::delazifySelfHostedFunction(
       JS_LOG(selfHosted, Debug,
              "self_hosted_cache: reusing JIT code for script '%s'",
              nameStr.get());
+      mozilla::glean::javascript_self_hosted_cache::hits.AddToNumerator();
+      mozilla::glean::javascript_self_hosted_cache::total.Add();
 
       if (!cx->zone()->ensureJitZoneExists(cx)) {
         return false;
@@ -3001,6 +3174,7 @@ bool CompilationStencil::delazifySelfHostedFunction(
       JS_LOG(selfHosted, Debug,
              "self_hosted_cache: new JIT code entry for script '%s'",
              nameStr.get());
+      mozilla::glean::javascript_self_hosted_cache::total.Add();
 
       if (!cx->zone()->ensureJitZoneExists(cx)) {
         return false;
@@ -4027,7 +4201,7 @@ size_t InitialStencilAndDelazifications::sizeOfExcludingThis(
     // The initial stencil can be shared between multiple owners, but
     // in most case this instance is considered as the main owner, in term
     // of the memory reporting.
-    size += initial_->sizeOfExcludingThis(mallocSizeOf);
+    size += initial_->sizeOfIncludingThis(mallocSizeOf);
   }
 
   size += delazifications_.sizeOfExcludingThis(mallocSizeOf);
@@ -4038,7 +4212,7 @@ size_t InitialStencilAndDelazifications::sizeOfExcludingThis(
     }
 
     // Delazifications are exclusively owned by this instance.
-    size += (*delazification).sizeOfExcludingThis(mallocSizeOf);
+    size += (*delazification).sizeOfIncludingThis(mallocSizeOf);
   }
 
   size += functionKeyToInitialScriptIndex_.sizeOfExcludingThis(mallocSizeOf);
@@ -5039,6 +5213,25 @@ struct DumpOptionsFields {
 
       FOREACH_DELAZIFICATION_STRATEGY(SelectValueStr_)
 #  undef SelectValueStr_
+    }
+    json.property(name, valueStr);
+  }
+
+  void operator()(const char* name, JS::EagerBaselineOption value) {
+    const char* valueStr = nullptr;
+    switch (value) {
+      case JS::EagerBaselineOption::None:
+        valueStr = "JS::EagerBaselineOption::None";
+        break;
+      case JS::EagerBaselineOption::JitHints:
+        valueStr = "JS::EagerBaselineOption::JitHints";
+        break;
+      case JS::EagerBaselineOption::Aggressive:
+        valueStr = "JS::EagerBaselineOption::Aggressive";
+        break;
+      default:
+        MOZ_CRASH("Unknown JS::EagerBaselineOption enum");
+        break;
     }
     json.property(name, valueStr);
   }
@@ -6079,4 +6272,12 @@ bool JS::IsStencilCacheable(JS::Stencil* stencil) {
   }
 
   return true;
+}
+
+JS_PUBLIC_API size_t JS::GetScriptSourceLength(JS::Stencil* stencil) {
+  const ScriptSource* source = stencil->getInitial()->source;
+  if (!source->hasSourceText()) {
+    return 0;
+  }
+  return source->length();
 }

@@ -79,7 +79,7 @@ function destroyTestDirectory() {
   dir.remove(true);
 }
 
-/** ***********
+/*************
  * UTILITIES *
  *************/
 
@@ -212,7 +212,7 @@ function makeFile(name, isDirectory, parentDir, lst) {
   }
 }
 
-/** *******
+/*********
  * TESTS *
  *********/
 

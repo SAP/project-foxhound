@@ -37,15 +37,6 @@ SparseBitmap::BitBlock* SparseBitmap::createBlock(Data::AddPtr p,
   return block.release();
 }
 
-SparseBitmap::BitBlock& SparseBitmap::createBlock(
-    Data::AddPtr p, size_t blockId, AutoEnterOOMUnsafeRegion& oomUnsafe) {
-  BitBlock* block = createBlock(p, blockId);
-  if (!block) {
-    oomUnsafe.crash("Bitmap OOM");
-  }
-  return *block;
-}
-
 bool SparseBitmap::getBit(size_t bit) const {
   size_t word = bit / JS_BITS_PER_WORD;
   size_t blockWord = blockStartWord(word);
@@ -85,14 +76,19 @@ void SparseBitmap::bitwiseAndWith(const DenseBitmap& other) {
   }
 }
 
-void SparseBitmap::bitwiseOrWith(const SparseBitmap& other) {
+bool SparseBitmap::bitwiseOrWith(const SparseBitmap& other) {
   for (Data::Range r(other.data.all()); !r.empty(); r.popFront()) {
     const BitBlock& otherBlock = *r.front().value();
-    BitBlock& block = getOrCreateBlock(r.front().key());
+    BitBlock* block = getOrCreateBlock(r.front().key());
+    if (!block) {
+      return false;
+    }
     for (size_t i = 0; i < WordsInBlock; i++) {
-      block[i] |= otherBlock[i];
+      (*block)[i] |= otherBlock[i];
     }
   }
+
+  return true;
 }
 
 void SparseBitmap::bitwiseOrInto(DenseBitmap& other) const {

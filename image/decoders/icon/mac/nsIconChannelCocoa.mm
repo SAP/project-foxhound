@@ -7,7 +7,6 @@
 #include "nsContentUtils.h"
 #include "nsIconChannel.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/EndianUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIIconURI.h"
 #include "nsIInputStream.h"

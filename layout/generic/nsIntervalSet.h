@@ -6,8 +6,8 @@
 
 /* a set of ranges on a number-line */
 
-#ifndef nsIntervalSet_h___
-#define nsIntervalSet_h___
+#ifndef nsIntervalSet_h_
+#define nsIntervalSet_h_
 
 #include "nsCoord.h"
 
@@ -69,4 +69,4 @@ class nsIntervalSet {
   mozilla::PresShell* mPresShell;
 };
 
-#endif  // !defined(nsIntervalSet_h___)
+#endif  // !defined(nsIntervalSet_h_)

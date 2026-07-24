@@ -23,7 +23,7 @@ TEST_F(NimbusTelemetryFixture, NimbusFeaturesTelemetry) {
   constexpr auto prefValue =
       R"({"slug":"experiment-slug","branch":{"slug":"branch-slug"}})";
   AutoJSContextWithGlobal cx(mCleanGlobal);
-  Unused << mTelemetry->ClearEvents();
+  (void)mTelemetry->ClearEvents();
 
   ASSERT_EQ(NimbusFeatures::RecordExposureEvent("foo"_ns), NS_ERROR_UNEXPECTED)
       << "Should fail because not enrolled in experiment";

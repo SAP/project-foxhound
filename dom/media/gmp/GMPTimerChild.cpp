@@ -4,8 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPTimerChild.h"
-#include "GMPPlatform.h"
+
 #include "GMPChild.h"
+#include "GMPPlatform.h"
 
 #define MAX_NUM_TIMERS 1000
 

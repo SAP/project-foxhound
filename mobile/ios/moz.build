@@ -12,4 +12,5 @@ with Files("**"):
 
 DIRS += [
     "../shared",
+    "app",
 ]

@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::cc::classic_cc::WindowAdjustment;
+use crate::cc::{classic_cc::WindowAdjustment, CongestionEvent};
 
 #[derive(Debug, Default)]
 pub struct NewReno {}
@@ -41,17 +41,14 @@ impl WindowAdjustment for NewReno {
         curr_cwnd: usize,
         acked_bytes: usize,
         _max_datagram_size: usize,
+        _congestion_event: CongestionEvent,
     ) -> (usize, usize) {
         (curr_cwnd / 2, acked_bytes / 2)
     }
 
     fn on_app_limited(&mut self) {}
 
-    #[cfg(test)]
-    fn last_max_cwnd(&self) -> f64 {
-        0.0
-    }
+    fn save_undo_state(&mut self) {}
 
-    #[cfg(test)]
-    fn set_last_max_cwnd(&mut self, _last_max_cwnd: f64) {}
+    fn restore_undo_state(&mut self) {}
 }

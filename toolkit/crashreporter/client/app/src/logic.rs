@@ -6,7 +6,7 @@
 
 use crate::std::{
     cell::RefCell,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc, Mutex, Weak,
@@ -46,19 +46,49 @@ fn modify_extra_for_report(extra: &mut serde_json::Value) {
     extra["Throttleable"] = "1".into();
 }
 
+pub fn sha256_hash_file(path: &Path) -> crate::std::io::Result<String> {
+    let hash = {
+        use sha2::{Digest, Sha256};
+        let mut file = std::fs::File::open(path)?;
+        let mut hasher = Sha256::new();
+        std::io::copy(&mut file, &mut hasher)?;
+        hasher.finalize()
+    };
+
+    let mut s = String::with_capacity(hash.len() * 2);
+    for byte in hash {
+        use crate::std::fmt::Write;
+        write!(s, "{:02x}", byte).unwrap();
+    }
+
+    Ok(s)
+}
+
 impl ReportCrash {
     pub fn new(config: Arc<Config>, extra: serde_json::Value) -> anyhow::Result<Self> {
         let settings_file = config.data_dir().join("crashreporter_settings.json");
         let settings: Settings = match std::fs::File::open(&settings_file) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                anyhow::bail!(
-                    "failed to open settings file ({}): {e}",
-                    settings_file.display()
-                );
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!(
+                        "failed to open settings file ({}): {e}",
+                        settings_file.display()
+                    );
+                }
+                Default::default()
             }
-            Err(_) => Default::default(),
-            Ok(f) => Settings::from_reader(f)?,
+            Ok(f) => match Settings::from_reader(f) {
+                Err(e) => {
+                    log::warn!(
+                        "failed to read settings file ({}): {e}",
+                        settings_file.display()
+                    );
+                    Default::default()
+                }
+                Ok(s) => s,
+            },
         };
+        log::debug!("loaded settings: {settings:?}");
 
         Ok(ReportCrash {
             config,
@@ -75,10 +105,8 @@ impl ReportCrash {
     pub fn run(mut self) -> anyhow::Result<bool> {
         self.memtest_according_to_settings();
         self.set_log_file();
-        let hash = self.compute_minidump_hash().map(Some).unwrap_or_else(|e| {
-            log::warn!("failed to compute minidump hash: {e:#}");
-            None
-        });
+        self.set_extra_context();
+        let hash = self.compute_minidump_hash();
         let ping_uuid = self.send_crash_ping(hash.as_deref());
         if let Err(e) = self.update_events_file(hash.as_deref(), ping_uuid) {
             log::warn!("failed to update events file: {e:#}");
@@ -104,23 +132,38 @@ impl ReportCrash {
         }
     }
 
-    /// Compute the SHA256 hash of the minidump file contents, and return it as a hex string.
-    fn compute_minidump_hash(&self) -> anyhow::Result<String> {
-        let hash = {
-            use sha2::{Digest, Sha256};
-            let mut dump_file = std::fs::File::open(self.config.dump_file())?;
-            let mut hasher = Sha256::new();
-            std::io::copy(&mut dump_file, &mut hasher)?;
-            hasher.finalize()
+    /// Set the process type and crash time, if not already set.
+    ///
+    /// NOTE: this assumes that the crashreporter client (in the default mode) is only used to send
+    /// main process crashes.
+    fn set_extra_context(&mut self) {
+        let Some(obj) = self.extra.as_object_mut() else {
+            log::error!("expected extra data to be an object");
+            return;
         };
-
-        let mut s = String::with_capacity(hash.len() * 2);
-        for byte in hash {
-            use crate::std::fmt::Write;
-            write!(s, "{:02x}", byte).unwrap();
+        obj.entry("ProcessType").or_insert("main".into());
+        if !obj.contains_key("CrashTime") {
+            if let Ok(time) = crate::std::time::SystemTime::now()
+                .duration_since(crate::std::time::SystemTime::UNIX_EPOCH)
+            {
+                obj.insert("CrashTime".into(), time.as_secs().to_string().into());
+            }
         }
+    }
 
-        Ok(s)
+    /// Compute the SHA256 hash of the minidump file contents, set it in the extra file, and return
+    /// it as a hex string.
+    fn compute_minidump_hash(&mut self) -> Option<String> {
+        match sha256_hash_file(self.config.dump_file()) {
+            Ok(hash) => {
+                self.extra["MinidumpSha256Hash"] = hash.clone().into();
+                Some(hash)
+            }
+            Err(e) => {
+                log::warn!("failed to compute minidump hash: {e:#}");
+                None
+            }
+        }
     }
 
     /// Send crash pings to legacy telemetry and Glean.
@@ -128,11 +171,14 @@ impl ReportCrash {
     /// Returns the crash ping uuid used in legacy telemetry.
     fn send_crash_ping(&self, minidump_hash: Option<&str>) -> Option<Uuid> {
         net::ping::CrashPing {
-            crash_id: self.config.local_dump_id().as_ref(),
             extra: &self.extra,
-            ping_dir: self.config.ping_dir.as_deref(),
-            minidump_hash,
-            pingsender_path: crate::config::installation_program_path("pingsender").as_ref(),
+            reason: Some("crash"),
+            legacy_telemetry: Some(net::ping::LegacyTelemetryCrashPing {
+                crash_id: self.config.local_dump_id().as_ref(),
+                ping_dir: self.config.ping_dir.as_deref(),
+                minidump_hash,
+                pingsender_path: crate::config::installation_program_path("pingsender").as_ref(),
+            }),
         }
         .send()
     }

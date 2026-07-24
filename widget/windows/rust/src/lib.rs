@@ -7,8 +7,8 @@ use nserror::{nsresult, NS_OK};
 use nsstring::{nsAString, nsString};
 use thin_vec::ThinVec;
 use windows::core::HSTRING;
-use windows::Foundation::Collections::IVectorView;
 use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+use windows_collections::IVectorView;
 use xpcom::{xpcom, xpcom_method};
 
 #[xpcom(implement(nsIAlertsServiceRust), nonatomic)]
@@ -30,7 +30,7 @@ impl AlertsServiceRust {
         || -> windows::core::Result<()> {
             let history = ToastNotificationManager::History()?;
             let notifications: IVectorView<ToastNotification> =
-                history.GetHistoryWithId(&HSTRING::from_wide(&aumid[..])?)?;
+                history.GetHistoryWithId(&HSTRING::from_wide(&aumid[..]))?;
 
             for n in notifications {
                 let tag = n.Tag()?;

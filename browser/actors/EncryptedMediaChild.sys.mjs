@@ -29,6 +29,7 @@ class GlobalCaptureListener {
 
   /**
    * Handle changes in shared data that may alter the capture state.
+   *
    * @param event a notification that sharedData has changed. If this includes
    * changes to screen or window sharing state then we'll update the capture
    * state.
@@ -45,8 +46,11 @@ class GlobalCaptureListener {
   /**
    * Updates the capture state and notifies the state to observers if the
    * state has changed since last update, or if forced.
-   * @param forceNotify if true then the capture state will be sent to
-   * observers even if it didn't change since the last update.
+   *
+   * @param {object} options
+   * @param {boolean} [options.forceNotify]
+   *   If true then the capture state will be sent to observers even if it
+   *   didn't change since the last update.
    */
   _updateCaptureState({ forceNotify = false } = {}) {
     const previousCaptureState =

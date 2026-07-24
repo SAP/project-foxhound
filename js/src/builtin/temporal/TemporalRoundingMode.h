@@ -12,8 +12,7 @@
 #include <cmath>
 #include <stdint.h>
 
-#include "builtin/temporal/Crash.h"
-#include "builtin/temporal/Int128.h"
+#include "vm/Int128.h"
 
 namespace js::temporal {
 
@@ -77,7 +76,7 @@ constexpr auto NegateRoundingMode(TemporalRoundingMode roundingMode) {
     case TemporalRoundingMode::HalfEven:
       return roundingMode;
   }
-  JS_CONSTEXPR_CRASH("invalid rounding mode");
+  MOZ_CRASH("invalid rounding mode");
 }
 
 /**
@@ -116,7 +115,7 @@ constexpr auto ToPositiveRoundingMode(TemporalRoundingMode roundingMode) {
       // Adjust the rounding mode to Half-Floor, similar to the Trunc case.
       return TemporalRoundingMode::HalfFloor;
   }
-  JS_CONSTEXPR_CRASH("unexpected rounding mode");
+  MOZ_CRASH("unexpected rounding mode");
 }
 
 // Temporal performs division on "mathematical values" [1] with implies using

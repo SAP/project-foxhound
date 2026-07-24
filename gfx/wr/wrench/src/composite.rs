@@ -255,6 +255,8 @@ impl LayerCompositor for WrCompositor {
         _transform: CompositorSurfaceTransform,
         _clip_rect: webrender::api::units::DeviceIntRect,
         _image_rendering: webrender::api::ImageRendering,
+        _rounded_clip_rect: webrender::api::units::DeviceIntRect,
+        _rounded_clip_radii: webrender::ClipRadius,
     ) {
         let layer = &self.layers[index];
 

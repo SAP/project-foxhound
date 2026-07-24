@@ -2689,17 +2689,7 @@ nsNavHistoryFolderResultNode::GetQueryOptions(
 }
 
 nsresult nsNavHistoryFolderResultNode::FillChildren() {
-  NS_ASSERTION(!mContentsValid,
-               "Don't call FillChildren when contents are valid");
-  NS_ASSERTION(mChildren.Count() == 0,
-               "We are trying to fill children when there already are some");
-
-  nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksService();
-  NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-
-  // Actually get the folder children from the bookmark service.
-  nsresult rv =
-      bookmarks->QueryFolderChildren(mTargetFolderItemId, mOptions, &mChildren);
+  nsresult rv = FillChildrenInternal();
   NS_ENSURE_SUCCESS(rv, rv);
 
   // PERFORMANCE: it may be better to also fill any child folders at this point
@@ -2761,29 +2751,184 @@ void nsNavHistoryFolderResultNode::EnsureRegisteredAsFolderObserver() {
 }
 
 /**
- * The async version of FillChildren.  This begins asynchronous execution by
- * calling nsNavBookmarks::QueryFolderChildrenAsync.  During execution, this
- * node's async Storage callbacks, HandleResult and HandleCompletion, will be
- * called.
+ * The async version of FillChildren. This begins asynchronous execution by
+ * calling FillChildrenInternal.  During execution, this node's async Storage
+ * callbacks, HandleResult and HandleCompletion, will be called.
  */
 nsresult nsNavHistoryFolderResultNode::FillChildrenAsync() {
-  NS_ASSERTION(!mContentsValid, "FillChildrenAsync when contents are valid");
-  NS_ASSERTION(mChildren.Count() == 0, "FillChildrenAsync when children exist");
-
   // ProcessFolderNodeChild, called in HandleResult, increments this for every
   // result row it processes.  Initialize it here as we begin async execution.
   mAsyncBookmarkIndex = -1;
 
-  nsNavBookmarks* bmSvc = nsNavBookmarks::GetBookmarksService();
-  NS_ENSURE_TRUE(bmSvc, NS_ERROR_OUT_OF_MEMORY);
-  nsresult rv =
-      bmSvc->QueryFolderChildrenAsync(this, getter_AddRefs(mAsyncPendingStmt));
+  nsresult rv = FillChildrenInternal(getter_AddRefs(mAsyncPendingStmt));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Register with the result for updates.  All updates during async execution
   // will cause it to be restarted.
   EnsureRegisteredAsFolderObserver();
 
+  return NS_OK;
+}
+
+nsresult nsNavHistoryFolderResultNode::FillChildrenInternal(
+    mozIStoragePendingStatement** aPendingStmt) {
+  NS_ASSERTION(!mContentsValid,
+               "Don't call FillChildrenInternal when contents are valid");
+  NS_ASSERTION(mChildren.Count() == 0,
+               "We are trying to fill children when there already are some");
+
+  // Select all children of a given folder, sorted by position.
+  // This is a LEFT JOIN because not all bookmarks types have a place.
+  // We construct a result where the first columns exactly match those returned
+  // by mDBGetURLPageInfo, and additionally contains columns for position,
+  // item_child, and folder_child from moz_bookmarks.
+  bool isAsync = !!aPendingStmt;
+  nsCString sql =
+      "SELECT "
+      "  h.id, h.url, b.title, h.rev_host, h.visit_count, h.last_visit_date, "
+      "  null, b.id, b.dateAdded, b.lastModified, b.parent, "_ns +
+      nsCString(
+          isAsync
+              ? " null, "
+              : " (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, ") +
+      "  h.frecency, h.hidden, h.guid, null, null, null, b.guid, b.position, "
+      "  b.type, b.fk, t.guid, t.id, t.title "
+      "FROM moz_bookmarks b "
+      "LEFT JOIN moz_places h ON b.fk = h.id "
+      "LEFT JOIN moz_bookmarks t ON t.guid = target_folder_guid(h.url) "
+      "WHERE b.parent = :parent "
+      "  AND ("
+      "    NOT :excludeItems OR "
+      "    b.type = :folder OR "
+      "    h.url_hash BETWEEN "
+      "      hash('place', 'prefix_lo') AND hash('place', 'prefix_hi')"
+      "  ) "
+      "ORDER BY b.position ASC"_ns;
+
+  RefPtr<Database> db = Database::GetDatabase();
+  NS_ENSURE_STATE(db);
+  nsCOMPtr<mozIStorageBaseStatement> stmt;
+  if (isAsync) {
+    stmt = db->GetAsyncStatement(sql);
+    NS_ENSURE_STATE(stmt);
+  } else {
+    stmt = db->GetStatement(nsNavHistory::GetTagsSqlFragment(
+                                nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS,
+                                mOptions->ExcludeItems()) +
+                            sql);
+    NS_ENSURE_STATE(stmt);
+  }
+
+  nsresult rv = stmt->BindInt64ByName("parent"_ns, mTargetFolderItemId);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = stmt->BindInt32ByName("folder"_ns, nsINavBookmarksService::TYPE_FOLDER);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = stmt->BindInt32ByName("excludeItems"_ns, mOptions->ExcludeItems());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (isAsync) {
+    nsCOMPtr<mozIStorageAsyncStatement> async = do_QueryInterface(stmt, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<mozIStoragePendingStatement> pendingStmt;
+    rv = async->ExecuteAsync(this, getter_AddRefs(pendingStmt));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    NS_IF_ADDREF(*aPendingStmt = pendingStmt);
+  } else {
+    nsCOMPtr<mozIStorageStatement> sync = do_QueryInterface(stmt, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+    mozStorageStatementScoper scoper(sync);
+    nsCOMPtr<mozIStorageValueArray> row = do_QueryInterface(sync, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    int32_t index = -1;
+    bool hasResult;
+    while (NS_SUCCEEDED(sync->ExecuteStep(&hasResult)) && hasResult) {
+      rv = AppendRowAsChild(row, index);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  }
+
+  return NS_OK;
+}
+
+nsresult nsNavHistoryFolderResultNode::AppendRowAsChild(
+    mozIStorageValueArray* aRow, int32_t& aCurrentIndex) {
+  NS_ENSURE_ARG_POINTER(aRow);
+
+  // The results will be in order of aCurrentIndex. Even if we don't add a node
+  // because it was excluded, we need to count its index, so do that before
+  // doing anything else.
+  aCurrentIndex++;
+
+  int32_t itemType;
+  nsresult rv =
+      aRow->GetInt32(nsNavBookmarks::kGetChildrenIndex_Type, &itemType);
+  NS_ENSURE_SUCCESS(rv, rv);
+  int64_t id;
+  rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemId, &id);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  RefPtr<nsNavHistoryResultNode> node;
+
+  if (itemType == nsINavBookmarksService::TYPE_BOOKMARK) {
+    nsNavHistory* history = nsNavHistory::GetHistoryService();
+    NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
+    rv = history->RowToResult(aRow, mOptions, getter_AddRefs(node));
+    NS_ENSURE_SUCCESS(rv, rv);
+    uint32_t nodeType;
+    node->GetType(&nodeType);
+    if (nodeType == nsINavHistoryResultNode::RESULT_TYPE_QUERY &&
+        mOptions->ExcludeQueries()) {
+      return NS_OK;
+    }
+  } else if (itemType == nsINavBookmarksService::TYPE_FOLDER) {
+    nsAutoCString title;
+    bool isNull;
+    rv = aRow->GetIsNull(nsNavHistory::kGetInfoIndex_Title, &isNull);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (!isNull) {
+      rv = aRow->GetUTF8String(nsNavHistory::kGetInfoIndex_Title, title);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    nsAutoCString guid;
+    rv = aRow->GetUTF8String(nsNavBookmarks::kGetChildrenIndex_Guid, guid);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Don't use options from the parent to build the new folder node, it will
+    // inherit those later when it's inserted in the result.
+    node = new nsNavHistoryFolderResultNode(id, guid, id, guid, title,
+                                            new nsNavHistoryQueryOptions());
+
+    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemDateAdded,
+                        reinterpret_cast<int64_t*>(&node->mDateAdded));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemLastModified,
+                        reinterpret_cast<int64_t*>(&node->mLastModified));
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else {
+    // This is a separator.
+    node = new nsNavHistorySeparatorResultNode();
+
+    node->mItemId = id;
+    rv = aRow->GetUTF8String(nsNavBookmarks::kGetChildrenIndex_Guid,
+                             node->mBookmarkGuid);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemDateAdded,
+                        reinterpret_cast<int64_t*>(&node->mDateAdded));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemLastModified,
+                        reinterpret_cast<int64_t*>(&node->mLastModified));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Store the index of the node within this container.  Note that this is not
+  // moz_bookmarks.position.
+  node->mBookmarkIndex = aCurrentIndex;
+
+  NS_ENSURE_TRUE(mChildren.AppendObject(node), NS_ERROR_OUT_OF_MEMORY);
   return NS_OK;
 }
 
@@ -2798,17 +2943,10 @@ NS_IMETHODIMP
 nsNavHistoryFolderResultNode::HandleResult(mozIStorageResultSet* aResultSet) {
   NS_ENSURE_ARG_POINTER(aResultSet);
 
-  nsNavBookmarks* bmSvc = nsNavBookmarks::GetBookmarksService();
-  if (!bmSvc) {
-    CancelAsyncOpen(false);
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
   // Consume all the currently available rows of the result set.
   nsCOMPtr<mozIStorageRow> row;
   while (NS_SUCCEEDED(aResultSet->GetNextRow(getter_AddRefs(row))) && row) {
-    nsresult rv = bmSvc->ProcessFolderNodeRow(row, mOptions, &mChildren,
-                                              mAsyncBookmarkIndex);
+    nsresult rv = AppendRowAsChild(row, mAsyncBookmarkIndex);
     if (NS_FAILED(rv)) {
       CancelAsyncOpen(false);
       return rv;

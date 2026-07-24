@@ -379,7 +379,7 @@ nr_stun_add_realm_and_nonce(int new_nonce, nr_stun_server_client *clnt, nr_stun_
 {
     int r,_status;
     char *realm = 0;
-    char *nonce;
+    const char *nonce;
     UINT2 size;
 
     if ((r=NR_reg_alloc_string(NR_STUN_REG_PREF_SERVER_REALM, &realm)))

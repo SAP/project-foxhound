@@ -805,7 +805,7 @@ typedef struct {
   // Indicates the delta q mode to be used.
   DELTAQ_MODE deltaq_mode;
   // Indicates the delta q mode strength.
-  DELTAQ_MODE deltaq_strength;
+  unsigned int deltaq_strength;
   // Indicates if delta quantization should be enabled in chroma planes.
   bool enable_chroma_deltaq;
   // Indicates if delta quantization should be enabled for hdr video
@@ -832,6 +832,11 @@ typedef struct {
    * can change the sample values on block edges to favor perceived sharpness.
    */
   int sharpness;
+
+  /*!
+   * Indicates if sharpness is adapted based on frame QP
+   */
+  bool enable_adaptive_sharpness;
 
   /*!
    * Indicates the trellis optimization mode of quantized coefficients.
@@ -1475,7 +1480,8 @@ typedef struct ThreadData {
   PC_TREE_SHARED_BUFFERS shared_coeff_buf;
   SIMPLE_MOTION_DATA_TREE *sms_tree;
   SIMPLE_MOTION_DATA_TREE *sms_root;
-  uint32_t *hash_value_buffer[2][2];
+  // buffers are AOM_BUFFER_SIZE_FOR_BLOCK_HASH elements long
+  uint32_t *hash_value_buffer[2];
   OBMCBuffer obmc_buffer;
   PALETTE_BUFFER *palette_buffer;
   CompoundTypeRdBuffers comp_rd_buffer;

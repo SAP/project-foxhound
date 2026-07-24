@@ -33,7 +33,7 @@ implementing the trivial example visible in `EmptyUtil
   - To use ``StartUtility()`` mentioned above, please ensure that you provide
     a ``nsresult BindToUtilityProcess(RefPtr<UtilityProcessParent>
     aUtilityParent)``. Usually, it should be in charge of creating a set of
-    endpoints and performing ``Bind()`` to setup the IPC. You can see some example for `Utility AudioDecoder <https://searchfox.org/mozilla-central/rev/f9f9b422f685244dcd3f6826b70d34a496ce5853/ipc/glue/UtilityAudioDecoderChild.cpp#60-92>`_
+    endpoints and performing ``Bind()`` to setup the IPC. You can see some example for `UtilityMediaService <https://searchfox.org/mozilla-central/rev/0fe32133f12ed0f20d5fde8fe970157f04817982/ipc/glue/UtilityMediaServiceChild.cpp#60-92>`_
 
   - For proper user-facing exposition in ``about:processes`` you will have to also provide an actor
     name via a method ``UtilityActorName GetActorName() { return UtilityActorName::EmptyUtil; }``

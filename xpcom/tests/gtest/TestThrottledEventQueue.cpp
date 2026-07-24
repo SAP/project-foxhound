@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <functional>
-#include <queue>
 #include <string>
 #include <utility>
 
@@ -25,86 +24,17 @@
 #include "nsThreadUtils.h"
 #include "prinrval.h"
 
+#include "Helpers.h"
+
 using mozilla::CondVar;
 using mozilla::MakeRefPtr;
 using mozilla::Mutex;
 using mozilla::MutexAutoLock;
 using mozilla::ThrottledEventQueue;
-using std::function;
-using std::string;
 
 namespace TestThrottledEventQueue {
 
-// A simple queue of runnables, to serve as the base target of
-// ThrottledEventQueues in tests.
-//
-// This is much simpler than mozilla::TaskQueue, and so better for unit tests.
-// It's about the same as mozilla::EventQueue, but that doesn't implement
-// nsIEventTarget, so it can't be the base target of a ThrottledEventQueue.
-struct RunnableQueue : nsISerialEventTarget {
-  std::queue<nsCOMPtr<nsIRunnable>> runnables;
-
-  bool IsEmpty() { return runnables.empty(); }
-  size_t Length() { return runnables.size(); }
-
-  [[nodiscard]] nsresult Run() {
-    while (!runnables.empty()) {
-      auto runnable = std::move(runnables.front());
-      runnables.pop();
-      nsresult rv = runnable->Run();
-      if (NS_FAILED(rv)) return rv;
-    }
-
-    return NS_OK;
-  }
-
-  // nsIEventTarget methods
-
-  [[nodiscard]] NS_IMETHODIMP Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                       uint32_t aFlags) override {
-    MOZ_ALWAYS_TRUE(aFlags == nsIEventTarget::DISPATCH_NORMAL);
-    runnables.push(aRunnable);
-    return NS_OK;
-  }
-
-  [[nodiscard]] NS_IMETHODIMP DispatchFromScript(nsIRunnable* aRunnable,
-                                                 uint32_t aFlags) override {
-    RefPtr<nsIRunnable> r = aRunnable;
-    return Dispatch(r.forget(), aFlags);
-  }
-
-  NS_IMETHOD_(bool)
-  IsOnCurrentThreadInfallible(void) override { return NS_IsMainThread(); }
-
-  [[nodiscard]] NS_IMETHOD IsOnCurrentThread(bool* retval) override {
-    *retval = IsOnCurrentThreadInfallible();
-    return NS_OK;
-  }
-
-  [[nodiscard]] NS_IMETHODIMP DelayedDispatch(
-      already_AddRefed<nsIRunnable> aEvent, uint32_t aDelay) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  NS_IMETHOD RegisterShutdownTask(nsITargetShutdownTask*) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask*) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  // nsISupports methods
-
-  NS_DECL_THREADSAFE_ISUPPORTS
-
- private:
-  virtual ~RunnableQueue() = default;
-};
-
-NS_IMPL_ISUPPORTS(RunnableQueue, nsIEventTarget, nsISerialEventTarget)
-
-static void Enqueue(nsIEventTarget* target, function<void()>&& aCallable) {
+static void Enqueue(nsIEventTarget* target, std::function<void()>&& aCallable) {
   nsresult rv = target->Dispatch(
       NS_NewRunnableFunction("TEQ GTest", std::move(aCallable)));
   MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
@@ -113,10 +43,11 @@ static void Enqueue(nsIEventTarget* target, function<void()>&& aCallable) {
 }  // namespace TestThrottledEventQueue
 
 using namespace TestThrottledEventQueue;
+using testing::RunnableQueue;
 
 TEST(ThrottledEventQueue, RunnableQueue)
 {
-  string log;
+  std::string log;
 
   RefPtr<RunnableQueue> queue = MakeRefPtr<RunnableQueue>();
   Enqueue(queue, [&]() { log += 'a'; });
@@ -130,7 +61,7 @@ TEST(ThrottledEventQueue, RunnableQueue)
 
 TEST(ThrottledEventQueue, SimpleDispatch)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -146,7 +77,7 @@ TEST(ThrottledEventQueue, SimpleDispatch)
 
 TEST(ThrottledEventQueue, MixedDispatch)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -192,7 +123,7 @@ TEST(ThrottledEventQueue, MixedDispatch)
 
 TEST(ThrottledEventQueue, EnqueueFromRun)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -218,7 +149,7 @@ TEST(ThrottledEventQueue, EnqueueFromRun)
 
 TEST(ThrottledEventQueue, RunFromRun)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -245,7 +176,7 @@ TEST(ThrottledEventQueue, RunFromRun)
 
 TEST(ThrottledEventQueue, DropWhileRunning)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
 
@@ -266,7 +197,7 @@ TEST(ThrottledEventQueue, AwaitIdle)
   Mutex mutex MOZ_UNANNOTATED("TEQ AwaitIdle");
   CondVar cond(mutex, "TEQ AwaitIdle");
 
-  string dequeue_await;           // mutex
+  std::string dequeue_await;      // mutex
   bool threadFinished = false;    // mutex & cond
   bool runnableFinished = false;  // main thread only
 
@@ -330,7 +261,7 @@ TEST(ThrottledEventQueue, AwaitIdleMixed)
   CondVar cond(mutex, "AwaitIdleMixed");
 
   // The following are protected by mutex and cond, above.
-  string log;
+  std::string log;
   bool threadStarted = false;
   bool threadFinished = false;
 
@@ -412,7 +343,7 @@ TEST(ThrottledEventQueue, AwaitIdleMixed)
 
 TEST(ThrottledEventQueue, SimplePauseResume)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -448,7 +379,7 @@ TEST(ThrottledEventQueue, SimplePauseResume)
 
 TEST(ThrottledEventQueue, MixedPauseResume)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =
@@ -492,7 +423,7 @@ TEST(ThrottledEventQueue, AwaitIdlePaused)
   Mutex mutex MOZ_UNANNOTATED("AwaitIdlePaused");
   CondVar cond(mutex, "AwaitIdlePaused");
 
-  string dequeue_await;           // mutex
+  std::string dequeue_await;      // mutex
   bool threadFinished = false;    // mutex & cond
   bool runnableFinished = false;  // main thread only
 
@@ -563,7 +494,7 @@ TEST(ThrottledEventQueue, AwaitIdlePaused)
 
 TEST(ThrottledEventQueue, ExecutorTransitions)
 {
-  string log;
+  std::string log;
 
   auto base = MakeRefPtr<RunnableQueue>();
   RefPtr<ThrottledEventQueue> throttled =

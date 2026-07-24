@@ -7,7 +7,6 @@
 #ifndef jit_MachineState_h
 #define jit_MachineState_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Variant.h"
 

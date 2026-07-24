@@ -55,9 +55,9 @@ class FeatureFlagPreferenceTest {
     private inner class FeatureFlagHolder(featureFlag: Boolean) : PreferencesHolder {
         override val preferences = testPreferences
 
-        var property by featureFlagPreference(
+        var property by featureFlagBooleanPreference(
             "key",
-            default = false,
+            defaultValue = false,
             featureFlag = featureFlag,
         )
     }

@@ -7,19 +7,17 @@
 #ifndef mozilla_dom_quota_NSSCipherStrategy_h
 #define mozilla_dom_quota_NSSCipherStrategy_h
 
-#include "CipherStrategy.h"
-
+#include <array>
 #include <cstddef>
 #include <cstdint>
+
+#include "CipherStrategy.h"
+#include "ErrorList.h"
+#include "ScopedNSSTypes.h"
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
-#include "ErrorList.h"
 #include "nsTArray.h"
-
-#include "ScopedNSSTypes.h"
-
-#include <array>
 
 namespace mozilla::dom::quota {
 

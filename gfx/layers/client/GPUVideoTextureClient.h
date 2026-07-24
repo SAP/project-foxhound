@@ -38,6 +38,8 @@ class GPUVideoTextureData : public TextureData {
 
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface();
 
+  void OnSetCurrent();
+
   GPUVideoTextureData* AsGPUVideoTextureData() override { return this; }
 
  protected:

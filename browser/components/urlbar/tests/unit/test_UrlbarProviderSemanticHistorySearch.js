@@ -12,11 +12,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const { UrlbarProviderSemanticHistorySearch } = ChromeUtils.importESModule(
-  "resource:///modules/UrlbarProviderSemanticHistorySearch.sys.mjs"
+  "moz-src:///browser/components/urlbar/UrlbarProviderSemanticHistorySearch.sys.mjs"
 );
 const { getPlacesSemanticHistoryManager } = ChromeUtils.importESModule(
   "resource://gre/modules/PlacesSemanticHistoryManager.sys.mjs"
 );
+ChromeUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
+  const { QuickSuggestTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/QuickSuggestTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
 
 let semanticManager = getPlacesSemanticHistoryManager();
 let hasSufficientEntriesStub = sinon
@@ -46,10 +53,16 @@ add_task(async function setup() {
   Services.prefs
     .getDefaultBranch("")
     .setIntPref("browser.urlbar.suggest.semanticHistory.minLength", 5);
+
+  let cleanup = await QuickSuggestTestUtils.setRegionAndLocale({
+    region: "US",
+    locale: "en-US",
+  });
+  registerCleanupFunction(cleanup);
 });
 
 add_task(async function test_startQuery_adds_results() {
-  const provider = UrlbarProviderSemanticHistorySearch;
+  const provider = new UrlbarProviderSemanticHistorySearch();
 
   const queryContext = { searchString: "test page" };
 
@@ -101,7 +114,7 @@ add_task(async function test_startQuery_adds_results() {
 });
 
 add_task(async function test_isActive_conditions() {
-  const provider = UrlbarProviderSemanticHistorySearch;
+  const provider = new UrlbarProviderSemanticHistorySearch();
 
   // Stub canUseSemanticSearch to control the return value
   const canUseStub = sinon.stub(semanticManager, "canUseSemanticSearch");
@@ -190,7 +203,7 @@ add_task(async function test_switchTab() {
     false
   );
   await PlacesTestUtils.addVisits([url1, url2]);
-  const provider = UrlbarProviderSemanticHistorySearch;
+  const provider = new UrlbarProviderSemanticHistorySearch();
 
   // Trigger isActive() to initialize the semantic manager
   const queryContext = createContext("firefox", { isPrivate: false });
@@ -253,24 +266,6 @@ add_task(async function test_switchTab() {
   Assert.equal(added.length, 2, "Two results should be added");
   AssertSwitchToTabResult(added[0], url1, privateContextId);
   Assert.ok(isUrlResult(added[1], url2), "Second result should be URL");
-
-  info("Test single container mode.");
-  Services.prefs.setBoolPref(
-    "browser.urlbar.switchTabs.searchAllContainers",
-    false
-  );
-  const singleContext = createContext("firefox", {
-    isPrivate: false,
-    userContextId: userContextId1,
-  });
-  added.length = 0;
-  await provider.startQuery(singleContext, (_provider, result) => {
-    added.push(result);
-  });
-  Assert.equal(added.length, 2, "Two results should be added");
-  AssertSwitchToTabResult(added[0], url1, userContextId1);
-  AssertSwitchToTabResult(added[1], url2, userContextId1);
-  Services.prefs.clearUserPref("browser.urlbar.switchTabs.searchAllContainers");
 
   info("Test tab groups and current page.");
   let tabGroudId1 = "group1";

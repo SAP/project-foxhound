@@ -66,17 +66,31 @@ UrlClassifierExceptionListEntry::Matches(nsIURI* aURI, nsIURI* aTopLevelURI,
       mCategory ==
           nsIUrlClassifierExceptionListEntry::Category::CATEGORY_CONVENIENCE);
 
-  // Check if the entry category is enabled. CATEGORY_INTERNAL_PREF always
-  // applies.
-  if ((mCategory ==
-           nsIUrlClassifierExceptionListEntry::Category::CATEGORY_BASELINE &&
-       !StaticPrefs::
-           privacy_trackingprotection_allow_list_baseline_enabled()) ||
-      (mCategory ==
-           nsIUrlClassifierExceptionListEntry::Category::CATEGORY_CONVENIENCE &&
-       !StaticPrefs::
-           privacy_trackingprotection_allow_list_convenience_enabled())) {
-    return NS_OK;
+  // If the entry category is not internal pref, we need to check if the
+  // baseline and convenience exceptions are enabled.
+  if (mCategory !=
+      nsIUrlClassifierExceptionListEntry::Category::CATEGORY_INTERNAL_PREF) {
+    bool baselineEnabled =
+        StaticPrefs::privacy_trackingprotection_allow_list_baseline_enabled();
+    bool convenienceEnabled = StaticPrefs::
+        privacy_trackingprotection_allow_list_convenience_enabled();
+
+    // If baseline is disabled, we should not allow convenience exceptions
+    // either.
+    if (!baselineEnabled) {
+      convenienceEnabled = false;
+    }
+
+    // Check if the entry category is enabled. CATEGORY_INTERNAL_PREF always
+    // applies.
+    if ((mCategory ==
+             nsIUrlClassifierExceptionListEntry::Category::CATEGORY_BASELINE &&
+         !baselineEnabled) ||
+        (mCategory == nsIUrlClassifierExceptionListEntry::Category::
+                          CATEGORY_CONVENIENCE &&
+         !convenienceEnabled)) {
+      return NS_OK;
+    }
   }
 
   // Entry is scoped to private browsing only and we're not in private browsing.

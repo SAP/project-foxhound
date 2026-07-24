@@ -86,8 +86,8 @@ class SVGRootRenderingObserver final : public SVGRenderingObserver {
     StopObserving();
   }
 
-  Element* GetReferencedElementWithoutObserving() final {
-    return mDocWrapper->GetRootSVGElem();
+  Element* GetReferencedElementWithoutObserving() const final {
+    return mDocWrapper->GetSVGRootElement();
   }
 
   virtual void OnRenderingChange() override {
@@ -458,7 +458,7 @@ VectorImage::GetWidth(int32_t* aWidth) {
     return NS_ERROR_FAILURE;
   }
 
-  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetRootSVGElem();
+  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetSVGRootElement();
   if (MOZ_UNLIKELY(!rootElem)) {
     // Unlikely to reach this code; we should have a root SVG elem, since we
     // finished loading without errors. But we can sometimes get here during
@@ -489,7 +489,7 @@ VectorImage::GetHeight(int32_t* aHeight) {
     return NS_ERROR_FAILURE;
   }
 
-  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetRootSVGElem();
+  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetSVGRootElement();
   if (MOZ_UNLIKELY(!rootElem)) {
     // Unlikely to reach this code; we should have a root SVG elem, since we
     // finished loading without errors. But we can sometimes get here during
@@ -514,7 +514,7 @@ VectorImage::GetIntrinsicSize(ImageIntrinsicSize* aIntrinsicSize) {
   if (mError || !mIsFullyLoaded) {
     return NS_ERROR_FAILURE;
   }
-  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetRootSVGElem();
+  SVGSVGElement* rootElem = mSVGDocumentWrapper->GetSVGRootElement();
   if (MOZ_UNLIKELY(!rootElem)) {
     return NS_ERROR_FAILURE;
   }
@@ -620,7 +620,7 @@ VectorImage::GetFrame(uint32_t aWhichFrame, uint32_t aFlags) {
 
   // Look up height & width
   // ----------------------
-  SVGSVGElement* svgElem = mSVGDocumentWrapper->GetRootSVGElem();
+  SVGSVGElement* svgElem = mSVGDocumentWrapper->GetSVGRootElement();
   MOZ_ASSERT(svgElem,
              "Should have a root SVG elem, since we finished "
              "loading without errors");
@@ -629,6 +629,9 @@ VectorImage::GetFrame(uint32_t aWhichFrame, uint32_t aFlags) {
   if (!width.IsLength() || !height.IsLength()) {
     // The SVG is lacking a definite size for its width or height, so we do not
     // know how big of a surface to generate. Hence, we just bail.
+    NS_WARNING(
+        "VectorImage::GetFrame called on image without an intrinsic width or "
+        "height");
     return nullptr;
   }
 
@@ -1015,6 +1018,10 @@ imgIContainer::DecodeResult VectorImage::RequestDecodeWithResult(
 NS_IMETHODIMP
 VectorImage::RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags,
                                   uint32_t aWhichFrame) {
+  if (mError) {
+    return NS_ERROR_FAILURE;
+  }
+
   // Nothing to do for SVG images, though in theory we could rasterize to the
   // provided size ahead of time if we supported off-main-thread SVG
   // rasterization...
@@ -1323,12 +1330,6 @@ already_AddRefed<SourceSurface> VectorImage::CreateSurface(
       aParams.context ? aParams.context->GetDrawTarget()->GetBackendType()
                       : gfxPlatform::GetPlatform()->GetDefaultContentBackend();
 
-  if (backend == BackendType::DIRECT2D1_1) {
-    // We don't want to draw arbitrary content with D2D anymore
-    // because it doesn't support PushLayerWithBlend so switch to skia
-    backend = BackendType::SKIA;
-  }
-
   // Try to create an imgFrame, initializing the surface it contains by drawing
   // our gfxDrawable into it. (We use FILTER_NEAREST since we never scale here.)
   auto frame = MakeNotNull<RefPtr<imgFrame>>();
@@ -1419,7 +1420,7 @@ void VectorImage::Show(gfxDrawable* aDrawable,
   gfxUtils::DrawPixelSnapped(aParams.context, aDrawable,
                              SizeDouble(aParams.size), region,
                              SurfaceFormat::OS_RGBA, aParams.samplingFilter,
-                             aParams.flags, aParams.opacity, false);
+                             aParams.flags, aParams.opacity);
 
   AutoProfilerImagePaintMarker PROFILER_RAII(this);
 #ifdef DEBUG
@@ -1494,7 +1495,7 @@ void VectorImage::OnSVGDocumentParsed() {
   MOZ_ASSERT(mParseCompleteListener, "Should have the parse complete listener");
   MOZ_ASSERT(mLoadEventListener, "Should have the load event listener");
 
-  if (!mSVGDocumentWrapper->GetRootSVGElem()) {
+  if (!mSVGDocumentWrapper->GetSVGRootElement()) {
     // This is an invalid SVG document. It may have failed to parse, or it may
     // be missing the <svg> root element, or the <svg> root element may not
     // declare the correct namespace. In any of these cases, we'll never be
@@ -1547,7 +1548,7 @@ void VectorImage::SendInvalidationNotifications() {
 }
 
 void VectorImage::OnSVGDocumentLoaded() {
-  MOZ_ASSERT(mSVGDocumentWrapper->GetRootSVGElem(),
+  MOZ_ASSERT(mSVGDocumentWrapper->GetSVGRootElement(),
              "Should have parsed successfully");
   MOZ_ASSERT(!mIsFullyLoaded && !mHaveAnimations,
              "These flags shouldn't get set until OnSVGDocumentLoaded. "

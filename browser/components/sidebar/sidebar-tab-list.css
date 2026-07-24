@@ -5,6 +5,7 @@
 sidebar-tab-row {
   border-radius: var(--border-radius-medium);
   height: var(--size-item-large);
+  align-items: center;
 
   &:hover {
     background-color: var(--button-background-color-ghost-hover);

@@ -49,6 +49,14 @@ vendoring:
     - action: delete-path
       path: "src/Makefile.am"
     - action: delete-path
+      path: "tests/unit/data/Makefile.am"
+    - action: delete-path
+      path: "tests/unit/data/Makefile.in"
+    - action: delete-path
+      path: "tests/unit/data/suggestiontest/Makefile.am"
+    - action: delete-path
+      path: "tests/unit/data/suggestiontest/Makefile.in"
+    - action: delete-path
       path: "src/filemgr.cxx"
     - action: delete-path
       path: "src/hunvisapi.h.in"

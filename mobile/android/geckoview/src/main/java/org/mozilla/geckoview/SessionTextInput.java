@@ -286,21 +286,7 @@ public final class SessionTextInput {
   }
 
   /**
-   * Get a Handler for the background input method thread. In order to use a background thread for
-   * input method operations on systems prior to Nougat, first override {@code View.getHandler()}
-   * for the View returning the InputConnection instance, and then call this method from the
-   * overridden method.
-   *
-   * <p>For example:
-   *
-   * <pre>
-   * &#64;Override
-   * public Handler getHandler() {
-   *     if (Build.VERSION.SDK_INT &gt;= 24) {
-   *         return super.getHandler();
-   *     }
-   *     return getSession().getTextInput().getHandler(super.getHandler());
-   * }</pre>
+   * Get a Handler for the background input method thread.
    *
    * @param defHandler Handler returned by the system {@code getHandler} implementation.
    * @return Handler to return to the system through {@code getHandler}.

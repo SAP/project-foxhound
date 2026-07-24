@@ -4,11 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-EXPORTS.mozilla.net += [
-    "DataChannelChild.h",
-    "DataChannelParent.h",
-]
-
 XPIDL_SOURCES += [
     "nsIDataChannel.idl",
 ]
@@ -21,8 +16,6 @@ EXPORTS += [
 ]
 
 UNIFIED_SOURCES += [
-    "DataChannelChild.cpp",
-    "DataChannelParent.cpp",
     "nsDataChannel.cpp",
     "nsDataHandler.cpp",
 ]

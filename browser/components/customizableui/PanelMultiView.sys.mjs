@@ -4,7 +4,8 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "gBundle", function () {
@@ -637,7 +638,7 @@ export var PanelMultiView = class extends AssociatedToNode {
     let subviews = Array.from(this._viewStack.children);
     let viewCache = this.document.getElementById("appMenu-viewCache");
     for (let subview of subviews) {
-      viewCache.appendChild(subview);
+      viewCache.moveBefore(subview, null);
     }
   }
 
@@ -1593,9 +1594,12 @@ export var PanelView = class extends AssociatedToNode {
         localName == "toolbarbutton" ||
         localName == "checkbox" ||
         localName == "a" ||
+        localName == "moz-button" ||
+        localName == "moz-box-button" ||
         localName == "moz-toggle" ||
         node.classList.contains("text-link") ||
-        (!arrowKey && isNavigableWithTabOnly)
+        (!arrowKey && isNavigableWithTabOnly) ||
+        node.dataset?.capturesFocus === "true"
       ) {
         // Set the tabindex attribute to make sure the node is focusable.
         // Don't do this for browser and iframe elements because this breaks
@@ -1603,7 +1607,8 @@ export var PanelView = class extends AssociatedToNode {
         if (
           localName != "browser" &&
           localName != "iframe" &&
-          !node.hasAttribute("tabindex")
+          !node.hasAttribute("tabindex") &&
+          node.dataset?.capturesFocus !== "true"
         ) {
           node.setAttribute("tabindex", "-1");
         }
@@ -1779,9 +1784,14 @@ export var PanelView = class extends AssociatedToNode {
       focus = null;
     }
 
-    // Some panels contain embedded documents. We can't manage
-    // keyboard navigation within those.
-    if (focus && (focus.tagName == "browser" || focus.tagName == "iframe")) {
+    // Some panels contain embedded documents or need to capture focus events.
+    // We can't manage keyboard navigation within those.
+    if (
+      focus &&
+      (focus.tagName == "browser" ||
+        focus.tagName == "iframe" ||
+        focus.dataset?.capturesFocus === "true")
+    ) {
       return;
     }
 
@@ -1876,7 +1886,13 @@ export var PanelView = class extends AssociatedToNode {
         // If the current button is _not_ one that points to a subview, pressing
         // the arrow key shouldn't do anything.
         let button = this.selectedElement;
-        if (!button || !button.classList.contains("subviewbutton-nav")) {
+        if (
+          !button ||
+          !(
+            button.classList.contains("subviewbutton-nav") ||
+            button.classList.contains("moz-button-subviewbutton-nav")
+          )
+        ) {
           break;
         }
       }
@@ -1901,14 +1917,26 @@ export var PanelView = class extends AssociatedToNode {
           shiftKey: event.shiftKey,
           metaKey: event.metaKey,
         };
+        // The a11y-checks want the target to be accessible. For moz-button the
+        // focus is really on the inner button which is accessible, but we check
+        // a11y against the event target (moz-button) which fails. Dispatch from
+        // the inner button element instead.
+        let target = button;
+        if (
+          button.localName == "moz-button" ||
+          button.localName == "moz-box-button"
+        ) {
+          target = button.buttonEl;
+          details.composed = true;
+        }
         let dispEvent = new event.target.ownerGlobal.MouseEvent(
           "mousedown",
           details
         );
-        button.dispatchEvent(dispEvent);
+        target.dispatchEvent(dispEvent);
         // This event will trigger a command event too.
         dispEvent = new event.target.ownerGlobal.PointerEvent("click", details);
-        button.dispatchEvent(dispEvent);
+        target.dispatchEvent(dispEvent);
         this._doingKeyboardActivation = false;
         break;
       }

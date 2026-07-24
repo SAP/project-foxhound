@@ -6,8 +6,8 @@
 
 /* Debug Logging support. */
 
-#ifndef xpclog_h___
-#define xpclog_h___
+#ifndef xpclog_h_
+#define xpclog_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
@@ -66,4 +66,4 @@ void XPC_Log_Finish();
 #  define XPC_LOG_FINISH() ((void)0)
 #endif
 
-#endif /* xpclog_h___ */
+#endif /* xpclog_h_ */

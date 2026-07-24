@@ -202,13 +202,14 @@
               this._finishFAYT(event);
             }
             break;
-          case KeyEvent.DOM_VK_TAB:
+          case KeyEvent.DOM_VK_TAB: {
             let shouldHandle =
               !event.altKey && !event.ctrlKey && !event.metaKey;
             if (shouldHandle && this.findMode != this.FIND_NORMAL) {
               this._finishFAYT(event);
             }
             break;
+          }
           case KeyEvent.DOM_VK_PAGE_UP:
           case KeyEvent.DOM_VK_PAGE_DOWN:
             if (
@@ -499,17 +500,16 @@
         return;
       }
 
-      this.browser.finder.requestMatchesCount(
-        this._findField.value,
-        this.findMode == this.FIND_LINKS
-      );
+      this.browser.finder.requestMatchesCount(this._findField.value, {
+        linksOnly: this.findMode == this.FIND_LINKS,
+      });
     }
 
     /**
      * Turns highlighting of all occurrences on or off.
      *
-     * @param {Boolean} highlight Whether to turn the highlight on or off.
-     * @param {Boolean} fromPrefObserver Whether the callee is the pref
+     * @param {boolean} highlight Whether to turn the highlight on or off.
+     * @param {boolean} fromPrefObserver Whether the callee is the pref
      *                                   observer, which means we should not set
      *                                   the same pref again.
      */
@@ -545,8 +545,8 @@
     /**
      * Updates the highlight-all mode of the findbar and its UI.
      *
-     * @param {Boolean} highlight Whether to turn the highlight on or off.
-     * @param {Boolean} fromPrefObserver Whether the callee is the pref
+     * @param {boolean} highlight Whether to turn the highlight on or off.
+     * @param {boolean} fromPrefObserver Whether the callee is the pref
      *                                   observer, which means we should not set
      *                                   the same pref again.
      */
@@ -568,7 +568,7 @@
     /**
      * Updates the case-sensitivity mode of the findbar and its UI.
      *
-     * @param {String} [str] The string for which case sensitivity might be
+     * @param {string} [str] The string for which case sensitivity might be
      *                       turned on. This only used when case-sensitivity is
      *                       in auto mode, see `_shouldBeCaseSensitive`. The
      *                       default value for this parameter is the find-field
@@ -602,7 +602,7 @@
     /**
      * Sets the findbar case-sensitivity mode.
      *
-     * @param {Number} caseSensitivity 0 - case insensitive,
+     * @param {number} caseSensitivity 0 - case insensitive,
      *                                 1 - case sensitive,
      *                                 2 - auto = case sensitive if the matching
      *                                     string contains upper case letters.
@@ -621,7 +621,7 @@
     /**
      * Updates the diacritic-matching mode of the findbar and its UI.
      *
-     * @param {String} [str] The string for which diacritic matching might be
+     * @param {string} [str] The string for which diacritic matching might be
      *                       turned on. This is only used when diacritic
      *                       matching is in auto mode, see
      *                       `_shouldMatchDiacritics`. The default value for
@@ -654,7 +654,8 @@
 
     /**
      * Sets the findbar diacritic-matching mode
-     * @param {Number} diacriticMatching 0 - ignore diacritics,
+     *
+     * @param {number} diacriticMatching 0 - ignore diacritics,
      *                                   1 - match diacritics,
      *                                   2 - auto = match diacritics if the
      *                                       matching string contains
@@ -697,7 +698,7 @@
     /**
      * Sets the findbar entire-word mode.
      *
-     * @param {Boolean} entireWord Whether or not entire-word mode should be
+     * @param {boolean} entireWord Whether or not entire-word mode should be
      *                             turned on.
      */
     toggleEntireWord(entireWord, fromPrefObserver) {
@@ -716,11 +717,11 @@
     /**
      * Opens and displays the find bar.
      *
-     * @param {Number} mode The find mode to be used, which is either
+     * @param {number} mode The find mode to be used, which is either
      *                      FIND_NORMAL, FIND_TYPEAHEAD or FIND_LINKS. If not
      *                      passed, we revert to the last find mode if any or
      *                      FIND_NORMAL.
-     * @return {Boolean} `true` if the find bar wasn't previously open, `false`
+     * @return {boolean} `true` if the find bar wasn't previously open, `false`
      *                   otherwise.
      */
     open(mode) {
@@ -752,7 +753,7 @@
     /**
      * Closes the findbar.
      *
-     * @param {Boolean} [noAnim] Whether to disable to closing animation. Used
+     * @param {boolean} [noAnim] Whether to disable to closing animation. Used
      *                           to close instantly and synchronously, when
      *                           other operations depend on this state.
      */
@@ -867,7 +868,7 @@
      * We get a fake event object through an IPC message when FAYT is being used
      * from within the browser. We then stuff that input in the find bar here.
      *
-     * @param {Object} fakeEvent Event object that looks and quacks like a
+     * @param {object} fakeEvent Event object that looks and quacks like a
      *                           native DOM KeyPress event.
      */
     _onBrowserKeypress(fakeEvent) {
@@ -1128,7 +1129,7 @@
      * Opens the findbar, focuses the findfield and selects its contents.
      * Also flashes the findbar the first time it's used.
      *
-     * @param {Number} mode The find mode to be used, which is either
+     * @param {number} mode The find mode to be used, which is either
      *                      FIND_NORMAL, FIND_TYPEAHEAD or FIND_LINKS. If not
      *                      passed, we revert to the last find mode if any or
      *                      FIND_NORMAL.
@@ -1194,7 +1195,7 @@
     /**
      * Stub for find-next and find-previous commands.
      *
-     * @param {Boolean} findPrevious `true` for find-previous, `false`
+     * @param {boolean} findPrevious `true` for find-previous, `false`
      *                               otherwise.
      */
     onFindAgainCommand(findPrevious) {
@@ -1271,7 +1272,7 @@
      * This handles all the result changes for both type-ahead-find and
      * highlighting.
      *
-     * @param {Object} data A dictionary that holds the following properties:
+     * @param {object} data A dictionary that holds the following properties:
      *                      - {Number} result  One of the FIND_* constants
      *                                         indicating the result of a search
      *                                         operation.
@@ -1308,7 +1309,7 @@
     /**
      * This handles all the result changes for matches counts.
      *
-     * @param {Object} result Result Object, containing the total amount of
+     * @param {object} result Result Object, containing the total amount of
      *                 matches and a vector of the current result.
      *                 - {Number} total Total count number of matches found.
      *                 - {Number} limit Current setting of the number of matches
@@ -1321,12 +1322,16 @@
         this._foundMatches.hidden = true;
         this._foundMatches.setAttribute("value", "");
       } else {
-        const l10nId =
-          result.total === -1
-            ? "findbar-found-matches-count-limit"
-            : "findbar-found-matches";
+        let l10nId, l10nArgs;
+        if (result.total === -1) {
+          l10nId = "findbar-found-matches-count-limit";
+          l10nArgs = { limit: result.limit };
+        } else {
+          l10nId = "findbar-found-matches";
+          l10nArgs = { current: result.current, total: result.total };
+        }
         this._foundMatches.hidden = false;
-        document.l10n.setAttributes(this._foundMatches, l10nId, result);
+        document.l10n.setAttributes(this._foundMatches, l10nId, l10nArgs);
       }
     }
 

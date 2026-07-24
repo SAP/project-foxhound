@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_WindowsLocationParent_h__
-#define mozilla_dom_WindowsLocationParent_h__
+#ifndef mozilla_dom_WindowsLocationParent_h_
+#define mozilla_dom_WindowsLocationParent_h_
 
-#include "nsCOMPtr.h"
 #include "mozilla/dom/PWindowsLocationParent.h"
+#include "nsCOMPtr.h"
 
 class nsGeoPosition;
 class nsIGeolocationUpdate;
@@ -49,4 +49,4 @@ class WindowsLocationParent final : public PWindowsLocationParent {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_WindowsLocationParent_h__
+#endif  // mozilla_dom_WindowsLocationParent_h_

@@ -10,6 +10,7 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/CheckedInt.h"  // mozilla::CheckedInt
 
+#include <compare>   // std::strong_ordering
 #include <stddef.h>  // ptrdiff_t
 
 namespace js {
@@ -38,11 +39,7 @@ class BytecodeOffset {
     return BytecodeOffset(Invalid());
   }
 
-  bool operator==(const BytecodeOffset& rhs) const {
-    return value_ == rhs.value_;
-  }
-
-  bool operator!=(const BytecodeOffset& rhs) const { return !(*this == rhs); }
+  constexpr bool operator==(const BytecodeOffset& rhs) const = default;
 
   inline BytecodeOffsetDiff operator-(const BytecodeOffset& rhs) const;
   inline BytecodeOffset operator+(const BytecodeOffsetDiff& diff) const;
@@ -50,25 +47,10 @@ class BytecodeOffset {
   inline BytecodeOffset& operator+=(const BytecodeOffsetDiff& diff);
   inline BytecodeOffset& operator-=(const BytecodeOffsetDiff& diff);
 
-  bool operator<(const BytecodeOffset& rhs) const {
+  auto operator<=>(const BytecodeOffset& rhs) const {
     MOZ_ASSERT(valid());
     MOZ_ASSERT(rhs.valid());
-    return value_ < rhs.value_;
-  }
-  bool operator<=(const BytecodeOffset& rhs) const {
-    MOZ_ASSERT(valid());
-    MOZ_ASSERT(rhs.valid());
-    return value_ <= rhs.value_;
-  }
-  bool operator>(const BytecodeOffset& rhs) const {
-    MOZ_ASSERT(valid());
-    MOZ_ASSERT(rhs.valid());
-    return value_ > rhs.value_;
-  }
-  bool operator>=(const BytecodeOffset& rhs) const {
-    MOZ_ASSERT(valid());
-    MOZ_ASSERT(rhs.valid());
-    return value_ >= rhs.value_;
+    return value_ <=> rhs.value_;
   }
 
   ptrdiff_t value() const { return value_; }
@@ -91,13 +73,7 @@ class BytecodeOffsetDiff {
 
   explicit constexpr BytecodeOffsetDiff(ptrdiff_t value_) : value_(value_) {}
 
-  bool operator==(const BytecodeOffsetDiff& rhs) const {
-    return value_ == rhs.value_;
-  }
-
-  bool operator!=(const BytecodeOffsetDiff& rhs) const {
-    return !(*this == rhs);
-  }
+  constexpr bool operator==(const BytecodeOffsetDiff& rhs) const = default;
 
   BytecodeOffsetDiff operator+(const BytecodeOffsetDiff& rhs) const {
     mozilla::CheckedInt<ptrdiff_t> result = value_;

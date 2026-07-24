@@ -8,8 +8,8 @@
         onload="setTimeout(runTest, 0);"
         style="margin: 0; border: 0; padding; 0;"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>  
-  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>  
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 
 <hbox id="box1">
@@ -25,11 +25,13 @@
         <menu id="menu">
           <menupopup id="popup" style="appearance: none; margin:0; border: 0; padding: 0;"
                                 onpopupshown="menuOpened()"
-                                onpopuphidden="if (event.target == this) SimpleTest.finish()">
+                                onpopuphidden="if (event.target == this) SimpleTest.finish()"
+                                native="false">
             <menuitem label="One"/>
             <menu id="submenu" label="Three">
               <menupopup id="subpopup" style="appearance: none; margin:0; border: 0; padding: 0;"
-                         onpopupshown="submenuOpened()">
+                         onpopupshown="submenuOpened()"
+                         native="false">
                 <menuitem label="Four"/>
               </menupopup>
             </menu>
@@ -56,6 +58,13 @@
 <![CDATA[
 
 SimpleTest.waitForExplicitFinish();
+
+function isRounded(a, b, msg) {
+  const diff = Math.abs(b - a);
+  const withinOnePx = diff <= 1;
+
+  is(withinOnePx, true, msg);
+}
 
 function runTest()
 {
@@ -110,15 +119,15 @@ function checkPosition(testid, elem, cleft, ctop, cright, cbottom)
   // -1 for right or bottom means that the exact size should not be
   // checked, just ensure it is larger then the left or top position
   var rect = elem.getBoundingClientRect();
-  is(Math.round(rect.left), cleft, testid + " client rect left");
+  isRounded(rect.left, cleft, testid + " client rect left");
   if (testid != "popup")
-    is(Math.round(rect.top), ctop, testid + " client rect top");
+    isRounded(rect.top, ctop, testid + " client rect top");
   if (cright >= 0)
-    is(Math.round(rect.right), cright, testid + " client rect right");
+    isRounded(rect.right, cright, testid + " client rect right");
   else
     ok(rect.right - rect.left > 20, testid + " client rect right");
   if (cbottom >= 0)
-    is(Math.round(rect.bottom), cbottom, testid + " client rect bottom");
+    isRounded(rect.bottom, cbottom, testid + " client rect bottom");
   else
     ok(rect.bottom - rect.top > 15, testid + " client rect bottom");
 }

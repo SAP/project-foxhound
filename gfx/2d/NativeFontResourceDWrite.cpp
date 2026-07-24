@@ -82,7 +82,7 @@ class DWriteFontFileStream final : public IDWriteFontFileStream {
    *
    * @param aData Font data
    */
-  bool Initialize(uint8_t* aData, uint32_t aSize);
+  bool Initialize(const uint8_t* aData, uint32_t aSize);
 
   // IUnknown interface
   IFACEMETHOD(QueryInterface)(IID const& iid, OUT void** ppObject) {
@@ -161,7 +161,7 @@ DWriteFontFileStream::~DWriteFontFileStream() {
   sFontFileStreams.erase(mFontFileKey);
 }
 
-bool DWriteFontFileStream::Initialize(uint8_t* aData, uint32_t aSize) {
+bool DWriteFontFileStream::Initialize(const uint8_t* aData, uint32_t aSize) {
   if (!mData.SetLength(aSize, fallible)) {
     return false;
   }
@@ -201,7 +201,7 @@ DWriteFontFileStream::ReleaseFileFragment(void* fragmentContext) {}
 
 /* static */
 already_AddRefed<NativeFontResourceDWrite> NativeFontResourceDWrite::Create(
-    uint8_t* aFontData, uint32_t aDataLength) {
+    const uint8_t* aFontData, uint32_t aDataLength) {
   RefPtr<IDWriteFactory> factory = Factory::GetDWriteFactory();
   if (!factory) {
     gfxWarning() << "Failed to get DWrite Factory.";

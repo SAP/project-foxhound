@@ -19,6 +19,7 @@
 
 #  ifdef WIN32
 #    define MOZ_USE_CHAR16_WRAPPER
+#    include <cstddef>
 #    include <cstdint>
 #    include "mozilla/Attributes.h"
 /**
@@ -44,7 +45,7 @@ class char16ptr_t {
       : mPtr(reinterpret_cast<const char16_t*>(aPtr)) {}
 
   /* Without this, nullptr assignment would be ambiguous. */
-  constexpr MOZ_IMPLICIT char16ptr_t(decltype(nullptr)) : mPtr(nullptr) {}
+  constexpr MOZ_IMPLICIT char16ptr_t(std::nullptr_t) : mPtr(nullptr) {}
 
   constexpr operator const char16_t*() const { return mPtr; }
   operator const wchar_t*() const {
@@ -95,11 +96,11 @@ class char16ptr_t {
   bool operator==(const char16ptr_t& aOther) const {
     return mPtr == aOther.mPtr;
   }
-  bool operator==(decltype(nullptr)) const { return mPtr == nullptr; }
+  bool operator==(std::nullptr_t) const { return mPtr == nullptr; }
   bool operator!=(const char16ptr_t& aOther) const {
     return mPtr != aOther.mPtr;
   }
-  bool operator!=(decltype(nullptr)) const { return mPtr != nullptr; }
+  bool operator!=(std::nullptr_t) const { return mPtr != nullptr; }
   char16ptr_t operator+(int aValue) const { return char16ptr_t(mPtr + aValue); }
   char16ptr_t operator+(unsigned int aValue) const {
     return char16ptr_t(mPtr + aValue);
@@ -121,8 +122,7 @@ class char16ptr_t {
   }
 };
 
-inline decltype((char*)0 - (char*)0) operator-(const char16_t* aX,
-                                               const char16ptr_t aY) {
+inline ptrdiff_t operator-(const char16_t* aX, const char16ptr_t aY) {
   return aX - static_cast<const char16_t*>(aY);
 }
 

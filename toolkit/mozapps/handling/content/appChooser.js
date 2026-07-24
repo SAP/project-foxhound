@@ -8,6 +8,9 @@ const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
 const { EnableDelayHelper } = ChromeUtils.importESModule(
   "resource://gre/modules/PromptUtils.sys.mjs"
 );
+const { getMozRemoteImageURL } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/modules/FaviconUtils.sys.mjs"
+);
 
 class MozHandler extends window.MozElements.MozRichlistitem {
   static get markup() {
@@ -146,7 +149,10 @@ let dialog = {
           // and users won't visit the handler's URL template, they'll only
           // visit URLs derived from that template (i.e. with %s in the template
           // replaced by the URL of the content being handled).
-          elm.setAttribute("image", uri.prePath + "/favicon.ico");
+          elm.setAttribute(
+            "image",
+            getMozRemoteImageURL(uri.prePath + "/favicon.ico", { size: 32 })
+          );
         }
         elm.setAttribute("description", uri.prePath);
 
@@ -285,7 +291,7 @@ let dialog = {
    * Determines if the accept button should be disabled or not
    */
   updateAcceptButton() {
-    this._dialog.setAttribute(
+    this._dialog.toggleAttribute(
       "buttondisabledaccept",
       this._acceptBtnDisabled || this._itemChoose.selected
     );
@@ -293,6 +299,7 @@ let dialog = {
 
   /**
    * Update the handler info to reflect the user choice.
+   *
    * @param {boolean} skipAsk - Whether we should persist the application
    * choice and skip asking next time.
    */

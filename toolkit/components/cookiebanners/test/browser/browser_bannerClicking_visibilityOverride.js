@@ -11,6 +11,7 @@ add_setup(clickTestSetup);
 
 /**
  * Insert a test rule with or without the skipPresenceVisibilityCheck flag.
+ *
  * @param {boolean} skipPresenceVisibilityCheck - Whether to set the flag for
  * the test rule.
  */

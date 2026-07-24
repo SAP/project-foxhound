@@ -11,7 +11,7 @@ ChromeUtils.defineESModuleGetters(this, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   SEARCH_SHORTCUTS:
     "moz-src:///toolkit/components/search/SearchShortcuts.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 async function doTopsitesTest({ trigger, assert }) {
@@ -69,7 +69,7 @@ async function doTopsitesSearchTest({ trigger, assert }) {
     // eslint-disable-next-line mozilla/valid-lazy
     let sandbox = lazy.sinon.createSandbox();
     sandbox
-      .stub(SearchService.prototype, "getAppProvidedEngines")
+      .stub(SearchService, "getAppProvidedEngines")
       .resolves([{ aliases: ["@test"] }]);
 
     let siteToPin = {

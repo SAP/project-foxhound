@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCORSListenerProxy_h__
-#define nsCORSListenerProxy_h__
+#ifndef nsCORSListenerProxy_h_
+#define nsCORSListenerProxy_h_
 
 #include "nsIStreamListener.h"
 #include "nsIInterfaceRequestor.h"

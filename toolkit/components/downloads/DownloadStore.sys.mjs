@@ -78,8 +78,8 @@ DownloadStore.prototype = {
   /**
    * Loads persistent downloads from the file to the list.
    *
-   * @return {Promise}
-   * @resolves When the operation finished successfully.
+   * @returns {Promise<void>}
+   *   Resolves when the operation finished successfully.
    * @rejects JavaScript exception.
    */
   load: function DS_load() {
@@ -157,8 +157,8 @@ DownloadStore.prototype = {
    *
    * If an error occurs, the previous file is not deleted.
    *
-   * @return {Promise}
-   * @resolves When the operation finished successfully.
+   * @returns {Promise<void>}
+   *   Resolves when the operation finished successfully.
    * @rejects JavaScript exception.
    */
   save: function DS_save() {

@@ -4,8 +4,8 @@
 
 #include "MFMediaEngineAudioStream.h"
 
-#include <mferror.h>
 #include <mfapi.h>
+#include <mferror.h>
 
 #include "MFMediaEngineUtils.h"
 #include "WMFUtils.h"

@@ -10,25 +10,25 @@
  * getElementsByTagName, some properties on HTMLDocument/Document, etc).
  */
 
-#ifndef nsContentList_h___
-#define nsContentList_h___
+#ifndef nsContentList_h_
+#define nsContentList_h_
 
 #include "mozilla/Attributes.h"
-#include "nsContentListDeclarations.h"
-#include "nsISupports.h"
-#include "nsTArray.h"
-#include "nsString.h"
-#include "nsIHTMLCollection.h"
-#include "nsINodeList.h"
-#include "nsStubMutationObserver.h"
-#include "nsAtomHashKeys.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsNameSpaceManager.h"
-#include "nsWrapperCache.h"
-#include "nsHashKeys.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/NameSpaceConstants.h"
+#include "nsAtomHashKeys.h"
+#include "nsContentListDeclarations.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsHashKeys.h"
+#include "nsIHTMLCollection.h"
+#include "nsINodeList.h"
+#include "nsISupports.h"
+#include "nsNameSpaceManager.h"
+#include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 // XXX Avoid including this here by moving function bodies to the cpp file.
 #include "nsIContent.h"
@@ -200,7 +200,7 @@ struct nsContentListKey {
  */
 class nsContentList : public nsBaseContentList,
                       public nsIHTMLCollection,
-                      public nsStubMutationObserver {
+                      public nsStubMultiMutationObserver {
  protected:
   enum class State : uint8_t {
     // The list is up to date and need not do any walking to be able to answer
@@ -387,6 +387,8 @@ class nsContentList : public nsBaseContentList,
    * @return whether we match something in the tree rooted at aContent
    */
   bool MatchSelf(nsIContent* aContent);
+
+  virtual nsINode* GetNextNode(nsINode* aCurrent);
 
   /**
    * Populate our list.  Stop once we have at least aNeededLength
@@ -619,25 +621,31 @@ class nsCacheableFuncStringHTMLCollection
 
 class nsLabelsNodeList final : public nsContentList {
  public:
-  nsLabelsNodeList(nsINode* aRootNode, nsContentListMatchFunc aFunc,
-                   nsContentListDestroyFunc aDestroyFunc, void* aData)
-      : nsContentList(aRootNode, aFunc, aDestroyFunc, aData) {}
+  nsLabelsNodeList(nsGenericHTMLElement* aLabeledElement, nsINode* aSubtreeRoot,
+                   nsContentListMatchFunc aMatchFunc,
+                   nsContentListDestroyFunc aDestroyFunc);
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
   JSObject* WrapObject(JSContext* cx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   /**
-   * Reset root, mutation observer, and clear content list
-   * if the root has been changed.
-   *
-   * @param aRootNode The node under which to limit our search.
+   * Reset roots, mutation observers and reference target observers, and clear
+   * content list if the roots have changed.
    */
-  void MaybeResetRoot(nsINode* aRootNode);
+  void ResetRoots();
+
+  void LastRelease() override;
+
+ protected:
+  virtual ~nsLabelsNodeList();
+
+  nsINode* GetNextNode(nsINode* aCurrent) override;
 
  private:
   /**
@@ -651,5 +659,28 @@ class nsLabelsNodeList final : public nsContentList {
    */
   void PopulateSelf(uint32_t aNeededLength,
                     uint32_t aExpectedElementsIfDirty = 0) override;
+
+  bool NodeIsInScope(nsINode* aNode);
+
+  static bool ResetRootsCallback(void* aData);
+  static bool SetDirtyCallback(void* aData);
+
+  void WatchLabeledDescendantsOfNearestAncestorLabel(Element* labeledHost);
+
+  /**
+   * An array of all relevant subtree roots for the labeled element.
+   *
+   * A labeled element's labels may include nodes from multiple roots, since
+   * each shadow root may have a reference target allowing labels to refer to an
+   * element within the shadow root, potentially recusively.
+   *
+   * This structure is populated by walking up from the labeled element,
+   * adding each subtree root in turn and walking out to the next one if the
+   * labeled element or the host of the previous root is the reference target of
+   * its subtree root.
+   *
+   * The last element in this array must always be the same as mRootNode.
+   */
+  nsTArray<nsINode*> mRoots;
 };
-#endif  // nsContentList_h___
+#endif  // nsContentList_h_

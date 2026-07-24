@@ -6,8 +6,8 @@ package org.mozilla.fenix.share
 
 import android.os.Bundle
 import android.view.View
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.HomeActivity
@@ -42,7 +42,7 @@ class AddNewDeviceFragment : Fragment(R.layout.fragment_add_new_device) {
         }
 
         binding.connectButton.setOnClickListener {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(R.string.sync_connect_device_dialog)
                 setPositiveButton(R.string.sync_confirmation_button) { dialog, _ -> dialog.cancel() }
                 create().withCenterAlignedButtons()

@@ -28,8 +28,8 @@ pub enum UuidMetric {
 #[derive(Debug, Clone)]
 pub struct UuidMetricIpc;
 
-crate::define_metric_metadata_getter!(UuidMetric, UUID_MAP);
-crate::define_metric_namer!(UuidMetric, PARENT_ONLY);
+define_metric_metadata_getter!(UuidMetric, UUID_MAP);
+define_metric_namer!(UuidMetric, PARENT_ONLY);
 
 impl UuidMetric {
     /// Create a new UUID metric.
@@ -119,28 +119,6 @@ impl glean::traits::Uuid for UuidMetric {
         }
     }
 
-    /// **Test-only API.**
-    ///
-    /// Get the stored UUID value.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `storage_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, storage_name: S) -> Option<Uuid> {
-        let storage_name = storage_name.into().map(|s| s.to_string());
-        match self {
-            UuidMetric::Parent { inner, .. } => inner
-                .test_get_value(storage_name)
-                .and_then(|s| Uuid::parse_str(&s).ok()),
-            UuidMetric::Child(_c) => panic!("Cannot get test value for in non-main process!"),
-        }
-    }
-
     /// **Exported for test purposes.**
     ///
     /// Gets the number of recorded errors for the given metric and error type.
@@ -164,6 +142,32 @@ impl glean::traits::Uuid for UuidMetric {
     }
 }
 
+#[inherent]
+impl glean::TestGetValue for UuidMetric {
+    type Output = Uuid;
+
+    /// **Test-only API.**
+    ///
+    /// Get the stored UUID value.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `storage_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<Uuid> {
+        match self {
+            UuidMetric::Parent { inner, .. } => inner
+                .test_get_value(ping_name)
+                .and_then(|s| Uuid::parse_str(&s).ok()),
+            UuidMetric::Child(_c) => panic!("Cannot get test value for in non-main process!"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -177,7 +181,12 @@ mod test {
         let expected = Uuid::new_v4();
         metric.set(expected.clone());
 
-        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            expected,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -203,7 +212,9 @@ mod test {
 
         assert_eq!(
             expected,
-            parent_metric.test_get_value("test-ping").unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "UUID metrics should only work in the parent process"
         );
     }

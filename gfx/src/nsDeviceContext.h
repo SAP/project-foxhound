@@ -3,22 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NS_DEVICECONTEXT_H_
-#define _NS_DEVICECONTEXT_H_
+#ifndef NS_DEVICECONTEXT_H_
+#define NS_DEVICECONTEXT_H_
 
-#include <stdint.h>                   // for uint32_t
-#include "gfxTypes.h"                 // for gfxFloat
-#include "mozilla/RefPtr.h"           // for RefPtr
-#include "nsCOMPtr.h"                 // for nsCOMPtr
-#include "nsCoord.h"                  // for nscoord
-#include "nsError.h"                  // for nsresult
-#include "nsISupports.h"              // for NS_INLINE_DECL_REFCOUNTING
-#include "nsMathUtils.h"              // for NS_round
-#include "nscore.h"                   // for char16_t, nsAString
-#include "mozilla/AppUnits.h"         // for AppUnits
-#include "nsFontMetrics.h"            // for nsFontMetrics::Params
-#include "mozilla/gfx/Point.h"        // for IntSize
-#include "mozilla/gfx/PrintPromise.h" // for PrintEndDocumentPromise
+#include <stdint.h>                    // for uint32_t
+#include "gfxTypes.h"                  // for gfxFloat
+#include "mozilla/RefPtr.h"            // for RefPtr
+#include "nsCOMPtr.h"                  // for nsCOMPtr
+#include "nsCoord.h"                   // for nscoord
+#include "nsError.h"                   // for nsresult
+#include "nsISupports.h"               // for NS_INLINE_DECL_REFCOUNTING
+#include "nsMathUtils.h"               // for NS_round
+#include "nscore.h"                    // for char16_t, nsAString
+#include "mozilla/AppUnits.h"          // for AppUnits
+#include "nsFontMetrics.h"             // for nsFontMetrics::Params
+#include "mozilla/gfx/Point.h"         // for IntSize
+#include "mozilla/gfx/PrintPromise.h"  // for PrintEndDocumentPromise
 
 class gfxContext;
 class gfxTextPerfMetrics;
@@ -90,6 +90,10 @@ class nsDeviceContext final {
    * not guaranteed.
    */
   int32_t AppUnitsPerDevPixel() const { return mAppUnitsPerDevPixel; }
+
+  static int32_t ComputeAppUnitsPerDevPixelForWidgetScale(
+      mozilla::CSSToLayoutDeviceScale);
+  static int32_t ApplyFullZoomToAPD(int32_t aAppUnitsPerPixel, float aFullZoom);
 
   /**
    * Convert device pixels which is used for gfx/thebes to nearest
@@ -302,4 +306,4 @@ class nsDeviceContext final {
   bool mIsInitialized = false;
 };
 
-#endif /* _NS_DEVICECONTEXT_H_ */
+#endif /* NS_DEVICECONTEXT_H_ */

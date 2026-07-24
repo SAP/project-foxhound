@@ -1,5 +1,6 @@
 [default]
 alert_threshold = 2.0
+subtest_alert_threshold = 5.0
 apps = "firefox, chrome, safari, safari-tp, custom-car"
 gecko_profile_interval = 1
 expose_browser_profiler = true
@@ -15,7 +16,7 @@ type = "benchmark"
 unit = "score"
 support_class = "jetstream3.py"
 repository = "https://github.com/webkit/jetstream"
-repository_revision = "6947a460f6b55ef5613c36263049ecf74c5ec1cd"
+repository_revision = "a3f5c45465f5271bed385321a0587bd4202682d6"
 test_script = "jetstream3.js"
 
 ["jetstream3"]

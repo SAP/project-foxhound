@@ -133,7 +133,7 @@ export var GeckoViewSessionStore = {
         }
         break;
       }
-      case "browsing-context-discarded":
+      case "browsing-context-discarded": {
         const permanentKey = aSubject?.embedderElement?.permanentKey;
         if (permanentKey) {
           this._browserSHistoryListener
@@ -141,6 +141,7 @@ export var GeckoViewSessionStore = {
             ?.unregister(permanentKey);
         }
         break;
+      }
     }
   },
 

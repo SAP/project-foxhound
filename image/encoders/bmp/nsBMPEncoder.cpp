@@ -23,7 +23,7 @@ NS_IMPL_ISUPPORTS(nsBMPEncoder, imgIEncoder, nsIInputStream,
 nsBMPEncoder::nsBMPEncoder()
     : mBMPInfoHeader{},
       mImageBufferStart(nullptr),
-      mImageBufferCurr(0),
+      mImageBufferCurr(nullptr),
       mImageBufferSize(0),
       mImageBufferReadPoint(0),
       mFinished(false),
@@ -52,7 +52,8 @@ nsBMPEncoder::InitFromData(const uint8_t* aData,
                            uint32_t aLength,  // (unused, req'd by JS)
                            uint32_t aWidth, uint32_t aHeight, uint32_t aStride,
                            uint32_t aInputFormat,
-                           const nsAString& aOutputOptions) {
+                           const nsAString& aOutputOptions,
+                           const nsACString& aRandomizationKey) {
   // validate input format
   if (aInputFormat != INPUT_FORMAT_RGB && aInputFormat != INPUT_FORMAT_RGBA &&
       aInputFormat != INPUT_FORMAT_HOSTARGB) {

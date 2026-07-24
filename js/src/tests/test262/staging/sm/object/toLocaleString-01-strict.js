@@ -5,12 +5,10 @@
 /*---
 flags:
   - onlyStrict
-includes: [sm/non262.js, sm/non262-shell.js]
 description: |
   pending
 esid: pending
 ---*/
-"use strict";
 
 Object.defineProperty(String.prototype, "toString", {
     get() {
@@ -20,6 +18,5 @@ Object.defineProperty(String.prototype, "toString", {
     }
 })
 assert.sameValue(Object.prototype.toLocaleString.call("test"), "string");
-
 
 reportCompare(0, 0);

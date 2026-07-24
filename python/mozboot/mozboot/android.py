@@ -23,18 +23,20 @@ from mozboot.bootstrap import MOZCONFIG_SUGGESTION_TEMPLATE
 # We need the NDK version in multiple different places, and it's inconvenient
 # to pass down the NDK version to all relevant places, so we have this global
 # variable.
-NDK_VERSION = "r28b"
+NDK_VERSION = "r29"
 CMDLINE_TOOLS_VERSION_STRING = "19.0"
 CMDLINE_TOOLS_VERSION = "13114758"
 
-BUNDLETOOL_VERSION = "1.18.1"
+BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_URL = f"https://github.com/google/bundletool/releases/download/{BUNDLETOOL_VERSION}/bundletool-all-{BUNDLETOOL_VERSION}.jar"
 
 # We expect the emulator AVD definitions to be platform agnostic
 X86_64_ANDROID_AVD = "linux64-android-avd-x86_64-repack"
 ARM64_ANDROID_AVD = "linux64-android-avd-arm64-repack"
 
-AVD_MANIFEST_X86_64 = Path(__file__).resolve().parent / "android-avds/x86_64.json"
+AVD_MANIFEST_X86_64 = (
+    Path(__file__).resolve().parent / "android-avds/android34-x86_64.json"
+)
 AVD_MANIFEST_ARM64 = Path(__file__).resolve().parent / "android-avds/arm64.json"
 
 MOZBUILD_PATH = Path(get_state_dir())
@@ -46,8 +48,8 @@ AVD_HOME_PATH = Path(
 )
 
 JAVA_VERSION_MAJOR = "17"
-JAVA_VERSION_MINOR = "0.15"
-JAVA_VERSION_PATCH = "6"
+JAVA_VERSION_MINOR = "0.17"
+JAVA_VERSION_PATCH = "10"
 
 ANDROID_NDK_EXISTS = """
 Looks like you have the correct version of the Android NDK installed at:
@@ -889,7 +891,7 @@ def ensure_java(os_name: str, os_arch: str):
         ext = "zip" if os_name == "windows" else "tar.gz"
 
         # e.g. https://github.com/adoptium/temurin17-binaries/releases/
-        #      download/jdk-17.0.15%2B6/OpenJDK17U-jdk_x64_linux_hotspot_17.0.15_6.tar.gz
+        #      download/jdk-17.0.17%2B10/OpenJDK17U-jdk_x64_linux_hotspot_17.0.17_10.tar.gz
         java_url = (
             f"https://github.com/adoptium/temurin{JAVA_VERSION_MAJOR}-binaries/releases/"
             f"download/jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}%2B{JAVA_VERSION_PATCH}/"
@@ -899,7 +901,7 @@ def ensure_java(os_name: str, os_arch: str):
 
 
 def get_java_bin_path(os_name: str, toolchain_path: Path):
-    # Like jdk-17.0.15+6
+    # Like jdk-17.0.17+10
     jdk_folder = f"jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}+{JAVA_VERSION_PATCH}"
 
     java_path = toolchain_path / "jdk" / jdk_folder

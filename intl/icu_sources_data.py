@@ -211,9 +211,7 @@ def try_run(name, command, cwd=None, **kwargs):
     except subprocess.CalledProcessError:
         print(
             """Error running "{}" in directory {}
-    See output in {}""".format(
-                " ".join(command), cwd, f.name
-            ),
+    See output in {}""".format(" ".join(command), cwd, f.name),
             file=sys.stderr,
         )
         return False
@@ -232,21 +230,19 @@ def update_data_file(topsrcdir):
     configure = mozpath.join(topsrcdir, "intl/icu/source/configure")
     env = dict(os.environ)
     # bug 1262101 - these should be shared with the moz.build files
-    env.update(
-        {
-            "CPPFLAGS": (
-                "-DU_NO_DEFAULT_INCLUDE_UTF_HEADERS=1 "
-                + "-DU_HIDE_OBSOLETE_UTF_OLD_H=1 "
-                + "-DUCONFIG_NO_LEGACY_CONVERSION "
-                + "-DUCONFIG_NO_TRANSLITERATION "
-                + "-DUCONFIG_NO_REGULAR_EXPRESSIONS "
-                + "-DUCONFIG_NO_BREAK_ITERATION "
-                + "-DUCONFIG_NO_IDNA "
-                + "-DUCONFIG_NO_MF2 "
-                + "-DU_CHARSET_IS_UTF8 "
-            )
-        }
-    )
+    env.update({
+        "CPPFLAGS": (
+            "-DU_NO_DEFAULT_INCLUDE_UTF_HEADERS=1 "
+            + "-DU_HIDE_OBSOLETE_UTF_OLD_H=1 "
+            + "-DUCONFIG_NO_LEGACY_CONVERSION "
+            + "-DUCONFIG_NO_TRANSLITERATION "
+            + "-DUCONFIG_NO_REGULAR_EXPRESSIONS "
+            + "-DUCONFIG_NO_BREAK_ITERATION "
+            + "-DUCONFIG_NO_IDNA "
+            + "-DUCONFIG_NO_MF2 "
+            + "-DU_CHARSET_IS_UTF8 "
+        )
+    })
 
     # Exclude data that we currently don't need.
     #

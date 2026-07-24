@@ -56,10 +56,6 @@ LazyLogModule gUtilityProcessLog("utilityproc");
             ("UtilityProcessHost=%p, " msg, this, ##__VA_ARGS__))
 #endif
 
-#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
-bool UtilityProcessHost::sLaunchWithMacSandbox = false;
-#endif
-
 UtilityProcessHost::UtilityProcessHost(SandboxingKind aSandbox,
                                        RefPtr<Listener> aListener)
     : GeckoChildProcessHost(GeckoProcessType_Utility),
@@ -71,24 +67,15 @@ UtilityProcessHost::UtilityProcessHost(SandboxingKind aSandbox,
        this, aSandbox);
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
-  if (!sLaunchWithMacSandbox) {
-    sLaunchWithMacSandbox = IsUtilitySandboxEnabled(aSandbox);
-  }
-  mDisableOSActivityMode = sLaunchWithMacSandbox;
+  mDisableOSActivityMode = IsUtilitySandboxEnabled(aSandbox);
 #endif
-#if defined(MOZ_SANDBOX)
-  mSandbox = aSandbox;
-#endif
+  mUtilitySandbox = aSandbox;
 }
 
 UtilityProcessHost::~UtilityProcessHost() {
   MOZ_COUNT_DTOR(UtilityProcessHost);
-#if defined(MOZ_SANDBOX)
   LOGD("[%p] UtilityProcessHost::~UtilityProcessHost sandboxingKind=%" PRIu64,
-       this, mSandbox);
-#else
-  LOGD("[%p] UtilityProcessHost::~UtilityProcessHost", this);
-#endif
+       this, mUtilitySandbox);
 }
 
 bool UtilityProcessHost::Launch(geckoargs::ChildProcessArgs aExtraOpts) {
@@ -196,15 +183,17 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   UniquePtr<SandboxBroker::Policy> policy;
-  switch (mSandbox) {
-    case SandboxingKind::GENERIC_UTILITY:
-      policy = SandboxBrokerPolicyFactory::GetUtilityProcessPolicy(
-          GetActor()->OtherPid());
-      break;
+  if (IsUtilitySandboxEnabled(mUtilitySandbox)) {
+    switch (mUtilitySandbox) {
+      case SandboxingKind::GENERIC_UTILITY:
+        policy = SandboxBrokerPolicyFactory::GetUtilityProcessPolicy(
+            GetActor()->OtherPid());
+        break;
 
-    default:
-      MOZ_ASSERT(false, "Invalid SandboxingKind");
-      break;
+      default:
+        MOZ_ASSERT(false, "Invalid SandboxingKind");
+        break;
+    }
   }
   if (policy != nullptr) {
     brokerFd = Some(FileDescriptor());
@@ -212,7 +201,7 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
         std::move(policy), GetActor()->OtherPid(), brokerFd.ref());
     // This is unlikely to fail and probably indicates OS resource
     // exhaustion, but we can at least try to recover.
-    Unused << NS_WARN_IF(mSandboxBroker == nullptr);
+    (void)NS_WARN_IF(mSandboxBroker == nullptr);
     MOZ_ASSERT(brokerFd.ref().IsValid());
   }
 #endif  // XP_LINUX && MOZ_SANDBOX
@@ -223,10 +212,10 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
   isReadyForBackgroundProcessing = dllSvc->IsReadyForBackgroundProcessing();
 #endif
 
-  Unused << GetActor()->SendInit(brokerFd, Telemetry::CanRecordReleaseData(),
-                                 isReadyForBackgroundProcessing);
+  (void)GetActor()->SendInit(brokerFd, Telemetry::CanRecordReleaseData(),
+                             isReadyForBackgroundProcessing);
 
-  Unused << GetActor()->SendInitProfiler(
+  (void)GetActor()->SendInitProfiler(
       ProfilerParent::CreateForProcess(GetActor()->OtherPid()));
 
   LOGD("[%p] UtilityProcessHost::InitAfterConnect succeeded", this);
@@ -362,7 +351,7 @@ MacSandboxType UtilityProcessHost::GetMacSandboxType() {
 #ifdef MOZ_WMF_CDM_LPAC_SANDBOX
 void UtilityProcessHost::EnsureWidevineL1PathForSandbox(
     geckoargs::ChildProcessArgs& aExtraOpts) {
-  if (mSandbox != SandboxingKind::MF_MEDIA_ENGINE_CDM) {
+  if (mUtilitySandbox != SandboxingKind::MF_MEDIA_ENGINE_CDM) {
     return;
   }
 

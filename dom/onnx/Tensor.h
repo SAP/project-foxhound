@@ -7,14 +7,14 @@
 #ifndef DOM_TENSOR_H_
 #define DOM_TENSOR_H_
 
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ONNXBinding.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ONNXBinding.h"
 #include "mozilla/dom/onnxruntime_c_api.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "nsIGlobalObject.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class Promise;

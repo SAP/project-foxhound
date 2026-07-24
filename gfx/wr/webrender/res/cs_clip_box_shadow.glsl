@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include shared,clip_shared
+#include shared,clip_shared,image_source
 
 varying highp vec4 vLocalPos;
 varying highp vec2 vUv;
@@ -17,7 +17,7 @@ flat varying mediump vec2 vClipMode;
 
 #ifdef WR_VERTEX_SHADER
 
-PER_INSTANCE in ivec2 aClipDataResourceAddress;
+PER_INSTANCE in int aClipDataResourceAddress;
 PER_INSTANCE in vec2 aClipSrcRectSize;
 PER_INSTANCE in int aClipMode;
 PER_INSTANCE in ivec2 aStretchMode;
@@ -25,7 +25,7 @@ PER_INSTANCE in vec4 aClipDestRect;
 
 struct ClipMaskInstanceBoxShadow {
     ClipMaskInstanceCommon base;
-    ivec2 resource_address;
+    int resource_address;
 };
 
 ClipMaskInstanceBoxShadow fetch_clip_item() {
@@ -61,7 +61,7 @@ void main(void) {
     Transform clip_transform = fetch_transform(cmi.base.clip_transform_id);
     Transform prim_transform = fetch_transform(cmi.base.prim_transform_id);
     BoxShadowData bs_data = fetch_data();
-    ImageSource res = fetch_image_source_direct(cmi.resource_address);
+    ImageSource res = fetch_image_source(cmi.resource_address);
 
     RectWithEndpoint dest_rect = bs_data.dest_rect;
 

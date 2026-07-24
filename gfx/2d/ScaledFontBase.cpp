@@ -103,7 +103,7 @@ SkPath ScaledFontBase::GetSkiaPathForGlyphs(const GlyphBuffer& aBuffer) {
   } ctx = {aBuffer.mGlyphs};
 
   font.getPaths(
-      indices.data(), indices.size(),
+      {indices.data(), indices.size()},
       [](const SkPath* glyphPath, const SkMatrix& scaleMatrix, void* ctxPtr) {
         Context& ctx = *reinterpret_cast<Context*>(ctxPtr);
         if (glyphPath) {

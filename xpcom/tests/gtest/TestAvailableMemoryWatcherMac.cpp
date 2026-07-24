@@ -9,7 +9,6 @@
 #include "AvailableMemoryWatcher.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/Unused.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsITimer.h"
@@ -34,7 +33,8 @@ bool WaitUntil(const ConditionT& aCondition, uint32_t aTimeoutMs) {
       [](nsITimer*, void* isTimeout) {
         *reinterpret_cast<bool*>(isTimeout) = true;
       },
-      &isTimeout, aTimeoutMs, nsITimer::TYPE_ONE_SHOT, __func__);
+      &isTimeout, aTimeoutMs, nsITimer::TYPE_ONE_SHOT,
+      "TestAvailableMemoryWatcherMac"_ns);
 
   SpinEventLoopUntil("TestAvailableMemoryWatcherMac"_ns, [&]() -> bool {
     if (isTimeout) {

@@ -10,7 +10,7 @@ import { ShortcutUtils } from "resource://gre/modules/ShortcutUtils.sys.mjs";
 
 const lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
+  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", Ci.nsIWindowsUIUtils],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -270,6 +270,7 @@ export var PictureInPicture = {
 
   /**
    * Get the PiP panel for a browser. Create the panel if needed.
+   *
    * @param {Browser} browser The current browser
    * @returns panel The panel element
    */
@@ -321,6 +322,7 @@ export var PictureInPicture = {
 
   /**
    * Increase the count of PiP windows for a given browser
+   *
    * @param browser The browser to increase PiP count in browserWeakMap
    */
   addPiPBrowserToWeakMap(browser) {
@@ -362,6 +364,7 @@ export var PictureInPicture = {
   /**
    * Decrease the count of PiP windows for a given browser.
    * If the count becomes 0, we will remove the browser from the WeakMap
+   *
    * @param browser The browser to decrease PiP count in browserWeakMap
    */
   removePiPBrowserFromWeakMap(browser) {
@@ -496,6 +499,7 @@ export var PictureInPicture = {
 
   /**
    * Update the respect PiPDisabled pref value when the toggle is clicked.
+   *
    * @param {Event} event The event from toggling the respect
    *   PiPDisabled in the PiP panel
    */
@@ -514,8 +518,9 @@ export var PictureInPicture = {
   /**
    * Updates the PiP count and PiPDisabled count of eligible PiP videos for a
    * respective WindowGlobal.
+   *
    * @param {BrowsingContext} browsingContext The BrowsingContext with eligible videos
-   * @param {Object} object
+   * @param {object} object
    *    pipCount: The number of eligible videos for the respective WindowGlobal
    *    pipDisabledCount: The number of disablePiP videos for the respective WindowGlobal
    */
@@ -530,6 +535,7 @@ export var PictureInPicture = {
   /**
    * A generator function that yeilds a WindowGlobal, it's respective PiP
    * count, and if any of the videos have PiPDisabled set.
+   *
    * @param {Browser} browser The selected browser
    */
   *windowGlobalPipCountGenerator(browser) {
@@ -557,6 +563,7 @@ export var PictureInPicture = {
   /**
    * Gets the total eligible video count and total PiPDisabled count for a
    * given browser.
+   *
    * @param {Browser} browser The selected browser
    * @returns Total count of eligible PiP videos for the selected broser
    */
@@ -577,9 +584,10 @@ export var PictureInPicture = {
 
   /**
    * This function updates the hover text on the urlbar PiP button when we enter or exit PiP
+   *
    * @param {Document} document The window document
    * @param {Element} pipToggle The urlbar PiP button
-   * @param {String} dataL10nId The data l10n id of the string we want to show
+   * @param {string} dataL10nId The data l10n id of the string we want to show
    */
   updateUrlbarHoverText(document, pipToggle, dataL10nId) {
     let shortcut = document.getElementById("key_togglePictureInPicture");
@@ -593,6 +601,7 @@ export var PictureInPicture = {
    * Toggles the visibility of the PiP urlbar button. If the total video count
    * is 1, then we will show the button. If any eligible video has PiPDisabled,
    * then the button will show. Otherwise the button is hidden.
+   *
    * @param {Browser} browser The selected browser
    */
   updateUrlbarToggle(browser) {
@@ -630,6 +639,7 @@ export var PictureInPicture = {
   /**
    * Open the PiP panel if any video has PiPDisabled, otherwise finds the
    * correct WindowGlobal to open the eligible PiP video.
+   *
    * @param {Event} event Event from clicking the PiP urlbar button
    */
   toggleUrlbar(event) {
@@ -689,6 +699,7 @@ export var PictureInPicture = {
    * Set the toggle for PiPDisabled when the panel is shown.
    * If the pref is set from about:config, we need to update
    * the toggle switch in the panel to match the pref.
+   *
    * @param {Event} event The panel shown event
    */
   onPipPanelShown(event) {
@@ -701,6 +712,7 @@ export var PictureInPicture = {
    * The button will show when there is more than 1 video and at least 1 video
    * has PiPDisabled. If we no longer want to respect PiPDisabled then we
    * need to check if the urlbar button should still be visible.
+   *
    * @param {Event} event The panel hidden event
    */
   onPipPanelHidden(event) {
@@ -709,6 +721,7 @@ export var PictureInPicture = {
 
   /**
    * Create the PiP panel if needed and toggle the display of the panel
+   *
    * @param {Browser} browser The current browser
    */
   togglePipPanel(browser) {
@@ -731,6 +744,7 @@ export var PictureInPicture = {
   /**
    * Sets the PiP urlbar to an active state. This changes the icon in the
    * urlbar button to the unpip icon.
+   *
    * @param {Window} win The current Window
    */
   setUrlbarPipIconActive(win) {
@@ -747,6 +761,7 @@ export var PictureInPicture = {
   /**
    * Sets the PiP urlbar to an inactive state. This changes the icon in the
    * urlbar button to the open pip icon.
+   *
    * @param {Window} win The current window
    */
   setUrlbarPipIconInactive(win) {
@@ -815,7 +830,7 @@ export var PictureInPicture = {
    * Closes a single PiP window. Used exclusively in conjunction with support
    * for multiple PiP windows
    *
-   * @param {Object} closeData
+   * @param {object} closeData
    *   Additional data required to complete a close operation on a PiP window
    * @param {PictureInPictureParent} closeData.actorRef
    *   The PictureInPictureParent actor associated with the PiP window being closed
@@ -1490,6 +1505,7 @@ export var PictureInPicture = {
    * currently has a PiP window.
    * If the browser has a PiP window we want to keep the browser in an active state because
    * the browser is still partially visible.
+   *
    * @param browser The browser to check if it has a PiP window
    * @returns true if browser has PiP window else false
    */
@@ -1521,10 +1537,11 @@ export var PictureInPicture = {
   /**
    * This function takes a screen and will return the left, top, width and
    * height of the screen
+   *
    * @param {Screen} screen
    * The screen we need to get the size and coordinates of
    *
-   * @returns {array}
+   * @returns {Array}
    * Size and location of screen in desktop pixels.
    *
    *   screenLeft.value (int):
@@ -1593,6 +1610,7 @@ export var PictureInPicture = {
 
   /**
    * Saves position and size of Picture-in-Picture window
+   *
    * @param {Window} win The Picture-in-Picture window
    */
   savePosition(win) {
@@ -1616,6 +1634,7 @@ export var PictureInPicture = {
 
   /**
    * Load last Picture in Picture location and size
+   *
    * @returns {object}
    *   The size and position of the last Picture in Picture window.
    *

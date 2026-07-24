@@ -12,22 +12,16 @@
 #define RTC_BASE_PLATFORM_THREAD_H_
 
 #include <functional>
-#include <string>
-#if !defined(WEBRTC_WIN)
-#include <pthread.h>
-#endif
-
 #include <optional>
 
 #include "absl/strings/string_view.h"
-#include "rtc_base/platform_thread_types.h"
+#include "rtc_base/platform_thread_types.h"  // IWYU pragma: keep
 
-#include "rtc_base/deprecated/recursive_critical_section.h"
+#if !defined(WEBRTC_WIN)
+#include <pthread.h>  // IWYU pragma: keep
+#endif
 
 namespace webrtc {
-
-// Bug 1691641
-class PlatformUIThread;
 
 enum class ThreadPriority {
   kLow = 1,
@@ -119,18 +113,9 @@ class PlatformThread final {
 
   std::optional<Handle> handle_;
   bool joinable_ = false;
-  // Bug 1691641
-  friend PlatformUIThread;
 };
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::PlatformThread;
-using ::webrtc::ThreadAttributes;
-using ::webrtc::ThreadPriority;
-}  // namespace rtc
 
 #endif  // RTC_BASE_PLATFORM_THREAD_H_

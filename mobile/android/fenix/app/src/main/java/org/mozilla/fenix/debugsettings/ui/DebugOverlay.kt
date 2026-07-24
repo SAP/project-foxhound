@@ -11,17 +11,19 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.draggable2D
 import androidx.compose.foundation.gestures.rememberDraggable2DState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
@@ -41,8 +43,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import mozilla.components.compose.base.button.FloatingActionButton
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.button.FloatingActionButton
 import org.mozilla.fenix.debugsettings.navigation.DebugDrawerDestination
 import org.mozilla.fenix.debugsettings.store.DrawerStatus
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -69,7 +71,6 @@ private const val INITIAL_FAB_OFFSET_Y = 0f
  * @param onDrawerClose Invoked when the drawer is closed.
  * @param onDrawerBackButtonClick Invoked when the user taps on the back button in the app bar.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongMethod")
 @Composable
 fun DebugOverlay(
@@ -119,10 +120,11 @@ fun DebugOverlay(
             ),
             exit = slideOutHorizontally() + shrinkHorizontally() + fadeOut(),
         ) {
-            Row {
+            Row(modifier = Modifier.background(MaterialTheme.colorScheme.scrim)) {
                 ModalDrawerSheet(
-                    drawerContainerColor = FirefoxTheme.colors.layer1,
                     drawerState = drawerState,
+                    drawerContainerColor = MaterialTheme.colorScheme.surface,
+                    windowInsets = WindowInsets(),
                 ) {
                     DebugDrawer(
                         navController = navController,
@@ -153,7 +155,6 @@ private fun DebugOverlayPreview() {
                 content = {
                     Text(
                         text = "Tool $index",
-                        color = FirefoxTheme.colors.textPrimary,
                         style = FirefoxTheme.typography.headline6,
                     )
                 },

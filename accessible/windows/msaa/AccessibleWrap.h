@@ -7,17 +7,10 @@
 #ifndef mozilla_a11y_AccessibleWrap_h_
 #define mozilla_a11y_AccessibleWrap_h_
 
-#include "nsCOMPtr.h"
 #include "LocalAccessible.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/mscom/Utils.h"
-#include "mozilla/StaticPtr.h"
-#include "nsXULAppAPI.h"
-#include "Units.h"
 
 namespace mozilla {
 namespace a11y {
-class DocRemoteAccessibleWrap;
 class MsaaAccessible;
 
 /**
@@ -35,22 +28,7 @@ class AccessibleWrap : public LocalAccessible {
   // LocalAccessible
   virtual void Shutdown() override;
 
-  // Helper methods
-  /**
-   * System caret support: update the Windows caret position.
-   * The system caret works more universally than the MSAA caret
-   * For example, Window-Eyes, JAWS, ZoomText and Windows Tablet Edition use it
-   * We will use an invisible system caret.
-   * Gecko is still responsible for drawing its own caret
-   */
-  static void UpdateSystemCaretFor(Accessible* aAccessible);
-
  public:
-  /**
-   * Determine whether this is the root accessible for its HWND.
-   */
-  bool IsRootForHWND();
-
   MsaaAccessible* GetMsaa();
   virtual void GetNativeInterface(void** aOutAccessible) override;
 

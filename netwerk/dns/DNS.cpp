@@ -6,7 +6,6 @@
 
 #include "mozilla/net/DNS.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -239,6 +238,11 @@ NetAddr::NetAddr(const PRNetAddr* prAddr) { PRNetAddrToNetAddr(prAddr, this); }
 
 nsILoadInfo::IPAddressSpace NetAddr::GetIpAddressSpace() const {
   const NetAddr* addr = this;
+  if (addr->raw.family != AF_INET && addr->raw.family != AF_INET6) {
+    // We don't know the address space for non-IP addresses.
+    return nsILoadInfo::IPAddressSpace::Unknown;
+  }
+
   nsILoadInfo::IPAddressSpace overriddenIpAddressSpace;
 
   if (NS_SUCCEEDED(gIOService->GetOverridenIpAddressSpace(
@@ -246,8 +250,12 @@ nsILoadInfo::IPAddressSpace NetAddr::GetIpAddressSpace() const {
     return overriddenIpAddressSpace;
   }
 
-  if (addr->IsBenchMarkingAddress() || addr->IsLoopbackAddr() ||
-      addr->IsIPAddrAny()) {
+  if (StaticPrefs::network_lna_benchmarking_is_local() &&
+      addr->IsBenchMarkingAddress()) {
+    return nsILoadInfo::IPAddressSpace::Local;
+  }
+
+  if (addr->IsLoopbackAddr() || addr->IsIPAddrAny()) {
     return nsILoadInfo::IPAddressSpace::Local;
   }
 

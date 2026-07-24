@@ -7,6 +7,29 @@ package mozilla.components.concept.storage
 import kotlinx.coroutines.Deferred
 
 /**
+ * Hint types that provide context in which a login entry was created or presented.
+ */
+enum class LoginHint {
+    /** No hint specified. */
+    NONE,
+
+    /** Auto-generated secure password. */
+    GENERATED,
+
+    /** The form that is considered insecure. */
+    INSECURE_FORM,
+
+    /** The username is shared with another login entry. */
+    DUPLICATE_USERNAME,
+
+    /** The login entry's origin matches the login form origin. */
+    MATCHING_ORIGIN,
+
+    /** Indicates that an email mask should be offered. */
+    EMAIL_MASK,
+}
+
+/**
  * A login stored in the database
  */
 data class Login(
@@ -63,6 +86,23 @@ data class Login(
      * Time of last password change in milliseconds from the unix epoch.
      */
     val timePasswordChanged: Long = 0L,
+    /**
+     * Time of last breach in milliseconds from the unix epoch.
+     * A breach indicates that the login's origin has been found in a known data breach.
+     * This timestamp represents when the breach affecting this login's origin was last detected.
+     * Note: Breach information is ingested on Desktop.
+     */
+    val timeOfLastBreach: Long? = null,
+    /**
+     * Time of last breach alert dismissal in milliseconds from the unix epoch.
+     * This field is set on Desktop when a user discards the warning message of the breach.
+     */
+    val timeLastBreachAlertDismissed: Long? = null,
+    /**
+     * A hint provides context in which this item was created. For example, [LoginHint.GENERATED]
+     * tells a consumer that the password was generated.
+     */
+    val hint: LoginHint = LoginHint.NONE,
 ) {
     /**
      * Converts [Login] into a [LoginEntry].
@@ -122,7 +162,7 @@ data class EncryptedLogin(
 /**
  * An interface describing a storage layer for logins/passwords.
  */
-interface LoginsStorage : AutoCloseable {
+interface LoginsStorage : Storage, StorageMaintenanceRegistry, AutoCloseable {
     /**
      * Clears out all local state, bringing us back to the state before the first write (or sync).
      */
@@ -156,6 +196,13 @@ interface LoginsStorage : AutoCloseable {
      * @return A list of stored [Login] records.
      */
     suspend fun list(): List<Login>
+
+    /**
+     * Counts the full list of logins from the underlying storage layer.
+     *
+     * @return A count of stored [Login] records.
+     */
+    suspend fun count(): Long
 
     /**
      * Calculate how we should save a login
@@ -211,6 +258,22 @@ interface LoginsStorage : AutoCloseable {
      * @return A list of [Login] objects, representing matching logins.
      */
     suspend fun getByBaseDomain(origin: String): List<Login>
+
+    override fun registerStorageMaintenanceWorker() {
+       // Implemented by concrete implementation of `LoginsStorage`
+    }
+
+    override fun unregisterStorageMaintenanceWorker(uniqueWorkName: String) {
+        // Implemented by concrete implementation of `LoginsStorage`
+    }
+
+    override suspend fun runMaintenance(dbSizeLimit: UInt) {
+        // Implemented by concrete implementation of `LoginsStorage`
+    }
+
+    override suspend fun warmUp() {
+        // Implemented by concrete implementation of `LoginsStorage`
+    }
 }
 
 /**

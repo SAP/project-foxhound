@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __AboutWindowsMessages_h__
-#define __AboutWindowsMessages_h__
+#ifndef AboutWindowsMessages_h_
+#define AboutWindowsMessages_h_
 
 #include "mozilla/MozPromise.h"
 #include "nsIAboutWindowsMessages.h"
@@ -26,4 +26,4 @@ class AboutWindowsMessages final : public nsIAboutWindowsMessages {
 
 }  // namespace mozilla
 
-#endif  // __AboutWindowsMessages_h__
+#endif  // AboutWindowsMessages_h_

@@ -4,17 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workernavigator_h__
-#define mozilla_dom_workernavigator_h__
+#ifndef mozilla_dom_workernavigator_h_
+#define mozilla_dom_workernavigator_h_
 
 #include <stdint.h>
+
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/workerinternals/RuntimeService.h"
-#include "mozilla/StaticPrefs_privacy.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsStringFwd.h"
@@ -126,4 +127,4 @@ class WorkerNavigator final : public nsWrapperCache {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_workernavigator_h__
+#endif  // mozilla_dom_workernavigator_h_

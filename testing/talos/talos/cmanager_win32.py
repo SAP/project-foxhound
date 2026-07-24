@@ -43,7 +43,7 @@ def _getExpandedCounterPaths(processName, counterName):
     list of strings or None, if no counter paths can be created
     """
     pcchPathListLength = DWORD(0)
-    szWildCardPath = LPSTR("\\process(%s)\\%s" % (processName, counterName))
+    szWildCardPath = LPSTR(b"\\process(%s)\\%s" % (processName, counterName))
     if (
         pdh.PdhExpandCounterPathA(
             szWildCardPath, LPSTR(None), pointer(pcchPathListLength)
@@ -53,7 +53,7 @@ def _getExpandedCounterPaths(processName, counterName):
         return []
 
     pathListLength = pcchPathListLength.value
-    szExpandedPathList = LPCSTR("\0" * pathListLength)
+    szExpandedPathList = LPCSTR(b"\0" * pathListLength)
     if (
         pdh.PdhExpandCounterPathA(
             szWildCardPath, szExpandedPathList, pointer(pcchPathListLength)
@@ -68,7 +68,7 @@ def _getExpandedCounterPaths(processName, counterName):
     i = 0
     path = ""
     for j in range(0, pcchPathListLength.value):
-        c = struct.unpack_from("c", buffer, offset=j)[0]
+        c = str(struct.unpack_from("c", buffer, offset=j)[0])
         if c == "\0":
             if j == i:
                 # double null: we're done
@@ -109,18 +109,22 @@ class WinCounterManager(CounterManager):
         self.registerCounters(counters)
         # PDH might need to be "refreshed" if it has been queried while the
         # browser is closed
-        pdh.PdhEnumObjectsA(None, None, 0, 1, 0, True)
+        pdh.PdhEnumObjectsA(None, None, 0, 0, 0, True)
 
         for counter in self.registeredCounters:
             try:
                 # Add the counter path for the default process.
-                self._addCounter(process_name, "process", counter)
+                self._addCounter(
+                    bytes(process_name, encoding="utf-8"), b"process", counter
+                )
             except TalosError:
                 # Assume that this is a memory counter for the system,
                 # not a process counter
                 # If we got an error that has nothing to do with that,
                 # the exception will almost certainly be re-raised
-                self._addCounter(process_name, "Memory", counter)
+                self._addCounter(
+                    bytes(process_name, encoding="utf-8"), b"Memory", counter
+                )
 
             self._updateCounterPathsForChildProcesses(counter)
 
@@ -152,7 +156,7 @@ class WinCounterManager(CounterManager):
                 % (counterName, processName)
             )
 
-        szFullPathBuffer = LPCSTR("\0" * pcchbufferSize.value)
+        szFullPathBuffer = LPCSTR(b"\0" * pcchbufferSize.value)
         # Then we run to get the actual value
         if (
             pdh.PdhMakeCounterPathA(
@@ -194,7 +198,7 @@ class WinCounterManager(CounterManager):
             if counter.strip() == "mainthread_io":
                 continue
 
-            self.registeredCounters[counter] = []
+            self.registeredCounters[bytes(counter, encoding="utf-8")] = []
 
     def _updateCounterPathsForChildProcesses(self, counter):
         # Create a counter path for each instance of the child process that
@@ -206,9 +210,11 @@ class WinCounterManager(CounterManager):
         hq = self.registeredCounters[counter][0]
         oldCounterListLength = len(self.registeredCounters[counter][1])
 
-        pdh.PdhEnumObjectsA(None, None, 0, 1, 0, True)
+        pdh.PdhEnumObjectsA(None, None, 0, 0, 0, True)
 
-        expandedPaths = _getExpandedCounterPaths(self.childProcess, counter)
+        expandedPaths = _getExpandedCounterPaths(
+            bytes(self.childProcess, encoding="utf-8"), counter
+        )
         if not expandedPaths:
             return
         for expandedPath in expandedPaths:
@@ -234,6 +240,7 @@ class WinCounterManager(CounterManager):
         # Update counter paths, to catch any new child processes that might
         # have been launched since last call.  Then iterate through all
         # counter paths for this counter, and return a combined value.
+        counter = bytes(counter, encoding="utf-8")
         if counter not in self.registeredCounters:
             return None
 

@@ -79,10 +79,11 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
     const YCbCrDescriptor& descriptor = sdBuffer.desc().get_YCbCrDescriptor();
 
     size_t descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
-        descriptor.ySize(), descriptor.yStride(), descriptor.cbCrSize(),
-        descriptor.cbCrStride(), descriptor.yOffset(), descriptor.cbOffset(),
-        descriptor.crOffset());
-    if (NS_WARN_IF(descriptorSize > bufferSize)) {
+        descriptor.display(), descriptor.ySize(), descriptor.yStride(),
+        descriptor.cbCrSize(), descriptor.cbCrStride(), descriptor.yOffset(),
+        descriptor.cbOffset(), descriptor.crOffset(), descriptor.colorDepth(),
+        descriptor.chromaSubsampling());
+    if (NS_WARN_IF(descriptorSize == 0 || descriptorSize > bufferSize)) {
       MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
       return nullptr;
     }
@@ -117,7 +118,7 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
 
     size_t descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
         descriptor.size(), descriptor.format());
-    if (NS_WARN_IF(descriptorSize > bufferSize)) {
+    if (NS_WARN_IF(descriptorSize == 0 || descriptorSize > bufferSize)) {
       MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
       return nullptr;
     }
@@ -181,33 +182,33 @@ RemoteImageHolder::~RemoteImageHolder() {
   }
 }
 
-/* static */ void ipc::IPDLParamTraits<RemoteImageHolder>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    RemoteImageHolder&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mSource);
-  WriteIPDLParam(aWriter, aActor, aParam.mSize);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorDepth);
-  WriteIPDLParam(aWriter, aActor, aParam.mSD);
-  WriteIPDLParam(aWriter, aActor, aParam.mYUVColorSpace);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorPrimaries);
-  WriteIPDLParam(aWriter, aActor, aParam.mTransferFunction);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorRange);
+}  // namespace mozilla
+
+/* static */ void IPC::ParamTraits<mozilla::RemoteImageHolder>::Write(
+    MessageWriter* aWriter, mozilla::RemoteImageHolder&& aParam) {
+  WriteParam(aWriter, aParam.mSource);
+  WriteParam(aWriter, aParam.mSize);
+  WriteParam(aWriter, aParam.mColorDepth);
+  WriteParam(aWriter, aParam.mSD);
+  WriteParam(aWriter, aParam.mYUVColorSpace);
+  WriteParam(aWriter, aParam.mColorPrimaries);
+  WriteParam(aWriter, aParam.mTransferFunction);
+  WriteParam(aWriter, aParam.mColorRange);
   // Empty this holder.
-  aParam.mSD = Nothing();
+  aParam.mSD = mozilla::Nothing();
   aParam.mManager = nullptr;
 }
 
-/* static */ bool ipc::IPDLParamTraits<RemoteImageHolder>::Read(
-    IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-    RemoteImageHolder* aResult) {
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mSource) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSize) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorDepth) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSD) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mYUVColorSpace) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorPrimaries) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mTransferFunction) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorRange)) {
+/* static */ bool IPC::ParamTraits<mozilla::RemoteImageHolder>::Read(
+    MessageReader* aReader, mozilla::RemoteImageHolder* aResult) {
+  if (!ReadParam(aReader, &aResult->mSource) ||
+      !ReadParam(aReader, &aResult->mSize) ||
+      !ReadParam(aReader, &aResult->mColorDepth) ||
+      !ReadParam(aReader, &aResult->mSD) ||
+      !ReadParam(aReader, &aResult->mYUVColorSpace) ||
+      !ReadParam(aReader, &aResult->mColorPrimaries) ||
+      !ReadParam(aReader, &aResult->mTransferFunction) ||
+      !ReadParam(aReader, &aResult->mColorRange)) {
     return false;
   }
 
@@ -215,20 +216,21 @@ RemoteImageHolder::~RemoteImageHolder() {
     return true;
   }
 
-  if (auto* manager = aActor->Manager()) {
-    if (manager->GetProtocolId() == ProtocolId::PRemoteMediaManagerMsgStart) {
-      aResult->mManager =
-          XRE_IsContentProcess()
-              ? static_cast<IGPUVideoSurfaceManager*>(
-                    static_cast<RemoteMediaManagerChild*>(manager))
-              : static_cast<IGPUVideoSurfaceManager*>(
-                    static_cast<RemoteMediaManagerParent*>(manager));
-      return true;
+  if (auto* actor = aReader->GetActor()) {
+    if (auto* manager = actor->Manager()) {
+      if (manager->GetProtocolId() ==
+          mozilla::ipc::ProtocolId::PRemoteMediaManagerMsgStart) {
+        aResult->mManager =
+            XRE_IsContentProcess()
+                ? static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerChild*>(manager))
+                : static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerParent*>(manager));
+        return true;
+      }
     }
   }
 
   MOZ_ASSERT_UNREACHABLE("Unexpected or missing protocol manager!");
   return false;
 }
-
-}  // namespace mozilla

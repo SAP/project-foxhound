@@ -14,7 +14,7 @@ this rule manually, use:
 .. note::
     Note that for platform-specific interfaces, you need to manually add the
     interface in question to
-    :searchfox:`the rule <tools/lint/eslint/eslint-plugin-mozilla/lib/rules/valid-ci-uses.js>`
+    :searchfox:`the rule <tools/lint/eslint/eslint-plugin-mozilla/lib/rules/valid-ci-uses.mjs>`
     (as a build on any given platform cannot find out about interfaces that are
     not available on that platform).
 

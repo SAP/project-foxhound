@@ -16,6 +16,9 @@ kind-dependencies:
     - repackage-signing-l10n
     - fetch
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - win32-shippable/opt
     - win64-shippable/opt

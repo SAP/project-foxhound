@@ -90,5 +90,5 @@ add_task(async function test_saveTargetBlank() {
   );
 
   // Cleanup
-  Services.logins.removeLogin(login);
+  await Services.logins.removeLoginAsync(login);
 });

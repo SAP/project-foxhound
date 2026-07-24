@@ -24,8 +24,6 @@ PLATFORM_RENAMES = {
 }
 
 BALROG_PLATFORM_MAP = {
-    "linux": ["Linux_x86-gcc3"],
-    "linux32": ["Linux_x86-gcc3"],
     "linux64": ["Linux_x86_64-gcc3"],
     "linux64-aarch64": ["Linux_aarch64-gcc3"],
     "linux64-asan-reporter": ["Linux_x86_64-gcc3-asan"],
@@ -50,7 +48,6 @@ FTP_PLATFORM_MAP = {
     "Darwin_x86_64-gcc3": "mac",
     "Darwin_x86_64-gcc3-u-i386-x86_64": "mac",
     "Darwin_aarch64-gcc3": "mac",
-    "Linux_x86-gcc3": "linux-i686",
     "Linux_x86_64-gcc3": "linux-x86_64",
     "Linux_aarch64-gcc3": "linux-aarch64",
     "Linux_x86_64-gcc3-asan": "linux-x86_64-asan-reporter",
@@ -129,8 +126,7 @@ def _retry_on_http_errors(url, verify, params, errors):
                 )
             else:
                 raise
-    else:
-        raise Exception(f"Cannot connect to {url}!")
+    raise Exception(f"Cannot connect to {url}!")
 
 
 def get_sorted_releases(product, branch):
@@ -197,32 +193,32 @@ def populate_release_history(
 
 
 def _populate_nightly_history(product, branch, maxbuilds=4, maxsearch=10):
-    """Find relevant releases in Balrog
+    """Find relevant releases in Balrog.
+
     Not all releases have all platforms and locales, due
     to Taskcluster migration.
 
-        Args:
-            product (str): capitalized product name, AKA appName, e.g. Firefox
-            branch (str): branch name (mozilla-central)
-            maxbuilds (int): Maximum number of historical releases to populate
-            maxsearch(int): Traverse at most this many releases, to avoid
-                working through the entire history.
-        Returns:
-            json object based on data from balrog api
+    Args:
+        product (str): capitalized product name, AKA appName, e.g. Firefox
+        branch (str): branch name (mozilla-central)
+        maxbuilds (int): Maximum number of historical releases to populate
+        maxsearch(int): Traverse at most this many releases, to avoid
+            working through the entire history.
+    Returns:
+        json object based on data from balrog api::
 
             results = {
-                'platform1': {
-                    'locale1': {
-                        'buildid1': mar_url,
-                        'buildid2': mar_url,
-                        'buildid3': mar_url,
+                "platform1": {
+                    "locale1": {
+                        "buildid1": mar_url,
+                        "buildid2": mar_url,
+                        "buildid3": mar_url,
                     },
-                    'locale2': {
-                        'target.partial-1.mar': {'buildid1': 'mar_url'},
-                    }
+                    "locale2": {
+                        "target.partial-1.mar": {"buildid1": "mar_url"},
+                    },
                 },
-                'platform2': {
-                }
+                "platform2": {},
             }
     """
     last_releases = get_sorted_releases(product, branch)
@@ -286,6 +282,9 @@ def _populate_release_history(product, branch, partial_updates):
         url_pattern = history["fileUrls"][localtest]["completes"]["*"]
 
         for platform in history["platforms"]:
+            if platform not in FTP_PLATFORM_MAP:
+                # skip EOL platforms
+                continue
             if "alias" in history["platforms"][platform]:
                 continue
             if platform not in builds:

@@ -6,7 +6,7 @@
 // in the Urlbar as a search term.
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 add_setup(async function () {
@@ -48,7 +48,7 @@ add_task(async function search_strings() {
   for (let searchString of searches) {
     info("Search for term:", searchString);
     let [searchUrl] = UrlbarUtils.getSearchQueryUrl(
-      Services.search.defaultEngine,
+      SearchService.defaultEngine,
       searchString
     );
     let browserLoadedPromise = BrowserTestUtils.browserLoaded(

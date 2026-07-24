@@ -18,10 +18,6 @@ existing_tasks:
   build-android-arm-shippable-lite/opt-upload-symbols: P6mOjtt5Qm-u8gPIYSo49g
   build-android-arm-shippable/opt: KNGiMbsrRWWY_lsTLomWxA
   build-android-arm-shippable/opt-upload-symbols: Pub-L_d1RpWN3AuPtypWNg
-  build-android-x86-shippable-lite/opt: KCmGqLTxTvyPtbE0A_GWUA
-  build-android-x86-shippable-lite/opt-upload-symbols: CUaF1w-NQWOS9XnPBE_plQ
-  build-android-x86-shippable/opt: EbCtc0XeSse4QNKH66ertw
-  build-android-x86-shippable/opt-upload-symbols: b8qOb6Z5RDGU26ZKDhn-Xg
   build-android-x86_64-asan-fuzzing/opt: HZNQBpN5T1OwrsxszAXFQA
   build-android-x86_64-shippable-lite/opt: H5CZxWk5Ti6-D3onDi010A
   build-android-x86_64-shippable-lite/opt-upload-symbols: T7m_BftPSXGH_0rSPjsO1Q
@@ -68,8 +64,6 @@ existing_tasks:
   build-signing-android-arm-shippable/opt: K70yCKAqSJ-71R2Jlk_I6g
   build-signing-android-geckoview-fat-aar-shippable-lite/opt: QikTgqsxRou3ZuEoDf-yMQ
   build-signing-android-geckoview-fat-aar-shippable/opt: PlV3qN7UTSqjayDi8NlpHg
-  build-signing-android-x86-shippable-lite/opt: L0WyL0CbRf2W3uDWfQilSg
-  build-signing-android-x86-shippable/opt: KD3dzpdtQOuT_DISoYGF8g
   build-signing-android-x86_64-shippable-lite/opt: Arni4MPASKiCXsdwP0G0KA
   build-signing-android-x86_64-shippable/opt: PEqJ_RvDRbmUhGGY7i35JQ
   build-signing-linux-shippable/opt: aXfG3gnmT6GkF5pnu9qBOA
@@ -210,7 +204,6 @@ existing_tasks:
   fetch-wix-3.14.0: fQbbtuqtREi9d_Fr7jUbpA
   fetch-xar: LoVx_vS2QgGNZr02_QEJOw
   fuzzing-python: BkVeSz7UR8eVkHUQACOaIQ
-  generate-profile-android-x86-shippable/opt: TDRVn0qxQJ-hWTSSKQBDFw
   generate-profile-android-x86_64-shippable/opt: NlT1YD2QQw-nUYyYXt0zcA
   generate-profile-linux-shippable/opt: cD0i7J75SQSOqgZHy8pCkw
   generate-profile-linux64-shippable/opt: aE_bAXDPQN6qk_ttGrvRLg
@@ -218,7 +211,6 @@ existing_tasks:
   generate-profile-win32-shippable/opt: K4RLd3-iTzyOQHASFh6Vkw
   generate-profile-win64-shippable/opt: Nryd0-35SXiHfIq0dZfrVQ
   hazard-linux64-haz/debug: AEDHAay0TE2hTYt22slSew
-  instrumented-build-android-x86-shippable/opt: U3IQ2x4NRVG1DF-qCPzfgg
   instrumented-build-android-x86_64-shippable/opt: RsVgFGAUTAyCtS31V45yPw
   instrumented-build-linux-shippable/opt: CCuHqMjqSaK7BBbeMMuWDg
   instrumented-build-linux64-shippable/opt: AgGuFNzaR3iiiXuK2ynvrg
@@ -1555,10 +1547,6 @@ existing_tasks:
   toolchain-android-x64-compiler-rt-17: SPDCsZatQj6j-F69-aFs6w
   toolchain-android-x64-libunwind-16: cMWT8AgkQtC1aelI5Y9shw
   toolchain-android-x64-libunwind-17: HIyfXA2xTn2Xt56A2mqSOQ
-  toolchain-android-x86-compiler-rt-16: LJmPTV09QSmPMzmDGWF6YA
-  toolchain-android-x86-compiler-rt-17: N72sNepJT2y2X1OV3KLVSg
-  toolchain-android-x86-libunwind-16: WPVJPQ4rSYyV7YnbV4bI_A
-  toolchain-android-x86-libunwind-17: M15b8bhCQ3K2T8aGWNxTsQ
   toolchain-browsertime: JtsdQx0tSJ-J9WIa0aSeyQ
   toolchain-clang-dist-toolchain: Kc5EFLmSRY2BqQxJvatk2A
   toolchain-linux32-llvm-symbolizer-16: PiiD_ItTRsGBy41tUdzu1A
@@ -1637,8 +1625,6 @@ existing_tasks:
   toolchain-linux64-wine: CmoaeSviQh2Kcx0Cewvixw
   toolchain-linux64-x64-compiler-rt-16: SqztQZk5QWaMHWzu5ZrP-w
   toolchain-linux64-x64-compiler-rt-17: Vche33oMTga3OWbVedBYdQ
-  toolchain-linux64-x86-compiler-rt-16: CWynfAn-TaG9rCKlKe3lUQ
-  toolchain-linux64-x86-compiler-rt-17: Pp7vc4z8SK2IxFIpVrxLCA
   toolchain-linux64-xar: BICcFTJhTiCmd7MVZ48rlQ
   toolchain-macosx64-aarch64-cargo-vet: fRV3j4-8SEyjdT0C2Ekyog
   toolchain-macosx64-aarch64-cbindgen: TCvtMPvxTT61gAdwdlojxw
@@ -1733,8 +1719,6 @@ existing_tasks:
   upload-generated-sources-android-aarch64-shippable/opt: FJjSy5PoSBexAp5CVxZBmg
   upload-generated-sources-android-arm-shippable-lite/opt: M1EQLivoRUOQEQqgfbotTw
   upload-generated-sources-android-arm-shippable/opt: Wtg1Ti53T9CFE3Nss9QscQ
-  upload-generated-sources-android-x86-shippable-lite/opt: TYi6Y89lQUG8V9EKfJ_sHA
-  upload-generated-sources-android-x86-shippable/opt: SV0tNOVrQ_2XWOLS4-Weaw
   upload-generated-sources-android-x86_64-shippable-lite/opt: amwDF4bgT52Lnt_UtHeSFw
   upload-generated-sources-android-x86_64-shippable/opt: axYChB-ISqaeDtpwkl15Hg
   upload-generated-sources-dummy-firefox-macosx64-shippable: es-ePR10Q0Cpd2Np-APsmQ
@@ -2061,7 +2045,6 @@ release_partner_config:
           - en-US
           - zh-CN
         platforms:
-          - linux-shippable
           - linux64-shippable
           - macosx64-shippable
         upload_to_candidates: 'true'
@@ -2281,7 +2264,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2293,7 +2276,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2304,7 +2287,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2352,7 +2335,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2363,7 +2346,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2375,7 +2358,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2386,7 +2369,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -2398,7 +2381,7 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
+          - linux64-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable

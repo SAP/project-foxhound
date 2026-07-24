@@ -8,6 +8,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.widget.FrameLayout
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.flow.flowOf
 import mozilla.components.concept.engine.selection.SelectionActionDelegate
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
@@ -62,6 +63,8 @@ class EngineViewTest {
     private fun createDummyEngineView(context: Context): EngineView = DummyEngineView(context)
 
     open class DummyEngineView(context: Context) : FrameLayout(context), EngineView {
+        override val verticalScrollPosition = flowOf(0f)
+        override val verticalScrollDelta = flowOf(0f)
         override fun setVerticalClipping(clippingHeight: Int) {}
         override fun setDynamicToolbarMaxHeight(height: Int) {}
         override fun setActivityContext(context: Context?) {}
@@ -78,6 +81,8 @@ class EngineViewTest {
 
     // Class it not actually a View!
     open class BrokenEngineView : EngineView {
+        override val verticalScrollPosition = flowOf(0f)
+        override val verticalScrollDelta = flowOf(0f)
         override fun setVerticalClipping(clippingHeight: Int) {}
         override fun setDynamicToolbarMaxHeight(height: Int) {}
         override fun setActivityContext(context: Context?) {}

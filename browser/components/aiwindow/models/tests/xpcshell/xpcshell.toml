@@ -1,0 +1,57 @@
+[DEFAULT]
+run-if = [
+  "os != 'android'",
+]
+head = "head.js"
+firefox-appdir = "browser"
+support-files = [
+  "ai-window-prompts-remote-settings-snapshot.json",
+]
+
+["test_Chat.js"]
+
+["test_ChatUtils.js"]
+
+["test_CitationParser.js"]
+
+["test_ConversationSuggestions.js"]
+
+["test_Memories.js"]
+
+["test_MemoriesChatSource.js"]
+
+["test_MemoriesConversationScheduler.js"]
+
+["test_MemoriesDriftDetector.js"]
+
+["test_MemoriesHistoryScheduler.js"]
+
+["test_MemoriesHistorySource.js"]
+
+["test_MemoriesHistorySource_blocklist.js"]
+
+["test_MemoriesManager.js"]
+
+["test_SearchBrowsingHistory.js"]
+
+["test_SearchBrowsingHistoryDomainBoost.js"]
+
+["test_SensitiveInfoDetector.js"]
+
+["test_TitleGeneration.js"]
+
+["test_ToolDefinitions.js"]
+
+["test_Tools_GetOpenTabs.js"]
+
+["test_Tools_GetPageContent.js"]
+
+["test_Tools_RunSearch.js"]
+
+["test_Tools_SearchBrowsingHistory.js"]
+
+["test_Utils.js"]
+
+["test_Utils_RemoteSettings.js"]
+
+["test_intent_classifier.js"]

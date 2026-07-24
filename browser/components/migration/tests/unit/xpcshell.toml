@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_migration.js"
 tags = "condprof os_integration"
 firefox-appdir = "browser"
@@ -12,10 +15,14 @@ support-files = [
 ]
 
 ["test_360seMigrationUtils.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_360se_bookmarks.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_BookmarksFileMigrator.js"]
 
@@ -24,11 +31,14 @@ run-if = ["os == 'win'"]
 ["test_ChromeMigrationUtils_path.js"]
 
 ["test_ChromeMigrationUtils_path_chromium_snap.js"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]
 
 ["test_Chrome_bookmarks.js"]
 
 ["test_Chrome_corrupt_history.js"]
+run-sequentially = ["true"] # fails more than 50% of the time in parallel
 
 ["test_Chrome_credit_cards.js"]
 run-if = [
@@ -39,9 +49,12 @@ run-if = [
 ["test_Chrome_extensions.js"]
 
 ["test_Chrome_formdata.js"]
+run-sequentially = ["true"] # fails more than 50% of the time in parallel
 
 ["test_Chrome_history.js"]
-run-if = ["os == 'mac'"] # Relies on ULibDir
+run-if = [
+  "os == 'mac'", # Relies on ULibDir
+]
 
 ["test_Chrome_passwords.js"]
 run-if = [
@@ -59,18 +72,27 @@ run-if = [
 ["test_Chrome_permissions.js"]
 
 ["test_Edge_db_migration.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_Edge_registry_migration.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_IE_bookmarks.js"]
-run-if = ["os == 'win' && bits == 64"] # bug 1392396
+run-if = [
+  "os == 'win' && arch == 'x86_64'", # bug 1392396
+]
 
 ["test_IE_history.js"]
-run-if = ["os == 'win'"]
+requesttimeoutfactor = 2  # Slow on condprof
+run-if = [
+  "os == 'win'",
+]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && msix", # Bug 1807928
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix", # Bug 1807928
 ]
 
 ["test_MigrationUtils_timedRetry.js"]
@@ -78,15 +100,25 @@ skip-if = [
 ["test_PasswordFileMigrator.js"]
 
 ["test_Safari_bookmarks.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_Safari_history.js"]
-run-if = ["os == 'mac'"]
+run-sequentially = ["true"] # almost perma fail in parallel
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_Safari_history_strange_entries.js"]
-run-if = ["os == 'mac'"]
+run-sequentially = ["true"] # frequent fail in parallel
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_Safari_permissions.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_fx_telemetry.js"]

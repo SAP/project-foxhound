@@ -7,8 +7,6 @@
 #ifndef mozilla_AutoCopyListener_h
 #define mozilla_AutoCopyListener_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_clipboard.h"
 #include "mozilla/dom/Selection.h"
 #include "nsIClipboard.h"

@@ -21,6 +21,8 @@ LOCAL_INCLUDES += ['/modules/fdlibm/inexact-math-override']
 
 SharedLibrary('mozavcodec')
 SOURCES += [
+    'adts_header.c',
+    'adts_parser.c',
     'allcodecs.c',
     'audio_frame_queue.c',
     'avcodec.c',
@@ -52,6 +54,8 @@ SOURCES += [
     'libvorbisdec.c',
     'libvorbisenc.c',
     'log2_tab.c',
+    'mpeg4audio.c',
+    'mpeg4audio_sample_rates.c',
     'mpegaudio.c',
     'mpegaudiodata.c',
     'mpegaudiodec_common.c',
@@ -149,6 +153,23 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
             'dxva2_av1.c',
             'dxva2_vp9.c',
         ]
+    elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+        SOURCES += [
+            'fffjni.c',
+            'ffjni.c',
+            'mediacodec.c',
+            'mediacodec_surface.c',
+            'mediacodec_sw_buffer.c',
+            'mediacodec_wrapper.c',
+            'mediacodecdec.c',
+            'mediacodecdec_common.c',
+            'mediacodecenc.c',
+        ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+    EXPORTS.ffvpx += [
+        "mediacodec.h"
+    ]
 
 LOCAL_INCLUDES += [
     '/media/libopus/include',
@@ -171,5 +192,8 @@ USE_LIBS += [
 
 if CONFIG['OS_TARGET'] != 'WINNT':
     OS_LIBS += ['m']
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+    OS_LIBS += ['android', 'mediandk']
 
 include("../ffvpxcommon.mozbuild")

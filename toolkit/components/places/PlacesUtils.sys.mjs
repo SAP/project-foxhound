@@ -1041,7 +1041,7 @@ export var PlacesUtils = {
   /**
    * Copy a single places result node, recursively if applicable.
    *
-   * @param {Object} node
+   * @param {object} node
    *    The node to copy. If not a real places node but a single
    *    title/URL combination, you must set `type` to 0 (aka RESULT_TYPE_URI),
    *    and provide a `title` and `uri` property which should both be strings.
@@ -2145,6 +2145,24 @@ export var PlacesUtils = {
   },
 
   /**
+   * Converts an array of Float32 into a SQL bindable blob format.
+   *
+   * @param {Array<number>|Float32Array} tensor
+   * @returns {Uint8ClampedArray} SQL bindable blob.
+   */
+  tensorToSQLBindable(tensor) {
+    if (!tensor) {
+      throw new Error("tensorToSQLBindable received an invalid tensor");
+    } else if (Array.isArray(tensor)) {
+      return new Uint8ClampedArray(new Float32Array(tensor).buffer);
+    } else if (tensor instanceof Float32Array) {
+      return new Uint8ClampedArray(tensor.buffer);
+    } else {
+      throw new Error("tensorToSQLBindable received an invalid tensor");
+    }
+  },
+
+  /**
    * The metadata API allows consumers to store simple key-value metadata in
    * Places. Keys are strings, values can be any type that SQLite supports:
    * numbers (integers and doubles), Booleans, strings, and blobs. Values are
@@ -2997,14 +3015,14 @@ XPCOMUtils.defineLazyServiceGetter(
   PlacesUtils,
   "favicons",
   "@mozilla.org/browser/favicon-service;1",
-  "nsIFaviconService"
+  Ci.nsIFaviconService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "bmsvc",
   "@mozilla.org/browser/nav-bookmarks-service;1",
-  "nsINavBookmarksService"
+  Ci.nsINavBookmarksService
 );
 ChromeUtils.defineLazyGetter(PlacesUtils, "bookmarks", () => {
   return Object.freeze(
@@ -3021,7 +3039,7 @@ XPCOMUtils.defineLazyServiceGetter(
   PlacesUtils,
   "tagging",
   "@mozilla.org/browser/tagging-service;1",
-  "nsITaggingService"
+  Ci.nsITaggingService
 );
 
 ChromeUtils.defineLazyGetter(lazy, "bundle", function () {
@@ -3134,9 +3152,9 @@ ChromeUtils.defineLazyGetter(lazy, "gAsyncDBLargeCacheConnPromised", () =>
       // This should be kept in sync with nsPlacesTables.h.
       await conn.execute(`
         CREATE TEMP TABLE IF NOT EXISTS moz_openpages_temp (
-          url TEXT,
-          userContextId INTEGER,
-          groupId TEXT,
+          url TEXT NOT NULL,
+          userContextId INTEGER NOT NULL,
+          groupId TEXT NOT NULL,
           open_count INTEGER,
           PRIMARY KEY (url, userContextId, groupId)
         )`);
@@ -3149,7 +3167,7 @@ ChromeUtils.defineLazyGetter(lazy, "gAsyncDBLargeCacheConnPromised", () =>
           DELETE FROM moz_openpages_temp
           WHERE url = NEW.url
             AND userContextId = NEW.userContextId
-            AND groupId IS NEW.groupId;
+            AND groupId = NEW.groupId;
         END`);
       gAsyncDBLargeCacheConnDeferred.resolve(conn);
       return conn;

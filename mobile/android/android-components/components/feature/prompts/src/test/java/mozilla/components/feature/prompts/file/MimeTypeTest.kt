@@ -64,7 +64,7 @@ class MimeTypeTest {
 
     @Test
     fun `matches empty list of mime types`() {
-        assertTypes(setOf(MimeType.Wildcard)) {
+        assertTypes(setOf(MimeType.Image(), MimeType.Audio, MimeType.Video, MimeType.Wildcard)) {
             it.matches(emptyArray())
         }
     }

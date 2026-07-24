@@ -9,7 +9,7 @@ const ToolDefinitions =
   require("resource://devtools/client/definitions.js").Tools;
 const CssLogic = require("resource://devtools/shared/inspector/css-logic.js");
 const {
-  style: { ELEMENT_STYLE },
+  style: { ELEMENT_STYLE, PRES_HINTS },
 } = require("resource://devtools/shared/constants.js");
 const OutputParser = require("resource://devtools/client/shared/output-parser.js");
 const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
@@ -46,6 +46,10 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/link.js",
   true
 );
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getMdnLinkParams: "resource://devtools/shared/mdn.mjs",
+});
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
@@ -58,6 +62,9 @@ const L10N_TWISTY_COLLAPSE_LABEL = STYLE_INSPECTOR_L10N.getStr(
   "rule.twistyCollapse.label"
 );
 const L10N_EMPTY_VARIABLE = STYLE_INSPECTOR_L10N.getStr("rule.variableEmpty");
+const L10N_JUMP_DEFINITION_TITLE = STYLE_INSPECTOR_L10N.getStr(
+  "rule.jumpDeclaration.title"
+);
 
 const FILTER_CHANGED_TIMEOUT = 150;
 
@@ -71,7 +78,7 @@ class UpdateProcess {
    *        Timeouts will be set on this window when appropriate.
    * @param {Array} array
    *        The array of items to process.
-   * @param {Object} options
+   * @param {object} options
    *        Options for the update process:
    *          onItem {function} Will be called with the value of each iteration.
    *          onBatch {function} Will be called after each batch of iterations,
@@ -234,7 +241,7 @@ class CssComputedView {
       );
     }
 
-    if (!this.inspector.is3PaneModeEnabled) {
+    if (!this.inspector.isThreePaneModeEnabled) {
       // When the rules view is added in 3 pane mode, refresh the Computed view whenever
       // the rules are changed.
       this.inspector.once(
@@ -266,6 +273,9 @@ class CssComputedView {
 
     // The PageStyle front related to the currently selected element
     this.viewedElementPageStyle = null;
+    // Flag that is set when the selected element style was updated. This will force
+    // clearing the page style cssLogic cache the next time we're calling getComputed().
+    this.elementStyleUpdated = false;
 
     this.createStyleViews();
 
@@ -276,9 +286,9 @@ class CssComputedView {
   /**
    * Lookup a l10n string in the shared styleinspector string bundle.
    *
-   * @param {String} name
+   * @param {string} name
    *        The key to lookup.
-   * @returns {String} localized version of the given key.
+   * @returns {string} localized version of the given key.
    */
   static l10n(name) {
     try {
@@ -411,7 +421,7 @@ class CssComputedView {
    *
    * @param {DOMNode} node
    *        The node which we want information about
-   * @return {Object} The type information object contains the following props:
+   * @return {object} The type information object contains the following props:
    * - view {String} Always "computed" to indicate the computed view.
    * - type {String} One of the VIEW_NODE_XXX_TYPE const in
    *   client/inspector/shared/node-types
@@ -602,9 +612,12 @@ class CssComputedView {
           filter: this.#sourceFilter,
           onlyMatched: !this.includeBrowserStyles,
           markMatched: true,
+          clearCache: !!this.elementStyleUpdated,
         }),
         this.#createPropertyViews(),
       ]);
+
+      this.elementStyleUpdated = false;
 
       if (viewedElement !== this.#viewedElement) {
         return;
@@ -753,7 +766,8 @@ class CssComputedView {
 
   /**
    * Set the filter style search value.
-   * @param {String} value
+   *
+   * @param {string} value
    *        The search value.
    */
   setFilterStyles(value = "") {
@@ -983,10 +997,10 @@ class CssComputedView {
 }
 
 class PropertyInfo {
-  /*
+  /**
    * @param {CssComputedView} tree
    *        The CssComputedView instance we are working with.
-   * @param {String} name
+   * @param {string} name
    *        The CSS property name
    */
   constructor(tree, name) {
@@ -1017,13 +1031,13 @@ class PropertyInfo {
  * A container to give easy access to property data from the template engine.
  */
 class PropertyView {
-  /*
+  /**
    * @param {CssComputedView} tree
    *        The CssComputedView instance we are working with.
-   * @param {String} name
+   * @param {string} name
    *        The CSS property name for which this PropertyView
    *        instance will render the rules.
-   * @param {Boolean} isCustomProperty
+   * @param {boolean} isCustomProperty
    *        Set to true if this will represent a custom property.
    */
   constructor(tree, name, isCustomProperty = false) {
@@ -1033,7 +1047,7 @@ class PropertyView {
     this.isCustomProperty = isCustomProperty;
 
     if (!this.isCustomProperty) {
-      this.link = "https://developer.mozilla.org/docs/Web/CSS/" + name;
+      this.link = `https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/${name}?${lazy.getMdnLinkParams("computed-panel")}`;
     }
 
     this.#propertyInfo = new PropertyInfo(tree, name);
@@ -1076,7 +1090,7 @@ class PropertyView {
   /**
    * Get the computed style for the current property.
    *
-   * @return {String} the computed style for the current property of the
+   * @return {string} the computed style for the current property of the
    * currently highlighted element.
    */
   get value() {
@@ -1125,7 +1139,7 @@ class PropertyView {
   /**
    * Returns the className that should be assigned to the propertyView.
    *
-   * @return {String}
+   * @return {string}
    */
   get propertyHeaderClassName() {
     return this.visible ? "computed-property-view" : "computed-property-hidden";
@@ -1134,7 +1148,7 @@ class PropertyView {
   /**
    * Is the property invalid at computed value time
    *
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   get invalidAtComputedValueTime() {
     return this.#tree.computed[this.name].invalidAtComputedValueTime;
@@ -1394,20 +1408,22 @@ class PropertyView {
         class: "rule-link",
       });
 
-      const link = createChild(span, "a", {
-        target: "_blank",
-        class: "computed-link theme-link",
-        title: selector.longSource,
-        sourcelocation: selector.source,
-        tabindex: "0",
-        textContent: selector.source,
-      });
-      link.addEventListener("click", selector.openStyleEditor);
-      const shortcuts = new KeyShortcuts({
-        window: this.#tree.styleWindow,
-        target: link,
-      });
-      shortcuts.on("Return", () => selector.openStyleEditor());
+      if (selector.source) {
+        const link = createChild(span, "a", {
+          target: "_blank",
+          class: "computed-link theme-link",
+          title: selector.longSource,
+          sourcelocation: selector.source,
+          tabindex: "0",
+          textContent: selector.source,
+        });
+        link.addEventListener("click", selector.openStyleEditor);
+        const shortcuts = new KeyShortcuts({
+          window: this.#tree.styleWindow,
+          target: link,
+        });
+        shortcuts.on("Return", () => selector.openStyleEditor());
+      }
 
       const status = createChild(p, "span", {
         dir: "ltr",
@@ -1423,10 +1439,16 @@ class PropertyView {
         textContent: selector.statusText + " ",
       });
 
-      createChild(status, "div", {
-        class: "fix-get-selection",
+      const selectorEl = createChild(status, "div", {
+        class: "fix-get-selection computed-other-property-selector",
         textContent: selector.sourceText,
       });
+      if (
+        selector.selectorInfo.rule.type === ELEMENT_STYLE ||
+        selector.selectorInfo.rule.type === PRES_HINTS
+      ) {
+        selectorEl.classList.add("alternative-selector");
+      }
 
       const valueDiv = createChild(status, "div", {
         class:
@@ -1449,6 +1471,16 @@ class PropertyView {
             `"${selector.selectorInfo.registeredPropertySyntax}"`
           ),
         });
+      }
+
+      // We only want to show the "Jump to definition" icon if the declaration is in
+      // the RuleView
+      if (selector.isInRuleView()) {
+        const ruleLink = createChild(status, "button", {
+          class: "computed-other-property-ruleview-link jump-definition",
+          title: L10N_JUMP_DEFINITION_TITLE,
+        });
+        ruleLink.addEventListener("click", selector.focusPropertyInRuleView);
       }
     }
 
@@ -1480,8 +1512,8 @@ class PropertyView {
   /**
    * Parse a property value using the OutputParser.
    *
-   * @param {String} value
-   * @param {String} baseURI
+   * @param {string} value
+   * @param {string} baseURI
    * @returns {DocumentFragment|Element}
    */
   #parseValue(value, baseURI) {
@@ -1589,12 +1621,10 @@ class SelectorView {
     this.#cacheStatusNames();
 
     this.openStyleEditor = this.openStyleEditor.bind(this);
+    this.focusPropertyInRuleView = this.focusPropertyInRuleView.bind(this);
 
     const rule = this.selectorInfo.rule;
-    if (!rule || !rule.parentStyleSheet || rule.type == ELEMENT_STYLE) {
-      this.source = CssLogic.l10n("rule.sourceElement");
-      this.longSource = this.source;
-    } else {
+    if (rule?.parentStyleSheet) {
       // This always refers to the generated location.
       const sheet = rule.parentStyleSheet;
       const sourceSuffix = rule.line > 0 ? ":" + rule.line : "";
@@ -1624,6 +1654,7 @@ class SelectorView {
 
   /**
    * Decode for cssInfo.rule.status
+   *
    * @see SelectorView.prototype.#cacheStatusNames
    * @see CssLogic.STATUS
    */
@@ -1638,6 +1669,7 @@ class SelectorView {
    *
    * These statuses are localized inside the styleinspector.properties string
    * bundle.
+   *
    * @see css-logic.js - the CssLogic.STATUS array.
    */
   #cacheStatusNames() {
@@ -1691,7 +1723,7 @@ class SelectorView {
    * original sources or not.  This is a callback for
    * SourceMapURLService.subscribe, which see.
    *
-   * @param {Object | null} originalLocation
+   * @param {object | null} originalLocation
    *        The original position object (url/line/column) or null.
    */
   #updateLocation = originalLocation => {
@@ -1748,6 +1780,31 @@ class SelectorView {
   }
 
   /**
+   * Returns whether or not the underlying rule is in the rules view
+   *
+   * @returns {boolean}
+   */
+  isInRuleView() {
+    const rule = this.selectorInfo.rule;
+    if (!rule) {
+      return false;
+    }
+
+    return this.#tree.ruleView.hasRule(rule);
+  }
+
+  /**
+   * Open the RuleView and highlight the property represented by this SelectorView
+   */
+  focusPropertyInRuleView() {
+    const ruleFront = this.selectorInfo.rule;
+    this.#tree.ruleView.highlightProperty(this.selectorInfo.name, {
+      ruleFront,
+      focusValue: true,
+    });
+  }
+
+  /**
    * Destroy this selector view, removing event listeners
    */
   destroy() {
@@ -1783,7 +1840,17 @@ class ComputedViewTool {
       this.onPanelSelected,
       opts
     );
-    this.inspector.styleChangeTracker.on("style-changed", this.refresh, opts);
+    this.inspector.styleChangeTracker.on(
+      "style-changed",
+      () => {
+        // `refresh` may not actually update the styles if the computed panel is hidden
+        // so use a flag to force updating the element styles the next time the computed
+        // panel refreshes.
+        this.computedView.elementStyleUpdated = true;
+        this.refresh();
+      },
+      opts
+    );
 
     this.computedView.selectElement(null);
 

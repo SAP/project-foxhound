@@ -34,7 +34,7 @@ var generateRequestMethods = function (actorSpec, frontProto) {
         );
       }
 
-      const startTime = Cu.now();
+      const startTime = ChromeUtils.now();
       let packet;
       try {
         packet = spec.request.write(args, this);

@@ -7,10 +7,9 @@
 // A class that handles style system image loads (other image loads are handled
 // by the nodes in the content tree).
 
-#ifndef mozilla_css_ImageLoader_h___
-#define mozilla_css_ImageLoader_h___
+#ifndef mozilla_css_ImageLoader_h_
+#define mozilla_css_ImageLoader_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
@@ -167,4 +166,4 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ImageLoader::Flags)
 }  // namespace css
 }  // namespace mozilla
 
-#endif /* mozilla_css_ImageLoader_h___ */
+#endif /* mozilla_css_ImageLoader_h_ */

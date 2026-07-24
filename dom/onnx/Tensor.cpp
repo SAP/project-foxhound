@@ -4,22 +4,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with
  * fmt::ptr(this\) file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Tensor.h"
+
 #include "js/ArrayBuffer.h"
 #include "js/BigInt.h"
 #include "js/Value.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ONNXBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/Promise.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
-#include "mozilla/dom/ToJSValue.h"
 
 extern mozilla::LazyLogModule gONNXLog;
 #define LOGD(fmt, ...) \
@@ -357,7 +359,7 @@ nsLiteralCString Tensor::ONNXTypeToString(
 nsCString Tensor::ToString() const {
   nsCString rv;
   size_t count = mData.Length() / DataTypeSize(Type());
-  rv.AppendFmt(FMT_STRING("{} {} elements, {} bytes, {} dims"), mType, count,
+  rv.AppendFmt("{} {} elements, {} bytes, {} dims", mType, count,
                mData.Length(), mDims.Length());
 
   if (MOZ_LOG_TEST(gONNXLog, LogLevel::Verbose)) {

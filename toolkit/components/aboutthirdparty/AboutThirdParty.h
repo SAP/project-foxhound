@@ -4,9 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __AboutThirdParty_h__
-#define __AboutThirdParty_h__
+#ifndef AboutThirdParty_h_
+#define AboutThirdParty_h_
 
+#include "mozilla/CompactPair.h"
 #include "mozilla/MozPromise.h"
 #include "nsIAboutThirdParty.h"
 #include "nsInterfaceHashtable.h"
@@ -110,4 +111,4 @@ class AboutThirdParty final : public nsIAboutThirdParty {
 
 }  // namespace mozilla
 
-#endif  // __AboutThirdParty_h__
+#endif  // AboutThirdParty_h_

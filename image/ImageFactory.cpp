@@ -8,8 +8,6 @@
 
 #include <algorithm>
 
-#include "mozilla/Likely.h"
-
 #include "nsIChannel.h"
 #include "nsIFileChannel.h"
 #include "nsIObserverService.h"
@@ -21,7 +19,7 @@
 #include "RasterImage.h"
 #include "VectorImage.h"
 #include "Image.h"
-#include "nsMediaFragmentURIParser.h"
+#include "mozilla/MediaFragmentURIParser.h"
 #include "nsContentUtils.h"
 
 #include "mozilla/SchedulerGroup.h"

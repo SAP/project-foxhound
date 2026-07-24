@@ -11,8 +11,8 @@ import {
   createFactory,
 } from "resource://devtools/client/shared/vendor/react.mjs";
 
-import { cleanupStyle } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { cleanupStyle } from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
 
 const ALLOWED_TAGS = new Set([
   "span",

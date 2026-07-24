@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["tsan"] # Bug 1804081
+skip-if = [
+  "tsan", # Bug 1804081
+]
 support-files = ["profiler_test_utils.js"]
 
 ["test_profile_worker.html"]

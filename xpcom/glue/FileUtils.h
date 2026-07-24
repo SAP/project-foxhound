@@ -17,7 +17,6 @@
 #include "prio.h"
 #include "prlink.h"
 
-#include <memory>  // unique_ptr
 #include "nsIFile.h"
 #include <errno.h>
 #include <limits.h>

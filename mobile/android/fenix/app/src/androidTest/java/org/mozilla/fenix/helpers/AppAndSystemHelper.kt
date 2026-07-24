@@ -20,6 +20,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.test.espresso.Espresso
@@ -74,7 +75,7 @@ import java.util.regex.Pattern
 object AppAndSystemHelper {
 
     private val bookmarksStorage = PlacesBookmarksStorage(appContext.applicationContext)
-    suspend fun bookmarks() = bookmarksStorage.getTree(BookmarkRoot.Mobile.id)?.children
+    suspend fun bookmarks() = bookmarksStorage.getTree(BookmarkRoot.Mobile.id).getOrNull()?.children
     fun getPermissionAllowID(): String {
         Log.i(TAG, "getPermissionAllowID: Trying to get the permission button resource ID based on API.")
         return when (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
@@ -160,7 +161,7 @@ object AppAndSystemHelper {
                         "clearDownloadsFolder: Before cleanup: Downloads storage contains: ${files.size} file(s).",
                     )
                     // Delete all files in the folder
-                    for (file in files!!) {
+                    for (file in files) {
                         Log.i(
                             TAG,
                             "clearDownloadsFolder: Trying to delete $file from \"DOWNLOADS\" folder.",
@@ -251,72 +252,78 @@ object AppAndSystemHelper {
 
         when (enabled) {
             true -> {
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Trying to enable the network connection.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Trying to enable the network connection.")
                 mDevice.executeShellCommand("svc data enable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Data network connection enable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Data network connection enable command sent.")
                 mDevice.executeShellCommand("svc wifi enable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Wifi network connection enable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Wifi network connection enable command sent.")
 
                 // Wait for network connection to be completely enabled
                 Log.i(TAG, "setNetworkEnabled: Waiting for connection to be enabled.")
-                IdlingRegistry.getInstance().register(networkConnectedIdlingResource)
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
-                }
-                Log.i(TAG, "setNetworkEnabled: Network connection was enabled.")
 
-                // Register the TimerIdlingResource
-                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+                // Wait until both idling resources are idle
+                val registered = IdlingRegistry.getInstance().register(
+                    networkConnectedIdlingResource,
+                    enableNetworkTimerIdlingResource,
+                )
 
-                // Wait for the TimerIdlingResource to become idle
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
-                    // Check the active network state
-                    checkActiveNetworkState(enabled = true)
+                Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for enabling the connection are registered.")
+                if (registered) {
+                    Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for enabling the connection are registered.")
+                    Espresso.onIdle {
+                        // Unregister resources after they become idle
+                        val unregistered = IdlingRegistry.getInstance().unregister(
+                            networkConnectedIdlingResource,
+                            enableNetworkTimerIdlingResource,
+                        )
+                        Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for enabling the connection are unregistered.")
+                        if (unregistered) {
+                            Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for enabling the connection are unregistered.")
+                            Log.i(TAG, "setNetworkEnabled: Network connection was enabled.")
+                            checkActiveNetworkState(enabled = true)
+                        } else {
+                            Log.i(TAG, "setNetworkEnabled: Failed to unregister the idling resources for enabling the connection.")
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "setNetworkEnabled: Failed to register idling resources for enabling the connection.")
                 }
             }
 
             false -> {
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Trying to disable the network connection.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Trying to disable the network connection.")
                 mDevice.executeShellCommand("svc data disable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Data network connection disable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Data network connection disable command sent.")
                 mDevice.executeShellCommand("svc wifi disable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Wifi network connection disable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Wifi network connection disable command sent.")
 
                 // Wait for network connection to be completely disabled
                 Log.i(TAG, "setNetworkEnabled: Waiting for connection to be disabled.")
-                IdlingRegistry.getInstance().register(networkDisconnectedIdlingResource)
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkDisconnectedIdlingResource)
-                }
-                Log.i(TAG, "setNetworkEnabled: Network connection was disabled.")
 
-                // Register the TimerIdlingResource
-                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+                val registered = IdlingRegistry.getInstance().register(
+                    networkDisconnectedIdlingResource,
+                    disableNetworkTimerIdlingResource,
+                )
 
-                // Wait for the TimerIdlingResource to become idle
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(disableNetworkTimerIdlingResource)
-                    // Check the active network state
-                    checkActiveNetworkState(enabled = false)
+                Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for disabling the connection are registered.")
+                if (registered) {
+                    Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for disabling the connection are registered.")
+                    Espresso.onIdle {
+                        val unregistered = IdlingRegistry.getInstance().unregister(
+                            networkDisconnectedIdlingResource,
+                            disableNetworkTimerIdlingResource,
+                        )
+                        Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for disabling the connection are unregistered.")
+                        if (unregistered) {
+                            Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for disabling the connection are unregistered.")
+                            Log.i(TAG, "setNetworkEnabled: Network connection was disabled.")
+                            checkActiveNetworkState(enabled = false)
+                        } else {
+                            Log.i(TAG, "setNetworkEnabled: Failed to unregister the idling resources for disabling the connection.")
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "setNetworkEnabled: Failed to register idling resources for disabling the connection.")
                 }
             }
         }
@@ -375,7 +382,7 @@ object AppAndSystemHelper {
         }
     }
 
-    fun assertNativeAppOpens(appPackageName: String, url: String = "") {
+    fun assertNativeAppOpens(composeTestRule: ComposeTestRule, appPackageName: String, url: String = "") {
         if (isPackageInstalled(appPackageName)) {
             Log.i(TAG, "assertNativeAppOpens: Waiting for the device to be idle $waitingTimeShort ms.")
             mDevice.waitForIdle(waitingTimeShort)
@@ -392,7 +399,7 @@ object AppAndSystemHelper {
             forceCloseApp(appPackageName)
         } else {
             Log.i(TAG, "assertNativeAppOpens: Trying to verify the page redirect URL.")
-            BrowserRobot().verifyUrl(url)
+            BrowserRobot(composeTestRule).verifyUrl(url)
             Log.i(TAG, "assertNativeAppOpens: Verified the page redirect URL.")
         }
     }
@@ -482,16 +489,14 @@ object AppAndSystemHelper {
                     .className("android.widget.Button"),
             )
 
-        if (Build.VERSION.SDK_INT >= 23) {
-            if (whileUsingTheAppPermissionButton.waitForExists(waitingTimeShort)) {
-                Log.i(TAG, "grantSystemPermission: Trying to click the \"While using the app\" button.")
-                whileUsingTheAppPermissionButton.click()
-                Log.i(TAG, "grantSystemPermission: Clicked the \"While using the app\" button.")
-            } else if (allowPermissionButton.waitForExists(waitingTimeShort)) {
-                Log.i(TAG, "grantSystemPermission: Trying to click the \"Allow\" button.")
-                allowPermissionButton.click()
-                Log.i(TAG, "grantSystemPermission: Clicked the \"Allow\" button.")
-            }
+        if (whileUsingTheAppPermissionButton.waitForExists(waitingTimeShort)) {
+            Log.i(TAG, "grantSystemPermission: Trying to click the \"While using the app\" button.")
+            whileUsingTheAppPermissionButton.click()
+            Log.i(TAG, "grantSystemPermission: Clicked the \"While using the app\" button.")
+        } else if (allowPermissionButton.waitForExists(waitingTimeShort)) {
+            Log.i(TAG, "grantSystemPermission: Trying to click the \"Allow\" button.")
+            allowPermissionButton.click()
+            Log.i(TAG, "grantSystemPermission: Clicked the \"Allow\" button.")
         }
     }
 
@@ -660,24 +665,46 @@ object AppAndSystemHelper {
         Log.i(TAG, "verifyKeyboardVisibility: Verified the keyboard is visible.")
     }
 
-    fun openAppFromExternalLink(url: String) {
-        val context = InstrumentationRegistry.getInstrumentation().getTargetContext()
-        val intent = Intent().apply {
-            action = Intent.ACTION_VIEW
-            data = url.toUri()
+    fun openAppFromExternalLink(
+        composeTestRule: AndroidComposeTestRule<HomeActivityIntentTestRule, HomeActivity>,
+        url: String,
+    ) {
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
             `package` = TestHelper.packageName
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+
         try {
-            Log.i(TAG, "openAppFromExternalLink: Trying to start the activity from an external intent.")
-            context.startActivity(intent)
-            Log.i(TAG, "openAppFromExternalLink: Activity started from an external intent.")
-        } catch (ex: ActivityNotFoundException) {
-            Log.i(TAG, "openAppFromExternalLink: Exception caught. Trying to start the activity from a null intent.")
-            intent.setPackage(null)
-            context.startActivity(intent)
-            Log.i(TAG, "openAppFromExternalLink: Started the activity from a null intent.")
+            // Case 1: The app is already running and Compose has a host activity.
+            // Launch the external intent from the existing activity so the
+            // ComposeTestRule can properly track the Compose hierarchy.
+            Log.i(TAG, "openAppFromExternalLink: Host activity exists, launching external intent from activity.")
+            composeTestRule.activity.startActivity(intent)
+        } catch (e: IllegalStateException) {
+            // Case 2: The host activity was finished (cold start scenario).
+            // ComposeTestRule no longer has an activity, so we fall back to
+            // launching the intent from the instrumentation context.
+            Log.i(TAG, "openAppFromExternalLink: No host activity found. Launching external intent from instrumentation context.")
+
+            val context = InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+
+            try {
+                context.startActivity(intent)
+                Log.i(TAG, "openAppFromExternalLink: Activity started from instrumentation context.")
+            } catch (ex: ActivityNotFoundException) {
+                // Fallback in case the explicit package cannot handle the intent.
+                Log.i(TAG, "openAppFromExternalLink: ActivityNotFoundException caught. Retrying with null package.")
+                intent.`package` = null
+                context.startActivity(intent)
+                Log.i(TAG, "openAppFromExternalLink: Activity started with null package.")
+            }
         }
+
+        // Ensure Compose has fully settled before any UI assertions or robot actions.
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "openAppFromExternalLink: Compose is idle and ready for assertions.")
     }
 
     /**

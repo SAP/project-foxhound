@@ -8,13 +8,13 @@ from marionette_harness import MarionetteTestCase
 
 class ServiceWorkerAtShutdownTestCase(MarionetteTestCase):
     def setUp(self):
-        super(ServiceWorkerAtShutdownTestCase, self).setUp()
+        super().setUp()
         self.install_service_worker()
         self.set_pref_to_delete_site_data_on_shutdown()
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(ServiceWorkerAtShutdownTestCase, self).tearDown()
+        super().tearDown()
 
     def install_service_worker(self):
         install_url = self.marionette.absolute_url(

@@ -7,8 +7,8 @@
 #define MOZILLA_SHAREDBUFFER_H_
 
 #include "mozilla/CheckedInt.h"
-#include "mozilla/mozalloc.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/mozalloc.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {

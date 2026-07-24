@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIScriptObjectPrincipal_h__
-#define nsIScriptObjectPrincipal_h__
+#ifndef nsIScriptObjectPrincipal_h_
+#define nsIScriptObjectPrincipal_h_
 
 #include "nsISupports.h"
 
@@ -30,4 +30,4 @@ class nsIScriptObjectPrincipal : public nsISupports {
   virtual nsIPrincipal* PartitionedPrincipal() = 0;
 };
 
-#endif  // nsIScriptObjectPrincipal_h__
+#endif  // nsIScriptObjectPrincipal_h_

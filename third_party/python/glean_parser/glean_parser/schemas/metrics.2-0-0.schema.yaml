@@ -15,10 +15,6 @@ description: |
 $id: moz://mozilla.org/schemas/glean/metrics/2-0-0
 
 definitions:
-  token:
-    type: string
-    pattern: "^[A-Za-z_][A-Za-z0-9_\\.]*$"
-
   snake_case:
     type: string
     pattern: "^[a-z_][a-z0-9_]*$"
@@ -38,11 +34,6 @@ definitions:
   kebab_case:
     type: string
     pattern: "^[a-z][a-z0-9-]{0,29}$"
-
-  long_id:
-    allOf:
-      - $ref: "#/definitions/snake_case"
-      - maxLength: 40
 
   short_id:
     allOf:

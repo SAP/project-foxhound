@@ -32,10 +32,10 @@ use core::num::NonZeroU64;
 use alloc::{boxed::Box, string::String, string::ToString, sync::Arc};
 
 use hashbrown::HashMap;
-use wgt::PushConstantRange;
 
 use crate::{
     device::{Device, DeviceError},
+    hal_label,
     pipeline::{CreateComputePipelineError, CreateShaderModuleError},
     resource::Buffer,
     snatch::SnatchGuard,
@@ -112,7 +112,10 @@ impl TimestampNormalizer {
             let temporary_bind_group_layout = device
                 .raw()
                 .create_bind_group_layout(&hal::BindGroupLayoutDescriptor {
-                    label: Some("Timestamp Normalization Bind Group Layout"),
+                    label: hal_label(
+                        Some("Timestamp Normalization Bind Group Layout"),
+                        device.instance_flags,
+                    ),
                     flags: hal::BindGroupLayoutFlags::empty(),
                     entries: &[wgt::BindGroupLayoutEntry {
                         binding: 0,
@@ -148,7 +151,7 @@ impl TimestampNormalizer {
                 panic!("Timestamp normalization requires the wgsl feature flag to be enabled!");
 
             let info = crate::device::create_validator(
-                wgt::Features::PUSH_CONSTANTS,
+                wgt::Features::IMMEDIATES,
                 wgt::DownlevelFlags::empty(),
                 naga::valid::ValidationFlags::all(),
             )
@@ -177,7 +180,7 @@ impl TimestampNormalizer {
                         CreateShaderModuleError::Device(device.handle_hal_error(error))
                     }
                     hal::ShaderError::Compilation(ref msg) => {
-                        log::error!("Shader error: {}", msg);
+                        log::error!("Shader error: {msg}");
                         CreateShaderModuleError::Generation
                     }
                 })?;
@@ -187,10 +190,7 @@ impl TimestampNormalizer {
                 .create_pipeline_layout(&hal::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[temporary_bind_group_layout.as_ref()],
-                    push_constant_ranges: &[PushConstantRange {
-                        stages: wgt::ShaderStages::COMPUTE,
-                        range: 0..8,
-                    }],
+                    immediate_size: 8,
                     flags: hal::PipelineLayoutFlags::empty(),
                 })
                 .map_err(|e| {
@@ -274,8 +274,7 @@ impl TimestampNormalizer {
             let bg_label_alloc;
             let label = match buffer_label {
                 Some(label) => {
-                    bg_label_alloc =
-                        alloc::format!("Timestamp normalization bind group ({})", label);
+                    bg_label_alloc = alloc::format!("Timestamp normalization bind group ({label})");
                     &*bg_label_alloc
                 }
                 None => "Timestamp normalization bind group",
@@ -284,12 +283,13 @@ impl TimestampNormalizer {
             let bg = device
                 .raw()
                 .create_bind_group(&hal::BindGroupDescriptor {
-                    label: Some(label),
+                    label: hal_label(Some(label), device.instance_flags),
                     layout: &*state.temporary_bind_group_layout,
                     buffers: &[hal::BufferBinding::new_unchecked(buffer, 0, buffer_size)],
                     samplers: &[],
                     textures: &[],
                     acceleration_structures: &[],
+                    external_textures: &[],
                     entries: &[hal::BindGroupEntry {
                         binding: 0,
                         resource_index: 0,
@@ -331,14 +331,16 @@ impl TimestampNormalizer {
         unsafe {
             encoder.transition_buffers(barrier.as_slice());
             encoder.begin_compute_pass(&hal::ComputePassDescriptor {
-                label: Some("Timestamp normalization pass"),
+                label: hal_label(
+                    Some("Timestamp normalization pass"),
+                    buffer.device.instance_flags,
+                ),
                 timestamp_writes: None,
             });
             encoder.set_compute_pipeline(&*state.pipeline);
             encoder.set_bind_group(&*state.pipeline_layout, 0, Some(bind_group), &[]);
-            encoder.set_push_constants(
+            encoder.set_immediates(
                 &*state.pipeline_layout,
-                wgt::ShaderStages::COMPUTE,
                 0,
                 &[buffer_offset_timestamps, total_timestamps],
             );

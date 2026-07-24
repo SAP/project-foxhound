@@ -15,8 +15,6 @@
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
 
-#include <string>
-
 #ifdef MOZ_WIDGET_ANDROID
 #  include "nsIAppShell.h"
 #  include "nsServiceManagerUtils.h"

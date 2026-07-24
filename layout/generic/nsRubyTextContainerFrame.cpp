@@ -10,7 +10,6 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
@@ -147,7 +146,6 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
       // Relative positioning hasn't happened yet.
       // So MovePositionBy should not be used here.
       child->SetPosition(rtcWM, pos, containerSize);
-      nsContainerFrame::PlaceFrameView(child);
     }
     aDesiredSize.SetSize(rtcWM, size);
   } else {
@@ -160,4 +158,30 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
     nsLayoutUtils::SetBSizeFromFontMetrics(this, aDesiredSize, borderPadding,
                                            rtcWM, rtcWM);
   }
+}
+
+RubyMetrics nsRubyTextContainerFrame::RubyMetrics(
+    float aRubyMetricsFactor) const {
+  mozilla::RubyMetrics result;
+  WritingMode containerWM = GetWritingMode();
+  bool foundAnyFrames = false;
+  for (const auto* f : mFrames) {
+    WritingMode wm = f->GetWritingMode();
+    if (wm.IsOrthogonalTo(containerWM) || f->IsPlaceholderFrame()) {
+      continue;
+    }
+    mozilla::RubyMetrics m = f->RubyMetrics(aRubyMetricsFactor);
+    const LogicalMargin borderPadding = f->GetLogicalUsedBorderAndPadding(wm);
+    m.mAscent += borderPadding.BStart(wm);
+    m.mDescent += borderPadding.BEnd(wm);
+    const LogicalMargin margin = f->GetLogicalUsedMargin(wm);
+    m.mAscent += margin.BStart(wm);
+    m.mDescent += margin.BEnd(wm);
+    result.CombineWith(m);
+    foundAnyFrames = true;
+  }
+  if (!foundAnyFrames) {
+    result = nsIFrame::RubyMetrics(aRubyMetricsFactor);
+  }
+  return result;
 }

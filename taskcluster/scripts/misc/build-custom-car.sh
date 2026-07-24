@@ -60,12 +60,13 @@ fi
 # Logic for macosx64
 if [[ $(uname -s) == "Darwin" ]]; then
   # Modify the config with fetched sdk path
-  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX15.4.sdk"
-
-  # Avoid mixing up the system python and toolchain python in the
-  # python path configuration
-  # https://bugs.python.org/issue22490
-  unset __PYVENV_LAUNCHER__
+  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX26.2.sdk"
+  # Bug 1990712 & 1989676
+  # HACK: Create a stub DarwinBasic.modulemap to satisfy Ninja’s dependency graph.
+  # This file does not exist in Command Line Tools SDKs. It seems only the full
+  # Xcode SDK includes DarwinBasic/DarwinFoundation modulemaps.
+  mkdir -p "$MACOS_SYSROOT/usr/include"
+  touch "$MACOS_SYSROOT/usr/include/DarwinFoundation.modulemap"
 
   # Set the SDK path for build, which is technically a higher version
   # than what is associated with the current OS version (10.15).
@@ -111,7 +112,7 @@ if [[ $(uname -o) == "Msys" ]]; then
   pushd "$WINDOWSSDKDIR"
   mkdir -p Debuggers/x64/
   popd
-  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.40.33807/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
+  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
   mv "$WINDOWSSDKDIR/App Certification Kit/"* "$WINDOWSSDKDIR"/Debuggers/x64/
   export WINDIR="$PWD/chrome_dll"
 
@@ -221,3 +222,12 @@ tar -c chromium | python3 $GECKO_PATH/taskcluster/scripts/misc/zstdpy > $ARTIFAC
 
 mkdir -p $UPLOAD_DIR
 mv "$ARTIFACT_NAME" "$UPLOAD_DIR"
+
+if [ "$IS_ANDROID" = true ]; then
+  # Package up symbols (lib.unstripped) from android build separately.
+  SYM_ARTIFACT="car_android_symbols.tar.zst"
+  SYM_DIR="src/out/Default/lib.unstripped"
+  tar -C "$(dirname "$SYM_DIR")" -c "$(basename "$SYM_DIR")" \
+    | python3 "$GECKO_PATH/taskcluster/scripts/misc/zstdpy" > "$SYM_ARTIFACT"
+  mv "$SYM_ARTIFACT" "$UPLOAD_DIR"
+fi

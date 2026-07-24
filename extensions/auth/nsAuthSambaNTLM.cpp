@@ -8,9 +8,9 @@
 #include "nsAuthSambaNTLM.h"
 #include "nspr.h"
 #include "prenv.h"
-#include "plbase64.h"
 #include "prerror.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
+#include "mozilla/Base64.h"
 
 #include <stdlib.h>
 #include <sys/wait.h>
@@ -118,14 +118,11 @@ static uint8_t* ExtractMessage(const nsACString& aLine, uint32_t* aLen) {
     return nullptr;
   }
 
-  // Calculate the exact length. I wonder why there isn't a function for this
-  // in plbase64.
-  int32_t numEquals;
-  for (numEquals = 0; numEquals < length; ++numEquals) {
-    if (s[length - 1 - numEquals] != '=') break;
+  char* base64;
+  if (NS_FAILED(mozilla::Base64Decode(s, length, &base64, aLen))) {
+    return nullptr;
   }
-  *aLen = (length / 4) * 3 - numEquals;
-  return reinterpret_cast<uint8_t*>(PL_Base64Decode(s, length, nullptr));
+  return (uint8_t*)base64;
 }
 
 nsresult nsAuthSambaNTLM::SpawnNTLMAuthHelper() {
@@ -211,14 +208,12 @@ nsAuthSambaNTLM::GetNextToken(const void* inToken, uint32_t inTokenLen,
   }
 
   /* inToken must be a type 2 message. Get ntlm_auth to generate our response */
-  char* encoded =
-      PL_Base64Encode(static_cast<const char*>(inToken), inTokenLen, nullptr);
-  if (!encoded) return NS_ERROR_OUT_OF_MEMORY;
-
   nsCString request;
   request.AssignLiteral("TT ");
-  request.Append(encoded);
-  PR_Free(encoded);
+  if (NS_FAILED(mozilla::Base64EncodeAppend(static_cast<const char*>(inToken),
+                                            inTokenLen, request))) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
   request.Append('\n');
 
   if (!WriteString(mToChildFD, request)) return NS_ERROR_FAILURE;

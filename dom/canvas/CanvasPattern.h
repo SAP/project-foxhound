@@ -5,8 +5,8 @@
 #ifndef mozilla_dom_CanvasPattern_h
 #define mozilla_dom_CanvasPattern_h
 
-#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 

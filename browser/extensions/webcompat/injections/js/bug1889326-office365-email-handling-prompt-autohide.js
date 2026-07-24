@@ -5,30 +5,35 @@
 "use strict";
 
 /**
- * Bug 1889326 - Office 365 email handling prompt autohide
+ * Bug 1709653 - Office 365 email handling prompt autohide
  *
  * This site patch prevents the notification bar on Office 365
  * apps from popping up on each page-load, offering to handle
  * email with Outlook.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1709653) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1709653", {
+    configurable: false,
+    value: true,
+  });
 
-const warning =
-  "Office 365 Outlook email handling prompt has been hidden. See https://bugzilla.mozilla.org/show_bug.cgi?id=1889326 for details.";
+  const warning =
+    "Office 365 Outlook email handling prompt has been hidden. See https://bugzilla.mozilla.org/show_bug.cgi?id=1709653 for details.";
 
-const localStorageKey = "mailProtocolHandlerAlreadyOffered";
+  const localStorageKey = "mailProtocolHandlerAlreadyOffered";
 
-const proto = Object.getPrototypeOf(navigator).wrappedJSObject;
-const { registerProtocolHandler } = proto;
-const { localStorage } = window.wrappedJSObject;
+  const proto = Object.getPrototypeOf(navigator);
+  const { registerProtocolHandler } = proto;
+  const { localStorage } = window;
 
-proto.registerProtocolHandler = exportFunction(function (scheme, url, title) {
-  if (localStorage.getItem(localStorageKey)) {
-    console.info(warning);
+  proto.registerProtocolHandler = function (scheme, url, title) {
+    if (localStorage.getItem(localStorageKey)) {
+      console.info(warning);
+      return undefined;
+    }
+    registerProtocolHandler.call(this, scheme, url, title);
+    localStorage.setItem(localStorageKey, true);
     return undefined;
-  }
-  registerProtocolHandler.call(this, scheme, url, title);
-  localStorage.setItem(localStorageKey, true);
-  return undefined;
-}, window);
+  };
+}

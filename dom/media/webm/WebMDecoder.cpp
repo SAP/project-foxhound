@@ -8,8 +8,8 @@
 
 #include <utility>
 
-#include "mozilla/Preferences.h"
 #include "VPXDecoder.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"

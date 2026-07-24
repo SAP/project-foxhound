@@ -7,13 +7,13 @@
 #ifndef VIDEOFRAMECONTAINER_H_
 #define VIDEOFRAMECONTAINER_H_
 
-#include "mozilla/Mutex.h"
-#include "mozilla/TimeStamp.h"
-#include "gfxPoint.h"
-#include "nsCOMPtr.h"
 #include "ImageContainer.h"
 #include "MediaSegment.h"
 #include "VideoSegment.h"
+#include "gfxPoint.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/TimeStamp.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla {
 

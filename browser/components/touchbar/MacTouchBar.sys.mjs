@@ -8,14 +8,15 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "touchBarUpdater",
   "@mozilla.org/widget/touchbarupdater;1",
-  "nsITouchBarUpdater"
+  Ci.nsITouchBarUpdater
 );
 
 // For accessing TouchBarHelper methods from static contexts in this file.
@@ -23,7 +24,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "touchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 /**
@@ -441,7 +442,7 @@ export class TouchBarHelper {
 
   observe(subject, topic, data) {
     switch (topic) {
-      case "touchbar-location-change":
+      case "touchbar-location-change": {
         let updatedInputs = ["Back", "Forward"];
         gBuiltInInputs.Back.disabled =
           !TouchBarHelper.window.gBrowser.canGoBack;
@@ -457,6 +458,7 @@ export class TouchBarHelper {
         }
         this._updateTouchBarInputs(...updatedInputs);
         break;
+      }
       case "fullscreen-painted":
         if (TouchBarHelper.window.document.fullscreenElement) {
           gBuiltInInputs.OpenLocation.title = "touchbar-fullscreen-exit";

@@ -249,11 +249,25 @@ nsresult nsPageFrame::GetFrameName(nsAString& aResult) const {
 void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   aNewStr = aStr;
 
+  // Helper to wrap a string in Unicode FSI/PDI controls, so that its bidi
+  // rendering will be isolated from the context, and will respect the default
+  // directionality of the string's content.
+  // We apply this to each of the strings being substituted in for "special"
+  // codes in the header/footer.
+  constexpr char16_t kFirstStrongIsolate = char16_t(0x2068);
+  constexpr char16_t kPopDirectionalIsolate = char16_t(0x2069);
+  auto bidiIsolateWrap = [](nsString& aString) {
+    aString.Insert(kFirstStrongIsolate, 0);
+    aString.Append(kPopDirectionalIsolate);
+  };
+
   // Search to see if the &D code is in the string
   // then subst in the current date/time
   constexpr auto kDate = u"&D"_ns;
   if (aStr.Find(kDate) != kNotFound) {
-    aNewStr.ReplaceSubstring(kDate, mPD->mDateTimeStr);
+    nsAutoString uStr(mPD->mDateTimeStr);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kDate, uStr);
   }
 
   // NOTE: Must search for &PT before searching for &P
@@ -266,6 +280,7 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumAndTotalsFormat.get(),
                               mPageNum, mPD->mRawNumPages);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPageAndTotal, uStr);
   }
 
@@ -275,17 +290,22 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   if (aStr.Find(kPage) != kNotFound) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(), mPageNum);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPage, uStr);
   }
 
   constexpr auto kTitle = u"&T"_ns;
   if (aStr.Find(kTitle) != kNotFound) {
-    aNewStr.ReplaceSubstring(kTitle, mPD->mDocTitle);
+    nsAutoString uStr(mPD->mDocTitle);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kTitle, uStr);
   }
 
   constexpr auto kDocURL = u"&U"_ns;
   if (aStr.Find(kDocURL) != kNotFound) {
-    aNewStr.ReplaceSubstring(kDocURL, mPD->mDocURL);
+    nsAutoString uStr(mPD->mDocURL);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kDocURL, uStr);
   }
 
   constexpr auto kPageTotal = u"&L"_ns;
@@ -293,6 +313,7 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(),
                               mPD->mRawNumPages);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPageTotal, uStr);
   }
 }
@@ -1021,8 +1042,8 @@ void nsPageBreakFrame::Reflow(nsPresContext* aPresContext,
     // frame and thus "misplaced".  nsFieldSetFrame::Reflow deals with these
     // forced breaks explicitly instead.
     const nsContainerFrame* parent = GetParent();
-    if (parent &&
-        parent->Style()->GetPseudoType() == PseudoStyleType::fieldsetContent) {
+    if (parent && parent->Style()->GetPseudoType() ==
+                      PseudoStyleType::MozFieldsetContent) {
       while ((parent = parent->GetParent())) {
         if (const nsFieldSetFrame* const fieldset = do_QueryFrame(parent)) {
           const auto* const legend = fieldset->GetLegend();

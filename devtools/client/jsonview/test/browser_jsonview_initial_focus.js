@@ -18,7 +18,7 @@ add_task(async function () {
       "Scrollable area initially focused"
     );
   });
-  await reloadBrowser();
+  await reloadSelectedTab();
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
     const scroller = await ContentTaskUtils.waitForCondition(
       () => content.document.getElementById("json-scrolling-panel"),

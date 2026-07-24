@@ -6,11 +6,13 @@ apply plugin: 'com.android.application'
 
 android {
     buildToolsVersion = project.ext.buildToolsVersion
-    compileSdkVersion = project.ext.compileSdkVersion
+    compileSdk {
+        version = release(project.ext.compileSdkMajorVersion) { minorApiLevel = project.ext.compileSdkMinorVersion }
+    }
 
     defaultConfig {
-        targetSdkVersion = project.ext.targetSdkVersion
-        minSdkVersion = project.ext.minSdkVersion
+        targetSdk project.ext.targetSdkVersion
+        minSdk project.ext.minSdkVersion
         manifestPlaceholders = project.ext.manifestPlaceholders
 
         applicationId "org.mozilla.geckoview.test_runner"
@@ -39,11 +41,11 @@ android {
 }
 
 dependencies {
+    implementation project(path: ':geckoview')
+
     implementation libs.androidx.annotation
     implementation libs.androidx.appcompat
-    implementation libs.androidx.preferences
-
-    implementation project(path: ':geckoview')
     implementation libs.androidx.constraintlayout
+    implementation libs.androidx.preferences
     implementation libs.google.material
 }

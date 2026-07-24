@@ -7,9 +7,8 @@
 #include "mozilla/dom/InternalHeaders.h"
 
 #include "FetchUtil.h"
-#include "mozilla/dom/FetchTypes.h"
 #include "mozilla/ErrorResult.h"
-
+#include "mozilla/dom/FetchTypes.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsIHttpChannel.h"

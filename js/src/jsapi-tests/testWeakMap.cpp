@@ -90,7 +90,8 @@ BEGIN_TEST(testWeakMap_setWeakMapEntry_invalid_key) {
   JS::Rooted<JS::Value> exn(cx);
   CHECK(JS_GetPendingException(cx, &exn));
   JS::Rooted<JSObject*> obj(cx, &exn.toObject());
-  JSErrorReport* err = JS_ErrorFromException(cx, obj);
+  JS::BorrowedErrorReport err(cx);
+  CHECK(JS_ErrorFromException(cx, obj, err));
   CHECK(err->exnType == JSEXN_TYPEERR);
 
   JS_ClearPendingException(cx);
@@ -104,7 +105,6 @@ BEGIN_TEST(testWeakMap_setWeakMapEntry_invalid_key) {
 }
 END_TEST(testWeakMap_setWeakMapEntry_invalid_key)
 
-#ifdef NIGHTLY_BUILD
 BEGIN_TEST(testWeakMap_basicOperations_symbols_as_keys) {
   JS::RootedObject map(cx, JS::NewWeakMapObject(cx));
   CHECK(IsWeakMapObject(map));
@@ -142,7 +142,6 @@ BEGIN_TEST(testWeakMap_basicOperations_symbols_as_keys) {
   return true;
 }
 END_TEST(testWeakMap_basicOperations_symbols_as_keys)
-#endif
 
 BEGIN_TEST(testWeakMap_keyDelegates) {
   AutoLeaveZeal nozeal(cx);
@@ -311,12 +310,12 @@ JSObject* newDelegate() {
 
 void performIncrementalGC() {
   JSRuntime* rt = cx->runtime();
-  JS::SliceBudget budget(JS::WorkBudget(1000));
+  JS::SliceBudget budget(JS::WorkBudget(200));
   rt->gc.startDebugGC(JS::GCOptions::Normal, budget);
 
-  // Wait until we've started marking before finishing the GC
-  // non-incrementally.
-  while (rt->gc.state() == gc::State::Prepare) {
+  // Wait until we've started sweeping before finishing the GC
+  // non-incrementally otherwise we'll put all zones into one sweep group.
+  while (rt->gc.state() < gc::State::Sweep) {
     rt->gc.debugGCSlice(budget);
   }
   if (JS::IsIncrementalGCInProgress(cx)) {

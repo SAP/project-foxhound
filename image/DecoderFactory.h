@@ -8,7 +8,6 @@
 #define mozilla_image_DecoderFactory_h
 
 #include "DecoderFlags.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/gfx/2D.h"
@@ -30,9 +29,6 @@ class DecoderFactory {
  public:
   /// @return the type of decoder which is appropriate for @aMimeType.
   static DecoderType GetDecoderType(const char* aMimeType);
-
-  /// @return the default flags to use when creating a decoder of @aType.
-  static DecoderFlags GetDefaultDecoderFlagsForType(DecoderType aType);
 
   /**
    * Creates and initializes a decoder for non-animated images of type @aType.

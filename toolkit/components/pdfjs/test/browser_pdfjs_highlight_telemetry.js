@@ -218,7 +218,7 @@ add_task(async function test() {
       );
 
       telemetryPromise = waitForTelemetry(browser);
-      await EventUtils.synthesizeKey("KEY_Delete");
+      await click(browser, ".highlightEditor button.deleteButton");
       await telemetryPromise;
 
       await Services.fog.testFlushAllChildren();

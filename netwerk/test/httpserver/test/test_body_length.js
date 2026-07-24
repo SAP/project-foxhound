@@ -37,7 +37,7 @@ function contentLength(request) {
   Assert.equal(data, REQUEST_DATA);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

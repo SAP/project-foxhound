@@ -6,50 +6,14 @@
 
 import json
 import os
-import platform
 import re
-import subprocess
-import sys
 from filecmp import dircmp
 
 from mozbuild.nodeutil import (
-    NODE_MIN_VERSION,
-    NPM_MIN_VERSION,
-    find_node_executable,
-    find_npm_executable,
+    package_setup,
+    remove_directory,
 )
-from mozfile.mozfile import remove as mozfileremove
 from packaging.version import Version
-
-NODE_MACHING_VERSION_NOT_FOUND_MESSAGE = """
-Could not find Node.js executable later than %s.
-
-Executing `mach bootstrap --no-system-changes` should
-install a compatible version in ~/.mozbuild on most platforms.
-""".strip()
-
-NPM_MACHING_VERSION_NOT_FOUND_MESSAGE = """
-Could not find npm executable later than %s.
-
-Executing `mach bootstrap --no-system-changes` should
-install a compatible version in ~/.mozbuild on most platforms.
-""".strip()
-
-NODE_NOT_FOUND_MESSAGE = """
-nodejs is either not installed or is installed to a non-standard path.
-
-Executing `mach bootstrap --no-system-changes` should
-install a compatible version in ~/.mozbuild on most platforms.
-""".strip()
-
-NPM_NOT_FOUND_MESSAGE = """
-Node Package Manager (npm) is either not installed or installed to a
-non-standard path.
-
-Executing `mach bootstrap --no-system-changes` should
-install a compatible version in ~/.mozbuild on most platforms.
-""".strip()
-
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 CARET_VERSION_RANGE_RE = re.compile(r"^\^((\d+)\.\d+\.\d+)$")
@@ -85,129 +49,12 @@ def eslint_setup(package_root, package_name, should_clobber=False):
         os.path.join(get_eslint_module_path(), "eslint-plugin-mozilla", "node_modules")
     )
 
-    package_setup(package_root, package_name, should_clobber=should_clobber)
-
-
-def remove_directory(path, skip_logging=False):
-    if not skip_logging:
-        print("Clobbering %s..." % path)
-    if sys.platform.startswith("win") and have_winrm():
-        process = subprocess.Popen(["winrm", "-rf", path])
-        process.wait()
-    else:
-        mozfileremove(path)
-
-
-def package_setup(
-    package_root,
-    package_name,
-    should_update=False,
-    should_clobber=False,
-    no_optional=False,
-    skip_logging=False,
-):
-    """Ensure `package_name` at `package_root` is installed.
-
-    When `should_update` is true, clobber, install, and produce a new
-    "package-lock.json" file.
-
-    This populates `package_root/node_modules`.
-
-    """
     orig_project_root = get_project_root()
-    orig_cwd = os.getcwd()
-
-    if should_update:
-        should_clobber = True
-
     try:
         set_project_root(package_root)
-        sys.path.append(os.path.dirname(__file__))
-
-        # npm sometimes fails to respect cwd when it is run using check_call so
-        # we manually switch folders here instead.
-        project_root = get_project_root()
-        os.chdir(project_root)
-
-        if should_clobber:
-            remove_directory(os.path.join(project_root, "node_modules"), skip_logging)
-
-        npm_path, _ = find_npm_executable()
-        if not npm_path:
-            return 1
-
-        node_path, _ = find_node_executable()
-        if not node_path:
-            return 1
-
-        extra_parameters = ["--loglevel=error"]
-
-        if no_optional:
-            extra_parameters.append("--no-optional")
-
-        package_lock_json_path = os.path.join(get_project_root(), "package-lock.json")
-
-        if should_update:
-            cmd = [npm_path, "install"]
-            mozfileremove(package_lock_json_path)
-        else:
-            cmd = [npm_path, "ci"]
-
-        # On non-Windows, ensure npm is called via node, as node may not be in the
-        # path.
-        if platform.system() != "Windows":
-            cmd.insert(0, node_path)
-
-        cmd.extend(extra_parameters)
-
-        # Ensure that bare `node` and `npm` in scripts, including post-install scripts, finds the
-        # binary we're invoking with.  Without this, it's easy for compiled extensions to get
-        # mismatched versions of the Node.js extension API.
-        path = os.environ.get("PATH", "").split(os.pathsep)
-        node_dir = os.path.dirname(node_path)
-        if node_dir not in path:
-            path = [node_dir] + path
-
-        if not skip_logging:
-            print(
-                'Installing %s for mach using "%s"...' % (package_name, " ".join(cmd))
-            )
-        result = call_process(
-            package_name, cmd, append_env={"PATH": os.pathsep.join(path)}
-        )
-
-        if not result:
-            return 1
-
-        bin_path = os.path.join(
-            get_project_root(), "node_modules", ".bin", package_name
-        )
-
-        if not skip_logging:
-            print("\n%s installed successfully!" % package_name)
-            print("\nNOTE: Your local %s binary is at %s\n" % (package_name, bin_path))
-
+        package_setup(package_root, package_name, should_clobber=should_clobber)
     finally:
         set_project_root(orig_project_root)
-        os.chdir(orig_cwd)
-
-
-def call_process(name, cmd, cwd=None, append_env={}):
-    env = dict(os.environ)
-    env.update(append_env)
-
-    try:
-        with open(os.devnull, "w") as fnull:
-            subprocess.check_call(cmd, cwd=cwd, stdout=fnull, env=env)
-    except subprocess.CalledProcessError:
-        if cwd:
-            print("\nError installing %s in the %s folder, aborting." % (name, cwd))
-        else:
-            print("\nError installing %s, aborting." % name)
-
-        return False
-
-    return True
 
 
 def expected_installed_modules(package_root, package_name):
@@ -338,33 +185,6 @@ def version_in_range(version, version_range):
     return False
 
 
-def get_possible_node_paths_win():
-    """
-    Return possible nodejs paths on Windows.
-    """
-    if platform.system() != "Windows":
-        return []
-
-    return list(
-        {
-            "%s\\nodejs" % os.environ.get("SystemDrive"),
-            os.path.join(os.environ.get("ProgramFiles"), "nodejs"),
-            os.path.join(os.environ.get("PROGRAMW6432"), "nodejs"),
-            os.path.join(os.environ.get("PROGRAMFILES"), "nodejs"),
-        }
-    )
-
-
-def get_version(path):
-    try:
-        version_str = subprocess.check_output(
-            [path, "--version"], stderr=subprocess.STDOUT, universal_newlines=True
-        )
-        return version_str
-    except (subprocess.CalledProcessError, OSError):
-        return None
-
-
 def set_project_root(root=None):
     """Sets the project root to the supplied path, or works out what the root
     is based on looking for 'mach'.
@@ -396,7 +216,6 @@ def get_project_root():
     """Returns the absolute path to the root of the project, see set_project_root()
     for how this is determined.
     """
-    global project_root
 
     if not project_root:
         set_project_root()
@@ -406,34 +225,3 @@ def get_project_root():
 
 def get_eslint_module_path():
     return os.path.join(get_project_root(), "tools", "lint", "eslint")
-
-
-def check_node_executables_valid():
-    node_path, version = find_node_executable()
-    if not node_path:
-        print(NODE_NOT_FOUND_MESSAGE)
-        return False
-    if not version:
-        print(NODE_MACHING_VERSION_NOT_FOUND_MESSAGE % NODE_MIN_VERSION)
-        return False
-
-    npm_path, version = find_npm_executable()
-    if not npm_path:
-        print(NPM_NOT_FOUND_MESSAGE)
-        return False
-    if not version:
-        print(NPM_MACHING_VERSION_NOT_FOUND_MESSAGE % NPM_MIN_VERSION)
-        return False
-
-    return True
-
-
-def have_winrm():
-    # `winrm -h` should print 'winrm version ...' and exit 1
-    try:
-        p = subprocess.Popen(
-            ["winrm.exe", "-h"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        )
-        return p.wait() == 1 and p.stdout.read().startswith("winrm")
-    except Exception:
-        return False

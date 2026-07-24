@@ -38,6 +38,8 @@ support-files = [
 
 ["browser_rules_add-property-invalid-identifier.js"]
 
+["browser_rules_add-property-large-stylesheet.js"]
+
 ["browser_rules_add-property-svg.js"]
 
 ["browser_rules_add-property_01.js"]
@@ -60,6 +62,8 @@ support-files = [
 
 ["browser_rules_add-rule-pseudo-class.js"]
 
+["browser_rules_add-rule-shadow-dom.js"]
+
 ["browser_rules_add-rule-then-property-edit-selector.js"]
 
 ["browser_rules_add-rule-with-menu.js"]
@@ -70,12 +74,15 @@ support-files = [
 
 ["browser_rules_at_starting-style.js"]
 
+["browser_rules_attr.js"]
+
+["browser_rules_attributes-style.js"]
+
 ["browser_rules_authored.js"]
 
 ["browser_rules_authored_color.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1781471
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1781471
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1781471
 ]
 
 ["browser_rules_authored_override.js"]
@@ -149,13 +156,19 @@ skip-if = [
 ["browser_rules_completion-new-property_02.js"]
 
 ["browser_rules_completion-new-property_03.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_completion-new-property_04.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_completion-new-property_multiline.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_completion-on-empty.js"]
 
@@ -187,6 +200,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_rules_cubicbezier-revert-on-ESC.js"]
 
+["browser_rules_custom-states.js"]
+
 ["browser_rules_custom.js"]
 
 ["browser_rules_cycle-angle.js"]
@@ -198,7 +213,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property-cancel.js"]
 
 ["browser_rules_edit-property-click.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_edit-property-commit.js"]
 
@@ -215,7 +232,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property-remove_01.js"]
 
 ["browser_rules_edit-property-remove_02.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_edit-property-remove_03.js"]
 
@@ -238,18 +257,24 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property_08.js"]
 
 ["browser_rules_edit-property_09.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_edit-property_10.js"]
 
 ["browser_rules_edit-selector-click-on-scrollbar.js"]
 
 ["browser_rules_edit-selector-click.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_edit-selector-commit.js"]
 
 ["browser_rules_edit-selector-nested-rules.js"]
+
+["browser_rules_edit-selector-pseudo-element.js"]
 
 ["browser_rules_edit-selector_01.js"]
 
@@ -276,11 +301,16 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-selector_12.js"]
 
 ["browser_rules_edit-size-property-dragging.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_rules_edit-value-after-name_01.js"]
 
 ["browser_rules_edit-value-after-name_02.js"]
+fail-if = [
+  "a11y_checks", # Bug 1984832 clicked element is destroyed after mousedown, a11y utils asserts the wrong element
+]
 
 ["browser_rules_edit-value-after-name_03.js"]
 
@@ -297,11 +327,15 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_editable-field-focus_02.js"]
 
 ["browser_rules_eyedropper.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug"] # Bug 1781473
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1781473
+]
 
 ["browser_rules_variables-in-pseudo-element_01.js"]
 
 ["browser_rules_variables-in-pseudo-element_02.js"]
+
+["browser_rules_variables-jump-to-definition.js"]
 
 ["browser_rules_variables_01.js"]
 
@@ -314,3 +348,9 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_rules_variables_autocomplete.js"]
 
 ["browser_rules_variables_host.js"]
+
+["browser_rules_variables_unused.js"]
+
+["browser_rules_variables_unused_add_property.js"]
+
+["browser_rules_variables_unused_filtering.js"]

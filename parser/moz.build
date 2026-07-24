@@ -7,7 +7,7 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: HTML Parser")
 
-DIRS += ["expat", "prototype", "xml", "htmlparser", "html"]
+DIRS += ["expat", "prototype", "xml", "htmlaccel", "htmlparser", "html"]
 
 EXPORTS += [
     "nsCharsetSource.h",

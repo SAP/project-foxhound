@@ -18,9 +18,8 @@ const PAGE_3 = "http://example.net";
  *   The browser to check.
  * @param expected (Boolean)
  *   True if we expect the "multiple" state to be set.
- * @returns Promise
- * @resolves undefined
- *   When the check has completed.
+ * @returns {Promise<void>}
+ *   Resolves when the check has completed.
  */
 async function assertShowingMultipleUI(browser, expected) {
   let showingMultiple = await SpecialPowers.spawn(browser, [], async () => {
@@ -49,9 +48,8 @@ function snapshotCount(snapshot) {
  *
  * @param tab (<xul:tab>)
  *   The tab to switch to and crash.
- * @returns Promise
- * @resolves undefined
- *   When about:tabcrashed is loaded.
+ * @returns {Promise<void>}
+ *   Resolves when about:tabcrashed is loaded.
  */
 async function switchToAndCrashTab(tab) {
   let browser = tab.linkedBrowser;

@@ -7,15 +7,15 @@
 #include "nsHistory.h"
 
 #include "jsapi.h"
-#include "nsCOMPtr.h"
-#include "nsDocShell.h"
-#include "nsPIDOMWindow.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowContext.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
 #include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/RefPtr.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -260,3 +260,4 @@ void nsHistory::DeltaTraverse(mozilla::Maybe<NotNull<JSContext*>> aCx,
   session_history->AsyncGo(aDelta, /* aRequireUserInteraction = */ false,
                            userActivation);
 }
+#undef LOG

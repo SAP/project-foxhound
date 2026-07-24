@@ -54,6 +54,7 @@ export class FindBarChild extends JSWindowActorChild {
    * Check whether this key event will start the findbar in the parent,
    * in which case we should pass any further key events to the parent to avoid
    * them being lost.
+   *
    * @param aEvent the key event to check.
    */
   eventMatchesFindShortcut(aEvent) {

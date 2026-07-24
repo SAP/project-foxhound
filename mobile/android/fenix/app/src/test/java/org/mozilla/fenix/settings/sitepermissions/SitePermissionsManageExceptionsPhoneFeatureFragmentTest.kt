@@ -540,5 +540,7 @@ class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
         persistentStorage = Action.ASK_TO_ALLOW,
         mediaKeySystemAccess = Action.ASK_TO_ALLOW,
         crossOriginStorageAccess = Action.ASK_TO_ALLOW,
+        localDeviceAccess = Action.ASK_TO_ALLOW,
+        localNetworkAccess = Action.ASK_TO_ALLOW,
     )
 }

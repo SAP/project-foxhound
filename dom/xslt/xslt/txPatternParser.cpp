@@ -4,15 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txPatternParser.h"
-#include "txExprLexer.h"
-#include "nsGkAtoms.h"
-#include "nsError.h"
-#include "txStringUtils.h"
-#include "txXSLTPatterns.h"
-#include "txStylesheetCompiler.h"
-#include "txPatternOptimizer.h"
 
-#include "mozilla/UniquePtrExtensions.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "txExprLexer.h"
+#include "txPatternOptimizer.h"
+#include "txStringUtils.h"
+#include "txStylesheetCompiler.h"
+#include "txXSLTPatterns.h"
 
 using mozilla::UniquePtr;
 
@@ -26,7 +25,7 @@ nsresult txPatternParser::createPattern(const nsString& aPattern,
     return rv;
   }
   UniquePtr<txPattern> pattern;
-  rv = createUnionPattern(lexer, aContext, *getter_Transfers(pattern));
+  rv = createUnionPattern(lexer, aContext, *mozilla::getter_Transfers(pattern));
   if (NS_FAILED(rv)) {
     // XXX error report parsing error
     return rv;

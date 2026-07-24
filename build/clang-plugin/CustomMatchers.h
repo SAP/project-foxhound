@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CustomMatchers_h__
-#define CustomMatchers_h__
+#ifndef CustomMatchers_h_
+#define CustomMatchers_h_
 
 #include "MemMoveAnnotation.h"
 #include "Utils.h"

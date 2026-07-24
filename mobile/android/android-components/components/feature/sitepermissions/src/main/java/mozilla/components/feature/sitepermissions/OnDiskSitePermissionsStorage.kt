@@ -23,6 +23,8 @@ import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permi
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.AUTOPLAY_INAUDIBLE
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.BLUETOOTH
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.CAMERA
+import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_DEVICE_ACCESS
+import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_NETWORK_ACCESS
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_STORAGE
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCATION
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.MEDIA_KEY_SYSTEM_ACCESS
@@ -134,6 +136,8 @@ class OnDiskSitePermissionsStorage(
                 map.putIfAllowed(AUTOPLAY_INAUDIBLE, autoplayInaudible.toStatus(), permission)
                 map.putIfAllowed(MEDIA_KEY_SYSTEM_ACCESS, mediaKeySystemAccess, permission)
                 map.putIfAllowed(STORAGE_ACCESS, crossOriginStorageAccess, permission)
+                map.putIfAllowed(LOCAL_DEVICE_ACCESS, localDeviceAccess, permission)
+                map.putIfAllowed(LOCAL_NETWORK_ACCESS, localNetworkAccess, permission)
             }
         }
         return map

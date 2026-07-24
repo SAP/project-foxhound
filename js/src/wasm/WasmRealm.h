@@ -78,12 +78,6 @@ extern void InterruptRunningCode(JSContext* cx);
 
 void ResetInterruptState(JSContext* cx);
 
-#ifdef ENABLE_WASM_JSPI
-void UpdateInstanceStackLimitsForSuspendableStack(JSContext* cx,
-                                                  JS::NativeStackLimit limit);
-void ResetInstanceStackLimits(JSContext* cx);
-#endif
-
 }  // namespace wasm
 }  // namespace js
 

@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.9.1" type="baseline" client="gradle" dependencies="false" name="AGP (8.9.1)" variant="all" version="8.9.1">
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.generic_button_tint` appears to be unused"
+        errorLine1="    &lt;color name=&quot;generic_button_tint&quot;>#ff15141a&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="7"
+            column="12"/>
+    </issue>
 
     <issue
         id="UnusedResources"
@@ -14,12 +25,23 @@
 
     <issue
         id="UnusedResources"
+        message="The resource `R.string.clear_button_description` appears to be unused"
+        errorLine1="    &lt;string name=&quot;clear_button_description&quot;>Clear current input&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="8"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
         message="The resource `R.string.history_search_engine_description` appears to be unused"
         errorLine1="    &lt;string name=&quot;history_search_engine_description&quot;>Search within history&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="16"
+            line="17"
             column="13"/>
     </issue>
 
@@ -29,7 +51,7 @@
         errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
         errorLine2="^">
         <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+            file="src/main/res/mipmap-anydpi/ic_launcher.xml"
             line="5"
             column="1"/>
     </issue>
@@ -40,7 +62,7 @@
         errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
         errorLine2="^">
         <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
+            file="src/main/res/mipmap-anydpi/ic_launcher_round.xml"
             line="5"
             column="1"/>
     </issue>

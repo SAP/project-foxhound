@@ -41,7 +41,7 @@ async function testSteps() {
   info("Opening databases");
 
   {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
 
     const openPromises = [];
 
@@ -57,7 +57,7 @@ async function testSteps() {
       database.close();
     }
 
-    const endTime = Cu.now();
+    const endTime = ChromeUtils.now();
 
     const timeDelta = endTime - startTime;
 
@@ -67,12 +67,12 @@ async function testSteps() {
   info("Deleting database");
 
   {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
 
     const request = indexedDB.deleteForPrincipal(principal, name);
     await IndexedDBUtils.requestFinished(request);
 
-    const endTime = Cu.now();
+    const endTime = ChromeUtils.now();
 
     const timeDelta = endTime - startTime;
 

@@ -8,12 +8,12 @@
  * Implementation of common traversal methods for TreeWalker and NodeIterator.
  */
 
-#ifndef nsTraversal_h___
-#define nsTraversal_h___
+#ifndef nsTraversal_h_
+#define nsTraversal_h_
 
-#include "nsCOMPtr.h"
 #include "mozilla/dom/CallbackObject.h"
 #include "mozilla/dom/NodeFilterBinding.h"
+#include "nsCOMPtr.h"
 
 class nsINode;
 

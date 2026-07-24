@@ -78,6 +78,7 @@ class ReleaseParser(BaseTryParser):
 
 
 def run(
+    metrics,
     version,
     migrations,
     limit_locales,
@@ -89,6 +90,7 @@ def run(
     closed_tree=False,
     push_to_vcs=False,
 ):
+    metrics.mach_try.task_config_generation_duration.start()
     app_version = attr.evolve(version, beta_number=None, is_esr=False)
 
     files_to_change = {
@@ -117,13 +119,11 @@ def run(
     elif release_type == "esr":
         release_type += str(version.major_number)
     task_config = {"version": 2, "parameters": try_config_params or {}}
-    task_config["parameters"].update(
-        {
-            "target_tasks_method": TARGET_TASKS[tasks],
-            "optimize_target_tasks": True,
-            "release_type": release_type,
-        }
-    )
+    task_config["parameters"].update({
+        "target_tasks_method": TARGET_TASKS[tasks],
+        "optimize_target_tasks": True,
+        "release_type": release_type,
+    })
 
     with open(
         os.path.join(vcs.path, "taskcluster/kinds/merge-automation/kind.yml")
@@ -161,10 +161,12 @@ def run(
             os.path.join(vcs.path, "browser/locales/onchange-locales")
         )
 
+    metrics.mach_try.task_config_generation_duration.stop()
     msg = f"staging release: {version}"
     return push_to_try(
         "release",
         message.format(msg=msg),
+        metrics,
         stage_changes=stage_changes,
         dry_run=dry_run,
         closed_tree=closed_tree,

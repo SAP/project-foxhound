@@ -8,8 +8,6 @@
 #include <math.h>
 
 #include "mozilla/Array.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Range.h"
 #include "mozilla/Tainting.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"

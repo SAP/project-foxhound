@@ -19,6 +19,8 @@
 #include "SimpleMap.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Types.h"
@@ -27,7 +29,6 @@
 #include "mozilla/java/SampleBufferWrappers.h"
 #include "mozilla/java/SampleWrappers.h"
 #include "mozilla/java/SurfaceAllocatorWrappers.h"
-#include "mozilla/Maybe.h"
 #include "nsPromiseFlatString.h"
 #include "nsThreadUtils.h"
 #include "prlog.h"
@@ -49,12 +50,15 @@ class RenderOrReleaseOutput {
  public:
   RenderOrReleaseOutput(java::CodecProxy::Param aCodec,
                         java::Sample::Param aSample)
-      : mCodec(aCodec), mSample(aSample) {}
+      : mMutex("AndroidRenderOrReleaseOutput"),
+        mCodec(aCodec),
+        mSample(aSample) {}
 
   virtual ~RenderOrReleaseOutput() { ReleaseOutput(false); }
 
  protected:
   void ReleaseOutput(bool aToRender) {
+    MutexAutoLock lock(mMutex);
     if (mCodec && mSample) {
       mCodec->ReleaseOutput(mSample, aToRender);
       mCodec = nullptr;
@@ -63,8 +67,9 @@ class RenderOrReleaseOutput {
   }
 
  private:
-  java::CodecProxy::GlobalRef mCodec;
-  java::Sample::GlobalRef mSample;
+  Mutex mMutex;
+  java::CodecProxy::GlobalRef mCodec MOZ_GUARDED_BY(mMutex);
+  java::Sample::GlobalRef mSample MOZ_GUARDED_BY(mMutex);
 };
 
 static bool areSmpte432ColorPrimariesBuggy() {
@@ -319,7 +324,7 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
           "RemoteVideoDecoder::SetSeekThreshold", std::move(setter));
       nsresult rv = mThread->Dispatch(runnable.forget());
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
+      (void)rv;
     }
   }
 
@@ -348,6 +353,25 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
     return ConversionRequired::kNeedAnnexB;
   }
 
+  Maybe<MediaDataDecoder::PropertyValue> GetDecodeProperty(
+      MediaDataDecoder::PropertyName aName) const override {
+    // Android has limited amount of output buffers. See Bug 794747.
+    static constexpr uint32_t kNumOutputBuffers = 3;
+    // SurfaceTexture can have only one current/renderable image at a time.
+    // See Bug 1299068
+    static constexpr uint32_t kNumCurrentImages = 1;
+    switch (aName) {
+      case PropertyName::MaxNumVideoBuffers:
+        [[fallthrough]];
+      case PropertyName::MinNumVideoBuffers:
+        return Some(PropertyValue(kNumOutputBuffers));
+      case PropertyName::MaxNumCurrentImages:
+        return Some(PropertyValue(kNumCurrentImages));
+      default:
+        return MediaDataDecoder::GetDecodeProperty(aName);
+    }
+  }
+
  private:
   // Param and LocalRef are only valid for the duration of a JNI method call.
   // Use GlobalRef as the parameter type to keep the Java object referenced
@@ -359,7 +383,7 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
               "RemoteVideoDecoder::ProcessOutput", this,
               &RemoteVideoDecoder::ProcessOutput, std::move(aSample)));
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
+      (void)rv;
       return;
     }
 
@@ -408,10 +432,13 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
     ok = mInputInfos.Find(presentationTimeUs, inputInfo);
     bool isEOS = !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
     if (!ok && !isEOS) {
+      LOG("No corresponding input");
       // Ignore output with no corresponding input.
       return;
     }
 
+    LOG("flags=%" PRIx32 " size=%" PRIi32 " presentationTimeUs=%" PRIi64, flags,
+        size, presentationTimeUs);
     if (ok && (size > 0 || presentationTimeUs >= 0)) {
       bool forceBT709ColorSpace = false;
       // On certain devices SMPTE 432 color primaries are rendered incorrectly,
@@ -566,7 +593,7 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
               &RemoteVideoDecoder::ProcessOutputFormatChange, aColorFormat,
               aColorRange, aColorSpace));
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
+      (void)rv;
       return;
     }
 
@@ -761,7 +788,7 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
               &RemoteAudioDecoder::ProcessOutput, std::move(aSample),
               std::move(aBuffer)));
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
+      (void)rv;
       return;
     }
 
@@ -833,7 +860,6 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
     }
 
     if (isEOS) {
-      LOG("EOS: drain complete");
       DrainComplete();
     }
   }
@@ -845,7 +871,7 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
           &RemoteAudioDecoder::ProcessOutputFormatChange, aChannels,
           aSampleRate));
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
+      (void)rv;
       return;
     }
 
@@ -929,15 +955,11 @@ RefPtr<MediaDataDecoder::DecodePromise> RemoteDataDecoder::Drain() {
                                           __func__);
   }
   RefPtr<DecodePromise> p = mDrainPromise.Ensure(__func__);
-  if (GetState() == State::DRAINED) {
+  if (GetState() == State::DRAINING || GetState() == State::DRAINED) {
+    // Drain operation already in progress or complete.
     // There's no operation to perform other than returning any already
     // decoded data.
     ReturnDecodedData();
-    return p;
-  }
-
-  if (GetState() == State::DRAINING) {
-    // Draining operation already pending, let it complete its course.
     return p;
   }
 
@@ -977,13 +999,6 @@ static CryptoInfoResult GetCryptoInfoFromSample(const MediaRawData* aSample) {
 
   if (!cryptoObj.IsEncrypted()) {
     return CryptoInfoResult(cryptoInfo);
-  }
-
-  static bool supportsCBCS = java::CodecProxy::SupportsCBCS();
-  if ((cryptoObj.mCryptoScheme == CryptoScheme::Cbcs ||
-       cryptoObj.mCryptoScheme == CryptoScheme::Cbcs_1_9) &&
-      !supportsCBCS) {
-    return CryptoInfoResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR);
   }
 
   nsresult rv = java::sdk::MediaCodec::CryptoInfo::New(&cryptoInfo);
@@ -1107,7 +1122,7 @@ void RemoteDataDecoder::UpdateInputStatus(int64_t aTimestamp, bool aProcessed) {
         "RemoteDataDecoder::UpdateInputStatus", this,
         &RemoteDataDecoder::UpdateInputStatus, aTimestamp, aProcessed));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
   AssertOnThread();
@@ -1147,13 +1162,28 @@ void RemoteDataDecoder::ReturnDecodedData() {
   MOZ_ASSERT(GetState() != State::SHUTDOWN);
 
   // We only want to clear mDecodedData when we have resolved the promises.
+  LOG("have decode promise=%i, have drain promise=%i, state=%i",
+      static_cast<int>(!mDecodePromise.IsEmpty()),
+      static_cast<int>(!mDrainPromise.IsEmpty()), static_cast<int>(GetState()));
+  MOZ_ASSERT(mDecodePromise.IsEmpty() || mDrainPromise.IsEmpty());
+
   if (!mDecodePromise.IsEmpty()) {
-    mDecodePromise.Resolve(std::move(mDecodedData), __func__);
-    mDecodedData = DecodedData();
-  } else if (!mDrainPromise.IsEmpty() &&
-             (!mDecodedData.IsEmpty() || GetState() == State::DRAINED)) {
-    mDrainPromise.Resolve(std::move(mDecodedData), __func__);
-    mDecodedData = DecodedData();
+    // Return successfully decoded samples, even if there is an error, which
+    // can be returned for a subsequent decode or drain request.
+    if (!mDecodedData.IsEmpty() || mDecodeError.isNothing()) {
+      mDecodePromise.Resolve(std::move(mDecodedData), __func__);
+      MOZ_ASSERT(mDecodedData.IsEmpty());
+    } else if (mDecodeError.isSome()) {
+      mDecodePromise.Reject(mDecodeError.extract(), __func__);
+    }
+  } else if (!mDrainPromise.IsEmpty()) {
+    if (!mDecodedData.IsEmpty() ||
+        (GetState() == State::DRAINED && mDecodeError.isNothing())) {
+      mDrainPromise.Resolve(std::move(mDecodedData), __func__);
+      MOZ_ASSERT(mDecodedData.IsEmpty());
+    } else if (mDecodeError.isSome()) {
+      mDrainPromise.Reject(mDecodeError.extract(), __func__);
+    }
   }
 }
 
@@ -1163,9 +1193,10 @@ void RemoteDataDecoder::DrainComplete() {
         NewRunnableMethod("RemoteDataDecoder::DrainComplete", this,
                           &RemoteDataDecoder::DrainComplete));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
+  LOG("EOS");
   AssertOnThread();
   if (GetState() == State::SHUTDOWN) {
     return;
@@ -1179,7 +1210,7 @@ void RemoteDataDecoder::Error(const MediaResult& aError) {
     nsresult rv = mThread->Dispatch(NewRunnableMethod<MediaResult>(
         "RemoteDataDecoder::Error", this, &RemoteDataDecoder::Error, aError));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
   AssertOnThread();
@@ -1187,16 +1218,25 @@ void RemoteDataDecoder::Error(const MediaResult& aError) {
     return;
   }
 
+  LOG("ErrorName=%s Message=%s", aError.ErrorName().get(),
+      aError.Message().get());
   // If we know we need a new decoder (eg because RemoteVideoDecoder's mSurface
   // has been released due to a GPU process crash) then override the error to
   // request a new decoder.
-  const MediaResult& error =
-      NeedsNewDecoder()
-          ? MediaResult(NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER, __func__)
-          : aError;
+  if (NeedsNewDecoder()) {
+    mDecodeError =
+        Some(MediaResult(NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER, __func__));
+  } else if (!mDecodeError.isSome()) {
+    mDecodeError.emplace(aError);
+  }  // else keep the first error to report.
 
-  mDecodePromise.RejectIfExists(error, __func__);
-  mDrainPromise.RejectIfExists(error, __func__);
+  ReturnDecodedData();
+}
+
+void RemoteDataDecoder::SetState(RemoteDataDecoder::State aState) {
+  LOG("%i", static_cast<int>(aState));
+  AssertOnThread();
+  mState = aState;
 }
 
 }  // namespace mozilla

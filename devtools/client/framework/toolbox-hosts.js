@@ -32,150 +32,66 @@ const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
  * following functions:
  *
  * create() - create the UI
+ * raise() - bring UI in foreground
+ * setTitle - update UI's visible title (if any)
  * destroy() - destroy the host's UI
  */
 
 /**
- * Host object for the dock on the bottom of the browser
+ * Base class for any in-browser host: left, bottom, right.
  */
-function BottomHost(hostTab) {
-  this.hostTab = hostTab;
-
-  EventEmitter.decorate(this);
-}
-
-BottomHost.prototype = {
-  type: "bottom",
-
-  heightPref: "devtools.toolbox.footer.height",
-
+class BaseInBrowserHost {
   /**
-   * Create a box at the bottom of the host tab.
+   * @param {Tab} hostTab
+   *              The web page's tab where DevTools are displayed.
+   * @param {string} type
+   *              The host type: left, bottom, right.
    */
-  async create() {
-    await gDevToolsBrowser.loadBrowserStyleSheet(this.hostTab.ownerGlobal);
-
-    const gBrowser = this.hostTab.ownerDocument.defaultView.gBrowser;
-    const ownerDocument = gBrowser.ownerDocument;
-    this._browserContainer = gBrowser.getBrowserContainer(
-      this.hostTab.linkedBrowser
-    );
-
-    this._splitter = ownerDocument.createXULElement("splitter");
-    this._splitter.setAttribute("class", "devtools-horizontal-splitter");
-    this._splitter.setAttribute("resizebefore", "none");
-    this._splitter.setAttribute("resizeafter", "sibling");
-
-    this.frame = createDevToolsFrame(
-      ownerDocument,
-      "devtools-toolbox-bottom-iframe"
-    );
-    this.frame.style.height =
-      Math.min(
-        Services.prefs.getIntPref(this.heightPref),
-        this._browserContainer.clientHeight - MIN_PAGE_SIZE
-      ) + "px";
-
-    this._browserContainer.appendChild(this._splitter);
-    this._browserContainer.appendChild(this.frame);
-
-    focusTab(this.hostTab);
-    return this.frame;
-  },
-
-  /**
-   * Raise the host.
-   */
-  raise() {
-    focusTab(this.hostTab);
-  },
-
-  /**
-   * Set the toolbox title.
-   * Nothing to do for this host type.
-   */
-  setTitle() {},
-
-  /**
-   * Destroy the bottom dock.
-   */
-  destroy() {
-    if (!this._destroyed) {
-      this._destroyed = true;
-
-      const height = parseInt(this.frame.style.height, 10);
-      if (!isNaN(height)) {
-        Services.prefs.setIntPref(this.heightPref, height);
-      }
-
-      this._browserContainer.removeChild(this._splitter);
-      this._browserContainer.removeChild(this.frame);
-      this.frame = null;
-      this._browserContainer = null;
-      this._splitter = null;
-    }
-
-    return Promise.resolve(null);
-  },
-};
-
-/**
- * Base Host object for the in-browser sidebar
- */
-class SidebarHost {
   constructor(hostTab, type) {
     this.hostTab = hostTab;
     this.type = type;
-    this.widthPref = "devtools.toolbox.sidebar.width";
 
-    EventEmitter.decorate(this);
-  }
-
-  /**
-   * Create a box in the sidebar of the host tab.
-   */
-  async create() {
-    await gDevToolsBrowser.loadBrowserStyleSheet(this.hostTab.ownerGlobal);
-    const gBrowser = this.hostTab.ownerDocument.defaultView.gBrowser;
-    const ownerDocument = gBrowser.ownerDocument;
-    this._browserContainer = gBrowser.getBrowserContainer(
+    this._gBrowser = this.hostTab.ownerGlobal.gBrowser;
+    this._browserContainer = this._gBrowser.getBrowserContainer(
       this.hostTab.linkedBrowser
     );
-    this._browserPanel = gBrowser.getPanel(this.hostTab.linkedBrowser);
 
-    this._splitter = ownerDocument.createXULElement("splitter");
-    this._splitter.setAttribute("class", "devtools-side-splitter");
+    // Reference to the <browser> element used to load DevTools.
+    // This is created by each subclass from create() method
+    this.frame = null;
 
+    Services.obs.addObserver(this, "browsing-context-active-change");
+  }
+
+  _createFrame() {
     this.frame = createDevToolsFrame(
-      ownerDocument,
-      "devtools-toolbox-side-iframe"
+      this.hostTab.ownerDocument,
+      this.type == "bottom"
+        ? "devtools-toolbox-bottom-iframe"
+        : "devtools-toolbox-side-iframe"
     );
-    this.frame.style.width =
-      Math.min(
-        Services.prefs.getIntPref(this.widthPref),
-        this._browserPanel.clientWidth - MIN_PAGE_SIZE
-      ) + "px";
+  }
 
-    // We should consider the direction when changing the dock position.
-    const topWindow = this.hostTab.ownerDocument.defaultView.top;
-    const topDoc = topWindow.document.documentElement;
-    const isLTR = topWindow.getComputedStyle(topDoc).direction === "ltr";
-
-    this._splitter.setAttribute("resizebefore", "none");
-    this._splitter.setAttribute("resizeafter", "none");
-
-    if ((isLTR && this.type == "right") || (!isLTR && this.type == "left")) {
-      this._splitter.setAttribute("resizeafter", "sibling");
-      this._browserPanel.appendChild(this._splitter);
-      this._browserPanel.appendChild(this.frame);
-    } else {
-      this._splitter.setAttribute("resizebefore", "sibling");
-      this._browserPanel.insertBefore(this.frame, this._browserContainer);
-      this._browserPanel.insertBefore(this._splitter, this._browserContainer);
+  observe(subject, topic) {
+    if (topic != "browsing-context-active-change") {
+      return;
+    }
+    // Ignore any BrowsingContext which isn't the debugged tab's BrowsingContext
+    // (toolbox may be half destroyed and the linkedBrowser be null when moving a tab
+    // with DevTools to another window)
+    if (this.hostTab.linkedBrowser?.browsingContext != subject) {
+      return;
     }
 
-    focusTab(this.hostTab);
-    return this.frame;
+    // In case this is called before create() is called
+    if (!this.frame) {
+      return;
+    }
+
+    // Update DevTools <browser> element's isActive according to the debugged <browser> element status.
+    // This helps activate/deactivate DevTools when changing tabs.
+    // It notably triggers visibilitychange events on DevTools documents.
+    this.frame.docShellIsActive = subject.isActive;
   }
 
   /**
@@ -191,20 +107,155 @@ class SidebarHost {
    */
   setTitle() {}
 
+  destroy() {
+    Services.obs.removeObserver(this, "browsing-context-active-change");
+    this._gBrowser = null;
+    this._browserContainer = null;
+  }
+}
+
+/**
+ * Host object for the dock on the bottom of the browser
+ */
+class BottomHost extends BaseInBrowserHost {
+  constructor(hostTab) {
+    super(hostTab, "bottom");
+
+    this.heightPref = "devtools.toolbox.footer.height";
+  }
+
+  #splitter;
+
+  #destroyed;
+
+  /**
+   * Create a box at the bottom of the host tab.
+   */
+  async create() {
+    await gDevToolsBrowser.loadBrowserStyleSheet(this.hostTab.ownerGlobal);
+
+    const { ownerDocument } = this.hostTab;
+    this.#splitter = ownerDocument.createXULElement("splitter");
+    this.#splitter.setAttribute("class", "devtools-horizontal-splitter");
+    this.#splitter.setAttribute("resizebefore", "none");
+    this.#splitter.setAttribute("resizeafter", "sibling");
+
+    this._createFrame();
+
+    this.frame.style.height =
+      Math.min(
+        Services.prefs.getIntPref(this.heightPref),
+        this._browserContainer.clientHeight - MIN_PAGE_SIZE
+      ) + "px";
+
+    this._browserContainer.appendChild(this.#splitter);
+    this._browserContainer.appendChild(this.frame);
+    this.frame.docShellIsActive = true;
+
+    focusTab(this.hostTab);
+    return this.frame;
+  }
+
+  /**
+   * Destroy the bottom dock.
+   */
+  destroy() {
+    if (!this.#destroyed) {
+      this.#destroyed = true;
+
+      const height = parseInt(this.frame.style.height, 10);
+      if (!isNaN(height)) {
+        Services.prefs.setIntPref(this.heightPref, height);
+      }
+
+      this._browserContainer.removeChild(this.#splitter);
+      this._browserContainer.removeChild(this.frame);
+      this.frame = null;
+      this.#splitter = null;
+
+      super.destroy();
+    }
+
+    return Promise.resolve(null);
+  }
+}
+
+/**
+ * Base Host object for the in-browser left or right sidebars
+ */
+class SidebarHost extends BaseInBrowserHost {
+  constructor(hostTab, type) {
+    super(hostTab, type);
+
+    this.widthPref = "devtools.toolbox.sidebar.width";
+  }
+
+  #splitter;
+  #browserPanel;
+  #destroyed;
+
+  /**
+   * Create a box in the sidebar of the host tab.
+   */
+  async create() {
+    await gDevToolsBrowser.loadBrowserStyleSheet(this.hostTab.ownerGlobal);
+
+    this.#browserPanel = this._gBrowser.getPanel(this.hostTab.linkedBrowser);
+    const { ownerDocument } = this.hostTab;
+
+    this.#splitter = ownerDocument.createXULElement("splitter");
+    this.#splitter.setAttribute("class", "devtools-side-splitter");
+
+    this._createFrame();
+
+    this.frame.style.width =
+      Math.min(
+        Services.prefs.getIntPref(this.widthPref),
+        this.#browserPanel.clientWidth - MIN_PAGE_SIZE
+      ) + "px";
+
+    // We should consider the direction when changing the dock position.
+    const topWindow = this.hostTab.ownerGlobal;
+    const topDoc = topWindow.document.documentElement;
+    const isLTR = topWindow.getComputedStyle(topDoc).direction === "ltr";
+
+    this.#splitter.setAttribute("resizebefore", "none");
+    this.#splitter.setAttribute("resizeafter", "none");
+
+    if ((isLTR && this.type == "right") || (!isLTR && this.type == "left")) {
+      this.#splitter.setAttribute("resizeafter", "sibling");
+      this.#browserPanel.appendChild(this.#splitter);
+      this.#browserPanel.appendChild(this.frame);
+    } else {
+      this.#splitter.setAttribute("resizebefore", "sibling");
+      this.#browserPanel.insertBefore(this.frame, this._browserContainer);
+      this.#browserPanel.insertBefore(this.#splitter, this._browserContainer);
+    }
+    this.frame.docShellIsActive = true;
+
+    focusTab(this.hostTab);
+    return this.frame;
+  }
+
   /**
    * Destroy the sidebar.
    */
   destroy() {
-    if (!this._destroyed) {
-      this._destroyed = true;
+    if (!this.#destroyed) {
+      this.#destroyed = true;
 
       const width = parseInt(this.frame.style.width, 10);
       if (!isNaN(width)) {
         Services.prefs.setIntPref(this.widthPref, width);
       }
 
-      this._browserPanel.removeChild(this._splitter);
-      this._browserPanel.removeChild(this.frame);
+      this.#browserPanel.removeChild(this.#splitter);
+      this.#browserPanel.removeChild(this.frame);
+      this.#browserPanel = null;
+      this.#splitter = null;
+      this.frame = null;
+
+      super.destroy();
     }
 
     return Promise.resolve(null);
@@ -232,17 +283,18 @@ class RightHost extends SidebarHost {
 /**
  * Host object for the toolbox in a separate window
  */
-function WindowHost(hostTab, options) {
-  this._boundUnload = this._boundUnload.bind(this);
-  this.hostTab = hostTab;
-  this.options = options;
-  EventEmitter.decorate(this);
-}
+class WindowHost extends EventEmitter {
+  constructor(hostTab, options) {
+    super();
 
-WindowHost.prototype = {
-  type: "window",
+    this._boundUnload = this._boundUnload.bind(this);
+    this.hostTab = hostTab;
+    this.options = options;
+  }
 
-  WINDOW_URL: "chrome://devtools/content/framework/toolbox-window.xhtml",
+  type = "window";
+
+  WINDOW_URL = "chrome://devtools/content/framework/toolbox-window.xhtml";
 
   /**
    * Create a new xul window to contain the toolbox.
@@ -294,6 +346,7 @@ WindowHost.prototype = {
         win.document
           .getElementById("devtools-toolbox-window")
           .appendChild(this.frame);
+        this.frame.docShellIsActive = true;
 
         // The forceOwnRefreshDriver attribute is set to avoid Windows only issues with
         // CSS transitions when switching from docked to window hosts.
@@ -307,7 +360,7 @@ WindowHost.prototype = {
 
       this._window = win;
     });
-  },
+  }
 
   /**
    * Catch the user closing the window.
@@ -319,21 +372,21 @@ WindowHost.prototype = {
     this._window.removeEventListener("unload", this._boundUnload);
 
     this.emit("window-closed");
-  },
+  }
 
   /**
    * Raise the host.
    */
   raise() {
     this._window.focus();
-  },
+  }
 
   /**
    * Set the toolbox title.
    */
   setTitle(title) {
     this._window.document.title = title;
-  },
+  }
 
   /**
    * Destroy the window.
@@ -347,19 +400,20 @@ WindowHost.prototype = {
     }
 
     return Promise.resolve(null);
-  },
-};
+  }
+}
 
 /**
  * Host object for the Browser Toolbox
  */
-function BrowserToolboxHost(hostTab, options) {
-  this.doc = options.doc;
-  EventEmitter.decorate(this);
-}
+class BrowserToolboxHost extends EventEmitter {
+  constructor(hostTab, options) {
+    super();
 
-BrowserToolboxHost.prototype = {
-  type: "browsertoolbox",
+    this.doc = options.doc;
+  }
+
+  type = "browsertoolbox";
 
   async create() {
     this.frame = createDevToolsFrame(
@@ -368,29 +422,30 @@ BrowserToolboxHost.prototype = {
     );
 
     this.doc.body.appendChild(this.frame);
+    this.frame.docShellIsActive = true;
 
     return this.frame;
-  },
+  }
 
   /**
    * Raise the host.
    */
   raise() {
     this.doc.defaultView.focus();
-  },
+  }
 
   /**
    * Set the toolbox title.
    */
   setTitle(title) {
     this.doc.title = title;
-  },
+  }
 
   // Do nothing. The BrowserToolbox is destroyed by quitting the application.
   destroy() {
     return Promise.resolve(null);
-  },
-};
+  }
+}
 
 /**
  * Host object for the toolbox as a page.
@@ -398,34 +453,38 @@ BrowserToolboxHost.prototype = {
  * via `about:devtools-toolbox` URLs.
  * The `iframe` ends up being the tab's browser element.
  */
-function PageHost(hostTab, options) {
-  this.frame = options.customIframe;
-}
+class PageHost {
+  constructor(hostTab, options) {
+    this.frame = options.customIframe;
+  }
 
-PageHost.prototype = {
-  type: "page",
+  type = "page";
 
   create() {
     return Promise.resolve(this.frame);
-  },
+  }
+
+  // Focus the tab owning the browser element.
+  raise() {
+    // See @constructor, for the page host, the frame is also the browser
+    // element.
+    focusTab(this.frame.ownerGlobal.gBrowser.getTabForBrowser(this.frame));
+  }
 
   // Do nothing.
-  raise() {},
-
-  // Do nothing.
-  setTitle() {},
+  setTitle() {}
 
   // Do nothing.
   destroy() {
     return Promise.resolve(null);
-  },
-};
+  }
+}
 
 /**
  *  Switch to the given tab in a browser and focus the browser window
  */
 function focusTab(tab) {
-  const browserWindow = tab.ownerDocument.defaultView;
+  const browserWindow = tab.ownerGlobal;
   browserWindow.focus();
   browserWindow.gBrowser.selectedTab = tab;
 }
@@ -447,6 +506,9 @@ function createDevToolsFrame(doc, className) {
     // document (for instance: Browser Toolbox).
     frame.tooltip = "aHTMLTooltip";
   }
+
+  // Allows toggling the `docShellIsActive` attribute
+  frame.setAttribute("manualactiveness", "true");
   return frame;
 }
 

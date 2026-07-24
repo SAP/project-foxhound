@@ -6,9 +6,9 @@
 
 #include "RTCStatsIdGenerator.h"
 
-#include "mozilla/RandomNum.h"
 #include "RTCStatsReport.h"
 #include "WebrtcGlobal.h"
+#include "mozilla/RandomNum.h"
 
 namespace mozilla {
 

@@ -456,7 +456,7 @@ function test() {
     });
 
     const wait = waitForNetworkEvents(monitor, 1);
-    await reloadBrowser();
+    await reloadSelectedTab();
     await wait;
 
     const requestItem = getSortedRequests(store.getState())[0];

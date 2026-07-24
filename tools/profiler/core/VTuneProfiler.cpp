@@ -11,7 +11,6 @@
 
 #include "VTuneProfiler.h"
 #include "mozilla/Bootstrap.h"
-#include <memory>
 
 VTuneProfiler* VTuneProfiler::mInstance = nullptr;
 

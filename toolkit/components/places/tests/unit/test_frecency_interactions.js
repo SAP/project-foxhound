@@ -2,9 +2,9 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Tests for integrating interaction table data with alternative frecency.
- * If the interaction data is considered "interesting", alternative frecency
- * should experience a small boost.
+ * Tests for integrating interaction table data with interactions based
+ * frecency. If the interaction data is considered "interesting", frecency
+ * should experience a boost.
  *
  * Since we don't know the precise values of the score, the tests typically
  * have a pattern of caching a baseline without interactions and then checking
@@ -18,24 +18,24 @@
 // places, the data is stored in milliseconds.
 const VIEWTIME_THRESHOLD =
   Services.prefs.getIntPref(
-    "places.frecency.pages.alternative.interactions.viewTimeSeconds"
+    "places.frecency.pages.interactions.viewTimeSeconds"
   ) * 1000;
 const MANY_KEYPRESSES_THRESHOLD = Services.prefs.getIntPref(
-  "places.frecency.pages.alternative.interactions.manyKeypresses"
+  "places.frecency.pages.interactions.manyKeypresses"
 );
 
 // The Viewtime Threshold for Keypresses preference is stored in seconds.
 // When recorded in places, the data is stored in milliseconds.
 const VIEWTIME_IF_MANY_KEYPRESSES_THRESHOLD =
   Services.prefs.getIntPref(
-    "places.frecency.pages.alternative.interactions.viewTimeIfManyKeypressesSeconds"
+    "places.frecency.pages.interactions.viewTimeIfManyKeypressesSeconds"
   ) * 1000;
 
 const SAMPLED_VISITS_THRESHOLD = Services.prefs.getIntPref(
-  "places.frecency.pages.alternative.numSampledVisits"
+  "places.frecency.pages.numSampledVisits"
 );
 const MAX_VISIT_GAP = Services.prefs.getIntPref(
-  "places.frecency.pages.alternative.interactions.maxVisitGapSeconds"
+  "places.frecency.pages.interactions.maxVisitGapSeconds"
 );
 
 async function insertIntoMozPlacesMetadata(
@@ -109,7 +109,6 @@ async function insertIntoMozPlaces({
   url_hash,
   origin_id,
   frecency,
-  alt_frecency,
 }) {
   await PlacesUtils.withConnectionWrapper(
     "test_frecency_interactions::insertIntoMozPlaces",
@@ -121,15 +120,13 @@ async function insertIntoMozPlaces({
           guid,
           url_hash,
           origin_id,
-          frecency,
-          alt_frecency
+          frecency
         ) VALUES (
           :url,
           :guid,
           :url_hash,
           :origin_id,
-          :frecency,
-          :alt_frecency
+          :frecency
         )
       `,
         {
@@ -138,7 +135,6 @@ async function insertIntoMozPlaces({
           url_hash,
           origin_id,
           frecency,
-          alt_frecency,
         }
       );
     }
@@ -158,8 +154,6 @@ async function getPageWithUrl(url) {
     title: r.getResultByName("title"),
     frecency: r.getResultByName("frecency"),
     recalc_frecency: r.getResultByName("recalc_frecency"),
-    alt_frecency: r.getResultByName("alt_frecency"),
-    recalc_alt_frecency: r.getResultByName("recalc_alt_frecency"),
   }))[0];
 }
 
@@ -218,18 +212,18 @@ add_task(async function one_visit_one_matching_interaction() {
     await PlacesTestUtils.addVisits([url]);
 
     let page = await getPageWithUrl(url);
-    let oldAltFrecency = page.alt_frecency;
+    let oldFrecency = page.frecency;
     Assert.notEqual(
-      oldAltFrecency,
-      null,
-      "Alt frecency with a visit but no interaction should not be null."
+      oldFrecency,
+      0,
+      "Frecency with a visit but no interaction should not be zero."
     );
 
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Assert.equal(
-      page.alt_frecency,
-      oldAltFrecency,
-      `Alt frecency of ${url} should not have changed.`
+      page.frecency,
+      oldFrecency,
+      `Frecency of ${url} should not have changed.`
     );
 
     await insertIntoMozPlacesMetadata(page.id, test.interactionData);
@@ -237,15 +231,15 @@ add_task(async function one_visit_one_matching_interaction() {
     page = await getPageWithUrl(url);
     if (test.expectIncrease) {
       Assert.greater(
-        page.alt_frecency,
-        oldAltFrecency,
-        `Alt frecency of ${url} should have increased.`
+        page.frecency,
+        oldFrecency,
+        `Frecency of ${url} should have increased.`
       );
     } else {
       Assert.equal(
-        page.alt_frecency,
-        oldAltFrecency,
-        `Alt frecency of ${url} should not have changed.`
+        page.frecency,
+        oldFrecency,
+        `Frecency of ${url} should not have changed.`
       );
     }
     await PlacesUtils.history.clear();
@@ -311,13 +305,13 @@ add_task(async function one_visit_one_non_matching_interaction() {
     await PlacesTestUtils.addVisits([url]);
 
     let page = await getPageWithUrl(url);
-    let oldAltFrecency = page.alt_frecency;
+    let oldFrecency = page.frecency;
 
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     Assert.equal(
-      page.alt_frecency,
-      oldAltFrecency,
-      `Alt frecency of ${url} should not have changed.`
+      page.frecency,
+      oldFrecency,
+      `Frecency of ${url} should not have changed.`
     );
 
     await insertIntoMozPlacesMetadata(page.id, test.interactionData);
@@ -326,15 +320,15 @@ add_task(async function one_visit_one_non_matching_interaction() {
     page = await getPageWithUrl(url);
     if (test.expectIncrease) {
       Assert.greater(
-        page.alt_frecency,
-        oldAltFrecency,
-        `Alt frecency of ${url} should have increased.`
+        page.frecency,
+        oldFrecency,
+        `Frecency of ${url} should have increased.`
       );
     } else {
       Assert.equal(
-        page.alt_frecency,
-        oldAltFrecency,
-        `Alt frecency of ${url} should not have changed.`
+        page.frecency,
+        oldFrecency,
+        `Frecency of ${url} should not have changed.`
       );
     }
     await PlacesUtils.history.clear();
@@ -348,14 +342,12 @@ add_task(async function zero_visits_one_interaction() {
       interactionData: {
         total_view_time: VIEWTIME_THRESHOLD - 1,
       },
-      expectIncrease: false,
     },
     {
       title: "View time is at threshold",
       interactionData: {
         total_view_time: VIEWTIME_THRESHOLD,
       },
-      expectIncrease: true,
     },
   ];
 
@@ -367,23 +359,21 @@ add_task(async function zero_visits_one_interaction() {
       url,
       url_hash: "1234567890",
       frecency: 0,
-      alt_frecency: null,
     });
 
     let page = await getPageWithUrl(url);
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-    Assert.equal(page.alt_frecency, null, "Alt frecency is null");
+    Assert.equal(page.frecency, 0, "Frecency is zero");
 
     await insertIntoMozPlacesMetadata(page.id, test.interactionData);
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
     page = await getPageWithUrl(url);
-    if (test.expectIncrease) {
-      Assert.notEqual(page.alt_frecency, null, "Alt frecency is non null");
-      Assert.greater(page.alt_frecency, 0, "Alt frecency greater than zero");
-    } else {
-      Assert.equal(page.alt_frecency, null, "Alt frecency is null");
-    }
+    Assert.equal(
+      page.frecency,
+      0,
+      "Frecency remains 0 because frecency was at zero."
+    );
 
     await PlacesUtils.history.clear();
   }
@@ -432,53 +422,53 @@ add_task(async function max_samples_threshold() {
 
     let page = await getPageWithUrl(url);
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-    Assert.notEqual(page.alt_frecency, null, "Alt frecency is non-null");
+    Assert.notEqual(page.frecency, 0, "Frecency is non-zero");
 
-    let oldAltFrecency = page.alt_frecency;
+    let oldFrecency = page.frecency;
     await insertIntoMozPlacesMetadata(page.id, test.interactionData);
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
     page = await getPageWithUrl(url);
     if (test.expectIncrease) {
-      Assert.notEqual(page.alt_frecency, null, "Alt frecency is non null");
+      Assert.notEqual(page.frecency, 0, "Frecency is non zero");
       Assert.greater(
-        page.alt_frecency,
-        oldAltFrecency,
-        "Alt frecency greater than the old value."
+        page.frecency,
+        oldFrecency,
+        "Frecency greater than the old value."
       );
     } else {
-      Assert.equal(
-        page.alt_frecency,
-        oldAltFrecency,
-        "Alt frecency didn't change"
-      );
+      Assert.equal(page.frecency, oldFrecency, "Frecency didn't change");
     }
 
     await PlacesUtils.history.clear();
   }
 });
 
-// Verify that the number of interactions contributing to alternative frecency
-// is as expected. Avoid using actual visits, ensuring all interactions are
-// treated as virtual visits. Each virtual visit should increase the alternative
-// frecency score until the threshold is exceeded. Interactions are deliberately
-// inserted sequentially in the past, as the date can affect the score.
+// Verify that the number of interactions contributing to frecency
+// is as expected. Insert an old visit to ensure the URL has a positive
+// frecency. Ensure all interactions are treated as virtual visits by making
+// them interesting and more recent than the oldest visit.
+// Each virtual visit should increase the frecency score until
+// the threshold is exceeded. Interactions are deliberately inserted
+// sequentially in the past, as the date can affect the score.
 add_task(async function max_interesting_interactions() {
   const today = new Date();
 
+  // We deliberately set a visit that can't be grouped with an interaction.
+  const yearAgo = new Date();
+  yearAgo.setMonth(yearAgo.getMonth() - 12);
   let url = "https://testdomain1.moz.org/";
-  await insertIntoMozPlaces({
+  await PlacesTestUtils.addVisits({
     url,
-    url_hash: "1234567890",
-    frecency: 0,
-    alt_frecency: null,
+    visitDate: yearAgo.getTime() * 1000,
+    transition: PlacesUtils.history.TRANSITIONS.LINK,
   });
 
   let page = await getPageWithUrl(url);
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-  Assert.equal(page.alt_frecency, null, "Alt frecency is null");
+  Assert.greater(page.frecency, 0, "Frecency is above zero");
 
-  info("Insert interesting interactions until threshold is met.");
+  info("Insert interesting interactions.");
   for (let i = 0; i < SAMPLED_VISITS_THRESHOLD; ++i) {
     let pageBefore = await getPageWithUrl(url);
     await insertIntoMozPlacesMetadata(page.id, {
@@ -488,10 +478,9 @@ add_task(async function max_interesting_interactions() {
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     let pageAfter = await getPageWithUrl(url);
     Assert.greater(
-      pageAfter.alt_frecency,
-      // The first run, alt frecency will be null.
-      pageBefore.alt_frecency ?? 0,
-      "Alt frecency has increased."
+      pageAfter.frecency,
+      pageBefore.frecency,
+      "Frecency has increased."
     );
   }
 
@@ -505,15 +494,15 @@ add_task(async function max_interesting_interactions() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let pageAfter = await getPageWithUrl(url);
   Assert.equal(
-    pageBefore.alt_frecency,
-    pageAfter.alt_frecency,
-    "Alt frecency is the same."
+    pageBefore.frecency,
+    pageAfter.frecency,
+    "Frecency is the same."
   );
 
   await PlacesUtils.history.clear();
 });
 
-add_task(async function temp_redirect_alt_frecency() {
+add_task(async function temp_redirect_frecency() {
   const yesterday = new Date();
 
   let url1 = "http://testdomain1.moz.org/";
@@ -544,13 +533,13 @@ add_task(async function temp_redirect_alt_frecency() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   let page1 = await getPageWithUrl(url1);
-  Assert.notEqual(page1.alt_frecency, null, "Alt frecency is non-null");
+  Assert.notEqual(page1.frecency, 0, "Frecency is non-zero");
 
   let page2 = await getPageWithUrl(url2);
-  Assert.notEqual(page2.alt_frecency, null, "Alt frecency is non-null");
+  Assert.notEqual(page2.frecency, 0, "Frecency is non-zero");
 
   let page3 = await getPageWithUrl(url3);
-  Assert.notEqual(page3.alt_frecency, null, "Alt frecency is non-null");
+  Assert.notEqual(page3.frecency, 0, "Frecency is non-zero");
 
   info("For each visit, add an interesting interaction.");
   const created_at = yesterday.getTime();
@@ -574,25 +563,13 @@ add_task(async function temp_redirect_alt_frecency() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   let newPage1 = await getPageWithUrl(url1);
-  Assert.equal(
-    newPage1.alt_frecency,
-    page1.alt_frecency,
-    "Alt frecency is the same"
-  );
+  Assert.equal(newPage1.frecency, page1.frecency, "Frecency is the same");
 
   let newPage2 = await getPageWithUrl(url2);
-  Assert.equal(
-    newPage2.alt_frecency,
-    page2.alt_frecency,
-    "Alt frecency is the same"
-  );
+  Assert.equal(newPage2.frecency, page2.frecency, "Frecency is the same");
 
   let newPage3 = await getPageWithUrl(url3);
-  Assert.greater(
-    newPage3.alt_frecency,
-    page3.alt_frecency,
-    "Alt frecency has increased"
-  );
+  Assert.greater(newPage3.frecency, page3.frecency, "Frecency has increased");
 
   await PlacesUtils.history.clear();
 });
@@ -615,7 +592,7 @@ add_task(async function interaction_visit_gap() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   let page = await getPageWithUrl(url);
-  Assert.notEqual(page.alt_frecency, null, "Alt frecency is not null");
+  Assert.notEqual(page.frecency, 0, "Frecency is not zero");
 
   info("Add an interaction just below the visit gap.");
   await insertIntoMozPlacesMetadata(page.id, {
@@ -626,11 +603,7 @@ add_task(async function interaction_visit_gap() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   let updatedPage = await getPageWithUrl(url);
-  Assert.equal(
-    updatedPage.alt_frecency,
-    page.alt_frecency,
-    "Alt frecency didn't change."
-  );
+  Assert.equal(updatedPage.frecency, page.frecency, "Frecency didn't change.");
 
   info("Add an interaction at the visit gap.");
   await insertIntoMozPlacesMetadata(page.id, {
@@ -641,16 +614,12 @@ add_task(async function interaction_visit_gap() {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   updatedPage = await getPageWithUrl(url);
-  Assert.greater(
-    updatedPage.alt_frecency,
-    page.alt_frecency,
-    "Alt frecency increased."
-  );
+  Assert.greater(updatedPage.frecency, page.frecency, "Frecency increased.");
 
   await PlacesUtils.history.clear();
 });
 
-add_task(async function old_visits_not_null() {
+add_task(async function old_visits_not_zero() {
   let testCases = [
     { daysOld: 365, description: "1 year old" },
     { daysOld: 1825, description: "5 years old" },
@@ -672,13 +641,13 @@ add_task(async function old_visits_not_null() {
 
     let page = await getPageWithUrl(url);
     Assert.notEqual(
-      page.alt_frecency,
-      null,
-      `Frecency should not be NULL for ${testCase.description}`
+      page.frecency,
+      0,
+      `Frecency should not be zero for ${testCase.description}`
     );
 
     Assert.greater(
-      page.alt_frecency,
+      page.frecency,
       0,
       `Frecency should be positive for ${testCase.description}`
     );
@@ -698,13 +667,9 @@ add_task(async function old_visits_new_interactions() {
 
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let page = await getPageWithUrl(url);
-  let baselineFrecency = page.alt_frecency;
+  let baselineFrecency = page.frecency;
 
-  Assert.notEqual(
-    baselineFrecency,
-    null,
-    "Baseline frecency should not be NULL."
-  );
+  Assert.notEqual(baselineFrecency, 0, "Baseline frecency should not be zero.");
   Assert.greater(
     baselineFrecency,
     0,
@@ -720,7 +685,7 @@ add_task(async function old_visits_new_interactions() {
   page = await getPageWithUrl(url);
 
   Assert.greater(
-    page.alt_frecency,
+    page.frecency,
     baselineFrecency,
     "Recent interaction should boost frecency of page with really old visit."
   );

@@ -286,30 +286,13 @@ async function testTopLevelNavigationsOnDocumentWithIframe() {
     onDestroyed,
   });
 
-  if (isEveryFrameTargetEnabled()) {
-    is(
-      targets.length,
-      2,
-      "retrieved targets for top level and iframe documents"
-    );
-    is(
-      targets[0],
-      targetCommand.targetFront,
-      "the target is the top level one"
-    );
-    is(
-      getLocationIdParam(targets[1].url),
-      "iframe",
-      "the second target is the iframe one"
-    );
-  } else {
-    is(targets.length, 1, "retrieved only the top level target");
-    is(
-      targets[0],
-      targetCommand.targetFront,
-      "the target is the top level one"
-    );
-  }
+  is(targets.length, 2, "retrieved targets for top level and iframe documents");
+  is(targets[0], targetCommand.targetFront, "the target is the top level one");
+  is(
+    getLocationIdParam(targets[1].url),
+    "iframe",
+    "the second target is the iframe one"
+  );
 
   is(
     destroyedTargets.length,
@@ -343,45 +326,31 @@ async function testTopLevelNavigationsOnDocumentWithIframe() {
   );
 
   ok(targets[0].isDestroyed(), "the first target is destroyed");
-  if (isEveryFrameTargetEnabled()) {
-    ok(targets[1].isDestroyed(), "the second target is destroyed");
-    is(destroyedTargets.length, 2, "The two targets were destroyed");
-  } else {
-    is(destroyedTargets.length, 1, "Only one target was destroyed");
-  }
+  ok(targets[1].isDestroyed(), "the second target is destroyed");
+  is(destroyedTargets.length, 2, "The two targets were destroyed");
 
   // Go back to the first page, this should be a bfcache navigation, and,
-  // we should get a new target (or 2 if EFT is enabled)
+  // we should get 2 new targets
   targetCountBeforeNavigation = targets.length;
   info("Go back to the first page");
   gBrowser.selectedBrowser.goBack();
 
   await waitFor(
-    () =>
-      targets.length ===
-      targetCountBeforeNavigation + (isEveryFrameTargetEnabled() ? 2 : 1),
-    "wait for the next top level target"
+    () => targets.length === targetCountBeforeNavigation + 2,
+    "wait for the next targets"
   );
 
-  if (isEveryFrameTargetEnabled()) {
-    await waitFor(() => targets.at(-2).url && targets.at(-1).url);
-    is(
-      getLocationIdParam(targets.at(-2).url),
-      "top",
-      "the first new target is for the top document…"
-    );
-    is(
-      getLocationIdParam(targets.at(-1).url),
-      "iframe",
-      "…and the second one is for the iframe"
-    );
-  } else {
-    is(
-      getLocationIdParam(targets.at(-1).url),
-      "top",
-      "the new target is for the first url"
-    );
-  }
+  await waitFor(() => targets.at(-2).url && targets.at(-1).url);
+  is(
+    getLocationIdParam(targets.at(-2).url),
+    "top",
+    "the first new target is for the top document…"
+  );
+  is(
+    getLocationIdParam(targets.at(-1).url),
+    "iframe",
+    "…and the second one is for the iframe"
+  );
 
   ok(
     targets[targetCountBeforeNavigation - 1].isDestroyed(),
@@ -435,17 +404,6 @@ async function testIframeNavigations() {
   };
   await targetCommand.watchTargets({ types: [TYPES.FRAME], onAvailable });
 
-  // When fission/EFT is off, there isn't much to test for iframes as they are debugged
-  // when the unique top level target
-  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    is(
-      targets.length,
-      1,
-      "Without fission/EFT, there is only the top level target"
-    );
-    await commands.destroy();
-    return;
-  }
   is(targets.length, 2, "retrieved the top level and the iframe targets");
   is(
     targets[0],

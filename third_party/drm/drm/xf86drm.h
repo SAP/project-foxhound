@@ -843,6 +843,7 @@ extern char *drmGetRenderDeviceNameFromFd(int fd);
 #define DRM_BUS_USB       1
 #define DRM_BUS_PLATFORM  2
 #define DRM_BUS_HOST1X    3
+#define DRM_BUS_FAUX      4
 
 typedef struct _drmPciBusInfo {
     uint16_t domain;
@@ -889,6 +890,10 @@ typedef struct _drmHost1xDeviceInfo {
     char **compatible; /* NULL terminated list of compatible strings */
 } drmHost1xDeviceInfo, *drmHost1xDeviceInfoPtr;
 
+typedef struct _drmFauxDeviceInfo {
+    char *name;
+} drmFauxDeviceInfo, *drmFauxDeviceInfoPtr;
+
 typedef struct _drmDevice {
     char **nodes; /* DRM_NODE_MAX sized array */
     int available_nodes; /* DRM_NODE_* bitmask */
@@ -904,6 +909,7 @@ typedef struct _drmDevice {
         drmUsbDeviceInfoPtr usb;
         drmPlatformDeviceInfoPtr platform;
         drmHost1xDeviceInfoPtr host1x;
+        drmFauxDeviceInfoPtr faux;
     } deviceinfo;
 } drmDevice, *drmDevicePtr;
 

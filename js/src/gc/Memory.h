@@ -53,6 +53,11 @@ void* MapAlignedPages(size_t length, size_t alignment,
                       StallAndRetry stallAndRetry = StallAndRetry::No);
 void UnmapPages(void* region, size_t length);
 
+// Map the region below the current stack pointer as a stack, down to the
+// allowed JS stack depth, so that heap allocations will never intersect with
+// the space that the stack may expand into. (Only on Linux fuzzing builds.)
+void MapStack(size_t stackSize);
+
 // We only decommit unused pages if the system page size is the same as the
 // hardcoded page size for the build.
 bool DecommitEnabled();

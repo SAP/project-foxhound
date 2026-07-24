@@ -6,9 +6,9 @@
 
 #include "FFmpegLog.h"
 #include "PlatformDecoderModule.h"
-#include "prlink.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/widget/DMABufDevice.h"
+#include "prlink.h"
 
 namespace mozilla {
 

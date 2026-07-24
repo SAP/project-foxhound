@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s igas vin reganto.</p> <p>Uzu ĝin kiel privatan retumilon: <ul> <li>Serĉu kaj retumu rekte el la programo</li> <li>Bloku spurilojn (aŭ agordi por permesi spurilojn)</li> <li>Forigu kuketojn kaj ankaŭ retuman kaj serĉan historion</li> </ul> </p> <p>%1$s estas farita de Mozilla. Nia misio estas stimuli sanan kaj malfermitan interreton.<br/> <a href=\"%2$s\">Pli da informo</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s igas vin reganto.</p>\n<p>Uzu ĝin kiel privatan retumilon:\n<ul>\n<li>Serĉu kaj retumu rekte el la programo</li>\n<li>Bloku spurilojn (aŭ agordi por permesi spurilojn)</li>\n<li>Forigu kuketojn kaj ankaŭ retuman kaj serĉan historion</li>\n</ul> </p>\n<p>%1$s estas farita de Mozilla. Nia misio estas stimuli sanan kaj malfermitan interreton.<br/>\n<a href=\"%2$s\">Pli da informo</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Pli da informo</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Se vi daŭrigas vi akceptas la %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Se vi daŭrigas vi akceptas la %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Kondiĉoj de uzo de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">kondiĉojn de uzo de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox zorgas pri via privateco. Pli da informo en nia %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox zorgas pri via privateco. Pli da informo en nia %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Rimarko pri privateco.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Rimarko pri privateco</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Tio povus esti problemo kun la agordoj de la servilo, aŭ iu kiu klopodas trompe ŝajnigi esti tiu servilo. <br/><br/> Se vi sukcese konektiĝis al tiu ĉi servilo en la pasinto, la eraro povas esti momenta.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Iu povus voli trompe aspekti kiel tiu retejo, kaj daŭrigo estas riska.</label> <br><br> <label>%1$s ne fidas <b>%2$s</b> ĉar la eldoninto de ĝia atestilo estas nekonata, la atestilo estas memsubskribita aŭ la servilo ne sendas la ĝustajn perajn atestilojn.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Iu povus voli trompe aspekti kiel tiu retejo, kaj daŭrigo estas riska.</label> <br><br>\n<label>%1$s ne fidas <b>%2$s</b> ĉar la eldoninto de ĝia atestilo estas nekonata, la atestilo estas memsubskribita aŭ la servilo ne sendas la ĝustajn perajn atestilojn.</label>]]></string>
   <!--
     Sessions List
 

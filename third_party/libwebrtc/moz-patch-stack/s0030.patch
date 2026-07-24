@@ -1,0 +1,39 @@
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Fri, 19 Feb 2021 13:45:00 +0100
+Subject: Bug 1654112 - libwebrtc: Add a REMB on/off switch to
+ VideoReceiveStream. r=ng
+
+Differential Revision: https://phabricator.services.mozilla.com/D105774
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/7330681cf4de6d8dd868cc661cbdd6679bbc07b3
+---
+ call/video_receive_stream.h         | 3 +++
+ video/rtp_video_stream_receiver2.cc | 2 +-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/call/video_receive_stream.h b/call/video_receive_stream.h
+index ae9951e6f9..c69ec1a674 100644
+--- a/call/video_receive_stream.h
++++ b/call/video_receive_stream.h
+@@ -240,6 +240,9 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
+       // disabled.
+       KeyFrameReqMethod keyframe_method = KeyFrameReqMethod::kPliRtcp;
+ 
++      // See draft-alvestrand-rmcat-remb for information.
++      bool remb = false;
++
+       bool tmmbr = false;
+ 
+       // See LntfConfig for description.
+diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
+index 054b9c1126..30e97de170 100644
+--- a/video/rtp_video_stream_receiver2.cc
++++ b/video/rtp_video_stream_receiver2.cc
+@@ -1366,7 +1366,7 @@ void RtpVideoStreamReceiver2::StartReceive() {
+     // Change REMB candidate egibility.
+     packet_router_->RemoveReceiveRtpModule(rtp_rtcp_.get());
+     packet_router_->AddReceiveRtpModule(rtp_rtcp_.get(),
+-                                        /*remb_candidate=*/true);
++                                        /*remb_candidate=*/config_.rtp.remb);
+   }
+   receiving_ = true;
+ }

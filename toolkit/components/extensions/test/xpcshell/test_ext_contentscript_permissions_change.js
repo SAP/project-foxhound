@@ -1,6 +1,5 @@
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
 Services.prefs.setBoolPref("extensions.originControls.grantByDefault", false);
 
 const server = createHttpServer({ hosts: ["example.com", "example.net"] });

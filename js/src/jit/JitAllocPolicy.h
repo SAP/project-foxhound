@@ -9,14 +9,13 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/Likely.h"
 #include "mozilla/OperatorNewExtensions.h"
-#include "mozilla/TemplateLib.h"
 
 #include <algorithm>
 #include <stddef.h>
 #include <string.h>
-#include <type_traits>
 #include <utility>
 
 #include "ds/LifoAlloc.h"
@@ -75,7 +74,7 @@ class TempAllocator {
   }
 };
 
-class JitAllocPolicy {
+class JitAllocPolicy : public AllocPolicyBase {
   TempAllocator& alloc_;
 
  public:
@@ -103,8 +102,11 @@ class JitAllocPolicy {
     if (MOZ_UNLIKELY(!n)) {
       return n;
     }
-    MOZ_ASSERT(!(oldSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value));
-    memcpy(n, p, std::min(oldSize * sizeof(T), newSize * sizeof(T)));
+    size_t oldLength;
+    [[maybe_unused]] bool nooverflow =
+        mozilla::SafeMul(oldSize, sizeof(T), &oldLength);
+    MOZ_ASSERT(nooverflow);
+    memcpy(n, p, std::min(oldLength, newSize * sizeof(T)));
     return n;
   }
   template <typename T>
@@ -122,10 +124,6 @@ class JitAllocPolicy {
   }
   template <typename T>
   void free_(T* p, size_t numElems = 0) {}
-  void reportAllocOverflow() const {}
-  [[nodiscard]] bool checkSimulatedOOM() const {
-    return !js::oom::ShouldFailWithOOM();
-  }
 };
 
 struct TempObject {

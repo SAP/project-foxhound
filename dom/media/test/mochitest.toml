@@ -22,6 +22,9 @@
 # do ok(true, "Type not supported") and stop the test.
 
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "media-gpu"
 prefs = [
@@ -542,6 +545,18 @@ support-files = [
   "opus-sample.mp4^headers^",
   "opus-sample-cenc.mp4",
   "opus-sample-cenc.mp4^headers^",
+  "output_aac.mkv",
+  "output_av1.mkv",
+  "output_avc.mkv",
+  "output_avc_hl41_1080p_aaclc_44100.mkv",
+  "output_flac.mkv",
+  "output_hevc.mkv",
+  "output_mp3.mkv",
+  "output_opus.mkv",
+  "output_pcm.mkv",
+  "output_vorbis.mkv",
+  "output_vp8.mkv",
+  "output_vp9.mkv",
   "owl-funnier-id3.mp3",
   "owl-funnier-id3.mp3^headers^",
   "owl-funny-id3.mp3",
@@ -550,6 +565,13 @@ support-files = [
   "owl.mp3^headers^",
   "owl-short.mp3",
   "owl-short.mp3^headers^",
+  "partial_support_av1_ac3.mkv",
+  "partial_support_avc_ac3.mkv",
+  "partial_support_vp8_ac3.mkv",
+  "partial_support_vp9_ac3.mkv",
+  "partial_support_theora_aac.mkv",
+  "partial_support_theora_opus.mkv",
+  "partial_support_theora_vorbis.mkv",
   "pixel_aspect_ratio.mp4",
   "play_promise.js",
   "poster-test.jpg",
@@ -618,6 +640,9 @@ support-files = [
   "sin-1k-32bit.m4a",
   "sine.webm",
   "sine.webm^headers^",
+  # Generated with sox, encoded using https://gitlab.com/ecodis/exhale
+  "sine-3s-xhe-aac-44khz-mono.mp4",
+  "sine-3s-xhe-aac-44khz-mono.mp4^headers^",
   "sintel-short-clearkey-subsample-encrypted-audio.webm",
   "sintel-short-clearkey-subsample-encrypted-audio.webm^headers^",
   "sintel-short-clearkey-subsample-encrypted-video.webm",
@@ -658,6 +683,7 @@ support-files = [
   "test-8-7.1.opus^headers^",
   "test-stereo-phase-inversion-180.opus",
   "test-stereo-phase-inversion-180.opus^headers^",
+  "tone_1s_nosilence.mp3",
   "variable-channel.ogg",
   "variable-channel.ogg^headers^",
   "variable-channel.opus",
@@ -739,13 +765,16 @@ support-files = [
   "padding-spanning-multiple-packets.mp3",
 ]
 
+["test_captureStream_audioLoopBack.html"]
+scheme = "https"
+tags = "capturestream"
+
 ["test_capture_stream_av_sync.html"]
 skip-if = [
-  "os == 'android'", # 1712598 (canvas error)
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # 1517199 (timeout-on-osx)
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
-  "os == 'linux'", # 1713397, 1719881 (high intermittent failure on linux tsan), 1776937
   "mda_gpu", # Disabled because high intermittent failure
+  "os == 'android'", # 1712598 (canvas error)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # 1713397, 1719881 (high intermittent failure on linux tsan), 1776937
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # 1517199 (timeout-on-osx)
 ]
 
 ["test_chaining.html"]
@@ -770,15 +799,17 @@ tags = "cloneelementvisually"
 
 ["test_cloneElementVisually_resource_change.html"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1559308 - lower frequency intermittent
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov", # Bug 1559308 - lower frequency intermittent
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1909908
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov", # Bug 1559308 - lower frequency intermittent
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1559308 - lower frequency intermittent
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1909908
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1909908
 ]
 tags = "cloneelementvisually os_integration"
 
 ["test_clone_media_element.html"]
-skip-if = ["os == 'android'"] # bug 1108558, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1108558, android(bug 1232305)
+]
 
 ["test_complete_length.html"]
 scheme = "https"
@@ -790,17 +821,21 @@ scheme = "https"
 ["test_hls_player_independency.html"]
 # There's a limit for creating decoder when API lever < 18(Bug 1278574)
 # We could skip the test in that case as we cannot play 2 video at a time.
-skip-if = ["os != 'android'"]
+run-if = [
+  "os == 'android'",
+]
 tags = "hls"
 
 ["test_hw_video_decoding.html"]
 run-if = [
+  "os == 'mac' && os_version != '10.15'", # Bug 1942396
   "os == 'win'",
-  "os == 'mac' && os_version != '10.15'" # Bug 1942396
 ]
 scheme = "https"
 tags = "os_integration"
-skip-if = ["!mda_gpu"]
+skip-if = [
+  "!mda_gpu",
+]
 
 ["test_imagecapture.html"]
 scheme = "https"
@@ -816,7 +851,9 @@ scheme = "https"
 ["test_mediatrack_consuming_mediastream.html"]
 scheme = "https"
 tags = "mtg"
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"] # TIMEOUT
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # TIMEOUT
+]
 
 ["test_mediatrack_replay_from_end.html"]
 
@@ -825,7 +862,12 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"]
 ["test_mixed_principals.html"]
 skip-if = [
   "os == 'android'", # bug 1309814, android(bug 1232305)
-  "apple_silicon", # bug 1707737
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # bug 1707737
+]
+
+["test_mkv_playback.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && mda_gpu", # Bug 1942396
 ]
 
 ["test_mp3_broadcast.html"]
@@ -833,7 +875,9 @@ skip-if = [
 ["test_mp4a_32bit_samplesize.html"] # bug 1924052
 
 ["test_multiple_mediastreamtracks.html"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"] # TIMEOUT
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # TIMEOUT
+]
 scheme = "https"
 
 ["test_networkconnection_spoofing.html"]
@@ -841,7 +885,9 @@ scheme = "https"
 ["test_play_events_2.html"]
 
 ["test_playback.html"]
-skip-if = ["os == 'android'"] # bug 1316177
+skip-if = [
+  "os == 'android'", # bug 1316177
+]
 
 ["test_playback_and_bfcache.html"]
 support-files = ["file_playback_and_bfcache.html"]
@@ -850,20 +896,21 @@ support-files = ["file_playback_and_bfcache.html"]
 # HLS is only supported on Fennec with API level >= 16
 # TODO: This test is similar to test_playback.html, will remove the
 # redundant code once test_playback.html is enabled on Fennec.
-skip-if = ["os != 'android'"]
+run-if = [
+  "os == 'android'",
+]
 tags = "hls"
 
 ["test_playback_rate.html"]
 
 ["test_played.html"]
 skip-if = [
+  "os == 'android' && arch == 'aarch64'", # Bug 1110922
   "os == 'android' && is_emulator", # Times out on android-em, Bug 1613946
-  "os == 'android' && processor == 'aarch64'", # Bug 1110922
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1110922
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1110922
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1110922
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && mda_gpu", # Bug 1929426
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && socketprocess_e10s", # Bug 1929426
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1110922
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1110922
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && mda_gpu", # Bug 1929426
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && socketprocess_e10s", # Bug 1929426
   "os == 'win'", # Bug 1110922
 ]
 
@@ -875,10 +922,14 @@ skip-if = [
 tags = "capturestream"
 
 ["test_resume.html"]
-skip-if = ["true"] # bug 1021673
+skip-if = [
+  "true", # bug 1021673
+]
 
 ["test_seamless_looping.html"]
-skip-if = ["apple_catalina && debug"] # Bug 1796318
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1796318
+]
 
 ["test_seamless_looping_cancel_looping_future_frames.html"]
 
@@ -887,42 +938,56 @@ skip-if = ["apple_catalina && debug"] # Bug 1796318
 ["test_seamless_looping_media_element_state.html"]
 
 ["test_seamless_looping_not_keep_painting_old_video_frames.html"]
-skip-if = ["os == 'android'"] # Android has black frames issue.
+skip-if = [
+  "os == 'android'", # Android has black frames issue.
+]
 
 ["test_seamless_looping_resume_video_decoding.html"]
 
 ["test_seamless_looping_seek_current_time.html"]
 
 ["test_seamless_looping_shorter_audio_than_video.html"]
-skip-if = ["os == 'android' && verify"] # Crash
+skip-if = [
+  "os == 'android' && verify", # Crash
+]
 
 ["test_seamless_looping_video.html"]
-skip-if = ["os == 'android'"] # Android has black frames issue.
+skip-if = [
+  "os == 'android'", # Android has black frames issue.
+]
 
 ["test_setSinkId_after_loop.html"]
 scheme = "https"
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !fission",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1961557
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && !fission",
 ]
 
 ["test_temporary_file_blob_video_plays.html"]
 skip-if = [
   "os == 'android'", # bug 1533534 # android(bug 1232305)
-  "os == 'linux' && mda_gpu",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && mda_gpu",
 ]
 
 
+["test_unsupported_mkv.html"]
+
 ["test_videoPlaybackQuality_totalFrames.html"]
-skip-if = ["os == 'win'"] # bug 1374189
+skip-if = [
+  "os == 'win'", # bug 1374189
+]
 
 ["test_video_dimensions.html"]
 
 ["test_video_low_power_telemetry.html"]
 tags = "os_integration"
-skip-if = ["true"] # Bug 1970241
+skip-if = [
+  "true", # Bug 1970241
+]
 
 ["test_video_to_canvas.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305), bugs 1320418,1347953,1347954,1348140,1348386
+skip-if = [
+  "os == 'android'", # android(bug 1232305), bugs 1320418,1347953,1347954,1348140,1348386
+]
 
 ["test_vp9_superframes.html"]

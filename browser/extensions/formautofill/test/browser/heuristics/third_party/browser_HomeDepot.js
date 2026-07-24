@@ -21,12 +21,15 @@ add_heuristic_tests(
           ],
         },
         {
-          invalid: true,
           fields: [
             {
               fieldName: "street-address",
               reason: "autocomplete",
               addressType: "billing",
+            },
+            {
+              fieldName: "tel",
+              reason: "regex-heuristic",
             },
           ],
         },

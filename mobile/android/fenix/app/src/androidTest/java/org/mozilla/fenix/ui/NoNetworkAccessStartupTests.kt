@@ -35,58 +35,58 @@ class NoNetworkAccessStartupTests : TestSetup() {
     // caution when making changes to it, so they don't block the builds
     // Based on STR from https://github.com/mozilla-mobile/fenix/issues/16886
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2240542
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1964989")
     @Test
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     fun noNetworkConnectionStartupTest() {
         setNetworkEnabled(false)
 
         composeTestRule.activityRule.launchActivity(null)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
             verifyHomeScreen()
         }
     }
 
     // Based on STR from https://github.com/mozilla-mobile/fenix/issues/16886
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2240722
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1964989")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     @Test
     fun networkInterruptedFromBrowserToHomeTest() {
         val url = "example.com"
 
         composeTestRule.activityRule.launchActivity(null)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(url.toUri()) {}
 
         setNetworkEnabled(false)
 
-        browserScreen {
-        }.goToHomescreen(composeTestRule) {
+        browserScreen(composeTestRule) {
+        }.goToHomescreen {
             verifyHomeScreen()
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2240723
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1964989")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     @Test
     fun testPageReloadAfterNetworkInterrupted() {
         val url = "example.com"
 
         composeTestRule.activityRule.launchActivity(null)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(url.toUri()) {}
 
         setNetworkEnabled(false)
 
-        browserScreen {
+        browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.refreshPage { }
+        }.clickRefreshButton { }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2240721
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1964989")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     @SdkSuppress(minSdkVersion = 34)
     @SmokeTest
     @Test
@@ -95,12 +95,12 @@ class NoNetworkAccessStartupTests : TestSetup() {
 
         composeTestRule.activityRule.launchActivity(null)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
-        }.openTurnOnSyncMenu {
+        }.clickSettingsButton {
+        }.openTurnOnSyncMenu(composeTestRule) {
             tapOnUseEmailToSignIn()
-            browserScreen {
+            browserScreen(composeTestRule) {
                 verifyUrl("firefox.com")
             }
         }

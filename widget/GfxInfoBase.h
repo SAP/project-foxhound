@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_widget_GfxInfoBase_h__
-#define __mozilla_widget_GfxInfoBase_h__
+#ifndef _mozilla_widget_GfxInfoBase_h_
+#define _mozilla_widget_GfxInfoBase_h_
 
 #include "GfxDriverInfo.h"
 #include "GfxInfoCollector.h"
@@ -14,7 +14,6 @@
 #include "gfxTelemetry.h"
 #include "js/Value.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/gfx/GraphicsMessages.h"
@@ -78,11 +77,12 @@ class GfxInfoBase : public nsIGfxInfo,
   NS_IMETHOD GetAzureCanvasBackend(nsAString& aBackend) override;
   NS_IMETHOD GetAzureContentBackend(nsAString& aBackend) override;
   NS_IMETHOD GetUsingGPUProcess(bool* aOutValue) override;
-  NS_IMETHOD GetUsingRemoteCanvas(bool* aOutValue) override;
   NS_IMETHOD GetUsingAcceleratedCanvas(bool* aOutValue) override;
   NS_IMETHOD GetIsHeadless(bool* aIsHeadless) override;
   NS_IMETHOD GetTargetFrameRate(uint32_t* aTargetFrameRate) override;
   NS_IMETHOD GetCodecSupportInfo(nsACString& aCodecSupportInfo) override;
+  NS_IMETHOD_(void)
+  SetCodecSupportInfo(const nsACString& aCodecSupportInfo) override;
 
 #ifdef DEBUG
   NS_IMETHOD SpoofMonitorInfo(uint32_t aScreenCount, int32_t aMinRefreshRate,
@@ -119,6 +119,11 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual nsString Manufacturer() { return u""_ns; }
   virtual uint32_t OperatingSystemVersion() { return 0; }
   virtual GfxVersionEx OperatingSystemVersionEx() { return GfxVersionEx(); }
+
+  // Reports GL string values obtained from an OpenGL context to gfxInfo. Some
+  // gfxInfo implementations can use these in order to avoid having to create
+  // their own GL context during startup.
+  virtual void ReportGLStrings(gfx::GfxInfoGLStrings&& aStrings) {}
 
   // Convenience to get the application version
   static const nsCString& GetApplicationVersion();
@@ -177,6 +182,7 @@ class GfxInfoBase : public nsIGfxInfo,
   size_t mScreenCount = 0;
   int32_t mMinRefreshRate = 0;
   int32_t mMaxRefreshRate = 0;
+  nsCString mCodecSupportInfo;
 
  private:
   virtual int32_t FindBlocklistedDeviceInList(
@@ -201,4 +207,4 @@ class GfxInfoBase : public nsIGfxInfo,
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /* __mozilla_widget_GfxInfoBase_h__ */
+#endif /* _mozilla_widget_GfxInfoBase_h_ */

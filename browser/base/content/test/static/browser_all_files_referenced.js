@@ -46,6 +46,9 @@ var gExceptionPaths = [
   "chrome://browser/content/asrouter/assets/fox-with-devices.svg",
   "chrome://browser/content/asrouter/assets/fox-with-locked-box.svg",
   "chrome://browser/content/asrouter/assets/fox-with-mobile.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-banner.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-non-eu-QR.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-eu-QR.svg",
 
   // toolkit/components/pdfjs/content/build/pdf.js
   "resource://pdf.js/web/images/",
@@ -119,6 +122,17 @@ var gExceptionPaths = [
   "resource://builtin-addons/newtab/",
   "resource://newtab/",
   "chrome://newtab/",
+
+  // UniFFI test files.
+  "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/tests/generated/",
+
+  // Used for Market suggestions on the urlbar. This is specified from Remote
+  // Settings.
+  "chrome://browser/skin/illustrations/market-opt-in.svg",
+
+  // Used for Yelp realtime suggestions on the urlbar. This is specified from
+  // Remote Settings.
+  "chrome://browser/skin/illustrations/yelpRealtime-opt-in.svg",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -171,9 +185,6 @@ var allowlist = [
     isFromDevTools: true,
   },
 
-  // used by devtools/client/memory/index.xhtml
-  { file: "chrome://global/content/third_party/d3/d3.js" },
-
   // SpiderMonkey parser API, currently unused in browser/ and toolkit/
   { file: "resource://gre/modules/reflect.sys.mjs" },
 
@@ -191,10 +202,6 @@ var allowlist = [
 
   { file: "resource://gre/greprefs.js" },
 
-  // layout/mathml/nsMathMLChar.cpp
-  { file: "resource://gre/res/fonts/mathfontSTIXGeneral.properties" },
-  { file: "resource://gre/res/fonts/mathfontUnicode.properties" },
-
   // toolkit/mozapps/extensions/AddonContentPolicy.cpp
   { file: "resource://gre/localization/en-US/toolkit/global/cspErrors.ftl" },
 
@@ -207,19 +214,11 @@ var allowlist = [
     platforms: ["linux", "win"],
   },
   {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/mac/intl.properties",
-    platforms: ["linux", "win"],
-  },
-  {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/mac/platformKeys.properties",
     platforms: ["linux", "win"],
   },
   {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/unix/accessible.properties",
-    platforms: ["macosx", "win"],
-  },
-  {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/unix/intl.properties",
     platforms: ["macosx", "win"],
   },
   {
@@ -231,10 +230,6 @@ var allowlist = [
     platforms: ["linux", "macosx"],
   },
   {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/win/intl.properties",
-    platforms: ["linux", "macosx"],
-  },
-  {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/win/platformKeys.properties",
     platforms: ["linux", "macosx"],
   },
@@ -242,6 +237,9 @@ var allowlist = [
   // Files from upstream library
   { file: "resource://pdf.js/web/debugger.mjs" },
   { file: "resource://pdf.js/web/debugger.css" },
+
+  // File from the ipp-activator add-on
+  { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
   // Bug 1339424 (wontfix?)
@@ -312,7 +310,9 @@ var allowlist = [
 
   // Referenced programmatically
   { file: "chrome://browser/content/backup/BackupManifest.1.schema.json" },
+  { file: "chrome://browser/content/backup/BackupManifest.2.schema.json" },
   { file: "chrome://browser/content/backup/ArchiveJSONBlock.1.schema.json" },
+  { file: "chrome://browser/content/backup/ArchiveJSONBlock.2.schema.json" },
 
   // Bug 1733498 - Migrate necko errors l10n strings from .properties to Fluent
   {
@@ -324,6 +324,20 @@ var allowlist = [
 
   // A QA and dev debug tool.
   { file: "chrome://browser/content/places/interactionsViewer.html" },
+
+  // Bug 1984409: We're doing backups to cloud-synced locations first. We'll do local backups eventually,
+  // and this file will be needed for that.
+  {
+    file: "resource://app/modules/backup/CookiesBackupResource.sys.mjs",
+  },
+
+  // Bug 1996315: QR code generation modules
+  {
+    file: "moz-src:///browser/components/qrcode/QRCodeGenerator.sys.mjs",
+  },
+  {
+    file: "moz-src:///browser/components/qrcode/QRCodeWorker.sys.mjs",
+  },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {

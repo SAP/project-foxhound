@@ -107,12 +107,30 @@ export default class MozPageNav extends MozLitElement {
     }
   }
 
+  onPrimaryNavChange() {
+    this.updateNavButtonsState();
+  }
+
   onSecondaryNavChange(event) {
     let secondaryNavElements = event.target.assignedElements();
     this.hasSecondaryNav = !!secondaryNavElements.length;
-    secondaryNavElements?.forEach(el => {
-      el.classList.add("secondary-nav-item");
-    });
+  }
+
+  updated() {
+    this.updateNavButtonsState();
+  }
+
+  updateNavButtonsState() {
+    let isViewSelected = false;
+    let assignedPageNavButtons = this.pageNavButtons;
+    for (let button of assignedPageNavButtons) {
+      button.selected = button.view == this.currentView;
+      isViewSelected = isViewSelected || button.selected;
+    }
+    if (!isViewSelected && assignedPageNavButtons.length) {
+      // Current page nav has no matching view, reset to the first view.
+      assignedPageNavButtons[0].activate();
+    }
   }
 
   render() {
@@ -145,6 +163,7 @@ export default class MozPageNav extends MozLitElement {
           <slot
             @change-view=${this.onChangeView}
             @keydown=${this.handleFocus}
+            @slotchange=${this.onPrimaryNavChange}
           ></slot>
         </div>
         ${when(this.hasSecondaryNav, () => html`<hr />`)}
@@ -156,19 +175,6 @@ export default class MozPageNav extends MozLitElement {
         </div>
       </nav>
     `;
-  }
-
-  updated() {
-    let isViewSelected = false;
-    let assignedPageNavButtons = this.pageNavButtons;
-    for (let button of assignedPageNavButtons) {
-      button.selected = button.view == this.currentView;
-      isViewSelected = isViewSelected || button.selected;
-    }
-    if (!isViewSelected && assignedPageNavButtons.length) {
-      // Current page nav has no matching view, reset to the first view.
-      assignedPageNavButtons[0].activate();
-    }
   }
 }
 customElements.define("moz-page-nav", MozPageNav);

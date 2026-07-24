@@ -4,13 +4,16 @@
 
 package mozilla.components.lib.crash
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.BadParcelableException
 import android.os.Build
 import androidx.annotation.StyleRes
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,7 +21,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.base.crash.CrashReporting
+import mozilla.components.lib.crash.CrashReporter.Companion.requireInstance
 import mozilla.components.lib.crash.db.CrashDatabase
+import mozilla.components.lib.crash.db.forceSerializable
 import mozilla.components.lib.crash.db.insertCrashSafely
 import mozilla.components.lib.crash.db.insertReportSafely
 import mozilla.components.lib.crash.db.toCrash
@@ -60,9 +65,9 @@ private class BreadcrumbList(val maxBreadCrumbs: Int) {
  * in on nightly was unexpectedly high. In order to avoid an unmanageable volume when we turned the
  * feature on in the Release channel, we decided to only send crashes that were as new as the feature
  * itself.
- * This timestamp is equivalent to October 28th, 2024 00:00:00 GMT
+ * This timestamp is equivalent to Mon Aug 18 2025 00:00:00 GMT+0000
  */
-private const val START_OF_134_NIGHTLY_TIMESTAMP = 1730073600000L
+private const val START_OF_144_NIGHTLY_TIMESTAMP = 1755475200000L
 
 /**
  *
@@ -100,6 +105,7 @@ class CrashReporter internal constructor(
     enabled: Boolean = true,
     internal val promptConfiguration: PromptConfiguration = PromptConfiguration(),
     private val nonFatalCrashIntent: PendingIntent? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val maxBreadCrumbs: Int = 30,
     private val runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
@@ -115,6 +121,7 @@ class CrashReporter internal constructor(
         enabled: Boolean = true,
         promptConfiguration: PromptConfiguration = PromptConfiguration(),
         nonFatalCrashIntent: PendingIntent? = null,
+        mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
         scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
         maxBreadCrumbs: Int = 30,
         runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
@@ -126,6 +133,7 @@ class CrashReporter internal constructor(
         enabled = enabled,
         promptConfiguration = promptConfiguration,
         nonFatalCrashIntent = nonFatalCrashIntent,
+        mainDispatcher = mainDispatcher,
         scope = scope,
         maxBreadCrumbs = maxBreadCrumbs,
         runtimeTagProviders = runtimeTagProviders,
@@ -154,7 +162,10 @@ class CrashReporter internal constructor(
     /**
      * Install this [CrashReporter] instance. At this point the component will be setup to collect crash reports.
      */
-    fun install(applicationContext: Context): CrashReporter {
+    fun install(
+        applicationContext: Context,
+        handleCaughtExceptionSideEffects: (() -> Unit)? = null,
+    ): CrashReporter {
         instance = this
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -162,6 +173,7 @@ class CrashReporter internal constructor(
             context = applicationContext,
             crashReporter = this,
             defaultExceptionHandler = defaultHandler,
+            handleCaughtException = handleCaughtExceptionSideEffects,
         )
         Thread.setDefaultUncaughtExceptionHandler(handler)
 
@@ -174,7 +186,7 @@ class CrashReporter internal constructor(
      * @param timestampMillis Timestamp in milliseconds to retrieve reports after. Defaults to the start
      * of the Fenix 134 cycle when this feature went live.
      */
-    suspend fun hasUnsentCrashReportsSince(timestampMillis: Long = START_OF_134_NIGHTLY_TIMESTAMP): Boolean {
+    suspend fun hasUnsentCrashReportsSince(timestampMillis: Long = START_OF_144_NIGHTLY_TIMESTAMP): Boolean {
         return database.crashDao().numberOfUnsentCrashesSince(timestampMillis) > 0
     }
 
@@ -185,7 +197,7 @@ class CrashReporter internal constructor(
      * @param timestampMillis Timestamp in milliseconds to retrieve reports after. Defaults to the start
      * of the Fenix 134 cycle when this feature went live.
      */
-    suspend fun unsentCrashReportsSince(timestampMillis: Long = START_OF_134_NIGHTLY_TIMESTAMP): List<Crash> {
+    suspend fun unsentCrashReportsSince(timestampMillis: Long = START_OF_144_NIGHTLY_TIMESTAMP): List<Crash> {
         return database.crashDao().getCrashesWithoutReportsSince(timestampMillis)
             .map { it.toCrash() }
     }
@@ -228,7 +240,7 @@ class CrashReporter internal constructor(
             }
 
             logger.info("Crash report submitted to ${services.size} services")
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 then()
             }
         }
@@ -247,7 +259,7 @@ class CrashReporter internal constructor(
             }
 
             logger.info("Crash report submitted to ${telemetryServices.size} telemetry services")
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 then()
             }
         }
@@ -378,13 +390,51 @@ class CrashReporter internal constructor(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun sendCrashReport(context: Context, crash: Crash) {
+    internal fun sendCrashReport(context: Context, crash: Crash) = try {
         ContextCompat.startForegroundService(context, SendCrashReportService.createReportIntent(context, crash))
+    } catch (e: BadParcelableException) {
+        (crash as? Crash.UncaughtExceptionCrash)?.let {
+            // We may end up with a throwable that isn't completely serializable, which will cause
+            // a crash when the service tries to unbundle it.
+            val updatedCrash = it.copy(throwable = it.throwable.forceSerializable())
+            ContextCompat.startForegroundService(
+                context,
+                SendCrashReportService.createReportIntent(context, updatedCrash),
+            )
+            logger.warn("replaced throwable for crash that could not be serialized")
+        }
+    } catch (e: IllegalStateException) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S &&
+            e is ForegroundServiceStartNotAllowedException
+        ) {
+            logger.warn("ignored failed service start while backgrounded")
+        } else {
+            throw e
+        }
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun sendCrashTelemetry(context: Context, crash: Crash) {
+    internal fun sendCrashTelemetry(context: Context, crash: Crash) = try {
         ContextCompat.startForegroundService(context, SendCrashTelemetryService.createReportIntent(context, crash))
+    } catch (e: BadParcelableException) {
+        (crash as? Crash.UncaughtExceptionCrash)?.let {
+            // We may end up with a throwable that isn't completely serializable, which will cause
+            // a crash when the service tries to unbundle it.
+            val updatedCrash = it.copy(throwable = it.throwable.forceSerializable())
+            ContextCompat.startForegroundService(
+                context,
+                SendCrashTelemetryService.createReportIntent(context, updatedCrash),
+            )
+            logger.warn("replaced throwable for crash that could not be serialized")
+        }
+    } catch (e: IllegalStateException) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S &&
+            e is ForegroundServiceStartNotAllowedException
+        ) {
+            logger.warn("ignored failed service start while backgrounded")
+        } else {
+            throw e
+        }
     }
 
     @VisibleForTesting
@@ -439,20 +489,48 @@ class CrashReporter internal constructor(
     )
 
     companion object {
-        const val RELEASE_RUNTIME_TAG = "release"
-
         @Volatile
         private var instance: CrashReporter? = null
+
+        private var deferredInitializer: (() -> CrashReporter)? = null
 
         @VisibleForTesting
         internal fun reset() {
             instance = null
+            deferredInitializer = null
+        }
+
+        /**
+         * Register a deferred initializer that will be called lazily when [requireInstance] is accessed.
+         * This allows processes to register crash reporting setup without immediately initializing
+         * the CrashReporter and its dependencies.
+         *
+         * Note: This will not register the [Thread.UncaughtExceptionHandler] and is primarily for
+         * cases where we access the crash database or uploader.
+         *
+         * @param initializer A function that returns a configured and installed CrashReporter instance.
+         */
+        fun registerDeferredInitializer(initializer: () -> CrashReporter) = synchronized(this) {
+            deferredInitializer = initializer
         }
 
         internal val requireInstance: CrashReporter
-            get() = instance ?: throw IllegalStateException(
-                "You need to call install() on your CrashReporter instance from Application.onCreate().",
-            )
+            get() = synchronized(this) {
+                instance?.let { return it }
+
+                deferredInitializer?.let { initializer ->
+                    return initializer().also {
+                        it.logger.info("Ran deferred CrashReporter initializer")
+                        instance = it
+                        deferredInitializer = null
+                    }
+                }
+
+                throw IllegalStateException(
+                    "You need to call install() or registerDeferredInitializer() on your" +
+                        " CrashReporter from Application.onCreate().",
+                )
+            }
     }
 }
 

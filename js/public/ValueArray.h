@@ -12,8 +12,6 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Attributes.h"  // MOZ_IMPLICIT, MOZ_RAII
 
-#include <stdint.h>  // size_t
-
 #include "js/CallArgs.h"    // JS::CallArgs
 #include "js/GCVector.h"    // JS::RootedVector
 #include "js/RootingAPI.h"  // JS::AutoGCRooter, JS::{,Mutable}Handle

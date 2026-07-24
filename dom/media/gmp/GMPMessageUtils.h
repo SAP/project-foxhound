@@ -6,12 +6,12 @@
 #ifndef GMPMessageUtils_h_
 #define GMPMessageUtils_h_
 
+#include "GMPNativeTypes.h"
+#include "GMPSanitizedExports.h"
 #include "gmp-video-codec.h"
 #include "gmp-video-frame-encoded.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "GMPNativeTypes.h"
-#include "GMPSanitizedExports.h"
 
 namespace IPC {
 

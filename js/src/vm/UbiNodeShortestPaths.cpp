@@ -6,8 +6,6 @@
 
 #include "js/UbiNodeShortestPaths.h"
 
-#include "mozilla/Maybe.h"
-
 #include <stdio.h>
 #include <utility>
 

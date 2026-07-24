@@ -5,7 +5,6 @@
 extern crate geckoservo;
 
 extern crate abridged_certs;
-extern crate app_services_logger;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc2_client;
 #[cfg(feature = "cubeb-remoting")]
@@ -36,6 +35,8 @@ extern crate idna_glue;
 extern crate ipdl_utils;
 extern crate jog;
 extern crate jsrust_shared;
+#[cfg(feature = "jxl_decoder")]
+extern crate jxl_decoder;
 extern crate kvstore;
 extern crate mapped_hyph;
 extern crate mozurl;
@@ -68,6 +69,8 @@ extern crate aa_stroke;
 extern crate qcms;
 extern crate wpf_gpu_raster;
 
+extern crate locale_service_glue;
+
 extern crate unic_langid;
 extern crate unic_langid_ffi;
 
@@ -87,6 +90,8 @@ extern crate l10nregistry_ffi;
 extern crate localization_ffi;
 
 extern crate ipcclientcerts;
+extern crate pdf_trust_anchors;
+extern crate qwac_trust_anchors;
 extern crate trust_anchors;
 
 #[cfg(any(
@@ -100,13 +105,16 @@ extern crate osclientcerts;
 #[cfg(not(target_os = "android"))]
 extern crate gkrust_uniffi_components;
 
-#[cfg(feature = "uniffi_fixtures")]
+#[cfg(all(feature = "uniffi_fixtures", not(target_os = "android")))]
 extern crate uniffi_bindgen_gecko_js_test_fixtures;
 
 #[cfg(not(target_os = "android"))]
 extern crate viaduct;
+#[cfg(not(target_os = "android"))]
+extern crate viaduct_necko;
 
 extern crate gecko_logger;
+extern crate gecko_tracing;
 
 #[cfg(feature = "oxidized_breakpad")]
 extern crate rust_minidump_writer_linux;
@@ -137,11 +145,17 @@ extern crate oblivious_http;
 
 extern crate mime_guess_ffi;
 
+extern crate uritemplate_glue;
 extern crate urlpattern;
 extern crate urlpattern_glue;
 
+extern crate adblock;
+extern crate content_classifier_engine;
+
 #[cfg(feature = "libz-rs-sys")]
 extern crate libz_rs_sys;
+
+extern crate gecko_trace;
 
 extern crate log;
 use log::info;
@@ -154,6 +168,12 @@ use gecko_logger::GeckoLogger;
 pub extern "C" fn GkRust_Init() {
     // Initialize logging.
     let _ = GeckoLogger::init();
+    // Initialize tracing.
+    gecko_tracing::initialize_tracing();
+    #[cfg(not(target_os = "android"))]
+    if let Err(e) = viaduct_necko::init_necko_backend() {
+        log::warn!("Failed to initialize viaduct-necko backend: {:?}", e);
+    }
 }
 
 #[no_mangle]

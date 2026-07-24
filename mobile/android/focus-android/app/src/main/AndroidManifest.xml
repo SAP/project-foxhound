@@ -111,8 +111,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:resizeableActivity="true"
-            android:supportsPictureInPicture="true"
-            tools:targetApi="n">
+            android:supportsPictureInPicture="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -131,8 +130,7 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:theme="@style/AppTheme"
-            tools:targetApi="n" />
+            android:theme="@style/AppTheme" />
 
         <activity android:name=".activity.TextActionActivity"
             android:label="${textSelectionSearchAction}"
@@ -218,6 +216,18 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <!-- Disables automatic initialization of EmojiCompat -->
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
+        </provider>
+
 
     </application>
 

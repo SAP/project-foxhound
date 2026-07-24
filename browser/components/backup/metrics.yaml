@@ -14,7 +14,10 @@ browser.backup:
   enabled:
     type: boolean
     description: >
-      True if the BackupService is enabled by default.
+      True if the BackupService has initialized and reached idle. You may want
+      to use archive_enabled/restore_enabled to determine whether those
+      features are available, or use scheduler_enabled for whether automatic
+      backups are enabled.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908727
     data_reviews:
@@ -25,6 +28,38 @@ browser.backup:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_BACKUP_ENABLED
+
+  archive_enabled:
+    type: boolean
+    description: >
+      True if the user can create backups, i.e. it has not been disabled by a
+      pref or otherwise deemed incompatible.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997389
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997389
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    telemetry_mirror: BROWSER_BACKUP_ARCHIVE_ENABLED
+
+  restore_enabled:
+    type: boolean
+    description: >
+      True if the user can restore backups, i.e. it has not been disabled by a
+      pref or otherwise deemed incompatible.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997389
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997389
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    telemetry_mirror: BROWSER_BACKUP_RESTORE_ENABLED
 
   scheduler_enabled:
     type: boolean
@@ -459,8 +494,10 @@ browser.backup:
       Dispatched when scheduled backups are enabled.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908732
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908732
+      - https://phabricator.services.mozilla.com/D268774
     data_sensitivity:
       - interaction
     send_in_pings:
@@ -469,6 +506,17 @@ browser.backup:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BrowserBackup_ToggleOn_Backupservice
+    extra_keys:
+      encrypted:
+        type: boolean
+        description: Whether or not encryption is enabled.
+      location:
+        type: string
+        description: >
+          The location of the backup. This can be either "onedrive",
+          "documents", or "other". "other" will be sent if the parent directory
+          of the backup doesn't match the default "documents" or "onedrive"
+          save paths.
 
   toggle_off:
     type: event
@@ -493,8 +541,10 @@ browser.backup:
       Dispatched when a backup is successfully created.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908732
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1908732
+      - https://phabricator.services.mozilla.com/D268774
     data_sensitivity:
       - technical
     send_in_pings:
@@ -503,6 +553,22 @@ browser.backup:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BrowserBackup_Created_Backupservice
+    extra_keys:
+      encrypted:
+        type: boolean
+        description: Whether or not encryption is enabled for the backup.
+      location:
+        type: string
+        description: >
+          The location of the backup. This can be either "onedrive",
+          "documents", or "other". "other" will be sent if the parent directory
+          of the backup doesn't match the default "documents" or "onedrive"
+          save paths.
+      size:
+        type: quantity
+        description: >
+          The size-on-disk of the created backup. This is rounded to the
+          nearest mebibyte to reduce fingerprintability.
 
   change_location:
     type: event
@@ -598,3 +664,266 @@ browser.backup:
           The string representation of the step that backup creation was in
           when the error occurred.
     telemetry_mirror: BrowserBackup_Error_Backupservice
+
+  backup_start:
+    type: event
+    description: >
+      Dispatched when a backup is initiated.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D268774
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      reason:
+        type: string
+        description: >
+          The reason that the backup was started. Can be one of the following:
+            - "manual" if the user selected "Backup Now";
+            - "idle" if the user was idle and sufficiently long passed since
+              the last backup;
+            - "missed" if the user was idle, sufficiently long has passed since
+              the last backup, and this backup was scheduled to happen before;
+            - "user deleted some data" if cookies or other user data was
+              deleted;
+            - "encryption" if the password was added, changed, or removed;
+            - "location" if the location changed (not implemented yet, see
+              bug 1996377);
+            - "first" if scheduled backups were just enabled;
+            - or "unknown" if the reason wasn't specified.
+
+  backup_throttled:
+    type: event
+    description: >
+      Dispatched when backups are throttled due to too many errors.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D268774
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+
+  archive_disabled_reason:
+    type: string
+    description: >
+      Only set if `browser.backup.enabled` is `false`. Possible reasons are
+      "nimbus", "pref" (non-Nimbus), "policy", "sanitizeOnShutdown",
+      "selectable profiles", "os version".
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D268774
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+
+  restore_disabled_reason:
+    type: string
+    description: >
+      Only set if `browser.backup.enabled` is `false`. Possible reasons are
+      "nimbus", "pref" (non-Nimbus), "policy", "sanitizeOnShutdown",
+      "selectable profiles".
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992808
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D268774
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+
+  restore_file_chosen:
+    type: event
+    description: Dispatched when a file is chosen to be restored.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - interaction
+    send_in_pings:
+      - profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      location:
+        type: string
+        description: >
+          The location of the restore file. This can be either "onedrive",
+          "documents", or "other". "other" will be sent if the file's parent
+          directory doesn't match the default "documents" or "onedrive" save
+          paths.
+      valid:
+        type: boolean
+        description: >
+          If `false`, the selected restore file was invalid and could not be
+          restored. In this case, keys besides this one and `location` will not
+          be specified.
+      backup_timestamp:
+        type: quantity
+        description: >
+          The number of milliseconds between the epoch and the creation of the
+          backup.
+      restore_id:
+        type: string
+        description: The identifier for the potential profile restore event.
+      encryption:
+        type: boolean
+        description: >
+          `true` if the restore file chosen is encrypted.
+      app_name:
+        type: string
+        description: The name of the application that created the backup file.
+      version:
+        type: string
+        description: The application version that created the backup file.
+      build_id:
+        type: string
+        description: The build ID of the application that created the backup.
+      os_name:
+        type: string
+        description: The OS in which the backup was created.
+      os_version:
+        type: string
+        description: The OS version in which the backup was created.
+      telemetry_enabled:
+        type: boolean
+        description: Whether telemetry was enabled when the backup was created.
+
+  restore_started:
+    type: event
+    description: Dispatched when a file is chosen to be restored.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - interaction
+    send_in_pings:
+      - profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      restore_id:
+        type: string
+        description: The identifier for the potential profile restore event.
+      replace:
+        type: boolean
+        description: Indicates if the restore will replace the current running profile.
+
+  restore_failed:
+    type: event
+    description: Dispatched when a restore fails (prior to Firefox restart).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - technical
+    send_in_pings:
+      - profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      restore_id:
+        type: string
+        description: The identifier for the potential profile restore event.
+      error_type:
+        type: string
+        description: >
+          The reason for the failure. Possible values include, but are not
+          limited to, "UNAUTHORIZED" (bad password provided by user),
+          "CORRUPTED_ARCHIVE", and "FILE_SYSTEM_ERROR".
+
+  restore_complete:
+    type: event
+    description: >
+      Dispatched when a restore completes, just before the browser restarts into
+      the restored profile.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - interaction
+    send_in_pings:
+      - profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      restore_id:
+        type: string
+        description: The identifier for the potential profile restore event.
+
+  restored_profile_launched:
+    type: event
+    description: >
+      Dispatched when a restore completes, after the browser restarts into the
+      restored profile (from that profile). Note that this will not be sent if
+      the new profile has telemetry disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - interaction
+    send_in_pings:
+      - post-profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      restore_id:
+        type: string
+        description: The identifier for the potential profile restore event.
+
+  restored_profile_data:
+    type: object
+    description: >
+      Describes the backup that was restored to make the current profile. If
+      This is not a restored profile, `is_restored` will be set to `false` and
+      no other values will be set.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+    data_sensitivity:
+      - technical
+    send_in_pings:
+      - post-profile-restore
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    structure:
+      type: object
+      properties:
+        is_restored:
+          type: boolean
+        backup_timestamp:
+          type: number
+        backup_app_name:
+          type: string
+        backup_app_version:
+          type: string
+        backup_build_id:
+          type: string
+        backup_os_name:
+          type: string
+        backup_os_version:
+          type: string
+        backup_legacy_client_id:
+          type: string

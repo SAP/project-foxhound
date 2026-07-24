@@ -11,7 +11,6 @@
 #include "nsAppRunner.h"
 #include "mozilla/XREAppData.h"
 #include "mozilla/Base64.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/GUniquePtr.h"
 #include "MainThreadUtils.h"
 #include "nsPrintfCString.h"

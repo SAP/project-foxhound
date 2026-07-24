@@ -6,8 +6,6 @@
 #include "HostWebGLContext.h"
 
 #include "CompositableHost.h"
-#include "mozilla/layers/LayersSurfaces.h"
-
 #include "MozFramebuffer.h"
 #include "TexUnpackBlob.h"
 #include "WebGL2Context.h"
@@ -17,6 +15,7 @@
 #include "WebGLMemoryTracker.h"
 #include "WebGLParent.h"
 #include "WebGLProgram.h"
+#include "WebGLQuery.h"
 #include "WebGLRenderbuffer.h"
 #include "WebGLSampler.h"
 #include "WebGLShader.h"
@@ -24,9 +23,8 @@
 #include "WebGLTexture.h"
 #include "WebGLTransformFeedback.h"
 #include "WebGLVertexArray.h"
-#include "WebGLQuery.h"
-
 #include "mozilla/StaticMutex.h"
+#include "mozilla/layers/LayersSurfaces.h"
 
 namespace mozilla {
 

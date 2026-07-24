@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Coba malih</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Konéksi Aman Gagal</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>Kaca sané ragané coba cingak tan prasida katampilang mawinan kaaslian data sané katerima tan prasida kavérifikasi.</li> <li>Durus hubungin sané ngadruénang situs wéb antuk nganikain indik pikobet puniki.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Kaca sané ragané coba cingak tan prasida katampilang mawinan kaaslian data sané katerima tan prasida kavérifikasi.</li>\n<li>Durus hubungin sané ngadruénang situs wéb antuk nganikain indik pikobet puniki.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Konéksi Aman Gagal</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>Puniki minab pikobet sareng setélan peladén, utawi minab wénten sané nyoba nuutin peladén.</li> <li>Pinaka ragané sampun maasil mahubung nuju peladén puniki sadurungné, galat minab abaan nyané ajebos, miwah ragané prasida nyoba malih nyanan.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Puniki minab pikobet sareng setélan peladén, utawi minab wénten sané nyoba nuutin peladén.</li>\n<li>Pinaka ragané sampun maasil mahubung nuju peladén puniki sadurungné, galat minab abaan nyané ajebos, miwah ragané prasida nyoba malih nyanan.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">Lanturan…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Minab wénten sané nyoba nyamar dados situs miwah ragané tan dados ngalanturang.</label> <br><br> <label>Situs wéb ngabuktiyang identitas dané saking sértifikat. %1$s tan kaparcaya <b>%2$s</b> krana pawedar sértifikat nyané nénten kauningin, sértifikat katanda tanganin ngaraga, utawi peladén nénten ngirimang sértifikat parantara sané patut.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Minab wénten sané nyoba nyamar dados situs miwah ragané tan dados ngalanturang.</label> <br><br>\n<label>Situs wéb ngabuktiyang identitas dané saking sértifikat. %1$s tan kaparcaya <b>%2$s</b> krana pawedar sértifikat nyané nénten kauningin, sértifikat katanda tanganin ngaraga, utawi peladén nénten ngirimang sértifikat parantara sané patut.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">Mawali (Kanikayang)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->

@@ -34,7 +34,7 @@ header {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   padding-block: 9px;
   padding-inline-start: 16px;
   padding-inline-end: 23px;
@@ -72,7 +72,7 @@ login-item[data-editing="true"] + login-intro,
   display: flex;
   justify-content: center;
   width: var(--sidebar-width);
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
 }
 
 :root:not(.primary-password-auth-required) #primary-password-required-overlay {
@@ -90,7 +90,7 @@ login-item[data-editing="true"] + login-intro,
   position: fixed;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--background-color-overlay);
 }
 
 body > section {

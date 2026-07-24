@@ -7,7 +7,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
@@ -26,14 +26,6 @@ add_setup(async function setup() {
   });
 });
 
-async function isGroupHidden(tab) {
-  return SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [],
-    async () => content.document.getElementById("quickActionsBox").hidden
-  );
-}
-
 add_task(async function test_show_prefs() {
   Services.prefs.setBoolPref(
     "browser.urlbar.scotchBonnet.enableOverride",
@@ -41,26 +33,35 @@ add_task(async function test_show_prefs() {
   );
   Services.prefs.setBoolPref("browser.urlbar.quickactions.showPrefs", false);
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:preferences#search"
-  );
-
+  await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
+  let doc = gBrowser.selectedBrowser.contentDocument;
+  let quickActionsCheckbox = doc.getElementById("enableQuickActions");
   Assert.ok(
-    await isGroupHidden(tab),
-    "The preferences are hidden when pref disabled"
+    !BrowserTestUtils.isVisible(quickActionsCheckbox),
+    "Quick actions checkbox should be hidden when both prefs are false"
   );
 
   Services.prefs.setBoolPref("browser.urlbar.quickactions.showPrefs", true);
-
+  await quickActionsCheckbox.parentElement.updateComplete;
   Assert.ok(
-    !(await isGroupHidden(tab)),
-    "The preferences are shown when pref enabled"
+    BrowserTestUtils.isVisible(quickActionsCheckbox),
+    "Quick actions checkbox should be shown again"
+  );
+
+  Services.prefs.setBoolPref("browser.urlbar.quickactions.showPrefs", false);
+  Services.prefs.setBoolPref(
+    "browser.urlbar.scotchBonnet.enableOverride",
+    true
+  );
+  await quickActionsCheckbox.parentElement.updateComplete;
+  Assert.ok(
+    BrowserTestUtils.isVisible(quickActionsCheckbox),
+    "Quick actions checkbox should still be shown"
   );
 
   Services.prefs.clearUserPref("browser.urlbar.scotchBonnet.enableOverride");
   Services.prefs.clearUserPref("browser.urlbar.quickactions.showPrefs");
-  await BrowserTestUtils.removeTab(tab);
+  gBrowser.removeCurrentTab();
 });
 
 async function testActionIsShown(window, name) {

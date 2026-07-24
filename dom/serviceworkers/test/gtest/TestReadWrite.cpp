@@ -6,18 +6,16 @@
 
 #include "gtest/gtest.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
 #include "mozilla/dom/ServiceWorkerRegistrarTypes.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/UniquePtr.h"
-
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsIOutputStream.h"
+#include "nsIServiceWorkerManager.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
-#include "nsIServiceWorkerManager.h"
-
 #include "prtime.h"
 
 using namespace mozilla::dom;
@@ -37,7 +35,7 @@ struct HandlerStats {
   nsCString lastValue2;
 };
 
-MOZ_CONSTINIT mozilla::UniquePtr<HandlerStats> gHandlerStats;
+constinit mozilla::UniquePtr<HandlerStats> gHandlerStats;
 
 void MaybeCreateHandlerStats() {
   if (!gHandlerStats) {
@@ -253,6 +251,14 @@ TEST(ServiceWorkerRegistrar, TestReadData)
   buffer.AppendLiteral("true\n");
   buffer.AppendInt(0);
   buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
   buffer.Append(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
   buffer.AppendLiteral("\n");
@@ -271,6 +277,14 @@ TEST(ServiceWorkerRegistrar, TestReadData)
   buffer.AppendInt(1);
   buffer.AppendLiteral("\n");
   buffer.AppendLiteral("false\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
   buffer.AppendInt(0);
   buffer.AppendLiteral("\n");
   buffer.Append(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
@@ -1012,6 +1026,7 @@ TEST(ServiceWorkerRegistrar, TestDedupeWrite)
       ServiceWorkerRegistrationData reg;
 
       reg.scope() = "https://scope_write.dedupe"_ns;
+      reg.type() = WorkerType::Classic;
       reg.currentWorkerURL() = nsPrintfCString("currentWorkerURL write %d", i);
       reg.currentWorkerHandlesFetch() = true;
       reg.cacheName() =
@@ -1098,6 +1113,14 @@ TEST(ServiceWorkerRegistrar, TestLoadHandler)
   buffer.AppendLiteral("hello world!\n");
   buffer.AppendLiteral("handler_test2\n");
   buffer.AppendLiteral("hello\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
+  buffer.AppendInt(0);
+  buffer.AppendLiteral("\n");
   buffer.Append(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
   ASSERT_TRUE(CreateFile(buffer))

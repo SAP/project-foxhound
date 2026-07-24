@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=877690
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 <script>
 
-/** Test for InspectorUtils.getCSSValuesForProperty **/
+/** Test for InspectorUtils.getCSSValuesForProperty */
 
 const InspectorUtils = SpecialPowers.InspectorUtils;
 
@@ -46,6 +46,7 @@ function do_test() {
     "hwb",
     "color-mix",
     "color",
+    "contrast-color",
     "lab",
     "lch",
     "light-dark",
@@ -158,7 +159,6 @@ function do_test() {
   var values = InspectorUtils.getCSSValuesForProperty(prop);
   var expected = [
     "-moz-available",
-    "-webkit-fill-available",
     "auto",
     "fit-content",
     "inherit",
@@ -167,10 +167,15 @@ function do_test() {
     "min-content",
     "revert",
     "revert-layer",
-    "stretch",
     "unset",
   ];
 
+  if(SpecialPowers.getBoolPref("layout.css.stretch-size-keyword.enabled")) {
+    expected.push("stretch");
+  }
+  if(SpecialPowers.getBoolPref("layout.css.webkit-fill-available.enabled")) {
+    expected.push("-webkit-fill-available");
+  }
   if(SpecialPowers.getBoolPref("layout.css.anchor-positioning.enabled")) {
     expected.push("anchor-size");
   }
@@ -181,7 +186,6 @@ function do_test() {
   var values = InspectorUtils.getCSSValuesForProperty(prop);
   var expected = [
     "-moz-available",
-    "-webkit-fill-available",
     "none",
     "fit-content",
     "inherit",
@@ -190,10 +194,15 @@ function do_test() {
     "min-content",
     "revert",
     "revert-layer",
-    "stretch",
     "unset",
   ];
 
+  if(SpecialPowers.getBoolPref("layout.css.stretch-size-keyword.enabled")) {
+    expected.push("stretch");
+  }
+  if(SpecialPowers.getBoolPref("layout.css.webkit-fill-available.enabled")) {
+    expected.push("-webkit-fill-available");
+  }
   if(SpecialPowers.getBoolPref("layout.css.anchor-positioning.enabled")) {
     expected.push("anchor-size");
   }
@@ -283,8 +292,9 @@ function do_test() {
   ok(testValues(values, expected), "property box-shadow's values");
 
   // Regression test for bug 1255379.
-  var shapeFunction = [ "close", "evenodd", "nonzero", "by", "to", "cw", "ccw",
-                        "small", "large" ];
+  var shapeFunction = [ "close", "evenodd", "nonzero", "cw", "ccw", "small", "large",
+                        "end", "origin", "start", "center", "left", "right", "top",
+                        "bottom", "x-end","x-start", "y-end","y-start" ];
   var expected = [ "inherit", "initial", "unset", "revert", "revert-layer",
                    "none", "url", "polygon", "circle", "ellipse", "inset",
                    "path", "rect", "xywh", "fill-box", "stroke-box",

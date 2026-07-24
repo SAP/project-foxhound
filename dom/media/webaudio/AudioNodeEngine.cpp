@@ -8,16 +8,16 @@
 
 #include "mozilla/AbstractThread.h"
 #ifdef USE_NEON
-#  include "mozilla/arm.h"
 #  include "AudioNodeEngineGeneric.h"
+#  include "mozilla/arm.h"
 #endif
 #ifdef USE_SSE2
-#  include "mozilla/SSE.h"
 #  include "AudioNodeEngineGeneric.h"
+#  include "mozilla/SSE.h"
 #endif
 #if defined(USE_SSE42) && defined(USE_FMA3)
-#  include "mozilla/SSE.h"
 #  include "AudioNodeEngineGeneric.h"
+#  include "mozilla/SSE.h"
 #endif
 #include "AudioBlock.h"
 #include "Tracing.h"

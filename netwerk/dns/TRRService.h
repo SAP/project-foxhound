@@ -98,13 +98,14 @@ class TRRService : public TRRServiceBase,
   // Only called when TRR mode changed.
   static void SetCurrentTRRMode(nsIDNSService::ResolverMode aMode);
 
-  void InitTRRConnectionInfo() override;
+  void InitTRRConnectionInfo(bool aForceReinit = false) override;
 
   void DontUseTRRThread() { mDontUseTRRThread = true; }
 
  private:
   virtual ~TRRService();
 
+  friend class TRR;
   friend class TRRServiceChild;
   friend class TRRServiceParent;
   static void AddObserver(nsIObserver* aObserver,
@@ -141,7 +142,6 @@ class TRRService : public TRRServiceBase,
   void AddEtcHosts(const nsTArray<nsCString>&);
 
   bool mInitialized{false};
-  Mutex mLock;
 
   nsCString mPrivateCred;  // main thread only
   nsCString mConfirmationNS MOZ_GUARDED_BY(mLock){"example.com"_ns};

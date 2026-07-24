@@ -9,6 +9,7 @@ import { MozLitElement } from "toolkit/content/widgets/lit-utils.mjs";
 import customElementsManifest from "../custom-elements.json";
 import { insertFTLIfNeeded, connectFluent } from "./fluent-utils.mjs";
 import chromeMap from "./chrome-map.js";
+import DocsContainer from "./DocsContainer.mjs";
 
 // Base Fluent set up.
 connectFluent();
@@ -64,7 +65,7 @@ importReusableComponents();
  *  Storybook uses this internally to render stories. We call `story` in our
  *  render function so that the story contents have the same shadow root as
  *  `with-common-styles` and styles from `in-content/common` get applied.
- * @property {Object} context
+ * @property {object} context
  *  Another Storybook provided property containing additional data stories use
  *  to render. If we don't make this a reactive property Lit seems to optimize
  *  away any re-rendering of components inside `with-common-styles`.
@@ -130,16 +131,30 @@ class WithCommonStyles extends MozLitElement {
 }
 customElements.define("with-common-styles", WithCommonStyles);
 
+// ---- theme helpers used by the decorator (hoisted once) ----
+const mql = window.matchMedia("(prefers-color-scheme: dark)");
+const resolveTheme = (selected /* 'light'|'dark'|'system' */) => {
+  if (selected === "dark") {
+    return "dark";
+  }
+  if (selected === "light") {
+    return "light";
+  }
+  return mql.matches ? "dark" : "light"; // system
+};
+
 // Wrap all stories in `with-common-styles`.
 export default {
   decorators: [
     (story, context) => {
-      const theme = context.globals.theme;
+      const selectedTheme = context?.globals?.theme ?? "system";
+      const resolvedTheme = resolveTheme(selectedTheme);
+
       return html`
         <with-common-styles
           .story=${story}
           .context=${context}
-          theme=${theme}
+          theme=${resolvedTheme}
         ></with-common-styles>
       `;
     },
@@ -153,17 +168,14 @@ export default {
         ignoreSelector: "h2.text-truncated-ellipsis, .toc-ignore",
         title: "On this page",
       },
+      container: DocsContainer, // updates /docs iframe
     },
     options: { showPanel: true },
   },
   globalTypes: {
     theme: {
       description: "Global theme",
-      defaultValue: (() => {
-        return window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-      })(),
+      defaultValue: "system",
       toolbar: {
         title: "Theme toggle",
         items: [
@@ -176,6 +188,11 @@ export default {
             value: "dark",
             title: "Dark",
             icon: "circle",
+          },
+          {
+            value: "system",
+            title: "System",
+            icon: "mirror",
           },
         ],
         dynamicTitle: true,

@@ -4,9 +4,8 @@
 
 package org.mozilla.fenix.reviewprompt
 
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.telemetry.glean.internal.RecordedEvent
+import mozilla.telemetry.glean.private.RecordedEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -28,7 +27,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
         assertNull(CustomReviewPrompt.promptDisplayed.testGetValue())
 
         val store = createStore()
-        store.dispatch(CustomReviewPromptAction.Displayed).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.Displayed)
 
         assertEventRecorded("prompt_displayed") {
             CustomReviewPrompt.promptDisplayed.testGetValue()
@@ -40,7 +39,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
         assertNull(CustomReviewPrompt.positiveFeedbackClicked.testGetValue())
 
         val store = createStore()
-        store.dispatch(CustomReviewPromptAction.PositivePrePromptButtonClicked).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.PositivePrePromptButtonClicked)
 
         assertEventRecorded("positive_feedback_clicked") {
             CustomReviewPrompt.positiveFeedbackClicked.testGetValue()
@@ -52,7 +51,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
         assertNull(CustomReviewPrompt.negativeFeedbackClicked.testGetValue())
 
         val store = createStore()
-        store.dispatch(CustomReviewPromptAction.NegativePrePromptButtonClicked).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.NegativePrePromptButtonClicked)
 
         assertEventRecorded("negative_feedback_clicked") {
             CustomReviewPrompt.negativeFeedbackClicked.testGetValue()
@@ -64,7 +63,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
         assertNull(CustomReviewPrompt.rateOnPlayStoreClicked.testGetValue())
 
         val store = createStore(CustomReviewPromptState.Rate)
-        store.dispatch(CustomReviewPromptAction.RateButtonClicked).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.RateButtonClicked)
 
         assertEventRecorded("rate_on_play_store_clicked") {
             CustomReviewPrompt.rateOnPlayStoreClicked.testGetValue()
@@ -72,14 +71,14 @@ class CustomReviewPromptTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN LeaveFeedbackButtonClicked is dispatched THEN openMozillaConnectClicked event is recorded`() {
-        assertNull(CustomReviewPrompt.openMozillaConnectClicked.testGetValue())
+    fun `WHEN LeaveFeedbackButtonClicked is dispatched THEN leaveFeedbackClicked event is recorded`() {
+        assertNull(CustomReviewPrompt.leaveFeedbackClicked.testGetValue())
 
         val store = createStore(CustomReviewPromptState.Feedback)
-        store.dispatch(CustomReviewPromptAction.LeaveFeedbackButtonClicked).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.LeaveFeedbackButtonClicked)
 
-        assertEventRecorded("open_mozilla_connect_clicked") {
-            CustomReviewPrompt.openMozillaConnectClicked.testGetValue()
+        assertEventRecorded("leave_feedback_clicked") {
+            CustomReviewPrompt.leaveFeedbackClicked.testGetValue()
         }
     }
 
@@ -88,7 +87,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
         assertNull(CustomReviewPrompt.promptDismissed.testGetValue())
 
         val store = createStore()
-        store.dispatch(CustomReviewPromptAction.Dismissed).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.Dismissed)
 
         assertEventRecorded("prompt_dismissed") {
             CustomReviewPrompt.promptDismissed.testGetValue()

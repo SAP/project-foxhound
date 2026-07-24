@@ -26,6 +26,12 @@ struct CookieSubscription
   nsString url;
 };
 
+struct CookieStoreResult
+{
+  bool success;
+  bool waitForNotification;
+};
+
 // This protocol is used for the CookieStore API
 [ManualDealloc]
 protocol PCookieStore
@@ -59,7 +65,7 @@ parent:
                    nsString path,
                    int32_t sameSite,
                    bool partitioned,
-                   nsID operationId) returns (bool waitForNotification);
+                   nsID operationId) returns (CookieStoreResult result);
 
   async DeleteRequest(nsIURI cookieURI,
                       OriginAttributes attrs,

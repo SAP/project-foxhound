@@ -1,26 +1,102 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Thu, 3 Nov 2022 07:37:00 +0000
-Subject: Bug 1833541 - Correctly check for std::launder support in abseil.
- r=webrtc-reviewers,ng
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - abseil-cpp preprocessor, .json, .gni, and *.gn changes
+ r=ng
 
-Sent upstream at https://github.com/abseil/abseil-cpp/pull/1448
-
-Differential Revision: https://phabricator.services.mozilla.com/D178274
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d976369464663a9147b82c82436afcaab1f61aec
+Differential Revision: https://phabricator.services.mozilla.com/D224077
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6207cac8e337488d54927a5a09e574afec9b432d
 ---
- abseil-cpp/absl/functional/internal/any_invocable.h | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ abseil-cpp/.gn                           | 10 ++++++++++
+ abseil-cpp/absl.gni                      | 15 ++++++++-------
+ abseil-cpp/absl/random/internal/BUILD.gn |  2 ++
+ 3 files changed, 20 insertions(+), 7 deletions(-)
+ create mode 100644 abseil-cpp/.gn
 
-diff --git a/abseil-cpp/absl/functional/internal/any_invocable.h b/abseil-cpp/absl/functional/internal/any_invocable.h
-index c2d8cd4727a..366d94c4fe1 100644
---- a/abseil-cpp/absl/functional/internal/any_invocable.h
-+++ b/abseil-cpp/absl/functional/internal/any_invocable.h
-@@ -205,7 +205,7 @@ union TypeErasedState {
- template <class T>
- T& ObjectInLocalStorage(TypeErasedState* const state) {
-   // We launder here because the storage may be reused with the same type.
--#if defined(__cpp_lib_launder) && __cpp_lib_launder >= 201606L
-+#if ABSL_INTERNAL_CPLUSPLUS_LANG >= 201703L && __cpp_lib_launder >= 201606L
-   return *std::launder(reinterpret_cast<T*>(&state->storage));
- #elif ABSL_HAVE_BUILTIN(__builtin_launder)
-   return *__builtin_launder(reinterpret_cast<T*>(&state->storage));
+diff --git a/abseil-cpp/.gn b/abseil-cpp/.gn
+new file mode 100644
+index 00000000000..648423a128f
+--- /dev/null
++++ b/abseil-cpp/.gn
+@@ -0,0 +1,10 @@
++# The location of the build configuration file.
++buildconfig = "//build/config/BUILDCONFIG.gn"
++script_executable = "python3"
++secondary_source = "//abseil-cpp/"
++
++default_args = {
++use_custom_libcxx = false
++is_component_build = false
++}
++
+diff --git a/abseil-cpp/absl.gni b/abseil-cpp/absl.gni
+index b19ac75675a..ff2ff91cfa4 100644
+--- a/abseil-cpp/absl.gni
++++ b/abseil-cpp/absl.gni
+@@ -34,8 +34,8 @@ template("absl_source_set") {
+       configs += [
+         "//build/config/compiler:no_chromium_code",
+         "//build/config/compiler:prevent_unsafe_narrowing",
+-        "//third_party/abseil-cpp:absl_default_cflags_cc",
+-        "//third_party/abseil-cpp:absl_define_config",
++        "//abseil-cpp:absl_default_cflags_cc",
++        "//abseil-cpp:absl_define_config",
+       ]
+ 
+       if (!defined(defines)) {
+@@ -52,7 +52,7 @@ template("absl_source_set") {
+       if (!defined(public_configs)) {
+         public_configs = []
+       }
+-      public_configs += [ "//third_party/abseil-cpp:absl_include_config" ]
++      public_configs += [ "//abseil-cpp:absl_include_config" ]
+ 
+       if (!defined(visibility)) {
+         # Within Chromium builds, restrict direct visibility of Abseil sources, so
+@@ -80,6 +80,7 @@ template("absl_source_set") {
+         }
+       }
+     }
++    visibility += [ "//abseil-cpp/*" ]
+   }
+ }
+ 
+@@ -93,15 +94,15 @@ template("absl_test") {
+       configs -= [ "//build/config/compiler:chromium_code" ]
+       configs += [
+         "//build/config/compiler:no_chromium_code",
+-        "//third_party/abseil-cpp:absl_default_cflags_cc",
+-        "//third_party/abseil-cpp:absl_define_config",
+-        "//third_party/abseil-cpp:absl_test_config",
++        "//abseil-cpp:absl_default_cflags_cc",
++        "//abseil-cpp:absl_define_config",
++        "//abseil-cpp:absl_test_config",
+       ]
+ 
+       if (!defined(public_configs)) {
+         public_configs = []
+       }
+-      public_configs += [ "//third_party/abseil-cpp:absl_include_config" ]
++      public_configs += [ "//abseil-cpp:absl_include_config" ]
+ 
+       visibility = [ "//third_party/abseil-cpp/:*" ]
+       deps += [
+diff --git a/abseil-cpp/absl/random/internal/BUILD.gn b/abseil-cpp/absl/random/internal/BUILD.gn
+index 46dcff5a887..2aef8a1aa9d 100644
+--- a/abseil-cpp/absl/random/internal/BUILD.gn
++++ b/abseil-cpp/absl/random/internal/BUILD.gn
+@@ -242,6 +242,7 @@ absl_source_set("randen_hwaes_impl") {
+   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
+ }
+ 
++if (!moz_webrtc_build) {
+ executable("gaussian_distribution_gentables") {
+   sources = [ "gaussian_distribution_gentables.cc" ]
+   deps = [
+@@ -250,6 +251,7 @@ executable("gaussian_distribution_gentables") {
+   ]
+   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
+ }
++}
+ 
+ absl_source_set("distribution_test_util") {
+   testonly = true

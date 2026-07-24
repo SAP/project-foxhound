@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _include_gfx_ipc_CanvasRenderThread_h__
-#define _include_gfx_ipc_CanvasRenderThread_h__
+#ifndef _include_gfx_ipc_CanvasRenderThread_h_
+#define _include_gfx_ipc_CanvasRenderThread_h_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Mutex.h"
@@ -15,10 +15,8 @@
 
 class nsIRunnable;
 class nsIThread;
-class nsIThreadPool;
 
 namespace mozilla {
-class TaskQueue;
 
 namespace gfx {
 
@@ -53,26 +51,15 @@ class CanvasRenderThread final {
   /// Can be called from any thread, may return nullptr late in shutdown.
   static already_AddRefed<nsIThread> GetCanvasRenderThread();
 
-  static already_AddRefed<TaskQueue> CreateWorkerTaskQueue();
-
-  static void ShutdownWorkerTaskQueue(TaskQueue* aTaskQueue);
-
-  static void FinishShutdownWorkerTaskQueue(TaskQueue* aTaskQueue);
-
   static void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
 
  private:
-  CanvasRenderThread(nsCOMPtr<nsIThread>&& aThread,
-                     nsCOMPtr<nsIThreadPool>&& aWorkers, bool aCreatedThread);
+  CanvasRenderThread(nsCOMPtr<nsIThread>&& aThread, bool aCreatedThread);
   ~CanvasRenderThread();
 
   Mutex mMutex;
 
   nsCOMPtr<nsIThread> const mThread;
-
-  nsCOMPtr<nsIThreadPool> const mWorkers;
-
-  nsTArray<RefPtr<TaskQueue>> mPendingShutdownTaskQueues MOZ_GUARDED_BY(mMutex);
 
   // True if mThread points to CanvasRender thread, false if mThread points to
   // Compositor/Render thread.
@@ -82,4 +69,4 @@ class CanvasRenderThread final {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _include_gfx_ipc_CanvasRenderThread_h__
+#endif  // _include_gfx_ipc_CanvasRenderThread_h_

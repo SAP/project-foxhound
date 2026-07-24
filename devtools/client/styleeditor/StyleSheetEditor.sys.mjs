@@ -79,83 +79,89 @@ const STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR = "styleeditor";
  *   'property-change': A property on the underlying stylesheet has changed
  *   'source-editor-load': The source editor for this editor has been loaded
  *   'error': An error has occured
- *
- * @param  {Resource} resource
- *         The STYLESHEET resource which is received from resource command.
- * @param {DOMWindow}  win
- *        panel window for style editor
- * @param {Number} styleSheetFriendlyIndex
- *        Optional Integer representing the index of the current stylesheet
- *        among all stylesheets of its type (inline, constructed or user-created)
  */
-export function StyleSheetEditor(resource, win, styleSheetFriendlyIndex) {
-  EventEmitter.decorate(this);
+export class StyleSheetEditor extends EventEmitter {
+  /**
+   * @param  {Resource} resource
+   *         The STYLESHEET resource which is received from resource command.
+   * @param {DOMWindow}  win
+   *        panel window for style editor
+   * @param {number} styleSheetFriendlyIndex
+   *        Optional Integer representing the index of the current stylesheet
+   *        among all stylesheets of its type (inline, constructed or user-created)
+   */
+  constructor(resource, win, styleSheetFriendlyIndex) {
+    super();
 
-  this._resource = resource;
-  this._inputElement = null;
-  this.sourceEditor = null;
-  this._window = win;
-  this._isNew = this.styleSheet.isNew;
-  this.styleSheetFriendlyIndex = styleSheetFriendlyIndex;
+    this._resource = resource;
+    this._inputElement = null;
+    this.sourceEditor = null;
+    this._window = win;
+    this._isNew = this.styleSheet.isNew;
+    this.styleSheetFriendlyIndex = styleSheetFriendlyIndex;
 
-  // True when we've just set the editor text based on a style-applied
-  // event from the StyleSheetActor.
-  this._justSetText = false;
+    // True when we've just set the editor text based on a style-applied
+    // event from the StyleSheetActor.
+    this._justSetText = false;
 
-  // state to use when inputElement attaches
-  this._state = {
-    text: "",
-    selection: {
-      start: { line: 0, ch: 0 },
-      end: { line: 0, ch: 0 },
-    },
-  };
+    // state to use when inputElement attaches
+    this._state = {
+      text: "",
+      selection: {
+        start: { line: 0, ch: 0 },
+        end: { line: 0, ch: 0 },
+      },
+    };
 
-  this._styleSheetFilePath = null;
-  if (
-    this.styleSheet.href &&
-    Services.io.extractScheme(this.styleSheet.href) == "file"
-  ) {
-    this._styleSheetFilePath = this.styleSheet.href;
+    this._styleSheetFilePath = null;
+    if (
+      this.styleSheet.href &&
+      Services.io.extractScheme(this.styleSheet.href) == "file"
+    ) {
+      this._styleSheetFilePath = this.styleSheet.href;
+    }
+
+    this.onPropertyChange = this.onPropertyChange.bind(this);
+    this.onAtRulesChanged = this.onAtRulesChanged.bind(this);
+    this.checkLinkedFileForChanges = this.checkLinkedFileForChanges.bind(this);
+    this.markLinkedFileBroken = this.markLinkedFileBroken.bind(this);
+    this.saveToFile = this.saveToFile.bind(this);
+    this.updateStyleSheet = this.updateStyleSheet.bind(this);
+    this._updateStyleSheet = this._updateStyleSheet.bind(this);
+    this._onMouseMove = this._onMouseMove.bind(this);
+
+    this._focusOnSourceEditorReady = false;
+    this.savedFile = this.styleSheet.file;
+    this.linkCSSFile();
+
+    this.emitAtRulesChanged = throttle(
+      this.emitAtRulesChanged,
+      EMIT_AT_RULES_THROTTLING,
+      this
+    );
+
+    this.atRules = [];
+    this._isPrettyPrinted = false;
   }
 
-  this.onPropertyChange = this.onPropertyChange.bind(this);
-  this.onAtRulesChanged = this.onAtRulesChanged.bind(this);
-  this.checkLinkedFileForChanges = this.checkLinkedFileForChanges.bind(this);
-  this.markLinkedFileBroken = this.markLinkedFileBroken.bind(this);
-  this.saveToFile = this.saveToFile.bind(this);
-  this.updateStyleSheet = this.updateStyleSheet.bind(this);
-  this._updateStyleSheet = this._updateStyleSheet.bind(this);
-  this._onMouseMove = this._onMouseMove.bind(this);
+  get isPrettyPrinted() {
+    return this._isPrettyPrinted;
+  }
 
-  this._focusOnSourceEditorReady = false;
-  this.savedFile = this.styleSheet.file;
-  this.linkCSSFile();
-
-  this.emitAtRulesChanged = throttle(
-    this.emitAtRulesChanged,
-    EMIT_AT_RULES_THROTTLING,
-    this
-  );
-
-  this.atRules = [];
-}
-
-StyleSheetEditor.prototype = {
   get resourceId() {
     return this._resource.resourceId;
-  },
+  }
 
   get styleSheet() {
     return this._resource;
-  },
+  }
 
   /**
    * Whether there are unsaved changes in the editor
    */
   get unsaved() {
     return this.sourceEditor && !this.sourceEditor.isClean();
-  },
+  }
 
   /**
    * Whether the editor is for a stylesheet created by the user
@@ -163,7 +169,7 @@ StyleSheetEditor.prototype = {
    */
   get isNew() {
     return this._isNew;
-  },
+  }
 
   /**
    * The style sheet or the generated style sheet for this source if it's an
@@ -174,17 +180,17 @@ StyleSheetEditor.prototype = {
       return this.styleSheet.relatedStyleSheet;
     }
     return this.styleSheet;
-  },
+  }
 
   get savedFile() {
     return this._savedFile;
-  },
+  }
 
   set savedFile(name) {
     this._savedFile = name;
 
     this.linkCSSFile();
-  },
+  }
 
   /**
    * Get a user-friendly name for the style sheet.
@@ -218,7 +224,7 @@ StyleSheetEditor.prototype = {
       }
     }
     return this._friendlyName;
-  },
+  }
 
   /**
    * Check if transitions are enabled for style changes.
@@ -227,7 +233,7 @@ StyleSheetEditor.prototype = {
    */
   get transitionsEnabled() {
     return Services.prefs.getBoolPref(TRANSITION_PREF);
-  },
+  }
 
   /**
    * If this is an original source, get the path of the CSS file it generated.
@@ -272,7 +278,7 @@ StyleSheetEditor.prototype = {
     }, this.markLinkedFileBroken);
 
     this.emit("linked-css-file");
-  },
+  }
 
   /**
    * A helper function that fetches the source text from the style
@@ -293,11 +299,11 @@ StyleSheetEditor.prototype = {
     }
 
     this._state.text = await longStr.string();
-  },
+  }
 
   prettifySourceText() {
     this._prettifySourceTextIfNeeded(/* force */ true);
-  },
+  }
 
   /**
    * Attempt to prettify the current text if the corresponding stylesheet is not
@@ -305,7 +311,7 @@ StyleSheetEditor.prototype = {
    *
    * This will set |this._state.text| to the prettified text if needed.
    *
-   * @param {Boolean} force: Set to true to prettify the stylesheet, no matter if it's
+   * @param {boolean} force: Set to true to prettify the stylesheet, no matter if it's
    *                         minified or not.
    */
   _prettifySourceTextIfNeeded(force = false) {
@@ -327,8 +333,9 @@ StyleSheetEditor.prototype = {
 
     if (force && this.sourceEditor) {
       this.sourceEditor.setText(result);
+      this._isPrettyPrinted = true;
     }
-  },
+  }
 
   /**
    * Start fetching the full text source for this editor's sheet.
@@ -353,13 +360,13 @@ StyleSheetEditor.prototype = {
         throw e;
       }
     }
-  },
+  }
 
   /**
    * Set the cursor at the given line and column location within the code editor.
    *
-   * @param {Number} line
-   * @param {Number} column
+   * @param {number} line
+   * @param {number} column
    */
   setCursor(line, column) {
     line = line || 0;
@@ -367,7 +374,7 @@ StyleSheetEditor.prototype = {
 
     const position = this.translateCursorPosition(line, column);
     this.sourceEditor.setCursor({ line: position.line, ch: position.column });
-  },
+  }
 
   /**
    * If the stylesheet was automatically prettified, there should be a list of line
@@ -375,10 +382,10 @@ StyleSheetEditor.prototype = {
    * to translate the cursor position to the correct location in the prettified source.
    * If no mappings exist, return the original cursor position unchanged.
    *
-   * @param  {Number} line
+   * @param  {number} line
    * @param  {Numer} column
    *
-   * @return {Object}
+   * @return {object}
    */
   translateCursorPosition(line, column) {
     if (Array.isArray(this._mappings)) {
@@ -395,7 +402,7 @@ StyleSheetEditor.prototype = {
     }
 
     return { line, column };
-  },
+  }
 
   /**
    * Forward property-change event from stylesheet.
@@ -407,11 +414,12 @@ StyleSheetEditor.prototype = {
    */
   onPropertyChange(property, value) {
     this.emit("property-change", property, value);
-  },
+  }
 
   /**
    * Called when the stylesheet text changes.
-   * @param {Object} update: The stylesheet resource update packet.
+   *
+   * @param {object} update: The stylesheet resource update packet.
    */
   async onStyleApplied(update) {
     const updateIsFromSyleSheetEditor =
@@ -448,13 +456,13 @@ StyleSheetEditor.prototype = {
       this.sourceEditor.setCursor(pos);
       this.emit("style-applied");
     }
-  },
+  }
 
   /**
    * Handles changes to the list of at-rules (@media, @layer, @container, …) in the stylesheet.
    * Emits 'at-rules-changed' if the list has changed.
    *
-   * @param  {array} rules
+   * @param  {Array} rules
    *         Array of MediaRuleFronts for new media rules of sheet.
    */
   onAtRulesChanged(rules) {
@@ -464,17 +472,18 @@ StyleSheetEditor.prototype = {
 
     this.atRules = rules;
     this.emitAtRulesChanged();
-  },
+  }
 
   /**
    * Forward at-rules-changed event from stylesheet.
    */
   emitAtRulesChanged() {
     this.emit("at-rules-changed", this.atRules);
-  },
+  }
 
   /**
    * Create source editor and load state into it.
+   *
    * @param  {DOMElement} inputElement
    *         Element to load source editor in
    * @param  {CssProperties} cssProperties
@@ -546,7 +555,7 @@ StyleSheetEditor.prototype = {
     sourceEditor.insertCommandsController();
 
     this.emit("source-editor-load");
-  },
+  }
 
   /**
    * Get the source editor for this editor.
@@ -566,7 +575,7 @@ StyleSheetEditor.prototype = {
         resolve(self);
       });
     });
-  },
+  }
 
   /**
    * Focus the Style Editor input.
@@ -577,13 +586,13 @@ StyleSheetEditor.prototype = {
     } else {
       this._focusOnSourceEditorReady = true;
     }
-  },
+  }
 
   /**
    * Event handler for when the editor is shown.
    *
-   * @param {Object} options
-   * @param {String} options.reason: Indicates why the editor is shown
+   * @param {object} options
+   * @param {string} options.reason: Indicates why the editor is shown
    */
   onShow(options = {}) {
     if (this.sourceEditor) {
@@ -597,7 +606,7 @@ StyleSheetEditor.prototype = {
     if (options.reason !== "filter-auto") {
       this.focus();
     }
-  },
+  }
 
   /**
    * Toggled the disabled state of the underlying stylesheet.
@@ -605,7 +614,7 @@ StyleSheetEditor.prototype = {
   async toggleDisabled() {
     const styleSheetsFront = await this._getStyleSheetsFront();
     styleSheetsFront.toggleDisabled(this.resourceId).catch(console.error);
-  },
+  }
 
   /**
    * Queue a throttled task to update the live style sheet.
@@ -620,7 +629,7 @@ StyleSheetEditor.prototype = {
       this._updateStyleSheet,
       UPDATE_STYLESHEET_DELAY
     );
-  },
+  }
 
   /**
    * Update live style sheet according to modifications.
@@ -661,7 +670,7 @@ StyleSheetEditor.prototype = {
     } catch (e) {
       console.error(e);
     }
-  },
+  }
 
   /**
    * Handle mousemove events, calling _highlightSelectorAt after a delay only
@@ -682,14 +691,14 @@ StyleSheetEditor.prototype = {
     this.mouseMoveTimeout = this._window.setTimeout(() => {
       this._highlightSelectorAt(e.clientX, e.clientY);
     }, SELECTOR_HIGHLIGHT_TIMEOUT);
-  },
+  }
 
   /**
    * Highlight nodes matching the selector found at coordinates x,y in the
    * editor, if any.
    *
-   * @param {Number} x
-   * @param {Number} y
+   * @param {number} x
+   * @param {number} y
    */
   async _highlightSelectorAt(x, y) {
     const pos = this.sourceEditor.getPositionFromCoords({ left: x, top: y });
@@ -711,7 +720,7 @@ StyleSheetEditor.prototype = {
     });
 
     this.emit("node-highlighted");
-  },
+  }
 
   /**
    * Returns the walker front associated with this._resource target.
@@ -727,7 +736,7 @@ StyleSheetEditor.prototype = {
     const inspectorFront = await targetFront.getFront("inspector");
     this.walker = inspectorFront.walker;
     return this.walker;
-  },
+  }
 
   /**
    * Returns or creates the selector highlighter associated with this._resource target.
@@ -755,7 +764,7 @@ StyleSheetEditor.prototype = {
       );
     }
     return null;
-  },
+  }
 
   /**
    * Save the editor contents into a file and set savedFile property.
@@ -821,7 +830,7 @@ StyleSheetEditor.prototype = {
       onFile,
       defaultName
     );
-  },
+  }
 
   /**
    * Called when this source has been successfully saved to disk.
@@ -846,7 +855,7 @@ StyleSheetEditor.prototype = {
         CHECK_LINKED_SHEET_DELAY
       );
     }
-  },
+  }
 
   /**
    * Check to see if our linked CSS file has changed on disk, and
@@ -875,7 +884,7 @@ StyleSheetEditor.prototype = {
         CHECK_LINKED_SHEET_DELAY
       );
     }, this.markLinkedFileBroken);
-  },
+  }
 
   /**
    * Notify that the linked CSS file (if this is an original source)
@@ -894,7 +903,7 @@ StyleSheetEditor.prototype = {
       " original source location: " +
       this.savedFile.path;
     console.error(error);
-  },
+  }
 
   /**
    * For original sources (e.g. Sass files). Fetch contents of linked CSS
@@ -916,13 +925,13 @@ StyleSheetEditor.prototype = {
         STYLE_SHEET_UPDATE_CAUSED_BY_STYLE_EDITOR
       );
     }, this.markLinkedFileBroken);
-  },
+  }
 
   /**
    * Retrieve custom key bindings objects as expected by Editor.
    * Editor action names are not displayed to the user.
    *
-   * @return {array} key binding objects for the source editor
+   * @return {Array} key binding objects for the source editor
    */
   _getKeyBindings() {
     const saveStyleSheetKeybind = Editor.accel(
@@ -946,11 +955,11 @@ StyleSheetEditor.prototype = {
         this.emit("filter-input-keyboard-shortcut");
       },
     };
-  },
+  }
 
   _getStyleSheetsFront() {
     return this._resource.targetFront.getFront("stylesheets");
-  },
+  }
 
   /**
    * Clean up for this editor.
@@ -969,8 +978,8 @@ StyleSheetEditor.prototype = {
       this._sourceEditor.destroy();
     }
     this._isDestroyed = true;
-  },
-};
+  }
+}
 
 /**
  * Find a path on disk for a file given it's hosted uri, the uri of the
@@ -1005,9 +1014,9 @@ function findLinkedFilePath(uri, origUri, file) {
  *
  * @param {nsIFile} file
  *        file for that resource on disk
- * @param {array} branch
+ * @param {Array} branch
  *        path parts for branch to chop off file path.
- * @return {array}
+ * @return {Array}
  *        array of path parts
  */
 function findProjectPath(file, branch) {

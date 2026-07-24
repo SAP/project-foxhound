@@ -6,9 +6,9 @@
 
 #include "MemMapSnapshot.h"
 
-#include "nsDebug.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
+#include "nsDebug.h"
 
 namespace mozilla::ipc {
 

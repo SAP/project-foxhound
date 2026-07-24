@@ -3,12 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebGLContext.h"
-
 #include "GLContext.h"
-#include "mozilla/Casting.h"
-#include "mozilla/CheckedInt.h"
 #include "WebGLBuffer.h"
+#include "WebGLContext.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLProgram.h"
 #include "WebGLRenderbuffer.h"
@@ -16,7 +13,6 @@
 #include "WebGLTexture.h"
 #include "WebGLTypes.h"
 #include "WebGLVertexArray.h"
-
 #include "mozilla/ResultVariant.h"
 
 namespace mozilla {

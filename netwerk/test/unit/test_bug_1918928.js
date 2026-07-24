@@ -31,6 +31,7 @@ async function waitForConfirmationState(state, msToWait = 0) {
 }
 
 let h2Port;
+let trrServer;
 
 function makeChan(url) {
   let chan = NetUtil.newChannel({
@@ -51,13 +52,16 @@ function channelOpenPromise(chan, flags) {
 }
 
 add_setup(async function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   trr_test_setup();
   registerCleanupFunction(async () => {
     trr_clear_prefs();
+    if (trrServer) {
+      await trrServer.stop();
+    }
   });
 });
 
@@ -97,11 +101,6 @@ add_task(async function test_caps_in_trr_first() {
 
   Assert.ok(!WaitHTTPSRR(observer.caps));
 
-  let trrServer = new TRRServer();
-  registerCleanupFunction(async () => {
-    await trrServer.stop();
-  });
-  await trrServer.start();
   await trrServer.registerDoHAnswers("confirm.example.com", "NS", {
     answers: [
       {
@@ -132,7 +131,6 @@ add_task(async function test_caps_in_trr_first() {
   await channelOpenPromise(chan);
 
   Assert.ok(WaitHTTPSRR(observer.caps));
-  await trrServer.stop();
 });
 
 // Test in TRRONLY mode, channel always wait for HTTPS RR.

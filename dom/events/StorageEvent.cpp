@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/StorageEvent.h"
+
 #include "mozilla/dom/Storage.h"
 #include "mozilla/dom/StorageEventBinding.h"
 

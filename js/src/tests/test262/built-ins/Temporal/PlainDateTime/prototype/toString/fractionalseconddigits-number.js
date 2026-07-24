@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -17,6 +17,8 @@ assert.sameValue(fewSeconds.toString({ fractionalSecondDigits: 0 }), "1976-02-04
   "pads parts with 0");
 assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 0 }), "1976-11-18T15:23:30",
   "truncates 4 decimal places to 0");
+assert.sameValue(zeroSeconds.toString({ fractionalSecondDigits: 1 }), "1976-11-18T15:23:00.0",
+  "pads zero seconds to 1 decimal place");
 assert.sameValue(zeroSeconds.toString({ fractionalSecondDigits: 2 }), "1976-11-18T15:23:00.00",
   "pads zero seconds to 2 decimal places");
 assert.sameValue(wholeSeconds.toString({ fractionalSecondDigits: 2 }), "1976-11-18T15:23:30.00",
@@ -25,6 +27,10 @@ assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 2 }), "1976-11-18
   "truncates 4 decimal places to 2");
 assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 3 }), "1976-11-18T15:23:30.123",
   "truncates 4 decimal places to 3");
+assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 4 }), "1976-11-18T15:23:30.1234",
+  "does not pad");
+assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 5 }), "1976-11-18T15:23:30.12340",
+  "pads 4 decimal places to 5");
 assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 6 }), "1976-11-18T15:23:30.123400",
   "pads 4 decimal places to 6");
 assert.sameValue(zeroSeconds.toString({ fractionalSecondDigits: 7 }), "1976-11-18T15:23:00.0000000",
@@ -33,6 +39,8 @@ assert.sameValue(wholeSeconds.toString({ fractionalSecondDigits: 7 }), "1976-11-
   "pads whole seconds to 7 decimal places");
 assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 7 }), "1976-11-18T15:23:30.1234000",
   "pads 4 decimal places to 7");
+assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 8 }), "1976-11-18T15:23:30.12340000",
+  "pads 4 decimal places to 8");
 assert.sameValue(subSeconds.toString({ fractionalSecondDigits: 9 }), "1976-11-18T15:23:30.123400000",
   "pads 4 decimal places to 9");
 

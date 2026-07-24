@@ -8,8 +8,8 @@ in supporting documentation.  Samphan Raruenrom makes no
 representations about the suitability of this software for any
 purpose.  It is provided "as is" without express or implied warranty.
 */
-#ifndef __RULEBRK_H__
-#define __RULEBRK_H__
+#ifndef RULEBRK_H_
+#define RULEBRK_H_
 #include "th_char.h"
 
 #ifdef __cplusplus

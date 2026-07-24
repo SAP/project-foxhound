@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsApplicationChooser_h__
-#define nsApplicationChooser_h__
+#ifndef nsApplicationChooser_h_
+#define nsApplicationChooser_h_
 
 #include <gtk/gtk.h>
 #include "nsCOMPtr.h"

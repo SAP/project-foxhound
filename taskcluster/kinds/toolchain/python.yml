@@ -6,7 +6,7 @@ task-defaults:
     description: "python repack"
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 7200
     run:
@@ -29,7 +29,7 @@ linux64-python-3.9:
 
 linux64-aarch64-python-3.9:
     description: "cpython 3.9.13 AArch64/ARM64"
-    worker-type: b-linux-gcp-aarch64
+    worker-type: b-linux-aarch64
     treeherder:
         symbol: TLA64(python)
     run:
@@ -42,7 +42,7 @@ linux64-aarch64-python-3.9:
         docker-image: {in-tree: ubuntu2204-arm64-build-python}
 
 linux64-aarch64-python-3.11:
-    worker-type: b-linux-gcp-aarch64
+    worker-type: b-linux-aarch64
     treeherder:
         symbol: TLA64(python3.11)
     run:

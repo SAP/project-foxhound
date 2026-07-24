@@ -233,6 +233,7 @@ void nsMacDockSupport::BuildDockTile() {
     imageView.imageScaling = NSImageScaleAxesIndependently;
     imageView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [mDockTileWrapperView addSubview:imageView];
+    [imageView release];
 
     mDockBadgeView =
         [[NSImageView alloc] initWithFrame:NSMakeRect(19.5, 19.5, 12, 12)];

@@ -16,7 +16,6 @@
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"  // for override
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"  // for RefPtr, RefCounted
 #include "mozilla/dom/ipc/IdType.h"
@@ -253,6 +252,8 @@ class TextureData {
     return nullptr;
   }
 
+  virtual void ReturnDrawTarget(already_AddRefed<gfx::DrawTarget> aDT);
+
   /**
    * When the TextureData is not being Unlocked, this can be used to inform a
    * TextureData that drawing has finished until the next BorrowDrawTarget.
@@ -263,7 +264,7 @@ class TextureData {
     return nullptr;
   }
 
-  virtual void ReturnSnapshot(already_AddRefed<gfx::SourceSurface> aSnapshot) {}
+  virtual void ReturnSnapshot(already_AddRefed<gfx::SourceSurface> aSnapshot);
 
   virtual bool BorrowMappedData(MappedTextureData&) { return false; }
 
@@ -747,9 +748,6 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   gl::GfxTextureWasteTracker mWasteTracker;
 
   OpenMode mOpenMode;
-#ifdef DEBUG
-  uint32_t mExpectedDtRefs;
-#endif
   bool mIsLocked;
   bool mIsReadLocked MOZ_GUARDED_BY(mMutex);
   bool mIsPendingForwardReadLocked MOZ_GUARDED_BY(mMutex) = false;

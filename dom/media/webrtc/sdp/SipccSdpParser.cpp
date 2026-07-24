@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "sdp/SipccSdpParser.h"
-#include "sdp/SipccSdp.h"
 
 #include <utility>
+
+#include "sdp/SipccSdp.h"
 extern "C" {
 #include "sipcc_sdp.h"
 }

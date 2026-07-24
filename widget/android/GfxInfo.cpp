@@ -15,7 +15,7 @@
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/java/GeckoAppShellWrappers.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 
 namespace mozilla {
@@ -27,6 +27,20 @@ class GfxInfo::GLStrings {
   nsCString mVersion;
   nsTArray<nsCString> mExtensions;
   bool mReady;
+
+  // Pref names to use for caching. The OS build fingerprint is used to check
+  // whether the cached values are still valid, and the others store the values
+  // themselves.
+  constexpr static const char* kCachePrefNameFingerprint =
+      "gfxinfo.gl-strings.build-fingerprint";
+  constexpr static const char* kCachePrefNameVendor =
+      "gfxinfo.gl-strings.vendor";
+  constexpr static const char* kCachePrefNameRenderer =
+      "gfxinfo.gl-strings.renderer";
+  constexpr static const char* kCachePrefNameVersion =
+      "gfxinfo.gl-strings.version";
+  constexpr static const char* kCachePrefNameExtensions =
+      "gfxinfo.gl-strings.extensions";
 
  public:
   GLStrings() : mReady(false) {}
@@ -68,6 +82,59 @@ class GfxInfo::GLStrings {
       return;
     }
 
+    // First, attempt to spoof the strings from environment variables so they
+    // take precedence over the real values. But don't overwrite any values
+    // already set by the Spoof*() functions.
+    if (mVendor.IsEmpty()) {
+      const char* spoofedVendor = PR_GetEnv("MOZ_GFX_SPOOF_GL_VENDOR");
+      if (spoofedVendor) {
+        mVendor.Assign(spoofedVendor);
+      }
+    }
+    if (mRenderer.IsEmpty()) {
+      const char* spoofedRenderer = PR_GetEnv("MOZ_GFX_SPOOF_GL_RENDERER");
+      if (spoofedRenderer) {
+        mRenderer.Assign(spoofedRenderer);
+      }
+    }
+    if (mVersion.IsEmpty()) {
+      const char* spoofedVersion = PR_GetEnv("MOZ_GFX_SPOOF_GL_VERSION");
+      if (spoofedVersion) {
+        mVersion.Assign(spoofedVersion);
+      }
+    }
+
+    // Next we attempt to initialize the strings from values cached by a
+    // previous run, to avoid expensive GL context creation during startup. The
+    // OS build fingerprint is used to ensure the cache is still valid.
+    const nsCString fingerprint = java::sdk::Build::FINGERPRINT()->ToCString();
+    nsCString cachedFingerprint;
+    Preferences::GetCString(kCachePrefNameFingerprint, cachedFingerprint);
+
+    if (fingerprint == cachedFingerprint) {
+      if (mVendor.IsEmpty()) {
+        Preferences::GetCString(kCachePrefNameVendor, mVendor);
+      }
+      if (mRenderer.IsEmpty()) {
+        Preferences::GetCString(kCachePrefNameRenderer, mRenderer);
+      }
+      if (mVersion.IsEmpty()) {
+        Preferences::GetCString(kCachePrefNameVersion, mVersion);
+      }
+      if (mExtensions.IsEmpty()) {
+        nsCString extensions;
+        Preferences::GetCString(kCachePrefNameExtensions, extensions);
+        for (auto extension : extensions.Split(' ')) {
+          mExtensions.AppendElement(extension);
+        }
+      }
+
+      mReady = true;
+      return;
+    }
+
+    // If we didn't have any cached values or they were invalid, we must create
+    // a GL context and query the strings from it.
     RefPtr<gl::GLContext> gl;
     nsCString discardFailureId;
     gl = gl::GLContextProvider::CreateHeadless(
@@ -84,43 +151,41 @@ class GfxInfo::GLStrings {
     gl->MakeCurrent();
 
     if (mVendor.IsEmpty()) {
-      const char* spoofedVendor = PR_GetEnv("MOZ_GFX_SPOOF_GL_VENDOR");
-      if (spoofedVendor) {
-        mVendor.Assign(spoofedVendor);
-      } else {
-        mVendor.Assign((const char*)gl->fGetString(LOCAL_GL_VENDOR));
-      }
+      mVendor.Assign(gl->VendorString());
     }
-
     if (mRenderer.IsEmpty()) {
-      const char* spoofedRenderer = PR_GetEnv("MOZ_GFX_SPOOF_GL_RENDERER");
-      if (spoofedRenderer) {
-        mRenderer.Assign(spoofedRenderer);
-      } else {
-        mRenderer.Assign((const char*)gl->fGetString(LOCAL_GL_RENDERER));
-      }
+      mRenderer.Assign(gl->RendererString());
     }
-
     if (mVersion.IsEmpty()) {
-      const char* spoofedVersion = PR_GetEnv("MOZ_GFX_SPOOF_GL_VERSION");
-      if (spoofedVersion) {
-        mVersion.Assign(spoofedVersion);
-      } else {
-        mVersion.Assign((const char*)gl->fGetString(LOCAL_GL_VERSION));
-      }
+      mVersion.Assign(gl->VersionString());
     }
-
     if (mExtensions.IsEmpty()) {
-      nsCString rawExtensions;
-      rawExtensions.Assign((const char*)gl->fGetString(LOCAL_GL_EXTENSIONS));
-      rawExtensions.Trim(" ");
-
-      for (auto extension : rawExtensions.Split(' ')) {
-        mExtensions.AppendElement(extension);
-      }
+      mExtensions = gl->ExtensionStrings().Clone();
     }
+
+    // Cache the GL strings so we can avoid expensive GL Context
+    // initialization on next launch. Make sure we use the actual values
+    // obtained from GL rather than any spoofed values.
+    CacheStrings(gl->VendorString(), gl->RendererString(), gl->VersionString(),
+                 gl->ExtensionStrings());
 
     mReady = true;
+  }
+
+  void CacheStrings(const nsCString& aVendor, const nsCString& aRenderer,
+                    const nsCString& aVersion,
+                    Span<const nsCString> aExtensions) {
+    const nsCString fingerprint = java::sdk::Build::FINGERPRINT()->ToCString();
+
+    Preferences::SetCString(kCachePrefNameVendor, aVendor);
+    Preferences::SetCString(kCachePrefNameRenderer, aRenderer);
+    Preferences::SetCString(kCachePrefNameVersion, aVersion);
+    Preferences::SetCString(kCachePrefNameExtensions,
+                            StringJoin(" "_ns, aExtensions));
+    // Save the fingerprint last so that if we're killed part way through
+    // writing these prefs the next launch doesn't attempt to use partially
+    // cached data.
+    Preferences::SetCString(kCachePrefNameFingerprint, fingerprint);
   }
 };
 
@@ -135,11 +200,6 @@ GfxInfo::GfxInfo()
       mSDKVersion(0) {}
 
 GfxInfo::~GfxInfo() {}
-
-/* GetD2DEnabled and GetDwriteEnabled shouldn't be called until after
- * gfxPlatform initialization has occurred because they depend on it for
- * information. (See bug 591561) */
-nsresult GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 nsresult GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
@@ -434,80 +494,6 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       }
     }
 
-    if (aFeature == FEATURE_STAGEFRIGHT) {
-      NS_LossyConvertUTF16toASCII cManufacturer(mManufacturer);
-      NS_LossyConvertUTF16toASCII cModel(mModel);
-      NS_LossyConvertUTF16toASCII cHardware(mHardware);
-
-      if (cHardware.EqualsLiteral("antares") ||
-          cHardware.EqualsLiteral("harmony") ||
-          cHardware.EqualsLiteral("picasso") ||
-          cHardware.EqualsLiteral("picasso_e") ||
-          cHardware.EqualsLiteral("ventana") ||
-          cHardware.EqualsLiteral("rk30board")) {
-        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-        aFailureId = "FEATURE_FAILURE_STAGE_HW";
-        return NS_OK;
-      }
-
-      if (CompareVersions(mOSVersion.get(), "4.1.0") < 0) {
-        // Whitelist:
-        //   All Samsung ICS devices, except for:
-        //     Samsung SGH-I717 (Bug 845729)
-        //     Samsung SGH-I727 (Bug 845729)
-        //     Samsung SGH-I757 (Bug 845729)
-        //   All Galaxy nexus ICS devices
-        //   Sony Xperia Ion (LT28) ICS devices
-        bool isWhitelisted =
-            cModel.Equals("LT28h", nsCaseInsensitiveCStringComparator) ||
-            cManufacturer.Equals("samsung",
-                                 nsCaseInsensitiveCStringComparator) ||
-            cModel.Equals(
-                "galaxy nexus",
-                nsCaseInsensitiveCStringComparator);  // some Galaxy Nexus
-                                                      // have
-                                                      // manufacturer=amazon
-
-        if (cModel.LowerCaseFindASCII("sgh-i717") != -1 ||
-            cModel.LowerCaseFindASCII("sgh-i727") != -1 ||
-            cModel.LowerCaseFindASCII("sgh-i757") != -1) {
-          isWhitelisted = false;
-        }
-
-        if (!isWhitelisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_1_HW";
-          return NS_OK;
-        }
-      } else if (CompareVersions(mOSVersion.get(), "4.2.0") < 0) {
-        // Whitelist:
-        //   All JB phones except for those in blocklist below
-        // Blocklist:
-        //   Samsung devices from bug 812881 and 853522.
-        //   Motorola XT890 from bug 882342.
-        bool isBlocklisted = cModel.LowerCaseFindASCII("gt-p3100") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p3110") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p3113") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5100") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5110") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5113") != -1 ||
-                             cModel.LowerCaseFindASCII("xt890") != -1;
-
-        if (isBlocklisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_2_HW";
-          return NS_OK;
-        }
-      } else if (CompareVersions(mOSVersion.get(), "4.3.0") < 0) {
-        // Blocklist all Sony devices
-        if (cManufacturer.LowerCaseFindASCII("sony") != -1) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_3_SONY";
-          return NS_OK;
-        }
-      }
-    }
-
     if (aFeature == FEATURE_WEBRTC_HW_ACCELERATION_ENCODE) {
       if (jni::IsAvailable()) {
         *aStatus = WebRtcHwVp8EncodeSupported();
@@ -766,7 +752,7 @@ int32_t GfxInfo::WebRtcHwVp8EncodeSupported() {
     return status;
   }
 
-  status = java::GeckoAppShell::HasHWVP8Encoder()
+  status = java::HardwareCodecCapabilityUtils::HasHWVP8(true)
                ? nsIGfxInfo::FEATURE_STATUS_OK
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
@@ -789,7 +775,7 @@ int32_t GfxInfo::WebRtcHwVp8DecodeSupported() {
     return status;
   }
 
-  status = java::GeckoAppShell::HasHWVP8Decoder()
+  status = java::HardwareCodecCapabilityUtils::HasHWVP8(false)
                ? nsIGfxInfo::FEATURE_STATUS_OK
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
@@ -884,6 +870,24 @@ uint32_t GfxInfo::OperatingSystemVersion() {
 GfxVersionEx GfxInfo::OperatingSystemVersionEx() {
   EnsureInitialized();
   return mOSVersionEx;
+}
+
+void GfxInfo::ReportGLStrings(gfx::GfxInfoGLStrings&& aStrings) {
+  EnsureInitialized();
+  // Sanity check the provided strings match our cached values.
+  if (aStrings.vendor() != mGLStrings->Vendor() ||
+      aStrings.renderer() != mGLStrings->Renderer() ||
+      aStrings.version() != mGLStrings->Version() ||
+      aStrings.extensions() != mGLStrings->Extensions()) {
+    gfxCriticalNoteOnce << "Received unexpected GLStrings: "
+                        << aStrings.vendor().get() << ", "
+                        << aStrings.renderer().get() << ", "
+                        << aStrings.version().get();
+
+    // Update the cache if they differ.
+    mGLStrings->CacheStrings(aStrings.vendor(), aStrings.renderer(),
+                             aStrings.version(), aStrings.extensions());
+  }
 }
 
 }  // namespace widget

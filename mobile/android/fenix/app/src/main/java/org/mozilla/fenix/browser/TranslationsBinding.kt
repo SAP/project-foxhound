@@ -6,6 +6,8 @@ package org.mozilla.fenix.browser
 
 import androidx.annotation.VisibleForTesting
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -40,6 +42,8 @@ import org.mozilla.fenix.translations.TranslationsFlowState
  * @param onTranslationStatusUpdate Invoked when the translation status of the current page is updated.
  * @param onShowTranslationsDialog Invoked when [TranslationDialogBottomSheet]
  * should be automatically shown to the user.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class TranslationsBinding(
     private val browserStore: BrowserStore,
@@ -48,9 +52,10 @@ class TranslationsBinding(
     private val navController: NavController? = null,
     private val onTranslationStatusUpdate: (PageTranslationStatus) -> Unit = { _ -> },
     private val onShowTranslationsDialog: () -> Unit = { },
-) : AbstractBinding<BrowserState>(browserStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<BrowserState>(browserStore, mainDispatcher) {
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     override suspend fun onState(flow: Flow<BrowserState>) {
         // Browser level flows
         val browserFlow = flow.mapNotNull { state -> state }

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewExternalAppService_h__
-#define GeckoViewExternalAppService_h__
+#ifndef GeckoViewExternalAppService_h_
+#define GeckoViewExternalAppService_h_
 
 #include "nsIExternalHelperAppService.h"
 #include "mozilla/StaticPtr.h"

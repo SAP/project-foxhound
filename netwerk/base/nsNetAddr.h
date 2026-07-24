@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNetAddr_h__
-#define nsNetAddr_h__
+#ifndef nsNetAddr_h_
+#define nsNetAddr_h_
 
 #include "nsINetAddr.h"
 #include "mozilla/net/DNS.h"
-#include "mozilla/Attributes.h"
 
 class nsNetAddr final : public nsINetAddr {
   ~nsNetAddr() = default;
@@ -27,4 +26,4 @@ class nsNetAddr final : public nsINetAddr {
   /* additional members */
 };
 
-#endif  // !nsNetAddr_h__
+#endif  // !nsNetAddr_h_

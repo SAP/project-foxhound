@@ -57,6 +57,8 @@ class MockDragSession : public nsBaseDragSession {
 
 class MockDragService : public nsBaseDragService {
  public:
+  MockDragService() { SetNeverAllowSessionIsSynthesizedForTests(true); }
+
   NS_IMETHOD GetIsMockService(bool* aRet) override {
     *aRet = true;
     return NS_OK;

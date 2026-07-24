@@ -19,23 +19,22 @@ function waitForLoginCountToReach(browser, loginCount) {
 
 add_setup(async function () {
   await addLogin(TEST_LOGIN1);
-  registerCleanupFunction(() => {
-    Services.logins.removeAllUserFacingLogins();
+
+  // head.js enables OS auth for all tests in this directory but since we
+  // prefer that to PrP now it means we cannot test so I am disabling it here.
+  await sinon.restore();
+  LoginHelper.setOSAuthEnabled(false);
+
+  registerCleanupFunction(async () => {
+    await Services.logins.removeAllUserFacingLoginsAsync();
     LoginTestUtils.primaryPassword.disable();
   });
 });
 
 add_task(async function test() {
-  // Confirm that the mocking of the OS auth dialog isn't enabled so the
-  // test will timeout if a real OS auth dialog is shown. We don't show
-  // the OS auth dialog when Primary Password is enabled.
-  Assert.equal(
-    Services.prefs.getStringPref(
-      "toolkit.osKeyStore.unofficialBuildOnlyLogin",
-      ""
-    ),
-    "",
-    "Pref should be set to default value of empty string to start the test"
+  ok(
+    !LoginHelper.getOSAuthEnabled(),
+    "OS auth must be disabled for PrP tests."
   );
   LoginTestUtils.primaryPassword.enable();
 
@@ -232,16 +231,9 @@ add_task(async function test() {
 });
 
 add_task(async function test_login_item_after_successful_auth() {
-  // Confirm that the mocking of the OS auth dialog isn't enabled so the
-  // test will timeout if a real OS auth dialog is shown. We don't show
-  // the OS auth dialog when Primary Password is enabled.
-  Assert.equal(
-    Services.prefs.getStringPref(
-      "toolkit.osKeyStore.unofficialBuildOnlyLogin",
-      ""
-    ),
-    "",
-    "Pref should be set to default value of empty string to start the test"
+  ok(
+    !LoginHelper.getOSAuthEnabled(),
+    "OS auth must be disabled for PrP tests."
   );
   LoginTestUtils.primaryPassword.enable();
 

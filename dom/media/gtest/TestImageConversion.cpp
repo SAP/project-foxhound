@@ -1,15 +1,16 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ImageContainer.h"
+#include "ImageConversion.h"
+#include "SourceSurfaceRawData.h"
 #include "gtest/gtest.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
-#include "ImageConversion.h"
-#include "ImageContainer.h"
-#include "SourceSurfaceRawData.h"
 
 using mozilla::ConvertToI420;
 using mozilla::MakeAndAddRef;

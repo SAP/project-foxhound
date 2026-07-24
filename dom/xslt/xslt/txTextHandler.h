@@ -6,8 +6,8 @@
 #ifndef TRANSFRMX_TEXT_HANDLER_H
 #define TRANSFRMX_TEXT_HANDLER_H
 
-#include "txXMLEventHandler.h"
 #include "nsString.h"
+#include "txXMLEventHandler.h"
 
 class txTextHandler : public txAXMLEventHandler {
  public:

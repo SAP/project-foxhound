@@ -20,38 +20,50 @@ loadScripts(
 );
 
 // All the A11Y metrics in tools/performance/PerfStats.h.
-const ALL_A11Y_PERFSTATS =
-  (1 << 29) |
-  (1 << 30) |
-  (1 << 31) |
-  (1 << 32) |
-  (1 << 33) |
-  (1 << 34) |
-  (1 << 35) |
-  (1 << 36) |
-  (1 << 37) |
-  (1 << 38) |
-  (1 << 39) |
-  (1 << 40) |
-  (1 << 41) |
-  (1 << 42) |
-  (1 << 43) |
-  (1 << 44);
+const ALL_A11Y_PERFSTATS_FEATURES = [
+  "A11Y_DoInitialUpdate",
+  "A11Y_ProcessQueuedCacheUpdate",
+  "A11Y_ContentRemovedNode",
+  "A11Y_ContentRemovedAcc",
+  "A11Y_PruneOrInsertSubtree",
+  "A11Y_ShutdownChildrenInSubtree",
+  "A11Y_ShowEvent",
+  "A11Y_RecvCache",
+  "A11Y_ProcessShowEvent",
+  "A11Y_CoalesceEvents",
+  "A11Y_CoalesceMutationEvents",
+  "A11Y_ProcessHideEvent",
+  "A11Y_SendCache",
+  "A11Y_WillRefresh",
+  "A11Y_AccessibilityServiceInit",
+  "A11Y_PlatformShowHideEvent",
+];
+
+const LOG_PREFIX = "perfMetrics";
+
+function logToPerfMetrics(stat) {
+  info(`${LOG_PREFIX} | ${JSON.stringify(stat)}`);
+}
 
 /**
  * Time a function and log how long it took. The given name is included in log
  * messages. All accessibility PerfStats metrics are also captured and logged.
+ * This function may only be called once per task, and we are limited to one
+ * task per file.
  */
-async function timeThis(name, func) {
-  const logPrefix = `Timing: ${name}`;
-  info(`${logPrefix}: begin`);
+async function timeThis(func) {
   const start = performance.now();
-  ChromeUtils.setPerfStatsCollectionMask(ALL_A11Y_PERFSTATS);
+  ChromeUtils.setPerfStatsFeatures(ALL_A11Y_PERFSTATS_FEATURES);
+  const journal = {};
+
+  // Run the specified testing task
   await func();
-  const delta = performance.now() - start;
-  info(`${logPrefix}: took ${delta} ms`);
+
+  // Log our total elapsed time
+  journal.A11Y_TotalTime = performance.now() - start;
+
   const stats = JSON.parse(await ChromeUtils.collectPerfStats());
-  ChromeUtils.setPerfStatsCollectionMask(0);
+  ChromeUtils.setPerfStatsFeatures([]);
   // Filter stuff out of stats that we don't care about.
   // Filter out the GPU process, since accessibility doesn't do anything there.
   stats.processes = stats.processes.filter(process => process.type != "gpu");
@@ -67,5 +79,30 @@ async function timeThis(name, func) {
   stats.processes = stats.processes.filter(
     process => !!process.perfstats.metrics.length
   );
-  info(`${logPrefix}: PerfStats: ${JSON.stringify(stats, null, 2)}`);
+  // Also, filter out readings for the blank new tab that gets opened before the
+  // tab with our test content opens.
+  // We may get a reading that isn't attached to any URL; this contains
+  // the startup time for the Accessibility Service which we should keep.
+  // Our parent process readings have no URL field.
+  stats.processes = stats.processes.filter(
+    process =>
+      process.type == "parent" ||
+      !process.urls.length ||
+      !process.urls.includes("about:newtab")
+  );
+
+  // Because our perfstats measure both occurances and timing, log values separately
+  // under different probe names with different units.
+  // Also, as the same probes can be triggered in content and parent, append a process
+  // indicator to the end of each probe name.
+  for (const process of stats.processes) {
+    for (const stat of process.perfstats.metrics) {
+      journal[stat.metric + "_" + process.type] = stat.time;
+      if (stat.count) {
+        journal[stat.metric + "_Count_" + process.type] = stat.count;
+      }
+    }
+  }
+
+  logToPerfMetrics(journal);
 }

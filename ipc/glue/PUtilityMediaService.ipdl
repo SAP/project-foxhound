@@ -28,11 +28,11 @@ parent:
   async NewContentRemoteMediaManager(
             Endpoint<PRemoteMediaManagerParent> endpoint, ContentParentId parentId);
 
+  async UpdateVar(GfxVarUpdate[] var);
+
 #ifdef MOZ_WMF_MEDIA_ENGINE
   async InitVideoBridge(Endpoint<PVideoBridgeChild> endpoint,
                         ContentDeviceData contentDeviceData);
-
-  async UpdateVar(GfxVarUpdate var);
 #endif
 
 #ifdef MOZ_WMF_CDM

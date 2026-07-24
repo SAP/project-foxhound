@@ -1,0 +1,28 @@
+# Replace TBD test
+[DEFAULT]
+
+["bug_3.js"]
+# This is a comment about Bug 3
+# DO NOT ADD MORE TESTS HERE
+skip-if = [
+  "os == 'linux'", # Bug 33333
+]
+
+["bug_20.js"]
+
+["bug_100.js"]
+skip-if = [
+  "os == 'android' && asan", # Bug 100
+]
+
+["test_bar.html"]
+skip-if = [
+  "os == 'linux'", #   Bug 222
+  "os == 'mac'", #     Bug 111
+  "os == 'win'", #     Bug 333
+]
+
+["test_extend_linux.js"]
+skip-if = [
+  "os == 'mac'", # Bug 111
+]

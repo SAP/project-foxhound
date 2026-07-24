@@ -15,27 +15,23 @@
 #include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
 #include "gfxUtils.h"
-#include <limits>
 #include <cmath>
 
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-gfxAlphaBoxBlur::~gfxAlphaBoxBlur() = default;
+gfxGaussianBlur::~gfxGaussianBlur() = default;
 
-UniquePtr<gfxContext> gfxAlphaBoxBlur::Init(gfxContext* aDestinationCtx,
-                                            const gfxRect& aRect,
-                                            const IntSize& aSpreadRadius,
-                                            const IntSize& aBlurRadius,
-                                            const gfxRect* aDirtyRect,
-                                            const gfxRect* aSkipRect,
-                                            bool aUseHardwareAccel) {
+UniquePtr<gfxContext> gfxGaussianBlur::Init(
+    gfxContext* aDestinationCtx, const gfxRect& aRect,
+    const IntSize& aSpreadRadius, const Point& aBlurSigma,
+    const gfxRect* aDirtyRect, const gfxRect* aSkipRect, bool aClamp) {
   DrawTarget* refDT = aDestinationCtx->GetDrawTarget();
   Maybe<Rect> dirtyRect = aDirtyRect ? Some(ToRect(*aDirtyRect)) : Nothing();
   Maybe<Rect> skipRect = aSkipRect ? Some(ToRect(*aSkipRect)) : Nothing();
-  RefPtr<DrawTarget> dt = InitDrawTarget(
-      refDT, ToRect(aRect), aSpreadRadius, aBlurRadius,
-      dirtyRect.ptrOr(nullptr), skipRect.ptrOr(nullptr), aUseHardwareAccel);
+  RefPtr<DrawTarget> dt =
+      InitDrawTarget(refDT, ToRect(aRect), aSpreadRadius, aBlurSigma,
+                     dirtyRect.ptrOr(nullptr), skipRect.ptrOr(nullptr), aClamp);
   if (!dt || !dt->IsValid()) {
     return nullptr;
   }
@@ -45,11 +41,20 @@ UniquePtr<gfxContext> gfxAlphaBoxBlur::Init(gfxContext* aDestinationCtx,
   return context;
 }
 
-already_AddRefed<DrawTarget> gfxAlphaBoxBlur::InitDrawTarget(
-    const DrawTarget* aReferenceDT, const Rect& aRect,
+UniquePtr<gfxContext> gfxGaussianBlur::Init(
+    gfxContext* aDestinationCtx, const gfxRect& aRect,
     const IntSize& aSpreadRadius, const IntSize& aBlurRadius,
-    const Rect* aDirtyRect, const Rect* aSkipRect, bool aUseHardwareAccel) {
-  mBlur.Init(aRect, aSpreadRadius, aBlurRadius, aDirtyRect, aSkipRect);
+    const gfxRect* aDirtyRect, const gfxRect* aSkipRect, bool aClamp) {
+  return Init(aDestinationCtx, aRect, aSpreadRadius,
+              CalculateBlurSigma(aBlurRadius), aDirtyRect, aSkipRect, aClamp);
+}
+
+already_AddRefed<DrawTarget> gfxGaussianBlur::InitDrawTarget(
+    const DrawTarget* aReferenceDT, const Rect& aRect,
+    const IntSize& aSpreadRadius, const Point& aBlurSigma,
+    const Rect* aDirtyRect, const Rect* aSkipRect, bool aClamp) {
+  mBlur.Init(aRect, aSpreadRadius, aBlurSigma, aDirtyRect, aSkipRect,
+             SurfaceFormat::A8, aClamp);
   size_t blurDataSize = mBlur.GetSurfaceAllocationSize();
   if (blurDataSize == 0) {
     return nullptr;
@@ -57,43 +62,20 @@ already_AddRefed<DrawTarget> gfxAlphaBoxBlur::InitDrawTarget(
 
   BackendType backend = aReferenceDT->GetBackendType();
 
-  // Check if the backend has an accelerated DrawSurfaceWithShadow.
-  // Currently, only D2D1.1 supports this.
-  // Otherwise, DrawSurfaceWithShadow only supports square blurs without spread.
-  // When blurring small draw targets such as short spans text, the cost of
-  // creating and flushing an accelerated draw target may exceed the speedup
-  // gained from the faster blur. It's up to the users of this blur
-  // to determine whether they want to use hardware acceleration.
-  if (aBlurRadius.IsSquare() && aSpreadRadius.IsEmpty() && aUseHardwareAccel &&
-      backend == BackendType::DIRECT2D1_1) {
-    mAccelerated = true;
+  // Make an alpha-only surface to draw on. We will play with the data after
+  // everything is drawn to create a blur effect.
+  // This will be freed when the DrawTarget dies
+  mData = static_cast<uint8_t*>(calloc(1, blurDataSize));
+  if (!mData) {
+    return nullptr;
   }
-
-  if (mAccelerated) {
-    // Note: CreateShadowDrawTarget is only implemented for Cairo.
-    mDrawTarget = aReferenceDT->CreateShadowDrawTarget(
-        mBlur.GetSize(), SurfaceFormat::A8,
-        AlphaBoxBlur::CalculateBlurSigma(aBlurRadius.width));
-    if (mDrawTarget) {
-      // See Bug 1526045 - this is to force DT initialization.
-      mDrawTarget->ClearRect(gfx::Rect());
-    }
-  } else {
-    // Make an alpha-only surface to draw on. We will play with the data after
-    // everything is drawn to create a blur effect.
-    // This will be freed when the DrawTarget dies
-    mData = static_cast<uint8_t*>(calloc(1, blurDataSize));
-    if (!mData) {
-      return nullptr;
-    }
-    mDrawTarget =
-        Factory::DoesBackendSupportDataDrawtarget(backend)
-            ? Factory::CreateDrawTargetForData(backend, mData, mBlur.GetSize(),
-                                               mBlur.GetStride(),
-                                               SurfaceFormat::A8)
-            : gfxPlatform::CreateDrawTargetForData(
-                  mData, mBlur.GetSize(), mBlur.GetStride(), SurfaceFormat::A8);
-  }
+  mDrawTarget =
+      Factory::DoesBackendSupportDataDrawtarget(backend)
+          ? Factory::CreateDrawTargetForData(backend, mData, mBlur.GetSize(),
+                                             mBlur.GetStride(),
+                                             mBlur.GetFormat())
+          : gfxPlatform::CreateDrawTargetForData(
+                mData, mBlur.GetSize(), mBlur.GetStride(), mBlur.GetFormat());
 
   if (!mDrawTarget || !mDrawTarget->IsValid()) {
     if (mData) {
@@ -112,7 +94,7 @@ already_AddRefed<DrawTarget> gfxAlphaBoxBlur::InitDrawTarget(
   return do_AddRef(mDrawTarget);
 }
 
-already_AddRefed<SourceSurface> gfxAlphaBoxBlur::DoBlur(
+already_AddRefed<SourceSurface> gfxGaussianBlur::DoBlur(
     const sRGBColor* aShadowColor, IntPoint* aOutTopLeft) {
   if (aOutTopLeft) {
     *aOutTopLeft = mBlur.GetRect().TopLeft();
@@ -120,22 +102,8 @@ already_AddRefed<SourceSurface> gfxAlphaBoxBlur::DoBlur(
 
   RefPtr<SourceSurface> blurMask;
   if (mData) {
-    mBlur.Blur(mData);
+    mDrawTarget->Blur(mBlur);
     blurMask = mDrawTarget->Snapshot();
-  } else if (mAccelerated) {
-    blurMask = mDrawTarget->Snapshot();
-    RefPtr<DrawTarget> blurDT = mDrawTarget->CreateSimilarDrawTarget(
-        blurMask->GetSize(), SurfaceFormat::A8);
-    if (!blurDT) {
-      return nullptr;
-    }
-    blurDT->DrawSurfaceWithShadow(
-        blurMask, Point(0, 0),
-        ShadowOptions(
-            DeviceColor::MaskOpaqueWhite(), Point(0, 0),
-            AlphaBoxBlur::CalculateBlurSigma(mBlur.GetBlurRadius().width)),
-        CompositionOp::OP_OVER);
-    blurMask = blurDT->Snapshot();
   }
 
   if (!aShadowColor) {
@@ -153,8 +121,8 @@ already_AddRefed<SourceSurface> gfxAlphaBoxBlur::DoBlur(
   return shadowDT->Snapshot();
 }
 
-void gfxAlphaBoxBlur::Paint(gfxContext* aDestinationCtx) {
-  if (mDrawTarget && !mAccelerated && !mData) {
+void gfxGaussianBlur::Paint(gfxContext* aDestinationCtx) {
+  if (mDrawTarget && !mData) {
     return;
   }
 
@@ -199,10 +167,15 @@ void gfxAlphaBoxBlur::Paint(gfxContext* aDestinationCtx) {
   }
 }
 
-IntSize gfxAlphaBoxBlur::CalculateBlurRadius(const gfxPoint& aStd) {
-  mozilla::gfx::Point std(Float(aStd.x), Float(aStd.y));
-  IntSize size = AlphaBoxBlur::CalculateBlurRadius(std);
+IntSize gfxGaussianBlur::CalculateBlurRadius(const gfxPoint& aStd) {
+  Point std(Float(aStd.x), Float(aStd.y));
+  IntSize size = GaussianBlur::CalculateBlurRadius(std);
   return IntSize(size.width, size.height);
+}
+
+Point gfxGaussianBlur::CalculateBlurSigma(const IntSize& aBlurRadius) {
+  return Point(GaussianBlur::CalculateBlurSigma(aBlurRadius.width),
+               GaussianBlur::CalculateBlurSigma(aBlurRadius.height));
 }
 
 struct BlurCacheKey : public PLDHashEntryHdr {
@@ -265,9 +238,9 @@ struct BlurCacheKey : public PLDHashEntryHdr {
     hash = AddToHash(
         hash, HashBytes(&aKey->mShadowColor.a, sizeof(aKey->mShadowColor.a)));
 
-    for (int i = 0; i < 4; i++) {
-      hash = AddToHash(hash, aKey->mCornerRadii[i].width,
-                       aKey->mCornerRadii[i].height);
+    for (auto corner : mozilla::AllPhysicalCorners()) {
+      hash = AddToHash(hash, aKey->mCornerRadii[corner].width,
+                       aKey->mCornerRadii[corner].height);
     }
 
     hash = AddToHash(hash, (uint32_t)aKey->mBackend);
@@ -324,7 +297,7 @@ struct BlurCacheData {
 class BlurCache final : public nsExpirationTracker<BlurCacheData, 4> {
  public:
   BlurCache()
-      : nsExpirationTracker<BlurCacheData, 4>(GENERATION_MS, "BlurCache") {}
+      : nsExpirationTracker<BlurCacheData, 4>(GENERATION_MS, "BlurCache"_ns) {}
 
   virtual void NotifyExpired(BlurCacheData* aObject) override {
     RemoveObject(aObject);
@@ -443,7 +416,7 @@ static already_AddRefed<SourceSurface> CreateBoxShadow(
     const RectCornerRadii* aCornerRadii, const IntSize& aBlurRadius,
     const sRGBColor& aShadowColor, bool aMirrorCorners,
     IntMargin& aOutBlurMargin) {
-  gfxAlphaBoxBlur blur;
+  gfxGaussianBlur blur;
   Rect minRect(Point(0, 0), Size(aMinSize));
   Rect blurRect(minRect);
   // If mirroring corners, we only need to draw the top-left quadrant.
@@ -455,7 +428,8 @@ static already_AddRefed<SourceSurface> CreateBoxShadow(
   }
   IntSize zeroSpread(0, 0);
   RefPtr<DrawTarget> blurDT =
-      blur.InitDrawTarget(aDestDrawTarget, blurRect, zeroSpread, aBlurRadius);
+      blur.InitDrawTarget(aDestDrawTarget, blurRect, zeroSpread,
+                          gfxGaussianBlur::CalculateBlurSigma(aBlurRadius));
   if (!blurDT) {
     return nullptr;
   }
@@ -553,7 +527,7 @@ static already_AddRefed<SourceSurface> GetBlur(
   return boxShadow.forget();
 }
 
-void gfxAlphaBoxBlur::ShutdownBlurCache() {
+void gfxGaussianBlur::ShutdownBlurCache() {
   delete gBlurCache;
   gBlurCache = nullptr;
 }
@@ -854,7 +828,7 @@ static void DrawMirroredMinBoxShadow(
  */
 
 /* static */
-void gfxAlphaBoxBlur::BlurRectangle(gfxContext* aDestinationCtx,
+void gfxGaussianBlur::BlurRectangle(gfxContext* aDestinationCtx,
                                     const gfxRect& aRect,
                                     const RectCornerRadii* aCornerRadii,
                                     const gfxPoint& aBlurStdDev,
@@ -988,7 +962,7 @@ static void CacheInsetBlur(const IntSize& aMinOuterSize,
       MakeUnique<BlurCacheData>(aBoxShadow, blurMargin, std::move(key)));
 }
 
-already_AddRefed<SourceSurface> gfxAlphaBoxBlur::GetInsetBlur(
+already_AddRefed<SourceSurface> gfxGaussianBlur::GetInsetBlur(
     const Rect& aOuterRect, const Rect& aWhitespaceRect, bool aIsDestRect,
     const sRGBColor& aShadowColor, const IntSize& aBlurRadius,
     const RectCornerRadii* aInnerClipRadii, DrawTarget* aDestDrawTarget,
@@ -1022,12 +996,13 @@ already_AddRefed<SourceSurface> gfxAlphaBoxBlur::GetInsetBlur(
   }
   IntSize zeroSpread(0, 0);
   RefPtr<DrawTarget> minDrawTarget =
-      InitDrawTarget(aDestDrawTarget, blurRect, zeroSpread, aBlurRadius);
+      InitDrawTarget(aDestDrawTarget, blurRect, zeroSpread,
+                     CalculateBlurSigma(aBlurRadius), nullptr, nullptr, true);
   if (!minDrawTarget) {
     return nullptr;
   }
 
-  // This is really annoying. When we create the AlphaBoxBlur, the DrawTarget
+  // This is really annoying. When we create the GaussianBlur, the DrawTarget
   // has a translation applied to it that is the topLeft point. This is actually
   // the rect we gave it plus the blur radius. The rects we give this for the
   // outer and whitespace rects are based at (0, 0). We could either translate
@@ -1145,7 +1120,7 @@ static bool GetInsetBoxShadowRects(const Margin& aBlurMargin,
   return useDestRect;
 }
 
-void gfxAlphaBoxBlur::BlurInsetBox(
+void gfxGaussianBlur::BlurInsetBox(
     gfxContext* aDestinationCtx, const Rect& aDestinationRect,
     const Rect& aShadowClipRect, const IntSize& aBlurRadius,
     const sRGBColor& aShadowColor, const RectCornerRadii* aInnerClipRadii,

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpConnection_h__
-#define nsHttpConnection_h__
+#ifndef nsHttpConnection_h_
+#define nsHttpConnection_h_
 
 #include <functional>
 #include "HttpConnectionBase.h"
@@ -152,7 +152,7 @@ class nsHttpConnection final : public HttpConnectionBase,
   int64_t ContentBytesWritten() { return mContentBytesWritten; }
 
   void SetupSecondaryTLS();
-  void SetInSpdyTunnel();
+  void SetInTunnel() override;
 
   // Check active connections for traffic (or not). SPDY connections send a
   // ping, ordinary HTTP connections get some time to get traffic to be
@@ -194,24 +194,12 @@ class nsHttpConnection final : public HttpConnectionBase,
                                                uint32_t*);
 
   nsresult CreateTunnelStream(nsAHttpTransaction* httpTransaction,
-                              nsHttpConnection** aHttpConnection,
-                              bool aIsExtendedCONNECT = false);
-
-  bool RequestDone() { return mRequestDone; }
+                              HttpConnectionBase** aHttpConnection,
+                              bool aIsExtendedCONNECT = false) override;
 
  private:
-  enum HttpConnectionState {
-    UNINITIALIZED,
-    SETTING_UP_TUNNEL,
-    REQUEST,
-  } mState{HttpConnectionState::UNINITIALIZED};
-  void ChangeState(HttpConnectionState newState);
-
-  // Tunnel retated functions:
-  bool TunnelSetupInProgress() { return mState == SETTING_UP_TUNNEL; }
-  void SetTunnelSetupDone();
-  nsresult CheckTunnelIsNeeded();
-  nsresult SetupProxyConnectStream();
+  void SetTunnelSetupDone() override;
+  nsresult SetupProxyConnectStream() override;
   nsresult SendConnectRequest(void* closure, uint32_t* transactionBytes);
 
   void HandleTunnelResponse(uint16_t responseStatus, bool* reset);
@@ -376,7 +364,6 @@ class nsHttpConnection final : public HttpConnectionBase,
 
   nsCOMPtr<nsIInputStream> mProxyConnectStream;
 
-  bool mRequestDone{false};
   bool mHasTLSTransportLayer{false};
   bool mTransactionDisallowHttp3{false};
 };
@@ -384,4 +371,4 @@ class nsHttpConnection final : public HttpConnectionBase,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpConnection_h__
+#endif  // nsHttpConnection_h_

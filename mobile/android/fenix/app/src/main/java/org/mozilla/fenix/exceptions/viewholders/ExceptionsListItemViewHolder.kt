@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.exceptions.viewholders
 
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.ui.widgets.WidgetSiteItemView
@@ -39,6 +40,7 @@ class ExceptionsListItemViewHolder<T : Any>(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.site_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.site_list_item
     }
 }

@@ -176,7 +176,7 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
 function promiseSetToolbarVisibility(aToolbar, aVisible) {
   if (isToolbarVisible(aToolbar) != aVisible) {
     let visibilityChanged = TestUtils.waitForCondition(
-      () => aToolbar.collapsed != aVisible
+      () => isToolbarVisible(aToolbar) == aVisible
     );
     setToolbarVisibility(aToolbar, aVisible, undefined, false);
     return visibilityChanged;
@@ -196,9 +196,7 @@ function promiseSetToolbarVisibility(aToolbar, aVisible) {
 function isToolbarVisible(aToolbar) {
   let hidingAttribute =
     aToolbar.getAttribute("type") == "menubar" ? "autohide" : "collapsed";
-  let hidingValue = aToolbar.getAttribute(hidingAttribute)?.toLowerCase();
-  // Check for both collapsed="true" and collapsed="collapsed"
-  return hidingValue !== "true" && hidingValue !== hidingAttribute;
+  return !aToolbar.hasAttribute(hidingAttribute);
 }
 
 /**
@@ -325,21 +323,10 @@ var openContextMenuForContentSelector = async function (browser, selector) {
     dump(`openContextMenuForContentSelector: found ${elt}\n`);
 
     /* Open context menu so chrome can access the element */
-    const domWindowUtils = content.windowUtils;
-    let rect = elt.getBoundingClientRect();
-    let left = rect.left + rect.width / 2;
-    let top = rect.top + rect.height / 2;
-    domWindowUtils.sendMouseEvent(
-      "contextmenu",
-      left,
-      top,
-      2,
-      1,
-      0,
-      false,
-      0,
-      0,
-      true
+    EventUtils.synthesizeMouseAtCenter(
+      elt,
+      { type: "contextmenu", button: 2, clickCount: 1, buttons: 0 },
+      content
     );
   });
   await contextPromise;

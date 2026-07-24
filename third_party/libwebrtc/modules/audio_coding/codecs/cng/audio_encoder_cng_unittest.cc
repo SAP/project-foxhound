@@ -10,11 +10,21 @@
 
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
-#include <vector>
+#include <optional>
+#include <utility>
 
+#include "api/array_view.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/units/time_delta.h"
+#include "common_audio/vad/include/vad.h"
 #include "common_audio/vad/mock/mock_vad.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_audio_encoder.h"
 #include "test/testsupport/rtc_expect_death.h"
@@ -22,7 +32,7 @@
 using ::testing::_;
 using ::testing::Eq;
 using ::testing::InSequence;
-using ::testing::Invoke;
+
 using ::testing::Not;
 using ::testing::Optional;
 using ::testing::Return;
@@ -31,9 +41,9 @@ using ::testing::SetArgPointee;
 namespace webrtc {
 
 namespace {
-static const size_t kMaxNumSamples = 48 * 10 * 2;  // 10 ms @ 48 kHz stereo.
-static const size_t kMockReturnEncodedBytes = 17;
-static const int kCngPayloadType = 18;
+constexpr size_t kMaxNumSamples = 48 * 10 * 2;  // 10 ms @ 48 kHz stereo.
+constexpr size_t kMockReturnEncodedBytes = 17;
+constexpr int kCngPayloadType = 18;
 }  // namespace
 
 class AudioEncoderCngTest : public ::testing::Test {
@@ -88,8 +98,7 @@ class AudioEncoderCngTest : public ::testing::Test {
   void Encode() {
     ASSERT_TRUE(cng_) << "Must call CreateCng() first.";
     encoded_info_ = cng_->Encode(
-        timestamp_,
-        rtc::ArrayView<const int16_t>(audio_, num_audio_samples_10ms_),
+        timestamp_, ArrayView<const int16_t>(audio_, num_audio_samples_10ms_),
         &encoded_);
     timestamp_ += static_cast<uint32_t>(num_audio_samples_10ms_);
   }
@@ -105,8 +114,7 @@ class AudioEncoderCngTest : public ::testing::Test {
     }
     info.encoded_bytes = kMockReturnEncodedBytes;
     EXPECT_CALL(*mock_encoder_, EncodeImpl(_, _, _))
-        .WillOnce(
-            Invoke(MockAudioEncoder::FakeEncoding(kMockReturnEncodedBytes)));
+        .WillOnce(MockAudioEncoder::FakeEncoding(kMockReturnEncodedBytes));
   }
 
   // Verifies that the cng_ object waits until it has collected
@@ -207,7 +215,7 @@ class AudioEncoderCngTest : public ::testing::Test {
   uint32_t timestamp_;
   int16_t audio_[kMaxNumSamples];
   size_t num_audio_samples_10ms_;
-  rtc::Buffer encoded_;
+  Buffer encoded_;
   AudioEncoder::EncodedInfo encoded_info_;
   int sample_rate_hz_;
 };
@@ -407,8 +415,7 @@ TEST_F(AudioEncoderCngTest, VerifySidFrameAfterSpeech) {
   EXPECT_CALL(*mock_vad_, VoiceActivity(_, _, _))
       .WillOnce(Return(Vad::kActive));
   EXPECT_CALL(*mock_encoder_, EncodeImpl(_, _, _))
-      .WillOnce(
-          Invoke(MockAudioEncoder::FakeEncoding(kMockReturnEncodedBytes)));
+      .WillOnce(MockAudioEncoder::FakeEncoding(kMockReturnEncodedBytes));
   Encode();
   EXPECT_EQ(kMockReturnEncodedBytes, encoded_info_.encoded_bytes);
 

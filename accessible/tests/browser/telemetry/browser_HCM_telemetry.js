@@ -101,7 +101,7 @@ add_task(async function testInit() {
   if (AppConstants.platform == "win") {
     is(
       contrastControlRadios.value,
-      "0",
+      0,
       "HCM menulist should be set to only with HCM theme on startup for windows"
     );
 
@@ -115,7 +115,7 @@ add_task(async function testInit() {
   } else {
     is(
       contrastControlRadios.value,
-      "1",
+      1,
       "HCM menulist should be set to never on startup for non-windows platforms"
     );
 
@@ -170,7 +170,7 @@ add_task(async function testSetAlways() {
     );
   newOption.click();
 
-  is(contrastControlRadios.value, "2", "HCM menulist should be set to always");
+  is(contrastControlRadios.value, 2, "HCM menulist should be set to always");
 
   await refresh();
 
@@ -207,7 +207,7 @@ add_task(async function testSetDefault() {
   );
   newOption.click();
 
-  is(contrastControlRadios.value, "0", "HCM menulist should be set to default");
+  is(contrastControlRadios.value, 0, "HCM menulist should be set to default");
 
   await refresh();
 
@@ -260,7 +260,7 @@ add_task(async function testSetNever() {
   );
   newOption.click();
 
-  is(contrastControlRadios.value, "1", "HCM menulist should be set to never");
+  is(contrastControlRadios.value, 1, "HCM menulist should be set to never");
 
   await refresh();
 

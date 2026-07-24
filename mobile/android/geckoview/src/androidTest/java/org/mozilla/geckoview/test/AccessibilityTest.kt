@@ -49,6 +49,10 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 const val DISPLAY_WIDTH = 480
 const val DISPLAY_HEIGHT = 640
 
+// Constants from {@link AccessibilityNodeInfo.java}
+const val VIRTUAL_DESCENDANT_ID_MASK = -0x100000000L
+const val VIRTUAL_DESCENDANT_ID_SHIFT = 32
+
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 @WithDisplay(width = DISPLAY_WIDTH, height = DISPLAY_HEIGHT)
@@ -62,12 +66,21 @@ class AccessibilityTest : BaseSessionTest() {
     @get:Rule
     override val rules: RuleChain = RuleChain.outerRule(activityRule).around(sessionRule)
 
-    // Given a child ID, return the virtual descendent ID.
-    private fun getVirtualDescendantId(childId: Long): Int {
+    /**
+     * Given a child ID, return the virtual descendent ID.
+     *
+     * @param accessibilityNodeId The id of an AccessibilityNodeInfo.
+     */
+    private fun getVirtualDescendantId(accessibilityNodeId: Long): Int {
         try {
-            val getVirtualDescendantIdMethod =
-                AccessibilityNodeInfo::class.java.getMethod("getVirtualDescendantId", Long::class.java)
-            val virtualDescendantId = getVirtualDescendantIdMethod.invoke(null, childId) as Int
+            // Rewritten in Kotlin from https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/core/java/android/view/accessibility/AccessibilityNodeInfo.java;l=1068
+            // due to being a restricted API beginning in Android 12 and unavailable for reflection.
+            val virtualDescendantId =
+                (
+                    (accessibilityNodeId and VIRTUAL_DESCENDANT_ID_MASK)
+                        shr VIRTUAL_DESCENDANT_ID_SHIFT
+                    ).toInt()
+
             return if (virtualDescendantId == Int.MAX_VALUE) -1 else virtualDescendantId
         } catch (ex: Exception) {
             return 0
@@ -1278,11 +1291,16 @@ class AccessibilityTest : BaseSessionTest() {
             @AssertCalled(count = 1, order = [1])
             override fun onAccessibilityFocused(event: AccessibilityEvent) {
                 nodeId = getSourceId(event)
+                var node = createNodeInfo(nodeId)
+                assertThat("Focused node is not scrollable", node.isScrollable, equalTo(false))
                 assertThat("Focused node is onscreen", screenContainsNode(nodeId), equalTo(true))
             }
 
             @AssertCalled(count = 1, order = [2])
             override fun onScrolled(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                var node = createNodeInfo(nodeId)
+                assertThat("View is scrollable", node.isScrollable, equalTo(true))
                 assertThat("View is scrolled for focused node to be onscreen", event.scrollY, greaterThan(0))
                 assertThat("View is not scrolled to the end", event.scrollY, lessThan(event.maxScrollY))
             }
@@ -1412,13 +1430,13 @@ class AccessibilityTest : BaseSessionTest() {
                     }
                 }
 
-                val ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE = AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE
-                val ACTION_SET_TEXT = AccessibilityNodeInfo.ACTION_SET_TEXT
-
-                args.putCharSequence(ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+                args.putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    value,
+                )
                 assertThat(
                     "Can perform auto-fill",
-                    provider.performAction(id, ACTION_SET_TEXT, args),
+                    provider.performAction(id, AccessibilityNodeInfo.ACTION_SET_TEXT, args),
                     equalTo(true),
                 )
             }
@@ -1650,6 +1668,7 @@ class AccessibilityTest : BaseSessionTest() {
         })
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun testRemoteAccessibilityFocusIframe() {
         testAccessibilityFocusIframe(REMOTE_IFRAME)
     }
@@ -1694,6 +1713,7 @@ class AccessibilityTest : BaseSessionTest() {
         assertThat("inner node in inner doc bounds", innerDocBounds.contains(nodeBounds), equalTo(true))
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun testRemoteIframeTree() {
         testIframeTree(REMOTE_IFRAME)

@@ -3,20 +3,11 @@
 
 "use strict";
 
-const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
-  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-);
-
 let { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const TOTAL_PROMO_CARDS_COUNT = 6;
-
-async function clearPolicies() {
-  // Ensure no active policies are set
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
-}
 
 // The Relay promo is only shown if the default FxA instance is detected, and
 // tests override it to a dummy address, so we need to make the dummy address

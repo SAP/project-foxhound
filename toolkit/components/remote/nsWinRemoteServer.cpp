@@ -32,9 +32,7 @@ HWND hwndForDOMWindow(mozIDOMWindowProxy* window) {
     return 0;
   }
 
-  nsCOMPtr<nsIWidget> ppWidget;
-  ppBaseWindow->GetMainWidget(getter_AddRefs(ppWidget));
-
+  nsCOMPtr<nsIWidget> ppWidget = ppBaseWindow->GetMainWidget();
   return (HWND)(ppWidget->GetNativeData(NS_NATIVE_WIDGET));
 }
 

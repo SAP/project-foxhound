@@ -5,9 +5,10 @@
 package mozilla.components.feature.session.engine
 
 import android.view.View
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.LastAccessAction
@@ -25,6 +26,7 @@ internal class EngineViewPresenter(
     private val store: BrowserStore,
     private val engineView: EngineView,
     private val tabId: String?,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     private var scope: CoroutineScope? = null
 
@@ -32,7 +34,7 @@ internal class EngineViewPresenter(
      * Start presenter and display data in view.
      */
     fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 // Render if the tab itself changed and when an engine session is linked
                 .ifAnyChanged { tab ->

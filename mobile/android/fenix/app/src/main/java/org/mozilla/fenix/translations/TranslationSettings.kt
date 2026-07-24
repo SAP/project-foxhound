@@ -4,14 +4,15 @@
 
 package org.mozilla.fenix.translations
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,16 +20,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import mozilla.components.concept.engine.translate.TranslationError
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.InfoCard
 import org.mozilla.fenix.compose.InfoType
-import org.mozilla.fenix.compose.SwitchWithLabel
+import org.mozilla.fenix.compose.list.SwitchListItem
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 
 /**
  * Translation Settings Fragment.
@@ -42,7 +45,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * @param onNeverTranslationClicked Invoked when the user clicks on the "Never Translation" button.
  * @param onDownloadLanguageClicked Invoked when the user clicks on the "Download Language" button.
  */
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 fun TranslationSettings(
     translationSwitchList: List<TranslationSwitchItem>,
@@ -55,19 +58,17 @@ fun TranslationSettings(
     onDownloadLanguageClicked: () -> Unit,
 ) {
     val showHeader = showAutomaticTranslations || showNeverTranslate || showDownloads
-    Column(
-        modifier = Modifier
-            .background(
-                color = FirefoxTheme.colors.layer1,
-            ),
-    ) {
+
+    Surface {
         LazyColumn {
             items(translationSwitchList) { item: TranslationSwitchItem ->
-                SwitchWithLabel(
+                SwitchListItem(
                     label = item.textLabel,
                     checked = item.isChecked,
                     modifier = Modifier
                         .padding(start = 72.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+                    maxLabelLines = Int.MAX_VALUE,
+                    showSwitchAfter = true,
                 ) { checked ->
                     item.onStateChange.invoke(
                         item.type,
@@ -76,7 +77,7 @@ fun TranslationSettings(
                 }
 
                 if (item.type.hasDivider && showHeader && pageSettingsError == null) {
-                    Divider(Modifier.padding(top = 8.dp, bottom = 8.dp))
+                    HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 8.dp))
                 }
             }
 
@@ -95,7 +96,7 @@ fun TranslationSettings(
                                 .fillMaxWidth()
                                 .padding(start = 72.dp, end = 16.dp, bottom = 8.dp, top = 8.dp)
                                 .semantics { heading() },
-                            color = FirefoxTheme.colors.textAccent,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = FirefoxTheme.typography.headline8,
                         )
                     }
@@ -198,10 +199,12 @@ internal fun getTranslationSettingsSwitchList(): List<TranslationSwitchItem> {
     }
 }
 
+@Preview
 @Composable
-@PreviewLightDark
-private fun TranslationSettingsPreview() {
-    FirefoxTheme {
+private fun TranslationSettingsPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         TranslationSettings(
             translationSwitchList = getTranslationSettingsSwitchList(),
             showAutomaticTranslations = true,

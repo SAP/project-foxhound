@@ -8,6 +8,7 @@
 
 #include "mozilla/ComputedStyle.h"
 
+#include "PseudoStyleType.h"
 #include "RubyUtils.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/DebugOnly.h"
@@ -18,8 +19,7 @@
 #include "mozilla/ToString.h"
 #include "mozilla/dom/Document.h"
 #include "nsCOMPtr.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsCSSPseudoElements.h"
+#include "nsCSSVisitedDependentPropList.h"
 #include "nsCoord.h"
 #include "nsFontMetrics.h"
 #include "nsLayoutUtils.h"
@@ -29,6 +29,7 @@
 #include "nsStyleConsts.h"
 #include "nsStyleStruct.h"
 #include "nsStyleStructInlines.h"
+#include "nsStyleStructList.h"
 #include "nsWindowSizes.h"
 
 // Ensure the binding function declarations in ComputedStyle.h matches
@@ -202,9 +203,10 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   if (!thisVis != !otherVis) {
     // One style has a style-if-visited and the other doesn't.
     // Presume a difference.
-#define STYLE_STRUCT(name_, fields_) *aEqualStructs &= ~STYLE_STRUCT_BIT(name_);
-#include "nsCSSVisitedDependentPropList.h"
-#undef STYLE_STRUCT
+#define CLEAR_STRUCT_BIT(name_, fields_) \
+  *aEqualStructs &= ~STYLE_STRUCT_BIT(name_);
+    FOR_EACH_VISITED_DEPENDENT_STYLE_STRUCT(CLEAR_STRUCT_BIT)
+#undef CLEAR_STRUCT_BIT
     hint |= nsChangeHint_RepaintFrame;
   } else if (thisVis) {
     // Both styles have a style-if-visited.
@@ -216,7 +218,7 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
     // due to change being true already or due to the old style not having a
     // style-if-visited), but not the other way around.
 #define STYLE_FIELD(name_) thisVisStruct->name_ != otherVisStruct->name_
-#define STYLE_STRUCT(name_, fields_)                                 \
+#define CHECK_VISITED_STYLE_STRUCT(name_, fields_)                   \
   {                                                                  \
     const nsStyle##name_* thisVisStruct = thisVis->Style##name_();   \
     const nsStyle##name_* otherVisStruct = otherVis->Style##name_(); \
@@ -225,8 +227,8 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
       change = true;                                                 \
     }                                                                \
   }
-#include "nsCSSVisitedDependentPropList.h"
-#undef STYLE_STRUCT
+    FOR_EACH_VISITED_DEPENDENT_STYLE_STRUCT(CHECK_VISITED_STYLE_STRUCT)
+#undef CHECK_VISITED_STYLE_STRUCT
 #undef STYLE_FIELD
 #undef STYLE_STRUCT_BIT
 
@@ -320,7 +322,7 @@ static nscolor ExtractColor(const ComputedStyle& aStyle,
 }
 
 #define STYLE_FIELD(struct_, field_) aField == &struct_::field_ ||
-#define STYLE_STRUCT(name_, fields_)                                           \
+#define GENERATE_VISITED_COLOR_TEMPLATE(name_, fields_)                        \
   template <>                                                                  \
   nscolor ComputedStyle::GetVisitedDependentColor(                             \
       decltype(nsStyle##name_::MOZ_ARG_1 fields_) nsStyle##name_::* aField)    \
@@ -333,8 +335,8 @@ static nscolor ExtractColor(const ComputedStyle& aStyle,
           return ExtractColor(aStyle, aStyle.Style##name_()->*aField);         \
         });                                                                    \
   }
-#include "nsCSSVisitedDependentPropList.h"
-#undef STYLE_STRUCT
+FOR_EACH_VISITED_DEPENDENT_STYLE_STRUCT(GENERATE_VISITED_COLOR_TEMPLATE)
+#undef GENERATE_VISITED_COLOR_TEMPLATE
 #undef STYLE_FIELD
 
 struct ColorIndexSet {
@@ -367,11 +369,11 @@ nscolor ComputedStyle::CombineVisitedColors(nscolor* aColors,
 #ifdef DEBUG
 /* static */ const char* ComputedStyle::StructName(StyleStructID aSID) {
   switch (aSID) {
-#  define STYLE_STRUCT(name_)  \
+#  define CASE_STRUCT(name_)   \
     case StyleStructID::name_: \
       return #name_;
-#  include "nsStyleStructList.h"
-#  undef STYLE_STRUCT
+    FOR_EACH_STYLE_STRUCT(CASE_STRUCT, CASE_STRUCT)
+#  undef CASE_STRUCT
     default:
       return "Unknown";
   }
@@ -379,23 +381,23 @@ nscolor ComputedStyle::CombineVisitedColors(nscolor* aColors,
 
 /* static */
 Maybe<StyleStructID> ComputedStyle::LookupStruct(const nsACString& aName) {
-#  define STYLE_STRUCT(name_) \
+#  define CHECK_STRUCT(name_) \
     if (aName.EqualsLiteral(#name_)) return Some(StyleStructID::name_);
-#  include "nsStyleStructList.h"
-#  undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(CHECK_STRUCT, CHECK_STRUCT)
+#  undef CHECK_STRUCT
   return Nothing();
 }
 #endif  // DEBUG
 
 ComputedStyle* ComputedStyle::GetCachedLazyPseudoStyle(
-    PseudoStyleType aPseudo) const {
-  MOZ_ASSERT(PseudoStyle::IsPseudoElement(aPseudo));
+    const PseudoStyleRequest& aRequest) const {
+  MOZ_ASSERT(PseudoStyle::IsPseudoElement(aRequest.mType));
 
-  if (nsCSSPseudoElements::PseudoElementSupportsUserActionState(aPseudo)) {
+  if (PseudoStyle::SupportsUserActionState(aRequest.mType)) {
     return nullptr;
   }
 
-  return mCachedInheritingStyles.Lookup(aPseudo);
+  return mCachedInheritingStyles.Lookup(aRequest);
 }
 
 MOZ_DEFINE_MALLOC_ENCLOSING_SIZE_OF(ServoComputedValuesMallocEnclosingSizeOf)
@@ -429,10 +431,30 @@ void ComputedStyle::DumpMatchedRules() const {
 
 bool ComputedStyle::HasAnchorPosReference() const {
   const auto* pos = StylePosition();
-  if (pos->mPositionAnchor.IsIdent()) {
-    // Short circuit if there's a default anchor defined, even if
-    // it may not end up being referenced.
+  if (pos->mPositionAnchor.value.IsIdent()) {
+    // Short circuit if there's an explicit default anchor defined,
+    // even if it may not end up being referenced. If this early return is
+    // removed, we'll need to handle mPositionArea explicitly.
     return true;
+  }
+
+  if (pos->mPositionAnchor.value.IsAuto()) {
+    if (!pos->mPositionArea.IsNone()) {
+      // Position area is relative to an anchor.
+      return true;
+    }
+
+    // Check if anchor-center is used in alignment properties, directly
+    // accessing members rather than using UsedAlign* because legacy values
+    // can't resolve to anchor-center.
+    const auto alignSelfValue =
+        pos->mAlignSelf._0 & ~StyleAlignFlags::FLAG_BITS;
+    const auto justifySelfValue =
+        pos->mJustifySelf._0 & ~StyleAlignFlags::FLAG_BITS;
+    if (alignSelfValue == StyleAlignFlags::ANCHOR_CENTER ||
+        justifySelfValue == StyleAlignFlags::ANCHOR_CENTER) {
+      return true;
+    }
   }
 
   // Now check if any property that can use anchor() or anchor-size()
@@ -443,13 +465,43 @@ bool ComputedStyle::HasAnchorPosReference() const {
     return aInset.HasAnchorPositioningFunction();
   }) || pos->mWidth.HasAnchorPositioningFunction() ||
          pos->mHeight.HasAnchorPositioningFunction() ||
+         pos->mMinWidth.HasAnchorPositioningFunction() ||
          pos->mMinHeight.HasAnchorPositioningFunction() ||
-         pos->mMinHeight.HasAnchorPositioningFunction() ||
-         pos->mMaxHeight.HasAnchorPositioningFunction() ||
+         pos->mMaxWidth.HasAnchorPositioningFunction() ||
          pos->mMaxHeight.HasAnchorPositioningFunction() ||
          StyleMargin()->mMargin.Any([](const ::mozilla::StyleMargin& aMargin) {
            return aMargin.HasAnchorPositioningFunction();
          });
+}
+
+// XXX: This is a broad-stroke method to return true if the referenced anchors
+// in two computed style may differ. Since we do not get the actual anchor
+// names, we do not know if the difference is just a position/size/margin change
+// or if indeed the anchors changed. So we will get false positives here, hence
+// "maybe".
+bool ComputedStyle::MaybeAnchorPosReferencesDiffer(
+    const ComputedStyle* aOther) const {
+  if (!HasAnchorPosReference() || !aOther->HasAnchorPosReference()) {
+    return true;
+  }
+
+  const auto* pos = StylePosition();
+  const auto* otherPos = aOther->StylePosition();
+  if (pos->mOffset != otherPos->mOffset || pos->mWidth != otherPos->mWidth ||
+      pos->mHeight != otherPos->mHeight ||
+      pos->mMinWidth != otherPos->mMinWidth ||
+      pos->mMinHeight != otherPos->mMinHeight ||
+      pos->mMaxWidth != otherPos->mMaxWidth ||
+      pos->mMaxHeight != otherPos->mMaxHeight ||
+      pos->mPositionAnchor != otherPos->mPositionAnchor) {
+    return true;
+  }
+
+  if (StyleMargin()->mMargin != aOther->StyleMargin()->mMargin) {
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace mozilla

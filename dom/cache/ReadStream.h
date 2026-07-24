@@ -9,7 +9,6 @@
 
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsIInputStream.h"

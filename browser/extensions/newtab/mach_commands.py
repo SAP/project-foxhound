@@ -13,6 +13,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from zipfile import ZipFile
 
 import requests
 import yaml
@@ -23,6 +25,8 @@ from mach.decorators import (
     SubCommand,
 )
 from mozfile import json
+
+import taskcluster
 
 # The glean parser module dependency is in a different folder, so we add it to our path.
 sys.path.append(
@@ -43,7 +47,7 @@ WEBEXT_LOCALES_PATH = Path("browser", "extensions", "newtab", "webext-glue", "lo
 
 LOCAL_EN_US_PATH = Path("browser", "locales", "en-US", "browser", "newtab", FLUENT_FILE)
 COMPARE_TOOL_PATH = Path(
-    "third_party", "python", "moz.l10n", "moz", "l10n", "bin", "compare.py"
+    "third_party", "python", "moz_l10n", "moz", "l10n", "bin", "compare.py"
 )
 REPORT_PATH = Path(WEBEXT_LOCALES_PATH, "locales-report.json")
 REPORT_LEFT_JUSTIFY_CHARS = 15
@@ -59,6 +63,11 @@ RELEASE_SCHEDULE_QUERY = (
     "https://whattrainisitnow.com/api/release/schedule/?version=release"
 )
 BETA_FALLBACK_THRESHOLD = timedelta(weeks=3)
+TASKCLUSTER_ROOT_URL = "https://firefox-ci-tc.services.mozilla.com"
+BEETMOVER_TASK_NAME = "beetmover-newtab"
+XPI_NAME = "newtab.xpi"
+BEETMOVER_ARTIFACT_PATH = f"public/build/{XPI_NAME}"
+ARCHIVE_ROOT_PATH = "https://ftp.mozilla.org"
 
 
 class YamlType(Enum):
@@ -89,15 +98,19 @@ def run_mach(command_context, cmd, **kwargs):
 @SubCommand(
     "newtab",
     "watch",
-    description="Parses the current locales-report.json and produces something human readable.",
+    description="Invokes npm run watchmc and mach watch simultaneously for auto-building and bundling of compiled newtab code.",
 )
 def watch(command_context):
     processes = []
 
     try:
-        p1 = subprocess.Popen(
-            ["./mach", "npm", "run", "watchmc", "--prefix=browser/extensions/newtab"]
-        )
+        p1 = subprocess.Popen([
+            "./mach",
+            "npm",
+            "run",
+            "watchmc",
+            "--prefix=browser/extensions/newtab",
+        ])
         p2 = subprocess.Popen(["./mach", "watch"])
         processes.extend([p1, p2])
         print("Watching subprocesses started. Press Ctrl-C to terminate them.")
@@ -136,9 +149,13 @@ def update_locales(command_context):
     # Step 1: We download the latest reckoning of strings from firefox-l10n
     print("Cloning the latest HEAD of firefox-l10n repository")
     with tempfile.TemporaryDirectory() as clone_dir:
-        subprocess.check_call(
-            ["git", "clone", "--depth=1", FIREFOX_L10N_REPO, clone_dir]
-        )
+        subprocess.check_call([
+            "git",
+            "clone",
+            "--depth=1",
+            FIREFOX_L10N_REPO,
+            clone_dir,
+        ])
         # Step 2: Get some metadata about what we just pulled down -
         # specifically, the revision.
         revision = subprocess.check_output(
@@ -275,7 +292,7 @@ def get_message_dates(fluent_file_path):
         ["git", "blame", "--line-porcelain", fluent_file_path],
         stdout=subprocess.PIPE,
         text=True,
-        check=False,
+        check=True,
     )
 
     pattern = re.compile(r"^([a-z-]+[^\s]+) ")
@@ -392,7 +409,6 @@ def display_report(report, details=None):
         sorted_locales = sorted(report["locales"].keys(), key=lambda x: x.lower())
     for locale in sorted_locales:
         print(Style.RESET_ALL, end="")
-        # import pdb;pdb.set_trace()
         if report["locales"][locale]["missing"]:
             missing_translations = report["locales"][locale]["missing"][
                 str(FLUENT_FILE_ANCESTRY.joinpath(FLUENT_FILE))
@@ -461,19 +477,19 @@ def display_report(report, details=None):
 @SubCommand(
     "newtab",
     "channel-metrics-diff",
-    description="Compares and produces a JSON diff between NewTab Nightly metrics and pings, using the specified channel.",
+    description="Compares and produces a JSON diff between local NewTab metrics and pings, and the specified channel.",
     virtualenv_name="newtab",
 )
 @CommandArgument(
     "--channel",
-    default="local",
-    choices=["beta", "release", "local"],
+    default="release",
+    choices=["beta", "release"],
     help="Which channel should be used to compare NewTab metrics and pings YAML",
 )
 def channel_metrics_diff(command_context, channel):
     """
     Fetch main and a comparison branch (beta or release) metrics.yaml, compute only the new metrics,
-    and process as before. To run use: ./mach newtab channel-metrics-diff --channel [beta|release|local]
+    and process as before. To run use: ./mach newtab channel-metrics-diff --channel [beta|release]
     This will print YAML-formatted output to stdout, showing the differences in newtab metrics and pings.
     """
     METRICS_LOCAL_YAML_PATH = Path("browser", "components", "newtab", "metrics.yaml")
@@ -501,29 +517,14 @@ def channel_metrics_diff(command_context, channel):
         # Base URL for fetching YAML files from GitHub
         GITHUB_URL_TEMPLATE = "https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/{branch}/browser/components/newtab/{yaml}"
 
-        # 1. Fetch both main and comparison metrics and pings YAMLs and determine which branch to compare against
-        if channel == "local":
-            main_metrics_yaml = yaml.safe_load(open(METRICS_LOCAL_YAML_PATH))
-            compare_metrics_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch="main", yaml="metrics.yaml")
-            )
-            main_pings_yaml = yaml.safe_load(open(PINGS_LOCAL_YAML_PATH))
-            compare_pings_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch="main", yaml="pings.yaml")
-            )
-        else:
-            main_metrics_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch="main", yaml="metrics.yaml")
-            )
-            compare_metrics_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch=channel, yaml="metrics.yaml")
-            )
-            main_pings_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch="main", yaml="pings.yaml")
-            )
-            compare_pings_yaml = fetch_yaml(
-                GITHUB_URL_TEMPLATE.format(branch=channel, yaml="pings.yaml")
-            )
+        main_metrics_yaml = yaml.safe_load(open(METRICS_LOCAL_YAML_PATH))
+        compare_metrics_yaml = fetch_yaml(
+            GITHUB_URL_TEMPLATE.format(branch=channel, yaml="metrics.yaml")
+        )
+        main_pings_yaml = yaml.safe_load(open(PINGS_LOCAL_YAML_PATH))
+        compare_pings_yaml = fetch_yaml(
+            GITHUB_URL_TEMPLATE.format(branch=channel, yaml="pings.yaml")
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -750,3 +751,224 @@ def check_existing_metrics(main_yaml, compare_yaml):
             changed_metrics[category] = category_changes
 
     return changed_metrics
+
+
+@SubCommand(
+    "newtab",
+    "trainhop-recipe",
+    description="""Generates the appropriate trainhop recipe for the Nimbus
+newtabTrainhopAddon feature, given a Taskcluster shipping task group URL from
+ship-it""",
+)
+@CommandArgument(
+    "taskcluster_group_url", help="The shipping Taskcluster task group URL from ship-it"
+)
+def trainhop_recipe(command_context, taskcluster_group_url):
+    tc_root_url = urlparse(TASKCLUSTER_ROOT_URL)
+    group_url = urlparse(taskcluster_group_url)
+    if group_url.scheme != "https" or group_url.hostname != tc_root_url.hostname:
+        print(
+            f"Expected an https URL with hostname {tc_root_url.hostname}. Got: {taskcluster_group_url}"
+        )
+        return 1
+
+    group_id = group_url.path.split("/")[-1]
+    if not group_id:
+        print(f"Could not extract the task group ID from {taskcluster_group_url}")
+        return 1
+
+    print(f"Extracted task group ID {group_id}")
+
+    queue = taskcluster.Queue({"rootUrl": TASKCLUSTER_ROOT_URL})
+    task_group = queue.listTaskGroup(group_id)
+    artifact_destination = ""
+
+    for task in task_group["tasks"]:
+        if task["task"]["metadata"]["name"] == BEETMOVER_TASK_NAME:
+            print(f"Found {BEETMOVER_TASK_NAME} task")
+            artifacts = task["task"]["payload"]["artifactMap"]
+            for artifact in artifacts:
+                if BEETMOVER_ARTIFACT_PATH in artifact["paths"]:
+                    artifact_destination = artifact["paths"][BEETMOVER_ARTIFACT_PATH][
+                        "destinations"
+                    ][0]
+
+    print(f"Got the destination: {artifact_destination}")
+    xpi_archive_url = urljoin(ARCHIVE_ROOT_PATH, artifact_destination)
+    print(f"Downloading from: {xpi_archive_url}")
+
+    with tempfile.TemporaryDirectory() as download_dir:
+        with requests.get(xpi_archive_url, stream=True) as request:
+            request.raise_for_status()
+
+            download_path = Path(download_dir).joinpath(XPI_NAME)
+            with open(download_path, "wb") as f:
+                for chunk in request.iter_content(chunk_size=8192):
+                    # If you have chunk encoded response uncomment if
+                    # and set chunk_size parameter to None.
+                    # if chunk:
+                    f.write(chunk)
+
+            # XPIs are just ZIP files, so let's reach in and read manifest.json.
+            with ZipFile(download_path) as newtab_xpi:
+                with newtab_xpi.open("manifest.json") as manifest_file:
+                    manifest = json.loads(manifest_file.read())
+                    addon_version = manifest["version"]
+
+            shutil.rmtree(download_dir)
+
+    result = {
+        "addon_version": addon_version,
+        "xpi_download_path": "/".join(artifact_destination.split("/")[-2:]),
+    }
+
+    print("Nimbus train-hop recipe:\n\n")
+    print(json.dumps(result, indent=2, sort_keys=True))
+    print("\n")
+
+
+@SubCommand(
+    "newtab",
+    "bundle",
+    description="Bundle compiled newtab code.",
+)
+def bundle(command_context):
+    """
+    Runs: ./mach npm run bundle --prefix=browser/extensions/newtab
+    """
+    proc = None
+
+    try:
+        proc = subprocess.Popen([
+            "./mach",
+            "npm",
+            "run",
+            "bundle",
+            "--prefix=browser/extensions/newtab",
+        ])
+        print("Bundling newtab started. Press Ctrl-C to terminate.")
+        proc.wait()
+    except KeyboardInterrupt:
+        if proc:
+            proc.terminate()
+            proc.wait()
+            print("Bundle process terminated.")
+    else:
+        # Successful bundle
+        if proc and proc.returncode == 0:
+            print("Bundling newtab completed.")
+        elif proc:
+            code = proc.returncode
+            print(f"Bundling newtab failed (exit code {code}). See logs above.")
+
+            if code == 127:
+                print(
+                    "Hint: Required npm binaries not found. "
+                    "Try running:\n  ./mach newtab install"
+                )
+
+    # Swallow errors (no exception raising). Return the process returncode for mach to surface.
+    return 0 if proc is None else proc.returncode
+
+
+@SubCommand(
+    "newtab",
+    "install",
+    description="Installing node dependencies for newtab extension.",
+)
+def install(command_context):
+    """
+    Runs: ./mach npm install --prefix=browser/extensions/newtab
+    """
+    proc = None
+
+    try:
+        proc = subprocess.Popen([
+            "./mach",
+            "npm",
+            "install",
+            "--prefix=browser/extensions/newtab",
+        ])
+        print(
+            "Installing node dependencies for newtab started. Press Ctrl-C to terminate."
+        )
+        proc.wait()
+    except KeyboardInterrupt:
+        if proc:
+            proc.terminate()
+            proc.wait()
+            print("Install process terminated.")
+    else:
+        print("Installing node dependencies for newtab completed.")
+
+    # Swallow errors (no exception raising). Return the process returncode for mach to surface.
+    return 0 if proc is None else proc.returncode
+
+
+@SubCommand(
+    "newtab",
+    "get-unbranded-builds",
+    description="Get URLs for the latest unbranded Firefox builds for add-on development.",
+)
+@CommandArgument(
+    "--channel",
+    default="release",
+    choices=["beta", "release"],
+    help="Which channel to get unbranded builds for",
+)
+def get_unbranded_builds(command_context, channel):
+    """
+    Prints the latest unbranded Firefox build artifact URLs for Mac, Windows, and Linux.
+    These builds allow testing unsigned extensions without enforcing signature requirements.
+    """
+    TASKCLUSTER_INDEX_URL = (
+        "https://firefox-ci-tc.services.mozilla.com/api/index/v1/task"
+    )
+
+    repo = f"mozilla-{channel}"
+
+    platforms = {
+        "macOS (Intel)": {
+            "namespace": f"gecko.v2.{repo}.latest.firefox.macosx64-add-on-devel",
+            "artifact": "public/build/target.dmg",
+        },
+        "Windows 32-bit": {
+            "namespace": f"gecko.v2.{repo}.latest.firefox.win32-add-on-devel",
+            "artifact": "public/build/target.zip",
+        },
+        "Windows 64-bit": {
+            "namespace": f"gecko.v2.{repo}.latest.firefox.win64-add-on-devel",
+            "artifact": "public/build/target.zip",
+        },
+        "Linux 64-bit": {
+            "namespace": f"gecko.v2.{repo}.latest.firefox.linux64-add-on-devel",
+            "artifact": "public/build/target.tar.bz2",
+        },
+    }
+
+    print(f"Fetching latest unbranded builds for {channel} channel...\n")
+
+    for platform_name, platform_info in platforms.items():
+        namespace = platform_info["namespace"]
+        artifact = platform_info["artifact"]
+
+        try:
+            index_url = f"{TASKCLUSTER_INDEX_URL}/{namespace}"
+            response = requests.get(index_url, timeout=10)
+            response.raise_for_status()
+            task_data = response.json()
+            task_id = task_data["taskId"]
+
+            artifact_url = f"https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/{task_id}/runs/0/artifacts/{artifact}"
+
+            print(f"{platform_name}:")
+            print(f"  {artifact_url}\n")
+        except requests.RequestException as e:
+            print(f"{platform_name}: Failed to fetch ({e})\n")
+
+    print(
+        "For more information, see: https://wiki.mozilla.org/Add-ons/Extension_Signing#Unbranded_Builds"
+    )
+    print(
+        f"Manual search: https://treeherder.mozilla.org/#/jobs?repo={repo}&searchStr=addon"
+    )

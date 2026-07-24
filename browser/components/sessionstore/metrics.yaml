@@ -418,6 +418,27 @@ session_restore:
     expires: never
     telemetry_mirror: h#SHUTDOWN_OK
 
+  startup_timeline:
+    type: labeled_quantity
+    unit: milliseconds since process creation
+    lifetime: application
+    description: |
+      Events on the startup timeline, in millis since process creation.
+      Previously carried in Legacy "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - sfoster@mozilla.com
+      - session-restore-telemetry-alerts@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+    labels:
+      - sessionRestoreInitialized
+      - sessionRestoreRestoring
+
 browser.engagement:
   sessionrestore_interstitial:
     type: labeled_counter

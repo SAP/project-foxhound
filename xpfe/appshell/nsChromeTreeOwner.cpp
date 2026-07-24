@@ -233,14 +233,6 @@ nsChromeTreeOwner::GetHasPrimaryContent(bool* aResult) {
 // nsChromeTreeOwner::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP nsChromeTreeOwner::InitWindow(nsIWidget* parentWidget, int32_t x,
-                                            int32_t y, int32_t cx, int32_t cy) {
-  // Ignore widget parents for now.  Don't think those are a valid thing to
-  // call.
-  NS_ENSURE_SUCCESS(SetPositionAndSize(x, y, cx, cy, 0), NS_ERROR_FAILURE);
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsChromeTreeOwner::Destroy() {
   NS_ENSURE_STATE(mAppWindow);
   return mAppWindow->Destroy();
@@ -317,11 +309,6 @@ nsChromeTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
     return NS_ERROR_NOT_IMPLEMENTED;
   }
   return GetRootShellSize(aCX, aCY);
-}
-
-NS_IMETHODIMP nsChromeTreeOwner::Repaint(bool aForce) {
-  NS_ENSURE_STATE(mAppWindow);
-  return mAppWindow->Repaint(aForce);
 }
 
 NS_IMETHODIMP nsChromeTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {

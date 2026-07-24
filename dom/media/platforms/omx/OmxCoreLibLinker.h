@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __OmxCoreLibLinker_h__
-#define __OmxCoreLibLinker_h__
+#ifndef OmxCoreLibLinker_h_
+#define OmxCoreLibLinker_h_
 
 struct PRLibrary;
 
@@ -33,4 +33,4 @@ class OmxCoreLibLinker {
 
 }  // namespace mozilla
 
-#endif  // __OmxCoreLibLinker_h__
+#endif  // OmxCoreLibLinker_h_

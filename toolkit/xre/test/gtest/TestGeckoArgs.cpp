@@ -5,7 +5,6 @@
 
 #include "gtest/gtest.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/GeckoArgs.h"
 
 using namespace mozilla;

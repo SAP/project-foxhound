@@ -6,15 +6,15 @@
 
 #include "gtest/gtest.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/dom/ProcessIsolation.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/SystemPrincipal.h"
+#include "mozilla/dom/ProcessIsolation.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/gtest/MozHelpers.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/SystemPrincipal.h"
-#include "mozilla/StaticPrefs_browser.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 /**
@@ -21,12 +21,12 @@ export class WikipediaSuggestions extends SuggestProvider {
     return [
       "wikipediaFeatureGate",
       "suggest.wikipedia",
-      "suggest.quicksuggest.nonsponsored",
+      "suggest.quicksuggest.all",
     ];
   }
 
-  get primaryUserControlledPreference() {
-    return "suggest.wikipedia";
+  get primaryUserControlledPreferences() {
+    return ["suggest.wikipedia"];
   }
 
   get merinoProvider() {
@@ -48,21 +48,45 @@ export class WikipediaSuggestions extends SuggestProvider {
   }
 
   makeResult(queryContext, suggestion) {
-    return new lazy.UrlbarResult(
-      lazy.UrlbarUtils.RESULT_TYPE.URL,
-      lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+    // Note that Rust uses camelCase, Merino uses snake_case.
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      isNovaSuggestion: true,
+      richSuggestionIconSize: 16,
+      payload: {
         url: suggestion.url,
-        title: suggestion.title,
-        qsSuggestion: [
-          // Merino uses snake_case, so this will be `full_keyword` for it.
-          suggestion.fullKeyword ?? suggestion.full_keyword,
-          lazy.UrlbarUtils.HIGHLIGHT.SUGGESTED,
-        ],
-        isBlockable: true,
-        isManageable: true,
-      })
-    );
+        title: suggestion.fullKeyword ?? suggestion.full_keyword,
+        subtitle: suggestion.title,
+        bottomTextL10n: {
+          id: "urlbar-result-suggestion-recommended",
+        },
+      },
+    });
+  }
+
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   */
+  getResultCommands() {
+    return [
+      {
+        name: "dismiss",
+        l10n: {
+          id: "urlbar-result-menu-dismiss-suggestion",
+        },
+      },
+      { name: "separator" },
+      {
+        name: "manage",
+        l10n: {
+          id: "urlbar-result-menu-manage-firefox-suggest",
+        },
+      },
+    ];
   }
 
   onEngagement(queryContext, controller, details, _searchString) {

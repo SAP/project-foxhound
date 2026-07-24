@@ -647,6 +647,14 @@ CONST_OID ed25519Signature[] = { 0x2B, 0x65, 0x70 };
 /*https://www.rfc-editor.org/rfc/rfc8410#section-3*/
 CONST_OID x25519PublicKey[] = { 0x2b, 0x65, 0x6e };
 
+/*
+ * ML-DSA OIDs
+ * https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration
+ */
+CONST_OID mlDsa44[] = { DSA2, 17 };
+CONST_OID mlDsa65[] = { DSA2, 18 };
+CONST_OID mlDsa87[] = { DSA2, 19 };
+
 #define OI(x)                                  \
     {                                          \
         siDEROID, (unsigned char *)x, sizeof x \
@@ -1285,11 +1293,11 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
        INVALID_CERT_EXTENSION),
 
     OD(aes128_KEY_WRAP, SEC_OID_AES_128_KEY_WRAP,
-       "AES-128 Key Wrap", CKM_NSS_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
+       "AES-128 Key Wrap", CKM_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
     OD(aes192_KEY_WRAP, SEC_OID_AES_192_KEY_WRAP,
-       "AES-192 Key Wrap", CKM_NSS_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
+       "AES-192 Key Wrap", CKM_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
     OD(aes256_KEY_WRAP, SEC_OID_AES_256_KEY_WRAP,
-       "AES-256 Key Wrap", CKM_NSS_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
+       "AES-256 Key Wrap", CKM_AES_KEY_WRAP, INVALID_CERT_EXTENSION),
 
     /* Elliptic Curve Cryptography (ECC) OIDs */
     OD(ansix962ECPublicKey, SEC_OID_ANSIX962_EC_PUBLIC_KEY,
@@ -1789,7 +1797,7 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
     ODE(SEC_OID_APPLY_SSL_POLICY,
         "Apply SSL policy (pseudo-OID)", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
     ODE(SEC_OID_CHACHA20_POLY1305,
-        "ChaCha20-Poly1305", CKM_NSS_CHACHA20_POLY1305, INVALID_CERT_EXTENSION),
+        "ChaCha20-Poly1305", CKM_CHACHA20_POLY1305, INVALID_CERT_EXTENSION),
 
     ODE(SEC_OID_TLS_ECDHE_PSK,
         "TLS ECHDE-PSK key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
@@ -1897,9 +1905,17 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
        "X25519 key exchange", CKM_EC_MONTGOMERY_KEY_PAIR_GEN, INVALID_CERT_EXTENSION),
 
     ODE(SEC_OID_MLKEM768X25519,
-        "ML-KEM-768+X25519 key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+        "X25519+ML-KEM-768 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
     ODE(SEC_OID_TLS_REQUIRE_EMS,
         "TLS Require EMS", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+
+    OD(mlDsa44, SEC_OID_ML_DSA_44, "ML-DSA-44", CKM_ML_DSA, INVALID_CERT_EXTENSION),
+    OD(mlDsa65, SEC_OID_ML_DSA_65, "ML-DSA-65", CKM_ML_DSA, INVALID_CERT_EXTENSION),
+    OD(mlDsa87, SEC_OID_ML_DSA_87, "ML-DSA-87", CKM_ML_DSA, INVALID_CERT_EXTENSION),
+    ODE(SEC_OID_SECP256R1MLKEM768,
+        "SECP256R1+ML-KEM-768 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+    ODE(SEC_OID_SECP384R1MLKEM1024,
+        "SECP384R1+ML-KEM-1024 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
 
 };
 
@@ -2335,6 +2351,35 @@ SECOID_FindOIDTagDescription(SECOidTag tagnum)
 {
     const SECOidData *oidData = SECOID_FindOIDByTag(tagnum);
     return oidData ? oidData->desc : 0;
+}
+
+/*
+ * find an oidtag from a descriptive string. Our tools
+ * have implemented this several times, so it's time to make
+ * it available to everyone.
+ */
+SECOidTag
+SECOID_FindOIDTagFromDescripton(const char *cipherString, size_t len,
+                                PRBool isCipher)
+{
+    SECOidTag tag;
+    SECOidData *oid;
+
+    if (len == (size_t)-1) {
+        len = PORT_Strlen(cipherString);
+    }
+    /* future enhancement: accept dotted oid spec? */
+    for (tag = 1; (oid = SECOID_FindOIDByTag(tag)) != NULL; tag++) {
+        /* only interested in oids that we actually understand */
+        if (isCipher && oid->mechanism == CKM_INVALID_MECHANISM) {
+            continue;
+        }
+        if (PORT_Strncasecmp(oid->desc, cipherString, len) != 0) {
+            continue;
+        }
+        return tag;
+    }
+    return SEC_OID_UNKNOWN;
 }
 
 /* return the total tags, including dymamic tags. NOTE: there is

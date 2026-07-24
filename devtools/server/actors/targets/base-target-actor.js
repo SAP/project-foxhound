@@ -30,6 +30,7 @@ class BaseTargetActor extends Actor {
 
     /**
      * Type of target, a string of Targets.TYPES.
+     *
      * @return {string}
      */
     this.targetType = targetType;
@@ -188,7 +189,7 @@ class BaseTargetActor extends Actor {
    * They are lazily instantiated and so will only be available
    * if the client called at least one of their method.
    *
-   * @param {String} prefix
+   * @param {string} prefix
    *        Prefix for the actor we would like to retrieve.
    *        Defined in devtools/server/actors/utils/actor-registry.js
    */
@@ -205,7 +206,7 @@ class BaseTargetActor extends Actor {
    * Returns true, if the related target scoped actor has already been queried
    * and instantiated via `getTargetScopedActor` method.
    *
-   * @param {String} prefix
+   * @param {string} prefix
    *        See getTargetScopedActor definition
    * @return Boolean
    *         True, if the actor has already been instantiated.
@@ -231,7 +232,7 @@ class BaseTargetActor extends Actor {
    * @param {JSON} options
    *        Configuration object provided by the client.
    *        See target-configuration actor.
-   * @param {Boolean} calledFromDocumentCreate
+   * @param {boolean} calledFromDocumentCreate
    *        True, when this is called with initial configuration when the related target
    *        actor is instantiated.
    */

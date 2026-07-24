@@ -6,7 +6,7 @@ import React from "devtools/client/shared/vendor/react";
 import { button } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-import AccessibleImage from "../AccessibleImage";
+import DebuggerImage from "../DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 
@@ -28,8 +28,8 @@ export function debugBtn(
       pressed: ariaPressed,
       title: tooltip,
     },
-    React.createElement(AccessibleImage, {
-      className: type,
+    React.createElement(DebuggerImage, {
+      name: type,
     })
   );
 }

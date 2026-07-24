@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,14 @@
 #define BASE_SYNCHRONIZATION_LOCK_H_
 
 #include "base/base_export.h"
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/dcheck_is_on.h"
 #include "base/synchronization/lock_impl.h"
 #include "base/thread_annotations.h"
-#include "base/threading/platform_thread.h"
 #include "build/build_config.h"
+
+#if DCHECK_IS_ON()
+#include "base/threading/platform_thread_ref.h"
+#endif
 
 namespace base {
 
@@ -23,22 +25,24 @@ class LOCKABLE BASE_EXPORT Lock {
 #if !DCHECK_IS_ON()
   // Optimized wrapper implementation
   Lock() : lock_() {}
+
+  Lock(const Lock&) = delete;
+  Lock& operator=(const Lock&) = delete;
+
   ~Lock() {}
 
-  // TODO(lukasza): https://crbug.com/831825: Add EXCLUSIVE_LOCK_FUNCTION
-  // annotation to Acquire method and similar annotations to Release and Try
-  // methods (here and in the #else branch).
-  void Acquire() { lock_.Lock(); }
-  void Release() { lock_.Unlock(); }
+  void Acquire() EXCLUSIVE_LOCK_FUNCTION() { lock_.Lock(); }
+  void Release() UNLOCK_FUNCTION() { lock_.Unlock(); }
 
   // If the lock is not held, take it and return true. If the lock is already
   // held by another thread, immediately return false. This must not be called
   // by a thread already holding the lock (what happens is undefined and an
   // assertion may fail).
-  bool Try() { return lock_.Try(); }
+  bool Try() EXCLUSIVE_TRYLOCK_FUNCTION(true) { return lock_.Try(); }
 
   // Null implementation if not debug.
   void AssertAcquired() const ASSERT_EXCLUSIVE_LOCK() {}
+  void AssertNotHeld() const {}
 #else
   Lock();
   ~Lock();
@@ -46,16 +50,16 @@ class LOCKABLE BASE_EXPORT Lock {
   // NOTE: We do not permit recursive locks and will commonly fire a DCHECK() if
   // a thread attempts to acquire the lock a second time (while already holding
   // it).
-  void Acquire() {
+  void Acquire() EXCLUSIVE_LOCK_FUNCTION() {
     lock_.Lock();
     CheckUnheldAndMark();
   }
-  void Release() {
+  void Release() UNLOCK_FUNCTION() {
     CheckHeldAndUnmark();
     lock_.Unlock();
   }
 
-  bool Try() {
+  bool Try() EXCLUSIVE_TRYLOCK_FUNCTION(true) {
     bool rv = lock_.Try();
     if (rv) {
       CheckUnheldAndMark();
@@ -64,17 +68,18 @@ class LOCKABLE BASE_EXPORT Lock {
   }
 
   void AssertAcquired() const ASSERT_EXCLUSIVE_LOCK();
+  void AssertNotHeld() const;
 #endif  // DCHECK_IS_ON()
 
   // Whether Lock mitigates priority inversion when used from different thread
   // priorities.
   static bool HandlesMultipleThreadPriorities() {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
     // Windows mitigates priority inversion by randomly boosting the priority of
     // ready threads.
     // https://msdn.microsoft.com/library/windows/desktop/ms684831.aspx
     return true;
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
     // POSIX mitigates priority inversion by setting the priority of a thread
     // holding a Lock to the maximum priority of any other thread waiting on it.
     return internal::LockImpl::PriorityInheritanceAvailable();
@@ -105,25 +110,27 @@ class LOCKABLE BASE_EXPORT Lock {
 
   // Platform specific underlying lock implementation.
   internal::LockImpl lock_;
-
-  DISALLOW_COPY_AND_ASSIGN(Lock);
 };
 
 // A helper class that acquires the given Lock while the AutoLock is in scope.
 using AutoLock = internal::BasicAutoLock<Lock>;
+
+// A helper class that tries to acquire the given Lock while the AutoTryLock is
+// in scope.
+using AutoTryLock = internal::BasicAutoTryLock<Lock>;
 
 // AutoUnlock is a helper that will Release() the |lock| argument in the
 // constructor, and re-Acquire() it in the destructor.
 using AutoUnlock = internal::BasicAutoUnlock<Lock>;
 
 // Like AutoLock but is a no-op when the provided Lock* is null. Inspired from
-// absl::MutexLockMaybe. Use this instead of base::Optional<base::AutoLock> to
+// absl::MutexLockMaybe. Use this instead of absl::optional<base::AutoLock> to
 // get around -Wthread-safety-analysis warnings for conditional locking.
 using AutoLockMaybe = internal::BasicAutoLockMaybe<Lock>;
 
 // Like AutoLock but permits Release() of its mutex before destruction.
 // Release() may be called at most once. Inspired from
-// absl::ReleasableMutexLock. Use this instead of base::Optional<base::AutoLock>
+// absl::ReleasableMutexLock. Use this instead of absl::optional<base::AutoLock>
 // to get around -Wthread-safety-analysis warnings for AutoLocks that are
 // explicitly released early (prefer proper scoping to this).
 using ReleasableAutoLock = internal::BasicReleasableAutoLock<Lock>;

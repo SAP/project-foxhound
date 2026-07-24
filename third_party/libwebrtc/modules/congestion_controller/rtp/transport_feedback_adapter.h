@@ -20,6 +20,7 @@
 
 #include "api/transport/network_types.h"
 #include "api/units/data_size.h"
+#include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/congestion_control_feedback.h"
@@ -35,30 +36,26 @@ struct PacketFeedback {
   // Time corresponding to when this object was created.
   Timestamp creation_time = Timestamp::MinusInfinity();
   SentPacket sent;
-  // Time corresponding to when the packet was received. Timestamped with the
-  // receiver's clock. For unreceived packet, Timestamp::PlusInfinity() is
-  // used.
-  Timestamp receive_time = Timestamp::PlusInfinity();
 
   // The network route that this packet is associated with.
-  rtc::NetworkRoute network_route;
+  NetworkRoute network_route;
 
   uint32_t ssrc = 0;
   uint16_t rtp_sequence_number = 0;
+  bool is_retransmission = false;
 };
 
 class InFlightBytesTracker {
  public:
   void AddInFlightPacketBytes(const PacketFeedback& packet);
   void RemoveInFlightPacketBytes(const PacketFeedback& packet);
-  DataSize GetOutstandingData(const rtc::NetworkRoute& network_route) const;
+  DataSize GetOutstandingData(const NetworkRoute& network_route) const;
 
  private:
   struct NetworkRouteComparator {
-    bool operator()(const rtc::NetworkRoute& a,
-                    const rtc::NetworkRoute& b) const;
+    bool operator()(const NetworkRoute& a, const NetworkRoute& b) const;
   };
-  std::map<rtc::NetworkRoute, DataSize, NetworkRouteComparator> in_flight_data_;
+  std::map<NetworkRoute, DataSize, NetworkRouteComparator> in_flight_data_;
 };
 
 // TransportFeedbackAdapter converts RTCP feedback packets to RTCP agnostic per
@@ -76,7 +73,7 @@ class TransportFeedbackAdapter {
                  Timestamp creation_time);
 
   std::optional<SentPacket> ProcessSentPacket(
-      const rtc::SentPacket& sent_packet);
+      const SentPacketInfo& sent_packet);
 
   std::optional<TransportPacketsFeedback> ProcessTransportFeedback(
       const rtcp::TransportFeedback& feedback,
@@ -86,7 +83,7 @@ class TransportFeedbackAdapter {
       const rtcp::CongestionControlFeedback& feedback,
       Timestamp feedback_receive_time);
 
-  void SetNetworkRoute(const rtc::NetworkRoute& network_route);
+  void SetNetworkRoute(const NetworkRoute& network_route);
 
   DataSize GetOutstandingData() const;
 
@@ -123,7 +120,9 @@ class TransportFeedbackAdapter {
   // sequence number.
   int64_t last_ack_seq_num_ = -1;
   InFlightBytesTracker in_flight_;
-  rtc::NetworkRoute network_route_;
+  NetworkRoute network_route_;
+
+  TimeDelta smoothed_rtt_ = TimeDelta::PlusInfinity();
 
   Timestamp current_offset_ = Timestamp::MinusInfinity();
 

@@ -9,11 +9,7 @@ ChromeUtils.defineESModuleGetters(this, {
 
 async function testExecuteBrowserActionWithOptions(options = {}) {
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(
-    gURLBar.textbox,
-    { type: "mouseover" },
-    window
-  );
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
   let extensionOptions = {};
 
@@ -194,11 +190,7 @@ add_task(
 
 add_task(async function test_fallback_to_execute_browser_action_in_mv3() {
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(
-    gURLBar.textbox,
-    { type: "mouseover" },
-    window
-  );
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
   const EXTENSION_ID = "@test-action";
   const extMV2 = ExtensionTestUtils.loadExtension({

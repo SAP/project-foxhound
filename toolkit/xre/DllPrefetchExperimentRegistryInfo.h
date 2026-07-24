@@ -7,7 +7,6 @@
 #ifndef mozilla_DllPrefetchExperimentRegistryInfo_h
 #define mozilla_DllPrefetchExperimentRegistryInfo_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "nsWindowsHelpers.h"
 

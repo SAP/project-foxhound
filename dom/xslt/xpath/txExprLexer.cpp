@@ -8,9 +8,10 @@
  */
 
 #include "txExprLexer.h"
+
+#include "nsError.h"
 #include "nsGkAtoms.h"
 #include "nsString.h"
-#include "nsError.h"
 #include "txXMLUtils.h"
 
 /**

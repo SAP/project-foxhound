@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txBufferingHandler_h__
-#define txBufferingHandler_h__
+#ifndef txBufferingHandler_h_
+#define txBufferingHandler_h_
 
 #include "mozilla/UniquePtr.h"
-#include "txXMLEventHandler.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "txXMLEventHandler.h"
 
 class txOutputTransaction;
 
@@ -42,4 +42,4 @@ class txBufferingHandler : public txAXMLEventHandler {
   bool mCanAddAttribute;
 };
 
-#endif /* txBufferingHandler_h__ */
+#endif /* txBufferingHandler_h_ */

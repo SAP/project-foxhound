@@ -150,13 +150,13 @@ The Rules side panel of the DevTools is smarter when it comes to pasting CSS int
 Toggle pseudo-classes
 ---------------------
 
-Firebug lets you toggle the CSS `pseudo-classes <https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-classes>`_ `:hover <https://developer.mozilla.org/en-US/docs/Web/CSS/:hover>`_, `:active <https://developer.mozilla.org/en-US/docs/Web/CSS/:active>`_ and `:focus <https://developer.mozilla.org/en-US/docs/Web/CSS/:focus>`_ for an element via the options menu of the Style side panel. In the DevTools there are two ways to do the same. The first one is to toggle them via the pseudo-class panel within the Rules side panel. The second one is to right-click and element within the node view and toggle the pseudo-classes via the :ref:`context menu <page_inspector_how_to_examine_and_edit_html_context_menu_reference>`.
+Firebug lets you toggle the CSS `pseudo-classes <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/Pseudo-classes>`_ `:hover <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:hover>`_, `:active <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:active>`_ and `:focus <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus>`_ for an element via the options menu of the Style side panel. In the DevTools there are two ways to do the same. The first one is to toggle them via the pseudo-class panel within the Rules side panel. The second one is to right-click and element within the node view and toggle the pseudo-classes via the :ref:`context menu <page_inspector_how_to_examine_and_edit_html_context_menu_reference>`.
 
 
 Examine CSS shorthand properties
 --------------------------------
 
-CSS `shorthand properties <https://developer.mozilla.org/en-US/docs/Web/CSS/Shorthand_properties>`_ can be split into their related longhand properties by setting the option *Expand Shorthand Properties* within the Style side panel. The DevTools' Rules panel is a bit smarter and allows you to expand individual shorthand properties by clicking the twisty besides them.
+CSS `shorthand properties <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Shorthand_properties>`_ can be split into their related longhand properties by setting the option *Expand Shorthand Properties* within the Style side panel. The DevTools' Rules panel is a bit smarter and allows you to expand individual shorthand properties by clicking the twisty besides them.
 
 
 Only show applied styles

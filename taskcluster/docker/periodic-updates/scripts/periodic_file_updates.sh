@@ -13,7 +13,7 @@ Usage: $(basename "$0") [-p product]
            # Use archive.m.o instead of the taskcluster index to get xpcshell
            [--use-ftp-builds]
            # Use git rather than hg. Using git does not currently support cloning (use
-           # --skip-repo as well).
+           # --skip-clone as well).
            [--use-git]
            # One (or more) of the following actions must be specified.
            --hsts | --hpkp | --remote-settings | --suffix-list | --mobile-experiments | --ct-logs
@@ -119,7 +119,11 @@ if [ "${TOPSRCDIR}" == "" ]; then
 fi
 
 case "${BRANCH}" in
-  mozilla-central|comm-central|try )
+  try)
+    # don't clone try, that can only end in sadness
+    HGREPO="https://${HGHOST}/mozilla-central"
+    ;;
+  mozilla-central|comm-central )
     HGREPO="https://${HGHOST}/${BRANCH}"
     ;;
   mozilla-*|comm-* )
@@ -131,12 +135,11 @@ case "${BRANCH}" in
 esac
 
 BROWSER_ARCHIVE="target.tar.xz"
-TESTS_ARCHIVE="target.common.tests.tar.gz"
+TESTS_ARCHIVE="target.common.tests.tar.zst"
 
-UNPACK_CMD="tar Jxf"
+UNPACK_CMD="tar xf"
 COMMIT_AUTHOR='ffxbld <ffxbld@mozilla.com>'
 WGET="wget -nv"
-UNTAR="tar -zxf"
 DIFF="$(command -v diff) -u"
 JQ="$(command -v jq)"
 
@@ -275,7 +278,7 @@ function unpack_artifacts {
   ${UNPACK_CMD} "${BROWSER_ARCHIVE}"
   mkdir -p tests
   cd tests
-  ${UNTAR} "../${TESTS_ARCHIVE}"
+  ${UNPACK_CMD} "../${TESTS_ARCHIVE}"
   cd "${BASEDIR}"
   cp tests/bin/xpcshell "${PRODUCT}"
 }
@@ -407,9 +410,18 @@ function compare_remote_settings_files {
 
   # 1. List remote settings collections from server.
   echo "INFO: fetch remote settings list from server"
-  ${WGET} -qO- "${REMOTE_SETTINGS_SERVER}/buckets/monitor/collections/changes/records" |\
-    ${JQ} -r '.data[] | .bucket+"/"+.collection+"/"+(.last_modified|tostring)' |\
-    # 2. For each entry ${bucket, collection, last_modified}
+  changes_lines="$(
+    ${WGET} -O- \
+      "${REMOTE_SETTINGS_SERVER}/buckets/monitor/collections/changes/changeset?_expected=0" |
+        ${JQ} -r '.changes[] | .bucket+"/"+.collection+"/"+(.last_modified|tostring)'
+  )"
+  line_count="$(printf '%s\n' "${changes_lines}" | wc -l | xargs)"
+  if [ "${line_count}" -le 1 ]; then
+    echo "ERROR: no changes pulled from server" >&2
+    exit 15
+  fi
+
+  # 2. For each entry ${bucket, collection, last_modified}
   while IFS="/" read -r bucket collection last_modified; do
 
     # 3. Check to see if the collection exists in the dump directory of the repository,
@@ -467,7 +479,7 @@ function compare_remote_settings_files {
     else
       ${HG} --cwd "${TOPSRCDIR}" purge services/settings/dumps/main/search-config-icons
     fi
-  done
+  done <<< "${changes_lines}"
 
   echo "INFO: diffing old/new remote settings dumps..."
   create_repo_diff "${REMOTE_SETTINGS_DIR}" "${REMOTE_SETTINGS_DIFF_ARTIFACT}"
@@ -598,10 +610,18 @@ function push_repo {
   then
     return 1
   fi
-  # Clean up older review requests
+  # Clean up older review requests of the same type as this run.
+  # Pinning updates (HSTS/HPKP) and periodic updates are separate tasks and
+  # must not abandon each other's patches.
   # Turn  Needs Review D624: No bug, Automated HSTS ...
   # into D624
-  for diff in $($ARC list | grep "Needs Review" | grep -E "${BRANCH} repo-update" | awk 'match($0, /D[0-9]+[^: ]/) { print substr($0, RSTART, RLENGTH)  }')
+  ALL_DIFFS=$($ARC list | grep "Needs Review" | grep -E "${BRANCH} repo-update" || true)
+  if [ "${DO_HSTS}" == "true" ] || [ "${DO_HPKP}" == "true" ]; then
+    OLDER_DIFFS=$(echo "${ALL_DIFFS}" | grep -E "HSTS|HPKP" || true)
+  else
+    OLDER_DIFFS=$(echo "${ALL_DIFFS}" | grep -vE "HSTS|HPKP" || true)
+  fi
+  for diff in $(echo "${OLDER_DIFFS}" | awk 'match($0, /D[0-9]+[^: ]/) { print substr($0, RSTART, RLENGTH)  }')
   do
     echo "Removing old request $diff"
     # There is no 'arc abandon', see bug 1452082

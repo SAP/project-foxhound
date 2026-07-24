@@ -4,7 +4,7 @@
 
 "use strict";
 
-const HEURISTIC_FALLBACK_PROVIDERNAME = "HeuristicFallback";
+const HEURISTIC_FALLBACK_PROVIDERNAME = "UrlbarProviderHeuristicFallback";
 
 const origin = "example.com";
 
@@ -29,6 +29,7 @@ add_task(async function trailingSlash() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
 
@@ -54,6 +55,7 @@ add_task(async function trailingSlashWWW() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://www.example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(`${origin}/`, { isPrivate: false });
@@ -77,6 +79,7 @@ add_task(async function port() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("ex", { isPrivate: false });
@@ -101,6 +104,7 @@ add_task(async function portPartial() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(`${origin}:8`, { isPrivate: false });
@@ -125,6 +129,7 @@ add_task(async function preserveCase() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("EXaM", { isPrivate: false });
@@ -150,6 +155,7 @@ add_task(async function preserveCasePort() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("EXaM", { isPrivate: false });
@@ -173,6 +179,7 @@ add_task(async function portNoMatch1() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(`${origin}:89`, { isPrivate: false });
@@ -182,7 +189,7 @@ add_task(async function portNoMatch1() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${origin}:89/`,
-        fallbackTitle: `${origin}:89/`,
+        title: `${origin}:89/`,
         iconUri: "",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -197,6 +204,7 @@ add_task(async function portNoMatch2() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(`${origin}:9`, { isPrivate: false });
@@ -206,7 +214,7 @@ add_task(async function portNoMatch2() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${origin}:9/`,
-        fallbackTitle: `${origin}:9/`,
+        title: `${origin}:9/`,
         iconUri: "",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -221,6 +229,7 @@ add_task(async function trailingSlash_2() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("example/", { isPrivate: false });
@@ -230,7 +239,7 @@ add_task(async function trailingSlash_2() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://example/",
-        fallbackTitle: "example/",
+        title: "example/",
         iconUri: "page-icon:http://example/",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -245,6 +254,7 @@ add_task(async function multidotted() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://www.example.co.jp:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("www.example.co.", { isPrivate: false });
@@ -276,7 +286,10 @@ add_task(async function test_ip() {
     "[::1]/",
   ]) {
     info("testing " + str);
-    await PlacesTestUtils.addVisits("http://" + str);
+    await PlacesTestUtils.addVisits({
+      url: "http://" + str,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
     for (let i = 1; i < str.length; ++i) {
       let context = createContext(str.substring(0, i), { isPrivate: false });
       await check_results({
@@ -302,6 +315,7 @@ add_task(async function large_number_host() {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://12345example.it:8888/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("1234", { isPrivate: false });
@@ -331,34 +345,55 @@ add_task(async function groupByHost() {
   // both so that alone, neither http nor https would be autofilled, but added
   // together they should be.
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
+    {
+      uri: "http://example.com/",
+      visitDate: daysAgo(30),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
 
-    { uri: "https://example.com/" },
-    { uri: "https://example.com/" },
+    // Have a higher frecency by being more recent. But not so recent that it
+    // has a higher frecency than other visits that bump the origins threshold.
+    {
+      uri: "https://example.com/",
+      visitDate: daysAgo(7),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
 
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
+    {
+      uri: "https://mozilla.org/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://mozilla.org/1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+      visitDate: daysAgo(1),
+    },
+
+    // Add more origins to make the threshold higher
+    {
+      uri: "https://mozilla.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://mozilla.ca/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
 
-  let httpFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    { url: "http://example.com/" }
+  let httpFrec = await getOriginFrecency("http://", "example.com");
+  let httpsFrec = await getOriginFrecency("https://", "example.com");
+  let otherFrec = await getOriginFrecency("https://", "mozilla.org");
+
+  Assert.less(
+    httpFrec,
+    httpsFrec,
+    "Frecency http://example.com is less than https://example.com"
   );
-  let httpsFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    { url: "https://example.com/" }
+  Assert.less(
+    httpsFrec,
+    otherFrec,
+    "Frecency of https://example.com is less than https://mozilla.org"
   );
-  let otherFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    { url: "https://mozilla.org/" }
-  );
-  Assert.less(httpFrec, httpsFrec, "Sanity check");
-  Assert.less(httpsFrec, otherFrec, "Sanity check");
 
   // Make sure the frecencies of the three origins are as expected in relation
   // to the threshold.
@@ -406,45 +441,47 @@ add_task(async function groupByHostNonDefaultStddevMultiplier() {
   );
 
   await PlacesTestUtils.addVisits([
-    { uri: "http://example.com/" },
-    { uri: "http://example.com/" },
+    {
+      uri: "http://example.com/",
+      visitDate: daysAgo(30),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
 
-    { uri: "https://example.com/" },
-    { uri: "https://example.com/" },
-    { uri: "https://example.com/" },
+    {
+      uri: "https://example.com/",
+      visitDate: daysAgo(7),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
 
-    { uri: "https://foo.com/" },
-    { uri: "https://foo.com/" },
-    { uri: "https://foo.com/" },
+    {
+      uri: "https://mozilla.org/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://mozilla.org/1",
+      visitDate: daysAgo(1),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://mozilla.org/2",
+      visitDate: daysAgo(2),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
 
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
-    { uri: "https://mozilla.org/" },
+    // Add more origins to make the threshold higher
+    {
+      uri: "https://mozilla.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "https://mozilla.ca/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
 
-  let httpFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    {
-      url: "http://example.com/",
-    }
-  );
-  let httpsFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    {
-      url: "https://example.com/",
-    }
-  );
-  let otherFrec = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    {
-      url: "https://mozilla.org/",
-    }
-  );
+  let httpFrec = await getOriginFrecency("http://", "example.com");
+  let httpsFrec = await getOriginFrecency("https://", "example.com");
+  let otherFrec = await getOriginFrecency("https://", "mozilla.org");
   Assert.less(httpFrec, httpsFrec, "Sanity check");
   Assert.less(httpsFrec, otherFrec, "Sanity check");
 
@@ -505,6 +542,7 @@ add_task(async function suggestHistoryFalse_bookmark_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: baseURL + "other1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(search, { isPrivate: false });
@@ -522,6 +560,7 @@ add_task(async function suggestHistoryFalse_bookmark_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: bookmarkedURL,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   context = createContext(search, { isPrivate: false });
@@ -539,6 +578,7 @@ add_task(async function suggestHistoryFalse_bookmark_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: baseURL + "other2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   context = createContext(search, { isPrivate: false });
@@ -565,7 +605,7 @@ add_task(async function suggestHistoryFalse_bookmark_multiple() {
     matches: [
       makeVisitResult(context, {
         uri: baseURL,
-        fallbackTitle: UrlbarTestUtils.trimURL(baseURL),
+        title: UrlbarTestUtils.trimURL(baseURL),
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -599,6 +639,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: baseURL + "other1",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext(search, { isPrivate: false });
@@ -608,7 +649,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${search}/`,
-        fallbackTitle: `${search}/`,
+        title: `${search}/`,
         iconUri: "",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -619,6 +660,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: bookmarkedURL,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   context = createContext(search, { isPrivate: false });
@@ -628,7 +670,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${search}/`,
-        fallbackTitle: `${search}/`,
+        title: `${search}/`,
         iconUri: "",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -639,6 +681,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
   await PlacesTestUtils.addVisits([
     {
       uri: baseURL + "other2",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   context = createContext(search, { isPrivate: false });
@@ -648,7 +691,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `${search}/`,
-        fallbackTitle: `${search}/`,
+        title: `${search}/`,
         iconUri: "",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -668,7 +711,7 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
     matches: [
       makeVisitResult(context, {
         uri: baseURL,
-        fallbackTitle: UrlbarTestUtils.trimURL(baseURL),
+        title: UrlbarTestUtils.trimURL(baseURL),
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -685,9 +728,18 @@ add_task(async function suggestHistoryFalse_bookmark_prefix_multiple() {
 // not be included in the results since it dupes the autofill result.
 add_task(async function searchParams() {
   await PlacesTestUtils.addVisits([
-    "http://example.com/",
-    "http://example.com/?",
-    "http://example.com/?foo",
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com/?",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "http://example.com/?foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
 
   // First, do a search with autofill disabled to make sure the visits were
@@ -746,9 +798,18 @@ add_task(async function searchParams() {
 // substantive difference.)
 add_task(async function searchParams_https() {
   await PlacesTestUtils.addVisits([
-    "https://example.com/",
-    "https://example.com/?",
-    "https://example.com/?foo",
+    {
+      url: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "https://example.com/?",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      url: "https://example.com/?foo",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
 
   // First, do a search with autofill disabled to make sure the visits were
@@ -805,7 +866,9 @@ add_task(async function searchParams_https() {
 add_task(async function originLooksLikePrefix() {
   let hostAndPort = "localhost:8888";
   let address = `http://${hostAndPort}/`;
-  await PlacesTestUtils.addVisits([{ uri: address }]);
+  await PlacesTestUtils.addVisits([
+    { uri: address, transition: PlacesUtils.history.TRANSITION_TYPED },
+  ]);
 
   // addTestSuggestionsEngine adds a search engine
   // with localhost as a server, so we have to disable the
@@ -857,7 +920,7 @@ add_task(async function about() {
         context =>
           makeVisitResult(context, {
             uri: "about:blan",
-            fallbackTitle: "about:blan",
+            title: "about:blan",
             source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
             heuristic: true,
           }),
@@ -920,17 +983,17 @@ add_task(async function nullTitle() {
         // Set title of visits data to an empty string causes
         // the title to be null in the database.
         title: "",
-        frecency: 100,
+        frecencyBucket: "high",
       },
       {
         uri: "https://www.example.com/",
-        title: "high frecency",
-        frecency: 50,
+        title: "medium frecency",
+        frecencyBucket: "medium",
       },
       {
         uri: "http://www.example.com/",
         title: "low frecency",
-        frecency: 1,
+        frecencyBucket: "low",
       },
     ],
     input: "example.com",
@@ -940,12 +1003,12 @@ add_task(async function nullTitle() {
       matches: context => [
         makeVisitResult(context, {
           uri: "http://example.com/",
-          title: "high frecency",
+          title: "medium frecency",
           heuristic: true,
         }),
         makeVisitResult(context, {
           uri: "https://www.example.com/",
-          title: "high frecency",
+          title: "medium frecency",
         }),
       ],
     },
@@ -958,17 +1021,17 @@ add_task(async function domainTitle() {
       {
         uri: "http://example.com/",
         title: "example.com",
-        frecency: 100,
+        frecencyBucket: "high",
       },
       {
         uri: "https://www.example.com/",
         title: "",
-        frecency: 50,
+        frecencyBucket: "medium",
       },
       {
         uri: "http://www.example.com/",
         title: "lowest frecency but has title",
-        frecency: 1,
+        frecencyBucket: "low",
       },
     ],
     input: "example.com",
@@ -983,7 +1046,7 @@ add_task(async function domainTitle() {
         }),
         makeVisitResult(context, {
           uri: "https://www.example.com/",
-          title: "www.example.com",
+          title: "",
         }),
       ],
     },
@@ -996,12 +1059,12 @@ add_task(async function exactMatchedTitle() {
       {
         uri: "http://example.com/",
         title: "exact match",
-        frecency: 50,
+        frecencyBucket: "medium",
       },
       {
         uri: "https://www.example.com/",
         title: "high frecency uri",
-        frecency: 100,
+        frecencyBucket: "high",
       },
     ],
     input: "http://example.com/",
@@ -1024,20 +1087,55 @@ add_task(async function exactMatchedTitle() {
 });
 
 async function doTitleTest({ visits, input, expected }) {
-  await PlacesTestUtils.addVisits(visits);
-  for (const { uri, frecency } of visits) {
-    // Prepare data.
-    await PlacesUtils.withConnectionWrapper("test::doTitleTest", async db => {
-      await db.execute(
-        `UPDATE moz_places SET frecency = :frecency, recalc_frecency=0 WHERE url = :url`,
-        {
-          frecency,
-          url: uri,
-        }
-      );
-      await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-    });
+  for (let visit of visits) {
+    switch (visit.frecencyBucket) {
+      case "high": {
+        await PlacesTestUtils.addVisits({
+          title: visit.title,
+          uri: visit.uri,
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        });
+        break;
+      }
+      case "medium": {
+        await PlacesTestUtils.addVisits({ title: visit.title, uri: visit.uri });
+        break;
+      }
+      case "low": {
+        // Non-bookmarked sponsors are categorized as low.
+        await PlacesTestUtils.addVisits({
+          title: visit.title,
+          uri: visit.uri,
+        });
+        // Add visits doesn't allow you to set the visit source.
+        await PlacesUtils.withConnectionWrapper("setVisitSource", async db => {
+          await db.execute(
+            `
+            UPDATE moz_historyvisits
+            SET source = :source
+            WHERE place_id = (SELECT id FROM moz_places WHERE url = :url)`,
+            {
+              url: visit.uri,
+              source: PlacesUtils.history.VISIT_SOURCE_SPONSORED,
+            }
+          );
+          await db.execute(
+            `
+            UPDATE moz_places
+            SET recalc_frecency = 1
+            WHERE id = (SELECT id FROM moz_places WHERE url = :url)`,
+            {
+              url: visit.uri,
+            }
+          );
+        });
+        await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+        break;
+      }
+    }
   }
+
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   const context = createContext(input, { isPrivate: false });
   await check_results({

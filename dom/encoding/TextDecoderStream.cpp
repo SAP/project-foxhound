@@ -6,15 +6,15 @@
 
 #include "mozilla/dom/TextDecoderStream.h"
 
-#include "nsContentUtils.h"
-#include "nsIGlobalObject.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/BufferSourceBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TextDecoderStreamBinding.h"
-#include "mozilla/dom/TransformerCallbackHelpers.h"
 #include "mozilla/dom/TransformStream.h"
+#include "mozilla/dom/TransformerCallbackHelpers.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsContentUtils.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

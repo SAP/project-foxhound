@@ -6,8 +6,8 @@
 
 #include "GroupInfo.h"
 
-#include "mozilla/dom/quota/AssertionsImpl.h"
 #include "OriginInfo.h"
+#include "mozilla/dom/quota/AssertionsImpl.h"
 
 namespace mozilla::dom::quota {
 

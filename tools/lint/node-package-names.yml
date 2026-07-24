@@ -11,6 +11,7 @@ node-package-names:
         # ThirdPartyPaths.txt.
         - toolkit/components/normandy/actions/schemas/package.json
         - tools/lint/eslint/eslint-plugin-mozilla/package.json
+        - devtools/client/shared/components/reps/package.json
     extensions: ['json']
     support-files:
         - 'tools/lint/node-package-names/**'

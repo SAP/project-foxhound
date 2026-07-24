@@ -432,7 +432,7 @@ class CustomTabConfigHelperTest {
             customTabMenuInsertIndex = 1,
         )
 
-        assertEquals(5, customTabMenu!!.items.size)
+        assertEquals(5, customTabMenu.items.size)
         assertEquals(defaultItems[0], customTabMenu.items[0])
         assertTrue(customTabMenu.items[1] is SimpleBrowserMenuItem)
         assertTrue(customTabMenu.items[2] is SimpleBrowserMenuItem)

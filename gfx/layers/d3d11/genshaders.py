@@ -95,7 +95,7 @@ def run_fxc(shader_model, shader_file, shader_name, output_fp):
     with ScopedTempFilename() as temp_filename:
         argv += [f"-Fh{os.path.relpath(temp_filename)}"]
 
-        sys.stdout.write("{0}\n".format(" ".join(argv)))
+        sys.stdout.write("{}\n".format(" ".join(argv)))
         sys.stdout.flush()
         proc_stdout = subprocess.check_output(argv)
         proc_stdout = decode_console_text(sys.stdout, proc_stdout)

@@ -5,24 +5,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef ACCESSIBLE_MAC_MOZTEXTACCESSIBLE_H_
+#define ACCESSIBLE_MAC_MOZTEXTACCESSIBLE_H_
+
 #import "mozAccessible.h"
 
-@interface mozTextAccessible : mozAccessible
-
-// override
-- (id)moxValue;
-
-// override
-- (id)moxRequired;
-
-// override
-- (NSString*)moxInvalid;
+@interface mozAccessible (TextField)
 
 // override
 - (NSNumber*)moxInsertionPointLineNumber;
-
-// override
-- (NSString*)moxRole;
 
 // override
 - (NSNumber*)moxNumberOfCharacters;
@@ -35,9 +26,6 @@
 
 // override
 - (NSValue*)moxVisibleCharacterRange;
-
-// override
-- (BOOL)moxBlockSelector:(SEL)selector;
 
 // override
 - (void)moxSetValue:(id)value;
@@ -66,16 +54,15 @@
 // override
 - (NSValue*)moxBoundsForRange:(NSValue*)range;
 
-#pragma mark - mozAccessible
-
 // override
+- (BOOL)moxIsTextField;
+
+- (BOOL)blockTextFieldMethod:(SEL)selector;
+
 - (void)handleAccessibleTextChangeEvent:(NSString*)change
                                inserted:(BOOL)isInserted
                             inContainer:(mozilla::a11y::Accessible*)container
                                      at:(int32_t)start;
-
-// override
-- (void)handleAccessibleEvent:(uint32_t)eventType;
 
 @end
 
@@ -106,3 +93,5 @@
 - (NSValue*)moxBoundsForRange:(NSValue*)range;
 
 @end
+
+#endif  // ACCESSIBLE_MAC_MOZTEXTACCESSIBLE_H_

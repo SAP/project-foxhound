@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsINodeList_h___
-#define nsINodeList_h___
+#ifndef nsINodeList_h_
+#define nsINodeList_h_
 
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
 #include "nsIContent.h"
+#include "nsISupports.h"
+#include "nsWrapperCache.h"
 
 // IID for the nsINodeList interface
 #define NS_INODELIST_IID \
@@ -45,4 +45,4 @@ class nsINodeList : public nsISupports, public nsWrapperCache {
   }
 };
 
-#endif /* nsINodeList_h___ */
+#endif /* nsINodeList_h_ */

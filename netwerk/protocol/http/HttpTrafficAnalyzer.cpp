@@ -8,7 +8,6 @@
 
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-#include "mozilla/Unused.h"
 #include "nsSocketTransportService2.h"
 
 namespace mozilla {

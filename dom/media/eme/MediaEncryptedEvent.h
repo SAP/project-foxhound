@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_MediaKeyNeededEvent_h__
-#define mozilla_dom_MediaKeyNeededEvent_h__
+#ifndef mozilla_dom_MediaKeyNeededEvent_h_
+#define mozilla_dom_MediaKeyNeededEvent_h_
 
 #include <cstdint>
+
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/dom/Event.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
@@ -57,4 +57,4 @@ class MediaEncryptedEvent final : public Event {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_MediaKeyNeededEvent_h__
+#endif  // mozilla_dom_MediaKeyNeededEvent_h_

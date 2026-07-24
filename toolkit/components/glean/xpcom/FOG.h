@@ -22,6 +22,14 @@ class FOG final : public nsIFOG, public nsIObserver, public nsIMemoryReporter {
   static already_AddRefed<FOG> GetSingleton();
   void InitMemoryReporter();
 
+  /**
+   * Sets the application_id to initialize Glean with.
+   * Does not take precedence over `nsIFOG.initializeFOG`'s `aAppIdOverride`.
+   * Only has effect if called before `nsIFOG.initializeFOG`.
+   * Parent-process only.
+   */
+  static void SetApplicationID(const nsACString& aAppId);
+
  private:
   ~FOG() = default;
   static bool ApplyInterestingServerKnobs();

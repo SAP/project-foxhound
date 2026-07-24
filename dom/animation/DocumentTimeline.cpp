@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentTimeline.h"
+
+#include "AnimationUtils.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimelineBinding.h"
-#include "AnimationUtils.h"
 #include "nsContentUtils.h"
 #include "nsDOMMutationObserver.h"
 #include "nsDOMNavigationTiming.h"
@@ -46,7 +47,7 @@ DocumentTimeline::DocumentTimeline(Document* aDocument,
       mDocument(aDocument),
       mOriginTime(aOriginTime) {
   if (mDocument) {
-    mDocument->Timelines().insertBack(this);
+    mDocument->TimelinesController().AddDocumentTimeline(*this);
   }
   // Ensure mLastRefreshDriverTime is valid.
   UpdateLastRefreshDriverTime();
@@ -172,6 +173,13 @@ void DocumentTimeline::TriggerAllPendingAnimationsNow() {
   for (Animation* animation :
        ToTArray<AutoTArray<RefPtr<Animation>, 32>>(mAnimationOrder)) {
     animation->TryTriggerNow();
+  }
+}
+
+void DocumentTimeline::PostUpdateForAllAnimations() {
+  for (Animation* animation :
+       ToTArray<AutoTArray<RefPtr<Animation>, 32>>(mAnimationOrder)) {
+    animation->PostUpdate();
   }
 }
 

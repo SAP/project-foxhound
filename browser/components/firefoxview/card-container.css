@@ -4,19 +4,20 @@
 
 .card-container {
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   background-color: var(--fxview-background-color-secondary);
   margin-block-end: 24px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  @media (prefers-contrast) {
+    border: 1px solid var(--fxview-border);
+  }
 
   &[isOpenTabsView] {
     margin-block-end: 0;
   }
-}
 
-@media (forced-colors) or (prefers-contrast) {
-  .card-container {
-    border: 1px solid var(--fxview-border);
+  &[open]::details-content {
+    display: contents;
   }
 }
 
@@ -26,7 +27,7 @@
   width: 100%;
   align-items: center;
   cursor: pointer;
-  border-radius: 1px;
+  border-radius: var(--border-radius-xsmall);
   outline-offset: 4px;
   padding: 6px;
   padding-inline-end: 0;
@@ -50,7 +51,7 @@
   color: var(--fxview-primary-action-background);
   float: inline-end;
   outline-offset: 6px;
-  border-radius: 1px;
+  border-radius: var(--border-radius-xsmall);
   width: 12%;
   text-align: end;
   padding: 6px;
@@ -59,7 +60,7 @@
 
 .card-container-header:focus-visible,
 .view-all-link:focus-visible {
-  outline: 2px solid var(--in-content-focus-outline-color);
+  outline: var(--focus-outline);
 }
 
 .chevron-icon {
@@ -76,7 +77,7 @@
   border: none;
   background-color: transparent;
   background-repeat: no-repeat;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .chevron-icon:hover {
@@ -118,7 +119,7 @@
   align-self: center;
   margin: 0;
   font-size: 1.13em;
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: none;
@@ -145,7 +146,7 @@
   text-decoration: underline;
   display: inline-block;
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   margin-block: 0.5rem;
 }
 
@@ -167,5 +168,5 @@
 details.empty-state {
   box-shadow: none;
   border: 1px solid var(--fxview-border);
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
 }

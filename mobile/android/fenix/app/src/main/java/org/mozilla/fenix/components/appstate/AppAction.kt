@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.components.appstate
 
+import com.google.android.material.snackbar.BaseTransientBottomBar.LENGTH_SHORT
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
@@ -16,8 +17,8 @@ import mozilla.components.lib.state.Action
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.nimbus.messaging.MessageSurfaceId
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
+import org.mozilla.fenix.bookmarks.BookmarksGlobalResultReport
 import org.mozilla.fenix.browser.StandardSnackbarError
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
@@ -138,11 +139,6 @@ sealed class AppAction : Action {
      * Action dispatched when the browser is deleting its data and quitting.
      */
     data object DeleteAndQuitStarted : AppAction()
-
-    /**
-     * Action dispatched when the current site's data has been cleared.
-     */
-    data object SiteDataCleared : AppAction()
 
     /**
      * Action dispatched when the current tab has been closed.
@@ -287,6 +283,10 @@ sealed class AppAction : Action {
      * [AppAction] implementations related to the application lifecycle.
      */
     sealed class AppLifecycleAction : AppAction() {
+        /**
+         * The application has started.
+         */
+        object StartAction : AppLifecycleAction()
 
         /**
          * The application has received an ON_RESUME event.
@@ -345,10 +345,12 @@ sealed class AppAction : Action {
          *
          * @property guidToEdit The guid of the newly added bookmark or null.
          * @property parentNode The [BookmarkNode] representing the folder the bookmark was added to, if any.
+         * @property source Describes where the action was called from.
          */
         data class BookmarkAdded(
             val guidToEdit: String?,
             val parentNode: BookmarkNode?,
+            val source: MetricsUtils.BookmarkAction.Source,
         ) : BookmarkAction()
 
         /**
@@ -357,6 +359,46 @@ sealed class AppAction : Action {
          * @property title The title of the bookmark that was removed.
          */
         data class BookmarkDeleted(val title: String?) : BookmarkAction()
+
+        /**
+         * [BookmarkAction] dispatched when a bookmark operation has a result that must be
+         * reported even if the bookmark feature goes out of scope.
+         *
+         * @property globalResultReport The specific result to report.
+         */
+        data class BookmarkOperationResultReported(
+            val globalResultReport: BookmarksGlobalResultReport,
+        ) : BookmarkAction()
+    }
+
+    /**
+     * [AppAction]s related to Qr Scanner.
+     */
+    sealed class QrScannerAction : AppAction() {
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner is requested.
+         */
+        data object QrScannerRequested : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner request is consumed.
+         */
+        data object QrScannerRequestConsumed : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner is dismissed.
+         */
+        data object QrScannerDismissed : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR scanner loads a QR code.
+         */
+        data class QrScannerInputAvailable(val data: String?) : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the loaded QR code is consumed.
+         */
+        data object QrScannerInputConsumed : QrScannerAction()
     }
 
     /**
@@ -367,11 +409,6 @@ sealed class AppAction : Action {
          * [ShortcutAction] dispatched when a shortcut is added.
          */
         data object ShortcutAdded : ShortcutAction()
-
-        /**
-         * [ShortcutAction] dispatched when a shortcut is removed.
-         */
-        data object ShortcutRemoved : ShortcutAction()
     }
 
     /**
@@ -435,6 +472,14 @@ sealed class AppAction : Action {
          * [SnackbarAction] dispatched to reset the [AppState.snackbarState] to its default state.
          */
         data object Reset : SnackbarAction()
+
+        /**
+         * [SnackbarAction] dispatched to show a snackbar with a custom title.
+         *
+         * @property title The title to display in the snackbar.
+         * @property duration The length of time for the snackbar to show.
+         */
+        data class ShowSnackbar(val title: String, val duration: Int = LENGTH_SHORT) : SnackbarAction()
     }
 
     /**
@@ -550,15 +595,6 @@ sealed class AppAction : Action {
         data object PocketStoriesClean : ContentRecommendationsAction()
 
         /**
-         * Replaces the current list of Pocket sponsored stories.
-         *
-         * @property sponsoredStories The new list of [PocketSponsoredStory] that was fetched.
-         */
-        data class PocketSponsoredStoriesChange(
-            val sponsoredStories: List<PocketSponsoredStory>,
-        ) : ContentRecommendationsAction()
-
-        /**
          * Replaces the current list of [SponsoredContent]s.
          *
          * @property sponsoredContents THe new list of [SponsoredContent] that was fetched.
@@ -640,9 +676,9 @@ sealed class AppAction : Action {
         /**
          * Dispatched when a download is in progress.
          *
-         * @property sessionId The ID of the session associated with the download.
+         * @property downloadId The unique identifier for the ongoing download.
          */
-        data class DownloadInProgress(val sessionId: String?) : DownloadAction()
+        data class DownloadInProgress(val downloadId: String) : DownloadAction()
 
         /**
          * Dispatched when a download has failed.
@@ -727,5 +763,25 @@ sealed class AppAction : Action {
             val searchEngine: SearchEngine,
             val isUserSelected: Boolean,
         ) : SearchAction()
+    }
+
+    /**
+     * [AppAction]s related to menu notifications. These actions are used to manage
+     * the display and removal of notifications within the application's menu.
+     */
+    sealed class MenuNotification : AppAction() {
+        /**
+         * Dispatched to add a new notification to the menu.
+         *
+         * @property notification The [SupportedMenuNotifications] type to be displayed.
+         */
+        data class AddMenuNotification(val notification: SupportedMenuNotifications) : MenuNotification()
+
+        /**
+         * Dispatched to remove an existing notification from the menu.
+         *
+         * @property notification The [SupportedMenuNotifications] type to be removed.
+         */
+        data class RemoveMenuNotification(val notification: SupportedMenuNotifications) : MenuNotification()
     }
 }

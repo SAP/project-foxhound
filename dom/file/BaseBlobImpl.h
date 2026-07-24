@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_BaseBlobImpl_h
 #define mozilla_dom_BaseBlobImpl_h
 
-#include "nsIGlobalObject.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Blob.h"
 #include "mozilla/dom/BlobImpl.h"
-#include "mozilla/ErrorResult.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

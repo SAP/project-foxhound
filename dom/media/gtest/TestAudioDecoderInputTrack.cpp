@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +7,14 @@
 #include <utility>
 
 #include "AudioDecoderInputTrack.h"
-#include "gmock/gmock.h"
 #include "GraphDriver.h"
-#include "gtest/gtest.h"
 #include "MediaInfo.h"
 #include "MediaTrackGraphImpl.h"
+#include "VideoUtils.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "mozilla/gtest/WaitFor.h"
 #include "nsThreadUtils.h"
-#include "VideoUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::media;
@@ -59,7 +59,7 @@ class MockTestGraph : public MediaTrackGraphImpl {
 
     MOCK_METHOD0(Start, void());
     MOCK_METHOD0(Shutdown, void());
-    MOCK_METHOD0(IterationDuration, uint32_t());
+    MOCK_METHOD0(IterationDuration, TimeDuration());
     MOCK_METHOD0(EnsureNextIteration, void());
     MOCK_CONST_METHOD0(OnThread, bool());
     MOCK_CONST_METHOD0(ThreadRunning, bool());
@@ -67,8 +67,6 @@ class MockTestGraph : public MediaTrackGraphImpl {
    protected:
     ~MockDriver() = default;
   };
-
-  bool mEnableFakeAppend = false;
 };
 
 AudioData* CreateAudioDataFromInfo(uint32_t aFrames, const AudioInfo& aInfo) {
@@ -81,10 +79,9 @@ AudioDecoderInputTrack* CreateTrack(MediaTrackGraph* aGraph,
                                     nsISerialEventTarget* aThread,
                                     const AudioInfo& aInfo,
                                     float aPlaybackRate = 1.0,
-                                    float aVolume = 1.0,
                                     bool aPreservesPitch = true) {
   return AudioDecoderInputTrack::Create(aGraph, aThread, aInfo, aPlaybackRate,
-                                        aVolume, aPreservesPitch);
+                                        aPreservesPitch);
 }
 
 class TestAudioDecoderInputTrack : public testing::Test {
@@ -320,39 +317,6 @@ TEST_F(TestAudioDecoderInputTrack, ChannelChange) {
             audioMono->Frames() + audioWithFiveChannels->Frames());
 }
 
-TEST_F(TestAudioDecoderInputTrack, VolumeChange) {
-  // In order to run the volume change directly without using a real graph.
-  // one for setting the track's volume, another for the track destruction.
-  EXPECT_CALL(*mGraph, AppendMessage)
-      .Times(2)
-      .WillOnce(
-          [](UniquePtr<ControlMessageInterface> aMessage) { aMessage->Run(); })
-      .WillOnce([](UniquePtr<ControlMessageInterface> aMessage) {});
-
-  // The default volume is 1.0.
-  float expectedVolume = 1.0;
-  RefPtr<AudioData> audio = CreateAudioData(20);
-  TrackTime start = 0;
-  TrackTime end = 10;
-  mTrack->AppendData(audio, nullptr);
-  mTrack->ProcessInput(start, end, kNoFlags);
-  EXPECT_PRED_FORMAT2(ExpectSegmentNonSilence, start, end);
-  EXPECT_TRUE(GetTrackSegment()->GetLastChunk()->mVolume == expectedVolume);
-
-  // After setting volume on the track, the data in the output chunk should be
-  // changed as well.
-  expectedVolume = 0.1;
-  mTrack->SetVolume(expectedVolume);
-  SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
-      "TEST_F(TestAudioDecoderInputTrack, VolumeChange)"_ns,
-      [&] { return mTrack->Volume() == expectedVolume; });
-  start = end;
-  end += 10;
-  mTrack->ProcessInput(start, end, kNoFlags);
-  EXPECT_PRED_FORMAT2(ExpectSegmentNonSilence, start, end);
-  EXPECT_TRUE(GetTrackSegment()->GetLastChunk()->mVolume == expectedVolume);
-}
-
 TEST_F(TestAudioDecoderInputTrack, BatchedData) {
   uint32_t appendedFrames = 0;
   RefPtr<AudioData> audio = CreateAudioData(10);
@@ -394,30 +358,21 @@ TEST_F(TestAudioDecoderInputTrack, OutputAndEndEvent) {
   // Append an audio and EOS, the output event should notify the amount of
   // frames that is equal to the amount of audio we appended.
   RefPtr<AudioData> audio = CreateAudioData(10);
-  MozPromiseHolder<GenericPromise> holder;
-  RefPtr<GenericPromise> p = holder.Ensure(__func__);
-  MediaEventListener outputListener =
-      mTrack->OnOutput().Connect(NS_GetCurrentThread(), [&](TrackTime aFrame) {
-        EXPECT_EQ(aFrame, audio->Frames());
-        holder.Resolve(true, __func__);
-      });
+  auto outputPromise = TakeN(mTrack->OnOutput(), 1);
   mTrack->AppendData(audio, nullptr);
   mTrack->NotifyEndOfStream();
   TrackTime start = 0;
   TrackTime end = 10;
   mTrack->ProcessInput(start, end, ProcessedMediaTrack::ALLOW_END);
-  Unused << WaitFor(p);
+  auto output = WaitFor(outputPromise).unwrap()[0];
+  EXPECT_EQ(std::get<int64_t>(output), audio->Frames());
 
   // Track should end in this iteration, so the end event should be notified.
-  p = holder.Ensure(__func__);
-  MediaEventListener endListener = mTrack->OnEnd().Connect(
-      NS_GetCurrentThread(), [&]() { holder.Resolve(true, __func__); });
+  auto endPromise = TakeN(mTrack->OnEnd(), 1);
   start = end;
   end += 10;
   mTrack->ProcessInput(start, end, ProcessedMediaTrack::ALLOW_END);
-  Unused << WaitFor(p);
-  outputListener.Disconnect();
-  endListener.Disconnect();
+  (void)WaitFor(endPromise);
 }
 
 TEST_F(TestAudioDecoderInputTrack, PlaybackRateChange) {
@@ -445,10 +400,13 @@ TEST_F(TestAudioDecoderInputTrack, PlaybackRateChange) {
   mTrack->NotifyEndOfStream();
 
   // Playback rate is 2x, so we should only get 1/2x sample frames, another 1/2
-  // should be silence.
+  // should be silence. Output should not be rate-aware.
+  auto outputPromise = TakeN(mTrack->OnOutput(), 1);
   TrackTime start = 0;
   TrackTime end = audio->Frames();
   mTrack->ProcessInput(start, end, kNoFlags);
+  auto output = WaitFor(outputPromise).unwrap()[0];
+  EXPECT_EQ(std::get<int64_t>(output), audio->Frames());
   EXPECT_PRED_FORMAT2(ExpectSegmentNonSilence, start, audio->Frames() / 2);
   EXPECT_PRED_FORMAT2(ExpectSegmentSilence, start + audio->Frames() / 2, end);
 }

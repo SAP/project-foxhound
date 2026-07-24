@@ -3,6 +3,12 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "desktop_device_info.h"
+
+#include <cstddef>
+#include <cstring>
+#include <map>
+#include <memory>
+
 #include "VideoEngine.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capturer.h"
@@ -10,13 +16,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "nsIBrowserWindowTracker.h"
 #include "nsImportModule.h"
-
-#include <cstddef>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <map>
-#include <memory>
+#include "nsPrintfCString.h"
 
 using mozilla::camera::CaptureDeviceType;
 

@@ -5,18 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIPort.h"
+
+#include "MIDILog.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDIConnectionEvent.h"
 #include "mozilla/dom/MIDIPortChild.h"
-#include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDITypes.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Promise.h"
 #include "nsContentUtils.h"
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, MOZ_COUNT_DTOR
-#include "MIDILog.h"
 
 using namespace mozilla::ipc;
 

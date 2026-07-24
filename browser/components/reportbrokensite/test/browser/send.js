@@ -188,16 +188,25 @@ async function getExpectedWebCompatInfo(tab, snapshot, fullAppData = false) {
         false
       ),
     },
-    security: {
-      antispyware: securityStringToArray(registeredAntiSpyware),
-      antivirus: securityStringToArray(registeredAntiVirus),
-      firewall: securityStringToArray(registeredFirewall),
-    },
     system: {
       isTablet: getSysinfoProperty("tablet", false),
       memory: Math.round(memorySizeBytes / 1024 / 1024),
     },
   };
+  if (registeredAntiSpyware) {
+    browserInfo.security ??= {};
+    browserInfo.security.antispyware = securityStringToArray(
+      registeredAntiSpyware
+    );
+  }
+  if (registeredAntiVirus) {
+    browserInfo.security ??= {};
+    browserInfo.security.antivirus = securityStringToArray(registeredAntiVirus);
+  }
+  if (registeredFirewall) {
+    browserInfo.security ??= {};
+    browserInfo.security.firewall = securityStringToArray(registeredFirewall);
+  }
 
   const tabInfo = await tab.linkedBrowser.ownerGlobal.SpecialPowers.spawn(
     tab.linkedBrowser,
@@ -207,6 +216,7 @@ async function getExpectedWebCompatInfo(tab, snapshot, fullAppData = false) {
         devicePixelRatio: `${content.devicePixelRatio}`,
         antitracking: {
           blockList: "basic",
+          blockedOrigins: null,
           isPrivateBrowsing: false,
           hasTrackingContentBlocked: false,
           hasMixedActiveContentBlocked: false,
@@ -256,9 +266,17 @@ function extractBrokenSiteReportFromGleanPing(Glean) {
       Glean.brokenSiteReportBrowserInfo.experiments.testGetValue()
     ),
     prefs: extractPingData(Glean.brokenSiteReportBrowserInfoPrefs),
-    security: extractPingData(Glean.brokenSiteReportBrowserInfoSecurity),
     system: extractPingData(Glean.brokenSiteReportBrowserInfoSystem),
   };
+  const security = extractPingData(Glean.brokenSiteReportBrowserInfoSecurity);
+  for (const [k, v] of Object.entries(security)) {
+    if (v === null) {
+      delete security[k];
+    }
+  }
+  if (Object.keys(security).length) {
+    ping.browserInfo.security = security;
+  }
   return ping;
 }
 
@@ -286,6 +304,10 @@ async function testSend(tab, menu, expectedOverrides = {}) {
 
   if (expectedOverrides.antitracking) {
     expected.tabInfo.antitracking = expectedOverrides.antitracking;
+
+    if (expectedOverrides.antitracking.blockedOrigins) {
+      rbs.blockedTrackersCheckbox = true;
+    }
   }
 
   if (expectedOverrides.frameworks) {
@@ -308,6 +330,14 @@ async function testSend(tab, menu, expectedOverrides = {}) {
         ["basic", "strict"].includes(tabInfo.antitracking.blockList),
         "Got a blockList"
       );
+      if (rbs.blockedTrackersCheckbox.checked) {
+        ok(
+          Array.isArray(tabInfo.antitracking.blockedOrigins),
+          "Got an array for blockedOrigins"
+        );
+      } else {
+        ok(!tabInfo.antitracking.blockedOrigins, "No blockedOrigins included");
+      }
       ok(tabInfo.useragentString?.length, "Got a final UA string");
       ok(
         browserInfo.app.defaultUseragentString?.length,
@@ -323,8 +353,20 @@ async function testSend(tab, menu, expectedOverrides = {}) {
 
   await rbs.clickOkay();
 
+  const telemetry = Glean.webcompatreporting.send.testGetValue();
+  is(telemetry?.length, 1, "Got a 'send' telemetry event");
+  is(
+    telemetry[0].extra.sent_with_blocked_trackers,
+    String(!!expectedOverrides.antitracking?.blockedOrigins),
+    "Got correct 'sent_with_blocked_trackers' flag"
+  );
+
   // re-opening the panel, the url and description should be reset
   rbs = await menu.openReportBrokenSite();
   rbs.isMainViewResetToCurrentTab();
+  ok(
+    !rbs.blockedTrackersCheckbox.checked,
+    "blocked trackers checkbox is reset"
+  );
   rbs.close();
 }

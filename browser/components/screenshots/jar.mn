@@ -5,7 +5,6 @@
 browser.jar:
         content/browser/screenshots/copied-notification.svg            (content/copied-notification.svg)
         content/browser/screenshots/fileHelpers.mjs
-        content/browser/screenshots/icon-welcome-face-without-eyes.svg (content/icon-welcome-face-without-eyes.svg)
         content/browser/screenshots/menu-fullpage.svg                  (content/menu-fullpage.svg)
         content/browser/screenshots/menu-visible.svg                   (content/menu-visible.svg)
         content/browser/screenshots/screenshots-buttons.js             (screenshots-buttons.js)

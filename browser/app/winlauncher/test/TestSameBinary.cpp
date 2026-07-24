@@ -9,15 +9,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <utility>
-
 #include "SameBinary.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/NativeNt.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Vector.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "nsWindowsHelpers.h"
 

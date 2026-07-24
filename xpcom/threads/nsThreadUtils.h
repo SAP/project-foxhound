@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsThreadUtils_h__
-#define nsThreadUtils_h__
+#ifndef nsThreadUtils_h_
+#define nsThreadUtils_h_
 
 #include <type_traits>
 #include <tuple>
@@ -121,10 +121,11 @@ extern nsresult NS_DispatchToCurrentThread(
  *   If event is null.
  */
 extern nsresult NS_DispatchToMainThread(
-    nsIRunnable* aEvent, uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+    nsIRunnable* aEvent,
+    nsIEventTarget::DispatchFlags aDispatchFlags = NS_DISPATCH_NORMAL);
 extern nsresult NS_DispatchToMainThread(
     already_AddRefed<nsIRunnable>&& aEvent,
-    uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+    nsIEventTarget::DispatchFlags aDispatchFlags = NS_DISPATCH_NORMAL);
 
 extern nsresult NS_DelayedDispatchToCurrentThread(
     already_AddRefed<nsIRunnable>&& aEvent, uint32_t aDelayMs);
@@ -938,19 +939,16 @@ struct IsParameterStorageClass<StoreConstPtrPassByConstPtr<S>>
 
 namespace detail {
 
-template <typename>
-struct SFINAE1True : std::true_type {};
+template <class T, typename = void>
+struct HasRefCountMethodsTest : std::false_type {};
 
 template <class T>
-static auto HasRefCountMethodsTest(int)
-    -> SFINAE1True<decltype(std::declval<T>().AddRef(),
-                            std::declval<T>().Release())>;
-template <class>
-static auto HasRefCountMethodsTest(long) -> std::false_type;
+struct HasRefCountMethodsTest<
+    T, std::void_t<decltype(std::declval<T>().AddRef(),
+                            std::declval<T>().Release())>> : std::true_type {};
 
 template <class T>
-constexpr static bool HasRefCountMethods =
-    decltype(HasRefCountMethodsTest<T>(0))::value;
+constexpr static bool HasRefCountMethods = HasRefCountMethodsTest<T>::value;
 
 // Choose storage&passing strategy based on preferred storage type:
 // - If IsParameterStorageClass<T>::value is true, use as-is.
@@ -1011,8 +1009,11 @@ struct OtherParameterStorage<T&&> {
 
 template <typename T>
 struct OtherParameterStorage<const T&&> {
-  // This is good advice regardless of the types you're handling.
-  static_assert(!SFINAE1True<T>::value, "please use a lambda function");
+  // This is good advice regardless of the types you're handling. Making it a
+  // dependent type so that the check only happens when this specialization is
+  // instantiated.
+  static_assert(!std::is_same_v<std::void_t<T>, void>,
+                "please use a lambda function");
 };
 
 // default impl.
@@ -1046,16 +1047,13 @@ struct ParameterStorage {
   using Type = typename ParameterStorageHelper<T>::Type;
 };
 
-template <class T>
-static auto HasSetDeadlineTest(int)
-    -> SFINAE1True<decltype(std::declval<T>().SetDeadline(
-        std::declval<mozilla::TimeStamp>()))>;
+template <class T, typename = void>
+struct HasSetDeadline : std::false_type {};
 
 template <class T>
-static auto HasSetDeadlineTest(long) -> std::false_type;
-
-template <class T>
-struct HasSetDeadline : decltype(HasSetDeadlineTest<T>(0)) {};
+struct HasSetDeadline<T, std::void_t<decltype(std::declval<T>().SetDeadline(
+                             std::declval<mozilla::TimeStamp>()))>>
+    : std::true_type {};
 
 template <class T>
 std::enable_if_t<::detail::HasSetDeadline<T>::value> SetDeadlineImpl(
@@ -1160,9 +1158,9 @@ class RunnableMethodImpl final
     if (nsCOMPtr<nsITimer> timer = GetTimer()) {
       timer->Cancel();
       timer->SetTarget(aTarget);
-      timer->InitWithNamedFuncCallback(TimedOut, this, aDelay,
-                                       nsITimer::TYPE_ONE_SHOT,
-                                       "detail::RunnableMethodImpl::SetTimer");
+      timer->InitWithNamedFuncCallback(
+          TimedOut, this, aDelay, nsITimer::TYPE_ONE_SHOT,
+          "detail::RunnableMethodImpl::SetTimer"_ns);
     }
   }
 };
@@ -1663,9 +1661,10 @@ extern mozilla::TimeStamp NS_GetTimerDeadlineHintOnCurrentThread(
  */
 extern nsresult NS_DispatchBackgroundTask(
     already_AddRefed<nsIRunnable> aEvent,
-    uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+    nsIEventTarget::DispatchFlags aDispatchFlags = NS_DISPATCH_NORMAL);
 extern "C" nsresult NS_DispatchBackgroundTask(
-    nsIRunnable* aEvent, uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+    nsIRunnable* aEvent,
+    nsIEventTarget::DispatchFlags aDispatchFlags = NS_DISPATCH_NORMAL);
 
 /**
  * Obtain a new serial event target that dispatches runnables to a background
@@ -1674,7 +1673,7 @@ extern "C" nsresult NS_DispatchBackgroundTask(
  * private thread.
  */
 extern "C" nsresult NS_CreateBackgroundTaskQueue(
-    const char* aName, nsISerialEventTarget** aTarget);
+    mozilla::StaticString aName, nsISerialEventTarget** aTarget);
 
 /**
  * Dispatch the given runnable to the given event target, spinning the current
@@ -1812,6 +1811,7 @@ class LogTaskBase {
 };
 
 class MicroTaskRunnable;
+class MustConsumeMicroTask;
 class Task;  // TaskController
 class PresShell;
 namespace dom {
@@ -1834,6 +1834,7 @@ LogTaskBase<nsTimerImpl>::Run::Run(nsTimerImpl* aEvent, bool aWillRunAgain);
 
 typedef LogTaskBase<nsIRunnable> LogRunnable;
 typedef LogTaskBase<MicroTaskRunnable> LogMicroTaskRunnable;
+typedef LogTaskBase<MustConsumeMicroTask> LogMustConsumeMicroTask;
 typedef LogTaskBase<IPC::Message> LogIPCMessage;
 typedef LogTaskBase<nsTimerImpl> LogTimerEvent;
 typedef LogTaskBase<Task> LogTask;
@@ -1846,4 +1847,4 @@ typedef LogTaskBase<dom::VideoFrameRequestCallback>
 
 }  // namespace mozilla
 
-#endif  // nsThreadUtils_h__
+#endif  // nsThreadUtils_h_

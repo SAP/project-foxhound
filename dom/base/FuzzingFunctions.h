@@ -30,6 +30,8 @@ class FuzzingFunctions final {
   static void Crash(const GlobalObject& aGlobalObject,
                     const nsAString& aKeyValue);
 
+  static void KillGPUProcess(const GlobalObject&);
+
   static void CycleCollect(const GlobalObject&);
 
   static void MemoryPressure(const GlobalObject&);

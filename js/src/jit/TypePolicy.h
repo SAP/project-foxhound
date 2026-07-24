@@ -529,6 +529,7 @@ class StoreUnboxedScalarPolicy : public TypePolicy {
 
   friend class StoreDataViewElementPolicy;
   friend class StoreTypedArrayHolePolicy;
+  friend class TypedArrayFillPolicy;
 
  public:
   EMPTY_DATA_;
@@ -547,6 +548,14 @@ class StoreDataViewElementPolicy final : public StoreUnboxedScalarPolicy {
 class StoreTypedArrayHolePolicy final : public StoreUnboxedScalarPolicy {
  public:
   constexpr StoreTypedArrayHolePolicy() = default;
+  EMPTY_DATA_;
+  [[nodiscard]] bool adjustInputs(TempAllocator& alloc,
+                                  MInstruction* ins) const override;
+};
+
+class TypedArrayFillPolicy final : public StoreUnboxedScalarPolicy {
+ public:
+  constexpr TypedArrayFillPolicy() = default;
   EMPTY_DATA_;
   [[nodiscard]] bool adjustInputs(TempAllocator& alloc,
                                   MInstruction* ins) const override;

@@ -7,10 +7,12 @@
 #ifndef vm_BytecodeLocation_h
 #define vm_BytecodeLocation_h
 
+#include <compare>  // std::strong_ordering
+
 #include "frontend/NameAnalysisTypes.h"
 #include "js/TypeDecls.h"
 #include "vm/BuiltinObjectKind.h"
-#include "vm/BytecodeUtil.h"
+#include "vm/BytecodeUtil.h"            // GET_ENVCOORD_HOPS
 #include "vm/CheckIsObjectKind.h"       // CheckIsObjectKind
 #include "vm/CompletionKind.h"          // CompletionKind
 #include "vm/ConstantCompareOperand.h"  // ConstantCompareOperand
@@ -140,21 +142,9 @@ class BytecodeLocation {
     return !(other == *this);
   }
 
-  bool operator<(const BytecodeLocation& other) const {
+  auto operator<=>(const BytecodeLocation& other) const {
     MOZ_ASSERT(this->debugOnlyScript_ == other.debugOnlyScript_);
-    return rawBytecode_ < other.rawBytecode_;
-  }
-
-  // It is traditional to represent the rest of the relational operators
-  // using operator<, so we don't need to assert for these.
-  bool operator>(const BytecodeLocation& other) const { return other < *this; }
-
-  bool operator<=(const BytecodeLocation& other) const {
-    return !(other < *this);
-  }
-
-  bool operator>=(const BytecodeLocation& other) const {
-    return !(*this < other);
+    return rawBytecode_ <=> other.rawBytecode_;
   }
 
   // Return the next bytecode
@@ -261,7 +251,7 @@ class BytecodeLocation {
 
   uint32_t getEnvCalleeNumHops() const {
     MOZ_ASSERT(is(JSOp::EnvCallee));
-    return GET_UINT8(rawBytecode_);
+    return GET_ENVCOORD_HOPS(rawBytecode_);
   }
 
   EnvironmentCoordinate getEnvironmentCoordinate() const {

@@ -10,9 +10,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "nsCOMPtr.h"
-#include "mozilla/dom/Document.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 

@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWebNavigationInfo_h__
-#define nsWebNavigationInfo_h__
+#ifndef nsWebNavigationInfo_h_
+#define nsWebNavigationInfo_h_
 
 #include "nsIWebNavigationInfo.h"
 #include "nsCOMPtr.h"
 #include "nsICategoryManager.h"
 #include "nsStringFwd.h"
-#include "mozilla/Attributes.h"
 
 class nsWebNavigationInfo final : public nsIWebNavigationInfo {
  public:
@@ -31,4 +30,4 @@ class nsWebNavigationInfo final : public nsIWebNavigationInfo {
   static uint32_t IsTypeSupportedInternal(const nsCString& aType);
 };
 
-#endif  // nsWebNavigationInfo_h__
+#endif  // nsWebNavigationInfo_h_

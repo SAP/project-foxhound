@@ -229,7 +229,12 @@ class AutoResampler final {
     MOZ_ASSERT(mResampler);
     return mResampler;
   }
-  void operator=(SpeexResamplerState* aResampler) { mResampler = aResampler; }
+  void operator=(SpeexResamplerState* aResampler) {
+    if (mResampler) {
+      speex_resampler_destroy(mResampler);
+    }
+    mResampler = aResampler;
+  }
 
  private:
   SpeexResamplerState* mResampler;
@@ -564,6 +569,14 @@ void MediaDecodeTask::FinishDecode() {
       }
       mDecodeJob.mBuffer.mBuffer = std::move(newBuffers);
       channelCount = audioData->mChannels;
+
+      // Don't bother draining the previous resampler for unexpected edge case.
+      if (sampleRate != destSampleRate) {
+        resampler =
+            speex_resampler_init(channelCount, sampleRate, destSampleRate,
+                                 SPEEX_RESAMPLER_QUALITY_DEFAULT, nullptr);
+        speex_resampler_skip_zeros(resampler);
+      }
     }
 
     const AudioDataValue* bufferData =
@@ -689,7 +702,7 @@ void AsyncDecodeWebAudio(const char* aContentType, uint8_t* aBuffer,
   } else {
     nsresult rv = task->PSupervisorTaskQueue()->Dispatch(task.forget());
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 }
 

@@ -76,12 +76,12 @@ add_setup(async function () {
     { compress: true }
   );
 
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_icon_migration() {
-  let engine = Services.search.getEngineByName("IconsTest");
-  let sizes = Object.keys(engine.wrappedJSObject._iconMapObj);
+  let engine = SearchService.getEngineByName("IconsTest");
+  let sizes = Object.keys(engine._iconMapObj);
 
   Assert.equal(
     sizes.length,

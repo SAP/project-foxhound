@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "mozilla/Ashmem.h"
+#include <android/sharedmem.h>
 
 #ifdef MOZ_VALGRIND
 #  include <valgrind/valgrind.h>
@@ -31,7 +31,7 @@ namespace mozilla::ipc::shared_memory {
 static Maybe<PlatformHandle> CreateImpl(size_t aSize, bool aFreezable) {
   MOZ_ASSERT(aSize > 0);
 
-  int fd = mozilla::android::ashmem_create(nullptr, aSize);
+  int fd = ASharedMemory_create(nullptr, aSize);
   if (fd < 0) {
     MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning, "failed to open shm: {}",
                 strerror(errno));
@@ -63,19 +63,18 @@ bool Platform::CreateFreezable(FreezableHandle& aHandle, size_t aSize) {
 }
 
 PlatformHandle Platform::CloneHandle(const PlatformHandle& aHandle) {
-  const int new_fd = dup(aHandle.get());
-  if (new_fd < 0) {
+  auto rv = DuplicateFileHandle(aHandle);
+  if (!rv) {
     MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning,
                 "failed to duplicate file descriptor: {}", strerror(errno));
-    return nullptr;
   }
-  return mozilla::UniqueFileHandle(new_fd);
+  return rv;
 }
 
 bool Platform::Freeze(FreezableHandle& aHandle) {
-  if (mozilla::android::ashmem_setProt(aHandle.mHandle.get(), PROT_READ) != 0) {
+  if (ASharedMemory_setProt(aHandle.mHandle.get(), PROT_READ) != 0) {
     MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning,
-                "failed to set ashmem read-only: {}", strerror(errno));
+                "failed to set sharedmem read-only: {}", strerror(errno));
     return false;
   }
   return true;

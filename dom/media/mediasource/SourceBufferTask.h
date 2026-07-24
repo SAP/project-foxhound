@@ -7,13 +7,13 @@
 #ifndef MOZILLA_SOURCEBUFFERTASK_H_
 #define MOZILLA_SOURCEBUFFERTASK_H_
 
-#include "mozilla/MozPromise.h"
+#include <utility>
+
+#include "MediaResult.h"
 #include "SourceBufferAttributes.h"
 #include "TimeUnits.h"
-#include "MediaResult.h"
 #include "mozilla/Maybe.h"
-
-#include <utility>
+#include "mozilla/MozPromise.h"
 
 namespace mozilla {
 

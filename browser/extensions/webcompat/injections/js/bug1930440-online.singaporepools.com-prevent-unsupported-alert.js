@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals exportFunction */
-
 "use strict";
 
 /**
@@ -15,31 +13,38 @@
  * additional in-page support message that they show to all browsers.
  */
 
-console.info(
-  "window.alert is being overriden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1923286 for details."
-);
+if (!window.__firefoxWebCompatFixBug1923286) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1923286", {
+    configurable: false,
+    value: true,
+  });
 
-new MutationObserver(mutations => {
-  for (let { addedNodes } of mutations) {
-    for (const node of addedNodes) {
-      try {
-        if (
-          node.matches(".alert.views-row") &&
-          node.innerText.includes("Chrome")
-        ) {
-          node.remove();
-        }
-      } catch (_) {}
+  console.info(
+    "window.alert is being overriden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1923286 for details."
+  );
+
+  new MutationObserver(mutations => {
+    for (let { addedNodes } of mutations) {
+      for (const node of addedNodes) {
+        try {
+          if (
+            node.matches(".alert.views-row") &&
+            node.innerText.includes("Chrome")
+          ) {
+            node.remove();
+          }
+        } catch (_) {}
+      }
     }
-  }
-}).observe(document.documentElement, {
-  childList: true,
-  subtree: true,
-});
+  }).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
 
-const originalAlert = window.wrappedJSObject.alert;
-window.wrappedJSObject.alert = exportFunction(function (msg) {
-  if (!msg?.toLowerCase?.().includes("unsupported browser")) {
-    originalAlert(msg);
-  }
-}, window);
+  const originalAlert = window.alert;
+  window.alert = function (msg) {
+    if (!msg?.toLowerCase?.().includes("unsupported browser")) {
+      originalAlert(msg);
+    }
+  };
+}

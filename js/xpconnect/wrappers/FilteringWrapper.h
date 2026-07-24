@@ -4,11 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FilteringWrapper_h__
-#define __FilteringWrapper_h__
+#ifndef FilteringWrapper_h_
+#define FilteringWrapper_h_
 
 #include "XrayWrapper.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Wrapper.h"
@@ -54,4 +53,4 @@ class FilteringWrapper : public Base {
 
 }  // namespace xpc
 
-#endif /* __FilteringWrapper_h__ */
+#endif /* FilteringWrapper_h_ */

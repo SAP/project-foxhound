@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_originorpatternstring_h__
-#define mozilla_dom_quota_originorpatternstring_h__
+#ifndef mozilla_dom_quota_originorpatternstring_h_
+#define mozilla_dom_quota_originorpatternstring_h_
 
 #include <utility>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/UniquePtr.h"
@@ -415,4 +416,4 @@ class OriginScope {
 
 }  // namespace mozilla::dom::quota
 
-#endif  // mozilla_dom_quota_originorpatternstring_h__
+#endif  // mozilla_dom_quota_originorpatternstring_h_

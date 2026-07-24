@@ -15,7 +15,7 @@ const REMOTE_SETTINGS_DATA = [
         title: "Array.prototype.filter()",
         description:
           "The filter() method creates a shallow copy of a portion of a given array, filtered down to just the elements from the given array that pass the test implemented by the provided function.",
-        keywords: ["array filter"],
+        keywords: ["array filter", "fil", "filte", "filter"],
         score: 0.24,
       },
       {
@@ -45,7 +45,7 @@ add_setup(async function init() {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_DATA,
     prefs: [
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", false],
     ],
   });
@@ -89,8 +89,9 @@ add_task(async function disableByLocalPref() {
 
   const prefs = [
     "suggest.mdn",
+    "mdn.featureGate",
     "quicksuggest.enabled",
-    "suggest.quicksuggest.nonsponsored",
+    "suggest.quicksuggest.all",
   ];
 
   for (const pref of prefs) {
@@ -240,4 +241,106 @@ add_task(async function notInterested() {
       },
     ],
   });
+});
+
+add_task(async function show_less_frequently() {
+  UrlbarPrefs.set("mdn.showLessFrequentlyCount", 0);
+  UrlbarPrefs.set("mdn.minKeywordLength", 0);
+  UrlbarPrefs.set("mdn.showLessFrequentlyCap", 3);
+
+  let result = QuickSuggestTestUtils.mdnResult(
+    REMOTE_SETTINGS_DATA[0].attachment[0]
+  );
+  const testData = [
+    {
+      input: "fil",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 0,
+        minKeywordLength: 0,
+      },
+      after: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 1,
+        minKeywordLength: 4,
+      },
+    },
+    {
+      input: "filte",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 1,
+        minKeywordLength: 4,
+      },
+      after: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 2,
+        minKeywordLength: 6,
+      },
+    },
+    {
+      input: "filter",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 2,
+        minKeywordLength: 6,
+      },
+      after: {
+        canShowLessFrequently: false,
+        showLessFrequentlyCount: 3,
+        minKeywordLength: 7,
+      },
+    },
+  ];
+
+  for (let { input, before, after } of testData) {
+    let feature = QuickSuggest.getFeature("MDNSuggestions");
+
+    await check_results({
+      context: createContext(input, {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
+      }),
+      matches: [result],
+    });
+
+    Assert.equal(
+      UrlbarPrefs.get("mdn.minKeywordLength"),
+      before.minKeywordLength
+    );
+    Assert.equal(feature.canShowLessFrequently, before.canShowLessFrequently);
+    Assert.equal(
+      feature.showLessFrequentlyCount,
+      before.showLessFrequentlyCount
+    );
+
+    triggerCommand({
+      result,
+      feature,
+      command: "show_less_frequently",
+      searchString: input,
+    });
+
+    Assert.equal(
+      UrlbarPrefs.get("mdn.minKeywordLength"),
+      after.minKeywordLength
+    );
+    Assert.equal(feature.canShowLessFrequently, after.canShowLessFrequently);
+    Assert.equal(
+      feature.showLessFrequentlyCount,
+      after.showLessFrequentlyCount
+    );
+
+    await check_results({
+      context: createContext(input, {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
+      }),
+      matches: [],
+    });
+  }
+
+  UrlbarPrefs.clear("mdn.showLessFrequentlyCount");
+  UrlbarPrefs.clear("mdn.minKeywordLength");
+  UrlbarPrefs.clear("mdn.showLessFrequentlyCap");
 });

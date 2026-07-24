@@ -7,90 +7,34 @@
 
 #include <unordered_map>
 
-#include "mozilla/Atomics.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/gfx/Logging.h"
 
 class gfxDWriteFontFileStream;
 
-static mozilla::StaticMutex sFontFileStreamsMutex MOZ_UNANNOTATED;
+using namespace mozilla;
+
+static StaticMutex sFontFileStreamsMutex MOZ_UNANNOTATED;
 static uint64_t sNextFontFileKey = 0;
 MOZ_RUNINIT static std::unordered_map<uint64_t, gfxDWriteFontFileStream*>
     sFontFileStreams;
 
 IDWriteFontFileLoader* gfxDWriteFontFileLoader::mInstance = nullptr;
 
-class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
- public:
-  /**
-   * Used by the FontFileLoader to create a new font stream,
-   * this font stream is created from data in memory. The memory
-   * passed may be released after object creation, it will be
-   * copied internally.
-   *
-   * @param aData Font data
-   */
-  gfxDWriteFontFileStream(const uint8_t* aData, uint32_t aLength,
-                          uint64_t aFontFileKey);
-  ~gfxDWriteFontFileStream();
-
-  // IUnknown interface
-  IFACEMETHOD(QueryInterface)(IID const& iid, OUT void** ppObject) {
-    if (iid == __uuidof(IDWriteFontFileStream)) {
-      *ppObject = static_cast<IDWriteFontFileStream*>(this);
-      return S_OK;
-    } else if (iid == __uuidof(IUnknown)) {
-      *ppObject = static_cast<IUnknown*>(this);
-      return S_OK;
-    } else {
-      return E_NOINTERFACE;
+IFACEMETHODIMP_(ULONG) gfxDWriteFontFileStream::Release() {
+  MOZ_ASSERT(0 != mRefCnt, "dup release");
+  uint32_t count = --mRefCnt;
+  if (count == 0) {
+    // Avoid locking unless necessary. Verify the refcount hasn't changed
+    // while locked. Delete within the scope of the lock when zero.
+    StaticMutexAutoLock lock(sFontFileStreamsMutex);
+    if (0 != mRefCnt) {
+      return mRefCnt;
     }
+    delete this;
   }
-
-  IFACEMETHOD_(ULONG, AddRef)() {
-    MOZ_ASSERT(int32_t(mRefCnt) >= 0, "illegal refcnt");
-    return ++mRefCnt;
-  }
-
-  IFACEMETHOD_(ULONG, Release)() {
-    MOZ_ASSERT(0 != mRefCnt, "dup release");
-    uint32_t count = --mRefCnt;
-    if (count == 0) {
-      // Avoid locking unless necessary. Verify the refcount hasn't changed
-      // while locked. Delete within the scope of the lock when zero.
-      mozilla::StaticMutexAutoLock lock(sFontFileStreamsMutex);
-      if (0 != mRefCnt) {
-        return mRefCnt;
-      }
-      delete this;
-    }
-    return count;
-  }
-
-  // IDWriteFontFileStream methods
-  virtual HRESULT STDMETHODCALLTYPE
-  ReadFileFragment(void const** fragmentStart, UINT64 fileOffset,
-                   UINT64 fragmentSize, OUT void** fragmentContext);
-
-  virtual void STDMETHODCALLTYPE ReleaseFileFragment(void* fragmentContext);
-
-  virtual HRESULT STDMETHODCALLTYPE GetFileSize(OUT UINT64* fileSize);
-
-  virtual HRESULT STDMETHODCALLTYPE GetLastWriteTime(OUT UINT64* lastWriteTime);
-
-  size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return mData.ShallowSizeOfExcludingThis(mallocSizeOf);
-  }
-
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return mallocSizeOf(this) + SizeOfExcludingThis(mallocSizeOf);
-  }
-
- private:
-  FallibleTArray<uint8_t> mData;
-  mozilla::Atomic<uint32_t> mRefCnt;
-  uint64_t mFontFileKey;
-};
+  return count;
+}
 
 gfxDWriteFontFileStream::gfxDWriteFontFileStream(const uint8_t* aData,
                                                  uint32_t aLength,
@@ -98,7 +42,7 @@ gfxDWriteFontFileStream::gfxDWriteFontFileStream(const uint8_t* aData,
     : mFontFileKey(aFontFileKey) {
   // If this fails, mData will remain empty. That's OK: GetFileSize()
   // will then return 0, etc., and the font just won't load.
-  if (!mData.AppendElements(aData, aLength, mozilla::fallible_t())) {
+  if (!mData.AppendElements(aData, aLength, fallible_t())) {
     NS_WARNING("Failed to store data in gfxDWriteFontFileStream");
   }
 }
@@ -141,7 +85,7 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileLoader::CreateStreamFromKey(
     return E_POINTER;
   }
 
-  mozilla::StaticMutexAutoLock lock(sFontFileStreamsMutex);
+  StaticMutexAutoLock lock(sFontFileStreamsMutex);
   uint64_t fontFileKey = *static_cast<const uint64_t*>(fontFileReferenceKey);
   auto found = sFontFileStreams.find(fontFileKey);
   if (found == sFontFileStreams.end()) {
@@ -158,11 +102,11 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileLoader::CreateStreamFromKey(
 HRESULT
 gfxDWriteFontFileLoader::CreateCustomFontFile(
     const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
-    IDWriteFontFileStream** aFontFileStream) {
+    gfxDWriteFontFileStream** aFontFileStream) {
   MOZ_ASSERT(aFontFile);
   MOZ_ASSERT(aFontFileStream);
 
-  RefPtr<IDWriteFactory> factory = mozilla::gfx::Factory::GetDWriteFactory();
+  RefPtr<IDWriteFactory> factory = gfx::Factory::GetDWriteFactory();
   if (!factory) {
     gfxCriticalError()
         << "Failed to get DWrite Factory in CreateCustomFontFile.";
@@ -191,15 +135,16 @@ gfxDWriteFontFileLoader::CreateCustomFontFile(
 }
 
 size_t gfxDWriteFontFileLoader::SizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf) const {
-  size_t sizes = mallocSizeOf(this);
-
+    MallocSizeOf mallocSizeOf) const {
   // We are a singleton type that is effective owner of sFontFileStreams.
   MOZ_ASSERT(this == mInstance);
-  for (const auto& entry : sFontFileStreams) {
-    gfxDWriteFontFileStream* fileStream = entry.second;
-    sizes += fileStream->SizeOfIncludingThis(mallocSizeOf);
-  }
+
+  size_t sizes = mallocSizeOf(this);
+
+  // We don't have memory-reporting methods for a std::unordered_map, so just
+  // take the size of the actual elements stored for now.
+  sizes += sFontFileStreams.size() *
+           (sizeof(uint64_t) + sizeof(gfxDWriteFontFileStream*));
 
   return sizes;
 }

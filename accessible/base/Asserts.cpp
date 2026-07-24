@@ -18,7 +18,7 @@ using namespace mozilla::a11y;
       static_cast<uint32_t>(roles::geckoRole) ==                            \
           static_cast<uint32_t>(nsIAccessibleRole::ROLE_##geckoRole),       \
       "internal and xpcom roles differ!");
-#include "RoleMap.h"
+#include "RoleMap.inc"
 #undef ROLE
 
 #define RELATIONTYPE(geckoType, stringType, atkType, msaaType, ia2Type)       \
@@ -26,5 +26,5 @@ using namespace mozilla::a11y;
       static_cast<uint32_t>(RelationType::geckoType) ==                       \
           static_cast<uint32_t>(nsIAccessibleRelation::RELATION_##geckoType), \
       "internal and xpcom relations differ!");
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
 #undef RELATIONTYPE

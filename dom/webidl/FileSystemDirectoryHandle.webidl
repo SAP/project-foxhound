@@ -18,7 +18,7 @@ dictionary FileSystemRemoveOptions {
 [Exposed=(Window,Worker), SecureContext, Serializable, Pref="dom.fs.enabled"]
 interface FileSystemDirectoryHandle : FileSystemHandle {
 
-  async iterable<USVString, FileSystemHandle>;
+  async_iterable<USVString, FileSystemHandle>;
 
   [NewObject]
   Promise<FileSystemFileHandle> getFileHandle(USVString name, optional FileSystemGetFileOptions options = {});

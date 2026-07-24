@@ -8,7 +8,6 @@
 #define mozilla_dom_JSWindowActorParent_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/JSActor.h"
@@ -50,9 +49,8 @@ class JSWindowActorParent final : public JSActor {
   CanonicalBrowsingContext* GetBrowsingContext(ErrorResult& aRv);
 
  protected:
-  void SendRawMessage(const JSActorMessageMeta& aMeta,
-                      Maybe<ipc::StructuredCloneData>&& aData,
-                      Maybe<ipc::StructuredCloneData>&& aStack,
+  void SendRawMessage(const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
+                      ipc::StructuredCloneData* aStack,
                       ErrorResult& aRv) override;
 
  private:

@@ -101,6 +101,27 @@ AddonUtilsInternal.prototype = {
             }
           },
           onInstallEnded(install, addon) {
+            // Themes-addons are not automatically enabled when installed, but the active
+            // theme is synced by prefs, so we use a transient pref to enable it
+            // after install
+            let hasIncomingActiveThemeId = Services.prefs.getStringPref(
+              "extensions.pendingActiveThemeID",
+              ""
+            );
+            if (
+              hasIncomingActiveThemeId &&
+              addon.id === hasIncomingActiveThemeId
+            ) {
+              try {
+                addon.enable();
+              } catch (e) {
+                this._log.error("Failed to enable the incoming theme", e);
+              } finally {
+                // If something went wrong with enabling the theme, we don't have a good
+                // way to retry -- so we'll clear it rather than keeping the pref around
+                Services.prefs.clearUserPref("extensions.pendingActiveThemeID");
+              }
+            }
             install.removeListener(listener);
 
             res({ id: addon.id, install, addon });

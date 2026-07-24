@@ -12,6 +12,11 @@ ChromeUtils.defineESModuleGetters(this, {
 // Set the content pref to make it available across tests
 const ABOUT_WELCOME_OVERRIDE_CONTENT_PREF = "browser.aboutwelcome.screens";
 
+const { MockFilePicker } = SpecialPowers;
+const { BackupService } = ChromeUtils.importESModule(
+  "resource:///modules/backup/BackupService.sys.mjs"
+);
+
 function popPrefs() {
   return SpecialPowers.popPrefEnv();
 }

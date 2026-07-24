@@ -14,11 +14,10 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
-import mozilla.components.browser.state.state.BrowserState
-import mozilla.components.browser.state.store.BrowserStore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mozilla.fenix.FenixApplication
+import org.mozilla.fenix.ext.application
 
 internal class FirstSessionPingTest {
 
@@ -32,12 +31,6 @@ internal class FirstSessionPingTest {
 
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
-
-        val mockedState: BrowserState = mockk(relaxed = true)
-        every { mockedState.distributionId } returns null
-
-        val mockedStore: BrowserStore = mockk(relaxed = true)
-        every { mockedStore.state } returns mockedState
 
         val mockAp = spyk(FirstSessionPing(mockedContext), recordPrivateCalls = true)
         every { mockAp.wasAlreadyTriggered() } returns false
@@ -73,7 +66,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result = FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R)
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R,
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals(testPackageName, result)
     }
 
@@ -88,7 +85,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result = FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R)
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R,
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals("", result)
     }
 
@@ -104,8 +105,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result =
-            FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R.plus(1))
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.plus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals(testPackageName, result)
     }
 
@@ -120,8 +124,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result =
-            FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R.plus(1))
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.plus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals("", result)
     }
 
@@ -137,8 +144,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result =
-            FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R.minus(1))
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.minus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals(testPackageName, result)
     }
 
@@ -154,8 +164,11 @@ internal class FirstSessionPingTest {
         val mockedContext: Context = mockk(relaxed = true)
         every { mockedContext.applicationContext } returns mockedApplication
 
-        val result =
-            FirstSessionPing(mockedContext).installSourcePackage(Build.VERSION_CODES.R.minus(1))
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.minus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
         assertEquals("", result)
     }
 }

@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIContentSink_h___
-#define nsIContentSink_h___
+#ifndef nsIContentSink_h_
+#define nsIContentSink_h_
 
 /**
  * MODULE NOTES:
@@ -21,7 +21,6 @@
 #include "nsString.h"
 #include "mozilla/FlushType.h"
 #include "mozilla/NotNull.h"
-#include "nsIDTD.h"
 
 class nsParserBase;
 namespace mozilla {
@@ -57,7 +56,7 @@ class nsIContentSink : public nsISupports {
    *
    * @update 5/7/98 gess
    */
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) { return NS_OK; }
+  NS_IMETHOD WillBuildModel() { return NS_OK; }
 
   /**
    * This method gets called when the parser concludes the process
@@ -136,4 +135,4 @@ class nsIContentSink : public nsISupports {
   virtual void InitialTranslationCompleted() {}
 };
 
-#endif /* nsIContentSink_h___ */
+#endif /* nsIContentSink_h_ */

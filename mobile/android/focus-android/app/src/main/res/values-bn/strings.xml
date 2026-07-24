@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s আপনাকে নিয়ন্ত্রণ দেয়।</p> <p>ব্যক্তিগত ব্রাউজার হিসাবে এটিকে ব্যবহার করুন: <ul> <li>সরাসরি অ্যাপেই সন্ধান এবং ব্রাউজ করুন</li> <li>ট্রাকারদেরকে অবরুদ্ধ করুন(অথবা ট্রাকারদের অনুমতি দিতে সেটিংস আপডেট করুন)</li> <li>কুকি ও ব্রাউজিং ইতিহাস মুছে ফেলতে “মুছে ফেলুন” ব্যবহার করুন</li> </ul> </p> <p>%1$s তৈরী করেছে Mozilla। আমাদের লক্ষ্য একটি সুস্থ ও মুক্ত ইন্টারনেট গড়ে তোলা।.<br/> <a href=\"%2$s\">আরও জানুন</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s আপনাকে নিয়ন্ত্রণ দেয়।</p>\n<p>ব্যক্তিগত ব্রাউজার হিসাবে এটিকে ব্যবহার করুন:\n<ul>\n<li>সরাসরি অ্যাপেই সন্ধান এবং ব্রাউজ করুন</li>\n<li>ট্রাকারদেরকে অবরুদ্ধ করুন(অথবা ট্রাকারদের অনুমতি দিতে সেটিংস আপডেট করুন)</li>\n<li>কুকি ও ব্রাউজিং ইতিহাস মুছে ফেলতে “মুছে ফেলুন” ব্যবহার করুন</li>\n</ul> </p>\n<p>%1$s তৈরী করেছে Mozilla। আমাদের লক্ষ্য একটি সুস্থ ও মুক্ত ইন্টারনেট গড়ে তোলা।.<br/>\n<a href=\"%2$s\">আরও জানুন</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">আরও জানুন</string>
   <!-- Header for the Privacy and Security settings menu -->

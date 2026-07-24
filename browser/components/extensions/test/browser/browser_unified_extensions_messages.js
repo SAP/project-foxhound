@@ -350,7 +350,7 @@ async function runBlockedExtensionsTestCase({ testSoftBlocks = false }) {
       type: testSoftBlocks ? "warning" : "error",
       fluentAttributes: {
         id: testSoftBlocks
-          ? "unified-extensions-mb-blocklist-warning-single"
+          ? "unified-extensions-mb-blocklist-warning-single2"
           : "unified-extensions-mb-blocklist-error-single",
         args: {
           extensionName: addon1.name,
@@ -432,7 +432,7 @@ async function runBlockedExtensionsTestCase({ testSoftBlocks = false }) {
       type: testSoftBlocks ? "warning" : "error",
       fluentAttributes: {
         id: testSoftBlocks
-          ? "unified-extensions-mb-blocklist-warning-multiple"
+          ? "unified-extensions-mb-blocklist-warning-multiple2"
           : "unified-extensions-mb-blocklist-error-multiple",
         args: {
           extensionsCount: 2,
@@ -610,7 +610,7 @@ add_task(async function test_quarantined_and_blocklist_message() {
       await openExtensionsPanel();
       let messages = getMessageBars();
       Assert.equal(messages.length, 1, "expected a message");
-      verifyQuarantinedDomainsMessageBar(messages[0]);
+      await verifyQuarantinedDomainsMessageBar(messages[0]);
       await closeExtensionsPanel();
 
       let promiseBlocklistAttentionUpdated = AddonTestUtils.promiseManagerEvent(
@@ -638,7 +638,7 @@ add_task(async function test_quarantined_and_blocklist_message() {
           },
         },
       });
-      verifyQuarantinedDomainsMessageBar(messages[1]);
+      await verifyQuarantinedDomainsMessageBar(messages[1]);
       await closeExtensionsPanel();
       cleanupBlocklist();
     }

@@ -56,6 +56,9 @@ size_t RoundUpToMultiple(size_t value, size_t multiple) {
 
 std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
     const DesktopCaptureOptions& options) {
+  RTC_LOG(LS_INFO)
+      << "video capture: DesktopCapturer::CreateRawScreenCapturer creates "
+         "DesktopCapturer of type ScreenCapturerFuchsia";
   std::unique_ptr<ScreenCapturerFuchsia> capturer(new ScreenCapturerFuchsia());
   return capturer;
 }
@@ -93,7 +96,7 @@ void ScreenCapturerFuchsia::CaptureFrame() {
     return;
   }
 
-  int64_t capture_start_time_nanos = rtc::TimeNanos();
+  int64_t capture_start_time_nanos = TimeNanos();
 
   zx::event event;
   zx::event dup;
@@ -148,8 +151,8 @@ void ScreenCapturerFuchsia::CaptureFrame() {
                       << release_result.err();
   }
 
-  int capture_time_ms = (rtc::TimeNanos() - capture_start_time_nanos) /
-                        rtc::kNumNanosecsPerMillisec;
+  int capture_time_ms =
+      (TimeNanos() - capture_start_time_nanos) / kNumNanosecsPerMillisec;
   frame->set_capture_time_ms(capture_time_ms);
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 }
@@ -303,9 +306,8 @@ void ScreenCapturerFuchsia::SetupBuffers() {
 
   fuchsia::ui::composition::RegisterBufferCollectionArgs buffer_collection_args;
   buffer_collection_args.set_export_token(std::move(export_token));
-  buffer_collection_args.set_buffer_collection_token(
-      fuchsia::sysmem::BufferCollectionTokenHandle(
-          flatland_token.Unbind().TakeChannel()));
+  buffer_collection_args.set_buffer_collection_token2(
+      std::move(flatland_token));
   buffer_collection_args.set_usage(
       fuchsia::ui::composition::RegisterBufferCollectionUsage::SCREENSHOT);
 
@@ -387,7 +389,7 @@ void ScreenCapturerFuchsia::SetupBuffers() {
     const zx::vmo& virt_mem =
         buffer_collection_info_.buffers()[buffer_index].vmo();
     virtual_memory_mapped_addrs_[buffer_index] = nullptr;
-    auto status = zx::vmar::root_self()->map(
+    status = zx::vmar::root_self()->map(
         ZX_VM_PERM_READ, /*vmar_offset*/ 0, virt_mem,
         /*vmo_offset*/ 0, virt_mem_bytes,
         reinterpret_cast<uintptr_t*>(

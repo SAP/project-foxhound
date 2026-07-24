@@ -27,11 +27,9 @@ add_task(async function test_remoteness_switch_listeners() {
       browser.addProgressListener(wpl);
     });
 
-    let loaded = BrowserTestUtils.browserLoaded(
-      browser,
-      null,
-      "https://example.com/"
-    );
+    let loaded = BrowserTestUtils.browserLoaded(browser, {
+      wantLoad: "https://example.com/",
+    });
     BrowserTestUtils.startLoadingURIString(browser, "https://example.com/");
     await Promise.all([loaded, navigated]);
     browser.removeProgressListener(wpl);

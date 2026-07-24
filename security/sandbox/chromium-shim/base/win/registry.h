@@ -22,6 +22,10 @@ class BASE_EXPORT RegKey {
  public:
   RegKey() {};
   RegKey(HKEY rootkey, const wchar_t* subkey, REGSAM access) {}
+
+  RegKey(const RegKey&) = delete;
+  RegKey& operator=(const RegKey&) = delete;
+
   ~RegKey() {}
 
   LONG Open(HKEY rootkey, const wchar_t* subkey, REGSAM access) {
@@ -37,9 +41,6 @@ class BASE_EXPORT RegKey {
   {
     return ERROR_CANTREAD;
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(RegKey);
 };
 
 }  // namespace win

@@ -11,6 +11,9 @@
  * (UCS, Unicode) values.
  */
 
+#ifndef WIDGET_X11_KEYSYM2UCS_H_
+#define WIDGET_X11_KEYSYM2UCS_H_
+
 #ifdef MOZ_X11
 #  include <X11/X.h>
 #else
@@ -26,3 +29,5 @@ long keysym2ucs(KeySym keysym);
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
+
+#endif  // WIDGET_X11_KEYSYM2UCS_H_

@@ -11,9 +11,9 @@
 #include "States.h"
 
 #include "nsContentUtils.h"
+#include "nsIMutationObserver.h"
 #include "mozilla/a11y/DocAccessible.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/MutationEventBinding.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -99,15 +99,13 @@ bool HTMLLinkAccessible::AttributeChangesState(nsAtom* aAttribute) {
 
 void HTMLLinkAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                              nsAtom* aAttribute,
-                                             int32_t aModType,
+                                             AttrModType aModType,
                                              const nsAttrValue* aOldValue,
                                              uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
                                            aOldValue, aOldState);
 
-  if (aAttribute == nsGkAtoms::href &&
-      (aModType == dom::MutationEvent_Binding::ADDITION ||
-       aModType == dom::MutationEvent_Binding::REMOVAL)) {
+  if (aAttribute == nsGkAtoms::href && IsAdditionOrRemoval(aModType)) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Actions);
   }
 }

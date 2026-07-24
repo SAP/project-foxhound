@@ -6,13 +6,15 @@ package org.mozilla.focus.input
 
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.widget.AppCompatEditText
-import androidx.compose.material.Text
+import androidx.compose.material3.Text
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
@@ -34,12 +36,15 @@ import org.mozilla.focus.ext.settings
 import org.mozilla.focus.fragment.UrlInputFragment
 import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.ui.theme.focusTypography
+import androidx.cardview.R as cardViewR
+import mozilla.components.browser.toolbar.R as toolbarR
 
 class InputToolbarIntegration(
     private val toolbar: BrowserToolbar,
     private val fragment: UrlInputFragment,
     shippedDomainsProvider: ShippedDomainsProvider,
     customDomainsProvider: CustomDomainsProvider,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
     private val settings = toolbar.context.settings
 
@@ -141,13 +146,15 @@ class InputToolbarIntegration(
 
     @VisibleForTesting
     internal fun observeStartBrowserCfrVisibility() {
-        startBrowsingCfrScope = fragment.components?.appStore?.flowScoped { flow ->
+        startBrowsingCfrScope = fragment.components?.appStore?.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> state.showStartBrowsingTabsCfr }
                 .distinctUntilChanged()
                 .collect { showStartBrowsingCfr ->
                     if (showStartBrowsingCfr) {
                         CFRPopup(
-                            anchor = toolbar.findViewById<AppCompatEditText>(R.id.mozac_browser_toolbar_background),
+                            anchor = toolbar.findViewById<AppCompatEditText>(
+                                toolbarR.id.mozac_browser_toolbar_background,
+                            ),
                             properties = CFRPopupProperties(
                                 popupWidth = 256.dp,
                                 popupAlignment = CFRPopup.PopupAlignment.BODY_TO_ANCHOR_START,
@@ -163,7 +170,7 @@ class InputToolbarIntegration(
                                 ),
                                 dismissButtonColor = ContextCompat.getColor(
                                     fragment.requireContext(),
-                                    R.color.cardview_light_background,
+                                    cardViewR.color.cardview_light_background,
                                 ),
                                 popupVerticalOffset = 0.dp,
                             ),

@@ -25,9 +25,11 @@ add_setup(async function () {
   await PlacesTestUtils.addVisits([
     {
       uri: "http://www.autofilltrimurl.com/whatever",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
     {
       uri: "https://www.secureautofillurl.com/whatever",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
 });

@@ -6,11 +6,12 @@ import React, { useCallback } from "react";
 import { FeatureHighlight } from "./FeatureHighlight";
 
 export function ShortcutFeatureHighlight({
-  position,
   dispatch,
-  handleDismiss,
-  handleBlock,
   feature,
+  handleBlock,
+  handleDismiss,
+  messageData,
+  position,
 }) {
   const onDismiss = useCallback(() => {
     handleDismiss();
@@ -18,28 +19,49 @@ export function ShortcutFeatureHighlight({
   }, [handleDismiss, handleBlock]);
 
   return (
-    <div className="shortcut-feature-highlight">
+    <div
+      className={`shortcut-feature-highlight ${messageData.content?.darkModeDismiss ? "is-inverted-dark-dismiss-button" : ""}`}
+    >
       <FeatureHighlight
         position={position}
         feature={feature}
         dispatch={dispatch}
         message={
           <div className="shortcut-feature-highlight-content">
-            <img
-              src="chrome://global/skin/icons/open-in-new.svg"
-              width="24"
-              height="24"
-              alt=""
-            />
+            <picture className="follow-section-button-highlight-image">
+              <source
+                srcSet={
+                  messageData.content?.darkModeImageURL ||
+                  "chrome://newtab/content/data/content/assets/highlights/omc-newtab-shortcuts.svg"
+                }
+                media="(prefers-color-scheme: dark)"
+              />
+              <source
+                srcSet={
+                  messageData.content?.imageURL ||
+                  "chrome://newtab/content/data/content/assets/highlights/omc-newtab-shortcuts.svg"
+                }
+                media="(prefers-color-scheme: light)"
+              />
+              <img width="320" height="195" alt="" />
+            </picture>
             <div className="shortcut-feature-highlight-copy">
-              <p
-                className="title"
-                data-l10n-id="newtab-shortcuts-highlight-title"
-              />
-              <p
-                className="subtitle"
-                data-l10n-id="newtab-shortcuts-highlight-subtitle"
-              />
+              {messageData.content?.cardTitle ? (
+                <p className="title">{messageData.content.cardTitle}</p>
+              ) : (
+                <p
+                  className="title"
+                  data-l10n-id="newtab-shortcuts-highlight-title"
+                />
+              )}
+              {messageData.content?.cardMessage ? (
+                <p className="subtitle">{messageData.content.cardMessage}</p>
+              ) : (
+                <p
+                  className="subtitle"
+                  data-l10n-id="newtab-shortcuts-highlight-subtitle"
+                />
+              )}
             </div>
           </div>
         }

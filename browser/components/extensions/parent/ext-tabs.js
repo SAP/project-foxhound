@@ -8,7 +8,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   ExtensionControlledPopup:
     "resource:///modules/ExtensionControlledPopup.sys.mjs",
@@ -161,6 +162,7 @@ const allProperties = new Set([
   "discarded",
   "favIconUrl",
   "groupId",
+  "splitViewId",
   "hidden",
   "isArticle",
   "mutedInfo",
@@ -493,6 +495,20 @@ this.tabs = class extends ExtensionAPIPersistent {
             return;
           }
           needed.push("groupId");
+        } else if (event.type == "TabMove") {
+          const { previousTabState, currentTabState } = event.detail;
+          if (previousTabState.splitViewId === currentTabState.splitViewId) {
+            // Ignore all TabMove events except when the splitViewId changes.
+            return;
+          }
+          if (updatedTab.removedByAdoption || updatedTab.addedByAdoption) {
+            // Ignore TabMove events that were fired while adopting a split
+            // view and its tabs across windows. When a split view is adopted,
+            // it continues to exist in the new window, so despite the multiple
+            // TabMove events, effectively splitViewId does not change.
+            return;
+          }
+          needed.push("splitViewId");
         } else if (event.type == "TabShow") {
           needed.push("hidden");
         } else if (event.type == "TabHide") {
@@ -563,6 +579,9 @@ this.tabs = class extends ExtensionAPIPersistent {
         listeners.set("TabGrouped", listener);
         listeners.set("TabUngrouped", listener);
       }
+      if (filter.properties.has("splitViewId")) {
+        listeners.set("TabMove", listener);
+      }
       if (filter.properties.has("hidden")) {
         listeners.set("TabShow", listener);
         listeners.set("TabHide", listener);
@@ -632,6 +651,14 @@ this.tabs = class extends ExtensionAPIPersistent {
         }
         return tab;
       });
+    }
+
+    function updateNativeTabAfterAdopt(nativeTabs, oldTab, newTab) {
+      for (let i = 0; i < nativeTabs.length; ++i) {
+        if (nativeTabs[i] === oldTab) {
+          nativeTabs[i] = newTab;
+        }
+      }
     }
 
     async function promiseTabWhenReady(tabId) {
@@ -779,7 +806,7 @@ this.tabs = class extends ExtensionAPIPersistent {
               url = context.uri.resolve(createProperties.url);
 
               if (
-                !url.startsWith("moz-extension://") &&
+                !ExtensionUtils.isExtensionUrl(url) &&
                 !context.checkLoadURL(url, { dontReportErrors: true })
               ) {
                 return Promise.reject({ message: `Illegal URL: ${url}` });
@@ -793,7 +820,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             }
             let discardable = url && !url.startsWith("about:");
             // Handle moz-ext separately from the discardable flag to retain prior behavior.
-            if (!discardable || url.startsWith("moz-extension://")) {
+            if (!discardable || ExtensionUtils.isExtensionUrl(url)) {
               setContentTriggeringPrincipal(url, window.gBrowser, options);
             }
 
@@ -865,11 +892,14 @@ this.tabs = class extends ExtensionAPIPersistent {
 
             if (
               createProperties.url &&
-              createProperties.url !== window.BROWSER_NEW_TAB_URL
+              createProperties.url !== window.BROWSER_NEW_TAB_URL &&
+              !createProperties.url.startsWith("about:blank")
             ) {
               // We can't wait for a location change event for about:newtab,
               // since it may be pre-rendered, in which case its initial
               // location change event has already fired.
+              // The same goes for about:blank, since the initial blank document
+              // is loaded synchronously.
 
               // Mark the tab as initializing, so that operations like
               // `executeScript` wait until the requested URL is loaded in
@@ -942,7 +972,7 @@ this.tabs = class extends ExtensionAPIPersistent {
 
             if (!context.checkLoadURL(url, { dontReportErrors: true })) {
               // We allow loading top level tabs for "other" extensions.
-              if (url.startsWith("moz-extension://")) {
+              if (ExtensionUtils.isExtensionUrl(url)) {
                 setContentTriggeringPrincipal(url, tabbrowser, options);
               } else {
                 return Promise.reject({ message: `Illegal URL: ${url}` });
@@ -1143,7 +1173,9 @@ this.tabs = class extends ExtensionAPIPersistent {
           */
           let lastInsertionMap = new Map();
 
-          for (let nativeTab of getNativeTabsFromIDArray(tabIds)) {
+          const tabsToMove = getNativeTabsFromIDArray(tabIds);
+          while (tabsToMove.length) {
+            let nativeTab = tabsToMove.shift();
             // If the window is not specified, use the window from the tab.
             let window = destinationWindow || nativeTab.ownerGlobal;
             let isSameWindow = nativeTab.ownerGlobal == window;
@@ -1203,18 +1235,55 @@ this.tabs = class extends ExtensionAPIPersistent {
               continue;
             }
 
+            let splitview = nativeTab.splitview;
+            let splitviewTabs = splitview?.tabs;
             if (isSameWindow) {
               // If the window we are moving is the same, just move the tab.
+              // moveTabTo handles regular tabs and split views.
               gBrowser.moveTabTo(nativeTab, { tabIndex: insertionPoint });
+            } else if (splitview) {
+              // Split view for different window.
+              let tabIndexInSplitview = splitviewTabs.indexOf(nativeTab);
+              splitview = gBrowser.adoptSplitView(splitview, {
+                tabIndex: insertionPoint,
+              });
+              const oldTabs = splitviewTabs;
+              splitviewTabs = splitview.tabs;
+              nativeTab = splitviewTabs[tabIndexInSplitview];
+              for (const [o, n] of Iterator.zip([oldTabs, splitviewTabs])) {
+                updateNativeTabAfterAdopt(tabsToMove, o, n);
+              }
             } else {
               // If the window we are moving the tab in is different, then move the tab
               // to the new window.
+              // TODO bug 1762800: handle adoptTab failure.
+              const oldNativeTab = nativeTab;
               nativeTab = gBrowser.adoptTab(nativeTab, {
                 tabIndex: insertionPoint,
               });
+              updateNativeTabAfterAdopt(tabsToMove, oldNativeTab, nativeTab);
             }
-            lastInsertionMap.set(window, nativeTab._tPos);
-            tabsMoved.push(nativeTab);
+            lastInsertionMap.set(
+              window,
+              splitview ? splitviewTabs.at(-1)._tPos : nativeTab._tPos
+            );
+            if (splitview) {
+              for (const tab of splitviewTabs) {
+                let tabIsInTabsToMove = tab === nativeTab;
+                let i = 0;
+                while ((i = tabsToMove.indexOf(tab, i)) !== -1) {
+                  // When a tab of a split view is moved, the whole split view
+                  // is moved instead. We do not need to move these tabs again.
+                  tabsToMove.splice(i, 1);
+                  tabIsInTabsToMove = true;
+                }
+                if (tabIsInTabsToMove) {
+                  tabsMoved.push(tab);
+                }
+              }
+            } else {
+              tabsMoved.push(nativeTab);
+            }
           }
 
           return tabsMoved.map(nativeTab => tabManager.convert(nativeTab));

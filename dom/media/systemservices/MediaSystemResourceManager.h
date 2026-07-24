@@ -12,8 +12,8 @@
 #  include "MediaSystemResourceTypes.h"
 #  include "mozilla/ReentrantMonitor.h"
 #  include "mozilla/StaticPtr.h"
-#  include "nsTHashMap.h"
 #  include "nsISupportsImpl.h"
+#  include "nsTHashMap.h"
 
 namespace mozilla {
 

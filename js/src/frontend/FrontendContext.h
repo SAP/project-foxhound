@@ -66,7 +66,7 @@ class FrontendAllocator : public MallocProvider<FrontendAllocator> {
 
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                       size_t nbytes, void* reallocPtr = nullptr);
-  void reportAllocationOverflow();
+  void reportAllocOverflow();
 };
 
 class FrontendContext {

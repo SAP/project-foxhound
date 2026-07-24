@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGDataParser.h"
-#include "nsContentUtils.h"
+
 #include "SVGContentUtils.h"
+#include "nsContentUtils.h"
 
 namespace mozilla {
 

@@ -126,6 +126,12 @@ using MutableHandleVector = MutableHandle<StackGCVector<T>>;
 
 using jsid = JS::PropertyKey;
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+#  define IF_SOURCE_PHASE_IMPORTS(x, ...) x
+#else
+#  define IF_SOURCE_PHASE_IMPORTS(x, ...) __VA_ARGS__
+#endif
+
 #ifdef ENABLE_DECORATORS
 #  define IF_DECORATORS(x, ...) x
 #else

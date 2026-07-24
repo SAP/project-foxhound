@@ -187,7 +187,6 @@ struct TypeToRootType<Handle<T*>> {
       case TraceKind::RegExpShared:
       case TraceKind::GetterSetter:
       case TraceKind::PropMap:
-      case TraceKind::SmallBuffer:
         MOZ_CRASH("Unexpected trace kind");
     }
   }
@@ -508,6 +507,25 @@ bool InvokeFunction(JSContext* cx, HandleObject obj, bool constructing,
 
     RootedValue newTarget(cx, argvWithoutThis[argc]);
 
+    // The JIT ABI expects at least callee->nargs() arguments, with undefined
+    // values passed for missing formal arguments. These undefined values are
+    // passed before newTarget. We don't normally insert undefined values when
+    // calling native functions like this one, but by detecting and supporting
+    // that case here, it is easier for jit code to fall back to InvokeFunction
+    // as a slow path.
+    if (newTarget.isUndefined()) {
+      MOZ_RELEASE_ASSERT(obj->is<JSFunction>());
+      JSFunction* callee = &obj->as<JSFunction>();
+#ifdef DEBUG
+      MOZ_ASSERT(callee->nargs() > argc);
+      for (uint32_t i = argc; i < callee->nargs(); i++) {
+        MOZ_ASSERT(argvWithoutThis[i].isUndefined());
+      }
+#endif
+      newTarget = argvWithoutThis[callee->nargs()];
+      MOZ_ASSERT(newTarget.isObject());
+    }
+
     // See CreateThisFromIon for why this can be NullValue.
     if (thisv.isNull()) {
       thisv.setMagic(JS_IS_CONSTRUCTING);
@@ -563,8 +581,8 @@ bool InvokeFromInterpreterStub(JSContext* cx,
   bool constructing = CalleeTokenIsConstructing(token);
   RootedFunction fun(cx, CalleeTokenToFunction(token));
 
-  // Ensure new.target immediately follows the actual arguments (the arguments
-  // rectifier added padding).
+  // Ensure new.target immediately follows the actual arguments (the JIT
+  // ABI passes `undefined` for missing formals).
   if (constructing && numActualArgs < fun->nargs()) {
     argv[1 + numActualArgs] = argv[1 + fun->nargs()];
   }
@@ -883,13 +901,23 @@ bool GetIntrinsicValue(JSContext* cx, Handle<PropertyName*> name,
   return GlobalObject::getIntrinsicValue(cx, cx->global(), name, rval);
 }
 
+static uint32_t NumTraceableArgsForCreateThis(HandleFunction fun,
+                                              uint32_t argc) {
+  uint32_t numActualArgs = std::max(argc, uint32_t(fun->nargs()));
+  return numActualArgs + 1;  // Add 1 for newTarget
+}
+
 bool CreateThisFromIC(JSContext* cx, HandleObject callee,
-                      HandleObject newTarget, MutableHandleValue rval) {
+                      HandleObject newTarget, Value* argv, uint32_t argc,
+                      MutableHandleValue rval) {
   HandleFunction fun = callee.as<JSFunction>();
   MOZ_ASSERT(fun->isInterpreted());
   MOZ_ASSERT(fun->isConstructor());
   MOZ_ASSERT(cx->realm() == fun->realm(),
              "Realm switching happens before creating this");
+
+  RootedExternalValueArray args(cx, NumTraceableArgsForCreateThis(fun, argc),
+                                argv);
 
   // CreateThis expects rval to be this magic value.
   rval.set(MagicValue(JS_IS_CONSTRUCTING));
@@ -899,6 +927,38 @@ bool CreateThisFromIC(JSContext* cx, HandleObject callee,
   }
 
   MOZ_ASSERT_IF(rval.isObject(), fun->realm() == rval.toObject().nonCCWRealm());
+  return true;
+}
+
+bool CreateThisFromICWithAllocSite(JSContext* cx, HandleObject callee,
+                                   HandleObject newTarget, gc::AllocSite* site,
+                                   Value* argv, uint32_t argc,
+                                   MutableHandleValue rval) {
+  HandleFunction fun = callee.as<JSFunction>();
+  MOZ_ASSERT(fun->isInterpreted());
+  MOZ_ASSERT(fun->isConstructor());
+  MOZ_ASSERT(cx->realm() == fun->realm(),
+             "Realm switching happens before creating this");
+  MOZ_ASSERT(!fun->constructorNeedsUninitializedThis());
+
+  RootedExternalValueArray args(cx, NumTraceableArgsForCreateThis(fun, argc),
+                                argv);
+
+  Rooted<SharedShape*> shape(cx, ThisShapeForFunction(cx, fun, newTarget));
+  if (!shape) {
+    return false;
+  }
+
+  gc::AllocKind allocKind = gc::GetGCObjectKind(shape->numFixedSlots());
+  gc::Heap initialHeap = site->initialHeap();
+  PlainObject* obj = NativeObject::create<PlainObject>(
+      cx, allocKind, initialHeap, shape, site);
+  if (!obj) {
+    return false;
+  }
+
+  MOZ_ASSERT(fun->realm() == obj->nonCCWRealm());
+  rval.setObject(*obj);
   return true;
 }
 
@@ -1480,6 +1540,27 @@ JSObject* ObjectKeys(JSContext* cx, HandleObject obj) {
   return argv[0].toObjectOrNull();
 }
 
+JSObject* ObjectKeysFromIterator(JSContext* cx, HandleObject iterObj) {
+  MOZ_RELEASE_ASSERT(iterObj->is<PropertyIteratorObject>());
+  NativeIterator* iter =
+      iterObj->as<PropertyIteratorObject>().getNativeIterator();
+
+  size_t length = iter->ownPropertyCount();
+  Rooted<ArrayObject*> array(cx, NewDenseFullyAllocatedArray(cx, length));
+  if (!array) {
+    return nullptr;
+  }
+
+  array->ensureDenseInitializedLength(0, length);
+
+  for (size_t i = 0; i < length; ++i) {
+    array->initDenseElement(
+        i, StringValue((iter->propertiesBegin() + i)->asString()));
+  }
+
+  return array;
+}
+
 bool ObjectKeysLength(JSContext* cx, HandleObject obj, int32_t* length) {
   MOZ_ASSERT(!obj->is<ProxyObject>());
   return js::obj_keys_length(cx, obj, *length);
@@ -1488,27 +1569,35 @@ bool ObjectKeysLength(JSContext* cx, HandleObject obj, int32_t* length) {
 void JitValuePreWriteBarrier(JSRuntime* rt, Value* vp) {
   AutoUnsafeCallWithABI unsafe;
   MOZ_ASSERT(vp->isGCThing());
+#ifndef JS_GC_CONCURRENT_MARKING
   MOZ_ASSERT(!vp->toGCThing()->isMarkedBlack());
+#endif
   gc::ValuePreWriteBarrier(*vp);
 }
 
 void JitStringPreWriteBarrier(JSRuntime* rt, JSString** stringp) {
   AutoUnsafeCallWithABI unsafe;
   MOZ_ASSERT(*stringp);
+#ifndef JS_GC_CONCURRENT_MARKING
   MOZ_ASSERT(!(*stringp)->isMarkedBlack());
+#endif
   gc::PreWriteBarrier(*stringp);
 }
 
 void JitObjectPreWriteBarrier(JSRuntime* rt, JSObject** objp) {
   AutoUnsafeCallWithABI unsafe;
   MOZ_ASSERT(*objp);
+#ifndef JS_GC_CONCURRENT_MARKING
   MOZ_ASSERT(!(*objp)->isMarkedBlack());
+#endif
   gc::PreWriteBarrier(*objp);
 }
 
 void JitShapePreWriteBarrier(JSRuntime* rt, Shape** shapep) {
   AutoUnsafeCallWithABI unsafe;
+#ifndef JS_GC_CONCURRENT_MARKING
   MOZ_ASSERT(!(*shapep)->isMarkedBlack());
+#endif
   gc::PreWriteBarrier(*shapep);
 }
 
@@ -2528,27 +2617,74 @@ void* AllocateBigIntNoGC(JSContext* cx, bool requestMinorGC) {
   return cx->newCell<JS::BigInt, NoGC>(js::gc::Heap::Tenured);
 }
 
-void AllocateAndInitTypedArrayBuffer(JSContext* cx, TypedArrayObject* obj,
-                                     int32_t count) {
+void AllocateAndInitTypedArrayBuffer(JSContext* cx,
+                                     FixedLengthTypedArrayObject* obj,
+                                     int32_t count, size_t inlineCapacity) {
   AutoUnsafeCallWithABI unsafe;
 
-  // Initialize the data slot to UndefinedValue to signal to our JIT caller that
-  // the allocation failed if the slot isn't overwritten below.
-  obj->initFixedSlot(TypedArrayObject::DATA_SLOT, UndefinedValue());
+  // Inline implementation of the last steps in
+  // `FixedLengthTypedArrayObjectTemplate::makeTypedArrayWithTemplate`.
+  //
+  // 1. Perform FixedLengthTypedArrayObjectTemplate::initTypedArraySlots:
+  //   - Initialize BUFFER_SLOT, LENGTH_SLOT, and BYTEOFFSET_SLOT.
+  //   - Mark zero-length typed arrays with `ZeroLengthArrayData`.
+  // 2. Perform FixedLengthTypedArrayObjectTemplate::initTypedArrayData:
+  //   - Initialize the DATA_SLOT.
 
-  // Negative numbers or zero will bail out to the slow path, which in turn will
-  // raise an invalid argument exception or create a correct object with zero
-  // elements.
+  // The data slot is initialized to UndefinedValue when copying slots from the
+  // template object. If the slot isn't overwritten below, this value is used as
+  // a signal to our JIT caller that the allocation failed.
+  MOZ_RELEASE_ASSERT(
+      obj->getFixedSlot(TypedArrayObject::DATA_SLOT).isUndefined(),
+      "DATA_SLOT initialized to UndefinedValue in JIT code");
+
+  // The buffer and byte-offset slots are initialized to their default values.
+  MOZ_ASSERT(obj->getFixedSlot(TypedArrayObject::BUFFER_SLOT).isFalse(),
+             "BUFFER_SLOT initialized to FalseValue in JIT code");
+  MOZ_ASSERT(obj->getFixedSlot(TypedArrayObject::BYTEOFFSET_SLOT) ==
+                 PrivateValue(size_t(0)),
+             "BUFFER_SLOT initialized to PrivateValue(0) in JIT code");
+
+  // Negative numbers will bail out to the slow path, which in turn will raise
+  // an invalid argument exception.
   constexpr size_t byteLengthLimit = TypedArrayObject::ByteLengthLimit;
-  if (count <= 0 || size_t(count) > byteLengthLimit / obj->bytesPerElement()) {
+  size_t bytesPerElement = obj->bytesPerElement();
+  if (count < 0 || size_t(count) > byteLengthLimit / bytesPerElement) {
     obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, PrivateValue(size_t(0)));
     return;
   }
 
+  size_t nbytes = size_t(count) * bytesPerElement;
+  MOZ_ASSERT(nbytes <= byteLengthLimit);
+
+  // Overwrite the slot with the length of the newly allocated typed array.
   obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, PrivateValue(count));
 
-  size_t nbytes = size_t(count) * obj->bytesPerElement();
-  MOZ_ASSERT(nbytes <= byteLengthLimit);
+  // If possible try to use the available inline space allocated through the
+  // template object's alloc-kind.
+  if (inlineCapacity > 0 && nbytes <= inlineCapacity) {
+    uint8_t* data =
+        obj->fixedData(FixedLengthTypedArrayObject::FIXED_DATA_START);
+    std::memset(data, 0, nbytes);
+
+#ifdef DEBUG
+    if (count == 0) {
+      data[0] = TypedArrayObject::ZeroLengthArrayData;
+    }
+#endif
+
+    obj->initFixedSlot(TypedArrayObject::DATA_SLOT, PrivateValue(data));
+    return;
+  }
+
+  // Zero-length typed arrays have to be tagged with |ZeroLengthArrayData|, but
+  // there's not enough space when exceeding the inline buffer limit. Fall back
+  // to the slow path.
+  if (count == 0) {
+    MOZ_ASSERT(inlineCapacity == 0);
+    return;
+  }
+
   nbytes = RoundUp(nbytes, sizeof(Value));
 
   MOZ_ASSERT(!obj->isTenured());
@@ -2603,6 +2739,11 @@ bool DoStringToInt64(JSContext* cx, HandleString str, uint64_t* res) {
 
   *res = js::BigInt::toUint64(bi);
   return true;
+}
+
+bool PreserveWrapper(JSContext* cx, JSObject* obj) {
+  AutoUnsafeCallWithABI unsafe;
+  return cx->zone()->preserveWrapper(obj);
 }
 
 template <EqualityKind Kind>
@@ -3232,6 +3373,27 @@ void AssertPropertyLookup(NativeObject* obj, PropertyKey id, uint32_t slot) {
 #else
   MOZ_CRASH("This should only be called in debug builds.");
 #endif
+}
+
+// This is a specialized version of ExposeJSThingToActiveJS
+void ReadBarrier(gc::Cell* cell) {
+  AutoUnsafeCallWithABI unsafe;
+
+  MOZ_ASSERT(!JS::RuntimeHeapIsCollecting());
+  MOZ_ASSERT(!gc::IsInsideNursery(cell));
+
+  gc::TenuredCell* tenured = &cell->asTenured();
+  MOZ_ASSERT(!gc::detail::TenuredCellIsMarkedBlack(tenured));
+
+  Zone* zone = tenured->zone();
+  if (zone->needsMarkingBarrier()) {
+    gc::PerformIncrementalReadBarrier(tenured);
+  } else if (!zone->isGCPreparing() &&
+             gc::detail::NonBlackCellIsMarkedGray(tenured)) {
+    gc::UnmarkGrayGCThingRecursively(tenured);
+  }
+  MOZ_ASSERT_IF(!zone->isGCPreparing(),
+                !gc::detail::TenuredCellIsMarkedGray(tenured));
 }
 
 void AssumeUnreachable(const char* output) {

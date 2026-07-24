@@ -3,10 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import sdl from "@microsoft/eslint-plugin-sdl";
-import eslintConfigPrettier from "eslint-config-prettier";
+import eslintConfigPrettier from "eslint-config-prettier/flat";
 import html from "eslint-plugin-html";
 import importPlugin from "eslint-plugin-import";
-import json from "eslint-plugin-json";
+import json from "@eslint/json";
 import lit from "eslint-plugin-lit";
 import mozilla from "eslint-plugin-mozilla";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -133,6 +133,7 @@ let config = [
     rules: {
       "lit/quoted-expressions": ["error", "never"],
       "lit/no-invalid-html": "error",
+      "lit/no-value-attribute": "error",
     },
   },
   {
@@ -146,7 +147,21 @@ let config = [
   {
     name: "json-recommended-with-comments",
     files: ["**/*.json"],
-    ...json.configs["recommended-with-comments"],
+    language: "json/jsonc",
+    ...json.configs.recommended,
+  },
+  {
+    name: "json-recommended-no-comments",
+    files: ["**/package.json"],
+    language: "json/json",
+    ...json.configs.recommended,
+  },
+  {
+    name: "json-empty-keys-off-for-image_builder",
+    files: ["taskcluster/docker/image_builder/policy.json"],
+    rules: {
+      "json/no-empty-keys": "off",
+    },
   },
   {
     name: "eslint-plugin-html",
@@ -411,7 +426,30 @@ let config = [
   {
     name: "mozilla/require-jsdoc",
     files: wrapPaths({ paths: ["**"] }),
-    ...mozilla.configs["flat/valid-jsdoc"],
+    ...mozilla.configs["flat/require-jsdoc"],
+  },
+  {
+    name: "rollout-no-browser-refs-in-toolkit",
+    files: ["toolkit/**"],
+    ignores: ["toolkit/**/test/**", "toolkit/**/tests/**"],
+    plugins: { mozilla },
+    rules: {
+      "mozilla/no-browser-refs-in-toolkit": "error",
+    },
+  },
+  {
+    name: "no-newtab-refs-outside-newtab",
+    files: ["**/*.mjs", "**/*.js", "**/*.sys.mjs"],
+    ignores: [
+      "tools/@types/generated/**",
+      "browser/base/content/test/static/browser_all_files_referenced.js",
+      "tools/lint/eslint/eslint-plugin-mozilla/lib/rules/no-newtab-refs-outside-newtab.mjs",
+      "tools/lint/eslint/eslint-plugin-mozilla/tests/no-newtab-refs-outside-newtab.mjs",
+    ],
+    plugins: { mozilla },
+    rules: {
+      "mozilla/no-newtab-refs-outside-newtab": "error",
+    },
   },
 
   ...wrapPathsInConfig(subdirConfigs),

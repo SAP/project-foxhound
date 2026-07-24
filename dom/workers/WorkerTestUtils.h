@@ -4,18 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_WorkerTestUtils__
-#define mozilla_dom_WorkerTestUtils__
+#ifndef mozilla_dom_WorkerTestUtils_
+#define mozilla_dom_WorkerTestUtils_
 
 #include "nsStringFwd.h"
 
 namespace mozilla {
 
 class ErrorResult;
-class GlobalObject;
 
 namespace dom {
 
+class GlobalObject;
 class WorkerTestCallback;
 
 /**

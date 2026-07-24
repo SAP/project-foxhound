@@ -10,7 +10,6 @@
 #define jit_mips_shared_AtomicOperations_mips_shared_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Types.h"
 
 #include "builtin/AtomicsObject.h"
 #include "vm/Uint8Clamped.h"

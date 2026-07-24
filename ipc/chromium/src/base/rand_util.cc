@@ -8,8 +8,6 @@
 
 #include <math.h>
 
-#include <limits>
-
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "mozilla/RandomNum.h"

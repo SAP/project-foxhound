@@ -23,18 +23,17 @@
 #include "VideoUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/RemoteDecodeUtils.h"
-#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/RemoteDecoderModule.h"
+#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/UtilityMediaServiceParent.h"
 #include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "nsPrintfCString.h"
-
-#include "mozilla/ipc/UtilityMediaServiceParent.h"
 
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
@@ -57,9 +56,9 @@
 #ifdef MOZ_OMX
 #  include "OmxDecoderModule.h"
 #endif
-#include "FFVPXRuntimeLinker.h"
-
 #include <functional>
+
+#include "FFVPXRuntimeLinker.h"
 
 using DecodeSupport = mozilla::media::DecodeSupport;
 using DecodeSupportSet = mozilla::media::DecodeSupportSet;
@@ -315,7 +314,7 @@ void PDMFactory::EnsureInit() {
     // Ensure that all system variables are initialized.
     gfx::gfxVars::Initialize();
     // Prime the preferences system from the main thread.
-    Unused << BrowserTabsRemoteAutostart();
+    (void)BrowserTabsRemoteAutostart();
   };
   // There are some initialization needed to be done on the main thread.
   if (!gfx::gfxVars::IsInitialized()) {
@@ -577,6 +576,12 @@ void PDMFactory::CreateRddPDMs() {
 #endif
   StartupPDM(AgnosticDecoderModule::Create(),
              StaticPrefs::media_prefer_non_ffvpx());
+
+  PDM_INIT_LOG("RDD PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+  }
 }
 
 void PDMFactory::CreateUtilityPDMs() {
@@ -617,6 +622,12 @@ void PDMFactory::CreateUtilityPDMs() {
     }
   }
 #endif
+
+  PDM_INIT_LOG("Utility PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+  }
 }
 
 void PDMFactory::CreateContentPDMs() {
@@ -691,7 +702,7 @@ void PDMFactory::CreateContentPDMs() {
 
   // Android still needs this, the actual decoder is remoted on java side
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -701,6 +712,11 @@ void PDMFactory::CreateContentPDMs() {
       !StartupPDM(GMPDecoderModule::Create(),
                   StaticPrefs::media_gmp_decoder_preferred())) {
     mFailureFlags += DecoderDoctorDiagnostics::Flags::GMPPDMFailedToStartup;
+  }
+  PDM_INIT_LOG("Content PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
   }
 }
 
@@ -732,7 +748,7 @@ void PDMFactory::CreateDefaultPDMs() {
   }
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -745,6 +761,12 @@ void PDMFactory::CreateDefaultPDMs() {
       !StartupPDM(GMPDecoderModule::Create(),
                   StaticPrefs::media_gmp_decoder_preferred())) {
     mFailureFlags += DecoderDoctorDiagnostics::Flags::GMPPDMFailedToStartup;
+  }
+
+  PDM_INIT_LOG("Default PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
   }
 }
 
@@ -790,7 +812,8 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
   MOZ_ASSERT(aProxy);
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (IsWidevineKeySystem(aProxy->KeySystem())) {
+  if (IsWidevineKeySystem(aProxy->KeySystem()) &&
+      AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     mEMEPDM = AndroidDecoderModule::Create(aProxy);
     return;
   }
@@ -832,7 +855,9 @@ media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
           cd.codec, pdm->SupportsMimeType(nsCString(cd.mimeTypeString)));
     }
 #ifdef MOZ_WIDGET_ANDROID
-    supported += AndroidDecoderModule::GetSupportedCodecs();
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+      supported += AndroidDecoderModule::GetSupportedCodecs();
+    }
 #endif
     return supported;
   };

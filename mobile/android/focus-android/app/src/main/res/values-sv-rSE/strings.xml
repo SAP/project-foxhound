@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ger dig full kontroll.</p> <p>Använd den som en privat webbläsare: <ul> <li>Sök och surfa direkt i appen</li> <li>Blockera trackers (eller uppdatera inställningar att tillåta trackers)</li> <li>Radera för att ta bort kakor samt sök- och webbhistorik</li> </ul> </p> <p>%1$s är utvecklad av Mozilla. Vårt uppdrag är att främja ett hälsosamt, öppet Internet.<br/> <a href=\"%2$s\">Läs mer</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ger dig full kontroll.</p>\n<p>Använd den som en privat webbläsare:\n<ul>\n<li>Sök och surfa direkt i appen</li>\n<li>Blockera trackers (eller uppdatera inställningar att tillåta trackers)</li>\n<li>Radera för att ta bort kakor samt sök- och webbhistorik</li>\n</ul> </p>\n<p>%1$s är utvecklad av Mozilla. Vårt uppdrag är att främja ett hälsosamt, öppet Internet.<br/>\n<a href=\"%2$s\">Läs mer</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Läs mer</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Genom att fortsätta godkänner du %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Genom att fortsätta godkänner du %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox användarvillkor.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">användarvillkor för Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox bryr sig om din integritet. Läs mer i vår %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox bryr sig om din integritet. Läs mer i vårt %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Sekretessmeddelande.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">sekretessmeddelande</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Radera webbhistorik</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Stäng andra flikar</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Lägg till ny flik</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Detta kan vara ett problem med serverns konfiguration, eller så kan det vara någon som försöker utge sig för att vara servern. <br/><br/> Om du har anslutit till den här servern tidigare kan felet vara tillfälligt.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Någon kan försöka utge sig för webbplatsen och att fortsätta kan vara riskabelt.</label> <br><br> <label>%1$s litar inte på <b>%2$s</b> eftersom dess certifikatutfärdare är okänd, certifikatet är självsignerat eller att servern inte skickar rätt mellanliggande certifikat.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Någon kan försöka utge sig för webbplatsen och att fortsätta kan vara riskabelt.</label> <br><br>\n<label>%1$s litar inte på <b>%2$s</b> eftersom dess certifikatutfärdare är okänd, certifikatet är självsignerat eller att servern inte skickar rätt mellanliggande certifikat.</label>]]></string>
   <!--
     Sessions List
 

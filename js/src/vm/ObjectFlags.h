@@ -83,16 +83,23 @@ enum class ObjectFlag : uint32_t {
   NeedsProxyGetSetResultValidation = 1 << 13,
 
   // There exists a property on this object which has fuse semantics associated
-  // with it, and thus we must trap on changes to said property.
-  HasFuseProperty = 1 << 14,
+  // with it. Changes to this object may require popping a per-realm Fuse. This
+  // is used for builtin prototypes and constructors.
+  HasRealmFuseProperty = 1 << 14,
 
-  // This is just holding the place of the flag for bug 1844878 which was
-  // temporarily backed out in bug 1980081.
-  HasPreservedWrapperDummy = 1 << 15,
+  // If set, this object may have an ObjectFuse associated with it that JIT code
+  // can use to bake in constant property values of this object. Changes to this
+  // object may require popping this per-Object fuse. See also the ObjectFuse
+  // SMDOC comment in ObjectFuse.h.
+  HasObjectFuse = 1 << 15,
+
+  // If set, we have already called the preserveWrapper hook for this object.
+  // This should only be set if `obj->getClass()->preservesWrapper()` is true.
+  HasPreservedWrapper = 1 << 16,
 
   // If set, the object may have an accessor property where the getter or setter
   // is a non-JSFunction callable object.
-  HasNonFunctionAccessor = 1 << 16,
+  HasNonFunctionAccessor = 1 << 17,
 };
 
 using ObjectFlags = EnumFlags<ObjectFlag>;

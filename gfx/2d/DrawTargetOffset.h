@@ -9,12 +9,8 @@
 
 #include "2D.h"
 
-#include "mozilla/Vector.h"
-
 #include "Filters.h"
 #include "Logging.h"
-
-#include <vector>
 
 namespace mozilla {
 namespace gfx {

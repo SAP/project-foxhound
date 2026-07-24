@@ -1,0 +1,158 @@
+[
+  {
+    "namespace": "ippActivator",
+    "description": "IPP Activator API",
+    "functions": [
+      {
+        "name": "showMessage",
+        "type": "function",
+        "description": "Show a localized message using the browser notification box. Optionally target a specific tab by id.",
+        "async": true,
+        "parameters": [
+          {
+            "name": "message",
+            "description": "Object with a Fluent l10n ID.",
+            "type": "object",
+            "properties": {
+              "l10nId": { "type": "string" }
+            }
+          },
+          {
+            "name": "tabId",
+            "type": "integer",
+            "optional": true,
+            "description": "Target tab id. Defaults to active tab."
+          }
+        ]
+      },
+      {
+        "name": "hideMessage",
+        "type": "function",
+        "description": "Hide the IPP notification for the given tab (or active tab by default). No-op if not present.",
+        "async": true,
+        "parameters": [
+          {
+            "name": "tabId",
+            "type": "integer",
+            "optional": true,
+            "description": "Target tab id. Defaults to active tab."
+          }
+        ]
+      },
+      {
+        "name": "getNotifiedDomains",
+        "type": "function",
+        "description": "Return the list of base domains for which a notification was already shown.",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "addNotifiedDomain",
+        "type": "function",
+        "description": "Add a base domain to the suppression list (no-op if present).",
+        "async": true,
+        "parameters": [{ "name": "domain", "type": "string" }]
+      },
+      {
+        "name": "isTesting",
+        "type": "function",
+        "description": "Return whether we are running in testing mode.",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "isIPPActive",
+        "type": "function",
+        "description": "Return whether IPP connection is active.",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getDynamicTabBreakages",
+        "type": "function",
+        "description": "Return dynamic tab breakages (pref: extensions.ippactivator.dynamicTabBreakages).",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getDynamicWebRequestBreakages",
+        "type": "function",
+        "description": "Return dynamic webRequest breakages (pref: extensions.ippactivator.dynamicWebRequestBreakages).",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getBaseDomainFromURL",
+        "type": "function",
+        "description": "Return both the eTLD+1 (baseDomain) and full host for the given URL.",
+        "async": true,
+        "parameters": [
+          {
+            "name": "url",
+            "type": "string",
+            "description": "The URL to analyze."
+          }
+        ]
+      },
+      {
+        "name": "hasExclusion",
+        "type": "function",
+        "description": "Return true if this URL has ipp-vpn permission set to DENY.",
+        "async": true,
+        "parameters": [
+          {
+            "name": "url",
+            "type": "string",
+            "description": "The URL to analyze."
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "name": "onIPPActivated",
+        "type": "function",
+        "description": "Fired when IPProtectionService dispatches 'IPProtectionService:Started'.",
+        "parameters": [
+          {
+            "name": "listener",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "name": "onDynamicTabBreakagesUpdated",
+        "type": "function",
+        "description": "Fired when dynamicTabBreakages preference changes.",
+        "parameters": [
+          {
+            "name": "listener",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "name": "onDynamicWebRequestBreakagesUpdated",
+        "type": "function",
+        "description": "Fired when dynamicWebRequestBreakages preference changes.",
+        "parameters": [
+          {
+            "name": "listener",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "name": "onIPPExceptionsChanged",
+        "type": "function",
+        "description": "Fired when the ipp-vpn permission changes.",
+        "parameters": [
+          {
+            "name": "listener",
+            "type": "function"
+          }
+        ]
+      }
+    ]
+  }
+]

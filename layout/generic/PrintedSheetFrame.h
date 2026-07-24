@@ -102,14 +102,15 @@ class PrintedSheetFrame final : public nsContainerFrame {
   // nsSharedPageData.
   // XXXjwatt: We should investigate sharing this function for the single
   // page-per-sheet case (bug 1835782). The logic for that case
-  // (nsPageFrame::ComputePageSizeScale) is somewhat different though, since
-  // that case uses no sheet margins and uses the user/CSS specified margins on
-  // the page, with any page scaling reverted to keep the margins unchanged.
-  // We, on the other hand, use the unwriteable margins for the sheet, unscaled,
-  // and use the user/CSS margins on the pages and allow them to be scaled
-  // along with any pages-per-sheet scaling. (This behavior makes maximum use
-  // of the sheet and, by scaling the default on the pages, results in a
-  // a sensible amount of spacing between pages.)
+  // (nsPageFrame::ComputeSinglePPSPageSizeScale) is somewhat different
+  // though, since that case uses no sheet margins and uses the user/CSS
+  // specified margins on the page, with any page scaling reverted to keep
+  // the margins unchanged.
+  // We, on the other hand, use the unwriteable margins for the sheet,
+  // unscaled, and use the user/CSS margins on the pages and allow them to
+  // be scaled along with any pages-per-sheet scaling. (This behavior makes
+  // maximum use of the sheet and, by scaling the default on the pages,
+  // results in a a sensible amount of spacing between pages.)
   void ComputePagesPerSheetGridMetrics(const nsSize& aSheetSize);
 
   // See GetSizeForChildren.

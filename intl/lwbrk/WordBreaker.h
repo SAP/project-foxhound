@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef mozilla_intl_WordBreaker_h__
-#define mozilla_intl_WordBreaker_h__
+#ifndef mozilla_intl_WordBreaker_h_
+#define mozilla_intl_WordBreaker_h_
 
 #include "nsStringFwd.h"
 #include <cstdint>
@@ -69,4 +69,4 @@ class WordBreaker final {
 }  // namespace intl
 }  // namespace mozilla
 
-#endif /* mozilla_intl_WordBreaker_h__ */
+#endif /* mozilla_intl_WordBreaker_h_ */

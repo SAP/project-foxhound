@@ -212,7 +212,7 @@ class CSSRegisteredPropertiesWatcher {
   };
 
   /**
-   * @param {Array<Object>} updates: Array of update object, which have the following properties:
+   * @param {Array<object>} updates: Array of update object, which have the following properties:
    *        - {InspectorCSSPropertyDefinition} registeredProperty: The property definition
    *                                            of the updated property
    *        - {Object} resourceUpdates: An object containing all the fields that are

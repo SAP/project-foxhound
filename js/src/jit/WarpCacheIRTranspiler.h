@@ -18,12 +18,12 @@ namespace jit {
 class CallInfo;
 class MDefinition;
 class WarpBuilder;
-class WarpCacheIR;
+class WarpCacheIRBase;
 
 // Generate MIR from a Baseline ICStub's CacheIR.
 [[nodiscard]] bool TranspileCacheIRToMIR(
     WarpBuilder* builder, BytecodeLocation loc,
-    const WarpCacheIR* cacheIRSnapshot,
+    const WarpCacheIRBase* cacheIRSnapshot,
     std::initializer_list<MDefinition*> inputs,
     CallInfo* maybeCallInfo = nullptr);
 

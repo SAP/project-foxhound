@@ -12,7 +12,7 @@ add_task(async function () {
     leaveOpen: true,
   });
   // Oh, Canada:
-  await evaluateSearchResults("Unified Canadian Syllabary", "fontsGroup");
+  await evaluateSearchResults("Unified Canadian Syllabary", "fonts");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -23,7 +23,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("Link Colors", "contrastControlGroup");
+  await evaluateSearchResults("Link Colors", "contrast");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 

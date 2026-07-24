@@ -49,6 +49,7 @@ public class WebRequest extends WebMessage {
   /** The value of the Referer header for this request. */
   public final @Nullable String referrer;
 
+  /** Cache mode definitions for web requests. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     CACHE_MODE_DEFAULT,

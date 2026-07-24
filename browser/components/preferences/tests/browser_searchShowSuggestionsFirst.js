@@ -29,7 +29,7 @@ add_task(async function openWithSearchSuggestionsShownFirst() {
     "Pref should be true initially"
   );
 
-  // Open preferences.  The checkbox should be checked.
+  // Open preferences. The checkbox should be checked.
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let checkbox = doc.getElementById(FIRST_CHECKBOX_ID);
@@ -37,8 +37,7 @@ add_task(async function openWithSearchSuggestionsShownFirst() {
   Assert.ok(!checkbox.disabled, "Checkbox should be enabled");
 
   // Uncheck the checkbox.
-  checkbox.checked = false;
-  checkbox.doCommand();
+  checkbox.click();
 
   // The pref should now be false so that history is shown first.
   Assert.ok(
@@ -52,6 +51,7 @@ add_task(async function openWithSearchSuggestionsShownFirst() {
 
   // Clear the pref.
   Services.prefs.clearUserPref(FIRST_PREF);
+  await checkbox.updateComplete;
 
   // The checkbox should have become checked again.
   Assert.ok(
@@ -72,7 +72,7 @@ add_task(async function openWithHistoryShownFirst() {
   // Set the pref to show history first.
   Services.prefs.setBoolPref(FIRST_PREF, false);
 
-  // Open preferences.  The checkbox should be unchecked.
+  // Open preferences. The checkbox should be unchecked.
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let checkbox = doc.getElementById(FIRST_CHECKBOX_ID);
@@ -80,8 +80,7 @@ add_task(async function openWithHistoryShownFirst() {
   Assert.ok(!checkbox.disabled, "Checkbox should be enabled");
 
   // Check the checkbox.
-  checkbox.checked = true;
-  checkbox.doCommand();
+  checkbox.click();
 
   // Make sure the checkbox state didn't change.
   Assert.ok(checkbox.checked, "Checkbox should remain checked");
@@ -95,6 +94,7 @@ add_task(async function openWithHistoryShownFirst() {
 
   // Set the pref to false again.
   Services.prefs.setBoolPref(FIRST_PREF, false);
+  await checkbox.updateComplete;
 
   // The checkbox should have become unchecked again.
   Assert.ok(
@@ -120,7 +120,7 @@ add_task(async function superprefInteraction() {
     "Pref should be true initially"
   );
 
-  // Open preferences.  The checkbox should be checked.
+  // Open preferences. The checkbox should be checked.
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
   let checkbox = doc.getElementById(FIRST_CHECKBOX_ID);
@@ -130,13 +130,14 @@ add_task(async function superprefInteraction() {
   await gCUITestUtils.addSearchBar();
 
   // Two superior prefs control the show-suggestion-first pref: URLBAR_PREF and
-  // MAIN_PREF.  Toggle each and make sure the show-suggestion-first checkbox
+  // MAIN_PREF. Toggle each and make sure the show-suggestion-first checkbox
   // reacts appropriately.
   for (let superiorPref of [URLBAR_PREF, MAIN_PREF]) {
     info(`Testing superior pref ${superiorPref}`);
 
     // Set the superior pref to false.
     Services.prefs.setBoolPref(superiorPref, false);
+    await checkbox.updateComplete;
 
     // The pref should remain true.
     Assert.ok(
@@ -156,6 +157,7 @@ add_task(async function superprefInteraction() {
 
     // Set the superior pref to true.
     Services.prefs.setBoolPref(superiorPref, true);
+    await checkbox.updateComplete;
 
     // The pref should remain true.
     Assert.ok(
@@ -175,6 +177,7 @@ add_task(async function superprefInteraction() {
 
     // Set the pref to false.
     Services.prefs.setBoolPref(FIRST_PREF, false);
+    await checkbox.updateComplete;
 
     // The checkbox should have become unchecked.
     Assert.ok(
@@ -188,6 +191,7 @@ add_task(async function superprefInteraction() {
 
     // Set the superior pref to false again.
     Services.prefs.setBoolPref(superiorPref, false);
+    await checkbox.updateComplete;
 
     // The pref should remain false.
     Assert.ok(
@@ -207,6 +211,7 @@ add_task(async function superprefInteraction() {
 
     // Set the superior pref to true.
     Services.prefs.setBoolPref(superiorPref, true);
+    await checkbox.updateComplete;
 
     // The pref should remain false.
     Assert.ok(
@@ -226,6 +231,7 @@ add_task(async function superprefInteraction() {
 
     // Finally, set the pref back to true.
     Services.prefs.setBoolPref(FIRST_PREF, true);
+    await checkbox.updateComplete;
 
     // The checkbox should have become checked.
     Assert.ok(

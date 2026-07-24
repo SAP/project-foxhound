@@ -13,12 +13,7 @@
 
 #include "vm/JSFunction-inl.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Range.h"
-
-#include <algorithm>
-#include <string.h>
 
 #include "jsapi.h"
 #include "jstypes.h"
@@ -107,7 +102,7 @@ static bool fun_enumerate(JSContext* cx, HandleObject obj) {
   return true;
 }
 
-bool IsFunction(HandleValue v) {
+static bool IsFunction(HandleValue v) {
   return v.isObject() && v.toObject().is<JSFunction>();
 }
 
@@ -173,7 +168,7 @@ static bool ArgumentsRestrictions(JSContext* cx, HandleFunction fun) {
   return true;
 }
 
-bool ArgumentsGetterImpl(JSContext* cx, const CallArgs& args) {
+static bool ArgumentsGetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   RootedFunction fun(cx, &args.thisv().toObject().as<JSFunction>());
@@ -219,7 +214,7 @@ static bool ArgumentsGetter(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsFunction, ArgumentsGetterImpl>(cx, args);
 }
 
-bool ArgumentsSetterImpl(JSContext* cx, const CallArgs& args) {
+static bool ArgumentsSetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   RootedFunction fun(cx, &args.thisv().toObject().as<JSFunction>());
@@ -255,7 +250,7 @@ static bool CallerRestrictions(JSContext* cx, HandleFunction fun) {
   return true;
 }
 
-bool CallerGetterImpl(JSContext* cx, const CallArgs& args) {
+static bool CallerGetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   // Beware!  This function can be invoked on *any* function!  It can't
@@ -325,7 +320,7 @@ static bool CallerGetter(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsFunction, CallerGetterImpl>(cx, args);
 }
 
-bool CallerSetterImpl(JSContext* cx, const CallArgs& args) {
+static bool CallerSetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   // We just have to return |undefined|, but first we call CallerGetterImpl
@@ -1019,7 +1014,8 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
   return out.finishString();
 }
 
-JSString* fun_toStringHelper(JSContext* cx, HandleObject obj, bool isToSource) {
+JSString* js::fun_toStringHelper(JSContext* cx, HandleObject obj,
+                                 bool isToSource) {
   if (!obj->is<JSFunction>()) {
     if (JSFunToStringOp op = obj->getOpsFunToString()) {
       return op(cx, obj, isToSource);
@@ -1486,8 +1482,10 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
   }
 
   // Block this call if security callbacks forbid it.
-  bool canCompileStrings = false;
-  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::JS, functionText,
+  bool canCompileStrings = cx->bypassCSPForDebugger;
+
+  if (!canCompileStrings &&
+      !cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::JS, functionText,
                                    JS::CompilationType::Function,
                                    parameterStrings, bodyString, parameterArgs,
                                    bodyArg, &canCompileStrings)) {

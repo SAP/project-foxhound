@@ -25,6 +25,7 @@ import mozilla.components.compose.browser.awesomebar.AwesomeBarColors
 import mozilla.components.compose.browser.awesomebar.AwesomeBarOrientation
 import mozilla.components.concept.awesomebar.AwesomeBar
 
+@Suppress("LongParameterList")
 @Composable
 internal fun Suggestions(
     suggestions: Map<AwesomeBar.SuggestionProviderGroup, List<AwesomeBar.Suggestion>>,
@@ -32,6 +33,7 @@ internal fun Suggestions(
     orientation: AwesomeBarOrientation,
     onSuggestionClicked: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
     onAutoComplete: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
+    onRemoveClicked: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
     onVisibilityStateUpdated: (AwesomeBar.VisibilityState) -> Unit,
     onScroll: () -> Unit,
 ) {
@@ -61,6 +63,7 @@ internal fun Suggestions(
                     orientation,
                     onSuggestionClicked = { onSuggestionClicked(group, suggestion) },
                     onAutoComplete = { onAutoComplete(group, suggestion) },
+                    onRemoveClicked = { onRemoveClicked(group, suggestion) },
                 )
             }
         }

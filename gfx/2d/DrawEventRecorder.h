@@ -8,6 +8,7 @@
 #define MOZILLA_GFX_DRAWEVENTRECORDER_H_
 
 #include "2D.h"
+#include "DrawEventRecorderTypes.h"
 #include "RecordedEvent.h"
 #include "RecordingTypes.h"
 
@@ -31,6 +32,7 @@ namespace gfx {
 
 class DrawTargetRecording;
 class PathRecording;
+class RecordedEvent;
 
 class DrawEventRecorderPrivate : public DrawEventRecorder {
  public:
@@ -214,7 +216,8 @@ class DrawEventRecorderPrivate : public DrawEventRecorder {
     int64_t mEventCount = -1;
   };
 
-  using ExternalSurfacesHolder = std::deque<ExternalSurfaceEntry>;
+  using ExternalSurfacesHolder =
+      DrawEventRecorderPrivate_ExternalSurfacesHolder;
 
   void TakeExternalSurfaces(ExternalSurfacesHolder& aSurfaces) {
     NS_ASSERT_OWNINGTHREAD(DrawEventRecorderPrivate);

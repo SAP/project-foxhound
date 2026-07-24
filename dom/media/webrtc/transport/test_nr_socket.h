@@ -80,8 +80,8 @@ nrappkit copyright:
 
 // Original author: bcampen@mozilla.com [:bwc]
 
-#ifndef test_nr_socket__
-#define test_nr_socket__
+#ifndef test_nr_socket_
+#define test_nr_socket_
 
 extern "C" {
 #include "transport_addr.h"
@@ -93,14 +93,14 @@ extern "C" {
 #include "nr_socket.h"
 }
 
-#include <set>
-#include <map>
 #include <list>
+#include <map>
+#include <set>
 #include <string>
 
+#include "mediapacket.h"
 #include "mozilla/UniquePtr.h"
 #include "prinrval.h"
-#include "mediapacket.h"
 
 namespace mozilla {
 
@@ -366,4 +366,4 @@ class TestNrSocket : public NrSocketBase {
 
 }  // namespace mozilla
 
-#endif  // test_nr_socket__
+#endif  // test_nr_socket_

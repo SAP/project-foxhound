@@ -6,8 +6,8 @@
 #ifndef GPU_SharedTextureMacIOSurface_H_
 #define GPU_SharedTextureMacIOSurface_H_
 
-#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/webgpu/SharedTexture.h"
 
 class MacIOSurface;

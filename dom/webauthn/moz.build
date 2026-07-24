@@ -94,3 +94,7 @@ MOCHITEST_MANIFESTS += ["tests/mochitest.toml"]
 BROWSER_CHROME_MANIFESTS += [
     "tests/browser/browser.toml",
 ]
+
+TEST_DIRS += [
+    "tests/gtest",
+]

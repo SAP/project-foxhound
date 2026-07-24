@@ -12,7 +12,6 @@
 #include "nsISHEntry.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 
 class nsSHEntryShared;
 class nsIInputStream;

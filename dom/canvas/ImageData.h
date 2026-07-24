@@ -8,10 +8,9 @@
 #define mozilla_dom_ImageData_h
 
 #include <cstdint>
-#include <utility>
+
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"

@@ -8,6 +8,7 @@
 #define mozilla_glean_GleanCounter_h
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/glean/bindings/CounterStandalone.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
@@ -17,19 +18,10 @@ namespace mozilla::glean {
 
 namespace impl {
 
-enum class CounterType { eBaseOrLabeled, eDualLabeled };
-
 template <CounterType C = CounterType::eBaseOrLabeled>
-class CounterMetric {
+class CounterMetric : public CounterStandalone<C> {
  public:
-  constexpr explicit CounterMetric(uint32_t aId) : mId(aId) {}
-
-  /*
-   * Increases the counter by `amount`.
-   *
-   * @param aAmount The amount to increase by. Should be positive.
-   */
-  void Add(int32_t aAmount = 1) const;
+  constexpr explicit CounterMetric(uint32_t aId) : CounterStandalone<C>(aId) {}
 
   /**
    * **Test-only API**
@@ -50,9 +42,6 @@ class CounterMetric {
    */
   Result<Maybe<int32_t>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 }  // namespace impl
 

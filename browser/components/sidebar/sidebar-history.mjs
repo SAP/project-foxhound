@@ -21,6 +21,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SidebarTreeView:
     "moz-src:///browser/components/sidebar/SidebarTreeView.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 const NEVER_REMEMBER_HISTORY_PREF = "browser.privatebrowsing.autostart";
@@ -101,10 +102,16 @@ export class SidebarHistory extends SidebarPage {
         child.hidden = isMultiSelectCommand;
       }
     }
+    let privateWindowMenuItem = this._contextMenu.querySelector(
+      "#sidebar-history-context-open-in-private-window"
+    );
+    privateWindowMenuItem.hidden = !lazy.PrivateBrowsingUtils.enabled;
   }
 
   handleContextMenuEvent(e) {
-    this.triggerNode = this.findTriggerNode(e, "sidebar-tab-row");
+    this.triggerNode =
+      this.findTriggerNode(e, "sidebar-tab-row") ||
+      this.findTriggerNode(e, "moz-input-search");
     if (!this.triggerNode) {
       e.preventDefault();
     }
@@ -162,13 +169,22 @@ export class SidebarHistory extends SidebarPage {
       // Avoid opening multiple links at once.
       return;
     }
-    navigateToLink(e);
+    navigateToLink(e, e.originalTarget.url, { forceNewTab: false });
     this.treeView.clearSelection();
   }
 
   onSecondaryAction(e) {
     this.triggerNode = e.detail.item;
     this.controller.deleteFromHistory().catch(console.error);
+  }
+
+  onMiddleClickAction(e) {
+    if (this.isMultipleRowsSelected) {
+      // Avoid opening multiple links at once.
+      return;
+    }
+    navigateToLink(e, e.originalTarget.url, { forceNewTab: true });
+    this.treeView.clearSelection();
   }
 
   /**
@@ -342,6 +358,7 @@ export class SidebarHistory extends SidebarPage {
       .tabItems=${tabItems}
       @fxview-tab-list-primary-action=${this.onPrimaryAction}
       @fxview-tab-list-secondary-action=${this.onSecondaryAction}
+      @fxview-tab-list-middleclick-action=${this.onMiddleClickAction}
     >
     </sidebar-tab-list>`;
   }
@@ -367,19 +384,19 @@ export class SidebarHistory extends SidebarPage {
   }
 
   willUpdate() {
-    this._menuSortByDate.setAttribute(
+    this._menuSortByDate.toggleAttribute(
       "checked",
       this.controller.sortOption == "date"
     );
-    this._menuSortBySite.setAttribute(
+    this._menuSortBySite.toggleAttribute(
       "checked",
       this.controller.sortOption == "site"
     );
-    this._menuSortByDateSite.setAttribute(
+    this._menuSortByDateSite.toggleAttribute(
       "checked",
       this.controller.sortOption == "datesite"
     );
-    this._menuSortByLastVisited.setAttribute(
+    this._menuSortByLastVisited.toggleAttribute(
       "checked",
       this.controller.sortOption == "lastvisited"
     );
@@ -398,26 +415,28 @@ export class SidebarHistory extends SidebarPage {
           data-l10n-attrs="heading"
           view="viewHistorySidebar"
         >
+          <div class="options-container">
+            <moz-input-search
+              data-l10n-id="firefoxview-search-text-box-history"
+              data-l10n-attrs="placeholder"
+              @MozInputSearch:search=${this.onSearchQuery}
+            ></moz-input-search>
+            <moz-button
+              class="menu-button"
+              @click=${this.openMenu}
+              data-l10n-id="sidebar-options-menu-button"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              view=${this.view}
+              type="icon ghost"
+              iconsrc="chrome://global/skin/icons/more.svg"
+            >
+            </moz-button>
+          </div>
         </sidebar-panel-header>
-        <div class="options-container">
-          <moz-input-search
-            data-l10n-id="firefoxview-search-text-box-history"
-            data-l10n-attrs="placeholder"
-            @MozInputSearch:search=${this.onSearchQuery}
-          ></moz-input-search>
-          <moz-button
-            class="menu-button"
-            @click=${this.openMenu}
-            data-l10n-id="sidebar-options-menu-button"
-            aria-haspopup="menu"
-            aria-expanded="false"
-            view=${this.view}
-            type="icon ghost"
-            iconsrc="chrome://global/skin/icons/more.svg"
-          >
-          </moz-button>
+        <div class="sidebar-panel-scrollable-content">
+          ${this.cardsTemplate}
         </div>
-        ${this.cardsTemplate}
       </div>
     `;
   }

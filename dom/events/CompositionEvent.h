@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_CompositionEvent_h_
 #define mozilla_dom_CompositionEvent_h_
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/CompositionEventBinding.h"
 #include "mozilla/dom/TextClause.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/UIEvent.h"
-#include "mozilla/EventForwards.h"
 
 namespace mozilla::dom {
 
@@ -36,16 +36,14 @@ class CompositionEvent : public UIEvent {
 
   void InitCompositionEvent(const nsAString& aType, bool aCanBubble,
                             bool aCancelable, nsGlobalWindowInner* aView,
-                            const nsAString& aData, const nsAString& aLocale);
+                            const nsAString& aData);
   void GetData(nsAString&) const;
-  void GetLocale(nsAString&) const;
   void GetRanges(TextClauseArray& aRanges);
 
  protected:
   ~CompositionEvent() = default;
 
   nsString mData;
-  nsString mLocale;
   TextClauseArray mRanges;
 };
 

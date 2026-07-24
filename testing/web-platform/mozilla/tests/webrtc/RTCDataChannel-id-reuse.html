@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset=utf-8>
+<meta name="timeout" content="long">
+<title>Test cases that verify datachannel ids are reused in the expected way. The spec is not very picky here, but we want to be.</title>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src="/webrtc/RTCPeerConnection-helper.js"></script>
+<script src="/webrtc/RTCDataChannel-helper.js"></script>
+<script>
+'use strict';
+
+promise_test(async t => {
+  const offerer = new RTCPeerConnection();
+  const answerer = new RTCPeerConnection();
+  t.add_cleanup(() => offerer.close());
+  t.add_cleanup(() => answerer.close());
+
+  const pairPromise = openChannelPair(offerer, answerer, 'ensure_datachannel_msection');
+  await negotiate(offerer, answerer);
+  const [dco, dca] = await pairPromise;
+  const id = dco.id;
+  assert_equals(dca.id, id);
+  dco.close();
+  await new Promise(r => dco.onclose = r);
+
+  answerer.addEventListener('datachannel', ({channel}) => {
+    channel.addEventListener('message', ({data}) => {
+      // echo data back to sender
+      channel.send(data);
+      // close channel
+      channel.close();
+    })
+  });
+
+  for (let i = 0; i < 1000; i++) {
+    const dc = offerer.createDataChannel(`dc ${i}`);
+    await new Promise(r => dc.onopen = r);
+    assert_equals(dc.id, id);
+    dc.send("ping");
+    dc.close();
+    await new Promise(r => dc.onclose = r);
+  }
+}, 'Test that repeated open/send/close with minimal waiting uses the same id every time');
+
+</script>

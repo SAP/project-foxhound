@@ -5,15 +5,22 @@
 
 package org.mozilla.gecko.process;
 
+import androidx.annotation.Keep;
+
+// R8 fullMode can over-optimize this. Annotate with @Keep to avoid crashes.
+@Keep
 public class GeckoChildProcessServices {
     /* package */ static final int MAX_NUM_ISOLATED_CONTENT_SERVICES = {{MOZ_ANDROID_CONTENT_SERVICE_COUNT}};
     public static final class gmplugin extends GeckoServiceChildProcess {}
     public static final class socket extends GeckoServiceChildProcess {}
     public static final class gpu extends GeckoServiceGpuProcess {}
+    public static final class rdd extends GeckoServiceChildProcess {}
     public static final class utility extends GeckoServiceChildProcess {}
     public static final class ipdlunittest extends GeckoServiceChildProcess {}
 
 {% for id in range(0, MOZ_ANDROID_CONTENT_SERVICE_COUNT | int) %}
     public static final class tab{{ id }} extends GeckoServiceChildProcess {}
+    public static final class isolatedTab{{ id }} extends GeckoServiceChildProcess {}
+    public static final class isolatedTabWithZygote{{ id }} extends GeckoServiceChildProcess {}
 {% endfor %}
 }

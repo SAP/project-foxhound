@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmencloseFrame_h___
-#define nsMathMLmencloseFrame_h___
+#ifndef nsMathMLmencloseFrame_h_
+#define nsMathMLmencloseFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EnumSet.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLContainerFrame.h"
@@ -30,20 +29,20 @@ class PresShell;
   containing its arguments, as described in Section 3.1.3 Required Arguments.
 */
 
-enum nsMencloseNotation {
-  NOTATION_LONGDIV,
-  NOTATION_ROUNDEDBOX,
-  NOTATION_CIRCLE,
-  NOTATION_LEFT,
-  NOTATION_RIGHT,
-  NOTATION_TOP,
-  NOTATION_BOTTOM,
-  NOTATION_UPDIAGONALSTRIKE,
-  NOTATION_DOWNDIAGONALSTRIKE,
-  NOTATION_VERTICALSTRIKE,
-  NOTATION_HORIZONTALSTRIKE,
-  NOTATION_UPDIAGONALARROW,
-  NOTATION_PHASORANGLE
+enum class MencloseNotation : uint16_t {
+  LongDiv,
+  RoundedBox,
+  Circle,
+  Left,
+  Right,
+  Top,
+  Bottom,
+  UpDiagonalStrike,
+  DownDiagonalStrike,
+  VerticalStrike,
+  HorizontalStrike,
+  UpDiagonalArrow,
+  PhasorAngle,
 };
 
 class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
@@ -53,11 +52,11 @@ class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
   friend nsIFrame* NS_NewMathMLmencloseFrame(mozilla::PresShell* aPresShell,
                                              ComputedStyle* aStyle);
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void DidSetComputedStyle(ComputedStyle* aOldStyle) override;
 
@@ -83,8 +82,8 @@ class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
   void InitNotations();
 
   // Description of the notations to draw
-  mozilla::EnumSet<nsMencloseNotation> mNotationsToDraw;
-  bool IsToDraw(nsMencloseNotation notation) {
+  mozilla::EnumSet<MencloseNotation> mNotationsToDraw;
+  bool IsToDraw(MencloseNotation notation) {
     return mNotationsToDraw.contains(notation);
   }
 
@@ -92,13 +91,13 @@ class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
   nsTArray<nsMathMLChar> mMathMLChar;
   int8_t mLongDivCharIndex;
   nscoord mContentWidth;
-  nsresult AllocateMathMLChar(nsMencloseNotation mask);
+  nsresult AllocateMathMLChar(MencloseNotation mask);
 
   // Display a frame of the specified type.
   // @param aType Type of frame to display
   void DisplayNotation(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                        const nsRect& aRect, const nsDisplayListSet& aLists,
-                       nscoord aThickness, nsMencloseNotation aType);
+                       nscoord aThickness, MencloseNotation aType);
 };
 
-#endif /* nsMathMLmencloseFrame_h___ */
+#endif /* nsMathMLmencloseFrame_h_ */

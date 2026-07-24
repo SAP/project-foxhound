@@ -14,7 +14,6 @@
 
 #include "mozilla/EventForwards.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -195,12 +194,34 @@ const char* ToChar(EventClassID aEventClassID) {
   case e##aName##Class:                \
     return "e" #aName "Class";
 
-#include "mozilla/EventClassList.h"
+#include "mozilla/EventClassList.inc"
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
     default:
       return "illegal event class ID";
+  }
+}
+
+nsCString InputSourceToString(uint16_t aInputSource) {
+  switch (aInputSource) {
+    case dom::MouseEvent_Binding::MOZ_SOURCE_UNKNOWN:
+      return "MOZ_SOURCE_UNKNOWN"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_MOUSE:
+      return "MOZ_SOURCE_MOUSE"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_PEN:
+      return "MOZ_SOURCE_PEN"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_ERASER:
+      return "MOZ_SOURCE_ERASER"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_CURSOR:
+      return "MOZ_SOURCE_CURSOR"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH:
+      return "MOZ_SOURCE_TOUCH"_ns;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_KEYBOARD:
+      return "MOZ_SOURCE_KEYBOARD"_ns;
+    default:
+      return nsPrintfCString("<unknown value %u (0x%04X)>", aInputSource,
+                             aInputSource);
   }
 }
 
@@ -238,7 +259,7 @@ const char* ToChar(Command aCommand) {
   case Command::aName:                           \
     return "Command::" #aName;
 
-#include "mozilla/CommandList.h"
+#include "mozilla/CommandList.inc"
 
 #undef NS_DEFINE_COMMAND
 #undef NS_DEFINE_COMMAND_WITH_PARAM
@@ -256,7 +277,7 @@ const nsCString GetDOMKeyCodeName(uint32_t aKeyCode) {
   case aDOMKeyCode:                            \
     return nsLiteralCString(#aDOMKeyName);
 
-#include "mozilla/VirtualKeyCodeList.h"
+#include "mozilla/VirtualKeyCodeList.inc"
 
 #undef NS_DEFINE_VK
 #undef NS_DISALLOW_SAME_KEYCODE
@@ -270,17 +291,13 @@ const nsCString GetDOMKeyCodeName(uint32_t aKeyCode) {
  * non class method implementation
  ******************************************************************************/
 
-static nsTHashMap<nsDepCharHashKey, Command>* sCommandHashtable = nullptr;
+static nsTHashMap<nsCStringHashKey, Command>* sCommandHashtable = nullptr;
 
-Command GetInternalCommand(const char* aCommandName,
+Command GetInternalCommand(const nsACString& aCommandName,
                            const nsCommandParams* aCommandParams) {
-  if (!aCommandName) {
-    return Command::DoNothing;
-  }
-
   // Special cases for "cmd_align".  It's mapped to multiple internal commands
   // with additional param.  Therefore, we cannot handle it with the hashtable.
-  if (!strcmp(aCommandName, "cmd_align")) {
+  if (aCommandName.EqualsLiteral("cmd_align")) {
     if (!aCommandParams) {
       // Note that if this is called by EditorCommand::IsCommandEnabled(),
       // it cannot set aCommandParams.  So, don't warn in this case even though
@@ -316,15 +333,15 @@ Command GetInternalCommand(const char* aCommandName,
   }
 
   if (!sCommandHashtable) {
-    sCommandHashtable = new nsTHashMap<nsDepCharHashKey, Command>();
+    sCommandHashtable = new nsTHashMap<nsCStringHashKey, Command>();
 #define NS_DEFINE_COMMAND(aName, aCommandStr) \
-  sCommandHashtable->InsertOrUpdate(#aCommandStr, Command::aName);
+  sCommandHashtable->InsertOrUpdate(#aCommandStr ""_ns, Command::aName);
 
 #define NS_DEFINE_COMMAND_WITH_PARAM(aName, aCommandStr, aParam)
 
 #define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName)
 
-#include "mozilla/CommandList.h"
+#include "mozilla/CommandList.inc"
 
 #undef NS_DEFINE_COMMAND
 #undef NS_DEFINE_COMMAND_WITH_PARAM
@@ -349,7 +366,7 @@ Command GetInternalCommand(const char* aCommandName,
     return const_cast<WidgetEvent*>(this)->As##aName();        \
   }
 
-#include "mozilla/EventClassList.h"
+#include "mozilla/EventClassList.inc"
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
@@ -589,23 +606,6 @@ bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
               keyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_Control ||
               keyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_AltGraph);
     }
-    case ePointerEventClass: {
-      if (IsPointerEventMessageOriginallyMouseEventMessage(mMessage)) {
-        return false;
-      }
-
-      if (SPOOFED_MAX_TOUCH_POINTS > 0) {
-        return false;
-      }
-
-      const WidgetPointerEvent* pointerEvent = AsPointerEvent();
-
-      // We suppress the pointer events if it is not primary for fingerprinting
-      // resistance. It is because of that we want to spoof any pointer event
-      // into a mouse pointer event and the mouse pointer event only has
-      // isPrimary as true.
-      return !pointerEvent->mIsPrimary;
-    }
     default:
       return false;
   }
@@ -670,7 +670,7 @@ void WidgetEvent::PreventDefault(bool aCalledByDefaultHandler,
     }
     if (aPrincipal) {
       nsAutoString addonId;
-      Unused << NS_WARN_IF(NS_FAILED(aPrincipal->GetAddonId(addonId)));
+      (void)NS_WARN_IF(NS_FAILED(aPrincipal->GetAddonId(addonId)));
       if (!addonId.IsEmpty()) {
         // Ignore the case that it's called by a web extension.
         return;
@@ -977,11 +977,10 @@ float WidgetMouseEventBase::ComputeMouseButtonPressure() const {
       }
       break;
     default:
-      NS_ASSERTION(false,
-                   nsFmtCString(FMT_STRING("This method is not designed for "
-                                           "{}, implement the case explicitly"),
-                                ToChar(mMessage))
-                       .get());
+      NS_ASSERTION(false, nsFmtCString("This method is not designed for "
+                                       "{}, implement the case explicitly",
+                                       ToChar(mMessage))
+                              .get());
   }
   switch (mInputSource) {
     // The caller must want to handle these cases.
@@ -1174,14 +1173,14 @@ double WidgetWheelEvent::OverriddenDeltaY() const {
 
 #define NS_DEFINE_KEYNAME(aCPPName, aDOMKeyName) (u"" aDOMKeyName),
 const char16_t* const WidgetKeyboardEvent::kKeyNames[] = {
-#include "mozilla/KeyNameList.h"
+#include "mozilla/KeyNameList.inc"
 };
 #undef NS_DEFINE_KEYNAME
 
 #define NS_DEFINE_PHYSICAL_KEY_CODE_NAME(aCPPName, aDOMCodeName) \
   (u"" aDOMCodeName),
 const char16_t* const WidgetKeyboardEvent::kCodeNames[] = {
-#include "mozilla/PhysicalKeyCodeNameList.h"
+#include "mozilla/PhysicalKeyCodeNameList.inc"
 };
 #undef NS_DEFINE_PHYSICAL_KEY_CODE_NAME
 
@@ -1279,6 +1278,12 @@ bool WidgetKeyboardEvent::ExecuteEditCommands(NativeKeyBindingsType aType,
   // This event should be trusted event here and we shouldn't expose native
   // key binding information to web contents with untrusted events.
   if (NS_WARN_IF(!IsTrusted())) {
+    return false;
+  }
+
+  // If this is a reply event, we shouldn't execute the native key bindings in
+  // the parent process.
+  if (NS_WARN_IF(IsHandledInRemoteProcess())) {
     return false;
   }
 
@@ -1703,7 +1708,7 @@ uint32_t WidgetKeyboardEvent::GetFallbackKeyCodeOfPunctuationKey(
 #define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , ""
   static const char* const kCommands[] = {
       ""  // DoNothing
-#include "mozilla/CommandList.h"
+#include "mozilla/CommandList.inc"
   };
 #undef NS_DEFINE_COMMAND
 #undef NS_DEFINE_COMMAND_WITH_PARAM
@@ -1717,9 +1722,9 @@ uint32_t WidgetKeyboardEvent::GetFallbackKeyCodeOfPunctuationKey(
 /* static */
 uint32_t WidgetKeyboardEvent::ComputeLocationFromCodeValue(
     CodeNameIndex aCodeNameIndex) {
-  // Following commented out cases are not defined in PhysicalKeyCodeNameList.h
-  // but are defined by D3E spec.  So, they should be uncommented when the
-  // code values are defined in the header.
+  // Following commented out cases are not defined in
+  // PhysicalKeyCodeNameList.inc but are defined by D3E spec.  So, they should
+  // be uncommented when the code values are defined in the header.
   switch (aCodeNameIndex) {
     case CODE_NAME_INDEX_AltLeft:
     case CODE_NAME_INDEX_ControlLeft:
@@ -2299,7 +2304,7 @@ bool WidgetKeyboardEvent::IsLockableModifier(KeyNameIndex aKeyNameIndex) {
 
 #define NS_DEFINE_INPUTTYPE(aCPPName, aDOMName) (u"" aDOMName),
 const char16_t* const InternalEditorInputEvent::kInputTypeNames[] = {
-#include "mozilla/InputTypeList.h"
+#include "mozilla/InputTypeList.inc"
 };
 #undef NS_DEFINE_INPUTTYPE
 

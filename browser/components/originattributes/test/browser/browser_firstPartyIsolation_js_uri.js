@@ -14,7 +14,8 @@ add_task(async function test_remote_window_open_js_uri() {
 
   BrowserTestUtils.startLoadingURIString(browser, `javascript:"1";`);
 
-  await BrowserTestUtils.browserLoaded(browser);
+  // js URIs have about:blank as location
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   await SpecialPowers.spawn(browser, [], async function () {
     Assert.ok(true, "origin " + content.document.nodePrincipal.origin);

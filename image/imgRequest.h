@@ -147,6 +147,8 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   /// Returns a non-owning pointer to this imgRequest's MIME type.
   const char* GetMimeType() const { return mContentType.get(); }
 
+  int64_t GetContentLength() const { return mContentLength; }
+
   void GetFileName(nsACString& aFileName);
 
   /// @return the priority of the underlying network request, or
@@ -248,6 +250,7 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsCOMPtr<nsITimedChannel> mTimedChannel;
 
   nsCString mContentType;
+  int64_t mContentLength;
 
   /* we hold on to this to this so long as we have observers */
   RefPtr<imgCacheEntry> mCacheEntry;
@@ -265,10 +268,6 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
 
-  // The CORS mode (defined in imgIRequest) this image was loaded with. By
-  // default, CORS_NONE.
-  mozilla::CORSMode mCORSMode;
-
   // The ReferrerInfo used for this image.
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
 
@@ -276,6 +275,10 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
 
   // The categories of prioritization strategy that have been requested.
   uint32_t mBoostCategoriesRequested = 0;
+
+  // The CORS mode (defined in imgIRequest) this image was loaded with. By
+  // default, CORS_NONE.
+  mozilla::CORSMode mCORSMode;
 
   // If we've called OnImageAvailable.
   bool mImageAvailable;

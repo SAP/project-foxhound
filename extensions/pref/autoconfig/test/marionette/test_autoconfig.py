@@ -19,7 +19,7 @@ class TestAutoConfig(MarionetteTestCase):
         if hasattr(self, "pref_file_dir_created"):
             os.rmdir(self.pref_file_dir)
 
-        super(TestAutoConfig, self).tearDown()
+        super().tearDown()
 
     def pref_has_user_value(self, pref):
         with self.marionette.using_context("chrome"):

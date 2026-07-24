@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.utils
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -16,6 +15,8 @@ import androidx.core.graphics.BlendModeCompat.SRC_IN
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelativeWithIntrinsicBounds
 import org.mozilla.fenix.R
+import androidx.appcompat.R as appcompatR
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * An [AppCompatEditText] that shows a clear button to the user.
@@ -23,7 +24,7 @@ import org.mozilla.fenix.R
 class ClearableEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = R.attr.editTextStyle,
+    defStyleAttr: Int = appcompatR.attr.editTextStyle,
 ) :
     AppCompatEditText(context, attrs, defStyleAttr) {
 
@@ -33,13 +34,21 @@ class ClearableEditText @JvmOverloads constructor(
      * Since the icon is just a compound drawable, we check the tap location
      * to see if the X position of the tap is where the drawable is located.
      */
-    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (shouldShowClearButton(length()) && event.action == ACTION_UP && event.endDrawableTouched()) {
+        if (shouldShowClearButton(length()) &&
+            event.action == ACTION_UP &&
+            event.endDrawableTouched()
+        ) {
+            performClick()
             setText("")
             return true
         }
         return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     /**
@@ -53,7 +62,7 @@ class ClearableEditText @JvmOverloads constructor(
         // lengthAfter has inconsistent behaviour when there are spaces in the entered text, so we'll use text.length.
         val textLength = text?.length ?: 0
         val drawable = if (shouldShowClearButton(textLength)) {
-            AppCompatResources.getDrawable(context, R.drawable.mozac_ic_cross_circle_fill_24)?.apply {
+            AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_cross_circle_fill_24)?.apply {
                 colorFilter = createBlendModeColorFilterCompat(context.getColorFromAttr(R.attr.textPrimary), SRC_IN)
             }
         } else {

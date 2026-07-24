@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ChannelMergerNode.h"
-#include "mozilla/dom/ChannelMergerNodeBinding.h"
+
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "nsPrintfCString.h"
 #include "Tracing.h"
+#include "mozilla/dom/ChannelMergerNodeBinding.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla::dom {
 

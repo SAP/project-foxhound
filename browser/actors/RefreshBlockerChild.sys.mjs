@@ -157,12 +157,13 @@ export class RefreshBlockerChild extends JSWindowActorChild {
     let data = message.data;
 
     switch (message.name) {
-      case "RefreshBlocker:Refresh":
+      case "RefreshBlocker:Refresh": {
         let docShell = data.browsingContext.docShell;
         let refreshURI = docShell.QueryInterface(Ci.nsIRefreshURI);
         let URI = Services.io.newURI(data.URI);
         refreshURI.forceRefreshURI(URI, null, data.delay);
         break;
+      }
 
       case "PreferenceChanged":
         if (data.isEnabled) {

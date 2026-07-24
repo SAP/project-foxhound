@@ -9,7 +9,6 @@
 
 #include "mozilla/fallible.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Unused.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 
@@ -29,7 +28,7 @@ class SeenPtrs : public nsTHashtable<nsPtrHashKey<const void>> {
   bool HaveSeenPtr(const void* aPtr) {
     uint32_t oldCount = Count();
 
-    mozilla::Unused << PutEntry(aPtr, fallible);
+    (void)PutEntry(aPtr, fallible);
 
     // If the counts match, there are two possibilities.
     //

@@ -29,8 +29,9 @@ addRDMTask(TEST_URL, async function ({ ui }) {
     );
     await touchStartPromise;
 
-    const win = content.document.defaultView;
-    const bg = win.getComputedStyle(span).getPropertyValue("background-color");
+    const bg = content
+      .getComputedStyle(span)
+      .getPropertyValue("background-color");
 
     is(
       bg,

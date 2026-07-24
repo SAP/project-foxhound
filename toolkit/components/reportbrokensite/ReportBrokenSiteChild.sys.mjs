@@ -217,23 +217,260 @@ const FrameworkDetector = {
 };
 
 export class ReportBrokenSiteChild extends JSWindowActorChild {
+  async #getBrokenSiteReport(docShell) {
+    let consoleLog = [];
+    try {
+      consoleLog = await this.#getConsoleLogs(docShell);
+    } catch (_) {}
+
+    const { frameworks, languages, userAgent, url } =
+      this.#getInfoFromChild(docShell);
+
+    const { antitracking, browser, devicePixelRatio, screenshot } =
+      await this.sendQuery(
+        "GetWebcompatInfoFromParentProcess",
+        SCREENSHOT_FORMAT
+      );
+
+    const reportData = {
+      tabInfo: {
+        consoleLog: {
+          value: consoleLog,
+          do_not_preview: true,
+          // Only sent to webcompat.com with send more info, not with Glean.
+        },
+        languages: {
+          value: languages,
+          glean: "tabInfo",
+        },
+        screenshot: {
+          value: screenshot,
+          do_not_preview: true,
+          // Binary data not sent by Glean
+        },
+        url: {
+          value: url,
+          do_not_preview: true,
+          // Duplicate value used only for sanity-checking.
+        },
+        useragentString: {
+          value: userAgent,
+          glean: "tabInfo",
+        },
+      },
+      graphics: {
+        devicePixelRatio: {
+          value: devicePixelRatio,
+          glean: "browserInfo.graphics",
+        },
+        devices: {
+          json: true,
+          value: browser.graphics.devices,
+          glean: "browserInfo.graphics",
+        },
+        drivers: {
+          json: true,
+          value: browser.graphics.drivers,
+          glean: "browserInfo.graphics",
+        },
+        features: {
+          json: true,
+          value: browser.graphics.features,
+          glean: "browserInfo.graphics",
+        },
+        hasTouchScreen: {
+          value: browser.graphics.hasTouchScreen,
+          glean: "browserInfo.graphics",
+        },
+        monitors: {
+          json: true,
+          value: browser.graphics.monitors,
+          glean: "browserInfo.graphics",
+        },
+      },
+      antitracking: {
+        blockList: {
+          value: antitracking.blockList,
+          glean: "tabInfo.antitracking",
+        },
+        blockedOrigins: {
+          value: antitracking.blockedOrigins,
+          glean: "tabInfo.antitracking",
+        },
+        isPrivateBrowsing: {
+          value: antitracking.isPrivateBrowsing,
+          glean: "tabInfo.antitracking",
+        },
+        hasMixedActiveContentBlocked: {
+          value: antitracking.hasMixedActiveContentBlocked,
+          glean: "tabInfo.antitracking",
+        },
+        hasMixedDisplayContentBlocked: {
+          value: antitracking.hasMixedDisplayContentBlocked,
+          glean: "tabInfo.antitracking",
+        },
+        hasTrackingContentBlocked: {
+          value: antitracking.hasTrackingContentBlocked,
+          glean: "tabInfo.antitracking",
+        },
+        btpHasPurgedSite: {
+          value: antitracking.btpHasPurgedSite,
+          glean: "tabInfo.antitracking",
+        },
+        etpCategory: {
+          value: antitracking.etpCategory,
+          glean: "tabInfo.antitracking",
+        },
+      },
+      frameworks: {
+        fastclick: {
+          value: frameworks.fastclick,
+          glean: "tabInfo.frameworks",
+        },
+        marfeel: {
+          value: frameworks.marfeel,
+          glean: "tabInfo.frameworks",
+        },
+        mobify: {
+          value: frameworks.mobify,
+          glean: "tabInfo.frameworks",
+        },
+      },
+      browserInfo: {
+        addons: {
+          value: browser.addons,
+          glean: "browserInfo",
+        },
+        experiments: {
+          value: browser.experiments,
+          glean: "browserInfo",
+        },
+      },
+      app: {
+        applicationName: {
+          value: browser.app.applicationName,
+          // Gleans sends this for us in the base ping
+        },
+        buildId: {
+          value: browser.app.buildId,
+          // Gleans sends this for us in the base ping
+        },
+        defaultLocales: {
+          value: browser.locales,
+          glean: "browserInfo.app",
+        },
+        defaultUseragentString: {
+          value: browser.app.defaultUserAgent,
+          glean: "browserInfo.app",
+        },
+        fissionEnabled: {
+          value: browser.platform.fissionEnabled,
+          glean: "browserInfo.app",
+        },
+        platform: {
+          do_not_preview: true,
+          value: browser.platform.name,
+          // Gleans sends this for us in the base ping
+        },
+        updateChannel: {
+          value: browser.app.updateChannel,
+          // Gleans sends this for us in the base ping
+        },
+        version: {
+          value: browser.app.version,
+          // Gleans sends this for us in the base ping
+        },
+      },
+      system: {
+        isTablet: {
+          value: browser.platform.isTablet ?? false,
+          glean: "browserInfo.system",
+        },
+        memory: {
+          value: browser.platform.memoryMB,
+          glean: "browserInfo.system",
+        },
+        osArchitecture: {
+          value: browser.platform.osArchitecture,
+          // Gleans sends this for us in the base ping
+        },
+        osName: {
+          value: browser.platform.osName,
+          // Gleans sends this for us in the base ping
+        },
+        osVersion: {
+          value: browser.platform.osVersion,
+          // Gleans sends this for us in the base ping
+        },
+      },
+      prefs: {},
+    };
+
+    for (const [label, pref] of Object.entries({
+      cookieBehavior: "network.cookie.cookieBehavior",
+      forcedAcceleratedLayers: "layers.acceleration.force-enabled",
+      globalPrivacyControlEnabled: "privacy.globalprivacycontrol.enabled",
+      installtriggerEnabled: "extensions.InstallTrigger.enabled",
+      opaqueResponseBlocking: "browser.opaqueResponseBlocking",
+      resistFingerprintingEnabled: "privacy.resistFingerprinting",
+      softwareWebrender: "gfx.webrender.software",
+      thirdPartyCookieBlockingEnabled:
+        "network.cookie.cookieBehavior.optInPartitioning",
+      thirdPartyCookieBlockingEnabledInPbm:
+        "network.cookie.cookieBehavior.optInPartitioning.pbmode",
+    })) {
+      const value = browser.prefs[pref];
+      if (value !== undefined) {
+        reportData.prefs[label] = {
+          value,
+          glean: "browserInfo.prefs",
+        };
+      }
+    }
+
+    if (browser.security) {
+      const actuallySet = {};
+      for (const name of ["antispyware", "antivirus", "firewall"]) {
+        if (browser.security[name]?.length) {
+          actuallySet[name] = {
+            value: browser.security[name],
+            glean: "browserInfo.security",
+          };
+        }
+      }
+      if (Object.keys(actuallySet).length) {
+        reportData.security = actuallySet;
+      }
+    }
+
+    return reportData;
+  }
+
+  #getInfoFromChild(docShell) {
+    const win = docShell.domWindow;
+
+    const frameworks = FrameworkDetector.checkWindow(win);
+    const { languages, userAgent } = win.navigator;
+
+    return {
+      frameworks,
+      languages,
+      url: win.location.href,
+      userAgent,
+    };
+  }
+
   #getWebCompatInfo(docShell) {
     return Promise.all([
       this.#getConsoleLogs(docShell),
       this.sendQuery("GetWebcompatInfoFromParentProcess", SCREENSHOT_FORMAT),
     ])
       .then(([consoleLog, infoFromParent]) => {
+        const { frameworks, languages, userAgent, url } =
+          this.#getInfoFromChild(docShell);
+
         const { antitracking, browser, devicePixelRatio, screenshot } =
           infoFromParent;
-
-        const win = docShell.domWindow;
-
-        const frameworks = FrameworkDetector.checkWindow(win);
-        const { languages, userAgent } = win.navigator;
-
-        if (browser.platform.name !== "linux") {
-          delete browser.prefs["layers.acceleration.force-enabled"];
-        }
 
         return {
           antitracking,
@@ -243,7 +480,7 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
           frameworks,
           languages,
           screenshot,
-          url: win.location.href,
+          url,
           userAgent,
         };
       })
@@ -292,109 +529,50 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
     };
 
     if (webcompatInfo) {
-      const {
-        antitracking,
-        browser,
-        devicePixelRatio,
-        consoleLog,
-        frameworks,
-        languages,
-        screenshot,
-        url,
-        userAgent,
-      } = webcompatInfo;
+      // Copy the full report data into additionalData, reformatting it nicely.
+      const additionalData = {};
+      for (const category of Object.values(webcompatInfo)) {
+        for (const [name, { do_not_preview, glean, value }] of Object.entries(
+          category
+        )) {
+          if (do_not_preview) {
+            continue;
+          }
+          let target = additionalData;
+          for (const step of (glean ?? "browserInfo.app").split(".")) {
+            target[step] ??= {};
+            target = target[step];
+          }
+          target[name] = value;
+        }
+      }
 
-      const {
-        blockList,
-        isPrivateBrowsing,
-        hasMixedActiveContentBlocked,
-        hasMixedDisplayContentBlocked,
-        hasTrackingContentBlocked,
-        btpHasPurgedSite,
-        etpCategory,
-      } = antitracking;
+      const { browserInfo, tabInfo } = additionalData;
+      const { app, graphics } = browserInfo;
+      const { antitracking, frameworks } = tabInfo;
+      const { blockList } = antitracking;
+
+      const consoleLog = webcompatInfo.tabInfo.consoleLog.value;
+      const screenshot = webcompatInfo.tabInfo.screenshot.value;
+      const url = webcompatInfo.tabInfo.url.value;
 
       message.blockList = blockList;
-
-      const {
-        addons,
-        app,
-        experiments,
-        graphics,
-        locales,
-        prefs,
-        platform,
-        security,
-      } = browser;
-
-      const {
-        applicationName,
-        buildId,
-        defaultUserAgent,
-        updateChannel,
-        version,
-      } = app;
-
-      const {
-        fissionEnabled,
-        memoryMB,
-        osArchitecture,
-        osName,
-        osVersion,
-        device,
-        isTablet,
-      } = platform;
-
-      const additionalData = {
-        addons,
-        applicationName,
-        blockList,
-        buildId,
-        devicePixelRatio,
-        experiments,
-        finalUserAgent: userAgent,
-        fissionEnabled,
-        gfxData: graphics,
-        hasMixedActiveContentBlocked,
-        hasMixedDisplayContentBlocked,
-        hasTrackingContentBlocked,
-        btpHasPurgedSite,
-        isPB: isPrivateBrowsing,
-        etpCategory,
-        languages,
-        locales,
-        memoryMB,
-        osArchitecture,
-        osName,
-        osVersion,
-        prefs,
-        version,
-      };
-      if (security !== undefined && Object.keys(security).length) {
-        additionalData.sec = security;
-      }
-      if (device !== undefined) {
-        additionalData.device = device;
-      }
-      if (isTablet !== undefined) {
-        additionalData.isTablet = isTablet;
-      }
-
-      const specialPrefs = {};
-      for (const pref of [
-        "layers.acceleration.force-enabled",
-        "gfx.webrender.software",
-      ]) {
-        specialPrefs[pref] = prefs[pref];
-      }
-
-      const details = Object.assign(message.details, specialPrefs, {
+      const details = Object.assign(message.details, {
         additionalData,
         blockList,
-        channel: updateChannel,
-        defaultUserAgent,
-        hasTouchScreen: browser.graphics.hasTouchScreen,
+        channel: app.updateChannel,
+        defaultUserAgent: app.defaultUseragentString,
+        "gfx.webrender.software": webcompatInfo.prefs.softwareWebrender.value,
+        hasTouchScreen: graphics.hasTouchScreen,
       });
+
+      // We only care about this pref on Linux right now on webcompat.com.
+      if (webcompatInfo.app.platform.value === "linux") {
+        details["layers.acceleration.force-enabled"] =
+          webcompatInfo.prefs.forcedAcceleratedLayers.value;
+      } else {
+        delete details.additionalData.browserInfo.prefs.forcedAcceleratedLayers;
+      }
 
       // If the user enters a URL unrelated to the current tab,
       // don't bother sending a screenshot or logs/etc
@@ -418,17 +596,15 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
           antitracking.hasMixedDisplayContentBlocked;
         details["tracking content blocked"] =
           antitracking.hasTrackingContentBlocked
-            ? `true (${antitracking.blockList})`
+            ? `true (${blockList})`
             : "false";
         details["btp has purged site"] = antitracking.btpHasPurgedSite;
 
         if (antitracking.hasTrackingContentBlocked) {
-          extra_labels.push(
-            `type-tracking-protection-${antitracking.blockList}`
-          );
+          extra_labels.push(`type-tracking-protection-${blockList}`);
         }
 
-        for (const [framework, active] of Object.entries(frameworks)) {
+        for (const [framework, active] of Object.entries(tabInfo.frameworks)) {
           if (!active) {
             continue;
           }
@@ -481,6 +657,9 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
           }
         }
         return null;
+      }
+      case "GetBrokenSiteReport": {
+        return this.#getBrokenSiteReport(docShell);
       }
       case "GetWebCompatInfo": {
         return this.#getWebCompatInfo(docShell);

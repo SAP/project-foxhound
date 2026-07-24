@@ -4,13 +4,13 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
 flags:
   - noStrict
 description: |
   pending
 esid: pending
 ---*/
+
 function foo()
 {
   assert.sameValue(foo.arguments.length, 0);
@@ -22,9 +22,5 @@ assert.sameValue(foo.caller, null);
 foo();
 assert.sameValue(foo.arguments, null);
 assert.sameValue(foo.caller, null);
-
-/******************************************************************************/
-
-print("Tests complete");
 
 reportCompare(0, 0);

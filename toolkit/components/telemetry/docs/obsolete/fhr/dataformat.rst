@@ -1598,8 +1598,8 @@ default
    engine exists but its identifier could not be determined.
 
    This field's contents are
-   ``Services.search.defaultEngine.identifier`` (if defined) or
-   ``"other-"`` + ``Services.search.defaultEngine.name`` if not.
+   ``SearchService.defaultEngine.identifier`` (if defined) or
+   ``"other-"`` + ``SearchService.defaultEngine.name`` if not.
    In other words, search engines without an ``.identifier``
    are prefixed with ``other-``.
 

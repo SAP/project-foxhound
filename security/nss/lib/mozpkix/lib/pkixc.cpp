@@ -79,8 +79,7 @@ class CodeSigningTrustDomain final : public TrustDomain {
       EndEntityOrCA endEntityOrCA, const CertID& certID, Time time,
       Duration validityDuration,
       /*optional*/ const Input* stapledOCSPresponse,
-      /*optional*/ const Input* aiaExtension,
-      /*optional*/ const Input* sctExtension) override {
+      /*optional*/ const Input* aiaExtension) override {
     return Success;
   }
 
@@ -146,12 +145,6 @@ class CodeSigningTrustDomain final : public TrustDomain {
   virtual Result CheckValidityIsAcceptable(Time notBefore, Time notAfter,
                                            EndEntityOrCA endEntityOrCA,
                                            KeyPurposeId keyPurpose) override {
-    return Success;
-  }
-
-  virtual Result NetscapeStepUpMatchesServerAuth(
-      Time notBefore, /*out*/ bool& matches) override {
-    matches = false;
     return Success;
   }
 

@@ -28,7 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.TabSessionState
-import mozilla.components.ui.icons.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Renders a single [TabSessionState] as a list item.
@@ -86,7 +86,7 @@ fun Tab(
                 onClick = { onClose.invoke(tab.id) },
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.mozac_ic_cross_24),
+                    painter = painterResource(iconsR.drawable.mozac_ic_cross_24),
                     contentDescription = "close",
                     tint = Color.White,
                 )

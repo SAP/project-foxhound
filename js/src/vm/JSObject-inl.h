@@ -117,10 +117,6 @@ inline bool JSObject::setQualifiedVarObj(
   return setFlag(cx, obj, js::ObjectFlag::QualifiedVarObj);
 }
 
-inline bool JSObject::canHaveFixedElements() const {
-  return is<js::ArrayObject>();
-}
-
 namespace js {
 
 #ifdef DEBUG
@@ -551,12 +547,18 @@ inline bool IsConstructor(const Value& v) {
 }
 
 static inline bool MaybePreserveDOMWrapper(JSContext* cx, HandleObject obj) {
-  if (!obj->getClass()->isDOMClass()) {
+  const JSClass* clasp = obj->getClass();
+  // If this ever changes, we'll just need to reevaluate the check below
+  MOZ_ASSERT_IF(clasp->preservesWrapper(), clasp->isDOMClass());
+  if (!clasp->isDOMClass()) {
     return true;
   }
 
-  MOZ_ASSERT(cx->runtime()->preserveWrapperCallback);
-  return cx->runtime()->preserveWrapperCallback(cx, obj);
+  if (!obj->zone()->preserveWrapper(obj.get())) {
+    return cx->runtime()->preserveWrapperCallback(cx, obj);
+  }
+
+  return true;
 }
 
 } /* namespace js */

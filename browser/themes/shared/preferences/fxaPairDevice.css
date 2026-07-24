@@ -8,7 +8,7 @@
 
 #pairTitle {
   font-size: 2.1rem;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   padding-top: 12px;
   text-align: center;
 }

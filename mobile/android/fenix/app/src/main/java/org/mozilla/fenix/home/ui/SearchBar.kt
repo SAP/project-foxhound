@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 private val searchBarShape = RoundedCornerShape(28.dp)
 private val IconBoxSize = 48.dp
@@ -61,7 +62,7 @@ internal fun SearchBar(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.mozac_ic_search_24),
+                painter = painterResource(id = iconsR.drawable.mozac_ic_search_24),
                 tint = MaterialTheme.colorScheme.onSurface,
                 contentDescription = null,
             )

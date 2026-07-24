@@ -47,6 +47,7 @@ async function negotiateLangPackForLanguageMismatch() {
 
   /**
    * Figure out a langpack to recommend.
+   *
    * @type {LangPack | null}
    */
   const langPack =
@@ -163,6 +164,7 @@ const mockable = {
 
   /**
    * Use the AddonManager to install an addon from the URL.
+   *
    * @param {LangPack} langPack
    */
   async installLangPack(langPack) {
@@ -275,7 +277,7 @@ function setRequestedAppLocales(locales) {
  * and any other malformed locale information provided by the system by wrapping the call
  * into a catch/try.
  *
- * @param {string} locale
+ * @param {string} localeString
  * @returns {StructuredLocale | null}
  */
 function getStructuredLocaleOrNull(localeString) {

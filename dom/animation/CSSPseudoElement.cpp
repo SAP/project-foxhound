@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSSPseudoElement.h"
+
+#include "mozilla/AnimationUtils.h"
 #include "mozilla/dom/CSSPseudoElementBinding.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
-#include "mozilla/AnimationComparator.h"
 
 namespace mozilla::dom {
 
@@ -70,13 +71,13 @@ already_AddRefed<CSSPseudoElement> CSSPseudoElement::GetCSSPseudoElement(
 nsAtom* CSSPseudoElement::GetCSSPseudoElementPropertyAtom(
     PseudoStyleType aType) {
   switch (aType) {
-    case PseudoStyleType::before:
+    case PseudoStyleType::Before:
       return nsGkAtoms::cssPseudoElementBeforeProperty;
 
-    case PseudoStyleType::after:
+    case PseudoStyleType::After:
       return nsGkAtoms::cssPseudoElementAfterProperty;
 
-    case PseudoStyleType::marker:
+    case PseudoStyleType::Marker:
       return nsGkAtoms::cssPseudoElementMarkerProperty;
 
     default:
@@ -85,6 +86,10 @@ nsAtom* CSSPseudoElement::GetCSSPseudoElementPropertyAtom(
           "other than ::before, ::after or ::marker");
       return nullptr;
   }
+}
+
+void CSSPseudoElement::GetType(nsString& aRetVal) const {
+  PseudoStyleRequest(mPseudoType).ToString(aRetVal);
 }
 
 }  // namespace mozilla::dom

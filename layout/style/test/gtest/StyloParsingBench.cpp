@@ -69,7 +69,7 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
   }
 }
 
-static void ServoGetPropertyValueById() {
+static void ServoGetPropertyValueByNonCustomId() {
   RefPtr<StyleLockedDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
@@ -87,8 +87,8 @@ static void ServoGetPropertyValueById() {
 
   for (int i = 0; i < GETPROPERTY_REPETITIONS; i++) {
     nsAutoCString value;
-    Servo_DeclarationBlock_GetPropertyValueById(block, eCSSProperty_width,
-                                                &value);
+    Servo_DeclarationBlock_GetPropertyValueByNonCustomId(
+        block, eCSSProperty_width, &value);
     ASSERT_TRUE(value.EqualsLiteral("10px"));
   }
 }
@@ -104,6 +104,6 @@ MOZ_GTEST_BENCH(Stylo,
                 [] { ServoSetPropertyByIdBench(" 10px"_ns); });
 
 MOZ_GTEST_BENCH(Stylo, Servo_DeclarationBlock_GetPropertyById_Bench,
-                ServoGetPropertyValueById);
+                ServoGetPropertyValueByNonCustomId);
 
 #endif

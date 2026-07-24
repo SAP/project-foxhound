@@ -12,7 +12,6 @@
 #include "mozilla/TextUtils.h"
 
 #include <stddef.h>
-#include <stdint.h>
 
 #include "js/AllocPolicy.h"
 #include "js/TypeDecls.h"

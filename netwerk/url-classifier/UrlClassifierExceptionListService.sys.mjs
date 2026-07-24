@@ -61,7 +61,8 @@ class Feature {
 
   /**
    * Convert a JS object from RemoteSettings to an nsIUrlClassifierExceptionListEntry.
-   * @param {Object} rsObject - The JS object from RemoteSettings to convert.
+   *
+   * @param {object} rsObject - The JS object from RemoteSettings to convert.
    * @returns {nsIUrlClassifierExceptionListEntry} The converted nsIUrlClassifierExceptionListEntry.
    */
   static rsObjectToEntry(rsObject) {
@@ -174,7 +175,15 @@ UrlClassifierExceptionListService.prototype = {
   features: {},
   _initialized: false,
 
-  observe(subject, topic) {
+  ETP_PREFERENCES: [
+    "privacy.trackingprotection.allow_list.baseline.enabled",
+    "privacy.trackingprotection.allow_list.convenience.enabled",
+    "browser.contentblocking.category",
+  ],
+  PREF_ALLOW_LIST_USER_INTERACTED:
+    "privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings",
+
+  observe(subject, topic, data) {
     if (topic === "idle-daily") {
       const baseline = Services.prefs.getBoolPref(
         "privacy.trackingprotection.allow_list.baseline.enabled"
@@ -183,7 +192,19 @@ UrlClassifierExceptionListService.prototype = {
         "privacy.trackingprotection.allow_list.convenience.enabled"
       );
       Glean.contentblocking.tpAllowlistBaselineEnabled.set(baseline);
-      Glean.contentblocking.tpAllowlistConvenienceEnabled.set(convenience);
+      // If baseline is false, having convenience as true has no effect, so we treat it as false.
+      Glean.contentblocking.tpAllowlistConvenienceEnabled.set(
+        baseline ? convenience : false
+      );
+    }
+    if (topic === "nsPref:changed") {
+      // If the user changes the baseline, convenience, or category preference, we set
+      // hasUserInteractedWithETP to true to indicate interaction with ETP settings.
+      // This lets us skip the infobar prompting users to enable allowlists if they’ve
+      // already made a choice.
+      if (this.ETP_PREFERENCES.includes(data)) {
+        Services.prefs.setBoolPref(this.PREF_ALLOW_LIST_USER_INTERACTED, true);
+      }
     }
   },
 
@@ -193,6 +214,12 @@ UrlClassifierExceptionListService.prototype = {
     }
 
     this.maybeMigrateCategoryPrefs();
+
+    // Add ETP preference observers AFTER migration to avoid false positives. The migration function
+    // above may programmatically change ETP preferences, which would incorrectly trigger our user
+    // interaction tracking if observers were already installed. By adding observers after
+    // migration, we ensure we only detect user changes to ETP settings.
+    this.addETPUserInteractionPrefObservers();
 
     let rs = lazy.RemoteSettings(COLLECTION_NAME);
     rs.on("sync", event => {
@@ -303,9 +330,27 @@ UrlClassifierExceptionListService.prototype = {
     this.features[feature].removeObserver(observer);
   },
 
+  /**
+   * Adds preference observers to track user interactions with ETP settings.
+   * These observers monitor changes to the baseline allow list, convenience allow list, and
+   * content blocking category preferences to detect when users modify ETP-related settings.
+   */
+  addETPUserInteractionPrefObservers() {
+    this.ETP_PREFERENCES.forEach(pref => {
+      Services.prefs.addObserver(pref, this.observe.bind(this));
+    });
+  },
+
+  removeETPUserInteractionPrefObservers() {
+    this.ETP_PREFERENCES.forEach(pref => {
+      Services.prefs.removeObserver(pref, this.observe.bind(this));
+    });
+  },
+
   clear() {
     this.features = {};
     this._initialized = false;
     this.entries = null;
+    this.removeETPUserInteractionPrefObservers();
   },
 };

@@ -9,8 +9,8 @@
 
 #include "GroupInfo.h"
 #include "GroupInfoPair.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "OriginInfo.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 
 namespace mozilla::dom::quota {
 

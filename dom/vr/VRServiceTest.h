@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_VRServiceTest_h_
 #define mozilla_dom_VRServiceTest_h_
 
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/VRServiceTestBinding.h"
-
-#include "gfxVR.h"
 
 namespace mozilla {
 namespace gfx {

@@ -12,8 +12,7 @@
 #include "mozilla/layers/APZCTreeManagerChild.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/GeckoContentController.h"
-#include "mozilla/Unused.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/layers/UiCompositorControllerChild.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
@@ -25,7 +24,7 @@ using namespace gfx;
 using namespace widget;
 
 RemoteCompositorSession::RemoteCompositorSession(
-    nsBaseWidget* aWidget, CompositorBridgeChild* aChild,
+    nsIWidget* aWidget, CompositorBridgeChild* aChild,
     CompositorWidgetDelegate* aWidgetDelegate, APZCTreeManagerChild* aAPZ,
     const LayersId& aRootLayerTreeId)
     : CompositorSession(aWidget, aWidgetDelegate, aChild, aRootLayerTreeId),
@@ -48,7 +47,7 @@ RemoteCompositorSession::~RemoteCompositorSession() {
 void RemoteCompositorSession::NotifySessionLost() {
   // Hold a reference to mWidget since NotifyCompositorSessionLost may
   // release the last reference mid-execution.
-  RefPtr<nsBaseWidget> widget(mWidget);
+  RefPtr<nsIWidget> widget(mWidget);
   // Re-entrancy should be impossible: when we are being notified of a lost
   // session, we have by definition not shut down yet. We will shutdown, but
   // then will be removed from the notification list.

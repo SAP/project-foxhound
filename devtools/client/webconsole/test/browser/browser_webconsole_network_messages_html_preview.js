@@ -87,7 +87,7 @@ add_task(async function task() {
   await pushPref("test.events.async.enabled", true);
 
   const hud = await openNewTabAndConsole(TEST_URL);
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await expandNetworkRequestAndWaitForHtmlView({
     hud,
@@ -162,7 +162,7 @@ async function expandNetworkRequestAndWaitForHtmlView({
   const rawToggleEl = node.querySelector(".devtools-checkbox-toggle");
   ok(!rawToggleEl.checked, "Raw toggle isn't checked by default");
   rawToggleEl.click();
-  await waitFor(() => node.querySelector(".CodeMirror"));
+  await waitFor(() => node.querySelector(".cm-editor"));
   ok(true, "The CodeMirror instance is rendered");
 }
 

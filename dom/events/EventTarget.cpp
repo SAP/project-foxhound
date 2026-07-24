@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/EventListenerManager.h"
 #include "mozilla/dom/EventTarget.h"
-#include "mozilla/dom/EventTargetBinding.h"
+
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/dom/ConstructibleEventTarget.h"
+#include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "nsGlobalWindowInner.h"
@@ -211,13 +212,13 @@ bool EventTarget::IsApzAware() const {
 void EventTarget::DispatchEvent(Event& aEvent) {
   // The caller type doesn't really matter if we don't care about the
   // return value, but let's be safe and pass NonSystem.
-  Unused << DispatchEvent(aEvent, CallerType::NonSystem, IgnoreErrors());
+  (void)DispatchEvent(aEvent, CallerType::NonSystem, IgnoreErrors());
 }
 
 void EventTarget::DispatchEvent(Event& aEvent, ErrorResult& aRv) {
   // The caller type doesn't really matter if we don't care about the
   // return value, but let's be safe and pass NonSystem.
-  Unused << DispatchEvent(aEvent, CallerType::NonSystem, IgnoreErrors());
+  (void)DispatchEvent(aEvent, CallerType::NonSystem, IgnoreErrors());
 }
 
 Nullable<WindowProxyHolder> EventTarget::GetOwnerGlobalForBindings() {

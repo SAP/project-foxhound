@@ -6,23 +6,23 @@
 
 #include "VPXDecoder.h"
 
-#include <algorithm>
 #include <vpx/vpx_image.h>
+
+#include <algorithm>
 
 #include "BitReader.h"
 #include "BitWriter.h"
 #include "ImageContainer.h"
+#include "PerformanceRecorder.h"
 #include "TimeUnits.h"
+#include "VideoUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "nsError.h"
-#include "PerformanceRecorder.h"
 #include "prsystem.h"
-#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -37,9 +37,18 @@ using namespace layers;
 static VPXDecoder::Codec MimeTypeToCodec(const nsACString& aMimeType) {
   if (aMimeType.EqualsLiteral("video/vp8")) {
     return VPXDecoder::Codec::VP8;
-  } else if (aMimeType.EqualsLiteral("video/vp9")) {
+  }
+  if (aMimeType.EqualsLiteral("video/vp9")) {
     return VPXDecoder::Codec::VP9;
   }
+#ifdef ANDROID
+  if (aMimeType.EqualsLiteral("video/x-vnd.on2.vp8")) {
+    return VPXDecoder::Codec::VP8;
+  }
+  if (aMimeType.EqualsLiteral("video/x-vnd.on2.vp9")) {
+    return VPXDecoder::Codec::VP9;
+  }
+#endif
   return VPXDecoder::Codec::Unknown;
 }
 
@@ -90,6 +99,7 @@ VPXDecoder::~VPXDecoder() { MOZ_COUNT_DTOR(VPXDecoder); }
 RefPtr<ShutdownPromise> VPXDecoder::Shutdown() {
   RefPtr<VPXDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
+    AUTO_PROFILER_LABEL("VPXDecoder::Shutdown", MEDIA_PLAYBACK);
     vpx_codec_destroy(&self->mVPX);
     vpx_codec_destroy(&self->mVPXAlpha);
     return self->mTaskQueue->BeginShutdown();
@@ -97,6 +107,7 @@ RefPtr<ShutdownPromise> VPXDecoder::Shutdown() {
 }
 
 RefPtr<MediaDataDecoder::InitPromise> VPXDecoder::Init() {
+  AUTO_PROFILER_LABEL("VPXDecoder::Init", MEDIA_PLAYBACK);
   if (NS_FAILED(InitContext(&mVPX, mInfo, mCodec, mLowLatency))) {
     return VPXDecoder::InitPromise::CreateAndReject(
         NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
@@ -113,12 +124,14 @@ RefPtr<MediaDataDecoder::InitPromise> VPXDecoder::Init() {
 
 RefPtr<MediaDataDecoder::FlushPromise> VPXDecoder::Flush() {
   return InvokeAsync(mTaskQueue, __func__, []() {
+    AUTO_PROFILER_LABEL("VPXDecoder::Flush", MEDIA_PLAYBACK);
     return FlushPromise::CreateAndResolve(true, __func__);
   });
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("VPXDecoder::ProcessDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
 
   MediaInfoFlag flag = MediaInfoFlag::None;
@@ -187,13 +200,17 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
 
     if (img->fmt == VPX_IMG_FMT_I420) {
       b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
-
+      MOZ_ASSERT(img->y_chroma_shift == 1);
       b.mPlanes[1].mHeight = (img->d_h + 1) >> img->y_chroma_shift;
+      MOZ_ASSERT(img->x_chroma_shift == 1);
       b.mPlanes[1].mWidth = (img->d_w + 1) >> img->x_chroma_shift;
 
       b.mPlanes[2].mHeight = (img->d_h + 1) >> img->y_chroma_shift;
       b.mPlanes[2].mWidth = (img->d_w + 1) >> img->x_chroma_shift;
     } else if (img->fmt == VPX_IMG_FMT_I444) {
+      MOZ_ASSERT(b.mChromaSubsampling == gfx::ChromaSubsampling::FULL);
+      MOZ_ASSERT(img->y_chroma_shift == 0);
+      MOZ_ASSERT(img->x_chroma_shift == 0);
       b.mPlanes[1].mHeight = img->d_h;
       b.mPlanes[1].mWidth = img->d_w;
 
@@ -289,6 +306,7 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::Decode(
 
 RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::Drain() {
   return InvokeAsync(mTaskQueue, __func__, [] {
+    AUTO_PROFILER_LABEL("VPXDecoder::Flush", MEDIA_PLAYBACK);
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
   });
 }
@@ -327,10 +345,9 @@ nsCString VPXDecoder::GetCodecName() const {
 
 /* static */
 bool VPXDecoder::IsVPX(const nsACString& aMimeType, uint8_t aCodecMask) {
-  return ((aCodecMask & VPXDecoder::VP8) &&
-          aMimeType.EqualsLiteral("video/vp8")) ||
-         ((aCodecMask & VPXDecoder::VP9) &&
-          aMimeType.EqualsLiteral("video/vp9"));
+  VPXDecoder::Codec codec = MimeTypeToCodec(aMimeType);
+  return ((aCodecMask & VPXDecoder::VP8) && codec == VPXDecoder::Codec::VP8) ||
+         ((aCodecMask & VPXDecoder::VP9) && codec == VPXDecoder::Codec::VP9);
 }
 
 /* static */
@@ -442,7 +459,7 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
     if (profile == 3 && aBuffer.Length() < 2) {
       return false;
     }
-    Unused << br.ReadBits(3);  // frame_to_show_map_idx
+    (void)br.ReadBits(3);  // frame_to_show_map_idx
     return true;
   }
 
@@ -528,7 +545,7 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
   } else {
     bool intra_only = show_frame ? false : br.ReadBit();
     if (!error_resilient_mode) {
-      Unused << br.ReadBits(2);  // reset_frame_context
+      (void)br.ReadBits(2);  // reset_frame_context
     }
     if (intra_only) {
       if (!frame_sync_code()) {
@@ -544,7 +561,7 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
         aInfo.mSubSampling_y = true;
         aInfo.mBitDepth = 8;
       }
-      Unused << br.ReadBits(8);  // refresh_frame_flags
+      (void)br.ReadBits(8);  // refresh_frame_flags
       frame_size();
       render_size();
     }

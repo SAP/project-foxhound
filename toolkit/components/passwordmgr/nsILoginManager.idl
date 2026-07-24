@@ -60,6 +60,7 @@ interface nsILoginManager : nsISupports {
 
   /**
    * Remove a login from the login manager.
+   * Deprecated: use removeLoginAsync instead.
    *
    * @param aLogin
    *        The login to be removed.
@@ -70,7 +71,19 @@ interface nsILoginManager : nsISupports {
   void removeLogin(in nsILoginInfo aLogin);
 
   /**
+   * Remove a login from the login manager.
+   *
+   * @param aLogin
+   *        The login to be removed.
+   *
+   * The specified login must exactly match a stored login. However, the
+   * values of any nsILoginMetaInfo properties are ignored.
+   */
+  Promise removeLoginAsync(in nsILoginInfo aLogin);
+
+  /**
    * Modify an existing login in the login manager.
+   * Deprecated: use ModifyLoginAsync instead.
    *
    * @param oldLogin
    *        The login to be modified.
@@ -91,7 +104,31 @@ interface nsILoginManager : nsISupports {
   void modifyLogin(in nsILoginInfo oldLogin, in nsISupports newLoginData);
 
   /**
+   *Like modifyLogin, but asynchronous.
+   *
+   * Modify an existing login in the login manager.
+   *
+   * @param oldLogin
+   *        The login to be modified.
+   * @param newLoginData
+   *        The new login values (either a nsILoginInfo or nsIProperyBag)
+   *
+   * If newLoginData is a nsILoginInfo, all of the old login's nsILoginInfo
+   * properties are changed to the values from newLoginData (but the old
+   * login's nsILoginMetaInfo properties are unmodified).
+   *
+   * If newLoginData is a nsIPropertyBag, only the specified properties
+   * will be changed. The nsILoginMetaInfo properties of oldLogin can be
+   * changed in this manner.
+   *
+   * If the propertybag contains an item named "timesUsedIncrement", the
+   * login's timesUsed property will be incremented by the item's value.
+   */
+  Promise modifyLoginAsync(in nsILoginInfo oldLogin, in nsISupports newLoginData);
+
+  /**
    * Record that the password of a saved login was used (e.g. submitted or copied).
+   Deprecated: use recordPasswordUseAsync instead.
    *
    * @param {nsILoginInfo} aLogin
    *        The login record of the password that was used.
@@ -112,6 +149,43 @@ interface nsILoginManager : nsISupports {
    */
   void recordPasswordUse(in nsILoginInfo aLogin, in boolean aPrivateContextWithoutExplicitConsent, in AString aLoginType, in boolean aFilled);
 
+    /**
+   * Record that the password of a saved login was used (e.g. submitted or copied).
+   *
+   * @param {nsILoginInfo} aLogin
+   *        The login record of the password that was used.
+   * @param {boolean} aPrivateContextWithoutExplicitConsent
+   *        If the use was in private browsing AND without the user explicitly choosing to save/update.
+   *        Login use metadata will not be updated in this case but it will stil be counted for telemetry.
+   * @param {AString} aLoginType
+   *        One of "form_login", "form_password", "auth_login", or "prompt_login".
+   *        See saved_login_used in Events.yaml.
+   *        Don't assume that an auth. login is never used in a form and vice-versa. This argument
+   *        indicates the context of how it was used.
+   * @param {boolean} aFilled
+   *        Whether the login was filled, rather than being typed manually.
+   *
+   * If only the username was used, this method shouldn't be called as we don't
+   * want to double-count the use if both the username and password are copied.
+   * Copying of the username normally precedes the copying of the password anyways.
+   */
+  Promise recordPasswordUseAsync(in nsILoginInfo aLogin, in boolean aPrivateContextWithoutExplicitConsent, in AString aLoginType, in boolean aFilled);
+
+  /**
+   * Remove all stored user facing logins.
+   * Deprecated: use removeAllUserFacingLoginsAsync instead.
+   * This will remove all the logins that a user can access through about:logins.
+   * This will not remove the FxA Sync key which is stored with the rest of a user's logins
+   * but is not accessible through about:logins
+   *
+   * The browser sanitization feature allows the user to clear any stored
+   * passwords. This interface allows that to be done without getting each
+   * login first.
+   *
+   */
+  void removeAllUserFacingLogins();
+
+
   /**
    * Remove all stored user facing logins.
    *
@@ -124,13 +198,20 @@ interface nsILoginManager : nsISupports {
    * login first.
    *
    */
-  void removeAllUserFacingLogins();
+  Promise removeAllUserFacingLoginsAsync();
 
   /**
    * Completely remove all logins, including the user's FxA Sync key.
+   * Deprecated: use removeAllLoginsAsync instead.
    *
    */
   void removeAllLogins();
+
+   /**
+   * Completely remove all logins, including the user's FxA Sync key.
+   *
+   */
+  Promise removeAllLoginsAsync();
 
   /**
    * Fetch all logins in the login manager. An array is always returned;
@@ -149,6 +230,24 @@ interface nsILoginManager : nsISupports {
    *
    */
   void getAllLoginsWithCallback(in nsILoginSearchCallback aCallback);
+
+  /**
+   * For migration purposes, asynchronously reencrypt all logins in the
+   * background. If a login is updated externally during that reencryption, that
+   * update will take priority and will not be overwritten.
+   */
+  Promise reencryptAllLogins();
+
+  /**
+   * Debug helper to identify logins with invalid origin/formActionOrigin URLs.
+   * Used to diagnose login storage incompatibilities with the Application Services
+   * Rust component, which has stricter URL validation requirements.
+   *
+   * @return A promise which resolves with a JS Array of objects containing
+   *         origin, timeCreated, and timeLastUsed for logins that failed
+   *         URL validation.
+   */
+  Promise listInvalidOrigins();
 
   /**
    * Obtain a list of all origins for which password saving is disabled.

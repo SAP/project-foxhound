@@ -81,6 +81,8 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     SetPermission(SetPermissionParameters),
     Status,
     Extension(T),
+    GPCSetGlobalPrivacyControl(GlobalPrivacyControlParameters),
+    GPCGetGlobalPrivacyControl,
     WebAuthnAddVirtualAuthenticator(AuthenticatorParameters),
     WebAuthnRemoveVirtualAuthenticator,
     WebAuthnAddCredential(CredentialParameters),
@@ -413,6 +415,10 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
             }
             Route::Status => WebDriverCommand::Status,
             Route::Extension(ref extension) => extension.command(params, &body_data)?,
+            Route::GPCGetGlobalPrivacyControl => WebDriverCommand::GPCGetGlobalPrivacyControl,
+            Route::GPCSetGlobalPrivacyControl => {
+                WebDriverCommand::GPCSetGlobalPrivacyControl(serde_json::from_str(raw_body)?)
+            }
             Route::WebAuthnAddVirtualAuthenticator => {
                 WebDriverCommand::WebAuthnAddVirtualAuthenticator(serde_json::from_str(raw_body)?)
             }
@@ -715,6 +721,11 @@ pub struct UserVerificationParameters {
     pub is_user_verified: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GlobalPrivacyControlParameters {
+    pub gpc: bool,
+}
+
 fn deserialize_to_positive_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: Deserializer<'de>,
@@ -762,16 +773,18 @@ pub struct TimeoutsParameters {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_to_u64"
+        deserialize_with = "deserialize_to_nullable_u64"
     )]
-    pub implicit: Option<u64>,
+    #[allow(clippy::option_option)]
+    pub implicit: Option<Option<u64>>,
     #[serde(
         default,
         rename = "pageLoad",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_to_u64"
+        deserialize_with = "deserialize_to_nullable_u64"
     )]
-    pub page_load: Option<u64>,
+    #[allow(clippy::option_option)]
+    pub page_load: Option<Option<u64>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -804,33 +817,6 @@ where
             Some(Some(n as u64))
         }
         None => Some(None),
-    };
-
-    Ok(value)
-}
-
-fn deserialize_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt: Option<f64> = Option::deserialize(deserializer)?;
-    let value = match opt {
-        Some(n) => {
-            if n < 0.0 || n.fract() != 0.0 {
-                return Err(de::Error::custom(format!(
-                    "{} is not a positive Integer",
-                    n
-                )));
-            }
-            if (n as u64) > MAX_SAFE_INTEGER {
-                return Err(de::Error::custom(format!(
-                    "{} is greater than maximum safe integer",
-                    n
-                )));
-            }
-            Some(n as u64)
-        }
-        None => return Err(de::Error::custom("null is not a positive integer")),
     };
 
     Ok(value)
@@ -1645,26 +1631,6 @@ mod tests {
     }
 
     #[test]
-    fn test_json_timeout_parameters_with_only_null_script_timeout() {
-        let timeouts = TimeoutsParameters {
-            implicit: None,
-            page_load: None,
-            script: Some(None),
-        };
-        assert_de(&timeouts, json!({ "script": null }));
-    }
-
-    #[test]
-    fn test_json_timeout_parameters_with_only_null_implicit_timeout() {
-        assert!(serde_json::from_value::<TimeoutsParameters>(json!({ "implicit": null })).is_err());
-    }
-
-    #[test]
-    fn test_json_timeout_parameters_with_only_null_pageload_timeout() {
-        assert!(serde_json::from_value::<TimeoutsParameters>(json!({ "pageLoad": null })).is_err());
-    }
-
-    #[test]
     fn test_json_timeout_parameters_without_optional_null_field() {
         let timeouts = TimeoutsParameters {
             implicit: None,
@@ -1672,6 +1638,38 @@ mod tests {
             script: None,
         };
         assert_de(&timeouts, json!({}));
+    }
+
+    #[test]
+    fn test_json_timeout_parameters_with_only_null() {
+        let json = json!({
+            "implicit": null,
+            "pageLoad": null,
+            "script": null
+        });
+
+        let timeouts = TimeoutsParameters {
+            implicit: Some(None),
+            page_load: Some(None),
+            script: Some(None),
+        };
+        assert_de(&timeouts, json);
+    }
+
+    #[test]
+    fn test_json_timeout_parameters_with_values() {
+        let json = json!({
+            "implicit": Some(300),
+            "pageLoad": Some(3000),
+            "script": Some(30000)
+        });
+
+        let timeouts = TimeoutsParameters {
+            implicit: Some(300.into()),
+            page_load: Some(3000.into()),
+            script: Some(30000.into()),
+        };
+        assert_de(&timeouts, json);
     }
 
     #[test]

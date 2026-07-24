@@ -29,14 +29,15 @@ nsMathMLmrowFrame::InheritAutomaticData(nsIFrame* aParent) {
   // let the base class get the default from our parent
   nsMathMLContainerFrame::InheritAutomaticData(aParent);
 
-  mPresentationData.flags |= NS_MATHML_STRETCH_ALL_CHILDREN_VERTICALLY;
+  mPresentationData.flags +=
+      MathMLPresentationFlag::StretchAllChildrenVertically;
 
   return NS_OK;
 }
 
 nsresult nsMathMLmrowFrame::AttributeChanged(int32_t aNameSpaceID,
                                              nsAtom* aAttribute,
-                                             int32_t aModType) {
+                                             AttrModType aModType) {
   // Special for <mtable>: In the frame construction code, we also use
   // this frame class as a wrapper for mtable. Hence, we should pass the
   // notification to the real mtable
@@ -56,7 +57,7 @@ nsresult nsMathMLmrowFrame::AttributeChanged(int32_t aNameSpaceID,
 }
 
 /* virtual */
-eMathMLFrameType nsMathMLmrowFrame::GetMathMLFrameType() {
+MathMLFrameType nsMathMLmrowFrame::GetMathMLFrameType() {
   if (!IsMrowLike()) {
     nsIMathMLFrame* child = do_QueryFrame(mFrames.FirstChild());
     if (child) {

@@ -5,8 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/BitSet.h"
 
+using mozilla::Atomic;
 using mozilla::BitSet;
 
 template <typename Storage>
@@ -14,9 +16,11 @@ class BitSetSuite {
   template <size_t N>
   using TestBitSet = BitSet<N, Storage>;
 
+  using Word = typename TestBitSet<1>::Word;
+
   static constexpr size_t kBitsPerWord = sizeof(Storage) * 8;
 
-  static constexpr Storage kAllBitsSet = ~Storage{0};
+  static constexpr Word kAllBitsSet = ~Word{0};
 
  public:
   void testLength() {
@@ -28,7 +32,7 @@ class BitSetSuite {
     MOZ_RELEASE_ASSERT(TestBitSet<kBitsPerWord + 1>().Storage().Length() == 2);
   }
 
-  void testConstruct() {
+  void testConstructAndAssign() {
     MOZ_RELEASE_ASSERT(TestBitSet<1>().Storage()[0] == 0);
     MOZ_RELEASE_ASSERT(TestBitSet<kBitsPerWord>().Storage()[0] == 0);
     MOZ_RELEASE_ASSERT(TestBitSet<kBitsPerWord + 1>().Storage()[0] == 0);
@@ -63,6 +67,18 @@ class BitSetSuite {
         kAllBitsSet);
     MOZ_RELEASE_ASSERT(
         TestBitSet<kBitsPerWord + 1>(bitsetW1.Storage()).Storage()[1] == 1);
+
+    TestBitSet<1> bitset1Copy;
+    bitset1Copy = bitset1;
+    TestBitSet<kBitsPerWord> bitsetWCopy;
+    bitsetWCopy = bitsetW;
+    TestBitSet<kBitsPerWord + 1> bitsetW1Copy;
+    bitsetW1Copy = bitsetW1;
+
+    MOZ_RELEASE_ASSERT(bitset1Copy.Storage()[0] == 1);
+    MOZ_RELEASE_ASSERT(bitsetWCopy.Storage()[0] == kAllBitsSet);
+    MOZ_RELEASE_ASSERT(bitsetW1Copy.Storage()[0] == kAllBitsSet);
+    MOZ_RELEASE_ASSERT(bitsetW1Copy.Storage()[1] == 1);
   }
 
   void testSetBit() {
@@ -162,11 +178,118 @@ class BitSetSuite {
     }
   }
 
+  void testCount() {
+    testCountForSize<1>();
+    testCountForSize<kBitsPerWord>();
+    testCountForSize<kBitsPerWord + 1>();
+  }
+
+  template <size_t N>
+  void testCountForSize() {
+    TestBitSet<N> bits;
+    MOZ_RELEASE_ASSERT(bits.Count() == 0);
+    bits.SetAll();
+    MOZ_RELEASE_ASSERT(bits.Count() == N);
+    bits.ResetAll();
+    bits[0] = true;
+    MOZ_RELEASE_ASSERT(bits.Count() == 1);
+    bits[0] = false;
+    bits[N - 1] = true;
+    MOZ_RELEASE_ASSERT(bits.Count() == 1);
+  }
+
+  void testComparison() {
+    testComparisonForSize<1>();
+    testComparisonForSize<kBitsPerWord>();
+    testComparisonForSize<kBitsPerWord + 1>();
+  }
+
+  template <size_t N>
+  void testComparisonForSize() {
+    TestBitSet<N> a;
+    TestBitSet<N> b;
+    MOZ_RELEASE_ASSERT(a == b);
+    MOZ_RELEASE_ASSERT(!(a != b));
+    a[0] = true;
+    MOZ_RELEASE_ASSERT(a != b);
+    MOZ_RELEASE_ASSERT(!(a == b));
+    b[0] = true;
+    MOZ_RELEASE_ASSERT(a == b);
+    MOZ_RELEASE_ASSERT(!(a != b));
+    a.SetAll();
+    b.SetAll();
+    MOZ_RELEASE_ASSERT(a == b);
+    MOZ_RELEASE_ASSERT(!(a != b));
+    a[N - 1] = false;
+    MOZ_RELEASE_ASSERT(a != b);
+    MOZ_RELEASE_ASSERT(!(a == b));
+    b[N - 1] = false;
+    MOZ_RELEASE_ASSERT(a == b);
+    MOZ_RELEASE_ASSERT(!(a != b));
+  }
+
+  void testLogical() {
+    testLogicalForSize<2>();
+    testLogicalForSize<kBitsPerWord>();
+    testLogicalForSize<kBitsPerWord + 1>();
+  }
+
+  template <size_t N>
+  void testLogicalForSize() {
+    TestBitSet<N> none;
+    TestBitSet<N> all;
+    all.SetAll();
+    TestBitSet<N> some;
+    for (size_t i = 0; i < N; i += 2) {
+      some[i] = true;
+    }
+
+    // operator& is implemented in terms of operator&= (and likewise for
+    // operator|) so this tests both.
+
+    MOZ_RELEASE_ASSERT(none.Count() == 0);
+    MOZ_RELEASE_ASSERT(all.Count() == N);
+    MOZ_RELEASE_ASSERT(some.Count() == (N + 1) / 2);
+
+    MOZ_RELEASE_ASSERT((none & none) == none);
+    MOZ_RELEASE_ASSERT((none & all) == none);
+    MOZ_RELEASE_ASSERT((none & some) == none);
+
+    MOZ_RELEASE_ASSERT((all & none) == none);
+    MOZ_RELEASE_ASSERT((all & all) == all);
+    MOZ_RELEASE_ASSERT((all & some) == some);
+
+    MOZ_RELEASE_ASSERT((some & none) == none);
+    MOZ_RELEASE_ASSERT((some & all) == some);
+    MOZ_RELEASE_ASSERT((some & some) == some);
+
+    MOZ_RELEASE_ASSERT((none | none) == none);
+    MOZ_RELEASE_ASSERT((none | all) == all);
+    MOZ_RELEASE_ASSERT((none | some) == some);
+
+    MOZ_RELEASE_ASSERT((all | none) == all);
+    MOZ_RELEASE_ASSERT((all | all) == all);
+    MOZ_RELEASE_ASSERT((all | some) == all);
+
+    MOZ_RELEASE_ASSERT((some | none) == some);
+    MOZ_RELEASE_ASSERT((some | all) == all);
+    MOZ_RELEASE_ASSERT((some | some) == some);
+
+    MOZ_RELEASE_ASSERT(~none == all);
+    MOZ_RELEASE_ASSERT(~all == none);
+    MOZ_RELEASE_ASSERT(~some != some);
+    MOZ_RELEASE_ASSERT(~some != all);
+    MOZ_RELEASE_ASSERT(~some != none);
+  }
+
   void runTests() {
     testLength();
-    testConstruct();
+    testConstructAndAssign();
     testSetBit();
     testFindBits();
+    testCount();
+    testComparison();
+    testLogical();
   }
 };
 
@@ -174,6 +297,8 @@ int main() {
   BitSetSuite<uint8_t>().runTests();
   BitSetSuite<uint32_t>().runTests();
   BitSetSuite<uint64_t>().runTests();
+  BitSetSuite<Atomic<uint32_t>>().runTests();
+  BitSetSuite<Atomic<uint64_t>>().runTests();
 
   return 0;
 }

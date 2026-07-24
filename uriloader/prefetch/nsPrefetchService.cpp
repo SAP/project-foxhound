@@ -6,7 +6,6 @@
 #include "nsPrefetchService.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/ClientInfo.h"

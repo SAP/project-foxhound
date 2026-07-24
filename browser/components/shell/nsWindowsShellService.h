@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nswindowsshellservice_h____
-#define nswindowsshellservice_h____
+#ifndef nswindowsshellservice_h_
+#define nswindowsshellservice_h_
 
 #include "nscore.h"
 #include "nsString.h"
@@ -31,4 +31,4 @@ class nsWindowsShellService : public nsToolkitShellService,
   nsresult LaunchModernSettingsDialogDefaultApps();
 };
 
-#endif  // nswindowsshellservice_h____
+#endif  // nswindowsshellservice_h_

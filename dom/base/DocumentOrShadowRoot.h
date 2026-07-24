@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_DocumentOrShadowRoot_h__
-#define mozilla_dom_DocumentOrShadowRoot_h__
+#ifndef mozilla_dom_DocumentOrShadowRoot_h_
+#define mozilla_dom_DocumentOrShadowRoot_h_
 
-#include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/IdentifierMapEntry.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/ReverseIterator.h"
+#include "mozilla/dom/NameSpaceConstants.h"
 #include "nsClassHashtable.h"
 #include "nsContentListDeclarations.h"
 #include "nsTArray.h"
@@ -102,10 +102,12 @@ class DocumentOrShadowRoot {
    *
    * This is useful for stuff like QuerySelector optimization and such.
    */
-  const nsTArray<Element*>* GetAllElementsForId(
+  Span<Element* const> GetAllElementsForId(
       const IdentifierMapEntry::DependentAtomOrString& aElementId) const {
-    IdentifierMapEntry* entry = mIdentifierMap.GetEntry(aElementId);
-    return entry ? &entry->GetIdElements() : nullptr;
+    if (IdentifierMapEntry* entry = mIdentifierMap.GetEntry(aElementId)) {
+      return entry->GetIdElements();
+    }
+    return {};
   }
 
   already_AddRefed<nsContentList> GetElementsByTagName(
@@ -244,7 +246,7 @@ class DocumentOrShadowRoot {
   void ClearAdoptedStyleSheets();
 
   /**
-   * Clone's the argument's adopted style sheets into this.
+   * Clones the argument's adopted style sheets into this.
    * This should only be used when cloning a static document for printing.
    */
   void CloneAdoptedSheetsFrom(const DocumentOrShadowRoot&);

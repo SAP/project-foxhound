@@ -4,6 +4,7 @@
 
 //! Generic types for CSS values that are related to transformations.
 
+use crate::derives::*;
 use crate::values::computed::length::Length as ComputedLength;
 use crate::values::computed::length::LengthPercentage as ComputedLengthPercentage;
 use crate::values::specified::angle::Angle as SpecifiedAngle;
@@ -13,6 +14,7 @@ use crate::values::{computed, CSSFloat};
 use crate::{Zero, ZeroNoPercent};
 use euclid::default::{Rect, Transform3D};
 use std::fmt::{self, Write};
+use std::ops::Neg;
 use style_traits::{CssWriter, ToCss};
 
 /// A generic 2D transformation matrix.
@@ -115,6 +117,7 @@ impl<T: Into<f64>> From<Matrix3D<T>> for Transform3D<f64> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct GenericTransformOrigin<H, V, Depth> {
@@ -321,6 +324,7 @@ pub use self::GenericTransformOperation as TransformOperation;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 /// A value of the `transform` property
@@ -460,8 +464,8 @@ where
     fn is_3d(&self) -> bool {
         use self::TransformOperation::*;
         match *self {
-            Translate3D(..) | TranslateZ(..) | Rotate3D(..) | RotateX(..) | RotateY(..) |
-            RotateZ(..) | Scale3D(..) | ScaleZ(..) | Perspective(..) | Matrix3D(..) => true,
+            Translate3D(..) | TranslateZ(..) | Rotate3D(..) | RotateX(..) | RotateY(..)
+            | RotateZ(..) | Scale3D(..) | ScaleZ(..) | Perspective(..) | Matrix3D(..) => true,
             _ => false,
         }
     }
@@ -606,7 +610,7 @@ impl<T: ToMatrix> Transform<T> {
     /// Same as Transform::to_transform_3d_matrix but a f64 version.
     pub fn to_transform_3d_matrix_f64(
         &self,
-        reference_box: Option<&Rect<ComputedLength>>
+        reference_box: Option<&Rect<ComputedLength>>,
     ) -> Result<(Transform3D<f64>, bool), ()> {
         Self::components_to_transform_3d_matrix_f64(&self.0, reference_box)
     }
@@ -680,6 +684,7 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 /// A value of the `Rotate` property
@@ -705,8 +710,8 @@ pub trait IsParallelTo {
 
 impl<Number, Angle> ToCss for Rotate<Number, Angle>
 where
-    Number: Copy + ToCss + Zero,
-    Angle: ToCss,
+    Number: Copy + PartialOrd + ToCss + Zero,
+    Angle: Copy + Neg<Output = Angle> + ToCss + Zero,
     (Number, Number, Number): IsParallelTo,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
@@ -717,30 +722,40 @@ where
         match *self {
             Rotate::None => dest.write_str("none"),
             Rotate::Rotate(ref angle) => angle.to_css(dest),
-            Rotate::Rotate3D(x, y, z, ref angle) => {
+            Rotate::Rotate3D(x, y, z, angle) => {
                 // If the axis is parallel with the x or y axes, it must serialize as the
                 // appropriate keyword. If a rotation about the z axis (that is, in 2D) is
-                // specified, the property must serialize as just an <angle>
+                // specified, the property must serialize as just an <angle>.
+                //
+                // Note that if the axis is parallel to x/y/z but pointing in the opposite
+                // direction, we need to negate the angle to maintain the correct meaning.
                 //
                 // https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
                 let v = (x, y, z);
-                let axis = if x.is_zero() && y.is_zero() && z.is_zero() {
+                let (axis, angle) = if x.is_zero() && y.is_zero() && z.is_zero() {
                     // The zero length vector is parallel to every other vector, so
                     // is_parallel_to() returns true for it. However, it is definitely different
                     // from x axis, y axis, or z axis, and it's meaningless to perform a rotation
                     // using that direction vector. So we *have* to serialize it using that same
                     // vector - we can't simplify to some theoretically parallel axis-aligned
                     // vector.
-                    None
+                    (None, angle)
                 } else if v.is_parallel_to(&DirectionVector::new(1., 0., 0.)) {
-                    Some("x ")
+                    (
+                        Some("x "),
+                        if v.0 < Number::zero() { -angle } else { angle },
+                    )
                 } else if v.is_parallel_to(&DirectionVector::new(0., 1., 0.)) {
-                    Some("y ")
+                    (
+                        Some("y "),
+                        if v.1 < Number::zero() { -angle } else { angle },
+                    )
                 } else if v.is_parallel_to(&DirectionVector::new(0., 0., 1.)) {
                     // When we're parallel to the z-axis, we can just serialize the angle.
+                    let angle = if v.2 < Number::zero() { -angle } else { angle };
                     return angle.to_css(dest);
                 } else {
-                    None
+                    (None, angle)
                 };
                 match axis {
                     Some(a) => dest.write_str(a)?,
@@ -773,6 +788,7 @@ where
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 /// A value of the `Scale` property
@@ -841,6 +857,7 @@ fn y_axis_and_z_axis_are_zero<LengthPercentage: Zero + ZeroNoPercent, Length: Ze
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 /// A value of the `translate` property
@@ -886,6 +903,7 @@ pub use self::GenericTranslate as Translate;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum TransformStyle {

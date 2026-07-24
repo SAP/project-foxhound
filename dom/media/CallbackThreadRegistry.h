@@ -7,11 +7,11 @@
 #ifndef CALLBACKTHREADREGISTRY_H
 #define CALLBACKTHREADREGISTRY_H
 
-#include <cstdint>
+#include <GeckoProfiler.h>
 #include <mozilla/DataMutex.h>
 #include <nsTArray.h>
+
 #include <thread>
-#include <GeckoProfiler.h>
 
 namespace mozilla {
 

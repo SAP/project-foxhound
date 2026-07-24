@@ -14,6 +14,7 @@ using namespace mozilla;
 ViewRegion::~ViewRegion() {
   for (NSView* view : mViews) {
     [view removeFromSuperview];
+    [view release];
   }
 }
 
@@ -42,10 +43,6 @@ bool ViewRegion::UpdateRegion(const LayoutDeviceIntRegion& aRegion,
     } else {
       view = aViewCreationCallback();
       [aContainerView addSubview:view];
-
-      // Now that the view is in the view hierarchy, it'll be kept alive by
-      // its superview, so we can drop our reference.
-      [view release];
     }
     if (!NSEqualRects(rect, view.frame)) {
       view.frame = rect;
@@ -55,9 +52,10 @@ bool ViewRegion::UpdateRegion(const LayoutDeviceIntRegion& aRegion,
   }
   for (NSView* view : Span(viewsToRecycle).From(viewsRecycled)) {
     // Our new region is made of fewer rects than the old region, so we can
-    // remove this view. We only have a weak reference to it, so removing it
-    // from the view hierarchy will release it.
+    // remove this view. Remove it from its superview and also remove our
+    // reference to it.
     [view removeFromSuperview];
+    [view release];
   }
 
   mRegion = aRegion;

@@ -62,27 +62,38 @@ support-files = [
 prefs = [ "javascript.options.large_arraybuffers=true" ]
 
 ["test_1331680.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_1331680_iframe.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_1331680_xhr.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_1396395.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 # test_142* fail with xorigin if 3pc are rejected by default (Bug 1873998).
 
 ["test_1421324.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1981321
+  "xorigin",
+]
 
 ["test_1425031.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_1502055.html"]
 support-files = [
@@ -101,61 +112,73 @@ support-files = ["test_accept_header.sjs", "test_import_json_module.mjs"]
 ["test_arraybufferinputstream.html"]
 
 ["test_arraybufferinputstream_large.html"]
-run-if = ["processor != 'x86'"] # Large ArrayBuffers not supported on 32-bit.
+run-if = [
+  "arch != 'x86'", # Large ArrayBuffers not supported on 32-bit.
+]
 skip-if = [
-  "tsan", # TSan shadow memory causes OOMs.
   "asan",
+  "tsan", # TSan shadow memory causes OOMs.
 ]
 
 ["test_different_domain_in_hierarchy.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_differentdomain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_documentcookies_maxage.html"]
 # Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_fetch_lnk.html"]
 
+["test_http_auth_cache.html"]
+support-files = ["authenticate.sjs", "../../../toolkit/components/prompts/test/prompt_common.js", "../../../toolkit/components/prompts/test/chromeScript.js"]
+skip-if = [
+  "os == 'android'", # bug 1267092: auth prompt helpers don't work on android
+]
+
 ["test_idn_redirect.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_image.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_loadflags.html"]
 # Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
 skip-if = [
-  "xorigin",
-  "http3",
   "http2",
+  "http3",
+  "xorigin",
 ]
 
 ["test_loadinfo_redirectchain.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_origin_header.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_partially_cached_content.html"]
@@ -167,52 +190,52 @@ support-files = ["file_pdfjs_test.pdf", "file_pdfjs_test.pdf^headers^"]
 
 ["test_redirect_ref.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_rel_preconnect.html"]
 
 ["test_same_base_domain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_same_base_domain_2.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_same_base_domain_3.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_same_base_domain_4.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_same_base_domain_5.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_same_base_domain_6.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_samedomain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_uri_scheme.html"]
@@ -220,9 +243,13 @@ skip-if = [
 ["test_url_perf.html"]
 # test to check the performance of URL parsing.
 # No need to run in CI.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_viewsource_unlinkable.html"]
 
 ["test_xhr_method_case.html"]
-skip-if = ["http2"]
+skip-if = [
+  "http2",
+]

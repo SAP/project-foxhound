@@ -7,8 +7,6 @@
 #ifndef mozilla_ipc_Shmem_h
 #define mozilla_ipc_Shmem_h
 
-#include "mozilla/Attributes.h"
-
 #include "base/basictypes.h"
 #include "base/process.h"
 #include "chrome/common/ipc_message_utils.h"
@@ -59,11 +57,8 @@ namespace mozilla::ipc {
 class IProtocol;
 class IToplevelProtocol;
 
-template <typename P>
-struct IPDLParamTraits;
-
 class Shmem final {
-  friend struct IPDLParamTraits<Shmem>;
+  friend struct IPC::ParamTraits<Shmem>;
   friend class IProtocol;
   friend class IToplevelProtocol;
 

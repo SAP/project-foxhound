@@ -70,6 +70,9 @@ class ServiceWorkerRegistrationInfo final
   bool mCorrupt;
 
   IPCNavigationPreloadState mNavigationPreloadState;
+  int64_t mNumberOfAttemptedActivations{0};
+  bool mIsBroken{false};
+  int64_t mCacheAPIId{-1};
 
  public:
   NS_DECL_ISUPPORTS
@@ -78,9 +81,17 @@ class ServiceWorkerRegistrationInfo final
   using TryToActivateCallback = std::function<void()>;
 
   ServiceWorkerRegistrationInfo(
-      const nsACString& aScope, nsIPrincipal* aPrincipal,
+      const nsACString& aScope, WorkerType aType, nsIPrincipal* aPrincipal,
       ServiceWorkerUpdateViaCache aUpdateViaCache,
       IPCNavigationPreloadState&& aNavigationPreloadState);
+
+  int64_t GetNumberOfAttemptedActivations() const {
+    return mNumberOfAttemptedActivations;
+  }
+
+  bool IsBroken() const { return mIsBroken; }
+
+  int64_t GetCacheAPIId() const { return mCacheAPIId; }
 
   void AddInstance(ServiceWorkerRegistrationListener* aInstance,
                    const ServiceWorkerRegistrationDescriptor& aDescriptor);
@@ -88,6 +99,8 @@ class ServiceWorkerRegistrationInfo final
   void RemoveInstance(ServiceWorkerRegistrationListener* aInstance);
 
   const nsCString& Scope() const;
+
+  WorkerType Type() const;
 
   nsIPrincipal* Principal() const;
 
@@ -212,7 +225,8 @@ class ServiceWorkerRegistrationInfo final
 
   ServiceWorkerUpdateViaCache GetUpdateViaCache() const;
 
-  void SetUpdateViaCache(ServiceWorkerUpdateViaCache aUpdateViaCache);
+  void SetOptions(ServiceWorkerUpdateViaCache aUpdateViaCache,
+                  WorkerType aType);
 
   int64_t GetLastUpdateTime() const;
 
@@ -246,7 +260,8 @@ class ServiceWorkerRegistrationInfo final
   // may get CC-ed.
   void UpdateRegistrationState();
 
-  void UpdateRegistrationState(ServiceWorkerUpdateViaCache aUpdateViaCache);
+  void UpdateRegistrationState(ServiceWorkerUpdateViaCache aUpdateViaCache,
+                               WorkerType aType);
 
   // Used by devtools to track changes to the properties of
   // *nsIServiceWorkerRegistrationInfo*. Note, this doesn't necessarily need to

@@ -6,11 +6,11 @@
 #if !defined(WebMBufferedParser_h_)
 #  define WebMBufferedParser_h_
 
-#  include "nsISupportsImpl.h"
-#  include "nsTArray.h"
-#  include "mozilla/Mutex.h"
 #  include "MediaResource.h"
 #  include "MediaResult.h"
+#  include "mozilla/Mutex.h"
+#  include "nsISupportsImpl.h"
+#  include "nsTArray.h"
 
 namespace mozilla {
 
@@ -255,7 +255,7 @@ class WebMBufferedState final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebMBufferedState)
 
  public:
-  WebMBufferedState() : mMutex("WebMBufferedState"), mLastBlockOffset(-1) {
+  WebMBufferedState() : mMutex("WebMBufferedState") {
     MOZ_COUNT_CTOR(WebMBufferedState);
   }
 
@@ -275,8 +275,6 @@ class WebMBufferedState final {
 
   // Returns end offset of init segment or -1 if none found.
   int64_t GetInitEndOffset();
-  // Returns the end offset of the last complete block or -1 if none found.
-  int64_t GetLastBlockOffset();
 
   // Returns start time
   bool GetStartTime(uint64_t* aTime);
@@ -288,14 +286,12 @@ class WebMBufferedState final {
   // Private destructor, to discourage deletion outside of Release():
   MOZ_COUNTED_DTOR(WebMBufferedState)
 
-  // Synchronizes access to the mTimeMapping array and mLastBlockOffset.
+  // Synchronizes access to the mTimeMapping array.
   Mutex mMutex;
 
   // Sorted (by offset) map of data offsets to timecodes.  Populated
   // on the main thread as data is received and parsed by WebMBufferedParsers.
   nsTArray<WebMTimeDataOffset> mTimeMapping MOZ_GUARDED_BY(mMutex);
-  // The last complete block parsed. -1 if not set.
-  int64_t mLastBlockOffset MOZ_GUARDED_BY(mMutex);
 
   // Sorted (by offset) live parser instances.  Main thread only.
   nsTArray<WebMBufferedParser> mRangeParsers;

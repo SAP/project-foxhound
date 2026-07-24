@@ -55,7 +55,7 @@ class RtcEventAudioPlayout final : public RtcEvent {
 
   uint32_t ssrc() const { return ssrc_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> batch) {
+  static std::string Encode(ArrayView<const RtcEvent*> batch) {
     return RtcEventAudioPlayout::definition_.EncodeBatch(batch);
   }
 
@@ -73,7 +73,7 @@ class RtcEventAudioPlayout final : public RtcEvent {
   }
 
  private:
-  RtcEventAudioPlayout(const RtcEventAudioPlayout& other);
+  RtcEventAudioPlayout(const RtcEventAudioPlayout&) = default;
 
   const uint32_t ssrc_;
 

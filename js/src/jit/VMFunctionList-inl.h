@@ -53,7 +53,6 @@ namespace jit {
   IF_EXPLICIT_RESOURCE_MANAGEMENT(_(AddDisposableResourceToCapability,         \
                                     js::AddDisposableResourceToCapability))    \
   _(AddOrUpdateSparseElementHelper, js::AddOrUpdateSparseElementHelper)        \
-  _(AddSlotAndCallAddPropHook, js::AddSlotAndCallAddPropHook)                  \
   _(ArgumentsObjectCreateForInlinedIon,                                        \
     js::ArgumentsObject::createForInlinedIon)                                  \
   _(ArgumentsObjectCreateForIon, js::ArgumentsObject::createForIon)            \
@@ -140,6 +139,7 @@ namespace jit {
   IF_EXPLICIT_RESOURCE_MANAGEMENT(                                             \
       _(CreateSuppressedError, js::CreateSuppressedError))                     \
   _(CreateThisFromIC, js::jit::CreateThisFromIC)                               \
+  _(CreateThisFromICWithAllocSite, js::jit::CreateThisFromICWithAllocSite)     \
   _(CreateThisFromIon, js::jit::CreateThisFromIon)                             \
   _(DebugAfterYield, js::jit::DebugAfterYield)                                 \
   _(DebugEpilogueOnBaselineReturn, js::jit::DebugEpilogueOnBaselineReturn)     \
@@ -205,7 +205,10 @@ namespace jit {
   _(GetImportOperation, js::GetImportOperation)                                \
   _(GetIntrinsicValue, js::jit::GetIntrinsicValue)                             \
   _(GetIterator, js::GetIterator)                                              \
+  _(GetIteratorForObjectKeys, js::GetIteratorForObjectKeys)                    \
   _(GetIteratorWithIndices, js::GetIteratorWithIndices)                        \
+  _(GetIteratorWithIndicesForObjectKeys,                                       \
+    js::GetIteratorWithIndicesForObjectKeys)                                   \
   _(GetNonSyntacticGlobalThis, js::GetNonSyntacticGlobalThis)                  \
   _(GetOrCreateModuleMetaObject, js::GetOrCreateModuleMetaObject)              \
   _(GetPendingExceptionStack, js::GetPendingExceptionStack)                    \
@@ -325,6 +328,8 @@ namespace jit {
   _(SetPropertyMegamorphicYesCache, js::jit::SetPropertyMegamorphic<true>)     \
   _(SetPropertySuper, js::SetPropertySuper)                                    \
   _(StartDynamicModuleImport, js::StartDynamicModuleImport)                    \
+  IF_SOURCE_PHASE_IMPORTS(                                                     \
+      _(StartDynamicModuleImportSource, js::StartDynamicModuleImportSource))   \
   _(StringBigIntGreaterThanOrEqual,                                            \
     js::jit::StringBigIntCompare<js::jit::ComparisonKind::GreaterThanOrEqual>) \
   _(StringBigIntLessThan,                                                      \
@@ -364,6 +369,10 @@ namespace jit {
   _(ThrowWithStackOperation, js::ThrowWithStackOperation)                      \
   _(ToBigInt, js::ToBigInt)                                                    \
   _(ToStringSlow, js::ToStringSlow<js::CanGC>)                                 \
+  _(TypedArraySet, js::TypedArraySet)                                          \
+  _(TypedArraySetFromSubarray, js::TypedArraySetFromSubarray)                  \
+  _(TypedArraySubarray, js::TypedArraySubarray)                                \
+  _(TypedArraySubarrayWithLength, js::TypedArraySubarrayWithLength)            \
   _(ValueToIterator, js::ValueToIterator)                                      \
   _(VarEnvironmentObjectCreateWithoutEnclosing,                                \
     js::VarEnvironmentObject::createWithoutEnclosing)

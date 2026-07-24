@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "api/array_view.h"
-#include "api/environment/environment.h"
+#include "api/field_trials_view.h"
 #include "api/frame_transformer_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_factory.h"
@@ -88,8 +88,9 @@ class RTPSenderVideo : public RTPVideoFrameSenderInterface {
     bool enable_retransmit_all_layers = false;
     std::optional<int> red_payload_type;
     const FieldTrialsView* field_trials = nullptr;
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer;
+    scoped_refptr<FrameTransformerInterface> frame_transformer;
     TaskQueueFactory* task_queue_factory = nullptr;
+    bool raw_packetization = false;
   };
 
   explicit RTPSenderVideo(const Config& config);
@@ -102,21 +103,22 @@ class RTPSenderVideo : public RTPVideoFrameSenderInterface {
   // video encoder, excluding any additional overhead.
   // Calls to this method are assumed to be externally serialized.
   bool SendVideo(int payload_type,
-                 std::optional<VideoCodecType> codec_type,
+                 VideoCodecType codec_type,
                  uint32_t rtp_timestamp,
                  Timestamp capture_time,
-                 rtc::ArrayView<const uint8_t> payload,
+                 ArrayView<const uint8_t> payload,
                  size_t encoder_output_size,
                  RTPVideoHeader video_header,
                  TimeDelta expected_retransmission_time,
                  std::vector<uint32_t> csrcs) override;
 
   bool SendEncodedImage(int payload_type,
-                        std::optional<VideoCodecType> codec_type,
+                        VideoCodecType codec_type,
                         uint32_t rtp_timestamp,
                         const EncodedImage& encoded_image,
                         RTPVideoHeader video_header,
-                        TimeDelta expected_retransmission_time);
+                        TimeDelta expected_retransmission_time,
+                        const std::vector<uint32_t>& csrcs = {});
 
   // Configures video structures produced by encoder to send using the
   // dependency descriptor rtp header extension. Next call to SendVideo should
@@ -248,13 +250,15 @@ class RTPSenderVideo : public RTPVideoFrameSenderInterface {
   // Set to true if the generic descriptor should be authenticated.
   const bool generic_descriptor_auth_experiment_;
 
+  const bool raw_packetization_;
+
   AbsoluteCaptureTimeSender absolute_capture_time_sender_
       RTC_GUARDED_BY(send_checker_);
   // Tracks updates to the active decode targets and decides when active decode
   // targets bitmask should be attached to the dependency descriptor.
   ActiveDecodeTargetsHelper active_decode_targets_tracker_;
 
-  const rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate>
+  const scoped_refptr<RTPSenderVideoFrameTransformerDelegate>
       frame_transformer_delegate_;
 };
 

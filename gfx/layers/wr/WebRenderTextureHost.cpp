@@ -104,6 +104,10 @@ gfx::SurfaceFormat WebRenderTextureHost::GetFormat() const {
   return mWrappedTextureHost->GetFormat();
 }
 
+bool WebRenderTextureHost::NeedsYFlip() const {
+  return mWrappedTextureHost->NeedsYFlip();
+}
+
 void WebRenderTextureHost::MaybeDestroyRenderTexture() {
   // WebRenderTextureHost does not create RenderTexture, then
   // WebRenderTextureHost does not need to destroy RenderTexture.
@@ -119,15 +123,7 @@ void WebRenderTextureHost::NotifyNotUsed() {
     wr::RenderThread::Get()->NotifyNotUsed(GetExternalImageKey());
   }
 #endif
-  if (mWrappedTextureHost->AsRemoteTextureHostWrapper() ||
-      mWrappedTextureHost->AsTextureHostWrapperD3D11()) {
-    mWrappedTextureHost->NotifyNotUsed();
-  }
-#ifdef XP_WIN
-  if (auto* host = AsDXGIYCbCrTextureHostD3D11()) {
-    host->NotifyNotUsed();
-  }
-#endif
+  mWrappedTextureHost->NotifyNotUsed();
   TextureHost::NotifyNotUsed();
 }
 
@@ -204,16 +200,8 @@ bool WebRenderTextureHost::SupportsExternalCompositing(
   return mWrappedTextureHost->SupportsExternalCompositing(aBackend);
 }
 
-void WebRenderTextureHost::SetAcquireFence(UniqueFileHandle&& aFenceFd) {
-  mWrappedTextureHost->SetAcquireFence(std::move(aFenceFd));
-}
-
-void WebRenderTextureHost::SetReleaseFence(UniqueFileHandle&& aFenceFd) {
-  mWrappedTextureHost->SetReleaseFence(std::move(aFenceFd));
-}
-
-UniqueFileHandle WebRenderTextureHost::GetAndResetReleaseFence() {
-  return mWrappedTextureHost->GetAndResetReleaseFence();
+void WebRenderTextureHost::SetReadFence(Fence* aReadFence) {
+  return mWrappedTextureHost->SetReadFence(aReadFence);
 }
 
 AndroidHardwareBuffer* WebRenderTextureHost::GetAndroidHardwareBuffer() const {

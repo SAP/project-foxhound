@@ -113,10 +113,11 @@ def skip_unless_browser_pref(reason, pref, predicate=bool):
     Example: ::
 
       class TestSomething(MarionetteTestCase):
-          @skip_unless_browser_pref("Sessionstore needs to be enabled for crashes",
-                                    "browser.sessionstore.resume_from_crash",
-                                    lambda value: value is True,
-                                    )
+          @skip_unless_browser_pref(
+              "Sessionstore needs to be enabled for crashes",
+              "browser.sessionstore.resume_from_crash",
+              lambda value: value is True,
+          )
           def test_foo(self):
               pass  # test implementation here
 

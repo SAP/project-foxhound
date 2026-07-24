@@ -8,11 +8,13 @@
 // classes in order to specialize CC helpers such as ImplCycleCollectionTraverse
 // for them.
 
-#ifndef nsCycleCollectionNoteChild_h__
-#define nsCycleCollectionNoteChild_h__
+#ifndef nsCycleCollectionNoteChild_h_
+#define nsCycleCollectionNoteChild_h_
 
 #include "nsCycleCollectionTraversalCallback.h"
 #include "mozilla/Likely.h"
+
+#include <type_traits>
 
 enum { CycleCollectionEdgeNameArrayFlag = 1 };
 
@@ -82,4 +84,4 @@ inline void CycleCollectionNoteChild(
   CycleCollectionNoteChild(aCallback, aChild, aName, 0);
 }
 
-#endif  // nsCycleCollectionNoteChild_h__
+#endif  // nsCycleCollectionNoteChild_h_

@@ -11,7 +11,6 @@
 #include "mozilla/GeckoArgs.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "nsXULAppAPI.h"
-#include <vector>
 
 namespace mozilla {
 

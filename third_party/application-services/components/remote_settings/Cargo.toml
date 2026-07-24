@@ -1,0 +1,48 @@
+[package]
+name = "remote_settings"
+version = "0.1.0"
+edition = "2021"
+# The Android mobile team took the basis of this client from Nimbus originally.
+authors = ["The Android Mobile Team <firefox-android-team@mozilla.com>", "The Glean Team <glean-team@mozilla.com>"]
+description = "A Remote Settings client intended for application layer platforms."
+license = "MPL-2.0"
+exclude = ["/android", "/ios"]
+
+[features]
+default = []
+signatures = ["dep:canonical_json", "dep:rc_crypto"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+uniffi = { version = "0.31" }
+thiserror = "2"
+serde = { version = "1", features=["derive"] }
+serde_json = "1"
+parking_lot = "0.12"
+error-support = { path = "../support/error" }
+sql-support = { path = "../support/sql" }
+viaduct = { path = "../viaduct" }
+url = "2"
+camino = "1.0"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+jexl-eval = { version = "0.4.0" }
+regex = "1.9"
+anyhow = "1.0"
+firefox-versioning = { path = "../support/firefox-versioning" }
+sha2 = "^0.10"
+canonical_json = { version = "0.5", optional = true }
+rc_crypto = { path = "../support/rc_crypto", optional = true }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
+
+[dev-dependencies]
+expect-test = "1.4"
+viaduct-dev = { path = "../support/viaduct-dev" }
+mockall = "0.12"
+mockito = { version = "0.31", default-features = false}
+# We add the perserve_order feature to guarantee ordering of the keys in our
+# JSON objects as they get serialized/deserialized.
+serde_json = { version = "1", features = ["preserve_order"] }
+nss = { path = "../support/rc_crypto/nss" }

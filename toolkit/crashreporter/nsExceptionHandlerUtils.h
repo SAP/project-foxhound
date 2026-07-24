@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsExceptionHandlerUtils_h__
-#define nsExceptionHandlerUtils_h__
+#ifndef nsExceptionHandlerUtils_h_
+#define nsExceptionHandlerUtils_h_
 
 bool SimpleNoCLibDtoA(double aValue, char* aBuffer, int aBufferLength);
 
-#endif  // nsExceptionHandlerUtils_h__
+#endif  // nsExceptionHandlerUtils_h_

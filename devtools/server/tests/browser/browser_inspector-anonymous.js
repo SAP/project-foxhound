@@ -118,15 +118,13 @@ async function testPseudoElements(walker) {
   is(children.nodes.length, 3, "Correct number of children");
 
   const before = children.nodes[0];
-  ok(before.isAnonymous, "Child is anonymous");
-  ok(before._form.isNativeAnonymous, "Child is native anonymous");
+  ok(before.isNativeAnonymous, "Child is native anonymous");
 
   const span = children.nodes[1];
-  ok(!span.isAnonymous, "Child is not anonymous");
+  ok(!span.isNativeAnonymous, "Child is not anonymous");
 
   const after = children.nodes[2];
-  ok(after.isAnonymous, "Child is anonymous");
-  ok(after._form.isNativeAnonymous, "Child is native anonymous");
+  ok(after.isNativeAnonymous, "Child is native anonymous");
 }
 
 async function testEmptyWithPseudo(walker) {
@@ -144,8 +142,7 @@ async function testEmptyWithPseudo(walker) {
   is(children.nodes.length, 1, "Correct number of children");
 
   const before = children.nodes[0];
-  ok(before.isAnonymous, "Child is anonymous");
-  ok(before._form.isNativeAnonymous, "Child is native anonymous");
+  ok(before.isNativeAnonymous, "Child is native anonymous");
 }
 
 async function testShadowAnonymous(walker) {
@@ -164,8 +161,7 @@ async function testShadowAnonymous(walker) {
     "_moz_generated_content_before",
     "Should be the ::before pseudo-element"
   );
-  ok(before.isAnonymous, "::before is anonymous");
-  ok(before._form.isNativeAnonymous, "::before is native anonymous");
+  ok(before.isNativeAnonymous, "::before is native anonymous");
   info(JSON.stringify(before._form));
 
   const shadow = children.nodes[0];
@@ -176,11 +172,7 @@ async function testShadowAnonymous(walker) {
 
   // <h3>Shadow <em>DOM</em></h3>
   const shadowChild1 = shadowChildren.nodes[0];
-  ok(!shadowChild1.isAnonymous, "Shadow child is not anonymous");
-  ok(
-    !shadowChild1._form.isNativeAnonymous,
-    "Shadow child is not native anonymous"
-  );
+  ok(!shadowChild1.isNativeAnonymous, "Shadow child is not native anonymous");
 
   const shadowSubChildren = await walker.children(shadowChild1);
   is(shadowChild1.numChildren, 2, "Subchildren of the shadow root are counted");
@@ -189,16 +181,11 @@ async function testShadowAnonymous(walker) {
   // <em>DOM</em>
   const shadowSubChild = shadowSubChildren.nodes[1];
   ok(
-    !shadowSubChild.isAnonymous,
-    "Subchildren of shadow root are not anonymous"
-  );
-  ok(
-    !shadowSubChild._form.isNativeAnonymous,
-    "Subchildren of shadow root is not native anonymous"
+    !shadowSubChild.isNativeAnonymous,
+    "Subchildren of shadow root are not native anonymous"
   );
 
   // <select multiple></select>
   const shadowChild2 = shadowChildren.nodes[1];
-  ok(!shadowChild2.isAnonymous, "Child is anonymous");
-  ok(!shadowChild2._form.isNativeAnonymous, "Child is not native anonymous");
+  ok(!shadowChild2.isNativeAnonymous, "Child is native anonymous");
 }

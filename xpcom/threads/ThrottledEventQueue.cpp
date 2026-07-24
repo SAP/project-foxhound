@@ -6,12 +6,11 @@
 
 #include "ThrottledEventQueue.h"
 
-#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/MaybeLeakRefPtr.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/Unused.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -251,7 +250,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
     // Execute the event now that we have unlocked.
     LogRunnable::Run log(event);
-    Unused << event->Run();
+    (void)event->Run();
 
     // To cover the event's destructor code in the LogRunnable log
     event = nullptr;
@@ -292,7 +291,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
     MOZ_ASSERT(!NS_IsMainThread());
 #ifdef DEBUG
     bool onBaseTarget = false;
-    Unused << mBaseTarget->IsOnCurrentThread(&onBaseTarget);
+    (void)mBaseTarget->IsOnCurrentThread(&onBaseTarget);
     MOZ_ASSERT(!onBaseTarget);
 #endif
 
@@ -328,14 +327,15 @@ class ThrottledEventQueue::Inner final : public nsISupports {
     return NS_OK;
   }
 
-  nsresult DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
+  nsresult DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
     // Any thread
-    nsCOMPtr<nsIRunnable> r = aEvent;
-    return Dispatch(r.forget(), aFlags);
+    return Dispatch(do_AddRef(aEvent), aFlags);
   }
 
-  nsresult Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
-    MOZ_ASSERT(aFlags == NS_DISPATCH_NORMAL || aFlags == NS_DISPATCH_AT_END);
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aEvent,
+                    DispatchFlags aFlags) {
+    MaybeLeakRefPtr<nsIRunnable> event(std::move(aEvent),
+                                       aFlags & NS_DISPATCH_FALLIBLE);
 
     // Any thread
     MutexAutoLock lock(mMutex);
@@ -345,12 +345,13 @@ class ThrottledEventQueue::Inner final : public nsISupports {
       // fallible, so do it first. Our lock will prevent the executor from
       // accessing the event queue before we add the event below.
       nsresult rv = EnsureExecutor(lock);
-      if (NS_FAILED(rv)) return rv;
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
     }
 
     // Only add the event to the underlying queue if are able to
     // dispatch to our base target.
-    nsCOMPtr<nsIRunnable> event(aEvent);
     LogRunnable::LogDispatch(event);
     mEventQueue.PutEvent(event.forget(), EventQueuePriority::Normal, lock);
     return NS_OK;
@@ -369,6 +370,10 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   nsresult UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
     return mBaseTarget->UnregisterShutdownTask(aTask);
+  }
+
+  nsIEventTarget::FeatureFlags GetFeatures() {
+    return mBaseTarget->GetFeatures();
   }
 
   bool IsOnCurrentThread() { return mBaseTarget->IsOnCurrentThread(); }
@@ -417,13 +422,14 @@ nsresult ThrottledEventQueue::SetIsPaused(bool aIsPaused) {
 bool ThrottledEventQueue::IsPaused() const { return mInner->IsPaused(); }
 
 NS_IMETHODIMP
-ThrottledEventQueue::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
+ThrottledEventQueue::DispatchFromScript(nsIRunnable* aEvent,
+                                        DispatchFlags aFlags) {
   return mInner->DispatchFromScript(aEvent, aFlags);
 }
 
 NS_IMETHODIMP
 ThrottledEventQueue::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                              uint32_t aFlags) {
+                              DispatchFlags aFlags) {
   return mInner->Dispatch(std::move(aEvent), aFlags);
 }
 
@@ -441,6 +447,10 @@ ThrottledEventQueue::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
 NS_IMETHODIMP
 ThrottledEventQueue::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   return mInner->UnregisterShutdownTask(aTask);
+}
+
+nsIEventTarget::FeatureFlags ThrottledEventQueue::GetFeatures() {
+  return mInner->GetFeatures();
 }
 
 NS_IMETHODIMP

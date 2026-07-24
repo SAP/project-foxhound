@@ -3,65 +3,84 @@ head = "head.js"
 support-files = ["../shared-head.js"]
 
 ["test_active_configuration.js"]
-skip-if = ["tsan"] # Intermittent timeouts, bug 1781449
+skip-if = [
+  "tsan", # Intermittent timeouts, bug 1781449
+]
 
 ["test_addProfilerMarker.js"]
 
 ["test_asm.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # bug 1302198, permanent failure since GCP machine type change from n2-standard- to c2-standard-4
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # bug 1302198, permanent failure since GCP machine type change from n2-standard- to c2-standard-4
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1302198, permanent failure since GCP machine type change from n2-standard- to c2-standard-4
 ]
 
 ["test_assertion_helper.js"]
 
 ["test_enterjit_osr.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
 ]
 
 ["test_enterjit_osr_disabling.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "opt",
+  "tsan",
+]
 
 ["test_enterjit_osr_enabling.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "opt",
+  "tsan",
+]
 
 ["test_feature_cpufreq.js"]
-skip-if = ["tsan"] # Times out, intermittently before (bug 1879744), perma after bug 1915433.
+skip-if = [
+  "tsan", # Times out, intermittently before (bug 1879744), perma after bug 1915433.
+]
 
 ["test_feature_fileioall.js"]
-skip-if = ["release_or_beta"]
+skip-if = [
+  "release_or_beta",
+]
 
 ["test_feature_java.js"]
-skip-if = ["os != 'android'"]
+run-if = [
+  "os == 'android'",
+]
 
 ["test_feature_js.js"]
-skip-if = ["tsan"] # Times out on TSan, bug 1612707
+skip-if = [
+  "tsan", # Times out on TSan, bug 1612707
+]
 
 # See the comment on test_feature_stackwalking.js
 
 ["test_feature_mainthreadio.js"]
 skip-if = [
-  "release_or_beta",
   "os == 'win' && socketprocess_networking",
+  "release_or_beta",
   "tsan", # bug 1885381
 ]
 
 ["test_feature_nativeallocations.js"]
 skip-if = [
-  "os == 'android' && verify", # bug 1757528
   "asan",
-  "tsan",
+  "os == 'android' && verify", # bug 1757528
   "socketprocess_networking",
+  "tsan",
 ]
 
 ["test_feature_posix_signals.js"]
+run-if = [
+  # Currently only supported on Linux and macOS.
+  # Windows support: Bug 1867328
+  # Android support: Bug 1904639
+  "os == 'linux'",
+  "os == 'mac'",
+]
 skip-if = [
-  "tsan", # We have intermittent timeout issues in TSan, see Bug 1889828
   "ccov", # The signals for the profiler conflict with the ccov signals
-  "os == 'win'", # Not yet supported on windows - Bug 1867328
-  "os == 'android'", # Not yet supported on android - Bug 1904639
+  "tsan", # We have intermittent timeout issues in TSan, see Bug 1889828
 ]
 
 # Native stackwalking is somewhat unreliable depending on the platform.
@@ -80,35 +99,45 @@ skip-if = [
 
 ["test_feature_stackwalking.js"]
 skip-if = [
-  "os == 'mac' && release_or_beta",
-  "os == 'linux' && release_or_beta && !debug",
   "asan",
+  "os == 'android' && release_or_beta", # Bug 1992989
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt && release_or_beta",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && release_or_beta",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && release_or_beta",
   "tsan",
 ]
 
 ["test_get_features.js"]
 
+["test_get_profile.js"]
+skip-if = [
+  "tsan", # Times out on TSan, bug 1612707
+]
+
+["test_marker_jit_sourceindex.js"]
+
 ["test_merged_stacks.js"]
 skip-if = [
-  "os == 'mac' && release_or_beta",
-  "os == 'linux' && release_or_beta && !debug",
   "asan",
+  "os == 'android' && release_or_beta", # Bug 1992989
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt && release_or_beta",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && release_or_beta",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && release_or_beta",
   "tsan",
 ]
 
 ["test_pause.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1783179, frequent failure since GCP machine type change from n2-standard- to c2-standard-4
 ]
 
 ["test_responsiveness.js"]
-skip-if = ["tsan"] # Times out on TSan, bug 1612707
-
-["test_run.js"]
-skip-if = ["true"]
+skip-if = [
+  "tsan", # Times out on TSan, bug 1612707
+]
 
 ["test_shared_library.js"]
-
-["test_start.js"]
-skip-if = ["true"]

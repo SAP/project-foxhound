@@ -3,6 +3,12 @@
 
 "use strict";
 
+const AVAILABLE = "available";
+const BLOCKED = "blocked";
+
+const AI_FEATURES_ENABLED_PREF = "browser.ai.control.default";
+const AI_TARGETING = `'${AI_FEATURES_ENABLED_PREF}'|preferenceValue == '${AVAILABLE}'`;
+
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["test.wait300msAfterTabSwitch", true]],
@@ -35,10 +41,6 @@ add_task(async function testFilterFeatures() {
     },
   ];
   const cleanup = await setupLabsTest(recipes);
-
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.preferences.experimental", true]],
-  });
 
   await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -190,6 +192,94 @@ add_task(async function testFilterFeatures() {
 
   await cleanup();
 });
+
+add_task(async function testUpdateTriggersRerender() {
+  Services.prefs.setStringPref(AI_FEATURES_ENABLED_PREF, AVAILABLE);
+
+  const recipes = [
+    {
+      ...DEFAULT_LABS_RECIPES[0],
+      slug: "always-available",
+      targeting: "true",
+    },
+    {
+      ...DEFAULT_LABS_RECIPES[1],
+      slug: "requires-pref",
+      targeting: AI_TARGETING,
+    },
+  ];
+
+  const cleanup = await setupLabsTest(recipes);
+
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:preferences#paneExperimental"
+  );
+
+  const doc = gBrowser.contentDocument;
+
+  await TestUtils.waitForCondition(
+    () => doc.querySelector(".featureGate"),
+    "wait for features to be added to the DOM"
+  );
+
+  Assert.ok(
+    !!doc.getElementById(recipes[0].slug),
+    "expect always-available recipe to be present"
+  );
+
+  Assert.ok(
+    !!doc.getElementById(recipes[1].slug),
+    "expect requires-pref recipe to be present"
+  );
+
+  {
+    info("Disabling AI features pref");
+    const promise = promiseRecipesUpdated();
+    Services.prefs.setStringPref(AI_FEATURES_ENABLED_PREF, BLOCKED);
+    await promise;
+  }
+
+  Assert.ok(
+    !!doc.getElementById(recipes[0].slug),
+    "expect always-visible recipe to be present"
+  );
+
+  Assert.equal(
+    doc.getElementById(recipes[1].slug),
+    null,
+    "expect requires-pref recipe to be hidden"
+  );
+
+  {
+    info("Re-enabling AI features pref");
+    const promise = promiseRecipesUpdated();
+    Services.prefs.setStringPref(AI_FEATURES_ENABLED_PREF, AVAILABLE);
+    await promise;
+  }
+
+  Assert.ok(
+    !!doc.getElementById(recipes[0].slug),
+    "expect always-available recipe to be present"
+  );
+
+  Assert.ok(
+    !!doc.getElementById(recipes[1].slug),
+    "expect requires-pref recipe to be present"
+  );
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  await cleanup();
+
+  Services.prefs.clearUserPref(AI_FEATURES_ENABLED_PREF);
+});
+
+async function promiseRecipesUpdated() {
+  await TestUtils.topicObserved("experimental-pane-loaded");
+
+  info("Experimental Pane Reloaded");
+}
 
 function checkVisibility(element, expected, desc) {
   return expected

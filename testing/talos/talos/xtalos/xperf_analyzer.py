@@ -204,14 +204,13 @@ class XPerfInterval(XPerfAttribute):
     """
 
     def __init__(self, startevt, endevt, attrs=None, **kwargs):
-        super(XPerfInterval, self).__init__([startevt, endevt], **kwargs)
+        super().__init__([startevt, endevt], **kwargs)
         if not attrs:
             self.attrs_during_interval = []
+        elif isinstance(attrs, list):
+            self.attrs_during_interval = attrs
         else:
-            if isinstance(attrs, list):
-                self.attrs_during_interval = attrs
-            else:
-                self.attrs_during_interval = [attrs]
+            self.attrs_during_interval = [attrs]
 
     def on_event_matched(self, evt):
         if evt == self.evtlist[0]:
@@ -224,7 +223,7 @@ class XPerfInterval(XPerfAttribute):
             # sub-attributes by setting their session to None.
             for a in self.attrs_during_interval:
                 a.set_session(None)
-        super(XPerfInterval, self).on_event_matched(evt)
+        super().on_event_matched(evt)
 
     def process(self):
         # Propagate the process call to our sub-attributes
@@ -293,7 +292,7 @@ class XPerfCounter(XPerfAttribute):
                    value is a function that evaluates the corresponding value
                    from the event's whiteboard.
         """
-        super(XPerfCounter, self).__init__([evt], XPerfAttribute.PERSISTENT, **kwargs)
+        super().__init__([evt], XPerfAttribute.PERSISTENT, **kwargs)
         self.values = dict()
         self.count = 0
         try:
@@ -470,7 +469,7 @@ class Nth(EventExpression):
     """
 
     def __init__(self, N, event):
-        super(Nth, self).__init__(event)
+        super().__init__(event)
         self.event = event
         self.N = N
         self.match_count = 0
@@ -528,7 +527,7 @@ class EventSequence(EventExpression):
     """
 
     def __init__(self, *events):
-        super(EventSequence, self).__init__(list(events))
+        super().__init__(list(events))
         if len(events) < 2:
             raise Exception(
                 "EventSequence requires at least two events, %d provided" % len(events)
@@ -591,7 +590,7 @@ class BindThread(EventExpression):
     """
 
     def __init__(self, event):
-        super(BindThread, self).__init__(event)
+        super().__init__(event)
         self.event = event
         self.tid = None
 
@@ -635,11 +634,11 @@ class ClassicEvent(XPerfEvent):
     guid_index = None
 
     def __init__(self, guidstr):
-        super(ClassicEvent, self).__init__("UnknownEvent/Classic")
+        super().__init__("UnknownEvent/Classic")
         self.guid = UUID(guidstr)
 
     def match(self, row):
-        if not super(ClassicEvent, self).match(row):
+        if not super().match(row):
             return False
 
         if not ClassicEvent.guid_index:
@@ -656,9 +655,7 @@ class SessionStoreWindowRestored(ClassicEvent):
     """The Firefox session store window restored event"""
 
     def __init__(self):
-        super(SessionStoreWindowRestored, self).__init__(
-            EVENT_ID_FIREFOX_WINDOW_RESTORED
-        )
+        super().__init__(EVENT_ID_FIREFOX_WINDOW_RESTORED)
 
     def __str__(self):
         return "Firefox Session Store Window Restored"
@@ -670,7 +667,7 @@ class ProcessStart(XPerfEvent):
     extractor = re.compile(r"^(.+) \(\s*(\d+)\)$")
 
     def __init__(self, leafname):
-        super(ProcessStart, self).__init__("P-Start")
+        super().__init__("P-Start")
         self.leafname = leafname.lower()
 
     @staticmethod
@@ -683,13 +680,12 @@ class ProcessStart(XPerfEvent):
             if quoted:
                 if c == '"':
                     quoted = False
-            else:
-                if c == '"':
-                    quoted = True
-                elif c == " ":
-                    result.append(current)
-                    current = ""
-                    continue
+            elif c == '"':
+                quoted = True
+            elif c == " ":
+                result.append(current)
+                current = ""
+                continue
 
             current += c
 
@@ -700,7 +696,7 @@ class ProcessStart(XPerfEvent):
         return [t.strip('"') for t in result]
 
     def match(self, row):
-        if not super(ProcessStart, self).match(row):
+        if not super().match(row):
             return False
 
         if not ProcessStart.process_index:
@@ -745,10 +741,10 @@ class ThreadStart(XPerfEvent):
     pid_extractor = re.compile(r"^.+ \(\s*(\d+)\)$")
 
     def __init__(self):
-        super(ThreadStart, self).__init__("T-Start")
+        super().__init__("T-Start")
 
     def match(self, row):
-        if not super(ThreadStart, self).match(row):
+        if not super().match(row):
             return False
 
         if not ThreadStart.process_index:
@@ -777,13 +773,13 @@ class ReadyThread(XPerfEvent):
     tid_index = None
 
     def __init__(self):
-        super(ReadyThread, self).__init__("ReadyThread")
+        super().__init__("ReadyThread")
 
     def set_whiteboard(self, data):
-        super(ReadyThread, self).set_whiteboard(data)
+        super().set_whiteboard(data)
 
     def match(self, row):
-        if not super(ReadyThread, self).match(row):
+        if not super().match(row):
             return False
 
         if not ReadyThread.tid_index:
@@ -808,10 +804,10 @@ class ContextSwitchToThread(XPerfEvent):
     tid_index = None
 
     def __init__(self):
-        super(ContextSwitchToThread, self).__init__("CSwitch")
+        super().__init__("CSwitch")
 
     def match(self, row):
-        if not super(ContextSwitchToThread, self).match(row):
+        if not super().match(row):
             return False
 
         if not ContextSwitchToThread.tid_index:
@@ -849,12 +845,12 @@ class FileIOReadOrWrite(XPerfEvent):
         else:
             raise Exception("Invalid verb argument to FileIOReadOrWrite")
 
-        super(FileIOReadOrWrite, self).__init__(evt_name)
+        super().__init__(evt_name)
 
         self.verb = verb
 
     def match(self, row):
-        if not super(FileIOReadOrWrite, self).match(row):
+        if not super().match(row):
             return False
 
         if not FileIOReadOrWrite.tid_index:

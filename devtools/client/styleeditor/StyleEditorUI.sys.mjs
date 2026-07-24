@@ -122,7 +122,7 @@ export class StyleEditorUI extends EventEmitter {
 
   /**
    * @param {Toolbox} toolbox
-   * @param {Object} commands Object defined from devtools/shared/commands to interact with the devtools backend
+   * @param {object} commands Object defined from devtools/shared/commands to interact with the devtools backend
    * @param {Document} panelDoc
    *        Document of the toolbox panel to populate UI in.
    * @param {CssProperties} A css properties database.
@@ -175,11 +175,11 @@ export class StyleEditorUI extends EventEmitter {
   /**
    * Initiates the style editor ui creation, and start to track TargetCommand updates.
    *
-   * @params {Object} options
-   * @params {Object} options.stylesheetToSelect
-   * @params {StyleSheetResource} options.stylesheetToSelect.stylesheet
-   * @params {Integer} options.stylesheetToSelect.line
-   * @params {Integer} options.stylesheetToSelect.column
+   * @param {object} options
+   * @param {object} options.stylesheetToSelect
+   * @param {StyleSheetResource} options.stylesheetToSelect.stylesheet
+   * @param {Integer} options.stylesheetToSelect.line
+   * @param {Integer} options.stylesheetToSelect.column
    */
   async initialize(options = {}) {
     this.createUI();
@@ -203,8 +203,8 @@ export class StyleEditorUI extends EventEmitter {
       }
     }
 
-    await this.#toolbox.resourceCommand.watchResources(
-      [this.#toolbox.resourceCommand.TYPES.DOCUMENT_EVENT],
+    await this.#commands.resourceCommand.watchResources(
+      [this.#commands.resourceCommand.TYPES.DOCUMENT_EVENT],
       { onAvailable: this.#onResourceAvailable }
     );
     await this.#commands.targetCommand.watchTargets({
@@ -214,8 +214,8 @@ export class StyleEditorUI extends EventEmitter {
     });
 
     this.#startLoadingStyleSheets();
-    await this.#toolbox.resourceCommand.watchResources(
-      [this.#toolbox.resourceCommand.TYPES.STYLESHEET],
+    await this.#commands.resourceCommand.watchResources(
+      [this.#commands.resourceCommand.TYPES.STYLESHEET],
       {
         onAvailable: this.#onResourceAvailable,
         onUpdated: this.#onResourceUpdated,
@@ -277,7 +277,7 @@ export class StyleEditorUI extends EventEmitter {
         if (!this.selectedEditor) {
           return;
         }
-
+        this.#prettyPrintButton.classList.add("pretty");
         this.selectedEditor.prettifySourceText();
       },
       eventListenersConfig
@@ -472,8 +472,8 @@ export class StyleEditorUI extends EventEmitter {
   /**
    * Opens the Options Popup Menu
    *
-   * @params {number} screenX
-   * @params {number} screenY
+   * @param {number} screenX
+   * @param {number} screenY
    *   Both obtained from the event object, used to position the popup
    */
   #onOptionsButtonClick = ({ screenX, screenY }) => {
@@ -501,8 +501,8 @@ export class StyleEditorUI extends EventEmitter {
     // same stylesheet resources from ResourceCommand, but `_addStyleSheet` will trigger
     // or ignore the additional source-map mapping.
     this.#root.classList.add("loading");
-    for (const resource of this.#toolbox.resourceCommand.getAllResources(
-      this.#toolbox.resourceCommand.TYPES.STYLESHEET
+    for (const resource of this.#commands.resourceCommand.getAllResources(
+      this.#commands.resourceCommand.TYPES.STYLESHEET
     )) {
       await this.#handleStyleSheetResource(resource);
     }
@@ -685,7 +685,7 @@ export class StyleEditorUI extends EventEmitter {
    *
    * @param {StyleSheet} styleSheet
    *        Object representing stylesheet
-   * @return {Number}
+   * @return {number}
    *         1-based Integer representing the index of the current stylesheet
    *         among all stylesheets of its type (inline, constructed or user-created).
    *         Defaults to 0 when non-applicable (e.g. for stylesheet with href)
@@ -1254,9 +1254,9 @@ export class StyleEditorUI extends EventEmitter {
    *
    * @param {StyleSheetResource} stylesheet
    *        Stylesheet to select or href of stylesheet to select
-   * @param {Number} line
+   * @param {number} line
    *        Line to which the caret should be moved (zero-indexed).
-   * @param {Number} col
+   * @param {number} col
    *        Column to which the caret should be moved (zero-indexed).
    * @return {Promise}
    *         Promise that will resolve when the editor is selected and ready
@@ -1359,6 +1359,10 @@ export class StyleEditorUI extends EventEmitter {
     if (disable !== this.#prettyPrintButton.hasAttribute("disabled")) {
       this.#prettyPrintButton.toggleAttribute("disabled");
     }
+    this.#prettyPrintButton.classList.toggle(
+      "pretty",
+      this.selectedEditor?.isPrettyPrinted || false
+    );
     let l10nString;
     if (disable) {
       if (isReadOnly) {
@@ -1387,18 +1391,13 @@ export class StyleEditorUI extends EventEmitter {
   #updateAtRulesList = editor => {
     (async function () {
       const details = await this.getEditorDetails(editor);
-      const list = details.querySelector(".stylesheet-at-rules-list");
-
-      while (list.firstChild) {
-        list.firstChild.remove();
-      }
-
       const rules = editor.atRules;
       const showSidebar = Services.prefs.getBoolPref(PREF_AT_RULES_SIDEBAR);
       const sidebar = details.querySelector(".stylesheet-sidebar");
 
       let inSource = false;
 
+      const listItems = [];
       for (const rule of rules) {
         const { line, column } = rule;
 
@@ -1443,6 +1442,27 @@ export class StyleEditorUI extends EventEmitter {
           type.append(
             this.#panelDoc.createTextNode(`${rule.propertyName}\u00A0`)
           );
+        } else if (rule.type === "position-try") {
+          type.append(
+            this.#panelDoc.createTextNode(`${rule.positionTryName}\u00A0`)
+          );
+        } else if (rule.type === "custom-media") {
+          const parts = [];
+          const { customMediaName, customMediaQuery } = rule;
+          for (let i = 0, len = customMediaQuery.length; i < len; i++) {
+            const media = customMediaQuery[i];
+            const queryEl = this.#panelDoc.createElementNS(HTML_NS, "span");
+            queryEl.textContent = media.text;
+            if (!media.matches) {
+              queryEl.classList.add("media-condition-unmatched");
+            }
+            parts.push(queryEl);
+            if (len > 1 && i !== len - 1) {
+              parts.push(", ");
+            }
+          }
+
+          type.append(`${customMediaName} `, ...parts);
         }
 
         const cond = this.#panelDoc.createElementNS(HTML_NS, "span");
@@ -1464,8 +1484,11 @@ export class StyleEditorUI extends EventEmitter {
 
         ruleTextContainer.append(type, cond);
         div.append(ruleTextContainer, link);
-        list.appendChild(div);
+        listItems.push(div);
       }
+
+      const list = details.querySelector(".stylesheet-at-rules-list");
+      list.replaceChildren(...listItems);
 
       sidebar.hidden = !showSidebar || !inSource;
 
@@ -1481,9 +1504,9 @@ export class StyleEditorUI extends EventEmitter {
    *
    * @param {HTMLElement} element
    *        The element corresponding to the media sidebar condition
-   * @param {String} ruleConditionText
+   * @param {string} ruleConditionText
    *        The rule conditionText
-   * @param {String} type
+   * @param {string} type
    *        The type of the at-rule (e.g. "media", "layer", "supports", …)
    */
   #setConditionContents(element, ruleConditionText, type) {
@@ -1638,7 +1661,8 @@ export class StyleEditorUI extends EventEmitter {
     const promises = [];
     for (const resource of resources) {
       if (
-        resource.resourceType === this.#toolbox.resourceCommand.TYPES.STYLESHEET
+        resource.resourceType ===
+        this.#commands.resourceCommand.TYPES.STYLESHEET
       ) {
         const onStyleSheetHandled = this.#handleStyleSheetResource(resource);
 
@@ -1654,7 +1678,14 @@ export class StyleEditorUI extends EventEmitter {
         continue;
       }
 
-      if (resource.name === "will-navigate") {
+      if (
+        resource.name === "will-navigate" &&
+        // When selecting a document in the Browser Toolbox iframe picker, we're getting
+        // a will-navigate event. In such case, we don't want to clear the list (see Bug 1981937)
+        (!this.#commands.targetCommand.descriptorFront
+          .isBrowserProcessDescriptor ||
+          !resource.isFrameSwitching)
+      ) {
         this.#startLoadingStyleSheets();
         this.#clear();
       } else if (resource.name === "dom-complete") {
@@ -1672,7 +1703,7 @@ export class StyleEditorUI extends EventEmitter {
 
     for (const { resource, update } of updates) {
       if (
-        update.resourceType === this.#toolbox.resourceCommand.TYPES.STYLESHEET
+        update.resourceType === this.#commands.resourceCommand.TYPES.STYLESHEET
       ) {
         const editor = this.editors.find(
           e => e.resourceId === update.resourceId
@@ -1711,7 +1742,8 @@ export class StyleEditorUI extends EventEmitter {
   #onResourceDestroyed = resources => {
     for (const resource of resources) {
       if (
-        resource.resourceType !== this.#toolbox.resourceCommand.TYPES.STYLESHEET
+        resource.resourceType !==
+        this.#commands.resourceCommand.TYPES.STYLESHEET
       ) {
         continue;
       }
@@ -1731,8 +1763,8 @@ export class StyleEditorUI extends EventEmitter {
    * Set the active item's summary element.
    *
    * @param DOMElement summary
-   * @param {Object} options
-   * @param {String=} options.reason: Indicates why the summary was selected. It's set to
+   * @param {object} options
+   * @param {string=} options.reason: Indicates why the summary was selected. It's set to
    *                  "filter-auto" when the summary was automatically selected as the result
    *                  of the previous active summary being filtered out.
    */
@@ -1765,8 +1797,8 @@ export class StyleEditorUI extends EventEmitter {
    * Show summary's associated editor
    *
    * @param DOMElement summary
-   * @param {Object} options
-   * @param {String=} options.reason: Indicates why the summary was selected. It's set to
+   * @param {object} options
+   * @param {string=} options.reason: Indicates why the summary was selected. It's set to
    *                  "filter-auto" when the summary was automatically selected as the result
    *                  of the previous active summary being filtered out.
    */
@@ -1815,8 +1847,8 @@ export class StyleEditorUI extends EventEmitter {
    * Make the passed element visible or not, depending if it matches the current filter
    *
    * @param {Element} summary
-   * @param {Object} options
-   * @param {Boolean} options.triggerOnFilterStateChange: Set to false to avoid calling
+   * @param {object} options
+   * @param {boolean} options.triggerOnFilterStateChange: Set to false to avoid calling
    *                  #onFilterStateChange directly here. This can be useful when this
    *                  function is called for every item of the list, like in `setFilter`.
    */
@@ -1841,10 +1873,10 @@ export class StyleEditorUI extends EventEmitter {
   }
 
   destroy() {
-    this.#toolbox.resourceCommand.unwatchResources(
+    this.#commands.resourceCommand.unwatchResources(
       [
-        this.#toolbox.resourceCommand.TYPES.DOCUMENT_EVENT,
-        this.#toolbox.resourceCommand.TYPES.STYLESHEET,
+        this.#commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+        this.#commands.resourceCommand.TYPES.STYLESHEET,
       ],
       {
         onAvailable: this.#onResourceAvailable,
@@ -1889,10 +1921,6 @@ export class StyleEditorUI extends EventEmitter {
     }
 
     if (this.#prefObserver) {
-      this.#prefObserver.off(
-        PREF_AT_RULES_SIDEBAR,
-        this.#onAtRulesSidebarPrefChanged
-      );
       this.#prefObserver.destroy();
       this.#prefObserver = null;
     }

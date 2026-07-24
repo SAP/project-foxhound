@@ -14,10 +14,18 @@ dictionary RTCEncodedAudioFrameMetadata {
     short sequenceNumber;
 };
 
+dictionary RTCEncodedAudioFrameOptions {
+    RTCEncodedAudioFrameMetadata metadata;
+};
+
+// [Serializable] is implemented without adding attribute here,
+// because we don't implement "full serialization" to disk.
 [Pref="media.peerconnection.enabled",
  Pref="media.peerconnection.scripttransform.enabled",
  Exposed=(Window,DedicatedWorker)]
 interface RTCEncodedAudioFrame {
+    [Throws]
+    constructor(RTCEncodedAudioFrame originalFrame, optional RTCEncodedAudioFrameOptions options = {});
     readonly attribute unsigned long timestamp;
     attribute ArrayBuffer data;
     RTCEncodedAudioFrameMetadata getMetadata();

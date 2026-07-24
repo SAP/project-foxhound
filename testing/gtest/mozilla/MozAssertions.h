@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_gtest_MozAssertions_h__
-#define mozilla_gtest_MozAssertions_h__
+#ifndef mozilla_gtest_MozAssertions_h_
+#define mozilla_gtest_MozAssertions_h_
 
 #include "gtest/gtest.h"
 #include "nsError.h"
@@ -29,4 +29,4 @@ testing::AssertionResult IsNsresultFailure(const char* expr, nsresult rv);
 #define ASSERT_NS_FAILED(expr) \
   ASSERT_PRED_FORMAT1(::mozilla::gtest::IsNsresultFailure, (expr))
 
-#endif  // mozilla_gtest_MozAssertions_h__
+#endif  // mozilla_gtest_MozAssertions_h_

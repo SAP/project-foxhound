@@ -103,12 +103,16 @@ impl NewSessionResponse {
 pub struct TimeoutsResponse {
     pub script: Option<u64>,
     #[serde(rename = "pageLoad")]
-    pub page_load: u64,
-    pub implicit: u64,
+    pub page_load: Option<u64>,
+    pub implicit: Option<u64>,
 }
 
 impl TimeoutsResponse {
-    pub fn new(script: Option<u64>, page_load: u64, implicit: u64) -> TimeoutsResponse {
+    pub fn new(
+        script: Option<u64>,
+        page_load: Option<u64>,
+        implicit: Option<u64>,
+    ) -> TimeoutsResponse {
         TimeoutsResponse {
             script,
             page_load,
@@ -294,16 +298,16 @@ mod tests {
     #[test]
     fn test_json_timeouts_response() {
         assert_ser(
-            &WebDriverResponse::Timeouts(TimeoutsResponse::new(Some(1), 2, 3)),
+            &WebDriverResponse::Timeouts(TimeoutsResponse::new(Some(1), Some(2), Some(3))),
             json!({"value": {"script": 1, "pageLoad": 2, "implicit": 3}}),
         );
     }
 
     #[test]
-    fn test_json_timeouts_response_with_null_script_timeout() {
+    fn test_json_timeouts_response_with_null_timeout() {
         assert_ser(
-            &WebDriverResponse::Timeouts(TimeoutsResponse::new(None, 2, 3)),
-            json!({"value": {"script": null, "pageLoad": 2, "implicit": 3}}),
+            &WebDriverResponse::Timeouts(TimeoutsResponse::new(None, None, None)),
+            json!({"value": {"script": null, "pageLoad": null, "implicit": null}}),
         );
     }
 

@@ -8,8 +8,8 @@
 
 #include "mozilla/DebugOnly.h"
 #include "nsCOMPtr.h"
-#include "nsNetUtil.h"
 #include "nsNetCID.h"
+#include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 
 namespace mozilla {

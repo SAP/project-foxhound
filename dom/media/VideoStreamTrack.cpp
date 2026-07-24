@@ -7,9 +7,9 @@
 
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
+#include "VideoOutput.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "VideoOutput.h"
 
 namespace mozilla::dom {
 
@@ -74,9 +74,8 @@ void VideoStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
   MediaStreamTrack::GetLabel(aLabel, aCallerType);
 }
 
-already_AddRefed<MediaStreamTrack> VideoStreamTrack::CloneInternal() {
-  return do_AddRef(new VideoStreamTrack(mWindow, mInputTrack, mSource,
-                                        ReadyState(), Muted(), mConstraints));
+already_AddRefed<MediaStreamTrack> VideoStreamTrack::Clone() {
+  return MediaStreamTrack::CloneInternal<VideoStreamTrack>();
 }
 
 }  // namespace mozilla::dom

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ This Source Code Form is subject to the terms of the Mozilla Public
+  ~ License, v. 2.0. If a copy of the MPL was not distributed with this
+  ~ file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">Abrir no…</string>
@@ -20,7 +27,7 @@
     The message of the prompt to confirm with users that they want to open the link in another app
     %s is a placeholder that will be replaced by the app name
   -->
-  <string name="mozac_feature_applinks_normal_confirm_dialog_message">Quer sair do %s para ver este conteúdo?</string>
+  <string name="mozac_feature_applinks_normal_confirm_dialog_message">Sair do %s para ver este conteúdo?</string>
   <!-- Opens the selected time -->
   <string name="mozac_feature_applinks_confirm_dialog_confirm">Abrir</string>
   <!-- Cancels the prompt -->

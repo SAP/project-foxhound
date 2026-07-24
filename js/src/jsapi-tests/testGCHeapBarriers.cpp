@@ -5,9 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
-
 #include "gc/AllocKind.h"
 #include "gc/Cell.h"
 #include "gc/GCInternals.h"
@@ -30,10 +27,10 @@ static js::gc::CellColor GetColor(const JS::ArrayBufferOrView& view) {
   return view.asObjectUnbarriered()->color();
 }
 
-static MOZ_MAYBE_UNUSED bool IsInsideNursery(gc::Cell* cell) {
+[[maybe_unused]] static bool IsInsideNursery(gc::Cell* cell) {
   return !cell->isTenured();
 }
-static MOZ_MAYBE_UNUSED bool IsInsideNursery(
+[[maybe_unused]] static bool IsInsideNursery(
     const JS::ArrayBufferOrView& view) {
   return IsInsideNursery(view.asObjectUnbarriered());
 }
@@ -622,7 +619,7 @@ BEGIN_TEST(testGCHeapPreBarriers) {
   while (gc->state() != gc::State::Mark) {
     gc->debugGCSlice(budget);
   }
-  MOZ_ASSERT(cx->zone()->needsIncrementalBarrier());
+  MOZ_ASSERT(cx->zone()->needsMarkingBarrier());
 
   CHECK(TestWrapper<HeapPtr<JSObject*>>(testObjects));
   CHECK(TestWrapper<PreBarriered<JSObject*>>(testObjects));

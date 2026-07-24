@@ -12,6 +12,16 @@
 
       // Add a rule with a leading newline, to test that inspector can handle it.
       x.insertRule("\ndiv { font-weight: bold; }", 1);
+
+      // Add a shadow dom root and a h2 element inside it
+      const shadow = document.getElementById("host").attachShadow({ mode: "open" });
+      const shadowEl = document.createElement("h2");
+      shadowEl.textContent = "Hello from the shadow DOM";
+      shadow.appendChild(shadowEl);
+
+      const shadowDomStyleSheet = new CSSStyleSheet();
+      shadowDomStyleSheet.insertRule("h2 { color: tomato; background-color: gold;}");
+      shadow.adoptedStyleSheets = [shadowDomStyleSheet];
     };
   </script>
 
@@ -21,5 +31,6 @@
 </head>
 <body>
   <div id="target"> the ocean </div>
+  <div id="host"></div>
 </body>
 </html>

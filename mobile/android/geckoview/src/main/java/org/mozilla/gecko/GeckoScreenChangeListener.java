@@ -8,11 +8,13 @@ package org.mozilla.gecko;
 import android.content.Context;
 import android.hardware.display.DisplayManager;
 import android.util.Log;
-import android.view.Display;
+import org.mozilla.gecko.util.ThreadUtils;
 
 public class GeckoScreenChangeListener implements DisplayManager.DisplayListener {
   private static final String LOGTAG = "ScreenChangeListener";
   private static final boolean DEBUG = false;
+
+  private static final int NOTIFY_SCREEN_DELAY_MS = 100;
 
   public GeckoScreenChangeListener() {}
 
@@ -20,7 +22,13 @@ public class GeckoScreenChangeListener implements DisplayManager.DisplayListener
   public void onDisplayAdded(final int displayId) {}
 
   @Override
-  public void onDisplayRemoved(final int displayId) {}
+  public void onDisplayRemoved(final int displayId) {
+    if (DEBUG) {
+      Log.d(LOGTAG, "onDisplayRemoved");
+    }
+
+    GeckoAppShell.onDisplayRemoved(displayId);
+  }
 
   @Override
   public void onDisplayChanged(final int displayId) {
@@ -30,24 +38,27 @@ public class GeckoScreenChangeListener implements DisplayManager.DisplayListener
 
     // Even if onDisplayChanged is called, Configuration may not updated yet.
     // So we use Display's data instead.
-    if (displayId != Display.DEFAULT_DISPLAY) {
+    if (displayId != GeckoAppShell.getDisplayId()) {
       if (DEBUG) {
-        Log.d(LOGTAG, "Primary display is only supported");
+        Log.d(LOGTAG, "The display that GeckoView is attached is only supported");
       }
       return;
     }
 
-    final DisplayManager displayManager = getDisplayManager();
-    if (displayManager == null) {
-      return;
-    }
-
-    if (GeckoScreenOrientation.getInstance().update(displayManager.getDisplay(displayId))) {
-      // refreshScreenInfo is already called.
-      return;
-    }
-
-    ScreenManagerHelper.refreshScreenInfo();
+    // When getting screen information immediately, this may not be valid yet.
+    // So we need a few delays.
+    ThreadUtils.postToUiThreadDelayed(
+        new Runnable() {
+          @Override
+          public void run() {
+            if (GeckoScreenOrientation.getInstance().update()) {
+              // refreshScreenInfo is already called.
+              return;
+            }
+            ScreenManagerHelper.refreshScreenInfo();
+          }
+        },
+        NOTIFY_SCREEN_DELAY_MS);
   }
 
   private static DisplayManager getDisplayManager() {

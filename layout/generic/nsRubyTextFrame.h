@@ -6,8 +6,8 @@
 
 /* rendering object for CSS "display: ruby-text" */
 
-#ifndef nsRubyTextFrame_h___
-#define nsRubyTextFrame_h___
+#ifndef nsRubyTextFrame_h_
+#define nsRubyTextFrame_h_
 
 #include "nsRubyContentFrame.h"
 
@@ -51,4 +51,4 @@ class nsRubyTextFrame final : public nsRubyContentFrame {
       : nsRubyContentFrame(aStyle, aPresContext, kClassID) {}
 };
 
-#endif /* nsRubyTextFrame_h___ */
+#endif /* nsRubyTextFrame_h_ */

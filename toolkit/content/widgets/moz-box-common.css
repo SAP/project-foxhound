@@ -7,14 +7,25 @@
     --box-border-width: var(--border-width);
     --box-border-color: var(--border-color);
     --box-border: var(--box-border-width) solid var(--box-border-color);
-    --box-border-width-end: var(--box-border-width);
     --box-border-radius: var(--border-radius-medium);
     --box-border-radius-inner: calc(var(--box-border-radius) - var(--border-width));
     --box-padding: var(--space-large);
-    --box-icon-size: var(--icon-size-default);
+    --box-icon-size: var(--icon-size);
+    --box-icon-fill: var(--icon-color);
+    --box-icon-stroke: var(--box-icon-fill);
+    --box-button-background-color: var(--button-background-color-menu);
+    --box-button-background-color-hover: var(--button-background-color-menu-hover);
+    --box-button-background-color-active: var(--button-background-color-menu-active);
+    --box-button-background-color-disabled: var(--button-background-color-menu-disabled);
+    --box-button-text-color: var(--button-text-color-menu);
+    --box-button-text-color-hover: var(--button-text-color-menu-hover);
+    --box-button-text-color-active: var(--button-text-color-menu-active);
+    --box-button-text-color-disabled: var(--button-text-color-menu-disabled);
 
-    border: var(--box-border);
-    border-block-end: var(--box-border-width-end) solid var(--box-border-color);
+    border-inline-start: var(--box-border-inline-start, var(--box-border));
+    border-inline-end: var(--box-border-inline-end, var(--box-border));
+    border-block-start: var(--box-border-block-start, var(--box-border));
+    border-block-end: var(--box-border-block-end, var(--box-border));
     border-start-start-radius: var(--box-border-radius-start, var(--box-border-radius));
     border-start-end-radius: var(--box-border-radius-start, var(--box-border-radius));
     border-end-start-radius: var(--box-border-radius-end, var(--box-border-radius));
@@ -26,7 +37,7 @@
   .text-content {
     display: grid;
     place-items: center start;
-    gap: var(--space-xxsmall) var(--space-small);
+    gap: var(--space-xsmall) var(--space-small);
     grid-template-columns: var(--box-icon-size) 1fr;
     grid-template-areas: "label label";
 
@@ -49,29 +60,58 @@
 
   .label {
     grid-area: label;
+    font-weight: var(--box-label-font-weight, normal);
+    align-self: var(--box-label-alignment);
   }
 
   .icon {
     grid-area: icon;
     width: var(--box-icon-size);
     height: var(--box-icon-size);
-    -moz-context-properties: fill;
-    fill: var(--icon-color);
+    -moz-context-properties: fill, stroke;
+    fill: var(--box-icon-fill);
+    stroke: var(--box-icon-stroke);
+    border-radius: var(--box-icon-border-radius);
+
+    &:not(.nav-icon) {
+      fill: var(--box-icon-start-fill, var(--box-icon-fill));
+      stroke: var(--box-icon-start-stroke, var(--box-icon-stroke));
+
+      .button & {
+        fill: var(--box-icon-start-fill, var(--button-icon-fill));
+        stroke: var(--box-icon-start-stroke, var(--button-icon-stroke));
+      }
+    }
+
+    @media (prefers-contrast) {
+      .button & {
+        --box-icon-fill: var(--button-icon-fill);
+        --box-icon-stroke: var(--button-icon-stroke);
+        --box-icon-start-fill: var(--box-icon-fill);
+        --box-icon-start-stroke: var(--box-icon-stroke);
+      }
+    }
   }
 
   .description {
     grid-area: description;
+    display: flex;
+    justify-content: center;
+    gap: var(--space-small);
+    align-self: var(--box-description-alignment);
   }
 }
 
 .button {
+  box-sizing: border-box;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
   font-family: inherit;
   font-size: inherit;
   appearance: none;
-  background-color: var(--button-background-color-ghost);
-  color: var(--button-text-color-ghost);
+  background-color: var(--box-button-background-color);
+  color: var(--box-button-text-color);
   display: flex;
   padding: var(--box-padding);
   text-align: start;
@@ -83,22 +123,22 @@
 
   &:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: var(--focus-outline-offset);
+    outline-offset: var(--focus-outline-inset);
   }
 
   &:hover {
-    background-color: var(--button-background-color-ghost-hover);
-    color: var(--button-text-color-ghost-hover);
+    background-color: var(--box-button-background-color-hover);
+    color: var(--box-button-text-color-hover);
   }
 
   &:hover:active:not(:disabled) {
-    background-color: var(--button-background-color-ghost-active);
-    color: var(--button-text-color-ghost-active);
+    background-color: var(--box-button-background-color-active);
+    color: var(--box-button-text-color-active);
   }
 
   &:disabled {
-    background-color: var(--button-background-color-ghost-disabled);
-    color: var(--button-text-color-ghost-disabled);
+    background-color: var(--box-button-background-color-disabled);
+    color: var(--box-button-text-color-disabled);
     opacity: var(--button-opacity-disabled);
   }
 }

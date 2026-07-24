@@ -2263,10 +2263,6 @@ existing_tasks:
   build-android-arm-shippable-lite/opt-upload-symbols: DmDeuIiSSOe2qiPxGd-WOw
   build-android-arm-shippable/opt: GBzHah2BT4-h8UQ3kCG9jg
   build-android-arm-shippable/opt-upload-symbols: GL4BuTy2Q2-GFToE4fhPvQ
-  build-android-x86-shippable-lite/opt: VL_U7Y20QWuaaU1gus8Vuw
-  build-android-x86-shippable-lite/opt-upload-symbols: Rg2EGdJKSl2wE57PROyL3g
-  build-android-x86-shippable/opt: b_jlmoPdQJ-QaPAAnFeuiQ
-  build-android-x86-shippable/opt-upload-symbols: ac5pqK8dRZCFL1rWVLylrw
   build-android-x86_64-asan-fuzzing/opt: fPpAk24QQgqQqisiFUCmVQ
   build-android-x86_64-shippable-lite/opt: egVMWRF9RIaTuDeQTgXsDQ
   build-android-x86_64-shippable-lite/opt-upload-symbols: bNzzhnh8TlS1ezro6nNH9Q
@@ -2313,8 +2309,6 @@ existing_tasks:
   build-signing-android-arm-shippable/opt: QN427y9cRriGeIhHpxfWMA
   build-signing-android-geckoview-fat-aar-shippable-lite/opt: UeD9Kb1ZQ2-lujGGehokOw
   build-signing-android-geckoview-fat-aar-shippable/opt: e4a5PpdPSuOrlExWXZJUnw
-  build-signing-android-x86-shippable-lite/opt: d4RcKc7IREOKs3NaYD1NXg
-  build-signing-android-x86-shippable/opt: ZA_7qV4WQ5-tsnw4JnkRgg
   build-signing-android-x86_64-shippable-lite/opt: PalAGxsbSz-EFAgdDkenKA
   build-signing-android-x86_64-shippable/opt: IJOmZCkhTYi0mNEDVs1e_Q
   build-signing-linux-shippable/opt: NRplj2DpRTGMs2FPJSJFmw
@@ -2461,12 +2455,9 @@ existing_tasks:
   geckoview-beetmover-geckoview-android-arm-shippable/opt: QFsud-5ETQSyMEOAwk6C2Q
   geckoview-beetmover-geckoview-android-geckoview-fat-aar-shippable-lite/opt: NETAuzSLSXC9VdOCnXm6Xg
   geckoview-beetmover-geckoview-android-geckoview-fat-aar-shippable/opt: I6wtmlq6R-OvIYXwWjMp6A
-  geckoview-beetmover-geckoview-android-x86-shippable-lite/opt: BT0T3GfzRbGPqWd9Ge73BQ
-  geckoview-beetmover-geckoview-android-x86-shippable/opt: Pcta7F76SkiIGkLMf9ATqQ
   geckoview-beetmover-geckoview-android-x86_64-shippable-lite/opt: aSa4B5KmTeG-Ix-jq0V3IA
   geckoview-beetmover-geckoview-android-x86_64-shippable/opt: MaElkJl3RfuV37WxJRWDFQ
   geckoview-exoplayer2-beetmover-geckoview-android-geckoview-fat-aar-shippable-lite/opt: Dgi9bXKwTamjDx1XyDFC3Q
-  generate-profile-android-x86-shippable/opt: YpWlavZJRdWDGTt4mEnnKA
   generate-profile-android-x86_64-shippable/opt: F9FaseXiSTa7bqO5J9pZhw
   generate-profile-linux-shippable/opt: FAivkNdxToGD8pS1DCk0gA
   generate-profile-linux64-shippable/opt: ViYWvMiVTwWWdc0zYSu1Gg
@@ -2474,7 +2465,6 @@ existing_tasks:
   generate-profile-win32-shippable/opt: D0tsolhgRLCiCwvOz5ji-w
   generate-profile-win64-shippable/opt: VejIrju7RY2WGkRXX7bJqA
   hazard-linux64-haz/debug: au3jPw_lT7-1yhty5J0m0w
-  instrumented-build-android-x86-shippable/opt: ZrPyi0S-Rnenyho0UC6meA
   instrumented-build-android-x86_64-shippable/opt: V_VoNUs_Q1un9-nrGgy1Fg
   instrumented-build-linux-shippable/opt: DHmD5jAfRDOSU6KPduvarg
   instrumented-build-linux64-shippable/opt: C5XYDSPvQuCqiiXUMPYDyQ
@@ -7257,14 +7247,6 @@ existing_tasks:
   release-partner-repack-repackage-win64-shippable-unitedinternet-web.de_notb-en-US: J6YePGkKQCaYt7X3eNh_kQ
   release-partner-repack-win32-shippable: eZdRYTKjR5iP40QFctfVeQ
   release-partner-repack-win64-shippable: SIxk-SP3QdS7HqW1BwqFGA
-  release-secondary-balrog-submit-toplevel-firefox: ON4xl7XuTJG8U1KlcaGRVw
-  release-secondary-final-verify-firefox: JKFhnPBERQuis3GwDPA7oA
-  release-secondary-update-verify-config-firefox-secondary-linux: Wiib3lyhQCKPK-wgED8H1Q
-  release-secondary-update-verify-config-firefox-secondary-linux64: OxtiIuL0RBy3RKv2hqjJxw
-  release-secondary-update-verify-config-firefox-secondary-macosx64: crUMvJGbReyOqCOaeVbYDw
-  release-secondary-update-verify-config-firefox-secondary-win32: Ev_2iKZhQrWneFLHzw9ogg
-  release-secondary-update-verify-config-firefox-secondary-win64: IsaHW_d7Tym42kgcmj3Nnw
-  release-secondary-update-verify-config-firefox-secondary-win64-aarch64: QVR6r7_ZSy-cb-2i8Mimww
   release-snap-repackage-firefox: dMztQQOXQgyMl0lcMtspcg
   release-source-checksums-signing-firefox-source/opt: QX7MjV25SOmLEzHytuC1jg
   release-source-firefox-source/opt: GXjGDG_uRWa2zOvhX3hNvw
@@ -7337,116 +7319,6 @@ existing_tasks:
   release-update-verify-firefox-macosx64-7/30: Wk1q5WKaSHCqChAmsis67g
   release-update-verify-firefox-macosx64-8/30: RLT6jghNQP6ceZI3aXBNxA
   release-update-verify-firefox-macosx64-9/30: S5jyfk39TvmLCCUbEp6OXw
-  release-update-verify-firefox-secondary-linux-1/16: SAWM0h7XTUeF0Gb7N43YVA
-  release-update-verify-firefox-secondary-linux-10/16: J9Vr2F5SR9qkf_X_V2bCmw
-  release-update-verify-firefox-secondary-linux-11/16: bc-jHmeZQ5moRZj0F1O-yA
-  release-update-verify-firefox-secondary-linux-12/16: MrUnrimiQFWYq_05ZSz0qg
-  release-update-verify-firefox-secondary-linux-13/16: Gb_fGubUQGKfsxEIOCW1gw
-  release-update-verify-firefox-secondary-linux-14/16: LrYLEHNlQsWULcgQIp_cTQ
-  release-update-verify-firefox-secondary-linux-15/16: PSr74fOvQOu-CMZNo__7Dg
-  release-update-verify-firefox-secondary-linux-16/16: EZkxnXePROKCCPXBHB8Isg
-  release-update-verify-firefox-secondary-linux-2/16: TIoREU54Q0Cme6PHHh_43A
-  release-update-verify-firefox-secondary-linux-3/16: f5EmdXNxTkCl2y7qCrXtVw
-  release-update-verify-firefox-secondary-linux-4/16: Coew6f7cTvyBpXHbU9kJLA
-  release-update-verify-firefox-secondary-linux-5/16: exPav9pNSQy91Dfz2FEzRA
-  release-update-verify-firefox-secondary-linux-6/16: PcVAsqqVQW-82xWacMKDRw
-  release-update-verify-firefox-secondary-linux-7/16: fvSSYhtHQaehw0pB2iiPsA
-  release-update-verify-firefox-secondary-linux-8/16: MYuT-j4xR2unOtk-XPPiUA
-  release-update-verify-firefox-secondary-linux-9/16: A4X1YADdQ7OBgLtDkgBFEw
-  release-update-verify-firefox-secondary-linux64-1/16: JUQy8ZUJTQmTA2PDT_hu6w
-  release-update-verify-firefox-secondary-linux64-10/16: V2kk5zoAQEa67sMfkI2MWw
-  release-update-verify-firefox-secondary-linux64-11/16: epVwf8AZTgCCBO8UXPTw6A
-  release-update-verify-firefox-secondary-linux64-12/16: LhyoNq7TTymfI9QdW7IGgQ
-  release-update-verify-firefox-secondary-linux64-13/16: MO3-D7W_TDyzUdLjQ73hJg
-  release-update-verify-firefox-secondary-linux64-14/16: bXba8gSoQxCBSB4_Ijwkww
-  release-update-verify-firefox-secondary-linux64-15/16: XhyF4mXbTL6L0txHs0pB4w
-  release-update-verify-firefox-secondary-linux64-16/16: SGX4NZ7sThOj865odtk7Cw
-  release-update-verify-firefox-secondary-linux64-2/16: CSWAIkjCSk6Bjyw6vMKEIw
-  release-update-verify-firefox-secondary-linux64-3/16: PkUXJgAkSjO1HD6tiP1Otw
-  release-update-verify-firefox-secondary-linux64-4/16: G4q04JNNQwCNa0BDS0WkDw
-  release-update-verify-firefox-secondary-linux64-5/16: fWGzQX2cSsWpXyyXLl_iFw
-  release-update-verify-firefox-secondary-linux64-6/16: XkNdPZrxSJmnIPCJsIWUYw
-  release-update-verify-firefox-secondary-linux64-7/16: endnTJWsSyKJ_RmdipO6Yg
-  release-update-verify-firefox-secondary-linux64-8/16: Ce8nmIxNRIuVPQ6S0rzU7Q
-  release-update-verify-firefox-secondary-linux64-9/16: A0y6vqnPRHOcFxVmBI0WiA
-  release-update-verify-firefox-secondary-macosx64-1/30: QGTFwunIQw6g6AoXnC_eKw
-  release-update-verify-firefox-secondary-macosx64-10/30: c0ntY-gnS7O-XeaXFMHt6g
-  release-update-verify-firefox-secondary-macosx64-11/30: VDihN0W9TNe-kTcmLpl2Zw
-  release-update-verify-firefox-secondary-macosx64-12/30: FMSOkXLkS6uHuFoR_K7XSg
-  release-update-verify-firefox-secondary-macosx64-13/30: BzmPPfaVRHShofsbqKojDw
-  release-update-verify-firefox-secondary-macosx64-14/30: F9PmfJv1RyGfvYB3hhcMVg
-  release-update-verify-firefox-secondary-macosx64-15/30: Te508FLXSfufb9qGLAUq-w
-  release-update-verify-firefox-secondary-macosx64-16/30: L68vk37hRrWyf0iH2skizg
-  release-update-verify-firefox-secondary-macosx64-17/30: dzm_M357RWyADc3xnwM6rw
-  release-update-verify-firefox-secondary-macosx64-18/30: POhnxZ9ARxeoKbWB6yJ97Q
-  release-update-verify-firefox-secondary-macosx64-19/30: JFMpesoXTteZhtqokKXjOg
-  release-update-verify-firefox-secondary-macosx64-2/30: dfDoy22tSkuwaymu9YAeXg
-  release-update-verify-firefox-secondary-macosx64-20/30: FcDO0J6CQ9mQfvy7Ip12QQ
-  release-update-verify-firefox-secondary-macosx64-21/30: dlm10kjOTz-nxH1iH1W7-g
-  release-update-verify-firefox-secondary-macosx64-22/30: DojSmvrNR96pb8KRuBwJvg
-  release-update-verify-firefox-secondary-macosx64-23/30: c7iOAzjsRjKtGNbOd_PgOA
-  release-update-verify-firefox-secondary-macosx64-24/30: Xe17ERmcT3mwKl3bDLoVnA
-  release-update-verify-firefox-secondary-macosx64-25/30: OKiO8N-wTkisGYX66tVQiA
-  release-update-verify-firefox-secondary-macosx64-26/30: So6yTsG1SleNIyDLC4V4RA
-  release-update-verify-firefox-secondary-macosx64-27/30: WMlTKOJqTRupFq2I_nMv9w
-  release-update-verify-firefox-secondary-macosx64-28/30: E2Svfsw0QwOtzTYBJM2ZYg
-  release-update-verify-firefox-secondary-macosx64-29/30: GlTgwPN2QJuvF_kwddnvzQ
-  release-update-verify-firefox-secondary-macosx64-3/30: YvTrpbajRmCDzYPBU9gI7Q
-  release-update-verify-firefox-secondary-macosx64-30/30: DrcpDGBURPyj2cycL1Sxgw
-  release-update-verify-firefox-secondary-macosx64-4/30: XHBkJmHjRtmY8vUT9e5a0Q
-  release-update-verify-firefox-secondary-macosx64-5/30: F1mAAwwRSLaQ8ETV_ERUNA
-  release-update-verify-firefox-secondary-macosx64-6/30: efTYS3B0ToqboX4YQBKdbA
-  release-update-verify-firefox-secondary-macosx64-7/30: Abs3zvf0Qm2xpqfd7cjilg
-  release-update-verify-firefox-secondary-macosx64-8/30: WexjOQ-aS9SdNAV3xHF8pg
-  release-update-verify-firefox-secondary-macosx64-9/30: NE72IVZjQ4mwkh4Zi4t-aQ
-  release-update-verify-firefox-secondary-win32-1/16: bXJI6vhfQwCvFpjgtKUFkQ
-  release-update-verify-firefox-secondary-win32-10/16: RpxhDw8eQbqtr0ixK_De3w
-  release-update-verify-firefox-secondary-win32-11/16: KAxOsYafTLqYWcUa6QvnXg
-  release-update-verify-firefox-secondary-win32-12/16: W8TeRzA2Rj-ofGfSlwCGoA
-  release-update-verify-firefox-secondary-win32-13/16: B0i1mPmDRO68UoTUzCeBzQ
-  release-update-verify-firefox-secondary-win32-14/16: Gtr8gXjaT6SBebR32mSpPA
-  release-update-verify-firefox-secondary-win32-15/16: DXVxRQhEQMWhqAMlonpmgA
-  release-update-verify-firefox-secondary-win32-16/16: D3iM1NIWQ7CMiogEZx6xgA
-  release-update-verify-firefox-secondary-win32-2/16: TfFDSsAVRCGNvIUT9PM9IQ
-  release-update-verify-firefox-secondary-win32-3/16: ek6Zz48WQOSBdyl_lIcZmg
-  release-update-verify-firefox-secondary-win32-4/16: JNm4v42XR26zpEkTomTxvQ
-  release-update-verify-firefox-secondary-win32-5/16: JVwUJyOVTUy27jaWRTrzlQ
-  release-update-verify-firefox-secondary-win32-6/16: OruFVRWKRCmzBcDgN_8-4g
-  release-update-verify-firefox-secondary-win32-7/16: PMSd2DMMTuGZ3Usf4_H1tg
-  release-update-verify-firefox-secondary-win32-8/16: KvdJ3BCeQo2X63z14aAy8Q
-  release-update-verify-firefox-secondary-win32-9/16: DsFaieHxRpSayC_tF9YGHw
-  release-update-verify-firefox-secondary-win64-1/16: WHqH07o0QlKzXEJIRXv0uA
-  release-update-verify-firefox-secondary-win64-10/16: Tloja0koTL2S-AqPJv4uzQ
-  release-update-verify-firefox-secondary-win64-11/16: aVScdPDCQ4eYLYhxYC-1nA
-  release-update-verify-firefox-secondary-win64-12/16: O1BkALYlTB-ALEqhbQs50g
-  release-update-verify-firefox-secondary-win64-13/16: Z0EOzA_dREK5YsFV0zFpNA
-  release-update-verify-firefox-secondary-win64-14/16: dhGuLZAETTGOEYFRDF3uBA
-  release-update-verify-firefox-secondary-win64-15/16: CBVZ9VzRQh6elClxskXkbg
-  release-update-verify-firefox-secondary-win64-16/16: afFUTX1lRFOnS5hRPbQk9w
-  release-update-verify-firefox-secondary-win64-2/16: DN5A3YRGTGmQgEJ_vDp4wQ
-  release-update-verify-firefox-secondary-win64-3/16: Rt7XgFCORpel0BiVG5NBuA
-  release-update-verify-firefox-secondary-win64-4/16: CUfEJ5DLSSa7ZM27MOzY_A
-  release-update-verify-firefox-secondary-win64-5/16: TQxxdWmaQLyiZzDx76pXTg
-  release-update-verify-firefox-secondary-win64-6/16: bc4R2sN5QgCAfT7I3ZTjpA
-  release-update-verify-firefox-secondary-win64-7/16: AMFDd96WTVqQesmvC-p8Lg
-  release-update-verify-firefox-secondary-win64-8/16: Yl2wY5TkRBa4CRxCF7JsGw
-  release-update-verify-firefox-secondary-win64-9/16: a7qKSrk0RjuJT_-MACGxQg
-  release-update-verify-firefox-secondary-win64-aarch64-1/16: cqzVhQnuS2KIRCsA3PBwTQ
-  release-update-verify-firefox-secondary-win64-aarch64-10/16: D30Pd2YwRFWTWASislhaGQ
-  release-update-verify-firefox-secondary-win64-aarch64-11/16: ZdGwDmJBRZ6hrwKO2zP75w
-  release-update-verify-firefox-secondary-win64-aarch64-12/16: SRFZHeaARp-TlCpCvOPjUA
-  release-update-verify-firefox-secondary-win64-aarch64-13/16: CA930YtTQIGcC1Gpj5BDKA
-  release-update-verify-firefox-secondary-win64-aarch64-14/16: RuPSOwzQTYO4ZxdUsBZl3g
-  release-update-verify-firefox-secondary-win64-aarch64-15/16: Hx6CttdqQS-xv43sxD1Mrw
-  release-update-verify-firefox-secondary-win64-aarch64-16/16: CtQFBftHTD-5RqzXLJdhLA
-  release-update-verify-firefox-secondary-win64-aarch64-2/16: NzNkSaU8TqOUdNe3ptV4gA
-  release-update-verify-firefox-secondary-win64-aarch64-3/16: GJlOS61eTBijt5HvDbnWTQ
-  release-update-verify-firefox-secondary-win64-aarch64-4/16: XKoVPkeuRB6HnxBOtaCiYQ
-  release-update-verify-firefox-secondary-win64-aarch64-5/16: OtsWvODgQ_qC6gbW7zUzHQ
-  release-update-verify-firefox-secondary-win64-aarch64-6/16: c2Ov-V5PSI2gbg8BRshOzg
-  release-update-verify-firefox-secondary-win64-aarch64-7/16: FYWdJWNhQDS25IUmr-v1OQ
-  release-update-verify-firefox-secondary-win64-aarch64-8/16: ebvkRO3jQbOB16bP1AxWOw
-  release-update-verify-firefox-secondary-win64-aarch64-9/16: H37G0WBQSZic3iOsO-Wnew
   release-update-verify-firefox-win32-1/16: D6_ceVVRSqe2vlnEBcHnAg
   release-update-verify-firefox-win32-10/16: P0MolUX6RRS35d6KHkT-Lg
   release-update-verify-firefox-win32-11/16: HlzQ17xgTSSFzB6cor7bww
@@ -10493,8 +10365,6 @@ existing_tasks:
   toolchain-android-arm-libunwind-17: NwRF9AR0TQ2-aVdNQOqbYg
   toolchain-android-x64-compiler-rt-17: T40ena_QR7Ku1_PxmhHAWw
   toolchain-android-x64-libunwind-17: JcjzEsOST_qJQ7bNkqV-8Q
-  toolchain-android-x86-compiler-rt-17: do6DenNkTKuv0FNZCD6RYA
-  toolchain-android-x86-libunwind-17: AqMRl0KeR3qa2FbEhj7NFA
   toolchain-browsertime: WzM15r-EQRCkuxRJWuPcBA
   toolchain-clang-dist-toolchain: O5jYW2HOQJiQRgNOZKQelg
   toolchain-linux32-llvm-symbolizer-17: N26WZYBzRb6g5g_PUHvw5g
@@ -10566,7 +10436,6 @@ existing_tasks:
   toolchain-linux64-winchecksec: SVDd4XWNQbyL2L7Gy5MRlQ
   toolchain-linux64-wine: ItOfIoMiRx-KXcSGxWJ_rg
   toolchain-linux64-x64-compiler-rt-17: chfw3Z8ZRm2ihT9uSz-3kA
-  toolchain-linux64-x86-compiler-rt-17: W-EBLL9XTgqIxU443KKtSg
   toolchain-linux64-xar: B3gctg0KS6uGQgBKo83pzA
   toolchain-macosx64-aarch64-cargo-vet: OHlkYlHdTE6EpgSxHdprWw
   toolchain-macosx64-aarch64-cbindgen: Qrluvw0gRNqyF8-LqJ8Ltg
@@ -10650,8 +10519,6 @@ existing_tasks:
   upload-generated-sources-android-aarch64-shippable/opt: ZpC2XWMyT0ap7yP9GwQA_w
   upload-generated-sources-android-arm-shippable-lite/opt: flr895GgSCGXFUCBlj5_kQ
   upload-generated-sources-android-arm-shippable/opt: epLwyN6iRlGgN-d6GoGYQw
-  upload-generated-sources-android-x86-shippable-lite/opt: EbQ4ApObSoOIBXDvYvU_Mg
-  upload-generated-sources-android-x86-shippable/opt: YgJgEap6QgKXq8FK4EyNBw
   upload-generated-sources-android-x86_64-shippable-lite/opt: al4wC1MmR2KTJl9ShhzBWg
   upload-generated-sources-android-x86_64-shippable/opt: VGWkn1jMQTuuJoNPmzbMrA
   upload-generated-sources-dummy-firefox-macosx64-shippable: V7qwscv9TbKpz40ZnJlXJw
@@ -10978,7 +10845,6 @@ release_partner_config:
           - en-US
           - zh-CN
         platforms:
-          - linux-shippable
           - linux64-shippable
           - macosx64-shippable
         upload_to_candidates: 'true'
@@ -11198,7 +11064,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11210,7 +11075,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11221,7 +11085,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11269,7 +11132,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11280,7 +11142,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11292,7 +11153,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11303,7 +11163,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable
@@ -11315,7 +11174,6 @@ release_partner_config:
           - de
           - en-US
         platforms:
-          - linux-shippable
           - macosx64-shippable
           - win32-shippable
           - win64-shippable

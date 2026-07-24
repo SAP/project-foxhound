@@ -50,7 +50,7 @@ Maybe<ScalarID> ScalarIdForMetric(uint32_t aId) {
     case 26: { // test.nested.quantity_metric
       return Some(ScalarID::TELEMETRY_TEST_MIRROR_FOR_QUANTITY);
     }
-    case 29: { // test.nested.uuid_metric
+    case 30: { // test.nested.uuid_metric
       return Some(ScalarID::SOME_OTHER_STRING_SCALAR);
     }
     default: {

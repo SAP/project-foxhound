@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSPMessageUtils.h"
+
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsSerializationHelper.h"
-#include "mozilla/ipc/BackgroundUtils.h"
 
 namespace IPC {
 
@@ -22,7 +23,7 @@ void ParamTraits<nsIContentSecurityPolicy*>::Write(
   }
 
   CSPInfo csp;
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(CSPToCSPInfo(aParam, &csp)));
+  (void)NS_WARN_IF(NS_FAILED(CSPToCSPInfo(aParam, &csp)));
   WriteParam(aWriter, csp);
 }
 

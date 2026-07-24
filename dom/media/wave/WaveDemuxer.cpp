@@ -7,20 +7,19 @@
 #include "WaveDemuxer.h"
 
 #include <inttypes.h>
+
 #include <algorithm>
 
-#include "mozilla/Assertions.h"
-#include "mozilla/Utf8.h"
 #include "BufferReader.h"
-#include "mozilla/EndianUtils.h"
-#include "VideoUtils.h"
 #include "TimeUnits.h"
+#include "VideoUtils.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Utf8.h"
 
 using mozilla::media::TimeIntervals;
 using mozilla::media::TimeUnit;
-
-extern mozilla::LazyLogModule gMediaDemuxerLog;
 
 namespace mozilla {
 
@@ -194,7 +193,7 @@ bool WAVTrackDemuxer::RIFFParserInit() {
     return false;
   }
   BufferReader RIFFReader(riffHeader->Data(), 12);
-  Unused << mRIFFParser.Parse(RIFFReader);
+  (void)mRIFFParser.Parse(RIFFReader);
   return mRIFFParser.RiffHeader().IsValid(11);
 }
 
@@ -204,7 +203,7 @@ bool WAVTrackDemuxer::HeaderParserInit() {
     return false;
   }
   BufferReader headerReader(header->Data(), 8);
-  Unused << mHeaderParser.Parse(headerReader);
+  (void)mHeaderParser.Parse(headerReader);
   return true;
 }
 

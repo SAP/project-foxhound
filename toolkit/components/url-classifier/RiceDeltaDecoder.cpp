@@ -4,6 +4,7 @@
 
 #include "RiceDeltaDecoder.h"
 #include "mozilla/Logging.h"
+#include "nsString.h"
 
 #include <limits>
 
@@ -76,6 +77,62 @@ static void ReverseByte(uint8_t& b) {
   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
 }
 
+// Template for multi-precision numbers. Supports 128-bit (2 uint64_t) and
+// 256-bit (4 uint64_t)
+template <size_t N>
+struct Number {
+  static_assert(
+      N >= 2 && N <= 4,
+      "Number template only supports 128-bit (N=2) and 256-bit (N=4)");
+
+  Number() {
+    for (size_t i = 0; i < N; i++) {
+      mData[i] = 0;
+    }
+  }
+
+  // Constructor that takes an array of values
+  explicit Number(const uint64_t (&values)[N]) {
+    for (size_t i = 0; i < N; i++) {
+      mData[i] = values[i];
+    }
+  }
+
+  const char* get() const { return reinterpret_cast<const char*>(mData); }
+
+  Number operator+(const Number& aOther) const {
+    uint64_t result[N];
+    uint64_t carry = 0;
+
+    // Add from least significant to most significant, propagating carry
+    for (size_t i = 0; i < N; i++) {
+      uint64_t sum = mData[i] + aOther.mData[i] + carry;
+      result[i] = sum;
+      // Check for overflow: if the sum is less than either operand (when carry
+      // is 0) or if the sum is less than the sum without carry (when carry is
+      // 1)
+      carry = (sum < mData[i]) || (carry && sum < (mData[i] + aOther.mData[i]))
+                  ? 1
+                  : 0;
+    }
+
+    return Number(result);
+  }
+
+  Number operator=(const Number& aOther) {
+    for (size_t i = 0; i < N; i++) {
+      mData[i] = aOther.mData[i];
+    }
+    return *this;
+  }
+
+  uint64_t mData[N];
+};
+
+// Type aliases for convenience
+using Number128 = Number<2>;
+using Number256 = Number<4>;
+
 namespace mozilla {
 namespace safebrowsing {
 
@@ -120,8 +177,177 @@ bool RiceDeltaDecoder::Decode(uint32_t aRiceParameter, uint32_t aFirstValue,
     // Caculate N from q,r,k.
     uint32_t N = (q << k) + r;
 
-    // We start filling aDecodedData from [1].
+    // We start filling aDecodedData.
     aDecodedData[i + 1] = N + aDecodedData[i];
+  }
+
+  return true;
+}
+
+bool RiceDeltaDecoder::Decode64(uint32_t aRiceParameter, uint64_t aFirstValue,
+                                uint32_t aNumEntries, uint64_t* aDecodedData) {
+  // Reverse each byte before reading bits from the byte buffer.
+  for (size_t i = 0; i < mEncodedDataSize; i++) {
+    ReverseByte(mEncodedData[i]);
+  }
+
+  BitBuffer bitBuffer(mEncodedData, mEncodedDataSize);
+
+  // q = quotient
+  // r = remainder
+  // k = RICE parameter
+  const uint32_t k = aRiceParameter;
+  aDecodedData[0] = aFirstValue;
+  for (uint32_t i = 0; i < aNumEntries; i++) {
+    // Read the quotient of N.
+    uint32_t q;
+    if (!bitBuffer.ReadExponentialGolomb(&q)) {
+      LOG(("Encoded data underflow!"));
+      return false;
+    }
+
+    // Read the remainder of N, one bit at a time.
+    uint64_t r = 0;
+    for (uint32_t j = 0; j < k; j++) {
+      uint32_t b = 0;
+      if (!bitBuffer.ReadBits(&b, 1)) {
+        // Insufficient bits. Just leave them as zeros.
+        break;
+      }
+      // Add the bit to the right position so that it's in Little Endian order.
+      r |= static_cast<uint64_t>(b) << j;
+    }
+
+    // Calculate N from q,r,k.
+    uint64_t N = (static_cast<uint64_t>(q) << k) + r;
+
+    // We start filling aDecodedData.
+    aDecodedData[i + 1] = N + aDecodedData[i];
+  }
+
+  return true;
+}
+
+bool RiceDeltaDecoder::Decode128(uint32_t aRiceParameter,
+                                 uint64_t aFirstValueHigh,
+                                 uint64_t aFirstValueLow, uint32_t aNumEntries,
+                                 nsACString& aDecodedData) {
+  // Reverse each byte before reading bits from the byte buffer.
+  for (size_t i = 0; i < mEncodedDataSize; i++) {
+    ReverseByte(mEncodedData[i]);
+  }
+
+  BitBuffer bitBuffer(mEncodedData, mEncodedDataSize);
+
+  // q = quotient
+  // r = remainder
+  // k = RICE parameter
+  const uint32_t k = aRiceParameter;
+  Number128 firstValue({aFirstValueLow, aFirstValueHigh});
+
+  aDecodedData.Append(firstValue.get(), sizeof(firstValue));
+
+  Number128 previousValue = firstValue;
+  for (uint32_t i = 0; i < aNumEntries; i++) {
+    // Read the quotient of N.
+    uint32_t q;
+    if (!bitBuffer.ReadExponentialGolomb(&q)) {
+      LOG(("Encoded data underflow!"));
+      return false;
+    }
+
+    // The rice parameter is guaranteed to be between 99 and 126. So, the
+    // quotient is guaranteed to be located at the first 4 bytes.
+    uint64_t r[2] = {0, 0};
+    for (uint32_t j = 0; j < k; j++) {
+      uint32_t b = 0;
+      if (!bitBuffer.ReadBits(&b, 1)) {
+        // Insufficient bits. Just leave them as zeros.
+        break;
+      }
+      // Add the bit to the right position so that it's in Little Endian order.
+      r[j / 64] |= static_cast<uint64_t>(b) << (j % 64);
+    }
+
+    // Calculate N from q,r,k.
+    uint64_t N[2] = {0, 0};
+    N[0] = r[0];
+    N[1] = (static_cast<uint64_t>(q) << (k - 64)) + r[1];
+
+    // Create delta N and add it to the previous value
+    Number128 deltaN(N);
+    Number128 result = previousValue + deltaN;
+    previousValue = result;
+
+    // Append the result to the decoded data
+    aDecodedData.Append(result.get(), sizeof(result));
+  }
+
+  return true;
+}
+
+bool RiceDeltaDecoder::Decode256(uint32_t aRiceParameter,
+                                 uint64_t aFirstValueOne,
+                                 uint64_t aFirstValueTwo,
+                                 uint64_t aFirstValueThree,
+                                 uint64_t aFirstValueFour, uint32_t aNumEntries,
+                                 nsACString& aDecodedData) {
+  // Reverse each byte before reading bits from the byte buffer.
+  for (size_t i = 0; i < mEncodedDataSize; i++) {
+    ReverseByte(mEncodedData[i]);
+  }
+
+  BitBuffer bitBuffer(mEncodedData, mEncodedDataSize);
+
+  // q = quotient
+  // r = remainder
+  // k = RICE parameter
+  const uint32_t k = aRiceParameter;
+  // The first value is in the Big Endian order. The value one contains the
+  // highest 64 bits, value two contains the second highest 64 bits, and so on.
+  Number256 firstValue(
+      {aFirstValueFour, aFirstValueThree, aFirstValueTwo, aFirstValueOne});
+
+  aDecodedData.Append(firstValue.get(), sizeof(firstValue));
+
+  Number256 previousValue = firstValue;
+  for (uint32_t i = 0; i < aNumEntries; i++) {
+    // Read the quotient of N.
+    uint32_t q;
+    if (!bitBuffer.ReadExponentialGolomb(&q)) {
+      LOG(("Encoded data underflow!"));
+      return false;
+    }
+
+    // Read the remainder of N, one bit at a time.
+    uint64_t r[4] = {0, 0, 0, 0};
+
+    for (uint32_t j = 0; j < k; j++) {
+      uint32_t b = 0;
+      if (!bitBuffer.ReadBits(&b, 1)) {
+        // Insufficient bits. Just leave them as zeros.
+        break;
+      }
+      // Add the bit to the right position so that it's in Little Endian order.
+      r[j / 64] |= static_cast<uint64_t>(b) << (j % 64);
+    }
+
+    // Calculate N from q,r,k.
+    // The rice parameter is guaranteed to be between 227 and 254. So, the
+    // quotient is guaranteed to be located at the highest 4 bytes.
+    uint64_t N[4] = {0, 0, 0, 0};
+    N[0] = r[0];
+    N[1] = r[1];
+    N[2] = r[2];
+    N[3] = (static_cast<uint64_t>(q) << (k - (64 * 3))) + r[3];
+
+    // Create delta N and add it to the previous value
+    Number256 deltaN(N);
+    Number256 result = previousValue + deltaN;
+    previousValue = result;
+
+    // Append the result to the decoded data
+    aDecodedData.Append(result.get(), sizeof(result));
   }
 
   return true;

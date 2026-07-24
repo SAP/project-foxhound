@@ -245,8 +245,21 @@ static const oidValDef curveOptList[] = {
       NSS_USE_ALG_IN_SSL_KX | NSS_USE_ALG_IN_CERT_SIGNATURE },
     { CIPHER_NAME("CURVE25519"), SEC_OID_CURVE25519,
       NSS_USE_ALG_IN_SSL_KX | NSS_USE_ALG_IN_CERT_SIGNATURE },
-    { CIPHER_NAME("XYBER768D00"), SEC_OID_XYBER768D00, 0 },
-    { CIPHER_NAME("MLKEM768X25519"), SEC_OID_MLKEM768X25519, 0 },
+    /* NOTE, don't use '0' to indicate default off. Setting '0'
+     * makes this entry unmanagable by the policy code (including
+     * turning the entry off. If you want an entry off by default
+     * simply explictly flip the bits in SECOID_Init()
+     * (util/secoid.c) */
+    { CIPHER_NAME("XYBER768D00"), SEC_OID_XYBER768D00,
+      NSS_USE_ALG_IN_SSL_KX },
+    { CIPHER_NAME("X25519MLKEM768"), SEC_OID_MLKEM768X25519,
+      NSS_USE_ALG_IN_SSL_KX },
+    { CIPHER_NAME("SECP256R1MLKEM768"), SEC_OID_SECP256R1MLKEM768,
+      NSS_USE_ALG_IN_SSL_KX },
+    { CIPHER_NAME("SECP384R1MLKEM1024"), SEC_OID_SECP384R1MLKEM1024,
+      NSS_USE_ALG_IN_SSL_KX },
+    { CIPHER_NAME("MLKEM768X25519"), SEC_OID_MLKEM768X25519,
+      NSS_USE_ALG_IN_SSL_KX },
     /* ANSI X9.62 named elliptic curves (characteristic two field) */
     { CIPHER_NAME("C2PNB163V1"), SEC_OID_ANSIX962_EC_C2PNB163V1,
       NSS_USE_ALG_IN_SSL_KX | NSS_USE_ALG_IN_CERT_SIGNATURE },
@@ -460,6 +473,12 @@ static const oidValDef signOptList[] = {
     { CIPHER_NAME("ECDSA"), SEC_OID_ANSIX962_EC_PUBLIC_KEY,
       NSS_USE_ALG_IN_SSL_KX | NSS_USE_ALG_IN_SIGNATURE },
     { CIPHER_NAME("ED25519"), SEC_OID_ED25519_PUBLIC_KEY,
+      NSS_USE_ALG_IN_SIGNATURE },
+    { CIPHER_NAME("ML-DSA-44"), SEC_OID_ML_DSA_44,
+      NSS_USE_ALG_IN_SIGNATURE },
+    { CIPHER_NAME("ML-DSA-65"), SEC_OID_ML_DSA_65,
+      NSS_USE_ALG_IN_SIGNATURE },
+    { CIPHER_NAME("ML-DSA-87"), SEC_OID_ML_DSA_87,
       NSS_USE_ALG_IN_SIGNATURE },
 };
 

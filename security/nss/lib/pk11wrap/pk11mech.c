@@ -202,6 +202,8 @@ PK11_GetKeyMechanism(CK_KEY_TYPE type)
             return CKM_EDDSA;
         case CKK_HKDF:
             return CKM_HKDF_DERIVE;
+        case CKK_ML_DSA:
+            return CKM_ML_DSA;
         case CKK_GENERIC_SECRET:
         default:
             return CKM_SHA_1_HMAC;
@@ -433,6 +435,9 @@ PK11_GetKeyType(CK_MECHANISM_TYPE type, unsigned long len)
             return CKK_NSS_KYBER;
         case CKM_NSS_ML_KEM_KEY_PAIR_GEN:
             return CKK_NSS_ML_KEM;
+        case CKM_ML_DSA_KEY_PAIR_GEN:
+        case CKM_ML_DSA:
+            return CKK_ML_DSA;
         default:
             return pk11_lookup(type)->keyType;
     }
@@ -666,6 +671,8 @@ PK11_GetKeyGenWithSize(CK_MECHANISM_TYPE type, int size)
         case CKM_PBE_SHA1_DES2_EDE_CBC:
         case CKM_PKCS5_PBKD2:
             return type;
+        case CKM_ML_DSA:
+            return CKM_ML_DSA_KEY_PAIR_GEN;
         default:
             return pk11_lookup(type)->keyGen;
     }
@@ -795,6 +802,11 @@ PK11_GetIVLength(CK_MECHANISM_TYPE type)
         case CKM_CAST_ECB:
         case CKM_CAST3_ECB:
         case CKM_CAST5_ECB:
+        case CKM_AES_KEY_WRAP:
+        case CKM_AES_KEY_WRAP_PAD:
+        case CKM_AES_KEY_WRAP_KWP:
+        case CKM_NSS_AES_KEY_WRAP:
+        case CKM_NSS_AES_KEY_WRAP_PAD:
             return 0;
         case CKM_RC2_CBC:
         case CKM_DES_CBC:
@@ -902,6 +914,11 @@ pk11_ParamFromIVWithLen(CK_MECHANISM_TYPE type, SECItem *iv, int keyLen)
         case CKM_CAST3_ECB:
         case CKM_CAST5_ECB:
         case CKM_RC4:
+        case CKM_AES_KEY_WRAP:
+        case CKM_AES_KEY_WRAP_PAD:
+        case CKM_AES_KEY_WRAP_KWP:
+        case CKM_NSS_AES_KEY_WRAP:
+        case CKM_NSS_AES_KEY_WRAP_PAD:
             break;
         case CKM_RC2_ECB:
             rc2_ecb_params = (CK_RC2_PARAMS *)PORT_Alloc(sizeof(CK_RC2_PARAMS));
@@ -1939,7 +1956,21 @@ PK11_MapSignKeyType(KeyType keyType)
             return CKM_ECDSA;
         case edKey:
             return CKM_EDDSA;
+        case mldsaKey:
+            return CKM_ML_DSA;
         case dhKey:
+        default:
+            break;
+    }
+    return CKM_INVALID_MECHANISM;
+}
+
+CK_MECHANISM_TYPE
+pk11_mapKemKeyType(KeyType keyType)
+{
+    switch (keyType) {
+        case kyberKey:
+            return CKM_ML_KEM;
         default:
             break;
     }
@@ -1952,7 +1983,23 @@ pk11_mapWrapKeyType(KeyType keyType)
     switch (keyType) {
         case rsaKey:
             return CKM_RSA_PKCS;
-        /* Add fortezza?? */
+        default:
+            break;
+    }
+    return CKM_INVALID_MECHANISM;
+}
+
+CK_MECHANISM_TYPE
+pk11_mapDeriveKeyType(KeyType keyType)
+{
+    switch (keyType) {
+        case dhKey:
+            return CKM_DH_PKCS_DERIVE;
+        case ecMontKey:
+        case ecKey:
+            return CKM_ECDH1_DERIVE;
+        /* not adding fortezza here
+         * only because forezza is dead */
         default:
             break;
     }

@@ -6,7 +6,6 @@
 #include "TransactionManager.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/TransactionStack.h"

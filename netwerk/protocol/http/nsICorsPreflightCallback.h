@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsICorsPreflightCallback_h__
-#define nsICorsPreflightCallback_h__
+#ifndef nsICorsPreflightCallback_h_
+#define nsICorsPreflightCallback_h_
 
 #include "nsISupports.h"
 #include "nsID.h"

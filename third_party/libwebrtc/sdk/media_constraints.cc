@@ -10,9 +10,13 @@
 
 #include "sdk/media_constraints.h"
 
+#include <cstddef>
 #include <optional>
+#include <string>
 
+#include "api/audio_options.h"
 #include "api/peer_connection_interface.h"
+#include "rtc_base/string_encode.h"
 
 namespace webrtc {
 namespace {
@@ -36,7 +40,7 @@ bool FindConstraint(const MediaConstraints* constraints,
   if (!FindConstraint(constraints, key, &string_value, mandatory_constraints)) {
     return false;
   }
-  return rtc::FromString(string_value, value);
+  return FromString(string_value, value);
 }
 
 // Specialization for std::string, since a string doesn't need conversion.
@@ -164,7 +168,7 @@ void CopyConstraintsIntoRtcConfiguration(
 }
 
 void CopyConstraintsIntoAudioOptions(const MediaConstraints* constraints,
-                                     cricket::AudioOptions* options) {
+                                     AudioOptions* options) {
   if (!constraints) {
     return;
   }

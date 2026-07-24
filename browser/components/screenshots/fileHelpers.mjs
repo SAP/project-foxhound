@@ -35,13 +35,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "screenshotsSaveLocation",
-  "browser.screenshots.folderList",
-  1
-);
-
 /**
  * macOS and Linux have a max filename of 255.
  * Windows allows 259 as the total path length so we have to calculate the max
@@ -77,6 +70,7 @@ function checkFilenameLength(filename, maxFilenameLength) {
 
 /**
  * Gets the filename automatically or by a file picker depending on "browser.download.useDownloadDir"
+ *
  * @param filenameTitle The title of the current page
  * @param browser The current browser
  * @returns Path of the chosen filename
@@ -156,10 +150,11 @@ export async function getFilename(filenameTitle, browser) {
 
 /**
  * Gets the path to the preferred screenshots directory if "browser.download.useDownloadDir" is true
+ *
  * @returns Path to preferred screenshots directory or null if not available
  */
 export async function getDownloadDirectory() {
-  if (lazy.useDownloadDir || lazy.screenshotsSaveLocation !== 1) {
+  if (lazy.useDownloadDir) {
     const downloadsDir =
       await lazy.Downloads.getPreferredScreenshotsDirectory();
     if (await IOUtils.exists(downloadsDir)) {
@@ -173,6 +168,7 @@ export async function getDownloadDirectory() {
 /**
  * Structure for holding info about a URL and the target filename it should be
  * saved to.
+ *
  * @param aFileName The target filename
  */
 class FileInfo {
@@ -272,14 +268,15 @@ function appendFiltersForContentType(
 /**
  * Given the Filepicker Parameters (aFpP), show the file picker dialog,
  * prompting the user to confirm (or change) the fileName.
+ *
  * @param aFpP
  *        A structure (see definition in internalSave(...) method)
  *        containing all the data used within this method.
  * @param win
  *        The window used for opening the file picker
- * @return Promise
- * @resolve a boolean. When true, it indicates that the file picker dialog
- *          is accepted.
+ * @returns {Promise<boolean>}
+ *   Resolves when the dialog is closed. When resolved to true, it indicates that
+ *   the file picker dialog is accepted.
  */
 function promiseTargetFile(aFpP, win) {
   return (async function () {

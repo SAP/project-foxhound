@@ -6,12 +6,11 @@
 #ifndef WEBGL_EXTENSIONS_H_
 #define WEBGL_EXTENSIONS_H_
 
-#include "mozilla/AlreadyAddRefed.h"
+#include "WebGLObjectModel.h"
+#include "WebGLTypes.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
-#include "WebGLObjectModel.h"
-#include "WebGLTypes.h"
 
 namespace mozilla {
 class ErrorResult;

@@ -18,10 +18,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  AlertsService: ["@mozilla.org/alerts-service;1", "nsIAlertsService"],
+  AlertsService: ["@mozilla.org/alerts-service;1", Ci.nsIAlertsService],
 });
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -306,7 +306,7 @@ async function showNotification(name) {
     let yesAction = "yes-action";
     let noAction = "no-action";
 
-    let alert = makeAlert({
+    let alert = await makeAlert({
       name,
       title,
       body,
@@ -342,17 +342,35 @@ async function showNotification(name) {
   return notificationTelemetry;
 }
 
-function makeAlert(options) {
+async function makeAlert(options) {
   let winalert = Cc["@mozilla.org/windows-alert-notification;1"].createInstance(
     Ci.nsIWindowsAlertNotification
   );
   winalert.imagePlacement = winalert.eIcon;
 
+  let image = null;
+  try {
+    const uri = Services.io.newURI(
+      "chrome://global/content/defaultagent/fox-doodle-peek.png"
+    );
+    const channel = Services.io.newChannelFromURI(
+      uri,
+      null,
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null,
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_IMAGE
+    );
+    image = await ChromeUtils.fetchDecodedImage(uri, channel);
+  } catch (e) {
+    lazy.log.error(`makeAlert image loading failed: ${e}`);
+  }
+
   let alert = winalert.QueryInterface(Ci.nsIAlertNotification);
   let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
   alert.init(
     options.name,
-    "chrome://global/content/defaultagent/fox-doodle-peek.png",
+    null /* aImageURL */,
     options.title,
     options.body,
     true /* aTextClickable */,
@@ -364,6 +382,7 @@ function makeAlert(options) {
     null /* aInPrivateBrowsing */,
     true /* aRequireInteraction */
   );
+  alert.image = image;
 
   alert.actions = options.actions;
 

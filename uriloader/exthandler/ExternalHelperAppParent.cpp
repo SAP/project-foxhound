@@ -22,8 +22,6 @@
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "nsQueryObject.h"
 
-#include "mozilla/Unused.h"
-
 using namespace mozilla::ipc;
 
 namespace mozilla {
@@ -103,7 +101,7 @@ void ExternalHelperAppParent::ActorDestroy(ActorDestroyReason why) {
 
 void ExternalHelperAppParent::Delete() {
   if (!mIPCClosed) {
-    Unused << Send__delete__(this);
+    (void)Send__delete__(this);
   }
 }
 
@@ -210,7 +208,7 @@ NS_IMETHODIMP
 ExternalHelperAppParent::Cancel(nsresult aStatus) {
   mCanceled = true;
   mStatus = aStatus;
-  Unused << SendCancel(aStatus);
+  (void)SendCancel(aStatus);
   return NS_OK;
 }
 

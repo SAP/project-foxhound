@@ -89,7 +89,7 @@ let gContainersManager = {
   // Check if name is provided to determine if the form can be submitted
   checkForm() {
     const name = document.getElementById("name");
-    this._dialog.setAttribute("buttondisabledaccept", !name.value.trim());
+    this._dialog.toggleAttribute("buttondisabledaccept", !name.value.trim());
   },
 
   createIconButtons() {

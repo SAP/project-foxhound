@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "D3D11ShareHandleImage.h"
-#include <memory>
 #include "DXVA2Manager.h"
 #include "WMF.h"
 #include "d3d11.h"
@@ -52,8 +51,11 @@ bool D3D11ShareHandleImage::AllocateTexture(D3D11RecycleAllocator* aAllocator,
     return false;
   } else {
     MOZ_ASSERT(aDevice);
+    auto format = mColorDepth > gfx::ColorDepth::COLOR_8
+                      ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                      : DXGI_FORMAT_B8G8R8A8_UNORM;
     CD3D11_TEXTURE2D_DESC newDesc(
-        DXGI_FORMAT_B8G8R8A8_UNORM, mSize.width, mSize.height, 1, 1,
+        format, mSize.width, mSize.height, 1, 1,
         D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE);
     newDesc.MiscFlags =
         D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
@@ -176,7 +178,10 @@ void D3D11RecycleAllocator::SetPreferredSurfaceFormat(
     gfx::SurfaceFormat aPreferredFormat) {
   if ((aPreferredFormat == gfx::SurfaceFormat::NV12 && mCanUseNV12) ||
       (aPreferredFormat == gfx::SurfaceFormat::P010 && mCanUseP010) ||
-      (aPreferredFormat == gfx::SurfaceFormat::P016 && mCanUseP016)) {
+      (aPreferredFormat == gfx::SurfaceFormat::P016 && mCanUseP016) ||
+      (aPreferredFormat == gfx::SurfaceFormat::R10G10B10A2_UINT32) ||
+      (aPreferredFormat == gfx::SurfaceFormat::R10G10B10X2_UINT32) ||
+      (aPreferredFormat == gfx::SurfaceFormat::R16G16B16A16F)) {
     mUsableSurfaceFormat = aPreferredFormat;
     return;
   }

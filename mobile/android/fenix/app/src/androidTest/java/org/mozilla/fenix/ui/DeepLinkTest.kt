@@ -27,13 +27,10 @@ import org.mozilla.fenix.ui.robots.DeepLinkRobot
  **/
 
 class DeepLinkTest : TestSetup() {
-    private val robot = DeepLinkRobot()
-
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule(
-                isMenuRedesignEnabled = false,
                 isMenuRedesignCFREnabled = false,
             ),
         ) { it.activity }
@@ -41,14 +38,16 @@ class DeepLinkTest : TestSetup() {
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
 
+    private val robot = DeepLinkRobot(composeTestRule)
+
     @Test
     fun openHomeScreen() {
         robot.openHomeScreen {
-            verifyHomeComponent(activityTestRule)
+            verifyHomeComponent()
         }
         robot.openSettings { /* move away from the home screen */ }
         robot.openHomeScreen {
-            verifyHomeComponent(activityTestRule)
+            verifyHomeComponent()
         }
     }
 
@@ -63,7 +62,7 @@ class DeepLinkTest : TestSetup() {
 
     @Test
     fun openBookmarks() {
-        robot.openBookmarks(activityTestRule) {
+        robot.openBookmarks(composeTestRule) {
             // verify we can see headings.
             verifyEmptyBookmarksMenuView()
         }
@@ -79,7 +78,7 @@ class DeepLinkTest : TestSetup() {
     @Test
     fun openCollections() {
         robot.openCollections {
-            verifyCollectionsHeader(activityTestRule)
+            verifyCollectionsHeader()
         }
     }
 

@@ -6,26 +6,24 @@ pluginManagement {
         apply from: file('mobile/android/gradle/mozconfig.gradle')
     } else {
         gradle.ext.mozconfig = gradle.root.mozconfig
+        gradle.ext.configureMavenRepositories = gradle.root.ext.configureMavenRepositories
     }
 
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/conventions")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/config")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/dependencies")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/publicsuffixlist")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/fenix/plugins/apksize")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/apilint")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/nimbus-gradle-plugin")
 }
 
 plugins {
+    id 'org.mozilla.conventions.settings'
     id 'mozac.DependenciesPlugin'
 }
 
@@ -35,6 +33,10 @@ ext.topsrcdir = rootProject.projectDir.absolutePath
 
 apply from: "${topsrcdir}/mobile/android/shared-settings.gradle"
 apply from: "${topsrcdir}/mobile/android/autopublish-settings.gradle"
+
+if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
+    apply from: "${topsrcdir}/services/app-services/settings.gradle"
+}
 
 // Set the Android SDK location.  This is the *least specific* mechanism, which
 // is unfortunate: we'd prefer to use the *most specific* mechanism.  That is,

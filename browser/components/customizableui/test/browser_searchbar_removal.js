@@ -4,7 +4,7 @@
 "use strict";
 
 const { SearchWidgetTracker } = ChromeUtils.importESModule(
-  "resource:///modules/SearchWidgetTracker.sys.mjs"
+  "moz-src:///browser/components/customizableui/SearchWidgetTracker.sys.mjs"
 );
 
 const SEARCH_BAR_LAST_USED_PREF_NAME = "browser.search.widget.lastUsed";
@@ -17,12 +17,12 @@ add_task(async function checkSearchBarPresent() {
   );
 
   Assert.ok(
-    document.getElementById("searchbar"),
+    document.getElementById("searchbar-new"),
     "Search bar should be present in the Nav bar"
   );
   SearchWidgetTracker._updateSearchBarVisibilityBasedOnUsage();
   Assert.ok(
-    !document.getElementById("searchbar"),
+    !document.getElementById("searchbar-new"),
     "Search bar should not be present in the Nav bar"
   );
   Assert.ok(

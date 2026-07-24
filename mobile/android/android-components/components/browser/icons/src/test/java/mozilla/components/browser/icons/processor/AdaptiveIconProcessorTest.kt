@@ -34,16 +34,6 @@ class AdaptiveIconProcessorTest {
     fun teardown() = setSdkInt(0)
 
     @Test
-    fun `process returns non-maskable icons on legacy devices`() {
-        val icon = Icon(mock(), source = Icon.Source.GENERATOR)
-
-        assertEquals(
-            icon,
-            AdaptiveIconProcessor().process(mock(), mock(), mock(), icon, mock()),
-        )
-    }
-
-    @Test
     fun `process adds padding to legacy icons`() {
         setSdkInt(Build.VERSION_CODES.O)
         val bitmap = spy(createBitmap(128, 128))
@@ -81,6 +71,22 @@ class AdaptiveIconProcessorTest {
 
         assertEquals(Icon.Source.INLINE, icon.source)
         assertTrue(icon.maskable)
+    }
+
+    @Test
+    fun `process returns initial icon if bitmap is recycled`() {
+        val bitmap = createBitmap(128, 128).apply { recycle() }
+        val icon = Icon(bitmap, source = Icon.Source.INLINE)
+
+        val processed = AdaptiveIconProcessor().process(
+            mock(),
+            mock(),
+            IconRequest.Resource("", MANIFEST_ICON, maskable = true),
+            icon,
+            mock(),
+        )
+
+        assertEquals(icon, processed)
     }
 
     private fun setSdkInt(sdkVersion: Int) {

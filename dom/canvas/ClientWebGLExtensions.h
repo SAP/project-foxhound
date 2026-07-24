@@ -6,8 +6,8 @@
 #ifndef CLIENTWEBGLEXTENSIONS_H_
 #define CLIENTWEBGLEXTENSIONS_H_
 
-#include "WebGLExtensions.h"
 #include "ClientWebGLContext.h"
+#include "WebGLExtensions.h"
 
 namespace mozilla {
 

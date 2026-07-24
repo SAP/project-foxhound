@@ -7,6 +7,7 @@
 #define mozilla_glean_DistributionData_h
 
 #include "nsTHashMap.h"
+#include "mozilla/glean/fog_ffi_generated.h"
 
 namespace mozilla::glean {
 
@@ -25,6 +26,16 @@ struct DistributionData final {
       : sum(aSum), count(aCount) {
     for (size_t i = 0; i < aBuckets.Length(); ++i) {
       this->values.InsertOrUpdate(aBuckets[i], aCounts[i]);
+    }
+  }
+
+  /**
+   * Create distribution data from an FfiDistributionData instance.
+   */
+  explicit DistributionData(const impl::FfiDistributionData& aData)
+      : sum(aData.sum), count(aData.count) {
+    for (size_t i = 0; i < aData.keys.Length(); ++i) {
+      this->values.InsertOrUpdate(aData.keys[i], aData.values[i]);
     }
   }
 
@@ -48,6 +59,14 @@ struct DistributionData final {
     aStream << "}";
     aStream << ")";
     return aStream;
+  }
+
+  static void fromFFIArray(
+      const nsTArray<impl::FfiDistributionData>& aDataArray,
+      nsTArray<DistributionData>& aResultArray) {
+    for (const auto& d : aDataArray) {
+      aResultArray.AppendElement(DistributionData(d));
+    }
   }
 };
 

@@ -27,7 +27,7 @@ rawPackets.set(`GET request`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": false,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "img",
     "stacktraceAvailable": false
   },
@@ -45,6 +45,7 @@ rawPackets.set(`GET request`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 2,
   "securityState": "secure",
   "isRacing": false
@@ -59,7 +60,7 @@ rawPackets.set(`GET request update`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": false,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "img",
     "stacktraceAvailable": false
   },
@@ -77,6 +78,7 @@ rawPackets.set(`GET request update`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 3,
   "securityState": "secure",
   "isRacing": false
@@ -91,11 +93,11 @@ rawPackets.set(`XHR GET request`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": true,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "xhr",
     "stacktraceAvailable": true,
     "lastFrame": {
-      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
       "lineNumber": 4,
       "columnNumber": 5,
       "functionName": "triggerPacket",
@@ -116,6 +118,7 @@ rawPackets.set(`XHR GET request`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 1,
   "securityState": "insecure",
   "isRacing": false
@@ -129,11 +132,11 @@ rawPackets.set(`XHR GET request update`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": true,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "xhr",
     "stacktraceAvailable": true,
     "lastFrame": {
-      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
       "lineNumber": 4,
       "columnNumber": 5,
       "functionName": "triggerPacket",
@@ -154,6 +157,7 @@ rawPackets.set(`XHR GET request update`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 1,
   "securityState": "insecure",
   "isRacing": false
@@ -168,11 +172,11 @@ rawPackets.set(`XHR POST request`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": true,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "xhr",
     "stacktraceAvailable": true,
     "lastFrame": {
-      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
       "lineNumber": 4,
       "columnNumber": 5,
       "functionName": "triggerPacket",
@@ -193,6 +197,7 @@ rawPackets.set(`XHR POST request`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 1,
   "securityState": "insecure",
   "isRacing": false
@@ -206,11 +211,11 @@ rawPackets.set(`XHR POST request update`, {
   "url": "https://example.com/inexistent.html",
   "isXHR": true,
   "cause": {
-    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+    "loadingDocumentUri": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
     "type": "xhr",
     "stacktraceAvailable": true,
     "lastFrame": {
-      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html",
+      "filename": "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html",
       "lineNumber": 4,
       "columnNumber": 5,
       "functionName": "triggerPacket",
@@ -231,6 +236,7 @@ rawPackets.set(`XHR POST request update`, {
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "strict-origin-when-cross-origin",
   "blockedReason": 0,
+  "extension": {},
   "totalTime": 2,
   "securityState": "insecure",
   "isRacing": false

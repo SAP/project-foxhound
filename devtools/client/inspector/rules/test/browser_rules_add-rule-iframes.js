@@ -31,11 +31,11 @@ add_task(async function () {
  * Add a new property in the rule at the provided index in the rule view.
  *
  * @param {RuleView} view
- * @param {Number} index
+ * @param {number} index
  *        The index of the rule in which we should add a new property.
- * @param {String} name
+ * @param {string} name
  *        The name of the new property.
- * @param {String} value
+ * @param {string} value
  *        The value of the new property.
  */
 async function addNewProperty(view, index, name, value) {

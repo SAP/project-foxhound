@@ -87,6 +87,7 @@ class PROT_ListManager {
 
   /**
    * Register a new table table
+   *
    * @param tableName - the name of the table
    * @param updateUrl - the url for updating the table
    * @param gethashUrl - the url for fetching hash completions
@@ -200,6 +201,7 @@ class PROT_ListManager {
 
   /**
    * Returns true if any table associated with the updateUrl requires updates.
+   *
    * @param updateUrl - the updateUrl
    */
   #updatesNeeded(updateUrl) {
@@ -469,6 +471,7 @@ class PROT_ListManager {
   /**
    * Method that fires the actual HTTP update request.
    * First we reset any tables that have disappeared.
+   *
    * @param tableData List of table data already in the database, in the form
    *        tablename;<chunk ranges>\n
    */
@@ -480,28 +483,40 @@ class PROT_ListManager {
       return;
     }
     // An object of the form
-    // { tableList: comma-separated list of tables to request,
+    // {
+    //   tableList: comma-separated list of tables to request,
     //   tableNames: map of tables that need updating,
-    //   request: list of tables and existing chunk ranges from tableData
+    //   requestPayload: the request payload for the update request,
+    //   requestQueryParameters: the query parameters for the update request,
+    //   isPostRequest: true if the request is a POST request, false if it's a GET request,
     // }
     var streamerMap = {
       tableList: null,
       tableNames: {},
       requestPayload: "",
+      requestQueryParameters: "",
       isPostRequest: true,
     };
 
     let useProtobuf = false;
     let onceThru = false;
+    let provider;
     for (const tableName in this.tablesData) {
       // Skip tables not matching this update url
       if (this.tablesData[tableName].updateUrl != updateUrl) {
         continue;
       }
 
-      // Check if |updateURL| is for 'proto'. (only v4 uses protobuf for now.)
-      // We use the table name 'goog-*-proto' and an additional provider "google4"
-      // to describe the v4 settings.
+      if (provider && this.tablesData[tableName].provider != provider) {
+        log(
+          "ERROR: Cannot mix tables with different providers within the same update URL."
+        );
+        continue;
+      }
+
+      provider = this.tablesData[tableName].provider;
+
+      // Check if the table is for 'proto'.
       let isCurTableProto = tableName.endsWith("-proto");
       if (!onceThru) {
         useProtobuf = isCurTableProto;
@@ -563,11 +578,34 @@ class PROT_ListManager {
         Ci.nsIUrlClassifierUtils
       );
 
-      streamerMap.requestPayload = urlUtils.makeUpdateRequestV4(
-        tableArray,
-        stateArray
-      );
-      streamerMap.isPostRequest = false;
+      if (provider === "google4") {
+        streamerMap.requestPayload = urlUtils.makeUpdateRequestV4(
+          tableArray,
+          stateArray
+        );
+        streamerMap.isPostRequest = false;
+      } else if (provider === "google5") {
+        // The request body for v5 is empty and it uses the query parameters to
+        // pass the table lists and their versions. We need to encode the
+        // versions with URL encoding to avoid issues with special characters.
+        stateArray = stateArray.map(encodeURIComponent);
+
+        streamerMap.requestPayload = "";
+        streamerMap.requestQueryParameters = urlUtils.makeUpdateRequestV5(
+          tableArray,
+          stateArray
+        );
+        // Setting isPostRequest to true to use GET method for v5 requests.
+        streamerMap.isPostRequest = true;
+      } else if (provider === "test") {
+        streamerMap.requestPayload = urlUtils.makeUpdateRequestV4(
+          tableArray,
+          stateArray
+        );
+        streamerMap.isPostRequest = false;
+      } else {
+        log("Unknown provider for protobuf: " + provider);
+      }
     } else {
       // Build the request. For each table already in the database, include the
       // chunk data from the database
@@ -592,12 +630,17 @@ class PROT_ListManager {
     log("update request: " + JSON.stringify(streamerMap, undefined, 2) + "\n");
 
     // Don't send an empty request.
-    if (streamerMap.requestPayload.length) {
+    if (
+      streamerMap.requestPayload.length ||
+      streamerMap.requestQueryParameters.length
+    ) {
       this.#makeUpdateRequestForEntry(
         updateUrl,
         streamerMap.tableList,
         streamerMap.requestPayload,
-        streamerMap.isPostRequest
+        streamerMap.requestQueryParameters,
+        streamerMap.isPostRequest,
+        provider
       );
     } else {
       // We were disabled between kicking off getTables and now.
@@ -609,11 +652,15 @@ class PROT_ListManager {
     updateUrl,
     tableList,
     requestPayload,
-    isPostRequest
+    requestQueryParameters,
+    isPostRequest,
+    safeBrowsingProvider
   ) {
     log(
       "makeUpdateRequestForEntry: requestPayload " +
         requestPayload +
+        " requestQueryParameters " +
+        requestQueryParameters +
         " update: " +
         updateUrl +
         " tablelist: " +
@@ -630,7 +677,9 @@ class PROT_ListManager {
       !streamer.downloadUpdates(
         tableList,
         requestPayload,
+        requestQueryParameters,
         isPostRequest,
+        safeBrowsingProvider,
         updateUrl,
         waitForUpdateSec =>
           this.#updateSuccess(tableList, updateUrl, waitForUpdateSec),
@@ -651,6 +700,7 @@ class PROT_ListManager {
 
   /**
    * Callback function if the update request succeeded.
+   *
    * @param waitForUpdate String The number of seconds that the client should
    *        wait before requesting again.
    */
@@ -745,6 +795,7 @@ class PROT_ListManager {
 
   /**
    * Callback function if the update request succeeded.
+   *
    * @param result String The error code of the failure
    */
   #updateError(table, updateUrl, result) {
@@ -764,6 +815,7 @@ class PROT_ListManager {
 
   /**
    * Callback function when the download failed
+   *
    * @param status String http status or an empty string if connection refused.
    */
   #downloadError(table, updateUrl, status) {

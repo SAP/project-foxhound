@@ -2,19 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   GeolocationUtils:
-    "resource:///modules/urlbar/private/GeolocationUtils.sys.mjs",
+    "moz-src:///browser/components/urlbar/private/GeolocationUtils.sys.mjs",
   GeonameMatchType:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   YelpSubjectType:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
 });
@@ -24,6 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 const RESULT_MENU_COMMAND = {
+  HELP: "help",
   INACCURATE_LOCATION: "inaccurate_location",
   MANAGE: "manage",
   NOT_INTERESTED: "not_interested",
@@ -39,12 +40,13 @@ export class YelpSuggestions extends SuggestProvider {
     return [
       "yelpFeatureGate",
       "suggest.yelp",
+      "suggest.quicksuggest.all",
       "suggest.quicksuggest.sponsored",
     ];
   }
 
-  get primaryUserControlledPreference() {
-    return "suggest.yelp";
+  get primaryUserControlledPreferences() {
+    return ["suggest.yelp"];
   }
 
   get rustSuggestionType() {
@@ -181,10 +183,12 @@ export class YelpSuggestions extends SuggestProvider {
     url.searchParams.set("utm_source", "mozilla");
 
     let resultProperties = {
-      isRichSuggestion: true,
-      showFeedbackMenu: true,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      isNovaSuggestion: true,
       isBestMatch: lazy.UrlbarPrefs.get("yelpSuggestPriority"),
     };
+
     if (!resultProperties.isBestMatch) {
       let suggestedIndex = lazy.UrlbarPrefs.get("yelpSuggestNonPriorityIndex");
       if (suggestedIndex !== null) {
@@ -193,18 +197,15 @@ export class YelpSuggestions extends SuggestProvider {
       }
     }
 
-    let titleHighlights = lazy.UrlbarUtils.getTokenMatches(
-      queryContext.tokens,
-      title,
-      lazy.UrlbarUtils.HIGHLIGHT.TYPED
-    );
     let payload = {
       url: url.toString(),
       originalUrl: suggestion.url,
-      bottomTextL10n: { id: "firefox-suggest-yelp-bottom-text" },
+      subtitleL10n: { id: "urlbar-result-yelp-subtitle" },
+      bottomTextL10n: {
+        id: "urlbar-result-action-sponsored",
+      },
       iconBlob: suggestion.icon_blob,
     };
-    let highlights = {};
 
     if (
       lazy.UrlbarPrefs.get("yelpServiceResultDistinction") &&
@@ -215,34 +216,33 @@ export class YelpSuggestions extends SuggestProvider {
         args: {
           service: title,
         },
-        argsHighlights: {
-          service: titleHighlights,
-        },
       };
     } else {
       payload.title = title;
-      highlights.title = titleHighlights;
     }
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        lazy.UrlbarUtils.RESULT_TYPE.URL,
-        lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-        payload,
-        highlights
-      ),
-      resultProperties
-    );
+    return new lazy.UrlbarResult({
+      ...resultProperties,
+      payload,
+    });
   }
 
   /**
    * @typedef {object} L10nItem
    * @property {Values<RESULT_MENU_COMMAND>} [name]
+   *   The name of the command.
    * @property {{id: string}} [l10n]
+   *   The id of the l10n string to use for the translation.
    */
 
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   */
   getResultCommands() {
-    /** @type {(L10nItem& { children?: L10nItem[]})[]} */
+    /** @type {UrlbarResultCommand[]} */
     let commands = [
       {
         name: RESULT_MENU_COMMAND.INACCURATE_LOCATION,
@@ -263,29 +263,22 @@ export class YelpSuggestions extends SuggestProvider {
 
     commands.push(
       {
+        name: RESULT_MENU_COMMAND.NOT_RELEVANT,
         l10n: {
-          id: "firefox-suggest-command-dont-show-this",
+          id: "urlbar-result-menu-dismiss-suggestion",
         },
-        children: [
-          {
-            name: RESULT_MENU_COMMAND.NOT_RELEVANT,
-            l10n: {
-              id: "firefox-suggest-command-not-relevant",
-            },
-          },
-          {
-            name: RESULT_MENU_COMMAND.NOT_INTERESTED,
-            l10n: {
-              id: "firefox-suggest-command-not-interested",
-            },
-          },
-        ],
       },
       { name: "separator" },
       {
         name: RESULT_MENU_COMMAND.MANAGE,
         l10n: {
           id: "urlbar-result-menu-manage-firefox-suggest",
+        },
+      },
+      {
+        name: RESULT_MENU_COMMAND.HELP,
+        l10n: {
+          id: "urlbar-result-menu-learn-more",
         },
       }
     );
@@ -296,8 +289,10 @@ export class YelpSuggestions extends SuggestProvider {
   onEngagement(queryContext, controller, details, searchString) {
     let { result } = details;
     switch (details.selType) {
+      case RESULT_MENU_COMMAND.HELP:
       case RESULT_MENU_COMMAND.MANAGE:
-        // "manage" is handled by UrlbarInput, no need to do anything here.
+        // "manage" and "help" are handled by UrlbarInput, no need to do
+        // anything here.
         break;
       case RESULT_MENU_COMMAND.INACCURATE_LOCATION:
         // Currently the only way we record this feedback is in the Glean

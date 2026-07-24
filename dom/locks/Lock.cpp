@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Lock.h"
+
 #include "mozilla/dom/LockBinding.h"
 #include "mozilla/dom/LockManager.h"
 #include "mozilla/dom/Promise.h"

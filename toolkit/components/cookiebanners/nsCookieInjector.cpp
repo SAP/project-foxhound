@@ -328,7 +328,7 @@ nsresult nsCookieInjector::InjectCookiesFromRules(
     nsCOMPtr<nsICookieValidation> validation;
     rv = cookieManager->AddNative(
         nullptr, c.Host(), c.Path(), c.Name(), c.Value(), c.IsSecure(),
-        c.IsHttpOnly(), c.IsSession(), c.Expiry(), &aOriginAttributes,
+        c.IsHttpOnly(), c.IsSession(), c.ExpiryInMSec(), &aOriginAttributes,
         c.SameSite(), static_cast<nsICookie::schemeType>(c.SchemeMap()),
         /* is partitioned: */ false, /* is from http: */ true, nullptr,
         getter_AddRefs(validation));

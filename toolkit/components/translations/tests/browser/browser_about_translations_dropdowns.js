@@ -3,119 +3,209 @@
 
 "use strict";
 
-// runInPage calls ContentTask.spawn, which injects ContentTaskUtils in the
-// scope of the callback. Eslint doesn't know about that.
-/* global ContentTaskUtils */
+add_task(async function test_about_translations_dropdown_initialization() {
+  const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations({
+    languagePairs: [
+      { fromLang: "en", toLang: "es" },
+      { fromLang: "es", toLang: "en" },
 
-add_task(async function test_about_translations_dropdowns() {
-  const languagePairs = [
-    { fromLang: "en", toLang: "es" },
-    { fromLang: "es", toLang: "en" },
-    // This is not a bi-directional translation.
-    { fromLang: "is", toLang: "en" },
-  ];
+      // Only translations from "is" are available.
+      { fromLang: "is", toLang: "en" },
 
-  const { runInPage, cleanup } = await openAboutTranslations({
-    languagePairs,
-    dataForContent: languagePairs,
-    autoDownloadFromRemoteSettings: true,
+      // Only translations into "fi" are available.
+      { fromLang: "en", toLang: "fi" },
+
+      // The following languages utilize script tags.
+      { fromLang: "en", toLang: "zh-Hans" },
+      { fromLang: "zh-Hans", toLang: "en" },
+      { fromLang: "en", toLang: "zh-Hant" },
+      { fromLang: "zh-Hant", toLang: "en" },
+
+      // The following languages utilize variant tags.
+      { fromLang: "en", toLang: "es,base-memory" },
+      { fromLang: "es,base-memory", toLang: "en" },
+      { fromLang: "en", toLang: "zh-Hans,base" },
+      { fromLang: "zh-Hans,base", toLang: "en" },
+    ],
   });
 
-  await runInPage(async ({ selectors }) => {
-    const { document } = content;
+  await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+    value: "detect",
+    options: [
+      "detect",
+      "zh-Hans",
+      "zh-Hans,base",
+      "zh-Hant",
+      "en",
+      "is",
+      "es",
+      "es,base-memory",
+    ],
+  });
 
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        return document.body.hasAttribute("ready");
-      },
-      "Waiting for the document to be ready.",
-      100,
-      200
-    );
-
-    /**
-     * Some languages can be marked as hidden in the dropbdown. This function
-     * asserts the configuration of the options.
-     *
-     * @param {object} args
-     * @param {string} args.message
-     * @param {HTMLSelectElement} args.select
-     * @param {string[]} args.availableOptions
-     * @param {string} args.selectedValue
-     */
-    function assertOptions({
-      message,
-      select,
-      availableOptions,
-      selectedValue,
-    }) {
-      const options = [...select.options];
-      info(message);
-      Assert.deepEqual(
-        options.filter(option => !option.hidden).map(option => option.value),
-        availableOptions,
-        "The available options match."
-      );
-
-      is(selectedValue, select.value, "The selected value matches.");
-    }
-
-    /** @type {HTMLSelectElement} */
-    const fromSelect = document.querySelector(selectors.fromLanguageSelect);
-    /** @type {HTMLSelectElement} */
-    const toSelect = document.querySelector(selectors.toLanguageSelect);
-
-    assertOptions({
-      message: 'From languages have "detect" already selected.',
-      select: fromSelect,
-      availableOptions: ["detect", "en", "is", "es"],
-      selectedValue: "detect",
-    });
-
-    assertOptions({
-      message:
-        'The "to" options do not have "detect" in the list, and nothing is selected.',
-      select: toSelect,
-      availableOptions: ["", "en", "es"],
-      selectedValue: "",
-    });
-
-    info('Switch the "to" language to "es".');
-    toSelect.value = "es";
-    toSelect.dispatchEvent(new Event("input"));
-
-    assertOptions({
-      message: 'The "from" languages no longer suggest "es".',
-      select: fromSelect,
-      availableOptions: ["detect", "en", "is"],
-      selectedValue: "detect",
-    });
-
-    assertOptions({
-      message: 'The "to" options remain the same, but "es" is selected.',
-      select: toSelect,
-      availableOptions: ["", "en", "es"],
-      selectedValue: "es",
-    });
-
-    info('Switch the "from" language to English.');
-    fromSelect.value = "en";
-    fromSelect.dispatchEvent(new Event("input"));
-
-    assertOptions({
-      message: 'The "to" languages no longer suggest "en".',
-      select: toSelect,
-      availableOptions: ["", "es"],
-      selectedValue: "es",
-    });
-
-    assertOptions({
-      message: 'The "from" options remain the same, but "en" is selected.',
-      select: fromSelect,
-      availableOptions: ["detect", "en", "is"],
-      selectedValue: "en",
-    });
+  await aboutTranslationsTestUtils.assertTargetLanguageSelector({
+    value: "",
+    options: [
+      "",
+      "zh-Hans",
+      "zh-Hans,base",
+      "zh-Hant",
+      "en",
+      "fi",
+      "es",
+      "es,base-memory",
+    ],
   });
 
   await cleanup();
 });
+
+add_task(
+  async function test_about_translations_dropdown_initialization_failure() {
+    // Simulate a getSupportedLanguages error only for the next call.
+    const realGetSupportedLanguages = TranslationsParent.getSupportedLanguages;
+    TranslationsParent.getSupportedLanguages = () => {
+      TranslationsParent.getSupportedLanguages = realGetSupportedLanguages;
+      throw new Error("Simulating getSupportedLanguagesError()");
+    };
+
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        languagePairs: [
+          { fromLang: "en", toLang: "es" },
+          { fromLang: "es", toLang: "en" },
+        ],
+      }
+    );
+
+    await aboutTranslationsTestUtils.assertIsVisible({
+      pageHeader: true,
+      languageLoadErrorMessage: true,
+      mainUserInterface: false,
+      sourceLanguageSelector: false,
+      targetLanguageSelector: false,
+      copyButton: false,
+      swapLanguagesButton: false,
+      sourceSectionTextArea: false,
+      targetSectionTextArea: false,
+      unsupportedInfoMessage: false,
+    });
+
+    await cleanup();
+  }
+);
+
+add_task(
+  async function test_about_translations_source_dropdown_detect_language_option() {
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        languagePairs: [
+          { fromLang: "en", toLang: "es" },
+          { fromLang: "es", toLang: "en" },
+
+          // Only translations from "is" are available.
+          { fromLang: "is", toLang: "en" },
+
+          // Only translations into "fi" are available.
+          { fromLang: "en", toLang: "fi" },
+
+          // The following languages utilize script tags.
+          { fromLang: "en", toLang: "zh-Hans" },
+          { fromLang: "zh-Hans", toLang: "en" },
+          { fromLang: "en", toLang: "zh-Hant" },
+          { fromLang: "zh-Hant", toLang: "en" },
+
+          // The following languages utilize variant tags.
+          { fromLang: "en", toLang: "es,base-memory" },
+          { fromLang: "es,base-memory", toLang: "en" },
+          { fromLang: "en", toLang: "zh-Hans,base" },
+          { fromLang: "zh-Hans,base", toLang: "en" },
+        ],
+      }
+    );
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "detect",
+      options: [
+        "detect",
+        "zh-Hans",
+        "zh-Hans,base",
+        "zh-Hant",
+        "en",
+        "is",
+        "es",
+        "es,base-memory",
+      ],
+    });
+
+    await aboutTranslationsTestUtils.assertDetectLanguageOption({
+      isSelected: true,
+      defaultValue: true,
+    });
+
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.DetectedLanguageUpdated,
+            { language: "es" },
+          ],
+        ],
+      },
+      async () => {
+        await aboutTranslationsTestUtils.setSourceTextAreaValue(
+          "Hola mundo, ¿cómo estás?"
+        );
+      }
+    );
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      detectedLanguage: "es",
+    });
+
+    await aboutTranslationsTestUtils.assertDetectLanguageOption({
+      isSelected: true,
+      defaultValue: false,
+      language: "es",
+    });
+
+    await aboutTranslationsTestUtils.setSourceLanguageSelectorValue("is");
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "is",
+    });
+
+    await aboutTranslationsTestUtils.assertDetectLanguageOption({
+      isSelected: false,
+      defaultValue: true,
+    });
+
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.DetectedLanguageUpdated,
+            { language: "es" },
+          ],
+        ],
+      },
+      async () => {
+        await aboutTranslationsTestUtils.setSourceLanguageSelectorValue(
+          "detect"
+        );
+      }
+    );
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      detectedLanguage: "es",
+    });
+
+    await aboutTranslationsTestUtils.assertDetectLanguageOption({
+      isSelected: true,
+      defaultValue: false,
+      language: "es",
+    });
+
+    await cleanup();
+  }
+);

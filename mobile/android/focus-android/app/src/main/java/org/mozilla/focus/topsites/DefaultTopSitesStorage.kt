@@ -20,6 +20,8 @@ import kotlin.coroutines.CoroutineContext
  * Default implementation of [TopSitesStorage].
  *
  * @param pinnedSitesStorage An instance of [PinnedSiteStorage], used for storing pinned sites.
+ * @param coroutineContext The [CoroutineContext] to be used for background operations.
+ * Defaults to [Dispatchers.IO].
  */
 class DefaultTopSitesStorage(
     private val pinnedSitesStorage: PinnedSiteStorage,
@@ -35,6 +37,8 @@ class DefaultTopSitesStorage(
             notifyObservers { onStorageUpdated() }
         }
     }
+
+    override fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean) = Unit
 
     override fun removeTopSite(topSite: TopSite) {
         scope.launch {

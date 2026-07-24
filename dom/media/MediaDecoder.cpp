@@ -23,14 +23,11 @@
 #include "VideoUtils.h"
 #include "WindowRenderer.h"
 #include "mozilla/AbstractThread.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/glean/DomMediaMetrics.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/DOMTypes.h"
+#include "mozilla/glean/DomMediaMetrics.h"
 #include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
@@ -153,23 +150,17 @@ RefPtr<GenericPromise> MediaDecoder::SetSink(AudioDeviceInfo* aSinkDevice) {
   return GetStateMachine()->InvokeSetSink(aSinkDevice);
 }
 
-void MediaDecoder::SetOutputCaptureState(OutputCaptureState aState,
-                                         SharedDummyTrack* aDummyTrack) {
+void MediaDecoder::SetOutputCaptureState(OutputCaptureInfo aInfo) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
-  MOZ_ASSERT_IF(aState == OutputCaptureState::Capture, aDummyTrack);
+  MOZ_ASSERT_IF(aInfo.mState == OutputCaptureState::Capture, aInfo.mDummyTrack);
 
-  if (mOutputCaptureState.Ref() != aState) {
+  if (mOutputCaptureInfo.Ref().mState != aInfo.mState) {
     LOG("Capture state change from %s to %s",
-        EnumValueToString(mOutputCaptureState.Ref()),
-        EnumValueToString(aState));
+        EnumValueToString(mOutputCaptureInfo.Ref().mState),
+        EnumValueToString(aInfo.mState));
   }
-  mOutputCaptureState = aState;
-  if (mOutputDummyTrack.Ref().get() != aDummyTrack) {
-    mOutputDummyTrack = nsMainThreadPtrHandle<SharedDummyTrack>(
-        MakeAndAddRef<nsMainThreadPtrHolder<SharedDummyTrack>>(
-            "MediaDecoder::mOutputDummyTrack", aDummyTrack));
-  }
+  mOutputCaptureInfo = std::move(aInfo);
 }
 
 void MediaDecoder::AddOutputTrack(RefPtr<ProcessedMediaTrack> aTrack) {
@@ -242,8 +233,8 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       INIT_CANONICAL(mStreamName, aInit.mStreamName),
       INIT_CANONICAL(mSinkDevice, nullptr),
       INIT_CANONICAL(mSecondaryVideoContainer, nullptr),
-      INIT_CANONICAL(mOutputCaptureState, OutputCaptureState::None),
-      INIT_CANONICAL(mOutputDummyTrack, nullptr),
+      INIT_CANONICAL(mOutputCaptureInfo,
+                     OutputCaptureInfo(OutputCaptureState::None)),
       INIT_CANONICAL(mOutputTracks, nsTArray<RefPtr<ProcessedMediaTrack>>()),
       INIT_CANONICAL(mOutputPrincipal, PRINCIPAL_HANDLE_NONE),
       INIT_CANONICAL(mPlayState, PLAY_STATE_LOADING),
@@ -383,7 +374,7 @@ void MediaDecoder::OnPlaybackErrorEvent(const MediaResult& aError) {
 #ifdef MOZ_WMF_MEDIA_ENGINE
   if (aError == NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR ||
       aError == NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR) {
-    SwitchStateMachine(aError);
+    (void)SwitchStateMachine(aError);
     return;
   }
 #endif
@@ -391,12 +382,12 @@ void MediaDecoder::OnPlaybackErrorEvent(const MediaResult& aError) {
 }
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
-void MediaDecoder::SwitchStateMachine(const MediaResult& aError) {
+bool MediaDecoder::SwitchStateMachine(const MediaResult& aError) {
   MOZ_ASSERT(aError == NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR ||
              aError == NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR);
   // Already in shutting down decoder, no need to create another state machine.
   if (mPlayState == PLAY_STATE_SHUTDOWN) {
-    return;
+    return false;
   }
 
   // External engine can't play the resource or we intentionally disable it, try
@@ -475,6 +466,7 @@ void MediaDecoder::SwitchStateMachine(const MediaResult& aError) {
 
   discardStateMachine->BeginShutdown()->Then(
       AbstractThread::MainThread(), __func__, [discardStateMachine] {});
+  return true;
 }
 #endif
 
@@ -682,8 +674,9 @@ void MediaDecoder::DiscardOngoingSeekIfExists() {
 void MediaDecoder::CallSeek(const SeekTarget& aTarget) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mShouldDelaySeek) {
-    LOG("Delay seek to %f and store it to delayed seek target",
-        mDelayedSeekTarget->GetTime().ToSeconds());
+    LOG("Delay seek to %f (was %f) and store it to delayed seek target",
+        aTarget.GetTime().ToSeconds(),
+        mDelayedSeekTarget ? mDelayedSeekTarget->GetTime().ToSeconds() : 0.0f);
     mDelayedSeekTarget = Some(aTarget);
     return;
   }
@@ -1040,6 +1033,8 @@ void MediaDecoder::UpdateLogicalPositionInternal() {
       // the decoder doesn't know. That means decoder still thinks it's in
       // playing. Therefore, we have to manually call those methods to notify
       // the owner about seeking.
+      MOZ_ASSERT(std::isfinite(GetDuration()) && GetDuration() > 0.0);
+      GetOwner()->UpdatePlayedRangesBeforeSeek(GetDuration());
       GetOwner()->SeekStarted();
       SetLogicalPosition(currentPosition);
       GetOwner()->SeekCompleted();
@@ -1129,7 +1124,7 @@ void MediaDecoder::NotifyCompositor() {
         NewRunnableMethod<already_AddRefed<KnowsCompositor>&&>(
             "MediaFormatReader::UpdateCompositor", mReader,
             &MediaFormatReader::UpdateCompositor, knowsCompositor.forget());
-    Unused << mReader->OwnerThread()->Dispatch(r.forget());
+    (void)mReader->OwnerThread()->Dispatch(r.forget());
   }
 }
 
@@ -1483,7 +1478,7 @@ void MediaDecoder::NotifyReaderDataArrived() {
       NewRunnableMethod("MediaFormatReader::NotifyDataArrived", mReader.get(),
                         &MediaFormatReader::NotifyDataArrived));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 // Provide access to the state machine object
@@ -1515,12 +1510,13 @@ RefPtr<SetCDMPromise> MediaDecoder::SetCDMProxy(CDMProxy* aProxy) {
       // given CDM proxy.
       LOG("CDM proxy %s not supported! Switch to another state machine.",
           NS_ConvertUTF16toUTF8(aProxy->KeySystem()).get());
-      SwitchStateMachine(
+      [[maybe_unused]] bool switched = SwitchStateMachine(
           MediaResult{NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR, aProxy});
       rv = GetStateMachine()->IsCDMProxySupported(aProxy);
       if (NS_FAILED(rv)) {
-        MOZ_DIAGNOSTIC_CRASH("CDM proxy not supported after switch!");
-        LOG("CDM proxy not supported after switch!");
+        MOZ_DIAGNOSTIC_ASSERT(
+            !switched, "We should only reach here if we failed to switch");
+        LOG("CDM proxy is still not supported!");
         return SetCDMPromise::CreateAndReject(rv, __func__);
       }
     }
@@ -1694,6 +1690,48 @@ void MediaMemoryTracker::InitMemoryReporter() {
 MediaMemoryTracker::~MediaMemoryTracker() {
   UnregisterWeakMemoryReporter(this);
 }
+
+MediaDecoder::OutputCaptureInfo::OutputCaptureInfo(OutputCaptureState aState)
+    : mState(aState),
+      mDummyTrack(nullptr),
+      mShouldConfigAudioOutput(false),
+      mDevice(nullptr) {}
+
+MediaDecoder::OutputCaptureInfo::OutputCaptureInfo(
+    OutputCaptureState aState, SharedDummyTrack* aDummyTrack,
+    bool aShouldConfigAudioOutput, AudioDeviceInfo* aDevice)
+    : mState(aState),
+      mDummyTrack(nullptr),
+      mShouldConfigAudioOutput(aShouldConfigAudioOutput),
+      mDevice(aDevice) {
+  if (aDummyTrack) {
+    mDummyTrack = nsMainThreadPtrHandle<SharedDummyTrack>(
+        MakeAndAddRef<nsMainThreadPtrHolder<SharedDummyTrack>>(
+            "MediaDecoder::OutputCaptureInfo::mDummyTrack", aDummyTrack));
+  }
+}
+
+MediaDecoder::OutputCaptureInfo::OutputCaptureInfo(
+    const OutputCaptureInfo& aOther) = default;
+
+MediaDecoder::OutputCaptureInfo& MediaDecoder::OutputCaptureInfo::operator=(
+    const OutputCaptureInfo& aOther) = default;
+
+MediaDecoder::OutputCaptureInfo::OutputCaptureInfo(
+    OutputCaptureInfo&& aOther) noexcept = default;
+
+MediaDecoder::OutputCaptureInfo& MediaDecoder::OutputCaptureInfo::operator=(
+    OutputCaptureInfo&& aOther) noexcept = default;
+
+bool MediaDecoder::OutputCaptureInfo::operator==(
+    const OutputCaptureInfo& aOther) const {
+  return mState == aOther.mState &&
+         mShouldConfigAudioOutput == aOther.mShouldConfigAudioOutput &&
+         mDummyTrack.get() == aOther.mDummyTrack.get() &&
+         mDevice.get() == aOther.mDevice.get();
+}
+
+MediaDecoder::OutputCaptureInfo::~OutputCaptureInfo() = default;
 
 }  // namespace mozilla
 

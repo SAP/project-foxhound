@@ -1,14 +1,17 @@
 [DEFAULT]
 prefs = ["gfx.font_loader.delay=0"]
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 
 ["test_accessiblecaret_cursor_mode.py"]
 skip-if = [
-  "os == 'mac' && debug", # Bug 1841181
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1841181
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1841181
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1841181
 ]
 
 ["test_accessiblecaret_selection_mode.py"]
 skip-if = [
-  "os == 'win' && os_version == '11.2009' && (debug || asan)", # Bug 1855083
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968697
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968697
 ]

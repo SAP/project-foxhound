@@ -28,6 +28,11 @@ dictionary ImageDecodeResult {
   required boolean complete;
 };
 
+dictionary ImageSize {
+  required unsigned long width;
+  required unsigned long height;
+};
+
 [Exposed=(Window,DedicatedWorker),
  SecureContext,
  Func="nsRFPService::ExposeWebCodecsAPIImageDecoder"]
@@ -36,6 +41,10 @@ interface ImageTrack {
   readonly attribute unsigned long frameCount;
   readonly attribute unrestricted float repetitionCount;
   attribute boolean selected;
+
+  // Mozilla-internal-only addition
+  [ChromeOnly]
+  sequence<ImageSize> getSizes();
 };
 
 [Exposed=(Window,DedicatedWorker),

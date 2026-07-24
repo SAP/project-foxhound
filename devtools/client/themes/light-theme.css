@@ -77,7 +77,18 @@ body {
   background-color: hsl(72, 100%, 27%);
 }
 
+.cm-s-mozilla .cm-property,
+:is(.cm-editor, .cm-highlighted) .tok-propertyName {
+  color: var(--theme-highlight-green);
+}
+
 .theme-fg-color1,
+/* ------- cm6 ------- */
+.cm-editor .tok-literal,
+.cm-editor .tok-className,
+/* This matches html attribute names only, not matching css declaration names */
+.cm-editor .tok-propertyName:has(+ .tok-operator),
+/* ------------------- */
 .cm-s-mozilla .cm-attribute,
 .cm-s-mozilla .cm-builtin,
 .cm-s-mozilla .cm-keyword,
@@ -97,16 +108,14 @@ body {
   color: var(--purple-60);
 }
 
-.cm-s-mozilla .cm-property,
-:is(.cm-editor, .cm-highlighted) .tok-propertyName {
-  color: var(--theme-highlight-green);
-}
-
 .CodeMirror-Tern-completion-object:before {
   background-color: hsl(208, 56%, 40%);
 }
 
 .theme-fg-color3,
+/* ------- cm6 ------- */
+.cm-editor .tok-typeName,
+/* ------------------- */
 .cm-s-mozilla .cm-tag,
 .cm-s-mozilla .cm-header,
 .cm-s-mozilla .cm-bracket,
@@ -123,8 +132,11 @@ body {
 .theme-fg-color2,
 .cm-s-mozilla .cm-string,
 .cm-s-mozilla .cm-string-2,
+/* ------- cm6 ------- */
 :is(.cm-editor, .cm-highlighted) .tok-string,
+:is(.cm-editor, .cm-highlighted) .tok-string2,
 .variable-or-property .token-string,
+/* ------------------- */
 .CodeMirror-Tern-farg {
   color: var(--theme-highlight-purple);
 }

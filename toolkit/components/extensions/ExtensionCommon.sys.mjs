@@ -51,7 +51,6 @@ var {
   DefaultMap,
   DefaultWeakMap,
   ExtensionError,
-  filterStack,
   getInnerWindowID,
   getUniqueId,
 } = ExtensionUtils;
@@ -75,9 +74,7 @@ function runSafeSyncWithoutClone(f, ...args) {
     dump(
       `Extension error: ${e} ${e?.fileName} ${
         e?.lineNumber
-      }\n[[Exception stack\n${
-        e?.stack ? filterStack(e) : undefined
-      }Current stack\n${filterStack(Error())}]]\n`
+      }\n[[Exception stack\n${e?.stack}Current stack\n${Error().stack}]]\n`
     );
     Cu.reportError(e);
   }
@@ -659,9 +656,7 @@ export class BaseContext {
       } catch (e) {
         Cu.reportError(e);
         dump(
-          `runSafe failure: cloning into ${
-            this.cloneScope
-          }: ${e}\n\n${filterStack(Error())}`
+          `runSafe failure: cloning into ${this.cloneScope}: ${e}\n\n${Error().stack}`
         );
       }
 
@@ -1834,6 +1829,7 @@ class SchemaAPIManager extends EventEmitter {
     );
 
     Object.assign(global, {
+      global, // This must be first, see bug 1977694.
       AppConstants,
       Cc,
       ChromeWorker,
@@ -1859,7 +1855,6 @@ class SchemaAPIManager extends EventEmitter {
       WebExtensionPolicy,
       XPCOMUtils,
       extensions: this,
-      global,
     });
 
     ChromeUtils.defineLazyGetter(global, "console", getConsole);
@@ -2209,11 +2204,7 @@ LocaleData.prototype = {
   },
 
   get acceptLanguages() {
-    let result = Services.prefs.getComplexValue(
-      "intl.accept_languages",
-      Ci.nsIPrefLocalizedString
-    ).data;
-    return result.split(/\s*,\s*/g);
+    return Services.locale.acceptLanguages.split(/\s*,\s*/g);
   },
 
   get uiLocale() {
@@ -2253,7 +2244,7 @@ LocaleData.prototype = {
  * content process).
  */
 class EventManager {
-  /*
+  /**
    * A persistent event must provide module and name.  Additionally the
    * module must implement primeListeners in the ExtensionAPI class.
    *
@@ -2371,7 +2362,7 @@ class EventManager {
     this.remove = new Map();
   }
 
-  /*
+  /**
    * Information about listeners to persistent events is associated with
    * the extension to which they belong.  Any extension thas has such
    * listeners has a property called `persistentListeners` that is a

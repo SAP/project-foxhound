@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SpeechRecognitionResult.h"
-#include "mozilla/dom/SpeechRecognitionResultBinding.h"
 
 #include "SpeechRecognition.h"
+#include "mozilla/dom/SpeechRecognitionResultBinding.h"
 
 namespace mozilla::dom {
 

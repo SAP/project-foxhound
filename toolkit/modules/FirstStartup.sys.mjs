@@ -7,11 +7,14 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Normandy: "resource://normandy/Normandy.sys.mjs",
   TaskScheduler: "resource://gre/modules/TaskScheduler.sys.mjs",
 });
 
 const PREF_TIMEOUT = "first-startup.timeout";
+const PREF_CATEGORY_TASKS = "first-startup.category-tasks-enabled";
+const CATEGORY_NAME = "first-startup-new-profile";
 
 /**
  * Service for blocking application startup, to be used on the first install. The intended
@@ -57,18 +60,20 @@ export var FirstStartup = {
 
     this._state = this.IN_PROGRESS;
     const timeout = Services.prefs.getIntPref(PREF_TIMEOUT, 30000); // default to 30 seconds
-    let startingTime = Cu.now();
+    let startingTime = ChromeUtils.now();
     let initialized = false;
 
     let promises = [];
 
     let normandyInitEndTime = null;
+    let normandyInitPromise = null;
     if (AppConstants.MOZ_NORMANDY) {
-      promises.push(
-        lazy.Normandy.init({ runAsync: false }).finally(() => {
-          normandyInitEndTime = Cu.now();
-        })
+      normandyInitPromise = lazy.Normandy.init({ runAsync: false }).finally(
+        () => {
+          normandyInitEndTime = ChromeUtils.now();
+        }
       );
+      promises.push(normandyInitPromise);
     }
 
     let deleteTasksEndTime = null;
@@ -79,17 +84,46 @@ export var FirstStartup = {
         lazy.TaskScheduler.deleteAllTasks()
           .catch(() => {})
           .finally(() => {
-            deleteTasksEndTime = Cu.now();
+            deleteTasksEndTime = ChromeUtils.now();
           })
       );
     }
 
+    // Very important things that need to run before we launch the first window
+    // during new profile setup can register a hook with CATEGORY_NAME.
+    //
+    // Consumers should be aware that:
+    //
+    // * This blocks first startup window opening for new installs on Windows
+    //   ONLY for the first created default profile
+    // * If PREF_TIMEOUT elapses before all of these promises complete, the
+    //   registered category entries might not have all had a chance to
+    //   successfully complete before the first browser window appears.
+    const CATEGORY_TASKS_ENABLED = Services.prefs.getBoolPref(
+      PREF_CATEGORY_TASKS,
+      false
+    );
+    let categoryTasksEndTime = null;
+    if (CATEGORY_TASKS_ENABLED && AppConstants.MOZ_NORMANDY) {
+      promises.push(
+        normandyInitPromise.finally(() => {
+          return lazy.BrowserUtils.callModulesFromCategory({
+            categoryName: CATEGORY_NAME,
+            profileMarker: "first-startup-new-profile-tasks",
+            idleDispatch: false,
+          }).finally(() => {
+            categoryTasksEndTime = ChromeUtils.now();
+          });
+        })
+      );
+    }
+
     if (promises.length) {
-      Promise.all(promises).then(() => (initialized = true));
+      Promise.allSettled(promises).then(() => (initialized = true));
 
       this.elapsed = 0;
       Services.tm.spinEventLoopUntil("FirstStartup.sys.mjs:init", () => {
-        this.elapsed = Math.round(Cu.now() - startingTime);
+        this.elapsed = Math.ceil(ChromeUtils.now() - startingTime);
         if (this.elapsed >= timeout) {
           this._state = this.TIMED_OUT;
           return true;
@@ -105,13 +139,19 @@ export var FirstStartup = {
 
     if (AppConstants.MOZ_NORMANDY) {
       Glean.firstStartup.normandyInitTime.set(
-        Math.ceil(normandyInitEndTime || Cu.now() - startingTime)
+        Math.ceil(normandyInitEndTime || ChromeUtils.now() - startingTime)
       );
     }
 
     if (AppConstants.MOZ_UPDATE_AGENT) {
       Glean.firstStartup.deleteTasksTime.set(
-        Math.ceil(deleteTasksEndTime || Cu.now() - startingTime)
+        Math.ceil(deleteTasksEndTime || ChromeUtils.now() - startingTime)
+      );
+    }
+
+    if (CATEGORY_TASKS_ENABLED) {
+      Glean.firstStartup.categoryTasksTime.set(
+        Math.ceil(categoryTasksEndTime || ChromeUtils.now() - startingTime)
       );
     }
 

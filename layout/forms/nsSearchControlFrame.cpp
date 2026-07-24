@@ -45,7 +45,7 @@ nsresult nsSearchControlFrame::CreateAnonymousContent(
   nsTextControlFrame::CreateAnonymousContent(aElements);
 
   // Create the ::-moz-search-clear-button pseudo-element:
-  mButton = MakeAnonElement(PseudoStyleType::mozSearchClearButton, nullptr,
+  mButton = MakeAnonElement(PseudoStyleType::MozSearchClearButton, nullptr,
                             nsGkAtoms::button);
   mButton->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns, false);
   mButton->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden, u"true"_ns,

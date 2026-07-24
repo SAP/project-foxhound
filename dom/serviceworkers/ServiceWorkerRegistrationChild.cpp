@@ -34,7 +34,8 @@ IPCResult ServiceWorkerRegistrationChild::RecvUpdateState(
 
 IPCResult ServiceWorkerRegistrationChild::RecvFireUpdateFound() {
   if (mOwner) {
-    mOwner->FireUpdateFound();
+    RefPtr<ServiceWorkerRegistration> owner = mOwner;
+    owner->FireUpdateFound();
   }
   return IPC_OK();
 }
@@ -84,7 +85,7 @@ void ServiceWorkerRegistrationChild::Shutdown() {
   if (!CanSend()) {
     return;
   }
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 }  // namespace mozilla::dom

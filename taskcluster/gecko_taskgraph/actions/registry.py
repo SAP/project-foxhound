@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
-import re
 from collections import namedtuple
 from types import FunctionType
 
@@ -151,18 +149,18 @@ def register_callback_action(
     def register_callback(cb):
         assert isinstance(name, str), "name must be a string"
         assert isinstance(order, int), "order must be an integer"
-        assert callable(schema) or is_json(
-            schema
-        ), "schema must be a JSON compatible object"
+        assert callable(schema) or is_json(schema), (
+            "schema must be a JSON compatible object"
+        )
         assert isinstance(cb, FunctionType), "callback must be a function"
         # Allow for json-e > 25 chars in the symbol.
         if "$" not in symbol:
             assert 1 <= len(symbol) <= 25, "symbol must be between 1 and 25 characters"
         assert isinstance(symbol, str), "symbol must be a string"
 
-        assert not mem[
-            "registered"
-        ], "register_callback_action must be used as decorator"
+        assert not mem["registered"], (
+            "register_callback_action must be used as decorator"
+        )
         assert cb_name not in callbacks, f"callback name {cb_name} is not unique"
 
         def action_builder(parameters, graph_config, decision_task_id):
@@ -192,11 +190,12 @@ def register_callback_action(
                 "base_revision": base_revision,
             }
 
-            match = re.match(
-                r"https://(hg.mozilla.org)/(.*?)/?$", parameters[repo_param]
-            )
-            if not match:
-                raise Exception(f"Unrecognized {repo_param}")
+            if branch := parameters.get("head_ref"):
+                push["branch"] = branch
+
+            if (base_branch := parameters.get("base_ref")) and branch != base_branch:
+                push["base_branch"] = base_branch
+
             action = {
                 "name": name,
                 "title": title,
@@ -205,6 +204,13 @@ def register_callback_action(
                 "taskGroupId": decision_task_id,
                 "cb_name": cb_name,
                 "symbol": symbol,
+            }
+
+            # The full parameter set is too large, and gets duplicated in
+            # `actions.json` once per hook. So only pass in what's actually
+            # necessary.
+            filtered_params = {
+                "repository_type": parameters["repository_type"],
             }
 
             rv = {
@@ -230,32 +236,29 @@ def register_callback_action(
             if "/" in permission:
                 raise Exception("`/` is not allowed in action names; use `-`")
 
-            rv.update(
-                {
-                    "kind": "hook",
-                    "hookGroupId": f"project-{trustDomain}",
-                    "hookId": f"in-tree-action-{level}-{permission}/{tcyml_hash}",
-                    "hookPayload": {
-                        # provide the decision-task parameters as context for triggerHook
-                        "decision": {
-                            "action": action,
-                            "repository": repository,
-                            "push": push,
-                        },
-                        # and pass everything else through from our own context
-                        "user": {
-                            "input": {"$eval": "input"},
-                            "taskId": {"$eval": "taskId"},  # target taskId (or null)
-                            "taskGroupId": {
-                                "$eval": "taskGroupId"
-                            },  # target task group
-                        },
+            rv.update({
+                "kind": "hook",
+                "hookGroupId": f"project-{trustDomain}",
+                "hookId": f"in-tree-action-{level}-{permission}/{tcyml_hash}",
+                "hookPayload": {
+                    # provide the decision-task parameters as context for triggerHook
+                    "decision": {
+                        "action": action,
+                        "repository": repository,
+                        "push": push,
+                        "parameters": filtered_params,
                     },
-                    "extra": {
-                        "actionPerm": permission,
+                    # and pass everything else through from our own context
+                    "user": {
+                        "input": {"$eval": "input"},
+                        "taskId": {"$eval": "taskId"},  # target taskId (or null)
+                        "taskGroupId": {"$eval": "taskGroupId"},  # target task group
                     },
-                }
-            )
+                },
+                "extra": {
+                    "actionPerm": permission,
+                },
+            })
 
             return rv
 
@@ -311,7 +314,6 @@ def sanity_check_task_scope(callback, parameters, graph_config):
 
     repo_param = "{}head_repository".format(graph_config["project-repo-param-prefix"])
     head_repository = parameters[repo_param]
-    assert head_repository.startswith("https://hg.mozilla.org/")
     expected_scope = f"assume:repo:{head_repository[8:]}:action:{action.permission}"
 
     # the scope should appear literally; no need for a satisfaction check. The use of

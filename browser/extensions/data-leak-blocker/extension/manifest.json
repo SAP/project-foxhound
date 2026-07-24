@@ -1,0 +1,24 @@
+{
+  "manifest_version": 2,
+  "name": "Data Leak Blocker",
+  "hidden": true,
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "data-leak-blocker@mozilla.com",
+      "strict_min_version": "139.0"
+    }
+  },
+  "version": "144.0.0",
+  "description": "",
+  "experiment_apis": {
+    "dataAbuseDetection": {
+      "schema": "schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "script": "api.js",
+        "events": ["startup"]
+      }
+    }
+  },
+  "permissions": ["mozillaAddons"]
+}

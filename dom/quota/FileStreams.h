@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_filestreams_h__
-#define mozilla_dom_quota_filestreams_h__
+#ifndef mozilla_dom_quota_filestreams_h_
+#define mozilla_dom_quota_filestreams_h_
 
 // Local includes
 #include "Client.h"
 
 // Global includes
 #include <cstdint>
-#include "mozilla/AlreadyAddRefed.h"
+
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
@@ -173,4 +173,4 @@ CreateFileRandomAccessStream(PersistenceType aPersistenceType,
 
 }  // namespace mozilla::dom::quota
 
-#endif /* mozilla_dom_quota_filestreams_h__ */
+#endif /* mozilla_dom_quota_filestreams_h_ */

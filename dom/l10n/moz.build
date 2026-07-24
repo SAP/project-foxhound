@@ -32,5 +32,4 @@ MOCHITEST_MANIFESTS += ["tests/mochitest/mochitest.toml"]
 MOCHITEST_CHROME_MANIFESTS += ["tests/mochitest/chrome.toml"]
 BROWSER_CHROME_MANIFESTS += ["tests/mochitest/browser.toml"]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]

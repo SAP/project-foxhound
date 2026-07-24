@@ -5,13 +5,13 @@
 import {
   ActionsProvider,
   ActionsResult,
-} from "resource:///modules/ActionsProvider.sys.mjs";
+} from "moz-src:///browser/components/urlbar/ActionsProvider.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickActionsLoaderDefault:
-    "resource:///modules/QuickActionsLoaderDefault.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+    "moz-src:///browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
@@ -45,6 +45,7 @@ class ProviderQuickActions extends ActionsProvider {
 
   isActive(queryContext) {
     return (
+      queryContext.sapName == "urlbar" &&
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       !queryContext.searchMode &&
       queryContext.trimmedSearchString.length < 50 &&
@@ -55,7 +56,7 @@ class ProviderQuickActions extends ActionsProvider {
 
   async queryActions(queryContext) {
     let input = queryContext.trimmedLowerCaseSearchString;
-    let results = await this.getActions(input);
+    let results = await this.getActions({ input });
 
     if (lazy.UrlbarPrefs.get(MATCH_IN_PHRASE_PREF)) {
       for (let [keyword, keys] of this.#keywords) {
@@ -92,9 +93,17 @@ class ProviderQuickActions extends ActionsProvider {
     });
   }
 
-  async getActions(prefix) {
+  async getActions({ input, includesExactMatch = false }) {
     await lazy.QuickActionsLoaderDefault.ensureLoaded();
-    return this.#prefixes.get(prefix) ?? new Set();
+
+    let results = this.#prefixes.get(input) ?? new Set();
+
+    if (includesExactMatch) {
+      let actions = this.#keywords.get(input);
+      actions?.forEach(action => results.add(action));
+    }
+
+    return results;
   }
 
   getAction(key) {

@@ -37,7 +37,6 @@ class Http2StreamTunnel : public Http2StreamBase, public nsISocketTransport {
 
   nsHttpConnectionInfo* ConnectionInfo() override { return mConnectionInfo; }
 
-  void SetRequestDone() { mSendClosed = true; }
   nsresult Condition() override { return mCondition; }
   void CloseStream(nsresult reason) override;
   void DisableSpdy() override {
@@ -90,7 +89,6 @@ class OutputStreamTunnel : public nsIAsyncOutputStream {
   explicit OutputStreamTunnel(Http2StreamTunnel* aStream);
 
   nsresult OnSocketReady(nsresult condition);
-  void MaybeSetRequestDone(nsIOutputStreamCallback* aCallback);
 
  private:
   virtual ~OutputStreamTunnel();

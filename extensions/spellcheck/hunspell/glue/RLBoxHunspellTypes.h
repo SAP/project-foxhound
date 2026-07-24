@@ -6,7 +6,6 @@
 #ifndef EXTENSIONS_SPELLCHECK_HUNSPELL_GLUE_RLBOXHUNSPELLTYPES_H_
 #define EXTENSIONS_SPELLCHECK_HUNSPELL_GLUE_RLBOXHUNSPELLTYPES_H_
 
-#include <stddef.h>
 #include "mozilla/rlbox/rlbox_types.hpp"
 #include "hunspell_csutil.hxx"
 

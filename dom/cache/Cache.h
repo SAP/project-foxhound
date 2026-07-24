@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_cache_Cache_h
 #define mozilla_dom_cache_Cache_h
 
-#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/cache/TypeUtils.h"
+#include "mozilla/dom/cache/Types.h"
 #include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsString.h"
@@ -38,9 +38,18 @@ namespace cache {
 class AutoChildOpArgs;
 class CacheChild;
 
+enum class PutStatusPolicy { Default, RequireOK };
+bool IsValidPutRequestURL(const nsACString& aUrl, ErrorResult& aRv);
+bool IsValidPutRequestMethod(const RequestOrUTF8String& aRequest,
+                             ErrorResult& aRv);
+bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv);
+bool IsValidPutResponseStatus(Response& aResponse, PutStatusPolicy aPolicy,
+                              ErrorResult& aRv);
+
 class Cache final : public nsISupports,
                     public nsWrapperCache,
-                    public TypeUtils {
+                    public TypeUtils,
+                    public CacheChildListener {
  public:
   Cache(nsIGlobalObject* aGlobal, CacheChild* aActor, Namespace aNamespace);
 
@@ -77,8 +86,9 @@ class Cache final : public nsISupports,
   virtual JSObject* WrapObject(JSContext* aContext,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  // Called when CacheChild actor is being destroyed
-  void DestroyInternal(CacheChild* aActor);
+  // Called when CacheChild actor is being destroyed.
+  // Overrides CacheChildListener method
+  void OnActorDestroy(CacheChild* aActor) override;
 
   // TypeUtils methods
   virtual nsIGlobalObject* GetGlobalObject() const override;
@@ -86,8 +96,6 @@ class Cache final : public nsISupports,
 #ifdef DEBUG
   virtual void AssertOwningThread() const override;
 #endif
-
-  virtual mozilla::ipc::PBackgroundChild* GetIPCManager() override;
 
  private:
   class FetchHandler;

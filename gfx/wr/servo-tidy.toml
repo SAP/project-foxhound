@@ -38,6 +38,13 @@ packages = [
     "syn",
     # Requires an update to clap v4
     "textwrap",
+    # v1 required by glsl-lang@0.2
+    # v2 by Glean and rkv
+    "thiserror",
+    "thiserror-impl",
+    # v1 required by clap@3, which wrench uses
+    # v2 required by uniffi (transitive of Glean)
+    "indexmap",
     # Can be fixed by removing time dependency - see bug 1765324
     "wasi",
     # Pulled in by mozangle dev-dep on windows
@@ -52,6 +59,13 @@ packages = [
     "windows_aarch64_msvc",
     "windows_i686_msvc",
     "windows_aarch64_gnullvm",
+    "miniz_oxide",
+    "mio",
+    "socket2",
+    # 0.9 required by glean/uniffi
+    # 0.5 by proc-macro-crate
+    "toml",
+    "windows-link",
 ]
 
 # Files that are ignored for all tidy and lint checks.

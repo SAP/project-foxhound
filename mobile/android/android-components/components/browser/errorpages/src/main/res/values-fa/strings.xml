@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">تلاش دوباره</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">برقراری پیوند ایمن شکست خورد</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>صفحه‌ای که تلاش می‌کنید از آن بازدید کنید قابل نمایش نیست، زیرا امکان تأیید اعتبار داده‌های دریافتی از آن وجود ندارد.</li> <li>لطفاً با صاحبان این وبگاه تماس بگیرید و آن‌ها را در جریان این مشکل قرار دهید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>صفحه‌ای که تلاش می‌کنید از آن بازدید کنید قابل نمایش نیست، زیرا امکان تأیید اعتبار داده‌های دریافتی از آن وجود ندارد.</li>\n<li>لطفاً با صاحبان این وبگاه تماس بگیرید و آن‌ها را در جریان این مشکل قرار دهید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">برپاسازی پیوند ایمن شکست خورد</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>علت می‌تواند اشکالی در پیکربندی کارساز، یا تلاش فردی برای وانمود کردن خود به جای این کارساز باشد.</li> <li>اگر در گذشته با موفقیت به این کارساز متصل شده‌اید، امکان دارد این اشکال موقتی باشد، و می‌توانید بعداً دوباره تلاش کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>علت می‌تواند اشکالی در پیکربندی کارساز، یا تلاش فردی برای وانمود کردن خود به جای این کارساز باشد.</li>\n<li>اگر در گذشته با موفقیت به این کارساز متصل شده‌اید، امکان دارد این اشکال موقتی باشد، و می‌توانید بعداً دوباره تلاش کنید.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">پیشرفته…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>شخصی می‌تواند در تلاش برای جعل هویت پایگاه باشد و شما نباید ادامه دهید.</label> <br><br> <label>وبگاه‌ها هویت خود را از طریق گواهینامه‌ها اثبات می‌کنند. %1$s به <b>%2$s</b> اعتماد ندارد، زیرا صادرکننده گواهینامهٔ آن ناشناخته است، گواهینامه خودامضا است یا کارساز در حال ارسال گواهینامه‌های واسط صحیح نیست.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>شخصی می‌تواند در تلاش برای جعل هویت پایگاه باشد و شما نباید ادامه دهید.</label> <br><br>\n<label>وبگاه‌ها هویت خود را از طریق گواهینامه‌ها اثبات می‌کنند. %1$s به <b>%2$s</b> اعتماد ندارد، زیرا صادرکننده گواهینامهٔ آن ناشناخته است، گواهینامه خودامضا است یا کارساز در حال ارسال گواهینامه‌های واسط صحیح نیست.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">بازگشت (پیشنهاد می‌شود)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
@@ -25,7 +32,7 @@
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">این وبگاه به اتصالی ایمن نیاز دارد.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>صفحه‌ای را که می‌خواهید مشاهده کنید نمیتواند نمایش داده شود زیرا این وبگاه به اتصال ایمن نیاز دارد.</li> <li>مشکل به احتمال زیاد مربوط به وبگاه است و کاری برای حل آن نمی توانید انجام دهید.</li> <li>می‌توانید مشکل را به مدیر وبگاه اطلاع دهید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>صفحه‌ای را که می‌خواهید مشاهده کنید نمیتواند نمایش داده شود زیرا این وبگاه به اتصال ایمن نیاز دارد.</li>\n<li>مشکل به احتمال زیاد مربوط به وبگاه است و کاری برای حل آن نمی توانید انجام دهید.</li>\n<li>می‌توانید مشکل را به مدیر وبگاه اطلاع دهید.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">پیش‌رفته…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
@@ -35,15 +42,15 @@
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">اتّصال قطع شد</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
-  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>مرورگر با موفقیت متصل شد، اما هنگام انتقال اطلاعات، اتصال قطع شد. لطفا دوباره تلاش کنید.</p> <ul> <li>وبگاه ممکن است موقتاً در دسترس نباشد یا خیلی شلوغ باشد. چند لحظه بعد دوباره تلاش کنید.</li> <li>اگر قادر به بارگزاری هیچ صفحه‌ای نیستید، اتصال داده دستگاه یا وای‌فای خود را بررسی کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>مرورگر با موفقیت متصل شد، اما هنگام انتقال اطلاعات، اتصال قطع شد. لطفا دوباره تلاش کنید.</p>\n<ul>\n<li>وبگاه ممکن است موقتاً در دسترس نباشد یا خیلی شلوغ باشد. چند لحظه بعد دوباره تلاش کنید.</li>\n<li>اگر قادر به بارگزاری هیچ صفحه‌ای نیستید، اتصال داده دستگاه یا وای‌فای خود را بررسی کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">مهلت اتّصال تمام شد</string>
   <!-- The error message shown when a website took long to load. -->
-  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>پایگاه درخواست شده به تقاضای اتّصال مرورگر پاسخ نداد و مرورگر انتظار برای پاسخ را متوقف کرد.</p> <ul> <li>آیا ممکن است کارساز دچار تقاضای بیش از حد شده باشد یا موقتاً دارای مشکلی باشد؟ لطفاً بعداً دوباره تلاش کنید.</li> <li>آیا قادر به مرور پایگاه‌های دیگر نیز نیستید؟ اتّصال شبکهٔ افزاره‌تان را بررسی کنید.</li> <li>آیا افزاره یا شبکهٔ شما توسط دیوار آتش یا پیشکار محافظت می‌شود؟ تنظیمات نادرست آن مانع از مرور وب می‌شود.</li> <li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>پایگاه درخواست شده به تقاضای اتّصال مرورگر پاسخ نداد و مرورگر انتظار برای پاسخ را متوقف کرد.</p>\n<ul>\n<li>آیا ممکن است کارساز دچار تقاضای بیش از حد شده باشد یا موقتاً دارای مشکلی باشد؟ لطفاً بعداً دوباره تلاش کنید.</li>\n<li>آیا قادر به مرور پایگاه‌های دیگر نیز نیستید؟ اتّصال شبکهٔ افزاره‌تان را بررسی کنید.</li>\n<li>آیا افزاره یا شبکهٔ شما توسط دیوار آتش یا پیشکار محافظت می‌شود؟ تنظیمات نادرست آن مانع از مرور وب می‌شود.</li>\n<li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">قادر به برقراری اتصال نیست</string>
   <!-- The error message shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul> <li>ممکن است پایگاه موقتاً در دسترس نباشد یا خیلی شلوغ باشد. چند لحظهٔ دیگر دوباره تلاش کنید.</li> <li>اگر نمی‌توانید هیچ صفحه‌ای را باز کنید، اتّصال دادهٔ افزاره یا وای‌فای خود را بررسی کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>ممکن است پایگاه موقتاً در دسترس نباشد یا خیلی شلوغ باشد. چند لحظهٔ دیگر دوباره تلاش کنید.</li>\n<li>اگر نمی‌توانید هیچ صفحه‌ای را باز کنید، اتّصال دادهٔ افزاره یا وای‌فای خود را بررسی کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">جواب غیرمنتظره از کارساز</string>
   <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -51,11 +58,11 @@
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">این صفحه درست تغییر مسیر نمی‌دهد</string>
   <!-- The error message shown when the browser gets stuck in an infinite loop when loading a website. -->
-  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>مرورگر تلاش برای دریافت مورد درخواستی را پایان داده است. وبگاه به صورتی درخواست را تغییر مسیر می‌دهد که این کار هیچ‌گاه به پایان نخواهد رسید.</p> <ul> <li>آیا کلوچک‌های احتمالی مورد نیاز این وبگاه را غیرفعال ساخته‌اید؟</li> <li>اگر پذیرفتن کلوچک‌های وبگاه مشکل را حل نکرد، به احتمال زیاد این مشکلی در تنظیمات کارساز است و به رایانهٔ شما مربوط نیست.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>مرورگر تلاش برای دریافت مورد درخواستی را پایان داده است. وبگاه به صورتی درخواست را تغییر مسیر می‌دهد که این کار هیچ‌گاه به پایان نخواهد رسید.</p>\n<ul>\n<li>آیا کلوچک‌های احتمالی مورد نیاز این وبگاه را غیرفعال ساخته‌اید؟</li>\n<li>اگر پذیرفتن کلوچک‌های وبگاه مشکل را حل نکرد، به احتمال زیاد این مشکلی در تنظیمات کارساز است و به رایانهٔ شما مربوط نیست.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">حالت برون‌خط</string>
   <!-- The error message shown when a website cannot be loaded because the browser is in offline mode. -->
-  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>مرورگر در حالت برون‌خط قرار دارد و نمی‌تواند به مورد درخواستی وصل شود.</p> <ul> <li> آیا رایانه به یک شبکهٔ فعال متصل است؟</li><li>دکمهٔ «تلاش دوباره» را فشار دهید تا به حالت برخط رفته و صفحه را دوباره بار کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>مرورگر در حالت برون‌خط قرار دارد و نمی‌تواند به مورد درخواستی وصل شود.</p>\n<ul>\n<li> آیا رایانه به یک شبکهٔ فعال متصل است؟</li><li>دکمهٔ «تلاش دوباره» را فشار دهید تا به حالت برخط رفته و صفحه را دوباره بار کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser prevents loading a website on a restricted port. -->
   <string name="mozac_browser_errorpages_port_blocked_title">درگاه به دلایل امنیتی محدود شده است</string>
   <!-- The error message shown when the browser prevents loading a website on a restricted port. -->
@@ -63,25 +70,25 @@
   <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
   <string name="mozac_browser_errorpages_net_reset_title">اتصال از نو برقرار شد</string>
   <!-- The error message shown when the Internet connection is disrupted while loading a website. -->
-  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p> مرورگر با موفقیت متصل شد ، اما هنگام انتقال اطلاعات ، اتصال قطع شد. لطفا دوباره امتحان کنید. </p> <ul> <li> وبگاه ممکن است موقتاً در دسترس نباشد یا خیلی شلوغ باشد. در چند لحظه دوباره امتحان کنید. </li> <li> اگر قادر به بارگیری هیچ صفحه ای نیستید ، اطلاعات دستگاه یا اتصال Wi-Fi خود را بررسی کنید. </li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p> مرورگر با موفقیت متصل شد ، اما هنگام انتقال اطلاعات ، اتصال قطع شد. لطفا دوباره امتحان کنید. </p>\n<ul>\n<li> وبگاه ممکن است موقتاً در دسترس نباشد یا خیلی شلوغ باشد. در چند لحظه دوباره امتحان کنید. </li>\n<li> اگر قادر به بارگیری هیچ صفحه ای نیستید ، اطلاعات دستگاه یا اتصال Wi-Fi خود را بررسی کنید. </li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">نوع پرونده ناامن است</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>لطفاً با صاحبان پایگاه وب تماس بگیرید تا آنها را در جریان این مشکل قرار دهید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>لطفاً با صاحبان پایگاه وب تماس بگیرید تا آنها را در جریان این مشکل قرار دهید.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">خطای خرابی محتوا</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>صفحه‌ای که تلاش می‌کنید از آن بازدید کنید قابل نمایش نیست، زیرا خطایی در هنگام انتقال اطلاعات رُخ داده است.</p><ul><li>لطفاً با صاحبان این پایگاه اینترنتی تماس بگیرید و آنها را در جریان این مشکل قرار دهید.</li></ul>]]></string>
   <!-- The document title and heading of an error page. -->
-  <string name="mozac_browser_errorpages_content_crashed_title">محتوا فروپاشید</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>صفحه‌ای که تلاش می‌کنید از آن بازدید کنید قابل نمایش نیست، زیرا خطایی در هنگام انتقال اطلاعات رخ داده است.</p> <ul> <li>لطفاً با صاحبان این وبگاه تماس بگیرید و آن‌ها را در جریان این مشکل قرار دهید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_title">محتوا ازکارافتاد</string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>صفحه‌ای که تلاش می‌کنید از آن بازدید کنید قابل نمایش نیست، زیرا خطایی در هنگام انتقال اطلاعات رخ داده است.</p>\n<ul>\n<li>لطفاً با صاحبان این وبگاه تماس بگیرید و آن‌ها را در جریان این مشکل قرار دهید.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">خطای کدگذاری محتوا</string>
   <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>قادر به نمایش صفحه‌ای که درخواست بازدید از آن را کرده‌اید نیست، زیرا از گونه‌ای ناشناخته یا پشتیبانی نشده از فشرده‌سازی استفاده می‌کند.</p><ul><li>لطفاً با صاحبان این پایگاه اینترنتی تماس برقرار کنید و آنها را در جریان این مشکل قرار دهید.</li></ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">نشانی پیدا نشد</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>مرورگر نتوانست کارساز میزبان را برای نشانی ارائه شده پیدا کند.</p> <ul> <li>نشانی را برای غلط‌های املایی بررسی کنید، مانند: <strong>ww</strong>.example.com به جای <strong>www</strong>.example.com.</li> <li>اگر قادر به بارگیری هیچ صفحه‌ای نیستید، دادهٔ افزاره یا اتصال وای‌فای خود را بررسی کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>مرورگر نتوانست کارساز میزبان را برای نشانی ارائه شده پیدا کند.</p>\n<ul>\n<li>نشانی را برای غلط‌های املایی بررسی کنید، مانند: <strong>ww</strong>.example.com به جای <strong>www</strong>.example.com.</li>\n<li>اگر قادر به بارگیری هیچ صفحه‌ای نیستید، دادهٔ افزاره یا اتصال وای‌فای خود را بررسی کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">به نظر می‌رسد مشکلی با اتصال اینترنت شما وجود دارد</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
@@ -96,7 +103,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">نشانی معتبر نیست</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>نشانی‌های وب معمولاً به این صورت نوشته می‌شوند <strong>http://www.example.com/</strong></li> <li>مطمئن شوید که از ممیز درست استفاده می‌کنید (یعنی <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>نشانی‌های وب معمولاً به این صورت نوشته می‌شوند <strong>http://www.example.com/</strong></li>\n<li>مطمئن شوید که از ممیز درست استفاده می‌کنید (یعنی <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">نشانی قابل فهم نبود</string>
   <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>نشانی قراردادی مثلا (e.g. <q>wxyz://</q>)‏ را مشخص کرده است که مرورگر قادر به شناسایی آن نیست، بنابراین نمی‌تواند به شیوه صحیح به وب‌گاه متصل شود.</p><ul><li>آیا در حال تلاش برای دسترسی به خدمات چندرسانه‌ای یا غیر متنی هستید؟ این وب‌گاه را برای یافتن ملزومات اضافی جست‌وجو کنید.</li><li>برخی قراردادها ممکن است برای شناسایی نیاز به نرم‌افزار یا افزایه های دیگری جهت شناسایی داشته باشند.</li></ul>]]></string>
@@ -108,10 +115,10 @@
   <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul><li>ممکن است حذف،‌منتقل شده باشد یا مجوز‌های آن از دسترسی جلوگیری‌ می‌کند.</li></ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">کارساز پیشکار از اتصال خودداری می‌کند</string>
-  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>مرورگر برای استفاده از یک کارساز پیشکار پیکربندی شده است، ولی پیشکار از اتصال خودداری می‌کند.</p> <ul> <li>آیا تنظیمات کارساز پیشکار مرورگر صحیح است؟ تنظیمات را کنترل کنید و دوباره تلاش نمایید.</li> <li>آیا پیشکار اجازهٔ اتصال از این شبکه را می‌دهد؟</li> <li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>مرورگر برای استفاده از یک کارساز پیشکار پیکربندی شده است، ولی پیشکار از اتصال خودداری می‌کند.</p>\n<ul>\n<li>آیا تنظیمات کارساز پیشکار مرورگر صحیح است؟ تنظیمات را کنترل کنید و دوباره تلاش نمایید.</li>\n<li>آیا پیشکار اجازهٔ اتصال از این شبکه را می‌دهد؟</li>\n<li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_proxy_host_title">کارساز پیشکار پیدا نشد</string>
-  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>مرورگر برای استفاده از یک کارساز پیشکار پیکربندی شده است، ولی پیشکار پیدا نشد.</p> <ul> <li>آیا تنظیمات کارساز پیشکار مرورگر صحیح است؟ تنظیمات را کنترل کنید و دوباره تلاش نمایید.</li> <li>آیا افزاره به شبکه‌ای فعال متصل است؟</li> <li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>مرورگر برای استفاده از یک کارساز پیشکار پیکربندی شده است، ولی پیشکار پیدا نشد.</p>\n<ul>\n<li>آیا تنظیمات کارساز پیشکار مرورگر صحیح است؟ تنظیمات را کنترل کنید و دوباره تلاش نمایید.</li>\n<li>آیا افزاره به شبکه‌ای فعال متصل است؟</li>\n<li>هنوز هم مشکل دارید؟ برای دریافت کمک با مدیر شبکه یا فراهم‌کنندهٔ اینترنت خود مشورت کنید.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_safe_browsing_malware_uri_title">مشکل پایگاه بدافزار</string>
   <!-- The %1$s will be replaced by the malicious website URL -->

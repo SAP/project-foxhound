@@ -17,7 +17,7 @@
 #include "api/rtc_error.h"
 #include "media/base/codec.h"
 
-namespace cricket {
+namespace webrtc {
 
 class CodecList {
  public:
@@ -35,7 +35,7 @@ class CodecList {
 
   // Creates a codec list on untrusted data. If successful, the
   // resulting CodecList satisfies all the CodecList invariants.
-  static webrtc::RTCErrorOr<CodecList> Create(const std::vector<Codec>& codecs);
+  static RTCErrorOr<CodecList> Create(const std::vector<Codec>& codecs);
   // Creates a codec list on trusted data. Only for use when
   // the codec list is generated from internal code.
   static CodecList CreateFromTrustedData(const std::vector<Codec>& codecs) {
@@ -83,6 +83,7 @@ class CodecList {
   std::vector<Codec> codecs_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // MEDIA_BASE_CODEC_LIST_H_

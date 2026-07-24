@@ -1,0 +1,25 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for Worklet - Warnings</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+  <script type="application/javascript" src="common.js"></script>
+</head>
+<body>
+
+<script type="application/javascript">
+function runTestInIframe() {
+  var audioContext = new AudioContext();
+  audioContext.audioWorklet.addModule("warning_reporter_worklet.js")
+  .then(() => {
+    const node = new AudioWorkletNode(audioContext, "warning");
+    node.port.onmessage = e => {
+      ok(e.data.caught, "An error should be caught");
+      SimpleTest.finish();
+    }
+  });
+}
+</script>
+</body>
+</html>

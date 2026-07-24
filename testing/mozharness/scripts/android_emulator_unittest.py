@@ -65,6 +65,15 @@ class AndroidEmulatorTest(
                 },
             ],
             [
+                ["--timeout-factor"],
+                {
+                    "action": "store",
+                    "dest": "timeout_factor",
+                    "default": None,
+                    "help": "Multiplier for test timeout values",
+                },
+            ],
+            [
                 ["--enable-xorigin-tests"],
                 {
                     "action": "store_true",
@@ -130,6 +139,15 @@ class AndroidEmulatorTest(
                 },
             ],
             [
+                ["--enable-isolated-zygote-process"],
+                {
+                    "action": "store_true",
+                    "dest": "enable_isolated_zygote_process",
+                    "default": False,
+                    "help": "Run with app Zygote preloading enabled.",
+                },
+            ],
+            [
                 ["--repeat"],
                 {
                     "action": "store",
@@ -166,7 +184,7 @@ class AndroidEmulatorTest(
     )
 
     def __init__(self, require_config_file=False):
-        super(AndroidEmulatorTest, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "clobber",
@@ -196,6 +214,7 @@ class AndroidEmulatorTest(
         self.test_suite = suite
         self.this_chunk = c.get("this_chunk")
         self.total_chunks = c.get("total_chunks")
+        self.timeout_factor = c.get("timeout_factor")
         self.xre_path = None
         self.device_serial = "emulator-5554"
         self.log_raw_level = c.get("log_raw_level")
@@ -206,13 +225,14 @@ class AndroidEmulatorTest(
         self.disable_e10s = c.get("disable_e10s")
         self.disable_fission = c.get("disable_fission")
         self.web_content_isolation_strategy = c.get("web_content_isolation_strategy")
+        self.enable_isolated_zygote_process = c.get("enable_isolated_zygote_process")
         self.extra_prefs = c.get("extra_prefs")
         self.test_tags = c.get("test_tags")
 
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(AndroidEmulatorTest, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         dirs = {}
         dirs["abs_test_install_dir"] = os.path.join(abs_dirs["abs_work_dir"], "tests")
         dirs["abs_test_bin_dir"] = os.path.join(
@@ -347,6 +367,9 @@ class AndroidEmulatorTest(
         if c["disable_fission"] and category not in ["gtest", "cppunittest"]:
             cmd.append("--disable-fission")
 
+        if c["enable_isolated_zygote_process"]:
+            cmd.append("--enable-isolated-zygote-process")
+
         if "web_content_isolation_strategy" in c:
             cmd.append(
                 "--web-content-isolation-strategy=%s"
@@ -365,6 +388,9 @@ class AndroidEmulatorTest(
                     cmd.extend(["--this-chunk", self.this_chunk])
                 if self.total_chunks is not None:
                     cmd.extend(["--total-chunks", self.total_chunks])
+
+        if self.timeout_factor is not None:
+            cmd.extend(["--timeout-factor", self.timeout_factor])
 
         if category not in SUITE_NO_E10S:
             if category in SUITE_DEFAULT_E10S and not c["e10s"]:
@@ -387,13 +413,11 @@ class AndroidEmulatorTest(
             )
 
         if self.java_code_coverage_enabled:
-            cmd.extend(
-                [
-                    "--enable-coverage",
-                    "--coverage-output-dir",
-                    self.java_coverage_output_dir,
-                ]
-            )
+            cmd.extend([
+                "--enable-coverage",
+                "--coverage-output-dir",
+                self.java_coverage_output_dir,
+            ])
 
         if self.config.get("restartAfterFailure", False):
             cmd.append("--restartAfterFailure")
@@ -468,9 +492,7 @@ class AndroidEmulatorTest(
         """
         Download and extract product APK, tests.zip, and host utils.
         """
-        super(AndroidEmulatorTest, self).download_and_extract(
-            suite_categories=self._query_suite_categories()
-        )
+        super().download_and_extract(suite_categories=self._query_suite_categories())
         dirs = self.query_abs_dirs()
         self.xre_path = dirs["abs_xre_dir"]
 
@@ -484,9 +506,9 @@ class AndroidEmulatorTest(
         if install_needed is False:
             self.info("Skipping apk installation for %s" % self.test_suite)
             return
-        assert (
-            self.installer_path is not None
-        ), "Either add installer_path to the config or use --installer-path."
+        assert self.installer_path is not None, (
+            "Either add installer_path to the config or use --installer-path."
+        )
         self.install_android_app(self.installer_path)
         self.info("Finished installing apps for %s" % self.device_serial)
 

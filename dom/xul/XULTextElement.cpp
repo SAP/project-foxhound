@@ -4,28 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/XULTextElement.h"
+
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/XULTextElementBinding.h"
 #include "nsCOMPtr.h"
 #include "nsChangeHint.h"
 #include "nsIContent.h"
+#include "nsIMutationObserver.h"
 #include "nsPresContext.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/XULTextElement.h"
-#include "mozilla/dom/XULTextElementBinding.h"
 
 namespace mozilla::dom {
 
-nsChangeHint XULTextElement::GetAttributeChangeHint(const nsAtom* aAttribute,
-                                                    int32_t aModType) const {
+nsChangeHint XULTextElement::GetAttributeChangeHint(
+    const nsAtom* aAttribute, AttrModType aModType) const {
   const bool reframe = [&] {
     if (aAttribute == nsGkAtoms::value) {
       // If we have an accesskey we need to recompute our -moz-label-content.
       // Otherwise this is handled by either the attribute text node, or
       // nsTextBoxFrame for crop="center".
-      return aModType == MutationEvent_Binding::ADDITION ||
-             aModType == MutationEvent_Binding::REMOVAL ||
-             HasAttr(nsGkAtoms::accesskey);
+      return IsAdditionOrRemoval(aModType) || HasAttr(nsGkAtoms::accesskey);
     }
     if (aAttribute == nsGkAtoms::crop || aAttribute == nsGkAtoms::accesskey) {
       // value attr + crop="center" still uses nsTextBoxFrame. accesskey
@@ -38,6 +37,18 @@ nsChangeHint XULTextElement::GetAttributeChangeHint(const nsAtom* aAttribute,
     return nsChangeHint_ReconstructFrame;
   }
   return nsXULElement::GetAttributeChangeHint(aAttribute, aModType);
+}
+
+void XULTextElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                  const nsAttrValue* aValue,
+                                  const nsAttrValue* aOldValue,
+                                  nsIPrincipal* aSubjectPrincipal,
+                                  bool aNotify) {
+  nsXULElement::AfterSetAttr(aNamespaceID, aName, aValue, aOldValue,
+                             aSubjectPrincipal, aNotify);
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::disabled) {
+    SetStates(ElementState::DISABLED, !!aValue, aNotify);
+  }
 }
 
 JSObject* XULTextElement::WrapNode(JSContext* aCx,

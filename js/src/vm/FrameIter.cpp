@@ -173,7 +173,13 @@ void JitFrameIter::settle() {
     wasm::Frame* prevFP = (wasm::Frame*)jitFrame.prevFp();
 
     if (mustUnwindActivation_) {
-      act_->setWasmExitFP(prevFP);
+      // The JS-JIT exit frame doesn't support stack switching and will only be
+      // used if original wasm func was on the main stack.
+#ifdef ENABLE_WASM_JSPI
+      MOZ_ASSERT(!act_->cx()->wasm().findSuspenderForStackAddress(
+          prevFP->wasmCaller()));
+#endif
+      act_->setWasmExitFP(prevFP, nullptr);
     }
 
     iter_.destroy();

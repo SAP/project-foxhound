@@ -2,9 +2,10 @@
 
 /**
  * Return a web-based URL for a given file based on the testing directory.
- * @param {String} fileName
+ *
+ * @param {string} fileName
  *        file that caller wants its web-based url
- * @param {Boolean} cors [optional]
+ * @param {boolean} cors [optional]
  *        if set, then return a url with different origin
  */
 function GetTestWebBasedURL(fileName) {
@@ -29,6 +30,7 @@ async function getMFCDMProcessId() {
 
 /**
  * Make the utility process with given process id crash.
+ *
  * @param {int} pid
  *        the process id for the process which is going to crash
  */
@@ -106,6 +108,7 @@ async function crashUtilityProcess(utilityPid) {
 
 /**
  * Make video in the tab play.
+ *
  * @param {object} tab
  *        the tab contains at least one video element
  */
@@ -124,6 +127,7 @@ async function playVideo(tab) {
 
 /**
  * Check whether the video playback is performed in the right process and right decoder.
+ *
  * @param {object} tab
  *        the tab which has a playing video
  * @param {string} expectedProcess
@@ -165,6 +169,7 @@ async function assertRunningProcessAndDecoderName(
 
 /**
  * Check whether the video playback is not performed in the given process and given decoder.
+ *
  * @param {object} tab
  *        the tab which has a playing video
  * @param {string} givenProcess

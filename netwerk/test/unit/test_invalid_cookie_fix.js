@@ -51,11 +51,15 @@ add_task(async function test_invalid_cookie_fix() {
   // Create a schema 16 database.
   let schema16db = new CookieDatabaseConnection(
     do_get_cookie_file(profile),
-    16
+    17
   );
 
-  let now = Date.now();
-  let future = now + 60 * 60 * 24 * 1000 * 1000;
+  const nowInMSec = Date.now();
+  const farFarInThePastInMSec = nowInMSec - 60 * 60 * 24 * 1000 * 1000;
+  const farFarInTheFutureInMSec = nowInMSec + 60 * 60 * 24 * 1000 * 1000;
+  const nearFutureInMSec = nowInMSec + 60 * 60 * 24 * 1000;
+  const nowInUSec = nowInMSec * 1000;
+  const farFarInThePastInUSec = farFarInThePastInMSec * 1000;
 
   // CookieValidation.result => eRejectedNoneRequiresSecure
   schema16db.insertCookie(
@@ -64,16 +68,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_NONE,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -84,16 +89,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_LAX,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -104,16 +110,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_STRICT,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -124,16 +131,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_UNSET,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -144,16 +152,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       true,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_NONE,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -164,16 +173,17 @@ add_task(async function test_invalid_cookie_fix() {
       "Some data",
       "foo.com",
       "/",
-      future,
-      now,
-      now,
+      farFarInTheFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_UNSET,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -184,16 +194,17 @@ add_task(async function test_invalid_cookie_fix() {
       "",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_UNSET,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -204,16 +215,17 @@ add_task(async function test_invalid_cookie_fix() {
       "",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_UNSET,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -224,16 +236,38 @@ add_task(async function test_invalid_cookie_fix() {
       " test9",
       "foo.com",
       "/",
-      now,
-      now,
-      now,
+      nearFutureInMSec,
+      nowInUSec,
+      nowInUSec,
       false,
       false,
       false,
       false,
       {},
       Ci.nsICookie.SAMESITE_UNSET,
-      Ci.nsICookie.SCHEME_UNSET
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
+    )
+  );
+
+  // CookieValidation.result => eOK
+  schema16db.insertCookie(
+    new Cookie(
+      "testA",
+      "Some data",
+      "foo.com",
+      "/",
+      nearFutureInMSec,
+      nowInUSec,
+      farFarInThePastInUSec,
+      false,
+      false,
+      false,
+      false,
+      {},
+      Ci.nsICookie.SAMESITE_UNSET,
+      Ci.nsICookie.SCHEME_UNSET,
+      nowInUSec
     )
   );
 
@@ -265,64 +299,71 @@ add_task(async function test_invalid_cookie_fix() {
         name: "",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: " test8",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test1",
         sameSite: Ci.nsICookie.SAMESITE_NONE,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test2",
         sameSite: Ci.nsICookie.SAMESITE_LAX,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test3",
         sameSite: Ci.nsICookie.SAMESITE_STRICT,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test4",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test5",
         sameSite: Ci.nsICookie.SAMESITE_NONE,
         isSecure: 1,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test6",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: future,
+        creationTime: nowInUSec,
+        expiry: farFarInTheFutureInMSec,
       },
       {
         name: "test9",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
+      },
+      {
+        name: "testA",
+        sameSite: Ci.nsICookie.SAMESITE_UNSET,
+        isSecure: 0,
+        creationTime: farFarInThePastInUSec,
+        expiry: nearFutureInMSec,
       },
     ]);
 
@@ -338,7 +379,7 @@ add_task(async function test_invalid_cookie_fix() {
   await promise;
 
   // Assert inserted cookies are in the db and correctly handled by services.
-  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 6);
+  Assert.equal(Services.cookies.countCookiesFromHost("foo.com"), 7);
 
   // Close the profile.
   await promise_close_profile();
@@ -368,48 +409,55 @@ add_task(async function test_invalid_cookie_fix() {
         name: "test1",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test2",
         sameSite: Ci.nsICookie.SAMESITE_LAX,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test3",
         sameSite: Ci.nsICookie.SAMESITE_STRICT,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test4",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test5",
         sameSite: Ci.nsICookie.SAMESITE_NONE,
         isSecure: 1,
-        creationTime: now,
-        expiry: now,
+        creationTime: nowInUSec,
+        expiry: nearFutureInMSec,
       },
       {
         name: "test6",
         sameSite: Ci.nsICookie.SAMESITE_UNSET,
         isSecure: 0,
-        creationTime: now,
+        creationTime: nowInUSec,
         expiry: results.find(a => a.name === "test6").expiry,
+      },
+      {
+        name: "testA",
+        sameSite: Ci.nsICookie.SAMESITE_UNSET,
+        isSecure: 0,
+        creationTime: farFarInThePastInUSec,
+        expiry: nearFutureInMSec,
       },
     ]);
 
     for (const r of results) {
-      Assert.less(r.expiry, future);
+      Assert.less(r.expiry, farFarInTheFutureInMSec);
     }
 
     stmt.finalize();

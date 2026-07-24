@@ -262,3 +262,8 @@ Now that you're prepared and set up, you can access specific project instruction
 - GeckoView: :ref:`Contributing to GeckoView <Contributing to GeckoView>`
 - Android Components: `Mozilla Android Components <https://mozac.org/>`_
 - Frontend: :ref:`Building Firefox for Android <Building Firefox for Android>`
+
+Android Request For Comment (RFC) Process
+-----------------------------------------
+
+See :doc:`Android RFC Process <rfcs/0015-android-rfc-process>`.

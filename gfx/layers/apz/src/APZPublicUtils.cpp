@@ -8,7 +8,6 @@
 
 #include "AsyncPanZoomController.h"
 #include "nsLayoutUtils.h"
-#include "mozilla/HelperMacros.h"
 #include "mozilla/StaticPrefs_general.h"
 
 namespace mozilla {

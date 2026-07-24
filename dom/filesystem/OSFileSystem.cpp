@@ -9,10 +9,10 @@
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileSystemUtils.h"
-#include "nsIGlobalObject.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsIFile.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

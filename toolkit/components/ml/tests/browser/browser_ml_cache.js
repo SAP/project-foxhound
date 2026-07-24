@@ -17,7 +17,7 @@ const { URLChecker } = ChromeUtils.importESModule(
   "chrome://global/content/ml/Utils.sys.mjs"
 );
 
-const { Progress } = ChromeUtils.importESModule(
+const { Progress, MLUtils } = ChromeUtils.importESModule(
   "chrome://global/content/ml/Utils.sys.mjs"
 );
 
@@ -46,26 +46,6 @@ const FAKE_ONNX_MODEL_ARGS = {
   file: "onnx/config.json",
   taskName: "task_onnx",
 };
-
-function createRandomBlob(blockSize = 8, count = 1) {
-  const blocks = Array.from({ length: count }, () =>
-    Uint32Array.from(
-      { length: blockSize / 4 },
-      () => Math.random() * 4294967296
-    )
-  );
-  return new Blob(blocks, { type: "application/octet-stream" });
-}
-
-function createBlob(size = 8) {
-  return createRandomBlob(size);
-}
-
-function stripLastUsed(data) {
-  return data.map(({ lastUsed: _unusedLastUsed, ...rest }) => {
-    return rest;
-  });
-}
 
 /**
  * Test the MOZ_ALLOW_EXTERNAL_ML_HUB environment variable
@@ -585,8 +565,8 @@ add_task(async function testInvalidDomain() {
   );
 });
 
-/** Tests the method's error handling when the URL format does not include the required segments.
- *
+/**
+ * Tests the method's error handling when the URL format does not include the required segments.
  */
 add_task(async function testTooFewParts() {
   const hub = new ModelHub({
@@ -602,29 +582,6 @@ add_task(async function testTooFewParts() {
 });
 
 // IndexedDB tests
-
-/**
- * Helper function to initialize the cache
- */
-async function initializeCache() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
-  await OPFS.getDirectoryHandle(dbName, { create: true });
-  return await IndexedDBCache.init({ dbName });
-}
-
-/**
- * Helper function to delete the cache database
- */
-async function deleteCache(cache) {
-  await cache.dispose();
-  indexedDB.deleteDatabase(cache.dbName);
-  try {
-    await OPFS.remove(cache.dbName, { recursive: true });
-  } catch (e) {
-    // can be empty
-  }
-}
 
 /**
  * Test the initialization and creation of the IndexedDBCache instance.
@@ -1044,11 +1001,11 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
     }),
   ]);
 
-  await hub.deleteNonMatchingModelRevisions({
+  await hub.deleteNonMatchingModelRevisions(
     taskName,
-    modelWithHostname: `${hostname}/org/model2`,
-    targetRevision: "v3",
-  });
+    `${hostname}/org/model2`,
+    "v3"
+  );
 
   const [retrievedData, headers] = await cache.getFile({
     model: `${hostname}/org/model`,
@@ -1325,8 +1282,8 @@ add_task(async function test_initDbFromNonExisting() {
  * Test that we can upgrade even if the existing database is missing some stores or indices.
  */
 add_task(async function test_initDbFromExistingEmpty() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   const dbVersion = 1;
 
@@ -1388,8 +1345,9 @@ add_task(async function test_initDbFromExistingEmpty() {
  * Test that upgrading from version 1 to version 2 results in existing data being deleted.
  */
 add_task(async function test_initDbFromExistingNoChange() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Create version 1
   let cache = await IndexedDBCache.init({ dbName, version: 1 });
@@ -1432,8 +1390,8 @@ add_task(async function test_initDbFromExistingNoChange() {
  * Test that upgrading an existing cache from another source is possible.
  */
 add_task(async function test_initDbFromExistingElseWhereStoreChanges() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   const dbVersion = 2;
   const model = "mozilla/distilvit";
@@ -1649,6 +1607,8 @@ add_task(async function test_DeleteFileByEngines() {
   const testData = createBlob();
   const engineOne = "engine-1";
   const engineTwo = "engine-2";
+  const model = "org/model";
+  const revision = "v1";
 
   // a file is stored by engineOne
   await cache.put({
@@ -1675,6 +1635,10 @@ add_task(async function test_DeleteFileByEngines() {
     "The retrieved data should match the stored data."
   );
 
+  // We should have two engines associated with the model file
+  let retrievedFiles = await cache.listFiles({ model, revision });
+  Assert.equal(retrievedFiles.metadata.engineIds.length, 2);
+
   // if we delete the model by engineOne, it will still be around for engineTwo
   await cache.deleteFilesByEngine({ engineId: engineOne });
 
@@ -1689,6 +1653,11 @@ add_task(async function test_DeleteFileByEngines() {
     testData,
     "The retrieved data should match the stored data."
   );
+
+  // We should now have one engine associated with the model file
+  retrievedFiles = await cache.listFiles({ model, revision });
+  Assert.equal(retrievedFiles.metadata.engineIds.length, 1);
+  Assert.equal(retrievedFiles.metadata.engineIds[0], engineTwo);
 
   // now deleting via engineTwo
   await cache.deleteFilesByEngine({ engineId: engineTwo });
@@ -1705,6 +1674,10 @@ add_task(async function test_DeleteFileByEngines() {
     null,
     "The data for the deleted model should not exist."
   );
+
+  // Now we should have no more engine
+  Assert.equal(await cache._testGetData(cache.enginesStoreName), null);
+
   await deleteCache(cache);
 });
 
@@ -1733,6 +1706,18 @@ add_task(async function test_ModelHub_DeleteFileByEngines() {
     headers: null,
   });
 
+  // We should have at least one file
+  const dataBeforeDelete = await cache.getFile({
+    engineId: engineOne,
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+  });
+  Assert.notEqual(dataBeforeDelete, null, "The data should exist");
+
+  // We should have at least one engine
+  Assert.notEqual(await cache._testGetData(cache.enginesStoreName), null);
+
   await hub.deleteFilesByEngine({ engineId: engineOne });
 
   // at this point we should not have anymore files
@@ -1747,6 +1732,11 @@ add_task(async function test_ModelHub_DeleteFileByEngines() {
     null,
     "The data for the deleted model should not exist."
   );
+
+  // The engine should be removed from the model/revision/file engine list.
+  // In our case, this means we should have no entry in the engine list since it is
+  // the last
+  Assert.equal(await cache._testGetData(cache.enginesStoreName), null);
 
   await deleteCache(cache);
 });
@@ -1830,8 +1820,8 @@ add_task(async function test_update_allow_deny_after_model_cache() {
  * Test that data from OPFS is wiped
  */
 add_task(async function test_migrateStore_modelsDeleted() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Initialize version 4 of the database
   let cache = await IndexedDBCache.init({ dbName, version: 4 });
@@ -1880,8 +1870,8 @@ add_task(async function test_migrateStore_modelsDeleted() {
  * Test migration when database starts empty.
  */
 add_task(async function test_migrateStore_emptyDatabase() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Initialize an empty version 4 database
   let cache = await IndexedDBCache.init({ dbName, version: 4 });
@@ -1973,5 +1963,70 @@ add_task(async function test_getOwnerIcon_download() {
   stub.restore();
   for (const path of localPaths) {
     await OPFS.remove(path, { recursive: true });
+  }
+});
+
+/**
+ * Test that downloads can be cancelled
+ */
+add_task(async function test_download_cancellation() {
+  const cache = await initializeCache();
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+  });
+  hub.cache = cache;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  try {
+    controller.abort();
+
+    await Assert.rejects(
+      hub.getModelDataAsFile({ ...FAKE_MODEL_ARGS, abortSignal: signal }),
+      err => err?.name === "AbortError",
+      "The call should be cancelled"
+    );
+  } catch (err) {
+    Assert.ok(false, `Expected AbortError. Got ${err}`);
+  } finally {
+    await deleteCache(cache);
+  }
+});
+
+/**
+ * Test that downloads can be cancelled after fetch is successfull
+ */
+add_task(async function test_download_cancellation_after_fetch() {
+  const cache = await initializeCache();
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+  });
+  hub.cache = cache;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  const fetchUrlStub = sinon
+    .stub(MLUtils, "fetchUrl")
+    .callsFake((url, { signal: _, ...rest } = {}) => {
+      const p = fetch(url, rest);
+      controller.abort();
+      return p;
+    });
+
+  try {
+    await Assert.rejects(
+      hub.getModelDataAsFile({ ...FAKE_MODEL_ARGS, abortSignal: signal }),
+      err => err?.name === "AbortError",
+      "The call should be cancelled"
+    );
+  } catch (err) {
+    Assert.ok(false, `Expected AbortError. Got ${err}`);
+  } finally {
+    await deleteCache(cache);
+    fetchUrlStub.restore();
   }
 });

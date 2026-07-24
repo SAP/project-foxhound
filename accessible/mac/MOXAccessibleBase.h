@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_
+#define ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_
+
 #import <Cocoa/Cocoa.h>
 
 #import "mozAccessibleProtocol.h"
@@ -79,10 +82,17 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (id)accessibilityFocusedUIElement;
 
 // override, final
+- (NSArray*)accessibilityCustomActions;
+
+// override, final
 - (BOOL)isAccessibilityElement;
 
 // final
 - (BOOL)accessibilityNotifiesWhenDestroyed;
+
+#pragma mark - AXCustomContentProvider protocol
+
+- (NSArray*)accessibilityCustomContent;
 
 #pragma mark - MOXAccessible protocol
 
@@ -91,6 +101,9 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 
 // override
 - (id)moxFocusedUIElement;
+
+// override
+- (NSArray*)moxCustomActions;
 
 // override
 - (void)moxPostNotification:(NSString*)notification;
@@ -127,8 +140,14 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (BOOL)moxIsLiveRegion;
 
 // override
+- (BOOL)moxIsTextField;
+
+// override
 - (id<MOXAccessible>)moxFindAncestor:(BOOL (^)(id<MOXAccessible> moxAcc,
                                                BOOL* stop))findBlock;
+
+// override
+- (NSArray*)moxCustomContent;
 
 #pragma mark -
 
@@ -141,3 +160,5 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (void)expire;
 
 @end
+
+#endif  // ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_

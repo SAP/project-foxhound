@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_WAYLAND_SURFACE_LOCK_H__
-#define __MOZ_WAYLAND_SURFACE_LOCK_H__
+#ifndef MOZ_WAYLAND_SURFACE_LOCK_H_
+#define MOZ_WAYLAND_SURFACE_LOCK_H_
 
 #include "mozilla/RefPtr.h"
 
@@ -25,7 +25,7 @@ class WaylandSurface;
 class WaylandSurfaceLock final {
  public:
   explicit WaylandSurfaceLock(RefPtr<WaylandSurface> aWaylandSurface,
-                              bool aForceCommit = false);
+                              bool aSkipCommit = false);
   ~WaylandSurfaceLock();
 
   WaylandSurface* GetWaylandSurface() const;
@@ -35,14 +35,19 @@ class WaylandSurfaceLock final {
 #endif
   }
 
+#ifdef MOZ_WAYLAND
+  void Commit();
+#endif
+
  private:
 #ifdef MOZ_WAYLAND
   RefPtr<WaylandSurface> mWaylandSurface;
   wl_surface* mSurface = nullptr;
   bool mForceCommit = false;
+  bool mSkipCommit = false;
 #endif
 };
 
 }  // namespace mozilla::widget
 
-#endif /* __MOZ_WAYLAND_SURFACE_LOCK_H__ */
+#endif /* MOZ_WAYLAND_SURFACE_LOCK_H_ */

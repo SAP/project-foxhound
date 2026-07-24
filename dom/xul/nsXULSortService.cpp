@@ -7,21 +7,21 @@
   This file provides the implementation for the sort service manager.
  */
 
-#include "nsCOMArray.h"
-#include "nsCOMPtr.h"
-#include "nsIContent.h"
-#include "nsGkAtoms.h"
-#include "nsNameSpaceManager.h"
-#include "nsXULContentUtils.h"
-#include "nsString.h"
-#include "nsWhitespaceTokenizer.h"
 #include "nsXULSortService.h"
-#include "nsXULElement.h"
-#include "nsTArray.h"
-#include "nsUnicharUtils.h"
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/intl/Collator.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsNameSpaceManager.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsUnicharUtils.h"
+#include "nsWhitespaceTokenizer.h"
+#include "nsXULContentUtils.h"
+#include "nsXULElement.h"
 
 using mozilla::dom::Element;
 const unsigned long SORT_COMPARECASE = 0x0001;

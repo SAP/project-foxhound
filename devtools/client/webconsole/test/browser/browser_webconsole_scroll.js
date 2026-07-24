@@ -42,7 +42,7 @@ add_task(async function () {
     "The console is scrolled to the bottom"
   );
 
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   info("Console should be scrolled to bottom after refresh from page logs");
   await waitFor(() => findConsoleAPIMessage(hud, "init-100"));

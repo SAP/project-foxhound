@@ -28,12 +28,21 @@ dictionary RTCEncodedVideoFrameMetadata {
     long long timestamp;    // microseconds
 };
 
+dictionary RTCEncodedVideoFrameOptions {
+    RTCEncodedVideoFrameMetadata metadata;
+};
+
 // New interfaces to define encoded video and audio frames. Will eventually
 // re-use or extend the equivalent defined in WebCodecs.
+//
+// [Serializable] is implemented without adding attribute here,
+// because we don't implement "full serialization" to disk.
 [Pref="media.peerconnection.enabled",
  Pref="media.peerconnection.scripttransform.enabled",
  Exposed=(Window,DedicatedWorker)]
 interface RTCEncodedVideoFrame {
+    [Throws]
+    constructor(RTCEncodedVideoFrame originalFrame, optional RTCEncodedVideoFrameOptions options = {});
     readonly attribute RTCEncodedVideoFrameType type;
     readonly attribute unsigned long timestamp;
     attribute ArrayBuffer data;

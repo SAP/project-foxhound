@@ -30,14 +30,14 @@ use crate::capture::CaptureConfig;
 use crate::composite::{CompositorKind, CompositeDescriptor};
 use crate::frame_builder::{FrameBuilder, FrameBuilderConfig, FrameScratchBuffer};
 use glyph_rasterizer::FontInstance;
-use crate::gpu_cache::GpuCache;
 use crate::hit_test::{HitTest, HitTester, SharedHitTester};
 use crate::intern::DataStore;
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::internal_types::DebugOutput;
 use crate::internal_types::{FastHashMap, FrameId, FrameStamp, RenderedDocument, ResultMsg};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use crate::picture::{PictureScratchBuffer, SliceId, TileCacheInstance, TileCacheParams, SurfaceInfo, RasterConfig};
+use crate::picture::{PictureScratchBuffer, SurfaceInfo, RasterConfig};
+use crate::tile_cache::{SliceId, TileCacheInstance, TileCacheParams};
 use crate::picture::PicturePrimitive;
 use crate::prim_store::{PrimitiveScratchBuffer, PrimitiveInstance};
 use crate::prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
@@ -71,9 +71,10 @@ use std::{mem, u32};
 use std::path::PathBuf;
 #[cfg(feature = "replay")]
 use crate::frame_builder::Frame;
-use time::precise_time_ns;
 use core::time::Duration;
 use crate::util::{Recycler, VecHelper, drain_filter};
+#[cfg(feature = "debugger")]
+use crate::debugger::DebugQueryKind;
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -234,8 +235,7 @@ impl DataStores {
         prim_inst: &PrimitiveInstance
     ) -> &PrimTemplateCommonData {
         match prim_inst.kind {
-            PrimitiveInstanceKind::Rectangle { data_handle, .. } |
-            PrimitiveInstanceKind::Clear { data_handle, .. } => {
+            PrimitiveInstanceKind::Rectangle { data_handle, .. } => {
                 let prim_data = &self.prim[data_handle];
                 &prim_data.common
             }
@@ -511,7 +511,6 @@ impl Document {
     fn build_frame(
         &mut self,
         resource_cache: &mut ResourceCache,
-        gpu_cache: &mut GpuCache,
         debug_flags: DebugFlags,
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
         frame_stats: Option<FullFrameStats>,
@@ -519,7 +518,7 @@ impl Document {
         render_reasons: RenderReasons,
         chunk_pool: Arc<ChunkPool>,
     ) -> RenderedDocument {
-        let frame_build_start_time = precise_time_ns();
+        let frame_build_start_time = zeitstempel::now();
 
         // Advance to the next frame.
         self.stamp.advance();
@@ -532,7 +531,6 @@ impl Document {
                 &mut self.scene,
                 present,
                 resource_cache,
-                gpu_cache,
                 &mut self.rg_builder,
                 self.stamp,
                 self.view.scene.device_rect.min,
@@ -560,7 +558,7 @@ impl Document {
         self.has_built_scene = false;
 
         let frame_build_time_ms =
-            profiler::ns_to_ms(precise_time_ns() - frame_build_start_time);
+            profiler::ns_to_ms(zeitstempel::now() - frame_build_start_time);
         self.profile.set(profiler::FRAME_BUILDING_TIME, frame_build_time_ms);
         self.profile.start_time(profiler::FRAME_SEND_TIME);
 
@@ -586,7 +584,6 @@ impl Document {
         &mut self,
         mut txn: OffscreenBuiltScene,
         resource_cache: &mut ResourceCache,
-        gpu_cache: &mut GpuCache,
         chunk_pool: Arc<ChunkPool>,
         debug_flags: DebugFlags,
     ) -> RenderedDocument {
@@ -612,7 +609,6 @@ impl Document {
             &mut txn.scene,
             present,
             resource_cache,
-            gpu_cache,
             &mut self.rg_builder,
             self.stamp, // TODO(nical)
             self.view.scene.device_rect.min,
@@ -777,7 +773,6 @@ pub struct RenderBackend {
     result_tx: Sender<ResultMsg>,
     scene_tx: Sender<SceneBuilderRequest>,
 
-    gpu_cache: GpuCache,
     resource_cache: ResourceCache,
     chunk_pool: Arc<ChunkPool>,
 
@@ -829,7 +824,6 @@ impl RenderBackend {
             result_tx,
             scene_tx,
             resource_cache,
-            gpu_cache: GpuCache::new(),
             chunk_pool,
             frame_config,
             default_compositor_kind : frame_config.compositor_kind,
@@ -928,7 +922,6 @@ impl RenderBackend {
         result_tx: Option<Sender<SceneSwapResult>>,
         frame_counter: &mut u32,
     ) -> bool {
-        self.prepare_for_frames();
         self.maybe_force_nop_documents(
             frame_counter,
             |document_id| txns.iter().any(|txn| txn.document_id == document_id));
@@ -1017,13 +1010,9 @@ impl RenderBackend {
                     let rendered_document = doc.process_offscreen_scene(
                         offscreen_scene,
                         &mut self.resource_cache,
-                        &mut self.gpu_cache,
                         self.chunk_pool.clone(),
                         self.debug_flags,
                     );
-
-                    let msg = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
-                    self.result_tx.send(msg).unwrap();
 
                     let pending_update = self.resource_cache.pending_updates();
 
@@ -1111,8 +1100,6 @@ impl RenderBackend {
                 // recently used resources.
                 self.resource_cache.clear(ClearCache::all());
 
-                self.gpu_cache.clear();
-
                 for (_, doc) in &mut self.documents {
                     doc.scratch.memory_pressure();
                     for tile_cache in self.tile_caches.values_mut() {
@@ -1144,6 +1131,41 @@ impl RenderBackend {
                     DebugCommand::SetMaximumSurfaceSize(surface_size) => {
                         self.frame_config.max_surface_override = surface_size;
                         self.update_frame_builder_config();
+
+                        return RenderBackendStatus::Continue;
+                    }
+                    DebugCommand::GenerateFrame => {
+                        let documents: Vec<DocumentId> = self.documents.keys()
+                            .cloned()
+                            .collect();
+                        for document_id in documents {
+                            let mut invalidation_config = false;
+                            if let Some(doc) = self.documents.get_mut(&document_id) {
+                                doc.frame_is_valid = false;
+                                invalidation_config = doc.scene.config.force_invalidation;
+                                doc.scene.config.force_invalidation = true;
+                            }
+
+                            self.update_document(
+                                document_id,
+                                Vec::default(),
+                                Vec::default(),
+                                Vec::default(),
+                                true,
+                                true,
+                                false,
+                                RenderReasons::empty(),
+                                None,
+                                true,
+                                frame_counter,
+                                false,
+                                None,
+                            );
+
+                            if let Some(doc) = self.documents.get_mut(&document_id) {
+                                doc.scene.config.force_invalidation = invalidation_config;
+                            }
+                        }
 
                         return RenderBackendStatus::Continue;
                     }
@@ -1187,6 +1209,23 @@ impl RenderBackend {
                         // before the `PublishDocument` messages sent by `load_capture`.
                         return RenderBackendStatus::Continue;
                     }
+                    #[cfg(feature = "debugger")]
+                    DebugCommand::Query(ref query) => {
+                        match query.kind {
+                            DebugQueryKind::SpatialTree { .. } => {
+                                if let Some(doc) = self.documents.values().next() {
+                                    let result = doc.spatial_tree.print_to_string();
+                                    query.result.send(result).ok();
+                                }
+                                return RenderBackendStatus::Continue;
+                            }
+                            DebugQueryKind::CompositorView { .. } |
+                            DebugQueryKind::CompositorConfig { .. } |
+                            DebugQueryKind::Textures { .. } => {
+                                ResultMsg::DebugCommand(option)
+                            }
+                        }
+                    }
                     DebugCommand::ClearCaches(mask) => {
                         self.resource_cache.clear(mask);
                         return RenderBackendStatus::Continue;
@@ -1226,27 +1265,16 @@ impl RenderBackend {
                     }
                     DebugCommand::SetFlags(flags) => {
                         self.resource_cache.set_debug_flags(flags);
-                        self.gpu_cache.set_debug_flags(flags);
 
                         let force_invalidation = flags.contains(DebugFlags::FORCE_PICTURE_INVALIDATION);
                         if self.frame_config.force_invalidation != force_invalidation {
                             self.frame_config.force_invalidation = force_invalidation;
+                            for doc in self.documents.values_mut() {
+                                doc.scene.config.force_invalidation = force_invalidation;
+                            }
                             self.update_frame_builder_config();
                         }
 
-                        // If we're toggling on the GPU cache debug display, we
-                        // need to blow away the cache. This is because we only
-                        // send allocation/free notifications to the renderer
-                        // thread when the debug display is enabled, and thus
-                        // enabling it when the cache is partially populated will
-                        // give the renderer an incomplete view of the world.
-                        // And since we might as well drop all the debugging state
-                        // from the renderer when we disable the debug display,
-                        // we just clear the cache on toggle.
-                        let changed = self.debug_flags ^ flags;
-                        if changed.contains(DebugFlags::GPU_CACHE_DBG) {
-                            self.gpu_cache.clear();
-                        }
                         self.debug_flags = flags;
 
                         ResultMsg::DebugCommand(option)
@@ -1290,7 +1318,6 @@ impl RenderBackend {
                     result_tx,
                     frame_counter,
                 );
-                self.bookkeep_after_frames();
             },
             #[cfg(feature = "capture")]
             SceneBuilderResult::CapturedTransactions(txns, capture_config, result_tx) => {
@@ -1313,8 +1340,6 @@ impl RenderBackend {
                 if built_frame {
                     self.save_capture_sequence();
                 }
-
-                self.bookkeep_after_frames();
             },
             #[cfg(feature = "capture")]
             SceneBuilderResult::StopCaptureSequence => {
@@ -1380,16 +1405,8 @@ impl RenderBackend {
         );
     }
 
-    fn prepare_for_frames(&mut self) {
-        self.gpu_cache.prepare_for_frames();
-    }
-
-    fn bookkeep_after_frames(&mut self) {
-        self.gpu_cache.bookkeep_after_frames();
-    }
-
     fn requires_frame_build(&mut self) -> bool {
-        self.gpu_cache.requires_frame_build()
+        false // TODO(nical)
     }
 
     fn prepare_transactions(
@@ -1397,7 +1414,6 @@ impl RenderBackend {
         txns: Vec<Box<TransactionMsg>>,
         frame_counter: &mut u32,
     ) {
-        self.prepare_for_frames();
         self.maybe_force_nop_documents(
             frame_counter,
             |document_id| txns.iter().any(|txn| txn.document_id == document_id));
@@ -1430,7 +1446,6 @@ impl RenderBackend {
             #[cfg(feature = "capture")]
             self.save_capture_sequence();
         }
-        self.bookkeep_after_frames();
     }
 
     /// In certain cases, resources shared by multiple documents have to run
@@ -1490,9 +1505,9 @@ impl RenderBackend {
         has_built_scene: bool,
         start_time: Option<u64>
     ) -> bool {
-        let update_doc_start = precise_time_ns();
+        let update_doc_start = zeitstempel::now();
 
-        let requested_frame = render_frame;
+        let requested_frame = render_frame || self.frame_config.force_invalidation;
 
         let requires_frame_build = self.requires_frame_build();
         let doc = self.documents.get_mut(&document_id).unwrap();
@@ -1570,7 +1585,7 @@ impl RenderBackend {
             }
 
             if start_time.is_some() {
-              Telemetry::record_time_to_frame_build(Duration::from_nanos(precise_time_ns() - start_time.unwrap()));
+              Telemetry::record_time_to_frame_build(Duration::from_nanos(zeitstempel::now() - start_time.unwrap()));
             }
             profile_scope!("generate frame");
 
@@ -1584,7 +1599,6 @@ impl RenderBackend {
 
                 let rendered_document = doc.build_frame(
                     &mut self.resource_cache,
-                    &mut self.gpu_cache,
                     self.debug_flags,
                     &mut self.tile_caches,
                     frame_stats,
@@ -1595,9 +1609,6 @@ impl RenderBackend {
 
                 debug!("generated frame for document {:?} with {} passes",
                     document_id, rendered_document.frame.passes.len());
-
-                let msg = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
-                self.result_tx.send(msg).unwrap();
 
                 Telemetry::stop_and_accumulate_framebuild_time(timer_id);
 
@@ -1651,7 +1662,7 @@ impl RenderBackend {
                 None => {},
             }
 
-            let update_doc_time = profiler::ns_to_ms(precise_time_ns() - update_doc_start);
+            let update_doc_time = profiler::ns_to_ms(zeitstempel::now() - update_doc_start);
             rendered_document.profile.set(profiler::UPDATE_DOCUMENT_TIME, update_doc_time);
 
             let msg = ResultMsg::PublishPipelineInfo(doc.updated_pipeline_info());
@@ -1719,7 +1730,6 @@ impl RenderBackend {
         let mut report = Box::new(MemoryReport::default());
         let ops = self.size_of_ops.as_mut().unwrap();
         let op = ops.size_of_op;
-        report.gpu_cache_metadata = self.gpu_cache.size_of(ops);
         for doc in self.documents.values() {
             report.clip_stores += doc.scene.clip_store.size_of(ops);
             report.hit_testers += match &doc.hit_tester {
@@ -1785,10 +1795,6 @@ impl RenderBackend {
         }
         let config = CaptureConfig::new(root, bits);
 
-        if config.bits.contains(CaptureBits::FRAME) {
-            self.prepare_for_frames();
-        }
-
         for (&id, doc) in &mut self.documents {
             debug!("\tdocument {:?}", id);
             if config.bits.contains(CaptureBits::FRAME) {
@@ -1796,7 +1802,6 @@ impl RenderBackend {
                 let force_invalidation = std::mem::replace(&mut doc.scene.config.force_invalidation, true);
                 let rendered_document = doc.build_frame(
                     &mut self.resource_cache,
-                    &mut self.gpu_cache,
                     self.debug_flags,
                     &mut self.tile_caches,
                     None,
@@ -1807,11 +1812,6 @@ impl RenderBackend {
 
                 doc.scene.config.force_invalidation = force_invalidation;
 
-                // After we rendered the frames, there are pending updates to both
-                // GPU cache and resources. Instead of serializing them, we are going to make sure
-                // they are applied on the `Renderer` side.
-                let msg_update_gpu_cache = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
-                self.result_tx.send(msg_update_gpu_cache).unwrap();
                 //TODO: write down doc's pipeline info?
                 // it has `pipeline_epoch_map`,
                 // which may capture necessary details for some cases.
@@ -1869,7 +1869,6 @@ impl RenderBackend {
             // report it here if we do. If we don't, it will simply crash in
             // Renderer::render_impl and give us less information about the source.
             assert!(!self.requires_frame_build(), "Caches were cleared during a capture.");
-            self.bookkeep_after_frames();
         }
 
         debug!("\tscene builder");
@@ -1903,8 +1902,6 @@ impl RenderBackend {
             info!("\tresource cache");
             let caches = self.resource_cache.save_caches(&config.root);
             config.serialize_for_resource(&caches, "resource_cache");
-            info!("\tgpu cache");
-            config.serialize_for_resource(&self.gpu_cache, "gpu_cache");
         }
 
         DebugOutput::SaveCapture(config, deferred)
@@ -1978,11 +1975,6 @@ impl RenderBackend {
                 DebugOutput::LoadCapture(config.clone(), plain_externals)
             );
             self.result_tx.send(msg_load).unwrap();
-
-            self.gpu_cache = match config.deserialize_for_resource::<GpuCache, _>("gpu_cache") {
-                Some(gpu_cache) => gpu_cache,
-                None => GpuCache::new(),
-            };
         }
 
         self.frame_config = backend.frame_config;
@@ -2066,9 +2058,6 @@ impl RenderBackend {
             let build_frame = match frame {
                 Some(frame) => {
                     info!("\tloaded a built frame with {} passes", frame.passes.len());
-
-                    let msg_update = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
-                    self.result_tx.send(msg_update).unwrap();
 
                     self.frame_publish_id.advance();
                     let msg_publish = ResultMsg::PublishDocument(

@@ -150,8 +150,9 @@ nsWindowInfo* nsWindowMediator::GetInfoFor(nsIWidget* aWindow) {
 
   nsCOMPtr<nsIWidget> scanWidget;
   while (info != listEnd) {
-    nsCOMPtr<nsIBaseWindow> base(do_QueryInterface(info->mWindow));
-    if (base) base->GetMainWidget(getter_AddRefs(scanWidget));
+    if (nsCOMPtr<nsIBaseWindow> base = do_QueryInterface(info->mWindow)) {
+      scanWidget = base->GetMainWidget();
+    }
     if (aWindow == scanWidget.get()) return info;
     info = info->mYounger;
     listEnd = mOldestWindow;

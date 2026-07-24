@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CustomEvent_h__
-#define CustomEvent_h__
+#ifndef CustomEvent_h_
+#define CustomEvent_h_
 
 #include "js/Value.h"
 #include "mozilla/dom/Event.h"
@@ -49,4 +49,4 @@ already_AddRefed<mozilla::dom::CustomEvent> NS_NewDOMCustomEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
     mozilla::WidgetEvent* aEvent);
 
-#endif  // CustomEvent_h__
+#endif  // CustomEvent_h_

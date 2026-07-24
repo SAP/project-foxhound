@@ -25,7 +25,7 @@ devtools:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944631
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_SAVE_HEAP_SNAPSHOT_MS
 
@@ -43,7 +43,7 @@ devtools:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944631
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_READ_HEAP_SNAPSHOT_MS
 
@@ -64,7 +64,7 @@ devtools:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944631
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_HEAP_SNAPSHOT_NODE_COUNT
 
@@ -85,6 +85,6 @@ devtools:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944631
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_HEAP_SNAPSHOT_EDGE_COUNT

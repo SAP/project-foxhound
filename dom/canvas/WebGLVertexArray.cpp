@@ -6,11 +6,11 @@
 #include "WebGLVertexArray.h"
 
 #include "GLContext.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "WebGLBuffer.h"
 #include "WebGLContext.h"
-#include "WebGLVertexArrayGL.h"
 #include "WebGLVertexArrayFake.h"
+#include "WebGLVertexArrayGL.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
 
 namespace mozilla {
 

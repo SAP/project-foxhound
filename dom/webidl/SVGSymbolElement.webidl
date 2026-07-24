@@ -11,7 +11,7 @@
  */
 
 [Exposed=Window]
-interface SVGSymbolElement : SVGElement {
+interface SVGSymbolElement : SVGGraphicsElement {
 };
 
 SVGSymbolElement includes SVGFitToViewBox;

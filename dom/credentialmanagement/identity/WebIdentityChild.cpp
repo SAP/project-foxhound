@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/WebIdentityChild.h"
+
 #include "mozilla/dom/WebIdentityHandler.h"
 #include "mozilla/dom/WindowContext.h"
 #include "nsGlobalWindowOuter.h"

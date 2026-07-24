@@ -1,0 +1,419 @@
+Use a RW/RX mapping for the remote initialization of sandboxed children.
+
+This removes the need for a remote RWX allocation in the child, or for a
+remote change of protection from RW to RX. Instead, sandboxed child
+processes only ever get a RX view on the mapping, which the parent
+initializes with a RW view.
+
+The calls to WriteProcessMemory do not need to occur anymore, since the
+parent updates through the RW view automatically propagate to the
+child's RX view.
+
+We also delete ServiceResolverThunk::CopyThunk which is dead code.
+---
+ sandbox/win/src/eat_resolver.cc        |  9 ++-
+ sandbox/win/src/eat_resolver.h         |  1 +
+ sandbox/win/src/interception.cc        | 56 +++++++++++--------
+ sandbox/win/src/interception_agent.cc  |  2 +-
+ sandbox/win/src/resolver.cc            |  4 +-
+ sandbox/win/src/resolver.h             |  2 +
+ sandbox/win/src/service_resolver.h     | 10 +---
+ sandbox/win/src/service_resolver_32.cc | 50 ++---------------
+ sandbox/win/src/service_resolver_64.cc | 49 ++++------------
+ 9 files changed, 64 insertions(+), 119 deletions(-)
+
+diff --git a/sandbox/win/src/eat_resolver.cc b/sandbox/win/src/eat_resolver.cc
+index 97f77c1849d2..e1dc18a241bb 100644
+--- a/sandbox/win/src/eat_resolver.cc
++++ b/sandbox/win/src/eat_resolver.cc
+@@ -18,12 +18,15 @@ NTSTATUS EatResolverThunk::Setup(const void* target_module,
+                                  const char* target_name,
+                                  const char* interceptor_name,
+                                  const void* interceptor_entry_point,
++                                 void* local_thunk_storage,
+                                  void* thunk_storage,
+                                  size_t storage_bytes,
+                                  size_t* storage_used) {
+-  NTSTATUS ret =
+-      Init(target_module, interceptor_module, target_name, interceptor_name,
+-           interceptor_entry_point, thunk_storage, storage_bytes);
++  // In-process interception only: we don't have a notion of local and remote.
++  CHECK(local_thunk_storage == thunk_storage);
++  NTSTATUS ret = Init(target_module, interceptor_module, target_name,
++                      interceptor_name, interceptor_entry_point,
++                      local_thunk_storage, thunk_storage, storage_bytes);
+   if (!NT_SUCCESS(ret))
+     return ret;
+ 
+diff --git a/sandbox/win/src/eat_resolver.h b/sandbox/win/src/eat_resolver.h
+index 924354e447a3..9d45c2863942 100644
+--- a/sandbox/win/src/eat_resolver.h
++++ b/sandbox/win/src/eat_resolver.h
+@@ -29,6 +29,7 @@ class EatResolverThunk : public ResolverThunk {
+                  const char* target_name,
+                  const char* interceptor_name,
+                  const void* interceptor_entry_point,
++                 void* local_thunk_storage,
+                  void* thunk_storage,
+                  size_t storage_bytes,
+                  size_t* storage_used) override;
+diff --git a/sandbox/win/src/interception.cc b/sandbox/win/src/interception.cc
+index 04f32b099646..4a5e06b35d84 100644
+--- a/sandbox/win/src/interception.cc
++++ b/sandbox/win/src/interception.cc
+@@ -28,6 +28,8 @@
+ #include "sandbox/win/src/target_process.h"
+ #include "sandbox/win/src/win_utils.h"
+ 
++#include "mozilla/WindowsMapRemoteView.h"
++
+ namespace sandbox {
+ 
+ namespace {
+@@ -372,8 +374,27 @@ ResultCode InterceptionManager::PatchNtdll(bool hot_patch_needed) {
+ 
+   // Reserve a full 64k memory range in the child process.
+   HANDLE child = child_->Process();
+-  BYTE* thunk_base = reinterpret_cast<BYTE*>(::VirtualAllocEx(
+-      child, nullptr, kAllocGranularity, MEM_RESERVE, PAGE_NOACCESS));
++  HANDLE mapping = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr,
++                                        PAGE_EXECUTE_READWRITE | SEC_RESERVE, 0,
++                                        kAllocGranularity, nullptr);
++  // MOZ: We must crash on failure paths for parity with upstream code. This
++  //      will allow us to compare the crash volume before and after patch.
++  CHECK(mapping);
++
++  using LocalViewPtr = std::unique_ptr<void, decltype(&::UnmapViewOfFile)>;
++  LocalViewPtr local_view_ptr(
++      ::MapViewOfFile(mapping, FILE_MAP_WRITE | FILE_MAP_READ, 0, 0, 0),
++      &::UnmapViewOfFile);
++  auto* local_view = static_cast<BYTE*>(local_view_ptr.get());
++  CHECK(local_view);
++
++  // We never unmap child_view. If we succeed we want it to stay mapped, if we
++  // fail the child process will be terminated anyway.
++  auto* child_view = static_cast<BYTE*>(mozilla::MapRemoteViewOfFile(
++      mapping, child, 0ULL, nullptr, 0, 0, PAGE_EXECUTE_READ));
++  CHECK(child_view);
++
++  ::CloseHandle(mapping);
+ 
+   // Find an aligned, random location within the reserved range.
+   size_t thunk_bytes =
+@@ -381,19 +402,23 @@ ResultCode InterceptionManager::PatchNtdll(bool hot_patch_needed) {
+   size_t thunk_offset = internal::GetGranularAlignedRandomOffset(thunk_bytes);
+ 
+   // Split the base and offset along page boundaries.
+-  thunk_base += thunk_offset & ~(kPageSize - 1);
++  auto* local_thunk_base = local_view + (thunk_offset & ~(kPageSize - 1));
++  auto* thunk_base = child_view + (thunk_offset & ~(kPageSize - 1));
+   thunk_offset &= kPageSize - 1;
+ 
+   // Make an aligned, padded allocation, and move the pointer to our chunk.
+   size_t thunk_bytes_padded = base::bits::AlignUp(thunk_bytes, kPageSize);
+-  thunk_base = reinterpret_cast<BYTE*>(
+-      ::VirtualAllocEx(child, thunk_base, thunk_bytes_padded, MEM_COMMIT,
+-                       PAGE_EXECUTE_READWRITE));
+-  CHECK(thunk_base);  // If this fails we'd crash anyway on an invalid access.
++  // MOZ: Committing RW pages in the parent also commits the corresponding RX
++  //      pages in the child (see TestSharedMappingCommit).
++  local_thunk_base = reinterpret_cast<BYTE*>(::VirtualAlloc(
++      local_thunk_base, thunk_bytes_padded, MEM_COMMIT, PAGE_READWRITE));
++  CHECK(local_thunk_base);
++
+   DllInterceptionData* thunks =
+       reinterpret_cast<DllInterceptionData*>(thunk_base + thunk_offset);
+ 
+-  DllInterceptionData dll_data;
++  DllInterceptionData& dll_data =
++      *reinterpret_cast<DllInterceptionData*>(local_thunk_base + thunk_offset);
+   dll_data.data_bytes = thunk_bytes;
+   dll_data.num_thunks = 0;
+   dll_data.used_bytes = offsetof(DllInterceptionData, thunks);
+@@ -407,20 +432,6 @@ ResultCode InterceptionManager::PatchNtdll(bool hot_patch_needed) {
+   if (rc != SBOX_ALL_OK)
+     return rc;
+ 
+-  // and now write the first part of the table to the child's memory
+-  SIZE_T written;
+-  bool ok =
+-      !!::WriteProcessMemory(child, thunks, &dll_data,
+-                             offsetof(DllInterceptionData, thunks), &written);
+-
+-  if (!ok || (offsetof(DllInterceptionData, thunks) != written))
+-    return SBOX_ERROR_CANNOT_WRITE_INTERCEPTION_THUNK;
+-
+-  // Attempt to protect all the thunks, but ignore failure
+-  DWORD old_protection;
+-  ::VirtualProtectEx(child, thunks, thunk_bytes, PAGE_EXECUTE_READ,
+-                     &old_protection);
+-
+   ResultCode ret =
+       child_->TransferVariable("g_originals", g_originals, sizeof(g_originals));
+   return ret;
+@@ -475,6 +486,7 @@ ResultCode InterceptionManager::PatchClientFunctions(
+     NTSTATUS ret = thunk.Setup(
+         ntdll_base, interceptor_base, interception.function.c_str(),
+         interception.interceptor.c_str(), interception.interceptor_address,
++        &dll_data->thunks[dll_data->num_thunks],
+         &thunks->thunks[dll_data->num_thunks],
+         thunk_bytes - dll_data->used_bytes, nullptr);
+     if (!NT_SUCCESS(ret)) {
+diff --git a/sandbox/win/src/interception_agent.cc b/sandbox/win/src/interception_agent.cc
+index d4bc2a231203..3c8c4f112373 100644
+--- a/sandbox/win/src/interception_agent.cc
++++ b/sandbox/win/src/interception_agent.cc
+@@ -172,7 +172,7 @@ bool InterceptionAgent::PatchDll(const DllPatchInfo* dll_info,
+     NTSTATUS ret = resolver->Setup(
+         thunks->base, interceptions_->interceptor_base, function->function,
+         interceptor, function->interceptor_address, &thunks->thunks[i],
+-        sizeof(ThunkData), nullptr);
++        &thunks->thunks[i], sizeof(ThunkData), nullptr);
+     if (!NT_SUCCESS(ret)) {
+       NOTREACHED_NT();
+       return false;
+diff --git a/sandbox/win/src/resolver.cc b/sandbox/win/src/resolver.cc
+index b48a2f29a7b6..86f68a2c8313 100644
+--- a/sandbox/win/src/resolver.cc
++++ b/sandbox/win/src/resolver.cc
+@@ -19,9 +19,11 @@ NTSTATUS ResolverThunk::Init(const void* target_module,
+                              const char* target_name,
+                              const char* interceptor_name,
+                              const void* interceptor_entry_point,
++                             void* local_thunk_storage,
+                              void* thunk_storage,
+                              size_t storage_bytes) {
+-  if (!thunk_storage || 0 == storage_bytes || !target_module || !target_name)
++  if (!local_thunk_storage || !thunk_storage || 0 == storage_bytes ||
++      !target_module || !target_name)
+     return STATUS_INVALID_PARAMETER;
+ 
+   if (storage_bytes < GetThunkSize())
+diff --git a/sandbox/win/src/resolver.h b/sandbox/win/src/resolver.h
+index 5dd5bbc4fd8e..62ef0dcfd0bb 100644
+--- a/sandbox/win/src/resolver.h
++++ b/sandbox/win/src/resolver.h
+@@ -54,6 +54,7 @@ class [[clang::lto_visibility_public]] ResolverThunk {
+                          const char* target_name,
+                          const char* interceptor_name,
+                          const void* interceptor_entry_point,
++                         void* local_thunk_storage,
+                          void* thunk_storage,
+                          size_t storage_bytes,
+                          size_t* storage_used) = 0;
+@@ -87,6 +88,7 @@ class [[clang::lto_visibility_public]] ResolverThunk {
+                         const char* target_name,
+                         const char* interceptor_name,
+                         const void* interceptor_entry_point,
++                        void* local_thunk_storage,
+                         void* thunk_storage,
+                         size_t storage_bytes);
+ 
+diff --git a/sandbox/win/src/service_resolver.h b/sandbox/win/src/service_resolver.h
+index dc74bd6e5253..6d2a372083a3 100644
+--- a/sandbox/win/src/service_resolver.h
++++ b/sandbox/win/src/service_resolver.h
+@@ -35,6 +35,7 @@ class [[clang::lto_visibility_public]] ServiceResolverThunk
+                  const char* target_name,
+                  const char* interceptor_name,
+                  const void* interceptor_entry_point,
++                 void* local_thunk_storage,
+                  void* thunk_storage,
+                  size_t storage_bytes,
+                  size_t* storage_used) override;
+@@ -55,15 +56,6 @@ class [[clang::lto_visibility_public]] ServiceResolverThunk
+   // Call this to set up ntdll_base_ which will allow for local patches.
+   void AllowLocalPatches();
+ 
+-  // Verifies that the function specified by |target_name| in |target_module| is
+-  // a service and copies the data from that function into |thunk_storage|. If
+-  // |storage_bytes| is too small, then the method fails.
+-  NTSTATUS CopyThunk(const void* target_module,
+-                     const char* target_name,
+-                     BYTE* thunk_storage,
+-                     size_t storage_bytes,
+-                     size_t* storage_used);
+-
+   // Checks if a target was patched correctly for a jump. This is only for use
+   // in testing in 32-bit builds. Will always return true on 64-bit builds. Set
+   // |thunk_storage| to the same pointer passed to Setup().
+diff --git a/sandbox/win/src/service_resolver_32.cc b/sandbox/win/src/service_resolver_32.cc
+index cb43a3d053a7..fdf8d5eea102 100644
+--- a/sandbox/win/src/service_resolver_32.cc
++++ b/sandbox/win/src/service_resolver_32.cc
+@@ -153,20 +153,20 @@ NTSTATUS ServiceResolverThunk::Setup(const void* target_module,
+                                      const char* target_name,
+                                      const char* interceptor_name,
+                                      const void* interceptor_entry_point,
++                                     void* local_thunk_storage,
+                                      void* thunk_storage,
+                                      size_t storage_bytes,
+                                      size_t* storage_used) {
+-  NTSTATUS ret =
+-      Init(target_module, interceptor_module, target_name, interceptor_name,
+-           interceptor_entry_point, thunk_storage, storage_bytes);
++  NTSTATUS ret = Init(target_module, interceptor_module, target_name,
++                      interceptor_name, interceptor_entry_point,
++                      local_thunk_storage, thunk_storage, storage_bytes);
+   if (!NT_SUCCESS(ret))
+     return ret;
+ 
+   relative_jump_ = 0;
+   size_t thunk_bytes = GetThunkSize();
+-  std::unique_ptr<char[]> thunk_buffer(new char[thunk_bytes]);
+   ServiceFullThunk* thunk =
+-      reinterpret_cast<ServiceFullThunk*>(thunk_buffer.get());
++      reinterpret_cast<ServiceFullThunk*>(local_thunk_storage);
+ 
+   if (!IsFunctionAService(&thunk->original) &&
+       (!relaxed_ || !SaveOriginalFunction(&thunk->original, thunk_storage))) {
+@@ -185,32 +185,6 @@ size_t ServiceResolverThunk::GetThunkSize() const {
+   return offsetof(ServiceFullThunk, internal_thunk) + GetInternalThunkSize();
+ }
+ 
+-NTSTATUS ServiceResolverThunk::CopyThunk(const void* target_module,
+-                                         const char* target_name,
+-                                         BYTE* thunk_storage,
+-                                         size_t storage_bytes,
+-                                         size_t* storage_used) {
+-  NTSTATUS ret = ResolveTarget(target_module, target_name, &target_);
+-  if (!NT_SUCCESS(ret))
+-    return ret;
+-
+-  size_t thunk_bytes = GetThunkSize();
+-  if (storage_bytes < thunk_bytes)
+-    return STATUS_UNSUCCESSFUL;
+-
+-  ServiceFullThunk* thunk = reinterpret_cast<ServiceFullThunk*>(thunk_storage);
+-
+-  if (!IsFunctionAService(&thunk->original) &&
+-      (!relaxed_ || !SaveOriginalFunction(&thunk->original, thunk_storage))) {
+-    return STATUS_OBJECT_NAME_COLLISION;
+-  }
+-
+-  if (storage_used)
+-    *storage_used = thunk_bytes;
+-
+-  return ret;
+-}
+-
+ bool ServiceResolverThunk::IsFunctionAService(void* local_thunk) const {
+   static bool is_wow64 = IsWow64Process();
+   return is_wow64 ? IsFunctionAServiceWow64(process_, target_, local_thunk)
+@@ -247,23 +221,11 @@ NTSTATUS ServiceResolverThunk::PerformPatch(void* local_thunk,
+   SetInternalThunk(&full_local_thunk->internal_thunk, GetInternalThunkSize(),
+                    remote_thunk, interceptor_);
+ 
+-  size_t thunk_size = GetThunkSize();
+-
+-  // copy the local thunk buffer to the child
+-  SIZE_T written;
+-  if (!::WriteProcessMemory(process_, remote_thunk, local_thunk, thunk_size,
+-                            &written)) {
+-    return STATUS_UNSUCCESSFUL;
+-  }
+-
+-  if (thunk_size != written)
+-    return STATUS_UNSUCCESSFUL;
+-
+   // and now change the function to intercept, on the child
+   if (ntdll_base_) {
+     // running a unit test
+     if (!::WriteProcessMemory(process_, target_, &intercepted_code,
+-                              bytes_to_write, &written))
++                              bytes_to_write, nullptr))
+       return STATUS_UNSUCCESSFUL;
+   } else {
+     if (!WriteProtectedChildMemory(process_, target_, &intercepted_code,
+diff --git a/sandbox/win/src/service_resolver_64.cc b/sandbox/win/src/service_resolver_64.cc
+index 33b91d04ad11..9d6839961c93 100644
+--- a/sandbox/win/src/service_resolver_64.cc
++++ b/sandbox/win/src/service_resolver_64.cc
+@@ -178,19 +178,19 @@ NTSTATUS ServiceResolverThunk::Setup(const void* target_module,
+                                      const char* target_name,
+                                      const char* interceptor_name,
+                                      const void* interceptor_entry_point,
++                                     void* local_thunk_storage,
+                                      void* thunk_storage,
+                                      size_t storage_bytes,
+                                      size_t* storage_used) {
+-  NTSTATUS ret =
+-      Init(target_module, interceptor_module, target_name, interceptor_name,
+-           interceptor_entry_point, thunk_storage, storage_bytes);
++  NTSTATUS ret = Init(target_module, interceptor_module, target_name,
++                      interceptor_name, interceptor_entry_point,
++                      local_thunk_storage, thunk_storage, storage_bytes);
+   if (!NT_SUCCESS(ret))
+     return ret;
+ 
+   size_t thunk_bytes = GetThunkSize();
+-  std::unique_ptr<char[]> thunk_buffer(new char[thunk_bytes]);
+   ServiceFullThunk* thunk =
+-      reinterpret_cast<ServiceFullThunk*>(thunk_buffer.get());
++      reinterpret_cast<ServiceFullThunk*>(local_thunk_storage);
+ 
+   if (!IsFunctionAService(&thunk->original))
+     return STATUS_OBJECT_NAME_COLLISION;
+@@ -207,30 +207,6 @@ size_t ServiceResolverThunk::GetThunkSize() const {
+   return sizeof(ServiceFullThunk);
+ }
+ 
+-NTSTATUS ServiceResolverThunk::CopyThunk(const void* target_module,
+-                                         const char* target_name,
+-                                         BYTE* thunk_storage,
+-                                         size_t storage_bytes,
+-                                         size_t* storage_used) {
+-  NTSTATUS ret = ResolveTarget(target_module, target_name, &target_);
+-  if (!NT_SUCCESS(ret))
+-    return ret;
+-
+-  size_t thunk_bytes = GetThunkSize();
+-  if (storage_bytes < thunk_bytes)
+-    return STATUS_UNSUCCESSFUL;
+-
+-  ServiceFullThunk* thunk = reinterpret_cast<ServiceFullThunk*>(thunk_storage);
+-
+-  if (!IsFunctionAService(&thunk->original))
+-    return STATUS_OBJECT_NAME_COLLISION;
+-
+-  if (storage_used)
+-    *storage_used = thunk_bytes;
+-
+-  return ret;
+-}
+-
+ bool ServiceResolverThunk::IsFunctionAService(void* local_thunk) const {
+   ServiceFullThunk function_code;
+   SIZE_T read;
+@@ -252,26 +228,21 @@ bool ServiceResolverThunk::IsFunctionAService(void* local_thunk) const {
+ 
+ NTSTATUS ServiceResolverThunk::PerformPatch(void* local_thunk,
+                                             void* remote_thunk) {
++  // MOZ: These variables are used in the 32-bit variant of this function.
++  (void) local_thunk;
++  (void) remote_thunk;
++
+   // Patch the original code.
+   ServiceEntry local_service;
+   if (!SetInternalThunk(&local_service, sizeof(local_service), nullptr,
+                         interceptor_))
+     return STATUS_UNSUCCESSFUL;
+ 
+-  // Copy the local thunk buffer to the child.
+-  SIZE_T actual;
+-  if (!::WriteProcessMemory(process_, remote_thunk, local_thunk,
+-                            sizeof(ServiceFullThunk), &actual))
+-    return STATUS_UNSUCCESSFUL;
+-
+-  if (sizeof(ServiceFullThunk) != actual)
+-    return STATUS_UNSUCCESSFUL;
+-
+   // And now change the function to intercept, on the child.
+   if (ntdll_base_) {
+     // Running a unit test.
+     if (!::WriteProcessMemory(process_, target_, &local_service,
+-                              sizeof(local_service), &actual))
++                              sizeof(local_service), nullptr))
+       return STATUS_UNSUCCESSFUL;
+   } else {
+     if (!WriteProtectedChildMemory(process_, target_, &local_service,

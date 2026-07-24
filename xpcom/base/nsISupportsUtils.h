@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsISupportsUtils_h__
-#define nsISupportsUtils_h__
+#ifndef nsISupportsUtils_h_
+#define nsISupportsUtils_h_
 
 #include <type_traits>
 

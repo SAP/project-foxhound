@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WindowGfx_h__
-#define WindowGfx_h__
+#ifndef WindowGfx_h_
+#define WindowGfx_h_
 
 /*
  * nsWindowGfx - Painting and aceleration.
@@ -46,4 +46,4 @@ class nsWindowGfx {
                               uint32_t aHeight, uint32_t aDepth);
 };
 
-#endif  // WindowGfx_h__
+#endif  // WindowGfx_h_

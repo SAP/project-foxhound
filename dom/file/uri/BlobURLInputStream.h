@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_BlobURLInputStream_h
 #define mozilla_dom_BlobURLInputStream_h
 
-#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIInputStreamLength.h"

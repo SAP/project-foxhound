@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_FileSystemBase_h
 #define mozilla_dom_FileSystemBase_h
 
-#include "nsString.h"
 #include "Directory.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

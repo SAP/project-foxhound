@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIClassInfoImpl.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-
 #include "mozilla/dom/BlobURL.h"
+
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
 
 using namespace mozilla::dom;
 
@@ -82,7 +82,7 @@ BlobURL::Serialize(mozilla::ipc::URIParams& aParams) {
 
   hostParams.revoked() = mRevoked;
 
-  aParams = hostParams;
+  aParams = std::move(hostParams);
 }
 
 bool BlobURL::Deserialize(const mozilla::ipc::URIParams& aParams) {

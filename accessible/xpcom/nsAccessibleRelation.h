@@ -11,7 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsIMutableArray.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/a11y/RemoteAccessible.h"
 
 namespace mozilla {

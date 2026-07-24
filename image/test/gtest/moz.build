@@ -52,6 +52,7 @@ TEST_HARNESS_FILES.gtest += [
     "exif_resolution.jpg",
     "first-frame-green.avif",
     "first-frame-green.gif",
+    "first-frame-green.jxl",
     "first-frame-green.png",
     "first-frame-green.webp",
     "first-frame-padding.gif",

@@ -6,11 +6,8 @@
 
 #include "LogCommandLineHandler.h"
 
-#include <iterator>
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "gtest/gtest.h"
 
 using namespace mozilla;

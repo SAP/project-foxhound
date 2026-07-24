@@ -22,7 +22,14 @@ export default {
       control: { type: "radio" },
     },
     type: {
-      options: ["default", "primary", "destructive", "icon", "icon ghost"],
+      options: [
+        "default",
+        "primary",
+        "destructive",
+        "icon",
+        "icon ghost",
+        "split",
+      ],
       control: { type: "select" },
     },
     iconPosition: {
@@ -44,9 +51,6 @@ moz-button-titled =
   .title = View logins
 moz-button-aria-labelled =
   .aria-label = View logins
-moz-button-more-options =
-  .aria-label = More options
-  .title = More options
 `,
   },
 };
@@ -175,5 +179,12 @@ MenuButton.args = {
   ...Icon.args,
   type: "icon",
   l10nId: "moz-button-more-options",
+  menuId: "panel-list",
+};
+
+export const SplitButton = Template.bind({});
+SplitButton.args = {
+  ...Default.args,
+  type: "split",
   menuId: "panel-list",
 };

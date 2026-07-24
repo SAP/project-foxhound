@@ -33,6 +33,14 @@ RefPtr<DBusCallPromise> DBusProxyCallWithUnixFDList(
     GDBusProxy*, const char* aMethod, GVariant* aArgs, GDBusCallFlags,
     gint aTimeout = -1, GUnixFDList* = nullptr, GCancellable* = nullptr);
 
+// https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Request.html#org-freedesktop-portal-request
+void MakePortalRequestToken(const nsCString& aType, nsACString& aOutToken);
+void GetPortalRequestPath(GDBusProxy*, const nsCString& aRequestToken,
+                          nsACString& aOutPath);
+using PortalResponseListener = std::function<void(GVariant*)>;
+guint OnDBusPortalResponse(GDBusProxy* aProxy, const nsCString& aRequestToken,
+                           PortalResponseListener);
+
 }  // namespace mozilla::widget
 
 #endif

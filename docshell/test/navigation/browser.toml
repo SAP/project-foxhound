@@ -24,7 +24,11 @@ tags = "openwindow"
 ["browser_test_bfcache_eviction.js"]
 
 ["browser_test_shentry_wireframe.js"]
-skip-if = ["!sessionHistoryInParent"]
+run-if = [
+  "sessionHistoryInParent",
+]
 
 ["browser_test_simultaneous_normal_and_history_loads.js"]
-skip-if = ["!sessionHistoryInParent"] # The test is for the new session history
+run-if = [
+  "sessionHistoryInParent", # The test is for the new session history
+]

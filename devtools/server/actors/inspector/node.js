@@ -25,14 +25,9 @@ loader.lazyRequireGetter(
   this,
   [
     "getShadowRootMode",
-    "isAfterPseudoElement",
-    "isAnonymous",
-    "isBeforePseudoElement",
     "isDirectShadowHostChild",
     "isFrameBlockedByCSP",
     "isFrameWithChildTarget",
-    "isMarkerPseudoElement",
-    "isNativeAnonymous",
     "isShadowHost",
     "isShadowRoot",
   ],
@@ -61,7 +56,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "getFontPreviewData",
-  "resource://devtools/server/actors/utils/style-utils.js",
+  "resource://devtools/server/actors/stylesheets/style-utils.js",
   true
 );
 loader.lazyRequireGetter(
@@ -107,6 +102,7 @@ class NodeActor extends Actor {
     this.wasDisplayed = this.isDisplayed;
     this.wasScrollable = wasScrollable;
     this.currentContainerType = this.containerType;
+    this.currentAnchorName = this.anchorName;
 
     if (wasScrollable) {
       this.walker.updateOverflowCausingElements(
@@ -204,6 +200,7 @@ class NodeActor extends Actor {
       isTopLevelDocument: this.isTopLevelDocument,
       causesOverflow: this.walker.overflowCausingElementsMap.has(this.rawNode),
       containerType: this.containerType,
+      anchorName: this.anchorName,
 
       // doctype attributes
       name: this.rawNode.name,
@@ -212,11 +209,8 @@ class NodeActor extends Actor {
 
       attrs: this.writeAttrs(),
       customElementLocation: this.getCustomElementLocation(),
-      isMarkerPseudoElement: isMarkerPseudoElement(this.rawNode),
-      isBeforePseudoElement: isBeforePseudoElement(this.rawNode),
-      isAfterPseudoElement: isAfterPseudoElement(this.rawNode),
-      isAnonymous: isAnonymous(this.rawNode),
-      isNativeAnonymous: isNativeAnonymous(this.rawNode),
+      isPseudoElement: !!this.rawNode.implementedPseudoElement,
+      isNativeAnonymous: this.rawNode.isNativeAnonymous,
       isShadowRoot: shadowRoot,
       shadowRootMode: getShadowRootMode(this.rawNode),
       isShadowHost: isShadowHost(this.rawNode),
@@ -239,9 +233,7 @@ class NodeActor extends Actor {
       nodeType !== Node.CDATA_SECTION_NODE &&
       nodeType !== Node.DOCUMENT_NODE &&
       nodeType !== Node.DOCUMENT_TYPE_NODE &&
-      !form.isMarkerPseudoElement &&
-      !form.isBeforePseudoElement &&
-      !form.isAfterPseudoElement
+      !form.isPseudoElement
     ) {
       form.hasEventListeners = this.hasEventListeners();
     }
@@ -318,16 +310,6 @@ class NodeActor extends Actor {
   // Estimate the number of children that the walker will return without making
   // a call to children() if possible.
   get numChildren() {
-    // For pseudo elements, childNodes.length returns 1, but the walker
-    // will return 0.
-    if (
-      isMarkerPseudoElement(this.rawNode) ||
-      isBeforePseudoElement(this.rawNode) ||
-      isAfterPseudoElement(this.rawNode)
-    ) {
-      return 0;
-    }
-
     const rawNode = this.rawNode;
     let numChildren = rawNode.childNodes.length;
     const hasContentDocument = rawNode.contentDocument;
@@ -339,13 +321,13 @@ class NodeActor extends Actor {
 
     // Normal counting misses ::before/::after.  Also, some anonymous children
     // may ultimately be skipped, so we have to consult with the walker.
-    //
-    // FIXME: We should be able to just check <slot> rather than
-    // containingShadowRoot.
     if (
       numChildren === 0 ||
       isShadowHost(this.rawNode) ||
-      this.rawNode.containingShadowRoot
+      // FIXME: We should be able to just check <slot> rather than
+      // containingShadowRoot.
+      this.rawNode.containingShadowRoot ||
+      !!this.rawNode.implementedPseudoElement
     ) {
       numChildren = this.walker.countChildren(this);
     }
@@ -381,10 +363,10 @@ class NodeActor extends Actor {
       // Fails for <scrollbar> elements.
     }
 
+    const gridContainerType = InspectorUtils.getGridContainerType(this.rawNode);
     if (
-      (display === "grid" || display === "inline-grid") &&
-      (style.gridTemplateRows.startsWith("subgrid") ||
-        style.gridTemplateColumns.startsWith("subgrid"))
+      gridContainerType &
+      (InspectorUtils.GRID_SUBGRID_COL | InspectorUtils.GRID_SUBGRID_ROW)
     ) {
       display = "subgrid";
     }
@@ -406,6 +388,22 @@ class NodeActor extends Actor {
     }
 
     return this.computedStyle.containerType;
+  }
+
+  /**
+   * Returns the computed anchorName style property value of the node.
+   */
+  get anchorName() {
+    // non-element nodes can't be anchors
+    if (
+      isNodeDead(this) ||
+      this.rawNode.nodeType !== Node.ELEMENT_NODE ||
+      !this.computedStyle
+    ) {
+      return null;
+    }
+
+    return this.computedStyle.anchorName;
   }
 
   /**
@@ -439,7 +437,7 @@ class NodeActor extends Actor {
    * uses all parsers registered via event-parsers.js.registerEventParser() to
    * check if there are any event listeners.
    *
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   hasEventListeners(refreshCache = false) {
     if (this._hasEventListenersCached === undefined || refreshCache) {
@@ -564,7 +562,7 @@ class NodeActor extends Actor {
   /**
    * Get the full CSS path for this node.
    *
-   * @return {String} A CSS selector with a part for the node and each of its ancestors.
+   * @return {string} A CSS selector with a part for the node and each of its ancestors.
    */
   getCssPath() {
     if (Cu.isDeadWrapper(this.rawNode)) {
@@ -576,7 +574,7 @@ class NodeActor extends Actor {
   /**
    * Get the XPath for this node.
    *
-   * @return {String} The XPath for finding this node on the page.
+   * @return {string} The XPath for finding this node on the page.
    */
   getXPath() {
     if (Cu.isDeadWrapper(this.rawNode)) {
@@ -646,7 +644,7 @@ class NodeActor extends Actor {
   /**
    * Disable a specific event listener given its associated id
    *
-   * @param {String} eventListenerInfoId
+   * @param {string} eventListenerInfoId
    */
   disableEventListener(eventListenerInfoId) {
     const nsEventListenerInfo =
@@ -660,7 +658,7 @@ class NodeActor extends Actor {
   /**
    * (Re-)enable a specific event listener given its associated id
    *
-   * @param {String} eventListenerInfoId
+   * @param {string} eventListenerInfoId
    */
   enableEventListener(eventListenerInfoId) {
     const nsEventListenerInfo =
@@ -731,7 +729,7 @@ class NodeActor extends Actor {
    * Finds the computed background color of the closest parent with a set background
    * color.
    *
-   * @return {String}
+   * @return {string}
    *         String with the background color of the form rgba(r, g, b, a). Defaults to
    *         rgba(255, 255, 255, 1) if no background color is found.
    */
@@ -745,7 +743,7 @@ class NodeActor extends Actor {
    * background color for single-colored backgrounds. Defaults to the closest
    * background color if an error is encountered.
    *
-   * @return {Object}
+   * @return {object}
    *         Object with one or more of the following properties: value, min, max
    */
   getBackgroundColor() {
@@ -755,7 +753,7 @@ class NodeActor extends Actor {
   /**
    * Returns an object with the width and height of the node's owner window.
    *
-   * @return {Object}
+   * @return {object}
    */
   getOwnerGlobalDimensions() {
     const win = this.rawNode.ownerGlobal;

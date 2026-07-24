@@ -10,10 +10,13 @@ shift
 
 FEATURES="$@"
 
+export CARGO_PROFILE_RELEASE_LTO=fat
+rust_lto_flags="-C codegen-units=1"
+
 case "$TARGET" in
 x86_64-unknown-linux-gnu)
     # Native Linux Build
-    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu -C link-arg=-fuse-ld=lld"
+    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu -C link-arg=-fuse-ld=lld $rust_lto_flags"
     export CC=$MOZ_FETCHES_DIR/clang/bin/clang
     export CXX=$MOZ_FETCHES_DIR/clang/bin/clang++
     # Not using TARGET_C*FLAGS because that applies only on target compilations,
@@ -25,7 +28,7 @@ x86_64-unknown-linux-gnu)
     export CXXFLAGS_x86_64_unknown_linux_gnu="-D_GLIBCXX_USE_CXX11_ABI=0 --sysroot=$MOZ_FETCHES_DIR/sysroot-x86_64-linux-gnu -fuse-ld=lld"
     ;;
 aarch64-unknown-linux-gnu)
-    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-aarch64-linux-gnu -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET"
+    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=--sysroot=$MOZ_FETCHES_DIR/sysroot-aarch64-linux-gnu -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET $rust_lto_flags"
     export CC=$MOZ_FETCHES_DIR/clang/bin/clang
     export CXX=$MOZ_FETCHES_DIR/clang/bin/clang++
     export TARGET_CFLAGS="--sysroot=$MOZ_FETCHES_DIR/sysroot-aarch64-linux-gnu -fuse-ld=lld"
@@ -37,10 +40,10 @@ aarch64-unknown-linux-gnu)
     if test "$TARGET" = "aarch64-apple-darwin"; then
         export MACOSX_DEPLOYMENT_TARGET=11.0
     else
-        export MACOSX_DEPLOYMENT_TARGET=10.12
+        export MACOSX_DEPLOYMENT_TARGET=10.15
     fi
-    MACOS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX15.4.sdk
-    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=-isysroot -C link-arg=$MACOS_SYSROOT -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET"
+    MACOS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX26.2.sdk
+    export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=-isysroot -C link-arg=$MACOS_SYSROOT -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET $rust_lto_flags"
     export CC="$MOZ_FETCHES_DIR/clang/bin/clang"
     export CXX="$MOZ_FETCHES_DIR/clang/bin/clang++"
     export TARGET_CFLAGS="-isysroot $MACOS_SYSROOT -fuse-ld=lld"
@@ -63,7 +66,12 @@ esac
 
 PATH="$MOZ_FETCHES_DIR/rustc/bin:$MOZ_FETCHES_DIR/clang/bin:$PATH"
 
-CRATE_PATH=$MOZ_FETCHES_DIR/${FETCH-$project}
+if [ -n "${CRATE_PATH}" ]; then
+  CRATE_PATH="${GECKO_PATH}/${CRATE_PATH}"
+else
+  CRATE_PATH=$MOZ_FETCHES_DIR/${FETCH-$project}
+fi
+
 WORKSPACE_ROOT=$(cd $CRATE_PATH; cargo metadata --format-version 1 --no-deps --locked 2> /dev/null | jq -r .workspace_root)
 
 if test ! -f $WORKSPACE_ROOT/Cargo.lock; then

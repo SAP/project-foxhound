@@ -14,7 +14,7 @@ add_task(async function test_check_urls_before_restoring() {
   // Add a blank tab.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   // Restore form data with a valid URL.
   await promiseTabState(tab, getState(URL));

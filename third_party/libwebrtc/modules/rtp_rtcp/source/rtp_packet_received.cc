@@ -10,12 +10,14 @@
 
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
+#include "api/rtp_headers.h"
+#include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_packet.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
@@ -23,7 +25,7 @@ namespace webrtc {
 RtpPacketReceived::RtpPacketReceived() = default;
 RtpPacketReceived::RtpPacketReceived(
     const ExtensionManager* extensions,
-    webrtc::Timestamp arrival_time /*= webrtc::Timestamp::MinusInfinity()*/)
+    class Timestamp arrival_time /*= Timestamp::MinusInfinity()*/)
     : RtpPacket(extensions), arrival_time_(arrival_time) {}
 RtpPacketReceived::RtpPacketReceived(const RtpPacketReceived& packet) = default;
 RtpPacketReceived::RtpPacketReceived(RtpPacketReceived&& packet) = default;

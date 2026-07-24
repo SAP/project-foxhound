@@ -4,13 +4,14 @@
 ---
 task-defaults:
     platform: linux2404-64/opt
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: "ubuntu2404-test"}
         max-run-time: 1800
     treeherder:
         kind: test
         tier: 1
+    run-on-repo-type: [hg]
     run:
         using: run-task
         cwd: '{checkout}'
@@ -48,6 +49,8 @@ newtab-unit-tests:
 
 newtab-unit-tests-ccov:
     description: newtab unit tests code coverage
+    attributes:
+        ccov: true
     treeherder:
         symbol: node(newtab-ccov)
     worker:
@@ -118,6 +121,8 @@ messagingsystem-unit-tests:
 
 messagingsystem-unit-tests-ccov:
     description: messaging system unit tests code coverage
+    attributes:
+        ccov: true
     treeherder:
         symbol: node(messagingsystem-ccov)
     worker:
@@ -239,6 +244,7 @@ stylelint-plugin-mozilla:
     when:
         files-changed:
             - 'tools/lint/stylelint/stylelint-plugin-mozilla/**'
+            - toolkit/themes/shared/design-system/dist/tokens-table.mjs
     fetches:
         toolchain:
             - linux64-node

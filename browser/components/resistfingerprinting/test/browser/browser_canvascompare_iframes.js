@@ -94,6 +94,16 @@ let expectedResults = {};
 var UNMODIFIED_CANVAS_DATA = undefined;
 
 add_setup(async function () {
+  // Make sure Old Randomization is the only one on
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "privacy.fingerprintingProtection.overrides",
+        "-EfficientCanvasRandomization,+CanvasRandomization",
+      ],
+    ],
+  });
+
   // Disable the fingerprinting randomization.
   await SpecialPowers.pushPrefEnv({
     set: [

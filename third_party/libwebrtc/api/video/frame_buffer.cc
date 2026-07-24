@@ -47,7 +47,7 @@ bool ValidReferences(const EncodedFrame& frame) {
 // Since FrameBuffer::FrameInfo is private it can't be used in the function
 // signature, hence the FrameIteratorT type.
 template <typename FrameIteratorT>
-rtc::ArrayView<const int64_t> GetReferences(const FrameIteratorT& it) {
+ArrayView<const int64_t> GetReferences(const FrameIteratorT& it) {
   return {it->second.encoded_frame->references,
           std::min<size_t>(it->second.encoded_frame->num_references,
                            EncodedFrame::kMaxFrameReferences)};
@@ -127,7 +127,8 @@ bool FrameBuffer::InsertFrame(std::unique_ptr<EncodedFrame> frame) {
   }
 
   const int64_t frame_id = frame->Id();
-  auto insert_res = frames_.emplace(frame_id, FrameInfo{std::move(frame)});
+  auto insert_res =
+      frames_.emplace(frame_id, FrameInfo{.encoded_frame = std::move(frame)});
   if (!insert_res.second) {
     // Frame has already been inserted.
     return false;
@@ -312,7 +313,8 @@ void FrameBuffer::FindNextAndLastDecodableTemporalUnit() {
 
       if (temporal_unit_decodable) {
         if (!next_decodable_temporal_unit_) {
-          next_decodable_temporal_unit_ = {first_frame_it, last_frame_it};
+          next_decodable_temporal_unit_ = {.first_frame = first_frame_it,
+                                           .last_frame = last_frame_it};
         }
 
         last_decodable_temporal_unit_timestamp = GetTimestamp(first_frame_it);

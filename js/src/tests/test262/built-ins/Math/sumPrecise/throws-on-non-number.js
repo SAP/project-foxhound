@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-math-sumprecise) skip-if(!Math.sumPrecise||!xulRuntime.shell) -- Math.sumPrecise is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Kevin Gibbons. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -50,14 +49,14 @@ assert.throws(TypeError, function () {
 assert.sameValue(coercions, 0);
 
 var nextCalls = 0;
-var closed = false;
+var returnCalls = 0;
 var iterator = {
   next: function () {
     ++nextCalls;
     return { done: false, value: objectWithValueOf };
   },
   return: function () {
-    closed = true;
+    ++returnCalls;
     return {};
   }
 };
@@ -72,6 +71,6 @@ assert.throws(TypeError, function () {
 });
 assert.sameValue(coercions, 0);
 assert.sameValue(nextCalls, 1);
-assert.sameValue(closed, true);
+assert.sameValue(returnCalls, 1);
 
 reportCompare(0, 0);

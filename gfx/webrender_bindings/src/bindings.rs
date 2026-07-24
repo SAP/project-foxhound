@@ -416,6 +416,7 @@ extern "C" {
         renderer: *mut c_void,
         external_image_id: ExternalImageId,
         channel_index: u8,
+        is_composited: bool,
     ) -> WrExternalImage;
     fn wr_renderer_unlock_external_image(renderer: *mut c_void, external_image_id: ExternalImageId, channel_index: u8);
 }
@@ -427,8 +428,9 @@ pub struct WrExternalImageHandler {
 }
 
 impl ExternalImageHandler for WrExternalImageHandler {
-    fn lock(&mut self, id: ExternalImageId, channel_index: u8) -> ExternalImage {
-        let image = unsafe { wr_renderer_lock_external_image(self.external_image_obj, id, channel_index) };
+    fn lock(&mut self, id: ExternalImageId, channel_index: u8, is_composited: bool) -> ExternalImage {
+        let image =
+            unsafe { wr_renderer_lock_external_image(self.external_image_obj, id, channel_index, is_composited) };
         ExternalImage {
             uv: TexelRect::new(image.u0, image.v0, image.u1, image.v1),
             source: match image.image_type {
@@ -646,11 +648,13 @@ pub extern "C" fn wr_renderer_render(
     buffer_age: usize,
     out_stats: &mut RendererStats,
     out_dirty_rects: &mut ThinVec<DeviceIntRect>,
+    out_did_rasterize: &mut bool,
 ) -> bool {
     match renderer.render(DeviceIntSize::new(width, height), buffer_age) {
         Ok(results) => {
             *out_stats = results.stats;
             out_dirty_rects.extend(results.dirty_rects);
+            *out_did_rasterize = results.did_rasterize_any_tile;
             true
         },
         Err(errors) => {
@@ -924,7 +928,7 @@ pub fn gecko_profiler_event_marker(name: &str) {
 
 pub fn gecko_profiler_add_text_marker(name: &str, text: &str, microseconds: f64) {
     use gecko_profiler::{gecko_profiler_category, MarkerOptions, MarkerTiming, ProfilerTime};
-    if !gecko_profiler::can_accept_markers() {
+    if !gecko_profiler::current_thread_is_being_profiled_for_markers() {
         return;
     }
 
@@ -1554,12 +1558,9 @@ impl WrLayerCompositor {
         }
     }
 
-    fn reuse_same_tree(
-        &mut self,
-        input: &CompositorInputConfig,
-        ) -> bool {
-            if input.layers.len() != self.visual_tree.len() {
-                return false;
+    fn reuse_same_tree(&mut self, input: &CompositorInputConfig) -> bool {
+        if input.layers.len() != self.visual_tree.len() {
+            return false;
         }
 
         for (request, layer) in input.layers.iter().zip(self.visual_tree.iter()) {
@@ -1572,7 +1573,7 @@ impl WrLayerCompositor {
                     if layer.size != request.clip_rect.size() {
                         return false;
                     }
-                }
+                },
                 CompositorSurfaceUsage::External { .. } => {},
                 CompositorSurfaceUsage::DebugOverlay => {},
             };
@@ -1584,40 +1585,26 @@ impl WrLayerCompositor {
             // Copy across (potentially) updated external image id
             layer.usage = request.usage;
             match layer.usage {
-                CompositorSurfaceUsage::Content | CompositorSurfaceUsage::DebugOverlay => {}
-                CompositorSurfaceUsage::External { external_image_id, .. } => {
-                    unsafe {
-                        wr_compositor_attach_external_image(
-                            self.compositor,
-                            layer.id,
-                            external_image_id,
-                        );
-                    }
-                }
+                CompositorSurfaceUsage::Content | CompositorSurfaceUsage::DebugOverlay => {},
+                CompositorSurfaceUsage::External { external_image_id, .. } => unsafe {
+                    wr_compositor_attach_external_image(self.compositor, layer.id, external_image_id);
+                },
             }
         }
 
         true
     }
 
-    fn use_multiple_layers_except_debug_layer(
-        &mut self,
-        input: &CompositorInputConfig,
-        ) -> bool {
-
+    fn use_multiple_layers_except_debug_layer(&mut self, input: &CompositorInputConfig) -> bool {
         let is_debug_layer = |usage: &CompositorSurfaceUsage| -> bool {
             match usage {
-                CompositorSurfaceUsage::DebugOverlay => {
-                    true
-                },
-                CompositorSurfaceUsage::Content |
-                CompositorSurfaceUsage::External { .. } => {
-                    false
-                },
+                CompositorSurfaceUsage::DebugOverlay => true,
+                CompositorSurfaceUsage::Content | CompositorSurfaceUsage::External { .. } => false,
             }
         };
 
-        let count = input.layers
+        let count = input
+            .layers
             .iter()
             .filter(|layer| !is_debug_layer(&layer.usage))
             .count();
@@ -1628,11 +1615,8 @@ impl WrLayerCompositor {
 
 impl LayerCompositor for WrLayerCompositor {
     // Begin compositing a frame with the supplied input config
-    fn begin_frame(
-        &mut self,
-        input: &CompositorInputConfig,
-    ) -> bool {
-        const FRAME_COUNT_BEFORE_DISABLING_SYNC_DCOMP_COMMIT: u32  = 60;
+    fn begin_frame(&mut self, input: &CompositorInputConfig) -> bool {
+        const FRAME_COUNT_BEFORE_DISABLING_SYNC_DCOMP_COMMIT: u32 = 60;
 
         let mut destroy_all_layers = false;
         if self.enable_screenshot != input.enable_screenshot {
@@ -1660,7 +1644,7 @@ impl LayerCompositor for WrLayerCompositor {
             match self.frames_since_using_multiple_layers {
                 None => {
                     // Do not request sync dcomp commit.
-                }
+                },
                 Some(count) => {
                     if count < FRAME_COUNT_BEFORE_DISABLING_SYNC_DCOMP_COMMIT {
                         // Keep to requet sync dcomp commit to avoid frequent layers creation.
@@ -1670,7 +1654,7 @@ impl LayerCompositor for WrLayerCompositor {
                         // Stop to requet sync dcomp commit.
                         self.frames_since_using_multiple_layers = None;
                     }
-                }
+                },
             }
         };
 
@@ -1734,7 +1718,8 @@ impl LayerCompositor for WrLayerCompositor {
                                     id,
                                     size,
                                     request.is_opaque,
-                                    needs_sync_dcomp_commit);
+                                    needs_sync_dcomp_commit,
+                                );
                             },
                             CompositorSurfaceUsage::External { .. } => {
                                 wr_compositor_create_external_surface(self.compositor, id, request.is_opaque);
@@ -1778,38 +1763,20 @@ impl LayerCompositor for WrLayerCompositor {
     }
 
     // Bind a layer by index for compositing into
-    fn bind_layer(
-        &mut self,
-        index: usize,
-        dirty_rects: &[DeviceIntRect],
-    ) {
+    fn bind_layer(&mut self, index: usize, dirty_rects: &[DeviceIntRect]) {
         let layer = &self.visual_tree[index];
 
         unsafe {
-            wr_compositor_bind_swapchain(
-                self.compositor,
-                layer.id,
-                dirty_rects.as_ptr(),
-                dirty_rects.len(),
-            );
+            wr_compositor_bind_swapchain(self.compositor, layer.id, dirty_rects.as_ptr(), dirty_rects.len());
         }
     }
 
     // Finish compositing a layer and present the swapchain
-    fn present_layer(
-        &mut self,
-        index: usize,
-        dirty_rects: &[DeviceIntRect],
-    ) {
+    fn present_layer(&mut self, index: usize, dirty_rects: &[DeviceIntRect]) {
         let layer = &self.visual_tree[index];
 
         unsafe {
-            wr_compositor_present_swapchain(
-                self.compositor,
-                layer.id,
-                dirty_rects.as_ptr(),
-                dirty_rects.len(),
-            );
+            wr_compositor_present_swapchain(self.compositor, layer.id, dirty_rects.as_ptr(), dirty_rects.len());
         }
     }
 
@@ -1819,6 +1786,8 @@ impl LayerCompositor for WrLayerCompositor {
         transform: CompositorSurfaceTransform,
         clip_rect: DeviceIntRect,
         image_rendering: ImageRendering,
+        rounded_clip_rect: DeviceIntRect,
+        rounded_clip_radii: ClipRadius,
     ) {
         let layer = &self.visual_tree[index];
 
@@ -1829,8 +1798,8 @@ impl LayerCompositor for WrLayerCompositor {
                 &transform,
                 clip_rect,
                 image_rendering,
-                clip_rect,
-                ClipRadius::EMPTY,
+                rounded_clip_rect,
+                rounded_clip_radii,
             );
         }
     }
@@ -2102,15 +2071,13 @@ pub extern "C" fn wr_window_new(
                 use_native_compositor,
             )),
         }
+    } else if use_layer_compositor {
+        CompositorConfig::Layer {
+            compositor: Box::new(WrLayerCompositor::new(compositor)),
+        }
     } else if use_native_compositor {
-        if use_layer_compositor {
-            CompositorConfig::Layer {
-                compositor: Box::new(WrLayerCompositor::new(compositor)),
-            }
-        } else {
-            CompositorConfig::Native {
-                compositor: Box::new(WrCompositor(compositor)),
-            }
+        CompositorConfig::Native {
+            compositor: Box::new(WrCompositor(compositor)),
         }
     } else {
         CompositorConfig::Draw {
@@ -2147,6 +2114,12 @@ pub extern "C" fn wr_window_new(
         true
     } else {
         false
+    };
+
+    let precise_linear_gradients = if software {
+        static_prefs::pref!("gfx.webrender.precise-linear-gradients-swgl")
+    } else {
+        static_prefs::pref!("gfx.webrender.precise-linear-gradients")
     };
 
     let opts = WebRenderOptions {
@@ -2204,6 +2177,7 @@ pub extern "C" fn wr_window_new(
         low_quality_pinch_zoom,
         max_shared_surface_size,
         enable_dithering,
+        precise_linear_gradients,
         ..Default::default()
     };
 
@@ -2433,7 +2407,13 @@ pub extern "C" fn wr_transaction_set_document_view(txn: &mut Transaction, doc_re
 }
 
 #[no_mangle]
-pub extern "C" fn wr_transaction_generate_frame(txn: &mut Transaction, id: u64, present: bool, tracked: bool, reasons: RenderReasons) {
+pub extern "C" fn wr_transaction_generate_frame(
+    txn: &mut Transaction,
+    id: u64,
+    present: bool,
+    tracked: bool,
+    reasons: RenderReasons,
+) {
     txn.generate_frame(id, present, tracked, reasons);
 }
 
@@ -2817,7 +2797,7 @@ fn generate_capture_path(path: *const c_char, moz_revision: *const c_char) -> Op
     match File::create(path.join("wr.txt")) {
         Ok(mut file) => {
             // The Gecko HG revision is available at compile time
-            if ! moz_revision.is_null() {
+            if !moz_revision.is_null() {
                 if let Ok(moz_revision) = unsafe { CStr::from_ptr(moz_revision) }.to_str() {
                     writeln!(file, "mozilla-central {}", moz_revision).unwrap()
                 }
@@ -2832,7 +2812,12 @@ fn generate_capture_path(path: *const c_char, moz_revision: *const c_char) -> Op
 }
 
 #[no_mangle]
-pub extern "C" fn wr_api_capture(dh: &mut DocumentHandle, path: *const c_char, moz_revision: *const c_char, bits_raw: u32) {
+pub extern "C" fn wr_api_capture(
+    dh: &mut DocumentHandle,
+    path: *const c_char,
+    moz_revision: *const c_char,
+    bits_raw: u32,
+) {
     if let Some(path) = generate_capture_path(path, moz_revision) {
         let bits = CaptureBits::from_bits(bits_raw as _).unwrap();
         dh.api.save_capture(path, bits);
@@ -2840,7 +2825,12 @@ pub extern "C" fn wr_api_capture(dh: &mut DocumentHandle, path: *const c_char, m
 }
 
 #[no_mangle]
-pub extern "C" fn wr_api_start_capture_sequence(dh: &mut DocumentHandle, path: *const c_char, moz_revision: *const c_char, bits_raw: u32) {
+pub extern "C" fn wr_api_start_capture_sequence(
+    dh: &mut DocumentHandle,
+    path: *const c_char,
+    moz_revision: *const c_char,
+    bits_raw: u32,
+) {
     if let Some(path) = generate_capture_path(path, moz_revision) {
         let bits = CaptureBits::from_bits(bits_raw as _).unwrap();
         dh.api.start_capture_sequence(path, bits);
@@ -3215,7 +3205,6 @@ pub extern "C" fn wr_dp_push_stacking_context(
         params.mix_blend_mode,
         &filters,
         &r_filter_datas,
-        &[],
         glyph_raster_space,
         params.flags,
         unsafe { params.snapshot.as_ref() }.cloned(),
@@ -3550,28 +3539,7 @@ pub extern "C" fn wr_dp_push_backdrop_filter(
     state
         .frame_builder
         .dl_builder
-        .push_backdrop_filter(&prim_info, &filters, &filter_datas, &[]);
-}
-
-#[no_mangle]
-pub extern "C" fn wr_dp_push_clear_rect(
-    state: &mut WrState,
-    rect: LayoutRect,
-    clip_rect: LayoutRect,
-    parent: &WrSpaceAndClipChain,
-) {
-    debug_assert!(unsafe { !is_in_render_thread() });
-
-    let space_and_clip = parent.to_webrender(state.pipeline_id);
-
-    let prim_info = CommonItemProperties {
-        clip_rect,
-        clip_chain_id: space_and_clip.clip_chain_id,
-        spatial_id: space_and_clip.spatial_id,
-        flags: prim_flags(true, /* prefer_compositor_surface */ false),
-    };
-
-    state.frame_builder.dl_builder.push_clear_rect(&prim_info, rect);
+        .push_backdrop_filter(&prim_info, &filters, &filter_datas);
 }
 
 #[no_mangle]
@@ -4391,6 +4359,7 @@ pub extern "C" fn wr_dp_push_box_shadow(
     blur_radius: f32,
     spread_radius: f32,
     border_radius: BorderRadius,
+    shadow_radius: BorderRadius,
     clip_mode: BoxShadowClipMode,
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
@@ -4412,6 +4381,7 @@ pub extern "C" fn wr_dp_push_box_shadow(
         blur_radius,
         spread_radius,
         border_radius,
+        shadow_radius,
         clip_mode,
     );
 }

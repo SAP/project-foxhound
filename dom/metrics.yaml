@@ -65,134 +65,182 @@ perf:
     expires: never
     extra_keys:
       load_time:
-        description:
-          "Time between loadEventStart and navigationStart, in ms."
+        description: |
+          Time between loadEventStart and navigationStart, in ms.
         type: quantity
         unit: ms
       dns_lookup_time:
-        description:
-          "Time taken to perform dns lookup of the top level document, in ms."
+        description: |
+          Time taken to perform dns lookup of the top level document, in ms.
         type: quantity
         unit: ms
       time_to_request_start:
-        description:
-          "Time between requestStart and navigationStart, in ms."
+        description: |
+          Time between requestStart and navigationStart, in ms.
         type: quantity
         unit: ms
       response_time:
-        description:
-          "Time between responseStart and navigationStart, in ms."
+        description: |
+          Time between responseStart and navigationStart, in ms.
         type: quantity
         unit: ms
       fcp_time:
-        description:
-          "Time between firstContentfulPaint and navigationStart, in ms."
+        description: |
+          Time between firstContentfulPaint and navigationStart, in ms.
         type: quantity
         unit: ms
       lcp_time:
-        description:
-          "Time between largestContentfulPaint and navigationStart, at the point of onLoad firing, in ms. This may differ from the final LCP value as reported through the LCP histogram."
+        description: |
+          Time between largestContentfulPaint and navigationStart, at the point of onLoad firing, in ms. This may differ from the final LCP value as reported through the LCP histogram.
         type: quantity
         unit: ms
       js_exec_time:
-        description:
-          "Time spent executing JS during page load, in ms."
+        description: |
+          Time spent executing JS during page load, in ms.
         type: quantity
         unit: ms
       delazify_time:
-        description:
-          "Time spent delazifying JS during page load, in ms."
+        description: |
+          Time spent delazifying JS during page load, in ms.
         type: quantity
         unit: ms
       redirect_time:
         type: quantity
-        description:
-          "Time spent in redirections for the top level document."
+        description: |
+          Time spent in redirections for the top level document.
         unit: ms
       tls_handshake_time:
         type: quantity
-        description:
-          "Time spent in TLS handshake for the top level document."
+        description: |
+          Time spent in TLS handshake for the top level document.
         unit: ms
       redirect_count:
-        description:
-          "Number of redirections for the top level document."
+        description: |
+          Number of redirections for the top level document.
         type: quantity
         unit: integer
       load_type:
-        description:
-          "One of normal,reload,stop,link,history,error or other."
+        description: |
+          One of normal,reload,stop,link,history,error or other.
         type: string
       same_origin_nav:
-        description:
-          "If true, a normal navigation was performed on the same origin."
+        description: |
+          If true, a normal navigation was performed on the same origin.
         type: boolean
       using_webdriver:
-        description:
-          "If true, a webdriver is running on the client."
+        description: |
+          If true, a webdriver is running on the client.
         type: boolean
       http_ver:
-        description:
-          "Version of HTTP protocol used."
+        description: |
+          Version of HTTP protocol used.
         type: quantity
         unit: integer
       trr_domain:
-        description:
-          "TRR domain used."
+        description: |
+          TRR domain used.
         type: string
-      features:
-        description:
-          "Bitfield of features in use within this document:
+      document_features:
+        description: >
+          Bitfield of web features in use within this document:
             1 - fetchpriority applied to images
-            2 - assistive technology in use"
+        type: quantity
+        unit: integer
+      user_features:
+        description: >
+          Bitfield of features the user is enabling:
+            1 - assistive technology in use
         type: quantity
         unit: integer
       has_ssd:
-        description:
-          "Whether the user has SSD in their hardware or not. Only available on Windows, after startup-idle-tasks are done"
+        description: |
+          Whether the user has SSD in their hardware or not. Only available on Windows, after startup-idle-tasks are done
         type: boolean
+      cache_disposition:
+        description: |
+          cache disposition for the top level document
+        type: quantity
+        unit: integer
+      network_type:
+        description: |
+          Network link type from nsINetworkLinkService, only available on android. Values as:
+            - 0 unknown
+            - 1 ethernet
+            - 2 usb
+            - 3 wifi
+            - 4 wifimax
+            - 9 mobile
+        type: quantity
+        unit: integer
+      android_app_link_launch_type:
+        description:
+          "AppLink launch type, android only. UNKNOWN = 0 COLD = 1, WARM = 2, HOT = 3, see LoadURIOptions.webidl"
+        type: quantity
+        unit: integer
+      android_app_link_to_navigation_start:
+        type: quantity
+        description:
+          "For android navigations, the time from application launch (i.e parent process start) to navigation start. Only meaningful with android_app_link_launch_type = COLD"
+        unit: ms
+      android_isolation_category:
+        description: |
+          Process isolation category: shared_web, site_isolated, coop_isolated, or other
+        type: string
     send_in_pings:
       - pageload
-
-  http3_page_load_time:
-    type: labeled_timing_distribution
+  page_load_domain:
+    type: event
     description: >
-      Time in milliseconds from navigationStart to loadEventStart for the
-      foreground http or https root content document. This is collected only on
-      page load where the main document uses or suppports HTTP3
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram HTTP3_PERF_PAGE_LOAD_TIME_MS.
-    time_unit: millisecond
+        Recorded when a top level content document has been loaded.
+        Includes ETLD+1 information and sent with ohttp.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1675503
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1967780
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1675503
+      - https://phabricator.services.mozilla.com/D250521
     notification_emails:
-      - necko@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
+      - dpalmeiro@mozilla.com
     expires: never
-    telemetry_mirror: HTTP3_PERF_PAGE_LOAD_TIME_MS
-
-  http3_first_contentful_paint:
-    type: labeled_timing_distribution
-    description: >
-      The time between navigationStart and the first contentful paint of a
-      foreground http or https root content document, in milliseconds. The
-      contentful paint timestamp is taken during display list building and does
-      not include rasterization or compositing of that paint. This is collected
-      only on page load where the main document uses or suppports HTTP3
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram HTTP3_PERF_FIRST_CONTENTFUL_PAINT_MS.
-    time_unit: millisecond
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1675503
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1675503
-    notification_emails:
-      - necko@mozilla.com
-    expires: never
-    telemetry_mirror: HTTP3_PERF_FIRST_CONTENTFUL_PAINT_MS
+    extra_keys:
+      lcp_time:
+        description: |
+          Time between largestContentfulPaint and navigationStart, at the point of onLoad firing, in ms. This may differ from the final LCP value as reported through the LCP histogram.
+        type: quantity
+        unit: ms
+      load_type:
+        description: |
+          One of normal,reload,stop,link,history,error or other.
+        type: string
+      same_origin_nav:
+        description: |
+          If true, a normal navigation was performed on the same origin.
+        type: boolean
+      http_ver:
+        description: |
+          Version of HTTP protocol used.
+        type: quantity
+        unit: integer
+      document_features:
+        description: >
+          Bitfield of web features in use within this document:
+            1 - fetchpriority applied to images
+        type: quantity
+        unit: integer
+      domain:
+        description: |
+          ETLD+1 domain of website visited.
+        type: string
+      channel:
+        description: |
+          Release channel of the build. Either "nightly" or "release" only.
+        type: string
+      app_version_major:
+        description: |
+          Major version number.
+        type: quantity
+        unit: integer
+    send_in_pings:
+      - pageload-base-domain
 
   h3p_page_load_time:
     type: labeled_timing_distribution
@@ -240,28 +288,6 @@ perf:
     expires: never
     telemetry_mirror: H3P_PERF_FIRST_CONTENTFUL_PAINT_MS
 
-  dns_first_contentful_paint:
-    type: labeled_timing_distribution
-    description: >
-      The time between navigationStart and the first contentful paint of a
-      foreground http or https root content document, in milliseconds. The
-      contentful paint timestamp is taken during display list building and does
-      not include rasterization or compositing of that paint. Keyed by TRR
-      domain for DoH or 'Native' otherwise
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram DNS_PERF_FIRST_CONTENTFUL_PAINT_MS.
-    time_unit: millisecond
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1796639
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1796639
-    notification_emails:
-      - necko@mozilla.com
-      - acreskey@mozilla.com
-    expires: never
-    telemetry_mirror: DNS_PERF_FIRST_CONTENTFUL_PAINT_MS
-
   dns_first_byte:
     type: labeled_timing_distribution
     description: >
@@ -281,6 +307,38 @@ perf:
       - acreskey@mozilla.com
     expires: never
     telemetry_mirror: DNS_PERF_FIRST_BYTE_MS
+
+  cold_applink_process_launch_to_load_uri:
+    type: timing_distribution
+    time_unit: millisecond
+    description: |
+      The duration from cold process launch to load URI for an android cold applink.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1990344
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1990344
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - android-probes@mozilla.com
+    expires: never
+
+  cold_applink_main_to_load_uri:
+    type: timing_distribution
+    time_unit: millisecond
+    description: |
+      The duration from StartupTimeline::MAIN to load URI for an android cold applink.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1991160
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1991160
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - android-probes@mozilla.com
+    expires: never
 
 performance.pageload:
   load_time:
@@ -658,7 +716,7 @@ security:
       - https://bugzil.la/1955578
     notification_emails:
       - tschuster@mozilla.com
-    expires: 145
+    expires: 152
     extra_keys:
       name:
         description: >
@@ -698,6 +756,7 @@ dom.contentprocess:
       - https://bugzil.la/1817104
       - https://bugzil.la/1866197
       - https://bugzil.la/1928259
+      - https://bugzil.la/2010454
     data_reviews:
       - https://bugzil.la/1651133
       - https://bugzil.la/1730045
@@ -706,9 +765,10 @@ dom.contentprocess:
       - https://bugzil.la/1817104
       - https://bugzil.la/1866197
       - https://bugzil.la/1928259
+      - https://bugzil.la/2010454
     notification_emails:
       - alissy@mozilla.com
-    expires: 150
+    expires: 170
     telemetry_mirror: DOM_CONTENTPROCESS_BUILDID_MISMATCH_FALSE_POSITIVE
 
   os_priority_lowered:
@@ -907,48 +967,6 @@ dom.textfragment:
       - dom-core@mozilla.com
       - jjaschke@mozilla.com
 
-glam_experiment:
-  protect_time:
-    type: timing_distribution
-    disabled: true
-    time_unit: millisecond
-    description: >
-      Duplicate of:
-      `javascript_pageload.protect_time`
-
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1709139#c4
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146
-  largest_contentful_paint:
-    type: timing_distribution
-    disabled: true
-    time_unit: millisecond
-    description: >
-      Duplicate of:
-      `perf.largest_contentful_paint`
-
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862939#c5
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146
-
 dom:
   forget_skippable_during_idle:
     type: custom_distribution
@@ -1049,26 +1067,6 @@ dom:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
     telemetry_mirror: GC_SLICE_DURING_IDLE
-
-  innerwindows_with_mutation_listeners:
-    type: labeled_counter
-    description: >
-      Deleted or to-be-reused innerwindow which has had mutation event
-      listeners.
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram INNERWINDOWS_WITH_MUTATION_LISTENERS.
-    labels:
-      - "false"
-      - "true"
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956726
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956726
-    notification_emails:
-      - dom-core@mozilla.com
-    expires: never
-    telemetry_mirror: h#INNERWINDOWS_WITH_MUTATION_LISTENERS
 
   xmlhttprequest_async_or_sync:
     type: labeled_counter

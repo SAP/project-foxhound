@@ -224,7 +224,7 @@ function sortPanelDefinitions(definitions) {
   });
 }
 
-/*
+/**
  * This function returns absolute tab ids that were merged the both ids that are in
  * preference and tabs.
  * Some tabs added with add-ons etc show/hide depending on conditions.

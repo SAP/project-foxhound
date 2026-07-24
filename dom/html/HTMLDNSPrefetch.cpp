@@ -7,37 +7,33 @@
 #include "HTMLDNSPrefetch.h"
 
 #include "base/basictypes.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/HTMLLinkElement.h"
-#include "mozilla/dom/HTMLAnchorElement.h"
-#include "mozilla/net/NeckoCommon.h"
-#include "mozilla/net/NeckoChild.h"
-#include "mozilla/OriginAttributes.h"
-#include "mozilla/StoragePrincipalHelper.h"
-#include "nsURLHelper.h"
-
-#include "nsCOMPtr.h"
-#include "nsString.h"
-
-#include "nsNetUtil.h"
-#include "nsNetCID.h"
-#include "nsIProtocolHandler.h"
-
-#include "nsIDNSListener.h"
-#include "nsIWebProgressListener.h"
-#include "nsIWebProgress.h"
-#include "nsIDNSRecord.h"
-#include "nsIDNSService.h"
-#include "nsICancelable.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/Document.h"
-#include "nsThreadUtils.h"
-#include "nsITimer.h"
-#include "nsIObserverService.h"
-
 #include "mozilla/Components.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLAnchorElement.h"
+#include "mozilla/dom/HTMLLinkElement.h"
+#include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "nsCOMPtr.h"
+#include "nsGkAtoms.h"
+#include "nsICancelable.h"
+#include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
+#include "nsIDNSService.h"
+#include "nsIObserverService.h"
+#include "nsIProtocolHandler.h"
+#include "nsITimer.h"
+#include "nsIWebProgress.h"
+#include "nsIWebProgressListener.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsURLHelper.h"
 
 using namespace mozilla::net;
 
@@ -256,7 +252,7 @@ nsresult HTMLDNSPrefetch::Prefetch(
 
   if (StaticPrefs::network_dns_upgrade_with_https_rr() ||
       StaticPrefs::network_dns_use_https_rr_as_altsvc()) {
-    Unused << sDNSService->AsyncResolveNative(
+    (void)sDNSService->AsyncResolveNative(
         NS_ConvertUTF16toUTF8(hostname), nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
         flags | nsIDNSService::RESOLVE_SPECULATE, nullptr, sDNSListener,
         nullptr, aPartitionedPrincipalOriginAttributes,
@@ -339,7 +335,7 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(
 
   if (StaticPrefs::network_dns_upgrade_with_https_rr() ||
       StaticPrefs::network_dns_use_https_rr_as_altsvc()) {
-    Unused << sDNSService->CancelAsyncResolveNative(
+    (void)sDNSService->CancelAsyncResolveNative(
         NS_ConvertUTF16toUTF8(hostname), nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
         flags | nsIDNSService::RESOLVE_SPECULATE,
         nullptr,  // AdditionalInfo
@@ -513,7 +509,7 @@ nsresult DeferredDNSPrefetches::Add(nsIDNSService::DNSFlags flags,
     mTimerArmed = true;
     mTimer->InitWithNamedFuncCallback(
         Tick, this, 2000, nsITimer::TYPE_ONE_SHOT,
-        "HTMLDNSPrefetch::DeferredDNSPrefetches::Tick");
+        "HTMLDNSPrefetch::DeferredDNSPrefetches::Tick"_ns);
   }
 
   return NS_OK;

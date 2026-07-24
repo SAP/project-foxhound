@@ -32,7 +32,7 @@ add_task(async function adaptive_history() {
       assertEngagementTelemetry([
         {
           groups: "heuristic,adaptive_history",
-          results: "search_engine,history",
+          results: "search_engine,history_adaptive",
           n_results: 2,
         },
       ]),

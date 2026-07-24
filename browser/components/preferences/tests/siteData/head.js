@@ -34,7 +34,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "serviceWorkerManager",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 function promiseSiteDataManagerSitesUpdated() {
@@ -132,7 +132,7 @@ function openPreferencesViaOpenPreferencesAPI(aPane, aOptions) {
   });
 }
 
-function openSiteDataSettingsDialog() {
+async function openSiteDataSettingsDialog() {
   let doc = gBrowser.selectedBrowser.contentDocument;
   let settingsBtn = doc.getElementById("siteDataSettings");
   let dialogOverlay = content.gSubDialog._preloadDialog._overlay;
@@ -149,8 +149,19 @@ function openSiteDataSettingsDialog() {
   ]).then(() => {
     is_element_visible(dialogOverlay, "The Settings dialog should be visible");
   });
-  settingsBtn.doCommand();
-  return fullyLoadPromise;
+  // Wait for the dialog button to be enabled. It is disabled while
+  // SiteDataManager updates the site list and usage.
+  await BrowserTestUtils.waitForMutationCondition(
+    settingsBtn,
+    {
+      attributeFilter: ["disabled"],
+    },
+    () => {
+      return !settingsBtn.disabled;
+    }
+  );
+  settingsBtn.click();
+  await fullyLoadPromise;
 }
 
 function promiseSettingsDialogClose() {

@@ -1,3 +1,4 @@
+import glob
 import os
 import unittest
 
@@ -101,14 +102,16 @@ if __name__ == "__main__":
             # The extra subdirectory is used for non-failing files we want
             # to include from failing files.
             errorIncludes = ["-I", os.path.join(errordir, "extra"), "-I", errordir]
-            errorsuite.addTest(ErrorTestCase(ipdlargv + errorIncludes, arg))
+            for test in glob.glob(arg):
+                errorsuite.addTest(ErrorTestCase(ipdlargv + errorIncludes, test))
         elif oktests:
-            if "ERRORTESTS" == arg:
+            if "--error-tests" == arg:
                 errortests = True
                 continue
-            oksuite.addTest(OkTestCase(ipdlargv + ["-I", okdir], arg))
+            for test in glob.glob(arg):
+                oksuite.addTest(OkTestCase(ipdlargv + ["-I", okdir], test))
         else:
-            if "OKTESTS" == arg:
+            if "--ok-tests" == arg:
                 oktests = True
                 continue
             ipdlargv.append(arg)

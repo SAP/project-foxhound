@@ -44,7 +44,7 @@ async function addTabAndCreateCommands(url) {
  * Naive implementaion of addTab working from a mochitest-chrome test.
  */
 async function addTab(url) {
-  const { gBrowser } = Services.wm.getMostRecentWindow("navigator:browser");
+  const { gBrowser } = Services.wm.getMostRecentBrowserWindow();
   const { BrowserTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/BrowserTestUtils.sys.mjs"
   );

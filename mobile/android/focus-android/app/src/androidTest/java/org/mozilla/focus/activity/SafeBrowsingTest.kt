@@ -18,16 +18,17 @@ import org.mozilla.focus.helpers.TestHelper.exitToTop
 import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
+import mozilla.components.browser.errorpages.R as errorpagesR
 
 // These tests verify the Safe Browsing feature by visiting unsafe URLs and checking they are blocked
 class SafeBrowsingTest : TestSetup() {
     private lateinit var webServer: MockWebServer
-    private val malwareWarning = getStringResource(R.string.mozac_browser_errorpages_safe_browsing_malware_uri_title)
-    private val phishingWarning = getStringResource(R.string.mozac_browser_errorpages_safe_phishing_uri_title)
+    private val malwareWarning = getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_browsing_malware_uri_title)
+    private val phishingWarning = getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_phishing_uri_title)
     private val unwantedSoftwareWarning =
-        getStringResource(R.string.mozac_browser_errorpages_safe_browsing_unwanted_uri_title)
-    private val harmfulSiteWarning = getStringResource(R.string.mozac_browser_errorpages_safe_harmful_uri_title)
-    private val tryAgainButton = getStringResource(R.string.mozac_browser_errorpages_page_refresh)
+        getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_browsing_unwanted_uri_title)
+    private val harmfulSiteWarning = getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_harmful_uri_title)
+    private val tryAgainButton = getStringResource(errorpagesR.string.mozac_browser_errorpages_page_refresh)
     private val featureSettingsHelper = FeatureSettingsHelper()
 
     @get:Rule

@@ -1814,9 +1814,10 @@ class WebExtensionTest : BaseSessionTest() {
             override fun onShowNotification(notification: WebNotification) {
                 assertEquals(notification.title, "Time for cake!")
                 assertEquals(notification.text, "Something something cake")
-                assertEquals(notification.imageUrl, "https://example.com/img.svg")
+                assertEquals(notification.imageUrl, "http://localhost:4245/assets/www/images/test.gif")
                 // This should be filled out, Bug 1589693
                 assertEquals(notification.source, null)
+                notification.show()
             }
         })
 
@@ -2080,7 +2081,7 @@ class WebExtensionTest : BaseSessionTest() {
             "browser",
         )
 
-        val TEST_SINCE_VALUE = 59294
+        val testSinceValue = 59294
 
         sessionRule.addExternalDelegateUntilTestEnd(
             WebExtension.BrowsingDataDelegate::class,
@@ -2090,7 +2091,7 @@ class WebExtensionTest : BaseSessionTest() {
                 override fun onGetSettings(): GeckoResult<WebExtension.BrowsingDataDelegate.Settings>? {
                     return GeckoResult.fromValue(
                         WebExtension.BrowsingDataDelegate.Settings(
-                            TEST_SINCE_VALUE,
+                            testSinceValue,
                             CACHE or COOKIES or DOWNLOADS or HISTORY or LOCAL_STORAGE,
                             CACHE or COOKIES or HISTORY,
                         ),
@@ -2322,7 +2323,7 @@ class WebExtensionTest : BaseSessionTest() {
         assertThat(
             "Since should be correct",
             options.getInt("since"),
-            equalTo(TEST_SINCE_VALUE),
+            equalTo(testSinceValue),
         )
         for (key in listOf("cache", "cookies", "history")) {
             assertThat(
@@ -4342,6 +4343,8 @@ class WebExtensionTest : BaseSessionTest() {
         downloadData.endTime = expectedEndTime
         downloadData.totalBytes = finishedDownloadSize
         downloadData.state = Download.STATE_COMPLETE
+
+        downloadCreated.update(downloadData)
         downloadCreated.update(downloadData)
 
         sessionRule.waitForResult(thirdUpdateReceived)

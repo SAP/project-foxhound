@@ -133,7 +133,7 @@ EXTRA_JS_MODULES += [
     "PageActions.sys.mjs",
     "PartnerLinkAttribution.sys.mjs",
     "PermissionUI.sys.mjs",
-    "PopupBlockerObserver.sys.mjs",
+    "PopupAndRedirectBlockerObserver.sys.mjs",
     "ProcessHangMonitor.sys.mjs",
     "Sanitizer.sys.mjs",
     "SelectionChangedMenulist.sys.mjs",
@@ -147,7 +147,12 @@ EXTRA_JS_MODULES += [
 ]
 
 MOZ_SRC_FILES += [
+    "CanvasPermissionPromptHelper.sys.mjs",
     "ContextId.sys.mjs",
+    "ObserverForwarder.sys.mjs",
+    "PrivateBrowsingUI.sys.mjs",
+    "UnexpectedScriptObserver.sys.mjs",
+    "WebAuthnPromptHelper.sys.mjs",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":

@@ -27,7 +27,9 @@ interface OnboardingPreferencesRepository {
     /**
      * Enum for the onboarding preference keys.
      */
-    enum class OnboardingPreference(@param:StringRes val preferenceKey: Int) {
+    enum class OnboardingPreference(
+        @param:StringRes val preferenceKey: Int,
+    ) {
         DeviceTheme(preferenceKey = R.string.pref_key_follow_device_theme),
         LightTheme(preferenceKey = R.string.pref_key_light_theme),
         DarkTheme(preferenceKey = R.string.pref_key_dark_theme),

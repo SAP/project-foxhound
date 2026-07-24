@@ -7,9 +7,6 @@
 const { AppInfo } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/AppInfo.sys.mjs"
 );
-const { error } = ChromeUtils.importESModule(
-  "chrome://remote/content/shared/webdriver/Errors.sys.mjs"
-);
 const {
   Capabilities,
   mergeCapabilities,
@@ -50,33 +47,39 @@ add_task(function test_Timeouts_fromJSON() {
   equal(ts.script, json.script);
 });
 
-add_task(function test_Timeouts_fromJSON_unrecognized_field() {
-  let json = {
-    sessionId: "foobar",
-  };
-  try {
-    Timeouts.fromJSON(json);
-  } catch (e) {
-    equal(e.name, error.InvalidArgumentError.name);
-    equal(e.message, "Unrecognized timeout: sessionId");
+add_task(function test_Timeouts_fromJSON_invalid_key() {
+  let json = { sessionId: "foobar" };
+  Assert.throws(() => Timeouts.fromJSON(json), /InvalidArgumentError/);
+});
+
+add_task(function test_Timeouts_fromJSON_value_invalid_types() {
+  for (let type of ["implicit", "pageLoad", "script"]) {
+    for (let value of [[], {}, false, "10", 2.5]) {
+      Assert.throws(
+        () => Timeouts.fromJSON({ [type]: value }),
+        /InvalidArgumentError/
+      );
+    }
   }
 });
 
-add_task(function test_Timeouts_fromJSON_invalid_types() {
-  for (let value of [null, [], {}, false, "10", 2.5]) {
-    Assert.throws(
-      () => Timeouts.fromJSON({ implicit: value }),
-      /InvalidArgumentError/
-    );
+add_task(function test_Timeouts_fromJSON_value_bounds() {
+  for (let type of ["implicit", "pageLoad", "script"]) {
+    for (let value of [-1, Number.MAX_SAFE_INTEGER + 1]) {
+      Assert.throws(
+        () => Timeouts.fromJSON({ [type]: value }),
+        /InvalidArgumentError/
+      );
+    }
   }
 });
 
-add_task(function test_Timeouts_fromJSON_bounds() {
-  for (let value of [-1, Number.MAX_SAFE_INTEGER + 1]) {
-    Assert.throws(
-      () => Timeouts.fromJSON({ script: value }),
-      /InvalidArgumentError/
-    );
+add_task(function test_Timeouts_fromJSON_value_valid() {
+  for (let type of ["implicit", "pageLoad", "script"]) {
+    for (let value of [null, 0, 100]) {
+      let timeouts = Timeouts.fromJSON({ [type]: value });
+      equal(timeouts[type], value);
+    }
   }
 });
 
@@ -426,7 +429,7 @@ add_task(function test_Capabilities_ctor_bidi() {
   equal(false, caps.get("acceptInsecureCerts"));
   ok(!caps.has("timeouts"));
   ok(caps.get("proxy") instanceof ProxyConfiguration);
-  ok(!caps.has("setWindowRect"));
+  ok(caps.has("setWindowRect"));
   ok(!caps.has("strictFileInteractability"));
   ok(!caps.has("webSocketUrl"));
 

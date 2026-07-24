@@ -9,6 +9,8 @@
 #include <string.h>
 #include "sqlite3.h"
 
+#include "mozilla/Assertions.h"
+
 namespace {
 
 // The last VFS version for which this file has been updated.

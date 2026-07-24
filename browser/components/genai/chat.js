@@ -59,11 +59,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
           title: {
             fontWeight: 400,
-            string_id: "genai-onboarding-header",
+            string_id: "genai-onboarding-choose-header",
           },
           cta_paragraph: {
             text: {
-              string_id: "genai-onboarding-description",
+              string_id: "genai-onboarding-choose-description",
               string_name: "learn-more",
             },
             action: {
@@ -88,37 +88,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
             action: { dismiss: true, type: ACTIONS.CHATBOT_REVERT },
             label: { string_id: "genai-onboarding-secondary" },
             style: "link",
-          },
-          progress_bar: true,
-        },
-      },
-      {
-        id: "chat_suggest",
-        content: {
-          fullscreen: true,
-          hide_secondary_section: "responsive",
-          narrow: true,
-          position: "split",
-
-          title: {
-            fontWeight: 400,
-            string_id: "genai-onboarding-select-header",
-          },
-          subtitle: { string_id: "genai-onboarding-select-description" },
-          above_button_content: [
-            {
-              height: "172px",
-              type: "image",
-              width: "307px",
-            },
-            {
-              text: " ",
-              type: "text",
-            },
-          ],
-          primary_button: {
-            action: { navigate: true },
-            label: { string_id: "genai-onboarding-select-primary" },
           },
           progress_bar: true,
         },
@@ -205,6 +174,9 @@ async function renderProviders() {
       showOnboarding();
     }
   }
+
+  // Clear warning message from different provider
+  clearWarningMessage();
 
   // Add extra controls after the providers
   select.appendChild(document.createElement("hr"));
@@ -324,6 +296,12 @@ function handleChange({ target }) {
         });
       } else {
         Services.prefs.setStringPref("browser.ml.chat.provider", value);
+        // Reset Permissions UI by changing provider
+        topChromeWindow.dispatchEvent(
+          new CustomEvent("sidebarbrowserchanged", {
+            bubble: true,
+          })
+        );
       }
       break;
   }
@@ -445,66 +423,27 @@ function showOnboarding(length) {
       if (primary) {
         primary.disabled = true;
       }
-
-      // Specially handle links to open out of the sidebar
-      const handleLink = ev => {
-        const { href } = ev.target;
-        if (href) {
-          ev.preventDefault();
-          openLink(href);
-        }
-      };
-      const links = document.querySelector(".link-paragraph");
-      links?.addEventListener("click", handleLink);
-
-      [...document.querySelectorAll("fieldset label")].forEach(label => {
-        // Add content that is hidden with 0 height until selected
-        const div = label
-          .querySelector(".text")
-          .appendChild(document.createElement("div"));
-        div.style.maxHeight = 0;
-        div.tabIndex = -1;
-        const ul = div.appendChild(document.createElement("ul"));
-        const config = providerConfigs.get(label.querySelector("input").value);
-        config.choiceIds?.forEach(id => {
-          const li = ul.appendChild(document.createElement("li"));
-          document.l10n.setAttributes(li, id);
-        });
-        if (config.learnLink && config.learnId) {
-          const a = div.appendChild(document.createElement("a"));
-          a.href = config.learnLink;
-          a.tabIndex = -1;
-          a.addEventListener("click", ev => {
-            handleLink(ev);
-            Glean.genaiChatbot.onboardingProviderLearn.record({
-              provider: config.id,
-              step: 1,
-            });
-          });
-          document.l10n.setAttributes(a, config.learnId);
-        }
-      });
     },
-    AWSendEventTelemetry({ event, event_context: { source }, message_id }) {
+    AWSendEventTelemetry({ event, event_context: { source } }) {
       const { provider } = window.AWSendEventTelemetry;
-      const step = message_id.match(/chat_pick/) ? 1 : 2;
+      const step = 1;
       switch (true) {
-        case step == 1 && event == "IMPRESSION":
+        case event == "IMPRESSION":
           Glean.genaiChatbot.onboardingProviderChoiceDisplayed.record({
             provider: lazy.GenAI.getProviderId(lazy.providerPref),
             step,
           });
           break;
-        case step == 1 && source == "cta_paragraph":
+        case source == "cta_paragraph":
           Glean.genaiChatbot.onboardingLearnMore.record({ provider, step });
           break;
-        case step == 1 && source == "primary_button":
-          Glean.genaiChatbot.onboardingContinue.record({ provider, step });
+        case source == "primary_button":
+          Glean.genaiChatbot.onboardingFinish.record({ provider, step });
           break;
-        case step == 1 && source == "additional_button":
+        case source == "additional_button":
           Glean.genaiChatbot.onboardingClose.record({ provider, step });
           break;
-        case step == 1 && source.startsWith("link"):
+        case source.startsWith("link"):
           Glean.genaiChatbot.onboardingProviderTerms.record({
             provider,
             step,
@@ -512,21 +451,12 @@ function showOnboarding(length) {
           });
           break;
         // Assume generic click not yet handled above single select of provider
-        case step == 1 && event == "CLICK_BUTTON":
+        case event == "CLICK_BUTTON":
           window.AWSendEventTelemetry.provider = source;
           Glean.genaiChatbot.onboardingProviderSelection.record({
             provider: source,
             step,
           });
-          break;
-        case step == 2 && event == "IMPRESSION":
-          Glean.genaiChatbot.onboardingTextHighlightDisplayed.record({
-            provider,
-            step,
-          });
-          break;
-        case step == 2 && source == "primary_button":
-          Glean.genaiChatbot.onboardingFinish.record({ provider, step });
           break;
       }
     },
@@ -581,6 +511,19 @@ function showOnboarding(length) {
               link.setAttribute("value", name);
             }
             document.l10n.setAttributes(links, config.linksId);
+
+            const handleLink = ev => {
+              const { href } = ev.target;
+              if (href) {
+                ev.preventDefault();
+                openLink(href);
+              }
+            };
+
+            if (!links._listenerAdded) {
+              links?.addEventListener("click", handleLink);
+              links._listenerAdded = true;
+            }
           }
 
           break;
@@ -597,3 +540,74 @@ function showOnboarding(length) {
 var onboardingPromise = new Promise(resolve => {
   showOnboarding.resolve = resolve;
 });
+
+/**
+ * Clear message if present
+ *
+ */
+function clearWarningMessage() {
+  const messageContainer = document.getElementById("message-container");
+
+  if (messageContainer?.hasChildNodes()) {
+    messageContainer.replaceChildren();
+  }
+}
+
+/**
+ * Display a warning message in the sidebar chatbot panel when context is too long
+ *
+ * @param {number} length context length for a request
+ */
+async function showSummarizeWarning(length) {
+  // if previous request showed the message clear previous message
+  clearWarningMessage();
+
+  const messageContainer = document.getElementById("message-container");
+  const warningEl = lazy.GenAI.createWarningEl(document, null, true);
+
+  if (!messageContainer) {
+    return;
+  }
+
+  const provider = lazy.GenAI.getProviderId();
+  const type = "page_summarization";
+  document.l10n.setAttributes(warningEl, "genai-page-warning");
+  messageContainer.hidden = false;
+  messageContainer.appendChild(warningEl);
+
+  // Warning message bar impression event
+  Glean.genaiChatbot.lengthDisclaimer.record({
+    type,
+    length,
+    provider,
+  });
+
+  await customElements.whenDefined("moz-message-bar");
+  const dismissButton = warningEl.shadowRoot.querySelector(".close");
+  dismissButton?.addEventListener("click", () => {
+    Glean.genaiChatbot.lengthDisclaimerDismissed.record({
+      type,
+      provider,
+    });
+    messageContainer.hidden = true;
+  });
+}
+
+/**
+ * Expose Sidebar entry for new prompt
+ *
+ * @param {object} opt for new prompt
+ * @param {boolean} [opt.show]
+ * @param {number} [opt.contextLength]
+ */
+window.onNewPrompt = async function (opt = {}) {
+  if (opt.show) {
+    await showSummarizeWarning(opt.contextLength);
+  } else {
+    clearWarningMessage();
+  }
+};
+
+window.addEventListener("SidebarFocused", () =>
+  document.querySelector("#browser-container browser").focus()
+);

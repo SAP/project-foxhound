@@ -63,14 +63,12 @@ class AnotherHeuristicProvider extends UrlbarTestUtils.TestProvider {
 }
 const anotherHeuristicProvider = new AnotherHeuristicProvider({
   results: [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        { url: "https://example.com/immediate" }
-      ),
-      { heuristic: true }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      heuristic: true,
+      payload: { url: "https://example.com/immediate" },
+    }),
   ],
 });
 
@@ -81,20 +79,21 @@ add_task(async function engagement_before_showing_results() {
   });
 
   // Increase chunk delays to delay the call to notifyResults.
-  let originalChunkTimeout = UrlbarProvidersManager.CHUNK_RESULTS_DELAY_MS;
-  UrlbarProvidersManager.CHUNK_RESULTS_DELAY_MS = 1000000;
+  let originalChunkTimeout = ProvidersManager.chunkResultsDelayMs;
+  ProvidersManager.chunkResultsDelayMs = 1000000;
 
   // Add a provider that waits forever in startQuery() to avoid fireing
   // heuristicProviderTimer.
-  UrlbarProvidersManager.registerProvider(noResponseProvider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(noResponseProvider);
 
   // Add a provider that add a result immediately as usual.
-  UrlbarProvidersManager.registerProvider(anotherHeuristicProvider);
+  providersManager.registerProvider(anotherHeuristicProvider);
 
   const cleanup = () => {
-    UrlbarProvidersManager.unregisterProvider(noResponseProvider);
-    UrlbarProvidersManager.unregisterProvider(anotherHeuristicProvider);
-    UrlbarProvidersManager.CHUNK_RESULTS_DELAY_MS = originalChunkTimeout;
+    providersManager.unregisterProvider(noResponseProvider);
+    providersManager.unregisterProvider(anotherHeuristicProvider);
+    ProvidersManager.chunkResultsDelayMs = originalChunkTimeout;
   };
   registerCleanupFunction(cleanup);
 
@@ -104,11 +103,11 @@ add_task(async function engagement_before_showing_results() {
 
     // Wait until starting the query and filling expected results.
     const context = await anotherHeuristicProvider.onQueryStarted();
-    const query = UrlbarProvidersManager.queries.get(context);
+    const query = providersManager.queries.get(context);
     await BrowserTestUtils.waitForCondition(
       () =>
         query.unsortedResults.some(
-          r => r.providerName === "HeuristicFallback"
+          r => r.providerName === "UrlbarProviderHeuristicFallback"
         ) &&
         query.unsortedResults.some(
           r => r.providerName === anotherHeuristicProvider.name
@@ -174,7 +173,7 @@ add_task(async function engagement_after_closing_results() {
       assertEngagementTelemetry([
         {
           selected_result: "search_engine",
-          provider: "HeuristicFallback",
+          provider: "UrlbarProviderHeuristicFallback",
           results: "search_engine",
           groups: "heuristic",
         },
@@ -201,7 +200,7 @@ add_task(async function enter_to_reload_current_url() {
     assertEngagementTelemetry([
       {
         selected_result: "url",
-        provider: "HeuristicFallback",
+        provider: "UrlbarProviderHeuristicFallback",
         results: "url",
         groups: "heuristic",
       },

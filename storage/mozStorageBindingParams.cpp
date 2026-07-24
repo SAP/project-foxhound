@@ -13,7 +13,6 @@
 #include "mozStoragePrivateHelpers.h"
 #include "mozStorageBindingParams.h"
 #include "Variant.h"
-#include "sqlite3_static_ext.h"
 
 namespace mozilla::storage {
 

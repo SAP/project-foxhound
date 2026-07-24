@@ -16,7 +16,7 @@ body {
 
 @media (prefers-contrast) {
   body {
-    --warning-color: var(--in-content-page-color);
+    --warning-color: var(--text-color);
   }
 }
 
@@ -56,7 +56,7 @@ button:disabled {
 }
 
 #errorWhatToDoTitle {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin-top: 2em;
 }
 
@@ -88,20 +88,33 @@ button:disabled {
 
 .trr-message-container {
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   padding: 10px;
 }
 
 #badCertAdvancedPanel {
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .advanced-panel {
   margin: 48px auto;
   min-width: var(--in-content-container-min-width);
   max-width: var(--in-content-container-max-width);
+}
+
+.custom-net-error-card h3,
+.advanced-container h3 {
+  margin-block-end: var(--space-small);
+
+  & + p {
+    margin-block-start: var(--space-small);
+  }
+}
+
+.custom-net-error-card h1 + p:last-of-type {
+  margin-block-end: var(--space-xxlarge);
 }
 
 #errorCode {
@@ -119,23 +132,23 @@ button:disabled {
 }
 
 #certificateErrorDebugInformation {
-  background-color: var(--in-content-box-info-background) !important;
-  border-top: 1px solid var(--in-content-border-color);
+  background-color: var(--background-color-box-info) !important;
+  border-top: 1px solid var(--border-color);
   width: 100%;
-  padding: 1em 3%;
+  padding: var(--space-large);
   box-sizing: border-box;
 }
 
 #certificateErrorText {
   font-family: monospace;
   white-space: pre-wrap;
-  padding: 1em 0;
+  padding: var(--space-small) 0;
   display: flex;
   flex-wrap: wrap;
 }
 
 #cert_domain_link:not([href]) {
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   text-decoration: none;
 }
 
@@ -144,14 +157,18 @@ button:disabled {
 }
 
 #errorLongDesc strong {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #errorShortDesc {
   font-size: 1.15em;
   line-height: 1.3;
-  font-weight: 400;
+  font-weight: normal;
   margin-top: 10px;
+}
+
+#prefChangeContainer {
+  margin-block-end: var(--space-large);
 }
 
 /* Felt Privacy v1 LARGER SCREEN! */
@@ -164,12 +181,17 @@ button:disabled {
   net-error-card {
     width: min(100%, 720px);
     min-width: min-content;
-    margin-top: 150px;
+    margin-top: calc(150px - var(--error-page-padding, 0px));
+    padding-block-end: var(--space-xxlarge);
   }
 
   .felt-privacy-container {
     display: flex;
     flex-direction: row;
+
+    > .container {
+      width: 100%;
+    }
   }
 
   .img-container > img {

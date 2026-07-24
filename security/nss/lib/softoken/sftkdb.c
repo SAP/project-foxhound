@@ -98,6 +98,7 @@ sftkdb_isPrivateAttribute(CK_ATTRIBUTE_TYPE type)
 {
     switch (type) {
         case CKA_VALUE:
+        case CKA_SEED:
         case CKA_PRIVATE_EXPONENT:
         case CKA_PRIME_1:
         case CKA_PRIME_2:
@@ -912,9 +913,15 @@ sftkdb_getFindTemplate(CK_OBJECT_CLASS objectType, unsigned char *objTypeData,
                  * happens in the key gen case */
                 return CKR_OBJECT_HANDLE_INVALID;
             }
-
             findTemplate[1] = *attr;
-            count = 2;
+            attr = sftkdb_getAttributeFromTemplate(CKA_KEY_TYPE,
+                                                   ptemplate, len);
+            if (attr != NULL) {
+                findTemplate[2] = *attr;
+                count = 3;
+            } else {
+                count = 2;
+            }
             break;
 
         case CKO_NSS_CRL:

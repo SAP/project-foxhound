@@ -160,15 +160,15 @@ class JUnitTestRunner(MochitestDesktop):
         self.merge_base_profiles(self.options, "geckoview-junit")
 
         if self.options.web_content_isolation_strategy is not None:
-            self.options.extra_prefs.append(
+            self.options.extraPrefs.append(
                 "fission.webContentIsolationStrategy=%s"
                 % self.options.web_content_isolation_strategy
             )
-        self.options.extra_prefs.append("fission.autostart=true")
+        self.options.extraPrefs.append("fission.autostart=true")
         if self.options.disable_fission:
-            self.options.extra_prefs.pop()
-            self.options.extra_prefs.append("fission.autostart=false")
-        prefs = parse_preferences(self.options.extra_prefs)
+            self.options.extraPrefs.pop()
+            self.options.extraPrefs.append("fission.autostart=false")
+        prefs = parse_preferences(self.options.extraPrefs)
         self.profile.set_preferences(prefs)
 
         if self.fillCertificateDB(self.options):
@@ -258,6 +258,10 @@ class JUnitTestRunner(MochitestDesktop):
             env["MOZ_FORCE_DISABLE_FISSION"] = "1"
         else:
             env["MOZ_FORCE_ENABLE_FISSION"] = "1"
+        if self.options.enable_isolated_zygote_process:
+            env["MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE"] = "1"
+        else:
+            env["MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE"] = "0"
 
         # Add additional env variables
         for [key, value] in [p.split("=", 1) for p in self.options.add_env]:
@@ -475,7 +479,7 @@ class JunitArgumentParser(argparse.ArgumentParser):
     """
 
     def __init__(self, **kwargs):
-        super(JunitArgumentParser, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.add_argument(
             "--appname",
@@ -597,6 +601,13 @@ class JunitArgumentParser(argparse.ArgumentParser):
             help="Run the tests without Fission (site isolation) enabled.",
         )
         self.add_argument(
+            "--enable-isolated-zygote-process",
+            action="store_true",
+            dest="enable_isolated_zygote_process",
+            default=False,
+            help="Run with app Zygote preloading enabled.",
+        )
+        self.add_argument(
             "--web-content-isolation-strategy",
             type=int,
             dest="web_content_isolation_strategy",
@@ -619,20 +630,22 @@ class JunitArgumentParser(argparse.ArgumentParser):
         self.add_argument(
             "--setpref",
             action="append",
-            dest="extra_prefs",
+            dest="extraPrefs",
             default=[],
             metavar="PREF=VALUE",
             help="Defines an extra user preference.",
         )
         # Additional options for server.
-        self.add_argument(
-            "--certificate-path",
-            action="store",
-            type=str,
-            dest="certPath",
-            default=None,
-            help="Path to directory containing certificate store.",
-        ),
+        (
+            self.add_argument(
+                "--certificate-path",
+                action="store",
+                type=str,
+                dest="certPath",
+                default=None,
+                help="Path to directory containing certificate store.",
+            ),
+        )
         self.add_argument(
             "--http-port",
             action="store",

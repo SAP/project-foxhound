@@ -31,9 +31,10 @@ function details(state = getInitialState(), action) {
 
 /**
  * Handle details update for an accessible object
- * @param {Object} state  Current accessible object details.
- * @param {Object} action Redux action object
- * @return {Object}  updated state
+ *
+ * @param {object} state  Current accessible object details.
+ * @param {object} action Redux action object
+ * @return {object}  updated state
  */
 function onUpdateDetails(state, action) {
   const { accessible, response, error } = action;

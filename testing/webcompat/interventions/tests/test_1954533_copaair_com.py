@@ -2,6 +2,7 @@ import pytest
 
 URL = "https://www.copaair.com/en-gs/enrollment/"
 
+COOKIES_CSS = ".MuiBox-root:has(img[src*=Cookies])"
 CAPTCHA_CSS = "iframe[src*='Incapsula_Resource']"
 NAME_CSS = "#input-name"
 SURNAME_CSS = "#input-lastName"
@@ -11,10 +12,16 @@ MONTH_SELECTOR_CSS = "#month"
 MONTH_CSS = "#month-open [data-value='3']"
 DAY_SELECTOR_CSS = "#day"
 DAY_CSS = "#day-open [data-value='6']"
-COUNTRY_SELECTOR_CSS = "#option"
+GENDER_SELECTOR_CSS = "#gender"
+GENDER_MALE_CSS = "#menu-gender [data-value='Male']"
+COUNTRY_SELECTOR_CSS = "[aria-label='enrollmentFormNationalityWCAG'] #option"
 COUNTRY_CSS = "#option-open [data-value='CA'], #option-open [data-value='0']"
+COUNTRY_RESIDENCE_SELECTOR_CSS = (
+    "[aria-label='enrollmentFormResidenceCountryWCAG'] #option"
+)
+COUNTRY_RESIDENCE_CSS = "#option-open [data-value='CA'], #option-open [data-value='0']"
 DOC_SELECTOR_CSS = "#memberDoc"
-DOC_CSS = "#memberDoc-open [data-value='p']"
+DOC_CSS = "#memberDoc-open [aria-label='Passport']"
 DOC_NUMBER_CSS = "[id='input-memberDoc.documentId']"
 DOC_COUNTRY_SELECTOR_CSS = "[id='memberDoc.issuingCountry']"
 DOC_COUNTRY_CSS = "[id='memberDoc.issuingCountry-open'] [data-value='CA'], [id='memberDoc.issuingCountry-open'] [data-value='0']"
@@ -38,7 +45,7 @@ async def get_accept_button(client, in_headless_mode):
     await client.make_preload_script(
         "Object.defineProperty(window, 'y', {get: () => document.head, configurable:true})"
     )
-    await client.navigate(URL, wait="none")
+    await client.navigate(URL)
     captcha, name = client.await_first_element_of(
         [
             client.css(CAPTCHA_CSS),
@@ -53,6 +60,7 @@ async def get_accept_button(client, in_headless_mode):
         print(
             "Please do Captcha...\a\n"
         )  # beep to let the user know to do the reCAPTCHA
+    client.hide_elements(COOKIES_CSS)
     client.await_css(NAME_CSS, is_displayed=True).send_keys("webcompat")
     client.await_css(SURNAME_CSS, is_displayed=True).send_keys("tester")
     client.click(client.await_css(YEAR_SELECTOR_CSS, is_displayed=True), force=True)
@@ -61,8 +69,14 @@ async def get_accept_button(client, in_headless_mode):
     client.click(client.await_css(MONTH_CSS, is_displayed=True), force=True)
     client.click(client.await_css(DAY_SELECTOR_CSS, is_displayed=True), force=True)
     client.click(client.await_css(DAY_CSS, is_displayed=True), force=True)
+    client.click(client.await_css(GENDER_SELECTOR_CSS, is_displayed=True), force=True)
+    client.click(client.await_css(GENDER_MALE_CSS, is_displayed=True), force=True)
     client.click(client.await_css(COUNTRY_SELECTOR_CSS, is_displayed=True), force=True)
-    client.click(client.await_css(COUNTRY_CSS, is_displayed=True), force=True)
+    client.soft_click(client.await_css(COUNTRY_CSS, is_displayed=True))
+    client.click(
+        client.await_css(COUNTRY_RESIDENCE_SELECTOR_CSS, is_displayed=True), force=True
+    )
+    client.soft_click(client.await_css(COUNTRY_RESIDENCE_CSS, is_displayed=True))
     client.click(client.await_css(DOC_SELECTOR_CSS, is_displayed=True), force=True)
     client.click(client.await_css(DOC_CSS, is_displayed=True), force=True)
     client.await_css(DOC_NUMBER_CSS, is_displayed=True).send_keys("1235123")
@@ -95,17 +109,24 @@ async def get_accept_button(client, in_headless_mode):
     """,
         create,
     )
-    client.click(create, force=True)
-    return client.await_css(DIALOG_BUTTONS_CSS, all=True, is_displayed=True)[1]
+    await client.stall(1)
+    client.soft_click(create)
+    return client.await_css(
+        DIALOG_BUTTONS_CSS,
+        condition=f"elem.innerText.includes('{ACCEPT_BUTTON_TEXT}')",
+        is_displayed=True,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.with_interventions
+async def test_with_interventions(client, in_headless_mode):
+    client.soft_click(await get_accept_button(client, in_headless_mode))
+    assert client.await_css(OOPS_CSS, is_displayed=True)
 
 
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_regression(client, in_headless_mode):
-    await get_accept_button(client, in_headless_mode)
-    client.await_css(
-        "button",
-        condition=f"elem.innerText.includes('{ACCEPT_BUTTON_TEXT}')",
-        is_displayed=True,
-    ).click()
-    assert client.await_css(OOPS_CSS, is_displayed=True)
+async def test_disabled(client, in_headless_mode):
+    client.soft_click(await get_accept_button(client, in_headless_mode))
+    await (await client.promise_console_message_listener(FAIL_MSG))

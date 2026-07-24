@@ -2,28 +2,6 @@ const { TabGroupTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TabGroupTestUtils.sys.mjs"
 );
 
-function promiseTabLoadEvent(tab, url) {
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  if (url) {
-    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
-  }
-
-  return loaded;
-}
-
 function updateTabContextMenu(tab) {
   let menu = document.getElementById("tabContextMenu");
   if (!tab) {
@@ -70,7 +48,7 @@ async function addTabTo(
   params.skipAnimation = true;
   const tab = BrowserTestUtils.addTab(targetBrowser, url, params);
   const browser = targetBrowser.getBrowserForTab(tab);
-  await BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: url });
   return tab;
 }
 
@@ -296,7 +274,7 @@ async function dragAndDrop(
     ctrlKey: copy,
     altKey: copy,
     clientX: rect.left + rect.width / 2 + (afterTab ? 1 : -1),
-    clientY: rect.top + rect.height / 2,
+    clientY: rect.top + rect.height / 2 + (afterTab ? 1 : -1),
   };
 
   if (destWindow != origWindow) {

@@ -8,7 +8,6 @@
 #define NSTEXTRUNTRANSFORMATIONS_H_
 
 #include "gfxTextRun.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"

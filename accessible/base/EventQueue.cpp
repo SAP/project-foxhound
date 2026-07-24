@@ -130,7 +130,7 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
         bool fireNameChange = parent->IsHTMLFileInput();
         if (!fireNameChange) {
           nsAutoString name;
-          ENameValueFlag nameFlag = parent->Name(name);
+          ENameValueFlag nameFlag = parent->DirectName(name);
           switch (nameFlag) {
             case eNameOK:
               // Descendants of subtree may have been removed, making the name

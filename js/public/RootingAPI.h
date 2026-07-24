@@ -161,7 +161,7 @@ JS_FOR_EACH_PUBLIC_TAGGED_GC_POINTER_TYPE(JS_DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE)
 // be used with Heap<>.
 
 namespace gc {
-struct Cell;
+class Cell;
 } /* namespace gc */
 
 // Important: Return a reference so passing a Rooted<T>, etc. to
@@ -223,13 +223,10 @@ JS_PUBLIC_API void HeapScriptWriteBarriers(JSScript** objp, JSScript* prev,
  */
 template <typename T, typename Enable = void>
 struct SafelyInitialized {
-  static T create() {
+  static constexpr T create() {
     // This function wants to presume that |T()| -- which value-initializes a
     // |T| per C++11 [expr.type.conv]p2 -- will produce a safely-initialized,
     // safely-usable T that it can return.
-
-#if defined(XP_WIN) || defined(XP_DARWIN) || \
-    (defined(XP_UNIX) && !defined(__clang__))
 
     // That presumption holds for pointers, where value initialization produces
     // a null pointer.
@@ -245,8 +242,6 @@ struct SafelyInitialized {
 
     static_assert(IsPointer || IsNonTriviallyDefaultConstructibleClassOrUnion,
                   "T() must evaluate to a safely-initialized T");
-
-#endif
 
     return T();
   }
@@ -1164,7 +1159,7 @@ template <typename T>
 class MOZ_RAII Rooted : public detail::RootedTraits<T>::StackBase,
                         public js::RootedOperations<T, Rooted<T>> {
   // Intentionally store a pointer into the stack.
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ >= 12
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wdangling-pointer"
 #endif
@@ -1173,7 +1168,7 @@ class MOZ_RAII Rooted : public detail::RootedTraits<T>::StackBase,
     this->prev = *this->stack;
     *this->stack = this;
   }
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ >= 12
 #  pragma GCC diagnostic pop
 #endif
 
@@ -1254,6 +1249,8 @@ class MOZ_RAII Rooted : public detail::RootedTraits<T>::StackBase,
   T* address() { return &ptr; }
   const T* address() const { return &ptr; }
 
+  static constexpr size_t offsetOfPtr() { return offsetof(Rooted, ptr); }
+
  private:
   T ptr;
 
@@ -1308,9 +1305,6 @@ class RootedTuple {
  public:
   template <typename RootingContext>
   explicit RootedTuple(const RootingContext& cx) : fields(cx) {}
-  template <typename RootingContext>
-  explicit RootedTuple(const RootingContext& cx, const Fs&... fs)
-      : fields(cx, fs...) {}
 };
 
 // Reference to a field in a RootedTuple. This is a drop-in replacement for an
@@ -1338,8 +1332,10 @@ class RootedTuple {
 template <typename T, size_t N /* = SIZE_MAX */>
 class MOZ_RAII RootedField : public js::RootedOperations<T, RootedField<T, N>> {
   T* ptr;
-  friend class Handle<T>;
-  friend class MutableHandle<T>;
+  template <typename U>
+  friend class Handle;
+  template <typename U>
+  friend class MutableHandle;
 
 #ifdef DEBUG
   bool* inUseFlag = nullptr;
@@ -1358,6 +1354,7 @@ class MOZ_RAII RootedField : public js::RootedOperations<T, RootedField<T, N>> {
       static_assert(std::is_same_v<T, std::tuple_element_t<N, Tuple>>);
       ptr = &std::get<N>(rootedTuple.fields.get());
     }
+    *ptr = SafelyInitialized<T>::create();
 #ifdef DEBUG
     size_t index = N;
     if constexpr (N == SIZE_MAX) {

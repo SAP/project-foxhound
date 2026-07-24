@@ -19,6 +19,18 @@ void gecko_profiler_register_thread(const char* aName) {
 
 void gecko_profiler_unregister_thread() { PROFILER_UNREGISTER_THREAD(); }
 
+bool gecko_profiler_current_thread_is_registered(
+    ThreadProfilingFeatures aThreadProfilingFeatures) {
+  return mozilla::profiler::ThreadRegistration::WithOnThreadRefOr(
+      [aThreadProfilingFeatures](
+          mozilla::profiler::ThreadRegistration::OnThreadRef aTR) {
+        return DoFeaturesIntersect(
+            aTR.UnlockedConstReaderAndAtomicRWCRef().ProfilingFeatures(),
+            aThreadProfilingFeatures);
+      },
+      false);
+}
+
 void gecko_profiler_construct_label(mozilla::AutoProfilerLabel* aAutoLabel,
                                     JS::ProfilingCategoryPair aCategoryPair) {
 #ifdef MOZ_GECKO_PROFILER
@@ -186,6 +198,13 @@ void gecko_profiler_marker_schema_set_all_labels(mozilla::MarkerSchema* aSchema,
 #endif
 }
 
+void gecko_profiler_marker_schema_set_stack_based(
+    mozilla::MarkerSchema* aSchema) {
+#ifdef MOZ_GECKO_PROFILER
+  aSchema->SetIsStackBased();
+#endif
+}
+
 void gecko_profiler_marker_schema_add_key_format(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     mozilla::MarkerSchema::Format aFormat) {
@@ -204,25 +223,24 @@ void gecko_profiler_marker_schema_add_key_label_format(
 #endif
 }
 
-void gecko_profiler_marker_schema_add_key_format_searchable(
+void gecko_profiler_marker_schema_add_key_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable) {
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags) {
 #ifdef MOZ_GECKO_PROFILER
-  aSchema->AddKeyFormatSearchable(std::string(aKey, aKeyLength), aFormat,
-                                  aSearchable);
+  aSchema->AddKeyFormat(std::string(aKey, aKeyLength), aFormat, aPayloadFlags);
 #endif
 }
 
-void gecko_profiler_marker_schema_add_key_label_format_searchable(
+void gecko_profiler_marker_schema_add_key_label_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     const char* aLabel, size_t aLabelLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable) {
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags) {
 #ifdef MOZ_GECKO_PROFILER
-  aSchema->AddKeyLabelFormatSearchable(std::string(aKey, aKeyLength),
-                                       std::string(aLabel, aLabelLength),
-                                       aFormat, aSearchable);
+  aSchema->AddKeyLabelFormat(std::string(aKey, aKeyLength),
+                             std::string(aLabel, aLabelLength), aFormat,
+                             aPayloadFlags);
 #endif
 }
 

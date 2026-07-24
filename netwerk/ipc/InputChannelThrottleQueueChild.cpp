@@ -20,7 +20,7 @@ InputChannelThrottleQueueChild::RecordRead(uint32_t aBytesRead) {
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "InputChannelThrottleQueueChild::RecordRead", [self, aBytesRead]() {
         if (self->CanSend()) {
-          Unused << self->SendRecordRead(aBytesRead);
+          (void)self->SendRecordRead(aBytesRead);
         }
       }));
   return NS_OK;

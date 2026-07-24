@@ -10,8 +10,10 @@
 #ifndef BASE_PROCESS_LAUNCH_H_
 #define BASE_PROCESS_LAUNCH_H_
 
+#include <minwindef.h>
 #include <vector>
 
+// Included because other files rely on it being included here.
 #include "base/environment.h"
 
 namespace base {

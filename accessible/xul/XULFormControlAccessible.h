@@ -50,7 +50,7 @@ class XULButtonAccessible : public AccessibleWrap {
   // LocalAccessible
   virtual bool AttributeChangesState(nsAtom* aAttribute) override;
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 

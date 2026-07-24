@@ -7,8 +7,8 @@
 #ifndef MOZILLA_MEDIASOURCEUTILS_H_
 #define MOZILLA_MEDIASOURCEUTILS_H_
 
-#include "nsString.h"
 #include "TimeUnits.h"
+#include "nsString.h"
 
 namespace mozilla {
 

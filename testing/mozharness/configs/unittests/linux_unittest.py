@@ -149,16 +149,15 @@ config = {
             "--timeout=900",
             "--max-timeouts=50",
         ],
-        "mochitest-plain": ["--chunk-by-dir=4"],
+        "mochitest-plain": [],
         "mochitest-plain-gpu": ["--subsuite=gpu"],
-        "mochitest-plain-coverage": ["--chunk-by-dir=4", "--timeout=1200"],
+        "mochitest-plain-coverage": ["--timeout=1200"],
         "mochitest-media": ["--subsuite=media"],
-        "mochitest-chrome": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
+        "mochitest-chrome": ["--flavor=chrome", "--disable-e10s"],
         "mochitest-chrome-gpu": ["--flavor=chrome", "--subsuite=gpu", "--disable-e10s"],
-        "mochitest-browser-chrome": ["--flavor=browser", "--chunk-by-runtime"],
+        "mochitest-browser-chrome": ["--flavor=browser"],
         "mochitest-browser-chrome-coverage": [
             "--flavor=browser",
-            "--chunk-by-runtime",
             "--timeout=1200",
         ],
         "mochitest-browser-screenshots": [
@@ -174,12 +173,10 @@ config = {
         "mochitest-devtools-chrome": [
             "--flavor=browser",
             "--subsuite=devtools",
-            "--chunk-by-runtime",
         ],
         "mochitest-devtools-chrome-coverage": [
             "--flavor=browser",
             "--subsuite=devtools",
-            "--chunk-by-runtime",
             "--timeout=1200",
         ],
         "mochitest-browser-a11y": ["--flavor=browser", "--subsuite=a11y"],
@@ -264,7 +261,6 @@ config = {
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
     "unstructured_flavors": {
-        "xpcshell": [],
         "gtest": [],
         "cppunittest": [],
         "jittest": [],

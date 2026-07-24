@@ -49,6 +49,10 @@ class ViewRegion {
 
  private:
   mozilla::LayoutDeviceIntRegion mRegion;
+  // This array holds retained references to all the views we created. We
+  // don't rely on the lifetime of the superview to keeo our views alive,
+  // because we don't own the superview and don't know when it will be
+  // released.
   nsTArray<NSView*> mViews;
 };
 

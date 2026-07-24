@@ -20,7 +20,8 @@ class MoveEmitterMIPS64 : public MoveEmitterMIPSShared {
                      MoveOp::Type type, uint32_t slot);
 
  public:
-  MoveEmitterMIPS64(MacroAssembler& masm) : MoveEmitterMIPSShared(masm) {}
+  explicit MoveEmitterMIPS64(MacroAssembler& masm)
+      : MoveEmitterMIPSShared(masm) {}
 };
 
 typedef MoveEmitterMIPS64 MoveEmitter;

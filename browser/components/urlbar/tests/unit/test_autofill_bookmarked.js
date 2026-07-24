@@ -21,13 +21,33 @@ add_task(async function () {
     url: `http://${host}`,
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
   });
-  for (let i = 0; i < 3; i++) {
-    await PlacesTestUtils.addVisits(`https://${host}`);
-  }
-  // ensure both fall below the threshold.
-  for (let i = 0; i < 15; i++) {
-    await PlacesTestUtils.addVisits(`https://not-${host}`);
-  }
+  // Add one visit to http to give it a realistic origin frecency score instead
+  // of the default value of 1. This ensures the threshold test doesn't use an
+  // artificially low baseline.
+  await PlacesTestUtils.addVisits({
+    uri: `http://${host}`,
+    visitDate: daysAgo(90),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
+
+  await PlacesTestUtils.addVisits({
+    uri: `https://${host}`,
+    visitDate: daysAgo(30),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
+
+  await PlacesTestUtils.addVisits({
+    uri: `https://fakedomain1.com/`,
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
+  await PlacesTestUtils.addVisits({
+    uri: `https://fakedomain2.com/`,
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
+  await PlacesTestUtils.addVisits({
+    url: `https://not-${host}/`,
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
 
   async function check_autofill() {
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
@@ -48,6 +68,12 @@ add_task(async function () {
       httpOriginFrecency,
       httpsOriginFrecency,
       "Http origin frecency should be below the https origin frecency"
+    );
+    let not = await getOriginFrecency("https://", "not-example.com");
+    Assert.less(
+      httpsOriginFrecency,
+      not,
+      "Http origin frecency should be below not example.com"
     );
 
     // The http version should be filled because it's bookmarked, but with the
@@ -78,10 +104,19 @@ add_task(async function () {
   await checkOriginsOrder(host, ["http://", "https://"]);
   await PlacesUtils.bookmarks.remove(bookmark);
   await PlacesUtils.withConnectionWrapper("removeOrphans", async db => {
-    db.execute(`DELETE FROM moz_places WHERE url = :url`, {
+    // Delete the visit.
+    await db.execute(
+      `
+      DELETE FROM moz_historyvisits
+      WHERE place_id = (SELECT id FROM moz_places WHERE url = :url)`,
+      { url: `http://${host}/` }
+    );
+
+    await db.execute(`DELETE FROM moz_places WHERE url = :url`, {
       url: `http://${host}/`,
     });
-    db.execute(
+
+    await db.execute(
       `DELETE FROM moz_origins WHERE prefix = "http://" AND host = :host`,
       { host }
     );
@@ -115,7 +150,7 @@ add_task(async function test_www() {
     matches: [
       makeVisitResult(context, {
         uri: `http://www.${host}/`,
-        fallbackTitle: UrlbarTestUtils.trimURL(`http://www.${host}`),
+        title: UrlbarTestUtils.trimURL(`http://www.${host}`),
         heuristic: true,
       }),
     ],
@@ -129,7 +164,7 @@ add_task(async function test_www() {
     matches: [
       makeVisitResult(context, {
         uri: `http://www.${host}/`,
-        fallbackTitle: UrlbarTestUtils.trimURL(`http://www.${host}`),
+        title: UrlbarTestUtils.trimURL(`http://www.${host}`),
         heuristic: true,
       }),
     ],
@@ -143,7 +178,7 @@ add_task(async function test_www() {
     matches: [
       makeVisitResult(context, {
         uri: `http://www.${host}/`,
-        fallbackTitle: UrlbarTestUtils.trimURL(`http://www.${host}`),
+        title: UrlbarTestUtils.trimURL(`http://www.${host}`),
         heuristic: true,
       }),
     ],

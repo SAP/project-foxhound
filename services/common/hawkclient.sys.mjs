@@ -73,7 +73,7 @@ ChromeUtils.defineLazyGetter(lazy, "logPII", function () {
   }
 });
 
-/*
+/**
  * A general purpose client for making HAWK authenticated requests to a single
  * host.  Keeps track of the clock offset between the client and the host for
  * computation of the timestamp in the HAWK Authorization header.
@@ -93,7 +93,7 @@ export var HawkClient = function (host) {
 };
 
 HawkClient.prototype = {
-  /*
+  /**
    * Construct an error message for a response.  Private.
    *
    * @param restResponse
@@ -130,7 +130,7 @@ HawkClient.prototype = {
     return errorObj;
   },
 
-  /*
+  /**
    *
    * Update clock offset by determining difference from date gives in the (RFC
    * 1123) Date header of a server response.  Because HAWK tolerates a window
@@ -175,7 +175,8 @@ HawkClient.prototype = {
     return Date.now();
   },
 
-  /* A general method for sending raw RESTRequest calls authorized using HAWK
+  /**
+   * A general method for sending raw RESTRequest calls authorized using HAWK.
    *
    * @param path
    *        API endpoint path

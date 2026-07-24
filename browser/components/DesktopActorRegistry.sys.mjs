@@ -135,6 +135,9 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:messagepreview", "about:messagepreview?*"],
+    remoteTypes: ["privilegedabout"],
+    enablePreference:
+      "browser.newtabpage.activity-stream.asrouter.devtoolsEnabled",
   },
 
   AboutPrivateBrowsing: {
@@ -150,6 +153,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:privatebrowsing*"],
+    remoteTypes: ["privilegedabout"],
   },
 
   AboutProtections: {
@@ -165,6 +169,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:protections", "about:protections?*"],
+    remoteTypes: ["privilegedabout"],
   },
 
   AboutReader: {
@@ -218,6 +223,42 @@ let JSWINDOWACTORS = {
     enablePreference: "browser.aboutwelcome.enabled",
   },
 
+  AIChatContent: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentParent.sys.mjs",
+    },
+    child: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentChild.sys.mjs",
+      events: {
+        "AIChatContent:DispatchSearch": { wantUntrusted: true },
+        "AIChatContent:DispatchFollowUp": { wantUntrusted: true },
+        "AIChatContent:Ready": { wantUntrusted: true },
+        "AIChatContent:DispatchAction": { wantUntrusted: true },
+        "AIChatContent:OpenLink": { wantUntrusted: true },
+      },
+    },
+    allFrames: true,
+    matches: ["about:aichatcontent"],
+    enablePreference: "browser.smartwindow.enabled",
+  },
+
+  AISmartBar: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AISmartBarParent.sys.mjs",
+    },
+    child: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AISmartBarChild.sys.mjs",
+    },
+    matches: ["chrome://browser/content/aiwindow/aiWindow.html"],
+    includeChrome: true,
+    allFrames: true,
+    enablePreference: "browser.smartwindow.enabled",
+  },
+
   BackupUI: {
     parent: {
       esModuleURI: "resource:///actors/BackupUIParent.sys.mjs",
@@ -226,6 +267,7 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource:///actors/BackupUIChild.sys.mjs",
       events: {
         "BackupUI:InitWidget": { wantUntrusted: true },
+        "BackupUI:TriggerCreateBackup": { wantUntrusted: true },
         "BackupUI:EnableScheduledBackups": { wantUntrusted: true },
         "BackupUI:DisableScheduledBackups": { wantUntrusted: true },
         "BackupUI:ShowFilepicker": { wantUntrusted: true },
@@ -234,13 +276,23 @@ let JSWINDOWACTORS = {
         "BackupUI:RestoreFromBackupChooseFile": { wantUntrusted: true },
         "BackupUI:EnableEncryption": { wantUntrusted: true },
         "BackupUI:DisableEncryption": { wantUntrusted: true },
-        "BackupUI:RerunEncryption": { wantUntrusted: true },
         "BackupUI:ShowBackupLocation": { wantUntrusted: true },
         "BackupUI:EditBackupLocation": { wantUntrusted: true },
+        "BackupUI:SetEmbeddedComponentPersistentData": { wantUntrusted: true },
+        "BackupUI:FlushEmbeddedComponentPersistentData": {
+          wantUntrusted: true,
+        },
+        "BackupUI:ErrorBarDismissed": { wantUntrusted: true },
       },
     },
-    matches: ["about:preferences*", "about:settings*"],
-    enablePreference: "browser.backup.preferences.ui.enabled",
+    includeChrome: true,
+    allFrames: true,
+    matches: [
+      "about:preferences*",
+      "about:settings*",
+      "about:welcome*",
+      "chrome://browser/content/spotlight.html",
+    ],
   },
 
   BlockedSite: {
@@ -264,6 +316,34 @@ let JSWINDOWACTORS = {
     },
 
     messageManagerGroups: ["browsers"],
+  },
+
+  CanonicalURL: {
+    parent: {
+      esModuleURI: "resource:///actors/CanonicalURLParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/CanonicalURLChild.sys.mjs",
+      events: {
+        DOMContentLoaded: {},
+        pageshow: {},
+        // `popstate` does not bubble, so it needs to be captured.
+        popstate: { capture: true },
+      },
+    },
+    matches: ["http://*/*", "https://*/*"],
+    messageManagerGroups: ["browsers"],
+    enablePreference: "browser.tabs.notes.enabled",
+    onPreferenceChanged: isEnabled => {
+      if (isEnabled) {
+        Services.obs.notifyObservers(undefined, "CanonicalURL:ActorRegistered");
+      } else {
+        Services.obs.notifyObservers(
+          undefined,
+          "CanonicalURL:ActorUnregistered"
+        );
+      }
+    },
   },
 
   ClickHandler: {
@@ -334,6 +414,20 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+  },
+
+  CustomKeys: {
+    parent: {
+      esModuleURI: "resource:///actors/CustomKeysParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/CustomKeysChild.sys.mjs",
+      events: {
+        DOMDocElementInserted: { wantUntrusted: true },
+      },
+    },
+    matches: ["about:keyboard"],
+    remoteTypes: ["privilegedabout"],
   },
 
   DecoderDoctor: {
@@ -465,6 +559,7 @@ let JSWINDOWACTORS = {
       "about:editprofile",
       "about:deleteprofile",
       "about:newprofile",
+      "about:opentabs",
     ],
   },
 
@@ -499,12 +594,29 @@ let JSWINDOWACTORS = {
     enablePreference: "browser.ml.linkPreview.enabled",
   },
 
+  PageAssist: {
+    parent: {
+      esModuleURI: "resource:///actors/PageAssistParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/PageAssistChild.sys.mjs",
+    },
+    includeChrome: true,
+    enablePreference: "browser.ml.pageAssist.enabled",
+  },
+
   PageInfo: {
     child: {
       esModuleURI: "resource:///actors/PageInfoChild.sys.mjs",
     },
 
     allFrames: true,
+  },
+
+  PageInfoPreview: {
+    child: {
+      esModuleURI: "resource:///actors/PageInfoPreviewChild.sys.mjs",
+    },
   },
 
   PageStyle: {
@@ -697,6 +809,14 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+  },
+
+  TLSCertificateBinding: {
+    child: {
+      esModuleURI: "resource:///actors/TLSCertificateBindingChild.sys.mjs",
+    },
+
+    messageManagerGroups: ["browsers"],
   },
 
   UITour: {

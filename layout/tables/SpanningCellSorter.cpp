@@ -10,35 +10,15 @@
 
 #include "SpanningCellSorter.h"
 
-#include "mozilla/HashFunctions.h"
 #include "nsTArray.h"
 
 using namespace mozilla;
 
 // #define DEBUG_SPANNING_CELL_SORTER
 
-SpanningCellSorter::SpanningCellSorter()
-    : mState(ADDING), mHashTable(&HashTableOps, sizeof(HashTableEntry)) {
-  memset(mArray, 0, sizeof(mArray));
-}
+SpanningCellSorter::SpanningCellSorter() = default;
 
 SpanningCellSorter::~SpanningCellSorter() = default;
-
-/* static */ const PLDHashTableOps SpanningCellSorter::HashTableOps = {
-    HashTableHashKey, HashTableMatchEntry, PLDHashTable::MoveEntryStub,
-    PLDHashTable::ClearEntryStub, nullptr};
-
-/* static */
-PLDHashNumber SpanningCellSorter::HashTableHashKey(const void* key) {
-  return HashGeneric(key);
-}
-
-/* static */
-bool SpanningCellSorter::HashTableMatchEntry(const PLDHashEntryHdr* hdr,
-                                             const void* key) {
-  const HashTableEntry* entry = static_cast<const HashTableEntry*>(hdr);
-  return NS_PTR_TO_INT32(key) == entry->mColSpan;
-}
 
 bool SpanningCellSorter::AddCell(int32_t aColSpan, int32_t aRow, int32_t aCol) {
   NS_ASSERTION(mState == ADDING, "cannot call AddCell after GetNext");
@@ -55,18 +35,10 @@ bool SpanningCellSorter::AddCell(int32_t aColSpan, int32_t aRow, int32_t aCol) {
     i->next = mArray[index];
     mArray[index] = i;
   } else {
-    auto entry = static_cast<HashTableEntry*>(
-        mHashTable.Add(NS_INT32_TO_PTR(aColSpan), fallible));
-    NS_ENSURE_TRUE(entry, false);
+    Item*& entryItems = mHashTable.LookupOrInsert(aColSpan, nullptr);
 
-    NS_ASSERTION(entry->mColSpan == 0 || entry->mColSpan == aColSpan,
-                 "wrong entry");
-    NS_ASSERTION((entry->mColSpan == 0) == (entry->mItems == nullptr),
-                 "entry should be either new or properly initialized");
-    entry->mColSpan = aColSpan;
-
-    i->next = entry->mItems;
-    entry->mItems = i;
+    i->next = entryItems;
+    entryItems = i;
   }
 
   return true;
@@ -79,10 +51,10 @@ SpanningCellSorter::Item* SpanningCellSorter::GetNext(int32_t* aColSpan) {
   class HashTableEntryComparator {
    public:
     bool Equals(HashTableEntry* left, HashTableEntry* right) const {
-      return left->mColSpan == right->mColSpan;
+      return left->GetKey() == right->GetKey();
     }
     bool LessThan(HashTableEntry* left, HashTableEntry* right) const {
-      return left->mColSpan < right->mColSpan;
+      return left->GetKey() < right->GetKey();
     }
   };
 
@@ -112,22 +84,21 @@ SpanningCellSorter::Item* SpanningCellSorter::GetNext(int32_t* aColSpan) {
       /* prepare to enumerate the hash */
       mState = ENUMERATING_HASH;
       mEnumerationIndex = 0;
-      if (mHashTable.EntryCount() > 0) {
+      if (!mHashTable.IsEmpty()) {
         // This clear is a no-op if the array is empty and it makes us
         // resilient against re-entrance.
         mSortedHashTable.ClearAndRetainStorage();
-        mSortedHashTable.SetCapacity(mHashTable.EntryCount());
-        for (auto iter = mHashTable.ConstIter(); !iter.Done(); iter.Next()) {
-          mSortedHashTable.AppendElement(
-              static_cast<HashTableEntry*>(iter.Get()));
+        mSortedHashTable.SetCapacity(mHashTable.Count());
+        for (HashTableEntry& entry : mHashTable) {
+          mSortedHashTable.AppendElement(&entry);
         }
         mSortedHashTable.Sort(HashTableEntryComparator());
       }
       [[fallthrough]];
     case ENUMERATING_HASH:
-      if (mEnumerationIndex < mHashTable.EntryCount()) {
-        Item* result = mSortedHashTable[mEnumerationIndex]->mItems;
-        *aColSpan = mSortedHashTable[mEnumerationIndex]->mColSpan;
+      if (mEnumerationIndex < mSortedHashTable.Length()) {
+        Item* result = mSortedHashTable[mEnumerationIndex]->GetData();
+        *aColSpan = mSortedHashTable[mEnumerationIndex]->GetKey();
         NS_ASSERTION(result, "holes in hash table");
 #ifdef DEBUG_SPANNING_CELL_SORTER
         printf(

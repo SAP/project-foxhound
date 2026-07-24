@@ -149,4 +149,26 @@ void MemoryMappedFile::CloseHandles() {
   length_ = 0;
 }
 
+#if defined(MOZ_ZUCCHINI)
+bool MemoryMappedFile::Flush() {
+  if (!data_) {
+    return false;
+  }
+
+  // Flush the memory-mapped view to disk.
+  if (!::FlushViewOfFile(data_, length_)) {
+    PLOG(ERROR) << "FlushViewOfFile failed";
+    return false;
+  }
+
+  // Flush the file buffers to ensure data is written to disk.
+  if (file_.IsValid() && !::FlushFileBuffers(file_.GetPlatformFile())) {
+    PLOG(ERROR) << "FlushFileBuffers failed";
+    return false;
+  }
+
+  return true;
+}
+#endif  // MOZ_ZUCCHINI
+
 }  // namespace base

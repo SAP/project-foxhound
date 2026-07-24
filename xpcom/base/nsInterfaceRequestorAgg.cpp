@@ -7,7 +7,6 @@
 #include "nsInterfaceRequestorAgg.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 

@@ -231,6 +231,12 @@ NS_IMETHODIMP nsMIMEInfoWin::GetDefaultExecutable(nsIFile** aExecutable) {
   return NS_ERROR_FAILURE;
 }
 
+NS_IMETHODIMP nsMIMEInfoWin::GetDefaultDescription(nsAString& aDescription) {
+  UpdateDefaultInfoIfStale();
+  aDescription = mDefaultAppDescription;
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsMIMEInfoWin::GetEnumerator(nsISimpleEnumerator** _retval) {
   nsCOMArray<nsIVariant> properties;

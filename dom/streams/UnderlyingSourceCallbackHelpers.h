@@ -9,9 +9,9 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
-#include "mozilla/WeakPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"

@@ -19,9 +19,9 @@ class MachEnvironment(MachLogger):
     def __init__(self, mach_cmd, flavor="desktop-browser", hooks=None, **kwargs):
         MachLogger.__init__(self, mach_cmd)
         self._mach_cmd = mach_cmd
-        self._mach_args = dict(
-            [(self._normalize(key), value) for key, value in kwargs.items()]
-        )
+        self._mach_args = dict([
+            (self._normalize(key), value) for key, value in kwargs.items()
+        ])
         self.layers = []
         if flavor not in FLAVORS:
             raise NotImplementedError(flavor)

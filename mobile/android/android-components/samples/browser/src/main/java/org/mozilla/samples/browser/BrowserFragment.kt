@@ -8,9 +8,15 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
+import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.browser.thumbnails.BrowserThumbnails
+import mozilla.components.concept.awesomebar.AwesomeBar.GroupedSuggestion
 import mozilla.components.feature.awesomebar.AwesomeBarFeature
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.SearchTermSuggestionsProvider
 import mozilla.components.feature.media.fullscreen.MediaSessionFullscreenFeature
 import mozilla.components.feature.search.SearchFeature
 import mozilla.components.feature.session.FullScreenFeature
@@ -62,6 +68,9 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         )
 
         AwesomeBarFeature(binding.awesomeBar, binding.toolbar, binding.engineView, components.icons)
+            .addRemoveButtonListener {
+                deleteHistoryEntry(it, components.historyStorage)
+            }
             .addHistoryProvider(
                 components.historyStorage,
                 components.sessionUseCases.loadUrl,
@@ -108,13 +117,14 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 components.store,
                 components.sessionUseCases,
                 sessionId,
-            ) { inFullScreen ->
-                if (inFullScreen) {
-                    activity?.enterImmersiveMode()
-                } else {
-                    activity?.exitImmersiveMode()
-                }
-            },
+                fullScreenChanged = { inFullScreen ->
+                    if (inFullScreen) {
+                        activity?.enterImmersiveMode()
+                    } else {
+                        activity?.exitImmersiveMode()
+                    }
+                },
+            ),
             owner = this,
             view = binding.root,
         )
@@ -160,6 +170,21 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         lifecycle.addObserver(windowFeature)
 
         return binding.root
+    }
+
+    private fun deleteHistoryEntry(
+        entry: GroupedSuggestion,
+        historyStorage: PlacesHistoryStorage,
+    ) = MainScope().launch(Dispatchers.IO) {
+        when (entry.suggestion.provider is SearchTermSuggestionsProvider) {
+            true -> entry.suggestion.title?.let {
+                historyStorage.deleteHistoryMetadata(it)
+            }
+
+            else -> entry.suggestion.description?.let {
+                historyStorage.deleteVisitsFor(it)
+            }
+        }
     }
 
     private fun showTabs() {

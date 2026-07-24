@@ -41,6 +41,7 @@ support-files = [
 # The video used in those tests crash the Android emulator's VP9 decoder.
 prefs = [
   "media.android-media-codec.enabled=false",
+  "media.ffvpx-hw.enabled=false",
 ]
 
 ["test_2d.clearRect.image.offscreen.html"]
@@ -211,7 +212,6 @@ skip-if = [
 ["test_bug902651.html"]
 
 ["test_bug1215072.html"]
-skip-if = ["os == 'android' && android_version == '24' && processor == 'x86_64' && debug"] # Bug 1908622
 
 ["test_bug1567544.html"]
 subsuite = "gpu"
@@ -220,7 +220,9 @@ subsuite = "gpu"
 subsuite = "gpu"
 
 ["test_canvas_focusring.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+]
 
 ["test_canvas_font_setter.html"]
 
@@ -290,55 +292,75 @@ tags = "imagebitmap"
 ["test_offscreencanvas_basic_webgl.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_dynamic_fallback.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_font.html"]
 
 ["test_offscreencanvas_many.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_neuter.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_serviceworker.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_sharedworker.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_sizechange.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_subworker.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_toblob.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_offscreencanvas_toimagebitmap.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1795521
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+  "os == 'android' && debug",
+]
 
 ["test_strokeText_throw.html"]
 

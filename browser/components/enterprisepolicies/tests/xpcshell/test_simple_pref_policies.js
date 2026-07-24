@@ -81,6 +81,8 @@ const POLICIES_TESTS = [
         Fingerprinting: true,
         EmailTracking: true,
         SuspectedFingerprinting: true,
+        BaselineExceptions: true,
+        ConvenienceExceptions: true,
         Locked: true,
       },
     },
@@ -91,6 +93,8 @@ const POLICIES_TESTS = [
       "privacy.trackingprotection.emailtracking.pbmode.enabled": true,
       "privacy.fingerprintingProtection": true,
       "privacy.fingerprintingProtection.pbmode": true,
+      "privacy.trackingprotection.allow_list.baseline.enabled": true,
+      "privacy.trackingprotection.allow_list.convenience.enabled": true,
     },
   },
 
@@ -168,18 +172,6 @@ const POLICIES_TESTS = [
       "network.automatic-ntlm-auth.allow-proxies": false,
       "network.negotiate-auth.allow-proxies": false,
       "network.auth.private-browsing-sso": true,
-    },
-  },
-
-  // POLICY: Certificates (true)
-  {
-    policies: {
-      Certificates: {
-        ImportEnterpriseRoots: true,
-      },
-    },
-    lockedPrefs: {
-      "security.enterprise_roots.enabled": true,
     },
   },
 
@@ -783,6 +775,29 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: LocalNetworkAccess
+  {
+    policies: {
+      LocalNetworkAccess: {
+        Enabled: true,
+      },
+    },
+    unlockedPrefs: {
+      "network.lna.enabled": true,
+    },
+  },
+  {
+    policies: {
+      LocalNetworkAccess: {
+        Enabled: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.lna.enabled": false,
+    },
+  },
+
   // POLICY: EncryptedMediaExtensions
 
   {
@@ -1181,6 +1196,48 @@ const POLICIES_TESTS = [
       "termsofuse.acceptedVersion": 999,
       // "termsofuse.acceptedVersion" is a string of
       // the timestamp at which the policy was set
+    },
+  },
+
+  // POLICY: VisualSearchEnabled
+  {
+    policies: {
+      VisualSearchEnabled: false,
+    },
+    lockedPrefs: {
+      "browser.search.visualSearch.featureGate": false,
+    },
+  },
+
+  // Bug 1981587
+  {
+    policies: {
+      Preferences: {
+        "security.webauthn.always_allow_direct_attestation": {
+          Value: true,
+          Status: "locked",
+        },
+      },
+    },
+    lockedPrefs: {
+      "security.webauthn.always_allow_direct_attestation": true,
+    },
+  },
+
+  // GenerativeAI
+  {
+    policies: {
+      GenerativeAI: {
+        Enabled: false,
+        Chatbot: true,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "browser.ml.chat.enabled": true,
+      "browser.ml.chat.page": true,
+      "browser.ml.linkPreview.optin": false,
+      "browser.tabs.groups.smart.userEnabled": false,
     },
   },
 ];

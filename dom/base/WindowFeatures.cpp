@@ -6,9 +6,9 @@
 
 #include "WindowFeatures.h"
 
-#include "nsINode.h"               // IsSpaceCharacter
 #include "nsContentUtils.h"        // nsContentUtils
 #include "nsDependentSubstring.h"  // Substring
+#include "nsINode.h"               // IsSpaceCharacter
 #include "nsReadableUtils.h"       // ToLowerCase
 
 using mozilla::dom::IsSpaceCharacter;

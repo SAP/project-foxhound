@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ti duna u cuntrollu.</p> <p>Ùsalu comu navicaturi privatu: <ul> <li>Riscedi e nàvica direttu di l’applicazzioni</li> <li>Ferma i trazzatura (o cancia i mpustazzioni pi pirmittìrili)</li> <li>Scancella i viscotta e macari a crunuluggìa di risciduta e di navicazzioni</li> </ul> </p> <p>%1$s fu criatu di Mozilla. A nostra missioni è chiḍḍa d’ammuttari pi na riti graputa e ’n saluti.<br/> <a href=\"%2$s\">Cchiù nfurmazzioni</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ti duna u cuntrollu.</p>\n<p>Ùsalu comu navicaturi privatu:\n<ul>\n<li>Riscedi e nàvica direttu di l’applicazzioni</li>\n<li>Ferma i trazzatura (o cancia i mpustazzioni pi pirmittìrili)</li>\n<li>Scancella i viscotta e macari a crunuluggìa di risciduta e di navicazzioni</li>\n</ul> </p>\n<p>%1$s fu criatu di Mozilla. A nostra missioni è chiḍḍa d’ammuttari pi na riti graputa e ’n saluti.<br/>\n<a href=\"%2$s\">Cchiù nfurmazzioni</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Cchiù nfurmazzioni</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Cuntinuannu, accetti i %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Cuntinuannu, accetti i %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Tèrmini di sirbizzu di Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Tèrmini di sirbizzu di Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">A Firefox ci ntiressa dâ to privatizza. Pi sapìrinni cchiù assai, leggi u nostru %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">A Firefox ci ntiressa dâ to privatizza. Cchiù assai nfurmazzioni nnô nostru %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Abbisu di privatizza.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Abbisu di privatizza</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Chistu putissi èssiru un prubblema di cunfijurazzioni dû sirburi, o putissi èssiri quarchidunu chi sta mpirsunannu u sirburi. <br/><br/> Si già ti cullijasti cu stu sirburi ’n passatu, l’erruri putissi èssiri timpuraniu.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>È pussìbbili chi quarchidunu sta pruvannu a farsificari stu situ e cuntinuari po èssiri piriculusu.</label> <br><br> <label>%1$s nun àvi fiducia nni <b>%2$s</b> picchì cu’ ci detti u cirtificatu è scanusciutu, u cirtificatu sû firmau sulu o u sirburi nun sta mannannu a catina di cirtificati giusta.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>È pussìbbili chi quarchidunu sta pruvannu a farsificari stu situ e cuntinuari po èssiri piriculusu.</label> <br><br>\n<label>%1$s nun àvi fiducia nni <b>%2$s</b> picchì cu’ ci detti u cirtificatu è scanusciutu, u cirtificatu sû firmau sulu o u sirburi nun sta mannannu a catina di cirtificati giusta.</label>]]></string>
   <!--
     Sessions List
 

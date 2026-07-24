@@ -5,15 +5,22 @@
 package org.mozilla.fenix.onboarding
 
 import org.mozilla.fenix.GleanMetrics.Onboarding
+import org.mozilla.fenix.GleanMetrics.Pings
+import org.mozilla.fenix.GleanMetrics.TermsOfUse
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
+import org.mozilla.fenix.termsofuse.TOU_VERSION
+import org.mozilla.fenix.termsofuse.store.Surface
 
 /**
  * Abstraction responsible for recording telemetry events for Onboarding.
  */
-class OnboardingTelemetryRecorder {
+class OnboardingTelemetryRecorder(
+    private val onboardingReason: OnboardingReason,
+    private val installSource: String,
+) {
 
     /**
-     * Records "onboarding_completed" telemetry event.
+     * Records "onboarding_completed" telemetry event and sends the onboarding ping.
      * @param sequenceId The identifier of the onboarding sequence shown to the user.
      * @param sequencePosition The sequence position of the page on which the completed event occurred.
      */
@@ -22,15 +29,30 @@ class OnboardingTelemetryRecorder {
             Onboarding.CompletedExtra(
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
+        Onboarding.dismissed.record(
+            Onboarding.DismissedExtra(
+                method = "complete",
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        Pings.onboarding.submit()
     }
 
     /**
      * Records "onboarding_started" telemetry event.
      */
     fun onOnboardingStarted() {
-        Onboarding.started.record()
+        Onboarding.started.record(
+            extra = Onboarding.StartedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
@@ -53,6 +75,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -64,6 +88,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -75,6 +101,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -86,6 +114,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -97,6 +127,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -108,6 +140,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -119,9 +153,12 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
+
             OnboardingPageUiData.Type.MARKETING_DATA -> {
                 Onboarding.marketingDataCardViewed.record(
                     Onboarding.MarketingDataCardViewedExtra(
@@ -129,6 +166,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -147,6 +186,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -163,6 +204,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -179,6 +222,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -195,6 +240,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -211,6 +258,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -227,6 +276,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -243,6 +294,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -259,6 +312,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -277,6 +332,8 @@ class OnboardingTelemetryRecorder {
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
                 toolbarPlacement = toolbarPlacement,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -294,6 +351,8 @@ class OnboardingTelemetryRecorder {
                 themeOption = themeOption,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -310,6 +369,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -318,28 +379,62 @@ class OnboardingTelemetryRecorder {
      * Records when the terms of service link is clicked.
      */
     fun onTermsOfServiceLinkClick() {
-        Onboarding.termsOfServiceLinkClicked.record()
+        Onboarding.termsOfServiceLinkClicked.record(
+            extra = Onboarding.TermsOfServiceLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the privacy notice link clicked.
      */
     fun onTermsOfServicePrivacyNoticeLinkClick() {
-        Onboarding.termsOfServicePrivacyNoticeLinkClicked.record()
+        Onboarding.termsOfServicePrivacyNoticeLinkClicked.record(
+            extra = Onboarding.TermsOfServicePrivacyNoticeLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the manage privacy preferences link clicked.
      */
     fun onTermsOfServiceManagePrivacyPreferencesLinkClick() {
-        Onboarding.termsOfServiceManageLinkClicked.record()
+        Onboarding.termsOfServiceManageLinkClicked.record(
+            extra = Onboarding.TermsOfServiceManageLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the accept terms button clicked.
      */
     fun onTermsOfServiceManagerAcceptTermsButtonClick() {
-        Onboarding.termsOfServiceAccepted.record()
+        Onboarding.shown.record(
+            extra = Onboarding.ShownExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        Onboarding.termsOfServiceAccepted.record(
+            extra = Onboarding.TermsOfServiceAcceptedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        TermsOfUse.accepted.record(
+            TermsOfUse.AcceptedExtra(
+                surface = Surface.ONBOARDING.metricLabel,
+                touVersion = TOU_VERSION,
+            ),
+        )
+        TermsOfUse.version.set(TOU_VERSION.toLong())
+        TermsOfUse.date.set()
     }
 
     /**
@@ -348,14 +443,23 @@ class OnboardingTelemetryRecorder {
      */
     fun onMarketingDataContinueClicked(optIn: Boolean) {
         Onboarding.marketingDataContinueClicked.record(
-            Onboarding.MarketingDataContinueClickedExtra(optIn = optIn),
+            Onboarding.MarketingDataContinueClickedExtra(
+                optIn = optIn,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
         )
     }
 
     /**
      * Records when the marketing data learn more link clicked.
      */
-    fun onMarketingDataLearnMoreClick() = Onboarding.marketingDataLearnMore.record()
+    fun onMarketingDataLearnMoreClick() = Onboarding.marketingDataLearnMore.record(
+        extra = Onboarding.MarketingDataLearnMoreExtra(
+            onboardingReason = onboardingReason.value,
+            installSource = installSource,
+        ),
+    )
 
     /**
      * Records the marketing data opt-in toggle event.
@@ -363,8 +467,19 @@ class OnboardingTelemetryRecorder {
      */
     fun onMarketingDataOptInToggled(optIn: Boolean) {
         Onboarding.marketingDataOptInToggled.record(
-            Onboarding.MarketingDataOptInToggledExtra(optIn = optIn),
+            Onboarding.MarketingDataOptInToggledExtra(
+                optIn = optIn,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
         )
+    }
+
+    /**
+     * Sends the onboarding ping when the user navigates to the next onboarding page.
+     */
+    fun onNavigatedToNextPage() {
+        Pings.onboarding.submit()
     }
 
     companion object {

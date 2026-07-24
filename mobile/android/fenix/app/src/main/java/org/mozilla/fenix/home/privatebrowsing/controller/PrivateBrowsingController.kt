@@ -57,6 +57,10 @@ class DefaultPrivateBrowsingController(
     override fun handlePrivateModeButtonClicked(newMode: BrowsingMode) {
         Homepage.privateModeIconTapped.record(NoExtras())
 
+        if (settings.enableHomepageAsNewTab) {
+            fenixBrowserUseCases.addNewHomepageTab(private = newMode.isPrivate)
+        }
+
         browsingModeManager.mode = newMode
 
         if (newMode == BrowsingMode.Private) {

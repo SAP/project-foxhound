@@ -77,8 +77,8 @@ add_task(async function setup_to_default_browserish_state() {
  * Set the `userDisabled` property of one specific theme and check if the theme
  * switching works as expected by checking the state of all installed themes.
  *
- * @param {String}  which    ID of the addon to set the `userDisabled` property on
- * @param {Boolean} disabled Flag value to switch to
+ * @param {string}  which    ID of the addon to set the `userDisabled` property on
+ * @param {boolean} disabled Flag value to switch to
  */
 async function setDisabledStateAndCheck(which, disabled = false) {
   if (disabled) {

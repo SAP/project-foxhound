@@ -561,7 +561,7 @@ void av1_rd_pick_palette_intra_sby(
   const SequenceHeader *const seq_params = cpi->common.seq_params;
   const int is_hbd = seq_params->use_highbitdepth;
   const int bit_depth = seq_params->bit_depth;
-  const int discount_color_cost = cpi->sf.rt_sf.use_nonrd_pick_mode;
+  const int discount_color_cost = cpi->sf.rt_sf.discount_color_cost;
   int unused;
 
   int count_buf[1 << 12];  // Maximum (1 << 12) color levels.

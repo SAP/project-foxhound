@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -91,7 +92,7 @@ def fixture_load_branches(experiment_url):
             data = requests.get(f"{KLAATU_SERVER_URL}/experiment").json()
         except ConnectionRefusedError:
             logging.warn("No URL or experiment slug provided, exiting.")
-            exit()
+            sys.exit()
         else:
             for item in reversed(data):
                 data = item
@@ -119,12 +120,12 @@ def fixture_experiment_data(experiment_url, request):
     data = requests.get(experiment_url).json()
     branches = next(iter(data.get("branches")), None)
     features = next(iter(branches.get("features")), None)
-    match request.config.getoption("--experiment-feature"):
-        case "messaging_survey":
-            if features.get("value").get("messages"):
-                for item in features["value"]["messages"].values():
-                    if "USER_EN-US_SPEAKER" in item["trigger-if-all"]:
-                        item["trigger-if-all"] = ["ALWAYS"]
+    experiment_feature = request.config.getoption("--experiment-feature")
+    if experiment_feature == "messaging_survey":
+        if features.get("value").get("messages"):
+            for item in features["value"]["messages"].values():
+                if "USER_EN-US_SPEAKER" in item["trigger-if-all"]:
+                    item["trigger-if-all"] = ["ALWAYS"]
     logging.debug(f"JSON Data used for this test: {data}")
     return [data]
 
@@ -144,7 +145,7 @@ def fixture_experiment_url(request, variables):
             data = requests.get(f"{KLAATU_SERVER_URL}/experiment").json()
         except requests.exceptions.ConnectionError:
             logging.error("No URL or experiment slug provided, exiting.")
-            exit()
+            sys.exit()
         else:
             for item in data:
                 if isinstance(item, dict):

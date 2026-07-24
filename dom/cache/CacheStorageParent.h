@@ -20,7 +20,9 @@ class CacheStorageParent final : public PCacheStorageParent,
   friend class PCacheStorageParent;
 
  public:
-  CacheStorageParent(PBackgroundParent* aManagingActor, Namespace aNamespace,
+  CacheStorageParent(mozilla::ipc::PBackgroundParent* aIPCActor,
+                     PBoundStorageKeyParent* aBoundStorageKeyActor,
+                     Namespace aNamespace,
                      const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
 
   NS_INLINE_DECL_REFCOUNTING(CacheStorageParent, override)
@@ -44,6 +46,8 @@ class CacheStorageParent final : public PCacheStorageParent,
   virtual void OnPrincipalVerified(
       nsresult aRv, const SafeRefPtr<ManagerId>& aManagerId) override;
 
+  mozilla::ipc::PBackgroundParent* mBackgroundIPCActor;
+  PBoundStorageKeyParent* mBoundStorageKeyActor;
   const Namespace mNamespace;
   RefPtr<PrincipalVerifier> mVerifier;
   nsresult mVerifiedStatus;

@@ -143,3 +143,117 @@ add_task(async function test_multi_action_set_pref_ordered_execution() {
   Services.prefs.clearUserPref(TEST_MULTI_PREF);
   sinon.restore();
 });
+
+add_task(
+  async function test_multi_action_ordered_execution_requires_previous() {
+    const TEST_SET_PREF = "test.set.pref";
+
+    let sandbox = sinon.createSandbox();
+    const originalHandleAction = SpecialMessageActions.handleAction.bind(
+      SpecialMessageActions
+    );
+
+    sandbox
+      .stub(SpecialMessageActions, "handleAction")
+      .callsFake(function (action, browser) {
+        if (action.type == "RETURN_TRUE") {
+          return true;
+        } else if (action.type == "RETURN_FALSE") {
+          return false;
+        }
+        return originalHandleAction(action, browser);
+      });
+
+    // Checks that both actions complete if the first succeeds
+    // and the second has requiresPrevious: true
+    const successAction = {
+      type: "MULTI_ACTION",
+      data: {
+        orderedExecution: true,
+        actions: [
+          {
+            type: "RETURN_TRUE",
+          },
+          {
+            type: "SET_PREF",
+            data: { pref: { name: TEST_SET_PREF, value: true } },
+            requiresPrevious: true,
+          },
+        ],
+      },
+    };
+
+    await SpecialMessageActions.handleAction(successAction, gBrowser);
+
+    Assert.equal(
+      Services.prefs.getBoolPref(`messaging-system-action.${TEST_SET_PREF}`),
+      true,
+      "Pref should be set"
+    );
+
+    Services.prefs.clearUserPref(`messaging-system-action.${TEST_SET_PREF}`);
+
+    // Checks that the second action does not complete
+    // if the first action fails and the second has requiresPrevious: true
+    const failureAction = {
+      type: "MULTI_ACTION",
+      data: {
+        orderedExecution: true,
+        actions: [
+          {
+            type: "RETURN_FALSE",
+          },
+          {
+            type: "SET_PREF",
+            data: { pref: { name: TEST_SET_PREF, value: true } },
+            requiresPrevious: true,
+          },
+        ],
+      },
+    };
+
+    await SpecialMessageActions.handleAction(failureAction, gBrowser);
+
+    Assert.ok(
+      !Services.prefs.getBoolPref(
+        `messaging-system-action.${TEST_SET_PREF}`,
+        false
+      ),
+      "Pref should not be set"
+    );
+
+    Services.prefs.clearUserPref(TEST_SET_PREF);
+
+    // Check that the second action still completes if the first fails
+    // and requiresPrevious is not set
+    const failureActionDoNoPrevious = {
+      type: "MULTI_ACTION",
+      data: {
+        orderedExecution: true,
+        actions: [
+          {
+            type: "RETURN_FALSE",
+          },
+          {
+            type: "SET_PREF",
+            data: { pref: { name: TEST_SET_PREF, value: true } },
+          },
+        ],
+      },
+    };
+
+    await SpecialMessageActions.handleAction(
+      failureActionDoNoPrevious,
+      gBrowser
+    );
+
+    Assert.equal(
+      Services.prefs.getBoolPref(`messaging-system-action.${TEST_SET_PREF}`),
+      true,
+      "Pref should be set"
+    );
+
+    Services.prefs.clearUserPref(`messaging-system-action.${TEST_SET_PREF}`);
+    sandbox.restore();
+  }
+);

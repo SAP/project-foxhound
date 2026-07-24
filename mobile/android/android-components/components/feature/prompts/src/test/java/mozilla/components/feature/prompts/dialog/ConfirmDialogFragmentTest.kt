@@ -11,6 +11,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.feature.prompts.R
 import mozilla.components.support.test.ext.appCompatContext
+import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -34,6 +35,7 @@ class ConfirmDialogFragmentTest {
     @Before
     fun setup() {
         openMocks(this)
+        testContext.setTheme(com.google.android.material.R.style.Theme_MaterialComponents_Light)
         fragment = spy(
             ConfirmDialogFragment.newInstance(
                 "sessionId",

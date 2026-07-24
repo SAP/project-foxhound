@@ -5,14 +5,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "nsWindowsDllInterceptor.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/BinarySearch.h"
 #include "mozilla/ImportDir.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/PolicyChecks.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Types.h"
 #include "mozilla/WindowsDllBlocklist.h"
 #include "mozilla/WindowsStackCookie.h"
 #include "mozilla/WinHeaderOnlyUtils.h"

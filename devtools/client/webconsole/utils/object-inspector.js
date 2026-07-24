@@ -49,11 +49,11 @@ loader.lazyRequireGetter(
 /**
  * Create and return an ObjectInspector for the given front.
  *
- * @param {Object} grip
+ * @param {object} grip
  *        The object grip to create an ObjectInspector for.
- * @param {Object} serviceContainer
+ * @param {object} serviceContainer
  *        Object containing various utility functions
- * @param {Object} override
+ * @param {object} override
  *        Object containing props that should override the default props passed to
  *        ObjectInspector.
  * @returns {ObjectInspector}
@@ -97,7 +97,7 @@ function getObjectInspector(
     sourceMapURLService: serviceContainer.sourceMapURLService,
     customFormat: override.customFormat !== false,
     setExpanded: override.setExpanded,
-    initiallyExpanded: override.initiallyExpanded,
+    getInitiallyExpanded: override.getInitiallyExpanded,
     queueActorsForCleanup: override.queueActorsForCleanup,
     cachedNodes: override.cachedNodes,
     urlCropLimit: 120,

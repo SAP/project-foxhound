@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "RemoteLazyInputStreamStorage.h"
+
+#include "RemoteLazyInputStreamParent.h"
 #include "mozilla/SlicedInputStream.h"
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/ContentParent.h"
 #include "nsIPropertyBag2.h"
 #include "nsStreamUtils.h"
-#include "RemoteLazyInputStreamParent.h"
-#include "RemoteLazyInputStreamStorage.h"
 
 namespace mozilla {
 

@@ -12,15 +12,11 @@
 
 namespace mozilla {
 
-#define NS_REGISTER_COMMAND(_cmdClass, _cmdName)                       \
-  {                                                                    \
-    aCommandTable->RegisterCommand(                                    \
-        _cmdName,                                                      \
-        static_cast<nsIControllerCommand*>(_cmdClass::GetInstance())); \
-  }
+#define NS_REGISTER_COMMAND(_cmdClass, _cmdName) \
+  aCommandTable->RegisterCommand(_cmdName ""_ns, _cmdClass::GetInstance());
 
 // static
-nsresult HTMLEditorController::RegisterEditorDocStateCommands(
+void HTMLEditorController::RegisterEditorDocStateCommands(
     nsControllerCommandTable* aCommandTable) {
   // observer commands for document state
   NS_REGISTER_COMMAND(DocumentStateCommand, "obs_documentCreated")
@@ -39,12 +35,10 @@ nsresult HTMLEditorController::RegisterEditorDocStateCommands(
                       "cmd_enableAbsolutePositionEditing")
   NS_REGISTER_COMMAND(SetDocumentStateCommand,
                       "cmd_enableCompatibleJoinSplitNodeDirection")
-
-  return NS_OK;
 }
 
 // static
-nsresult HTMLEditorController::RegisterHTMLEditorCommands(
+void HTMLEditorController::RegisterHTMLEditorCommands(
     nsControllerCommandTable* aCommandTable) {
   // Edit menu
   NS_REGISTER_COMMAND(PasteNoFormattingCommand, "cmd_pasteNoFormatting");
@@ -105,8 +99,6 @@ nsresult HTMLEditorController::RegisterHTMLEditorCommands(
   NS_REGISTER_COMMAND(AbsolutePositioningCommand, "cmd_absPos");
   NS_REGISTER_COMMAND(DecreaseZIndexCommand, "cmd_decreaseZIndex");
   NS_REGISTER_COMMAND(IncreaseZIndexCommand, "cmd_increaseZIndex");
-
-  return NS_OK;
 }
 
 // static

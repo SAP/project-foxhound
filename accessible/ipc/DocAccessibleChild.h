@@ -9,7 +9,6 @@
 
 #include "mozilla/a11y/DocAccessible.h"
 #include "mozilla/a11y/PDocAccessibleChild.h"
-#include "mozilla/Unused.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -141,18 +140,6 @@ class DocAccessibleChild : public PDocAccessibleChild {
                                                     const int32_t& aX,
                                                     const int32_t& aY) override;
 
-  bool SendCaretMoveEvent(const uint64_t& aID, const int32_t& aOffset,
-                          const bool& aIsSelectionCollapsed,
-                          const bool& aIsAtEndOfLine,
-                          const int32_t& aGranularity, bool aFromUser);
-  bool SendFocusEvent(const uint64_t& aID);
-
-#if !defined(XP_WIN)
-  virtual mozilla::ipc::IPCResult RecvAnnounce(
-      const uint64_t& aID, const nsAString& aAnnouncement,
-      const uint16_t& aPriority) override;
-#endif  // !defined(XP_WIN)
-
   virtual mozilla::ipc::IPCResult RecvScrollSubstringToPoint(
       const uint64_t& aID, const int32_t& aStartOffset,
       const int32_t& aEndOffset, const uint32_t& aCoordinateType,
@@ -160,9 +147,14 @@ class DocAccessibleChild : public PDocAccessibleChild {
 
   virtual mozilla::ipc::IPCResult RecvAckMutationEvents() override;
 
- private:
-  LayoutDeviceIntRect GetCaretRectFor(const uint64_t& aID);
+  /**
+   * Get the caret rect suitable to be sent via IPC. This is used with
+   * SendCaretMoveEvent and SendFocusEvent.
+   */
+  static mozilla::LayoutDeviceIntRect GetCaretRectForIPCEvent(
+      LocalAccessible* aAcc);
 
+ private:
   // Set to true if we have sent mutation events that have not yet been
   // acknowledged by the parent process. We only request and receive one ACK per
   // tick, regardless of how many mutation events we send. Additional ticks

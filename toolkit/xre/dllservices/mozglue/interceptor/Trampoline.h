@@ -10,10 +10,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Types.h"
 #include "mozilla/WindowsProcessMitigations.h"
 #include "mozilla/WindowsUnwindInfo.h"
+#include "mozilla/interceptor/TargetFunction.h"
 
 namespace mozilla {
 namespace interceptor {
@@ -310,7 +311,7 @@ class MOZ_STACK_CLASS Trampoline final {
 
     auto result = Some(*reinterpret_cast<uintptr_t*>(mLocalBase + mOffset));
     mOffset += sizeof(uintptr_t);
-    return std::move(result);
+    return result;
   }
 
   Maybe<uintptr_t> ReadEncodedPointer() {

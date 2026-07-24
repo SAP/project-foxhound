@@ -18,7 +18,6 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/RemoteLazyInputStreamParent.h"
-#include "mozilla/Unused.h"
 #include "nsIMIMEInputStream.h"
 #include "nsNetCID.h"
 
@@ -188,4 +187,31 @@ bool IPC::ParamTraits<nsIInputStream*>::Read(IPC::MessageReader* aReader,
 
   *aResult = mozilla::ipc::DeserializeIPCStream(ipcStream);
   return true;
+}
+
+void IPC::ParamTraits<mozilla::ipc::EagerIPCStream>::Write(
+    IPC::MessageWriter* aWriter, const paramType& aParam) {
+  mozilla::ipc::IPCStream stream;
+  if (!mozilla::ipc::SerializeIPCStream(do_AddRef(aParam.mStream.get()), stream,
+                                        /* aAllowLazy */ false)) {
+    MOZ_CRASH("Failed to serialize EagerIPCStream");
+  }
+
+  WriteParam(aWriter, stream);
+}
+
+IPC::ReadResult<mozilla::ipc::EagerIPCStream> IPC::ParamTraits<
+    mozilla::ipc::EagerIPCStream>::Read(IPC::MessageReader* aReader) {
+  mozilla::ipc::IPCStream ipcStream;
+  if (!ReadParam(aReader, &ipcStream)) {
+    return {};
+  }
+
+  nsCOMPtr<nsIInputStream> stream =
+      mozilla::ipc::DeserializeIPCStream(ipcStream);
+  if (!stream) {
+    return {};
+  }
+
+  return paramType{mozilla::WrapNotNull(stream)};
 }

@@ -17,31 +17,6 @@
   padding-bottom: 0;
 }
 
-h1.translations-panel-header-wrapper {
-  flex-grow: 0;
-}
-
-.translations-panel-beta {
-  flex-shrink: 0;
-  flex-grow: 1;
-}
-
-.translations-panel-beta-icon {
-  list-style-image: url(chrome://browser/skin/translations/beta.svg);
-  width: 34px;
-  height: 20px;
-  -moz-context-properties: fill, stroke;
-  fill: currentColor;
-  stroke: currentColor;
-  margin: 2px 8px;
-}
-
-@media (prefers-contrast: no-preference) and (prefers-color-scheme: light) {
-  .translations-panel-beta-icon {
-    opacity: 0.8;
-  }
-}
-
 #full-page-translations-panel-intro {
   line-height: 1.6;
   margin-block-end: var(--arrowpanel-padding);
@@ -63,7 +38,7 @@ h1.translations-panel-header-wrapper {
 
 /* The default styling is to dim the default, but here override it so that it still uses
    the primary color. */
-.translations-panel-button-group > button[default][disabled="true"] {
+.translations-panel-button-group > button[default][disabled] {
   color: var(--button-text-color-primary);
   background-color: var(--color-accent-primary);
 }
@@ -71,7 +46,7 @@ h1.translations-panel-header-wrapper {
 #full-page-translations-panel-translate-hint-action {
   appearance: none;
   background-color: var(--button-background-color);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   color: var(--button-text-color);
   padding: 8px 16px;
   font-size: 0.9em;
@@ -96,7 +71,7 @@ h1.translations-panel-header-wrapper {
 }
 
 #full-page-translations-panel-error-message {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .translations-panel-error-icon {
@@ -113,7 +88,7 @@ h1.translations-panel-header-wrapper {
 
 #full-page-translations-panel-error {
   border: 1px solid currentColor;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding: 12px;
 }
 
@@ -123,6 +98,7 @@ h1.translations-panel-header-wrapper {
 }
 
 #select-translations-panel-header-row {
+  text-align: start;
   padding-block: var(--space-small) 0;
 }
 

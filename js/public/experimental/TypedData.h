@@ -13,7 +13,6 @@
 #define js_experimental_TypedData_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
-#include "mozilla/Casting.h"     // mozilla::AssertedCast
 #include "mozilla/Span.h"
 
 #include <stddef.h>  // size_t

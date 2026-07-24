@@ -9,15 +9,15 @@
 
 #include "mozilla/Monitor.h"
 #include "mozilla/dom/ServiceWorkerRegistrarTypes.h"
+#include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIAsyncShutdown.h"
 #include "nsIObserver.h"
-#include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
 #define SERVICEWORKERREGISTRAR_FILE u"serviceworker.txt"
-#define SERVICEWORKERREGISTRAR_VERSION 10
+#define SERVICEWORKERREGISTRAR_VERSION 12
 #define SERVICEWORKERREGISTRAR_TERMINATOR "#"
 #define SERVICEWORKERREGISTRAR_TRUE "true"
 #define SERVICEWORKERREGISTRAR_FALSE "false"

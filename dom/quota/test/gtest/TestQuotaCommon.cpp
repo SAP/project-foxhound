@@ -4,27 +4,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/quota/QuotaCommon.h"
-
-#include "gtest/gtest.h"
-
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <new>
 #include <ostream>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
 #include "ErrorList.h"
+#include "gtest/gtest.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ResultVariant.h"
-#include "mozilla/Unused.h"
-#include "mozilla/fallible.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaTestParent.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "nsCOMPtr.h"
@@ -134,7 +129,7 @@ QuotaTestParent::RecvTryInspect_Success_CustomErr_QmIpcFail(
     bool* aTryDidNotReturn) {
   QM_TRY_INSPECT(const auto& x, (mozilla::Result<int32_t, nsresult>{42}),
                  QM_IPC_FAIL(this));
-  Unused << x;
+  (void)x;
 
   *aTryDidNotReturn = true;
 
@@ -146,7 +141,7 @@ QuotaTestParent::RecvTryInspect_Success_CustomErr_IpcFail(
     bool* aTryDidNotReturn) {
   QM_TRY_INSPECT(const auto& x, (mozilla::Result<int32_t, nsresult>{42}),
                  IPC_FAIL(this, "Custom why"));
-  Unused << x;
+  (void)x;
 
   *aTryDidNotReturn = true;
 
@@ -755,7 +750,7 @@ TEST(QuotaCommon_TryInspect, Failure_PropagateErr)
   nsresult rv = [&tryInspectDidNotReturn]() -> nsresult {
     QM_TRY_INSPECT(const auto& x,
                    (Result<int32_t, nsresult>{Err(NS_ERROR_FAILURE)}));
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
 
@@ -774,7 +769,7 @@ TEST(QuotaCommon_TryInspect, Failure_CustomErr)
     QM_TRY_INSPECT(const auto& x,
                    (Result<int32_t, nsresult>{Err(NS_ERROR_FAILURE)}),
                    NS_ERROR_UNEXPECTED);
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
 
@@ -795,7 +790,7 @@ TEST(QuotaCommon_TryInspect, Failure_CustomErr_CustomLambda)
       QM_TRY_INSPECT(const auto& x,                                      \
                      (Result<int32_t, nsresult>{Err(NS_ERROR_FAILURE)}), \
                      [](__VA_ARGS__) { return NS_ERROR_UNEXPECTED; });   \
-      Unused << x;                                                       \
+      (void)x;                                                           \
                                                                          \
       tryInspectDidNotReturn = true;                                     \
                                                                          \
@@ -819,7 +814,7 @@ TEST(QuotaCommon_TryInspect, Failure_NoErr)
   [&tryInspectDidNotReturn]() -> void {
     QM_TRY_INSPECT(const auto& x,
                    (Result<int32_t, nsresult>{Err(NS_ERROR_FAILURE)}), QM_VOID);
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
   }();
@@ -840,7 +835,7 @@ TEST(QuotaCommon_TryInspect, Failure_WithCleanup)
 
                      tryInspectCleanupRan = true;
                    });
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
 
@@ -869,7 +864,7 @@ TEST(QuotaCommon_TryInspect, Failure_WithCleanup_UnwrapErr)
 
                      tryInspectCleanupRan = true;
                    }));
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
 
@@ -954,7 +949,7 @@ TEST(QuotaCommon_TryInspect, NestingMadness_Failure)
 
           return x;
         }()));
-    Unused << x;
+    (void)x;
 
     tryInspectDidNotReturn = true;
 
@@ -1024,7 +1019,7 @@ TEST(QuotaCommon_TryInspect, NestingMadness_Multiple_Failure1)
 
           return x + y;
         }()));
-    Unused << z;
+    (void)z;
 
     tryInspectDidNotReturn = true;
 
@@ -1060,7 +1055,7 @@ TEST(QuotaCommon_TryInspect, NestingMadness_Multiple_Failure2)
 
           return x + y;
         }()));
-    Unused << z;
+    (void)z;
 
     tryInspectDidNotReturn = true;
 

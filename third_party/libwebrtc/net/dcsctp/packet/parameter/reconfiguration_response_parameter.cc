@@ -9,9 +9,8 @@
  */
 #include "net/dcsctp/packet/parameter/reconfiguration_response_parameter.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -19,9 +18,9 @@
 
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
+#include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
-#include "net/dcsctp/packet/tlv_trait.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 
@@ -42,7 +41,6 @@ namespace dcsctp {
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //  |                  Receiver's Next TSN (optional)               |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-constexpr int ReconfigurationResponseParameter::kType;
 
 absl::string_view ToString(ReconfigurationResponseParameter::Result result) {
   switch (result) {
@@ -65,7 +63,7 @@ absl::string_view ToString(ReconfigurationResponseParameter::Result result) {
 }
 
 std::optional<ReconfigurationResponseParameter>
-ReconfigurationResponseParameter::Parse(rtc::ArrayView<const uint8_t> data) {
+ReconfigurationResponseParameter::Parse(webrtc::ArrayView<const uint8_t> data) {
   std::optional<BoundedByteReader<kHeaderSize>> reader = ParseTLV(data);
   if (!reader.has_value()) {
     return std::nullopt;

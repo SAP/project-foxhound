@@ -58,7 +58,7 @@ UrlClassifierExceptionList::AddEntry(
 
   if (MOZ_LOG_TEST(UrlClassifierCommon::sLog, LogLevel::Debug)) {
     nsAutoCString entryString;
-    Unused << aEntry->Describe(entryString);
+    (void)aEntry->Describe(entryString);
     UC_LOG_DEBUG(("UrlClassifierExceptionList::%s - Adding entry: %s",
                   __FUNCTION__, entryString.get()));
   }
@@ -177,7 +177,7 @@ bool UrlClassifierExceptionList::ExceptionListMatchesLoad(
       // Match found, return immediately.
       if (MOZ_LOG_TEST(UrlClassifierCommon::sLog, LogLevel::Debug)) {
         nsAutoCString entryString;
-        Unused << entry->Describe(entryString);
+        (void)entry->Describe(entryString);
         UC_LOG_DEBUG(
             ("UrlClassifierExceptionList::%s - Exception list match found. "
              "entry: %s",

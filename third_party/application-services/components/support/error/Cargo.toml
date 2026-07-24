@@ -1,0 +1,26 @@
+[package]
+name = "error-support"
+version = "0.1.0"
+authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+autotests = false
+exclude = ["/android"]
+
+[dependencies]
+backtrace = { version = "0.3", optional = true}
+error-support-macros = { path = "macros" }
+env_logger = { version = "0.10", default-features = false }
+lazy_static = { version = "1.4" }
+log = { version = "0.4" }
+parking_lot = { version = ">=0.11,<=0.12" }
+tracing = { version = "0.1", optional = true }
+tracing-support = { path = "../tracing" }
+uniffi = { version = "0.31" }
+
+[build-dependencies]
+uniffi = { version = "0.31", features=["build"]}
+
+[features]
+backtrace = ["dep:backtrace"]
+testing = []

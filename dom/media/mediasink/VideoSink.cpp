@@ -6,8 +6,10 @@
 
 #ifdef XP_WIN
 // Include Windows headers required for enabling high precision timers.
+// clang-format off
 #  include <windows.h>
 #  include <mmsystem.h>
+// clang-format on
 #endif
 
 #include "VideoSink.h"
@@ -15,7 +17,6 @@
 #include "AudioDeviceInfo.h"
 #include "MediaQueue.h"
 #include "VideoUtils.h"
-
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkerTypes.h"

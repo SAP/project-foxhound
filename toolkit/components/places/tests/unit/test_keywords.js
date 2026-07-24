@@ -51,6 +51,9 @@ async function check_keyword(aExpectExists, aHref, aKeyword, aPostData = null) {
 
 /**
  * Polls the keywords cache waiting for the given keyword entry.
+ *
+ * @param {string} keyword
+ * @param {string} expectedHref
  */
 async function promiseKeyword(keyword, expectedHref) {
   let href = null;

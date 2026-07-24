@@ -13,11 +13,11 @@
 
 #define EPOXY_PUBLIC __attribute__((visibility("default"))) extern
 
-#define HAVE_KHRPLATFORM_H
+#undef HAVE_KHRPLATFORM_H
 
 #define PACKAGE_DATADIR "/usr/local/share"
 
-#define PACKAGE_LIBDIR "/usr/local/lib/x86_64-linux-gnu"
+#define PACKAGE_LIBDIR "/usr/local/lib64"
 
 #define PACKAGE_LIBEXECDIR "/usr/local/libexec"
 

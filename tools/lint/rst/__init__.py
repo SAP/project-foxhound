@@ -26,17 +26,13 @@ RSTCHECK_NOT_FOUND = """
 Could not find rstcheck! Install rstcheck and try again.
 
     $ pip install -U --require-hashes -r {}
-""".strip().format(
-    rstcheck_requirements_file
-)
+""".strip().format(rstcheck_requirements_file)
 
 RSTCHECK_INSTALL_ERROR = """
 Unable to install required version of rstcheck
 Try to install it manually with:
     $ pip install -U --require-hashes -r {}
-""".strip().format(
-    rstcheck_requirements_file
-)
+""".strip().format(rstcheck_requirements_file)
 
 RSTCHECK_FORMAT_REGEX = re.compile(r"(.*):(.*): \(.*/([0-9]*)\) (.*)$")
 

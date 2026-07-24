@@ -854,8 +854,5 @@ add_task(async function test_overriding_home_page_open_mv2() {
 });
 
 add_task(async function test_overriding_home_page_open_mv3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
   await _test_overriding_home_page_open(3);
 });

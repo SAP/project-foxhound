@@ -15,11 +15,11 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "nsIFrame.h"  // for WeakFrame only
-#include "nsIStreamListener.h"
-#include "nsIChannelEventSink.h"
-#include "nsIObjectLoadingContent.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsIChannelEventSink.h"
+#include "nsIFrame.h"  // for WeakFrame only
+#include "nsIObjectLoadingContent.h"
+#include "nsIStreamListener.h"
 
 class nsStopPluginRunnable;
 class nsIPrincipal;

@@ -18,6 +18,9 @@ only-for-attributes:
     - nightly
     - shippable
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - linux64-shippable/opt
     - linux64-devedition/opt
@@ -33,5 +36,5 @@ tasks:
         attributes:
             artifact_map:
                 by-release-type:
-                    beta|release.*|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
+                    beta|release|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
                     default: taskcluster/gecko_taskgraph/manifests/firefox_nightly.yml

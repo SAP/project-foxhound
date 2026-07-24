@@ -4,19 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SDPHELPER_H_
-#define _SDPHELPER_H_
+#ifndef SDPHELPER_H_
+#define SDPHELPER_H_
+
+#include <map>
+#include <string>
+#include <vector>
 
 #include "nsError.h"
-
-#include "sdp/SdpMediaSection.h"
 #include "sdp/SdpAttribute.h"
-
+#include "sdp/SdpMediaSection.h"
 #include "transport/m_cpp_utils.h"
-
-#include <string>
-#include <map>
-#include <vector>
 
 namespace mozilla {
 class SdpMediaSection;
@@ -106,4 +104,4 @@ class SdpHelper {
 };
 }  // namespace mozilla
 
-#endif  // _SDPHELPER_H_
+#endif  // SDPHELPER_H_

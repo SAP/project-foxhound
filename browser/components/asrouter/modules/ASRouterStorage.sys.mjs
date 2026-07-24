@@ -97,10 +97,9 @@ export class ASRouterStorage {
   }
 
   /**
-   * createOrOpenDb - Open a db (with this.dbName) if it exists.
-   *                  If it does not exist, create it.
-   *                  If an error occurs, deleted the db and attempt to
-   *                  re-create it.
+   * Open a db (with this.dbName) if it exists. If it does not exist, create it.
+   * If an error occurs, deleted the db and attempt to re-create it.
+   *
    * @returns Promise that resolves with a db instance
    */
   async createOrOpenDb() {
@@ -132,14 +131,15 @@ export class ASRouterStorage {
 
   /**
    * Gets all of the message impression data
+   *
    * @returns {object|null} All multiprofile message impressions or null if error occurs
    */
   async getSharedMessageImpressions() {
-    const conn = await lazy.ProfilesDatastoreService.getConnection();
-    if (!conn) {
-      return null;
-    }
     try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return null;
+      }
       const rows = await conn.executeCached(
         `SELECT messageId, json(impressions) AS impressions FROM MessagingSystemMessageImpressions;`
       );
@@ -174,14 +174,15 @@ export class ASRouterStorage {
 
   /**
    * Gets the message blocklist
+   *
    * @returns {Array|null} The message blocklist, or null if error occurred
    */
   async getSharedMessageBlocklist() {
-    const conn = await lazy.ProfilesDatastoreService.getConnection();
-    if (!conn) {
-      return null;
-    }
     try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return null;
+      }
       const rows = await conn.executeCached(
         `SELECT messageId FROM MessagingSystemMessageBlocklist;`
       );
@@ -203,6 +204,7 @@ export class ASRouterStorage {
 
   /**
    * Set the message impressions for a given message ID
+   *
    * @param {string} messageId - The message ID to set the impressions for
    * @param {Array|null} impressions - The new value of "impressions" (an array of
    *  impression data or an emtpy array, or null to delete)
@@ -210,22 +212,20 @@ export class ASRouterStorage {
    */
   async setSharedMessageImpressions(messageId, impressions) {
     let success = true;
-    const conn = await lazy.ProfilesDatastoreService.getConnection();
-    if (!conn) {
-      return false;
-    }
     try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return false;
+      }
       if (!messageId) {
         throw new Error(
           "Failed attempt to set shared message impressions with no message ID."
         );
       }
 
-      // If impressions is falsy or an empty array, delete the row
-      if (
-        !impressions ||
-        (Array.isArray(impressions) && impressions.length === 0)
-      ) {
+      // If impressions is falsy, delete the row (an empty array may indicate a custom
+      // frequency cap; we still want to track the message ID in that case.)
+      if (!impressions) {
         await conn.executeBeforeShutdown(
           "ASRouter: setSharedMessageImpressions",
           async () => {
@@ -277,19 +277,20 @@ export class ASRouterStorage {
    * Adds a message ID to the blocklist and removes impressions
    * for that message ID from the impressions table when isBlocked is true
    * and deletes message ID from the blocklist when isBlocked is false
+   *
    * @param {string} messageId - The message ID to set the blocked status for
    * @param {boolean} [isBlocked=true] - If the message should be blocked (true) or unblocked (false)
    * @returns {boolean} Success status
    */
   async setSharedMessageBlocked(messageId, isBlocked = true) {
     let success = true;
-    const conn = await lazy.ProfilesDatastoreService.getConnection();
-    if (!conn) {
-      return false;
-    }
     if (isBlocked) {
       // Block the message, and clear impressions
       try {
+        const conn = await lazy.ProfilesDatastoreService.getConnection();
+        if (!conn) {
+          return false;
+        }
         await conn.executeTransaction(async () => {
           await conn.executeCached(
             `INSERT INTO MessagingSystemMessageBlocklist (messageId)
@@ -321,6 +322,10 @@ export class ASRouterStorage {
     } else {
       // Unblock the message
       try {
+        const conn = await lazy.ProfilesDatastoreService.getConnection();
+        if (!conn) {
+          return false;
+        }
         await conn.executeBeforeShutdown(
           "ASRouter: setSharedMessageBlocked",
           async () => {

@@ -589,14 +589,9 @@ add_task(function test_mv2_suspend_shutdown_race() {
   return testSuspendShutdownRace({ manifest_version: 2 });
 });
 
-add_task(
-  {
-    pref_set: [["extensions.manifestV3.enabled", true]],
-  },
-  function test_mv3_suspend_shutdown_race() {
-    return testSuspendShutdownRace({ manifest_version: 3 });
-  }
-);
+add_task(function test_mv3_suspend_shutdown_race() {
+  return testSuspendShutdownRace({ manifest_version: 3 });
+});
 
 function createPendingListenerTestExtension() {
   return ExtensionTestUtils.loadExtension({

@@ -22,8 +22,10 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "nsHttpHandler.h"
+#include "nsHttpConnectionMgr.h"
 #include "ConnectionEntry.h"
 #include "HttpConnectionUDP.h"
+#include "NullHttpTransaction.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/net/NeckoChannelParams.h"  // For HttpActivityArgs.
 
@@ -63,18 +65,21 @@ static void NotifyActivity(nsHttpConnectionInfo* aConnInfo, uint32_t aSubtype) {
 DnsAndConnectSocket::DnsAndConnectSocket(nsHttpConnectionInfo* ci,
                                          nsAHttpTransaction* trans,
                                          uint32_t caps, bool speculative,
-                                         bool isFromPredictor, bool urgentStart)
+                                         bool urgentStart)
     : mTransaction(trans),
       mCaps(caps),
       mSpeculative(speculative),
       mUrgentStart(urgentStart),
-      mIsFromPredictor(isFromPredictor),
       mConnInfo(ci) {
   MOZ_ASSERT(ci && trans, "constructor with null arguments");
   LOG(("Creating DnsAndConnectSocket [this=%p trans=%p ent=%s key=%s]\n", this,
        trans, mConnInfo->Origin(), mConnInfo->HashKey().get()));
 
-  mIsHttp3 = mConnInfo->IsHttp3();
+  if (mConnInfo->UsingProxy()) {
+    mIsHttp3 = mConnInfo->IsHttp3ProxyConnection();
+  } else {
+    mIsHttp3 = mConnInfo->IsHttp3();
+  }
 
   MOZ_ASSERT(mConnInfo);
   NotifyActivity(mConnInfo,
@@ -482,7 +487,7 @@ DnsAndConnectSocket::OnOutputStreamReady(nsIAsyncOutputStream* out) {
   RefPtr<ConnectionEntry> ent =
       gHttpHandler->ConnMgr()->FindConnectionEntry(mConnInfo);
   MOZ_DIAGNOSTIC_ASSERT(ent);
-  Unused << ent;
+  (void)ent;
 
   RefPtr<DnsAndConnectSocket> deleteProtector(this);
 
@@ -574,10 +579,10 @@ nsresult DnsAndConnectSocket::SetupConn(bool isPrimary, nsresult status) {
 
   nsresult rv = NS_OK;
   if (isPrimary) {
-    rv = mPrimaryTransport.SetupConn(mTransaction, ent, status, mCaps,
+    rv = mPrimaryTransport.SetupConn(this, mTransaction, ent, status, mCaps,
                                      getter_AddRefs(conn));
   } else {
-    rv = mBackupTransport.SetupConn(mTransaction, ent, status, mCaps,
+    rv = mBackupTransport.SetupConn(this, mTransaction, ent, status, mCaps,
                                     getter_AddRefs(conn));
   }
 
@@ -591,7 +596,8 @@ nsresult DnsAndConnectSocket::SetupConn(bool isPrimary, nsresult status) {
          conn.get(), static_cast<uint32_t>(rv)));
 
     if (nsHttpTransaction* trans = mTransaction->QueryHttpTransaction()) {
-      if (mIsHttp3 && !mConnInfo->GetWebTransport()) {
+      if (mIsHttp3 && !mConnInfo->GetWebTransport() &&
+          !mConnInfo->IsHttp3ProxyConnection()) {
         trans->DisableHttp3(true);
         gHttpHandler->ExcludeHttp3(mConnInfo);
       }
@@ -617,6 +623,35 @@ nsresult DnsAndConnectSocket::SetupConn(bool isPrimary, nsresult status) {
 
     ent->InsertIntoActiveConns(conn);
     if (mIsHttp3) {
+      // For WebSocket through HTTP/3 proxy, queue the transaction to be
+      // dispatched when the H3 session is connected, and use a NullTransaction
+      // to drive the H3 connection establishment.
+      // We do NOT create a ConnectionHandle for the WebSocket transaction here
+      // because it will get a tunnel connection later, and setting a
+      // ConnectionHandle now would cause it to be reclaimed when cleared.
+      nsHttpTransaction* trans = pendingTransInfo->Transaction();
+      if (trans->IsWebsocketUpgrade()) {
+        LOG(
+            ("DnsAndConnectSocket::SetupConn WebSocket through HTTP/3 proxy, "
+             "queueing for tunnel creation after H3 connected"));
+        // Put the transaction back in the pending queue so it can be
+        // dispatched through TryDispatchTransaction when the H3 session
+        // reports it's connected
+        RefPtr<PendingTransactionInfo> newPendingInfo =
+            new PendingTransactionInfo(trans);
+        ent->InsertTransaction(newPendingInfo);
+
+        // Dispatch a NullHttpTransaction to drive the H3 proxy connection
+        // establishment
+        nsCOMPtr<nsIInterfaceRequestor> nullCallbacks;
+        trans->GetSecurityCallbacks(getter_AddRefs(nullCallbacks));
+        RefPtr<nsAHttpTransaction> nullTrans =
+            new NullHttpTransaction(mConnInfo, nullCallbacks, mCaps);
+        rv = gHttpHandler->ConnMgr()->DispatchAbstractTransaction(
+            ent, nullTrans, mCaps, conn, 0);
+        return rv;
+      }
+
       // Each connection must have a ConnectionHandle wrapper.
       // In case of Http < 2 the a ConnectionHandle is created for each
       // transaction in DispatchAbstractTransaction.
@@ -654,9 +689,10 @@ nsresult DnsAndConnectSocket::SetupConn(bool isPrimary, nsresult status) {
     // the NullHttpTransaction does not know how to drive Connect
     // Http3 cannot be dispatched using OnMsgReclaimConnection (see below),
     // therefore we need to use a Nulltransaction.
-    if (!connTCP ||
-        (ent->mConnInfo->FirstHopSSL() && !ent->UrgentStartQueueLength() &&
-         !ent->PendingQueueLength() && !ent->mConnInfo->UsingConnect())) {
+    // Ensure that the fallback transacion is always dispatched.
+    if (!connTCP || ent->mConnInfo->GetFallbackConnection() ||
+        (ent->mConnInfo->FirstHopSSL() && ent->UrgentStartQueueIsEmpty() &&
+         ent->PendingQueueIsEmpty() && !ent->mConnInfo->UsingConnect())) {
       LOG(
           ("DnsAndConnectSocket::SetupConn null transaction will "
            "be used to finish SSL handshake on conn %p\n",
@@ -855,7 +891,7 @@ bool DnsAndConnectSocket::Claim() {
       if (NS_SUCCEEDED(mPrimaryTransport.mSocketTransport->GetTlsSocketControl(
               getter_AddRefs(tlsSocketControl))) &&
           tlsSocketControl) {
-        Unused << tlsSocketControl->Claim();
+        (void)tlsSocketControl->Claim();
       }
     }
 
@@ -1048,10 +1084,11 @@ nsresult DnsAndConnectSocket::TransportSetup::CheckConnectedResult(
 }
 
 nsresult DnsAndConnectSocket::TransportSetup::SetupConn(
-    nsAHttpTransaction* transaction, ConnectionEntry* ent, nsresult status,
-    uint32_t cap, HttpConnectionBase** connection) {
+    DnsAndConnectSocket* dnsAndSock, nsAHttpTransaction* transaction,
+    ConnectionEntry* ent, nsresult status, uint32_t cap,
+    HttpConnectionBase** connection) {
   RefPtr<HttpConnectionBase> conn;
-  if (!ent->mConnInfo->IsHttp3()) {
+  if (!dnsAndSock->mIsHttp3) {
     conn = new nsHttpConnection();
   } else {
     conn = new HttpConnectionUDP();
@@ -1062,7 +1099,7 @@ nsresult DnsAndConnectSocket::TransportSetup::SetupConn(
   LOG(
       ("DnsAndConnectSocket::SocketTransport::SetupConn "
        "Created new nshttpconnection %p %s\n",
-       conn.get(), ent->mConnInfo->IsHttp3() ? "using http3" : ""));
+       conn.get(), dnsAndSock->mIsHttp3 ? "using http3" : ""));
 
   NullHttpTransaction* nullTrans = transaction->QueryNullTransaction();
   if (nullTrans) {
@@ -1076,7 +1113,7 @@ nsresult DnsAndConnectSocket::TransportSetup::SetupConn(
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   transaction->GetSecurityCallbacks(getter_AddRefs(callbacks));
   nsresult rv = NS_OK;
-  if (!ent->mConnInfo->IsHttp3()) {
+  if (!dnsAndSock->mIsHttp3) {
     RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
     rv =
         connTCP->Init(ent->mConnInfo, gHttpHandler->ConnMgr()->mMaxRequestDelay,
@@ -1205,7 +1242,8 @@ nsresult DnsAndConnectSocket::TransportSetup::SetupStreams(
     tmpFlags |= nsISocketTransport::NO_PERMANENT_STORAGE;
   }
 
-  Unused << socketTransport->SetIsPrivate(ci->GetPrivate());
+  (void)socketTransport->SetIsPrivate(ci->GetPrivate());
+  (void)socketTransport->SetIsTRRConnection(ci->GetIsTrrServiceChannel());
 
   if (dnsAndSock->mCaps & NS_HTTP_DISALLOW_ECH) {
     tmpFlags |= nsISocketTransport::DONT_TRY_ECH;
@@ -1277,7 +1315,7 @@ nsresult DnsAndConnectSocket::TransportSetup::SetupStreams(
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (nsHttpHandler::EchConfigEnabled() && !ci->GetEchConfig().IsEmpty()) {
-    MOZ_ASSERT(!ci->IsHttp3());
+    MOZ_ASSERT(!dnsAndSock->mIsHttp3);
     LOG(("Setting ECH"));
     rv = socketTransport->SetEchConfig(ci->GetEchConfig());
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1372,7 +1410,7 @@ nsresult DnsAndConnectSocket::TransportSetup::OnLookupComplete(
     mDNSRecord = do_QueryInterface(rec);
     MOZ_ASSERT(mDNSRecord);
 
-    if (dnsAndSock->mConnInfo->IsHttp3()) {
+    if (dnsAndSock->mIsHttp3) {
       mState = TransportSetup::TransportSetupState::RESOLVED;
       return status;
     }

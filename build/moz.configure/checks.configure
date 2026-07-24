@@ -109,7 +109,7 @@ def checking(what, callback=None):
 # it can find. If PROG is already set from the environment or command line,
 # use that value instead.
 @template
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def check_prog(
     var,
     progs,

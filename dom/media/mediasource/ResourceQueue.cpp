@@ -5,12 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ResourceQueue.h"
+
 #include "MediaData.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/Unused.h"
 
 extern mozilla::LogModule* GetSourceBufferResourceLog();
 
@@ -158,7 +158,7 @@ void ResourceQueue::Dump(const char* aPath) {
     if (!fp) {
       return;
     }
-    Unused << fwrite(item->mData.Elements(), item->mData.Length(), 1, fp);
+    (void)fwrite(item->mData.Elements(), item->mData.Length(), 1, fp);
     fclose(fp);
   }
 }

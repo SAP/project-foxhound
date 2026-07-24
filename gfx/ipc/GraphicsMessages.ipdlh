@@ -34,7 +34,6 @@ struct DevicePrefs
   FeatureStatus hwCompositing;
   FeatureStatus d3d11Compositing;
   FeatureStatus oglCompositing;
-  FeatureStatus useD2D1;
   FeatureStatus d3d11HwAngle;
 };
 
@@ -87,6 +86,13 @@ struct GfxInfoFeatureStatus
     int32_t feature;
     int32_t status;
     nsCString failureId;
+};
+
+struct GfxInfoGLStrings {
+  nsCString vendor;
+  nsCString renderer;
+  nsCString version;
+  nsCString[] extensions;
 };
 
 } // namespace gfx

@@ -7,8 +7,8 @@
  * Interface definitions for fuzzing rust modules
  */
 
-#ifndef RustFuzzingTargets_h__
-#define RustFuzzingTargets_h__
+#ifndef RustFuzzingTargets_h_
+#define RustFuzzingTargets_h_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -23,4 +23,4 @@ int fuzz_rkv_calls(const uint8_t* raw_data, size_t size);
 
 }  // extern "C"
 
-#endif  // RustFuzzingTargets_h__
+#endif  // RustFuzzingTargets_h_

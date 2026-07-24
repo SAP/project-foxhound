@@ -54,7 +54,7 @@ async function editAndCheck(view) {
   view.debounce.flush();
   await onPropertyChange;
 
-  info("Waiting for ruleview-refreshed after previewValue was applied.");
+  info("Waiting for ruleview-changed after previewValue was applied.");
   await onRefreshAfterPreview;
 
   const onBlur = once(editor.input, "blur");

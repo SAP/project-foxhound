@@ -143,6 +143,35 @@ RefType RefType::leastUpperBound(RefType a, RefType b) {
   return common.withIsNullable(nullable);
 }
 
+RefType RefType::greatestLowerBound(RefType a, RefType b) {
+  // Types in different hierarchies have no common bound. Validation should
+  // always prevent two such types from being compared.
+  MOZ_RELEASE_ASSERT(a.hierarchy() == b.hierarchy());
+
+  // The GLB is easy in WASM because the type hierarchies nearly form a tree. If
+  // two types are in a subtype relationship, the lower of the two is obviously
+  // the GLB. Otherwise, the only possible common subtype is `none` (or the
+  // equivalent bottom type for other hierarchies.)
+
+  // Whether the GLB is nullable can be determined by the nullability of a and
+  // b, regardless of their actual types.
+  bool nullable = a.isNullable() && b.isNullable();
+
+  // If one type is a subtype of the other, the lower type is the GLB. The
+  // nullability should already match what we expect.
+  if (RefType::isSubTypeOf(a, b)) {
+    MOZ_RELEASE_ASSERT(a.isNullable() == nullable);
+    return a;
+  }
+  if (RefType::isSubTypeOf(b, a)) {
+    MOZ_RELEASE_ASSERT(b.isNullable() == nullable);
+    return b;
+  }
+
+  // The only possible common type now is the hierarchy's bottom type.
+  return a.bottomType().withIsNullable(nullable);
+}
+
 TypeDefKind RefType::typeDefKind() const {
   switch (kind()) {
     case RefType::Struct:

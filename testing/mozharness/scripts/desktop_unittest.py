@@ -195,6 +195,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 },
             ],
             [
+                ["--timeout-factor"],
+                {
+                    "action": "store",
+                    "dest": "timeout_factor",
+                    "help": "Multiplier for test timeout values",
+                },
+            ],
+            [
                 ["--filter"],
                 {
                     "action": "store",
@@ -405,13 +413,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
     def __init__(self, require_config_file=True):
         # abs_dirs defined already in BaseScript but is here to make pylint happy
         self.abs_dirs = None
-        super(DesktopUnittest, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "clobber",
                 "download-and-extract",
                 "create-virtualenv",
                 "start-pulseaudio",
+                "unlock-keyring",
                 "install",
                 "stage-files",
                 "run-tests",
@@ -466,7 +475,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
     # helper methods {{{2
     def _pre_config_lock(self, rw_config):
-        super(DesktopUnittest, self)._pre_config_lock(rw_config)
+        super()._pre_config_lock(rw_config)
         c = self.config
         if not c.get("run_all_suites"):
             return  # configs are valid
@@ -484,7 +493,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(DesktopUnittest, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
 
         c = self.config
         dirs = {}
@@ -717,12 +726,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 c.get("install_extension", [])
             ):
                 fetches_dir = os.environ.get("MOZ_FETCHES_DIR", '""')
-                base_cmd.extend(
-                    [
-                        f"--install-extension={os.path.join(fetches_dir, e)}"
-                        for e in c["install_extension"]
-                    ]
-                )
+                base_cmd.extend([
+                    f"--install-extension={os.path.join(fetches_dir, e)}"
+                    for e in c["install_extension"]
+                ])
 
             # do not add --disable fission if we don't have --disable-e10s
             if c["disable_fission"] and suite_category not in [
@@ -769,14 +776,15 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                                 "'{suite_category}' suite."
                             )
                 elif c.get("total_chunks") and c.get("this_chunk"):
-                    base_cmd.extend(
-                        [
-                            "--total-chunks",
-                            c["total_chunks"],
-                            "--this-chunk",
-                            c["this_chunk"],
-                        ]
-                    )
+                    base_cmd.extend([
+                        "--total-chunks",
+                        c["total_chunks"],
+                        "--this-chunk",
+                        c["this_chunk"],
+                    ])
+
+                if c.get("timeout_factor"):
+                    base_cmd.extend(["--timeout-factor", c["timeout_factor"]])
 
             if c["no_random"]:
                 if suite_category == "mochitest":
@@ -1024,24 +1032,39 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 for cat in SUITE_CATEGORIES
                 if self._query_specified_suites(cat) is not None
             ]
-        super(DesktopUnittest, self).download_and_extract(
+        super().download_and_extract(
             extract_dirs=extract_dirs, suite_categories=target_categories
         )
+
+    def unlock_keyring(self):
+        if os.environ.get("NEED_GNOME_KEYRING") == "true":
+            self.log("replacing and unlocking gnome-keyring-daemon")
+            import subprocess
+
+            subprocess.run(
+                [
+                    "gnome-keyring-daemon",
+                    "-r",
+                    "-d",
+                    "--unlock",
+                    "--components=secrets",
+                ],
+                check=True,
+                input=b"\n",
+            )
 
     def start_pulseaudio(self):
         command = []
         # Implies that underlying system is Linux.
         if os.environ.get("NEED_PULSEAUDIO") == "true":
-            command.extend(
-                [
-                    "pulseaudio",
-                    "--daemonize",
-                    "--log-level=4",
-                    "--log-time=1",
-                    "-vvvvv",
-                    "--exit-idle-time=-1",
-                ]
-            )
+            command.extend([
+                "pulseaudio",
+                "--daemonize",
+                "--log-level=4",
+                "--log-time=1",
+                "-vvvvv",
+                "--exit-idle-time=-1",
+            ])
 
             # Only run the initialization for Debian.
             # Ubuntu appears to have an alternate method of starting pulseaudio.
@@ -1482,18 +1505,24 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     final_cmd = copy.copy(cmd)
                     final_cmd.extend(per_test_args)
 
-                    # Bug 1714406: In test-verify of xpcshell tests on Windows, repeated
-                    # self-tests can trigger https://bugs.python.org/issue37380,
-                    # for python < 3.7; avoid by running xpcshell self-tests only once
-                    # per test-verify run.
-                    if (
-                        (self.verify_enabled or self.per_test_coverage)
-                        and sys.platform.startswith("win")
-                        and sys.version_info < (3, 7)
-                        and "--self-test" in final_cmd
-                    ):
-                        xpcshell_selftests += 1
-                        if xpcshell_selftests > 1:
+                    # Run xpcshell self-tests only once per test-verify run or only in chunk 1.
+                    if "--self-test" in final_cmd:
+                        should_remove_selftest = False
+
+                        # Remove self-test for test-verify runs after the first one
+                        if self.verify_enabled or self.per_test_coverage:
+                            xpcshell_selftests += 1
+                            if xpcshell_selftests > 1:
+                                should_remove_selftest = True
+
+                        # Remove self-test for chunked runs when not in chunk 1
+                        if (
+                            self.config.get("this_chunk")
+                            and int(self.config["this_chunk"]) != 1
+                        ):
+                            should_remove_selftest = True
+
+                        if should_remove_selftest:
                             final_cmd.remove("--self-test")
 
                     final_env = copy.copy(env)

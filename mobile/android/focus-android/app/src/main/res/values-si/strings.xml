@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ඔබව පාලනයේ තබයි.</p> <p>පෞද්. අතිරික්සුවක් ලෙස යොදාගන්න: <ul> <li>යෙදුමෙහි සොයන්න සහ පිරික්සන්න</li> <li>ලුහුබැඳීම් අවහිර කරන්න (හෝ සැකසුම් තුළින් ඉඩ දෙන්න)</li> <li>දත්තකඩ මෙන්ම සෙවුම් හා පිරික්සුම් ඉතිහාසය ඉවත් කිරීමට මකන්න</li> </ul> </p> <p>මොසිල්ලා හරහා %1$s නිෂ්පාදනය කෙරේ. හිතකර, විවෘත අන්තර්ජාලයකට පිහිටාධාර සැපයීම අපගේ මෙහෙවරයි.<br/> <a href=\"%2$s\">තව දැනගන්න</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ඔබව පාලනයේ තබයි.</p>\n<p>පෞද්. අතිරික්සුවක් ලෙස යොදාගන්න:\n<ul>\n<li>යෙදුමෙහි සොයන්න සහ පිරික්සන්න</li>\n<li>ලුහුබැඳීම් අවහිර කරන්න (හෝ සැකසුම් තුළින් ඉඩ දෙන්න)</li>\n<li>දත්තකඩ මෙන්ම සෙවුම් හා පිරික්සුම් ඉතිහාසය ඉවත් කිරීමට මකන්න</li>\n</ul> </p>\n<p>මොසිල්ලා හරහා %1$s නිෂ්පාදනය කෙරේ. හිතකර, විවෘත අන්තර්ජාලයකට පිහිටාධාර සැපයීම අපගේ මෙහෙවරයි.<br/>\n<a href=\"%2$s\">තව දැනගන්න</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">පෞද්ගලිකත්‍වය හා ආරක්‍ෂාව</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -457,26 +464,6 @@
   <string name="onboarding_first_screen_title">%1$s වෙත පිළිගනිමු</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">වේගවත්. පෞද්ගලික. බාධා රහිත.</string>
-  <!--
-    New Onboarding flow first screen 'terms of use' text
-
-    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
-  -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">ඉදිරියට යාමෙන් ඔබ %1$s සඳහා එකඟ වේ</string>
-  <!--
-    New Onboarding flow first screen 'terms of use link'
-
-    Text for the link used in onboarding_first_screen_terms_of_use_text
-  -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">ෆයර්ෆොක්ස් භාවිත නියම</string>
-  <!--
-    New Onboarding flow first screen 'privacy notice' text
-
-    %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
-  -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">ෆයර්ෆොක්ස් ඔබගේ පෞද්ගලිකත්‍වය ගැන සැලකිලිමත් වේ. අපගේ %1$s ගැන තව දැනගන්න.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">රහස්‍යතා දැන්වීම</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">සබැඳිය තිබේ</string>
   <!--
@@ -871,7 +858,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[මෙය සේවාදායකයේ වින්‍යාසයෙහි ගැටලුවක් විය හැකිය, හෝ යමෙක් සේවාදායකය ලෙස වංචනිකව පෙනී සිටීමට තැත් කරනවා විය හැකිය. <br/><br/> ඔබ කලින් මෙම සේවාදායකයට සාර්ථකව සම්බන්‍ධ වී ඇත්නම්, මෙය තාවකාලික දෝෂයක් විය හැකිය.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>යමෙක් වංචනිකව මෙම අඩවිය හසුරුවීමට තැත් කරන හෙයින් ඉදිරියට යාම අවදානම් සහගතය.</label> <br><br> <label><b>%2$s</b> හි සහතිකයේ නිකුත්කරු නොදන්නා නිසා %1$s එය විශ්වාස නොකරයි, සහතිකය ස්වයං-අත්සන් කර හෝ සේවාදායකය නිවැරදි අතරමැදි සහතිකය එවන්නේ නැත.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>යමෙක් වංචනිකව මෙම අඩවිය හසුරුවීමට තැත් කරන හෙයින් ඉදිරියට යාම අවදානම් සහගතය.</label> <br><br>\n<label><b>%2$s</b> හි සහතිකයේ නිකුත්කරු නොදන්නා නිසා %1$s එය විශ්වාස නොකරයි, සහතිකය ස්වයං-අත්සන් කර හෝ සේවාදායකය නිවැරදි අතරමැදි සහතිකය එවන්නේ නැත.</label>]]></string>
   <!--
     Sessions List
 

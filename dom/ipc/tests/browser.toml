@@ -8,7 +8,9 @@ support-files = [
 ]
 
 ["browser_CrashService_crash.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_ProcessPriorityManager.js"]
 # The Process Priority Manager is only enabled for Windows, Linux, and MacOS so far.
@@ -40,12 +42,11 @@ support-files = [
 ]
 
 ["browser_crash_oopiframe.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 skip-if = [
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && asan", # Bug 1775837
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug && msix", # Bug 1775837
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl && asan", # Bug 1775837
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl && tsan", # Bug 1775837
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix", # Bug 1775837
 ]
 
 ["browser_domainPolicy.js"]
@@ -55,33 +56,41 @@ skip-if = [
 # can upset it.
 skip-if = [
   "asan",
-  "tsan",
+  "arch == 'x86'",
   "debug",
   "os != 'linux'",
-  "bits != 64",
+  "tsan",
 ]
 
 ["browser_hide_tooltip.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1971068
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1971068
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt", # Bug 1971068
+]
 
 ["browser_isactiveintab.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1890386
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1890386
-  "win11_2009 && opt", # Bug 1890386
-]
+
+["browser_jsat_serialize.js"]
 
 ["browser_layers_unloaded_while_interruptingJS.js"]
 
 ["browser_memory_distribution_telemetry.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_pbrowser_creation_failure.js"]
 
 ["browser_subframesPreferUsed.js"]
 
+["browser_transparent.js"]
+
 ["browser_very_fission.js"]
 support-files = ["file_dummy.html"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]
 skip-if = [
   "asan", # appears to hang the machine
   "tsan", # appears to hang the machine
@@ -94,6 +103,8 @@ support-files = ["browser_wpi_base.js"]
 support-files = ["browser_wpi_base.js"]
 
 ["browser_wpi_isolate_nothing.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug 1741763; high frequency intermittent; leaked 2 windows
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1741763; high frequency intermittent; leaked 2 windows
+]
 
 support-files = ["browser_wpi_base.js"]

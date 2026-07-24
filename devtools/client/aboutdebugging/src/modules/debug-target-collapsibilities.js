@@ -15,7 +15,7 @@ const {
  */
 
 /**
- * @return {Object}
+ * @return {object}
  *         {
  *           key: constants.DEBUG_TARGET_PANE
  *           value: true - collapsed

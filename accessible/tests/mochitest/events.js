@@ -217,6 +217,7 @@ const DO_NOT_FINISH_TEST = 1;
  *
  * Invoker interface is:
  *
+ * ```js
  *   var invoker = {
  *     // Generates accessible event or event sequence. If returns
  *     // INVOKER_ACTION_FAILED constant then stop tests.
@@ -285,7 +286,7 @@ const DO_NOT_FINISH_TEST = 1;
  *   // Used to add a possible scenario of expected/unexpected events on
  *   // invoker's action.
  *  defineScenario(aInvokerObj, aEventSeq, aUnexpectedEventSeq)
- *
+ * ```
  *
  * @param  aEventType  [in, optional] the default event type (isn't used if
  *                      invoker defines eventSeq property).
@@ -1965,6 +1966,7 @@ function nofocusChecker(aID) {
 
 /**
  * Text inserted/removed events checker.
+ *
  * @param aFromUser  [in, optional] kNotFromUserInput or kFromUserInput
  */
 function textChangeChecker(

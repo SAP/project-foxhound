@@ -65,7 +65,7 @@ class RtcEventFrameDecoded final : public RtcEvent {
   VideoCodecType codec() const { return codec_; }
   uint8_t qp() const { return qp_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -79,7 +79,7 @@ class RtcEventFrameDecoded final : public RtcEvent {
   }
 
  private:
-  RtcEventFrameDecoded(const RtcEventFrameDecoded& other);
+  RtcEventFrameDecoded(const RtcEventFrameDecoded&) = default;
 
   const int64_t render_time_ms_;
   const uint32_t ssrc_;

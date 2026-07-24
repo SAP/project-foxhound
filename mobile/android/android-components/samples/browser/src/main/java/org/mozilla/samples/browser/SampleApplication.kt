@@ -21,6 +21,7 @@ import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.log.sink.AndroidLogSink
 import mozilla.components.support.ktx.android.content.isMainProcess
 import mozilla.components.support.ktx.android.content.runOnlyInMainProcess
+import mozilla.components.support.rusthttp.RustHttpConfig
 import mozilla.components.support.rustlog.RustLog
 import mozilla.components.support.webextensions.WebExtensionSupport
 import mozilla.telemetry.glean.BuildInfo
@@ -52,6 +53,7 @@ class SampleApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        RustHttpConfig.setClient(lazy { components.client })
         RustLog.enable()
 
         Log.addSink(AndroidLogSink())

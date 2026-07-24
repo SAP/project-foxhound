@@ -748,7 +748,7 @@ add_task(async function update_softblocked_to_unblocked() {
 add_task(async function update_softblocked_to_hardblocked() {
   // Re-initialize AMTelemetry to make sure it is listening to the AOM
   // addon events onEnabled.
-  AMTelemetry.telemetrySetupDone = false;
+  await AMTelemetry.uninit();
   AMTelemetry.onStartup();
 
   Services.fog.testResetFOG();

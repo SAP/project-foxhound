@@ -9,12 +9,15 @@
  */
 #include "common_video/h264/h264_bitstream_parser.h"
 
-#include <stdlib.h>
-
 #include <cstdint>
+#include <cstdlib>
+#include <optional>
 #include <vector>
 
+#include "api/array_view.h"
 #include "common_video/h264/h264_common.h"
+#include "common_video/h264/pps_parser.h"
+#include "common_video/h264/sps_parser.h"
 #include "rtc_base/bitstream_reader.h"
 #include "rtc_base/logging.h"
 
@@ -31,7 +34,7 @@ H264BitstreamParser::H264BitstreamParser() = default;
 H264BitstreamParser::~H264BitstreamParser() = default;
 
 H264BitstreamParser::Result H264BitstreamParser::ParseNonParameterSetNalu(
-    rtc::ArrayView<const uint8_t> source,
+    ArrayView<const uint8_t> source,
     uint8_t nalu_type) {
   if (!sps_ || !pps_)
     return kInvalidStream;
@@ -308,7 +311,7 @@ H264BitstreamParser::Result H264BitstreamParser::ParseNonParameterSetNalu(
   return kOk;
 }
 
-void H264BitstreamParser::ParseSlice(rtc::ArrayView<const uint8_t> slice) {
+void H264BitstreamParser::ParseSlice(ArrayView<const uint8_t> slice) {
   if (slice.empty()) {
     return;
   }
@@ -340,8 +343,7 @@ void H264BitstreamParser::ParseSlice(rtc::ArrayView<const uint8_t> slice) {
   }
 }
 
-void H264BitstreamParser::ParseBitstream(
-    rtc::ArrayView<const uint8_t> bitstream) {
+void H264BitstreamParser::ParseBitstream(ArrayView<const uint8_t> bitstream) {
   std::vector<H264::NaluIndex> nalu_indices = H264::FindNaluIndices(bitstream);
   for (const H264::NaluIndex& index : nalu_indices)
     ParseSlice(

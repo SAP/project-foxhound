@@ -9,10 +9,10 @@ import android.content.DialogInterface
 import android.view.LayoutInflater
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
-import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.doOnTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.TabSessionState
@@ -67,7 +67,7 @@ fun CollectionsDialog.show(
     val layout = LayoutInflater.from(context).inflate(R.layout.add_new_collection_dialog, null)
     val list = layout.findViewById<RecyclerView>(R.id.recycler_view)
 
-    val builder = AlertDialog.Builder(context).setTitle(R.string.tab_tray_select_collection)
+    val builder = MaterialAlertDialogBuilder(context).setTitle(R.string.tab_tray_select_collection)
         .setView(layout)
         .setPositiveButton(R.string.create_collection_positive) { dialog, _ ->
             val selectedCollection =
@@ -116,7 +116,7 @@ internal fun CollectionsDialog.showAddNewDialog(
     )
     collectionNameEditText.increaseTapArea(context.resources.getDimension(R.dimen.tap_increase_2).toInt())
 
-    val dialog = AlertDialog.Builder(context)
+    val dialog = MaterialAlertDialogBuilder(context)
         .setTitle(R.string.tab_tray_add_new_collection)
         .setView(layout).setPositiveButton(R.string.create_collection_positive) { dialog, _ ->
 

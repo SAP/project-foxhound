@@ -32,19 +32,16 @@ case `uname -s` in
                 macosx_version_min=11.0
                 ;;
             *)
-                macosx_version_min=10.12
+                macosx_version_min=10.15
                 ;;
         esac
         # NOTE: both CFLAGS and CPPFLAGS need to be set here, otherwise
         # configure step fails.
-        sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX15.4.sdk -mmacosx-version-min=${macosx_version_min}"
+        sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX26.2.sdk -mmacosx-version-min=${macosx_version_min}"
         export CPPFLAGS="${sysroot_flags} -I${xz_prefix}/include"
         export CFLAGS=${sysroot_flags}
         export LDFLAGS="${LDFLAGS} ${sysroot_flags} -L${xz_prefix}/lib"
         configure_flags_extra=--with-openssl=/usr/local/opt/openssl
-
-        # see https://bugs.python.org/issue22490
-        unset __PYVENV_LAUNCHER__
 
         # see https://bugs.python.org/issue44065
         sed -i -e 's,$CC --print-multiarch,:,' ${python_src}/configure

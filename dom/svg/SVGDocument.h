@@ -7,7 +7,6 @@
 #ifndef DOM_SVG_SVGDOCUMENT_H_
 #define DOM_SVG_SVGDOCUMENT_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/XMLDocument.h"
 
 namespace mozilla {
@@ -19,7 +18,10 @@ class SVGForeignObjectElement;
 
 class SVGDocument final : public XMLDocument {
  public:
-  SVGDocument() : XMLDocument("image/svg+xml") { mType = eSVG; }
+  explicit SVGDocument(LoadedAsData aLoadedAsData)
+      : XMLDocument("image/svg+xml", aLoadedAsData) {
+    mType = eSVG;
+  }
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };

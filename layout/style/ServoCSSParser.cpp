@@ -8,7 +8,7 @@
 
 #include "ServoCSSParser.h"
 
-#include "mozilla/AnimatedPropertyID.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/Document.h"
@@ -22,14 +22,23 @@ bool ServoCSSParser::IsValidCSSColor(const nsACString& aValue) {
 }
 
 /* static */
-bool ServoCSSParser::ComputeColor(ServoStyleSet* aStyleSet,
+bool ServoCSSParser::ComputeColor(const StylePerDocumentStyleData* aStyleData,
                                   nscolor aCurrentColor,
                                   const nsACString& aValue,
                                   nscolor* aResultColor, bool* aWasCurrentColor,
                                   css::Loader* aLoader) {
-  return Servo_ComputeColor(aStyleSet ? aStyleSet->RawData() : nullptr,
-                            aCurrentColor, &aValue, aResultColor,
+  return Servo_ComputeColor(aStyleData, aCurrentColor, &aValue, aResultColor,
                             aWasCurrentColor, aLoader);
+}
+
+/* static */
+Maybe<StyleAbsoluteColor> ServoCSSParser::ComputeAbsoluteColor(
+    const StylePerDocumentStyleData* aStyleData, const nsACString& aValue) {
+  StyleAbsoluteColor color{};
+  if (Servo_ComputeAbsoluteColor(aStyleData, &aValue, &color)) {
+    return Some(color);
+  }
+  return Nothing();
 }
 
 /* static */
@@ -44,16 +53,16 @@ bool ServoCSSParser::ColorTo(const nsACString& aFromColor,
 
 /* static */
 already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
-    nsCSSPropertyID aProperty, const nsACString& aValue,
+    NonCustomCSSPropertyId aProperty, const nsACString& aValue,
     const ParsingEnvironment& aParsingEnvironment,
     const StyleParsingMode& aParsingMode) {
-  AnimatedPropertyID property(aProperty);
+  CSSPropertyId property(aProperty);
   return ParseProperty(property, aValue, aParsingEnvironment, aParsingMode);
 }
 
 /* static */
 already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
-    const AnimatedPropertyID& aProperty, const nsACString& aValue,
+    const CSSPropertyId& aProperty, const nsACString& aValue,
     const ParsingEnvironment& aParsingEnvironment,
     const StyleParsingMode& aParsingMode) {
   return Servo_ParseProperty(
@@ -95,6 +104,7 @@ already_AddRefed<URLExtraData> ServoCSSParser::GetURLExtraData(
 
 /* static */ ServoCSSParser::ParsingEnvironment
 ServoCSSParser::GetParsingEnvironment(Document* aDocument) {
-  return {GetURLExtraData(aDocument), aDocument->GetCompatibilityMode(),
-          aDocument->CSSLoader()};
+  return {
+      GetURLExtraData(aDocument), aDocument->GetCompatibilityMode(),
+      aDocument->GetExistingCSSLoader()};  // Loader for error reporting only.
 }

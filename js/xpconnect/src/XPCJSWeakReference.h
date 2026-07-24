@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef xpcjsweakreference_h___
-#define xpcjsweakreference_h___
+#ifndef xpcjsweakreference_h_
+#define xpcjsweakreference_h_
 
 #include "xpcIJSWeakReference.h"
 #include "nsIWeakReferenceUtils.h"
-#include "mozilla/Attributes.h"
 
 class xpcJSWeakReference final : public xpcIJSWeakReference {
   ~xpcJSWeakReference() = default;
@@ -25,4 +24,4 @@ class xpcJSWeakReference final : public xpcIJSWeakReference {
   nsWeakPtr mReferent;
 };
 
-#endif  // xpcjsweakreference_h___
+#endif  // xpcjsweakreference_h_

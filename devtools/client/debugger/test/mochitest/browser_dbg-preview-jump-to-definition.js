@@ -48,7 +48,7 @@ add_task(async function testJumpToDefinitionInPrettyPrintedSource() {
   );
 
   await selectSource(dbg, TEST_URL_ONE_LINE);
-  await prettyPrint(dbg);
+  await togglePrettyPrint(dbg);
 
   invokeInTab("main");
   await waitForPaused(dbg);

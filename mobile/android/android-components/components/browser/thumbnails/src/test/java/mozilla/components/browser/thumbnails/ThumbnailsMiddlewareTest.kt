@@ -14,7 +14,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.thumbnails.storage.ThumbnailStorage
 import mozilla.components.concept.base.images.ImageSaveRequest
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import org.junit.Test
@@ -34,7 +33,7 @@ class ThumbnailsMiddlewareTest {
         )
 
         val bitmap: Bitmap = mock()
-        store.dispatch(ContentAction.UpdateThumbnailAction(request.id, bitmap)).joinBlocking()
+        store.dispatch(ContentAction.UpdateThumbnailAction(request.id, bitmap))
         verify(thumbnailStorage).saveThumbnail(request, bitmap)
     }
 
@@ -49,7 +48,7 @@ class ThumbnailsMiddlewareTest {
         )
 
         val bitmap: Bitmap = mock()
-        store.dispatch(ContentAction.UpdateThumbnailAction(request.id, bitmap)).joinBlocking()
+        store.dispatch(ContentAction.UpdateThumbnailAction(request.id, bitmap))
         verify(thumbnailStorage).saveThumbnail(request, bitmap)
     }
 
@@ -68,7 +67,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveAllNormalTabsAction).joinBlocking()
+        store.dispatch(TabListAction.RemoveAllNormalTabsAction)
         verify(thumbnailStorage).deleteThumbnail("test-tab1", false)
         verify(thumbnailStorage).deleteThumbnail("test-tab2", false)
         verify(thumbnailStorage).deleteThumbnail("test-tab3", false)
@@ -90,7 +89,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveAllPrivateTabsAction).joinBlocking()
+        store.dispatch(TabListAction.RemoveAllPrivateTabsAction)
         verify(thumbnailStorage, never()).deleteThumbnail("test-tab1", false)
         verify(thumbnailStorage).deleteThumbnail("test-tab2", true)
         verify(thumbnailStorage).deleteThumbnail("test-tab3", true)
@@ -110,7 +109,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveAllTabsAction()).joinBlocking()
+        store.dispatch(TabListAction.RemoveAllTabsAction())
         verify(thumbnailStorage).clearThumbnails()
     }
 
@@ -128,7 +127,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveTabAction(sessionIdOrUrl)).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabAction(sessionIdOrUrl))
         verify(thumbnailStorage).deleteThumbnail(sessionIdOrUrl, false)
     }
 
@@ -146,7 +145,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveTabAction(sessionIdOrUrl)).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabAction(sessionIdOrUrl))
         verify(thumbnailStorage).deleteThumbnail(sessionIdOrUrl, true)
     }
 
@@ -164,7 +163,7 @@ class ThumbnailsMiddlewareTest {
             middleware = listOf(ThumbnailsMiddleware(thumbnailStorage)),
         )
 
-        store.dispatch(TabListAction.RemoveTabsAction(listOf(sessionIdOrUrl))).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabsAction(listOf(sessionIdOrUrl)))
         verify(thumbnailStorage).deleteThumbnail(sessionIdOrUrl, false)
     }
 
@@ -184,8 +183,8 @@ class ThumbnailsMiddlewareTest {
             ),
         )
 
-        store.dispatch(ContentAction.UpdateThumbnailAction("test-tab1", mock())).joinBlocking()
-        store.dispatch(TabListAction.RemoveTabAction("test-tab1")).joinBlocking()
+        store.dispatch(ContentAction.UpdateThumbnailAction("test-tab1", mock()))
+        store.dispatch(TabListAction.RemoveTabAction("test-tab1"))
 
         // We shouldn't allow thumbnail actions to continue being processed.
         capture.assertNotDispatched(ContentAction.UpdateThumbnailAction::class)
@@ -193,7 +192,7 @@ class ThumbnailsMiddlewareTest {
         capture.assertLastAction(TabListAction.RemoveTabAction::class) {}
 
         // All other actions should also continue being processed.
-        store.dispatch(EngineAction.KillEngineSessionAction("test-tab1")).joinBlocking()
+        store.dispatch(EngineAction.KillEngineSessionAction("test-tab1"))
         capture.assertLastAction(EngineAction.KillEngineSessionAction::class) {}
     }
 }

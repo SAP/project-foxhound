@@ -445,7 +445,7 @@ class XPCShellTestsTests(unittest.TestCase):
     """
 
     def __init__(self, name):
-        super(XPCShellTestsTests, self).__init__(name)
+        super().__init__(name)
         from buildconfig import substs
         from mozbuild.base import MozbuildObject
 
@@ -500,7 +500,7 @@ class XPCShellTestsTests(unittest.TestCase):
 
     def writeManifest(self, tests, prefs=[]):
         """
-        Write an xpcshell.ini in the temp directory and set
+        Write an xpcshell.toml in the temp directory and set
         self.manifest to its pathname. |tests| is a list containing
         either strings (for test names), or tuples with a test name
         as the first element and manifest conditions as the following
@@ -542,20 +542,29 @@ prefs = [
         kwargs["shuffle"] = shuffle
         kwargs["verbose"] = verbose
         kwargs["headless"] = headless
-        kwargs["sequential"] = True
+        kwargs["selfTest"] = True  # Prevent singleFile from forcing sequential=True
         kwargs["testingModulesDir"] = self.testing_modules
         kwargs["utility_path"] = self.utility_path
         kwargs["repeat"] = 0
-        self.assertEqual(
-            expected,
-            self.x.runTests(kwargs),
-            msg="""Tests should have %s, log:
+        # Don't retry tests that are expected to fail
+        if not expected:
+            kwargs["retry"] = False
+
+        startup_profiling = os.environ.pop("MOZ_PROFILER_STARTUP", None)
+        try:
+            self.assertEqual(
+                expected,
+                self.x.runTests(kwargs),
+                msg="""Tests should have %s, log:
 ========
 %s
 ========
 """
-            % ("passed" if expected else "failed", self.log.getvalue()),
-        )
+                % ("passed" if expected else "failed", self.log.getvalue()),
+            )
+        finally:
+            if startup_profiling:
+                os.environ["MOZ_PROFILER_STARTUP"] = startup_profiling
 
     def _assertLog(self, s, expected):
         l = self.log.getvalue()
@@ -1485,9 +1494,9 @@ add_test({
         Check that the manifest entry overrides the explicit default.
         """
         self.writeFile("test_notHeadlessWhenFalseInManifest.js", HEADLESS_FALSE)
-        self.writeManifest(
-            [("test_notHeadlessWhenFalseInManifest.js", "headless = false")]
-        )
+        self.writeManifest([
+            ("test_notHeadlessWhenFalseInManifest.js", "headless = false")
+        ])
         self.assertTestResult(True, headless=True)
 
 

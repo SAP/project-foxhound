@@ -5,10 +5,11 @@
 # See python/mozbuild/mozbuild/mozinfo.py for incoming data.
 
 ##########
-# android_version strings
+# os_version strings
 #   https://en.wikipedia.org/wiki/Android_version_history
 #   * Android           13.0: 33 (pixel 5 phones)
 #   * Android           14.0: 34 (samsung a55 phones)
+#   See also testing/mozbase/mozinfo/mozinfo/platforminfo.py
 
 ##########
 # os_version strings
@@ -20,57 +21,73 @@
 prefs = "media.seamless-looping-video=false"
 
 ["generated/test_..__always-fail.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ####################
 # Failures from 2024-04 CTS update
 
 ["generated/test_2_conformance2__attribs__gl-bindAttribLocation-aliasing-inactive.html"]
 fail-if = [
-  "os == 'linux'",
-  "os == 'mac'",
-  "os == 'android' && android_version == '33'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["generated/test_2_conformance2__attribs__gl-vertex-attrib-i-render.html"]
 # timed out crash
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__attribs__gl-vertex-attrib.html"]
 # random timed out
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__buffers__get-buffer-sub-data.html"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__context__context-attributes-depth-stencil-antialias-obeyed.html"]
 fail-if = [
-  "os == 'android'",
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
+tags = "os_integration"
+
 
 ["generated/test_2_conformance2__extensions__ext-color-buffer-float.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
 ]
 
 ["generated/test_2_conformance2__extensions__ext-texture-norm16.html"]
-skip-if = ["os == 'android'"] #Bug 1658801
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", #Bug 1658801
+]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "os == 'linux'",
 ]
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2.html"]
 # Windows failure: ANGLE bug: FAIL #extension GL_OVR_multiview must be forbidden.
 #   Because we have to enable multiview1 to get ANGLE to emit gl_ViewID_OVR.
-fail-if = ["os == 'win'"]
-skip-if = ["os == 'android'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 #[task 2020-01-06T23:47:51.786Z] 23:47:51     INFO -  GPU: UNKNOWN
 #[task 2020-01-06T23:47:51.786Z] 23:47:51     INFO -  Crash reason:  SIGSEGV /SEGV_MAPERR
 #[task 2020-01-06T23:47:51.786Z] 23:47:51     INFO -  Crash address: 0x0
@@ -129,10 +146,14 @@ skip-if = ["os == 'android'"]
 #[task 2020-01-06T23:47:51.792Z] 23:47:51     INFO -      Found by: call frame info
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2_depth.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2_draw_buffers.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1810021
 #
 # Currently getting failures like the following:
@@ -151,36 +172,46 @@ skip-if = ["os == 'android'"]
 # > the right edge of view 2 of color attachment 2 should be untouched
 # > the left edge of view 3 of color attachment 2 should be untouched
 # > ```
-fail-if = ["os == 'win' && debug"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100' && debug",
+]
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2_instanced_draw.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2_single_view_operations.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_2_conformance2__extensions__ovr_multiview2_transform_feedback.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["generated/test_2_conformance2__extensions__required-extensions.html"]
 # has_etc1 == has_etc should be true. Was false
-fail-if = ["os == 'linux'"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_2_conformance2__extensions__webgl-multi-draw-instanced-base-vertex-base-instance.html"]
 # instid_prog: Expected [0,0,0,0], was [0,1,1,1]. desc: {"name":"drawArraysInstanced","base_vert":0,"vert_count":1,"base_inst":0,"inst_count":1,"first_vert":1}
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__glsl3__loops-with-side-effects.html"]
 # application crashed [@ nvoglv32.dll + 0x999512]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__glsl3__matrix-row-major-dynamic-indexing.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ########################################################################
@@ -190,77 +221,85 @@ fail-if = [
 
 ["generated/test_2_conformance2__glsl3__switch-case.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1725442
-fail-if = ["os == 'win'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__glsl3__texture-bias.html"]
 # should be: 3,3,3,3
 # should be: 13,13,13,13
-fail-if = ["os == 'win'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ####################
 # Bugs surfaced during fx106 CTS update
 
 ["generated/test_2_conformance2__glsl3__tricky-loop-conditions.html"]
-fail-if = ["os == 'win'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__glsl3__uniform-location-length-limits.html"]
 # time out crash
-skip-if = ["os == 'win' && debug"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && debug",
+]
 
 ["generated/test_2_conformance2__glsl3__valid-invariant.html"]
-fail-if = ["os == 'linux' && os_version == '18.04' && display != 'wayland'"]
 # [unexpected link status] vertex shader with invariant varying and fragment shader with variant varying must succeed
 # [unexpected link status] vertex shader with invariant (global setting) varying and fragment shader with variant varying must succeed
 # [unexpected link status] vertex shader with invariant (separately set) varying and fragment shader with variant varying must succeed
 
 ["generated/test_2_conformance2__glsl3__vector-dynamic-indexing-swizzled-lvalue.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__glsl3__vector-dynamic-indexing.html"]
 skip-if = [
-  "os == 'win'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__misc__expando-loss-2.html"]
 skip-if = [
-  "os == 'android'",
-  "os == 'linux'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_2_conformance2__misc__uninitialized-test-2.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
-  "os == 'android' && android_version == '34'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__offscreencanvas__offscreencanvas-sync.html"]
 # Timeout
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt",
 ]
 
 ["generated/test_2_conformance2__programs__gl-get-frag-data-location.html"]
 # gl.getFragDataLocation(programEs2, 'gl_FragColor') should be -1. Was 0.
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["generated/test_2_conformance2__query__occlusion-query-scissor.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_2_conformance2__query__occlusion-query.html"]
 # Test timed out
 # called finish() multiple times
 # (broken test)
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__reading__format-r11f-g11f-b10f.html"]
 
@@ -268,17 +307,20 @@ skip-if = ["true"]
 # Test timed out
 # called finish() multiple times
 # (broken test)
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__reading__read-pixels-into-pixel-pack-buffer.html"]
 # getError expected: INVALID_ENUM. Was INVALID_OPERATION : Format should not be able to read as DEPTH_STENCIL
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__renderbuffers__multisample-draws-between-blits.html"]
 # "whole thing" and more
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance2__renderbuffers__multisampled-depth-renderbuffer-initialization.html"]
@@ -291,38 +333,42 @@ fail-if = [
 ["generated/test_2_conformance2__renderbuffers__readbuffer.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1726625
 # getError expected: INVALID_OPERATION. Was INVALID_ENUM : calling readBuffer with GL_COLOR_ATTACHMENTi that exceeds MAX_COLOR_ATTACHMENT on fbo should generate INVALID_OPERATION
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__rendering__blitframebuffer-filter-srgb.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["generated/test_2_conformance2__rendering__blitframebuffer-multisampled-readbuffer.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance2__rendering__blitframebuffer-resolve-to-back-buffer.html"]
 # ABORT_ON_ERROR
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__rendering__clipping-wide-points.html"]
-fail-if = ["os == 'linux'"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_2_conformance2__rendering__draw-buffers-sparse-output-locations.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1726624
 # Flakey?
 # check COLOR_ATTACHMENT0
 skip-if = [
-  "os == 'win'",
-  "os == 'android' && android_version == '34'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 # -
@@ -331,20 +377,23 @@ skip-if = [
 ["generated/test_2_conformance2__rendering__framebuffer-mismatched-attachment-targets.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1725283
 # E.g. framebuffer layer 0 should be drawn green
-fail-if = ["os == 'win'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__rendering__framebuffer-render-to-layer-angle-issue.html"]
 # framebuffer layer 0 should be green
 # framebuffer layer 1 should be green
-fail-if = ["os == 'win'"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance2__rendering__framebuffer-render-to-layer.html"]
 # pixel 0,0 channel 2 was 51 expected 63 +/- 9
 fail-if = [
-  "os == 'android'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
@@ -354,39 +403,43 @@ fail-if = [
 
 ["generated/test_2_conformance2__rendering__framebuffer-texture-level1.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 # Crash in `swrast_dri.so!st_finalize_texture`
 
 ["generated/test_2_conformance2__rendering__framebuffer-to-texture.html"]
 # checkFramebufferStatus expected: FRAMEBUFFER_COMPLETE. Was FRAMEBUFFER_INCOMPLETE_ATTACHMENT
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance2__rendering__line-rendering-quality.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 # Found 0 lines, looking in the vertical direction, expected 2
 
 ["generated/test_2_conformance2__rendering__multisampling-depth-resolve.html"]
 # multisampling-depth-resolve: outer pixels should be red
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance2__rendering__texture-switch-performance.html"]
 # Orange on OSX+debug
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__rendering__uniform-block-buffer-size.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 # [task 2020-01-07T01:44:09.858Z] 01:44:09  WARNING -  PROCESS-CRASH | dom/canvas/test/webgl-conf/generated/test_2_conformance2__rendering__uniform-block-buffer-size.html | application crashed [@ mozilla::gfx::Log<1, mozilla::gfx::CriticalLogger>::WriteLog(std::__ndk1::basic_string<char, std::__ndk1::char_traits<char>, std::__ndk1::allocator<char> > const&)]
 # [task 2020-01-07T01:44:09.858Z] 01:44:09     INFO -  Crash dump filename: /tmp/tmpc7PIpQ/54957c68-e992-3e79-0598-34251a47e519.dmp
 # [task 2020-01-07T01:44:09.858Z] 01:44:09     INFO -  Operating system: Android
@@ -445,477 +498,524 @@ skip-if = ["os == 'android'"]
 
 ["generated/test_2_conformance2__state__gl-get-calls.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance2__state__gl-object-get-calls.html"]
 # Really really slow on IPC mode. Update test suite to get faster/quick-mode test.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 # Also fails on Linux still?
-fail-if = ["os == 'linux'"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 # -
 # Large tex allocations
 
 ["generated/test_2_conformance2__textures__canvas__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__canvas__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r11f_g11f_b10f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r11f_g11f_b10f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r11f_g11f_b10f-rgb-unsigned_int_10f_11f_11f_rev.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r16f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r16f-red-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r32f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r8-red-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-r8ui-red_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rg16f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rg16f-rg-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rg32f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rg8-rg-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rg8ui-rg_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb16f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb16f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb32f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb565-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb565-rgb-unsigned_short_5_6_5.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb5_a1-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb5_a1-rgba-unsigned_short_5_5_5_1.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb8ui-rgb_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb9_e5-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgb9_e5-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba16f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba16f-rgba-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba32f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba4-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba4-rgba-unsigned_short_4_4_4_4.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-rgba8ui-rgba_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-srgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__canvas_sub_rectangle__tex-3d-srgb8_alpha8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r11f_g11f_b10f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r11f_g11f_b10f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r11f_g11f_b10f-rgb-unsigned_int_10f_11f_11f_rev.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r16f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r16f-red-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r32f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r8-red-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-r8ui-red_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rg16f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rg16f-rg-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rg32f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rg8-rg-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rg8ui-rg_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb16f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb16f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb32f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb565-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb565-rgb-unsigned_short_5_6_5.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb5_a1-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb5_a1-rgba-unsigned_short_5_5_5_1.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb8ui-rgb_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb9_e5-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgb9_e5-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba16f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba16f-rgba-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba32f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba4-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba4-rgba-unsigned_short_4_4_4_4.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-rgba8ui-rgba_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-srgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image__tex-3d-srgb8_alpha8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_blob__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_blob__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_canvas__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_canvas__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image_bitmap__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image_bitmap__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image_data__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_image_data__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_video__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_bitmap_from_video__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_data__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__image_data__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__misc__copy-texture-cube-map-bug.html"]
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 # [task 2019-12-27T02:30:35.051Z] 02:30:35     INFO - GECKO(1114) | Assertion failure: err == 0x0505, at /builds/worker/workspace/build/src/gfx/gl/SharedSurfaceGL.cpp:31
 # [task 2019-12-27T02:30:56.779Z] 02:30:56     INFO - GECKO(1114) | #01: mozilla::gl::SurfaceFactory_Basic::CreateShared(mozilla::gfx::IntSizeTyped<mozilla::gfx::UnknownUnits> const&) [gfx/gl/SharedSurfaceGL.h:82]
 # [task 2019-12-27T02:30:56.786Z] 02:30:56     INFO - GECKO(1114) | #02: mozilla::gl::SurfaceFactory::NewTexClient(mozilla::gfx::IntSizeTyped<mozilla::gfx::UnknownUnits> const&) [gfx/gl/SharedSurface.cpp:301]
@@ -929,9 +1029,10 @@ skip-if = ["os == 'linux'"]
 
 ["generated/test_2_conformance2__textures__misc__copy-texture-image-same-texture.html"]
 skip-if = [
-  "os == 'linux'",
-  "os == 'win'",
-  "os == 'android' && android_version == '34'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__generate-mipmap-with-large-base-level.html"]
@@ -940,21 +1041,23 @@ skip-if = [
 ["generated/test_2_conformance2__textures__misc__immutable-tex-render-feedback.html"]
 # E.g. getError expected: NO_ERROR. Was INVALID_VALUE : after draw with texture
 fail-if = [
-  "os == 'android' && android_version == '33'",
-  "os == 'linux'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 # Assertion failure: [GFX1]: void mozilla::gl::GLContext::fFramebufferTexture2D(GLenum, GLenum, GLenum, GLuint, GLint): Generated unexpected GL_INVALID_VALUE error
 skip-if = [
-  "os == 'linux' && debug",
-  "os == 'android' && android_version == '34' && debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["generated/test_2_conformance2__textures__misc__origin-clean-conformance-offscreencanvas.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 
 ####################
@@ -962,388 +1065,427 @@ skip-if = ["true"]
 
 ["generated/test_2_conformance2__textures__misc__tex-3d-mipmap-levels-intel-bug.html"]
 fail-if = [
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-base-level-bug.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]  # macosx1014 due to 1563418
 
 ["generated/test_2_conformance2__textures__misc__tex-image-10bpc.html"]
 # gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be 36053. Was 36054.
 # uniquePixels.size should be >= 7. Was 1 (of type number).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 
 ["generated/test_2_conformance2__textures__misc__tex-image-with-bad-args-from-dom-elements.html"]
 skip-if = [
-  "os == 'win'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'android' && processor == 'aarch64'", # Bug 1687073
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1687073
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-input-validation.html"]
 skip-if = [
-  "os == 'android'",
-  "os == 'win'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-mipmap-levels.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-srgb-mipmap.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-unpack-params-imagedata.html"]
 # areArraysEqual(actual, expected) should be true. Was false.
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__misc__tex-unpack-params-with-flip-y-and-premultiply-alpha.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ####################################################
 # Bugs
 
 ["generated/test_2_conformance2__textures__misc__tex-unpack-params.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug",
 ]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["generated/test_2_conformance2__textures__svg_image__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__svg_image__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__video__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r11f_g11f_b10f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r11f_g11f_b10f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r11f_g11f_b10f-rgb-unsigned_int_10f_11f_11f_rev.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r16f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r16f-red-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r32f-red-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r8-red-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-r8ui-red_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rg16f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rg16f-rg-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rg32f-rg-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rg8-rg-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rg8ui-rg_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb16f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb16f-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb32f-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb565-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb565-rgb-unsigned_short_5_6_5.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb5_a1-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb5_a1-rgba-unsigned_short_5_5_5_1.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb8ui-rgb_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb9_e5-rgb-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgb9_e5-rgb-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba16f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba16f-rgba-half_float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba32f-rgba-float.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba4-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba4-rgba-unsigned_short_4_4_4_4.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-rgba8ui-rgba_integer-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-srgb8-rgb-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__video__tex-3d-srgb8_alpha8-rgba-unsigned_byte.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance2__textures__webgl_canvas__tex-2d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__textures__webgl_canvas__tex-3d-rgb10_a2-rgba-unsigned_int_2_10_10_10_rev.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__transform_feedback__too-small-buffers.html"]
 # ABORT_ON_ERROR
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__transform_feedback__transform_feedback.html"]
 # Linux: Assertion failure: [GFX1]: void mozilla::gl::GLContext::fTransformFeedbackVaryings(GLuint, GLsizei, const GLchar *const *, GLenum): Generated unexpected GL_INVALID_OPERATION error
 # Android: void mozilla::gl::GLContext::fDeleteTransformFeedbacks(GLsizei, const GLuint *): Generated unexpected GL_INVALID_OPERATION error.
 skip-if = [
-  "os == 'linux'",
-  "os == 'android' && debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_2_conformance2__wasm__bufferdata-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__bufferdata-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__buffersubdata-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__buffersubdata-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__getbuffersubdata-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__getbuffersubdata-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__readpixels-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__readpixels-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__teximage2d-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__teximage2d-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__texsubimage2d-16gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance2__wasm__texsubimage2d-4gb-wasm-memory.html"]
 # successfullyParsed should be true (of type boolean). Was undefined (of type undefined).
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__canvas__canvas-test.html"]
 # this test is not always passed every time on opt and debug build
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win', && os_version == '11.26100' && arch == 'x86_64'",
+]
 
 ["generated/test_2_conformance__canvas__to-data-url-test.html"]
 # TEST-UNEXPECTED-ERROR: Assertion count 1 is greater than expected range 0-0 assertions
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__context__context-attribute-preserve-drawing-buffer.html"]
 
 ["generated/test_2_conformance__context__context-attributes-alpha-depth-stencil-antialias.html"]
 # contextAttribs.antialias should be true. Was false
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 
 ["generated/test_2_conformance__extensions__webgl-compressed-texture-astc.html"]
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+]
 
 ["generated/test_2_conformance__extensions__webgl-compressed-texture-size-limit.html"]
 
 ["generated/test_2_conformance__glsl__bugs__sampler-array-using-loop-index.html"]
-fail-if = ["os == 'linux' && os_version == '18.04' && display != 'wayland'"]
 
 ["generated/test_2_conformance__glsl__bugs__vector-matrix-constructor-scalarization.html"]
 # Ditto
 fail-if = [
-  "os == 'android' && opt",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && opt",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance__glsl__constructors__glsl-construct-bvec2.html"]
@@ -1363,11 +1505,11 @@ fail-if = [
 ["generated/test_2_conformance__glsl__constructors__glsl-construct-vec-mat-index.html"]
 # skip this test because finish() was called multiple times
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance__glsl__constructors__glsl-construct-vec2.html"]
@@ -1378,9 +1520,8 @@ skip-if = [
 
 ["generated/test_2_conformance__glsl__misc__fragcolor-fragdata-invariant.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ] # [unexpected fragment shader compile status] (expected: true) Declaring both gl_FragColor and gl_FragData invariant should succeed.
 
@@ -1392,140 +1533,165 @@ fail-if = [
 
 ["generated/test_2_conformance__limits__gl-line-width.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance__misc__bad-arguments-test.html"]
 # skip because some result logged after SimpleTest.finish()
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance__misc__type-conversion-test.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
 ]
 
 ["generated/test_2_conformance__misc__uninitialized-test.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1725286
 # E.g. gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be 36053. Was 0
-skip-if = [
-  "os == 'win' && debug",
-  "os == 'android' && debug",
+fail-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt",
 ]
-fail-if = ["os == 'win' && !debug"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'win' && os_version == '11.26100' && debug",
+]
 
 ["generated/test_2_conformance__misc__webgl-specific-stencil-settings.html"]
 # [gl:0D6DE000] mozilla::gl::GLContext::raw_fDrawArrays: Generated unexpected GL_INVALID_OPERATION error. (0x0502)
 # ERR: gl::ValidateDrawBase(2519): This ANGLE implementation does not support separate front/back stencil writemasks, reference values, or stencil mask values.
 # Hit MOZ_CRASH(Unexpected error with MOZ_GL_DEBUG_ABORT_ON_ERROR. (Run with MOZ_GL_DEBUG_ABORT_ON_ERROR=0 to disable)) at z:/build/build/src/gfx/gl/GLContext.cpp:3030
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__more__functions__readPixelsBadArgs.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to www.opengl.org (45.55.206.190) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__more__functions__texImage2DHTML.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to mashable.com (88.221.93.55) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__more__functions__texSubImage2DHTML.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to mashable.com (184.50.232.90) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__ogles__GL__built_in_varying_array_out_of_bounds__built_in_varying_array_out_of_bounds_001_to_001.html"]
 # time out crash
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__ogles__GL__struct__struct_025_to_032.html"]
 # application crashed [@ nvoglv32.dll + 0x90b445]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__rendering__bind-framebuffer-flush-bug.html"]
 
 ["generated/test_2_conformance__rendering__blending.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["generated/test_2_conformance__rendering__gl-scissor-test.html"]
-fail-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"]
+fail-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_2_conformance__rendering__line-rendering-quality.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04'",
-  "os == 'linux' && os_version == '22.04'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
 ]
 # Found 0 lines, looking in the vertical direction, expected 2
 
 ["generated/test_2_conformance__rendering__many-draw-calls.html"]
 # Appears to just take too long on debug, most of the time.
-skip-if = ["debug"]
+skip-if = [
+  "debug",
+]
 
 ["generated/test_2_conformance__rendering__preservedrawingbuffer-leak.html"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__rendering__rendering-stencil-large-viewport.html"]
 # same as webgl1 test
-fail-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64'"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
 skip-if = [
-  "os == 'android'",
-  "os == 'win'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance__rendering__texture-switch-performance.html"]
 # Orange on win10+debug
 # Texture switching significantly hurt performance - achieved 3 frames in 2.164
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__textures__misc__copy-tex-image-2d-formats.html"]
 # Assertion: ""GFX: We should have caught all other errors"" in WebGLTextureUpload.cpp
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance__textures__misc__cube-map-uploads-out-of-order.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_2_conformance__textures__misc__mipmap-fbo.html"]
 
 ["generated/test_2_conformance__textures__misc__origin-clean-conformance-offscreencanvas.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__textures__misc__origin-clean-conformance.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to www.opengl.org (104.131.58.36) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__textures__misc__tex-image-and-sub-image-2d-with-array-buffer-view.html"]
 
 ["generated/test_2_conformance__textures__misc__tex-video-using-tex-unit-non-zero.html"]
 skip-if = [
-  "os == 'win'",
-  "os == 'android' && debug",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && !debug",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
 ]
 
 ["generated/test_2_conformance__textures__misc__texture-corner-case-videos.html"]
 # Timeout. Bug 1599937
 skip-if = [
-  "os == 'android'",
-  "os == 'linux' && os_version == '18.04'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
 ]
 
 ["generated/test_2_conformance__textures__misc__texture-size-cube-maps.html"]
 # Random failures
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_2_conformance__textures__misc__texture-size-limit.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1657084
 # Really slow on ASAN (after driver update?), likely due to ASAN's perf impact on the huge allocations in this test.
-skip-if = ["os == 'linux' && asan"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+]
 
 ########################################################################
 # Global
@@ -1534,300 +1700,389 @@ skip-if = ["os == 'linux' && asan"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1657084
 # Really slow on ASAN (after driver update?), likely due to ASAN's perf impact on the huge allocations in this test.
 skip-if = [
-  "os == 'linux' && asan",
-  "os == 'win'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_2_conformance__textures__misc__texture-srgb-upload.html"]
-skip-if = ["os == 'android' && processor == 'aarch64'"] # Bug 1796057
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1796057
+]
 
 ["generated/test_2_conformance__textures__misc__texture-upload-size.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1687071
 # getError expected: NO_ERROR. Was INVALID_VALUE : when calling texSubImage2D with the same texture upload
-skip-if = ["os == 'android' && processor == 'aarch64'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_2_conformance__textures__misc__texture-video-transparent.html"]
 # Assertion failure: [GFX1]: Unhandled srcImage->GetFormat(): 2
 # mac opt seems to pass, though linux and win fail.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__textures__misc__video-rotation.html"]
 # Ditto
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_2_conformance__uniforms__out-of-bounds-uniform-array-access.html"]
 # application terminated
 skip-if = [
-  "os == 'win'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__attribs__gl-bindAttribLocation-aliasing.html"]
 # OOM crash
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__attribs__gl-bindAttribLocation-matrix.html"]
 # OOM crash
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__canvas__drawingbuffer-hd-dpi-test.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__canvas__drawingbuffer-static-canvas-test.html"]
 # Intermittent crash on OSX.
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__canvas__rapid-resizing.html"]
 # Frequent orange crash.
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__context__context-attributes-alpha-depth-stencil-antialias.html"]
 # Asserts on linux debug. Crashes on Android.
 skip-if = [
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
 ]
 # should be 0,0,0,255
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && !swgl",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && !swgl",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug && !swgl",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && !swgl",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug && !swgl",
 ]
 
 ["generated/test_conformance__context__context-creation.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__context__context-eviction-with-garbage-collection.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__context__context-release-upon-reload.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__context__context-release-with-workers.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__context__context-size-change.html"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_conformance__extensions__angle-instanced-arrays.html"]
-skip-if = ["os == 'mac' && os_version == '10.15'"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
 
 ["generated/test_conformance__extensions__ext-sRGB.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["generated/test_conformance__extensions__oes-texture-float-with-image-data.html"]
 
 ["generated/test_conformance__extensions__oes-texture-float-with-video.html"]
 # Timeout
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__extensions__oes-texture-half-float-with-image-data.html"]
 
 ["generated/test_conformance__extensions__oes-texture-half-float-with-video.html"]
 # Timeout
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__extensions__oes-texture-half-float.html"]
 
 ["generated/test_conformance__extensions__webgl-compressed-texture-size-limit.html"]
 
 ["generated/test_conformance__extensions__webgl-depth-texture.html"]
-skip-if = ["os == 'android' && android_version == '34'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__array-of-struct-with-int-first-position.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__compare-loop-index-to-uniform.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__complex-glsl-does-not-crash.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__conditional-discard-in-loop.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__conditional-discard-optimization.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__floored-division-accuracy.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__fragcoord-linking-bug.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__gl-fragcoord-multisampling-bug.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__logic-inside-block-without-braces.html"]
 # application crashed [@ MustSkipMarking<JSObject*>]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__long-expressions-should-not-crash.html"]
 # Android: Crashes sometimes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__modulo-arithmetic-accuracy.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__multiplication-assignment.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__nested-functions-should-not-crash.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__nested-loops-with-break-and-continue.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__pow-of-small-constant-in-user-defined-function.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__qualcomm-crash.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__sampler-array-using-loop-index.html"]
 # Testfail on Linux after removing SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX.
 # Only happen on tryserver
-fail-if = ["os == 'linux' && os_version == '18.04' && display != 'wayland'"]
 
 ["generated/test_conformance__glsl__bugs__sampler-struct-function-arg.html"]
 # Crashes
 skip-if = [
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_conformance__glsl__bugs__sequence-operator-evaluation-order.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__struct-constructor-highp-bug.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__temp-expressions-should-not-crash.html"]
 # Coincidentally enough, crashes on Linux and Android 4.0.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_conformance__glsl__bugs__uniforms-should-not-lose-values.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__bugs__vector-matrix-constructor-scalarization.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1725075
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-bvec2.html"]
 # mozalloc_abort in libglsl.so
 skip-if = [
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-bvec3.html"]
 # Crashes from libglsl.so
 # application crashed [@ jemalloc_crash] on Android
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-bvec4.html"]
 # application crashed [@ ParseOperand::GetLogicalSize() const + 0x4]
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-ivec2.html"]
 # Crashes from libglsl.so
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-ivec3.html"]
 # application crashed [@ ParseOperand::GetLogicalSize() const + 0x4]
 # application crashed [@ jemalloc_crash] on Android
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-ivec4.html"]
 # Assume crashes like ivec3
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-mat2.html"]
 # Crashes on Linux ASAN
-skip-if = ["os == 'linux' && asan"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-vec-mat-corner-cases.html"]
 # mozalloc_abort in libglsl.so
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-vec-mat-index.html"]
 # skip this test because finish() was called multiple times
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-vec3.html"]
 # Crashes
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__glsl__constructors__glsl-construct-vec4.html"]
 # Inferred crash from vec3 above.
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__glsl__functions__glsl-function-atan.html"]
 # Crashes
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__glsl__functions__glsl-function-step-gentype.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__misc__fragcolor-fragdata-invariant.html"]
 # [unexpected fragment shader compile status] (expected: true) Declaring both gl_FragColor and gl_FragData invariant should succeed.
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
@@ -1840,110 +2095,157 @@ fail-if = [
 ["generated/test_conformance__glsl__misc__shader-uniform-packing-restrictions.html"]
 # Frequent timeout on win7 and linux debug.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux' && debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
 ["generated/test_conformance__glsl__samplers__glsl-function-texture2dproj.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__samplers__glsl-function-texture2dprojlod.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__variables__gl-fragcoord.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__glsl__variables__glsl-built-ins.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__limits__gl-min-textures.html"]
 # mesa upgrade issues or task cluster issues- we just need it green; bug 1220658
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__misc__bad-arguments-test.html"]
 # skip because some result logged after SimpleTest.finish()
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
-  "os == 'linux'",
-  "os == 'android'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__misc__boolean-argument-conversion.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__misc__shader-precision-format.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__misc__type-conversion-test.html"]
-fail-if = ["os == 'linux'"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 # Resets device on Android 2.3.
 # Crashes on desktop Linux.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_conformance__misc__uninitialized-test.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__misc__webgl-specific-stencil-settings.html"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_conformance__more__conformance__quickCheckAPI-D_G.html"]
 # void mozilla::gl::GLContext::fGenerateMipmap(GLenum): Generated unexpected GL_INVALID_ENUM error. (0x0500)
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__more__functions__readPixelsBadArgs.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to www.opengl.org (45.55.206.190) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__more__functions__texImage2DHTML.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to mashable.com (88.221.93.55) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__more__functions__texSubImage2DHTML.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to mashable.com (184.50.232.90) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__ogles__GL__abs__abs_001_to_006.html"]
 # Test suite terminates, e.g. at pixel @ (412, 253 was [191,0,0,255] expected [98,0,0,255]. Bug 1897792
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+]
 
 ["generated/test_conformance__ogles__GL__built_in_varying_array_out_of_bounds__built_in_varying_array_out_of_bounds_001_to_001.html"]
 # time out crash
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_conformance__ogles__GL__mat3__mat3_001_to_006.html"]
 # Timeout on D3D11
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_conformance__ogles__GL__notEqual__notEqual_001_to_008.html"]
 # Crashes
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__ogles__GL__sign__sign_001_to_006.html"]
 # Crashes
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__reading__read-pixels-test.html"]
 # Causes consistent *blues*: "DMError: Remote Device Error: unable to
 # connect to 127.0.0.1 after 5 attempts" on 'Android 2.3 Opt'.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["generated/test_conformance__renderbuffers__framebuffer-object-attachment.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ########################################################################
 ########################################################################
@@ -1954,22 +2256,32 @@ skip-if = ["os == 'android'"]
 ["generated/test_conformance__rendering__blending.html"]
 # Android 13.0 Pixel5 AArch64
 # dom/canvas/test/webgl-conf/generated/test_conformance__rendering__blending.html | Expected [100,2,3,4], was [1,2,3,4]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["generated/test_conformance__rendering__clipping-wide-points.html"]
-fail-if = ["os == 'linux'"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["generated/test_conformance__rendering__framebuffer-switch.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__rendering__framebuffer-texture-switch.html"]
 # Crashes
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__rendering__gl-scissor-test.html"]
-fail-if = ["display == 'wayland'"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug TBD
+fail-if = [
+  "display == 'wayland'",
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 
 ####################
@@ -1977,31 +2289,31 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 
 ["generated/test_conformance__rendering__line-rendering-quality.html"]
 # Found 0 lines, looking in the vertical direction, expected 2
-fail-if = ["os == 'linux' && os_version == '18.04' && display != 'wayland'"]
 
 ["generated/test_conformance__rendering__many-draw-calls.html"]
 # Crashes on Android
 # Times-out on DEBUG builds
 skip-if = [
-  "os == 'android'",
   "debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
 ]
 
 ["generated/test_conformance__rendering__multisample-corruption.html"]
 # application crashed [@ gldAttachDrawable + 0x9e0]. Also crash on Android.
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'android'",
-  "os == 'win'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__rendering__preservedrawingbuffer-leak.html"]
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]
 
 ["generated/test_conformance__rendering__rendering-stencil-large-viewport.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 # 02:52:43     INFO -  GECKO(1000) | JavaScript warning: http://mochi.test:8888/tests/dom/canvas/test/webgl-conf/checkout/conformance/rendering/rendering-stencil-large-viewport.html, line 85: Error: WebGL warning: Requested size 32767x32767 was too large, but resize to 16383x16383 succeeded.
 # 02:52:43     INFO -  GECKO(1000) | JavaScript warning: http://mochi.test:8888/tests/dom/canvas/test/webgl-conf/checkout/conformance/rendering/rendering-stencil-large-viewport.html, line 85: Error: WebGL warning: drawArrays: Drawing to a destination rect smaller than the viewport rect. (This warning will only be given once)
@@ -2017,22 +2329,28 @@ fail-if = [
 # 02:53:02     INFO -  GECKO(1000) | #04: mozilla::layers::CanvasClientSharedSurface::Update(mozilla::gfx::IntSizeTyped<mozilla::gfx::UnknownUnits>,mozilla::layers::ShareableCanvasRenderer *) [gfx/layers/client/CanvasClient.cpp:381]
 # 02:53:02     INFO -  GECKO(1000) | #05: mozilla::layers::ShareableCanvasRenderer::UpdateCompositableClient() [gfx/layers/ShareableCanvasRenderer.cpp:237]
 skip-if = [
-  "os == 'android'",
-  "os == 'win'",
-  "display == 'wayland'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__rendering__texture-switch-performance.html"]
 # Frequent orange on linux+asan, but likely intermittant:
 # Texture switching significantly hurt performance - achieved 77 frames in 2.016 seconds (0.79 times baseline performance)
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__state__gl-object-get-calls.html"]
 # Really really slow on IPC mode. Update test suite to get faster/quick-mode test.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-alpha-alpha-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 #[task 2020-01-06T23:59:59.859Z] 23:59:59  WARNING -  PROCESS-CRASH | dom/canvas/test/webgl-conf/generated/test_conformance__textures__image_bitmap_from_video__tex-2d-alpha-alpha-unsigned_byte.html | application crashed [@ RefPtr<mozilla::gfx::SourceSurface>::operator->() const]
 #[task 2020-01-06T23:59:59.859Z] 23:59:59     INFO -  Crash dump filename: /tmp/tmpJ24uPs/47e5f8af-bbd2-5a7d-2a9b-a1455e27b452.dmp
 #[task 2020-01-06T23:59:59.859Z] 23:59:59     INFO -  Operating system: Android
@@ -2068,25 +2386,39 @@ skip-if = ["os == 'android'"]
 #[task 2020-01-06T23:59:59.859Z] 23:59:59     INFO -      Found by: call frame info
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-luminance-luminance-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-luminance_alpha-luminance_alpha-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-rgb-rgb-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-rgb-rgb-unsigned_short_5_6_5.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-rgba-rgba-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-rgba-rgba-unsigned_short_4_4_4_4.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__image_bitmap_from_video__tex-2d-rgba-rgba-unsigned_short_5_5_5_1.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__cube-map-uploads-out-of-order.html"]
 #19:53:21     INFO -  0  libsystem_platform.dylib!_platform_memmove$VARIANT$Unknown + 0x144
@@ -2153,32 +2485,44 @@ skip-if = ["os == 'android'"]
 #19:53:21     INFO -     r15 = 0xfff8800000001401   rip = 0x000000010f8a563f
 #19:53:21     INFO -     Found by: call frame info
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__textures__misc__gl-teximage.html"]
 # application crashed [@ jemalloc_crash]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__mipmap-fbo.html"]
 
 ["generated/test_conformance__textures__misc__origin-clean-conformance-offscreencanvas.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__textures__misc__origin-clean-conformance.html"]
 # (TODO) FATAL ERROR: Non-local network connections are disabled and a connection attempt to www.opengl.org (104.131.58.36) was made.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__textures__misc__tex-image-and-sub-image-2d-with-array-buffer-view.html"]
 # time out crash
-skip-if = ["os == 'win' && debug"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && debug",
+]
 
 ["generated/test_conformance__textures__misc__tex-image-webgl.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__tex-image-with-invalid-data.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
 ####################
 # Timeouts
 
@@ -2186,120 +2530,145 @@ skip-if = ["os == 'android'"]
 # Fails on QuantumRender configs, but passes on standard configs?
 # Might be intermittant.
 skip-if = [
-  "os == 'win'",
-  "os == 'android' && debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__textures__misc__texture-corner-case-videos.html"]
 # Timeout. Bug 1599937 - test fails consistently on ubuntu1804.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux' && os_version == '18.04'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
 ]
 
 ["generated/test_conformance__textures__misc__texture-mips.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__texture-npot-video.html"]
 skip-if = [
-  "win11_2009", # win11 - 50/50 intermittent
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # win11 - 50/50 intermittent
-  "os == 'android' && android_version == '33'", # Bug 1873144
-  "os == 'android' && android_version == '34'", # Bug 1873144
+  "os == 'win' && os_version == '11.26100'", # win11 - 50/50 intermittent
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1873144
 ]
 ####################
 # Bugs surfaced during fx93 CTS update
 
 ["generated/test_conformance__textures__misc__texture-npot.html"]
 # application crashed [@ mozilla::gl::GLContext::AfterGLCall]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__texture-size-cube-maps.html"]
 # application crashed [@ mozilla::gl::GLContext::AfterGLCall]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__texture-size-limit.html"]
-skip-if = ["os == 'linux' && asan"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+]
 
 ["generated/test_conformance__textures__misc__texture-size.html"]
 # application crashed [@ mozilla::gl::GLContext::AfterGLCall]
 skip-if = [
-  "os == 'android'",
-  "os == 'win'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1796057
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__textures__misc__texture-srgb-upload.html"]
-skip-if = ["os == 'android' && processor == 'aarch64'"] # Bug 1796057
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1796057
+]
 
 ["generated/test_conformance__textures__misc__texture-sub-image-cube-maps.html"]
 # application crashed [@ mozilla::gl::GLContext::AfterGLCall]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__misc__texture-upload-size.html"]
 # application crashed [@ mozilla::WebGLTexture::TexSubImage]
 skip-if = [
-  "os == 'win'",
-  "os == 'android'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
 ]
 
 ["generated/test_conformance__textures__misc__texture-video-transparent.html"]
 # Assertion failure: [GFX1]: Unhandled srcImage->GetFormat(): 2
 # mac opt seems to pass, though linux and win fail.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["generated/test_conformance__textures__misc__video-rotation.html"]
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1725072
 # E.g. "shouldBe 255,0,0 +/-10"
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-alpha-alpha-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-luminance-luminance-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-luminance_alpha-luminance_alpha-unsigned_byte.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-rgb-rgb-unsigned_byte.html"]
 skip-if = [
-  "os == 'android'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1673105 for mac+WR
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__textures__video__tex-2d-rgb-rgb-unsigned_short_5_6_5.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-rgba-rgba-unsigned_byte.html"]
 skip-if = [
-  "os == 'android'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1673105 for mac+WR
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["generated/test_conformance__textures__video__tex-2d-rgba-rgba-unsigned_short_4_4_4_4.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__textures__video__tex-2d-rgba-rgba-unsigned_short_5_5_5_1.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
 
 ["generated/test_conformance__uniforms__out-of-bounds-uniform-array-access.html"]
 # Crashes
 skip-if = [
-  "os == 'android'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["generated/test_conformance__uniforms__uniform-default-values.html"]
 # Timeout on Windows, crash on Android/Linux.
 skip-if = [
-  "os == 'android'",
-  "os == 'linux'",
-  "os == 'win'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'win' && os_version == '11.26100'",
 ]
 
 ["generated/test_conformance__uniforms__uniform-values-per-program.html"]
 # Crashes on D3D11 debug.
-skip-if = ["os == 'win'"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+]

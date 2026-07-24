@@ -6,6 +6,8 @@
 
 #include "ContentEventHandler.h"
 
+#include <algorithm>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
@@ -20,14 +22,16 @@
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ViewportUtils.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/StaticRange.h"
 #include "mozilla/dom/Text.h"
-#include "nsCaret.h"
 #include "nsCOMPtr.h"
+#include "nsCaret.h"
 #include "nsContentUtils.h"
 #include "nsCopySupport.h"
 #include "nsElementTable.h"
@@ -40,12 +44,7 @@
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsRange.h"
-#include "nsTextFragment.h"
 #include "nsTextFrame.h"
-#include "nsView.h"
-#include "mozilla/ViewportUtils.h"
-
-#include <algorithm>
 
 // Work around conflicting define in rpcndr.h
 #if defined(small)
@@ -155,12 +154,12 @@ ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetStart(
   // Collapse if not positioned yet, or if positioned in another document.
   if (!IsPositioned() || newRoot != mRoot) {
     mRoot = newRoot;
-    mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
-    mEnd.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
+    mStart.CopyFrom(aStart, RangeBoundarySetBy::Ref);
+    mEnd.CopyFrom(aStart, RangeBoundarySetBy::Ref);
     return NS_OK;
   }
 
-  mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
+  mStart.CopyFrom(aStart, RangeBoundarySetBy::Ref);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
@@ -181,12 +180,12 @@ ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEnd(
   // Collapse if not positioned yet, or if positioned in another document.
   if (!IsPositioned() || newRoot != mRoot) {
     mRoot = newRoot;
-    mStart.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
-    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+    mStart.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
+    mEnd.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
     return NS_OK;
   }
 
-  mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+  mEnd.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
@@ -194,8 +193,8 @@ ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEnd(
 template <typename NodeType, typename RangeBoundaryType>
 nsresult
 ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEndAfter(
-    nsINode* aEndContainer) {
-  return SetEnd(RangeUtils::GetRawRangeBoundaryAfter(aEndContainer));
+    nsIContent* aEndContainer) {
+  return SetEnd(RawRangeBoundary::After(*aEndContainer));
 }
 
 template <typename NodeType, typename RangeBoundaryType>
@@ -225,8 +224,8 @@ nsresult ContentEventHandler::SimpleRangeBase<
     MOZ_ASSERT(*aStart.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets) <=
                *aEnd.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets));
     mRoot = newStartRoot;
-    mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
-    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+    mStart.CopyFrom(aStart, RangeBoundarySetBy::Ref);
+    mEnd.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
     return NS_OK;
   }
 
@@ -241,15 +240,15 @@ nsresult ContentEventHandler::SimpleRangeBase<
   // If they have different root, this should be collapsed at the end point.
   if (newStartRoot != newEndRoot) {
     mRoot = newEndRoot;
-    mStart.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
-    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+    mStart.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
+    mEnd.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
     return NS_OK;
   }
 
   // Otherwise, set the range as specified.
   mRoot = newStartRoot;
-  mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
-  mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+  mStart.CopyFrom(aStart, RangeBoundarySetBy::Ref);
+  mEnd.CopyFrom(aEnd, RangeBoundarySetBy::Ref);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
@@ -394,7 +393,7 @@ nsresult ContentEventHandler::InitRootContent(
 
   RefPtr<PresShell> presShell = mDocument->GetPresShell();
   mRootElement = Element::FromNodeOrNull(startNode->GetSelectionRootContent(
-      presShell, nsINode::IgnoreOwnIndependentSelection::No,
+      presShell, nsINode::IgnoreOwnIndependentSelection::Yes,
       nsINode::AllowCrossShadowBoundary::No));
   if (NS_WARN_IF(!mRootElement)) {
     return NS_ERROR_FAILURE;
@@ -458,7 +457,8 @@ nsresult ContentEventHandler::InitCommon(EventMessage aEventMessage,
 
   // But otherwise, we need to assume that there is a selection range at the
   // beginning of the root content if aSelectionType is eNormal.
-  rv = mFirstSelectedSimpleRange.CollapseTo(RawRangeBoundary(mRootElement, 0u));
+  rv = mFirstSelectedSimpleRange.CollapseTo(
+      RawRangeBoundary::StartOfParent(*mRootElement));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -610,7 +610,7 @@ static void ConvertToNativeNewlines(nsString& aString) {
 
 static void AppendString(nsString& aString, const Text& aTextNode) {
   const uint32_t oldXPLength = aString.Length();
-  aTextNode.TextFragment().AppendTo(aString);
+  aTextNode.DataBuffer().AppendTo(aString);
   if (aTextNode.HasFlag(NS_MAYBE_MASKED)) {
     TextEditor::MaskString(aString, aTextNode, oldXPLength, 0);
   }
@@ -619,7 +619,7 @@ static void AppendString(nsString& aString, const Text& aTextNode) {
 static void AppendSubString(nsString& aString, const Text& aTextNode,
                             uint32_t aXPOffset, uint32_t aXPLength) {
   const uint32_t oldXPLength = aString.Length();
-  aTextNode.TextFragment().AppendTo(aString, aXPOffset, aXPLength);
+  aTextNode.DataBuffer().AppendTo(aString, aXPOffset, aXPLength);
   if (aTextNode.HasFlag(NS_MAYBE_MASKED)) {
     TextEditor::MaskString(aString, aTextNode, oldXPLength, aXPOffset);
   }
@@ -640,19 +640,20 @@ static uint32_t CountNewlinesInXPLength(const StringType& aString) {
 
 static uint32_t CountNewlinesInXPLength(const Text& aTextNode,
                                         uint32_t aXPLength) {
-  const nsTextFragment& textFragment = aTextNode.TextFragment();
+  const CharacterDataBuffer& characterDataBuffer = aTextNode.DataBuffer();
   // For automated tests, we should abort on debug build.
-  MOZ_ASSERT(aXPLength == UINT32_MAX || aXPLength <= textFragment.GetLength(),
-             "aXPLength is out-of-bounds");
-  const uint32_t length = std::min(aXPLength, textFragment.GetLength());
+  MOZ_ASSERT(
+      aXPLength == UINT32_MAX || aXPLength <= characterDataBuffer.GetLength(),
+      "aXPLength is out-of-bounds");
+  const uint32_t length = std::min(aXPLength, characterDataBuffer.GetLength());
   if (!length) {
     return 0;
   }
-  if (textFragment.Is2b()) {
-    nsDependentSubstring str(textFragment.Get2b(), length);
+  if (characterDataBuffer.Is2b()) {
+    nsDependentSubstring str(characterDataBuffer.Get2b(), length);
     return CountNewlinesInXPLength(str);
   }
-  nsDependentCSubstring str(textFragment.Get1b(), length);
+  nsDependentCSubstring str(characterDataBuffer.Get1b(), length);
   return CountNewlinesInXPLength(str);
 }
 
@@ -677,16 +678,16 @@ static uint32_t CountNewlinesInNativeLength(const StringType& aString,
 
 static uint32_t CountNewlinesInNativeLength(const Text& aTextNode,
                                             uint32_t aNativeLength) {
-  const nsTextFragment& textFragment = aTextNode.TextFragment();
-  const uint32_t xpLength = textFragment.GetLength();
+  const CharacterDataBuffer& characterDataBuffer = aTextNode.DataBuffer();
+  const uint32_t xpLength = characterDataBuffer.GetLength();
   if (!xpLength) {
     return 0;
   }
-  if (textFragment.Is2b()) {
-    nsDependentSubstring str(textFragment.Get2b(), xpLength);
+  if (characterDataBuffer.Is2b()) {
+    nsDependentSubstring str(characterDataBuffer.Get2b(), xpLength);
     return CountNewlinesInNativeLength(str, aNativeLength);
   }
-  nsDependentCSubstring str(textFragment.Get1b(), xpLength);
+  nsDependentCSubstring str(characterDataBuffer.Get1b(), xpLength);
   return CountNewlinesInNativeLength(str, aNativeLength);
 }
 #endif
@@ -738,7 +739,7 @@ uint32_t ContentEventHandler::GetTextLength(const Text& aTextNode,
 #endif
 
   const uint32_t length =
-      std::min(aTextNode.TextFragment().GetLength(), aMaxLength);
+      std::min(aTextNode.DataBuffer().GetLength(), aMaxLength);
   return length + textLengthDifference;
 }
 
@@ -1129,18 +1130,18 @@ nsresult ContentEventHandler::ExpandToClusterBoundary(
   MOZ_DIAGNOSTIC_ASSERT(mDocument->GetPresShell());
   CaretAssociationHint hint =
       aForward ? CaretAssociationHint::Before : CaretAssociationHint::After;
-  nsIFrame* frame = SelectionMovementUtils::GetFrameForNodeOffset(
+  FrameAndOffset frameAndOffset = SelectionMovementUtils::GetFrameForNodeOffset(
       &aTextNode, int32_t(*aXPOffset), hint);
-  if (frame) {
-    auto [startOffset, endOffset] = frame->GetOffsets();
+  if (frameAndOffset) {
+    auto [startOffset, endOffset] = frameAndOffset->GetOffsets();
     if (*aXPOffset == static_cast<uint32_t>(startOffset) ||
         *aXPOffset == static_cast<uint32_t>(endOffset)) {
       return NS_OK;
     }
-    if (!frame->IsTextFrame()) {
+    if (!frameAndOffset->IsTextFrame()) {
       return NS_ERROR_FAILURE;
     }
-    nsTextFrame* textFrame = static_cast<nsTextFrame*>(frame);
+    nsTextFrame* textFrame = static_cast<nsTextFrame*>(frameAndOffset.mFrame);
     int32_t newOffsetInFrame = *aXPOffset - startOffset;
     newOffsetInFrame += aForward ? -1 : 1;
     // PeekOffsetCharacter() should respect cluster but ignore user-select
@@ -1158,7 +1159,7 @@ nsresult ContentEventHandler::ExpandToClusterBoundary(
   }
 
   // If the frame isn't available, we only can check surrogate pair...
-  if (aTextNode.TextFragment().IsLowSurrogateFollowingHighSurrogateAt(
+  if (aTextNode.DataBuffer().IsLowSurrogateFollowingHighSurrogateAt(
           *aXPOffset)) {
     *aXPOffset += aForward ? 1 : -1;
   }
@@ -1198,7 +1199,8 @@ ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase(
 
   // Special case like <br contenteditable>
   if (!mRootElement->HasChildren()) {
-    nsresult rv = result.mRange.CollapseTo(RawRangeBoundary(mRootElement, 0u));
+    nsresult rv = result.mRange.CollapseTo(
+        RawRangeBoundary::StartOfParent(*mRootElement));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return Err(rv);
     }
@@ -2973,9 +2975,7 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   // a popup but the rootFrame is the document root.
   if (rootWidget != aEvent->mWidget) {
     MOZ_ASSERT(aEvent->mWidget, "The event must have the widget");
-    nsView* view = nsView::GetViewFor(aEvent->mWidget);
-    NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
-    rootFrame = view->GetFrame();
+    rootFrame = aEvent->mWidget->GetFrame();
     NS_ENSURE_TRUE(rootFrame, NS_ERROR_FAILURE);
     rootWidget = rootFrame->GetNearestWidget();
     NS_ENSURE_TRUE(rootWidget, NS_ERROR_FAILURE);
@@ -3213,7 +3213,8 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
       }
     } else if (endPosition.GetContainer() != aRootElement) {
       // Offset is past node's length; set end of range to end of node
-      rv = prevSimpleRange.SetEndAfter(endPosition.GetContainer());
+      rv = prevSimpleRange.SetEndAfter(
+          nsIContent::FromNode(endPosition.GetContainer()));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -3327,11 +3328,12 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
   if (startPoint.IsStartOfContainer()) {
     // If the range is the start of the container, adjusted the range to the
     // start of the first child.
-    if (!startPoint.GetContainer()->GetFirstChild()->IsText()) {
+    nsIContent* const firstChild = startPoint.GetContainer()->GetFirstChild();
+    if (!firstChild->IsText()) {
       return NS_OK;
     }
-    nsresult rv = aSimpleRange.CollapseTo(
-        RawRangeBoundary(startPoint.GetContainer()->GetFirstChild(), 0u));
+    nsresult rv =
+        aSimpleRange.CollapseTo(RawRangeBoundary::StartOfParent(*firstChild));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -3347,8 +3349,8 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
   if (!startPoint.Ref()->IsText()) {
     return NS_OK;
   }
-  nsresult rv = aSimpleRange.CollapseTo(
-      RawRangeBoundary(startPoint.Ref(), startPoint.Ref()->Length()));
+  nsresult rv =
+      aSimpleRange.CollapseTo(RawRangeBoundary::EndOfParent(*startPoint.Ref()));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 #include "fmt/format.h"
 #include "fmt/xchar.h"
-#include "mozilla/ArrayUtils.h"
 #include "nsTArray.h"
 #include "nsFmtString.h"
 #include "nsString.h"
@@ -59,7 +58,8 @@ TEST(Fmt, CrossCheckPrintf)
     nsCString fmtFormat =
         PrintfToFmtFormat(tfformat::sprint_doubles[i].format_string);
     nsCString withFmt;
-    withFmt.AppendFmt(fmtFormat.get(), tfformat::sprint_doubles[i].value);
+    withFmt.AppendVfmt(fmtFormat.get(), fmt::make_format_args(
+                                            tfformat::sprint_doubles[i].value));
     SprintfBuf(bufGeckoPrintf, 1024, tfformat::sprint_doubles[i].format_string,
                tfformat::sprint_doubles[i].value);
     if (strcmp(bufGeckoPrintf, withFmt.get()) != 0) {
@@ -81,8 +81,7 @@ TEST(Fmt, Sequences)
     for (uint32_t i = 0; i < 4; i++) {
       array.AppendElement(i);
     }
-    auto [out, size] =
-        fmt::format_to(bufFmt, FMT_STRING("{}"), fmt::join(array, ", "));
+    auto [out, size] = fmt::format_to(bufFmt, "{}", fmt::join(array, ", "));
     *out = 0;
     ASSERT_STREQ("0, 1, 2, 3", bufFmt);
   }
@@ -92,7 +91,7 @@ TEST(Fmt, Sequences)
       array.AppendElement((123 * 5 * (i + 1)) % 255);
     }
     auto [out, size] =
-        fmt::format_to(bufFmt, FMT_STRING("{:#04x}"), fmt::join(array, ", "));
+        fmt::format_to(bufFmt, "{:#04x}", fmt::join(array, ", "));
     *out = 0;
     ASSERT_STREQ("0x69, 0xd2, 0x3c, 0xa5", bufFmt);
   }
@@ -113,15 +112,14 @@ class fmt::formatter<POD> : public formatter<string_view> {
  public:
   auto format(const POD& aPod, format_context& aCtx) const {
     std::string temp;
-    format_to(std::back_inserter(temp), FMT_STRING("POD: mA: {}, mB: {}"),
-              aPod.mA, aPod.mB);
+    fmt::format_to(std::back_inserter(temp), "POD: mA: {}, mB: {}", aPod.mA,
+                   aPod.mB);
     return formatter<string_view>::format(temp, aCtx);
   }
 };
 
 auto format_as(POD2 aInstance) -> std::string {
-  return fmt::format(FMT_STRING("POD2: mA: {}, mB: {}"), aInstance.mA,
-                     aInstance.mB);
+  return fmt::format("POD2: mA: {}, mB: {}", aInstance.mA, aInstance.mB);
 }
 
 TEST(Fmt, PodPrint)
@@ -131,19 +129,19 @@ TEST(Fmt, PodPrint)
   POD p{4.33, 8};
   POD2 p2{4.33, 8};
   {
-    auto [out, size] = fmt::format_to(bufFmt, FMT_STRING("{}"), p);
+    auto [out, size] = fmt::format_to(bufFmt, "{}", p);
     *out = 0;
     ASSERT_STREQ("POD: mA: 4.33, mB: 8", bufFmt);
   }
 
   {
-    auto [out, size] = fmt::format_to(bufFmt, FMT_STRING("{:>30}"), p);
+    auto [out, size] = fmt::format_to(bufFmt, "{:>30}", p);
     *out = 0;
     ASSERT_STREQ("          POD: mA: 4.33, mB: 8", bufFmt);
   }
 
   {
-    auto [out, size] = fmt::format_to(bufFmt, FMT_STRING("{:>30}"), p2);
+    auto [out, size] = fmt::format_to(bufFmt, "{:>30}", p2);
     *out = 0;
     ASSERT_STREQ("         POD2: mA: 4.33, mB: 8", bufFmt);
   }
@@ -152,21 +150,21 @@ TEST(Fmt, PodPrint)
 TEST(Fmt, nsString)
 {
   {
-    nsFmtCString str(FMT_STRING("{} {} {}"), 4, 4.3, " end");
+    nsFmtCString str("{} {} {}", 4, 4.3, " end");
     ASSERT_STREQ("4 4.3  end", str.get());
   }
   {
-    nsFmtString str(FMT_STRING(u"Étonnant {} {} {}"), u"Étienne", 4, 4.3);
+    nsFmtString str(u"Étonnant {} {} {}", u"Étienne", 4, 4.3);
     ASSERT_STREQ("Étonnant Étienne 4 4.3", NS_ConvertUTF16toUTF8(str).get());
   }
   {
     nsString str;
-    str.AppendFmt(FMT_STRING(u"Étonnant {} {} {}"), u"Étienne", 4, 4.3);
+    str.AppendFmt(u"Étonnant {} {} {}", u"Étienne", 4, 4.3);
     ASSERT_STREQ("Étonnant Étienne 4 4.3", NS_ConvertUTF16toUTF8(str).get());
   }
   {
     nsCString str;
-    str.AppendFmt(FMT_STRING("{} {} {}"), 4, 4.3, " end");
+    str.AppendFmt("{} {} {}", 4, 4.3, " end");
     ASSERT_STREQ("4 4.3  end", str.get());
   }
 }
@@ -176,27 +174,25 @@ TEST(Fmt, Truncation)
   char too_short_buf[16];
   const char* too_long_buf = "asdasdlkasjdashdkajhsdkhaksdjhasd";
   {
-    auto [out, truncated] =
-        fmt::format_to(too_short_buf, FMT_STRING("{}"), too_long_buf);
+    auto [out, truncated] = fmt::format_to(too_short_buf, "{}", too_long_buf);
     assert(truncated);
     // Overwrite the last char for printing
     too_short_buf[15] = 0;
-    fmt::print(FMT_STRING("{} {} {}\n"), too_short_buf, fmt::ptr(out),
-               truncated);
+    fmt::print("{} {} {}\n", too_short_buf, fmt::ptr(out), truncated);
   }
   {
     auto [out, size] = fmt::format_to_n(too_short_buf, sizeof(too_short_buf),
-                                        FMT_STRING("{}"), too_long_buf);
+                                        "{}", too_long_buf);
     assert(size > sizeof(too_short_buf));
     too_short_buf[15] = 0;
-    fmt::print(FMT_STRING("{} {} {}\n"), too_short_buf, fmt::ptr(out), size);
+    fmt::print("{} {} {}\n", too_short_buf, fmt::ptr(out), size);
   }
 }
 
 TEST(Fmt, NullString)
 {
   char str[16];
-  auto [out, size] = fmt::format_to(str, FMT_STRING("{}"), (char*)nullptr);
+  auto [out, size] = fmt::format_to(str, "{}", (char*)nullptr);
   *out = 0;
   ASSERT_STREQ("(null)", str);
 }
@@ -210,7 +206,7 @@ TEST(Fmt, IOError)
   fclose(duped);
   // glibc will crash here on x86 Linux debug
 #    if defined(DEBUG) && defined(XP_LINUX) && !defined(__i386__)
-  fmt::println(duped, FMT_STRING("Hi {}"), 14);
+  fmt::println(duped, "Hi {}", 14);
 #    endif
 }
 #  endif

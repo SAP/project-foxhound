@@ -66,6 +66,7 @@ search.engine.default:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   partner_code:
     type: string
@@ -97,6 +98,7 @@ search.engine.default:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   overridden_by_third_party:
     type: boolean
@@ -124,6 +126,7 @@ search.engine.default:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   display_name:
     type: string
@@ -144,13 +147,14 @@ search.engine.default:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   load_path:
     type: string
     description: |
       A path relating to where the search engine was installed/loaded from.
       For example:
-        `[app]appDefault` for an app-provided engine.
+        `[app]appDefault` for a config search engine.
         `[addon]<extension id>` for a WebExtension-based engine.
         `[https]developer.mozilla.org/mdn-web-docs.xml` for an OpenSearch-based
         engine.
@@ -173,6 +177,7 @@ search.engine.default:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   submission_url:
     type: url
@@ -197,6 +202,7 @@ search.engine.default:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   changed:
     type: event
@@ -304,6 +310,7 @@ search.engine.private:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   partner_code:
     type: string
@@ -335,6 +342,7 @@ search.engine.private:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   overridden_by_third_party:
     type: boolean
@@ -362,6 +370,7 @@ search.engine.private:
     send_in_pings:
       - 'metrics'
       - 'newtab'
+      - 'events'
 
   display_name:
     type: string
@@ -388,13 +397,14 @@ search.engine.private:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   load_path:
     type: string
     description: |
       A path relating to where the search engine was installed/loaded from.
       For example:
-        `[app]appDefault` for an app-provided engine.
+        `[app]appDefault` for a config search engine.
         `[addon]<extension id>` for a WebExtension-based engine.
         `[https]developer.mozilla.org/mdn-web-docs.xml` for an OpenSearch-based
         engine.
@@ -423,6 +433,7 @@ search.engine.private:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   submission_url:
     type: url
@@ -452,6 +463,7 @@ search.engine.private:
     lifetime: application
     send_in_pings:
       - 'metrics'
+      - 'events'
 
   changed:
     type: event
@@ -564,6 +576,7 @@ browser.searchinit:
       - https://bugzil.la/1871199
       - https://bugzil.la/1897049
       - https://bugzil.la/1933859
+      - https://bugzil.la/1994584
     data_reviews:
       - https://bugzil.la/1665938
       - https://bugzil.la/1691050
@@ -574,10 +587,11 @@ browser.searchinit:
       - https://bugzil.la/1871199
       - https://bugzil.la/1897049
       - https://bugzil.la/1933859
+      - https://bugzil.la/1994584
     notification_emails:
       - fx-search-telemetry@mozilla.com
       - mbanner@mozilla.com
-    expires: 147
+    expires: 153
     unit: custom enum value
 
   secure_opensearch_engine_count:
@@ -593,17 +607,19 @@ browser.searchinit:
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
+      - https://bugzil.la/1984462
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 145
+    expires: 151
     unit: engines
-    telemetry_mirror: BROWSER_SEARCHINIT_SECURE_OPENSEARCH_ENGINE_COUNT
 
   insecure_opensearch_engine_count:
     type: quantity
@@ -618,17 +634,19 @@ browser.searchinit:
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
+      - https://bugzil.la/1984462
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 145
+    expires: 151
     unit: engines
-    telemetry_mirror: BROWSER_SEARCHINIT_INSECURE_OPENSEARCH_ENGINE_COUNT
 
   secure_opensearch_update_count:
     type: quantity
@@ -643,17 +661,19 @@ browser.searchinit:
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
+      - https://bugzil.la/1984462
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 145
+    expires: 151
     unit: updates
-    telemetry_mirror: BROWSER_SEARCHINIT_SECURE_OPENSEARCH_UPDATE_COUNT
 
   insecure_opensearch_update_count:
     type: quantity
@@ -668,82 +688,45 @@ browser.searchinit:
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
+      - https://bugzil.la/1984462
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
       - https://bugzil.la/1846899
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
+      - https://bugzil.la/1984248
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 145
+    expires: 151
     unit: updates
-    telemetry_mirror: BROWSER_SEARCHINIT_INSECURE_OPENSEARCH_UPDATE_COUNT
 
-search:
-  suggestions_latency:
+search.suggestions:
+  latency:
     type: labeled_timing_distribution
     description: >
       Records the latencies (ms) of search suggestions fetches per search
-      engine. Keys in this histogram are search engine identifiers for built-in
-      search engines and 'other' for non-built-in search engines.
+      engine. Keys in this histogram are the search engine identifier for
+      configuration provided search engines and 'other' for search engines
+      installed via other methods.
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram SEARCH_SUGGESTIONS_LATENCY_MS.
+
+      This metric was renamed in Gecko 144 from `search.suggestions_latency`
+      and changed to report the search engine identifier rather than the telemetry
+      identifier.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1743885
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1987911
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1743885
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1987911
+    data_sensitivity:
+      - technical
     notification_emails:
       - fx-search-telemetry@mozilla.com
-      - adw@mozilla.com
     expires: never
     telemetry_mirror: SEARCH_SUGGESTIONS_LATENCY_MS
-
-search.suggestions:
-  successful_requests:
-    type: labeled_counter
-    description: >
-      Counts the number of successful search suggestion fetches per search
-      engine. Only records app provided engines using their short IDs
-      ('id', not 'identifier') as labels.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: 146
-  aborted_requests:
-    type: labeled_counter
-    description: >
-      Counts the number of aborted search suggestion fetches per search
-      engine. Only records app provided engines using their short IDs
-      ('id', not 'identifier') as labels.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: 146
-  failed_requests:
-    type: labeled_counter
-    description: >
-      Counts the number of failed search suggestion fetches per search
-      engine. Only records app provided engines using their short IDs
-      ('id', not 'identifier') as labels.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1957950
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: 146

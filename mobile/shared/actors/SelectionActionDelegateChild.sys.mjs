@@ -269,15 +269,10 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
     if (["presscaret", "dragcaret"].includes(aEvent.reason)) {
       debug`_handleMagnifier: ${aEvent.reason}`;
       const screenPoint = this._getBetterMagnifierPoint(aEvent);
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:ShowMagnifier",
-        screenPoint,
-      });
+      this.sendAsyncMessage("GeckoView:ShowMagnifier", { screenPoint });
     } else if (aEvent.reason == "releasecaret") {
       debug`_handleMagnifier: ${aEvent.reason}`;
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:HideMagnifier",
-      });
+      this.sendAsyncMessage("GeckoView:HideMagnifier");
     }
   }
 
@@ -431,9 +426,7 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
         break;
     }
     // Reset magnifier
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:HideMagnifier",
-    });
+    this.sendAsyncMessage("GeckoView:HideMagnifier");
   }
 }
 

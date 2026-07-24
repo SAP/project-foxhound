@@ -6,9 +6,9 @@
 
 #include "ViewTimeline.h"
 
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/ElementInlines.h"
-#include "mozilla/ScrollContainerFrame.h"
 #include "nsLayoutUtils.h"
 
 namespace mozilla::dom {
@@ -72,9 +72,15 @@ Maybe<ScrollTimeline::ScrollOffsets> ViewTimeline::ComputeOffsets(
   MOZ_ASSERT(mSubject);
   MOZ_ASSERT(aScrollContainerFrame);
 
+  // Note: We may fail to get the pseudo element (or its primary frame) if it is
+  // not generated yet or just get destroyed, while we are sampling this view
+  // timeline.
+  // FIXME: Bug 1954230. It's probably a case we need to discard this timeline.
+  // For now, this is just a hot fix.
   const Element* subjectElement =
       mSubject->GetPseudoElement(PseudoStyleRequest(mSubjectPseudoType));
-  const nsIFrame* subject = subjectElement->GetPrimaryFrame();
+  const nsIFrame* subject =
+      subjectElement ? subjectElement->GetPrimaryFrame() : nullptr;
   if (!subject) {
     // No principal box of the subject, so we cannot compute the offset. This
     // may happen when we clear all animation collections during unbinding from

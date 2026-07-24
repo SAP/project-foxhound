@@ -20,8 +20,6 @@ import tempfile
 import textwrap
 from contextlib import contextmanager
 
-import requests
-import toml
 import zstandard
 
 
@@ -33,6 +31,8 @@ def fetch_file(url):
     """Download a file from the given url if it's not already present.
 
     Returns the SHA-2 256-bit hash of the received file."""
+    import requests
+
     filename = os.path.basename(url)
     sha = hashlib.sha256()
     size = 4096
@@ -191,9 +191,14 @@ def fetch(url, validate=True):
     if validate:
         log("Verifying %s..." % base)
         verify_sha(base, sha)
-        subprocess.check_call(
-            ["gpg", "--keyid-format", "0xlong", "--verify", base + ".asc", base]
-        )
+        subprocess.check_call([
+            "gpg",
+            "--keyid-format",
+            "0xlong",
+            "--verify",
+            base + ".asc",
+            base,
+        ])
     return sha
 
 
@@ -237,8 +242,7 @@ def fetch_package(manifest, pkg, host):
     sha = fetch(info["url"], info["hash"] is not None)
     if info["hash"] and sha != info["hash"]:
         log(
-            "Checksum mismatch: package resource is different from manifest"
-            "\n  %s" % sha
+            "Checksum mismatch: package resource is different from manifest\n  %s" % sha
         )
         raise AssertionError
     return info
@@ -299,6 +303,9 @@ def build_tar_package(name, base, directory):
 
 
 def fetch_manifest(channel="stable", host=None, targets=()):
+    import requests
+    import toml
+
     if channel.startswith("bors-"):
         assert host
         rev = channel[len("bors-") :]
@@ -415,7 +422,7 @@ def build_src(install_dir, host, targets, patches):
         sanitizers = true
         profiler = true
         extended = true
-        tools = ["analysis", "cargo", "rustfmt", "clippy", "src", "rust-analyzer"]
+        tools = ["analysis", "cargo", "rustdoc", "rustfmt", "clippy", "src", "rust-analyzer"]
         cargo-native-static = true
 
         [rust]
@@ -423,24 +430,45 @@ def build_src(install_dir, host, targets, patches):
         use-lld = true
 
         [install]
-        prefix = "{install_dir}"
-        sysconfdir = "etc"
+        prefix = "/"
 
         [llvm]
         download-ci-llvm = false
         """
     )
+    if "msvc" in host:
+        assert all("msvc" in target for target in targets)
+        base_config += textwrap.dedent(
+            f"""
+            ldflags = "-winsysroot:{fetches}/vs"
 
-    # Rust requires these to be specified per-target
-    target_config = textwrap.dedent(
-        """
-        [target.{target}]
-        cc = "clang"
-        cxx = "clang++"
-        linker = "clang"
+            [llvm.build-config]
+            CMAKE_MT = "llvm-mt.exe"
+            CMAKE_ASM_MASM_COMPILER = "ml64.exe"
+            """
+        )
+        target_config = textwrap.dedent(
+            """
+            [target.{target}]
+            cc = "clang-cl.bat"
+            cxx = "clang-cl.bat"
+            linker = "lld-link.bat"
+            ar = "llvm-lib"
 
-        """
-    )
+            """
+        )
+    else:
+        assert all("msvc" not in target for target in targets)
+        # Rust requires these to be specified per-target
+        target_config = textwrap.dedent(
+            """
+            [target.{target}]
+            cc = "clang"
+            cxx = "clang++"
+            linker = "clang"
+
+            """
+        )
 
     final_config = base_config
     for target in sorted(set(targets) | set([host])):
@@ -455,11 +483,11 @@ def build_src(install_dir, host, targets, patches):
     clang_lib = os.path.join(clang, "lib")
     sysroot = os.path.join(fetches, "sysroot")
 
-    # The rust build doesn't offer much in terms of overriding compiler flags
-    # when it builds LLVM's compiler-rt, but we want to build with a sysroot.
-    # So, we create wrappers for clang and clang++ that add the sysroot to the
-    # command line.
     with tempfile.TemporaryDirectory() as tmpdir:
+        # The rust build doesn't offer much in terms of overriding compiler flags
+        # when it builds LLVM's compiler-rt, but we want to build with a sysroot.
+        # So, we create wrappers for clang and clang++ that add the sysroot to the
+        # command line.
         for exe in ("clang", "clang++"):
             tmp_exe = os.path.join(tmpdir, exe)
             with open(tmp_exe, "w") as fh:
@@ -467,17 +495,40 @@ def build_src(install_dir, host, targets, patches):
                 fh.write(f'exec {clang_bin}/{exe} --sysroot={sysroot} "$@"\n')
             os.chmod(tmp_exe, 0o755)
 
+        if "msvc" in host:
+            # Same thing for the linker on windows, where we want to add the MSVC
+            # sysroot
+            with open(os.path.join(tmpdir, "lld-link.bat"), "w") as fh:
+                fh.write("@echo off\n")
+                fh.write(f"{clang_bin}/lld-link.exe -winsysroot:{fetches}/vs %*")
+            # And clang-cl.
+            with open(os.path.join(tmpdir, "clang-cl.bat"), "w") as fh:
+                fh.write("@echo off\n")
+                fh.write(
+                    f"{clang_bin}/clang-cl.exe -Xclang -ivfsoverlay -Xclang {fetches}/vs/overlay.yaml -winsysroot {fetches}/vs %*"
+                )
+            # cc-rs expects to find ml64.exe to build asm files, without a way to override it.
+            shutil.copy(f"{clang_bin}/llvm-ml.exe", f"{tmpdir}/ml64.exe")
+
         env = os.environ.copy()
-        env.update(
-            {
-                "PATH": os.pathsep.join((tmpdir, clang_bin, os.environ["PATH"])),
-                "LD_LIBRARY_PATH": clang_lib,
-            }
-        )
+        env.update({
+            "PATH": os.pathsep.join((tmpdir, clang_bin, os.environ["PATH"])),
+            "LD_LIBRARY_PATH": clang_lib,
+            "DESTDIR": install_dir,
+        })
+        if "msvc" in host:
+            cmake_bin = os.path.join(fetches, "cmake", "bin")
+            ninja_bin = os.path.join(fetches, "ninja", "bin")
+            env.update({
+                "PATH": os.pathsep.join((env["PATH"], cmake_bin, ninja_bin)),
+                "CC_x86_64_pc_windows_msvc": "clang-cl.bat",
+                "CXX_x86_64_pc_windows_msvc": "clang-cl.bat",
+                "AR_x86_64_pc_windows_msvc": "llvm-lib",
+            })
 
         # x.py install does everything we need for us.
         # If you're running into issues, consider using `-vv` to debug it.
-        command = ["python3", "x.py", "install", "-v", "--host", host]
+        command = ["python3", "x.py", "install", "-v", "--host", host, "--build", host]
         for target in targets:
             command.extend(["--target", target])
 
@@ -500,6 +551,7 @@ def repack(
                 'Patch specified, but channel "%s" is not "dev"!'
                 "\nPatches are only for building from source." % channel
             )
+        setup_gpg()
         log("Repacking rust for %s supporting %s..." % (host, targets))
         manifest = fetch_manifest(channel, host, targets)
         log("Using manifest for rust %s as of %s." % (channel, manifest["date"]))
@@ -570,7 +622,6 @@ def expand_platform(name):
         "android_x86-64": "x86_64-linux-android",
         "android_aarch64": "aarch64-linux-android",
         "linux64": "x86_64-unknown-linux-gnu",
-        "linux32": "i686-unknown-linux-gnu",
         "mac": "x86_64-apple-darwin",
         "macos": "x86_64-apple-darwin",
         "mac64": "x86_64-apple-darwin",
@@ -643,7 +694,7 @@ def args():
         action="append",
         default=[],
         help="Additional target platform to support:"
-        " e.g. linux32 or i686-pc-windows-gnu."
+        " e.g. linux64 or i686-pc-windows-gnu."
         " can be given more than once.",
     )
     args = parser.parse_args()
@@ -663,5 +714,4 @@ def args():
 
 if __name__ == "__main__":
     args = vars(args())
-    setup_gpg()
     repack(**args)

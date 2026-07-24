@@ -139,7 +139,8 @@ class AudioInputSource : public CubebInputStream::Listener {
 
   struct Data : public Variant<AudioChunk, LatencyChangeData, Empty> {
     Data() : Variant(AsVariant(Empty())) {}
-    explicit Data(AudioChunk aChunk) : Variant(AsVariant(std::move(aChunk))) {}
+    explicit Data(AudioChunk&& aChunk)
+        : Variant(AsVariant(std::move(aChunk))) {}
     explicit Data(LatencyChangeData aLatencyChangeData)
         : Variant(AsVariant(std::move(aLatencyChangeData))) {}
   };

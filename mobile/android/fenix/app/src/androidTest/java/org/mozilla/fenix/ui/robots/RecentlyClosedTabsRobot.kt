@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.Visibility
@@ -91,7 +92,7 @@ class RecentlyClosedTabsRobot {
     }
 
     class Transition {
-        fun clickRecentlyClosedItem(title: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickRecentlyClosedItem(composeTestRule: ComposeTestRule, title: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             recentlyClosedTabsPageTitle(title).also {
                 Log.i(TAG, "clickRecentlyClosedItem: Waiting for $waitingTimeShort ms for recently closed tab with title: $title to exist")
                 it.waitForExists(waitingTimeShort)
@@ -104,8 +105,8 @@ class RecentlyClosedTabsRobot {
             mDevice.waitForIdle()
             Log.i(TAG, "clickRecentlyClosedItem: Waited for device to be idle")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickOpenInNewTab(testRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
@@ -135,13 +136,13 @@ class RecentlyClosedTabsRobot {
             return ShareOverlayRobot.Transition()
         }
 
-        fun goBackToHistoryMenu(interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
+        fun goBackToHistoryMenu(composeTestRule: ComposeTestRule, interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
             Log.i(TAG, "goBackToHistoryMenu: Trying to click navigate up toolbar button")
             onView(withContentDescription("Navigate up")).click()
             Log.i(TAG, "goBackToHistoryMenu: Clicked navigate up toolbar button")
 
             HistoryRobot().interact()
-            return HistoryRobot.Transition()
+            return HistoryRobot.Transition(composeTestRule)
         }
     }
 }

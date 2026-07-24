@@ -9,7 +9,6 @@
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
 #include "nsCRT.h"
-#include "mozilla/Likely.h"
 
 NS_IMPL_CYCLE_COLLECTION(mozEnglishWordUtils, mURLDetector)
 

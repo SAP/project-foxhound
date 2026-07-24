@@ -36,8 +36,6 @@ that you don't get warnings about undefined or unused variables.
 * ``.sys.mjs`` - A system module, this is typically a singleton in the process it is loaded into.
 * ``.worker.(m)js`` - A file that is a web worker.
 
-  * Workers that use ctypes should use ``/* eslint-env mozilla/chrome-worker */``
-
 * Test files, see the section on :ref:`adding tests <adding-tests>`
 
 
@@ -138,9 +136,9 @@ I have valid code that is failing the ``no-undef`` rule or can't be parsed
   this can be fixed, if the following tips don't help, please `seek help`_.
 * If you are adding a new test directory, see the :ref:`section above <adding-tests>`
 
-* If you are writing a script loaded into special environment (e.g. frame script) you may need to tell ESLint to use the `environment definitions`_ for each case:
-
-  * ``/* eslint-env mozilla/frame-script */``
+* If you are writing a script loaded into special environment (e.g. frame script) you may need to
+  name the file appropriately, or add it to the relevant lists in
+  :searchfox:`eslint-file-globals.config.mjs <eslint-file-globals.config.mjs>` to add the appropriate globals.
 
 * I use ``Services.scriptloader.loadSubScript``:
 
@@ -220,7 +218,6 @@ For test harness issues, file bugs in Developer Infrastructure :: Lint and Forma
 .. _informed that it is a module: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/browser/base/content/.eslintrc.js
 .. _seek help: ../index.html#getting-help
 .. _patterns in .eslintrc.js: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/.eslintrc.js#24-38
-.. _environment definitions: ./eslint-plugin-mozilla/environment.html
 .. _known ones: https://searchfox.org/mozilla-central/rev/287583a4a605eee8cd2d41381ffaea7a93d7b987/.eslintrc.js#24-40
 .. _difficult for ESLint to handle: https://bugzilla.mozilla.org/show_bug.cgi?id=1379669
 .. _prettier ignore docs: https://prettier.io/docs/en/ignore.html

@@ -3,11 +3,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MediaTransportParent.h"
-#include "jsapi/MediaTransportHandler.h"
 
-#include "transport/sigslot.h"
-#include "common/browser_logging/CSFLog.h"
 #include "MediaEventSource.h"
+#include "common/browser_logging/CSFLog.h"
+#include "jsapi/MediaTransportHandler.h"
+#include "transport/sigslot.h"
 
 namespace mozilla {
 

@@ -17,6 +17,7 @@ import mozcrash
 import mozinfo
 from mochitest_options import MochitestArgumentParser, build_obj
 from mozdevice import ADBDeviceFactory, ADBTimeoutError, RemoteProcessMonitor
+from mozinfo.platforminfo import android_api_to_os_version
 from mozscreenshot import dump_device_screen, dump_screen
 from runtests import MessageLogger, MochitestDesktop
 
@@ -100,13 +101,14 @@ class MochiRemote(MochitestDesktop):
         if self.device.process_exist(self.appName):
             self.log.warning("unable to kill %s before running tests!" % self.appName)
 
+        android_version = str(self.device.version)
+        os_version = android_api_to_os_version(android_version)
         # Add Android version (SDK level) to mozinfo so that manifest entries
         # can be conditional on android_version.
         self.log.info(
-            "Android sdk version '%s'; will use this to filter manifests"
-            % str(self.device.version)
+            f"Android sdk version '{android_version}' corresponds to os_version '{os_version}'; use os_version to filter manifests"
         )
-        mozinfo.info["android_version"] = str(self.device.version)
+        mozinfo.info["os_version"] = os_version
         mozinfo.info["is_emulator"] = self.device._device_serial.startswith("emulator-")
 
     def cleanup(self, options, final=False):
@@ -255,7 +257,7 @@ class MochiRemote(MochitestDesktop):
         return retVal
 
     def getChromeTestDir(self, options):
-        local = super(MochiRemote, self).getChromeTestDir(options)
+        local = super().getChromeTestDir(options)
         remote = self.remoteChromeTestDir
         if options.flavor == "chrome" and not self.chromePushed:
             self.log.info("pushing %s to %s on device..." % (local, remote))

@@ -20,6 +20,8 @@ import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.PhoneFeature.AUTOPLAY
 import org.mozilla.fenix.settings.PhoneFeature.CAMERA
 import org.mozilla.fenix.settings.PhoneFeature.CROSS_ORIGIN_STORAGE_ACCESS
+import org.mozilla.fenix.settings.PhoneFeature.LOCAL_DEVICE_ACCESS
+import org.mozilla.fenix.settings.PhoneFeature.LOCAL_NETWORK_ACCESS
 import org.mozilla.fenix.settings.PhoneFeature.LOCATION
 import org.mozilla.fenix.settings.PhoneFeature.MEDIA_KEY_SYSTEM_ACCESS
 import org.mozilla.fenix.settings.PhoneFeature.MICROPHONE
@@ -101,6 +103,14 @@ class WebsitePermissionsView(
             AUTOPLAY to SpinnerPermission(
                 binding.autoplayLabel,
                 binding.autoplayStatus,
+            ),
+            LOCAL_DEVICE_ACCESS to ToggleablePermission(
+                binding.localDeviceAccessLabel,
+                binding.localDeviceAccessStatus,
+            ),
+            LOCAL_NETWORK_ACCESS to ToggleablePermission(
+                binding.localNetworkAccessLabel,
+                binding.localNetworkAccessStatus,
             ),
         ),
     )

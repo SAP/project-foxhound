@@ -246,7 +246,7 @@ long AudioInputSource::DataCallback(const void* aBuffer, long aFrames) {
     }
   }
 
-  Data data(c);
+  Data data(std::move(c));
   int writes = mSPSCQueue.Enqueue(data);
   if (writes == 0) {
     LOGW("AudioInputSource %p, buffer is full. Dropping %ld frames", this,

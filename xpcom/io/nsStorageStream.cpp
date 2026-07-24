@@ -23,7 +23,6 @@
 #include "nsIIPCSerializableInputStream.h"
 #include "nsISeekableStream.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/ipc/InputStreamUtils.h"

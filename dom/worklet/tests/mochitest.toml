@@ -9,7 +9,9 @@ support-files = ["worklet_audioWorklet.js"]
 support-files = ["worklet_test_audioWorkletGlobalScopeRegisterProcessor.js"]
 
 ["test_audioWorklet_WASM.html"]
-skip-if = ["release_or_beta"] # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+run-if = [
+  "!release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+]
 support-files = ["worklet_audioWorklet_WASM.js"]
 
 ["test_audioWorklet_WASM_Features.html"]
@@ -18,12 +20,14 @@ support-files = ["worklet_audioWorklet_WASM_features.js"]
 ["test_audioWorklet_insecureContext.html"]
 scheme = "http"
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_audioWorklet_options.html"]
-skip-if = ["release_or_beta"] # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+run-if = [
+  "!release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+]
 support-files = ["worklet_audioWorklet_options.js"]
 
 ["test_basic.html"]
@@ -48,10 +52,20 @@ support-files = ["specifier_with_user.mjs"]
 
 ["test_import_with_cache.html"]
 support-files = ["server_import_with_cache.sjs"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["test_paintWorklet.html"]
-skip-if = ["release_or_beta"]
+run-if = [
+  "!release_or_beta",
+]
 support-files = ["worklet_paintWorklet.js"]
 
 ["test_promise.html"]
 support-files = ["worklet_promise.js"]
+
+["test_warning_reporter.html"]
+support-files = [
+  "warning_reporter_worklet.js",
+]

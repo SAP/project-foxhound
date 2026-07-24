@@ -14,6 +14,7 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
+#include <compare>   // std::strong_ordering
 #include <stdint.h>  // uint32_t
 
 #include "frontend/ParserAtom.h"  // TaggedParserAtomIndex, TrivialTaggedParserAtomIndex
@@ -39,21 +40,11 @@ struct TokenPos {
     return TokenPos(left.begin, right.end);
   }
 
-  bool operator==(const TokenPos& bpos) const {
-    return begin == bpos.begin && end == bpos.end;
+  constexpr bool operator==(const TokenPos& bpos) const = default;
+
+  constexpr auto operator<=>(const TokenPos& bpos) const {
+    return begin <=> bpos.begin;
   }
-
-  bool operator!=(const TokenPos& bpos) const {
-    return begin != bpos.begin || end != bpos.end;
-  }
-
-  bool operator<(const TokenPos& bpos) const { return begin < bpos.begin; }
-
-  bool operator<=(const TokenPos& bpos) const { return begin <= bpos.begin; }
-
-  bool operator>(const TokenPos& bpos) const { return !(*this <= bpos); }
-
-  bool operator>=(const TokenPos& bpos) const { return !(*this < bpos); }
 
   bool encloses(const TokenPos& pos) const {
     return begin <= pos.begin && pos.end <= end;

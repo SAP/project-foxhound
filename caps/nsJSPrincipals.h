@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* describes principals by their orginating uris*/
 
-#ifndef nsJSPrincipals_h__
-#define nsJSPrincipals_h__
+#ifndef nsJSPrincipals_h_
+#define nsJSPrincipals_h_
 
 #include "js/Principals.h"
 #include "nsIPrincipal.h"
@@ -44,7 +44,8 @@ class nsJSPrincipals : public nsIPrincipal, public JSPrincipals {
 
   bool write(JSContext* aCx, JSStructuredCloneWriter* aWriter) final;
 
-  bool isSystemOrAddonPrincipal() final;
+  bool isSystemPrincipal() final;
+  bool isAddonPrincipal() final;
 
   /*
    * Get a weak reference to nsIPrincipal associated with the given JS
@@ -79,4 +80,4 @@ class nsJSPrincipals : public nsIPrincipal, public JSPrincipals {
   virtual ~nsJSPrincipals() { setDebugToken(0); }
 };
 
-#endif /* nsJSPrincipals_h__ */
+#endif /* nsJSPrincipals_h_ */

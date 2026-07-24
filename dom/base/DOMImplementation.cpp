@@ -8,10 +8,10 @@
 
 #include "mozilla/ContentEvents.h"
 #include "mozilla/dom/DOMImplementationBinding.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentType.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentUtils.h"
 #include "nsTextNode.h"
 
 namespace mozilla::dom {
@@ -52,8 +52,9 @@ already_AddRefed<DocumentType> DOMImplementation::CreateDocumentType(
     return nullptr;
   }
 
-  aRv = nsContentUtils::CheckQName(aQualifiedName);
-  if (aRv.Failed()) {
+  // https://dom.spec.whatwg.org/#dom-domimplementation-createdocumenttype
+  if (!nsContentUtils::IsValidDoctypeName(aQualifiedName)) {
+    aRv.ThrowInvalidCharacterError("Invalid doctype name");
     return nullptr;
   }
 
@@ -79,7 +80,9 @@ nsresult DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
   if (!aQualifiedName.IsEmpty()) {
     const nsString& qName = PromiseFlatString(aQualifiedName);
     const char16_t* colon;
-    rv = nsContentUtils::CheckQName(qName, true, &colon);
+    // https://dom.spec.whatwg.org/#dom-domimplementation-createdocument
+    rv = nsContentUtils::ParseQualifiedNameRelaxed(qName, nsINode::ELEMENT_NODE,
+                                                   &colon);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (colon && (DOMStringIsNull(aNamespaceURI) ||
@@ -99,8 +102,8 @@ nsresult DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
 
   rv = NS_NewDOMDocument(getter_AddRefs(doc), aNamespaceURI, aQualifiedName,
                          aDoctype, mDocumentURI, mBaseURI,
-                         mOwner->NodePrincipal(), true, scriptHandlingObject,
-                         DocumentFlavor::XML);
+                         mOwner->NodePrincipal(), LoadedAsData::AsData,
+                         scriptHandlingObject, DocumentFlavor::XML);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // When DOMImplementation's createDocument method is invoked with
@@ -150,10 +153,10 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
 
   nsCOMPtr<Document> doc;
-  nsresult rv =
-      NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, doctype,
-                        mDocumentURI, mBaseURI, mOwner->NodePrincipal(), true,
-                        scriptHandlingObject, DocumentFlavor::LegacyGuess);
+  nsresult rv = NS_NewDOMDocument(
+      getter_AddRefs(doc), u""_ns, u""_ns, doctype, mDocumentURI, mBaseURI,
+      mOwner->NodePrincipal(), LoadedAsData::AsData, scriptHandlingObject,
+      DocumentFlavor::LegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
 
   ErrorResult error;

@@ -30,6 +30,8 @@ const ERRORS = new Set([
   "NoSuchHandleError",
   "NoSuchHistoryEntryError",
   "NoSuchInterceptError",
+  "NoSuchNetworkCollectorError",
+  "NoSuchNetworkDataError",
   "NoSuchNodeError",
   "NoSuchRequestError",
   "NoSuchScriptError",
@@ -44,6 +46,7 @@ const ERRORS = new Set([
   "UnableToCaptureScreen",
   "UnableToSetCookieError",
   "UnableToSetFileInputError",
+  "UnavailableNetworkDataError",
   "UnexpectedAlertOpenError",
   "UnknownCommandError",
   "UnknownError",
@@ -668,6 +671,38 @@ class NoSuchInterceptError extends WebDriverError {
 }
 
 /**
+ * A network data collector with the given unique id could not be found.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchNetworkCollectorError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "no such network collector";
+  }
+}
+
+/**
+ * A network data for the provided request id and data type could not be found.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchNetworkDataError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "no such network data";
+  }
+}
+
+/**
  * A node as given by its unique shared id could not be found within the cache
  * of known nodes.
  *
@@ -863,6 +898,22 @@ class UnableToCaptureScreen extends WebDriverError {
 }
 
 /**
+ * A network data content is not available.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class UnavailableNetworkDataError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "unavailable network data";
+  }
+}
+
+/**
  * A modal dialog was open, blocking this operation.
  *
  * @param {(string|Error)=} obj
@@ -949,6 +1000,8 @@ const STATUSES = new Map([
   ["no such handle", NoSuchHandleError],
   ["no such history entry", NoSuchHistoryEntryError],
   ["no such intercept", NoSuchInterceptError],
+  ["no such network collector", NoSuchNetworkCollectorError],
+  ["no such network data", NoSuchNetworkDataError],
   ["no such node", NoSuchNodeError],
   ["no such request", NoSuchRequestError],
   ["no such script", NoSuchScriptError],
@@ -963,6 +1016,7 @@ const STATUSES = new Map([
   ["unable to capture screen", UnableToCaptureScreen],
   ["unable to set cookie", UnableToSetCookieError],
   ["unable to set file input", UnableToSetFileInputError],
+  ["unavailable network data", UnavailableNetworkDataError],
   ["unexpected alert open", UnexpectedAlertOpenError],
   ["unknown command", UnknownCommandError],
   ["unknown error", UnknownError],

@@ -24,7 +24,7 @@ function run_test() {
   runHttpTests(tests, testComplete(srv));
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

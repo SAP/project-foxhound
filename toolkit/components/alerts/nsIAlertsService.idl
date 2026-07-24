@@ -7,6 +7,7 @@
 #include "nsIObserver.idl"
 
 interface imgIRequest;
+interface imgIContainer;
 interface nsICancelable;
 interface nsIPrincipal;
 interface nsIURI;
@@ -19,25 +20,6 @@ static constexpr nsLiteralString kAlertActionDisable = u"snooze"_ns;
 static constexpr nsLiteralString kAlertActionSettings = u"settings"_ns;
 %}
 
-[scriptable, uuid(a71a637d-de1d-47c6-a8d2-c60b2596f471)]
-interface nsIAlertNotificationImageListener : nsISupports
-{
-  /**
-   * Called when the image finishes loading.
-   *
-   * @param aUserData An opaque parameter passed to |loadImage|.
-   * @param aRequest  The image request.
-   */
-  void onImageReady(in nsISupports aUserData, in imgIRequest aRequest);
-
-  /**
-   * Called if the alert doesn't have an image, or if the image request times
-   * out or fails.
-   *
-   * @param aUserData An opaque parameter passed to |loadImage|.
-   */
-  void onImageMissing(in nsISupports aUserData);
-};
 
 [scriptable, uuid(a054c2c9-2787-4686-859c-45609d790056)]
 interface nsIAlertAction : nsISupports
@@ -106,6 +88,12 @@ interface nsIAlertNotification : nsISupports
             [optional] in Array<uint32_t> aVibrate);
 
   /**
+   * Initializes an alert notification with another instance.
+   * Can be useful in JS as it can provide a dictionary object.
+   */
+  void initWithObject(in nsIAlertNotification aAlertNotification);
+
+  /**
    * The unique ID of the notification, based on the profile path and the caller
    * given name.
    *
@@ -125,6 +113,11 @@ interface nsIAlertNotification : nsISupports
    * that time, the alert will show without an image.
    */
   readonly attribute AString imageURL;
+
+  /**
+   * The actual image container to use for the alert. This should be what imageURL returns.
+   */
+  attribute imgIContainer image;
 
   /** The title for the alert. */
   readonly attribute AString title;
@@ -240,22 +233,6 @@ interface nsIAlertNotification : nsISupports
   attribute AString opaqueRelaunchData;
 
   /**
-   * Loads the image associated with this alert.
-   *
-   * @param aTimeout  The number of milliseconds to wait before cancelling the
-   *                  image request. If zero, there is no timeout.
-   * @param aListener An |nsIAlertNotificationImageListener| implementation,
-   *                  notified when the image loads. The listener is kept alive
-   *                  until the request completes.
-   * @param aUserData An opaque parameter passed to the listener's methods.
-   *                  Not used by the libnotify backend, but the OS X backend
-   *                  passes the pending notification.
-   */
-  nsICancelable loadImage(in unsigned long aTimeout,
-                          in nsIAlertNotificationImageListener aListener,
-                          [optional] in nsISupports aUserData);
-
-  /**
    * Retrieves the action object by the action name or null if not.
    *
    * @param aName The action name corresponding to nsIAlertAction.action.
@@ -266,12 +243,11 @@ interface nsIAlertNotification : nsISupports
 [scriptable, uuid(f7a36392-d98b-4141-a7d7-4e46642684e3)]
 interface nsIAlertsService : nsISupports
 {
-  void showAlert(in nsIAlertNotification aAlert,
-                 [optional] in nsIObserver aAlertListener);
   /**
    * Initializes and shows an |nsIAlertNotification| with the given parameters.
    *
-   * @param aAlertListener Used for callbacks. May be null if the caller
+   * @param aAlert The alert notification to show.
+   * @param aAlertListener Used for callbacks. May be omitted if the caller
    *                       doesn't care about callbacks.
    * @see nsIAlertNotification for descriptions of all other parameters.
    * @throws NS_ERROR_NOT_AVAILABLE If the notification cannot be displayed.
@@ -284,26 +260,15 @@ interface nsIAlertsService : nsISupports
    *             "alertsettingscallback" when alert settings should be opened
    *             "alertclickcallback" when the text is clicked
    *             "alertshow" when the alert is shown
-   *   data    - the value of the cookie parameter passed to showAlertNotification.
+   *   data    - the value of the cookie attribute of the alert parameter.
    *
    * @note Depending on current circumstances (if the user's in a fullscreen
    *       application, for instance), the alert might not be displayed at all.
    *       In that case, if an alert listener is passed in it will receive the
    *       "alertfinished" notification immediately.
    */
-  void showAlertNotification(in AString aImageURL,
-                             in AString aTitle,
-                             in AString aText,
-                             [optional] in boolean aTextClickable,
-                             [optional] in AString aCookie,
-                             [optional] in nsIObserver aAlertListener,
-                             [optional] in AString aName,
-                             [optional] in AString aDir,
-                             [optional] in AString aLang,
-                             [optional] in AString aData,
-                             [optional] in nsIPrincipal aPrincipal,
-                             [optional] in boolean aInPrivateBrowsing,
-                             [optional] in boolean aRequireInteraction);
+  void showAlert(in nsIAlertNotification aAlert,
+                 [optional] in nsIObserver aAlertListener);
 
   /**
    * Close alerts created by the service.

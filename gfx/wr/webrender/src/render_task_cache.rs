@@ -9,7 +9,6 @@ use crate::border::BorderSegmentCacheKey;
 use crate::box_shadow::BoxShadowCacheKey;
 use crate::device::TextureFilter;
 use crate::freelist::{FreeList, FreeListHandle, WeakFreeListHandle};
-use crate::gpu_cache::GpuCache;
 use crate::internal_types::FastHashMap;
 use crate::prim_store::image::ImageCacheKey;
 use crate::prim_store::gradient::{
@@ -17,6 +16,7 @@ use crate::prim_store::gradient::{
     ConicGradientCacheKey,
 };
 use crate::prim_store::line_dec::LineDecorationCacheKey;
+use crate::quad::QuadCacheKey;
 use crate::resource_cache::CacheItem;
 use std::{mem, usize, f32, i32};
 use crate::surface::SurfaceBuilder;
@@ -53,6 +53,7 @@ pub enum RenderTaskCacheKeyKind {
     RadialGradient(RadialGradientCacheKey),
     ConicGradient(ConicGradientCacheKey),
     Snapshot(SnapshotImageKey),
+    Quad(QuadCacheKey),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -165,7 +166,7 @@ impl RenderTaskCache {
         size: DeviceIntSize,
         render_task: &mut RenderTask,
         entry: &mut RenderTaskCacheEntry,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         texture_cache: &mut TextureCache,
     ) {
         // Find out what size to alloc in the texture cache.
@@ -199,7 +200,7 @@ impl RenderTaskCache {
             None,
             entry.user_data.unwrap_or([0.0; 4]),
             DirtyRect::All,
-            gpu_cache,
+            gpu_buffer,
             None,
             render_task.uv_rect_kind(),
             Eviction::Auto,
@@ -230,22 +231,20 @@ impl RenderTaskCache {
         texture_cache: &mut TextureCache,
         is_opaque: bool,
         parent: RenderTaskParent,
-        gpu_cache: &mut GpuCache,
         gpu_buffer_builder: &mut GpuBufferBuilderF,
         rg_builder: &mut RenderTaskGraphBuilder,
         surface_builder: &mut SurfaceBuilder,
-        f: &mut dyn FnMut(&mut RenderTaskGraphBuilder, &mut GpuBufferBuilderF, &mut GpuCache) -> RenderTaskId,
+        f: &mut dyn FnMut(&mut RenderTaskGraphBuilder, &mut GpuBufferBuilderF) -> RenderTaskId,
     ) -> RenderTaskId {
         // If this render task cache is being drawn this frame, ensure we hook up the
         // render task for it as a dependency of any render task that uses this as
         // an input source.
         let (task_id, rendered_this_frame) = match key {
-            None => (f(rg_builder, gpu_buffer_builder, gpu_cache), true),
+            None => (f(rg_builder, gpu_buffer_builder), true),
             Some(key) => self.request_render_task_impl(
                 key,
                 is_opaque,
                 texture_cache,
-                gpu_cache,
                 gpu_buffer_builder,
                 rg_builder,
                 f
@@ -284,10 +283,9 @@ impl RenderTaskCache {
         key: RenderTaskCacheKey,
         is_opaque: bool,
         texture_cache: &mut TextureCache,
-        gpu_cache: &mut GpuCache,
         gpu_buffer_builder: &mut GpuBufferBuilderF,
         rg_builder: &mut RenderTaskGraphBuilder,
-        f: &mut dyn FnMut(&mut RenderTaskGraphBuilder, &mut GpuBufferBuilderF, &mut GpuCache) -> RenderTaskId,
+        f: &mut dyn FnMut(&mut RenderTaskGraphBuilder, &mut GpuBufferBuilderF) -> RenderTaskId,
     ) -> (RenderTaskId, bool) {
         let frame_id = self.frame_id;
         let size = key.size;
@@ -309,10 +307,10 @@ impl RenderTaskCache {
         cache_entry.frame_id = self.frame_id;
 
         // Check if this texture cache handle is valid.
-        if texture_cache.request(&cache_entry.handle, gpu_cache) {
+        if texture_cache.request(&cache_entry.handle, gpu_buffer_builder) {
             // Invoke user closure to get render task chain
             // to draw this into the texture cache.
-            let render_task_id = f(rg_builder, gpu_buffer_builder, gpu_cache);
+            let render_task_id = f(rg_builder, gpu_buffer_builder);
 
             cache_entry.user_data = None;
             cache_entry.is_opaque = is_opaque;
@@ -328,7 +326,7 @@ impl RenderTaskCache {
                 task_size,
                 render_task,
                 cache_entry,
-                gpu_cache,
+                gpu_buffer_builder,
                 texture_cache,
             );
         }

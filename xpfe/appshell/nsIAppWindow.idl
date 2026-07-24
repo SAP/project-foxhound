@@ -151,4 +151,11 @@ interface nsIAppWindow : nsISupports
    * Note that tooltips and noautohide popups won't be closed.
    */
   void rollupAllPopups();
+
+  /**
+   * Normally, the window is shown when the first navigation completes.
+   * This method does everything that would be done after the first
+   * navigation right now for the initial viewer.
+   */
+  void showInitialViewer();
 };

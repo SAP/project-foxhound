@@ -18,8 +18,8 @@
 #include "mozilla/Hal.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerThreadSleep.h"
-#include "mozilla/Unused.h"
 #include "mozilla/GUniquePtr.h"
+#include "mozilla/GRefPtr.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WidgetUtils.h"
 #include "nsIPowerManagerService.h"
@@ -145,7 +145,7 @@ gboolean nsAppShell::EventProcessorCallback(GIOChannel* source,
   nsAppShell* self = static_cast<nsAppShell*>(data);
 
   unsigned char c;
-  Unused << read(self->mPipeFDs[0], &c, 1);
+  [[maybe_unused]] ssize_t _ = read(self->mPipeFDs[0], &c, 1);
   switch (c) {
     case NOTIFY_TOKEN:
       self->NativeEventCallback();
@@ -278,6 +278,32 @@ void nsAppShell::DBusConnectClientResponse(GObject* aObject,
   }
 }
 
+void nsAppShell::DBusConnectionCheck() {
+  if (sAppShell && sAppShell->mDBusConnectionSession &&
+      sAppShell->mDBusConnectionSystem) {
+    MOZ_DIAGNOSTIC_ASSERT(
+        ((GObject*)sAppShell->mDBusConnectionSession.get())->ref_count > 1,
+        "Released mDBusConnectionSession connection?!");
+    MOZ_DIAGNOSTIC_ASSERT(
+        ((GObject*)sAppShell->mDBusConnectionSystem.get())->ref_count > 1,
+        "Released mDBusConnectionSystem connection?!");
+  }
+}
+
+void nsAppShell::SetSessionDBus(GDBusConnection* aDBusConnectionSession) {
+  if (sAppShell) {
+    sAppShell->mDBusConnectionSession = aDBusConnectionSession;
+    DBusConnectionCheck();
+  }
+}
+
+void nsAppShell::SetSystemDBus(GDBusConnection* aDBusConnectionSystem) {
+  if (sAppShell) {
+    sAppShell->mDBusConnectionSystem = aDBusConnectionSystem;
+    DBusConnectionCheck();
+  }
+}
+
 // Based on
 // https://github.com/lcp/NetworkManager/blob/240f47c892b4e935a3e92fc09eb15163d1fa28d8/src/nm-sleep-monitor-systemd.c
 // Use login1 to signal sleep and wake notifications.
@@ -301,6 +327,52 @@ void nsAppShell::StartDBusListening() {
       "org.freedesktop.timedate1", "/org/freedesktop/timedate1",
       "org.freedesktop.DBus.Properties", mTimedate1ProxyCancellable,
       reinterpret_cast<GAsyncReadyCallback>(DBusConnectClientResponse), this);
+
+  // Don't grab reference to DBus connect from xpcshell, it fails
+  // to release nsAppShell singleton and causes test timeout.
+  if (!g_getenv("XPCSHELL_TEST")) {
+    // Obtain session DBus connection
+    mDBusGetCancellableSession = dont_AddRef(g_cancellable_new());
+    g_bus_get(
+        G_BUS_TYPE_SESSION, mDBusGetCancellableSession,
+        [](GObject* aSourceObject, GAsyncResult* aRes, gpointer aUserData) {
+          GUniquePtr<GError> error;
+          GDBusConnection* conn =
+              g_bus_get_finish(aRes, getter_Transfers(error));
+          if (!conn) {
+            if (!IsCancelledGError(error.get())) {
+              NS_WARNING(
+                  nsPrintfCString("Failure at g_bus_get_finish: %s",
+                                  error ? error->message : "Unknown Error")
+                      .get());
+            }
+            return;
+          }
+          nsAppShell::SetSessionDBus(conn);
+        },
+        this);
+
+    // Obtain system-wide DBus connection
+    mDBusGetCancellableSystem = dont_AddRef(g_cancellable_new());
+    g_bus_get(
+        G_BUS_TYPE_SYSTEM, mDBusGetCancellableSystem,
+        [](GObject* aSourceObject, GAsyncResult* aRes, gpointer aUserData) {
+          GUniquePtr<GError> error;
+          GDBusConnection* conn =
+              g_bus_get_finish(aRes, getter_Transfers(error));
+          if (!conn) {
+            if (!IsCancelledGError(error.get())) {
+              NS_WARNING(
+                  nsPrintfCString("Failure at g_bus_get_finish: %s",
+                                  error ? error->message : "Unknown Error")
+                      .get());
+            }
+            return;
+          }
+          nsAppShell::SetSystemDBus(conn);
+        },
+        this);
+  }
 }
 
 void nsAppShell::StopDBusListening() {
@@ -323,6 +395,18 @@ void nsAppShell::StopDBusListening() {
     mTimedate1ProxyCancellable = nullptr;
   }
   mTimedate1Proxy = nullptr;
+
+  DBusConnectionCheck();
+  if (mDBusGetCancellableSession) {
+    g_cancellable_cancel(mDBusGetCancellableSession);
+    mDBusGetCancellableSession = nullptr;
+  }
+  if (mDBusGetCancellableSystem) {
+    g_cancellable_cancel(mDBusGetCancellableSystem);
+    mDBusGetCancellableSystem = nullptr;
+  }
+  mDBusConnectionSession = nullptr;
+  mDBusConnectionSystem = nullptr;
 }
 #endif
 
@@ -478,12 +562,12 @@ NS_IMETHODIMP nsAppShell::Run() {
 
 void nsAppShell::ScheduleNativeEventCallback() {
   unsigned char buf[] = {NOTIFY_TOKEN};
-  Unused << write(mPipeFDs[1], buf, 1);
+  [[maybe_unused]] ssize_t _ = write(mPipeFDs[1], buf, 1);
 }
 
 void nsAppShell::ScheduleQuitEvent() {
   unsigned char buf[] = {QUIT_TOKEN};
-  Unused << write(mPipeFDs[1], buf, 1);
+  [[maybe_unused]] ssize_t _ = write(mPipeFDs[1], buf, 1);
 }
 
 bool nsAppShell::ProcessNextNativeEvent(bool mayWait) {

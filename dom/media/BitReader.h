@@ -14,7 +14,7 @@ class BitReader {
   explicit BitReader(const MediaByteBuffer* aBuffer);
   BitReader(const MediaByteBuffer* aBuffer, size_t aBits);
   BitReader(const uint8_t* aBuffer, size_t aBits);
-  ~BitReader();
+  ~BitReader() = default;
   uint32_t ReadBits(size_t aNum);
   bool ReadBit() { return ReadBits(1) != 0; }
   uint32_t ReadU32() { return ReadBits(32); }

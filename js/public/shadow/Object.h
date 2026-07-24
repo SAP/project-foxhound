@@ -26,6 +26,11 @@ class JS_PUBLIC_API Value;
 
 namespace shadow {
 
+inline size_t NumObjectFixedSlots(Shape* shape) {
+  return (shape->immutableFlags & shadow::Shape::FIXED_SLOTS_MASK) >>
+         shadow::Shape::FIXED_SLOTS_SHIFT;
+}
+
 /**
  * This layout is shared by all native objects. For non-native objects, the
  * shape may always be accessed safely, and other members may be as well,
@@ -41,10 +46,7 @@ struct Object {
 
   static constexpr size_t MAX_FIXED_SLOTS = 16;
 
-  size_t numFixedSlots() const {
-    return (shape->immutableFlags & shadow::Shape::FIXED_SLOTS_MASK) >>
-           shadow::Shape::FIXED_SLOTS_SHIFT;
-  }
+  size_t numFixedSlots() const { return NumObjectFixedSlots(shape); }
 
   Value* fixedSlots() const {
     auto address = reinterpret_cast<uintptr_t>(this);

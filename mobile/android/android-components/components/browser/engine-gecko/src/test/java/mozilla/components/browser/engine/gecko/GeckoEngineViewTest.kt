@@ -27,6 +27,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -242,6 +243,31 @@ class GeckoEngineViewTest {
         )
 
         verify(geckoSession).selectionActionDelegate = null
+    }
+
+    fun `WHEN rendering a new session THEN start observing scroll events`() {
+        val listener: GeckoVerticalScrollListener = mock()
+        val engineView = GeckoEngineView(context).apply {
+            verticalScrollListener = listener
+        }
+        val geckoSession: GeckoSession = mock()
+        val engineSession = mock<GeckoEngineSession>()
+        doReturn(geckoSession).`when`(engineSession).geckoSession
+
+        engineView.render(engineSession)
+
+        verify(listener).observe(geckoSession)
+    }
+
+    fun `WHEN releasing a session THEN stop observing scroll events`() {
+        val listener: GeckoVerticalScrollListener = mock()
+        val engineView = GeckoEngineView(context).apply {
+            verticalScrollListener = listener
+        }
+
+        engineView.release()
+
+        verify(listener).release()
     }
 
     @Test

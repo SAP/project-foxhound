@@ -9,19 +9,17 @@
 
 #include <stdint.h>
 
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/VRDisplayBinding.h"
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Pose.h"
-#include "mozilla/TimeStamp.h"
-
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/VRDisplayBinding.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
-
-#include "gfxVR.h"
 
 namespace mozilla {
 class ErrorResult;

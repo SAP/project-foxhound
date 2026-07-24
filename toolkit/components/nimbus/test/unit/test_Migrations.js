@@ -80,13 +80,12 @@ async function setupTest({
     );
   }
 
-  const { initExperimentAPI, ...ctx } = await NimbusTestUtils.setupTest({
+  const ctx = await NimbusTestUtils.setupTest({
     init: false,
     clearTelemetry: true,
+    migrationState: NimbusTestUtils.migrationState.UNMIGRATED,
     ...args,
   });
-
-  const { sandbox } = ctx;
 
   if (typeof legacyMigrationState !== "undefined") {
     Services.prefs.setIntPref(
@@ -105,13 +104,11 @@ async function setupTest({
       migrations
     );
 
-    sandbox.stub(NimbusMigrations, "MIGRATIONS").get(() => migrationsStub);
+    ctx.sandbox.stub(NimbusMigrations, "MIGRATIONS").get(() => migrationsStub);
   }
 
   if (init) {
-    await initExperimentAPI();
-  } else {
-    ctx.initExperimentAPI = initExperimentAPI;
+    await ExperimentAPI.init();
   }
 
   return ctx;
@@ -866,23 +863,28 @@ add_task(async function test_migration_firefoxLabsEnrollments_idempotent() {
 
   const recipes = mockLabsRecipes("true");
 
-  // Get the store into a partially migrated state (i.e., we have enrolled in at least one
-  // experiment but the migration pref has not updated).
-  {
-    const manager = NimbusTestUtils.stubs.manager();
-    await manager.store.init();
-    await manager.onStartup();
-
-    manager.enroll(recipes[0], "rs-loader", { branchSlug: "control" });
-
-    await NimbusTestUtils.saveStore(manager.store);
-
-    removePrefObservers(manager);
-    assertNoObservers(manager);
-  }
-
   const { manager, cleanup } = await setupTest({
+    storePath: await NimbusTestUtils.createStoreWith(store => {
+      // Get the store into a partially migrated state (i.e., we have enrolled in at least one
+      // experiment but the migration pref has not updated).
+      NimbusTestUtils.addEnrollmentForRecipe(recipes[0], {
+        store,
+        branchSlug: "control",
+        extra: {
+          prefs: [
+            {
+              name: prefs[0],
+              featureId: recipes[0].featureIds[0],
+              variable: "enabled",
+              branch: "user",
+              originalValue: false,
+            },
+          ],
+        },
+      });
+    }),
     experiments: recipes,
+    migrationState: NimbusTestUtils.migrationState.UNMIGRATED,
     migrations: {
       [NimbusMigrations.Phase.AFTER_REMOTE_SETTINGS_UPDATE]: [
         FIREFOX_LABS_MIGRATION,
@@ -933,7 +935,6 @@ async function testMigrateEnrollmentsToSql(primary = "jsonfile") {
       },
     },
   };
-  let storePath;
 
   const experiments = [
     NimbusTestUtils.factories.recipe.withFeatureConfig(
@@ -1041,11 +1042,7 @@ async function testMigrateEnrollmentsToSql(primary = "jsonfile") {
     ),
   ];
 
-  {
-    const store = NimbusTestUtils.stubs.store();
-
-    await store.init();
-
+  const storePath = await NimbusTestUtils.createStoreWith(store => {
     store.set(
       "inactive-1",
       NimbusTestUtils.factories.experiment.withFeatureConfig(
@@ -1194,9 +1191,7 @@ async function testMigrateEnrollmentsToSql(primary = "jsonfile") {
         }
       )
     );
-
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
+  });
 
   let importMigrationError = null;
 
@@ -1548,6 +1543,7 @@ async function testMigrateEnrollmentsToSql(primary = "jsonfile") {
     storePath,
     experiments,
     secureExperiments,
+    migrationState: NimbusTestUtils.migrationState.UNMIGRATED,
     migrations: {
       [NimbusMigrations.Phase.AFTER_STORE_INITIALIZED]: [
         IMPORT_TO_SQL_MIGRATION,
@@ -1617,4 +1613,199 @@ add_task(async function testMigrateEnrollmentsToSqlDb() {
   });
   await testMigrateEnrollmentsToSql("database");
   resetNimbusEnrollmentPrefs();
+});
+
+add_task(async function testGraduateFirefoxLabsAutoPip() {
+  const SLUG = "firefox-labs-auto-pip";
+
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    SLUG,
+    {
+      featureId: "auto-pip",
+      value: { enabled: true },
+    },
+    {
+      isFirefoxLabsOptIn: true,
+      firefoxLabsTitle: "experimental-features-auto-pip",
+      firefoxLabsDescription: "experimental-features-auto-pip-description",
+      firefoxLabsDescriptionLink: null,
+      firefoxLabsGroup: "experimental-features-group-productivity",
+      requiresRestart: false,
+    }
+  );
+
+  const ENABLED_PREF = getEnabledPrefForFeature("auto-pip");
+
+  Services.fog.applyServerKnobsConfig(
+    JSON.stringify({
+      metrics_enabled: {
+        "nimbus_events.enrollment_status": true,
+      },
+    })
+  );
+
+  Services.prefs.setBoolPref(ENABLED_PREF, true);
+
+  const { cleanup, manager } = await NimbusTestUtils.setupTest({
+    clearTelemetry: true,
+    init: false,
+    storePath: await NimbusTestUtils.createStoreWith(store => {
+      NimbusTestUtils.addEnrollmentForRecipe(recipe, {
+        store,
+        extra: {
+          prefs: [
+            {
+              name: ENABLED_PREF,
+              featureId: "auto-pip",
+              variable: "enabled",
+              branch: "user",
+              originalValue: false,
+            },
+          ],
+        },
+      });
+    }),
+    migrationState: NimbusTestUtils.migrationState.IMPORTED_ENROLLMENTS_TO_SQL,
+  });
+
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          .map(event => event.extra),
+        [
+          {
+            slug: "firefox-labs-auto-pip",
+            branch: "control",
+            status: "WasEnrolled",
+            reason: "Migration",
+            migration: "graduate-firefox-labs-auto-pip",
+          },
+        ]
+      );
+    },
+    () => ExperimentAPI.init()
+  );
+
+  const enrollment = manager.store.get(SLUG);
+
+  Assert.ok(!enrollment.active, "Enrollment is not active");
+  Assert.deepEqual(enrollment.featureIds, ["auto-pip"]);
+  Assert.equal(enrollment.unenrollReason, "migration");
+
+  Assert.equal(
+    Services.prefs.getBoolPref(ENABLED_PREF),
+    true,
+    "Pref is still set"
+  );
+
+  Assert.deepEqual(
+    Glean.nimbusEvents.migration.testGetValue().map(event => event.extra),
+    [
+      {
+        migration_id: "separate-rollout-opt-out",
+        success: "true",
+      },
+      {
+        migration_id: "graduate-firefox-labs-auto-pip",
+        success: "true",
+      },
+    ]
+  );
+
+  Assert.deepEqual(
+    Glean.nimbusEvents.unenrollment
+      .testGetValue("events")
+      .map(event => event.extra),
+    [
+      {
+        experiment: "firefox-labs-auto-pip",
+        branch: "control",
+        reason: "migration",
+        migration: "graduate-firefox-labs-auto-pip",
+      },
+    ]
+  );
+
+  Services.prefs.setBoolPref(ENABLED_PREF, false);
+  await cleanup();
+});
+
+add_task(async function testSeparateRolloutOptOut() {
+  const STUDIES_PREF = "app.shield.optoutstudies.enabled";
+  const TELEMETRY_PREF = "datareporting.healthreport.uploadEnabled";
+  const ROLLOUT_PREF = "nimbus.rollouts.enabled";
+
+  const rollout = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "test-rollout",
+    { featureId: "no-feature-firefox-desktop" },
+    { isRollout: true }
+  );
+
+  for (const studiesEnabled of [true, false]) {
+    for (const telemetryEnabled of [true, false]) {
+      info(
+        `testSeparateRolloutOptOut: studiesEnabled=${studiesEnabled} telemetryEnabled=${telemetryEnabled}\n`
+      );
+      Services.prefs.setBoolPref(STUDIES_PREF, studiesEnabled);
+      Services.prefs.setBoolPref(TELEMETRY_PREF, telemetryEnabled);
+
+      const { manager, cleanup } = await NimbusTestUtils.setupTest({
+        migrationState:
+          NimbusTestUtils.migrationState.GRADUATED_FIREFOX_LABS_AUTO_PIP,
+        experiments: [rollout],
+        clearTelemetry: true,
+      });
+
+      Assert.deepEqual(
+        Glean.nimbusEvents.migration
+          .testGetValue("events")
+          .map(event => event.extra),
+        [
+          {
+            migration_id: "separate-rollout-opt-out",
+            success: "true",
+          },
+        ]
+      );
+
+      Assert.equal(
+        Services.prefs.getBoolPref(ROLLOUT_PREF),
+        studiesEnabled,
+        "Rollout pref matches expected value"
+      );
+      Assert.equal(
+        ExperimentAPI.rolloutsEnabled,
+        studiesEnabled,
+        "Rollouts enable status correct"
+      );
+
+      const activeEnrollments = manager.store
+        .getAll()
+        .filter(e => e.active)
+        .map(e => e.slug);
+
+      if (studiesEnabled) {
+        Assert.deepEqual(
+          activeEnrollments,
+          ["test-rollout"],
+          "Should have enrolled in rollout"
+        );
+        manager.unenroll("test-rollout", "test-cleanup");
+      } else {
+        Assert.deepEqual(
+          activeEnrollments,
+          [],
+          "Should not have enrolled in rollout"
+        );
+      }
+
+      await cleanup();
+    }
+
+    Services.prefs.clearUserPref(STUDIES_PREF);
+    Services.prefs.clearUserPref(TELEMETRY_PREF);
+    Services.prefs.clearUserPref(ROLLOUT_PREF);
+  }
 });

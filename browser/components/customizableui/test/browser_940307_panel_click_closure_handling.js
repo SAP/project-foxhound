@@ -27,6 +27,10 @@ add_task(async function plain_button() {
 });
 
 add_task(async function searchbar_in_panel() {
+  SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+
   CustomizableUI.addWidgetToArea(
     "search-container",
     CustomizableUI.AREA_FIXED_OVERFLOW_PANEL

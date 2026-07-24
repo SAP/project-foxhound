@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseDragService_h__
-#define nsBaseDragService_h__
+#ifndef nsBaseDragService_h_
+#define nsBaseDragService_h_
 
 #include "nsIDragService.h"
 #include "nsIDragSession.h"
@@ -18,13 +18,12 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/RemoteDragStartData.h"
 #include "mozilla/Logging.h"
+#include "mozilla/widget/WidgetLogging.h"
 #include "nsTArray.h"
 #include "nsRegion.h"
 #include "Units.h"
 
-extern mozilla::LazyLogModule sWidgetDragServiceLog;
-#define MOZ_DRAGSERVICE_LOG(...) \
-  MOZ_LOG(sWidgetDragServiceLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define MOZ_DRAGSERVICE_LOG DRAGSERVICE_LOGD
 #define MOZ_DRAGSERVICE_LOG_ENABLED() \
   MOZ_LOG_TEST(sWidgetDragServiceLog, mozilla::LogLevel::Debug)
 
@@ -341,4 +340,4 @@ class nsBaseDragService : public nsIDragService {
   bool mNeverAllowSessionIsSynthesizedForTests = false;
 };
 
-#endif  // nsBaseDragService_h__
+#endif  // nsBaseDragService_h_

@@ -6,10 +6,8 @@
 
 #include "MLUtils.h"
 
-#include <algorithm>
 #include <cmath>
 #include "prsystem.h"
-#include "mozilla/Casting.h"
 #include <sys/types.h>
 #include "nsSystemInfo.h"
 
@@ -23,6 +21,7 @@
 #if defined(XP_LINUX)
 #  include <sys/sysinfo.h>
 #endif
+#include "mozilla/SSE.h"
 
 namespace mozilla::ml {
 
@@ -94,6 +93,18 @@ NS_IMETHODIMP MLUtils::GetOptimalCPUConcurrency(uint8_t* _retval) {
 #endif
 
   *_retval = cpuCount;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP MLUtils::CanUseLlamaCpp(bool* _retval) {
+#ifdef __x86_64__
+  *_retval = mozilla::supports_avx2();
+#elif defined(__aarch64__)
+  *_retval = true;
+#else
+  *_retval = false;
+#endif
 
   return NS_OK;
 }

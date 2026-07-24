@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function invalidCode(code) {
-  return { code, errors: [{ messageId: "useOnce", type: "CallExpression" }] };
+  return { code, errors: [{ messageId: "useOnce" }] };
 }
 
 ruleTester.run("no-useless-removeEventListener", rule, {

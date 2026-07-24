@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SHELL_WINDOWS11LIMITEDACCESSFEATURES_H__
-#define SHELL_WINDOWS11LIMITEDACCESSFEATURES_H__
+#ifndef SHELL_WINDOWS11LIMITEDACCESSFEATURES_H_
+#define SHELL_WINDOWS11LIMITEDACCESSFEATURES_H_
 
 #include "nsISupportsImpl.h"
 #include "nsString.h"
@@ -62,4 +62,4 @@ mozilla::Result<LimitedAccessFeatureInfo, nsresult>
 GenerateLimitedAccessFeatureInfo(const nsCString& debugName,
                                  const nsString& lafId);
 
-#endif  // SHELL_WINDOWS11LIMITEDACCESSFEATURES_H__
+#endif  // SHELL_WINDOWS11LIMITEDACCESSFEATURES_H_

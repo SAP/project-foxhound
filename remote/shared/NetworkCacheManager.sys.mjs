@@ -75,7 +75,7 @@ class NetworkCacheManager {
     const loadFlags = this.#getLoadFlags(behavior);
 
     // Update cache settings for all existing navigables.
-    for (const browser of lazy.TabManager.browsers) {
+    for (const browser of lazy.TabManager.getBrowsers()) {
       this.#setLoadFlagsForBrowsingContext(browser.browsingContext, loadFlags);
     }
 
@@ -106,7 +106,7 @@ class NetworkCacheManager {
 
     const loadFlags = this.#getLoadFlags(CacheBehavior.Default);
 
-    for (const browser of lazy.TabManager.browsers) {
+    for (const browser of lazy.TabManager.getBrowsers()) {
       if (this.#navigableCacheBehaviorMap.has(browser.browsingContext)) {
         this.#setLoadFlagsForBrowsingContext(
           browser.browsingContext,

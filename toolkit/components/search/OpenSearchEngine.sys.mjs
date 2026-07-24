@@ -53,6 +53,8 @@ export class OpenSearchEngine extends SearchEngine {
    * @param {string} [options.faviconURL]
    *   The website favicon, to be used if the engine data hasn't specified an
    *   icon.
+   * @param {object} [options.originAttributes]
+   *   The origin attributes to use to download additional resources.
    */
   constructor(options = {}) {
     super({
@@ -65,7 +67,10 @@ export class OpenSearchEngine extends SearchEngine {
     });
 
     if (options.faviconURL) {
-      this._setIcon(options.faviconURL, undefined, false).catch(e =>
+      this._setIcon(options.faviconURL, {
+        override: false,
+        originAttributes: options.originAttributes,
+      }).catch(e =>
         lazy.logConsole.error(
           `Error while setting icon for search engine ${options.engineData.name}:`,
           e.message
@@ -74,7 +79,7 @@ export class OpenSearchEngine extends SearchEngine {
     }
 
     if (options.engineData) {
-      this.#setEngineData(options.engineData);
+      this.#setEngineData(options.engineData, options.originAttributes);
 
       // As this is a new engine, we must set the verification hash for the load
       // path set in the constructor.
@@ -114,7 +119,7 @@ export class OpenSearchEngine extends SearchEngine {
    */
   get hasUpdates() {
     // Whether or not the engine has an update URL
-    let selfURL = this._getURLOfType(
+    let selfURL = this.getURLOfType(
       lazy.SearchUtils.URL_TYPE.OPENSEARCH,
       "self"
     );
@@ -127,7 +132,7 @@ export class OpenSearchEngine extends SearchEngine {
    * @returns {?nsIURI}
    */
   get updateURI() {
-    let updateURL = this._getURLOfType(lazy.SearchUtils.URL_TYPE.OPENSEARCH);
+    let updateURL = this.getURLOfType(lazy.SearchUtils.URL_TYPE.OPENSEARCH);
     let updateURI =
       updateURL && updateURL._hasRelation("self")
         ? updateURL.getSubmission("", this.queryCharset).uri
@@ -186,30 +191,25 @@ export class OpenSearchEngine extends SearchEngine {
    *
    * @param {OpenSearchProperties} data
    *   The OpenSearch data.
+   * @param {object} originAttributes
+   *   The origin attributes for any additional downloads
    */
-  #setEngineData(data) {
+  #setEngineData(data, originAttributes) {
     let name = data.name.trim();
-    if (Services.search.getEngineByName(name)) {
-      throw Components.Exception(
-        "Found a duplicate engine",
-        Ci.nsISearchService.ERROR_DUPLICATE_ENGINE
-      );
-    }
 
     this._name = name;
     this._queryCharset = data.queryCharset ?? "UTF-8";
     if (data.searchForm) {
       try {
-        let searchFormUrl = new EngineURL(
-          lazy.SearchUtils.URL_TYPE.SEARCH_FORM,
-          "GET",
-          data.searchForm
-        );
+        let searchFormUrl = new EngineURL({
+          type: lazy.SearchUtils.URL_TYPE.SEARCH_FORM,
+          template: data.searchForm,
+        });
         this._urls.push(searchFormUrl);
       } catch (ex) {
-        throw Components.Exception(
+        throw new Error(
           `Failed to add ${data.searchForm} as a searchForm URL`,
-          Cr.NS_ERROR_FAILURE
+          { cause: ex }
         );
       }
     }
@@ -220,16 +220,14 @@ export class OpenSearchEngine extends SearchEngine {
       if (url.rels.includes("searchform")) {
         let searchFormURL;
         try {
-          searchFormURL = new EngineURL(
-            lazy.SearchUtils.URL_TYPE.SEARCH_FORM,
-            "GET",
-            url.template
-          );
+          searchFormURL = new EngineURL({
+            type: lazy.SearchUtils.URL_TYPE.SEARCH_FORM,
+            template: url.template,
+          });
         } catch (ex) {
-          throw Components.Exception(
-            `Failed to add ${url.template} as an Engine URL`,
-            Cr.NS_ERROR_FAILURE
-          );
+          throw new Error(`Failed to add ${url.template} as an Engine URL`, {
+            cause: ex,
+          });
         }
         this.#addParamsToUrl(searchFormURL, url.params);
         this._urls.push(searchFormURL);
@@ -237,12 +235,11 @@ export class OpenSearchEngine extends SearchEngine {
 
       let engineURL;
       try {
-        engineURL = new EngineURL(url.type, url.method, url.template);
+        engineURL = new EngineURL(url);
       } catch (ex) {
-        throw Components.Exception(
-          `Failed to add ${url.template} as an Engine URL`,
-          Cr.NS_ERROR_FAILURE
-        );
+        throw new Error(`Failed to add ${url.template} as an Engine URL`, {
+          cause: ex,
+        });
       }
 
       let nonSearchformRels = url.rels.filter(rel => rel != "searchform");
@@ -255,11 +252,12 @@ export class OpenSearchEngine extends SearchEngine {
     }
 
     for (let image of data.images) {
-      this._setIcon(image.url, image.size).catch(e =>
-        lazy.logConsole.error(
-          `Error while setting icon for search engine ${data.name}:`,
-          e.message
-        )
+      this._setIcon(image.url, { size: image.size, originAttributes }).catch(
+        e =>
+          lazy.logConsole.error(
+            `Error while setting icon for search engine ${data.name}:`,
+            e.message
+          )
       );
     }
   }

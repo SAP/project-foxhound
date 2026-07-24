@@ -197,6 +197,10 @@ export class WindowRealm extends Realm {
     return this.#window.browsingContext;
   }
 
+  get globalObject() {
+    return this.#globalObject;
+  }
+
   get globalObjectReference() {
     return this.#globalObjectReference;
   }
@@ -282,6 +286,7 @@ export class WindowRealm extends Realm {
   executeInGlobal(expression) {
     this.#enableRealmAutomationFeatures();
     return this.#globalObjectReference.executeInGlobal(expression, {
+      bypassCSP: true,
       url: this.#window.document.baseURI,
     });
   }
@@ -323,6 +328,7 @@ export class WindowRealm extends Realm {
         __bidi_this: this.#createDebuggerObject(thisParameter),
       },
       {
+        bypassCSP: true,
         url: this.#window.document.baseURI,
       }
     );

@@ -148,14 +148,16 @@ support-files = [
 
 ["test_bug1063538.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1104064.html"]
 
 ["test_bug1132395.html"]
-skip-if = ["true"] # bug 1176225
+skip-if = [
+  "true", # bug 1176225
+]
 
 ["test_bug1132924.html"]
 
@@ -196,8 +198,8 @@ support-files = ["worker_dynamicImport.mjs"]
 
 ["test_errorPropagation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_errorwarning.html"]
@@ -216,8 +218,8 @@ skip-if = [
 
 ["test_importScripts_3rdparty.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_importScripts_mixedcontent.html"]
@@ -233,16 +235,16 @@ tags = "mcb"
 
 ["test_location.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_longThread.html"]
 
 ["test_multi_sharedWorker.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_multi_sharedWorker_lifetimes_bfcache.html"]
@@ -258,8 +260,8 @@ support-files = [
   "!/dom/tests/mochitest/general/interface_exposure_checker.js",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_navigator_languages.html"]
@@ -288,16 +290,16 @@ support-files = [
 
 ["test_recursiveOnerror.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_referrer.html"]
 
 ["test_referrer_header_worker.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resolveWorker-assignment.html"]
@@ -320,20 +322,20 @@ support-files = [
   "sharedWorker_thirdparty_window.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_sharedworker_event_listener_leaks.html"]
 skip-if = [
-  "bits == 64 && os == 'linux' && asan", # Disabled on Linux64 opt asan, bug 1493563
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Disabled on Linux64 opt asan, bug 1493563
   "os == 'win' && debug && xorigin", # high frequency intermittent
 ]
 
 ["test_simpleThread.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_subworkers_suspended.html"]
@@ -353,13 +355,20 @@ scheme = "https"
 
 ["test_transferable.html"]
 
+["test_warning_reporter.html"]
+support-files = [
+  "warning_reporter_worker.js",
+]
+
 ["test_worker_in_background.html"]
-skip-if = ["os == 'android'"] # since geckoview does not support multiple tabs
+run-if = [
+  "os != 'android'", # since geckoview does not support multiple tabs
+]
 
 ["test_worker_interfaces.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = [
   "test_worker_interfaces.js",

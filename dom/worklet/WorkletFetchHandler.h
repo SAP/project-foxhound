@@ -114,6 +114,9 @@ class WorkletScriptHandler final : public PromiseNativeHandler,
 
   RefPtr<Worklet> mWorklet;
   nsCOMPtr<nsIURI> mURI;
+#ifdef NIGHTLY_BUILD
+  bool mHasWasmMimeTypeEssence = false;
+#endif
 };
 
 }  // namespace mozilla::dom

@@ -6,11 +6,11 @@
 #ifndef MOZILLA_AUDIONODETRACK_H_
 #define MOZILLA_AUDIONODETRACK_H_
 
-#include "MediaTrackGraph.h"
-#include "mozilla/dom/AudioNodeBinding.h"
 #include "AlignedTArray.h"
 #include "AudioBlock.h"
 #include "AudioSegment.h"
+#include "MediaTrackGraph.h"
+#include "mozilla/dom/AudioNodeBinding.h"
 
 namespace WebCore {
 class Reverb;
@@ -27,6 +27,7 @@ class AudioContext;
 class AbstractThread;
 class ThreadSharedFloatArrayBufferList;
 class AudioNodeEngine;
+class AudioNodeExternalInputTrack;
 
 typedef AlignedAutoTArray<float, GUESS_AUDIO_CHANNELS * WEBAUDIO_BLOCK_SIZE, 16>
     DownmixBufferType;
@@ -172,6 +173,10 @@ class AudioNodeTrack : public ProcessedMediaTrack {
    * schedules a call to CheckForInactive() after track processing.
    */
   void ScheduleCheckForInactive();
+
+  virtual AudioNodeExternalInputTrack* AsAudioNodeExternalInputTrack() {
+    return nullptr;
+  }
 
  protected:
   void OnGraphThreadDone() override;

@@ -6,22 +6,16 @@
 
 const SlottedNodeEditor = require("resource://devtools/client/inspector/markup/views/slotted-node-editor.js");
 const MarkupContainer = require("resource://devtools/client/inspector/markup/views/markup-container.js");
-const { extend } = require("resource://devtools/shared/extend.js");
 
-function SlottedNodeContainer(markupView, node) {
-  MarkupContainer.prototype.initialize.call(
-    this,
-    markupView,
-    node,
-    "slottednodecontainer"
-  );
+class SlottedNodeContainer extends MarkupContainer {
+  constructor(markupView, node) {
+    super();
+    super.initialize(markupView, node, "slottednodecontainer");
 
-  this.editor = new SlottedNodeEditor(this, node);
-  this.tagLine.appendChild(this.editor.elt);
-  this.hasChildren = false;
-}
-
-SlottedNodeContainer.prototype = extend(MarkupContainer.prototype, {
+    this.editor = new SlottedNodeEditor(this, node);
+    this.tagLine.appendChild(this.editor.elt);
+    this.hasChildren = false;
+  }
   _onMouseDown(event) {
     if (event.target.classList.contains("reveal-link")) {
       event.stopPropagation();
@@ -29,20 +23,20 @@ SlottedNodeContainer.prototype = extend(MarkupContainer.prototype, {
       return;
     }
     MarkupContainer.prototype._onMouseDown.call(this, event);
-  },
+  }
 
   /**
    * Slotted node containers never display children and should not react to toggle.
    */
   _onToggle(event) {
     event.stopPropagation();
-  },
+  }
 
   _revealFromSlot() {
     const reason = "reveal-from-slot";
     this.markup.inspector.selection.setNodeFront(this.node, { reason });
     Glean.devtoolsShadowdom.revealLinkClicked.set(true);
-  },
+  }
 
   _onKeyDown(event) {
     MarkupContainer.prototype._onKeyDown.call(this, event);
@@ -51,7 +45,7 @@ SlottedNodeContainer.prototype = extend(MarkupContainer.prototype, {
     if (event.target.classList.contains("reveal-link") && isActionKey) {
       this._revealFromSlot();
     }
-  },
+  }
 
   async onContainerClick(event) {
     if (!event.target.classList.contains("reveal-link")) {
@@ -59,15 +53,15 @@ SlottedNodeContainer.prototype = extend(MarkupContainer.prototype, {
     }
 
     this._revealFromSlot();
-  },
+  }
 
   isDraggable() {
     return false;
-  },
+  }
 
   isSlotted() {
     return true;
-  },
-});
+  }
+}
 
 module.exports = SlottedNodeContainer;

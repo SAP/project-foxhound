@@ -12,7 +12,7 @@ import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] implementation for managing [PromptRequest]s.
@@ -22,13 +22,13 @@ class PromptMiddleware : Middleware<BrowserState, BrowserAction> {
     private val scope = MainScope()
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
             is ContentAction.UpdatePromptRequestAction -> {
-                if (shouldBlockPrompt(action, context)) {
+                if (shouldBlockPrompt(action, store)) {
                     return
                 }
             }
@@ -42,10 +42,10 @@ class PromptMiddleware : Middleware<BrowserState, BrowserAction> {
 
     private fun shouldBlockPrompt(
         action: ContentAction.UpdatePromptRequestAction,
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
     ): Boolean {
         if (action.promptRequest is PromptRequest.Popup) {
-            context.state.findTab(action.sessionId)?.let {
+            store.state.findTab(action.sessionId)?.let {
                 if (it.content.promptRequests.lastOrNull { prompt -> prompt is PromptRequest.Popup } != null) {
                     scope.launch {
                         (action.promptRequest as PromptRequest.Popup).onDeny()

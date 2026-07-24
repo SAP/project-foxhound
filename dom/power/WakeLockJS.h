@@ -11,10 +11,10 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/HalBatteryInformation.h"
 #include "mozilla/dom/WakeLockBinding.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDocumentActivity.h"
 #include "nsIObserver.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 

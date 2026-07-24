@@ -20,7 +20,7 @@ add_setup(async function () {
 
   registerCleanupFunction(async function () {
     gCUITestUtils.removeSearchBar();
-    Services.search.restoreDefaultEngines();
+    SearchService.restoreDefaultEngines();
   });
 });
 
@@ -59,7 +59,7 @@ add_task(async function test_addEngine() {
   // Image URL in testEngine.xml is very long, so we only check its end.
   Assert.ok(oneOffButton?.image.endsWith("AElFTkSuQmCC"), "Image is correct");
 
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
   BrowserTestUtils.removeTab(tab);
 });
 
@@ -112,11 +112,11 @@ add_task(async function test_invalidEngine() {
 
 add_task(async function test_onOnlyDefaultEngine() {
   info("Remove engines except default");
-  const defaultEngine = Services.search.defaultEngine;
-  const engines = await Services.search.getVisibleEngines();
+  const defaultEngine = SearchService.defaultEngine;
+  const engines = await SearchService.getVisibleEngines();
   for (const engine of engines) {
     if (defaultEngine.name !== engine.name) {
-      await Services.search.removeEngine(engine);
+      await SearchService.removeEngine(engine);
     }
   }
 

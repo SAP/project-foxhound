@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_ReadableStreamPipeTo_h
 #define mozilla_dom_ReadableStreamPipeTo_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 

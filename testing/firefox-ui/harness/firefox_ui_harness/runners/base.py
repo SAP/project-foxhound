@@ -9,7 +9,7 @@ from marionette_harness import BaseMarionetteTestRunner, MarionetteTestCase
 
 class FirefoxUITestRunner(BaseMarionetteTestRunner):
     def __init__(self, **kwargs):
-        super(FirefoxUITestRunner, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # select the appropriate GeckoInstance
         self.app = "fxdesktop"

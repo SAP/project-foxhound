@@ -33,9 +33,9 @@ def test_yamls_sorted():
             continue
 
         yamls_to_test = metrics_index.__dict__[name]
-        assert (
-            sorted(yamls_to_test) == yamls_to_test
-        ), f"{name} must be be lexicographically sorted."
+        assert sorted(yamls_to_test) == yamls_to_test, (
+            f"{name} must be be lexicographically sorted."
+        )
 
 
 if __name__ == "__main__":

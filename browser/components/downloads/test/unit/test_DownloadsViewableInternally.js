@@ -2,7 +2,6 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const PREF_SVG_DISABLED = "svg.disabled";
-const PREF_AVIF_ENABLED = "image.avif.enabled";
 const PDF_MIME = "application/pdf";
 const OCTET_MIME = "application/octet-stream";
 const XML_MIME = "text/xml";
@@ -19,7 +18,7 @@ const {
   PREF_BRANCH_PREVIOUS_ACTION,
   PREF_BRANCH_PREVIOUS_ASK,
 } = ChromeUtils.importESModule(
-  "resource:///modules/DownloadsViewableInternally.sys.mjs"
+  "moz-src:///browser/components/downloads/DownloadsViewableInternally.sys.mjs"
 );
 
 /* global DownloadIntegration */
@@ -82,7 +81,6 @@ function checkAll(mime, ext, expected) {
 add_task(async function test_viewable_internally() {
   Services.prefs.setCharPref(PREF_ENABLED_TYPES, "xml , svg,avif");
   Services.prefs.setBoolPref(PREF_SVG_DISABLED, false);
-  Services.prefs.setBoolPref(PREF_AVIF_ENABLED, true);
 
   checkAll(XML_MIME, "xml", false);
   checkAll(SVG_MIME, "svg", false);

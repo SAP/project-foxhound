@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTObserverArray_h___
-#define nsTObserverArray_h___
+#ifndef nsTObserverArray_h_
+#define nsTObserverArray_h_
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ReverseIterator.h"
@@ -333,7 +333,8 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     }
 
     // Removes the element at the current iterator position.
-    // (the last element returned from |GetNext()|)
+    // This is the last element returned from |GetNext()|, unless
+    // the array was modified in the meantime.
     // This will not affect the next call to |GetNext()|
     void Remove() {
       return base_type::mArray.RemoveElementAt(base_type::mPosition - 1);
@@ -580,4 +581,4 @@ inline void ImplCycleCollectionTraverse(
     }                                                              \
   } while (0)
 
-#endif  // nsTObserverArray_h___
+#endif  // nsTObserverArray_h_

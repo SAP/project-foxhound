@@ -146,7 +146,7 @@ class SummaryGraphPath extends Component {
    *
    * @param {Array} keyframes1
    * @param {Array} keyframes2
-   * @return {Boolean} true: equals
+   * @return {boolean} true: equals
    */
   isOffsetAndEasingKeyframesEqual(keyframes1, keyframes2) {
     if (keyframes1.length !== keyframes2.length) {

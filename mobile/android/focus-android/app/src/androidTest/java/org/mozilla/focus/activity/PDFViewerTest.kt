@@ -10,8 +10,8 @@ import org.mozilla.focus.helpers.DeleteFilesHelper.deleteFileUsingDisplayName
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityIntentsTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
-import org.mozilla.focus.helpers.TestAssetHelper.getGenericAsset
-import org.mozilla.focus.helpers.TestAssetHelper.getPDFTestAsset
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.pdfTestAsset
 import org.mozilla.focus.helpers.TestHelper.getTargetContext
 import org.mozilla.focus.helpers.TestHelper.permAllowBtn
 import org.mozilla.focus.helpers.TestHelper.verifyDownloadedFileOnStorage
@@ -47,8 +47,8 @@ class PDFViewerTest : TestSetup() {
     @SmokeTest
     @Test
     fun openPdfFileTest() {
-        val genericPageUrl = getGenericAsset(webServer).url
-        val pdfDoc = getPDFTestAsset(webServer)
+        val genericPageUrl = webServer.genericAsset.url
+        val pdfDoc = webServer.pdfTestAsset
 
         searchScreen {
         }.loadPage(genericPageUrl) {
@@ -62,7 +62,7 @@ class PDFViewerTest : TestSetup() {
     @SmokeTest
     @Test
     fun downloadPdfTest() {
-        val pdfDoc = getPDFTestAsset(webServer)
+        val pdfDoc = webServer.pdfTestAsset
 
         searchScreen {
         }.loadPage(pdfDoc.url) {

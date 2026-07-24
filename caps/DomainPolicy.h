@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DomainPolicy_h__
-#define DomainPolicy_h__
+#ifndef DomainPolicy_h_
+#define DomainPolicy_h_
 
 #include "nsIDomainPolicy.h"
 #include "nsTHashSet.h"
@@ -61,4 +61,4 @@ class DomainPolicy final : public nsIDomainPolicy {
 
 } /* namespace mozilla */
 
-#endif /* DomainPolicy_h__ */
+#endif /* DomainPolicy_h_ */

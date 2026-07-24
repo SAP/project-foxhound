@@ -3,11 +3,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef __MINITRANSCEIVER_H_
-#define __MINITRANSCEIVER_H_
+#ifndef MINITRANSCEIVER_H_
+#define MINITRANSCEIVER_H_
 
 #include "chrome/common/ipc_message.h"
-#include "mozilla/Assertions.h"
 
 struct msghdr;
 
@@ -115,4 +114,4 @@ class MiniTransceiver {
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif  // __MINITRANSCEIVER_H_
+#endif  // MINITRANSCEIVER_H_

@@ -11,12 +11,10 @@ import android.os.StrictMode
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationManagerCompat
 import androidx.preference.PreferenceManager
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.search.SearchEngine
@@ -52,9 +50,14 @@ import org.mozilla.focus.utils.Settings
  *
  * To track events, use Glean's generated bindings directly.
  */
-class GleanMetricsService(context: Context) : MetricsService {
+class GleanMetricsService(
+    context: Context,
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : MetricsService {
 
-    private val activationPing = ActivationPing(context)
+    private val serviceScope = CoroutineScope(SupervisorJob() + mainDispatcher)
+    private val activationPing = ActivationPing(context, serviceScope, ioDispatcher)
 
     companion object {
         // collection name to fetch from server for SERP telemetry
@@ -107,7 +110,6 @@ class GleanMetricsService(context: Context) : MetricsService {
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
     override fun initialize(context: Context) {
         val components = context.components
         val settings = context.settings
@@ -130,9 +132,9 @@ class GleanMetricsService(context: Context) : MetricsService {
         Glean.registerPings(Pings)
 
         if (telemetryEnabled) {
-            CoroutineScope(Dispatchers.Main).launch {
+            serviceScope.launch {
                 val readJson = { context.assets.readJSONObject("search/search_telemetry_v2.json") }
-                val providerList = withContext(IO) {
+                val providerList = withContext(ioDispatcher) {
                     SerpTelemetryRepository(
                         rootStorageDirectory = context.filesDir,
                         readJson = readJson,
@@ -149,9 +151,9 @@ class GleanMetricsService(context: Context) : MetricsService {
         }
 
         // Do this immediately after init.
-        GlobalScope.launch(IO) {
+        serviceScope.launch {
             // Wait for preferences to be collected before we send the activation ping.
-            collectPrefMetricsAsync(components, settings, context).await()
+            collectPrefMetrics(components, settings, context)
 
             components.store.waitForSelectedOrDefaultSearchEngine { searchEngine ->
                 if (searchEngine != null) {
@@ -163,11 +165,11 @@ class GleanMetricsService(context: Context) : MetricsService {
         }
     }
 
-    private fun collectPrefMetricsAsync(
+    private suspend fun collectPrefMetrics(
         components: Components,
         settings: Settings,
         context: Context,
-    ) = CoroutineScope(IO).async {
+    ) = withContext(ioDispatcher) {
         val installedBrowsers = BrowsersCache.all(context)
         val hasFenixInstalled = FenixProductDetector.getInstalledFenixVersions(context).isNotEmpty()
         val isFenixDefaultBrowser = FenixProductDetector.isFenixDefaultBrowser(installedBrowsers.defaultBrowser)
@@ -197,10 +199,10 @@ class GleanMetricsService(context: Context) : MetricsService {
         MozillaProducts.isFenixDefaultBrowser.set(isFenixDefaultBrowser)
 
         // tracking protection metrics
-        TrackingProtection.hasAdvertisingBlocked.set(settings.hasAdvertisingBlocked())
-        TrackingProtection.hasAnalyticsBlocked.set(settings.hasAnalyticsBlocked())
+        TrackingProtection.hasAdvertisingBlocked.set(settings.shouldBlockAdTrackers())
+        TrackingProtection.hasAnalyticsBlocked.set(settings.shouldBlockAnalyticTrackers())
         TrackingProtection.hasContentBlocked.set(settings.shouldBlockOtherTrackers())
-        TrackingProtection.hasSocialBlocked.set(settings.hasSocialBlocked())
+        TrackingProtection.hasSocialBlocked.set(settings.shouldBlockSocialTrackers())
 
         // theme telemetry
         val currentTheme =

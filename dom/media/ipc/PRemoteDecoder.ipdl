@@ -8,6 +8,8 @@ include "mozilla/dom/MediaIPCUtils.h";
 include protocol PRemoteMediaManager;
 
 using mozilla::MediaDataDecoder::ConversionRequired from "PlatformDecoderModule.h";
+using mozilla::MediaDataDecoder::PropertyName from "PlatformDecoderModule.h";
+using mozilla::MediaDataDecoder::PropertyValue from "PlatformDecoderModule.h";
 using mozilla::TrackInfo::TrackType from "MediaInfo.h";
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
 using mozilla::MediaResult from "MediaResult.h";
@@ -25,6 +27,11 @@ union DecodedOutputIPDL
   nullable ArrayOfRemoteVideoData;
 };
 
+struct DecodePropertyIPDL {
+  PropertyName name;
+  PropertyValue value;
+};
+
 struct InitCompletionIPDL
 {
   TrackType type;
@@ -35,6 +42,7 @@ struct InitCompletionIPDL
   nsCString hardwareReason;
   ConversionRequired conversion;
   bool shouldDecoderAlwaysBeRecycled;
+  DecodePropertyIPDL[] decodeProperties;
 };
 
 union InitResultIPDL

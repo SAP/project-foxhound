@@ -4,8 +4,8 @@
 
 #include "MFMediaEngineUtils.h"
 
-#include "mozilla/UniquePtr.h"
 #include "WMFUtils.h"
+#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 
@@ -138,6 +138,7 @@ const char* MFVideoTransferFunctionToStr(MFVideoTransferFunction aFunc) {
     ENUM_TO_STR(MFVideoTransFunc_709);
     ENUM_TO_STR(MFVideoTransFunc_2020);
     ENUM_TO_STR(MFVideoTransFunc_sRGB);
+    ENUM_TO_STR(MFVideoTransFunc_2084);
     default:
       return "Unsupported MFVideoTransferFunction";
   }

@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Telemetry_h__
-#define Telemetry_h__
+#ifndef Telemetry_h_
+#define Telemetry_h_
 
-#include "mozilla/Maybe.h"
 #include "mozilla/TelemetryEventEnums.h"
 #include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TelemetryScalarEnums.h"
@@ -133,4 +132,4 @@ void WriteFailedProfileLock(nsIFile* aProfileDir);
 }  // namespace Telemetry
 }  // namespace mozilla
 
-#endif  // Telemetry_h__
+#endif  // Telemetry_h_

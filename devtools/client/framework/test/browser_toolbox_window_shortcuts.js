@@ -8,7 +8,7 @@ var Startup = Cc["@mozilla.org/devtools/startup-clh;1"].getService(
 ).wrappedJSObject;
 var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
-var toolbox,
+var gToolbox,
   toolIDs,
   toolShortcuts = [],
   idIndex,
@@ -46,20 +46,20 @@ async function test() {
   });
 }
 
-function testShortcuts(aToolbox, aIndex) {
-  if (aIndex === undefined) {
-    aIndex = 1;
-  } else if (aIndex == toolIDs.length) {
+function testShortcuts(toolbox, index) {
+  if (index === undefined) {
+    index = 1;
+  } else if (index == toolIDs.length) {
     tidyUp();
     return;
   }
 
-  toolbox = aToolbox;
+  gToolbox = toolbox;
   info("Toolbox fired a `ready` event");
 
-  toolbox.once("select", selectCB);
+  gToolbox.once("select", selectCB);
 
-  const shortcut = toolShortcuts[aIndex];
+  const shortcut = toolShortcuts[index];
   const key = shortcut.shortcut;
   const toolModifiers = shortcut.modifiers;
   const modifiers = {
@@ -67,16 +67,16 @@ function testShortcuts(aToolbox, aIndex) {
     altKey: toolModifiers.includes("alt"),
     shiftKey: toolModifiers.includes("shift"),
   };
-  idIndex = aIndex;
+  idIndex = index;
   info(
     "Testing shortcut for tool " +
-      aIndex +
+      index +
       ":" +
-      toolIDs[aIndex] +
+      toolIDs[index] +
       " using key " +
       key
   );
-  EventUtils.synthesizeKey(key, modifiers, toolbox.win.parent);
+  EventUtils.synthesizeKey(key, modifiers, gToolbox.win.parent);
 }
 
 function selectCB(id) {
@@ -88,17 +88,17 @@ function selectCB(id) {
     "Correct tool is selected on pressing the shortcut for " + id
   );
 
-  testShortcuts(toolbox, idIndex + 1);
+  testShortcuts(gToolbox, idIndex + 1);
 }
 
 function tidyUp() {
-  toolbox.destroy().then(function () {
+  gToolbox.destroy().then(function () {
     gBrowser.removeCurrentTab();
 
     for (const pref of modifiedPrefs) {
       Services.prefs.clearUserPref(pref);
     }
-    toolbox = toolIDs = idIndex = modifiedPrefs = Toolbox = null;
+    gToolbox = toolIDs = idIndex = modifiedPrefs = Toolbox = null;
     finish();
   });
 }

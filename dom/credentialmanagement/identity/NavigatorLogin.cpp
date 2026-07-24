@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/NavigatorLogin.h"
+
 #include "mozilla/Components.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/CredentialsContainer.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/NavigatorLogin.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/net/SFVService.h"
 #include "mozilla/dom/WebIdentityHandler.h"
+#include "mozilla/net/SFVService.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsIPermissionManager.h"

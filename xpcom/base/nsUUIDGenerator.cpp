@@ -8,8 +8,6 @@
 
 NS_IMPL_ISUPPORTS(nsUUIDGenerator, nsIUUIDGenerator)
 
-nsUUIDGenerator::~nsUUIDGenerator() = default;
-
 NS_IMETHODIMP
 nsUUIDGenerator::GenerateUUID(nsID** aRet) {
   nsID* id = static_cast<nsID*>(moz_xmalloc(sizeof(nsID)));

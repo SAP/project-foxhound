@@ -101,46 +101,6 @@ class nsNavBookmarks final : public nsINavBookmarksService,
                    bool aHidden, uint32_t aVisitCount, uint32_t aTyped,
                    const nsAString& aLastKnownTitle);
 
-  // Find all the children of a folder, using the given query and options.
-  // For each child, a ResultNode is created and added to |children|.
-  // The results are ordered by folder position.
-  nsresult QueryFolderChildren(int64_t aFolderId,
-                               nsNavHistoryQueryOptions* aOptions,
-                               nsCOMArray<nsNavHistoryResultNode>* children);
-
-  /**
-   * Turns aRow into a node and appends it to aChildren if it is appropriate to
-   * do so.
-   *
-   * @param aRow
-   *        A Storage statement (in the case of synchronous execution) or row of
-   *        a result set (in the case of asynchronous execution).
-   * @param aOptions
-   *        The options of the parent folder node. These are the options used
-   *        to fill the parent node.
-   * @param aChildren
-   *        The children of the parent folder node.
-   * @param aCurrentIndex
-   *        The index of aRow within the results.  When called on the first row,
-   *        this should be set to -1.
-   */
-  nsresult ProcessFolderNodeRow(mozIStorageValueArray* aRow,
-                                nsNavHistoryQueryOptions* aOptions,
-                                nsCOMArray<nsNavHistoryResultNode>* aChildren,
-                                int32_t& aCurrentIndex);
-
-  /**
-   * The async version of QueryFolderChildren.
-   *
-   * @param aNode
-   *        The folder node that will receive the children.
-   * @param _pendingStmt
-   *        The Storage pending statement that will be used to control async
-   *        execution.
-   */
-  nsresult QueryFolderChildrenAsync(nsNavHistoryFolderResultNode* aNode,
-                                    mozIStoragePendingStatement** _pendingStmt);
-
   /**
    * Fetches information about the specified id from the database.
    *
@@ -150,16 +110,6 @@ class nsNavBookmarks final : public nsINavBookmarksService,
    *        BookmarkData to store the information.
    */
   nsresult FetchItemInfo(int64_t aItemId, BookmarkData& _bookmark);
-
-  /**
-   * Fetches information about the specified GUID from the database.
-   *
-   * @param aGUID
-   *        GUID of the item to fetch information for.
-   * @param aBookmark
-   *        BookmarkData to store the information.
-   */
-  nsresult FetchItemInfo(const nsCString& aGUID, BookmarkData& _bookmark);
 
   /**
    * Notifies that a bookmark has been visited.

@@ -47,7 +47,7 @@ class PendingFullscreenEvent {
         break;
     }
     nsINode* target = mTarget->GetComposedDoc() == aDoc ? mTarget.get() : aDoc;
-    Unused << nsContentUtils::DispatchTrustedEvent(
+    (void)nsContentUtils::DispatchTrustedEvent(
         aDoc, target, name, CanBubble::eYes, Cancelable::eNo, Composed::eYes);
   }
 

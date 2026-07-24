@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ni taq’ teq’ol isuuchil.</p> <p>B’anb’e u chukb’al uva’ eetz kuxhtu’: <ul> <li>Chuka as ti kuxh u aplicación la atin kat axh</li> <li>La majpu ivatz unq’a chukunaal (moj la b’anax tuche’ aq’al uva’ la uch tok u chukunaal)</li> <li>Sojsa aq’al uva’ la eesa-el u cookies as unq’a vee’ chukeltu ve’te’</li> </ul> </p> <p>%1$s a’ u Mozilla kat aq’on. U qitz’ab’al nisa’ taq’at Internet b’a’n as jajlukan unpajte.<br/> <a href=\"%2$s\">Ootzi unka’te</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ni taq’ teq’ol isuuchil.</p>\n<p>B’anb’e u chukb’al uva’ eetz kuxhtu’:\n<ul>\n<li>Chuka as ti kuxh u aplicación la atin kat axh</li>\n<li>La majpu ivatz unq’a chukunaal (moj la b’anax tuche’ aq’al uva’ la uch tok u chukunaal)</li>\n<li>Sojsa aq’al uva’ la eesa-el u cookies as unq’a vee’ chukeltu ve’te’</li>\n</ul> </p>\n<p>%1$s a’ u Mozilla kat aq’on. U qitz’ab’al nisa’ taq’at Internet b’a’n as jajlukan unpajte.<br/>\n<a href=\"%2$s\">Ootzi unka’te</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ye\'xhib\'il unka\'te la ootzin as tii tatine\'</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -842,7 +849,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Kamal tu b’anb’al tuche’ ni yanik kat tzan moj umaj uxhchil q’a ni sa’on tok tzitza’.<br/><br/> Asoj b’a’nik kuxh tatin u vaa’ b’axa, u vaa’ neel cheel tuk kuxh paloje’.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>At umaj uxchil ni tokch’u’l ib’anat ivatz u atinb’ale’ vaa’ asoj la yakeb’ axh at iva’laxhil.</label> <br><br> <label>%1$s ye’ ni k’ujb’a’ ik’u’l ti’ u <b>%2$s</b> tan ye’ ootzimal ab’il ni aq’onvan, as ankuxhe’ ni b’anb’ela je’ tib’ as ye’ ni taq’ tzan unq’a u’uje’ ti jikil.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>At umaj uxchil ni tokch’u’l ib’anat ivatz u atinb’ale’ vaa’ asoj la yakeb’ axh at iva’laxhil.</label> <br><br>\n<label>%1$s ye’ ni k’ujb’a’ ik’u’l ti’ u <b>%2$s</b> tan ye’ ootzimal ab’il ni aq’onvan, as ankuxhe’ ni b’anb’ela je’ tib’ as ye’ ni taq’ tzan unq’a u’uje’ ti jikil.</label>]]></string>
   <!--
     Sessions List
 

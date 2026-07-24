@@ -8,8 +8,6 @@
 
 #include <utility>
 
-#include "nsDebug.h"
-#include "nsString.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
@@ -20,6 +18,8 @@
 #include "mozilla/dom/quota/OriginScope.h"
 #include "mozilla/dom/quota/PersistenceScope.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "nsDebug.h"
+#include "nsString.h"
 
 namespace mozilla::dom::quota {
 

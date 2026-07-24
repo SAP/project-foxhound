@@ -32,6 +32,8 @@ with Files("profile/channel-prefs.js"):
 with Files("profile/firefox.js"):
     BUG_COMPONENT = ("Firefox", "General")
 
+DIRS += ["distribution"]
+
 if CONFIG["MOZ_MACBUNDLE_NAME"]:
     DIRS += ["macbuild/Contents"]
 
@@ -116,6 +118,11 @@ if CONFIG["OS_ARCH"] == "WINNT":
     # only enable it for processes that are not using JIT in xul.dll.
     LINK_FLAGS["CETCOMPAT"] = []
 
+if CONFIG["DESKTOP_LAUNCHER_ENABLED"]:
+    DIRS += [
+        "desktop-launcher",
+    ]
+
 if CONFIG["OS_ARCH"] == "Darwin":
     OS_LIBS += [
         "-framework CoreFoundation",
@@ -138,6 +145,7 @@ if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":
     DELAYLOAD_DLLS += [
         "winmm.dll",
         "user32.dll",
+        "userenv.dll",
         "usp10.dll",
     ]
 

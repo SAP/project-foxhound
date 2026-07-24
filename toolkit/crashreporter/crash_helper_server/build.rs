@@ -135,7 +135,7 @@ fn generate_annotation_skiplist(annotations: &[Annotation]) -> Result<String, Er
 // Generate Rust code to manipulate crash annotations
 fn generate_annotations() -> Result<(), Error> {
     const CRASH_ANNOTATIONS_YAML: &str = "../CrashAnnotations.yaml";
-    const CRASH_ANNOTATIONS_TEMPLATE: &str = "../crash_annotations.rs.in";
+    const CRASH_ANNOTATIONS_TEMPLATE: &str = "../annotations/crash_annotations.rs.in";
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let annotations_path = Path::new(&out_dir).join("crash_annotations.rs");

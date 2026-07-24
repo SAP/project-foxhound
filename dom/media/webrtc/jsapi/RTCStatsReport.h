@@ -10,18 +10,18 @@
 #include "api/units/timestamp.h"  // webrtc::Timestamp
 #include "js/RootingAPI.h"        // JS::Rooted
 #include "js/Value.h"
-#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/PerformanceService.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"  // RTCStatsCollection
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsPIDOMWindow.h"  // nsPIDOMWindowInner
-#include "nsContentUtils.h"
 #include "nsWrapperCache.h"
 #include "prtime.h"  // PR_Now
 

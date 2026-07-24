@@ -4,16 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddatabase_h__
-#define mozilla_dom_indexeddatabase_h__
+#ifndef mozilla_dom_indexeddatabase_h_
+#define mozilla_dom_indexeddatabase_h_
 
 #include "DatabaseFileInfoFwd.h"
+#include "SafeRefPtr.h"
 #include "js/StructuredClone.h"
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/Variant.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "SafeRefPtr.h"
 
 namespace mozilla::dom {
 
@@ -232,4 +232,4 @@ MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
     mozilla::dom::indexedDB::StructuredCloneReadInfoParent);
 
-#endif  // mozilla_dom_indexeddatabase_h__
+#endif  // mozilla_dom_indexeddatabase_h_

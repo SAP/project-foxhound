@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/NumericInputTypes.h"
 
+#include "ICUUtils.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "ICUUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

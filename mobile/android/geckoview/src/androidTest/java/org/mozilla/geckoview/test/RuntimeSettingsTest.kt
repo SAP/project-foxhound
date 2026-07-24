@@ -249,6 +249,28 @@ class RuntimeSettingsTest : BaseSessionTest() {
     }
 
     @Test
+    fun firefoxRelay() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        geckoRuntimeSettings.setFirefoxRelay(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED)
+
+        assertThat(
+            "Firefox Relay was set to enabled.",
+            geckoRuntimeSettings.firefoxRelay,
+            equalTo(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED),
+        )
+
+        val geckoPreference =
+            (sessionRule.getPrefs("signon.firefoxRelay.feature").get(0)) as String
+
+        assertThat(
+            "Firefox Relay pref value should be enabled.",
+            geckoPreference,
+            equalTo(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED),
+        )
+    }
+
+    @Test
     fun largeKeepaliveFactor() {
         val defaultLargeKeepaliveFactor = 10
         val settings = sessionRule.runtime.settings
@@ -273,10 +295,8 @@ class RuntimeSettingsTest : BaseSessionTest() {
 
         val sanitizedDefaultLargeKeepaliveFactor = 1
 
-        /**
-         * Setting an invalid factor will cause an exception to be throw in debug build.
-         * otherwise, the factor will be reset to default when an invalid factor is given.
-         */
+        // Setting an invalid factor will cause an exception to be throw in debug build.
+        // otherwise, the factor will be reset to default when an invalid factor is given.
         try {
             settings.setLargeKeepaliveFactor(128)
             prefValue = (sessionRule.getPrefs(largeKeepaliveFactorPref)[0] as Int)
@@ -718,26 +738,26 @@ class RuntimeSettingsTest : BaseSessionTest() {
         val geckoRuntimeSettings = sessionRule.runtime.settings
 
         assertThat(
-            "Certificate Transparency mode should default to 0",
-            geckoRuntimeSettings.certificateTransparencyMode,
-            equalTo(0),
-        )
-
-        geckoRuntimeSettings.setCertificateTransparencyMode(2)
-
-        assertThat(
-            "Certificate Transparency mode should be set to 2",
+            "Certificate Transparency mode should default to 2",
             geckoRuntimeSettings.certificateTransparencyMode,
             equalTo(2),
+        )
+
+        geckoRuntimeSettings.setCertificateTransparencyMode(0)
+
+        assertThat(
+            "Certificate Transparency mode should be set to 0",
+            geckoRuntimeSettings.certificateTransparencyMode,
+            equalTo(0),
         )
 
         val preference =
             (sessionRule.getPrefs("security.pki.certificate_transparency.mode").get(0)) as Int
 
         assertThat(
-            "Certificate Transparency mode pref should be set to 2",
+            "Certificate Transparency mode pref should be set to 0",
             preference,
-            equalTo(2),
+            equalTo(0),
         )
     }
 
@@ -1005,6 +1025,71 @@ class RuntimeSettingsTest : BaseSessionTest() {
             "Pref value should match setting",
             ports,
             equalTo("12345,23456"),
+        )
+    }
+
+    @Test
+    fun switchCRLiteChannel() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+        val crliteChannel = "test"
+
+        assertThat(
+            "CRLite channel should not be set",
+            geckoRuntimeSettings.crliteChannel,
+            equalTo(null),
+        )
+
+        geckoRuntimeSettings.setCrliteChannel(crliteChannel)
+
+        assertThat(
+            "Runtime settings crliteChannel should match the string passed above",
+            geckoRuntimeSettings.crliteChannel,
+            equalTo(crliteChannel),
+        )
+
+        val crlitePreference =
+            (sessionRule.getPrefs("security.pki.crlite_channel").get(0)) as String
+        assertThat(
+            "The security.pki.crlite_channel preference should be set to the correct string",
+            crlitePreference,
+            equalTo(crliteChannel),
+        )
+    }
+
+    @Test
+    fun safeBrowsingV5Enabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        // Read the default pref value.
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.provider.google5.enabled").get(0)) as Boolean
+
+        // Verify the Safe Browsing V5 enabled setting matches the default
+        // pref value.
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingV5Enabled,
+            equalTo(defaultPrefValue),
+        )
+
+        // Set the Safe Browsing V5 setting.
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingV5Enabled(!defaultPrefValue)
+
+        // Verify the Safe Browsing V5 enabled setting does change.
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingV5Enabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        // Verify the Safe Browsing V5 enabled pref does change.
+        var enabled =
+            (sessionRule.getPrefs("browser.safebrowsing.provider.google5.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            enabled,
+            equalTo(!defaultPrefValue),
         )
     }
 }

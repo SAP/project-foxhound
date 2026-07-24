@@ -7,7 +7,7 @@ task-defaults:
     treeherder:
         kind: other
         tier: 1
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         artifacts:
             - type: directory
@@ -15,6 +15,7 @@ task-defaults:
               name: public
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
+    run-on-repo-type: [hg]
     run:
         using: mach
 
@@ -127,3 +128,123 @@ test-info-all:
             ./mach test-info testrun-report --output-file /builds/worker/artifacts/test-run-info.json &&
             ./mach test-info report --show-tests --show-summary --show-testruns --verbose --output-file /builds/worker/artifacts/test-info-all-tests.json --config-matrix-output-file /builds/worker/artifacts/test-info-testrun-matrix.json --runcounts-input-file /builds/worker/artifacts/test-run-info.json &&
             ./mach test-info report --show-annotations --output-file /builds/worker/artifacts/test-info-manifest-conditions.json
+
+test-info-xpcshell-timings-periodic:
+    description: Generate xpcshell test timing data
+    treeherder:
+        symbol: test-info(xpcshell-timings-daily)
+        tier: 2
+    index:
+        product: source
+        job-name: test-info-xpcshell-timings
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 5400
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info xpcshell-timings --days 21 --output-dir /builds/worker/artifacts/
+
+test-info-xpcshell-timings-rev:
+    description: Generate xpcshell test timing data
+    treeherder:
+        symbol: test-info(xpcshell-timings)
+        tier: 2
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 1800
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info xpcshell-timings --revision=current --output-dir /builds/worker/artifacts/
+
+test-info-mochitest-timings-periodic:
+    description: Generate mochitest test timing data
+    treeherder:
+        symbol: test-info(mochitest-timings-daily)
+        tier: 2
+    index:
+        product: source
+        job-name: test-info-mochitest-timings
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 5400
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info mochitest-timings --days 21 --output-dir /builds/worker/artifacts/
+
+test-info-mochitest-timings-rev:
+    description: Generate mochitest test timing data
+    treeherder:
+        symbol: test-info(mochitest-timings)
+        tier: 2
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 1800
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info mochitest-timings --revision=current --output-dir /builds/worker/artifacts/
+
+test-info-manifest-timings-periodic:
+    description: Generate manifest runtime data
+    treeherder:
+        symbol: test-info(manifest-timings-daily)
+        tier: 2
+    index:
+        product: source
+        job-name: test-info-manifest-timings
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 3600
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info manifest-timings --output-dir /builds/worker/artifacts/ &&
+            python3 -m json.tool /builds/worker/artifacts/manifests-runtimes.json > /dev/null

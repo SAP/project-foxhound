@@ -119,7 +119,7 @@ void AsyncGtkClipboardRequest::Request::Complete(const void* aData) {
 AsyncGtkClipboardRequest::~AsyncGtkClipboardRequest() {
   if (mRequest && mRequest->mData.isNothing()) {
     mRequest->mTimedOut = true;
-    Unused << mRequest.release();
+    (void)mRequest.release();
   }
 }
 

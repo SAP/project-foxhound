@@ -31,7 +31,7 @@
   }
 
   .section-empty-state {
-    border: $border-secondary;
+    border: 1px solid var(--border-color);
     border-radius: var(--border-radius-small);
     display: flex;
     height: $card-height;
@@ -64,7 +64,7 @@
 
   a {
     color: var(--newtab-primary-action-background);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
 
     &.more-recommendations {
       font-weight: var(--font-weight);
@@ -72,30 +72,13 @@
     }
   }
 
-  .wrapper-topics,
-  .wrapper-cta + .wrapper-more-recommendations {
+  .wrapper-topics {
     @media (max-width: $break-point-large - 1) {
       display: none;
     }
   }
 
   @media (max-width: $break-point-medium - 1) {
-    .wrapper-cta {
-      text-align: center;
-
-      .pocket-logged-in-cta {
-        display: block;
-        margin-inline-end: 0;
-
-        .pocket-cta-button {
-          max-width: none;
-          display: block;
-          margin-inline-end: 0;
-          margin: var(--space-xsmall) 0 var(--space-small);
-        }
-      }
-    }
-
     .wrapper-more-recommendations {
       width: 100%;
 

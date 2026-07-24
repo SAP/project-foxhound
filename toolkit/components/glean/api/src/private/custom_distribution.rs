@@ -32,7 +32,7 @@ pub enum CustomDistributionMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_namer!(CustomDistributionMetric);
+define_metric_namer!(CustomDistributionMetric);
 
 impl CustomDistributionMetric {
     /// Create a new custom distribution metric.
@@ -185,22 +185,6 @@ impl CustomDistribution for CustomDistributionMetric {
         );
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            CustomDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            CustomDistributionMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                )
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32 {
         match self {
             CustomDistributionMetric::Parent { inner, .. } => {
@@ -210,6 +194,23 @@ impl CustomDistribution for CustomDistributionMetric {
                 "Cannot get number of recorded errors for {:?} in non-parent process!",
                 meta.id
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for CustomDistributionMetric {
+    type Output = DistributionData;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        match self {
+            CustomDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            CustomDistributionMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
+                    meta.id
+                )
+            }
         }
     }
 }
@@ -226,7 +227,9 @@ mod test {
 
         metric.accumulate_samples_signed(vec![1, 2, 3]);
 
-        assert!(metric.test_get_value("test-ping").is_some());
+        assert!(metric
+            .test_get_value(Some("test-ping".to_string()))
+            .is_some());
     }
 
     #[test]
@@ -250,7 +253,7 @@ mod test {
         assert!(ipc::replay_from_buf(&buf).is_ok());
 
         let data = parent_metric
-            .test_get_value("test-ping")
+            .test_get_value(Some("test-ping".to_string()))
             .expect("should have some data");
 
         assert_eq!(2, data.values[&1], "Low bucket has 2 values");

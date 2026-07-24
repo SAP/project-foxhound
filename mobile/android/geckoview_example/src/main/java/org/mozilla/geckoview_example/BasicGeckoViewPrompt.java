@@ -5,7 +5,6 @@
 
 package org.mozilla.geckoview_example;
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -19,7 +18,6 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.net.Uri;
-import android.os.Build;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.text.format.DateFormat;
@@ -737,26 +735,14 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
     return defaultToNow ? new Date() : null;
   }
 
-  @SuppressWarnings("deprecation")
   private static void setTimePickerTime(final TimePicker picker, final Calendar cal) {
-    if (Build.VERSION.SDK_INT >= 23) {
-      picker.setHour(cal.get(Calendar.HOUR_OF_DAY));
-      picker.setMinute(cal.get(Calendar.MINUTE));
-    } else {
-      picker.setCurrentHour(cal.get(Calendar.HOUR_OF_DAY));
-      picker.setCurrentMinute(cal.get(Calendar.MINUTE));
-    }
+    picker.setHour(cal.get(Calendar.HOUR_OF_DAY));
+    picker.setMinute(cal.get(Calendar.MINUTE));
   }
 
-  @SuppressWarnings("deprecation")
   private static void setCalendarTime(final Calendar cal, final TimePicker picker) {
-    if (Build.VERSION.SDK_INT >= 23) {
-      cal.set(Calendar.HOUR_OF_DAY, picker.getHour());
-      cal.set(Calendar.MINUTE, picker.getMinute());
-    } else {
-      cal.set(Calendar.HOUR_OF_DAY, picker.getCurrentHour());
-      cal.set(Calendar.MINUTE, picker.getCurrentMinute());
-    }
+    cal.set(Calendar.HOUR_OF_DAY, picker.getHour());
+    cal.set(Calendar.MINUTE, picker.getMinute());
   }
 
   @Override
@@ -917,7 +903,6 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
   }
 
   @Override
-  @TargetApi(19)
   public GeckoResult<PromptResponse> onFilePrompt(GeckoSession session, FilePrompt prompt) {
     final Activity activity = mActivity;
     if (activity == null) {

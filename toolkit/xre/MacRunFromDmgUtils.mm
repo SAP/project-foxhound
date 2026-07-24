@@ -8,14 +8,12 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #include <IOKit/IOKitLib.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/param.h>
 
 #include "MacLaunchHelper.h"
 #include "MacRunFromDmgUtils.h"
-#include "MacUtils.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/intl/Localization.h"
@@ -37,7 +35,6 @@
 // https://developer.apple.com/documentation/iokit
 // https://developer.apple.com/library/archive/documentation/DeviceDrivers/Conceptual/IOKitFundamentals/
 
-using namespace mozilla::MacUtils;
 using namespace mozilla::MacLaunchHelper;
 
 namespace mozilla::MacRunFromDmgUtils {

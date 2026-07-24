@@ -122,12 +122,13 @@
   background-color: var(--identity-icon-color);
   height: 2px;
   border-radius: 2px;
-  margin: -3px 2px 0;
+  margin: 0 calc(var(--tab-border-radius) / 2);
+  position: relative;
 
   #tabbrowser-tabs[orient="vertical"] & {
     height: auto;
     width: 2px;
-    margin: 3px 0;
+    margin: calc(var(--tab-border-radius) / 2) 0;
   }
 }
 
@@ -143,7 +144,6 @@
 }
 
 .menuitem-iconic[data-usercontextid] {
-  list-style-image: var(--identity-icon);
-  -moz-context-properties: fill;
-  fill: var(--identity-icon-color);
+  --menuitem-icon: var(--identity-icon);
+  --menuitem-icon-fill: var(--identity-icon-color);
 }

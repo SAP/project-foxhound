@@ -68,8 +68,6 @@ class FileDescriptor {
   bool operator==(const FileDescriptor& aOther) const;
 
  private:
-  static UniqueFileHandle Clone(PlatformHandleType aHandle);
-
   UniquePlatformHandle mHandle;
 };
 

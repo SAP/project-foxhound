@@ -1,0 +1,33 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test that the compat hack for old ZE does not disturb new ZE that uses srcdoc</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+<script>
+let count = 0;
+SimpleTest.waitForExplicitFinish();
+window.ZE_Init = { foo: "bar" };
+function runTest() {
+    let iframe = document.createElement("iframe");
+    iframe.srcdoc = "<!DOCTYPE html>";
+    iframe.className = "ze_area";
+    iframe.onload = function() {
+        ++count;
+        is(count, 1, "iframe onload should have fired exactly once")
+        window.setTimeout(function() {
+            SimpleTest.finish();
+        }, 0);
+    }
+    document.body.appendChild(iframe);
+    is(count, 0, "iframe should not fire onload synchronously");
+}
+</script>
+</head>
+<body onload="runTest();">
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+</body>
+</html>

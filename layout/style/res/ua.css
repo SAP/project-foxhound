@@ -67,6 +67,7 @@
   contain: inherit; /* needed if table has 'contain:layout' or 'paint' */
   container: inherit; /* Bug 1805588 */
   scroll-margin: inherit; /* Bug 1633192 */
+  view-transition-name: inherit; /* Bug 1985925 */
 }
 
 *|*::-moz-table-row {
@@ -133,8 +134,12 @@
 }
 
 /* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
-::marker {
+::marker,
+::before::marker,
+::after::marker {
   text-align: end;
+  text-align-last: end;
+  text-indent: 0;
   text-transform: none;
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
@@ -151,6 +156,13 @@
 :any-link {
   cursor: pointer;
   text-decoration: underline;
+}
+
+:any-link:lang(ja),
+:any-link:lang(ko),
+:any-link:lang(zh) {
+  /* stylelint-disable-next-line */
+  text-decoration-inset: auto;
 }
 
 :link {
@@ -192,7 +204,6 @@
   unicode-bidi: inherit;
   text-overflow: inherit;
   overflow: inherit;
-  overflow-clip-box: inherit;
   resize: inherit;
   padding: inherit;
   box-decoration-break: inherit;
@@ -209,7 +220,6 @@
   mask: inherit;
   opacity: inherit;
   text-decoration: inherit;
-  overflow-clip-box: inherit;
   unicode-bidi: inherit;
   user-select: inherit;
   text-overflow: inherit;
@@ -266,9 +276,6 @@
   align-items: inherit;
   justify-content: inherit;
   justify-items: inherit;
-  /* Do not change these. nsCSSFrameConstructor depends on them to create a good
-     frame tree. */
-  overflow-clip-box: inherit;
 }
 
 *|*::-moz-viewport,
@@ -437,6 +444,10 @@ parsererror|parsererror {
   color: black;
 }
 
+parsererror|parsererror[dir="rtl"] {
+  direction: rtl;
+}
+
 parsererror|sourcetext {
   display: block;
   white-space: pre;
@@ -446,6 +457,7 @@ parsererror|sourcetext {
   color: red;
   font-weight: bold;
   font-size: 12pt;
+  direction: ltr;
 }
 
 /* Custom content container in the CanvasFrame, positioned on top of everything
@@ -461,15 +473,6 @@ parsererror|sourcetext {
   height: 100%;
   /* Initial direction depends on the document, make sure to reset it */
   direction: ltr;
-}
-
-/* contenteditable support */
-
-:read-write:focus,
-:root:read-write {
-  /* Scroll-anchoring shouldn't work in any editable and scrollable elements
-   * when user inserts something. */
-  overflow-anchor: none;
 }
 
 /* https://drafts.csswg.org/css-view-transitions-1/#ua-styles */
@@ -503,9 +506,7 @@ parsererror|sourcetext {
 }
 
 :root::view-transition {
-  /* This is confusing and we probably should use "position: absolute".
-   * https://github.com/w3c/csswg-drafts/issues/12116 */
-  position: fixed;
+  position: absolute;
   inset: 0;
 }
 
@@ -521,10 +522,6 @@ parsererror|sourcetext {
 :root::view-transition-image-pair(*) {
   position: absolute;
   inset: 0;
-
-  animation-duration: inherit;
-  animation-fill-mode: inherit;
-  animation-delay: inherit;
 }
 
 :root::view-transition-old(*),
@@ -533,10 +530,18 @@ parsererror|sourcetext {
   inset-block-start: 0;
   inline-size: 100%;
   block-size: auto;
+}
 
+:root::view-transition-image-pair(*),
+:root::view-transition-old(*),
+:root::view-transition-new(*) {
   animation-duration: inherit;
   animation-fill-mode: inherit;
   animation-delay: inherit;
+  animation-timing-function: inherit;
+  animation-iteration-count: inherit;
+  animation-direction: inherit;
+  animation-play-state: inherit;
 }
 
 /* Avoid exposing these keyframe names when view transitions are disabled */

@@ -25,15 +25,11 @@ DEFAULT_CXX_97 = {"__cplusplus": "199711L"}
 
 DEFAULT_CXX_11 = {"__cplusplus": "201103L"}
 
-DRAFT_CXX_14 = {"__cplusplus": "201300L"}
-
 DEFAULT_CXX_14 = {"__cplusplus": "201402L"}
 
-DRAFT_CXX17_201500 = {"__cplusplus": "201500L"}
-
-DRAFT_CXX17_201406 = {"__cplusplus": "201406L"}
-
 DEFAULT_CXX_17 = {"__cplusplus": "201703L"}
+
+DEFAULT_CXX_20 = {"__cplusplus": "202002L"}
 
 SUPPORTS_GNU99 = {"-std=gnu99": DEFAULT_C99}
 
@@ -55,18 +51,23 @@ SUPPORTS_CXX17 = {
     "-std:c++17": DEFAULT_CXX_17,
 }
 
+SUPPORTS_GNUXX20 = {"-std=gnu++20": DEFAULT_CXX_20}
+
+SUPPORTS_CXX20 = {
+    "-std=c++20": DEFAULT_CXX_20,
+    "-std:c++20": DEFAULT_CXX_20,
+}
+
 
 @memoize
 def GCC_BASE(version):
     version = Version(version)
-    return FakeCompiler(
-        {
-            "__GNUC__": version.major,
-            "__GNUC_MINOR__": version.minor,
-            "__GNUC_PATCHLEVEL__": version.patch,
-            "__STDC__": 1,
-        }
-    )
+    return FakeCompiler({
+        "__GNUC__": version.major,
+        "__GNUC_MINOR__": version.minor,
+        "__GNUC_PATCHLEVEL__": version.patch,
+        "__STDC__": 1,
+    })
 
 
 @memoize
@@ -79,32 +80,24 @@ def GXX(version):
     return GCC_BASE(version) + DEFAULT_CXX_97 + SUPPORTS_GNUXX11
 
 
-SUPPORTS_DRAFT_CXX14_VERSION = {"-std=gnu++14": DRAFT_CXX_14}
-
-SUPPORTS_GNUXX1Z = {"-std=gnu++1z": DRAFT_CXX17_201406}
-
-SUPPORTS_DRAFT_CXX17_201500_VERSION = {"-std=gnu++17": DRAFT_CXX17_201500}
-
-GCC_4_9 = GCC("4.9.3")
-GXX_4_9 = GXX("4.9.3") + SUPPORTS_DRAFT_CXX14_VERSION
-GCC_5 = GCC("5.2.1") + DEFAULT_C11
-GXX_5 = GXX("5.2.1") + SUPPORTS_GNUXX14
-GCC_6 = GCC("6.4.0") + DEFAULT_C11
-GXX_6 = (
-    GXX("6.4.0")
-    + DEFAULT_CXX_14
-    + SUPPORTS_GNUXX17
-    + SUPPORTS_DRAFT_CXX17_201500_VERSION
-)
 GCC_7 = GCC("7.3.0") + DEFAULT_C11
 GXX_7 = GXX("7.3.0") + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_CXX17
-GCC_8 = GCC("8.3.0") + DEFAULT_C17
-GXX_8 = GXX("8.3.0") + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_CXX17
 GCC_10 = GCC("10.2.1") + DEFAULT_C17
-GXX_10 = GXX("10.2.1") + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_CXX17
+GXX_10 = (
+    GXX("10.2.1")
+    + DEFAULT_CXX_14
+    + SUPPORTS_GNUXX17
+    + SUPPORTS_CXX17
+    + {
+        "-std=gnu++20": {"__cplusplus": "201709L"},
+        "-std=c++20": {"__cplusplus": "201709L"},
+    }
+)
+GCC_14 = GCC("14.3.0") + DEFAULT_C17
+GXX_14 = GXX("14.3.0") + DEFAULT_CXX_17 + SUPPORTS_GNUXX20 + SUPPORTS_CXX20
 
-DEFAULT_GCC = GCC_8
-DEFAULT_GXX = GXX_8
+DEFAULT_GCC = GCC_14
+DEFAULT_GXX = GXX_14
 
 GCC_PLATFORM_LITTLE_ENDIAN = {
     "__ORDER_LITTLE_ENDIAN__": 1234,
@@ -150,14 +143,12 @@ GCC_PLATFORM_X86_64_WIN = FakeCompiler(GCC_PLATFORM_X86_64, GCC_PLATFORM_WIN)
 @memoize
 def CLANG_BASE(version):
     version = Version(version)
-    return FakeCompiler(
-        {
-            "__clang__": 1,
-            "__clang_major__": version.major,
-            "__clang_minor__": version.minor,
-            "__clang_patchlevel__": version.patch,
-        }
-    )
+    return FakeCompiler({
+        "__clang__": 1,
+        "__clang_major__": version.major,
+        "__clang_minor__": version.minor,
+        "__clang_patchlevel__": version.patch,
+    })
 
 
 @memoize
@@ -176,33 +167,47 @@ def CLANGXX(version):
     )
 
 
-CLANG_3_3 = CLANG("3.3.0") + DEFAULT_C99
-CLANGXX_3_3 = CLANGXX("3.3.0")
-CLANG_4_0 = CLANG("4.0.2") + DEFAULT_C11
-CLANGXX_4_0 = CLANGXX("4.0.2") + SUPPORTS_GNUXX1Z
-CLANG_8_0 = CLANG("8.0.0") + DEFAULT_C11 + SUPPORTS_GNU17
-CLANGXX_8_0 = CLANGXX("8.0.0") + DEFAULT_CXX_14 + SUPPORTS_GNUXX17
-XCODE_CLANG_3_3 = (
-    CLANG("5.0")
-    + DEFAULT_C99
-    + {
+def XCODE(compiler):
+    return compiler + {
         # Real Xcode clang has a full version here, but we don't care about it.
         "__apple_build_version__": "1"
     }
+
+
+CLANG_14 = CLANG("14.0.0") + DEFAULT_C17
+CLANGXX_14 = CLANGXX("14.0.0") + DEFAULT_CXX_14
+CLANG_17 = CLANG("17.0.0") + DEFAULT_C17
+CLANGXX_17 = CLANGXX("17.0.0") + DEFAULT_CXX_17 + SUPPORTS_CXX20 + SUPPORTS_GNUXX20
+CLANG_19 = CLANG("19.1.7") + DEFAULT_C17
+CLANGXX_19 = CLANGXX("19.1.7") + DEFAULT_CXX_17 + SUPPORTS_CXX20 + SUPPORTS_GNUXX20
+
+XCODE_CLANG_14 = XCODE(CLANG("14.0.0") + DEFAULT_C17)
+XCODE_CLANGXX_14 = XCODE(
+    CLANGXX("14.0.0")
+    + SUPPORTS_GNUXX17
+    + SUPPORTS_CXX17
+    + SUPPORTS_GNUXX20
+    + SUPPORTS_CXX20
 )
-XCODE_CLANGXX_3_3 = CLANGXX("5.0") + {"__apple_build_version__": "1"}
-XCODE_CLANG_4_0 = CLANG("9.0.0") + DEFAULT_C11 + {"__apple_build_version__": "1"}
-XCODE_CLANGXX_4_0 = (
-    CLANGXX("9.0.0") + SUPPORTS_GNUXX1Z + {"__apple_build_version__": "1"}
+XCODE_CLANG_17 = XCODE(CLANG("16.0.0") + DEFAULT_C17)
+XCODE_CLANGXX_17 = XCODE(
+    CLANGXX("16.0.0")
+    + SUPPORTS_GNUXX17
+    + SUPPORTS_CXX17
+    + SUPPORTS_GNUXX20
+    + SUPPORTS_CXX20
 )
-XCODE_CLANG_8_0 = (
-    CLANG("11.0.1") + DEFAULT_C11 + SUPPORTS_GNU17 + {"__apple_build_version__": "1"}
+XCODE_CLANG_19 = XCODE(CLANG("17.0.0") + DEFAULT_C17)
+XCODE_CLANGXX_19 = XCODE(
+    CLANGXX("17.0.0")
+    + DEFAULT_CXX_14
+    + SUPPORTS_GNUXX17
+    + SUPPORTS_CXX17
+    + SUPPORTS_GNUXX20
+    + SUPPORTS_CXX20
 )
-XCODE_CLANGXX_8_0 = (
-    CLANGXX("11.0.1") + SUPPORTS_GNUXX17 + {"__apple_build_version__": "1"}
-)
-DEFAULT_CLANG = CLANG_8_0
-DEFAULT_CLANGXX = CLANGXX_8_0
+DEFAULT_CLANG = CLANG_19
+DEFAULT_CLANGXX = CLANGXX_19
 
 
 def CLANG_PLATFORM(gcc_platform):
@@ -230,17 +235,15 @@ CLANG_PLATFORM_X86_64_WIN = CLANG_PLATFORM(GCC_PLATFORM_X86_64_WIN)
 @memoize
 def VS(version):
     version = Version(version)
-    return FakeCompiler(
-        {
-            None: {
-                "_MSC_VER": "%02d%02d" % (version.major, version.minor),
-                "_MSC_FULL_VER": "%02d%02d%05d"
-                % (version.major, version.minor, version.patch),
-                "_MT": "1",
-            },
-            "*.cpp": DEFAULT_CXX_97,
-        }
-    )
+    return FakeCompiler({
+        None: {
+            "_MSC_VER": "%02d%02d" % (version.major, version.minor),
+            "_MSC_FULL_VER": "%02d%02d%05d"
+            % (version.major, version.minor, version.patch),
+            "_MT": "1",
+        },
+        "*.cpp": DEFAULT_CXX_97,
+    })
 
 
 VS_2017u8 = VS("19.15.26726")
@@ -254,23 +257,24 @@ MINGW32 = {"__MINGW32__": True}
 
 # Note: In reality, the -std=gnu* options are only supported when preceded by
 # -Xclang.
-CLANG_CL_3_9 = (
-    CLANG_BASE("3.9.0")
+CLANG_CL_14 = (
+    CLANG_14
     + VS("18.00.00000")
-    + DEFAULT_C11
     + SUPPORTS_GNU99
     + SUPPORTS_GNUXX11
     + SUPPORTS_CXX14
-) + {"*.cpp": {"__STDC_VERSION__": False, "__cplusplus": "201103L"}}
-CLANG_CL_9_0 = (
-    CLANG_BASE("9.0.0")
+    + SUPPORTS_CXX17
+    + SUPPORTS_CXX20
+) + {"*.cpp": {"__STDC_VERSION__": False, "__cplusplus": "201703L"}}
+CLANG_CL_19 = (
+    CLANG_19
     + VS("18.00.00000")
-    + DEFAULT_C11
     + SUPPORTS_GNU17
     + SUPPORTS_GNUXX11
     + SUPPORTS_CXX14
     + SUPPORTS_CXX17
-) + {"*.cpp": {"__STDC_VERSION__": False, "__cplusplus": "201103L"}}
+    + SUPPORTS_CXX20
+) + {"*.cpp": {"__STDC_VERSION__": False, "__cplusplus": "201703L"}}
 
 CLANG_CL_PLATFORM_X86 = FakeCompiler(
     VS_PLATFORM_X86, GCC_PLATFORM_X86[None], GCC_PLATFORM_LITTLE_ENDIAN
@@ -333,7 +337,8 @@ LIBRARY_NAME_INFOS = {
 
 class BaseToolchainTest(BaseConfigureTest):
     def setUp(self):
-        super(BaseToolchainTest, self).setUp()
+        super().setUp()
+        self.maxDiff = None
         self.out = StringIO()
         self.logger = logging.getLogger("BaseToolchainTest")
         self.logger.setLevel(logging.ERROR)
@@ -344,7 +349,7 @@ class BaseToolchainTest(BaseConfigureTest):
         self.logger.removeHandler(self.handler)
         del self.handler
         del self.out
-        super(BaseToolchainTest, self).tearDown()
+        super().tearDown()
 
     def do_toolchain_test(self, paths, results, args=[], environ={}):
         """Helper to test the toolchain checks from toolchain.configure.
@@ -433,90 +438,86 @@ class BaseToolchainTest(BaseConfigureTest):
 
 
 def old_gcc_message(old_ver):
-    return f"Only GCC 8.1 or newer is supported (found version {old_ver})."
+    return f"Only GCC 10.1 or newer is supported (found version {old_ver})."
 
 
 class LinuxToolchainTest(BaseToolchainTest):
     PATHS = {
         "/usr/bin/gcc": DEFAULT_GCC + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/g++": DEFAULT_GXX + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/gcc-4.9": GCC_4_9 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/g++-4.9": GXX_4_9 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/gcc-5": GCC_5 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/g++-5": GXX_5 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/gcc-6": GCC_6 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/g++-6": GXX_6 + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/gcc-7": GCC_7 + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/g++-7": GXX_7 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/gcc-8": GCC_8 + GCC_PLATFORM_X86_64_LINUX,
-        "/usr/bin/g++-8": GXX_8 + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/gcc-10": GCC_10 + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/g++-10": GXX_10 + GCC_PLATFORM_X86_64_LINUX,
+        "/usr/bin/gcc-14": GCC_14 + GCC_PLATFORM_X86_64_LINUX,
+        "/usr/bin/g++-14": GXX_14 + GCC_PLATFORM_X86_64_LINUX,
         "/usr/bin/clang": DEFAULT_CLANG + CLANG_PLATFORM_X86_64_LINUX,
         "/usr/bin/clang++": DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang-8.0": CLANG_8_0 + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang++-8.0": CLANGXX_8_0 + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang-4.0": CLANG_4_0 + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang++-4.0": CLANGXX_4_0 + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang-3.3": CLANG_3_3 + CLANG_PLATFORM_X86_64_LINUX,
-        "/usr/bin/clang++-3.3": CLANGXX_3_3 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang-14": CLANG_14 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang++-14": CLANGXX_14 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang-17": CLANG_17 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang++-17": CLANGXX_17 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang-19": CLANG_19 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang++-19": CLANGXX_19 + CLANG_PLATFORM_X86_64_LINUX,
     }
 
-    GCC_4_7_RESULT = old_gcc_message("4.7.3")
-    GXX_4_7_RESULT = GCC_4_7_RESULT
-    GCC_4_9_RESULT = old_gcc_message("4.9.3")
-    GXX_4_9_RESULT = GCC_4_9_RESULT
-    GCC_5_RESULT = old_gcc_message("5.2.1")
-    GXX_5_RESULT = GCC_5_RESULT
-    GCC_6_RESULT = old_gcc_message("6.4.0")
-    GXX_6_RESULT = GCC_6_RESULT
     GCC_7_RESULT = old_gcc_message("7.3.0")
     GXX_7_RESULT = GCC_7_RESULT
-    GCC_8_RESULT = CompilerResult(
-        # gcc 8 defaults to C17, so no there's need to add -std=gnu17.
-        version="8.3.0",
+    GCC_10_RESULT = CompilerResult(
+        # gcc 10 defaults to C17, so no there's need to add -std=gnu17.
+        version="10.2.1",
         type="gcc",
-        compiler="/usr/bin/gcc-8",
+        compiler="/usr/bin/gcc-10",
         language="C",
     )
-    GXX_8_RESULT = CompilerResult(
-        flags=["-std=gnu++17"],
-        version="8.3.0",
+    GXX_10_RESULT = CompilerResult(
+        flags=["-std=gnu++20", "-U__cplusplus", "-D__cplusplus=202002L"],
+        version="10.2.1",
         type="gcc",
-        compiler="/usr/bin/g++-8",
+        compiler="/usr/bin/g++-10",
         language="C++",
     )
-    DEFAULT_GCC_RESULT = GCC_8_RESULT + {"compiler": "/usr/bin/gcc"}
-    DEFAULT_GXX_RESULT = GXX_8_RESULT + {"compiler": "/usr/bin/g++"}
+    GCC_14_RESULT = GCC_10_RESULT + {"compiler": "/usr/bin/gcc-14", "version": "14.3.0"}
+    GXX_14_RESULT = CompilerResult(
+        flags=["-std=gnu++20"],
+        version="14.3.0",
+        type="gcc",
+        compiler="/usr/bin/g++-14",
+        language="C++",
+    )
+    DEFAULT_GCC_RESULT = GCC_14_RESULT + {"compiler": "/usr/bin/gcc"}
+    DEFAULT_GXX_RESULT = GXX_14_RESULT + {"compiler": "/usr/bin/g++"}
 
-    CLANG_3_3_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 3.3.0)."
+    CLANG_14_RESULT = (
+        "Only clang/llvm 17.0 or newer is supported (found version 14.0.0)."
     )
-    CLANGXX_3_3_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 3.3.0)."
+    CLANGXX_14_RESULT = (
+        "Only clang/llvm 17.0 or newer is supported (found version 14.0.0)."
     )
-    CLANG_4_0_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.2)."
-    )
-    CLANGXX_4_0_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.2)."
-    )
-    CLANG_8_0_RESULT = CompilerResult(
-        flags=["-std=gnu17"],
-        version="8.0.0",
+    CLANG_17_RESULT = CompilerResult(
+        flags=[],
+        version="17.0.0",
         type="clang",
-        compiler="/usr/bin/clang-8.0",
+        compiler="/usr/bin/clang-17",
         language="C",
     )
-    CLANGXX_8_0_RESULT = CompilerResult(
-        flags=["-std=gnu++17"],
-        version="8.0.0",
+    CLANGXX_17_RESULT = CompilerResult(
+        flags=["-std=gnu++20"],
+        version="17.0.0",
         type="clang",
-        compiler="/usr/bin/clang++-8.0",
+        compiler="/usr/bin/clang++-17",
         language="C++",
     )
-    DEFAULT_CLANG_RESULT = CLANG_8_0_RESULT + {"compiler": "/usr/bin/clang"}
-    DEFAULT_CLANGXX_RESULT = CLANGXX_8_0_RESULT + {"compiler": "/usr/bin/clang++"}
+    CLANG_19_RESULT = CLANG_17_RESULT + {
+        "compiler": "/usr/bin/clang-19",
+        "version": "19.1.7",
+    }
+    CLANGXX_19_RESULT = CLANGXX_17_RESULT + {
+        "compiler": "/usr/bin/clang++-19",
+        "version": "19.1.7",
+    }
+    DEFAULT_CLANG_RESULT = CLANG_19_RESULT + {"compiler": "/usr/bin/clang"}
+    DEFAULT_CLANGXX_RESULT = CLANGXX_19_RESULT + {"compiler": "/usr/bin/clang++"}
 
     def test_default(self):
         # We'll try clang and gcc, and find clang first.
@@ -541,8 +542,8 @@ class LinuxToolchainTest(BaseToolchainTest):
     def test_unsupported_gcc(self):
         self.do_toolchain_test(
             self.PATHS,
-            {"c_compiler": self.GCC_4_9_RESULT},
-            environ={"CC": "gcc-4.9", "CXX": "g++-4.9"},
+            {"c_compiler": self.GCC_7_RESULT},
+            environ={"CC": "gcc-7", "CXX": "g++-7"},
         )
 
         # Maybe this should be reporting the mismatched version instead.
@@ -550,9 +551,9 @@ class LinuxToolchainTest(BaseToolchainTest):
             self.PATHS,
             {
                 "c_compiler": self.DEFAULT_GCC_RESULT,
-                "cxx_compiler": self.GXX_4_9_RESULT,
+                "cxx_compiler": self.GXX_7_RESULT,
             },
-            environ={"CC": "gcc", "CXX": "g++-4.9"},
+            environ={"CC": "gcc", "CXX": "g++-7"},
         )
 
     def test_overridden_gcc(self):
@@ -576,7 +577,7 @@ class LinuxToolchainTest(BaseToolchainTest):
             {
                 "c_compiler": self.DEFAULT_GCC_RESULT,
                 "cxx_compiler": (
-                    "The target C compiler is version 8.3.0, while the target "
+                    "The target C compiler is version 14.3.0, while the target "
                     "C++ compiler is version 10.2.1. Need to use the same compiler "
                     "version."
                 ),
@@ -591,7 +592,7 @@ class LinuxToolchainTest(BaseToolchainTest):
                 "cxx_compiler": self.DEFAULT_GXX_RESULT,
                 "host_c_compiler": self.DEFAULT_GCC_RESULT,
                 "host_cxx_compiler": (
-                    "The host C compiler is version 8.3.0, while the host "
+                    "The host C compiler is version 14.3.0, while the host "
                     "C++ compiler is version 10.2.1. Need to use the same compiler "
                     "version."
                 ),
@@ -666,28 +667,20 @@ class LinuxToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.CLANG_8_0_RESULT,
-                "cxx_compiler": self.CLANGXX_8_0_RESULT,
+                "c_compiler": self.CLANG_17_RESULT,
+                "cxx_compiler": self.CLANGXX_17_RESULT,
             },
-            environ={"CC": "clang-8.0"},
+            environ={"CC": "clang-17"},
         )
 
     def test_unsupported_clang(self):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.CLANG_3_3_RESULT,
-                "cxx_compiler": self.CLANGXX_3_3_RESULT,
+                "c_compiler": self.CLANG_14_RESULT,
+                "cxx_compiler": self.CLANGXX_14_RESULT,
             },
-            environ={"CC": "clang-3.3", "CXX": "clang++-3.3"},
-        )
-        self.do_toolchain_test(
-            self.PATHS,
-            {
-                "c_compiler": self.CLANG_4_0_RESULT,
-                "cxx_compiler": self.CLANGXX_4_0_RESULT,
-            },
-            environ={"CC": "clang-4.0", "CXX": "clang++-4.0"},
+            environ={"CC": "clang-14", "CXX": "clang++-14"},
         )
 
     def test_no_supported_compiler(self):
@@ -704,12 +697,10 @@ class LinuxToolchainTest(BaseToolchainTest):
 
     def test_absolute_path(self):
         paths = dict(self.PATHS)
-        paths.update(
-            {
-                "/opt/clang/bin/clang": paths["/usr/bin/clang"],
-                "/opt/clang/bin/clang++": paths["/usr/bin/clang++"],
-            }
-        )
+        paths.update({
+            "/opt/clang/bin/clang": paths["/usr/bin/clang"],
+            "/opt/clang/bin/clang++": paths["/usr/bin/clang++"],
+        })
         result = {
             "c_compiler": self.DEFAULT_CLANG_RESULT
             + {"compiler": "/opt/clang/bin/clang"},
@@ -726,12 +717,10 @@ class LinuxToolchainTest(BaseToolchainTest):
 
     def test_atypical_name(self):
         paths = dict(self.PATHS)
-        paths.update(
-            {
-                "/usr/bin/afl-clang-fast": paths["/usr/bin/clang"],
-                "/usr/bin/afl-clang-fast++": paths["/usr/bin/clang++"],
-            }
-        )
+        paths.update({
+            "/usr/bin/afl-clang-fast": paths["/usr/bin/clang"],
+            "/usr/bin/afl-clang-fast++": paths["/usr/bin/clang++"],
+        })
         self.do_toolchain_test(
             paths,
             {
@@ -850,56 +839,46 @@ def xcrun(stdin, args):
 class OSXToolchainTest(BaseToolchainTest):
     HOST = "x86_64-apple-darwin11.2.0"
     PATHS = {
-        "/usr/bin/gcc-5": GCC_5 + GCC_PLATFORM_X86_64_OSX,
-        "/usr/bin/g++-5": GXX_5 + GCC_PLATFORM_X86_64_OSX,
-        "/usr/bin/gcc-8": GCC_8 + GCC_PLATFORM_X86_64_OSX,
-        "/usr/bin/g++-8": GXX_8 + GCC_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang": XCODE_CLANG_8_0 + CLANG_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang++": XCODE_CLANGXX_8_0 + CLANG_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang-4.0": XCODE_CLANG_4_0 + CLANG_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang++-4.0": XCODE_CLANGXX_4_0 + CLANG_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang-3.3": XCODE_CLANG_3_3 + CLANG_PLATFORM_X86_64_OSX,
-        "/usr/bin/clang++-3.3": XCODE_CLANGXX_3_3 + CLANG_PLATFORM_X86_64_OSX,
+        "/usr/bin/gcc-7": GCC_7 + GCC_PLATFORM_X86_64_OSX,
+        "/usr/bin/g++-7": GXX_7 + GCC_PLATFORM_X86_64_OSX,
+        "/usr/bin/gcc-10": GCC_10 + GCC_PLATFORM_X86_64_OSX,
+        "/usr/bin/g++-10": GXX_10 + GCC_PLATFORM_X86_64_OSX,
+        "/usr/bin/clang": XCODE_CLANG_19 + CLANG_PLATFORM_X86_64_OSX,
+        "/usr/bin/clang++": XCODE_CLANGXX_19 + CLANG_PLATFORM_X86_64_OSX,
+        "/usr/bin/clang-14": XCODE_CLANG_14 + CLANG_PLATFORM_X86_64_OSX,
+        "/usr/bin/clang++-14": XCODE_CLANGXX_14 + CLANG_PLATFORM_X86_64_OSX,
         "/usr/bin/xcrun": xcrun,
     }
-    CLANG_3_3_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.0.or.less)."
+    CLANG_14_RESULT = (
+        "Only clang/llvm 17.0 or newer is supported (found version 14.0.0)."
     )
-    CLANGXX_3_3_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.0.or.less)."
-    )
-    CLANG_4_0_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.0.or.less)."
-    )
-    CLANGXX_4_0_RESULT = (
-        "Only clang/llvm 8.0 or newer is supported (found version 4.0.0.or.less)."
+    CLANGXX_14_RESULT = (
+        "Only clang/llvm 17.0 or newer is supported (found version 14.0.0)."
     )
     DEFAULT_CLANG_RESULT = CompilerResult(
-        flags=["-std=gnu17"],
-        version="8.0.0",
+        flags=[],
+        version="19.1.4.or.more",
         type="clang",
         compiler="/usr/bin/clang",
         language="C",
     )
     DEFAULT_CLANGXX_RESULT = CompilerResult(
-        flags=["-stdlib=libc++", "-std=gnu++17"],
-        version="8.0.0",
+        flags=["-stdlib=libc++", "-std=gnu++20"],
+        version="19.1.4.or.more",
         type="clang",
         compiler="/usr/bin/clang++",
         language="C++",
     )
-    GCC_5_RESULT = LinuxToolchainTest.GCC_5_RESULT
-    GXX_5_RESULT = LinuxToolchainTest.GXX_5_RESULT
-    GCC_8_RESULT = LinuxToolchainTest.GCC_8_RESULT
-    GXX_8_RESULT = LinuxToolchainTest.GXX_8_RESULT
+    GCC_7_RESULT = LinuxToolchainTest.GCC_7_RESULT
+    GXX_7_RESULT = LinuxToolchainTest.GXX_7_RESULT
+    GCC_10_RESULT = LinuxToolchainTest.GCC_10_RESULT
+    GXX_10_RESULT = LinuxToolchainTest.GXX_10_RESULT
     SYSROOT_FLAGS = {
-        "flags": PrependFlags(
-            [
-                "-isysroot",
-                xcrun("", ("--show-sdk-path",))[1],
-                "-mmacosx-version-min=10.15",
-            ]
-        )
+        "flags": PrependFlags([
+            "-isysroot",
+            xcrun("", ("--show-sdk-path",))[1],
+            "-mmacosx-version-min=10.15",
+        ])
     }
 
     def test_clang(self):
@@ -927,19 +906,10 @@ class OSXToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.CLANG_3_3_RESULT,
-                "cxx_compiler": self.CLANGXX_3_3_RESULT,
+                "c_compiler": self.CLANG_14_RESULT,
+                "cxx_compiler": self.CLANGXX_14_RESULT,
             },
-            environ={"CC": "clang-3.3", "CXX": "clang++-3.3"},
-        )
-        # When targeting mac, we require at least version 5.
-        self.do_toolchain_test(
-            self.PATHS,
-            {
-                "c_compiler": self.CLANG_4_0_RESULT,
-                "cxx_compiler": self.CLANGXX_4_0_RESULT,
-            },
-            environ={"CC": "clang-4.0", "CXX": "clang++-4.0"},
+            environ={"CC": "clang-14", "CXX": "clang++-14"},
         )
 
     def test_forced_gcc(self):
@@ -947,17 +917,17 @@ class OSXToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.GCC_8_RESULT + self.SYSROOT_FLAGS,
-                "cxx_compiler": self.GXX_8_RESULT + self.SYSROOT_FLAGS,
+                "c_compiler": self.GCC_10_RESULT + self.SYSROOT_FLAGS,
+                "cxx_compiler": self.GXX_10_RESULT + self.SYSROOT_FLAGS,
             },
-            environ={"CC": "gcc-8", "CXX": "g++-8"},
+            environ={"CC": "gcc-10", "CXX": "g++-10"},
         )
 
     def test_forced_unsupported_gcc(self):
         self.do_toolchain_test(
             self.PATHS,
-            {"c_compiler": self.GCC_5_RESULT},
-            environ={"CC": "gcc-5", "CXX": "g++-5"},
+            {"c_compiler": self.GCC_7_RESULT},
+            environ={"CC": "gcc-7", "CXX": "g++-7"},
         )
 
 
@@ -968,52 +938,46 @@ class MingwToolchainTest(BaseToolchainTest):
     # real Windows paths.
     PATHS = {
         "/usr/bin/cl": VS_2017u8 + VS_PLATFORM_X86,
-        "/usr/bin/clang-cl-3.9": CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86,
-        "/usr/bin/clang-cl": CLANG_CL_9_0 + CLANG_CL_PLATFORM_X86,
+        "/usr/bin/clang-cl-14": CLANG_CL_14 + CLANG_CL_PLATFORM_X86,
+        "/usr/bin/clang-cl": CLANG_CL_19 + CLANG_CL_PLATFORM_X86,
         "/usr/bin/gcc": DEFAULT_GCC + GCC_PLATFORM_X86_WIN + MINGW32,
         "/usr/bin/g++": DEFAULT_GXX + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/gcc-4.9": GCC_4_9 + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/g++-4.9": GXX_4_9 + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/gcc-5": GCC_5 + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/g++-5": GXX_5 + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/gcc-6": GCC_6 + GCC_PLATFORM_X86_WIN + MINGW32,
-        "/usr/bin/g++-6": GXX_6 + GCC_PLATFORM_X86_WIN + MINGW32,
         "/usr/bin/gcc-7": GCC_7 + GCC_PLATFORM_X86_WIN + MINGW32,
         "/usr/bin/g++-7": GXX_7 + GCC_PLATFORM_X86_WIN + MINGW32,
+        "/usr/bin/gcc-10": GCC_10 + GCC_PLATFORM_X86_WIN + MINGW32,
+        "/usr/bin/g++-10": GXX_10 + GCC_PLATFORM_X86_WIN + MINGW32,
         "/usr/bin/clang": DEFAULT_CLANG + CLANG_PLATFORM_X86_WIN,
         "/usr/bin/clang++": DEFAULT_CLANGXX + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang-8.0": CLANG_8_0 + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang++-8.0": CLANGXX_8_0 + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang-4.0": CLANG_4_0 + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang++-4.0": CLANGXX_4_0 + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang-3.3": CLANG_3_3 + CLANG_PLATFORM_X86_WIN,
-        "/usr/bin/clang++-3.3": CLANGXX_3_3 + CLANG_PLATFORM_X86_WIN,
+        "/usr/bin/clang-17": CLANG_17 + CLANG_PLATFORM_X86_WIN,
+        "/usr/bin/clang++-17": CLANGXX_17 + CLANG_PLATFORM_X86_WIN,
+        "/usr/bin/clang-14": CLANG_14 + CLANG_PLATFORM_X86_WIN,
+        "/usr/bin/clang++-14": CLANGXX_14 + CLANG_PLATFORM_X86_WIN,
     }
 
-    CLANG_CL_3_9_RESULT = (
-        "Only clang-cl 9.0 or newer is supported (found version 3.9.0)"
+    CLANG_CL_14_RESULT = (
+        "Only clang-cl 17.0 or newer is supported (found version 14.0.0)."
     )
-    CLANG_CL_9_0_RESULT = CompilerResult(
-        version="9.0.0",
-        flags=["-Xclang", "-std=gnu17"],
+    CLANG_CL_19_RESULT = CompilerResult(
+        version="19.1.7",
+        flags=[],
         type="clang-cl",
         compiler="/usr/bin/clang-cl",
         language="C",
     )
-    CLANGXX_CL_3_9_RESULT = (
-        "Only clang-cl 9.0 or newer is supported (found version 3.9.0)"
+    CLANGXX_CL_14_RESULT = (
+        "Only clang-cl 17.0 or newer is supported (found version 14.0.0)."
     )
-    CLANGXX_CL_9_0_RESULT = CompilerResult(
-        version="9.0.0",
-        flags=["-std:c++17"],
+    CLANGXX_CL_19_RESULT = CompilerResult(
+        version="19.1.7",
+        flags=["-std:c++20"],
         type="clang-cl",
         compiler="/usr/bin/clang-cl",
         language="C++",
     )
-    CLANG_3_3_RESULT = LinuxToolchainTest.CLANG_3_3_RESULT
-    CLANGXX_3_3_RESULT = LinuxToolchainTest.CLANGXX_3_3_RESULT
-    CLANG_4_0_RESULT = LinuxToolchainTest.CLANG_4_0_RESULT
-    CLANGXX_4_0_RESULT = LinuxToolchainTest.CLANGXX_4_0_RESULT
+    CLANG_14_RESULT = LinuxToolchainTest.CLANG_14_RESULT
+    CLANGXX_14_RESULT = LinuxToolchainTest.CLANGXX_14_RESULT
+    CLANG_17_RESULT = LinuxToolchainTest.CLANG_17_RESULT
+    CLANGXX_17_RESULT = LinuxToolchainTest.CLANGXX_17_RESULT
     DEFAULT_CLANG_RESULT = LinuxToolchainTest.DEFAULT_CLANG_RESULT
     DEFAULT_CLANGXX_RESULT = LinuxToolchainTest.DEFAULT_CLANGXX_RESULT
 
@@ -1027,16 +991,16 @@ class MingwToolchainTest(BaseToolchainTest):
     def test_unsupported_clang_cl(self):
         self.do_toolchain_test(
             self.PATHS,
-            {"c_compiler": self.CLANG_CL_3_9_RESULT},
-            environ={"CC": "/usr/bin/clang-cl-3.9"},
+            {"c_compiler": self.CLANG_CL_14_RESULT},
+            environ={"CC": "/usr/bin/clang-cl-14"},
         )
 
     def test_clang_cl(self):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.CLANG_CL_9_0_RESULT,
-                "cxx_compiler": self.CLANGXX_CL_9_0_RESULT,
+                "c_compiler": self.CLANG_CL_19_RESULT,
+                "cxx_compiler": self.CLANGXX_CL_19_RESULT,
             },
         )
 
@@ -1067,7 +1031,7 @@ class MingwToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {"c_compiler": "Unknown compiler or compiler not supported."},
-            environ={"CC": "gcc-5", "CXX": "g++-5"},
+            environ={"CC": "gcc-7", "CXX": "g++-7"},
         )
 
     def test_clang(self):
@@ -1090,10 +1054,10 @@ class MingwToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": self.CLANG_3_3_RESULT,
-                "cxx_compiler": self.CLANGXX_3_3_RESULT,
+                "c_compiler": self.CLANG_14_RESULT,
+                "cxx_compiler": self.CLANGXX_14_RESULT,
             },
-            environ={"CC": "clang-3.3", "CXX": "clang++-3.3"},
+            environ={"CC": "clang-14", "CXX": "clang++-14"},
         )
 
 
@@ -1104,26 +1068,20 @@ class Mingw64ToolchainTest(MingwToolchainTest):
     # real Windows paths.
     PATHS = {
         "/usr/bin/cl": VS_2017u8 + VS_PLATFORM_X86_64,
-        "/usr/bin/clang-cl": CLANG_CL_9_0 + CLANG_CL_PLATFORM_X86_64,
-        "/usr/bin/clang-cl-3.9": CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86_64,
+        "/usr/bin/clang-cl": CLANG_CL_19 + CLANG_CL_PLATFORM_X86_64,
+        "/usr/bin/clang-cl-14": CLANG_CL_14 + CLANG_CL_PLATFORM_X86_64,
         "/usr/bin/gcc": DEFAULT_GCC + GCC_PLATFORM_X86_64_WIN + MINGW32,
         "/usr/bin/g++": DEFAULT_GXX + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/gcc-4.9": GCC_4_9 + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/g++-4.9": GXX_4_9 + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/gcc-5": GCC_5 + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/g++-5": GXX_5 + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/gcc-6": GCC_6 + GCC_PLATFORM_X86_64_WIN + MINGW32,
-        "/usr/bin/g++-6": GXX_6 + GCC_PLATFORM_X86_64_WIN + MINGW32,
         "/usr/bin/gcc-7": GCC_7 + GCC_PLATFORM_X86_64_WIN + MINGW32,
         "/usr/bin/g++-7": GXX_7 + GCC_PLATFORM_X86_64_WIN + MINGW32,
+        "/usr/bin/gcc-10": GCC_10 + GCC_PLATFORM_X86_64_WIN + MINGW32,
+        "/usr/bin/g++-10": GXX_10 + GCC_PLATFORM_X86_64_WIN + MINGW32,
         "/usr/bin/clang": DEFAULT_CLANG + CLANG_PLATFORM_X86_64_WIN,
         "/usr/bin/clang++": DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang-8.0": CLANG_8_0 + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang++-8.0": CLANGXX_8_0 + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang-4.0": CLANG_4_0 + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang++-4.0": CLANGXX_4_0 + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang-3.3": CLANG_3_3 + CLANG_PLATFORM_X86_64_WIN,
-        "/usr/bin/clang++-3.3": CLANGXX_3_3 + CLANG_PLATFORM_X86_64_WIN,
+        "/usr/bin/clang-17": CLANG_17 + CLANG_PLATFORM_X86_64_WIN,
+        "/usr/bin/clang++-17": CLANGXX_17 + CLANG_PLATFORM_X86_64_WIN,
+        "/usr/bin/clang-14": CLANG_14 + CLANG_PLATFORM_X86_64_WIN,
+        "/usr/bin/clang++-14": CLANGXX_14 + CLANG_PLATFORM_X86_64_WIN,
     }
 
 
@@ -1142,16 +1100,16 @@ class WindowsToolchainTest(BaseToolchainTest):
     def test_unsupported_clang_cl(self):
         self.do_toolchain_test(
             self.PATHS,
-            {"c_compiler": MingwToolchainTest.CLANG_CL_3_9_RESULT},
-            environ={"CC": "/usr/bin/clang-cl-3.9"},
+            {"c_compiler": MingwToolchainTest.CLANG_CL_14_RESULT},
+            environ={"CC": "/usr/bin/clang-cl-14"},
         )
 
     def test_clang_cl(self):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": MingwToolchainTest.CLANG_CL_9_0_RESULT,
-                "cxx_compiler": MingwToolchainTest.CLANGXX_CL_9_0_RESULT,
+                "c_compiler": MingwToolchainTest.CLANG_CL_19_RESULT,
+                "cxx_compiler": MingwToolchainTest.CLANGXX_CL_19_RESULT,
             },
         )
 
@@ -1168,7 +1126,7 @@ class WindowsToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {"c_compiler": "Unknown compiler or compiler not supported."},
-            environ={"CC": "gcc-5", "CXX": "g++-5"},
+            environ={"CC": "gcc-7", "CXX": "g++-7"},
         )
 
     def test_unsupported_clang(self):
@@ -1186,7 +1144,7 @@ class WindowsToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {"c_compiler": "Unknown compiler or compiler not supported."},
-            environ={"CC": "clang-3.3", "CXX": "clang++-3.3"},
+            environ={"CC": "clang-14", "CXX": "clang++-14"},
         )
 
 
@@ -1235,7 +1193,7 @@ class WindowsGnuToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {"c_compiler": "Unknown compiler or compiler not supported."},
-            environ={"CC": "gcc-5", "CXX": "g++-5"},
+            environ={"CC": "gcc-7", "CXX": "g++-7"},
         )
 
     def test_clang(self):
@@ -1256,10 +1214,10 @@ class WindowsGnuToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(
             self.PATHS,
             {
-                "c_compiler": MingwToolchainTest.CLANG_3_3_RESULT,
-                "cxx_compiler": MingwToolchainTest.CLANGXX_3_3_RESULT,
+                "c_compiler": MingwToolchainTest.CLANG_14_RESULT,
+                "cxx_compiler": MingwToolchainTest.CLANGXX_14_RESULT,
             },
-            environ={"CC": "clang-3.3", "CXX": "clang++-3.3"},
+            environ={"CC": "clang-14", "CXX": "clang++-14"},
         )
 
 
@@ -1272,20 +1230,12 @@ class WindowsGnu64ToolchainTest(WindowsGnuToolchainTest):
 class LinuxCrossCompileToolchainTest(BaseToolchainTest):
     TARGET = "arm-unknown-linux-gnu"
     PATHS = {
-        "/usr/bin/arm-linux-gnu-gcc-4.9": GCC_4_9 + GCC_PLATFORM_ARM_LINUX,
-        "/usr/bin/arm-linux-gnu-g++-4.9": GXX_4_9 + GCC_PLATFORM_ARM_LINUX,
-        "/usr/bin/arm-linux-gnu-gcc-5": GCC_5 + GCC_PLATFORM_ARM_LINUX,
-        "/usr/bin/arm-linux-gnu-g++-5": GXX_5 + GCC_PLATFORM_ARM_LINUX,
         "/usr/bin/arm-linux-gnu-gcc": DEFAULT_GCC + GCC_PLATFORM_ARM_LINUX,
         "/usr/bin/arm-linux-gnu-g++": DEFAULT_GXX + GCC_PLATFORM_ARM_LINUX,
         "/usr/bin/arm-linux-gnu-gcc-7": GCC_7 + GCC_PLATFORM_ARM_LINUX,
         "/usr/bin/arm-linux-gnu-g++-7": GXX_7 + GCC_PLATFORM_ARM_LINUX,
     }
     PATHS.update(LinuxToolchainTest.PATHS)
-    ARM_GCC_4_9_RESULT = LinuxToolchainTest.GCC_4_9_RESULT
-    ARM_GXX_4_9_RESULT = LinuxToolchainTest.GXX_4_9_RESULT
-    ARM_GCC_5_RESULT = LinuxToolchainTest.GCC_5_RESULT
-    ARM_GXX_5_RESULT = LinuxToolchainTest.GXX_5_RESULT
     ARM_DEFAULT_GCC_RESULT = LinuxToolchainTest.DEFAULT_GCC_RESULT + {
         "compiler": "/usr/bin/arm-linux-gnu-gcc"
     }
@@ -1400,12 +1350,10 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
             },
         )
 
-        paths.update(
-            {
-                "%s-gcc" % toolchain_prefix: DEFAULT_GCC + self.PLATFORMS[target],
-                "%s-g++" % toolchain_prefix: DEFAULT_GXX + self.PLATFORMS[target],
-            }
-        )
+        paths.update({
+            "%s-gcc" % toolchain_prefix: DEFAULT_GCC + self.PLATFORMS[target],
+            "%s-g++" % toolchain_prefix: DEFAULT_GXX + self.PLATFORMS[target],
+        })
         self.do_toolchain_test(
             paths,
             {
@@ -1458,8 +1406,8 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
     def test_overridden_unsupported_cross_gcc(self):
         self.do_toolchain_test(
             self.PATHS,
-            {"c_compiler": self.ARM_GCC_4_9_RESULT},
-            environ={"CC": "arm-linux-gnu-gcc-4.9", "CXX": "arm-linux-gnu-g++-4.9"},
+            {"c_compiler": self.ARM_GCC_7_RESULT},
+            environ={"CC": "arm-linux-gnu-gcc-7", "CXX": "arm-linux-gnu-g++-7"},
         )
 
     def test_guess_cross_cxx(self):
@@ -1532,12 +1480,10 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
 
     def test_cross_atypical_clang(self):
         paths = dict(self.PATHS)
-        paths.update(
-            {
-                "/usr/bin/afl-clang-fast": paths["/usr/bin/clang"],
-                "/usr/bin/afl-clang-fast++": paths["/usr/bin/clang++"],
-            }
-        )
+        paths.update({
+            "/usr/bin/afl-clang-fast": paths["/usr/bin/clang"],
+            "/usr/bin/afl-clang-fast++": paths["/usr/bin/clang++"],
+        })
         afl_clang_result = self.DEFAULT_CLANG_RESULT + {
             "compiler": "/usr/bin/afl-clang-fast"
         }
@@ -1560,22 +1506,20 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
 class OSXCrossToolchainTest(BaseToolchainTest):
     TARGET = "i686-apple-darwin11.2.0"
     PATHS = dict(LinuxToolchainTest.PATHS)
-    PATHS.update(
-        {
-            "/usr/bin/clang": CLANG_8_0 + CLANG_PLATFORM_X86_64_LINUX,
-            "/usr/bin/clang++": CLANGXX_8_0 + CLANG_PLATFORM_X86_64_LINUX,
-        }
-    )
+    PATHS.update({
+        "/usr/bin/clang": CLANG_17 + CLANG_PLATFORM_X86_64_LINUX,
+        "/usr/bin/clang++": CLANGXX_17 + CLANG_PLATFORM_X86_64_LINUX,
+    })
     DEFAULT_CLANG_RESULT = CompilerResult(
-        flags=["-std=gnu17"],
-        version="8.0.0",
+        flags=[],
+        version="17.0.0",
         type="clang",
         compiler="/usr/bin/clang",
         language="C",
     )
     DEFAULT_CLANGXX_RESULT = CompilerResult(
-        flags=["-std=gnu++17"],
-        version="8.0.0",
+        flags=["-std=gnu++20"],
+        version="17.0.0",
         type="clang",
         compiler="/usr/bin/clang++",
         language="C++",
@@ -1617,13 +1561,13 @@ class WindowsCrossToolchainTest(BaseToolchainTest):
     DEFAULT_CLANGXX_RESULT = LinuxToolchainTest.DEFAULT_CLANGXX_RESULT
 
     def test_clang_cl_cross(self):
-        paths = {"/usr/bin/clang-cl": CLANG_CL_9_0 + CLANG_CL_PLATFORM_X86_64}
+        paths = {"/usr/bin/clang-cl": CLANG_CL_19 + CLANG_CL_PLATFORM_X86_64}
         paths.update(LinuxToolchainTest.PATHS)
         self.do_toolchain_test(
             paths,
             {
-                "c_compiler": MingwToolchainTest.CLANG_CL_9_0_RESULT,
-                "cxx_compiler": MingwToolchainTest.CLANGXX_CL_9_0_RESULT,
+                "c_compiler": MingwToolchainTest.CLANG_CL_19_RESULT,
+                "cxx_compiler": MingwToolchainTest.CLANGXX_CL_19_RESULT,
                 "host_c_compiler": self.DEFAULT_CLANG_RESULT,
                 "host_cxx_compiler": self.DEFAULT_CLANGXX_RESULT,
             },
@@ -1679,7 +1623,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "",
             )
         if args == ("--print", "target-list"):
-            # Raw list returned by rustc version 1.76
+            # Raw list returned by rustc version 1.90
             rust_targets = [
                 "aarch64-apple-darwin",
                 "aarch64-apple-ios",
@@ -1687,9 +1631,10 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "aarch64-apple-ios-sim",
                 "aarch64-apple-tvos",
                 "aarch64-apple-tvos-sim",
+                "aarch64-apple-visionos",
+                "aarch64-apple-visionos-sim",
                 "aarch64-apple-watchos",
                 "aarch64-apple-watchos-sim",
-                "aarch64-fuchsia",
                 "aarch64-kmc-solid_asp3",
                 "aarch64-linux-android",
                 "aarch64-nintendo-switch-freestanding",
@@ -1698,6 +1643,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "aarch64-unknown-freebsd",
                 "aarch64-unknown-fuchsia",
                 "aarch64-unknown-hermit",
+                "aarch64-unknown-illumos",
                 "aarch64-unknown-linux-gnu",
                 "aarch64-unknown-linux-gnu_ilp32",
                 "aarch64-unknown-linux-musl",
@@ -1705,16 +1651,22 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "aarch64-unknown-netbsd",
                 "aarch64-unknown-none",
                 "aarch64-unknown-none-softfloat",
+                "aarch64-unknown-nto-qnx700",
                 "aarch64-unknown-nto-qnx710",
+                "aarch64-unknown-nto-qnx710_iosock",
+                "aarch64-unknown-nto-qnx800",
+                "aarch64-unknown-nuttx",
                 "aarch64-unknown-openbsd",
                 "aarch64-unknown-redox",
                 "aarch64-unknown-teeos",
+                "aarch64-unknown-trusty",
                 "aarch64-unknown-uefi",
                 "aarch64-uwp-windows-msvc",
                 "aarch64-wrs-vxworks",
                 "aarch64_be-unknown-linux-gnu",
                 "aarch64_be-unknown-linux-gnu_ilp32",
                 "aarch64_be-unknown-netbsd",
+                "amdgcn-amd-amdhsa",
                 "arm-linux-androideabi",
                 "arm-unknown-linux-gnueabi",
                 "arm-unknown-linux-gnueabihf",
@@ -1723,6 +1675,8 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "arm64_32-apple-watchos",
                 "arm64e-apple-darwin",
                 "arm64e-apple-ios",
+                "arm64e-apple-tvos",
+                "arm64ec-pc-windows-msvc",
                 "armeb-unknown-linux-gnueabi",
                 "armebv7r-none-eabi",
                 "armebv7r-none-eabihf",
@@ -1736,6 +1690,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "armv6-unknown-netbsd-eabihf",
                 "armv6k-nintendo-3ds",
                 "armv7-linux-androideabi",
+                "armv7-rtems-eabihf",
                 "armv7-sony-vita-newlibeabihf",
                 "armv7-unknown-freebsd",
                 "armv7-unknown-linux-gnueabi",
@@ -1746,29 +1701,34 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "armv7-unknown-linux-uclibceabi",
                 "armv7-unknown-linux-uclibceabihf",
                 "armv7-unknown-netbsd-eabihf",
+                "armv7-unknown-trusty",
                 "armv7-wrs-vxworks-eabihf",
                 "armv7a-kmc-solid_asp3-eabi",
                 "armv7a-kmc-solid_asp3-eabihf",
                 "armv7a-none-eabi",
                 "armv7a-none-eabihf",
+                "armv7a-nuttx-eabi",
+                "armv7a-nuttx-eabihf",
                 "armv7k-apple-watchos",
                 "armv7r-none-eabi",
                 "armv7r-none-eabihf",
                 "armv7s-apple-ios",
-                "avr-unknown-gnu-atmega328",
+                "armv8r-none-eabihf",
+                "avr-none",
                 "bpfeb-unknown-none",
                 "bpfel-unknown-none",
                 "csky-unknown-linux-gnuabiv2",
                 "csky-unknown-linux-gnuabiv2hf",
                 "hexagon-unknown-linux-musl",
+                "hexagon-unknown-none-elf",
                 "i386-apple-ios",
-                "i586-pc-nto-qnx700",
-                "i586-pc-windows-msvc",
                 "i586-unknown-linux-gnu",
                 "i586-unknown-linux-musl",
                 "i586-unknown-netbsd",
+                "i586-unknown-redox",
                 "i686-apple-darwin",
                 "i686-linux-android",
+                "i686-pc-nto-qnx700",
                 "i686-pc-windows-gnu",
                 "i686-pc-windows-gnullvm",
                 "i686-pc-windows-msvc",
@@ -1782,12 +1742,19 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "i686-unknown-uefi",
                 "i686-uwp-windows-gnu",
                 "i686-uwp-windows-msvc",
+                "i686-win7-windows-gnu",
                 "i686-win7-windows-msvc",
                 "i686-wrs-vxworks",
+                "loongarch32-unknown-none",
+                "loongarch32-unknown-none-softfloat",
                 "loongarch64-unknown-linux-gnu",
+                "loongarch64-unknown-linux-musl",
+                "loongarch64-unknown-linux-ohos",
                 "loongarch64-unknown-none",
                 "loongarch64-unknown-none-softfloat",
                 "m68k-unknown-linux-gnu",
+                "m68k-unknown-none-elf",
+                "mips-mti-none-elf",
                 "mips-unknown-linux-gnu",
                 "mips-unknown-linux-musl",
                 "mips-unknown-linux-uclibc",
@@ -1796,6 +1763,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "mips64-unknown-linux-muslabi64",
                 "mips64el-unknown-linux-gnuabi64",
                 "mips64el-unknown-linux-muslabi64",
+                "mipsel-mti-none-elf",
                 "mipsel-sony-psp",
                 "mipsel-sony-psx",
                 "mipsel-unknown-linux-gnu",
@@ -1813,6 +1781,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "powerpc-unknown-linux-gnu",
                 "powerpc-unknown-linux-gnuspe",
                 "powerpc-unknown-linux-musl",
+                "powerpc-unknown-linux-muslspe",
                 "powerpc-unknown-netbsd",
                 "powerpc-unknown-openbsd",
                 "powerpc-wrs-vxworks",
@@ -1826,17 +1795,28 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "powerpc64le-unknown-freebsd",
                 "powerpc64le-unknown-linux-gnu",
                 "powerpc64le-unknown-linux-musl",
+                "riscv32-wrs-vxworks",
+                "riscv32e-unknown-none-elf",
+                "riscv32em-unknown-none-elf",
+                "riscv32emc-unknown-none-elf",
                 "riscv32gc-unknown-linux-gnu",
                 "riscv32gc-unknown-linux-musl",
                 "riscv32i-unknown-none-elf",
+                "riscv32im-risc0-zkvm-elf",
                 "riscv32im-unknown-none-elf",
+                "riscv32ima-unknown-none-elf",
                 "riscv32imac-esp-espidf",
                 "riscv32imac-unknown-none-elf",
+                "riscv32imac-unknown-nuttx-elf",
                 "riscv32imac-unknown-xous-elf",
+                "riscv32imafc-esp-espidf",
                 "riscv32imafc-unknown-none-elf",
+                "riscv32imafc-unknown-nuttx-elf",
                 "riscv32imc-esp-espidf",
                 "riscv32imc-unknown-none-elf",
+                "riscv32imc-unknown-nuttx-elf",
                 "riscv64-linux-android",
+                "riscv64-wrs-vxworks",
                 "riscv64gc-unknown-freebsd",
                 "riscv64gc-unknown-fuchsia",
                 "riscv64gc-unknown-hermit",
@@ -1844,8 +1824,10 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "riscv64gc-unknown-linux-musl",
                 "riscv64gc-unknown-netbsd",
                 "riscv64gc-unknown-none-elf",
+                "riscv64gc-unknown-nuttx-elf",
                 "riscv64gc-unknown-openbsd",
                 "riscv64imac-unknown-none-elf",
+                "riscv64imac-unknown-nuttx-elf",
                 "s390x-unknown-linux-gnu",
                 "s390x-unknown-linux-musl",
                 "sparc-unknown-linux-gnu",
@@ -1857,21 +1839,33 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "thumbv4t-none-eabi",
                 "thumbv5te-none-eabi",
                 "thumbv6m-none-eabi",
+                "thumbv6m-nuttx-eabi",
+                "thumbv7a-nuttx-eabi",
+                "thumbv7a-nuttx-eabihf",
                 "thumbv7a-pc-windows-msvc",
                 "thumbv7a-uwp-windows-msvc",
                 "thumbv7em-none-eabi",
                 "thumbv7em-none-eabihf",
+                "thumbv7em-nuttx-eabi",
+                "thumbv7em-nuttx-eabihf",
                 "thumbv7m-none-eabi",
+                "thumbv7m-nuttx-eabi",
                 "thumbv7neon-linux-androideabi",
                 "thumbv7neon-unknown-linux-gnueabihf",
                 "thumbv7neon-unknown-linux-musleabihf",
                 "thumbv8m.base-none-eabi",
+                "thumbv8m.base-nuttx-eabi",
                 "thumbv8m.main-none-eabi",
                 "thumbv8m.main-none-eabihf",
+                "thumbv8m.main-nuttx-eabi",
+                "thumbv8m.main-nuttx-eabihf",
                 "wasm32-unknown-emscripten",
                 "wasm32-unknown-unknown",
-                "wasm32-wasi",
-                "wasm32-wasi-preview1-threads",
+                "wasm32-wali-linux-musl",
+                "wasm32-wasip1",
+                "wasm32-wasip1-threads",
+                "wasm32-wasip2",
+                "wasm32v1-none",
                 "wasm64-unknown-unknown",
                 "x86_64-apple-darwin",
                 "x86_64-apple-ios",
@@ -1879,9 +1873,12 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "x86_64-apple-tvos",
                 "x86_64-apple-watchos-sim",
                 "x86_64-fortanix-unknown-sgx",
-                "x86_64-fuchsia",
                 "x86_64-linux-android",
+                "x86_64-lynx-lynxos178",
+                "x86_64-pc-cygwin",
                 "x86_64-pc-nto-qnx710",
+                "x86_64-pc-nto-qnx710_iosock",
+                "x86_64-pc-nto-qnx800",
                 "x86_64-pc-solaris",
                 "x86_64-pc-windows-gnu",
                 "x86_64-pc-windows-gnullvm",
@@ -1892,108 +1889,33 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                 "x86_64-unknown-fuchsia",
                 "x86_64-unknown-haiku",
                 "x86_64-unknown-hermit",
+                "x86_64-unknown-hurd-gnu",
                 "x86_64-unknown-illumos",
                 "x86_64-unknown-l4re-uclibc",
                 "x86_64-unknown-linux-gnu",
                 "x86_64-unknown-linux-gnux32",
                 "x86_64-unknown-linux-musl",
+                "x86_64-unknown-linux-none",
                 "x86_64-unknown-linux-ohos",
                 "x86_64-unknown-netbsd",
                 "x86_64-unknown-none",
                 "x86_64-unknown-openbsd",
                 "x86_64-unknown-redox",
+                "x86_64-unknown-trusty",
                 "x86_64-unknown-uefi",
                 "x86_64-uwp-windows-gnu",
                 "x86_64-uwp-windows-msvc",
+                "x86_64-win7-windows-gnu",
                 "x86_64-win7-windows-msvc",
                 "x86_64-wrs-vxworks",
                 "x86_64h-apple-darwin",
+                "xtensa-esp32-espidf",
+                "xtensa-esp32-none-elf",
+                "xtensa-esp32s2-espidf",
+                "xtensa-esp32s2-none-elf",
+                "xtensa-esp32s3-espidf",
+                "xtensa-esp32s3-none-elf",
             ]
-            # Additional targets from 1.77
-            if Version(version) >= "1.77.0":
-                rust_targets += [
-                    "aarch64-unknown-illumos",
-                    "hexagon-unknown-none-elf",
-                    "riscv32im-risc0-zkvm-elf",
-                    "riscv32imafc-esp-espidf",
-                ]
-            # Additional targets from 1.78
-            if Version(version) >= "1.78.0":
-                rust_targets += [
-                    "arm64ec-pc-windows-msvc",
-                    "armv8r-none-eabihf",
-                    "loongarch64-unknown-linux-musl",
-                    "wasm32-wasip1",
-                    "wasm32-wasip1-threads",
-                    "wasm32-wasip2",
-                ]
-                rust_targets.remove("wasm32-wasi-preview1-threads")
-            # Additional targets from 1.79
-            if Version(version) >= "1.79.0":
-                rust_targets += [
-                    "aarch64-apple-visionos",
-                    "aarch64-apple-visionos-sim",
-                    "riscv32ima-unknown-none-elf",
-                ]
-            # Additional targets from 1.80
-            if Version(version) >= "1.80.0":
-                rust_targets += [
-                    "x86_64-unknown-linux-none",
-                ]
-            # Additional targets from 1.81
-            if Version(version) >= "1.81.0":
-                rust_targets += [
-                    "i686-unknown-redox",
-                    "xtensa-esp32-espidf",
-                    "xtensa-esp32-none-elf",
-                    "xtensa-esp32s2-espidf",
-                    "xtensa-esp32s2-none-elf",
-                    "xtensa-esp32s3-espidf",
-                    "xtensa-esp32s3-none-elf",
-                ]
-            # Additional targets from 1.82
-            if Version(version) >= "1.82.0":
-                rust_targets += [
-                    "aarch64-unknown-trusty",
-                    "armv7-unknown-trusty",
-                    "powerpc-unknown-linux-muslspe",
-                    "riscv32imac-unknown-nuttx-elf",
-                    "riscv32imafc-unknown-nuttx-elf",
-                    "riscv32imc-unknown-nuttx-elf",
-                    "riscv64gc-unknown-nuttx-elf",
-                    "riscv64imac-unknown-nuttx-elf",
-                    "thumbv6m-nuttx-eabi",
-                    "thumbv7em-nuttx-eabi",
-                    "thumbv7em-nuttx-eabihf",
-                    "thumbv7m-nuttx-eabi",
-                    "thumbv8m.base-nuttx-eabi",
-                    "thumbv8m.main-nuttx-eabi",
-                    "thumbv8m.main-nuttx-eabihf",
-                ]
-            # Additional targets from 1.83
-            if Version(version) >= "1.83.0":
-                rust_targets += [
-                    "aarch64-unknown-nto-qnx700",
-                    "arm64e-apple-tvos",
-                    "armv7-rtems-eabihf",
-                    "loongarch64-unknown-linux-ohos",
-                    "riscv32-wrs-vxworks",
-                    "riscv32e-unknown-none-elf",
-                    "riscv32em-unknown-none-elf",
-                    "riscv32emc-unknown-none-elf",
-                    "riscv64-wrs-vxworks",
-                    "x86_64-unknown-hurd-gnu",
-                    "x86_64-unknown-trusty",
-                ]
-                rust_targets.remove("aarch64-fuchsia")
-                rust_targets.remove("x86_64-fuchsia")
-            # Additional targets from 1.84
-            if Version(version) >= "1.84.0":
-                rust_targets += [
-                    "wasm32v1-none",
-                ]
-                rust_targets.remove("wasm32-wasi")
-
             return 0, "\n".join(sorted(rust_targets)), ""
         if (
             len(args) == 6
@@ -2090,14 +2012,7 @@ class RustTest(BaseConfigureTest):
             ("x86_64-unknown-linux-android21", "x86_64-linux-android"),
             ("x86_64-pc-linux-gnu", "x86_64-unknown-linux-gnu"),
             ("sparcv9-sun-solaris2", "sparcv9-sun-solaris"),
-            (
-                "x86_64-sun-solaris2",
-                (
-                    "x86_64-sun-solaris"
-                    if Version(self.VERSION) < "1.76.0"
-                    else "x86_64-pc-solaris"
-                ),
-            ),
+            ("x86_64-sun-solaris2", "x86_64-pc-solaris"),
             ("x86_64-apple-darwin23.3.0", "x86_64-apple-darwin"),
         ):
             self.assertEqual(self.get_rust_target(autoconf), rust)
@@ -2204,38 +2119,6 @@ class RustTest(BaseConfigureTest):
             ),
             "armv4t-unknown-linux-gnueabi",
         )
-
-    def test_rust_wasi_target(self):
-        self.assertEqual(self.get_rust_target("wasm32-unknown-wasi"), "wasm32-wasi")
-
-
-# These tests are expensive, so we don't run them by default.
-if False:
-
-    class Rust177Test(RustTest):
-        VERSION = "1.77.0"
-
-    class Rust178Test(RustTest):
-        VERSION = "1.78.0"
-
-    class Rust179Test(RustTest):
-        VERSION = "1.79.0"
-
-    class Rust180Test(RustTest):
-        VERSION = "1.80.0"
-
-    class Rust181Test(RustTest):
-        VERSION = "1.81.0"
-
-    class Rust182Test(RustTest):
-        VERSION = "1.82.0"
-
-    class Rust183Test(RustTest):
-        VERSION = "1.83.0"
-
-
-class Rust184Test(RustTest):
-    VERSION = "1.84.0"
 
     def test_rust_wasi_target(self):
         self.assertEqual(self.get_rust_target("wasm32-unknown-wasi"), "wasm32-wasip1")

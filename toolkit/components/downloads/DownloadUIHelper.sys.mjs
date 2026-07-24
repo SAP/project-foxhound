@@ -146,7 +146,8 @@ DownloadPrompter.prototype = {
    * @param path
    *        String containing the full path to the file to be opened.
    *
-   * @resolves Boolean indicating whether the launch operation can continue.
+   * @returns {Promise<boolean>}
+   *   Resolves to a boolean indicating whether the launch operation can continue.
    */
   async confirmLaunchExecutable(path) {
     const kPrefSkipConfirm = "browser.download.skipConfirmLaunchExecutable";

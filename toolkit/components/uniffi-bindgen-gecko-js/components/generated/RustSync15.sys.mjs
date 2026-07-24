@@ -42,7 +42,7 @@ export var UnitTestObjs = {
  * application should inspect the device it is running on and select an appropriate
  * [`DeviceType`] to include in its device registration record.
  */
-export const DeviceType = {
+export const DeviceType = Object.freeze({
     /**
      * DESKTOP
      */
@@ -67,8 +67,7 @@ export const DeviceType = {
      * UNKNOWN
      */
     UNKNOWN: 5,
-};
-Object.freeze(DeviceType);
+});
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterTypeDeviceType extends FfiConverterArrayBuffer {

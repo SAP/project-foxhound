@@ -6,12 +6,12 @@
 #ifndef DOM_MEDIA_DRIFTCONTROL_DYNAMICRESAMPLER_H_
 #define DOM_MEDIA_DRIFTCONTROL_DYNAMICRESAMPLER_H_
 
+#include <speex/speex_resampler.h>
+
 #include "AudioRingBuffer.h"
 #include "AudioSegment.h"
 #include "TimeUnits.h"
 #include "WavDumper.h"
-
-#include <speex/speex_resampler.h>
 
 namespace mozilla {
 

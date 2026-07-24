@@ -9,26 +9,25 @@
 #include "js/ArrayBuffer.h"  // JS::NewArrayBufferWithContents
 #include "js/RootingAPI.h"   // JS::{,Mutable}Handle
 #include "js/Utility.h"  // js::ArrayBufferContentsArena, JS::FreePolicy, js_pod_arena_malloc
-#include "mozilla/Unused.h"
 #include "mozilla/Base64.h"
-#include "mozilla/dom/File.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/FileReaderSyncBinding.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "nsCExternalHandlerService.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsError.h"
+#include "nsIAsyncInputStream.h"
 #include "nsIConverterInputStream.h"
 #include "nsIInputStream.h"
 #include "nsIMultiplexInputStream.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
 #include "nsISupportsImpl.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIAsyncInputStream.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

@@ -8,12 +8,12 @@
 
 #include <memory>
 
+#include "ObjectModel.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/webgpu/WebGPUTypes.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
-#include "ObjectModel.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -47,8 +47,7 @@ class AdapterInfo final : public nsWrapperCache, public ChildOf<Adapter> {
 
  protected:
   const std::shared_ptr<ffi::WGPUAdapterInformation> mAboutSupportInfo;
-  ~AdapterInfo() = default;
-  void Cleanup() {}
+  virtual ~AdapterInfo() = default;
 
  public:
   explicit AdapterInfo(
@@ -81,18 +80,16 @@ inline auto ToHexCString(const uint64_t v) {
   return nsPrintfCString("0x%" PRIx64, v);
 }
 
-class Adapter final : public ObjectBase, public ChildOf<Instance> {
+class Adapter final : public nsWrapperCache,
+                      public ObjectBase,
+                      public ChildOf<Instance> {
  public:
   GPU_DECL_CYCLE_COLLECTION(Adapter)
   GPU_DECL_JS_WRAP(Adapter)
 
-  RefPtr<WebGPUChild> mBridge;
-
  private:
-  ~Adapter();
-  void Cleanup();
+  virtual ~Adapter();
 
-  const RawId mId;
   // Cant have them as `const` right now, since we wouldn't be able
   // to unlink them in CC unlink.
   RefPtr<SupportedFeatures> mFeatures;
@@ -101,7 +98,7 @@ class Adapter final : public ObjectBase, public ChildOf<Instance> {
   const std::shared_ptr<ffi::WGPUAdapterInformation> mInfoInner;
 
  public:
-  Adapter(Instance* const aParent, WebGPUChild* const aBridge,
+  Adapter(Instance* const aParent, WebGPUChild* const aChild,
           const std::shared_ptr<ffi::WGPUAdapterInformation>& aInfo);
   const RefPtr<SupportedFeatures>& Features() const;
   const RefPtr<SupportedLimits>& Limits() const;
@@ -112,7 +109,7 @@ class Adapter final : public ObjectBase, public ChildOf<Instance> {
   nsCString LabelOrId() const {
     nsCString ret = this->CLabel();
     if (ret.IsEmpty()) {
-      ret = ToHexCString(mId);
+      ret = ToHexCString(GetId());
     }
     return ret;
   }

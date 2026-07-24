@@ -8,7 +8,6 @@
 #define mozilla_layers_ScreenshotGrabber_h
 
 #include "nsISupportsImpl.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Point.h"

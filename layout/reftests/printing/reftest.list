@@ -35,3 +35,4 @@ print test-print-selection-shadow-crossing-flat-6.html test-print-selection-shad
 print test-print-selection-shadow-crossing-flat-7.html test-print-selection-shadow-crossing-flat-7-ref.html
 print test-print-selection-shadow-crossing-flat-8.html test-print-selection-shadow-crossing-flat-8-ref.html
 print test-print-selection-shadow-crossing-flat-9.html test-print-selection-shadow-crossing-flat-9-ref.html
+print test-print-selection-leading-trailing-whitespace.html test-text-ref.html

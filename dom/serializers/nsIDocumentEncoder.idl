@@ -12,12 +12,6 @@ webidl Node;
 webidl Range;
 webidl Selection;
 
-%{ C++
-class nsINode;
-
-%}
-[ptr] native nsINodePtr(nsINode);
-
 [scriptable, uuid(3d9371d8-a2ad-403e-8b0e-8885ad3562e3)]
 interface nsIDocumentEncoderNodeFixup : nsISupports
 {
@@ -252,9 +246,6 @@ interface nsIDocumentEncoder : nsISupports
   void init(in Document aDocument,
             in AString aMimeType,
             in unsigned long aFlags);
-  [noscript] void nativeInit(in Document aDocument,
-                             in AString aMimeType,
-                             in unsigned long aFlags);
 
   /**
    *  If the selection is set to a non-null value, then the

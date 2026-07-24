@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef TOOLKIT_COMPONENTS_MAINTENANCESERVICE_SERVICEBASE_H_
+#define TOOLKIT_COMPONENTS_MAINTENANCESERVICE_SERVICEBASE_H_
+
 #include <windows.h>
 #include "updatecommon.h"
 
@@ -20,3 +23,5 @@ BOOL VerifySameFiles(LPCWSTR file1Path, LPCWSTR file2Path, BOOL& sameContent);
 #define UPDATER_IDENTITY_STRING \
   "moz-updater.exe-4cdccec4-5ee0-4a06-9817-4cd899a9db49"
 #define IDS_UPDATER_IDENTITY 1006
+
+#endif  // TOOLKIT_COMPONENTS_MAINTENANCESERVICE_SERVICEBASE_H_

@@ -6,11 +6,12 @@
 
 #include "SVGOrientSMILType.h"
 
+#include <math.h>
+
+#include "SVGAnimatedOrient.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGMarkerElement.h"
 #include "nsDebug.h"
-#include "SVGAnimatedOrient.h"
-#include <math.h>
 
 namespace mozilla {
 
@@ -104,7 +105,7 @@ nsresult SVGOrientSMILType::ComputeDistance(const SMILValue& aFrom,
   }
 
   // Normalize both to degrees in case they're different angle units:
-  aDistance = fabs(ValueInDegrees(aTo) - ValueInDegrees(aFrom));
+  aDistance = std::abs(ValueInDegrees(aTo) - ValueInDegrees(aFrom));
 
   return NS_OK;
 }

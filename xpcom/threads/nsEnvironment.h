@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsEnvironment_h__
-#define nsEnvironment_h__
+#ifndef nsEnvironment_h_
+#define nsEnvironment_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsIEnvironment.h"
 
@@ -30,4 +29,4 @@ class nsEnvironment final : public nsIEnvironment {
   ~nsEnvironment() = default;
 };
 
-#endif /* !nsEnvironment_h__ */
+#endif /* !nsEnvironment_h_ */

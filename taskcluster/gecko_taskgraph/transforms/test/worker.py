@@ -6,11 +6,13 @@ from taskgraph.transforms.base import TransformSequence
 
 # default worker types keyed by instance-size
 LINUX_WORKER_TYPES = {
-    "large": "t-linux-docker",
-    "large-noscratch": "t-linux-docker-noscratch",
-    "xlarge": "t-linux-docker",
-    "xlarge-noscratch": "t-linux-docker-noscratch",
-    "default": "t-linux-docker-noscratch",
+    "large-legacy": "t-linux-docker",
+    "large": "t-linux-docker-amd",
+    "large-noscratch": "t-linux-docker-noscratch-amd",
+    "xlarge": "t-linux-docker-amd",
+    "xlarge-noscratch": "t-linux-docker-noscratch-amd",
+    "highcpu": "t-linux-docker-16c32gb-amd",
+    "default": "t-linux-docker-noscratch-amd",
 }
 
 # windows worker types keyed by test-platform and virtualization
@@ -88,6 +90,9 @@ WINDOWS_WORKER_TYPES = {
     "windows11-64-24h2-mingwclang": {
         "virtual": "win11-64-24h2",
         "virtual-with-gpu": "win11-64-24h2-gpu",
+    },
+    "windows11-aarch64-24h2": {
+        "virtual": "win11-a64-24h2",
     },
 }
 
@@ -178,7 +183,7 @@ def set_worker_type(config, tasks):
                 task["worker-type"] = "t-lambda-perf-a55"
             else:
                 task["worker-type"] = "t-bitbar-gw-perf-a55"
-        elif test_platform.startswith("android-em-7.0-x86"):
+        elif test_platform.startswith("android-em-"):
             task["worker-type"] = "t-linux-kvm"
         elif test_platform.startswith("linux") or test_platform.startswith("android"):
             if "wayland" in test_platform:
@@ -211,4 +216,18 @@ def set_wayland_env(config, tasks):
         env = task.setdefault("worker", {}).setdefault("env", {})
         env["MOZ_ENABLE_WAYLAND"] = "1"
         env["WAYLAND_DISPLAY"] = "wayland-0"
+        env["NEED_GNOME_KEYRING"] = "true"
+        yield task
+
+
+@transforms.add
+def hide_cmd_exe_window_on_windows(config, tasks):
+    for task in tasks:
+        if task["test-platform"].startswith("win") and task["suite"] in (
+            "raptor",
+            "talos",
+            "awsy",
+        ):
+            worker = task.setdefault("worker", {})
+            worker["hide-cmd-window"] = True
         yield task

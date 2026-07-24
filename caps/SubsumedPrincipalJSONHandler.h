@@ -11,9 +11,8 @@
 
 #include "js/TypeDecls.h"  // JS::Latin1Char
 
-#include "mozilla/AlreadyAddRefed.h"  // already_AddRefed
-#include "mozilla/Variant.h"          // Variant
-#include "mozilla/RefPtr.h"           // RefPtr
+#include "mozilla/Variant.h"  // Variant
+#include "mozilla/RefPtr.h"   // RefPtr
 
 #include "nsDebug.h"  // NS_WARNING
 

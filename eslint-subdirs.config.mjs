@@ -20,14 +20,14 @@ async function convertConfigurationFile(directory) {
   let newConfig = [];
   for (let section of config.default) {
     let newSection = { ...section };
-    newSection.name = directory + ".eslintrc.js-" + sectionId++;
+    newSection.name = directory + "/.eslintrc.js-" + sectionId++;
 
     if (!newSection.files) {
-      newSection.files = [directory];
+      newSection.files = [`${directory}/`];
     } else if (Array.isArray(newSection.files)) {
-      newSection.files = newSection.files.map(f => directory + f);
+      newSection.files = newSection.files.map(f => `${directory}/${f}`);
     } else if (typeof newSection.files == "string") {
-      newSection.files = [directory + newSection.files];
+      newSection.files = [`${directory}/${newSection.files}`];
     } else {
       throw new Error(
         "Unexpected type for the files property in configuration for",
@@ -40,157 +40,155 @@ async function convertConfigurationFile(directory) {
 }
 
 export default [
-  ...(await convertConfigurationFile("accessible/tests/browser/")),
-  ...(await convertConfigurationFile("accessible/tests/mochitest/")),
-  ...(await convertConfigurationFile("browser/")),
+  ...(await convertConfigurationFile("accessible/tests/browser")),
+  ...(await convertConfigurationFile("accessible/tests/mochitest")),
+  ...(await convertConfigurationFile("browser")),
   ...(await convertConfigurationFile(
-    "browser/base/content/test/webextensions/"
+    "browser/base/content/test/webextensions"
   )),
-  ...(await convertConfigurationFile("browser/components/")),
+  ...(await convertConfigurationFile("browser/components")),
   ...(await convertConfigurationFile(
-    "browser/components/aboutlogins/tests/chrome/"
+    "browser/components/aboutlogins/tests/chrome"
   )),
-  ...(await convertConfigurationFile("browser/components/aboutwelcome/")),
-  ...(await convertConfigurationFile("browser/components/asrouter/")),
-  ...(await convertConfigurationFile("browser/components/customizableui/")),
+  ...(await convertConfigurationFile("browser/components/aboutwelcome")),
+  ...(await convertConfigurationFile("browser/components/asrouter")),
+  ...(await convertConfigurationFile("browser/components/customizableui")),
   ...(await convertConfigurationFile(
-    "browser/components/customizableui/content/"
-  )),
-  ...(await convertConfigurationFile(
-    "browser/components/enterprisepolicies/tests/xpcshell/"
-  )),
-  ...(await convertConfigurationFile("browser/components/extensions/")),
-  ...(await convertConfigurationFile("browser/components/extensions/child/")),
-  ...(await convertConfigurationFile("browser/components/extensions/parent/")),
-  ...(await convertConfigurationFile(
-    "browser/components/extensions/test/browser/"
+    "browser/components/customizableui/content"
   )),
   ...(await convertConfigurationFile(
-    "browser/components/extensions/test/mochitest/"
+    "browser/components/enterprisepolicies/tests/xpcshell"
+  )),
+  ...(await convertConfigurationFile("browser/components/extensions")),
+  ...(await convertConfigurationFile("browser/components/extensions/child")),
+  ...(await convertConfigurationFile("browser/components/extensions/parent")),
+  ...(await convertConfigurationFile(
+    "browser/components/extensions/test/browser"
   )),
   ...(await convertConfigurationFile(
-    "browser/components/extensions/test/xpcshell/"
-  )),
-  ...(await convertConfigurationFile("browser/components/migration/")),
-  ...(await convertConfigurationFile("browser/components/pagedata/")),
-  ...(await convertConfigurationFile(
-    "browser/components/resistfingerprinting/test/mochitest/"
-  )),
-  ...(await convertConfigurationFile("browser/components/search/")),
-  ...(await convertConfigurationFile("browser/components/urlbar/")),
-  ...(await convertConfigurationFile("browser/extensions/newtab/")),
-  ...(await convertConfigurationFile(
-    "browser/extensions/pictureinpicture/tests/browser/"
+    "browser/components/extensions/test/mochitest"
   )),
   ...(await convertConfigurationFile(
-    "browser/extensions/search-detection/tests/browser/"
+    "browser/components/extensions/test/xpcshell"
   )),
-  ...(await convertConfigurationFile("devtools/")),
-  ...(await convertConfigurationFile("devtools/client/")),
-  ...(await convertConfigurationFile("devtools/client/debugger/src/")),
-  ...(await convertConfigurationFile("devtools/client/dom/")),
-  ...(await convertConfigurationFile("devtools/client/framework/test/reload/")),
-  ...(await convertConfigurationFile("devtools/client/jsonview/")),
-  ...(await convertConfigurationFile("devtools/client/memory/")),
-  ...(await convertConfigurationFile("devtools/client/netmonitor/test/")),
-  ...(await convertConfigurationFile("devtools/client/performance-new/")),
-  ...(await convertConfigurationFile("devtools/client/shared/components/")),
-  ...(await convertConfigurationFile("devtools/server/tests/xpcshell/")),
-  ...(await convertConfigurationFile("devtools/shared/")),
-  ...(await convertConfigurationFile("dom/base/test/jsmodules/")),
-  ...(await convertConfigurationFile("dom/fs/test/common/")),
-  ...(await convertConfigurationFile("dom/fs/test/mochitest/worker/")),
-  ...(await convertConfigurationFile("dom/fs/test/xpcshell/worker/")),
-  ...(await convertConfigurationFile("dom/media/mediasource/test/")),
-  ...(await convertConfigurationFile("dom/quota/test/modules/system/worker/")),
-  ...(await convertConfigurationFile("js/src/builtin/")),
-  ...(await convertConfigurationFile("mobile/android/")),
+  ...(await convertConfigurationFile("browser/components/migration")),
+  ...(await convertConfigurationFile("browser/components/pagedata")),
   ...(await convertConfigurationFile(
-    "mobile/android/android-components/components/feature/webcompat-reporter/src/main/assets/extensions/webcompat-reporter/"
+    "browser/components/resistfingerprinting/test/mochitest"
+  )),
+  ...(await convertConfigurationFile("browser/components/search")),
+  ...(await convertConfigurationFile("browser/components/urlbar")),
+  ...(await convertConfigurationFile("browser/extensions/newtab")),
+  ...(await convertConfigurationFile(
+    "browser/extensions/pictureinpicture/tests/browser"
   )),
   ...(await convertConfigurationFile(
-    "mobile/android/examples/messaging_example/app/src/main/assets/messaging/"
+    "browser/extensions/search-detection/tests/browser"
+  )),
+  ...(await convertConfigurationFile("devtools")),
+  ...(await convertConfigurationFile("devtools/client")),
+  ...(await convertConfigurationFile("devtools/client/debugger/src")),
+  ...(await convertConfigurationFile("devtools/client/dom")),
+  ...(await convertConfigurationFile("devtools/client/framework/test/reload")),
+  ...(await convertConfigurationFile("devtools/client/jsonview")),
+  ...(await convertConfigurationFile("devtools/client/memory")),
+  ...(await convertConfigurationFile("devtools/client/netmonitor/test")),
+  ...(await convertConfigurationFile("devtools/client/performance-new")),
+  ...(await convertConfigurationFile("devtools/client/shared/components")),
+  ...(await convertConfigurationFile("devtools/server/tests/xpcshell")),
+  ...(await convertConfigurationFile("devtools/shared")),
+  ...(await convertConfigurationFile("dom/base/test/jsmodules")),
+  ...(await convertConfigurationFile("dom/fs/test/common")),
+  ...(await convertConfigurationFile("dom/fs/test/mochitest/worker")),
+  ...(await convertConfigurationFile("dom/fs/test/xpcshell/worker")),
+  ...(await convertConfigurationFile("dom/media/mediasource/test")),
+  ...(await convertConfigurationFile("dom/quota/test/modules/system/worker")),
+  ...(await convertConfigurationFile("js/src/builtin")),
+  ...(await convertConfigurationFile("mobile/android")),
+  ...(await convertConfigurationFile(
+    "mobile/android/android-components/components/feature/webcompat-reporter/src/main/assets/extensions/webcompat-reporter"
   )),
   ...(await convertConfigurationFile(
-    "mobile/android/examples/port_messaging_example/app/src/main/assets/messaging/"
+    "mobile/android/examples/messaging_example/app/src/main/assets/messaging"
   )),
   ...(await convertConfigurationFile(
-    "mobile/android/fenix/app/src/androidTest/java/org/mozilla/fenix/syncintegration/"
+    "mobile/android/examples/port_messaging_example/app/src/main/assets/messaging"
   )),
   ...(await convertConfigurationFile(
-    "mobile/android/geckoview/src/androidTest/assets/web_extensions/"
-  )),
-  ...(await convertConfigurationFile("mobile/shared/")),
-  ...(await convertConfigurationFile("mobile/shared/components/extensions/")),
-  ...(await convertConfigurationFile(
-    "mobile/shared/components/extensions/test/mochitest/"
+    "mobile/android/fenix/app/src/androidTest/java/org/mozilla/fenix/syncintegration"
   )),
   ...(await convertConfigurationFile(
-    "mobile/shared/components/extensions/test/xpcshell/"
+    "mobile/android/geckoview/src/androidTest/assets/web_extensions"
   )),
-  ...(await convertConfigurationFile("netwerk/test/perf/")),
-  ...(await convertConfigurationFile("remote/marionette/")),
-  ...(await convertConfigurationFile("remote/marionette/test/xpcshell/")),
-  ...(await convertConfigurationFile("security/")),
-  ...(await convertConfigurationFile("security/manager/ssl/tests/")),
-  ...(await convertConfigurationFile("security/manager/tools/")),
-  ...(await convertConfigurationFile("services/sync/tests/tps/")),
-  ...(await convertConfigurationFile("taskcluster/docker/index-task/")),
-  ...(await convertConfigurationFile("taskcluster/docker/periodic-updates/")),
+  ...(await convertConfigurationFile("mobile/shared")),
+  ...(await convertConfigurationFile("mobile/shared/components/extensions")),
   ...(await convertConfigurationFile(
-    "testing/talos/talos/tests/perf-reftest-singletons/"
+    "mobile/shared/components/extensions/test/mochitest"
   )),
   ...(await convertConfigurationFile(
-    "testing/mozbase/mozprofile/tests/files/dummy-profile/"
+    "mobile/shared/components/extensions/test/xpcshell"
   )),
-  ...(await convertConfigurationFile("testing/performance/")),
-  ...(await convertConfigurationFile("testing/raptor/")),
-  ...(await convertConfigurationFile("testing/talos/")),
+  ...(await convertConfigurationFile("netwerk/test/perf")),
+  ...(await convertConfigurationFile("remote/marionette")),
+  ...(await convertConfigurationFile("remote/marionette/test/xpcshell")),
+  ...(await convertConfigurationFile("security")),
+  ...(await convertConfigurationFile("security/manager/ssl/tests")),
+  ...(await convertConfigurationFile("security/manager/tools")),
+  ...(await convertConfigurationFile("services/sync/tests/tps")),
+  ...(await convertConfigurationFile("taskcluster/docker/index-task")),
+  ...(await convertConfigurationFile("taskcluster/docker/periodic-updates")),
   ...(await convertConfigurationFile(
-    "testing/talos/talos/tests/devtools/addon/content/"
-  )),
-  ...(await convertConfigurationFile(
-    "testing/talos/talos/tests/perf-reftest/"
-  )),
-  ...(await convertConfigurationFile("toolkit/")),
-  ...(await convertConfigurationFile(
-    "toolkit/components/antitracking/test/browser/"
-  )),
-  ...(await convertConfigurationFile("toolkit/components/extensions/")),
-  ...(await convertConfigurationFile("toolkit/components/extensions/child/")),
-  ...(await convertConfigurationFile("toolkit/components/extensions/parent/")),
-  ...(await convertConfigurationFile(
-    "toolkit/components/extensions/test/browser/"
+    "testing/talos/talos/tests/perf-reftest-singletons"
   )),
   ...(await convertConfigurationFile(
-    "toolkit/components/extensions/test/mochitest/"
+    "testing/mozbase/mozprofile/tests/files/dummy-profile"
+  )),
+  ...(await convertConfigurationFile("testing/performance")),
+  ...(await convertConfigurationFile("testing/raptor")),
+  ...(await convertConfigurationFile("testing/talos")),
+  ...(await convertConfigurationFile(
+    "testing/talos/talos/tests/devtools/addon/content"
+  )),
+  ...(await convertConfigurationFile("testing/talos/talos/tests/perf-reftest")),
+  ...(await convertConfigurationFile("toolkit")),
+  ...(await convertConfigurationFile(
+    "toolkit/components/antitracking/test/browser"
+  )),
+  ...(await convertConfigurationFile("toolkit/components/extensions")),
+  ...(await convertConfigurationFile("toolkit/components/extensions/child")),
+  ...(await convertConfigurationFile("toolkit/components/extensions/parent")),
+  ...(await convertConfigurationFile(
+    "toolkit/components/extensions/test/browser"
   )),
   ...(await convertConfigurationFile(
-    "toolkit/components/extensions/test/xpcshell/"
+    "toolkit/components/extensions/test/mochitest"
   )),
   ...(await convertConfigurationFile(
-    "toolkit/components/extensions/test/xpcshell/webidl-api/"
-  )),
-  ...(await convertConfigurationFile("toolkit/components/narrate/")),
-  ...(await convertConfigurationFile("toolkit/components/normandy/test/")),
-  ...(await convertConfigurationFile(
-    "toolkit/components/passwordmgr/test/browser/"
+    "toolkit/components/extensions/test/xpcshell"
   )),
   ...(await convertConfigurationFile(
-    "toolkit/components/passwordmgr/test/mochitest/"
+    "toolkit/components/extensions/test/xpcshell/webidl-api"
   )),
-  ...(await convertConfigurationFile("toolkit/components/prompts/test/")),
-  ...(await convertConfigurationFile("toolkit/components/reader/")),
-  ...(await convertConfigurationFile("toolkit/content/")),
-  ...(await convertConfigurationFile("toolkit/modules/subprocess/")),
-  ...(await convertConfigurationFile("toolkit/mozapps/extensions/")),
+  ...(await convertConfigurationFile("toolkit/components/narrate")),
+  ...(await convertConfigurationFile("toolkit/components/normandy/test")),
   ...(await convertConfigurationFile(
-    "toolkit/mozapps/extensions/test/browser/"
+    "toolkit/components/passwordmgr/test/browser"
   )),
   ...(await convertConfigurationFile(
-    "toolkit/mozapps/extensions/test/xpcshell/"
+    "toolkit/components/passwordmgr/test/mochitest"
   )),
-  ...(await convertConfigurationFile("tools/lint/eslint/")),
-  ...(await convertConfigurationFile("tools/tryselect/selectors/chooser/")),
-  ...(await convertConfigurationFile("tools/ts/")),
+  ...(await convertConfigurationFile("toolkit/components/prompts/test")),
+  ...(await convertConfigurationFile("toolkit/components/reader")),
+  ...(await convertConfigurationFile("toolkit/content")),
+  ...(await convertConfigurationFile("toolkit/modules/subprocess")),
+  ...(await convertConfigurationFile("toolkit/mozapps/extensions")),
+  ...(await convertConfigurationFile(
+    "toolkit/mozapps/extensions/test/browser"
+  )),
+  ...(await convertConfigurationFile(
+    "toolkit/mozapps/extensions/test/xpcshell"
+  )),
+  ...(await convertConfigurationFile("tools/lint/eslint")),
+  ...(await convertConfigurationFile("tools/tryselect/selectors/chooser")),
+  ...(await convertConfigurationFile("tools/ts")),
 ];

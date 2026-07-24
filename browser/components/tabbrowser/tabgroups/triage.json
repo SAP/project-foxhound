@@ -1,0 +1,39 @@
+{
+  "triagers": {
+    "DJ Walker": {
+      "bzmail": "dwalker@mozilla.com"
+    },
+    "Jeremy Swinarton": {
+      "bzmail": "jswinarton@mozilla.com"
+    },
+    "Stephen Thompson": {
+      "bzmail": "sthompson@mozilla.com"
+    }
+  },
+  "duty-start-dates": {
+    "2026-01-01": "Stephen Thompson",
+    "2026-02-01": "DJ Walker",
+    "2026-03-01": "Jeremy Swinarton",
+    "2026-04-01": "Stephen Thompson",
+    "2026-05-01": "DJ Walker",
+    "2026-06-01": "Jeremy Swinarton",
+    "2026-07-01": "Stephen Thompson",
+    "2026-08-01": "DJ Walker",
+    "2026-09-01": "Jeremy Swinarton",
+    "2026-10-01": "Stephen Thompson",
+    "2026-11-01": "DJ Walker",
+    "2026-12-01": "Jeremy Swinarton",
+    "2027-01-01": "Stephen Thompson",
+    "2027-02-01": "DJ Walker",
+    "2027-03-01": "Jeremy Swinarton",
+    "2027-04-01": "Stephen Thompson",
+    "2027-05-01": "DJ Walker",
+    "2027-06-01": "Jeremy Swinarton",
+    "2027-07-01": "Stephen Thompson",
+    "2027-08-01": "DJ Walker",
+    "2027-09-01": "Jeremy Swinarton",
+    "2027-10-01": "Stephen Thompson",
+    "2027-11-01": "DJ Walker",
+    "2027-12-01": "Jeremy Swinarton"
+  }
+}

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <!--
 Copyright 2012 Mozilla Foundation
 
@@ -22,8 +22,8 @@ See https://github.com/adobe-type-tools/cmap-resources
 -->
 <html dir="ltr" mozdisallowselectionprint>
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>PDF.js viewer</title>
 
 <!-- This snippet is used in the Firefox extension (included from viewer.html) -->
@@ -33,14 +33,11 @@ See https://github.com/adobe-type-tools/cmap-resources
   <link rel="localization" href="toolkit/pdfviewer/viewer.ftl"/>
 
   <script src="resource://pdf.js/web/viewer.mjs" type="module"></script>
-
   </head>
 
   <body tabindex="0">
     <div id="outerContainer">
-
       <div id="mainContainer">
-
         <div id="floatingToolbar">
           <button id="download" class="toolbarButton" type="button" tabindex="0" data-l10n-id="pdfjs-download-button">
             <span data-l10n-id="pdfjs-download-button-label"></span>
@@ -50,7 +47,8 @@ See https://github.com/adobe-type-tools/cmap-resources
         <div id="viewerContainer" tabindex="0">
           <div id="viewer" class="pdfViewer"></div>
         </div>
-      </div> <!-- mainContainer -->
+      </div>
+      <!-- mainContainer -->
 
       <div id="dialogContainer">
         <dialog id="passwordDialog">
@@ -58,16 +56,21 @@ See https://github.com/adobe-type-tools/cmap-resources
             <label for="password" id="passwordText" data-l10n-id="pdfjs-password-label"></label>
           </div>
           <div class="row">
-            <input type="password" id="password" class="toolbarField">
+            <input type="password" id="password" class="toolbarField" />
           </div>
           <div class="buttonRow">
-            <button id="passwordCancel" class="dialogButton" type="button"><span data-l10n-id="pdfjs-password-cancel-button"></span></button>
-            <button id="passwordSubmit" class="dialogButton" type="button"><span data-l10n-id="pdfjs-password-ok-button"></span></button>
+            <button id="passwordCancel" class="dialogButton" type="button">
+              <span data-l10n-id="pdfjs-password-cancel-button"></span>
+            </button>
+            <button id="passwordSubmit" class="dialogButton" type="button">
+              <span data-l10n-id="pdfjs-password-ok-button"></span>
+            </button>
           </div>
         </dialog>
-      </div>  <!-- dialogContainer -->
-
-    </div> <!-- outerContainer -->
+      </div>
+      <!-- dialogContainer -->
+    </div>
+    <!-- outerContainer -->
     <div id="printContainer"></div>
   </body>
 </html>

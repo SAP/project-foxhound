@@ -55,9 +55,11 @@ async function ensureExpectedTabOrder(
     order.push("#report-broken-site-popup-reason");
   }
   order.push("#report-broken-site-popup-description");
+  order.push("#report-broken-site-popup-blocked-trackers-checkbox");
   if (expectSendMoreInfo) {
     order.push("#report-broken-site-popup-send-more-info-link");
   }
+  order.push("#report-broken-site-popup-preview-button");
   // moz-button-groups swap the order of buttons to follow
   // platform conventions, so the order of send/cancel will vary.
   order.push([
@@ -67,6 +69,7 @@ async function ensureExpectedTabOrder(
   if (expectBackButton) {
     order.push(".subviewbutton-back");
   }
+  order.push("#report-broken-site-popup-learn-more-link");
   order.push("#report-broken-site-popup-url"); // check that we've cycled back
   return ensureTabOrder(order);
 }

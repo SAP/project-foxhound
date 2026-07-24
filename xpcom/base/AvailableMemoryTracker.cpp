@@ -19,7 +19,6 @@
 #include "nsXULAppAPI.h"
 
 #include "mozilla/Mutex.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Services.h"
 
 #if defined(MOZ_MEMORY)

@@ -107,8 +107,10 @@ function setPassword() {
           // we reached a case that should have been prevented by checkPasswords.
         } else {
           if (pw1.value == "") {
-            var secmoddb = Cc[nsPKCS11ModuleDB].getService(nsIPKCS11ModuleDB);
-            if (secmoddb.isFIPSEnabled) {
+            const fipsUtils = Cc[
+              "@mozilla.org/security/fipsutils;1"
+            ].getService(Ci.nsIFIPSUtils);
+            if (fipsUtils.isFIPSEnabled) {
               // empty passwords are not allowed in FIPS mode
               createAlert(
                 "pw-change-failed-title",
@@ -213,15 +215,10 @@ function checkPasswords() {
       return;
     }
   }
-
-  if (
+  let enabled =
     pw1 == pw2 &&
-    (pw1 != "" || Services.policies.isAllowed("removeMasterPassword"))
-  ) {
-    ok.setAttribute("disabled", "false");
-  } else {
-    ok.setAttribute("disabled", "true");
-  }
+    (pw1 != "" || Services.policies.isAllowed("removeMasterPassword"));
+  ok.toggleAttribute("disabled", !enabled);
 }
 
 window.addEventListener("load", init);

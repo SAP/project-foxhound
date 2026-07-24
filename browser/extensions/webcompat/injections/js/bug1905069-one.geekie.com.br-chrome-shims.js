@@ -10,24 +10,15 @@
  * This site is checking for window.chrome and navigator.vendor, so let's spoof those.
  */
 
-/* globals exportFunction */
+if (!window.chrome) {
+  console.info(
+    "window.chrome and navigator.vendor have been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1905069 for details."
+  );
 
-console.info(
-  "window.chrome and navigator.vendor have been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1905069 for details."
-);
+  window.chrome = {};
 
-Object.defineProperty(window.wrappedJSObject, "chrome", {
-  get: exportFunction(function () {
-    return true;
-  }, window),
-
-  set: exportFunction(function () {}, window),
-});
-
-Object.defineProperty(window.navigator.wrappedJSObject, "vendor", {
-  get: exportFunction(function () {
-    return "Google Inc.";
-  }, window),
-
-  set: exportFunction(function () {}, window),
-});
+  const nav = Object.getPrototypeOf(navigator);
+  const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
+  vendor.get = () => "Google Inc.";
+  Object.defineProperty(nav, "vendor", vendor);
+}

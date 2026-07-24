@@ -1,0 +1,47 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+/* CodeMirror 6 block widgets can't have margin, so we put a padding on a container element */
+.trace-inline-panel-container {
+  padding-block: 1em;
+  /* we want the inline trace panel to be to the right of the gutter… */
+  left: var(--cm-gutter-width, 0);
+  /* and to stick horizontally to it so it appears "fixed" … */
+  position: sticky;
+  /* finally, we need to set it's width as the scroller width minus the gutter width so
+           it takes the whole horizontal visual space */
+  width: calc(var(--cm-editor-scroller-width, 100%) - var(--cm-gutter-width, 0) - /* borders */ 2px);
+}
+
+.trace-panel {
+  position: relative;
+
+  background: var(--theme-toolbar-background);
+  background-image: url("chrome://devtools/content/debugger/images/trace.svg");
+  background-size: 1.25em;
+  background-repeat: no-repeat;
+  background-position: 0.5em;
+  -moz-context-properties: fill;
+  fill: var(--theme-inline-preview-label-trace-color);
+
+  border: 1px solid var(--theme-splitter-color);
+  border-inline-start-width: 0;
+
+  padding: 1em 2em;
+
+  .trace-item {
+    display: inline-block;
+    margin-inline-start: 10px;
+    border: 1px solid var(--theme-splitter-color);
+
+    &.selected {
+      color: var(--theme-selection-color);
+      background-color: var(--theme-selection-background);
+    }
+    ² &:focus {
+      outline: var(--theme-focus-outline);
+      outline-offset: -2px;
+    }
+  }
+}

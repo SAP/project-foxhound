@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Unused.h"
 #include "mozilla/TimeStamp.h"
 
 #include <stdlib.h>
@@ -1406,7 +1404,7 @@ TEST(TArray, test_SetLengthAndRetainStorage_no_ctor)
   } while (0)
 
   // Setup test arrays.
-  FOR_EACH(; Unused <<, .SetLength(N, fallible));
+  FOR_EACH(; (void), .SetLength(N, fallible));
   for (int n = 0; n < N; ++n) {
     FOR_EACH(;, [n] = n);
   }
@@ -1450,8 +1448,9 @@ TEST(TArray, test_SetLengthAndRetainStorage_no_ctor)
 #undef RPAREN
 }
 
-template <typename Comparator>
-bool TestCompareMethods(const Comparator& aComp) {
+template <typename F, typename Comparator, typename ItemComparator>
+bool TestCompareMethodsImpl(F aItemCreator, const Comparator& aComp,
+                            const ItemComparator& aItemComp) {
   nsTArray<int> ary({57, 4, 16, 17, 3, 5, 96, 12});
 
   ary.Sort(aComp);
@@ -1463,18 +1462,23 @@ bool TestCompareMethods(const Comparator& aComp) {
     }
   }
 
-  if (!ary.ContainsSorted(5, aComp)) {
+  if (!ary.ContainsSorted(aItemCreator(5), aItemComp)) {
     return false;
   }
-  if (ary.ContainsSorted(42, aComp)) {
+  if (ary.ContainsSorted(aItemCreator(42), aItemComp)) {
     return false;
   }
 
-  if (ary.BinaryIndexOf(16, aComp) != 4) {
+  if (ary.BinaryIndexOf(aItemCreator(16), aItemComp) != 4) {
     return false;
   }
 
   return true;
+}
+
+template <typename Comparator>
+bool TestCompareMethods(const Comparator& aComp) {
+  return TestCompareMethodsImpl([](int aI) { return aI; }, aComp, aComp);
 }
 
 struct IntComparator {
@@ -1483,11 +1487,18 @@ struct IntComparator {
   bool LessThan(int aLeft, int aRight) const { return aLeft < aRight; }
 };
 
+struct IntWrapper {
+  int mI;
+};
+
 TEST(TArray, test_comparator_objects)
 {
   ASSERT_TRUE(TestCompareMethods(IntComparator()));
   ASSERT_TRUE(
       TestCompareMethods([](int aLeft, int aRight) { return aLeft - aRight; }));
+  ASSERT_TRUE(TestCompareMethodsImpl(
+      [](int aI) { return IntWrapper{.mI = aI}; }, IntComparator(),
+      [](int aElem, const IntWrapper& aItem) { return aElem - aItem.mI; }));
 }
 
 struct Big {
@@ -1513,6 +1524,34 @@ TEST(TArray, test_AutoTArray_SwapElements)
 
   ASSERT_EQ(oneArray[0].size[10], 0u);
   ASSERT_EQ(another[0].size[10], 1u);
+}
+
+TEST(TArray, test_TArray_Move_EmptyWithCapacity)
+{
+  nsTArray<void*> oneArray;
+  nsTArray<void*> otherArray;
+
+  oneArray.SetCapacity(50);
+  auto cap = oneArray.Capacity();
+  ASSERT_TRUE(cap >= 50);
+
+  otherArray = std::move(oneArray);
+  ASSERT_EQ(otherArray.Capacity(), cap);
+  ASSERT_EQ(oneArray.Capacity(), 0u);
+}
+
+TEST(TArray, test_TArray_SwapElements_EmptyWithCapacity)
+{
+  nsTArray<void*> oneArray;
+  nsTArray<void*> otherArray;
+
+  oneArray.SetCapacity(50);
+  auto cap = oneArray.Capacity();
+  ASSERT_TRUE(cap >= 50);
+
+  otherArray.SwapElements(oneArray);
+  ASSERT_EQ(otherArray.Capacity(), cap);
+  ASSERT_EQ(oneArray.Capacity(), 0u);
 }
 
 }  // namespace TestTArray

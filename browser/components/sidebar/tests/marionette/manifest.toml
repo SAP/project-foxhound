@@ -2,7 +2,13 @@
 tags = "local"
 
 ["test_default_launcher_visible.py"]
+skip-if = [
+  "asan", # Bug 2010115
+  "tsan", # Bug 2010115
+]
 
 ["test_initialize_vertical_tabs.py"]
 
 ["test_last_used_sidebar_panel.py"]
+
+["test_sidebar_button_removal.py"]

@@ -45,6 +45,11 @@ export var ResetProfile = {
       return false;
     }
 
+    // Allow Firefox Refresh if force pref is set, see Bug 1928138
+    if (Services.prefs.getBoolPref("browser.profiles.forceEnableRefresh")) {
+      return true;
+    }
+
     // We also need to be using a profile the profile manager knows about.
     // We are disabling Firefox Refresh for profiles with a storeID.
     // Bug 1928138 will add support for selectable profiles and profiles with

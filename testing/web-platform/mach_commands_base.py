@@ -103,5 +103,5 @@ class WebPlatformTestsRunner:
             logger=logger,
             src_root=self.setup.topsrcdir,
             obj_root=self.setup.topobjdir,
-            **kwargs
+            **kwargs,
         )

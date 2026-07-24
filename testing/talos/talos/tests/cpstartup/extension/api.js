@@ -92,7 +92,7 @@ this.cpstartup = class extends ExtensionAPI {
   async openTab(gBrowser, url) {
     // Start the timer and the profiler right before the tab open on the parent side.
     TalosParentProfiler.subtestStart("cpstartup: Begin Tab Open");
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
 
     this.startStamp = Services.telemetry.msSystemNow();
     let newDomainURL = url.replace(

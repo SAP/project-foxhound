@@ -8,75 +8,46 @@ import android.content.Context
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
-import io.mockk.MockKAnnotations
-import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
 import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.spyk
-import mozilla.components.browser.state.state.TabSessionState
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
-import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.session.TrackingProtectionUseCases
-import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
-import org.junit.Before
-import org.junit.Rule
+import mozilla.components.support.test.any
 import org.junit.Test
-import org.junit.runner.RunWith
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
-import org.robolectric.RobolectricTestRunner
+import kotlin.coroutines.ContinuationInterceptor
 
-@RunWith(RobolectricTestRunner::class)
 class DefaultConnectionDetailsControllerTest {
-
-    private lateinit var context: Context
-
-    @MockK(relaxed = true)
-    private lateinit var navController: NavController
-
-    @MockK(relaxed = true)
-    private lateinit var fragment: Fragment
-
-    @MockK(relaxed = true)
-    private lateinit var sitePermissions: SitePermissions
-
-    @MockK(relaxed = true)
-    private lateinit var cookieBannersStorage: CookieBannersStorage
-
-    private lateinit var controller: DefaultConnectionDetailsController
-
-    private lateinit var tab: TabSessionState
-
     private var gravity = 54
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val scope = coroutinesTestRule.scope
-
-    @Before
-    fun setUp() {
-        MockKAnnotations.init(this)
+    @Test
+    fun `WHEN handleBackPressed is called THEN should call popBackStack and navigate`() = runTest {
         val trackingProtectionUseCases: TrackingProtectionUseCases = mockk(relaxed = true)
-        context = spyk(testContext)
-        tab = createTab("https://mozilla.org")
-        controller = DefaultConnectionDetailsController(
+        val context: Context = mockk {
+            every { components.useCases.trackingProtectionUseCases } returns trackingProtectionUseCases
+            every { components.settings.shouldUseCookieBannerPrivateMode } returns false
+            every { components.publicSuffixList } returns mockk()
+        }
+
+        val fragment = mockk<Fragment>()
+        every { fragment.context } returns context
+
+        val tab = createTab("https://mozilla.org")
+        val navController: NavController = mockk(relaxed = true)
+        val controller = DefaultConnectionDetailsController(
             fragment = fragment,
             context = context,
-            ioScope = scope,
-            cookieBannersStorage = cookieBannersStorage,
+            scope = this,
+            cookieBannersStorage = mockk(),
             navController = { navController },
-            sitePermissions = sitePermissions,
+            sitePermissions = mockk(),
             gravity = gravity,
+            ioDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
             getCurrentTab = { tab },
         )
-
-        every { fragment.context } returns context
-        every { context.components.useCases.trackingProtectionUseCases } returns trackingProtectionUseCases
 
         val onComplete = slot<(Boolean) -> Unit>()
         every {
@@ -85,19 +56,12 @@ class DefaultConnectionDetailsControllerTest {
                 capture(onComplete),
             )
         }.answers { onComplete.captured.invoke(true) }
-    }
-
-    @Test
-    fun `WHEN handleBackPressed is called THEN should call popBackStack and navigate`() = runTestOnMain {
-        every { context.settings().shouldUseCookieBannerPrivateMode } returns false
-        every { context.components.publicSuffixList } returns mockk()
 
         controller.handleBackPressed()
+        testScheduler.advanceUntilIdle()
 
-        coVerify {
-            navController.popBackStack()
+        navController.popBackStack()
 
-            navController.navigate(any<NavDirections>())
-        }
+        navController.navigate(any<NavDirections>())
     }
 }

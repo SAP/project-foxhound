@@ -147,6 +147,7 @@ function InterestPicker({ title, subtitle, interests, receivedFeedRank }) {
                   checked={checked}
                   aria-checked={checked}
                   onChange={e => handleChange(e, index)}
+                  key={`${interest.sectionId}-${checked}`} // Force remount to sync DOM state with React state
                   tabIndex={index === focusedIndex ? 0 : -1}
                   onFocus={() => {
                     onItemFocus(index);

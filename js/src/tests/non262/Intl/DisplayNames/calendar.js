@@ -4,7 +4,7 @@ const tests = {
   "en": {
     long: {
       "gregory": "Gregorian Calendar",
-      "iso8601": "ISO-8601 Calendar",
+      "iso8601": "Gregorian Calendar (ISO 8601 Weeks)",
       "japanese": "Japanese Calendar",
       "islamic-civil": "Hijri Calendar (tabular, civil epoch)",
       "islamicc": "Hijri Calendar (tabular, civil epoch)",
@@ -19,8 +19,8 @@ const tests = {
       "gregory": "Gregorianischer Kalender",
       "iso8601": "ISO-8601-Kalender",
       "japanese": "Japanischer Kalender",
-      "islamic-civil": "Bürgerlicher Hidschri-Kalender (tabellarisch)",
-      "islamicc": "Bürgerlicher Hidschri-Kalender (tabellarisch)",
+      "islamic-civil": "Hidschra-Kalender (tabellarisch, nicht-astronomisch)",
+      "islamicc": "Hidschra-Kalender (tabellarisch, nicht-astronomisch)",
       "ethioaa": "Äthiopischer Amätä-Aläm-Kalender",
       "ethiopic-amete-alem": "Äthiopischer Amätä-Aläm-Kalender",
     },

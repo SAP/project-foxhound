@@ -28,7 +28,7 @@ You also need to set some options to get full diagnostics:
 
 .. code ::
 
-   "rust-analyzer.server.extraEnv": {
+   "rust-analyzer.cargo.extraEnv": {
      "CARGO_TARGET_DIR": "/path/to/objdir"
    },
    "rust-analyzer.vfs.extraIncludes": ["/path/to/objdir", "/optional/path/to/windows_rs_dir"],
@@ -36,7 +36,7 @@ You also need to set some options to get full diagnostics:
    "rust-analyzer.cargo.buildScripts.overrideCommand": [ "/path/to/mach", "--log-no-times", "cargo", "check", "--all-crates", "--message-format-json" ],
 
 The easiest way to make these work out of the box is using
-`neoconf <https://github.com/folke/neoconf.nvim/>`__, which
+`codesettings.nvim <https://github.com/mrjones2014/codesettings.nvim>`__, which
 automatically supports importing VSCode configuration files.
 :code:`./mach ide vscode --no-interactive` will then generate the right
 configuration for you.
@@ -46,13 +46,6 @@ ESLint
 
 The easiest way to integrate ESLint with VIM is using the `Syntastic plugin
 <https://github.com/vim-syntastic/syntastic>`__.
-
-In order for VIM to detect jsm files as JS you might want something like this
-in your :code:`.vimrc`:
-
-.. code::
-
-    autocmd BufRead,BufNewFile *.jsm set filetype=javascript
 
 :code:`mach eslint --setup` installs a specific ESLint version and some ESLint
 plugins into the repositories' :code:`node_modules`.

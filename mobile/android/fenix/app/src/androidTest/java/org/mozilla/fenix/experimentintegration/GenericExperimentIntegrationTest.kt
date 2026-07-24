@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.experimentintegration
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Before
@@ -18,9 +19,12 @@ class GenericExperimentIntegrationTest {
     private val experimentName = InstrumentationRegistry.getArguments().getString("EXP_NAME", "Viewpoint")
 
     @get:Rule
-    val activityTestRule = HomeActivityTestRule(
-        isPWAsPromptEnabled = false,
-    )
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityTestRule(
+                isPWAsPromptEnabled = false,
+            ),
+        ) { it.activity }
 
     @Before
     fun setUp() {
@@ -34,9 +38,9 @@ class GenericExperimentIntegrationTest {
 
     @Test
     fun disableStudiesViaStudiesToggle() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openExperimentsMenu {
             verifyExperimentEnrolled(experimentName)
         }.goBack {
@@ -49,9 +53,9 @@ class GenericExperimentIntegrationTest {
 
     @Test
     fun verifyStudiesAreDisabled() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDataCollection {
             clickStudiesOption()
             verifyStudiesToggle(false)
@@ -60,9 +64,9 @@ class GenericExperimentIntegrationTest {
 
     @Test
     fun testExperimentEnrolled() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openExperimentsMenu {
             verifyExperimentEnrolled(experimentName)
         }
@@ -70,9 +74,9 @@ class GenericExperimentIntegrationTest {
 
     @Test
     fun testExperimentUnenrolled() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openExperimentsMenu {
             verifyExperimentExists(experimentName)
             verifyExperimentNotEnrolled(experimentName)
@@ -81,9 +85,9 @@ class GenericExperimentIntegrationTest {
 
     @Test
     fun testExperimentUnenrolledViaSecretMenu() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openExperimentsMenu {
             verifyExperimentExists(experimentName)
             verifyExperimentEnrolled(experimentName)

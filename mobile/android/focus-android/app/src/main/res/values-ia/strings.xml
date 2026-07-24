@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -48,9 +55,9 @@
   <!-- Menu item: Add the current page as a shortcut to the device's home screen (launcher). -->
   <string name="menu_add_to_home_screen">Adder al pagina initial</string>
   <!-- Menu item: Add the current site as a shortcut on the Home screen -->
-  <string name="menu_add_to_shortcuts">Adder al vias breve</string>
+  <string name="menu_add_to_shortcuts">Adder al accessos directe</string>
   <!-- Menu item: Remove the current site as a shortcut from the Home screen -->
-  <string name="menu_remove_from_shortcuts">Remover del vias breve</string>
+  <string name="menu_remove_from_shortcuts">Remover del accessos directe</string>
   <!-- Menu item: Shows information about features and changes that are new to this version -->
   <string name="menu_settings">Parametros</string>
   <string name="menu_about">A proposito</string>
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te pone al commando.</p> <p>Usa lo como un navigator private: <ul> <li>Cerca e naviga directemente in le app</li> <li>Bloca le traciatores (o actualisa le parametros pro permitter traciatores)</li> <li>Eliminar pro deler le cookies e tamben le chronologia de recercas e de navigation</li> </ul> </p> <p>%1$s es producite per Mozilla. Nostre mission es promover un Internet san e aperte.<br/> <a href=\"%2$s\">Pro saper plus</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te pone al commando.</p>\n<p>Usa lo como un navigator private:\n<ul>\n<li>Cerca e naviga directemente in le app</li>\n<li>Bloca le traciatores (o actualisa le parametros pro permitter traciatores)</li>\n<li>Eliminar pro deler le cookies e tamben le chronologia de recercas e de navigation</li>\n</ul> </p>\n<p>%1$s es producite per Mozilla. Nostre mission es promover un Internet san e aperte.<br/>\n<a href=\"%2$s\">Pro saper plus</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Pro saper plus</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -288,7 +295,7 @@
     %s is the name of the app (for example "Firefox Focus" or "Firefox Klar")
     Shortcuts is a feature that allows the user to pin his favorite websites to Focus home screen so he can quickly access them.
   -->
-  <string name="preference_security_biometric_summary2">Disbloca per le dactylogramma si tu addeva le vias breve o quando un sito web jam es aperte in %s.</string>
+  <string name="preference_security_biometric_summary2">Disserra con dactylogramma si tu ha addite accessos directe o quando un sito web es ja aperte in %s.</string>
   <!--
     Preference Title: Secure Mode is a setting that prevents the app's content to show up in the "recent apps" screen
     and prevents the user from taking screenshots or casting the app to other displays.
@@ -449,7 +456,7 @@
   <!-- Snackbar action to immediately open the successfully downloaded file. -->
   <string name="download_snackbar_open">Aperir</string>
   <!-- Snackbar that will be displayed after a website has been added to shortcuts. -->
-  <string name="snackbar_added_to_shortcuts">Addite a vias breve!</string>
+  <string name="snackbar_added_to_shortcuts">Addite al accessos directe!</string>
   <string name="error_hostLookup_title">Servitor non trovate</string>
   <!--
     New Onboarding flow first screen title
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Continuante, tu accepta le %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Continuante, tu accepta le %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Conditiones de uso de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Conditiones de uso de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox se cura de tu confidentialitate. Pro saper plus, consulta nostre %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se cura de tu confidentialitate. Pro saper plus in nostre %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Aviso de confidentialitate.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Aviso de confidentialitate</string>
   <!-- New Onboarding flow first screen button label -->
@@ -542,7 +541,7 @@
     When enhanced tracking protection is disabled for the current session then we will show this warning in the "Add to home screen" dialog to
     let the user know that the shortcut will always be opened with enhanced tracking protection disabled.
   -->
-  <string name="dialog_addtohomescreen_tracking_protection2">Le via breve se aperira con le Protection antitraciamento reinfortiate disactivate</string>
+  <string name="dialog_addtohomescreen_tracking_protection2">Le accesso directe se aperira con le Protection antitraciamento reinfortiate disactivate</string>
   <!--
     The user visible name of the "notification channel" (Android 8+ feature) for the ongoing notification shown while a browsing session is active.
     The recommended maximum length is 40 characters; the value may be truncated if it is too long.
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Eliminar le chronologia de navigation</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Clauder le altere schedas</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Adder nove scheda</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -851,7 +852,7 @@
   <!-- Text for the dialog title for renaming a top site -->
   <string name="rename_top_site">Renominar</string>
   <!-- Placeholder text for the input field of rename top site -->
-  <string name="placeholder_rename_top_site">Nomine via-breve</string>
+  <string name="placeholder_rename_top_site">Nomine del accesso directe</string>
   <!--
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Isto pote esser un problema con le configuration del servitor, o pote esser que un persona tenta de usurpar le identitate del servitor. <br/><br/> Si tu te ha connectite a iste servitor con successo in le passato, le error pote esser temporari.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Il es possibile que alcuno tenta usurpar le identitate del sito e pote esser riscose continuar.</label> <br><br> <label>%1$s non considera digne de fide <b>%2$s</b> perque su emissor de certificatos es incognite, le certificato es auto-signate, o le servitor non invia le correcte certificatos intermedie.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Il es possibile que alcuno tenta usurpar le identitate del sito e pote esser riscose continuar.</label> <br><br>\n<label>%1$s non considera digne de fide <b>%2$s</b> perque su emissor de certificatos es incognite, le certificato es auto-signate, o le servitor non invia le correcte certificatos intermedie.</label>]]></string>
   <!--
     Sessions List
 

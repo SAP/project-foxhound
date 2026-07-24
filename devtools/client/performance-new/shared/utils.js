@@ -42,6 +42,7 @@ function clamp(val, min, max) {
 
 /**
  * Formats a file size.
+ *
  * @param {number} num - The number (in bytes) to format.
  * @returns {string} e.g. "10 B", "100 MiB"
  */
@@ -191,6 +192,7 @@ function makePowerOf2Scale(rangeStart, rangeEnd) {
 /**
  * Scale a source range to a destination range, but clamp it within the
  * destination range.
+ *
  * @param {number} val - The source range value to map to the destination range,
  * @param {number} sourceRangeStart,
  * @param {number} sourceRangeEnd,
@@ -340,8 +342,8 @@ function withCommonPathPrefixRemoved(pathArray) {
 }
 
 /**
- * This method has been copied from `ospath_win.jsm` as part of the migration
- * from `OS.Path` to `PathUtils`.
+ * This method has been copied as part of the migration from `OS.Path` to
+ * `PathUtils`.
  *
  * Return the windows drive name of a path, or |null| if the path does
  * not contain a drive name.
@@ -572,6 +574,12 @@ const featureDescriptions = [
     title:
       "Include all flow-related markers. These markers show the program flow better but " +
       "can cause more overhead in some places than normal.",
+  },
+  {
+    name: "JavaScript Sources",
+    value: "jssources",
+    title: "Collect JavaScript source code information for profiled scripts.",
+    experimental: true,
   },
 ];
 

@@ -15,9 +15,10 @@
 #ifndef mozilla_dom_gamepad_GamepadHandle_h
 #define mozilla_dom_gamepad_GamepadHandle_h
 
-#include "PLDHashTable.h"
-#include <type_traits>
 #include <cinttypes>
+#include <type_traits>
+
+#include "PLDHashTable.h"
 
 namespace IPC {
 

@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 //
@@ -79,6 +78,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "called_from_lib:libgvfscommon\n"
          "called_from_lib:libgvfsdbus\n"
          "called_from_lib:libibus-1\n"
+         "called_from_lib:libnvidia-egl-wayland\n"
          "called_from_lib:libnvidia-eglcore\n"
          "called_from_lib:libnvidia-glsi\n"
          "called_from_lib:libogg.so\n"
@@ -200,6 +200,12 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "deadlock:EncryptedClientHelloServer\n"
          // Bug 1682861 - permanent
          "deadlock:nsDOMWindowUtils::CompareCanvases\n"
+         // Bug 1984952 - not technically necessarily a deadlock, but a weird case of
+         // recursive locking that tsan normally doesn't allow, that is not clear yet
+         // how it happens and whether it's actually problematic, but it's originating
+         // from a system library so we can't do much about fixing it (except if it's
+         // actually a tsan bug).
+         "deadlock:libgallium-*.so\n"
 
 
 

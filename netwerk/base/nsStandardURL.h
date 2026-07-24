@@ -6,8 +6,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef nsStandardURL_h__
-#define nsStandardURL_h__
+#ifndef nsStandardURL_h_
+#define nsStandardURL_h_
 
 #include <bitset>
 
@@ -18,10 +18,8 @@
 #include "mozilla/Encoding.h"
 #include "nsCOMPtr.h"
 #include "nsURLHelper.h"
-#include "nsISizeOf.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsISensitiveInfoHiddenURI.h"
 #include "nsIURIMutator.h"
 
@@ -115,7 +113,6 @@ class URLSegmentNumber {
 class nsStandardURL : public nsIFileURL,
                       public nsIStandardURL,
                       public nsISerializable,
-                      public nsISizeOf,
                       public nsISensitiveInfoHiddenURI
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
     ,
@@ -134,10 +131,6 @@ class nsStandardURL : public nsIFileURL,
   NS_DECL_NSISTANDARDURL
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSISENSITIVEINFOHIDDENURI
-
-  // nsISizeOf
-  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
-  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
   static void InitGlobalObjects();
   static void ShutdownGlobalObjects();
@@ -609,6 +602,11 @@ inline nsDependentCSubstring nsStandardURL::Host() {
   if (mHost.mLen > 0) {
     pos = mHost.mPos;
     len = mHost.mLen;
+    MOZ_RELEASE_ASSERT(pos < mSpec.Length());
+    // `pos + len - 1 < mSpec.Length()` is `len <= mSpec.Length() - pos`
+    // but also avoids overflow. Underflow can't happen because of previous
+    // assert.
+    MOZ_RELEASE_ASSERT(len <= mSpec.Length() - pos);
     if (mSpec.CharAt(pos) == '[' && mSpec.CharAt(pos + len - 1) == ']') {
       pos++;
       len -= 2;
@@ -631,4 +629,4 @@ inline nsDependentCSubstring nsStandardURL::Filename() {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsStandardURL_h__
+#endif  // nsStandardURL_h_

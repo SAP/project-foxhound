@@ -7,22 +7,6 @@ support-files = [
   "doc_markup_dragdrop_autoscroll_01.html",
   "doc_markup_dragdrop_autoscroll_02.html",
   "doc_markup_edit.html",
-  "doc_markup_events_01.html",
-  "doc_markup_events_02.html",
-  "doc_markup_events_03.html",
-  "doc_markup_events_04.html",
-  "doc_markup_events_chrome_listeners.html",
-  "doc_markup_events_jquery.html",
-  "doc_markup_events_object_listener.html",
-  "doc_markup_events-overflow.html",
-  "doc_markup_events_react_development_15.4.1.html",
-  "doc_markup_events_react_development_15.4.1_jsx.html",
-  "doc_markup_events_react_production_15.3.1.html",
-  "doc_markup_events_react_production_15.3.1_jsx.html",
-  "doc_markup_events_react_production_16.2.0.html",
-  "doc_markup_events_react_production_16.2.0_jsx.html",
-  "doc_markup_events-source_map.html",
-  "doc_markup_events_toggle.html",
   "doc_markup_flashing.html",
   "doc_markup_html_mixed_case.html",
   "doc_markup_image_and_canvas.html",
@@ -35,6 +19,7 @@ support-files = [
   "doc_markup_pagesize_01.html",
   "doc_markup_pagesize_02.html",
   "doc_markup_pseudo.html",
+  "doc_markup_search.css",
   "doc_markup_search.html",
   "doc_markup_subgrid.html",
   "doc_markup_svg_attributes.html",
@@ -46,37 +31,13 @@ support-files = [
   "doc_markup_xul.xhtml",
   "doc_markup_update-on-navigtion_1.html",
   "doc_markup_update-on-navigtion_2.html",
-  "doc_markup_view-original-source.html",
-  "doc_markup_shadowdom_open_debugger_pretty_printed.html",
-  "events_bundle.js",
-  "events_bundle.js.map",
-  "events_original.js",
   "head.js",
   "helper_attributes_test_runner.js",
-  "helper_diff.js",
-  "helper_events_test_runner.js",
   "helper_markup_accessibility_navigation.js",
   "helper_outerhtml_test_runner.js",
   "helper_style_attr_test_runner.js",
-  "lib_babel_6.21.0_min.js",
-  "lib_jquery_1.0.js",
-  "lib_jquery_1.1.js",
-  "lib_jquery_1.2_min.js",
-  "lib_jquery_1.3_min.js",
-  "lib_jquery_1.4_min.js",
-  "lib_jquery_1.6_min.js",
-  "lib_jquery_1.7_min.js",
-  "lib_jquery_1.11.1_min.js",
-  "lib_jquery_2.1.1_min.js",
-  "lib_react_16.2.0_min.js",
-  "lib_react_dom_15.3.1_min.js",
-  "lib_react_dom_15.4.1.js",
-  "lib_react_dom_16.2.0_min.js",
-  "lib_react_with_addons_15.3.1_min.js",
-  "lib_react_with_addons_15.4.1.js",
-  "react_external_listeners.js",
+  "events/lib_jquery_1.0.js",
   "resources/*",
-  "shadowdom_open_debugger.min.js",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
   "!/devtools/client/inspector/test/head.js",
   "!/devtools/client/inspector/test/shared-head.js",
@@ -86,17 +47,25 @@ support-files = [
 ]
 
 ["browser_markup_accessibility_focus_blur.js"]
-run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = [
+  "os != 'mac'", # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+]
 
 ["browser_markup_accessibility_navigation.js"]
-run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = [
+  "os != 'mac'", # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+]
 
 ["browser_markup_accessibility_navigation_after_edit.js"]
-run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = [
+  "os != 'mac'", # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+]
 
 ["browser_markup_accessibility_new_selection.js"]
 
 ["browser_markup_accessibility_semantics.js"]
+
+["browser_markup_anchor_badge.js"]
 
 ["browser_markup_anonymous_01.js"]
 
@@ -111,7 +80,9 @@ run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Ke
 ["browser_markup_copy_image_data.js"]
 
 ["browser_markup_css_completion_style_attribute_01.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_markup_css_completion_style_attribute_02.js"]
 
@@ -122,7 +93,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_markup_display_node_02.js"]
 
 ["browser_markup_dom_mutation_breakpoints.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_markup_dragdrop_autoscroll_01.js"]
 
@@ -144,89 +117,7 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_markup_dragdrop_tooltip.js"]
 
-["browser_markup_events-overflow.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1177550
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1177550
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1177550
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1177550
-]
-
-["browser_markup_events-windowed-host.js"]
-
-["browser_markup_events_01.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_02.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_03.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_04.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_chrome_blocked.js"]
-
-["browser_markup_events_chrome_not_blocked.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_click_to_close.js"]
-
-["browser_markup_events_jquery_1.0.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.1.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.11.1.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.2.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.3.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.4.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.6.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_1.7.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_jquery_2.1.1.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_keyboard_navigation.js"]
-
-["browser_markup_events_object_listener.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_development_15.4.1.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_development_15.4.1_jsx.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_production_15.3.1.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_production_15.3.1_jsx.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_production_16.2.0.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_react_production_16.2.0_jsx.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_source_map.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_markup_events_toggle.js"]
+["browser_markup_empty_attributes.js"]
 
 ["browser_markup_flex_display_badge.js"]
 
@@ -286,10 +177,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_markup_load_01.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1706833, times out waiting for context menu to open
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1706833, times out waiting for context menu to open
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1706833, times out waiting for context menu to open
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1706833, times out waiting for context menu to open
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1706833, times out waiting for context menu to open
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1706833, times out waiting for context menu to open
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1706833, times out waiting for context menu to open
 ]
 
 ["browser_markup_mutation_01.js"]
@@ -312,7 +202,9 @@ skip-if = [
 
 ["browser_markup_pagesize_02.js"]
 
-["browser_markup_pseudo_on_reload.js"]
+["browser_markup_pseudo.js"]
+
+["browser_markup_pseudo_view-transition.js"]
 
 ["browser_markup_remove_xul_attributes.js"]
 
@@ -333,48 +225,6 @@ skip-if = [
 ["browser_markup_search_01.js"]
 
 ["browser_markup_search_html.js"]
-
-["browser_markup_shadowdom.js"]
-
-["browser_markup_shadowdom_clickreveal.js"]
-
-["browser_markup_shadowdom_clickreveal_scroll.js"]
-
-["browser_markup_shadowdom_copy_paths.js"]
-
-["browser_markup_shadowdom_delete.js"]
-
-["browser_markup_shadowdom_dynamic.js"]
-
-["browser_markup_shadowdom_hover.js"]
-
-["browser_markup_shadowdom_marker_and_before_pseudos.js"]
-
-["browser_markup_shadowdom_maxchildren.js"]
-
-["browser_markup_shadowdom_mutations_shadow.js"]
-
-["browser_markup_shadowdom_navigation.js"]
-
-["browser_markup_shadowdom_nested_pick_inspect.js"]
-
-["browser_markup_shadowdom_noslot.js"]
-
-["browser_markup_shadowdom_open_debugger.js"]
-
-["browser_markup_shadowdom_open_debugger_pretty_printed.js"]
-
-["browser_markup_shadowdom_shadowroot_mode.js"]
-
-["browser_markup_shadowdom_show_nodes_button.js"]
-
-["browser_markup_shadowdom_slotted_keyboard_focus.js"]
-
-["browser_markup_shadowdom_slotupdate.js"]
-
-["browser_markup_shadowdom_ua_widgets.js"]
-
-["browser_markup_shadowdom_ua_widgets_with_nac.js"]
 
 ["browser_markup_subgrid_display_badge.js"]
 
@@ -431,10 +281,6 @@ skip-if = [
 ["browser_markup_toggle_closing_tag_line.js"]
 
 ["browser_markup_update-on-navigtion.js"]
-
-["browser_markup_view-original-source.js"]
-
-["browser_markup_view-source.js"]
 
 ["browser_markup_void_elements_html.js"]
 

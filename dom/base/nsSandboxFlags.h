@@ -9,8 +9,8 @@
  * HTML5 spec.
  */
 
-#ifndef nsSandboxFlags_h___
-#define nsSandboxFlags_h___
+#ifndef nsSandboxFlags_h_
+#define nsSandboxFlags_h_
 
 /**
  * This constant denotes the lack of a sandbox attribute/directive.

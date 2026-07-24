@@ -6,7 +6,6 @@ package org.mozilla.fenix.microsurvey.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,12 +31,15 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.RadioButtonListItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
+import mozilla.components.ui.icons.R as iconsR
 
 private val shape = RoundedCornerShape(8.dp)
 
@@ -53,13 +57,13 @@ private val shape = RoundedCornerShape(8.dp)
 fun MicrosurveyContent(
     question: String,
     answers: List<String>,
-    @DrawableRes icon: Int = R.drawable.ic_print,
-    backgroundColor: Color = FirefoxTheme.colors.layer2,
+    @DrawableRes icon: Int = iconsR.drawable.mozac_ic_print_24,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
     selectedAnswer: String? = null,
     onSelectionChange: (String) -> Unit,
 ) {
     Card(
-        border = BorderStroke(1.dp, FirefoxTheme.colors.borderPrimary),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         modifier = Modifier
@@ -97,7 +101,7 @@ private fun Header(icon: Int, question: String) {
         modifier = Modifier.padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
+        Icon(
             painter = painterResource(icon),
             contentDescription = stringResource(id = R.string.microsurvey_feature_icon_content_description),
             modifier = Modifier.size(24.dp),
@@ -107,23 +111,20 @@ private fun Header(icon: Int, question: String) {
 
         Text(
             text = question,
-            color = FirefoxTheme.colors.textPrimary,
             style = FirefoxTheme.typography.headline7,
         )
     }
 }
 
-/**
- * Preview for [MicrosurveyContent].
- */
-@PreviewScreenSizes
-@PreviewLightDark
+@FlexibleWindowPreview
 @Composable
-fun MicrosurveyContentPreview() {
-    FirefoxTheme {
+private fun MicrosurveyContentPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         MicrosurveyContent(
             question = "How satisfied are you with printing in Firefox?",
-            icon = R.drawable.ic_print,
+            icon = iconsR.drawable.mozac_ic_print_24,
             answers = listOf(
                 stringResource(id = R.string.likert_scale_option_1),
                 stringResource(id = R.string.likert_scale_option_2),

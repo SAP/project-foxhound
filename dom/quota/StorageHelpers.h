@@ -7,8 +7,8 @@
 #ifndef DOM_QUOTA_QUOTADATABASEHELPER_H
 #define DOM_QUOTA_QUOTADATABASEHELPER_H
 
-#include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozIStorageConnection.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 

@@ -47,8 +47,14 @@ class MFTDecoder final {
   //  - aOutputType needs at least major and minor types set.
   //    This is used to select the matching output type out
   //    of all the available output types of the MFT.
+  //  - aFallbackSubType is a preferred subtype to fall back to if the currently
+  //    selected subtype in aOutputType is unavailable, if this is GUID_NULL
+  //    then no attempt to fallback will occur, if it is not GUID_NULL then it
+  //    will be searched for as a preferred fallback, and if not found the last
+  //    subtype available will be chosen as a final fallback.
   HRESULT SetMediaTypes(
       IMFMediaType* aInputType, IMFMediaType* aOutputType,
+      const GUID& aFallbackSubType,
       std::function<HRESULT(IMFMediaType*)>&& aCallback =
           [](IMFMediaType* aOutput) { return S_OK; });
 
@@ -100,14 +106,30 @@ class MFTDecoder final {
   // Sends a message to the MFT.
   HRESULT SendMFTMessage(MFT_MESSAGE_TYPE aMsg, ULONG_PTR aData);
 
-  HRESULT FindDecoderOutputTypeWithSubtype(const GUID& aSubType);
-  HRESULT FindDecoderOutputType();
+  // This method first attempts to find the provided aSubType in the compatible
+  // list reported by the decoder, if found it will be set up, otherwise it will
+  // search for the preferred subtype aFallbackSubType, and if that is also not
+  // found the last available subtype is set up.
+  //
+  // aFallbackSubType can be GUID_NULL to cause this to return E_FAIL when
+  // aSubType is not found, avoiding fallback behaviors.
+  HRESULT FindDecoderOutputTypeWithSubtype(const GUID& aSubType,
+                                           const GUID& aFallbackSubType);
+  HRESULT FindDecoderOutputType(const GUID& aFallbackSubType);
 
  private:
   // Will search a suitable MediaType using aTypeToUse if set, if not will
   // use the current mOutputType.
+  //
+  // When aSubType (or the current mOutputType) is not found, it will search for
+  // aFallbackSubType instead, and if not is not found it will use the last
+  // available compatible type reported by the decoder.
+  //
+  // aFallbackSubType can be GUID_NULL to cause this to return E_FAIL when
+  // aSubType (or the current mOutputType) is not found, avoiding fallbacks.
   HRESULT SetDecoderOutputType(
-      const GUID& aSubType, IMFMediaType* aTypeToUse,
+      const GUID& aSubType, const GUID& aFallbackSubType,
+      IMFMediaType* aTypeToUse,
       std::function<HRESULT(IMFMediaType*)>&& aCallback);
   HRESULT CreateOutputSample(RefPtr<IMFSample>* aOutSample);
 

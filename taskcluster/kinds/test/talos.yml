@@ -17,10 +17,6 @@ task-defaults:
                 default:
                     - talos/linux_config.py
     test-manifest-loader: null  # don't load tests in the taskgraph
-    use-caches:
-        by-test-platform:
-            windows.*: ["checkout"]
-            default: ["checkout", "pip", "uv"]
 
 talos-bcv:
     description: Talos basic compositor video
@@ -36,10 +32,7 @@ talos-bcv:
                     windows11-64.*(-qr)?/opt: [trunk]
                     macosx.*(-qr)?/opt: [trunk]
                     default: []
-            default:
-                by-test-platform:
-                    windows.*-32.*: []
-                    default: [trunk]
+            default: [trunk]
     max-run-time: 1800
     mozharness:
         extra-options:
@@ -724,6 +717,11 @@ talos-xperf:
                     # running xperf as an administrator which cause us to fail
                     # due to generating minidumps.
                     - --setpref=layers.gpu-process.enabled=false
+                    # On these runs in particular, the Windows App SDK crashes
+                    # when initializing because DCompositionCreateDevice3()
+                    # fails with ERROR_ACCESS_DENIED. This only seems to happen
+                    # on this kind of run, so disable the Windows App SDK.
+                    - --setpref=widget.windows.windowsappsdk.enabled=false
                 default:
                     - --suite=xperf
         config:

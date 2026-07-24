@@ -9,8 +9,8 @@
 
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/PPaymentRequestParent.h"
-#include "nsIPaymentAddress.h"
 #include "nsIPaymentActionResponse.h"
+#include "nsIPaymentAddress.h"
 
 namespace mozilla::dom {
 

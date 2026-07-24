@@ -1,8 +1,17 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 firefox-appdir = "browser"
 
 ["test_average_similarity.js"]
 
 ["test_calculate_probability.js"]
+
+["test_logistic_regression_utils.js"]
+
+["test_settings_utils.js"]
+
+["test_tabs_to_process.js"]
 
 ["test_text_preprocessing.js"]

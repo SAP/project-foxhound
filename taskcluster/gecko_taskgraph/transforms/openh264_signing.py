@@ -7,7 +7,7 @@ Transform the repackage signing task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
 from voluptuous import Optional
 
@@ -17,17 +17,16 @@ from gecko_taskgraph.util.scriptworker import get_signing_type_per_platform
 
 transforms = TransformSequence()
 
-signing_description_schema = Schema(
-    {
-        Optional("label"): str,
-        Optional("extra"): object,
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+signing_description_schema = LegacySchema({
+    Optional("label"): str,
+    Optional("extra"): object,
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("dependencies"): task_description_schema["dependencies"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 
 @transforms.add
@@ -52,8 +51,7 @@ def make_signing_description(config, jobs):
         is_nightly = True  # cert_scope_per_platform uses this to choose the right cert
 
         description = (
-            "Signing of OpenH264 Binaries for '"
-            "{build_platform}/{build_type}'".format(
+            "Signing of OpenH264 Binaries for '{build_platform}/{build_type}'".format(
                 build_platform=attributes.get("build_platform"),
                 build_type=attributes.get("build_type"),
             )
@@ -109,6 +107,7 @@ def make_signing_description(config, jobs):
             "dependencies": dependencies,
             "attributes": my_attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
         }
 

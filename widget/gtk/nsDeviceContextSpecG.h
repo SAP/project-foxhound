@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDeviceContextSpecGTK_h___
-#define nsDeviceContextSpecGTK_h___
+#ifndef nsDeviceContextSpecGTK_h_
+#define nsDeviceContextSpecGTK_h_
 
 struct JSContext;
 
@@ -13,7 +13,6 @@ struct JSContext;
 #include "nsIPrintSettings.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/gfx/PrintPromise.h"
 
 #include "nsCRT.h" /* should be <limits.h>? */
@@ -59,4 +58,4 @@ class nsDeviceContextSpecGTK : public nsIDeviceContextSpec {
   static gboolean PrinterEnumerator(GtkPrinter* aPrinter, gpointer aData);
 };
 
-#endif /* !nsDeviceContextSpecGTK_h___ */
+#endif /* !nsDeviceContextSpecGTK_h_ */

@@ -24,10 +24,10 @@ export class TestWindowParent extends JSWindowActorParent {
         aMessage.data.toParent = true;
         this.sendAsyncMessage("done", aMessage.data);
         break;
-      case "asyncMul":
+      case "asyncMul": {
         let { a, b } = aMessage.data;
         return { result: a * b };
-
+      }
       case "event":
         Services.obs.notifyObservers(
           this,

@@ -36,6 +36,58 @@ def mock_manifest_runtimes():
 
 
 @pytest.fixture(scope="module")
+def mock_manifest_runtimes_file():
+    """Pre-populate the _load_manifest_runtimes_data memoize cache with test data."""
+    mock_data = {
+        "metadata": {
+            "date": "2026-01-01",
+            "repository": "mozilla-central",
+            "generatedAt": "2026-01-01T00:00:00.000Z",
+            "manifestCount": 3,
+            "jobNameCount": 3,
+        },
+        "jobNames": [
+            "test-linux2404-64-shippable/opt-crashtest",
+            "test-linux2404-64-shippable/opt-reftest",
+            "test-linux2404-64-shippable/opt-xpcshell",
+            "test-linux2404-64-shippable/opt-web-platform-tests",
+            "test-windows11-64-24h2-shippable/opt-crashtest",
+            "test-windows11-64-24h2-shippable/opt-reftest",
+            "test-windows11-64-24h2-shippable/opt-xpcshell",
+            "test-windows11-64-24h2-shippable/opt-web-platform-tests",
+            "test-android-em-14-x86_64-shippable/opt-geckoview-crashtest",
+            "test-android-em-14-x86_64-shippable/opt-geckoview-reftest",
+            "test-android-em-14-x86_64-shippable/opt-geckoview-xpcshell",
+            "test-android-em-14-x86_64-shippable/opt-geckoview-web-platform-tests",
+        ],
+        "manifests": {
+            "test/manifest1.toml": {
+                "jobs": [0, 4, 8],
+                "runtimes": [[1000, 1100], [1200], [1300, 1400, 1500]],
+            },
+            "test/manifest2.toml": {
+                "jobs": [1, 5, 9],
+                "runtimes": [[2000], [2100, 2200], [2300]],
+            },
+            "test/manifest3.toml": {
+                "jobs": [2, 6, 10],
+                "runtimes": [[3000, 3100, 3200], [3300], [3400]],
+            },
+            "test/manifest4.toml": {
+                "jobs": [3, 7, 11],
+                "runtimes": [[4000], [4100], [4200, 4300]],
+            },
+        },
+    }
+
+    # Inject mock data directly into the memoize cache
+    chunking._load_manifest_runtimes_data[()] = mock_data
+    yield
+    # Clean up
+    chunking._load_manifest_runtimes_data.clear()
+
+
+@pytest.fixture(scope="module")
 def unchunked_manifests():
     """Produce a list of unchunked manifests to be consumed by test method.
 
@@ -227,20 +279,37 @@ def test_guess_mozinfo_from_task(params, exception, mock_task_definition):
         assert ("1proc" in setting["runtime"]) != result["e10s"]
 
 
-@pytest.mark.parametrize("platform", ["unix", "windows", "android"])
 @pytest.mark.parametrize(
-    "suite", ["crashtest", "reftest", "web-platform-tests", "xpcshell"]
+    "platform,suite",
+    [
+        ("linux2404-64-shippable/opt", "crashtest"),
+        ("linux2404-64-shippable/opt", "reftest"),
+        ("linux2404-64-shippable/opt", "web-platform-tests"),
+        ("linux2404-64-shippable/opt", "xpcshell"),
+        ("windows11-64-24h2-shippable/opt", "crashtest"),
+        ("windows11-64-24h2-shippable/opt", "reftest"),
+        ("windows11-64-24h2-shippable/opt", "web-platform-tests"),
+        ("windows11-64-24h2-shippable/opt", "xpcshell"),
+        ("android-em-14-x86_64-shippable/opt", "crashtest"),
+        ("android-em-14-x86_64-shippable/opt", "reftest"),
+        ("android-em-14-x86_64-shippable/opt", "web-platform-tests"),
+        ("android-em-14-x86_64-shippable/opt", "xpcshell"),
+    ],
 )
-def test_get_runtimes(platform, suite):
+def test_get_runtimes(platform, suite, mock_manifest_runtimes_file):
     """Tests that runtime information is returned for known good configurations."""
-    assert chunking.get_runtimes(platform, suite)
+    # Clear get_runtimes cache so each parametrized test gets fresh results
+    chunking.get_runtimes.clear()
+
+    result = chunking.get_runtimes(platform, suite)
+    assert isinstance(result, dict)
+    # With our mock data, we should get some results for all platforms
+    assert len(result) > 0
 
 
 @pytest.mark.parametrize(
     "platform,suite,exception",
     [
-        ("nonexistent_platform", "nonexistent_suite", KeyError),
-        ("unix", "nonexistent_suite", KeyError),
         ("unix", "", TypeError),
         ("", "", TypeError),
         ("", "nonexistent_suite", TypeError),
@@ -367,12 +436,10 @@ def test_get_manifests(suite, platform, mock_mozinfo):
     if suite == "xpcshell":
         assert all([re.search(r"xpcshell(.*)?(.ini|.toml)", m) for m in items])
     if "mochitest" in suite:
-        assert all(
-            [
-                re.search(r"(perftest|mochitest|chrome|browser).*(.ini|.toml)", m)
-                for m in items
-            ]
-        )
+        assert all([
+            re.search(r"(perftest|mochitest|chrome|browser).*(.ini|.toml)", m)
+            for m in items
+        ])
     if "web-platform" in suite:
         assert all([m.startswith("/") and m.count("/") <= 4 for m in items])
 

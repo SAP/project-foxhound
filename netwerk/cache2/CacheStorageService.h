@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheStorageService__h__
-#define CacheStorageService__h__
+#ifndef CacheStorageService_h_
+#define CacheStorageService_h_
 
 #include "mozilla/LinkedList.h"
 #include "nsICacheStorageService.h"
@@ -19,6 +19,7 @@
 #include "nsProxyRelease.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/AtomicBitfields.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
@@ -41,6 +42,7 @@ class CacheStorageService;
 class CacheStorage;
 class CacheEntry;
 class CacheEntryHandle;
+class CacheEntryTable;
 
 class CacheMemoryConsumer {
  private:
@@ -73,11 +75,22 @@ class CacheMemoryConsumer {
   void DoMemoryReport(uint32_t aCurrentSize);
 };
 
+using GlobalEntryTables = nsClassHashtable<nsCStringHashKey, CacheEntryTable>;
+class WalkMemoryCacheRunnable;
+
+namespace CacheStorageServiceInternal {
+class WalkMemoryCacheRunnable;
+class WalkDiskCacheRunnable;
+}  // namespace CacheStorageServiceInternal
+
 class CacheStorageService final : public nsICacheStorageService,
                                   public nsIMemoryReporter,
                                   public nsITimerCallback,
                                   public nsICacheTesting,
                                   public nsINamed {
+  friend class CacheStorageServiceInternal::WalkMemoryCacheRunnable;
+  friend class CacheStorageServiceInternal::WalkDiskCacheRunnable;
+
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICACHESTORAGESERVICE
@@ -99,7 +112,7 @@ class CacheStorageService final : public nsICacheStorageService,
   static bool IsRunning() { return sSelf && !sSelf->mShutdown; }
   static bool IsOnManagementThread();
   already_AddRefed<nsIEventTarget> Thread() const;
-  mozilla::Mutex& Lock() { return mLock; }
+  StaticMutex& Lock() { return sLock; }
 
   // Tracks entries that may be forced valid in a pruned hashtable.
   struct ForcedValidData {
@@ -144,6 +157,16 @@ class CacheStorageService final : public nsICacheStorageService,
  private:
   virtual ~CacheStorageService();
   void ShutdownBackground();
+
+  /**
+   * Keeps tables of entries.  There is one entries table for each distinct load
+   * context type.  The distinction is based on following load context info
+   * states: <isPrivate|isAnon|inIsolatedMozBrowser> which builds a mapping
+   * key.
+   *
+   * Thread-safe to access, protected by the service mutex.
+   */
+  static GlobalEntryTables* sGlobalEntryTables MOZ_GUARDED_BY(sLock);
 
  private:
   // The following methods may only be called on the management
@@ -263,9 +286,11 @@ class CacheStorageService final : public nsICacheStorageService,
   /**
    * CacheFileIOManager uses this method to notify CacheStorageService that
    * an active entry was removed. This method is called even if the entry
-   * removal was originated by CacheStorageService.
+   * removal was originated by CacheStorageService.  This also removes the entry
+   * from the DictionaryCache.
    */
-  void CacheFileDoomed(nsILoadContextInfo* aLoadContextInfo,
+  void CacheFileDoomed(const nsACString& aKey,
+                       nsILoadContextInfo* aLoadContextInfo,
                        const nsACString& aIdExtension,
                        const nsACString& aURISpec);
 
@@ -322,7 +347,7 @@ class CacheStorageService final : public nsICacheStorageService,
 
   static CacheStorageService* sSelf;
 
-  mozilla::Mutex mLock MOZ_UNANNOTATED{"CacheStorageService.mLock"};
+  static StaticMutex sLock;
   mozilla::Mutex mForcedValidEntriesLock{
       "CacheStorageService.mForcedValidEntriesLock"};
 

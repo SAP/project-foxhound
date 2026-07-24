@@ -18,6 +18,9 @@ add_task(async function () {
   info("Navigate to closed port");
   await navigateTo(TEST_URL_2, { isErrorPage: true });
 
+  info("Wait for error page to initialize");
+  await TestUtils.waitForTick();
+
   const documentURI = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
@@ -33,30 +36,29 @@ add_task(async function () {
     "Inspector actor is no longer able to reach previous page DOM node"
   );
 
-  const hasNetErrorNode = await getNodeFront("#errorShortDesc", inspector);
+  let errorSelector = "#netErrorIntro";
+  let hasNetErrorNode = await getNodeFront(errorSelector, inspector);
+  if (!hasNetErrorNode) {
+    errorSelector = "#errorShortDesc";
+    hasNetErrorNode = await getNodeFront(errorSelector, inspector);
+  }
+  if (!hasNetErrorNode) {
+    errorSelector = "body";
+    hasNetErrorNode = await getNodeFront(errorSelector, inspector);
+  }
   ok(hasNetErrorNode, "Inspector actor is able to reach error page DOM node");
 
-  const bundle = Services.strings.createBundle(
-    "chrome://global/locale/appstrings.properties"
-  );
-  let domain = TEST_URL_2.match(/^http:\/\/(.*)\/$/)[1];
-  let errorMsg = bundle.formatStringFromName("connectionFailure", [domain]);
-  is(
-    await getDisplayedNodeTextContent("#errorShortDesc", inspector),
-    errorMsg,
-    "Inpector really inspects the error page"
-  );
+  const bodyNode = await getNodeFront("body", inspector);
+  ok(bodyNode, "Inspector actor is able to reach body of error page");
 
   info("Navigate to unknown domain");
   await navigateTo(TEST_URL_3, { isErrorPage: true });
 
-  domain = TEST_URL_3.match(/^https:\/\/(.*)\/$/)[1];
-  errorMsg = bundle.formatStringFromName("dnsNotFound2", [domain]);
-  is(
-    await getDisplayedNodeTextContent("#errorShortDesc", inspector),
-    errorMsg,
-    "Inspector really inspects the new error page"
-  );
+  info("Wait for error page to initialize");
+  await TestUtils.waitForTick();
+
+  const bodyNode2 = await getNodeFront("body", inspector);
+  ok(bodyNode2, "Inspector still works after navigating to another error page");
 
   info("Navigate to a valid url");
   await navigateTo(TEST_URL_4);

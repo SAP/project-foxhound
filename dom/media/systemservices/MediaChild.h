@@ -7,9 +7,9 @@
 #ifndef mozilla_MediaChild_h
 #define mozilla_MediaChild_h
 
+#include "MediaUtils.h"
 #include "mozilla/media/PMediaChild.h"
 #include "mozilla/media/PMediaParent.h"
-#include "MediaUtils.h"
 
 namespace mozilla {
 

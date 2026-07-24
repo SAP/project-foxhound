@@ -7,7 +7,6 @@
 #ifndef mozilla_UniFFICall_h
 #define mozilla_UniFFICall_h
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/UniFFIBindingFwd.h"
 #include "mozilla/dom/UniFFIScaffolding.h"

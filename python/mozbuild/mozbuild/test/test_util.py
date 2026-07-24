@@ -447,12 +447,10 @@ class TestStrictOrderingOnAppendListWithAction(unittest.TestCase):
 
 class TestStrictOrderingOnAppendListWithFlagsFactory(unittest.TestCase):
     def test_strict_ordering_on_append_list_with_flags_factory(self):
-        cls = StrictOrderingOnAppendListWithFlagsFactory(
-            {
-                "foo": bool,
-                "bar": int,
-            }
-        )
+        cls = StrictOrderingOnAppendListWithFlagsFactory({
+            "foo": bool,
+            "bar": int,
+        })
 
         l = cls()
         l += ["a", "b"]

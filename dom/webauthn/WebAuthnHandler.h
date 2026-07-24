@@ -9,11 +9,10 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/RandomNum.h"
 #include "mozilla/dom/AbortSignal.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PWebAuthnTransaction.h"
 #include "mozilla/dom/PWebAuthnTransactionChild.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebAuthnTransactionChild.h"
 
 /*
@@ -84,19 +83,20 @@ class WebAuthnHandler final : public AbortFollower {
     MOZ_ASSERT(aWindow);
   }
 
-  already_AddRefed<Promise> MakeCredential(
-      const PublicKeyCredentialCreationOptions& aOptions,
-      const Optional<OwningNonNull<AbortSignal>>& aSignal, ErrorResult& aError);
+  void MakeCredential(JSContext* aCx,
+                      const PublicKeyCredentialCreationOptions& aOptions,
+                      const Optional<OwningNonNull<AbortSignal>>& aSignal,
+                      const RefPtr<Promise>& aPromise);
 
-  already_AddRefed<Promise> GetAssertion(
-      const PublicKeyCredentialRequestOptions& aOptions,
-      const bool aConditionallyMediated,
-      const Optional<OwningNonNull<AbortSignal>>& aSignal, ErrorResult& aError);
+  void GetAssertion(JSContext* aCx,
+                    const PublicKeyCredentialRequestOptions& aOptions,
+                    const bool aConditionallyMediated,
+                    const Optional<OwningNonNull<AbortSignal>>& aSignal,
+                    const RefPtr<Promise>& aPromise);
 
-  already_AddRefed<Promise> Store(const Credential& aCredential,
-                                  ErrorResult& aError);
+  void Store(const Credential& aCredential, const RefPtr<Promise>& aPromise);
 
-  already_AddRefed<Promise> IsUVPAA(GlobalObject& aGlobal, ErrorResult& aError);
+  void IsUVPAA(const RefPtr<Promise>& aPromise);
 
   void ActorDestroyed();
 

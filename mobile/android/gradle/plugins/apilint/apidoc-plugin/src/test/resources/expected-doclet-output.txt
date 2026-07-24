@@ -1,0 +1,253 @@
+import android.support.annotation.NonNull;
+import androidx.annotation.Nullable;
+import java.lang.Class;
+import java.lang.Cloneable;
+import java.lang.Deprecated;
+import java.lang.Integer;
+import java.lang.Long;
+import java.lang.Runnable;
+import java.lang.String;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.util.List;
+import java.util.Map;
+import org.mozilla.test.A;
+import org.mozilla.test.B;
+import org.mozilla.test.C;
+import org.mozilla.test.DeprecationSchedule;
+import org.mozilla.test.TestClass;
+import org.mozilla.test.testsorta.TestSort;
+
+package org.mozilla.test {
+
+  @Documented public interface A {
+  }
+
+  @Documented public interface B {
+  }
+
+  @Documented public interface C {
+  }
+
+  @Documented @Retention(value=RetentionPolicy.RUNTIME) @Target(value={ElementType.CONSTRUCTOR, ElementType.FIELD, ElementType.LOCAL_VARIABLE, ElementType.METHOD, ElementType.PACKAGE, ElementType.PARAMETER, ElementType.TYPE}) public interface DeprecationSchedule {
+    element public String id();
+    element public int version();
+  }
+
+  public class TestClass {
+    ctor public TestClass();
+    ctor public TestClass(String);
+    ctor public TestClass(String, int);
+    ctor @Deprecated public TestClass(float);
+    ctor public TestClass(int, float);
+    ctor protected TestClass(boolean);
+    method @Deprecated public void testAnnotation();
+    method public void testAnnotationSorting1(@A @B @C int);
+    method public void testAnnotationSorting2(@A @B @C int);
+    method public void testAnnotationSorting3(@A @B @C int);
+    method public void testArrayArg(int[]);
+    method public <T> void testCompositeParam(List<T>);
+    method public final void testFinal();
+    method public void testFinalArg(int);
+    method public void testHiddenAnnotation();
+    method public final void testMethodAnnotation(@NonNull String);
+    method public final void testMultipleMethodAnnotation(@NonNull String, @NonNull String);
+    method public <T> void testParamNestedCompositeType(List<List<T>>);
+    method public <T> List<T> testReturnCompositeType();
+    method public <T> List<List<T>> testReturnNestedCompositeType();
+    method @NonNull public final String testReturnTypeAnnotation();
+    method public <T> T testReturnTypeUnbounded();
+    method public <T extends Runnable> T testReturnTypeWithBound();
+    method public static void testStatic();
+    method public String testStringMethod();
+    method public String testStringMethodWithArg(String);
+    method public synchronized void testSynchronized();
+    method public <T> void testTypeVariableUnbounded(T);
+    method public <T extends Runnable> void testTypeVariableWithBounds(T);
+    method public <T extends Map<Integer,Long>> void testTypeVariableWithMapBounds(T);
+    method public <T extends Runnable & Cloneable> void testTypeVariableWithMultipleBounds(T);
+    method public void testVarArgsOneArg(int...);
+    method public void testVarArgsTwoArgs(int, int...);
+    method public void testVoidMethod();
+    method public void testVoidMethodWithArg(String);
+    method protected void testProtectedMethod();
+    field public static final List<String> TEST_COMPOSITE_TYPE;
+    field @Deprecated public static final int TEST_DEPRECATED_CONST = 1;
+    field public static final double TEST_DOUBLE = 2.0;
+    field public static final int TEST_HIDDEN_ANNOTATION = 2;
+    field public static final int TEST_INT = 1;
+    field public static final long TEST_LONG = 2L;
+    field public static final List<List<String>> TEST_NESTED_COMPOSITE_TYPE;
+    field public static TestSort sort1;
+    field public static org.mozilla.test.testsortb.TestSort sort2;
+    field public String testFieldWithValue;
+    field public String testFieldWithoutValue;
+    field public final String testFinalField = "finalValue";
+    field public static final String testFinalStaticField = "finalStaticValue";
+    field @A @B @C public int testSorting1;
+    field @A @B @C public int testSorting2;
+    field @A @B @C public int testSorting3;
+    field protected int testProtectedField;
+  }
+
+  @Deprecated public class TestClass.DeprecatedClass {
+    ctor public DeprecatedClass();
+  }
+
+  public class TestClass.HiddenAnnotationClass {
+    ctor public HiddenAnnotationClass();
+  }
+
+  public abstract class TestClass.TestAbstractClass {
+    ctor public TestAbstractClass();
+  }
+
+  public static interface TestClass.TestAnnotation {
+  }
+
+  @Deprecated @DeprecationSchedule(id="test-deprecation",version=2) public static class TestClass.TestAnnotationBase {
+    method @Deprecated public void methodToOverride();
+    method public void methodToOverrideWithArgAnnotation(@NonNull String);
+    method public void methodToOverrideWithArgAnnotation2(@Nullable String);
+  }
+
+  @Deprecated @DeprecationSchedule(id="test-deprecation",version=2) public static class TestClass.TestAnnotationChildDuplicateAnnotation extends TestClass.TestAnnotationBase {
+  }
+
+  @Deprecated @DeprecationSchedule(id="test-deprecation",version=2) public static class TestClass.TestAnnotationChildShouldHaveAnnotation extends TestClass.TestAnnotationBase {
+    method public void methodToOverride(int);
+  }
+
+  public static interface TestClass.TestDefaultInterface {
+    method default public void testInterfaceMethod();
+  }
+
+  public static final enum TestClass.TestEnum {
+    method public static TestClass.TestEnum valueOf(String);
+    method public static TestClass.TestEnum[] values();
+    enum_constant public static final TestClass.TestEnum TestEnumConstantOne;
+    enum_constant public static final TestClass.TestEnum TestEnumConstantTwo;
+  }
+
+  public abstract class TestClass.TestExtendGeneric implements List<TestClass> {
+    ctor public TestExtendGeneric();
+  }
+
+  public static class TestClass.TestExtends extends TestClass.TestInterfaceImpl {
+    ctor public TestExtends();
+  }
+
+  public static class TestClass.TestExtendsImplements extends TestClass.TestSubclass implements TestClass.TestInterface TestClass.TestInterfaceTwo {
+    ctor public TestExtendsImplements();
+  }
+
+  public static interface TestClass.TestInterface {
+    method public void testInterfaceMethod();
+  }
+
+  public static class TestClass.TestInterface.TestSubInterfaceClass {
+  }
+
+  public static interface TestClass.TestInterface.TestSubInterfaceClass.TestSubClassInterface {
+  }
+
+  public static class TestClass.TestInterfaceImpl implements TestClass.TestInterface {
+    ctor public TestInterfaceImpl();
+  }
+
+  public static interface TestClass.TestInterfaceTwo {
+  }
+
+  public static interface TestClass.TestInterfaceTypeVariable<T> {
+    method public void testTypeVariableMethod(T);
+  }
+
+  public static class TestClass.TestMultipleInterfaceImpl implements TestClass.TestInterface TestClass.TestInterfaceTwo {
+    ctor public TestMultipleInterfaceImpl();
+  }
+
+  public static class TestClass.TestOverrideNonVisibleApi extends TestClass.TestPackageProtected {
+    method public void testPackageProtected();
+  }
+
+  public static class TestClass.TestPackageProtected {
+  }
+
+  public static class TestClass.TestSort {
+    method public void testSortA0();
+    method public void testSortB0();
+    method public void testSortC0();
+    method public void testSortD0();
+    method protected void testSortA1();
+    method protected void testSortB1();
+    method protected void testSortC1();
+    method protected void testSortD1();
+    field public static final int TEST_SORT_A = 2;
+    field public static final int TEST_SORT_B = 4;
+    field public static final int TEST_SORT_C = 1;
+    field public static final int TEST_SORT_D = 3;
+  }
+
+  public static class TestClass.TestSort.TestSortA {
+  }
+
+  public static class TestClass.TestSort.TestSortB {
+  }
+
+  public static class TestClass.TestSort.TestSortC {
+  }
+
+  public static class TestClass.TestSort.TestSortD {
+  }
+
+  public static class TestClass.TestStaticSubclass {
+    ctor public TestStaticSubclass();
+  }
+
+  public class TestClass.TestSubclass {
+    ctor public TestSubclass();
+  }
+
+  public static class TestClass.TestTypeBoundVariable<T extends Runnable> {
+    ctor public TestTypeBoundVariable();
+    method public void testTypeVariableMethod(T);
+  }
+
+  public static class TestClass.TestTypeVariable<T> {
+    ctor public TestTypeVariable();
+    method public void testTypeVariableMethod(T);
+  }
+
+}
+
+package org.mozilla.test.testsorta {
+
+  public class TestSort {
+  }
+
+}
+
+package org.mozilla.test.testsortb {
+
+  public class TestSort {
+  }
+
+}
+
+package org.mozilla.test.testsortc {
+
+  public class TestSort {
+  }
+
+}
+
+package org.mozilla.test.testsortd {
+
+  public class TestSort {
+  }
+
+}
+

@@ -1,0 +1,25 @@
+From: Landry Breuil <landry@rhaalovely.net>
+Date: Mon, 27 Oct 2025 17:42:00 +0000
+Subject: Bug 1994630: fix build on OpenBSD/arm64 after bug 1988042 r=mjf
+
+we return false on BSD in Supports(), so no need to include something which doesn't exist
+
+Differential Revision: https://phabricator.services.mozilla.com/D268827
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6bcf80824ecafc424e41b136705ba08370d66254
+---
+ rtc_base/cpu_info.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index b51c9e950e..d8469535c6 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -38,7 +38,7 @@
+ #if defined(WEBRTC_ARCH_X86_FAMILY) && defined(_MSC_VER)
+ #include <intrin.h>
+ #endif
+-#if defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD))
++#if defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_LINUX)
+ #include <asm/hwcap.h>
+ #include <sys/auxv.h>
+ #endif

@@ -23,10 +23,6 @@ existing_tasks:
   build-android-arm-shippable/opt: UlHW7hElQTecMpSV8uGHIw
   build-android-arm-shippable/opt-upload-symbols: dBfW1V0IRmeIjPRpbpXkJw
   build-android-arm/opt: DCLlHpwuRG-Gw452ybF8eA
-  build-android-x86-shippable-lite/opt: YUd_z5ZFRKqG-R2ptb6ESQ
-  build-android-x86-shippable-lite/opt-upload-symbols: YvamjR1ZQzGySdQF9FgGtw
-  build-android-x86-shippable/opt: AYDcAK9WRwqIO5AbNfLDkw
-  build-android-x86-shippable/opt-upload-symbols: a9QbIVdhT3KnfXWTYNA-ow
   build-android-x86/opt: Oi6dosi1Sruf5WDHtgMGoQ
   build-android-x86_64-asan-fuzzing/opt: EWLaet8rTfewJwDuuDz8ug
   build-android-x86_64-shippable-lite/opt: JEHIxxuEQdqHy61r-y6d_Q
@@ -374,7 +370,6 @@ existing_tasks:
   generate-baseline-profile-firebase-fenix: BLuv-uHwT3Ws-VR9sPUrQQ
   generate-profile-android-aarch64-shippable/opt: Hr2cAR1TROmEDH9ZBB1NiA
   generate-profile-android-arm-shippable/opt: KDwH8_YhQu-9UoYQ-b23oQ
-  generate-profile-android-x86-shippable/opt: Lo3rCpmWQZecHDKgwsyurw
   generate-profile-android-x86_64-shippable/opt: K1DbNvMZSPi-X-zSuB-w_A
   generate-profile-linux-shippable/opt: GG3-shUBSxqR5ZyKgOKXOg
   generate-profile-linux64-shippable/opt: eYm1a4DfQYOqHylJ84NhDg
@@ -386,7 +381,6 @@ existing_tasks:
   hazard-linux64-haz/debug: CIpyPr_GQgam8sVqRYxwIA
   instrumented-build-android-aarch64-shippable/opt: AbAWZgFSQHab--8b86ySFg
   instrumented-build-android-arm-shippable/opt: WqcPkkFCSviCe62MacemVQ
-  instrumented-build-android-x86-shippable/opt: Srfg50DuQBmZoXDE_RjYrg
   instrumented-build-android-x86_64-shippable/opt: JfziYi8GRnm6lcmR5sVReg
   instrumented-build-apk-fenix: NoshgOImQsqp78lVx0cvcQ
   instrumented-build-linux-shippable/opt: LLaaI34zRzywwPcxO4TT-w
@@ -1886,10 +1880,6 @@ existing_tasks:
   toolchain-android-x64-compiler-rt-20: ZCL9hCjBRAe1FpwhV8vFhA
   toolchain-android-x64-libunwind-19: HKQa0y4JRy-OgHCAUknRpA
   toolchain-android-x64-libunwind-20: fjV4S_F7R0-1-vkvUNtsAg
-  toolchain-android-x86-compiler-rt-19: Qar9S0miT6C8hkazJbXcCA
-  toolchain-android-x86-compiler-rt-20: RoyzelVTQhO-WE2bDYV6DQ
-  toolchain-android-x86-libunwind-19: erwiaz_wS7e5TVolfzUf6Q
-  toolchain-android-x86-libunwind-20: ECIB8ooAQ8KBWe4OJby3bQ
   toolchain-browsertime: J8eJkwcMS3u3d7P3rq5p4g
   toolchain-clang-dist-toolchain: UbOhm-_cQkKuGGa-9Mbe5g
   toolchain-eslint-plugin-mozilla: c3OHDPO7QmWz-X0ZmMgqfg
@@ -1921,8 +1911,6 @@ existing_tasks:
   toolchain-linux64-android-ndk-linux-repack: MowY3pSITBur-O1ze3yanw
   toolchain-linux64-android-sdk-linux-repack: P5G_G9CtSH-nLkHHpUwPMg
   toolchain-linux64-android-system-image-x86_64-repack: c7ne5bckRpWlvjpJcsmEmQ
-  toolchain-linux64-android30-avd-x86-repack: MWZLl7-jR_65mRGzl3logw
-  toolchain-linux64-android30-system-image-x86-repack: PnPtAnkpQm-9AaUuVGXGKw
   toolchain-linux64-android31-avd-x86_64-repack: KXrOTyO2RU-ROZVHDvBPmQ
   toolchain-linux64-android31-system-image-x86_64-repack: dTEa5SPYSyizo4-C4e91UQ
   toolchain-linux64-binutils-2.31.1: A5W0Lw0fRTOQAEO_hAAi9w
@@ -1991,8 +1979,6 @@ existing_tasks:
   toolchain-linux64-wine: SPnl9fgyT6WjDtZB_tpi-g
   toolchain-linux64-x64-compiler-rt-19: XBFalWhyQ7uq6AdjATFCzw
   toolchain-linux64-x64-compiler-rt-20: AY-KVJ_kRnKqKhHUD5B6cg
-  toolchain-linux64-x86-compiler-rt-19: VQ2hQ7u3Rr6v11ea38J7-Q
-  toolchain-linux64-x86-compiler-rt-20: A6VAKpeBQZGDlvmkYar3EQ
   toolchain-linux64-xar: PwUbbnzBT_mdKXp7sF1-Rg
   toolchain-linux64-zucchini-bin: fVgyG9FDQzukx7HEuWtBrw
   toolchain-macosx64-aarch64-cargo-vet: UHnfdRFyRTCZgnkMJknWlA

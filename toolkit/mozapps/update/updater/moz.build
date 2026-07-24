@@ -15,8 +15,7 @@ else:
 updater_rel_path = ""
 include("updater-common.build")
 DIRS += ["updater-dep"]
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["updater-xpcshell"]
+TEST_DIRS += ["updater-xpcshell"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     LDFLAGS += [
@@ -65,6 +64,7 @@ elif CONFIG["MOZ_UPDATE_CHANNEL"] in (
     "aurora",
     "nightly-elm",
     "nightly-pine",
+    "nightly-cypress",
     "nightly-profiling",
     "nightly-oak",
     "nightly-ux",

@@ -4,225 +4,106 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsString.h"
-#include "nsIControllerCommand.h"
 #include "nsControllerCommandTable.h"
-#include "nsGlobalWindowCommands.h"
+
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ControllerCommand.h"
 #include "mozilla/EditorController.h"
 #include "mozilla/HTMLEditorController.h"
+#include "mozilla/StaticPtr.h"
+#include "nsGlobalWindowCommands.h"
+#include "nsString.h"
+
+using mozilla::ControllerCommand;
 
 // this value is used to size the hash table. Just a sensible upper bound
 #define NUM_COMMANDS_LENGTH 32
 
 nsControllerCommandTable::nsControllerCommandTable()
-    : mCommandsTable(NUM_COMMANDS_LENGTH), mMutable(true) {}
+    : mCommandsTable(NUM_COMMANDS_LENGTH) {}
 
 nsControllerCommandTable::~nsControllerCommandTable() = default;
 
-NS_IMPL_ISUPPORTS(nsControllerCommandTable, nsIControllerCommandTable,
-                  nsISupportsWeakReference)
-
-NS_IMETHODIMP
-nsControllerCommandTable::MakeImmutable(void) {
-  mMutable = false;
-  return NS_OK;
+void nsControllerCommandTable::RegisterCommand(const nsACString& aName,
+                                               ControllerCommand* aCommand) {
+  MOZ_DIAGNOSTIC_ASSERT(mMutable);
+  mCommandsTable.InsertOrUpdate(aName, aCommand);
 }
 
-NS_IMETHODIMP
-nsControllerCommandTable::RegisterCommand(const char* aCommandName,
-                                          nsIControllerCommand* aCommand) {
-  NS_ENSURE_TRUE(mMutable, NS_ERROR_FAILURE);
-
-  mCommandsTable.InsertOrUpdate(nsDependentCString(aCommandName), aCommand);
-
-  return NS_OK;
+void nsControllerCommandTable::UnregisterCommand(const nsACString& aCommandName,
+                                                 ControllerCommand* aCommand) {
+  MOZ_DIAGNOSTIC_ASSERT(mMutable);
+  mCommandsTable.Remove(aCommandName);
 }
 
-NS_IMETHODIMP
-nsControllerCommandTable::UnregisterCommand(const char* aCommandName,
-                                            nsIControllerCommand* aCommand) {
-  NS_ENSURE_TRUE(mMutable, NS_ERROR_FAILURE);
-
-  nsDependentCString commandKey(aCommandName);
-  if (!mCommandsTable.Get(commandKey, nullptr)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  mCommandsTable.Remove(commandKey);
-  return NS_OK;
+ControllerCommand* nsControllerCommandTable::FindCommandHandler(
+    const nsACString& aCommandName) const {
+  return mCommandsTable.GetWeak(aCommandName);
 }
 
-NS_IMETHODIMP
-nsControllerCommandTable::FindCommandHandler(const char* aCommandName,
-                                             nsIControllerCommand** aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  *aResult = nullptr;
-
-  nsCOMPtr<nsIControllerCommand> foundCommand;
-  mCommandsTable.Get(nsDependentCString(aCommandName),
-                     getter_AddRefs(foundCommand));
-  if (!foundCommand) {
-    return NS_ERROR_FAILURE;
-  }
-
-  foundCommand.forget(aResult);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::IsCommandEnabled(const char* aCommandName,
-                                           nsISupports* aCommandRefCon,
-                                           bool* aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  *aResult = false;
-
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-  if (!commandHandler) {
+bool nsControllerCommandTable::IsCommandEnabled(const nsACString& aCommandName,
+                                                nsISupports* aContext) const {
+  RefPtr handler = FindCommandHandler(aCommandName);
+  if (!handler) {
     NS_WARNING(
         "Controller command table asked about a command that it does "
         "not handle");
-    return NS_OK;
+    return false;
   }
-
-  return commandHandler->IsCommandEnabled(aCommandName, aCommandRefCon,
-                                          aResult);
+  return handler->IsCommandEnabled(aCommandName, aContext);
 }
 
-NS_IMETHODIMP
-nsControllerCommandTable::UpdateCommandState(const char* aCommandName,
-                                             nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-  if (!commandHandler) {
-    NS_WARNING(
-        "Controller command table asked to update the state of a "
-        "command that it does not handle");
-    return NS_OK;
-  }
-
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::SupportsCommand(const char* aCommandName,
-                                          nsISupports* aCommandRefCon,
-                                          bool* aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  // XXX: need to check the readonly and disabled states
-
-  *aResult = false;
-
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-
-  *aResult = (commandHandler.get() != nullptr);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::DoCommand(const char* aCommandName,
-                                    nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-  if (!commandHandler) {
-    NS_WARNING(
-        "Controller command table asked to do a command that it does "
-        "not handle");
-    return NS_OK;
-  }
-
-  return commandHandler->DoCommand(aCommandName, aCommandRefCon);
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::DoCommandParams(const char* aCommandName,
-                                          nsICommandParams* aParams,
-                                          nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-  if (!commandHandler) {
-    NS_WARNING(
-        "Controller command table asked to do a command that it does "
-        "not handle");
-    return NS_OK;
-  }
-  return commandHandler->DoCommandParams(aCommandName, aParams, aCommandRefCon);
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::GetCommandState(const char* aCommandName,
-                                          nsICommandParams* aParams,
-                                          nsISupports* aCommandRefCon) {
-  nsCOMPtr<nsIControllerCommand> commandHandler;
-  FindCommandHandler(aCommandName, getter_AddRefs(commandHandler));
-  if (!commandHandler) {
-    NS_WARNING(
-        "Controller command table asked to do a command that it does "
-        "not handle");
-    return NS_OK;
-  }
-  return commandHandler->GetCommandStateParams(aCommandName, aParams,
-                                               aCommandRefCon);
-}
-
-NS_IMETHODIMP
-nsControllerCommandTable::GetSupportedCommands(nsTArray<nsCString>& aCommands) {
+void nsControllerCommandTable::GetSupportedCommands(
+    nsTArray<nsCString>& aCommands) const {
   mozilla::AppendToArray(aCommands, mCommandsTable.Keys());
-
-  return NS_OK;
 }
 
-using CommandTableRegistrar = nsresult (*)(nsControllerCommandTable*);
+using CommandTableRegistrar = void (*)(nsControllerCommandTable*);
 
-static already_AddRefed<nsControllerCommandTable>
-CreateCommandTableWithCommands(CommandTableRegistrar aRegistrar) {
-  RefPtr<nsControllerCommandTable> commandTable =
-      new nsControllerCommandTable();
-
-  nsresult rv = aRegistrar(commandTable);
-  if (NS_FAILED(rv)) return nullptr;
-
-  // we don't know here whether we're being created as an instance,
-  // or a service, so we can't become immutable
-
-  return commandTable.forget();
+static nsControllerCommandTable* EnsureCommandTableWithCommands(
+    mozilla::StaticRefPtr<nsControllerCommandTable>& aTable,
+    CommandTableRegistrar aRegistrar) {
+  if (!aTable) {
+    aTable = new nsControllerCommandTable();
+    aRegistrar(aTable);
+    aTable->MakeImmutable();
+    ClearOnShutdown(&aTable);
+  }
+  return aTable;
 }
 
 // static
-already_AddRefed<nsControllerCommandTable>
-nsControllerCommandTable::CreateEditorCommandTable() {
-  return CreateCommandTableWithCommands(
-      mozilla::EditorController::RegisterEditorCommands);
+nsControllerCommandTable* nsControllerCommandTable::EditorCommandTable() {
+  static mozilla::StaticRefPtr<nsControllerCommandTable> sTable;
+  return EnsureCommandTableWithCommands(
+      sTable, mozilla::EditorController::RegisterEditorCommands);
 }
 
 // static
-already_AddRefed<nsControllerCommandTable>
-nsControllerCommandTable::CreateEditingCommandTable() {
-  return CreateCommandTableWithCommands(
-      mozilla::EditorController::RegisterEditingCommands);
+nsControllerCommandTable* nsControllerCommandTable::EditingCommandTable() {
+  static mozilla::StaticRefPtr<nsControllerCommandTable> sTable;
+  return EnsureCommandTableWithCommands(
+      sTable, mozilla::EditorController::RegisterEditingCommands);
 }
 
 // static
-already_AddRefed<nsControllerCommandTable>
-nsControllerCommandTable::CreateHTMLEditorCommandTable() {
-  return CreateCommandTableWithCommands(
-      mozilla::HTMLEditorController::RegisterHTMLEditorCommands);
+nsControllerCommandTable* nsControllerCommandTable::HTMLEditorCommandTable() {
+  static mozilla::StaticRefPtr<nsControllerCommandTable> sTable;
+  return EnsureCommandTableWithCommands(
+      sTable, mozilla::HTMLEditorController::RegisterHTMLEditorCommands);
 }
 
 // static
-already_AddRefed<nsControllerCommandTable>
-nsControllerCommandTable::CreateHTMLEditorDocStateCommandTable() {
-  return CreateCommandTableWithCommands(
-      mozilla::HTMLEditorController::RegisterEditorDocStateCommands);
+nsControllerCommandTable*
+nsControllerCommandTable::HTMLEditorDocStateCommandTable() {
+  static mozilla::StaticRefPtr<nsControllerCommandTable> sTable;
+  return EnsureCommandTableWithCommands(
+      sTable, mozilla::HTMLEditorController::RegisterEditorDocStateCommands);
 }
 
 // static
-already_AddRefed<nsControllerCommandTable>
-nsControllerCommandTable::CreateWindowCommandTable() {
-  return CreateCommandTableWithCommands(
-      nsWindowCommandRegistration::RegisterWindowCommands);
+nsControllerCommandTable* nsControllerCommandTable::WindowCommandTable() {
+  static mozilla::StaticRefPtr<nsControllerCommandTable> sTable;
+  return EnsureCommandTableWithCommands(
+      sTable, nsWindowCommandRegistration::RegisterWindowCommands);
 }

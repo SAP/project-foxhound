@@ -5,24 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDocument.h"
-#include "nsGkAtoms.h"
-#include "nsRect.h"
-#include "nsPresContext.h"
-#include "nsViewManager.h"
-#include "nsITextToSubURI.h"
-#include "nsIURL.h"
-#include "nsIDocShell.h"
-#include "nsCharsetSource.h"  // kCharsetFrom* macro definition
-#include "nsNodeInfoManager.h"
-#include "nsContentUtils.h"
-#include "nsDocElementCreatedNotificationRunner.h"
+
+#include "mozilla/Components.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/Components.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIPrincipal.h"
+#include "nsCharsetSource.h"  // kCharsetFrom* macro definition
+#include "nsContentUtils.h"
+#include "nsDocElementCreatedNotificationRunner.h"
+#include "nsGkAtoms.h"
+#include "nsIDocShell.h"
 #include "nsIMultiPartChannel.h"
+#include "nsIPrincipal.h"
+#include "nsITextToSubURI.h"
+#include "nsIURL.h"
+#include "nsNodeInfoManager.h"
+#include "nsPresContext.h"
 #include "nsProxyRelease.h"
+#include "nsRect.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 
@@ -120,7 +120,8 @@ const char* const MediaDocument::sFormatNames[4] = {
     ""                       // eWithDimAndFile
 };
 
-MediaDocument::MediaDocument() : mDidInitialDocumentSetup(false) {
+MediaDocument::MediaDocument()
+    : nsHTMLDocument(LoadedAsData::No), mDidInitialDocumentSetup(false) {
   mCompatMode = eCompatibility_FullStandards;
 }
 MediaDocument::~MediaDocument() = default;

@@ -169,9 +169,12 @@ class IMEStateManager {
   /**
    * Called when the parent chain of the observing element of IMEContentObserver
    * is changed.
+   *
+   * @param aObserver   The IMEContentObserver which received the notification.
+   * @param aContent    The topmost content which is changed.
    */
   MOZ_CAN_RUN_SCRIPT static void OnParentChainChangedOfObservingElement(
-      IMEContentObserver& aObserver);
+      IMEContentObserver& aObserver, nsIContent& aContent);
 
   /**
    * Called when HTMLEditor updates the root element which is <body> of the
@@ -329,9 +332,6 @@ class IMEStateManager {
   static nsresult NotifyIME(IMEMessage aMessage, nsPresContext* aPresContext,
                             BrowserParent* aBrowserParent = nullptr);
 
-  static nsINode* GetRootEditableNode(const nsPresContext& aPresContext,
-                                      const dom::Element* aElement);
-
   /**
    * Returns active IMEContentObserver but may be nullptr if focused content
    * isn't editable or focus in a remote process.
@@ -382,8 +382,6 @@ class IMEStateManager {
       const nsPresContext& aPresContext, const dom::Element* aFocusedElement);
 
   static void DestroyIMEContentObserver();
-
-  [[nodiscard]] static bool IsEditable(nsINode* node);
 
   [[nodiscard]] static bool IsIMEObserverNeeded(const IMEState& aState);
 

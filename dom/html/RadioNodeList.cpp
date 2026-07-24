@@ -6,11 +6,10 @@
 
 #include "mozilla/dom/RadioNodeList.h"
 
+#include "HTMLInputElement.h"
+#include "js/TypeDecls.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/RadioNodeListBinding.h"
-#include "js/TypeDecls.h"
-
-#include "HTMLInputElement.h"
 
 namespace mozilla::dom {
 

@@ -9,6 +9,7 @@
 
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 
+#include "mozilla/Casting.h"
 #include "mozilla/MathAlgorithms.h"
 
 namespace js {
@@ -198,6 +199,10 @@ void MacroAssembler::byteSwap32(Register reg) { bswapl(reg); }
 // ===============================================================
 // Arithmetic instructions
 
+void MacroAssembler::add32(const Address& src, Register dest) {
+  addl(Operand(src), dest);
+}
+
 void MacroAssembler::add32(Register src, Register dest) { addl(src, dest); }
 
 void MacroAssembler::add32(Imm32 imm, Register dest) { addl(imm, dest); }
@@ -252,9 +257,9 @@ void MacroAssembler::mulDouble(FloatRegister src, FloatRegister dest) {
   vmulsd(src, dest, dest);
 }
 
-void MacroAssembler::quotient32(Register rhs, Register srcDest,
+void MacroAssembler::quotient32(Register lhs, Register rhs, Register dest,
                                 Register tempEdx, bool isUnsigned) {
-  MOZ_ASSERT(srcDest == eax && tempEdx == edx);
+  MOZ_ASSERT(lhs == eax && dest == eax && tempEdx == edx);
 
   // Sign extend eax into edx to make (edx:eax): idiv/udiv are 64-bit.
   if (isUnsigned) {
@@ -266,9 +271,9 @@ void MacroAssembler::quotient32(Register rhs, Register srcDest,
   }
 }
 
-void MacroAssembler::remainder32(Register rhs, Register srcDest,
+void MacroAssembler::remainder32(Register lhs, Register rhs, Register dest,
                                  Register tempEdx, bool isUnsigned) {
-  MOZ_ASSERT(srcDest == eax && tempEdx == edx);
+  MOZ_ASSERT(lhs == eax && dest == eax && tempEdx == edx);
 
   // Sign extend eax into edx to make (edx:eax): idiv/udiv are 64-bit.
   if (isUnsigned) {
@@ -292,22 +297,13 @@ void MacroAssembler::divDouble(FloatRegister src, FloatRegister dest) {
 void MacroAssembler::neg32(Register reg) { negl(reg); }
 
 void MacroAssembler::negateFloat(FloatRegister reg) {
-  ScratchFloat32Scope scratch(*this);
-  vpcmpeqw(Operand(scratch), scratch, scratch);
-  vpsllq(Imm32(31), scratch, scratch);
-
   // XOR the float in a float register with -0.0.
-  vxorps(scratch, reg, reg);  // s ^ 0x80000000
+  vxorpsSimd128(SimdConstant::SplatX4(-0.0f), reg, reg);
 }
 
 void MacroAssembler::negateDouble(FloatRegister reg) {
-  // From MacroAssemblerX86Shared::maybeInlineDouble
-  ScratchDoubleScope scratch(*this);
-  vpcmpeqw(Operand(scratch), scratch, scratch);
-  vpsllq(Imm32(63), scratch, scratch);
-
   // XOR the float in a float register with -0.0.
-  vxorpd(scratch, reg, reg);  // s ^ 0x80000000000000
+  vxorpdSimd128(SimdConstant::SplatX2(-0.0), reg, reg);
 }
 
 void MacroAssembler::abs32(Register src, Register dest) {
@@ -321,19 +317,13 @@ void MacroAssembler::abs32(Register src, Register dest) {
 }
 
 void MacroAssembler::absFloat32(FloatRegister src, FloatRegister dest) {
-  ScratchFloat32Scope scratch(*this);
-  loadConstantFloat32(mozilla::SpecificNaN<float>(
-                          0, mozilla::FloatingPoint<float>::kSignificandBits),
-                      scratch);
-  vandps(scratch, src, dest);
+  float clearSignMask = mozilla::BitwiseCast<float>(INT32_MAX);
+  vandpsSimd128(SimdConstant::SplatX4(clearSignMask), src, dest);
 }
 
 void MacroAssembler::absDouble(FloatRegister src, FloatRegister dest) {
-  ScratchDoubleScope scratch(*this);
-  loadConstantDouble(mozilla::SpecificNaN<double>(
-                         0, mozilla::FloatingPoint<double>::kSignificandBits),
-                     scratch);
-  vandpd(scratch, src, dest);
+  double clearSignMask = mozilla::BitwiseCast<double>(INT64_MAX);
+  vandpdSimd128(SimdConstant::SplatX2(clearSignMask), src, dest);
 }
 
 void MacroAssembler::sqrtFloat32(FloatRegister src, FloatRegister dest) {
@@ -551,13 +541,13 @@ void MacroAssembler::branch16(Condition cond, const Address& lhs, Imm32 rhs,
 }
 
 void MacroAssembler::branch32(Condition cond, Register lhs, Register rhs,
-                              Label* label, LhsHighBitsAreClean) {
+                              Label* label) {
   cmp32(lhs, rhs);
   j(cond, label);
 }
 
 void MacroAssembler::branch32(Condition cond, Register lhs, Imm32 rhs,
-                              Label* label, LhsHighBitsAreClean) {
+                              Label* label) {
   cmp32(lhs, rhs);
   j(cond, label);
 }
@@ -654,9 +644,9 @@ void MacroAssembler::branchPtr(Condition cond, const BaseIndex& lhs,
   branchPtrImpl(cond, lhs, rhs, label);
 }
 
-template <typename T, typename S, typename L>
+template <typename T, typename S>
 void MacroAssembler::branchPtrImpl(Condition cond, const T& lhs, const S& rhs,
-                                   L label) {
+                                   Label* label) {
   cmpPtr(Operand(lhs), rhs);
   j(cond, label);
 }
@@ -1164,8 +1154,9 @@ void MacroAssembler::branchTestMagic(Condition cond, const ValueOperand& value,
   branchTestMagicImpl(cond, value, label);
 }
 
-template <typename T, class L>
-void MacroAssembler::branchTestMagicImpl(Condition cond, const T& t, L label) {
+template <typename T>
+void MacroAssembler::branchTestMagicImpl(Condition cond, const T& t,
+                                         Label* label) {
   cond = testMagic(cond, t);
   j(cond, label);
 }

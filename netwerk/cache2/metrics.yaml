@@ -11,23 +11,6 @@ $tags:
   - 'Core :: Networking: Cache'
 
 network:
-  disk_cache_shutdown_v2:
-    type: timing_distribution
-    description: >
-      Total Time spent (ms) during disk cache shutdown [cache2]
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram NETWORK_DISK_CACHE_SHUTDOWN_V2.
-    time_unit: millisecond
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
-    notification_emails:
-      - necko@mozilla.com
-    expires: never
-    telemetry_mirror: NETWORK_DISK_CACHE_SHUTDOWN_V2
-
   disk_cache2_shutdown_clear_private:
     type: timing_distribution
     description: >

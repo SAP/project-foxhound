@@ -6,7 +6,6 @@ package mozilla.components.service.mars
 
 import android.text.format.DateUtils
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Response
@@ -28,7 +27,6 @@ import org.mockito.Mockito.verify
 import java.io.File
 import java.util.Date
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class MarsTopSitesProviderTest {
 

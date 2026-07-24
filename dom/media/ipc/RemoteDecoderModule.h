@@ -17,6 +17,7 @@ class RemoteDecoderModule : public PlatformDecoderModule {
   friend already_AddRefed<T> MakeAndAddRef(Args&&...);
 
  public:
+  const char* Name() const override;
   static already_AddRefed<PlatformDecoderModule> Create(
       RemoteMediaIn aLocation);
 

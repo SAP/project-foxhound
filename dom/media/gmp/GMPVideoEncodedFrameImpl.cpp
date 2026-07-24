@@ -4,10 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPVideoEncodedFrameImpl.h"
+
+#include "GMPSharedMemManager.h"
 #include "GMPVideoHost.h"
 #include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/Unused.h"
-#include "GMPSharedMemManager.h"
 
 namespace mozilla::gmp {
 
@@ -217,7 +217,7 @@ void GMPVideoEncodedFrameImpl::SetAllocatedSize(uint32_t aNewSize) {
   }
 
   if (!mArrayBuffer.IsEmpty()) {
-    Unused << mArrayBuffer.SetLength(aNewSize, fallible);
+    (void)mArrayBuffer.SetLength(aNewSize, fallible);
     return;
   }
 

@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_XRViewport_h_
 #define mozilla_dom_XRViewport_h_
 
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "mozilla/gfx/Rect.h"
-
-#include "gfxVR.h"
 
 namespace mozilla::dom {
 

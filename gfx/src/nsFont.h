@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFont_h___
-#define nsFont_h___
+#ifndef nsFont_h_
+#define nsFont_h_
 
 #include <cstdint>
 #include "gfxFontConstants.h"  // for NS_FONT_KERNING_AUTO, etc
@@ -123,4 +123,4 @@ struct nsFont final {
 #define NS_FONT_VARIANT_NORMAL 0
 #define NS_FONT_VARIANT_SMALL_CAPS 1
 
-#endif /* nsFont_h___ */
+#endif /* nsFont_h_ */

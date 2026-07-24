@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "OSPermissions",
   "@mozilla.org/ospermissionrequest;1",
-  "nsIOSPermissionRequest"
+  Ci.nsIOSPermissionRequest
 );
 
 export class WebRTCParent extends JSWindowActorParent {
@@ -155,6 +155,13 @@ export class WebRTCParent extends JSWindowActorParent {
       tabbrowser.updateBrowserSharing(browser, {
         webRTC: state,
       });
+    }
+
+    if (isSidebarBrowser(browser)) {
+      browser._sharingState = { webRTC: state };
+      browser.browsingContext.topChromeWindow.SidebarController?._permissions.updateFromBrowserState(
+        browser._sharingState
+      );
     }
   }
 
@@ -493,6 +500,7 @@ function prompt(aActor, aBrowser, aRequest) {
     sharingScreen,
     sharingAudio,
     requestTypes,
+    isHandlingUserInput,
   } = aRequest;
 
   let principal =
@@ -547,7 +555,9 @@ function prompt(aActor, aBrowser, aRequest) {
     }
   }
 
-  let chromeDoc = aBrowser.ownerDocument;
+  // If aBrowser is sidebar browser, its ownerDocument is sidebar panel document.
+  // We need top chrome window's document to access notification elements.
+  let chromeDoc = aBrowser.browsingContext.topChromeWindow?.document;
   const localization = new Localization(
     ["browser/webrtcIndicator.ftl", "branding/brand.ftl"],
     true
@@ -663,8 +673,9 @@ function prompt(aActor, aBrowser, aRequest) {
           // Denying a camera / microphone prompt means we set a temporary or
           // persistent permission block. There may still be active grace period
           // permissions at this point. We need to remove them.
+          let notificationBrowser = notification.browser;
           clearTemporaryGrants(
-            notification.browser,
+            notificationBrowser,
             reqVideoInput === "Camera",
             !!reqAudioInput
           );
@@ -676,32 +687,28 @@ function prompt(aActor, aBrowser, aRequest) {
             if (!isPersistent) {
               // After a temporary block, having permissions.query() calls
               // persistently report "granted" would be misleading
-              maybeClearAlwaysAsk(
-                principal,
-                "microphone",
-                notification.browser
-              );
+              maybeClearAlwaysAsk(principal, "microphone", notificationBrowser);
             }
             lazy.SitePermissions.setForPrincipal(
               principal,
               "microphone",
               lazy.SitePermissions.BLOCK,
               scope,
-              notification.browser
+              notificationBrowser
             );
           }
           if (reqVideoInput) {
             if (!isPersistent && !sharingScreen) {
               // After a temporary block, having permissions.query() calls
               // persistently report "granted" would be misleading
-              maybeClearAlwaysAsk(principal, "camera", notification.browser);
+              maybeClearAlwaysAsk(principal, "camera", notificationBrowser);
             }
             lazy.SitePermissions.setForPrincipal(
               principal,
               sharingScreen ? "screen" : "camera",
               lazy.SitePermissions.BLOCK,
               scope,
-              notification.browser
+              notificationBrowser
             );
           }
         },
@@ -745,29 +752,35 @@ function prompt(aActor, aBrowser, aRequest) {
         return true;
       }
 
-      let doc = this.browser.ownerDocument;
+      let doc = this.browser?.browsingContext?.topChromeWindow?.document;
+      // Sudden sidebar close when PopupNotification is open
+      if (!doc) {
+        return false;
+      }
 
-      // Clean-up video streams of screensharing previews.
+      // Clean-up video streams of screensharing and camera previews.
       if (
-        reqVideoInput !== "Screen" ||
+        (reqVideoInput != "Screen" && reqVideoInput != "Camera") ||
         aTopic == "dismissed" ||
         aTopic == "removed"
       ) {
-        let video = doc.getElementById("webRTC-previewVideo");
-        video.deviceId = null; // Abort previews still being started.
-        if (video.stream) {
-          video.stream.getTracks().forEach(t => t.stop());
-          video.stream = null;
-          video.src = null;
-          doc.getElementById("webRTC-preview").hidden = true;
-        }
-        let menupopup = doc.getElementById("webRTC-selectWindow-menupopup");
-        if (menupopup._commandEventListener) {
-          menupopup.removeEventListener(
-            "command",
-            menupopup._commandEventListener
-          );
-          menupopup._commandEventListener = null;
+        // Hide the webrtc preview section.
+        let webrtcPreviewSection = doc.getElementById("webRTC-preview-section");
+        webrtcPreviewSection.hidden = true;
+
+        // Remove event listeners for camera and window selection menus.
+        for (const id of [
+          "webRTC-selectWindow-menupopup",
+          "webRTC-selectCamera-menupopup",
+        ]) {
+          let menuPopup = doc.getElementById(id);
+          if (menuPopup?._commandEventListener) {
+            menuPopup.removeEventListener(
+              "command",
+              menuPopup._commandEventListener
+            );
+            menuPopup._commandEventListener = null;
+          }
         }
       }
 
@@ -787,6 +800,14 @@ function prompt(aActor, aBrowser, aRequest) {
         focusElement.focus();
       }
 
+      const isRequestingCamera = reqVideoInput === "Camera";
+
+      if (aTopic == "shown") {
+        if (!notification.wasDismissed && isRequestingCamera) {
+          onCameraPromptShown(doc, isHandlingUserInput);
+        }
+      }
+
       if (aTopic != "showing") {
         return false;
       }
@@ -803,7 +824,8 @@ function prompt(aActor, aBrowser, aRequest) {
 
       /**
        * Prepare the device selector for one kind of device.
-       * @param {Object[]} devices - available devices of this kind.
+       *
+       * @param {object[]} devices - available devices of this kind.
        * @param {string} IDPrefix - indicating kind of device and so
        *   associated UI elements.
        * @param {string[]} describedByIDs - an array to which might be
@@ -834,6 +856,10 @@ function prompt(aActor, aBrowser, aRequest) {
 
         for (let device of devices) {
           let item = addDeviceToList(list, device.name, device.deviceIndex);
+          // Add deviceId property for camera devices so that we can preview them on selection.
+          if (IDPrefix == "webRTC-selectCamera") {
+            item.deviceId = device.rawId;
+          }
           if (IDPrefix == "webRTC-selectSpeaker") {
             item.addEventListener("dblclick", event => {
               // Allow the chosen speakers via
@@ -961,40 +987,29 @@ function prompt(aActor, aBrowser, aRequest) {
           .removeAttribute("value");
         doc.getElementById("webRTC-all-windows-shared").hidden = true;
 
+        const webrtcPreview = getOrCreateWebRTCPreviewEl(doc);
+        webrtcPreview.showPreviewControlButtons = false;
+
         menupopup._commandEventListener = event => {
           checkDisabledWindowMenuItem();
-          let video = doc.getElementById("webRTC-previewVideo");
-          if (video.stream) {
-            video.stream.getTracks().forEach(t => t.stop());
-            video.stream = null;
-          }
 
           const { deviceId, mediaSource, scary } = event.target;
           if (deviceId == undefined) {
-            doc.getElementById("webRTC-preview").hidden = true;
-            video.src = null;
+            webrtcPreviewSection.hidden = true;
             return;
           }
+          // We have a valid device
+          webrtcPreviewSection.hidden = false;
 
           let warning = doc.getElementById("webRTC-previewWarning");
           let warningBox = doc.getElementById("webRTC-previewWarningBox");
           warningBox.hidden = !scary;
-          let chromeWin = doc.defaultView;
           if (scary) {
             const warnId =
               mediaSource == "screen"
                 ? "webrtc-share-screen-warning"
                 : "webrtc-share-browser-warning";
             doc.l10n.setAttributes(warning, warnId);
-
-            const learnMore = doc.getElementById(
-              "webRTC-previewWarning-learnMore"
-            );
-            const baseURL = Services.urlFormatter.formatURLPref(
-              "app.support.baseURL"
-            );
-            learnMore.setAttribute("href", baseURL + "screenshare-safety");
-            doc.l10n.setAttributes(learnMore, "webrtc-share-screen-learn-more");
 
             // On Catalina, we don't want to blow our chance to show the
             // OS-level helper prompt to enable screen recording if the user
@@ -1033,39 +1048,11 @@ function prompt(aActor, aBrowser, aRequest) {
               true
             )
           ) {
-            video.deviceId = deviceId;
-            let constraints = {
-              video: { mediaSource, deviceId: { exact: deviceId } },
-            };
-            chromeWin.navigator.mediaDevices.getUserMedia(constraints).then(
-              stream => {
-                if (video.deviceId != deviceId) {
-                  // The user has selected a different device or closed the panel
-                  // before getUserMedia finished.
-                  stream.getTracks().forEach(t => t.stop());
-                  return;
-                }
-                video.srcObject = stream;
-                video.stream = stream;
-                doc.getElementById("webRTC-preview").hidden = false;
-                video.onloadedmetadata = function () {
-                  video.play();
-                };
-              },
-              err => {
-                if (
-                  err.name == "OverconstrainedError" &&
-                  err.constraint == "deviceId"
-                ) {
-                  // Window has disappeared since enumeration, which can happen.
-                  // No preview for you.
-                  return;
-                }
-                console.error(
-                  `error in preview: ${err.message} ${err.constraint}`
-                );
-              }
-            );
+            webrtcPreview.startPreview({
+              deviceId,
+              mediaSource,
+              showPreviewControlButtons: false,
+            });
           }
         };
         menupopup.addEventListener("command", menupopup._commandEventListener);
@@ -1085,8 +1072,7 @@ function prompt(aActor, aBrowser, aRequest) {
         return item;
       }
 
-      doc.getElementById("webRTC-selectCamera").hidden =
-        reqVideoInput !== "Camera";
+      doc.getElementById("webRTC-selectCamera").hidden = !isRequestingCamera;
       doc.getElementById("webRTC-selectWindowOrScreen").hidden =
         reqVideoInput !== "Screen";
       doc.getElementById("webRTC-selectMicrophone").hidden =
@@ -1095,6 +1081,10 @@ function prompt(aActor, aBrowser, aRequest) {
 
       let describedByIDs = ["webRTC-shareDevices-notification-description"];
 
+      // Hide the webrtc preview section.
+      let webrtcPreviewSection = doc.getElementById("webRTC-preview-section");
+      webrtcPreviewSection.hidden = true;
+
       if (sharingScreen) {
         let windowMenupopup = doc.getElementById(
           "webRTC-selectWindow-menupopup"
@@ -1102,8 +1092,46 @@ function prompt(aActor, aBrowser, aRequest) {
         listScreenShareDevices(windowMenupopup, videoInputDevices);
         checkDisabledWindowMenuItem();
       } else {
-        listDevices(videoInputDevices, "webRTC-selectCamera", describedByIDs);
         notificationElement.removeAttribute("invalidselection");
+
+        // Make sure the screen share warning is hidden before showing the permission panel.
+        let warningBox = doc.getElementById("webRTC-previewWarningBox");
+        warningBox.hidden = true;
+
+        if (isRequestingCamera) {
+          listDevices(videoInputDevices, "webRTC-selectCamera", describedByIDs);
+
+          let cameraMenuPopup = doc.getElementById(
+            "webRTC-selectCamera-menupopup"
+          );
+
+          // Set up initial camera preview.
+          let webrtcPreview = getOrCreateWebRTCPreviewEl(doc);
+          webrtcPreview.showPreviewControlButtons = true;
+          // Apply the initial selection.
+          webrtcPreview.deviceId =
+            cameraMenuPopup.querySelector("[selected]")?.deviceId;
+          webrtcPreview.mediaSource = "camera";
+
+          // Show the preview section.
+          webrtcPreviewSection.hidden = false;
+
+          if (cameraMenuPopup) {
+            cameraMenuPopup._commandEventListener = event => {
+              let { deviceId } = event.target;
+              if (deviceId == undefined) {
+                webrtcPreviewSection.hidden = true;
+                return;
+              }
+              // Start preview on selection change.
+              webrtcPreview.startPreview({ deviceId, mediaSource: "camera" });
+            };
+            cameraMenuPopup.addEventListener(
+              "command",
+              cameraMenuPopup._commandEventListener
+            );
+          }
+        }
       }
       if (!sharingAudio) {
         listDevices(
@@ -1319,6 +1347,21 @@ function prompt(aActor, aBrowser, aRequest) {
     );
   }
 
+  // sidebar anchor handling
+  let sidebarPopupNotification = maybeShowPopupNotificationInSidebar(
+    aRequest,
+    aBrowser,
+    message,
+    mainAction,
+    secondaryActions,
+    options
+  );
+
+  if (sidebarPopupNotification) {
+    notification = sidebarPopupNotification;
+    return;
+  }
+
   notification = chromeDoc.defaultView.PopupNotifications.show(
     aBrowser,
     "webRTC-shareDevices",
@@ -1440,6 +1483,7 @@ function getPromptMessageId(
 /**
  * Checks whether we have a microphone/camera in use by checking the activePerms map
  * or if we have an allow permission for a microphone/camera in sitePermissions
+ *
  * @param {Browser} browser - Browser to find all active and allowed microphone and camera devices for
  * @return true if one of the above conditions is met
  */
@@ -1481,7 +1525,10 @@ function allowedOrActiveCameraOrMicrophone(browser) {
 }
 
 function removePrompt(aBrowser, aCallId) {
-  let chromeWin = aBrowser.ownerGlobal;
+  let chromeWin = aBrowser.browsingContext?.topChromeWindow;
+  if (!chromeWin) {
+    return;
+  }
   let notification = chromeWin.PopupNotifications.getNotification(
     "webRTC-shareDevices",
     aBrowser
@@ -1493,6 +1540,7 @@ function removePrompt(aBrowser, aCallId) {
 
 /**
  * Clears temporary permission grants used for WebRTC device grace periods.
+ *
  * @param browser - Browser element to clear permissions for.
  * @param {boolean} clearCamera - Clear camera grants.
  * @param {boolean} clearMicrophone - Clear microphone grants.
@@ -1552,6 +1600,7 @@ function persistGrantOrPromptPermission(principal, permissionName, remember) {
 
 /**
  * Clears any persisted PROMPT (aka Always Ask) permission.
+ *
  * @param principal - Principal to remove permission from.
  * @param {string} permissionName - name of permission.
  * @param browser - Browser element to clear permission for.
@@ -1569,4 +1618,111 @@ function maybeClearAlwaysAsk(principal, permissionName, browser) {
       browser
     );
   }
+}
+
+/**
+ * Helper for lazily creating the webrtc-preview element.
+ *
+ * @param {Document} chromeDoc - The chrome document to create the webrtc-preview element in.
+ * @returns {HTMLElement} The webrtc-preview element which has been inserted into the DOM.
+ */
+function getOrCreateWebRTCPreviewEl(chromeDoc) {
+  let previewSection = chromeDoc.getElementById("webRTC-preview-section");
+  let previewEl = previewSection.querySelector("#webRTC-preview");
+  if (!previewEl) {
+    previewEl = chromeDoc.createElement("webrtc-preview");
+    previewEl.id = "webRTC-preview";
+    previewSection.insertBefore(previewEl, previewSection.firstChild);
+  }
+  return previewEl;
+}
+
+/**
+ * On prompt "shown", if a camera permission request was made as the result of
+ * user interaction start the camera preview automatically.
+ * While websites don't have access to the camera preview, giving websites the
+ * ability to turn on the users camera without any user interaction can be
+ * scary. If there is no user input we offer the user to start the preview
+ * manually.
+ *
+ * @param {Document} doc - The chrome document containing the prompt.
+ * @param {boolean} isHandlingUserInput - Whether the prompt is shown as a
+ * result of user interaction.
+ */
+function onCameraPromptShown(doc, isHandlingUserInput) {
+  // Skip if the request was made without user input.
+  if (!isHandlingUserInput) {
+    return;
+  }
+
+  // Skip if the entire preview section is hidden.
+  if (doc.getElementById("webRTC-preview-section").hidden) {
+    return;
+  }
+
+  // Skip if no device is selected.
+  let cameraMenuPopup = doc.getElementById("webRTC-selectCamera-menupopup");
+  let deviceId = cameraMenuPopup?.querySelector("[selected]")?.deviceId;
+  if (!deviceId) {
+    return;
+  }
+
+  let webrtcPreview = doc.getElementById("webRTC-preview");
+  // Pass deviceId and mediaSource to make sure they're up to date,
+  // matching the user selection.
+  webrtcPreview?.startPreview({ deviceId, mediaSource: "camera" });
+}
+
+function isSidebarBrowser(browser) {
+  const sidebarBrowser =
+    browser.browsingContext?.topChromeWindow?.SidebarController?.browser;
+  if (!sidebarBrowser) {
+    return false;
+  }
+
+  const nestedBrowsers =
+    sidebarBrowser.contentDocument.querySelectorAll("browser");
+  return Array.from(nestedBrowsers).some(b => b === browser);
+}
+
+/**
+ * Show WebRTC popup inside the sidebar instead of urlbar.
+ * Returns the notification object or null.
+ */
+function maybeShowPopupNotificationInSidebar(
+  aRequest,
+  aBrowser,
+  message,
+  mainAction,
+  secondaryActions,
+  options
+) {
+  if (!isSidebarBrowser(aBrowser)) {
+    return null;
+  }
+
+  const win = aBrowser.browsingContext?.topChromeWindow;
+  const sidebarPopupNotifications = win?.SidebarPopupNotifications;
+
+  if (!sidebarPopupNotifications) {
+    return null;
+  }
+
+  const notification = sidebarPopupNotifications.show(
+    aBrowser,
+    "webRTC-shareDevices",
+    message,
+    "sidebar-webrtc-microphone-notification-icon",
+    mainAction,
+    secondaryActions,
+    {
+      ...options,
+      // Prevent dismissal when clicking outside the panel within the sidebar.
+      // Sidebar users may interact with sidebar content while the permission prompt is open.
+      queue: false,
+    }
+  );
+
+  notification.callID = aRequest.callID;
+  return notification;
 }

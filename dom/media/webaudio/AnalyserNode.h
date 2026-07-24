@@ -7,9 +7,9 @@
 #ifndef AnalyserNode_h_
 #define AnalyserNode_h_
 
+#include "AlignedTArray.h"
 #include "AudioNode.h"
 #include "FFTBlock.h"
-#include "AlignedTArray.h"
 
 namespace mozilla::dom {
 

@@ -9,6 +9,7 @@ import android.graphics.Matrix
 import android.view.View
 import android.widget.ImageView
 import androidx.annotation.VisibleForTesting
+import mozilla.components.support.utils.ext.getKeyboardHeight
 
 /**
  * This will scale the received [Bitmap] to the size of the [view]. It retains the bitmap's

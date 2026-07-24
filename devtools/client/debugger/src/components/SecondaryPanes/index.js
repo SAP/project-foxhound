@@ -30,7 +30,7 @@ import {
   shouldLogEventBreakpoints,
 } from "../../selectors/index";
 
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 import { prefs } from "../../utils/prefs";
 
 import Breakpoints from "./Breakpoints/index";
@@ -56,8 +56,8 @@ function debugBtn(onClick, type, className, tooltip) {
       key: type,
       title: tooltip,
     },
-    React.createElement(AccessibleImage, {
-      className: type,
+    React.createElement(DebuggerImage, {
+      name: type,
       title: tooltip,
       "aria-label": tooltip,
     })
@@ -230,8 +230,8 @@ class SecondaryPanes extends Component {
             onClick: e => e.stopPropagation(),
             title: L10N.getStr("scopes.showOriginalScopesHelpTooltip"),
           },
-          React.createElement(AccessibleImage, {
-            className: "shortcuts",
+          React.createElement(DebuggerImage, {
+            name: "shortcuts",
           })
         )
       ),

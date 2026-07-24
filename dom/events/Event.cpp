@@ -10,19 +10,19 @@
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/EventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/InternalMutationEvent.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PointerLockManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGOuterSVGFrame.h"
+#include "mozilla/SVGUtils.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
@@ -30,20 +30,18 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/FragmentOrElement.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/SVGUtils.h"
-#include "mozilla/SVGOuterSVGFrame.h"
-#include "nsContentUtils.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
 #include "nsGlobalWindowInner.h"
-#include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
+#include "nsIFrame.h"
 #include "nsJSEnvironment.h"
 #include "nsLayoutUtils.h"
 #include "nsPIWindowRoot.h"
@@ -161,9 +159,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Event)
         inputEvent->mTargetRanges.Clear();
         break;
       }
-      case eMutationEventClass:
-        tmp->mEvent->AsMutationEvent()->mRelatedNode = nullptr;
-        break;
       default:
         break;
     }
@@ -201,10 +196,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
         cb.NoteXPCOMChild(tmp->mEvent->AsEditorInputEvent()->mDataTransfer);
         NS_IMPL_CYCLE_COLLECTION_TRAVERSE(
             mEvent->AsEditorInputEvent()->mTargetRanges);
-        break;
-      case eMutationEventClass:
-        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mRelatedNode");
-        cb.NoteXPCOMChild(tmp->mEvent->AsMutationEvent()->mRelatedNode);
         break;
       default:
         break;
@@ -339,6 +330,19 @@ EventTarget* Event::GetExplicitOriginalTarget() const {
 
 EventTarget* Event::GetOriginalTarget() const {
   return mEvent->GetOriginalDOMEventTarget();
+}
+
+EventTarget* Event::GetOriginalTarget(CallerType aCallerType) const {
+  if (aCallerType == CallerType::System || nsContentUtils::IsCallerUAWidget()) {
+    return GetOriginalTarget();
+  }
+
+  EventTarget* et = mEvent->GetOriginalDOMEventTarget();
+  nsIContent* content = nsIContent::FromEventTargetOrNull(et);
+  if (!content) {
+    return et;
+  }
+  return content->FindFirstNonChromeOnlyAccessContent();
 }
 
 EventTarget* Event::GetComposedTarget() const {
@@ -777,7 +781,7 @@ const char16_t* Event::GetEventName(EventMessage aEventType) {
 #define MESSAGE_TO_EVENT(name_, _message, _type, _struct) \
   case _message:                                          \
     return u"" #name_;
-#include "mozilla/EventNameList.h"
+#include "mozilla/EventNameList.inc"
 #undef MESSAGE_TO_EVENT
     default:
       break;

@@ -18,7 +18,6 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "nsIPrincipal.h"
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIProtocolHandler.h"
@@ -234,7 +233,7 @@ CookieJarSettings::InitWithURI(nsIURI* aURI, bool aIsPrivate) {
 
   mCookieBehavior = nsICookieManager::GetCookieBehavior(aIsPrivate);
 
-  SetPartitionKey(aURI, false);
+  SetPartitionKey(aURI);
   return NS_OK;
 }
 
@@ -561,12 +560,11 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::Merge(
   return newCookieJarSettings.forget();
 }
 
-void CookieJarSettings::SetPartitionKey(nsIURI* aURI,
-                                        bool aForeignByAncestorContext) {
+void CookieJarSettings::SetPartitionKey(nsIURI* aURI) {
   MOZ_ASSERT(aURI);
 
   OriginAttributes attrs;
-  attrs.SetPartitionKey(aURI, aForeignByAncestorContext);
+  attrs.SetPartitionKey(aURI, false);
   mPartitionKey = std::move(attrs.mPartitionKey);
 
   mToBeMerged = true;
@@ -619,9 +617,9 @@ void CookieJarSettings::UpdateIsOnContentBlockingAllowList(
     return;
   }
 
-  Unused << ContentBlockingAllowList::Check(contentBlockingAllowListPrincipal,
-                                            NS_UsePrivateBrowsing(aChannel),
-                                            mIsOnContentBlockingAllowList);
+  (void)ContentBlockingAllowList::Check(contentBlockingAllowListPrincipal,
+                                        NS_UsePrivateBrowsing(aChannel),
+                                        mIsOnContentBlockingAllowList);
 
   mToBeMerged = true;
 }

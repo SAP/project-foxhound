@@ -6,7 +6,6 @@
 #ifndef mozilla_image_encoders_bmp_nsBMPEncoder_h
 #define mozilla_image_encoders_bmp_nsBMPEncoder_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/UniquePtr.h"
 

@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 
 /* This must occur *after* base/basictypes.h to avoid typedefs conflicts. */
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
 #include "mozilla/ResultExtensions.h"
 
@@ -18,6 +17,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/RandomNum.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPtr.h"
@@ -187,11 +187,12 @@ static nsresult UnescapeFragment(const nsACString& aFragment, nsIURI* aURI,
   return rv;
 }
 
+#if !defined(ANDROID)
 static Result<nsCOMPtr<nsIFile>, nsresult> GetOsTmpDownloadDirectory() {
   nsCOMPtr<nsIFile> dir;
   MOZ_TRY(NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(dir)));
 
-#if !defined(XP_MACOSX) && defined(XP_UNIX)
+#  if !defined(XP_MACOSX) && defined(XP_UNIX)
   // Ensuring that only the current user can read the file names we end up
   // creating. Note that creating directories with a specified permission is
   // only supported on Unix platform right now. That's why the above check
@@ -256,7 +257,7 @@ static Result<nsCOMPtr<nsIFile>, nsresult> GetOsTmpDownloadDirectory() {
     }
   }
 
-#endif
+#  endif
   NS_ASSERTION(dir, "Somehow we didn't get a download directory!");
   return dir;
 }
@@ -272,6 +273,7 @@ static nsresult EnsureDirectoryExists(nsIFile* aDir) {
   }
   return rv;
 };
+#endif  // ANDROID
 
 /**
  * Obtains the final directory to save downloads to. This tends to vary per
@@ -285,8 +287,7 @@ static Result<nsCOMPtr<nsIFile>, nsresult> GetPreferredDownloadsDirectory(
     bool aSkipChecks = false) {
 #if defined(ANDROID)
   return Err(NS_ERROR_FAILURE);
-#endif
-
+#else
   nsresult rv;
   // Try to get the users download location, if it's set.
   switch (Preferences::GetInt(NS_PREF_DOWNLOAD_FOLDERLIST, -1)) {
@@ -376,6 +377,7 @@ static Result<nsCOMPtr<nsIFile>, nsresult> GetPreferredDownloadsDirectory(
   }
 
   return dir;
+#endif  // ANDROID
 }
 
 NS_IMETHODIMP nsExternalHelperAppService::GetPreferredDownloadsDirectory(
@@ -397,13 +399,13 @@ static Result<nsCOMPtr<nsIFile>, nsresult> GetInitialDownloadDirectory(
     bool aSkipChecks = false) {
 #if defined(ANDROID)
   return Err(NS_ERROR_FAILURE);
-#endif
-
+#else
   if (StaticPrefs::browser_download_start_downloads_in_tmp_dir()) {
     return GetOsTmpDownloadDirectory();
   }
 
   return GetPreferredDownloadsDirectory(aSkipChecks);
+#endif
 }
 
 /**
@@ -800,7 +802,7 @@ NS_IMETHODIMP nsExternalHelperAppService::CreateListener(
   }
 
   nsAutoString extension;
-  int32_t dotidx = fileName.RFind(u".");
+  int32_t dotidx = fileName.RFindChar(u'.');
   if (dotidx != -1) {
     extension = Substring(fileName, dotidx + 1);
   }
@@ -967,13 +969,9 @@ nsresult nsExternalHelperAppService::EscapeURI(nsIURI* aURI, nsIURI** aResult) {
   return ios->NewURI(escapedSpec, nullptr, nullptr, aResult);
 }
 
-bool ExternalProtocolIsBlockedBySandbox(
+bool nsExternalHelperAppService::ExternalProtocolIsBlockedBySandbox(
     BrowsingContext* aBrowsingContext,
     const bool aHasValidUserGestureActivation) {
-  if (!StaticPrefs::dom_block_external_protocol_navigation_from_sandbox()) {
-    return false;
-  }
-
   if (!aBrowsingContext || aBrowsingContext->IsTop()) {
     return false;
   }
@@ -1294,8 +1292,8 @@ nsExternalHelperAppService::Observe(nsISupports* aSubject, const char* aTopic,
   if (!strcmp(aTopic, "profile-before-change")) {
     ExpungeTemporaryFiles();
   } else if (!strcmp(aTopic, "last-pb-context-exited")) {
-    if (Preferences::GetBool("browser.download.enableDeletePrivate", true) &&
-        Preferences::GetBool("browser.download.deletePrivate", true)) {
+    if (StaticPrefs::browser_download_enableDeletePrivate() &&
+        StaticPrefs::browser_download_deletePrivate()) {
       ExpungePrivateFiles();
     }
     ExpungeTemporaryPrivateFiles();
@@ -3169,7 +3167,7 @@ nsresult nsExternalHelperAppService::FillMIMEInfoForMimeTypeFromExtras(
       extensions.EndReading(end);
       while (start != end) {
         nsACString::const_iterator cursor = start;
-        mozilla::Unused << FindCharInReadable(',', cursor, end);
+        (void)FindCharInReadable(',', cursor, end);
         aMIMEInfo->AppendExtension(Substring(start, cursor));
         // If a comma was found, skip it for the next search.
         start = cursor != end ? ++cursor : cursor;
@@ -3547,229 +3545,250 @@ void nsExternalHelperAppService::CheckDefaultFileName(nsAString& aFileName,
 
 void nsExternalHelperAppService::SanitizeFileName(nsAString& aFileName,
                                                   uint32_t aFlags) {
-  nsAutoString fileName(aFileName);
+  // True if multiple consecutive whitespace characters should be replaced by
+  // single space ' '.
+  const bool collapseWhitespace = !(aFlags & VALIDATE_DONT_COLLAPSE_WHITESPACE);
 
-  // Replace known invalid characters.
-  fileName.ReplaceChar(u"" KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS "%",
-                       u'_');
-  fileName.StripChar(char16_t(0));
-
-  const char16_t *startStr, *endStr;
-  fileName.BeginReading(startStr);
-  fileName.EndReading(endStr);
-
-  // True if multiple consecutive whitespace characters should
-  // be replaced by single space ' '.
-  bool collapseWhitespace = !(aFlags & VALIDATE_DONT_COLLAPSE_WHITESPACE);
-
-  // The maximum filename length differs based on the platform:
-  //  Windows (FAT/NTFS) stores filenames as a maximum of 255 UTF-16 code units.
-  //  Mac (APFS) stores filenames with a maximum 255 of UTF-8 code units.
-  //  Linux (ext3/ext4...) stores filenames with a maximum 255 bytes.
-  // So here we just use the maximum of 255 bytes.
-  // 0 means don't truncate at a maximum size.
-  const uint32_t maxBytes =
-      (aFlags & VALIDATE_DONT_TRUNCATE) ? 0 : kDefaultMaxFileNameLength;
-
-  // True if the last character added was whitespace.
+  // Scan the filename in-place, stripping control and separator characters;
+  // collapse runs of whitespace if required, and convert formatting chars
+  // (except ZWNBSP, which is treated as whitespace) to underscore.
+  char16_t* dest = aFileName.BeginWriting();
+  // Known-invalid chars that will be replaced by '_'.
+  const auto kInvalidChars =
+      u"" KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS "%"_ns;
+  // True if the last character seen was whitespace.
   bool lastWasWhitespace = false;
-
-  // Length of the filename that fits into the maximum size excluding the
-  // extension and period.
-  int32_t longFileNameEnd = -1;
-
-  // Index of the last character added that was not a character that can be
-  // trimmed off of the end of the string. Trimmable characters are whitespace,
-  // periods and the vowel separator u'\u180e'. If all the characters after this
-  // point are trimmable characters, truncate the string to this point after
-  // iterating over the filename.
-  int32_t lastNonTrimmable = -1;
-
-  // The number of bytes that the string would occupy if encoded in UTF-8.
-  uint32_t bytesLength = 0;
-
-  // The length of the extension in bytes.
-  uint32_t extensionBytesLength = 0;
-
-  // This algorithm iterates over each character in the string and appends it
-  // or a replacement character if needed to outFileName.
-  nsAutoString outFileName;
-  while (startStr < endStr) {
-    bool err = false;
-    char32_t nextChar = UTF16CharEnumerator::NextChar(&startStr, endStr, &err);
-    if (err) {
-      break;
+  // Accumulator for all bits seen in characters; this gives us a trivial way
+  // to confirm if the name is pure ASCII.
+  char32_t allBits = 0;
+  const char16_t* end = aFileName.EndReading();
+  for (const char16_t* cp = aFileName.BeginReading(); cp < end;) {
+    // Replace known-invalid characters with underscore.
+    if (kInvalidChars.Contains(*cp)) {
+      *dest++ = u'_';
+      cp++;
+      lastWasWhitespace = false;
+      continue;
     }
 
-    // nulls are already stripped out above.
-    MOZ_ASSERT(nextChar != char16_t(0));
+    // Remember where this character begins.
+    const char16_t* charStart = cp;
+    // Get the full character code, and advance cp past it.
+    bool err = false;
+    char32_t nextChar = UTF16CharEnumerator::NextChar(&cp, end, &err);
+    allBits |= nextChar;
+    if (NS_WARN_IF(err)) {
+      // Invalid (unpaired) surrogate: replace with REPLACEMENT CHARACTER,
+      // and continue processing the remainder of the name.
+      MOZ_ASSERT(nextChar == u'\uFFFD');
+      *dest++ = nextChar;
+      lastWasWhitespace = false;
+      continue;
+    }
 
+    // Skip control characters and line/paragraph separators.
     auto unicodeCategory = unicode::GetGeneralCategory(nextChar);
     if (unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_CONTROL ||
         unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_LINE_SEPARATOR ||
         unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_PARAGRAPH_SEPARATOR) {
-      // Skip over any control characters and separators.
       continue;
     }
 
+    // Convert whitespace to ASCII spaces, and handle whitespace collapsing.
     if (unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_SPACE_SEPARATOR ||
         nextChar == u'\ufeff') {
-      // Trim out any whitespace characters at the beginning of the filename,
-      // and only add whitespace in the middle of the filename if the last
-      // character was not whitespace or if we are not collapsing whitespace.
-      if (!outFileName.IsEmpty() &&
-          (!lastWasWhitespace || !collapseWhitespace)) {
-        // Allow the ideographic space if it is present, otherwise replace with
-        // ' '.
-        if (nextChar != u'\u3000') {
-          nextChar = ' ';
-        }
-        lastWasWhitespace = true;
-      } else {
-        lastWasWhitespace = true;
+      if (dest == aFileName.BeginWriting() ||
+          (collapseWhitespace && lastWasWhitespace)) {
         continue;
       }
+      lastWasWhitespace = true;
+      if (nextChar != u'\u3000') {
+        nextChar = u' ';
+      }
+      *dest++ = nextChar;
+      continue;
     } else {
       lastWasWhitespace = false;
-      if (nextChar == '.' || nextChar == u'\u180e') {
-        // Don't add any periods or vowel separators at the beginning of the
-        // string. Note also that lastNonTrimmable is not adjusted in this
-        // case, because periods and vowel separators are included in the
-        // set of characters to trim at the end of the filename.
-        if (outFileName.IsEmpty()) {
-          continue;
-        }
-      } else {
-        if (unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_FORMAT) {
-          // Replace formatting characters with an underscore.
-          nextChar = '_';
-        }
-
-        // Don't truncate surrogate pairs in the middle.
-        lastNonTrimmable =
-            int32_t(outFileName.Length()) +
-            (NS_IS_HIGH_SURROGATE(H_SURROGATE(nextChar)) ? 2 : 1);
-      }
     }
 
-    if (maxBytes) {
-      // UTF16CharEnumerator already converts surrogate pairs, so we can use
-      // a simple computation of byte length here.
-      uint32_t charBytesLength = nextChar < 0x80      ? 1
-                                 : nextChar < 0x800   ? 2
-                                 : nextChar < 0x10000 ? 3
-                                                      : 4;
-      bytesLength += charBytesLength;
-      if (bytesLength > maxBytes) {
-        if (longFileNameEnd == -1) {
-          longFileNameEnd = int32_t(outFileName.Length());
-        }
+    if ((nextChar == u'.' || nextChar == u'\u180e')) {
+      // Trim dot and vowel separator at beginning.
+      if (dest == aFileName.BeginWriting()) {
+        continue;
       }
-
-      // If we encounter a period, it could be the start of an extension, so
-      // start counting the number of bytes in the extension. If another period
-      // is found, start again since we want to use the last extension found.
-      if (nextChar == u'.') {
-        extensionBytesLength = 1;  // 1 byte for the period.
-      } else if (extensionBytesLength) {
-        extensionBytesLength += charBytesLength;
-      }
+    } else if (unicodeCategory == HB_UNICODE_GENERAL_CATEGORY_FORMAT) {
+      // Replace other formatting characters with underscore.
+      *dest++ = u'_';
+      continue;
     }
 
-    AppendUCS4ToUTF16(nextChar, outFileName);
+    // Copy the current character (potentially a surrogate pair) to dest.
+    while (charStart < cp) {
+      *dest++ = *charStart++;
+    }
   }
 
-  // If the filename is longer than the maximum allowed filename size,
-  // truncate it, but preserve the desired extension that is currently
-  // on the filename.
-  if (bytesLength > maxBytes && !outFileName.IsEmpty()) {
-    // Get the sanitized extension from the filename without the dot.
-    nsAutoString extension;
-    int32_t dotidx = outFileName.RFind(u".");
-    if (dotidx != -1) {
-      extension = Substring(outFileName, dotidx + 1);
+  // UTF-16 code units we will trim if they're left at the end of the name,
+  // or at the end of the base name after removing an extension.
+  auto trimIfTrailing = [](char16_t aCh) -> bool {
+    return aCh == u' ' || aCh == u'\u3000' || aCh == u'.' || aCh == u'\u180e';
+  };
+
+  // Strip any trailing whitespace/period/vowel-separator.
+  while (dest > aFileName.BeginWriting()) {
+    char16_t ch = *(dest - 1);
+    if (trimIfTrailing(ch)) {
+      dest--;
+    } else {
+      break;
     }
+  }
 
-    // There are two ways in which the filename should be truncated:
-    //   - If the filename was too long, truncate the name at the length
-    //     of the filename.
-    //     This position is indicated by longFileNameEnd.
-    //   - lastNonTrimmable will indicate the last character that was not
-    //     whitespace, a period, or a vowel separator at the end of the
-    //     the string, so the string should be truncated there as well.
-    // If both apply, use the earliest position.
-    if (lastNonTrimmable >= 0) {
-      // Subtract off the amount for the extension and the period.
-      // Note that the extension length is in bytes but longFileNameEnd is in
-      // characters, but if they don't match, it just means we crop off
-      // more than is necessary. This is OK since it is better than cropping
-      // off too little.
-      longFileNameEnd -= extensionBytesLength;
-      if (longFileNameEnd <= 0) {
-        // This is extremely unlikely, but if the extension is larger than the
-        // maximum size, just get rid of it. In this case, the extension
-        // wouldn't have been an ordinary one we would want to preserve (such
-        // as .html or .png) so just truncate off the file wherever the first
-        // period appears.
-        int32_t dotidx = outFileName.Find(u".");
-        outFileName.Truncate(dotidx > 0 ? dotidx : 1);
-      } else {
-        outFileName.Truncate(std::min(longFileNameEnd, lastNonTrimmable));
+  // Update the string length to account for trimmed/skipped characters.
+  aFileName.SetLength(dest - aFileName.BeginWriting());
 
-        // Now that the filename has been truncated, re-append the extension
-        // again.
-        if (!extension.IsEmpty()) {
-          if (outFileName.Last() != '.') {
-            outFileName.AppendLiteral(".");
-          }
-
-          outFileName.Append(extension);
-        }
-      }
-    }
-  } else if (lastNonTrimmable >= 0) {
-    // Otherwise, the filename wasn't too long, so just trim off the
-    // extra whitespace and periods at the end.
-    outFileName.Truncate(lastNonTrimmable);
+  // Get the sanitized extension from the filename (including its dot).
+  nsAutoString ext;
+  int32_t dotidx = aFileName.RFindChar(u'.');
+  if (dotidx != -1) {
+    ext = Substring(aFileName, dotidx);
+    aFileName.Truncate(dotidx);
   }
 
   if (!(aFlags & VALIDATE_ALLOW_DIRECTORY_NAMES)) {
-    nsAutoString extension;
-    int32_t dotidx = outFileName.RFind(u".");
-    if (dotidx != -1) {
-      extension = Substring(outFileName, dotidx + 1);
-      extension.StripWhitespace();
-      outFileName = Substring(outFileName, 0, dotidx + 1) + extension;
-    }
+    ext.StripWhitespace();
   }
 
-#ifdef XP_WIN
-  if (nsLocalFile::CheckForReservedFileName(outFileName)) {
-    outFileName.Truncate();
-    CheckDefaultFileName(outFileName, aFlags);
-  }
-
-#endif
-
+  // Determine if we need to add a ".download" suffix.
+  nsAutoString downloadSuffix;
   if (!(aFlags & VALIDATE_ALLOW_INVALID_FILENAMES)) {
-    // If the extension is one these types, replace it with .download, as these
+    // If the extension is one these types, we append .download, as these
     // types of files can have significance on Windows or Linux.
     // This happens for any file, not just those with the shortcut mime type.
-    if (StringEndsWith(outFileName, u".lnk"_ns,
-                       nsCaseInsensitiveStringComparator) ||
-        StringEndsWith(outFileName, u".local"_ns,
-                       nsCaseInsensitiveStringComparator) ||
-        StringEndsWith(outFileName, u".url"_ns,
-                       nsCaseInsensitiveStringComparator) ||
-        StringEndsWith(outFileName, u".scf"_ns,
-                       nsCaseInsensitiveStringComparator) ||
-        StringEndsWith(outFileName, u".desktop"_ns,
-                       nsCaseInsensitiveStringComparator)) {
-      outFileName.AppendLiteral(".download");
+    if (nsContentUtils::EqualsIgnoreASCIICase(ext, u".lnk"_ns) ||
+        nsContentUtils::EqualsIgnoreASCIICase(ext, u".local"_ns) ||
+        nsContentUtils::EqualsIgnoreASCIICase(ext, u".url"_ns) ||
+        nsContentUtils::EqualsIgnoreASCIICase(ext, u".scf"_ns) ||
+        nsContentUtils::EqualsIgnoreASCIICase(ext, u".desktop"_ns)) {
+      downloadSuffix = u".download"_ns;
     }
   }
 
-  aFileName = outFileName;
+  // Filename finalization helper, applied once we have determined the
+  // (possibly-truncated) sanitized base-name and extension components.
+  auto finalizeName = MakeScopeExit([&]() {
+#ifdef XP_WIN
+    // If aFileName is one of the Windows reserved names, replace it with our
+    // default ("Untitled") name.
+    if (nsLocalFile::CheckForReservedFileName(aFileName)) {
+      aFileName.Truncate();
+      CheckDefaultFileName(aFileName, aFlags);
+    }
+#endif
+    aFileName.Append(ext);
+    aFileName.Append(downloadSuffix);
+#ifdef DEBUG
+    if (!(aFlags & VALIDATE_DONT_TRUNCATE)) {
+      // Verify that the final name, when converted to UTF-8, does not exceed
+      // the allowed length in bytes.
+      NS_ConvertUTF16toUTF8 utf8name(aFileName);
+      MOZ_ASSERT(utf8name.Length() <= kDefaultMaxFileNameLength);
+      // Verify that replacing the extension with "_files" will also not exceed
+      // the allowed length.
+      int32_t dotidx = utf8name.RFindChar('.');
+      if (dotidx >= 0) {
+        utf8name.Truncate(dotidx);
+      }
+      utf8name.Append("_files");
+      MOZ_ASSERT(utf8name.Length() <= kDefaultMaxFileNameLength);
+    }
+#endif
+  });
+
+  // Depending whether the name contained any non-ASCII chars, or any chars
+  // above U+07FF, we can determine a safe UTF-16 length for which detailed
+  // UTF-8 length checking is unnecessary.
+  uint32_t safeUtf16Length = (allBits & ~0x7f) == 0 ? kDefaultMaxFileNameLength
+                             : (allBits & ~0x7ff) == 0
+                                 ? kDefaultMaxFileNameLength / 2
+                                 : kDefaultMaxFileNameLength / 3;
+  safeUtf16Length -= downloadSuffix.Length();
+
+  // Check if the name is short enough that it is guaranteed to fit (or
+  // truncation is disabled), without needing to count the exact utf-8 byte
+  // length and figure out the preferred truncation position.
+  const auto kFiles = u"_files"_ns;
+  if ((aFlags & VALIDATE_DONT_TRUNCATE) ||
+      (aFileName.Length() + ext.Length() <= safeUtf16Length &&
+       aFileName.Length() + kFiles.Length() <= safeUtf16Length)) {
+    return;
+  }
+
+  // The name might exceed the UTF-8 byte limit, so we need to actually compute
+  // its length in UTF-8 code units and truncate appropriately.
+
+  uint32_t byteLimit = kDefaultMaxFileNameLength;
+  // downloadSuffix is pure ASCII, so its UTF-8 length == UTF-16 length.
+  byteLimit -= downloadSuffix.Length();
+
+  // Helper to compute the UTF-8 code unit length of a UTF-16 string.
+  auto utf8Length = [](const nsAString& aString) -> size_t {
+    size_t result = 0;
+    const char16_t* end = aString.EndReading();
+    for (const char16_t* cp = aString.BeginReading(); cp < end;) {
+      bool err = false;
+      char32_t ch = UTF16CharEnumerator::NextChar(&cp, end, &err);
+      MOZ_ASSERT(!err, "unexpected lone surrogate");
+      result += ch < 0x80 ? 1 : ch < 0x800 ? 2 : ch < 0x10000 ? 3 : 4;
+    }
+    return result;
+  };
+
+  size_t fileNameBytes = utf8Length(aFileName);
+  size_t extBytes = utf8Length(ext);
+
+  if (extBytes >= byteLimit) {
+    // This is extremely unlikely, but if the extension is larger than the
+    // maximum size, just get rid of it. In this case, the extension
+    // wouldn't have been an ordinary one we would want to preserve (such
+    // as .html or .png) so just truncate off the file wherever the first
+    // period appears.
+    int32_t dotidx = aFileName.FindChar(u'.');
+    if (dotidx > 0) {
+      aFileName.Truncate(dotidx);
+    }
+    fileNameBytes = utf8Length(aFileName);
+    ext.Truncate();
+    extBytes = 0;
+  }
+
+  if (fileNameBytes + extBytes <= byteLimit &&
+      fileNameBytes + kFiles.Length() <= byteLimit) {
+    return;
+  }
+
+  // Convert to UTF-8 and truncate at the byte-length limit. This may leave
+  // an incomplete UTF-8 sequence at the end of the string.
+  NS_ConvertUTF16toUTF8 truncated(aFileName);
+  truncated.Truncate(byteLimit - std::max(extBytes, kFiles.Length()));
+
+  // Convert back to UTF-16, discarding any trailing incomplete character.
+  aFileName.Truncate();
+  const char* endUtf8 = truncated.EndReading();
+  for (const char* cp = truncated.BeginReading(); cp < endUtf8;) {
+    bool err = false;
+    char32_t ch = UTF8CharEnumerator::NextChar(&cp, endUtf8, &err);
+    if (err) {
+      // Discard a possible broken final character.
+      break;
+    }
+    AppendUCS4ToUTF16(ch, aFileName);
+  }
+
+  // Trim any trailing space/vowel-separator/dots at the truncation point.
+  while (!aFileName.IsEmpty() && trimIfTrailing(aFileName.Last())) {
+    aFileName.Truncate(aFileName.Length() - 1);
+  }
 }
 
 nsExternalHelperAppService::ModifyExtensionType

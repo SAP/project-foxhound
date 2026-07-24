@@ -21,6 +21,7 @@ export function FeatureHighlight({
   showButtonIcon = true,
   dismissCallback = () => {},
   outsideClickCallback = () => {},
+  modalClassName = "",
 }) {
   const [opened, setOpened] = useState(openedOverride);
   const ref = useRef(null);
@@ -81,7 +82,7 @@ export function FeatureHighlight({
         {toggle}
       </button>
       <div
-        className={`feature-highlight-modal ${position} ${arrowPosition} ${openedClassname}`}
+        className={`feature-highlight-modal ${position} ${arrowPosition} ${modalClassName} ${openedClassname}`}
       >
         <div className="message-icon">{icon}</div>
         <p className="content-wrapper">{message}</p>

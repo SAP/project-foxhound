@@ -22,9 +22,9 @@ class BrowserPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule
             from = "HomePage",
             to = pageName,
             steps = listOf(
-                NavigationStep.Click(ToolbarSelectors.URL_BAR_PLACE_HOLDER),
-                NavigationStep.EnterText(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
-                NavigationStep.PressEnter(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
+                NavigationStep.Click(ToolbarSelectors.TOOLBAR_URL_BOX),
+                NavigationStep.EnterText(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
+                NavigationStep.PressEnter(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
             ),
         )
 
@@ -32,9 +32,9 @@ class BrowserPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule
             from = pageName,
             to = pageName,
             steps = listOf(
-                NavigationStep.Click(SearchBarSelectors.URL_TEXT),
-                NavigationStep.EnterText(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
-                NavigationStep.PressEnter(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
+                NavigationStep.Click(ToolbarSelectors.TOOLBAR_URL_BOX),
+                NavigationStep.EnterText(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
+                NavigationStep.PressEnter(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
             ),
         )
 
@@ -42,8 +42,8 @@ class BrowserPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule
             from = "SearchBarComponent",
             to = pageName,
             steps = listOf(
-                NavigationStep.EnterText(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
-                NavigationStep.PressEnter(SearchBarSelectors.EDIT_SEARCHBAR_VIEW),
+                NavigationStep.EnterText(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
+                NavigationStep.PressEnter(SearchBarSelectors.TOOLBAR_IN_EDIT_MODE),
             ),
         )
     }

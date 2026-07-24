@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.90.0"
 name = "wgpu-types"
-version = "26.0.0"
+version = "28.0.0"
 authors = ["gfx-rs developers"]
 build = false
 autolib = false
@@ -52,7 +52,6 @@ serde = [
 std = [
     "js-sys?/std",
     "web-sys?/std",
-    "thiserror/std",
 ]
 strict_asserts = []
 trace = ["std"]
@@ -67,7 +66,6 @@ path = "src/lib.rs"
 
 [dependencies.bitflags]
 version = "2.9"
-features = ["serde"]
 
 [dependencies.bytemuck]
 version = "1.22"
@@ -80,6 +78,10 @@ features = [
 [dependencies.log]
 version = "0.4.21"
 
+[dependencies.raw-window-handle]
+version = "0.6.2"
+default-features = false
+
 [dependencies.serde]
 version = "1.0.219"
 features = [
@@ -89,18 +91,13 @@ features = [
 optional = true
 default-features = false
 
-[dependencies.thiserror]
-version = "2.0.3"
-optional = true
-default-features = false
-
 [dev-dependencies.serde]
 version = "1.0.219"
 features = ["derive"]
 default-features = false
 
 [dev-dependencies.serde_json]
-version = "1.0.118"
+version = "1.0.143"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
 version = "0.3.77"

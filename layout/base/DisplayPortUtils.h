@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_DisplayPortUtils_h__
-#define mozilla_DisplayPortUtils_h__
+#ifndef mozilla_DisplayPortUtils_h_
+#define mozilla_DisplayPortUtils_h_
 
 #include <cstdint>
 #include <iosfwd>
@@ -124,6 +124,15 @@ struct DisplayPortMarginsPropertyData {
   bool mPainted;
 };
 
+struct FrameAndASRKind {
+  nsIFrame* mFrame;
+  ActiveScrolledRoot::ASRKind mASRKind;
+  bool operator==(const FrameAndASRKind&) const = default;
+  static FrameAndASRKind default_value() {
+    return {nullptr, ActiveScrolledRoot::ASRKind::Scroll};
+  }
+};
+
 class DisplayPortUtils {
  public:
   /**
@@ -238,6 +247,12 @@ class DisplayPortUtils {
   static void RemoveDisplayPort(nsIContent* aContent);
 
   /**
+   * Set minimal display port margins during painting.
+   */
+  static void SetMinimalDisplayPortDuringPainting(nsIContent* aContent,
+                                                  PresShell* aPresShell);
+
+  /**
    * Return true if aPresContext's viewport has a displayport.
    */
   static bool ViewportHasDisplayPort(nsPresContext* aPresContext);
@@ -280,15 +295,6 @@ class DisplayPortUtils {
       ScrollContainerFrame* aScrollContainerFrame, RepaintMode aRepaintMode);
 
   /**
-   * Step up one frame in the async scrollable ancestor chain, to be used in
-   * conjunction with GetAsyncScrollableAncestorFrame to walk the async
-   * scrollable ancestor chain. Note this doesn't go from one async scrollable
-   * frame to the next. Rather this walks all frame types, taking only one
-   * ancestor step per call.
-   */
-  static nsIFrame* OneStepInAsyncScrollableAncestorChain(nsIFrame* aFrame);
-
-  /**
    * Sets a zero margin display port on all proper ancestors of aFrame that
    * are async scrollable.
    */
@@ -320,8 +326,97 @@ class DisplayPortUtils {
    * of displayports.
    */
   static bool WillUseEmptyDisplayPortMargins(nsIContent* aContent);
+
+  /**
+   * Step up one frame in the async scrollable ancestor chain, to be used in
+   * conjunction with GetAsyncScrollableAncestorFrame to walk the async
+   * scrollable ancestor chain. Note this doesn't go from one async scrollable
+   * frame to the next. Rather this walks all frame types, taking only one
+   * ancestor step per call.
+   */
+  static nsIFrame* OneStepInAsyncScrollableAncestorChain(nsIFrame* aFrame);
+
+  /**
+   * The next two functions (GetASRAncestorFrame and OneStepInASRChain) use
+   * FrameAndASRKind (a pair of a nsIFrame pointer an an ASRKind enum) as a
+   * cursor iterating up the frame tree. Each frame can potential generate two
+   * ASRs: an inner one corresponding to scrolling with the contents of the
+   * frame if it is a scroll frame, and an outer one correspnding to scrolling
+   * with the frame itself if it is a sticky position frame. Its meaning is
+   * different for each of the two functions but is natural when considering
+   * what each function does. When passed into GetASRAncestorFrame it specifies
+   * the first frame and type for the function to check. When returned from
+   * GetASRAncestorFrame it specifies the frame and type of the ASR (because
+   * GetASRAncestorFrame only returns ASRs). When passed into OneStepInASRChain
+   * it specifies the last spot that was checked, and OneStepInASRChain's job is
+   * to move one iteration from that, so it returns the next frame and ASR kind
+   * to be checked (which may not generate an ASR, just that it needs to be
+   * checked because it could generate an ASR).
+   */
+
+  /**
+   * Follows the ASR (ActiveScrolledRoot) chain of frames, so that if
+   * f is the frame of an ASR A, then calling this function on
+   * OneStepInASRChain(f) will return the frame of parent ASR of A. Frames that
+   * generate an ASR are scroll frames for which IsMaybeAsynchronouslyScrolled()
+   * returns true (aka mWillBuildScrollableLayer == true) or they are sticky
+   * position frames for which their corresponding scroll frame will generate an
+   * ASR. This function is different from
+   * nsLayoutUtils::GetAsyncScrollableAncestorFrame because
+   * GetAsyncScrollableAncestorFrame looks only for scroll frames that
+   * WantAsyncScroll that that function walks from fixed pos to the root scroll
+   * frame. Because that status (ie mWillBuildScrollableLayer) can change this
+   * should only be called during a paint to the window after BuildDisplayList
+   * has been called on aTarget so that mWillBuildScrollableLayer will have been
+   * updated for this paint already for any frame we need to consult. Or for
+   * some other reason you know that mWillBuildScrollableLayer is up to date for
+   * this paint for any frame that might need to be consulted, ie you just
+   * updated them yourself. Note that a frame returned from this function could
+   * generate two ASRs: an inner one corresponding to an activated scroll frame,
+   * and an outer one corresponding to sticky pos.
+   */
+  static FrameAndASRKind GetASRAncestorFrame(FrameAndASRKind aFrameAndASRKind,
+                                             nsDisplayListBuilder* aBuilder);
+
+  /**
+   * Step up one frame in the ASR chain, to be used in conjunction with
+   * GetASRAncestorFrame to walk the ASR chain. Note this doesn't go from one
+   * ASR frame to the next. Rather this walks all frame types, taking only one
+   * ancestor step per call. Note that a frame returned from this function could
+   * generate two ASRs: an inner one corresponding to an activated scroll frame,
+   * and an outer one corresponding to sticky pos. Returns null if we hit
+   * aLimitAncestor.
+   */
+  static FrameAndASRKind OneStepInASRChain(FrameAndASRKind aFrameAndASRKind,
+                                           nsDisplayListBuilder* aBuilder,
+                                           nsIFrame* aLimitAncestor = nullptr);
+
+  /**
+   * Calls DecideScrollableLayerEnsureDisplayport on all proper ancestors of
+   * aAnchor that are async scrollable up to but not including aLimitAncestor
+   * (this creates a minimal display port on all async scrollable ancestors if
+   * they don't have a display port) and makes sure that there is an ASR struct
+   * created for all such async scrollable ancestors.
+   * Returns the ASR of aAnchor.
+   * This is a very specific function for anchor positioning and likely not
+   * what you want. In that context, aAnchor is the anchor of an abspos frame f
+   * (not passed to this function because it is not needed) and aLimitAncestor
+   * is the parent/containing block of f.
+   */
+  static const ActiveScrolledRoot* ActivateDisplayportOnASRAncestors(
+      nsIFrame* aAnchor, nsIFrame* aLimitAncestor,
+      const ActiveScrolledRoot* aASRofLimitAncestor,
+      nsDisplayListBuilder* aBuilder);
+
+  /**
+   * aFrame is an absolutely positioned frame that is anchor positioned and
+   * compensates for scroll in at least one axis.
+   */
+  static bool ShouldAsyncScrollWithAnchor(nsIFrame* aFrame, nsIFrame* aAnchor,
+                                          nsDisplayListBuilder* aBuilder,
+                                          PhysicalAxes aAxes);
 };
 
 }  // namespace mozilla
 
-#endif  // mozilla_DisplayPortUtils_h__
+#endif  // mozilla_DisplayPortUtils_h_

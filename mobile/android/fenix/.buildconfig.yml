@@ -17,10 +17,13 @@ projects:
     - components:compose-base
     - components:compose-browser-toolbar
     - components:compose-cfr
+    - components:concept-accelerometer
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
     - components:concept-fetch
+    - components:concept-integrity
+    - components:concept-llm
     - components:concept-menu
     - components:concept-push
     - components:concept-storage
@@ -52,6 +55,7 @@ projects:
     - components:feature-session
     - components:feature-share
     - components:feature-sitepermissions
+    - components:feature-summarize
     - components:feature-syncedtabs
     - components:feature-tab-collections
     - components:feature-tabs
@@ -61,14 +65,19 @@ projects:
     - components:feature-webcompat
     - components:feature-webcompat-reporter
     - components:feature-webnotifications
+    - components:lib-accelerometer-sensormanager
     - components:lib-crash
     - components:lib-crash-sentry
     - components:lib-dataprotect
+    - components:lib-integrity-googleplay
+    - components:lib-llm-mlpa
     - components:lib-publicsuffixlist
     - components:lib-push-firebase
+    - components:lib-shake
     - components:lib-state
     - components:service-digitalassetlinks
     - components:service-firefox-accounts
+    - components:service-firefox-relay
     - components:service-glean
     - components:service-location
     - components:service-mars
@@ -96,69 +105,59 @@ projects:
 variants:
 - apks:
   - abi: arm64-v8a
-    fileName: app-fenix-arm64-v8a-debug.apk
+    fileName: app-arm64-v8a-debug.apk
   - abi: armeabi-v7a
-    fileName: app-fenix-armeabi-v7a-debug.apk
+    fileName: app-armeabi-v7a-debug.apk
   - abi: universal
-    fileName: app-fenix-universal-debug.apk
-  - abi: x86
-    fileName: app-fenix-x86-debug.apk
+    fileName: app-universal-debug.apk
   - abi: x86_64
-    fileName: app-fenix-x86_64-debug.apk
+    fileName: app-x86_64-debug.apk
   build_type: debug
-  name: fenixDebug
+  name: debug
 - apks:
   - abi: arm64-v8a
-    fileName: app-fenix-arm64-v8a-release-unsigned.apk
+    fileName: app-arm64-v8a-release-unsigned.apk
   - abi: armeabi-v7a
-    fileName: app-fenix-armeabi-v7a-release-unsigned.apk
+    fileName: app-armeabi-v7a-release-unsigned.apk
   - abi: universal
-    fileName: app-fenix-universal-release-unsigned.apk
-  - abi: x86
-    fileName: app-fenix-x86-release-unsigned.apk
+    fileName: app-universal-release-unsigned.apk
   - abi: x86_64
-    fileName: app-fenix-x86_64-release-unsigned.apk
+    fileName: app-x86_64-release-unsigned.apk
   build_type: release
-  name: fenixRelease
+  name: release
 - apks:
   - abi: arm64-v8a
-    fileName: app-fenix-arm64-v8a-nightly-unsigned.apk
+    fileName: app-arm64-v8a-nightly-unsigned.apk
   - abi: armeabi-v7a
-    fileName: app-fenix-armeabi-v7a-nightly-unsigned.apk
+    fileName: app-armeabi-v7a-nightly-unsigned.apk
   - abi: universal
-    fileName: app-fenix-universal-nightly-unsigned.apk
-  - abi: x86
-    fileName: app-fenix-x86-nightly-unsigned.apk
+    fileName: app-universal-nightly-unsigned.apk
   - abi: x86_64
-    fileName: app-fenix-x86_64-nightly-unsigned.apk
+    fileName: app-x86_64-nightly-unsigned.apk
   build_type: nightly
-  name: fenixNightly
+  name: nightly
 - apks:
   - abi: arm64-v8a
-    fileName: app-fenix-arm64-v8a-beta-unsigned.apk
+    fileName: app-arm64-v8a-beta-unsigned.apk
   - abi: armeabi-v7a
-    fileName: app-fenix-armeabi-v7a-beta-unsigned.apk
+    fileName: app-armeabi-v7a-beta-unsigned.apk
   - abi: universal
-    fileName: app-fenix-universal-beta-unsigned.apk
-  - abi: x86
-    fileName: app-fenix-x86-beta-unsigned.apk
+    fileName: app-universal-beta-unsigned.apk
   - abi: x86_64
-    fileName: app-fenix-x86_64-beta-unsigned.apk
+    fileName: app-x86_64-beta-unsigned.apk
   build_type: beta
-  name: fenixBeta
+  name: beta
 - apks:
   - abi: arm64-v8a
-    fileName: app-fenix-arm64-v8a-benchmark.apk
+    fileName: app-arm64-v8a-benchmark.apk
   - abi: armeabi-v7a
-    fileName: app-fenix-armeabi-v7a-benchmark.apk
+    fileName: app-armeabi-v7a-benchmark.apk
   - abi: universal
-    fileName: app-fenix-universal-benchmark.apk
-  - abi: x86
-    fileName: app-fenix-x86-benchmark.apk
+    fileName: app-universal-benchmark.apk
   - abi: x86_64
-    fileName: app-fenix-x86_64-benchmark.apk
+    fileName: app-x86_64-benchmark.apk
   build_type: benchmark
-  name: fenixBenchmark
+  name: benchmark
 - apks:
   - abi: noarch
     fileName: app-debug-androidTest.apk

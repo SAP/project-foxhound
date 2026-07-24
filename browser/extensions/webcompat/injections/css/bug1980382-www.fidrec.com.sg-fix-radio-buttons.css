@@ -1,0 +1,16 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.fidrec.com.sg - Radio buttons are not visible
+ * Bug #1980382 - https://bugzilla.mozilla.org/show_bug.cgi?id=1980382
+ * WebCompat issue #169560 - https://github.com/webcompat/web-bugs/issues/169560
+ *
+ * The page has some bad CSS where it makes a -webkit-appearance rule invalid, but
+ * the corresponding -moz-apperance rule remains intact, leading to a bad rendering.
+ */
+
+input[type="radio"] {
+  -moz-appearance: radio !important;
+}

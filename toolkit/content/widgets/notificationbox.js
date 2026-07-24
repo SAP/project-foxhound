@@ -14,7 +14,7 @@
      *
      * @param insertElementFn Called with the "notification-stack" element as an
      *        argument when the first notification has to be displayed.
-     * @param {Number} securityDelayMS - Delay in milliseconds until buttons are enabled to
+     * @param {number} securityDelayMS - Delay in milliseconds until buttons are enabled to
      * protect against click- and tapjacking.
      */
     constructor(insertElementFn, securityDelayMS = 0) {
@@ -140,7 +140,7 @@
      *        Optional boolean arg to disable clickjacking protections. By
      *        default the security delay is enabled.
      *
-     * @returns {Promise<Object>} The <notification-message> element that is shown.
+     * @returns {Promise<object>} The <notification-message> element that is shown.
      */
     async appendNotification(
       aType,
@@ -632,7 +632,7 @@
        * restarts on window focus or if the user attempts to click during the
        * disabled period.
        *
-       * @param {Number} securityDelayMS - ClickJacking delay to apply
+       * @param {number} securityDelayMS - ClickJacking delay to apply
        * (milliseconds).
        */
       _initClickJackingProtection(securityDelayMS) {

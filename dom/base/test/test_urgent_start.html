@@ -17,6 +17,7 @@
 <head>
   <title>Test for urgent-start on Fetch and XHR</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet"
         type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css">
@@ -191,8 +192,7 @@ function addListenerAndSendEvent(aFunction, aEventToTest) {
 
   if (aEventToTest === TestEvent.USER_INPUT_EVENT) {
     // User Input Event
-    var utils = SpecialPowers.getDOMWindowUtils(window);
-    utils.sendMouseEvent("mousedown", 1, 1, 0, 1, 0);
+    synthesizeMouseAtPoint(1, 1, { type: "mousedown" });
   } else if (aEventToTest === TestEvent.NONUSER_INPUT_EVENT) {
     window.postMessage("hello", "*");
   } else if (aEventToTest === TestEvent.NOEVENT) {

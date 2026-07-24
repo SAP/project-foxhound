@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_ByteStreamHelpers_h
 #define mozilla_dom_ByteStreamHelpers_h
 
+#include "UnderlyingSourceCallbackHelpers.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
-#include "UnderlyingSourceCallbackHelpers.h"
 
 namespace mozilla::dom {
 

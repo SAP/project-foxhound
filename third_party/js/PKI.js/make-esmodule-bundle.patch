@@ -1,29 +1,27 @@
-diff --git a/rollup.config.js b/rollup.config.js
-index 8c8a7c2..b6e61c0 100644
---- a/rollup.config.js
-+++ b/rollup.config.js
+diff --git a/rollup.config.mjs b/rollup.config.mjs
+index fcc1af8..572b511 100644
+--- a/rollup.config.mjs
++++ b/rollup.config.mjs
 @@ -3,6 +3,7 @@ import fs from "fs";
+ import { fileURLToPath } from "url";
  import typescript from "rollup-plugin-typescript2";
  import dts from "rollup-plugin-dts";
- import pkg from "./package.json";
-+import { nodeResolve } from '@rollup/plugin-node-resolve';
++import { nodeResolve } from "@rollup/plugin-node-resolve";
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ const pkg = JSON.parse(fs.readFileSync("./package.json", "utf8"));
  
- const LICENSE = fs.readFileSync("LICENSE", { encoding: "utf-8" });
- const banner = [
-@@ -12,7 +13,6 @@ const banner = [
-   "",
- ].join("\n");
- const input = "src/index.ts";
--const external = Object.keys(pkg.dependencies || {});
- 
- export default [
-   {
-@@ -26,10 +26,10 @@ export default [
-             module: "ES2015",
-             removeComments: true,
+@@ -23,7 +24,7 @@ export default [
+     input,
+     plugins: [
+       typescript({
+-        check: true,
++        check: false,
+         clean: true,
+         tsconfigOverride: {
+           compilerOptions: {
+@@ -32,8 +33,8 @@ export default [
            }
--        }
-+        },
+         }
        }),
 +      nodeResolve(),
      ],
@@ -31,7 +29,7 @@ index 8c8a7c2..b6e61c0 100644
      output: [
        {
          banner,
-@@ -45,7 +45,6 @@ export default [
+@@ -49,7 +50,6 @@ export default [
    },
    {
      input,
@@ -39,32 +37,10 @@ index 8c8a7c2..b6e61c0 100644
      plugins: [
        dts({
          tsconfig: path.resolve(__dirname, "./tsconfig.json")
-@@ -58,4 +57,4 @@ export default [
+@@ -62,4 +62,4 @@ export default [
        }
      ]
    },
 -];
 \ No newline at end of file
 +];
-diff --git a/tsconfig.json b/tsconfig.json
-index ffd67ec..e72bdb6 100644
---- a/tsconfig.json
-+++ b/tsconfig.json
-@@ -1,7 +1,8 @@
- {
-   "compilerOptions": {
--    "target": "ES2019",
--    "module": "CommonJS",
-+    "target": "ES6",
-+    "module": "ES6",
-+    "moduleResolution": "node",
-     "strict": true,
-     "importHelpers": true,
-     "noImplicitOverride": true,
-@@ -11,4 +12,4 @@
-   "exclude": [
-     "build/*.ts"
-   ]
--}
-\ No newline at end of file
-+}

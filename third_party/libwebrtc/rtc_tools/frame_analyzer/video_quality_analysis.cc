@@ -11,13 +11,18 @@
 #include "rtc_tools/frame_analyzer/video_quality_analysis.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include "api/numerics/samples_stats_counter.h"
+#include "api/scoped_refptr.h"
 #include "api/test/metrics/metric.h"
+#include "api/test/metrics/metrics_logger.h"
+#include "api/units/timestamp.h"
+#include "api/video/video_frame_buffer.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
+#include "rtc_tools/video_file_reader.h"
 #include "third_party/libyuv/include/libyuv/compare.h"
 
 namespace webrtc {
@@ -29,8 +34,8 @@ ResultsContainer::~ResultsContainer() {}
 template <typename FrameMetricFunction>
 static double CalculateMetric(
     const FrameMetricFunction& frame_metric_function,
-    const rtc::scoped_refptr<I420BufferInterface>& ref_buffer,
-    const rtc::scoped_refptr<I420BufferInterface>& test_buffer) {
+    const scoped_refptr<I420BufferInterface>& ref_buffer,
+    const scoped_refptr<I420BufferInterface>& test_buffer) {
   RTC_CHECK_EQ(ref_buffer->width(), test_buffer->width());
   RTC_CHECK_EQ(ref_buffer->height(), test_buffer->height());
   return frame_metric_function(
@@ -41,28 +46,28 @@ static double CalculateMetric(
       test_buffer->width(), test_buffer->height());
 }
 
-double Psnr(const rtc::scoped_refptr<I420BufferInterface>& ref_buffer,
-            const rtc::scoped_refptr<I420BufferInterface>& test_buffer) {
+double Psnr(const scoped_refptr<I420BufferInterface>& ref_buffer,
+            const scoped_refptr<I420BufferInterface>& test_buffer) {
   // LibYuv sets the max psnr value to 128, we restrict it to 48.
   // In case of 0 mse in one frame, 128 can skew the results significantly.
   return std::min(48.0,
                   CalculateMetric(&libyuv::I420Psnr, ref_buffer, test_buffer));
 }
 
-double Ssim(const rtc::scoped_refptr<I420BufferInterface>& ref_buffer,
-            const rtc::scoped_refptr<I420BufferInterface>& test_buffer) {
+double Ssim(const scoped_refptr<I420BufferInterface>& ref_buffer,
+            const scoped_refptr<I420BufferInterface>& test_buffer) {
   return CalculateMetric(&libyuv::I420Ssim, ref_buffer, test_buffer);
 }
 
 std::vector<AnalysisResult> RunAnalysis(
-    const rtc::scoped_refptr<webrtc::test::Video>& reference_video,
-    const rtc::scoped_refptr<webrtc::test::Video>& test_video,
+    const scoped_refptr<test::Video>& reference_video,
+    const scoped_refptr<test::Video>& test_video,
     const std::vector<size_t>& test_frame_indices) {
   std::vector<AnalysisResult> results;
   for (size_t i = 0; i < test_video->number_of_frames(); ++i) {
-    const rtc::scoped_refptr<I420BufferInterface>& test_frame =
+    const scoped_refptr<I420BufferInterface>& test_frame =
         test_video->GetFrame(i);
-    const rtc::scoped_refptr<I420BufferInterface>& reference_frame =
+    const scoped_refptr<I420BufferInterface>& reference_frame =
         reference_video->GetFrame(i);
 
     // Fill in the result struct.
@@ -121,7 +126,7 @@ int GetTotalNumberOfSkippedFrames(const std::vector<Cluster>& clusters) {
 void PrintAnalysisResults(const std::string& label,
                           ResultsContainer& results,
                           MetricsLogger& logger) {
-  if (results.frames.size() > 0u) {
+  if (!results.frames.empty()) {
     logger.LogSingleValueMetric("Unique_frames_count", label,
                                 results.frames.size(), Unit::kUnitless,
                                 ImprovementDirection::kNeitherIsBetter);
@@ -129,8 +134,10 @@ void PrintAnalysisResults(const std::string& label,
     SamplesStatsCounter psnr_values;
     SamplesStatsCounter ssim_values;
     for (const auto& frame : results.frames) {
-      psnr_values.AddSample(frame.psnr_value);
-      ssim_values.AddSample(frame.ssim_value);
+      psnr_values.AddSample(
+          {.value = frame.psnr_value, .time = Timestamp::Zero()});
+      ssim_values.AddSample(
+          {.value = frame.ssim_value, .time = Timestamp::Zero()});
     }
 
     logger.LogMetric("PSNR_dB", label, psnr_values, Unit::kUnitless,

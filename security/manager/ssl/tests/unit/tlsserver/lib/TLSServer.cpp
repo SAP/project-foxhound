@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "base64.h"
+#include "certdb.h"
 #include "mozilla/Sprintf.h"
 #include "nspr.h"
 #include "nss.h"
@@ -188,6 +189,30 @@ static SECStatus AddCertificateFromFile(const std::string& path,
   if (rv != SECSuccess) {
     PrintPRError("PK11_ImportCert failed");
     return rv;
+  }
+
+  // By convention, the file `test-ca.pem` is a trust anchor.
+  if (!filename.compare("test-ca.pem")) {
+    if (PK11_NeedUserInit(slot.get())) {
+      rv = PK11_InitPin(slot.get(), nullptr, nullptr);
+      if (rv != SECSuccess) {
+        PrintPRError("PK11_InitPin failed");
+        return rv;
+      }
+    }
+    rv = PK11_CheckUserPassword(slot.get(), "");
+    if (rv != SECSuccess) {
+      PrintPRError("PK11_CheckUserPassword failed");
+      return rv;
+    }
+    CERTCertTrust trust{
+        CERTDB_TERMINAL_RECORD | CERTDB_TRUSTED_CA | CERTDB_TRUSTED_CLIENT_CA,
+        0, 0};
+    rv = CERT_ChangeCertTrust(nullptr, cert.get(), &trust);
+    if (rv != SECSuccess) {
+      PrintPRError("CERT_ChangeCertTrust failed");
+      return rv;
+    }
   }
 
   return SECSuccess;

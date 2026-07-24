@@ -20,14 +20,15 @@ work directly top-down)
 -  ☐ Add the `fuzzing:needed` label to the proposal epic in the FFXP project in JIRA to request fuzzing for the feature.
     -  ☐ If the feature introduces a new syntax, it may require a lot of work in the fuzzing engine to support it. Notify the fuzzing team early with the details.
 -  ☐ Add shell option to `js/src/shell/fuzz-flags.txt`. This signals to other
-  fuzzers as well that the feature is ready for fuzzing.
+  fuzzers as well that the feature is ready for fuzzing. Note that this makes the code eligible for bug bounties and should only be done once sufficient internal fuzzing has happened. This is only necessary if we want to have external fuzzing on the feature prior to enabling the feature on Nightly.
 -  ☐ Send an Intent to Ship Email to `dev-platform`.  This is also part of the
   [Exposure Guidelines](https://wiki.mozilla.org/ExposureGuidelines) process.
 -  ☐ Ship the feature:
-    -  ☐ default the preference to true.
+    -  ☐ First, ping the fuzzing team to make sure sufficient fuzzing has occurred.
+    -  ☐ Default the preference to true.
     -  ☐ Double check for any code that is currently `NIGHTLY_BUILD` that should now be built unconditionally, e.g. in `js/src/vm/JSObject.cpp`.
          You may want to run a [central as beta simulation](https://wiki.mozilla.org/Sheriffing/How_To/Beta_simulations#TRUNK_AS_EARLY_BETA)
-         to make sure you've caught any lingering `NIGHTLY_BUILD` parts.
+         to make sure you've caught any lingering `NIGHTLY_BUILD` parts. Note you don't need the `--stage-changes` flag.
     -  ☐ Update `js/xpconnect/tests/chrome/test_xrayToJS.xhtml` for any changes to existing global objects. This is a mochitest, you need to run `mach test js/xpconnect/tests/chrome/test_xrayToJS.xhtml`.
     -  ☐ For new globals, the following tests also need updates:
           `dom/serviceworkers/test/test_serviceworker_interfaces.js`, `tests/mochitest/general/test_interfaces.js`, and `dom/workers/test/test_worker_interfaces.js`. These are mochitests, you need to run, e.g. `mach test dom/serviceworkers/test/test_serviceworker_interfaces.html`.

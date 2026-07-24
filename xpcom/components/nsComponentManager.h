@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsComponentManager_h__
-#define nsComponentManager_h__
+#ifndef nsComponentManager_h_
+#define nsComponentManager_h_
 
 #include "nsXPCOM.h"
 
@@ -15,11 +15,9 @@
 #include "nsIServiceManager.h"
 #include "nsIFile.h"
 #include "mozilla/ArenaAllocator.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Module.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/UniquePtr.h"
 #include "nsXULAppAPI.h"
 #include "nsIFactory.h"
 #include "nsIInterfaceRequestor.h"
@@ -207,4 +205,4 @@ struct nsFactoryEntry {
   nsCOMPtr<nsISupports> mServiceObject;
 };
 
-#endif  // nsComponentManager_h__
+#endif  // nsComponentManager_h_

@@ -13,8 +13,8 @@
 
 namespace mozilla::dom {
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedTransformList,
-                                         DOMSVGAnimatedTransformList>
+constinit static SVGAttrTearoffTable<SVGAnimatedTransformList,
+                                     DOMSVGAnimatedTransformList>
     sSVGAnimatedTransformListTearoffTable;
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAnimatedTransformList,
@@ -108,12 +108,12 @@ bool DOMSVGAnimatedTransformList::IsAnimating() const {
 }
 
 SVGAnimatedTransformList& DOMSVGAnimatedTransformList::InternalAList() {
-  return *mElement->GetAnimatedTransformList();
+  return *mElement->GetExistingAnimatedTransformList();
 }
 
 const SVGAnimatedTransformList& DOMSVGAnimatedTransformList::InternalAList()
     const {
-  return *mElement->GetAnimatedTransformList();
+  return *mElement->GetExistingAnimatedTransformList();
 }
 
 }  // namespace mozilla::dom

@@ -5,6 +5,8 @@
 include HttpChannelParams;
 include NeckoChannelParams;
 
+using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
+
 namespace mozilla {
 namespace net {
 

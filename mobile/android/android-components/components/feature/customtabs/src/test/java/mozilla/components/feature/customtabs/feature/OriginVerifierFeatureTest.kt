@@ -9,7 +9,6 @@ import androidx.browser.customtabs.CustomTabsService.RELATION_USE_AS_ORIGIN
 import androidx.browser.customtabs.CustomTabsSessionToken
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.customtabs.store.CustomTabState
 import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
@@ -33,7 +32,6 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 class OriginVerifierFeatureTest {
 
     @Test

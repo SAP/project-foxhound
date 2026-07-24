@@ -90,7 +90,7 @@ CompositorVsyncScheduler::~CompositorVsyncScheduler() {
   MOZ_ASSERT(!mIsObservingVsync);
   MOZ_ASSERT(!mVsyncObserver);
   // The CompositorVsyncDispatcher is cleaned up before this in the
-  // nsBaseWidget, which stops vsync listeners
+  // nsIWidget, which stops vsync listeners
   mVsyncSchedulerOwner = nullptr;
 }
 

@@ -10,6 +10,9 @@ if [ "${SNAP_BASE}" != "core24" ]; then
     exit 0
 fi;
 
+# Remove snapshot.ubuntu.com configuration for now.
+rm -f /etc/apt/apt.conf.d/99snapshot
+
 # GPG: we need to do it here otherwhise snapcraft tries to do it as user and fails
 CROSS_GPG_KEYID="F6ECB3762474EDA9D21B7022871920D1991BC93C"
 KEYRING_FILENAME="/etc/apt/keyrings/craft-$(echo "${CROSS_GPG_KEYID}" | rev | cut -c 1-8 | rev | tr -d '\n').gpg"
@@ -30,13 +33,12 @@ Types: deb
 URIs: http://ports.ubuntu.com
 Suites: noble noble-updates noble-security noble-backports
 Components: main multiverse universe
-Architectures: armhf arm64
+Architectures: arm64
 Signed-By: ${KEYRING_FILENAME}
 EOF
 
 # snapcraft 8.8+ will want both and will rewrite ubuntu.sources
 dpkg --add-architecture "arm64"
-dpkg --add-architecture "armhf"
 apt-get update
 apt-get --fix-broken install -y
 apt-get upgrade -y

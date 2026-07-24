@@ -3,8 +3,8 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.importESModule(
-  "resource://gre/modules/AppConstants.sys.mjs"
+const { BasePromiseWorker } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseWorker.sys.mjs"
 );
 const { JsonSchema } = ChromeUtils.importESModule(
   "resource://gre/modules/JsonSchema.sys.mjs"
@@ -15,59 +15,38 @@ const { UIState } = ChromeUtils.importESModule(
 const { ClientID } = ChromeUtils.importESModule(
   "resource://gre/modules/ClientID.sys.mjs"
 );
+const { ERRORS } = ChromeUtils.importESModule(
+  "chrome://browser/content/backup/backup-constants.mjs"
+);
+
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
 const LAST_BACKUP_TIMESTAMP_PREF_NAME =
   "browser.backup.scheduled.last-backup-timestamp";
 const LAST_BACKUP_FILE_NAME_PREF_NAME =
   "browser.backup.scheduled.last-backup-file";
+const BACKUP_ARCHIVE_ENABLED_PREF_NAME = "browser.backup.archive.enabled";
+const BACKUP_RESTORE_ENABLED_PREF_NAME = "browser.backup.restore.enabled";
 
 /** @type {nsIToolkitProfile} */
 let currentProfile;
 
+// Mock backup metadata
+const DATE = "2024-06-25T21:59:11.777Z";
+const IS_ENCRYPTED = true;
+const DEVICE_NAME = "test-device";
+const APP_NAME = "test-app-name";
+const APP_VERSION = "test-app-version";
+const BUILD_ID = "test-build-id";
+const OS_NAME = "test-os-name";
+const OS_VERSION = "test-os-version";
+const TELEMETRY_ENABLED = true;
+const LEGACY_CLIENT_ID = "legacy-client-id";
+
 add_setup(function () {
-  // FOG needs to be initialized in order for data to flow.
-  Services.fog.initializeFOG();
-
-  // Much of this setup is copied from toolkit/profile/xpcshell/head.js. It is
-  // needed in order to put the xpcshell test environment into the state where
-  // it thinks its profile is the one pointed at by
-  // nsIToolkitProfileService.currentProfile.
-  let gProfD = do_get_profile();
-  let gDataHome = gProfD.clone();
-  gDataHome.append("data");
-  gDataHome.createUnique(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-  let gDataHomeLocal = gProfD.clone();
-  gDataHomeLocal.append("local");
-  gDataHomeLocal.createUnique(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-
-  let xreDirProvider = Cc["@mozilla.org/xre/directory-provider;1"].getService(
-    Ci.nsIXREDirProvider
-  );
-  xreDirProvider.setUserDataDirectory(gDataHome, false);
-  xreDirProvider.setUserDataDirectory(gDataHomeLocal, true);
-
-  let profileSvc = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-    Ci.nsIToolkitProfileService
-  );
-
-  let createdProfile = {};
-  let didCreate = profileSvc.selectStartupProfile(
-    ["xpcshell"],
-    false,
-    AppConstants.UPDATE_CHANNEL,
-    "",
-    {},
-    {},
-    createdProfile
-  );
-  Assert.ok(didCreate, "Created a testing profile and set it to current.");
-  Assert.equal(
-    profileSvc.currentProfile,
-    createdProfile.value,
-    "Profile set to current"
-  );
-
-  currentProfile = createdProfile.value;
+  currentProfile = setupProfile();
 });
 
 /**
@@ -135,7 +114,7 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     .stub(FakeBackupResource3.prototype, "recover")
     .resolves(fake3PostRecoveryEntry);
 
-  let bs = new BackupService({
+  let bs = BackupService.init({
     FakeBackupResource1,
     FakeBackupResource2,
     FakeBackupResource3,
@@ -146,19 +125,15 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     "createBackupTest"
   );
 
-  let testTelemetryStateObject = {
-    clientID: "ed209123-04a1-04a1-04a1-c0ffeec0ffee",
-  };
-  await IOUtils.writeJSON(
-    PathUtils.join(PathUtils.profileDir, "datareporting", "state.json"),
-    testTelemetryStateObject
-  );
-
   Assert.ok(!bs.state.lastBackupDate, "No backup date is stored in state.");
   let { manifest, archivePath: backupFilePath } = await bs.createBackup({
     profilePath: fakeProfilePath,
   });
-  Assert.ok(bs.state.lastBackupDate, "The backup date was recorded.");
+  Assert.notStrictEqual(
+    bs.state.lastBackupDate,
+    null,
+    "The backup date was recorded."
+  );
 
   let legacyEvents = TelemetryTestUtils.getEvents(
     { category: "browser.backup", method: "created", object: "BackupService" },
@@ -308,17 +283,82 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     "createBackupTestRecoveredProfile"
   );
 
+  let originalProfileName = currentProfile.name;
+
+  let profileSvc = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
+    Ci.nsIToolkitProfileService
+  );
+  // make our current profile default
+  profileSvc.defaultProfile = currentProfile;
+
+  await bs.getBackupFileInfo(backupFilePath);
+  const restoreID = bs.state.restoreID;
+
+  // Intercept the telemetry that we want to check for before it gets submitted
+  // and cleared out.
+  let restoreStartedEvents;
+  let restoreCompleteEvents;
+  let restoreCompleteCallback = () => {
+    Services.obs.removeObserver(
+      restoreCompleteCallback,
+      "browser-backup-restore-complete"
+    );
+    restoreStartedEvents = Glean.browserBackup.restoreStarted.testGetValue();
+    restoreCompleteEvents = Glean.browserBackup.restoreComplete.testGetValue();
+  };
+  Services.obs.addObserver(
+    restoreCompleteCallback,
+    "browser-backup-restore-complete"
+  );
+
   let recoveredProfile = await bs.recoverFromBackupArchive(
     backupFilePath,
     null,
     false,
     fakeProfilePath,
-    recoveredProfilePath
+    recoveredProfilePath,
+    true
   );
 
   Assert.ok(
-    recoveredProfile.name.startsWith(currentProfile.name),
+    recoveredProfile.name.startsWith(originalProfileName),
     "Should maintain profile name across backup and restore"
+  );
+
+  Assert.ok(
+    currentProfile.name.startsWith("old-"),
+    "The old profile should be prefixed with old-"
+  );
+
+  Assert.strictEqual(
+    profileSvc.defaultProfile,
+    recoveredProfile,
+    "The new profile should now be the default"
+  );
+
+  Assert.equal(
+    restoreStartedEvents.length,
+    1,
+    "Should be a single restore start event after we start restoring a profile"
+  );
+  Assert.deepEqual(
+    restoreStartedEvents[0].extra,
+    {
+      restore_id: restoreID,
+      replace: "true",
+    },
+    "Restore start event should have the right data"
+  );
+
+  Assert.equal(
+    restoreCompleteEvents.length,
+    1,
+    "Should be a single restore complete event after we start restoring a profile"
+  );
+  Assert.deepEqual(
+    restoreCompleteEvents[0].extra,
+    { restore_id: restoreID },
+    "Restore complete event should have the right data"
   );
 
   // Check that resources were recovered from highest to lowest backup priority.
@@ -342,22 +382,24 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     "Should have post-recovery data from fake backup 3"
   );
 
-  let newProfileTelemetryStateObject = await IOUtils.readJSON(
-    PathUtils.join(recoveredProfilePath, "datareporting", "state.json")
-  );
-  Assert.deepEqual(
-    testTelemetryStateObject,
-    newProfileTelemetryStateObject,
-    "Recovered profile inherited telemetry state from the profile that " +
-      "initiated recovery"
+  await Assert.rejects(
+    IOUtils.readJSON(
+      PathUtils.join(recoveredProfilePath, "datareporting", "state.json")
+    ),
+    /file does not exist/,
+    "The telemetry state was cleared."
   );
 
-  taskFn(bs, manifest);
+  await taskFn(bs, manifest);
 
   await maybeRemovePath(backupFilePath);
   await maybeRemovePath(fakeProfilePath);
   await maybeRemovePath(recoveredProfilePath);
   await maybeRemovePath(EXPECTED_ARCHIVE_PATH);
+
+  Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
+
+  BackupService.uninit();
 }
 
 /**
@@ -391,8 +433,9 @@ async function testDeleteLastBackupHelper(taskFn) {
   Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
 
   await testCreateBackupHelper(sandbox, async (bs, _manifest) => {
-    Assert.ok(
+    Assert.notStrictEqual(
       bs.state.lastBackupDate,
+      null,
       "Should have a last backup date recorded."
     );
     Assert.ok(
@@ -420,7 +463,11 @@ async function testDeleteLastBackupHelper(taskFn) {
       await taskFn(LAST_BACKUP_FILE_PATH);
     }
 
-    await bs.deleteLastBackup();
+    // NB: On Windows, deletes of backups in tests run into an issue where
+    // the file is locked briefly by the system and deletes fail with
+    // NS_ERROR_FILE_IS_LOCKED.  See doFileRemovalOperation for details.
+    // We therefore retry this delete a few times before accepting failure.
+    await doFileRemovalOperation(async () => await bs.deleteLastBackup());
 
     Assert.equal(
       bs.state.lastBackupDate,
@@ -510,12 +557,48 @@ add_task(async function test_createBackup_signed_in() {
 });
 
 /**
- * Tests that any internal file system errors in BackupService.createBackup
- * do not bubble up any errors.
+ * Makes a folder readonly.  Windows does not support read-only folders, so
+ * this creates a file inside the folder and makes that read-only.
+ *
+ * @param {string}  folderpath Full path to folder to make read-only.
+ * @param {boolean} isReadonly Whether to set or clear read-only status.
+ */
+async function makeFolderReadonly(folderpath, isReadonly) {
+  if (AppConstants.platform !== "win") {
+    await IOUtils.setPermissions(folderpath, isReadonly ? 0o444 : 0o666);
+    let folder = await IOUtils.getFile(folderpath);
+    Assert.equal(
+      folder.isWritable(),
+      !isReadonly,
+      `folder is ${isReadonly ? "" : "not "}read-only`
+    );
+  } else if (isReadonly) {
+    // Permissions flags like 0o444 are not usually respected on Windows but in
+    // the case of creating a unique file, the read-only status is.  See
+    // OpenFile in nsLocalFileWin.cpp.
+    let tempFilename = await IOUtils.createUniqueFile(
+      folderpath,
+      "readonlyfile",
+      0o444
+    );
+    let file = await IOUtils.getFile(tempFilename);
+    Assert.equal(file.isWritable(), false, "file in folder is read-only");
+  } else {
+    // Recursively set any folder contents to be writeable.
+    let attrs = await IOUtils.getWindowsAttributes(folderpath);
+    attrs.readonly = false;
+    await IOUtils.setWindowsAttributes(folderpath, attrs, true /* recursive */);
+  }
+}
+
+/**
+ * Tests that read-only files in BackupService.createBackup cause backup
+ * failure (createBackup returns null) and does not bubble up any errors.
  */
 add_task(
   {
-    // Bug 1905724 - Need to find a way to deny write access to backup directory on Windows
+    // We override read-only on Windows -- see
+    // test_createBackup_override_readonly below.
     skip_if: () => AppConstants.platform == "win",
   },
   async function test_createBackup_robustToFileSystemErrors() {
@@ -539,9 +622,9 @@ add_task(
     // won't be able to make writes
     let inaccessibleProfilePath = await IOUtils.createUniqueDirectory(
       PathUtils.tempDir,
-      "createBackupErrorInaccessible"
+      "createBackupErrorReadonly"
     );
-    IOUtils.setPermissions(inaccessibleProfilePath, 0o444);
+    await makeFolderReadonly(inaccessibleProfilePath, true);
 
     const bs = new BackupService({});
 
@@ -561,13 +644,382 @@ add_task(
         assertHistogramMeasurementQuantity(backupTimerHistogram, 0);
       })
       .catch(() => {
-        // Trigger failure if there was an uncaught error
-        Assert.ok(false, "Should not have bubbled up an error");
+        // Failure bubbles up an error for handling by the caller
       })
       .finally(async () => {
+        await makeFolderReadonly(inaccessibleProfilePath, false);
         await IOUtils.remove(inaccessibleProfilePath, { recursive: true });
         sandbox.restore();
       });
+  }
+);
+
+/**
+ * Tests that BackupService.createBackup can override simple read-only status
+ * when handling staging files.  That currently only works on Windows.
+ */
+add_task(
+  {
+    skip_if: () => AppConstants.platform !== "win",
+  },
+  async function test_createBackup_override_readonly() {
+    let sandbox = sinon.createSandbox();
+
+    const TEST_UID = "ThisIsMyTestUID";
+    const TEST_EMAIL = "foxy@mozilla.org";
+
+    sandbox.stub(UIState, "get").returns({
+      status: UIState.STATUS_SIGNED_IN,
+      uid: TEST_UID,
+      email: TEST_EMAIL,
+    });
+
+    // Create a fake profile folder that contains a read-only file.  We do this
+    // because Windows does not respect read-only status on folders. The
+    // file's read-only status will make the folder un(re)movable.
+    let inaccessibleProfilePath = await IOUtils.createUniqueDirectory(
+      PathUtils.tempDir,
+      "createBackupErrorReadonly"
+    );
+    await makeFolderReadonly(inaccessibleProfilePath, true);
+    await Assert.rejects(
+      IOUtils.remove(inaccessibleProfilePath),
+      /Could not remove/,
+      "folder is not removable"
+    );
+
+    const bs = new BackupService({});
+
+    await bs
+      .createBackup({ profilePath: inaccessibleProfilePath })
+      .then(result => {
+        Assert.notEqual(result, null, "Should not return null on success");
+      })
+      .catch(e => {
+        console.error(e);
+        Assert.ok(false, "Should not have bubbled up an error");
+      })
+      .finally(async () => {
+        await makeFolderReadonly(inaccessibleProfilePath, false);
+        await IOUtils.remove(inaccessibleProfilePath, { recursive: true });
+        await bs.deleteLastBackup();
+        sandbox.restore();
+      });
+  }
+);
+
+/**
+ * Creates a unique file in the given folder and tells a worker to keep it
+ * open until we post a close message.  Checks that the folder is not
+ * removable as a result.
+ *
+ * @param {string} folderpath
+ * @returns {object} {{ path: string, worker: OpenFileWorker }}
+ */
+async function openUniqueFileInFolder(folderpath) {
+  let testFile = await IOUtils.createUniqueFile(folderpath, "openfile");
+  await IOUtils.writeUTF8(testFile, "");
+  Assert.ok(
+    await IOUtils.exists(testFile),
+    testFile + " should have been created"
+  );
+  // Use a worker to keep the testFile open.
+  const worker = new BasePromiseWorker(
+    "resource://test/data/test_keep_file_open.worker.js"
+  );
+  await worker.post("open", [testFile]);
+
+  await Assert.rejects(
+    IOUtils.remove(folderpath),
+    /NS_ERROR_FILE_DIR_NOT_EMPTY/,
+    "attempt to remove folder threw an exception"
+  );
+  Assert.ok(await IOUtils.exists(folderpath), "folder is not removable");
+  return { path: testFile, worker };
+}
+
+/**
+ * Stop the worker returned from openUniqueFileInFolder and close the file.
+ *
+ * @param {object} worker The worker returned by openUniqueFileInFolder
+ */
+async function closeTestFile(worker) {
+  await worker.post("close", []);
+}
+
+/**
+ * Run a backup and check that it either succeeded with a response or failed
+ * and returned null.
+ *
+ * @param {object}  backupService Instance of BackupService
+ * @param {string}  profilePath   Full path to profile folder
+ * @param {boolean} shouldSucceed Whether to expect success or failure
+ */
+async function checkBackup(backupService, profilePath, shouldSucceed) {
+  if (shouldSucceed) {
+    await backupService.createBackup({ profilePath }).then(result => {
+      Assert.ok(true, "createBackup did not throw an exception");
+      Assert.notEqual(
+        result,
+        null,
+        `createBackup should not have returned null`
+      );
+    });
+    await backupService.deleteLastBackup();
+    return;
+  }
+
+  await Assert.rejects(
+    backupService.createBackup({ profilePath }),
+    /Failed to remove/,
+    "createBackup threw correct exception"
+  );
+}
+
+/**
+ * Checks that browser.backup.max-num-unremovable-staging-items allows backups
+ * to succeed if the snapshots folder contains no more than that many
+ * unremovable items, and that it fails if there are more than that.
+ *
+ * @param {number} unremovableItemsLimit Max number of unremovable items that
+ *                                       backups can succeed with.
+ */
+async function checkBackupWithUnremovableItems(unremovableItemsLimit) {
+  Services.prefs.setIntPref(
+    "browser.backup.max-num-unremovable-staging-items",
+    unremovableItemsLimit
+  );
+  registerCleanupFunction(() =>
+    Services.prefs.clearUserPref(
+      "browser.backup.max-num-unremovable-staging-items"
+    )
+  );
+
+  let sandbox = sinon.createSandbox();
+
+  const TEST_UID = "ThisIsMyTestUID";
+  const TEST_EMAIL = "foxy@mozilla.org";
+
+  sandbox.stub(UIState, "get").returns({
+    status: UIState.STATUS_SIGNED_IN,
+    uid: TEST_UID,
+    email: TEST_EMAIL,
+  });
+  const backupService = new BackupService({});
+
+  let profilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "profileDir"
+  );
+  let snapshotsFolder = PathUtils.join(
+    profilePath,
+    BackupService.PROFILE_FOLDER_NAME,
+    BackupService.SNAPSHOTS_FOLDER_NAME
+  );
+
+  let openFileWorkers = [];
+  try {
+    for (let i = 0; i < unremovableItemsLimit + 1; i++) {
+      info(`Performing backup #${i}`);
+      await checkBackup(backupService, profilePath, true /* shouldSucceed */);
+
+      // Create and open a file so that the snapshots folder cannot be
+      // emptied.
+      openFileWorkers.push(await openUniqueFileInFolder(snapshotsFolder));
+    }
+
+    // We are now over the unremovableItemsLimit.
+    info(`Performing backup that should fail`);
+    await checkBackup(backupService, profilePath, false /* shouldSucceed */);
+  } finally {
+    await Promise.all(
+      openFileWorkers.map(async ofw => await closeTestFile(ofw.worker))
+    );
+    await Promise.all(
+      openFileWorkers.map(async ofw => await IOUtils.remove(ofw.path))
+    );
+    await IOUtils.remove(profilePath, { recursive: true });
+    sandbox.restore();
+  }
+}
+
+/**
+ * Tests that any non-read-only file deletion errors do not prevent backups
+ * until the browser.backup.max-num-unremovable-staging-items limit has been
+ * reached.
+ */
+add_task(
+  async function test_createBackup_robustToNonReadonlyFileSystemErrorsAllowOneNonReadonly() {
+    await checkBackupWithUnremovableItems(1);
+  }
+);
+
+/**
+ * Tests that browser.backup.max-num-unremovable-staging-items works for value
+ * 0.
+ */
+add_task(
+  async function test_createBackup_robustToNonReadonlyFileSystemErrors() {
+    await checkBackupWithUnremovableItems(0);
+  }
+);
+
+/**
+ * Tests that failure to delete the prior backup doesn't prevent the backup
+ * location from being edited.
+ */
+add_task(
+  async function test_editBackupLocation_robustToDeleteLastBackupException() {
+    const backupLocationPref = "browser.backup.location";
+    const resetLocation = Services.prefs.getStringPref(backupLocationPref);
+
+    const exceptionBackupLocation = await IOUtils.createUniqueDirectory(
+      PathUtils.tempDir,
+      "exceptionBackupLocation"
+    );
+    Services.prefs.setStringPref(backupLocationPref, exceptionBackupLocation);
+
+    const newBackupLocation = await IOUtils.createUniqueDirectory(
+      PathUtils.tempDir,
+      "newBackupLocation"
+    );
+
+    let pickerDir = await IOUtils.getDirectory(newBackupLocation);
+    const reg = MockRegistrar.register("@mozilla.org/filepicker;1", {
+      init() {},
+      open(cb) {
+        cb.done(Ci.nsIFilePicker.returnOK);
+      },
+      displayDirectory: null,
+      file: pickerDir,
+      QueryInterface: ChromeUtils.generateQI(["nsIFilePicker"]),
+    });
+
+    const backupService = new BackupService({});
+
+    const sandbox = sinon.createSandbox();
+    sandbox
+      .stub(backupService, "deleteLastBackup")
+      .rejects(new Error("Exception while deleting backup"));
+
+    await backupService.editBackupLocation({ browsingContext: null });
+
+    pickerDir.append("Restore Firefox");
+    Assert.equal(
+      Services.prefs.getStringPref(backupLocationPref),
+      pickerDir.path,
+      "Backup location pref should have updated to the new directory."
+    );
+
+    Services.prefs.setStringPref(backupLocationPref, resetLocation);
+    sinon.restore();
+    MockRegistrar.unregister(reg);
+    await Promise.all([
+      IOUtils.remove(exceptionBackupLocation, { recursive: true }),
+      IOUtils.remove(newBackupLocation, { recursive: true }),
+    ]);
+  }
+);
+
+/**
+ * Tests that the existence of selectable profiles prevent backups (see bug
+ * 1990980).
+ *
+ * @param {boolean} aSetCreatedSelectableProfilesBeforeSchedulingBackups
+ *    If true (respectively, false), set browser.profiles.created before
+ *    (respectively, after) attempting to setScheduledBackups.
+ */
+async function testSelectableProfilesPreventBackup(
+  aSetCreatedSelectableProfilesBeforeSchedulingBackups
+) {
+  let sandbox = sinon.createSandbox();
+  Services.fog.testResetFOG();
+  const TEST_UID = "ThisIsMyTestUID";
+  const TEST_EMAIL = "foxy@mozilla.org";
+  sandbox.stub(UIState, "get").returns({
+    status: UIState.STATUS_SIGNED_IN,
+    uid: TEST_UID,
+    email: TEST_EMAIL,
+  });
+
+  const SELECTABLE_PROFILES_CREATED_PREF = "browser.profiles.created";
+
+  Services.prefs.setBoolPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME, true);
+  Services.prefs.setBoolPref(BACKUP_RESTORE_ENABLED_PREF_NAME, true);
+
+  // Make sure created profiles pref is not set until we want it to be.
+  Services.prefs.setBoolPref(SELECTABLE_PROFILES_CREATED_PREF, false);
+
+  const setHasSelectableProfiles = () => {
+    // "Enable" selectable profiles by pref.
+    Services.prefs.setBoolPref(SELECTABLE_PROFILES_CREATED_PREF, true);
+    Assert.ok(
+      Services.prefs.getBoolPref(SELECTABLE_PROFILES_CREATED_PREF),
+      "set has selectable profiles | browser.profiles.created = true"
+    );
+  };
+
+  if (aSetCreatedSelectableProfilesBeforeSchedulingBackups) {
+    setHasSelectableProfiles();
+  }
+
+  let bs = new BackupService({});
+  bs.initBackupScheduler();
+  bs.setScheduledBackups(true);
+
+  const SCHEDULED_BACKUP_ENABLED_PREF = "browser.backup.scheduled.enabled";
+  if (!aSetCreatedSelectableProfilesBeforeSchedulingBackups) {
+    Assert.ok(
+      Services.prefs.getBoolPref(SCHEDULED_BACKUP_ENABLED_PREF, true),
+      "enabled scheduled backups | browser.backup.scheduled.enabled = true"
+    );
+    registerCleanupFunction(() => {
+      // Just in case the test fails.
+      bs.setScheduledBackups(false);
+      info("cleared scheduled backups");
+    });
+
+    setHasSelectableProfiles();
+  }
+
+  // Backups attempts should be rejected because of selectable profiles.
+  let fakeProfilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "testSelectableProfilesPreventBackup"
+  );
+  registerCleanupFunction(async () => {
+    await maybeRemovePath(fakeProfilePath);
+  });
+  let failedBackup = await bs.createBackup({
+    profilePath: fakeProfilePath,
+  });
+  Assert.equal(failedBackup, null, "Backup returned null");
+
+  // Test cleanup
+  if (!aSetCreatedSelectableProfilesBeforeSchedulingBackups) {
+    bs.uninitBackupScheduler();
+  }
+
+  Services.prefs.clearUserPref(SELECTABLE_PROFILES_CREATED_PREF);
+  // These tests assume that backups and restores have been enabled.
+  Services.prefs.setBoolPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME, true);
+  Services.prefs.setBoolPref(BACKUP_RESTORE_ENABLED_PREF_NAME, true);
+  sandbox.restore();
+}
+
+add_task(
+  async function test_managing_profiles_before_scheduling_prevents_backup() {
+    await testSelectableProfilesPreventBackup(
+      true /* aSetCreatedSelectableProfilesBeforeSchedulingBackups */
+    );
+  }
+);
+
+add_task(
+  async function test_managing_profiles_after_scheduling_prevents_backup() {
+    await testSelectableProfilesPreventBackup(
+      false /* aSetCreatedSelectableProfilesBeforeSchedulingBackups */
+    );
   }
 );
 
@@ -642,14 +1094,25 @@ add_task(async function test_checkForPostRecovery() {
 add_task(async function test_getBackupFileInfo() {
   let sandbox = sinon.createSandbox();
 
-  const DATE = "2024-06-25T21:59:11.777Z";
-  const IS_ENCRYPTED = true;
-
   let fakeSampleArchiveResult = {
     isEncrypted: IS_ENCRYPTED,
     startByteOffset: 26985,
     contentType: "multipart/mixed",
-    archiveJSON: { version: 1, meta: { date: DATE }, encConfig: {} },
+    archiveJSON: {
+      version: 1,
+      meta: {
+        date: DATE,
+        deviceName: DEVICE_NAME,
+        appName: APP_NAME,
+        appVersion: APP_VERSION,
+        buildID: BUILD_ID,
+        osName: OS_NAME,
+        osVersion: OS_VERSION,
+        healthTelemetryEnabled: TELEMETRY_ENABLED,
+        legacyClientID: LEGACY_CLIENT_ID,
+      },
+      encConfig: {},
+    },
   };
 
   sandbox
@@ -667,7 +1130,18 @@ add_task(async function test_getBackupFileInfo() {
 
   Assert.deepEqual(
     bs.state.backupFileInfo,
-    { isEncrypted: IS_ENCRYPTED, date: DATE },
+    {
+      isEncrypted: IS_ENCRYPTED,
+      date: DATE,
+      deviceName: DEVICE_NAME,
+      appName: APP_NAME,
+      appVersion: APP_VERSION,
+      buildID: BUILD_ID,
+      osName: OS_NAME,
+      osVersion: OS_VERSION,
+      healthTelemetryEnabled: TELEMETRY_ENABLED,
+      legacyClientID: LEGACY_CLIENT_ID,
+    },
     "State should match a subset from the archive sample."
   );
 
@@ -692,6 +1166,172 @@ add_task(async function test__deleteLastBackup_file_does_not_exist() {
   // Now delete the file ourselves before we call deleteLastBackup,
   // so that it's missing from the disk.
   await testDeleteLastBackupHelper(async lastBackupFilePath => {
-    await IOUtils.remove(lastBackupFilePath);
+    await maybeRemovePath(lastBackupFilePath);
   });
+});
+
+/**
+ * Tests that getBackupFileInfo properly handles errors, and clears file info
+ * for errors that indicate that the file is invalid.
+ */
+add_task(async function test_getBackupFileInfo_error_handling() {
+  let sandbox = sinon.createSandbox();
+
+  const errorTypes = [
+    ERRORS.FILE_SYSTEM_ERROR,
+    ERRORS.CORRUPTED_ARCHIVE,
+    ERRORS.UNSUPPORTED_BACKUP_VERSION,
+    ERRORS.INTERNAL_ERROR,
+    ERRORS.UNINITIALIZED,
+    ERRORS.INVALID_PASSWORD,
+  ];
+
+  for (const testError of errorTypes) {
+    let bs = new BackupService();
+
+    let fakeSampleArchiveResult = {
+      isEncrypted: IS_ENCRYPTED,
+      startByteOffset: 26985,
+      contentType: "multipart/mixed",
+      archiveJSON: {
+        version: 1,
+        meta: {
+          date: DATE,
+          deviceName: DEVICE_NAME,
+          appName: APP_NAME,
+          appVersion: APP_VERSION,
+          buildID: BUILD_ID,
+          osName: OS_NAME,
+          osVersion: OS_VERSION,
+          healthTelemetryEnabled: TELEMETRY_ENABLED,
+          legacyClientID: LEGACY_CLIENT_ID,
+        },
+        encConfig: {},
+      },
+    };
+
+    sandbox
+      .stub(BackupService.prototype, "sampleArchive")
+      .resolves(fakeSampleArchiveResult);
+    await bs.getBackupFileInfo("test-backup.html");
+
+    // Verify initial state was set
+    Assert.deepEqual(
+      bs.state.backupFileInfo,
+      {
+        isEncrypted: IS_ENCRYPTED,
+        date: DATE,
+        deviceName: DEVICE_NAME,
+        appName: APP_NAME,
+        appVersion: APP_VERSION,
+        buildID: BUILD_ID,
+        osName: OS_NAME,
+        osVersion: OS_VERSION,
+        healthTelemetryEnabled: TELEMETRY_ENABLED,
+        legacyClientID: LEGACY_CLIENT_ID,
+      },
+      "Initial state should be set correctly"
+    );
+    Assert.strictEqual(
+      bs.state.backupFileToRestore,
+      "test-backup.html",
+      "Initial backupFileToRestore should be set correctly"
+    );
+
+    // Test when sampleArchive throws an error
+    sandbox.restore();
+    sandbox
+      .stub(BackupService.prototype, "sampleArchive")
+      .rejects(new Error("Test error", { cause: testError }));
+    const setRecoveryErrorStub = sandbox.stub(bs, "setRecoveryError");
+
+    try {
+      await bs.getBackupFileInfo("test-backup.html");
+    } catch (error) {
+      Assert.ok(
+        false,
+        `Expected getBackupFileInfo to throw for error ${testError}`
+      );
+    }
+
+    Assert.ok(
+      setRecoveryErrorStub.calledOnceWith(testError),
+      `setRecoveryError should be called with ${testError}`
+    );
+
+    Assert.strictEqual(
+      bs.state.backupFileInfo,
+      null,
+      `backupFileInfo should be cleared for error ${testError}`
+    );
+    Assert.strictEqual(
+      bs.state.backupFileToRestore,
+      null,
+      `backupFileToRestore should be cleared for error ${testError}`
+    );
+
+    sandbox.restore();
+  }
+});
+
+/**
+ * Tests changing the status prefs to ensure that backup is cleaned up if being disabled.
+ */
+add_task(async function test_changing_prefs_cleanup() {
+  let sandbox = sinon.createSandbox();
+  Services.prefs.setBoolPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME, true);
+  let bs = new BackupService();
+  bs.initStatusObservers();
+  let cleanupStub = sandbox.stub(bs, "cleanupBackupFiles");
+  let statusUpdatePromise = TestUtils.topicObserved(
+    "backup-service-status-updated"
+  );
+  Services.prefs.setBoolPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME, false);
+  await statusUpdatePromise;
+
+  Assert.equal(
+    cleanupStub.callCount,
+    1,
+    "Cleanup backup files was called on pref change"
+  );
+
+  Services.prefs.setBoolPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME, true);
+
+  Assert.equal(
+    cleanupStub.callCount,
+    1,
+    "Cleanup backup files should not have been called when enabling backups"
+  );
+
+  Services.prefs.clearUserPref(BACKUP_ARCHIVE_ENABLED_PREF_NAME);
+});
+
+add_task(function test_checkOsSupportsBackup_win10() {
+  const osParams = {
+    name: "Windows_NT",
+    version: "10.0",
+    build: "20000",
+  };
+  const result = BackupService.checkOsSupportsBackup(osParams);
+  Assert.ok(result);
+});
+
+add_task(function test_checkOsSupportsBackup_win11() {
+  const osParams = {
+    name: "Windows_NT",
+    version: "10.0",
+    build: "22000",
+  };
+  const result = BackupService.checkOsSupportsBackup(osParams);
+  Assert.ok(!result);
+});
+
+add_task(function test_checkOsSupportsBackup_linux() {
+  const osParams = {
+    name: "Linux",
+    version: "10.0",
+    build: "22000",
+  };
+  const result = BackupService.checkOsSupportsBackup(osParams);
+  Assert.ok(!result);
 });

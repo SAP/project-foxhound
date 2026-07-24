@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PeriodicWave.h"
+
 #include "AudioContext.h"
 #include "mozilla/dom/PeriodicWaveBinding.h"
 

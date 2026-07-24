@@ -20,9 +20,23 @@ const HEADER = `/**
  */
 `;
 
-const IGNORE = [/\.git/, /\.hg/, /node_modules/, /^obj.*/, /test262/];
+const IGNORE = [
+  /\.git/,
+  /\.hg/,
+  /node_modules/,
+  /^obj.*/,
+  /test262/,
+  // eslint-plugin-mozilla isn't part of Gecko/Firefox code, but runs tests
+  // simulating imports that we don't need to define in the paths.
+  /eslint-plugin-mozilla/,
+];
 const IMPORT =
-  /(\bimport |import\(|require\(|\.importESModule\(|\.(defineESModuleGetters?|declareLazy|defineLazy)\()[^;]+/gm;
+  /(?<!@)(\bimport |import\(|require\(|\.(importESModule|defineESModuleGetters?|declareLazy|defineLazy)\()[^;]+/gm;
+// TypeScript imports have no `;` so cannot be included in the IMPORT regular
+// expression. Therefore we have a separate expression to handle the TypeScript
+// specific imports which will be within comments.
+const TYPESCRIPT_IMPORT =
+  /\/\*\*?\s*@import\s.*?\s+from\s+["'][^"']+["']\s*\*\//gm;
 const URI = /("|')((resource|chrome|moz-src):\/\/[\w\d\/_.-]+\.m?js)\1/gm;
 
 function ignore(filePath) {
@@ -83,7 +97,7 @@ function emitPaths(files, uris, modules, relativeBasePath) {
 // Emit type mapping for all modules imported via lazy getters.
 function emitLazy(modules) {
   let lines = [HEADER];
-  lines.push("export interface LazyModules {");
+  lines.push("export interface Modules {");
   for (let uri of [...modules].sort()) {
     lines.push(`  "${uri}": typeof import("${uri}"),`);
   }
@@ -101,12 +115,15 @@ function main(root_dir, paths_json, lib_lazy) {
   for (let file of files) {
     let src = fs.readFileSync(`${root_dir}/${file}`, "utf-8");
 
-    for (let [exp, , method] of src.matchAll(IMPORT)) {
+    for (let [exp, , method] of [
+      ...src.matchAll(IMPORT),
+      ...src.matchAll(TYPESCRIPT_IMPORT),
+    ]) {
       for (let [, , uri, proto] of exp.matchAll(URI)) {
         if (proto !== "moz-src") {
           uris.add(uri);
         }
-        if (method?.match(/ModuleGetter|Lazy/)) {
+        if (method?.match(/importESModule|ModuleGetter|Lazy/)) {
           modules.add(uri);
         }
       }

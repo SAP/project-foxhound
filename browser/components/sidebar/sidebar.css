@@ -4,6 +4,8 @@
 
 @import url("chrome://global/skin/global.css");
 @import url("chrome://browser/skin/browser-colors.css");
+@import url("chrome://browser/skin/notification-icons.css");
+@import url("chrome://browser/skin/identity-block/identity-block.css");
 
 :root {
   --sidebar-box-border-color: light-dark(color-mix(in srgb, currentColor 10%, transparent), var(--border-color-deemphasized));
@@ -51,29 +53,28 @@ moz-card {
     white-space: nowrap;
   }
 
-  &.phone::part(icon),
-  &.mobile::part(icon) {
-    background-image: url("chrome://browser/skin/device-phone.svg");
-  }
-
-  &.desktop::part(icon) {
-    background-image: url("chrome://browser/skin/device-desktop.svg");
-  }
-
-  &.tablet::part(icon) {
-    background-image: url("chrome://browser/skin/device-tablet.svg");
+  &:first-of-type {
+    margin-block-start: 0;
   }
 }
 
 .sidebar-panel {
+  display: flex;
+  flex-direction: column;
   padding: var(--space-large);
-  height: 100%;
   box-sizing: border-box;
   border-radius: var(--border-radius-medium);
   width: 100%;
+  height: 100%;
 
-  > moz-input-search {
+  moz-input-search {
     display: block;
+  }
+
+  .sidebar-panel-scrollable-content {
+    overflow-y: auto;
+    height: 100%;
+    padding: var(--space-xsmall);
   }
 }
 
@@ -98,10 +99,83 @@ fxview-empty-state {
     max-width: 250px;
   }
 
-  /* these illustrations need a larger width otherwise they look too small */
-  &.synced-tabs::part(image-container) {
-    min-width: auto;
-    width: 100%;
-    max-width: 350px;
+  &.synced-tabs {
+    &::part(container) {
+      margin-block-start: 0;
+    }
+
+    /* these illustrations need a larger width otherwise they look too small */
+    &::part(image-container) {
+      min-width: auto;
+      width: 100%;
+      max-width: 350px;
+    }
+  }
+}
+
+moz-input-search {
+  width: 100%;
+}
+
+#permissions-indicator {
+  margin-inline: var(--space-xsmall);
+
+  .identity-box-button,
+  #notification-popup-box {
+    fill: currentColor;
+    fill-opacity: var(--urlbar-icon-fill-opacity);
+    border-radius: var(--border-radius-small);
+
+    &:hover:active,
+    &[open] {
+      background-color: var(--button-background-color-ghost-hover);
+      color: var(--button-text-color-ghost-hover);
+    }
+  }
+
+  .identity-box-button,
+  .notification-anchor-icon {
+    padding: var(--space-small);
+  }
+
+  .identity-box-button {
+    display: none;
+
+    &.showing {
+      display: flex;
+    }
+
+    #permission-sharing {
+      .sharing-icon {
+        margin-inline-start: 0;
+      }
+    }
+  }
+
+  .blocked-permission-icon {
+    margin-inline-start: 0;
+  }
+
+  .blocked-permission-icon:not([showing]) {
+    display: none;
+  }
+
+  #notification-popup-box {
+    width: 0;
+    height: 0;
+    overflow: hidden;
+
+    .notification-anchor-icon {
+      display: none;
+    }
+
+    &.showing {
+      width: 32px;
+      height: 32px;
+      overflow: visible;
+    }
+    .notification-anchor-icon {
+      display: block;
+    }
   }
 }

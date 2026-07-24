@@ -6,8 +6,6 @@
 #include "MacLaunchHelper.h"
 
 #include "MacAutoreleasePool.h"
-#include "MacUtils.h"
-#include "mozilla/UniquePtr.h"
 
 #include <Cocoa/Cocoa.h>
 #include <crt_externs.h>
@@ -17,7 +15,6 @@
 #include <stdio.h>
 
 using namespace mozilla;
-using namespace mozilla::MacUtils;
 using namespace mozilla::MacLaunchHelper;
 
 static void RegisterAppWithLaunchServices(NSString* aBundlePath) {
@@ -31,6 +28,27 @@ static void RegisterAppWithLaunchServices(NSString* aBundlePath) {
             @"which may lead to a failure to launch the app. Launch path: %@",
             aBundlePath);
     }
+  } @catch (NSException* e) {
+    NSLog(@"%@: %@", e.name, e.reason);
+  }
+}
+
+/**
+ * Helper to launch macOS tasks via NSTask and wait for the launched task to
+ * terminate.
+ */
+static void LaunchTask(NSString* aPath, NSArray* aArguments) {
+  MacAutoreleasePool pool;
+
+  @try {
+    NSTask* task = [[NSTask alloc] init];
+    [task setExecutableURL:[NSURL fileURLWithPath:aPath]];
+    if (aArguments) {
+      [task setArguments:aArguments];
+    }
+    [task launchAndReturnError:nil];
+    [task waitUntilExit];
+    [task release];
   } @catch (NSException* e) {
     NSLog(@"%@: %@", e.name, e.reason);
   }

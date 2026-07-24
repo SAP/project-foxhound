@@ -8,10 +8,15 @@
 ---
 $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
-  - 'Firefox :: Messaging System'
+  - "Firefox :: Messaging System"
 
+# Keys added to messaging_system should also be added to microsurvey below,
+# unless they carry sensitive/identifying information. The microsurvey ping
+# basically mirrors the messaging_system ping, except that it includes
+# event_input_value and excludes client_id and browser_session_id, to protect
+# the user's privacy. When in doubt, ask in the #omc Slack channel.
 messaging_system:
-  event_context_parse_error:
+  event_context_parse_error: &event_context_parse_error
     type: counter
     lifetime: ping
     description: |
@@ -29,7 +34,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_reason:
+  event_reason: &event_reason
     type: string
     lifetime: ping
     description: |
@@ -48,7 +53,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_page:
+  event_page: &event_page
     type: string
     lifetime: ping
     description: |
@@ -66,7 +71,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_source:
+  event_source: &event_source
     type: string
     lifetime: ping
     description: |
@@ -84,7 +89,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_context:
+  event_context: &event_context
     type: text
     lifetime: ping
     description: |
@@ -102,7 +107,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_screen_family:
+  event_screen_family: &event_screen_family
     type: text
     lifetime: ping
     description: |
@@ -122,7 +127,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_screen_id:
+  event_screen_id: &event_screen_id
     type: text
     lifetime: ping
     description: |
@@ -142,7 +147,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_screen_initials:
+  event_screen_initials: &event_screen_initials
     type: text
     lifetime: ping
     description: |
@@ -162,7 +167,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event_screen_index:
+  event_screen_index: &event_screen_index
     type: quantity
     unit: integer
     lifetime: ping
@@ -183,7 +188,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  message_id:
+  message_id: &message_id
     type: text
     lifetime: ping
     description: |
@@ -201,7 +206,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  event:
+  event: &event
     type: string
     description: >
       The type of event. Any user defined string
@@ -219,7 +224,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  ping_type:
+  ping_type: &ping_type
     type: string
     description: >
       Type of event the ping is capturing.
@@ -237,7 +242,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  source:
+  source: &source
     type: string
     description: >
       The source of the interaction described by the other metrics.
@@ -248,6 +253,25 @@ messaging_system:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
     data_sensitivity:
       - interaction
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - messaging-system
+
+  locale: &locale
+    type: string
+    lifetime: ping
+    description: >
+      The locale as supplied to the messaging system by
+      `Services.locale.appLocaleAsBCP47`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
+    data_sensitivity:
+      - technical
     notification_emails:
       - pmcmanis@mozilla.com
       - dmosedale@mozilla.com
@@ -282,25 +306,6 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  locale:
-    type: string
-    lifetime: ping
-    description: >
-      The locale as supplied to the messaging system by
-      `Services.locale.appLocaleAsBCP47`.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - pmcmanis@mozilla.com
-      - dmosedale@mozilla.com
-    expires: never
-    send_in_pings:
-      - messaging-system
-
   browser_session_id:
     type: uuid
     lifetime: ping
@@ -325,7 +330,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  impression_id:
+  impression_id: &impression_id
     type: uuid
     lifetime: ping
     description: >
@@ -343,14 +348,13 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  bucket_id:
+  bucket_id: &bucket_id
     type: string
     lifetime: ping
     description: >
       A name shared between multiple messages that may individually be too
-      targetted.
-      e.g. a message that gets shown on specific websites or a message asking
-      about personal information.
+      targeted. e.g. a message that gets shown on specific websites or a message
+      asking about personal information.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
     data_reviews:
@@ -364,7 +368,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  addon_version:
+  addon_version: &addon_version
     type: string
     lifetime: ping
     description: >
@@ -383,7 +387,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  unknown_key_count:
+  unknown_key_count: &unknown_key_count
     type: counter
     description: |
       The sum of all unknown keys counted.
@@ -401,7 +405,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  unknown_keys:
+  unknown_keys: &unknown_keys
     type: labeled_counter
     description: |
       Ping keys supplied to the messaging system for which
@@ -422,7 +426,7 @@ messaging_system:
     send_in_pings:
       - messaging-system
 
-  glean_ping_for_ping_failures:
+  glean_ping_for_ping_failures: &glean_ping_for_ping_failures
     type: counter
     description: |
       How often something went awry within
@@ -441,7 +445,7 @@ messaging_system:
     send_in_pings:
       - metrics
 
-  invalid_nested_data:
+  invalid_nested_data: &invalid_nested_data
     type: labeled_counter
     description: |
       We received a ping with non-scalar data on a field of this name.
@@ -479,14 +483,13 @@ messaging_system:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1600335
     notification_emails:
-      - omc@mozilla.com
+      - omc-core@mozilla.com
       - dmosedale@mozilla.com
     expires: never
     telemetry_mirror: MS_MESSAGE_REQUEST_TIME_MS
 
-
 messaging_system.attribution:
-  source:
+  source: &attribution_source
     type: string
     lifetime: ping
     description: |
@@ -505,7 +508,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  medium:
+  medium: &attribution_medium
     type: string
     lifetime: ping
     description: |
@@ -524,7 +527,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  campaign:
+  campaign: &attribution_campaign
     type: string
     lifetime: ping
     description: |
@@ -543,7 +546,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  content:
+  content: &attribution_content
     type: string
     lifetime: ping
     description: |
@@ -562,7 +565,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  experiment:
+  experiment: &attribution_experiment
     type: string
     lifetime: ping
     description: |
@@ -580,7 +583,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  variation:
+  variation: &attribution_variation
     type: string
     lifetime: ping
     description: |
@@ -598,7 +601,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  ua:
+  ua: &attribution_ua
     type: string
     lifetime: ping
     description: |
@@ -616,7 +619,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  dltoken:
+  dltoken: &attribution_dltoken
     type: string
     lifetime: ping
     description: |
@@ -636,7 +639,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  msstoresignedin:
+  msstoresignedin: &attribution_msstoresignedin
     type: string
     lifetime: ping
     description: |
@@ -658,7 +661,27 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  dlsource:
+  msclkid: &attribution_msclkid
+    type: string
+    lifetime: ping
+    description: |
+      A string containing the attribution for a Microsoft Store Ads Campaign ID.
+      This differs from a Campaign ID originating from a Microsoft Store URL
+      containing attribution_
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2004494
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D275328
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - dmosedale@mozilla.com
+      - pmcmanis@mozilla.com
+    expires: never
+    send_in_pings:
+      - messaging-system
+
+  dlsource: &attribution_dlsource
     type: string
     lifetime: ping
     description: |
@@ -680,7 +703,7 @@ messaging_system.attribution:
     send_in_pings:
       - messaging-system
 
-  unknown_keys:
+  unknown_keys: &attribution_unknown_keys
     type: labeled_counter
     description: |
       Attribution keys supplied to the messaging system for which
@@ -701,3 +724,313 @@ messaging_system.attribution:
     expires: never
     send_in_pings:
       - messaging-system
+
+# Most keys in microsurvey are alias nodes corresponding to those in
+# messaging_system, to keep the two pings in sync. The main exceptions are
+# event_input_value, which is unique to microsurvey, and client_id and
+# browser_session_id, which are omitted from microsurvey for privacy reasons.
+# Some other keys are excluded from microsurvey as they are not relevant there,
+# e.g. message_request_time. These are used for high-level monitoring of the
+# messaging system as a whole, rather than for analyzing individual messages.
+microsurvey:
+  event_input_value:
+    type: text
+    lifetime: ping
+    description: |
+      Text input by the user in a write-in textarea produced by the textarea
+      tile type. Truncated to 8KB (though the textarea tile normally has a
+      separate character limit enforced at display time).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010984
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010984
+    data_sensitivity:
+      - web_activity
+      - highly_sensitive
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+  event_context_parse_error:
+    <<: *event_context_parse_error
+    send_in_pings:
+      - microsurvey
+
+  event_reason:
+    <<: *event_reason
+    send_in_pings:
+      - microsurvey
+
+  event_page:
+    <<: *event_page
+    send_in_pings:
+      - microsurvey
+
+  event_source:
+    <<: *event_source
+    send_in_pings:
+      - microsurvey
+
+  event_context:
+    <<: *event_context
+    send_in_pings:
+      - microsurvey
+
+  event_screen_family:
+    <<: *event_screen_family
+    send_in_pings:
+      - microsurvey
+
+  event_screen_id:
+    <<: *event_screen_id
+    send_in_pings:
+      - microsurvey
+
+  event_screen_initials:
+    <<: *event_screen_initials
+    send_in_pings:
+      - microsurvey
+
+  event_screen_index:
+    <<: *event_screen_index
+    send_in_pings:
+      - microsurvey
+
+  message_id:
+    <<: *message_id
+    send_in_pings:
+      - microsurvey
+
+  event:
+    <<: *event
+    send_in_pings:
+      - microsurvey
+
+  ping_type:
+    <<: *ping_type
+    send_in_pings:
+      - microsurvey
+
+  source:
+    <<: *source
+    send_in_pings:
+      - microsurvey
+
+  locale:
+    <<: *locale
+    send_in_pings:
+      - microsurvey
+
+  impression_id:
+    <<: *impression_id
+    send_in_pings:
+      - microsurvey
+
+  bucket_id:
+    <<: *bucket_id
+    send_in_pings:
+      - microsurvey
+
+  addon_version:
+    <<: *addon_version
+    send_in_pings:
+      - microsurvey
+
+  unknown_key_count:
+    <<: *unknown_key_count
+    send_in_pings:
+      - microsurvey
+
+  unknown_keys:
+    <<: *unknown_keys
+    send_in_pings:
+      - microsurvey
+
+  glean_ping_for_ping_failures:
+    <<: *glean_ping_for_ping_failures
+    send_in_pings:
+      - microsurvey
+
+  invalid_nested_data:
+    <<: *invalid_nested_data
+    send_in_pings:
+      - microsurvey
+
+  # These metrics are copies of certain metadata fields that get removed because
+  # the microsurvey ping has `include_info_sections: false` (see pings.yaml).
+  os:
+    type: string
+    lifetime: ping
+    description: |
+      The name of the operating system.
+      Possible values:
+      Android, iOS, Linux, Darwin, Windows,
+      FreeBSD, NetBSD, OpenBSD, Solaris, Unknown
+    bugs:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1497894
+      - https://bugzilla.mozilla.org/1944090
+    data_reviews:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+  os_version:
+    type: string
+    lifetime: ping
+    description: |
+      The user-visible version of the operating system (e.g. "1.2.3").
+      If the version detection fails, this metric gets set to `Unknown`.
+    bugs:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1497894
+      - https://bugzilla.mozilla.org/1944090
+    data_reviews:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+  windows_build_number:
+    type: quantity
+    unit: build_number
+    lifetime: ping
+    description: |
+      The optional Windows build number, reported by Windows
+      (e.g. 22000) and not set for other platforms.
+    bugs:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1802094
+      - https://bugzilla.mozilla.org/1944090
+    data_reviews:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1802094
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+  app_display_version:
+    type: string
+    lifetime: ping
+    description: |
+      The user visible version string (e.g. "1.0.3").
+      If the value was not provided through configuration,
+      this metric gets set to `Unknown`.
+    bugs:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1508305
+      - https://bugzilla.mozilla.org/1944090
+    data_reviews:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1508305#c9
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+  app_channel:
+    type: string
+    lifetime: ping
+    description: |
+      The channel the application is being distributed on.
+    bugs:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/1520741
+      - https://bugzilla.mozilla.org/1944090
+    data_reviews:
+      - https://bugzilla.mozilla.org/2010984
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1520741#c18
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+microsurvey.attribution:
+  source:
+    <<: *attribution_source
+    send_in_pings:
+      - microsurvey
+
+  medium:
+    <<: *attribution_medium
+    send_in_pings:
+      - microsurvey
+
+  campaign:
+    <<: *attribution_campaign
+    send_in_pings:
+      - microsurvey
+
+  content:
+    <<: *attribution_content
+    send_in_pings:
+      - microsurvey
+
+  experiment:
+    <<: *attribution_experiment
+    send_in_pings:
+      - microsurvey
+
+  variation:
+    <<: *attribution_variation
+    send_in_pings:
+      - microsurvey
+
+  ua:
+    <<: *attribution_ua
+    send_in_pings:
+      - microsurvey
+
+  dltoken:
+    <<: *attribution_dltoken
+    send_in_pings:
+      - microsurvey
+
+  msstoresignedin:
+    <<: *attribution_msstoresignedin
+    send_in_pings:
+      - microsurvey
+
+  msclkid:
+    <<: *attribution_msclkid
+    send_in_pings:
+      - microsurvey
+
+  dlsource:
+    <<: *attribution_dlsource
+    send_in_pings:
+      - microsurvey
+
+  unknown_keys:
+    <<: *attribution_unknown_keys
+    send_in_pings:
+      - microsurvey

@@ -11,9 +11,8 @@
 #ifndef TEST_PC_E2E_ANALYZER_VIDEO_DEFAULT_VIDEO_QUALITY_ANALYZER_H_
 #define TEST_PC_E2E_ANALYZER_VIDEO_DEFAULT_VIDEO_QUALITY_ANALYZER_H_
 
-#include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -21,13 +20,16 @@
 #include <unordered_map>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/array_view.h"
+#include "api/scoped_refptr.h"
+#include "api/stats/rtc_stats_report.h"
 #include "api/test/metrics/metrics_logger.h"
 #include "api/test/video_quality_analyzer_interface.h"
-#include "api/units/data_size.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
+#include "api/video_codecs/video_encoder.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/clock.h"
@@ -50,7 +52,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   ~DefaultVideoQualityAnalyzer() override;
 
   void Start(std::string test_case_name,
-             rtc::ArrayView<const std::string> peer_names,
+             ArrayView<const std::string> peer_names,
              int max_threads_count) override;
   uint16_t OnFrameCaptured(absl::string_view peer_name,
                            const std::string& stream_label,
@@ -92,7 +94,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   std::string GetSenderPeerName(uint16_t frame_id) const override;
   void OnStatsReports(
       absl::string_view pc_label,
-      const rtc::scoped_refptr<const RTCStatsReport>& report) override {}
+      const scoped_refptr<const RTCStatsReport>& report) override {}
 
   // Returns set of stream labels, that were met during test call.
   std::set<StatsKey> GetKnownVideoStreams() const;

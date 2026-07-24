@@ -73,9 +73,12 @@ interface nsIAppStartup : nsISupports
      * Run a new instance of this app with a specified profile
      * @param aProfile
      *        The profile we want to use.
+     * @param aArgs
+     *        Optional command line arguments to pass to the new instance.
      * @see nsIAppStartup::quit
      */
-    void createInstanceWithProfile(in nsIToolkitProfile aProfile);
+    void createInstanceWithProfile(in nsIToolkitProfile aProfile,
+                                   [optional] in Array<AString> aArgs);
 
     /**
      * If the last startup crashed then increment a counter.

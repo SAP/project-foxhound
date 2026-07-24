@@ -845,9 +845,9 @@ function temporalPreviewer(cls, objectActor, grip) {
 
 /**
  * @param {ObjectActor} objectActor
- * @param {Object} grip: The grip built by the objectActor, for which we need to populate
+ * @param {object} grip: The grip built by the objectActor, for which we need to populate
  *                       the `preview` property.
- * @param {Number} depth
+ * @param {number} depth
  *        Depth of the object compared to the top level object,
  *        when we are inspecting nested attributes.
  * @returns
@@ -1160,7 +1160,7 @@ previewers.Object = [
     const { safeRawObj, className } = objectActor;
     if (
       !safeRawObj ||
-      (className != "CSSStyleDeclaration" && className != "CSS2Properties") ||
+      (className != "CSSStyleDeclaration" && className != "CSSStyleProperties") ||
       isWorker
     ) {
       return false;

@@ -5,6 +5,8 @@
 
 package org.mozilla.gecko;
 
+import android.content.ComponentName;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Looper;
 import android.os.Process;
@@ -13,6 +15,7 @@ import android.util.Log;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,7 +42,14 @@ import org.mozilla.geckoview.GeckoResult;
  * exception is {@link #isProfilerActive()}: see the javadoc for details.
  */
 public class GeckoJavaSampler {
+
   private static final String LOGTAG = "GeckoJavaSampler";
+
+  private static final String PROFILER_SERVICE_CLASS_NAME =
+      "org.mozilla.fenix.perf.ProfilerService";
+  private static final String PROFILER_SERVICE_ACTION = "mozilla.perf.action.START_PROFILING";
+  public static final String INTENT_PROFILER_STATE_CHANGED =
+      "org.mozilla.fenix.PROFILER_STATE_CHANGED";
 
   /**
    * The thread ID to use for the main thread instead of its true thread ID.
@@ -584,8 +594,6 @@ public class GeckoJavaSampler {
         return;
       }
 
-      Log.i(LOGTAG, "Profiler starting. Calling thread: " + Thread.currentThread().getName());
-
       // Setting a limit of 120000 (2 mins with 1ms interval) for samples and markers for now
       // to make sure we are not allocating too much.
       final int limitedEntryCount = Math.min(aEntryCount, 120000);
@@ -778,6 +786,32 @@ public class GeckoJavaSampler {
       sSamplingFuture.set(null);
       sMarkerStorage.stop();
     }
+  }
+
+  /**
+   * Notifies Fenix layer about profiler state changes by broadcasting the new state. This is called
+   * from native code whenever the profiler starts or stops, ensuring that the Fenix repository is
+   * always synchronized with the actual native profiler state.
+   *
+   * @param isActive true if the profiler is now active, false if it stopped
+   */
+  @WrapForJNI
+  public static void notifyProfilerStateChanged(final boolean isActive) {
+    if (isActive) {
+      final ComponentName componentName =
+          new ComponentName(GeckoAppShell.getApplicationContext(), PROFILER_SERVICE_CLASS_NAME);
+      final Intent serviceIntent = new Intent();
+      serviceIntent.setComponent(componentName);
+      serviceIntent.setAction(PROFILER_SERVICE_ACTION);
+      ContextCompat.startForegroundService(GeckoAppShell.getApplicationContext(), serviceIntent);
+    }
+
+    final Intent intent = new Intent(INTENT_PROFILER_STATE_CHANGED);
+    intent.putExtra("isActive", isActive);
+    intent.setPackage(GeckoAppShell.getApplicationContext().getPackageName());
+    final String permission =
+        GeckoAppShell.getApplicationContext().getPackageName() + ".permission.PROFILER_INTERNAL";
+    GeckoAppShell.getApplicationContext().sendBroadcast(intent, permission);
   }
 
   @WrapForJNI(dispatchTo = "gecko", stubName = "StartProfiler")

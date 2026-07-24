@@ -19,27 +19,29 @@ loader.lazyGetter(this, "Pipe", () => {
  * DebuggerTransport, but instead of transmitting serialized messages across a
  * connection it merely calls the packet dispatcher of the other side.
  *
- * @param other LocalDebuggerTransport
- *        The other endpoint for this debugger connection.
- *
  * @see DebuggerTransport
  */
-function LocalDebuggerTransport(other) {
-  this.other = other;
-  this.hooks = null;
 
-  // A packet number, shared between this and this.other. This isn't used by the
-  // protocol at all, but it makes the packet traces a lot easier to follow.
-  this._serial = this.other ? this.other._serial : { count: 0 };
-  this.close = this.close.bind(this);
-}
+class LocalDebuggerTransport {
+  /**
+   * @param {LocalDebuggerTransport} other
+   *        The other endpoint for this debugger connection.
+   */
+  constructor(other) {
+    this.other = other;
+    this.hooks = null;
 
-LocalDebuggerTransport.prototype = {
+    // A packet number, shared between this and this.other. This isn't used by the
+    // protocol at all, but it makes the packet traces a lot easier to follow.
+    this._serial = this.other ? this.other._serial : { count: 0 };
+    this.close = this.close.bind(this);
+  }
+
   /**
    * Boolean to help identify DevToolsClient instances connected to a LocalDevToolsTransport pipe
    * and so connected to the same runtime as the frontend.
    */
-  isLocalTransport: true,
+  isLocalTransport = true;
 
   /**
    * Transmit a message by directly calling the onPacket handler of the other
@@ -75,7 +77,7 @@ LocalDebuggerTransport.prototype = {
         }, "LocalDebuggerTransport instance's this.other.hooks.onPacket")
       );
     }
-  },
+  }
 
   /**
    * Send a streaming bulk packet directly to the onBulkPacket handler of the
@@ -191,7 +193,7 @@ LocalDebuggerTransport.prototype = {
         );
       });
     });
-  },
+  }
 
   /**
    * Close the transport.
@@ -214,12 +216,12 @@ LocalDebuggerTransport.prototype = {
       }
       this.hooks = null;
     }
-  },
+  }
 
   /**
    * An empty method for emulating the DebuggerTransport API.
    */
-  ready() {},
+  ready() {}
 
   /**
    * Helper function that makes an object fully immutable.
@@ -239,7 +241,7 @@ LocalDebuggerTransport.prototype = {
         this._deepFreeze(object[prop]);
       }
     }
-  },
-};
+  }
+}
 
 exports.LocalDebuggerTransport = LocalDebuggerTransport;

@@ -11,11 +11,10 @@ process interspersed with some tips.
 
 Before vendoring a new Puppeteer release make sure that there are no Puppeteer
 specific changes in mozilla-central repository that haven't been upstreamed yet
-since the last vendor happened. Run one of the following commands and check the
-listed bugs or related upstream code to verify:
+since the last vendor happened. Run the following command and check the listed
+bugs or related upstream code to verify:
 
 ```shell
-% hg log remote/test/puppeteer
 % git log remote/test/puppeteer
 ```
 
@@ -61,9 +60,8 @@ to skip this step; for example, if you want to run installation separately at
 a later point.
 
 Validate that newly created files and folders are required to be tracked by
-version control. If that is not the case then update both the top-level
-`.hgignore` and `remote/.gitignore` files for those paths.
-
+version control. If that is not the case then update the top-level
+`remote/.gitignore` file for those paths.
 
 ### Apply recurring patches
 
@@ -79,15 +77,6 @@ applied with `git apply`:
 % git commit -a -m "Bug XXXXXXX - [puppeteer] Skip test \"\$\$eval should handle many elements\" which is causing the error summary log to overflow"
 % git apply -3 remote/test/puppeteer-patches/skip-mozilla-ci-incompatible-tests.patch
 % git commit -a -m "Bug XXXXXXX - [puppeteer] Disable all puppeteer tests incompatible with Mozilla CI"
-```
-
-For mercurial, use `hg import --no-commit`:
-
-```shell
-% hg import --no-commit remote/test/puppeteer-patches/skip-aria-test.patch
-% hg commit -m "Bug XXXXXXX - [puppeteer] Skip test \"\$\$eval should handle many elements\" which is causing the error summary log to overflow"
-% hg import --no-commit remote/test/puppeteer-patches/skip-mozilla-ci-incompatible-tests.patch
-% hg commit -m "Bug XXXXXXX - [puppeteer] Disable all puppeteer tests incompatible with Mozilla CI"
 ```
 
 ### Validate that the new code works

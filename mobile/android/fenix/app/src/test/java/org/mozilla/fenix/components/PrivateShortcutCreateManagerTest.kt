@@ -8,15 +8,13 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.IntentSender
 import androidx.core.content.pm.ShortcutInfoCompat
-import androidx.core.content.pm.ShortcutManagerCompat
 import io.mockk.every
-import io.mockk.mockkStatic
+import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.unmockkStatic
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,25 +27,42 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class PrivateShortcutCreateManagerTest {
 
+    private lateinit var mockShortcutManagerWrapper: ShortcutManagerCompatWrapper
+    private lateinit var mockPendingIntentCreator: PendingIntentFactory
+
+    private lateinit var privateShortcutCreateManager: PrivateShortcutCreateManager
+
+    private lateinit var mockIntentSender: IntentSender
+    private lateinit var mockPendingIntent: PendingIntent
+
     @Before
     fun setup() {
-        mockkStatic(ShortcutManagerCompat::class)
-        mockkStatic(PendingIntent::class)
-    }
+        mockShortcutManagerWrapper = mockk(relaxed = true)
+        mockPendingIntentCreator = mockk()
+        mockIntentSender = mockk()
+        mockPendingIntent = mockk()
 
-    @After
-    fun tearDown() {
-        unmockkStatic(ShortcutManagerCompat::class)
-        unmockkStatic(PendingIntent::class)
+        privateShortcutCreateManager = PrivateShortcutCreateManager(
+            mockShortcutManagerWrapper,
+            mockPendingIntentCreator,
+        )
+
+        every { mockPendingIntent.intentSender } returns mockIntentSender
     }
 
     @Test
     fun `GIVEN shortcut pinning is not supported WHEN createPrivateShortcut is called THEN do not create a pinned shortcut`() {
-        every { ShortcutManagerCompat.isRequestPinShortcutSupported(testContext) } returns false
+        every { mockShortcutManagerWrapper.isRequestPinShortcutSupported(testContext) } returns false
 
-        PrivateShortcutCreateManager.createPrivateShortcut(testContext)
+        privateShortcutCreateManager.createPrivateShortcut(testContext)
 
-        verify(exactly = 0) { ShortcutManagerCompat.requestPinShortcut(testContext, any(), any()) }
+        verify(exactly = 0) {
+            mockShortcutManagerWrapper.requestPinShortcut(
+                testContext,
+                any(),
+                any(),
+            )
+        }
     }
 
     @Test
@@ -56,14 +71,63 @@ class PrivateShortcutCreateManagerTest {
         val intentSender = slot<IntentSender>()
         val intent = slot<Intent>()
 
-        every { ShortcutManagerCompat.isRequestPinShortcutSupported(testContext) } returns true
+        every { mockShortcutManagerWrapper.isRequestPinShortcutSupported(testContext) } returns true
+        every {
+            mockPendingIntentCreator.createPendingIntent(
+                context = testContext,
+                requestCode = 0,
+                intent = capture(intent),
+                flags = IntentUtils.DEFAULT_PENDING_INTENT_FLAGS or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        } returns mockPendingIntent
 
-        PrivateShortcutCreateManager.createPrivateShortcut(testContext)
+        privateShortcutCreateManager.createPrivateShortcut(testContext)
 
-        verify { PendingIntent.getActivity(testContext, 0, capture(intent), IntentUtils.defaultIntentPendingFlags or PendingIntent.FLAG_UPDATE_CURRENT) }
-        verify { ShortcutManagerCompat.requestPinShortcut(testContext, capture(shortcut), capture(intentSender)) }
-        `assert shortcutInfoCompat is build correctly`(shortcut.captured)
-        `assert homeScreenIntent is built correctly`(intent.captured)
+        verify {
+            mockShortcutManagerWrapper.requestPinShortcut(
+                context = testContext,
+                shortcut = capture(shortcut),
+                intentSender = capture(intentSender),
+            )
+        }
+
+        val capturedShortcut = shortcut.captured
+        `assert shortcutInfoCompat is build correctly`(capturedShortcut)
+
+        assertNotNull(intentSender.captured)
+        assertEquals(mockIntentSender, intentSender.captured)
+
+        val capturedPendingIntentActivityIntent = intent.captured
+        `assert homeScreenIntent is built correctly`(capturedPendingIntentActivityIntent)
+    }
+
+    @Test
+    fun `GIVEN PrivateShortcutCreateManager WHEN createPrivateHomeActivityIntent is called THEN intent is built correctly`() {
+        val intent = privateShortcutCreateManager.createPrivateHomeActivityIntent(testContext)
+        assertEquals("Intent action should be ACTION_VIEW", Intent.ACTION_VIEW, intent.action)
+        assertEquals(
+            "Intent flags should be NEW_TASK or CLEAR_TASK",
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+            intent.flags,
+        )
+        assertNotNull("Intent component should not be null", intent.component)
+        assertEquals(
+            "Intent component should target HomeActivity",
+            HomeActivity::class.qualifiedName,
+            intent.component?.className,
+        )
+
+        assertNotNull("Intent extras should not be null", intent.extras)
+        assertEquals(
+            "Extra PRIVATE_BROWSING_MODE should be true",
+            true,
+            intent.extras?.getBoolean(HomeActivity.PRIVATE_BROWSING_MODE),
+        )
+        assertEquals(
+            "Extra OPEN_TO_SEARCH should be PRIVATE_BROWSING_PINNED_SHORTCUT",
+            StartSearchIntentProcessor.PRIVATE_BROWSING_PINNED_SHORTCUT,
+            intent.extras?.getString(HomeActivity.OPEN_TO_SEARCH),
+        )
     }
 
     private fun `assert shortcutInfoCompat is build correctly`(shortcutInfoCompat: ShortcutInfoCompat) {

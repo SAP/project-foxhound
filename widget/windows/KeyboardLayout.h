@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef KeyboardLayout_h__
-#define KeyboardLayout_h__
+#ifndef KeyboardLayout_h_
+#define KeyboardLayout_h_
 
 #include "nscore.h"
 #include "nsString.h"
@@ -1102,9 +1102,9 @@ class RedirectedKeyDownMessageManager {
     const MSG& mMsg;
   };
 
-  static void WillRedirect(const MSG& aMsg, bool aDefualtPrevented) {
+  static void WillRedirect(const MSG& aMsg, bool aDefaultPrevented) {
     sRedirectedKeyDownMsg = aMsg;
-    sDefaultPreventedOfRedirectedMsg = aDefualtPrevented;
+    sDefaultPreventedOfRedirectedMsg = aDefaultPrevented;
   }
 
   static void Forget() { sRedirectedKeyDownMsg.message = WM_NULL; }

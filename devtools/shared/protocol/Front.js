@@ -26,7 +26,7 @@ var {
  * @param [Front|null] parentFront
  *   The parent front. This is only available if the Front being initialized is a child
  *   of a parent front.
- * @constructor
+ * @class
  */
 class Front extends Pool {
   constructor(conn = null, targetFront = null, parentFront = null) {
@@ -171,10 +171,10 @@ class Front extends Pool {
     }
   }
 
-  /*
+  /**
    * Listen for the creation and/or destruction of fronts matching one of the provided types.
    *
-   * @param {String} typeName
+   * @param {string} typeName
    *        Actor type to watch.
    * @param {Function} onAvailable (optional)
    *        Callback fired when a front has been just created or was already available.
@@ -273,9 +273,9 @@ class Front extends Pool {
   /**
    * Send a packet on the connection.
    *
-   * @param {Object} packet
-   * @param {Object} options
-   * @param {Boolean} options.bulk
+   * @param {object} packet
+   * @param {object} options
+   * @param {boolean} options.bulk
    *        To be set to true, if the packet relates to bulk request.
    *        Bulk request allows to send raw bytes over the wire instead of
    *        having to create a JSON string packet.

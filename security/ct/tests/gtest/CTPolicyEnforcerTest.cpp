@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "CTLogVerifier.h"
 #include "CTVerifyResult.h"
@@ -323,7 +322,7 @@ TEST_F(CTPolicyEnforcerTest,
   CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
-TEST_F(CTPolicyEnforcerTest, DoesNotConformToCTPolicyWithNoRFC6962Logs) {
+TEST_F(CTPolicyEnforcerTest, DoesConformToCTPolicyWithNoRFC6962Logs) {
   VerifiedSCTList scts;
 
   AddSct(scts, LOG_1, OPERATOR_1, ORIGIN_TLS, TIMESTAMP_1,
@@ -331,11 +330,10 @@ TEST_F(CTPolicyEnforcerTest, DoesNotConformToCTPolicyWithNoRFC6962Logs) {
   AddSct(scts, LOG_2, OPERATOR_2, ORIGIN_TLS, TIMESTAMP_1,
          CTLogState::Admissible, CTLogFormat::Tiled, Some(23));
 
-  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::NotEnoughScts);
+  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
-TEST_F(CTPolicyEnforcerTest,
-       DoesNotConformToCTPolicyWithNoRFC6962LogsEmbedded) {
+TEST_F(CTPolicyEnforcerTest, DoesConformToCTPolicyWithNoRFC6962LogsEmbedded) {
   VerifiedSCTList scts;
 
   // 3 embedded SCTs required for DEFAULT_LIFETIME.
@@ -346,7 +344,7 @@ TEST_F(CTPolicyEnforcerTest,
   AddSct(scts, LOG_3, OPERATOR_2, ORIGIN_EMBEDDED, TIMESTAMP_1,
          CTLogState::Admissible, CTLogFormat::Tiled, Some(23));
 
-  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::NotEnoughScts);
+  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
 TEST_F(CTPolicyEnforcerTest,

@@ -12,9 +12,9 @@
 #ifndef MITREXSL_EXPRPARSER_H
 #define MITREXSL_EXPRPARSER_H
 
-#include "txCore.h"
 #include "mozilla/UniquePtr.h"
 #include "nsString.h"
+#include "txCore.h"
 
 class Expr;
 class txExprLexer;

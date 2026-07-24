@@ -65,7 +65,7 @@ class EraseBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun trashButtonTest() {
-        val testPage = getGenericTabAsset(webServer, 1)
+        val testPage = webServer.getGenericTabAsset(1)
 
         searchScreen {
         }.loadPage(testPage.url) {
@@ -80,7 +80,7 @@ class EraseBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun notificationEraseAndOpenButtonTest() {
-        val testPage = getGenericTabAsset(webServer, 1)
+        val testPage = webServer.getGenericTabAsset(1)
 
         notificationTray {
             mDevice.openNotification()
@@ -106,7 +106,7 @@ class EraseBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun deleteHistoryOnRestartTest() {
-        val testPage = getGenericTabAsset(webServer, 1)
+        val testPage = webServer.getGenericTabAsset(1)
 
         searchScreen {
         }.loadPage(testPage.url) {}
@@ -119,7 +119,7 @@ class EraseBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun systemBarHomeViewTest() {
-        val testPage = getGenericTabAsset(webServer, 1)
+        val testPage = webServer.getGenericTabAsset(1)
         val launcherLoadTimeoutMillis = 5000
         val launcherPackage = mDevice.launcherPackageName
 

@@ -5,6 +5,7 @@
 // Tests dynamic Rust suggestions.
 
 const REMOTE_SETTINGS_RECORDS = [
+  // nonsponsored, no `bypassSuggestAll`
   {
     type: "dynamic-suggestions",
     suggestion_type: "aaa",
@@ -23,6 +24,8 @@ const REMOTE_SETTINGS_RECORDS = [
       },
     ],
   },
+
+  // sponsored, no `bypassSuggestAll`
   {
     type: "dynamic-suggestions",
     suggestion_type: "bbb",
@@ -48,6 +51,50 @@ const REMOTE_SETTINGS_RECORDS = [
       },
     ],
   },
+
+  // nonsponsored, `bypassSuggestAll: true`
+  {
+    type: "dynamic-suggestions",
+    suggestion_type: "ccc",
+    score: 0.9,
+    attachment: [
+      {
+        keywords: ["ccc keyword", "ccc ddd keyword"],
+        data: {
+          result: {
+            bypassSuggestAll: true,
+            payload: {
+              title: "ccc title",
+              url: "https://example.com/ccc",
+            },
+          },
+        },
+      },
+    ],
+  },
+
+  // sponsored, `bypassSuggestAll: true`
+  {
+    type: "dynamic-suggestions",
+    suggestion_type: "ddd",
+    score: 0.9,
+    attachment: [
+      {
+        keywords: ["ddd keyword", "ccc ddd keyword"],
+        data: {
+          result: {
+            bypassSuggestAll: true,
+            payload: {
+              title: "ddd title",
+              url: "https://example.com/ddd",
+              isSponsored: true,
+            },
+          },
+        },
+      },
+    ],
+  },
+
   {
     type: QuickSuggestTestUtils.RS_TYPE.WIKIPEDIA,
     attachment: [QuickSuggestTestUtils.wikipediaRemoteSettings()],
@@ -58,6 +105,7 @@ const EXPECTED_AAA_RESULT = makeExpectedResult({
   title: "aaa title",
   url: "https://example.com/aaa",
   telemetryType: "aaa",
+  suggestionType: "aaa",
 });
 
 const EXPECTED_BBB_RESULT = makeExpectedResult({
@@ -65,19 +113,35 @@ const EXPECTED_BBB_RESULT = makeExpectedResult({
   url: "https://example.com/bbb",
   isSponsored: true,
   telemetryType: "bbb_telemetry_type",
+  suggestionType: "bbb",
   isBestMatch: true,
   suggestedIndex: 1,
   isSuggestedIndexRelativeToGroup: false,
   isRichSuggestion: true,
 });
 
+const EXPECTED_CCC_RESULT = makeExpectedResult({
+  title: "ccc title",
+  url: "https://example.com/ccc",
+  telemetryType: "ccc",
+  suggestionType: "ccc",
+});
+
+const EXPECTED_DDD_RESULT = makeExpectedResult({
+  title: "ddd title",
+  url: "https://example.com/ddd",
+  isSponsored: true,
+  telemetryType: "ddd",
+  suggestionType: "ddd",
+});
+
 add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RECORDS,
     prefs: [
-      ["quicksuggest.dynamicSuggestionTypes", "aaa,bbb"],
+      ["quicksuggest.dynamicSuggestionTypes", "aaa,bbb,ccc,ddd"],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
-      ["suggest.quicksuggest.nonsponsored", true],
       ["quicksuggest.ampTopPickCharThreshold", 0],
     ],
   });
@@ -133,6 +197,19 @@ add_task(async function basic() {
       // The "aaa" suggestion has a higher score than "bbb".
       expected: [EXPECTED_AAA_RESULT],
     },
+    {
+      query: "ccc keyword",
+      expected: [EXPECTED_CCC_RESULT],
+    },
+    {
+      query: "ddd keyword",
+      expected: [EXPECTED_DDD_RESULT],
+    },
+    {
+      query: "ccc ddd keyword",
+      // The "ccc" suggestion has a higher score than "ddd".
+      expected: [EXPECTED_CCC_RESULT],
+    },
   ];
 
   await doQueries(queries);
@@ -176,13 +253,59 @@ add_task(async function disabled() {
   });
 });
 
+// Dynamic suggestions shouldn't be added when `all` is disabled unless they
+// define `bypassSuggestAll`.
+add_task(async function allDisabled() {
+  UrlbarPrefs.set("suggest.quicksuggest.all", false);
+
+  // The sponsored pref shouldn't matter.
+  for (let sponsoredEnabled of [true, false]) {
+    UrlbarPrefs.set("suggest.quicksuggest.sponsored", sponsoredEnabled);
+
+    await withSuggestionTypesPref("aaa,bbb,ccc,ddd", async () => {
+      await doQueries([
+        {
+          query: "aaa keyword",
+          expected: [],
+        },
+        {
+          query: "bbb keyword",
+          expected: [],
+        },
+        {
+          query: "aaa bbb keyword",
+          expected: [],
+        },
+
+        {
+          query: "ccc keyword",
+          expected: [EXPECTED_CCC_RESULT],
+        },
+        {
+          query: "ddd keyword",
+          expected: [EXPECTED_DDD_RESULT],
+        },
+        {
+          query: "ccc ddd keyword",
+          // The "ccc" suggestion has a higher score than "ddd".
+          expected: [EXPECTED_CCC_RESULT],
+        },
+      ]);
+    });
+  }
+
+  UrlbarPrefs.set("suggest.quicksuggest.all", true);
+  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
+  await QuickSuggestTestUtils.forceSync();
+});
+
 // Dynamic suggestions that are sponsored shouldn't be added when sponsored
-// suggestions are disabled.
+// suggestions are disabled unless they define `bypassSuggestAll`.
 add_task(async function sponsoredDisabled() {
+  UrlbarPrefs.set("suggest.quicksuggest.all", true);
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
 
-  // Enable both "aaa" (nonsponsored) and "bbb" (sponsored).
-  await withSuggestionTypesPref("aaa,bbb", async () => {
+  await withSuggestionTypesPref("aaa,bbb,ccc,ddd", async () => {
     await doQueries([
       {
         query: "aaa keyword",
@@ -195,38 +318,25 @@ add_task(async function sponsoredDisabled() {
       {
         query: "aaa bbb keyword",
         expected: [EXPECTED_AAA_RESULT],
+      },
+
+      {
+        query: "ccc keyword",
+        expected: [EXPECTED_CCC_RESULT],
+      },
+      {
+        query: "ddd keyword",
+        expected: [EXPECTED_DDD_RESULT],
+      },
+      {
+        query: "ccc ddd keyword",
+        // The "ccc" suggestion has a higher score than "ddd".
+        expected: [EXPECTED_CCC_RESULT],
       },
     ]);
   });
 
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-});
-
-// Dynamic suggestions that are nonsponsored shouldn't be added when
-// nonsponsored suggestions are disabled.
-add_task(async function sponsoredDisabled() {
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
-
-  // Enable both "aaa" (nonsponsored) and "bbb" (sponsored).
-  await withSuggestionTypesPref("aaa,bbb", async () => {
-    await doQueries([
-      {
-        query: "aaa keyword",
-        expected: [],
-      },
-      {
-        query: "bbb keyword",
-        expected: [EXPECTED_BBB_RESULT],
-      },
-      {
-        query: "aaa bbb keyword",
-        expected: [EXPECTED_BBB_RESULT],
-      },
-    ]);
-  });
-
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
   await QuickSuggestTestUtils.forceSync();
 });
 
@@ -312,10 +422,6 @@ add_task(async function dismissal() {
     await QuickSuggest.rustBackend.isRustSuggestionDismissed(suggestionObject),
     "The suggestion should be dismissed"
   );
-  Assert.ok(
-    await QuickSuggest.rustBackend.isDismissedByKey(dismissalKey),
-    "The dismissal key should be registered"
-  );
 
   await check_results({
     context: createContext("bbb keyword", {
@@ -352,6 +458,28 @@ add_task(async function dismissal() {
   );
 });
 
+// Tests whether the prefs DynamicSuggestion handles clears.
+add_task(async function clearDismissedSuggestions() {
+  let feature = QuickSuggest.getFeature("DynamicSuggestions");
+  let sandbox = sinon.createSandbox();
+  sinon
+    .stub(feature, "primaryUserControlledPreferences")
+    .get(() => ["suggest.realtimeOptIn", "autoFill", "closeOtherPanelsOnOpen"]);
+
+  UrlbarPrefs.set("suggest.realtimeOptIn", false);
+  UrlbarPrefs.set("autoFill", false);
+  UrlbarPrefs.set("closeOtherPanelsOnOpen", false);
+
+  Assert.ok(await QuickSuggest.canClearDismissedSuggestions());
+  await QuickSuggest.clearDismissedSuggestions();
+
+  Assert.ok(UrlbarPrefs.get("suggest.realtimeOptIn"));
+  Assert.ok(UrlbarPrefs.get("autoFill"));
+  Assert.ok(UrlbarPrefs.get("closeOtherPanelsOnOpen"));
+
+  sandbox.restore();
+});
+
 // Tests some suggestions with bad data that desktop ignores.
 add_task(async function badSuggestions() {
   await QuickSuggestTestUtils.setRemoteSettingsRecords([
@@ -360,8 +488,13 @@ add_task(async function badSuggestions() {
       suggestion_type: "bad",
       attachment: [
         // Include a good suggestion so we can verify this record was actually
-        // ingested.
-        REMOTE_SETTINGS_RECORDS[0].attachment[0],
+        // ingested. Change the keyword so we don't confuse ourselves by
+        // searching for an "aaa" keyword and getting a urlbar result whose
+        // telemetry type and dynamic suggestion type is "bad".
+        {
+          ...REMOTE_SETTINGS_RECORDS[0].attachment[0],
+          keywords: ["good actually"],
+        },
         // `data` is missing -- Rust actually allows this since `data` is
         // defined as `Option<serde_json::Value>`, but desktop doesn't.
         {
@@ -400,7 +533,7 @@ add_task(async function badSuggestions() {
   await withSuggestionTypesPref("bad", async () => {
     // Verify the good suggestion was ingested.
     await check_results({
-      context: createContext("aaa keyword", {
+      context: createContext("good actually", {
         providers: [UrlbarProviderQuickSuggest.name],
         isPrivate: false,
       }),
@@ -410,6 +543,7 @@ add_task(async function badSuggestions() {
           payload: {
             ...EXPECTED_AAA_RESULT.payload,
             telemetryType: "bad",
+            suggestionType: "bad",
           },
         },
       ],
@@ -471,6 +605,7 @@ function makeExpectedResult({
   title,
   url,
   telemetryType,
+  suggestionType,
   isSponsored = false,
   isBestMatch = false,
   suggestedIndex = -1,
@@ -490,7 +625,7 @@ function makeExpectedResult({
       url,
       isSponsored,
       telemetryType,
-      displayUrl: url.replace(/^https:\/\//, ""),
+      suggestionType,
       source: "rust",
       provider: "Dynamic",
       isManageable: true,

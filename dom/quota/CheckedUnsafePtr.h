@@ -7,18 +7,18 @@
 #ifndef mozilla_CheckedUnsafePtr_h
 #define mozilla_CheckedUnsafePtr_h
 
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/StackWalk.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
-#include "nsTArray.h"
 #include "nsString.h"
-
-#include <cstddef>
-#include <type_traits>
-#include <utility>
+#include "nsTArray.h"
 
 #if defined __has_builtin
 #  if __has_builtin(__builtin_FUNCTION)
@@ -135,8 +135,8 @@ static inline void CheckedUnsafePtrStackCallback(uint32_t aFrameNumber,
   MozCodeAddressDetails details;
   MozDescribeCodeAddress(aPC, &details);
   char buf[1025];
-  Unused << MozFormatCodeAddressDetails(buf, sizeof(buf), aFrameNumber, aPC,
-                                        &details);
+  (void)MozFormatCodeAddressDetails(buf, sizeof(buf), aFrameNumber, aPC,
+                                    &details);
   stack->Append(buf);
   stack->Append("\n");
 }
@@ -475,23 +475,19 @@ template <typename Condition,
 using CheckIf = std::conditional_t<Condition::value, CheckingPolicy,
                                    DoNotCheckCheckedUnsafePtrs>;
 
-using AssertEnabled = std::integral_constant<bool,
 #ifdef DEBUG
-                                             true
+using AssertEnabled = std::true_type;
 #else
-                                             false
+using AssertEnabled = std::false_type;
 #endif
-                                             >;
 
-using DiagnosticAssertEnabled = std::integral_constant<bool,
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-                                                       true
+using DiagnosticAssertEnabled = std::true_type;
 #else
-                                                       false
+using DiagnosticAssertEnabled = std::false_type;
 #endif
-                                                       >;
 
-using ReleaseAssertEnabled = std::integral_constant<bool, true>;
+using ReleaseAssertEnabled = std::true_type;
 
 // A T class that publicly inherits from an instantiation of
 // SupportsCheckedUnsafePtr and its subclasses can be pointed to by smart

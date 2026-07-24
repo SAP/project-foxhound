@@ -1,0 +1,31 @@
+import pytest
+from webdriver.bidi.modules.script import ContextTarget, ScriptEvaluateResultException
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("await_promise", [True, False])
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "null",
+        "{ toString: 'not a function' }",
+        "{ toString: () => {{ throw 'toString not allowed'; }} }",
+        "{ toString: () => true }",
+    ],
+)
+@pytest.mark.asyncio
+async def test_call_function_without_to_string_interface(
+    bidi_session, top_context, await_promise, expression
+):
+    function_declaration = "()=>{throw { toString: 'not a function' } }"
+    if await_promise:
+        function_declaration = "async" + function_declaration
+
+    with pytest.raises(ScriptEvaluateResultException) as exception:
+        await bidi_session.script.call_function(
+            function_declaration=function_declaration,
+            await_promise=await_promise,
+            target=ContextTarget(top_context["context"]),
+        )
+
+    assert isinstance(exception.value.text, str)

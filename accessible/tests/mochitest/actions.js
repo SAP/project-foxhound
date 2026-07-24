@@ -21,6 +21,7 @@ const XUL_EVENTS = CLICK_EVENTS | COMMAND_EVENT;
  *
  * Action tester interface is:
  *
+ * ```js
  *  var actionObj = {
  *    // identifier of accessible to perform an action on
  *    get ID() {},
@@ -50,7 +51,7 @@ const XUL_EVENTS = CLICK_EVENTS | COMMAND_EVENT;
  *    // constructor events.js)
  *    get eventSeq() {}
  *  };
- *
+ * ```
  *
  * @param  aArray [in] an array of action cheker objects
  */
@@ -114,7 +115,7 @@ function testActionNames(aID, aActions) {
   var actions = typeof aActions == "string" ? [aActions] : aActions || [];
 
   var acc = getAccessible(aID);
-  is(acc.actionCount, actions.length, "Wong number of actions.");
+  is(acc.actionCount, actions.length, "Wrong number of actions.");
   for (var i = 0; i < actions.length; i++) {
     is(
       acc.getActionName(i),

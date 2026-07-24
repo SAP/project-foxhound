@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsChildContentList_h__
-#define nsChildContentList_h__
+#ifndef nsChildContentList_h_
+#define nsChildContentList_h_
 
-#include "mozilla/RefPtr.h"
-#include "nsISupportsImpl.h"
-#include "nsINodeList.h"   // base class
 #include "js/TypeDecls.h"  // for Handle, Value, JSObject, JSContext
+#include "mozilla/RefPtr.h"
+#include "nsINodeList.h"  // base class
+#include "nsISupportsImpl.h"
 
 class nsIContent;
 class nsINode;
@@ -84,4 +84,4 @@ class nsParentNodeChildContentList final : public nsAttrChildContentList {
   AutoTArray<nsIContent*, 8> mCachedChildArray;
 };
 
-#endif /* nsChildContentList_h__ */
+#endif /* nsChildContentList_h_ */

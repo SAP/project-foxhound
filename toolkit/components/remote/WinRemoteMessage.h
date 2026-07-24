@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __WinRemoteMessage_h__
-#define __WinRemoteMessage_h__
+#ifndef WinRemoteMessage_h_
+#define WinRemoteMessage_h_
 
 #include <windows.h>
 
@@ -76,4 +76,4 @@ class WinRemoteMessageReceiver final {
   nsICommandLineRunner* CommandLineRunner();
 };
 
-#endif  // __WinRemoteMessage_h__
+#endif  // WinRemoteMessage_h_

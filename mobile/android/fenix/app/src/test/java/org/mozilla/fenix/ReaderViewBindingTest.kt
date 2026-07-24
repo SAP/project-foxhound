@@ -5,13 +5,11 @@
 package org.mozilla.fenix
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
@@ -23,9 +21,8 @@ import org.mozilla.fenix.components.appstate.readerview.ReaderViewState
 
 @RunWith(AndroidJUnit4::class)
 class ReaderViewBindingTest {
-    @get:Rule
-    val coroutineRule = MainCoroutineRule()
 
+    private val testDispatcher = StandardTestDispatcher()
     private lateinit var readerModeController: ReaderModeController
 
     @Before
@@ -34,21 +31,19 @@ class ReaderViewBindingTest {
     }
 
     @Test
-    fun `WHEN the reader view state is active THEN show reader view`() = runTestOnMain {
+    fun `WHEN the reader view state is active THEN show reader view`() = runTest(testDispatcher) {
         val appStore = AppStore()
         val binding = ReaderViewBinding(
             appStore = appStore,
             readerMenuController = readerModeController,
+            mainDispatcher = testDispatcher,
         )
 
         binding.start()
 
         appStore.dispatch(ReaderViewAction.ReaderViewStarted)
 
-        // Wait for ReaderViewAction.ReaderViewStarted
-        appStore.waitUntilIdle()
-        // Wait for ReaderViewAction.Reset
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(readerModeController).showReaderView()
 
@@ -56,23 +51,21 @@ class ReaderViewBindingTest {
     }
 
     @Test
-    fun `WHEN the reader view state is dismiss THEN hide reader view`() = runTestOnMain {
+    fun `WHEN the reader view state is dismiss THEN hide reader view`() = runTest(testDispatcher) {
         val appStore = AppStore(
             initialState = AppState(),
         )
         val binding = ReaderViewBinding(
             appStore = appStore,
             readerMenuController = readerModeController,
+            mainDispatcher = testDispatcher,
         )
 
         binding.start()
 
         appStore.dispatch(ReaderViewAction.ReaderViewDismissed)
 
-        // Wait for ReaderViewAction.ReaderViewDismissed
-        appStore.waitUntilIdle()
-        // Wait for ReaderViewAction.Reset
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(readerModeController).hideReaderView()
 
@@ -80,23 +73,21 @@ class ReaderViewBindingTest {
     }
 
     @Test
-    fun `WHEN the reader view state is show controls THEN show reader view customization controls`() = runTestOnMain {
+    fun `WHEN the reader view state is show controls THEN show reader view customization controls`() = runTest(testDispatcher) {
         val appStore = AppStore(
             initialState = AppState(),
         )
         val binding = ReaderViewBinding(
             appStore = appStore,
             readerMenuController = readerModeController,
+            mainDispatcher = testDispatcher,
         )
 
         binding.start()
 
         appStore.dispatch(ReaderViewAction.ReaderViewControlsShown)
 
-        // Wait for ReaderViewAction.ReaderViewControlsShown
-        appStore.waitUntilIdle()
-        // Wait for ReaderViewAction.Reset
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(readerModeController).showControls()
 

@@ -164,7 +164,7 @@ function testFields(
 
 async function doTestCompleteCacheAfterReload(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -241,7 +241,7 @@ add_task(async function testModuleCompleteCacheAfterReload() {
 
 async function doTestCompleteCacheInSameDocument(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -363,7 +363,7 @@ add_task(async function testModuleCompleteCacheInSameDocument() {
 
 async function doTestNoCacheReload(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -440,7 +440,7 @@ add_task(async function testModuleNoCacheReload() {
 
 async function doTest_NoCORS(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -514,7 +514,7 @@ add_task(async function testScript_NoCORS() {
 
 async function doTest_NoCORS_TAO(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -588,7 +588,7 @@ add_task(async function testScript_NoCORS_TAO() {
 
 async function doTest_CORS(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -665,7 +665,7 @@ add_task(async function testModule_CORS() {
 
 async function doTest_CORS_TAO(type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

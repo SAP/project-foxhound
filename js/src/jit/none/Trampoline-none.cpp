@@ -23,10 +23,6 @@ JitRuntime::getCppEntryRegisters(JitFrameLayout* frameStackAddress) {
   return mozilla::Nothing{};
 }
 void JitRuntime::generateInvalidator(MacroAssembler&, Label*) { MOZ_CRASH(); }
-void JitRuntime::generateArgumentsRectifier(MacroAssembler&,
-                                            ArgumentsRectifierKind kind) {
-  MOZ_CRASH();
-}
 void JitRuntime::generateBailoutHandler(MacroAssembler&, Label*) {
   MOZ_CRASH();
 }

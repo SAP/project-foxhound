@@ -11,10 +11,6 @@ add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  await testCreateNewSetOfCommentedAndUncommentedProperties(view);
-});
-
-async function testCreateNewSetOfCommentedAndUncommentedProperties(view) {
   info("Test creating a new set of commented and uncommented properties");
 
   info("Focusing a new property name in the rule-view");
@@ -40,11 +36,47 @@ async function testCreateNewSetOfCommentedAndUncommentedProperties(view) {
   const onModifications = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
   await onModifications;
+  // Hitting Enter focuses a new empty declaration, blur the input so we don't have
+  // to deal with it.
+  view.styleDocument.activeElement.blur();
 
-  const textProps = ruleEditor.rule.textProps;
-  ok(textProps[0].enabled, "The 'color' property is enabled.");
-  ok(!textProps[1].enabled, "The 'background-color' property is disabled.");
-  ok(textProps[2].enabled, "The 'width' property is enabled.");
-  ok(textProps[3].enabled, "The 'height' property is enabled.");
-  ok(!textProps[4].enabled, "The 'padding-bottom' property is disabled.");
-}
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      selectorEditable: false,
+      declarations: [
+        {
+          name: "color",
+          value: "blue",
+          dirty: true,
+        },
+        {
+          name: "background-color",
+          value: "yellow",
+          dirty: true,
+          enabled: false,
+          // disabled declarations use the same class as we do for "overridden"
+          overridden: true,
+        },
+        {
+          name: "width",
+          value: "200px",
+          dirty: true,
+        },
+        {
+          name: "height",
+          value: "100px",
+          dirty: true,
+        },
+        {
+          name: "padding-bottom",
+          value: "1px",
+          enabled: false,
+          // disabled declarations use the same class as we do for "overridden"
+          overridden: true,
+          dirty: true,
+        },
+      ],
+    },
+  ]);
+});

@@ -15,6 +15,7 @@ if CONFIG["ENABLE_TESTS"]:
 EXPORTS += [
     "nsIPopupContainer.h",
     "nsIScrollbarMediator.h",
+    "nsMenuPopupFrame.h",
     "nsXULPopupManager.h",
     "nsXULTooltipListener.h",
 ]

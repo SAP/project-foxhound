@@ -6,10 +6,9 @@
 #ifndef GPU_DeviceLostInfo_H_
 #define GPU_DeviceLostInfo_H_
 
-#include "mozilla/dom/WebGPUBinding.h"
-#include "mozilla/Maybe.h"
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/WebGPUBinding.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::webgpu {
 class Device;
@@ -24,8 +23,7 @@ class DeviceLostInfo final : public nsWrapperCache {
       : mGlobal(aGlobal), mReason(aReason), mMessage(aMessage) {}
 
  private:
-  ~DeviceLostInfo() = default;
-  void Cleanup() {}
+  virtual ~DeviceLostInfo() = default;
 
   nsCOMPtr<nsIGlobalObject> mGlobal;
   const dom::GPUDeviceLostReason mReason;

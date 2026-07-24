@@ -2,12 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:root {
-  --toolbox-bgcolor: -moz-headerbar;
-  --toolbox-textcolor: -moz-headerbartext;
-  --toolbox-bgcolor-inactive: -moz-headerbarinactive;
-  --toolbox-textcolor-inactive: -moz-headerbarinactivetext;
+@import url("chrome://global/skin/design-system/toolbar.css");
 
+:root {
   &:where([customtitlebar]) {
     --toolbox-bgcolor: ActiveCaption;
     --toolbox-textcolor: CaptionText;
@@ -55,11 +52,6 @@
     --tabs-navbar-separator-color: light-dark(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.3));
     --attention-dot-color: light-dark(#2ac3a2, #54ffbd);
 
-    --toolbox-bgcolor: var(--lwt-accent-color);
-    --toolbox-bgcolor-inactive: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
-    --toolbox-textcolor: var(--lwt-text-color, currentColor);
-    --toolbox-textcolor-inactive: var(--lwt-text-color, currentColor);
-
     @media not (prefers-contrast) {
       --focus-outline-color: light-dark(#0061e0, #00ddff);
     }
@@ -79,8 +71,7 @@
  * theme enabled, instead choosing to fall back to system colors and
  * transparencies in order to look more native.
  */
-/* stylelint-disable-next-line media-query-no-invalid */
-@media not ((prefers-contrast) or -moz-pref("browser.theme.native-theme")) {
+@media not ((forced-colors) or (-moz-native-theme)) {
   :root:not([lwtheme]) {
     --color-accent-primary: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
     --button-text-color-primary: light-dark(rgb(251, 251, 254), rgb(43, 42, 51));
@@ -103,29 +94,9 @@
     --tab-selected-textcolor: light-dark(rgb(21, 20, 26), rgb(255, 255, 255));
     --tabs-navbar-separator-style: none;
 
-    /* stylelint-disable-next-line media-query-no-invalid */
-    @media not ((-moz-windows-mica) or ((-moz-windows-accent-color-in-titlebar) and -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled"))) {
-      --toolbox-bgcolor: light-dark(rgb(234, 234, 237), rgb(28, 27, 34));
-      --toolbox-textcolor: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
-      --toolbox-bgcolor-inactive: var(--toolbox-bgcolor);
-      --toolbox-textcolor-inactive: var(--toolbox-textcolor);
-      &:where([customtitlebar]) {
-        --toolbox-bgcolor-inactive: light-dark(rgb(235, 235, 239), rgb(31, 30, 37));
-      }
+    &:where([customtitlebar]) {
+      --toolbox-bgcolor-inactive: light-dark(rgb(235, 235, 239), rgb(31, 30, 37));
     }
-
-    --toolbar-color: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
-    --toolbar-bgcolor: light-dark(#f9f9fb, rgb(43, 42, 51));
-
-    --toolbarbutton-icon-fill: light-dark(rgb(91, 91, 102), rgb(251, 251, 254));
-    --toolbarbutton-icon-fill-attention: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
-    --toolbarbutton-icon-fill-attention-text: light-dark(rgb(240, 240, 244), rgb(28, 27, 34));
-
-    --toolbar-field-border-color: transparent;
-    --toolbar-field-background-color: light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.3));
-    --toolbar-field-color: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
-    --toolbar-field-focus-background-color: light-dark(white, rgb(66, 65, 77));
-    --toolbar-field-focus-color: light-dark(black, rgb(251, 251, 254));
 
     --urlbarView-action-color: light-dark(rgb(91, 91, 102), rgb(191, 191, 201));
     --urlbarView-separator-color: light-dark(rgb(240, 240, 244), rgb(82, 82, 94));

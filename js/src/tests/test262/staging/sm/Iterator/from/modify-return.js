@@ -1,11 +1,7 @@
-// |reftest| shell-option(--enable-iterator-helpers) skip-if(!this.hasOwnProperty('Iterator')||!xulRuntime.shell) -- iterator-helpers is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 features:
   - iterator-helpers
 info: |
@@ -26,7 +22,7 @@ assert.sameValue(done, true);
 assert.sameValue(value, "old return");
 
 iter.return = () => { throw new Error(); };
-assertThrowsInstanceOf(() => wrap.return(), Error);
+assert.throws(Error, () => wrap.return());
 
 iter.return = null;
 let nullResult = wrap.return("return argument ignored");

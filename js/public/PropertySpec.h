@@ -366,6 +366,9 @@ constexpr uint8_t CheckAccessorAttrs() {
 #define JS_PSG(name, getter, attributes)                                  \
   JSPropertySpec::nativeAccessors(name, CheckAccessorAttrs<attributes>(), \
                                   getter, nullptr)
+#define JS_INLINABLE_PSG(name, getter, attributes, native)                \
+  JSPropertySpec::nativeAccessors(name, CheckAccessorAttrs<attributes>(), \
+                                  getter, &js::jit::JitInfo_##native)
 #define JS_PSGS(name, getter, setter, attributes)                         \
   JSPropertySpec::nativeAccessors(name, CheckAccessorAttrs<attributes>(), \
                                   getter, nullptr, setter, nullptr)

@@ -14,7 +14,6 @@
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/ElementAnimationData.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/TimelineCollection.h"
 #include "mozilla/dom/AnimationEffect.h"

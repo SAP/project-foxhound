@@ -1,0 +1,9 @@
+package test {
+  public class TestClass<T,V> {
+    method public void testMethod(java.lang.Array<not_allowed.GenericNotAllowed>);
+    method public void testMethod(V);
+    method <K> public java.lang.Array<K> testMethodGeneric(java.lang.Array<K>);
+    method @android.support.annotation.NonNull public <U> org.mozilla.geckoview.GeckoResult<U> then(@android.support.annotation.Nullable org.mozilla.geckoview.GeckoResult.OnValueListener<T,U>, @android.support.annotation.Nullable org.mozilla.geckoview.GeckoResult.OnExceptionListener<U>)
+ }
+}
+

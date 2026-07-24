@@ -8,6 +8,7 @@
 #define mozilla_dom_localstorage_LSDatabase_h
 
 #include <cstdint>
+
 #include "ErrorList.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPtr.h"

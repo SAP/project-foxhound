@@ -76,7 +76,7 @@ export var TaskScheduler = {
    * @param intervalSeconds
    *        Interval at which to run the command, in seconds. Minimum 1800 (30 minutes).
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional, as are all of its properties:
    *        {
    *          options.args
@@ -130,7 +130,7 @@ export var TaskScheduler = {
   /**
    * Delete a scheduled task previously created with registerTask.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional, as are all of its properties:
    *        {
    *            options.nameVersion
@@ -150,7 +150,7 @@ export var TaskScheduler = {
   /**
    * Delete all tasks registered by this application.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional, as are all of its properties:
    *        {
    *            options.nameVersion
@@ -172,7 +172,7 @@ export var TaskScheduler = {
    * @param id
    *        A string representing the identifier of the task to look for.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional, as are all of its properties:
    *        {
    *            options.nameVersion

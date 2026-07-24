@@ -14,7 +14,7 @@ add_task(async function () {
   for (let uri of URIS) {
     let tab = BrowserTestUtils.addTab(gBrowser);
     BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, uri);
-    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, { wantLoad: uri });
     let isRemote = tab.linkedBrowser.isRemoteBrowser;
 
     let win = gBrowser.replaceTabWithWindow(tab);

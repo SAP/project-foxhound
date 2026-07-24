@@ -2,6 +2,10 @@ var conn = PlacesUtils.history.DBConnection;
 
 /**
  * Gets a single column value from either the places or historyvisits table.
+ *
+ * @param {string} table
+ * @param {string} column
+ * @param {string} url
  */
 function getColumn(table, column, url) {
   var stmt = conn.createStatement(

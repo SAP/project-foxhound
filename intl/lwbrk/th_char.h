@@ -8,8 +8,8 @@ in supporting documentation.  Samphan Raruenrom makes no
 representations about the suitability of this software for any
 purpose.  It is provided "as is" without express or implied warranty.
 */
-#ifndef __TH_CHAR_H__
-#define __TH_CHAR_H__
+#ifndef TH_CHAR_H_
+#define TH_CHAR_H_
 
 typedef unsigned char tis_char;
 
@@ -19,8 +19,10 @@ typedef unsigned char tis_char;
  * select a binary compatible C type for the expat C code to use.
  */
 #  ifdef __cplusplus
+#    include <uchar.h>
 typedef char16_t th_char;
 #  else
+#    include <stdint.h>
 typedef uint16_t th_char;
 #  endif
 #  define TH_THAIBEGIN_ 0x0e00

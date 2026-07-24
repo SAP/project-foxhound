@@ -1,16 +1,7 @@
 add_task(async function testRestoreDefaultsBtn_visible() {
-  const before = SpecialPowers.Services.prefs.getStringPref(
-    "browser.newtabpage.activity-stream.feeds.section.topstories.options",
-    ""
-  );
-
   await SpecialPowers.pushPrefEnv({
     set: [
       // Hide Pocket prefs so we don't trigger network requests when we reset all preferences
-      [
-        "browser.newtabpage.activity-stream.feeds.section.topstories.options",
-        JSON.stringify(Object.assign({}, JSON.parse(before), { hidden: true })),
-      ],
       [
         "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
         "",
@@ -102,18 +93,8 @@ add_task(async function testRestoreDefaultsBtn_visible() {
 });
 
 add_task(async function testRestoreDefaultsBtn_hidden() {
-  const before = SpecialPowers.Services.prefs.getStringPref(
-    "browser.newtabpage.activity-stream.feeds.section.topstories.options",
-    ""
-  );
-
   await SpecialPowers.pushPrefEnv({
     set: [
-      // Hide Pocket pref so we don't trigger network requests when we reset all preferences
-      [
-        "browser.newtabpage.activity-stream.feeds.section.topstories.options",
-        JSON.stringify(Object.assign({}, JSON.parse(before), { hidden: true })),
-      ],
       [
         "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
         "",

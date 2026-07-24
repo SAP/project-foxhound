@@ -7,6 +7,9 @@ add_setup(async function () {
     gBrowser,
     url: "about:logins",
   });
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
   registerCleanupFunction(() => {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   });
@@ -62,6 +65,7 @@ if (OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
         }
       );
       await osAuthDialogShown;
+      await TestUtils.waitForTick();
       await SpecialPowers.spawn(browser, [], async () => {
         let loginItem = Cu.waiveXrays(
           content.document.querySelector("login-item")

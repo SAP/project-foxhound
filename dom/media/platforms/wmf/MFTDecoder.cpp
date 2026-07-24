@@ -6,12 +6,12 @@
 
 #include "MFTDecoder.h"
 
+#include "PlatformDecoderModule.h"
 #include "WMFUtils.h"
 #include "mozilla/Logging.h"
-#include "nsThreadUtils.h"
 #include "mozilla/mscom/COMWrappers.h"
 #include "mozilla/mscom/Utils.h"
-#include "PlatformDecoderModule.h"
+#include "nsThreadUtils.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 #define LOGV(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Verbose, (__VA_ARGS__))
@@ -109,6 +109,7 @@ MFTDecoder::Create(const GUID& aCategory, const GUID& aInSubtype,
 
 HRESULT
 MFTDecoder::SetMediaTypes(IMFMediaType* aInputType, IMFMediaType* aOutputType,
+                          const GUID& aFallbackSubType,
                           std::function<HRESULT(IMFMediaType*)>&& aCallback) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
 
@@ -117,8 +118,8 @@ MFTDecoder::SetMediaTypes(IMFMediaType* aInputType, IMFMediaType* aOutputType,
 
   GUID currentSubtype = {0};
   RETURN_IF_FAILED(aOutputType->GetGUID(MF_MT_SUBTYPE, &currentSubtype));
-  RETURN_IF_FAILED(
-      SetDecoderOutputType(currentSubtype, aOutputType, std::move(aCallback)));
+  RETURN_IF_FAILED(SetDecoderOutputType(currentSubtype, aFallbackSubType,
+                                        aOutputType, std::move(aCallback)));
   RETURN_IF_FAILED(mDecoder->GetInputStreamInfo(0, &mInputStreamInfo));
   RETURN_IF_FAILED(SendMFTMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0));
   RETURN_IF_FAILED(SendMFTMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0));
@@ -142,22 +143,41 @@ already_AddRefed<IMFAttributes> MFTDecoder::GetOutputStreamAttributes() {
 }
 
 HRESULT
-MFTDecoder::FindDecoderOutputType() {
+MFTDecoder::FindDecoderOutputType(const GUID& aFallbackSubType) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   MOZ_ASSERT(mOutputType, "SetDecoderTypes must have been called once");
 
-  return FindDecoderOutputTypeWithSubtype(mOutputSubType);
+  return FindDecoderOutputTypeWithSubtype(mOutputSubType, aFallbackSubType);
 }
 
 HRESULT
-MFTDecoder::FindDecoderOutputTypeWithSubtype(const GUID& aSubType) {
-  return SetDecoderOutputType(aSubType, nullptr,
+MFTDecoder::FindDecoderOutputTypeWithSubtype(const GUID& aSubType,
+                                             const GUID& aFallbackSubType) {
+  return SetDecoderOutputType(aSubType, aFallbackSubType, nullptr,
                               [](IMFMediaType*) { return S_OK; });
 }
 
+// This method first attempts to find the provided aSubType in the compatible
+// list reported by the decoder, if found it will be set up.
+//
+// If aSubType is not found in the compatible list, and aFallbackSubType is
+// GUID_NULL, this will promptly return E_FAIL instead of attempting fallbacks.
+//
+// If aSubType is not found in the compatible list, and aFallbackSubType is not
+// GUID_NULL, this method will attempt to find aFallbackSubType in the
+// compatible list, if found it will be set up.
+//
+// If aSubType is not found in the compatible list, and aFallbackSubType is not
+// GUID_NULL, but aFallbackSubType is also not found in the compatible list,
+// this method will set up the last available compatible type reported by the
+// decoder.
+//
+// Callers that do not want a fallback behavior must pass GUID_NULL as
+// aFallbackSubType.
 HRESULT
 MFTDecoder::SetDecoderOutputType(
-    const GUID& aSubType, IMFMediaType* aTypeToUse,
+    const GUID& aSubType, const GUID& aFallbackSubType,
+    IMFMediaType* aTypeToUse,
     std::function<HRESULT(IMFMediaType*)>&& aCallback) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   NS_ENSURE_TRUE(mDecoder != nullptr, E_POINTER);
@@ -197,16 +217,14 @@ MFTDecoder::SetDecoderOutputType(
   }
 
   if (foundType == Result::eNotFound) {
+    if (aFallbackSubType == GUID_NULL) {
+      // The caller specifically did not want a fallback, so just return.
+      return E_FAIL;
+    }
     typeIndex = 0;
     LOG("Can't find a compatible output type, searching with the preferred "
         "type instead");
-    auto getPreferredSubtype = [](const GUID& aMajor) -> GUID {
-      if (aMajor == MFMediaType_Audio) {
-        return MFAudioFormat_Float;
-      }
-      return MFVideoFormat_NV12;
-    };
-    const GUID preferredSubtype = getPreferredSubtype(mMajorType);
+    const GUID preferredSubtype = aFallbackSubType;
     while (SUCCEEDED(mDecoder->GetOutputAvailableType(
         0, typeIndex++, getter_AddRefs(outputType)))) {
       GUID outSubtype = {0};

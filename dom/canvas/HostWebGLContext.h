@@ -6,21 +6,21 @@
 #ifndef HOSTWEBGLCONTEXT_H_
 #define HOSTWEBGLCONTEXT_H_
 
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/GfxMessageUtils.h"
-#include "ClientWebGLContext.h"
-#include "mozilla/Maybe.h"
-#include "GLContext.h"
-#include "WebGLContext.h"
-#include "WebGL2Context.h"
-#include "WebGLFramebuffer.h"
-#include "WebGLTypes.h"
-#include "WebGLCommandQueue.h"
-
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include "ClientWebGLContext.h"
+#include "GLContext.h"
+#include "WebGL2Context.h"
+#include "WebGLCommandQueue.h"
+#include "WebGLContext.h"
+#include "WebGLFramebuffer.h"
+#include "WebGLTypes.h"
+#include "mozilla/GfxMessageUtils.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/BindingUtils.h"
 
 namespace mozilla {
 

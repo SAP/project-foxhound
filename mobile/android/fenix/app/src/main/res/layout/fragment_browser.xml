@@ -49,7 +49,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_gravity="bottom"
-                android:background="?attr/layer1"
+                android:background="?attr/colorSurface"
                 android:elevation="24dp"
                 android:visibility="gone" />
 
@@ -83,6 +83,13 @@
                 android:layout_height="wrap_content" />
 
             <ViewStub
+                android:id="@+id/emailMaskBarStub"
+                android:inflatedId="@+id/emailMaskBar"
+                android:layout="@layout/email_mask_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <ViewStub
                 android:id="@+id/addressSelectBarStub"
                 android:inflatedId="@+id/addressSelectBar"
                 android:layout="@layout/address_select_bar"
@@ -93,6 +100,13 @@
                 android:id="@+id/creditCardSelectBarStub"
                 android:inflatedId="@+id/creditCardSelectBar"
                 android:layout="@layout/creditcard_select_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <ViewStub
+                android:id="@+id/translationsBannerStub"
+                android:inflatedId="@+id/translationsBanner"
+                android:layout="@layout/translations_banner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 

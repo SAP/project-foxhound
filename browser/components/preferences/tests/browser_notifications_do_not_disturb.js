@@ -15,8 +15,8 @@ add_task(async function () {
 
   let doc = gBrowser.contentDocument;
   let notificationsDoNotDisturbBox = doc.getElementById(
-    "notificationsDoNotDisturbBox"
-  );
+    "notificationsDoNotDisturb"
+  ).control;
   if (notificationsDoNotDisturbBox.hidden) {
     todo(false, "Do not disturb is not available on this platform");
     return;
@@ -32,14 +32,15 @@ add_task(async function () {
     return;
   }
 
-  let checkbox = doc.getElementById("notificationsDoNotDisturb");
+  let checkbox = doc.getElementById("notificationsDoNotDisturb").control
+    .controlEl;
   ok(!checkbox.checked, "Checkbox should not be checked by default");
   ok(
     !alertService.manualDoNotDisturb,
     "Do not disturb should be off by default"
   );
 
-  let checkboxChanged = BrowserTestUtils.waitForEvent(checkbox, "command");
+  let checkboxChanged = BrowserTestUtils.waitForEvent(checkbox, "change");
   checkbox.click();
   await checkboxChanged;
   ok(
@@ -47,7 +48,7 @@ add_task(async function () {
     "Do not disturb should be enabled when checked"
   );
 
-  checkboxChanged = BrowserTestUtils.waitForEvent(checkbox, "command");
+  checkboxChanged = BrowserTestUtils.waitForEvent(checkbox, "change");
   checkbox.click();
   await checkboxChanged;
   ok(

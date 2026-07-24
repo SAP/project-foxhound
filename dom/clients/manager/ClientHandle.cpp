@@ -140,21 +140,16 @@ RefPtr<ClientStatePromise> ClientHandle::Focus(CallerType aCallerType) {
 }
 
 RefPtr<GenericErrorResultPromise> ClientHandle::PostMessage(
-    StructuredCloneData& aData, const ServiceWorkerDescriptor& aSource) {
+    NotNull<StructuredCloneData*> aData,
+    const ServiceWorkerDescriptor& aSource) {
   if (IsShutdown()) {
     CopyableErrorResult rv;
     rv.ThrowInvalidStateError("Client has been destroyed");
     return GenericErrorResultPromise::CreateAndReject(rv, __func__);
   }
 
-  ClientPostMessageArgs args;
-  args.serviceWorker() = aSource.ToIPC();
-
-  if (!aData.BuildClonedMessageData(args.clonedData())) {
-    CopyableErrorResult rv;
-    rv.ThrowInvalidStateError("Failed to clone data");
-    return GenericErrorResultPromise::CreateAndReject(rv, __func__);
-  }
+  ClientPostMessageArgs args(/* clonedData */ aData,
+                             /* serviceWorker */ aSource.ToIPC());
 
   RefPtr<GenericErrorResultPromise::Private> outerPromise =
       new GenericErrorResultPromise::Private(__func__);

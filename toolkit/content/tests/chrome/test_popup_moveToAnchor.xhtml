@@ -12,17 +12,26 @@
   <button id="button2" label="Button 2" style="margin-top: 70px;"/>
 </vbox>
 
-<menupopup id="popup" onpopupshown="popupshown()" onpopuphidden="SimpleTest.finish()">
+<menupopup id="popup" onpopupshown="popupshown()" onpopuphidden="SimpleTest.finish()" native="false">
   <menuitem label="One"/>
   <menuitem label="Two"/>
 </menupopup>
 
 <script>
+<![CDATA[
+
 SimpleTest.waitForExplicitFinish();
 
 function runTest()
 {
   $("popup").openPopup($("button1"), "after_start");
+}
+
+function isRounded(a, b, msg) {
+  const diff = Math.abs(b - a);
+  const withinOnePx = diff <= 1;
+
+  is(withinOnePx, true, msg);
 }
 
 function popupshown()
@@ -66,12 +75,13 @@ function popupshown()
 function checkCoords(popup, expectedx, expectedy, testid)
 {
   var rect = popup.getBoundingClientRect();
-  is(Math.round(rect.left), Math.round(expectedx), testid + " left");
-  is(Math.round(rect.top), Math.round(expectedy), testid + " top");
+  isRounded(rect.left, expectedx, testid + " left");
+  isRounded(rect.top, expectedy, testid + " top");
 }
 
 SimpleTest.waitForFocus(runTest);
 
+]]>
 </script>
 
 <body xmlns="http://www.w3.org/1999/xhtml">

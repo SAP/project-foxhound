@@ -15,9 +15,5 @@ internal object ShortcutStateReducer {
         is ShortcutAction.ShortcutAdded -> state.copy(
             snackbarState = SnackbarState.ShortcutAdded,
         )
-
-        is ShortcutAction.ShortcutRemoved -> state.copy(
-            snackbarState = SnackbarState.ShortcutRemoved,
-        )
     }
 }

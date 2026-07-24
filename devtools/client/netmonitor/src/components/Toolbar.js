@@ -294,7 +294,7 @@ class Toolbar extends Component {
   onSearchBoxFocusKeyboardShortcut(event) {
     // Don't take focus when the keyboard shortcut is triggered in a CodeMirror instance,
     // so the CodeMirror search UI is displayed.
-    return !!event.target.closest(".CodeMirror");
+    return !!event.target.closest(".cm-editor");
   }
 
   onSearchBoxFocus() {

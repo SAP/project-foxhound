@@ -9,23 +9,23 @@
  * attribute.
  */
 
-#ifndef nsAttrValue_h___
-#define nsAttrValue_h___
+#ifndef nsAttrValue_h_
+#define nsAttrValue_h_
 
 #include <type_traits>
 
-#include "nscore.h"
-#include "nsString.h"
-#include "mozilla/StringBuffer.h"
-#include "nsColor.h"
-#include "nsCaseTreatment.h"
-#include "nsMargin.h"
-#include "nsStringFwd.h"
-#include "nsTArrayForwardDeclare.h"
-#include "nsAtom.h"
 #include "mozilla/AtomArray.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StringBuffer.h"
+#include "nsAtom.h"
+#include "nsCaseTreatment.h"
+#include "nsColor.h"
+#include "nsMargin.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
+#include "nsTArrayForwardDeclare.h"
+#include "nscore.h"
 
 class nsIPrincipal;
 class nsIURI;

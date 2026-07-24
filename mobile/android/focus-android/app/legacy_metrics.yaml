@@ -1019,6 +1019,22 @@ tab_count:
       opened_tabs:
         description: Number of currently opened tabs
         type: quantity
+  session_add_new_tab_tapped:
+    type: event
+    description: The user has opened a new tab from the session list.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2011801
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    extra_keys:
+      opened_tabs:
+        description: Number of currently opened tabs
+        type: quantity
   session_list_closed:
     type: event
     description: The user has closed the session list.

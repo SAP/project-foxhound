@@ -26,8 +26,8 @@ interface HTMLTextAreaElement : HTMLElement {
            attribute DOMString dirName;
   [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
-  [Pure]
-  readonly attribute HTMLFormElement? form;
+  [Pure, BinaryName=formForBindings]
+  readonly attribute Element? form;
            // attribute DOMString inputMode;
   [CEReactions, SetterThrows, Pure]
            attribute long maxLength;
@@ -62,6 +62,7 @@ interface HTMLTextAreaElement : HTMLElement {
   boolean reportValidity();
   undefined setCustomValidity(DOMString error);
 
+  [BinaryName=labelsForBindings]
   readonly attribute NodeList labels;
 
   undefined select();

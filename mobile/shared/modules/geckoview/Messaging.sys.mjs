@@ -5,39 +5,6 @@
 const IS_PARENT_PROCESS =
   Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT;
 
-class ChildActorDispatcher {
-  constructor(actor) {
-    this._actor = actor;
-  }
-
-  // TODO: Bug 1658980
-  registerListener() {
-    throw new Error("Cannot registerListener in child actor");
-  }
-  unregisterListener() {
-    throw new Error("Cannot registerListener in child actor");
-  }
-
-  /**
-   * Sends a request to Java.
-   *
-   * @param aMsg      Message to send; must be an object with a "type" property
-   */
-  sendRequest(aMsg) {
-    this._actor.sendAsyncMessage("DispatcherMessage", aMsg);
-  }
-
-  /**
-   * Sends a request to Java, returning a Promise that resolves to the response.
-   *
-   * @param aMsg Message to send; must be an object with a "type" property
-   * @return A Promise resolving to the response
-   */
-  sendRequestForResult(aMsg) {
-    return this._actor.sendQuery("DispatcherQuery", aMsg);
-  }
-}
-
 function DispatcherDelegate(aDispatcher, aMessageManager) {
   this._dispatcher = aDispatcher;
   this._messageManager = aMessageManager;
@@ -197,7 +164,7 @@ DispatcherDelegate.prototype = {
 
 export var EventDispatcher = {
   instance: new DispatcherDelegate(
-    IS_PARENT_PROCESS ? Services.androidBridge : undefined
+    IS_PARENT_PROCESS ? Services.geckoviewBridge : undefined
   ),
 
   /**
@@ -239,7 +206,7 @@ export var EventDispatcher = {
     if (!IS_PARENT_PROCESS) {
       return undefined;
     }
-    const dispatcher = Services.androidBridge.getDispatcherByName(aName);
+    const dispatcher = Services.geckoviewBridge.getDispatcherByName(aName);
     return new DispatcherDelegate(dispatcher);
   },
 
@@ -251,15 +218,6 @@ export var EventDispatcher = {
    */
   forMessageManager(aMessageManager) {
     return new DispatcherDelegate(null, aMessageManager);
-  },
-
-  /**
-   * Return the EventDispatcher instance associated with an actor.
-   *
-   * @param aActor an actor
-   */
-  forActor(aActor) {
-    return new ChildActorDispatcher(aActor);
   },
 
   receiveMessage(aMsg) {

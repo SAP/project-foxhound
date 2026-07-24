@@ -1,0 +1,47 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Opaque, so that the opaque region is completely covered. Note this is on the
+ * <body> because some platforms (linux) use appearance on the root element to
+ * render window decorations like shadows.
+ * TODO(emilio, bug 2005818): This breaks rounded corners on Linux, unless we also
+ * enable rounded bottom corners, which is blocked on bug 1979083. */
+
+body {
+  --tabpanel-background-color: transparent;
+  background-color: white;
+  background-image: var(--ai-gradient);
+}
+
+/* LightWeightThemeConsumer forces these backgrounds to be opaque, but we want
+ * to let the <body> background show through.
+ * FIXME(bug 1952602): Find a solution that doesn't require custom CSS. */
+#navigator-toolbox,
+#browser {
+  background-color: transparent !important;
+}
+
+/* Selected tab */
+#tabbrowser-tabs tab[selected] .tab-background {
+  background-image: light-dark(
+    linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.3)),
+    linear-gradient(180deg, rgba(199, 194, 255, 0.36) 0%, rgba(194, 188, 247, 0.11) 100%)
+  );
+  /* AI Window design uses purple-tinted shadows to match brand colors, rather
+   * than the neutral gray shadows from standard design tokens. */
+  /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow:
+    0 3px 16px 0 rgba(59, 34, 121, 0.12),
+    0 1px 2px 0 rgba(59, 34, 121, 0.2);
+}
+
+/* Urlbar */
+#urlbar:not([open]) > .urlbar-background {
+  border-radius: var(--border-radius-circle);
+}
+
+/* Tab preview thumbnail */
+.tab-preview-thumbnail-container > canvas {
+  background-image: var(--ai-gradient);
+}

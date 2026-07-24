@@ -14,7 +14,15 @@ namespace gfx {
 StaticAutoPtr<gfxVars> gfxVars::sInstance;
 StaticAutoPtr<nsTArray<gfxVars::VarBase*>> gfxVars::sVarList;
 
+// Used only during initialization to store pending updates if received prior to
+// gfxVars::Initialize.
 StaticAutoPtr<nsTArray<GfxVarUpdate>> gGfxVarInitUpdates;
+
+// Used only after initialization to store pending updates for
+// gfxVarsCollectUpdates that will be dispatched once it goes out of scope. This
+// is useful when we are changing multiple gfxVars and wish to only update the
+// child processes once.
+StaticAutoPtr<nsTArray<GfxVarUpdate>> gGfxVarPendingUpdates;
 
 void gfxVars::SetValuesForInitialize(
     const nsTArray<GfxVarUpdate>& aInitUpdates) {
@@ -25,13 +33,30 @@ void gfxVars::SetValuesForInitialize(
   // and for sInstance to be null here, but handle the alternative.
   if (sInstance) {
     // Apply the updates, the object has been created already
-    for (const auto& varUpdate : aInitUpdates) {
-      ApplyUpdate(varUpdate);
-    }
+    ApplyUpdate(aInitUpdates);
   } else {
     // Save the values for Initialize call
     gGfxVarInitUpdates = new nsTArray<GfxVarUpdate>(aInitUpdates.Clone());
   }
+}
+
+void gfxVars::StartCollectingUpdates() {
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
+  MOZ_RELEASE_ASSERT(sInstance);
+  MOZ_RELEASE_ASSERT(!gGfxVarPendingUpdates);
+  gGfxVarPendingUpdates = new nsTArray<GfxVarUpdate>();
+}
+
+void gfxVars::StopCollectingUpdates() {
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
+  MOZ_RELEASE_ASSERT(sInstance);
+  MOZ_RELEASE_ASSERT(gGfxVarPendingUpdates);
+  if (!gGfxVarPendingUpdates->IsEmpty()) {
+    for (auto& receiver : sInstance->mReceivers) {
+      receiver->OnVarChanged(*gGfxVarPendingUpdates);
+    }
+  }
+  gGfxVarPendingUpdates = nullptr;
 }
 
 void gfxVars::Initialize() {
@@ -53,9 +78,7 @@ void gfxVars::Initialize() {
 
   if (gGfxVarInitUpdates) {
     // Apply any updates from gGfxVarInitUpdates.
-    for (const auto& varUpdate : *gGfxVarInitUpdates) {
-      ApplyUpdate(varUpdate);
-    }
+    ApplyUpdate(*gGfxVarInitUpdates);
     gGfxVarInitUpdates = nullptr;
   }
 }
@@ -69,16 +92,18 @@ void gfxVars::Shutdown() {
 }
 
 /* static */
-void gfxVars::ApplyUpdate(const GfxVarUpdate& aUpdate) {
+void gfxVars::ApplyUpdate(const nsTArray<GfxVarUpdate>& aUpdate) {
   // Only subprocesses receive updates and apply them locally.
   MOZ_ASSERT(!XRE_IsParentProcess());
   MOZ_DIAGNOSTIC_ASSERT(sVarList || gGfxVarInitUpdates);
   if (sVarList) {
-    sVarList->ElementAt(aUpdate.index())->SetValue(aUpdate.value());
+    for (auto& i : aUpdate) {
+      sVarList->ElementAt(i.index())->SetValue(i.value());
+    }
   } else if (gGfxVarInitUpdates) {
     // Too early, we haven't been initialized, so just add to
     // the array waiting for the initialization...
-    gGfxVarInitUpdates->AppendElement(aUpdate);
+    gGfxVarInitUpdates->AppendElements(aUpdate);
   }
 }
 
@@ -134,9 +159,16 @@ void gfxVars::NotifyReceivers(VarBase* aVar) {
   GfxVarValue value;
   aVar->GetValue(&value);
 
-  GfxVarUpdate update(aVar->Index(), value);
+  if (XRE_IsParentProcess() && gGfxVarPendingUpdates) {
+    gGfxVarPendingUpdates->AppendElement(GfxVarUpdate(aVar->Index(), value));
+    return;
+  }
+
+  AutoTArray<GfxVarUpdate, 1> vars;
+  vars.AppendElement(GfxVarUpdate(aVar->Index(), value));
+
   for (auto& receiver : mReceivers) {
-    receiver->OnVarChanged(update);
+    receiver->OnVarChanged(vars);
   }
 }
 

@@ -17,7 +17,6 @@ load 327695-1.html
 load 329481-1.xhtml
 load 336381-1.xhtml
 load 336715-1.xhtml
-load 338391-1.xhtml
 load 338674-1.xhtml
 load 340733-1.html
 load 343730-1.xhtml
@@ -96,7 +95,6 @@ load 595606-1.html
 load 595606-2.html
 load 601247.html
 load 603531.html
-load 604262-1.html
 load 605672-1.svg
 load 606729-1.html
 load 607222.html
@@ -107,7 +105,6 @@ load 628599-1.html
 load 637116.html
 load 637214-1.svg
 load 637214-2.svg
-pref(extensions.InstallTrigger.enabled,true) pref(extensions.InstallTriggerImpl.enabled,true) load 642022-1.html
 load 646184.html
 load 666869.html
 load 667336-1.html
@@ -213,7 +210,7 @@ load 1396466.html
 load 1397795.html
 load 1400701.html
 load 1403377.html
-load 1405771.html
+asserts(1) load 1405771.html
 load 1406109-1.html
 load 1411473.html
 load 1413815.html
@@ -286,3 +283,8 @@ load 1966485.html
 load 1966466.html
 load 1969289.html
 load 1975990.html
+load 1991206.html
+load 2004132.html
+load 2014583.html
+load 2014592.html
+load 2016511.html

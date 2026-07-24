@@ -7,13 +7,12 @@
 #ifndef mozilla_dom_LocalStorageCache_h
 #define mozilla_dom_LocalStorageCache_h
 
+#include "mozilla/Atomics.h"
+#include "mozilla/Monitor.h"
+#include "nsHashKeys.h"
 #include "nsIPrincipal.h"
-
 #include "nsString.h"
 #include "nsTHashMap.h"
-#include "nsHashKeys.h"
-#include "mozilla/Monitor.h"
-#include "mozilla/Atomics.h"
 
 namespace mozilla::dom {
 
@@ -32,7 +31,7 @@ class LocalStorageCacheBridge {
 
   // The origin of the cache, result is concatenation of OriginNoSuffix() and
   // OriginSuffix(), see below.
-  virtual const nsCString Origin() const = 0;
+  virtual nsCString Origin() const = 0;
 
   // The origin attributes suffix alone, this is usually passed as an
   // |aOriginSuffix| argument to various methods
@@ -141,7 +140,7 @@ class LocalStorageCache : public LocalStorageCacheBridge {
 
   // LocalStorageCacheBridge
 
-  const nsCString Origin() const override;
+  nsCString Origin() const override;
   const nsCString& OriginNoSuffix() const override { return mOriginNoSuffix; }
   const nsCString& OriginSuffix() const override { return mOriginSuffix; }
   bool Loaded() override { return mLoaded; }

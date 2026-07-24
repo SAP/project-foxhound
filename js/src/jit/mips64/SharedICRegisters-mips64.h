@@ -26,9 +26,6 @@ static constexpr ValueOperand R2(a6);
 static constexpr Register ICTailCallReg = ra;
 static constexpr Register ICStubReg = a5;
 
-// Register used internally by MacroAssemblerMIPS.
-static constexpr Register BaselineSecondScratchReg = SecondScratchReg;
-
 // Note that ICTailCallReg is actually just the link register.
 // In MIPS code emission, we do not clobber ICTailCallReg since we keep
 // the return address for calls there.

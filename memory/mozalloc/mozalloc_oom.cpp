@@ -7,7 +7,6 @@
 
 #include "mozilla/mozalloc_abort.h"
 #include "mozilla/mozalloc_oom.h"
-#include "mozilla/Assertions.h"
 
 #define OOM_MSG_LEADER "out of memory: 0x"
 #define OOM_MSG_DIGITS "0000000000000000"  // large enough for 2^64

@@ -18,6 +18,7 @@ kind-dependencies:
     - build-fat-aar
 
 task-defaults:
+    run-on-repo-type: [hg]
     artifact-template:
         type: file
         name: public/build/{artifact_file_name}
@@ -38,10 +39,12 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - android-gradle-dependencies
             - linux64-jdk
         build-fat-aar:
-            - target.maven.tar.xz
+            - target.maven.zip
     attributes:
         build_platform: android
     dependencies:
@@ -125,7 +128,7 @@ task-defaults:
                 default: '{treeherder_group}(B)'
         platform: AC-android-all/opt
         tier: 1
-    worker-type: b-linux-medium-gcp
+    worker-type: b-linux-medium
     worker:
         chain-of-trust: true
         docker-image: {in-tree: android-components}

@@ -1,7 +1,7 @@
-import { FeatureHighlight } from "content-src/components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight";
-import { SponsoredContentHighlight } from "content-src/components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight";
 import React from "react";
 import { mount } from "enzyme";
+
+import { FeatureHighlight } from "content-src/components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight";
 
 describe("<FeatureHighlight>", () => {
   let wrapper;
@@ -75,18 +75,5 @@ describe("<FeatureHighlight>", () => {
 
     assert.calledOnce(outsideClickCallback);
     assert(wrapper.find(".feature-highlight-modal.closed").exists);
-  });
-});
-
-describe("<SponsoredContentHighlight>", () => {
-  let wrapper;
-
-  beforeEach(() => {
-    wrapper = mount(<SponsoredContentHighlight />);
-  });
-
-  it("should render", () => {
-    assert.ok(wrapper.exists());
-    assert.ok(wrapper.find(".sponsored-content-highlight").exists());
   });
 });

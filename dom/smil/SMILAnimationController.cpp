@@ -8,20 +8,20 @@
 
 #include <algorithm>
 
+#include "SMILCSSProperty.h"
+#include "SMILCompositor.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/SMILTimedElement.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/SVGAnimationElement.h"
-#include "nsContentUtils.h"
 #include "nsCSSProps.h"
+#include "nsContentUtils.h"
 #include "nsRefreshDriver.h"
-#include "mozilla/dom/Document.h"
-#include "SMILCompositor.h"
-#include "SMILCSSProperty.h"
 
 using namespace mozilla::dom;
 
@@ -57,7 +57,7 @@ void SMILAnimationController::Disconnect() {
   MOZ_ASSERT(mDocument, "disconnecting when we weren't connected...?");
   MOZ_ASSERT(mRefCnt.get() == 1,
              "Expecting to disconnect when doc is sole remaining owner");
-  NS_ASSERTION(mPauseState & SMILTimeContainer::PAUSE_PAGEHIDE,
+  NS_ASSERTION(IsPausedByType(PauseType::PageHide),
                "Expecting to be paused for pagehide before disconnect");
   mDocument = nullptr;  // (raw pointer)
 }
@@ -65,20 +65,20 @@ void SMILAnimationController::Disconnect() {
 //----------------------------------------------------------------------
 // SMILTimeContainer methods:
 
-void SMILAnimationController::Pause(uint32_t aType) {
+void SMILAnimationController::Pause(PauseType aType) {
   SMILTimeContainer::Pause(aType);
   UpdateSampling();
 }
 
-void SMILAnimationController::Resume(uint32_t aType) {
-  bool wasPaused = !!mPauseState;
+void SMILAnimationController::Resume(PauseType aType) {
+  bool wasPaused = IsPaused();
   // Update mCurrentSampleTime so that calls to GetParentTime--used for
   // calculating parent offsets--are accurate
   mCurrentSampleTime = mozilla::TimeStamp::Now();
 
   SMILTimeContainer::Resume(aType);
 
-  if (wasPaused && !mPauseState) {
+  if (wasPaused && !IsPaused()) {
     UpdateSampling();
   }
 }
@@ -162,13 +162,9 @@ void SMILAnimationController::UnregisterAnimationElement(
 //----------------------------------------------------------------------
 // Page show/hide
 
-void SMILAnimationController::OnPageShow() {
-  Resume(SMILTimeContainer::PAUSE_PAGEHIDE);
-}
+void SMILAnimationController::OnPageShow() { Resume(PauseType::PageHide); }
 
-void SMILAnimationController::OnPageHide() {
-  Pause(SMILTimeContainer::PAUSE_PAGEHIDE);
-}
+void SMILAnimationController::OnPageHide() { Pause(PauseType::PageHide); }
 
 //----------------------------------------------------------------------
 // Cycle-collection support
@@ -189,7 +185,7 @@ void SMILAnimationController::Unlink() { mLastCompositorTable = nullptr; }
 // Timer-related implementation helpers
 
 bool SMILAnimationController::ShouldSample() const {
-  return !mPauseState && !mAnimationElementTable.IsEmpty() &&
+  return !IsPaused() && !mAnimationElementTable.IsEmpty() &&
          !mChildContainerTable.IsEmpty();
 }
 
@@ -253,7 +249,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
       continue;
     }
 
-    if (!container->IsPausedByType(SMILTimeContainer::PAUSE_BEGIN) &&
+    if (!container->IsPausedByType(PauseType::Begin) &&
         (container->NeedsSample() || !aSkipUnchangedContainers)) {
       container->ClearMilestones();
       container->Sample();
@@ -283,7 +279,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
   // save iterating over the animation elements twice.
 
   // Create the compositor table
-  UniquePtr<SMILCompositorTable> currentCompositorTable(
+  std::unique_ptr<SMILCompositorTable> currentCompositorTable(
       new SMILCompositorTable(0));
   nsTArray<RefPtr<SVGAnimationElement>> animElems(
       mAnimationElementTable.Count());
@@ -401,7 +397,7 @@ void SMILAnimationController::DoMilestoneSamples() {
     // sample.
     SMILMilestone nextMilestone(GetCurrentTimeAsSMILTime() + 1, true);
     for (SMILTimeContainer* container : mChildContainerTable.Keys()) {
-      if (container->IsPausedByType(SMILTimeContainer::PAUSE_BEGIN)) {
+      if (container->IsPausedByType(PauseType::Begin)) {
         continue;
       }
       SMILMilestone thisMilestone;
@@ -418,7 +414,7 @@ void SMILAnimationController::DoMilestoneSamples() {
 
     nsTArray<RefPtr<dom::SVGAnimationElement>> elements;
     for (SMILTimeContainer* container : mChildContainerTable.Keys()) {
-      if (container->IsPausedByType(SMILTimeContainer::PAUSE_BEGIN)) {
+      if (container->IsPausedByType(PauseType::Begin)) {
         continue;
       }
       container->PopMilestoneElementsAtMilestone(nextMilestone, elements);
@@ -520,12 +516,16 @@ void SMILAnimationController::AddAnimationToCompositorTable(
   }
 }
 
-static inline bool IsTransformAttribute(int32_t aNamespaceID,
-                                        nsAtom* aAttributeName) {
-  return aNamespaceID == kNameSpaceID_None &&
-         (aAttributeName == nsGkAtoms::transform ||
-          aAttributeName == nsGkAtoms::patternTransform ||
-          aAttributeName == nsGkAtoms::gradientTransform);
+static inline bool IsTransformAttribute(const Element* aElement,
+                                        int32_t aNamespaceID,
+                                        const nsAtom* aAttributeName) {
+  if (aNamespaceID != kNameSpaceID_None) {
+    return false;
+  }
+  if (auto* svgElement = SVGElement::FromNode(aElement)) {
+    return svgElement->GetTransformListAttrName() == aAttributeName;
+  }
+  return false;
 }
 
 // Helper function that, given a SVGAnimationElement, looks up its target
@@ -552,8 +552,8 @@ bool SMILAnimationController::GetTargetIdentifierForAnimation(
 
   // animateTransform can only animate transforms, conversely transforms
   // can only be animated by animateTransform
-  if (IsTransformAttribute(attributeNamespaceID, attributeName) !=
-      (aAnimElem->IsSVGElement(nsGkAtoms::animateTransform)))
+  if (IsTransformAttribute(targetElem, attributeNamespaceID, attributeName) !=
+      aAnimElem->IsSVGElement(nsGkAtoms::animateTransform))
     return false;
 
   // Construct the key

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPipe_h__
-#define nsPipe_h__
+#ifndef nsPipe_h_
+#define nsPipe_h_
 
 #define NS_PIPE_CONTRACTID "@mozilla.org/pipe;1"
 #define NS_PIPE_CID                           \
@@ -18,4 +18,4 @@
 // Generic factory constructor for the nsPipe class
 nsresult nsPipeConstructor(REFNSIID iid, void** result);
 
-#endif  // !defined(nsPipe_h__)
+#endif  // !defined(nsPipe_h_)

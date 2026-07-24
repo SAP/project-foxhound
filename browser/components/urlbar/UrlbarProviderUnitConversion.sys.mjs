@@ -8,27 +8,27 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-import { UnitConverterSimple } from "resource:///modules/UnitConverterSimple.sys.mjs";
-import { UnitConverterTemperature } from "resource:///modules/UnitConverterTemperature.sys.mjs";
-import { UnitConverterTimezone } from "resource:///modules/UnitConverterTimezone.sys.mjs";
+import { UnitConverterSimple } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterSimple.sys.mjs";
+import { UnitConverterTemperature } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterTemperature.sys.mjs";
+import { UnitConverterTimezone } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterTimezone.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 const CONVERTERS = [
@@ -75,20 +75,11 @@ const VIEW_TEMPLATE = {
 /**
  * Provide a feature that converts given units.
  */
-class ProviderUnitConversion extends UrlbarProvider {
+export class UrlbarProviderUnitConversion extends UrlbarProvider {
   constructor() {
     super();
     lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
     lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-  }
-
-  /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "UnitConversion";
   }
 
   /**
@@ -143,28 +134,23 @@ class ProviderUnitConversion extends UrlbarProvider {
   }
 
   /**
-   * This method is called by the providers manager when a query starts to fetch
-   * each extension provider's results.  It fires the resultsRequested event.
+   * Starts querying.
    *
    * @param {UrlbarQueryContext} queryContext
-   *   The query context object.
-   * @param {Function} addCallback
-   *   The callback invoked by this method to add each result.
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   startQuery(queryContext, addCallback) {
-    const result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
+    const result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      suggestedIndex: lazy.UrlbarPrefs.get("unitConversion.suggestedIndex"),
+      payload: {
         dynamicType: DYNAMIC_RESULT_TYPE,
         output: this._activeResult,
         input: queryContext.searchString,
-      }
-    );
-    result.suggestedIndex = lazy.UrlbarPrefs.get(
-      "unitConversion.suggestedIndex"
-    );
-
+      },
+    });
     addCallback(this, result);
   }
 
@@ -176,5 +162,3 @@ class ProviderUnitConversion extends UrlbarProvider {
     lazy.ClipboardHelper.copyString(textContent);
   }
 }
-
-export const UrlbarProviderUnitConversion = new ProviderUnitConversion();

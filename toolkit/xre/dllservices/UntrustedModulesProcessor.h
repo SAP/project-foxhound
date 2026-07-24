@@ -8,14 +8,12 @@
 #define mozilla_UntrustedModulesProcessor_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/glue/WindowsDllServices.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UntrustedModulesData.h"
-#include "mozilla/Vector.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"

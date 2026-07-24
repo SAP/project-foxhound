@@ -12,23 +12,24 @@ support-files = [
   "keyword_form.html",
 ]
 prefs = [
-  "sidebar.revamp=false",
+  # Disable tab previews as some tests click on the toolbar.
+  "browser.tabs.hoverPreview.enabled=false",
+  "browser.tabs.groups.hoverPreview.enabled=false",
 ]
 
 ["browser_addBookmarkForFrame.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && opt && socketprocess_networking", # Bug 1775655
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking", # Bug 1775655
 ]
 
 ["browser_autoshow_bookmarks_toolbar.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan"] # Bug 1829323
 
 ["browser_bookmarkMenu_hiddenWindow.js"]
-run-if = ["os == 'mac'"] # Mac-only functionality
+run-if = [
+  "os == 'mac'", # Mac-only functionality
+]
 
 ["browser_bookmarkProperties_addFolderDefaultButton.js"]
-
-["browser_bookmarkProperties_addKeywordForThisSearch.js"]
 
 ["browser_bookmarkProperties_bookmarkAllTabs.js"]
 
@@ -47,7 +48,9 @@ run-if = ["os == 'mac'"] # Mac-only functionality
 ["browser_bookmarkProperties_readOnlyRoot.js"]
 
 ["browser_bookmarkProperties_remember_folders.js"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug"] # Bug 1869782
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1869782
+]
 
 ["browser_bookmarkProperties_speculativeConnection.js"]
 
@@ -55,18 +58,25 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && deb
 
 ["browser_bookmark_add_tags.js"]
 https_first_disabled = true
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775656
+]
 
 ["browser_bookmark_backup_export_import.js"]
 
 ["browser_bookmark_change_location.js"]
 
 ["browser_bookmark_context_menu_contents.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking"] # Bug 1775657
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1775657
+]
 
 ["browser_bookmark_copy_folder_tree.js"]
 tags = "os_integration"
 
 ["browser_bookmark_current_tabs.js"]
+
+["browser_bookmark_drag_splitview.js"]
 
 ["browser_bookmark_folder_moveability.js"]
 
@@ -75,7 +85,9 @@ tags = "os_integration"
 ["browser_bookmark_popup.js"]
 
 ["browser_bookmark_private_window.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1937891
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1937891
+]
 
 ["browser_bookmark_remove_tags.js"]
 
@@ -89,7 +101,9 @@ support-files = ["bookmarklet_windowOpen_dummy.html"]
 ["browser_bookmarksProperties.js"]
 
 ["browser_bookmarks_change_title.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1961550
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1961550
+]
 
 ["browser_bookmarks_change_url.js"]
 
@@ -105,10 +119,16 @@ support-files = ["pageopeningwindow.html"]
 ["browser_bookmarks_toolbar_drag_with_chevron.js"]
 
 ["browser_bookmarks_toolbar_telemetry.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_bug427633_no_newfolder_if_noip.js"]
 
 ["browser_bug485100-change-case-loses-tag.js"]
+skip-if = [
+  "socketprocess_networking", # Bug 1973561
+]
 
 ["browser_bug631374_tags_selector_scroll.js"]
 support-files = ["favicon-normal16.png"]
@@ -213,6 +233,8 @@ https_first_disabled = true
 
 ["browser_paste_resets_cut_highlights.js"]
 
+["browser_recursive_hierarchies.js"]
+
 ["browser_remove_bookmarks.js"]
 
 ["browser_sidebar_bookmarks_telemetry.js"]
@@ -230,6 +252,8 @@ https_first_disabled = true
 ["browser_stayopenmenu.js"]
 
 ["browser_toolbar_drop_bookmarklet.js"]
+
+["browser_toolbar_drop_indicator_empty.js"]
 
 ["browser_toolbar_drop_multiple_flavors.js"]
 

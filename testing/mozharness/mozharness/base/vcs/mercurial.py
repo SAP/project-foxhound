@@ -2,8 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-"""Mercurial VCS support.
-"""
+"""Mercurial VCS support."""
 
 import hashlib
 import os
@@ -52,7 +51,7 @@ class RepositoryUpdateRevisionParser(OutputParser):
         if m:
             self.revision = m.group(1)
 
-        return super(RepositoryUpdateRevisionParser, self).parse_single_line(line)
+        return super().parse_single_line(line)
 
 
 def make_hg_url(hg_host, repo_path, protocol="http", revision=None, filename=None):
@@ -80,7 +79,7 @@ class MercurialVCS(ScriptMixin, LogMixin, TransferMixin):
     #  get_branches, cleanOutgoingRevs
 
     def __init__(self, log_obj=None, config=None, vcs_config=None, script_obj=None):
-        super(MercurialVCS, self).__init__()
+        super().__init__()
         self.can_share = None
         self.log_obj = log_obj
         self.script_obj = script_obj
@@ -382,7 +381,7 @@ class MercurialVCS(ScriptMixin, LogMixin, TransferMixin):
         # only have 1 local copy of logical repo stores.
         if not share_base:
             raise VCSException(
-                "vcs share base not defined; " "refusing to operate sub-optimally"
+                "vcs share base not defined; refusing to operate sub-optimally"
             )
 
         if not self.robustcheckout_path:

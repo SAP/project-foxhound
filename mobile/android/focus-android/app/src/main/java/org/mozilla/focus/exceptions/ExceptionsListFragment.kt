@@ -10,21 +10,19 @@ import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.CompoundButton
 import android.widget.TextView
+import androidx.annotation.LayoutRes
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionException
 import org.mozilla.focus.GleanMetrics.TrackingProtectionExceptions
@@ -39,7 +37,6 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.utils.ViewUtils
 import java.util.Collections
-import kotlin.coroutines.CoroutineContext
 
 private const val REMOVE_EXCEPTIONS_DISABLED_ALPHA = 0.5f
 typealias DomainFormatter = (String) -> String
@@ -47,10 +44,8 @@ typealias DomainFormatter = (String) -> String
 /**
  * Fragment showing settings UI listing all exception domains.
  */
-open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
-    private var job = Job()
-    override val coroutineContext: CoroutineContext
-        get() = job + Dispatchers.Main
+open class ExceptionsListFragment : BaseSettingsLikeFragment() {
+
     private var _binding: FragmentExceptionsDomainsBinding? = null
     protected val binding get() = _binding!!
 
@@ -152,8 +147,6 @@ open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
     override fun onResume() {
         super.onResume()
 
-        job = Job()
-
         showToolbar(getString(R.string.preference_exceptions))
 
         (binding.exceptionList.adapter as DomainListAdapter).refresh(requireActivity()) {
@@ -167,11 +160,6 @@ open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
                 activity?.invalidateOptionsMenu()
             }
         }
-    }
-
-    override fun onStop() {
-        job.cancel()
-        super.onStop()
     }
 
     override fun onDestroyView() {
@@ -212,7 +200,7 @@ open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
         private val selectedExceptions: MutableList<TrackingProtectionException> = mutableListOf()
 
         fun refresh(context: Context, body: (() -> Unit)? = null) {
-            this@ExceptionsListFragment.launch(Dispatchers.Main) {
+            viewLifecycleOwner.lifecycleScope.launch {
                 context.components.trackingProtectionUseCases.fetchExceptions {
                     exceptions = it
                     notifyDataSetChanged()
@@ -275,6 +263,7 @@ open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
         val handleView: View = itemView.findViewById(R.id.handleView)
 
         companion object {
+            @LayoutRes
             val LAYOUT_ID = R.layout.item_custom_domain
         }
 
@@ -300,11 +289,9 @@ open class ExceptionsListFragment : BaseSettingsLikeFragment(), CoroutineScope {
             }
 
             handleView.isVisible = isSelectionMode
-            handleView.setOnTouchListener { _, event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    itemTouchHelper.startDrag(this)
-                }
-                false
+            handleView.setOnLongClickListener {
+                itemTouchHelper.startDrag(this)
+                true
             }
 
             if (isSelectionMode) {

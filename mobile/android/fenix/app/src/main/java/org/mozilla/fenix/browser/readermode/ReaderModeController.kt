@@ -12,6 +12,7 @@ import androidx.appcompat.content.res.AppCompatResources
 import mozilla.components.feature.readerview.ReaderViewFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import org.mozilla.fenix.R
+import mozilla.components.feature.readerview.R as readerviewR
 
 /**
  * An interface that exposes the hide and show reader view functions of a ReaderViewFeature
@@ -67,8 +68,8 @@ class DefaultReaderModeController(
 
     private fun themeReaderViewControlsForPrivateMode(view: View) = with(view) {
         listOf(
-            R.id.mozac_feature_readerview_font_size_decrease,
-            R.id.mozac_feature_readerview_font_size_increase,
+            readerviewR.id.mozac_feature_readerview_font_size_decrease,
+            readerviewR.id.mozac_feature_readerview_font_size_increase,
         ).map {
             findViewById<Button>(it)
         }.forEach {
@@ -76,8 +77,8 @@ class DefaultReaderModeController(
         }
 
         listOf(
-            R.id.mozac_feature_readerview_font_serif,
-            R.id.mozac_feature_readerview_font_sans_serif,
+            readerviewR.id.mozac_feature_readerview_font_serif,
+            readerviewR.id.mozac_feature_readerview_font_sans_serif,
         ).map {
             findViewById<RadioButton>(it)
         }.forEach {

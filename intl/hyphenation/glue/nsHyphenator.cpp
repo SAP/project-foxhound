@@ -26,14 +26,16 @@
 
 using namespace mozilla;
 
-void DefaultDelete<const HyphDic>::operator()(const HyphDic* aHyph) const {
+namespace std {
+void default_delete<const HyphDic>::operator()(const HyphDic* aHyph) const {
   mapped_hyph_free_dictionary(const_cast<HyphDic*>(aHyph));
 }
 
-void DefaultDelete<const CompiledData>::operator()(
+void default_delete<const CompiledData>::operator()(
     const CompiledData* aData) const {
   mapped_hyph_free_compiled_data(const_cast<CompiledData*>(aData));
 }
+}  // namespace std
 
 static const uint8_t* GetItemPtrFromJarURI(nsIJARURI* aJAR, uint32_t* aLength) {
   // Try to get the jarfile's nsZipArchive, find the relevant item, and return

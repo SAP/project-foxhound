@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -17,7 +17,17 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/search/SERPCategorization.sys.mjs",
   SERPCategorizationEventScheduler:
     "moz-src:///browser/components/search/SERPCategorization.sys.mjs",
+  logConsole: () => {
+    return console.createInstance({
+      prefix: "SearchTelemetry",
+      maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
+    });
+  },
 });
+
+/**
+ * @typedef {typeof lazy.BrowserSearchTelemetry.KNOWN_SEARCH_SOURCES} KNOWN_SEARCH_SOURCES
+ */
 
 // Exported for tests.
 export const ADLINK_CHECK_TIMEOUT_MS = 1000;
@@ -35,13 +45,6 @@ export const SEARCH_TELEMETRY_SHARED = {
 };
 
 const impressionIdsWithoutEngagementsSet = new Set();
-
-ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
-  return console.createInstance({
-    prefix: "SearchTelemetry",
-    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
-  });
-});
 
 export const SearchSERPTelemetryUtils = {
   ACTIONS: {
@@ -177,6 +180,8 @@ const AD_COMPONENTS = [
  * @property {string[]} followOnParamNames
  *   An array of query parameter names that are used when a follow-on search
  *   occurs.
+ * @property {ImpressionAttribute[]} impressionAttributes
+ *  An array of conditions to check and report to the impression.
  * @property {boolean} isSPA
  *   Whether the provider is a single page app. This was deprecated in Fx 142
  *   and should no longer be used.
@@ -191,13 +196,58 @@ const AD_COMPONENTS = [
  * @property {SignedInCookies[]} signedInCookies
  *   An array of cookie details that are used to determine whether a client is
  *   signed in to a provider's account.
+ * @property {string} searchMode
+ *  The mode which the search page is in. If it is in the normal search mode,
+ *  then no value is reported. Possible values are: `image_search`.
  * @property {ShoppingTab} shoppingTab
- *   Shopping page parameter.
+ *   Shopping page parameter. Deprecated but still in use for older versions.
  * @property {string[]} taggedCodes
  *   An array of partner codes to match against the parameters in the url.
  *   Matching one of these codes will report the SERP as tagged.
  * @property {string} telemetryId
  *   The telemetry identifier for the provider.
+ */
+
+/**
+ * @typedef {object} ImpressionAttributeUrlPattern
+ *
+ * @property {RegExp} regexp
+ *   The regular expression to match against the URL.
+ */
+
+/**
+ * @typedef {object} ImpressionAttributeElementPattern
+ *
+ * @property {string} selector
+ *   The CSS selector to find the element.
+ * @property {string} attribute
+ *   The attribute of the element to check.
+ * @property {RegExp} regexp
+ *   The regular expression to match against the attribute's value.
+ */
+
+/**
+ * @typedef {object} ImpressionAttributeComponent
+ *
+ * @property {string} type
+ *   The type of component to report to telemetry.
+ * @property {boolean} countImpressions
+ *   Whether to count the number of impressions for this component.
+ * @property {boolean} trackEngagement
+ *   Whether to track engagements for this component.
+ */
+
+/**
+ * @typedef {object} ImpressionAttribute
+ *
+ * @property {string} key
+ *   The key used to store the result in telemetry. e.g. `is_shopping_`
+ * @property {ImpressionAttributeUrlPattern} [url]
+ *   The metadata to use to check against the URL in the parent process.
+ * @property {ImpressionAttributeElementPattern} [element]
+ *   The metadata to use to check against an element in the content process.
+ * @property {string} [value]
+ *   The value to use directly without any checking.
  */
 
 /**
@@ -262,8 +312,10 @@ class TelemetryHandler {
   // on SERPs.
   #subframeRegexps = [];
 
-  // _browserSourceMap is a map of the latest search source for a particular
-  // browser - one of the KNOWN_SEARCH_SOURCES in BrowserSearchTelemetry.
+  /**
+   * @type {WeakMap<MozBrowser, keyof KNOWN_SEARCH_SOURCES>}
+   *   A map of the latest search source for a particular browser.
+   */
   _browserSourceMap = new WeakMap();
 
   /**
@@ -278,7 +330,7 @@ class TelemetryHandler {
    * Sets the source of a SERP visit from something that occured in content
    * rather than from the browser.
    *
-   * @param {browser} browser
+   * @param {MozBrowser} browser
    *   The browser object associated with the page that should be a SERP.
    * @param {string} source
    *   The source that started the load. One of
@@ -394,9 +446,9 @@ class TelemetryHandler {
    * Records the search source for particular browsers, in case it needs
    * to be associated with a SERP.
    *
-   * @param {browser} browser
+   * @param {MozBrowser} browser
    *   The browser where the search originated.
-   * @param {string} source
+   * @param {keyof KNOWN_SEARCH_SOURCES} source
    *    Where the search originated from.
    */
   recordBrowserSource(browser, source) {
@@ -407,7 +459,7 @@ class TelemetryHandler {
    * Records the newtab source for particular browsers, in case it needs
    * to be associated with a SERP.
    *
-   * @param {browser} browser
+   * @param {MozBrowser} browser
    *   The browser where the search originated.
    * @param {string} newtabSessionId
    *    The sessionId of the newtab session the search originated from.
@@ -516,6 +568,19 @@ class TelemetryHandler {
           this.#subframeRegexps.push(regexp);
           return { ...obj, regexp };
         }) ?? [];
+
+      if (provider.impressionAttributes?.length) {
+        newProvider.impressionAttributes = provider.impressionAttributes.map(
+          attribute => {
+            if (attribute.url?.regexp) {
+              let newAttribute = structuredClone(attribute);
+              newAttribute.url.regexp = new RegExp(attribute.url.regexp);
+              return newAttribute;
+            }
+            return attribute;
+          }
+        );
+      }
 
       return newProvider;
     });
@@ -669,7 +734,7 @@ class TelemetryHandler {
    * 3. Untrack the browser if we're tracking it and switching pages.
    * 4. Track the browser if we're now on a default search page.
    *
-   * @param {BrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser element related to the request.
    * @param {string} url
    *   The url of the request.
@@ -1149,8 +1214,8 @@ class TelemetryHandler {
    *
    * @param {string} url The url to match.
    * @returns {null|object} Returns null if there is no match found. Otherwise,
-   *   returns an object of strings for provider, code, type, whether it's a
-   *   single page app, and the search query used.
+   *   returns an object of strings for provider, code, type, search query used,
+   *   whether it's a single page app, page type and search mode.
    */
   _checkURLForSerpMatch(url) {
     let searchProviderInfo = this._getProviderInfoForURL(url);
@@ -1260,6 +1325,18 @@ class TelemetryHandler {
       }
     }
 
+    /** @type {?string} */
+    let searchMode;
+    if (searchProviderInfo.searchMode) {
+      for (let [param, paramMode] of Object.entries(
+        searchProviderInfo.searchMode
+      )) {
+        if (queries.has(param)) {
+          searchMode = paramMode;
+        }
+      }
+    }
+
     return {
       provider: searchProviderInfo.telemetryId,
       type,
@@ -1267,6 +1344,7 @@ class TelemetryHandler {
       searchQuery,
       isSPA,
       pageType,
+      searchMode,
     };
   }
 
@@ -1308,7 +1386,7 @@ class TelemetryHandler {
    * caches information that shouldn't be changed during the lifetime of the
    * impression.
    *
-   * @param {browser} browser
+   * @param {MozBrowser} browser
    *   The browser associated with the SERP.
    * @param {string} url
    *   The URL of the SERP.
@@ -1347,9 +1425,18 @@ class TelemetryHandler {
       partnerCode = info.code;
     }
 
-    let isShoppingPage = false;
-    if (searchProviderInfo.shoppingTab?.regexp) {
-      isShoppingPage = searchProviderInfo.shoppingTab.regexp.test(url);
+    let urlBasedAttributes = {};
+    if (searchProviderInfo.impressionAttributes?.length) {
+      for (let attribute of searchProviderInfo.impressionAttributes) {
+        // If the provider has a value, we always set it.
+        if (attribute.value) {
+          urlBasedAttributes[attribute.key] = attribute.value;
+        }
+
+        if (attribute.url?.regexp) {
+          urlBasedAttributes[attribute.key] = attribute.url.regexp.test(url);
+        }
+      }
     }
 
     let isPrivate =
@@ -1374,9 +1461,10 @@ class TelemetryHandler {
       tagged: info.type.startsWith("tagged"),
       partnerCode,
       source,
-      isShoppingPage,
+      searchMode: info.searchMode,
       isPrivate,
       isSignedIn,
+      urlBasedAttributes,
     };
 
     return data;
@@ -1616,11 +1704,10 @@ class ContentHandler {
       (wrappedChannel.channel.loadInfo.isTopLevelLoad ||
         info.nonAdsLinkRegexps.some(r => r.test(url)))
     ) {
-      let browser = wrappedChannel.browserElement;
+      let browser = /** @type {MozBrowser} */ (wrappedChannel.browserElement);
 
       // If the load is from history, don't record an event.
       if (
-        // @ts-expect-error - Bug 1957632
         browser?.browsingContext.webProgress?.loadType &
         Ci.nsIDocShell.LOAD_CMD_HISTORY
       ) {
@@ -1630,7 +1717,7 @@ class ContentHandler {
 
       // Step 1: Check if the browser associated with the request was a
       // tracked SERP.
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let telemetryState;
       let isFromNewtab = false;
       if (item.browserTelemetryStateMap.has(browser)) {
@@ -1655,7 +1742,6 @@ class ContentHandler {
           // If the count is more than 1, then multiple open SERPs contain the
           // same search term, so try to find the specific browser that opened
           // the request.
-          // @ts-expect-error - Bug 1957632
           let tabBrowser = browser.getTabBrowser();
           let tab = tabBrowser.getTabForBrowser(browser).openerTab;
           // A tab will not always have an openerTab, as first tabs in new
@@ -1693,7 +1779,7 @@ class ContentHandler {
           isSerp = true;
         }
 
-        let startFindComponent = Cu.now();
+        let startFindComponent = ChromeUtils.now();
         let parsedUrl = new URL(url);
 
         // Organic links may contain query param values mapped to links shown
@@ -1814,10 +1900,8 @@ class ContentHandler {
     // The sponsored link could be opened in a new tab, in which case the
     // browser URI may not match a SERP. Thus, try to find a tab that contains
     // a URI matching a SERP.
-    let browser = wrappedChannel.browserElement;
-    // @ts-expect-error - Bug 1957632
+    let browser = /** @type {MozBrowser} */ (wrappedChannel.browserElement);
     if (browser?.currentURI.spec == "about:blank") {
-      // @ts-expect-error - Bug 1957632
       let tabBrowser = browser.getTabBrowser();
       let tab = tabBrowser.getTabForBrowser(browser).openerTab;
       if (tab) {
@@ -1839,7 +1923,6 @@ class ContentHandler {
       return null;
     }
 
-    // @ts-expect-error - Bug 1957632
     return browser?.currentURI.spec;
   }
 
@@ -2029,24 +2112,32 @@ class ContentHandler {
     let impressionId = telemetryState.impressionId;
     if (impressionId && !telemetryState.impressionRecorded) {
       let impressionInfo = telemetryState.impressionInfo;
+
       Glean.serp.impression.record({
         impression_id: impressionId,
         provider: impressionInfo.provider,
         tagged: impressionInfo.tagged,
         partner_code: impressionInfo.partnerCode,
+        search_mode: impressionInfo.searchMode,
         source: impressionInfo.source,
-        shopping_tab_displayed: info.shoppingTabDisplayed,
-        is_shopping_page: impressionInfo.isShoppingPage,
         is_private: impressionInfo.isPrivate,
         is_signed_in: impressionInfo.isSignedIn,
+        is_shopping_page:
+          impressionInfo.urlBasedAttributes?.is_shopping_page ?? "false",
+        shopping_tab_displayed:
+          info.elementBasedAttributes?.shopping_tab_displayed ?? "false",
+        has_ai_summary: info.elementBasedAttributes?.has_ai_summary ?? "false",
       });
 
       telemetryState.impressionRecorded = true;
 
+      let { urlBasedAttributes, ...restImpressionInfo } = impressionInfo;
+
       lazy.logConsole.debug(`Reported Impression:`, {
         impressionId,
-        ...impressionInfo,
-        shoppingTabDisplayed: info.shoppingTabDisplayed,
+        ...restImpressionInfo,
+        ...urlBasedAttributes,
+        ...info.elementBasedAttributes,
       });
       Services.obs.notifyObservers(null, "reported-page-with-impression");
     } else if (telemetryState.impressionRecorded) {
@@ -2066,19 +2157,26 @@ class ContentHandler {
       provider: impressionInfo.provider,
       tagged: impressionInfo.tagged,
       partner_code: impressionInfo.partnerCode,
+      search_mode: impressionInfo.searchMode,
       source: impressionInfo.source,
-      shopping_tab_displayed: false,
-      is_shopping_page: impressionInfo.isShoppingPage,
       is_private: impressionInfo.isPrivate,
       is_signed_in: impressionInfo.isSignedIn,
+      is_shopping_page:
+        impressionInfo.urlBasedAttributes?.is_shopping_page ?? "false",
+      shopping_tab_displayed: "unknown",
+      has_ai_summary: "unknown",
     });
 
     telemetryState.impressionRecorded = true;
 
+    let { urlBasedAttributes, ...restImpressionInfo } = impressionInfo;
+
     lazy.logConsole.debug(`Reported Impression:`, {
       impressionId: telemetryState.impressionId,
-      ...impressionInfo,
-      shoppingTabDisplayed: false,
+      ...restImpressionInfo,
+      ...urlBasedAttributes,
+      shopping_tab_displayed: "unknown",
+      has_ai_summary: "unknown",
     });
     Services.obs.notifyObservers(null, "reported-page-with-impression");
   }
@@ -2118,7 +2216,11 @@ class ContentHandler {
             partner_code: impressionInfo.partnerCode,
             provider: impressionInfo.provider,
             tagged: impressionInfo.tagged,
-            is_shopping_page: impressionInfo.isShoppingPage,
+            // Default to false. Page categorization should only use
+            // specific parts of the impression info hence we explicitly
+            // check for the attribute.
+            is_shopping_page:
+              impressionInfo.urlBasedAttributes?.is_shopping_page || false,
             num_ads_clicked: telemetryState.adsClicked,
             num_ads_hidden: telemetryState.adsHidden,
             num_ads_loaded: telemetryState.adsLoaded,

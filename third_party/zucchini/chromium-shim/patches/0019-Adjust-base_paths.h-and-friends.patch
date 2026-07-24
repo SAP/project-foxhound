@@ -1,0 +1,289 @@
+Adjust base_paths.h and friends
+
+We limit dependencies by removing paths not used by zucchini. We also
+adapt paths that link test executables to the root of the source tree.
+---
+ base/base_paths.cc       |  2 ++
+ base/base_paths.h        |  4 ++++
+ base/base_paths_apple.cc |  4 ++++
+ base/base_paths_mac.mm   |  8 +++++++
+ base/base_paths_posix.cc | 21 +++++++++++++++-
+ base/base_paths_win.cc   | 24 +++++++++++++++++++
+ base/base_paths_win.h    |  2 ++
+ 7 files changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/base/base_paths.cc b/base/base_paths.cc
+index ae29db4de0db..c55281f4811d 100644
+--- a/base/base_paths.cc
++++ b/base/base_paths.cc
+@@ -26,8 +26,10 @@ bool PathProvider(int key, FilePath* result) {
+         return false;
+       *result = result->DirName();
+       return true;
++#if !defined(MOZ_ZUCCHINI)
+     case DIR_ASSETS:
+       return PathService::Get(DIR_MODULE, result);
++#endif  // !defined(MOZ_ZUCCHINI)
+ #endif  // !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_IOS)
+     case DIR_TEMP:
+       return GetTempDir(result);
+diff --git a/base/base_paths.h b/base/base_paths.h
+index 6e7a86ea1ed1..f0de57d28b09 100644
+--- a/base/base_paths.h
++++ b/base/base_paths.h
+@@ -49,7 +49,9 @@ enum BasePathKey {
+   // details.
+   DIR_MODULE,  // Directory containing FILE_MODULE.
+ #endif
++#if !defined(MOZ_ZUCCHINI)
+   DIR_ASSETS,  // Directory that contains application assets.
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+   // The following refer to system and system user directories.
+   DIR_TEMP,  // Temporary directory for the system and/or user.
+@@ -57,7 +59,9 @@ enum BasePathKey {
+              // like "C:\Users\<user>"  which isn't necessarily a great
+              // place to put files.
+ #if !BUILDFLAG(IS_IOS)
++#if !defined(MOZ_ZUCCHINI)
+   DIR_USER_DESKTOP,  // The current user's Desktop.
++#endif  // !defined(MOZ_ZUCCHINI)
+ #endif
+ 
+   // The following refer to the applications current environment.
+diff --git a/base/base_paths_apple.cc b/base/base_paths_apple.cc
+index 62e3caaa15e3..de2e0d5ecc95 100644
+--- a/base/base_paths_apple.cc
++++ b/base/base_paths_apple.cc
+@@ -12,7 +12,9 @@
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/strings/string_util.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/threading/thread_restrictions.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ namespace base::apple::internal {
+ 
+@@ -32,7 +34,9 @@ base::FilePath GetExecutablePath() {
+   // paths such as DIR_SRC_TEST_DATA_ROOT can work, since we expect absolute
+   // paths to be returned here.
+   // TODO(bauerb): http://crbug.com/259796, http://crbug.com/373477
++#if !defined(MOZ_ZUCCHINI)
+   base::ScopedAllowBlocking allow_blocking;
++#endif  // !defined(MOZ_ZUCCHINI)
+   return base::MakeAbsoluteFilePath(base::FilePath(executable_path));
+ }
+ 
+diff --git a/base/base_paths_mac.mm b/base/base_paths_mac.mm
+index 1c6c840dc82b..855f31d50e2e 100644
+--- a/base/base_paths_mac.mm
++++ b/base/base_paths_mac.mm
+@@ -44,6 +44,7 @@ bool PathProviderMac(int key, base::FilePath* result) {
+       // Start with the executable's directory.
+       *result = result->DirName();
+ 
++#if !defined(MOZ_ZUCCHINI)
+       if (base::mac::AmIBundled()) {
+         // The bundled app executables (Chromium, TestShell, etc) live five
+         // levels down, eg:
+@@ -54,7 +55,13 @@ bool PathProviderMac(int key, base::FilePath* result) {
+         // src/xcodebuild/{Debug|Release}/base_unittests
+         *result = result->DirName().DirName();
+       }
++#else
++      // Firefox unit tests execute three levels deep from the source root, eg:
++      // ./obj-aarch64-apple-darwin24.5.0/dist/bin/zucchini-gtest
++      *result = result->DirName().DirName().DirName();
++#endif  // !defined(MOZ_ZUCCHINI)
+       return true;
++#if !defined(MOZ_ZUCCHINI)
+     case base::DIR_USER_DESKTOP:
+       return base::mac::GetUserDirectory(NSDesktopDirectory, result);
+     case base::DIR_ASSETS:
+@@ -66,6 +73,7 @@ bool PathProviderMac(int key, base::FilePath* result) {
+       return true;
+     case base::DIR_CACHE:
+       return base::mac::GetUserDirectory(NSCachesDirectory, result);
++#endif  // !defined(MOZ_ZUCCHINI)
+     default:
+       return false;
+   }
+diff --git a/base/base_paths_posix.cc b/base/base_paths_posix.cc
+index 046b05bf25d3..d0aa34a44779 100644
+--- a/base/base_paths_posix.cc
++++ b/base/base_paths_posix.cc
+@@ -15,14 +15,22 @@
+ #include <ostream>
+ #include <string>
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/environment.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/logging.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/nix/xdg_util.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/notreached.h"
+ #include "base/path_service.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/process/process_metrics.h"
++#else
++#define kProcSelfExe "/proc/self/exe"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "build/build_config.h"
+ 
+ #if BUILDFLAG(IS_FREEBSD)
+@@ -78,6 +86,7 @@ bool PathProviderPosix(int key, FilePath* result) {
+ #endif
+     }
+     case DIR_SRC_TEST_DATA_ROOT: {
++#if !defined(MOZ_ZUCCHINI)
+       // Allow passing this in the environment, for more flexibility in build
+       // tree configurations (sub-project builds, gyp --output_dir, etc.)
+       std::unique_ptr<Environment> env(Environment::Create());
+@@ -98,11 +107,20 @@ bool PathProviderPosix(int key, FilePath* result) {
+         *result = path.DirName().DirName();
+         return true;
+       }
+-
++#else
++      FilePath path;
++      // On POSIX, Firefox unit tests execute three levels deep from the source root.
++      // For example:  ./obj-x86_64-pc-linux-gnu/dist/bin/zucchini-gtest
++      if (PathService::Get(DIR_EXE, &path)) {
++        *result = path.DirName().DirName().DirName();
++        return true;
++      }
++#endif  // !defined(MOZ_ZUCCHINI)
+       DLOG(ERROR) << "Couldn't find your source root.  "
+                   << "Try running from your chromium/src directory.";
+       return false;
+     }
++#if !defined(MOZ_ZUCCHINI)
+     case DIR_USER_DESKTOP:
+       *result = nix::GetXDGUserDirectory("DESKTOP", "Desktop");
+       return true;
+@@ -113,6 +131,7 @@ bool PathProviderPosix(int key, FilePath* result) {
+       *result = cache_dir;
+       return true;
+     }
++#endif  // !defined(MOZ_ZUCCHINI)
+   }
+   return false;
+ }
+diff --git a/base/base_paths_win.cc b/base/base_paths_win.cc
+index 3ac45e74666f..ce7ce4b6899e 100644
+--- a/base/base_paths_win.cc
++++ b/base/base_paths_win.cc
+@@ -8,13 +8,20 @@
+ #include <shlobj.h>
+ 
+ #include "base/base_paths.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/environment.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/files/file_path.h"
++#if defined(MOZ_ZUCCHINI)
++#include "base/notreached.h"
++#endif  // defined(MOZ_ZUCCHINI)
+ #include "base/path_service.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/win/current_module.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/win/scoped_co_mem.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/win/windows_version.h"
+ 
+ using base::FilePath;
+@@ -53,6 +60,7 @@ bool PathProviderWin(int key, FilePath* result) {
+       GetSystemDirectory(system_buffer, MAX_PATH);
+       cur = FilePath(system_buffer);
+       break;
++#if !defined(MOZ_ZUCCHINI)
+     case base::DIR_PROGRAM_FILESX86:
+       if (win::OSInfo::GetArchitecture() != win::OSInfo::X86_ARCHITECTURE) {
+         if (FAILED(SHGetFolderPath(NULL, CSIDL_PROGRAM_FILESX86, NULL,
+@@ -63,12 +71,14 @@ bool PathProviderWin(int key, FilePath* result) {
+       }
+       // Fall through to base::DIR_PROGRAM_FILES if we're on an X86 machine.
+       [[fallthrough]];
++#endif  // !defined(MOZ_ZUCCHINI)
+     case base::DIR_PROGRAM_FILES:
+       if (FAILED(SHGetFolderPath(NULL, CSIDL_PROGRAM_FILES, NULL,
+                                  SHGFP_TYPE_CURRENT, system_buffer)))
+         return false;
+       cur = FilePath(system_buffer);
+       break;
++#if !defined(MOZ_ZUCCHINI)
+     case base::DIR_PROGRAM_FILES6432:
+ #if !defined(_WIN64)
+       if (base::win::OSInfo::GetInstance()->IsWowX86OnAMD64()) {
+@@ -89,6 +99,7 @@ bool PathProviderWin(int key, FilePath* result) {
+         return false;
+       cur = FilePath(system_buffer);
+       break;
++#endif  // !defined(MOZ_ZUCCHINI)
+     case base::DIR_IE_INTERNET_CACHE:
+       if (FAILED(SHGetFolderPath(NULL, CSIDL_INTERNET_CACHE, NULL,
+                                  SHGFP_TYPE_CURRENT, system_buffer)))
+@@ -142,10 +153,17 @@ bool PathProviderWin(int key, FilePath* result) {
+       // On Windows, unit tests execute two levels deep from the source root.
+       // For example:  chrome/{Debug|Release}/ui_tests.exe
+       PathService::Get(base::DIR_EXE, &executableDir);
++#if !defined(MOZ_ZUCCHINI)
+       cur = executableDir.DirName().DirName();
++#else
++      // On Windows, for Firefox, we are thre levels deep.
++      // For example: ./obj-x86_64-pc-windows-msvc/dist/bin/zucchini-gtest.exe
++      cur = executableDir.DirName().DirName().DirName();
++#endif  // !defined(MOZ_ZUCCHINI)
+       break;
+     }
+     case base::DIR_APP_SHORTCUTS: {
++#if !defined(MOZ_ZUCCHINI)
+       base::win::ScopedCoMem<wchar_t> path_buf;
+       if (FAILED(SHGetKnownFolderPath(FOLDERID_ApplicationShortcuts, 0, NULL,
+                                       &path_buf)))
+@@ -153,7 +171,12 @@ bool PathProviderWin(int key, FilePath* result) {
+ 
+       cur = FilePath(path_buf.get());
+       break;
++#else
++      NOTREACHED();
++      return false;
++#endif  // !defined(MOZ_ZUCCHINI)
+     }
++#if !defined(MOZ_ZUCCHINI)
+     case base::DIR_USER_DESKTOP:
+       if (FAILED(SHGetFolderPath(NULL, CSIDL_DESKTOPDIRECTORY, NULL,
+                                  SHGFP_TYPE_CURRENT, system_buffer))) {
+@@ -161,6 +184,7 @@ bool PathProviderWin(int key, FilePath* result) {
+       }
+       cur = FilePath(system_buffer);
+       break;
++#endif  // !defined(MOZ_ZUCCHINI)
+     case base::DIR_COMMON_DESKTOP:
+       if (FAILED(SHGetFolderPath(NULL, CSIDL_COMMON_DESKTOPDIRECTORY, NULL,
+                                  SHGFP_TYPE_CURRENT, system_buffer))) {
+diff --git a/base/base_paths_win.h b/base/base_paths_win.h
+index f5fa01fa28d6..99e34f79c5f0 100644
+--- a/base/base_paths_win.h
++++ b/base/base_paths_win.h
+@@ -22,8 +22,10 @@ enum {
+   // DIR_PROGRAM_FILES6432     1               1                  1
+   // 1 - C:\Program Files   2 - C:\Program Files (x86)
+   DIR_PROGRAM_FILES,      // See table above.
++#if !defined(MOZ_ZUCCHINI)
+   DIR_PROGRAM_FILESX86,   // See table above.
+   DIR_PROGRAM_FILES6432,  // See table above.
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+   DIR_IE_INTERNET_CACHE,       // Temporary Internet Files directory.
+   DIR_COMMON_START_MENU,       // Usually "C:\ProgramData\Microsoft\Windows\
+-- 
+2.42.0.windows.2
+

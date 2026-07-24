@@ -262,13 +262,11 @@ def bundle_schema(schema_def: SchemaDefinition):
 
         # patch_schema mutates the given schema, so we read a new copy in for
         # each bundle operation.
-        defs.update(
-            {
-                name: dfn
-                for name, dfn in common_schema["$defs"].items()
-                if dfn_filter(name)
-            }
-        )
+        defs.update({
+            name: dfn
+            for name, dfn in common_schema["$defs"].items()
+            if dfn_filter(name)
+        })
 
     # Ensure all bundled schemas have an $id so that $refs inside the
     # bundled schema work correctly (i.e, they will reference the subschema

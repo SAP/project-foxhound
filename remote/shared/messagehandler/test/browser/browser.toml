@@ -11,6 +11,8 @@ prefs = ["remote.messagehandler.modulecache.useBrowserTestRoot=true"]
 
 ["browser_events_dispatcher.js"]
 
+["browser_events_dispatcher_related_contexts.js"]
+
 ["browser_events_handler.js"]
 
 ["browser_events_interception.js"]
@@ -34,6 +36,9 @@ prefs = ["remote.messagehandler.modulecache.useBrowserTestRoot=true"]
 ["browser_session_data.js"]
 
 ["browser_session_data_browser_element.js"]
+skip-if = [
+  "true", # Bug 1713440
+]
 
 ["browser_session_data_constructor_race.js"]
 

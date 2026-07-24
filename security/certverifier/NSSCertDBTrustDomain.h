@@ -20,11 +20,6 @@
 namespace mozilla {
 namespace psm {
 
-enum class ValidityCheckingMode {
-  CheckingOff = 0,
-  CheckForEV = 1,
-};
-
 enum class NSSDBConfig {
   ReadWrite = 0,
   ReadOnly = 1,
@@ -33,20 +28,6 @@ enum class NSSDBConfig {
 enum class PKCS11DBConfig {
   DoNotLoadModules = 0,
   LoadModules = 1,
-};
-
-// Policy options for matching id-Netscape-stepUp with id-kp-serverAuth (for CA
-// certificates only):
-// * Always match: the step-up OID is considered equivalent to serverAuth
-// * Match before 23 August 2016: the OID is considered equivalent if the
-//   certificate's notBefore is before 23 August 2016
-// * Match before 23 August 2015: similarly, but for 23 August 2015
-// * Never match: the OID is never considered equivalent to serverAuth
-enum class NetscapeStepUpPolicy : uint32_t {
-  AlwaysMatch = 0,
-  MatchBefore23August2016 = 1,
-  MatchBefore23August2015 = 2,
-  NeverMatch = 3,
 };
 
 enum class OCSPFetchStatus : uint16_t {
@@ -135,26 +116,25 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
  public:
   typedef mozilla::pkix::Result Result;
 
-  enum OCSPFetching {
-    NeverFetchOCSP = 0,
-    FetchOCSPForDVSoftFail = 1,
-    FetchOCSPForDVHardFail = 2,
-    FetchOCSPForEV = 3,
-    LocalOnlyOCSPForEV = 4,
+  enum RevocationCheckMode {
+    RevocationCheckLocalOnly = 0,
+    RevocationCheckMayFetch = 1,
+    RevocationCheckRequired = 2,
   };
 
   NSSCertDBTrustDomain(
-      SECTrustType certDBTrustType, OCSPFetching ocspFetching,
+      SECTrustType certDBTrustType, RevocationCheckMode ocspFetching,
       OCSPCache& ocspCache, SignatureCache* signatureCache,
       TrustCache* trustCache, void* pinArg,
       mozilla::TimeDuration ocspTimeoutSoft,
       mozilla::TimeDuration ocspTimeoutHard, uint32_t certShortLifetimeInDays,
-      unsigned int minRSABits, ValidityCheckingMode validityCheckingMode,
-      NetscapeStepUpPolicy netscapeStepUpPolicy, CRLiteMode crliteMode,
+      unsigned int minRSABits, CRLiteMode crliteMode,
       const OriginAttributes& originAttributes,
       const nsTArray<mozilla::pkix::Input>& thirdPartyRootInputs,
       const nsTArray<mozilla::pkix::Input>& thirdPartyIntermediateInputs,
       const Maybe<nsTArray<nsTArray<uint8_t>>>& extraCertificates,
+      const mozilla::pkix::Input& encodedSCTsFromTLS,
+      const UniquePtr<mozilla::ct::MultiLogCTVerifier>& ctVerifier,
       /*out*/ nsTArray<nsTArray<uint8_t>>& builtChain,
       /*optional*/ PinningTelemetryInfo* pinningTelemetryInfo = nullptr,
       /*optional*/ const char* hostname = nullptr);
@@ -207,17 +187,12 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       mozilla::pkix::EndEntityOrCA endEntityOrCA,
       mozilla::pkix::KeyPurposeId keyPurpose) override;
 
-  virtual Result NetscapeStepUpMatchesServerAuth(
-      mozilla::pkix::Time notBefore,
-      /*out*/ bool& matches) override;
-
   virtual Result CheckRevocation(
       mozilla::pkix::EndEntityOrCA endEntityOrCA,
       const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
       mozilla::pkix::Duration validityDuration,
       /*optional*/ const mozilla::pkix::Input* stapledOCSPResponse,
-      /*optional*/ const mozilla::pkix::Input* aiaExtension,
-      /*optional*/ const mozilla::pkix::Input* sctExtension) override;
+      /*optional*/ const mozilla::pkix::Input* aiaExtension) override;
 
   virtual Result IsChainValid(
       const mozilla::pkix::DERArray& certChain, mozilla::pkix::Time time,
@@ -246,6 +221,8 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   mozilla::pkix::Input GetSCTListFromCertificate() const;
   mozilla::pkix::Input GetSCTListFromOCSPStapling() const;
 
+  Maybe<ct::CTVerifyResult>& GetCachedCTVerifyResult();
+
   bool GetIsBuiltChainRootBuiltInRoot() const;
 
   OCSPFetchStatus GetOCSPFetchStatus() { return mOCSPFetchStatus; }
@@ -272,26 +249,22 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   TimeDuration GetOCSPTimeout() const;
 
   Result CheckRevocationByCRLite(const mozilla::pkix::CertID& certID,
-                                 const mozilla::pkix::Input& sctExtension,
+                                 mozilla::pkix::Time time,
                                  /*out*/ bool& crliteCoversCertificate);
 
   Result CheckRevocationByOCSP(
       const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
       mozilla::pkix::Duration validityDuration, const nsCString& aiaLocation,
-      const bool crliteCoversCertificate, const Result crliteResult,
-      /*optional*/ const mozilla::pkix::Input* stapledOCSPResponse,
-      /*out*/ bool& softFailure);
+      /*optional*/ const mozilla::pkix::Input* stapledOCSPResponse);
 
   Result SynchronousCheckRevocationWithServer(
       const mozilla::pkix::CertID& certID, const nsCString& aiaLocation,
       mozilla::pkix::Time time, uint16_t maxOCSPLifetimeInDays,
-      const Result cachedResponseResult, const Result stapledOCSPResponseResult,
-      const bool crliteFilterCoversCertificate, const Result crliteResult,
-      /*out*/ bool& softFailure);
+      const Result cachedResponseResult,
+      const Result stapledOCSPResponseResult);
   Result HandleOCSPFailure(const Result cachedResponseResult,
                            const Result stapledOCSPResponseResult,
-                           const Result error,
-                           /*out*/ bool& softFailure);
+                           const Result error);
 
   bool ShouldSkipSelfSignedNonTrustAnchor(mozilla::pkix::Input certDER);
   Result CheckCandidates(IssuerChecker& checker,
@@ -300,7 +273,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
                          bool& keepGoing);
 
   const SECTrustType mCertDBTrustType;
-  const OCSPFetching mOCSPFetching;
+  const RevocationCheckMode mOCSPFetching;
   OCSPCache& mOCSPCache;            // non-owning!
   SignatureCache* mSignatureCache;  // non-owning!
   TrustCache* mTrustCache;          // non-owning!
@@ -309,15 +282,15 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   const mozilla::TimeDuration mOCSPTimeoutHard;
   const uint32_t mCertShortLifetimeInDays;
   const unsigned int mMinRSABits;
-  ValidityCheckingMode mValidityCheckingMode;
-  NetscapeStepUpPolicy mNetscapeStepUpPolicy;
   CRLiteMode mCRLiteMode;
   const OriginAttributes& mOriginAttributes;
   const nsTArray<mozilla::pkix::Input>& mThirdPartyRootInputs;  // non-owning
   const nsTArray<mozilla::pkix::Input>&
-      mThirdPartyIntermediateInputs;                             // non-owning
-  const Maybe<nsTArray<nsTArray<uint8_t>>>& mExtraCertificates;  // non-owning
-  nsTArray<nsTArray<uint8_t>>& mBuiltChain;                      // non-owning
+      mThirdPartyIntermediateInputs;                              // non-owning
+  const Maybe<nsTArray<nsTArray<uint8_t>>>& mExtraCertificates;   // non-owning
+  const mozilla::pkix::Input& mEncodedSCTsFromTLS;                // non-owning
+  const UniquePtr<mozilla::ct::MultiLogCTVerifier>& mCTVerifier;  // non-owning
+  nsTArray<nsTArray<uint8_t>>& mBuiltChain;                       // non-owning
   bool mIsBuiltChainRootBuiltInRoot;
   PinningTelemetryInfo* mPinningTelemetryInfo;
   const char* mHostname;  // non-owning - only used for pinning checks
@@ -333,6 +306,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   OCSPFetchStatus mOCSPFetchStatus;
   IssuerSources mIssuerSources;
   Maybe<mozilla::pkix::Time> mDistrustAfterTime;
+  Maybe<mozilla::ct::CTVerifyResult> mCTVerifyResult;
 };
 
 }  // namespace psm

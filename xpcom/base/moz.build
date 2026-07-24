@@ -23,6 +23,14 @@ XPIDL_SOURCES += [
     "nsrootidl.idl",
 ]
 
+if CONFIG["OS_TARGET"] == "Linux":
+    XPIDL_SOURCES += [
+        "nsIAvailableMemoryWatcherTestingLinux.idl",
+    ]
+    EXPORTS += [
+        "nsIPSIProvider.h",
+    ]
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     XPIDL_SOURCES += [
         "nsIMacPreferencesReader.idl",
@@ -83,7 +91,6 @@ EXPORTS += [
     "nsIInterfaceRequestorUtils.h",
     "nsINIParser.h",
     "nsInterfaceRequestorAgg.h",
-    "nsISizeOf.h",
     "nsISupportsImpl.h",
     "nsISupportsUtils.h",
     "nsIWeakReferenceUtils.h",

@@ -18,11 +18,11 @@ class ReadStream;
 
 class CacheStreamControlChild final : public PCacheStreamControlChild,
                                       public StreamControl,
-                                      public ActorChild {
+                                      public CacheActorChild {
   friend class PCacheStreamControlChild;
 
  public:
-  CacheStreamControlChild();
+  explicit CacheStreamControlChild(ActorChild* aParentActor = nullptr);
 
   // ActorChild methods
   virtual void StartDestroy() override;
@@ -51,6 +51,7 @@ class CacheStreamControlChild final : public PCacheStreamControlChild,
   mozilla::ipc::IPCResult RecvClose(const nsID& aId);
   mozilla::ipc::IPCResult RecvCloseAll();
 
+  ActorChild* mParentActor;
   bool mDestroyStarted;
   bool mDestroyDelayed;
 };

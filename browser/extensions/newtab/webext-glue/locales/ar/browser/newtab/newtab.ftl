@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = اختصار جديد
 newtab-topsites-edit-topsites-header = حرّر الموقع الشائع
 newtab-topsites-edit-shortcut-header = حرّر الاختصار
 newtab-topsites-add-shortcut-label = أضِف اختصارًا
+newtab-topsites-add-shortcut-title =
+    .title = أضِف اختصارًا
+    .aria-label = أضِف اختصارًا
 newtab-topsites-title-label = العنوان
 newtab-topsites-title-input =
     .placeholder = أدخل عنوانًا
@@ -306,9 +309,12 @@ newtab-custom-pocket-sponsored = قصص مموّلة
 newtab-custom-pocket-show-recent-saves = أظهِر عمليات الحفظ الأخيرة
 newtab-custom-recent-title = أحدث الأنشطة
 newtab-custom-recent-subtitle = مختارات من المواقع والمحتويات الحديثة
-newtab-custom-recent-toggle =
-    .label = أحدث الأنشطة
-    .description = مختارات من المواقع والمحتويات الحديثة
+newtab-custom-widget-weather-toggle =
+    .label = الطقس
+newtab-custom-widget-lists-toggle =
+    .label = قوائم
+newtab-custom-widget-timer-toggle =
+    .label = المؤقت
 newtab-custom-close-button = أغلِق
 newtab-custom-settings = أدِر المزيد من الإعدادات
 
@@ -362,7 +368,7 @@ newtab-wallpaper-abstract-orange = أشكال برتقالية
 newtab-wallpaper-gradient-orange = تدرج اللون البرتقالي والوردي
 newtab-wallpaper-abstract-blue-purple = الأشكال الزرقاء والأرجوانية
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-white-mountains = جبال بيضاء
 newtab-wallpaper-feature-highlight-header = جرب دفقة من الألوان
@@ -370,9 +376,6 @@ newtab-wallpaper-feature-highlight-button = فهمت
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
-
-## Celestial
-
 
 ## New Tab Weather
 
@@ -393,6 +396,16 @@ newtab-weather-menu-learn-more = اطّلع على المزيد
 
 ## Topic Labels
 
+newtab-topic-label-education = تعليم
+newtab-topic-label-health = صحة
+newtab-topic-label-hobbies = الألعاب
+# ”Money” = “Personal Finance”, refers to articles and stories that help readers better manage
+# and understand their personal finances – from saving money to buying a home. See the
+# “Curated by our editors“ section at the top of https://getpocket.com/explore/personal-finance for more context
+newtab-topic-label-finance = مال
+newtab-topic-label-society-parenting = تربية الأبناء
+newtab-topic-label-government = سياسة
+newtab-topic-label-education-science = علوم
 
 ## Topic Selection Modal
 
@@ -404,6 +417,7 @@ newtab-topic-selection-button-maybe-later = ربما لاحقا
 ## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 ## e.g. Following the travel section of stories.
 
+newtab-section-follow-button = تابع
 newtab-section-unfollow-button = ألغِ المتابعة
 
 ## Button to block/unblock listed topics
@@ -428,10 +442,7 @@ newtab-custom-wallpaper-cta = جربه
 # "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
 newtab-download-mobile-highlight-body-variant-a = افحص الرمز للتصفح بشكل آمن أثناء التنقل.
 
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = لماذا تُبلِّغ عن هذا؟
@@ -450,5 +461,41 @@ newtab-report-submit = أرسِل
 newtab-toast-thanks-for-reporting =
     .message = شكرا لك على الإبلاغ عن هذا.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = جديد
+newtab-widget-lists-label-beta =
+    .label = تجريبي
+newtab-widget-task-list-menu-copy = انسخ
+newtab-widget-lists-menu-edit = حرّر اسم القائمة
+newtab-widget-lists-menu-create = أنشئ قائمة جديدة
+newtab-widget-lists-menu-delete = احذف هذه القائمة
+newtab-widget-lists-menu-copy = انسخ القائمة إلى الحافظة
+newtab-widget-lists-menu-hide = أخفِ جميع القوائم
+newtab-widget-lists-menu-learn-more = اطّلع على المزيد
+newtab-widget-lists-input-add-an-item =
+    .placeholder = أضف عنصر
+newtab-widget-lists-input-menu-delete = احذف
+newtab-widget-lists-input-menu-edit = حرّر
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = قائمة المهام
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = قائمة جديدة
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = المؤقت
+newtab-widget-timer-label-play =
+    .label = شغّل
+newtab-widget-timer-label-pause =
+    .label = ألبِث
+newtab-widget-timer-menu-learn-more = اطّلع على المزيد
+newtab-promo-card-title = ادعم { -brand-product-name }
+newtab-promo-card-cta = اطّلع على المزيد
+newtab-promo-card-dismiss-button =
+    .title = أهمِل
+    .aria-label = أهمِل

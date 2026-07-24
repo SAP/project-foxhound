@@ -12,6 +12,7 @@
 #include "mozilla/EditorBase.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/Logging.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Element.h"
 
 #include "nsDebug.h"
@@ -20,7 +21,6 @@
 #include "nsUnicodeProperties.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIContent.h"
-#include "nsTextFragment.h"
 #include "nsRange.h"
 #include "nsContentUtils.h"
 #include "nsIFrame.h"
@@ -697,17 +697,19 @@ static inline bool IsBRElement(nsINode* aNode) {
  */
 static Maybe<int32_t> FindOffsetOfLastDOMWordSeparatorSequence(
     nsIContent* aContent, int32_t aBeforeOffset) {
-  const nsTextFragment* textFragment = aContent->GetText();
-  MOZ_ASSERT(textFragment, "Where is our text?");
-  int32_t end = std::min(aBeforeOffset, int32_t(textFragment->GetLength()));
+  const dom::CharacterDataBuffer* characterDataBuffer =
+      aContent->GetCharacterDataBuffer();
+  MOZ_ASSERT(characterDataBuffer, "Where is our text?");
+  int32_t end =
+      std::min(aBeforeOffset, int32_t(characterDataBuffer->GetLength()));
 
-  if (textFragment->Is2b()) {
-    nsDependentSubstring targetText(textFragment->Get2b(), end);
+  if (characterDataBuffer->Is2b()) {
+    nsDependentSubstring targetText(characterDataBuffer->Get2b(), end);
     WordSplitState<nsDependentSubstring> state(targetText);
     return state.FindOffsetOfLastDOMWordSeparatorSequence(end);
   }
 
-  nsDependentCSubstring targetText(textFragment->Get1b(), end);
+  nsDependentCSubstring targetText(characterDataBuffer->Get1b(), end);
   WordSplitState<nsDependentCSubstring> state(targetText);
   return state.FindOffsetOfLastDOMWordSeparatorSequence(end);
 }
@@ -873,16 +875,17 @@ void mozInlineSpellWordUtil::SoftText::AdjustBeginAndBuildText(
     if (IsSpellCheckingTextNode(node)) {
       nsIContent* content = static_cast<nsIContent*>(node);
       MOZ_ASSERT(content, "Where is our content?");
-      const nsTextFragment* textFragment = content->GetText();
-      MOZ_ASSERT(textFragment, "Where is our text?");
-      uint32_t lastOffsetInNode = textFragment->GetLength();
+      const dom::CharacterDataBuffer* characterDataBuffer =
+          content->GetCharacterDataBuffer();
+      MOZ_ASSERT(characterDataBuffer, "Where is our text?");
+      uint32_t lastOffsetInNode = characterDataBuffer->GetLength();
 
       if (seenSoftEnd) {
         // check whether we can stop after this
         for (uint32_t i =
                  node == mEnd.mNode ? AssertedCast<uint32_t>(mEnd.mOffset) : 0;
-             i < textFragment->GetLength(); ++i) {
-          if (IsDOMWordSeparator(textFragment->CharAt(i))) {
+             i < characterDataBuffer->GetLength(); ++i) {
+          if (IsDOMWordSeparator(characterDataBuffer->CharAt(i))) {
             exit = true;
             // stop at the first separator after the soft end point
             lastOffsetInNode = i;
@@ -897,7 +900,7 @@ void mozInlineSpellWordUtil::SoftText::AdjustBeginAndBuildText(
         mDOMMapping.AppendElement(DOMTextMapping(
             NodeOffset(node, firstOffsetInNode), mValue.Length(), len));
 
-        const bool ok = textFragment->AppendTo(
+        const bool ok = characterDataBuffer->AppendTo(
             mValue, static_cast<uint32_t>(firstOffsetInNode), len,
             mozilla::fallible);
         if (!ok) {

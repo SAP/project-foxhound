@@ -112,7 +112,6 @@ class SaveSearchEngineFragment : Fragment(R.layout.fragment_save_search_engine) 
         _binding = null
     }
 
-    @Suppress("ComplexMethod")
     private fun createCustomEngine() {
         binding.customSearchEngineNameField.error = ""
         binding.customSearchEngineSearchStringField.error = ""

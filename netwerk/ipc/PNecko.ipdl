@@ -7,10 +7,14 @@
 
 include protocol PContent;
 include protocol PHttpChannel;
+include protocol PCacheEntryWriteHandle;
 include protocol PCookieService;
 include protocol PBrowser;
 #ifdef MOZ_WIDGET_GTK
 include protocol PGIOChannel;
+#endif
+#ifdef MOZ_WIDGET_ANDROID
+include protocol PGeckoViewContentChannel;
 #endif
 include protocol PWebSocket;
 include protocol PWebSocketEventListener;
@@ -18,11 +22,8 @@ include protocol PTCPSocket;
 include protocol PTCPServerSocket;
 include protocol PUDPSocket;
 include protocol PDNSRequest;
-include protocol PDataChannel;
-include protocol PSimpleChannel;
 include protocol PTransportProvider;
 include protocol PStunAddrsRequest;
-include protocol PFileChannel;
 include protocol PWebrtcTCPSocket;
 include protocol PSocketProcessBridge;
 include protocol PDocumentChannel;
@@ -50,6 +51,7 @@ namespace net {
 {
   manager PContent;
   manages PHttpChannel;
+  manages PCacheEntryWriteHandle;
   manages PCookieService;
   manages PWebSocket;
   manages PWebSocketEventListener;
@@ -57,12 +59,12 @@ namespace net {
   manages PTCPServerSocket;
   manages PUDPSocket;
   manages PDNSRequest;
-  manages PDataChannel;
 #ifdef MOZ_WIDGET_GTK
   manages PGIOChannel;
 #endif
-  manages PSimpleChannel;
-  manages PFileChannel;
+#ifdef MOZ_WIDGET_ANDROID
+  manages PGeckoViewContentChannel;
+#endif
   manages PTransportProvider;
   manages PAltDataOutputStream;
   manages PStunAddrsRequest;
@@ -91,15 +93,9 @@ parent:
 
   async PWebSocketEventListener(uint64_t aInnerWindowID);
 
-  /* Predictor Methods */
-  async PredPredict(nullable nsIURI targetURI, nullable nsIURI sourceURI,
-                    uint32_t reason, OriginAttributes originAttributes,
-                    bool hasVerifier);
-  async PredLearn(nullable nsIURI targetURI, nullable nsIURI sourceURI,
-                  uint32_t reason, OriginAttributes originAttributes);
-  async PredReset();
-
-  async SpeculativeConnect(nullable nsIURI uri,
+  async SpeculativeConnect(nullable PBrowser browser,
+                           SerializedLoadContext loadContext,
+                           nullable nsIURI uri,
                            nullable nsIPrincipal principal,
                            OriginAttributes? originAttributes,
                            bool anonymous);
@@ -110,21 +106,35 @@ parent:
                               DNSFlags flags, nsresult reason);
 
   /**
-   * channelId is used to establish a connection between redirect channels in
-   * the parent and the child when we're redirecting to a data: URI.
+   * Establish a connection between generic redirect channels which do not need
+   * specialized nsIParentChannel handling.
    */
-  async PDataChannel(uint32_t channelId);
+  async ConnectBaseChannel(uint32_t channelId);
+
 #ifdef MOZ_WIDGET_GTK
   async PGIOChannel(nullable PBrowser browser, SerializedLoadContext loadContext, GIOChannelCreationArgs args);
 #endif
-  async PSimpleChannel(uint32_t channelId);
-  async PFileChannel();
+
+#ifdef MOZ_WIDGET_ANDROID
+  async PGeckoViewContentChannel(nullable PBrowser browser,
+                                 SerializedLoadContext loadContext,
+                                 GeckoViewContentChannelArgs args);
+#endif
+
+  /**
+   * When a nsFileChannel is opened within the content process, we notify
+   * "file-channel-opened" in the parent process using this IPC message.
+   */
+  async NotifyFileChannelOpened(FileChannelInfo info);
 
   async RequestContextLoadBegin(uint64_t rcid);
   async RequestContextAfterDOMContentLoaded(uint64_t rcid);
   async RemoveRequestContext(uint64_t rcid);
 
-  async PAltDataOutputStream(nsCString type, int64_t predictedSize, PHttpChannel channel);
+  async PCacheEntryWriteHandle(PHttpChannel channel);
+
+  async PAltDataOutputStream(nsCString type, int64_t predictedSize, PHttpChannel? channel, PCacheEntryWriteHandle? handle);
+
 
   async PStunAddrsRequest();
 
@@ -150,12 +160,12 @@ parent:
   async GetPageThumbStream(nullable nsIURI uri, LoadInfoArgs loadInfo) returns (RemoteStreamInfo? info);
   async GetPageIconStream(nullable nsIURI uri, LoadInfoArgs loadInfo) returns (RemoteStreamInfo? info);
 
-child:
-  /* Predictor Methods */
-  async PredOnPredictPrefetch(nullable nsIURI uri, uint32_t httpStatus);
-  async PredOnPredictPreconnect(nullable nsIURI uri);
-  async PredOnPredictDNS(nullable nsIURI uri);
+  /**
+   * New Tab wallpaper remote resource loading
+   */
+  async GetMozNewTabWallpaperStream(nullable nsIURI uri, LoadInfoArgs loadInfo) returns (RemoteStreamInfo? info);
 
+child:
   async SpeculativeConnectRequest();
 
   // Using medium high priority to deliver this notification possibly sooner than we

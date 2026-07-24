@@ -28,7 +28,7 @@ class CQTest : public ::libvpx_test::EncoderTest,
                public ::libvpx_test::CodecTestWithParam<int> {
  public:
   // maps the cqlevel to the bitrate produced.
-  typedef std::map<int, uint32_t> BitrateMap;
+  using BitrateMap = std::map<int, uint32_t>;
 
   static void SetUpTestSuite() { bitrates_.clear(); }
 
@@ -104,11 +104,11 @@ class CQTest : public ::libvpx_test::EncoderTest,
 CQTest::BitrateMap CQTest::bitrates_;
 
 TEST_P(CQTest, LinearPSNRIsHigherForCQLevel) {
-  const vpx_rational timebase = { 33333333, 1000000000 };
-#if CONFIG_REALTIME_ONlY
+#if CONFIG_REALTIME_ONLY
   GTEST_SKIP()
       << "Non-zero g_lag_in_frames is unsupported with CONFIG_REALTIME_ONLY";
 #else
+  const vpx_rational timebase = { 33333333, 1000000000 };
   cfg_.g_timebase = timebase;
   cfg_.rc_target_bitrate = kCQTargetBitrate;
   cfg_.g_lag_in_frames = 25;

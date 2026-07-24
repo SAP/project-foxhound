@@ -66,10 +66,13 @@ struct DefaultJitOptions {
   bool disableRecoverIns;
   bool disableScalarReplacement;
   bool disableCacheIR;
+  bool disableStubFolding;
+  bool disableStubFoldingLoadsAndStores;
   bool disableSink;
   bool disableRedundantShapeGuards;
   bool disableRedundantGCBarriers;
   bool disableBailoutLoopCheck;
+  bool disableObjectKeysScalarReplacement;
 #ifdef ENABLE_PORTABLE_BASELINE_INTERP
   bool portableBaselineInterpreter;
 #endif

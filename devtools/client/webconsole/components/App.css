@@ -434,7 +434,7 @@ body {
   grid-area: notification;
 }
 
-.jsterm-editor .jsterm-input-container > .CodeMirror {
+.jsterm-editor .jsterm-input-container > :is(.CodeMirror, .cm-editor) {
   flex: 1;
   padding-inline-start: 0;
   font-size: var(--theme-code-font-size);

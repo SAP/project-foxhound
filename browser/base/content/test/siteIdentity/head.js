@@ -18,40 +18,6 @@ function getIdentityMode(aWindow = window) {
   return aWindow.document.getElementById("identity-box").className;
 }
 
-/**
- * Waits for a load (or custom) event to finish in a given tab. If provided
- * load an uri into the tab.
- *
- * @param tab
- *        The tab to load into.
- * @param [optional] url
- *        The url to load, or the current url.
- * @return {Promise} resolved when the event is handled.
- * @resolves to the received event
- * @rejects if a valid load event is not received within a meaningful interval
- */
-function promiseTabLoadEvent(tab, url) {
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  if (url) {
-    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
-  }
-
-  return loaded;
-}
-
 // Compares the security state of the page with what is expected
 function isSecurityState(browser, expectedState) {
   let ui = browser.securityUI;
@@ -93,9 +59,9 @@ function isSecurityState(browser, expectedState) {
  * Test the state of the identity box and control center to make
  * sure they are correctly showing the expected mixed content states.
  *
- * @note The checks are done synchronously, but new code should wait on the
- *       returned Promise object to ensure the identity panel has closed.
- *       Bug 1221114 is filed to fix the existing code.
+ * Note: The checks are done synchronously, but new code should wait on the
+ * returned Promise object to ensure the identity panel has closed.
+ * Bug 1221114 is filed to fix the existing code.
  *
  * @param tabbrowser
  * @param Object states
@@ -106,8 +72,8 @@ function isSecurityState(browser, expectedState) {
  *           passiveLoaded: true|false,
  *        }
  *
- * @return {Promise}
- * @resolves When the operation has finished and the identity panel has closed.
+ * @returns {Promise<void>}
+ *   Resolves when the operation has finished and the identity panel has closed.
  */
 async function assertMixedContentBlockingState(tabbrowser, states = {}) {
   if (
@@ -395,14 +361,58 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
   }
 }
 
-async function loadBadCertPage(url) {
-  let loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
+async function loadBadCertPage(url, feltPrivacyV1) {
+  const loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
+  const loadFlagsSkipCache =
+    Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_PROXY |
+    Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE;
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    url,
+    loadFlagsSkipCache
+  );
   await loaded;
-
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
-    content.document.getElementById("exceptionDialogButton").click();
-  });
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [feltPrivacyV1],
+    async prefFeltPrivacyV1 => {
+      if (prefFeltPrivacyV1) {
+        const netErrorCard =
+          content.document.querySelector("net-error-card").wrappedJSObject;
+        await netErrorCard.getUpdateComplete();
+        EventUtils.synthesizeMouseAtCenter(
+          netErrorCard.advancedButton,
+          {},
+          content
+        );
+        await ContentTaskUtils.waitForCondition(() => {
+          return (
+            netErrorCard.exceptionButton &&
+            !netErrorCard.exceptionButton.disabled
+          );
+        }, "Waiting for exception button");
+        netErrorCard.exceptionButton.scrollIntoView(true);
+        EventUtils.synthesizeMouseAtCenter(
+          netErrorCard.exceptionButton,
+          {},
+          content
+        );
+      } else {
+        const advancedButton =
+          content.document.getElementById("advancedButton");
+        advancedButton.scrollIntoView(true);
+        EventUtils.synthesizeMouseAtCenter(advancedButton, {}, content);
+        const exceptionButton = content.document.getElementById(
+          "exceptionDialogButton"
+        );
+        await ContentTaskUtils.waitForCondition(() => {
+          return exceptionButton && !exceptionButton.disabled;
+        }, "Waiting for exception button");
+        exceptionButton.scrollIntoView(true);
+        EventUtils.synthesizeMouseAtCenter(exceptionButton, {}, content);
+      }
+    }
+  );
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 }
 

@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 async function testSidebarKeyToggle(key, options, expectedSidebarId) {
-  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {});
+  EventUtils.synthesizeMouseAtCenter(gURLBar, {});
   let promiseShown = BrowserTestUtils.waitForEvent(window, "SidebarShown");
   EventUtils.synthesizeKey(key, options);
   await promiseShown;
@@ -28,7 +28,7 @@ add_task(async function test_sidebar_in_customize_mode() {
   // the sidebar button widget doesn't appear checked, and that the sidebar
   // button toggle is inert while in customize mode.
   let { CustomizableUI } = ChromeUtils.importESModule(
-    "resource:///modules/CustomizableUI.sys.mjs"
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
   );
   registerCleanupFunction(() => SidebarController.hide());
 

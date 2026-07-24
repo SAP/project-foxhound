@@ -7,9 +7,9 @@
 #ifndef LAYOUT_SVG_SVGCONTAINERFRAME_H_
 #define LAYOUT_SVG_SVGCONTAINERFRAME_H_
 
-#include "mozilla/Attributes.h"
+#include <memory>
+
 #include "mozilla/ISVGDisplayableFrame.h"
-#include "mozilla/UniquePtr.h"
 #include "nsContainerFrame.h"
 #include "nsIFrame.h"
 #include "nsQueryFrame.h"
@@ -134,7 +134,7 @@ class SVGDisplayContainerFrame : public SVGContainerFrame,
                 imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
   void ReflowSVG() override;
-  void NotifySVGChanged(uint32_t aFlags) override;
+  void NotifySVGChanged(ChangeFlags aFlags) override;
   SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                               uint32_t aFlags) override;
   bool IsDisplayContainer() override { return true; }
@@ -144,7 +144,7 @@ class SVGDisplayContainerFrame : public SVGContainerFrame,
   /**
    * Cached canvasTM value.
    */
-  UniquePtr<gfxMatrix> mCanvasTM;
+  std::unique_ptr<gfxMatrix> mCanvasTM;
 };
 
 }  // namespace mozilla

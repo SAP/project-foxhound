@@ -5,31 +5,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheLoadHandler.h"
+
 #include "ScriptResponseHeaderProcessor.h"  // ScriptResponseHeaderProcessor
 #include "WorkerLoadContext.h"              // WorkerLoadContext
-
-#include "nsIPrincipal.h"
-
-#include "nsIThreadRetargetableRequest.h"
-#include "nsIXPConnect.h"
-
 #include "jsapi.h"
-#include "nsNetUtil.h"
-
 #include "mozilla/Assertions.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/dom/CacheBinding.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/dom/cache/CacheTypes.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/ServiceWorkerBinding.h"  // ServiceWorkerState
-#include "mozilla/Result.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/Response.h"
+#include "mozilla/dom/ServiceWorkerBinding.h"  // ServiceWorkerState
 #include "mozilla/dom/WorkerScope.h"
-
+#include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/workerinternals/ScriptLoader.h"  // WorkerScriptLoader
+#include "nsIPrincipal.h"
+#include "nsIThreadRetargetableRequest.h"
+#include "nsIXPConnect.h"
+#include "nsNetUtil.h"
 
 namespace mozilla {
 namespace dom {
@@ -407,6 +402,11 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
   rv = ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
       mWorkerRef->Private(), coep, loadContext->IsTopLevel());
 
+  if (loadContext->IsTopLevel()) {
+    headers->Get("Reporting-Endpoints"_ns, mReportingEndpointsHeaderValue,
+                 IgnoreErrors());
+  }
+
   if (NS_WARN_IF(NS_FAILED(rv))) {
     Fail(rv);
     return;
@@ -433,7 +433,8 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
 
     nsresult rv = DataReceivedFromCache(
         (uint8_t*)"", 0, mChannelInfo, std::move(mPrincipalInfo),
-        mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
+        mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue,
+        mReportingEndpointsHeaderValue);
 
     mRequestHandle->OnStreamComplete(rv);
     return;
@@ -507,7 +508,8 @@ CacheLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
 
   nsresult rv = DataReceivedFromCache(
       aString, aStringLen, mChannelInfo, std::move(mPrincipalInfo),
-      mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
+      mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue,
+      mReportingEndpointsHeaderValue);
   return mRequestHandle->OnStreamComplete(rv);
 }
 
@@ -516,7 +518,8 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
     const mozilla::dom::ChannelInfo& aChannelInfo,
     UniquePtr<PrincipalInfo> aPrincipalInfo, const nsACString& aCSPHeaderValue,
     const nsACString& aCSPReportOnlyHeaderValue,
-    const nsACString& aReferrerPolicyHeaderValue) {
+    const nsACString& aReferrerPolicyHeaderValue,
+    const nsACString& aReportingEndpointsHeaderValue) {
   AssertIsOnMainThread();
   if (mRequestHandle->IsEmpty()) {
     return NS_OK;
@@ -563,12 +566,14 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
 
   nsCOMPtr<nsIURI> finalURI;
   rv = NS_NewURI(getter_AddRefs(finalURI), loadContext->mFullURL);
-  if (!loadContext->mRequest->mBaseURL) {
-    loadContext->mRequest->mBaseURL = finalURI;
+  if (!loadContext->mRequest->BaseURL()) {
+    loadContext->mRequest->SetBaseURL(finalURI);
   }
   if (loadContext->IsTopLevel()) {
     if (NS_SUCCEEDED(rv)) {
       mWorkerRef->Private()->SetBaseURI(finalURI);
+      mWorkerRef->Private()->SetReportingEndpointsHeader(
+          aReportingEndpointsHeaderValue);
     }
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED

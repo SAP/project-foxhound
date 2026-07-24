@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = Berradenn nevez
 newtab-topsites-edit-topsites-header = Kemmañ al lec'hienn wellañ
 newtab-topsites-edit-shortcut-header = Kemmañ ar verradenn
 newtab-topsites-add-shortcut-label = Ouzhpennañ ur verradenn
+newtab-topsites-add-shortcut-title =
+    .title = Ouzhpennañ ur verradenn
+    .aria-label = Ouzhpennañ ur verradenn
 newtab-topsites-title-label = Titl
 newtab-topsites-title-input =
     .placeholder = Enankañ un titl
@@ -288,9 +291,6 @@ newtab-custom-pocket-sponsored = Istorioù paeroniet
 newtab-custom-pocket-show-recent-saves = Diskouez an enrolladennoù diwezhañ
 newtab-custom-recent-title = Oberiantiz nevesañ
 newtab-custom-recent-subtitle = Un dibab lec'hiennoù ha danvezioù nevez
-newtab-custom-recent-toggle =
-    .label = Oberiantiz nevesañ
-    .description = Un dibab lec'hiennoù ha danvezioù nevez
 newtab-custom-close-button = Serriñ
 newtab-custom-settings = Merañ muioc'h a arventennoù
 
@@ -336,7 +336,7 @@ newtab-wallpaper-abstract-purple = Furmoù limestra
 newtab-wallpaper-abstract-orange = Furmoù orañjez
 newtab-wallpaper-abstract-blue-purple = Furmoù limestra hag orañjez
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotoioù
 newtab-wallpaper-beach-at-sunrise = Traezhenn e-pad ar sav-heol
@@ -375,7 +375,6 @@ newtab-weather-menu-change-location = Cheñch al lec’h
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Klask ul lec’h
     .aria-label = Klask ul lec’h
-newtab-weather-change-location-search-input = Klask ul lec’h
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -443,16 +442,17 @@ newtab-section-mangage-topics-followed-topics = O heuliañ
 newtab-section-mangage-topics-blocked-topics = Stanket
 newtab-custom-wallpaper-cta = Esaeañ
 
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-cancel = Nullañ
 newtab-report-submit = Kas
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Nevez
+newtab-widget-lists-menu-create = Krouiñ ur roll nevez
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Roll nevez

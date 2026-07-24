@@ -1,4 +1,3 @@
-.ds-onboarding-container,
 .ds-card-grid .ds-card {
   background: var(--newtab-background-color-secondary);
   border-radius: var(--border-radius-small);
@@ -14,113 +13,10 @@
   }
 }
 
-.ds-card.refined-cards:not(.placeholder) {
+.ds-card:not(.placeholder) {
   .img-wrapper .img {
     height: 160px;
     width: 100%;
-  }
-}
-
-.ds-onboarding-container {
-  padding-inline: var(--space-large);
-
-  @media (min-width: $break-point-medium) {
-    // Bug 1967304 - Large number (48px)
-    padding-inline-end: calc(var(--space-xlarge) * 2);
-  }
-
-  @media (min-width: $break-point-large) {
-    // Bug 1967304 - Large number (56px)
-    padding-inline-end: calc(var(--space-xlarge) + var(--space-xxlarge));
-  }
-
-  margin-block-end: var(--space-xlarge);
-  // This is to position the dismiss button to the right most of this element.
-  position: relative;
-
-  .ds-onboarding {
-    position: static;
-    display: flex;
-
-    .ds-dismiss-button {
-      inset-inline-end: var(--space-small);
-      inset-block-start: var(--space-small);
-    }
-  }
-
-  header {
-    @include dark-theme-only {
-      color: var(--newtab-background-color-primary);
-    }
-
-    display: flex;
-    margin: var(--space-xxlarge) 0 var(--space-small);
-
-    @media (min-width: $break-point-medium) {
-      margin: var(--space-large) 0 var(--space-small);
-      display: block;
-      height: 24px;
-    }
-
-    font-size: var(--font-size-large);
-    font-weight: var(--font-weight-bold);
-    color: $pocket-icon-fill;
-  }
-
-  p {
-    margin: var(--space-small) 0 var(--space-large);
-    font-size: var(--font-size-small);
-  }
-
-  .icon-pocket {
-    @include dark-theme-only {
-      @media (forced-colors: active) {
-        fill: CurrentColor;
-      }
-
-      fill: var(--newtab-text-primary-color);
-    }
-
-    @media (forced-colors: active) {
-      fill: CurrentColor;
-    }
-
-    fill: $pocket-icon-fill;
-    margin-block-start: var(--space-xxsmall);;
-    margin-inline-end: var(--space-small);
-    height: 22px;
-    width: 22px;
-    background-image: url('chrome://global/skin/icons/help.svg');
-
-    @media (min-width: $break-point-medium) {
-      margin-block-start: calc(var(--space-small) * -1);
-      margin-inline-start: calc(var(--space-xxsmall) * -1);
-      margin-inline-end: var(--space-large);
-      height: 30px;
-      width: 30px;
-    }
-
-    background-size: contain;
-  }
-
-  .ds-onboarding-graphic {
-    background-image: image-set(url('chrome://newtab/content/data/content/assets/pocket-onboarding.avif'), url('chrome://newtab/content/data/content/assets/pocket-onboarding@2x.avif') 2x);
-    border-radius: var(--border-radius-medium);
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    height: 120px;
-    width: 200px;
-    margin-block-start: var(--space-large);
-    margin-block-end: var(--space-large);
-    // Bug 1967304 - Large Token (56px)
-    margin-inline-start: calc(var(--space-xlarge) + var(--space-xxlarge));
-    flex-shrink: 0;
-    display: none;
-
-    @media (min-width: $break-point-large) {
-      display: block;
-    }
   }
 }
 
@@ -137,17 +33,6 @@
   &.ad-sizing-variant-b {
     row-gap: var(--space-xlarge);
     column-gap: var(--space-large);
-  }
-
-  &.ds-card-grid-recent-saves {
-    .ds-card {
-      // Hide the second row orphan on narrow screens.
-      @media (min-width: $break-point-medium) and (max-width: $break-point-large) {
-        &:last-child:nth-child(2n - 1) {
-          display: none;
-        }
-      }
-    }
   }
 
   .ds-card-link:focus {

@@ -137,32 +137,32 @@
         this.lastOutputTime = Date.now();
         this.results.push(result);
 
+        // Use task name as subtest if available
+        let subtest = this.scope?.SimpleTest?._currentTaskName || null;
+
         if (result.info) {
           if (result.msg) {
-            ChromeUtils.addProfilerMarker("TEST-INFO", {category: "Test"},
-                                          result.msg);
-            this.dumper.structuredLogger.info(result.msg);
+            let extra = { test: this.path };
+            if (subtest) {
+              extra.subtest = subtest;
+            }
+            this.dumper.structuredLogger.info(result.msg, extra);
           }
           return;
         }
 
+        // Combine assertion name with exception details if present
+        let message = result.name;
+        if (result.msg) {
+          message += " - " + result.msg;
+        }
+
         this.dumper.structuredLogger.testStatus(this.path,
-                                                result.name,
+                                                subtest,
                                                 result.status,
                                                 result.expected,
-                                                result.msg);
-        let markerName = "TEST-";
-        if (result.pass) {
-          markerName += result.todo ? "KNOWN-FAIL" : "PASS";
-        }
-        else {
-          markerName += "UNEXPECTED-" + result.status;
-        }
-        let markerText = result.name;
-        if (result.msg) {
-          markerText += " - " + result.msg;
-        }
-        ChromeUtils.addProfilerMarker(markerName, {category: "Test"}, markerText);
+                                                message,
+                                                result.stack || null);
       },
 
       setDuration: function setDuration(duration) {

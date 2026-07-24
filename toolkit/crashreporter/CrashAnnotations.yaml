@@ -9,16 +9,56 @@
 #   by the crash reporting machinery; these values can't be accessed by the
 #   C++/JS APIs.
 #
-# Additionally a field can have the following optional fields:
+# Additionally an entry can have the following optional fields:
 # - altname: A string that will be used when writing out the annotation to the
 #   .extra file instead of the annotation name
 # - scope: A string that indicates the scope of the annotation. Valid values
 # include:
 #   - "client": annotations which are never sent remotely (the default if unspecified),
-#   - "report": annotations which are sent in reports, and
-#   - "ping": annotations which are sent in pings and reports.
+#   - "report": annotations which are sent in reports,
+#   - "ping": annotations which are sent in pings and reports, and
+#   - "ping-only": annotations which are sent only in pings.
 # - skip_if: A string that will cause the annotation not to be included in the
 #   crash report if the contents match it.
+# - bugs: An array of bug numbers on bugzilla that relate to the annotation.
+# - glean: How the annotation is surfaced as a Glean metric. This may only be
+#   present if scope is "ping" or "ping-only".
+#
+#   This should be a map with the following (optional) properties:
+#   - metric: Either the full name of the Glean metric (e.g. crash.foobar) or
+#     the top-level Glean metric category to use (in which case the metric name
+#     will be derived as the snake_case version of the annotation name).
+#     Defaults to `crash` (as a category).
+#   - type: The Glean metric type. Defaults based on the annotation type:
+#     - `string` -> `string`
+#     - `boolean` -> `boolean`
+#     Other types have no default and will require an entry.
+#     Valid type descriptions:
+#     - `boolean`
+#     - `datetime`
+#       - requires an adjacent `time_unit` field
+#     - `timespan`
+#       - requires an adjacent `time_unit` field
+#     - `string`
+#     - `string_list`
+#       - requires an adjacent `delimiter` field
+#     - `quantity`
+#       - requires an adjacent `unit` field
+#     - `object`
+#       - requires an adjacent `structure` field (matching the glean schema)
+#   - custom_convert: If set to `true` or a string, a custom conversion function
+#     will be called to convert to the metric value. When set to `true`, the
+#     function will be based on the metric name. When set to a string, the
+#     function will be based on the provided string.
+#
+#     It is only necessary to set this to override the default conversion
+#     functions or to share a conversion function -- other conversions will
+#     always use a custom conversion function. Default conversion functions
+#     exist for:
+#     - `boolean` -> `boolean`
+#     - `string` -> `string`
+#     - `u32`/`u64`/`usize` -> `quantity`
+#     - `string` -> `string_list`
 
 AbortMessage:
   description: >
@@ -161,11 +201,24 @@ Android_PackageName:
   type: string
   scope: report
 
+Android_ProcessName:
+  description: >
+    The name of the process which sent the crash report in the Android
+    application.
+  type: string
+  scope: report
+
 Android_Version:
   description: >
     The developer preview revision of a prerelease SDK plus The current
     development codename, or the string "REL" if this is a release build.
     e.g. "31 (REL)"
+  type: string
+  scope: report
+
+AndroidComponentVersion:
+  description: >
+    The version of android-components in use.
   type: string
   scope: report
 
@@ -178,7 +231,12 @@ AppInitDLLs:
 
 ApplicationBuildID:
   description: >
-    Product application's build ID.
+    The Android application's build ID.
+  type: string
+  scope: ping
+
+ApplicationServicesVersion:
+  description: The version of Application Services libraries.
   type: string
   scope: report
 
@@ -189,6 +247,19 @@ AsyncShutdownTimeout:
     condition that caused the hang is contained in the annotation.
   type: string
   scope: ping
+  glean:
+    type: object
+    structure:
+      type: object
+      properties:
+        phase:
+          type: string
+        conditions:
+          type: string
+        broken_add_blockers:
+          type: array
+          items:
+            type: string
 
 AvailablePageFile:
   description: >
@@ -201,6 +272,10 @@ AvailablePageFile:
     - Not available on other platforms.
   type: usize
   scope: ping
+  glean:
+    metric: memory.available_commit
+    type: quantity
+    unit: bytes
 
 AvailablePhysicalMemory:
   description: >
@@ -212,6 +287,10 @@ AvailablePhysicalMemory:
     - Not available on other platforms.
   type: usize
   scope: ping
+  glean:
+    metric: memory.available_physical
+    type: quantity
+    unit: bytes
 
 AvailableSwapMemory:
   description: >
@@ -222,6 +301,10 @@ AvailableSwapMemory:
     - Not available on other platforms.
   type: usize
   scope: ping
+  glean:
+    metric: memory.available_swap
+    type: quantity
+    unit: bytes
 
 AvailableVirtualMemory:
   description: >
@@ -232,6 +315,10 @@ AvailableVirtualMemory:
     - For macOS, see AvailableSwapMemory, AvailablePhysicalMemory and PurgeablePhysicalMemory.
   type: usize
   scope: ping
+  glean:
+    metric: memory.available_virtual
+    type: quantity
+    unit: bytes
 
 BackgroundTaskMode:
   description: >
@@ -247,9 +334,13 @@ BackgroundTaskName:
 
 BlockedDllList:
   description: >
-    Comma-separated list of blocked DLLS, Windows-only
+    Semicolon-separated list of blocked DLLS, Windows-only
   type: string
   scope: ping
+  glean:
+    metric: dll_blocklist.list
+    type: string_list
+    delimiter: ";"
 
 BlocklistInitFailed:
   description: >
@@ -257,6 +348,8 @@ BlocklistInitFailed:
   type: boolean
   scope: ping
   skip_if: "0"
+  glean:
+    metric: dll_blocklist.init_failed
 
 Breadcrumbs:
   description: >
@@ -268,6 +361,13 @@ Breadcrumbs:
 BuildID:
   description: >
     Application build ID, the format is YYYYMMDDHHMMSS.
+  type: string
+  scope: ping
+  glean:
+    metric: crash.app_build
+
+CrashType:
+  description: The type of crash that occurred (Android-only).
   type: string
   scope: ping
 
@@ -324,6 +424,10 @@ CrashTime:
     Crash time in seconds since the Epoch.
   type: string
   scope: ping
+  glean:
+    metric: crash.time
+    type: datetime
+    time_unit: second
 
 CycleCollector:
   description: >
@@ -341,6 +445,11 @@ DeviceResetReason:
   description: >
     Reason why a DirectX device has been reset, Windows only.
   type: u32
+  scope: report
+
+DistributionID:
+  description: The distribution ID of the application.
+  type: string
   scope: report
 
 DOMFissionEnabled:
@@ -377,12 +486,25 @@ EventLoopNestingLevel:
   type: u32
   scope: ping
   skip_if: "0"
+  glean:
+    type: quantity
+    unit: levels
 
 FontName:
   description: >
     Set before attempting to load a font to help diagnose crashes during loading.
   type: string
   scope: ping
+
+GeckoViewVersion:
+  description: The version of geckoview in use.
+  type: string
+  scope: report
+
+GleanVersion:
+  description: The version of Glean in use.
+  type: string
+  scope: report
 
 GMPLibraryPath:
   description: >
@@ -401,6 +523,10 @@ GPUProcessLaunchCount:
     Number of times the GPU process was launched.
   type: u32
   scope: ping
+  glean:
+    metric: crash.gpu_process_launch
+    type: quantity
+    unit: events
 
 GPUProcessStatus:
   description: >
@@ -428,6 +554,13 @@ GraphicsDrawShader:
   type: string
   scope: report
 
+GraphicsFontFile:
+  description: >
+    Error and path of the font file that has failed to load. The user's profile
+    dir is removed from the front of the path if necessary.
+  type: string
+  scope: report
+
 GraphicsNumActiveRenderers:
   description: >
     Number of webrender renderer instances that are not in a paused state.
@@ -451,6 +584,8 @@ HeadlessMode:
     True if the app was invoked in headless mode via `--headless ...` or `--backgroundtask ...`, false otherwise.
   type: boolean
   scope: ping
+  glean:
+    metric: environment
 
 PHCKind:
   description: >
@@ -506,7 +641,7 @@ InstallTime:
 
 ipc_channel_error:
   description: >
-    Set before a content process crashes because of an IPC channel error, holds
+    Set before a content process crashes because of an IPC channel error. Holds
     a description of the error.
   type: string
   scope: ping
@@ -613,7 +748,63 @@ JavaException:
     JSON structured Java stack trace, only present on Firefox for Android if we encounter an
     uncaught Java exception.
   type: string
-  scope: report
+  scope: ping
+  glean:
+    type: object
+    # version history (typescript for brevity)
+    # # 0
+    # {
+    #   messages: string[],
+    #   stack: { file: string, line: number, class_name: string, method_name: string, is_native: boolean }[]
+    # }
+    #
+    # # 1
+    # {
+    #   throwables: {
+    #     message: string,
+    #     type_name: string,
+    #     stack: { file: string, line: number, class_name: string, method_name: string, is_native: boolean }[]
+    #   }[]
+    # }
+    version: 1
+    structure:
+      type: object
+      properties:
+        # The Throwable and any cause Throwables.
+        # They are always in cause order (e.g., [`e`, `e.cause`, `e.cause.cause`, ...]).
+        throwables:
+          type: array
+          items:
+            type: object
+            properties:
+              # The message of the Throwable.
+              message:
+                type: string
+              # The java fully qualified type name of the Throwable.
+              type_name:
+                type: string
+              # The stack trace, from nearest to farthest execution point, of the Throwable.
+              # This may be omitted on `cause` Throwables.
+              stack:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    # The source file containing this stack trace element.
+                    file:
+                      type: string
+                    # The line number of the source file containing this stack trace element.
+                    line:
+                      type: number
+                    # The name of the class containing this stack trace element.
+                    class_name:
+                      type: string
+                    # The name of the method containing this stack trace element.
+                    method_name:
+                      type: string
+                    # Whether the method is native.
+                    is_native:
+                      type: boolean
 
 JavaStackTrace:
   description: >
@@ -642,6 +833,8 @@ JSLargeAllocationFailure:
     description for the possible values of this annotation.
   type: string
   scope: ping
+  glean:
+    metric: memory
 
 JSModuleLoadError:
   description: >
@@ -659,6 +852,8 @@ JSOutOfMemory:
     to satisfy the allocation.
   type: string
   scope: ping
+  glean:
+    metric: memory
 
 
 LastInteractionDuration:
@@ -667,6 +862,10 @@ LastInteractionDuration:
     at crash.  The value is not set if the user state was active.
   type: u64
   scope: ping
+  glean:
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
 
 LastStartupWasCrash:
   description: >
@@ -741,6 +940,13 @@ LinuxUnderMemoryPressure:
   type: boolean
   scope: report
 
+LinuxMemoryPSI:
+  description: >
+    Memory PSI (Pressure Stall Information) values from /proc/pressure/memory
+    as comma-separated list: some_avg10,some_avg60,some_avg300,some_total,full_avg10,full_avg60,full_avg300,full_total
+  type: string
+  scope: ping
+
 LauncherProcessState:
   description: >
     Launcher process enabled state. The integer value of this annotation must
@@ -756,10 +962,20 @@ LowPhysicalMemoryEvents:
   type: u32
   scope: ping
   skip_if: "0"
+  glean:
+    metric: memory.low_physical
+    type: quantity
+    unit: events
 
 MainThreadRunnableName:
   description: >
     Name of the currently executing nsIRunnable on the main thread.
+  type: string
+  scope: ping
+
+MinidumpSha256Hash:
+  description: >
+    The sha256 hash of the minidump file, if available.
   type: string
   scope: ping
 
@@ -784,6 +1000,10 @@ NimbusEnrollments:
     rollouts, as well as their branches.
   type: string
   scope: ping
+  glean:
+    metric: environment
+    type: string_list
+    delimiter: ","
 
 Notes:
   description: >
@@ -797,6 +1017,10 @@ OOMAllocationSize:
   type: usize
   scope: ping
   skip_if: "0"
+  glean:
+    metric: memory
+    type: quantity
+    unit: bytes
 
 PluginFilename:
   description: >
@@ -823,7 +1047,7 @@ ProcessType:
     Type of the process that crashed, the possible values are defined in
     GeckoProcessTypes.h.
   type: string
-  scope: report
+  scope: ping
 
 ProductName:
   description: >
@@ -856,6 +1080,10 @@ PurgeablePhysicalMemory:
     vm_statistics64_data_t::purgeable_count * vm_page_size.
   type: usize
   scope: ping
+  glean:
+    metric: memory.purgeable_physical
+    type: quantity
+    unit: bytes
 
 QuotaManagerShutdownTimeout:
   description: >
@@ -887,6 +1115,12 @@ QuotaManagerShutdownTimeout:
     started. These include the time difference and the type of object.
   type: string
   scope: ping
+  glean:
+    type: object
+    structure:
+      type: array
+      items:
+        type: string
 
 QuotaManagerStorageIsNetworkResource:
   description: >
@@ -906,6 +1140,8 @@ ReleaseChannel:
     Application release channel (e.g. default, beta, ...)
   type: string
   scope: ping
+  glean:
+    metric: crash.app_channel
 
 RemoteAgent:
   description: >
@@ -930,6 +1166,11 @@ SecondsSinceLastCrash:
     Time in seconds since the last crash occurred.
   type: u64
   scope: ping
+  glean:
+    metric: crash.time_since_last_crash
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
 
 ServerURL:
   description: >
@@ -957,6 +1198,70 @@ StackTraces:
     sent in pings, however they are extracted and transformed into a different
     format. The field in the extra file is meant only for client use.
   type: object
+  scope: ping-only
+  glean:
+    type: object
+    # All addresses are hex strings rather than numbers.
+    structure:
+      type: object
+      properties:
+        # An error from the stack trace analysis, omitted if no errors occurred.
+        error:
+          type: string
+        # The type of crash (SIGSEGV, assertion, etc)
+        crash_type:
+          type: string
+        crash_address:
+          type: string
+        # Index of the crash thread
+        crash_thread:
+          type: number
+        # Index of the main executable module.
+        main_module:
+          type: number
+        # Modules ordered by base memory address.
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              base_address:
+                type: string
+              end_address:
+                type: string
+              # Unique ID of the module
+              code_id:
+                type: string
+              debug_file:
+                type: string
+              debug_id:
+                type: string
+              filename:
+                type: string
+              version:
+                type: string
+        # Stack traces for each thread.
+        threads:
+          type: array
+          items:
+            type: object
+            properties:
+              # Frames in the thread stack trace
+              frames:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    # Index of the module that contains the frame
+                    module_index:
+                      type: number
+                    # The instruction pointer of the frame
+                    ip:
+                      type: string
+                    # Trust of the frame, one of "context", "prewalked", "cfi",
+                    # "frame_pointer", "cfi_scan", "scan", or "none"
+                    trust:
+                      type: string
 
 StartupCacheValid:
   description: >
@@ -970,6 +1275,8 @@ StartupCrash:
     If set to 1 then this crash occurred during startup.
   type: boolean
   scope: ping
+  glean:
+    metric: crash.startup
 
 StartupTime:
   description: >
@@ -1004,6 +1311,10 @@ SystemMemoryUsePercentage:
     field.
   type: u32
   scope: ping
+  glean:
+    metric: memory.system_use_percentage
+    type: quantity
+    unit: percent
 
 TelemetryClientId:
   description: >
@@ -1062,6 +1373,10 @@ TextureUsage:
   type: usize
   scope: ping
   skip_if: "0"
+  glean:
+    metric: memory.texture
+    type: quantity
+    unit: bytes
 
 Throttleable:
   description: >
@@ -1082,6 +1397,10 @@ TotalPageFile:
     - Not available on other systems.
   type: usize
   scope: ping
+  glean:
+    metric: memory
+    type: quantity
+    unit: bytes
 
 TotalPhysicalMemory:
   description: >
@@ -1093,6 +1412,10 @@ TotalPhysicalMemory:
     - Not available on other systems.
   type: usize
   scope: ping
+  glean:
+    metric: memory.total_physical
+    type: quantity
+    unit: bytes
 
 TotalVirtualMemory:
   description: >
@@ -1102,6 +1425,10 @@ TotalVirtualMemory:
     - Not available on other platforms.
   type: usize
   scope: ping
+  glean:
+    metric: memory.total_virtual
+    type: quantity
+    unit: bytes
 
 UnknownNetAddrSocketFamily:
   description: >
@@ -1116,6 +1443,10 @@ UptimeTS:
     because it has a fractional component.
   type: string # This is a floating-point number but we treat it as a string
   scope: ping
+  glean:
+    metric: environment.uptime
+    type: timespan
+    time_unit: millisecond
 
 URL:
   description: >
@@ -1135,10 +1466,19 @@ User32BeforeBlocklist:
   type: boolean
   scope: ping
   skip_if: "0"
+  glean:
+    metric: dll_blocklist.user32_loaded_before
 
 useragent_locale:
   description: >
     User-agent locale.
+  type: string
+  scope: report
+
+UserFontRulesExhausted:
+  description: >
+    Set to "inside" if rules exhausted while adding fonts inside the user's dir,
+    set to "outside" if adding for fonts outside the user's dir.
   type: string
   scope: report
 
@@ -1153,6 +1493,9 @@ UtilityActorsName:
     Comma-separated list of IPC actors name running on this Utility process instance
   type: string
   scope: ping
+  glean:
+    type: string_list
+    delimiter: ","
 
 Vendor:
   description: >
@@ -1165,6 +1508,8 @@ Version:
     Product version.
   type: string
   scope: ping
+  glean:
+    metric: crash.app_display_version
 
 VRProcessStatus:
   description: >
@@ -1186,6 +1531,9 @@ WindowsFileDialogErrorCode:
     for the value.
   type: u32 # This is an HRESULT which is defined as signed, but we don't want to print it as a signed integer
   scope: ping
+  glean:
+    metric: crash.windows.file_dialog_error_code
+    type: string
 
 WindowsPackageFamilyName:
   description: >
@@ -1196,6 +1544,8 @@ WindowsPackageFamilyName:
     starts "Mozilla." or "MozillaCorporation.".
   type: string
   scope: ping
+  glean:
+    metric: windows.package_family_name
 
 WindowsErrorReporting:
   description: >
@@ -1203,6 +1553,8 @@ WindowsErrorReporting:
     runtime exception module.
   type: boolean
   scope: ping
+  glean:
+    metric: crash.windows.error_reporting
 
 Winsock_LSP:
   description: >

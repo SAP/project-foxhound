@@ -51,27 +51,42 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
   const positions = {};
   const DS_COMPONENTS = [
     "Message",
-    "TextPromo",
     "SectionTitle",
-    "Signup",
     "Navigation",
     "Widgets",
     "CardGrid",
-    "CollectionCardGrid",
     "HorizontalRule",
     "PrivacyLink",
   ];
 
   const filterArray = [];
 
+  // Filter sections is Topsites are turned off
   if (!prefs["feeds.topsites"]) {
     filterArray.push("TopSites");
   }
 
+  // Filter sections is Widgets are turned off
+  // Note extra logic is required bc this feature can be enabled via Nimbus
+  const nimbusWidgetsTrainhopEnabled = prefs.trainhopConfig?.widgets?.enabled;
+  const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
+  const widgetsEnabled = prefs["widgets.system.enabled"];
+  if (
+    !nimbusWidgetsTrainhopEnabled &&
+    !nimbusWidgetsEnabled &&
+    !widgetsEnabled
+  ) {
+    filterArray.push("Widgets");
+  }
+
+  // Filter sections is Recommended Stories are turned off
   const pocketEnabled =
     prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
   if (!pocketEnabled) {
-    filterArray.push(...DS_COMPONENTS);
+    filterArray.push(
+      // Bug 1980459 - Do not remove Widgets if DS is disabled
+      ...DS_COMPONENTS.filter(component => component !== "Widgets")
+    );
   }
 
   // function to determine amount of tiles shown per section per viewport
@@ -91,7 +106,7 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
 
   const placeholderComponent = component => {
     if (!component.feed) {
-      // TODO we now need a placeholder for topsites and textPromo.
+      // TODO we now need a placeholder for topsites.
       return {
         ...component,
         data: {
@@ -169,7 +184,8 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
 
     result.forEach(section => {
       const { sectionKey } = section;
-      section.data = sectionsMap[sectionKey];
+      const sectionRecs = sectionsMap[sectionKey] || [];
+      section.data = sectionRecs.filter(rec => !rec.isHeadline);
     });
 
     return result;
@@ -237,15 +253,23 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
             sections: handleSections(data.sections, data.recommendations).map(
               section => {
                 const sectionsSpocsPositions = [];
-                section.layout.responsiveLayouts
-                  // Initial position for spocs is going to be for the smallest breakpoint.
-                  // We can then move it from there via breakpoints.
-                  .find(item => item.columnCount === 1)
-                  .tiles.forEach(tile => {
-                    if (tile.hasAd) {
-                      sectionsSpocsPositions.push({ index: tile.position });
-                    }
-                  });
+                const smallestBreakpointLayout =
+                  section.layout.responsiveLayouts
+                    // Initial position for spocs is going to be for the smallest breakpoint.
+                    // We can then move it from there via breakpoints.
+                    .find(item => item.columnCount === 1);
+
+                smallestBreakpointLayout.tiles.forEach(tile => {
+                  if (tile.hasAd) {
+                    const widgetsBeforeThisPosition =
+                      smallestBreakpointLayout.tiles.filter(
+                        t => t.allowsWidget && t.position < tile.position
+                      ).length;
+                    const adjustedPosition =
+                      tile.position - widgetsBeforeThisPosition;
+                    sectionsSpocsPositions.push({ index: adjustedPosition });
+                  }
+                });
                 return {
                   ...section,
                   data: handleSpocs(

@@ -92,6 +92,7 @@ add_task(async function test() {
 
   /**
    * Trigger a tooltip over an element by sending mousemove event.
+   *
    * @return a promise that resolves when the tooltip is shown
    */
   async function showTooltipOn(element) {

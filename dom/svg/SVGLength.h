@@ -7,9 +7,8 @@
 #ifndef DOM_SVG_SVGLENGTH_H_
 #define DOM_SVG_SVGLENGTH_H_
 
-#include "nsDebug.h"
-#include "mozilla/dom/SVGAnimatedLength.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "nsDebug.h"
 
 enum nsCSSUnit : uint32_t;
 
@@ -17,7 +16,8 @@ namespace mozilla {
 
 namespace dom {
 class SVGElement;
-}
+class UserSpaceMetrics;
+}  // namespace dom
 
 /**
  * This SVGLength class is currently used for SVGLength *list* attributes only.
@@ -37,7 +37,14 @@ class SVGLength {
   SVGLength()
       : mValue(0.0f), mUnit(dom::SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN) {}
 
-  SVGLength(float aValue, uint8_t aUnit) : mValue(aValue), mUnit(aUnit) {}
+  SVGLength(float aValue, uint16_t aUnit)
+      : mValue(aValue), mUnit(uint8_t(aUnit)) {
+    MOZ_ASSERT(aUnit <= std::numeric_limits<uint8_t>::max(),
+               "Length unit-type enums should fit in 8 bits");
+  }
+
+  // Coordinate direction for ObjectSpace/UserSpace.
+  enum class Axis : uint8_t { X, Y, XY };
 
   bool operator==(const SVGLength& rhs) const {
     return mValue == rhs.mValue && mUnit == rhs.mUnit;
@@ -61,31 +68,28 @@ class SVGLength {
    */
   float GetValueInCurrentUnits() const { return mValue; }
 
-  uint8_t GetUnit() const { return mUnit; }
+  uint16_t GetUnit() const { return mUnit; }
 
   void SetValueInCurrentUnits(float aValue) {
     NS_ASSERTION(std::isfinite(aValue), "Set invalid SVGLength");
     mValue = aValue;
   }
 
-  void SetValueAndUnit(float aValue, uint8_t aUnit) {
+  void SetValueAndUnit(float aValue, uint16_t aUnit) {
+    MOZ_ASSERT(aUnit <= std::numeric_limits<uint8_t>::max(),
+               "Length unit-type enums should fit in 8 bits");
     mValue = aValue;
-    mUnit = aUnit;
+    mUnit = uint8_t(aUnit);
   }
 
   /**
    * If it's not possible to convert this length's value to pixels, then
    * this method will return numeric_limits<float>::quiet_NaN().
    */
-  float GetValueInPixels(const dom::SVGElement* aElement, uint8_t aAxis) const {
-    return mValue * GetPixelsPerUnit(dom::SVGElementMetrics(aElement), aAxis);
-  }
+  float GetValueInPixels(const dom::SVGElement* aElement, Axis aAxis) const;
 
   float GetValueInPixelsWithZoom(const dom::SVGElement* aElement,
-                                 uint8_t aAxis) const {
-    return mValue *
-           GetPixelsPerUnitWithZoom(dom::SVGElementMetrics(aElement), aAxis);
-  }
+                                 Axis aAxis) const;
 
   /**
    * Get this length's value in the units specified.
@@ -93,18 +97,18 @@ class SVGLength {
    * This method returns numeric_limits<float>::quiet_NaN() if it is not
    * possible to convert the value to the specified unit.
    */
-  float GetValueInSpecifiedUnit(uint8_t aUnit, const dom::SVGElement* aElement,
-                                uint8_t aAxis) const;
+  float GetValueInSpecifiedUnit(uint16_t aUnit, const dom::SVGElement* aElement,
+                                Axis aAxis) const;
 
   bool IsPercentage() const { return IsPercentageUnit(mUnit); }
 
   float GetPixelsPerUnitWithZoom(const dom::UserSpaceMetrics& aMetrics,
-                                 uint8_t aAxis) const {
+                                 Axis aAxis) const {
     return GetPixelsPerUnit(aMetrics, mUnit, aAxis, true);
   }
 
   float GetPixelsPerUnit(const dom::UserSpaceMetrics& aMetrics,
-                         uint8_t aAxis) const {
+                         Axis aAxis) const {
     return GetPixelsPerUnit(aMetrics, mUnit, aAxis, false);
   }
 
@@ -113,17 +117,17 @@ class SVGLength {
            aUnitType <= dom::SVGLength_Binding::SVG_LENGTHTYPE_PC;
   }
 
-  static bool IsPercentageUnit(uint8_t aUnit) {
+  static bool IsPercentageUnit(uint16_t aUnit) {
     return aUnit == dom::SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE;
   }
 
-  static bool IsAbsoluteUnit(uint8_t aUnit);
+  static bool IsAbsoluteUnit(uint16_t aUnit);
 
-  static bool IsFontRelativeUnit(uint8_t aUnit);
+  static bool IsFontRelativeUnit(uint16_t aUnit);
 
-  static float GetAbsUnitsPerAbsUnit(uint8_t aUnits, uint8_t aPerUnit);
+  static float GetAbsUnitsPerAbsUnit(uint16_t aUnits, uint16_t aPerUnit);
 
-  static nsCSSUnit SpecifiedUnitTypeToCSSUnit(uint8_t aSpecifiedUnit);
+  static nsCSSUnit SpecifiedUnitTypeToCSSUnit(uint16_t aSpecifiedUnit);
 
   static void GetUnitString(nsAString& aUnit, uint16_t aUnitType);
 
@@ -133,11 +137,11 @@ class SVGLength {
    * Returns the number of pixels per given unit.
    */
   static float GetPixelsPerUnit(const dom::UserSpaceMetrics& aMetrics,
-                                uint8_t aUnitType, uint8_t aAxis,
+                                uint16_t aUnitType, Axis aAxis,
                                 bool aApplyZoom);
 
   static float GetPixelsPerCSSUnit(const dom::UserSpaceMetrics& aMetrics,
-                                   nsCSSUnit aCSSUnit, uint8_t aAxis,
+                                   nsCSSUnit aCSSUnit, Axis aAxis,
                                    bool aApplyZoom);
 
  private:

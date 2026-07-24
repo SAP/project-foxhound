@@ -14,7 +14,11 @@ Jinja2 template is not. Please file bugs! #}
 {% if all_objs|has_structure %}
 #include "mozilla/JSONStringWriteFuncs.h"
 {% endif %}
+{% if options.standalone %}
+#include "mozilla/glean/bindings/MetricStandaloneTypes.h"
+{% else %}
 #include "mozilla/glean/bindings/MetricTypes.h"
+{% endif %}
 
 namespace mozilla::glean {
 

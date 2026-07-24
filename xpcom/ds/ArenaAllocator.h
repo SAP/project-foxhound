@@ -13,11 +13,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/fallible.h"
 #include "mozilla/Likely.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/Poison.h"
-#include "mozilla/TemplateLib.h"
 #include "nsDebug.h"
 
 namespace mozilla {
@@ -42,9 +42,9 @@ template <size_t ArenaSize, size_t Alignment = 1>
 class ArenaAllocator {
  public:
   constexpr ArenaAllocator() : mHead(), mCurrent(nullptr) {
-    static_assert(mozilla::tl::FloorLog2<Alignment>::value ==
-                      mozilla::tl::CeilingLog2<Alignment>::value,
-                  "ArenaAllocator alignment must be a power of two");
+    static_assert(
+        mozilla::FloorLog2(Alignment) == mozilla::CeilingLog2(Alignment),
+        "ArenaAllocator alignment must be a power of two");
   }
 
   ArenaAllocator(const ArenaAllocator&) = delete;

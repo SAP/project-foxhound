@@ -47,7 +47,7 @@ class CSSCounterStyleRule final : public css::Rule {
 #define CSS_COUNTER_DESC(name_, method_) \
   void Get##method_(nsACString& aValue); \
   void Set##method_(const nsACString& aValue);
-#include "nsCSSCounterDescList.h"
+#include "nsCSSCounterDescList.inc"
 #undef CSS_COUNTER_DESC
 
   size_t SizeOfIncludingThis(MallocSizeOf) const final;

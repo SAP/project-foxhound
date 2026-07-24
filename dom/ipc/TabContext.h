@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_TabContext_h
 #define mozilla_dom_TabContext_h
 
-#include "nsCOMPtr.h"
 #include "mozilla/BasePrincipal.h"
+#include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
 

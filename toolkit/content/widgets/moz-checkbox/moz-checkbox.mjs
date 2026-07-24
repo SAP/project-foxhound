@@ -24,6 +24,8 @@ import "chrome://global/content/elements/moz-support-link.mjs";
  * @property {string} iconSrc - The src for an optional icon
  * @property {string} description - The text for the description element that helps describe the checkbox
  * @property {string} supportPage - Name of the SUMO support page to link to.
+ * @property {string} ariaLabel - The aria-label text when there is no visible label.
+ * @property {string} ariaDescription - The aria-description text when there is no visible description.
  */
 export default class MozCheckbox extends MozBaseInputElement {
   static properties = {
@@ -37,6 +39,21 @@ export default class MozCheckbox extends MozBaseInputElement {
     this.checked = false;
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.defaultChecked = this.getAttribute("checked") || this.checked;
+    this.checked = !!this.defaultChecked;
+    let val = this.getAttribute("value");
+    if (!val) {
+      this.defaultValue = "on";
+      this.value = "on";
+    } else {
+      this.defaultValue = val;
+      this.value = val;
+    }
+    this.setFormValue(this.value);
+  }
+
   /**
    * Handles click events and keeps the checkbox checked value in sync
    *
@@ -45,6 +62,16 @@ export default class MozCheckbox extends MozBaseInputElement {
    */
   handleStateChange(event) {
     this.checked = event.target.checked;
+    if (this.checked) {
+      this.setFormValue(this.value);
+    } else {
+      this.setFormValue(null);
+    }
+  }
+
+  formResetCallback() {
+    this.checked = this.defaultChecked;
+    this.value = this.defaultValue;
   }
 
   inputTemplate() {
@@ -52,13 +79,16 @@ export default class MozCheckbox extends MozBaseInputElement {
       id="input"
       type="checkbox"
       name=${this.name}
-      value=${this.value}
+      .value=${this.value}
       .checked=${this.checked}
       @click=${this.handleStateChange}
       @change=${this.redispatchEvent}
       ?disabled=${this.disabled || this.parentDisabled}
-      aria-describedby="description"
       aria-label=${ifDefined(this.ariaLabel ?? undefined)}
+      aria-describedby="description"
+      aria-description=${ifDefined(
+        this.hasDescription ? undefined : this.ariaDescription
+      )}
       accesskey=${ifDefined(this.accessKey)}
     />`;
   }

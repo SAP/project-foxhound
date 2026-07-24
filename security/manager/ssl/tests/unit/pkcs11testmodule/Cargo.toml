@@ -5,8 +5,17 @@ edition = "2021"
 license = "MPL-2.0"
 
 [dependencies]
+base64 = "0.22"
+env_logger = {version = "0.10", default-features = false } # disable `regex` to reduce code size
+libcrux-p256 = { version = "0.0.3", features = ["expose-hacl"] }
+log = "0.4"
 mozilla-central-workspace-hack = { version = "0.1", features = ["pkcs11testmodule-static"], optional = true }
+num-bigint = "0.4"
+num-integer = "0.1"
 pkcs11-bindings = "0.1.1"
+rand = "0.8"
+rsclientcerts = { path = "../../../rsclientcerts" }
+rsclientcerts-util = { path = "../../../rsclientcerts-util" }
 
 [lib]
 crate-type = ["staticlib"]

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_jni_Types_h__
-#define mozilla_jni_Types_h__
+#ifndef mozilla_jni_Types_h_
+#define mozilla_jni_Types_h_
 
 #include <jni.h>
 
@@ -121,4 +121,4 @@ using namespace detail;
 }  // namespace jni
 }  // namespace mozilla
 
-#endif  // mozilla_jni_Types_h__
+#endif  // mozilla_jni_Types_h_

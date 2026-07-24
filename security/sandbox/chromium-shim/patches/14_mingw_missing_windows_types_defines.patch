@@ -14,8 +14,8 @@ diff --git a/base/win/windows_types.h b/base/win/windows_types.h
  // This file contains defines and typedefs that allow popular Windows types to
  // be used without the overhead of including windows.h.
  
- #ifndef BASE_WIN_WINDOWS_TYPES_H
- #define BASE_WIN_WINDOWS_TYPES_H
+ #ifndef BASE_WIN_WINDOWS_TYPES_H_
+ #define BASE_WIN_WINDOWS_TYPES_H_
  
  // Needed for function prototypes.
 +#if defined(__MINGW32__)
@@ -30,8 +30,8 @@ diff --git a/base/win/windows_types.h b/base/win/windows_types.h
  #include <sal.h>
  #include <specstrings.h>
  
+ #include "base/win/win_handle_types.h"
+ 
  #ifdef __cplusplus
  extern "C" {
  #endif
- 
- // typedef and define the most commonly used Windows integer types.

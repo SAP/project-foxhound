@@ -2,8 +2,10 @@
 support-files = [
   "../formsubmit.sjs",
   "authenticate.sjs",
+  "slow_css.sjs",
   "empty.html",
   "form_basic.html",
+  "form_basic_slow_css.html",
   "form_basic_iframe.html",
   "form_basic_login.html",
   "form_basic_login_fields_with_max_length.html",
@@ -36,9 +38,7 @@ support-files = [
 
 ["browser_DOMInputPasswordAdded.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'", # Bug 1337606
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1337606
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1337606
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1337606
 ]
 
 ["browser_autocomplete_autofocus_with_frame.js"]
@@ -48,26 +48,28 @@ support-files = ["form_autofocus_frame.html"]
 support-files = ["form_disabled_readonly_passwordField.html"]
 
 ["browser_autocomplete_footer.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && bits == 64 && !debug"] # Bug 1591126
 
 ["browser_autocomplete_generated_password_private_window.js"]
 
 ["browser_autocomplete_import.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1775902
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1775902
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1775902
-  "win10_2009 && !debug", # Bug 1775902
-  "win11_2009 && !debug", # Bug 1775902
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1775902
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && verify-standalone",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1775902
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1775902
 ]
 
 ["browser_autocomplete_insecure_warning.js"]
 
 ["browser_autocomplete_primary_password.js"]
 
+["browser_autofill_after_paint.js"]
+
 ["browser_autofill_hidden_document.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && !debug"] # high frequency intermittent, Bug 1716486
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # high frequency intermittent, Bug 1716486
+]
 
 ["browser_autofill_http.js"]
 https_first_disabled = true
@@ -75,18 +77,24 @@ https_first_disabled = true
 ["browser_autofill_track_filled_logins.js"]
 
 ["browser_basicAuth_multiTab.js"]
-fail-if = ["a11y_checks"] # Bug 1854452 clicked button may not be focusable
-skip-if = ["os == 'android'"]
+fail-if = [
+  "a11y_checks", # Bug 1854452 clicked button may not be focusable
+]
+skip-if = [
+  "os == 'android'",
+]
 
 ["browser_basicAuth_rateLimit.js"]
 
 ["browser_basicAuth_switchTab.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1530566
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1530566
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1530566
 ]
 
 ["browser_context_menu.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+]
 
 ["browser_context_menu_autocomplete_interaction.js"]
 
@@ -98,10 +106,14 @@ skip-if = [
 support-files = ["form_cross_origin_secure_action.html"]
 
 ["browser_deleteLoginsBackup.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["browser_doorhanger_autocomplete_values.js"]
-fail-if = ["a11y_checks"] # Bug 1854452 clicked password-notification-username-dropmaker may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1854452 clicked password-notification-username-dropmaker may not be focusable and/or labeled
+]
 
 ["browser_doorhanger_autofill_then_save_password.js"]
 
@@ -123,13 +135,10 @@ support-files = [
   "form_password_change.html",
 ]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'", # Bug 1729196
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1729196
-  "win11_2009 && bits == 64", # Bug 1729196
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1729196
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1729196
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1729196
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1729196
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1729196
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1729196
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1729196
 ]
 
 ["browser_doorhanger_httpsUpgrade.js"]
@@ -143,22 +152,31 @@ support-files = [
 ["browser_doorhanger_password_edits.js"]
 
 ["browser_doorhanger_promptToChangePassword.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"] # Bug 1775906
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775906
+]
 
 ["browser_doorhanger_remembering.js"]
 
 ["browser_doorhanger_replace_dismissed_with_visible_while_opening.js"]
 
+["browser_doorhanger_reveal_password.js"]
+skip-if = [
+  "a11y_checks", # Bugs 1858041, 1854454 and 1824058 for causing intermittent crashes
+]
+
 ["browser_doorhanger_save_password.js"]
-skip-if = ["a11y_checks"] # Bugs 1858041, 1854454 and 1824058 for causing intermittent crashes
+skip-if = [
+  "a11y_checks", # Bugs 1858041, 1854454 and 1824058 for causing intermittent crashes
+]
 
 ["browser_doorhanger_submit_telemetry.js"]
-fail-if = ["a11y_checks"] # Bug 1854452 clicked dropmaker may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854452 clicked dropmaker may not be focusable
+]
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1695395
   "tsan", # Bug 1661305
-  "os == 'linux' && os_version == '18.04' && debug", # Bug 1658056
-  "os == 'linux' && os_version == '18.04' && asan", # Bug 1695395
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1695395
 ]
 
 ["browser_doorhanger_target_blank.js"]
@@ -171,7 +189,6 @@ support-files = [
   "subtst_notifications_11.html",
   "subtst_notifications_11_popup.html",
 ]
-skip-if = ["os == 'linux' && os_version == '18.04'"] # Bug 1312981, bug 1313136
 
 ["browser_entry_point_telemetry.js"]
 
@@ -184,7 +201,6 @@ support-files = ["file_focus_before_DOMContentLoaded.sjs"]
 
 ["browser_form_history_fallback.js"]
 https_first_disabled = true # TODO remove that line and move test to HTTPS, see Bug 1776350
-skip-if = ["os == 'linux' && os_version == '18.04' && debug"] # Bug 1334336
 support-files = [
   "subtst_notifications_1.html",
   "subtst_notifications_2.html",
@@ -201,7 +217,9 @@ support-files = [
 ]
 
 ["browser_formless_submit_chrome.js"]
-skip-if = ["tsan"] # Bug 1683730
+skip-if = [
+  "tsan", # Bug 1683730
+]
 
 ["browser_glean_pwmgr_form_autofill_result.js"]
 
@@ -213,9 +231,7 @@ support-files = ["form_signup_detection.html"]
 
 ["browser_localip_frame.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1683848
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1683848
-  "os == 'linux' && os_version == '18.04' && bits == 64 && !debug", # Bug 1683848
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1683848
 ]
 
 ["browser_message_onFormSubmit.js"]
@@ -223,15 +239,15 @@ skip-if = [
 ["browser_openPasswordManager.js"]
 
 ["browser_preselect_login.js"]
-fail-if = ["a11y_checks"] # Bug 1854452 clicked ac-secondary-action may not be labeled
+fail-if = [
+  "a11y_checks", # Bug 1854452 clicked ac-secondary-action may not be labeled
+]
 skip-if = [
   "asan",
-  "tsan",
-  "os == 'linux' && os_version == '18.04' && debug", # Bug 1840479
-  "os == 'linux' && os_version == '24.04' && processor == 'x64_64' && display == 'x11' && debug", # Bug 1840479
-  "win10_2009 && debug", # Bug 1840479
-  "win11_2009 && debug", # Bug 1840479
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1840479
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && debug", # Bug 1840479
   "os == 'win' && os_version == '11.26100' && debug", # Bug 1840479
+  "tsan",
 ]
 
 ["browser_private_window.js"]
@@ -239,10 +255,12 @@ support-files = [
   "subtst_privbrowsing_1.html",
   "form_password_change.html",
 ]
-skip-if = ["os == 'linux' && os_version == '18.04' && bits == 64 && !debug"] # Bug 1744976
 
 ["browser_proxyAuth_prompt.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+  "os == 'win' && os_version == '11.26100' && verify-standalone",
+]
 
 ["browser_relay_signup_flow.js"]
 support-files = ["browser_relay_utils.js"]
@@ -252,6 +270,15 @@ support-files = ["browser_relay_utils.js"]
 
 ["browser_relay_telemetry.js"]
 support-files = ["browser_relay_utils.js"]
+
+["browser_relay_use.js"]
+support-files = ["browser_relay_utils.js"]
+
+["browser_rust_mirror.js"]
+skip-if = [
+  "os == 'android'",
+  "release_or_beta", # Bug 1993218
+]
 
 ["browser_telemetry_SignUpFormRuleset.js"]
 

@@ -54,4 +54,30 @@ sealed class Event {
          */
         data class UserActivated(val fromSearch: Boolean) : GrowthData("imgpmr")
     }
+
+    /**
+     * Events related to first week, post install data.
+     */
+    sealed class FirstWeekPostInstall(val tokenName: String) : Event() {
+        /**
+         * Event recording when user is at least 1 day active on the last 3 days of the first week.
+         */
+        object LastThreeDaysActivity : FirstWeekPostInstall("89cbkw")
+
+        /**
+         * Event recording when **both** of the following are true:
+         *
+         * - At least 2 days active on the last 3 days of the first week
+         * - At least 2 days active on the first 4 days of the first week.
+         */
+        object RecurrentActivity : FirstWeekPostInstall("yzyixm")
+
+        /**
+         * Event recording when **both** of the following are true:
+         *
+         * - Active on every single day in the first week
+         * - Default browser on the first 4 days of the first week.
+         */
+        object EverydayActivityAndSetToDefault : FirstWeekPostInstall("v0g2bc")
+    }
 }

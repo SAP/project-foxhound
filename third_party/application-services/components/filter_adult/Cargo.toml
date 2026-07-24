@@ -1,0 +1,21 @@
+[package]
+name = "filter_adult"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+base64 = "0.22.1"
+clap = { version = "4.5", default-features = false, features = ["std", "derive"], optional = true }
+error-support = { path = "../support/error" }
+md-5 = "0.10"
+regex = "1"
+thiserror = "2"
+uniffi = { version = "0.31" }
+
+[[bin]]
+name = "import-site-list"
+required-features = ["build-binary"]
+
+[features]
+build-binary = ["clap"]

@@ -23,8 +23,9 @@ browser {
 
 #header {
   align-items: center;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   background-color: var(--sidebar-background-color);
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: row;
   padding-inline: var(--space-large);
@@ -44,12 +45,14 @@ browser {
     --caret-padding: var(--space-xsmall);
     --end-padding: 0px;
     --start-padding: calc(var(--caret-padding) + var(--background-image-width) + var(--space-xsmall));
+    --select-default-width: 300px;
     background-color: var(--button-background-color-ghost);
     background-position-x: var(--caret-anchor) var(--caret-padding);
     color: var(--button-text-color-ghost);
     flex: 1;
     height: var(--button-size-icon);
     margin-block: var(--space-xsmall);
+    max-width: var(--select-default-width);
 
     &:hover {
       background-color: var(--button-background-color-ghost-hover);
@@ -58,17 +61,6 @@ browser {
 
     &:dir(rtl) {
       --caret-anchor: right;
-    }
-  }
-
-  /* Hide some content, e.g., dropdown, when onboarding exists */
-  #multi-stage-message-root + & {
-    select {
-      background-image: none;
-    }
-
-    #header-more {
-      display: none;
     }
   }
 }
@@ -83,8 +75,12 @@ browser {
   }
 }
 
+#message-container {
+  padding: var(--space-xsmall);
+}
+
 #multi-stage-message-root {
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--background-color-overlay);
   display: flex;
   flex-direction: column;
   inset: 0;
@@ -93,8 +89,8 @@ browser {
 
   .onboardingContainer {
     height: unset;
-    margin: var(--space-large);
-    margin-top: max(36px, 10vh - 31px);
+    margin: auto var(--space-large);
+    min-height: unset;
   }
 
   .screen {
@@ -114,6 +110,10 @@ browser {
   .welcome-text {
     margin-bottom: var(--space-xlarge);
     padding-inline: 0;
+  }
+
+  .content-tile {
+    width: 100%;
   }
 
   .tiles-single-select-container {
@@ -137,11 +137,11 @@ browser {
         z-index: 1;
       }
       &::after {
-        background: linear-gradient(transparent, var(--in-content-page-background));
+        background: linear-gradient(transparent, var(--background-color-canvas));
         bottom: 0;
       }
       &::before {
-        background: linear-gradient(var(--in-content-page-background), transparent);
+        background: linear-gradient(var(--background-color-canvas), transparent);
         top: 0;
       }
     }
@@ -196,7 +196,7 @@ browser {
     &.chatgpt {
       background-image: url(assets/brands/chatgpt.svg);
       -moz-context-properties: fill;
-      fill: var(--in-content-page-color);
+      fill: var(--text-color);
     }
     &.copilot {
       background-image: url(assets/brands/copilot.svg);
@@ -214,48 +214,9 @@ browser {
 
   .text {
     flex-direction: column;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     margin: 5px;
     text-align: start;
-
-    > div {
-      color: var(--text-color-deemphasized);
-      font-weight: normal;
-      margin: -3px;
-      overflow-y: hidden;
-      padding: 3px; /* extra space to avoid outlines hidden by overflow */
-
-      @media (prefers-reduced-motion: no-preference) {
-        transition: max-height 0.6s;
-      }
-    }
-
-    ul {
-      margin: 0;
-      padding: 0;
-    }
-
-    li {
-      background-position: 0 50%;
-      background-repeat: no-repeat;
-      -moz-context-properties: fill;
-      fill: currentColor;
-      margin-block: var(--space-small);
-      padding-inline-start: 24px;
-
-      &[data-l10n-id*="generate"] {
-        background-image: url(chrome://global/skin/icons/edit-outline.svg);
-      }
-      &[data-l10n-id*="analyze"] {
-        background-image: url(chrome://global/skin/icons/eye.svg);
-      }
-      &[data-l10n-id*="switch"] {
-        background-image: url(chrome://global/skin/icons/arrows-updown.svg);
-      }
-      &[data-l10n-id*="price"] {
-        background-image: url(chrome://browser/skin/price.svg);
-      }
-    }
   }
 
   .link-paragraph {
@@ -263,37 +224,22 @@ browser {
     font-size: 0.8em;
   }
 
-  .inline-image {
-    background-image: url(assets/shortcuts-static.svg);
-    background-repeat: no-repeat;
-    background-size: contain;
-
-    @media (prefers-reduced-motion: no-preference) {
-      background-image: url(assets/shortcuts-animated.svg);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      background-image: url(assets/shortcuts-static-dark.svg);
-
-      @media (prefers-reduced-motion: no-preference) {
-        background-image: url(assets/shortcuts-animated-dark.svg);
-      }
-    }
-
-    > img {
-      visibility: hidden;
-    }
+  + #header,
+  + #browser-container,
+  + #summarize-btn-container {
+    display: none;
   }
 }
 
 #summarize-btn-container {
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
   padding: var(--space-large);
   position: relative;
 
   .badge {
     --badge-background-color-new: var(--color-green-40);
 
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     background: var(--badge-background-color-new);
     border-radius: var(--border-radius-small);
     color: var(--button-text-color-primary-hover);
@@ -313,11 +259,6 @@ browser {
 
   /* stylelint-disable-next-line media-query-no-invalid */
   @media (not -moz-pref("browser.ml.chat.page")) or -moz-pref("browser.ml.chat.provider", "") {
-    display: none;
-  }
-
-  /* Hide footer when onboarding exists */
-  #multi-stage-message-root ~ & {
     display: none;
   }
 }

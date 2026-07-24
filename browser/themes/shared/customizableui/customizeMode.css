@@ -15,7 +15,7 @@
 }
 
 :root[customizing] .customization-target:not(#widget-overflow-fixed-list) {
-  min-width: 100px;
+  min-width: var(--size-layout-xsmall);
 }
 
 /* When customizing, overflowable toolbars move automatically moved items back
@@ -53,7 +53,7 @@ toolbar[overflowable][customizing] > .customization-target {
 }
 
 #customization-header {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   font-size: 1.2em;
   margin: 20px 20px 15px;
 }
@@ -262,8 +262,8 @@ toolbarpaletteitem {
     justify-content: inherit;
   }
 
-  #PersonalToolbar & toolbarbutton[checked="true"],
-  toolbar & toolbarbutton[checked="true"] > :where(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
+  #PersonalToolbar & toolbarbutton[checked],
+  toolbar & toolbarbutton[checked] > :where(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
     background-color: revert !important;
   }
 
@@ -288,7 +288,7 @@ toolbarpaletteitem {
     }
 
     > #search-container > #searchbar,
-    > #urlbar-container > #urlbar > #urlbar-background {
+    .urlbar-background {
       outline: 1px solid color-mix(in srgb, currentColor 60%, transparent);
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.13);
     }
@@ -345,7 +345,7 @@ toolbarpaletteitem {
   appearance: none;
   color: inherit;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding-block: 0;
   padding-inline: 0 5px;
   margin: 2px 0;
@@ -376,15 +376,15 @@ toolbarpaletteitem {
 }
 
 #customization-uidensity-menuitem-normal {
-  list-style-image: url("chrome://browser/skin/customizableui/density-normal.svg");
+  --menuitem-icon: url("chrome://browser/skin/customizableui/density-normal.svg");
 }
 
 #customization-uidensity-menuitem-compact {
-  list-style-image: url("chrome://browser/skin/customizableui/density-compact.svg");
+  --menuitem-icon: url("chrome://browser/skin/customizableui/density-compact.svg");
 }
 
 #customization-uidensity-menuitem-touch {
-  list-style-image: url("chrome://browser/skin/customizableui/density-touch.svg");
+  --menuitem-icon: url("chrome://browser/skin/customizableui/density-touch.svg");
 }
 
 #customization-uidensity-button > .box-inherit > .box-inherit > .button-icon:-moz-locale-dir(rtl) {
@@ -464,7 +464,7 @@ toolbarpaletteitem {
 
 #customization-panelHeader {
   font-size: 1.3em;
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   padding: 2px 12px;
   margin: 0;
 }

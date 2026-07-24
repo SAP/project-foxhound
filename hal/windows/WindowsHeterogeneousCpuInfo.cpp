@@ -6,7 +6,6 @@
 
 #include "Hal.h"
 #include "HalTypes.h"
-#include "mozilla/BitSet.h"
 #include "nsTArray.h"
 
 #include <windows.h>

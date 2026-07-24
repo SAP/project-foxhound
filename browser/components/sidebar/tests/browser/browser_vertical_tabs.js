@@ -162,10 +162,28 @@ add_task(async function test_toggle_vertical_tabs() {
   gBrowser.selectedTab.focus();
 
   info("Open a new tab using the context menu.");
-  await openAndWaitForContextMenu(contextMenu, gBrowser.selectedTab, () => {
-    document.getElementById("context_openANewTab").click();
-  });
+  const promiseTabOpen = BrowserTestUtils.waitForEvent(
+    window.gBrowser.tabContainer,
+    "TabOpen"
+  );
+  let hidden = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  await openAndWaitForContextMenu(
+    contextMenu,
+    gBrowser.selectedTab,
+    async () => {
+      info("Tab context menu opened");
+      let newTabOption = document.getElementById("context_openANewTab");
+      if (!newTabOption) {
+        info("New tab context menu option not found");
+      }
+      newTabOption?.click();
+    }
+  );
+
+  await promiseTabOpen;
+  info("New tab opened");
   contextMenu.hidePopup();
+  await hidden;
 
   let keyedScalars = TelemetryTestUtils.getProcessScalars("parent", true);
   TelemetryTestUtils.assertKeyedScalar(
@@ -190,10 +208,36 @@ add_task(async function test_toggle_vertical_tabs() {
 
   info("Pin a tab using the context menu.");
   await SidebarController.waitUntilStable();
-  await openAndWaitForContextMenu(contextMenu, gBrowser.selectedTab, () => {
-    document.getElementById("context_pinTab").click();
-  });
+  const promiseTabPinned = BrowserTestUtils.waitForEvent(
+    window,
+    "TabPinned",
+    true
+  );
+  let hidden2 = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  await openAndWaitForContextMenu(
+    contextMenu,
+    gBrowser.selectedTab,
+    async () => {
+      info("Tab context menu opened");
+      let pinTabOption = document.getElementById("context_pinTab");
+      if (!pinTabOption) {
+        info("Pin tab context menu option not found");
+      }
+      pinTabOption?.click();
+    }
+  );
+
+  await promiseTabPinned;
+  // Wait for pinned tab to render
+  let pinnedTabsContainer = document.getElementById("pinned-tabs-container");
+  await BrowserTestUtils.waitForMutationCondition(
+    pinnedTabsContainer,
+    { childList: true },
+    () => pinnedTabsContainer.childElementCount === 1
+  );
+  info("Tab pinned via the context menu");
   contextMenu.hidePopup();
+  await hidden2;
 
   scalars = await getTelemetryScalars([
     "browser.engagement.max_concurrent_vertical_tab_pinned_count",
@@ -228,6 +272,8 @@ add_task(async function test_toggle_vertical_tabs() {
   });
 
   // Synthesize a double click 100px below the last tab
+  let target = document.getElementById("tabbrowser-arrowscrollbox");
+  let dblClickPromise = BrowserTestUtils.waitForEvent(target, "dblclick");
   EventUtils.synthesizeMouseAtPoint(
     containerRect.left + containerRect.width / 2,
     tabRect.bottom + 100,
@@ -238,6 +284,7 @@ add_task(async function test_toggle_vertical_tabs() {
     tabRect.bottom + 100,
     { clickCount: 2 }
   );
+  await dblClickPromise;
 
   is(gBrowser.tabs.length, 3, "Tabstrip now has three tabs");
 
@@ -414,26 +461,17 @@ add_task(async function test_enabling_vertical_tabs_enables_sidebar_revamp() {
 
 add_task(async function test_vertical_tabs_overflow() {
   await waitForTabstripOrientation("vertical");
-  const numTabs = 50;
-  const winData = {
-    tabs: Array.from({ length: numTabs }, (_, i) => ({
-      entries: [
-        {
-          url: `data:,Tab${i}`,
-          triggeringPrincipal_base64: E10SUtils.SERIALIZED_SYSTEMPRINCIPAL,
-        },
-      ],
-    })),
-    selected: numTabs,
-  };
-  const browserState = { windows: [winData] };
-
-  // use Session restore to batch-open tabs
-  info(`Restoring to browserState: ${JSON.stringify(browserState, null, 2)}`);
-  await SessionStoreTestUtils.promiseBrowserState(browserState);
-  info("Windows and tabs opened, waiting for readyWindowsPromise");
-  await NonPrivateTabs.readyWindowsPromise;
-  info("readyWindowsPromise resolved");
+  let tabsContainer = document.getElementById("tabbrowser-tabs");
+  info("Open new tabs until they overflow");
+  let index = gBrowser.tabs.length;
+  while (!tabsContainer.hasAttribute("overflow")) {
+    await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      `data:text/html,<title>${index + 1}</title>`
+    );
+    index++;
+  }
+  await SidebarController.waitUntilStable();
 
   info("Open a new tab using the new tab button.");
   const newTabButton = document.getElementById("vertical-tabs-newtab-button");
@@ -443,11 +481,7 @@ add_task(async function test_vertical_tabs_overflow() {
   );
   EventUtils.synthesizeMouseAtCenter(newTabButton, {});
 
-  is(
-    gBrowser.tabs.length,
-    numTabs + 1,
-    `Tabstrip now has ${numTabs + 1} tabs.`
-  );
+  is(gBrowser.tabs.length, index + 1, `Tabstrip now has ${index + 1} tabs.`);
   const keyedScalars = TelemetryTestUtils.getProcessScalars("parent", true);
   TelemetryTestUtils.assertKeyedScalar(
     keyedScalars,
@@ -547,8 +581,8 @@ add_task(async function test_vertical_tabs_min_width() {
   );
   is(
     pinnedTabsContainer.children.length,
-    1,
-    "One tab is pinned in vertical pinned tabs container"
+    2,
+    "Two tabs are pinned in vertical pinned tabs container"
   );
   is(
     pinnedTabsContainer.getBoundingClientRect().width,
@@ -561,6 +595,7 @@ add_task(async function test_vertical_tabs_min_width() {
     Math.round(tabs[1].getBoundingClientRect().width),
     "Vertical pinned tabs should be the same width as the unpinned tabs"
   );
+  gBrowser.unpinTab(tabs[0]);
   gBrowser.unpinTab(tabs[1]);
 
   // Switch to horizontal tabs

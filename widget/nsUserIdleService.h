@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUserIdleService_h__
-#define nsUserIdleService_h__
+#ifndef nsUserIdleService_h_
+#define nsUserIdleService_h_
 
 #include "nsIUserIdleServiceInternal.h"
 #include "nsCOMPtr.h"
@@ -215,4 +215,4 @@ class nsUserIdleService : public nsIUserIdleServiceInternal {
   void IdleTimerCallback(void);
 };
 
-#endif  // nsUserIdleService_h__
+#endif  // nsUserIdleService_h_

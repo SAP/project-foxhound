@@ -16,7 +16,6 @@
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Result.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 
@@ -60,6 +59,12 @@ OSPreferences* OSPreferences::GetInstance() {
 }
 
 void OSPreferences::Refresh() {
+  // TODO: in content processes, get system locales from the parent process
+  // to ensure consistency and avoid depending on APIs that may be blocked
+  // by sandboxing (see bug 1946691).
+  // (Not strictly necessary for now as we don't currently use Refresh() on
+  // Windows.)
+
   nsTArray<nsCString> newLocales;
   ReadSystemLocales(newLocales);
 

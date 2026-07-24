@@ -17,6 +17,8 @@ loader.lazyRequireGetter(
   true
 );
 
+const { getSystemInfo } = require("resource://devtools/shared/system.js");
+
 class InspectorCommand {
   constructor({ commands }) {
     this.commands = commands;
@@ -41,10 +43,10 @@ class InspectorCommand {
   /**
    * Search the document for the given string and return all the results.
    *
-   * @param {Object} walkerFront
-   * @param {String} query
+   * @param {object} walkerFront
+   * @param {string} query
    *        The string to search for.
-   * @param {Object} options
+   * @param {object} options
    *        {Boolean} options.reverse - search backwards
    * @returns {Array} The list of search results
    */
@@ -60,11 +62,11 @@ class InspectorCommand {
    * If a new query which does not match the current one all is reset and new search
    * is kicked off.
    *
-   * @param {String} query
+   * @param {string} query
    *         The string / selector searched for
-   * @param {Object} options
+   * @param {object} options
    *        {Boolean} reverse - determines if the search is done backwards
-   * @returns {Object} res
+   * @returns {object} res
    *          {String} res.type
    *          {String} res.query - The string / selector searched for
    *          {Object} res.node - the current node
@@ -111,11 +113,11 @@ class InspectorCommand {
   /**
    * Returns a list of matching results for CSS selector autocompletion.
    *
-   * @param {String} query
+   * @param {string} query
    *        The selector query being completed
-   * @param {String} firstPart
+   * @param {string} firstPart
    *        The exact token being completed out of the query
-   * @param {String} state
+   * @param {string} state
    *        One of "pseudo", "id", "tag", "class", "null"
    * @return {Array<string>} suggestions
    *        The list of suggested CSS selectors
@@ -176,14 +178,14 @@ class InspectorCommand {
    *        Several selectors can be needed if the element is nested in frames
    *        and not directly in the root document.
    * @param {Integer} timeoutInMs
-   *        The maximum number of ms the function should run (defaults to 5000).
+   *        The maximum number of ms the function should run (defaults to 1000).
    *        If it exceeds this, the returned promise will resolve with `null`.
    * @return {Promise<NodeFront|null>} a promise that resolves when the node front is found
    *        for selection using inspector tools. It resolves with the deepest frame document
    *        that could be retrieved when the "final" nodeFront couldn't be found in the page.
    *        It resolves with `null` when the function runs for more than timeoutInMs.
    */
-  async findNodeFrontFromSelectors(nodeSelectors, timeoutInMs = 5000) {
+  async findNodeFrontFromSelectors(nodeSelectors, timeoutInMs = 1000) {
     if (
       !nodeSelectors ||
       !Array.isArray(nodeSelectors) ||
@@ -251,9 +253,9 @@ class InspectorCommand {
     // Since this is only used for re-setting a selection after a page reloads, we can
     // put a timeout, in case there's an iframe that would take too much time to load,
     // and prevent the markup view to be populated.
-    const onTimeout = new Promise(res => setTimeout(res, timeoutInMs)).then(
-      () => null
-    );
+    const onTimeout = new Promise(res =>
+      setTimeout(res, timeoutInMs * getSystemInfo().timeoutMultiplier)
+    ).then(() => null);
     const onQuerySelectors = querySelectors(rootNodeFront);
     return Promise.race([onTimeout, onQuerySelectors]);
   }
@@ -331,7 +333,7 @@ class InspectorCommand {
    * it will return something like: ["body > iframe", "#sub-document-title"]
    *
    * @param {NodeFront} nodeFront: The nodefront to get the selectors for
-   * @returns {Promise<Array<String>>} A promise that resolves with an array of selectors (strings)
+   * @returns {Promise<Array<string>>} A promise that resolves with an array of selectors (strings)
    */
   async getNodeFrontSelectorsFromTopDocument(nodeFront) {
     const selectors = [];
@@ -359,10 +361,10 @@ class InspectorCommand {
   /**
    *  Get compatibility issues for given domRule declarations
    *
-   * @param {Array<Object>} domRuleDeclarations
+   * @param {Array<object>} domRuleDeclarations
    * @param {string} domRuleDeclarations[].name: Declaration name
    * @param {string} domRuleDeclarations[].value: Declaration value
-   * @returns {Promise<Array<Object>>}
+   * @returns {Promise<Array<object>>}
    */
   async getCSSDeclarationBlockIssues(domRuleDeclarations) {
     // Filter out custom property declarations as we can't have issue with those and
@@ -412,7 +414,8 @@ class InspectorCommand {
 
   /**
    * Get compatibility issues for all queued domRules declarations
-   * @returns {Promise<Array<Array<Object>>>}
+   *
+   * @returns {Promise<Array<Array<object>>>}
    */
   #batchedGetCSSDeclarationBlockIssues = async () => {
     const declarations =

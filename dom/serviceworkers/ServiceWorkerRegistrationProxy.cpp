@@ -6,13 +6,13 @@
 
 #include "ServiceWorkerRegistrationProxy.h"
 
+#include "ServiceWorkerManager.h"
+#include "ServiceWorkerRegistrationParent.h"
+#include "ServiceWorkerUnregisterCallback.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/notification/NotificationUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "ServiceWorkerManager.h"
-#include "ServiceWorkerRegistrationParent.h"
-#include "ServiceWorkerUnregisterCallback.h"
 #include "nsINotificationStorage.h"
 
 namespace mozilla::dom {
@@ -66,7 +66,7 @@ void ServiceWorkerRegistrationProxy::UpdateStateOnBGThread(
   if (!mActor) {
     return;
   }
-  Unused << mActor->SendUpdateState(aDescriptor.ToIPC());
+  (void)mActor->SendUpdateState(aDescriptor.ToIPC());
 }
 
 void ServiceWorkerRegistrationProxy::FireUpdateFoundOnBGThread() {
@@ -74,7 +74,7 @@ void ServiceWorkerRegistrationProxy::FireUpdateFoundOnBGThread() {
   if (!mActor) {
     return;
   }
-  Unused << mActor->SendFireUpdateFound();
+  (void)mActor->SendFireUpdateFound();
 }
 
 void ServiceWorkerRegistrationProxy::InitOnMainThread() {

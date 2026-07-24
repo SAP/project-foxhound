@@ -10,7 +10,11 @@
 
 #include "api/peer_connection_interface.h"
 
+#include <vector>
+
+#include "api/candidate.h"
 #include "pc/media_factory.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -45,26 +49,16 @@ PeerConnectionDependencies::PeerConnectionDependencies(
     PeerConnectionObserver* observer_in)
     : observer(observer_in) {}
 
-// TODO(bugs.webrtc.org/12598: remove pragma once async_resolver_factory
-// is removed from PeerConnectionDependencies
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 PeerConnectionDependencies::PeerConnectionDependencies(
     PeerConnectionDependencies&&) = default;
-#pragma clang diagnostic pop
 
 PeerConnectionDependencies::~PeerConnectionDependencies() = default;
 
 PeerConnectionFactoryDependencies::PeerConnectionFactoryDependencies() =
     default;
 
-// TODO: bugs.webrtc.org/369904700 - remove pragma once `audio_processing`
-// is removed from PeerConnectionFactoryDependencies.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 PeerConnectionFactoryDependencies::PeerConnectionFactoryDependencies(
     PeerConnectionFactoryDependencies&&) = default;
-#pragma clang diagnostic pop
 
 PeerConnectionFactoryDependencies::~PeerConnectionFactoryDependencies() =
     default;

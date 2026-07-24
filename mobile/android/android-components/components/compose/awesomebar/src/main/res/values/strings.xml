@@ -5,4 +5,6 @@
 <resources>
     <!-- Description for the button to accept the search suggestion and continue editing the search. -->
     <string name="mozac_browser_awesomebar_edit_suggestion">Accept and edit suggestion</string>
+    <!-- Description for the button to remove the search suggestion from the displayed results. -->
+    <string name="mozac_browser_awesomebar_remove_suggestion">Remove suggestion</string>
 </resources>

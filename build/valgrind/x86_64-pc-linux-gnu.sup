@@ -266,15 +266,7 @@
     fun:_gdk_x11_display_create_window_impl
     fun:gdk_window_ensure_native
     fun:gdk_x11_window_get_xid
-    fun:GetX11Window
-    ...
-    fun:gtk_widget_map
-    fun:gtk_window_map
-    ...
-    fun:gtk_widget_map
-    fun:gtk_window_show
-    ...
-    fun:gtk_widget_show
+    fun:_ZN8nsWindow6CreateEP9nsIWidgetRKN7mozilla3gfx12IntRectTypedINS2_17LayoutDevicePixelEEERKNS2_6widget8InitDataE
     ...
 }
 

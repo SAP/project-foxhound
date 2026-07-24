@@ -66,7 +66,7 @@ add_task(async function testButtons() {
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"
   );
-  exceptionButton.doCommand();
+  exceptionButton.click();
 
   let win = await promiseSubDialogLoaded;
 
@@ -277,11 +277,13 @@ add_task(async function checkDialogFunctionality() {
     }
   );
 
+  SpecialPowers.clearUserPref("dom.security.https_only_mode_ever_enabled_pbm");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 /**
  * Changes HTTPS-Only Mode pref
+ *
  * @param {string} state "everywhere", "private", "off"
  */
 async function setHttpsOnlyPref(state) {
@@ -295,6 +297,7 @@ async function setHttpsOnlyPref(state) {
 
 /**
  * Changes HTTPS-First Mode pref
+ *
  * @param {string} state "everywhere", "private", "off"
  */
 async function setHttpsFirstPref(state) {
@@ -308,6 +311,7 @@ async function setHttpsFirstPref(state) {
 
 /**
  * Opens new exceptions dialog, runs test function
+ *
  * @param {HTMLElement} preferencesDoc document of about:preferences tab
  * @param {function} test function to call when dialog is open
  * @param {Array} observances permission changes to observe (order is important)
@@ -317,7 +321,7 @@ async function runTest(preferencesDoc, test, observancesFn) {
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"
   );
-  preferencesDoc.getElementById("httpsOnlyExceptionButton").doCommand();
+  preferencesDoc.getElementById("httpsOnlyExceptionButton").click();
 
   let win = await promiseSubDialogLoaded;
 

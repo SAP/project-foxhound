@@ -1,0 +1,10 @@
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const decoder = new VideoDecoder({'output': () => {}, 'error': () => {}})
+  decoder.decode(new EncodedVideoChunk({
+    type: 'key',
+    timestamp: 1,
+    data: new ArrayBuffer(2147483647)
+  }))
+})
+</script>

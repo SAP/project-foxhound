@@ -14,7 +14,6 @@
 #include "jspubtd.h"
 #include "js/CompileOptions.h"
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "xptinfo.h"
 #include "nsCOMPtr.h"
 

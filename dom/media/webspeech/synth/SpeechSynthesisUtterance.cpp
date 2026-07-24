@@ -4,16 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "SpeechSynthesisUtterance.h"
+
+#include "SpeechSynthesisVoice.h"
+#include "mozilla/dom/SpeechSynthesisEvent.h"
+#include "mozilla/dom/SpeechSynthesisUtteranceBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsGkAtoms.h"
-
-#include "mozilla/dom/SpeechSynthesisEvent.h"
-#include "mozilla/dom/SpeechSynthesisUtteranceBinding.h"
-#include "SpeechSynthesisUtterance.h"
-#include "SpeechSynthesisVoice.h"
-
-#include <stdlib.h>
 
 namespace mozilla::dom {
 

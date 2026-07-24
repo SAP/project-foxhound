@@ -128,7 +128,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   nsISHistory* GetSessionHistory();
   SessionHistoryEntry* GetActiveSessionHistoryEntry();
-  void SetActiveSessionHistoryEntry(SessionHistoryEntry* aEntry);
+  void SetActiveSessionHistoryEntryFromBFCache(SessionHistoryEntry* aEntry);
 
   bool ManuallyManagesActiveness() const;
 
@@ -197,7 +197,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   MOZ_CAN_RUN_SCRIPT Maybe<int32_t> HistoryGo(
       int32_t aOffset, uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-      bool aUserActivation, Maybe<ContentParentId> aContentId);
+      bool aUserActivation, bool aCheckForCancelation,
+      Maybe<ContentParentId> aContentId,
+      std::function<void(nsresult)>&& aResolver = [](nsresult) {});
+
+  MOZ_CAN_RUN_SCRIPT void NavigationTraverse(
+      const nsID& aKey, uint64_t aHistoryEpoch, bool aUserActivation,
+      bool aCheckForCancelation, Maybe<ContentParentId> aContentId,
+      std::function<void(nsresult)>&& aResolver);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -278,12 +285,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   bool HasCreatedMediaController() const;
 
   // Attempts to start loading the given load state in this BrowsingContext,
-  // without requiring any communication from a docshell. This will handle
-  // computing the right process to load in, and organising handoff to
-  // the right docshell when we get a response.
-  bool LoadInParent(nsDocShellLoadState* aLoadState, bool aSetNavigating);
-
-  // Attempts to start loading the given load state in this BrowsingContext,
   // in parallel with a DocumentChannelChild being created in the docshell.
   // Requires the DocumentChannel to connect with this load for it to
   // complete successfully.
@@ -326,11 +327,12 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void GetLoadingSessionHistoryInfoFromParent(
       Maybe<LoadingSessionHistoryInfo>& aLoadingInfo);
 
-  mozilla::Span<const SessionHistoryInfo> GetContiguousSessionHistoryInfos();
-
+  MOZ_CAN_RUN_SCRIPT
   void HistoryCommitIndexAndLength();
 
   void SynchronizeLayoutHistoryState();
+
+  void SynchronizeNavigationAPIState(nsIStructuredCloneContainer* aState);
 
   void ResetScalingZoom();
 
@@ -387,9 +389,18 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void SetIsActive(bool aIsActive, ErrorResult& aRv);
 
   void SetIsActiveInternal(bool aIsActive, ErrorResult& aRv) {
-    SetExplicitActive(aIsActive ? ExplicitActiveStatus::Active
-                                : ExplicitActiveStatus::Inactive,
-                      aRv);
+    ExplicitActiveStatus newValue = aIsActive ? ExplicitActiveStatus::Active
+                                              : ExplicitActiveStatus::Inactive;
+    bool changed = GetExplicitActive() != newValue;
+    SetExplicitActive(newValue, aRv);
+    if (changed) {
+      nsCOMPtr<nsIObserverService> observerService =
+          mozilla::services::GetObserverService();
+      if (observerService) {
+        observerService->NotifyObservers(
+            ToSupports(this), "browsing-context-active-change", nullptr);
+      }
+    }
   }
 
   void SetTouchEventsOverride(dom::TouchEventsOverride, ErrorResult& aRv);
@@ -436,6 +447,30 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   already_AddRefed<BounceTrackingState> GetBounceTrackingState();
 
   bool CanOpenModalPicker();
+
+  static bool ShouldEnforceParentalControls();
+
+  // Get the load listener for the current load in this browsing context.
+  already_AddRefed<net::DocumentLoadListener> GetCurrentLoad();
+
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  void CreateRedactedAncestorOriginsList(
+      nsIPrincipal* aThisDocumentPrincipal,
+      ReferrerPolicy aFrameReferrerPolicyAttribute);
+
+  Span<const nsCOMPtr<nsIPrincipal>> GetPossiblyRedactedAncestorOriginsList()
+      const;
+  void SetPossiblyRedactedAncestorOriginsList(
+      nsTArray<nsCOMPtr<nsIPrincipal>> aAncestorOriginsList);
+
+  void SetEmbedderFrameReferrerPolicy(ReferrerPolicy aPolicy);
+
+  // Called when we need to snap shot referrer policy for ancestorOrigins
+  // and also when building the internal ancestor origins list for about:blank
+  // because it needs special handling.
+  ReferrerPolicy GetEmbedderFrameReferrerPolicy() const {
+    return mEmbedderFrameReferrerPolicy;
+  }
 
  protected:
   // Called when the browsing context is being discarded.
@@ -564,7 +599,12 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   }
 
   already_AddRefed<nsDocShellLoadState> CreateLoadInfo(
-      SessionHistoryEntry* aEntry);
+      SessionHistoryEntry* aEntry, NavigationType aNavigationType);
+
+  void GetContiguousEntriesForLoad(LoadingSessionHistoryInfo& aLoadingInfo,
+                                   const RefPtr<SessionHistoryEntry>& aEntry);
+
+  void MaybeReuseNavigationKeyFromActiveEntry(SessionHistoryEntry* aEntry);
 
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?
   // Indicates which process owns the docshell.
@@ -606,7 +646,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     RefPtr<SessionHistoryEntry> mEntry;
   };
   nsTArray<LoadingSessionHistoryEntry> mLoadingEntries;
-  AutoCleanLinkedList<RefPtr<SessionHistoryEntry>> mActiveEntryList;
   RefPtr<SessionHistoryEntry> mActiveEntry;
 
   RefPtr<nsSecureBrowserUI> mSecureBrowserUI;
@@ -649,10 +688,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   uint32_t mPendingDiscards = 0;
 
   bool mFullyDiscarded = false;
+  // the referrerPolicy attribute of the iframe hosting this browsing context
+  // defaults to the empty string
+  ReferrerPolicy mEmbedderFrameReferrerPolicy = ReferrerPolicy::_empty;
 
   nsTArray<std::function<void(uint64_t)>> mFullyDiscardedListeners;
 
-  nsTArray<SessionHistoryInfo> mActiveContiguousEntries;
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  nsTArray<nsCOMPtr<nsIPrincipal>> mPossiblyRedactedAncestorOriginsList;
 };
 
 }  // namespace dom

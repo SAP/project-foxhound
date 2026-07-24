@@ -8,10 +8,12 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   ViewPopup: "resource:///modules/ExtensionPopups.sys.mjs",
+  isGloballyBlockingOpenPopup: "resource:///modules/ExtensionPopups.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -88,6 +90,24 @@ class BrowserAction extends BrowserActionBase {
   dispatchClick(tab, clickInfo) {
     this.buttonDelegate.emit("click", tab, clickInfo);
   }
+
+  isPanelShownBlockingOpenPopup(window) {
+    const widget = this.buttonDelegate.widget;
+    if (!widget) {
+      return false;
+    }
+    if (window.gUnifiedExtensions.isPanelOpen()) {
+      // This covers buttons that are part of the panel, and also covers the
+      // scenario when the user is interacting with the Extensions Panel (not
+      // specific to browserActions).
+      return true;
+    }
+    if (isGloballyBlockingOpenPopup(window)) {
+      return true;
+    }
+    return window.document.getElementById(this.buttonDelegate.buttonViewId)
+      ?.open;
+  }
 }
 
 this.browserAction = class extends ExtensionAPIPersistent {
@@ -117,6 +137,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
     let widgetId = makeWidgetId(extension.id);
     this.id = actionWidgetId(widgetId);
     this.viewId = `PanelUI-webext-${widgetId}-BAV`;
+    this.buttonViewId = `${widgetId}-BAP`;
     this.widget = null;
 
     this.pendingPopup = null;
@@ -173,7 +194,6 @@ this.browserAction = class extends ExtensionAPIPersistent {
 
   build() {
     let { extension } = this;
-    let widgetId = makeWidgetId(extension.id);
     let widget = CustomizableUI.createWidget({
       id: this.id,
       viewId: this.viewId,
@@ -192,10 +212,9 @@ this.browserAction = class extends ExtensionAPIPersistent {
 
       // Build a custom widget that looks like a `unified-extensions-item`
       // custom element.
-      onBuild(document) {
-        let viewId = widgetId + "-BAP";
+      onBuild: document => {
         let button = document.createXULElement("toolbarbutton");
-        button.setAttribute("id", viewId);
+        button.setAttribute("id", this.buttonViewId);
         // Ensure the extension context menuitems are available by setting this
         // on all button children and the item.
         button.setAttribute("data-extensionid", extension.id);
@@ -265,7 +284,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
           "toolbaritem-combined-buttons",
           "unified-extensions-item"
         );
-        node.setAttribute("view-button-id", viewId);
+        node.setAttribute("view-button-id", this.buttonViewId);
         node.setAttribute("data-extensionid", extension.id);
 
         let rowWrapper = document.createXULElement("box");
@@ -484,10 +503,15 @@ this.browserAction = class extends ExtensionAPIPersistent {
       return;
     }
 
-    // We want to focus hidden or minimized windows (both for the API, and to
-    // avoid an issue where showing the popup in a non-focused window
-    // immediately triggers a popuphidden event)
-    window.focus();
+    if (Services.focus.activeWindow !== window) {
+      // We should not get here - action.openPopup() should enforce that the
+      // window is not focused, and other callers are in response to user
+      // interaction.
+      this.extension.logger.warn(
+        "Refused to open action popup for non-focused window"
+      );
+      return;
+    }
 
     const toolbarButton = widgetForWindow.node.querySelector(
       ".unified-extensions-item-action-button"
@@ -685,7 +709,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
         break;
       }
 
-      case "popupshowing":
+      case "popupshowing": {
         const menu = event.target;
         const trigger = menu.triggerNode;
         const node = window.document.getElementById(this.id);
@@ -698,8 +722,9 @@ this.browserAction = class extends ExtensionAPIPersistent {
           this.updateContextMenu(menu);
         }
         break;
+      }
 
-      case "auxclick":
+      case "auxclick": {
         if (event.button !== 1) {
           return;
         }
@@ -716,6 +741,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
           CustomizableUI.hidePanelForNode(event.target);
         }
         break;
+      }
     }
   }
 
@@ -910,37 +936,41 @@ this.browserAction = class extends ExtensionAPIPersistent {
   }
 
   getIconData(icons) {
-    let getIcon = (icon, theme) => {
+    const getIcon = (icon, theme) => {
       if (typeof icon === "object") {
         return IconDetails.escapeUrl(icon[theme]);
       }
       return IconDetails.escapeUrl(icon);
     };
 
-    let getStyle = (name, icon1x, icon2x) => {
-      return `
-        --webextension-${name}: image-set(
-          url("${getIcon(icon1x, "default")}"),
-          url("${getIcon(icon2x, "default")}") 2x
-        );
-        --webextension-${name}-light: image-set(
-          url("${getIcon(icon1x, "light")}"),
-          url("${getIcon(icon2x, "light")}") 2x
-        );
-        --webextension-${name}-dark: image-set(
-          url("${getIcon(icon1x, "dark")}"),
-          url("${getIcon(icon2x, "dark")}") 2x
-        );
-      `;
+    const getBackgroundImage = (icon1x, icon2x = icon1x) => {
+      const image1x = `url("${icon1x}")`;
+      if (icon2x === icon1x) {
+        return image1x;
+      }
+
+      const image2x = `url("${icon2x}")`;
+      return `image-set(${image1x} 1dppx, ${image2x} 2dppx);`;
     };
 
-    let icon16 = IconDetails.getPreferredIcon(icons, this.extension, 16).icon;
-    let icon32 = IconDetails.getPreferredIcon(icons, this.extension, 32).icon;
-    let icon64 = IconDetails.getPreferredIcon(icons, this.extension, 64).icon;
+    const getStyle = (cssVarName, icon1x, icon2x) => {
+      return `${cssVarName}: ${getBackgroundImage(
+        getIcon(icon1x, "light"),
+        getIcon(icon2x, "light")
+      )};
+      ${cssVarName}-dark: ${getBackgroundImage(
+        getIcon(icon1x, "dark"),
+        getIcon(icon2x, "dark")
+      )};`;
+    };
+
+    const icon16 = IconDetails.getPreferredIcon(icons, this.extension, 16).icon;
+    const icon32 = IconDetails.getPreferredIcon(icons, this.extension, 32).icon;
+    const icon64 = IconDetails.getPreferredIcon(icons, this.extension, 64).icon;
 
     return `
-        ${getStyle("menupanel-image", icon32, icon64)}
-        ${getStyle("toolbar-image", icon16, icon32)}
+        ${getStyle("--webextension-menupanel-image", icon32, icon64)}
+        ${getStyle("--webextension-toolbar-image", icon16, icon32)}
       `;
   }
 
@@ -1079,7 +1109,20 @@ this.browserAction = class extends ExtensionAPIPersistent {
               ? windowTracker.getWindow(options.windowId, context)
               : windowTracker.getTopNormalWindow(context);
 
-          if (this.action.getPopupUrl(window.gBrowser.selectedTab, true)) {
+          if (
+            // Ideally this should match the windows.Window.focused definition,
+            // which uses document.hasFocus(), but for some reason hasFocus()
+            // can be false despite the window being focused. This was observed
+            // while running test_ext_action_openPopup_multiple.html with
+            // --tag=in-process-webextensions.
+            Services.focus.activeWindow !== window ||
+            window.windowState === window.STATE_MINIMIZED
+          ) {
+            throw new ExtensionError(BrowserActionBase.ERROR_WIN_NOT_FOCUSED);
+          }
+
+          if (action.getPopupUrl(window.gBrowser.selectedTab, true)) {
+            action.throwIfOpenPopupIsBlockedByAnyAction(window);
             await this.openPopup(window, !isHandlingUserInput);
           }
         },

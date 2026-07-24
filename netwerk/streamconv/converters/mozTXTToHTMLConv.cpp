@@ -41,6 +41,14 @@ static inline bool IsSpace(const char16_t aChar) {
   return (nsCRT::IsAsciiSpace(aChar) || aChar == 0xA0 || aChar == 0x3000);
 }
 
+// https://url.spec.whatwg.org/#url-rendering-i18n
+// https://www.unicode.org/reports/tr9/#Directional_Formatting_Characters
+static inline bool IsBidiFormattingChar(const char16_t aChar) {
+  return aChar == 0x061C || aChar == 0x200E || aChar == 0x200F ||
+         (aChar >= 0x202A && aChar <= 0x202E) ||
+         (aChar >= 0x2066 && aChar <= 0x2069);
+}
+
 // Escape Char will take ch, escape it and append the result to
 // aStringToAppendTo
 void mozTXTToHTMLConv::EscapeChar(const char16_t ch,
@@ -249,7 +257,12 @@ bool mozTXTToHTMLConv::FindURLEnd(const char16_t* aInString,
     case RFC2396E: {
       nsDependentSubstring temp(aInString, aInStringLength);
 
-      int32_t i = temp.FindCharInSet(u"<>\"", pos + 1);
+      // Bidi chars are treated as unmatched delimiters here
+      int32_t i = temp.FindCharInSet(
+          u"<>\""
+          u"\u061C\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067"
+          u"\u2068\u2069",
+          pos + 1);
       if (i != kNotFound &&
           temp[uint32_t(i--)] ==
               (check == RFC1738 || temp[start - 1] == '<' ? '>' : '"')) {
@@ -274,7 +287,7 @@ bool mozTXTToHTMLConv::FindURLEnd(const char16_t* aInString,
             // Allow IPv6 adresses like http://[1080::8:800:200C:417A]/foo.
             (aInString[i] == '[' && i > 2 &&
              (aInString[i - 1] != '/' || aInString[i - 2] != '/')) ||
-            IsSpace(aInString[i])) {
+            IsSpace(aInString[i]) || IsBidiFormattingChar(aInString[i])) {
           break;
         }
         // Disallow non-ascii-characters for email.
@@ -511,9 +524,11 @@ bool mozTXTToHTMLConv::FindURL(const char16_t* aInString, int32_t aInLength,
                              resultReplaceAfter);
 
       if (aInString[pos] != ':') {
+        // CalculateURLBoundaries removes whitespace, so a new pos is needed
+        uint32_t urlPos = std::max(txtURL.FindChar(aInString[pos]), 0);
         nsAutoString temp = txtURL;
         txtURL.SetLength(0);
-        CompleteAbbreviatedURL(temp.get(), temp.Length(), pos - start, txtURL);
+        CompleteAbbreviatedURL(temp.get(), temp.Length(), urlPos, txtURL);
       }
 
       if (!txtURL.IsEmpty() &&

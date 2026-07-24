@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXMLElement.h"
+
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "nsContentUtils.h"  // nsAutoScriptBlocker
@@ -26,14 +27,17 @@ nsresult NS_NewXMLElement(
 void nsXMLElement::UnbindFromTree(UnbindContext& aContext) {
   nsAtom* property;
   switch (GetPseudoElementType()) {
-    case PseudoStyleType::marker:
+    case PseudoStyleType::Marker:
       property = nsGkAtoms::markerPseudoProperty;
       break;
-    case PseudoStyleType::before:
+    case PseudoStyleType::Before:
       property = nsGkAtoms::beforePseudoProperty;
       break;
-    case PseudoStyleType::after:
+    case PseudoStyleType::After:
       property = nsGkAtoms::afterPseudoProperty;
+      break;
+    case PseudoStyleType::Backdrop:
+      property = nsGkAtoms::backdropPseudoProperty;
       break;
     default:
       property = nullptr;

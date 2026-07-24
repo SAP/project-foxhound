@@ -29,7 +29,7 @@ add_task(async function () {
   );
 
   await waitForAllNetworkUpdateEvents();
-  await reloadBrowser();
+  await reloadSelectedTab();
   await allRequestsVisible;
 
   const onStackTracesVisible = waitUntil(

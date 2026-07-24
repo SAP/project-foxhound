@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#import <Accessibility/Accessibility.h>
+
 #import "MOXAccessibleBase.h"
 
 #import "MacSelectorMap.h"
@@ -388,6 +390,12 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
+- (id)accessibilityCustomActions {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+  return [self moxCustomActions];
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
 - (BOOL)isAccessibilityElement {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -407,6 +415,12 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 
 - (BOOL)accessibilityNotifiesWhenDestroyed {
   return YES;
+}
+
+#pragma mark - AXCustomContentProvider protocol
+
+- (NSArray*)accessibilityCustomContent {
+  return [self moxCustomContent];
 }
 
 #pragma mark - MOXAccessible protocol
@@ -529,6 +543,10 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   return NO;
 }
 
+- (BOOL)moxIsTextField {
+  return NO;
+}
+
 #pragma mark -
 
 // objc-style description (from NSObject); not to be confused with the
@@ -571,6 +589,14 @@ mozilla::LogModule* GetMacAccessibilityLog() {
     }
   }
 
+  return nil;
+}
+
+- (NSArray*)moxCustomContent {
+  return nil;
+}
+
+- (NSArray*)moxCustomActions {
   return nil;
 }
 

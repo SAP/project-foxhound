@@ -6,25 +6,25 @@
 
 #include "RTCTransformEventRunnable.h"
 
-#include "nsIGlobalObject.h"
 #include "ErrorList.h"
-#include "nsError.h"
-#include "nsDebug.h"
-#include "nsLiteralString.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsIGlobalObject.h"
+#include "nsLiteralString.h"
 // This needs to come before RTCTransformEvent.h, since webidl codegen doesn't
 // include-what-you-use or forward declare.
-#include "mozilla/dom/RTCRtpScriptTransformer.h"
-#include "mozilla/dom/RTCTransformEvent.h"
-#include "mozilla/dom/RTCTransformEventBinding.h"
-#include "mozilla/dom/EventWithOptionsRunnable.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/EventTarget.h"
-#include "mozilla/dom/RootedDictionary.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/EventWithOptionsRunnable.h"
+#include "mozilla/dom/RTCRtpScriptTransformer.h"
+#include "mozilla/dom/RTCTransformEvent.h"
+#include "mozilla/dom/RTCTransformEventBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
 
 namespace mozilla::dom {
 

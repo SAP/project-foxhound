@@ -9,26 +9,26 @@
  */
 
 #include "mozilla/dom/Attr.h"
-#include "mozilla/dom/AttrBinding.h"
-#include "mozilla/dom/Element.h"
+
+#include "NodeUbiReporting.h"
+#include "mozAutoDocUpdate.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "nsContentCreatorFunctions.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
-#include "mozilla/dom/TrustedTypeUtils.h"
-#include "nsError.h"
-#include "nsUnicharUtils.h"
-#include "nsDOMString.h"
-#include "nsIContentInlines.h"
+#include "mozilla/dom/AttrBinding.h"
 #include "mozilla/dom/Document.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsCOMArray.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsIContentInlines.h"
 #include "nsNameSpaceManager.h"
 #include "nsTextNode.h"
-#include "mozAutoDocUpdate.h"
+#include "nsUnicharUtils.h"
 #include "nsWrapperCacheInlines.h"
-#include "NodeUbiReporting.h"
 
 namespace mozilla::dom {
 
@@ -194,7 +194,7 @@ void Attr::SetNodeValue(const nsAString& aNodeValue, ErrorResult& aError) {
 void Attr::GetNodeValueInternal(nsAString& aNodeValue) { GetValue(aNodeValue); }
 
 void Attr::SetNodeValueInternal(const nsAString& aNodeValue,
-                                ErrorResult& aError) {
+                                ErrorResult& aError, MutationEffectOnScript) {
   SetValueInternal(aNodeValue, aError);
 }
 
@@ -229,7 +229,7 @@ void Attr::GetTextContentInternal(nsAString& aTextContent,
 
 void Attr::SetTextContentInternal(const nsAString& aTextContent,
                                   nsIPrincipal* aSubjectPrincipal,
-                                  ErrorResult& aError) {
+                                  ErrorResult& aError, MutationEffectOnScript) {
   SetValueInternal(aTextContent, aError);
 }
 

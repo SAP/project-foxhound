@@ -8,7 +8,6 @@
 
 #include "cairo-ft.h"
 #include "gfxFT2FontBase.h"
-#include "mozilla/Likely.h"
 
 // Rounding and truncation functions for a FreeType fixed point number
 // (FT26Dot6) stored in a 32bit integer with high 26 bits for the integer
@@ -30,11 +29,7 @@ class MOZ_STACK_CLASS gfxFT2LockedFace {
  public:
   explicit gfxFT2LockedFace(const gfxFT2FontBase* aFont)
       : mGfxFont(aFont), mFace(aFont->LockFTFace()) {}
-  ~gfxFT2LockedFace() {
-    if (mFace) {
-      mGfxFont->UnlockFTFace();
-    }
-  }
+  ~gfxFT2LockedFace() { mGfxFont->UnlockFTFace(); }
 
   FT_Face get() { return mFace; };
 

@@ -10,6 +10,8 @@
 
 #include "api/audio_codecs/opus/audio_encoder_opus_config.h"
 
+#include "api/audio_codecs/audio_encoder.h"
+
 namespace webrtc {
 
 namespace {
@@ -24,10 +26,6 @@ constexpr int kDefaultLowRateComplexity =
     WEBRTC_OPUS_VARIABLE_COMPLEXITY ? 9 : kDefaultComplexity;
 
 }  // namespace
-
-constexpr int AudioEncoderOpusConfig::kDefaultFrameSizeMs;
-constexpr int AudioEncoderOpusConfig::kMinBitrateBps;
-constexpr int AudioEncoderOpusConfig::kMaxBitrateBps;
 
 AudioEncoderOpusConfig::AudioEncoderOpusConfig()
     : frame_size_ms(kDefaultFrameSizeMs),
@@ -59,7 +57,7 @@ bool AudioEncoderOpusConfig::IsOk() const {
     // well; we can add support for them when needed.)
     return false;
   }
-  if (num_channels >= 255) {
+  if (num_channels > AudioEncoder::kMaxNumberOfChannels) {
     return false;
   }
   if (!bitrate_bps)

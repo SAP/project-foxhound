@@ -79,7 +79,7 @@ add_task(async function () {
   nodeFront = await highlightAndSelectNode(inspector, pseudoRep);
   is(
     nodeFront.displayName,
-    "_moz_generated_content_after",
+    "::after",
     "The expected node was highlighted/selected"
   );
   is(

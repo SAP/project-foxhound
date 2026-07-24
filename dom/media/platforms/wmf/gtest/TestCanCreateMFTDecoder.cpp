@@ -6,8 +6,8 @@
 #include <gtest/gtest.h>
 
 #include "WMFDecoderModule.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 
 using namespace mozilla;
 

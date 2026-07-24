@@ -14,7 +14,8 @@ prefs = ["security.allow_parent_unrestricted_js_loads=true"]
 ["fetch.js"]
 
 ["large-pipeto.js"]
-run-sequentially = "very high failure rate in parallel"
+requesttimeoutfactor = 6  # Slow and high CPU on Linux and Windows
+run-sequentially = ["os == 'mac'"] # almost perma timeout on Mac
 
 ["proper-realm-cancel.js"]
 
@@ -25,4 +26,6 @@ run-sequentially = "very high failure rate in parallel"
 ["subclassing.js"]
 
 ["too-big-array-buffer.js"]
-skip-if = ["bits == 32"] # autoAllocateChunkSize limit is different on 32-bit
+skip-if = [
+  "arch == 'x86'", # autoAllocateChunkSize limit is different on 32-bit
+]

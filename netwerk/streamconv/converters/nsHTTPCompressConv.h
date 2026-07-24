@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(__nsHTTPCompressConv__h__)
-#  define __nsHTTPCompressConv__h__ 1
+#if !defined(_nsHTTPCompressConv_h_)
+#  define _nsHTTPCompressConv_h_ 1
 
 #  include "nsIStreamConverter.h"
 #  include "nsICompressConvStats.h"
@@ -35,6 +35,8 @@ class nsIStringInputStream;
 #  define HTTP_UNCOMPRESSED_TYPE "uncompressed"
 #  define HTTP_ZSTD_TYPE "zstd"
 #  define HTTP_ZST_TYPE "zst"
+#  define HTTP_BROTLI_DICTIONARY_TYPE "dcb"
+#  define HTTP_ZSTD_DICTIONARY_TYPE "dcz"
 
 namespace mozilla {
 namespace net {
@@ -64,6 +66,8 @@ class nsHTTPCompressConv : public nsIStreamConverter,
     HTTP_COMPRESS_BROTLI,
     HTTP_COMPRESS_IDENTITY,
     HTTP_COMPRESS_ZSTD,
+    HTTP_COMPRESS_BROTLI_DICTIONARY,
+    HTTP_COMPRESS_ZSTD_DICTIONARY,
   };
 
  private:
@@ -100,7 +104,7 @@ class nsHTTPCompressConv : public nsIStreamConverter,
   bool mStreamInitialized{false};
   bool mDummyStreamInitialised{false};
   bool mFailUncleanStops;
-  bool mDispatchToMainThread{false};
+  Atomic<bool> mDispatchToMainThread{false};
 
   z_stream d_stream{};
   unsigned mLen{0}, hMode{0}, mSkipCount{0}, mFlags{0};

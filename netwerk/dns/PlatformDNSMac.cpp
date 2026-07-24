@@ -9,7 +9,6 @@
 #include "mozilla/net/DNSPacket.h"
 #include "nsIDNSService.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/ThreadLocal.h"
 
 #include <dns_sd.h>
 #include <unistd.h>

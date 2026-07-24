@@ -1,0 +1,80 @@
+# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, you can obtain one at https://mozilla.org/MPL/2.0/.
+
+Program("zucchini-gtest")
+
+DisableStlWrapping()
+
+LOCAL_INCLUDES += [
+    "/third_party/abseil-cpp/",
+    "/third_party/googletest/googletest",
+    "/third_party/googletest/googletest/include",
+    "/third_party/zucchini/chromium-shim/",
+    "/third_party/zucchini/chromium/",
+]
+
+DEFINES["UNICODE"] = True
+DEFINES["ENABLED_VLOG_LEVEL"] = 1
+
+if not CONFIG["MOZ_DEBUG"]:
+    DEFINES["NDEBUG"] = True
+
+# We don't support DEX nor ZTF (see components/zucchini/buildflags.h).
+# Therefore we omit the following upstream tests:
+#  - disassembler_dex_unittest.cc:*
+#  - disassembler_ztf_unittest.cc:*
+
+SOURCES += [
+    "/third_party/googletest/googletest/src/gtest-all.cc",
+    "/third_party/googletest/googletest/src/gtest_main.cc",
+    "/third_party/zucchini/chromium/base/files/scoped_temp_dir.cc",
+    "/third_party/zucchini/chromium/components/zucchini/abs32_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/address_translator_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/algorithm_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/arm_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/binary_data_histogram_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/buffer_sink_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/buffer_source_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/buffer_view_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/crc32_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/disassembler_elf_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/element_detection_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/encoded_view_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/equivalence_map_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/image_index_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/image_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/imposed_ensemble_matcher_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/integration_test.cc",
+    "/third_party/zucchini/chromium/components/zucchini/io_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/mapped_file_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/patch_read_write_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/patch_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/reference_set_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/rel32_finder_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/rel32_utils_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/reloc_elf_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/reloc_win32_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/suffix_array_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/target_pool_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/targets_affinity_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/test_disassembler.cc",
+    "/third_party/zucchini/chromium/components/zucchini/test_reference_reader.cc",
+    "/third_party/zucchini/chromium/components/zucchini/test_utils.cc",
+    "/third_party/zucchini/chromium/components/zucchini/typed_value_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/zucchini_apply_unittest.cc",
+    "/third_party/zucchini/chromium/components/zucchini/zucchini_gen_unittest.cc",
+]
+
+if CONFIG["TARGET_OS"] == "WINNT":
+    USE_STATIC_MSVCRT = True
+
+    SOURCES += [
+        "/third_party/zucchini/chromium/components/zucchini/exception_filter_helper_win_unittest.cc",
+    ]
+
+USE_LIBS += [
+    "zucchini",
+]

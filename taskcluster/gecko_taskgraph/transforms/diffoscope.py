@@ -7,7 +7,7 @@ defined in kind.yml
 """
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.taskcluster import get_artifact_path
 from voluptuous import Any, Optional, Required
 
@@ -18,41 +18,40 @@ index_or_string = Any(
     {Required("index-search"): str},
 )
 
-diff_description_schema = Schema(
-    {
-        # Name of the diff task.
-        Required("name"): str,
-        # Treeherder tier.
-        Required("tier"): int,
-        # Treeherder symbol.
-        Required("symbol"): str,
-        # relative path (from config.path) to the file the task was defined in.
-        Optional("task-from"): str,
-        # Original and new builds to compare.
-        Required("original"): index_or_string,
-        Required("new"): index_or_string,
-        # Arguments to pass to diffoscope, used for task-defaults in
-        # taskcluster/kinds/diffoscope/kind.yml
-        Optional("args"): str,
-        # Extra arguments to pass to diffoscope, that can be set per job.
-        Optional("extra-args"): str,
-        # Fail the task when differences are detected.
-        Optional("fail-on-diff"): bool,
-        # What artifact to check the differences of. Defaults to target.tar.xz
-        # for Linux, target.dmg for Mac, target.zip for Windows, target.apk for
-        # Android.
-        Optional("artifact"): str,
-        # Whether to unpack first. Diffoscope can normally work without unpacking,
-        # but when one needs to --exclude some contents, that doesn't work out well
-        # if said content is packed (e.g. in omni.ja).
-        Optional("unpack"): bool,
-        # Commands to run before performing the diff.
-        Optional("pre-diff-commands"): [str],
-        # Only run the task on a set of projects/branches.
-        Optional("run-on-projects"): task_description_schema["run-on-projects"],
-        Optional("optimization"): task_description_schema["optimization"],
-    }
-)
+diff_description_schema = LegacySchema({
+    # Name of the diff task.
+    Required("name"): str,
+    # Treeherder tier.
+    Required("tier"): int,
+    # Treeherder symbol.
+    Required("symbol"): str,
+    # relative path (from config.path) to the file the task was defined in.
+    Optional("task-from"): str,
+    # Original and new builds to compare.
+    Required("original"): index_or_string,
+    Required("new"): index_or_string,
+    # Arguments to pass to diffoscope, used for task-defaults in
+    # taskcluster/kinds/diffoscope/kind.yml
+    Optional("args"): str,
+    # Extra arguments to pass to diffoscope, that can be set per job.
+    Optional("extra-args"): str,
+    # Fail the task when differences are detected.
+    Optional("fail-on-diff"): bool,
+    # What artifact to check the differences of. Defaults to target.tar.xz
+    # for Linux, target.dmg for Mac, target.zip for Windows, target.apk for
+    # Android.
+    Optional("artifact"): str,
+    # Whether to unpack first. Diffoscope can normally work without unpacking,
+    # but when one needs to --exclude some contents, that doesn't work out well
+    # if said content is packed (e.g. in omni.ja).
+    Optional("unpack"): bool,
+    # Commands to run before performing the diff.
+    Optional("pre-diff-commands"): [str],
+    # Only run the task on a set of projects/branches.
+    Optional("run-on-projects"): task_description_schema["run-on-projects"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+    Optional("optimization"): task_description_schema["optimization"],
+})
 
 transforms = TransformSequence()
 transforms.add_validate(diff_description_schema)
@@ -121,7 +120,7 @@ def fill_template(config, tasks):
                 "kind": "other",
                 "tier": task["tier"],
             },
-            "worker-type": "b-linux-gcp",
+            "worker-type": "b-linux",
             "worker": {
                 "docker-image": {"in-tree": "diffoscope"},
                 "artifacts": [
@@ -155,16 +154,15 @@ def fill_template(config, tasks):
             },
             "dependencies": deps,
             "optimization": task.get("optimization"),
+            "run-on-repo-type": task.get("run-on-repo-type", ["git", "hg"]),
         }
         if "run-on-projects" in task:
             taskdesc["run-on-projects"] = task["run-on-projects"]
 
         if artifact.endswith(".dmg"):
-            taskdesc.setdefault("fetches", {}).setdefault("toolchain", []).extend(
-                [
-                    "linux64-cctools-port",
-                    "linux64-libdmg",
-                ]
-            )
+            taskdesc.setdefault("fetches", {}).setdefault("toolchain", []).extend([
+                "linux64-cctools-port",
+                "linux64-libdmg",
+            ])
 
         yield taskdesc

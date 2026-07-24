@@ -7,6 +7,7 @@
 #include "QuotaObject.h"
 
 #include "CanonicalQuotaObject.h"
+#include "RemoteQuotaObject.h"
 #include "mozilla/dom/quota/IPCQuotaObject.h"
 #include "mozilla/dom/quota/PRemoteQuotaObject.h"
 #include "mozilla/dom/quota/RemoteQuotaObjectChild.h"
@@ -15,7 +16,6 @@
 #include "mozilla/ipc/BackgroundParent.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "RemoteQuotaObject.h"
 
 namespace mozilla::dom::quota {
 

@@ -45,7 +45,6 @@ add_task(async function () {
   await eventWait;
 
   info("test state after delete");
-  await selectTreeItem(cacheToDelete);
   ok(
     !gUI.tree.isSelected(cacheToDelete),
     "Cache item is no longer present in the tree"

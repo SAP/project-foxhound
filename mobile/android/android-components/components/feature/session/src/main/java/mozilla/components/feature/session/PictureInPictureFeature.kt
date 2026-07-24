@@ -7,9 +7,6 @@ package mozilla.components.feature.session
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
-import androidx.annotation.RequiresApi
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.selector.findTabOrCustomTabOrSelectedTab
 import mozilla.components.browser.state.selector.selectedTab
@@ -35,7 +32,7 @@ class PictureInPictureFeature(
 ) {
     internal val logger = Logger("PictureInPictureFeature")
 
-    private val hasSystemFeature = SDK_INT >= Build.VERSION_CODES.N &&
+    private val hasSystemFeature =
         activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     fun onHomePressed(): Boolean {
@@ -63,21 +60,11 @@ class PictureInPictureFeature(
      */
     fun enterPipModeCompat() = when {
         !hasSystemFeature -> false
-        SDK_INT >= Build.VERSION_CODES.O -> enterPipModeForO()
-        SDK_INT >= Build.VERSION_CODES.N -> enterPipModeForN()
-        else -> false
+        else -> enterPipModeForO()
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     private fun enterPipModeForO() =
         activity.enterPictureInPictureMode(PictureInPictureParams.Builder().build())
-
-    @Suppress("Deprecation")
-    @RequiresApi(Build.VERSION_CODES.N)
-    private fun enterPipModeForN() = run {
-        activity.enterPictureInPictureMode()
-        true
-    }
 
     /**
      * Should be called when the system informs you of changes to and from picture-in-picture mode.

@@ -234,6 +234,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           redirectId: htmlFetch1.data.id,
           redirectType: "Internal",
           isHttpToHttpsRedirect: false,
@@ -258,6 +259,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
         }),
       });
       Assert.objectContains(htmlFetch2, {
@@ -290,6 +292,7 @@ add_task(async function test_network_markers_service_worker_use() {
           id: Expect.number(),
           count: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
         }),
       });
       /* ----- /HTML FILE ---- */
@@ -309,6 +312,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           redirectId: generatedSvgFetch.data.id,
           redirectType: "Internal",
           isHttpToHttpsRedirect: false,
@@ -333,6 +337,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           innerWindowID: Expect.number(),
         }),
       });
@@ -352,6 +357,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           redirectId: firefoxSvgFetch1.data.id,
           redirectType: "Internal",
           isHttpToHttpsRedirect: false,
@@ -376,6 +382,7 @@ add_task(async function test_network_markers_service_worker_use() {
           endTime: Expect.number(),
           id: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           innerWindowID: Expect.number(),
         }),
       });
@@ -409,6 +416,7 @@ add_task(async function test_network_markers_service_worker_use() {
           id: Expect.number(),
           count: Expect.number(),
           pri: Expect.number(),
+          priorityHeader: Expect.string(),
           // Note: no innerWindowID here, is that a bug?
         }),
       });
@@ -481,6 +489,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
       }),
     });
     Assert.objectContains(generatedSvgFetch1, {
@@ -499,6 +508,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         innerWindowID: Expect.number(),
       }),
     });
@@ -518,6 +528,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         innerWindowID: Expect.number(),
       }),
     });

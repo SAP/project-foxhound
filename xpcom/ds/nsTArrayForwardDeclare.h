@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTArrayForwardDeclare_h__
-#define nsTArrayForwardDeclare_h__
+#ifndef nsTArrayForwardDeclare_h_
+#define nsTArrayForwardDeclare_h_
 
 //
 // This simple header file contains forward declarations for the TArray family

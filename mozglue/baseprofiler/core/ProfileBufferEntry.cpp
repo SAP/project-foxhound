@@ -14,7 +14,7 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/StackWalk.h"
 
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/BaseProfilerMarkers.h"
 #include "platform.h"
 #include "ProfileBuffer.h"
@@ -61,6 +61,11 @@ ProfileBufferEntry::ProfileBufferEntry(Kind aKind, int64_t aInt64)
 ProfileBufferEntry::ProfileBufferEntry(Kind aKind, uint64_t aUint64)
     : mKind(aKind) {
   memcpy(mStorage, &aUint64, sizeof(aUint64));
+}
+
+ProfileBufferEntry::ProfileBufferEntry(Kind aKind, uint32_t aUint32)
+    : mKind(aKind) {
+  memcpy(mStorage, &aUint32, sizeof(aUint32));
 }
 
 ProfileBufferEntry::ProfileBufferEntry(Kind aKind,
@@ -1337,7 +1342,7 @@ bool ProfileBuffer::DuplicateLastSample(BaseProfilerThreadId aThreadId,
 void ProfileBuffer::DiscardSamplesBeforeTime(double aTime) {
   // This function does nothing!
   // The duration limit will be removed from Firefox, see bug 1632365.
-  Unused << aTime;
+  (void)aTime;
 }
 
 // END ProfileBuffer

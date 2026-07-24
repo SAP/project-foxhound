@@ -207,8 +207,8 @@ class BaseStorageActor extends Actor {
    *
    * @param {window} window
    *        The window which was removed.
-   * @param {Object} options
-   * @param {Boolean} options.dontCheckHost
+   * @param {object} options
+   * @param {boolean} options.dontCheckHost
    *        If set to true, the function won't check if the host still is in this.hosts.
    *        This is helpful in the case of the StorageActorMock, as the `hosts` getter
    *        uses its `windows` getter, and at this point in time the window which is

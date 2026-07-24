@@ -7,23 +7,10 @@
  * Retrieves and displays icons in native menu items on Mac OS X.
  */
 
-/* exception_defines.h defines 'try' to 'if (true)' which breaks objective-c
-   exceptions and produces errors like: error: unexpected '@' in program'.
-   If we define __EXCEPTIONS exception_defines.h will avoid doing this.
-
-   See bug 666609 for more information.
-
-   We use <limits> to get the libstdc++ version. */
-#include <limits>
-#if __GLIBCXX__ <= 20070719
-#  ifndef __EXCEPTIONS
-#    define __EXCEPTIONS
-#  endif
-#endif
-
 #include "MOZIconHelper.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/widget/NativeMenu.h"
 #include "mozilla/SVGImageContext.h"
 #include "nsCocoaUtils.h"
 #include "nsComputedDOMStyle.h"
@@ -85,60 +72,21 @@ void nsMenuItemIconX::SetupIcon(nsIContent* aContent) {
 }
 
 bool nsMenuItemIconX::StartIconLoad(nsIContent* aContent) {
-  RefPtr<nsIURI> iconURI = GetIconURI(aContent);
-  if (!iconURI) {
+  if (!aContent->IsElement()) {
+    return false;
+  }
+  auto icon = widget::NativeMenu::GetIcon(*aContent->AsElement());
+  if (!icon) {
     return false;
   }
 
+  mComputedStyle = std::move(icon.mStyle);
+  mPresContext = aContent->OwnerDoc()->GetPresContext();
   if (!mIconLoader) {
     mIconLoader = new IconLoader(this);
   }
 
-  nsresult rv = mIconLoader->LoadIcon(iconURI, aContent);
-  return NS_SUCCEEDED(rv);
-}
-
-already_AddRefed<nsIURI> nsMenuItemIconX::GetIconURI(nsIContent* aContent) {
-  // First, look at the content node's "image" attribute.
-  nsAutoString imageURIString;
-  bool hasImageAttr =
-      aContent->IsElement() &&
-      aContent->AsElement()->GetAttr(nsGkAtoms::image, imageURIString);
-
-  if (hasImageAttr) {
-    // Use the URL from the image attribute.
-    // If this menu item shouldn't have an icon, the string will be empty,
-    // and NS_NewURI will fail.
-    RefPtr<nsIURI> iconURI;
-    nsresult rv = NS_NewURI(getter_AddRefs(iconURI), imageURIString);
-    if (NS_FAILED(rv)) {
-      return nullptr;
-    }
-    return iconURI.forget();
-  }
-
-  // If the content node has no "image" attribute, get the
-  // "list-style-image" property from CSS.
-  RefPtr<mozilla::dom::Document> document = aContent->GetComposedDoc();
-  if (!document || !aContent->IsElement()) {
-    return nullptr;
-  }
-
-  RefPtr<const ComputedStyle> sc =
-      nsComputedDOMStyle::GetComputedStyle(aContent->AsElement());
-  if (!sc) {
-    return nullptr;
-  }
-
-  RefPtr<nsIURI> iconURI = sc->StyleList()->GetListStyleImageURI();
-  if (!iconURI) {
-    return nullptr;
-  }
-
-  mComputedStyle = std::move(sc);
-  mPresContext = document->GetPresContext();
-
-  return iconURI.forget();
+  return NS_SUCCEEDED(mIconLoader->LoadIcon(icon.mURI, aContent));
 }
 
 //
@@ -173,6 +121,7 @@ nsresult nsMenuItemIconX::OnComplete(imgIContainer* aImage) {
   }
 
   mIconLoader->Destroy();
+  mIconLoader = nullptr;
 
   return NS_OK;
 

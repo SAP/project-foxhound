@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "Web Apps")
+
 EXTRA_JS_MODULES.taskbartabs += [
     "TaskbarTabs.sys.mjs",
     "TaskbarTabsChrome.sys.mjs",
@@ -28,3 +31,5 @@ XPCSHELL_TESTS_MANIFESTS += [
 XPCOM_MANIFESTS += [
     "components.conf",
 ]
+
+SPHINX_TREES["docs"] = "docs"

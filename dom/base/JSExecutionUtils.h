@@ -7,9 +7,9 @@
 #ifndef DOM_BASE_JSEXECUTIONUTILS_H_
 #define DOM_BASE_JSEXECUTIONUTILS_H_
 
+#include "js/CompileOptions.h"          // JS::CompileOptions
 #include "js/TypeDecls.h"               // JSScript
 #include "js/experimental/JSStencil.h"  // JS::Stencil
-#include "js/CompileOptions.h"          // JS::CompileOptions
 #include "mozilla/ErrorResult.h"        // ErrorResult
 #include "nsStringFwd.h"                // nsAString
 

@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_stringifyutils_h__
-#define mozilla_dom_quota_stringifyutils_h__
+#ifndef mozilla_dom_quota_stringifyutils_h_
+#define mozilla_dom_quota_stringifyutils_h_
 
 #include "mozilla/ThreadLocal.h"
-#include "nsTHashSet.h"
 #include "nsLiteralString.h"
+#include "nsTHashSet.h"
 
 namespace mozilla {
 
@@ -50,4 +50,4 @@ class Stringifyable {
 
 }  // namespace mozilla
 
-#endif  // mozilla_dom_quota_stringifyutils_h__
+#endif  // mozilla_dom_quota_stringifyutils_h_

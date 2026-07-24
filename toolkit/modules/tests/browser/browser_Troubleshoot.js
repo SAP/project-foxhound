@@ -493,34 +493,52 @@ const SNAPSHOT_SCHEMA = {
     },
     places: {
       required: true,
-      type: "array",
-      items: {
-        type: "object",
-        items: {
-          entity: {
-            required: true,
-            type: "string",
+      type: "object",
+      properties: {
+        prefs: {
+          required: true,
+          type: "array",
+          items: {
+            type: "object",
+            items: {
+              entity: {
+                required: true,
+                type: "string",
+              },
+              count: {
+                required: true,
+                type: "number",
+              },
+              sizeBytes: {
+                required: true,
+                type: "number",
+              },
+              sizePerc: {
+                required: true,
+                type: "number",
+              },
+              efficiencyPerc: {
+                required: true,
+                type: "number",
+              },
+              sequentialityPerc: {
+                required: true,
+                type: "number",
+              },
+            },
           },
-          count: {
-            required: true,
-            type: "number",
-          },
-          sizeBytes: {
-            required: true,
-            type: "number",
-          },
-          sizePerc: {
-            required: true,
-            type: "number",
-          },
-          efficiencyPerc: {
-            required: true,
-            type: "number",
-          },
-          sequentialityPerc: {
-            required: true,
-            type: "number",
-          },
+        },
+        lastMaintenanceDate: {
+          required: true,
+          type: "number",
+        },
+        lastVacuumDate: {
+          required: true,
+          type: "number",
+        },
+        lastIntegrityCorruptionDate: {
+          required: true,
+          type: "number",
         },
       },
     },
@@ -618,9 +636,6 @@ const SNAPSHOT_SCHEMA = {
         isGPU2Active: {
           type: "boolean",
         },
-        direct2DEnabled: {
-          type: "boolean",
-        },
         directWriteEnabled: {
           type: "boolean",
         },
@@ -686,19 +701,6 @@ const SNAPSHOT_SCHEMA = {
         },
         crashGuards: {
           type: "array",
-        },
-        direct2DEnabledMessage: {
-          type: "object",
-          properties: {
-            key: {
-              required: true,
-              type: "string",
-            },
-            args: {
-              required: false,
-              type: "object",
-            },
-          },
         },
         targetFrameRate: {
           type: "number",

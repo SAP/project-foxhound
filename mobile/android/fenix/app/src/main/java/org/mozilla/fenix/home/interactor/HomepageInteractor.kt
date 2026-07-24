@@ -15,9 +15,10 @@ import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.home.sessioncontrol.MessageCardInteractor
 import org.mozilla.fenix.home.sessioncontrol.SetupChecklistInteractor
 import org.mozilla.fenix.home.sessioncontrol.TabSessionInteractor
-import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.home.sessioncontrol.WallpaperInteractor
+import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerInteractor
 import org.mozilla.fenix.home.toolbar.ToolbarInteractor
+import org.mozilla.fenix.home.topsites.interactor.TopSiteInteractor
 import org.mozilla.fenix.search.toolbar.SearchSelectorInteractor
 
 /**
@@ -30,6 +31,7 @@ interface HomepageInteractor :
     ToolbarInteractor,
     HomeSearchInteractor,
     MessageCardInteractor,
+    PrivacyNoticeBannerInteractor,
     RecentTabInteractor,
     RecentSyncedTabInteractor,
     BookmarksInteractor,

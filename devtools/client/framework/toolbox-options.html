@@ -58,6 +58,20 @@
             />
             <span data-l10n-id="options-show-user-agent-styles-label"></span>
           </label>
+          <label data-l10n-id="options-show-user-agent-shadow-dom-tooltip">
+            <input
+              type="checkbox"
+              data-pref="devtools.inspector.showAllAnonymousContent"
+              data-force-reload
+            />
+            <span
+              data-l10n-id="options-show-user-agent-shadow-dom-label"
+            ></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-persists"
+            ></span>
+          </label>
           <label data-l10n-id="options-collapse-attrs-tooltip">
             <input
               type="checkbox"
@@ -252,7 +266,11 @@
           </label>
           <label data-l10n-id="options-disable-javascript-tooltip">
             <input type="checkbox" id="devtools-disable-javascript" />
-            <span data-l10n-id="options-disable-javascript-label"></span>
+            <span data-l10n-id="options-disable-javascript-label-2"></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-temporary"
+            ></span>
           </label>
           <label data-l10n-id="options-enable-service-workers-http-tooltip">
             <input
@@ -279,11 +297,6 @@
             <input type="checkbox" data-pref="devtools.f12_enabled" />
             <span data-l10n-id="options-enable-f12-label"></span>
           </label>
-          <span
-            class="options-citation-label theme-comment"
-            id="triggers-page-refresh-label"
-            data-l10n-id="options-context-triggers-page-refresh"
-          ></span>
         </fieldset>
       </div>
     </form>

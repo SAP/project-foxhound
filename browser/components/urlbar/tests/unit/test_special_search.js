@@ -20,26 +20,30 @@ function setSuggestPrefsToFalse() {
 const TRANSITION_TYPED = PlacesUtils.history.TRANSITION_TYPED;
 
 add_task(async function test_special_searches() {
+  // High weight - Typed visit.
   let uri1 = Services.io.newURI("http://url/");
+  // Medium weight - Regular visit.
   let uri2 = Services.io.newURI("http://url/2");
+  // Medium weight - Regular visit.
   let uri3 = Services.io.newURI("http://foo.bar/");
+  // High weight - Typed visit.
   let uri4 = Services.io.newURI("http://foo.bar/2");
+  // High weight - Bookmark.
   let uri5 = Services.io.newURI("http://url/star");
+  // High weight - Bookmark, regular visit.
   let uri6 = Services.io.newURI("http://url/star/2");
+  // High weight - Bookmark, no visit.
   let uri7 = Services.io.newURI("http://foo.bar/star");
+  // High weight - Bookmark.
   let uri8 = Services.io.newURI("http://foo.bar/star/2");
+  // High weight - Bookmark, no visit.
   let uri9 = Services.io.newURI("http://url/tag");
+  // High weight - Bookmark, no visit.
   let uri10 = Services.io.newURI("http://url/tag/2");
+  // High weight - Bookmark, typed visit.
   let uri11 = Services.io.newURI("http://foo.bar/tag");
+  // High weight - Bookmark, 0 visits.
   let uri12 = Services.io.newURI("http://foo.bar/tag/2");
-  await PlacesTestUtils.addVisits([
-    { uri: uri11, title: "title", transition: TRANSITION_TYPED },
-    { uri: uri6, title: "foo.bar" },
-    { uri: uri4, title: "foo.bar", transition: TRANSITION_TYPED },
-    { uri: uri3, title: "title" },
-    { uri: uri2, title: "foo.bar" },
-    { uri: uri1, title: "title", transition: TRANSITION_TYPED },
-  ]);
 
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: uri12,
@@ -66,21 +70,32 @@ add_task(async function test_special_searches() {
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri6, title: "foo.bar" });
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri5, title: "title" });
 
+  await PlacesTestUtils.addVisits([
+    { uri: uri11, title: "title", transition: TRANSITION_TYPED },
+    { uri: uri6, title: "foo.bar" },
+    { uri: uri4, title: "foo.bar", transition: TRANSITION_TYPED },
+    { uri: uri3, title: "title" },
+    { uri: uri2, title: "foo.bar" },
+    { uri: uri1, title: "title", transition: TRANSITION_TYPED },
+  ]);
+
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Order of frecency when not restricting, descending:
-  // uri11
   // uri1
   // uri4
-  // uri6
   // uri5
+  // uri6
   // uri7
   // uri8
   // uri9
   // uri10
+  // uri11
   // uri12
   // uri2
   // uri3
+  // Because there are a lot of ties, the ordering is influenced by order in
+  // which they were inserted.
 
   // Test restricting searches.
 
@@ -95,10 +110,10 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri1.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -115,12 +130,8 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-      }),
-      makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri5.spec, title: "title" }),
+      makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
       makeBookmarkResult(context, {
@@ -130,6 +141,10 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri12.spec,
@@ -148,16 +163,16 @@ add_task(async function test_special_searches() {
         heuristic: true,
       }),
       makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-      }),
-      makeBookmarkResult(context, {
         uri: uri9.spec,
         title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri12.spec,
@@ -179,9 +194,9 @@ add_task(async function test_special_searches() {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -198,9 +213,9 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -219,9 +234,9 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -238,11 +253,6 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
@@ -254,6 +264,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -275,12 +290,12 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri9.spec, title: "title" }),
       makeVisitResult(context, { uri: uri10.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri12.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
     ],
@@ -297,10 +312,10 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri12.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -318,11 +333,6 @@ add_task(async function test_special_searches() {
         heuristic: true,
       }),
       makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
-      makeBookmarkResult(context, {
         uri: uri9.spec,
         title: "title",
         tags: ["foo.bar"],
@@ -330,6 +340,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -446,9 +461,9 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -471,11 +486,6 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
@@ -488,6 +498,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -513,11 +528,6 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
@@ -529,6 +539,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {

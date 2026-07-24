@@ -31,7 +31,7 @@ ApplicationAccessible::ApplicationAccessible()
 ////////////////////////////////////////////////////////////////////////////////
 // nsIAccessible
 
-ENameValueFlag ApplicationAccessible::Name(nsString& aName) const {
+ENameValueFlag ApplicationAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   nsCOMPtr<nsIStringBundleService> bundleService =
@@ -56,8 +56,10 @@ ENameValueFlag ApplicationAccessible::Name(nsString& aName) const {
   return eNameOK;
 }
 
-void ApplicationAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag ApplicationAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
+  return eDescriptionOK;
 }
 
 void ApplicationAccessible::Value(nsString& aValue) const { aValue.Truncate(); }

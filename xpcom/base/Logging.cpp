@@ -315,6 +315,7 @@ class LogModuleManager {
         mSetFromEnv(false),
         mAddTimestamp(false),
         mCaptureProfilerStack(false),
+        mLogJSStack(false),
         mIsRaw(false),
         mIsSync(false),
         mRotate(0),
@@ -358,7 +359,8 @@ class LogModuleManager {
     bool addTimestamp = false;
     bool isSync = false;
     bool isRaw = false;
-    bool captureStacks = false;
+    bool captureProfilerStacks = false;
+    bool logJSStacks = false;
     int32_t rotate = 0;
     int32_t maxSize = 0;
     bool prependHeader = false;
@@ -385,8 +387,8 @@ class LogModuleManager {
     NSPRLogModulesParser(
         modules,
         [this, &shouldAppend, &addTimestamp, &isSync, &isRaw, &rotate, &maxSize,
-         &prependHeader, &captureStacks](const char* aName, LogLevel aLevel,
-                                         int32_t aValue) mutable {
+         &prependHeader, &captureProfilerStacks, &logJSStacks](
+            const char* aName, LogLevel aLevel, int32_t aValue) mutable {
           if (strcmp(aName, "append") == 0) {
             shouldAppend = true;
           } else if (strcmp(aName, "timestamp") == 0) {
@@ -402,7 +404,9 @@ class LogModuleManager {
           } else if (strcmp(aName, "prependheader") == 0) {
             prependHeader = true;
           } else if (strcmp(aName, "profilerstacks") == 0) {
-            captureStacks = true;
+            captureProfilerStacks = true;
+          } else if (strcmp(aName, "jsstacks") == 0) {
+            logJSStacks = true;
           } else {
             this->CreateOrGetModule(aName)->SetLevel(aLevel);
           }
@@ -413,7 +417,8 @@ class LogModuleManager {
     mIsSync = isSync;
     mIsRaw = isRaw;
     mRotate = rotate;
-    mCaptureProfilerStack = captureStacks;
+    mCaptureProfilerStack = captureProfilerStacks;
+    mLogJSStack = logJSStacks;
 
     if (rotate > 0 && shouldAppend) {
       NS_WARNING("MOZ_LOG: when you rotate the log, you cannot use append!");
@@ -519,6 +524,8 @@ class LogModuleManager {
   }
 
   void SetIsSync(bool aIsSync) { mIsSync = aIsSync; }
+
+  bool GetLogJSStacks() { return mLogJSStack; }
 
   void SetCaptureStacks(bool aCaptureStacks) {
     mCaptureProfilerStack = aCaptureStacks;
@@ -664,21 +671,23 @@ class LogModuleManager {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
           schema.SetTableLabel("({marker.data.module}) {marker.data.name}");
-          schema.AddKeyLabelFormatSearchable("module", "Module",
-                                             MS::Format::String,
-                                             MS::Searchable::Searchable);
-          schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
-                                             MS::Searchable::Searchable);
+          schema.AddKeyLabelFormat("module", "Module", MS::Format::String);
+          schema.AddKeyLabelFormat("name", "Name", MS::Format::String);
           return schema;
         }
       };
 
+      nsAutoCString levelAndName;
+      levelAndName.AppendASCII(ToLogStr(aLevel));
+      levelAndName.AppendLiteral("/");
+      levelAndName.AppendASCII(aName);
       profiler_add_marker(
           "LogMessages", geckoprofiler::category::OTHER,
           {aStart ? MarkerTiming::IntervalUntilNowFrom(*aStart)
                   : MarkerTiming::InstantNow(),
            MarkerStack::MaybeCapture(mCaptureProfilerStack)},
-          LogMarker{}, ProfilerString8View::WrapNullTerminatedString(aName),
+          LogMarker{},
+          ProfilerString8View::WrapNullTerminatedString(levelAndName.get()),
           ProfilerString8View::WrapNullTerminatedString(aLogMessage));
     }
 
@@ -842,6 +851,7 @@ class LogModuleManager {
   bool mSetFromEnv;
   Atomic<bool, Relaxed> mAddTimestamp;
   Atomic<bool, Relaxed> mCaptureProfilerStack;
+  Atomic<bool, Relaxed> mLogJSStack;
   Atomic<bool, Relaxed> mIsRaw;
   Atomic<bool, Relaxed> mIsSync;
   int32_t mRotate;
@@ -878,6 +888,8 @@ void LogModule::SetIsSync(bool aIsSync) {
 void LogModule::SetCaptureStacks(bool aCaptureStacks) {
   sLogModuleManager->SetCaptureStacks(aCaptureStacks);
 }
+
+bool LogModule::GetLogJSStacks() { return sLogModuleManager->GetLogJSStacks(); }
 
 // This function is defined in gecko_logger/src/lib.rs
 // We mirror the level in rust code so we don't get forwarded all of the

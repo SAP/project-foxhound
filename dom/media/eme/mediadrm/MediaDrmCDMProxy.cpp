@@ -4,9 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/MediaDrmCDMProxy.h"
+
 #include "MediaDrmCDMCallbackProxy.h"
+#include "mozilla/dom/MediaKeySession.h"
 
 namespace mozilla {
 
@@ -67,7 +68,7 @@ void MediaDrmCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
 }
 
 void MediaDrmCDMProxy::CreateSession(uint32_t aCreateSessionToken,
-                                     MediaKeySessionType aSessionType,
+                                     dom::MediaKeySessionType aSessionType,
                                      PromiseId aPromiseId,
                                      const nsAString& aInitDataType,
                                      nsTArray<uint8_t>& aInitData) {
@@ -225,14 +226,15 @@ void MediaDrmCDMProxy::OnExpirationChange(const nsAString& aSessionId,
   }
 }
 
-void MediaDrmCDMProxy::OnSessionClosed(const nsAString& aSessionId) {
+void MediaDrmCDMProxy::OnSessionClosed(
+    const nsAString& aSessionId, dom::MediaKeySessionClosedReason aReason) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mKeys.IsNull()) {
     return;
   }
   RefPtr<dom::MediaKeySession> session(mKeys->GetSession(aSessionId));
   if (session) {
-    session->OnClosed();
+    session->OnClosed(aReason);
   }
 }
 

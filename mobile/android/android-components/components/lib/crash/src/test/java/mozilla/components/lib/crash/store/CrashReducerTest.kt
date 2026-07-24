@@ -63,4 +63,11 @@ class CrashReducerTest {
         val state = crashReducer(CrashState.Reporting(listOf("1", "2")), CrashAction.CancelForEverTapped)
         assertEquals(state, CrashState.Done)
     }
+
+    @Test
+    fun `GIVEN a Reporting state WHEN we process a PromptShown action THEN update state to Idle`() {
+        val start = CrashState.Reporting(emptyList())
+        val next = crashReducer(start, CrashAction.PromptShown)
+        assertEquals(CrashState.Idle, next)
+    }
 }

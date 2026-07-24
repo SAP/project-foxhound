@@ -7,12 +7,12 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Event.h"
-#include "mozilla/dom/TextTrackListBinding.h"
-#include "mozilla/dom/TrackEvent.h"
-#include "nsThreadUtils.h"
-#include "nsGlobalWindowInner.h"
 #include "mozilla/dom/TextTrackCue.h"
+#include "mozilla/dom/TextTrackListBinding.h"
 #include "mozilla/dom/TextTrackManager.h"
+#include "mozilla/dom/TrackEvent.h"
+#include "nsGlobalWindowInner.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 

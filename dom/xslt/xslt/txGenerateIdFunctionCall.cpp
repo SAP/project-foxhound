@@ -4,11 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsGkAtoms.h"
+#include "txExecutionState.h"
 #include "txIXPathContext.h"
 #include "txNodeSet.h"
 #include "txXPathTreeWalker.h"
 #include "txXSLTFunctions.h"
-#include "txExecutionState.h"
 
 /*
   Implementation of XSLT 1.0 extension function: generate-id

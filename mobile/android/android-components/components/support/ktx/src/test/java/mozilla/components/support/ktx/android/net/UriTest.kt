@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito.any
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 
 @RunWith(AndroidJUnit4::class)
 class UriTest {
@@ -229,5 +230,55 @@ class UriTest {
 
         assertTrue(fileName.contains(".txt"))
         assertTrue(fileName.isNotEmpty())
+    }
+
+    @Test
+    fun `GIVEN content resolver finds a result WHEN checking readability THEN returns true`() {
+        val resolver = mock<ContentResolver>()
+        val uri = "content://media/external/file/37162".toUri()
+        val cursor = mock<Cursor>()
+
+        doReturn(cursor).`when`(resolver).query(any(), any(), any(), any(), any())
+
+        val result = uri.isReadable(resolver)
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN content resolver query returns null WHEN checking readability THEN returns false`() {
+        val resolver = mock<ContentResolver>()
+        val uri = "content://media/external/file/37162".toUri()
+
+        doReturn(null).`when`(resolver).query(any(), any(), any(), any(), any())
+
+        val result = uri.isReadable(resolver)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN content resolver query throws SecurityException WHEN checking readability THEN returns false`() {
+        val resolver = mock<ContentResolver>()
+        val uri = "content://media/external/file/37162".toUri()
+
+        doThrow(SecurityException("Permission denied"))
+            .`when`(resolver)
+            .query(any(), any<Array<String>>(), any(), any(), any())
+
+        val result = uri.isReadable(resolver)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN content resolver query throws IllegalStateException WHEN checking readability THEN return false`() {
+        val resolver = mock<ContentResolver>()
+        val uri = "content://media/external/file/37162".toUri()
+
+        doThrow(IllegalStateException("Must call PhenotypeContext.setContext() first"))
+            .`when`(resolver)
+            .query(any(), any<Array<String>>(), any(), any(), any())
+
+        val result = uri.isReadable(resolver)
+
+        assertFalse(result)
     }
 }

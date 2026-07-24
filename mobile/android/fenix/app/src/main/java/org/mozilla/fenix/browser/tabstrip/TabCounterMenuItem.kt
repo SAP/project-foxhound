@@ -9,6 +9,7 @@ import androidx.annotation.StringRes
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.text.Text
 import org.mozilla.fenix.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Model representing different tab strip tab counter menu items.
@@ -37,7 +38,7 @@ sealed interface TabCounterMenuItem {
             override val onClick: () -> Unit,
         ) : IconItem(
             textResource = R.string.add_tab,
-            drawableRes = R.drawable.mozac_ic_plus_24,
+            drawableRes = iconsR.drawable.mozac_ic_plus_24,
             onClick = onClick,
         )
 
@@ -50,7 +51,7 @@ sealed interface TabCounterMenuItem {
             override val onClick: () -> Unit,
         ) : IconItem(
             textResource = R.string.add_private_tab,
-            drawableRes = R.drawable.mozac_ic_private_mode_24,
+            drawableRes = iconsR.drawable.mozac_ic_private_mode_24,
             onClick = onClick,
         )
 
@@ -63,7 +64,7 @@ sealed interface TabCounterMenuItem {
             override val onClick: () -> Unit,
         ) : IconItem(
             textResource = R.string.close_tab,
-            drawableRes = R.drawable.mozac_ic_cross_24,
+            drawableRes = iconsR.drawable.mozac_ic_cross_24,
             onClick = onClick,
         )
     }

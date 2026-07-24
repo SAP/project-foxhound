@@ -85,6 +85,7 @@ exports.ReflowActor = class ReflowActor extends Actor {
 /**
  * Base class for all sorts of observers that need to listen to events on the
  * targetActor's windows.
+ *
  * @param {WindowGlobalTargetActor} targetActor
  * @param {Function} callback Executed everytime the observer observes something
  */
@@ -189,7 +190,7 @@ class Observable {
  * make sure all reflows which occurred before switching the mode on or off are
  * either observed or ignored depending on the current mode.
  *
- * @param {Boolean} ignore
+ * @param {boolean} ignore
  * @param {DOMNode} syncReflowNode The node to use to force a sync reflow
  */
 var gIgnoreLayoutChanges = false;
@@ -341,9 +342,10 @@ class LayoutChangesObserver extends EventEmitter {
    * Executed whenever a reflow is observed. Only stacks the reflow in the
    * reflows array.
    * The EVENT_BATCHING_DELAY loop will take care of it later.
-   * @param {Number} start When the reflow started
-   * @param {Number} end When the reflow ended
-   * @param {Boolean} isInterruptible
+   *
+   * @param {number} start When the reflow started
+   * @param {number} end When the reflow ended
+   * @param {boolean} isInterruptible
    */
   _onReflow(start, end, isInterruptible) {
     if (gIgnoreLayoutChanges) {
@@ -377,6 +379,7 @@ exports.LayoutChangesObserver = LayoutChangesObserver;
 /**
  * Get a LayoutChangesObserver instance for a given window. This function makes
  * sure there is only one instance per window.
+ *
  * @param {WindowGlobalTargetActor} targetActor
  * @return {LayoutChangesObserver}
  */
@@ -404,6 +407,7 @@ exports.getLayoutChangesObserver = getLayoutChangesObserver;
  * Release a LayoutChangesObserver instance that was retrieved by
  * getLayoutChangesObserver. This is required to ensure the targetActor reference
  * is removed and the observer is eventually stopped and destroyed.
+ *
  * @param {WindowGlobalTargetActor} targetActor
  */
 function releaseLayoutChangesObserver(targetActor) {
@@ -422,7 +426,8 @@ exports.releaseLayoutChangesObserver = releaseLayoutChangesObserver;
 
 /**
  * Reports any reflow that occurs in the targetActor's docshells.
- * @extends Observable
+ *
+ * @augments Observable
  * @param {WindowGlobalTargetActor} targetActor
  * @param {Function} callback Executed everytime a reflow occurs
  */
@@ -464,7 +469,8 @@ ReflowObserver.prototype.QueryInterface = ChromeUtils.generateQI([
 
 /**
  * Reports window resize events on the targetActor's windows.
- * @extends Observable
+ *
+ * @augments Observable
  * @param {WindowGlobalTargetActor} targetActor
  * @param {Function} callback Executed everytime a resize occurs
  */
@@ -479,14 +485,17 @@ class WindowResizeObserver extends Observable {
   }
 
   _startListeners() {
-    this.listenerTarget.addEventListener("resize", this.onResize);
+    this._abortController = new AbortController();
+    this.listenerTarget.addEventListener("resize", this.onResize, {
+      signal: this._abortController.signal,
+    });
   }
 
   _stopListeners() {
-    if (!this.listenerTarget) {
-      return;
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
     }
-    this.listenerTarget.removeEventListener("resize", this.onResize);
   }
 
   onNavigate() {
@@ -504,6 +513,7 @@ class WindowResizeObserver extends Observable {
     if (this.targetActor) {
       this.targetActor.off("navigate", this.onNavigate);
     }
+    this._stopListeners();
     super.destroy();
   }
 

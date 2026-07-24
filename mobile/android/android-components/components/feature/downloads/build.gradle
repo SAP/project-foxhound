@@ -4,6 +4,10 @@
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
@@ -12,21 +16,9 @@ apply plugin: 'com.google.devtools.ksp'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas".toString())
             arg("room.generateKotlin", "true")
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -45,15 +37,11 @@ android {
     namespace = 'mozilla.components.feature.downloads'
 }
 
-tasks.withType(KotlinCompile).configureEach {
-    kotlinOptions.freeCompilerArgs += "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
-}
-
 dependencies {
     implementation project(':components:browser-state')
     implementation project(':components:concept-fetch')
-    implementation project(':components:support-ktx')
     implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
     implementation project(':components:ui-icons')
     implementation project(':components:ui-widgets')
@@ -61,36 +49,34 @@ dependencies {
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.core.ktx
     implementation libs.androidx.lifecycle.livedata
-    implementation libs.androidx.localbroadcastmanager
     implementation libs.androidx.paging
     implementation libs.androidx.recyclerview
-
-    implementation libs.kotlin.coroutines
-
     implementation libs.androidx.room.runtime
+    implementation libs.google.material
     ksp libs.androidx.room.compiler
+    implementation libs.kotlinx.coroutines
 
-    testImplementation libs.androidx.test.core
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
     testImplementation project(':components:concept-engine')
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-test-libstate')
 
+    testFixturesImplementation libs.kotlinx.coroutines.core
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
+
     androidTestImplementation project(':components:support-android-test')
+    testImplementation testFixtures(project(':components:support-utils'))
 
-    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.arch.core.testing
+    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
-    androidTestImplementation libs.testing.coroutines
-
-    testFixturesImplementation libs.kotlin.coroutines.core
-
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlinx.coroutines.test
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

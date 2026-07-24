@@ -9,13 +9,13 @@ use crate::context::StackLimitChecker;
 use crate::dom::{TElement, TNode, TShadowRoot};
 use crate::invalidation::element::invalidation_map::{
     Dependency, DependencyInvalidationKind, NormalDependencyInvalidationKind,
-    RelativeDependencyInvalidationKind,
+    RelativeDependencyInvalidationKind, ScopeDependencyInvalidationKind,
 };
 use selectors::matching::matches_compound_selector_from;
 use selectors::matching::{CompoundSelectorMatchingResult, MatchingContext};
-use selectors::parser::{Combinator, Component};
-use selectors::OpaqueElement;
-use smallvec::SmallVec;
+use selectors::parser::{Combinator, Component, Selector, SelectorVisitor};
+use selectors::{OpaqueElement, SelectorImpl};
+use smallvec::{smallvec, SmallVec};
 use std::fmt;
 use std::fmt::Write;
 
@@ -125,9 +125,17 @@ where
     /// that is, in the case above it should match
     /// `div .foo:where(.bar *, .baz)`.
     ///
+    /// `scope` is set to `Some()` if this dependency follows a scope invalidation
+    /// Matching context should be adjusted accordingly with `nest_for_scope`.
+    ///
     /// Returning true unconditionally here is over-optimistic and may
     /// over-invalidate.
-    fn check_outer_dependency(&mut self, dependency: &Dependency, element: E) -> bool;
+    fn check_outer_dependency(
+        &mut self,
+        dependency: &Dependency,
+        element: E,
+        scope: Option<OpaqueElement>,
+    ) -> bool;
 
     /// The matching context that should be used to process invalidations.
     fn matching_context(&mut self) -> &mut MatchingContext<'b, E::Impl>;
@@ -161,6 +169,12 @@ where
     /// `of`.
     fn invalidated_sibling(&mut self, sibling: E, of: E);
 
+    /// Called when a highlight pseudo-element (::selection, ::highlight,
+    /// ::target-text) style is invalidated. These pseudos have their styles
+    /// resolved lazily during painting rather than during the restyle traversal,
+    /// so style changes don't automatically trigger repaints.
+    fn invalidated_highlight_pseudo(&mut self, _element: E) {}
+
     /// Executes an action when any descendant of `Self` is invalidated.
     fn invalidated_descendants(&mut self, element: E, child: E);
 
@@ -193,9 +207,9 @@ pub struct DescendantInvalidationLists<'a> {
 
 impl<'a> DescendantInvalidationLists<'a> {
     fn is_empty(&self) -> bool {
-        self.dom_descendants.is_empty() &&
-            self.slotted_descendants.is_empty() &&
-            self.parts.is_empty()
+        self.dom_descendants.is_empty()
+            && self.slotted_descendants.is_empty()
+            && self.parts.is_empty()
     }
 }
 
@@ -237,6 +251,14 @@ enum InvalidationKind {
     Sibling,
 }
 
+/// The kind of traversal an invalidation requires.
+pub enum InvalidationAddOverride {
+    /// This invalidation should be added to descendant invalidation
+    Descendant,
+    /// This invalidation should be added to sibling invalidations
+    Sibling,
+}
+
 /// An `Invalidation` is a complex selector that describes which elements,
 /// relative to a current element we are processing, must be restyled.
 #[derive(Clone)]
@@ -251,6 +273,8 @@ pub struct Invalidation<'a> {
     /// This is needed to ensure that we match the selector with the right
     /// state, as whether some selectors like :host and ::part() match depends
     /// on it.
+    host: Option<OpaqueElement>,
+    /// The scope element from which this rule comes from, if any.
     scope: Option<OpaqueElement>,
     /// The offset of the selector pointing to a compound selector.
     ///
@@ -266,30 +290,106 @@ pub struct Invalidation<'a> {
     /// this one if the generated invalidation is effective for all the siblings
     /// or descendants after us.
     matched_by_any_previous: bool,
+    /// Whether this incalidation should always be pushed to next invalidations.
+    ///
+    /// This is useful for overriding invalidations we would otherwise skip.
+    ///  e.g @scope(.a){:not(:scope)} where we would need the :not(:scope)
+    /// invalidation to traverse down for all children of the scope root
+    always_effective_for_next_descendant: bool,
 }
 
 impl<'a> Invalidation<'a> {
     /// Create a new invalidation for matching a dependency.
-    pub fn new(dependency: &'a Dependency, scope: Option<OpaqueElement>) -> Self {
+    pub fn new(
+        dependency: &'a Dependency,
+        host: Option<OpaqueElement>,
+        scope: Option<OpaqueElement>,
+    ) -> Self {
         debug_assert!(
-            dependency.selector_offset == dependency.selector.len() + 1 ||
-                dependency.normal_invalidation_kind() !=
-                    NormalDependencyInvalidationKind::Element,
+            dependency.selector_offset == dependency.selector.len() + 1
+                || dependency.invalidation_kind()
+                    != DependencyInvalidationKind::Normal(
+                        NormalDependencyInvalidationKind::Element
+                    ),
             "No point to this, if the dependency matched the element we should just invalidate it"
         );
         Self {
             dependency,
+            host,
             scope,
             // + 1 to go past the combinator.
             offset: dependency.selector.len() + 1 - dependency.selector_offset,
             matched_by_any_previous: false,
+            always_effective_for_next_descendant: false,
         }
+    }
+
+    /// Create a new invalidation for matching a dependency from the selector's subject.
+    /// Using this should be avoided whenever possible as it overinvalidates.
+    /// Only use it when it's not possible to match the selector in order due to
+    /// invalidations that don't necessarily start at the pointed compound, such as
+    /// what happens in note_scope_dependency_force_at_subject.
+    pub fn new_subject_invalidation(
+        dependency: &'a Dependency,
+        host: Option<OpaqueElement>,
+        scope: Option<OpaqueElement>,
+    ) -> Self {
+        let mut compound_offset = 0;
+        for s in dependency.selector.iter_raw_match_order() {
+            if s.is_combinator() {
+                break;
+            }
+            compound_offset += 1;
+        }
+
+        Self {
+            dependency,
+            host,
+            scope,
+            offset: dependency.selector.len() - compound_offset,
+            matched_by_any_previous: false,
+            always_effective_for_next_descendant: true,
+        }
+    }
+
+    /// Create a new invalidation for matching a dependency that should always check
+    /// its next descendants. It tends to overinvalidate less than new_subject_invalidation
+    /// but it should also be avoided whenever possible. Specifically used when crossing
+    /// into implicit scope invalidation.
+    pub fn new_always_effective_for_next_descendant(
+        dependency: &'a Dependency,
+        host: Option<OpaqueElement>,
+        scope: Option<OpaqueElement>,
+    ) -> Self {
+        if dependency.selector.is_rightmost(dependency.selector_offset) {
+            return Self::new_subject_invalidation(dependency, host, scope);
+        }
+
+        Self {
+            dependency,
+            host,
+            scope,
+            // + 1 to go past the combinator.
+            offset: dependency.selector.len() + 1 - dependency.selector_offset,
+            matched_by_any_previous: false,
+            always_effective_for_next_descendant: true,
+        }
+    }
+
+    /// Return the combinator to the right of the currently invalidating compound
+    /// Useful for determining whether this invalidation should be pushed to
+    /// sibling or descendant invalidations.
+    pub fn combinator_to_right(&self) -> Combinator {
+        debug_assert_ne!(self.dependency.selector_offset, 0);
+        self.dependency
+            .selector
+            .combinator_at_match_order(self.dependency.selector.len() - self.offset)
     }
 
     /// Whether this invalidation is effective for the next sibling or
     /// descendant after us.
     fn effective_for_next(&self) -> bool {
-        if self.offset == 0 {
+        if self.offset == 0 || self.always_effective_for_next_descendant {
             return true;
         }
 
@@ -303,10 +403,10 @@ impl<'a> Invalidation<'a> {
             .combinator_at_parse_order(self.offset - 1)
         {
             Combinator::Descendant | Combinator::LaterSibling | Combinator::PseudoElement => true,
-            Combinator::Part |
-            Combinator::SlotAssignment |
-            Combinator::NextSibling |
-            Combinator::Child => false,
+            Combinator::Part
+            | Combinator::SlotAssignment
+            | Combinator::NextSibling
+            | Combinator::Child => false,
         }
     }
 
@@ -332,6 +432,126 @@ impl<'a> Invalidation<'a> {
     }
 }
 
+/// A struct that visits a selector and determines if there is a `:scope`
+/// component nested withing a negation. eg. :not(:scope)
+struct NegationScopeVisitor {
+    /// Have we found a negation list yet
+    in_negation: bool,
+    /// Have we found a :scope inside a negation yet
+    found_scope_in_negation: bool,
+}
+
+impl NegationScopeVisitor {
+    /// Create a new NegationScopeVisitor
+    fn new() -> Self {
+        Self {
+            in_negation: false,
+            found_scope_in_negation: false,
+        }
+    }
+
+    fn traverse_selector(
+        mut self,
+        selector: &Selector<<NegationScopeVisitor as SelectorVisitor>::Impl>,
+    ) -> bool {
+        selector.visit(&mut self);
+        self.found_scope_in_negation
+    }
+
+    /// Traverse all the next dependencies in an outer dependency until we reach
+    /// 1. :not(* :scope *)
+    /// 2. a scope or relative dependency
+    /// 3. the end of the chain of dependencies
+    /// Return whether or not we encountered :not(* :scope *)
+    fn traverse_dependency(mut self, dependency: &Dependency) -> bool {
+        if dependency.next.is_none()
+            || !matches!(
+                dependency.invalidation_kind(),
+                DependencyInvalidationKind::Normal(..)
+            )
+        {
+            dependency.selector.visit(&mut self);
+            return self.found_scope_in_negation;
+        }
+
+        let nested_visitor = Self {
+            in_negation: self.in_negation,
+            found_scope_in_negation: false,
+        };
+        dependency.selector.visit(&mut self);
+        // Has to be normal dependency and next.is_some()
+        nested_visitor.traverse_dependency(&dependency.next.as_ref().unwrap().slice()[0])
+    }
+}
+
+impl SelectorVisitor for NegationScopeVisitor {
+    type Impl = crate::selector_parser::SelectorImpl;
+
+    fn visit_attribute_selector(
+        &mut self,
+        _namespace: &selectors::attr::NamespaceConstraint<
+            &<Self::Impl as SelectorImpl>::NamespaceUrl,
+        >,
+        _local_name: &<Self::Impl as SelectorImpl>::LocalName,
+        _local_name_lower: &<Self::Impl as SelectorImpl>::LocalName,
+    ) -> bool {
+        true
+    }
+
+    fn visit_simple_selector(&mut self, component: &Component<Self::Impl>) -> bool {
+        if self.in_negation {
+            match component {
+                Component::Scope => {
+                    self.found_scope_in_negation = true;
+                },
+                _ => {},
+            }
+        }
+        true
+    }
+
+    fn visit_relative_selector_list(
+        &mut self,
+        _list: &[selectors::parser::RelativeSelector<Self::Impl>],
+    ) -> bool {
+        true
+    }
+
+    fn visit_selector_list(
+        &mut self,
+        list_kind: selectors::visitor::SelectorListKind,
+        list: &[selectors::parser::Selector<Self::Impl>],
+    ) -> bool {
+        for nested in list {
+            let nested_visitor = Self {
+                in_negation: list_kind.in_negation(),
+                found_scope_in_negation: false,
+            };
+
+            self.found_scope_in_negation |= nested_visitor.traverse_selector(nested);
+        }
+        true
+    }
+
+    fn visit_complex_selector(&mut self, _combinator_to_right: Option<Combinator>) -> bool {
+        true
+    }
+}
+
+/// Determines if we can find a selector in the form of :not(:scope)
+/// anywhere down the chain of dependencies.
+pub fn any_next_has_scope_in_negation(dependency: &Dependency) -> bool {
+    let next = match dependency.next.as_ref() {
+        None => return false,
+        Some(l) => l,
+    };
+
+    next.slice().iter().any(|dep| {
+        let visitor = NegationScopeVisitor::new();
+        visitor.traverse_dependency(dep)
+    })
+}
+
 impl<'a> fmt::Debug for Invalidation<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use cssparser::ToCss;
@@ -352,7 +572,7 @@ impl<'a> fmt::Debug for Invalidation<'a> {
 }
 
 /// The result of processing a single invalidation for a given element.
-struct SingleInvalidationResult {
+struct ProcessInvalidationResult {
     /// Whether the element itself was invalidated.
     invalidated_self: bool,
     /// Whether the invalidation matched, either invalidating the element or
@@ -870,6 +1090,131 @@ where
         invalidated
     }
 
+    #[inline(always)]
+    fn handle_fully_matched(
+        &mut self,
+        invalidation: &Invalidation<'b>,
+    ) -> (ProcessInvalidationResult, SmallVec<[Invalidation<'b>; 1]>) {
+        debug!(" > Invalidation matched completely");
+        // We matched completely. If we're an inner selector now we need
+        // to go outside our selector and carry on invalidating.
+        let mut to_process: SmallVec<[&Dependency; 1]> = SmallVec::from([invalidation.dependency]);
+        let mut next_invalidations: SmallVec<[Invalidation; 1]> = SmallVec::new();
+        let mut result = ProcessInvalidationResult {
+            invalidated_self: false,
+            matched: false,
+        };
+
+        while !to_process.is_empty() {
+            let mut next_dependencies: SmallVec<[&Dependency; 1]> = SmallVec::new();
+
+            while let Some(dependency) = to_process.pop() {
+                if let DependencyInvalidationKind::Scope(scope_kind) =
+                    dependency.invalidation_kind()
+                {
+                    if scope_kind == ScopeDependencyInvalidationKind::ImplicitScope {
+                        if let Some(ref deps) = dependency.next {
+                            for dep in deps.as_ref().slice() {
+                                let invalidation =
+                                    Invalidation::new_always_effective_for_next_descendant(
+                                        dep,
+                                        invalidation.host,
+                                        invalidation.scope,
+                                    );
+                                next_invalidations.push(invalidation);
+                            }
+                        }
+                        continue;
+                    }
+
+                    let force_add = any_next_has_scope_in_negation(dependency);
+                    if scope_kind == ScopeDependencyInvalidationKind::ScopeEnd || force_add {
+                        let invalidations = note_scope_dependency_force_at_subject(
+                            dependency,
+                            invalidation.host,
+                            invalidation.scope,
+                            force_add,
+                        );
+
+                        next_invalidations.extend(invalidations);
+
+                        continue;
+                    }
+                }
+
+                match dependency.next {
+                    None => {
+                        result.invalidated_self = true;
+                        result.matched = true;
+                    },
+                    Some(ref deps) => {
+                        for n in deps.as_ref().slice() {
+                            let invalidation_kind = n.invalidation_kind();
+                            match invalidation_kind {
+                                DependencyInvalidationKind::FullSelector => unreachable!(),
+                                DependencyInvalidationKind::Normal(_) => next_dependencies.push(n),
+                                //TODO(descalente, bug 1934061): Add specific handling for implicit scopes.
+                                DependencyInvalidationKind::Scope(_) => {
+                                    next_dependencies.push(n);
+                                },
+                                DependencyInvalidationKind::Relative(kind) => {
+                                    self.processor.found_relative_selector_invalidation(
+                                        self.element,
+                                        kind,
+                                        n,
+                                    );
+                                    result.matched = true;
+                                },
+                            }
+                        }
+                    },
+                };
+            }
+
+            for cur_dependency in next_dependencies.as_ref() {
+                let scope = matches!(
+                    invalidation.dependency.invalidation_kind(),
+                    DependencyInvalidationKind::Scope(_)
+                )
+                .then(|| self.element.opaque());
+                debug!(" > Checking outer dependency {:?}", cur_dependency);
+
+                // The inner selector changed, now check if the full
+                // previous part of the selector did, before keeping
+                // checking for descendants.
+                if !self
+                    .processor
+                    .check_outer_dependency(cur_dependency, self.element, scope)
+                {
+                    // Dependency is not relevant, do not note it down
+                    continue;
+                }
+
+                let invalidation_kind = cur_dependency.invalidation_kind();
+                if matches!(
+                    invalidation_kind,
+                    DependencyInvalidationKind::Normal(NormalDependencyInvalidationKind::Element)
+                ) || (matches!(invalidation_kind, DependencyInvalidationKind::Scope(_))
+                    && cur_dependency
+                        .selector
+                        .is_rightmost(cur_dependency.selector_offset))
+                {
+                    // Add to dependency stack to process its next dependencies.
+                    to_process.push(cur_dependency);
+                    continue;
+                }
+
+                debug!(" > Generating invalidation");
+                next_invalidations.push(Invalidation::new(
+                    cur_dependency,
+                    invalidation.host,
+                    scope,
+                ));
+            }
+        }
+        return (result, next_invalidations);
+    }
+
     /// Processes a given invalidation, potentially invalidating the style of
     /// the current element.
     ///
@@ -882,7 +1227,7 @@ where
         descendant_invalidations: &mut DescendantInvalidationLists<'b>,
         sibling_invalidations: &mut InvalidationVector<'b>,
         invalidation_kind: InvalidationKind,
-    ) -> SingleInvalidationResult {
+    ) -> ProcessInvalidationResult {
         debug!(
             "TreeStyleInvalidator::process_invalidation({:?}, {:?}, {:?})",
             self.element, invalidation, invalidation_kind
@@ -890,229 +1235,238 @@ where
 
         let matching_result = {
             let context = self.processor.matching_context();
-            context.current_host = invalidation.scope;
+            context.current_host = invalidation.host;
 
-            matches_compound_selector_from(
-                &invalidation.dependency.selector,
-                invalidation.offset,
-                context,
-                &self.element,
-            )
+            context.nest_for_scope_condition(invalidation.scope, |ctx| {
+                matches_compound_selector_from(
+                    &invalidation.dependency.selector,
+                    invalidation.offset,
+                    ctx,
+                    &self.element,
+                )
+            })
         };
 
-        let next_invalidation = match matching_result {
+        let (mut result, next_invalidations) = match matching_result {
             CompoundSelectorMatchingResult::NotMatched => {
-                return SingleInvalidationResult {
+                return ProcessInvalidationResult {
                     invalidated_self: false,
                     matched: false,
                 }
             },
-            CompoundSelectorMatchingResult::FullyMatched => {
-                debug!(" > Invalidation matched completely");
-                // We matched completely. If we're an inner selector now we need
-                // to go outside our selector and carry on invalidating.
-                let mut cur_dependency = invalidation.dependency;
-                loop {
-                    cur_dependency = match cur_dependency.next {
-                        None => {
-                            return SingleInvalidationResult {
-                                invalidated_self: true,
-                                matched: true,
-                            }
-                        },
-                        Some(ref deps) => {
-                            let n = &deps.as_ref().slice()[0];
-                            let invalidation_kind = n.invalidation_kind();
-                            match invalidation_kind {
-                                DependencyInvalidationKind::Normal(_) => n,
-                                DependencyInvalidationKind::Relative(kind) => {
-                                    self.processor.found_relative_selector_invalidation(
-                                        self.element,
-                                        kind,
-                                        n,
-                                    );
-                                    return SingleInvalidationResult {
-                                        invalidated_self: false,
-                                        matched: true,
-                                    };
-                                },
-                            }
-                        },
-                    };
-
-                    debug!(" > Checking outer dependency {:?}", cur_dependency);
-
-                    // The inner selector changed, now check if the full
-                    // previous part of the selector did, before keeping
-                    // checking for descendants.
-                    if !self
-                        .processor
-                        .check_outer_dependency(cur_dependency, self.element)
-                    {
-                        return SingleInvalidationResult {
-                            invalidated_self: false,
-                            matched: false,
-                        };
-                    }
-
-                    if cur_dependency.normal_invalidation_kind() ==
-                        NormalDependencyInvalidationKind::Element
-                    {
-                        continue;
-                    }
-
-                    debug!(" > Generating invalidation");
-                    break Invalidation::new(cur_dependency, invalidation.scope);
-                }
-            },
+            CompoundSelectorMatchingResult::FullyMatched => self.handle_fully_matched(invalidation),
             CompoundSelectorMatchingResult::Matched {
                 next_combinator_offset,
-            } => Invalidation {
-                dependency: invalidation.dependency,
-                scope: invalidation.scope,
-                offset: next_combinator_offset + 1,
-                matched_by_any_previous: false,
-            },
+            } => (
+                ProcessInvalidationResult {
+                    invalidated_self: false,
+                    matched: true,
+                },
+                smallvec![Invalidation {
+                    dependency: invalidation.dependency,
+                    host: invalidation.host,
+                    scope: invalidation.scope,
+                    offset: next_combinator_offset + 1,
+                    matched_by_any_previous: false,
+                    always_effective_for_next_descendant: invalidation
+                        .always_effective_for_next_descendant,
+                }],
+            ),
         };
 
-        debug_assert_ne!(
-            next_invalidation.offset, 0,
-            "Rightmost selectors shouldn't generate more invalidations",
-        );
+        for next_invalidation in next_invalidations {
+            let next_invalidation_kind = if next_invalidation.always_effective_for_next_descendant {
+                InvalidationKind::Descendant(DescendantInvalidationKind::Dom)
+            } else {
+                debug_assert_ne!(
+                    next_invalidation.offset, 0,
+                    "Rightmost selectors shouldn't generate more invalidations",
+                );
 
-        let mut invalidated_self = false;
-        let next_combinator = next_invalidation
-            .dependency
-            .selector
-            .combinator_at_parse_order(next_invalidation.offset - 1);
+                let next_combinator = next_invalidation
+                    .dependency
+                    .selector
+                    .combinator_at_parse_order(next_invalidation.offset - 1);
 
-        if matches!(next_combinator, Combinator::PseudoElement) &&
-            self.processor.invalidates_on_pseudo_element()
-        {
-            // We need to invalidate the element whenever pseudos change, for
-            // two reasons:
+                if matches!(next_combinator, Combinator::PseudoElement)
+                    && self.processor.invalidates_on_pseudo_element()
+                {
+                    // We need to invalidate the element whenever pseudos change, for
+                    // two reasons:
+                    //
+                    //  * Eager pseudo styles are stored as part of the originating
+                    //    element's computed style.
+                    //
+                    //  * Lazy pseudo-styles might be cached on the originating
+                    //    element's pseudo-style cache.
+                    //
+                    // This could be more fine-grained (perhaps with a RESTYLE_PSEUDOS
+                    // hint?).
+                    //
+                    // Note that we'll also restyle the pseudo-element because it would
+                    // match this invalidation.
+                    result.invalidated_self = true;
+
+                    // For highlight pseudos (::selection, ::highlight, ::target-text),
+                    // we also need to trigger a repaint since their styles are resolved
+                    // lazily during painting.
+                    if next_invalidation
+                        .dependency
+                        .selector
+                        .pseudo_element()
+                        .is_some_and(|p| p.is_lazy_painted_highlight_pseudo())
+                    {
+                        self.processor.invalidated_highlight_pseudo(self.element);
+                    }
+                }
+
+                debug!(
+                    " > Invalidation matched, next: {:?}, ({:?})",
+                    next_invalidation, next_combinator
+                );
+
+                next_invalidation.kind()
+            };
+
+            // We can skip pushing under some circumstances, and we should
+            // because otherwise the invalidation list could grow
+            // exponentially.
             //
-            //  * Eager pseudo styles are stored as part of the originating
-            //    element's computed style.
+            //  * First of all, both invalidations need to be of the same
+            //    kind. This is because of how we propagate them going to
+            //    the right of the tree for sibling invalidations and going
+            //    down the tree for children invalidations. A sibling
+            //    invalidation that ends up generating a children
+            //    invalidation ends up (correctly) in five different lists,
+            //    not in the same list five different times.
             //
-            //  * Lazy pseudo-styles might be cached on the originating
-            //    element's pseudo-style cache.
+            //  * Then, the invalidation needs to be matched by a previous
+            //    ancestor/sibling, in order to know that this invalidation
+            //    has been generated already.
             //
-            // This could be more fine-grained (perhaps with a RESTYLE_PSEUDOS
-            // hint?).
+            //  * Finally, the new invalidation needs to be
+            //    `effective_for_next()`, in order for us to know that it is
+            //    still in the list, since we remove the dependencies that
+            //    aren't from the lists for our children / siblings.
             //
-            // Note that we'll also restyle the pseudo-element because it would
-            // match this invalidation.
+            // To go through an example, let's imagine we are processing a
+            // dom subtree like:
             //
-            // FIXME: For non-element-backed pseudos this is still not quite
-            // correct. For example for ::selection even though we invalidate
-            // the style properly there's nothing that triggers a repaint
-            // necessarily. Though this matches old Gecko behavior, and the
-            // ::selection implementation needs to change significantly anyway
-            // to implement https://github.com/w3c/csswg-drafts/issues/2474 for
-            // example.
-            invalidated_self = true;
-        }
+            //   <div><address><div><div/></div></address></div>
+            //
+            // And an invalidation list with a single invalidation like:
+            //
+            //   [div div div]
+            //
+            // When we process the invalidation list for the outer div, we
+            // match it, and generate a `div div` invalidation, so for the
+            // <address> child we have:
+            //
+            //   [div div div, div div]
+            //
+            // With the first of them marked as `matched`.
+            //
+            // When we process the <address> child, we don't match any of
+            // them, so both invalidations go untouched to our children.
+            //
+            // When we process the second <div>, we match _both_
+            // invalidations.
+            //
+            // However, when matching the first, we can tell it's been
+            // matched, and not push the corresponding `div div`
+            // invalidation, since we know it's necessarily already on the
+            // list.
+            //
+            // Thus, without skipping the push, we'll arrive to the
+            // innermost <div> with:
+            //
+            //   [div div div, div div, div div, div]
+            //
+            // While skipping it, we won't arrive here with duplicating
+            // dependencies:
+            //
+            //   [div div div, div div, div]
+            //
+            let can_skip_pushing = next_invalidation_kind == invalidation_kind
+                && invalidation.matched_by_any_previous
+                && next_invalidation.effective_for_next();
 
-        debug!(
-            " > Invalidation matched, next: {:?}, ({:?})",
-            next_invalidation, next_combinator
-        );
-
-        let next_invalidation_kind = next_invalidation.kind();
-
-        // We can skip pushing under some circumstances, and we should
-        // because otherwise the invalidation list could grow
-        // exponentially.
-        //
-        //  * First of all, both invalidations need to be of the same
-        //    kind. This is because of how we propagate them going to
-        //    the right of the tree for sibling invalidations and going
-        //    down the tree for children invalidations. A sibling
-        //    invalidation that ends up generating a children
-        //    invalidation ends up (correctly) in five different lists,
-        //    not in the same list five different times.
-        //
-        //  * Then, the invalidation needs to be matched by a previous
-        //    ancestor/sibling, in order to know that this invalidation
-        //    has been generated already.
-        //
-        //  * Finally, the new invalidation needs to be
-        //    `effective_for_next()`, in order for us to know that it is
-        //    still in the list, since we remove the dependencies that
-        //    aren't from the lists for our children / siblings.
-        //
-        // To go through an example, let's imagine we are processing a
-        // dom subtree like:
-        //
-        //   <div><address><div><div/></div></address></div>
-        //
-        // And an invalidation list with a single invalidation like:
-        //
-        //   [div div div]
-        //
-        // When we process the invalidation list for the outer div, we
-        // match it, and generate a `div div` invalidation, so for the
-        // <address> child we have:
-        //
-        //   [div div div, div div]
-        //
-        // With the first of them marked as `matched`.
-        //
-        // When we process the <address> child, we don't match any of
-        // them, so both invalidations go untouched to our children.
-        //
-        // When we process the second <div>, we match _both_
-        // invalidations.
-        //
-        // However, when matching the first, we can tell it's been
-        // matched, and not push the corresponding `div div`
-        // invalidation, since we know it's necessarily already on the
-        // list.
-        //
-        // Thus, without skipping the push, we'll arrive to the
-        // innermost <div> with:
-        //
-        //   [div div div, div div, div div, div]
-        //
-        // While skipping it, we won't arrive here with duplicating
-        // dependencies:
-        //
-        //   [div div div, div div, div]
-        //
-        let can_skip_pushing = next_invalidation_kind == invalidation_kind &&
-            invalidation.matched_by_any_previous &&
-            next_invalidation.effective_for_next();
-
-        if can_skip_pushing {
-            debug!(
-                " > Can avoid push, since the invalidation had \
-                 already been matched before"
-            );
-        } else {
-            match next_invalidation_kind {
-                InvalidationKind::Descendant(DescendantInvalidationKind::Dom) => {
-                    descendant_invalidations
-                        .dom_descendants
-                        .push(next_invalidation);
-                },
-                InvalidationKind::Descendant(DescendantInvalidationKind::Part) => {
-                    descendant_invalidations.parts.push(next_invalidation);
-                },
-                InvalidationKind::Descendant(DescendantInvalidationKind::Slotted) => {
-                    descendant_invalidations
-                        .slotted_descendants
-                        .push(next_invalidation);
-                },
-                InvalidationKind::Sibling => {
-                    sibling_invalidations.push(next_invalidation);
-                },
+            if can_skip_pushing {
+                debug!(
+                    " > Can avoid push, since the invalidation had \
+                    already been matched before"
+                );
+            } else {
+                match next_invalidation_kind {
+                    InvalidationKind::Descendant(DescendantInvalidationKind::Dom) => {
+                        descendant_invalidations
+                            .dom_descendants
+                            .push(next_invalidation);
+                    },
+                    InvalidationKind::Descendant(DescendantInvalidationKind::Part) => {
+                        descendant_invalidations.parts.push(next_invalidation);
+                    },
+                    InvalidationKind::Descendant(DescendantInvalidationKind::Slotted) => {
+                        descendant_invalidations
+                            .slotted_descendants
+                            .push(next_invalidation);
+                    },
+                    InvalidationKind::Sibling => {
+                        sibling_invalidations.push(next_invalidation);
+                    },
+                }
             }
         }
 
-        SingleInvalidationResult {
-            invalidated_self,
-            matched: true,
+        result
+    }
+}
+
+/// Note the child dependencies of a scope end selector
+/// This is necessary because the scope end selector is not bound to :scope
+///
+/// e.g @scope to (.b) {:scope .a .c {...}}
+/// in the case of the following:
+/// <div class=a><div id=x class=b><div class=c></div></div></div>
+///
+/// If we toggle class "b" in x, we would have to go up to find .a
+/// if we wanted to invalidate correctly. However, this is costly.
+/// Instead we just invalidate to the subject of the selector .c
+pub fn note_scope_dependency_force_at_subject<'selectors>(
+    dependency: &'selectors Dependency,
+    current_host: Option<OpaqueElement>,
+    scope: Option<OpaqueElement>,
+    traversed_non_subject: bool,
+) -> Vec<Invalidation<'selectors>> {
+    let mut invalidations: Vec<Invalidation> = Vec::new();
+    if let Some(next) = dependency.next.as_ref() {
+        for dep in next.slice() {
+            if dep.selector.is_rightmost(dep.selector_offset) && !traversed_non_subject {
+                continue;
+            }
+
+            // Follow the normal dependencies as far as we can, leaving
+            // other kinds to their own invalidation mechanisms elsewhere
+            if dep.next.is_some()
+                && matches!(
+                    dep.invalidation_kind(),
+                    DependencyInvalidationKind::Normal(_)
+                )
+            {
+                invalidations.extend(note_scope_dependency_force_at_subject(
+                    dep,
+                    current_host,
+                    scope,
+                    // Force add from now on because we
+                    // passed through a non-subject compound
+                    true,
+                ));
+            } else {
+                let invalidation = Invalidation::new_subject_invalidation(dep, current_host, scope);
+
+                invalidations.push(invalidation);
+            }
         }
     }
+    invalidations
 }

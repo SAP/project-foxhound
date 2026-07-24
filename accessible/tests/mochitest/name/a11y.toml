@@ -5,13 +5,9 @@ support-files = [
   "!/accessible/tests/mochitest/*.js",
   "!/accessible/tests/mochitest/moz.png"]
 
-["test_ARIACore_examples.html"]
-
 ["test_browserui.xhtml"]
 
 ["test_counterstyle.html"]
-
-["test_general.html"]
 
 ["test_general.xhtml"]
 

@@ -121,6 +121,14 @@ export class BlockedSiteChild extends JSWindowActorChild {
           "phishing-malware"
       );
 
+    doc
+      .getElementById("firefox_support_harmful_addons")
+      .setAttribute(
+        "href",
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+          "harmful-add-protection"
+      );
+
     // Show safe browsing details on load if the pref is set to true.
     let showDetails = Services.prefs.getBoolPref(
       "browser.xul.error_pages.show_safe_browsing_details_on_load"

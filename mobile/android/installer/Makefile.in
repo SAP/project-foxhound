@@ -4,14 +4,6 @@
 
 STANDALONE_MAKEFILE := 1
 
-# overwrite mobile-l10n.js with a matchOS=true one for multi-locale builds
-ifeq ($(AB_CD),multi)
-L10N_PREF_JS_EXPORTS = $(srcdir)/mobile-l10n.js
-L10N_PREF_JS_EXPORTS_PATH = $(FINAL_TARGET)/$(PREF_DIR)
-L10N_PREF_JS_EXPORTS_FLAGS = $(PREF_PPFLAGS) --silence-missing-directive-warnings
-PP_TARGETS += L10N_PREF_JS_EXPORTS
-endif
-
 include $(topsrcdir)/config/rules.mk
 
 MOZ_PKG_REMOVALS = $(srcdir)/removed-files.in
@@ -52,6 +44,10 @@ ifdef MOZ_ANDROID_EXCLUDE_FONTS
 DEFINES += -DMOZ_ANDROID_EXCLUDE_FONTS=1
 endif
 
+ifdef MOZ_PREF_EXTENSIONS
+DEFINES += -DMOZ_PREF_EXTENSIONS=1
+endif
+
 ifdef MOZ_ARTIFACT_BUILDS
 DEFINES += -DMOZ_ARTIFACT_BUILDS=1
 endif
@@ -79,4 +75,8 @@ endif
 
 ifdef MOZ_CLANG_RT_ASAN_LIB_PATH
 DEFINES += -DMOZ_CLANG_RT_ASAN_LIB=$(notdir $(MOZ_CLANG_RT_ASAN_LIB_PATH))
+endif
+
+ifdef MOZ_APPSERVICES_IN_TREE
+DEFINES += -DMOZ_APPSERVICES_IN_TREE=1
 endif

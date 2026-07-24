@@ -11,5 +11,10 @@ support-files = [
 # individually, without any other test being executed before or after.
 
 ["browser_metrics_webconsole.js"]
-run-if = ["os == 'linux' && opt"] # Results should be platform agnostic - only run on linux64-opt
-skip-if = ["verify"] # metrics tests should only run once, they are designed to record module usage and will fail in verify because the number of modules will be different after the first load.
+run-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt", # Results should be platform agnostic - only run on linux64-opt
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Results should be platform agnostic - only run on linux64-opt
+]
+skip-if = [
+  "verify", # metrics tests should only run once, they are designed to record module usage and will fail in verify because the number of modules will be different after the first load.
+]

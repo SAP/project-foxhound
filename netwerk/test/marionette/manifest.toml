@@ -1,3 +1,7 @@
 [DEFAULT]
 
+# Test for sendBeacon during pagehide on browser shutdown (bug 1931956)
+
+["test_beacon_on_pagehide_shutdown.py"]
+
 ["test_purge_http_cache_at_shutdown.py"]

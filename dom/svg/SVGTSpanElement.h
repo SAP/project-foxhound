@@ -33,11 +33,11 @@ class SVGTSpanElement final : public SVGTSpanElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   LengthAttributesInfo GetLengthInfo() override;
 
-  SVGAnimatedEnumeration mEnumAttributes[1];
-  SVGAnimatedEnumeration* EnumAttributes() override { return mEnumAttributes; }
-
   SVGAnimatedLength mLengthAttributes[1];
   SVGAnimatedLength* LengthAttributes() override { return mLengthAttributes; }
+
+  SVGAnimatedEnumeration mEnumAttributes[1];
+  SVGAnimatedEnumeration* EnumAttributes() override { return mEnumAttributes; }
 };
 
 }  // namespace mozilla::dom

@@ -1,9 +1,9 @@
 https://github.com/libffi/libffi/pull/580
 
-diff --git a/js/src/ctypes/libffi/src/x86/win64.S b/js/src/ctypes/libffi/src/x86/win64.S
+diff --git a/src/x86/win64.S b/src/x86/win64.S
 index 2c334c82f9b2d..a54459f077c91 100644
---- a/js/src/ctypes/libffi/src/x86/win64.S
-+++ b/js/src/ctypes/libffi/src/x86/win64.S
+--- a/src/x86/win64.S
++++ b/src/x86/win64.S
 @@ -25,17 +25,17 @@
  
  /* This macro allows the safe creation of jump tables without an
@@ -43,10 +43,10 @@ index 2c334c82f9b2d..a54459f077c91 100644
  E(0b, FFI_TYPE_SINT8)
  	movsbq	%al, %rax
  	jmp	98f
-diff --git a/js/src/ctypes/libffi/src/x86/win64_intel.S b/js/src/ctypes/libffi/src/x86/win64_intel.S
+diff --git a/src/x86/win64_intel.S b/src/x86/win64_intel.S
 index 7df78b30e42c6..970a4f997a981 100644
---- a/js/src/ctypes/libffi/src/x86/win64_intel.S
-+++ b/js/src/ctypes/libffi/src/x86/win64_intel.S
+--- a/src/x86/win64_intel.S
++++ b/src/x86/win64_intel.S
 @@ -24,17 +24,17 @@
  
  /* This macro allows the safe creation of jump tables without an

@@ -183,10 +183,11 @@ class TestStorageConnection : public QuotaManagerDependencyFixture {
   struct NSSInitContextDeleter {
     void operator()(NSSInitContext* p) { NSS_ShutdownContext(p); }
   };
-  MOZ_RUNINIT inline static std::unique_ptr<NSSInitContext,
-                                            NSSInitContextDeleter>
-      sNssContext;
+  static std::unique_ptr<NSSInitContext, NSSInitContextDeleter> sNssContext;
 };
+constinit std::unique_ptr<NSSInitContext,
+                          TestStorageConnection::NSSInitContextDeleter>
+    TestStorageConnection::sNssContext;
 
 TEST_F(TestStorageConnection, BaseVFS) {
   // XXX This call can't be wrapped with ASSERT_NO_FATAL_FAILURE because

@@ -40,7 +40,6 @@ XPCOM_MANIFESTS += [
 ]
 
 EXPORTS += [
-    "!nsGkAtomConsts.h",
     "!nsGkAtomList.h",
     "nsArray.h",
     "nsArrayEnumerator.h",
@@ -70,10 +69,8 @@ EXPORTS += [
     "nsRefPtrHashtable.h",
     "nsSimpleEnumerator.h",
     "nsStaticAtomUtils.h",
-    "nsStaticNameTable.h",
     "nsStringEnumerator.h",
     "nsSupportsPrimitives.h",
-    "nsTArray-inl.h",
     "nsTArray.h",
     "nsTArrayForwardDeclare.h",
     "nsTHashMap.h",
@@ -122,7 +119,6 @@ UNIFIED_SOURCES += [
     "nsPersistentProperties.cpp",
     "nsProperties.cpp",
     "nsSimpleEnumerator.cpp",
-    "nsStaticNameTable.cpp",
     "nsStringEnumerator.cpp",
     "nsSupportsPrimitives.cpp",
     "nsTArray.cpp",
@@ -140,13 +136,6 @@ GeneratedFile(
     "nsGkAtomList.h",
     script="StaticAtoms.py",
     entry_point="generate_nsgkatomlist_h",
-    inputs=["Atom.py", "HTMLAtoms.py"],
-)
-
-GeneratedFile(
-    "nsGkAtomConsts.h",
-    script="StaticAtoms.py",
-    entry_point="generate_nsgkatomconsts_h",
     inputs=["Atom.py", "HTMLAtoms.py"],
 )
 

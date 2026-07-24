@@ -7,9 +7,9 @@
 #ifndef DOM_INDEXEDDB_FILEINFO_H_
 #define DOM_INDEXEDDB_FILEINFO_H_
 
-#include "nsISupportsImpl.h"
-#include "nsCOMPtr.h"
 #include "SafeRefPtr.h"
+#include "nsCOMPtr.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom::indexedDB {
 

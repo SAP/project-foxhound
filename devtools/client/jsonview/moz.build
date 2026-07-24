@@ -9,6 +9,7 @@ DIRS += ["components", "css"]
 DevToolsModules(
     "converter-child.js",
     "Converter.sys.mjs",
+    "json-size-profiler.mjs",
     "json-viewer.mjs",
     "Sniffer.sys.mjs",
 )

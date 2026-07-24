@@ -13,9 +13,6 @@ const COLLECTION_NAME = "fingerprinting-protection-overrides";
 const TOP_DOMAIN = "https://example.com";
 const THIRD_PARTY_DOMAIN = "https://example.org";
 
-const SPOOFED_HW_CONCURRENCY = 2;
-const DEFAULT_HW_CONCURRENCY = navigator.hardwareConcurrency;
-
 const TEST_TOP_PAGE =
   getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
@@ -44,7 +41,7 @@ const TEST_CASES = [
         firstParty: true,
         thirdParty: true,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -67,7 +64,7 @@ const TEST_CASES = [
         firstParty: true,
         thirdParty: false,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -91,7 +88,7 @@ const TEST_CASES = [
         firstParty: true,
         thirdParty: true,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -115,7 +112,7 @@ const TEST_CASES = [
         firstParty: false,
         thirdParty: true,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -139,7 +136,7 @@ const TEST_CASES = [
         firstParty: false,
         thirdParty: true,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -163,7 +160,7 @@ const TEST_CASES = [
         firstParty: false,
         thirdParty: false,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -188,7 +185,7 @@ const TEST_CASES = [
         firstParty: false,
         thirdParty: false,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -213,7 +210,7 @@ const TEST_CASES = [
         firstParty: false,
         thirdParty: false,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: false,
@@ -233,7 +230,7 @@ const TEST_CASES = [
       {
         id: "2",
         last_modified: 1000000000000001,
-        overrides: "+NavigatorHWConcurrency",
+        overrides: "+CSSPrefersReducedMotion",
         firstPartyDomain: "example.com",
         thirdPartyDomain: "example.org",
       },
@@ -244,7 +241,7 @@ const TEST_CASES = [
         firstParty: true,
         thirdParty: false,
       },
-      hwConcurrency: {
+      prefersReducedMotion: {
         top: false,
         firstParty: false,
         thirdParty: true,
@@ -265,19 +262,15 @@ async function openAndSetupTestPage() {
     [TEST_TOP_PAGE, TEST_THIRD_PARTY_PAGE],
     async (firstPartySrc, thirdPartySrc) => {
       let firstPartyFrame = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        firstPartyFrame.onload = resolve;
-      });
-      content.document.body.appendChild(firstPartyFrame);
+      let loading = ContentTaskUtils.waitForEvent(firstPartyFrame, "load");
       firstPartyFrame.src = firstPartySrc;
+      content.document.body.appendChild(firstPartyFrame);
       await loading;
 
       let thirdPartyFrame = content.document.createElement("iframe");
-      loading = new content.Promise(resolve => {
-        thirdPartyFrame.onload = resolve;
-      });
-      content.document.body.appendChild(thirdPartyFrame);
+      loading = ContentTaskUtils.waitForEvent(thirdPartyFrame, "load");
       thirdPartyFrame.src = thirdPartySrc;
+      content.document.body.appendChild(thirdPartyFrame);
       await loading;
 
       return {
@@ -302,11 +295,9 @@ async function openAndSetupTestPageForPopup() {
     [TEST_THIRD_PARTY_PAGE],
     async thirdPartySrc => {
       let thirdPartyFrame = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        thirdPartyFrame.onload = resolve;
-      });
-      content.document.body.appendChild(thirdPartyFrame);
+      const loading = ContentTaskUtils.waitForEvent(thirdPartyFrame, "load");
       thirdPartyFrame.src = thirdPartySrc;
+      content.document.body.appendChild(thirdPartyFrame);
       await loading;
 
       let popupBC = await SpecialPowers.spawn(
@@ -316,7 +307,11 @@ async function openAndSetupTestPageForPopup() {
           let win;
           let loading = new content.Promise(resolve => {
             win = content.open(src);
-            win.onload = resolve;
+            if (src == "about:blank") {
+              resolve();
+            } else {
+              win.onload = resolve;
+            }
           });
           await loading;
 
@@ -336,30 +331,26 @@ async function openAndSetupTestPageForPopup() {
 
 async function verifyResultInTab(tab, firstPartyBC, thirdPartyBC, expected) {
   let testScreenAvailRect = enabled => {
-    if (enabled) {
-      ok(
-        content.wrappedJSObject.screen.availHeight ==
-          content.wrappedJSObject.screen.height &&
-          content.wrappedJSObject.screen.availWidth ==
-            content.wrappedJSObject.screen.width,
-        "Fingerprinting target ScreenAvailRect is enabled for ScreenAvailRect."
-      );
-    } else {
-      ok(
-        content.wrappedJSObject.screen.availHeight !=
-          content.wrappedJSObject.screen.height ||
-          content.wrappedJSObject.screen.availWidth !=
-            content.wrappedJSObject.screen.width,
-        "Fingerprinting target ScreenAvailRect is not enabled for ScreenAvailRect."
-      );
-    }
+    const active = content.isRFPTargetActive("ScreenAvailRect");
+
+    is(
+      active,
+      enabled ? 1 : 0,
+      "Fingerprinting target ScreenAvailRect is" +
+        (enabled ? " enabled." : " not enabled.") +
+        "for ScreenAvailRect."
+    );
   };
 
-  let testHWConcurrency = expected => {
+  let testPrefersReducedMotion = enabled => {
+    const active = content.isRFPTargetActive("CSSPrefersReducedMotion");
+
     is(
-      content.wrappedJSObject.navigator.hardwareConcurrency,
-      expected,
-      "The hardware concurrency is expected."
+      active,
+      enabled,
+      "The prefersReducedMotion is expected to be " +
+        (enabled ? "spoofed" : "not spoofed") +
+        " for CSSPrefersReducedMotion."
     );
   };
 
@@ -373,24 +364,19 @@ async function verifyResultInTab(tab, firstPartyBC, thirdPartyBC, expected) {
     [expected.screenAvailRect.top],
     testScreenAvailRect
   );
-  let expectHWConcurrencyTop = expected.hwConcurrency.top
-    ? SPOOFED_HW_CONCURRENCY
-    : DEFAULT_HW_CONCURRENCY;
+  let expectPrefersReducedMotionTop = expected.prefersReducedMotion.top;
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    [expectHWConcurrencyTop],
-    testHWConcurrency
+    [expectPrefersReducedMotionTop],
+    testPrefersReducedMotion
   );
 
-  let workerTopResult = await runFunctionInWorker(
-    tab.linkedBrowser,
-    async _ => {
-      return navigator.hardwareConcurrency;
-    }
+  let workerTopResult = await runFunctionInWorker(tab.linkedBrowser, async _ =>
+    globalThis.isRFPTargetActive("CSSPrefersReducedMotion")
   );
   is(
     workerTopResult,
-    expectHWConcurrencyTop,
+    expectPrefersReducedMotionTop,
     "The top worker reports the expected HW concurrency."
   );
 
@@ -404,24 +390,21 @@ async function verifyResultInTab(tab, firstPartyBC, thirdPartyBC, expected) {
     [expected.screenAvailRect.firstParty],
     testScreenAvailRect
   );
-  let expectHWConcurrencyFirstParty = expected.hwConcurrency.firstParty
-    ? SPOOFED_HW_CONCURRENCY
-    : DEFAULT_HW_CONCURRENCY;
+  let expectPrefersReducedMotionFirstParty =
+    expected.prefersReducedMotion.firstParty;
   await SpecialPowers.spawn(
     firstPartyBC,
-    [expectHWConcurrencyFirstParty],
-    testHWConcurrency
+    [expectPrefersReducedMotionFirstParty],
+    testPrefersReducedMotion
   );
 
   let workerFirstPartyResult = await runFunctionInWorker(
     firstPartyBC,
-    async _ => {
-      return navigator.hardwareConcurrency;
-    }
+    async _ => globalThis.isRFPTargetActive("CSSPrefersReducedMotion")
   );
   is(
     workerFirstPartyResult,
-    expectHWConcurrencyFirstParty,
+    expectPrefersReducedMotionFirstParty,
     "The first-party worker reports the expected HW concurrency."
   );
 
@@ -435,24 +418,21 @@ async function verifyResultInTab(tab, firstPartyBC, thirdPartyBC, expected) {
     [expected.screenAvailRect.thirdParty],
     testScreenAvailRect
   );
-  let expectHWConcurrencyThirdParty = expected.hwConcurrency.thirdParty
-    ? SPOOFED_HW_CONCURRENCY
-    : DEFAULT_HW_CONCURRENCY;
+  let expectPrefersReducedMotionThirdParty =
+    expected.prefersReducedMotion.thirdParty;
   await SpecialPowers.spawn(
     thirdPartyBC,
-    [expectHWConcurrencyThirdParty],
-    testHWConcurrency
+    [expectPrefersReducedMotionThirdParty],
+    testPrefersReducedMotion
   );
 
   let workerThirdPartyResult = await runFunctionInWorker(
     thirdPartyBC,
-    async _ => {
-      return navigator.hardwareConcurrency;
-    }
+    async _ => globalThis.isRFPTargetActive("CSSPrefersReducedMotion")
   );
   is(
     workerThirdPartyResult,
-    expectHWConcurrencyThirdParty,
+    expectPrefersReducedMotionThirdParty,
     "The third-party worker reports the expected HW concurrency."
   );
 }
@@ -461,6 +441,7 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.fingerprintingProtection.remoteOverrides.testing", true],
+      ["privacy.fingerprintingProtection.testing", true],
       ["privacy.fingerprintingProtection", true],
       ["privacy.fingerprintingProtection.pbmode", true],
     ],
@@ -523,22 +504,18 @@ add_task(async function test_popup_inheritance() {
 
   // Ensure the third-party iframe has the correct overrides.
   await SpecialPowers.spawn(thirdPartyFrameBC, [], _ => {
-    ok(
-      content.wrappedJSObject.screen.availHeight ==
-        content.wrappedJSObject.screen.height &&
-        content.wrappedJSObject.screen.availWidth ==
-          content.wrappedJSObject.screen.width,
+    is(
+      content.isRFPTargetActive("ScreenAvailRect"),
+      1,
       "Fingerprinting target ScreenAvailRect is enabled for third-party iframe."
     );
   });
 
   // Verify the popup inherits overrides from the opener.
   await SpecialPowers.spawn(popupBC, [], _ => {
-    ok(
-      content.wrappedJSObject.screen.availHeight ==
-        content.wrappedJSObject.screen.height &&
-        content.wrappedJSObject.screen.availWidth ==
-          content.wrappedJSObject.screen.width,
+    is(
+      content.isRFPTargetActive("ScreenAvailRect"),
+      1,
       "Fingerprinting target ScreenAvailRect is enabled for the pop-up."
     );
 

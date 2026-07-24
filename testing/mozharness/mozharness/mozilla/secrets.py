@@ -2,14 +2,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-"""Support for fetching secrets from the secrets API
-"""
+"""Support for fetching secrets from the secrets API"""
 
 import json
 import os
-
-import six
-from six.moves import urllib
+import urllib.request
 
 
 class SecretsMixin:
@@ -25,7 +22,8 @@ class SecretsMixin:
         if res.getcode() != 200:
             self.fatal("Error fetching from secrets API:" + res.read())
 
-        return json.loads(six.ensure_str(res.read()))["secret"]["content"]
+        response_data = res.read().decode("utf-8")
+        return json.loads(response_data)["secret"]["content"]
 
     def get_secrets(self):
         """

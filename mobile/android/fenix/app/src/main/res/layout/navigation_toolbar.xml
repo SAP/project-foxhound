@@ -10,8 +10,8 @@
     android:layout_height="0dp"
     app:titleMarginStart="16dp"
     app:titleMarginEnd="16dp"
-    app:titleTextAppearance="@style/ToolbarTitleTextStyle"
-    android:background="?attr/layer1"
+    app:titleTextAppearance="@style/AppBarTitleTextStyle"
+    android:background="?attr/colorSurface"
     android:elevation="8dp">
 
     <FrameLayout

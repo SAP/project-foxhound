@@ -9,12 +9,14 @@
 
 use api::units::*;
 use api::ImageFormat;
-use crate::gpu_cache::{GpuCache, GpuCacheAddress};
+use crate::gpu_types::ImageSource;
 use crate::internal_types::{TextureSource, CacheTextureId, FastHashMap, FastHashSet, FrameId};
 use crate::internal_types::size_of_frame_vec;
-use crate::render_task::{StaticRenderTaskSurface, RenderTaskLocation, RenderTask};
+use crate::render_task::{StaticRenderTaskSurface, RenderTaskLocation, RenderTask, SubTask};
 use crate::render_target::RenderTargetKind;
 use crate::render_task::{RenderTaskData, RenderTaskKind};
+use crate::renderer::GpuBufferAddress;
+use crate::renderer::GpuBufferBuilder;
 use crate::resource_cache::ResourceCache;
 use crate::texture_pack::GuillotineAllocator;
 use crate::prim_store::DeferredResolve;
@@ -54,7 +56,7 @@ impl<'l> RenderTaskAllocation<'l> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[derive(MallocSizeOf)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -66,6 +68,55 @@ impl RenderTaskId {
     pub const INVALID: RenderTaskId = RenderTaskId {
         index: u32::MAX,
     };
+}
+
+impl std::fmt::Debug for RenderTaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if *self == Self::INVALID {
+            write!(f, "<invalid>")
+        } else {
+            write!(f, "#{}", self.index)
+        }
+    }
+}
+
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone)]
+pub struct SubTaskRange(std::ops::Range<u32>);
+
+impl SubTaskRange {
+    pub fn empty() -> Self { SubTaskRange(0..0) }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+}
+
+impl std::fmt::Debug for SubTaskRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.is_empty() {
+            write!(f, "<empty>")
+        } else {
+            self.0.fmt(f)
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(MallocSizeOf)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct SubTaskId(u32);
+
+impl std::fmt::Debug for SubTaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+impl Iterator for SubTaskRange {
+    type Item = SubTaskId;
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(SubTaskId(self.0.next()?))
+    }
 }
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -169,6 +220,9 @@ pub struct Pass {
 pub struct RenderTaskGraph {
     /// List of tasks added to the graph
     pub tasks: FrameVec<RenderTask>,
+    /// List of sub-tasks, executing after the regular tasks for a given
+    /// pass.
+    pub sub_tasks: FrameVec<SubTask>,
 
     /// The passes that were created, based on dependencies between tasks
     pub passes: FrameVec<Pass>,
@@ -193,6 +247,8 @@ pub struct RenderTaskGraph {
 pub struct RenderTaskGraphBuilder {
     /// List of tasks added to the builder
     tasks: Vec<RenderTask>,
+    /// List of sub-tasks added to the builder
+    sub_tasks: Vec<SubTask>,
 
     /// List of task roots
     roots: FastHashSet<RenderTaskId>,
@@ -215,6 +271,7 @@ impl RenderTaskGraphBuilder {
     pub fn new() -> Self {
         RenderTaskGraphBuilder {
             tasks: Vec::new(),
+            sub_tasks: Vec::new(),
             roots: FastHashSet::default(),
             frame_id: FrameId::INVALID,
             textures_to_free: FastHashSet::default(),
@@ -264,6 +321,19 @@ impl RenderTaskGraphBuilder {
         }
     }
 
+    pub fn begin_sub_tasks(&self) -> SubTaskRange {
+        let first = self.sub_tasks.len() as u32;
+        SubTaskRange(first..first)
+    }
+
+    pub fn push_sub_task(&mut self, in_range: &mut SubTaskRange, task: SubTask) {
+        // Check that we are pushing sub-tasks as contiguous sequences.
+        assert_eq!(in_range.0.end as usize, self.sub_tasks.len());
+        in_range.0.end += 1;
+
+        self.sub_tasks.push(task);
+    }
+
     /// Express a dependency, such that `task_id` depends on `input` as a texture source.
     pub fn add_dependency(
         &mut self,
@@ -280,7 +350,7 @@ impl RenderTaskGraphBuilder {
     pub fn end_frame(
         &mut self,
         resource_cache: &mut ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffers: &mut GpuBufferBuilder,
         deferred_resolves: &mut FrameVec<DeferredResolve>,
         max_shared_surface_size: i32,
         memory: &FrameMemory,
@@ -297,8 +367,14 @@ impl RenderTaskGraphBuilder {
             tasks.push(task)
         }
 
+        let mut sub_tasks = memory.new_vec_with_capacity(self.sub_tasks.len());
+        for task in self.sub_tasks.drain(..) {
+            sub_tasks.push(task)
+        }
+
         let mut graph = RenderTaskGraph {
             tasks,
+            sub_tasks,
             passes: memory.new_vec(),
             task_data: memory.new_vec_with_capacity(task_count),
             frame_id: self.frame_id,
@@ -618,32 +694,34 @@ impl RenderTaskGraphBuilder {
         // considered to be immutable for the rest of the frame building process.
 
         for task in &mut graph.tasks {
-            // First check whether the render task texture and uv rects are managed
-            // externally. This is the case for image tasks and cached tasks. In both
-            // cases it results in a finding the information in the texture cache.
+            // Check whether the render task texture and uv rects are managed externally.
+            // This is the case for image tasks and cached tasks. In both cases it
+            // results in a finding the information in the texture cache.
             let cache_item = if let Some(ref cache_handle) = task.cache_handle {
                 Some(resolve_cached_render_task(
                     cache_handle,
                     resource_cache,
                 ))
-            } else if let RenderTaskKind::Image(request) = &task.kind {
+            } else if let RenderTaskKind::Image(info) = &task.kind {
                 Some(resolve_image(
-                    *request,
+                    info.request,
                     resource_cache,
-                    gpu_cache,
+                    &mut gpu_buffers.f32,
                     deferred_resolves,
+                    info.is_composited,
                 ))
             } else {
                 // General case (non-cached non-image tasks).
                 None
             };
 
-            if let Some(cache_item) = cache_item {
+            if let Some(cache_item) = &cache_item {
+                task.uv_rect_handle = gpu_buffers.f32.resolve_handle(cache_item.uv_rect_handle);
+
                 // Update the render task even if the item is invalid.
                 // We'll handle it later and it's easier to not have to
                 // deal with unexpected location variants like
                 // RenderTaskLocation::CacheRequest when we do.
-                task.uv_rect_handle = cache_item.uv_rect_handle;
                 if let RenderTaskLocation::CacheRequest { .. } = &task.location {
                     let source = cache_item.texture_id;
                     task.location = RenderTaskLocation::Static {
@@ -653,14 +731,25 @@ impl RenderTaskGraphBuilder {
                 }
             }
 
-            // Give the render task an opportunity to add any
-            // information to the GPU cache, if appropriate.
+            // This has to be done after we do the task location fixup above.
             let target_rect = task.get_target_rect();
 
-            task.write_gpu_blocks(
-                target_rect,
-                gpu_cache,
-            );
+            // If the uv rect is not managed externally, generate it now.
+            if cache_item.is_none() {
+                let image_source = ImageSource {
+                    p0: target_rect.min.to_f32(),
+                    p1: target_rect.max.to_f32(),
+                    user_data: [0.0; 4],
+                    uv_rect_kind: task.uv_rect_kind,
+                };
+
+                let uv_rect_handle = image_source.write_gpu_blocks(&mut gpu_buffers.f32);
+                task.uv_rect_handle = gpu_buffers.f32.resolve_handle(uv_rect_handle);
+            }
+
+            // Give the render task an opportunity to add any
+            // information to the GPU cache, if appropriate.
+            task.kind.write_gpu_blocks(gpu_buffers);
 
             graph.task_data.push(
                 task.kind.write_task_data(target_rect)
@@ -722,16 +811,14 @@ impl RenderTaskGraph {
     pub fn resolve_location(
         &self,
         task_id: impl Into<Option<RenderTaskId>>,
-        gpu_cache: &GpuCache,
-    ) -> Option<(GpuCacheAddress, TextureSource)> {
-        self.resolve_impl(task_id.into()?, gpu_cache)
+    ) -> Option<(GpuBufferAddress, TextureSource)> {
+        self.resolve_impl(task_id.into()?)
     }
 
     fn resolve_impl(
         &self,
         task_id: RenderTaskId,
-        gpu_cache: &GpuCache,
-    ) -> Option<(GpuCacheAddress, TextureSource)> {
+    ) -> Option<(GpuBufferAddress, TextureSource)> {
         let task = &self[task_id];
         let texture_source = task.get_texture_source();
 
@@ -739,7 +826,8 @@ impl RenderTaskGraph {
             return None;
         }
 
-        let uv_address = task.get_texture_address(gpu_cache);
+        let uv_address = task.get_texture_address();
+        assert!(uv_address.is_valid());
 
         Some((uv_address, texture_source))
     }
@@ -770,6 +858,7 @@ impl RenderTaskGraph {
         let allocator = FrameAllocator::fallback();
         RenderTaskGraph {
             tasks: allocator.clone().new_vec(),
+            sub_tasks: allocator.clone().new_vec(),
             passes: allocator.clone().new_vec(),
             frame_id: FrameId::INVALID,
             task_data: allocator.clone().new_vec(),
@@ -796,6 +885,13 @@ impl std::ops::Index<RenderTaskId> for RenderTaskGraph {
     type Output = RenderTask;
     fn index(&self, id: RenderTaskId) -> &RenderTask {
         &self.tasks[id.index as usize]
+    }
+}
+
+impl std::ops::Index<SubTaskId> for RenderTaskGraph {
+    type Output = SubTask;
+    fn index(&self, id: SubTaskId) -> &SubTask {
+        &self.sub_tasks[id.0 as usize]
     }
 }
 
@@ -1094,19 +1190,20 @@ impl RenderTaskGraphBuilder {
         total_surface_count: usize,
         unique_surfaces: &[(i32, i32, ImageFormat)],
     ) {
-        use crate::internal_types::FrameStamp;
+        use crate::{internal_types::FrameStamp, renderer::{GpuBufferBuilderF, GpuBufferBuilderI}};
         use api::{DocumentId, IdNamespace};
 
         let mut rc = ResourceCache::new_for_testing();
-        let mut gc =  GpuCache::new();
 
         let mut frame_stamp = FrameStamp::first(DocumentId::new(IdNamespace(1), 1));
         frame_stamp.advance();
-        gc.prepare_for_frames();
-        gc.begin_frame(frame_stamp);
 
         let frame_memory = FrameMemory::fallback();
-        let g = self.end_frame(&mut rc, &mut gc, &mut frame_memory.new_vec(), 2048, &frame_memory);
+        let mut gpu_buffers = GpuBufferBuilder {
+            f32: GpuBufferBuilderF::new(&frame_memory, 0, FrameId::first()),
+            i32: GpuBufferBuilderI::new(&frame_memory, 0, FrameId::first()),
+        };
+        let g = self.end_frame(&mut rc, &mut gpu_buffers, &mut frame_memory.new_vec(), 2048, &frame_memory);
         g.print();
 
         assert_eq!(g.passes.len(), pass_count);

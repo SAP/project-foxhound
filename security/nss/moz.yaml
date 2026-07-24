@@ -9,8 +9,8 @@ origin:
   description: nss
   url: https://hg-edge.mozilla.org/projects/nss
 
-  release: 9b25114ee84b732c70e0915ff9bcd0fa6f1cb433 (2025-07-17T20:31:27Z).
-  revision: 9b25114ee84b732c70e0915ff9bcd0fa6f1cb433
+  release: bc6b0e2ac9a13912696ba177a90b36b4d408045f (2026-02-19T09:30:44Z).
+  revision: bc6b0e2ac9a13912696ba177a90b36b4d408045f
 
   license: MPL-2.0
   license-file: COPYING
@@ -28,14 +28,18 @@ vendoring:
     - TAG-INFO
   update-actions:
     - action: run-script
-      cwd: '{yaml_dir}/../../'
+      cwd: '{topsrcdir}'
       script: '{cwd}/security/manager/tools/regen_root_ca_metadata.py'
 
 updatebot:
   maintainer-phab: "#nss-reviewers"
   maintainer-bz: jschanck@mozilla.com
+  fuzzy-paths:
+    - netwerk/base
+    - security/certverifier
+    - security/manager/ssl
   tasks:
     - type: vendoring
       enabled: true
       frequency: 1 week
-      blocking: 1978341
+      blocking: 2009146 

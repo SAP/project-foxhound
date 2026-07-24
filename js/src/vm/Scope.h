@@ -21,6 +21,7 @@
 
 #include "builtin/ModuleObject.h"  // ModuleObject, Handle<ModuleObject*>
 #include "frontend/ParserAtom.h"   // frontend::TaggedParserAtomIndex
+#include "gc/Allocator.h"          // HandleBuffer
 #include "gc/Barrier.h"            // GCPtr
 #include "gc/Cell.h"               // TenuredCellWithNonGCPointer
 #include "js/GCPolicyAPI.h"        // GCPolicy, IgnoreGCPolicy
@@ -29,7 +30,6 @@
 #include "js/TraceKind.h"          // JS::TraceKind
 #include "js/TypeDecls.h"          // HandleFunction
 #include "js/UbiNode.h"            // ubi::*
-#include "js/UniquePtr.h"          // UniquePtr
 #include "util/Poison.h"  // AlwaysPoison, JS_SCOPE_DATA_TRAILING_NAMES_PATTERN, MemCheckKind
 #include "vm/JSFunction.h"  // JSFunction
 #include "vm/ScopeKind.h"   // ScopeKind
@@ -347,8 +347,7 @@ class Scope : public gc::TenuredCellWithNonGCPointer<BaseScopeData> {
                        Handle<SharedShape*> envShape);
 
   template <typename ConcreteScope>
-  void initData(
-      MutableHandle<UniquePtr<typename ConcreteScope::RuntimeData>> data);
+  void initData(HandleBuffer<typename ConcreteScope::RuntimeData> data);
 
   template <typename F>
   void applyScopeDataTyped(F&& f);
@@ -361,7 +360,7 @@ class Scope : public gc::TenuredCellWithNonGCPointer<BaseScopeData> {
   static ConcreteScope* create(
       JSContext* cx, ScopeKind kind, Handle<Scope*> enclosing,
       Handle<SharedShape*> envShape,
-      MutableHandle<UniquePtr<typename ConcreteScope::RuntimeData>> data);
+      HandleBuffer<typename ConcreteScope::RuntimeData> data);
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Scope;
 
@@ -434,9 +433,8 @@ class Scope : public gc::TenuredCellWithNonGCPointer<BaseScopeData> {
   }
 
   void traceChildren(JSTracer* trc);
-  void finalize(JS::GCContext* gcx);
 
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  size_t sizeOfExcludingThis() const;
 
   void dump();
 #if defined(DEBUG) || defined(JS_JITSPEW)
@@ -720,7 +718,7 @@ class FunctionScope : public Scope {
     explicit RuntimeData(size_t length) { PoisonNames(this, length); }
     RuntimeData() = delete;
 
-    void trace(JSTracer* trc);
+    inline void trace(JSTracer* trc);
   };
 
   using ParserData = ParserScopeData<SlotInfo>;
@@ -865,9 +863,8 @@ class GlobalScope : public Scope {
   static GlobalScope* createEmpty(JSContext* cx, ScopeKind kind);
 
  private:
-  static GlobalScope* createWithData(
-      JSContext* cx, ScopeKind kind,
-      MutableHandle<UniquePtr<RuntimeData>> data);
+  static GlobalScope* createWithData(JSContext* cx, ScopeKind kind,
+                                     HandleBuffer<RuntimeData> data);
 
   RuntimeData& data() { return *static_cast<RuntimeData*>(rawData()); }
 
@@ -1022,7 +1019,7 @@ class ModuleScope : public Scope {
     explicit RuntimeData(size_t length);
     RuntimeData() = delete;
 
-    void trace(JSTracer* trc);
+    inline void trace(JSTracer* trc);
   };
 
   using ParserData = ParserScopeData<SlotInfo>;
@@ -1083,7 +1080,7 @@ class WasmInstanceScope : public Scope {
     explicit RuntimeData(size_t length);
     RuntimeData() = delete;
 
-    void trace(JSTracer* trc);
+    inline void trace(JSTracer* trc);
   };
 
   using ParserData = ParserScopeData<SlotInfo>;
@@ -1884,7 +1881,7 @@ template <>
 struct GCPolicy<js::ScopeKind> : public IgnoreGCPolicy<js::ScopeKind> {};
 
 template <typename T>
-struct ScopeDataGCPolicy : public NonGCPointerPolicy<T> {};
+using ScopeDataGCPolicy = NonGCPointerPolicy<T>;
 
 #define DEFINE_SCOPE_DATA_GCPOLICY(Data)              \
   template <>                                         \
@@ -1902,6 +1899,7 @@ DEFINE_SCOPE_DATA_GCPOLICY(js::GlobalScope::RuntimeData);
 DEFINE_SCOPE_DATA_GCPOLICY(js::EvalScope::RuntimeData);
 DEFINE_SCOPE_DATA_GCPOLICY(js::ModuleScope::RuntimeData);
 DEFINE_SCOPE_DATA_GCPOLICY(js::WasmFunctionScope::RuntimeData);
+DEFINE_SCOPE_DATA_GCPOLICY(js::WasmInstanceScope::RuntimeData);
 
 #undef DEFINE_SCOPE_DATA_GCPOLICY
 

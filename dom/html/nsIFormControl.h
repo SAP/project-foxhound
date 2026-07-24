@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIFormControl_h___
-#define nsIFormControl_h___
+#ifndef nsIFormControl_h_
+#define nsIFormControl_h_
 
 #include "mozilla/EventForwards.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -111,10 +111,16 @@ class nsIFormControl : public nsISupports {
   virtual mozilla::dom::HTMLFieldSetElement* GetFieldSet() = 0;
 
   /**
+   * Get the form for this form control, retargeted to the appropriate scope.
+   * @return the form
+   */
+  virtual mozilla::dom::Element* GetFormForBindings() const = 0;
+
+  /**
    * Get the form for this form control.
    * @return the form
    */
-  virtual mozilla::dom::HTMLFormElement* GetForm() const = 0;
+  virtual mozilla::dom::HTMLFormElement* GetFormInternal() const = 0;
 
   /**
    * Set the form for this form control.
@@ -285,7 +291,7 @@ bool nsIFormControl::IsConceptButton() const {
 }
 
 bool nsIFormControl::IsButtonControl() const {
-  return IsConceptButton() && (!GetForm() || !IsSubmitControl());
+  return IsConceptButton() && (!GetFormInternal() || !IsSubmitControl());
 }
 
 bool nsIFormControl::AllowDraggableChildren() const {
@@ -294,4 +300,4 @@ bool nsIFormControl::AllowDraggableChildren() const {
          type == FormControlType::Output;
 }
 
-#endif /* nsIFormControl_h___ */
+#endif /* nsIFormControl_h_ */

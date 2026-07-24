@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/GeolocationPosition.h"
-#include "mozilla/dom/GeolocationCoordinates.h"
 
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/dom/GeolocationCoordinates.h"
 #include "mozilla/dom/GeolocationPositionBinding.h"
 
 using mozilla::EqualOrBothNaN;

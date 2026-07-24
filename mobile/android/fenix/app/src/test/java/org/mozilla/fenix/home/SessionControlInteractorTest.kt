@@ -27,7 +27,9 @@ import org.mozilla.fenix.home.recentvisits.controller.RecentVisitsController
 import org.mozilla.fenix.home.search.HomeSearchController
 import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
 import org.mozilla.fenix.home.sessioncontrol.SessionControlInteractor
+import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerController
 import org.mozilla.fenix.home.toolbar.ToolbarController
+import org.mozilla.fenix.home.topsites.controller.TopSiteController
 import org.mozilla.fenix.search.toolbar.SearchSelectorController
 
 class SessionControlInteractorTest {
@@ -41,6 +43,8 @@ class SessionControlInteractorTest {
     private val searchSelectorController: SearchSelectorController = mockk(relaxed = true)
     private val toolbarController: ToolbarController = mockk(relaxed = true)
     private val homeSearchController: HomeSearchController = mockk(relaxed = true)
+    private val topSiteController: TopSiteController = mockk(relaxed = true)
+    private val privacyNoticeBannerController: PrivacyNoticeBannerController = mockk(relaxed = true)
 
     // Note: the recent visits tests are handled in [RecentVisitsInteractorTest] and [RecentVisitsControllerTest]
     private val recentVisitsController: RecentVisitsController = mockk(relaxed = true)
@@ -60,6 +64,8 @@ class SessionControlInteractorTest {
             searchSelectorController,
             toolbarController,
             homeSearchController,
+            topSiteController,
+            privacyNoticeBannerController,
         )
     }
 
@@ -215,20 +221,20 @@ class SessionControlInteractorTest {
     @Test
     fun `WHEN onSettingsClicked is called THEN handleTopSiteSettingsClicked is called`() {
         interactor.onSettingsClicked()
-        verify { controller.handleTopSiteSettingsClicked() }
+        verify { topSiteController.handleTopSiteSettingsClicked() }
     }
 
     @Test
     fun `WHEN onSponsorPrivacyClicked is called THEN handleSponsorPrivacyClicked is called`() {
         interactor.onSponsorPrivacyClicked()
-        verify { controller.handleSponsorPrivacyClicked() }
+        verify { topSiteController.handleSponsorPrivacyClicked() }
     }
 
     @Test
     fun `WHEN a top site is long clicked THEN the click is handled`() {
         val topSite: TopSite = mockk()
         interactor.onTopSiteLongClicked(topSite)
-        verify { controller.handleTopSiteLongClicked(topSite) }
+        verify { topSiteController.handleTopSiteLongClicked(topSite) }
     }
 
     @Test
@@ -243,7 +249,7 @@ class SessionControlInteractorTest {
 
     @Test
     fun `GIVEN a PocketStoriesInteractor WHEN stories are shown THEN handle it in a PocketStoriesController`() {
-        val shownStories: List<PocketStory> = mockk()
+        val shownStories: List<PocketStory> = emptyList()
 
         interactor.onStoriesShown(shownStories)
 

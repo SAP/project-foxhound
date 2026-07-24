@@ -21,6 +21,10 @@ add_setup(async function () {
   registerCleanupFunction(() => {
     Services.prefs.setBoolPref(SUGGEST_PREF_NAME, originalSuggest);
     Services.prefs.setBoolPref(
+      URLBAR_SUGGEST_PREF_NAME,
+      initialUrlbarSuggestValue
+    );
+    Services.prefs.setBoolPref(
       PRIVATE_PREF_NAME,
       initialSuggestionsInPrivateValue
     );
@@ -37,11 +41,8 @@ async function toggleElement(
   descPref,
   shouldUpdatePref = false
 ) {
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    `#${id}`,
-    {},
-    gBrowser.selectedBrowser
-  );
+  element.click();
+
   is(
     element.checked,
     !initialCheckboxValue,
@@ -60,11 +61,8 @@ async function toggleElement(
     } have updated the ${descPref} preference value`
   );
 
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    `#${id}`,
-    {},
-    gBrowser.selectedBrowser
-  );
+  element.click();
+
   is(
     element.checked,
     initialCheckboxValue,
@@ -89,8 +87,10 @@ add_task(async function test_suggestions_start_enabled() {
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
 
   let doc = gBrowser.selectedBrowser.contentDocument;
-  let urlbarBox = doc.getElementById("urlBarSuggestion");
-  let privateBox = doc.getElementById("showSearchSuggestionsPrivateWindows");
+  let urlbarBox = doc.getElementById("urlBarSuggestionCheckbox");
+  let privateBox = doc.getElementById(
+    "showSearchSuggestionsPrivateWindowsCheckbox"
+  );
   ok(!urlbarBox.disabled, "Should have enabled the urlbar checkbox");
   ok(
     !privateBox.disabled,
@@ -130,10 +130,11 @@ add_task(async function test_suggestions_start_enabled() {
   );
 
   Services.prefs.setBoolPref(SUGGEST_PREF_NAME, false);
+  await urlbarBox.updateComplete;
   ok(!urlbarBox.checked, "Should have unchecked the urlbar box");
   ok(urlbarBox.disabled, "Should have disabled the urlbar box");
   gCUITestUtils.removeSearchBar();
-  ok(urlbarBox.hidden, "Should have hidden the urlbar box");
+  ok(!urlbarBox.visible, "Should have hidden the urlbar box");
   ok(!privateBox.checked, "Should have unchecked the private suggestions box");
   ok(privateBox.disabled, "Should have disabled the private suggestions box");
 
@@ -147,12 +148,15 @@ add_task(async function test_suggestions_start_disabled() {
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
 
   let doc = gBrowser.selectedBrowser.contentDocument;
-  let urlbarBox = doc.getElementById("urlBarSuggestion");
+  let urlbarBox = doc.getElementById("urlBarSuggestionCheckbox");
   ok(urlbarBox.disabled, "Should have the urlbar box disabled");
-  let privateBox = doc.getElementById("showSearchSuggestionsPrivateWindows");
+  let privateBox = doc.getElementById(
+    "showSearchSuggestionsPrivateWindowsCheckbox"
+  );
   ok(privateBox.disabled, "Should have the private suggestions box disabled");
 
   Services.prefs.setBoolPref(SUGGEST_PREF_NAME, true);
+  await urlbarBox.updateComplete;
 
   ok(!urlbarBox.disabled, "Should have enabled the urlbar box");
   ok(!privateBox.disabled, "Should have enabled the private suggestions box");
@@ -209,6 +213,7 @@ add_task(async function test_sync_search_suggestions_prefs() {
     for (let urlbarSuggestsState of urlbarSuggestsPref) {
       Services.prefs.setBoolPref(SUGGEST_PREF_NAME, suggestState);
       Services.prefs.setBoolPref(URLBAR_SUGGEST_PREF_NAME, urlbarSuggestsState);
+      await suggestionsInSearchFieldsCheckbox.updateComplete;
 
       if (suggestState && urlbarSuggestsState) {
         ok(

@@ -56,7 +56,7 @@ class RtcEventProbeResultSuccess final : public RtcEvent {
   int32_t id() const { return id_; }
   int32_t bitrate_bps() const { return bitrate_bps_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -70,7 +70,7 @@ class RtcEventProbeResultSuccess final : public RtcEvent {
   }
 
  private:
-  RtcEventProbeResultSuccess(const RtcEventProbeResultSuccess& other);
+  RtcEventProbeResultSuccess(const RtcEventProbeResultSuccess&) = default;
 
   const int32_t id_;
   const int32_t bitrate_bps_;

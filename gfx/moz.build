@@ -31,11 +31,10 @@ DIRS += [
     "skia",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 if CONFIG["FUZZING_INTERFACES"]:
-    DIRS += ["tests/fuzz"]
+    TEST_DIRS += ["tests/fuzz"]
 
 TEST_DIRS += ["tests"]
 

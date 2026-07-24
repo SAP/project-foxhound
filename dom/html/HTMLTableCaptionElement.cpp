@@ -7,9 +7,9 @@
 #include "mozilla/dom/HTMLTableCaptionElement.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 #include "nsAttrValueInlines.h"
 #include "nsStyleConsts.h"
-#include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableCaption)
 

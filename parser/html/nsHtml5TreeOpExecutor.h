@@ -111,10 +111,7 @@ class nsHtml5TreeOpExecutor final
    */
   NS_IMETHOD WillParse() override;
 
-  NS_IMETHOD WillBuildModel(nsDTDMode /* unused */) override {
-    return WillBuildModel();
-  }
-  nsresult WillBuildModel();
+  NS_IMETHOD WillBuildModel() override;
 
   /**
    * Emits EOF.
@@ -265,7 +262,7 @@ class nsHtml5TreeOpExecutor final
                     const nsAString& aMedia, const nsAString& aSrcset,
                     const nsAString& aSizes,
                     const nsAString& aImageReferrerPolicy, bool aLinkPreload,
-                    const nsAString& aFetchPriority);
+                    const nsAString& aFetchPriority, const nsAString& aType);
 
   void PreloadOpenPicture();
 
@@ -319,6 +316,11 @@ class nsHtml5TreeOpExecutor final
    * list of preloaded URIs
    */
   bool ShouldPreloadURI(nsIURI* aURI);
+
+  /**
+   * Returns true if the image type is supported.
+   */
+  bool ImageTypeSupports(const nsAString& aType);
 
   ReferrerPolicy GetPreloadReferrerPolicy(const nsAString& aReferrerPolicy);
 

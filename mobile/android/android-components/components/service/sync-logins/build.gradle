@@ -2,28 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            consumerProguardFiles 'proguard-rules-consumer.pro'
-        }
-    }
-
     namespace = 'mozilla.components.browser.storage.sync.logins'
 }
 
 dependencies {
+    // Types defined in concept-sync are part of this module's public API.
+    api project(':components:concept-sync')
+    api project(':components:lib-dataprotect')
+
     // Parts of this dependency are typealiase'd or are otherwise part of this module's public API.
     api (ComponentsDependencies.mozilla_appservices_logins) {
       // Use our own version of the Glean dependency,
@@ -31,18 +25,24 @@ dependencies {
       exclude group: 'org.mozilla.telemetry', module: 'glean'
     }
     api ComponentsDependencies.mozilla_appservices_sync15
-
-    // Types defined in concept-sync are part of this module's public API.
-    api project(':components:concept-sync')
-    api project(':components:lib-dataprotect')
+    implementation libs.androidx.work.runtime
 
     implementation project(':components:concept-storage')
     implementation project(':components:support-utils')
+
+    implementation libs.kotlinx.coroutines
     implementation libs.mozilla.glean
 
-    implementation libs.kotlin.coroutines
+    testImplementation project(':components:support-test')
+
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlin.reflect
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTransform2D_h___
-#define nsTransform2D_h___
+#ifndef nsTransform2D_h_
+#define nsTransform2D_h_
 
 #include "nsCoord.h"
 

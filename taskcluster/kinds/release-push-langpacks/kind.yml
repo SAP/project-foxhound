@@ -13,6 +13,9 @@ kind-dependencies:
     - build
     - shippable-l10n
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - linux64-shippable/opt  # addons.mozilla.org only support 1 platform per locale. That's why we use linux64
     - linux64-devedition/opt

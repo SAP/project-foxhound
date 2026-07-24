@@ -7,6 +7,8 @@
 #ifndef DOM_SVG_SVGPATTERNELEMENT_H_
 #define DOM_SVG_SVGPATTERNELEMENT_H_
 
+#include <memory>
+
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
@@ -14,7 +16,6 @@
 #include "SVGAnimatedTransformList.h"
 #include "SVGAnimatedViewBox.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/UniquePtr.h"
 
 nsresult NS_NewSVGPatternElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -46,8 +47,10 @@ class SVGPatternElement final : public SVGPatternElementBase {
   // SVGSVGElement methods:
   bool HasValidDimensions() const override;
 
-  SVGAnimatedTransformList* GetAnimatedTransformList(
-      uint32_t aFlags = 0) override;
+  SVGAnimatedTransformList* GetExistingAnimatedTransformList() const override {
+    return mPatternTransform.get();
+  }
+  SVGAnimatedTransformList* GetOrCreateAnimatedTransformList() override;
   nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::patternTransform;
   }
@@ -71,23 +74,23 @@ class SVGPatternElement final : public SVGPatternElementBase {
   SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio() override;
   SVGAnimatedViewBox* GetAnimatedViewBox() override;
 
-  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  SVGAnimatedLength mLengthAttributes[4];
-  static LengthInfo sLengthInfo[4];
-
-  enum { PATTERNUNITS, PATTERNCONTENTUNITS };
-  SVGAnimatedEnumeration mEnumAttributes[2];
-  static EnumInfo sEnumInfo[2];
-
-  UniquePtr<SVGAnimatedTransformList> mPatternTransform;
+  std::unique_ptr<SVGAnimatedTransformList> mPatternTransform;
 
   enum { HREF, XLINK_HREF };
   SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
+  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
+  SVGAnimatedLength mLengthAttributes[4];
+  static LengthInfo sLengthInfo[4];
+
   // SVGFitToViewbox properties
   SVGAnimatedViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
+
+  enum { PATTERNUNITS, PATTERNCONTENTUNITS };
+  SVGAnimatedEnumeration mEnumAttributes[2];
+  static EnumInfo sEnumInfo[2];
 };
 
 }  // namespace dom

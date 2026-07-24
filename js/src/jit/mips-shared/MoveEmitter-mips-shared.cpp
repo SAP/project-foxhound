@@ -46,8 +46,8 @@ Address MoveEmitterMIPSShared::getAdjustedAddress(const MoveOperand& operand) {
 }
 
 Register MoveEmitterMIPSShared::tempReg() {
-  spilledReg_ = SecondScratchReg;
-  return SecondScratchReg;
+  spilledReg_ = ScratchRegister;
+  return ScratchRegister;
 }
 
 void MoveEmitterMIPSShared::emitMove(const MoveOperand& from,

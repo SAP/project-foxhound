@@ -11,6 +11,8 @@ import androidx.annotation.AnyThread;
 /** This represents a decision to allow or deny a request. */
 @AnyThread
 public enum AllowOrDeny {
+  /** Allow the request. */
   ALLOW,
+  /** Deny the request. */
   DENY;
 }

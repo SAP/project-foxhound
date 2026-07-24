@@ -32,7 +32,7 @@ from . import util
 
 # Adding a metric here will require updating the `generate_metric_type` function
 # and require adjustments to `metrics` variables the the template.
-SUPPORTED_METRIC_TYPES = ["string", "quantity", "event", "datetime", "boolean"]
+SUPPORTED_METRIC_TYPES = ["string", "quantity", "event", "datetime", "boolean", "string_list"]
 
 
 def generate_ping_type_name(ping_name: str) -> str:
@@ -68,6 +68,8 @@ def generate_metric_type(metric_type: str) -> str:
         return "bool"
     elif metric_type == "datetime":
         return "time.Time"
+    elif metric_type == "string_list":
+        return "[]string"
     else:
         print("❌ Unable to generate Go type from metric type: " + metric_type)
         exit
@@ -147,8 +149,6 @@ def output_go(
     with filepath.open("w", encoding="utf-8") as fd:
         fd.write(
             template.render(
-                parser_version=__version__,
-                pings=ping_to_metrics,
-                events=event_metrics
+                parser_version=__version__, pings=ping_to_metrics, events=event_metrics
             )
         )

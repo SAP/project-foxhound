@@ -4,8 +4,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_WIN_UTIL_H__
-#define BASE_WIN_UTIL_H__
+#ifndef BASE_WIN_UTIL_H_
+#define BASE_WIN_UTIL_H_
 
 #include <windows.h>
 #include <aclapi.h>
@@ -19,4 +19,4 @@ std::wstring FormatLastWin32Error();
 
 }  // namespace win_util
 
-#endif  // BASE_WIN_UTIL_H__
+#endif  // BASE_WIN_UTIL_H_

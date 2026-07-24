@@ -7,7 +7,7 @@ Transform the checksums signing task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.treeherder import replace_group
 from voluptuous import Optional, Required
 
@@ -21,18 +21,17 @@ from gecko_taskgraph.util.scriptworker import (
     get_beetmover_bucket_scope,
 )
 
-beetmover_checksums_description_schema = Schema(
-    {
-        Required("attributes"): {str: object},
-        Required("dependencies"): task_description_schema["dependencies"],
-        Optional("label"): str,
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("locale"): str,
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+beetmover_checksums_description_schema = LegacySchema({
+    Required("attributes"): {str: object},
+    Required("dependencies"): task_description_schema["dependencies"],
+    Optional("label"): str,
+    Optional("treeherder"): task_description_schema["treeherder"],
+    Optional("locale"): str,
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 transforms = TransformSequence()
 
@@ -108,6 +107,7 @@ def make_beetmover_checksums_description(config, jobs):
             "dependencies": job["dependencies"],
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "extra": extra,
         }

@@ -4,8 +4,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_OBSERVER_LIST_H__
-#define BASE_OBSERVER_LIST_H__
+#ifndef BASE_OBSERVER_LIST_H_
+#define BASE_OBSERVER_LIST_H_
 
 #include <algorithm>
 #include <limits>
@@ -177,4 +177,4 @@ class ObserverList {
     while ((obs = it.GetNext()) != NULL) obs->func;               \
   } while (0)
 
-#endif  // BASE_OBSERVER_LIST_H__
+#endif  // BASE_OBSERVER_LIST_H_

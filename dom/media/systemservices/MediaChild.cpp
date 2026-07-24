@@ -5,13 +5,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaChild.h"
+
 #include "MediaParent.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/MediaManager.h"
 #include "mozilla/Logging.h"
+#include "mozilla/MediaManager.h"
+#include "mozilla/dom/ContentChild.h"
 #include "nsQueryObject.h"
 
-#undef LOG
 mozilla::LazyLogModule gMediaChildLog("MediaChild");
 #define LOG(args) MOZ_LOG(gMediaChildLog, mozilla::LogLevel::Debug, args)
 
@@ -91,3 +91,5 @@ bool DeallocPMediaChild(media::PMediaChild* aActor) {
 }
 
 }  // namespace mozilla::media
+
+#undef LOG

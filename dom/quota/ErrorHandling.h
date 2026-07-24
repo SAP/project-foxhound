@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef DOM_QUOTA_ERRORHANDLING_H_
+#define DOM_QUOTA_ERRORHANDLING_H_
+
 #include "ErrorList.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/ipc/ProtocolUtils.h"
@@ -41,3 +44,5 @@ using ResolveUsageInfoResponseAndReturn =
     ResolveAndReturn<UsageInfoResponseResolver>;
 
 }  // namespace mozilla::dom::quota
+
+#endif  // DOM_QUOTA_ERRORHANDLING_H_

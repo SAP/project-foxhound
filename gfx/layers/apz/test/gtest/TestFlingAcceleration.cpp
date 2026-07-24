@@ -51,11 +51,11 @@ class APZCFlingAccelerationTester : public APZCTreeManagerTester {
       mcc->AdvanceBy(kTouchTimeDelta100Hz);
       if (delta != 0) {
         currentLocation.y += delta;
-        Unused << TouchMove(apzc, currentLocation, mcc->Time());
+        (void)TouchMove(apzc, currentLocation, mcc->Time());
       }
     }
 
-    Unused << TouchUp(apzc, currentLocation, mcc->Time());
+    (void)TouchUp(apzc, currentLocation, mcc->Time());
   }
 
   void ExecuteWait(const TimeDuration& aDuration) {

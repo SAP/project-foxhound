@@ -10,34 +10,20 @@
 
 #include "HTMLSelectEventListener.h"
 #include "gfxContext.h"
-#include "gfxUtils.h"
-#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLSelectElement.h"
-#include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "nsGkAtoms.h"
-#include "nsISelectControlFrame.h"
 #include "nsITheme.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleConsts.h"
 #include "nsTextFrameUtils.h"
-#include "nsTextNode.h"
 #include "nsTextRunTransformations.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
-
-NS_IMETHODIMP
-nsComboboxControlFrame::RedisplayTextEvent::Run() {
-  if (mControlFrame) {
-    mControlFrame->HandleRedisplayTextEvent();
-  }
-  return NS_OK;
-}
 
 // Drop down list event management.
 // The combo box uses the following strategy for managing the drop-down list.
@@ -67,7 +53,6 @@ nsComboboxControlFrame::~nsComboboxControlFrame() = default;
 
 NS_QUERYFRAME_HEAD(nsComboboxControlFrame)
   NS_QUERYFRAME_ENTRY(nsComboboxControlFrame)
-  NS_QUERYFRAME_ENTRY(nsISelectControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(ButtonControlFrame)
 
 #ifdef ACCESSIBILITY
@@ -116,8 +101,8 @@ int32_t nsComboboxControlFrame::CharCountOfLargestOptionForInflation() const {
   return int32_t(maxLength);
 }
 
-nscoord nsComboboxControlFrame::GetOptionISize(gfxContext* aRenderingContext,
-                                               Type aType) const {
+nscoord nsComboboxControlFrame::GetLongestOptionISize(
+    gfxContext* aRenderingContext) const {
   // Compute the width of each option's (potentially text-transformed) text,
   // and use the widest one as part of our intrinsic size.
   nscoord maxOptionSize = 0;
@@ -150,12 +135,8 @@ nscoord nsComboboxControlFrame::GetOptionISize(gfxContext* aRenderingContext,
     return nsLayoutUtils::AppUnitWidthOfStringBidi(*stringToUse, this, *fm,
                                                    *aRenderingContext);
   };
-  if (aType == Type::Longest) {
-    for (auto i : IntegerRange(Select().Options()->Length())) {
-      maxOptionSize = std::max(maxOptionSize, GetOptionSize(i));
-    }
-  } else {
-    maxOptionSize = GetOptionSize(mDisplayedIndex);
+  for (auto i : IntegerRange(Select().Options()->Length())) {
+    maxOptionSize = std::max(maxOptionSize, GetOptionSize(i));
   }
   if (maxOptionSize) {
     // HACK: Add one app unit to workaround silly Netgear router styling, see
@@ -173,12 +154,13 @@ nscoord nsComboboxControlFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
     return *containISize;
   }
 
+  if (StyleUIReset()->mFieldSizing == StyleFieldSizing::Content) {
+    return ButtonControlFrame::IntrinsicISize(aInput, aType);
+  }
+
   nscoord displayISize = 0;
-  if (!containISize && !StyleContent()->mContent.IsNone()) {
-    auto optionType = StyleUIReset()->mFieldSizing == StyleFieldSizing::Content
-                          ? Type::Current
-                          : Type::Longest;
-    displayISize += GetOptionISize(aInput.mContext, optionType);
+  if (!containISize) {
+    displayISize += GetLongestOptionISize(aInput.mContext);
   }
 
   // Add room for the dropmarker button (if there is one).
@@ -213,15 +195,6 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
   // 3) Default block size of button is block size of display area
   // 4) Inline size of display area is whatever is left over from our
   //    inline size after allocating inline size for the button.
-  // Make sure the displayed text is the same as the selected option,
-  // bug 297389.
-  mDisplayedIndex = Select().SelectedIndex();
-
-  // In dropped down mode the "selected index" is the hovered menu item,
-  // we want the last selected item which is |mDisplayedIndex| in this case.
-  // FIXME(emilio): why is this needed here?
-  RedisplayText();
-
   WritingMode wm = aReflowInput.GetWritingMode();
 
   // Check if the theme specifies a minimum size for the dropdown button
@@ -246,120 +219,11 @@ void nsComboboxControlFrame::Init(nsIContent* aContent,
   ButtonControlFrame::Init(aContent, aParent, aPrevInFlow);
   mEventListener = new HTMLSelectEventListener(
       Select(), HTMLSelectEventListener::SelectType::Combobox);
-  mDisplayedIndex = Select().SelectedIndex();
-}
-
-nsresult nsComboboxControlFrame::RedisplaySelectedText() {
-  nsAutoScriptBlocker scriptBlocker;
-  mDisplayedIndex = Select().SelectedIndex();
-  return RedisplayText();
-}
-
-nsresult nsComboboxControlFrame::RedisplayText() {
-  nsAutoString currentLabel;
-  mDisplayLabel->GetFirstChild()->AsText()->GetData(currentLabel);
-
-  nsAutoString newLabel;
-  GetLabelText(newLabel);
-
-  // Revoke outstanding events to avoid out-of-order events which could mean
-  // displaying the wrong text.
-  mRedisplayTextEvent.Revoke();
-
-  if (currentLabel == newLabel) {
-    return NS_OK;
-  }
-
-  NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
-               "If we happen to run our redisplay event now, we might kill "
-               "ourselves!");
-  mRedisplayTextEvent = new RedisplayTextEvent(this);
-  nsContentUtils::AddScriptRunner(mRedisplayTextEvent.get());
-  return NS_OK;
-}
-
-void nsComboboxControlFrame::UpdateLabelText() {
-  RefPtr<dom::Text> displayContent = mDisplayLabel->GetFirstChild()->AsText();
-  nsAutoString newLabel;
-  GetLabelText(newLabel);
-  displayContent->SetText(newLabel, true);
-}
-
-void nsComboboxControlFrame::HandleRedisplayTextEvent() {
-  // First, make sure that the content model is up to date and we've constructed
-  // the frames for all our content in the right places. Otherwise they'll end
-  // up under the wrong insertion frame when we UpdateLabel, since that
-  // flushes out the content sink by calling SetText on a DOM node with aNotify
-  // set to true.  See bug 289730.
-  AutoWeakFrame weakThis(this);
-  PresContext()->Document()->FlushPendingNotifications(
-      FlushType::ContentAndNotify);
-  if (!weakThis.IsAlive()) {
-    return;
-  }
-  mRedisplayTextEvent.Forget();
-  UpdateLabelText();
-  // Note: `this` might be dead here.
-}
-
-void nsComboboxControlFrame::GetLabelText(nsAString& aLabel) {
-  Select().GetPreviewValue(aLabel);
-  // Get the text to display
-  if (!aLabel.IsEmpty()) {
-    return;
-  }
-  if (mDisplayedIndex != -1 && !StyleContent()->mContent.IsNone()) {
-    GetOptionText(mDisplayedIndex, aLabel);
-  }
-  EnsureNonEmptyLabel(aLabel);
 }
 
 bool nsComboboxControlFrame::IsDroppedDown() const {
   return Select().OpenInParentProcess();
 }
-
-//----------------------------------------------------------------------
-// nsISelectControlFrame
-//----------------------------------------------------------------------
-NS_IMETHODIMP
-nsComboboxControlFrame::DoneAddingChildren(bool aIsDone) { return NS_OK; }
-
-NS_IMETHODIMP
-nsComboboxControlFrame::AddOption(int32_t aIndex) {
-  if (aIndex <= mDisplayedIndex) {
-    ++mDisplayedIndex;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsComboboxControlFrame::RemoveOption(int32_t aIndex) {
-  if (Select().Options()->Length()) {
-    if (aIndex < mDisplayedIndex) {
-      --mDisplayedIndex;
-    } else if (aIndex == mDisplayedIndex) {
-      mDisplayedIndex = 0;  // IE6 compat
-      RedisplayText();
-    }
-  } else {
-    // If we removed the last option, we need to blank things out
-    mDisplayedIndex = -1;
-    RedisplayText();
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP_(void)
-nsComboboxControlFrame::OnSetSelectedIndex(int32_t aOldIndex,
-                                           int32_t aNewIndex) {
-  nsAutoScriptBlocker scriptBlocker;
-  mDisplayedIndex = aNewIndex;
-  RedisplayText();
-}
-
-// End nsISelectControlFrame
-//----------------------------------------------------------------------
 
 nsresult nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
                                              WidgetGUIEvent* aEvent,
@@ -371,50 +235,6 @@ nsresult nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
   }
 
   return ButtonControlFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
-}
-
-nsresult nsComboboxControlFrame::CreateAnonymousContent(
-    nsTArray<ContentInfo>& aElements) {
-  dom::Document* doc = mContent->OwnerDoc();
-  mDisplayLabel = doc->CreateHTMLElement(nsGkAtoms::label);
-  {
-    RefPtr<nsTextNode> text = doc->CreateEmptyTextNode();
-    mDisplayLabel->AppendChildTo(text, false, IgnoreErrors());
-    // set the value of the text node
-    UpdateLabelText();
-  }
-  aElements.AppendElement(mDisplayLabel);
-
-  if (HasDropDownButton()) {
-    mButtonContent = mContent->OwnerDoc()->CreateHTMLElement(nsGkAtoms::button);
-    {
-      // This gives the button a reasonable height. This could be done via CSS
-      // instead, but relative font units like 1lh don't play very well with our
-      // font inflation implementation, so we do it this way instead.
-      RefPtr<nsTextNode> text = doc->CreateTextNode(u"\ufeff"_ns);
-      mButtonContent->AppendChildTo(text, false, IgnoreErrors());
-    }
-    // Make someone to listen to the button.
-    mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type, u"button"_ns,
-                            false);
-    // Set tabindex="-1" so that the button is not tabbable
-    mButtonContent->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns,
-                            false);
-    aElements.AppendElement(mButtonContent);
-  }
-
-  return NS_OK;
-}
-
-void nsComboboxControlFrame::AppendAnonymousContentTo(
-    nsTArray<nsIContent*>& aElements, uint32_t aFilter) {
-  if (mDisplayLabel) {
-    aElements.AppendElement(mDisplayLabel);
-  }
-
-  if (mButtonContent) {
-    aElements.AppendElement(mButtonContent);
-  }
 }
 
 namespace mozilla {
@@ -469,38 +289,23 @@ nsIFrame* NS_NewComboboxLabelFrame(PresShell* aPresShell,
 }
 
 void nsComboboxControlFrame::Destroy(DestroyContext& aContext) {
-  // Revoke any pending RedisplayTextEvent
-  mRedisplayTextEvent.Revoke();
   mEventListener->Detach();
-
-  aContext.AddAnonymousContent(mDisplayLabel.forget());
-  aContext.AddAnonymousContent(mButtonContent.forget());
-  ButtonControlFrame::Destroy(aContext);
-}
-
-//---------------------------------------------------------
-// gets the content (an option) by index and then set it as
-// being selected or not selected
-//---------------------------------------------------------
-NS_IMETHODIMP
-nsComboboxControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected) {
-  if (aSelected) {
-    nsAutoScriptBlocker blocker;
-    mDisplayedIndex = aIndex;
-    RedisplayText();
-  } else {
-    AutoWeakFrame weakFrame(this);
-    RedisplaySelectedText();
-    if (weakFrame.IsAlive()) {
-      FireValueChangeEvent();  // Fire after old option is unselected
-    }
+  auto& select = Select();
+  if (select.OpenInParentProcess()) {
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "nsComboboxControlFrame::Destroy", [element = RefPtr{&select}] {
+          // Don't hide the dropdown if the element has another frame already,
+          // this prevents closing dropdowns on reframe, see bug 1440506.
+          //
+          // FIXME(emilio): The flush is needed to deal with reframes started
+          // from DOM node removal. But perhaps we can be a bit smarter here.
+          if (!element->IsCombobox() ||
+              !element->GetPrimaryFrame(FlushType::Frames)) {
+            nsContentUtils::DispatchChromeEvent(
+                element->OwnerDoc(), element, u"mozhidedropdown"_ns,
+                CanBubble::eYes, Cancelable::eNo);
+          }
+        }));
   }
-  return NS_OK;
-}
-
-void nsComboboxControlFrame::FireValueChangeEvent() {
-  // Fire ValueChange event to indicate data value of combo box has changed
-  // FIXME(emilio): This shouldn't be exposed to content.
-  nsContentUtils::AddScriptRunner(new AsyncEventDispatcher(
-      mContent, u"ValueChange"_ns, CanBubble::eYes, ChromeOnlyDispatch::eNo));
+  ButtonControlFrame::Destroy(aContext);
 }

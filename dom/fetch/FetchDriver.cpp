@@ -4,64 +4,60 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/Value.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/TaskQueue.h"
 #include "mozilla/dom/FetchDriver.h"
-
-#include "mozilla/dom/FetchPriority.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "mozilla/dom/Document.h"
-#include "nsIBaseChannel.h"
-#include "nsICookieJarSettings.h"
-#include "nsIFile.h"
-#include "nsIInputStream.h"
-#include "nsIInterceptionInfo.h"
-#include "nsIOutputStream.h"
-#include "nsIFileChannel.h"
-#include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsISupportsPriority.h"
-#include "nsIThreadRetargetableRequest.h"
-#include "nsIUploadChannel2.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIPipe.h"
-#include "nsIRedirectHistoryEntry.h"
-
-#include "nsContentPolicyUtils.h"
-#include "nsDataChannel.h"
-#include "nsDataHandler.h"
-#include "nsNetUtil.h"
-#include "nsPrintfCString.h"
-#include "nsProxyRelease.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
-#include "nsHttpChannel.h"
-
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/PerformanceStorage.h"
-#include "mozilla/dom/PerformanceTiming.h"
-#include "mozilla/dom/ServiceWorkerInterceptController.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/WorkerCommon.h"
-#include "mozilla/PreloaderBase.h"
-#include "mozilla/net/ContentRange.h"
-#include "mozilla/net/InterceptionInfo.h"
-#include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/StaticPrefs_privacy.h"
-#include "mozilla/StaticPrefs_javascript.h"
-#include "mozilla/Unused.h"
 
 #include "Fetch.h"
 #include "FetchLog.h"
 #include "FetchUtil.h"
 #include "InternalRequest.h"
 #include "InternalResponse.h"
+#include "js/Value.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/PreloaderBase.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/TaskQueue.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/PerformanceTiming.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/ServiceWorkerInterceptController.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/ContentRange.h"
+#include "mozilla/net/InterceptionInfo.h"
+#include "mozilla/net/NeckoChannelParams.h"
+#include "nsContentPolicyUtils.h"
+#include "nsDataChannel.h"
+#include "nsDataHandler.h"
+#include "nsHttpChannel.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIBaseChannel.h"
+#include "nsICookieJarSettings.h"
+#include "nsIFile.h"
+#include "nsIFileChannel.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIInputStream.h"
+#include "nsIInterceptionInfo.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIOutputStream.h"
+#include "nsIPipe.h"
+#include "nsIRedirectHistoryEntry.h"
+#include "nsISupportsPriority.h"
+#include "nsIThreadRetargetableRequest.h"
+#include "nsIUploadChannel2.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
+#include "nsProxyRelease.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 namespace mozilla::dom {
 
@@ -448,7 +444,7 @@ void FetchDriver::UpdateReferrerInfoFromNewChannel(nsIChannel* aChannel) {
 
   nsAutoCString computedReferrerSpec;
   mRequest->SetReferrerPolicy(referrerInfo->ReferrerPolicy());
-  Unused << referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
+  (void)referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
   mRequest->SetReferrer(computedReferrerSpec);
 }
 
@@ -1405,7 +1401,7 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
   if (nsCOMPtr<nsIThreadRetargetableRequest> rr = do_QueryInterface(aRequest)) {
     RefPtr<TaskQueue> queue =
         TaskQueue::Create(sts.forget(), "FetchDriver STS Delivery Queue");
-    Unused << NS_WARN_IF(NS_FAILED(rr->RetargetDeliveryTo(queue)));
+    (void)NS_WARN_IF(NS_FAILED(rr->RetargetDeliveryTo(queue)));
   }
   return NS_OK;
 }
@@ -1722,8 +1718,7 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
 
     // Fetch 4.4.11
     bool rewriteToGET = false;
-    Unused << oldHttpChannel->ShouldStripRequestBodyHeader(method,
-                                                           &rewriteToGET);
+    (void)oldHttpChannel->ShouldStripRequestBodyHeader(method, &rewriteToGET);
 
     // we need to strip Authentication headers for cross-origin requests
     // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch

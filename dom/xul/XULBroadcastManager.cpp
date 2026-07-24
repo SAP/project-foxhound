@@ -5,23 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XULBroadcastManager.h"
-#include "nsCOMPtr.h"
-#include "nsContentUtils.h"
+
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsXULElement.h"
-
-struct BroadcastListener {
-  nsWeakPtr mListener;
-  RefPtr<nsAtom> mAttribute;
-};
-
-struct BroadcasterMapEntry : public PLDHashEntryHdr {
-  mozilla::dom::Element* mBroadcaster;  // [WEAK]
-  nsTArray<BroadcastListener*>
-      mListeners;  // [OWNING] of BroadcastListener objects
-};
 
 struct nsAttrNameInfo {
   nsAttrNameInfo(int32_t aNamespaceID, nsAtom* aName, nsAtom* aPrefix)
@@ -33,19 +23,6 @@ struct nsAttrNameInfo {
   RefPtr<nsAtom> mName;
   RefPtr<nsAtom> mPrefix;
 };
-
-static void ClearBroadcasterMapEntry(PLDHashTable* aTable,
-                                     PLDHashEntryHdr* aEntry) {
-  BroadcasterMapEntry* entry = static_cast<BroadcasterMapEntry*>(aEntry);
-  for (size_t i = entry->mListeners.Length() - 1; i != (size_t)-1; --i) {
-    delete entry->mListeners[i];
-  }
-  entry->mListeners.Clear();
-
-  // N.B. that we need to manually run the dtor because we
-  // constructed the nsTArray object in-place.
-  entry->mListeners.~nsTArray<BroadcastListener*>();
-}
 
 static bool CanBroadcast(int32_t aNameSpaceID, nsAtom* aAttribute) {
   // Don't push changes to the |id|, |persist|, |command| or
@@ -123,11 +100,10 @@ bool XULBroadcastManager::MayNeedListener(const Element& aElement) {
 
 XULBroadcastManager::XULBroadcastManager(Document* aDocument)
     : mDocument(aDocument),
-      mBroadcasterMap(nullptr),
       mHandlingDelayedAttrChange(false),
       mHandlingDelayedBroadcasters(false) {}
 
-XULBroadcastManager::~XULBroadcastManager() { delete mBroadcasterMap; }
+XULBroadcastManager::~XULBroadcastManager() = default;
 
 void XULBroadcastManager::DropDocumentReference(void) { mDocument = nullptr; }
 
@@ -219,46 +195,22 @@ void XULBroadcastManager::AddListenerFor(Element& aBroadcaster,
     return;
   }
 
-  static const PLDHashTableOps gOps = {
-      PLDHashTable::HashVoidPtrKeyStub, PLDHashTable::MatchEntryStub,
-      PLDHashTable::MoveEntryStub, ClearBroadcasterMapEntry, nullptr};
-
-  if (!mBroadcasterMap) {
-    mBroadcasterMap = new PLDHashTable(&gOps, sizeof(BroadcasterMapEntry));
-  }
-
-  auto entry =
-      static_cast<BroadcasterMapEntry*>(mBroadcasterMap->Search(&aBroadcaster));
-  if (!entry) {
-    entry = static_cast<BroadcasterMapEntry*>(
-        mBroadcasterMap->Add(&aBroadcaster, fallible));
-
-    if (!entry) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
-
-    entry->mBroadcaster = &aBroadcaster;
-
-    // N.B. placement new to construct the nsTArray object in-place
-    new (&entry->mListeners) nsTArray<BroadcastListener*>();
-  }
+  auto& entry = mBroadcasterMap.LookupOrInsert(&aBroadcaster);
 
   // Only add the listener if it's not there already!
   RefPtr<nsAtom> attr = NS_Atomize(aAttr);
 
-  for (size_t i = entry->mListeners.Length() - 1; i != (size_t)-1; --i) {
-    BroadcastListener* bl = entry->mListeners[i];
-    nsCOMPtr<Element> blListener = do_QueryReferent(bl->mListener);
+  for (size_t i = entry.Length() - 1; i != (size_t)-1; --i) {
+    BroadcastListener& bl = entry[i];
+    nsCOMPtr<Element> blListener = do_QueryReferent(bl.mListener);
 
-    if (blListener == &aListener && bl->mAttribute == attr) return;
+    if (blListener == &aListener && bl.mAttribute == attr) return;
   }
 
-  BroadcastListener* bl = new BroadcastListener;
-  bl->mListener = do_GetWeakReference(&aListener);
-  bl->mAttribute = attr;
-
-  entry->mListeners.AppendElement(bl);
+  entry.AppendElement(BroadcastListener{
+      .mListener = do_GetWeakReference(&aListener),
+      .mAttribute = attr,
+  });
 
   SynchronizeBroadcastListener(&aBroadcaster, &aListener, aAttr);
 }
@@ -266,23 +218,19 @@ void XULBroadcastManager::AddListenerFor(Element& aBroadcaster,
 void XULBroadcastManager::RemoveListenerFor(Element& aBroadcaster,
                                             Element& aListener,
                                             const nsAString& aAttr) {
-  // If we haven't added any broadcast listeners, then there sure
-  // aren't any to remove.
-  if (!mBroadcasterMap) return;
-
-  auto entry =
-      static_cast<BroadcasterMapEntry*>(mBroadcasterMap->Search(&aBroadcaster));
+  auto entry = mBroadcasterMap.Lookup(&aBroadcaster);
   if (entry) {
     RefPtr<nsAtom> attr = NS_Atomize(aAttr);
-    for (size_t i = entry->mListeners.Length() - 1; i != (size_t)-1; --i) {
-      BroadcastListener* bl = entry->mListeners[i];
-      nsCOMPtr<Element> blListener = do_QueryReferent(bl->mListener);
+    for (size_t i = entry->Length() - 1; i != (size_t)-1; --i) {
+      BroadcastListener& bl = entry->ElementAt(i);
+      nsCOMPtr<Element> blListener = do_QueryReferent(bl.mListener);
 
-      if (blListener == &aListener && bl->mAttribute == attr) {
-        entry->mListeners.RemoveElementAt(i);
-        delete bl;
+      if (blListener == &aListener && bl.mAttribute == attr) {
+        entry->RemoveElementAt(i);
 
-        if (entry->mListeners.IsEmpty()) mBroadcasterMap->RemoveEntry(entry);
+        if (entry->IsEmpty()) {
+          entry.Remove();
+        }
 
         break;
       }
@@ -349,20 +297,19 @@ void XULBroadcastManager::AttributeChanged(Element* aElement,
   NS_ASSERTION(aElement->OwnerDoc() == mDocument, "unexpected doc");
 
   // Synchronize broadcast listeners
-  if (mBroadcasterMap && CanBroadcast(aNameSpaceID, aAttribute)) {
-    auto entry =
-        static_cast<BroadcasterMapEntry*>(mBroadcasterMap->Search(aElement));
+  if (CanBroadcast(aNameSpaceID, aAttribute)) {
+    auto entry = mBroadcasterMap.Lookup(aElement);
 
     if (entry) {
       // We've got listeners: push the value.
       nsAutoString value;
       bool attrSet = aElement->GetAttr(aAttribute, value);
 
-      for (size_t i = entry->mListeners.Length() - 1; i != (size_t)-1; --i) {
-        BroadcastListener* bl = entry->mListeners[i];
-        if ((bl->mAttribute == aAttribute) ||
-            (bl->mAttribute == nsGkAtoms::_asterisk)) {
-          nsCOMPtr<Element> listenerEl = do_QueryReferent(bl->mListener);
+      for (size_t i = entry->Length() - 1; i != (size_t)-1; --i) {
+        BroadcastListener& bl = entry->ElementAt(i);
+        if ((bl.mAttribute == aAttribute) ||
+            (bl.mAttribute == nsGkAtoms::_asterisk)) {
+          nsCOMPtr<Element> listenerEl = do_QueryReferent(bl.mListener);
           if (listenerEl) {
             nsAutoString currentValue;
             bool hasAttr = listenerEl->GetAttr(aAttribute, currentValue);

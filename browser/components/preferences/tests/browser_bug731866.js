@@ -7,8 +7,13 @@ const browserContainersGroupDisabled = !SpecialPowers.getBoolPref(
 const cookieBannerHandlingDisabled = !SpecialPowers.getBoolPref(
   "cookiebanners.ui.desktop.enabled"
 );
-const backupGroupDisabled = !SpecialPowers.getBoolPref(
-  "browser.backup.preferences.ui.enabled"
+const backupSectionDisabled = !(
+  SpecialPowers.getBoolPref("browser.backup.archive.enabled") ||
+  SpecialPowers.getBoolPref("browser.backup.restore.enabled")
+);
+const ipProtectionEnabled = SpecialPowers.getBoolPref(
+  "browser.ipProtection.enabled",
+  false
 );
 const profilesGroupDisabled = !SelectableProfileService.isEnabled;
 const updatePrefContainers = ["updatesCategory", "updateApp"];
@@ -65,13 +70,28 @@ function checkElements(expectedPane) {
     }
 
     // Backup is currently disabled by default. (bug 1895791)
-    if (element.id == "dataBackupGroup" && backupGroupDisabled) {
-      is_element_hidden(element, "Disabled dataBackupGroup should be hidden");
+    if (
+      (element.id == "dataBackupGroup" || element.id == "backupCategory") &&
+      backupSectionDisabled
+    ) {
+      is_element_hidden(element, "Disabled dataBackupSection should be hidden");
       continue;
     }
 
     // Profiles is only enabled in Nightly by default (bug 1947633)
     if (element.id === "profilesGroup" && profilesGroupDisabled) {
+      is_element_hidden(element, "Disabled profilesGroup should be hidden");
+      continue;
+    }
+
+    // IP Protection section is gated by browser.ipProtection.enabled
+    if (element.id === "dataIPProtectionGroup" && !ipProtectionEnabled) {
+      is_element_hidden(element, "Disabled ipProtection should be hidden");
+      continue;
+    }
+
+    if (element.getAttribute("data-hidden-from-search") == "true") {
+      is_element_hidden(element, "Hidden from search element should be hidden");
       continue;
     }
 

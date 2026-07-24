@@ -15,10 +15,9 @@ DIRS += [
     "jni",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += [
-        "tests",
-    ]
+TEST_DIRS += [
+    "tests",
+]
 
 EXPORTS += [
     "AndroidBridge.h",
@@ -67,6 +66,7 @@ classes_with_WrapForJNI = [
     "Image",
     "ImageDecoder",
     "MediaDrmProxy",
+    "MozLog",
     "PanZoomController",
     "Sample",
     "SampleBuffer",
@@ -90,13 +90,13 @@ classes_with_WrapForJNI = [
     "XPCOMEventTarget",
 ]
 
-natives_from_WrapForJNI = sorted(
-    ["GeneratedJNI/{}Natives.h".format(c) for c in classes_with_WrapForJNI]
-)
+natives_from_WrapForJNI = sorted([
+    "GeneratedJNI/{}Natives.h".format(c) for c in classes_with_WrapForJNI
+])
 
-wrappers_from_WrapForJNI = sorted(
-    ["GeneratedJNI/{}Wrappers.h".format(c) for c in classes_with_WrapForJNI]
-)
+wrappers_from_WrapForJNI = sorted([
+    "GeneratedJNI/{}Wrappers.h".format(c) for c in classes_with_WrapForJNI
+])
 
 sources_from_WrapForJNI = sorted(
     "GeneratedJNI/{}Wrappers.cpp".format(c) for c in classes_with_WrapForJNI
@@ -144,6 +144,7 @@ UNIFIED_SOURCES += [
     "GfxInfo.cpp",
     "ImageDecoderSupport.cpp",
     "InProcessAndroidCompositorWidget.cpp",
+    "MozLogSupport.cpp",
     "nsAppShell.cpp",
     "nsClipboard.cpp",
     "nsDeviceContextAndroid.cpp",
@@ -225,4 +226,4 @@ LOCAL_INCLUDES += [
     "/xpcom/threads",
 ]
 
-OS_LIBS += ["android"]
+OS_LIBS += ["android", "jnigraphics"]

@@ -19,7 +19,8 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-#define X 255
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
+#  define X 255
 static const uint8_t gMiniFontData[] = {
     0, X, 0, 0, X, 0, X, X, X, X, X, X, X, 0, X, X, X, X, X, X, X, X, X, X,
     X, X, X, X, X, X, X, X, X, X, X, 0, 0, X, X, X, X, 0, X, X, X, X, X, X,
@@ -32,7 +33,8 @@ static const uint8_t gMiniFontData[] = {
     0, X, 0, 0, X, 0, X, X, X, X, X, X, 0, 0, X, X, X, X, X, X, X, 0, 0, X,
     X, X, X, 0, 0, X, X, 0, X, X, X, 0, 0, X, X, X, X, 0, X, X, X, X, 0, 0,
 };
-#undef X
+#  undef X
+#endif
 
 /* Parameters that control the rendering of hexboxes. They look like this:
 
@@ -59,7 +61,9 @@ static const uint8_t gMiniFontData[] = {
 /** Width of a minifont glyph (see above) */
 static const int MINIFONT_WIDTH = 3;
 /** Height of a minifont glyph (see above) */
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
 static const int MINIFONT_HEIGHT = 5;
+#endif
 /**
  * Gap between minifont glyphs (both horizontal and vertical) and also
  * the minimum desired gap between the box border and the glyphs
@@ -196,7 +200,7 @@ static void DestroyImageKey(void* aClosure) {
   delete key;
 }
 
-MOZ_RUNINIT static RefPtr<SourceSurface> gWRGlyphAtlas[8];
+constinit static RefPtr<SourceSurface> gWRGlyphAtlas[8];
 MOZ_RUNINIT static LinkedList<WRUserData> gWRUsers;
 UserDataKey WRUserData::sWRUserDataKey;
 

@@ -7,8 +7,6 @@
 #ifndef MOZILLA_GFX_COMPOSITOROGL_H
 #define MOZILLA_GFX_COMPOSITOROGL_H
 
-#include <map>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "gfx2DGlue.h"
@@ -17,7 +15,6 @@
 #include "OGLShaderConfig.h"        // for ShaderConfigOGL
 #include "Units.h"                  // for ScreenPoint
 #include "mozilla/Assertions.h"     // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"     // for override, final
 #include "mozilla/RefPtr.h"         // for already_AddRefed, RefPtr
 #include "mozilla/gfx/2D.h"         // for DrawTarget
 #include "mozilla/gfx/BaseSize.h"   // for BaseSize

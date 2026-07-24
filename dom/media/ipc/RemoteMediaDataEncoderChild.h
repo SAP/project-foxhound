@@ -8,11 +8,11 @@
 
 #include <functional>
 
+#include "PlatformEncoderModule.h"
 #include "mozilla/MediaActorUtils.h"
 #include "mozilla/PRemoteEncoderChild.h"
 #include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/ShmemRecycleAllocator.h"
-#include "PlatformEncoderModule.h"
 
 namespace mozilla {
 
@@ -43,6 +43,8 @@ class RemoteMediaDataEncoderChild final
   RefPtr<MediaDataEncoder::InitPromise> Init() override;
   RefPtr<MediaDataEncoder::EncodePromise> Encode(
       const MediaData* aSample) override;
+  RefPtr<MediaDataEncoder::EncodePromise> Encode(
+      nsTArray<RefPtr<MediaData>>&& aSamples) override;
   RefPtr<MediaDataEncoder::EncodePromise> Drain() override;
   RefPtr<MediaDataEncoder::ReconfigurationPromise> Reconfigure(
       const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges)
@@ -57,7 +59,7 @@ class RemoteMediaDataEncoderChild final
   RemoteMediaManagerChild* GetManager();
 
   virtual RefPtr<PRemoteEncoderChild::EncodePromise> DoSendEncode(
-      const MediaData* aSample, ShmemRecycleTicket* aTicket);
+      const nsTArray<RefPtr<MediaData>>& aSamples, ShmemRecycleTicket* aTicket);
 
   void DoSendInit();
   void MaybeDestroyActor();
@@ -65,6 +67,7 @@ class RemoteMediaDataEncoderChild final
   const nsCOMPtr<nsISerialEventTarget> mThread;
   const RemoteMediaIn mLocation;
   bool mRemoteCrashed = false;
+  bool mHasConstructed = false;
 
   MozPromiseHolder<PlatformEncoderModule::CreateEncoderPromise>
       mConstructPromise;

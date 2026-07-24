@@ -15,6 +15,7 @@
 #include "nsFrameSelection.h"
 #include "TextLeafRange.h"
 
+#include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Element.h"
@@ -124,10 +125,35 @@ void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
   // event->mSel is correct.
   if (!selection) selection = event->mSel;
 
-  mCaretOffset = caretCntr->DOMPointToOffset(selection->GetFocusNode(),
-                                             selection->FocusOffset());
-  mAccWithCaret = caretCntr;
-  if (mCaretOffset != -1) {
+  int32_t caretOffset = caretCntr->DOMPointToOffset(selection->GetFocusNode(),
+                                                    selection->FocusOffset());
+  if (caretOffset != -1) {
+    LocalAccessible* focus =
+        FocusMgr() ? FocusMgr()->FocusedLocalAccessible() : nullptr;
+    DocAccessible* caretDoc = caretCntr->Document();
+    if (!focus || caretDoc != focus->Document()) {
+      // The caret isn't in the focused document. Don't update the global caret
+      // cache or fire the event, as this will confuse clients, who expect that
+      // the caret should be related to the focus. However, we still need to
+      // update the RemoteAccessible cache, as this event won't be fired again
+      // if the document gets focus later.
+      if (DocAccessibleChild* ipcDoc = caretDoc->IPCDoc()) {
+        // TextLeafPoint::GetCaret won't use mCaretOffset because mAccWithCaret
+        // is in a different document to caretCntr.
+        TextLeafPoint caret = TextLeafPoint::GetCaret(caretCntr);
+        ipcDoc->SendCaretMoveEvent(
+            caretCntr->ID(),
+            DocAccessibleChild::GetCaretRectForIPCEvent(caretCntr), caretOffset,
+            selection->IsCollapsed(), caret.mIsEndOfLineInsertionPoint,
+            event->GetGranularity(), aEvent->FromUserInput(),
+            /* aSuppressEvent */ true);
+      }
+      return;
+    }
+    mCaretOffset = caretOffset;
+    mAccWithCaret = caretCntr;
+    // It is important that we call TextLeafPoint::GetCaret *after* updating
+    // mCaretOffset because GetCaret will use mCaretOffset.
     TextLeafPoint caret = TextLeafPoint::GetCaret(caretCntr);
     RefPtr<AccCaretMoveEvent> caretMoveEvent =
         new AccCaretMoveEvent(caretCntr, mCaretOffset, selection->IsCollapsed(),

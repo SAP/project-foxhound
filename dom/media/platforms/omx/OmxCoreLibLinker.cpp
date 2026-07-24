@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OmxCoreLibLinker.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Preferences.h"
+
 #include "MainThreadUtils.h"
-#include "prlink.h"
 #include "PlatformDecoderModule.h"
+#include "mozilla/Preferences.h"
+#include "prlink.h"
 
 #ifdef LOG
 #  undef LOG
@@ -33,7 +33,7 @@ PRLibrary* OmxCoreLibLinker::sLinkedLib = nullptr;
 const char* OmxCoreLibLinker::sLibName = nullptr;
 
 #define OMX_FUNC(func) void (*func)();
-#include "OmxFunctionList.h"
+#include "OmxFunctionList.inc"
 #undef OMX_FUNC
 
 bool OmxCoreLibLinker::TryLinkingLibrary(const char* libName) {
@@ -93,7 +93,7 @@ bool OmxCoreLibLinker::Bind(const char* aLibName) {
       return false;                                                 \
     }                                                               \
   }
-#include "OmxFunctionList.h"
+#include "OmxFunctionList.inc"
 #undef OMX_FUNC
   return true;
 }

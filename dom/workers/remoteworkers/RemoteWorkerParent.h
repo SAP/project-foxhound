@@ -27,7 +27,7 @@ class RemoteWorkerParent final : public PRemoteWorkerParent {
   NS_INLINE_DECL_REFCOUNTING(RemoteWorkerParent, override);
 
   explicit RemoteWorkerParent(
-      UniqueThreadsafeContentParentKeepAlive aKeepAlive);
+      UniqueThreadsafeContentParentKeepAlive&& aKeepAlive);
 
   void SetController(RemoteWorkerController* aController);
 

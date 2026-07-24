@@ -6,11 +6,11 @@
 
 #include "ServiceWorkerJob.h"
 
+#include "ServiceWorkerManager.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "nsIPrincipal.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
-#include "ServiceWorkerManager.h"
 
 namespace mozilla::dom {
 

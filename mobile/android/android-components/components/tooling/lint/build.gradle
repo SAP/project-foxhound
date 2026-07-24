@@ -4,23 +4,26 @@
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'java-library'
 apply plugin: 'kotlin'
 
 dependencies {
-  compileOnly libs.tools.lintapi
-  compileOnly libs.tools.lintchecks
-
+  compileOnly libs.android.lint.api
+  compileOnly libs.android.lint.checks
   compileOnly libs.kotlin.reflect
-  testImplementation libs.kotlin.reflect
 
-  testImplementation libs.tools.lint
-  testImplementation libs.tools.linttests
+  testImplementation libs.android.lint
+  testImplementation libs.android.lint.tests
   testImplementation platform(libs.junit.bom)
   testImplementation libs.junit4
-  testRuntimeOnly libs.junit.vintage
   testRuntimeOnly libs.junit.platform.launcher
-  testImplementation libs.testing.mockito
+  testRuntimeOnly libs.junit.vintage
+  testImplementation libs.kotlin.reflect
+  testImplementation libs.mockito
 }
 
 jar {

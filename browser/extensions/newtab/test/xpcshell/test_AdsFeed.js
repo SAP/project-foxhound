@@ -604,5 +604,12 @@ add_task(async function test_fetchData_OHTTP() {
   Assert.ok(ObliviousHTTP.ohttpRequest.calledOnce);
   Assert.deepEqual(result.tiles[0].id, "test1");
 
+  info("AdsFeed: fetchData() should not send cookies");
+  Assert.equal(
+    ObliviousHTTP.ohttpRequest.firstCall.args[3].credentials,
+    "omit",
+    "should not send cookies"
+  );
+
   sandbox.restore();
 });

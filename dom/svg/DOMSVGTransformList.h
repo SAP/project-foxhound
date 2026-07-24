@@ -8,12 +8,12 @@
 #define DOM_SVG_DOMSVGTRANSFORMLIST_H_
 
 #include "DOMSVGAnimatedTransformList.h"
+#include "SVGTransformList.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/Attributes.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
-#include "SVGTransformList.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -36,15 +36,13 @@ class MOZ_RAII AutoChangeTransformListNotifier {
     // If we don't have an owner then changes don't affect anything else.
     if (mValue->HasOwner()) {
       mUpdateBatch.emplace(mValue->Element()->GetComposedDoc(), true);
-      mEmptyOrOldValue =
-          mValue->Element()->WillChangeTransformList(mUpdateBatch.ref());
+      mValue->Element()->WillChangeTransformList(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeTransformListNotifier() {
     if (mValue->HasOwner()) {
-      mValue->Element()->DidChangeTransformList(mEmptyOrOldValue,
-                                                mUpdateBatch.ref());
+      mValue->Element()->DidChangeTransformList(mUpdateBatch.ref());
       if (mValue->IsAnimating()) {
         mValue->Element()->AnimationNeedsResample();
       }
@@ -54,7 +52,6 @@ class MOZ_RAII AutoChangeTransformListNotifier {
  private:
   T* const mValue;
   Maybe<mozAutoDocUpdate> mUpdateBatch;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 /**

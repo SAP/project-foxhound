@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_ScrollAreaEvent_h_
 #define mozilla_dom_ScrollAreaEvent_h_
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ScrollAreaEventBinding.h"
 #include "mozilla/dom/UIEvent.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/EventForwards.h"
 
 namespace mozilla::dom {
 

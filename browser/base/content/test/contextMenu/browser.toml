@@ -21,18 +21,29 @@ tags = "os_integration"
 ["browser_contextmenu.js"]
 support-files = [ "../general/video.webm"  ]
 tags = "fullscreen"
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1853186
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1853186
+]
 
 ["browser_contextmenu_add_search_engine.js"]
 support-files = ["subtst_contextmenu_add_search_engine.html"]
-skip-if = ["os == 'linux'"] # disabled on Linux due to bug 513558
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # disabled on Linux due to bug 513558
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # disabled on Linux due to bug 513558
+]
 
 ["browser_contextmenu_badiframe.js"]
 https_first_disabled = true
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
   "os == 'win'", # Bug 1719856
-  "os == 'linux' && socketprocess_networking",
 ]
+
+["browser_contextmenu_bookmark_link_text.js"]
+
+["browser_contextmenu_chrome_images.js"]
 
 ["browser_contextmenu_contenteditable.js"]
 
@@ -40,46 +51,79 @@ skip-if = [
 
 ["browser_contextmenu_iframe.js"]
 support-files = ["test_contextmenu_iframe.html"]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_contextmenu_input.js"]
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_contextmenu_inspect.js"]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_contextmenu_linkopen.js"]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_contextmenu_loadblobinnewtab.js"]
 support-files = ["browser_contextmenu_loadblobinnewtab.html"]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
+
+["browser_contextmenu_plaintextlinks.js"]
+skip-if = [
+  "a11y_checks", # Bugs 1858041 and 1835079 for causing intermittent crashes
+]
 
 ["browser_contextmenu_save_blocked.js"]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_contextmenu_share_linux.js"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_contextmenu_share_macosx.js"]
 https_first_disabled = true
 support-files = ["browser_contextmenu_shareurl.html"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["browser_contextmenu_share_win.js"]
 https_first_disabled = true
 support-files = ["browser_contextmenu_shareurl.html"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["browser_contextmenu_spellcheck.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux'",
   "debug", # bug 1798233 - this trips assertions that seem harmless in opt and unlikely to occur in practical use.
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["browser_contextmenu_touch.js"]
-skip-if = ["true"] # Bug 1424433, disable due to very high frequency failure rate also on Windows 10
+skip-if = [
+  "true", # Bug 1424433, disable due to very high frequency failure rate also on Windows 10
+]
 
 ["browser_copy_image_link.js"]
 support-files = [
@@ -87,9 +131,14 @@ support-files = [
   "firebird.png",
   "firebird.png^headers^",
 ]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_copy_link_to_highlight.js"]
+
+["browser_copy_link_to_highlight_viewsource.js"]
 
 ["browser_save_image.js"]
 
@@ -99,7 +148,10 @@ skip-if = ["os == 'linux' && socketprocess_networking"]
 
 ["browser_utilityOverlay.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]
 
 ["browser_utilityOverlayPrincipal.js"]
 https_first_disabled = true
@@ -109,4 +161,7 @@ support-files = [
   "test_view_image_revoked_cached_blob.html",
   "test_view_image_inline_svg.html",
 ]
-skip-if = ["os == 'linux' && socketprocess_networking"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && socketprocess_networking",
+]

@@ -43,13 +43,13 @@ const tests = {
         {
           date: new Date("1970-01-01T00:00:00.000Z"),
           parts: [
-            Day("1"), Literal("/"), Month("1"), Literal("/"), Year("1970"), Literal(" "), Era("AD")
+            Day("01"), Literal("/"), Month("01"), Literal("/"), Year("1970"), Literal(" "), Era("AD")
           ],
         },
         {
           date: new Date("-001970-01-01T00:00:00.000Z"),
           parts: [
-            Day("1"), Literal("/"), Month("1"), Literal("/"), Year("1971"), Literal(" "), Era("BC")
+            Day("01"), Literal("/"), Month("01"), Literal("/"), Year("1971"), Literal(" "), Era("BC")
           ],
         },
       ],
@@ -193,13 +193,13 @@ const tests = {
         {
           date: new Date("1970-01-01T00:00:00.000Z"),
           parts: [
-            Era("公元"), Literal(" "), Year("1970"), Literal("-"), Month("01"), Literal("-"), Day("01")
+            Era("公元"), Year("1970"), Literal("-"), Month("01"), Literal("-"), Day("01")
           ],
         },
         {
           date: new Date("-001970-01-01T00:00:00.000Z"),
           parts: [
-            Era("公元前"), Literal(" "), Year("1971"), Literal("-"), Month("01"), Literal("-"), Day("01")
+            Era("公元前"), Year("1971"), Literal("-"), Month("01"), Literal("-"), Day("01")
           ],
         },
       ],

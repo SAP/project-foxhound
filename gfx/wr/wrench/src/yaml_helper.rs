@@ -39,10 +39,6 @@ pub trait YamlHelper {
     fn as_vec_filter_op(&self) -> Option<Vec<FilterOp>>;
     fn as_filter_data(&self) -> Option<FilterData>;
     fn as_vec_filter_data(&self) -> Option<Vec<FilterData>>;
-    fn as_filter_input(&self) -> Option<FilterPrimitiveInput>;
-    fn as_filter_primitive(&self) -> Option<FilterPrimitive>;
-    fn as_vec_filter_primitive(&self) -> Option<Vec<FilterPrimitive>>;
-    fn as_color_space(&self) -> Option<ColorSpace>;
     fn as_complex_clip_region(&self) -> ComplexClipRegion;
     fn as_sticky_offset_bounds(&self) -> StickyOffsetBounds;
     fn as_gradient(&self, dl: &mut DisplayListBuilder) -> Gradient;
@@ -337,6 +333,9 @@ impl YamlHelper for Yaml {
                     let (function, ref args, reminder) = parse_function(slice);
                     slice = reminder;
                     let mx = match function {
+                        "identity" => {
+                            LayoutTransform::identity()
+                        }
                         "translate" if args.len() >= 2 => {
                             let z = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(0.);
                             LayoutTransform::translation(
@@ -972,140 +971,12 @@ impl YamlHelper for Yaml {
         None
     }
 
-    fn as_filter_input(&self) -> Option<FilterPrimitiveInput> {
-        if let Some(input) = self.as_str() {
-            match input {
-                "original" => Some(FilterPrimitiveInput::Original),
-                "previous" => Some(FilterPrimitiveInput::Previous),
-                _ => None,
-            }
-        } else if let Some(index) = self.as_i64() {
-            if index >= 0 {
-                Some(FilterPrimitiveInput::OutputOfPrimitiveIndex(index as usize))
-            } else {
-                panic!("Filter input index cannot be negative");
-            }
-        } else {
-            panic!("Invalid filter input");
-        }
-    }
-
     fn as_vec_filter_data(&self) -> Option<Vec<FilterData>> {
         if let Some(v) = self.as_vec() {
             Some(v.iter().map(|x| x.as_filter_data().unwrap()).collect())
         } else {
             self.as_filter_data().map(|data| vec![data])
         }
-    }
-
-    fn as_filter_primitive(&self) -> Option<FilterPrimitive> {
-        if let Some(filter_type) = self["type"].as_str() {
-            let kind = match filter_type {
-                "identity" => {
-                    FilterPrimitiveKind::Identity(IdentityPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                    })
-                }
-                "blend" => {
-                    FilterPrimitiveKind::Blend(BlendPrimitive {
-                        input1: self["in1"].as_filter_input().unwrap(),
-                        input2: self["in2"].as_filter_input().unwrap(),
-                        mode: self["blend-mode"].as_mix_blend_mode().unwrap(),
-                    })
-                }
-                "flood" => {
-                    FilterPrimitiveKind::Flood(FloodPrimitive {
-                        color: self["color"].as_colorf().unwrap(),
-                    })
-                }
-                "blur" => {
-                    FilterPrimitiveKind::Blur(BlurPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                        width: self["width"].as_f32().unwrap(),
-                        height: self["height"].as_f32().unwrap(),
-                    })
-                }
-                "opacity" => {
-                    FilterPrimitiveKind::Opacity(OpacityPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                        opacity: self["opacity"].as_f32().unwrap(),
-                    })
-                }
-                "color-matrix" => {
-                    let m: Vec<f32> = self["matrix"].as_vec_f32().unwrap();
-                    let mut matrix: [f32; 20] = [0.0; 20];
-                    matrix.clone_from_slice(&m);
-
-                    FilterPrimitiveKind::ColorMatrix(ColorMatrixPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                        matrix,
-                    })
-                }
-                "drop-shadow" => {
-                    FilterPrimitiveKind::DropShadow(DropShadowPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                        shadow: Shadow {
-                            offset: self["offset"].as_vector().unwrap(),
-                            color: self["color"].as_colorf().unwrap(),
-                            blur_radius: self["radius"].as_f32().unwrap(),
-                        }
-                    })
-                }
-                "component-transfer" => {
-                    FilterPrimitiveKind::ComponentTransfer(ComponentTransferPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                    })
-                }
-                "offset" => {
-                    FilterPrimitiveKind::Offset(OffsetPrimitive {
-                        input: self["in"].as_filter_input().unwrap(),
-                        offset: self["offset"].as_vector().unwrap(),
-                    })
-                }
-                "composite" => {
-                    let operator = match self["operator"].as_str().unwrap() {
-                        "over" => CompositeOperator::Over,
-                        "in" => CompositeOperator::In,
-                        "out" => CompositeOperator::Out,
-                        "atop" => CompositeOperator::Atop,
-                        "xor" => CompositeOperator::Xor,
-                        "lighter" => CompositeOperator::Lighter,
-                        "arithmetic" => {
-                            let k_vals = self["k-values"].as_vec_f32().unwrap();
-                            assert!(k_vals.len() == 4, "Must be 4 k values for arithmetic composite operator");
-                            let k_vals = [k_vals[0], k_vals[1], k_vals[2], k_vals[3]];
-                            CompositeOperator::Arithmetic(k_vals)
-                        }
-                        _ => panic!("Invalid composite operator"),
-                    };
-                    FilterPrimitiveKind::Composite(CompositePrimitive {
-                        input1: self["in1"].as_filter_input().unwrap(),
-                        input2: self["in2"].as_filter_input().unwrap(),
-                        operator,
-                    })
-                }
-                _ => return None,
-            };
-
-            Some(FilterPrimitive {
-                kind,
-                color_space: self["color-space"].as_color_space().unwrap_or(ColorSpace::LinearRgb),
-            })
-        } else {
-            None
-        }
-    }
-
-    fn as_vec_filter_primitive(&self) -> Option<Vec<FilterPrimitive>> {
-        if let Some(v) = self.as_vec() {
-            Some(v.iter().map(|x| x.as_filter_primitive().unwrap()).collect())
-        } else {
-            self.as_filter_primitive().map(|data| vec![data])
-        }
-    }
-
-    fn as_color_space(&self) -> Option<ColorSpace> {
-        self.as_str().and_then(StringEnum::from_str)
     }
 
     fn as_complex_clip_region(&self) -> ComplexClipRegion {

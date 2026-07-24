@@ -23,6 +23,13 @@ for (var prop in gCSSProperties) {
 
   var s = document.createElement("div").style;
 
+  if (info.domPropDisabled) {
+    // Certain properties like -moz-appearance is intentionally hidden from
+    // CSSStyleProperties.
+    is(s[info.domProp], undefined, `${prop} should not exist`);
+    continue;
+  }
+
   is(s[info.domProp], "", prop + " should not be set yet");
   s[info.domProp] = info.initial_values[0];
   isnot(s[info.domProp], "", prop + " should now be set");

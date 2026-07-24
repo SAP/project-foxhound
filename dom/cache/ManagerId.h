@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_cache_ManagerId_h
 #define mozilla_dom_cache_ManagerId_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/cache/Types.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsISupportsImpl.h"

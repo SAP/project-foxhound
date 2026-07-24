@@ -6,8 +6,6 @@
 
 #include "RuntimeExceptionModule.h"
 
-#include <cstdint>
-
 #include "mozilla/ProcessType.h"
 
 #if defined(XP_WIN)
@@ -24,10 +22,6 @@ typedef HANDLE HREPORT;
 #    undef WerReportSubmit
 #  endif  // defined(__MINGW32__) || defined(__MINGW64__)
 #  include <stdlib.h>
-
-#  include "mozilla/Unused.h"
-
-using mozilla::Unused;
 #endif
 
 namespace CrashReporter {
@@ -97,7 +91,7 @@ void UnregisterRuntimeExceptionModule() {
 #ifdef XP_WIN
   // If sModulePath is set then we have registered the module.
   if (*sModulePath) {
-    Unused << ::WerUnregisterRuntimeExceptionModule(
+    (void)::WerUnregisterRuntimeExceptionModule(
         sModulePath, reinterpret_cast<PVOID>(mozilla::GetGeckoProcessType()));
     *sModulePath = L'\0';
   }

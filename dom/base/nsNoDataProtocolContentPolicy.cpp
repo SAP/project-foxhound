@@ -11,11 +11,12 @@
  */
 
 #include "nsNoDataProtocolContentPolicy.h"
-#include "nsString.h"
+
+#include "nsContentUtils.h"
 #include "nsIProtocolHandler.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsContentUtils.h"
+#include "nsString.h"
 
 NS_IMPL_ISUPPORTS(nsNoDataProtocolContentPolicy, nsIContentPolicy)
 

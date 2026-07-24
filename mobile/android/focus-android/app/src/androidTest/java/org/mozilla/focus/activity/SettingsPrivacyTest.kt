@@ -72,8 +72,8 @@ class SettingsPrivacyTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyAllCookiesBlockedTest() {
-        val sameSiteCookiesUrl = getStorageTestAsset(webServer, "same-site-cookies.html").url
-        val thirdPartyCookiesUrl = getStorageTestAsset(webServer, "cross-site-cookies.html").url
+        val sameSiteCookiesUrl = webServer.getStorageTestAsset("same-site-cookies.html").url
+        val thirdPartyCookiesUrl = webServer.getStorageTestAsset("cross-site-cookies.html").url
 
         homeScreen {
         }.openMainMenu {
@@ -98,8 +98,8 @@ class SettingsPrivacyTest : TestSetup() {
     @SmokeTest
     @Test
     fun verify3rdPartyCookiesBlockedTest() {
-        val sameSiteCookiesUrl = getStorageTestAsset(webServer, "same-site-cookies.html").url
-        val thirdPartyCookiesURL = getStorageTestAsset(webServer, "cross-site-cookies.html").url
+        val sameSiteCookiesUrl = webServer.getStorageTestAsset("same-site-cookies.html").url
+        val thirdPartyCookiesURL = webServer.getStorageTestAsset("cross-site-cookies.html").url
 
         homeScreen {
         }.openMainMenu {
@@ -123,8 +123,8 @@ class SettingsPrivacyTest : TestSetup() {
     @Ignore("Failing on Beta, see https://bugzilla.mozilla.org/show_bug.cgi?id=1906806")
     @Test
     fun verifyCrossSiteCookiesBlockedTest() {
-        val sameSiteCookiesUrl = getStorageTestAsset(webServer, "same-site-cookies.html").url
-        val crossSiteCookiesURL = getStorageTestAsset(webServer, "cross-site-cookies.html").url
+        val sameSiteCookiesUrl = webServer.getStorageTestAsset("same-site-cookies.html").url
+        val crossSiteCookiesURL = webServer.getStorageTestAsset("cross-site-cookies.html").url
 
         searchScreen {
         }.loadPage(crossSiteCookiesURL) {

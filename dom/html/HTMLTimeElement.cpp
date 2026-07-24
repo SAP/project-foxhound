@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLTimeElement.h"
+
 #include "mozilla/dom/HTMLTimeElementBinding.h"
 #include "nsGenericHTMLElement.h"
-#include "nsVariant.h"
 #include "nsGkAtoms.h"
+#include "nsVariant.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Time)
 

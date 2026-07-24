@@ -7,9 +7,10 @@
 #ifndef mozilla_dom_MathMLElement_h_
 #define mozilla_dom_MathMLElement_h_
 
-#include "mozilla/Attributes.h"
-#include "nsStyledElement.h"
 #include "Link.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
+#include "nsStyledElement.h"
 
 class nsCSSValue;
 
@@ -44,16 +45,19 @@ class MathMLElement final : public MathMLElementBase, public Link {
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
-  enum {
-    PARSE_ALLOW_NEGATIVE = 0x02,
-    PARSE_SUPPRESS_WARNINGS = 0x04,
+  enum class ParseFlag : uint8_t {
+    AllowNegative,
+    SuppressWarnings,
   };
+  using ParseFlags = mozilla::EnumSet<ParseFlag>;
   static bool ParseNamedSpaceValue(const nsString& aString,
-                                   nsCSSValue& aCSSValue, uint32_t aFlags,
-                                   const Document& aDocument);
+                                   nsCSSValue& aCSSValue,
+                                   const Document& aDocument,
+                                   ParseFlags aFlags = ParseFlags());
 
   static bool ParseNumericValue(const nsString& aString, nsCSSValue& aCSSValue,
-                                uint32_t aFlags, Document* aDocument);
+                                Document* aDocument,
+                                ParseFlags aFlags = ParseFlags());
 
   static void MapGlobalMathMLAttributesInto(
       mozilla::MappedDeclarationsBuilder&);

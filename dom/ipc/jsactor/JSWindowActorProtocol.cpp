@@ -5,19 +5,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/JSWindowActorProtocol.h"
+
+#include "JSActorProtocolUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/JSActorBinding.h"
 #include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/JSWindowActorBinding.h"
 #include "mozilla/dom/JSWindowActorChild.h"
-#include "mozilla/dom/JSWindowActorProtocol.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/WindowGlobalChild.h"
-
 #include "mozilla/extensions/MatchPattern.h"
 #include "nsContentUtils.h"
-#include "JSActorProtocolUtils.h"
 
 namespace mozilla::dom {
 
@@ -309,16 +309,6 @@ extensions::MatchPatternSetCore* JSWindowActorProtocol::GetURIMatcher() {
   return mURIMatcher;
 }
 
-bool JSWindowActorProtocol::RemoteTypePrefixMatches(
-    const nsDependentCSubstring& aRemoteType) {
-  for (auto& remoteType : mRemoteTypes) {
-    if (StringBeginsWith(aRemoteType, remoteType)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool JSWindowActorProtocol::MessageManagerGroupMatches(
     BrowsingContext* aBrowsingContext) {
   BrowsingContext* top = aBrowsingContext->Top();
@@ -349,8 +339,7 @@ bool JSWindowActorProtocol::Matches(BrowsingContext* aBrowsingContext,
     return false;
   }
 
-  if (!mRemoteTypes.IsEmpty() &&
-      !RemoteTypePrefixMatches(RemoteTypePrefix(aRemoteType))) {
+  if (!RemoteTypePrefixMatches(aRemoteType)) {
     aRv.ThrowNotSupportedError(
         nsPrintfCString("Window protocol '%s' doesn't match remote type '%s'",
                         mName.get(), PromiseFlatCString(aRemoteType).get()));

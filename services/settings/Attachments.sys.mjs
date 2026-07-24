@@ -67,7 +67,7 @@ class LazyRecordAndBuffer {
 
   /**
    * @returns {object} The attachment record, if found. null otherwise.
-   **/
+   */
   async getRecord() {
     try {
       return (await this._ensureRecordAndLazyBuffer()).record;
@@ -79,7 +79,7 @@ class LazyRecordAndBuffer {
   /**
    * @param {object} requestedRecord An attachment record
    * @returns {boolean} Whether the requested record matches this record.
-   **/
+   */
   async isMatchingRequestedRecord(requestedRecord) {
     const record = await this.getRecord();
     return (
@@ -94,10 +94,10 @@ class LazyRecordAndBuffer {
    * Generate the return value for the "download" method.
    *
    * @throws {*} if the record or attachment content is unavailable.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   buffer: ArrayBuffer with the file content.
    *   record: Record associated with the bytes.
-   **/
+   */
   async getResult() {
     const { record, readBuffer } = await this._ensureRecordAndLazyBuffer();
     if (!this.bufferPromise) {
@@ -131,7 +131,7 @@ export class Downloader {
   }
 
   /**
-   * @returns {Object} An object with async "get", "set" and "delete" methods.
+   * @returns {object} An object with async "get", "set" and "delete" methods.
    *                   The keys are strings, the values may be any object that
    *                   can be stored in IndexedDB (including Blob).
    */
@@ -144,27 +144,27 @@ export class Downloader {
    * If the requested record cannot be downloaded and fallbacks are enabled, the
    * returned attachment may have a different record than the input record.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
+   * @param {object} record A Remote Settings entry with attachment.
    *                        If omitted, the attachmentId option must be set.
-   * @param {Object} options Some download options.
-   * @param {Number} [options.retries] Number of times download should be retried (default: `3`)
-   * @param {Boolean} [options.checkHash] Check content integrity (default: `true`)
+   * @param {object} options Some download options.
+   * @param {number} [options.retries] Number of times download should be retried (default: `3`)
+   * @param {boolean} [options.checkHash] Check content integrity (default: `true`)
    * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      caching and accessing the attachment.
    *                                      (default: `record.id`)
-   * @param {Boolean} [options.cacheResult] if the client should cache a copy of the attachment.
+   * @param {boolean} [options.cacheResult] if the client should cache a copy of the attachment.
    *                                          (default: `true`)
-   * @param {Boolean} [options.fallbackToCache] Return the cached attachment when the
+   * @param {boolean} [options.fallbackToCache] Return the cached attachment when the
    *                                          input record cannot be fetched.
    *                                          (default: `false`)
-   * @param {Boolean} [options.fallbackToDump] Use the remote settings dump as a
+   * @param {boolean} [options.fallbackToDump] Use the remote settings dump as a
    *                                         potential source of the attachment.
    *                                         (default: `false`)
    * @throws {Downloader.DownloadError} if the file could not be fetched.
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @throws {Downloader.ServerInfoError} if the server response is not valid.
    * @throws {NetworkError} if fetching the server infos and fetching the attachment fails.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   `buffer` `ArrayBuffer`: the file content.
    *   `record` `Object`: record associated with the attachment.
    *   `_source` `String`: identifies the source of the result. Used for testing.
@@ -177,8 +177,8 @@ export class Downloader {
    * Downloads an attachment bundle for a given collection, if one exists. Fills in the cache
    * for all attachments provided by the bundle.
    *
-   * @param {Boolean} force Set to true to force a sync even when local data exists
-   * @returns {Boolean} True if all attachments were processed successfully, false if failed, null if skipped.
+   * @param {boolean} force Set to true to force a sync even when local data exists
+   * @returns {boolean} True if all attachments were processed successfully, false if failed, null if skipped.
    */
   async cacheAll(force = false) {
     // If we're offline, don't try
@@ -300,11 +300,11 @@ export class Downloader {
    * returned attachment may have a different record, e.g. packaged in binary
    * resources or one that is outdated.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
+   * @param {object} record A Remote Settings entry with attachment.
    *                        If omitted, the attachmentId option must be set.
-   * @param {Object} options Some download options.
-   * @param {Number} [options.retries] Number of times download should be retried (default: `3`)
-   * @param {Boolean} [options.checkHash] Check content integrity (default: `true`)
+   * @param {object} options Some download options.
+   * @param {number} [options.retries] Number of times download should be retried (default: `3`)
+   * @param {boolean} [options.checkHash] Check content integrity (default: `true`)
    * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      caching and accessing the attachment.
    *                                      (default: `record.id`)
@@ -312,7 +312,7 @@ export class Downloader {
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @throws {Downloader.ServerInfoError} if the server response is not valid.
    * @throws {NetworkError} if fetching the server infos and fetching the attachment fails.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   `buffer` `ArrayBuffer`: the file content.
    *   `record` `Object`: record associated with the attachment.
    *   `_source` `String`: identifies the source of the result. Used for testing.
@@ -480,7 +480,7 @@ export class Downloader {
    * No-op if the attachment does not exist.
    *
    * @param record A Remote Settings entry with attachment.
-   * @param {Object} [options] Some options.
+   * @param {object} [options] Some options.
    * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      accessing and deleting the attachment.
    *                                      (default: `record.id`)
@@ -500,7 +500,7 @@ export class Downloader {
   /**
    * Clear the cache from obsolete downloaded attachments.
    *
-   * @param {Array<String>} excludeIds List of attachments IDs to exclude from pruning.
+   * @param {Array<string>} excludeIds List of attachments IDs to exclude from pruning.
    */
   async prune(excludeIds) {
     return this.cacheImpl.prune(excludeIds);
@@ -508,10 +508,10 @@ export class Downloader {
   /**
    * Download the record attachment and return its content as bytes.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
-   * @param {Object} options Some download options.
-   * @param {Number} options.retries Number of times download should be retried (default: `3`)
-   * @param {Boolean} options.checkHash Check content integrity (default: `true`)
+   * @param {object} record A Remote Settings entry with attachment.
+   * @param {object} options Some download options.
+   * @param {number} options.retries Number of times download should be retried (default: `3`)
+   * @param {boolean} options.checkHash Check content integrity (default: `true`)
    * @throws {Downloader.DownloadError} if the file could not be fetched.
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @returns {ArrayBuffer} the file content.

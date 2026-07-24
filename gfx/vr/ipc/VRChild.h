@@ -38,7 +38,7 @@ class VRChild final : public PVRChild,
   static void Destroy(RefPtr<VRChild>&& aChild);
   void Init();
   bool EnsureVRReady();
-  virtual void OnVarChanged(const GfxVarUpdate& aVar) override;
+  void OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) override;
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
                                const bool& aAnonymize,
                                const bool& aMinimizeMemoryUsage,

@@ -22,28 +22,34 @@ const subtests = [
   {"file": "helper_bug1960053_scroll_snap_align_start.html",
    "prefs": [["apz.test.mac.synth_wheel_input", true]]},
   {"file": "helper_scroll_snap_resnap_after_async_scroll.html",
-    // Specify a small `layout.css.scroll-behavior.spring-constant` value to
+    // Specify a small `layout.css.scroll-snap.spring-constant` value to
     // keep the smooth scroll animation running long enough so that we can
     // trigger a reflow during the animation.
-   "prefs": [["layout.css.scroll-behavior.spring-constant", 10],
+    // FIXME: This test uses promiseMoveMouseAndScrollWheelOver(), so even
+    //        with layout.css.scroll-behavior.same-physics-as-user-input=false,
+    //        layout.css.scroll-snap.* prefs have no impact on scroll
+    //        animation speed.
+   "prefs": [["layout.css.scroll-snap.spring-constant", 10],
+             ["layout.css.scroll-behavior.same-physics-as-user-input", false],
              ["apz.test.mac.synth_wheel_input", true]]},
   {"file": "helper_scroll_snap_resnap_after_async_scroll.html",
     "prefs": [["general.smoothScroll", false],
              ["apz.test.mac.synth_wheel_input", true]]},
   {"file": "helper_scroll_snap_resnap_after_async_scrollBy.html",
     // Same as above helper_scroll_snap_resnap_after_async_scroll.html.
-   "prefs": [["layout.css.scroll-behavior.spring-constant", 10]]},
+   "prefs": [["layout.css.scroll-snap.spring-constant", 10],
+             ["layout.css.scroll-behavior.same-physics-as-user-input", false]]},
   {"file": "helper_scroll_snap_not_resnap_during_panning.html",
     // Specify a strong spring constant to make scroll snap animation be
     // effective in a short span of time.
-   "prefs": [["layout.css.scroll-behavior.spring-constant", 1000]]},
+   "prefs": [["layout.css.scroll-snap.spring-constant", 1000]]},
   {"file": "helper_scroll_snap_not_resnap_during_scrollbar_dragging.html",
     // Same as above helper_scroll_snap_not_resnap_during_scrollbar_dragging.html.
-   "prefs": [["layout.css.scroll-behavior.spring-constant", 1000]]},
+   "prefs": [["layout.css.scroll-snap.spring-constant", 1000]]},
   {"file": "helper_bug1780701.html"},
   {"file": "helper_bug1783936.html",
              // Shorten the scroll snap animation duration.
-   "prefs": [["layout.css.scroll-behavior.spring-constant", 1000],
+   "prefs": [["layout.css.scroll-snap.spring-constant", 1000],
              // Avoid fling at the end of pan.
              ["apz.fling_min_velocity_threshold", "10000"],
              // This test needs mSimilateMomentum flag on headless mode.
@@ -56,6 +62,7 @@ const subtests = [
    "prefs": [["apz.test.mac.synth_wheel_input", true]]},
   {"file": "helper_bug1934118.html",
    "prefs": [["apz.test.mac.synth_wheel_input", true]]},
+  {"file": "helper_mousewheel_scroll_proximity_snap_type.html"}
 ];
 
 if (isApzEnabled()) {

@@ -4,10 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Utility.h"
+
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebGPUBinding.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 
 namespace mozilla::webgpu {
 
@@ -613,6 +614,26 @@ ffi::WGPUDepthStencilState ConvertDepthStencilState(
   desc.bias.slope_scale = aDesc.mDepthBiasSlopeScale;
   desc.bias.clamp = aDesc.mDepthBiasClamp;
   return desc;
+}
+
+ffi::WGPUPredefinedColorSpace ConvertPredefinedColorSpace(
+    const dom::PredefinedColorSpace& aColorSpace) {
+  ffi::WGPUPredefinedColorSpace result = ffi::WGPUPredefinedColorSpace_Sentinel;
+  switch (aColorSpace) {
+    case dom::PredefinedColorSpace::Srgb:
+      result = ffi::WGPUPredefinedColorSpace_Srgb;
+      break;
+    case dom::PredefinedColorSpace::Display_p3:
+      result = ffi::WGPUPredefinedColorSpace_DisplayP3;
+      break;
+  }
+
+  // Clang will check for us that the switch above is exhaustive,
+  // but not if we add a 'default' case. So, check this here.
+  MOZ_RELEASE_ASSERT(result != ffi::WGPUPredefinedColorSpace_Sentinel,
+                     "unexpected predefined color space enum");
+
+  return result;
 }
 
 // Extract a list of dynamic offsets from a larger JS-supplied buffer.

@@ -18,7 +18,7 @@ import { Utils } from "resource://services-sync/util.sys.mjs";
 
 import { Async } from "resource://services-common/async.sys.mjs";
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 /**
  * The base class for all Sync basic storage objects (BSOs). This is the format
@@ -27,8 +27,8 @@ import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
  * class retains the old name.
  *
  * @class
- * @param {String} collection The collection name for this BSO.
- * @param {String} id         The ID of this BSO.
+ * @param {string} collection The collection name for this BSO.
+ * @param {string} id         The ID of this BSO.
  */
 export function WBORecord(collection, id) {
   this.data = {};
@@ -73,12 +73,19 @@ WBORecord.prototype = {
   // Take a base URI string, with trailing slash, and return the URI of this
   // WBO based on collection and ID.
   uri(base) {
-    if (this.collection && this.id) {
-      let url = CommonUtils.makeURI(base + this.collection + "/" + this.id);
-      url.QueryInterface(Ci.nsIURL);
-      return url;
+    if (!this.collection || !this.id) {
+      return null;
     }
-    return null;
+    let url = CommonUtils.makeURI(base + this.collection + "/" + this.id);
+
+    // Bug 1985401: Prevent QueryInterface error when makeURI returns null
+    if (!url) {
+      throw new Error(
+        `WBORecord.uri(): makeURI returned null for base='${base}', collection='${this.collection}', id='${this.id}'`
+      );
+    }
+    url.QueryInterface(Ci.nsIURL);
+    return url;
   },
 
   deserialize: function deserialize(json) {
@@ -146,8 +153,8 @@ Utils.deferGetSet(WBORecord, "data", [
  *
  * @class
  * @template Cleartext
- * @param    {String} collection The collection name for this BSO.
- * @param    {String} id         The ID of this BSO.
+ * @param    {string} collection The collection name for this BSO.
+ * @param    {string} id         The ID of this BSO.
  */
 export function RawCryptoWrapper(collection, id) {
   // Setting properties before calling the superclass constructor isn't allowed
@@ -180,7 +187,7 @@ RawCryptoWrapper.prototype = {
    * in a BSO payload. This is called before uploading the record to the server.
    *
    * @param   {Cleartext} outgoingCleartext The cleartext to upload.
-   * @returns {String}                      The serialized cleartext.
+   * @returns {string}                      The serialized cleartext.
    */
   transformBeforeEncrypt() {
     throw new TypeError("Override to stringify outgoing records");
@@ -191,7 +198,7 @@ RawCryptoWrapper.prototype = {
    * `Cleartext` type. This is called when fetching the record from the
    * server.
    *
-   * @param   {String} incomingCleartext The decrypted cleartext string.
+   * @param   {string} incomingCleartext The decrypted cleartext string.
    * @returns {Cleartext}                The parsed cleartext.
    */
   transformAfterDecrypt() {
@@ -273,8 +280,8 @@ Utils.deferGetSet(RawCryptoWrapper, "payload", ["ciphertext", "IV", "hmac"]);
  * should subclass this class to describe their own record types.
  *
  * @class
- * @param {String} collection The collection name for this BSO.
- * @param {String} id         The ID of this BSO.
+ * @param {string} collection The collection name for this BSO.
+ * @param {string} id         The ID of this BSO.
  */
 export function CryptoWrapper(collection, id) {
   RawCryptoWrapper.call(this, collection, id);
@@ -747,6 +754,15 @@ export function Collection(uri, recordObj, service) {
 
   Resource.call(this, uri);
 
+  // Bug 1985401: Log when Resource constructor results in null uri
+  // We don't throw here to preserve existing functionality
+  if (!this.uri) {
+    this._log.error(
+      `Collection constructor: Resource.call() resulted in null uri`,
+      { originalUri: uri, recordObj: recordObj?.name || "unknown" }
+    );
+  }
+
   // This is a bit hacky, but gets the job done.
   let res = service.resource(uri);
   this.authenticator = res.authenticator;
@@ -772,6 +788,10 @@ Collection.prototype = {
   _logName: "Sync.Collection",
 
   _rebuildURL: function Coll__rebuildURL() {
+    // Bug 1985401: Prevent QueryInterface usage on null uri
+    if (!this.uri) {
+      throw new Error("_rebuildURL called with null uri");
+    }
     // XXX should consider what happens if it's not a URL...
     this.uri.QueryInterface(Ci.nsIURL);
 

@@ -11,37 +11,62 @@ https_first_disabled = true
 
 ["browser_referrer_middle_click.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking"] # Bug 1972455
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1972455
+]
 
 
 ["browser_referrer_middle_click_in_container.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking"] # Bug 1972455
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1972455
+]
 
 ["browser_referrer_open_link_in_container_tab.js"]
-skip-if = ["os == 'linux'"] # Bug 1144816
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1144816
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1144816
+]
 
 ["browser_referrer_open_link_in_container_tab2.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux'"] # Bug 1144816
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1144816
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1144816
+]
 
 ["browser_referrer_open_link_in_container_tab3.js"]
-skip-if = ["os == 'linux'"] # Bug 1144816
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1144816
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1144816
+]
 
 ["browser_referrer_open_link_in_private.js"]
-skip-if = ["os == 'linux'"] # Bug 1145199
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1145199
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1145199
+]
 
 ["browser_referrer_open_link_in_tab.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux'"] # Bug 1144816
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1144816
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1144816
+]
 
 ["browser_referrer_open_link_in_window.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux'"] # Bug 1145199
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1145199
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1145199
+]
 
 ["browser_referrer_open_link_in_window_in_container.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux'"] # Bug 1145199
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1145199
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1145199
+]
 
 ["browser_referrer_simple_click.js"]
 https_first_disabled = true

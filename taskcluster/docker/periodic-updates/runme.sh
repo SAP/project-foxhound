@@ -57,6 +57,9 @@ then
   PARAMS="${PARAMS} -d"
 fi
 
+if [ "${BRANCH}" = try ]; then
+  PARAMS="${PARAMS} --skip-push"
+fi
 
 export ARTIFACTS_DIR="/home/worker/artifacts"
 mkdir -p "$ARTIFACTS_DIR"

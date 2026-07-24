@@ -24,7 +24,7 @@ function run_test() {
   runRawTests(tests, testComplete(srv));
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

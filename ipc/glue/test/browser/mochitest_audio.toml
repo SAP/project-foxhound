@@ -13,7 +13,11 @@ prefs = [
 ]
 
 ["test_android_audio.html"]
-run-if = ["os == 'android' && !isolated_process"]
+run-if = [
+  "os == 'android' && !isolated_process",
+]
 
 ["test_utility_audio.html"]
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]

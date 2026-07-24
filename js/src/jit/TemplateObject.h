@@ -26,7 +26,7 @@ class TemplateObject {
 
   inline gc::AllocKind getAllocKind() const;
 
-  // The following methods rely on the object's group->clasp. This is safe
+  // The following methods rely on the object's shape->base->clasp. This is safe
   // to read off-thread for template objects.
   inline bool isNativeObject() const;
   inline const TemplateNativeObject& asTemplateNativeObject() const;

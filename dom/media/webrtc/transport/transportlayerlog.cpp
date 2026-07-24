@@ -6,8 +6,9 @@
 
 // Original author: ekr@rtfm.com
 
-#include "logging.h"
 #include "transportlayerlog.h"
+
+#include "logging.h"
 
 namespace mozilla {
 

@@ -34,11 +34,11 @@
 #ifndef GMP_VIDEO_FRAME_I420_h_
 #define GMP_VIDEO_FRAME_I420_h_
 
+#include <stdint.h>
+
 #include "gmp-errors.h"
 #include "gmp-video-frame.h"
 #include "gmp-video-plane.h"
-
-#include <stdint.h>
 
 enum GMPPlaneType {
   kGMPYPlane = 0,

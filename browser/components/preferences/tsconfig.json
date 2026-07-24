@@ -1,0 +1,20 @@
+{
+  "extends": "../../../tools/@types/tsconfig.json",
+  "include": [
+    "**/*.js",
+    "**/*.mjs",
+    "../../../toolkit/content/preferencesBindings.js",
+    "../../../toolkit/content/widgets/**/*.mjs"
+  ],
+  "exclude": ["tests", "../../../toolkit/content/widgets/vendor"],
+  "compilerOptions": {
+    "noImplicitAny": true,
+    "checkJs": true,
+    "plugins": [
+      {
+        "transform": "../../../tools/ts/plugins/checkRootOnly.js",
+        "transformProgram": true
+      }
+    ]
+  }
+}

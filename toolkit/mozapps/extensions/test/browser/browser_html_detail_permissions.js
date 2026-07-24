@@ -22,7 +22,9 @@ Services.prefs.setBoolPref(
 const addonsBundle = new Localization(["toolkit/about/aboutAddons.ftl"], true);
 
 const assertVisibleSections = async (permsSection, expectedHeaders) => {
-  let headers = Array.from(permsSection.querySelectorAll(".permission-header"))
+  let headers = Array.from(
+    permsSection.querySelectorAll(".permission-subsection")
+  )
     // Filter out hidden sections.
     .filter(el => !el.parentNode.hidden)
     .map(el => el.textContent);
@@ -33,6 +35,14 @@ const assertVisibleSections = async (permsSection, expectedHeaders) => {
     ),
     "Got expected headers"
   );
+};
+
+const verifyLearnMoreLink = (permsSection, supportUrl) => {
+  let link = permsSection.querySelector(".addon-permissions-footer").lastChild;
+  let rootUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
+  let url = rootUrl + supportUrl;
+  is(link.href, url, "The URL is set");
+  is(link.getAttribute("target"), "_blank", "The link opens in a new tab");
 };
 
 async function background() {
@@ -248,7 +258,9 @@ async function runTest(options) {
   let win = view || (await loadInitialView("extension"));
 
   let card = getAddonCard(win, addonId);
-  let permsSection = card.querySelector("addon-permissions-list");
+  let permsSection = card.querySelector(
+    "addon-permissions-list .addon-permissions-list-wrapper"
+  );
   if (!permsSection) {
     ok(!card.hasAttribute("expanded"), "The list card is not expanded");
     let loaded = waitForViewLoad(win);
@@ -267,34 +279,42 @@ async function runTest(options) {
   permsBtn.click();
   await permsShown;
 
-  permsSection = card.querySelector("addon-permissions-list");
-
-  let rows = Array.from(permsSection.querySelectorAll(".addon-detail-row"));
-  let permission_rows = Array.from(
-    permsSection.querySelectorAll(".permission-info")
+  permsSection = card.querySelector(
+    "addon-permissions-list .addon-permissions-list-wrapper"
   );
 
-  // Last row is the learn more link.
+  // The footer contains the learn more link.
   info("Check learn more link");
-  let link = rows[rows.length - 1].firstElementChild;
-  let rootUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
-  let url = rootUrl + "extension-permissions";
-  is(link.href, url, "The URL is set");
-  is(link.getAttribute("target"), "_blank", "The link opens in a new tab");
+  verifyLearnMoreLink(permsSection, "extension-permissions");
 
-  // We should have one more row (learn more) that the combined permissions,
-  // or if no permissions, 2 rows.
-  let num_permissions = permissions.length + optional_permissions.length;
+  let requiredRows = Array.from(
+    permsSection.querySelectorAll(
+      ".addon-permissions-required .permission-info"
+    )
+  );
   is(
-    permission_rows.length,
-    num_permissions,
-    "correct number of details rows are present"
+    permissions.length,
+    requiredRows.length,
+    "correct number of required details rows are present"
+  );
+
+  let optionalRows = Array.from(
+    permsSection.querySelectorAll(
+      ".addon-permissions-optional  .permission-info"
+    )
+  );
+  is(
+    optional_permissions.length,
+    optionalRows.length,
+    "correct number of optional details rows are present"
   );
 
   info("Check displayed permissions");
-  if (!num_permissions) {
+  if (!permissions.length && !optional_permissions.length) {
     is(
-      win.document.l10n.getAttributes(rows[0]).id,
+      win.document.l10n.getAttributes(
+        permsSection.querySelector(".addon-permissions-empty")
+      ).id,
       "addon-permissions-empty2",
       "There's a message when no permissions are shown"
     );
@@ -304,23 +324,28 @@ async function runTest(options) {
   // data collection sections when it is turned off).
   let expectedHeaders = [];
   if (permissions.length) {
-    expectedHeaders.push("addon-permissions-required");
+    expectedHeaders.push("addon-permissions-required-label");
   }
   if (optional_permissions.length) {
-    expectedHeaders.push("addon-permissions-optional");
+    expectedHeaders.push("addon-permissions-optional-label");
   }
   await assertVisibleSections(permsSection, expectedHeaders);
 
   if (permissions.length) {
     for (let name of permissions) {
       // Check the permission-info class to make sure it's for a permission.
-      let row = permission_rows.shift();
+      let row = requiredRows.shift();
       ok(
         row.classList.contains("permission-info"),
         `required permission row for ${name}`
       );
     }
   }
+
+  ok(
+    permsSection.querySelector(".permission-subheader").hidden,
+    "The subheader is always hidden for permissions."
+  );
 
   let addon = await AddonManager.getAddonByID(addonId);
   info(`addon ${addon.id} is ${addon.userDisabled ? "disabled" : "enabled"}`);
@@ -457,7 +482,7 @@ async function runTest(options) {
 
       // Check the row is a permission row with the correct key on the toggle
       // control.
-      let row = permission_rows.shift();
+      let row = optionalRows.shift();
       let toggle = row.querySelector("moz-toggle");
       let label = toggle.labelEl;
 
@@ -498,15 +523,7 @@ async function runTest(options) {
   }
 }
 
-async function testPermissionsView({
-  manifestV3enabled,
-  manifest_version,
-  expectGranted,
-}) {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", manifestV3enabled]],
-  });
-
+async function testPermissionsView({ manifest_version, expectGranted }) {
   // pre-set a permission prior to starting extensions.
   await ExtensionPermissions.add("addon4@mochi.test", {
     permissions: ["tabs"],
@@ -544,7 +561,7 @@ async function testPermissionsView({
   info("Check add-on with only one optional origin.");
   await runTest({
     extension: extensions["addon2@mochi.test"],
-    optional_permissions: manifestV3enabled ? ["http://mochi.test/*"] : [],
+    optional_permissions: ["http://mochi.test/*"],
     optional_strings: {
       "http://mochi.test/*": "Access your data for http://mochi.test",
     },
@@ -571,7 +588,7 @@ async function testPermissionsView({
     optional_permissions: [
       "webNavigation",
       "<all_urls>",
-      ...(manifestV3enabled ? ["https://example.com/*"] : []),
+      "https://example.com/*",
     ],
     optional_enabled: ["https://example.com/*"],
     optional_strings: {
@@ -595,10 +612,7 @@ async function testPermissionsView({
   info("Check privileged add-on with non-web origin permissions");
   await runTest({
     extension: extensions["priv6@mochi.test"],
-    optional_permissions: [
-      "<all_urls>",
-      ...(manifestV3enabled ? ["*://*.mozilla.com/*"] : []),
-    ],
+    optional_permissions: ["<all_urls>", "*://*.mozilla.com/*"],
     optional_overlapping: ["<all_urls>", "*://*/*"],
     optional_strings: {
       "*://*.mozilla.com/*":
@@ -628,12 +642,8 @@ async function testPermissionsView({
   await SpecialPowers.popPrefEnv();
 }
 
-add_task(async function testPermissionsView_MV2_manifestV3disabled() {
-  await testPermissionsView({ manifestV3enabled: false, manifest_version: 2 });
-});
-
-add_task(async function testPermissionsView_MV2_manifestV3enabled() {
-  await testPermissionsView({ manifestV3enabled: true, manifest_version: 2 });
+add_task(async function testPermissionsView_MV2() {
+  await testPermissionsView({ manifest_version: 2 });
 });
 
 add_task(async function testPermissionsView_MV3_noInstallPrompt() {
@@ -641,7 +651,6 @@ add_task(async function testPermissionsView_MV3_noInstallPrompt() {
     set: [["extensions.originControls.grantByDefault", false]],
   });
   await testPermissionsView({
-    manifestV3enabled: true,
     manifest_version: 3,
     expectGranted: false,
   });
@@ -653,7 +662,6 @@ add_task(async function testPermissionsView_MV3() {
     set: [["extensions.originControls.grantByDefault", true]],
   });
   await testPermissionsView({
-    manifestV3enabled: true,
     manifest_version: 3,
     expectGranted: true,
   });
@@ -1023,14 +1031,23 @@ add_task(async function test_data_collection() {
       title: "no permissions",
       data_collection_permissions: {},
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        await assertVisibleSections(permsSection, []);
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
 
-        let permission_rows = permsSection.querySelectorAll(".permission-info");
-        is(permission_rows.length, 0, "Expected 0 permission row");
+        verifyLearnMoreLink(permsSection, "extension-permissions");
 
-        let empty_row = permsSection.querySelector(".addon-permissions-empty");
-        ok(!empty_row.hidden, "Expected empty row to be visible");
+        const getFluentId = el => el?.ownerDocument.l10n.getAttributes(el).id;
+        is(
+          getFluentId(permsSection?.querySelector(".permission-header")),
+          "addon-permissions-heading",
+          "The permissions list section exist"
+        );
+        is(
+          dataPermsSection,
+          undefined,
+          "The data permissions list should not exist"
+        );
       },
     },
     {
@@ -1039,17 +1056,44 @@ add_task(async function test_data_collection() {
         required: ["healthInfo", "locationInfo"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        await assertVisibleSections(permsSection, [
-          "addon-permissions-required-data-collection",
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
+        let emptySection = permsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(!emptySection.hidden, "Expected empty section to be shown.");
+
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-required-label",
         ]);
 
-        let permission_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
-        );
-        is(permission_rows.length, 1, "Expected 1 permission row");
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
         is(
-          permission_rows[0].textContent,
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
+        );
+        ok(!subheader.hidden, "The subheader is shown.");
+
+        let requiredRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
+        );
+        is(requiredRows.length, 1, "Expected 1 required permissions");
+
+        let optionalRows = Array.from(
+          dataPermsSection.querySelectorAll(
+            ".addon-permissions-optional  .permission-info"
+          )
+        );
+        is(optionalRows.length, 0, "Expected 0 optional permissions");
+
+        is(
+          requiredRows[0].textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some",
             {
@@ -1059,8 +1103,10 @@ add_task(async function test_data_collection() {
           "Expected localized permission string"
         );
 
-        let empty_row = permsSection.querySelector(".addon-permissions-empty");
-        ok(empty_row.hidden, "Expected empty row to be hidden");
+        let dataEmptySection = dataPermsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(dataEmptySection.hidden, "Expected empty data section to be hidden");
       },
     },
     {
@@ -1069,23 +1115,22 @@ add_task(async function test_data_collection() {
         required: ["none"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        await assertVisibleSections(permsSection, [
-          "addon-permissions-required-data-collection",
-        ]);
-
-        let permission_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
-        );
-        is(permission_rows.length, 1, "Expected 1 permission row");
-        is(
-          permission_rows[0].textContent,
-          PERMISSION_L10N.formatValueSync("webext-perms-description-data-none"),
-          "Expected localized permission string"
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
         );
 
-        let empty_row = permsSection.querySelector(".addon-permissions-empty");
-        ok(empty_row.hidden, "Expected empty row to be hidden");
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
+        let emptySection = permsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(!emptySection.hidden, "Expected empty section to be shown.");
+
+        let dataEmptySection = dataPermsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(!dataEmptySection.hidden, "Expected empty data section to be shown");
       },
     },
     {
@@ -1094,17 +1139,43 @@ add_task(async function test_data_collection() {
         optional: ["technicalAndInteraction"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        await assertVisibleSections(permsSection, [
-          "addon-permissions-optional-data-collection",
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
+        let emptySection = permsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(!emptySection.hidden, "Expected empty section to be shown.");
+
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-optional-label",
         ]);
 
-        let permission_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-optional .permission-info"
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
+        is(
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
         );
-        is(permission_rows.length, 1, "Expected 1 permission row");
+        ok(!subheader.hidden, "The subheader is shown.");
 
-        let toggle = permission_rows[0].querySelector("moz-toggle");
+        let requiredRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
+        );
+        is(requiredRows.length, 0, "Expected 0 required permissions");
+
+        let optionalRows = Array.from(
+          dataPermsSection.querySelectorAll(
+            ".addon-permissions-optional  .permission-info"
+          )
+        );
+        is(optionalRows.length, 1, "Expected 1 optional permissions");
+
+        let toggle = optionalRows[0].querySelector("moz-toggle");
         ok(toggle, "Expected a toggle element");
         is(
           toggle.labelEl.textContent,
@@ -1114,8 +1185,10 @@ add_task(async function test_data_collection() {
           "Expected localized permission string"
         );
 
-        let empty_row = permsSection.querySelector(".addon-permissions-empty");
-        ok(empty_row.hidden, "Expected empty row to be hidden");
+        let dataEmptySection = dataPermsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(dataEmptySection.hidden, "Expected empty section to be hidden");
       },
     },
     {
@@ -1125,19 +1198,38 @@ add_task(async function test_data_collection() {
         optional: ["technicalAndInteraction"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        await assertVisibleSections(permsSection, [
-          "addon-permissions-required-data-collection",
-          "addon-permissions-optional-data-collection",
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
+        let emptySection = permsSection.querySelector(
+          ".addon-permissions-empty"
+        );
+        ok(!emptySection.hidden, "Expected empty section to be shown.");
+
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-required-label",
+          "addon-permissions-optional-label",
         ]);
 
-        // required data collection
-        let required_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
-        );
-        is(required_data_rows.length, 1, "Expected 1 permission row");
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
         is(
-          required_data_rows[0].textContent,
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
+        );
+        ok(!subheader.hidden, "The subheader is shown.");
+
+        // required data collection
+        let requiredRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
+        );
+        is(requiredRows.length, 1, "Expected 1 required permissions");
+        is(
+          requiredRows[0].textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some",
             {
@@ -1148,11 +1240,13 @@ add_task(async function test_data_collection() {
         );
 
         // optional data collection
-        let optional_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-optional .permission-info"
+        let optionalRows = Array.from(
+          dataPermsSection.querySelectorAll(
+            ".addon-permissions-optional  .permission-info"
+          )
         );
-        is(optional_data_rows.length, 1, "Expected 1 permission row");
-        let toggle = optional_data_rows[0].querySelector("moz-toggle");
+        is(optionalRows.length, 1, "Expected 1 optional permissions");
+        let toggle = optionalRows[0].querySelector("moz-toggle");
         ok(toggle, "Expected a toggle element");
         is(
           toggle.labelEl.textContent,
@@ -1163,8 +1257,13 @@ add_task(async function test_data_collection() {
         );
 
         // empty
-        let empty_row = permsSection.querySelector(".addon-permissions-empty");
-        ok(empty_row.hidden, "Expected empty row to be hidden");
+        is(
+          dataPermsSection
+            .querySelector(".addon-permissions-empty")
+            .getAttribute("data-l10n-id"),
+          null,
+          "There's no message when no permissions are shown"
+        );
       },
     },
     {
@@ -1175,41 +1274,45 @@ add_task(async function test_data_collection() {
         optional: ["locationInfo", "technicalAndInteraction"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
         await assertVisibleSections(permsSection, [
-          "addon-permissions-required",
-          "addon-permissions-required-data-collection",
-          "addon-permissions-optional-data-collection",
+          "addon-permissions-required-label",
+        ]);
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-optional-label",
         ]);
 
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
+        is(
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
+        );
+        ok(!subheader.hidden, "The subheader is shown.");
+
         // required permissions
-        let required_rows = permsSection.querySelectorAll(
+        let requiredRows = permsSection.querySelectorAll(
           ".addon-permissions-required .permission-info"
         );
-        is(required_rows.length, 1, "Expected 1 permission row");
+        is(requiredRows.length, 1, "Expected 1 permission row");
         is(
-          required_rows[0].textContent,
+          requiredRows[0].textContent,
           PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
           "Expected localized permission string"
         );
 
-        // required data collection
-        let required_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
-        );
-        is(required_data_rows.length, 1, "Expected 1 permission row");
-        is(
-          required_data_rows[0].textContent,
-          PERMISSION_L10N.formatValueSync("webext-perms-description-data-none"),
-          "Expected localized permission string"
-        );
-
         // optional data collection
-        let optional_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-optional .permission-info"
+        let optionalDataRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-optional .permission-info"
         );
-        is(optional_data_rows.length, 2, "Expected 2 permission rows");
-        let toggle = optional_data_rows[0].querySelector("moz-toggle");
+        is(optionalDataRows.length, 2, "Expected 2 optional permissions");
+        let toggle = optionalDataRows[0].querySelector("moz-toggle");
         is(
           toggle.labelEl.textContent,
           PERMISSION_L10N.formatValueSync(
@@ -1217,7 +1320,7 @@ add_task(async function test_data_collection() {
           ),
           "Expected localized permission string"
         );
-        toggle = optional_data_rows[1].querySelector("moz-toggle");
+        toggle = optionalDataRows[1].querySelector("moz-toggle");
         is(
           toggle.labelEl.textContent,
           PERMISSION_L10N.formatValueSync(
@@ -1234,30 +1337,46 @@ add_task(async function test_data_collection() {
         required: ["bookmarksInfo"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
         await assertVisibleSections(permsSection, [
-          "addon-permissions-required",
-          "addon-permissions-required-data-collection",
+          "addon-permissions-required-label",
+        ]);
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-required-label",
         ]);
 
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
+        is(
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
+        );
+        ok(!subheader.hidden, "The subheader is shown.");
+
         // required permissions
-        let required_rows = permsSection.querySelectorAll(
+        let requiredRows = permsSection.querySelectorAll(
           ".addon-permissions-required .permission-info"
         );
-        is(required_rows.length, 1, "Expected 1 permission row");
+        is(requiredRows.length, 1, "Expected 1 permission row");
         is(
-          required_rows[0].textContent,
+          requiredRows[0].textContent,
           PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
           "Expected localized permission string"
         );
 
         // required data collection
-        let required_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
+        let requiredDataRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
         );
-        is(required_data_rows.length, 1, "Expected 1 permission row");
+        is(requiredDataRows.length, 1, "Expected 1 permission row");
         is(
-          required_data_rows[0].textContent,
+          requiredDataRows[0].textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some",
             {
@@ -1277,31 +1396,47 @@ add_task(async function test_data_collection() {
         optional: ["locationInfo", "technicalAndInteraction"],
       },
       async verifyUI(card) {
-        let permsSection = card.querySelector("addon-permissions-list");
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        verifyLearnMoreLink(permsSection, "extension-permissions");
+        verifyLearnMoreLink(dataPermsSection, "extension-data-collection");
+
         await assertVisibleSections(permsSection, [
-          "addon-permissions-required",
-          "addon-permissions-optional",
-          "addon-permissions-required-data-collection",
-          "addon-permissions-optional-data-collection",
+          "addon-permissions-required-label",
+          "addon-permissions-optional-label",
+        ]);
+        await assertVisibleSections(dataPermsSection, [
+          "addon-permissions-required-label",
+          "addon-permissions-optional-label",
         ]);
 
+        let subheader = dataPermsSection.querySelector(".permission-subheader");
+        is(
+          dataPermsSection.ownerDocument.l10n.getAttributes(subheader).id,
+          "addon-data-collection-provided",
+          "The subheader is populated."
+        );
+        ok(!subheader.hidden, "The subheader is shown.");
+
         // required permissions
-        let required_rows = permsSection.querySelectorAll(
+        let requiredRows = permsSection.querySelectorAll(
           ".addon-permissions-required .permission-info"
         );
-        is(required_rows.length, 1, "Expected 1 permission row");
+        is(requiredRows.length, 1, "Expected 1 permission row");
         is(
-          required_rows[0].textContent,
+          requiredRows[0].textContent,
           PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
           "Expected localized permission string"
         );
 
         // optional permissions
-        let optional_rows = permsSection.querySelectorAll(
+        let optionalRows = permsSection.querySelectorAll(
           ".addon-permissions-optional .permission-info"
         );
-        is(optional_rows.length, 1, "Expected 1 permission row");
-        let toggle = optional_rows[0].querySelector("moz-toggle");
+        is(optionalRows.length, 1, "Expected 1 permission row");
+        let toggle = optionalRows[0].querySelector("moz-toggle");
         is(
           toggle.labelEl.textContent,
           PERMISSION_L10N.formatValueSync(
@@ -1311,12 +1446,12 @@ add_task(async function test_data_collection() {
         );
 
         // required data collection
-        let required_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-required .permission-info"
+        let requiredDataRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
         );
-        is(required_data_rows.length, 1, "Expected 1 permission row");
+        is(requiredDataRows.length, 1, "Expected 1 permission row");
         is(
-          required_data_rows[0].textContent,
+          requiredDataRows[0].textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some",
             {
@@ -1327,11 +1462,11 @@ add_task(async function test_data_collection() {
         );
 
         // optional data collection
-        let optional_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-optional .permission-info"
+        let optionalDataRows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-optional .permission-info"
         );
-        is(optional_data_rows.length, 2, "Expected 2 permission rows");
-        toggle = optional_data_rows[0].querySelector("moz-toggle");
+        is(optionalDataRows.length, 2, "Expected 2 permission rows");
+        toggle = optionalDataRows[0].querySelector("moz-toggle");
         is(
           toggle.labelEl.textContent,
           PERMISSION_L10N.formatValueSync(
@@ -1339,7 +1474,7 @@ add_task(async function test_data_collection() {
           ),
           "Expected localized permission string"
         );
-        toggle = optional_data_rows[1].querySelector("moz-toggle");
+        toggle = optionalDataRows[1].querySelector("moz-toggle");
         is(
           toggle.labelEl.textContent,
           PERMISSION_L10N.formatValueSync(
@@ -1349,9 +1484,27 @@ add_task(async function test_data_collection() {
         );
       },
       async togglePerms(card, extension) {
-        let permsSection = card.querySelector("addon-permissions-list");
-        let optional_data_rows = permsSection.querySelectorAll(
-          ".addon-data-collection-permissions-optional .permission-info"
+        let [permsSection, dataPermsSection] = card.querySelectorAll(
+          "addon-permissions-list .addon-permissions-list-wrapper"
+        );
+
+        let requiredRows = permsSection.querySelectorAll(
+          ".addon-permissions-required .permission-info"
+        );
+        is(requiredRows.length, 1, "Expected 1 permission row");
+        is(
+          requiredRows[0].textContent,
+          PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
+          "Expected localized permission string"
+        );
+
+        let optionalRows = permsSection.querySelectorAll(
+          ".addon-permissions-optional .permission-info"
+        );
+        is(optionalRows.length, 1, "Expected 1 permission row");
+
+        let optional_data_rows = dataPermsSection.querySelectorAll(
+          ".addon-permissions-optional .permission-info"
         );
         let locationToggle = optional_data_rows[0].querySelector("moz-toggle");
 
@@ -1438,6 +1591,14 @@ add_task(async function test_data_collection() {
       "Expected permissions and data tab"
     );
 
+    // Switch to the permissions UI tab.
+    let permsShown = BrowserTestUtils.waitForEvent(
+      card.details.deck,
+      "view-changed"
+    );
+    permsBtn.click();
+    await permsShown;
+
     await verifyUI(card);
 
     if (togglePerms) {
@@ -1484,9 +1645,7 @@ add_task(async function test_data_collection_and_disabled_extension() {
 
   let optional_data_rows = card
     .querySelector("addon-permissions-list")
-    .querySelectorAll(
-      ".addon-data-collection-permissions-optional .permission-info"
-    );
+    .querySelectorAll(".addon-permissions-optional .permission-info");
   let locationToggle = optional_data_rows[0].querySelector("moz-toggle");
 
   let permissionChangePromise = waitForPermissionChange(extensionId);

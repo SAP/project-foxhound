@@ -20,3 +20,4 @@ HOST_DEFINES["VALUE"] = value
 HOST_DEFINES["QUX"] = False
 
 HOST_CFLAGS += ["-funroll-loops", "-host-arg"]
+HOST_LDFLAGS += ["-Wl,--gc-sections"]

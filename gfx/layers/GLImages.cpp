@@ -20,7 +20,7 @@ using namespace mozilla::gl;
 
 namespace mozilla::layers {
 
-MOZ_RUNINIT static RefPtr<GLContext> sSnapshotContext;
+constinit static RefPtr<GLContext> sSnapshotContext;
 
 nsresult GLImage::ReadIntoBuffer(uint8_t* aData, int32_t aStride,
                                  const gfx::IntSize& aSize,
@@ -55,8 +55,8 @@ nsresult GLImage::ReadIntoBuffer(uint8_t* aData, int32_t aStride,
   const gl::OriginPos destOrigin = gl::OriginPos::TopLeft;
   {
     const ScopedBindFramebuffer bindFB(sSnapshotContext, autoFBForTex.FB());
-    if (!sSnapshotContext->BlitHelper()->BlitImageToFramebuffer(this, aSize,
-                                                                destOrigin)) {
+    if (!sSnapshotContext->BlitHelper()->BlitImageToFramebuffer(
+            this, gfx::IntRect(gfx::IntPoint(0, 0), aSize), destOrigin)) {
       return NS_ERROR_FAILURE;
     }
   }

@@ -15,7 +15,6 @@
 #include "IDBTransaction.h"
 #include "Key.h"
 #include "ThreadLocal.h"
-
 #include "mozilla/dom/Event.h"
 #include "nsReadableUtils.h"
 

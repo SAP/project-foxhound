@@ -4,18 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_idbcursor_h__
-#define mozilla_dom_idbcursor_h__
+#ifndef mozilla_dom_idbcursor_h_
+#define mozilla_dom_idbcursor_h_
 
 #include "IDBCursorType.h"
 #include "IndexedDatabase.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/InitializedOnce.h"
 #include "mozilla/dom/IDBCursorBinding.h"
 #include "mozilla/dom/IDBTransaction.h"
 #include "mozilla/dom/indexedDB/Key.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
-#include "mozilla/InitializedOnce.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
@@ -286,4 +285,4 @@ using IDBCursorImpl = typename CursorTypeTraits<CursorType>::Type;
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_idbcursor_h__
+#endif  // mozilla_dom_idbcursor_h_

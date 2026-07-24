@@ -4,5 +4,18 @@
 
 import { GeckoViewActorParent } from "resource://gre/modules/GeckoViewActorParent.sys.mjs";
 
-// For this.eventDispatcher in the child
-export class LoadURIDelegateParent extends GeckoViewActorParent {}
+export class LoadURIDelegateParent extends GeckoViewActorParent {
+  async receiveMessage({ name, data }) {
+    switch (name) {
+      case "GeckoView:OnLoadError": {
+        return this.eventDispatcher.sendRequestForResult({
+          ...data,
+          type: "GeckoView:OnLoadError",
+        });
+      }
+      default: {
+        return super.receiveMessage({ name, data });
+      }
+    }
+  }
+}

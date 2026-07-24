@@ -6,14 +6,13 @@
 #ifndef _mozilla_dom_ClientIPCUtils_h
 #define _mozilla_dom_ClientIPCUtils_h
 
-#include "ipc/EnumSerializer.h"
-
 #include "X11UndefineNone.h"
+#include "ipc/EnumSerializer.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BindingIPCUtils.h"
 #include "mozilla/dom/ClientBinding.h"
 #include "mozilla/dom/ClientsBinding.h"
 #include "mozilla/dom/DocumentBinding.h"
-#include "mozilla/StorageAccess.h"
 
 namespace IPC {
 template <>

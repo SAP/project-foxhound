@@ -110,6 +110,11 @@ static int ChildProcessInitImpl(int aArgc, char** aArgv) {
 
   mozilla::SetGeckoChildID(aArgv[aArgc - 2]);
 
+#if defined(MOZ_MEMORY)
+  jemalloc_reset_small_alloc_randomization(
+      /* aRandomizeSmall */ !XRE_IsContentProcess());
+#endif
+
   nsresult rv =
       bootstrap.inspect()->XRE_InitChildProcess(aArgc - 2, aArgv, &childData);
 
@@ -131,10 +136,9 @@ void HandleBootstrapMessage(xpc_object_t aEvent) {
     close(fd);
   }
 
-  // Immediately send a reply with our pid and mach task port.
+  // Immediately send a reply with our pid
   auto reply = mozilla::AdoptDarwinObject(xpc_dictionary_create_reply(aEvent));
   xpc_dictionary_set_int64(reply.get(), "pid", getpid());
-  xpc_dictionary_set_mach_send(reply.get(), "task", mach_task_self());
   xpc_connection_send_message(xpc_dictionary_get_remote_connection(aEvent),
                               reply.get());
 

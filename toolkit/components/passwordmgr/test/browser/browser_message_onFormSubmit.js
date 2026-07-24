@@ -69,7 +69,7 @@ add_task(async function test_login_save_enable() {
       // When login saving is enabled, we should receive both FormSubmit
       // event and "passwordmgr-form-submission-detected" event
       let p1 = waitForFormSubmissionDetected();
-      let p2 = listenForTestNotification("ShowDoorhanger");
+      let p2 = listenForTestNotification(["FormProcessed", "ShowDoorhanger"]);
       await SpecialPowers.spawn(browser, [], async function () {
         let doc = this.content.document;
         doc.getElementById("form-basic").submit();

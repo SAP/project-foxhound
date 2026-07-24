@@ -12,7 +12,6 @@
 #include <mutex>
 #include <set>
 #include <stdint.h>
-#include <string>
 
 #include "RLBoxHunspell.h"
 #include "mozilla/Result.h"

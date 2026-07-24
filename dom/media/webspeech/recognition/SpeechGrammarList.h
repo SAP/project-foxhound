@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_SpeechGrammarList_h
 #define mozilla_dom_SpeechGrammarList_h
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"

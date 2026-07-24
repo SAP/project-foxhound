@@ -274,8 +274,46 @@ class MOZ_STACK_CLASS RangeUpdater final {
     NS_WARNING_ASSERTION(mLocked, "Not locked");
     mLocked = false;
   }
-  void DidMoveNode(const nsINode& aOldParent, uint32_t aOldOffset,
-                   const nsINode& aNewParent, uint32_t aNewOffset);
+  template <typename PT, typename CT>
+  struct SimpleEditorDOMPointBase {
+    SimpleEditorDOMPointBase() = default;
+    SimpleEditorDOMPointBase(const nsINode* aContainer,
+                             const nsIContent* aChild, uint32_t aOffset)
+        : mContainer(const_cast<nsINode*>(aContainer)),
+          mChild(const_cast<nsIContent*>(aChild)),
+          mOffset(Some(aOffset)) {}
+    SimpleEditorDOMPointBase(const nsIContent* aChild, uint32_t aOffset)
+        : mContainer(aChild->GetParentNode()),
+          mChild(const_cast<nsIContent*>(aChild)),
+          mOffset(Some(aOffset)) {}
+    SimpleEditorDOMPointBase(const nsINode* aContainer,
+                             const nsIContent* aChild)
+        : mContainer(const_cast<nsINode*>(aContainer)),
+          mChild(const_cast<nsIContent*>(aChild)) {}
+    explicit SimpleEditorDOMPointBase(const nsIContent* aChild)
+        : mContainer(aChild->GetParentNode()),
+          mChild(const_cast<nsIContent*>(aChild)) {}
+
+    uint32_t Offset() const {
+      if (!mOffset && mContainer) {
+        mOffset = mContainer->ComputeIndexOf(mChild);
+      }
+      return mOffset.valueOr(0);
+    }
+    nsIContent* GetNextSiblingOfChild() const {
+      return mChild->GetNextSibling();
+    }
+    PT mContainer;
+    CT mChild;
+    mutable Maybe<uint32_t> mOffset;
+  };
+  using SimpleEditorDOMPoint =
+      SimpleEditorDOMPointBase<nsCOMPtr<nsINode>, nsCOMPtr<nsIContent>>;
+  using SimpleEditorRawDOMPoint =
+      SimpleEditorDOMPointBase<nsINode*, nsIContent*>;
+  void DidMoveNodes(const nsTArray<SimpleEditorDOMPoint>& aOldPoints,
+                    const SimpleEditorDOMPoint& aExpectedDestination,
+                    const nsTArray<SimpleEditorDOMPoint>& aNewPoints);
 
  private:
   // TODO: A lot of loop in these methods check whether each item `nullptr` or
@@ -283,6 +321,8 @@ class MOZ_STACK_CLASS RangeUpdater final {
   nsTArray<RefPtr<RangeItem>> mArray;
   bool mLocked;
 };
+
+enum class StopTracking : bool { No, Yes };
 
 /**
  * Helper class for using SelectionState.  Stack based class for doing
@@ -295,101 +335,94 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
 
   AutoTrackDOMPoint(RangeUpdater& aRangeUpdater, CaretPoint* aCaretPoint);
 
-  AutoTrackDOMPoint(RangeUpdater& aRangeUpdater, nsCOMPtr<nsINode>* aNode,
-                    uint32_t* aOffset)
-      : mRangeUpdater(aRangeUpdater),
-        mNode(aNode),
-        mOffset(aOffset),
-        mRangeItem(do_AddRef(new RangeItem())),
-        mWasConnected(aNode && (*aNode)->IsInComposedDoc()) {
-    mRangeItem->mStartContainer = *mNode;
-    mRangeItem->mEndContainer = *mNode;
-    mRangeItem->mStartOffset = *mOffset;
-    mRangeItem->mEndOffset = *mOffset;
-    mDocument = (*mNode)->OwnerDoc();
-    mRangeUpdater.RegisterRangeItem(mRangeItem);
-  }
-
   AutoTrackDOMPoint(RangeUpdater& aRangeUpdater, EditorDOMPoint* aPoint)
       : mRangeUpdater(aRangeUpdater),
-        mNode(nullptr),
-        mOffset(nullptr),
-        mPoint(Some(aPoint->IsSet() ? aPoint : nullptr)),
-        mRangeItem(do_AddRef(new RangeItem())),
-        mWasConnected(aPoint && aPoint->IsInComposedDoc()) {
-    if (!aPoint->IsSet()) {
+        mPoint(*aPoint),
+        mRangeItem(do_AddRef(new RangeItem())) {
+    Init();
+  }
+
+ private:
+  void Init() {
+    if (!mPoint.IsSet()) {
       mIsTracking = false;
+      mWasConnected = false;
       return;  // Nothing should be tracked.
     }
-    mRangeItem->mStartContainer = aPoint->GetContainer();
-    mRangeItem->mEndContainer = aPoint->GetContainer();
-    mRangeItem->mStartOffset = aPoint->Offset();
-    mRangeItem->mEndOffset = aPoint->Offset();
-    mDocument = aPoint->GetContainer()->OwnerDoc();
+    mRangeItem->mStartContainer = mPoint.GetContainer();
+    mRangeItem->mEndContainer = mPoint.GetContainer();
+    mRangeItem->mStartOffset = mPoint.Offset();
+    mRangeItem->mEndOffset = mPoint.Offset();
+    mDocument = mPoint.GetContainer()->OwnerDoc();
+    mWasConnected = mPoint.IsInComposedDoc();
+    mIsTracking = true;
     mRangeUpdater.RegisterRangeItem(mRangeItem);
   }
 
-  ~AutoTrackDOMPoint() { FlushAndStopTracking(); }
+ public:
+  ~AutoTrackDOMPoint() { Flush(StopTracking::Yes); }
 
-  void FlushAndStopTracking() {
+  void Flush(StopTracking aStopTracking) {
     if (!mIsTracking) {
       return;
     }
-    mIsTracking = false;
-    if (mPoint.isSome()) {
+    if (static_cast<bool>(aStopTracking)) {
+      mIsTracking = false;
+    }
+    if (!mIsTracking) {
       mRangeUpdater.DropRangeItem(mRangeItem);
-      // Setting `mPoint` with invalid DOM point causes hitting `NS_ASSERTION()`
-      // and the number of times may be too many.  (E.g., 1533913.html hits
-      // over 700 times!)  We should just put warning instead.
-      if (NS_WARN_IF(!mRangeItem->mStartContainer)) {
-        mPoint.ref()->Clear();
-        return;
-      }
-      // If the node was removed from the original document, clear the instance
-      // since the user should not keep handling the adopted or orphan node
-      // anymore.
-      if (NS_WARN_IF(mWasConnected &&
-                     !mRangeItem->mStartContainer->IsInComposedDoc()) ||
-          NS_WARN_IF(mRangeItem->mStartContainer->OwnerDoc() != mDocument)) {
-        mPoint.ref()->Clear();
-        return;
-      }
-      if (NS_WARN_IF(mRangeItem->mStartContainer->Length() <
-                     mRangeItem->mStartOffset)) {
-        mPoint.ref()->SetToEndOf(mRangeItem->mStartContainer);
-        return;
-      }
-      mPoint.ref()->Set(mRangeItem->mStartContainer, mRangeItem->mStartOffset);
+    }
+    // Setting `mPoint` with invalid DOM point causes hitting `NS_ASSERTION()`
+    // and the number of times may be too many.  (E.g., 1533913.html hits
+    // over 700 times!)  We should just put warning instead.
+    if (NS_WARN_IF(!mRangeItem->mStartContainer)) {
+      mPoint.Clear();
       return;
     }
-    mRangeUpdater.DropRangeItem(mRangeItem);
-    *mNode = mRangeItem->mStartContainer;
-    *mOffset = mRangeItem->mStartOffset;
-    if (!(*mNode)) {
-      return;
-    }
-    // If the node was removed from the original document, clear the instances
+    // If the node was removed from the original document, clear the instance
     // since the user should not keep handling the adopted or orphan node
     // anymore.
-    if (NS_WARN_IF(mWasConnected && !(*mNode)->IsInComposedDoc()) ||
-        NS_WARN_IF((*mNode)->OwnerDoc() != mDocument)) {
-      *mNode = nullptr;
-      *mOffset = 0;
+    if (NS_WARN_IF(mWasConnected &&
+                   !mRangeItem->mStartContainer->IsInComposedDoc()) ||
+        NS_WARN_IF(mRangeItem->mStartContainer->OwnerDoc() != mDocument)) {
+      mPoint.Clear();
+      return;
+    }
+    if (NS_WARN_IF(mRangeItem->mStartContainer->Length() <
+                   mRangeItem->mStartOffset)) {
+      mPoint.SetToEndOf(mRangeItem->mStartContainer);
+      return;
+    }
+    mPoint.Set(mRangeItem->mStartContainer, mRangeItem->mStartOffset);
+  }
+
+  void StopTracking() {
+    if (mIsTracking) {
+      mIsTracking = false;
+      mRangeUpdater.DropRangeItem(mRangeItem);
     }
   }
 
-  void StopTracking() { mIsTracking = false; }
+  /**
+   * Restart to track for the current mPoint value. I.e., the caller must have
+   * changed mPoint and wants to track the new point. Be aware, this does not
+   * flush, of course. Therefore, you'll completely lose the old point
+   * completely even if this fails to restart to track the new point.
+   */
+  void RestartToTrack() {
+    StopTracking();
+    MOZ_ASSERT(mPoint.IsSetAndValid());
+    MOZ_ASSERT(mPoint.GetContainer()->OwnerDoc() == mDocument);
+    Init();
+  }
 
  private:
   RangeUpdater& mRangeUpdater;
-  // Allow tracking nsINode until nsNode is gone
-  nsCOMPtr<nsINode>* mNode;
-  uint32_t* mOffset;
-  Maybe<EditorDOMPoint*> mPoint;
+  EditorDOMPoint& mPoint;
   OwningNonNull<RangeItem> mRangeItem;
   RefPtr<dom::Document> mDocument;
-  bool mIsTracking = true;
-  bool mWasConnected;
+  bool mIsTracking = false;
+  bool mWasConnected = false;
 };
 
 class MOZ_STACK_CLASS AutoTrackDOMRange final {
@@ -425,14 +458,29 @@ class MOZ_STACK_CLASS AutoTrackDOMRange final {
     mStartPointTracker.emplace(aRangeUpdater, &mStartPoint);
     mEndPointTracker.emplace(aRangeUpdater, &mEndPoint);
   }
-  ~AutoTrackDOMRange() { FlushAndStopTracking(); }
+  ~AutoTrackDOMRange() { Flush(StopTracking::Yes); }
 
-  void FlushAndStopTracking() {
+  void Flush(StopTracking aStopTracking) {
     if (!mStartPointTracker && !mEndPointTracker) {
       return;
     }
-    mStartPointTracker.reset();
-    mEndPointTracker.reset();
+    if (static_cast<bool>(aStopTracking)) {
+      mStartPointTracker.reset();
+      mEndPointTracker.reset();
+    } else {
+      if (mStartPointTracker) {
+        mStartPointTracker->Flush(StopTracking::No);
+        if (MOZ_UNLIKELY(!mStartPoint.IsSet())) {
+          mStartPointTracker.reset();
+        }
+      }
+      if (mEndPointTracker) {
+        mEndPointTracker->Flush(StopTracking::No);
+        if (MOZ_UNLIKELY(!mEndPoint.IsSet())) {
+          mEndPointTracker.reset();
+        }
+      }
+    }
     if (!mRangeRefPtr && !mRangeOwningNonNull) {
       // This must be created with EditorDOMRange or EditorDOMPoints.  In the
       // cases, destroying mStartPointTracker and mEndPointTracker has done
@@ -470,30 +518,6 @@ class MOZ_STACK_CLASS AutoTrackDOMRange final {
       mEndPointTracker->StopTracking();
     }
   }
-  void StopTrackingStartBoundary() {
-    MOZ_ASSERT(!mRangeRefPtr,
-               "StopTrackingStartBoundary() is not available when tracking "
-               "RefPtr<nsRange>");
-    MOZ_ASSERT(!mRangeOwningNonNull,
-               "StopTrackingStartBoundary() is not available when tracking "
-               "OwningNonNull<nsRange>");
-    if (!mStartPointTracker) {
-      return;
-    }
-    mStartPointTracker->StopTracking();
-  }
-  void StopTrackingEndBoundary() {
-    MOZ_ASSERT(!mRangeRefPtr,
-               "StopTrackingEndBoundary() is not available when tracking "
-               "RefPtr<nsRange>");
-    MOZ_ASSERT(!mRangeOwningNonNull,
-               "StopTrackingEndBoundary() is not available when tracking "
-               "OwningNonNull<nsRange>");
-    if (!mEndPointTracker) {
-      return;
-    }
-    mEndPointTracker->StopTracking();
-  }
 
  private:
   Maybe<AutoTrackDOMPoint> mStartPointTracker;
@@ -510,10 +534,10 @@ class MOZ_STACK_CLASS AutoTrackDOMMoveNodeResult final {
   AutoTrackDOMMoveNodeResult(RangeUpdater& aRangeUpdater,
                              MoveNodeResult* aMoveNodeResult);
 
-  void FlushAndStopTracking() {
-    mTrackCaretPoint.FlushAndStopTracking();
-    mTrackNextInsertionPoint.FlushAndStopTracking();
-    mTrackMovedContentRange.FlushAndStopTracking();
+  void Flush(StopTracking aStopTracking) {
+    mTrackCaretPoint.Flush(aStopTracking);
+    mTrackNextInsertionPoint.Flush(aStopTracking);
+    mTrackMovedContentRange.Flush(aStopTracking);
   }
   void StopTracking() {
     mTrackCaretPoint.StopTracking();
@@ -533,9 +557,9 @@ class MOZ_STACK_CLASS AutoTrackDOMDeleteRangeResult final {
   AutoTrackDOMDeleteRangeResult(RangeUpdater& aRangeUpdater,
                                 DeleteRangeResult* aDeleteRangeResult);
 
-  void FlushAndStopTracking() {
-    mTrackCaretPoint.FlushAndStopTracking();
-    mTrackDeleteRange.FlushAndStopTracking();
+  void Flush(StopTracking aStopTracking) {
+    mTrackCaretPoint.Flush(aStopTracking);
+    mTrackDeleteRange.Flush(aStopTracking);
   }
   void StopTracking() {
     mTrackCaretPoint.StopTracking();
@@ -551,8 +575,9 @@ class MOZ_STACK_CLASS AutoTrackLineBreak final {
  public:
   AutoTrackLineBreak() = delete;
   AutoTrackLineBreak(RangeUpdater& aRangeUpdater, EditorLineBreak* aLineBreak);
+  ~AutoTrackLineBreak() { Flush(StopTracking::Yes); }
 
-  void FlushAndStopTracking();
+  void Flush(StopTracking aStopTracking);
   void StopTracking() { mTracker.StopTracking(); }
 
  private:
@@ -653,29 +678,69 @@ class MOZ_STACK_CLASS AutoInsertContainerSelNotify final {
 
 class MOZ_STACK_CLASS AutoMoveNodeSelNotify final {
  public:
+  using SimpleEditorDOMPoint = RangeUpdater::SimpleEditorDOMPoint;
+
   AutoMoveNodeSelNotify() = delete;
-  AutoMoveNodeSelNotify(RangeUpdater& aRangeUpdater,
-                        const EditorRawDOMPoint& aOldPoint,
-                        const EditorRawDOMPoint& aNewPoint)
+  explicit AutoMoveNodeSelNotify(RangeUpdater& aRangeUpdater,
+                                 const EditorRawDOMPoint& aExpectedDestination)
       : mRangeUpdater(aRangeUpdater),
-        mOldParent(*aOldPoint.GetContainer()),
-        mNewParent(*aNewPoint.GetContainer()),
-        mOldOffset(aOldPoint.Offset()),
-        mNewOffset(aNewPoint.Offset()) {
-    MOZ_ASSERT(aOldPoint.IsSet());
-    MOZ_ASSERT(aNewPoint.IsSet());
+        mExpectedDestination(aExpectedDestination.GetContainer(), nullptr,
+                             aExpectedDestination.Offset()) {}
+  AutoMoveNodeSelNotify(RangeUpdater& aRangeUpdater, nsIContent& aContent,
+                        const EditorRawDOMPoint& aExpectedDestination)
+      : mRangeUpdater(aRangeUpdater),
+        mExpectedDestination(aExpectedDestination.GetContainer(), nullptr,
+                             aExpectedDestination.Offset()) {
+    if (aContent.GetParentNode()) {
+      mOldPoints.AppendElement(SimpleEditorDOMPoint(
+          &aContent, aContent.ComputeIndexInParentNode().valueOr(0)));
+      return;
+    }
+    mOldPoints.AppendElement(SimpleEditorDOMPoint(&aContent));
+  }
+
+  void AppendContentWhichWillBeMoved(nsIContent& aContent) {
+    if (!mOldPoints.IsEmpty() &&
+        mOldPoints.LastElement().GetNextSiblingOfChild() == &aContent) {
+      mOldPoints.AppendElement(SimpleEditorDOMPoint(
+          &aContent, mOldPoints.LastElement().Offset() + 1));
+      return;
+    }
+    if (aContent.GetParentNode()) {
+      mOldPoints.AppendElement(SimpleEditorDOMPoint(
+          &aContent, aContent.ComputeIndexInParentNode().valueOr(0)));
+      return;
+    }
+    mOldPoints.AppendElement(SimpleEditorDOMPoint(&aContent));
+  }
+
+  void DidMoveContent(nsIContent& aContent) {
+    if (!mNewPoints.IsEmpty() &&
+        mNewPoints.LastElement().GetNextSiblingOfChild() == &aContent) {
+      mNewPoints.AppendElement(SimpleEditorDOMPoint(
+          &aContent, mNewPoints.LastElement().Offset() + 1));
+      return;
+    }
+    // Compute offset when we need it.
+    mNewPoints.AppendElement(SimpleEditorDOMPoint(&aContent));
   }
 
   ~AutoMoveNodeSelNotify() {
-    mRangeUpdater.DidMoveNode(mOldParent, mOldOffset, mNewParent, mNewOffset);
+    mRangeUpdater.DidMoveNodes(mOldPoints, mExpectedDestination, mNewPoints);
+  }
+
+  [[nodiscard]] size_t MovingContentCount() const {
+    return mOldPoints.Length();
+  }
+  [[nodiscard]] nsIContent* GetContentAt(size_t index) const {
+    return mOldPoints[index].mChild;
   }
 
  private:
   RangeUpdater& mRangeUpdater;
-  nsINode& mOldParent;
-  nsINode& mNewParent;
-  const uint32_t mOldOffset;
-  const uint32_t mNewOffset;
+  SimpleEditorDOMPoint mExpectedDestination;
+  AutoTArray<SimpleEditorDOMPoint, 12> mOldPoints;
+  AutoTArray<SimpleEditorDOMPoint, 12> mNewPoints;
 };
 
 }  // namespace mozilla

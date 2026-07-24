@@ -64,7 +64,7 @@ LazyLogModule gCocoaUtilsLog("nsCocoaUtils");
  * For each audio and video capture request, we hold an owning reference
  * to a promise to be resolved when the request's async callback is invoked.
  * sVideoCapturePromises and sAudioCapturePromises are arrays of video and
- * audio promises waiting for to be resolved. Each array is protected by a
+ * audio promises waiting to be resolved. Each array is protected by a
  * mutex.
  */
 nsCocoaUtils::PromiseArray nsCocoaUtils::sVideoCapturePromises;
@@ -266,9 +266,8 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget() {
     return nullptr;
   }
 
-  nsCOMPtr<nsIWidget> hiddenWindowWidget;
-  if (NS_FAILED(baseHiddenWindow->GetMainWidget(
-          getter_AddRefs(hiddenWindowWidget)))) {
+  nsCOMPtr<nsIWidget> hiddenWindowWidget = baseHiddenWindow->GetMainWidget();
+  if (!hiddenWindowWidget) {
     NS_WARNING("Couldn't get nsIWidget from hidden window (nsIBaseWindow)");
     return nullptr;
   }
@@ -325,21 +324,32 @@ BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
   return NO;
 }
 
-void nsCocoaUtils::PrepareForNativeAppModalDialog() {
-  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+static bool sIsActivelyShowingAppModalDialog = false;
+
+bool nsCocoaUtils::PrepareForNativeAppModalDialog() {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (sIsActivelyShowingAppModalDialog) {
+    return false;
+  }
+  sIsActivelyShowingAppModalDialog = true;
 
   if (!NSApp.active) {
     // Early exit if the app isn't active. This is because we can't safely
     // set the NSApp.mainMenu property in such a case. We early exit so we
     // also don't invoke any side effects.
-    return;
+    return true;
   }
 
   // Don't do anything if this is embedding. We'll assume that if there is no
   // hidden window we shouldn't do anything, and that should cover the embedding
   // case.
   nsMenuBarX* hiddenWindowMenuBar = nsMenuUtilsX::GetHiddenWindowMenuBar();
-  if (!hiddenWindowMenuBar) return;
+  if (!hiddenWindowMenuBar) {
+    return true;
+  }
 
   // First put up the hidden window menu bar so that app menu event handling is
   // correct.
@@ -367,11 +377,19 @@ void nsCocoaUtils::PrepareForNativeAppModalDialog() {
   [NSApp setMainMenu:newMenuBar];
   [newMenuBar release];
 
-  NS_OBJC_END_TRY_IGNORE_BLOCK;
+  return true;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(sIsActivelyShowingAppModalDialog = false);
 }
 
 void nsCocoaUtils::CleanUpAfterNativeAppModalDialog() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!sIsActivelyShowingAppModalDialog) {
+    return;
+  }
 
   // Don't do anything if this is embedding. We'll assume that if there is no
   // hidden window we shouldn't do anything, and that should cover the embedding
@@ -387,6 +405,8 @@ void nsCocoaUtils::CleanUpAfterNativeAppModalDialog() {
   } else {
     [WindowDelegate paintMenubarForWindow:mainWindow];
   }
+
+  sIsActivelyShowingAppModalDialog = false;
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -564,10 +584,11 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(
       aSVGContext = svgContext.get();
     }
 
-    mozilla::image::ImgDrawResult res =
-        aImage->Draw(&context, scaledSize, ImageRegion::Create(scaledSize),
-                     aWhichFrame, SamplingFilter::POINT, *aSVGContext,
-                     imgIContainer::FLAG_SYNC_DECODE, 1.0);
+    mozilla::image::ImgDrawResult res = aImage->Draw(
+        &context, scaledSize, ImageRegion::Create(scaledSize), aWhichFrame,
+        SamplingFilter::POINT, *aSVGContext,
+        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY,
+        1.0);
 
     if (res != mozilla::image::ImgDrawResult::SUCCESS) {
       return NS_ERROR_FAILURE;
@@ -590,10 +611,10 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(
   }
 
   rv = nsCocoaUtils::CreateNSImageFromCGImage(imageRef, aResult);
-  if (NS_FAILED(rv) || !aResult) {
+  ::CGImageRelease(imageRef);
+  if (NS_FAILED(rv) || !*aResult) {
     return NS_ERROR_FAILURE;
   }
-  ::CGImageRelease(imageRef);
 
   // Ensure the image will be rendered the correct size on a retina display
   NSSize size = NSMakeSize(width, height);
@@ -628,6 +649,8 @@ nsresult nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
                                        aPreferredSize, &newRepresentation, 2.0f,
                                        aIsEntirelyBlack);
   if (NS_FAILED(rv) || !newRepresentation) {
+    [*aResult release];
+    *aResult = nil;
     return NS_ERROR_FAILURE;
   }
 
@@ -697,7 +720,7 @@ NSEvent* nsCocoaUtils::MakeNewCocoaEventWithType(NSEventType aEventType,
 }
 
 // static
-NSEvent* nsCocoaUtils::MakeNewCococaEventFromWidgetEvent(
+NSEvent* nsCocoaUtils::MakeNewCocoaEventFromWidgetEvent(
     const WidgetKeyboardEvent& aKeyEvent, NSInteger aWindowNumber,
     NSGraphicsContext* aContext) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
@@ -1484,7 +1507,7 @@ nsresult nsCocoaUtils::RequestCapturePermission(
 
   sMediaCaptureMutex.Unlock();
 
-  LOG("RequestCapturePermission(%s): %ld promise(s) unresolved",
+  LOG("RequestCapturePermission(%s): %zu promise(s) unresolved",
       AVMediaTypeToString(aType), nPromises);
 
   // If we had one or more more existing promises waiting to be resolved
@@ -1664,7 +1687,13 @@ NSString* nsCocoaUtils::GetStringForTypeFromPasteboardItem(
   NSString* availableType =
       [aItem availableTypeFromArray:[NSArray arrayWithObjects:(id)aType, nil]];
   if (availableType && IsValidPasteboardType(availableType, aAllowFileURL)) {
-    return [aItem stringForType:(id)availableType];
+    NSString* str = [aItem stringForType:(id)availableType];
+    if (!str) {
+      return nil;
+    }
+    // Sanitize (remove NULs, etc) to align with other platforms.
+    return [NSString stringWithCString:[str UTF8String]
+                              encoding:NSUTF8StringEncoding];
   }
 
   return nil;

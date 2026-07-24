@@ -3,62 +3,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/TextUtils.h"
+#include "nsWebBrowserPersist.h"
 
-#include "nspr.h"
-
-#include "nsIFileStreams.h"  // New Necko file streams
 #include <algorithm>
 
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
-#include "nsIClassOfService.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIPrivateBrowsingChannel.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIStorageStream.h"
-#include "nsISeekableStream.h"
-#include "nsIHttpChannel.h"
-#include "nsIEncodedChannel.h"
-#include "nsIUploadChannel.h"
-#include "nsICacheInfoChannel.h"
-#include "nsIFileChannel.h"
-#include "nsEscape.h"
-#include "nsIStringEnumerator.h"
-#include "nsStreamUtils.h"
-
-#include "nsCExternalHandlerService.h"
-
-#include "nsIURL.h"
-#include "nsIFileURL.h"
-#include "nsIWebProgressListener.h"
-#include "nsIAuthPrompt.h"
-#include "nsIPrompt.h"
-#include "nsIThreadRetargetableRequest.h"
-#include "nsContentUtils.h"
-
-#include "nsIStringBundle.h"
-#include "nsIProtocolHandler.h"
-
-#include "nsWebBrowserPersist.h"
+#include "ReferrerInfo.h"
 #include "WebBrowserPersistLocalDocument.h"
-
-#include "nsIContent.h"
-#include "nsIMIMEInfo.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Printf.h"
-#include "ReferrerInfo.h"
-#include "nsIURIMutator.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/WebBrowserPersistDocumentParent.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/PContentParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/PContentParent.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "nsCExternalHandlerService.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsEscape.h"
+#include "nsIAuthPrompt.h"
+#include "nsICacheInfoChannel.h"
+#include "nsIClassOfService.h"
+#include "nsIContent.h"
 #include "nsIDocumentEncoder.h"
+#include "nsIEncodedChannel.h"
+#include "nsIFileChannel.h"
+#include "nsIFileStreams.h"  // New Necko file streams
+#include "nsIFileURL.h"
+#include "nsIHttpChannel.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIMIMEInfo.h"
+#include "nsIPrivateBrowsingChannel.h"
+#include "nsIPrompt.h"
+#include "nsIProtocolHandler.h"
+#include "nsISeekableStream.h"
+#include "nsIStorageStream.h"
+#include "nsIStringBundle.h"
+#include "nsIStringEnumerator.h"
+#include "nsIThreadRetargetableRequest.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsIUploadChannel.h"
+#include "nsIWebProgressListener.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsStreamUtils.h"
+#include "nspr.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -2440,7 +2433,7 @@ nsresult nsWebBrowserPersist::URIData::GetLocalURI(nsIURI* targetBaseURI,
   }
 
   // remove username/password if present
-  Unused << NS_MutateURI(fileAsURI).SetUserPass(""_ns).Finalize(fileAsURI);
+  (void)NS_MutateURI(fileAsURI).SetUserPass(""_ns).Finalize(fileAsURI);
 
   // reset node attribute
   // Use relative or absolute links

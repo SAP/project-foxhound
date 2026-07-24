@@ -12,15 +12,15 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/QueuingStrategyBinding.h"
+#include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/QueueWithSizes.h"
+#include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
 #include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "mozilla/dom/Nullable.h"
-#include "nsTArray.h"
 #include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

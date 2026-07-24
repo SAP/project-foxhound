@@ -8,41 +8,11 @@
 #include "mozilla/TypedEnumBits.h"
 
 #include <stdint.h>
-#include <type_traits>
 
-// A rough feature check for is_literal_type. Not very carefully checked.
-// Feel free to amend as needed. is_literal_type was removed in C++20.
-// We leave ANDROID out because it's using stlport which doesn't have
-// std::is_literal_type.
-#if __cplusplus >= 201103L && __cplusplus < 202002L && !defined(ANDROID)
-#  if defined(__clang__)
-/*
- * Per Clang documentation, "Note that marketing version numbers should not
- * be used to check for language features, as different vendors use different
- * numbering schemes. Instead, use the feature checking macros."
- */
-#    ifndef __has_extension
-#      define __has_extension \
-        __has_feature /* compatibility, for older versions of clang */
-#    endif
-#    if __has_extension(is_literal) && __has_include(<type_traits>)
-#      define MOZ_HAVE_IS_LITERAL
-#    endif
-#  elif defined(__GNUC__) || defined(_MSC_VER)
-#    define MOZ_HAVE_IS_LITERAL
-#  endif
-#endif
-
-#if defined(MOZ_HAVE_IS_LITERAL) && defined(MOZ_HAVE_CXX11_CONSTEXPR)
-#  include <type_traits>
 template <typename T>
 void RequireLiteralType() {
-  static_assert(std::is_literal_type<T>::value, "Expected a literal type");
+  static_assert(__is_literal_type(T), "Expected a literal type");
 }
-#else  // not MOZ_HAVE_IS_LITERAL
-template <typename T>
-void RequireLiteralType() {}
-#endif
 
 template <typename T>
 void RequireLiteralType(const T&) {

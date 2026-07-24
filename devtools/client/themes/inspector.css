@@ -41,6 +41,13 @@ window {
   min-width: 125px;
   display: flex;
   flex-direction: column;
+
+  /* the panel is not visible at first… */
+  visibility: hidden;
+  /* … only when it's being initialized */
+  &.initialized {
+    visibility: visible;
+  }
 }
 
 /* Inspector Panel Splitter */
@@ -57,6 +64,10 @@ window {
   min-height: 50px;
   min-width: 50px;
   overflow-x: hidden;
+}
+
+#tabpanels {
+  visibility: collapse;
 }
 
 /* Set a minimum width of 200px for tab content to avoid breaking the layout when resizing
@@ -271,4 +282,11 @@ long base64 URLs and other unexpectedly long text properties. */
   vertical-align: text-top;
   /* Force the long text to be rendered on a single line. */
   white-space: nowrap;
+}
+
+/* Used for both the computed view and the rule view, to style element that we put
+   at the same place as selectors but who aren't technically selectors, e.g. element
+   style attribute and pres-hint styles */
+.alternative-selector {
+  font-style: italic;
 }

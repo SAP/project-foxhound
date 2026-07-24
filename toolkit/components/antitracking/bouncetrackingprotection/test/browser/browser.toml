@@ -24,6 +24,8 @@ support-files = [
 
 ["browser_bouncetracking_fpi.js"]
 
+["browser_bouncetracking_ipv6.js"]
+
 ["browser_bouncetracking_mode_prefs.js"]
 
 ["browser_bouncetracking_nimbus.js"]

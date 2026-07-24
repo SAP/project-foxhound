@@ -39,7 +39,7 @@ function encodeEnvVar(name, value) {
 }
 
 function platformSupportsDisclaimedSpawn() {
-  return AppConstants.isPlatformAndVersionAtLeast("macosx", 18);
+  return AppConstants.platform === "macosx";
 }
 
 /**

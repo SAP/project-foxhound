@@ -195,7 +195,7 @@ void OriginParser::HandleToken(const nsDependentCSubstring& aToken) {
         nsCString token(aToken);
 
         nsresult rv;
-        Unused << token.ToInteger(&rv);
+        (void)token.ToInteger(&rv);
         if (NS_SUCCEEDED(rv)) {
           mState = eExpectingInMozBrowser;
           return;

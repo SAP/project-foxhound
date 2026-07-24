@@ -5,7 +5,7 @@
 async function testVal(aExpected, overflowSide = null) {
   info(`Testing ${aExpected} with overflow ${overflowSide}`);
   try {
-    gURLBar.setURI(makeURI(aExpected));
+    gURLBar.setURI({ uri: makeURI(aExpected) });
   } catch (ex) {
     if (ex.result != Cr.NS_ERROR_MALFORMED_URI) {
       throw ex;
@@ -20,19 +20,17 @@ async function testVal(aExpected, overflowSide = null) {
     "Selection sanity check"
   );
 
+  let urlbarScheme = gURLBar.querySelector("#urlbar-scheme");
+
   gURLBar.focus();
   Assert.equal(
     document.activeElement,
     gURLBar.inputField,
     "URL Bar should be focused"
   );
+  Assert.equal(urlbarScheme.value, "", "Check the scheme value");
   Assert.equal(
-    gURLBar.valueFormatter.scheme.value,
-    "",
-    "Check the scheme value"
-  );
-  Assert.equal(
-    getComputedStyle(gURLBar.valueFormatter.scheme).visibility,
+    getComputedStyle(urlbarScheme).visibility,
     "hidden",
     "Check the scheme box visibility"
   );
@@ -57,11 +55,7 @@ async function testVal(aExpected, overflowSide = null) {
     scheme = "";
   }
 
-  Assert.equal(
-    gURLBar.valueFormatter.scheme.value,
-    scheme,
-    "Check the scheme value after blur"
-  );
+  Assert.equal(urlbarScheme.value, scheme, "Check the scheme value after blur");
   let isOverflowed =
     gURLBar.inputField.scrollWidth > gURLBar.inputField.clientWidth;
   Assert.equal(isOverflowed, !!overflowSide, "Check The input field overflow");
@@ -74,7 +68,7 @@ async function testVal(aExpected, overflowSide = null) {
     let side = gURLBar.getAttribute("domaindir") == "ltr" ? "right" : "left";
     Assert.equal(side, overflowSide, "Check the overflow side");
     Assert.equal(
-      getComputedStyle(gURLBar.valueFormatter.scheme).visibility,
+      getComputedStyle(urlbarScheme).visibility,
       scheme && isOverflowed && overflowSide == "left" ? "visible" : "hidden",
       "Check the scheme box visibility"
     );
@@ -91,7 +85,7 @@ async function testVal(aExpected, overflowSide = null) {
 
     Assert.equal(side, overflowSide, "Check the overflow side");
     Assert.equal(
-      getComputedStyle(gURLBar.valueFormatter.scheme).visibility,
+      getComputedStyle(urlbarScheme).visibility,
       scheme && isOverflowed && overflowSide == "left" ? "visible" : "hidden",
       "Check the scheme box visibility"
     );
@@ -122,10 +116,6 @@ add_task(async function () {
   await testVal(`https://${rtlDomain}/${lotsOfSpaces}/test/`, "left");
   await testVal(`https://mozilla.org:8888/${lotsOfSpaces}/test/`, "right");
   await testVal(`https://${rtlDomain}:8888/${lotsOfSpaces}/test/`, "left");
-
-  await testVal(`ftp://mozilla.org/${lotsOfSpaces}/test/`, "right");
-  await testVal(`ftp://${rtlDomain}/${lotsOfSpaces}/test/`, "left");
-  await testVal(`ftp://mozilla.org/`);
 
   await testVal(`http://${rtlDomain}/${lotsOfSpaces}/test/`, "left");
   await testVal(`http://mozilla.org/`);

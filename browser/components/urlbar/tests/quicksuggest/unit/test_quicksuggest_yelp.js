@@ -6,7 +6,27 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProviderSearchSuggestions:
+    "moz-src:///browser/components/urlbar/UrlbarProviderSearchSuggestions.sys.mjs",
+});
+
 const { GEOLOCATION } = MerinoTestUtils;
+
+const CONFIG_V2 = [
+  {
+    identifier: "engine_with_suggestions",
+    base: {
+      urls: {
+        suggestions: {
+          // This url will never respond with search suggestions.
+          base: "https://mochi.test/",
+          searchTermParamName: "q",
+        },
+      },
+    },
+  },
+];
 
 const REMOTE_SETTINGS_RECORDS = [
   {
@@ -42,6 +62,10 @@ const ALONGERKEYWORD_RESULT = {
 };
 
 add_setup(async function () {
+  // Add a search engine with search suggestions so sponsored suggestions can
+  // be shown first. See the `quickSuggestSponsoredIndex` pref for more info.
+  SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
+  await SearchService.init();
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RECORDS,
     prefs: [
@@ -72,17 +96,6 @@ add_task(async function basic() {
           id: "firefox-suggest-yelp-service-title",
           args: {
             service: "best a service delivery in Tokyo, Tokyo-to",
-          },
-          argsHighlights: {
-            service: [
-              [0, 4],
-              [5, 1],
-              [7, 7],
-              [15, 8],
-              [24, 2],
-              [27, 5],
-              [34, 5],
-            ],
           },
         },
       },
@@ -285,7 +298,10 @@ add_task(async function basic() {
 
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: expected ? [QuickSuggestTestUtils.yelpResult(expected)] : [],
@@ -303,62 +319,26 @@ add_task(async function telemetryType() {
   );
 });
 
-// When sponsored suggestions are disabled, Yelp suggestions should be
-// disabled.
-add_task(async function sponsoredDisabled() {
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
-
-  // First make sure the suggestion is added when non-sponsored
-  // suggestions are enabled, if the rust is enabled.
-  await check_results({
-    context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [QuickSuggestTestUtils.yelpResult(TOKYO_RESULT)],
-  });
-
-  // Now disable the pref.
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  Assert.ok(
-    !QuickSuggest.getFeature("YelpSuggestions").isEnabled,
-    "Yelp should be disabled"
-  );
-  await check_results({
-    context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [],
-  });
-
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.clear("suggest.quicksuggest.nonsponsored");
-  await QuickSuggestTestUtils.forceSync();
-
-  // Make sure Yelp is enabled again.
-  Assert.ok(
-    QuickSuggest.getFeature("YelpSuggestions").isEnabled,
-    "Yelp should be re-enabled"
-  );
-  await check_results({
-    context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [QuickSuggestTestUtils.yelpResult(TOKYO_RESULT)],
-  });
-});
-
-// When Yelp-specific preferences are disabled, suggestions should not be
+// When relevant Yelp and Suggest prefs are disabled, suggestions should not be
 // added.
-add_task(async function yelpSpecificPrefsDisabled() {
-  const prefs = ["suggest.yelp", "yelp.featureGate"];
+add_task(async function prefsDisabled() {
+  const prefs = [
+    "suggest.yelp",
+    "yelp.featureGate",
+    "suggest.quicksuggest.all",
+    "suggest.quicksuggest.sponsored",
+    "quicksuggest.enabled",
+  ];
   for (const pref of prefs) {
+    info("Doing test with pref: " + pref);
+
     // First make sure the suggestion is added, if the rust is enabled.
     await check_results({
       context: createContext("the shop in tokyo", {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: [QuickSuggestTestUtils.yelpResult(TOKYO_RESULT)],
@@ -372,7 +352,10 @@ add_task(async function yelpSpecificPrefsDisabled() {
     );
     await check_results({
       context: createContext("the shop in tokyo", {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: [],
@@ -389,7 +372,10 @@ add_task(async function yelpSpecificPrefsDisabled() {
     );
     await check_results({
       context: createContext("the shop in tokyo", {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: [QuickSuggestTestUtils.yelpResult(TOKYO_RESULT)],
@@ -404,7 +390,10 @@ add_task(async function featureGate() {
   UrlbarPrefs.set("yelp.featureGate", false);
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [],
@@ -417,7 +406,10 @@ add_task(async function featureGate() {
   await QuickSuggestTestUtils.forceSync();
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [QuickSuggestTestUtils.yelpResult(TOKYO_RESULT)],
@@ -434,7 +426,10 @@ add_task(async function featureGate() {
   });
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [],
@@ -457,7 +452,10 @@ add_task(async function yelpSuggestPriority() {
 
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -473,7 +471,10 @@ add_task(async function yelpSuggestPriority() {
 
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -498,7 +499,10 @@ add_task(async function nimbusSuggestedIndex() {
 
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -517,7 +521,10 @@ add_task(async function nimbusSuggestedIndex() {
   // default index used for Yelp, which is the sponsored suggestions index, 0.
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -537,7 +544,10 @@ add_task(async function showSearchSuggestionsFirstDisabledSuggestedIndex() {
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -553,7 +563,10 @@ add_task(async function showSearchSuggestionsFirstDisabledSuggestedIndex() {
   UrlbarPrefs.set("showSearchSuggestionsFirst", true);
   await check_results({
     context: createContext("the shop in tokyo", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -601,6 +614,10 @@ add_task(async function notRelevant() {
         ],
       },
     ],
+    providers: [
+      UrlbarProviderQuickSuggest.name,
+      UrlbarProviderSearchSuggestions.name,
+    ],
   });
 });
 
@@ -625,6 +642,10 @@ add_task(async function notInterested() {
           }),
         ],
       },
+    ],
+    providers: [
+      UrlbarProviderQuickSuggest.name,
+      UrlbarProviderSearchSuggestions.name,
     ],
   });
 });
@@ -721,7 +742,10 @@ add_task(async function showLessFrequently() {
 
     await check_results({
       context: createContext(input, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: [result],
@@ -760,7 +784,10 @@ add_task(async function showLessFrequently() {
 
     await check_results({
       context: createContext(input, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: [],
@@ -1035,7 +1062,10 @@ add_task(async function yelpServiceResultDistinction() {
   UrlbarPrefs.set("yelp.serviceResultDistinction", false);
   await check_results({
     context: createContext("a service", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -1053,7 +1083,10 @@ add_task(async function yelpServiceResultDistinction() {
   await QuickSuggestTestUtils.forceSync();
   await check_results({
     context: createContext("a service", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -1063,18 +1096,6 @@ add_task(async function yelpServiceResultDistinction() {
           id: "firefox-suggest-yelp-service-title",
           args: {
             service: "a service in Yokohama, Kanagawa",
-          },
-          argsHighlights: {
-            service: [
-              [0, 1],
-              [2, 7],
-              [18, 1],
-              [20, 1],
-              [24, 1],
-              [26, 1],
-              [28, 1],
-              [30, 1],
-            ],
           },
         },
       }),
@@ -1092,7 +1113,10 @@ add_task(async function yelpServiceResultDistinction() {
   });
   await check_results({
     context: createContext("a service", {
-      providers: [UrlbarProviderQuickSuggest.name],
+      providers: [
+        UrlbarProviderQuickSuggest.name,
+        UrlbarProviderSearchSuggestions.name,
+      ],
       isPrivate: false,
     }),
     matches: [
@@ -1134,7 +1158,10 @@ async function doMinKeywordLengthTest({ prefUserValue, nimbusValue, tests }) {
     info("Running min keyword length test with query: " + query);
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers: [
+          UrlbarProviderQuickSuggest.name,
+          UrlbarProviderSearchSuggestions.name,
+        ],
         isPrivate: false,
       }),
       matches: expected ? [QuickSuggestTestUtils.yelpResult(expected)] : [],

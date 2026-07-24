@@ -25,12 +25,16 @@ void ThemeDrawing::FillRect(WebRenderBackendData& aWrData,
 }
 
 /*static*/
-LayoutDeviceIntCoord ThemeDrawing::SnapBorderWidth(const CSSCoord& aCssWidth,
-                                                   const DPIRatio& aDpiRatio) {
-  if (aCssWidth == 0.0f) {
+LayoutDeviceIntCoord ThemeDrawing::SnapBorderWidth(CSSCoord aCssWidth,
+                                                   DPIRatio aDpiRatio) {
+  return SnapBorderWidth(aCssWidth * aDpiRatio);
+}
+
+LayoutDeviceIntCoord ThemeDrawing::SnapBorderWidth(LayoutDeviceCoord aWidth) {
+  if (aWidth == 0.0f) {
     return 0;
   }
-  return std::max(LayoutDeviceIntCoord(1), (aCssWidth * aDpiRatio).Truncated());
+  return std::max(LayoutDeviceIntCoord(1), aWidth.Truncated());
 }
 
 /*static*/

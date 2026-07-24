@@ -279,7 +279,6 @@ describe("<LinkMenu>", () => {
         referrer: FAKE_SITE.referrer,
         typedBonus: FAKE_SITE.typedBonus,
         url: FAKE_SITE.url,
-        sponsored_tile_id: FAKE_SITE.sponsored_tile_id,
         event_source: "CONTEXT_MENU",
         topic: undefined,
         firstVisibleTimestamp: undefined,
@@ -291,7 +290,7 @@ describe("<LinkMenu>", () => {
         recommended_at: undefined,
         format: undefined,
         is_pocket_card: false,
-        is_list_card: undefined,
+        is_sponsored: true,
       },
       "newtab-menu-open-new-private-window": {
         url: FAKE_SITE.url,
@@ -313,7 +312,6 @@ describe("<LinkMenu>", () => {
           card_type: FAKE_SITE.card_type,
           position: 3,
           is_pocket_card: false,
-          is_list_card: undefined,
         },
       ],
       menu_action_webext_dismiss: {
@@ -518,7 +516,6 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: false,
-        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });
@@ -567,7 +564,6 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: true,
-        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });

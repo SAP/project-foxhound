@@ -261,7 +261,7 @@ class ResponsePanel extends Component {
    * Pick correct component, componentprops, and other needed data to render
    * the given response
    *
-   * @returns {Object} shape:
+   * @returns {object} shape:
    *  {component}: React component used to render response
    *  {Object} componetProps: Props passed to component
    *  {Error} error: JSON parsing error
@@ -319,6 +319,7 @@ class ResponsePanel extends Component {
         defaultSelectFirstNode: false,
         mode: MODE.LONG,
         useBaseTreeViewExpand: true,
+        url,
       };
       hasFormattedDisplay = true;
     } else if (Filters.html(this.props.request)) {
@@ -332,8 +333,9 @@ class ResponsePanel extends Component {
       component = SourcePreview;
       componentProps = {
         text,
-        mode: json ? "application/json" : mimeType.replace(/;.+/, ""),
+        mimeType: json ? "application/json" : mimeType.replace(/;.+/, ""),
         targetSearchResult,
+        url,
       };
     }
     return {
@@ -344,6 +346,7 @@ class ResponsePanel extends Component {
       json,
       responsePayloadLabel,
       xssiStrippedCharsInfoBox,
+      url,
     };
   }
 

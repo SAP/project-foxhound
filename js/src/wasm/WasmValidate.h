@@ -19,8 +19,6 @@
 #ifndef wasm_validate_h
 #define wasm_validate_h
 
-#include <type_traits>
-
 #include "js/Utility.h"
 #include "js/WasmFeatures.h"
 

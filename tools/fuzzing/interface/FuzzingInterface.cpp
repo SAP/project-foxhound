@@ -10,6 +10,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "FuzzingInterface.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 

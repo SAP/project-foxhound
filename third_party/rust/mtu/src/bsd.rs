@@ -22,6 +22,7 @@ use static_assertions::{const_assert, const_assert_eq};
 
 #[allow(
     clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
     non_camel_case_types,
     non_snake_case,
     clippy::struct_field_names,
@@ -94,7 +95,7 @@ impl IfAddrs {
         Ok(ifap)
     }
 
-    const fn iter(&self) -> IfAddrPtr {
+    const fn iter(&self) -> IfAddrPtr<'_> {
         IfAddrPtr {
             ptr: self.0,
             _ref: PhantomData,
@@ -381,4 +382,17 @@ pub fn interface_and_mtu_impl(remote: IpAddr) -> Result<(String, usize)> {
     let (if_index, mtu1) = if_index_mtu(remote)?;
     let (if_name, mtu2) = if_name_mtu(if_index.into())?;
     Ok((if_name, mtu1.or(mtu2).ok_or_else(default_err)?))
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod test {
+    use super::*;
+
+    #[test]
+    fn sockaddr_len_valid_and_invalid() {
+        assert!(sockaddr_len(AF_INET).is_ok());
+        assert!(sockaddr_len(AF_INET6).is_ok());
+        assert!(sockaddr_len(AddressFamily::MAX).is_err());
+    }
 }

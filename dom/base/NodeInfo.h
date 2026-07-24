@@ -18,16 +18,16 @@
  * references are released the nsNodeInfoManager deletes itself.
  */
 
-#ifndef mozilla_dom_NodeInfo_h___
-#define mozilla_dom_NodeInfo_h___
+#ifndef mozilla_dom_NodeInfo_h_
+#define mozilla_dom_NodeInfo_h_
 
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/dom/NameSpaceConstants.h"
-#include "nsString.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/NameSpaceConstants.h"
 #include "nsAtom.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
+#include "nsString.h"
 
 class nsNodeInfoManager;
 
@@ -305,4 +305,4 @@ class NodeInfo final {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_NodeInfo_h___ */
+#endif /* mozilla_dom_NodeInfo_h_ */

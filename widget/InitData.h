@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_InitData_h__
-#define mozilla_widget_InitData_h__
+#ifndef mozilla_widget_InitData_h_
+#define mozilla_widget_InitData_h_
 
 #include <cstdint>
 #include "mozilla/TypedEnumBits.h"
@@ -71,6 +71,15 @@ enum class TransparencyMode : uint8_t {
   // WidgetMessageUtils.h
 };
 
+// There are different types of Picture-in-Picture windows on the web
+enum class PiPType : uint8_t {
+  NoPiP,
+  // https://w3c.github.io/picture-in-picture
+  MediaPiP,
+  // https://wicg.github.io/document-picture-in-picture
+  DocumentPiP
+};
+
 // Basic struct for widget initialization data.
 // @see Create member function of nsIWidget
 struct InitData {
@@ -89,8 +98,7 @@ struct InitData {
   // true if the window should support an alpha channel, if available.
   bool mHasRemoteContent = false;
   bool mAlwaysOnTop = false;
-  // Whether we're a PictureInPicture window
-  bool mPIPWindow = false;
+  PiPType mPiPType = PiPType::NoPiP;
   // True if the window is user-resizable.
   bool mResizable = false;
   bool mIsPrivate = false;

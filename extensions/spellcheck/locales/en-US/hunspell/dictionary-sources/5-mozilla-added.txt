@@ -5378,6 +5378,8 @@ aurei
 auteur
 auteur's
 auteurs
+authenticator
+authenticators
 autocomplete
 autocompletes
 autocorrect
@@ -5552,6 +5554,8 @@ chollas
 chorizo
 chorizo's
 chorizos
+chroma
+chrominance
 ciphertext
 ciphertexts
 cisgendered
@@ -5601,6 +5605,7 @@ composable
 compositeness
 compressions
 comradery
+conclusionary
 concurrents
 conferable
 conferenced
@@ -5616,6 +5621,10 @@ contrabass
 contrabass's
 contrabasses
 convolutional
+convolve
+convolved
+convolves
+convolving
 coproduct
 coproduct's
 coproducts
@@ -5633,6 +5642,7 @@ cosplays
 counterintuitive
 counterintuitively
 counterproposal
+countershading
 counterstrike
 counterstrike's
 counterstrikes
@@ -5734,12 +5744,21 @@ dedendum's
 dedendums
 definitional
 definitionally
+degauss
+degaussed
+degausser
+degaussers
+degausses
 degenerations
 dehydrogenase's
 demonization
 demonizations
 demonym
 demonyms
+deplatform
+deplatformed
+deplatforming
+deplatforms
 dequeuing
 desalinator
 desalinator's
@@ -5911,10 +5930,15 @@ expungements
 extensor
 extensor's
 extensors
+externality
 extortionary
 extrema
 extremum
 extremums
+eyewear
+eyewear's
+faceplate
+faceplates
 facto
 fav
 favs
@@ -5947,6 +5971,7 @@ flexor
 flexor's
 flexors
 fluidize
+fluidized
 fluidizes
 fluidizing
 flyer
@@ -5964,6 +5989,10 @@ freegans
 fugacious
 fugaciously
 fugaciousness
+functionalize
+functionalized
+functionalizes
+functionalizing
 funder
 funders
 gamification
@@ -5997,6 +6026,7 @@ gloming
 gloms
 gochujang
 golem
+googol
 gothic
 gothically
 gothicness
@@ -6041,6 +6071,8 @@ haptics
 harissa
 hatchling
 headspace
+headwear
+headwear's
 helicities
 helicity
 heliocentrically
@@ -6065,6 +6097,10 @@ hypotheticals
 iPods
 iatrogenesis
 iatrogenic
+ideate
+ideated
+ideates
+ideating
 ideation
 ideations
 idolator
@@ -6090,6 +6126,7 @@ incongruently
 incorporator
 incorporators
 incorrigibleness
+indicia
 inductor
 inductor's
 inductors
@@ -6181,6 +6218,8 @@ kombucha
 kryptonite
 labelled
 laggy
+lagomorph
+lagomorphs
 laissez-faire
 langue
 langue's
@@ -6188,6 +6227,9 @@ langues
 lawyerly
 leachate
 leachates
+leaker
+leaker's
+leakers
 learnt
 lector
 lector's
@@ -6205,6 +6247,9 @@ lexicology
 lexicology's
 licensor
 lifecycle
+liminal
+liminalities
+liminality
 limnological
 limnologist
 limnologist's
@@ -6219,6 +6264,7 @@ localizer
 localizers
 lumens
 lumina
+luminance
 mRNA
 macOS
 macOS's
@@ -6240,6 +6286,7 @@ mebibyte's
 mebibytes
 meerkats
 megajoule's
+memetic
 merchantability
 merchanting
 mesothelioma
@@ -6274,6 +6321,7 @@ misclassifying
 misconfiguration
 mise
 mises
+misformed
 misgender
 misgendered
 misgendering
@@ -6329,6 +6377,11 @@ neato
 neoadjuvant
 neurocysticercoses
 neurocysticercosis
+neurodivergent
+neurodiverse
+neurodiversities
+neurodiversity
+neurodiversity's
 neuropathic
 neuropathically
 neuropathies
@@ -6347,6 +6400,7 @@ nitrile
 nitriles
 nitty
 nitty-gritty
+non-sequiturs
 nonbinary
 nonnegative
 nonreal
@@ -6378,6 +6432,11 @@ ourself
 outlier's
 outsized
 overbroad
+overengineer
+overengineered
+overengineering
+overengineers
+overgeneralization
 overinclusion
 overinclusive
 overrich
@@ -6399,12 +6458,14 @@ parallelizes
 parallelizing
 parametrize
 parametrized
+pareidolia
 paronychia
 parsers
 partygoers
 paver
 pavers
 pax
+paywalled
 pebibyte
 pebibyte's
 pebibytes
@@ -6516,6 +6577,7 @@ preprocesses
 preprocessing
 preprogrammed
 preprogramming
+preselected
 prev
 proclaimable
 procreations
@@ -6602,6 +6664,7 @@ reflux's
 refluxed
 refluxes
 refluxing
+refried
 refunder
 refunders
 reglet
@@ -6682,6 +6745,7 @@ romanizing
 rotatable
 rotatably
 rotator
+runnable
 salability
 sativa
 savoir
@@ -6692,6 +6756,9 @@ schemas
 schnaps
 schrod
 schrods
+sclera
+sclera's
+scleras
 scooch
 scooched
 scooches
@@ -6717,6 +6784,7 @@ selfist
 selfists
 sensationalistic
 sentiently
+sequiturs
 sera
 seraphim
 severability
@@ -6871,6 +6939,7 @@ sysadmin's
 sysop's
 tRNA
 tRNA's
+taekwondo
 tebibyte
 tebibyte's
 tebibytes
@@ -6993,6 +7062,7 @@ unlinked
 unlinking
 unlinks
 unobservable
+unopenable
 unpressured
 unpressurized
 unredacted
@@ -7011,6 +7081,7 @@ uptime
 upvote
 upvoted
 upvotes
+urbanism
 usufruct
 usufruct's
 usufructs

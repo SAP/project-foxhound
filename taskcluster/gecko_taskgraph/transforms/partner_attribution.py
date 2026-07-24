@@ -68,13 +68,11 @@ def add_command_arguments(config, tasks):
 
                     fetches[upstream_label].add(attributed_build_config["fetch_config"])
 
-                    attributions.append(
-                        {
-                            "input": attributed_build_config["input_path"],
-                            "output": attributed_build_config["output_path"],
-                            "attribution": attribution_code,
-                        }
-                    )
+                    attributions.append({
+                        "input": attributed_build_config["input_path"],
+                        "output": attributed_build_config["output_path"],
+                        "attribution": attribution_code,
+                    })
                     release_artifacts.append(
                         attributed_build_config["release_artifact"]
                     )

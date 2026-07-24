@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsColor_h___
-#define nsColor_h___
+#ifndef nsColor_h_
+#define nsColor_h_
 
 #include <stdint.h>   // for uint8_t, uint32_t
 #include "nsCoord.h"  // for NSToIntRound
@@ -80,4 +80,4 @@ bool NS_LooseHexToRGB(const nsString& aBuf, nscolor* aResult);
 // There is no function to translate a color to a hex string, because
 // the hex-string syntax does not support transparency.
 
-#endif /* nsColor_h___ */
+#endif /* nsColor_h_ */

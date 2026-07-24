@@ -9,16 +9,26 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+
+/**
+ * @typedef {import("UrlbarProvidersManager.sys.mjs").Query} Query
+ */
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
+});
+
+ChromeUtils.defineLazyGetter(lazy, "pageFrecencyThreshold", () => {
+  return lazy.PlacesUtils.history.pageFrecencyThreshold(90, 0, true);
 });
 
 // AutoComplete query type constants.
@@ -63,18 +73,16 @@ const SQL_AUTOFILL_WITH = ORIGIN_USE_ALT_FRECENCY
     )
   `;
 
-const SQL_AUTOFILL_FRECENCY_THRESHOLD = `host_frecency >= (
+const SQL_AUTOFILL_FRECENCY_THRESHOLD = `total_fixed_host_frecency >= (
     SELECT value FROM autofill_frecency_threshold
   )`;
 
-function originQuery(where) {
+function originQuery(where, { preferHttps = false } = {}) {
   // `frecency`, `n_bookmarks` and `visited` are partitioned by the fixed host,
   // without `www.`. `host_prefix` instead is partitioned by full host, because
   // we assume a prefix may not work regardless of `www.`.
-  let selectVisited = where.includes("visited")
-    ? `MAX(EXISTS(
-      SELECT 1 FROM moz_places WHERE origin_id = o.id AND visit_count > 0
-    )) OVER (PARTITION BY fixup_url(host)) > 0`
+  let selectAnyRecentTyped = where.includes("any_recent_typed")
+    ? `MAX(${ORIGIN_FRECENCY_FIELD} > 1) OVER (PARTITION BY fixup_url(host))`
     : "0";
   let selectTitle;
   let joinBookmarks;
@@ -85,14 +93,30 @@ function originQuery(where) {
     selectTitle = "iif(h.frecency <> 0, h.title, NULL)";
     joinBookmarks = "";
   }
+
+  let hostPrefixOrder = preferHttps
+    ? `prefix = "https://" DESC, ${ORIGIN_FRECENCY_FIELD} DESC, id DESC`
+    : `${ORIGIN_FRECENCY_FIELD} DESC, prefix = "https://" DESC, id DESC`;
+
   return `/* do not warn (bug no): cannot use an index to sort */
     ${SQL_AUTOFILL_WITH},
-    origins(id, prefix, host_prefix, host, fixed, host_frecency, frecency, n_bookmarks, visited) AS (
+    origins(
+      id,
+      prefix,
+      host_prefix,
+      host,
+      fixed,
+      total_fixed_host_frecency,
+      frecency,
+      n_bookmarks,
+      any_recent_typed
+    ) AS (
       SELECT
       id,
       prefix,
       first_value(prefix) OVER (
-        PARTITION BY host ORDER BY ${ORIGIN_FRECENCY_FIELD} DESC, prefix = "https://" DESC, id DESC
+        PARTITION BY host
+        ORDER BY ${hostPrefixOrder}
       ),
       host,
       fixup_url(host),
@@ -101,7 +125,7 @@ function originQuery(where) {
       total(
         (SELECT total(foreign_count) FROM moz_places WHERE origin_id = o.id)
       ) OVER (PARTITION BY fixup_url(host)),
-      ${selectVisited}
+      ${selectAnyRecentTyped}
       FROM moz_origins o
       WHERE prefix NOT IN ('about:', 'place:')
         AND ((host BETWEEN :searchString AND :searchString || X'FFFF')
@@ -112,7 +136,12 @@ function originQuery(where) {
              ifnull(:prefix, host_prefix) || host || '/'
       FROM origins
       ${where}
-      ORDER BY frecency DESC, n_bookmarks DESC, prefix = "https://" DESC, id DESC
+      ORDER BY
+        total_fixed_host_frecency DESC,
+        frecency DESC,
+        n_bookmarks DESC,
+        prefix = "https://" DESC,
+        id DESC
       LIMIT 1
     ),
     matched_place(host_fixed, url, id, title, frecency) AS (
@@ -144,7 +173,7 @@ function originQuery(where) {
 
 function urlQuery(where1, where2, isBookmarkContained) {
   // We limit the search to places that are either bookmarked or have a frecency
-  // over some small, arbitrary threshold (20) in order to avoid scanning as few
+  // over some small, arbitrary threshold in order to avoid scanning as few
   // rows as possible.  Keep in mind that we run this query every time the user
   // types a key when the urlbar value looks like a URL with a path.
   let selectTitle;
@@ -196,21 +225,25 @@ function urlQuery(where1, where2, isBookmarkContained) {
 
 // Queries
 const QUERY_ORIGIN_HISTORY_BOOKMARK = originQuery(
-  `WHERE n_bookmarks > 0 OR ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`
+  `WHERE n_bookmarks > 0 OR (any_recent_typed AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD})`,
+  { preferHttps: true }
 );
 
 const QUERY_ORIGIN_PREFIX_HISTORY_BOOKMARK = originQuery(
   `WHERE prefix BETWEEN :prefix AND :prefix || X'FFFF'
-     AND (n_bookmarks > 0 OR ${SQL_AUTOFILL_FRECENCY_THRESHOLD})`
+     AND (n_bookmarks > 0 OR (any_recent_typed AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}))`,
+  { preferHttps: true }
 );
 
 const QUERY_ORIGIN_HISTORY = originQuery(
-  `WHERE visited AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`
+  `WHERE any_recent_typed AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
+  { preferHttps: true }
 );
 
 const QUERY_ORIGIN_PREFIX_HISTORY = originQuery(
   `WHERE prefix BETWEEN :prefix AND :prefix || X'FFFF'
-     AND visited AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`
+     AND any_recent_typed AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
+  { preferHttps: true }
 );
 
 const QUERY_ORIGIN_BOOKMARK = originQuery(`WHERE n_bookmarks > 0`);
@@ -220,20 +253,20 @@ const QUERY_ORIGIN_PREFIX_BOOKMARK = originQuery(
 );
 
 const QUERY_URL_HISTORY_BOOKMARK = urlQuery(
-  `AND (n_bookmarks > 0 OR frecency > 20)
+  `AND (n_bookmarks > 0 OR frecency > :pageFrecencyThreshold)
      AND stripped_url COLLATE NOCASE
        BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
-  `AND (n_bookmarks > 0 OR frecency > 20)
+  `AND (n_bookmarks > 0 OR frecency > :pageFrecencyThreshold)
      AND stripped_url COLLATE NOCASE
        BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`,
   true
 );
 
 const QUERY_URL_PREFIX_HISTORY_BOOKMARK = urlQuery(
-  `AND (n_bookmarks > 0 OR frecency > 20)
+  `AND (n_bookmarks > 0 OR frecency > :pageFrecencyThreshold)
      AND url COLLATE NOCASE
        BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
-  `AND (n_bookmarks > 0 OR frecency > 20)
+  `AND (n_bookmarks > 0 OR frecency > :pageFrecencyThreshold)
      AND url COLLATE NOCASE
        BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`,
   true
@@ -241,11 +274,11 @@ const QUERY_URL_PREFIX_HISTORY_BOOKMARK = urlQuery(
 
 const QUERY_URL_HISTORY = urlQuery(
   `AND (visited OR n_bookmarks = 0)
-     AND frecency > 20
+     AND frecency > :pageFrecencyThreshold
      AND stripped_url COLLATE NOCASE
        BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
   `AND (visited OR n_bookmarks = 0)
-     AND frecency > 20
+     AND frecency > :pageFrecencyThreshold
      AND stripped_url COLLATE NOCASE
        BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`,
   false
@@ -253,11 +286,11 @@ const QUERY_URL_HISTORY = urlQuery(
 
 const QUERY_URL_PREFIX_HISTORY = urlQuery(
   `AND (visited OR n_bookmarks = 0)
-     AND frecency > 20
+     AND frecency > :pageFrecencyThreshold
      AND url COLLATE NOCASE
        BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
   `AND (visited OR n_bookmarks = 0)
-     AND frecency > 20
+     AND frecency > :pageFrecencyThreshold
      AND url COLLATE NOCASE
        BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`,
   false
@@ -284,20 +317,27 @@ const QUERY_URL_PREFIX_BOOKMARK = urlQuery(
 );
 
 /**
+ * @typedef AutofillData
+ *
+ * @property {UrlbarResult} result
+ *   The result entry.
+ * @property {Query} instance
+ *   The query instance.
+ */
+
+/**
  * Class used to create the provider.
  */
-class ProviderAutofill extends UrlbarProvider {
+export class UrlbarProviderAutofill extends UrlbarProvider {
+  /**
+   * This is usually reset on canceling or completing the query, but since we
+   * query in isActive, it may not have been canceled by the previous call.
+   *
+   * @type {?AutofillData}
+   */
+  _autofillData = null;
   constructor() {
     super();
-  }
-
-  /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "Autofill";
   }
 
   /**
@@ -319,8 +359,6 @@ class ProviderAutofill extends UrlbarProvider {
 
     // This is usually reset on canceling or completing the query, but since we
     // query in isActive, it may not have been canceled by the previous call.
-    // It is an object with values { result: UrlbarResult, instance: Query }.
-    // See the documentation for _getAutofillData for more information.
     this._autofillData = null;
 
     // First of all, check for the autoFill pref.
@@ -370,7 +408,7 @@ class ProviderAutofill extends UrlbarProvider {
     // This may confuse completeDefaultIndex cause the AUTOCOMPLETE_MATCH
     // tokenizer ends up trimming the search string and returning a value
     // that doesn't match it, or is even shorter.
-    if (lazy.UrlbarTokenizer.REGEXP_SPACES.test(queryContext.searchString)) {
+    if (lazy.UrlUtils.REGEXP_SPACES.test(queryContext.searchString)) {
       return false;
     }
 
@@ -398,10 +436,9 @@ class ProviderAutofill extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     // Check if the query was cancelled while the autofill result was being
@@ -415,7 +452,6 @@ class ProviderAutofill extends UrlbarProvider {
       return;
     }
 
-    this._autofillData.result.heuristic = true;
     addCallback(this, this._autofillData.result);
     this._autofillData = null;
   }
@@ -439,7 +475,7 @@ class ProviderAutofill extends UrlbarProvider {
    *   Resolved when the filtering is complete. Resolves with the top matching
    *   host, or null if not found.
    */
-  async getTopHostOverThreshold(queryContext, hosts) {
+  static async getTopHostOverThreshold(queryContext, hosts) {
     let db = await lazy.PlacesUtils.promiseLargeCacheDBConnection();
     let conditions = [];
     // Pay attention to the order of params, since they are not named.
@@ -461,7 +497,7 @@ class ProviderAutofill extends UrlbarProvider {
     let rows = await db.executeCached(
       `
         ${SQL_AUTOFILL_WITH},
-        origins(id, prefix, host_prefix, host, fixed, host_frecency, frecency, n_bookmarks, visited) AS (
+        origins(id, prefix, host_prefix, host, fixed, total_fixed_host_frecency, frecency, n_bookmarks, visited) AS (
           SELECT
           id,
           prefix,
@@ -602,6 +638,7 @@ class ProviderAutofill extends UrlbarProvider {
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY) &&
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.BOOKMARKS)
     ) {
+      opts.pageFrecencyThreshold = lazy.pageFrecencyThreshold;
       return [
         this._strippedPrefix
           ? QUERY_URL_PREFIX_HISTORY_BOOKMARK
@@ -610,6 +647,7 @@ class ProviderAutofill extends UrlbarProvider {
       ];
     }
     if (queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY)) {
+      opts.pageFrecencyThreshold = lazy.pageFrecencyThreshold;
       return [
         this._strippedPrefix ? QUERY_URL_PREFIX_HISTORY : QUERY_URL_HISTORY,
         opts,
@@ -626,16 +664,20 @@ class ProviderAutofill extends UrlbarProvider {
 
   _getAdaptiveHistoryQuery(queryContext) {
     let sourceCondition;
+    let params = {};
     if (
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY) &&
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.BOOKMARKS)
     ) {
-      sourceCondition = "(h.foreign_count > 0 OR h.frecency > 20)";
+      sourceCondition =
+        "(h.foreign_count > 0 OR h.frecency > :pageFrecencyThreshold)";
+      params.pageFrecencyThreshold = lazy.pageFrecencyThreshold;
     } else if (
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY)
     ) {
       sourceCondition =
-        "((h.visit_count > 0 OR h.foreign_count = 0) AND h.frecency > 20)";
+        "((h.visit_count > 0 OR h.foreign_count = 0) AND h.frecency > :pageFrecencyThreshold)";
+      params.pageFrecencyThreshold = lazy.pageFrecencyThreshold;
     } else if (
       queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.BOOKMARKS)
     ) {
@@ -654,7 +696,7 @@ class ProviderAutofill extends UrlbarProvider {
       joinBookmarks = "";
     }
 
-    const params = {
+    params = Object.assign(params, {
       queryType: QUERYTYPE.AUTOFILL_ADAPTIVE,
       // `fullSearchString` is the value the user typed including a prefix if
       // they typed one. `searchString` has been stripped of the prefix.
@@ -664,7 +706,7 @@ class ProviderAutofill extends UrlbarProvider {
       useCountThreshold: lazy.UrlbarPrefs.get(
         "autoFillAdaptiveHistoryUseCountThreshold"
       ),
-    };
+    });
 
     const query = `
       WITH matched(input, url, title, stripped_url, is_exact_match, starts_with, id) AS (
@@ -843,12 +885,13 @@ class ProviderAutofill extends UrlbarProvider {
     }
 
     let payload = {
-      url: [finalCompleteValue, UrlbarUtils.HIGHLIGHT.TYPED],
+      url: finalCompleteValue,
       icon: UrlbarUtils.getIconForUrl(finalCompleteValue),
     };
 
+    let noVisitAction = !!title;
     if (title) {
-      payload.title = [title, UrlbarUtils.HIGHLIGHT.TYPED];
+      payload.title = title;
     } else {
       let trimHttps = lazy.UrlbarPrefs.getScotchBonnetPref("trimHttps");
       let displaySpec = UrlbarUtils.prepareUrlForDisplay(finalCompleteValue, {
@@ -860,26 +903,28 @@ class ProviderAutofill extends UrlbarProvider {
         trimEmptyQuery: true,
         trimSlash: !this._searchString.includes("/"),
       });
-      payload.fallbackTitle = [fallbackTitle, UrlbarUtils.HIGHLIGHT.TYPED];
+      payload.title = fallbackTitle;
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-        queryContext.tokens,
-        payload
-      )
-    );
-
-    result.autofill = {
-      adaptiveHistoryInput,
-      value: autofilledValue,
-      selectionStart: queryContext.searchString.length,
-      selectionEnd: autofilledValue.length,
-      type: autofilledType,
-    };
-    return result;
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      autofill: {
+        adaptiveHistoryInput,
+        value: autofilledValue,
+        selectionStart: queryContext.searchString.length,
+        selectionEnd: autofilledValue.length,
+        type: autofilledType,
+        noVisitAction,
+      },
+      payload,
+      highlights: {
+        url: UrlbarUtils.HIGHLIGHT.TYPED,
+        title: UrlbarUtils.HIGHLIGHT.TYPED,
+        fallbackTitle: UrlbarUtils.HIGHLIGHT.TYPED,
+      },
+    });
   }
 
   async _getAutofillResult(queryContext) {
@@ -912,25 +957,29 @@ class ProviderAutofill extends UrlbarProvider {
           trimEmptyQuery: true,
           trimSlash: !this._searchString.includes("/"),
         });
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-            title: [trimmedUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            url: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            icon: UrlbarUtils.getIconForUrl(aboutUrl),
-          })
-        );
         let autofilledValue =
           queryContext.searchString +
           aboutUrl.substring(queryContext.searchString.length);
-        result.autofill = {
-          type: "about",
-          value: autofilledValue,
-          selectionStart: queryContext.searchString.length,
-          selectionEnd: autofilledValue.length,
-        };
-        return result;
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          heuristic: true,
+          autofill: {
+            type: "about",
+            value: autofilledValue,
+            selectionStart: queryContext.searchString.length,
+            selectionEnd: autofilledValue.length,
+          },
+          payload: {
+            title: trimmedUrl,
+            url: aboutUrl,
+            icon: UrlbarUtils.getIconForUrl(aboutUrl),
+          },
+          highlights: {
+            title: UrlbarUtils.HIGHLIGHT.TYPED,
+            url: UrlbarUtils.HIGHLIGHT.TYPED,
+          },
+        });
       }
     }
     return null;
@@ -971,8 +1020,9 @@ class ProviderAutofill extends UrlbarProvider {
     // at the end, we still treat it as an URL.
     let query, params;
     if (
-      lazy.UrlbarTokenizer.looksLikeOrigin(this._searchString, {
+      lazy.UrlUtils.looksLikeOrigin(this._searchString, {
         ignoreKnownDomains: true,
+        allowPartialNumericalTLDs: true,
       })
     ) {
       [query, params] = this._getOriginQuery(queryContext);
@@ -990,5 +1040,3 @@ class ProviderAutofill extends UrlbarProvider {
     return null;
   }
 }
-
-export var UrlbarProviderAutofill = new ProviderAutofill();

@@ -31,7 +31,6 @@
 // them to the correct DLL. Through libxul these will 'magically' resolve.
 #  include "vtune/ittnotify.h"
 
-#  include <stddef.h>
 #  include <unordered_map>
 #  include <string>
 

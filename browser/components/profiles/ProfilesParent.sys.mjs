@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { SelectableProfileService } from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
+import { ProfileAge } from "resource://gre/modules/ProfileAge.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -11,136 +13,230 @@ const PROFILE_THEMES_MAP = new Map([
   [
     "firefox-compact-light@mozilla.org",
     {
-      dataL10nId: "profiles-light-theme",
+      dataL10nId: "profiles-gray-theme",
+      dataL10nTitle: "profiles-gray-theme-title",
       colors: {
-        chromeColor: "#F0F0F4",
-        toolbarColor: "#F9F9FB",
-        contentColor: "#FFFFFF",
+        light: {
+          chromeColor: "rgb(234, 234, 237)", // frame
+          toolbarColor: "rgb(255, 255, 255)", // sidebar?
+          contentColor: "#F9F9FB", // ntp_background
+        },
       },
       isDark: false,
       useInAutomation: true,
-    },
-  ],
-  [
-    "{b90acfd0-f0fc-4add-9195-f6306d25cdfa}",
-    {
-      dataL10nId: "profiles-marigold-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381985/marigold-1.9.xpi",
-      colors: {
-        chromeColor: "#F1CA52",
-        toolbarColor: "#FBDF8C",
-        contentColor: "#FEF7E0",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{388d9fae-8a28-4f9f-9aad-fb9e84e4f3c3}",
-    {
-      dataL10nId: "profiles-lichen-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381979/lichen_soft-1.3.xpi",
-      colors: {
-        chromeColor: "#D2E4DA",
-        toolbarColor: "#E9F2EC",
-        contentColor: "#F5F9F7",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{3ac3b0d7-f017-40e1-b142-a26f794e7015}",
-    {
-      dataL10nId: "profiles-magnolia-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381978/magnolia-1.1.xpi",
-      colors: {
-        chromeColor: "#FB5B9E",
-        toolbarColor: "#F986B6",
-        contentColor: "#FBE0ED",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{ba48d251-0732-45c2-9f2f-39c68e82d047}",
-    {
-      dataL10nId: "profiles-lavender-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381983/lavender_soft-1.2.xpi",
-      colors: {
-        chromeColor: "#CDC1EA",
-        toolbarColor: "#EBE4FA",
-        contentColor: "#F4F0FD",
-      },
-      isDark: false,
     },
   ],
   [
     "firefox-compact-dark@mozilla.org",
     {
-      dataL10nId: "profiles-dark-theme",
+      dataL10nId: "profiles-gray-theme",
+      dataL10nTitle: "profiles-gray-theme-title",
       colors: {
-        chromeColor: "#1C1B22",
-        toolbarColor: "#2B2A33",
-        contentColor: "#42414D",
+        dark: {
+          chromeColor: "rgb(28, 27, 34)",
+          toolbarColor: "rgb(28, 27, 34)",
+          contentColor: "rgb(43, 42, 51)",
+        },
       },
       isDark: true,
       useInAutomation: true,
     },
   ],
   [
-    "{750fa518-b61f-4068-9974-330dcf45442f}",
+    "{cd6791f7-4b6d-47b4-8877-1d4c82c6699d}",
     {
-      dataL10nId: "profiles-ocean-theme-2",
+      dataL10nId: "profiles-yellow-theme",
+      dataL10nTitle: "profiles-yellow-theme-title",
       downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381977/ocean_dark-1.1.xpi",
+        "https://addons.mozilla.org/firefox/downloads/file/4552782/profiles_yellow-1.0.xpi",
       colors: {
-        chromeColor: "#080D33",
-        toolbarColor: "#050D5B",
-        contentColor: "#000511",
+        light: {
+          chromeColor: "rgb(255, 230, 153)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 244, 208)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 16, 0)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(66, 27, 0)",
+        },
       },
-      isDark: true,
     },
   ],
   [
-    "{25b5a343-4238-4bae-b1f9-93a33f258167}",
+    "{7a301b7b-c3e2-40bf-a06b-6d517bbf138b}",
     {
-      dataL10nId: "profiles-terracotta-theme-2",
+      dataL10nId: "profiles-orange-theme",
+      dataL10nTitle: "profiles-orange-theme-title",
       downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381976/terracotta_dark-1.1.xpi",
+        "https://addons.mozilla.org/firefox/downloads/file/4552788/profiles_orange-1.0.xpi",
       colors: {
-        chromeColor: "#591305",
-        toolbarColor: "#98240B",
-        contentColor: "#060100",
+        light: {
+          chromeColor: "rgb(255, 205, 158)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 237, 214)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 15, 0)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(72, 18, 0)",
+        },
       },
-      isDark: true,
     },
   ],
   [
-    "{f9261f02-c03c-4352-92ee-78dd8b41ca98}",
+    "{8de5f8c3-bfc2-443b-9913-7bbadbd1ba0d}",
     {
-      dataL10nId: "profiles-moss-theme-2",
+      dataL10nId: "profiles-red-theme",
+      dataL10nTitle: "profiles-red-theme-title",
       downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381975/moss_dark-1.1.xpi",
+        "https://addons.mozilla.org/firefox/downloads/file/4552785/profiles_red-1.0.xpi",
       colors: {
-        chromeColor: "#405948",
-        toolbarColor: "#5B7B65",
-        contentColor: "#323433",
+        light: {
+          chromeColor: "rgb(255, 195, 201)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 232, 234)",
+        },
+        dark: {
+          chromeColor: "rgb(41, 11, 15)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(76, 5, 22)",
+        },
       },
-      isDark: true,
+    },
+  ],
+  [
+    "{2b0fadbf-238d-43db-aa9d-e06c9a7e000b}",
+    {
+      dataL10nId: "profiles-pink-theme",
+      dataL10nTitle: "profiles-pink-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552787/profiles_pink-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(255, 194, 219)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 232, 244)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 11, 21)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(73, 6, 36)",
+        },
+      },
+    },
+  ],
+  [
+    "{1d73a1eb-128d-4e9e-83f8-c0c51f8c5fd3}",
+    {
+      dataL10nId: "profiles-purple-theme",
+      dataL10nTitle: "profiles-purple-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552786/profiles_purple-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(247, 202, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 236, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(30, 14, 37)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(56, 17, 71)",
+        },
+      },
+    },
+  ],
+  [
+    "{aab1adac-5449-47fd-b836-c2f43dc28f3f}",
+    {
+      dataL10nId: "profiles-violet-theme",
+      dataL10nTitle: "profiles-violet-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552784/profiles_violet-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(221, 207, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(244, 240, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(22, 17, 43)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(40, 25, 83)",
+        },
+      },
+    },
+  ],
+  [
+    "{4223a94a-d3f9-40e9-95dd-99aca80ea04b}",
+    {
+      dataL10nId: "profiles-blue-theme",
+      dataL10nTitle: "profiles-blue-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4551961/profiles_blue-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(171, 223, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(226, 247, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(8, 21, 44)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(4, 35, 86)",
+        },
+      },
+    },
+  ],
+  [
+    "{7063abff-a690-4b87-a548-fc32d3ce5708}",
+    {
+      dataL10nId: "profiles-green-theme",
+      dataL10nTitle: "profiles-green-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552789/profiles_green-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(181, 240, 181)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(225, 255, 225)",
+        },
+        dark: {
+          chromeColor: "rgb(5, 28, 7)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(0, 50, 0)",
+        },
+      },
+    },
+  ],
+  [
+    "{0683b144-0d4a-4815-963e-55a8ec8d386b}",
+    {
+      dataL10nId: "profiles-cyan-theme",
+      dataL10nTitle: "profiles-cyan-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552790/profiles_cyan-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(166, 236, 244)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(207, 255, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(0, 31, 43)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(0, 50, 61)",
+        },
+      },
     },
   ],
   [
     "default-theme@mozilla.org",
     {
       dataL10nId: "profiles-system-theme",
-      colors: {
-        chromeColor: "#1C1B22",
-        toolbarColor: "#2B2A33",
-        contentColor: "#42414D",
-      },
+      dataL10nTitle: "profiles-system-theme-title",
+      colors: {},
     },
   ],
 ]);
@@ -154,6 +250,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
 });
 
+/**
+ * Actor implementation for the profile about pages.
+ */
 export class ProfilesParent extends JSWindowActorParent {
   get tab() {
     const gBrowser = this.browsingContext.topChromeWindow.gBrowser;
@@ -161,32 +260,20 @@ export class ProfilesParent extends JSWindowActorParent {
     return tab;
   }
 
-  actorCreated() {
-    let favicon = this.tab.iconImage;
-    favicon.classList.add("profiles-tab");
-  }
-
-  didDestroy() {
-    const gBrowser = this.browsingContext.topChromeWindow?.gBrowser;
-    if (!gBrowser) {
-      // If gBrowser doesn't exist, then we've closed the tab so we can just return
-      return;
-    }
-    let favicon = this.tab.iconImage;
-    favicon.classList.remove("profiles-tab");
-  }
-
-  async #getProfileContent() {
-    // Make sure SelectableProfileService is initialized
+  async #getProfileContent(isDark) {
     await SelectableProfileService.init();
     let currentProfile = SelectableProfileService.currentProfile;
+    let profileAge = await ProfileAge();
     let profiles = await SelectableProfileService.getAllProfiles();
-    let themes = await this.getSafeForContentThemes();
+    let themes = await this.getSafeForContentThemes(isDark);
     return {
       currentProfile: await currentProfile.toContentSafeObject(),
-      profiles: await Promise.all(profiles.map(p => p.toContentSafeObject())),
-      themes,
       isInAutomation: Cu.isInAutomation,
+      hasDesktopShortcut: currentProfile.hasDesktopShortcut(),
+      platform: AppConstants.platform,
+      profiles: await Promise.all(profiles.map(p => p.toContentSafeObject())),
+      profileCreated: await profileAge.created,
+      themes,
     };
   }
 
@@ -236,11 +323,17 @@ export class ProfilesParent extends JSWindowActorParent {
       }
       case "Profiles:GetNewProfileContent": {
         Glean.profilesNew.displayed.record();
-        return this.#getProfileContent();
+        let isDark = gBrowser.selectedBrowser.ownerGlobal.matchMedia(
+          "(-moz-system-dark-theme)"
+        ).matches;
+        return this.#getProfileContent(isDark);
       }
       case "Profiles:GetEditProfileContent": {
         Glean.profilesExisting.displayed.record();
-        return this.#getProfileContent();
+        let isDark = gBrowser.selectedBrowser.ownerGlobal.matchMedia(
+          "(-moz-system-dark-theme)"
+        ).matches;
+        return this.#getProfileContent(isDark);
       }
       case "Profiles:MoreThemes": {
         if (message.data.source === "about:editprofile") {
@@ -278,6 +371,20 @@ export class ProfilesParent extends JSWindowActorParent {
         let profileObj = message.data;
         SelectableProfileService.currentProfile.name = profileObj.name;
         break;
+      }
+      case "Profiles:SetDesktopShortcut": {
+        let profile = SelectableProfileService.currentProfile;
+        let { shouldEnable } = message.data;
+        if (shouldEnable) {
+          await profile.ensureDesktopShortcut();
+          Glean.profilesExisting.shortcut.record({ value: "create" });
+        } else {
+          await profile.removeDesktopShortcut();
+          Glean.profilesExisting.shortcut.record({ value: "delete" });
+        }
+        return {
+          hasDesktopShortcut: profile.hasDesktopShortcut(),
+        };
       }
       case "Profiles:GetDeleteProfileContent": {
         // Make sure SelectableProfileService is initialized
@@ -360,7 +467,7 @@ export class ProfilesParent extends JSWindowActorParent {
         // The enable theme promise resolves after the
         // "lightweight-theme-styling-update" observer so we know the profile
         // theme is up to date at this point.
-        return SelectableProfileService.currentProfile.theme;
+        return SelectableProfileService.currentProfile.toContentSafeObject();
       }
       case "Profiles:CloseProfileTab": {
         if (source === "about:editprofile") {
@@ -394,16 +501,21 @@ export class ProfilesParent extends JSWindowActorParent {
     await theme.enable();
   }
 
-  async getSafeForContentThemes() {
+  async getSafeForContentThemes(isDark) {
+    let lightDark = isDark ? "dark" : "light";
     let themes = [];
     for (let [themeId, themeObj] of PROFILE_THEMES_MAP) {
+      if (Object.hasOwn(themeObj, "isDark") && themeObj.isDark !== isDark) {
+        continue;
+      }
+
       let theme = await lazy.AddonManager.getAddonByID(themeId);
       themes.push({
         id: themeId,
         dataL10nId: themeObj.dataL10nId,
+        dataL10nTitle: themeObj.dataL10nTitle,
         isActive: theme?.isActive ?? false,
-        ...themeObj.colors,
-        isDark: themeObj.isDark,
+        ...themeObj.colors[lightDark],
         useInAutomation: themeObj?.useInAutomation,
       });
     }
@@ -416,6 +528,7 @@ export class ProfilesParent extends JSWindowActorParent {
       let safeCurrentTheme = {
         id: currentTheme.id,
         name: currentTheme.name,
+        dataL10nTitle: "profiles-custom-theme-title",
         isActive: currentTheme.isActive,
         chromeColor: SelectableProfileService.currentProfile.theme.themeBg,
         toolbarColor: SelectableProfileService.currentProfile.theme.themeFg,

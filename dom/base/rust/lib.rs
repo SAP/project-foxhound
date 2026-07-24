@@ -7,7 +7,7 @@
 use bitflags::bitflags;
 use malloc_size_of::malloc_size_of_is_0;
 
-pub const HEADING_LEVEL_OFFSET: usize = 52;
+pub const HEADING_LEVEL_OFFSET: usize = 57;
 
 bitflags! {
     /// Event-based element states.
@@ -144,6 +144,16 @@ bitflags! {
         const ACTIVE_VIEW_TRANSITION = 1u64 << 50;
         /// For :-moz-suppress-for-print-selection.
         const SUPPRESS_FOR_PRINT_SELECTION = 1u64 << 51;
+        /// https://html.spec.whatwg.org/multipage/semantics-other.html#selector-paused
+        const PAUSED = 1u64 << 52;
+        /// https://html.spec.whatwg.org/multipage/semantics-other.html#selector-seeking
+        const SEEKING = 1u64 << 53;
+        /// https://html.spec.whatwg.org/multipage/semantics-other.html#selector-buffering
+        const BUFFERING = 1u64 << 54;
+        /// https://html.spec.whatwg.org/multipage/semantics-other.html#selector-stalled
+        const STALLED = 1u64 << 55;
+        /// https://html.spec.whatwg.org/multipage/semantics-other.html#selector-muted
+        const MUTED = 1u64 << 56;
         /// https://drafts.csswg.org/selectors-5/#headings
         /// These 4 bits are used to pack the elements heading level into the element state
         /// Heading levels can be from 1-9 so 4 bits allows us to express the full range.

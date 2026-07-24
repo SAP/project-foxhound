@@ -21,7 +21,8 @@ const TEST_HOST = "mochi.test:8888";
 
 /**
  * Add a new test tab in the browser and load the given url.
- * @param {String} url The url to be loaded in the new tab
+ *
+ * @param {string} url The url to be loaded in the new tab
  * @param {Window} win The window to add the tab to (default: current window).
  * @return a promise that resolves to the tab object when the url is loaded
  */
@@ -68,7 +69,7 @@ var reloadPageAndWaitForStyleSheets = async function (ui, editorCount) {
     });
   });
 
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onClear;
 
   await onAllEditorAdded;
@@ -106,11 +107,11 @@ var openStyleEditorForURL = async function (url, win) {
  * Send an async message to the frame script and get back the requested
  * computed style property.
  *
- * @param {String} selector
+ * @param {string} selector
  *        The selector used to obtain the element.
- * @param {String} pseudo
+ * @param {string} pseudo
  *        pseudo id to query, or null.
- * @param {String} name
+ * @param {string} name
  *        name of the property.
  */
 var getComputedStyleProperty = async function (args) {
@@ -131,7 +132,7 @@ var getComputedStyleProperty = async function (args) {
  *
  * @param {StyleEditorUI} ui
  *        Current StyleEditorUI on which at-rules-list-changed events should be fired.
- * @param {Number} delay
+ * @param {number} delay
  */
 function waitForManyEvents(ui, delay) {
   return new Promise(resolve => {
@@ -204,7 +205,7 @@ function getContextMenuElement(panel) {
  * Assert the number of rules displayed in UI
  *
  * @param {StyleSheetEditor} editor
- * @param {Number} expected
+ * @param {number} expected
  */
 async function assertRuleCount(editor, expected) {
   // The rule count is displayed via l10n.setArgs which only applies the value

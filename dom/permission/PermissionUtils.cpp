@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PermissionUtils.h"
+
 #include "mozilla/dom/Document.h"
 #include "nsIPermissionManager.h"
 

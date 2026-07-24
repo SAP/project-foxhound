@@ -8,7 +8,6 @@
 
 #include "MemMapSnapshot.h"
 #include "ScriptPreloader-inl.h"
-
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Try.h"
 

@@ -6,21 +6,20 @@
 
 #include "ClientManagerParent.h"
 
-#include "mozilla/ipc/BackgroundParent.h"
 #include "ClientHandleParent.h"
 #include "ClientManagerOpParent.h"
 #include "ClientManagerService.h"
 #include "ClientSourceParent.h"
 #include "ClientValidation.h"
 #include "mozilla/dom/PClientNavigateOpParent.h"
-#include "mozilla/Unused.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
 IPCResult ClientManagerParent::RecvTeardown() {
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -108,7 +107,7 @@ IPCResult ClientManagerParent::RecvExpectFutureClientSource(
     const IPCClientInfo& aClientInfo) {
   RefPtr<ClientManagerService> cms =
       ClientManagerService::GetOrCreateInstance();
-  Unused << NS_WARN_IF(!cms->ExpectFutureSource(aClientInfo));
+  (void)NS_WARN_IF(!cms->ExpectFutureSource(aClientInfo));
   return IPC_OK();
 }
 

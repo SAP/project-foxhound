@@ -115,14 +115,14 @@ Test.prototype = {
    * Call this when an observer observes a container state change to sanity
    * check the arguments.
    *
-   * @param aNewState
-   *        The name of the new state.  Used only for printing out helpful info.
-   * @param aNode
-   *        The node argument passed to containerStateChanged.
-   * @param aOldState
-   *        The old state argument passed to containerStateChanged.
-   * @param aExpectOldState
-   *        The expected old state.
+   * @param {string} aNewState
+   *   The name of the new state. Used only for printing out helpful info.
+   * @param {nsINavHistoryContainerResultNode} aNode
+   *   The node argument passed to containerStateChanged.
+   * @param {string} aOldState
+   *   The old state argument passed to containerStateChanged.
+   * @param {string} aExpectOldState
+   *   The expected old state.
    */
   checkArgs(aNewState, aNode, aOldState, aExpectOldState) {
     print("Node passed on " + aNewState + " should be result.root");
@@ -140,8 +140,11 @@ Test.prototype = {
    * the state change and ensures that it has been observed the given number
    * of times.  See checkState for parameter explanations.
    *
-   * @return The number of times aState has been observed, including the new
-   *         observation.
+   * @param {string} aState
+   * @param {number} aExpectedMin
+   * @param {number} aExpectedMax
+   * @returns {number}
+   *   The number of times aState has been observed, including the new observation.
    */
   checkStateChanged(aState, aExpectedMin, aExpectedMax) {
     print(aState + " state change observed");
@@ -155,16 +158,15 @@ Test.prototype = {
   /**
    * Ensures that the state has been observed the given number of times.
    *
-   * @param  aState
-   *         The name of the state.
-   * @param  aExpectedMin
-   *         The state must have been observed at least this number of times.
-   * @param  aExpectedMax
-   *         The state must have been observed at most this number of times.
-   *         This parameter is optional.  If undefined, it's set to
-   *         aExpectedMin.
-   * @return The number of times aState has been observed, including the new
-   *         observation.
+   * @param {string} aState
+   *   The name of the state.
+   * @param {number} aExpectedMin
+   *   The state must have been observed at least this number of times.
+   * @param {number} [aExpectedMax]
+   *   The state must have been observed at most this number of times.
+   *   This parameter is optional. If undefined, it's set to aExpectedMin.
+   * @returns {number}
+   *   The number of times aState has been observed, including the new observation.
    */
   checkState(aState, aExpectedMin, aExpectedMax) {
     let cnt = this.stateCounts[aState] || 0;
@@ -303,11 +305,16 @@ var DataHelper = {
    * Converts an array of simple bookmark item descriptions to the more verbose
    * format required by task_populateDB() in head_queries.js.
    *
-   * @param  aData
-   *         An array of objects, each of which describes a bookmark item.
-   * @return An array of objects suitable for passing to populateDB().
+   * @param {object[]} aData
+   *   An array of objects, each of which describes a bookmark item.
+   * @param {string} aData.type
+   *   The type of item to create.
+   * @param {string} [aData.uri]
+   *   The URI to use for the item.
+   * @returns {object[]}
+   *   An array of objects suitable for passing to populateDB().
    */
-  makeDataArray: function DH_makeDataArray(aData) {
+  makeDataArray(aData) {
     let self = this;
     return aData.map(function (dat) {
       let type = dat.type;
@@ -348,13 +355,24 @@ var DataHelper = {
    * Returns a copy of aData, except that any properties that are undefined but
    * defined in aDefaults are set to the corresponding values in aDefaults.
    *
-   * @param  aData
-   *         An object describing a bookmark item.
-   * @param  aDefaults
-   *         An object describing the default bookmark item.
-   * @return A copy of aData with defaults values set.
+   * @param {object} aData
+   *   An array of objects, each of which describes a bookmark item.
+   * @param {string} aData.type
+   *   The type of item to create.
+   * @param {string} [aData.uri]
+   *   The URI to use for the item.
+   * @param {object} aDefaults
+   *   An object describing the default bookmark item.
+   * @param {string} aDefaults.parentGuid
+   *   The parent folder to create the bookmark item in by default.
+   * @param {string} [aDefaults.uri]
+   *   The URI to use as the default.
+   * @param {string} [aDefaults.title]
+   *   The title to use as the default
+   * @returns {object}
+   *   A copy of aData with defaults values set.
    */
-  _makeDataWithDefaults: function DH__makeDataWithDefaults(aData, aDefaults) {
+  _makeDataWithDefaults(aData, aDefaults) {
     let dat = {};
     for (let [prop, val] of Object.entries(aDefaults)) {
       dat[prop] = aData.hasOwnProperty(prop) ? aData[prop] : val;

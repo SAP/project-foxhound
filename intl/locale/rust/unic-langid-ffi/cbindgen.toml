@@ -16,7 +16,3 @@ namespaces = ["mozilla", "intl", "ffi"]
 [parse]
 parse_deps = true
 include = ["unic-langid", "unic-langid-impl"]
-
-[export.rename]
-"ThinVec" = "nsTArray"
-"nsCStr" = "nsDependentCSubstring"

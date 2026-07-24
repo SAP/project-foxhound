@@ -12,14 +12,11 @@
 #include "mozilla/gfx/PrintTargetThebes.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIPrintSettings.h"
 #include "private/pprio.h"
-
-using mozilla::Unused;
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -123,7 +120,7 @@ nsDeviceContextSpecProxy::EndDocument() {
         NS_ERROR_NOT_AVAILABLE, __func__);
   }
 
-  Unused << mRemotePrintJob->SendFinalizePrint();
+  (void)mRemotePrintJob->SendFinalizePrint();
 
   if (mRecorder) {
     MOZ_ASSERT(!mRecorder->IsOpen());

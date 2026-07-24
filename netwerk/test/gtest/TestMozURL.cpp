@@ -4,7 +4,6 @@
 #include <regex>
 #include "json/json.h"
 #include "json/reader.h"
-#include "mozilla/TextUtils.h"
 #include "nsString.h"
 #include "mozilla/net/MozURL.h"
 #include "nsCOMPtr.h"

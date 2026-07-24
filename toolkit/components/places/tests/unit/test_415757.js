@@ -7,9 +7,10 @@
 /**
  * Checks to see that a URI is in the database.
  *
- * @param aURI
- *        The URI to check.
- * @returns true if the URI is in the DB, false otherwise.
+ * @param {nsIURI} aURI
+ *   The URI to check.
+ * @returns {boolean}
+ *   true if the URI is in the DB, false otherwise.
  */
 function uri_in_db(aURI) {
   var options = PlacesUtils.history.getNewQueryOptions();

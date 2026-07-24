@@ -16,10 +16,10 @@ addRDMTask(TEST_URI, async function ({ ui, manager }) {
   await selectNode("div", inspector);
 
   info("Try shrinking the viewport and checking the applied styles");
-  await testShrink(view, ui, manager);
+  await testShrink(inspector, view, ui, manager);
 
   info("Try growing the viewport and checking the applied styles");
-  await testGrow(view, ui, manager);
+  await testGrow(inspector, view, ui, manager);
 
   info("Check that ESC still opens the split console");
   await testEscapeOpensSplitConsole(inspector);
@@ -27,20 +27,20 @@ addRDMTask(TEST_URI, async function ({ ui, manager }) {
   await closeToolboxIfOpen();
 });
 
-async function testShrink(ruleView, ui, manager) {
+async function testShrink(inspector, ruleView, ui, manager) {
   is(numberOfRules(ruleView), 2, "Should have two rules initially.");
 
   info("Resize to 100x100 and wait for the rule-view to update");
-  const onRefresh = ruleView.once("ruleview-refreshed");
+  const onRefresh = inspector.once("rule-view-refreshed");
   await setViewportSize(ui, manager, 100, 100);
   await onRefresh;
 
   is(numberOfRules(ruleView), 3, "Should have three rules after shrinking.");
 }
 
-async function testGrow(ruleView, ui, manager) {
+async function testGrow(inspector, ruleView, ui, manager) {
   info("Resize to 500x500 and wait for the rule-view to update");
-  const onRefresh = ruleView.once("ruleview-refreshed");
+  const onRefresh = inspector.once("rule-view-refreshed");
   await setViewportSize(ui, manager, 500, 500);
   await onRefresh;
 
@@ -48,14 +48,14 @@ async function testGrow(ruleView, ui, manager) {
 }
 
 async function testEscapeOpensSplitConsole(inspector) {
-  ok(!inspector._toolbox._splitConsole, "Console is not split.");
+  ok(!inspector.toolbox.splitConsole, "Console is not split.");
 
   info("Press escape");
-  const onSplit = inspector._toolbox.once("split-console");
+  const onSplit = inspector.toolbox.once("split-console");
   EventUtils.synthesizeKey("KEY_Escape");
   await onSplit;
 
-  ok(inspector._toolbox._splitConsole, "Console is split after pressing ESC.");
+  ok(inspector.toolbox.splitConsole, "Console is split after pressing ESC.");
 }
 
 function numberOfRules(ruleView) {

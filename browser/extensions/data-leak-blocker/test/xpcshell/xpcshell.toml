@@ -1,0 +1,10 @@
+[DEFAULT]
+run-if = [
+  "os != 'android'",
+]
+firefox-appdir = "browser"
+tags = "webextensions"
+dupe-manifest = ""
+
+["test_detected_requests_telemetry.js"]
+https_first_disabled = true # disabled on purpose (test uses http urls)

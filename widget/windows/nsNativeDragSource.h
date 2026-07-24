@@ -8,7 +8,6 @@
 #include "nscore.h"
 #include <ole2.h>
 #include <oleidl.h>
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 
 namespace mozilla {

@@ -16,11 +16,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
-#include <tuple>
 #include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
+#include "NotifyUtils.h"
 #include "mozIStorageAsyncConnection.h"
 #include "mozIStorageConnection.h"
 #include "mozIStorageFunction.h"
@@ -33,8 +34,8 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
@@ -50,8 +51,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 #include "mozilla/dom/ClientManagerService.h"
 #include "mozilla/dom/FlippedOnce.h"
@@ -85,10 +84,10 @@
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
-#include "mozilla/dom/quota/StorageHelpers.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/dom/quota/StorageHelpers.h"
 #include "mozilla/dom/quota/ThreadUtils.h"
 #include "mozilla/dom/quota/UsageInfo.h"
 #include "mozilla/glean/DomLocalstorageMetrics.h"
@@ -99,11 +98,9 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/storage/Variant.h"
-#include "NotifyUtils.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsHashKeys.h"
@@ -135,6 +132,7 @@
 #include "nsStringFlags.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 #include "nsTLiteralString.h"
 #include "nsTStringRepr.h"
@@ -625,7 +623,7 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateStorageConnection(
       // Windows caches the file size, let's force it to stat the file again.
       QM_TRY_INSPECT(const bool& exists,
                      MOZ_TO_RESULT_INVOKE_MEMBER(aDBFile, Exists));
-      Unused << exists;
+      (void)exists;
 
       QM_TRY_INSPECT(const int64_t& fileSize,
                      MOZ_TO_RESULT_INVOKE_MEMBER(aDBFile, GetFileSize));
@@ -738,6 +736,8 @@ Result<nsCOMPtr<nsIFile>, nsresult> GetArchiveFile(
 
 Result<nsCOMPtr<mozIStorageConnection>, nsresult>
 CreateArchiveStorageConnection(const nsAString& aStoragePath) {
+  GECKO_TRACE_SCOPE("dom::localstorage", "CreateArchiveStorageConnection");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(!aStoragePath.IsEmpty());
 
@@ -1060,6 +1060,8 @@ nsresult UpdateUsageFile(nsIFile* aUsageFile, nsIFile* aUsageJournalFile,
 }
 
 Result<UsageInfo, nsresult> LoadUsageFile(nsIFile& aUsageFile) {
+  GECKO_TRACE_SCOPE("dom::localstorage", "LoadUsageFile");
+
   AssertIsOnIOThread();
 
   QM_TRY_INSPECT(const int64_t& fileSize,
@@ -1704,7 +1706,7 @@ class PreparedDatastore {
 
     MOZ_ALWAYS_SUCCEEDS(mTimer->InitWithNamedFuncCallback(
         TimerCallback, this, kPreparedDatastoreTimeoutMs,
-        nsITimer::TYPE_ONE_SHOT, "PreparedDatastore::TimerCallback"));
+        nsITimer::TYPE_ONE_SHOT, "PreparedDatastore::TimerCallback"_ns));
   }
 
   ~PreparedDatastore() {
@@ -1746,7 +1748,7 @@ class PreparedDatastore {
 
       MOZ_ALWAYS_SUCCEEDS(mTimer->InitWithNamedFuncCallback(
           TimerCallback, this, 0, nsITimer::TYPE_ONE_SHOT,
-          "PreparedDatastore::TimerCallback"));
+          "PreparedDatastore::TimerCallback"_ns));
     }
   }
 
@@ -2831,7 +2833,7 @@ using PrivateDatastoreHashtable =
 // event of an (unlikely) race where the private browsing windows are still
 // being torn down, will cause the Datastore to be discarded when the last
 // window actually goes away.
-MOZ_RUNINIT UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
+constinit UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
 
 using DatabaseArray = nsTArray<Database*>;
 
@@ -2894,6 +2896,8 @@ already_AddRefed<Datastore> GetDatastore(const nsACString& aOrigin) {
 }
 
 nsresult LoadArchivedOrigins() {
+  GECKO_TRACE_SCOPE("dom::localstorage", "LoadArchivedOrigins");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(!gArchivedOrigins);
 
@@ -3181,7 +3185,7 @@ bool VerifyOriginKey(const nsACString& aOriginKey,
   QM_TRY_INSPECT((const auto& [originAttrSuffix, originKey]),
                  GenerateOriginKey2(aPrincipalInfo), false);
 
-  Unused << originAttrSuffix;
+  (void)originAttrSuffix;
 
   QM_TRY(OkIf(originKey == aOriginKey), false,
          ([&originKey = originKey, &aOriginKey](const auto) {
@@ -4212,7 +4216,7 @@ nsresult Connection::RollbackWriteTransaction() {
 
   // This may fail if SQLite already rolled back the transaction so ignore any
   // errors.
-  Unused << stmt->Execute();
+  (void)stmt->Execute();
 
   return NS_OK;
 }
@@ -4229,7 +4233,7 @@ void Connection::ScheduleFlush() {
 
   MOZ_ALWAYS_SUCCEEDS(mFlushTimer->InitWithNamedFuncCallback(
       FlushTimerCallback, this, kFlushTimeoutMs, nsITimer::TYPE_ONE_SHOT,
-      "Connection::FlushTimerCallback"));
+      "Connection::FlushTimerCallback"_ns));
 
   mFlushScheduled = true;
 }
@@ -5716,7 +5720,7 @@ void Snapshot::MarkDirty() {
   AssertIsOnBackgroundThread();
 
   if (!mSentMarkDirty) {
-    Unused << SendMarkDirty();
+    (void)SendMarkDirty();
     mSentMarkDirty = true;
   }
 }
@@ -6169,9 +6173,9 @@ void Observer::Observe(Database* aDatabase, const nsString& aDocumentURI,
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aDatabase);
 
-  Unused << SendObserve(aDatabase->GetPrincipalInfo(),
-                        aDatabase->PrivateBrowsingId(), aDocumentURI, aKey,
-                        aOldValue, aNewValue);
+  (void)SendObserve(aDatabase->GetPrincipalInfo(),
+                    aDatabase->PrivateBrowsingId(), aDocumentURI, aKey,
+                    aOldValue, aNewValue);
 }
 
 void Observer::ActorDestroy(ActorDestroyReason aWhy) {
@@ -6497,8 +6501,7 @@ void LSRequestBase::SendResults() {
       response = ResultCode();
     }
 
-    Unused << PBackgroundLSRequestParent::Send__delete__(this,
-                                                         std::move(response));
+    (void)PBackgroundLSRequestParent::Send__delete__(this, std::move(response));
   }
 
   Cleanup();
@@ -6594,6 +6597,12 @@ mozilla::ipc::IPCResult LSRequestBase::RecvCancel() {
 
 mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
   AssertIsOnOwningThread();
+
+  // A well-behaved content process only sends Finish() after receiving Ready(),
+  // which transitions us to WaitingForFinish.
+  if (NS_WARN_IF(mState != State::WaitingForFinish)) {
+    return IPC_FAIL(this, "Finish received in unexpected state");
+  }
 
   Finish();
 
@@ -7020,6 +7029,8 @@ void PrepareDatastoreOp::SendToIOThread() {
 }
 
 nsresult PrepareDatastoreOp::DatabaseWork() {
+  GECKO_TRACE_SCOPE("dom::localstorage", "PrepareDatastoreOp::DatabaseWork");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(mArchivedOriginScope);
   MOZ_ASSERT(mUsage == 0);
@@ -8125,7 +8136,7 @@ void LSSimpleRequestBase::SendResults() {
       response = ResultCode();
     }
 
-    Unused << PBackgroundLSSimpleRequestParent::Send__delete__(this, response);
+    (void)PBackgroundLSSimpleRequestParent::Send__delete__(this, response);
   }
 
   mState = State::Completed;
@@ -8572,7 +8583,7 @@ Result<UsageInfo, nsresult> QuotaClient::InitOrigin(
 
         switch (dirEntryKind) {
           case nsIFileKind::ExistsAsDirectory:
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
             break;
 
           case nsIFileKind::ExistsAsFile: {
@@ -8587,7 +8598,7 @@ Result<UsageInfo, nsresult> QuotaClient::InitOrigin(
               return Ok{};
             }
 
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
 
             break;
           }
@@ -9065,7 +9076,7 @@ QuotaClient::CreateArchivedOriginScope(const OriginScope& aOriginScope) {
     QM_TRY_INSPECT((const auto& [originAttrSuffix, originKey]),
                    GenerateOriginKey2(principalInfo));
 
-    Unused << originAttrSuffix;
+    (void)originAttrSuffix;
 
     return ArchivedOriginScope::CreateFromPrefix(originKey);
   }

@@ -7,12 +7,11 @@
 #ifndef MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORM_H_
 #define MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORM_H_
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Maybe.h"
 #include "js/RootingAPI.h"
+#include "mozilla/RefPtr.h"
+#include "nsISupports.h"
 #include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 

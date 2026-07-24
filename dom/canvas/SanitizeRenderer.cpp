@@ -3,12 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/IntegerRange.h"
-
 #include <functional>
 #include <regex>
 #include <string>
+
+#include "mozilla/gfx/Logging.h"
 
 namespace mozilla {
 namespace webgl {
@@ -301,7 +300,7 @@ std::string SanitizeRenderer(const std::string& raw_renderer) {
         "ANGLE [(]([^,]*), ([^,]*)( Direct3D[^,]*), .*[)]");
     // e.g. "ANGLE (Samsung Xclipse 940) on Vulkan 1.3.264"
     static const std::regex kReAngleVulkan(
-        "ANGLE [(](.*)[)]( on Vulkan) [0-9\\.]*");
+        "ANGLE [(]+(.*)[)]( on Vulkan) [0-9\\.]*[)]*");
 
     if (std::regex_match(raw_renderer, m, kReAngleDirect3D)) {
       const auto& vendor = m.str(1);
@@ -359,6 +358,51 @@ std::string SanitizeRenderer(const std::string& raw_renderer) {
   }
 
   return *replacementDevice + ", or similar";
+}
+
+// -
+
+/**
+ * Sanitize vendor string to standardized buckets.
+ * E.g. "NVIDIA Corporation" => "NVIDIA Corporation"
+ */
+std::string SanitizeVendor(const std::string& raw_vendor) {
+  if (Contains(raw_vendor, "NVIDIA")) {
+    return "NVIDIA Corporation";
+  }
+  if (Contains(raw_vendor, "Intel")) {
+    return "Intel";
+  }
+  if (Contains(raw_vendor, "AMD") || Contains(raw_vendor, "ATI") ||
+      Contains(raw_vendor, "Advanced Micro Devices")) {
+    return "AMD";
+  }
+  if (Contains(raw_vendor, "Qualcomm")) {
+    return "Qualcomm";
+  }
+  if (Contains(raw_vendor, "ARM")) {
+    return "ARM";
+  }
+  if (Contains(raw_vendor, "Apple")) {
+    return "Apple";
+  }
+  if (Contains(raw_vendor, "Samsung")) {
+    return "Samsung";
+  }
+  if (Contains(raw_vendor, "Mesa") || Contains(raw_vendor, "X.Org")) {
+    return "Mesa";
+  }
+  if (Contains(raw_vendor, "Microsoft")) {
+    return "Microsoft";
+  }
+  if (Contains(raw_vendor, "VMware")) {
+    return "VMware";
+  }
+  if (Contains(raw_vendor, "Google")) {
+    return "Google";
+  }
+
+  return "Other";
 }
 
 };  // namespace webgl

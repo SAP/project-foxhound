@@ -8,26 +8,21 @@
 
 #include <utility>
 
-#include "mozilla/dom/FetchTypes.h"
-#include "mozilla/dom/ServiceWorkerOpArgs.h"
-#include "nsCOMPtr.h"
-#include "nsIInputStream.h"
-
 #include "mozilla/Assertions.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/ResultExtensions.h"
+#include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "mozilla/Try.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/dom/InternalResponse.h"
-#include "mozilla/dom/PRemoteWorkerParent.h"
-#include "mozilla/dom/PRemoteWorkerControllerParent.h"
-#include "mozilla/dom/PRemoteWorkerServiceParent.h"
 #include "mozilla/dom/FetchEventOpParent.h"
-#include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/dom/FetchTypes.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/PRemoteWorkerControllerParent.h"
+#include "mozilla/dom/PRemoteWorkerParent.h"
+#include "mozilla/dom/PRemoteWorkerServiceParent.h"
+#include "mozilla/dom/ServiceWorkerOpArgs.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/RemoteLazyInputStreamStorage.h"
+#include "mozilla/ipc/PBackgroundParent.h"
+#include "nsCOMPtr.h"
+#include "nsIInputStream.h"
 
 namespace mozilla {
 
@@ -166,7 +161,7 @@ ParentToParentFetchEventRespondWithResult ToParentToParent(
     copyRequest.body().ref().get_ParentToChildStream() = stream;
   }
 
-  Unused << aManager->SendPFetchEventOpProxyConstructor(actor, copyArgs);
+  (void)aManager->SendPFetchEventOpProxyConstructor(actor, copyArgs);
 }
 
 FetchEventOpProxyParent::~FetchEventOpProxyParent() {
@@ -185,8 +180,8 @@ mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvAsyncLog(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(mReal);
 
-  Unused << mReal->SendAsyncLog(aScriptSpec, aLineNumber, aColumnNumber,
-                                aMessageName, aParams);
+  (void)mReal->SendAsyncLog(aScriptSpec, aLineNumber, aColumnNumber,
+                            aMessageName, aParams);
 
   return IPC_OK();
 }
@@ -198,7 +193,7 @@ mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvRespondWith(
 
   auto manager = WrapNotNull(mReal->Manager());
   auto backgroundParent = WrapNotNull(manager->Manager());
-  Unused << mReal->SendRespondWith(ToParentToParent(aResult, backgroundParent));
+  (void)mReal->SendRespondWith(ToParentToParent(aResult, backgroundParent));
   return IPC_OK();
 }
 

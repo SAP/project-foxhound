@@ -1,6 +1,6 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/import { keysOf } from '../../../../../../common/util/data_tables.js';import { assert, range, unreachable } from '../../../../../../common/util/util.js';import { Float16Array } from '../../../../../../external/petamoriken/float16/float16.js';
+**/import { keysOf } from '../../../../../../common/util/data_tables.js';import { assert, range, unreachable, hasFeature } from '../../../../../../common/util/util.js';import { Float16Array } from '../../../../../../external/petamoriken/float16/float16.js';
 import {
 
 
@@ -45,7 +45,10 @@ import {
 
 '../../../../../util/texture/texel_data.js';
 import { TexelView } from '../../../../../util/texture/texel_view.js';
-import { createTextureFromTexelViews } from '../../../../../util/texture.js';
+import {
+  copyTexelViewsToTexture,
+  createTextureFromTexelViews } from
+'../../../../../util/texture.js';
 import { reifyExtent3D } from '../../../../../util/unions.js';
 
 
@@ -117,13 +120,7 @@ format)
 {
   t.skipIfTextureFormatNotSupported(format);
   if (filter === 'linear') {
-    t.skipIf(isDepthTextureFormat(format), 'depth texture are unfilterable');
-
-    const type = getTextureFormatType(format);
-    if (type === 'unfilterable-float') {
-      assert(is32Float(format));
-      t.skipIfDeviceDoesNotHaveFeature('float32-filterable');
-    }
+    t.skipIfTextureFormatNotFilterable(format);
   }
 }
 
@@ -1056,32 +1053,40 @@ const kTextureTypeInfo = {
   depth: {
     componentType: 'f32',
     resultType: 'vec4f',
-    resultFormat: 'rgba32float'
+    resultFormat: 'rgba32float',
+    sampleType: 'depth'
   },
   float: {
     componentType: 'f32',
     resultType: 'vec4f',
-    resultFormat: 'rgba32float'
+    resultFormat: 'rgba32float',
+    sampleType: 'float'
   },
   'unfilterable-float': {
     componentType: 'f32',
     resultType: 'vec4f',
-    resultFormat: 'rgba32float'
+    resultFormat: 'rgba32float',
+    sampleType: 'unfilterable-float'
   },
   sint: {
     componentType: 'i32',
     resultType: 'vec4i',
-    resultFormat: 'rgba32sint'
+    resultFormat: 'rgba32sint',
+    sampleType: 'sint'
   },
   uint: {
     componentType: 'u32',
     resultType: 'vec4u',
-    resultFormat: 'rgba32uint'
+    resultFormat: 'rgba32uint',
+    sampleType: 'uint'
   }
 };
 
-export function getTextureFormatTypeInfo(format) {
-  const type = getTextureFormatType(format);
+export function getTextureFormatTypeInfo(
+format,
+aspect = 'all')
+{
+  const type = getTextureFormatType(format, aspect);
   assert(!!type);
   return kTextureTypeInfo[type];
 }
@@ -1378,18 +1383,20 @@ const kTextureCallArgNames = [
 
 
 
-const isBuiltinComparison = (builtin) =>
+export const isBuiltinComparison = (builtin) =>
 builtin === 'textureGatherCompare' ||
 builtin === 'textureSampleCompare' ||
 builtin === 'textureSampleCompareLevel';
-const isBuiltinGather = (builtin) =>
+export const isBuiltinGather = (builtin) =>
 builtin === 'textureGather' || builtin === 'textureGatherCompare';
-const builtinNeedsSampler = (builtin) =>
+export const builtinNeedsSampler = (builtin) =>
 builtin.startsWith('textureSample') || builtin.startsWith('textureGather');
-const builtinNeedsDerivatives = (builtin) =>
+export const builtinNeedsDerivatives = (builtin) =>
 builtin === 'textureSample' ||
 builtin === 'textureSampleBias' ||
 builtin === 'textureSampleCompare';
+// This returns true for `texture_depth_2d`, `texture_depth_cube` etc...
+const isSingleChannelInput = (textureType) => textureType.startsWith('texture_depth');
 
 const isCubeViewDimension = (viewDescriptor) =>
 viewDescriptor?.dimension === 'cube' || viewDescriptor?.dimension === 'cube-array';
@@ -1517,11 +1524,15 @@ const add = (a, b) => apply(a, b, (x, y) => x + y);
  */
 export function convertPerTexelComponentToResultFormat(
 src,
-format)
+format,
+aspect = 'all')
 {
-  const rep = kTexelRepresentationInfo[format];
+  const effectiveFormat = aspect === 'stencil-only' ? 'stencil8' : format;
+  const components = isEncodableTextureFormat(effectiveFormat) ?
+  kTexelRepresentationInfo[effectiveFormat].componentOrder :
+  kRGBAComponents;
   const out = { R: 0, G: 0, B: 0, A: 1 };
-  for (const component of rep.componentOrder) {
+  for (const component of components) {
     switch (component) {
       case 'Stencil':
       case 'Depth':
@@ -1533,6 +1544,39 @@ format)
     }
   }
   return out;
+}
+
+function swizzleComponentToTexelComponent(
+src,
+component)
+{
+  switch (component) {
+    case '0':
+      return 0;
+    case '1':
+      return 1;
+    case 'r':
+      return src.R;
+    case 'g':
+      return src.G;
+    case 'b':
+      return src.B;
+    case 'a':
+      return src.A;
+  }
+}
+
+export function swizzleTexel(
+src,
+swizzle)
+{
+  swizzle = swizzle ?? 'rgba';
+  return {
+    R: swizzleComponentToTexelComponent(src, swizzle[0]),
+    G: swizzleComponentToTexelComponent(src, swizzle[1]),
+    B: swizzleComponentToTexelComponent(src, swizzle[2]),
+    A: swizzleComponentToTexelComponent(src, swizzle[3])
+  };
 }
 
 /**
@@ -1600,6 +1644,37 @@ const kSamplerFns = {
   always: (ref, v) => true
 };
 
+const kDefaultValueForDepthTextureComponents = {
+  R: 0,
+  G: 0,
+  B: 0,
+  A: 1,
+  Depth: 0,
+  Stencil: 0
+};
+
+/**
+ * Applies a comparison function the R or Depth component of a texel.
+ */
+export function applyCompareToTexel(
+components,
+src,
+compare,
+ref)
+{
+  const out = {};
+  const compareFn = kSamplerFns[compare];
+  for (const component of components) {
+    out[component] =
+    component === 'R' || component === 'Depth' ?
+    compareFn(ref, src[component]) ?
+    1 :
+    0 :
+    kDefaultValueForDepthTextureComponents[component];
+  }
+  return out;
+}
+
 function applyCompare(
 call,
 sampler,
@@ -1609,12 +1684,7 @@ src)
   if (isBuiltinComparison(call.builtin)) {
     assert(sampler !== undefined);
     assert(call.depthRef !== undefined);
-    const out = {};
-    const compareFn = kSamplerFns[sampler.compare];
-    for (const component of components) {
-      out[component] = compareFn(call.depthRef, src[component]) ? 1 : 0;
-    }
-    return out;
+    return applyCompareToTexel(components, src, sampler.compare, call.depthRef);
   } else {
     return src;
   }
@@ -1645,6 +1715,7 @@ softwareTexture)
  * mip level
  */
 function softwareTextureReadMipLevel(
+t,
 call,
 softwareTexture,
 sampler,
@@ -1660,6 +1731,7 @@ mipLevel)
     baseMipLevelSize,
     mipLevel
   );
+  const swizzle = softwareTexture.viewDescriptor.swizzle;
 
   const addressMode =
   call.builtin === 'textureSampleBaseClampToEdge' ?
@@ -1849,7 +1921,8 @@ mipLevel)
             const v = load(c);
             const postV = applyCompare(call, sampler, rep.componentOrder, v);
             const rgba = convertPerTexelComponentToResultFormat(postV, format);
-            out[kRGBAComponents[i]] = rgba[component];
+            const swizzled = swizzleTexel(rgba, swizzle);
+            out[kRGBAComponents[i]] = swizzled[component];
           });
           return out;
         }
@@ -1866,13 +1939,15 @@ mipLevel)
           }
         }
 
-        return convertPerTexelComponentToResultFormat(out, format);
+        const rgba = convertPerTexelComponentToResultFormat(out, format);
+        return swizzleTexel(rgba, swizzle);
       }
     case 'textureLoad':{
         const out = isOutOfBoundsCall(softwareTexture, call) ?
         zeroValuePerTexelComponent(rep.componentOrder) :
         load(call.coords);
-        return convertPerTexelComponentToResultFormat(out, format);
+        const rgba = convertPerTexelComponentToResultFormat(out, format);
+        return swizzleTexel(rgba, swizzle);
       }
     default:
       unreachable();
@@ -1891,7 +1966,7 @@ sampler,
 mipLevel)
 {
   if (!sampler) {
-    return softwareTextureReadMipLevel(call, softwareTexture, sampler, mipLevel);
+    return softwareTextureReadMipLevel(t, call, softwareTexture, sampler, mipLevel);
   }
 
   const { mipLevelCount } = getBaseMipLevelInfo(softwareTexture);
@@ -1902,8 +1977,8 @@ mipLevel)
         const clampedMipLevel = clamp(mipLevel, lodClampMinMax);
         const rootMipLevel = Math.floor(clampedMipLevel);
         const nextMipLevel = Math.ceil(clampedMipLevel);
-        const t0 = softwareTextureReadMipLevel(call, softwareTexture, sampler, rootMipLevel);
-        const t1 = softwareTextureReadMipLevel(call, softwareTexture, sampler, nextMipLevel);
+        const t0 = softwareTextureReadMipLevel(t, call, softwareTexture, sampler, rootMipLevel);
+        const t1 = softwareTextureReadMipLevel(t, call, softwareTexture, sampler, nextMipLevel);
         const weightType = call.builtin === 'textureSampleLevel' ? 'sampleLevelWeights' : 'identity';
         const mix = getWeightForMipLevel(t, stage, weightType, mipLevelCount, clampedMipLevel);
         assert(mix >= 0 && mix <= 1);
@@ -1921,7 +1996,7 @@ mipLevel)
       }
     default:{
         const baseMipLevel = Math.floor(clamp(mipLevel, lodClampMinMax) + 0.5);
-        return softwareTextureReadMipLevel(call, softwareTexture, sampler, baseMipLevel);
+        return softwareTextureReadMipLevel(t, call, softwareTexture, sampler, baseMipLevel);
       }
   }
 }
@@ -2135,7 +2210,10 @@ call)
 }
 
 function isValidOutOfBoundsValue(
+device,
 softwareTexture,
+builtin,
+textureType,
 gotRGBA,
 maxFractionalDiff)
 {
@@ -2161,6 +2239,7 @@ maxFractionalDiff)
   }
 
   // Can be any texel value
+  const swizzle = softwareTexture.viewDescriptor.swizzle;
   for (let mipLevel = 0; mipLevel < softwareTexture.texels.length; ++mipLevel) {
     const mipTexels = softwareTexture.texels[mipLevel];
     const size = virtualMipSize(
@@ -2174,9 +2253,15 @@ maxFractionalDiff)
         for (let x = 0; x < size[0]; ++x) {
           for (let sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
             const texel = mipTexels.color({ x, y, z, sampleIndex });
-            const rgba = convertPerTexelComponentToResultFormat(texel, mipTexels.format);
+            const rgba = swizzleTexel(
+              convertPerTexelComponentToResultFormat(texel, mipTexels.format),
+              swizzle
+            );
             if (
             texelsApproximatelyEqual(
+              device,
+              builtin,
+              textureType,
               gotRGBA,
               softwareTexture.descriptor.format,
               rgba,
@@ -2204,8 +2289,10 @@ maxFractionalDiff)
  * * 0 if a depth texture
  */
 function okBecauseOutOfBounds(
+device,
 softwareTexture,
 call,
+textureType,
 gotRGBA,
 maxFractionalDiff)
 {
@@ -2213,7 +2300,14 @@ maxFractionalDiff)
     return false;
   }
 
-  return isValidOutOfBoundsValue(softwareTexture, gotRGBA, maxFractionalDiff);
+  return isValidOutOfBoundsValue(
+    device,
+    softwareTexture,
+    call.builtin,
+    textureType,
+    gotRGBA,
+    maxFractionalDiff
+  );
 }
 
 const kRGBAComponents = [
@@ -2229,6 +2323,9 @@ const kRComponent = [TexelComponent.R];
  * Compares two Texels
  */
 export function texelsApproximatelyEqual(
+device,
+builtin,
+textureType,
 gotRGBA,
 gotFormat,
 expectRGBA,
@@ -2247,10 +2344,7 @@ maxFractionalDiff)
     expectedFormat
   );
 
-  const rgbaComponentsToCheck = isDepthOrStencilTextureFormat(gotFormat) ?
-  kRComponent :
-  kRGBAComponents;
-
+  const rgbaComponentsToCheck = getComponentsToCheck(device, gotFormat, builtin, textureType);
   for (const component of rgbaComponentsToCheck) {
     const g = gotRGBA[component];
     const e = expectRGBA[component];
@@ -2325,6 +2419,28 @@ baseMipLevelSize: [${baseMipLevelSize.join(', ')}]
 physicalMipCount: ${physicalMipLevelCount}
   `;
 }
+
+function getComponentsToCheck(
+device,
+format,
+builtin,
+textureType)
+{
+  const returnsOneComponent = !isBuiltinGather(builtin) && isSingleChannelInput(textureType);
+  if (returnsOneComponent) {
+    return kRComponent;
+  }
+
+  const gbaUndefined =
+  isDepthOrStencilTextureFormat(format) &&
+  !hasFeature(device.features, 'texture-component-swizzle');
+  if (gbaUndefined) {
+    return kRComponent;
+  }
+
+  return kRGBAComponents;
+}
+
 /**
  * Checks the result of each call matches the expected result.
  */
@@ -2459,16 +2575,21 @@ gpuTexture)
 
     // The spec says depth and stencil have implementation defined values for G, B, and A
     // so if this is `textureGather` and component > 0 then there's nothing to check.
+    // except if texture-component-swizzle is on. Then G = 0, B = 0, A = 1
     if (
     isDepthOrStencilTextureFormat(format) &&
     isBuiltinGather(call.builtin) &&
-    call.component > 0)
+    call.component > 0 &&
+    !hasFeature(t.device.features, 'texture-component-swizzle'))
     {
       continue;
     }
 
     if (
     texelsApproximatelyEqual(
+      t.device,
+      call.builtin,
+      textureType,
       gotRGBA,
       softwareTexture.descriptor.format,
       expectRGBA,
@@ -2481,7 +2602,14 @@ gpuTexture)
 
     if (
     !sampler &&
-    okBecauseOutOfBounds(softwareTexture, call, gotRGBA, callSpecificMaxFractionalDiff))
+    okBecauseOutOfBounds(
+      t.device,
+      softwareTexture,
+      call,
+      textureType,
+      gotRGBA,
+      callSpecificMaxFractionalDiff
+    ))
     {
       continue;
     }
@@ -2490,11 +2618,12 @@ gpuTexture)
     const eULP = getULPFromZeroForComponents(expectRGBA, format, call.builtin, call.component);
 
     // from the spec: https://gpuweb.github.io/gpuweb/#reading-depth-stencil
-    // depth and stencil values are D, ?, ?, ?
-    const rgbaComponentsToCheck =
-    isBuiltinGather(call.builtin) || !isDepthOrStencilTextureFormat(format) ?
-    kRGBAComponents :
-    kRComponent;
+    // depth and stencil values are D, ?, ?, ? unless texture-component-swizzle is enabled
+    // in which case it's D, 0, 0, 1
+    //
+    // That said, functions that take `texture_depth_??`, except textureGatherCompare, return f32, not vec4f.
+    // Our tests convert them to vec4f for reasons but we only care about the first channel.
+    const rgbaComponentsToCheck = getComponentsToCheck(t.device, format, call.builtin, textureType);
 
     let bad = false;
     const diffs = rgbaComponentsToCheck.map((component) => {
@@ -2711,7 +2840,7 @@ we can not do that easily with compressed textures. ###
               if (useTexelFormatForGPUTexture) {
                 descriptor.format = texels[0].format;
               }
-              const gpuTexture = createTextureFromTexelViewsLocal(t, texels, descriptor);
+              const gpuTexture = createTextureFromTexelViewsLocal(t, [texels], descriptor);
               const result = (await checkInfo.runner.run(gpuTexture))[callIdx];
               gpuTexture.destroy();
               return result;
@@ -3189,6 +3318,14 @@ format)
   return texelViews;
 }
 
+/**
+ * Creates a texture from an array of TexelViews.
+ * @param t the current test
+ * @param texelViews Array of TexelViews per aspect per mip level. Note that only depth-stencil textures
+ *    have 2 aspects, in which case it's assumed the texelViews are in the order [depth, stencil]
+ * @param desc description for the texture to be created
+ * @returns created texture
+ */
 function createTextureFromTexelViewsLocal(
 t,
 texelViews,
@@ -3199,12 +3336,19 @@ desc)
   if (isDepthOrStencilTextureFormat(desc.format) || desc.sampleCount > 1) {
     modifiedDescriptor.usage = desc.usage | GPUTextureUsage.RENDER_ATTACHMENT;
   }
-  return createTextureFromTexelViews(t, texelViews, modifiedDescriptor);
+  const texture = createTextureFromTexelViews(t, texelViews[0], modifiedDescriptor);
+  if (texelViews.length > 1) {
+    copyTexelViewsToTexture(t, texture, 'stencil-only', texelViews[1]);
+  }
+  return texture;
 }
 
 /**
  * Fills a texture with random data and returns that data as
- * an array of TexelView.
+ * an array of arrays of TexelView. The top level arrays are
+ * per aspect. For textures with 1 aspect it would just be
+ * `[[textureViewsByMipLevel]]`. For a depth-stencil textures
+ * it would be [[depthViewsByMipLevel], [stencilViewsByMipLevel]]
  *
  * For compressed textures the texture is filled with random bytes
  * and then read back from the GPU by sampling so the GPU decompressed
@@ -3213,7 +3357,7 @@ desc)
  * For uncompressed textures the TexelViews are generated and then
  * copied to the texture.
  */
-export async function createTextureWithRandomDataAndGetTexels(
+export async function createTextureWithRandomDataAndGetTexelsForEachAspect(
 t,
 descriptor,
 options)
@@ -3229,7 +3373,7 @@ options)
       descriptor,
       getTexelViewFormatForTextureFormat(texture.format)
     );
-    return { texture, texels };
+    return { texture, texels: [texels] };
   } else if (isUnencodableDepthFormat(descriptor.format)) {
     // This is round about. We can't directly write to depth24plus, depth24plus-stencil8, depth32float-stencil8
     // and they are not encodable. So: (1) we make random data using `depth32float`. We create a texture with
@@ -3240,20 +3384,46 @@ options)
       ...descriptor,
       format: 'depth32float'
     };
-    const tempTexels = createRandomTexelViewMipmap(d32Descriptor, options);
-    const texture = createTextureFromTexelViewsLocal(t, tempTexels, descriptor);
+    const stencilTexels = isStencilTextureFormat(descriptor.format) ?
+    [createRandomTexelViewMipmap({ ...descriptor, format: 'stencil8' })] :
+    [];
+    const texture = createTextureFromTexelViewsLocal(
+      t,
+      [createRandomTexelViewMipmap(d32Descriptor, options), ...stencilTexels],
+      descriptor
+    );
     const texels = await readTextureToTexelViews(
       t,
       texture,
       descriptor,
       getTexelViewFormatForTextureFormat(texture.format)
     );
-    return { texture, texels };
+    const texelsPerAspect = [texels, ...stencilTexels];
+    return { texture, texels: texelsPerAspect };
   } else {
     const texels = createRandomTexelViewMipmap(descriptor, options);
-    const texture = createTextureFromTexelViewsLocal(t, texels, descriptor);
-    return { texture, texels };
+    const texture = createTextureFromTexelViewsLocal(t, [texels], descriptor);
+    return { texture, texels: [texels] };
   }
+}
+
+/**
+ * Fills a texture with random data and returns that data an arrays of TexelView.
+ * Note: If the texture has multiple aspects it only returns the `depth-only`
+ * TexelViews. If you need views for both aspects use
+ * @see {@link createTextureWithRandomDataAndGetTexelsForEachAspect}.
+ */
+export async function createTextureWithRandomDataAndGetTexels(
+t,
+descriptor,
+options)
+{
+  const { texture, texels } = await createTextureWithRandomDataAndGetTexelsForEachAspect(
+    t,
+    descriptor,
+    options
+  );
+  return { texture, texels: texels[0] };
 }
 
 function valueIfAllComponentsAreEqual(
@@ -5136,7 +5306,7 @@ ${stageWGSL}
   sampler.minFilter === 'linear' ||
   sampler.magFilter === 'linear' ||
   sampler.mipmapFilter === 'linear');
-  let sampleType = textureType.startsWith('texture_depth') ?
+  let sampleType = isSingleChannelInput(textureType) ?
   'depth' :
   isDepthTextureFormat(format) ?
   'unfilterable-float' :
@@ -5145,7 +5315,7 @@ ${stageWGSL}
   type ?? 'float';
   if (isFiltering && sampleType === 'unfilterable-float') {
     assert(is32Float(format));
-    assert(t.device.features.has('float32-filterable'));
+    assert(hasFeature(t.device.features, 'float32-filterable'));
     sampleType = 'float';
   }
   if (sampleCount > 1 && sampleType === 'float') {

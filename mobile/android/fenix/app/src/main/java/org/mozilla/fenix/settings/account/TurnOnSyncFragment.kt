@@ -22,6 +22,7 @@ import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.components.support.ktx.android.content.hasCamera
 import mozilla.components.support.ktx.android.content.isPermissionGranted
 import mozilla.components.support.ktx.android.view.hideKeyboard
+import mozilla.components.support.ktx.android.view.tryDisableEdgeToEdge
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.SyncAuth
 import org.mozilla.fenix.HomeActivity
@@ -106,6 +107,10 @@ class TurnOnSyncFragment : Fragment(), AccountObserver {
     override fun onResume() {
         super.onResume()
 
+        if (requireContext().settings().useOnboardingRedesign) {
+            activity?.tryDisableEdgeToEdge()
+        }
+
         if (pairWithEmailStarted ||
             requireComponents.backgroundServices.accountManager.authenticatedAccount() != null
         ) {
@@ -118,7 +123,7 @@ class TurnOnSyncFragment : Fragment(), AccountObserver {
             pairWithEmailStarted = true
         } else {
             requireComponents.backgroundServices.accountManager.register(this, owner = this)
-            showToolbar(getString(R.string.preferences_sync_2))
+            showToolbar(getString(R.string.preferences_sign_in))
         }
     }
 

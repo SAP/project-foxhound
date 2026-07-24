@@ -26,14 +26,11 @@ typedef double Double;
 
 enum class SurfaceType : int8_t {
   DATA,                   /* Data surface - bitmap in memory */
-  D2D1_BITMAP,            /* Surface wrapping a ID2D1Bitmap */
-  D2D1_DRAWTARGET,        /* Surface made from a D2D draw target */
   CAIRO,                  /* Surface wrapping a cairo surface */
   CAIRO_IMAGE,            /* Data surface wrapping a cairo image surface */
   COREGRAPHICS_IMAGE,     /* Surface wrapping a CoreGraphics Image */
   COREGRAPHICS_CGCONTEXT, /* Surface wrapping a CG context */
   SKIA,                   /* Surface wrapping a Skia bitmap */
-  D2D1_1_IMAGE,           /* A D2D 1.1 ID2D1Image SourceSurface */
   RECORDING,              /* Surface used for recording */
   DATA_SHARED,            /* Data surface using shared memory */
   DATA_RECYCLING_SHARED,  /* Data surface using shared memory */
@@ -43,6 +40,7 @@ enum class SurfaceType : int8_t {
   BLOB_IMAGE,             /* Recorded blob image */
   DATA_MAPPED,            /* Data surface wrapping a ScopedMap */
   WEBGL,                  /* Surface wrapping a DrawTargetWebgl texture */
+  D3D11_TEXTURE,          /* Surface wrapping a D3D11Texture */
 };
 
 enum class SurfaceFormat : int8_t {
@@ -98,6 +96,14 @@ enum class SurfaceFormat : int8_t {
   Lab,
   Depth,
 
+  // LE packed 10bit per channel format primarily associated with HDR10 video.
+  R10G10B10A2_UINT32,  // 0bAARRRRRRRRRRGGGGGGGGGGBBBBBBBBBB
+  // Same as R10G10B10A2_UINT32 but with the alpha channel ignored.
+  R10G10B10X2_UINT32,  // 0b00RRRRRRRRRRGGGGGGGGGGBBBBBBBBBB
+  // 4 half-float (f16) components in RGBA order for HDR rendering, each is
+  // machine endian.
+  R16G16B16A16F,
+
   // This represents the unknown format.
   UNKNOWN,  // TODO: Replace uses with Maybe<SurfaceFormat>.
 
@@ -122,6 +128,14 @@ enum class SurfaceFormat : int8_t {
   OS_RGBX = X8R8G8B8_UINT32
 };
 
+enum class SubpixelOrder : uint8_t {
+  UNKNOWN,
+  RGB,
+  BGR,
+  VRGB,
+  VBGR,
+};
+
 struct SurfaceFormatInfo {
   bool hasColor;
   bool hasAlpha;
@@ -135,6 +149,8 @@ inline std::optional<SurfaceFormatInfo> Info(const SurfaceFormat aFormat) {
     case SurfaceFormat::B8G8R8A8:
     case SurfaceFormat::R8G8B8A8:
     case SurfaceFormat::A8R8G8B8:
+    case SurfaceFormat::R10G10B10A2_UINT32:
+    case SurfaceFormat::R16G16B16A16F:
       info.hasColor = true;
       info.hasAlpha = true;
       break;
@@ -145,6 +161,7 @@ inline std::optional<SurfaceFormatInfo> Info(const SurfaceFormat aFormat) {
     case SurfaceFormat::R8G8B8:
     case SurfaceFormat::B8G8R8:
     case SurfaceFormat::R5G6B5_UINT16:
+    case SurfaceFormat::R10G10B10X2_UINT32:
     case SurfaceFormat::R8G8:
     case SurfaceFormat::R16G16:
     case SurfaceFormat::HSV:
@@ -210,6 +227,15 @@ inline std::optional<SurfaceFormatInfo> Info(const SurfaceFormat aFormat) {
 
     case SurfaceFormat::A8:
       info.bytesPerPixel = 1;
+      break;
+
+    case SurfaceFormat::R10G10B10A2_UINT32:
+    case SurfaceFormat::R10G10B10X2_UINT32:
+      info.bytesPerPixel = 4;
+      break;
+
+    case SurfaceFormat::R16G16B16A16F:
+      info.bytesPerPixel = 8;
       break;
 
     case SurfaceFormat::HSV:
@@ -296,9 +322,40 @@ static inline int BytesPerPixel(SurfaceFormat aFormat) {
       return 3 * sizeof(float);
     case SurfaceFormat::Depth:
       return sizeof(uint16_t);
-    default:
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::B8G8R8X8:
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::R8G8B8X8:
+    case SurfaceFormat::A8R8G8B8:
+    case SurfaceFormat::X8R8G8B8:
+    case SurfaceFormat::R10G10B10A2_UINT32:
+    case SurfaceFormat::R10G10B10X2_UINT32:
+    case SurfaceFormat::R16G16:
+      return 4;
+    case SurfaceFormat::R16G16B16A16F:
+      return 8;
+    case SurfaceFormat::R8G8:
+      return 2;
+    case SurfaceFormat::YUV420:
+    case SurfaceFormat::YUV420P10:
+    case SurfaceFormat::YUV422P10:
+    case SurfaceFormat::NV12:
+    case SurfaceFormat::NV16:
+    case SurfaceFormat::YUY2:
+      // These formats are not easily described in terms of bytes per pixel,
+      // technically 1.5 bytes per pixel on average, which is guaranteed by the
+      // width and height being multiples of 2.
+      return 0;
+    case SurfaceFormat::P016:
+    case SurfaceFormat::P010:
+      // Similar to NV12 but uint16 pixels.
+      return 0;
+    case SurfaceFormat::UNKNOWN:
+      MOZ_ASSERT_UNREACHABLE("unhandled gfx::SurfaceFormat::UNKNOWN");
       return 4;
   }
+  MOZ_ASSERT_UNREACHABLE("unhandled enum value for gfx::SurfaceFormat");
+  return 4;
 }
 
 inline bool IsOpaque(SurfaceFormat aFormat) {
@@ -308,6 +365,7 @@ inline bool IsOpaque(SurfaceFormat aFormat) {
     case SurfaceFormat::R8G8B8X8:
     case SurfaceFormat::X8R8G8B8:
     case SurfaceFormat::R5G6B5_UINT16:
+    case SurfaceFormat::R10G10B10X2_UINT32:
     case SurfaceFormat::R8G8B8:
     case SurfaceFormat::B8G8R8:
     case SurfaceFormat::R8G8:
@@ -320,9 +378,22 @@ inline bool IsOpaque(SurfaceFormat aFormat) {
     case SurfaceFormat::P016:
     case SurfaceFormat::YUY2:
       return true;
-    default:
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::A8R8G8B8:
+    case SurfaceFormat::R10G10B10A2_UINT32:
+    case SurfaceFormat::R16G16B16A16F:
+    case SurfaceFormat::A8:
+    case SurfaceFormat::A16:
+    case SurfaceFormat::R16G16:
+    case SurfaceFormat::YUV420P10:
+    case SurfaceFormat::YUV422P10:
+    case SurfaceFormat::NV16:
+    case SurfaceFormat::UNKNOWN:
       return false;
   }
+  MOZ_ASSERT_UNREACHABLE("unhandled enum value for gfx::SurfaceFormat");
+  return false;
 }
 
 // These are standardized Coding-independent Code Points
@@ -478,6 +549,8 @@ enum class ColorDepth : uint8_t {
   _First = COLOR_8,
   _Last = COLOR_16,
 };
+
+std::ostream& operator<<(std::ostream& aOut, const ColorDepth& aColorDepth);
 
 enum class TransferFunction : uint8_t {
   BT709,
@@ -697,6 +770,19 @@ static inline uint32_t RescalingFactorForColorDepth(ColorDepth aColorDepth) {
   return factor;
 }
 
+static inline bool IsHDRTransferFunction(
+    gfx::TransferFunction aTransferFunction) {
+  switch (aTransferFunction) {
+    case gfx::TransferFunction::PQ:
+    case gfx::TransferFunction::HLG:
+      return true;
+    case gfx::TransferFunction::BT709:
+    case gfx::TransferFunction::SRGB:
+      return false;
+  }
+  MOZ_CRASH("bad TransferFunction");
+}
+
 enum class ChromaSubsampling : uint8_t {
   FULL,
   HALF_WIDTH,
@@ -756,11 +842,9 @@ enum class DrawTargetType : int8_t {
 
 enum class BackendType : int8_t {
   NONE = 0,
-  DIRECT2D,  // Used for version independent D2D objects.
   CAIRO,
   SKIA,
   RECORDING,
-  DIRECT2D1_1,
   WEBRENDER_TEXT,
   WEBGL,
 
@@ -867,9 +951,9 @@ MOZ_DEFINE_ENUM_CLASS_WITH_BASE(PatternType, int8_t, (
 enum class JoinStyle : int8_t {
   BEVEL,
   ROUND,
-  MITER,  //!< Mitered if within the miter limit, else, if the backed supports
-          //!< it (D2D), the miter is clamped. If the backend does not support
-          //!< miter clamping the behavior is as for MITER_OR_BEVEL.
+  MITER,  //!< Mitered if within the miter limit, else, if the backend supports
+          //!< it, the miter is clamped. If the backend does not support miter
+          //!< clamping the behavior is as for MITER_OR_BEVEL.
   MITER_OR_BEVEL  //!< Mitered if within the miter limit, else beveled.
 };
 

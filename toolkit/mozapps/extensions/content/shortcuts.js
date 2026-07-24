@@ -408,7 +408,7 @@ ChromeUtils.defineESModuleGetters(this, {
 
     let validation = ShortcutUtils.validate(shortcutString);
     switch (validation) {
-      case ShortcutUtils.IS_VALID:
+      case ShortcutUtils.IS_VALID: {
         // Show an error if this is already a system shortcut.
         let chromeWindow = window.windowRoot.ownerGlobal;
         if (ShortcutUtils.isSystem(chromeWindow, shortcutString)) {
@@ -426,6 +426,7 @@ ChromeUtils.defineESModuleGetters(this, {
           assignShortcutToInput(input, shortcutString);
         }
         break;
+      }
       case ShortcutUtils.MODIFIER_REQUIRED:
         if (AppConstants.platform == "macosx") {
           setError(input, "shortcuts-modifier-mac");

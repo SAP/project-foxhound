@@ -72,7 +72,7 @@ class XPCShell(Layer):
     }
 
     def __init__(self, env, mach_cmd):
-        super(XPCShell, self).__init__(env, mach_cmd)
+        super().__init__(env, mach_cmd)
         self.topsrcdir = mach_cmd.topsrcdir
         self._mach_context = mach_cmd._mach_context
         self.python_path = mach_cmd.virtualenv_manager.python_path
@@ -166,17 +166,15 @@ class XPCShell(Layer):
         if len(results.items()) == 0:
             raise NoPerfMetricsError("xpcshell")
 
-        metadata.add_result(
-            {
-                "name": test.name,
-                "framework": {"name": "mozperftest"},
-                "transformer": "mozperftest.test.xpcshell:XPCShellData",
-                "results": [
-                    {"values": measures, "name": subtest}
-                    for subtest, measures in results.items()
-                ],
-            }
-        )
+        metadata.add_result({
+            "name": test.name,
+            "framework": {"name": "mozperftest"},
+            "transformer": "mozperftest.test.xpcshell:XPCShellData",
+            "results": [
+                {"values": measures, "name": subtest}
+                for subtest, measures in results.items()
+            ],
+        })
 
         return metadata
 

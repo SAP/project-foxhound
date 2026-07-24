@@ -8,23 +8,6 @@ add_setup(async function setup() {
   registerCleanupFunction(cleanup);
 });
 
-add_task(async function testPrefRequired() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.preferences.experimental", false]],
-  });
-
-  await openPreferencesViaOpenPreferencesAPI("paneHome", { leaveOpen: true });
-  let doc = gBrowser.contentDocument;
-
-  let experimentalCategory = doc.getElementById("category-experimental");
-  ok(experimentalCategory, "The category exists");
-  ok(experimentalCategory.hidden, "The category is hidden");
-
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
-
-  await SpecialPowers.popPrefEnv();
-});
-
 add_task(async function testCanOpenWithPref() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.preferences.experimental", true]],
@@ -58,10 +41,6 @@ add_task(async function testCanOpenWithPref() {
 });
 
 add_task(async function testSearchFindsExperiments() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.preferences.experimental", true]],
-  });
-
   await openPreferencesViaOpenPreferencesAPI("paneHome", { leaveOpen: true });
   let doc = gBrowser.contentDocument;
 
@@ -80,6 +59,4 @@ add_task(async function testSearchFindsExperiments() {
   );
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-
-  await SpecialPowers.popPrefEnv();
 });

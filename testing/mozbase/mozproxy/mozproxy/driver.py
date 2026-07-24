@@ -113,47 +113,41 @@ def main():
                 raise Exception("Please provide at least one recording file!")
 
             # Playback mode
-            proxy_service = get_playback(
-                {
-                    "run_local": args.local,
-                    "host": args.host,
-                    "binary": args.binary,
-                    "obj_path": args.objdir,
-                    "platform": mozinfo.os,
-                    "playback_tool": args.tool,
-                    "playback_version": args.tool_version,
-                    "playback_files": args.file,
-                    "app": args.app,
-                    "local_profile_dir": args.profiledir,
-                    "verbose": args.verbose,
-                }
-            )
+            proxy_service = get_playback({
+                "run_local": args.local,
+                "host": args.host,
+                "binary": args.binary,
+                "obj_path": args.objdir,
+                "platform": mozinfo.os,
+                "playback_tool": args.tool,
+                "playback_version": args.tool_version,
+                "playback_files": args.file,
+                "app": args.app,
+                "local_profile_dir": args.profiledir,
+                "verbose": args.verbose,
+            })
         if args.mode == "record":
             # Record mode
             if len(args.file) > 1:
                 raise Exception("Please provide only one recording file!")
 
             LOG.info("Recording will be saved to: %s" % args.file)
-            proxy_service = get_playback(
-                {
-                    "run_local": args.local,
-                    "host": args.host,
-                    "binary": args.binary,
-                    "obj_path": args.objdir,
-                    "platform": mozinfo.os,
-                    "playback_tool": args.tool,
-                    # bug 1883701 linux uses a different version for now
-                    "playback_version": (
-                        "8.1.1" if mozinfo.isLinux else args.tool_version
-                    ),
-                    "record": True,
-                    "recording_file": args.file[0],
-                    "app": args.app,
-                    "local_profile_dir": args.profiledir,
-                    "verbose": args.verbose,
-                    "inject_deterministic": args.deterministic,
-                }
-            )
+            proxy_service = get_playback({
+                "run_local": args.local,
+                "host": args.host,
+                "binary": args.binary,
+                "obj_path": args.objdir,
+                "platform": mozinfo.os,
+                "playback_tool": args.tool,
+                # bug 1883701 linux uses a different version for now
+                "playback_version": ("8.1.1" if mozinfo.isLinux else args.tool_version),
+                "record": True,
+                "recording_file": args.file[0],
+                "app": args.app,
+                "local_profile_dir": args.profiledir,
+                "verbose": args.verbose,
+                "inject_deterministic": args.deterministic,
+            })
         LOG.info("Proxy settings %s" % proxy_service)
         proxy_service.start()
         LOG.info("Proxy running on port %d" % proxy_service.port)

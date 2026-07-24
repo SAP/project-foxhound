@@ -6,8 +6,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef nsHttpTransaction_h__
-#define nsHttpTransaction_h__
+#ifndef nsHttpTransaction_h_
+#define nsHttpTransaction_h_
 
 #include "ARefBase.h"
 #include "EventTokenBucket.h"
@@ -197,6 +197,9 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   uint64_t ChannelId() { return mChannelId; }
 
+  void SetIsTRRTransaction() override { mIsTRRTransaction = true; }
+  bool IsTRRTransaction() { return mIsTRRTransaction; }
+
  private:
   friend class DeleteHttpTransaction;
   virtual ~nsHttpTransaction();
@@ -278,6 +281,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   void OnHttp3BackupTimer();
   void OnBackupConnectionReady(bool aTriggeredByHTTPSRR);
   void OnFastFallbackTimer();
+  void OnHttp3TunnelFallbackTimer();
   void HandleFallback(nsHttpConnectionInfo* aFallbackConnInfo);
   void MaybeCancelFallbackTimer();
 
@@ -315,13 +319,18 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   }
 
  private:
-  class UpdateSecurityCallbacks : public Runnable {
+  class UpdateSecurityCallbacks : public Runnable, public nsIRunnablePriority {
    public:
     UpdateSecurityCallbacks(nsHttpTransaction* aTrans,
-                            nsIInterfaceRequestor* aCallbacks)
+                            nsIInterfaceRequestor* aCallbacks,
+                            uint32_t aPriority)
         : Runnable("net::nsHttpTransaction::UpdateSecurityCallbacks"),
           mTrans(aTrans),
-          mCallbacks(aCallbacks) {}
+          mCallbacks(aCallbacks),
+          mPriority(aPriority) {}
+
+    NS_DECL_ISUPPORTS_INHERITED
+    NS_DECL_NSIRUNNABLEPRIORITY
 
     NS_IMETHOD Run() override {
       if (mTrans->mConnection) {
@@ -331,8 +340,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
     }
 
    private:
+    virtual ~UpdateSecurityCallbacks() = default;
+
     RefPtr<nsHttpTransaction> mTrans;
     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+    uint32_t mPriority;
   };
 
   Mutex mLock MOZ_UNANNOTATED{"transaction lock"};
@@ -460,6 +472,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   bool mDoNotRemoveAltSvc{false};
   bool mDoNotResetIPFamilyPreference{false};
   bool mIsHttp2Websocket{false};
+  bool mIsTRRTransaction{false};
 
   // mClosed           := transaction has been explicitly closed
   // mTransactionDone  := transaction ran to completion or was interrupted
@@ -573,8 +586,10 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   bool mDontRetryWithDirectRoute = false;
   bool mFastFallbackTriggered = false;
   bool mHttp3BackupTimerCreated = false;
+  bool mHttp3TunnelFallbackTimerCreated = false;
   nsCOMPtr<nsITimer> mFastFallbackTimer;
   nsCOMPtr<nsITimer> mHttp3BackupTimer;
+  nsCOMPtr<nsITimer> mHttp3TunnelFallbackTimer;
   RefPtr<nsHttpConnectionInfo> mBackupConnInfo;
   // A clone of mConnInfo taken when this transaction is activated.
   // Describes the server that the associated connection is connected to.
@@ -615,4 +630,4 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
 }  // namespace mozilla::net
 
-#endif  // nsHttpTransaction_h__
+#endif  // nsHttpTransaction_h_

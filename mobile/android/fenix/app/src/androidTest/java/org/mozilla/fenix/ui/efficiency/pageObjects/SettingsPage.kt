@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -60,6 +64,22 @@ class SettingsPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRul
             from = pageName,
             to = "SettingsTabsPage",
             steps = listOf(NavigationStep.Click(SettingsSelectors.TABS_BUTTON)),
+        )
+        NavigationRegistry.register(
+            from = pageName,
+            to = "GooglePlayPage",
+            steps = listOf(
+                NavigationStep.Swipe(SettingsSelectors.RATE_ON_GOOGLE_PLAY_BUTTON),
+                NavigationStep.Click(SettingsSelectors.RATE_ON_GOOGLE_PLAY_BUTTON),
+            ),
+        )
+        NavigationRegistry.register(
+            from = pageName,
+            to = "SettingsAboutPage",
+            steps = listOf(
+                NavigationStep.Swipe(SettingsSelectors.ABOUT_FIREFOX_BUTTON),
+                NavigationStep.Click(SettingsSelectors.ABOUT_FIREFOX_BUTTON),
+            ),
         )
     }
 

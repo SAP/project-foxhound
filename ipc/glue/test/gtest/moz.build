@@ -6,6 +6,10 @@
 
 Library("ipcgluetest")
 
+EXPORTS.mozilla.gtest.ipc += [
+    "TestUtilityProcess.h",
+]
+
 UNIFIED_SOURCES = [
     "TestAsyncBlockers.cpp",
     "TestUtilityProcess.cpp",

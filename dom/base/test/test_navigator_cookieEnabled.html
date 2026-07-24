@@ -11,11 +11,24 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
   <script type="application/javascript">
   "use strict";
 
-  /** Test for Bug 1753586 **/
+  /** Test for Bug 1753586 */
 
   const BEHAVIOR_REJECT = 2;
   const BEHAVIOR_REJECT_TRACKER = 4;
   const BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN = 5;
+
+  function behavior_to_string(behavior) {
+    switch (behavior) {
+      case BEHAVIOR_REJECT:
+        return "BEHAVIOR_REJECT";
+        case BEHAVIOR_REJECT_TRACKER:
+        return "BEHAVIOR_REJECT_TRACKER";
+        case BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+          return "BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN";
+        default:
+          throw new Error("unreachable");
+    }
+  }
 
   const TESTS = [
     { cookieBehavior: BEHAVIOR_REJECT, expect: false },
@@ -38,11 +51,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
         { once: true }
       );
 
-      win.document.body.appendChild(iframe);
       if (sandbox) {
         iframe.sandbox = sandbox;
       }
       iframe.src = src;
+      win.document.body.appendChild(iframe);
     });
   }
 
@@ -63,6 +76,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
     );
 
     await SpecialPowers.spawn(iframe, [expect], value => {
+      is(content.location.href, "http://mochi.test:8888/");
       is(
         content.navigator.cookieEnabled,
         value,
@@ -78,6 +92,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
     );
 
     await SpecialPowers.spawn(iframe, [expect], value => {
+      is(content.location.href, "http://example.com/");
       is(
         content.navigator.cookieEnabled,
         value,
@@ -95,6 +110,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
     );
 
     await SpecialPowers.spawn(iframe, [expect], value => {
+      is(content.location.href, "http://mochi.test:8888/");
       is(
         content.navigator.cookieEnabled,
         value,
@@ -107,6 +123,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
 
   add_task(async function doTests() {
     for (let test of TESTS) {
+      info(`cookieBehavior ${behavior_to_string(test.cookieBehavior)} expect ${test.expect}`);
+
       await SpecialPowers.pushPrefEnv({"set": [
         ["network.cookie.cookieBehavior", test.cookieBehavior],
       ]});

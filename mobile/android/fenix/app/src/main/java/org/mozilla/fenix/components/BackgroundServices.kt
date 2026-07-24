@@ -30,7 +30,7 @@ import mozilla.components.feature.syncedtabs.commands.SyncedTabsCommandsFlushSch
 import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.service.fxa.PeriodicSyncConfig
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SyncConfig
@@ -102,7 +102,6 @@ class BackgroundServices(
     private val deviceConfig = DeviceConfig(
         name = defaultDeviceName(context),
         type = DeviceType.MOBILE,
-
         // NB: flipping this flag back and worth is currently not well supported and may need hand-holding.
         // Consult with the android-components peers before changing.
         // See https://github.com/mozilla/application-services/issues/1308
@@ -110,7 +109,6 @@ class BackgroundServices(
             add(DeviceCapability.SEND_TAB)
             add(DeviceCapability.CLOSE_TABS)
         },
-
         // Enable encryption for account state on supported API levels (23+).
         // Just on Nightly and local builds for now.
         // Enabling this for all channels is tracked in https://github.com/mozilla-mobile/fenix/issues/6704
@@ -266,13 +264,13 @@ private class AccountManagerReadyObserver(
 
 internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
     override fun invoke(
-        context: MiddlewareContext<SyncState, SyncAction>,
+        store: Store<SyncState, SyncAction>,
         next: (SyncAction) -> Unit,
         action: SyncAction,
     ) {
-        val prevState = context.store.state
+        val prevState = store.state
         next(action)
-        val accountUid = context.store.state.account?.uid
+        val accountUid = store.state.account?.uid
         if (prevState.account?.uid != accountUid && accountUid != null) {
             ClientAssociation.uid.set(accountUid)
             fxAccounts.submit()

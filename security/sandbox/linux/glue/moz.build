@@ -25,6 +25,9 @@ LOCAL_INCLUDES += [
     # Need this for safe_sprintf.h used by SandboxLogging.h,
     # but it has to be after ipc/chromium/src.
     "/security/sandbox/chromium",
+    "/security/sandbox/chromium-shim",
+    "/security/sandbox/chromium-shim/base/allocator/partition_allocator/src",
+    "/security/sandbox/chromium/base/allocator/partition_allocator/src",
     "/security/sandbox/linux",
 ]
 

@@ -44,15 +44,14 @@ impl CrashHelperClient {
                 program,
                 breakpad_data,
                 minidump_path,
-                listener,
                 server_endpoint,
+                listener,
             )
         });
 
         Ok(CrashHelperClient {
             connector: client_endpoint,
             spawner_thread: Some(spawner_thread),
-            helper_process: None,
         })
     }
 
@@ -60,8 +59,8 @@ impl CrashHelperClient {
         program: OsString,
         breakpad_data: BreakpadData,
         minidump_path: OsString,
-        listener: IPCListener,
         endpoint: IPCConnector,
+        listener: IPCListener,
     ) -> Result<OwnedHandle> {
         // SAFETY: `GetCurrentProcessId()` takes no arguments and should always work
         let pid = OsString::from(unsafe { GetCurrentProcessId() }.to_string());
@@ -74,9 +73,9 @@ impl CrashHelperClient {
         cmd_line.push(" ");
         cmd_line.push(escape_cmd_line_arg(&minidump_path));
         cmd_line.push(" ");
-        cmd_line.push(escape_cmd_line_arg(&listener.serialize()));
+        cmd_line.push(escape_cmd_line_arg(&endpoint.serialize()?));
         cmd_line.push(" ");
-        cmd_line.push(escape_cmd_line_arg(&endpoint.serialize()));
+        cmd_line.push(escape_cmd_line_arg(&listener.serialize()?));
         cmd_line.push("\0");
         let mut cmd_line: Vec<u16> = cmd_line.encode_wide().collect();
 
@@ -116,8 +115,9 @@ impl CrashHelperClient {
         Ok(unsafe { OwnedHandle::from_raw_handle(pi.hProcess as RawHandle) })
     }
 
-    pub(crate) fn prepare_for_minidump(_crash_helper_pid: Pid) {
+    pub(crate) fn prepare_for_minidump(_crash_helper_pid: Pid) -> bool {
         // On Windows this is currently a no-op
+        true
     }
 }
 

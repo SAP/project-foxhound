@@ -14,7 +14,6 @@
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIObserver.h"
@@ -48,7 +47,8 @@ bool WaitUntil(const ConditionT& aCondition, uint32_t aTimeoutMs) {
       [](nsITimer*, void* isTimeout) {
         *reinterpret_cast<bool*>(isTimeout) = true;
       },
-      &isTimeout, aTimeoutMs, nsITimer::TYPE_ONE_SHOT, __func__);
+      &isTimeout, aTimeoutMs, nsITimer::TYPE_ONE_SHOT,
+      "xpcom-tests:WaitUntil"_ns);
 
   SpinEventLoopUntil("xpcom-tests:WaitUntil"_ns, [&]() -> bool {
     if (isTimeout) {
@@ -177,7 +177,7 @@ class MemoryEater {
       // VirtualAlloc consumes the commit space, but we need to *touch* memory
       // to consume physical memory
       TouchMemory(page.get(), currentSize);
-      Unused << aOutput.emplaceBack(std::move(page));
+      (void)aOutput.emplaceBack(std::move(page));
     }
     return true;
   }

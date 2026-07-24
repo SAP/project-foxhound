@@ -95,7 +95,7 @@ add_task(async function getFilterContext() {
   is(context.env.userId, "some id", "userId was cached");
 });
 
-add_task(
+decorate_task(
   withStub(NormandyApi, "verifyObjectSignature"),
   async function test_getRecipeSuitability_filterExpressions() {
     const check = filter =>

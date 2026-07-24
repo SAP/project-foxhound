@@ -76,7 +76,10 @@ add_task(async function () {
     110,
     "Zoom is changed to 110% for about:mozilla"
   );
-  await promiseTabLoadEvent(tab1, "about:home");
+  await BrowserTestUtils.loadURIString({
+    browser: tab1.linkedBrowser,
+    uriString: "about:home",
+  });
   await waitForZoom(100);
   is(
     parseInt(gZoomResetButton.label, 10),

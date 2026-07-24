@@ -10,20 +10,21 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+
+#include "MLSFallback.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_geo.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/XREAppData.h"
 #include "mozilla/dom/GeolocationPosition.h"
 #include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "mozilla/glean/DomGeolocationMetrics.h"
-#include "MLSFallback.h"
 #include "nsAppRunner.h"
+#include "nsAppShell.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMGeoPosition.h"
 #include "nsINamed.h"
@@ -383,6 +384,12 @@ void GCLocProviderPriv::DBusProxyError(const GError* aGError,
   GQuark gdbusDomain = G_DBUS_ERROR;
   int error = GeolocationPositionError_Binding::POSITION_UNAVAILABLE;
   if (aGError) {
+    // Telemetry will store up to 16 different error codes.
+    nsAutoCString errorCodeStr;
+    errorCodeStr.AppendInt(aGError->code);
+    glean::geolocation::geoclue_error_code.Get(errorCodeStr).Add();
+    GCL_LOG(Info, "GeoClue error (%d): %s", aGError->code, aGError->message);
+
     if (g_error_matches(aGError, gdbusDomain, G_DBUS_ERROR_TIMEOUT) ||
         g_error_matches(aGError, gdbusDomain, G_DBUS_ERROR_TIMED_OUT)) {
       error = GeolocationPositionError_Binding::TIMEOUT;
@@ -456,6 +463,7 @@ void GCLocProviderPriv::ConnectClient(const gchar* aClientPath) {
   MOZ_DIAGNOSTIC_ASSERT(mClientState == ClientState::Initing,
                         "Client in a wrong state");
   MOZ_ASSERT(mCancellable, "Watch() wasn't successfully called");
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_new_for_bus(
       G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr, kGeoclueBusName,
       aClientPath, kGCClientInterface, mCancellable,
@@ -465,6 +473,7 @@ void GCLocProviderPriv::ConnectClient(const gchar* aClientPath) {
 void GCLocProviderPriv::ConnectClientResponse(GObject* aObject,
                                               GAsyncResult* aResult,
                                               gpointer aUserData) {
+  nsAppShell::DBusConnectionCheck();
   GUniquePtr<GError> error;
   RefPtr<GDBusProxy> proxyClient =
       dont_AddRef(g_dbus_proxy_new_finish(aResult, getter_Transfers(error)));
@@ -498,6 +507,7 @@ void GCLocProviderPriv::SetDesktopID() {
 
   nsAutoCString appName;
   gAppData->GetDBusAppName(appName);
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(mProxyClient, kDBPropertySetMethod,
                     g_variant_new("(ssv)", kGCClientInterface, "DesktopId",
                                   g_variant_new_string(appName.get())),
@@ -510,7 +520,7 @@ void GCLocProviderPriv::SetDesktopIDResponse(GDBusProxy* aProxy,
                                              GAsyncResult* aResult,
                                              gpointer aUserData) {
   GUniquePtr<GError> error;
-
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GVariant> variant = dont_AddRef(
       g_dbus_proxy_call_finish(aProxy, aResult, getter_Transfers(error)));
   if (!variant) {
@@ -547,6 +557,7 @@ void GCLocProviderPriv::SetAccuracy() {
 
   mAccuracySet = mAccuracyWanted;
   GCLP_SETSTATE(this, SettingAccuracyForStart);
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(
       mProxyClient, kDBPropertySetMethod,
       g_variant_new("(ssv)", kGCClientInterface, "RequestedAccuracyLevel",
@@ -558,6 +569,7 @@ void GCLocProviderPriv::SetAccuracy() {
 void GCLocProviderPriv::SetAccuracyResponse(GDBusProxy* aProxy,
                                             GAsyncResult* aResult,
                                             gpointer aUserData) {
+  nsAppShell::DBusConnectionCheck();
   GUniquePtr<GError> error;
   RefPtr<GVariant> variant = dont_AddRef(
       g_dbus_proxy_call_finish(aProxy, aResult, getter_Transfers(error)));
@@ -591,16 +603,21 @@ void GCLocProviderPriv::StartClient() {
   MOZ_DIAGNOSTIC_ASSERT(mProxyClient && mCancellable,
                         "Watch() wasn't successfully called");
   GCLP_SETSTATE(this, Starting);
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(
       mProxyClient, "Start", nullptr, G_DBUS_CALL_FLAGS_NONE, -1, mCancellable,
       reinterpret_cast<GAsyncReadyCallback>(StartClientResponse), this);
+  glean::geolocation::geolocation_service
+      .EnumGet(glean::geolocation::GeolocationServiceLabel::eGeoclue)
+      .Add();
+  GCL_LOG(Info, "Geoclue location service starting.");
 }
 
 void GCLocProviderPriv::StartClientResponse(GDBusProxy* aProxy,
                                             GAsyncResult* aResult,
                                             gpointer aUserData) {
   GUniquePtr<GError> error;
-
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GVariant> variant = dont_AddRef(
       g_dbus_proxy_call_finish(aProxy, aResult, getter_Transfers(error)));
   if (!variant) {
@@ -646,6 +663,7 @@ void GCLocProviderPriv::StopClient(bool aForRestart) {
     GCLP_SETSTATE(this, Stopping);
   }
 
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(
       mProxyClient, "Stop", nullptr, G_DBUS_CALL_FLAGS_NONE, -1, mCancellable,
       reinterpret_cast<GAsyncReadyCallback>(StopClientResponse), this);
@@ -654,6 +672,7 @@ void GCLocProviderPriv::StopClient(bool aForRestart) {
 void GCLocProviderPriv::StopClientResponse(GDBusProxy* aProxy,
                                            GAsyncResult* aResult,
                                            gpointer aUserData) {
+  nsAppShell::DBusConnectionCheck();
   GUniquePtr<GError> error;
   RefPtr<GVariant> variant = dont_AddRef(
       g_dbus_proxy_call_finish(aProxy, aResult, getter_Transfers(error)));
@@ -685,6 +704,7 @@ void GCLocProviderPriv::StopClientResponse(GDBusProxy* aProxy,
 
 void GCLocProviderPriv::StopClientNoWait() {
   MOZ_DIAGNOSTIC_ASSERT(mProxyClient, "Watch() wasn't successfully called");
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(mProxyClient, "Stop", nullptr, G_DBUS_CALL_FLAGS_NONE, -1,
                     nullptr, nullptr, nullptr);
 }
@@ -756,6 +776,7 @@ void GCLocProviderPriv::GCClientSignal(GDBusProxy* aProxy, gchar* aSenderName,
 
 void GCLocProviderPriv::ConnectLocation(const gchar* aLocationPath) {
   MOZ_ASSERT(mCancellable, "Startup() wasn't successfully called");
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_new_for_bus(
       G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr, kGeoclueBusName,
       aLocationPath, kGCLocationInterface, mCancellable,
@@ -931,6 +952,7 @@ void GCLocProviderPriv::DoShutdown(bool aDeleteClient, bool aDeleteManager) {
   MOZ_DIAGNOSTIC_ASSERT(
       !aDeleteManager || aDeleteClient,
       "deleting manager proxy requires deleting client one, too");
+  nsAppShell::DBusConnectionCheck();
 
   // Invalidate the cached last position
   StopPositionTimer();
@@ -1000,6 +1022,7 @@ GCLocProviderPriv::Startup() {
                         "Client in a initialized state but no manager");
 
   GUniquePtr<GError> error;
+  nsAppShell::DBusConnectionCheck();
   mProxyManager = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr, kGeoclueBusName,
       kGCManagerPath, kGCManagerInterface, nullptr, getter_Transfers(error)));
@@ -1061,6 +1084,7 @@ GCLocProviderPriv::Watch(nsIGeolocationUpdate* aCallback) {
   StopMLSFallback();
 
   GCLP_SETSTATE(this, Initing);
+  nsAppShell::DBusConnectionCheck();
   g_dbus_proxy_call(mProxyManager, "GetClient", nullptr, G_DBUS_CALL_FLAGS_NONE,
                     -1, mCancellable,
                     reinterpret_cast<GAsyncReadyCallback>(GetClientResponse),

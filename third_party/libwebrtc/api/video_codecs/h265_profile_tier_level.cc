@@ -15,7 +15,6 @@
 
 #include "api/rtp_parameters.h"
 #include "api/video/resolution.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/string_to_number.h"
 
 namespace webrtc {
@@ -29,7 +28,7 @@ const char kH265FmtpLevel[] = "level-id";
 // Used to align frame width and height for luma picture size calculation.
 // Use the maximum value allowed by spec to get upper bound of luma picture
 // size for given resolution.
-static constexpr int kMinCbSizeYMax = 64;
+constexpr int kMinCbSizeYMax = 64;
 
 struct LevelConstraint {
   const int max_luma_picture_size;
@@ -46,20 +45,59 @@ struct LevelConstraint {
 // max_luma_picture_size is 36864, so pic_width_in_luma_samples <= sqrt(36864 *
 // 8) = 543.06. The largest integer that is multiple of 8 and less than 543.06
 // is 536.
-static constexpr LevelConstraint kLevelConstraints[] = {
-    {36864, 552960, 536, H265Level::kLevel1},
-    {122880, 3686400, 984, H265Level::kLevel2},
-    {245760, 7372800, 1400, H265Level::kLevel2_1},
-    {552960, 16588800, 2096, H265Level::kLevel3},
-    {983040, 33177600, 2800, H265Level::kLevel3_1},
-    {2228224, 66846720, 4216, H265Level::kLevel4},
-    {2228224, 133693400, 4216, H265Level::kLevel4_1},
-    {8912896, 267386880, 8440, H265Level::kLevel5},
-    {8912896, 534773760, 8440, H265Level::kLevel5_1},
-    {8912896, 1069547520, 8440, H265Level::kLevel5_2},
-    {35651584, 1069547520, 16888, H265Level::kLevel6},
-    {35651584, 2139095040, 16888, H265Level::kLevel6_1},
-    {35651584, 4278190080, 16888, H265Level::kLevel6_2},
+constexpr LevelConstraint kLevelConstraints[] = {
+    {.max_luma_picture_size = 36864,
+     .max_luma_sample_rate = 552960,
+     .max_pic_width_or_height_in_pixels = 536,
+     .level = H265Level::kLevel1},
+    {.max_luma_picture_size = 122880,
+     .max_luma_sample_rate = 3686400,
+     .max_pic_width_or_height_in_pixels = 984,
+     .level = H265Level::kLevel2},
+    {.max_luma_picture_size = 245760,
+     .max_luma_sample_rate = 7372800,
+     .max_pic_width_or_height_in_pixels = 1400,
+     .level = H265Level::kLevel2_1},
+    {.max_luma_picture_size = 552960,
+     .max_luma_sample_rate = 16588800,
+     .max_pic_width_or_height_in_pixels = 2096,
+     .level = H265Level::kLevel3},
+    {.max_luma_picture_size = 983040,
+     .max_luma_sample_rate = 33177600,
+     .max_pic_width_or_height_in_pixels = 2800,
+     .level = H265Level::kLevel3_1},
+    {.max_luma_picture_size = 2228224,
+     .max_luma_sample_rate = 66846720,
+     .max_pic_width_or_height_in_pixels = 4216,
+     .level = H265Level::kLevel4},
+    {.max_luma_picture_size = 2228224,
+     .max_luma_sample_rate = 133693400,
+     .max_pic_width_or_height_in_pixels = 4216,
+     .level = H265Level::kLevel4_1},
+    {.max_luma_picture_size = 8912896,
+     .max_luma_sample_rate = 267386880,
+     .max_pic_width_or_height_in_pixels = 8440,
+     .level = H265Level::kLevel5},
+    {.max_luma_picture_size = 8912896,
+     .max_luma_sample_rate = 534773760,
+     .max_pic_width_or_height_in_pixels = 8440,
+     .level = H265Level::kLevel5_1},
+    {.max_luma_picture_size = 8912896,
+     .max_luma_sample_rate = 1069547520,
+     .max_pic_width_or_height_in_pixels = 8440,
+     .level = H265Level::kLevel5_2},
+    {.max_luma_picture_size = 35651584,
+     .max_luma_sample_rate = 1069547520,
+     .max_pic_width_or_height_in_pixels = 16888,
+     .level = H265Level::kLevel6},
+    {.max_luma_picture_size = 35651584,
+     .max_luma_sample_rate = 2139095040,
+     .max_pic_width_or_height_in_pixels = 16888,
+     .level = H265Level::kLevel6_1},
+    {.max_luma_picture_size = 35651584,
+     .max_luma_sample_rate = 4278190080,
+     .max_pic_width_or_height_in_pixels = 16888,
+     .level = H265Level::kLevel6_2},
 };
 
 }  // anonymous namespace
@@ -310,7 +348,7 @@ std::optional<H265Level> GetSupportedH265Level(const Resolution& resolution,
   int aligned_height =
       (resolution.height + kMinCbSizeYMax - 1) & ~(kMinCbSizeYMax - 1);
 
-  for (int i = arraysize(kLevelConstraints) - 1; i >= 0; --i) {
+  for (int i = std::ssize(kLevelConstraints) - 1; i >= 0; --i) {
     const LevelConstraint& level_constraint = kLevelConstraints[i];
     if (level_constraint.max_luma_picture_size <=
             aligned_width * aligned_height &&

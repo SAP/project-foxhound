@@ -20,8 +20,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonSearchEngine:
     "moz-src:///toolkit/components/search/AddonSearchEngine.sys.mjs",
-  AppProvidedSearchEngine:
-    "moz-src:///toolkit/components/search/AppProvidedSearchEngine.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 // eslint-disable-next-line mozilla/reject-importGlobalProperties
@@ -51,12 +52,12 @@ this.addonsSearchDetection = class extends ExtensionAPI {
           const results = [];
 
           try {
-            // Delaying accessing Services.search if we didn't get to first paint yet
+            // Delaying accessing SearchService if we didn't get to first paint yet
             // to avoid triggering search internals from loading too soon during the
             // application startup.
             if (
               !Cu.isESModuleLoaded(
-                "resource://gre/modules/SearchService.sys.mjs"
+                "moz-src:///toolkit/components/search/SearchService.sys.mjs"
               )
             ) {
               await ExtensionParent.browserPaintedPromise;
@@ -65,13 +66,13 @@ this.addonsSearchDetection = class extends ExtensionAPI {
             if (extension.hasShutdown || Services.startup.shuttingDown) {
               return results;
             }
-            await Services.search.promiseInitialized;
-            const engines = await Services.search.getEngines();
+            await lazy.SearchService.promiseInitialized;
+            const engines = await lazy.SearchService.getEngines();
 
             for (let engine of engines) {
               if (
                 !(engine instanceof lazy.AddonSearchEngine) &&
-                !(engine instanceof lazy.AppProvidedSearchEngine)
+                !(engine instanceof lazy.ConfigSearchEngine)
               ) {
                 continue;
               }
@@ -87,7 +88,7 @@ this.addonsSearchDetection = class extends ExtensionAPI {
                 // because we don't need to report them. However, we do ensure
                 // the pattern is recorded (above), so that we check for
                 // redirects against those.
-                const addonId = engine.wrappedJSObject._extensionID;
+                const addonId = engine.extensionID;
 
                 let paramName;
                 for (let [key, value] of new URLSearchParams(uri.query)) {

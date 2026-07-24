@@ -210,9 +210,9 @@ export class DevToolsProcessChild extends JSProcessActorChild {
    * Stop watching for all target types and destroy all existing targets actor
    * related to a given watcher actor.
    *
-   * @param {Object} watcherDataObject
-   * @param {String} targetType
-   * @param {Object} options
+   * @param {object} watcherDataObject
+   * @param {string} targetType
+   * @param {object} options
    */
   #unwatchTargetsForWatcher(watcherDataObject, targetType, options) {
     const { watchingTargetTypes } = watcherDataObject;
@@ -259,7 +259,7 @@ export class DevToolsProcessChild extends JSProcessActorChild {
   /**
    * Cleanup everything around a given watcher actor
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    */
   #destroyWatcher(watcherDataObject) {
     const { watchingTargetTypes } = watcherDataObject;
@@ -273,7 +273,7 @@ export class DevToolsProcessChild extends JSProcessActorChild {
    * Used by DevTools Transport to send packets to the content process.
    *
    * @param {JSON} packet
-   * @param {String} prefix
+   * @param {string} prefix
    */
   sendPacket(packet, prefix) {
     this.sendAsyncMessage("DevToolsProcessChild:packet", { packet, prefix });
@@ -356,13 +356,13 @@ export class DevToolsProcessChild extends JSProcessActorChild {
   /**
    * The parent process requested that some session data have been added or set.
    *
-   * @param {String} watcherActorID
+   * @param {string} watcherActorID
    *        The Watcher Actor ID requesting to add new session data
-   * @param {String} type
+   * @param {string} type
    *        The type of data to be added
-   * @param {Array<Object>} entries
+   * @param {Array<object>} entries
    *        The values to be added to this type of data
-   * @param {String} updateType
+   * @param {string} updateType
    *        "add" will only add the new entries in the existing data set.
    *        "set" will update the data set with the new entries.
    */
@@ -454,11 +454,11 @@ export class DevToolsProcessChild extends JSProcessActorChild {
   /**
    * The parent process requested that some session data have been removed.
    *
-   * @param {String} watcherActorID
+   * @param {string} watcherActorID
    *        The Watcher Actor ID requesting to remove session data
-   * @param {String}} type
+   * @param {string}} type
    *        The type of data to be removed
-   * @param {Array<Object>} entries
+   * @param {Array<object>} entries
    *        The values to be removed to this type of data
    */
   #removeSessionDataEntry(watcherActorID, type, entries) {
@@ -523,7 +523,7 @@ export class DevToolsProcessChild extends JSProcessActorChild {
    * @param {DOMWindow|Document} subject
    *        A window for *-document-global-created
    *        A document for *-page-{shown|hide}
-   * @param {String} topic
+   * @param {string} topic
    */
   observe = (subject, topic) => {
     if (topic === "init-devtools-content-process-actor") {

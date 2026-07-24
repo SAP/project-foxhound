@@ -7,6 +7,7 @@
 #include "CompositeProcessD3D11FencesHolderMap.h"
 
 #include "mozilla/layers/FenceD3D11.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 
@@ -162,6 +163,25 @@ bool CompositeProcessD3D11FencesHolderMap::WaitWriteFence(
   }
 
   return writeFence->Wait(aDevice);
+}
+
+std::pair<const RefPtr<gfx::FileHandleWrapper>, uint64_t>
+CompositeProcessD3D11FencesHolderMap::GetWriteFenceHandleAndValue(
+    CompositeProcessFencesHolderId aHolderId) const {
+  MonitorAutoLock lock(mMonitor);
+  RefPtr<FenceD3D11> writeFence;
+  MOZ_ASSERT(aHolderId.IsValid());
+
+  auto it = mFencesHolderById.find(aHolderId);
+  MOZ_ASSERT(it != mFencesHolderById.end());
+  if (it != mFencesHolderById.end()) {
+    writeFence = it->second->mWriteFence;
+  }
+
+  if (writeFence) {
+    return {writeFence->mHandle, writeFence->GetFenceValue()};
+  }
+  return {};
 }
 
 bool CompositeProcessD3D11FencesHolderMap::WaitAllFencesAndForget(

@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = Новий ярлик
 newtab-topsites-edit-topsites-header = Редагувати популярний сайт
 newtab-topsites-edit-shortcut-header = Редагувати ярлик
 newtab-topsites-add-shortcut-label = Додати ярлик
+newtab-topsites-add-shortcut-title =
+    .title = Додати ярлик
+    .aria-label = Додати ярлик
 newtab-topsites-title-label = Заголовок
 newtab-topsites-title-input =
     .placeholder = Введіть назву
@@ -84,6 +87,14 @@ newtab-confirm-delete-history-p2 = Цю дію неможливо скасува
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Спонсоровано
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (закріплено)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -309,19 +320,30 @@ newtab-custom-pocket-subtitle = Добірні матеріали від { -pock
 newtab-custom-stories-toggle =
     .label = Рекомендовані матеріали
     .description = Виняткові матеріали, відібрані командою { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Історії
+newtab-custom-stories-personalized-checkbox-label = Персоналізовані історії на основі вашої активності
 newtab-custom-pocket-sponsored = Матеріали від спонсорів
 newtab-custom-pocket-show-recent-saves = Показати останні збереження
 newtab-custom-recent-title = Недавня активність
 newtab-custom-recent-subtitle = Добірка недавніх сайтів та вмісту
-newtab-custom-recent-toggle =
-    .label = Недавня активність
-    .description = Добірка недавніх сайтів та вмісту
 newtab-custom-weather-toggle =
     .label = Погода
     .description = Точний прогноз на сьогодні
-newtab-custom-trending-search-toggle =
-    .label = Популярні пошукові запити
-    .description = Популярні пошукові запити
+newtab-custom-widget-weather-toggle =
+    .label = Погода
+newtab-custom-widget-lists-toggle =
+    .label = Списки
+newtab-custom-widget-timer-toggle =
+    .label = Таймер
+newtab-custom-widget-section-title = Віджети
+newtab-custom-widget-section-toggle =
+    .label = Віджети
+newtab-widget-manage-title = Віджети
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Закрити
+    .aria-label = Закрити меню
 newtab-custom-close-button = Закрити
 newtab-custom-settings = Керувати іншими налаштуваннями
 
@@ -334,6 +356,7 @@ newtab-wallpaper-custom-color = Виберіть колір
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Зображення перевищує обмеження розміру файлу в { $file_size } МБ. Спробуйте вивантажити менший файл.
+newtab-wallpaper-error-upload-file-type = Не вдалося вивантажити ваш файл. Повторіть спробу з файлом зображення.
 newtab-wallpaper-error-file-type = Не вдалося вивантажити ваш файл. Повторіть спробу з іншим типом файлу.
 newtab-wallpaper-light-red-panda = Червона панда
 newtab-wallpaper-light-mountain = Біла гора
@@ -383,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Фіолетовий і зелений 
 newtab-wallpaper-abstract-blue-purple-waves = Сині та фіолетові хвилясті форми
 newtab-wallpaper-abstract-black-waves = Чорні хвилясті форми
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Фотографії
 newtab-wallpaper-beach-at-sunrise = Пляж на сході сонця
@@ -413,6 +436,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -439,7 +466,6 @@ newtab-weather-menu-change-location = Змінити розташування
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Пошук розташування
     .aria-label = Пошук розташування
-newtab-weather-change-location-search-input = Пошук розташування
 newtab-weather-menu-weather-display = Подання погоди
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -455,8 +481,21 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Перемкнути �
 newtab-weather-menu-change-temperature-units-celsius = Перемкнути на градуси Цельсія
 newtab-weather-menu-hide-weather = Сховати погоду на новій вкладці
 newtab-weather-menu-learn-more = Докладніше
+newtab-weather-menu-detect-my-location = Визначити моє розташування
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Дані про погоду зараз недоступні.
+newtab-weather-opt-in-see-weather = Хочете бачити погоду для вашого розташування?
+newtab-weather-opt-in-not-now =
+    .label = Не зараз
+newtab-weather-opt-in-yes =
+    .label = Так
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Нью-Йорк
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Дивіться прогноз у { $provider }
+    .aria-description = { $provider } ∙ Спонсоровано
 
 ## Topic Labels
 
@@ -540,9 +579,15 @@ newtab-custom-wallpaper-title = Користувацькі шпалери
 newtab-custom-wallpaper-subtitle = Вивантажте власне зображення або виберіть особливий колір, щоб персоналізувати { -brand-product-name }.
 newtab-custom-wallpaper-cta = Спробувати
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Оберіть шпалери, щоб персоналізувати { -brand-product-name }
+newtab-new-user-custom-wallpaper-subtitle = Персоналізуйте кожну нову вкладку завдяки власним шпалерам і кольорам.
+newtab-new-user-custom-wallpaper-cta = Спробувати зараз
+
 ## Strings for download mobile highlight
 
-newtab-download-mobile-highlight-title = Завантажити { -brand-product-name } для мобільних пристроїв
+newtab-download-mobile-highlight-title = Завантажте { -brand-product-name } для мобільних пристроїв
 # "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
 newtab-download-mobile-highlight-body-variant-a = Скануйте код, щоб безпечно переглядати вебсторінки в дорозі.
 newtab-download-mobile-highlight-body-variant-b = Продовжуйте з того місця, де зупинилися, синхронізуючи вкладки, паролі тощо.
@@ -555,7 +600,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Ваші закладки завжди під рукою
 newtab-shortcuts-highlight-subtitle = Додайте ярлик, щоб мати миттєвий доступ до своїх улюблених сайтів.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Чому ви повідомляєте про це?
@@ -578,15 +623,83 @@ newtab-report-submit = Надіслати
 newtab-toast-thanks-for-reporting =
     .message = Дякуємо, що повідомили про це.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Популярне в Google
-newtab-trending-searches-show-trending =
-    .title = Показати популярні пошукові запити
-newtab-trending-searches-hide-trending =
-    .title = Приховати популярні пошукові запити
-newtab-trending-searches-learn-more = Докладніше
-newtab-trending-searches-dismiss = Приховати популярні пошукові запити
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Популярні пошукові запити
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Можливості безмежні. Додайте ще.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Нове
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Завершено ({ $number })
+newtab-widget-task-list-menu-copy = Копіювати
+newtab-widget-lists-menu-edit = Редагувати назву списку
+newtab-widget-lists-menu-create = Створити новий список
+newtab-widget-lists-menu-delete = Видалити цей список
+newtab-widget-lists-menu-copy = Копіювати список до буфера обміну
+newtab-widget-lists-menu-hide = Приховати всі списки
+newtab-widget-lists-menu-learn-more = Докладніше
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Додати запис
+newtab-widget-lists-input-error = Введіть текст, щоб додати запис
+newtab-widget-lists-input-menu-open-link = Відкрити посилання
+newtab-widget-lists-input-menu-move-up = Посунути вгору
+newtab-widget-lists-input-menu-move-down = Посунути вниз
+newtab-widget-lists-input-menu-delete = Видалити
+newtab-widget-lists-input-menu-edit = Редагувати
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Створити новий список
+newtab-widget-lists-name-label-default =
+    .label = Список завдань
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Список завдань
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Новий список
+newtab-widget-section-title = Віджети
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Приховати віджети
+    .aria-label = Приховати всі віджети
+newtab-widget-section-maximize =
+    .title = Розгорнути віджети
+    .aria-label = Розгорнути всі віджети до повного розміру
+newtab-widget-section-minimize =
+    .title = Згорнути віджети
+    .aria-label = Згорнути всі віджети до компактного розміру
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Таймер
+newtab-widget-timer-notification-focus = Час зосередження вичерпано. Гарна робота. Потрібна перерва?
+newtab-widget-timer-notification-break = Ваша перерва закінчилася. Готові зосередитися?
+newtab-widget-timer-notification-warning = Сповіщення вимкнено
+newtab-widget-timer-mode-focus =
+    .label = Зосередження
+newtab-widget-timer-mode-break =
+    .label = Перерва
+newtab-widget-timer-label-play =
+    .label = Відтворити
+newtab-widget-timer-label-pause =
+    .label = Призупинити
+newtab-widget-timer-reset =
+    .title = Скинути
+newtab-widget-timer-menu-notifications = Вимкнути сповіщення
+newtab-widget-timer-menu-notifications-on = Увімкнути сповіщення
+newtab-widget-timer-menu-hide = Приховати таймер
+newtab-widget-timer-menu-learn-more = Докладніше
+newtab-widget-message-title = Будьте зосередженими завдяки спискам і вбудованому таймеру
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Миттєві нагадування, щоденні справи, сеанси зосередження і перерви – контролюйте свої завдання і виконуйте їх вчасно.
+newtab-promo-card-title = Підтримка { -brand-product-name }
+newtab-promo-card-body = Наші спонсори підтримують нашу місію зі створення кращого інтернету
+newtab-promo-card-cta = Докладніше
+newtab-promo-card-dismiss-button =
+    .title = Відхилити
+    .aria-label = Відхилити

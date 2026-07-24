@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_SimpleGestureEvent_h_
 #define mozilla_dom_SimpleGestureEvent_h_
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/SimpleGestureEventBinding.h"
-#include "mozilla/EventForwards.h"
 
 class nsPresContext;
 

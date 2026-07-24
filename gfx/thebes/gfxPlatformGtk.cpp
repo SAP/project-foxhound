@@ -25,7 +25,6 @@
 #include "gfxFT2FontBase.h"
 #include "gfxTextRun.h"
 #include "GLContextProvider.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/FontPropertyTypes.h"
@@ -125,6 +124,8 @@ gfxPlatformGtk::gfxPlatformGtk() {
   // Bug 1714483: Force disable FXAA Antialiasing on NV drivers. This is a
   // temporary workaround for a driver bug.
   PR_SetEnv("__GL_ALLOW_FXAA_USAGE=0");
+
+  InitMesaThreading();
 }
 
 gfxPlatformGtk::~gfxPlatformGtk() {
@@ -173,11 +174,6 @@ void gfxPlatformGtk::InitX11EGLConfig() {
   if (testType != u"EGL") {
     feature.ForceDisable(FeatureStatus::Broken, "glxtest could not use EGL",
                          "FEATURE_FAILURE_GLXTEST_NO_EGL"_ns);
-  }
-
-  if (feature.IsEnabled() && IsX11Display()) {
-    // Enabling glthread crashes on X11/EGL, see bug 1670545
-    PR_SetEnv("mesa_glthread=false");
   }
 #else
   feature.DisableByDefault(FeatureStatus::Unavailable, "X11 support missing",
@@ -229,7 +225,7 @@ void gfxPlatformGtk::InitDmabufConfig() {
                            failureId);
     }
     // Make sure we have DMABuf formats available.
-    Unused << GetGlobalDMABufFormats();
+    (void)GetGlobalDMABufFormats();
   }
 }
 
@@ -294,11 +290,7 @@ void gfxPlatformGtk::InitWebRenderConfig() {
   // HDR requires compositor to work
 #if defined(MOZ_WAYLAND)
   if (feature.IsEnabled()) {
-    if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
-      feature.ForceDisable(FeatureStatus::Unavailable, "HDR mode is disabled",
-                           "FEATURE_FAILURE_NO_HDR"_ns);
-
-    } else if (!IsWaylandDisplay()) {
+    if (!IsWaylandDisplay()) {
       feature.ForceDisable(FeatureStatus::Unavailable,
                            "Wayland support missing",
                            "FEATURE_FAILURE_NO_WAYLAND"_ns);
@@ -314,10 +306,6 @@ void gfxPlatformGtk::InitWebRenderConfig() {
       feature.ForceDisable(FeatureStatus::Unavailable,
                            "Requires wp_viewporter protocol support",
                            "FEATURE_FAILURE_REQUIRES_WPVIEWPORTER"_ns);
-    } else if (!GetGlobalDMABufFormats()->SupportsHDRComposition()) {
-      feature.ForceDisable(FeatureStatus::Unavailable,
-                           "Requires HDR format direct composition",
-                           "FEATURE_FAILURE_REQUIRES_FORMAT_COMPOSITION"_ns);
     }
   }
 #else  // MOZ_WAYLAND
@@ -337,6 +325,36 @@ void gfxPlatformGtk::InitPlatformGPUProcessPrefs() {
                          "FEATURE_FAILURE_WAYLAND"_ns);
   }
 #endif
+}
+
+void gfxPlatformGtk::InitMesaThreading() {
+  FeatureState& featureMesaThreading =
+      gfxConfig::GetFeature(Feature::MESA_THREADING);
+  featureMesaThreading.EnableByDefault();
+
+  nsCString failureId;
+  int32_t status;
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+  if (NS_FAILED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_MESA_THREADING,
+                                          failureId, &status))) {
+    featureMesaThreading.Disable(FeatureStatus::BlockedNoGfxInfo,
+                                 "gfxInfo is broken",
+                                 "FEATURE_FAILURE_NO_GFX_INFO"_ns);
+  } else if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+    featureMesaThreading.Disable(FeatureStatus::Blocklisted,
+                                 "Blocklisted by gfxInfo", failureId);
+  }
+
+  // Enabling glthread crashes on X11/EGL, see bug 1670545
+  if (gfxConfig::IsEnabled(Feature::X11_EGL) && IsX11Display()) {
+    featureMesaThreading.Disable(FeatureStatus::Failed,
+                                 "No glthread with EGL and X11",
+                                 "FEATURE_FAILURE_EGL_X11"_ns);
+  }
+
+  if (!featureMesaThreading.IsEnabled()) {
+    PR_SetEnv("mesa_glthread=false");
+  }
 }
 
 already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(

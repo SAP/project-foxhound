@@ -8,7 +8,6 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/XRWebGLLayer.h"
-#include "mozilla/Unused.h"
 #include "VRDisplayClient.h"
 #include "VRLayerChild.h"
 
@@ -127,7 +126,7 @@ void VRDisplayPresentation::CreateLayers() {
 void VRDisplayPresentation::DestroyLayers() {
   for (VRLayerChild* layer : mLayers) {
     if (layer->IsIPCOpen()) {
-      Unused << layer->SendDestroy();
+      (void)layer->SendDestroy();
     }
   }
   mLayers.Clear();

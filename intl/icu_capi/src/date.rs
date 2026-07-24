@@ -6,19 +6,24 @@ use ffi::IsoWeekOfYear;
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     use alloc::sync::Arc;
     use core::fmt::Write;
+    #[cfg(feature = "unstable")]
+    use diplomat_runtime::DiplomatOption;
     use icu_calendar::Iso;
 
     use crate::unstable::calendar::ffi::Calendar;
+    #[cfg(feature = "unstable")]
+    use crate::unstable::errors::ffi::CalendarDateFromFieldsError;
     use crate::unstable::errors::ffi::{CalendarError, Rfc9557ParseError};
 
     use tinystr::TinyAsciiStr;
 
     #[diplomat::enum_convert(icu_calendar::types::Weekday)]
+    #[diplomat::rust_link(icu::calendar::types::Weekday, Enum)]
+    #[non_exhaustive]
     pub enum Weekday {
         Monday = 1,
         Tuesday,
@@ -48,6 +53,7 @@ pub mod ffi {
         #[diplomat::rust_link(icu::calendar::Date::from_rata_die, FnInStruct)]
         #[diplomat::attr(all(supports = named_constructors), named_constructor)]
         #[diplomat::demo(default_constructor)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn from_rata_die(rd: i64) -> Box<IsoDate> {
             Box::new(IsoDate(icu_calendar::Date::from_rata_die(
                 icu_calendar::types::RataDie::new(rd),
@@ -60,6 +66,7 @@ pub mod ffi {
         #[diplomat::rust_link(icu::calendar::Date::try_from_utf8, FnInStruct, hidden)]
         #[diplomat::rust_link(icu::calendar::Date::from_str, FnInStruct, hidden)]
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn from_string(v: &DiplomatStr) -> Result<Box<IsoDate>, Rfc9557ParseError> {
             Ok(Box::new(IsoDate(icu_calendar::Date::try_from_utf8(
                 v, Iso,
@@ -68,11 +75,13 @@ pub mod ffi {
 
         /// Convert this date to one in a different calendar
         #[diplomat::rust_link(icu::calendar::Date::to_calendar, FnInStruct)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn to_calendar(&self, calendar: &Calendar) -> Box<Date> {
             Box::new(Date(self.0.to_calendar(calendar.0.clone())))
         }
 
         #[diplomat::rust_link(icu::calendar::Date::to_any, FnInStruct)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn to_any(&self) -> Box<Date> {
             Box::new(Date(self.0.to_any().into_atomic_ref_counted()))
         }
@@ -80,6 +89,7 @@ pub mod ffi {
         /// Returns this date's Rata Die
         #[diplomat::rust_link(icu::calendar::Date::to_rata_die, FnInStruct)]
         #[diplomat::attr(auto, getter = "rata_die")]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn to_rata_die(&self) -> i64 {
             self.0.to_rata_die().to_i64_date()
         }
@@ -87,6 +97,7 @@ pub mod ffi {
         /// Returns the 1-indexed day in the year for this date
         #[diplomat::rust_link(icu::calendar::Date::day_of_year, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn day_of_year(&self) -> u16 {
             self.0.day_of_year().0
         }
@@ -94,6 +105,7 @@ pub mod ffi {
         /// Returns the 1-indexed day in the month for this date
         #[diplomat::rust_link(icu::calendar::Date::day_of_month, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn day_of_month(&self) -> u8 {
             self.0.day_of_month().0
         }
@@ -101,6 +113,7 @@ pub mod ffi {
         /// Returns the day in the week for this day
         #[diplomat::rust_link(icu::calendar::Date::day_of_week, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn day_of_week(&self) -> Weekday {
             self.0.day_of_week().into()
         }
@@ -108,6 +121,7 @@ pub mod ffi {
         /// Returns the week number in this year, using week data
         #[diplomat::rust_link(icu::calendar::Date::week_of_year, FnInStruct)]
         #[cfg(feature = "calendar")]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn week_of_year(&self) -> IsoWeekOfYear {
             self.0.week_of_year().into()
         }
@@ -116,6 +130,7 @@ pub mod ffi {
         #[diplomat::rust_link(icu::calendar::types::MonthInfo::ordinal, StructField)]
         #[diplomat::rust_link(icu::calendar::Date::month, FnInStruct, compact)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn month(&self) -> u8 {
             self.0.month().ordinal
         }
@@ -125,6 +140,7 @@ pub mod ffi {
         /// For calendars without an era, returns the extended year
         #[diplomat::rust_link(icu::calendar::Date::year, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn year(&self) -> i32 {
             self.0.extended_year()
         }
@@ -132,6 +148,7 @@ pub mod ffi {
         /// Returns if the year is a leap year for this date
         #[diplomat::rust_link(icu::calendar::Date::is_in_leap_year, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn is_in_leap_year(&self) -> bool {
             self.0.is_in_leap_year()
         }
@@ -139,6 +156,7 @@ pub mod ffi {
         /// Returns the number of months in the year represented by this date
         #[diplomat::rust_link(icu::calendar::Date::months_in_year, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn months_in_year(&self) -> u8 {
             self.0.months_in_year()
         }
@@ -146,6 +164,7 @@ pub mod ffi {
         /// Returns the number of days in the month represented by this date
         #[diplomat::rust_link(icu::calendar::Date::days_in_month, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn days_in_month(&self) -> u8 {
             self.0.days_in_month()
         }
@@ -153,9 +172,50 @@ pub mod ffi {
         /// Returns the number of days in the year represented by this date
         #[diplomat::rust_link(icu::calendar::Date::days_in_year, FnInStruct)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // covered by Date
         pub fn days_in_year(&self) -> u16 {
             self.0.days_in_year()
         }
+    }
+
+    /// 🚧 This API is experimental and may experience breaking changes outside major releases.
+    #[diplomat::rust_link(icu::calendar::options::DateFromFieldsOptions, Struct)]
+    #[cfg(feature = "unstable")]
+    pub struct DateFromFieldsOptions {
+        pub overflow: DiplomatOption<DateOverflow>,
+        pub missing_fields_strategy: DiplomatOption<DateMissingFieldsStrategy>,
+    }
+
+    /// 🚧 This API is experimental and may experience breaking changes outside major releases.
+    #[diplomat::rust_link(icu::calendar::types::DateFields, Struct)]
+    #[cfg(feature = "unstable")]
+    pub struct DateFields<'a> {
+        pub era: DiplomatOption<&'a DiplomatStr>,
+        pub era_year: DiplomatOption<i32>,
+        pub extended_year: DiplomatOption<i32>,
+        pub month_code: DiplomatOption<&'a DiplomatStr>,
+        pub ordinal_month: DiplomatOption<u8>,
+        pub day: DiplomatOption<u8>,
+    }
+
+    /// 🚧 This API is experimental and may experience breaking changes outside major releases.
+    #[diplomat::enum_convert(icu_calendar::options::Overflow, needs_wildcard)]
+    #[diplomat::rust_link(icu::calendar::options::Overflow, Enum)]
+    #[non_exhaustive]
+    #[cfg(feature = "unstable")]
+    pub enum DateOverflow {
+        Constrain,
+        Reject,
+    }
+
+    /// 🚧 This API is experimental and may experience breaking changes outside major releases.
+    #[diplomat::enum_convert(icu_calendar::options::MissingFieldsStrategy, needs_wildcard)]
+    #[diplomat::rust_link(icu::calendar::options::MissingFieldsStrategy, Enum)]
+    #[non_exhaustive]
+    #[cfg(feature = "unstable")]
+    pub enum DateMissingFieldsStrategy {
+        Reject,
+        Ecma,
     }
 
     #[diplomat::opaque]
@@ -171,15 +231,34 @@ pub mod ffi {
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
         #[diplomat::demo(default_constructor)]
         pub fn from_iso_in_calendar(
-            year: i32,
-            month: u8,
-            day: u8,
+            iso_year: i32,
+            iso_month: u8,
+            iso_day: u8,
             calendar: &Calendar,
         ) -> Result<Box<Date>, CalendarError> {
             let cal = calendar.0.clone();
             Ok(Box::new(Date(
-                icu_calendar::Date::try_new_iso(year, month, day)?.to_calendar(cal),
+                icu_calendar::Date::try_new_iso(iso_year, iso_month, iso_day)?.to_calendar(cal),
             )))
+        }
+
+        /// Creates a new [`Date`] from the given fields, which are interpreted in the given calendar system.
+        ///
+        /// 🚧 This API is experimental and may experience breaking changes outside major releases.
+        #[diplomat::rust_link(icu::calendar::Date::try_from_fields, FnInStruct)]
+        #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
+        #[cfg(feature = "unstable")]
+        pub fn from_fields_in_calendar(
+            fields: DateFields,
+            options: DateFromFieldsOptions,
+            calendar: &Calendar,
+        ) -> Result<Box<Date>, CalendarDateFromFieldsError> {
+            let cal = calendar.0.clone();
+            Ok(Box::new(Date(icu_calendar::Date::try_from_fields(
+                fields.into(),
+                options.into(),
+                cal,
+            )?)))
         }
 
         /// Creates a new [`Date`] from the given codes, which are interpreted in the given calendar system
@@ -339,8 +418,13 @@ pub mod ffi {
             self.0.year().era_year_or_related_iso()
         }
 
-        /// Returns the extended year in the Date
+        /// Returns the extended year, which can be used for
+        ///
+        /// This year number can be used when you need a simple numeric representation
+        /// of the year, and can be meaningfully compared with extended years from other
+        /// eras or used in arithmetic.
         #[diplomat::rust_link(icu::calendar::Date::extended_year, FnInStruct)]
+        #[diplomat::rust_link(icu::calendar::types::YearInfo::extended_year, FnInEnum, hidden)]
         #[diplomat::attr(auto, getter)]
         pub fn extended_year(&self) -> i32 {
             self.0.extended_year()
@@ -386,6 +470,7 @@ pub mod ffi {
         }
     }
 
+    #[diplomat::rust_link(icu::calendar::types::IsoWeekOfYear, Struct)]
     pub struct IsoWeekOfYear {
         pub week_number: u8,
         pub iso_year: i32,
@@ -403,5 +488,32 @@ impl From<icu_calendar::types::IsoWeekOfYear> for IsoWeekOfYear {
             week_number,
             iso_year,
         }
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl From<ffi::DateFromFieldsOptions> for icu_calendar::options::DateFromFieldsOptions {
+    fn from(other: ffi::DateFromFieldsOptions) -> Self {
+        let mut options = Self::default();
+
+        options.overflow = other.overflow.into_converted_option();
+        options.missing_fields_strategy = other.missing_fields_strategy.into_converted_option();
+
+        options
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl<'a> From<ffi::DateFields<'a>> for icu_calendar::types::DateFields<'a> {
+    fn from(other: ffi::DateFields<'a>) -> Self {
+        let mut fields = Self::default();
+        fields.era = other.era.into_option();
+        fields.era_year = other.era_year.into();
+        fields.extended_year = other.extended_year.into();
+        fields.month_code = other.month_code.into_option();
+        fields.ordinal_month = other.ordinal_month.into();
+        fields.day = other.day.into();
+
+        fields
     }
 }

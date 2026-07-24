@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -46,7 +53,7 @@
   -->
   <string name="menu_open_with_a_browser2">Открыть в…</string>
   <!-- Menu item: Add the current page as a shortcut to the device's home screen (launcher). -->
-  <string name="menu_add_to_home_screen">Добавить на домашний экран</string>
+  <string name="menu_add_to_home_screen">На домашний экран</string>
   <!-- Menu item: Add the current site as a shortcut on the Home screen -->
   <string name="menu_add_to_shortcuts">Добавить в ярлыки</string>
   <!-- Menu item: Remove the current site as a shortcut from the Home screen -->
@@ -89,7 +96,7 @@
     Text shown in the notification description that pops up to remind the user that a browsing session is active
     for Android 14+.
   -->
-  <string name="notification_erase_text_android_14_1">Нажмите или снимите это уведомление, чтобы надежно удалить свою историю просмотра.</string>
+  <string name="notification_erase_text_android_14_1">Нажмите или снимите это уведомление, чтобы надёжно удалить свою историю просмотра.</string>
   <string name="notification_erase_text">Удалить историю просмотра сети</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">Открыть</string>
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s даёт вам контроль.</p> <p>Используйте его как приватный браузер: <ul> <li>Ищите и просматривайте сеть</li> <li>Блокируйте трекеры (или измените настройки, чтобы разрешить их)</li> <li>Стирайте и удаляйте куки, историю поиска и просмотра</li> </ul> </p> <p>%1$s создан Mozilla. Наша миссия способствовать здоровому, открытому Интернету.<br/> <a href=\"%2$s\">Узнать больше</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s даёт вам контроль.</p>\n<p>Используйте его как приватный браузер:\n<ul>\n<li>Ищите и просматривайте сеть</li>\n<li>Блокируйте трекеры (или измените настройки, чтобы разрешить их)</li>\n<li>Стирайте и удаляйте куки, историю поиска и просмотра</li>\n</ul> </p>\n<p>%1$s создан Mozilla. Наша миссия способствовать здоровому, открытому Интернету.<br/>\n<a href=\"%2$s\">Узнать больше</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Подробнее</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -218,15 +225,15 @@
   <!-- Item in autocomplete settings that will open a new preference screen for adding and removing URLs to the user-defined list -->
   <string name="preference_autocomplete_subitem_manage_sites">Управление сайтами</string>
   <!-- Action at the bottom of the list of custom autocomplete URLs that will open a new screen to add a new URL to the list. -->
-  <string name="preference_autocomplete_action_add">+ Добавить пользовательский URL</string>
+  <string name="preference_autocomplete_action_add">+ Добавить свой URL</string>
   <!-- Explanation text above the list of custom autocomplete URLs. -->
   <string name="preference_autocomplete_explanation_text">Ваш список автодополнения:</string>
   <!-- Action at the bottom of the list of custom autocomplete URLs that will open a new screen to add a new URL to the list. -->
   <string name="preference_autocomplete_action_add2">Добавить URL</string>
   <!-- Title of the screen for adding custom autocomplete URLs. -->
-  <string name="preference_autocomplete_title_add">Добавить пользовательский URL</string>
+  <string name="preference_autocomplete_title_add">Добавить свой URL</string>
   <!-- Label for the button to quick add custom autocomplete URLs. -->
-  <string name="custom_autocomplete_quick_add">Добавить пользовательский URL</string>
+  <string name="custom_autocomplete_quick_add">Добавить свой URL</string>
   <!-- Label for the button to quick add the current URL to the custom autocomplete list -->
   <string name="add_custom_autocomplete_label">Добавить ссылку для автодополнения</string>
   <!-- Preference category for settings about cookies and site data -->
@@ -234,7 +241,7 @@
   <!-- Preference category for settings about data choices -->
   <string name="preference_category_data_choices">Выбор данных</string>
   <!-- Title of the screen for removing custom autocomplete URLs. -->
-  <string name="preference_autocomplete_title_remove">Удалить пользовательские URL</string>
+  <string name="preference_autocomplete_title_remove">Удалить свои URL</string>
   <!-- A link to SUMO at autocomplete settings. -->
   <string name="preference_autocomplete_learn_more">Подробнее</string>
   <!-- Preference summary: Custom (user-defined) autocomplete URLs. -->
@@ -458,35 +465,27 @@
   -->
   <string name="onboarding_first_screen_title">Добро пожаловать в %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
-  <string name="onboarding_first_screen_subtitle">Быстро. Приватный. Никаких отвлечений.</string>
+  <string name="onboarding_first_screen_subtitle">Быстрый. Приватный. Никаких отвлечений.</string>
   <!--
     New Onboarding flow first screen 'terms of use' text
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Продолжая, вы соглашаетесь с %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
-  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Продолжая, вы соглашаетесь с %1$s.</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Продолжая, вы соглашаетесь с «%1$s».</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Условия использования Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
-  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Условия использования Firefox</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Условиями использования Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox заботится о вашей приватности. Узнайте больше в нашем %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
-  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox заботится о вашей конфиденциальности. Узнайте больше в нашем %1$s.</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox заботится о вашей конфиденциальности. Узнайте больше в нашей «%1$s».</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Уведомление о конфиденциальности.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link_2">Политика приватности</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Политике приватности</string>
   <!-- New Onboarding flow first screen button label -->
   <string name="onboarding_first_screen_button_agree_and_continue_2">Продолжить</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
@@ -520,12 +519,12 @@
   <!-- First run tour (Shortcut): Title -->
   <string name="firstrun_shortcut_title">Добавьте ярлыки на домашний экран</string>
   <!-- First run tour (Shortcut): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="firstrun_shortcut_text">С %1$s вы сможете быстро вернуться к любимым сайтам. Просто выберите «Добавить на домашний экран» из меню %1$s.</string>
+  <string name="firstrun_shortcut_text">С %1$s вы сможете быстро вернуться к любимым сайтам. Просто выберите «На домашний экран» из меню %1$s.</string>
   <!-- First run tour (Privacy): Title -->
   <string name="firstrun_privacy_title">Сделайте приватность своей привычкой</string>
   <!-- First run tour (Privacy): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
   <string name="firstrun_privacy_text">Установите %1$s своим браузером по умолчанию и получите преимущества приватного веб-сёрфинга, когда вы открываете веб-страницы из других приложений.</string>
-  <string name="firstrun_close_button">ОК, понятно!</string>
+  <string name="firstrun_close_button">Хорошо, понятно!</string>
   <string name="firstrun_skip_button">Пропустить</string>
   <string name="firstrun_next_button">Далее</string>
   <!-- Indicator that no trackers are being blocked because content blocking is disabled; normally shows the number of blocked trackers -->
@@ -563,11 +562,13 @@
   <string name="tabs_tray_action_erase">Удалить историю просмотра сети</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Закрыть остальные вкладки</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Добавить новую вкладку</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
-  <string name="download_firefox" tools:ignore="BrandUsage">Загрузить Firefox</string>
+  <string name="download_firefox" tools:ignore="BrandUsage">Скачать Firefox</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Имя пользователя</string>
   <string name="gv_prompt_password_hint">Пароль</string>
@@ -759,7 +760,7 @@
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
   -->
-  <string name="tip_add_to_homescreen">Получайте доступ к нужным сайтам в одно касание%1$s Меню &gt; Добавить на домашний экран</string>
+  <string name="tip_add_to_homescreen">Получайте доступ к нужным сайтам в одно касание%1$s «Меню» &gt; «На домашний экран»</string>
   <!--
     Tip displayed on home view explaining how to make Focus the default browser
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
@@ -805,7 +806,7 @@
   <!-- Message for Preference screen for cookie blocking for exceptions tracking protection -->
   <string name="preference_category_block_cookies">Хотите заблокировать куки?</string>
   <!-- Title for the tab crash report screen -->
-  <string name="tab_crash_report_title">Вкладка упала</string>
+  <string name="tab_crash_report_title">Падение вкладки</string>
   <!-- Headline for the tab crash report screen -->
   <string name="tab_crash_report_headline">Извините. С этой вкладкой возникли проблемы.</string>
   <!-- Subtitle for the tab crash report screen -->
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Это может быть проблемой с конфигурацией сервера или же кто-то пытается подменить нужный вам сервер другим. <br/><br/> Если в прошлом вы успешно соединялись с этим сервером, то, возможно, эта ошибка является временной.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Возможно, кто-то пытается подменить нужный вам сайт другим, поэтому продолжение может быть рискованным.</label> <br><br> <label>%1$s не может доверять <b>%2$s</b>, потому что издатель его сертификата неизвестен, сертификат подписан самим сайтом или его сервер не отправляет правильные промежуточные сертификаты.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Возможно, кто-то пытается подменить нужный вам сайт другим, поэтому продолжение может быть рискованным.</label> <br><br>\n<label>%1$s не может доверять <b>%2$s</b>, потому что издатель его сертификата неизвестен, сертификат подписан самим сайтом или его сервер не отправляет правильные промежуточные сертификаты.</label>]]></string>
   <!--
     Sessions List
 
@@ -905,7 +906,7 @@
   -->
   <string name="tool_tip_title">Вы защищены!</string>
   <!-- Tool Tip Message -->
-  <string name="tool_tip_message">Эти настройки по умолчанию обеспечивают надежную защиту. Но вы можете легко изменить их под ваши конкретные потребности.</string>
+  <string name="tool_tip_message">Эти настройки по умолчанию обеспечивают надёжную защиту. Но вы можете легко изменить их под ваши конкретные потребности.</string>
   <!-- Tool Tip "X" button Content description (not visible, for screen readers etc.) :Button that closes the tool tip -->
   <string name="tool_tip_dismiss_button_content_description">Убрать</string>
   <!-- CFR for Toolbar Delete Icon (Banner Info Message) -->
@@ -935,7 +936,7 @@
     This is te text from add search widget to home screen button .The button is located on
     promote search widget dialog.
   -->
-  <string name="promote_search_widget_button_text">Добавить виджет на домашний экран</string>
+  <string name="promote_search_widget_button_text">Виджет на домашний экран</string>
   <!--
     This is te text of the snackbar that appears after the search widget was added successfully
     to the home screen.

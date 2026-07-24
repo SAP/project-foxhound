@@ -11,22 +11,21 @@
 #include "js/TypeDecls.h"
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
+#include "vm/SymbolType.h"
 
 class JS_PUBLIC_API JSTracer;
 
-namespace js {
-class CollatorObject;
-class DateTimeFormatObject;
-class NumberFormatObject;
-
-namespace temporal {
+namespace js::temporal {
 class TimeZoneObject;
 }
-}  // namespace js
 
 namespace js::intl {
 
 enum class DateTimeFormatKind;
+
+class CollatorObject;
+class DateTimeFormatObject;
+class NumberFormatObject;
 
 /**
  * Cached per-global Intl data. In contrast to SharedIntlData, which is
@@ -39,7 +38,7 @@ class GlobalIntlData {
    * value controls the value returned by defaultLocale() that's what's
    * *actually* used.
    */
-  GCPtr<JSLinearString*> runtimeDefaultLocale_;
+  GCPtr<JSLinearString*> realmLocale_;
 
   /**
    * The actual default locale.
@@ -47,11 +46,11 @@ class GlobalIntlData {
   GCPtr<JSLinearString*> defaultLocale_;
 
   /**
-   * Time zone information provided by ICU. See
+   * Time zone information provided by ICU or the embedding. See
    * temporal::ComputeSystemTimeZoneIdentifier(), whose value controls the value
    * returned by defaultTimeZone() that's what's *actually* used.
    */
-  GCPtr<JSLinearString*> runtimeDefaultTimeZone_;
+  GCPtr<JSLinearString*> realmTimeZone_;
 
   /**
    * The actual default time zone.
@@ -125,21 +124,27 @@ class GlobalIntlData {
    */
   GCPtr<JSObject*> dateTimeFormatToLocaleTime_;
 
+  /**
+   * The [[FallbackSymbol]] symbol of the %Intl% intrinsic object.
+   *
+   * This symbol is used to implement the legacy constructor semantics for
+   * Intl.DateTimeFormat and Intl.NumberFormat.
+   */
+  GCPtr<JS::Symbol*> fallbackSymbol_;
+
  public:
   /**
-   * Returns the BCP 47 language tag for the host environment's current locale.
+   * Returns the BCP 47 language tag for the global's current locale.
    */
   JSLinearString* defaultLocale(JSContext* cx);
 
   /**
-   * Returns the IANA time zone name for the host environment's current time
-   * zone.
+   * Returns the IANA time zone name for the global's current time zone.
    */
   JSLinearString* defaultTimeZone(JSContext* cx);
 
   /**
-   * Get or create the time zone object for the host environment's current time
-   * zone.
+   * Get or create the time zone object for the global's current time zone.
    */
   temporal::TimeZoneObject* getOrCreateDefaultTimeZone(JSContext* cx);
 
@@ -175,11 +180,17 @@ class GlobalIntlData {
       JSContext* cx, DateTimeFormatKind kind,
       JS::Handle<JSLinearString*> locale);
 
+  /**
+   * Returns the %Intl%.[[FallbackSymbol]] for legacy constructor semantics of
+   * Intl.DateTimeFormat and Intl.NumberFormat.
+   */
+  JS::Symbol* fallbackSymbol(JSContext* cx);
+
   void trace(JSTracer* trc);
 
  private:
-  bool ensureRuntimeDefaultLocale(JSContext* cx);
-  bool ensureRuntimeDefaultTimeZone(JSContext* cx);
+  bool ensureRealmLocale(JSContext* cx);
+  bool ensureRealmTimeZone(JSContext* cx);
 
   void resetCollator();
   void resetNumberFormat();

@@ -22,6 +22,34 @@
 #  define USEPIPE 1
 #endif
 
+// PRFilePrivate is defined in a private header of NSPR (primpl.h) we can't
+// include. We need this to be able to set nonblocking=true which PR_CreatePipe
+// fails to do. We can remove this after bug 1993248 is fixed.
+// Note that nsLocalFileWin.cpp also redefines this in order to change the
+// appendMode.
+//-----------------------------------------------------------------------------
+typedef enum {
+  _PR_TRI_TRUE = 1,
+  _PR_TRI_FALSE = 0,
+  _PR_TRI_UNKNOWN = -1
+} _PRTriStateBool;
+
+struct _MDFileDesc {
+  PROsfd osfd;
+};
+
+struct PRFilePrivate {
+  int32_t state;
+  bool nonblocking;
+  _PRTriStateBool inheritable;
+  PRFileDesc* next;
+  int lockCount; /*   0: not locked
+                  *  -1: a native lockfile call is in progress
+                  * > 0: # times the file is locked */
+  bool appendMode;
+  _MDFileDesc md;
+};
+
 namespace mozilla {
 namespace net {
 
@@ -157,6 +185,12 @@ PollableEvent::PollableEvent()
     fd = PR_FileDesc2NativeHandle(mWriteFD);
     flags = fcntl(fd, F_GETFL, 0);
     (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    // Bug 1993248 - PR_CreatePipe doesn't set this flag, so we need to do it
+    // manually to ensure read operations are not blocking. This hack can be
+    // removed once this is fixed in NSPR.
+    mReadFD->secret->nonblocking = true;
+    mWriteFD->secret->nonblocking = true;
   } else {
     mReadFD = nullptr;
     mWriteFD = nullptr;
@@ -280,7 +314,7 @@ bool PollableEvent::Signal() {
   int32_t status = PR_Write(mWriteFD, "M", 1);
   SOCKET_LOG(("PollableEvent::Signal PR_Write %d\n", status));
   if (status != 1) {
-    NS_WARNING("PollableEvent::Signal Failed\n");
+    NS_WARNING("PollableEvent::Signal Failed");
     SOCKET_LOG(("PollableEvent::Signal Failed\n"));
     mSignaled = false;
     mWriteFailed = true;

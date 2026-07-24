@@ -52,13 +52,18 @@ function promiseMiddleware({ dispatch }) {
         },
         error => {
           executeSoon(() => {
-            dispatch(
-              Object.assign({}, action, {
-                status: "error",
-                error: error.message || error,
-              })
-            );
-            reject(error);
+            try {
+              dispatch(
+                Object.assign({}, action, {
+                  status: "error",
+                  error: error.message || error,
+                })
+              );
+            } finally {
+              // Ensure rejecting the original promise,
+              // even if the "error" action also throws
+              reject(error);
+            }
           });
         }
       );

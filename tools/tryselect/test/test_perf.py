@@ -880,9 +880,9 @@ def test_category_expansion(
 
     assert len(expanded_cats) == expected_counts
     assert not any([expanded_cats.get(ucat, None) is not None for ucat in missing])
-    assert all(
-        [expanded_cats.get(ucat, None) is not None for ucat in unique_categories.keys()]
-    )
+    assert all([
+        expanded_cats.get(ucat, None) is not None for ucat in unique_categories.keys()
+    ])
 
     # Ensure that the queries are as expected
     for cat_name, cat_query in unique_categories.items():
@@ -1068,9 +1068,7 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
         "tryselect.selectors.perf.print",
     ) as perf_print, mock.patch(
         "tryselect.selectors.perf.PerfParser.set_categories_for_test"
-    ) as tests_mock, mock.patch(
-        "tryselect.selectors.perf.requests"
-    ) as requests_mock:
+    ) as tests_mock, mock.patch("tryselect.selectors.perf.requests") as requests_mock:
 
         def test_mock_func(*args, **kwargs):
             """Used for testing any --test functionality."""
@@ -1186,9 +1184,7 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
         "tryselect.selectors.perf.print",
     ) as perf_print, mock.patch(
         "tryselect.selectors.perf.PerfParser.set_categories_for_test"
-    ) as tests_mock, mock.patch(
-        "tryselect.selectors.perf.requests"
-    ) as requests_mock:
+    ) as tests_mock, mock.patch("tryselect.selectors.perf.requests") as requests_mock:
 
         def test_mock_func(*args, **kwargs):
             """Used for testing any --test functionality."""
@@ -1508,9 +1504,7 @@ def test_check_cached_revision(
         "tryselect.selectors.perf.json.dump"
     ) as dump, mock.patch(
         "tryselect.selectors.perf.pathlib.Path.is_file"
-    ) as is_file, mock.patch(
-        "tryselect.selectors.perf.pathlib.Path.open"
-    ):
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"):
         load.return_value = load_data
         is_file.return_value = exists_cache_file
         result = PerfParser.check_cached_revision(*args)
@@ -1540,9 +1534,7 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
         "tryselect.selectors.perf.json.dump"
     ) as dump, mock.patch(
         "tryselect.selectors.perf.pathlib.Path.is_file"
-    ) as is_file, mock.patch(
-        "tryselect.selectors.perf.pathlib.Path.open"
-    ):
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"):
         is_file.return_value = exists_cache_file
 
         PerfParser.push_info.base_revision = "base_revision_treeherder"
@@ -1561,7 +1553,7 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
             [1, 0, 0, 1],
             (
                 "\n\n----------------------------------------------------------------------------------------------\n"
-                f"You have selected {MAX_PERF_TASKS+1} total test runs! (selected tasks({MAX_PERF_TASKS+1}) * rebuild"
+                f"You have selected {MAX_PERF_TASKS + 1} total test runs! (selected tasks({MAX_PERF_TASKS + 1}) * rebuild"
                 f" count(1) \nThese tests won't be triggered as the current maximum for a single ./mach try "
                 f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
                 "\n----------------------------------------------------------------------------------------------\n\n"
@@ -1787,7 +1779,6 @@ def test_perftest_test_selection(tests, tasks_found, categories_produced):
     ) as mock_script_info, mock.patch(
         "mozperftest.argparser.PerftestArgumentParser.parse_known_args"
     ) as mock_parse_args:
-
         mock_si_instance = mock_script_info.return_value
         mock_si_instance.get.return_value = "background-resource"
         mock_si_instance.script = pathlib.Path(

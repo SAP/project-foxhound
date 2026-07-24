@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <memory>
 #include <utility>
 #include <vector>
 

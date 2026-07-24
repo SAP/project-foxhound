@@ -84,7 +84,7 @@ const timeStyles = {
     short: "12:30",
   },
   ja: {
-    full: "12時30分45秒 アメリカ太平洋標準時",
+    full: "12時30分45秒 米国太平洋標準時",
     long: "12:30:45 GMT-8",
     medium: "12:30:45",
     short: "12:30",

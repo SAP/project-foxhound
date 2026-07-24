@@ -1,11 +1,11 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2023 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.plaindate.prototype.with
 description: Behaviour when property bag forms a date out of bounds of the current era
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
 // Last day of Showa era

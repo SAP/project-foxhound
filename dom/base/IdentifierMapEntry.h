@@ -127,12 +127,15 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
    * Returns the element if we know the element associated with this
    * id. Otherwise returns null.
    */
-  Element* GetIdElement() const { return mIdContentList->SafeElementAt(0); }
+  Element* GetIdElement() const {
+    auto span = mIdContentList.AsSpan();
+    return span.IsEmpty() ? nullptr : span[0];
+  }
 
   /**
    * Returns the list of all elements associated with this id.
    */
-  const nsTArray<Element*>& GetIdElements() const { return mIdContentList; }
+  Span<Element* const> GetIdElements() const { return mIdContentList.AsSpan(); }
 
   /**
    * If this entry has a non-null image element set (using SetImageElement),

@@ -187,7 +187,7 @@ dictionary RTCDataChannelStats : RTCStats {
 enum RTCStatsIceCandidatePairState {
   "frozen",
   "waiting",
-  "inprogress",
+  "in-progress",
   "failed",
   "succeeded",
   "cancelled"

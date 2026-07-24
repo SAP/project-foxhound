@@ -243,9 +243,80 @@ static NSAppearance* NativeAppearanceForContent(nsIContent* aContent) {
   return NSAppearanceForColorScheme(LookAndFeel::ColorSchemeForFrame(f));
 }
 
-void NativeMenuMac::ShowAsContextMenu(nsIFrame* aClickedFrame,
-                                      const CSSIntPoint& aPosition,
-                                      bool aIsContextMenu) {
+void NativeMenuMac::ShowMenuAnchored(nsIFrame* aClickedFrame,
+                                     const CSSIntRect& aRect,
+                                     const nsAString& aPosition) {
+  // "Pulls down" in Cocoa means the menu does not overlap its anchor.
+  const bool pullsDown =
+      !aPosition.Equals(u"overlap"_ns) && !aPosition.Equals(u"selection"_ns);
+
+  mMenu->SetIsAnchoredPopUp(!pullsDown);
+  mMenu->SetIsAnchoredPullDown(pullsDown);
+  mMenu->PopupShowingEventWasSentAndApprovedExternally();
+
+  NSView* view = NativeViewForFrame(aClickedFrame);
+  NSWindow* window = view.window;
+
+  nsPresContext* pc = aClickedFrame->PresContext();
+  auto cssToDesktopScale =
+      pc->CSSToDevPixelScale() / pc->DeviceContext()->GetDesktopToDeviceScale();
+
+  // Convert Gecko screen coordinates to Cocoa window coordinates.
+  const DesktopRect desktopRect = aRect * cssToDesktopScale;
+  NSPoint windowPoint = NSMakePoint(
+      desktopRect.x - window.frame.origin.x,
+      nsCocoaUtils::FlippedScreenY(desktopRect.y) - window.frame.origin.y);
+  // Convert to the content coordinate system to account for titlebars.
+  NSPoint contentPoint = [view convertPoint:windowPoint fromView:nil];
+
+  NSRect buttonRect = NSMakeRect(contentPoint.x, contentPoint.y,
+                                 desktopRect.width, desktopRect.height);
+
+  NSAppearance* appearance = NativeAppearanceForContent(mMenu->Content());
+  NSMenu* menu = mMenu->NativeNSMenu();
+
+  // XUL accepts many more anchor popup alignments than Cocoa. Map to the best
+  // approximate edge setting.
+  NSRectEdge edge;
+  if (StringBeginsWith(aPosition, u"topcenter bottom"_ns) ||
+      StringBeginsWith(aPosition, u"topleft bottom"_ns) ||
+      StringBeginsWith(aPosition, u"topright bottom"_ns) ||
+      StringBeginsWith(aPosition, u"before"_ns)) {
+    edge = NSRectEdgeMinY;
+  } else if ((StringEndsWith(aPosition, u"right"_ns) &&
+              (StringBeginsWith(aPosition, u"left"_ns) ||
+               StringBeginsWith(aPosition, u"topleft"_ns) ||
+               StringBeginsWith(aPosition, u"bottomleft"_ns))) ||
+             StringBeginsWith(aPosition, u"start"_ns)) {
+    edge = NSRectEdgeMinX;
+  } else if ((StringEndsWith(aPosition, u"left"_ns) &&
+              (StringBeginsWith(aPosition, u"right"_ns) ||
+               StringBeginsWith(aPosition, u"topright"_ns) ||
+               StringBeginsWith(aPosition, u"bottomright"_ns))) ||
+             StringBeginsWith(aPosition, u"end"_ns)) {
+    edge = NSRectEdgeMaxX;
+  } else {
+    edge = NSRectEdgeMaxY;
+  }
+
+  // Let the MOZMenuOpeningCoordinator do the actual opening, so that this
+  // ShowAsAnchoredMenu call does not spawn a nested event loop, which would be
+  // surprising to our callers.
+  mOpeningHandle = [MOZMenuOpeningCoordinator.sharedInstance
+      asynchronouslyOpenMenu:menu
+            atScreenPosition:buttonRect.origin  // unused for anchored popups
+                     forView:view
+              withAppearance:appearance
+               asContextMenu:false  // unused for anchored popups
+              asAnchoredMenu:true
+                  anchorRect:buttonRect
+                  anchorEdge:edge
+                   pullsDown:pullsDown];
+}
+
+void NativeMenuMac::ShowMenuAtPosition(nsIFrame* aClickedFrame,
+                                       const CSSIntPoint& aPosition,
+                                       bool aIsContextMenu) {
   nsPresContext* pc = aClickedFrame->PresContext();
   auto cssToDesktopScale =
       pc->CSSToDevPixelScale() / pc->DeviceContext()->GetDesktopToDeviceScale();
@@ -266,7 +337,11 @@ void NativeMenuMac::ShowAsContextMenu(nsIFrame* aClickedFrame,
             atScreenPosition:locationOnScreen
                      forView:view
               withAppearance:appearance
-               asContextMenu:aIsContextMenu];
+               asContextMenu:aIsContextMenu
+              asAnchoredMenu:false
+                  anchorRect:NSMakeRect(0, 0, 0, 0)  // unused
+                  anchorEdge:NSRectEdgeMaxY          // unused
+                   pullsDown:false];                 // unused
 }
 
 bool NativeMenuMac::Close() {

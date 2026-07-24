@@ -37,7 +37,6 @@
 
 #include <sys/types.h>
 
-#include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Likely.h"
 #include "mozilla/mozalloc.h"

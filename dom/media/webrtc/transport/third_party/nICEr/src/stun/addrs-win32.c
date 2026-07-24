@@ -65,7 +65,7 @@ static int nr_win32_get_adapter_friendly_name(char *adapter_GUID, char **friendl
 
 #ifdef UNICODE
     newlen = wcslen(keyval_buf)+1;
-    my_fn = (char *) RCALLOC(newlen);
+    my_fn = (char *) RCALLOC_RAWSIZE(newlen);
     if (!my_fn) {
       ABORT(R_NO_MEMORY);
     }
@@ -149,10 +149,10 @@ stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count)
 
         if(r=nr_crypto_md5((UCHAR *)tmpAddress->FriendlyName,
                            wcslen(tmpAddress->FriendlyName) * sizeof(wchar_t),
-                           bin_hashed_ifname))
+                           (UCHAR *)bin_hashed_ifname))
           ABORT(r);
-        if(r=nr_bin2hex(bin_hashed_ifname, sizeof(bin_hashed_ifname),
-          hex_hashed_ifname))
+        if(r=nr_bin2hex((UCHAR*)bin_hashed_ifname, sizeof(bin_hashed_ifname),
+                        (UCHAR*)hex_hashed_ifname))
           ABORT(r);
 
         for (u = tmpAddress->FirstUnicastAddress; u != 0; u = u->Next) {

@@ -58,8 +58,8 @@ void APZThreadUtils::AssertOnControllerThread() {
 }
 
 /*static*/
-void APZThreadUtils::RunOnControllerThread(RefPtr<Runnable>&& aTask,
-                                           uint32_t flags) {
+void APZThreadUtils::RunOnControllerThread(
+    RefPtr<Runnable>&& aTask, nsIEventTarget::DispatchFlags flags) {
   RefPtr<nsISerialEventTarget> thread;
   {
     StaticMutexAutoLock lock(sControllerThreadMutex);

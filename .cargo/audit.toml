@@ -1,5 +1,9 @@
 [advisories]
 ignore = [
-	# To be dealt with via <https://bugzilla.mozilla.org/show_bug.cgi?id=1975554>.
-	"RUSTSEC-2023-0018",
+  # remove_dir_all <https://bugzilla.mozilla.org/show_bug.cgi?id=1975554>
+  "RUSTSEC-2023-0018",
+  # paste <https://bugzilla.mozilla.org/show_bug.cgi?id=1998421>
+  "RUSTSEC-2024-0436",
+  # serde_cbor <https://bugzilla.mozilla.org/show_bug.cgi?id=1998418>
+  "RUSTSEC-2021-0127",
 ]

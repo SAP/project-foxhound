@@ -14,15 +14,15 @@
 #include <utility>
 #include "mozilla/MacroArgs.h"
 
+namespace IPC {
+template <typename P>
+struct ParamTraits;
+}
+
 namespace mozilla {
 
 template <typename T>
 class Tainted;
-
-namespace ipc {
-template <typename>
-struct IPDLParamTraits;
-}
 
 /*
  * The Tainted<> class allows data to be wrapped and considered 'tainted'; which
@@ -66,7 +66,7 @@ class Tainted {
   T& Coerce() { return this->mValue; }
   const T& Coerce() const { return this->mValue; }
 
-  friend struct mozilla::ipc::IPDLParamTraits<Tainted<T>>;
+  friend struct IPC::ParamTraits<Tainted<T>>;
 };
 
 // ====================================================================
@@ -81,7 +81,7 @@ class Tainted {
 // scope - this allows the user to write the same variable name in the
 // macro's condition without using a magic name like 'value'.
 //
-// We explicitly do not mark it MOZ_MAYBE_UNUSED because the condition
+// We explicitly do not mark it [[maybe_unused]] because the condition
 // should always make use of tainted_value, not doing so should cause an
 // unused variable warning. That would only happen when we are bypssing
 // validation.

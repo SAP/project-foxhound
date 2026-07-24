@@ -12,9 +12,11 @@ interface ToggleEvent : Event {
     constructor(DOMString type, optional ToggleEventInit eventInitDict = {});
     readonly attribute DOMString oldState;
     readonly attribute DOMString newState;
+    readonly attribute Element? source;
 };
 
 dictionary ToggleEventInit : EventInit {
+    Element? source = null;
     DOMString oldState = "";
     DOMString newState = "";
 };

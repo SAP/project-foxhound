@@ -9,7 +9,7 @@ import { connect } from "react-redux";
 import { DiscoveryStreamBase } from "content-src/components/DiscoveryStreamBase/DiscoveryStreamBase";
 import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
 import { CustomizeMenu } from "content-src/components/CustomizeMenu/CustomizeMenu";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Search } from "content-src/components/Search/Search";
 import { Sections } from "content-src/components/Sections/Sections";
 import { Logo } from "content-src/components/Logo/Logo";
@@ -19,6 +19,7 @@ import { Notifications } from "content-src/components/Notifications/Notification
 import { TopicSelection } from "content-src/components/DiscoveryStreamComponents/TopicSelection/TopicSelection";
 import { DownloadMobilePromoHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight";
 import { WallpaperFeatureHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight";
+import { ActivationWindowMessage } from "../ActivationWindowMessage/ActivationWindowMessage";
 import { MessageWrapper } from "content-src/components/MessageWrapper/MessageWrapper";
 
 const VISIBLE = "visible";
@@ -46,61 +47,51 @@ function debounce(func, wait) {
   };
 }
 
-export class _Base extends React.PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      message: {},
+export function WithDsAdmin(props) {
+  const { hash = globalThis?.location?.hash || "" } = props;
+
+  const [devtoolsCollapsed, setDevtoolsCollapsed] = useState(
+    !hash.startsWith("#devtools")
+  );
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const h = globalThis?.location?.hash || "";
+      setDevtoolsCollapsed(!h.startsWith("#devtools"));
     };
-    this.notifyContent = this.notifyContent.bind(this);
+
+    // run once in case hash changed before mount
+    onHashChange();
+
+    globalThis?.addEventListener("hashchange", onHashChange);
+    return () => globalThis?.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  return (
+    <>
+      <DiscoveryStreamAdmin devtoolsCollapsed={devtoolsCollapsed} />
+      {devtoolsCollapsed ? <BaseContent {...props} /> : null}
+    </>
+  );
+}
+
+export function _Base(props) {
+  const isDevtoolsEnabled = props.Prefs.values["asrouter.devtoolsEnabled"];
+  const { App } = props;
+
+  if (!App.initialized) {
+    return null;
   }
 
-  notifyContent(state) {
-    this.setState(state);
-  }
-
-  componentWillUnmount() {
-    this.updateTheme();
-  }
-
-  componentWillUpdate() {
-    this.updateTheme();
-  }
-
-  updateTheme() {
-    const bodyClassName = [
-      "activity-stream",
-      // If we skipped the about:welcome overlay and removed the CSS classes
-      // we don't want to add them back to the Activity Stream view
-      document.body.classList.contains("inline-onboarding")
-        ? "inline-onboarding"
-        : "",
-    ]
-      .filter(v => v)
-      .join(" ");
-    globalThis.document.body.className = bodyClassName;
-  }
-
-  render() {
-    const { props } = this;
-    const { App } = props;
-    const isDevtoolsEnabled = props.Prefs.values["asrouter.devtoolsEnabled"];
-
-    if (!App.initialized) {
-      return null;
-    }
-
-    return (
-      <ErrorBoundary className="base-content-fallback">
-        <React.Fragment>
-          <BaseContent {...this.props} adminContent={this.state} />
-          {isDevtoolsEnabled ? (
-            <DiscoveryStreamAdmin notifyContent={this.notifyContent} />
-          ) : null}
-        </React.Fragment>
-      </ErrorBoundary>
-    );
-  }
+  return (
+    <ErrorBoundary className="base-content-fallback">
+      {isDevtoolsEnabled ? (
+        <WithDsAdmin {...props} />
+      ) : (
+        <BaseContent {...props} />
+      )}
+    </ErrorBoundary>
+  );
 }
 
 export class BaseContent extends React.PureComponent {
@@ -116,11 +107,12 @@ export class BaseContent extends React.PureComponent {
     this.updateWallpaper = this.updateWallpaper.bind(this);
     this.prefersDarkQuery = null;
     this.handleColorModeChange = this.handleColorModeChange.bind(this);
-    this.shouldDisplayTopicSelectionModal =
-      this.shouldDisplayTopicSelectionModal.bind(this);
+    this.onVisible = this.onVisible.bind(this);
     this.toggleDownloadHighlight = this.toggleDownloadHighlight.bind(this);
     this.handleDismissDownloadHighlight =
       this.handleDismissDownloadHighlight.bind(this);
+    this.applyBodyClasses = this.applyBodyClasses.bind(this);
+    this.toggleSectionsMgmtPanel = this.toggleSectionsMgmtPanel.bind(this);
     this.state = {
       fixedSearch: false,
       firstVisibleTimestamp: null,
@@ -128,7 +120,10 @@ export class BaseContent extends React.PureComponent {
       fixedNavStyle: {},
       wallpaperTheme: "",
       showDownloadHighlightOverride: null,
+      visible: false,
+      showSectionsMgmtPanel: false,
     };
+    this.spocPlaceholderStartTime = null;
   }
 
   setFirstVisibleTimestamp() {
@@ -139,19 +134,105 @@ export class BaseContent extends React.PureComponent {
     }
   }
 
+  onVisible() {
+    this.setState({
+      visible: true,
+    });
+    this.setFirstVisibleTimestamp();
+    this.shouldDisplayTopicSelectionModal();
+    this.onVisibilityDispatch();
+
+    if (this.isSpocsOnDemandExpired && !this.spocPlaceholderStartTime) {
+      this.spocPlaceholderStartTime = Date.now();
+    }
+  }
+
+  onVisibilityDispatch() {
+    const { onDemand = {} } = this.props.DiscoveryStream.spocs;
+
+    // We only need to dispatch this if:
+    // 1. onDemand is enabled,
+    // 2. onDemand spocs have not been loaded on this tab.
+    // 3. Spocs are expired.
+    if (onDemand.enabled && !onDemand.loaded && this.isSpocsOnDemandExpired) {
+      // This dispatches that spocs are expired and we need to update them.
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.DISCOVERY_STREAM_SPOCS_ONDEMAND_UPDATE,
+        })
+      );
+    }
+  }
+
+  get isSpocsOnDemandExpired() {
+    const {
+      onDemand = {},
+      cacheUpdateTime,
+      lastUpdated,
+    } = this.props.DiscoveryStream.spocs;
+
+    // We can bail early if:
+    // 1. onDemand is off,
+    // 2. onDemand spocs have been loaded on this tab.
+    if (!onDemand.enabled || onDemand.loaded) {
+      return false;
+    }
+
+    return Date.now() - lastUpdated >= cacheUpdateTime;
+  }
+
+  spocsOnDemandUpdated() {
+    const { onDemand = {}, loaded } = this.props.DiscoveryStream.spocs;
+
+    // We only need to fire this if:
+    // 1. Spoc data is loaded.
+    // 2. onDemand is enabled.
+    // 3. The component is visible (not preloaded tab).
+    // 4. onDemand spocs have not been loaded on this tab.
+    // 5. Spocs are not expired.
+    if (
+      loaded &&
+      onDemand.enabled &&
+      this.state.visible &&
+      !onDemand.loaded &&
+      !this.isSpocsOnDemandExpired
+    ) {
+      // This dispatches that spocs have been loaded on this tab
+      // and we don't need to update them again for this tab.
+      this.props.dispatch(
+        ac.BroadcastToContent({ type: at.DISCOVERY_STREAM_SPOCS_ONDEMAND_LOAD })
+      );
+    }
+  }
+
   componentDidMount() {
+    this.applyBodyClasses();
     global.addEventListener("scroll", this.onWindowScroll);
     global.addEventListener("keydown", this.handleOnKeyDown);
     const prefs = this.props.Prefs.values;
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+
+    if (!prefs["externalComponents.enabled"]) {
+      if (prefs["search.useHandoffComponent"]) {
+        // Dynamically import the contentSearchHandoffUI module, but don't worry
+        // about webpacking this one.
+        import(
+          /* webpackIgnore: true */ "chrome://browser/content/contentSearchHandoffUI.mjs"
+        );
+      } else {
+        const scriptURL = "chrome://browser/content/contentSearchHandoffUI.js";
+        const scriptEl = document.createElement("script");
+        scriptEl.src = scriptURL;
+        document.head.appendChild(scriptEl);
+      }
+    }
+
     if (this.props.document.visibilityState === VISIBLE) {
-      this.setFirstVisibleTimestamp();
-      this.shouldDisplayTopicSelectionModal();
+      this.onVisible();
     } else {
       this._onVisibilityChange = () => {
         if (this.props.document.visibilityState === VISIBLE) {
-          this.setFirstVisibleTimestamp();
-          this.shouldDisplayTopicSelectionModal();
+          this.onVisible();
           this.props.document.removeEventListener(
             VISIBILITY_CHANGE_EVENT,
             this._onVisibilityChange
@@ -177,10 +258,49 @@ export class BaseContent extends React.PureComponent {
     if (wallpapersEnabled) {
       this.updateWallpaper();
     }
+
+    this._onHashChange = () => {
+      const hash = globalThis.location?.hash || "";
+      if (hash === "#customize" || hash === "#customize-topics") {
+        this.openCustomizationMenu();
+
+        if (hash === "#customize-topics") {
+          this.toggleSectionsMgmtPanel();
+        }
+      } else if (this.props.App.customizeMenuVisible) {
+        this.closeCustomizationMenu();
+      }
+    };
+
+    // Using the Performance API to detect page reload vs fresh navigation.
+    // Only open customize menu on fresh navigation, not on page refresh.
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/Performance/getEntriesByType
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEntry/entryType#navigation
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/PerformanceNavigationTiming/type
+    const isReload =
+      globalThis.performance?.getEntriesByType("navigation")[0]?.type ===
+      "reload";
+
+    if (!isReload) {
+      this._onHashChange();
+    }
+
+    globalThis.addEventListener("hashchange", this._onHashChange);
   }
 
   componentDidUpdate(prevProps) {
+    this.applyBodyClasses();
     const prefs = this.props.Prefs.values;
+
+    // Check if weather widget was re-enabled from customization menu
+    const wasWeatherDisabled = !prevProps.Prefs.values.showWeather;
+    const isWeatherEnabled = this.props.Prefs.values.showWeather;
+
+    if (wasWeatherDisabled && isWeatherEnabled) {
+      // If weather widget was enabled from customization menu, display opt-in dialog
+      this.props.dispatch(ac.SetPref("weather.optInDisplayed", true));
+    }
+
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
     if (wallpapersEnabled) {
       // destructure current and previous props with fallbacks
@@ -199,6 +319,10 @@ export class BaseContent extends React.PureComponent {
 
       const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
       const prevSelectedWallpaper = prevPrefs["newtabWallpapers.wallpaper"];
+      const uploadedWallpaperTheme =
+        prefs["newtabWallpapers.customWallpaper.theme"];
+      const prevUploadedWallpaperTheme =
+        prevPrefs["newtabWallpapers.customWallpaper.theme"];
 
       // don't update wallpaper unless the wallpaper is being changed.
       if (
@@ -206,16 +330,52 @@ export class BaseContent extends React.PureComponent {
         uploadedWallpaper !== prevUploadedWallpaper || // uploading a new wallpaper
         wallpaperList !== prevWallpaperList || // remote settings wallpaper list updates
         this.props.App.isForStartupCache.Wallpaper !==
-          prevProps.App.isForStartupCache.Wallpaper // Startup cached page wallpaper is updating
+          prevProps.App.isForStartupCache.Wallpaper || // Startup cached page wallpaper is updating
+        uploadedWallpaperTheme !== prevUploadedWallpaperTheme
       ) {
         this.updateWallpaper();
       }
+    }
+
+    this.spocsOnDemandUpdated();
+    this.trackSpocPlaceholderDuration(prevProps);
+  }
+
+  trackSpocPlaceholderDuration(prevProps) {
+    // isExpired returns true when the current props have expired spocs (showing placeholders)
+    const isExpired = this.isSpocsOnDemandExpired;
+
+    // Init tracking when placeholders become visible
+    if (isExpired && this.state.visible && !this.spocPlaceholderStartTime) {
+      this.spocPlaceholderStartTime = Date.now();
+    }
+
+    // wasExpired returns true when the previous props had expired spocs (showing placeholders)
+    const wasExpired =
+      prevProps.DiscoveryStream.spocs.onDemand?.enabled &&
+      !prevProps.DiscoveryStream.spocs.onDemand?.loaded &&
+      Date.now() - prevProps.DiscoveryStream.spocs.lastUpdated >=
+        prevProps.DiscoveryStream.spocs.cacheUpdateTime;
+
+    // Record duration telemetry event when placeholders are replaced with real content
+    if (wasExpired && !isExpired && this.spocPlaceholderStartTime) {
+      const duration = Date.now() - this.spocPlaceholderStartTime;
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.DISCOVERY_STREAM_SPOC_PLACEHOLDER_DURATION,
+          data: { duration },
+        })
+      );
+      this.spocPlaceholderStartTime = null;
     }
   }
 
   handleColorModeChange() {
     const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
-    this.setState({ colorMode });
+    if (colorMode !== this.state.colorMode) {
+      this.setState({ colorMode });
+      this.updateWallpaper();
+    }
   }
 
   componentWillUnmount() {
@@ -230,6 +390,9 @@ export class BaseContent extends React.PureComponent {
         VISIBILITY_CHANGE_EVENT,
         this._onVisibilityChange
       );
+    }
+    if (this._onHashChange) {
+      globalThis.removeEventListener("hashchange", this._onHashChange);
     }
   }
 
@@ -259,11 +422,11 @@ export class BaseContent extends React.PureComponent {
     const CSS_VAR_SPACE_XXLARGE = 32.04; // Custom Acorn themed variable (8 * 0.267rem);
 
     let layout = {
-      outerWrapperPaddingTop: 24,
-      searchWrapperPaddingTop: 16,
+      outerWrapperPaddingTop: 32.04,
+      searchWrapperPaddingTop: 16.02,
       searchWrapperPaddingBottom: CSS_VAR_SPACE_XXLARGE,
-      searchWrapperFixedScrollPaddingTop: 27,
-      searchWrapperFixedScrollPaddingBottom: 27,
+      searchWrapperFixedScrollPaddingTop: 24.03,
+      searchWrapperFixedScrollPaddingBottom: 24.03,
       searchInnerWrapperMinHeight: 52,
       logoAndWordmarkWrapperHeight: 0,
       logoAndWordmarkWrapperMarginBottom: 0,
@@ -331,6 +494,17 @@ export class BaseContent extends React.PureComponent {
     this.props.dispatch(ac.SetPref(pref, value));
   }
 
+  applyBodyClasses() {
+    const { body } = this.props.document;
+    if (!body) {
+      return;
+    }
+
+    if (!body.classList.contains("activity-stream")) {
+      body.classList.add("activity-stream");
+    }
+  }
+
   renderWallpaperAttribution() {
     const { wallpaperList } = this.props.Wallpapers;
     const activeWallpaper =
@@ -372,89 +546,82 @@ export class BaseContent extends React.PureComponent {
     const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
     const { wallpaperList, uploadedWallpaper: uploadedWallpaperUrl } =
       this.props.Wallpapers;
-    let lightWallpaper = {};
-    let darkWallpaper = {};
+    const uploadedWallpaperTheme =
+      prefs["newtabWallpapers.customWallpaper.theme"];
+    // Uuse this.prefersDarkQuery since this.state.colorMode can be undefined when this is called
+    const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
+    let url = "";
+    let color = "transparent";
+    let newTheme = colorMode;
+    let backgroundPosition = "center";
 
-    if (selectedWallpaper === "custom" && uploadedWallpaperUrl) {
-      try {
-        global.document?.body.style.setProperty(
-          "--newtab-wallpaper",
-          `url(${uploadedWallpaperUrl})`
-        );
-
-        global.document?.body.style.setProperty(
-          "--newtab-wallpaper-color",
-          "transparent"
-        );
-
-        // Based on the current colorMode, add the corresponding dark/light CSS classes
-        if (this.state.colorMode) {
-          this.setState(prevState => ({
-            wallpaperTheme: prevState.colorMode,
-          }));
-        }
-      } catch (e) {}
-
+    // if no selected wallpaper fallback to browser/theme styles
+    if (!selectedWallpaper) {
+      global.document?.body.style.removeProperty("--newtab-wallpaper");
+      global.document?.body.style.removeProperty("--newtab-wallpaper-color");
+      global.document?.body.style.removeProperty(
+        "--newtab-wallpaper-backgroundPosition"
+      );
+      global.document?.body.classList.remove("lightWallpaper", "darkWallpaper");
       return;
     }
 
-    if (wallpaperList) {
-      let wallpaper = wallpaperList.find(wp => wp.title === selectedWallpaper);
-      if (selectedWallpaper && wallpaper) {
-        // if selectedWallpaper exists - we override what light and dark prefs are to match that
-        lightWallpaper = wallpaper;
-        darkWallpaper = wallpaper;
-      }
-
-      // solid-color-picker-#00d100
-      const regexRGB = /#([a-fA-F0-9]{6})/;
-
-      // Override Remote Settings to set custom HEX bg color
+    // uploaded wallpaper
+    if (selectedWallpaper === "custom" && uploadedWallpaperUrl) {
+      url = uploadedWallpaperUrl;
+      color = "transparent";
+      // Note: There is no method to set a specific background position for custom wallpapers
+      backgroundPosition = "center";
+      newTheme = uploadedWallpaperTheme || colorMode;
+    } else if (wallpaperList) {
+      const wallpaper = wallpaperList.find(
+        wp => wp.title === selectedWallpaper
+      );
+      // solid color picker
       if (selectedWallpaper.includes("solid-color-picker")) {
-        wallpaper = {
-          theme: wallpaper?.theme || "light",
-          title: "solid-color-picker",
-          category: "solid-colors",
-          solid_color: selectedWallpaper.match(regexRGB)?.[0],
-        };
-      }
-
-      const wallpaperColor = wallpaper?.solid_color || "";
-
-      global.document?.body.style.setProperty(
-        "--newtab-wallpaper",
-        `url(${wallpaper?.wallpaperUrl || ""})`
-      );
-
-      global.document?.body.style.setProperty(
-        "--newtab-wallpaper-color",
-        wallpaperColor || "transparent"
-      );
-
-      let wallpaperTheme = "";
-
-      // If we have a solid colour set, let's see how dark it is.
-      if (wallpaperColor) {
-        const rgbColors = this.getRGBColors(wallpaperColor);
-        const isColorDark = this.isWallpaperColorDark(rgbColors);
-        wallpaperTheme = isColorDark ? "dark" : "light";
-      } else {
-        // Grab the contrast of the currently displayed wallpaper.
-        const { theme } =
-          this.state.colorMode === "light" ? lightWallpaper : darkWallpaper;
-
-        if (theme) {
-          wallpaperTheme = theme;
+        const regexRGB = /#([a-fA-F0-9]{6})/;
+        const hex = selectedWallpaper.match(regexRGB)?.[0];
+        url = "";
+        color = hex;
+        const rgbColors = this.getRGBColors(hex);
+        newTheme = this.isWallpaperColorDark(rgbColors) ? "dark" : "light";
+        // standard wallpaper & solid colors
+      } else if (selectedWallpaper) {
+        url = wallpaper?.wallpaperUrl || "";
+        backgroundPosition = wallpaper?.background_position || "center";
+        color = wallpaper?.solid_color || "transparent";
+        newTheme = wallpaper?.theme || colorMode;
+        // if a solid color, determine if dark or light
+        if (wallpaper?.solid_color) {
+          const rgbColors = this.getRGBColors(wallpaper.solid_color);
+          const isColorDark = this.isWallpaperColorDark(rgbColors);
+          newTheme = isColorDark ? "dark" : "light";
         }
       }
-
-      this.setState({ wallpaperTheme });
     }
+    global.document?.body.style.setProperty(
+      "--newtab-wallpaper",
+      `url(${url})`
+    );
+    global.document?.body.style.setProperty(
+      "--newtab-wallpaper-backgroundPosition",
+      backgroundPosition
+    );
+    global.document?.body.style.setProperty(
+      "--newtab-wallpaper-color",
+      color || "transparent"
+    );
+
+    global.document?.body.classList.remove("lightWallpaper", "darkWallpaper");
+    global.document?.body.classList.add(
+      newTheme === "dark" ? "darkWallpaper" : "lightWallpaper"
+    );
   }
 
   shouldShowOMCHighlight(componentId) {
     const messageData = this.props.Messages?.messageData;
-    if (!messageData || Object.keys(messageData).length === 0) {
+    const isVisible = this.props.Messages?.isVisible;
+    if (!messageData || Object.keys(messageData).length === 0 || !isVisible) {
       return false;
     }
     return messageData?.content?.messageType === componentId;
@@ -502,6 +669,12 @@ export class BaseContent extends React.PureComponent {
 
   isWallpaperColorDark([r, g, b]) {
     return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
+  }
+
+  toggleSectionsMgmtPanel() {
+    this.setState(prevState => ({
+      showSectionsMgmtPanel: !prevState.showSectionsMgmtPanel,
+    }));
   }
 
   shouldDisplayTopicSelectionModal() {
@@ -552,15 +725,12 @@ export class BaseContent extends React.PureComponent {
     const { initialized, customizeMenuVisible } = App;
     const prefs = props.Prefs.values;
 
-    const shortcutsRefresh = prefs["newtabShortcuts.refresh"];
-
     const activeWallpaper = prefs[`newtabWallpapers.wallpaper`];
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
     const weatherEnabled = prefs.showWeather;
     const { showTopicSelection } = DiscoveryStream;
     const mayShowTopicSelection =
       showTopicSelection && prefs["discoverystream.topicSelection.enabled"];
-    const { pocketConfig } = prefs;
 
     const isDiscoveryStream =
       props.DiscoveryStream.config && props.DiscoveryStream.config.enabled;
@@ -568,44 +738,59 @@ export class BaseContent extends React.PureComponent {
       section => section.id !== "topstories"
     );
 
-    let spocMessageVariant = "";
-    if (
-      props.App.locale?.startsWith("en-") &&
-      pocketConfig?.spocMessageVariant === "variant-c"
-    ) {
-      spocMessageVariant = pocketConfig.spocMessageVariant;
-    }
-
     const pocketEnabled =
       prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
     const noSectionsEnabled =
       !prefs["feeds.topsites"] &&
       !pocketEnabled &&
       filteredSections.filter(section => section.enabled).length === 0;
-    const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
     const enabledSections = {
       topSitesEnabled: prefs["feeds.topsites"],
       pocketEnabled: prefs["feeds.section.topstories"],
       showInferredPersonalizationEnabled:
         prefs[PREF_INFERRED_PERSONALIZATION_USER],
-      showRecentSavesEnabled: prefs.showRecentSaves,
       topSitesRowsCount: prefs.topSitesRows,
       weatherEnabled: prefs.showWeather,
-      trendingSearchEnabled: prefs["trendingSearch.enabled"],
     };
 
     const pocketRegion = prefs["feeds.system.topstories"];
-    const mayHaveSponsoredStories = prefs["system.showSponsored"];
     const mayHaveInferredPersonalization =
       prefs[PREF_INFERRED_PERSONALIZATION_SYSTEM];
-    const mayHaveWeather = prefs["system.showWeather"];
-    const { mayHaveSponsoredTopSites } = prefs;
+    const mayHaveWeather =
+      prefs["system.showWeather"] || prefs.trainhopConfig?.weather?.enabled;
     const supportUrl = prefs["support.url"];
 
-    // Trending Searches experiment pref check
-    const mayHaveTrendingSearch =
-      prefs["system.trendingSearch.enabled"] &&
-      prefs["trendingSearch.defaultSearchEngine"].toLowerCase() === "google";
+    // Widgets experiment pref check
+    const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
+    const nimbusListsEnabled = prefs.widgetsConfig?.listsEnabled;
+    const nimbusTimerEnabled = prefs.widgetsConfig?.timerEnabled;
+    const nimbusWidgetsTrainhopEnabled = prefs.trainhopConfig?.widgets?.enabled;
+    const nimbusListsTrainhopEnabled =
+      prefs.trainhopConfig?.widgets?.listsEnabled;
+    const nimbusTimerTrainhopEnabled =
+      prefs.trainhopConfig?.widgets?.timerEnabled;
+
+    const mayHaveWidgets =
+      prefs["widgets.system.enabled"] ||
+      nimbusWidgetsEnabled ||
+      nimbusWidgetsTrainhopEnabled;
+    const mayHaveListsWidget =
+      prefs["widgets.system.lists.enabled"] ||
+      nimbusListsEnabled ||
+      nimbusListsTrainhopEnabled;
+    const mayHaveTimerWidget =
+      prefs["widgets.system.focusTimer.enabled"] ||
+      nimbusTimerEnabled ||
+      nimbusTimerTrainhopEnabled;
+
+    // These prefs set the initial values on the Customize panel toggle switches
+    const enabledWidgets = {
+      listsEnabled: prefs["widgets.lists.enabled"],
+      timerEnabled: prefs["widgets.focusTimer.enabled"],
+      weatherEnabled: prefs.showWeather,
+      widgetsMaximized: prefs["widgets.maximized"],
+      widgetsMayBeMaximized: prefs["widgets.system.maximized"],
+    };
 
     // Mobile Download Promo Pref Checks
     const mobileDownloadPromoEnabled = prefs["mobileDownloadModal.enabled"];
@@ -625,12 +810,7 @@ export class BaseContent extends React.PureComponent {
       mayHaveWeather
         ? "is-tall"
         : "";
-
-    const hasThumbsUpDownLayout =
-      prefs["discoverystream.thumbsUpDown.searchTopsitesCompact"];
-    const hasThumbsUpDown = prefs["discoverystream.thumbsUpDown.enabled"];
     const sectionsEnabled = prefs["discoverystream.sections.enabled"];
-    const topicLabelsEnabled = prefs["discoverystream.topicLabels.enabled"];
     const sectionsCustomizeMenuPanelEnabled =
       prefs["discoverystream.sections.customizeMenuPanel.enabled"];
     const sectionsPersonalizationEnabled =
@@ -639,7 +819,6 @@ export class BaseContent extends React.PureComponent {
     // Logic to show follow/block topic mgmt panel in Customize panel
     const mayHavePersonalizedTopicSections =
       sectionsPersonalizationEnabled &&
-      topicLabelsEnabled &&
       sectionsEnabled &&
       sectionsCustomizeMenuPanelEnabled &&
       DiscoveryStream.feeds.loaded;
@@ -652,7 +831,6 @@ export class BaseContent extends React.PureComponent {
       prefs.showSearch ? "has-search" : "no-search",
       // layoutsVariantAEnabled ? "layout-variant-a" : "", // Layout experiment variant A
       // layoutsVariantBEnabled ? "layout-variant-b" : "", // Layout experiment variant B
-      shortcutsRefresh ? "shortcuts-refresh" : "", // Shortcuts refresh experiment
       pocketEnabled ? "has-recommended-stories" : "no-recommended-stories",
       sectionsEnabled ? "has-sections-grid" : "",
     ]
@@ -674,22 +852,9 @@ export class BaseContent extends React.PureComponent {
         "only-topsites",
       noSectionsEnabled && "no-sections",
       prefs["logowordmark.alwaysVisible"] && "visible-logo",
-      hasThumbsUpDownLayout && hasThumbsUpDown && "thumbs-ui-compact",
     ]
       .filter(v => v)
       .join(" ");
-    if (wallpapersEnabled) {
-      // Add helper class to body if user has a wallpaper selected
-      if (this.state.wallpaperTheme === "light") {
-        global.document?.body.classList.add("lightWallpaper");
-        global.document?.body.classList.remove("darkWallpaper");
-      }
-
-      if (this.state.wallpaperTheme === "dark") {
-        global.document?.body.classList.add("darkWallpaper");
-        global.document?.body.classList.remove("lightWallpaper");
-      }
-    }
 
     // If state.showDownloadHighlightOverride has value, let it override the logic
     // Otherwise, defer to OMC message display logic
@@ -699,35 +864,6 @@ export class BaseContent extends React.PureComponent {
 
     return (
       <div className={featureClassName}>
-        {/* Floating menu for customize menu toggle */}
-        <menu className="personalizeButtonWrapper">
-          <CustomizeMenu
-            onClose={this.closeCustomizationMenu}
-            onOpen={this.openCustomizationMenu}
-            openPreferences={this.openPreferences}
-            setPref={this.setPref}
-            enabledSections={enabledSections}
-            wallpapersEnabled={wallpapersEnabled}
-            activeWallpaper={activeWallpaper}
-            pocketRegion={pocketRegion}
-            mayHaveTopicSections={mayHavePersonalizedTopicSections}
-            mayHaveSponsoredTopSites={mayHaveSponsoredTopSites}
-            mayHaveSponsoredStories={mayHaveSponsoredStories}
-            mayHaveInferredPersonalization={mayHaveInferredPersonalization}
-            mayHaveWeather={mayHaveWeather}
-            mayHaveTrendingSearch={mayHaveTrendingSearch}
-            spocMessageVariant={spocMessageVariant}
-            showing={customizeMenuVisible}
-          />
-          {this.shouldShowOMCHighlight("CustomWallpaperHighlight") && (
-            <MessageWrapper dispatch={this.props.dispatch}>
-              <WallpaperFeatureHighlight
-                position="inset-block-start inset-inline-start"
-                dispatch={this.props.dispatch}
-              />
-            </MessageWrapper>
-          )}
-        </menu>
         <div className="weatherWrapper">
           {weatherEnabled && (
             <ErrorBoundary>
@@ -770,7 +906,6 @@ export class BaseContent extends React.PureComponent {
                     showLogo={
                       noSectionsEnabled || prefs["logowordmark.alwaysVisible"]
                     }
-                    handoffEnabled={searchHandoffEnabled}
                     {...props.Search}
                   />
                 </ErrorBoundary>
@@ -779,12 +914,20 @@ export class BaseContent extends React.PureComponent {
             {/* Bug 1914055: Show logo regardless if search is enabled */}
             {!prefs.showSearch && !noSectionsEnabled && <Logo />}
             <div className={`body-wrapper${initialized ? " on" : ""}`}>
+              {this.shouldShowOMCHighlight("ActivationWindowMessage") && (
+                <MessageWrapper dispatch={this.props.dispatch}>
+                  <ActivationWindowMessage
+                    dispatch={this.props.dispatch}
+                    messageData={this.props.Messages.messageData}
+                  />
+                </MessageWrapper>
+              )}
               {isDiscoveryStream ? (
                 <ErrorBoundary className="borderless-error">
                   <DiscoveryStreamBase
                     locale={props.App.locale}
-                    mayHaveSponsoredStories={mayHaveSponsoredStories}
                     firstVisibleTimestamp={this.state.firstVisibleTimestamp}
+                    placeholder={this.isSpocsOnDemandExpired}
                   />
                 </ErrorBoundary>
               ) : (
@@ -806,6 +949,41 @@ export class BaseContent extends React.PureComponent {
             <TopicSelection supportUrl={supportUrl} />
           )}
         </div>
+        {/* Floating menu for customize menu toggle */}
+        <menu className="personalizeButtonWrapper">
+          <CustomizeMenu
+            onClose={this.closeCustomizationMenu}
+            onOpen={this.openCustomizationMenu}
+            openPreferences={this.openPreferences}
+            setPref={this.setPref}
+            enabledSections={enabledSections}
+            enabledWidgets={enabledWidgets}
+            wallpapersEnabled={wallpapersEnabled}
+            activeWallpaper={activeWallpaper}
+            pocketRegion={pocketRegion}
+            mayHaveTopicSections={mayHavePersonalizedTopicSections}
+            mayHaveInferredPersonalization={mayHaveInferredPersonalization}
+            mayHaveWeather={mayHaveWeather}
+            mayHaveWidgets={mayHaveWidgets}
+            mayHaveTimerWidget={mayHaveTimerWidget}
+            mayHaveListsWidget={mayHaveListsWidget}
+            mayHaveWeatherForecast={
+              prefs["widgets.system.weatherForecast.enabled"]
+            }
+            weatherDisplay={prefs["weather.display"]}
+            showing={customizeMenuVisible}
+            toggleSectionsMgmtPanel={this.toggleSectionsMgmtPanel}
+            showSectionsMgmtPanel={this.state.showSectionsMgmtPanel}
+          />
+          {this.shouldShowOMCHighlight("CustomWallpaperHighlight") && (
+            <MessageWrapper dispatch={this.props.dispatch}>
+              <WallpaperFeatureHighlight
+                position="inset-block-start inset-inline-start"
+                dispatch={this.props.dispatch}
+              />
+            </MessageWrapper>
+          )}
+        </menu>
       </div>
     );
   }

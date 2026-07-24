@@ -32,6 +32,8 @@ class LintIssueRegistry : IssueRegistry() {
         VisibleForTestingDetector.ISSUE_VISIBLE_FOR_TESTING_ANNOTATION,
         NoStaticOrObjectMockingDetector.ISSUE_NO_STATIC_MOCKING,
         NoStaticOrObjectMockingDetector.ISSUE_NO_OBJECT_MOCKING,
+        NoDispatchersSetMainDetector.ISSUE_NO_DISPATCHERS_SET_MAIN,
+        ShowSnackbarDetector.ISSUE_NO_DIRECT_SHOW_SNACKBAR,
     ) + ConstraintLayoutPerfDetector.ISSUES + ContextCompatDetector.ISSUES
     override val vendor: Vendor = Vendor(
         vendorName = "Mozilla",

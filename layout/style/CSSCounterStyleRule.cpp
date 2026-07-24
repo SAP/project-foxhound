@@ -82,7 +82,7 @@ void CSSCounterStyleRule::SetName(const nsAString& aName) {
           mRawRule, eCSSCounterDesc_##method_, &aValue);             \
     });                                                              \
   }
-#include "nsCSSCounterDescList.h"
+#include "nsCSSCounterDescList.inc"
 #undef CSS_COUNTER_DESC
 
 /* virtual */

@@ -25,7 +25,6 @@
 #include "mozilla/Result.h"
 
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
 
 namespace js {

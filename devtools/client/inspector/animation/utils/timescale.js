@@ -80,8 +80,8 @@ class TimeScale {
    *  than the absolute value of zero position time, relative time will be
    *  negative time.
    *
-   * @param {Number} distance
-   * @return {Number}
+   * @param {number} distance
+   * @return {number}
    */
   distanceToRelativeTime(distance) {
     return (this.getDuration() * distance) / 100 - this.zeroPositionTime;
@@ -91,8 +91,8 @@ class TimeScale {
    * Depending on the time scale, format the given time as milliseconds or
    * seconds.
    *
-   * @param {Number} time
-   * @return {String} The formatted time string.
+   * @param {number} time
+   * @return {string} The formatted time string.
    */
   formatTime(time) {
     // Ignore negative zero
@@ -112,7 +112,7 @@ class TimeScale {
   /**
    * Return entire animations duration.
    *
-   * @return {Number} duration
+   * @return {number} duration
    */
   getDuration() {
     return this.maxEndTime - this.minStartTime;
@@ -121,7 +121,7 @@ class TimeScale {
   /**
    * Return current time of this time scale represents.
    *
-   * @return {Number}
+   * @return {number}
    */
   getCurrentTime() {
     return this.currentTime - this.minStartTime;
@@ -132,7 +132,7 @@ class TimeScale {
    * This time does not include playbackRate and cratedTime.
    * Also, if the animation has infinite iterations, this returns Infinity.
    *
-   * @param {Object} animation
+   * @param {object} animation
    * @return {Numbber} end time
    */
   getEndTime({ state }) {

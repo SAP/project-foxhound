@@ -24,7 +24,6 @@
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 

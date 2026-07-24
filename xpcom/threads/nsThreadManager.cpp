@@ -45,8 +45,7 @@ static MOZ_THREAD_LOCAL(bool) sTLSIsMainThread;
 
 bool NS_IsMainThreadTLSInitialized() { return sTLSIsMainThread.initialized(); }
 
-class BackgroundEventTarget final : public nsIEventTarget,
-                                    public TaskQueueTracker {
+class BackgroundEventTarget final : public nsIEventTarget {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIEVENTTARGET_FULL
@@ -55,10 +54,9 @@ class BackgroundEventTarget final : public nsIEventTarget,
 
   nsresult Init();
 
-  already_AddRefed<TaskQueue> CreateBackgroundTaskQueue(const char* aName);
+  already_AddRefed<TaskQueue> CreateBackgroundTaskQueue(StaticString aName);
 
-  void BeginShutdown(nsTArray<RefPtr<ShutdownPromise>>&);
-  void FinishShutdown();
+  void Shutdown();
 
  private:
   ~BackgroundEventTarget() = default;
@@ -67,7 +65,7 @@ class BackgroundEventTarget final : public nsIEventTarget,
   nsCOMPtr<nsIThreadPool> mIOPool;
 };
 
-NS_IMPL_ISUPPORTS(BackgroundEventTarget, nsIEventTarget, TaskQueueTracker)
+NS_IMPL_ISUPPORTS(BackgroundEventTarget, nsIEventTarget)
 
 nsresult BackgroundEventTarget::Init() {
   nsCOMPtr<nsIThreadPool> pool(new nsThreadPool());
@@ -154,27 +152,40 @@ BackgroundEventTarget::IsOnCurrentThread(bool* aValue) {
 
 NS_IMETHODIMP
 BackgroundEventTarget::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                uint32_t aFlags) {
-  // Select the right destination and clear the special flag.
-  bool mayBlock = bool(aFlags & NS_DISPATCH_EVENT_MAY_BLOCK);
-  nsCOMPtr<nsIThreadPool>& pool = mayBlock ? mIOPool : mPool;
-  uint32_t flags = aFlags & ~NS_DISPATCH_EVENT_MAY_BLOCK;
+                                DispatchFlags aFlags) {
+  nsCOMPtr<nsIRunnable> runnable(std::move(aRunnable));
 
-  // If an event is dispatched with NS_DISPATCH_AT_END, it is intended to run
-  // on the same thread on the same pool it is dispatched from, but we might
-  // not want to run the event on the same pool depending on the above choice.
-  // If we dispatch an event with NS_DISPATCH_AT_END to the wrong pool, the
-  // pool may not process the event in a timely fashion or even deadlock.
-  if (flags & NS_DISPATCH_AT_END && !pool->IsOnCurrentThread()) {
-    flags &= ~NS_DISPATCH_AT_END;
+  // First, try to dispatch to `mIOPool` if we're a blocking event.
+  if (aFlags & NS_DISPATCH_EVENT_MAY_BLOCK) {
+    DispatchFlags ioPoolFlags = aFlags | ~NS_DISPATCH_EVENT_MAY_BLOCK;
+    if (ioPoolFlags & NS_DISPATCH_AT_END && !mIOPool->IsOnCurrentThread()) {
+      ioPoolFlags &= ~NS_DISPATCH_AT_END;
+    }
+
+    // First we'll try to dispatch to `mIOPool` if we're a blocking event. If
+    // this fails, we may be late enough in shutdown that `mIOPool` has been
+    // shut down, but `mPool` has not, so we'll fall through to dispatching
+    // there.
+    nsresult rv = mIOPool->Dispatch(do_AddRef(runnable),
+                                    ioPoolFlags | NS_DISPATCH_FALLIBLE);
+    if (NS_SUCCEEDED(rv)) {
+      return rv;
+    }
   }
 
-  return pool->Dispatch(std::move(aRunnable), flags);
+  DispatchFlags poolFlags = aFlags & ~NS_DISPATCH_EVENT_MAY_BLOCK;
+  if (poolFlags & NS_DISPATCH_AT_END && !mPool->IsOnCurrentThread()) {
+    poolFlags &= ~NS_DISPATCH_AT_END;
+  }
+
+  // Either this event is not potentially blocking, or the dispatch to `mIOPool`
+  // failed - dispatch to `mPool`.
+  return mPool->Dispatch(runnable.forget(), poolFlags);
 }
 
 NS_IMETHODIMP
 BackgroundEventTarget::DispatchFromScript(nsIRunnable* aRunnable,
-                                          uint32_t aFlags) {
+                                          DispatchFlags aFlags) {
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
   return Dispatch(runnable.forget(), aFlags);
 }
@@ -188,29 +199,28 @@ BackgroundEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aRunnable,
 
 NS_IMETHODIMP
 BackgroundEventTarget::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return mPool->RegisterShutdownTask(aTask);
 }
 
 NS_IMETHODIMP
 BackgroundEventTarget::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return mPool->UnregisterShutdownTask(aTask);
 }
 
-void BackgroundEventTarget::BeginShutdown(
-    nsTArray<RefPtr<ShutdownPromise>>& promises) {
-  auto queues = GetAllTrackedTaskQueues();
-  for (auto& queue : queues) {
-    promises.AppendElement(queue->BeginShutdown());
-  }
+nsIEventTarget::FeatureFlags BackgroundEventTarget::GetFeatures() {
+  return SUPPORTS_SHUTDOWN_TASKS | SUPPORTS_SHUTDOWN_TASK_DISPATCH;
 }
 
-void BackgroundEventTarget::FinishShutdown() {
-  mPool->Shutdown();
+void BackgroundEventTarget::Shutdown() {
+  // Note that our shutdown tasks are registered on `mPool` and will all
+  // execute there (as well as any events they may dispatch to ourselves,
+  // regardless of NS_DISPATCH_EVENT_MAY_BLOCK).
   mIOPool->Shutdown();
+  mPool->Shutdown();
 }
 
 already_AddRefed<TaskQueue> BackgroundEventTarget::CreateBackgroundTaskQueue(
-    const char* aName) {
+    StaticString aName) {
   return TaskQueue::Create(do_AddRef(this), aName).forget();
 }
 
@@ -378,26 +388,9 @@ void nsThreadManager::ShutdownNonMainThreads() {
     backgroundEventTarget = mBackgroundEventTarget;
   }
 
-  nsTArray<RefPtr<ShutdownPromise>> promises;
-  backgroundEventTarget->BeginShutdown(promises);
-
-  bool taskQueuesShutdown = false;
-  // It's fine to capture everything by reference in the Then handler since it
-  // runs before we exit the nested event loop, thanks to the SpinEventLoopUntil
-  // below.
-  ShutdownPromise::All(mMainThread, promises)->Then(mMainThread, __func__, [&] {
-    backgroundEventTarget->FinishShutdown();
-    taskQueuesShutdown = true;
-  });
-
-  // Wait for task queues to shutdown, so we don't shut down the underlying
-  // threads of the background event target in the block below, thereby
-  // preventing the task queues from emptying, preventing the shutdown promises
-  // from resolving, and prevent anything checking `taskQueuesShutdown` from
-  // working.
-  mozilla::SpinEventLoopUntil(
-      "nsThreadManager::Shutdown"_ns, [&]() { return taskQueuesShutdown; },
-      mMainThread);
+  // This will execute the shutdown tasks of still associated TaskQueues,
+  // if any.
+  backgroundEventTarget->Shutdown();
 
   {
     // Prevent new nsThreads from being created, and collect a list of threads
@@ -530,8 +523,8 @@ nsThread* nsThreadManager::CreateCurrentThread(SynchronizedEventQueue* aQueue) {
   return thread.get();  // reference held in TLS
 }
 
-nsresult nsThreadManager::DispatchToBackgroundThread(nsIRunnable* aEvent,
-                                                     uint32_t aDispatchFlags) {
+nsresult nsThreadManager::DispatchToBackgroundThread(
+    nsIRunnable* aEvent, nsIEventTarget::DispatchFlags aDispatchFlags) {
   RefPtr<BackgroundEventTarget> backgroundTarget;
   {
     OffTheBooksMutexAutoLock lock(mMutex);
@@ -545,7 +538,7 @@ nsresult nsThreadManager::DispatchToBackgroundThread(nsIRunnable* aEvent,
 }
 
 already_AddRefed<TaskQueue> nsThreadManager::CreateBackgroundTaskQueue(
-    const char* aName) {
+    mozilla::StaticString aName) {
   RefPtr<BackgroundEventTarget> backgroundTarget;
   {
     OffTheBooksMutexAutoLock lock(mMutex);
@@ -606,6 +599,9 @@ nsThreadManager::NewNamedThread(
     nsIThread** aResult) {
   // Note: can be called from arbitrary threads
 
+  AUTO_PROFILER_MARKER_TEXT("NewThread", OTHER,
+                            MarkerOptions(MarkerStack::Capture()), aName);
+
   TimeStamp startTime = TimeStamp::Now();
 
   RefPtr<ThreadEventQueue> queue =
@@ -621,11 +617,6 @@ nsThreadManager::NewNamedThread(
     return rv;
   }
 
-  PROFILER_MARKER_TEXT(
-      "NewThread", OTHER,
-      MarkerOptions(MarkerStack::Capture(),
-                    MarkerTiming::IntervalUntilNowFrom(startTime)),
-      aName);
   if (!NS_IsMainThread()) {
     PROFILER_MARKER_TEXT(
         "NewThread (non-main thread)", OTHER,
@@ -768,9 +759,10 @@ nsThreadManager::DispatchToMainThread(nsIRunnable* aEvent, uint32_t aPriority,
   if (aArgc > 0 && aPriority != nsIRunnablePriority::PRIORITY_NORMAL) {
     nsCOMPtr<nsIRunnable> event(aEvent);
     return mMainThread->DispatchFromScript(
-        new PrioritizableRunnable(event.forget(), aPriority), 0);
+        new PrioritizableRunnable(event.forget(), aPriority),
+        NS_DISPATCH_FALLIBLE);
   }
-  return mMainThread->DispatchFromScript(aEvent, 0);
+  return mMainThread->DispatchFromScript(aEvent, NS_DISPATCH_FALLIBLE);
 }
 
 class AutoMicroTaskWrapperRunnable final : public Runnable {

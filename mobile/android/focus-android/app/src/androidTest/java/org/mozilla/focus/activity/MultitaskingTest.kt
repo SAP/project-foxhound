@@ -21,7 +21,7 @@ import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
-import org.mozilla.focus.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
 import org.mozilla.focus.helpers.TestHelper.clickSnackBarActionButton
 import org.mozilla.focus.helpers.TestHelper.getStringResource
@@ -71,11 +71,11 @@ class MultitaskingTest : TestSetup() {
     @SmokeTest
     @Test
     fun testVisitingMultipleSites() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
-        val tab3 = getGenericTabAsset(webServer, 3)
+        val tab1 = webServer.getGenericTabAsset(1)
+        val tab2 = webServer.getGenericTabAsset(2)
+        val tab3 = webServer.getGenericTabAsset(3)
         val eraseBrowsingSnackBarText = getStringResource(R.string.feedback_erase2)
-        val customTabPage = getGenericAsset(webServer)
+        val customTabPage = webServer.genericAsset
 
         // Load website: Erase button visible, Tabs button not
         searchScreen {
@@ -95,7 +95,7 @@ class MultitaskingTest : TestSetup() {
         browserScreen {
             verifyNumberOfTabsOpened(4)
         }.openTabsTray {
-            verifyTabsOrder(tab1.title, tab3.title, tab2.title, customTabPage.title)
+            verifyTabsOrder("Add new tab", tab1.title, tab3.title, tab2.title, customTabPage.title)
         }.selectTab(tab1.title) {
             verifyPageContent("Tab 1")
         }.clearBrowsingData {
@@ -107,9 +107,9 @@ class MultitaskingTest : TestSetup() {
     @SmokeTest
     @Test
     fun closeTabButtonTest() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
-        val tab3 = getGenericTabAsset(webServer, 3)
+        val tab1 = webServer.getGenericTabAsset(1)
+        val tab2 = webServer.getGenericTabAsset(2)
+        val tab3 = webServer.getGenericTabAsset(3)
 
         searchScreen {
         }.loadPage(tab1.url) {
@@ -120,11 +120,14 @@ class MultitaskingTest : TestSetup() {
             openLinkInNewTab()
             verifyNumberOfTabsOpened(3)
         }.openTabsTray {
-            verifyTabsOrder(tab1.title, tab3.title, tab2.title)
+            verifyTabsOrder("Add new tab", tab1.title, tab3.title, tab2.title)
         }.closeTab(tab1.title) {
         }.openTabsTray {
-            verifyTabsOrder(tab3.title, tab2.title)
+            verifyTabsOrder("Add new tab", tab3.title, tab2.title)
         }.closeTab(tab3.title) {
+        }.openTabsTray {
+            verifyTabsOrder("Add new tab", tab2.title)
+        }.closeTab(tab2.title) {
             verifyTabsCounterNotShown()
         }
     }
@@ -132,8 +135,8 @@ class MultitaskingTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyTabsTrayListTest() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
+        val tab1 = webServer.getGenericTabAsset(1)
+        val tab2 = webServer.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1.url) {

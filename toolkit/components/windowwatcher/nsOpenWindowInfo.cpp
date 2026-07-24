@@ -16,6 +16,25 @@ NS_IMPL_ISUPPORTS_CI(nsOpenWindowInfo, nsIOpenWindowInfo);
 nsOpenWindowInfo::nsOpenWindowInfo() = default;
 nsOpenWindowInfo::~nsOpenWindowInfo() = default;
 
+nsOpenWindowInfo::nsOpenWindowInfo(const nsOpenWindowInfo& aOther)
+    : mForceNoOpener(aOther.mForceNoOpener),
+      mIsRemote(aOther.mIsRemote),
+      mIsForPrinting(aOther.mIsForPrinting),
+      mIsForWindowDotPrint(aOther.mIsForWindowDotPrint),
+      mIsTopLevelCreatedByWebContent(aOther.mIsTopLevelCreatedByWebContent),
+      mHasValidUserGestureActivation(aOther.mHasValidUserGestureActivation),
+      mTextDirectiveUserActivation(aOther.mTextDirectiveUserActivation),
+      mNextRemoteBrowser(aOther.mNextRemoteBrowser),
+      mParent(aOther.mParent),
+      mBrowsingContextReadyCallback(aOther.mBrowsingContextReadyCallback),
+      mPrincipalToInheritForAboutBlank(aOther.mPrincipalToInheritForAboutBlank),
+      mPartitionedPrincipalToInheritForAboutBlank(
+          aOther.mPartitionedPrincipalToInheritForAboutBlank),
+      mBaseUriToInheritForAboutBlank(aOther.mBaseUriToInheritForAboutBlank),
+      mPolicyContainerToInheritForAboutBlank(
+          aOther.mPolicyContainerToInheritForAboutBlank),
+      mCoepToInheritForAboutBlank(aOther.mCoepToInheritForAboutBlank) {};
+
 NS_IMETHODIMP nsOpenWindowInfo::GetParent(
     mozilla::dom::BrowsingContext** aParent) {
   *aParent = do_AddRef(mParent).take();
@@ -62,13 +81,39 @@ NS_IMETHODIMP nsOpenWindowInfo::GetTextDirectiveUserActivation(
 
 NS_IMETHODIMP nsOpenWindowInfo::GetScriptableOriginAttributes(
     JSContext* aCx, JS::MutableHandle<JS::Value> aAttrs) {
-  bool ok = ToJSValue(aCx, mOriginAttributes, aAttrs);
+  bool ok = ToJSValue(aCx, GetOriginAttributes(), aAttrs);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
   return NS_OK;
 }
 
+nsIPrincipal* nsOpenWindowInfo::PrincipalToInheritForAboutBlank() {
+  MOZ_ASSERT(mPrincipalToInheritForAboutBlank, "Must have principal");
+  return mPrincipalToInheritForAboutBlank;
+}
+
+nsIPrincipal* nsOpenWindowInfo::PartitionedPrincipalToInheritForAboutBlank() {
+  if (mPartitionedPrincipalToInheritForAboutBlank) {
+    return mPartitionedPrincipalToInheritForAboutBlank;
+  }
+  MOZ_ASSERT(mPrincipalToInheritForAboutBlank, "Must have principal");
+  return mPrincipalToInheritForAboutBlank;
+}
+
+nsIURI* nsOpenWindowInfo::BaseUriToInheritForAboutBlank() {
+  return mBaseUriToInheritForAboutBlank;
+}
+
+nsIPolicyContainer* nsOpenWindowInfo::PolicyContainerToInheritForAboutBlank() {
+  return mPolicyContainerToInheritForAboutBlank;
+}
+
+const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>&
+nsOpenWindowInfo::CoepToInheritForAboutBlank() {
+  return mCoepToInheritForAboutBlank;
+}
+
 const mozilla::OriginAttributes& nsOpenWindowInfo::GetOriginAttributes() {
-  return mOriginAttributes;
+  return mPrincipalToInheritForAboutBlank->OriginAttributesRef();
 }
 
 mozilla::dom::BrowserParent* nsOpenWindowInfo::GetNextRemoteBrowser() {
@@ -116,5 +161,17 @@ NS_IMETHODIMP nsBrowsingContextReadyCallback::BrowsingContextReady(
     mPromise->Reject(NS_ERROR_FAILURE, __func__);
   }
   mPromise = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsOpenWindowInfo::CloneWithPrincipals(
+    nsIPrincipal* aPrincipal, nsIPrincipal* aPartitionedPrincipal,
+    nsIOpenWindowInfo** aClone) {
+  NS_ENSURE_ARG(aPrincipal);
+  NS_ENSURE_ARG(aPartitionedPrincipal);
+  RefPtr<nsOpenWindowInfo> clone = new nsOpenWindowInfo(*this);
+  clone->mPrincipalToInheritForAboutBlank = aPrincipal;
+  clone->mPartitionedPrincipalToInheritForAboutBlank = aPartitionedPrincipal;
+  clone.forget(aClone);
   return NS_OK;
 }

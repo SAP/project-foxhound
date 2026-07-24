@@ -15,9 +15,9 @@ namespace mozilla {
 // the IMAGE_FILE_HEADER in lieu of a version number.
 //
 // If the UTILITY_PROCESSES_ONLY, SOCKET_PROCESSES_ONLY, GPU_PROCESSES_ONLY,
-// or GMPLUGIN_PROCESSES_ONLY flags are set, the dll will only be blocked for
-// these specific child processes. Note that these are a subset of
-// CHILD_PROCESSES_ONLY.
+// GMPLUGIN_PROCESSES_ONLY, or RDD_PROCESSES_ONLY flags are set, the dll
+// will only be blocked for these specific child processes.
+// Note that these are a subset of CHILD_PROCESSES_ONLY.
 enum DllBlockInfoFlags : uint32_t {
   FLAGS_DEFAULT = 0,
   USE_TIMESTAMP = 1 << 0,
@@ -28,6 +28,7 @@ enum DllBlockInfoFlags : uint32_t {
   SOCKET_PROCESSES_ONLY = 1 << 5,
   GPU_PROCESSES_ONLY = 1 << 6,
   GMPLUGIN_PROCESSES_ONLY = 1 << 7,
+  RDD_PROCESSES_ONLY = 1 << 8,
 };
 
 constexpr DllBlockInfoFlags operator|(const DllBlockInfoFlags a,
@@ -56,9 +57,9 @@ struct DllBlockInfoT {
   // the IMAGE_FILE_HEADER in lieu of a version number.
   //
   // If the UTILITY_PROCESSES_ONLY, SOCKET_PROCESSES_ONLY, GPU_PROCESSES_ONLY,
-  // or GMPLUGIN_PROCESSES_ONLY flags are set, the dll will only be blocked for
-  // these specific child processes. Note that these are a subset of
-  // CHILD_PROCESSES_ONLY. These flags cannot be combined.
+  // GMPLUGIN_PROCESSES_ONLY, or RDD_PROCESSES_ONLY flags are set, the dll will
+  // only be blocked for these specific child processes. Note that these are a
+  // subset of CHILD_PROCESSES_ONLY. These flags cannot be combined.
   DllBlockInfoFlags mFlags;
 
   bool IsVersionBlocked(const uint64_t aOther) const {

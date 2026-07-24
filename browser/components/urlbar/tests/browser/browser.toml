@@ -4,11 +4,6 @@ support-files = [
   "head.js",
   "head-common.js",
 ]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # long running manifest
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # long running manifest
-  "win11_2009 && asan", # long running manifest
-]
 prefs = [
   "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
   "browser.urlbar.trending.featureGate=false",
@@ -22,7 +17,9 @@ support-files = [
 ]
 
 ["browser_UrlbarInput_formatValue.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968567
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968567
+]
 
 ["browser_UrlbarInput_formatValue_detachedTab.js"]
 
@@ -32,7 +29,9 @@ support-files = ["mixed_active.html"]
 ["browser_UrlbarInput_hiddenFocus.js"]
 
 ["browser_UrlbarInput_overflow.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968567
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968567
+]
 
 ["browser_UrlbarInput_overflow_resize.js"]
 
@@ -40,7 +39,9 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 
 ["browser_UrlbarInput_searchTerms.js"]
 tags = "persisted-search"
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1968567
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1968567
+]
 
 ["browser_UrlbarInput_searchTerms_autofill.js"]
 tags = "persisted-search"
@@ -91,7 +92,10 @@ tags = "persisted-search"
 
 ["browser_UrlbarInput_setURI.js"]
 https_first_disabled = true
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug 1773790
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1773790
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", #  Bug 1773790
+]
 
 ["browser_UrlbarInput_tooltip.js"]
 
@@ -104,13 +108,14 @@ support-files = [
 ["browser_UrlbarInput_untrimOnUserInteraction.js"]
 
 ["browser_aboutHomeLoading.js"]
-skip-if = ["tsan"] # Intermittently times out, see 1622698 (frequent on TSan).
+skip-if = [
+  "tsan", # Intermittently times out, see 1622698 (frequent on TSan).
+]
 
 ["browser_acknowledgeFeedbackAndDismissal.js"]
 
 ["browser_action_searchengine.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1834810
   "os == 'win' && asan", # Bug 1834810
 ]
 
@@ -161,7 +166,9 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
-skip-if = ["a11y_checks"] # Test times out (bug 1854660)
+skip-if = [
+  "a11y_checks", # Test times out (bug 1854660)
+]
 
 ["browser_autocomplete_autoselect.js"]
 
@@ -175,7 +182,9 @@ https_first_disabled = true
 ["browser_autocomplete_no_title.js"]
 
 ["browser_autocomplete_readline_navigation.js"]
-run-if = ["os == 'mac'"] # Mac only feature
+run-if = [
+  "os == 'mac'", # Mac only feature
+]
 
 ["browser_autocomplete_tag_star_visibility.js"]
 
@@ -210,6 +219,12 @@ support-files = [
 ["browser_content_opener.js"]
 
 ["browser_contextualsearch.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1932516
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1932516
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1932516
+]
+
 
 ["browser_contextualsearch_install.js"]
 
@@ -336,7 +351,9 @@ support-files = ["file_urlbar_edit_dos.html"]
 ["browser_lossless_encode.js"]
 
 ["browser_middleClick.js"]
-fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1854660 clicked element may not be focusable and/or labeled
+]
 
 ["browser_move_tab_to_new_window.js"]
 
@@ -357,7 +374,6 @@ support-files = [
 ]
 
 ["browser_oneOffs_heuristicRestyle.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && socketprocess_networking"] # Bug 1775811
 
 ["browser_oneOffs_keyModifiers.js"]
 support-files = [
@@ -413,6 +429,8 @@ support-files = [
 
 ["browser_quickactions_tab_refocus.js"]
 
+["browser_quickactions_translate.js"]
+
 ["browser_raceWithTabs.js"]
 
 ["browser_recentsearches.js"]
@@ -442,6 +460,11 @@ https_first_disabled = true
 ["browser_result_menu.js"]
 
 ["browser_result_menu_general.js"]
+
+["browser_result_noTitle.js"]
+support-files = [
+  "no_title.html"
+]
 
 ["browser_result_onSelection.js"]
 
@@ -492,10 +515,8 @@ support-files = ["dummy_page.html"]
 
 ["browser_searchMode_excludeResults.js"]
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1938142
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1938142
-  "win11_2009 && opt", # Bug 1938142
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1938142
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1938142
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1938142
 ]
 
 ["browser_searchMode_heuristic.js"]
@@ -551,8 +572,7 @@ support-files = [
 ["browser_searchSingleWordNotification.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks && swgl", # Bug 1773830
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1929645
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1929645
 ]
 
 ["browser_searchSuggestions.js"]
@@ -572,14 +592,12 @@ support-files = [
 ["browser_search_continuation.js"]
 support-files = ["../../../search/test/browser/trendingSuggestionEngine.sjs"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1883249
-  "win11_2009 && opt", # Bug 1883249
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1883249
 ]
 
 ["browser_search_history_from_history_panel.js"]
 
 ["browser_secondaryActions.js"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1869788
 
 ["browser_selectStaleResults.js"]
 support-files = [
@@ -641,7 +659,8 @@ support-files = ["slow-page.sjs"]
 
 ["browser_strip_on_share.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && asan && swgl", # Bug 1890664
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1890664
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1890664
 ]
 
 ["browser_strip_on_share_telemetry.js"]
@@ -673,6 +692,9 @@ skip-if = [
 ["browser_switchToTab_fullUrl_repeatedKeydown.js"]
 
 ["browser_tabKeyBehavior.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1813675
+]
 
 ["browser_tabMatchesInAwesomebar.js"]
 support-files = ["moz.png"]
@@ -696,6 +718,14 @@ https_first_disabled = true
 ["browser_top_sites_switchtab.js"]
 
 ["browser_trust_panel.js"]
+https_first_disabled = true
+support-files = ["!/browser/base/content/test/protectionsUI/trackingPage.html"]
+
+["browser_trust_panel_pages.js"]
+https_first_disabled = true
+
+["browser_trust_panel_security_view.js"]
+https_first_disabled = true
 
 ["browser_typed_value.js"]
 
@@ -711,11 +741,12 @@ https_first_disabled = true
 https_first_disabled = true
 support-files = ["redirect_to.sjs"]
 
+["browser_urlbar_modifiedClick.js"]
+
 ["browser_urlbar_selection.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # bug 1570474
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1570474
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # bug 1869788
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # bug 1570474
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # bug 1869788
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # bug 1570474
 ]
 
@@ -741,8 +772,7 @@ tags = "search-telemetry"
 ["browser_urlbar_telemetry_persisted.js"]
 tags = "search-telemetry"
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # bug 1934362
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1934362
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1934362
 ]
 
 ["browser_urlbar_telemetry_places.js"]
@@ -783,8 +813,9 @@ support-files = [
   "searchSuggestionEngine.sjs",
 ]
 
+["browser_view_reusable.js"]
+
 ["browser_view_selectionByMouse.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan"] # Bug 1789051
 
 ["browser_waitForLoadStartOrTimeout.js"]
 https_first_disabled = true

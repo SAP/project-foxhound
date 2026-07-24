@@ -9,9 +9,9 @@
 
 #include "AudioNode.h"
 #include "AudioNodeEngine.h"
-#include "mozilla/dom/MediaStreamTrack.h"
-#include "mozilla/WeakPtr.h"
 #include "PrincipalChangeObserver.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/MediaStreamTrack.h"
 
 namespace mozilla::dom {
 

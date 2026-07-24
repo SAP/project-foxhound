@@ -100,10 +100,9 @@ add_task(async function () {
   await startCustomizing();
   await gCustomizeMode.reset();
 
-  is(
-    menubar.getAttribute("autohide"),
-    "true",
-    "The menubar should have autohide=true after reset in customization mode"
+  ok(
+    menubar.hasAttribute("autohide"),
+    "The menubar should have autohide after reset in customization mode"
   );
   is(
     menubar.getBoundingClientRect().height,
@@ -113,10 +112,9 @@ add_task(async function () {
 
   await endCustomizing();
 
-  is(
-    menubar.getAttribute("autohide"),
-    "true",
-    "The menubar should have autohide=true after reset"
+  ok(
+    menubar.hasAttribute("autohide"),
+    "The menubar should have autohide after reset"
   );
   is(
     menubar.getBoundingClientRect().height,

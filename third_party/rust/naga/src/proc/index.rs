@@ -99,8 +99,8 @@ pub struct BoundsCheckPolicies {
     ///
     /// [`GlobalVariable`]: crate::GlobalVariable
     /// [`space`]: crate::GlobalVariable::space
-    /// [`Restrict`]: crate::back::BoundsCheckPolicy::Restrict
-    /// [`ReadZeroSkipWrite`]: crate::back::BoundsCheckPolicy::ReadZeroSkipWrite
+    /// [`Restrict`]: crate::proc::BoundsCheckPolicy::Restrict
+    /// [`ReadZeroSkipWrite`]: crate::proc::BoundsCheckPolicy::ReadZeroSkipWrite
     /// [`Access`]: crate::Expression::Access
     /// [`AccessIndex`]: crate::Expression::AccessIndex
     /// [`Storage`]: crate::AddressSpace::Storage
@@ -483,7 +483,7 @@ impl GuardedIndex {
         expressions: &crate::Arena<crate::Expression>,
         module: &crate::Module,
     ) -> Self {
-        match module.to_ctx().eval_expr_to_u32_from(expr, expressions) {
+        match module.to_ctx().get_const_val_from(expr, expressions) {
             Ok(value) => Self::Known(value),
             Err(_) => Self::Expression(expr),
         }

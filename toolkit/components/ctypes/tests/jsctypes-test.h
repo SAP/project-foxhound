@@ -6,7 +6,6 @@
 #ifndef jsctypes_test_h
 #define jsctypes_test_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 #include "jspubtd.h"
 #include "typedefs.h"

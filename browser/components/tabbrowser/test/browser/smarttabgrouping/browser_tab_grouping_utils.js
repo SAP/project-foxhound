@@ -6,6 +6,7 @@
 
 /**
  * Generates a dummy tab with title, url and description
+ *
  * @param {string} title
  * @param {string} url
  * @param {string} description
@@ -24,6 +25,7 @@ function generateTabWithInfo({ title, url, description = "" }) {
 
 /**
  * Returns a list of dummy tab data from an existing filename
+ *
  * @param {string} filename path to local file
  * @return {Promise<object[]>} list of tabs
  */

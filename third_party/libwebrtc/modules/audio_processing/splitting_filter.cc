@@ -11,10 +11,13 @@
 #include "modules/audio_processing/splitting_filter.h"
 
 #include <array>
+#include <cstddef>
+#include <cstring>
 
 #include "api/array_view.h"
 #include "common_audio/channel_buffer.h"
 #include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_processing/three_band_filter_bank.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -68,15 +71,15 @@ void SplittingFilter::TwoBandsAnalysis(const ChannelBuffer<float>* data,
   RTC_DCHECK_EQ(data->num_frames(), kTwoBandFilterSamplesPerFrame);
 
   for (size_t i = 0; i < two_bands_states_.size(); ++i) {
-    std::array<std::array<int16_t, kSamplesPerBand>, 2> bands16;
-    std::array<int16_t, kTwoBandFilterSamplesPerFrame> full_band16;
-    FloatS16ToS16(data->channels(0)[i], full_band16.size(), full_band16.data());
-    WebRtcSpl_AnalysisQMF(full_band16.data(), data->num_frames(),
+    std::array<std::array<float, kSamplesPerBand>, 2> bands16;
+    WebRtcSpl_AnalysisQMF(data->channels(0)[i], data->num_frames(),
                           bands16[0].data(), bands16[1].data(),
                           two_bands_states_[i].analysis_state1,
                           two_bands_states_[i].analysis_state2);
-    S16ToFloatS16(bands16[0].data(), bands16[0].size(), bands->channels(0)[i]);
-    S16ToFloatS16(bands16[1].data(), bands16[1].size(), bands->channels(1)[i]);
+    memcpy(bands->channels(0)[i], bands16[0].data(),
+           kSamplesPerBand * sizeof(float));
+    memcpy(bands->channels(1)[i], bands16[1].data(),
+           kSamplesPerBand * sizeof(float));
   }
 }
 
@@ -85,15 +88,15 @@ void SplittingFilter::TwoBandsSynthesis(const ChannelBuffer<float>* bands,
   RTC_DCHECK_LE(data->num_channels(), two_bands_states_.size());
   RTC_DCHECK_EQ(data->num_frames(), kTwoBandFilterSamplesPerFrame);
   for (size_t i = 0; i < data->num_channels(); ++i) {
-    std::array<std::array<int16_t, kSamplesPerBand>, 2> bands16;
-    std::array<int16_t, kTwoBandFilterSamplesPerFrame> full_band16;
-    FloatS16ToS16(bands->channels(0)[i], bands16[0].size(), bands16[0].data());
-    FloatS16ToS16(bands->channels(1)[i], bands16[1].size(), bands16[1].data());
+    std::array<std::array<float, kSamplesPerBand>, 2> bands16;
+    memcpy(bands16[0].data(), bands->channels(0)[i],
+           kSamplesPerBand * sizeof(float));
+    memcpy(bands16[1].data(), bands->channels(1)[i],
+           kSamplesPerBand * sizeof(float));
     WebRtcSpl_SynthesisQMF(bands16[0].data(), bands16[1].data(),
-                           bands->num_frames_per_band(), full_band16.data(),
+                           bands->num_frames_per_band(), data->channels(0)[i],
                            two_bands_states_[i].synthesis_state1,
                            two_bands_states_[i].synthesis_state2);
-    S16ToFloatS16(full_band16.data(), full_band16.size(), data->channels(0)[i]);
   }
 }
 
@@ -110,11 +113,10 @@ void SplittingFilter::ThreeBandsAnalysis(const ChannelBuffer<float>* data,
 
   for (size_t i = 0; i < three_band_filter_banks_.size(); ++i) {
     three_band_filter_banks_[i].Analysis(
-        rtc::ArrayView<const float, ThreeBandFilterBank::kFullBandSize>(
+        ArrayView<const float, ThreeBandFilterBank::kFullBandSize>(
             data->channels_view()[i].data(),
             ThreeBandFilterBank::kFullBandSize),
-        rtc::ArrayView<const rtc::ArrayView<float>,
-                       ThreeBandFilterBank::kNumBands>(
+        ArrayView<const ArrayView<float>, ThreeBandFilterBank::kNumBands>(
             bands->bands_view(i).data(), ThreeBandFilterBank::kNumBands));
   }
 }
@@ -132,10 +134,9 @@ void SplittingFilter::ThreeBandsSynthesis(const ChannelBuffer<float>* bands,
 
   for (size_t i = 0; i < data->num_channels(); ++i) {
     three_band_filter_banks_[i].Synthesis(
-        rtc::ArrayView<const rtc::ArrayView<float>,
-                       ThreeBandFilterBank::kNumBands>(
+        ArrayView<const ArrayView<float>, ThreeBandFilterBank::kNumBands>(
             bands->bands_view(i).data(), ThreeBandFilterBank::kNumBands),
-        rtc::ArrayView<float, ThreeBandFilterBank::kFullBandSize>(
+        ArrayView<float, ThreeBandFilterBank::kFullBandSize>(
             data->channels_view()[i].data(),
             ThreeBandFilterBank::kFullBandSize));
   }

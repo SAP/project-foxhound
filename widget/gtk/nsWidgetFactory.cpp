@@ -13,7 +13,7 @@
 #include "nsWidgetsCID.h"
 #include "nsAppShell.h"
 #include "nsAppShellSingleton.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "nsGtkKeyUtils.h"
 #include "nsLookAndFeel.h"
 #include "nsWindow.h"

@@ -1,0 +1,14 @@
+[package]
+name = "jxl_decoder"
+version = "0.1.0"
+authors = [
+    "Martin Bruse <zondolfin@gmail.com>",
+    "Kagami Sascha Rosylight <saschanaz@outlook.com>",
+    "Sami Boukortt <sboukortt@google.com>",
+]
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+jxl = { version = "0.3", features = ["all-simd"] }
+log = "0.4"

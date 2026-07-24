@@ -98,8 +98,8 @@ const HTTP_DOWNLOAD_ACTIVITIES = [
  * http-on-examine-response notifications. All network request information is
  * routed to the remote Web Console.
  *
- * @constructor
- * @param {Object} options
+ * @class
+ * @param {object} options
  * @param {Function(nsIChannel): boolean} options.ignoreChannelFunction
  *        This function will be called for every detected channel to decide if it
  *        should be monitored or not.
@@ -172,10 +172,16 @@ export class NetworkObserver {
    */
   #openRequests = new lazy.ChannelMap();
   /**
+   * The maximum size (in bytes) of the individual response bodies to be stored.
+   *
+   * @type {number}
+   */
+  #responseBodyLimit = 0;
+  /**
    * Network response bodies are piped through a buffer of the given size
    * (in bytes).
    *
-   * @type {Number}
+   * @type {number}
    */
   #responsePipeSegmentSize = Services.prefs.getIntPref(
     "network.buffer.cache.size"
@@ -187,19 +193,32 @@ export class NetworkObserver {
    */
   #saveRequestAndResponseBodies = true;
   /**
+   * Whether response bodies should be decoded or not.
+   *
+   * @type {boolean}
+   */
+  #decodeResponseBodies = true;
+  /**
    * Throttling configuration, see constructor of NetworkThrottleManager
    *
-   * @type {Object}
+   * @type {object}
    */
   #throttleData = null;
   /**
    * NetworkThrottleManager instance, created when a valid throttleData is set.
+   *
    * @type {NetworkThrottleManager}
    */
   #throttler = null;
 
   constructor(options = {}) {
-    const { ignoreChannelFunction, onNetworkEvent } = options;
+    const {
+      decodeResponseBodies,
+      ignoreChannelFunction,
+      onNetworkEvent,
+      responseBodyLimit,
+    } = options;
+
     if (typeof ignoreChannelFunction !== "function") {
       throw new Error(
         `Expected "ignoreChannelFunction" to be a function, got ${ignoreChannelFunction} (${typeof ignoreChannelFunction})`
@@ -214,6 +233,16 @@ export class NetworkObserver {
 
     this.#ignoreChannelFunction = ignoreChannelFunction;
     this.#onNetworkEvent = onNetworkEvent;
+
+    // Set decodeResponseBodies if provided, otherwise default to "true".
+    if (typeof decodeResponseBodies === "boolean") {
+      this.#decodeResponseBodies = decodeResponseBodies;
+    }
+
+    // Set the provided responseBodyLimit if any, otherwise use the default "0".
+    if (typeof responseBodyLimit === "number") {
+      this.#responseBodyLimit = responseBodyLimit;
+    }
 
     // Start all platform observers.
     if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT) {
@@ -264,6 +293,19 @@ export class NetworkObserver {
     this.#authPromptListenerEnabled = enabled;
   }
 
+  /**
+   * Update the maximum size in bytes that can be collected for network response
+   * bodies. Responses for which the NetworkResponseListener has already been
+   * created will not be using the new limit, only later responses will be
+   * affected.
+   *
+   * @param {number} responseBodyLimit
+   *        The new responseBodyLimit to use.
+   */
+  setResponseBodyLimit(responseBodyLimit) {
+    this.#responseBodyLimit = responseBodyLimit;
+  }
+
   setSaveRequestAndResponseBodies(save) {
     this.#saveRequestAndResponseBodies = save;
   }
@@ -272,9 +314,21 @@ export class NetworkObserver {
     return this.#throttleData;
   }
 
+  /**
+   * Update the network throttling configuration.
+   *
+   * @param {object|null} value
+   *        The network throttling configuration object, or null if throttling
+   *        should be disabled.
+   */
   setThrottleData(value) {
     this.#throttleData = value;
-    // Clear out any existing throttlers
+
+    // If value is null, the user is disabling throttling, destroy the previous
+    // throttler.
+    if (this.#throttler && value === null) {
+      this.#throttler.destroy();
+    }
     this.#throttler = null;
   }
 
@@ -401,11 +455,13 @@ export class NetworkObserver {
         });
       } else {
         // Handles any early blockings e.g by Web Extensions or by CORS
-        const { blockingExtension, blockedReason } =
-          lazy.NetworkUtils.getBlockedReason(channel, httpActivity.fromCache);
+        const { extension, blockedReason } = lazy.NetworkUtils.getBlockedReason(
+          channel,
+          httpActivity.fromCache
+        );
         this.#createNetworkEvent(httpActivity, {
           blockedReason,
-          blockingExtension,
+          extension,
         });
       }
     }
@@ -706,7 +762,8 @@ export class NetworkObserver {
       // not be considered as insecure either. Set empty string as security
       // state.
       owner.addSecurityInfo({ state: "" });
-      owner.addResponseContent(response, {});
+      owner.addResponseContent(response);
+      owner.addResponseContentComplete({});
     }
   );
 
@@ -886,7 +943,7 @@ export class NetworkObserver {
    */
   #createNetworkEvent(
     httpActivity,
-    { timestamp, blockedReason, blockingExtension, inProgressRequest } = {}
+    { timestamp, blockedReason, extension, inProgressRequest } = {}
   ) {
     if (
       blockedReason === undefined &&
@@ -902,7 +959,7 @@ export class NetworkObserver {
       {
         timestamp,
         blockedReason,
-        blockingExtension,
+        extension,
         discardRequestBody: !this.#saveRequestAndResponseBodies,
         discardResponseBody: !this.#saveRequestAndResponseBodies,
       },
@@ -1148,11 +1205,12 @@ export class NetworkObserver {
     sink.init(false, false, this.#responsePipeSegmentSize, PR_UINT32_MAX, null);
 
     // Add listener for the response body.
-    const newListener = new lazy.NetworkResponseListener(
-      httpActivity,
-      this.#decodedCertificateCache,
-      httpActivity.fromServiceWorker
-    );
+    const newListener = new lazy.NetworkResponseListener(httpActivity, {
+      decodedCertificateCache: this.#decodedCertificateCache,
+      decodeResponseBody: this.#decodeResponseBodies,
+      fromServiceWorker: httpActivity.fromServiceWorker,
+      responseBodyLimit: this.#responseBodyLimit,
+    });
 
     // Remember the input stream, so it isn't released by GC.
     newListener.inputStream = sink.inputStream;
@@ -1182,13 +1240,13 @@ export class NetworkObserver {
       return;
     }
 
-    const sentBody = lazy.NetworkHelper.readPostTextFromRequest(
+    const sentBody = lazy.NetworkHelper.readPostDataFromRequest(
       httpActivity.channel,
       httpActivity.charset
     );
 
     if (sentBody !== null) {
-      httpActivity.sentBody = sentBody;
+      httpActivity.sentBody = sentBody.data;
     }
   }
 

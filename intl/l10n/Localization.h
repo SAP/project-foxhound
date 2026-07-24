@@ -156,6 +156,9 @@ class Localization : public nsIObserver,
   Localization(nsIGlobalObject* aGlobal, bool aIsSync,
                const ffi::LocalizationRc* aRaw);
 
+  Localization(nsIGlobalObject* aGlobal, bool aIsSync,
+               const nsTArray<nsCString>& aLocales);
+
   virtual ~Localization();
 
   void RegisterObservers();

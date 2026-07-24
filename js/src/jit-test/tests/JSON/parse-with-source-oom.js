@@ -1,4 +1,4 @@
-// |jit-test| --enable-json-parse-with-source
+// |jit-test|
 
 oomTest(() => {
     JSON.parse(

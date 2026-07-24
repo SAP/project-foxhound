@@ -13,6 +13,116 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v149
+- Introduce the Firefox Relay APIs in `GeckoRuntimeSettings`.
+  - See also the annotation [`GeckoRuntimeSettings.FirefoxRelayMode`][149.1].
+- Added experimental [`PageExtractionController`][149.2] and [`SessionPageExtractor`][149.3] for extracting the text content of a page
+- Added [`processBackPressed`][149.4] to handle [`CloseWatcher`][149.5].
+  ([bug 1966467]({{bugzilla}}1966467))
+- Added [`HandlerThread`][149.6] annotation to better show that APIs using `GeckoResult`s require handlers and `ThreadUtils.assertOnHandlerThread`.
+- ⚠️ Switched `GeckoResult` APIs using `@AnyThread` annotations for `@HandlerThread` to better prevent unexpected behavior. ([bug 2015177]({{bugzilla}}2015177))
+
+[149.1]: {{javadoc_uri}}/GeckoRuntimeSettings.FirefoxRelayMode.html
+[149.2]: {{javadoc_uri}}/PageExtractionController.html
+[149.3]: {{javadoc_uri}}/PageExtractionController.SessionPageExtractor.html
+[149.4]: {{javadoc_uri}}/GeckoSession.html#processBackPressed()
+[149.5]: https://developer.mozilla.org/en-US/docs/Web/API/CloseWatcher
+[149.6]: {{javadoc_uri}}/HandlerThread.html
+
+## v148
+- Introduce the harmful-addon URL-Classifier feature
+        - [`HARMFULADDON`][148.1]
+- ⚠️ Remove deprecated `GeckoRuntimeSettings.Builder.setLnaBlockingEnabled`, `GeckoRuntimeSettings.setLnaBlockingEnabled` and `GeckoRuntimeSettings.getLnaBlockingEnabled` APIs. Alternatives were introduced in v147.
+- Added [`linkText`][148.2] to [`ContentDelegate.ContextElement`][65.21] and a new [`constructor`][148.3] to [`ContentDelegate.ContextElement`][65.21]
+- ⚠️ Deprecated [`ContentDelegate.ContextElement`][148.4] constructor.
+- ⚠️ Deprecated [`ContentDelegate.ContextElement.textContent`][148.5].
+- ⚠️ Removed superfluous constructor overload for [`ContentDelegate.ContextElement`]
+
+[148.1]: {{javadoc_uri}}/ContentBlocking.SafeBrowsing.html#HARMFULADDON
+[148.2]: {{javadoc_uri}}/GeckoSession.ContentDelegate.ContextElement.html#linkText
+[148.3]: {{javadoc_uri}}/GeckoSession.ContentDelegate.ContextElement.html#<init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String)
+[148.4]: {{javadoc_uri}}/GeckoSession.ContentDelegate.ContextElement.html#<init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String)
+[148.5]: {{javadoc_uri}}/GeckoSession.ContentDelegate.ContextElement.html#textContent
+
+## v147
+- Changed Local Network / Device Access APIs in `GeckoRuntimeSettings` & `GeckoRuntimeSettings.Builder` for more granularity
+    - Added new APIs in `GeckoRuntimeSettings`
+        - [`setLnaEnabled`][147.1] & [`getLnaEnabled`][147.2]
+        - [`setLnaBlockTrackers`][147.3] & [`getLnaBlockTrackers`][147.4]
+        - [`setLnaBlocking`][147.5] & [`getLnaBlocking`][147.6]
+    - Added corresponding APIs in `GeckoRuntimeSettings.Builder`
+        - [`setLnaEnabled`][147.7]
+        - [`setLnaBlockTrackers`][147.8]
+        - [`setLnaBlocking`][147.9]
+    - ⚠️ Deprecated `GeckoRuntimeSettings.Builder.setLnaBlockingEnabled`, `GeckoRuntimeSettings.setLnaBlockingEnabled` and `GeckoRuntimeSettings.getLnaBlockingEnabled` APIs.
+
+[147.1]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLnaEnabled(boolean)
+[147.2]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getLnaEnabled
+[147.3]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLnaBlockTrackers(boolean)
+[147.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getLnaBlockTrackers
+[147.5]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLnaBlocking(boolean)
+[147.6]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getLnaBlocking
+[147.7]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#setLnaEnabled(boolean)
+[147.8]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#setLnaBlockTrackers(boolean)
+[147.9]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#setLnaBlocking(boolean)
+
+## v146
+- Added `getSafeBrowsingV5Enabled` and `setSafeBrowsingV5Enabled` to [`ContentBlocking.Settings`][146.1] to control whether to use the SafeBrowsing V5 protocol to access the Google SafeBrowsing service.
+- Added [`Autocomplete.AddressStructure`][146.2] API used to retrieve the structure of an address for a given country.
+- Added [`GeckoRuntimeSettings.getAppZygoteProcessEnabled`][146.3] and [`GeckoRuntimeSettings.Builder.appZygoteProcessEnabled`][146.4] to control whether content service runs using App Zygote preloading or not.
+
+[146.1]: {{javadoc_uri}}/ContentBlocking.html
+[146.2]: {{javadoc_uri}}/Autocomplete.AddressStructure.html
+[146.3]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getAppZygoteProcessEnabled
+[146.4]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#appZygoteProcessEnabled(boolean)
+
+## v145
+- Added [`WebNotification.show`][145.1]. Implementations of `WebNotificationDelegate.onShowNotification` should now call either `show` when the notification is successfully opened, or `dismiss` if it failed.
+- Added [`WebExtension.InvalidMetaDataException`][145.2]. ([bug 1981496]({{bugzilla}}1981496))
+- Added [`GeckoSession.PromptDelegate.RedirectPrompt`][145.3] to display a prompt when a third-party redirect is blocked.
+- Added support for controlling `security.pki.crlite_channel` via [`GeckoRuntimeSettings.setCrliteChannel`][145.4]
+- Changed certificate transparency information in TLS connections to now be required by default. This can be controlled by the [`GeckoRuntimeSettings.setCertificateTransparencyMode`][145.5] API.
+
+[145.1]: {{javadoc_uri}}/WebNotification.html#show
+[145.2]: {{javadoc_uri}}/WebExtension.InvalidMetaDataException.html
+[145.3]: {{javadoc_uri}}/GeckoSession.PromptDelegate.RedirectPrompt.html
+[145.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setCrliteChannel
+[145.5]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setCertificateTransparencyMode
+
+## v144
+- Added [`GeckoRuntimeSettings.getIsolatedProcessEnabled`][144.4] and [`GeckoRuntimeSettings.Builder.isolatedProcessEnabled`][144.5] to control whether content service runs on isolated process or not.
+- Added [`ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER`][144.6] for the configuration of the SafeBrowsing V5 provider
+- ⚠️ Removed deprecated `onOptionalPrompt` function signature. ([bug 1972510]({{bugzilla}}1972510))
+- ⚠️ Removed deprecated `onUpdatePrompt` function signature. ([bug 1974744]({{bugzilla}}1974744))
+- Added [`RequiresApi`][144.7] annotations to APIs.
+- Added `appLinkLaunchType` to [`GeckoSession.Loader`][144.8] to set the launch type of the app session for the load.([bug 1982622]({{bugzilla}}1982622))
+- ⭐ Support for [`16 KB page sizes`][144.9] is now available.
+
+[144.1]: {{javadoc_uri}}/GeckoSession.html#flushSessionState()
+[144.2]: {{javadoc_uri}}/GeckoSession.ProgressDelegate.html
+[144.3]: {{javadoc_uri}}/GeckoSession.HistoryDelegate.html
+[144.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getIsolatedProcessEnabled
+[144.5]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#isolatedProcessEnabled(boolean)
+[144.6]: {{javadoc_uri}}/ContentBlocking.SafeBrowsingProvider.html
+[144.7]: https://developer.android.com/reference/androidx/annotation/RequiresApi
+[144.8]: {{javadoc_uri}}/GeckoSession.Loader.html#appLinkLaunchType(int)
+[144.9]: https://developer.android.com/guide/practices/page-sizes
+
+## v143
+- Added an option to set multiple preferences on [`GeckoPreferenceController`][140.1] as [`checkStateAndSetGeckoPrefs`][143.1].
+- Added [`WebNotification.origin`][143.2] that shows the origin of the notification. ([bug 1976269]({{bugzilla}}1976269))
+- ⚠️ Removed deprecated functions that were scheduled for removal in GeckoView 143. Includes deprecations to versions of `onInstallPromptRequest`, `removeOptionalPermissions`, `addOptionalPermissions`, `PermissionPromptResponse()`, and `CertificateRequest()`. ([bug 1980176]({{bugzilla}}1980176))
+- Added [`GeckoRuntimeSettings#setLnaBlockingEnabled`][143.3], [`GeckoRuntimeSettings#getLnaBlockingEnabled`][143.4] and [`GeckoRuntimeSettings.Builder#setLnaBlockingEnabled`][143.5] to enable LNA blocking.
+- Added new permissions [`GeckoSession.PermissionDelegate#PERMISSION_LOCAL_DEVICE_ACCESS`][143.6] and [`GeckoSession.PermissionDelegate#PERMISSION_LOCAL_NETWORK_ACCESS`][143.7]
+
+[143.1]: {{javadoc_uri}}/GeckoPreferenceController.html#setGeckoPrefs(java.util.List)
+[143.2]: {{javadoc_uri}}/WebNotification.html#origin
+[143.3]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLnaBlockingEnabled(boolean)
+[143.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getLnaBlockingEnabled
+[143.5]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#setLnaBlockingEnabled(boolean)
+[143.6]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.html#PERMISSION_LOCAL_DEVICE_ACCESS
+[143.7]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.html#PERMISSION_LOCAL_NETWORK_ACCESS
+
 ## v142
 - Added support for data collection permissions to [`WebExtensionController.onOptionalPrompt`][142.1] ([bug 1964999]({{bugzilla}}1964999))
 - ⚠️ Removed deprecated functions that were scheduled for removal in GeckoView 142. ([bug 1963053]({{bugzilla}}1963053))
@@ -1771,6 +1881,7 @@ to allow adding gecko profiler markers.
   [`GeckoSession.FinderResult`][65.23] to non-final class.
 - Update [`CrashReporter#sendCrashReport`][65.24] to return the crash ID as a
   [`GeckoResult<String>`][65.25].
+- Add FirefoxRelay field-detection hinting to Autocomplete interface
 
 [65.1]: {{javadoc_uri}}/CompositorController.html
 [65.2]: {{javadoc_uri}}/DynamicToolbarAnimator.html
@@ -1798,4 +1909,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: f97051e0321472fb865c7f70a56e579387b407e5
+[api-version]: b5b4a479d32c07f76d70de08a9280ece977cb606

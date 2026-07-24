@@ -320,6 +320,8 @@ export default class MozReorderableList extends MozLitElement {
       draggedElement: fromEl,
       targetElement: items[fromIndex + direction],
       position: Math.min(direction, 0),
+      draggedIndex: fromIndex,
+      targetIndex: fromIndex + direction,
     };
   }
 
@@ -327,7 +329,7 @@ export default class MozReorderableList extends MozLitElement {
    * Creates a CustomEvent and dispatches it on the element.
    *
    * @param {string} eventName The name of the event
-   * @param {Object} [detail] The detail object to pass to the event
+   * @param {object} [detail] The detail object to pass to the event
    */
   emitEvent(eventName, detail) {
     const customEvent = new CustomEvent(eventName, {

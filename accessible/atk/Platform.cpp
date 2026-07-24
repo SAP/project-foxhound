@@ -9,9 +9,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/widget/GSettings.h"
 #include "nsIAccessibleEvent.h"
-#include "nsIGSettingsService.h"
 #include "nsMai.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindow.h"
@@ -258,24 +257,9 @@ bool a11y::ShouldA11yBeEnabled() {
 #endif
 
   // check GSettings
-  nsCOMPtr<nsIGSettingsService> gsettings =
-      do_GetService(NS_GSETTINGSSERVICE_CONTRACTID);
-
-  if (gsettings) {
-    bool shouldEnable = false;
-    nsCOMPtr<nsIGSettingsCollection> a11y_settings;
-    gsettings->GetCollectionForSchema(
-        nsLiteralCString("org.gnome.desktop.interface"),
-        getter_AddRefs(a11y_settings));
-    if (a11y_settings) {
-      a11y_settings->GetBoolean(nsLiteralCString("toolkit-accessibility"),
-                                &shouldEnable);
-    }
-
-    return shouldEnable;
-  }
-
-  return false;
+  return widget::GSettings::GetBoolean("org.gnome.desktop.interface"_ns,
+                                       "toolkit-accessibility"_ns)
+      .valueOr(false);
 }
 
 uint64_t a11y::GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {

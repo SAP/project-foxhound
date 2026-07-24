@@ -47,7 +47,7 @@ WasmValueBox* WasmValueBox::create(JSContext* cx, HandleValue value) {
   if (!obj) {
     return nullptr;
   }
-  obj->setFixedSlot(VALUE_SLOT, value);
+  obj->initFixedSlot(VALUE_SLOT, value);
   return obj;
 }
 

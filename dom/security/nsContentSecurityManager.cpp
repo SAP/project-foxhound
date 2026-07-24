@@ -4,56 +4,56 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAboutProtocolUtils.h"
-#include "nsArray.h"
 #include "nsContentSecurityManager.h"
-#include "nsContentSecurityUtils.h"
-#include "nsContentPolicyUtils.h"
-#include "nsEscape.h"
-#include "nsDataHandler.h"
-#include "nsIChannel.h"
-#include "nsIContentPolicy.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsINode.h"
-#include "nsIStreamListener.h"
-#include "nsILoadInfo.h"
-#include "nsIMIMEService.h"
-#include "nsIOService.h"
-#include "nsContentUtils.h"
-#include "nsCORSListenerProxy.h"
-#include "nsIParentChannel.h"
-#include "nsIRedirectHistoryEntry.h"
-#include "nsIXULRuntime.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
-#include "nsSandboxFlags.h"
-#include "nsScriptSecurityManager.h"
-#include "nsIXPConnect.h"
 
+#include "js/RegExp.h"
+#include "jsapi.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/Components.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_content.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "xpcpublic.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
+#include "nsAboutProtocolUtils.h"
+#include "nsArray.h"
+#include "nsCORSListenerProxy.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentSecurityUtils.h"
+#include "nsContentUtils.h"
+#include "nsDataHandler.h"
+#include "nsEscape.h"
+#include "nsIChannel.h"
+#include "nsIContentPolicy.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsILoadInfo.h"
+#include "nsIMIMEService.h"
+#include "nsINode.h"
+#include "nsIOService.h"
+#include "nsIParentChannel.h"
+#include "nsIRedirectHistoryEntry.h"
+#include "nsIStreamListener.h"
+#include "nsIXPConnect.h"
+#include "nsIXULRuntime.h"
 #include "nsMimeTypes.h"
-
-#include "jsapi.h"
-#include "js/RegExp.h"
+#include "nsNetUtil.h"
+#include "nsReadableUtils.h"
+#include "nsSandboxFlags.h"
+#include "nsScriptSecurityManager.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -348,6 +348,47 @@ static nsresult DoSOPChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   return NS_OK;
 }
 
+// Determine which principal to use in DoCORSChecks.  Normally, we do CORS
+// checks using the LoadingPrincipal (whose Origin comes from the host
+// document).  But under certain configurations/situations, we instead use
+// the TriggeringPrincipal() (whose Origin comes from the specific resource
+// that initiated the request).
+static nsIPrincipal* DeterminePrincipalForCORSChecks(nsILoadInfo* aLoadInfo) {
+  nsIPrincipal* const triggeringPrincipal = aLoadInfo->TriggeringPrincipal();
+
+  if (StaticPrefs::content_cors_use_triggering_principal()) {
+    // This pref forces us to use the TriggeringPrincipal.
+    // TODO(dholbert): Remove this special-case, perhaps right after we
+    // fix bug 1982916 which requires it for a test.
+    return triggeringPrincipal;
+  }
+
+  if (!StaticPrefs::extensions_content_web_accessible_enabled() &&
+      triggeringPrincipal->GetIsAddonOrExpandedAddonPrincipal()) {
+    // If we get here, then we know:
+    // * we want to allow MV2 WebExtensions to access their own resources
+    // regardless of whether those are listed in 'web_accessible_resources' in
+    // their manifest (this is nonstandard but it's a legacy thing we allow).
+    // * this load was initiated by a WebExtension (possibly running in a
+    // content script in the context of a web page).
+    //
+    // Hence: in this case, we use the TriggeringPrincipal for our CORS checks
+    // (so that a WebExtension requesting its own resources will be treated as
+    // same-origin, rather than being rejected as a cross-origin request from
+    // the page's origin).
+    //
+    // NOTE: Technically we should also check whether the extension uses MV2
+    // here, since this pref is specific to MV2. But that's not strictly
+    // necessary because we already unconditionally block MV3-WebExtension
+    // content-loads of this type at a different level (in
+    // nsScriptSecurityManager::CheckLoadURIWithPrincipal).
+    return triggeringPrincipal;
+  }
+
+  // Otherwise we use the LoadingPrincipal.
+  return aLoadInfo->GetLoadingPrincipal();
+}
+
 static nsresult DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
                              nsCOMPtr<nsIStreamListener>& aInAndOutListener) {
   MOZ_RELEASE_ASSERT(aInAndOutListener,
@@ -358,12 +399,11 @@ static nsresult DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
     return NS_OK;
   }
 
-  // We use the triggering principal here, rather than the loading principal
-  // to ensure that anonymous CORS content in the browser resources and in
-  // WebExtensions is allowed to load.
-  nsIPrincipal* principal = aLoadInfo->TriggeringPrincipal();
+  nsIPrincipal* principalForCORSCheck =
+      DeterminePrincipalForCORSChecks(aLoadInfo);
+
   RefPtr<nsCORSListenerProxy> corsListener = new nsCORSListenerProxy(
-      aInAndOutListener, principal,
+      aInAndOutListener, principalForCORSCheck,
       aLoadInfo->GetCookiePolicy() == nsILoadInfo::SEC_COOKIES_INCLUDE);
   // XXX: @arg: DataURIHandling::Allow
   // lets use  DataURIHandling::Allow for now and then decide on callsite basis.
@@ -1067,8 +1107,8 @@ nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
 /* static */
 nsresult nsContentSecurityManager::CheckAllowLoadInPrivilegedAboutContext(
     nsIChannel* aChannel) {
-  // bail out if check is disabled
-  if (StaticPrefs::security_disallow_privilegedabout_remote_script_loads()) {
+  // If remote scripts aren't disallowed, then bail out.
+  if (!StaticPrefs::security_disallow_privilegedabout_remote_script_loads()) {
     return NS_OK;
   }
 
@@ -1498,7 +1538,7 @@ nsContentSecurityManager::AsyncOnChannelRedirect(
       aOldChannel, getter_AddRefs(oldPrincipal));
 
   nsCOMPtr<nsIURI> newURI;
-  Unused << NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
+  (void)NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
   NS_ENSURE_STATE(oldPrincipal && newURI);
 
   // Do not allow insecure redirects to data: URIs

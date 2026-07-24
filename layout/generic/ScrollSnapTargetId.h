@@ -23,9 +23,7 @@ inline constexpr bool IsEnumCase(ScrollSnapTargetId) { return true; }
 struct ScrollSnapTargetIds {
   CopyableTArray<ScrollSnapTargetId> mIdsOnX;
   CopyableTArray<ScrollSnapTargetId> mIdsOnY;
-  bool operator==(const ScrollSnapTargetIds& aOther) const {
-    return mIdsOnX == aOther.mIdsOnX && mIdsOnY == aOther.mIdsOnY;
-  }
+  bool operator==(const ScrollSnapTargetIds&) const = default;
 };
 
 struct SnapDestination {

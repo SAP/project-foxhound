@@ -10,7 +10,7 @@ interface nsIFile;
 interface nsIToolkitProfile;
 interface nsIProfileLock;
 
-[scriptable, builtinclass, uuid(1947899b-f369-48fa-89da-f7c37bb1e6bc)]
+[scriptable, builtinclass, uuid(fcb10bd5-3065-413f-a1ca-0c7818c5227b)]
 interface nsIToolkitProfileService : nsISupports
 {
     /**
@@ -140,6 +140,24 @@ interface nsIToolkitProfileService : nsISupports
      */
     nsIToolkitProfile createUniqueProfile(in nsIFile aRootDir,
                                           in AUTF8String aNamePrefix);
+
+    /**
+     * Gets the profile root directory descriptor for storing in profiles.ini or
+     * installs.ini.
+     * @param aRootDir
+     *        The root directory of the profile.
+     * @param aIsRelative
+     *        Set to true if the returned descriptor is relative to the
+     *        application data directory.
+     */
+    AUTF8String getProfileDescriptor(in nsIFile aRootDir, out boolean aIsRelative);
+
+    /**
+     * Return the local directory for a given profile root directory.
+     * @param aRootDir
+     *        The root directory of the profile
+     */
+    nsIFile getLocalDirFromRootDir(in nsIFile aRootDir);
 
     /**
      * Returns the number of profiles.

@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head =  ''
 firefox-appdir = "browser"
 tags = "os_integration"
@@ -17,12 +20,14 @@ prefs = ["browser.contextual-services.contextId.rust-component.enabled=true"]
 prefs = ["browser.newtabpage.activity-stream.filterAdult=true"]
 
 ["test_FirefoxBridgeExtensionUtils.js"]
-run-if = ["os == 'win'"] # Test of a Windows-specific feature
+run-if = [
+  "os == 'win'", # Test of a Windows-specific feature
+]
 
 ["test_FirefoxBridgeExtensionUtilsNativeManifest.js"]
 run-if = [
-  "os == 'win'",
   "os == 'mac'",
+  "os == 'win'",
 ]
 
 ["test_HomePage.js"]
@@ -30,20 +35,20 @@ run-if = [
 ["test_HomePage_ignore.js"]
 
 ["test_InstallationTelemetry.js"]
-run-if = ["os == 'win'"] # Test of a Windows-specific feature
+run-if = [
+  "os == 'win'", # Test of a Windows-specific feature
+]
 
 ["test_LaterRun.js"]
 
 ["test_LinksCache.js"]
 
 ["test_ProfileCounter.js"]
-run-if = ["os == 'win'"] # Test of a Windows-specific feature
-
-["test_Sanitizer_interrupted.js"]
-prefs = ["privacy.sanitize.useOldClearHistoryDialog=true"]
+run-if = [
+  "os == 'win'", # Test of a Windows-specific feature
+]
 
 ["test_Sanitizer_interrupted_v2.js"]
-prefs = ["privacy.sanitize.useOldClearHistoryDialog=false"]
 
 ["test_SiteDataManager.js"]
 

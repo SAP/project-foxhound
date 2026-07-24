@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFrameList_h___
-#define nsFrameList_h___
+#ifndef nsFrameList_h_
+#define nsFrameList_h_
 
 #include <stdio.h> /* for FILE* */
 
 #include "mozilla/EnumSet.h"
 #include "mozilla/FunctionTypeTraits.h"
-#include "mozilla/RefPtr.h"
 #include "nsDebug.h"
 #include "nsTArray.h"
 
@@ -37,15 +36,14 @@ enum class FrameChildListID {
   Principal,
   ColGroup,
   Absolute,
-  Fixed,
+  PushedAbsolute,
   Overflow,
   OverflowContainers,
   ExcessOverflowContainers,
   OverflowOutOfFlow,
   Float,
-  Bullet,
+  Marker,
   PushedFloats,
-  Backdrop,
   // A special alias for FrameChildListID::Principal that suppress the reflow
   // request that is normally done when manipulating child lists.
   NoReflowPrincipal,
@@ -271,7 +269,7 @@ class nsFrameList {
   nsIFrame* LastChild() const { return mLastChild; }
 
   nsIFrame* FrameAt(int32_t aIndex) const;
-  int32_t IndexOf(nsIFrame* aFrame) const;
+  int32_t IndexOf(const nsIFrame* aFrame) const;
 
   bool IsEmpty() const { return nullptr == mFirstChild; }
 
@@ -401,13 +399,8 @@ class nsFrameList {
       return ret;
     }
 
-    bool operator==(const Iterator<FrameTraversal>& aOther) const {
-      return mCurrent == aOther.mCurrent;
-    }
-
-    bool operator!=(const Iterator<FrameTraversal>& aOther) const {
-      return !(*this == aOther);
-    }
+    bool operator==(const Iterator<FrameTraversal>& aOther) const = default;
+    bool operator!=(const Iterator<FrameTraversal>& aOther) const = default;
 
    private:
     nsIFrame* mCurrent;
@@ -482,4 +475,4 @@ class MOZ_RAII AutoFrameListPtr final {
 
 }  // namespace mozilla
 
-#endif /* nsFrameList_h___ */
+#endif /* nsFrameList_h_ */

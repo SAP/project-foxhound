@@ -24,7 +24,7 @@
             android:id="@android:id/title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textAppearance="?android:attr/textAppearanceListItem"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
             tools:text="@string/preference_mozilla_telemetry2" />
 
         <TextView
@@ -34,7 +34,7 @@
             android:layout_below="@android:id/title"
             android:layout_alignStart="@android:id/title"
             android:maxLines="10"
-            android:textAppearance="?android:attr/textAppearanceListItemSecondary"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?android:attr/textColorSecondary"
             tools:text="@string/preference_mozilla_telemetry_summary2" />
 

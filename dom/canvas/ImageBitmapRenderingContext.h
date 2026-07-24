@@ -5,13 +5,13 @@
 #ifndef ImageBitmapRenderingContext_h
 #define ImageBitmapRenderingContext_h
 
+#include "ImageEncoder.h"
+#include "imgIEncoder.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/WebRenderUserData.h"
-#include "imgIEncoder.h"
-#include "ImageEncoder.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsWrapperCache.h"
 
@@ -70,10 +70,12 @@ class ImageBitmapRenderingContext final
       nsIDocShell* aDocShell, NotNull<gfx::DrawTarget*> aTarget) override;
 
   virtual mozilla::UniquePtr<uint8_t[]> GetImageBuffer(
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
       int32_t* out_format, gfx::IntSize* out_imageSize) override;
-  NS_IMETHOD GetInputStream(const char* aMimeType,
-                            const nsAString& aEncoderOptions,
-                            nsIInputStream** aStream) override;
+  NS_IMETHOD GetInputStream(
+      const char* aMimeType, const nsAString& aEncoderOptions,
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsACString& aRandomizationKey, nsIInputStream** aStream) override;
 
   virtual already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* aOutAlphaType) override;

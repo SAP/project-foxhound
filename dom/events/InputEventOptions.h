@@ -8,7 +8,6 @@
 #define mozilla_InputEventOptions_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/StaticRange.h"

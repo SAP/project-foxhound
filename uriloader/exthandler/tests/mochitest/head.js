@@ -184,6 +184,7 @@ async function waitForSubDialog(browser, url, state) {
 
 /**
  * Wait for protocol permission dialog open/close.
+ *
  * @param {MozBrowser} browser - Browser element the dialog belongs to.
  * @param {boolean} state - true: dialog open, false: dialog close
  * @returns {Promise<SubDialog>} - Returns a promise which resolves with the
@@ -199,6 +200,7 @@ async function waitForProtocolPermissionDialog(browser, state) {
 
 /**
  * Get the dialog element which is a child of the SubDialogs browser frame.
+ *
  * @param {SubDialog} subDialog - Dialog to get the dialog element for.
  */
 function getDialogElementFromSubDialog(subDialog) {
@@ -209,12 +211,12 @@ function getDialogElementFromSubDialog(subDialog) {
 
 /**
  * Accept the next protocol permission dialog.
+ *
  * @param {MozBrowser} browser - Browser element the dialog belongs to.
  * @returns {Promise} - Returns a promise which resolves once the dialog has
  * been accepted.
  *
  * Note: This function will bypass the security delay.
- *
  */
 async function acceptNextProtocolPermissionDialog(browser) {
   let dialog = await waitForProtocolPermissionDialog(browser, true);
@@ -226,7 +228,7 @@ async function acceptNextProtocolPermissionDialog(browser) {
   let dialogEl = getDialogElementFromSubDialog(dialog);
 
   // Bypass the security delay.
-  dialogEl.setAttribute("buttondisabledaccept", "false");
+  dialogEl.removeAttribute("buttondisabledaccept");
   dialogEl.acceptDialog();
 
   await dialogWindowClosePromise;
@@ -234,6 +236,7 @@ async function acceptNextProtocolPermissionDialog(browser) {
 
 /**
  * Wait for protocol app chooser dialog open/close.
+ *
  * @param {MozBrowser} browser - Browser element the dialog belongs to.
  * @param {boolean} state - true: dialog open, false: dialog close
  * @returns {Promise<SubDialog>} - Returns a promise which resolves with the
@@ -340,9 +343,9 @@ async function setDownloadDir() {
 
 add_setup(async function test_common_initialize() {
   gDownloadDir = await setDownloadDir();
-  Services.prefs.setCharPref("browser.download.loglevel", "Debug");
+  Services.prefs.setCharPref("toolkit.download.loglevel", "Debug");
   registerCleanupFunction(function () {
-    Services.prefs.clearUserPref("browser.download.loglevel");
+    Services.prefs.clearUserPref("toolkit.download.loglevel");
   });
 });
 
@@ -362,6 +365,7 @@ const EXT_PROTO_URI_MAILTO = "mailto:test@example.com";
 
 /**
  * Creates and iframe and navigate to an external protocol from the iframe.
+ *
  * @param {MozBrowser} browser - Browser to spawn iframe in.
  * @param {string} sandboxAttr - Sandbox attribute value for the iframe.
  * @param {'trustedClick'|'untrustedClick'|'trustedLocationAPI'|'untrustedLocationAPI'|'frameSrc'|'frameSrcRedirect'} triggerMethod
@@ -486,6 +490,7 @@ async function navigateExternalProtoFromIframe(
 /**
  * Wait for the sandbox error message which is shown in the web console when an
  * external protocol navigation from a sandboxed context is blocked.
+ *
  * @returns {Promise} - Promise which resolves once message has been logged.
  */
 function waitForExtProtocolSandboxError() {
@@ -510,7 +515,8 @@ function waitForExtProtocolSandboxError() {
 
 /**
  * Run the external protocol sandbox test using iframes.
- * @param {Object} options
+ *
+ * @param {object} options
  * @param {boolean} options.blocked - Whether the navigation should be blocked.
  * @param {string} options.sandbox -   See {@link navigateExternalProtoFromIframe}.
  * @param {string} options.useCSPSandbox -  See {@link navigateExternalProtoFromIframe}.
@@ -569,4 +575,17 @@ function runExtProtocolSandboxTest(options) {
       }
     }
   );
+}
+
+function getSystemProtocol() {
+  if (AppConstants.platform == "macosx") {
+    return "itunes";
+  } else if (AppConstants.platform == "win") {
+    return "ms-settings";
+  }
+
+  info(
+    "Skipping this test since there isn't a suitable default protocol on this platform"
+  );
+  return null;
 }

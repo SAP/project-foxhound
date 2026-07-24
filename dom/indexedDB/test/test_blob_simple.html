@@ -207,7 +207,6 @@
     info("Send blob to a worker, read its contents there, and verify results.");
 
     function workerScript() {
-      /* eslint-env worker */
       onmessage = function(event) {
         var reader = new FileReaderSync();
         postMessage(reader.readAsText(event.data));

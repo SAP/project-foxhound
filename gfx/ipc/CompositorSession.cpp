@@ -16,7 +16,7 @@ namespace layers {
 
 using namespace gfx;
 
-CompositorSession::CompositorSession(nsBaseWidget* aWidget,
+CompositorSession::CompositorSession(nsIWidget* aWidget,
                                      CompositorWidgetDelegate* aDelegate,
                                      CompositorBridgeChild* aChild,
                                      const LayersId& aRootLayerTreeId)

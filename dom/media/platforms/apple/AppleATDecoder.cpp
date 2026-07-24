@@ -5,24 +5,127 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AppleATDecoder.h"
+
+#include <CoreAudioTypes/CoreAudioBaseTypes.h>
+#include <mozilla/Result.h>
+
+#include "ADTSDemuxer.h"
 #include "Adts.h"
-#include "AppleUtils.h"
+#include "ByteWriter.h"
+#include "ErrorList.h"
 #include "MP4Decoder.h"
 #include "MediaInfo.h"
-#include "VideoUtils.h"
+#include "MediaResult.h"
 #include "mozilla/Logging.h"
-#include "mozilla/SyncRunnable.h"
+#include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
+#include "nsDebug.h"
 #include "nsTArray.h"
-#include "ADTSDemuxer.h"
 
-#include <array>
-
-#define LOG(...) DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
-#define LOGEX(_this, ...) \
-  DDMOZ_LOGEX(_this, sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
+#define LOG(...) \
+  MOZ_LOG(mozilla::sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 #define FourCC2Str(n) \
   ((char[5]){(char)(n >> 24), (char)(n >> 16), (char)(n >> 8), (char)(n), 0})
+
+const int AUDIO_OBJECT_TYPE_USAC = 42;
+const UInt32 kDynamicRangeControlProperty =
+    0x64726370;  // "drcp", not present in macOS headers
+
+// Write ISO/IEC 14496-1 expandable size field (1-4 bytes) (8.3.3)
+// Each byte encodes 7 bits of size with MSB as continuation flag
+template <typename T>
+static bool WriteDescriptor(mozilla::ByteWriter<T>& writer, uint8_t tag,
+                            uint32_t size) {
+#define TRY(x)    \
+  if (!(x)) {     \
+    return false; \
+  }
+  TRY(writer.WriteU8(tag));
+  // Sizes are encoded as:
+  // 0xxxxxxx                   - sizes 0 to 127 (1 byte)
+  // 1xxxxxxx 0xxxxxxx          - sizes 128 to 16383 (2 bytes)
+  // 1xxxxxxx 1xxxxxxx 0xxxxxxx - sizes 16384 to 2097151 (3 bytes)
+  // 1xxxxxxx 1xxxxxxx 1xxxxxxx 0xxxxxxx - sizes 2097152+ (4 bytes)
+  if (size < 0x80) {
+    TRY(writer.WriteU8(size));
+  } else if (size < 0x4000) {
+    TRY(writer.WriteU8(0x80 | (size >> 7)));
+    TRY(writer.WriteU8(size & 0x7F));
+  } else if (size < 0x200000) {
+    TRY(writer.WriteU8(0x80 | (size >> 14)));
+    TRY(writer.WriteU8(0x80 | (size >> 7)));
+    TRY(writer.WriteU8(size & 0x7F));
+  } else {
+    TRY(writer.WriteU8(0x80 | (size >> 21)));
+    TRY(writer.WriteU8(0x80 | (size >> 14)));
+    TRY(writer.WriteU8(0x80 | (size >> 7)));
+    TRY(writer.WriteU8(size & 0x7F));
+  }
+
+  return true;
+}
+
+#undef TRY
+
+// ISO/IEC 14496-1 (7.2.6.5.1)
+static mozilla::Result<nsTArray<uint8_t>, nsresult> CreateEsds(
+    const nsTArray<uint8_t>& extradata) {
+  nsTArray<uint8_t> esds;
+  mozilla::ByteWriter<mozilla::BigEndian> writer(esds);
+#define TRY(x)                                             \
+  if (!(x)) {                                              \
+    LOG("CreateEsds failed at line %d: %s", __LINE__, #x); \
+    return mozilla::Err(nsresult::NS_ERROR_FAILURE);       \
+  }
+
+  // ES_Descriptor (ES_DescrTag = 0x03)
+  // Size calculation breakdown:
+  // - 3 bytes: ES_ID (2) + flags (1)
+  // - 5 bytes: DecoderConfigDescriptor tag (1) + size field (4 max)
+  // - 13 bytes: DecoderConfigDescriptor fixed content
+  // - 5 bytes: DecoderSpecificInfo tag (1) + size field (4 max)
+  // - extradata.Length(): AudioSpecificConfig data
+  const uint32_t kESDescriptorHeaderSize = 3;        // ES_ID + flags
+  const uint32_t kDecoderConfigDescrTagSize = 5;     // tag + size field
+  const uint32_t kDecoderConfigDescrFixedSize = 13;  // fixed fields
+  const uint32_t kDecoderSpecificInfoTagSize = 5;    // tag + size field
+  const uint32_t esDescriptorSize =
+      kESDescriptorHeaderSize + kDecoderConfigDescrTagSize +
+      kDecoderConfigDescrFixedSize + kDecoderSpecificInfoTagSize +
+      extradata.Length();
+  WriteDescriptor(writer, 0x03, esDescriptorSize);
+  TRY(writer.WriteU16(0x0000));  // ES_ID = 0
+  TRY(writer.WriteU8(0x00));  // flags (streamDependenceFlag = 0, URL_Flag = 0,
+                              // OCRstreamFlag = 0, streamPriority = 0)
+
+  // DecoderConfigDescriptor (DecoderConfigDescrTag = 0x04)
+  // ISO/IEC 14496-1 (7.2.6.6)
+  const uint32_t decoderConfigDescrSize = kDecoderConfigDescrFixedSize +
+                                          kDecoderSpecificInfoTagSize +
+                                          extradata.Length();
+  TRY(WriteDescriptor(writer, 0x04, decoderConfigDescrSize));
+  TRY(writer.WriteU8(0x40));  // objectTypeIndication = 0x40 (MPEG-4 AAC)
+  TRY(writer.WriteU8(
+      0x15));  // streamType = 0x05 (AudioStream), upstream = 0, reserved = 1
+
+  // bufferSizeDB = 0 (24 bits) - using default buffer size
+  TRY(writer.WriteU8(0x00));
+  TRY(writer.WriteU16(0x0000));
+
+  TRY(writer.WriteU32(0x00000000));  // maxBitrate = 0 (no limit)
+  TRY(writer.WriteU32(0x00000000));  // avgBitrate = 0 (unknown)
+
+  // DecoderSpecificInfo (DecSpecificInfoTag = 0x05)
+  // Contains the AudioSpecificConfig from ISO/IEC 14496-3 (7.2.6.7: to be
+  // filled by classes extending it, we just write the extradata extracted from
+  // the mp4)
+  TRY(WriteDescriptor(writer, 0x05, extradata.Length()));
+  TRY(writer.Write(extradata.Elements(), extradata.Length()));
+
+  return esds;
+}
+
+#undef TRY
 
 namespace mozilla {
 
@@ -36,22 +139,36 @@ AppleATDecoder::AppleATDecoder(const AudioInfo& aConfig)
       mErrored(false) {
   MOZ_COUNT_CTOR(AppleATDecoder);
   LOG("Creating Apple AudioToolbox decoder");
-  LOG("Audio Decoder configuration: %s %d Hz %d channels %d bits per channel",
+  LOG("Audio Decoder configuration: %s %d Hz %d channels %d bits per channel "
+      "profile=%d extended_profile=%d",
       mConfig.mMimeType.get(), mConfig.mRate, mConfig.mChannels,
-      mConfig.mBitDepth);
+      mConfig.mBitDepth, mConfig.mProfile, mConfig.mExtendedProfile);
 
   if (mConfig.mMimeType.EqualsLiteral("audio/mpeg")) {
     mFormatID = kAudioFormatMPEGLayer3;
   } else if (mConfig.mMimeType.EqualsLiteral("audio/mp4a-latm")) {
-    mFormatID = kAudioFormatMPEG4AAC;
     if (aConfig.mCodecSpecificConfig.is<AacCodecSpecificData>()) {
       const AacCodecSpecificData& aacCodecSpecificData =
           aConfig.mCodecSpecificConfig.as<AacCodecSpecificData>();
+
+      // Check if this is xHE-AAC (USAC) based on profile or extended_profile
+      if (mConfig.mProfile == AUDIO_OBJECT_TYPE_USAC ||
+          mConfig.mExtendedProfile == AUDIO_OBJECT_TYPE_USAC) {
+        mFormatID = kAudioFormatMPEGD_USAC;
+        LOG("AppleATDecoder detected xHE-AAC/USAC format (profile=%d, "
+            "extended_profile=%d)",
+            mConfig.mProfile, mConfig.mExtendedProfile);
+      } else {
+        mFormatID = kAudioFormatMPEG4AAC;
+      }
+
       mEncoderDelay = aacCodecSpecificData.mEncoderDelayFrames;
       mTotalMediaFrames = aacCodecSpecificData.mMediaFrameCount;
       LOG("AppleATDecoder (aac), found encoder delay (%" PRIu32
           ") and total frame count (%" PRIu64 ") in codec-specific side data",
           mEncoderDelay, mTotalMediaFrames);
+    } else {
+      mFormatID = kAudioFormatMPEG4AAC;
     }
   } else {
     mFormatID = 0;
@@ -64,6 +181,7 @@ AppleATDecoder::~AppleATDecoder() {
 }
 
 RefPtr<MediaDataDecoder::InitPromise> AppleATDecoder::Init() {
+  AUTO_PROFILER_LABEL("AppleATDecoder::Init", MEDIA_PLAYBACK);
   if (!mFormatID) {
     LOG("AppleATDecoder::Init failure: unknown format ID");
     return InitPromise::CreateAndReject(
@@ -77,6 +195,7 @@ RefPtr<MediaDataDecoder::InitPromise> AppleATDecoder::Init() {
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> AppleATDecoder::Flush() {
+  AUTO_PROFILER_LABEL("AppleATDecoder::Flush", MEDIA_PLAYBACK);
   MOZ_ASSERT(mThread->IsOnCurrentThread());
   LOG("Flushing AudioToolbox AAC decoder");
   mQueuedSamples.Clear();
@@ -99,12 +218,14 @@ RefPtr<MediaDataDecoder::FlushPromise> AppleATDecoder::Flush() {
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> AppleATDecoder::Drain() {
+  AUTO_PROFILER_LABEL("AppleATDecoder::Drain", MEDIA_PLAYBACK);
   MOZ_ASSERT(mThread->IsOnCurrentThread());
   LOG("Draining AudioToolbox AAC decoder");
   return DecodePromise::CreateAndResolve(DecodedData(), __func__);
 }
 
 RefPtr<ShutdownPromise> AppleATDecoder::Shutdown() {
+  AUTO_PROFILER_LABEL("AppleATDecoder::Shutdown", MEDIA_PLAYBACK);
   // mThread may not be set if Init hasn't been called first.
   MOZ_ASSERT(!mThread || mThread->IsOnCurrentThread());
   ProcessShutdown();
@@ -140,6 +261,8 @@ nsCString AppleATDecoder::GetCodecName() const {
       return "mp3"_ns;
     case kAudioFormatMPEG4AAC:
       return "aac"_ns;
+    case kAudioFormatMPEGD_USAC:
+      return "xhe-aac"_ns;
     default:
       return "unknown"_ns;
   }
@@ -185,6 +308,7 @@ static OSStatus _PassthroughInputDataCallback(
 
 RefPtr<MediaDataDecoder::DecodePromise> AppleATDecoder::Decode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("AppleATDecoder::Decode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mThread->IsOnCurrentThread());
   LOG("mp4 input sample pts=%s duration=%s %s %llu bytes audio",
       aSample->mTime.ToString().get(), aSample->GetEndTime().ToString().get(),
@@ -355,8 +479,22 @@ MediaResult AppleATDecoder::GetInputAudioDescription(
   aDesc.mChannelsPerFrame = mConfig.mChannels;
   aDesc.mSampleRate = mConfig.mRate;
   UInt32 inputFormatSize = sizeof(aDesc);
-  OSStatus rv = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0,
-                                       nullptr, &inputFormatSize, &aDesc);
+  OSStatus rv;
+
+  if (mFormatID == kAudioFormatMPEGD_USAC && aExtraData.Length() > 0) {
+    // For xHE-AAC/USAC, we need to use the magic cookie to get the format info
+    aDesc.mFormatID = mFormatID;
+    aDesc.mChannelsPerFrame = mConfig.mChannels;
+    aDesc.mSampleRate = mConfig.mRate;
+
+    rv = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo,
+                                aExtraData.Length(), aExtraData.Elements(),
+                                &inputFormatSize, &aDesc);
+  } else {
+    rv = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, nullptr,
+                                &inputFormatSize, &aDesc);
+  }
+
   if (NS_WARN_IF(rv)) {
     return MediaResult(
         NS_ERROR_FAILURE,
@@ -535,6 +673,13 @@ MediaResult AppleATDecoder::SetupDecoder(MediaRawData* aSample) {
     mConfig.mProfile = mConfig.mExtendedProfile =
         parser.FirstFrame().Header().mObjectType;
     mIsADTS = true;
+
+    if (mFormatID == kAudioFormatMPEG4AAC &&
+        mConfig.mExtendedProfile == AUDIO_OBJECT_TYPE_USAC) {
+      LOG("Detected xHE-AAC profile 42 (USAC), switching to "
+          "kAudioFormatMPEGD_USAC");
+      mFormatID = kAudioFormatMPEGD_USAC;
+    }
   }
 
   if (mFormatID == kAudioFormatMPEG4AAC && mConfig.mExtendedProfile == 2 &&
@@ -611,10 +756,52 @@ MediaResult AppleATDecoder::SetupDecoder(MediaRawData* aSample) {
           RESULT_DETAIL("Error setting AudioConverter AAC cookie:%d",
                         int32_t(status)));
     }
+  } else if (magicCookie.Length() && mFormatID == kAudioFormatMPEGD_USAC) {
+    auto maybeEsdsData = CreateEsds(magicCookie);
+    if (maybeEsdsData.isErr()) {
+      return MediaResult(NS_ERROR_FAILURE,
+                         RESULT_DETAIL("Couldn't create ESDS data"));
+    }
+    nsTArray<uint8_t> esdsData = maybeEsdsData.unwrap();
+    status = AudioConverterSetProperty(
+        mConverter, kAudioConverterDecompressionMagicCookie,
+        magicCookie.Length(), magicCookie.Elements());
+    if (status) {
+      LOG("AudioConvertSetProperty failed: %d", int32_t(status));
+      return MediaResult(NS_ERROR_FAILURE,
+                         RESULT_DETAIL("AudioConverterSetProperty failed: %d",
+                                       int32_t(status)));
+    }
   }
 
   if (NS_FAILED(SetupChannelLayout())) {
     NS_WARNING("Couldn't retrieve channel layout, will use default layout");
+  }
+
+  if (mFormatID == kAudioFormatMPEG4AAC &&
+      mConfig.mExtendedProfile == AUDIO_OBJECT_TYPE_USAC) {
+    const Float32 kDefaultLoudness = -16.0;
+    status = AudioConverterSetProperty(
+        mConverter, kAudioCodecPropertyProgramTargetLevel,
+        sizeof(kDefaultLoudness), &kDefaultLoudness);
+    if (status != noErr) {
+      LOG("AudioConverterSetProperty() failed to set loudness: %d",
+          int(status));
+      // Non-fatal error, continue
+    }
+
+    // Dynamic range control setting isn't in the SDK yet
+    // https://developer.apple.com/documentation/http-live-streaming/providing-metadata-for-xhe-aac-video-soundtracks
+    // Values: none=0, night=1, noisy=2, limited=3
+    const UInt32 kDefaultEffectType = 3;
+    status = AudioConverterSetProperty(mConverter, kDynamicRangeControlProperty,
+                                       sizeof(kDefaultEffectType),
+                                       &kDefaultEffectType);
+    if (status != noErr) {
+      LOG("AudioConverterSetProperty() failed to set DRC effect type: %d",
+          int(status));
+      // Non-fatal error, continue
+    }
   }
 
   return NS_OK;
@@ -626,23 +813,23 @@ static void _MetadataCallback(void* aAppleATDecoder, AudioFileStreamID aStream,
   AppleATDecoder* decoder = static_cast<AppleATDecoder*>(aAppleATDecoder);
   MOZ_RELEASE_ASSERT(decoder->mThread->IsOnCurrentThread());
 
-  LOGEX(decoder, "MetadataCallback receiving: '%s'", FourCC2Str(aProperty));
+  LOG("MetadataCallback receiving: '%s'", FourCC2Str(aProperty));
   if (aProperty == kAudioFileStreamProperty_MagicCookieData) {
     UInt32 size;
     Boolean writeable;
     OSStatus rv =
         AudioFileStreamGetPropertyInfo(aStream, aProperty, &size, &writeable);
     if (rv) {
-      LOGEX(decoder, "Couldn't get property info for '%s' (%s)",
-            FourCC2Str(aProperty), FourCC2Str(rv));
+      LOG("Couldn't get property info for '%s' (%s)", FourCC2Str(aProperty),
+          FourCC2Str(rv));
       decoder->mFileStreamError = true;
       return;
     }
     auto data = MakeUnique<uint8_t[]>(size);
     rv = AudioFileStreamGetProperty(aStream, aProperty, &size, data.get());
     if (rv) {
-      LOGEX(decoder, "Couldn't get property '%s' (%s)", FourCC2Str(aProperty),
-            FourCC2Str(rv));
+      LOG("Couldn't get property '%s' (%s)", FourCC2Str(aProperty),
+          FourCC2Str(rv));
       decoder->mFileStreamError = true;
       return;
     }
@@ -712,4 +899,3 @@ nsresult AppleATDecoder::GetImplicitAACMagicCookie(MediaRawData* aSample) {
 }  // namespace mozilla
 
 #undef LOG
-#undef LOGEX

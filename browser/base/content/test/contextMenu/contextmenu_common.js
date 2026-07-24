@@ -301,14 +301,14 @@ let lastElementSelector = null;
  * Right-clicks on the element that matches `selector` and checks the
  * context menu that appears against the `menuItems` array.
  *
- * @param {String} selector
+ * @param {string} selector
  *        A selector passed to querySelector to find
  *        the element that will be referenced.
  * @param {Array} menuItems
  *        An array of menuitem ids and their associated enabled state. A state
  *        of null means that it will be ignored. Ids of '---' are used for
  *        menuseparators.
- * @param {Object} options, optional
+ * @param {object} options, optional
  *        skipFocusChange: don't move focus to the element before test, useful
  *                         if you want to delay spell-check initialization
  *        offsetX: horizontal mouse offset from the top-left corner of
@@ -399,13 +399,37 @@ async function test_contextmenu(selector, menuItems, options = {}) {
     info("Completed onContextMenuShown");
   }
 
+  if (
+    typeof options.awaitOnMenuBuilt === "object" &&
+    options.awaitOnMenuBuilt.id
+  ) {
+    const elementId = options.awaitOnMenuBuilt.id;
+    const menu = document.getElementById(elementId);
+    await TestUtils.waitForCondition(
+      () => menu && !menu.hidden,
+      `Menu ${elementId} did not appear in time`
+    );
+    info(`Menu "${elementId}" was built and is now visible`);
+  }
+
   if (menuItems) {
     if (Services.prefs.getBoolPref("devtools.inspector.enabled", true)) {
-      const inspectItems =
+      let inspectItems = [];
+      let hasSeparatorAboveAskChat = false;
+      const hasViewSource =
         menuItems.includes("context-viewsource") ||
-        menuItems.includes("context-viewpartialsource-selection")
-          ? []
-          : ["---", null];
+        menuItems.includes("context-viewpartialsource-selection");
+
+      const askChatIndex = menuItems.indexOf("context-ask-chat");
+      const isAskChatLastItem = menuItems.at(-6) === "context-ask-chat";
+      if (askChatIndex >= 2) {
+        hasSeparatorAboveAskChat = menuItems[askChatIndex - 2] === "---";
+      }
+
+      if (!hasViewSource && !(isAskChatLastItem && hasSeparatorAboveAskChat)) {
+        inspectItems.push("---", null);
+      }
+
       if (
         Services.prefs.getBoolPref("devtools.accessibility.enabled", true) &&
         (Services.prefs.getBoolPref("devtools.everOpened", false) ||

@@ -26,13 +26,6 @@ function objKeysLength(obj, expected, i) {
     return len;
 }
 
-// This is the same test as above, except that the branch which is being removed
-// cause the introduction of a different resume point to be inserted in the
-// middle. At the moment we expect this circustances to to disable the
-// optimization.
-//
-// Removing this limitation would be useful but would require more verification
-// when applying the optimization.
 function objKeysLengthDiffBlock(obj, expected, i) {
     var keys = Object.keys(obj);
     if (i >= 99) {
@@ -42,19 +35,19 @@ function objKeysLengthDiffBlock(obj, expected, i) {
         assertEq(arraysEqual(keys, expected), true);
     }
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     return len;
 }
 
 // Mutating the object in-between the call from Object.keys and the evaluation
-// of the length property should prevent the optimization from being reflected
-// as the mutation of the object would cause the a different result of
-// Object.keys evaluation.
+// of the length property should still allow the optimization to take place
+// since the iterator we held onto should be from the previous shape of the
+// object.
 function objKeysLengthMutate0(obj, expected, i) {
     var keys = Object.keys(obj);
     obj.foo = 42;
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     if (i >= 99) {
         bailout();
         assertEq(arraysEqual(keys, expected), true);
@@ -65,7 +58,7 @@ function objKeysLengthMutate0(obj, expected, i) {
 function objKeysLengthMutate1(obj, expected, i) {
     var keys = Object.keys(obj);
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     obj.foo = 42;
     if (i >= 99) {
         bailout();
@@ -77,7 +70,7 @@ function objKeysLengthMutate1(obj, expected, i) {
 function objKeysLengthMutate2(obj, expected, i) {
     var keys = Object.keys(obj);
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     if (i >= 99) {
         bailout();
         assertEq(arraysEqual(keys, expected), true);
@@ -91,8 +84,6 @@ function objKeysLengthMutate3(obj, expected, i) {
     let len = keys.length;
     assertRecoveredOnBailout(keys, true);
     if (i >= 99) {
-        // When branches are pruned, Warp/Ion is not aware and would recover the
-        // keys on bailout, and this is fine.
         obj.foo = 42;
         bailout();
         assertEq(arraysEqual(keys, expected), true);
@@ -101,9 +92,6 @@ function objKeysLengthMutate3(obj, expected, i) {
 }
 
 function objKeysLengthMutate4(obj, expected, i) {
-    // Mutating the objects ahead of keying the keys does not prevent optimizing
-    // the keys length query, given that all side-effects are already acted by
-    // the time we query the keys.
     obj.foo = 42;
     var keys = Object.keys(obj);
     let len = keys.length;
@@ -123,7 +111,7 @@ function doNotInlineSideEffect() {
 function objKeysLengthSideEffect0(obj, expected, i) {
     var keys = Object.keys(obj);
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     doNotInlineSideEffect();
     if (i >= 99) {
         bailout();
@@ -135,7 +123,7 @@ function objKeysLengthSideEffect0(obj, expected, i) {
 function objKeysLengthSideEffect1(obj, expected, i) {
     var keys = Object.keys(obj);
     let len = keys.length;
-    assertRecoveredOnBailout(keys, false);
+    assertRecoveredOnBailout(keys, true);
     if (i >= 99) {
         bailout();
         assertEq(arraysEqual(keys, expected), true);
@@ -161,6 +149,48 @@ function objKeysLengthSideEffect2(obj, expected, i) {
 function objKeysLengthSideEffect3(obj, expected, i) {
     doNotInlineSideEffect();
     var keys = Object.keys(obj);
+    let len = keys.length;
+    assertRecoveredOnBailout(keys, true);
+    if (i >= 99) {
+        bailout();
+        assertEq(arraysEqual(keys, expected), true);
+    }
+    return len;
+}
+
+function objKeysLengthMutateElements0(obj, expected, i) {
+    var keys = Object.keys(obj);
+    obj[0] = 42;
+    obj[1] = 42;
+    obj[2] = 42;
+    let len = keys.length;
+    assertRecoveredOnBailout(keys, true);
+    if (i >= 99) {
+        bailout();
+        assertEq(arraysEqual(keys, expected), true);
+    }
+    return len;
+}
+
+function objKeysLengthMutateElements1(obj, expected, i) {
+    obj[0] = 42;
+    var keys = Object.keys(obj);
+    obj[1] = 42;
+    obj[2] = 42;
+    let len = keys.length;
+    assertRecoveredOnBailout(keys, true);
+    if (i >= 99) {
+        bailout();
+        assertEq(arraysEqual(keys, expected), true);
+    }
+    return len;
+}
+
+function objKeysLengthMutateElements2(obj, expected, i) {
+    obj[0] = 42;
+    obj[1] = 42;
+    var keys = Object.keys(obj);
+    obj[2] = 42;
     let len = keys.length;
     assertRecoveredOnBailout(keys, true);
     if (i >= 99) {
@@ -204,5 +234,8 @@ for (let i = 0; i < 100; i++) {
     objKeysLengthSideEffect1({...obj}, ["a", "b", "c", "d"], i);
     objKeysLengthSideEffect2({...obj}, ["a", "b", "c", "d"], i);
     objKeysLengthSideEffect3({...obj}, ["a", "b", "c", "d"], i);
+    objKeysLengthMutateElements0({...obj}, ["a", "b", "c", "d"], i);
+    objKeysLengthMutateElements1({...obj}, ["0", "a", "b", "c", "d"], i);
+    objKeysLengthMutateElements2({...obj}, ["0", "1", "a", "b", "c", "d"], i);
     nonEscapedObjKeysLength(i);
 }

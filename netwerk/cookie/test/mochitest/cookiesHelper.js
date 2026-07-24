@@ -4,7 +4,6 @@ const BLOCKED = 1;
 async function cleanupData() {
   await new Promise(resolve => {
     const chromeScript = SpecialPowers.loadChromeScript(_ => {
-      /* eslint-env mozilla/chrome-script */
       addMessageListener("go", __ => {
         Services.clearData.deleteData(
           Services.clearData.CLEAR_COOKIES |

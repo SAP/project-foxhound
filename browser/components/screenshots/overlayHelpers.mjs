@@ -23,6 +23,7 @@ const doNotAutoselectTags = {
 
 /**
  * Gets the rect for an element if getBoundingClientRect exists
+ *
  * @param ele The element to get the rect from
  * @returns The bounding client rect of the element or null
  */
@@ -55,10 +56,10 @@ export function setMaxDetectWidth(maxWidth) {
  *
  * If the element is not an iframe, then we will just return the element.
  *
- * @param {Number} x The x coordinate
- * @param {Number} y The y coordinate
+ * @param {number} x The x coordinate
+ * @param {number} y The y coordinate
  * @param {Document} doc The document
- * @returns {Object}
+ * @returns {object}
  *    ele: The element for a given point (x, y)
  *    rect: The rect for the given point if ele is an iframe
  *          otherwise null
@@ -111,6 +112,7 @@ export async function getElementFromPoint(x, y, doc) {
 
 /**
  * This function takes an element and finds a suitable rect to draw the hover box on
+ *
  * @param {Element} ele The element to find a suitale rect of
  * @param {Document} doc The current document
  * @returns A suitable rect or null
@@ -200,6 +202,7 @@ export function getBestRectForElement(ele, doc) {
 
 /**
  * This finds a better element by looking for elements with role article
+ *
  * @param {Element} node The currently hovered node
  * @param {Document} doc The current document
  * @returns A better node or null
@@ -243,7 +246,8 @@ export class Region {
   /**
    * Sets the dimensions if the given dimension is defined.
    * Otherwise will reset the dimensions
-   * @param {Object} dims The new region dimensions
+   *
+   * @param {object} dims The new region dimensions
    *  {
    *    left: new left dimension value or undefined
    *    top: new top dimension value or undefined

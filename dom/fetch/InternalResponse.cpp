@@ -7,15 +7,15 @@
 #include "InternalResponse.h"
 
 #include "mozilla/Assertions.h"
+#include "mozilla/RandomNum.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "mozilla/dom/FetchStreamUtils.h"
 #include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/cache/CacheTypes.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/RandomNum.h"
-#include "mozilla/RemoteLazyInputStreamStorage.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIRandomGenerator.h"
 #include "nsStreamUtils.h"
 

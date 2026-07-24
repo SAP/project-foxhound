@@ -1,11 +1,11 @@
 plugins {
     alias(libs.plugins.kotlin.android)
+    id 'com.android.library'
+    id 'checkstyle'
+    id 'org.mozilla.apilint'
 }
 
 import groovy.json.JsonOutput
-
-apply plugin: 'com.android.library'
-apply plugin: 'checkstyle'
 
 // The SDK binding generation tasks depend on the JAR creation task of the
 // :annotations project.
@@ -13,15 +13,17 @@ evaluationDependsOn(':annotations')
 
 android {
     buildToolsVersion = project.ext.buildToolsVersion
-    compileSdkVersion = project.ext.compileSdkVersion
+    compileSdk {
+        version = release(project.ext.compileSdkMajorVersion) { minorApiLevel = project.ext.compileSdkMinorVersion }
+    }
 
     useLibrary 'android.test.runner'
     useLibrary 'android.test.base'
     useLibrary 'android.test.mock'
 
     defaultConfig {
-        targetSdkVersion = project.ext.targetSdkVersion
-        minSdkVersion = project.ext.minSdkVersion
+        targetSdk project.ext.targetSdkVersion
+        minSdk project.ext.minSdkVersion
         manifestPlaceholders = project.ext.manifestPlaceholders
 
         versionCode project.ext.versionCode
@@ -196,7 +198,7 @@ configurations {
             }
             afterEvaluate {
                 // Implicit capability
-                capability("org.mozilla.geckoview:${getArtifactId()}:${projectVersion}")
+                capability("org.mozilla.geckoview:${computeArtifactId()}:${projectVersion}")
             }
         }
     }
@@ -218,12 +220,10 @@ dependencies {
     implementation libs.androidx.annotation.experimental
     implementation libs.androidx.collection
     implementation libs.androidx.core
-
-    implementation libs.play.services.fido
-    implementation "org.yaml:snakeyaml:2.2"
-
     implementation libs.androidx.lifecycle.common
     implementation libs.androidx.lifecycle.process
+    implementation libs.play.services.fido
+    implementation "org.yaml:snakeyaml:2.2"
 
     if (mozconfig.substs.MOZ_ANDROID_HLS_SUPPORT) {
         implementation project(":exoplayer2")
@@ -231,17 +231,16 @@ dependencies {
 
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
-    testRuntimeOnly libs.junit.vintage
     testRuntimeOnly libs.junit.platform.launcher
-    testImplementation libs.testing.robolectric
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.robolectric
 
-    androidTestImplementation libs.testing.coroutines
     androidTestImplementation libs.androidx.core.ktx
-    androidTestImplementation libs.androidx.test.runner
-    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.espresso.core
     androidTestImplementation libs.androidx.test.junit
-    androidTestImplementation libs.androidx.espresso.core
-
+    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlinx.coroutines.test
     androidTestImplementation 'com.koushikdutta.async:androidasync:3.1.0'
 }
 
@@ -328,6 +327,11 @@ android.libraryVariants.all { variant ->
              variant.aidlCompileProvider.get().sourceOutputDir.asFile.get()
         )
         options.addStringOption("Xmaxwarns", "1000")
+        if (!project.hasProperty('android-lint')) {
+            // It's not helpful to produce 100s of lint warnings during regular
+            // builds.  (When linting, it is helpful.)
+            options.addBooleanOption("Xdoclint:-missing", true)
+        }
 
         classpath += files(android.getBootClasspath())
         classpath += variant.javaCompileProvider.get().classpath
@@ -393,7 +397,7 @@ version = getVersionNumber()
 println("GeckoView version = " + version)
 group = 'org.mozilla.geckoview'
 
-def getArtifactId() {
+def computeArtifactId() {
     def id = "geckoview" + project.ext.artifactSuffix
 
     if (!mozconfig.substs.MOZ_ANDROID_GECKOVIEW_LITE) {
@@ -421,7 +425,7 @@ publishing {
 
                 pom {
                     afterEvaluate {
-                        artifactId = getArtifactId()
+                        artifactId = computeArtifactId()
                     }
 
                     url = 'https://geckoview.dev'
@@ -543,11 +547,8 @@ tasks.register("generateSDKBindings", JavaExec) {
     outputs.dir("${topobjdir}/widget/android/bindings")
 
     dependsOn project(':annotations').jar
+    dependsOn rootProject.verifyGleanVersion
 }
-
-preBuild.dependsOn(":verifyGleanVersion")
-
-apply plugin: 'org.mozilla.apilint'
 
 apiLint {
     // TODO: Change this to `org` after hiding org.mozilla.gecko
@@ -571,6 +572,7 @@ apiLint {
         'org.json',
         'org.mozilla.geckoview',
     ]
+    helpCommand = { variantName -> "\$ ./mach gradle :geckoview:apiUpdateFile${variantName}" }
 }
 
 // generateDebugLintModel and other lint tasks that depend on it check the geckoview assets folder

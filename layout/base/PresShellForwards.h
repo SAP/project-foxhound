@@ -119,23 +119,13 @@ struct ScrollAxis final {
    *     visible.
    *   * WhenToScroll::Always: Move the frame regardless of its current
    *     visibility.
-   *
-   * aOnlyIfPerceivedScrollableDirection:
-   *   If the direction is not a perceived scrollable direction (i.e. no
-   *   scrollbar showing and less than one device pixel of scrollable
-   *   distance), don't scroll. Defaults to false.
    */
   explicit ScrollAxis(WhereToScroll aWhere = WhereToScroll::Nearest,
-                      WhenToScroll aWhen = WhenToScroll::IfNotFullyVisible,
-                      bool aOnlyIfPerceivedScrollableDirection = false)
-      : mWhereToScroll(aWhere),
-        mWhenToScroll(aWhen),
-        mOnlyIfPerceivedScrollableDirection(
-            aOnlyIfPerceivedScrollableDirection) {}
+                      WhenToScroll aWhen = WhenToScroll::IfNotFullyVisible)
+      : mWhereToScroll(aWhere), mWhenToScroll(aWhen) {}
 
   WhereToScroll mWhereToScroll;
   WhenToScroll mWhenToScroll;
-  bool mOnlyIfPerceivedScrollableDirection : 1;
 };
 
 enum class ScrollFlags : uint8_t {
@@ -147,11 +137,12 @@ enum class ScrollFlags : uint8_t {
   ScrollSmoothAuto = 1 << 4,
   TriggeredByScript = 1 << 5,
   AxesAreLogical = 1 << 6,
+  ForZoomToFocusedInput = 1 << 7,
   // NOTE: `Anchor` means here is "scrolling to an anchor", not "CSS scroll
   // anchoring".
   AnchorScrollFlags =
       ScrollOverflowHidden | ScrollNoParentFrames | TriggeredByScript,
-  ALL_BITS = (1 << 7) - 1,
+  ALL_BITS = (1 << 8) - 1,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ScrollFlags)

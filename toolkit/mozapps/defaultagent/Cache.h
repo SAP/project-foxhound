@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __DEFAULT_BROWSER_AGENT_CACHE_H__
-#define __DEFAULT_BROWSER_AGENT_CACHE_H__
+#ifndef DEFAULT_BROWSER_AGENT_CACHE_H_
+#define DEFAULT_BROWSER_AGENT_CACHE_H_
 
 #include <cstdint>
 #include <string>
@@ -186,4 +186,4 @@ class Cache {
 
 }  // namespace mozilla::default_agent
 
-#endif  // __DEFAULT_BROWSER_AGENT_CACHE_H__
+#endif  // DEFAULT_BROWSER_AGENT_CACHE_H_

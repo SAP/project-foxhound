@@ -14,13 +14,13 @@
 #include <objbase.h>
 #include <shlwapi.h>
 #undef ParseURL
-#include <stdlib.h>
 #include <tuple>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/UniquePtr.h"
 #include "nsWindowsHelpers.h"
@@ -814,6 +814,109 @@ int MozPathGetDriveNumber(const T* aPath) {
 
   return ToDriveNumber(aPath);
 }
+
+/**
+ * Class to provide a forward_iterator for accessing the ACE_HEADERs in an ACL.
+ * ACE_HEADERs start after the ACL struct and know the size of their ACE.
+ */
+class AclAceRange {
+ public:
+  explicit AclAceRange(const NotNull<const ACL*> aAcl) : mAcl(aAcl) {}
+
+  class Iterator {
+   public:
+    using iterator_category = std::forward_iterator_tag;
+    using difference_type = WORD;
+    using value_type = const ACE_HEADER;
+    using pointer = value_type*;
+    using reference = value_type&;
+
+    // Constructs an end iterator.
+    Iterator() = default;
+
+    Iterator(const Iterator&) = default;
+    Iterator& operator=(const Iterator& aOther) = default;
+    Iterator(Iterator&&) = default;
+    Iterator& operator=(Iterator&& aOther) = default;
+
+    reference operator*() const {
+      MOZ_RELEASE_ASSERT(mAceCount,
+                         "Trying to dereference past end of AclAceRange");
+      return *CurrentAceHeader();
+    }
+    pointer operator->() const {
+      MOZ_RELEASE_ASSERT(mAceCount,
+                         "Trying to dereference past end of AclAceRange");
+      return CurrentAceHeader();
+    }
+
+    Iterator& operator++() {
+      MOZ_ASSERT(mAceCount, "Iterating past end of AclAceRange");
+      if (!mAceCount) {
+        return *this;
+      }
+
+      --mAceCount;
+      if (!mAceCount) {
+        return *this;
+      }
+
+      mCharCurrentAceHeader += CurrentAceHeader()->AceSize;
+      SetAtEndIfCurrentAcePastEndOfAcl();
+      return *this;
+    }
+
+    Iterator operator++(int) {
+      auto tmp = *this;
+      ++*this;
+      return tmp;
+    }
+
+    bool operator==(const Iterator& aOther) const {
+      return mAceCount == aOther.mAceCount;
+    }
+    bool operator!=(const Iterator& aOther) const { return !(*this == aOther); }
+
+   private:
+    friend class AclAceRange;
+
+    explicit Iterator(const NotNull<const ACL*> aAcl)
+        : mCharCurrentAceHeader(reinterpret_cast<const char*>(aAcl.get() + 1)),
+          mCharEndAcl(reinterpret_cast<const char*>(aAcl.get()) +
+                      aAcl->AclSize),
+          mAceCount(aAcl->AceCount) {
+      if (mAceCount > 0) {
+        SetAtEndIfCurrentAcePastEndOfAcl();
+      } else if (mAceCount < 0) {
+        SetAtEnd();
+      }
+    }
+
+    void SetAtEnd() { mAceCount = 0; }
+
+    void SetAtEndIfCurrentAcePastEndOfAcl() {
+      if (mCharCurrentAceHeader + sizeof(ACE_HEADER) > mCharEndAcl ||
+          mCharCurrentAceHeader + CurrentAceHeader()->AceSize > mCharEndAcl) {
+        SetAtEnd();
+      }
+    }
+
+    pointer CurrentAceHeader() const {
+      return reinterpret_cast<const ACE_HEADER*>(mCharCurrentAceHeader);
+    }
+
+    const char* mCharCurrentAceHeader = nullptr;
+    const char* mCharEndAcl = nullptr;
+    // An mAceCount of 0 means we are at the end.
+    int mAceCount = 0;
+  };
+
+  Iterator begin() { return Iterator(mAcl); }
+  Iterator end() { return Iterator(); }
+
+ private:
+  const NotNull<const ACL*> mAcl;
+};
 
 }  // namespace mozilla
 

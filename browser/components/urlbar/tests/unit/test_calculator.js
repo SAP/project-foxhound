@@ -5,7 +5,8 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  Calculator: "resource:///modules/UrlbarProviderCalculator.sys.mjs",
+  Calculator:
+    "moz-src:///browser/components/urlbar/UrlbarProviderCalculator.sys.mjs",
 });
 
 const FORMULAS = [

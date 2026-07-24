@@ -19,7 +19,6 @@ const MenuButton = require("resource://devtools/client/shared/components/menu/Me
 const MenuItem = require("resource://devtools/client/shared/components/menu/MenuItem.js");
 const MenuList = require("resource://devtools/client/shared/components/menu/MenuList.js");
 import { prefs } from "../../utils/prefs";
-import { createLocation } from "../../utils/location";
 
 // Selectors
 import {
@@ -38,7 +37,7 @@ import actions from "../../actions/index";
 
 // Components
 import SourcesTreeItem from "./SourcesTreeItem";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const Tree = require("resource://devtools/client/shared/components/Tree.js");
@@ -69,7 +68,7 @@ class SourcesTree extends Component {
       focusItem: PropTypes.func.isRequired,
       focused: PropTypes.object,
       projectRoot: PropTypes.string.isRequired,
-      selectMayBePrettyPrintedLocation: PropTypes.func.isRequired,
+      selectSource: PropTypes.func.isRequired,
       setExpandedState: PropTypes.func.isRequired,
       rootItems: PropTypes.array.isRequired,
       clearProjectDirectoryRoot: PropTypes.func.isRequired,
@@ -107,12 +106,10 @@ class SourcesTree extends Component {
   }
 
   selectSourceItem = item => {
-    // Use a dedicated selection method to handle edgecases around pretty printed sources
-    // When a source is pretty printed, the `item.source` still refers to the minified source,
-    // whereas we expect to open the pretty printed version (if it exists).
-    this.props.selectMayBePrettyPrintedLocation(
-      createLocation({ source: item.source, sourceActor: item.sourceActor })
-    );
+    // Note that when the source is pretty printed, `item.source` still refers to the minified source.
+    // `mayBeSelectMappedSource` function within selectSource/selectLocation action will handle this edgecase
+    // and ensure selecting the pretty printed source, if relevant.
+    this.props.selectSource(item.source, item.sourceActor);
   };
 
   onFocus = item => {
@@ -264,8 +261,8 @@ class SourcesTree extends Component {
           onClick: () => this.props.clearProjectDirectoryRoot(),
           title: L10N.getFormatStr("removeDirectoryRoot.label"),
         },
-        React.createElement(AccessibleImage, {
-          className: "back",
+        React.createElement(DebuggerImage, {
+          name: "back",
         })
       ),
       div({ className: "devtools-separator" }),
@@ -447,7 +444,7 @@ const mapStateToProps = state => {
 };
 
 export default connect(mapStateToProps, {
-  selectMayBePrettyPrintedLocation: actions.selectMayBePrettyPrintedLocation,
+  selectSource: actions.selectSource,
   setExpandedState: actions.setExpandedState,
   focusItem: actions.focusItem,
   clearProjectDirectoryRoot: actions.clearProjectDirectoryRoot,

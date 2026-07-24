@@ -10,6 +10,9 @@ ChromeUtils.defineESModuleGetters(this, {
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
 add_task(async function test_setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
   await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -31,10 +34,18 @@ async function test_opensearch(shouldWork) {
     searchPopup,
     "popupshown"
   );
+  // Wait for the one-off buttons to rebuild. The opensearch engines are
+  // discovered asynchronously when the page loads, and the one-off buttons
+  // are populated after that. The "popupshown" event fires before the
+  // buttons are ready, so we must also wait for "rebuild".
+  let promiseSearchPopupBuilt = BrowserTestUtils.waitForEvent(
+    searchPopup.oneOffButtons,
+    "rebuild"
+  );
   let searchBarButton = searchBar.querySelector(".searchbar-search-button");
 
   searchBarButton.click();
-  await promiseSearchPopupShown;
+  await Promise.all([promiseSearchPopupShown, promiseSearchPopupBuilt]);
   let oneOffsContainer = searchPopup.searchOneOffsContainer;
   let engineElement = oneOffsContainer.querySelector(
     ".searchbar-engine-one-off-add-engine"

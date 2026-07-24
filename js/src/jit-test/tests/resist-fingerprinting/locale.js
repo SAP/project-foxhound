@@ -1,7 +1,7 @@
 // |jit-test| skip-if: typeof Intl === 'undefined'
 
-function test(locale, timeZone) {
-  let global = newGlobal({locale, forceUTC: true});
+function test(locale, timeZone, timeZoneName) {
+  let global = newGlobal({locale, timeZone});
 
   const constructors = ["Collator", "DateTimeFormat", "ListFormat",
                         "NumberFormat", "PluralRules", "RelativeTimeFormat"];
@@ -12,8 +12,8 @@ function test(locale, timeZone) {
 
   const date = new global.Date(2012, 0, 10);
   let tzRE = /\(([^\)]+)\)/;
-  assertEq(tzRE.exec(date)[1], timeZone)
+  assertEq(tzRE.exec(date)[1], timeZoneName)
 }
 
-test("de-CH", "Mittlere Greenwich-Zeit");
-test("en", "Greenwich Mean Time");
+test("de-CH", "Atlantic/Reykjavik", "Mittlere Greenwich-Zeit");
+test("en", "Atlantic/Reykjavik", "Greenwich Mean Time");

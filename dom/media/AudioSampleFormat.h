@@ -6,11 +6,12 @@
 #ifndef MOZILLA_AUDIOSAMPLEFORMAT_H_
 #define MOZILLA_AUDIOSAMPLEFORMAT_H_
 
+#include <algorithm>
+#include <limits>
+#include <type_traits>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/PodOperations.h"
-#include <algorithm>
-#include <type_traits>
-#include <limits>
 
 namespace mozilla {
 

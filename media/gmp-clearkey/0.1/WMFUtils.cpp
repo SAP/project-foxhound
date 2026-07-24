@@ -44,7 +44,7 @@ DEFINE_GUID(CLSID_CMSH264DecMFT, 0x62CE7E72, 0x4C71, 0x4d20, 0xB1, 0x5D, 0x45,
 namespace wmf {
 
 #define MFPLAT_FUNC(_func, _dllname) decltype(::_func)* _func;
-#include "WMFSymbols.h"
+#include "WMFSymbols.inc"
 #undef MFPLAT_FUNC
 
 static bool LinkMfplat() {
@@ -60,7 +60,7 @@ static bool LinkMfplat() {
     return false;                                                     \
   }
 
-#include "WMFSymbols.h"
+#include "WMFSymbols.inc"
 #undef MFPLAT_FUNC
     sInitOk = true;
   }

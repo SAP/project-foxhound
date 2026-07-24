@@ -4,7 +4,7 @@
     document.addEventListener("DOMContentLoaded", () => {
       const audio = document.getElementById("audio");
       audio.autoplay = true;
-      audio.mozCaptureStream();
+      audio.captureStream?.() || audio.mozCaptureStream();
     })
   </script>
 </head>

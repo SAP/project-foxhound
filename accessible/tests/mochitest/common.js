@@ -871,8 +871,9 @@ function getTextFromClipboard() {
  * Obtain DOMNode id from an accessible. This simply queries the .id property
  * on the accessible, but it catches exceptions which might occur if the
  * accessible has died.
+ *
  * @param  {nsIAccessible} accessible  accessible
- * @return {String?}                   DOMNode id if available
+ * @return {string?}                   DOMNode id if available
  */
 function getAccessibleDOMNodeID(accessible) {
   try {
@@ -957,6 +958,7 @@ function prettyName(aIdentifier) {
 
 /**
  * Shorten a long string if it exceeds MAX_TRIM_LENGTH.
+ *
  * @param aString the string to shorten.
  * @returns the shortened string.
  */

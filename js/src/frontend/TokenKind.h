@@ -129,7 +129,6 @@
   RANGE(ContextualKeywordFirst, As)                                    \
   /* TODO: Move to alphabetical order when IF_DECORATORS is removed */ \
   IF_DECORATORS(MACRO(Accessor, "'accessor'"))                         \
-  MACRO(Assert, "'assert'")                                            \
   MACRO(Async, "'async'")                                              \
   MACRO(Await, "'await'")                                              \
   MACRO(Each, "'each'")                                                \
@@ -140,6 +139,7 @@
   MACRO(Of, "'of'")                                                    \
   MACRO(Set, "'set'")                                                  \
   MACRO(Static, "'static'")                                            \
+  IF_SOURCE_PHASE_IMPORTS(MACRO(Source, "'source'"))                   \
   MACRO(Target, "'target'")                                            \
   IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(Using, "'using'"))             \
   MACRO(Yield, "'yield'")                                              \

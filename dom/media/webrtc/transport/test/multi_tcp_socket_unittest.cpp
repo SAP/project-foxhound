@@ -8,19 +8,20 @@
 #include <vector>
 
 #include "mozilla/Atomics.h"
-#include "runnable_utils.h"
 #include "pk11pub.h"
+#include "runnable_utils.h"
 
 extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "nr_socket.h"
 #include "transport_addr.h"
 #include "nr_socket_multi_tcp.h"
+// clang-format on
 }
 
-#include "stunserver.h"
-
 #include "nricectx.h"
+#include "stunserver.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"

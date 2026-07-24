@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,8 @@
 //   __builtin_unreachable() is used to provide that hint here. clang also uses
 //   this as a heuristic to pack the instructions in the function epilogue to
 //   improve code density.
+// - base::ImmediateCrash() is used in allocation hooks. To prevent recursions,
+//   TRAP_SEQUENCE_() must not allocate.
 //
 // Additional properties that are nice to have:
 // - TRAP_SEQUENCE_() should be as compact as possible.
@@ -41,7 +43,7 @@
 
 #if defined(COMPILER_GCC)
 
-#if defined(OS_NACL)
+#if BUILDFLAG(IS_NACL)
 
 // Crash report accuracy is not guaranteed on NaCl.
 #define TRAP_SEQUENCE1_() __builtin_trap()
@@ -55,13 +57,13 @@
 // to continue after SIGTRAP.
 #define TRAP_SEQUENCE1_() asm volatile("int3")
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_APPLE)
 // Intentionally empty: __builtin_unreachable() is always part of the sequence
 // (see IMMEDIATE_CRASH below) and already emits a ud2 on Mac.
 #define TRAP_SEQUENCE2_() asm volatile("")
 #else
 #define TRAP_SEQUENCE2_() asm volatile("ud2")
-#endif  // defined(OS_MACOSX)
+#endif  // BUILDFLAG(IS_APPLE)
 
 #elif defined(ARCH_CPU_ARMEL)
 
@@ -126,43 +128,27 @@
     TRAP_SEQUENCE2_();   \
   } while (false)
 
-// CHECK() and the trap sequence can be invoked from a constexpr function.
-// This could make compilation fail on GCC, as it forbids directly using inline
-// asm inside a constexpr function. However, it allows calling a lambda
-// expression including the same asm.
-// The side effect is that the top of the stacktrace will not point to the
-// calling function, but to this anonymous lambda. This is still useful as the
-// full name of the lambda will typically include the name of the function that
-// calls CHECK() and the debugger will still break at the right line of code.
-#if !defined(COMPILER_GCC)
-
-#define WRAPPED_TRAP_SEQUENCE_() TRAP_SEQUENCE_()
-
+// This version of ALWAYS_INLINE inlines even in is_debug=true.
+// TODO(pbos): See if NDEBUG can be dropped from ALWAYS_INLINE as well, and if
+// so merge. Otherwise document why it cannot inline in debug in
+// base/compiler_specific.h.
+#if defined(COMPILER_GCC)
+#define IMMEDIATE_CRASH_ALWAYS_INLINE inline __attribute__((__always_inline__))
+#elif defined(COMPILER_MSVC)
+#define IMMEDIATE_CRASH_ALWAYS_INLINE __forceinline
 #else
+#define IMMEDIATE_CRASH_ALWAYS_INLINE inline
+#endif
 
-#define WRAPPED_TRAP_SEQUENCE_() \
-  do {                           \
-    [] { TRAP_SEQUENCE_(); }();  \
-  } while (false)
+namespace base {
 
-#endif  // !defined(COMPILER_GCC)
-
+[[noreturn]] IMMEDIATE_CRASH_ALWAYS_INLINE void ImmediateCrash() {
+  TRAP_SEQUENCE_();
 #if defined(__clang__) || defined(COMPILER_GCC)
-
-// __builtin_unreachable() hints to the compiler that this is noreturn and can
-// be packed in the function epilogue.
-#define IMMEDIATE_CRASH()     \
-  ({                          \
-    WRAPPED_TRAP_SEQUENCE_(); \
-    __builtin_unreachable();  \
-  })
-
-#else
-
-// This is supporting non-chromium user of logging.h to build with MSVC, like
-// pdfium. On MSVC there is no __builtin_unreachable().
-#define IMMEDIATE_CRASH() WRAPPED_TRAP_SEQUENCE_()
-
+  __builtin_unreachable();
 #endif  // defined(__clang__) || defined(COMPILER_GCC)
+}
+
+}  // namespace base
 
 #endif  // BASE_IMMEDIATE_CRASH_H_

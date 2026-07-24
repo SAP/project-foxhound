@@ -1,4 +1,4 @@
-# Building
+# Building the Remote Agent
 
 The Remote Agent is included in the default Firefox build, but only
 ships on the Firefox Nightly release channel:
@@ -36,7 +36,7 @@ You may also opt out of building all the WebDriver specific components
 ([Marionette], and the Remote Agent) by setting the following flag in
 your [mozconfig]:
 
-```make
+```shell
 ac_add_options --disable-webdriver
 ```
 
@@ -47,7 +47,7 @@ This fast build mode downloads pre-built components from the Mozilla
 build servers, rendering local compilation unnecessary.  To use
 them, place this in your [mozconfig]:
 
-```make
+```shell
 ac_add_options --enable-artifact-builds
 ```
 

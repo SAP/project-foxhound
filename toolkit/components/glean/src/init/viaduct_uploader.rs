@@ -6,7 +6,7 @@ use glean::net::{CapablePingUploadRequest, PingUploadRequest, PingUploader, Uplo
 use once_cell::sync::OnceCell;
 use std::sync::Once;
 use url::Url;
-use viaduct::{Error::*, Request};
+use viaduct::{Request, ViaductError::*};
 
 extern "C" {
     fn FOG_TooLateToSend() -> bool;
@@ -68,12 +68,19 @@ impl PingUploader for ViaductUploader {
         match result {
             Ok(result) => result,
             Err(ViaductUploaderError::Viaduct(ve)) => match ve {
-                NonTlsUrl | UrlError(_) => UploadResult::unrecoverable_failure(),
+                NonTlsUrl
+                | UrlError(_)
+                | BackendAlreadyInitialized
+                | OhttpNotSupported
+                | OhttpChannelNotConfigured(_) => UploadResult::unrecoverable_failure(),
                 RequestHeaderError(_)
                 | BackendError(_)
                 | NetworkError(_)
                 | BackendNotInitialized
-                | SetBackendError => UploadResult::recoverable_failure(),
+                | SetBackendError
+                | OhttpConfigFetchFailed(_)
+                | OhttpRequestError(_)
+                | OhttpResponseError(_) => UploadResult::recoverable_failure(),
             },
             Err(
                 ViaductUploaderError::Bhttp(_)
@@ -140,7 +147,7 @@ fn ohttp_upload(upload_request: PingUploadRequest) -> Result<UploadResult, Viadu
             .control()
             .status()
             .ok_or(ViaductUploaderError::Fatal)?;
-        Ok(UploadResult::http_status(res as i32))
+        Ok(UploadResult::http_status(res.code() as i32))
     } else {
         Ok(UploadResult::http_status(res.status as i32))
     }
@@ -190,8 +197,8 @@ enum ViaductUploaderError {
     #[error("ohttp::Error {0}")]
     Ohttp(#[from] ohttp::Error),
 
-    #[error("viaduct::Error {0}")]
-    Viaduct(#[from] viaduct::Error),
+    #[error("viaduct::ViaductError {0}")]
+    Viaduct(#[from] viaduct::ViaductError),
 
     #[error("Fatal upload error")]
     Fatal,
@@ -199,6 +206,6 @@ enum ViaductUploaderError {
 
 impl From<url::ParseError> for ViaductUploaderError {
     fn from(e: url::ParseError) -> Self {
-        ViaductUploaderError::Viaduct(viaduct::Error::from(e))
+        ViaductUploaderError::Viaduct(viaduct::ViaductError::from(e))
     }
 }

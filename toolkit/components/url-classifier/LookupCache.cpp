@@ -8,7 +8,6 @@
 #include "HashStore.h"
 #include "nsIFileStreams.h"
 #include "nsISeekableStream.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/glean/UrlClassifierMetrics.h"
 #include "mozilla/Logging.h"
 #include "nsNetUtil.h"
@@ -206,7 +205,7 @@ nsresult LookupCache::Open() {
     rv = LoadPrefixSet();
   }
 
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return rv;
 }
@@ -721,7 +720,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
     nsCOMPtr<nsIFileOutputStream> fos(do_QueryInterface(localOutFile));
     auto timer = glean::urlclassifier::vlps_fallocate_time.Measure();
 
-    Unused << fos->Preallocate(fileSize);
+    (void)fos->Preallocate(fileSize);
   }
 
   nsCOMPtr<nsIOutputStream> out;
@@ -757,7 +756,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
   LOG(("[%s] Storing PrefixSet successful", mTableName.get()));
 
   // This is to remove old ".pset" files if exist
-  Unused << ClearLegacyFile();
+  (void)ClearLegacyFile();
   return NS_OK;
 }
 

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __SECURITY_SANDBOX_SANDBOXBROKER_H__
-#define __SECURITY_SANDBOX_SANDBOXBROKER_H__
+#ifndef SECURITY_SANDBOX_SANDBOXBROKER_H_
+#define SECURITY_SANDBOX_SANDBOXBROKER_H_
 
 #include <stdint.h>
 #include <windows.h>
@@ -26,7 +26,7 @@ class TargetPolicy;
 
 namespace mozilla {
 
-enum GMPSandboxKind { Default, Widevine, Clearkey };
+enum GMPSandboxKind { Default, Widevine, Clearkey, Fake };
 
 class SandboxBroker {
  public:
@@ -75,11 +75,11 @@ class SandboxBroker {
   bool IsWin32kLockedDown();
 
   // Set up dummy interceptions via the broker, so we can log calls.
-  void ApplyLoggingPolicy();
+  void ApplyLoggingConfig();
 
  private:
   static bool sRunningFromNetworkDrive;
-  sandbox::TargetPolicy* mPolicy;
+  std::unique_ptr<sandbox::TargetPolicy> mPolicy;
 };
 
 }  // namespace mozilla

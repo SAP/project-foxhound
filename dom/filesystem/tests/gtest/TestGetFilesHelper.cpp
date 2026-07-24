@@ -3,21 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include <thread>
 
+#include "SpecialSystemDirectory.h"
+#include "gtest/gtest.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/GetFilesHelper.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/SpinEventLoopUntil.h"
 #include "nsIFile.h"
-#include "SpecialSystemDirectory.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

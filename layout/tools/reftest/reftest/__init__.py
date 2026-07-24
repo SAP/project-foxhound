@@ -125,9 +125,9 @@ class ReftestManifest:
 
             for annotation in annotations:
                 key, condition = self.translate_condition_for_mozinfo(annotation)
-                test_dict[key] = "\n".join(
-                    [t for t in [test_dict.get(key, ""), condition] if t]
-                )
+                test_dict[key] = "\n".join([
+                    t for t in [test_dict.get(key, ""), condition] if t
+                ])
 
             self.tests.append(test_dict)
 
@@ -201,11 +201,11 @@ class ReftestManifest:
                     self.load(os.path.join(mdir, items[j + 1]), skip_if)
                     break
 
-                if item == "load" or item == "script":
+                if item in {"load", "script"}:
                     add_test(items[j + 1], annotations, None, parent_skip_if)
                     break
 
-                if item == "==" or item == "!=" or item == "print":
+                if item in {"==", "!=", "print"}:
                     add_test(items[j + 1], annotations, None, parent_skip_if)
                     add_test(items[j + 2], annotations, items[j + 1], parent_skip_if)
                     break

@@ -11,6 +11,17 @@ webidl Document;
 webidl Element;
 webidl Event;
 
+[scriptable, uuid(644ac1f4-2122-498e-87bf-2b01d2e24c1e)]
+interface nsIFormFillFocusListener : nsISupports {
+  /*
+   * Called when a form field is focused and may be used to delay showing
+   * autocomplete UI until the operation is complete.
+   *
+   * @param element the element that is focused.
+   */
+  Promise handleFocus(in Element element);
+};
+
 /*
  * nsIFormFillController is an interface for controlling form fill behavior
  * on HTML documents.  Any number of docShells can be controller concurrently.
@@ -26,7 +37,7 @@ interface nsIFormFillController : nsISupports
   /*
    * The input or textarea element the form fill controller is currently bound to.
    */
-  readonly attribute Element focusedElement;
+  [setter_can_run_script] attribute Element controlledElement;
 
   /*
    * Whether the autocomplete popup on a password field was automatically opened
@@ -46,6 +57,13 @@ interface nsIFormFillController : nsISupports
    * Open the autocomplete popup, if possible.
    */
   [can_run_script] void showPopup();
+
+  /*
+   * Add a listener which will be notified when a field is focused.
+   *
+   * @param listener the listener to be notified.
+   */
+  void addFocusListener(in nsIFormFillFocusListener listener);
 };
 
 [scriptable, function, uuid(604419ab-55a0-4831-9eca-1b9e67cc4751)]

@@ -6,10 +6,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AppInfo: "chrome://remote/content/shared/AppInfo.sys.mjs",
-  BrowsingContextListener:
-    "chrome://remote/content/shared/listeners/BrowsingContextListener.sys.mjs",
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
-  generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   MobileTabBrowser: "chrome://remote/content/shared/MobileTabBrowser.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
@@ -17,115 +14,58 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 class TabManagerClass {
-  #browserUniqueIds;
-  #contextListener;
-  #navigableIds;
-
-  constructor() {
-    // Maps browser's permanentKey to uuid: WeakMap.<Object, string>
-    this.#browserUniqueIds = new WeakMap();
-
-    // Maps browsing contexts to uuid: WeakMap.<BrowsingContext, string>.
-    // It's required as a fallback, since in the case when a context was discarded
-    // embedderElement is gone, and we cannot retrieve
-    // the context id from this.#browserUniqueIds.
-    this.#navigableIds = new WeakMap();
-
-    this.#contextListener = new lazy.BrowsingContextListener();
-    this.#contextListener.on("attached", this.#onContextAttached);
-    this.#contextListener.startListening();
-
-    this.browsers.forEach(browser => {
-      if (this.isValidCanonicalBrowsingContext(browser.browsingContext)) {
-        this.#navigableIds.set(
-          browser.browsingContext,
-          this.getIdForBrowsingContext(browser.browsingContext)
-        );
-      }
-    });
-  }
-
   /**
-   * Retrieve all the browser elements from tabs as contained in open windows.
-   *
-   * @returns {Array<XULBrowser>}
-   *     All the found <xul:browser>s. Will return an empty array if
-   *     no windows and tabs can be found.
-   */
-  get browsers() {
-    const browsers = [];
-
-    for (const win of lazy.windowManager.windows) {
-      for (const tab of this.getTabsForWindow(win)) {
-        const contentBrowser = this.getBrowserForTab(tab);
-        if (contentBrowser !== null) {
-          browsers.push(contentBrowser);
-        }
-      }
-    }
-
-    return browsers;
-  }
-
-  /**
-   * Retrieve all the browser tabs in open windows.
+   * Retrieve all the tabs in open browser windows.
    *
    * @returns {Array<Tab>}
    *     All the open browser tabs. Will return an empty list if tab browser
    *     is not available or tabs are undefined.
    */
-  get tabs() {
-    const tabs = [];
-
-    for (const win of lazy.windowManager.windows) {
-      tabs.push(...this.getTabsForWindow(win));
-    }
-
-    return tabs;
+  get allTabs() {
+    return lazy.windowManager.windows.flatMap(win =>
+      this.getTabsForWindow(win)
+    );
   }
 
   /**
-   * Array of unique browser ids (UUIDs) for all content browsers of all
-   * windows.
-   *
-   * TODO: Similarly to getBrowserById, we should improve the performance of
-   * this getter in Bug 1750065.
-   *
-   * @returns {Array<string>}
-   *     Array of UUIDs for all content browsers.
-   */
-  get allBrowserUniqueIds() {
-    const browserIds = [];
-
-    for (const win of lazy.windowManager.windows) {
-      // Only return handles for browser windows
-      for (const tab of this.getTabsForWindow(win)) {
-        const contentBrowser = this.getBrowserForTab(tab);
-        const winId = this.getIdForBrowser(contentBrowser);
-        if (winId !== null) {
-          browserIds.push(winId);
-        }
-      }
-    }
-
-    return browserIds;
-  }
-
-  /**
-   * Get the <code>&lt;xul:browser&gt;</code> for the specified tab.
+   * Get the linked `xul:browser` for the specified tab.
    *
    * @param {Tab} tab
    *     The tab whose browser needs to be returned.
    *
-   * @returns {XULBrowser}
-   *     The linked browser for the tab or null if no browser can be found.
+   * @returns {XULBrowser|null}
+   *     The linked browser for the tab or `null` if no browser can be found.
    */
   getBrowserForTab(tab) {
-    if (tab && "linkedBrowser" in tab) {
-      return tab.linkedBrowser;
-    }
+    return tab?.linkedBrowser ?? null;
+  }
 
-    return null;
+  /**
+   * Retrieve all the browser elements from tabs as contained in open windows.
+   *
+   * By default excludes browsers for unloaded tabs.
+   *
+   * @param {object=} options
+   * @param {boolean=} options.unloaded
+   *     Pass true to also retrieve browsers for unloaded tabs. Defaults to
+   *     false.
+   *
+   * @returns {Array<XULBrowser>}
+   *     All the found <xul:browser>s. Will return an empty array if
+   *     no windows and tabs can be found.
+   */
+  getBrowsers(options = {}) {
+    const { unloaded = false } = options;
+
+    return this.allTabs
+      .map(tab => this.getBrowserForTab(tab))
+      .filter(browser => {
+        return (
+          browser !== null &&
+          (unloaded ||
+            this.isValidCanonicalBrowsingContext(browser.browsingContext))
+        );
+      });
   }
 
   /**
@@ -134,10 +74,14 @@ class TabManagerClass {
    * @param {ChromeWindow} win
    *     Window whose <code>tabbrowser</code> needs to be accessed.
    *
-   * @returns {Tab}
-   *     Tab browser or null if it's not a browser window.
+   * @returns {TabBrowser|null}
+   *     Tab browser or `null` if it's not a browser window.
    */
   getTabBrowser(win) {
+    if (!win) {
+      return null;
+    }
+
     if (lazy.AppInfo.isAndroid) {
       return new lazy.MobileTabBrowser(win);
     } else if (lazy.AppInfo.isFirefox) {
@@ -201,146 +145,16 @@ class TabManagerClass {
   }
 
   /**
-   * Retrieve the browser element corresponding to the provided unique id,
-   * previously generated via getIdForBrowser.
+   * Retrieve the count of all the open tabs.
    *
-   * TODO: To avoid creating strong references on browser elements and
-   * potentially leaking those elements, this method loops over all windows and
-   * all tabs. It should be replaced by a faster implementation in Bug 1750065.
-   *
-   * @param {string} id
-   *     A browser unique id created by getIdForBrowser.
-   * @returns {XULBrowser}
-   *     The <xul:browser> corresponding to the provided id. Will return null if
-   *     no matching browser element is found.
+   * @returns {number} Number of open tabs.
    */
-  getBrowserById(id) {
-    for (const win of lazy.windowManager.windows) {
-      for (const tab of this.getTabsForWindow(win)) {
-        const contentBrowser = this.getBrowserForTab(tab);
-        if (this.getIdForBrowser(contentBrowser) == id) {
-          return contentBrowser;
-        }
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Retrieve the browsing context corresponding to the provided unique id.
-   *
-   * @param {string} id
-   *     A browsing context unique id (created by getIdForBrowsingContext).
-   * @returns {BrowsingContext=}
-   *     The browsing context found for this id, null if none was found or
-   *     browsing context is discarded.
-   */
-  getBrowsingContextById(id) {
-    const browser = this.getBrowserById(id);
-    let browsingContext;
-    if (browser) {
-      browsingContext = browser.browsingContext;
-    } else {
-      browsingContext = BrowsingContext.get(id);
-    }
-
-    if (!browsingContext || browsingContext.isDiscarded) {
-      return null;
-    }
-    return browsingContext;
-  }
-
-  /**
-   * Retrieve the unique id for the given xul browser element. The id is a
-   * dynamically generated uuid associated with the permanentKey property of the
-   * given browser element. This method is preferable over getIdForBrowsingContext
-   * in case of working with browser element of a tab, since we can not guarantee
-   * that browsing context is attached to it.
-   *
-   * @param {XULBrowser} browserElement
-   *     The <xul:browser> for which we want to retrieve the id.
-   * @returns {string} The unique id for this browser.
-   */
-  getIdForBrowser(browserElement) {
-    if (browserElement === null) {
-      return null;
-    }
-
-    const key = browserElement.permanentKey;
-    if (key === undefined) {
-      return null;
-    }
-
-    if (!this.#browserUniqueIds.has(key)) {
-      this.#browserUniqueIds.set(key, lazy.generateUUID());
-    }
-    return this.#browserUniqueIds.get(key);
-  }
-
-  /**
-   * Retrieve the id of a Browsing Context.
-   *
-   * For a top-level browsing context a custom unique id will be returned.
-   *
-   * @param {BrowsingContext=} browsingContext
-   *     The browsing context to get the id from.
-   *
-   * @returns {string}
-   *     The id of the browsing context.
-   */
-  getIdForBrowsingContext(browsingContext) {
-    if (!browsingContext) {
-      return null;
-    }
-
-    if (!browsingContext.parent) {
-      // Top-level browsing contexts have their own custom unique id.
-      // If a context was discarded, embedderElement is already gone,
-      // so use navigable id instead.
-      return browsingContext.embedderElement
-        ? this.getIdForBrowser(browsingContext.embedderElement)
-        : this.#navigableIds.get(browsingContext);
-    }
-
-    return browsingContext.id.toString();
-  }
-
-  /**
-   * Get the navigable for the given browsing context.
-   *
-   * Because Gecko doesn't support the Navigable concept in content
-   * scope the content browser could be used to uniquely identify
-   * top-level browsing contexts.
-   *
-   * @param {BrowsingContext} browsingContext
-   *
-   * @returns {BrowsingContext|XULBrowser} The navigable
-   *
-   * @throws {TypeError}
-   *     If `browsingContext` is not a CanonicalBrowsingContext instance.
-   */
-  getNavigableForBrowsingContext(browsingContext) {
-    if (!this.isValidCanonicalBrowsingContext(browsingContext)) {
-      throw new TypeError(
-        `Expected browsingContext to be a CanonicalBrowsingContext, got ${browsingContext}`
-      );
-    }
-
-    if (browsingContext.isContent && browsingContext.parent === null) {
-      return browsingContext.embedderElement;
-    }
-
-    return browsingContext;
-  }
-
   getTabCount() {
-    let count = 0;
-    for (const win of lazy.windowManager.windows) {
+    return lazy.windowManager.windows.reduce((total, win) => {
       // For browser windows count the tabs. Otherwise take the window itself.
       const tabsLength = this.getTabsForWindow(win).length;
-      count += tabsLength ? tabsLength : 1;
-    }
-    return count;
+      return total + (tabsLength ? tabsLength : 1);
+    }, 0);
   }
 
   /**
@@ -366,7 +180,7 @@ class TabManagerClass {
    * Retrieve the list of tabs for a given window.
    *
    * @param {ChromeWindow} win
-   *     Window whose <code>tabs</code> need to be returned.
+   *     Window whose tabs need to be returned.
    *
    * @returns {Array<Tab>}
    *     The list of tabs. Will return an empty list if tab browser is not available
@@ -374,11 +188,13 @@ class TabManagerClass {
    */
   getTabsForWindow(win) {
     const tabBrowser = this.getTabBrowser(win);
+
     // For web-platform reftests a faked tabbrowser is used,
     // which does not actually have tabs.
     if (tabBrowser && tabBrowser.tabs) {
       return tabBrowser.tabs;
     }
+
     return [];
   }
 
@@ -469,16 +285,6 @@ class TabManagerClass {
   supportsTabs() {
     return lazy.AppInfo.isAndroid || lazy.AppInfo.isFirefox;
   }
-
-  #onContextAttached = (eventName, data = {}) => {
-    const { browsingContext } = data;
-    if (this.isValidCanonicalBrowsingContext(browsingContext)) {
-      this.#navigableIds.set(
-        browsingContext,
-        this.getIdForBrowsingContext(browsingContext)
-      );
-    }
-  };
 }
 
 // Expose a shared singleton.

@@ -377,11 +377,44 @@ browser.backup:
     bug_numbers:
       - 1908727
     description: >
-      True if the BackupService is enabled by default.
+      True if the BackupService has initialized and reached idle. You may want
+      to use archive_enabled/restore_enabled to determine whether those
+      features are available, or use scheduler_enabled for whether automatic
+      backups are enabled.
     expires: never
     kind: boolean
     notification_emails:
       - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  archive_enabled:
+    bug_numbers:
+      - 1908727
+    description: >
+      True if the user can create backups, i.e. it has not been disabled by a
+      pref or otherwise deemed incompatible.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - drubino@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  restore_enabled:
+    bug_numbers:
+      - 1908727
+    description: >
+      True if the user can restore backups, i.e. it has not been disabled by a
+      pref or otherwise deemed incompatible.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - drubino@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -802,7 +835,7 @@ browser.engagement:
     kind: uint
     notification_emails:
       - bmiroglio@mozilla.com
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -835,7 +868,7 @@ browser.engagement:
     kind: uint
     notification_emails:
       - bmiroglio@mozilla.com
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -1946,13 +1979,14 @@ extensions.apis.dnr:
       - 1850890
       - 1881406
       - 1946276
+      - 1984461
     description: >
       Counters for startup cache data hits or misses on initializating
       DNR rules for extensions loaded on application startup.
       The expected keys are 'hit' and 'miss'.
       This probe is mirrored from a Glean metric with the same name.
     keyed: true
-    expires: '145'
+    expires: '155'
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1966,9 +2000,10 @@ extensions.apis.dnr:
       - 1850890
       - 1881406
       - 1946276
+      - 1984461
     description: >
       Max amount of DNR rules being evaluated.
-    expires: '145'
+    expires: '155'
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1984,9 +2019,10 @@ extensions.startupCache:
       - 1892151
       - 1928258
       - 1958168
+      - 1994581
     description: >
       The amount of bytes writted into the Extensions StartupCache file.
-    expires: "147"
+    expires: "154"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -2001,10 +2037,11 @@ extensions.startupCache:
       - 1892151
       - 1928258
       - 1958168
+      - 1994581
     description: >
       The amount of times an unexpected error has been raised while
       reading the Extensions StartupCache file
-    expires: "147"
+    expires: "154"
     kind: uint
     keyed: true
     notification_emails:
@@ -2019,6 +2056,7 @@ extensions.startupCache:
       - 1767336
       - 1912170
       - 1958168
+      - 1994581
     description: >
       Time to load and deserialize the extensions startupCache data.
       This scalar is mirroring the never expiring Glean metric named
@@ -2027,7 +2065,7 @@ extensions.startupCache:
       Unlike the related glean metric, this scalar has an expiring date,
       set as a deadline to consider removing the mirrored scalar in
       favor to just use the Glean metric).
-    expires: "147"
+    expires: "154"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -2979,10 +3017,11 @@ dom.contentprocess:
       - 1817104
       - 1866197
       - 1928259
+      - 2010454
     description: >
       The number of times a process crashed early but we could verify it was not
       because of buildID mismatch between the parent and the content processes.
-    expires: "150"
+    expires: "170"
     kind: uint
     notification_emails:
       - alissy@mozilla.com
@@ -3650,26 +3689,6 @@ telemetry:
       - 'fennec'
     record_in_processes:
       - 'main'
-
-  event_counts:
-    bug_numbers:
-      - 1440673
-    description: >
-      The counts of events recorded in the process, category, method, and
-      object of the key, even if event recording for the category was not
-      enabled.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - telemetry-client-dev@mozilla.com
-      - chutten@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - 'all'
 
   data_upload_optin:
     bug_numbers:
@@ -5177,91 +5196,6 @@ browser.search.adclicks:
     record_in_processes:
       - main
 
-browser.searchinit:
-  secure_opensearch_engine_count:
-    bug_numbers:
-      - 1789438
-      - 1811158
-      - 1846899
-      - 1881408
-      - 1916866
-    description: >
-      Records the number of secure (i.e., using https) OpenSearch search
-      engines a given user has installed
-    expires: "145"
-    keyed: false
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
-  insecure_opensearch_engine_count:
-    bug_numbers:
-      - 1789438
-      - 1811158
-      - 1846899
-      - 1881408
-      - 1916866
-    description: >
-      Records the number of insecure (i.e., using http) OpenSearch search
-      engines a given user has installed
-    expires: "145"
-    keyed: false
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
-  secure_opensearch_update_count:
-    bug_numbers:
-      - 1789438
-      - 1811158
-      - 1846899
-      - 1881408
-      - 1916866
-    description: >
-      Records the number of OpenSearch search engines with secure updates
-      enabled (i.e., using https) a given user has installed
-    expires: "145"
-    keyed: false
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
-  insecure_opensearch_update_count:
-    bug_numbers:
-      - 1789438
-      - 1811158
-      - 1846899
-      - 1881408
-      - 1916866
-    description: >
-      Records the number of OpenSearch search engines with insecure updates
-      enabled (i.e., using http) a given user has installed
-    expires: "145"
-    keyed: false
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
 startup:
   profile_selection_reason:
     bug_numbers:
@@ -5331,10 +5265,12 @@ startup:
       - 1878339
       - 1916867
       - 1958171
+      - 1994608
+      - 2010455
     description: >
       The version of the profiles.ini database loaded during startup. A value
       of "0" is used to indicate that no file was present during startup.
-    expires: "147"
+    expires: "156"
     keyed: false
     kind: string
     notification_emails:
@@ -5355,10 +5291,12 @@ startup:
       - 1878339
       - 1916867
       - 1958171
+      - 1994608
+      - 2010455
     description: >
       This records the number of known profiles after startup completes. This
       includes any profiles that were created during startup.
-    expires: "147"
+    expires: "156"
     keyed: false
     kind: uint
     notification_emails:
@@ -5627,23 +5565,6 @@ networking:
     record_in_processes:
       - 'main'
       - 'socket'
-
-  speculative_connect_outcome:
-    bug_numbers:
-      - 909865
-    description: >
-      Counts the occurrence of each outcome of a speculative connection
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - necko@mozilla.com
-      - acreskey@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
 
   doh_heuristics_attempts:
     bug_numbers:
@@ -7261,6 +7182,17 @@ telemetry.test:
     expires: never
     kind: boolean
     keyed: true
+    notification_emails: [glean-team@mozilla.com]
+    products: ["firefox", "thunderbird"]
+    record_in_processes: ["all"]
+    release_channel_collection: opt-out
+
+  mirror_for_unordered_quantity:
+    bug_numbers: [2012590]
+    description: >
+      Test only. This is a mirror probe for a Glean quantity metric.
+    expires: never
+    kind: uint
     notification_emails: [glean-team@mozilla.com]
     products: ["firefox", "thunderbird"]
     record_in_processes: ["all"]

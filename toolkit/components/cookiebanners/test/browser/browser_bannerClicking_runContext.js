@@ -7,6 +7,7 @@ add_setup(clickTestSetup);
 
 /**
  * Insert a test rule with the specified runContext.
+ *
  * @param {RunContext} - The runContext to set for the rule. See nsIClickRule
  * for documentation.
  */

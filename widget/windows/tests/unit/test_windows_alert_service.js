@@ -173,7 +173,7 @@ function testAlert(when, { serverEnabled, profD, isBackgroundTaskMode } = {}) {
     if (serverEnabled) {
       s += `program&#xA;${AppConstants.MOZ_APP_NAME}`;
     } else {
-      s += `invalid key&#xA;invalid value`;
+      s += `skipNotificationServer&#xA;true`;
     }
     if (serverEnabled && profD) {
       s += `&#xA;profile&#xA;${profD.path}`;
@@ -664,4 +664,63 @@ add_task(condition, async () => {
 
   // No longer a background task,
   bts.overrideBackgroundTaskNameForTesting("");
+});
+
+// This test checks whether `nsIWindowsalert.imagePathUnchecked` is used
+// in the generated XML used to display notifications.
+add_task(async function test_image_unchecked_xml() {
+  let alertsService = Cc["@mozilla.org/system-alerts-service;1"].getService(
+    Ci.nsIWindowsAlertsService
+  );
+
+  let name = "name";
+  let title = "title";
+  let text = "text";
+  let imageURL = "chrome://branding/content/icon32.gif";
+  let alert = makeAlert({ name, title, text, imageURL });
+
+  let capturedXML = alertsService.getXmlStringForWindowsAlert(alert);
+  Assert.ok(capturedXML, "Should have captured toast XML");
+
+  const xmlDoc = new DOMParser().parseFromString(
+    capturedXML,
+    "application/xml"
+  );
+  const [img] = xmlDoc.getElementsByTagNameNS("*", "image");
+  const src = img?.getAttribute("src");
+
+  Assert.deepEqual(
+    src,
+    imageURL,
+    "Check if image path is set in alert.imagePathUnchecked"
+  );
+});
+
+// This test makes sure that we can still get a notification xml without
+// images in it.
+add_task(async function test_not_gif_xml() {
+  let alertsService = Cc["@mozilla.org/system-alerts-service;1"].getService(
+    Ci.nsIWindowsAlertsService
+  );
+
+  let name = "name";
+  let title = "title";
+  let text = "text";
+
+  let alert = makeAlert({ name, title, text });
+
+  let capturedXML = alertsService.getXmlStringForWindowsAlert(alert);
+  Assert.ok(capturedXML, "Should have captured toast XML");
+
+  const xmlDoc = new DOMParser().parseFromString(
+    capturedXML,
+    "application/xml"
+  );
+  const [img] = xmlDoc.getElementsByTagNameNS("*", "image");
+  const src = img?.getAttribute("src");
+
+  Assert.ok(
+    !src,
+    "Ensure that imagePathUnchecked is not set since there is no image."
+  );
 });

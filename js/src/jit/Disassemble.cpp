@@ -70,9 +70,21 @@ void Disassemble(uint8_t* code, size_t length, InstrCallback callback) {
   uint8_t* end = code + length;
 
   while (instr < end) {
-    decoder.Decode(reinterpret_cast<vixl::Instruction*>(instr));
+    auto* ins = reinterpret_cast<vixl::Instruction*>(instr);
 
-    instr += sizeof(vixl::Instr);
+    decoder.Decode(ins);
+
+    // Check for constant pool.
+    const auto* skipped = ins->skipPool();
+    if (ins == skipped) {
+      // No constant pool, proceed to the next instruction.
+      instr += sizeof(vixl::Instr);
+    } else {
+      // Skip over constant pool entries, because they don't encode valid
+      // instructions.
+      callback("*** constant pool ***");
+      instr = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(skipped));
+    }
   }
 }
 

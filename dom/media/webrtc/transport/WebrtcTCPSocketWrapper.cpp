@@ -7,12 +7,10 @@
 #include "WebrtcTCPSocketWrapper.h"
 
 #include "mozilla/net/WebrtcTCPSocketChild.h"
-
+#include "nr_socket_proxy_config.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
-
-#include "nr_socket_proxy_config.h"
 
 namespace mozilla::net {
 

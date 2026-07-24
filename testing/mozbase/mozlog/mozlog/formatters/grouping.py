@@ -18,7 +18,7 @@ class GroupingFormatter(base.BaseFormatter):
     together in a readable format."""
 
     def __init__(self):
-        super(GroupingFormatter, self).__init__()
+        super().__init__()
         self.number_of_tests = 0
         self.completed_tests = 0
         self.need_to_erase_last_line = False
@@ -155,7 +155,7 @@ class GroupingFormatter(base.BaseFormatter):
     def wrap_and_indent_lines(self, lines, indent):
         assert len(lines) > 0
 
-        output = indent + "\u25B6 %s\n" % lines[0]
+        output = indent + "\u25b6 %s\n" % lines[0]
         for line in lines[1:-1]:
             output += indent + "\u2502 %s\n" % line
         if len(lines) > 1:

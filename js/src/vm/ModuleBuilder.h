@@ -42,6 +42,9 @@ class MOZ_STACK_CLASS ModuleBuilder {
       : ModuleBuilder(fc, frontend::EitherParser(parser)) {}
 
   bool processImport(frontend::BinaryNode* importNode);
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  bool processImportSource(frontend::BinaryNode* importNode);
+#endif
   bool processExport(frontend::ParseNode* exportNode);
   bool processExportFrom(frontend::BinaryNode* exportNode);
 

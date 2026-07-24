@@ -24,7 +24,6 @@
 #include <utility>
 
 #include "mozilla/AllocPolicy.h"
-#include "mozilla/Array.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"

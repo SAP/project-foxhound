@@ -51,7 +51,7 @@ const val DISMISSED_MESSAGE_ID = "dismissedMessageId"
  * or during the next scheduled sync interval.
  *
  * **Six seconds will cover 99% of users** based on Nimbus research.
- * @see `https://sql.telemetry.mozilla.org/queries/91863/source?p_days=30#227434`.
+ * @see https://sql.telemetry.mozilla.org/queries/91863/source?p_days=30#227434.
  */
 private const val NIMBUS_FETCH_OPERATION_TIMEOUT_MILLIS: Long = 6000
 
@@ -130,6 +130,7 @@ class MessageNotificationWorker(
             message.text,
             onClickPendingIntent,
             onDismissPendingIntent,
+            true,
         )
     }
 
@@ -146,7 +147,7 @@ class MessageNotificationWorker(
             context,
             SharedIdsHelper.getNextIdForTag(context, NOTIFICATION_PENDING_INTENT_TAG),
             intent,
-            IntentUtils.defaultIntentPendingFlags,
+            IntentUtils.DEFAULT_PENDING_INTENT_FLAGS,
         )
     }
 
@@ -162,7 +163,7 @@ class MessageNotificationWorker(
             context,
             SharedIdsHelper.getNextIdForTag(context, NOTIFICATION_PENDING_INTENT_TAG),
             intent,
-            IntentUtils.defaultIntentPendingFlags,
+            IntentUtils.DEFAULT_PENDING_INTENT_FLAGS,
         )
     }
 

@@ -46,6 +46,25 @@ add_task(async function testWebExtensionsToolboxNetmonitor() {
   const monitor = await toolbox.selectTool("netmonitor");
   const { document: monitorDocument, store } = monitor.panelWin;
 
+  await waitUntil(
+    () => !!monitorDocument.querySelector(".request-list-empty-notice")
+  );
+
+  const emptyListNotice = monitorDocument.querySelector(
+    ".request-list-empty-notice"
+  );
+
+  ok(
+    !!emptyListNotice,
+    "An empty notice should be displayed when the frontend is opened."
+  );
+
+  is(
+    emptyListNotice.innerText,
+    "Perform a request to see detailed information about network activity.",
+    "The reload and perfomance analysis details should not be visible in the netmonitor"
+  );
+
   const expectedURL = "https://example.org/?test_netmonitor=1";
 
   await toolbox.commands.scriptCommand.execute(`fetch("${expectedURL}");`);

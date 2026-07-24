@@ -369,6 +369,10 @@ class FrameWithInstances
   Instance* calleeInstance() { return calleeInstance_; }
   Instance* callerInstance() { return callerInstance_; }
 
+  Instance* setCalleeInstance(Instance* instance) {
+    return calleeInstance_ = instance;
+  }
+
   constexpr static uint32_t sizeOfInstanceFields() {
     return sizeof(wasm::FrameWithInstances) - sizeof(wasm::Frame) -
            js::jit::ShadowStackSpace;

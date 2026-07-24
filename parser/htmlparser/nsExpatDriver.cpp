@@ -29,10 +29,7 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsUnicharInputStream.h"
 #include "nsContentUtils.h"
-#include "mozilla/Array.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/glean/ParserHtmlparserMetrics.h"
@@ -48,7 +45,6 @@ using mozilla::fallible;
 using mozilla::LogLevel;
 using mozilla::MakeStringSpan;
 using mozilla::Maybe;
-using mozilla::Unused;
 using mozilla::dom::Document;
 
 // We only pass chunks of length sMaxChunkLength to Expat in the RLBOX sandbox.
@@ -102,19 +98,23 @@ static T safe_unverified(T val) {
   return val;
 }
 
+template <typename E, E MinLegal, E MaxLegal>
+inline E enum_verifier(std::underlying_type_t<E> e) {
+  using U = std::underlying_type_t<E>;
+  MOZ_RELEASE_ASSERT(
+      e >= static_cast<U>(MinLegal) && e <= static_cast<U>(MaxLegal),
+      "unexpected enum value");
+  return static_cast<E>(e);
+};
+
 /* status_verifier is a type validator for XML_Status */
-inline enum XML_Status status_verifier(enum XML_Status s) {
-  MOZ_RELEASE_ASSERT(s >= XML_STATUS_ERROR && s <= XML_STATUS_SUSPENDED,
-                     "unexpected status code");
-  return s;
+inline XML_Status status_verifier(std::underlying_type_t<XML_Status> s) {
+  return enum_verifier<XML_Status, XML_STATUS_ERROR, XML_STATUS_SUSPENDED>(s);
 }
 
 /* error_verifier is a type validator for XML_Error */
-inline enum XML_Error error_verifier(enum XML_Error code) {
-  MOZ_RELEASE_ASSERT(
-      code >= XML_ERROR_NONE && code <= XML_ERROR_INVALID_ARGUMENT,
-      "unexpected XML error code");
-  return code;
+inline XML_Error error_verifier(std::underlying_type_t<XML_Error> code) {
+  return enum_verifier<XML_Error, XML_ERROR_NONE, XML_ERROR_NOT_STARTED>(code);
 }
 
 /* We use unverified_xml_string to just expose sandbox expat strings to Firefox
@@ -301,6 +301,8 @@ static const nsCatalogData kCatalogTable[] = {
      "htmlmathml-f.ent", nullptr},
     {"-//W3C//DTD MathML 2.0//EN", "htmlmathml-f.ent", nullptr},
     {"-//WAPFORUM//DTD XHTML Mobile 1.0//EN", "htmlmathml-f.ent", nullptr},
+    {"-//WAPFORUM//DTD XHTML Mobile 1.1//EN", "htmlmathml-f.ent", nullptr},
+    {"-//WAPFORUM//DTD XHTML Mobile 1.2//EN", "htmlmathml-f.ent", nullptr},
     {nullptr, nullptr, nullptr}};
 
 static const nsCatalogData* LookupCatalogData(const char16_t* aPublicID) {
@@ -360,7 +362,6 @@ static void GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
 /***************************** END CATALOG UTILS *****************************/
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsExpatDriver)
-  NS_INTERFACE_MAP_ENTRY(nsIDTD)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
@@ -1088,7 +1089,7 @@ nsresult nsExpatDriver::HandleError() {
   nsCOMPtr<nsIURI> baseURI;
   if (expatBase && (baseURI = GetBaseURI(expatBase.get()))) {
     // Let's ignore if this fails, we're already reporting a parse error.
-    Unused << CopyUTF8toUTF16(baseURI->GetSpecOrDefault(), uri, fallible);
+    (void)CopyUTF8toUTF16(baseURI->GetSpecOrDefault(), uri, fallible);
   }
   nsAutoString errorText;
   CreateErrorText(description.get(), uri.get(), lineNumber, colNumber,
@@ -1659,8 +1660,7 @@ nsresult nsExpatDriver::Initialize(nsIURI* aURI, nsIContentSink* aSink) {
   return mInternalState;
 }
 
-NS_IMETHODIMP
-nsExpatDriver::BuildModel(nsIContentSink* aSink) { return mInternalState; }
+nsresult nsExpatDriver::BuildModel() { return mInternalState; }
 
 void nsExpatDriver::DidBuildModel() {
   if (!mInParser) {
@@ -1674,8 +1674,7 @@ void nsExpatDriver::DidBuildModel() {
   mSink = nullptr;
 }
 
-NS_IMETHODIMP_(void)
-nsExpatDriver::Terminate() {
+void nsExpatDriver::Terminate() {
   // XXX - not sure what happens to the unparsed data.
   if (mExpatParser) {
     RLBOX_EXPAT_MCALL(MOZ_XML_StopParser, XML_FALSE);

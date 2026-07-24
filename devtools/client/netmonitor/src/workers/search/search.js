@@ -120,6 +120,7 @@ function searchInResource(resource, query, modifiers) {
 
 /**
  * Concatenates all results
+ *
  * @param results
  * @returns {*[]}
  */
@@ -145,6 +146,7 @@ function find(query, modifiers, source) {
 
 /**
  * Find query matches in arrays, objects and strings.
+ *
  * @param resource
  * @param query
  * @param modifiers
@@ -197,6 +199,7 @@ function searchInProperties(query, modifiers, obj, data) {
 
 /**
  * Get type of resource - deals with arrays as well.
+ *
  * @param resource
  * @returns {*}
  */
@@ -206,6 +209,7 @@ function getType(resource) {
 
 /**
  * Function returns the value of a key, included nested keys.
+ *
  * @param path
  * @param obj
  * @returns {*}
@@ -217,6 +221,7 @@ function getValue(path, obj) {
 
 /**
  * Search text for specific string and return all matches found
+ *
  * @param query
  * @param modifiers
  * @param text
@@ -268,6 +273,7 @@ function searchInText(query, modifiers, text, data) {
 /**
  * Search for query in array.
  * Iterates through each array item and handles item based on type.
+ *
  * @param query
  * @param modifiers
  * @param arr
@@ -290,6 +296,7 @@ function searchInArray(query, modifiers, arr, data) {
 /**
  * Return query match and up to 50 characters on left and right.
  * (50) + [matched query] + (50)
+ *
  * @param value
  * @param query
  * @param startIndex
@@ -308,6 +315,7 @@ function getTruncatedValue(value, query, startIndex) {
 
 /**
  * Iterates through object, including nested objects, returns all
+ *
  * @param query
  * @param modifiers
  * @param obj

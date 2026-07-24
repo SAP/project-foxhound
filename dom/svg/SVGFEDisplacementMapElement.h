@@ -71,6 +71,10 @@ class SVGFEDisplacementMapElement final
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT, IN1, IN2 };
+  SVGAnimatedString mStringAttributes[3];
+  static StringInfo sStringInfo[3];
+
   enum { SCALE };
   SVGAnimatedNumber mNumberAttributes[1];
   static NumberInfo sNumberInfo[1];
@@ -79,10 +83,6 @@ class SVGFEDisplacementMapElement final
   SVGAnimatedEnumeration mEnumAttributes[2];
   static SVGEnumMapping sChannelMap[];
   static EnumInfo sEnumInfo[2];
-
-  enum { RESULT, IN1, IN2 };
-  SVGAnimatedString mStringAttributes[3];
-  static StringInfo sStringInfo[3];
 };
 
 }  // namespace mozilla::dom

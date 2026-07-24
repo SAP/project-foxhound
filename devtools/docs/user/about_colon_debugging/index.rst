@@ -89,7 +89,7 @@ Note: If the version of Firefox on your remote device is more than one major ver
   :class: center
 
 
-In Firefox 76 and above, the message can look like the following:
+The message can look like the following:
 
 .. image:: fxand-68-error.png
   :alt: This version of Firefox cannot debug Firefox for Android (68). We recommend installing Firefox for Android Nightly on your phone for testing. More details
@@ -107,7 +107,7 @@ In the image above, there are three tabs open: **Network or cache Recipe**, **Ni
 
 Above the usual list of tools, you can see information about the device you are connected to, including the fact that you are connected (in this example) via USB, to Firefox Preview, on a Pixel 2, as well as the title of the page that you are debugging, and the address of the page.
 
-Starting in Firefox 78, the URL bar is editable, so that you can change the URL used by the browser on the remote device, by typing in Firefox for Desktop. You can also reload the page by clicking the **Reload** button next to the URL bar, and (starting 79), navigate backward or forward in the browsing history with the **Back** and **Forward** buttons.
+The URL bar is editable, so that you can change the URL used by the browser on the remote device, by typing in Firefox for Desktop. You can also reload the page by clicking the **Reload** button next to the URL bar, and navigate backward or forward in the browsing history with the **Back** and **Forward** buttons.
 
 
 .. _about-colon-debugging-connecting-to-android-over-wi-fi:
@@ -317,7 +317,7 @@ This section uses a simple ServiceWorker demo, hosted at https://serviceworke.rs
 
 .. note::
 
-  From Firefox 79 onwards, you can access similar information on the Service Workers registered on a particular domain by going to the Firefox DevTools :doc:`Application panel <../application/index>`.
+  You can access similar information on the Service Workers registered on a particular domain by going to the Firefox DevTools :doc:`Application panel <../application/index>`.
 
 
 Unregistering service workers

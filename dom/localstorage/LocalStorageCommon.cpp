@@ -7,13 +7,13 @@
 #include "LocalStorageCommon.h"
 
 #include <cstdint>
+
 #include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/StorageUtils.h"

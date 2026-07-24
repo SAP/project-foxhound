@@ -8,8 +8,8 @@
 #define mozilla_dom_FetchObserver_h
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/FetchObserverBinding.h"
 #include "mozilla/dom/AbortSignal.h"
+#include "mozilla/dom/FetchObserverBinding.h"
 
 namespace mozilla::dom {
 

@@ -12,13 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -49,7 +48,6 @@ private fun OnBoardingSecondScreenComposePreview() {
  * @param skipScreen Will be called when the user clicks on Skip button.
  */
 @Composable
-@Suppress("LongMethod")
 fun OnBoardingSecondScreenCompose(
     setAsDefaultBrowser: () -> Unit,
     skipScreen: () -> Unit,
@@ -65,7 +63,7 @@ fun OnBoardingSecondScreenCompose(
 
         Image(
             painter = painterResource(R.drawable.onboarding_second_screen_icon),
-            contentDescription = LocalContext.current.getString(R.string.app_name),
+            contentDescription = stringResource(R.string.app_name),
             modifier = Modifier
                 .size(200.dp, 300.dp)
                 .weight(1f, false),
@@ -76,8 +74,7 @@ fun OnBoardingSecondScreenCompose(
                 R.string.onboarding_second_screen_title,
                 stringResource(R.string.onboarding_short_app_name),
             ),
-            modifier = Modifier
-                .padding(top = 32.dp, start = 16.dp, end = 16.dp),
+            modifier = Modifier.padding(top = 32.dp, start = 16.dp, end = 16.dp),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingTitle,
         )
@@ -118,15 +115,11 @@ private fun ComponentOnBoardingSecondScreenButtons(
             .padding(top = 33.dp, start = 16.dp, end = 16.dp)
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = colorResource(R.color.onboardingButtonOneColor),
+            containerColor = colorResource(R.color.onboardingButtonOneColor),
         ),
     ) {
         Text(
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.onboarding_second_screen_default_browser_button_text,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.onboarding_second_screen_default_browser_button_text)),
             color = PhotonColors.White,
         )
     }
@@ -136,15 +129,11 @@ private fun ComponentOnBoardingSecondScreenButtons(
             .padding(top = 8.dp, start = 16.dp, end = 16.dp, bottom = 74.dp)
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = colorResource(R.color.onboardingButtonTwoColor),
+            containerColor = colorResource(R.color.onboardingButtonTwoColor),
         ),
     ) {
         Text(
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.onboarding_second_screen_skip_button_text,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.onboarding_second_screen_skip_button_text)),
             color = PhotonColors.Black,
         )
     }

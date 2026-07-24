@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_CookieStoreSubscriptionService_h
 #define mozilla_dom_CookieStoreSubscriptionService_h
 
-#include "nsIObserver.h"
 #include "mozilla/dom/ServiceWorkerRegistrarTypes.h"
+#include "nsIObserver.h"
 
 namespace mozilla::dom {
 

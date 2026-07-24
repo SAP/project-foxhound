@@ -16,9 +16,10 @@ namespace widget {
 class CompositorWidgetParent final : public PCompositorWidgetParent,
                                      public AndroidCompositorWidget {
  public:
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(CompositorWidgetParent, CompositorWidget)
+
   explicit CompositorWidgetParent(const CompositorWidgetInitData& aInitData,
                                   const layers::CompositorOptions& aOptions);
-  ~CompositorWidgetParent() override;
 
   // CompositorWidget overrides
 
@@ -30,6 +31,7 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
       const LayoutDeviceIntSize& aClientSize) override;
 
  private:
+  ~CompositorWidgetParent() override;
   // AndroidCompositorWidget overrides
   void OnCompositorSurfaceChanged() override;
 

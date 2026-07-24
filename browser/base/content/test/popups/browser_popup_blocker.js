@@ -85,6 +85,78 @@ add_task(async function test_opening_blocked_popups_privateWindow() {
   await BrowserTestUtils.closeWindow(win);
 });
 
+// This is a test for Bug 1988311.
+// Make sure that everything also functions correctly on special pages,
+// such as "about:privatebrowsing".
+add_task(async function test_opening_blocked_popups_about_privatebrowsing() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:privatebrowsing"
+  );
+
+  const browser = tab.linkedBrowser;
+  const uri = Services.io.newURI(
+    "javascript:" +
+      `window.open("${baseURL}" + "popup_blocker_a.html");` +
+      `window.open("${baseURL}" + "popup_blocker_b.html");`
+  );
+  const triggeringPrincipal =
+    Services.scriptSecurityManager.getSystemPrincipal();
+
+  browser.loadURI(uri, { triggeringPrincipal });
+  await testPopupBlockingToolbar(tab);
+});
+
+// Bug 2006600.
+// When a notification has been dismissed by a user, it should not appear
+// again when switching to a different tab and back.
+add_task(async function test_dismissed_notification_switch_tabs() {
+  // Open the test page.
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    baseURL + "popup_blocker.html"
+  );
+
+  // Wait for the notification.
+  let notification;
+  await TestUtils.waitForCondition(
+    () =>
+      (notification = gBrowser
+        .getNotificationBox()
+        .getNotificationWithValue("popup-blocked"))
+  );
+
+  // Click dismiss button.
+  const mozButton = notification.shadowRoot.querySelector("moz-button.close");
+  mozButton.click();
+
+  // Open a new (foreground) tab and switch back.
+  const differentTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+  await BrowserTestUtils.switchTab(gBrowser, tab);
+
+  // Make sure no notification appears.
+  try {
+    await TestUtils.waitForCondition(
+      () =>
+        (notification = gBrowser
+          .getNotificationBox()
+          .getNotificationWithValue("popup-blocked")),
+      null,
+      50,
+      10
+    );
+  } catch (e) {
+    notification = null;
+  }
+  ok(!notification, "Notification should not reappear");
+
+  gBrowser.removeTab(tab);
+  gBrowser.removeTab(differentTab);
+});
+
 async function testPopupBlockingToolbar(tab) {
   let win = tab.ownerGlobal;
   // Wait for the popup-blocked notification.

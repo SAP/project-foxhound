@@ -3,22 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "AudioCaptureTrack.h"
+
+#include <algorithm>
+
+#include "AudioNodeEngine.h"
+#include "AudioNodeExternalInputTrack.h"
+#include "AudioNodeTrack.h"
+#include "AudioSegment.h"
+#include "DOMMediaStream.h"
+#include "ImageContainer.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Unused.h"
-
-#include "AudioSegment.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Attributes.h"
-#include "AudioCaptureTrack.h"
-#include "ImageContainer.h"
-#include "AudioNodeEngine.h"
-#include "AudioNodeTrack.h"
-#include "AudioNodeExternalInputTrack.h"
 #include "webaudio/MediaStreamAudioDestinationNode.h"
-#include <algorithm>
-#include "DOMMediaStream.h"
 
 using namespace mozilla::layers;
 using namespace mozilla::dom;

@@ -16,20 +16,20 @@ import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.lib.state.ext.flowScoped
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.RecentlyClosedTabs
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.StoreProvider
+import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.databinding.FragmentRecentlyClosedTabsBinding
+import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.setTextColor
 import org.mozilla.fenix.ext.showToolbar
@@ -83,11 +83,11 @@ class RecentlyClosedFragment :
                 true
             }
             R.id.open_history_in_new_tabs_multi_select -> {
-                recentlyClosedController.handleOpen(selectedTabs, BrowsingMode.Normal)
+                recentlyClosedController.handleOpen(selectedTabs)
                 true
             }
             R.id.open_history_in_private_tabs_multi_select -> {
-                recentlyClosedController.handleOpen(selectedTabs, BrowsingMode.Private)
+                recentlyClosedController.handleOpen(selectedTabs)
                 true
             }
             // other options are not handled by this menu provider
@@ -106,23 +106,21 @@ class RecentlyClosedFragment :
         savedInstanceState: Bundle?,
     ): View {
         val binding = FragmentRecentlyClosedTabsBinding.inflate(inflater, container, false)
-        recentlyClosedFragmentStore = StoreProvider.get(this) {
-            RecentlyClosedFragmentStore(
-                RecentlyClosedFragmentState(
-                    items = listOf(),
-                    selectedTabs = emptySet(),
-                ),
-            )
-        }
+        recentlyClosedFragmentStore = fragmentStore(
+            RecentlyClosedFragmentState(
+                items = listOf(),
+                selectedTabs = emptySet(),
+            ),
+        ) { RecentlyClosedFragmentStore(it) }.value
         recentlyClosedController = DefaultRecentlyClosedController(
+            appStore = requireComponents.appStore,
             navController = findNavController(),
             browserStore = requireComponents.core.store,
             recentlyClosedStore = recentlyClosedFragmentStore,
-            activity = activity as HomeActivity,
             tabsUseCases = requireComponents.useCases.tabsUseCases,
             recentlyClosedTabsStorage = requireComponents.core.recentlyClosedTabsStorage.value,
             lifecycleScope = lifecycleScope,
-            openToBrowser = ::openItem,
+            openToBrowser = { url -> openItem(url) },
         )
         recentlyClosedInteractor = RecentlyClosedFragmentInteractor(recentlyClosedController)
         _recentlyClosedFragmentView = RecentlyClosedFragmentView(
@@ -137,13 +135,17 @@ class RecentlyClosedFragment :
         _recentlyClosedFragmentView = null
     }
 
-    private fun openItem(url: String, mode: BrowsingMode? = null) {
-        mode?.let { (activity as HomeActivity).browsingModeManager.mode = it }
-
-        (activity as HomeActivity).openToBrowserAndLoad(
+    private fun openItem(url: String) {
+        requireComponents.appStore.dispatch(
+            AppAction.BrowsingModeManagerModeChanged(
+                mode =
+            requireComponents.appStore.state.mode,
+            ),
+        )
+        findNavController().openToBrowser()
+        requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
             searchTermOrURL = url,
             newTab = true,
-            from = BrowserDirection.FromRecentlyClosed,
         )
     }
 
@@ -155,7 +157,7 @@ class RecentlyClosedFragment :
             activity?.invalidateOptionsMenu()
         }
 
-        requireComponents.core.store.flowScoped(viewLifecycleOwner) { flow ->
+        requireComponents.core.store.flowScoped(viewLifecycleOwner, Dispatchers.Main) { flow ->
             flow.map { state -> state.closedTabs }
                 .distinctUntilChanged()
                 .collect { tabs ->

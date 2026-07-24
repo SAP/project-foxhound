@@ -138,6 +138,7 @@ class OwningElementRef final {
 
     enum SortingIndex : uint8_t {
       NotPseudo,
+      Backdrop,
       Marker,
       Before,
       After,
@@ -153,21 +154,23 @@ class OwningElementRef final {
       switch (aPseudoRequest.mType) {
         case PseudoStyleType::NotPseudo:
           return SortingIndex::NotPseudo;
-        case PseudoStyleType::marker:
+        case PseudoStyleType::Backdrop:
+          return SortingIndex::Backdrop;
+        case PseudoStyleType::Marker:
           return SortingIndex::Marker;
-        case PseudoStyleType::before:
+        case PseudoStyleType::Before:
           return SortingIndex::Before;
-        case PseudoStyleType::after:
+        case PseudoStyleType::After:
           return SortingIndex::After;
-        case PseudoStyleType::viewTransition:
+        case PseudoStyleType::ViewTransition:
           return SortingIndex::ViewTransition;
-        case PseudoStyleType::viewTransitionGroup:
+        case PseudoStyleType::ViewTransitionGroup:
           return SortingIndex::ViewTransitionGroup;
-        case PseudoStyleType::viewTransitionImagePair:
+        case PseudoStyleType::ViewTransitionImagePair:
           return SortingIndex::ViewTransitionImagePair;
-        case PseudoStyleType::viewTransitionOld:
+        case PseudoStyleType::ViewTransitionOld:
           return SortingIndex::ViewTransitionOld;
-        case PseudoStyleType::viewTransitionNew:
+        case PseudoStyleType::ViewTransitionNew:
           return SortingIndex::ViewTransitionNew;
         default:
           MOZ_ASSERT_UNREACHABLE("Unexpected pseudo type");

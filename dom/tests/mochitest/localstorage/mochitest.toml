@@ -33,8 +33,8 @@ support-files = [
 
 ["test_keySync.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageBase.html"]
@@ -47,55 +47,57 @@ skip-if = [
 
 ["test_localStorageKeyOrder.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageOriginsDiff.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageOriginsDomainDiffs.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageOriginsEquals.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageOriginsPortDiffs.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageOriginsSchemaDiffs.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageQuota.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_localStorageQuotaSessionOnly.html"]
 
 ["test_localStorageQuotaSessionOnly2.html"]
-skip-if = ["true"] # bug 1347690
+skip-if = [
+  "true", # bug 1347690
+]
 
 ["test_localStorageReplace.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storageConstructor.html"]

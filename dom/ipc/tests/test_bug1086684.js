@@ -29,7 +29,6 @@ server.registerPathHandler(childFramePath, (request, response) => {
 });
 
 function childFrameScript() {
-  /* eslint-env mozilla/frame-script */
   "use strict";
 
   let { MockFilePicker } = ChromeUtils.importESModule(

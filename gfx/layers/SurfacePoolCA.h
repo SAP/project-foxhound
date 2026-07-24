@@ -11,7 +11,6 @@
 #include <deque>
 #include <unordered_map>
 
-#include "mozilla/Atomics.h"
 #include "mozilla/DataMutex.h"
 
 #include "mozilla/layers/SurfacePool.h"

@@ -4,7 +4,7 @@
 
 <html:template id="template-trustpanel-popup">
 <panel id="trustpanel-popup"
-       class="panel-no-padding"
+       class="panel-no-padding site-information-popup"
        type="arrow"
        role="alertdialog"
        noautofocus="true"
@@ -20,9 +20,9 @@
 
       <vbox id="trustpanel-header-section">
         <hbox id="trustpanel-header-row">
-          <hbox>
+          <hbox id="trustpanel-popup-host-wrapper">
             <image id="trustpanel-popup-icon"></image>
-            <label id="trustpanel-popup-host"></label>
+            <label id="trustpanel-popup-host" crop="start"></label>
           </hbox>
           <toolbarbutton id="trustpanel-popup-connection" class="subviewbutton subviewbutton-nav">
             <image id="trustpanel-connection-icon"></image>
@@ -34,12 +34,20 @@
           <hbox>
             <image id="trustpanel-graphic-image"></image>
             <vbox id="trustpanel-graphic-section-text">
-              <label id="trustpanel-header" class="trustpanel-header"></label>
-              <label id="trustpanel-description"></label>
+              <label when-connection="secure secure-ev secure-etsi secure-cert-user-overridden chrome file extension net-error-page https-only-error-page"
+                     id="trustpanel-header"
+                     class="trustpanel-header"></label>
+              <label when-connection="not-secure cert-error-page"
+                     class="trustpanel-header"
+                     data-l10n-id="trustpanel-header-enabled-insecure"></label>
+              <label when-connection="secure secure-ev secure-etsi secure-cert-user-overridden chrome file extension net-error-page https-only-error-page"
+                     id="trustpanel-description"></label>
+              <label when-connection="not-secure cert-error-page"
+                     data-l10n-id="trustpanel-description-enabled-insecure"></label>
             </vbox>
           </hbox>
           <vbox id="trustpanel-blocker-section" class="trustpanel-graphic-inner">
-            <label data-l10n-id="trustpanel-blocker-section-header" data-l10n-args='{"count":0}' id="trustpanel-blocker-section-header" class="trustpanel-header"></label>
+            <label data-l10n-id="trustpanel-blocker-section-header2" data-l10n-args='{"count":0}' id="trustpanel-blocker-section-header" class="trustpanel-header"></label>
             <label data-l10n-id="trustpanel-blocker-description"></label>
             <html:moz-button-group>
               <html:moz-button id="trustpanel-blocker-see-all" data-l10n-id="trustpanel-blocker-see-all" default="true" size="small" type="primary"></html:moz-button>
@@ -67,14 +75,10 @@
       </vbox>
     </panelview>
 
-    <panelview id="trustpanel-siteInformationView"
+    <panelview id="trustpanel-securityInformationView"
                class="PanelUI-subView"
                role="document">
-      <hbox class="trustpanel-section">
-        <image id="trustpanel-siteinfo-icon" class="toolbarbutton-icon"></image>
-        <label id="trustpanel-siteinfo-label"></label>
-      </hbox>
-
+#include securityInformation.inc.xhtml
       <toolbarseparator></toolbarseparator>
       <html:a id="trustpanel-siteinformation-morelink" data-l10n-id="trustpanel-siteinformation-morelink" role="link" class="trustpanel-section panel-subview-footer-button"></html:a>
     </panelview>
@@ -83,6 +87,14 @@
                class="PanelUI-subView"
                role="document">
       <toolbarseparator></toolbarseparator>
+      <html:moz-message-bar id="trustpanel-smartblock-section">
+        <div slot="message">
+          <vbox>
+            <description data-l10n-id="protections-panel-smartblock-desc-label"></description>
+            <vbox id="trustpanel-smartblock-toggle-container" class="trustpanel-smartblock-toggle-box"></vbox>
+          </vbox>
+        </div>
+      </html:moz-message-bar>
       <vbox class="trustpanel-blocker-section" id="trustpanel-blocked">
         <label class="trustpanel-header" id="trustpanel-blocked-header" data-l10n-id="trustpanel-blocked-header"></label>
         <vbox class="trustpanel-blocker-buttons"></vbox>

@@ -7,8 +7,8 @@
 #include "SVGNumberPairSMILType.h"
 
 #include "mozilla/SMILValue.h"
-#include "nsMathUtils.h"
 #include "nsDebug.h"
+#include "nsMathUtils.h"
 
 namespace mozilla {
 

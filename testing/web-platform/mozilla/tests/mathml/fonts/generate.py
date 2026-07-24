@@ -261,7 +261,7 @@ largeop = [0x2A1B, 0x2A1C]  # integral with overbar/underbar
 # Draw boxes of size 1, 2, 7, 8, 9em.
 for i in [1, 2, 7, 8, 9]:
     s = em * i
-    if i == 1 or i == 2:
+    if i in {1, 2}:
         g = f.createChar(largeop[i - 1])
     else:
         g = f.createChar(-1, "L%d" % i)

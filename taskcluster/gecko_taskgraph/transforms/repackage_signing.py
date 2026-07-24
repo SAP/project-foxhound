@@ -9,24 +9,23 @@ import os
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from voluptuous import Optional
 
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import get_signing_type_per_platform
 
-repackage_signing_description_schema = Schema(
-    {
-        Optional("label"): str,
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("task-from"): task_description_schema["task-from"],
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    }
-)
+repackage_signing_description_schema = LegacySchema({
+    Optional("label"): str,
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("dependencies"): task_description_schema["dependencies"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("treeherder"): task_description_schema["treeherder"],
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 SIGNING_FORMATS = {
     "target.installer.exe": ["gcp_prod_autograph_authenticode_202412_stub"],
@@ -95,14 +94,12 @@ def make_repackage_signing_description(config, jobs):
         # This is so we get the build task etc in our dependencies to have better beetmover
         # support.  But for multi-locale MSIX packages, we don't want the signing task to directly
         # depend on the langpack tasks.
-        dependencies.update(
-            {
-                k: v
-                for k, v in signing_dependencies.items()
-                if k != "docker-image"
-                and not k.startswith("shippable-l10n-signing-linux64")
-            }
-        )
+        dependencies.update({
+            k: v
+            for k, v in signing_dependencies.items()
+            if k != "docker-image"
+            and not k.startswith("shippable-l10n-signing-linux64")
+        })
 
         description = (
             "Signing of repackaged artifacts for locale '{locale}' for build '"
@@ -123,14 +120,12 @@ def make_repackage_signing_description(config, jobs):
         for artifact in sorted(dep_job.attributes.get("release_artifacts")):
             basename = os.path.basename(artifact)
             if basename in SIGNING_FORMATS:
-                upstream_artifacts.append(
-                    {
-                        "taskId": {"task-reference": f"<{dep_kind}>"},
-                        "taskType": "repackage",
-                        "paths": [artifact],
-                        "formats": SIGNING_FORMATS[os.path.basename(artifact)],
-                    }
-                )
+                upstream_artifacts.append({
+                    "taskId": {"task-reference": f"<{dep_kind}>"},
+                    "taskType": "repackage",
+                    "paths": [artifact],
+                    "formats": SIGNING_FORMATS[os.path.basename(artifact)],
+                })
 
         task = {
             "label": label,
@@ -143,6 +138,7 @@ def make_repackage_signing_description(config, jobs):
             },
             "dependencies": dependencies,
             "attributes": attributes,
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
             "optimization": dep_job.optimization,
             "treeherder": treeherder,

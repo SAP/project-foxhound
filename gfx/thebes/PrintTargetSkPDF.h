@@ -21,11 +21,10 @@ namespace gfx {
  */
 class PrintTargetSkPDF final : public PrintTarget {
  public:
-  // The returned PrintTargetSkPDF keeps a raw pointer to the passed SkWStream
-  // but does not own it.  Callers are responsible for ensuring that passed
-  // stream outlives the returned PrintTarget.
   static already_AddRefed<PrintTargetSkPDF> CreateOrNull(
       UniquePtr<SkWStream> aStream, const IntSize& aSizeInPoints);
+  static already_AddRefed<PrintTargetSkPDF> CreateOrNull(
+      nsIOutputStream* aStream, const IntSize& aSizeInPoints);
 
   nsresult BeginPrinting(const nsAString& aTitle,
                          const nsAString& aPrintToFileName, int32_t aStartPage,

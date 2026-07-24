@@ -18,9 +18,12 @@ firefox-relay-get-unlimited-masks =
     .accesskey = M
 # This is followed, on a new line, by firefox-relay-opt-in-subtitle-1
 firefox-relay-opt-in-title-1 = Protect your email address:
+firefox-relay-opt-in-title-2 = Get a free email mask
 # This is preceded by firefox-relay-opt-in-title-1 (on a different line), which
 # ends with a colon. You might need to adapt the capitalization of this string.
 firefox-relay-opt-in-subtitle-1 = Use { -relay-brand-name } email mask
+firefox-relay-use-mask-title-1 = Use an email mask
+firefox-relay-opt-in-subtitle-2 = Protect your inbox from spam
 firefox-relay-use-mask-title = Use { -relay-brand-name } email mask
 # This is followed, on a new line, by firefox-relay-opt-in-subtitle-a
 firefox-relay-opt-in-title-a = Prevent spam with a free email mask
@@ -78,6 +81,8 @@ firefox-relay-and-fxa-popup-notification-header-with-domain = Get a free email m
 firefox-relay-and-fxa-popup-notification-first-sentence-with-domain  = Protect your inbox from spam by using a free <label data-l10n-name="firefox-relay-learn-more-url">email mask</label> to hide your real address. Emails from <label data-l10n-name="firefox-fxa-and-relay-offer-domain">this site</label> will still come to your inbox, but with your email hidden.
 
 firefox-relay-and-fxa-popup-notification-first-sentence = Protect your inbox from spam by using a free <label data-l10n-name="firefox-relay-learn-more-url">{ -relay-brand-name } email mask</label> to hide your real address. Emails from <label data-l10n-name="firefox-fxa-and-relay-offer-domain">this site</label> will still come to your inbox, but with your email hidden.
+
+firefox-relay-offer-why-to-use-relay-1 = Protect your inbox from spam by using a free <label data-l10n-name="firefox-relay-learn-more-url">{ -relay-brand-name } email mask</label> to hide your real address. Emails from <label data-l10n-name="firefox-fxa-and-relay-offer-domain">this site</label> will still come to your inbox, but with your email hidden.
 
 firefox-relay-and-fxa-popup-notification-second-sentence-with-domain = First, sign up or sign in to your account to use an email mask
 

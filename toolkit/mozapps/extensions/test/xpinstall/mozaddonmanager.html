@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+
+<html>
+
+<!-- This page will accept some json as the uri query and pass it to mozAddonManager.createInstall -->
+
+<head>
+<title>mozAddonManager tests</title>
+<script type="text/javascript">
+/* exported startInstall */
+function installCallback(install) {
+  document.getElementById("status").textContent = install.state;
+
+  dump("Sending InstallComplete\n");
+  var event = new CustomEvent("InstallComplete");
+  var target = window.parent ? window.parent : window;
+  target.dispatchEvent(event);
+}
+
+async function startInstall(viaWindowLoaded = false) {
+  var event = new CustomEvent("InstallTriggered");
+  var text;
+  if (viaWindowLoaded) {
+    text = decodeURIComponent(document.location.search.substring(1));
+  } else {
+    text = decodeURIComponent(document.location.search.substring("?manualStartInstall".length));
+  }
+  var triggers = JSON.parse(text);
+  try {
+    const install = await navigator.mozAddonManager.createInstall(triggers);
+    const promiseInstalled = install.install();
+    document.getElementById("return").textContent = true;
+    dump("Sending InstallTriggered\n");
+    window.dispatchEvent(event);
+    dump("Await AddonInstall.install async call to be resolved\n");
+    await promiseInstalled.catch(err => {
+      dump(`AddonInstall.install promise rejected: ${err.message}\n`);
+      document.getElementById("error").textContent = err.message;
+    });
+    dump("AddonInstall.install async call completed\n");
+    installCallback(install);
+  } catch (e) {
+    document.getElementById("return").textContent = "exception";
+    dump(`Sending InstallTriggered on mozAddonManager.createInstall rejection: ${e.message}\n`);
+    window.dispatchEvent(event);
+    if (viaWindowLoaded) {
+      throw e;
+    }
+  }
+}
+
+window.onload = function () {
+  if (!document.location.search.startsWith("?manualStartInstall")) {
+    startInstall(true);
+  }
+}
+</script>
+</head>
+<body>
+<p>mozAddonManager tests</p>
+<p id="return"></p>
+<p id="status"></p>
+<pre id="error"></pre>
+</body>
+</html>

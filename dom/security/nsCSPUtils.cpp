@@ -4,17 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsCSPUtils.h"
+
+#include "mozilla/Assertions.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/CSPDictionariesBinding.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsAttrValue.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"
-#include "nsCSPUtils.h"
-#include "nsDebug.h"
 #include "nsCSPParser.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsIChannel.h"
 #include "nsIConsoleService.h"
 #include "nsIContentSecurityPolicy.h"
-#include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIScriptError.h"
 #include "nsIStringBundle.h"
@@ -24,15 +33,6 @@
 #include "nsSandboxFlags.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWhitespaceTokenizer.h"
-
-#include "mozilla/Assertions.h"
-#include "mozilla/Components.h"
-#include "mozilla/dom/CSPDictionariesBinding.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/StaticPrefs_security.h"
 
 using namespace mozilla;
 using mozilla::dom::SRIMetadata;
@@ -316,6 +316,7 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_NOTIFICATION:
     case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
       return nsIContentSecurityPolicy::IMG_SRC_DIRECTIVE;
 

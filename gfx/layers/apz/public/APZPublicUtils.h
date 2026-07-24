@@ -11,7 +11,6 @@
 // of gfx/layers. For internal utilities, prefer APZUtils.h.
 
 #include <stdint.h>
-#include <utility>
 #include "ScrollAnimationBezierPhysics.h"
 #include "Units.h"
 #include "mozilla/DefineEnum.h"
@@ -73,6 +72,30 @@ ScrollAnimationBezierPhysicsSettings ComputeBezierAnimationSettingsForOrigin(
  * preferences and the origin
  */
 ScrollMode GetScrollModeForOrigin(ScrollOrigin origin);
+
+/**
+ * The kind of an APZ smooth scroll animation.
+ * This needs to be in APZPublicUtils.h because it's used by
+ * layout/generic/ScrollAnimationMSDPhysics{h.cpp} as well.
+ */
+enum class ScrollAnimationKind : uint8_t {
+  // Scroll animation in response to programmatic scrolling performed
+  // by the page or otherwise triggered by the main thread (e.g. for
+  // scroll-to-anchor, or certain scrollbar interactions). This may
+  // use Bezier or MSD physics depending on pref values.
+  Smooth,
+  // Scroll animation used to perform scroll snapping, or other
+  // operations triggered by the main thread using ScrollMode::SmoothMsd.
+  // This always uses MSD physics, and the parameter may be different
+  // than when using MSD physics for other ScrollAnimationKinds.
+  SmoothMsd,
+  // Scroll animation in response to user keyboard input.
+  // Uses the same scroll physics as ScrollAnimationKind::Smooth.
+  Keyboard,
+  // Scroll animation in response to user wheel input.
+  // Uses the same scroll physics as ScrollAnimationKind::Smooth.
+  Wheel
+};
 
 }  // namespace apz
 

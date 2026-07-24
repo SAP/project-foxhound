@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     use alloc::sync::Arc;
@@ -18,8 +17,12 @@ pub mod ffi {
     /// The various calendar types currently supported by [`Calendar`]
     #[diplomat::enum_convert(icu_calendar::AnyCalendarKind, needs_wildcard)]
     #[diplomat::rust_link(icu::calendar::AnyCalendarKind, Enum)]
+    #[non_exhaustive]
     pub enum CalendarKind {
         /// The kind of an Iso calendar
+        // AnyCalendarKind in Rust doesn't have a default, but it is useful to have one
+        // here for consistent behavior.
+        #[diplomat::attr(auto, default)]
         Iso = 0,
         /// The kind of a Gregorian calendar
         Gregorian = 1,
@@ -101,6 +104,7 @@ pub mod ffi {
         /// Returns the kind of this calendar
         #[diplomat::rust_link(icu::calendar::AnyCalendar::kind, FnInEnum)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns the single constructor argument
         pub fn kind(&self) -> CalendarKind {
             self.0.kind().into()
         }

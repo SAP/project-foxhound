@@ -123,7 +123,8 @@ def setup_env_for_shell(env, shell):
 )
 def hazards(command_context):
     """Commands related to performing the GC rooting hazard analysis"""
-    print("See `mach hazards --help` for a list of subcommands")
+    command_context._sub_mach(["help", "hazards"])
+    return 1
 
 
 @inherit_command_args("artifact", "toolchain")
@@ -136,7 +137,7 @@ def bootstrap(command_context, **kwargs):
     orig_dir = os.getcwd()
     os.chdir(ensure_dir_exists(tools_dir()))
     try:
-        kwargs["from_build"] = ("linux64-gcc-sixgill", "linux64-gcc-9")
+        kwargs["from_build"] = ("linux64-gcc-10-sixgill", "linux64-gcc-10")
         command_context._mach_context.commands.dispatch(
             "artifact", command_context._mach_context, subcommand="toolchain", **kwargs
         )
@@ -158,8 +159,9 @@ CLOBBER_CHOICES = {"objdir", "work", "shell", "all"}
     "what",
     default=["objdir", "work"],
     nargs="*",
-    help="Target to clobber, must be one of {{{}}} (default "
-    "objdir and work).".format(", ".join(CLOBBER_CHOICES)),
+    help="Target to clobber, must be one of {{{}}} (default objdir and work).".format(
+        ", ".join(CLOBBER_CHOICES)
+    ),
 )
 def clobber(command_context, what, **kwargs):
     from mozbuild.controller.clobber import Clobberer
@@ -343,15 +345,13 @@ def gather_hazard_data(command_context, **kwargs):
         )
         fh.write(data)
 
-    buildscript = " ".join(
-        [
-            command_context.topsrcdir + "/mach hazards compile",
-            *kwargs.get("what", []),
-            "--job-size=3.0",  # Conservatively estimate 3GB/process
-            "--project=" + project,
-            "--haz-objdir=" + objdir,
-        ]
-    )
+    buildscript = " ".join([
+        command_context.topsrcdir + "/mach hazards compile",
+        *kwargs.get("what", []),
+        "--job-size=3.0",  # Conservatively estimate 3GB/process
+        "--project=" + project,
+        "--haz-objdir=" + objdir,
+    ])
     args = [
         os.path.join(script_dir(command_context), "run_complete"),
         "--foreground",
@@ -550,7 +550,7 @@ def annotated_source(filename, query):
     out = "<pre>"
     for lineno, line in enumerate(fh, 1):
         processed = f"{lineno} <span id='{lineno}'"
-        if line0 <= lineno and lineno <= line1:
+        if line0 <= lineno <= line1:
             processed += " style='background: yellow'"
         processed += ">" + html.escape(line.rstrip()) + "</span>\n"
         out += processed

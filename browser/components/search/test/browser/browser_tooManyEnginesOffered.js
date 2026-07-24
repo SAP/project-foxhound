@@ -13,7 +13,7 @@ const searchPopup = document.getElementById("PopupSearchAutoComplete");
 add_setup(async function () {
   await gCUITestUtils.addSearchBar();
 
-  await Services.search.init();
+  await SearchService.init();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
   });

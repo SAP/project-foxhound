@@ -22,7 +22,7 @@ const kFontMinSizeFmt = "font.minimum-size.%LANG%";
 window.addEventListener("load", () => gFontsDialog.onLoad());
 
 Preferences.addAll([
-  { id: "font.language.group", type: "wstring" },
+  { id: "font.language.group", type: "string" },
   { id: "browser.display.use_document_fonts", type: "int" },
 ]);
 
@@ -157,9 +157,14 @@ var gFontsDialog = {
   },
 
   readFontLanguageGroup() {
-    var languagePref = Preferences.get("font.language.group");
-    this._selectLanguageGroup(languagePref.value);
-    return undefined;
+    let languageGroup = Preferences.get("font.language.group").value;
+    let rv = undefined;
+    if (!languageGroup) {
+      languageGroup = Services.locale.fontLanguageGroup;
+      rv = languageGroup;
+    }
+    this._selectLanguageGroup(languageGroup);
+    return rv;
   },
 
   readUseDocumentFonts() {

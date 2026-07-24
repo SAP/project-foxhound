@@ -225,9 +225,6 @@ add_task(async function test_enumerate_background_script_apis() {
 });
 
 add_task(async function test_enumerate_background_script_apis_mv3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
   let extensionData = {
     background: sendAllApis,
     manifest: {
@@ -249,5 +246,4 @@ add_task(async function test_enumerate_background_script_apis_mv3() {
   ok(sameness, "namespaces are same object");
 
   await extension.unload();
-  await SpecialPowers.popPrefEnv();
 });

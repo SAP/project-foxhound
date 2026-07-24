@@ -304,7 +304,7 @@ nscoord nsSplittableFrame::GetEffectiveComputedBSize(
   // report zero for true overflow containers here.
   // XXXmats: hmm, can we fix this so that the sizes actually adds up instead?
   if (IsTrueOverflowContainer() &&
-      Style()->GetPseudoType() == PseudoStyleType::fieldsetContent) {
+      Style()->GetPseudoType() == PseudoStyleType::MozFieldsetContent) {
     for (nsFieldSetFrame* fieldset = do_QueryFrame(GetParent()); fieldset;
          fieldset = static_cast<nsFieldSetFrame*>(fieldset->GetPrevInFlow())) {
       bSize -= fieldset->LegendSpace();

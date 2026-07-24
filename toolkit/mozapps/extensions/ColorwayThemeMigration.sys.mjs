@@ -82,7 +82,9 @@ export const ColorwayThemeMigration = {
       addon => addon.enable()
     );
 
-    const win = lazy.BrowserWindowTracker.getTopWindow();
+    const win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     win.MozXULElement.insertFTLIfNeeded("toolkit/global/extensions.ftl");
 
     win.gNotificationBox.appendNotification(

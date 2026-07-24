@@ -9,6 +9,9 @@
  *
  */
 
+#ifndef TOOLKIT_COMPONENTS_FIND_NSFINDSERVICE_H_
+#define TOOLKIT_COMPONENTS_FIND_NSFINDSERVICE_H_
+
 #include "nsString.h"
 
 #include "nsIFindService.h"
@@ -38,3 +41,5 @@ class nsFindService : public nsIFindService {
   bool mMatchCase;
   bool mMatchDiacritics;
 };
+
+#endif  // TOOLKIT_COMPONENTS_FIND_NSFINDSERVICE_H_

@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
@@ -171,14 +172,14 @@ class HistoryRobot {
         Log.i(TAG, "openSearchGroup: Clicked search group: $searchTerm")
     }
 
-    class Transition {
+    class Transition(private val composeTestRule: ComposeTestRule) {
         fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             Log.i(TAG, "goBackToHomeScreen: Trying to click go back button")
             onView(withContentDescription("Navigate up")).click()
             Log.i(TAG, "goBackToHomeScreen: Clicked go back button")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun goBack(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -186,8 +187,8 @@ class HistoryRobot {
             onView(withContentDescription("Navigate up")).click()
             Log.i(TAG, "goBack: Clicked go back menu button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun openWebsite(url: Uri, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -196,8 +197,8 @@ class HistoryRobot {
             onView(withText(url.toString())).click()
             Log.i(TAG, "openWebsite: Clicked history item with url: $url")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun openWebsiteFromSearchGroup(url: Uri, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -206,8 +207,8 @@ class HistoryRobot {
             onView(withText(url.toString())).click()
             Log.i(TAG, "openWebsiteFromSearchGroup: Clicked group item with url: $url")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun openRecentlyClosedTabs(interact: RecentlyClosedTabsRobot.() -> Unit): RecentlyClosedTabsRobot.Transition {
@@ -227,15 +228,15 @@ class HistoryRobot {
             itemWithResId("$packageName:id/history_search").click()
             Log.i(TAG, "clickSearchButton: Clicked search history button")
 
-            SearchRobot().interact()
-            return SearchRobot.Transition()
+            SearchRobot(composeTestRule).interact()
+            return SearchRobot.Transition(composeTestRule)
         }
     }
 }
 
-fun historyMenu(interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
+fun historyMenu(composeTestRule: ComposeTestRule, interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
     HistoryRobot().interact()
-    return HistoryRobot.Transition()
+    return HistoryRobot.Transition(composeTestRule)
 }
 
 private fun testPageTitle() = onView(withId(R.id.title))

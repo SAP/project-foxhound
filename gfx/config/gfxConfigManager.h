@@ -43,7 +43,6 @@ class gfxConfigManager {
         mWrOptimizedShaders(false),
         mWrScissoredCacheClearsEnabled(false),
         mWrScissoredCacheClearsForceEnabled(false),
-        mGPUProcessAllowSoftware(false),
         mWrEnvForceEnabled(false),
         mScaledResolution(false),
         mDisableHwCompositingNoWr(false),
@@ -94,7 +93,6 @@ class gfxConfigManager {
   bool mWrOptimizedShaders;
   bool mWrScissoredCacheClearsEnabled;
   bool mWrScissoredCacheClearsForceEnabled;
-  bool mGPUProcessAllowSoftware;
 
   /**
    * Environment variables

@@ -18,7 +18,6 @@
 #include "jsfriendapi.h"
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy
 #include "js/Object.h"              // JS::GetPrivate, JS::GetCompartment
-#include "mozilla/Likely.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/MaybeCrossOriginObject.h"
 #include "nsContentUtils.h"

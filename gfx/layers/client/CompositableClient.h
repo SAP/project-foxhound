@@ -9,9 +9,6 @@
 
 #include <stdint.h>  // for uint64_t
 
-#include <map>     // for map
-#include <vector>  // for vector
-
 #include "mozilla/Assertions.h"  // for MOZ_CRASH
 #include "mozilla/DataMutex.h"
 #include "mozilla/RefPtr.h"     // for already_AddRefed, RefCounted

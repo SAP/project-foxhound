@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -13,7 +13,7 @@ features: [Temporal]
 ---*/
 
 let d = new Temporal.Duration();
-assert.sameValue(d.toJSON(), "PT0S", "zero duration");
+assert.sameValue(d.toJSON(), "PT0S", "blank duration");
 
 d = new Temporal.Duration(1);
 assert.sameValue(d.toJSON(), "P1Y", "positive small years");

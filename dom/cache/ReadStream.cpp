@@ -6,20 +6,17 @@
 
 #include "mozilla/dom/cache/ReadStream.h"
 
-#include "mozilla/Unused.h"
+#include "mozilla/SnappyUncompressInputStream.h"
 #include "mozilla/dom/cache/CacheStreamControlChild.h"
 #include "mozilla/dom/cache/CacheStreamControlParent.h"
 #include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/SnappyUncompressInputStream.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIThread.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom::cache {
-
-using mozilla::Unused;
 
 // ----------------------------------------------------------------------------
 
@@ -498,7 +495,7 @@ void ReadStream::Inner::OpenStreamFailed() {
   MOZ_DIAGNOSTIC_ASSERT(!mStream);
   MOZ_DIAGNOSTIC_ASSERT(!mSnappyStream);
   mMutex.AssertCurrentThreadOwns();
-  Unused << NS_NewCStringInputStream(getter_AddRefs(mStream), ""_ns);
+  (void)NS_NewCStringInputStream(getter_AddRefs(mStream), ""_ns);
   mSnappyStream = mStream;
   mStream->Close();
   NoteClosed();

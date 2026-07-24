@@ -6,8 +6,6 @@
 
 #include "SanitizationUtils.h"
 
-#include <string>
-
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "nsString.h"
 

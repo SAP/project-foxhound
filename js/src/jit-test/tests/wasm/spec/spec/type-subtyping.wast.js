@@ -307,22 +307,22 @@ let $14 = instantiate(`(module
 assert_return(() => invoke($14, `run`, []), []);
 
 // ./test/core/gc/type-subtyping.wast:283
-assert_trap(() => invoke($14, `fail1`, []), `indirect call`);
+assert_trap(() => invoke($14, `fail1`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:284
-assert_trap(() => invoke($14, `fail2`, []), `indirect call`);
+assert_trap(() => invoke($14, `fail2`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:285
-assert_trap(() => invoke($14, `fail3`, []), `indirect call`);
+assert_trap(() => invoke($14, `fail3`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:286
-assert_trap(() => invoke($14, `fail4`, []), `cast`);
+assert_trap(() => invoke($14, `fail4`, []), `cast failure`);
 
 // ./test/core/gc/type-subtyping.wast:287
-assert_trap(() => invoke($14, `fail5`, []), `cast`);
+assert_trap(() => invoke($14, `fail5`, []), `cast failure`);
 
 // ./test/core/gc/type-subtyping.wast:288
-assert_trap(() => invoke($14, `fail6`, []), `cast`);
+assert_trap(() => invoke($14, `fail6`, []), `cast failure`);
 
 // ./test/core/gc/type-subtyping.wast:290
 let $15 = instantiate(`(module
@@ -351,16 +351,16 @@ let $15 = instantiate(`(module
 )`);
 
 // ./test/core/gc/type-subtyping.wast:314
-assert_trap(() => invoke($15, `fail1`, []), `indirect call`);
+assert_trap(() => invoke($15, `fail1`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:315
-assert_trap(() => invoke($15, `fail2`, []), `indirect call`);
+assert_trap(() => invoke($15, `fail2`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:316
-assert_trap(() => invoke($15, `fail3`, []), `cast`);
+assert_trap(() => invoke($15, `fail3`, []), `cast failure`);
 
 // ./test/core/gc/type-subtyping.wast:317
-assert_trap(() => invoke($15, `fail4`, []), `cast`);
+assert_trap(() => invoke($15, `fail4`, []), `cast failure`);
 
 // ./test/core/gc/type-subtyping.wast:319
 let $16 = instantiate(`(module
@@ -393,10 +393,10 @@ let $16 = instantiate(`(module
 assert_return(() => invoke($16, `run`, []), []);
 
 // ./test/core/gc/type-subtyping.wast:345
-assert_trap(() => invoke($16, `fail1`, []), `indirect call`);
+assert_trap(() => invoke($16, `fail1`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:346
-assert_trap(() => invoke($16, `fail2`, []), `indirect call`);
+assert_trap(() => invoke($16, `fail2`, []), `indirect call type mismatch`);
 
 // ./test/core/gc/type-subtyping.wast:348
 let $17 = instantiate(`(module
@@ -720,7 +720,7 @@ assert_unlinkable(
     (rec (type \$g1 (sub \$f1 (func))) (type (struct)))
     (func (import "M5" "g") (type \$g1))
   )`),
-  `incompatible import`,
+  `incompatible import type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:614
@@ -836,7 +836,7 @@ assert_unlinkable(
     (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f11 (func))))
     (func (import "M10" "f") (type \$f11))
   )`),
-  `incompatible import`,
+  `incompatible import type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:706
@@ -857,7 +857,7 @@ assert_unlinkable(
     (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f01 (func))))
     (func (import "M11" "f") (type \$f11))
   )`),
-  `incompatible import`,
+  `incompatible import type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:726
@@ -975,7 +975,7 @@ assert_invalid(
     (type \$a (sub (array (ref none))))
     (type \$b (sub \$a (array (ref any))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:835
@@ -984,7 +984,7 @@ assert_invalid(
     (type \$a (sub (array (mut (ref any)))))
     (type \$b (sub \$a (array (mut (ref none)))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:843
@@ -993,7 +993,7 @@ assert_invalid(
     (type \$a (sub (array (mut (ref any)))))
     (type \$b (sub \$a (array (ref any))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:851
@@ -1002,7 +1002,7 @@ assert_invalid(
     (type \$a (sub (array (ref any))))
     (type \$b (sub \$a (array (mut (ref any)))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:859
@@ -1011,7 +1011,7 @@ assert_invalid(
     (type \$a (sub (struct (field (ref none)))))
     (type \$b (sub \$a (struct (field (ref any)))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:867
@@ -1020,7 +1020,7 @@ assert_invalid(
     (type \$a (sub (struct (field (mut (ref any))))))
     (type \$b (sub \$a (struct (field (mut (ref none))))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:875
@@ -1029,7 +1029,7 @@ assert_invalid(
     (type \$a (sub (struct (field (mut (ref any))))))
     (type \$b (sub \$a (struct (field (ref any)))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:883
@@ -1038,7 +1038,7 @@ assert_invalid(
     (type \$a (sub (struct (field (ref any)))))
     (type \$b (sub \$a (struct (field (mut (ref any))))))
   )`),
-  `sub type 1 does not match super type`,
+  `sub type`,
 );
 
 // ./test/core/gc/type-subtyping.wast:891

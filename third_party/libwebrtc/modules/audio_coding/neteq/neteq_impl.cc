@@ -20,7 +20,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"
 #include "api/array_view.h"
+#include "api/audio/audio_frame.h"
+#include "api/audio/audio_view.h"
 #include "api/audio_codecs/audio_decoder.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
@@ -57,7 +60,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/sanitizer.h"
-#include "rtc_base/strings/audio_format_to_string.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
@@ -119,7 +121,7 @@ NetEqImpl::Dependencies::Dependencies(
                                      stats.get())),
       neteq_controller(controller_factory.Create(
           env,
-          NetEqController::Config{.allow_time_stretching = !config.for_test_no_time_stretching,
+          {.allow_time_stretching = !config.for_test_no_time_stretching,
            .max_packets_in_buffer =
                static_cast<int>(config.max_packets_in_buffer),
            .base_min_delay_ms = config.min_delay_ms,
@@ -183,12 +185,12 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
 NetEqImpl::~NetEqImpl() = default;
 
 int NetEqImpl::InsertPacket(const RTPHeader& rtp_header,
-                            rtc::ArrayView<const uint8_t> payload,
+                            ArrayView<const uint8_t> payload,
                             const RtpPacketInfo& packet_info) {
   MsanCheckInitialized(payload);
   TRACE_EVENT0("webrtc", "NetEqImpl::InsertPacket");
   MutexLock lock(&mutex_);
-  if (InsertPacketInternal(rtp_header, payload, packet_info) != 0) {
+  if (InsertPacketInternal(rtp_header, payload, packet_info) != kNoError) {
     return kFail;
   }
   return kOK;
@@ -209,7 +211,7 @@ int NetEqImpl::GetAudio(AudioFrame* audio_frame,
                         std::optional<Operation> action_override) {
   TRACE_EVENT0("webrtc", "NetEqImpl::GetAudio");
   MutexLock lock(&mutex_);
-  if (GetAudioInternal(audio_frame, action_override) != 0) {
+  if (GetAudioInternal(audio_frame, action_override) != kNoError) {
     return kFail;
   }
   stats_->IncreaseCounter(output_size_samples_, fs_hz_);
@@ -246,10 +248,15 @@ bool NetEqImpl::RegisterPayloadType(int rtp_payload_type,
                                     const SdpAudioFormat& audio_format) {
   RTC_LOG(LS_VERBOSE) << "NetEqImpl::RegisterPayloadType: payload type "
                       << rtp_payload_type << ", codec "
-                      << rtc::ToString(audio_format);
+                      << absl::StrCat(audio_format);
   MutexLock lock(&mutex_);
   return decoder_database_->RegisterPayload(rtp_payload_type, audio_format) ==
          DecoderDatabase::kOK;
+}
+
+bool NetEqImpl::CreateDecoder(int rtp_payload_type) {
+  MutexLock lock(&mutex_);
+  return decoder_database_->GetDecoder(rtp_payload_type) != nullptr;
 }
 
 int NetEqImpl::RemovePayloadType(uint8_t rtp_payload_type) {
@@ -311,7 +318,7 @@ int NetEqImpl::FilteredCurrentDelayMs() const {
   const int delay_samples =
       controller_->GetFilteredBufferLevel() + sync_buffer_->FutureLength();
   // The division below will truncate. The return value is in ms.
-  return delay_samples / rtc::CheckedDivExact(fs_hz_, 1000);
+  return delay_samples / CheckedDivExact(fs_hz_, 1000);
 }
 
 int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
@@ -390,10 +397,10 @@ std::optional<NetEq::DecoderFormat> NetEqImpl::GetCurrentDecoderFormat() const {
     return std::nullopt;
   }
   return DecoderFormat{
-      /*payload_type=*/*current_rtp_payload_type_,
-      /*sample_rate_hz=*/di->SampleRateHz(),
-      /*num_channels=*/dchecked_cast<int>(di->GetDecoder()->Channels()),
-      /*sdp_format=*/di->GetFormat()};
+      .payload_type = *current_rtp_payload_type_,
+      .sample_rate_hz = di->SampleRateHz(),
+      .num_channels = dchecked_cast<int>(di->GetDecoder()->Channels()),
+      .sdp_format = di->GetFormat()};
 }
 
 void NetEqImpl::FlushBuffers() {
@@ -437,7 +444,7 @@ std::vector<uint16_t> NetEqImpl::GetNackList(int64_t round_trip_time_ms) const {
 int NetEqImpl::SyncBufferSizeMs() const {
   MutexLock lock(&mutex_);
   return dchecked_cast<int>(sync_buffer_->FutureLength() /
-                            rtc::CheckedDivExact(fs_hz_, 1000));
+                            CheckedDivExact(fs_hz_, 1000));
 }
 
 const SyncBuffer* NetEqImpl::sync_buffer_for_test() const {
@@ -452,9 +459,10 @@ NetEq::Operation NetEqImpl::last_operation_for_test() const {
 
 // Methods below this line are private.
 
-int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
-                                    rtc::ArrayView<const uint8_t> payload,
-                                    const RtpPacketInfo& packet_info) {
+NetEqImpl::Error NetEqImpl::InsertPacketInternal(
+    const RTPHeader& rtp_header,
+    ArrayView<const uint8_t> payload,
+    const RtpPacketInfo& packet_info) {
   if (payload.empty()) {
     RTC_LOG_F(LS_ERROR) << "payload is empty";
     return kInvalidPointer;
@@ -693,12 +701,14 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
       AudioDecoder* decoder = decoder_database_->GetDecoder(payload_type);
       RTC_DCHECK(decoder);  // Payloads are already checked to be valid.
       channels = decoder->Channels();
+      RTC_DCHECK_LE(channels, kMaxNumberOfAudioChannels);
     }
     const DecoderDatabase::DecoderInfo* decoder_info =
         decoder_database_->GetDecoderInfo(payload_type);
     RTC_DCHECK(decoder_info);
     if (decoder_info->SampleRateHz() != fs_hz_ ||
         channels != algorithm_buffer_->Channels()) {
+      RTC_DCHECK_LE(channels, kMaxNumberOfAudioChannels);
       SetSampleRateAndChannels(decoder_info->SampleRateHz(), channels);
     }
     if (nack_enabled_) {
@@ -708,7 +718,7 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
     }
   }
 
-  return 0;
+  return kNoError;
 }
 
 bool NetEqImpl::MaybeChangePayloadType(uint8_t payload_type) {
@@ -745,6 +755,11 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
   last_decoded_packet_infos_.clear();
   tick_timer_->Increment();
 
+  // Sanity check - should already be taken care of when setting
+  // output_size_samples_.
+  RTC_DCHECK_LE(output_size_samples_ * sync_buffer_->Channels(),
+                AudioFrame::kMaxDataSizeSamples);
+
   // Check for muted state.
   if (enable_muted_state_ && expand_->Muted() && packet_buffer_->Empty()) {
     RTC_DCHECK_EQ(last_mode_, Mode::kExpand);
@@ -752,11 +767,6 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
     RTC_DCHECK(audio_frame->muted());  // Reset() should mute the frame.
     playout_timestamp_ += static_cast<uint32_t>(output_size_samples_);
     audio_frame->sample_rate_hz_ = fs_hz_;
-    // Make sure the total number of samples fits in the AudioFrame.
-    if (output_size_samples_ * sync_buffer_->Channels() >
-        AudioFrame::kMaxDataSizeSamples) {
-      return kSampleUnderrun;
-    }
     audio_frame->samples_per_channel_ = output_size_samples_;
     audio_frame->timestamp_ =
         first_packet_
@@ -878,20 +888,12 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
   sync_buffer_->PushBack(*algorithm_buffer_);
 
   // Extract data from `sync_buffer_` to `output`.
-  size_t num_output_samples_per_channel = output_size_samples_;
-  size_t num_output_samples = output_size_samples_ * sync_buffer_->Channels();
-  if (num_output_samples > AudioFrame::kMaxDataSizeSamples) {
-    RTC_LOG(LS_WARNING) << "Output array is too short. "
-                        << AudioFrame::kMaxDataSizeSamples << " < "
-                        << output_size_samples_ << " * "
-                        << sync_buffer_->Channels();
-    num_output_samples = AudioFrame::kMaxDataSizeSamples;
-    num_output_samples_per_channel =
-        AudioFrame::kMaxDataSizeSamples / sync_buffer_->Channels();
-  }
-  sync_buffer_->GetNextAudioInterleaved(num_output_samples_per_channel,
-                                        audio_frame);
-  audio_frame->sample_rate_hz_ = fs_hz_;
+  audio_frame->ResetWithoutMuting();
+  audio_frame->SetSampleRateAndChannelSize(fs_hz_);
+  InterleavedView<int16_t> view =
+      audio_frame->mutable_data(output_size_samples_, sync_buffer_->Channels());
+  bool got_audio = sync_buffer_->GetNextAudioInterleaved(view);
+
   // TODO(bugs.webrtc.org/10757):
   //   We don't have the ability to properly track individual packets once their
   //   audio samples have entered `sync_buffer_`. So for now, treat it as if
@@ -909,7 +911,8 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
     sync_buffer_->set_next_index(sync_buffer_->next_index() -
                                  missing_lookahead_samples);
   }
-  if (audio_frame->samples_per_channel_ != output_size_samples_) {
+
+  if (!got_audio) {
     RTC_LOG(LS_ERROR) << "audio_frame->samples_per_channel_ ("
                       << audio_frame->samples_per_channel_
                       << ") != output_size_samples_ (" << output_size_samples_
@@ -1070,8 +1073,9 @@ int NetEqImpl::GetDecision(Operation* operation,
   status.sync_buffer_samples = sync_buffer_->FutureLength();
   if (packet) {
     status.next_packet = {
-        packet->timestamp, packet->frame && packet->frame->IsDtxPacket(),
-        decoder_database_->IsComfortNoise(packet->payload_type)};
+        .timestamp = packet->timestamp,
+        .is_dtx = packet->frame && packet->frame->IsDtxPacket(),
+        .is_cng = decoder_database_->IsComfortNoise(packet->payload_type)};
   }
   *operation = controller_->GetDecision(status, &reset_decoder_);
 
@@ -1157,7 +1161,7 @@ int NetEqImpl::GetDecision(Operation* operation,
       // TODO(hlundin): Write test for this.
       // Update timestamp.
       timestamp_ = end_timestamp;
-      const uint64_t generated_noise_samples =
+      generated_noise_samples =
           generated_noise_stopwatch_
               ? generated_noise_stopwatch_->ElapsedTicks() *
                         output_size_samples_ +
@@ -1302,7 +1306,6 @@ int NetEqImpl::Decode(PacketList* packet_list,
         // a reset.
         if (decoder_info->SampleRateHz() != fs_hz_ ||
             decoder->Channels() != algorithm_buffer_->Channels()) {
-          // TODO(tlegrand): Add unittest to cover this event.
           SetSampleRateAndChannels(decoder_info->SampleRateHz(),
                                    decoder->Channels());
         }
@@ -1425,8 +1428,8 @@ int NetEqImpl::DecodeLoop(PacketList* packet_list,
                operation == Operation::kPreemptiveExpand);
 
     auto opt_result = packet_list->front().frame->Decode(
-        rtc::ArrayView<int16_t>(&decoded_buffer_[*decoded_length],
-                                decoded_buffer_length_ - *decoded_length));
+        ArrayView<int16_t>(&decoded_buffer_[*decoded_length],
+                           decoded_buffer_length_ - *decoded_length));
     if (packet_list->front().packet_info) {
       last_decoded_packet_infos_.push_back(*packet_list->front().packet_info);
     }
@@ -2000,16 +2003,24 @@ void NetEqImpl::UpdatePlcComponents(int fs_hz, size_t channels) {
 void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
   RTC_LOG(LS_VERBOSE) << "SetSampleRateAndChannels " << fs_hz << " "
                       << channels;
-  // TODO(hlundin): Change to an enumerator and skip assert.
-  RTC_DCHECK(fs_hz == 8000 || fs_hz == 16000 || fs_hz == 32000 ||
-             fs_hz == 48000);
-  RTC_DCHECK_GT(channels, 0);
+  RTC_CHECK(fs_hz == 8000 || fs_hz == 16000 || fs_hz == 32000 ||
+            fs_hz == 48000);
+  RTC_CHECK_GT(channels, 0);
+  RTC_CHECK_LE(channels, kMaxNumberOfAudioChannels);
+
+  // The format must fit in an AudioFrame. Situations where this could
+  // theoratically happen but aren't supported is e.g. if receiving 24 channels
+  // of 10ms 48 kHz buffers.
+  output_size_samples_ = SampleRateToDefaultChannelSize(fs_hz);
+  RTC_CHECK_LE(channels * output_size_samples_,
+               AudioFrame::kMaxDataSizeSamples);
 
   // Before changing the sample rate, end and report any ongoing expand event.
   stats_->EndExpandEvent(fs_hz_);
   fs_hz_ = fs_hz;
   fs_mult_ = fs_hz / 8000;
-  output_size_samples_ = static_cast<size_t>(kOutputSizeMs * 8 * fs_mult_);
+  RTC_DCHECK_EQ(output_size_samples_,
+                static_cast<size_t>(kOutputSizeMs * 8 * fs_mult_));
   decoder_frame_length_ = 3 * output_size_samples_;  // Initialize to 30ms.
 
   last_mode_ = Mode::kNormal;

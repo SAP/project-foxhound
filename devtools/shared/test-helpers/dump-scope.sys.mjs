@@ -268,12 +268,12 @@ function serializeFrame(frame) {
 
 /**
  * @typedef JSONFrame
- * @property {String} frame
+ * @property {string} frame
  *     The frame location represented as a string built from the original script
  *     url, the line number and the column number
  * @property {JSONFrameDetails} details
  *     Same information as in frame, but as an object.
- * @property {Object} scope
+ * @property {object} scope
  */
 
 /**

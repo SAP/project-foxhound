@@ -30,6 +30,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 import kotlin.random.Random
+import androidx.appcompat.R as appcompatR
 
 @RunWith(RobolectricTestRunner::class)
 class PreferenceBackedRadioButtonTest {
@@ -58,7 +59,7 @@ class PreferenceBackedRadioButtonTest {
             mockContext.obtainStyledAttributes(
                 any<AttributeSet>(),
                 R.styleable.PreferenceBackedRadioButton,
-                R.attr.radioButtonStyle,
+                appcompatR.attr.radioButtonStyle,
                 0,
             )
         } returns mockTypedArray

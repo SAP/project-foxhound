@@ -332,6 +332,14 @@ interface nsIScriptSecurityManager : nsISupports
      * the various blocklist/allowlist exceptions into account.
      */
     boolean policyAllowsScript(in nsIURI aDomain);
+
+    /**
+     * Whether or not we have had an unexpected JavaScript load prior to the
+     * JavaScript observer being initialized. Returns the first such script.
+     * Returns an empty string if not, the script name if so.
+     */
+     readonly attribute ACString firstUnexpectedJavaScriptLoad;
+
 };
 
 %{C++

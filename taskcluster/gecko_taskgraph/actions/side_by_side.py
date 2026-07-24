@@ -46,9 +46,9 @@ def side_by_side_modifier(task, input):
 
     # Make side-by-side job searchable by the platform, test name, and revisions
     # it was triggered for
-    task.task["metadata"][
-        "name"
-    ] = f"{input['platform']} {input['test_name']} {input['base_revision'][:12]} {input['new_revision'][:12]}"
+    task.task["metadata"]["name"] = (
+        f"{input['platform']} {input['test_name']} {input['base_revision'][:12]} {input['new_revision'][:12]}"
+    )
     # Use a job symbol to include the symbol of the job the side-by-side
     # is running for
     task.task["extra"]["treeherder"]["symbol"] += f"-{input['symbol']}"

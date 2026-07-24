@@ -8,11 +8,11 @@
  */
 
 #include "PartitionedLocalStorage.h"
-#include "SessionStorageCache.h"
-#include "nsContentUtils.h"
 #include "nsTaintingUtils.h"
 
+#include "SessionStorageCache.h"
 #include "mozilla/dom/StorageBinding.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 

@@ -5,9 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "sdp/SdpAttribute.h"
-#include "sdp/SdpHelper.h"
-#include <iomanip>
+
 #include <bitset>
+#include <iomanip>
+
+#include "sdp/SdpHelper.h"
 
 #ifdef CRLF
 #  undef CRLF
@@ -1046,7 +1048,7 @@ bool SdpRidAttributeList::PushEntry(const std::string& raw, std::string* error,
 
 void SdpRidAttributeList::PushEntry(const std::string& id, sdp::Direction dir,
                                     const std::vector<uint16_t>& formats,
-                                    const EncodingConstraints& constraints,
+                                    const VideoEncodingConstraints& constraints,
                                     const std::vector<std::string>& dependIds) {
   SdpRidAttributeList::Rid rid;
 

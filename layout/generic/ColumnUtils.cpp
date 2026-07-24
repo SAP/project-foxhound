@@ -28,7 +28,7 @@ nscoord ColumnUtils::GetColumnGap(const nsContainerFrame* aFrame,
 /* static */
 nscoord ColumnUtils::ClampUsedColumnWidth(const Length& aColumnWidth) {
   // Per spec, used values will be clamped to a minimum of 1px.
-  return std::max(CSSPixel::ToAppUnits(1), aColumnWidth.ToAppUnits());
+  return std::max(AppUnitsPerCSSPixel(), aColumnWidth.ToAppUnits());
 }
 
 /* static */

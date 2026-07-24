@@ -3,12 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
- * This test program should eventually become a full-blown test for
- * PR_ParseTimeString.  Right now it just verifies that PR_ParseTimeString
- * doesn't crash on an out-of-range time string (bug 480740).
- */
-
 #include "prtime.h"
 
 #include <time.h>
@@ -59,7 +53,52 @@ static void PrintExplodedTime(const PRExplodedTime* et) {
   }
 }
 
+static PRStatus KnownAnswerTest(void) {
+  static const struct {
+    const char* string;
+    PRBool default_to_gmt;
+    PRTime expected;
+  } tests[] = {
+      {"Mon, 15 Oct 2007 19:45:00 GMT", PR_FALSE, PR_INT64(1192477500000000)},
+      {"15 Oct 07 19:45 GMT", PR_FALSE, PR_INT64(1192477500000000)},
+      {"Mon Oct 15 12:45 PDT 2007", PR_FALSE, PR_INT64(1192477500000000)},
+      {"16 Oct 2007 4:45-JST (Tuesday)", PR_FALSE, PR_INT64(1192477500000000)},
+      // Not normalized.
+      {"Mon Oct 15 12:44:60 PDT 2007", PR_FALSE, PR_INT64(1192477500000000)},
+      // Not normalized.
+      {"Sun Oct 14 36:45 PDT 2007", PR_FALSE, PR_INT64(1192477500000000)},
+      {"Mon, 15 Oct 2007 19:45:23 GMT", PR_FALSE, PR_INT64(1192477523000000)},
+  };
+
+  PRBool failed = PR_FALSE;
+
+  for (int i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+    PRTime result = 0;
+    if (PR_ParseTimeString(tests[i].string, tests[i].default_to_gmt, &result) !=
+        PR_SUCCESS) {
+      printf("PR_ParseTimeString(\"%s\", %s, &result) failed\n",
+             tests[i].string, tests[i].default_to_gmt ? "PR_TRUE" : "PR_FALSE");
+      failed = PR_TRUE;
+      continue;
+    }
+    if (result != tests[i].expected) {
+      printf(
+          "PR_ParseTimeString(\"%s\", %s, &result) returns %lld, expected "
+          "%lld\n",
+          tests[i].string, tests[i].default_to_gmt ? "PR_TRUE" : "PR_FALSE",
+          (long long)result, (long long)tests[i].expected);
+      failed = PR_TRUE;
+    }
+  }
+
+  return failed ? PR_FAILURE : PR_SUCCESS;
+}
+
 int main(int argc, char** argv) {
+  /*
+   * 1. Verify that PR_ParseTimeString doesn't crash on an out-of-range time
+   * string (bug 480740).
+   */
   PRTime ct;
   PRExplodedTime et;
   PRStatus rv;
@@ -84,5 +123,12 @@ int main(int argc, char** argv) {
   PrintExplodedTime(&et);
   printf("\n");
 
+  /* 2. Run a full-blown test for PR_ParseTimeString. */
+  if (KnownAnswerTest() != PR_SUCCESS) {
+    printf("FAIL\n");
+    return 1;
+  }
+
+  printf("PASS\n");
   return 0;
 }

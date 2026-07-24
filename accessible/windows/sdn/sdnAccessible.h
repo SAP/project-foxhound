@@ -11,7 +11,6 @@
 #include "IUnknownImpl.h"
 #include "MsaaAccessible.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/NotNull.h"
 
 namespace mozilla {

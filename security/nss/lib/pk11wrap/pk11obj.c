@@ -16,6 +16,7 @@
 #include "pkcs11t.h"
 #include "pk11func.h"
 #include "keyhi.h"
+#include "keyi.h"
 #include "secitem.h"
 #include "secerr.h"
 #include "sslerr.h"
@@ -552,6 +553,7 @@ PK11_SignatureLen(SECKEYPrivateKey *key)
     SECItem attributeItem = { siBuffer, NULL, 0 };
     SECStatus rv;
     int length;
+    SECOidTag paramSet;
 
     switch (key->keyType) {
         case rsaKey:
@@ -590,6 +592,13 @@ PK11_SignatureLen(SECKEYPrivateKey *key)
                 }
             }
             return pk11_backupGetSignLength(key);
+        case mldsaKey:
+            paramSet = seckey_GetParameterSet(key);
+            if (paramSet == SEC_OID_UNKNOWN) {
+                break;
+            }
+
+            return SECKEY_MLDSAOidParamsToLen(paramSet, SECKEYSignatureType);
         default:
             break;
     }
@@ -760,19 +769,35 @@ PK11_VerifyWithMechanism(SECKEYPublicKey *key, CK_MECHANISM_TYPE mechanism,
     session = pk11_GetNewSession(slot, &owner);
     if (!owner || !(slot->isThreadSafe))
         PK11_EnterSlotMonitor(slot);
-    crv = PK11_GETTAB(slot)->C_VerifyInit(session, &mech, id);
-    if (crv != CKR_OK) {
-        if (!owner || !(slot->isThreadSafe))
-            PK11_ExitSlotMonitor(slot);
-        pk11_CloseSession(slot, session, owner);
-        PK11_FreeSlot(slot);
-        PORT_SetError(PK11_MapError(crv));
-        return SECFailure;
+    if (PK11_CheckPKCS11Version(slot, 3, 2, PR_TRUE) >= 0) {
+        crv = PK11_GETTAB(slot)->C_VerifySignatureInit(session, &mech, id,
+                                                       sig->data, sig->len);
+        if (crv != CKR_OK) {
+            if (!owner || !(slot->isThreadSafe))
+                PK11_ExitSlotMonitor(slot);
+            pk11_CloseSession(slot, session, owner);
+            PK11_FreeSlot(slot);
+            PORT_SetError(PK11_MapError(crv));
+            return SECFailure;
+        }
+        crv = PK11_GETTAB(slot)->C_VerifySignature(session, hash->data,
+                                                   hash->len);
+    } else {
+        crv = PK11_GETTAB(slot)->C_VerifyInit(session, &mech, id);
+        if (crv != CKR_OK) {
+            if (!owner || !(slot->isThreadSafe))
+                PK11_ExitSlotMonitor(slot);
+            pk11_CloseSession(slot, session, owner);
+            PK11_FreeSlot(slot);
+            PORT_SetError(PK11_MapError(crv));
+            return SECFailure;
+        }
+        crv = PK11_GETTAB(slot)->C_Verify(session, hash->data,
+                                          hash->len, sig->data, sig->len);
     }
-    crv = PK11_GETTAB(slot)->C_Verify(session, hash->data,
-                                      hash->len, sig->data, sig->len);
     if (!owner || !(slot->isThreadSafe))
         PK11_ExitSlotMonitor(slot);
+
     pk11_CloseSession(slot, session, owner);
     PK11_FreeSlot(slot);
     if (crv != CKR_OK) {
@@ -1193,7 +1218,7 @@ SECKEYPrivateKey *
 PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
                    CK_MECHANISM_TYPE wrapType, SECItem *param,
                    SECItem *wrappedKey, SECItem *label,
-                   SECItem *idValue, PRBool perm, PRBool sensitive,
+                   const SECItem *idValue, PRBool perm, PRBool sensitive,
                    CK_KEY_TYPE keyType, CK_ATTRIBUTE_TYPE *usage,
                    int usageCount, void *wincx)
 {
@@ -1212,7 +1237,7 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
     int i;
 
     if (!slot || !wrappedKey || !idValue) {
-        /* SET AN ERROR!!! */
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
 
@@ -1341,6 +1366,63 @@ loser:
     SECITEM_FreeItem(ck_id, PR_TRUE);
     SECITEM_FreeItem(param_free, PR_TRUE);
     return NULL;
+}
+
+/*
+ * PK11_UnwrapPrivKeyByKeyType is like PK11_UnwrapPrivKey but uses the
+ * keyType and the keyUsage to determine what usage attributes to set.
+ */
+#define _MAX_USAGE 6
+SECKEYPrivateKey *
+PK11_UnwrapPrivKeyByKeyType(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
+                            CK_MECHANISM_TYPE wrapType, SECItem *param,
+                            SECItem *wrappedKey, SECItem *label,
+                            const SECItem *idValue, PRBool perm, PRBool sensitive,
+                            KeyType keyType, unsigned int keyUsage, void *wincx)
+{
+    CK_KEY_TYPE pk11KeyType = pk11_getPKCS11KeyTypeFromKeyType(keyType);
+    CK_ATTRIBUTE_TYPE usage[_MAX_USAGE];
+    int usageCount = 0;
+    PRBool needKeyUsage = PR_FALSE;
+
+    /* RSA and ecKeys can be used in more than one usage, use the
+     * key usage to determine which usage to actual set */
+    if ((keyType == rsaKey) || (keyType == ecKey)) {
+        needKeyUsage = PR_TRUE;
+    }
+
+    /* use the pk11_mapXXXXKeyType functions to determine what kind
+     * of attributes to set on the key. Using these functions reduces
+     * the number of places we need to update to add new key types */
+    if ((pk11_mapWrapKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_ENCIPHERMENT)) {
+        usage[usageCount++] = CKA_UNWRAP;
+        usage[usageCount++] = CKA_DECRYPT;
+    }
+    if ((pk11_mapKemKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_AGREEMENT)) {
+        usage[usageCount++] = CKA_DECAPSULATE;
+    }
+    if ((PK11_MapSignKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_DIGITAL_SIGNATURE)) {
+        usage[usageCount++] = CKA_SIGN;
+        if (keyType == rsaKey) {
+            usage[usageCount++] = CKA_SIGN_RECOVER;
+        }
+    }
+    if ((pk11_mapDeriveKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_AGREEMENT)) {
+        usage[usageCount++] = CKA_DERIVE;
+    }
+
+    PORT_Assert(usageCount <= _MAX_USAGE);
+
+    if (usageCount == 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+    }
+    return PK11_UnwrapPrivKey(slot, wrappingKey, wrapType, param, wrappedKey,
+                              label, idValue, perm, sensitive, pk11KeyType,
+                              usage, usageCount, wincx);
 }
 
 /*

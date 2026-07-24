@@ -3,18 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/FloatingPoint.h"
-
-#include "txExpr.h"
-#include "txNodeSet.h"
-#include "nsGkAtoms.h"
-#include "txIXPathContext.h"
-#include "nsWhitespaceTokenizer.h"
-#include "txXPathTreeWalker.h"
 #include <math.h>
+
+#include "mozilla/FloatingPoint.h"
+#include "nsGkAtoms.h"
+#include "nsWhitespaceTokenizer.h"
+#include "txExpr.h"
+#include "txIXPathContext.h"
+#include "txNodeSet.h"
 #include "txStringUtils.h"
 #include "txXMLUtils.h"
+#include "txXPathTreeWalker.h"
 
 using namespace mozilla;
 

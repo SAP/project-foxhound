@@ -206,60 +206,31 @@ async function generateNewKeys(collectionKeys, collections = null) {
 // These reflect part of the internal structure of TabEngine,
 // and stub part of Service.wm.
 
-function mockShouldSkipWindow(win) {
-  return win.closed || win.mockIsPrivate;
-}
-
 function mockGetTabState(tab) {
   return tab;
 }
 
-function mockGetWindowEnumerator(urls) {
-  let elements = [];
+function mockGetOrderedNonPrivateWindows(urls) {
+  let tabs = [];
+  let win = {
+    gBrowser: {
+      tabs,
+    },
+  };
 
-  const numWindows = 1;
-  for (let w = 0; w < numWindows; ++w) {
-    let tabs = [];
-    let win = {
-      closed: false,
-      mockIsPrivate: false,
-      gBrowser: {
-        tabs,
+  let lastAccessed = 2000;
+  for (let url of urls) {
+    tabs.push({
+      linkedBrowser: {
+        currentURI: Services.io.newURI(url),
+        contentTitle: "title",
       },
-    };
-    elements.push(win);
-
-    let lastAccessed = 2000;
-    for (let url of urls) {
-      tabs.push({
-        linkedBrowser: {
-          currentURI: Services.io.newURI(url),
-          contentTitle: "title",
-        },
-        lastAccessed,
-      });
-      lastAccessed += 1000;
-    }
+      lastAccessed,
+    });
+    lastAccessed += 1000;
   }
 
-  // Always include a closed window and a private window.
-  elements.push({
-    closed: true,
-    mockIsPrivate: false,
-    gBrowser: {
-      tabs: [],
-    },
-  });
-
-  elements.push({
-    closed: false,
-    mockIsPrivate: true,
-    gBrowser: {
-      tabs: [],
-    },
-  });
-
-  return elements.values();
+  return [win];
 }
 
 // Helper function to get the sync telemetry and add the typically used test

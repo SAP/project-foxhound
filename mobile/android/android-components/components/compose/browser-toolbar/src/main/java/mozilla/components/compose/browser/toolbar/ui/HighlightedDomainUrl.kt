@@ -6,12 +6,12 @@ package mozilla.components.compose.browser.toolbar.ui
 
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.content.res.Configuration.UI_MODE_TYPE_NORMAL
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -95,7 +95,7 @@ fun HighlightedDomainUrl(
         it.first + LTR_MARK_OFFSET to it.second + LTR_MARK_OFFSET
     }
 
-    val annotatedUrl = remember(url, registrableDomainIndexRange) {
+    val annotatedUrl = remember(url, registrableDomainIndexRange, fadedTextStyle, boldedTextStyle) {
         buildAnnotatedString {
             if (registrableDomainIndexRange != null) {
                 withStyle(style = fadedTextStyle.toSpanStyle()) {
@@ -121,11 +121,15 @@ fun HighlightedDomainUrl(
         maxLines = 1,
         modifier = modifier
             .focusTextIndexRange(
-                url, fadedTextStyle, registrableDomainIndexRange, fadeLength,
+                annotatedUrl.text,
+                fadedTextStyle,
+                registrableDomainIndexRange,
+                fadeLength,
             ),
     )
 }
 
+@Suppress("LongMethod")
 private fun Modifier.focusTextIndexRange(
     text: String,
     textStyle: TextStyle,
@@ -152,10 +156,16 @@ private fun Modifier.focusTextIndexRange(
                 constraints = Constraints(maxWidth = it.width),
             ).also {
                 coroutineScope.launch {
-                    val index = (highlightRange?.second?.plus(END_SCROLL_OFFSET) ?: 0).coerceAtMost(text.lastIndex)
-                    val offset = it.getBoundingBox(index)
-                    // Ensure the end of [highlightRange] is shown to the end of the viewport.
-                    val endOffset = (offset.right - scrollState.viewportSize).toInt().coerceIn(0, scrollState.maxValue)
+                    val endOffset = when (highlightRange?.second == text.length) {
+                        true -> scrollState.maxValue
+                        else -> {
+                            val index = (highlightRange?.second?.plus(END_SCROLL_OFFSET) ?: 0)
+                                .coerceAtMost(text.lastIndex)
+                            val offset = it.getBoundingBox(index)
+                            // Ensure the end of [highlightRange] is shown to the end of the viewport.
+                            (offset.right - scrollState.viewportSize).toInt().coerceIn(0, scrollState.maxValue)
+                        }
+                    }
 
                     scrollState.scrollTo(endOffset)
                 }
@@ -222,15 +232,15 @@ private fun HighlightedDomainUrlPreview(
     @PreviewParameter(HighlightedUrlDomainDataProvider::class) config: HighlightedUrlDomainPreviewModel,
 ) {
     AcornTheme {
-        Box(Modifier.background(AcornTheme.colors.layer1)) {
+        Surface {
             HighlightedDomainUrl(
                 url = config.url,
                 registrableDomainIndexRange = config.registrableDomainIndexRange,
                 fadedTextStyle = LocalTextStyle.current.merge(
-                    TextStyle(color = AcornTheme.colors.actionWarning),
+                    TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant),
                 ),
                 boldedTextStyle = LocalTextStyle.current.merge(
-                    TextStyle(color = AcornTheme.colors.textPrimary),
+                    TextStyle(color = MaterialTheme.colorScheme.onSurface),
                 ),
                 modifier = Modifier.width(200.dp),
             )
@@ -244,15 +254,15 @@ private fun RTLHighlightedDomainUrlPreview(
     @PreviewParameter(HighlightedUrlDomainDataProvider::class) config: HighlightedUrlDomainPreviewModel,
 ) {
     AcornTheme {
-        Box(Modifier.background(AcornTheme.colors.layer1)) {
+        Surface {
             HighlightedDomainUrl(
                 url = config.url,
                 registrableDomainIndexRange = config.registrableDomainIndexRange,
                 fadedTextStyle = LocalTextStyle.current.merge(
-                    TextStyle(color = AcornTheme.colors.actionWarning),
+                    TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant),
                 ),
                 boldedTextStyle = LocalTextStyle.current.merge(
-                    TextStyle(color = AcornTheme.colors.textPrimary),
+                    TextStyle(color = MaterialTheme.colorScheme.onSurface),
                 ),
                 modifier = Modifier.width(200.dp),
             )

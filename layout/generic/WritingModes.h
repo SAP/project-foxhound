@@ -71,6 +71,12 @@ using PhysicalAxes = EnumSet<PhysicalAxis>;
 static constexpr PhysicalAxes kPhysicalAxesBoth{PhysicalAxis::Vertical,
                                                 PhysicalAxis::Horizontal};
 
+inline StyleLogicalAxis ToStyleLogicalAxis(LogicalAxis aLogicalAxis) {
+  return StyleLogicalAxis(aLogicalAxis == LogicalAxis::Block
+                              ? StyleLogicalAxis::Block
+                              : StyleLogicalAxis::Inline);
+}
+
 inline LogicalAxis GetOrthogonalAxis(LogicalAxis aAxis) {
   return aAxis == LogicalAxis::Block ? LogicalAxis::Inline : LogicalAxis::Block;
 }
@@ -218,7 +224,7 @@ class WritingMode {
 
   /**
    * True if vertical writing mode, i.e. when
-   * writing-mode: vertical-lr | vertical-rl.
+   * writing-mode: vertical-lr | vertical-rl | sideways-lr | sideways-rl.
    */
   bool IsVertical() const {
     return !!(mWritingMode & StyleWritingMode::VERTICAL);
@@ -474,6 +480,10 @@ class WritingMode {
     mWritingMode = aComputedStyle->WritingMode();
   }
 
+  inline StyleWritingMode ToStyleWritingMode() const {
+    return StyleWritingMode(GetBits());
+  }
+
   /**
    * This function performs fixup for elements with 'unicode-bidi: plaintext',
    * where inline directionality is derived from the Unicode bidi categories
@@ -499,19 +509,21 @@ class WritingMode {
   /**
    * Compare two WritingModes for equality.
    */
-  bool operator==(const WritingMode& aOther) const {
-    return mWritingMode == aOther.mWritingMode;
-  }
-
-  bool operator!=(const WritingMode& aOther) const {
-    return mWritingMode != aOther.mWritingMode;
-  }
+  bool operator==(const WritingMode&) const = default;
+  bool operator!=(const WritingMode&) const = default;
 
   /**
    * Check whether two modes are orthogonal to each other.
    */
   bool IsOrthogonalTo(const WritingMode& aOther) const {
     return IsVertical() != aOther.IsVertical();
+  }
+
+  /**
+   * Convert aAxis in current writing mode to the axis in aToMode.
+   */
+  LogicalAxis ConvertAxisTo(LogicalAxis aAxis, WritingMode aToMode) const {
+    return IsOrthogonalTo(aToMode) ? GetOrthogonalAxis(aAxis) : aAxis;
   }
 
   /**
@@ -525,14 +537,17 @@ class WritingMode {
    */
   bool ParallelAxisStartsOnSameSide(LogicalAxis aLogicalAxis,
                                     const WritingMode& aOther) const {
+    if (MOZ_LIKELY(*this == aOther)) {
+      // Dedicated short circuit for the common case.
+      return true;
+    }
+
     mozilla::Side myStartSide =
         this->PhysicalSide(MakeLogicalSide(aLogicalAxis, LogicalEdge::Start));
 
     // Figure out which of aOther's axes is parallel to |this| WritingMode's
     // aLogicalAxis, and get its physical start side as well.
-    LogicalAxis otherWMAxis = aOther.IsOrthogonalTo(*this)
-                                  ? GetOrthogonalAxis(aLogicalAxis)
-                                  : aLogicalAxis;
+    const LogicalAxis otherWMAxis = ConvertAxisTo(aLogicalAxis, aOther);
     mozilla::Side otherWMStartSide =
         aOther.PhysicalSide(MakeLogicalSide(otherWMAxis, LogicalEdge::Start));
 
@@ -848,11 +863,7 @@ class LogicalPoint {
     CHECK_WRITING_MODE(aOther.GetWritingMode());
     return mPoint == aOther.mPoint;
   }
-
-  bool operator!=(const LogicalPoint& aOther) const {
-    CHECK_WRITING_MODE(aOther.GetWritingMode());
-    return mPoint != aOther.mPoint;
-  }
+  bool operator!=(const LogicalPoint&) const = default;
 
   LogicalPoint operator+(const LogicalPoint& aOther) const {
     CHECK_WRITING_MODE(aOther.GetWritingMode());
@@ -1075,11 +1086,7 @@ class LogicalSize {
     CHECK_WRITING_MODE(aOther.GetWritingMode());
     return mSize == aOther.mSize;
   }
-
-  bool operator!=(const LogicalSize& aOther) const {
-    CHECK_WRITING_MODE(aOther.GetWritingMode());
-    return mSize != aOther.mSize;
-  }
+  bool operator!=(const LogicalSize&) const = default;
 
   LogicalSize operator+(const LogicalSize& aOther) const {
     CHECK_WRITING_MODE(aOther.GetWritingMode());
@@ -1191,14 +1198,11 @@ struct LogicalSides final {
     mSides += aOther;
     return *this;
   }
-  bool operator==(LogicalSides aOther) const {
+  bool operator==(const LogicalSides& aOther) const {
     CHECK_WRITING_MODE(aOther.GetWritingMode());
     return mSides == aOther.mSides;
   }
-  bool operator!=(LogicalSides aOther) const {
-    CHECK_WRITING_MODE(aOther.GetWritingMode());
-    return !(*this == aOther);
-  }
+  bool operator!=(const LogicalSides&) const = default;
 
 #ifdef DEBUG
   WritingMode GetWritingMode() const { return mWritingMode; }
@@ -1504,11 +1508,7 @@ class LogicalMargin {
     CHECK_WRITING_MODE(aMargin.GetWritingMode());
     return mMargin == aMargin.mMargin;
   }
-
-  bool operator!=(const LogicalMargin& aMargin) const {
-    CHECK_WRITING_MODE(aMargin.GetWritingMode());
-    return mMargin != aMargin.mMargin;
-  }
+  bool operator!=(const LogicalMargin&) const = default;
 
   LogicalMargin operator+(const LogicalMargin& aMargin) const {
     CHECK_WRITING_MODE(aMargin.GetWritingMode());
@@ -2189,6 +2189,17 @@ inline AnchorResolvedInset nsStylePosition::GetAnchorResolvedInset(
   return GetAnchorResolvedInset(aWM.PhysicalSide(aSide), aParams);
 }
 
+inline mozilla::Maybe<mozilla::Side> nsStylePosition::GetSingleAutoInsetInAxis(
+    LogicalAxis aAxis, WritingMode aWM,
+    const AnchorPosOffsetResolutionParams& aParams) const {
+  const bool isInlineAxis = (aAxis == LogicalAxis::Inline);
+  const mozilla::StylePhysicalAxis physicalAxis =
+      (isInlineAxis == aWM.IsVertical())
+          ? mozilla::StylePhysicalAxis::Vertical
+          : mozilla::StylePhysicalAxis::Horizontal;
+  return GetSingleAutoInsetInAxis(physicalAxis, aParams);
+}
+
 inline AnchorResolvedSize nsStylePosition::ISize(
     WritingMode aWM, const AnchorPosResolutionParams& aParams) const {
   return aWM.IsVertical() ? GetHeight(aParams) : GetWidth(aParams);
@@ -2313,9 +2324,20 @@ inline AnchorResolvedMargin nsStyleMargin::GetMargin(
 }
 
 inline mozilla::StyleAlignFlags nsStylePosition::UsedSelfAlignment(
-    mozilla::LogicalAxis aAxis, const mozilla::ComputedStyle* aParent) const {
-  return aAxis == mozilla::LogicalAxis::Block ? UsedAlignSelf(aParent)._0
-                                              : UsedJustifySelf(aParent)._0;
+    LogicalAxis aAlignContainerAxis,
+    const ComputedStyle* aAlignContainerStyle) const {
+  return aAlignContainerAxis == LogicalAxis::Block
+             ? UsedAlignSelf(aAlignContainerStyle)._0
+             : UsedJustifySelf(aAlignContainerStyle)._0;
+}
+
+inline mozilla::StyleAlignFlags nsStylePosition::UsedSelfAlignment(
+    WritingMode aAlignSubjectWM, LogicalAxis aAlignSubjectAxis,
+    WritingMode aAlignContainerWM,
+    const ComputedStyle* aAlignContainerStyle) const {
+  const auto alignContainerAxis =
+      aAlignSubjectWM.ConvertAxisTo(aAlignSubjectAxis, aAlignContainerWM);
+  return UsedSelfAlignment(alignContainerAxis, aAlignContainerStyle);
 }
 
 inline mozilla::StyleContentDistribution nsStylePosition::UsedContentAlignment(

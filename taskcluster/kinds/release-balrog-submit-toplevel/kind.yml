@@ -12,6 +12,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     run-on-projects: []  # to make sure this never runs in CI
     shipping-phase: promote
     worker-type: balrog
@@ -39,22 +40,22 @@ tasks:
             channel-names:
                 by-release-type:
                     beta: ["beta", "beta-localtest", "beta-cdntest"]
-                    release(-rc)?: ["release", "release-localtest", "release-cdntest"]
+                    release: ["release", "release-localtest", "release-cdntest"]
                     esr.*: ["esr", "esr-localtest", "esr-cdntest", "esr-localtest-next", "esr-cdntest-next"]
                     default: []
             rules-to-update:
                 by-release-type:
                     beta: ["firefox-beta-cdntest", "firefox-beta-localtest"]
-                    release(-rc)?: ["firefox-release-cdntest", "firefox-release-localtest"]
+                    release: ["firefox-release-cdntest", "firefox-release-localtest"]
                     esr140: ["firefox-esr140-cdntest", "firefox-esr140-localtest"]
                     default: []
             pin-channels:
                 by-release-type:
                     beta: ["beta-localtest", "beta-cdntest"]
-                    release(-rc)?: ["release-localtest", "release-cdntest"]
+                    release: ["release-localtest", "release-cdntest"]
                     esr.*: ["esr-localtest", "esr-cdntest", "esr-localtest-next", "esr-cdntest-next"]
                     default: []
-            platforms: ["linux", "linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
+            platforms: ["linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:
             platform: firefox-release/opt
             symbol: Rel(BPFx)
@@ -71,7 +72,7 @@ tasks:
             channel-names: ["aurora", "aurora-localtest", "aurora-cdntest"]
             rules-to-update: ["devedition-cdntest", "devedition-localtest"]
             pin-channels: ["aurora-localtest", "aurora-cdntest"]
-            platforms: ["linux", "linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
+            platforms: ["linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:
             platform: devedition-release/opt
             symbol: Rel(BPDev)

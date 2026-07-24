@@ -6,6 +6,9 @@
 
 DIRS += [
     "interface",
+    # Include the libfuzzer directory to all fuzzing builds so that
+    # FuzzedDataProvider is accessible to AFL++ builds
+    "libfuzzer",
     "registry",
 ]
 
@@ -26,8 +29,3 @@ if not CONFIG["JS_STANDALONE"]:
         DIRS += [
             "rust",
         ]
-
-if CONFIG["LIBFUZZER"]:
-    DIRS += [
-        "libfuzzer",
-    ]

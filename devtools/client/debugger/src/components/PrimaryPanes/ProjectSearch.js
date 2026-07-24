@@ -22,7 +22,7 @@ import {
 } from "../../selectors/index";
 
 import SearchInput from "../shared/SearchInput";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 const { PluralForm } = require("resource://devtools/shared/plural-form.js");
 const classnames = require("resource://devtools/client/shared/classnames.js");
@@ -234,13 +234,14 @@ export class ProjectSearch extends Component {
         }),
         key: file.location.source.id,
       },
-      React.createElement(AccessibleImage, {
-        className: classnames("arrow", {
+      React.createElement(DebuggerImage, {
+        name: "arrow",
+        className: classnames({
           expanded,
         }),
       }),
-      React.createElement(AccessibleImage, {
-        className: "file",
+      React.createElement(DebuggerImage, {
+        name: "file",
       }),
       span(
         {
@@ -307,8 +308,8 @@ export class ProjectSearch extends Component {
           : L10N.getStr("projectTextSearch.refreshButtonTooltip"),
         onClick: this.doSearch,
       },
-      React.createElement(AccessibleImage, {
-        className: "refresh",
+      React.createElement(DebuggerImage, {
+        name: "refresh",
       })
     );
   }

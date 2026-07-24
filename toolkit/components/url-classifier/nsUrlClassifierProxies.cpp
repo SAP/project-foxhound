@@ -58,14 +58,16 @@ UrlClassifierDBServiceWorkerProxy::SetHashCompleter(
 
 NS_IMETHODIMP
 UrlClassifierDBServiceWorkerProxy::BeginUpdate(
-    nsIUrlClassifierUpdateObserver* aUpdater, const nsACString& aTables) {
-  nsCOMPtr<nsIRunnable> r = new BeginUpdateRunnable(mTarget, aUpdater, aTables);
+    nsIUrlClassifierUpdateObserver* aUpdater, const nsACString& aTables,
+    const nsACString& aProvider) {
+  nsCOMPtr<nsIRunnable> r =
+      new BeginUpdateRunnable(mTarget, aUpdater, aTables, aProvider);
   return DispatchToWorkerThread(r);
 }
 
 NS_IMETHODIMP
 UrlClassifierDBServiceWorkerProxy::BeginUpdateRunnable::Run() {
-  mTarget->BeginUpdate(mUpdater, mTables);
+  mTarget->BeginUpdate(mUpdater, mTables, mProvider);
   return NS_OK;
 }
 
@@ -140,6 +142,11 @@ UrlClassifierDBServiceWorkerProxy::ClearCache() {
       NewRunnableMethod("nsUrlClassifierDBServiceWorker::ClearCache", mTarget,
                         &nsUrlClassifierDBServiceWorker::ClearCache);
   return DispatchToWorkerThread(r);
+}
+
+NS_IMETHODIMP
+UrlClassifierDBServiceWorkerProxy::CleanRealTimeSimulatorCache() {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult UrlClassifierDBServiceWorkerProxy::OpenDb() const {

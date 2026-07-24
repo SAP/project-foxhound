@@ -79,7 +79,7 @@ add_task(async function () {
   );
 
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  const cView = selectComputedView(inspector);
+  const cView = await selectComputedView(inspector);
   await onComputedViewReady;
   overlay = cView.highlighters;
 

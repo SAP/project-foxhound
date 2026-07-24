@@ -18,7 +18,6 @@
 #include <type_traits>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EndianUtils.h"
 
 #include "nsCharTraits.h"
 

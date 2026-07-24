@@ -9,18 +9,17 @@
 #  include "mozilla/a11y/DocManager.h"
 #  include "mozilla/a11y/OuterDocAccessible.h"
 #endif
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserBridgeHost.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
-#include "mozilla/PresShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsObjectLoadingContent.h"
 #include "nsQueryObject.h"
 #include "nsSubDocumentFrame.h"
-#include "nsView.h"
 
 using namespace mozilla::ipc;
 
@@ -65,17 +64,17 @@ nsILoadContext* BrowserBridgeChild::GetLoadContext() {
 
 void BrowserBridgeChild::NavigateByKey(bool aForward,
                                        bool aForDocumentNavigation) {
-  Unused << SendNavigateByKey(aForward, aForDocumentNavigation);
+  (void)SendNavigateByKey(aForward, aForDocumentNavigation);
 }
 
 void BrowserBridgeChild::Activate(uint64_t aActionId) {
   LOGBROWSERCHILDFOCUS(
       ("BrowserBridgeChild::Activate actionid: %" PRIu64, aActionId));
-  Unused << SendActivate(aActionId);
+  (void)SendActivate(aActionId);
 }
 
 void BrowserBridgeChild::Deactivate(bool aWindowLowering, uint64_t aActionId) {
-  Unused << SendDeactivate(aWindowLowering, aActionId);
+  (void)SendDeactivate(aWindowLowering, aActionId);
 }
 
 /*static*/

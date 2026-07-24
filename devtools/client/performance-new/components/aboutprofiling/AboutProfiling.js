@@ -63,19 +63,20 @@ function encodeShellValue(value) {
 /**
  * @typedef {import("../../@types/perf").RecordingSettings} RecordingSettings
  *
- * @typedef {Object} ButtonStateProps
+ * @typedef {object} ButtonStateProps
  * @property {RecordingSettings} recordingSettings
  *
  * @typedef {ButtonStateProps} ButtonProps
  *
- * @typedef {Object} ButtonState
+ * @typedef {object} ButtonState
  * @property {boolean} hasDeveloperOptions
  */
 
 /**
  * This component implements the button that triggers the menu that makes it
  * possible to show more actions.
- * @extends {React.PureComponent<ButtonProps, ButtonState>}
+ *
+ * @augments {React.PureComponent<ButtonProps, ButtonState>}
  */
 class MoreActionsButtonImpl extends PureComponent {
   state = {
@@ -84,6 +85,8 @@ class MoreActionsButtonImpl extends PureComponent {
       false
     ),
   };
+
+  _menuRef = createRef();
 
   componentDidMount() {
     Services.prefs.addObserver(
@@ -98,7 +101,6 @@ class MoreActionsButtonImpl extends PureComponent {
       this.onHasDeveloperOptionsPrefChanges
     );
   }
-  _menuRef = createRef();
 
   onHasDeveloperOptionsPrefChanges = () => {
     this.setState({
@@ -114,6 +116,7 @@ class MoreActionsButtonImpl extends PureComponent {
    * https://searchfox.org/mozilla-central/rev/4bacdbc8ac088f2ee516daf42c535fab2bc24a04/toolkit/content/widgets/panel-list/README.stories.md
    * Strangely our React's type doesn't have the `detail` property for
    * MouseEvent, so we're defining it manually.
+   *
    * @param {React.MouseEvent & { detail: number }} e
    */
   handleClickOrMousedown = e => {
@@ -234,7 +237,7 @@ const MoreActionsButton = connect(mapStateToButtonProps)(MoreActionsButtonImpl);
 /**
  * @typedef {import("../../@types/perf").PageContext} PageContext
  *
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {boolean?} isSupportedPlatform
  * @property {PageContext} pageContext
  * @property {string | null} promptEnvRestart
@@ -247,7 +250,7 @@ const MoreActionsButton = connect(mapStateToButtonProps)(MoreActionsButtonImpl);
  * This is the top level component for the about:profiling page. It shares components
  * with the popup and DevTools page.
  *
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class AboutProfiling extends PureComponent {
   render() {

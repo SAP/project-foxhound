@@ -7,9 +7,8 @@
 #ifndef mozilla_net_WebrtcTCPSocketParent_h
 #define mozilla_net_WebrtcTCPSocketParent_h
 
-#include "mozilla/net/PWebrtcTCPSocketParent.h"
-
 #include "WebrtcTCPSocketCallback.h"
+#include "mozilla/net/PWebrtcTCPSocketParent.h"
 
 class nsIAuthPromptProvider;
 

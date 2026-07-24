@@ -11,8 +11,8 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentAboutLibrariesBinding
@@ -91,11 +91,13 @@ class AboutLibrariesFragment : Fragment(R.layout.fragment_about_libraries) {
             val licenseData = licensesData.sliceArray(startOffset until startOffset + length)
             val licenseText = licenseData.toString(Charset.forName("UTF-8"))
             LibraryItem(name, licenseText)
-        }.sortedBy { item -> item.name.lowercase(Locale.ROOT) }
+        }
+        .distinctBy { it.name.lowercase(Locale.ROOT) }
+        .sortedBy { it.name.lowercase(Locale.ROOT) }
     }
 
     private fun showLicenseDialog(libraryItem: LibraryItem) {
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(libraryItem.name)
             .setMessage(libraryItem.license)
             .create()

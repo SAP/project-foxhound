@@ -60,11 +60,9 @@ async function getRandomKeyHexFromBrowser(
   let keyAboutBlank = await SpecialPowers.spawn(browser, [], async _ => {
     let ifr = content.document.createElement("iframe");
 
-    let loaded = new content.Promise(resolve => {
-      ifr.onload = resolve;
-    });
-    content.document.body.appendChild(ifr);
+    const loaded = ContentTaskUtils.waitForEvent(ifr, "load");
     ifr.src = "about:blank";
+    content.document.body.appendChild(ifr);
 
     await loaded;
 
@@ -106,11 +104,9 @@ async function getRandomKeyHexFromBrowser(
     async domain => {
       let ifr = content.document.createElement("iframe");
 
-      let loaded = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loaded = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = domain;
+      content.document.body.appendChild(ifr);
 
       await loaded;
 
@@ -137,11 +133,9 @@ async function getRandomKeyHexFromBrowser(
     async domain => {
       let ifr = content.document.createElement("iframe");
 
-      let loaded = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loaded = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = domain;
+      content.document.body.appendChild(ifr);
 
       await loaded;
 

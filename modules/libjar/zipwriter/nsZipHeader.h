@@ -10,7 +10,6 @@
 #include "nsIOutputStream.h"
 #include "nsIInputStream.h"
 #include "nsIZipReader.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 
 // High word is S_IFREG, low word is DOS file attribute

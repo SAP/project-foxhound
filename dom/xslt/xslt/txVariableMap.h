@@ -7,9 +7,9 @@
 #define TRANSFRMX_VARIABLEMAP_H
 
 #include "nsError.h"
-#include "txXMLUtils.h"
-#include "txExprResult.h"
 #include "txExpandedNameMap.h"
+#include "txExprResult.h"
+#include "txXMLUtils.h"
 
 /**
  * Map that maps from expanded name to an expression result value. This is just

@@ -7,6 +7,7 @@
 #define mozilla_telemetry_pingsender_h
 
 #include <string>
+#include <cstdint>
 
 #ifdef DEBUG
 #  define PINGSENDER_LOG(s, ...) printf(s, ##__VA_ARGS__)

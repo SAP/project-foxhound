@@ -152,15 +152,18 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
 
         self.marionette.execute_script(
             """
-            let utils = window.windowUtils;
-            utils.sendTouchEventToWindow('touchstart', [0],
-                                         [arguments[0]], [arguments[1]],
-                                         [1], [1], [0], [1], [0], [0], [0], 0);
-            utils.sendMouseEventToWindow('mouselongtap', arguments[0], arguments[1],
-                                          0, 1, 0);
-            utils.sendTouchEventToWindow('touchend', [0],
-                                         [arguments[0]], [arguments[1]],
-                                         [1], [1], [0], [1], [0], [0], [0], 0);
+            window.synthesizeTouchEvent('touchstart', [{
+                identifier: 0,
+                offsetX: arguments[0],
+                offsetY: arguments[1],
+            }], 0, { toWindow: true });
+            window.synthesizeMouseEvent('mouselongtap', arguments[0], arguments[1],
+                                        {}, { toWindow: true });
+            window.synthesizeTouchEvent('touchend', [{
+                identifier: 0,
+                offsetX: arguments[0],
+                offsetY: arguments[1],
+            }], 0, { toWindow: true });
             """,
             script_args=[target_x, target_y],
             sandbox="system",

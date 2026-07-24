@@ -5,6 +5,7 @@
 @import url("chrome://global/skin/in-content/info-pages.css");
 
 body {
+  --error-page-padding: 0px;
   background-size: 64px 32px;
   background-repeat: repeat-x;
   padding: 0;
@@ -77,10 +78,11 @@ body {
   body {
     /* Note: if you change the top padding, also update the image positioning
      * media query in aboutNetError.css for the certificate error case. */
-    padding-top: 38px;
+    --error-page-padding: 38px;
+    padding-top: var(--error-page-padding);
     /* We get rid of bottom padding for width < 640px, but
      * for height < 480px a bit of space between the content
      * and the viewport edge is nice. */
-    padding-bottom: 38px;
+    padding-bottom: var(--error-page-padding);
   }
 }

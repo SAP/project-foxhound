@@ -9,7 +9,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/mscom/ProcessRuntime.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/ShellHeaderOnlyUtils.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "../BrowserDefines.h"

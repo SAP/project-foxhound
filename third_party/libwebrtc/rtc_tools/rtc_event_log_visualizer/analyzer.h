@@ -14,10 +14,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <functional>
-#include <map>
 #include <string>
 #include <vector>
 
+#include "api/environment/environment.h"
 #include "api/function_view.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
@@ -62,7 +62,9 @@ class EventLogAnalyzer {
   // duration of its lifetime. The ParsedRtcEventLogNew must not be destroyed or
   // modified while the EventLogAnalyzer is being used.
   EventLogAnalyzer(const ParsedRtcEventLog& log, bool normalize_time);
-  EventLogAnalyzer(const ParsedRtcEventLog& log, const AnalyzerConfig& config);
+  EventLogAnalyzer(const Environment& env,
+                   const ParsedRtcEventLog& log,
+                   const AnalyzerConfig& config);
 
   void CreateGraphsByName(const std::vector<std::string>& names,
                           PlotCollection* collection) const;
@@ -114,9 +116,11 @@ class EventLogAnalyzer {
   void CreateBitrateAllocationGraph(PacketDirection direction,
                                     Plot* plot) const;
 
-  void CreateOutgoingTWCCLossRateGraph(Plot* plot) const;
+  void CreateOutgoingLossRateGraph(Plot* plot) const;
   void CreateOutgoingEcnFeedbackGraph(Plot* plot) const;
   void CreateIncomingEcnFeedbackGraph(Plot* plot) const;
+  void CreateScreamRefWindowGraph(Plot* plot) const;
+  void CreateScreamDelayEstimateGraph(Plot* plot) const;
   void CreateGoogCcSimulationGraph(Plot* plot) const;
   void CreateSendSideBweSimulationGraph(Plot* plot) const;
   void CreateReceiveSideBweSimulationGraph(Plot* plot) const;
@@ -148,6 +152,7 @@ class EventLogAnalyzer {
                                           const std::string& label) const;
   void CreateEcnFeedbackGraph(Plot* plot, PacketDirection direction) const;
 
+  const Environment env_;
   const ParsedRtcEventLog& parsed_log_;
 
   // A list of SSRCs we are interested in analysing.

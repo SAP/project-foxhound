@@ -32,11 +32,11 @@ no_check_targets = [
   "//third_party/googletest:gtest",
 ]
 
-# These are the list of GN files that run exec_script. This whitelist exists
+# These are the list of GN files that run exec_script. This allowlist exists
 # to force additional review for new uses of exec_script, which is strongly
 # discouraged except for gypi_to_gn calls.
-exec_script_whitelist = build_dotfile_settings.exec_script_whitelist +
-                        [ "//libwebrtc/build_overrides/build.gni" ]
+exec_script_allowlist = build_dotfile_settings.exec_script_allowlist +
+                        [ "//build_overrides/build.gni" ]
 
 # Normally, we'd use 'if (!build_with_mozilla)', but that flag isn't
 # available yet.
@@ -57,8 +57,7 @@ default_args = {
   ios_deployment_target = "14.0"
 
   # The SDK API level, in contrast, is set by build/android/AndroidManifest.xml.
-  android32_ndk_api_level = 21
-  android64_ndk_api_level = 21
+  android_ndk_api_level = 23
 
   # WebRTC does not provide the gflags dependency. Because libyuv uses it only
   # for unittests, it can be disabled (see third_party/libyuv/BUILD.gn)
@@ -69,7 +68,7 @@ default_args = {
   gtest_enable_absl_printers = true
 
   # Differently from Chromium, WebRTC still support SDK 21.
-  default_min_sdk_version = 21
+  default_min_sdk_version = 23
 
   # Prevent jsoncpp to pass -Wno-deprecated-declarations to users
   jsoncpp_no_deprecated_declarations = false
@@ -86,12 +85,17 @@ default_args = {
   # let's temporarily disable it.
   enable_jni_multiplexing = false
 
-  # TODO(b/42223878): use_fuzztest_wrapper adds a dependency to //base so
-  # let's temporarly disable it.
+  # use_fuzztest_wrapper adds a dependency to //base so we have to disable it.
   use_fuzztest_wrapper = false
 
   # Enable Rust in WebRTC
   enable_rust = false # Mozilla
   enable_rust_cxx = true
   enable_chromium_prelude = true
+
+  # See context on https://issues.chromium.org/issues/415076048.
+  enable_js_protobuf = false
+
+  # Use Siso instead of Ninja.
+  use_siso = true
 }

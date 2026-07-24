@@ -15,8 +15,9 @@ import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelativeW
 import org.mozilla.focus.R
 import org.mozilla.focus.databinding.ConnectionDetailsBinding
 import org.mozilla.focus.ext.components
+import com.google.android.material.R as materialR
+import mozilla.components.ui.icons.R as iconsR
 
-@SuppressWarnings("LongParameterList")
 class ConnectionDetailsPanel(
     context: Context,
     private val tabTitle: String,
@@ -38,8 +39,7 @@ class ConnectionDetailsPanel(
     }
 
     private fun expandBottomSheet() {
-        val bottomSheet =
-            findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+        val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
         BottomSheetBehavior.from(bottomSheet).state = BottomSheetBehavior.STATE_EXPANDED
     }
 
@@ -61,9 +61,9 @@ class ConnectionDetailsPanel(
         }
 
         val securityIcon = if (isConnectionSecure) {
-            AppCompatResources.getDrawable(context, R.drawable.mozac_ic_lock_24)
+            AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_lock_24)
         } else {
-            AppCompatResources.getDrawable(context, R.drawable.mozac_ic_warning_fill_24)
+            AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_warning_fill_24)
         }
 
         binding.securityInfo.putCompoundDrawablesRelativeWithIntrinsicBounds(

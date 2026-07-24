@@ -1,0 +1,7 @@
+import java.lang.Deprecated;
+
+package test {
+  public class TestClass {
+    ctor @Deprecated TestClass();
+  }
+}

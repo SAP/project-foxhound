@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PlayingRefChangeHandler_h__
-#define PlayingRefChangeHandler_h__
+#ifndef PlayingRefChangeHandler_h_
+#define PlayingRefChangeHandler_h_
 
-#include "nsThreadUtils.h"
 #include "AudioNodeTrack.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 

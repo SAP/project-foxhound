@@ -4,68 +4,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsString.h"
-#include "nsIWeakReferenceUtils.h"
 #include "nsBaseCommandController.h"
+
+#include "mozilla/ControllerCommand.h"
 #include "nsControllerCommandTable.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsString.h"
 
-NS_IMPL_ADDREF(nsBaseCommandController)
-NS_IMPL_RELEASE(nsBaseCommandController)
-
-NS_INTERFACE_MAP_BEGIN(nsBaseCommandController)
-  NS_INTERFACE_MAP_ENTRY(nsIController)
-  NS_INTERFACE_MAP_ENTRY(nsICommandController)
-  NS_INTERFACE_MAP_ENTRY(nsIControllerContext)
-  NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIControllerContext)
-NS_INTERFACE_MAP_END
+NS_IMPL_ISUPPORTS(nsBaseCommandController, nsIController, nsICommandController,
+                  nsBaseCommandController);
 
 nsBaseCommandController::nsBaseCommandController(
     nsControllerCommandTable* aControllerCommandTable)
-    : mCommandContextRawPtr(nullptr), mCommandTable(aControllerCommandTable) {}
+    : mCommandTable(aControllerCommandTable) {}
 
 nsBaseCommandController::~nsBaseCommandController() = default;
-
-NS_IMETHODIMP
-nsBaseCommandController::SetCommandContext(nsISupports* aCommandContext) {
-  mCommandContextWeakPtr = nullptr;
-  mCommandContextRawPtr = nullptr;
-
-  if (aCommandContext) {
-    nsCOMPtr<nsISupportsWeakReference> weak =
-        do_QueryInterface(aCommandContext);
-    if (weak) {
-      nsresult rv =
-          weak->GetWeakReference(getter_AddRefs(mCommandContextWeakPtr));
-      NS_ENSURE_SUCCESS(rv, rv);
-    } else {
-      mCommandContextRawPtr = aCommandContext;
-    }
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsBaseCommandController::GetInterface(const nsIID& aIID, void** aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  if (NS_SUCCEEDED(QueryInterface(aIID, aResult))) {
-    return NS_OK;
-  }
-
-  if (aIID.Equals(NS_GET_IID(nsIControllerCommandTable))) {
-    if (mCommandTable) {
-      *aResult =
-          do_AddRef(static_cast<nsIControllerCommandTable*>(mCommandTable))
-              .take();
-      return NS_OK;
-    }
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  return NS_NOINTERFACE;
-}
 
 /* =======================================================================
  * nsIController
@@ -76,14 +29,10 @@ nsBaseCommandController::IsCommandEnabled(const char* aCommand, bool* aResult) {
   NS_ENSURE_ARG_POINTER(aCommand);
   NS_ENSURE_ARG_POINTER(aResult);
   NS_ENSURE_STATE(mCommandTable);
-
-  nsISupports* context = mCommandContextRawPtr;
-  nsCOMPtr<nsISupports> weak;
-  if (!context) {
-    weak = do_QueryReferent(mCommandContextWeakPtr);
-    context = weak;
-  }
-  return mCommandTable->IsCommandEnabled(aCommand, context, aResult);
+  nsCOMPtr<nsISupports> context = do_QueryReferent(mContext);
+  *aResult =
+      mCommandTable->IsCommandEnabled(nsDependentCString(aCommand), context);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -91,14 +40,8 @@ nsBaseCommandController::SupportsCommand(const char* aCommand, bool* aResult) {
   NS_ENSURE_ARG_POINTER(aCommand);
   NS_ENSURE_ARG_POINTER(aResult);
   NS_ENSURE_STATE(mCommandTable);
-
-  nsISupports* context = mCommandContextRawPtr;
-  nsCOMPtr<nsISupports> weak;
-  if (!context) {
-    weak = do_QueryReferent(mCommandContextWeakPtr);
-    context = weak;
-  }
-  return mCommandTable->SupportsCommand(aCommand, context, aResult);
+  *aResult = mCommandTable->SupportsCommand(nsDependentCString(aCommand));
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -106,12 +49,13 @@ nsBaseCommandController::DoCommand(const char* aCommand) {
   NS_ENSURE_ARG_POINTER(aCommand);
   NS_ENSURE_STATE(mCommandTable);
 
-  nsCOMPtr<nsISupports> context = mCommandContextRawPtr;
-  if (!context) {
-    context = do_QueryReferent(mCommandContextWeakPtr);
+  nsCOMPtr<nsISupports> context = do_QueryReferent(mContext);
+  RefPtr<nsControllerCommandTable> table = mCommandTable;
+  nsDependentCString command(aCommand);
+  if (RefPtr handler = table->FindCommandHandler(command)) {
+    return handler->DoCommand(command, nullptr, context);
   }
-  RefPtr<nsControllerCommandTable> commandTable(mCommandTable);
-  return commandTable->DoCommand(aCommand, context);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -120,12 +64,13 @@ nsBaseCommandController::DoCommandWithParams(const char* aCommand,
   NS_ENSURE_ARG_POINTER(aCommand);
   NS_ENSURE_STATE(mCommandTable);
 
-  nsCOMPtr<nsISupports> context = mCommandContextRawPtr;
-  if (!context) {
-    context = do_QueryReferent(mCommandContextWeakPtr);
+  nsCOMPtr<nsISupports> context = do_QueryReferent(mContext);
+  RefPtr<nsControllerCommandTable> table = mCommandTable;
+  nsDependentCString command(aCommand);
+  if (RefPtr handler = table->FindCommandHandler(command)) {
+    handler->DoCommand(command, aParams, context);
   }
-  RefPtr<nsControllerCommandTable> commandTable(mCommandTable);
-  return commandTable->DoCommandParams(aCommand, aParams, context);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -134,13 +79,12 @@ nsBaseCommandController::GetCommandStateWithParams(const char* aCommand,
   NS_ENSURE_ARG_POINTER(aCommand);
   NS_ENSURE_STATE(mCommandTable);
 
-  nsISupports* context = mCommandContextRawPtr;
-  nsCOMPtr<nsISupports> weak;
-  if (!context) {
-    weak = do_QueryReferent(mCommandContextWeakPtr);
-    context = weak;
+  nsCOMPtr<nsISupports> context = do_QueryReferent(mContext);
+  nsDependentCString command(aCommand);
+  if (RefPtr handler = mCommandTable->FindCommandHandler(command)) {
+    handler->GetCommandStateParams(command, aParams, context);
   }
-  return mCommandTable->GetCommandState(aCommand, aParams, context);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -152,52 +96,36 @@ nsBaseCommandController::OnEvent(const char* aEventName) {
 NS_IMETHODIMP
 nsBaseCommandController::GetSupportedCommands(nsTArray<nsCString>& aCommands) {
   NS_ENSURE_STATE(mCommandTable);
-  return mCommandTable->GetSupportedCommands(aCommands);
-}
-
-using CommandTableCreatorFn = already_AddRefed<nsControllerCommandTable> (*)();
-
-static already_AddRefed<nsBaseCommandController>
-CreateControllerWithSingletonCommandTable(CommandTableCreatorFn aCreatorFn) {
-  RefPtr<nsControllerCommandTable> commandTable = aCreatorFn();
-  if (!commandTable) {
-    return nullptr;
-  }
-
-  // this is a singleton; make it immutable
-  commandTable->MakeImmutable();
-
-  RefPtr<nsBaseCommandController> commandController =
-      new nsBaseCommandController(commandTable);
-  return commandController.forget();
+  mCommandTable->GetSupportedCommands(aCommands);
+  return NS_OK;
 }
 
 already_AddRefed<nsBaseCommandController>
 nsBaseCommandController::CreateWindowController() {
-  return CreateControllerWithSingletonCommandTable(
-      nsControllerCommandTable::CreateWindowCommandTable);
+  return mozilla::MakeAndAddRef<nsBaseCommandController>(
+      nsControllerCommandTable::WindowCommandTable());
 }
 
 already_AddRefed<nsBaseCommandController>
 nsBaseCommandController::CreateEditorController() {
-  return CreateControllerWithSingletonCommandTable(
-      nsControllerCommandTable::CreateEditorCommandTable);
+  return mozilla::MakeAndAddRef<nsBaseCommandController>(
+      nsControllerCommandTable::EditorCommandTable());
 }
 
 already_AddRefed<nsBaseCommandController>
 nsBaseCommandController::CreateEditingController() {
-  return CreateControllerWithSingletonCommandTable(
-      nsControllerCommandTable::CreateEditingCommandTable);
+  return mozilla::MakeAndAddRef<nsBaseCommandController>(
+      nsControllerCommandTable::EditingCommandTable());
 }
 
 already_AddRefed<nsBaseCommandController>
 nsBaseCommandController::CreateHTMLEditorController() {
-  return CreateControllerWithSingletonCommandTable(
-      nsControllerCommandTable::CreateHTMLEditorCommandTable);
+  return mozilla::MakeAndAddRef<nsBaseCommandController>(
+      nsControllerCommandTable::HTMLEditorCommandTable());
 }
 
 already_AddRefed<nsBaseCommandController>
 nsBaseCommandController::CreateHTMLEditorDocStateController() {
-  return CreateControllerWithSingletonCommandTable(
-      nsControllerCommandTable::CreateHTMLEditorDocStateCommandTable);
+  return mozilla::MakeAndAddRef<nsBaseCommandController>(
+      nsControllerCommandTable::HTMLEditorDocStateCommandTable());
 }

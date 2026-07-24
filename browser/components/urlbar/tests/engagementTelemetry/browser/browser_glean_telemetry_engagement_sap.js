@@ -18,6 +18,14 @@ add_task(async function urlbar() {
   });
 });
 
+add_task(async function searchbar() {
+  await doSearchbarTest({
+    trigger: () => doEnter(),
+    assert: () =>
+      assertEngagementTelemetry([{ sap: "searchbar" }, { sap: "searchbar" }]),
+  });
+});
+
 add_task(async function handoff() {
   await doHandoffTest({
     trigger: () => doEnter(),

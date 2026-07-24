@@ -5,13 +5,11 @@
 
 package org.mozilla.geckoview;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.media.AudioManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -476,6 +474,9 @@ import org.mozilla.gecko.util.ThreadUtils;
 
   @Override // SessionTextInput.EditableListener
   public void onDefaultKeyEvent(final KeyEvent event) {
+    if (DEBUG) {
+      Log.d(LOGTAG, "onDefaultKeyEvent: " + event);
+    }
     ThreadUtils.runOnUiThread(
         new Runnable() {
           @Override
@@ -534,8 +535,8 @@ import org.mozilla.gecko.util.ThreadUtils;
       // changes, we gracefully fall back to using the regular Handler.
       if ("startInputInner".equals(frame.getMethodName())
           && "android.view.inputmethod.InputMethodManager".equals(frame.getClassName())) {
-        // Only return our own Handler to InputMethodManager and only prior to 24.
-        return Build.VERSION.SDK_INT < 24;
+        // Do not return our own Handler to InputMethodManager.
+        return false;
       }
       if (CUSTOM_HANDLER_TEST_METHOD.equals(frame.getMethodName())
           && CUSTOM_HANDLER_TEST_CLASS.equals(frame.getClassName())) {
@@ -606,7 +607,7 @@ import org.mozilla.gecko.util.ThreadUtils;
     }
 
     mIsPrivateBrowsing =
-        ((outAttrs.imeOptions & InputMethods.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0);
+        ((outAttrs.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0);
 
     if (DEBUG) {
       Log.d(
@@ -646,6 +647,34 @@ import org.mozilla.gecko.util.ThreadUtils;
   }
 
   @Override
+  public boolean setComposingText(final CharSequence text, final int newCursorPosition) {
+    final Editable content = getEditable();
+    if (content != null && text.length() == 0 && newCursorPosition == 1) {
+      final int composingStart = getComposingSpanStart(content);
+      final int composingEnd = getComposingSpanEnd(content);
+      if (composingStart < 0 || composingEnd < 0) {
+        final int selStart = Selection.getSelectionStart(content);
+        final int selEnd = Selection.getSelectionEnd(content);
+        if (selStart == selEnd) {
+          // We have no composition and trying composing text is also empty.
+          // If newCursorPosition is 1 and inserted text is empty, it sets the selection to
+          // inserted position.
+          // So if current selection is collapsed, this does nothing.
+          if (DEBUG) {
+            Log.d(
+                LOGTAG,
+                "setComposingText does nothing. Becasue, although we have no composing text and IME"
+                    + " tries to set empty string.");
+          }
+          return true;
+        }
+      }
+    }
+
+    return super.setComposingText(text, newCursorPosition);
+  }
+
+  @Override
   public boolean commitText(final CharSequence text, final int newCursorPosition) {
     if (InputMethods.shouldCommitCharAsKey(mCurrentInputMethod)
         && text.length() == 1
@@ -659,11 +688,6 @@ import org.mozilla.gecko.util.ThreadUtils;
       // text from the old composing span
       return replaceComposingSpanWithSelection()
           && mKeyInputConnection.commitText(text, newCursorPosition);
-    }
-
-    // Bug 1818268 - Unexpected crash on Galaxy J7
-    if (InputMethods.dontOverrideCommitText()) {
-      return super.commitText(text, newCursorPosition);
     }
 
     // Default implementation is
@@ -747,8 +771,7 @@ import org.mozilla.gecko.util.ThreadUtils;
     return event;
   }
 
-  // Called by OnDefaultKeyEvent handler, up from Gecko
-  /* package */ void performDefaultKeyAction(final KeyEvent event) {
+  /* package */ static boolean isMediaKeyEvent(final KeyEvent event) {
     switch (event.getKeyCode()) {
       case KeyEvent.KEYCODE_MUTE:
       case KeyEvent.KEYCODE_HEADSETHOOK:
@@ -763,19 +786,27 @@ import org.mozilla.gecko.util.ThreadUtils;
       case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
       case KeyEvent.KEYCODE_MEDIA_CLOSE:
       case KeyEvent.KEYCODE_MEDIA_EJECT:
-      case KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK:
-        // Forward media keypresses to the registered handler so headset controls work
-        // Does the same thing as Chromium
-        // https://chromium.googlesource.com/chromium/src/+/49.0.2623.67/chrome/android/java/src/org/chromium/chrome/browser/tab/TabWebContentsDelegateAndroid.java#445
-        // These are all the keys dispatchMediaKeyEvent supports.
-        final Context viewContext = getView().getContext();
-        final AudioManager am = (AudioManager) viewContext.getSystemService(Context.AUDIO_SERVICE);
-        am.dispatchMediaKeyEvent(event);
-        break;
+        return true;
+      default:
+        return false;
     }
   }
 
-  @TargetApi(Build.VERSION_CODES.N_MR1)
+  // Called by OnDefaultKeyEvent handler, up from Gecko
+  /* package */ void performDefaultKeyAction(final KeyEvent event) {
+    if (!isMediaKeyEvent(event)) {
+      return;
+    }
+
+    // Forward media keypresses to the registered handler so headset controls work
+    // Does the same thing as Chromium
+    // https://chromium.googlesource.com/chromium/src/+/49.0.2623.67/chrome/android/java/src/org/chromium/chrome/browser/tab/TabWebContentsDelegateAndroid.java#445
+    // These are all the keys dispatchMediaKeyEvent supports.
+    final Context viewContext = getView().getContext();
+    final AudioManager am = (AudioManager) viewContext.getSystemService(Context.AUDIO_SERVICE);
+    am.dispatchMediaKeyEvent(event);
+  }
+
   @Override
   public boolean commitContent(
       final InputContentInfo inputContentInfo, final int flags, final Bundle opts) {

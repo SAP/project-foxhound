@@ -13,12 +13,30 @@ EXTRA_JS_MODULES += [
     "AboutNewTabResourceMapping.sys.mjs",
 ]
 
+MOZ_SRC_FILES += [
+    "AboutNewTabComponents.sys.mjs",
+    "SponsorProtection.sys.mjs",
+]
+
 XPCOM_MANIFESTS += [
     "components.conf",
 ]
 
 FINAL_LIBRARY = "browsercomps"
 
+TESTING_JS_MODULES += [
+    "test/xpcshell/component-registrants/NotARegistrant.sys.mjs",
+    "test/xpcshell/component-registrants/TestRegistrant1.sys.mjs",
+    "test/xpcshell/component-registrants/TestRegistrant2.sys.mjs",
+    "test/xpcshell/component-registrants/TestRegistrantDuplicateTypes.sys.mjs",
+    "test/xpcshell/component-registrants/TestRegistrantInvalidConfigs.sys.mjs",
+]
+
 XPCSHELL_TESTS_MANIFESTS += [
     "test/xpcshell/xpcshell.toml",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "test/browser/abouthomecache/browser.toml",
+    "test/browser/browser.toml",
 ]

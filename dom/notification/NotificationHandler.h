@@ -8,8 +8,8 @@
 #define DOM_NOTIFICATION_NotificationHandler_H_
 
 #include "ErrorList.h"
-#include "nsStringFwd.h"
 #include "nsINotificationHandler.h"
+#include "nsStringFwd.h"
 
 class nsIPrincipal;
 namespace mozilla::dom {

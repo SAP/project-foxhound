@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLContainerFrame_h___
-#define nsMathMLContainerFrame_h___
+#ifndef nsMathMLContainerFrame_h_
+#define nsMathMLContainerFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "nsBlockFrame.h"
 #include "nsContainerFrame.h"
@@ -28,11 +27,6 @@ class PresShell;
  * to position children in various customized ways.
  */
 
-// Options for the preferred size at which to stretch our stretchy children
-#define STRETCH_CONSIDER_ACTUAL_SIZE 0x00000001  // just use our current size
-#define STRETCH_CONSIDER_EMBELLISHMENTS \
-  0x00000002  // size calculations include embellishments
-
 class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
  public:
   nsMathMLContainerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
@@ -47,14 +41,15 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   // Overloaded nsMathMLFrame methods -- see documentation in nsIMathMLFrame.h
 
   NS_IMETHOD
-  Stretch(DrawTarget* aDrawTarget, nsStretchDirection aStretchDirection,
+  Stretch(DrawTarget* aDrawTarget, StretchDirection aStretchDirection,
           nsBoundingMetrics& aContainerSize,
           ReflowOutput& aDesiredStretchSize) override;
 
   NS_IMETHOD
-  UpdatePresentationDataFromChildAt(int32_t aFirstIndex, int32_t aLastIndex,
-                                    uint32_t aFlagsValues,
-                                    uint32_t aFlagsToUpdate) override {
+  UpdatePresentationDataFromChildAt(
+      int32_t aFirstIndex, int32_t aLastIndex,
+      MathMLPresentationFlags aFlagsValues,
+      MathMLPresentationFlags aFlagsToUpdate) override {
     PropagatePresentationDataFromChildAt(this, aFirstIndex, aLastIndex,
                                          aFlagsValues, aFlagsToUpdate);
     return NS_OK;
@@ -85,14 +80,6 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  void DidReflow(nsPresContext* aPresContext,
-                 const ReflowInput* aReflowInput) override
-
-  {
-    mPresentationData.flags &= ~NS_MATHML_STRETCH_DONE;
-    return nsContainerFrame::DidReflow(aPresContext, aReflowInput);
-  }
-
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
 
@@ -120,7 +107,7 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   //        re-laid too (e.g., this happens with <munder>, <mover>,
   //        <munderover>).
   // nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-  //                           int32_t aModType) override;
+  //                           AttrModType aModType) override;
 
   // helper function to apply mirroring to a horizontal coordinate, if needed.
   nscoord MirrorIfRTL(nscoord aParentWidth, nscoord aChildWidth,
@@ -187,18 +174,23 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
    *        any space you want for border/padding in the desired size you
    *        return.
    */
-  virtual nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                         ReflowOutput& aDesiredSize);
+  virtual void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+                     ReflowOutput& aDesiredSize);
 
   // helper to re-sync the automatic data in our children and notify our parent
   // to reflow us when changes (e.g., append/insert/remove) happen in our child
   // list
-  virtual nsresult ChildListChanged(int32_t aModType);
+  virtual nsresult ChildListChanged();
 
   // helper to get the preferred size that a container frame should use to fire
   // the stretch on its stretchy child frames.
-  void GetPreferredStretchSize(DrawTarget* aDrawTarget, uint32_t aOptions,
-                               nsStretchDirection aStretchDirection,
+  enum class PreferredStretchSizeMode {
+    Embellishments,
+    EmbellishmentsIfSameStretchDirection,
+  };
+  void GetPreferredStretchSize(DrawTarget* aDrawTarget,
+                               PreferredStretchSizeMode aMode,
+                               StretchDirection aStretchDirection,
                                nsBoundingMetrics& aPreferredStretchSize);
 
   // helper used by mstyle, mphantom, mpadded and mrow in their implementation
@@ -211,8 +203,8 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
    * (typically invalid markup) was encountered during reflow. Parameters are
    * the same as Place().
    */
-  nsresult PlaceAsMrow(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                       ReflowOutput& aDesiredSize);
+  void PlaceAsMrow(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+                   ReflowOutput& aDesiredSize);
 
   /*
    * Helper to call ReportErrorToConsole for parse errors involving
@@ -294,7 +286,7 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   static void GetReflowAndBoundingMetricsFor(
       nsIFrame* aFrame, ReflowOutput& aReflowOutput,
       nsBoundingMetrics& aBoundingMetrics,
-      eMathMLFrameType* aMathMLFrameType = nullptr);
+      MathMLFrameType* aMathMLFrameType = nullptr);
 
   // helper method to clear metrics saved with
   // SaveReflowAndBoundingMetricsFor() from all child frames.
@@ -308,16 +300,15 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
 
   // helper to let the update of presentation data pass through
   // a subtree that may contain non-MathML container frames
-  static void PropagatePresentationDataFor(nsIFrame* aFrame,
-                                           uint32_t aFlagsValues,
-                                           uint32_t aFlagsToUpdate);
+  static void PropagatePresentationDataFor(
+      nsIFrame* aFrame, MathMLPresentationFlags aFlagsValues,
+      MathMLPresentationFlags aFlagsToUpdate);
 
  public:
-  static void PropagatePresentationDataFromChildAt(nsIFrame* aParentFrame,
-                                                   int32_t aFirstChildIndex,
-                                                   int32_t aLastChildIndex,
-                                                   uint32_t aFlagsValues,
-                                                   uint32_t aFlagsToUpdate);
+  static void PropagatePresentationDataFromChildAt(
+      nsIFrame* aParentFrame, int32_t aFirstChildIndex, int32_t aLastChildIndex,
+      MathMLPresentationFlags aFlagsValues,
+      MathMLPresentationFlags aFlagsToUpdate);
 
   // Sets flags on aFrame and all descendant frames
   static void PropagateFrameFlagFor(nsIFrame* aFrame, nsFrameState aFlags);
@@ -361,12 +352,6 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   void GatherAndStoreOverflow(ReflowOutput* aMetrics);
 
   /**
-   * Call DidReflow() if the NS_FRAME_IN_REFLOW frame bit is set on aFirst
-   * and all its next siblings. The method does nothing if aFirst == nullptr.
-   */
-  static void DidReflowChildren(nsIFrame* aFirst);
-
-  /**
    * Recompute mIntrinsicISize if it's not already up to date.
    */
   void UpdateIntrinsicISize(gfxContext* aRenderingContext);
@@ -403,8 +388,7 @@ class nsMathMLmathBlockFrame final : public nsBlockFrame {
   // mFrames
   void SetInitialChildList(ChildListID aListID,
                            nsFrameList&& aChildList) override {
-    MOZ_ASSERT(aListID == mozilla::FrameChildListID::Principal ||
-                   aListID == mozilla::FrameChildListID::Backdrop,
+    MOZ_ASSERT(aListID == mozilla::FrameChildListID::Principal,
                "unexpected frame list");
     nsBlockFrame::SetInitialChildList(aListID, std::move(aChildList));
     if (aListID == mozilla::FrameChildListID::Principal) {
@@ -525,4 +509,4 @@ class nsMathMLmathInlineFrame final : public nsInlineFrame,
   virtual ~nsMathMLmathInlineFrame() = default;
 };
 
-#endif /* nsMathMLContainerFrame_h___ */
+#endif /* nsMathMLContainerFrame_h_ */

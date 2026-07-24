@@ -25,8 +25,8 @@ interface HTMLObjectElement : HTMLElement {
            attribute DOMString name;
   [CEReactions, Pure, SetterThrows]
            attribute DOMString useMap;
-  [Pure]
-  readonly attribute HTMLFormElement? form;
+  [Pure, BinaryName=formForBindings]
+  readonly attribute Element? form;
   [CEReactions, Pure, SetterThrows]
            attribute DOMString width;
   [CEReactions, Pure, SetterThrows]

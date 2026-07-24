@@ -8,7 +8,6 @@
 
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include <algorithm>
 
 namespace mozilla {
 

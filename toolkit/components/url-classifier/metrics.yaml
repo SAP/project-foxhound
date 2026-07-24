@@ -488,3 +488,234 @@ urlclassifier:
       - safebrowsing-telemetry@mozilla.org
     expires: never
     telemetry_mirror: URLCLASSIFIER_COMPLETE_TIMEOUT2
+
+  lookup_hit:
+    type: labeled_counter
+    description: >
+      Counts the number of times that a lookup hits a table.
+      Keyed by table name.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+    labels:
+      - goog-phish-proto
+      - googpub-phish-proto
+      - goog-malware-proto
+      - goog-unwanted-proto
+      - goog-harmful-proto
+      - goog-badbinurl-proto
+      - goog-downloadwhite-proto
+      - base-track-digest256
+      - mozstd-trackwhite-digest256
+      - google-trackwhite-digest256
+      - content-track-digest256
+      - mozplugin-block-digest256
+      - ads-track-digest256
+      - social-track-digest256
+      - analytics-track-digest256
+      - base-fingerprinting-track-digest256
+      - content-fingerprinting-track-digest256
+      - base-cryptomining-track-digest256
+      - content-cryptomining-track-digest256
+      - social-tracking-protection-digest256
+      - social-tracking-protection-facebook-digest256
+      - social-tracking-protection-linkedin-digest256
+      - social-tracking-protection-twitter-digest256
+      - base-email-track-digest256
+      - content-email-track-digest256
+      - consent-manager-track-digest256
+      - anti-fraud-track-digest256
+      - test-malware-simple
+      - test-unwanted-simple
+
+  lookup_miss:
+    type: labeled_counter
+    description: >
+      Counts the number of times that a lookup misses a table.
+      Keyed by table name.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+    labels:
+      - goog-phish-proto
+      - googpub-phish-proto
+      - goog-malware-proto
+      - goog-unwanted-proto
+      - goog-harmful-proto
+      - goog-badbinurl-proto
+      - goog-downloadwhite-proto
+      - base-track-digest256
+      - mozstd-trackwhite-digest256
+      - google-trackwhite-digest256
+      - content-track-digest256
+      - mozplugin-block-digest256
+      - ads-track-digest256
+      - social-track-digest256
+      - analytics-track-digest256
+      - base-fingerprinting-track-digest256
+      - content-fingerprinting-track-digest256
+      - base-cryptomining-track-digest256
+      - content-cryptomining-track-digest256
+      - social-tracking-protection-digest256
+      - social-tracking-protection-facebook-digest256
+      - social-tracking-protection-linkedin-digest256
+      - social-tracking-protection-twitter-digest256
+      - base-email-track-digest256
+      - content-email-track-digest256
+      - consent-manager-track-digest256
+      - anti-fraud-track-digest256
+      - test-malware-simple
+      - test-unwanted-simple
+
+  completion:
+    type: event
+    description: >
+      Records each completion attempt and whether it resulted in a hit.
+    bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1975198
+    notification_emails:
+        - tihuang@mozilla.com
+        - dlee@mozilla.com
+        - safebrowsing-telemetry@mozilla.org
+    expires: never
+    extra_keys:
+      table_name:
+        description: The name of the table where the completion was performed.
+        type: string
+      hit:
+        description: Whether the completion matched an entry in the table.
+        type: boolean
+
+  global_cache_hit:
+    type: labeled_counter
+    description: >
+      Count of top-level navigations that hit the Global Cache table.
+      Keyed by ETP mode and window type.
+    labels:
+      - standard_normal
+      - standard_private
+      - strict_normal
+      - strict_private
+      - custom_normal
+      - custom_private
+      - other_normal
+      - other_private
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010020
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010020
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+
+  global_cache_miss:
+    type: labeled_counter
+    description: >
+      Count of top-level navigations that miss the Global Cache table.
+      Keyed by ETP mode and window type.
+    labels:
+      - standard_normal
+      - standard_private
+      - strict_normal
+      - strict_private
+      - custom_normal
+      - custom_private
+      - other_normal
+      - other_private
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010020
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010020
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+
+  realtime_simulation_request_count:
+    type: labeled_counter
+    description: >
+      Count of simulated real-time Safe Browsing lookup requests.
+      Keyed by ETP mode and window type.
+    labels:
+      - standard_normal
+      - standard_private
+      - strict_normal
+      - strict_private
+      - custom_normal
+      - custom_private
+      - other_normal
+      - other_private
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+
+  realtime_simulation_request_size:
+    type: labeled_counter
+    description: >
+      Total estimated data usage of simulated real-time Safe Browsing lookup
+      requests in bytes. Keyed by ETP mode and window type.
+    labels:
+      - standard_normal
+      - standard_private
+      - strict_normal
+      - strict_private
+      - custom_normal
+      - custom_private
+      - other_normal
+      - other_private
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never
+
+  realtime_simulation_response_size:
+    type: labeled_counter
+    description: >
+      Total estimated data usage of simulated real-time Safe Browsing lookup
+      responses in bytes. Keyed by ETP mode and window type.
+    labels:
+      - standard_normal
+      - standard_private
+      - strict_normal
+      - strict_private
+      - custom_normal
+      - custom_private
+      - other_normal
+      - other_private
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010023
+    notification_emails:
+      - tihuang@mozilla.com
+      - dlee@mozilla.com
+      - safebrowsing-telemetry@mozilla.org
+    expires: never

@@ -5,17 +5,21 @@
   <title>Tests for the restore-from-backup component</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script type="application/javascript" src="head.js"></script>
   <script
   src="chrome://browser/content/backup/restore-from-backup.mjs"
   type="module"
   ></script>
-  <link rel="localization" href="preview/backupSettings.ftl"/>
+  <link rel="localization" href="browser/backupSettings.ftl"/>
   <link rel="localization" href="branding/brand.ftl"/>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script>
 
     const { BrowserTestUtils } = ChromeUtils.importESModule(
       "resource://testing-common/BrowserTestUtils.sys.mjs"
+    );
+    const { ERRORS } = ChromeUtils.importESModule(
+      "chrome://browser/content/backup/backup-constants.mjs"
     );
 
     /**
@@ -43,11 +47,14 @@
 
       ok(confirmButton, "Restore button should be found");
 
-      restoreFromBackup.backupFileToRestore = "/Some/User/Documents/Firefox Backup/backup.html";
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileToRestore: "/Some/User/Documents/Firefox Backup/backup.html"
+      };
       await restoreFromBackup.updateComplete;
 
       let content = document.getElementById("content");
-      let promise = BrowserTestUtils.waitForEvent(content, "restoreFromBackupConfirm");
+      let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:RestoreFromBackupFile");
 
       confirmButton.click();
 
@@ -77,8 +84,9 @@
     /**
      * Tests that pressing the choose button will dispatch the expected events.
      */
-     add_task(async function test_choose() {
+    add_task(async function test_choose() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
+      restoreFromBackup.backupServiceState.backupFileToRestore = "/backup/file\\path.html";
 
       ok(restoreFromBackup.chooseButtonEl, "Choose button should be found");
 
@@ -87,38 +95,49 @@
 
       restoreFromBackup.chooseButtonEl.click();
 
-      await promise;
+      let event = await promise;
       ok(true, "Detected event after pressing the choose button");
+      is(event.detail.win, window.browsingContext, "Current window will be the parent");
+      is(event.detail.filter, "filterHTML", "Only HTML files will be shown");
+      is(event.detail.existingBackupPath, "/backup/file\\path.html", "Path to the backup file is given");
     });
 
     /**
-     * Tests that changing backup files will dispatch the expected events.
+     * Tests that selecting a backup file from the filepicker will dispatch the expected events.
      */
-     add_task(async function test_restore() {
+    add_task(async function test_new_file_selected() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
 
       let content = document.getElementById("content");
-      let promise = BrowserTestUtils.waitForEvent(content, "getBackupFileInfo");
+      let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo");
 
-      restoreFromBackup.backupFileToRestore = "/Some/User/Documents/Firefox Backup/backup-default.html";
-      await restoreFromBackup.updateComplete;
+      let selectEvent = new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+        detail: {
+          path: "/Some/User/Documents/Firefox Backup/backup-default.html",
+          iconURL: "chrome://global/skin/icons/document.svg"
+        }
+      });
+      restoreFromBackup.dispatchEvent(selectEvent);
 
       await promise;
-      ok(true, "Detected event after changing files to restore");
+      ok(true, "Detected event after new file is selected");
     });
 
     /**
      * Tests that the password input will shown when a file is encrypted.
      */
-     add_task(async function test_show_password() {
+    add_task(async function test_show_password() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
 
       ok(!restoreFromBackup.passwordInput, "Password input should not be present");
 
       let date = new Date();
-      restoreFromBackup.backupFileInfo = {
-        date,
-        isEncrypted: true,
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: {
+          date,
+          isEncrypted: true,
+        }
       };
 
       await restoreFromBackup.updateComplete;
@@ -127,22 +146,379 @@
     });
 
     /**
-     * Tests that an error message is displayed if there is an error restoring from backup.
+     * Tests that incorrect password is shown in a different error format than top level
      */
-     add_task(async function test_error_condition() {
+    add_task(async function test_incorrect_password_error_condition() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
 
-      is(restoreFromBackup.recoveryErrorCode, undefined, "Recovery error code should be undefined");
+      is(restoreFromBackup.backupServiceState.recoveryErrorCode, ERRORS.NONE, "Recovery error code should be 0");
+      ok(!restoreFromBackup.isIncorrectPassword, "Error message should not be displayed");
       ok(!restoreFromBackup.errorMessageEl, "No error message should be displayed");
 
-      restoreFromBackup.recoveryErrorCode = 1;
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        recoveryErrorCode: ERRORS.UNAUTHORIZED
+      };
 
       await restoreFromBackup.updateComplete;
 
-      is(restoreFromBackup.recoveryErrorCode, 1, "Recovery error code should be set");
+      is(restoreFromBackup.backupServiceState.recoveryErrorCode, ERRORS.UNAUTHORIZED, "Recovery error code should be set");
+      ok(restoreFromBackup.isIncorrectPassword, "Error message should be displayed");
+      ok(!restoreFromBackup.errorMessageEl, "No top level error message should be displayed");
+    });
+
+    /**
+     * Tests that a top level error message is displayed if there is an error restoring from backup.
+     */
+    add_task(async function test_error_condition() {
+      let restoreFromBackup = document.getElementById("test-restore-from-backup");
+
+      ok(!restoreFromBackup.errorMessageEl, "No error message should be displayed");
+
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        recoveryErrorCode: ERRORS.CORRUPTED_ARCHIVE
+      };
+
+      await restoreFromBackup.updateComplete;
+
+      is(restoreFromBackup.backupServiceState.recoveryErrorCode, ERRORS.CORRUPTED_ARCHIVE, "Recovery error code should be set");
       ok(restoreFromBackup.errorMessageEl, "Error message should be displayed");
     });
 
+    /**
+     * Tests that changes to backupServiceState emits BackupUI:RecoveryProgress,
+     * with the current progress state and progress is false when an error code is present.
+     */
+    add_task(async function test_recovery_state_updates() {
+      const content = document.getElementById("content");
+      let restoreFromBackup = document.getElementById("test-restore-from-backup");
+      content.appendChild(restoreFromBackup);
+
+      // Reset previous state changes
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        recoveryInProgress: false,
+        recoveryErrorCode: ERRORS.NONE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      // Helper to dispatch the BackupUI:RecoveryProgress event
+      async function sendState(testState) {
+        const promise = BrowserTestUtils.waitForEvent(
+          restoreFromBackup,
+          "BackupUI:RecoveryProgress"
+        );
+        restoreFromBackup.backupServiceState = {
+          ...restoreFromBackup.backupServiceState,
+          ...testState,
+        };
+        await restoreFromBackup.updateComplete;
+        return promise;
+      }
+
+      // Initial state
+      is(
+        restoreFromBackup.backupServiceState.recoveryInProgress,
+        false,
+        "Initial progress state is false"
+      );
+      is(restoreFromBackup.backupServiceState.recoveryErrorCode, ERRORS.NONE, "Initial error code should be 0");
+
+      // Backup in progress with no error
+      let event = await sendState({ recoveryInProgress: true });
+      is(event.detail?.recoveryInProgress, true, "'recoveryInProgress' is true");
+      is(restoreFromBackup.backupServiceState.recoveryInProgress, true, "State reflects in-progress");
+
+      // Backup not in progress
+      event = await sendState({ recoveryInProgress: false, recoveryErrorCode: 0 });
+      is(event.detail?.recoveryInProgress, false, "'recoveryInProgress' is false");
+      is(
+        restoreFromBackup.backupServiceState.recoveryInProgress,
+        false,
+        "State reflects not in-progress"
+      );
+
+      // Any error should clear progress
+      for (const code of [ERRORS.CORRUPTED_ARCHIVE, ERRORS.UNAUTHORIZED]) {
+        info(`Asserting recovery progress clears with error code: ${code}`);
+        event = await sendState({
+          recoveryInProgress: true,
+          recoveryErrorCode: ERRORS.NONE,
+        });
+        is(
+          restoreFromBackup.backupServiceState.recoveryInProgress,
+          true,
+          "State reflects in-progress"
+        );
+
+        // Add an error
+        event = await sendState({
+          recoveryInProgress: true,
+          recoveryErrorCode: code,
+        });
+        is(
+          event.detail?.recoveryInProgress,
+          false,
+          `Progress cleared for error ${code}`
+        );
+        // Clear state
+        await sendState({ recoveryInProgress: false, recoveryErrorCode: ERRORS.NONE });
+      }
+      restoreFromBackup.remove();
+    });
+
+    /**
+     * Helper function to test that a support link has correct attributes
+     * and UTM params when used with aboutWelcomeEmbedded
+     *
+     * @param {Element} link - The support link element to test
+     * @param {string} linkName - The name of the link to test
+     */
+
+    function assertEmbeddedSupportLink(link, linkName) {
+      ok(link, `${linkName} should be present`);
+      ok(
+        !link.hasAttribute("is"),
+        `${linkName} should not have 'is' attribute`
+      );
+      ok(
+        !link.hasAttribute("support-page"),
+        `${linkName} should not have support-page attribute`
+      );
+      ok(
+        link.hasAttribute("href"),
+        `${linkName} should have href attribute`
+      );
+
+      let url = new URL(link.getAttribute("href"));
+
+      is(
+        url.searchParams.get("utm_medium"),
+        "firefox-desktop",
+        `${linkName} should have correct utm_medium`
+      );
+      is(
+        url.searchParams.get("utm_source"),
+        "npo",
+        `${linkName} should have correct utm_source`
+      );
+      is(
+        url.searchParams.get("utm_campaign"),
+        "fx-backup-restore",
+        `${linkName} should have correct utm_campaign`
+      );
+      is(
+        url.searchParams.get("utm_content"),
+        "restore-error",
+        `${linkName} should have correct utm_content`
+      );
+      is(
+        link.getAttribute("target"),
+        "_blank",
+        `${linkName} should have target='_blank'`
+      );
+    }
+
+    /**
+     * Tests that support links have UTM parameters when aboutWelcomeEmbedded is true
+     */
+    add_task(async function test_support_links_with_utm_params() {
+      let content = document.getElementById("content");
+      let restoreFromBackup = document.createElement("restore-from-backup");
+      content.appendChild(restoreFromBackup);
+
+      // Set up the support base link for testing, otherwise links will be broken
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        supportBaseLink: "https://support.mozilla.org/",
+      };
+      restoreFromBackup.aboutWelcomeEmbedded = true;
+      await restoreFromBackup.updateComplete;
+
+      // Test the "no backup file" link
+      let noBackupFileLink = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-no-backup-file-link"
+      );
+      assertEmbeddedSupportLink(noBackupFileLink, "No backup file link");
+
+      // Test the incorrect password support link
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: {
+          date: new Date(),
+          isEncrypted: true,
+        },
+        recoveryErrorCode: ERRORS.UNAUTHORIZED,
+      };
+      await restoreFromBackup.updateComplete;
+      let passwordErrorLink = restoreFromBackup.shadowRoot.querySelector(
+        "#backup-incorrect-password-support-link"
+      );
+      assertEmbeddedSupportLink(passwordErrorLink, "Password error link");
+
+      restoreFromBackup.remove();
+    });
+
+    /**
+     * Tests that the correct status is displayed under the input
+     * for different backup file info states.
+     */
+    add_task(async function test_backup_file_status_rendering() {
+      let content = document.getElementById("content");
+      let restoreFromBackup = document.createElement("restore-from-backup");
+      content.appendChild(restoreFromBackup);
+
+      // Test that when no backup file is selected, the support link is displayed
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: null,
+        recoveryErrorCode: ERRORS.NONE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      let noBackupLink = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-no-backup-file-link"
+      );
+      ok(noBackupLink, "Should show support link when no backup file is selected");
+
+      let backupInfo = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-backup-found-info"
+      );
+      ok(!backupInfo, "Should not show backup info when no backup file is selected");
+
+      // Test that when a backup file is selected, the backup info is displayed
+      const IS_ENCRYPTED = true;
+      const DATE = new Date("2024-01-01T00:00:00.000Z");
+      const DEVICE_NAME = "test-device";
+
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: {
+          isEncrypted: IS_ENCRYPTED,
+          date: DATE,
+          deviceName: DEVICE_NAME
+        },
+        recoveryErrorCode: ERRORS.NONE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      noBackupLink = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-no-backup-file-link"
+      );
+      ok(!noBackupLink, "Should not show support link when backup file is found");
+
+      backupInfo = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-backup-found-info"
+      );
+      ok(backupInfo, "Should show backup info when backup file is found");
+      is(backupInfo.getAttribute("data-l10n-id"), "backup-file-creation-date-and-device",
+        "Should have correct l10n id for backup info");
+
+      // Test that when embedded in about:welcome, if an error occurs,
+      // the generic file error template is displayed
+      restoreFromBackup.aboutWelcomeEmbedded = true;
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: null,
+        recoveryErrorCode: ERRORS.CORRUPTED_ARCHIVE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      let errorTemplate = restoreFromBackup.shadowRoot.querySelector(
+        "#backup-generic-file-error"
+      );
+      ok(errorTemplate, "Should show error template in embedded context with error");
+
+      // Test that when not embedded in about:welcome, if an error occurs,
+      // the support link is displayed instead of the generic file error template
+      restoreFromBackup.aboutWelcomeEmbedded = false;
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: null,
+        recoveryErrorCode: ERRORS.FILE_SYSTEM_ERROR,
+      };
+      await restoreFromBackup.updateComplete;
+
+      errorTemplate = restoreFromBackup.shadowRoot.querySelector(
+        "#backup-generic-file-error"
+      );
+      ok(!errorTemplate, "Should not show generic file error template when not embedded in about:welcome");
+
+      noBackupLink = restoreFromBackup.shadowRoot.querySelector(
+        "#restore-from-backup-no-backup-file-link"
+      );
+      ok(noBackupLink, "Should show support link when not embedded in about:welcome, with error");
+
+      restoreFromBackup.remove();
+    });
+
+    /**
+     * Tests that when embedded in about:welcome, the textarea's aria-describedby
+     * attribute correctly references the appropriate element based on the displayed status.
+     */
+    add_task(async function test_textarea_aria_describedby_accessibility() {
+      let content = document.getElementById("content");
+      let restoreFromBackup = document.createElement("restore-from-backup");
+      content.appendChild(restoreFromBackup);
+
+      restoreFromBackup.aboutWelcomeEmbedded = true;
+      await restoreFromBackup.updateComplete;
+
+      let textarea = restoreFromBackup.shadowRoot.querySelector("#backup-filepicker-input");
+      ok(textarea, "Textarea should be present when aboutWelcomeEmbedded is true");
+
+      // Test that when there is no backup file info, we should reference no-backup-file-link
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: null,
+        recoveryErrorCode: ERRORS.NONE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      let ariaDescribedBy = textarea.getAttribute("aria-describedby");
+      is(ariaDescribedBy, "restore-from-backup-no-backup-file-link",
+        "aria-describedby should reference no-backup-file-link when no backup info");
+
+      let referencedElement = restoreFromBackup.shadowRoot.querySelector("#restore-from-backup-no-backup-file-link");
+      ok(referencedElement, "Referenced element should exist");
+
+      // Test that when a backup file is found, we should reference backup-found-info
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: {
+          date: new Date(),
+          deviceName: "test-device",
+          isEncrypted: false,
+        },
+        recoveryErrorCode: ERRORS.NONE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      ariaDescribedBy = textarea.getAttribute("aria-describedby");
+      is(ariaDescribedBy, "restore-from-backup-backup-found-info",
+        "aria-describedby should reference backup-found-info when backup file is found");
+
+      referencedElement = restoreFromBackup.shadowRoot.querySelector("#restore-from-backup-backup-found-info");
+      ok(referencedElement, "Referenced element should exist");
+
+      // Test that when we're in an error state, we should reference the generic-file-error
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileInfo: null,
+        recoveryErrorCode: ERRORS.CORRUPTED_ARCHIVE,
+      };
+      await restoreFromBackup.updateComplete;
+
+      ariaDescribedBy = textarea.getAttribute("aria-describedby");
+      is(ariaDescribedBy, "backup-generic-file-error",
+        "aria-describedby should reference generic-file-error when there's a recovery error");
+
+      referencedElement = restoreFromBackup.shadowRoot.querySelector("#backup-generic-file-error");
+      ok(referencedElement, "Referenced element should exist");
+
+      restoreFromBackup.remove();
+    });
   </script>
 </head>
 <body>

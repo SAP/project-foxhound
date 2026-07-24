@@ -17,7 +17,7 @@ EXPORTS.mozilla += [
     "SVGFragmentIdentifier.h",
     "SVGPreserveAspectRatio.h",
     "SVGStringList.h",
-    "SVGTagList.h",
+    "SVGTagList.inc",
 ]
 
 EXPORTS.mozilla.dom += [
@@ -72,7 +72,7 @@ EXPORTS.mozilla.dom += [
     "SVGGraphicsElement.h",
     "SVGImageElement.h",
     "SVGLength.h",
-    "SVGLengthUnits.h",
+    "SVGLengthUnits.inc",
     "SVGLineElement.h",
     "SVGMarkerElement.h",
     "SVGMaskElement.h",
@@ -271,5 +271,4 @@ LOCAL_INCLUDES += [
     "/layout/generic",
     "/layout/style",
     "/layout/svg",
-    "/layout/xul",
 ]

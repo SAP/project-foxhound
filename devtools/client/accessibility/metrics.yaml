@@ -27,7 +27,7 @@ devtools.accessibility:
       - https://bugzil.la/1503568
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_NODE_INSPECTED_COUNT
@@ -50,7 +50,7 @@ devtools.accessibility:
       - https://bugzil.la/1503568
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_SELECT_ACCESSIBLE_FOR_NODE
@@ -69,7 +69,7 @@ devtools.accessibility:
       - https://bugzil.la/1507870
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_ACCESSIBLE_CONTEXT_MENU_OPENED
@@ -90,7 +90,7 @@ devtools.accessibility:
       - https://bugzil.la/1507870
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_ACCESSIBLE_CONTEXT_MENU_ITEM_ACTIVATED
@@ -110,7 +110,7 @@ devtools.accessibility:
       - https://bugzil.la/1548241
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_AUDIT_ACTIVATED
@@ -130,7 +130,7 @@ devtools.accessibility:
       - https://bugzil.la/1567200
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
     telemetry_mirror: DEVTOOLS_ACCESSIBILITY_SIMULATION_ACTIVATED

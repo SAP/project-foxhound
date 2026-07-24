@@ -46,6 +46,7 @@ this.omnibox = class extends ExtensionAPIPersistent {
     onInputEntered({ fire }) {
       let { extension } = this;
       let listener = (eventName, text, disposition) => {
+        extension.tabManager.addActiveTabPermission();
         fire.sync(text, disposition);
       };
       extension.on(ExtensionSearchHandler.MSG_INPUT_ENTERED, listener);
@@ -142,6 +143,7 @@ this.omnibox = class extends ExtensionAPIPersistent {
           module: "omnibox",
           event: "onInputEntered",
           extensionApi: this,
+          inputHandling: true,
         }).api(),
 
         onInputChanged: new EventManager({

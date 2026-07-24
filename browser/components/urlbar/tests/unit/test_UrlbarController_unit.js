@@ -58,7 +58,7 @@ add_setup(function () {
 add_task(function test_constructor_throws() {
   Assert.throws(
     () => new UrlbarController(),
-    /Missing options: input/,
+    /options is undefined/,
     "Should throw if the input was not supplied"
   );
   Assert.throws(
@@ -112,6 +112,22 @@ add_task(function test_constructor_throws() {
     "Should throw if input.isPrivate is not set"
   );
 
+  Assert.throws(
+    () =>
+      new UrlbarController({
+        input: {
+          isPrivate: false,
+          window: {
+            location: {
+              href: AppConstants.BROWSER_CHROME_URL,
+            },
+          },
+        },
+      }),
+    /input needs a non-empty 'sapName' property/,
+    "Should throw if input.sapName is not set"
+  );
+
   new UrlbarController({
     input: {
       isPrivate: false,
@@ -119,6 +135,9 @@ add_task(function test_constructor_throws() {
         location: {
           href: AppConstants.BROWSER_CHROME_URL,
         },
+      },
+      get sapName() {
+        return "urlbar";
       },
     },
   });

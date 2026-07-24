@@ -42,8 +42,8 @@ It corresponds to the `RELEASE_VERSION` number _before_ the release of the new v
 
 We will also want to bump the Android Component's [changelog.md](https://hg.mozilla.org/mozilla-central/file/default/mobile/android/android-components/docs/changelog.md) with the new Nightly development section.
 
-0. Wait for greenlight coming from Release Engineering (see #3 above). You can subscribe to the [release-drivers](https://groups.google.com/a/mozilla.org/g/release-drivers) mailing list and look for an email with subjet: "Merge complete: mozilla-central to mozilla-beta (new release cycle)". ([direct link here](https://groups.google.com/a/mozilla.org/g/release-drivers/search?q=mozilla-central%20to%20mozilla-beta))
-1. File a Bugzilla issue named "Start the Nightly `[nightly_version]` development cycle". ([Example here](https://bugzilla.mozilla.org/show_bug.cgi?id=1933192))
+0. Wait for greenlight coming from Release Engineering (see #3 above). You can subscribe to the [release-drivers](https://groups.google.com/a/mozilla.org/g/release-drivers) mailing list and look for an email with subject: "Merge complete: firefox-main to firefox-beta (new release cycle)". ([direct link here](https://groups.google.com/a/mozilla.org/g/release-drivers/search?q=firefox-main%20to%20firefox-beta))
+1. File a Bugzilla issue named "Start the Nightly `[nightly_version]` development cycle". ([Example here](https://bugzilla.mozilla.org/show_bug.cgi?id=2004705))
 2. Run `./mobile/android/beta-cut.py BUG_ID`,  with `BUG_ID` being the id of the bug you created at step 1. This will:
     - Update the [changelog.md](https://hg.mozilla.org/mozilla-central/file/default/mobile/android/android-components/docs/changelog.md)
     - Search and remove all strings marked `moz:removedIn="[EXPIRED_STRING_VERSION]"` across Fenix, Focus and Android Components, limit changes only to `values/strings.xml` (the localized `strings.xml` should not be changed).

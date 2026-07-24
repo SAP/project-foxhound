@@ -21,7 +21,7 @@ namespace gc {
 inline constexpr AllocKind slotsToThingKind[] = {
     // clang-format off
     /*  0 */ AllocKind::OBJECT0,  AllocKind::OBJECT2,  AllocKind::OBJECT2,  AllocKind::OBJECT4,
-    /*  4 */ AllocKind::OBJECT4,  AllocKind::OBJECT8,  AllocKind::OBJECT8,  AllocKind::OBJECT8,
+    /*  4 */ AllocKind::OBJECT4,  AllocKind::OBJECT6,  AllocKind::OBJECT6,  AllocKind::OBJECT8,
     /*  8 */ AllocKind::OBJECT8,  AllocKind::OBJECT12, AllocKind::OBJECT12, AllocKind::OBJECT12,
     /* 12 */ AllocKind::OBJECT12, AllocKind::OBJECT16, AllocKind::OBJECT16, AllocKind::OBJECT16,
     /* 16 */ AllocKind::OBJECT16
@@ -110,6 +110,10 @@ static constexpr size_t GetGCKindSlots(AllocKind thingKind) {
     case AllocKind::OBJECT4_FOREGROUND:
     case AllocKind::OBJECT4_BACKGROUND:
       return 4;
+    case AllocKind::OBJECT6:
+    case AllocKind::OBJECT6_FOREGROUND:
+    case AllocKind::OBJECT6_BACKGROUND:
+      return 6;
     case AllocKind::FUNCTION_EXTENDED:
       return 7;
     case AllocKind::OBJECT8:

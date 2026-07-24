@@ -12,10 +12,9 @@
 #include "mozilla/Maybe.h"
 
 #include <cmath>
-#include <stddef.h>
 #include <stdint.h>
 
-#include "jsnum.h"
+#include "builtin/Number.h"
 
 using namespace js;
 using namespace js::temporal;

@@ -14,7 +14,6 @@
 #include "nsIDNSByTypeRecord.h"
 #include "nsICancelable.h"
 #include "nsIURI.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Preferences.h"
 
 static mozilla::StaticRefPtr<nsIDNSService> sDNSService;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 // for the sandboxed process. For more details see
 // http://dev.chromium.org/developers/design-documents/sandbox .
 
-#ifndef SANDBOX_SRC_INTERCEPTION_H_
-#define SANDBOX_SRC_INTERCEPTION_H_
+#ifndef SANDBOX_WIN_SRC_INTERCEPTION_H_
+#define SANDBOX_WIN_SRC_INTERCEPTION_H_
 
 #include <stddef.h>
 
@@ -15,7 +15,8 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr_exclusion.h"
+#include "base/memory/raw_ref.h"
 #include "sandbox/win/src/interceptors.h"
 #include "sandbox/win/src/sandbox_types.h"
 
@@ -67,10 +68,14 @@ class InterceptionManager {
 
  public:
   // An interception manager performs interceptions on a given child process.
-  // If we are allowed to intercept functions that have been patched by somebody
-  // else, relaxed should be set to true.
-  // Note: We increase the child's reference count internally.
-  InterceptionManager(TargetProcess* child_process, bool relaxed);
+  // We are allowed to intercept functions that have been patched by somebody
+  // else.
+  // |child_process| should outlive the manager.
+  InterceptionManager(TargetProcess& child_process);
+
+  InterceptionManager(const InterceptionManager&) = delete;
+  InterceptionManager& operator=(const InterceptionManager&) = delete;
+
   ~InterceptionManager();
 
   // Patches function_name inside dll_name to point to replacement_code_address.
@@ -145,18 +150,13 @@ class InterceptionManager {
     std::wstring dll;                 // Name of dll to intercept.
     std::string function;             // Name of function to intercept.
     std::string interceptor;          // Name of interceptor function.
-    const void* interceptor_address;  // Interceptor's entry point.
+    // Interceptor's entry point. Not a raw_ptr<> as it will always point at
+    // a function like `TargetNtOpenThread64`.
+    RAW_PTR_EXCLUSION const void* interceptor_address;
   };
 
   // Calculates the size of the required configuration buffer.
   size_t GetBufferSize() const;
-
-  // Rounds up the size of a given buffer, considering alignment (padding).
-  // value is the current size of the buffer, and alignment is specified in
-  // bytes.
-  static inline size_t RoundUpToMultiple(size_t value, size_t alignment) {
-    return ((value + alignment - 1) / alignment) * alignment;
-  }
 
   // Sets up a given buffer with all the information that has to be transfered
   // to the child.
@@ -192,13 +192,6 @@ class InterceptionManager {
   // as opposed to from the parent.
   bool IsInterceptionPerformedByChild(const InterceptionData& data) const;
 
-  // Allocates a buffer on the child's address space (returned on
-  // remote_buffer), and fills it with the contents of a local buffer.
-  // Returns SBOX_ALL_OK on success.
-  ResultCode CopyDataToChild(const void* local_buffer,
-                             size_t buffer_bytes,
-                             void** remote_buffer) const;
-
   // Performs the cold patch (from the parent) of ntdll.
   // Returns SBOX_ALL_OK on success.
   //
@@ -215,18 +208,13 @@ class InterceptionManager {
                                   DllInterceptionData* dll_data);
 
   // The process to intercept.
-  TargetProcess* child_;
+  const raw_ref<TargetProcess> child_;
   // Holds all interception info until the call to initialize (perform the
   // actual patch).
   std::list<InterceptionData> interceptions_;
 
   // Keep track of patches added by name.
   bool names_used_;
-
-  // true if we are allowed to patch already-patched functions.
-  bool relaxed_;
-
-  DISALLOW_COPY_AND_ASSIGN(InterceptionManager);
 };
 
 // This macro simply calls interception_manager.AddToPatchedFunctions with
@@ -287,4 +275,4 @@ class InterceptionManager {
 
 }  // namespace sandbox
 
-#endif  // SANDBOX_SRC_INTERCEPTION_H_
+#endif  // SANDBOX_WIN_SRC_INTERCEPTION_H_

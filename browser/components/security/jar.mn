@@ -1,0 +1,4 @@
+browser.jar:
+    content/browser/security/unexpectedScriptLoad.xhtml
+    content/browser/security/unexpectedScriptLoad.css
+    content/browser/security/unexpectedScriptLoad.js

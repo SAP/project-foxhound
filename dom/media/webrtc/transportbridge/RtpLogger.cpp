@@ -5,14 +5,15 @@
 // Original author: nohlmeier@mozilla.com
 
 #include "RtpLogger.h"
-#include "mozilla/Logging.h"
 
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+
+#include "mozilla/Logging.h"
 #ifdef _WIN32
-#  include <time.h>
 #  include <sys/timeb.h>
+#  include <time.h>
 #else
 #  include <sys/time.h>
 #endif

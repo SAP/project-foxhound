@@ -9,7 +9,6 @@
 #include "ProtocolUtils.h"
 #include "ShmemMessageUtils.h"
 #include "chrome/common/ipc_message_utils.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 
 namespace mozilla {
@@ -80,8 +79,8 @@ void Shmem::AssertInvariants() const {
   char checkMappingBack = *(reinterpret_cast<char*>(mData) + mSize - 1);
 
   // avoid "unused" warnings for these variables:
-  Unused << checkMappingFront;
-  Unused << checkMappingBack;
+  (void)checkMappingFront;
+  (void)checkMappingBack;
 }
 
 void Shmem::RevokeRights() {
@@ -166,46 +165,53 @@ UniquePtr<IPC::Message> Shmem::MkDestroyedMessage(
   return MakeUnique<ShmemDestroyed>(routingId, mId);
 }
 
-void IPDLParamTraits<Shmem>::Write(IPC::MessageWriter* aWriter,
-                                   IProtocol* aActor, Shmem&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mId);
-  WriteIPDLParam(aWriter, aActor, uint32_t(aParam.mSize));
+}  // namespace ipc
+}  // namespace mozilla
+
+namespace IPC {
+
+void ParamTraits<mozilla::ipc::Shmem>::Write(IPC::MessageWriter* aWriter,
+                                             paramType&& aParam) {
+  WriteParam(aWriter, aParam.mId);
+  WriteParam(aWriter, uint32_t(aParam.mSize));
 #ifdef DEBUG
-  WriteIPDLParam(aWriter, aActor, aParam.mUnsafe);
+  WriteParam(aWriter, aParam.mUnsafe);
 #endif
 
   aParam.RevokeRights();
   aParam.forget();
 }
 
-bool IPDLParamTraits<Shmem>::Read(IPC::MessageReader* aReader,
-                                  IProtocol* aActor, paramType* aResult) {
+bool ParamTraits<mozilla::ipc::Shmem>::Read(IPC::MessageReader* aReader,
+                                            paramType* aResult) {
+  if (!aReader->GetActor()) {
+    return false;
+  }
+
   paramType::id_t id;
   uint32_t size;
-  if (!ReadIPDLParam(aReader, aActor, &id) ||
-      !ReadIPDLParam(aReader, aActor, &size)) {
+  if (!ReadParam(aReader, &id) || !ReadParam(aReader, &size)) {
     return false;
   }
 
   bool unsafe = false;
 #ifdef DEBUG
-  if (!ReadIPDLParam(aReader, aActor, &unsafe)) {
+  if (!ReadParam(aReader, &unsafe)) {
     return false;
   }
 #endif
 
-  auto* segment = aActor->LookupSharedMemory(id);
+  auto* segment = aReader->GetActor()->LookupSharedMemory(id);
   if (segment) {
     if (size > segment->Size()) {
       return false;
     }
 
-    *aResult = Shmem(segment, id, size, unsafe);
+    *aResult = mozilla::ipc::Shmem(segment, id, size, unsafe);
     return true;
   }
-  *aResult = Shmem();
+  *aResult = mozilla::ipc::Shmem();
   return true;
 }
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC

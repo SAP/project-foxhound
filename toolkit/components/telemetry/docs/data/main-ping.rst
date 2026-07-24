@@ -67,7 +67,6 @@ Structure:
       log: [...], // obsolete in firefox 61, use Event Telemetry or Scalars
       gc: {...},
       fileIOReports: {...},
-      lateWrites: {...},
       addonDetails: {...},
       UIMeasurements: [...],  // Android only
       slowSQL: {...},
@@ -373,34 +372,6 @@ Structure:
       ...
     }
 
-lateWrites
-----------
-This sections reports writes to the file system that happen during shutdown. The reported data contains the stack and the file names of the loaded libraries at the time the writes happened.
-
-The file names of the loaded libraries can contain unicode characters.
-
-Structure:
-
-.. code-block:: js
-
-    "lateWrites" : {
-      "memoryMap" : [
-        ["wgdi32.pdb", "08A541B5942242BDB4AEABD8C87E4CFF2"],
-        ... other entries in the format ["module name", "breakpad identifier"] ...
-       ],
-      "stacks" : [
-        [
-          [
-            0, // the module index or -1 for invalid module indices
-            190649 // the offset of this program counter in its module or an absolute pc
-          ],
-          [1, 2540075],
-          ... other frames ...
-         ],
-         ... other stacks ...
-      ],
-    },
-
 addonDetails
 ------------
 This section contains per add-on telemetry details, as reported by each add-on provider. The XPI provider is the only one reporting at the time of writing (`see Searchfox <https://searchfox.org/mozilla-central/search?q=setTelemetryDetails&case=true>`_). Telemetry does not manipulate or enforce a specific format for the supplied provider's data.
@@ -479,6 +450,10 @@ Structure:
 
 Version History
 ---------------
+
+- Firefox 142:
+
+  - Stopped reporting ``lateWrites`` (`bug 1972836 <https://bugzilla.mozilla.org/show_bug.cgi?id=1972836>`_).
 
 - Firefox 88:
 

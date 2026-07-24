@@ -4,25 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/dom/InferenceSession.h"
+
 #include <prlink.h>
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Logging.h"
+
 #include <thread>
-#include "nsXPCOMPrivate.h"
-#include "mozilla/FileUtils.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/dom/ContentChild.h"
+
 #include "ErrorList.h"
 #include "GeckoProfiler.h"
 #include "fmt/format.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/FileUtils.h"
+#include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ONNXBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "nsString.h"
 #include "mozilla/dom/Tensor.h"
-#include "mozilla/Attributes.h"
+#include "nsString.h"
+#include "nsXPCOMPrivate.h"
 mozilla::LazyLogModule gONNXLog("GeckoMLONNXNative");
 #define LOGV(fmt, ...) \
   MOZ_LOG_FMT(gONNXLog, LogLevel::Verbose, fmt, ##__VA_ARGS__)
@@ -219,23 +221,23 @@ bool InferenceSession::InInferenceProcess(JSContext*, JSObject*) {
 nsCString InferenceSessionSessionOptionsToString(
     const InferenceSessionSessionOptions& aOptions) {
   return nsFmtCString(
-      FMT_STRING("EnableCpuMemArena: {}, "
-                 "EnableGraphCapture: {}, "
-                 "EnableMemPattern: {}, "
-                 "EnableProfiling: {}, "
-                 "ExecutionMode: {}, "
-                 "ExecutionProviders: {}, "
-                 "Extra: {}, "
-                 "FreeDimensionOverrides: {}, "
-                 "GraphOptimizationLevel: {}, "
-                 "InterOpNumThreads: {}, "
-                 "IntraOpNumThreads: {}, "
-                 "LogId: {}, "
-                 "LogSeverityLevel: {}, "
-                 "LogVerbosityLevel: {}, "
-                 "OptimizedModelFilePath: {}, "
-                 "PreferredOutputLocation: {}, "
-                 "ProfileFilePrefix: {}"),
+      "EnableCpuMemArena: {}, "
+      "EnableGraphCapture: {}, "
+      "EnableMemPattern: {}, "
+      "EnableProfiling: {}, "
+      "ExecutionMode: {}, "
+      "ExecutionProviders: {}, "
+      "Extra: {}, "
+      "FreeDimensionOverrides: {}, "
+      "GraphOptimizationLevel: {}, "
+      "InterOpNumThreads: {}, "
+      "IntraOpNumThreads: {}, "
+      "LogId: {}, "
+      "LogSeverityLevel: {}, "
+      "LogVerbosityLevel: {}, "
+      "OptimizedModelFilePath: {}, "
+      "PreferredOutputLocation: {}, "
+      "ProfileFilePrefix: {}",
       aOptions.mEnableCpuMemArena, aOptions.mEnableGraphCapture,
       aOptions.mEnableMemPattern, aOptions.mEnableProfiling,
       aOptions.mExecutionMode,

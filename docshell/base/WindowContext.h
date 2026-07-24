@@ -65,6 +65,10 @@ class BrowsingContextGroup;
   /* Whether this window has registered a "beforeunload" event           \
    * handler */                                                          \
   FIELD(NeedsBeforeUnload, bool)                                         \
+  /* Whether this window's navigation object has registered any          \
+   * event handlers or has ongoing or upcoming method trackers. Only     \
+   * valid for the top-level context. */                                 \
+  FIELD(NeedsTraverse, bool)                                             \
   /* Controls whether the WindowContext is currently considered to be    \
    * activated by a gesture */                                           \
   FIELD(UserActivationStateAndModifiers,                                 \
@@ -288,6 +292,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_NeedsBeforeUnload>, const bool& aHasBeforeUnload,
               ContentParent* aSource);
 
+  bool CanSet(FieldIndex<IDX_NeedsTraverse>, const bool& aNeedsTraverse,
+              ContentParent* aSource);
+
   bool CanSet(FieldIndex<IDX_CookieBehavior>, const Maybe<uint32_t>& aValue,
               ContentParent* aSource);
 
@@ -440,25 +447,22 @@ using MaybeDiscardedWindowContext = MaybeDiscarded<WindowContext>;
 extern template class syncedcontext::Transaction<WindowContext>;
 
 }  // namespace dom
-
-namespace ipc {
-template <>
-struct IPDLParamTraits<dom::MaybeDiscarded<dom::WindowContext>> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const dom::MaybeDiscarded<dom::WindowContext>& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   dom::MaybeDiscarded<dom::WindowContext>* aResult);
-};
-
-template <>
-struct IPDLParamTraits<dom::WindowContext::IPCInitializer> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const dom::WindowContext::IPCInitializer& aInitializer);
-
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   dom::WindowContext::IPCInitializer* aInitializer);
-};
-}  // namespace ipc
 }  // namespace mozilla
+
+namespace IPC {
+template <>
+struct ParamTraits<mozilla::dom::MaybeDiscarded<mozilla::dom::WindowContext>> {
+  using paramType = mozilla::dom::MaybeDiscarded<mozilla::dom::WindowContext>;
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
+};
+
+template <>
+struct ParamTraits<mozilla::dom::WindowContext::IPCInitializer> {
+  using paramType = mozilla::dom::WindowContext::IPCInitializer;
+  static void Write(MessageWriter* aWriter, const paramType& aInitializer);
+  static bool Read(MessageReader* aReader, paramType* aInitializer);
+};
+}  // namespace IPC
 
 #endif  // !defined(mozilla_dom_WindowContext_h)

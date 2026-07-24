@@ -197,6 +197,15 @@ TEST(SanitizeRenderer, TestAngleSamsungVulkan)
   EXPECT_EQ(sanitized, expectation);
 }
 
+TEST(SanitizeRenderer, TestAngleSamsungVulkanAlt)
+{
+  const std::string renderer("ANGLE ((Samsung Xclipse 940) on Vulkan 1.3.279)");
+  const std::string expectation(
+      "ANGLE (Samsung Xclipse 920) on Vulkan, or similar");
+  const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
+  EXPECT_EQ(sanitized, expectation);
+}
+
 TEST(SanitizeRenderer, TestLinuxK600)
 {
   const std::string renderer("NVE7");

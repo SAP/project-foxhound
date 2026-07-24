@@ -312,11 +312,15 @@ namespace IOUtils {
    * @param attrs The attributes to set. Attributes will only be set if they are
    *              |true| or |false| (i.e., |undefined| attributes are not
    *              changed).
+   * @param recursive  Whether or not to apply the changes to folder contents
+   *                   recursively.
    *
    * @return A promise that resolves is the attributes were set successfully.
    */
   [NewObject]
-  Promise<undefined> setWindowsAttributes(DOMString path, optional WindowsFileAttributes attrs = {});
+  Promise<undefined> setWindowsAttributes(DOMString path,
+      optional WindowsFileAttributes attrs = {},
+      optional boolean recursive = false);
 #elif defined(XP_MACOSX)
   /**
    * Return whether or not the file has a specific extended attribute.

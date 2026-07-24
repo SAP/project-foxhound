@@ -141,10 +141,7 @@ static PdfResult GetDefaultPdf() {
 }
 
 DefaultPdfResult GetDefaultPdfInfo() {
-  DefaultPdfInfo pdfInfo;
-  MOZ_TRY_VAR(pdfInfo.currentDefaultPdf, GetDefaultPdf());
-
-  return pdfInfo;
+  return DefaultPdfInfo{MOZ_TRY(GetDefaultPdf())};
 }
 
 }  // namespace mozilla::default_agent

@@ -89,7 +89,7 @@ add_task(async function test_omnibox_searchMode_switch() {
 
   Assert.equal(
     result.providerName,
-    "Omnibox",
+    "UrlbarProviderOmnibox",
     "First result should be default omnibox suggestion."
   );
 

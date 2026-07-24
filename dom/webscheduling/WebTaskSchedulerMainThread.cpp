@@ -5,15 +5,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/TimeoutManager.h"
-
-#include "nsContentUtils.h"
 #include "WebTaskSchedulerMainThread.h"
+
+#include "mozilla/dom/TimeoutManager.h"
+#include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
 
-MOZ_CONSTINIT uint32_t
-    gNumNormalOrHighPriorityQueuesHaveTaskScheduledMainThread = 0;
+constinit uint32_t gNumNormalOrHighPriorityQueuesHaveTaskScheduledMainThread =
+    0;
 
 NS_IMETHODIMP WebTaskMainThreadRunnable::Run() {
   if (mScheduler) {

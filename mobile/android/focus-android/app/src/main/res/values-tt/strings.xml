@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дилбегәне Сезнең кулга тапшыра.</p> <p>Аны хосусый браузер буларак кулланып, түбәндәгеләрне эшләп була: <ul> <li>Турыдан-туры кушымта эчендә эзләү һәм пәрәвездә гизү</li> <li>Күзәтүче-трекерларны блоклау (яисә, көйләүләрне яңартып, аларны рөхсәт итү)</li> <li>Кукиларны, эзләү һәм гизү тарихларын җиңел генә бетереп ату</li> </ul> </p> <p>%1$s Mozilla тарафыннан җитештерелә. Безнең миссиябез — сәламәт һәм ачык Интернетны үстерү.<br/> <a href=\"%2$s\">Күбрәк белү</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дилбегәне Сезнең кулга тапшыра.</p>\n<p>Аны хосусый браузер буларак кулланып, түбәндәгеләрне эшләп була:\n<ul>\n<li>Турыдан-туры кушымта эчендә эзләү һәм пәрәвездә гизү</li>\n<li>Күзәтүче-трекерларны блоклау (яисә, көйләүләрне яңартып, аларны рөхсәт итү)</li>\n<li>Кукиларны, эзләү һәм гизү тарихларын җиңел генә бетереп ату</li>\n</ul> </p>\n<p>%1$s Mozilla тарафыннан җитештерелә. Безнең миссиябез — сәламәт һәм ачык Интернетны үстерү.<br/>\n<a href=\"%2$s\">Күбрәк белү</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Күбрәк белү</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Хосусыйлык &amp; Хәвефсезлек</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -458,13 +467,25 @@
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Тиз. Хосусый. Бүлдерүләрсез.</string>
   <!--
+    New Onboarding flow first screen 'terms of use' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Дәвам итү %1$s шартларын кабул итү дигән сүз.</string>
+  <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox куллану шартлары.</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox куллану шартлары</string>
+  <!--
+    New Onboarding flow first screen 'privacy notice' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
+  -->
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox өчен Сезнең хосусыйлыгыз мөһим. %1$s-да моның турында күбрәк белә аласыз.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Хосусыйлык аңлатмасы.</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Хосусыйлык аңлатмасы</string>
   <!-- New Onboarding flow first screen button label -->
   <string name="onboarding_first_screen_button_agree_and_continue_2">Дәвам итү</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
@@ -861,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Бу сервер көйләүләрендәге хата белән бәйле булырга мөмкин, яисә кемдер Сезгә кирәкле серверны икенче бере белән алыштырырга тырыша.<br/><br/> Моңа кадәр бу серверга уңышлы тоташа торган булсагыз, бу хата вакытлыча гына булырга мөмкин.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Кемдер үзенең сайтын бу сайт дип күрсәтергә тырыша кебек, шунлыктан дәвам итү куркыныч булырга мөмкин.</label> <br><br> <label>%1$s кушымтасы <b>%2$s</b> сайтына ышанмый, чөнки сертификатын бастыручу я билгесез, я ул үзлегеннән имзаланган, я сервер дөрес арадашчы сертификатлар җибәрми.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Кемдер үзенең сайтын бу сайт дип күрсәтергә тырыша кебек, шунлыктан дәвам итү куркыныч булырга мөмкин.</label> <br><br>\n<label>%1$s кушымтасы <b>%2$s</b> сайтына ышанмый, чөнки сертификатын бастыручу я билгесез, я ул үзлегеннән имзаланган, я сервер дөрес арадашчы сертификатлар җибәрми.</label>]]></string>
   <!--
     Sessions List
 

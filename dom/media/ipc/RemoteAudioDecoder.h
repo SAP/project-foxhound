@@ -19,7 +19,8 @@ class RemoteAudioDecoderChild final : public RemoteDecoderChild {
   MOZ_IS_CLASS_INIT
   MediaResult InitIPDL(const AudioInfo& aAudioInfo,
                        const CreateDecoderParams::OptionSet& aOptions,
-                       const Maybe<uint64_t>& aMediaEngineId);
+                       const Maybe<uint64_t>& aMediaEngineId,
+                       PRemoteCDMActor* aCDM);
 
   MediaResult ProcessOutput(DecodedOutputIPDL&& aDecodedData) override;
 };
@@ -31,7 +32,8 @@ class RemoteAudioDecoderParent final : public RemoteDecoderParent {
                            const CreateDecoderParams::OptionSet& aOptions,
                            nsISerialEventTarget* aManagerThread,
                            TaskQueue* aDecodeTaskQueue,
-                           Maybe<uint64_t> aMediaEngineId);
+                           Maybe<uint64_t> aMediaEngineId,
+                           RemoteCDMParent* aCDM);
 
  protected:
   IPCResult RecvConstruct(ConstructResolver&& aResolver) override;

@@ -49,13 +49,13 @@ export var DelayedInit = {
 
 // Maximum duration for each idling period. Pending inits are run until this
 // duration is exceeded; then we wait for next idling period.
-const MAX_IDLE_RUN_MS = 50;
+const MAX_IDLE_RUN_MS = 5;
 
 var Impl = {
   pendingInits: [],
 
   onIdle() {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     let time = startTime;
     let nextDue;
 
@@ -68,7 +68,7 @@ var Impl = {
 
       if (time - startTime < MAX_IDLE_RUN_MS) {
         init.maybeInit();
-        time = Cu.now();
+        time = ChromeUtils.now();
       } else {
         // We ran out of time; find when the next closest due time is.
         nextDue = nextDue ? Math.min(nextDue, init.due) : init.due;
@@ -89,7 +89,7 @@ var Impl = {
   addPendingInit(fn, wait) {
     const init = {
       fn,
-      due: Cu.now() + wait,
+      due: ChromeUtils.now() + wait,
       complete: false,
       maybeInit() {
         if (this.complete) {

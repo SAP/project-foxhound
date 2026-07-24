@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-s3_bucket_paths:
+bucket_paths:
     by-platform:
         .*devedition.*:
             - pub/devedition/nightly
@@ -15,8 +15,6 @@ tasktype_map:  # Map task reference to task type.
 platform_names:
     filename_platform:
         by-platform:
-            linux-shippable: 'linux-i686'
-            linux-devedition: 'linux-i686'
             linux64-shippable: 'linux-x86_64'
             linux64-aarch64-shippable: 'linux-aarch64'
             linux64-aarch64-devedition: 'linux-aarch64'
@@ -34,7 +32,7 @@ platform_names:
 
 # A default entry, which the mappings below extend and override.
 # Final 'destinations' will be the product of:
-# s3_bucket_paths + destinations + locale_prefix + pretty_name
+# bucket_paths + destinations + locale_prefix + pretty_name
 default: &default
     from:
         - beetmover-repackage

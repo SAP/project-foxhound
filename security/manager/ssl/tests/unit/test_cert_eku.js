@@ -65,27 +65,6 @@ add_task(async function () {
   // failure (in particular, Netscape Server Gated Crypto (also known as
   // Netscape Step Up) is not an acceptable substitute for end-entity
   // certificates).
-  // Verify this for all Netscape Step Up policy configurations.
-  // 0 = "always accept nsSGC in place of serverAuth for CA certificates"
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 0);
-  await checkEndEntity(
-    certFromFile("ee-nsSGC"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  // 1 = "accept nsSGC before 23 August 2016"
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 1);
-  await checkEndEntity(
-    certFromFile("ee-nsSGC"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  // 2 = "accept nsSGC before 23 August 2015"
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 2);
-  await checkEndEntity(
-    certFromFile("ee-nsSGC"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  // 3 = "never accept nsSGC"
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 3);
   await checkEndEntity(
     certFromFile("ee-nsSGC"),
     SEC_ERROR_INADEQUATE_CERT_TYPE
@@ -115,70 +94,11 @@ add_task(async function () {
   loadCertWithTrust("int-SA-nsSGC", ",,");
   await checkEndEntity(certFromFile("ee-int-SA-nsSGC"), PRErrorCodeSuccess);
 
-  // Intermediate has Netscape Server Gated Crypto. Success will depend on the
-  // Netscape Step Up policy configuration and the notBefore property of the
-  // intermediate.
-  loadCertWithTrust("int-nsSGC-recent", ",,");
-  loadCertWithTrust("int-nsSGC-old", ",,");
-  loadCertWithTrust("int-nsSGC-older", ",,");
-  // 0 = "always accept nsSGC in place of serverAuth for CA certificates"
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 0);
-  info("Netscape Step Up policy: always accept");
+  // Intermediate has Netscape Server Gated Crypto, but no other suitable EKU
+  // => failure
+  loadCertWithTrust("int-nsSGC", ",,");
   await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-recent"),
-    PRErrorCodeSuccess
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-old"),
-    PRErrorCodeSuccess
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-older"),
-    PRErrorCodeSuccess
-  );
-  // 1 = "accept nsSGC before 23 August 2016"
-  info("Netscape Step Up policy: accept before 23 August 2016");
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 1);
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-recent"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-old"),
-    PRErrorCodeSuccess
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-older"),
-    PRErrorCodeSuccess
-  );
-  // 2 = "accept nsSGC before 23 August 2015"
-  info("Netscape Step Up policy: accept before 23 August 2015");
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 2);
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-recent"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-old"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-older"),
-    PRErrorCodeSuccess
-  );
-  // 3 = "never accept nsSGC"
-  info("Netscape Step Up policy: never accept");
-  Services.prefs.setIntPref("security.pki.netscape_step_up_policy", 3);
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-recent"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-old"),
-    SEC_ERROR_INADEQUATE_CERT_TYPE
-  );
-  await checkCertOn25August2016(
-    certFromFile("ee-int-nsSGC-older"),
+    certFromFile("ee-int-nsSGC"),
     SEC_ERROR_INADEQUATE_CERT_TYPE
   );
 

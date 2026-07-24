@@ -52,7 +52,7 @@ nr_stun_message_create(nr_stun_message **msg)
     int _status;
     nr_stun_message *m = 0;
 
-    m = RCALLOC(sizeof(*m));
+    m = R_NEW(nr_stun_message);
     if (!m)
         ABORT(R_NO_MEMORY);
 
@@ -118,7 +118,7 @@ nr_stun_message_attribute_create(nr_stun_message *msg, nr_stun_message_attribute
     int _status;
     nr_stun_message_attribute *a = 0;
 
-    a = RCALLOC(sizeof(*a));
+    a = R_NEW(nr_stun_message_attribute);
     if (!a)
         ABORT(R_NO_MEMORY);
 
@@ -208,7 +208,7 @@ NR_STUN_MESSAGE_ADD_ATTRIBUTE(
 )
 
 int
-nr_stun_message_add_error_code_attribute(nr_stun_message *msg, UINT2 number, char *reason)
+nr_stun_message_add_error_code_attribute(nr_stun_message *msg, UINT2 number, const char *reason)
 NR_STUN_MESSAGE_ADD_ATTRIBUTE(
     NR_STUN_ATTR_ERROR_CODE,
     {
@@ -238,7 +238,7 @@ NR_STUN_MESSAGE_ADD_ATTRIBUTE(
 )
 
 int
-nr_stun_message_add_nonce_attribute(nr_stun_message *msg, char *nonce)
+nr_stun_message_add_nonce_attribute(nr_stun_message *msg, const char *nonce)
 NR_STUN_MESSAGE_ADD_ATTRIBUTE(
     NR_STUN_ATTR_NONCE,
     { (void)strlcpy(attr->u.nonce, nonce, sizeof(attr->u.nonce)); }

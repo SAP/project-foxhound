@@ -109,9 +109,6 @@ newtab-menu-delete-pocket = Skasuj ze { -pocket-brand-name(case: "gen") }
 newtab-menu-archive-pocket = Archiwizuj we { -pocket-brand-name(case: "loc") }
 newtab-menu-show-privacy-info = Nasze spōnsory a twoja prywatność
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = Fertich
@@ -226,12 +223,6 @@ newtab-pocket-cta-button = Dostōń ze { -pocket-brand-name(case: "gen") }
 newtab-pocket-cta-text = Spamiyntuj we { -pocket-brand-name(case: "loc") } teksty, co ci pasujōm, coby durch mieć co ciekawego do poczytanio.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } je tajlōm familije { -brand-product-name }
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -259,60 +250,5 @@ newtab-custom-pocket-subtitle = Ekstra zawartość ôbrano ôd { -pocket-brand-n
 newtab-custom-pocket-sponsored = Spōnsorowane nowiny
 newtab-custom-recent-title = Niydowno aktywność
 newtab-custom-recent-subtitle = Wybōr z niydownych strōn i zawartości
-newtab-custom-recent-toggle =
-    .label = Niydowno aktywność
-    .description = Wybōr z niydownych strōn i zawartości
 newtab-custom-close-button = Zawrzij
 newtab-custom-settings = Inksze nasztalowania
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

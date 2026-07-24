@@ -14,7 +14,7 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import { CloseButton } from "./Button/index";
 
-import AccessibleImage from "./AccessibleImage";
+import DebuggerImage from "./DebuggerImage";
 import actions from "../../actions/index";
 import { getSearchOptions } from "../../selectors/index";
 
@@ -31,8 +31,8 @@ const arrowBtn = (onClick, type, className, tooltip) => {
   };
   return button(
     props,
-    React.createElement(AccessibleImage, {
-      className: type,
+    React.createElement(DebuggerImage, {
+      name: type,
     })
   );
 };
@@ -226,8 +226,9 @@ export class SearchInput extends Component {
     if (!isLoading) {
       return null;
     }
-    return React.createElement(AccessibleImage, {
-      className: "loader spin",
+    return React.createElement(DebuggerImage, {
+      name: "loader",
+      className: "spin",
     });
   }
 
@@ -339,8 +340,8 @@ export class SearchInput extends Component {
           "aria-owns": "result-list",
           "aria-expanded": expanded,
         },
-        React.createElement(AccessibleImage, {
-          className: "search",
+        React.createElement(DebuggerImage, {
+          name: "search",
         }),
         input(inputProps),
         this.renderSpinner(),

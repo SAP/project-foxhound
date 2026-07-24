@@ -6,9 +6,9 @@
 
 #include "ProfiledThreadData.h"
 
-#include "BaseProfiler.h"
 #include "ProfileBuffer.h"
 
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/BaseProfileJSONWriter.h"
 
 #if defined(GP_OS_darwin)

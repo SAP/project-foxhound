@@ -12,7 +12,6 @@
 #include "DDLogValue.h"
 #include "DDMessageIndex.h"
 #include "DDTimeStamp.h"
-#include "mozilla/Atomics.h"
 #include "nsString.h"
 
 namespace mozilla {

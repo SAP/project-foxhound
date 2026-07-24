@@ -75,7 +75,9 @@ async function withMigrationWizardDialog(taskFn) {
       BrowserTestUtils.removeTab(gBrowser.getTabForBrowser(prefsBrowser));
     } else {
       BrowserTestUtils.startLoadingURIString(prefsBrowser, "about:blank");
-      await BrowserTestUtils.browserLoaded(prefsBrowser);
+      await BrowserTestUtils.browserLoaded(prefsBrowser, {
+        wantLoad: "about:blank",
+      });
     }
   }
 }
@@ -329,19 +331,27 @@ async function selectResourceTypesAndStartMigration(
   migratorKey = InternalTestingProfileMigrator.key
 ) {
   let shadow = wizard.openOrClosedShadowRoot;
+  let panelList = shadow.querySelector("panel-list");
+  Assert.ok(!panelList.open, "Panel should not yet be open.");
 
   // First, select the InternalTestingProfileMigrator browser.
   let selector = shadow.querySelector("#browser-profile-selector");
   EventUtils.synthesizeMouseAtCenter(selector, {}, wizard.ownerGlobal);
 
   await new Promise(resolve => {
-    shadow
-      .querySelector("panel-list")
-      .addEventListener("shown", resolve, { once: true });
+    panelList.addEventListener("shown", resolve, { once: true });
   });
 
   let panelItem = shadow.querySelector(`panel-item[key="${migratorKey}"]`);
+  Assert.ok(
+    panelItem.openOrClosedShadowRoot.querySelector("button"),
+    "The panel-list button exists."
+  );
   panelItem.click();
+
+  await new Promise(resolve => {
+    panelList.addEventListener("hidden", resolve, { once: true });
+  });
 
   // And then check the right checkboxes for the resource types.
   let resourceTypeList = shadow.querySelector("#resource-type-list");

@@ -15,23 +15,21 @@ def inline(doc):
 
 # Each list element represents a window of tabs loaded at
 # some testing URL
-DEFAULT_WINDOWS = set(
-    [
-        # Window 1. Note the comma after the inline call -
-        # this is Python's way of declaring a 1 item tuple.
-        (inline("""<div">Lorem</div>"""),),
-        # Window 2
-        (
-            inline("""<div">ipsum</div>"""),
-            inline("""<div">dolor</div>"""),
-        ),
-        # Window 3
-        (
-            inline("""<div">sit</div>"""),
-            inline("""<div">amet</div>"""),
-        ),
-    ]
-)
+DEFAULT_WINDOWS = set([
+    # Window 1. Note the comma after the inline call -
+    # this is Python's way of declaring a 1 item tuple.
+    (inline("""<div">Lorem</div>"""),),
+    # Window 2
+    (
+        inline("""<div">ipsum</div>"""),
+        inline("""<div">dolor</div>"""),
+    ),
+    # Window 3
+    (
+        inline("""<div">sit</div>"""),
+        inline("""<div">amet</div>"""),
+    ),
+])
 
 
 class SessionStoreTestCase(WindowManagerMixin, MarionetteTestCase):
@@ -45,7 +43,7 @@ class SessionStoreTestCase(WindowManagerMixin, MarionetteTestCase):
         test_windows=DEFAULT_WINDOWS,
         taskbartabs_enable=False,
     ):
-        super(SessionStoreTestCase, self).setUp()
+        super().setUp()
         self.marionette.set_context("chrome")
 
         platform = self.marionette.session_capabilities["platformName"]
@@ -53,37 +51,33 @@ class SessionStoreTestCase(WindowManagerMixin, MarionetteTestCase):
 
         self.test_windows = test_windows
 
-        self.private_windows = set(
-            [
-                (
-                    inline("""<div">consectetur</div>"""),
-                    inline("""<div">ipsum</div>"""),
-                ),
-                (
-                    inline("""<div">adipiscing</div>"""),
-                    inline("""<div">consectetur</div>"""),
-                ),
-            ]
-        )
+        self.private_windows = set([
+            (
+                inline("""<div">consectetur</div>"""),
+                inline("""<div">ipsum</div>"""),
+            ),
+            (
+                inline("""<div">adipiscing</div>"""),
+                inline("""<div">consectetur</div>"""),
+            ),
+        ])
 
-        self.marionette.enforce_gecko_prefs(
-            {
-                # Set browser restore previous session pref,
-                # depending on what the test requires.
-                "browser.startup.page": startup_page,
-                # Make the content load right away instead of waiting for
-                # the user to click on the background tabs
-                "browser.sessionstore.restore_on_demand": restore_on_demand,
-                # Avoid race conditions by having the content process never
-                # send us session updates unless the parent has explicitly asked
-                # for them via the TabStateFlusher.
-                "browser.sessionstore.debug.no_auto_updates": no_auto_updates,
-                # Whether to enable the register application restart mechanism.
-                "toolkit.winRegisterApplicationRestart": win_register_restart,
-                # Whether to enable taskbar tabs for this test
-                "browser.taskbarTabs.enabled": taskbartabs_enable,
-            }
-        )
+        self.marionette.enforce_gecko_prefs({
+            # Set browser restore previous session pref,
+            # depending on what the test requires.
+            "browser.startup.page": startup_page,
+            # Make the content load right away instead of waiting for
+            # the user to click on the background tabs
+            "browser.sessionstore.restore_on_demand": restore_on_demand,
+            # Avoid race conditions by having the content process never
+            # send us session updates unless the parent has explicitly asked
+            # for them via the TabStateFlusher.
+            "browser.sessionstore.debug.no_auto_updates": no_auto_updates,
+            # Whether to enable the register application restart mechanism.
+            "toolkit.winRegisterApplicationRestart": win_register_restart,
+            # Whether to enable taskbar tabs for this test
+            "browser.taskbarTabs.enabled": taskbartabs_enable,
+        })
 
         self.all_windows = self.test_windows.copy()
         self.open_windows(self.test_windows)
@@ -97,7 +91,7 @@ class SessionStoreTestCase(WindowManagerMixin, MarionetteTestCase):
             # Create a fresh profile for subsequent tests.
             self.marionette.restart(in_app=False, clean=True)
         finally:
-            super(SessionStoreTestCase, self).tearDown()
+            super().tearDown()
 
     def open_windows(self, window_sets, is_private=False):
         """Open a set of windows with tabs pointing at some URLs.

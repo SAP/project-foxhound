@@ -89,6 +89,7 @@ function renderMultistage(ready) {
   dialog?.classList.add("spotlight");
   // Prevent SubDialog methods from manually setting dialog size.
   box.setAttribute("sizeto", "available");
+  box.setAttribute("fixedsize", "false");
   addEventListener("pagehide", () => {
     box.classList.remove("spotlightBox");
     dialog?.classList.remove("spotlight");
@@ -97,6 +98,28 @@ function renderMultistage(ready) {
 
   if (CONFIG?.disableEscClose) {
     disableEscClose();
+
+    // Prevent ESC key from closing the Spotlight when focus is on the dialog frame. SubDialog has a system group handler that closes dialogs on ESC, so we need to stop propagation at the parent window level
+    const preventEscape = event => {
+      if (
+        event.key === "Escape" &&
+        (dialog?.contains(event.target) || box.contains(event.target))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    browser.ownerGlobal.addEventListener("keydown", preventEscape, {
+      capture: true,
+      mozSystemGroup: true,
+    });
+
+    addEventListener("pagehide", () => {
+      browser.ownerGlobal.removeEventListener("keydown", preventEscape, {
+        capture: true,
+        mozSystemGroup: true,
+      });
+    });
   }
 
   // Load the bundle to render the content as configured.

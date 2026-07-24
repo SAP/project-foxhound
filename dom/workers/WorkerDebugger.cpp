@@ -4,22 +4,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WorkerDebugger.h"
+
+#include "ScriptLoader.h"
+#include "WorkerCommon.h"
+#include "WorkerError.h"
+#include "WorkerRunnable.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/AbstractThread.h"
-#include "mozilla/Encoding.h"
 #include "nsProxyRelease.h"
 #include "nsQueryObject.h"
 #include "nsThreadUtils.h"
-#include "ScriptLoader.h"
-#include "WorkerCommon.h"
-#include "WorkerError.h"
-#include "WorkerRunnable.h"
-#include "WorkerDebugger.h"
 
 #if defined(XP_WIN)
 #  include <processthreadsapi.h>  // for GetCurrentProcessId()

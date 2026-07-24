@@ -124,7 +124,7 @@ async function openPage() {
         browser,
         [""],
         function () {
-          return content.document.userHasInteracted;
+          return content.document.hasBeenUserGestureActivated;
         }
       );
 
@@ -159,7 +159,7 @@ async function loadPageAndReload(testCase) {
         browser,
         [""],
         function () {
-          return content.document.userHasInteracted;
+          return content.document.hasBeenUserGestureActivated;
         }
       );
       is(true, hasInteractedWith, "Simulated successfully user interaction");
@@ -194,7 +194,7 @@ async function loadPagesAndUseBackButton() {
         browser,
         [""],
         function () {
-          return content.document.userHasInteracted;
+          return content.document.hasBeenUserGestureActivated;
         }
       );
       is(true, hasInteractedWith, "Simulated successfully user interaction");

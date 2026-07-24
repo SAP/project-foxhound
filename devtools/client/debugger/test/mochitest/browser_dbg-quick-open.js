@@ -167,7 +167,7 @@ function findResultEl(dbg, index = 1) {
 async function assertResultIsTab(dbg, index) {
   const el = await findResultEl(dbg, index);
   ok(
-    el && !!el.querySelector(".tab.result-item-icon"),
+    el && !!el.querySelector(".dbg-img-tab.result-item-icon"),
     "Result should be a tab"
   );
 }

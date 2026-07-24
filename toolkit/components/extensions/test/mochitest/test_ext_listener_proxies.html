@@ -1,7 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-  <title>Test for content script</title>
+  <title>Test concurrent addListener works, unaffected by unrelated removeListener</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
@@ -12,6 +12,11 @@
 <script type="text/javascript">
 "use strict";
 
+// This test verifies that when an event has multiple listeners, that the
+// unregistration of an unrelated listener does not prevent other listeners
+// from being notified. This is a regression test for bug 1317154, where proxied
+// event listeners were identified by the API path (e.g. storage.onChanged),
+// and any removeListener call would stop other listeners from being notified.
 add_task(async function test_listener_proxies() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
@@ -25,7 +30,8 @@ add_task(async function test_listener_proxies() {
       // expected.
 
       let awaitChanged = () => new Promise(resolve => {
-        browser.storage.onChanged.addListener(function listener() {
+        browser.storage.onChanged.addListener(function listener(changes) {
+          browser.test.log(`onChanged fired: ${JSON.stringify(changes)}`);
           browser.storage.onChanged.removeListener(listener);
           resolve();
         });
@@ -42,8 +48,13 @@ add_task(async function test_listener_proxies() {
 
       promises.push(awaitChanged(), awaitChanged());
 
-      browser.storage.local.set({foo: "bar"});
+      browser.test.log("Changing storage, should trigger storage.onChanged")
+      // This used to call storage.local.set, but changed to storage.session.set
+      // in bug 1979063 because storage.local is known to be prone to race
+      // conditions (bug 1977080).
+      await browser.storage.session.set({ foo: "bar" });
 
+      browser.test.log("Waiting for storage.onChanged to fire twice")
       await Promise.all(promises);
 
       browser.test.notifyPass("onchanged-listeners");

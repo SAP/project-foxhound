@@ -6,6 +6,7 @@
 #ifndef mozilla_widget_GeckoEditableSupport_h
 #define mozilla_widget_GeckoEditableSupport_h
 
+#include "GeckoViewSupport.h"
 #include "nsAppShell.h"
 #include "nsIWidget.h"
 #include "nsTArray.h"
@@ -76,6 +77,16 @@ class GeckoEditableSupport final
   bool mIMESelectionChanged;
   bool mIMETextChangedDuringFlush;
   bool mIMEMonitorCursor;
+
+  struct WaitingReplyKeyEvent {
+    uint32_t mUniqueId = 0;
+    mozilla::jni::Object::GlobalRef mOriginalEvent;
+  };
+
+  AutoTArray<WaitingReplyKeyEvent, 8> mWaitingReplyKeyEvents;
+  // Unique ID of key event that is used whether GeckoEditable handles default
+  // key event.
+  static uint32_t sUniqueKeyEventId;
 
   // The cached selection data
   struct Selection {
@@ -195,6 +206,8 @@ class GeckoEditableSupport final
 
   bool HasIMEFocus() const { return mIMEFocusCount != 0; }
 
+  void PostHandleKeyEvent(mozilla::WidgetKeyboardEvent* aEvent);
+
   void AddBlocker() { mDisposeBlockCount++; }
 
   void ReleaseBlocker() {
@@ -249,7 +262,7 @@ class GeckoEditableSupport final
   void OnKeyEvent(int32_t aAction, int32_t aKeyCode, int32_t aScanCode,
                   int32_t aMetaState, int32_t aKeyPressMetaState, int64_t aTime,
                   int32_t aDomPrintableKeyValue, int32_t aRepeatCount,
-                  int32_t aFlags, bool aIsSynthesizedImeKey,
+                  int32_t aFlags, bool aIsSynthesizedImeKey, bool aWaitingReply,
                   jni::Object::Param originalEvent);
 
   // Synchronize Gecko thread with the InputConnection thread.

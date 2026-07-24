@@ -51,7 +51,7 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
   }
 
  private:
-  virtual ~ParentChannelListener();
+  ~ParentChannelListener();
 
   // Can be the original HttpChannelParent that created this object (normal
   // case), a different {HTTP|FTP}ChannelParent that we've been redirected to,

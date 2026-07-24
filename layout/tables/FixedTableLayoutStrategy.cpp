@@ -236,7 +236,7 @@ void FixedTableLayoutStrategy::ComputeColumnISizes(
           float pct = styleISize->ToPercentage();
           colISize = NSToCoordFloor(pct * float(tableISize));
 
-          if (cellStylePos->mBoxSizing == StyleBoxSizing::Content) {
+          if (cellStylePos->mBoxSizing == StyleBoxSizing::ContentBox) {
             nsIFrame::IntrinsicSizeOffsetData offsets =
                 cellFrame->IntrinsicISizeOffsets();
             colISize += offsets.padding + offsets.border;

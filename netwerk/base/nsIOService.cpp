@@ -25,7 +25,6 @@
 #include "nsSimpleNestedURI.h"
 #include "nsSocketTransport2.h"
 #include "nsTArray.h"
-#include "nsIConsoleService.h"
 #include "nsIUploadChannel2.h"
 #include "nsXULAppAPI.h"
 #include "nsIProtocolProxyCallback.h"
@@ -61,7 +60,7 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
+#include "SerializedLoadContext.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentUtils.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -106,9 +105,9 @@ using mozilla::dom::ServiceWorkerDescriptor;
 #define PREF_LNA_IP_ADDR_SPACE_PRIVATE \
   "network.lna.address_space.private.override"
 #define PREF_LNA_IP_ADDR_SPACE_LOCAL "network.lna.address_space.local.override"
+#define PREF_LNA_SKIP_DOMAINS "network.lna.skip-domains"
 
 nsIOService* gIOService;
-static bool gHasWarnedUploadChannel2;
 static bool gCaptivePortalEnabled = false;
 static LazyLogModule gIOServiceLog("nsIOService");
 #undef LOG
@@ -236,12 +235,15 @@ static const char* gCallbackPrefs[] = {
     PREF_LNA_IP_ADDR_SPACE_PUBLIC,
     PREF_LNA_IP_ADDR_SPACE_PRIVATE,
     PREF_LNA_IP_ADDR_SPACE_LOCAL,
+    PREF_LNA_SKIP_DOMAINS,
     nullptr,
 };
 
 static const char* gCallbackPrefsForSocketProcess[] = {
     WEBRTC_PREF_PREFIX,
     NETWORK_DNS_PREF,
+    "media.webrtc.enable_pq_hybrid_kex",
+    "media.webrtc.send_mlkem_keyshare",
     "network.send_ODA_to_content_directly",
     "network.trr.",
     "doh-rollout.",
@@ -250,12 +252,18 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.disable-localhost-when-offline",
     "network.proxy.parse_pac_on_socket_process",
     "network.proxy.allow_hijacking_localhost",
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
     "network.connectivity-service.",
     "network.captive-portal-service.testMode",
     "network.socket.ip_addr_any.disabled",
     "network.socket.attach_mock_network_layer",
     "network.lna.enabled",
     "network.lna.blocking",
+    "network.lna.address_space.private.override",
+    "network.lna.address_space.public.override",
+    "network.lna.websocket.enabled",
+    "network.lna.local-network-to-localhost.skip-checks",
+    "network.socket.forcePort",
     nullptr,
 };
 
@@ -304,13 +312,13 @@ nsresult nsIOService::Init() {
 
   // Register for profile change notifications
   mObserverService = services::GetObserverService();
-  AddObserver(this, kProfileChangeNetTeardownTopic, true);
-  AddObserver(this, kProfileChangeNetRestoreTopic, true);
-  AddObserver(this, kProfileDoChange, true);
-  AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
-  AddObserver(this, NS_NETWORK_LINK_TOPIC, true);
-  AddObserver(this, NS_NETWORK_ID_CHANGED_TOPIC, true);
-  AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileChangeNetTeardownTopic, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileChangeNetRestoreTopic, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileDoChange, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_NETWORK_LINK_TOPIC, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_NETWORK_ID_CHANGED_TOPIC, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true));
 
   // Register observers for sending notifications to nsSocketTransportService
   if (XRE_IsParentProcess()) {
@@ -327,8 +335,13 @@ nsresult nsIOService::Init() {
 
   InitializeNetworkLinkService();
   InitializeProtocolProxyService();
-
   SetOffline(false);
+
+  // This is just to start the DNS service to make it fast to get later.
+  // Don't invoke directly since we're already in GetService.  RefPtr needed
+  // because already_AddRefed<> doesn't like to be dropped
+  NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+      __func__, []() { RefPtr<nsIDNSService> dns = GetOrInitDNSService(); }));
 
   return NS_OK;
 }
@@ -533,7 +546,7 @@ nsresult nsIOService::InitializeProtocolProxyService() {
 
   if (XRE_IsParentProcess()) {
     // for early-initialization
-    Unused << mozilla::components::ProtocolProxy::Service(&rv);
+    (void)mozilla::components::ProtocolProxy::Service(&rv);
   }
 
   return rv;
@@ -701,8 +714,7 @@ void nsIOService::NotifySocketProcessPrefsChanged(const char* aName) {
   Preferences::GetPreference(&pref, GeckoProcessType_Socket,
                              /* remoteType */ ""_ns);
   auto sendPrefUpdate = [pref]() {
-    Unused << gIOService->mSocketProcess->GetActor()->SendPreferenceUpdate(
-        pref);
+    (void)gIOService->mSocketProcess->GetActor()->SendPreferenceUpdate(pref);
   };
   CallOrWaitForSocketProcess(sendPrefUpdate);
 }
@@ -800,8 +812,8 @@ RefPtr<MemoryReportingProcess> nsIOService::GetSocketProcessMemoryReporter() {
 NS_IMETHODIMP
 nsIOService::SocketProcessTelemetryPing() {
   CallOrWaitForSocketProcess([]() {
-    Unused << gIOService->mSocketProcess->GetActor()
-                  ->SendSocketProcessTelemetryPing();
+    (void)gIOService->mSocketProcess->GetActor()
+        ->SendSocketProcessTelemetryPing();
   });
   return NS_OK;
 }
@@ -1232,30 +1244,6 @@ nsresult nsIOService::NewChannelFromURIWithProxyFlagsInternal(
   if (loadInfo->GetLoadingSandboxed()) {
     channel->SetOwner(nullptr);
   }
-
-  // Some extensions override the http protocol handler and provide their own
-  // implementation. The channels returned from that implementation doesn't
-  // seem to always implement the nsIUploadChannel2 interface, presumably
-  // because it's a new interface.
-  // Eventually we should remove this and simply require that http channels
-  // implement the new interface.
-  // See bug 529041
-  if (!gHasWarnedUploadChannel2 && scheme.EqualsLiteral("http")) {
-    nsCOMPtr<nsIUploadChannel2> uploadChannel2 = do_QueryInterface(channel);
-    if (!uploadChannel2) {
-      nsCOMPtr<nsIConsoleService> consoleService;
-      consoleService = mozilla::components::Console::Service();
-      if (consoleService) {
-        consoleService->LogStringMessage(
-            u"Http channel implementation "
-            "doesn't support nsIUploadChannel2. An extension has "
-            "supplied a non-functional http protocol handler. This will "
-            "break behavior and in future releases not work at all.");
-      }
-      gHasWarnedUploadChannel2 = true;
-    }
-  }
-
   channel.forget(result);
   return NS_OK;
 }
@@ -1392,7 +1380,7 @@ nsresult nsIOService::SetOfflineInternal(bool offline,
                                              offline ? u"true" : u"false");
     }
     if (SocketProcessReady() && notifySocketProcess) {
-      Unused << mSocketProcess->GetActor()->SendSetOffline(offline);
+      (void)mSocketProcess->GetActor()->SendSetOffline(offline);
     }
   }
 
@@ -1503,7 +1491,7 @@ nsresult nsIOService::SetConnectivityInternal(bool aConnectivity) {
                                      NS_IPC_IOSERVICE_SET_CONNECTIVITY_TOPIC,
                                      aConnectivity ? u"true" : u"false");
     if (SocketProcessReady()) {
-      Unused << mSocketProcess->GetActor()->SendSetConnectivity(aConnectivity);
+      (void)mSocketProcess->GetActor()->SendSetConnectivity(aConnectivity);
     }
   }
 
@@ -1684,6 +1672,10 @@ void nsIOService::PrefsChanged(const char* pref) {
     UpdateAddressSpaceOverrideList(PREF_LNA_IP_ADDR_SPACE_LOCAL,
                                    mLocalAddressSpaceOverrideList);
   }
+  if (!pref || strncmp(pref, PREF_LNA_SKIP_DOMAINS,
+                       strlen(PREF_LNA_SKIP_DOMAINS)) == 0) {
+    UpdateSkipDomainsList();
+  }
 }
 
 void nsIOService::UpdateAddressSpaceOverrideList(
@@ -1700,6 +1692,52 @@ void nsIOService::UpdateAddressSpaceOverrideList(
   }
 
   aTargetList = std::move(addressSpaceOverridesArray);
+}
+
+void nsIOService::UpdateSkipDomainsList() {
+  nsAutoCString skipDomains;
+  Preferences::GetCString(PREF_LNA_SKIP_DOMAINS, skipDomains);
+
+  nsTArray<nsCString> skipDomainsArray;
+  nsCCharSeparatedTokenizer tokenizer(skipDomains, ',');
+  while (tokenizer.hasMoreTokens()) {
+    nsAutoCString token(tokenizer.nextToken());
+    token.StripWhitespace();
+    if (!token.IsEmpty()) {
+      skipDomainsArray.AppendElement(token);
+    }
+  }
+
+  AutoWriteLock lock(mLock);
+  mLNASkipDomainsList = std::move(skipDomainsArray);
+}
+
+bool nsIOService::ShouldSkipDomainForLNA(const nsACString& aDomain) {
+  AutoReadLock lock(mLock);
+
+  // Check each domain pattern
+  for (const auto& pattern : mLNASkipDomainsList) {
+    // Special case: plain "*" matches all domains
+    if (pattern.Equals("*"_ns)) {
+      return true;
+    }
+
+    // Suffix wildcard pattern (starts with *.)
+    if (StringBeginsWith(pattern, "*."_ns)) {
+      nsDependentCSubstring suffix(Substring(pattern, 2));
+      nsDependentCSubstring suffixWithDot(Substring(pattern, 1));
+      if (aDomain == suffix || StringEndsWith(aDomain, suffixWithDot)) {
+        return true;
+      }
+    }
+
+    // Exact match
+    if (pattern == aDomain) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void nsIOService::ParsePortList(const char* pref, bool remove) {
@@ -1794,7 +1832,7 @@ nsIOService::Observe(nsISupports* subject, const char* topic,
       mObserverTopicForSocketProcess.Contains(nsDependentCString(topic))) {
     nsCString topicStr(topic);
     nsString dataStr(data);
-    Unused << mSocketProcess->GetActor()->SendNotifyObserver(topicStr, dataStr);
+    (void)mSocketProcess->GetActor()->SendNotifyObserver(topicStr, dataStr);
   }
 
   if (!strcmp(topic, kProfileChangeNetTeardownTopic)) {
@@ -1996,7 +2034,7 @@ nsresult nsIOService::OnNetworkLinkEvent(const char* data) {
     if (!neckoParent) {
       continue;
     }
-    Unused << neckoParent->SendNetworkChangeNotification(dataAsString);
+    (void)neckoParent->SendNetworkChangeNotification(dataAsString);
   }
 
   LOG(("nsIOService::OnNetworkLinkEvent data:%s\n", data));
@@ -2164,8 +2202,11 @@ nsresult nsIOService::SpeculativeConnectInternal(
   }
 
   if (IsNeckoChild()) {
+    nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(aCallbacks);
+
     gNeckoChild->SendSpeculativeConnect(
-        aURI, aPrincipal, std::move(aOriginAttributes), aAnonymous);
+        nullptr, IPC::SerializedLoadContext(loadContext), aURI, aPrincipal,
+        std::move(aOriginAttributes), aAnonymous);
     return NS_OK;
   }
 
@@ -2240,7 +2281,7 @@ nsresult nsIOService::SpeculativeConnectInternal(
     // When proxyDNS is true, this speculative connection would likely leak a
     // DNS lookup, so we should return early to avoid that.
     bool hasProxyFilterRegistered = false;
-    Unused << pps->GetHasProxyFilterRegistered(&hasProxyFilterRegistered);
+    (void)pps->GetHasProxyFilterRegistered(&hasProxyFilterRegistered);
     if (hasProxyFilterRegistered) {
       return NS_ERROR_FAILURE;
     }
@@ -2288,8 +2329,8 @@ nsIOService::SpeculativeConnectWithOriginAttributesNative(
     nsIInterfaceRequestor* aCallbacks, bool aAnonymous) {
   Maybe<OriginAttributes> originAttributes;
   originAttributes.emplace(aOriginAttributes);
-  Unused << SpeculativeConnectInternal(
-      aURI, nullptr, std::move(originAttributes), aCallbacks, aAnonymous);
+  (void)SpeculativeConnectInternal(aURI, nullptr, std::move(originAttributes),
+                                   aCallbacks, aAnonymous);
 }
 
 NS_IMETHODIMP
@@ -2395,7 +2436,7 @@ nsIOService::SetSimpleURIUnknownRemoteSchemes(
     // which already has the pref list
     for (auto* cp : mozilla::dom::ContentParent::AllProcesses(
              mozilla::dom::ContentParent::eLive)) {
-      Unused << cp->SendSimpleURIUnknownRemoteSchemes(aRemoteSchemes);
+      (void)cp->SendSimpleURIUnknownRemoteSchemes(aRemoteSchemes);
     }
   }
   return NS_OK;

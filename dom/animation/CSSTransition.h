@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_CSSTransition_h
 #define mozilla_dom_CSSTransition_h
 
-#include "mozilla/ComputedTiming.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/AnimatedPropertyID.h"
-#include "mozilla/StyleAnimationValue.h"
 #include "AnimationCommon.h"
+#include "mozilla/CSSPropertyId.h"
+#include "mozilla/ComputedTiming.h"
+#include "mozilla/StyleAnimationValue.h"
+#include "mozilla/dom/Animation.h"
 
 class nsIGlobalObject;
 
@@ -21,7 +21,7 @@ namespace dom {
 class CSSTransition final : public Animation {
  public:
   explicit CSSTransition(nsIGlobalObject* aGlobal,
-                         const AnimatedPropertyID& aProperty)
+                         const CSSPropertyId& aProperty)
       : Animation(aGlobal),
         mPreviousTransitionPhase(TransitionPhase::Idle),
         mNeedsNewAnimationIndexWhenRun(false),
@@ -78,7 +78,7 @@ class CSSTransition final : public Animation {
 
   void Tick(TickState&) override;
 
-  const AnimatedPropertyID& TransitionProperty() const;
+  const CSSPropertyId& TransitionProperty() const;
   AnimationValue ToValue() const;
 
   int32_t CompareCompositeOrder(const Maybe<EventContext>& aContext,
@@ -214,7 +214,7 @@ class CSSTransition final : public Animation {
   // information in order to determine if there is an existing transition
   // for a given style change. We can't store that information on the
   // effect however since it can be replaced using the Web Animations API.
-  AnimatedPropertyID mTransitionProperty;
+  CSSPropertyId mTransitionProperty;
   AnimationValue mTransitionToValue;
 
   // This is the start value to be used for a check for whether a

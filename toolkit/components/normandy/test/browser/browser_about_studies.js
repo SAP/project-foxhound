@@ -12,8 +12,8 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
 const { ExperimentAPI } = ChromeUtils.importESModule(
   "resource://nimbus/ExperimentAPI.sys.mjs"
 );
-const { RemoteSettingsExperimentLoader } = ChromeUtils.importESModule(
-  "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
+const { FirefoxLabs } = ChromeUtils.importESModule(
+  "resource://nimbus/FirefoxLabs.sys.mjs"
 );
 
 const { NormandyTestUtils } = ChromeUtils.importESModule(
@@ -741,10 +741,12 @@ add_task(async function test_nimbus_about_studies_rollout() {
         return content.document.querySelectorAll(".study-name").length;
       });
       // Make sure strings are properly shown
-      Assert.equal(studyCount, 1, "Rollout loaded in non-debug mode");
+      Assert.equal(studyCount, 0, "Rollout not loaded in non-debug mode");
     }
   );
-  Services.prefs.setBoolPref("nimbus.debug", true);
+  await SpecialPowers.pushPrefEnv({
+    set: [["nimbus.debug", true]],
+  });
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:studies" },
     async browser => {
@@ -785,7 +787,7 @@ add_task(async function test_nimbus_about_studies_rollout() {
   );
   // Cleanup for multiple test runs
   await NimbusTestUtils.assert.storeIsEmpty(ExperimentAPI.manager.store);
-  Services.prefs.clearUserPref("nimbus.debug");
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_getStudiesEnabled() {
@@ -866,11 +868,11 @@ add_task(async function test_forceEnroll() {
     }
   );
 
-  NimbusTestUtils.assert.storeIsEmpty(ExperimentAPI.manager.store);
+  await NimbusTestUtils.assert.storeIsEmpty(ExperimentAPI.manager.store);
   sandbox.restore();
 });
 
-add_task(async function test_inactive_rollouts_under_completed_studies() {
+add_task(async function test_inactive_rollouts_not_under_completed_studies() {
   // Adds an active experiment and rollout
   const experiment = NimbusTestUtils.factories.recipe("my-testing-experiment");
   const rollout = NimbusTestUtils.factories.recipe("my-testing-rollout", {
@@ -904,12 +906,12 @@ add_task(async function test_inactive_rollouts_under_completed_studies() {
         "active list should include enrolled experiment"
       );
       Assert.ok(
-        activeListItems.includes(rollout.slug),
+        !activeListItems.includes(rollout.slug),
         "active list should include enrolled rollout"
       );
       Assert.equal(
         activeListItems.length,
-        2,
+        1,
         "should be 2 elements in active list"
       );
     }
@@ -942,17 +944,104 @@ add_task(async function test_inactive_rollouts_under_completed_studies() {
         "inactive list should include unenrolled experiment"
       );
       Assert.ok(
-        inactiveListItems.includes(rollout.slug),
-        "inactive list should include unenrolled rollout"
+        !inactiveListItems.includes(rollout.slug),
+        "inactive list should not include unenrolled rollout"
       );
       Assert.equal(
         inactiveListItems.length,
-        2,
+        1,
         "should be 2 items in inactive list"
       );
     }
   );
 
+  await SpecialPowers.pushPrefEnv({
+    set: [["nimbus.debug", true]],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:studies" },
+    async browser => {
+      const inactiveListItems = await SpecialPowers.spawn(
+        browser,
+        [],
+        async () => {
+          await ContentTaskUtils.waitForCondition(
+            () => content.document.querySelector(".nimbus.disabled"),
+            "waiting for the experiment to become disabled"
+          );
+          return Array.from(
+            content.document.querySelectorAll("ul.inactive-study-list li")
+          ).map(el => el.dataset.studySlug);
+        }
+      );
+
+      Assert.ok(
+        inactiveListItems.includes(experiment.slug),
+        "inactive list should include unenrolled experiment"
+      );
+      Assert.ok(
+        inactiveListItems.includes(rollout.slug),
+        "inactive list should include unenrolled rollout in debug"
+      );
+      Assert.equal(
+        inactiveListItems.length,
+        2,
+        "should be 2 items in inactive list in debug"
+      );
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
+
   // Cleanup for multiple test runs
+  await NimbusTestUtils.assert.storeIsEmpty(ExperimentAPI.manager.store);
+});
+
+add_task(async function testFirefoxLabs() {
+  const study = NimbusTestUtils.factories.recipe("study");
+  await ExperimentAPI.manager.enroll(study, "rs-loader");
+
+  const optin = NimbusTestUtils.factories.recipe("optin", {
+    isRollout: true,
+    isFirefoxLabsOptIn: true,
+    firefoxLabsTitle: "title",
+    firefoxLabsDescription: "description",
+    firefoxLabsGroup: "group",
+    requiresRestart: false,
+  });
+
+  ExperimentAPI.manager.optInRecipes.push(optin);
+
+  const labs = await FirefoxLabs.create();
+  await labs.enroll("optin", "control");
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:studies" },
+    async browser => {
+      const nimbusItems = await SpecialPowers.spawn(browser, [], async () => {
+        await ContentTaskUtils.waitForCondition(
+          () => content.document.querySelector(".nimbus .remove-button"),
+          "waiting for page to load"
+        );
+
+        return Array.from(
+          content.document.querySelectorAll(".nimbus"),
+          el => el.dataset.studySlug
+        );
+      });
+
+      Assert.deepEqual(
+        nimbusItems,
+        ["study"],
+        "Firefox Labs opt-in not present"
+      );
+    }
+  );
+
+  await labs.unenroll("optin", "control");
+  await ExperimentAPI.manager.unenroll("study");
+  ExperimentAPI.manager.optInRecipes.pop();
+
   await NimbusTestUtils.assert.storeIsEmpty(ExperimentAPI.manager.store);
 });

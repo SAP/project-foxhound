@@ -47,11 +47,12 @@ export class TopSiteLink extends React.PureComponent {
   /*
    * Helper to determine whether the drop zone should allow a drop. We only allow
    * dropping top sites for now. We don't allow dropping on sponsored top sites
-   * as their position is fixed.
+   * or the add shortcut button as their position is fixed.
    */
   _allowDrop(e) {
     return (
-      (this.dragged || !isSponsored(this.props.link)) &&
+      (this.dragged ||
+        (!isSponsored(this.props.link) && !this.props.isAddButton)) &&
       e.dataTransfer.types.includes("text/topsite-index")
     );
   }
@@ -269,7 +270,7 @@ export class TopSiteLink extends React.PureComponent {
       onClick,
       title,
       isAddButton,
-      shortcutsRefresh,
+      visibleTopSites,
     } = this.props;
 
     const topSiteOuterClassName = `top-site-outer${
@@ -291,6 +292,10 @@ export class TopSiteLink extends React.PureComponent {
     };
     const addButtonTitlel10n = {
       "data-l10n-id": "newtab-topsites-add-shortcut-title",
+    };
+    const addPinnedTitlel10n = {
+      "data-l10n-id": "topsite-label-pinned",
+      "data-l10n-args": JSON.stringify({ title }),
     };
 
     let draggableProps = {};
@@ -332,6 +337,9 @@ export class TopSiteLink extends React.PureComponent {
             reporting_url: link.sponsored_impression_url,
             advertiser: title.toLocaleLowerCase(),
             source: NEWTAB_SOURCE,
+            visible_topsites: visibleTopSites,
+            frecency_boosted: link.type === "frecency-boost",
+            attribution: link.attribution,
           }}
           // For testing.
           IntersectionObserver={this.props.IntersectionObserver}
@@ -349,6 +357,9 @@ export class TopSiteLink extends React.PureComponent {
             source: NEWTAB_SOURCE,
             isPinned: this.props.link.isPinned,
             guid: this.props.link.guid,
+            visible_topsites: visibleTopSites,
+            smartScores: this.props.link.scores,
+            smartWeights: this.props.link.weights,
           }}
           // For testing.
           IntersectionObserver={this.props.IntersectionObserver}
@@ -380,12 +391,13 @@ export class TopSiteLink extends React.PureComponent {
             draggable={true}
             data-is-sponsored-link={!!link.sponsored_tile_id}
             onFocus={this.props.onFocus}
+            aria-label={link.isPinned ? undefined : title}
             {...(isAddButton && { ...addButtonTitlel10n })}
             {...(!isAddButton && { title })}
+            {...(link.isPinned && { ...addPinnedTitlel10n })}
+            data-l10n-args={JSON.stringify({ title })}
           >
-            {shortcutsRefresh && link.isPinned && (
-              <div className="icon icon-pin-small" />
-            )}
+            {link.isPinned && <div className="icon icon-pin-small" />}
             <div className="tile" aria-hidden={true}>
               <div
                 className={
@@ -405,9 +417,6 @@ export class TopSiteLink extends React.PureComponent {
                   />
                 )}
               </div>
-              {!shortcutsRefresh && link.searchTopSite && (
-                <div className="top-site-icon search-topsite" />
-              )}
             </div>
             <div
               className={`title${link.isPinned ? " has-icon pinned" : ""}${
@@ -421,10 +430,7 @@ export class TopSiteLink extends React.PureComponent {
                 dir="auto"
                 {...(isAddButton && { ...addButtonLabell10n })}
               >
-                {!shortcutsRefresh && link.isPinned && (
-                  <div className="icon icon-pin-small" />
-                )}
-                {shortcutsRefresh && link.searchTopSite && (
+                {link.searchTopSite && (
                   <div className="top-site-icon search-topsite" />
                 )}
                 {title || <br />}
@@ -444,6 +450,7 @@ export class TopSiteLink extends React.PureComponent {
                 dispatch={this.props.dispatch}
                 feature="FEATURE_SHORTCUT_HIGHLIGHT"
                 position="inset-block-end inset-inline-start"
+                messageData={this.props.Messages?.messageData}
               />
             </MessageWrapper>
           )}
@@ -516,6 +523,7 @@ export class TopSite extends React.PureComponent {
           type: at.OPEN_LINK,
           data: Object.assign(this.props.link, {
             event: { altKey, button, ctrlKey, metaKey, shiftKey },
+            is_sponsored: !!this.props.link.sponsored_tile_id,
           }),
         })
       );
@@ -548,6 +556,7 @@ export class TopSite extends React.PureComponent {
               card_type: "spoc",
               tile_id: this.props.link.id,
               shim: this.props.link.shim && this.props.link.shim.click,
+              attribution: this.props.link.attribution,
             },
           })
         );
@@ -563,6 +572,7 @@ export class TopSite extends React.PureComponent {
               tile_id: this.props.link.id,
               advertiser: title.toLocaleLowerCase(),
               source: NEWTAB_SOURCE,
+              attribution: this.props.link.attribution,
             },
           })
         );
@@ -579,6 +589,9 @@ export class TopSite extends React.PureComponent {
               reporting_url: this.props.link.sponsored_click_url,
               advertiser: title.toLocaleLowerCase(),
               source: NEWTAB_SOURCE,
+              visible_topsites: this.props.visibleTopSites,
+              frecency_boosted: this.props.link.type === "frecency-boost",
+              attribution: this.props.link.attribution,
             },
           })
         );
@@ -593,6 +606,9 @@ export class TopSite extends React.PureComponent {
               source: NEWTAB_SOURCE,
               isPinned: this.props.link.isPinned,
               guid: this.props.link.guid,
+              visible_topsites: this.props.visibleTopSites,
+              smartScores: this.props.link.scores,
+              smartWeights: this.props.link.weights,
             },
           })
         );
@@ -838,15 +854,31 @@ export class _TopSiteList extends React.PureComponent {
     topSites.length = this.props.TopSitesRows * TOP_SITES_MAX_SITES_PER_ROW;
     // if topSites do not fill an entire row add 'Add shortcut' button to array of topSites
     // (there should only be one of these)
-    let firstPlaceholder = topSites.findIndex(Object.is.bind(null, undefined));
-    // make sure placeholder exists and there already isnt a add button
-    if (firstPlaceholder && !topSites.includes(site => site.isAddButton)) {
-      topSites[firstPlaceholder] = { isAddButton: true };
-    } else if (topSites.includes(site => site.isAddButton)) {
-      topSites.push(
-        topSites.splice(topSites.indexOf({ isAddButton: true }), 1)[0]
-      );
+    const addButtonIndex = topSites.findIndex(site => site?.isAddButton);
+
+    // Find the position right after the last regular shortcut
+    let targetPosition = topSites.length - 1;
+    for (let i = topSites.length - 1; i >= 0; i--) {
+      if (topSites[i] && !topSites[i].isAddButton) {
+        targetPosition = i + 1;
+        break;
+      }
     }
+
+    if (addButtonIndex === -1) {
+      // No add button exists yet, insert it at target position if it's within bounds
+      if (targetPosition < topSites.length) {
+        topSites[targetPosition] = { isAddButton: true };
+      }
+    } else if (addButtonIndex !== targetPosition) {
+      // Add button exists but not at the end, move it
+      const [button] = topSites.splice(addButtonIndex, 1);
+      // Adjust target if we removed something before it
+      const adjustedTarget =
+        addButtonIndex < targetPosition ? targetPosition - 1 : targetPosition;
+      topSites[adjustedTarget] = button;
+    }
+
     return topSites;
   }
 
@@ -858,10 +890,12 @@ export class _TopSiteList extends React.PureComponent {
     const topSites = this._getTopSites();
     topSites[this.state.draggedIndex] = null;
     const preview = topSites.map(site =>
-      site && (site.isPinned || isSponsored(site)) ? site : null
+      site && (site.isPinned || isSponsored(site) || site.isAddButton)
+        ? site
+        : null
     );
     const unpinned = topSites.filter(
-      site => site && !site.isPinned && !isSponsored(site)
+      site => site && !site.isPinned && !isSponsored(site) && !site.isAddButton
     );
     const siteToInsert = Object.assign({}, this.state.draggedSite, {
       isPinned: true,
@@ -885,7 +919,10 @@ export class _TopSiteList extends React.PureComponent {
         index > this.state.draggedIndex ? holeIndex < index : holeIndex > index
       ) {
         let nextIndex = holeIndex + shiftingStep;
-        while (isSponsored(preview[nextIndex])) {
+        while (
+          preview[nextIndex] &&
+          (isSponsored(preview[nextIndex]) || preview[nextIndex].isAddButton)
+        ) {
           nextIndex += shiftingStep;
         }
         preview[holeIndex] = preview[nextIndex];
@@ -913,24 +950,22 @@ export class _TopSiteList extends React.PureComponent {
       return;
     }
 
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // prevent the page from scrolling up/down while navigating.
-      e.preventDefault();
-    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL
+        ? e.key === "ArrowRight"
+        : e.key === "ArrowLeft";
 
-    if (
-      this.focusedRef?.nextSibling?.querySelector("a") &&
-      e.key === "ArrowDown"
-    ) {
-      this.focusedRef.nextSibling.querySelector("a").tabIndex = 0;
-      this.focusedRef.nextSibling.querySelector("a").focus();
-    }
-    if (
-      this.focusedRef?.previousSibling?.querySelector("a") &&
-      e.key === "ArrowUp"
-    ) {
-      this.focusedRef.previousSibling.querySelector("a").tabIndex = 0;
-      this.focusedRef.previousSibling.querySelector("a").focus();
+      const targetTopSite = navigateToPrevious
+        ? this.focusedRef?.previousSibling
+        : this.focusedRef?.nextSibling;
+
+      const targetAnchor = targetTopSite?.querySelector("a");
+      if (targetAnchor) {
+        targetAnchor.tabIndex = 0;
+        targetAnchor.focus();
+      }
     }
   }
 
@@ -948,8 +983,6 @@ export class _TopSiteList extends React.PureComponent {
 
   render() {
     const { props } = this;
-    const prefs = props.Prefs.values;
-    const shortcutsRefresh = prefs["newtabShortcuts.refresh"];
     const topSites = this.state.topSitesPreview || this._getTopSites();
     const topSitesUI = [];
     const commonProps = {
@@ -1008,6 +1041,7 @@ export class _TopSiteList extends React.PureComponent {
               this.onTopsiteFocus(i);
             }}
             Messages={this.props.Messages}
+            visibleTopSites={this.props.visibleTopSites}
           />
         );
       } else {
@@ -1019,7 +1053,6 @@ export class _TopSiteList extends React.PureComponent {
             {...slotProps}
             {...commonProps}
             colors={props.colors}
-            shortcutsRefresh={shortcutsRefresh}
             setRef={
               i === this.state.focusedIndex
                 ? el => {
@@ -1031,6 +1064,7 @@ export class _TopSiteList extends React.PureComponent {
             onFocus={() => {
               this.onTopsiteFocus(i);
             }}
+            visibleTopSites={this.props.visibleTopSites}
           />
         );
       }

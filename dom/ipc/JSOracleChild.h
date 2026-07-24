@@ -7,12 +7,11 @@
 #ifndef mozilla_dom_JSOracleChild
 #define mozilla_dom_JSOracleChild
 
-#include "mozilla/dom/PJSOracleChild.h"
-
-#include "js/experimental/JSStencil.h"
-#include "js/experimental/CompileScript.h"
 #include "js/Initialization.h"
+#include "js/experimental/CompileScript.h"
+#include "js/experimental/JSStencil.h"
 #include "jsapi.h"
+#include "mozilla/dom/PJSOracleChild.h"
 
 namespace mozilla::ipc {
 class UtilityProcessParent;

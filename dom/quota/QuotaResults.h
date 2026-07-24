@@ -8,6 +8,7 @@
 #define mozilla_dom_quota_QuotaResults_h
 
 #include <cstdint>
+
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/UsageInfo.h"
 #include "nsIQuotaResults.h"

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- The button that appears at the bottom of an error page. -->
+  <string name="mozac_browser_errorpages_page_refresh">بیا هڅه وکړه</string>
+  <!-- The document title and heading of an error page shown when a website cannot be loaded for an unknown reason. -->
+  <string name="mozac_browser_errorpages_generic_title">غوښتنه بشپړه کېدای نه شي</string>
+  <!-- The error message shown when a website cannot be loaded for an unknown reason. -->
+  <string name="mozac_browser_errorpages_generic_message"><![CDATA[<p>د دې ستونزې یا تېروتنې په اړه نور معلومات اوس مهال شتون نه لري.</p>]]></string>
+  <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_ssl_title">خوندي اړیکه ناکامه شوه</string>
+  <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>هغه پاڼه چې تاسو یې د لیدلو هڅه کوئ نشي ښودل کېدای ځکه چې د ترلاسه شويو معلوماتو اعتبار تایید نه شو.</li>\n<li>مهرباني وکړئ د دې ستونزې په اړه د خبر ورکولو لپاره د ویب پاڼې مالکینو سره اړیکه ونیسئ.</li>\n</ul>]]></string>
+  <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title">خوندي اړیکه ناکامه شوه</string>
+  <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>دا کېدای شي د سرور د تنظيماتو ستونزه وي، يا کېدای شي څوک د سرور په توګه د ځان ښودلو هڅه کوي.</li>\n<li>که تاسو پخوا له دې سرور سره په بریالیتوب وصل شوي ياست، ښايي دا تېروتنه لنډمهاله وي او وروسته بیا هڅه کولای شئ.</li>\n</ul>\n]]></string>
+  <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_advanced">پرمختللی…</string>
+  <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>کېدای شي څوک د وېب‌پاڼې په توګه د ځان ښودلو هڅه کوي، او تاسو باید دوام ور نه کړئ.</label> <br><br>\n<label>وېب‌پاڼې خپل هویت د سندونو له لارې ثابتوي. %1$s پر <b>%2$s</b> باور نه لري، ځکه چې د هغه د سند ورکوونکی ناڅرګند دی، سند پخپله لاسلیک شوی دی، يا سرور سم منځګړي سندونه نه لېږي.</label>\n]]></string>
+  <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_back">شاته ولاړ شئ (سپارښتنه کېږي)</string>
+  <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_accept_temporary">خطر ومنئ او دوام ورکړئ</string>
+  <!-- The document title and heading of the error page shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">دا وېب‌سايټ خوندي اړیکې (کنکشن) ته اړتیا لري.</string>
+  <!-- The error message shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>هغه پاڼه چې تاسو یې د کتلو هڅه کوئ نه شي ښودل کېدای، ځکه چې دا وېب‌پاڼه خوندي اړيکې (کنکشن) ته اړتیا لري.</li>\n<li>ستونزه ډېر امکان لري د وېب‌پاڼې له لوري وي، او تاسو د حل لپاره څه نه شئ کولای.</li>\n<li>تاسو کولای شئ د دې ستونزې په اړه د وېب‌پاڼې له مدير سره اړیکه ونیسئ.</li>\n</ul>\n]]></string>
+  <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">پرمختللی…</string>
+  <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[<label> <b>%1$s</b> د HTTP سخت ټرانسپورټ امنیت (HSTS) په نوم د امنیت تګلاره لري، چې معنا یې دا ده چې <b>%2$s</b> یوازې په خوندي ډول ورسره نښلېدای شي. ته نشې کولی د دې سایټ د لیدو لپاره استثنا اضافه کړې. </label>]]></string>
+  <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_back">شاته لاړ شه</string>
+  <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
+  <string name="mozac_browser_errorpages_net_interrupt_title">اړیکه پرې شوه</string>
+  <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
+  <string name="mozac_browser_errorpages_offline_title">آفلاين حالت</string>
+  <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
+  <string name="mozac_browser_errorpages_corrupted_content_title">د منځپانګې د خرابوالي تېروتنه</string>
+  <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>هغه پاڼه چې تاسو یې د کتلو هڅه کوئ نه شي ښودل کېدای، ځکه چې د مالوماتو د لېږد پر مهال یوه تېروتنه وموندل شوه.</p>\n<ul>\n<li>مهرباني وکړئ د دې ستونزې د خبر ورکولو لپاره د وېب پاڼې له خاوندانو سره اړیکه ونیسئ.</li>\n</ul>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_content_crashed_title">منځپانګه خرابه شوه</string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_malformed_uri_title">ناسمه پته</string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_file_not_found_title">فایل ونه موندل شو</string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_unknown_proxy_host_title">پراکسي سرور ونه موندل شو</string>
+</resources>

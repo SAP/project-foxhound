@@ -7,23 +7,13 @@ package org.mozilla.fenix.ext
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.os.Build
 
 /**
-* Checks for availability of network.
-*
-* For devices above [Build.VERSION_CODES.M] it even checks if there's internet flowing through it or not.
-* */
+ * Checks for availability of network and if there's internet flowing through it or not.
+ */
 fun ConnectivityManager.isOnline(network: Network? = null): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        getNetworkCapabilities(network ?: activeNetwork)?.let {
+    return getNetworkCapabilities(network ?: activeNetwork)?.let {
             it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         } ?: false
-    } else {
-        // for devices below android M, there's no better way to get this.
-        // active network info can be null if there are no active networks.
-        @Suppress("Deprecation")
-        activeNetworkInfo?.isConnected ?: false
-    }
 }

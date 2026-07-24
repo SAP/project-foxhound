@@ -92,8 +92,7 @@ class Scriptability {
   static Scriptability& Get(JSObject* aScope);
 
   // Returns true if scripting is allowed, false otherwise (if no Scriptability
-  // exists, like for example inside a ShadowRealm global, then script execution
-  // is assumed to be allowed)
+  // exists, then script execution is assumed to be allowed)
   static bool AllowedIfExists(JSObject* aScope);
 
  private:
@@ -755,7 +754,9 @@ void SetPrefableCompileOptions(JS::PrefableCompileOptions& options);
 void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
                              bool aIsSystemPrincipal, bool aSecureContext,
                              bool aForceUTC, bool aAlwaysUseFdlibm,
-                             bool aLocaleEnUS);
+                             bool aLocaleEnUS,
+                             const nsACString& aLanguageOverride,
+                             const nsAString& aTimezoneOverride);
 
 class ErrorBase {
  public:
@@ -895,6 +896,9 @@ struct alignas(kAutomationPageSize) ReadOnlyPage final {
 #ifdef MOZ_TSAN
   // TSan is confused by write access to read-only section.
   static ReadOnlyPage sInstance;
+#elif defined(XP_OPENBSD)
+  static const volatile ReadOnlyPage sInstance
+      __attribute__((section(".openbsd.mutable")));
 #else
   static const volatile ReadOnlyPage sInstance;
 #endif

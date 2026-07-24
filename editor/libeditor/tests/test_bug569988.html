@@ -18,15 +18,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=569988
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 569988 **/
+/** Test for Bug 569988 */
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTest);
 
-
 function runTest() {
   var script = SpecialPowers.loadChromeScript(function() {
-    /* eslint-env mozilla/chrome-script */
     var gPromptInput = null;
     var os = Services.obs;
 

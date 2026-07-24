@@ -12,6 +12,7 @@
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "nsCOMArray.h"
 #include "nsComponentManagerUtils.h"
@@ -522,7 +523,7 @@ nsresult BackgroundFileSaver::ProcessStateChange() {
 
       // Try to clean up the inputStream if an error occurs.
       auto closeGuard =
-          mozilla::MakeScopeExit([&] { Unused << inputStream->Close(); });
+          mozilla::MakeScopeExit([&] { (void)inputStream->Close(); });
 
       char buffer[BUFFERED_IO_SIZE];
       while (true) {
@@ -596,10 +597,12 @@ nsresult BackgroundFileSaver::ProcessStateChange() {
   {
     MutexAutoLock lock(mLock);
 
-    rv = NS_AsyncCopy(mPipeInputStream, outputStream, mBackgroundET,
-                      NS_ASYNCCOPY_VIA_READSEGMENTS, 4096, AsyncCopyCallback,
-                      this, false, true, getter_AddRefs(mAsyncCopyContext),
-                      GetProgressCallback());
+    rv = NS_AsyncCopy(
+        mPipeInputStream, outputStream, mBackgroundET,
+        NS_ASYNCCOPY_VIA_READSEGMENTS,
+        StaticPrefs::network_backgroundfilesaver_async_copy_chunk_size(),
+        AsyncCopyCallback, this, false, true, getter_AddRefs(mAsyncCopyContext),
+        GetProgressCallback());
     if (NS_FAILED(rv)) {
       NS_WARNING("NS_AsyncCopy failed.");
       mAsyncCopyContext = nullptr;

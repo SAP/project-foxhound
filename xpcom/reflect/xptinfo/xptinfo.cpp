@@ -8,7 +8,6 @@
 #include "nsISupports.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/ArrayUtils.h"
 
 #include "jsfriendapi.h"
 #include "js/Symbol.h"

@@ -65,7 +65,7 @@ namespace mozilla {
       MOZ_ASSERT(aFontFaceSrc);
 
       rv = aHttpChannel->SetReferrerInfo(aFontFaceSrc->mReferrerInfo);
-      Unused << NS_WARN_IF(NS_FAILED(rv));
+      (void)NS_WARN_IF(NS_FAILED(rv));
 
       // For WOFF and WOFF2, we should tell servers/proxies/etc NOT to try
       // and apply additional compression at the content-encoding layer

@@ -5,10 +5,28 @@ ChromeUtils.defineESModuleGetters(this, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
+const TOPSITES = "about:robots";
+const CONFIG = [
+  { identifier: "engine1" },
+  { identifier: "engine2" },
+  { identifier: "engine3" },
+];
+
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.scotchBonnet.enableOverride", true]],
+    set: [
+      ["browser.urlbar.scotchBonnet.enableOverride", true],
+      ["browser.urlbar.suggest.topsites", true],
+      ["browser.newtabpage.activity-stream.default.sites", TOPSITES],
+      ["widget.macos.native-anchored-menus", false],
+    ],
   });
+  await PlacesUtils.history.clear();
+  // Use top sites to make sure the results panel opens even on empty queries.
+  await updateTopSites(
+    sites => sites && sites.length == 1 && sites[0].url == TOPSITES
+  );
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
 });
 
 add_task(
@@ -47,24 +65,25 @@ add_task(
     });
 
     let results = [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: {
           url: "https://mozilla.org/a",
-        }
-      ),
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+        },
+      }),
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: {
           url: "https://mozilla.org/b",
-        }
-      ),
+        },
+      }),
     ];
 
     let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
-    UrlbarProvidersManager.registerProvider(provider);
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+    providersManager.registerProvider(provider);
 
     const FOCUS_ORDER_ASSERTIONS = [
       () =>
@@ -112,7 +131,7 @@ add_task(
       gURLBar.handleRevert();
     }
 
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
     await SpecialPowers.popPrefEnv();
   }
 );
@@ -199,28 +218,6 @@ async function test_navigate_switcher(navKey, navTimes, searchMode) {
   await UrlbarTestUtils.assertSearchMode(window, null);
 }
 
-// TODO: Don't let tests depend on the actual search config.
-let googleSearchMode = {
-  engineName: "Google",
-  entry: "searchbutton",
-  isGeneralPurposeEngine: true,
-  isPreview: false,
-  source: 3,
-};
-let amazonSearchMode = {
-  engineName: "Amazon.com",
-  entry: "searchbutton",
-  isGeneralPurposeEngine: true,
-  isPreview: false,
-};
-let bingSearchMode = {
-  engineName: "Bing",
-  entry: "searchbutton",
-  isGeneralPurposeEngine: true,
-  isPreview: false,
-  source: 3,
-};
-
 add_task(async function test_keyboard_nav() {
   await test_open_switcher("KEY_Enter");
   await test_open_switcher(" ");
@@ -229,9 +226,58 @@ add_task(async function test_keyboard_nav() {
   await test_dont_open_switcher("a");
   await test_dont_open_switcher("x");
 
-  await test_navigate_switcher("KEY_ArrowDown", 1, googleSearchMode);
-  await test_navigate_switcher("KEY_ArrowDown", 2, amazonSearchMode);
-  await test_navigate_switcher("KEY_ArrowDown", 3, bingSearchMode);
+  let searchModeTemplate = {
+    entry: "searchbutton",
+    isGeneralPurposeEngine: true,
+    isPreview: false,
+    source: 3,
+  };
+
+  await test_navigate_switcher("KEY_ArrowDown", 1, {
+    engineName: "engine1",
+    ...searchModeTemplate,
+  });
+  await test_navigate_switcher("KEY_ArrowDown", 2, {
+    engineName: "engine2",
+    ...searchModeTemplate,
+  });
+  await test_navigate_switcher("KEY_ArrowDown", 3, {
+    engineName: "engine3",
+    ...searchModeTemplate,
+  });
+});
+
+add_task(async function test_open_switcher_with_page() {
+  info("Open a page");
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "https://example.com/",
+    },
+    async function () {
+      info("Click on the urlbar to select all text");
+      await focusOnURLbar(() =>
+        EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {})
+      );
+      info("Input a char to show the Unified Search Button");
+      EventUtils.synthesizeKey("a");
+
+      info("Move the focus to the button");
+      EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+      await TestUtils.waitForCondition(
+        () => document.activeElement.id == "urlbar-searchmode-switcher"
+      );
+
+      info("Do the focus test");
+      let popup = UrlbarTestUtils.searchModeSwitcherPopup(window);
+      let promiseHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+      await test_open_switcher(" ");
+
+      info("Close the Unified Search popup");
+      EventUtils.synthesizeKey("KEY_Escape");
+      await promiseHidden;
+    }
+  );
 });
 
 add_task(async function test_focus_on_switcher_by_tab() {
@@ -258,10 +304,10 @@ add_task(async function test_focus_on_switcher_by_tab() {
   let promiseMenuOpen = BrowserTestUtils.waitForEvent(popup, "popupshown");
   EventUtils.synthesizeKey("KEY_Enter");
   await promiseMenuOpen;
-  Assert.notEqual(
+  Assert.equal(
     document.activeElement.id,
     "urlbar-searchmode-switcher",
-    "Dedicated Search button loses the focus"
+    "Dedicated Search button still has focus"
   );
   Assert.equal(gURLBar.view.isOpen, false, "Urlbar view panel is closed");
   Assert.equal(gURLBar.value, input, "Inputted value still be on urlbar");

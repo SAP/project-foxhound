@@ -32,13 +32,13 @@ const enginesSettings = {
   engines: [
     {
       _metaData: { alias: null },
-      _isAppProvided: true,
+      _isConfigEngine: true,
       _name: "appDefault",
       id: "appDefault",
     },
     {
       _metaData: { alias: null },
-      _isAppProvided: true,
+      _isConfigEngine: true,
       _name: "other",
       id: "other",
     },
@@ -84,7 +84,7 @@ add_setup(async function () {
 add_task(async function test_cached_engine_properties() {
   info("init search service");
 
-  const initResult = await Services.search.init();
+  const initResult = await SearchService.init();
 
   info("init'd search service");
   Assert.ok(
@@ -92,9 +92,9 @@ add_task(async function test_cached_engine_properties() {
     "Should have successfully created the search service"
   );
 
-  const engines = await Services.search.getEngines();
+  const engines = await SearchService.getEngines();
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "other",
     "Should have the expected default engine"
   );

@@ -38,7 +38,7 @@ class SyncIntegrationTest {
     private lateinit var mockWebServer: MockWebServer
 
     @get:Rule
-    val activityTestRule = AndroidComposeTestRule(HomeActivityIntentTestRule()) { it.activity }
+    val composeTestRule = AndroidComposeTestRule(HomeActivityIntentTestRule()) { it.activity }
 
     @Before
     fun setUp() {
@@ -63,9 +63,9 @@ class SyncIntegrationTest {
         // Let's wait until homescreen is shown to go to three dot menu
         TestAssetHelper.waitingTime
         mDevice.waitNotNull(Until.findObjects(By.res("org.mozilla.fenix.debug:id/counter_root")))
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openHistory {
+        }.clickHistoryButton {
         }
         historyAfterSyncIsShown()
     }
@@ -76,9 +76,9 @@ class SyncIntegrationTest {
     fun syncBookmarksTest() {
         signInFxSync()
         tapReturnToPreviousApp()
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openBookmarksMenu(activityTestRule) {}
+        }.clickBookmarksButton {}
         bookmarkAfterSyncIsShown()
     }
 
@@ -110,11 +110,11 @@ class SyncIntegrationTest {
     // Login item Desktop -> Fenix
     @Test
     fun synLoginsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openLoginsAndPasswordSubMenu {
-        }.openSyncLogins {
+        }.openSyncLogins(composeTestRule) {
             // Tap to sign in from Logins menu
             tapOnUseEmailToSignIn()
             typeEmail()
@@ -127,7 +127,7 @@ class SyncIntegrationTest {
             verifyDefaultView()
             // Sync logings option is set to Off, no synced logins yet
             verifyDefaultViewBeforeSyncComplete()
-        }.openSavedLogins {
+        }.openSavedLogins(composeTestRule) {
             // Discard the secure your device message
             tapSetupLater()
             // Check the logins synced
@@ -197,10 +197,10 @@ class SyncIntegrationTest {
     }
 
     fun signInFxSync() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
             verifySettingsButton()
-        }.openSettings {}
+        }.clickSettingsButton {}
         settingsAccount()
         useEmailInsteadButton()
 

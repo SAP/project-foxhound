@@ -106,7 +106,7 @@ static auto BuildTimelines(nsPresContext* aPresContext, Element* aElement,
     MOZ_ASSERT(dest);
 
     // Override the previous one if it is duplicated.
-    Unused << result.InsertOrUpdate(timeline.GetName(), dest);
+    (void)result.InsertOrUpdate(timeline.GetName(), dest);
   }
   return result;
 }
@@ -168,22 +168,6 @@ void TimelineManager::DoUpdateTimelines(
   // FIXME: Bug 1774060. We may have to restyle the animations which use the
   // dropped timelines. Or rely on restyling the subtree and the following
   // siblings when mutating {scroll|view}-timeline-name.
-}
-
-void TimelineManager::UpdateHiddenByContentVisibilityForAnimations() {
-  for (auto* scrollTimelineCollection : mScrollTimelineCollections) {
-    for (ScrollTimeline* timeline :
-         scrollTimelineCollection->Timelines().Values()) {
-      timeline->UpdateHiddenByContentVisibility();
-    }
-  }
-
-  for (auto* viewTimelineCollection : mViewTimelineCollections) {
-    for (ViewTimeline* timeline :
-         viewTimelineCollection->Timelines().Values()) {
-      timeline->UpdateHiddenByContentVisibility();
-    }
-  }
 }
 
 }  // namespace mozilla

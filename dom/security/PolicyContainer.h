@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PolicyContainer_h___
-#define PolicyContainer_h___
-
-#include "nsIPolicyContainer.h"
+#ifndef PolicyContainer_h_
+#define PolicyContainer_h_
 
 #include "nsCOMPtr.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIIntegrityPolicy.h"
+#include "nsIPolicyContainer.h"
 
 namespace mozilla::ipc {
 class PolicyContainerArgs;
@@ -61,13 +60,13 @@ class PolicyContainer : public nsIPolicyContainer {
                      const PolicyContainer* aOtherContainer);
 
   // == CSP ==
-  nsIContentSecurityPolicy* CSP() const;
+  nsIContentSecurityPolicy* GetCSP() const;
   void SetCSP(nsIContentSecurityPolicy* aPolicy);
   static nsIContentSecurityPolicy* GetCSP(
       const nsIPolicyContainer* aPolicyContainer);
 
   // == Integrity Policy ==
-  nsIIntegrityPolicy* IntegrityPolicy() const;
+  nsIIntegrityPolicy* GetIntegrityPolicy() const;
   void SetIntegrityPolicy(nsIIntegrityPolicy* aPolicy);
   static nsIIntegrityPolicy* GetIntegrityPolicy(
       const nsIPolicyContainer* aPolicyContainer);
@@ -80,4 +79,4 @@ class PolicyContainer : public nsIPolicyContainer {
   virtual ~PolicyContainer();
 };
 
-#endif /* PolicyContainer_h___ */
+#endif /* PolicyContainer_h_ */

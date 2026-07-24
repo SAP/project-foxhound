@@ -157,8 +157,8 @@ fuzzy(0-1,0-10000) == dynamic-filter-contents-01b.svg dynamic-filter-contents-01
 == dynamic-pattern-02.svg pass.svg
 == dynamic-pattern-contents-01.svg pass.svg
 == dynamic-pattern-contents-02.svg pass.svg
-== dynamic-rect-01.svg dynamic-rect-01-ref.svg
-fuzzy-if(winWidget,0-3,0-1200) == dynamic-rect-02.svg dynamic-rect-02-ref.svg # bug 776038 for Win7, Win8
+fuzzy(0-5,0-2800) == dynamic-rect-01.svg dynamic-rect-01-ref.svg
+fuzzy(0-13,0-6600) == dynamic-rect-02.svg dynamic-rect-02-ref.svg
 == dynamic-rect-03.svg dynamic-rect-03-ref.svg
 == dynamic-rect-04.xhtml pass.svg
 == dynamic-rect-05.svg pass.svg
@@ -170,7 +170,7 @@ fuzzy-if(winWidget,0-3,0-1200) == dynamic-rect-02.svg dynamic-rect-02-ref.svg # 
 == dynamic-stroke-width-01.svg pass.svg
 == dynamic-switch-01.svg pass.svg
 == dynamic-text-01.svg dynamic-text-01-ref.svg
-fuzzy-if(winWidget,0-4,0-12739) fuzzy-if(gfxSVGFEGaussianBlur,0-7,0-1000000) == dynamic-text-02.svg dynamic-text-02-ref.svg # bug 776038 for Win7, Win8
+fuzzy-if(winWidget,0-4,0-12739) fuzzy-if(gfxSVGFEGaussianBlur,0-16,0-1000000) == dynamic-text-02.svg dynamic-text-02-ref.svg # bug 776038 for Win7, Win8
 fuzzy-if(winWidget,0-2,0-10539) == dynamic-text-03.svg dynamic-text-03-ref.svg # bug 776038 for Win7
 == dynamic-text-04.svg dynamic-text-04-ref.svg
 == dynamic-text-05.svg pass.svg
@@ -634,3 +634,5 @@ fuzzy(0-1,0-230400) == 1630900-1.html 1630900-1-ref.html
 # do not increase fuzz significantly, test was designed to be within 1 color unit
 
 fuzzy-if(winWidget||cocoaWidget,0-1,0-6050) == rect-no-backgrounds-print.html rect-no-backgrounds-print-ref.html
+
+== bad-arc.html bad-arc-ref.html

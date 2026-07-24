@@ -52,15 +52,18 @@ class ArrayObject : public NativeObject {
     assertInt32LengthFuse(cx);
     NativeObject::elementsSizeMustNotOverflow();
     if (MOZ_UNLIKELY(length > INT32_MAX)) {
-      cx->runtime()->hasSeenArrayExceedsInt32LengthFuse.ref().popFuse(cx);
+      cx->runtime()
+          ->runtimeFuses.ref()
+          .hasSeenArrayExceedsInt32LengthFuse.popFuse(cx);
     }
     getElementsHeader()->length = length;
   }
 
   void assertInt32LengthFuse(JSContext* cx) {
-    MOZ_ASSERT_IF(
-        length() > INT32_MAX,
-        !cx->runtime()->hasSeenArrayExceedsInt32LengthFuse.ref().intact());
+    MOZ_ASSERT_IF(length() > INT32_MAX,
+                  !cx->runtime()
+                       ->runtimeFuses.ref()
+                       .hasSeenArrayExceedsInt32LengthFuse.intact());
   }
 
   // Try to add a new dense element to this array. The array must be extensible.

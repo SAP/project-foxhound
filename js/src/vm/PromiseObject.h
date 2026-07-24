@@ -141,8 +141,8 @@ class PromiseObject : public NativeObject {
   int32_t flags() const { return getFixedSlot(PromiseSlot_Flags).toInt32(); }
 
   void setHandled() {
-    setFixedSlot(PromiseSlot_Flags,
-                 JS::Int32Value(flags() | PROMISE_FLAG_HANDLED));
+    setNeverGCThingFixedSlot(PromiseSlot_Flags,
+                             JS::Int32Value(flags() | PROMISE_FLAG_HANDLED));
   }
 
   JS::PromiseState state() const {

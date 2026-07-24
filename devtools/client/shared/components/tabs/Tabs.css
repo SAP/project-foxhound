@@ -58,6 +58,10 @@ div[hidetabs="true"] .tabs .tabs-navigation {
   margin: 0;
   padding: 0;
   color: var(--theme-toolbar-color);
+
+  a {
+    color: currentColor;
+  }
 }
 
 .tabs .tabs-menu-item:hover {

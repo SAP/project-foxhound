@@ -23,6 +23,7 @@ DOM4_MSG_DEF(NamespaceError, "An attempt was made to create or change an object 
 DOM4_MSG_DEF(InvalidAccessError, "A parameter or an operation is not supported by the underlying object", NS_ERROR_DOM_INVALID_ACCESS_ERR)
 DOM4_MSG_DEF(TypeMismatchError, "The type of an object is incompatible with the expected type of the parameter associated to the object", NS_ERROR_DOM_TYPE_MISMATCH_ERR)
 DOM4_MSG_DEF(SecurityError, "The operation is insecure.", NS_ERROR_DOM_SECURITY_ERR)
+DOM4_MSG_DEF(SecurityError, "Property access denied.", NS_ERROR_DOM_PROP_ACCESS_DENIED)
 DOM4_MSG_DEF(NetworkError, "A network error occurred.", NS_ERROR_DOM_NETWORK_ERR)
 DOM4_MSG_DEF(AbortError, "The operation was aborted. ", NS_ERROR_DOM_ABORT_ERR)
 DOM4_MSG_DEF(URLMismatchError, "The given URL does not match another URL.", NS_ERROR_DOM_URL_MISMATCH_ERR)

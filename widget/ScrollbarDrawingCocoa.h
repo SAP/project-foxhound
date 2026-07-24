@@ -9,8 +9,6 @@
 
 #include "ScrollbarDrawing.h"
 
-#include "mozilla/Array.h"
-
 namespace mozilla::widget {
 
 class ScrollbarDrawingCocoa final : public ScrollbarDrawing {

@@ -1,0 +1,37 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  --assistant-box-shadow: var(--box-shadow-level-2);
+  --assistant-error-color: light-dark(var(--color-violet-100), var(--color-violet-10));
+}
+
+.chat-assistant-error {
+  margin-block: var(--space-xlarge) 0;
+}
+
+.chat-assistant-error__header {
+  color: var(--assistant-error-color);
+  font-size: var(--font-size-root);
+  font-weight: var(--font-weight-semibold);
+  margin-block: 0;
+}
+
+.chat-assistant-error__body {
+  color: var(--assistant-error-color);
+  margin-block: var(--space-small) 0;
+}
+
+.chat-assistant-error__button {
+  --button-background-color: color-mix(in srgb, var(--color-violet-0) 87%, transparent);
+  --button-border: 1px solid var(--color-white);
+  --button-border-radius: var(--border-radius-circle);
+  --button-padding: var(--space-small) var(--space-medium);
+  --button-text-color: var(--color-violet-90);
+
+  &::part(button) {
+    box-shadow: var(--assistant-box-shadow);
+    margin-block: var(--space-medium) 0;
+  }
+}

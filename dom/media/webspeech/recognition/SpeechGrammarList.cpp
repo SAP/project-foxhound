@@ -6,11 +6,11 @@
 
 #include "SpeechGrammarList.h"
 
+#include "SpeechRecognition.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/SpeechGrammar.h"
 #include "mozilla/dom/SpeechGrammarListBinding.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
-#include "SpeechRecognition.h"
 
 namespace mozilla::dom {
 

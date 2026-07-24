@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_CDATASection_h
 #define mozilla_dom_CDATASection_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Text.h"
 
 namespace mozilla::dom {

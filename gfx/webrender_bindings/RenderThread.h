@@ -182,6 +182,10 @@ class RenderThread final {
   static RefPtr<MemoryReportPromise> AccumulateMemoryReport(
       MemoryReport aInitial);
 
+  /// Can only be called from the main thread.
+  static void PostHandleDeviceReset(gfx::DeviceResetDetectPlace aPlace,
+                                    gfx::DeviceResetReason aReason);
+
   /// Can only be called from the render thread.
   void AddRenderer(wr::WindowId aWindowId, UniquePtr<RendererOGL> aRenderer);
 
@@ -355,6 +359,8 @@ class RenderThread final {
 
   void SetBatteryInfo(const hal::BatteryInformation& aBatteryInfo);
   bool GetPowerIsCharging();
+
+  void BeginShaderWarmupIfNeeded();
 
  private:
   static size_t sRendererCount;

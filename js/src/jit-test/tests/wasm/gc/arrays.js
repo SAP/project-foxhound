@@ -1843,6 +1843,10 @@ for (let [elemTy, valueTy, src, exp1, exp2] of ARRAY_COPY_TESTS) {
     arrayCopy(srcTO, 2, srcTO, 0, 3);
     assertEq(eqArrays(srcTO, exp2), true);
 
+    // Also check that a useless copy is valid nonetheless.
+    arrayCopy(srcTO, 0, srcTO, 0, 6);
+    assertEq(eqArrays(srcTO, exp2), true);
+
     // Check out-of-bounds conditions
     let exp1TO = arrayNew(exp1[0], exp1[1], exp1[2], exp1[3], exp1[4], exp1[5]);
     let exp2TO = arrayNew(exp2[0], exp2[1], exp2[2], exp2[3], exp2[4], exp2[5]);

@@ -10,10 +10,11 @@
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WebTaskScheduler.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "nsComponentManagerUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/WebTaskScheduler.h"
 
 namespace mozilla::dom {
 

@@ -27,6 +27,13 @@
 
 #include "src/riscv/asm.S"
 
+function blend_vl512_16bpc_rvv, export=1, ext=zbb
+  srai t0, a3, 3
+  ctz t0, t0
+  addi t0, t0, 0xc6
+  j L(blend_epilog)
+endfunc
+
 function blend_vl256_16bpc_rvv, export=1, ext=zbb
   ctz t0, a3
   addi t0, t0, 0xc4
@@ -39,7 +46,6 @@ function blend_16bpc_rvv, export=1, ext="v,zbb"
 L(blend_epilog):
   csrw vxrm, zero
   andi t0, t0, 0xc7
-  li t1, 64
   ori t0, t0, 8
   add a6, a3, a3
   vsetvl zero, a3, t0
@@ -58,19 +64,28 @@ L(blend_epilog):
   vle16.v v0, (a0)
   add t0, a0, a1
   vle16.v v4, (t0)
-  vwmulu.vv v24, v8, v16
-  vwmulu.vv v8, v12, v20
-  vrsub.vx v16, v16, t1
-  vrsub.vx v20, v20, t1
-  vwmaccu.vv v24, v0, v16
-  vwmaccu.vv v8, v4, v20
-  vnclipu.wi v0, v24, 6
-  vnclipu.wi v4, v8, 6
+  vrsub.vx v16, v16, x0
+  vrsub.vx v20, v20, x0
+  vsub.vv  v8, v0, v8
+  vsub.vv  v12, v4, v12
+  vsll.vi  v16, v16, 9
+  vsll.vi  v20, v20, 9
+  vsmul.vv v8, v8, v16
+  vsmul.vv v12, v12, v20
+  vadd.vv  v0, v0, v8
+  vadd.vv  v4, v4, v12
   vse16.v v0, (a0)
   vse16.v v4, (t0)
   add a0, t0, a1
   bnez a4, 1b
   ret
+endfunc
+
+function blend_v_vl512_16bpc_rvv, export=1, ext=zbb
+  srai t0, a3, 3
+  ctz t0, t0
+  addi t0, t0, 0xc6
+  j L(blend_v_epilog)
 endfunc
 
 function blend_v_vl256_16bpc_rvv, export=1, ext=zbb
@@ -93,10 +108,10 @@ L(blend_v_epilog):
   la t1, dav1d_obmc_masks
   add t1, t1, a3
   vle8.v v20, (t1)
-  li t0, 64
   vzext.vf2 v16, v20
   add a3, a3, a3
-  vrsub.vx v20, v16, t0
+  vrsub.vx v20, v16, x0
+  vsll.vi v20, v20, 9
 1:
   addi a4, a4, -2
   vle16.v v8, (a2)
@@ -106,12 +121,12 @@ L(blend_v_epilog):
   vle16.v v0, (a0)
   add t0, a0, a1
   vle16.v v4, (t0)
-  vwmulu.vv v24, v8, v16
-  vwmulu.vv v8, v12, v16
-  vwmaccu.vv v24, v0, v20
-  vwmaccu.vv v8, v4, v20
-  vnclipu.wi v0, v24, 6
-  vnclipu.wi v4, v8, 6
+  vsub.vv v8, v0, v8
+  vsub.vv v12, v4, v12
+  vsmul.vv v8, v8, v20
+  vsmul.vv v12, v12, v20
+  vadd.vv  v0, v0, v8
+  vadd.vv  v4, v4, v12
   vse16.v v0, (a0)
   vse16.v v4, (t0)
   add a0, t0, a1

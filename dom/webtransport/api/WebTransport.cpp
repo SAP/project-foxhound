@@ -7,15 +7,12 @@
 #include "WebTransport.h"
 
 #include "WebTransportBidirectionalStream.h"
-#include "mozilla/RefPtr.h"
-#include "nsUTF8Utils.h"
-#include "nsIURL.h"
-#include "nsIWebTransportStream.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/dom/Document.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/PWebTransport.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
@@ -29,6 +26,9 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "nsIURL.h"
+#include "nsIWebTransportStream.h"
+#include "nsUTF8Utils.h"
 
 using namespace mozilla::ipc;
 
@@ -71,6 +71,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebTransport)
     tmp->mChild->Shutdown(false);
     tmp->mChild = nullptr;
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WebTransport)
@@ -263,6 +264,12 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
     return;
   }
 
+  // TODO: Fix the shared and service worker use cases
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  mService = workerPrivate && (workerPrivate->IsSharedWorker() ||
+                               workerPrivate->IsServiceWorker())
+                 ? nullptr
+                 : net::WebTransportEventService::GetOrCreate();
   // XXX TODO
 
   // Step 15 Let transport be a newly constructed WebTransport object, with:
@@ -277,6 +284,7 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
   PBackgroundChild* backgroundChild =
       BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!backgroundChild)) {
+    aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 
@@ -285,6 +293,11 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
 
   if (mGlobal->GetClientInfo().isSome()) {
     ipcClientInfo = mozilla::Some(mGlobal->GetClientInfo().ref().ToIPC());
+  }
+
+  nsPIDOMWindowInner* window = mGlobal->GetAsInnerWindow();
+  if (window) {
+    mBrowsingContextID = window->GetBrowsingContext()->Id();
   }
   // Create a new IPC connection
   Endpoint<PWebTransportParent> parentEndpoint;
@@ -295,9 +308,11 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
   RefPtr<WebTransportChild> child = new WebTransportChild(this);
   if (NS_IsMainThread()) {
     if (!childEndpoint.Bind(child)) {
+      aError.Throw(NS_ERROR_FAILURE);
       return;
     }
   } else if (!childEndpoint.Bind(child, mGlobal->SerialEventTarget())) {
+    aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 
@@ -362,9 +377,9 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
   mChild = child;
   backgroundChild
       ->SendCreateWebTransportParent(
-          aURL, principal, ipcClientInfo, dedicated, requireUnreliable,
-          (uint32_t)congestionControl, std::move(aServerCertHashes),
-          std::move(parentEndpoint))
+          aURL, principal, mBrowsingContextID, ipcClientInfo, dedicated,
+          requireUnreliable, (uint32_t)congestionControl,
+          std::move(aServerCertHashes), std::move(parentEndpoint))
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [self = RefPtr{this}](
                  PBackgroundChild::CreateWebTransportParentPromise::
@@ -410,6 +425,17 @@ void WebTransport::ResolveWaitingConnection(
   // Step 17.3: Set transport.[[Session]] to session.
   // Step 17.4: Set transport’s [[Reliability]] to "supports-unreliable".
   mReliability = aReliability;
+  if (NS_IsMainThread()) {
+    nsPIDOMWindowInner* innerWindow = GetParentObject()->GetAsInnerWindow();
+    if (innerWindow) {
+      mInnerWindowID = innerWindow->WindowID();
+    }
+  } else {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    if (workerPrivate->IsDedicatedWorker()) {
+      mInnerWindowID = workerPrivate->WindowID();
+    }
+  }
 
   mChild->SendGetMaxDatagramSize()->Then(
       GetCurrentSerialEventTarget(), __func__,
@@ -428,6 +454,21 @@ void WebTransport::ResolveWaitingConnection(
 
   // We can now release any queued datagrams
   mDatagrams->SetChild(mChild);
+
+  if (mInnerWindowID != 0) {
+    // Get the http chanel created for the web transport session;
+    mChild->SendGetHttpChannelID()->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [self = RefPtr{this}](uint64_t&& aHttpChannelId) {
+          MOZ_ASSERT(self->mService);
+          self->mHttpChannelID = aHttpChannelId;
+          self->mService->WebTransportSessionCreated(self->mInnerWindowID,
+                                                     aHttpChannelId);
+        },
+        [](const mozilla::ipc::ResponseRejectReason& aReason) {
+          LOG(("WebTransport fetching the channel information failed "));
+        });
+  }
 }
 
 void WebTransport::RejectWaitingConnection(nsresult aRv) {
@@ -834,6 +875,13 @@ void WebTransport::Cleanup(WebTransportError* aError,
   // Step 9: If closeInfo is given, then set transport.[[State]] to "closed".
   // Otherwise, set transport.[[State]] to "failed".
   mState = aCloseInfo ? WebTransportState::CLOSED : WebTransportState::FAILED;
+
+  // Notify all the listeners of the closed session
+  if (aCloseInfo && mInnerWindowID != 0) {
+    mService->WebTransportSessionClosed(
+        mInnerWindowID, mHttpChannelID, aCloseInfo->mCloseCode,
+        NS_ConvertUTF8toUTF16(aCloseInfo->mReason));
+  }
 
   // Step 10: For each sendStream in sendStreams, error sendStream with error.
   AutoJSAPI jsapi;

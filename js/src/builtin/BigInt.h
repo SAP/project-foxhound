@@ -44,8 +44,6 @@ class BigIntObject : public NativeObject {
   static const JSFunctionSpec staticMethods[];
 };
 
-extern JSObject* InitBigIntClass(JSContext* cx, Handle<GlobalObject*> global);
-
 }  // namespace js
 
 #endif

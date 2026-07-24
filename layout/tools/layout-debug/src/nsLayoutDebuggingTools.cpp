@@ -6,6 +6,7 @@
 
 #include "nsLayoutDebuggingTools.h"
 
+#include "ErrorList.h"
 #include "RetainedDisplayListBuilder.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
@@ -25,7 +26,6 @@
 #include "nsIPrintSettingsService.h"
 #include "nsLayoutUtils.h"
 #include "nsPIDOMWindow.h"
-#include "nsViewManager.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -45,14 +45,6 @@ static PresShell* GetPresShell(nsIDocShell* aDocShell) {
     return nullptr;
   }
   return viewer->GetPresShell();
-}
-
-static nsViewManager* view_manager(nsIDocShell* aDocShell) {
-  PresShell* presShell = GetPresShell(aDocShell);
-  if (!presShell) {
-    return nullptr;
-  }
-  return presShell->GetViewManager();
 }
 
 #ifdef DEBUG
@@ -171,7 +163,7 @@ static void DumpContentRecur(nsIDocShell* aDocShell, FILE* out,
       fputs("--\n", out);
       if (current->IsElement() &&
           current->AsElement()->GetPseudoElementType() ==
-              PseudoStyleType::mozSnapshotContainingBlock) {
+              PseudoStyleType::MozSnapshotContainingBlock) {
         fprintf(out,
                 "View Transition Tree "
                 "[parent=%p][active-view-transition=%p]:\n",
@@ -246,28 +238,6 @@ NS_IMETHODIMP
 nsLayoutDebuggingTools::DumpTextRuns() {
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
   DumpTextRunsRecur(mDocShell, stdout);
-  return NS_OK;
-}
-
-static void DumpViewsRecur(nsIDocShell* aDocShell, FILE* out) {
-#ifdef DEBUG
-  fprintf(out, "docshell=%p \n", static_cast<void*>(aDocShell));
-  RefPtr<nsViewManager> vm(view_manager(aDocShell));
-  if (vm) {
-    nsView* root = vm->GetRootView();
-    if (root) {
-      root->List(out);
-    }
-  } else {
-    fputs("null view manager\n", out);
-  }
-#endif  // DEBUG
-}
-
-NS_IMETHODIMP
-nsLayoutDebuggingTools::DumpViews() {
-  NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  DumpViewsRecur(mDocShell, stdout);
   return NS_OK;
 }
 
@@ -376,15 +346,7 @@ nsLayoutDebuggingTools::DumpReflowStats() {
 }
 
 nsresult nsLayoutDebuggingTools::ForceRefresh() {
-  RefPtr<nsViewManager> vm(view_manager(mDocShell));
-  if (!vm) {
-    return NS_OK;
-  }
-  nsView* root = vm->GetRootView();
-  if (root) {
-    vm->InvalidateView(root);
-  }
-  return NS_OK;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult nsLayoutDebuggingTools::SetBoolPrefAndRefresh(const char* aPrefName,

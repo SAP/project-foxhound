@@ -7,8 +7,8 @@
 #define TRANSFRMX_TXXSLTNUMBER_H
 
 #include "nsError.h"
-#include "txList.h"
 #include "nsString.h"
+#include "txList.h"
 
 class Expr;
 class txPattern;

@@ -7,7 +7,6 @@
 #ifndef nsNSSCallbacks_h
 #define nsNSSCallbacks_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Vector.h"

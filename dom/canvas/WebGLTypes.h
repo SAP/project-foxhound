@@ -17,11 +17,11 @@
 #include "GLContextTypes.h"
 #include "GLDefs.h"
 #include "ImageContainer.h"
+#include "gfxTypes.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/IsEnumCase.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Range.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/Result.h"
@@ -29,6 +29,8 @@
 #include "mozilla/Span.h"
 #include "mozilla/TiedFields.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/Logging.h"
@@ -36,11 +38,8 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "gfxTypes.h"
-
-#include "nsTArray.h"
 #include "nsString.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "nsTArray.h"
 
 // Manual reflection of WebIDL typedefs that are different from their
 // OpenGL counterparts.
@@ -101,7 +100,6 @@ namespace webgl {
 template <typename T>
 struct QueueParamTraits;
 class TexUnpackBytes;
-class TexUnpackImage;
 class TexUnpackSurface;
 }  // namespace webgl
 
@@ -913,7 +911,10 @@ struct LinkActiveInfo final {
   std::vector<ActiveInfo> activeTfVaryings;
 };
 
-struct LinkResult final {
+struct LinkResult final : public SupportsWeakPtr {
+  LinkResult() {}
+  ~LinkResult() = default;
+
   bool pending = true;
   nsCString log;
   bool success = false;
@@ -1009,6 +1010,17 @@ inline Maybe<T> MaybeAs(const U val) {
 }
 
 // -
+
+inline GLenum IsTexMipmapFilter(const GLenum texFilter) {
+  switch (texFilter) {
+    case LOCAL_GL_NEAREST_MIPMAP_NEAREST:
+    case LOCAL_GL_LINEAR_MIPMAP_NEAREST:
+    case LOCAL_GL_NEAREST_MIPMAP_LINEAR:
+    case LOCAL_GL_LINEAR_MIPMAP_LINEAR:
+      return true;
+  }
+  return false;
+}
 
 inline GLenum IsTexImageTarget(const GLenum imageTarget) {
   switch (imageTarget) {
@@ -1141,6 +1153,9 @@ struct ExplicitPixelPackingState final {
     // (srcStrideAndRowOverride.x, otherwise ROW_LENGTH != 0, otherwise size.x)
     // ...aligned to ALIGNMENT.
     size_t bytesPerRowStride = 0;
+
+    // SKIP_PIXELS+size.x
+    size_t usedPixelsPerRow = 0;
 
     // structuredSrcSize.y, otherwise IMAGE_HEIGHT*(SKIP_IMAGES+size.z)
     size_t totalRows = 0;

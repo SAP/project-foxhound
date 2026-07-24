@@ -19,6 +19,7 @@
         android:hint="@string/customize_addon_collection_user_hint"
         android:inputType="number"
         android:singleLine="true"
+        android:textColorHint="?attr/colorOnSurfaceVariant"
         android:textColor="?attr/textPrimary" />
 
     <EditText
@@ -31,6 +32,7 @@
         android:hint="@string/customize_addon_collection_hint"
         android:inputType="text"
         android:singleLine="true"
+        android:textColorHint="?attr/colorOnSurfaceVariant"
         android:textColor="?attr/textPrimary" />
 
 </LinearLayout>

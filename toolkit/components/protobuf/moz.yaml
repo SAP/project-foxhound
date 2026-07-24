@@ -1,0 +1,50 @@
+---
+schema: 1
+
+bugzilla:
+  product: Core
+  component: General
+
+origin:
+  name: protobuf
+  description: Protocol Buffers - Google's data interchange format 
+  url: https://protobuf.dev/
+  release: v21.6 (2022-09-13T13:50:08-07:00).
+  revision: v21.6
+  license: BSD-3-Clause
+
+vendoring:
+  url: https://github.com/protocolbuffers/protobuf
+  source-hosting: github
+  tracking: tag
+  patches:
+    - patches/remove_io_stream_header.patch
+  keep:
+    - scripts/
+    - patches/
+    - README.txt
+  exclude:
+    - "**"
+    - src/google/protobuf/**/*_test*
+    - src/google/protobuf/**/*test_*
+    - src/google/protobuf/**/*_unittest*
+    - src/google/protobuf/**/*unittest_*
+    - src/google/protobuf/**/*unittest.*
+    - src/google/protobuf/**/testdata/*
+    - src/google/protobuf/**/testing/*
+    - src/google/protobuf/compiler
+  include:
+    - LICENSE
+    - src/google
+  update-actions:
+    - action: run-script
+      script: "{yaml_dir}/scripts/generate_files.py"
+      cwd: "{yaml_dir}"
+      args: ["{revision}"]
+
+# !!!BIG WARNING!!!
+#
+# Before enabling the Updatebot, please review the discussion in [1] and consult 
+# with the Updatebot maintainer (Tom Ritter) for compatibility.
+#
+# [1]: https://phabricator.services.mozilla.com/D255174#anchor-inline-1432377

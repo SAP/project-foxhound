@@ -17,6 +17,7 @@ import java.lang.annotation.RetentionPolicy;
  * of the full scroll size of the root document.
  */
 public class ScreenLength {
+  /** Screen length type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({PIXEL, VISUAL_VIEWPORT_WIDTH, VISUAL_VIEWPORT_HEIGHT, DOCUMENT_WIDTH, DOCUMENT_HEIGHT})
   public @interface ScreenLengthType {}

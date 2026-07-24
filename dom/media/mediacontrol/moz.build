@@ -7,7 +7,6 @@ EXPORTS.mozilla.dom += [
     "AudioFocusManager.h",
     "ContentMediaController.h",
     "ContentPlaybackController.h",
-    "FetchImageHelper.h",
     "MediaControlKeyManager.h",
     "MediaControlKeySource.h",
     "MediaController.h",
@@ -25,7 +24,6 @@ UNIFIED_SOURCES += [
     "AudioFocusManager.cpp",
     "ContentMediaController.cpp",
     "ContentPlaybackController.cpp",
-    "FetchImageHelper.cpp",
     "MediaControlKeyManager.cpp",
     "MediaControlKeySource.cpp",
     "MediaController.cpp",
@@ -37,7 +35,6 @@ UNIFIED_SOURCES += [
 
 include("/ipc/chromium/chromium-config.mozbuild")
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 FINAL_LIBRARY = "xul"

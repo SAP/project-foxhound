@@ -6,47 +6,39 @@
 
 #include "CamerasParent.h"
 
-#include <atomic>
+#include <algorithm>
+
 #include "CamerasTypes.h"
 #include "MediaEngineSource.h"
 #include "PerformanceRecorder.h"
 #include "VideoEngine.h"
 #include "VideoFrameUtils.h"
-
+#include "api/video/video_frame_buffer.h"
 #include "common/browser_logging/WebRtcLog.h"
-#include "mozilla/AppShutdown.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Services.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "mozilla/StaticPrefs_permissions.h"
 #include "nsIPermissionManager.h"
 #include "nsIThread.h"
-#include "nsThreadUtils.h"
 #include "nsNetUtil.h"
+#include "nsThreadUtils.h"
 #include "video_engine/desktop_capture_impl.h"
 #include "video_engine/video_capture_factory.h"
-
-#include "api/video/video_frame_buffer.h"
-#include "common_video/libyuv/include/webrtc_libyuv.h"
 
 #if defined(_WIN32)
 #  include <process.h>
 #  define getpid() _getpid()
 #endif
 
-#undef LOG
-#undef LOG_VERBOSE
-#undef LOG_ENABLED
 mozilla::LazyLogModule gCamerasParentLog("CamerasParent");
 #define LOG(...) \
   MOZ_LOG(gCamerasParentLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
@@ -58,12 +50,9 @@ mozilla::LazyLogModule gCamerasParentLog("CamerasParent");
 #define LOG_ENABLED() MOZ_LOG_TEST(gCamerasParentLog, mozilla::LogLevel::Debug)
 
 namespace mozilla {
+using dom::VideoResizeModeEnum;
 using media::ShutdownBlockingTicket;
 namespace camera {
-
-MOZ_RUNINIT std::map<uint32_t, const char*> sDeviceUniqueIDs;
-MOZ_RUNINIT std::map<uint32_t, webrtc::VideoCaptureCapability>
-    sAllRequestedCapabilities;
 
 uint32_t ResolutionFeasibilityDistance(int32_t candidate, int32_t requested) {
   // The purpose of this function is to find a smallest resolution
@@ -120,8 +109,48 @@ static int32_t sNumCamerasParents = 0;
 // CamerasParent instances. IPC background thread only.
 static StaticRefPtr<nsIThread> sVideoCaptureThread;
 // Main VideoCaptureFactory used to create and manage all capture related
-// objects. IPC background thread only. Outlives the CamerasParent instances.
+// objects. Created on IPC background thread, destroyed on main thread on
+// shutdown. Outlives the CamerasParent instances.
 static StaticRefPtr<VideoCaptureFactory> sVideoCaptureFactory;
+// All live capturers across all CamerasParent instances. The array and its
+// members are only modified on the video capture thread. The outermost refcount
+// is IPC background thread only.
+static StaticRefPtr<
+    media::Refcountable<nsTArray<std::unique_ptr<AggregateCapturer>>>>
+    sCapturers;
+
+static void ClearCameraDeviceInfo() {
+  ipc::AssertIsOnBackgroundThread();
+  if (sVideoCaptureThread) {
+    MOZ_ASSERT(sEngines);
+    MOZ_ALWAYS_SUCCEEDS(sVideoCaptureThread->Dispatch(
+        NS_NewRunnableFunction(__func__, [engines = RefPtr(sEngines.get())] {
+          if (VideoEngine* engine = engines->ElementAt(CameraEngine)) {
+            engine->ClearVideoCaptureDeviceInfo();
+          }
+        })));
+  }
+}
+
+static inline nsCString FakeCameraPref() {
+  return nsDependentCString(
+      StaticPrefs::GetPrefName_media_getusermedia_camera_fake_force());
+}
+
+static void OnPrefChange(const char* aPref, void* aClosure) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(FakeCameraPref() == aPref);
+  if (!sVideoCaptureFactory) {
+    return;
+  }
+  nsCOMPtr<nsISerialEventTarget> backgroundTarget =
+      ipc::BackgroundParent::GetBackgroundThread();
+  if (!backgroundTarget) {
+    return;
+  }
+  MOZ_ALWAYS_SUCCEEDS(backgroundTarget->Dispatch(NS_NewRunnableFunction(
+      "CamerasParent::OnPrefChange", &ClearCameraDeviceInfo)));
+}
 
 static VideoCaptureFactory* EnsureVideoCaptureFactory() {
   ipc::AssertIsOnBackgroundThread();
@@ -132,8 +161,13 @@ static VideoCaptureFactory* EnsureVideoCaptureFactory() {
 
   sVideoCaptureFactory = MakeRefPtr<VideoCaptureFactory>();
   NS_DispatchToMainThread(
-      NS_NewRunnableFunction("CamerasParent::EnsureVideoCaptureFactory",
-                             []() { ClearOnShutdown(&sVideoCaptureFactory); }));
+      NS_NewRunnableFunction("CamerasParent::EnsureVideoCaptureFactory", []() {
+        Preferences::RegisterCallback(&OnPrefChange, FakeCameraPref());
+        RunOnShutdown([] {
+          sVideoCaptureFactory = nullptr;
+          Preferences::UnregisterCallback(&OnPrefChange, FakeCameraPref());
+        });
+      }));
   return sVideoCaptureFactory;
 }
 
@@ -161,6 +195,9 @@ MakeAndAddRefVideoCaptureThreadAndSingletons() {
 
     sEngines = MakeRefPtr<VideoEngineArray>();
     sEngines->AppendElements(CaptureEngine::MaxEngine);
+
+    sCapturers = MakeRefPtr<
+        media::Refcountable<nsTArray<std::unique_ptr<AggregateCapturer>>>>();
   }
 
   ++sNumCamerasParents;
@@ -179,8 +216,10 @@ static void ReleaseVideoCaptureThreadAndSingletons() {
 
   // No other CamerasParent instances alive. Clean up.
   LOG("Shutting down VideoEngines and the VideoCapture thread");
-  MOZ_ALWAYS_SUCCEEDS(sVideoCaptureThread->Dispatch(
-      NS_NewRunnableFunction(__func__, [engines = RefPtr(sEngines.forget())] {
+  MOZ_ALWAYS_SUCCEEDS(sVideoCaptureThread->Dispatch(NS_NewRunnableFunction(
+      __func__, [engines = RefPtr(sEngines.forget()),
+                 capturers = RefPtr(sCapturers.forget())] {
+        MOZ_ASSERT(capturers->IsEmpty(), "No capturers expected on shutdown");
         for (RefPtr<VideoEngine>& engine : *engines) {
           if (engine) {
             VideoEngine::Delete(engine);
@@ -210,49 +249,42 @@ void CamerasParent::OnDeviceChange() {
           LOG("OnDeviceChanged failure: parent shutting down.");
           return;
         }
-        Unused << SendDeviceChange();
+        (void)SendDeviceChange();
       }));
 };
 
 class DeliverFrameRunnable : public mozilla::Runnable {
  public:
-  DeliverFrameRunnable(CamerasParent* aParent, CaptureEngine aEngine,
-                       uint32_t aStreamId, const TrackingId& aTrackingId,
+  // Constructor for when no ShmemBuffer (of the right size) was available, so
+  // keep the frame around until we can allocate one on PBackground (in Run).
+  DeliverFrameRunnable(already_AddRefed<CamerasParent> aParent,
+                       CaptureEngine aEngine, int aCaptureId,
+                       nsTArray<int>&& aStreamIds,
+                       const TrackingId& aTrackingId,
                        const webrtc::VideoFrame& aFrame,
                        const VideoFrameProperties& aProperties)
       : Runnable("camera::DeliverFrameRunnable"),
         mParent(aParent),
         mCapEngine(aEngine),
-        mStreamId(aStreamId),
+        mCaptureId(aCaptureId),
+        mStreamIds(std::move(aStreamIds)),
         mTrackingId(aTrackingId),
-        mProperties(aProperties),
-        mResult(0) {
-    // No ShmemBuffer (of the right size) was available, so make an
-    // extra buffer here.  We have no idea when we are going to run and
-    // it will be potentially long after the webrtc frame callback has
-    // returned, so the copy needs to be no later than here.
-    // We will need to copy this back into a Shmem later on so we prefer
-    // using ShmemBuffers to avoid the extra copy.
-    PerformanceRecorder<CopyVideoStage> rec(
-        "CamerasParent::VideoFrameToAltBuffer"_ns, aTrackingId, aFrame.width(),
-        aFrame.height());
-    mAlternateBuffer.reset(new unsigned char[aProperties.bufferSize()]);
-    VideoFrameUtils::CopyVideoFrameBuffers(mAlternateBuffer.get(),
-                                           aProperties.bufferSize(), aFrame);
-    rec.Record();
-  }
+        mBuffer(aFrame),
+        mProperties(aProperties) {}
 
-  DeliverFrameRunnable(CamerasParent* aParent, CaptureEngine aEngine,
-                       uint32_t aStreamId, const TrackingId& aTrackingId,
-                       ShmemBuffer aBuffer, VideoFrameProperties& aProperties)
+  DeliverFrameRunnable(already_AddRefed<CamerasParent> aParent,
+                       CaptureEngine aEngine, int aCaptureId,
+                       nsTArray<int>&& aStreamIds,
+                       const TrackingId& aTrackingId, ShmemBuffer aBuffer,
+                       VideoFrameProperties& aProperties)
       : Runnable("camera::DeliverFrameRunnable"),
         mParent(aParent),
         mCapEngine(aEngine),
-        mStreamId(aStreamId),
+        mCaptureId(aCaptureId),
+        mStreamIds(std::move(aStreamIds)),
         mTrackingId(aTrackingId),
         mBuffer(std::move(aBuffer)),
-        mProperties(aProperties),
-        mResult(0) {};
+        mProperties(aProperties) {}
 
   NS_IMETHOD Run() override {
     // runs on BackgroundEventTarget
@@ -260,45 +292,43 @@ class DeliverFrameRunnable : public mozilla::Runnable {
                mParent->mPBackgroundEventTarget);
     if (mParent->IsShuttingDown()) {
       // Communication channel is being torn down
-      mResult = 0;
       return NS_OK;
     }
-    if (!mParent->DeliverFrameOverIPC(mCapEngine, mStreamId, mTrackingId,
-                                      std::move(mBuffer),
-                                      mAlternateBuffer.get(), mProperties)) {
-      mResult = -1;
-    } else {
-      mResult = 0;
-    }
+    mParent->DeliverFrameOverIPC(mCapEngine, mCaptureId, mStreamIds,
+                                 mTrackingId, std::move(mBuffer), mProperties);
     return NS_OK;
   }
-
-  int GetResult() { return mResult; }
 
  private:
   const RefPtr<CamerasParent> mParent;
   const CaptureEngine mCapEngine;
-  const uint32_t mStreamId;
+  const int mCaptureId;
+  const nsTArray<int> mStreamIds;
   const TrackingId mTrackingId;
-  ShmemBuffer mBuffer;
-  UniquePtr<unsigned char[]> mAlternateBuffer;
+  Variant<ShmemBuffer, webrtc::VideoFrame> mBuffer;
   const VideoFrameProperties mProperties;
-  int mResult;
 };
 
-int CamerasParent::DeliverFrameOverIPC(CaptureEngine aCapEngine,
-                                       uint32_t aStreamId,
-                                       const TrackingId& aTrackingId,
-                                       ShmemBuffer aBuffer,
-                                       unsigned char* aAltBuffer,
-                                       const VideoFrameProperties& aProps) {
+int CamerasParent::DeliverFrameOverIPC(
+    CaptureEngine aCapEngine, int aCaptureId, const Span<const int>& aStreamIds,
+    const TrackingId& aTrackingId,
+    Variant<ShmemBuffer, webrtc::VideoFrame>&& aBuffer,
+    const VideoFrameProperties& aProps) {
   // No ShmemBuffers were available, so construct one now of the right size
   // and copy into it. That is an extra copy, but we expect this to be
   // the exceptional case, because we just assured the next call *will* have a
   // buffer of the right size.
-  if (aAltBuffer != nullptr) {
+  if (!aBuffer.is<ShmemBuffer>()) {
     // Get a shared memory buffer from the pool, at least size big
-    ShmemBuffer shMemBuff = mShmemPool.Get(this, aProps.bufferSize());
+    ShmemBuffer shMemBuff;
+    {
+      auto guard = mShmemPools.Lock();
+      auto it = guard->find(aCaptureId);
+      if (it != guard->end()) {
+        auto& [_, pool] = *it;
+        shMemBuff = pool.Get(this, aProps.bufferSize());
+      }
+    }
 
     if (!shMemBuff.Valid()) {
       LOG("No usable Video shmem in DeliverFrame (out of buffers?)");
@@ -309,18 +339,20 @@ int CamerasParent::DeliverFrameOverIPC(CaptureEngine aCapEngine,
     PerformanceRecorder<CopyVideoStage> rec(
         "CamerasParent::AltBufferToShmem"_ns, aTrackingId, aProps.width(),
         aProps.height());
-    // get() and Size() check for proper alignment of the segment
-    memcpy(shMemBuff.GetBytes(), aAltBuffer, aProps.bufferSize());
+    VideoFrameUtils::CopyVideoFrameBuffers(shMemBuff,
+                                           aBuffer.as<webrtc::VideoFrame>());
     rec.Record();
 
-    if (!SendDeliverFrame(aStreamId, std::move(shMemBuff.Get()), aProps)) {
+    if (!SendDeliverFrame(aCaptureId, aStreamIds, std::move(shMemBuff.Get()),
+                          aProps)) {
       return -1;
     }
   } else {
-    MOZ_ASSERT(aBuffer.Valid());
+    MOZ_ASSERT(aBuffer.as<ShmemBuffer>().Valid());
     // ShmemBuffer was available, we're all good. A single copy happened
     // in the original webrtc callback.
-    if (!SendDeliverFrame(aStreamId, std::move(aBuffer.Get()), aProps)) {
+    if (!SendDeliverFrame(aCaptureId, aStreamIds,
+                          std::move(aBuffer.as<ShmemBuffer>().Get()), aProps)) {
       return -1;
     }
   }
@@ -328,19 +360,283 @@ int CamerasParent::DeliverFrameOverIPC(CaptureEngine aCapEngine,
   return 0;
 }
 
-ShmemBuffer CamerasParent::GetBuffer(size_t aSize) {
-  return mShmemPool.GetIfAvailable(aSize);
+bool CamerasParent::IsWindowCapturing(uint64_t aWindowId,
+                                      const nsACString& aUniqueId) const {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+  for (const auto& capturer : *mCapturers) {
+    if (capturer->mUniqueId != aUniqueId) {
+      continue;
+    }
+    auto streamsGuard = capturer->mStreams.ConstLock();
+    for (const auto& stream : *streamsGuard) {
+      if (stream->mWindowId == aWindowId) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
-void CallbackHelper::OnCaptureEnded() {
-  nsIEventTarget* target = mParent->GetBackgroundEventTarget();
-
-  MOZ_ALWAYS_SUCCEEDS(target->Dispatch(NS_NewRunnableFunction(
-      __func__, [&] { Unused << mParent->SendCaptureEnded(mStreamId); })));
+ShmemBuffer CamerasParent::GetBuffer(int aCaptureId, size_t aSize) {
+  auto guard = mShmemPools.Lock();
+  auto it = guard->find(aCaptureId);
+  if (it == guard->end()) {
+    return ShmemBuffer();
+  }
+  auto& [_, pool] = *it;
+  return pool.GetIfAvailable(aSize);
 }
 
-void CallbackHelper::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
-  LOG_VERBOSE("CamerasParent(%p)::%s", mParent, __func__);
+/*static*/
+std::unique_ptr<AggregateCapturer> AggregateCapturer::Create(
+    nsISerialEventTarget* aVideoCaptureThread, CaptureEngine aCapEng,
+    VideoEngine* aEngine, const nsCString& aUniqueId, uint64_t aWindowId,
+    nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities,
+    CamerasParent* aParent) {
+  MOZ_ASSERT(aVideoCaptureThread->IsOnCurrentThread());
+  int captureId = aEngine->CreateVideoCapture(aUniqueId.get(), aWindowId);
+  if (captureId < 0) {
+    return nullptr;
+  }
+  auto capturer = WrapUnique(
+      new AggregateCapturer(aVideoCaptureThread, aCapEng, aEngine, aUniqueId,
+                            captureId, std::move(aCapabilities)));
+  capturer->AddStream(aParent, captureId, aWindowId);
+  aEngine->WithEntry(captureId, [&](VideoEngine::CaptureEntry& aEntry) -> void {
+    aEntry.VideoCapture()->SetTrackingId(capturer->mTrackingId.mUniqueInProcId);
+    aEntry.VideoCapture()->RegisterCaptureDataCallback(capturer.get());
+    if (auto* event = aEntry.CaptureEndedEvent()) {
+      capturer->mCaptureEndedListener =
+          event->Connect(aVideoCaptureThread, capturer.get(),
+                         &AggregateCapturer::OnCaptureEnded);
+    }
+  });
+  return capturer;
+}
+
+AggregateCapturer::AggregateCapturer(
+    nsISerialEventTarget* aVideoCaptureThread, CaptureEngine aCapEng,
+    VideoEngine* aEngine, const nsCString& aUniqueId, int aCaptureId,
+    nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities)
+    : mVideoCaptureThread(aVideoCaptureThread),
+      mCapEngine(aCapEng),
+      mEngine(aEngine),
+      mUniqueId(aUniqueId),
+      mCaptureId(aCaptureId),
+      mTrackingId(CaptureEngineToTrackingSourceStr(aCapEng), mCaptureId),
+      mCapabilities(std::move(aCapabilities)),
+      mStreams("CallbackHelper::mStreams") {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+}
+
+AggregateCapturer::~AggregateCapturer() {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+#ifdef DEBUG
+  {
+    auto streamsGuard = mStreams.Lock();
+    MOZ_ASSERT(streamsGuard->IsEmpty());
+  }
+#endif
+  mCaptureEndedListener.DisconnectIfExists();
+  mEngine->WithEntry(mCaptureId, [&](VideoEngine::CaptureEntry& aEntry) {
+    if (auto* cap = aEntry.VideoCapture().get()) {
+      cap->DeRegisterCaptureDataCallback(this);
+      cap->StopCaptureIfAllClientsClose();
+    }
+  });
+  MOZ_ALWAYS_FALSE(mEngine->ReleaseVideoCapture(mCaptureId));
+}
+
+void AggregateCapturer::AddStream(CamerasParent* aParent, int aStreamId,
+                                  uint64_t aWindowId) {
+  auto streamsGuard = mStreams.Lock();
+#ifdef DEBUG
+  for (const auto& stream : *streamsGuard) {
+    MOZ_ASSERT(stream->mId != aStreamId);
+  }
+#endif
+  streamsGuard->AppendElement(
+      new Stream{.mParent = aParent, .mId = aStreamId, .mWindowId = aWindowId});
+}
+
+auto AggregateCapturer::RemoveStream(int aStreamId) -> RemoveStreamResult {
+  auto streamsGuard = mStreams.Lock();
+  size_t idx = streamsGuard->IndexOf(
+      aStreamId, 0,
+      [](const auto& aElem, const auto& aId) { return aElem->mId - aId; });
+  if (idx == streamsGuard->NoIndex) {
+    return {.mNumRemainingStreams = 0, .mNumRemainingStreamsForParent = 0};
+  }
+  CamerasParent* parent = streamsGuard->ElementAt(idx)->mParent;
+  streamsGuard->RemoveElementAt(idx);
+  size_t remainingForParent = 0;
+  for (const auto& s : *streamsGuard) {
+    if (s->mParent == parent) {
+      remainingForParent += 1;
+    }
+  }
+  return {.mNumRemainingStreams = streamsGuard->Length(),
+          .mNumRemainingStreamsForParent = remainingForParent};
+}
+
+auto AggregateCapturer::RemoveStreamsFor(CamerasParent* aParent)
+    -> RemoveStreamResult {
+  auto streamsGuard = mStreams.Lock();
+  streamsGuard->RemoveElementsBy(
+      [&](const auto& aElem) { return aElem->mParent == aParent; });
+  return {.mNumRemainingStreams = streamsGuard->Length(),
+          .mNumRemainingStreamsForParent = 0};
+}
+
+Maybe<int> AggregateCapturer::CaptureIdFor(int aStreamId) {
+  auto streamsGuard = mStreams.Lock();
+  for (auto& stream : *streamsGuard) {
+    if (stream->mId == aStreamId) {
+      return Some(mCaptureId);
+    }
+  }
+  return Nothing();
+}
+
+void AggregateCapturer::SetConfigurationFor(
+    int aStreamId, const webrtc::VideoCaptureCapability& aCapability,
+    const NormalizedConstraints& aConstraints,
+    const dom::VideoResizeModeEnum& aResizeMode, bool aStarted) {
+  auto streamsGuard = mStreams.Lock();
+  for (auto& stream : *streamsGuard) {
+    if (stream->mId == aStreamId) {
+      stream->mConfiguration = {
+          .mCapability = aCapability,
+          .mConstraints = aConstraints,
+          .mResizeMode = aResizeMode,
+      };
+      stream->mStarted = aStarted;
+      break;
+    }
+  }
+}
+
+Maybe<webrtc::VideoCaptureCapability> AggregateCapturer::CombinedCapability() {
+  Maybe<webrtc::VideoCaptureCapability> combinedCap;
+  CamerasParent* someParent{};
+  const auto streamsGuard = mStreams.ConstLock();
+  for (const auto& stream : *streamsGuard) {
+    if (!stream->mStarted) {
+      continue;
+    }
+    if (!someParent) {
+      someParent = stream->mParent;
+    }
+    const auto& cap = stream->mConfiguration.mCapability;
+    if (!combinedCap) {
+      combinedCap = Some(cap);
+      continue;
+    }
+    auto combinedRes = combinedCap->width * combinedCap->height;
+    combinedCap->maxFPS = std::max(combinedCap->maxFPS, cap.maxFPS);
+    if (mCapEngine == CaptureEngine::CameraEngine) {
+      auto newCombinedRes = cap.width * cap.height;
+      if (newCombinedRes > combinedRes) {
+        combinedCap->videoType = cap.videoType;
+      }
+      combinedCap->width = std::max(combinedCap->width, cap.width);
+      combinedCap->height = std::max(combinedCap->height, cap.height);
+    }
+  }
+
+  if (!combinedCap) {
+    return Nothing();
+  }
+
+  if (mCapEngine == CameraEngine) {
+    const webrtc::VideoCaptureCapability* minDistanceCapability{};
+    uint64_t minDistance = UINT64_MAX;
+
+    for (const auto& candidateCapability : mCapabilities) {
+      if (candidateCapability.videoType != combinedCap->videoType) {
+        continue;
+      }
+      // The first priority is finding a suitable resolution.
+      // So here we raise the weight of width and height
+      uint64_t distance =
+          uint64_t(ResolutionFeasibilityDistance(candidateCapability.width,
+                                                 combinedCap->width)) +
+          uint64_t(ResolutionFeasibilityDistance(candidateCapability.height,
+                                                 combinedCap->height)) +
+          uint64_t(FeasibilityDistance(candidateCapability.maxFPS,
+                                       combinedCap->maxFPS));
+      if (distance < minDistance) {
+        minDistanceCapability = &candidateCapability;
+        minDistance = distance;
+      }
+    }
+    if (minDistanceCapability) {
+      combinedCap = Some(*minDistanceCapability);
+    }
+  }
+  return combinedCap;
+}
+
+void AggregateCapturer::OnCaptureEnded() {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+  std::multimap<CamerasParent*, int> parentsAndIds;
+  {
+    auto streamsGuard = mStreams.Lock();
+    for (const auto& stream : *streamsGuard) {
+      parentsAndIds.insert({stream->mParent, stream->mId});
+    }
+  }
+
+  for (auto it = parentsAndIds.begin(); it != parentsAndIds.end();) {
+    const auto& parent = it->first;
+    auto nextParentIt = parentsAndIds.upper_bound(parent);
+    AutoTArray<int, 4> ids;
+    while (it != nextParentIt) {
+      const auto& [_, id] = *it;
+      ids.AppendElement(id);
+      ++it;
+    }
+    nsIEventTarget* target = parent->GetBackgroundEventTarget();
+    MOZ_ALWAYS_SUCCEEDS(target->Dispatch(NS_NewRunnableFunction(
+        __func__, [parent = RefPtr(parent), ids = std::move(ids)] {
+          (void)parent->SendCaptureEnded(ids);
+        })));
+  }
+}
+
+void AggregateCapturer::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
+  std::multimap<RefPtr<CamerasParent>, int> parentsAndIds;
+  {
+    // Proactively drop frames that would not get processed anyway.
+    auto streamsGuard = mStreams.Lock();
+
+    for (auto& stream : *streamsGuard) {
+      auto& c = stream->mConfiguration;
+      const double maxFramerate = static_cast<double>(
+          c.mCapability.maxFPS > 0 ? c.mCapability.maxFPS : 120);
+      const double desiredFramerate =
+          c.mResizeMode == VideoResizeModeEnum::Crop_and_scale
+              ? c.mConstraints.mFrameRate.Get(maxFramerate)
+              : maxFramerate;
+      const double targetFramerate = std::clamp(desiredFramerate, 0.01, 120.);
+
+      // Allow 5% higher fps than configured as frame time sampling is timing
+      // dependent.
+      const auto minInterval =
+          media::TimeUnit(1000, static_cast<int64_t>(1050 * targetFramerate));
+      const auto frameTime =
+          media::TimeUnit::FromMicroseconds(aVideoFrame.timestamp_us());
+      const auto frameInterval = frameTime - stream->mLastFrameTime;
+      if (frameInterval < minInterval) {
+        continue;
+      }
+      stream->mLastFrameTime = frameTime;
+      LOG_VERBOSE("CamerasParent::%s parent=%p, id=%d.", __func__,
+                  stream->mParent, stream->mId);
+      parentsAndIds.insert({stream->mParent, stream->mId});
+    }
+  }
+
   if (profiler_thread_is_being_profiled_for_markers()) {
     PROFILER_MARKER_UNTYPED(
         nsPrintfCString("CaptureVideoFrame %dx%d %s %s", aVideoFrame.width(),
@@ -350,43 +646,68 @@ void CallbackHelper::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
                         mTrackingId.ToString().get()),
         MEDIA_RT);
   }
-  RefPtr<DeliverFrameRunnable> runnable = nullptr;
+
   // Get frame properties
   camera::VideoFrameProperties properties;
   VideoFrameUtils::InitFrameBufferProperties(aVideoFrame, properties);
-  // Get a shared memory buffer to copy the frame data into
-  ShmemBuffer shMemBuffer = mParent->GetBuffer(properties.bufferSize());
-  if (!shMemBuffer.Valid()) {
-    // Either we ran out of buffers or they're not the right size yet
-    LOG("Correctly sized Video shmem not available in DeliverFrame");
-    // We will do the copy into a(n extra) temporary buffer inside
-    // the DeliverFrameRunnable constructor.
-  } else {
-    // Shared memory buffers of the right size are available, do the copy here.
-    PerformanceRecorder<CopyVideoStage> rec(
-        "CamerasParent::VideoFrameToShmem"_ns, mTrackingId, aVideoFrame.width(),
-        aVideoFrame.height());
-    VideoFrameUtils::CopyVideoFrameBuffers(
-        shMemBuffer.GetBytes(), properties.bufferSize(), aVideoFrame);
-    rec.Record();
-    runnable =
-        new DeliverFrameRunnable(mParent, mCapEngine, mStreamId, mTrackingId,
-                                 std::move(shMemBuffer), properties);
+
+  for (auto it = parentsAndIds.begin(); it != parentsAndIds.end();) {
+    const auto& parent = it->first;
+    auto nextParentIt = parentsAndIds.upper_bound(parent);
+    AutoTArray<int, 4> ids;
+    while (it != nextParentIt) {
+      const auto& [_, id] = *it;
+      ids.AppendElement(id);
+      ++it;
+    }
+
+    LOG_VERBOSE("CamerasParent(%p)::%s", parent.get(), __func__);
+    RefPtr<DeliverFrameRunnable> runnable = nullptr;
+    // Get a shared memory buffer to copy the frame data into
+    ShmemBuffer shMemBuffer =
+        parent->GetBuffer(mCaptureId, properties.bufferSize());
+    if (!shMemBuffer.Valid()) {
+      // Either we ran out of buffers or they're not the right size yet
+      LOG("Correctly sized Video shmem not available in DeliverFrame");
+      // We will do the copy into a(n extra) temporary buffer inside
+      // the DeliverFrameRunnable constructor.
+    } else {
+      // Shared memory buffers of the right size are available, do the copy
+      // here.
+      PerformanceRecorder<CopyVideoStage> rec(
+          "CamerasParent::VideoFrameToShmem"_ns, mTrackingId,
+          aVideoFrame.width(), aVideoFrame.height());
+      VideoFrameUtils::CopyVideoFrameBuffers(
+          shMemBuffer.GetBytes(), properties.bufferSize(), aVideoFrame);
+      rec.Record();
+      runnable = new DeliverFrameRunnable(
+          do_AddRef(parent), mCapEngine, mCaptureId, std::move(ids),
+          mTrackingId, std::move(shMemBuffer), properties);
+    }
+    if (!runnable) {
+      runnable = new DeliverFrameRunnable(do_AddRef(parent), mCapEngine,
+                                          mCaptureId, std::move(ids),
+                                          mTrackingId, aVideoFrame, properties);
+    }
+    nsIEventTarget* target = parent->GetBackgroundEventTarget();
+    target->Dispatch(runnable, NS_DISPATCH_NORMAL);
   }
-  if (!runnable) {
-    runnable = new DeliverFrameRunnable(mParent, mCapEngine, mStreamId,
-                                        mTrackingId, aVideoFrame, properties);
-  }
-  MOZ_ASSERT(mParent);
-  nsIEventTarget* target = mParent->GetBackgroundEventTarget();
-  MOZ_ASSERT(target != nullptr);
-  target->Dispatch(runnable, NS_DISPATCH_NORMAL);
 }
 
-ipc::IPCResult CamerasParent::RecvReleaseFrame(ipc::Shmem&& aShmem) {
+ipc::IPCResult CamerasParent::RecvReleaseFrame(const int& aCaptureId,
+                                               ipc::Shmem&& aShmem) {
   MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
 
-  mShmemPool.Put(ShmemBuffer(aShmem));
+  auto guard = mShmemPools.Lock();
+  auto it = guard->find(aCaptureId);
+  if (it == guard->end()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Releasing shmem but pool is already gone. Shmem must have been "
+        "deallocated.");
+    return IPC_FAIL(this, "Shmem was already deallocated");
+  }
+  auto& [_, pool] = *it;
+  pool.Put(ShmemBuffer(aShmem));
   return IPC_OK();
 }
 
@@ -394,20 +715,20 @@ void CamerasParent::CloseEngines() {
   MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
   LOG_FUNCTION();
 
-  // Stop the callers
-  while (!mCallbacks.IsEmpty()) {
-    auto capEngine = mCallbacks[0]->mCapEngine;
-    auto streamNum = mCallbacks[0]->mStreamId;
-    LOG("Forcing shutdown of engine %d, capturer %d", capEngine, streamNum);
-    StopCapture(capEngine, streamNum);
-    Unused << ReleaseCapture(capEngine, streamNum);
+  // Stop the capturers.
+  for (const auto& capturer : Reversed(*mCapturers)) {
+    auto removed = capturer->RemoveStreamsFor(this);
+    if (removed.mNumRemainingStreams == 0) {
+      auto capEngine = capturer->mCapEngine;
+      auto captureId = capturer->mCaptureId;
+      size_t idx = mCapturers->LastIndexOf(capturer);
+      mCapturers->RemoveElementAtUnsafe(idx);
+      LOG("Forcing shutdown of engine %d, capturer %d", capEngine, captureId);
+    }
   }
 
-  auto device_info = GetDeviceInfo(CameraEngine);
-  MOZ_ASSERT(device_info);
-  if (device_info) {
-    device_info->DeRegisterVideoInputFeedBack(this);
-  }
+  mDeviceChangeEventListener.DisconnectIfExists();
+  mDeviceChangeEventListenerConnected = false;
 }
 
 std::shared_ptr<webrtc::VideoCaptureModule::DeviceInfo>
@@ -419,7 +740,15 @@ CamerasParent::GetDeviceInfo(int aEngine) {
   if (!engine) {
     return nullptr;
   }
-  return engine->GetOrCreateVideoCaptureDeviceInfo(this);
+  auto info = engine->GetOrCreateVideoCaptureDeviceInfo();
+
+  if (!mDeviceChangeEventListenerConnected && aEngine == CameraEngine) {
+    mDeviceChangeEventListener = engine->DeviceChangeEvent().Connect(
+        mVideoCaptureThread, this, &CamerasParent::OnDeviceChange);
+    mDeviceChangeEventListenerConnected = true;
+  }
+
+  return info;
 }
 
 VideoEngine* CamerasParent::EnsureInitialized(int aEngine) {
@@ -496,12 +825,12 @@ ipc::IPCResult CamerasParent::RecvNumberOfCaptureDevices(
 
             if (nrDevices < 0) {
               LOG("RecvNumberOfCaptureDevices couldn't find devices");
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
 
             LOG("RecvNumberOfCaptureDevices: %d", nrDevices);
-            Unused << SendReplyNumberOfCaptureDevices(nrDevices);
+            (void)SendReplyNumberOfCaptureDevices(nrDevices);
           });
   return IPC_OK();
 }
@@ -532,12 +861,12 @@ ipc::IPCResult CamerasParent::RecvEnsureInitialized(
 
             if (!result) {
               LOG("RecvEnsureInitialized failed");
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
 
             LOG("RecvEnsureInitialized succeeded");
-            Unused << SendReplySuccess();
+            (void)SendReplySuccess();
           });
   return IPC_OK();
 }
@@ -573,12 +902,12 @@ ipc::IPCResult CamerasParent::RecvNumberOfCapabilities(
 
             if (aNrCapabilities < 0) {
               LOG("RecvNumberOfCapabilities couldn't find capabilities");
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
 
             LOG("RecvNumberOfCapabilities: %d", aNrCapabilities);
-            Unused << SendReplyNumberOfCapabilities(aNrCapabilities);
+            (void)SendReplyNumberOfCapabilities(aNrCapabilities);
           });
   return IPC_OK();
 }
@@ -597,30 +926,21 @@ ipc::IPCResult CamerasParent::RecvGetCaptureCapability(
   InvokeAsync(mVideoCaptureThread, __func__,
               [this, self = RefPtr(this), id = nsCString(aUniqueId), aCapEngine,
                aIndex] {
+                nsTArray<webrtc::VideoCaptureCapability> const* capabilities =
+                    EnsureCapabilitiesPopulated(aCapEngine, id);
                 webrtc::VideoCaptureCapability webrtcCaps;
-                int error = -1;
-                if (auto devInfo = GetDeviceInfo(aCapEngine)) {
-                  error = devInfo->GetCapability(id.get(), aIndex, webrtcCaps);
-                }
-
-                if (!error && aCapEngine == CameraEngine) {
-                  auto iter = mAllCandidateCapabilities.find(id);
-                  if (iter == mAllCandidateCapabilities.end()) {
-                    std::map<uint32_t, webrtc::VideoCaptureCapability>
-                        candidateCapabilities;
-                    candidateCapabilities.emplace(aIndex, webrtcCaps);
-                    mAllCandidateCapabilities.emplace(id,
-                                                      candidateCapabilities);
-                  } else {
-                    (iter->second).emplace(aIndex, webrtcCaps);
-                  }
-                }
-                if (error) {
+                if (!capabilities) {
                   return Promise::CreateAndReject(
-                      error, "CamerasParent::RecvGetCaptureCapability");
+                      -1, "CamerasParent::RecvGetCaptureCapability");
+                }
+                if (aIndex < 0 ||
+                    static_cast<size_t>(aIndex) >= capabilities->Length()) {
+                  return Promise::CreateAndReject(
+                      -2, "CamerasParent::RecvGetCaptureCapability");
                 }
                 return Promise::CreateAndResolve(
-                    webrtcCaps, "CamerasParent::RecvGetCaptureCapability");
+                    capabilities->ElementAt(aIndex),
+                    "CamerasParent::RecvGetCaptureCapability");
               })
       ->Then(
           mPBackgroundEventTarget, __func__,
@@ -632,7 +952,7 @@ ipc::IPCResult CamerasParent::RecvGetCaptureCapability(
 
             if (aValue.IsReject()) {
               LOG("RecvGetCaptureCapability: reply failure");
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
 
@@ -643,7 +963,7 @@ ipc::IPCResult CamerasParent::RecvGetCaptureCapability(
             LOG("Capability: %u %u %u %d %d", webrtcCaps.width,
                 webrtcCaps.height, webrtcCaps.maxFPS,
                 static_cast<int>(webrtcCaps.videoType), webrtcCaps.interlaced);
-            Unused << SendReplyGetCaptureCapability(capCap);
+            (void)SendReplyGetCaptureCapability(capCap);
           });
   return IPC_OK();
 }
@@ -655,7 +975,7 @@ ipc::IPCResult CamerasParent::RecvGetCaptureDevice(
 
   LOG_FUNCTION();
 
-  using Data = std::tuple<nsCString, nsCString, pid_t, bool, int>;
+  using Data = std::tuple<nsCString, nsCString, pid_t, int>;
   using Promise = MozPromise<Data, bool, true>;
   InvokeAsync(mVideoCaptureThread, __func__,
               [this, self = RefPtr(this), aCapEngine, aDeviceIndex] {
@@ -664,13 +984,12 @@ ipc::IPCResult CamerasParent::RecvGetCaptureDevice(
                 nsCString name;
                 nsCString uniqueId;
                 pid_t devicePid = 0;
-                bool placeholder = false;
                 int error = -1;
                 if (auto devInfo = GetDeviceInfo(aCapEngine)) {
                   error = devInfo->GetDeviceName(
                       aDeviceIndex, deviceName, sizeof(deviceName),
                       deviceUniqueId, sizeof(deviceUniqueId), nullptr, 0,
-                      &devicePid, &placeholder);
+                      &devicePid);
                 }
 
                 if (error == 0) {
@@ -680,28 +999,27 @@ ipc::IPCResult CamerasParent::RecvGetCaptureDevice(
 
                 return Promise::CreateAndResolve(
                     std::make_tuple(std::move(name), std::move(uniqueId),
-                                    devicePid, placeholder, error),
+                                    devicePid, error),
                     "CamerasParent::RecvGetCaptureDevice");
               })
       ->Then(
           mPBackgroundEventTarget, __func__,
           [this, self = RefPtr(this)](Promise::ResolveOrRejectValue&& aValue) {
-            const auto& [name, uniqueId, devicePid, placeholder, error] =
+            const auto& [name, uniqueId, devicePid, error] =
                 aValue.ResolveValue();
             if (mDestroyed) {
               return;
             }
             if (error != 0) {
               LOG("GetCaptureDevice failed: %d", error);
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
             bool scary = (devicePid == getpid());
 
             LOG("Returning %s name %s id (pid = %d)%s", name.get(),
                 uniqueId.get(), devicePid, (scary ? " (scary)" : ""));
-            Unused << SendReplyGetCaptureDevice(name, uniqueId, scary,
-                                                placeholder);
+            (void)SendReplyGetCaptureDevice(name, uniqueId, scary);
           });
   return IPC_OK();
 }
@@ -776,97 +1094,97 @@ ipc::IPCResult CamerasParent::RecvAllocateCapture(
   LOG("CamerasParent(%p)::%s: Verifying permissions", this, __func__);
 
   using Promise1 = MozPromise<bool, bool, true>;
-  using Data = std::tuple<int, int>;
-  using Promise2 = MozPromise<Data, bool, true>;
-  InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
-              [aWindowID] {
-                // Verify whether the claimed origin has received permission
-                // to use the camera, either persistently or this session (one
-                // shot).
-                bool allowed = HasCameraPermission(aWindowID);
-                if (!allowed) {
-                  // Developer preference for turning off permission check.
-                  if (Preferences::GetBool(
-                          "media.navigator.permission.disabled", false)) {
-                    allowed = true;
-                    LOG("No permission but checks are disabled");
-                  } else {
-                    LOG("No camera permission for this origin");
-                  }
-                }
-                return Promise1::CreateAndResolve(
-                    allowed, "CamerasParent::RecvAllocateCapture");
-              })
-      ->Then(mVideoCaptureThread, __func__,
-             [this, self = RefPtr(this), aCapEngine,
-              unique_id = nsCString(aUniqueIdUTF8)](
-                 Promise1::ResolveOrRejectValue&& aValue) {
-               bool allowed = aValue.ResolveValue();
-               int captureId = -1;
-               int error = -1;
-               if (allowed && EnsureInitialized(aCapEngine)) {
-                 VideoEngine* engine = mEngines->ElementAt(aCapEngine);
-                 captureId = engine->CreateVideoCapture(unique_id.get());
-                 engine->WithEntry(captureId,
-                                   [&error](VideoEngine::CaptureEntry& cap) {
-                                     if (cap.VideoCapture()) {
-                                       error = 0;
-                                     }
-                                   });
-               }
-               return Promise2::CreateAndResolve(
-                   std::make_tuple(captureId, error),
-                   "CamerasParent::RecvAllocateCapture");
-             })
+  using Promise2 = MozPromise<Maybe<int>, bool, true>;
+  InvokeAsync(
+      GetMainThreadSerialEventTarget(), __func__,
+      [aWindowID] {
+        // Verify whether the claimed origin has received permission
+        // to use the camera, either persistently or this session (one
+        // shot).
+        bool allowed = HasCameraPermission(aWindowID);
+        if (!allowed && Preferences::GetBool(
+                            "media.navigator.permission.disabled", false)) {
+          // Developer preference for turning off permission check.
+          allowed = true;
+          LOG("No permission but checks are disabled");
+        }
+        if (!allowed) {
+          LOG("No camera permission for this origin");
+        }
+        return Promise1::CreateAndResolve(allowed,
+                                          "CamerasParent::RecvAllocateCapture");
+      })
+      ->Then(
+          mVideoCaptureThread, __func__,
+          [this, self = RefPtr(this), aCapEngine, aWindowID,
+           unique_id = nsCString(aUniqueIdUTF8)](
+              Promise1::ResolveOrRejectValue&& aValue) {
+            VideoEngine* engine = EnsureInitialized(aCapEngine);
+            if (!engine) {
+              return Promise2::CreateAndResolve(
+                  Nothing(), "CamerasParent::RecvAllocateCapture no engine");
+            }
+            bool allowed = aValue.ResolveValue();
+            if (!allowed && IsWindowCapturing(aWindowID, unique_id)) {
+              allowed = true;
+              LOG("No permission but window is already capturing this device");
+            }
+            if (!allowed) {
+              return Promise2::CreateAndResolve(
+                  Nothing(), "CamerasParent::RecvAllocateCapture");
+            }
+
+            nsTArray<webrtc::VideoCaptureCapability> capabilities;
+            if (const auto* caps =
+                    EnsureCapabilitiesPopulated(aCapEngine, unique_id)) {
+              capabilities.AppendElements(*caps);
+            }
+
+            auto created = GetOrCreateCapturer(aCapEngine, aWindowID, unique_id,
+                                               std::move(capabilities));
+            return Promise2::CreateAndResolve(
+                created.mCapturer ? Some(created.mStreamId) : Nothing(),
+                "CamerasParent::RecvAllocateCapture");
+          })
       ->Then(
           mPBackgroundEventTarget, __func__,
           [this, self = RefPtr(this)](Promise2::ResolveOrRejectValue&& aValue) {
-            const auto [captureId, error] = aValue.ResolveValue();
+            const Maybe<int> captureId = aValue.ResolveValue();
             if (mDestroyed) {
               LOG("RecvAllocateCapture: child not alive");
               return;
             }
 
-            if (error != 0) {
-              Unused << SendReplyFailure();
-              LOG("RecvAllocateCapture: WithEntry error");
+            if (!captureId) {
+              (void)SendReplyFailure();
+              LOG("RecvAllocateCapture: failed to create capturer");
               return;
             }
 
-            LOG("Allocated device nr %d", captureId);
-            Unused << SendReplyAllocateCapture(captureId);
+            LOG("Allocated device nr %d", *captureId);
+            (void)SendReplyAllocateCapture(*captureId);
           });
   return IPC_OK();
 }
 
-int CamerasParent::ReleaseCapture(const CaptureEngine& aCapEngine,
-                                  int aCaptureId) {
-  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
-  int error = -1;
-  if (auto* engine = EnsureInitialized(aCapEngine)) {
-    error = engine->ReleaseVideoCapture(aCaptureId);
-  }
-  return error;
-}
-
 ipc::IPCResult CamerasParent::RecvReleaseCapture(
-    const CaptureEngine& aCapEngine, const int& aCaptureId) {
+    const CaptureEngine& aCapEngine, const int& aStreamId) {
   MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
   MOZ_ASSERT(!mDestroyed);
 
   LOG_FUNCTION();
-  LOG("RecvReleaseCamera device nr %d", aCaptureId);
+  LOG("RecvReleaseCapture stream nr %d", aStreamId);
 
   using Promise = MozPromise<int, bool, true>;
   InvokeAsync(mVideoCaptureThread, __func__,
-              [this, self = RefPtr(this), aCapEngine, aCaptureId] {
+              [this, self = RefPtr(this), aCapEngine, aStreamId] {
                 return Promise::CreateAndResolve(
-                    ReleaseCapture(aCapEngine, aCaptureId),
+                    ReleaseStream(aCapEngine, aStreamId),
                     "CamerasParent::RecvReleaseCapture");
               })
       ->Then(mPBackgroundEventTarget, __func__,
              [this, self = RefPtr(this),
-              aCaptureId](Promise::ResolveOrRejectValue&& aValue) {
+              aStreamId](Promise::ResolveOrRejectValue&& aValue) {
                int error = aValue.ResolveValue();
 
                if (mDestroyed) {
@@ -875,21 +1193,23 @@ ipc::IPCResult CamerasParent::RecvReleaseCapture(
                }
 
                if (error != 0) {
-                 Unused << SendReplyFailure();
-                 LOG("RecvReleaseCapture: Failed to free device nr %d",
-                     aCaptureId);
+                 (void)SendReplyFailure();
+                 LOG("RecvReleaseCapture: Failed to free stream nr %d",
+                     aStreamId);
                  return;
                }
 
-               Unused << SendReplySuccess();
-               LOG("Freed device nr %d", aCaptureId);
+               (void)SendReplySuccess();
+               LOG("Freed stream nr %d", aStreamId);
              });
   return IPC_OK();
 }
 
 ipc::IPCResult CamerasParent::RecvStartCapture(
-    const CaptureEngine& aCapEngine, const int& aCaptureId,
-    const VideoCaptureCapability& aIpcCaps) {
+    const CaptureEngine& aCapEngine, const int& aStreamId,
+    const VideoCaptureCapability& aIpcCaps,
+    const NormalizedConstraints& aConstraints,
+    const dom::VideoResizeModeEnum& aResizeMode) {
   MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
   MOZ_ASSERT(!mDestroyed);
 
@@ -898,17 +1218,24 @@ ipc::IPCResult CamerasParent::RecvStartCapture(
   using Promise = MozPromise<int, bool, true>;
   InvokeAsync(
       mVideoCaptureThread, __func__,
-      [this, self = RefPtr(this), aCapEngine, aCaptureId, aIpcCaps] {
+      [this, self = RefPtr(this), aCapEngine, aStreamId, aIpcCaps, aConstraints,
+       aResizeMode] {
         LOG_FUNCTION();
-        int error = -1;
 
         if (!EnsureInitialized(aCapEngine)) {
-          return Promise::CreateAndResolve(error,
+          return Promise::CreateAndResolve(-1,
                                            "CamerasParent::RecvStartCapture");
         }
 
+        AggregateCapturer* cbh = GetCapturer(aCapEngine, aStreamId);
+        if (!cbh) {
+          return Promise::CreateAndResolve(-1,
+                                           "CamerasParent::RecvStartCapture");
+        }
+
+        int error = -1;
         mEngines->ElementAt(aCapEngine)
-            ->WithEntry(aCaptureId, [&](VideoEngine::CaptureEntry& cap) {
+            ->WithEntry(cbh->mCaptureId, [&](VideoEngine::CaptureEntry& cap) {
               webrtc::VideoCaptureCapability capability;
               capability.width = aIpcCaps.width();
               capability.height = aIpcCaps.height();
@@ -917,118 +1244,15 @@ ipc::IPCResult CamerasParent::RecvStartCapture(
                   static_cast<webrtc::VideoType>(aIpcCaps.videoType());
               capability.interlaced = aIpcCaps.interlaced();
 
-              if (sDeviceUniqueIDs.find(aCaptureId) == sDeviceUniqueIDs.end()) {
-                sDeviceUniqueIDs.emplace(
-                    aCaptureId, cap.VideoCapture()->CurrentDeviceName());
-                sAllRequestedCapabilities.emplace(aCaptureId, capability);
-              } else {
-                // Starting capture for an id that already exists. Update its
-                // requested capability.
-                MOZ_DIAGNOSTIC_ASSERT(
-                    strcmp(sDeviceUniqueIDs[aCaptureId],
-                           cap.VideoCapture()->CurrentDeviceName()) == 0);
-                MOZ_DIAGNOSTIC_ASSERT(
-                    sAllRequestedCapabilities.find(aCaptureId) !=
-                    sAllRequestedCapabilities.end());
-                sAllRequestedCapabilities[aCaptureId] = capability;
-              }
-
-              if (aCapEngine == CameraEngine) {
-                for (const auto& it : sDeviceUniqueIDs) {
-                  if (strcmp(it.second,
-                             cap.VideoCapture()->CurrentDeviceName()) == 0) {
-                    capability.width =
-                        std::max(capability.width,
-                                 sAllRequestedCapabilities[it.first].width);
-                    capability.height =
-                        std::max(capability.height,
-                                 sAllRequestedCapabilities[it.first].height);
-                    capability.maxFPS =
-                        std::max(capability.maxFPS,
-                                 sAllRequestedCapabilities[it.first].maxFPS);
-                  }
+              if (cbh) {
+                cbh->SetConfigurationFor(aStreamId, capability, aConstraints,
+                                         aResizeMode, /*aStarted=*/true);
+                error = cap.VideoCapture()->StartCapture(
+                    *cbh->CombinedCapability());
+                if (error) {
+                  cbh->SetConfigurationFor(aStreamId, capability, aConstraints,
+                                           aResizeMode, /*aStarted=*/false);
                 }
-
-                auto candidateCapabilities = mAllCandidateCapabilities.find(
-                    nsCString(cap.VideoCapture()->CurrentDeviceName()));
-                if ((candidateCapabilities !=
-                     mAllCandidateCapabilities.end()) &&
-                    (!candidateCapabilities->second.empty())) {
-                  int32_t minIdx = -1;
-                  uint64_t minDistance = UINT64_MAX;
-
-                  for (auto& candidateCapability :
-                       candidateCapabilities->second) {
-                    if (candidateCapability.second.videoType !=
-                        capability.videoType) {
-                      continue;
-                    }
-                    // The first priority is finding a suitable resolution.
-                    // So here we raise the weight of width and height
-                    uint64_t distance = uint64_t(ResolutionFeasibilityDistance(
-                                            candidateCapability.second.width,
-                                            capability.width)) +
-                                        uint64_t(ResolutionFeasibilityDistance(
-                                            candidateCapability.second.height,
-                                            capability.height)) +
-                                        uint64_t(FeasibilityDistance(
-                                            candidateCapability.second.maxFPS,
-                                            capability.maxFPS));
-                    if (distance < minDistance) {
-                      minIdx = static_cast<int32_t>(candidateCapability.first);
-                      minDistance = distance;
-                    }
-                  }
-                  MOZ_ASSERT(minIdx != -1);
-                  capability = candidateCapabilities->second[minIdx];
-                }
-              } else if (aCapEngine == ScreenEngine ||
-                         aCapEngine == BrowserEngine ||
-                         aCapEngine == WinEngine) {
-                for (const auto& it : sDeviceUniqueIDs) {
-                  if (strcmp(it.second,
-                             cap.VideoCapture()->CurrentDeviceName()) == 0) {
-                    capability.maxFPS =
-                        std::max(capability.maxFPS,
-                                 sAllRequestedCapabilities[it.first].maxFPS);
-                  }
-                }
-              }
-
-              bool cbhExists = false;
-              CallbackHelper** cbh = nullptr;
-              for (auto* cb : mCallbacks) {
-                if (cb->mCapEngine == aCapEngine &&
-                    cb->mStreamId == (uint32_t)aCaptureId) {
-                  cbhExists = true;
-                  break;
-                }
-              }
-              if (!cbhExists) {
-                cbh = mCallbacks.AppendElement(new CallbackHelper(
-                    static_cast<CaptureEngine>(aCapEngine), aCaptureId, this));
-                cap.VideoCapture()->SetTrackingId(
-                    (*cbh)->mTrackingId.mUniqueInProcId);
-              }
-
-              error = cap.VideoCapture()->StartCapture(capability);
-
-              if (!error) {
-                if (cbh) {
-                  cap.VideoCapture()->RegisterCaptureDataCallback(
-                      static_cast<rtc::VideoSinkInterface<webrtc::VideoFrame>*>(
-                          *cbh));
-                  if (auto* event = cap.CaptureEndedEvent();
-                      event && !(*cbh)->mConnectedToCaptureEnded) {
-                    (*cbh)->mCaptureEndedListener =
-                        event->Connect(mVideoCaptureThread, (*cbh),
-                                       &CallbackHelper::OnCaptureEnded);
-                    (*cbh)->mConnectedToCaptureEnded = true;
-                  }
-                }
-              } else {
-                sDeviceUniqueIDs.erase(aCaptureId);
-                sAllRequestedCapabilities.erase(aCaptureId);
               }
             });
 
@@ -1047,17 +1271,17 @@ ipc::IPCResult CamerasParent::RecvStartCapture(
 
             if (error != 0) {
               LOG("RecvStartCapture failure: StartCapture failed");
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               return;
             }
 
-            Unused << SendReplySuccess();
+            (void)SendReplySuccess();
           });
   return IPC_OK();
 }
 
 ipc::IPCResult CamerasParent::RecvFocusOnSelectedSource(
-    const CaptureEngine& aCapEngine, const int& aCaptureId) {
+    const CaptureEngine& aCapEngine, const int& aStreamId) {
   MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
   MOZ_ASSERT(!mDestroyed);
 
@@ -1065,11 +1289,17 @@ ipc::IPCResult CamerasParent::RecvFocusOnSelectedSource(
 
   using Promise = MozPromise<bool, bool, true>;
   InvokeAsync(mVideoCaptureThread, __func__,
-              [this, self = RefPtr(this), aCapEngine, aCaptureId] {
+              [this, self = RefPtr(this), aCapEngine, aStreamId] {
                 bool result = false;
+                auto* capturer = GetCapturer(aCapEngine, aStreamId);
+                if (!capturer) {
+                  return Promise::CreateAndResolve(
+                      result, "CamerasParent::RecvFocusOnSelectedSource");
+                }
                 if (auto* engine = EnsureInitialized(aCapEngine)) {
                   engine->WithEntry(
-                      aCaptureId, [&](VideoEngine::CaptureEntry& cap) {
+                      capturer->mCaptureId,
+                      [&](VideoEngine::CaptureEntry& cap) {
                         if (cap.VideoCapture()) {
                           result = cap.VideoCapture()->FocusOnSelectedSource();
                         }
@@ -1088,55 +1318,131 @@ ipc::IPCResult CamerasParent::RecvFocusOnSelectedSource(
             }
 
             if (!result) {
-              Unused << SendReplyFailure();
+              (void)SendReplyFailure();
               LOG("RecvFocusOnSelectedSource failure.");
               return;
             }
 
-            Unused << SendReplySuccess();
+            (void)SendReplySuccess();
           });
   return IPC_OK();
 }
 
-void CamerasParent::StopCapture(const CaptureEngine& aCapEngine,
-                                int aCaptureId) {
+auto CamerasParent::GetOrCreateCapturer(
+    CaptureEngine aEngine, uint64_t aWindowId, const nsCString& aUniqueId,
+    nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities)
+    -> GetOrCreateCapturerResult {
   MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
-  if (auto* engine = EnsureInitialized(aCapEngine)) {
-    // we're removing elements, iterate backwards
-    for (size_t i = mCallbacks.Length(); i > 0; i--) {
-      if (mCallbacks[i - 1]->mCapEngine == aCapEngine &&
-          mCallbacks[i - 1]->mStreamId == (uint32_t)aCaptureId) {
-        CallbackHelper* cbh = mCallbacks[i - 1];
-        engine->WithEntry(aCaptureId, [cbh, &aCaptureId](
-                                          VideoEngine::CaptureEntry& cap) {
-          if (cap.VideoCapture()) {
-            cap.VideoCapture()->DeRegisterCaptureDataCallback(
-                static_cast<rtc::VideoSinkInterface<webrtc::VideoFrame>*>(cbh));
-            cap.VideoCapture()->StopCaptureIfAllClientsClose();
-
-            sDeviceUniqueIDs.erase(aCaptureId);
-            sAllRequestedCapabilities.erase(aCaptureId);
-          }
-        });
-        cbh->mCaptureEndedListener.DisconnectIfExists();
-        delete mCallbacks[i - 1];
-        mCallbacks.RemoveElementAt(i - 1);
-        break;
-      }
+  VideoEngine* engine = EnsureInitialized(aEngine);
+  const auto ensureShmemPool = [&](int aCaptureId) {
+    auto guard = mShmemPools.Lock();
+    constexpr size_t kMaxShmemBuffers = 1;
+    guard->try_emplace(aCaptureId, kMaxShmemBuffers);
+  };
+  for (auto& capturer : *mCapturers) {
+    if (capturer->mCapEngine != aEngine) {
+      continue;
+    }
+    if (capturer->mUniqueId.Equals(aUniqueId)) {
+      int streamId = engine->GenerateId();
+      ensureShmemPool(capturer->mCaptureId);
+      capturer->AddStream(this, streamId, aWindowId);
+      return {.mCapturer = capturer.get(), .mStreamId = streamId};
     }
   }
+  std::unique_ptr aggregate =
+      AggregateCapturer::Create(mVideoCaptureThread, aEngine, engine, aUniqueId,
+                                aWindowId, std::move(aCapabilities), this);
+  if (!aggregate) {
+    return {};
+  }
+  NotNull capturer = mCapturers->AppendElement(std::move(aggregate));
+  ensureShmemPool(capturer->get()->mCaptureId);
+  return {.mCapturer = capturer->get(),
+          .mStreamId = capturer->get()->mCaptureId};
+}
+
+AggregateCapturer* CamerasParent::GetCapturer(CaptureEngine aEngine,
+                                              int aStreamId) {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+  for (auto& capturer : *mCapturers) {
+    if (capturer->mCapEngine != aEngine) {
+      continue;
+    }
+    Maybe captureId = capturer->CaptureIdFor(aStreamId);
+    if (captureId) {
+      return capturer.get();
+    }
+  }
+  return nullptr;
+}
+
+int CamerasParent::ReleaseStream(CaptureEngine aEngine, int aStreamId) {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+  auto* capturer = GetCapturer(aEngine, aStreamId);
+  if (!capturer) {
+    return -1;
+  }
+  auto removed = capturer->RemoveStream(aStreamId);
+  if (removed.mNumRemainingStreams == 0) {
+    mCapturers->RemoveElement(capturer);
+  }
+  return 0;
+}
+
+nsTArray<webrtc::VideoCaptureCapability> const*
+CamerasParent::EnsureCapabilitiesPopulated(CaptureEngine aEngine,
+                                           const nsCString& aUniqueId) {
+  MOZ_ASSERT(mVideoCaptureThread->IsOnCurrentThread());
+  if (auto iter = mAllCandidateCapabilities.find(aUniqueId);
+      iter != mAllCandidateCapabilities.end()) {
+    return &iter->second;
+  }
+  auto devInfo = GetDeviceInfo(aEngine);
+  if (!devInfo) {
+    return nullptr;
+  }
+  const int num = devInfo->NumberOfCapabilities(aUniqueId.get());
+  if (num <= 0) {
+    return nullptr;
+  }
+  nsTArray<webrtc::VideoCaptureCapability> capabilities(num);
+  for (int i = 0; i < num; ++i) {
+    webrtc::VideoCaptureCapability capability;
+    if (devInfo->GetCapability(aUniqueId.get(), i, capability)) {
+      return nullptr;
+    }
+    capabilities.AppendElement(capability);
+  }
+  const auto& [iter, _] =
+      mAllCandidateCapabilities.emplace(aUniqueId, std::move(capabilities));
+  return &iter->second;
 }
 
 ipc::IPCResult CamerasParent::RecvStopCapture(const CaptureEngine& aCapEngine,
-                                              const int& aCaptureId) {
+                                              const int& aStreamId) {
   MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
   MOZ_ASSERT(!mDestroyed);
 
   LOG_FUNCTION();
 
   nsresult rv = mVideoCaptureThread->Dispatch(NS_NewRunnableFunction(
-      __func__, [this, self = RefPtr(this), aCapEngine, aCaptureId] {
-        StopCapture(aCapEngine, aCaptureId);
+      __func__, [this, self = RefPtr(this), aCapEngine, aStreamId] {
+        auto* capturer = GetCapturer(aCapEngine, aStreamId);
+        if (capturer) {
+          capturer->SetConfigurationFor(
+              aStreamId, webrtc::VideoCaptureCapability{},
+              NormalizedConstraints{}, dom::VideoResizeModeEnum::None,
+              /*aStarted=*/false);
+          if (!capturer->CombinedCapability()) {
+            if (auto* engine = EnsureInitialized(aCapEngine)) {
+              engine->WithEntry(capturer->mCaptureId,
+                                [&](VideoEngine::CaptureEntry& aEntry) {
+                                  aEntry.VideoCapture()->StopCapture();
+                                });
+            }
+          }
+        }
       }));
 
   if (mDestroyed) {
@@ -1162,7 +1468,12 @@ void CamerasParent::ActorDestroy(ActorDestroyReason aWhy) {
   LOG_FUNCTION();
 
   // Release shared memory now, it's our last chance
-  mShmemPool.Cleanup(this);
+  {
+    auto guard = mShmemPools.Lock();
+    for (auto& [captureId, pool] : *guard) {
+      pool.Cleanup(this);
+    }
+  }
   // We don't want to receive callbacks or anything if we can't
   // forward them anymore anyway.
   mDestroyed = true;
@@ -1193,8 +1504,9 @@ CamerasParent::CamerasParent()
                               ? MakeAndAddRefVideoCaptureThreadAndSingletons()
                               : nullptr),
       mEngines(sEngines),
+      mCapturers(sCapturers),
       mVideoCaptureFactory(EnsureVideoCaptureFactory()),
-      mShmemPool(CaptureEngine::MaxEngine),
+      mShmemPools("CamerasParent::mShmemPools"),
       mPBackgroundEventTarget(GetCurrentSerialEventTarget()),
       mDestroyed(false) {
   MOZ_ASSERT(mPBackgroundEventTarget != nullptr,
@@ -1240,17 +1552,7 @@ auto CamerasParent::RequestCameraAccess(bool aAllowPermissionRequest)
             "CamerasParent::RequestCameraAccess camera backend init handler",
             [](nsresult aRv) mutable {
               MOZ_ASSERT(NS_SUCCEEDED(aRv));
-              if (sVideoCaptureThread) {
-                MOZ_ASSERT(sEngines);
-                MOZ_ALWAYS_SUCCEEDS(
-                    sVideoCaptureThread->Dispatch(NS_NewRunnableFunction(
-                        __func__, [engines = RefPtr(sEngines.get())] {
-                          if (VideoEngine* engine =
-                                  engines->ElementAt(CameraEngine)) {
-                            engine->ClearVideoCaptureDeviceInfo();
-                          }
-                        })));
-              }
+              ClearCameraDeviceInfo();
               return CameraAccessRequestPromise::CreateAndResolve(
                   CamerasAccessStatus::Granted,
                   "CamerasParent::RequestCameraAccess camera backend init "
@@ -1267,7 +1569,7 @@ auto CamerasParent::RequestCameraAccess(bool aAllowPermissionRequest)
             }));
     static nsresult clearingRv = NS_DispatchToMainThread(NS_NewRunnableFunction(
         __func__, [] { ClearOnShutdown(&sCameraAccessRequestPromise); }));
-    Unused << clearingRv;
+    (void)clearingRv;
   }
 
   // If camera acess is granted, all is jolly. But we need to handle rejection.
@@ -1356,3 +1658,8 @@ already_AddRefed<CamerasParent> CamerasParent::Create() {
 
 }  // namespace camera
 }  // namespace mozilla
+
+#undef LOG
+#undef LOG_FUNCTION
+#undef LOG_VERBOSE
+#undef LOG_ENABLED

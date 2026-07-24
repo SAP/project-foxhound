@@ -7,8 +7,6 @@
 #include <clocale>
 #include <cstring>
 #include <cwchar>
-#include <initializer_list>
-#include <iterator>
 #include <string_view>
 
 #include "js/CharacterEncoding.h"

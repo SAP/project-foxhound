@@ -7,6 +7,7 @@
 const TEST_URI = URL_ROOT_SSL + "doc_media_queries.html";
 
 add_task(async function () {
+  await pushPref("layout.css.custom-media.enabled", true);
   await addTab(TEST_URI);
   const { inspector, view, toolbox } = await openRuleView();
 
@@ -33,9 +34,9 @@ add_task(async function () {
 
   // Define functions checking if the rule view display the expected property.
   const divHasDefaultStyling = async () =>
-    (await getPropertiesForRuleIndex(view, 1)).has("background-color:yellow");
+    (await getPropertiesForRuleIndex(view, 2)).has("background-color:yellow");
   const divHasDarkSchemeStyling = async () =>
-    (await getPropertiesForRuleIndex(view, 1)).has("background-color:darkblue");
+    (await getPropertiesForRuleIndex(view, 2)).has("background-color:darkblue");
   const iframeElHasDefaultStyling = async () =>
     (await getPropertiesForRuleIndex(view, 1)).has("background:cyan");
   const iframeHasDarkSchemeStyling = async () =>
@@ -62,7 +63,7 @@ add_task(async function () {
 
   await waitFor(() => divHasDarkSchemeStyling());
   is(
-    getRuleViewAncestorRulesDataTextByIndex(view, 1),
+    getRuleViewAncestorRulesDataTextByIndex(view, 2),
     "@media (prefers-color-scheme: dark) {",
     "The rules view was updated with the rule from the dark scheme media query"
   );
@@ -123,7 +124,7 @@ add_task(async function () {
     "dark mode is still simulated after reloading the page"
   );
   is(
-    getRuleViewAncestorRulesDataTextByIndex(view, 1),
+    getRuleViewAncestorRulesDataTextByIndex(view, 2),
     "@media (prefers-color-scheme: dark) {",
     "The prefers-color-scheme media query is displayed on the rule after reloading"
   );

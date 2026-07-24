@@ -74,8 +74,7 @@ void DataChannelConnectionDcSctp::OnTransportReady() {
 }
 
 bool DataChannelConnectionDcSctp::Init(const uint16_t aLocalPort,
-                                       const uint16_t aNumStreams,
-                                       const Maybe<uint64_t>& aMaxMessageSize) {
+                                       const uint16_t aNumStreams) {
   return true;
 }
 
@@ -149,23 +148,25 @@ void DataChannelConnectionDcSctp::OnSctpPacketReceived(
   if (!mDcSctp) {
     return;
   }
-  rtc::ArrayView<const uint8_t> data(aPacket.data(), aPacket.len());
+  webrtc::ArrayView<const uint8_t> data(aPacket.data(), aPacket.len());
   mDcSctp->ReceivePacket(data);
 }
 
-void DataChannelConnectionDcSctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
+bool DataChannelConnectionDcSctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   if (!mDcSctp) {
-    return;
+    return false;
   }
   std::vector<StreamID> converted;
   for (auto id : aStreams) {
     DC_DEBUG(("%s: %p Resetting %u", __func__, this, id));
     converted.push_back(StreamID(id));
   }
-  mDcSctp->ResetStreams(rtc::ArrayView<const StreamID>(converted));
+  auto result =
+      mDcSctp->ResetStreams(webrtc::ArrayView<const StreamID>(converted));
   aStreams.Clear();
+  return result == ResetStreamsStatus::kPerformed;
 }
 
 void DataChannelConnectionDcSctp::OnStreamOpen(uint16_t aStream) {
@@ -182,7 +183,7 @@ void DataChannelConnectionDcSctp::OnStreamOpen(uint16_t aStream) {
 }
 
 SendPacketStatus DataChannelConnectionDcSctp::SendPacketWithStatus(
-    rtc::ArrayView<const uint8_t> aData) {
+    webrtc::ArrayView<const uint8_t> aData) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   std::unique_ptr<MediaPacket> packet(new MediaPacket);
@@ -214,7 +215,7 @@ class DcSctpTimeout : public Timeout {
                     static_cast<unsigned>(timeout_id.value())));
           connection->HandleTimeout(timeout_id);
         },
-        duration.value(), nsITimer::TYPE_ONE_SHOT, "DcSctpTimeout::Start");
+        duration.value(), nsITimer::TYPE_ONE_SHOT, "DcSctpTimeout::Start"_ns);
     if (result.isOk()) {
       mTimer = result.unwrap();
     }
@@ -245,7 +246,7 @@ std::unique_ptr<Timeout> DataChannelConnectionDcSctp::CreateTimeout(
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   // There is no such thing as a low precision TYPE_ONE_SHOT
-  Unused << aPrecision;
+  (void)aPrecision;
   return std::make_unique<DcSctpTimeout>(this);
 }
 
@@ -276,7 +277,7 @@ void DataChannelConnectionDcSctp::OnMessageReceived(DcSctpMessage aMessage) {
   msg.Append(aMessage.payload().data(), aMessage.payload().size());
   if (msg.GetPpid() == DATA_CHANNEL_PPID_CONTROL) {
     HandleDCEPMessage(std::move(msg));
-  } else if (channel) {
+  } else if (channel && !HasPreChannelData(msg.GetStreamId())) {
     HandleDataMessage(std::move(msg));
   } else {
     mPreChannelData.push_back(std::move(msg));
@@ -295,7 +296,7 @@ void DataChannelConnectionDcSctp::OnAborted(ErrorKind aError,
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_ERROR(("%s: %p %d %s", __func__, this, static_cast<int>(aError),
             std::string(aMessage).c_str()));
-  Stop();
+  CloseAll_s();
 }
 
 void DataChannelConnectionDcSctp::OnConnected() {
@@ -306,8 +307,7 @@ void DataChannelConnectionDcSctp::OnConnected() {
   if (state == DataChannelConnectionState::Connecting) {
     SetState(DataChannelConnectionState::Open);
 
-    Dispatch(do_AddRef(new DataChannelOnMessageAvailable(
-        DataChannelOnMessageAvailable::EventType::OnConnection, this)));
+    OnConnected();
     DC_DEBUG(("%s: %p DTLS connect() succeeded!  Entering connected mode",
               __func__, this));
 
@@ -328,7 +328,7 @@ void DataChannelConnectionDcSctp::OnConnected() {
 void DataChannelConnectionDcSctp::OnClosed() {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
-  Stop();
+  CloseAll_s();
 }
 
 void DataChannelConnectionDcSctp::OnConnectionRestarted() {
@@ -337,25 +337,33 @@ void DataChannelConnectionDcSctp::OnConnectionRestarted() {
 }
 
 void DataChannelConnectionDcSctp::OnStreamsResetFailed(
-    rtc::ArrayView<const StreamID> aOutgoingStreams,
+    webrtc::ArrayView<const StreamID> aOutgoingStreams,
     absl::string_view aReason) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_ERROR(("%s: %p", __func__, this));
   // It probably does not make much sense to retry this here. If dcsctp doesn't
   // want to retry, we probably don't either.
-  Unused << aOutgoingStreams;
-  Unused << aReason;
+  (void)aReason;
+  std::vector<uint16_t> streamsReset;
+  for (auto id : aOutgoingStreams) {
+    streamsReset.push_back(id.value());
+  }
+  OnStreamsResetComplete(std::move(streamsReset));
 }
 
 void DataChannelConnectionDcSctp::OnStreamsResetPerformed(
-    rtc::ArrayView<const StreamID> aOutgoingStreams) {
+    webrtc::ArrayView<const StreamID> aOutgoingStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
-  Unused << aOutgoingStreams;
+  std::vector<uint16_t> streamsReset;
+  for (auto id : aOutgoingStreams) {
+    streamsReset.push_back(id.value());
+  }
+  OnStreamsResetComplete(std::move(streamsReset));
 }
 
 void DataChannelConnectionDcSctp::OnIncomingStreamsReset(
-    rtc::ArrayView<const StreamID> aIncomingStreams) {
+    webrtc::ArrayView<const StreamID> aIncomingStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   std::vector<uint16_t> streamsReset;
@@ -441,6 +449,15 @@ void DataChannelConnectionDcSctp::OnDCEPMessageDone(LifecycleId aLifecycleId) {
   UpdateBufferedAmount(StreamID(stream));
 
   mBufferedDCEPBytes.erase(it);
+}
+
+bool DataChannelConnectionDcSctp::HasPreChannelData(uint16_t aStream) const {
+  for (const auto& msg : mPreChannelData) {
+    if (msg.GetStreamId() == aStream) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace mozilla

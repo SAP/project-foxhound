@@ -7,8 +7,8 @@
 #define ChromiumCDMCallback_h_
 
 #include "mozilla/CDMProxy.h"
-#include "mozilla/dom/MediaKeyStatusMapBinding.h"     // For MediaKeyStatus
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"  // For MediaKeyMessageType
+#include "mozilla/dom/MediaKeyStatusMapBinding.h"     // For MediaKeyStatus
 #include "mozilla/gmp/GMPTypes.h"                     // For CDMKeyInformation
 
 namespace mozilla {

@@ -17,6 +17,7 @@
 #    include "nsString.h"
 #  endif
 #  include "nsAlgorithm.h"
+#  include "mozilla/Char16.h"
 #endif
 
 struct VersionPart {

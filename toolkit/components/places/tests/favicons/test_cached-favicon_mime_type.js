@@ -34,6 +34,14 @@ streamListener.prototype = {
   },
 };
 
+add_setup(async function () {
+  // Ensure the Places DB file exists.
+  // In production, BrowserGlue initializes Places on idle after startup,
+  // but in tests that step doesn’t run. Clearing history here forces Places
+  // to init and the DB file to be created for ConcurrentConnection to use.
+  await PlacesUtils.history.clear();
+});
+
 add_task(async function () {
   info("Test that the default icon has the right content type.");
   let channel = NetUtil.newChannel({

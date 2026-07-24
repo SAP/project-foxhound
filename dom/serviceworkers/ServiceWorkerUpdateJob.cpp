@@ -6,16 +6,16 @@
 
 #include "ServiceWorkerUpdateJob.h"
 
-#include "nsIScriptError.h"
-#include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsProxyRelease.h"
 #include "ServiceWorkerManager.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerRegistrationInfo.h"
 #include "ServiceWorkerScriptCache.h"
-#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "nsIScriptError.h"
+#include "nsIURL.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla::dom {
 
@@ -418,8 +418,9 @@ void ServiceWorkerUpdateJob::ComparisonResult(nsresult aStatus,
   }
 
   RefPtr<ServiceWorkerInfo> sw = new ServiceWorkerInfo(
-      mRegistration->Principal(), mRegistration->Scope(), mRegistration->Id(),
-      mRegistration->Version(), mScriptSpec, aNewCacheName, flags);
+      mRegistration->Principal(), mRegistration->Scope(), mRegistration->Type(),
+      mRegistration->Id(), mRegistration->Version(), mScriptSpec, aNewCacheName,
+      flags);
 
   // If the registration is corrupt enough to force an uninstall if the
   // upgrade fails, then we want to make sure the upgrade takes effect

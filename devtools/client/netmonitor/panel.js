@@ -4,13 +4,12 @@
 
 "use strict";
 
-function NetMonitorPanel(iframeWindow, toolbox, commands) {
-  this.panelWin = iframeWindow;
-  this.toolbox = toolbox;
-  this.commands = commands;
-}
-
-NetMonitorPanel.prototype = {
+class NetMonitorPanel {
+  constructor(iframeWindow, toolbox, commands) {
+    this.panelWin = iframeWindow;
+    this.toolbox = toolbox;
+    this.commands = commands;
+  }
   async open() {
     // Reuse an existing Network monitor API object if available.
     // It could have been created for WE API before Net panel opens.
@@ -26,12 +25,12 @@ NetMonitorPanel.prototype = {
 
     // Ready to go!
     return this;
-  },
+  }
 
   destroy() {
     this.panelWin.Netmonitor.destroy();
     this.emit("destroyed");
-  },
-};
+  }
+}
 
 exports.NetMonitorPanel = NetMonitorPanel;

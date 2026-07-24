@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 /**
  * This module provides the DownloadUtils object which contains useful methods
  * for downloads such as displaying file sizes, transfer times, and download
@@ -54,14 +52,6 @@ const TIME_UNITS = [
 // These are the maximum values for seconds, minutes, hours corresponding
 // with TIME_UNITS without the last item
 const TIME_SIZES = [60, 60, 24];
-
-const lazy = {};
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "IDNService",
-  "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
-);
 
 var localeNumberFormatCache = new Map();
 function getLocaleNumberFormat(fractionDigits) {
@@ -167,6 +157,7 @@ export var DownloadUtils = {
   /**
    * Helper function that returns a transfer string, a time remaining string,
    * and a new value of "last seconds".
+   *
    * @param aCurrBytes
    *        Number of bytes transferred so far
    * @param [optional] aMaxBytes
@@ -387,82 +378,6 @@ export var DownloadUtils = {
   },
 
   /**
-   * Get the appropriate display host string for a URI string depending on if
-   * the URI has an eTLD + 1, is an IP address, a local file, or other protocol
-   *
-   * @param aURIString
-   *        The URI string to try getting an eTLD + 1, etc.
-   * @return A pair: [display host for the URI string, full host name]
-   */
-  getURIHost: function DU_getURIHost(aURIString) {
-    // Get a URI that knows about its components
-    let uri = URL.parse(aURIString)?.URI;
-    if (!uri) {
-      return ["", ""];
-    }
-
-    // Get the inner-most uri for schemes like jar:
-    if (uri instanceof Ci.nsINestedURI) {
-      uri = uri.innermostURI;
-    }
-
-    if (uri.schemeIs("blob")) {
-      let origin = URL.fromURI(uri).origin;
-      // Origin can be "null" for blob URIs from a sandbox.
-      if (origin != "null") {
-        // `newURI` can throw (like for null) and throwing here breaks...
-        // a lot of stuff. So let's avoid doing that in case there are other
-        // edgecases we're missing here.
-        try {
-          uri = Services.io.newURI(origin);
-        } catch (ex) {
-          console.error(ex);
-        }
-      }
-    }
-
-    let fullHost;
-    try {
-      // Get the full host name; some special URIs fail (data: jar:)
-      fullHost = uri.host;
-    } catch (e) {
-      fullHost = "";
-    }
-
-    let displayHost;
-    try {
-      // This might fail if it's an IP address or doesn't have more than 1 part
-      let baseDomain = Services.eTLD.getBaseDomain(uri);
-
-      // Convert base domain for display
-      displayHost = lazy.IDNService.convertToDisplayIDN(baseDomain);
-    } catch (e) {
-      // Default to the host name
-      displayHost = fullHost;
-    }
-
-    // Check if we need to show something else for the host
-    if (uri.schemeIs("file")) {
-      // Display special text for file protocol
-      displayHost = l10n.formatValueSync("download-utils-done-file-scheme");
-      fullHost = displayHost;
-    } else if (!displayHost.length) {
-      // Got nothing; show the scheme (data: about: moz-icon:)
-      displayHost = l10n.formatValueSync("download-utils-done-scheme", {
-        scheme: uri.scheme,
-      });
-      fullHost = displayHost;
-    } else if (uri.port != -1) {
-      // Tack on the port if it's not the default port
-      let port = ":" + uri.port;
-      displayHost += port;
-      fullHost += port;
-    }
-
-    return [displayHost, fullHost];
-  },
-
-  /**
    * Converts a number of bytes to the appropriate unit that results in an
    * internationalized number that needs fewer than 4 digits.
    *
@@ -535,6 +450,7 @@ export var DownloadUtils = {
 
   /**
    * Converts a number of seconds to "downloading file opens in X" status.
+   *
    * @param aSeconds
    *        Seconds to convert into the time format.
    * @return status object, example:

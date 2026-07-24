@@ -7,6 +7,7 @@
 #include "QuotaManagerDependencyFixture.h"
 
 #include "DirectoryMetadata.h"
+#include "QuotaManagerTestHelpers.h"
 #include "mozIStorageService.h"
 #include "mozStorageCID.h"
 #include "mozilla/BasePrincipal.h"
@@ -23,7 +24,6 @@
 #include "nsIQuotaRequests.h"
 #include "nsIVariant.h"
 #include "nsScriptSecurityManager.h"
-#include "QuotaManagerTestHelpers.h"
 
 namespace mozilla::dom::quota::test {
 
@@ -594,7 +594,7 @@ void QuotaManagerDependencyFixture::EnsureQuotaManager() {
                      [&resolver]() { return resolver->IsDone(); });
 }
 
-MOZ_RUNINIT nsCOMPtr<nsISerialEventTarget>
+constinit nsCOMPtr<nsISerialEventTarget>
     QuotaManagerDependencyFixture::sBackgroundTarget;
 
 }  // namespace mozilla::dom::quota::test

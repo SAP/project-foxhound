@@ -30,6 +30,16 @@ const TESTCASES = [
   ["234 Cedar Way, Unit 6-2", [234, "Cedar Way", "6-2", null]],
   ["345 Cherry St, Ste 12", [345, "Cherry St", "12", null]],
   ["234 Palm St, Bldg 1, Apt 12", null],
+  ["12A Oak St, 3rd Floor", ["12A", "Oak St", null, 3, ["12", "A"]]],
+  ["Meppeiweg 102B", ["102B", "Meppeiweg", null, null, ["102", "B"]]],
+  [
+    "Meppeiweg 102C 2nd Floor",
+    ["102C", "Meppeiweg", null, 2, ["102", "C 2nd Floor"]],
+  ],
+  [
+    "Meppeiweg 102C\n3rd Floor",
+    ["102C", "Meppeiweg", null, 3, ["102", "C 3rd Floor"]],
+  ],
 ];
 
 add_task(async function test_parseStreetAddress() {
@@ -69,5 +79,14 @@ add_task(async function test_parseStreetAddress() {
       expectedFN,
       `expect floor number to be ${expectedFN}, but got ${result.floor_number}`
     );
+
+    if (expected[4]) {
+      let splitNumber = AddressParser.parseHouseSuffix(address, result);
+      Assert.deepEqual(
+        splitNumber,
+        expected[4],
+        `expect house and suffix to be ${expected[4]}, but got ${splitNumber}`
+      );
+    }
   }
 });

@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_FilePickerParent_h
 #define mozilla_dom_FilePickerParent_h
 
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/PFilePickerParent.h"
+#include "nsCOMArray.h"
 #include "nsIEventTarget.h"
 #include "nsIFilePicker.h"
-#include "nsCOMArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/PFilePickerParent.h"
 
 class nsIFile;
 

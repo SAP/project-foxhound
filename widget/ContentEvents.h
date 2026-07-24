@@ -3,10 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ContentEvents_h__
-#define mozilla_ContentEvents_h__
-
-#include <stdint.h>
+#ifndef mozilla_ContentEvents_h_
+#define mozilla_ContentEvents_h_
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/dom/DataTransfer.h"
@@ -310,4 +308,4 @@ class InternalSMILTimeEvent : public InternalUIEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_ContentEvents_h__
+#endif  // mozilla_ContentEvents_h_

@@ -9,7 +9,6 @@
 #ifndef nsDOMCSSAttributeDeclaration_h
 #define nsDOMCSSAttributeDeclaration_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/dom/DocGroup.h"
 #include "nsDOMCSSDeclaration.h"
@@ -51,24 +50,26 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   nsINode* GetAssociatedNode() const override { return mElement; }
   nsINode* GetParentObject() const override { return mElement; }
 
-  nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue& aValue);
-  nsresult SetSMILValue(const nsCSSPropertyID aPropID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId aPropId,
+                        const SMILValue& aValue);
+  nsresult SetSMILValue(const NonCustomCSSPropertyId aPropId,
                         const SVGAnimatedLength& aLength);
-  nsresult SetSMILValue(const nsCSSPropertyID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId,
                         const mozilla::SVGAnimatedPathSegList& aPath);
-  nsresult SetSMILValue(const nsCSSPropertyID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId,
                         const mozilla::SVGAnimatedTransformList*,
                         const mozilla::gfx::Matrix* aAnimateMotion = nullptr);
-  void ClearSMILValue(const nsCSSPropertyID aPropID) {
+  void ClearSMILValue(const NonCustomCSSPropertyId aPropId) {
     // Put empty string in override style for our property
-    SetPropertyValue(aPropID, ""_ns, nullptr, mozilla::IgnoreErrors());
+    SetPropertyValue(aPropId, ""_ns, nullptr, mozilla::IgnoreErrors());
   }
 
-  void SetPropertyValue(const nsCSSPropertyID aPropID, const nsACString& aValue,
+  void SetPropertyValue(const NonCustomCSSPropertyId aPropId,
+                        const nsACString& aValue,
                         nsIPrincipal* aSubjectPrincipal,
                         mozilla::ErrorResult& aRv) override;
 
-  static void MutationClosureFunction(void* aData, nsCSSPropertyID);
+  static void MutationClosureFunction(void* aData, NonCustomCSSPropertyId);
 
   void GetPropertyChangeClosure(
       mozilla::DeclarationBlockMutationClosure* aClosure,

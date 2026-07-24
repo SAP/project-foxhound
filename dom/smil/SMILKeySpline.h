@@ -7,8 +7,7 @@
 #ifndef DOM_SMIL_SMILKEYSPLINE_H_
 #define DOM_SMIL_SMILKEYSPLINE_H_
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/PodOperations.h"
+#include <cstdint>
 
 namespace mozilla {
 
@@ -96,10 +95,11 @@ class SMILKeySpline {
     double mX2;
     double mY2;
 
-    enum { kSplineTableSize = 11 };
+    static constexpr uint32_t kSplineTableSize = 11;
     double mSampleValues[kSplineTableSize] = {};
 
-    static const double kSampleStepSize;
+    static constexpr double kSampleStepSize =
+        1.0 / double(kSplineTableSize - 1);
 };
 
 }  // namespace mozilla

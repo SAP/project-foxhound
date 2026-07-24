@@ -8,7 +8,6 @@
 
 #include "shell/OSObject.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/TextUtils.h"
 

@@ -31,7 +31,7 @@ const OBSERVER_TOPIC_RESOURCE_CACHE_RESPONSE =
  * };
  * ```
  *
- * @fires cached-resource-sent
+ * @fires CachedResourceListener#"cached-resource-sent"
  *    The CachedResourceListener emits "cached-resource-sent" event with the
  *    following object as payload:
  *      - {nsIHttpChannel} channel

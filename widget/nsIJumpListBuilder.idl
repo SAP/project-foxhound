@@ -127,6 +127,12 @@ interface nsIJumpListBuilder : nsISupports
   );
 
   /**
+   * Removes all entries from the recents list.  This is the only way to ensure
+   * that recents will not appear.
+   */
+  void clearRecentsList();
+
+  /**
    * Removes all items from the Jump List.
    *
    * @returns {Promise<undefined, nsresult>}

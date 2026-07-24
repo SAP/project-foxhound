@@ -30,7 +30,7 @@ class CompatibilityActor extends Actor {
    * @param inspector
    *    The InspectorActor that owns this CompatibilityActor.
    *
-   * @constructor
+   * @class
    */
   constructor(inspector) {
     super(inspector.conn, compatibilitySpec);
@@ -57,15 +57,15 @@ class CompatibilityActor extends Actor {
   /**
    * Responsible for computing the compatibility issues for a list of CSS declaration blocks
    *
-   * @param {Array<Array<Object>>} domRulesDeclarations: An array of arrays of CSS declaration object
+   * @param {Array<Array<object>>} domRulesDeclarations: An array of arrays of CSS declaration object
    * @param {string} domRulesDeclarations[][].name: Declaration name
    * @param {string} domRulesDeclarations[][].value: Declaration value
-   * @param {Array<Object>} targetBrowsers: Array of target browsers () to be used to check CSS compatibility against
+   * @param {Array<object>} targetBrowsers: Array of target browsers () to be used to check CSS compatibility against
    * @param {string} targetBrowsers[].id: Browser id as specified in `devtools/shared/compatibility/datasets/browser.json`
    * @param {string} targetBrowsers[].name
    * @param {string} targetBrowsers[].version
    * @param {string} targetBrowsers[].status: Browser status - esr, current, beta, nightly
-   * @returns {Array<Array<Object>>} An Array of arrays of JSON objects with compatibility
+   * @returns {Array<Array<object>>} An Array of arrays of JSON objects with compatibility
    *                                 information in following form:
    *    {
    *      // Type of compatibility issue
@@ -94,6 +94,7 @@ class CompatibilityActor extends Actor {
   /**
    * Responsible for computing the compatibility issues in the
    * CSS declaration of the given node.
+   *
    * @param NodeActor node
    * @param targetBrowsers Array
    *   An Array of JSON object of target browser to check compatibility against in following form:

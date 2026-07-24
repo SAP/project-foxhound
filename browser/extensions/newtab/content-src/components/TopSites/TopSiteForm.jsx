@@ -307,29 +307,33 @@ export class TopSiteForm extends React.PureComponent {
           </div>
         </div>
         <section className="actions">
-          <button
-            className="cancel"
-            type="button"
-            onClick={this.onCancelButtonClick}
-            data-l10n-id="newtab-topsites-cancel-button"
-          />
-          {previewMode ? (
-            <button
-              className="done preview"
-              type="submit"
-              data-l10n-id="newtab-topsites-preview-button"
+          <moz-button-group className="button-group">
+            <moz-button
+              id="topsites-form-cancel-button"
+              type="default"
+              data-l10n-id="newtab-topsites-cancel-button"
+              onClick={this.onCancelButtonClick}
             />
-          ) : (
-            <button
-              className="done"
-              type="submit"
-              data-l10n-id={
-                showAsAdd
-                  ? "newtab-topsites-add-button"
-                  : "newtab-topsites-save-button"
-              }
-            />
-          )}
+            {previewMode ? (
+              <moz-button
+                id="topsites-form-preview-button"
+                type="primary"
+                data-l10n-id="newtab-topsites-preview-button"
+                onClick={this.onPreviewButtonClick}
+              />
+            ) : (
+              <moz-button
+                id="topsites-form-save-button"
+                type="primary"
+                data-l10n-id={
+                  showAsAdd
+                    ? "newtab-topsites-add-button"
+                    : "newtab-topsites-save-button"
+                }
+                onClick={this.onDoneButtonClick}
+              />
+            )}
+          </moz-button-group>
         </section>
       </form>
     );

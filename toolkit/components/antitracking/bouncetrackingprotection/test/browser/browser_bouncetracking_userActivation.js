@@ -37,6 +37,7 @@ function getURL(origin) {
 
 /**
  * Inserts an iframe element and resolves once the iframe has loaded.
+ *
  * @param {*} browserOrBrowsingContext - Browser or BrowsingContext to insert the iframe into.
  * @param {string} url - URL to load in the iframe.
  * @returns {Promise<BrowsingContext>} Promise which resolves to the iframe's
@@ -57,6 +58,7 @@ function insertIframeAndWaitForLoad(browserOrBrowsingContext, url) {
 /**
  * Runs a test that spawns an iframe, interacts with it, and checks the BTP user
  * activation state.
+ *
  * @param {boolean} useIframeSameSite - Whether the iframe interacted with
  * should be same or cross-site to the top-level window.
  */

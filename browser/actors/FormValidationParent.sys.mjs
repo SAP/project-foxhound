@@ -81,7 +81,7 @@ export class FormValidationParent extends JSWindowActorParent {
 
   receiveMessage(aMessage) {
     switch (aMessage.name) {
-      case "FormValidation:ShowPopup":
+      case "FormValidation:ShowPopup": {
         let browser = this.browsingContext.top.embedderElement;
         let window = browser.ownerGlobal;
         let data = aMessage.data;
@@ -103,6 +103,7 @@ export class FormValidationParent extends JSWindowActorParent {
 
         this._showPopup(browser, data);
         break;
+      }
       case "FormValidation:HidePopup":
         this._hidePopup();
         break;
@@ -138,12 +139,12 @@ export class FormValidationParent extends JSWindowActorParent {
     this._panel = null;
   }
 
-  /*
+  /**
    * Shows the form validation popup at a specified position or updates the
    * messaging and position if the popup is already displayed.
    *
-   * @aBrowser - Browser element that requests the popup.
-   * @aPanelData - Object that contains popup information
+   * @param {MozBrowser} aBrowser - Browser element that requests the popup.
+   * @param {object} aPanelData - Object that contains popup information
    *  aPanelData stucture detail:
    *   screenRect - the screen rect of the target element.
    *   position - popup positional string constants.

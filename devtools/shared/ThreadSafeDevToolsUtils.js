@@ -27,8 +27,8 @@
  *     assert(original.baz === 2);
  *     assert(original.bang === undefined);
  *
- * @param {...Object} ...objs
- * @returns {Object}
+ * @param {...object} ...objs
+ * @returns {object}
  */
 exports.immutableUpdate = function (...objs) {
   return Object.freeze(Object.assign({}, ...objs));

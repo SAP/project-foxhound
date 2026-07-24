@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/NotifyPaintEvent.h"
+
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
-#include "mozilla/dom/DOMRect.h"
-#include "mozilla/dom/NotifyPaintEvent.h"
-#include "mozilla/dom/PaintRequest.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/PaintRequest.h"
 #include "nsContentUtils.h"
 
 namespace mozilla::dom {

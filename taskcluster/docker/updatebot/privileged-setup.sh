@@ -14,7 +14,6 @@ apt-get update -y
 
 # Install dependencies
 apt-get install -y --no-install-recommends \
-    arcanist \
     ca-certificates \
     cloudsql-proxy \
     curl \
@@ -23,6 +22,8 @@ apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
     meson \
+    php-cli \
+    php-curl \
     python3-minimal \
     python3-wheel \
     python3-pip \
@@ -37,6 +38,14 @@ apt-get install -y --no-install-recommends \
 mkdir -p /builds/worker/.mozbuild
 chown -R worker:worker /builds/worker/
 export GOPATH=/builds/worker/go
+
+# Install specific version of Arcanist
+pushd /builds/worker/.mozbuild/
+git clone https://github.com/phacility/arcanist.git
+cd arcanist
+git checkout e50d1bc4eabac9c37e3220e9f3fb8e37ae20b957
+ln -s /builds/worker/.mozbuild/arcanist/bin/arc /usr/local/bin/arc
+popd
 
 . install-node-for-pdfjs.sh
 

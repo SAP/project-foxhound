@@ -82,7 +82,7 @@ export var WebChannelBroker = Object.create({
  *        If a string, it names a permission, and incoming events will be accepted
  *        from any https:// origin that has been granted that permission by the
  *        permission manager.
- * @constructor
+ * @class
  */
 export var WebChannel = function (id, originOrPermission) {
   if (!id || !originOrPermission) {
@@ -155,9 +155,9 @@ WebChannel.prototype = {
    *
    * @param callback {Function}
    *        Callback that will be called when there is a message
-   *        @param {String} id
+   *        @param {string} id
    *        The WebChannel id that was used for this message
-   *        @param {Object} message
+   *        @param {object} message
    *        The message itself
    *        @param sendingContext {Object}
    *        The sending context of the source of the message. Can be passed to
@@ -250,7 +250,6 @@ WebChannel.prototype = {
    *               Can be null; if not null, should be a ContentDOMReference.
    *        @param sendingContext.principal {Principal}
    *               The <Principal> of the EventTarget where the message was sent.
-   *
    */
   deliver(data, sendingContext) {
     if (this._deliverCallback) {

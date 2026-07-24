@@ -15,7 +15,6 @@ UNIFIED_SOURCES += [
 if not CONFIG["MOZ_REPLACE_MALLOC_STATIC"]:
     UNIFIED_SOURCES += [
         "/mfbt/HashFunctions.cpp",
-        "/mfbt/JSONWriter.cpp",
         "/mfbt/Poison.cpp",
         "/mozglue/misc/StackWalk.cpp",
     ]

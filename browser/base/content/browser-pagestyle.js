@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 var gPageStyleMenu = {
   _getStyleSheetInfo(browser) {
     let actor =
@@ -57,7 +55,7 @@ var gPageStyleMenu = {
         menuItem.setAttribute("type", "radio");
         menuItem.setAttribute("label", currentStyleSheet.title);
         menuItem.setAttribute("data", currentStyleSheet.title);
-        menuItem.setAttribute(
+        menuItem.toggleAttribute(
           "checked",
           !currentStyleSheet.disabled && !styleDisabled
         );
@@ -71,8 +69,11 @@ var gPageStyleMenu = {
       }
     }
 
-    noStyle.setAttribute("checked", styleDisabled);
-    persistentOnly.setAttribute("checked", !altStyleSelected && !styleDisabled);
+    noStyle.toggleAttribute("checked", styleDisabled);
+    persistentOnly.toggleAttribute(
+      "checked",
+      !altStyleSelected && !styleDisabled
+    );
     persistentOnly.hidden = styleSheetInfo.preferredStyleSheetSet
       ? haveAltSheets
       : false;
@@ -81,6 +82,7 @@ var gPageStyleMenu = {
 
   /**
    * Send a message to all PageStyleParents by walking the BrowsingContext tree.
+   *
    * @param message
    *        The string message to send to each PageStyleChild.
    * @param data
@@ -105,6 +107,7 @@ var gPageStyleMenu = {
 
   /**
    * Switch the stylesheet of all documents in the current browser.
+   *
    * @param title The title of the stylesheet to switch to.
    */
   switchStyleSheet(title) {

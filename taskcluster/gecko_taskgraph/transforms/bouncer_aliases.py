@@ -5,7 +5,6 @@
 Add from parameters.yml into bouncer submission tasks.
 """
 
-
 import logging
 
 from taskgraph.transforms.base import TransformSequence
@@ -31,13 +30,13 @@ def make_task_worker(config, jobs):
             job,
             "worker-type",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
+            **{"release-level": release_level(config.params)},
         )
         resolve_keyed_by(
             job,
             "scopes",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
+            **{"release-level": release_level(config.params)},
         )
         resolve_keyed_by(
             job,
@@ -64,9 +63,7 @@ def make_task_worker(config, jobs):
         else:
             logger.warning(
                 'No bouncer entries defined in bouncer submission task for "{}". \
-Job deleted.'.format(
-                    job["name"]
-                )
+Job deleted.'.format(job["name"])
             )
 
 
@@ -90,19 +87,17 @@ def craft_bouncer_entries(config, job):
     if partner_bouncer_products_per_alias:
         partners = get_partners_to_be_published(config)
         for partner, sub_config_name, _ in partners:
-            entries.update(
-                {
-                    bouncer_alias.replace(
-                        "PARTNER", f"{partner}-{sub_config_name}"
-                    ): craft_partner_bouncer_product_name(
-                        product,
-                        bouncer_product,
-                        current_version,
-                        partner,
-                        sub_config_name,
-                    )
-                    for bouncer_alias, bouncer_product in partner_bouncer_products_per_alias.items()  # NOQA: E501
-                }
-            )
+            entries.update({
+                bouncer_alias.replace(
+                    "PARTNER", f"{partner}-{sub_config_name}"
+                ): craft_partner_bouncer_product_name(
+                    product,
+                    bouncer_product,
+                    current_version,
+                    partner,
+                    sub_config_name,
+                )
+                for bouncer_alias, bouncer_product in partner_bouncer_products_per_alias.items()  # NOQA: E501
+            })
 
     return entries

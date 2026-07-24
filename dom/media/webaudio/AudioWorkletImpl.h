@@ -7,9 +7,9 @@
 #ifndef AudioWorkletImpl_h
 #define AudioWorkletImpl_h
 
-#include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/AudioWorkletGlobalScope.h"
 #include "mozilla/dom/MessagePort.h"
+#include "mozilla/dom/WorkletImpl.h"
 
 namespace mozilla {
 

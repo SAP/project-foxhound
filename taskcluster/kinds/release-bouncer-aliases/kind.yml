@@ -13,6 +13,7 @@ kind-dependencies:
     - release-bouncer-check
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Update bouncer aliases job
     worker-type: bouncer
     worker:
@@ -55,7 +56,7 @@ tasks:
                     firefox-beta-msix-latest-ssl: msix
                     firefox-beta-pkg-latest-ssl: pkg
                     firefox-beta-langpack-latest-ssl: langpack
-                release.*:
+                release:
                     firefox-latest-ssl: installer-ssl
                     firefox-latest: installer
                     firefox-stub: stub-installer
@@ -87,7 +88,7 @@ tasks:
                 beta:
                     partner-firefox-beta-PARTNER-latest: installer
                     partner-firefox-beta-PARTNER-stub: stub-installer
-                release.*:
+                release:
                     partner-firefox-release-PARTNER-latest: installer
                     partner-firefox-release-PARTNER-stub: stub-installer
                 default: {}

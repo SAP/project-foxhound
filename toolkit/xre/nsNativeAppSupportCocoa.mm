@@ -16,7 +16,6 @@
 #include "nsIBaseWindow.h"
 #include "nsCommandLine.h"
 #include "mozIDOMWindow.h"
-#include "nsIWebNavigation.h"
 #include "nsIWidget.h"
 #include "nsIWindowMediator.h"
 #include "nsPIDOMWindow.h"
@@ -39,6 +38,9 @@ nsresult GetNativeWindowPointerFromDOMWindow(mozIDOMWindowProxy* a_window,
   }
 
   *a_nativeWindow = (NSWindow*)widget->GetNativeData(NS_NATIVE_WINDOW);
+  if (!*a_nativeWindow) {
+    return NS_ERROR_FAILURE;
+  }
 
   return NS_OK;
 }
@@ -62,22 +64,17 @@ nsNativeAppSupportCocoa::Enable() {
 }
 
 NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool* _retval) {
-  int major, minor, bugfix;
-  nsCocoaFeatures::GetSystemVersion(major, minor, bugfix);
-
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  // Check that the OS version is supported, if not return false,
-  // which will make the browser quit.  In principle we could display an
-  // alert here.  But the alert's message and buttons would require custom
-  // localization.  So (for now at least) we just log an English message
-  // to the console before quitting.
-  if (major < 10 || (major == 10 && minor < 12)) {
-    NSLog(@"Minimum OS version requirement not met!");
-    return NS_OK;
-  }
+  *_retval = false;
 
-  *_retval = true;
+  int major, minor, bugfix;
+  nsCocoaFeatures::GetSystemVersion(major, minor, bugfix);
+  if (major >= 11 || (major == 10 && minor >= 15)) {
+    *_retval = true;
+  } else {
+    NSLog(@"Minimum OS version requirement not met!");
+  }
 
   return NS_OK;
 
@@ -100,7 +97,11 @@ nsNativeAppSupportCocoa::ReOpen() {
   } else {
     nsCOMPtr<nsISimpleEnumerator> windowList;
     wm->GetAppWindowEnumerator(nullptr, getter_AddRefs(windowList));
-    bool more;
+    if (!windowList) {
+      return NS_ERROR_FAILURE;
+    }
+
+    bool more = false;
     windowList->HasMoreElements(&more);
     while (more) {
       nsCOMPtr<nsISupports> nextWindow = nullptr;
@@ -113,15 +114,14 @@ nsNativeAppSupportCocoa::ReOpen() {
         haveOpenWindows = true;
       }
 
-      nsCOMPtr<nsIWidget> widget = nullptr;
-      baseWindow->GetMainWidget(getter_AddRefs(widget));
+      nsCOMPtr<nsIWidget> widget = baseWindow->GetMainWidget();
       if (!widget || !widget->IsVisible()) {
         windowList->HasMoreElements(&more);
         continue;
       }
       NSWindow* cocoaWindow =
           (NSWindow*)widget->GetNativeData(NS_NATIVE_WINDOW);
-      if (![cocoaWindow isMiniaturized]) {
+      if (cocoaWindow && ![cocoaWindow isMiniaturized]) {
         haveNonMiniaturized = true;
         break;  // have un-minimized windows, nothing to do
       }
@@ -153,10 +153,12 @@ nsNativeAppSupportCocoa::ReOpen() {
 
       // use an empty command line to make the right kind(s) of window open
       nsCOMPtr<nsICommandLineRunner> cmdLine(new nsCommandLine());
+      if (!cmdLine) {
+        return NS_ERROR_FAILURE;
+      }
 
-      nsresult rv;
-      rv = cmdLine->Init(0, argv, nullptr,
-                         nsICommandLine::STATE_REMOTE_EXPLICIT);
+      nsresult rv = cmdLine->Init(0, argv, nullptr,
+                                  nsICommandLine::STATE_REMOTE_EXPLICIT);
       NS_ENSURE_SUCCESS(rv, rv);
 
       return cmdLine->Run();
@@ -173,8 +175,6 @@ nsNativeAppSupportCocoa::ReOpen() {
 // Create and return an instance of class nsNativeAppSupportCocoa.
 nsresult NS_CreateNativeAppSupport(nsINativeAppSupport** aResult) {
   *aResult = new nsNativeAppSupportCocoa;
-  if (!*aResult) return NS_ERROR_OUT_OF_MEMORY;
-
   NS_ADDREF(*aResult);
   return NS_OK;
 }

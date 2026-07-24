@@ -6,14 +6,8 @@
 #include "WebGLTexture.h"
 
 #include <algorithm>
+
 #include "GLContext.h"
-#include "mozilla/Casting.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/IntegerRange.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "ScopedGLHelpers.h"
 #include "WebGLContext.h"
 #include "WebGLContextUtils.h"
@@ -21,11 +15,16 @@
 #include "WebGLFramebuffer.h"
 #include "WebGLSampler.h"
 #include "WebGLTexelConversions.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/MathAlgorithms.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "mozilla/gfx/Logging.h"
 
 namespace mozilla {
 namespace webgl {
 
-MOZ_CONSTINIT /*static*/ const ImageInfo ImageInfo::kUndefined;
+constinit /*static*/ const ImageInfo ImageInfo::kUndefined;
 
 size_t ImageInfo::MemoryUsage() const {
   if (!IsDefined()) return 0;

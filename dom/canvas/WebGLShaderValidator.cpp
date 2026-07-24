@@ -5,15 +5,16 @@
 
 #include "WebGLShaderValidator.h"
 
-#include "GLContext.h"
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_webgl.h"
-#include "MurmurHash3.h"
-#include "nsPrintfCString.h"
 #include <string>
 #include <vector>
+
+#include "GLContext.h"
+#include "MurmurHash3.h"
 #include "WebGLContext.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/gfx/Logging.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 namespace webgl {

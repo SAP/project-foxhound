@@ -1,0 +1,502 @@
+Define only the required functions from file_util.h
+
+This limits dependencies.
+---
+ files/file_util.cc       | 16 ++++++++++
+ files/file_util_posix.cc | 29 ++++++++++++++++-
+ files/file_util_win.cc   | 31 +++++++++++++++++++
+ 3 files changed, 75 insertions(+), 1 deletion(-)
+
+diff --git a/base/files/file_util.cc b/base/files/file_util.cc
+index 48288660236d..b2b2a6fdbbd8 100644
+--- a/base/files/file_util.cc
++++ b/base/files/file_util.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "base/files/file_util.h"
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/task/sequenced_task_runner.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "build/build_config.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+@@ -18,6 +20,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/bit_cast.h"
+ #include "base/check_op.h"
+ #include "base/containers/span.h"
+@@ -25,12 +28,15 @@
+ #include "base/files/file_path.h"
+ #include "base/functional/function_ref.h"
+ #include "base/notreached.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/posix/eintr_wrapper.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/strings/string_piece.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/bind_post_task.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/threading/scoped_blocking_call.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+@@ -41,6 +47,7 @@ namespace base {
+ 
+ namespace {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #if !BUILDFLAG(IS_WIN)
+ 
+ void RunAndReply(OnceCallback<bool()> action_callback,
+@@ -51,6 +58,7 @@ void RunAndReply(OnceCallback<bool()> action_callback,
+ }
+ 
+ #endif  // !BUILDFLAG(IS_WIN)
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool ReadStreamToSpanWithMaxSize(
+     FILE* stream,
+@@ -134,6 +142,7 @@ bool ReadStreamToSpanWithMaxSize(
+ 
+ }  // namespace
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #if !BUILDFLAG(IS_WIN)
+ 
+ OnceClosure GetDeleteFileCallback(const FilePath& path,
+@@ -301,6 +310,7 @@ bool ReadStreamToString(FILE* stream, std::string* contents) {
+   return ReadStreamToStringWithMaxSize(
+       stream, std::numeric_limits<size_t>::max(), contents);
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool ReadStreamToStringWithMaxSize(FILE* stream,
+                                    size_t max_size,
+@@ -322,6 +332,7 @@ bool ReadStreamToStringWithMaxSize(FILE* stream,
+   return read_successs;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ absl::optional<std::vector<uint8_t>> ReadFileToBytes(const FilePath& path) {
+   if (path.ReferencesParent()) {
+     return absl::nullopt;
+@@ -343,6 +354,7 @@ absl::optional<std::vector<uint8_t>> ReadFileToBytes(const FilePath& path) {
+   }
+   return bytes;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool ReadFileToString(const FilePath& path, std::string* contents) {
+   return ReadFileToStringWithMaxSize(path, contents,
+@@ -362,6 +374,7 @@ bool ReadFileToStringWithMaxSize(const FilePath& path,
+   return ReadStreamToStringWithMaxSize(file_stream.get(), max_size, contents);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool IsDirectoryEmpty(const FilePath& dir_path) {
+   FileEnumerator files(dir_path, false,
+       FileEnumerator::FILES | FileEnumerator::DIRECTORIES);
+@@ -382,11 +395,13 @@ ScopedFILE CreateAndOpenTemporaryStream(FilePath* path) {
+ 
+   return CreateAndOpenTemporaryStreamInDir(directory, path);
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool CreateDirectory(const FilePath& full_path) {
+   return CreateDirectoryAndGetError(full_path, nullptr);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool GetFileSize(const FilePath& file_path, int64_t* file_size) {
+   File::Info info;
+   if (!GetFileInfo(file_path, &info))
+@@ -513,5 +528,6 @@ bool PreReadFileSlow(const FilePath& file_path, int64_t max_bytes) {
+ }
+ 
+ }  // namespace internal
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ }  // namespace base
+diff --git a/base/files/file_util_posix.cc b/base/files/file_util_posix.cc
+index da04b251ce91..bd41957f7149 100644
+--- a/base/files/file_util_posix.cc
++++ b/base/files/file_util_posix.cc
+@@ -21,18 +21,26 @@
+ #include <unistd.h>
+ 
+ #include "base/base_export.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/base_switches.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/bits.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/command_line.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/containers/adapters.h"
+ #include "base/containers/contains.h"
+ #include "base/containers/stack.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/environment.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/files/file_enumerator.h"
+ #include "base/files/file_path.h"
+ #include "base/files/scoped_file.h"
+ #include "base/logging.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/memory/singleton.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/notreached.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "base/path_service.h"
+@@ -77,6 +85,7 @@ namespace base {
+ 
+ namespace {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #if BUILDFLAG(IS_MAC)
+ // Helper for VerifyPathControlledByUser.
+ bool VerifySpecificPathControlledByUser(const FilePath& path,
+@@ -114,11 +123,13 @@ bool VerifySpecificPathControlledByUser(const FilePath& path,
+   return true;
+ }
+ #endif
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ base::FilePath GetTempTemplate() {
+   return FormatTemporaryFileName("XXXXXX");
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool AdvanceEnumeratorWithStat(FileEnumerator* traversal,
+                                FilePath* out_next_path,
+                                stat_wrapper_t* out_next_stat) {
+@@ -271,6 +282,7 @@ bool DoCopyDirectory(const FilePath& from_path,
+ 
+   return true;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ // TODO(erikkay): The Windows version of this accepts paths like "foo/bar/*"
+ // which works both with and without the recursive flag.  I'm not sure we need
+@@ -387,6 +399,7 @@ bool DeletePathRecursively(const FilePath& path) {
+   return DoDeleteFile(path, /*recursive=*/true);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool ReplaceFile(const FilePath& from_path,
+                  const FilePath& to_path,
+                  File::Error* error) {
+@@ -454,6 +467,7 @@ bool SetNonBlocking(int fd) {
+     return false;
+   return true;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool SetCloseOnExec(int fd) {
+   const int flags = fcntl(fd, F_GETFD);
+@@ -608,6 +622,7 @@ bool SetPosixFilePermissions(const FilePath& path,
+   return true;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool ExecutableExistsInPath(Environment* env,
+                             const FilePath::StringType& executable) {
+   std::string path;
+@@ -626,6 +641,7 @@ bool ExecutableExistsInPath(Environment* env,
+   }
+   return false;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ #endif  // !BUILDFLAG(IS_FUCHSIA)
+ 
+@@ -674,6 +690,7 @@ FilePath GetHomeDir() {
+ }
+ #endif  // !BUILDFLAG(IS_APPLE)
+ 
++#if !defined(MOZ_ZUCCHINI)
+ File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
+   // For call to close() inside ScopedFD.
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+@@ -687,6 +704,7 @@ bool CreateTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
+   ScopedFD fd = CreateAndOpenFdForTemporaryFileInDir(dir, temp_file);
+   return fd.is_valid();
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ FilePath FormatTemporaryFileName(FilePath::StringPieceType identifier) {
+ #if BUILDFLAG(IS_APPLE)
+@@ -699,6 +717,7 @@ FilePath FormatTemporaryFileName(FilePath::StringPieceType identifier) {
+   return FilePath(StrCat({".", prefix, ".", identifier}));
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ ScopedFILE CreateAndOpenTemporaryStreamInDir(const FilePath& dir,
+                                              FilePath* path) {
+   ScopedFD scoped_fd = CreateAndOpenFdForTemporaryFileInDir(dir, path);
+@@ -711,6 +730,7 @@ ScopedFILE CreateAndOpenTemporaryStreamInDir(const FilePath& dir,
+     close(fd);
+   return ScopedFILE(file);
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ static bool CreateTemporaryDirInDirImpl(const FilePath& base_dir,
+                                         const FilePath& name_tmpl,
+@@ -787,6 +807,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
+   return true;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ // ReadFileToStringNonBlockingNonBlocking will read a file to a string. This
+ // method should only be used on files which are known to be non-blocking such
+ // as procfs or sysfs nodes. Additionally, the file is opened as O_NONBLOCK so
+@@ -861,6 +882,7 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
+   results->FromStat(file_info);
+   return true;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ FILE* OpenFile(const FilePath& filename, const char* mode) {
+   // 'e' is unconditionally added below, so be sure there is not one already
+@@ -912,6 +934,7 @@ File FILEToFile(FILE* file_stream) {
+ }
+ #endif  // !BUILDFLAG(IS_NACL)
+ 
++#if !defined(MOZ_ZUCCHINI)
+ int ReadFile(const FilePath& filename, char* data, int max_size) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   if (max_size < 0)
+@@ -962,6 +985,7 @@ bool WriteFileDescriptor(int fd, span<const uint8_t> data) {
+ bool WriteFileDescriptor(int fd, StringPiece data) {
+   return WriteFileDescriptor(fd, as_bytes(make_span(data)));
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool AllocateFileRegion(File* file, int64_t offset, size_t size) {
+   DCHECK(file);
+@@ -1042,6 +1066,7 @@ bool AllocateFileRegion(File* file, int64_t offset, size_t size) {
+   return true;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool AppendToFile(const FilePath& filename, span<const uint8_t> data) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   bool ret = true;
+@@ -1068,6 +1093,7 @@ bool AppendToFile(const FilePath& filename, span<const uint8_t> data) {
+ bool AppendToFile(const FilePath& filename, StringPiece data) {
+   return AppendToFile(filename, as_bytes(make_span(data)));
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool GetCurrentDirectory(FilePath* dir) {
+   // getcwd can return ENOENT, which implies it checks against the disk.
+@@ -1081,6 +1107,7 @@ bool GetCurrentDirectory(FilePath* dir) {
+   return true;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool SetCurrentDirectory(const FilePath& path) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   return chdir(path.value().c_str()) == 0;
+@@ -1362,5 +1389,5 @@ BASE_EXPORT bool IsPathExecutable(const FilePath& path) {
+   return result;
+ }
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
+-
++#endif  // !defined(MOZ_ZUCCHINI)
+ }  // namespace base
+diff --git a/base/files/file_util_win.cc b/base/files/file_util_win.cc
+index d7b5fb20aeb3..bd2082584525 100644
+--- a/base/files/file_util_win.cc
++++ b/base/files/file_util_win.cc
+@@ -21,32 +21,43 @@
+ #include <utility>
+ #include <vector>
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/check.h"
+ #include "base/clang_profiling_buildflags.h"
+ #include "base/debug/alias.h"
+ #include "base/feature_list.h"
+ #include "base/features.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/files/file_enumerator.h"
+ #include "base/files/file_path.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/files/memory_mapped_file.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+ #include "base/location.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/logging.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "base/path_service.h"
+ #include "base/process/process_handle.h"
+ #include "base/rand_util.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/strings/strcat.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/strings/string_number_conversions.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/strings/string_piece.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/strings/string_util.h"
+ #include "base/strings/string_util_win.h"
+ #include "base/strings/utf_string_conversions.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/task/bind_post_task.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/threading/scoped_blocking_call.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/threading/scoped_thread_priority.h"
+ #include "base/time/time.h"
+ #include "base/uuid.h"
+@@ -55,12 +66,15 @@
+ #include "base/win/sid.h"
+ #include "base/win/windows_types.h"
+ #include "base/win/windows_version.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ namespace base {
+ 
+ namespace {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ int g_extra_allowed_path_for_no_execute = 0;
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ const DWORD kFileShareAll =
+     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+@@ -128,6 +142,7 @@ void AppendModeCharacter(wchar_t mode_char, std::wstring* mode) {
+                mode_char);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool DoCopyFile(const FilePath& from_path,
+                 const FilePath& to_path,
+                 bool fail_if_exists) {
+@@ -254,6 +269,7 @@ bool DoCopyDirectory(const FilePath& from_path,
+ 
+   return success;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ // Returns ERROR_SUCCESS on success, or a Windows error code on failure.
+ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
+@@ -320,6 +336,7 @@ bool DeleteFileOrSetLastError(const FilePath& path, bool recursive) {
+   return false;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ constexpr int kMaxDeleteAttempts = 9;
+ 
+ void DeleteFileWithRetry(const FilePath& path,
+@@ -422,9 +439,11 @@ bool IsPathSafeToSetAclOn(const FilePath& path) {
+ 
+   return false;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ }  // namespace
+ 
++#if !defined(MOZ_ZUCCHINI)
+ OnceClosure GetDeleteFileCallback(const FilePath& path,
+                                   OnceCallback<void(bool)> reply_callback) {
+   return GetDeleteFileCallbackInternal(path, /*recursive=*/false,
+@@ -437,6 +456,7 @@ OnceClosure GetDeletePathRecursivelyCallback(
+   return GetDeleteFileCallbackInternal(path, /*recursive=*/true,
+                                        std::move(reply_callback));
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ FilePath MakeAbsoluteFilePath(const FilePath& input) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+@@ -454,6 +474,7 @@ bool DeletePathRecursively(const FilePath& path) {
+   return DeleteFileOrSetLastError(path, /*recursive=*/true);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool DeleteFileAfterReboot(const FilePath& path) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+ 
+@@ -516,6 +537,7 @@ bool CopyDirectoryExcl(const FilePath& from_path,
+                        bool recursive) {
+   return DoCopyDirectory(from_path, to_path, recursive, true);
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool PathExists(const FilePath& path) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+@@ -594,6 +616,7 @@ FilePath GetHomeDir() {
+   return FilePath(FILE_PATH_LITERAL("C:\\"));
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+ 
+@@ -659,6 +682,7 @@ ScopedFILE CreateAndOpenTemporaryStreamInDir(const FilePath& dir,
+   return ScopedFILE(
+       FileToFILE(CreateAndOpenTemporaryFileInDir(dir, path), "wb+"));
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool CreateTemporaryDirInDir(const FilePath& base_dir,
+                              const FilePath::StringType& prefix,
+@@ -795,6 +819,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
+   return false;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool NormalizeFilePath(const FilePath& path, FilePath* real_path) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   File file(path,
+@@ -921,6 +946,7 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
+ 
+   return true;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ FILE* OpenFile(const FilePath& filename, const char* mode) {
+   // 'N' is unconditionally added below, so be sure there is not one already
+@@ -972,6 +998,7 @@ File FILEToFile(FILE* file_stream) {
+   return File(ScopedPlatformFile(other_handle));
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ int ReadFile(const FilePath& filename, char* data, int max_size) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   win::ScopedHandle file(CreateFile(filename.value().c_str(), GENERIC_READ,
+@@ -1047,6 +1074,7 @@ bool AppendToFile(const FilePath& filename, span<const uint8_t> data) {
+ bool AppendToFile(const FilePath& filename, StringPiece data) {
+   return AppendToFile(filename, as_bytes(make_span(data)));
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool GetCurrentDirectory(FilePath* dir) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+@@ -1064,6 +1092,7 @@ bool GetCurrentDirectory(FilePath* dir) {
+   return true;
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ bool SetCurrentDirectory(const FilePath& directory) {
+   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+   return ::SetCurrentDirectory(directory.value().c_str()) != 0;
+@@ -1257,4 +1286,6 @@ bool CopyAndDeleteDirectory(const FilePath& from_path,
+ }
+ 
+ }  // namespace internal
++#endif  // !defined(MOZ_ZUCCHINI)
++
+ }  // namespace base
+-- 
+2.42.0.windows.2
+

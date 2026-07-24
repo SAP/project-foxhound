@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/TrustedTypePolicy.h"
 
+#include <utility>
+
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/TrustedTypesBinding.h"
-
-#include <utility>
 
 namespace mozilla::dom {
 

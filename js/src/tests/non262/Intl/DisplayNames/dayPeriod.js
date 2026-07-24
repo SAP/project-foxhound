@@ -8,8 +8,14 @@ const tests = {
       "am": "AM",
       "pm": "PM",
     },
-    short: {},
-    narrow: {},
+    short: {
+      "am": "AM",
+      "pm": "PM",
+    },
+    narrow: {
+      "am": "a",
+      "pm": "p",
+    },
   },
   "de": {
     long: {
@@ -25,6 +31,17 @@ const tests = {
       "pm": "PM",
     },
     short: {},
+    narrow: {},
+  },
+  "es": {
+    long: {
+      "am": "a.\xA0m.",
+      "pm": "p.\xA0m.",
+    },
+    short: {
+      "am": "a.\u202Fm.",
+      "pm": "p.\u202Fm.",
+    },
     narrow: {},
   },
   "zh": {

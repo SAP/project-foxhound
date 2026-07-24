@@ -4,94 +4,92 @@
 
 package org.mozilla.fenix.browser
 
-import android.app.Activity
 import android.view.View
 import android.view.ViewGroup
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.verify
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
-import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.compose.snackbar.Snackbar
-import org.mozilla.fenix.ext.getRootView
-import org.robolectric.RobolectricTestRunner
+import org.mozilla.fenix.compose.snackbar.SnackbarFactory
 
-@RunWith(RobolectricTestRunner::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class StandardSnackbarErrorBindingTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
-    private lateinit var activity: Activity
+    private val testDispatcher = StandardTestDispatcher()
     private lateinit var snackbarContainer: ViewGroup
     private lateinit var snackbar: Snackbar
+    private lateinit var snackbarFactory: SnackbarFactory
     private lateinit var rootView: View
 
     @Before
     fun setup() {
         MockKAnnotations.init(this)
-        mockkObject(Snackbar)
 
         snackbarContainer = mockk()
         snackbar = mockk(relaxed = true)
-        every { Snackbar.make(any(), any()) } returns snackbar
+        snackbarFactory = mockk()
+        every {
+            snackbarFactory.make(
+                snackBarParentView = any(),
+                snackbarState = any(),
+            )
+        } returns snackbar
+
         rootView = mockk<ViewGroup>(relaxed = true)
-        activity = mockk(relaxed = true) {
-            every { findViewById<View>(android.R.id.content) } returns rootView
-            every { getRootView() } returns rootView
-        }
     }
 
     @Test
-    fun `WHEN show standard snackbar error action dispatched THEN snackbar should appear`() {
+    fun `WHEN show standard snackbar error action dispatched THEN snackbar should appear`() = runTest(testDispatcher) {
         val appStore = AppStore()
         val standardSnackbarError = StandardSnackbarErrorBinding(
-            activity,
             snackbarContainer,
             appStore,
+            snackbarFactory,
+            "Dismiss",
+            testDispatcher,
         )
 
         standardSnackbarError.start()
         appStore.dispatch(
             AppAction.UpdateStandardSnackbarErrorAction(
                 StandardSnackbarError(
-                    testContext.getString(R.string.unable_to_save_to_pdf_error),
+                    "Unable to generate PDF",
                 ),
             ),
         )
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify { snackbar.show() }
     }
 
     @Test
-    fun `WHEN show standard snackbar error action dispatched and binding is stopped THEN snackbar should appear when binding is again started`() {
+    fun `WHEN show standard snackbar error action dispatched and binding is stopped THEN snackbar should appear when binding is again started`() = runTest(testDispatcher) {
         val appStore = AppStore()
         val standardSnackbarError = StandardSnackbarErrorBinding(
-            activity,
             snackbarContainer,
             appStore,
+            snackbarFactory,
+            "Dismiss",
+            testDispatcher,
         )
 
         standardSnackbarError.start()
         appStore.dispatch(
             AppAction.UpdateStandardSnackbarErrorAction(
                 StandardSnackbarError(
-                    testContext.getString(R.string.unable_to_save_to_pdf_error),
+                    "Unable to generate PDF",
                 ),
             ),
         )
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         standardSnackbarError.stop()
 

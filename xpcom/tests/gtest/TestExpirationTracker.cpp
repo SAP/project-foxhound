@@ -46,7 +46,7 @@ static uint32_t lowerBoundSlackMS = 60;
 template <uint32_t K>
 class Tracker : public nsExpirationTracker<Object, K> {
  public:
-  Tracker() : nsExpirationTracker<Object, K>(periodMS, "Tracker") {
+  Tracker() : nsExpirationTracker<Object, K>(periodMS, "Tracker"_ns) {
     Object* obj = new Object();
     mUniverse.AppendElement(obj);
     LogAction(obj, "Created");

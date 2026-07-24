@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "BasicCardPayment.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/PaymentMethodChangeEvent.h"
-#include "mozilla/dom/PaymentRequestUpdateEvent.h"
+
+#include "BasicCardPayment.h"
 #include "PaymentRequestUtils.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/PaymentRequestUpdateEvent.h"
 
 namespace mozilla::dom {
 

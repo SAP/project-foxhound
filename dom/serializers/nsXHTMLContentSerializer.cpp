@@ -12,24 +12,24 @@
 
 #include "nsXHTMLContentSerializer.h"
 
-#include "mozilla/dom/Element.h"
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsElementTable.h"
-#include "nsNameSpaceManager.h"
-#include "nsString.h"
-#include "nsUnicharUtils.h"
-#include "nsIDocumentEncoder.h"
-#include "nsGkAtoms.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsEscape.h"
-#include "nsCRT.h"
-#include "nsContentUtils.h"
-#include "nsIScriptElement.h"
-#include "nsStubMutationObserver.h"
+#include "mozilla/dom/Element.h"
 #include "nsAttrName.h"
+#include "nsCRT.h"
 #include "nsComputedDOMStyle.h"
+#include "nsContentUtils.h"
+#include "nsElementTable.h"
+#include "nsEscape.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIDocumentEncoder.h"
+#include "nsIScriptElement.h"
+#include "nsIURI.h"
+#include "nsNameSpaceManager.h"
+#include "nsNetUtil.h"
+#include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsUnicharUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -108,7 +108,7 @@ bool nsXHTMLContentSerializer::HasLongLines(const nsString& text,
 }
 
 NS_IMETHODIMP
-nsXHTMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
+nsXHTMLContentSerializer::AppendText(Text* aText, int32_t aStartOffset,
                                      int32_t aEndOffset) {
   NS_ENSURE_ARG(aText);
   NS_ENSURE_STATE(mOutput);

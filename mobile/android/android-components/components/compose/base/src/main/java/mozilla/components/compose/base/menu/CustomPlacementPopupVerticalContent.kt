@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.requiredWidthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.theme.AcornTheme
 
 /**
  * [Column] wrapper over [content] configuring it to be shown inside of [CustomPlacementPopup].
@@ -28,7 +28,7 @@ inline fun CustomPlacementPopup.CustomPlacementPopupVerticalContent(
 ) {
     Column(
         modifier = Modifier
-            .background(AcornTheme.colors.layer2)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
             .requiredWidthIn(min = 250.dp)
             .width(IntrinsicSize.Max)
             .verticalScroll(rememberScrollState()),

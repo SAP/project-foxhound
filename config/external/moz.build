@@ -13,6 +13,9 @@ DIRS += [
     "sqlite",
 ]
 
+if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
+    DIRS += ["mozinference"]
+
 if CONFIG["MOZ_USING_WASM_SANDBOXING"]:
     DIRS += [
         "rlbox_wasm2c_sandbox",
@@ -51,9 +54,6 @@ if not CONFIG["MOZ_SYSTEM_WEBP"]:
     external_dirs += ["media/libwebp"]
 
 external_dirs += ["media/ffvpx"]
-
-if CONFIG["MOZ_JXL"]:
-    external_dirs += ["media/libjxl", "media/highway"]
 
 external_dirs += [
     "media/libcubeb",

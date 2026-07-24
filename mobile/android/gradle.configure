@@ -264,14 +264,49 @@ def gradle_android_api_lint_tasks(build_config):
 set_config("GRADLE_ANDROID_API_LINT_TASKS", gradle_android_api_lint_tasks)
 
 
+def spotless_projects():
+    return [
+        "geckoview",
+        "geckoview_example",
+        "annotations",
+        "exoplayer2",
+        "messaging_example",
+        "port_messaging_example",
+        "test_runner",
+    ]
+
+
+@dependable
+def gradle_android_format_lint_apply_tasks():
+    tasks = []
+    for project in spotless_projects():
+        for spotless_task in ["spotlessJavaApply", "spotlessKotlinApply"]:
+            tasks.append(
+                "{project}:{spotless_task}".format(
+                    project=project,
+                    spotless_task=spotless_task,
+                )
+            )
+    return tasks
+
+
 set_config(
-    "GRADLE_ANDROID_FORMAT_LINT_FIX_TASKS", ["spotlessJavaApply", "spotlessKotlinApply"]
+    "GRADLE_ANDROID_FORMAT_LINT_FIX_TASKS", gradle_android_format_lint_apply_tasks
 )
 
 
 @dependable
 def gradle_android_format_lint_check_tasks():
-    return ["spotlessJavaCheck", "spotlessKotlinCheck"]
+    tasks = []
+    for project in spotless_projects():
+        for spotless_task in ["spotlessJavaCheck", "spotlessKotlinCheck"]:
+            tasks.append(
+                "{project}:{spotless_task}".format(
+                    project=project,
+                    spotless_task=spotless_task,
+                )
+            )
+    return tasks
 
 
 set_config(
@@ -561,19 +596,25 @@ def gradle_android_compile_all_tasks(build_config):
         f"compileTestKotlin",
     ]
 
-    # "" is for GeckoView
-    for app in ["", "Fenix", "Focus", "Klar"]:
+    # Apps without product flavors (GeckoView, Fenix) use just `buildType` in task names
+    tasks += [
+        f"compile{buildType}Sources",
+        f"compile{buildType}UnitTestSources",
+    ]
+
+    # Apps with product flavors include `flavor` name and `buildType` in task names
+    for flavor in ["Focus", "Klar"]:
         tasks += [
-            f"compile{app}{buildType}Sources",
-            f"compile{app}{buildType}UnitTestSources",
+            f"compile{flavor}{buildType}Sources",
+            f"compile{flavor}{buildType}UnitTestSources",
         ]
 
-    # those tasks do not appear to have a Release variant
+    # These tasks do not appear to have a Release variant
     if buildType == "Debug":
-        for app in ["", "Fenix", "Focus", "Klar"]:
-            tasks += [
-                f"compile{app}{buildType}AndroidTestSources",
-            ]
+        tasks += [f"compile{buildType}AndroidTestSources"]
+
+        for flavor in ["Focus", "Klar"]:
+            tasks += [f"compile{flavor}{buildType}AndroidTestSources"]
 
         for app in ["Gecko", "System"]:
             tasks += [

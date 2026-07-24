@@ -4,6 +4,7 @@
 
 //! Applicable declarations management.
 
+use crate::derives::*;
 use crate::properties::PropertyDeclarationBlock;
 use crate::rule_tree::{CascadeLevel, StyleSource};
 use crate::shared_lock::Locked;
@@ -70,9 +71,9 @@ impl Ord for CascadePriority {
             //     the declaration whose cascade layer is first wins.
             //
             // But the style attribute layer for some reason is special.
-            if self.cascade_level.is_important() &&
-                !self.layer_order.is_style_attribute_layer() &&
-                !other.layer_order.is_style_attribute_layer()
+            if self.cascade_level.is_important()
+                && !self.layer_order.is_style_attribute_layer()
+                && !other.layer_order.is_style_attribute_layer()
             {
                 ordering.reverse()
             } else {
@@ -168,6 +169,11 @@ impl ScopeProximity {
     /// Create a scope proximity for delcarations outside of any scope root.
     pub fn infinity() -> Self {
         Self(PROXIMITY_INFINITY)
+    }
+
+    /// If the proximity is finite, get the value.
+    pub fn get(&self) -> Option<u16> {
+        (self.0 != PROXIMITY_INFINITY).then(|| self.0)
     }
 }
 

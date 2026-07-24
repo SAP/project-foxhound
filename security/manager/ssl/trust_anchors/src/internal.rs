@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use pkcs11_bindings::nss::*;
 use pkcs11_bindings::*;
 
 use smallvec::SmallVec;
@@ -98,28 +97,28 @@ fn get_cert_attribute(attribute: CK_ATTRIBUTE_TYPE, cert: &Root) -> Option<&[u8]
         CKA_ISSUER => Some(cert.der_name()),
         CKA_SERIAL_NUMBER => Some(cert.der_serial()),
         CKA_VALUE => Some(cert.der_cert),
-        CKA_NSS_MOZILLA_CA_POLICY => cert.mozilla_ca_policy,
-        CKA_NSS_SERVER_DISTRUST_AFTER => cert.server_distrust_after,
-        CKA_NSS_EMAIL_DISTRUST_AFTER => cert.email_distrust_after,
+        nss::CKA_NSS_MOZILLA_CA_POLICY => cert.mozilla_ca_policy,
+        nss::CKA_NSS_SERVER_DISTRUST_AFTER => cert.server_distrust_after,
+        nss::CKA_NSS_EMAIL_DISTRUST_AFTER => cert.email_distrust_after,
         _ => None,
     }
 }
 
 fn get_trust_attribute(attribute: CK_ATTRIBUTE_TYPE, cert: &Root) -> Option<&[u8]> {
     match attribute {
-        CKA_CLASS => Some(CKO_NSS_TRUST_BYTES),
+        CKA_CLASS => Some(CKO_TRUST_BYTES),
         CKA_TOKEN => Some(CK_TRUE_BYTES),
         CKA_PRIVATE => Some(CK_FALSE_BYTES),
         CKA_MODIFIABLE => Some(CK_FALSE_BYTES),
         CKA_LABEL => Some(cert.label.as_bytes()),
-        CKA_CERT_SHA1_HASH => Some(&cert.sha1[..]),
-        CKA_CERT_MD5_HASH => Some(&cert.md5[..]),
+        CKA_NAME_HASH_ALGORITHM => Some(CKM_SHA256_BYTES),
+        CKA_HASH_OF_CERTIFICATE => Some(&cert.sha256[..]),
         CKA_ISSUER => Some(cert.der_name()),
         CKA_SERIAL_NUMBER => Some(cert.der_serial()),
-        CKA_TRUST_STEP_UP_APPROVED => Some(CK_FALSE_BYTES),
-        CKA_TRUST_SERVER_AUTH => Some(cert.trust_server),
-        CKA_TRUST_EMAIL_PROTECTION => Some(cert.trust_email),
-        CKA_TRUST_CODE_SIGNING => Some(CKT_NSS_MUST_VERIFY_TRUST_BYTES),
+        nss::CKA_PKCS_TRUST_SERVER_AUTH => Some(cert.trust_server),
+        nss::CKA_PKCS_TRUST_CLIENT_AUTH => Some(CKT_TRUST_MUST_VERIFY_TRUST_BYTES),
+        nss::CKA_PKCS_TRUST_CODE_SIGNING => Some(CKT_TRUST_MUST_VERIFY_TRUST_BYTES),
+        nss::CKA_PKCS_TRUST_EMAIL_PROTECTION => Some(cert.trust_email),
         _ => None,
     }
 }
@@ -158,7 +157,7 @@ pub fn search(query: &Query) -> SearchResult {
     for &(attr, value) in query {
         if attr == CKA_CLASS {
             maybe_cert = value.eq(CKO_CERTIFICATE_BYTES);
-            maybe_trust = value.eq(CKO_NSS_TRUST_BYTES);
+            maybe_trust = value.eq(CKO_TRUST_BYTES);
             break;
         }
     }

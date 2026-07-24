@@ -31,6 +31,14 @@ const TEST_DATA = {
   },
 };
 
+add_setup(
+  { skip_if: () => AppConstants.platform == "android" },
+  function test_setup() {
+    // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
+    Services.fog.initializeFOG();
+  }
+);
+
 // Tests
 
 add_task(async function test_save_reload() {
@@ -354,3 +362,75 @@ add_task(async function test_save_failure_handler() {
     "Handler was passed Error"
   );
 });
+
+if (AppConstants.platform != "android") {
+  add_task(async function test_load_error_telemetry() {
+    let file = getTempFile("idontexist.json");
+    let store = new JSONFile({
+      path: file.path,
+      sanitizedBasename: "logins",
+    });
+
+    await store.load();
+    let telemetryData = Glean.jsonfile.loadLogins.testGetValue();
+    console.log(
+      "Telemetry data after trying to read file that doesn't exist:",
+      JSON.stringify(telemetryData)
+    );
+    telemetryData = telemetryData?.filter(n =>
+      n.extra?.value?.startsWith("error")
+    );
+
+    Assert.equal(telemetryData.length, 1, "Telemetry should record one error.");
+    Assert.equal(
+      telemetryData[0]?.extra.value,
+      "error_notfounderror",
+      "Telemetry should record not found."
+    );
+
+    // Can't easily create a file we can't read on Windows.
+    if (AppConstants.platform != "win") {
+      Services.fog.testResetFOG();
+
+      store = new JSONFile({
+        path: file.path,
+        sanitizedBasename: "logins",
+      });
+
+      file.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o111);
+
+      await store.load();
+
+      telemetryData = Glean.jsonfile.loadLogins.testGetValue();
+      console.log(
+        "Telemetry data after trying to read unreadable file:",
+        JSON.stringify(telemetryData)
+      );
+      telemetryData = telemetryData?.filter(n =>
+        n.extra?.value?.startsWith("error")
+      );
+
+      Assert.equal(
+        telemetryData.length,
+        1,
+        "Telemetry should record one error."
+      );
+      Assert.equal(
+        telemetryData[0]?.extra.value,
+        "error_notallowederror",
+        "Telemetry should record permission denied."
+      );
+
+      Assert.ok(
+        await IOUtils.exists(store.path + ".corrupt"),
+        "A backup file should have been created (via move)."
+      );
+      await IOUtils.remove(store.path + ".corrupt");
+
+      Assert.ok(
+        !(await IOUtils.exists(store.path)),
+        "Original file should have been moved."
+      );
+    }
+  });
+}

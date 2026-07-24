@@ -364,6 +364,7 @@ class NavigationDelegateTest : BaseSessionTest() {
         }
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun loadWithHTTPSOnlyMode() {
         sessionRule.runtime.settings.setAllowInsecureConnections(GeckoRuntimeSettings.HTTPS_ONLY)
 
@@ -496,6 +497,7 @@ class NavigationDelegateTest : BaseSessionTest() {
 
     // Due to Bug 1692578 we currently cannot test bypassing of the error
     // the URI loading process takes the desktop path for iframes
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun loadHTTPSOnlyInSubframe() {
         sessionRule.runtime.settings.setAllowInsecureConnections(GeckoRuntimeSettings.HTTPS_ONLY)
 
@@ -727,10 +729,10 @@ class NavigationDelegateTest : BaseSessionTest() {
         mainSession.waitForPageStop()
 
         // load insecure subdomain url to see if it gets upgraded to https
-        val http_uri = "http://test1.example.com/"
-        val https_uri = "https://test1.example.com/"
+        val httpUri = "http://test1.example.com/"
+        val httpsUri = "https://test1.example.com/"
 
-        mainSession.loadUri(http_uri)
+        mainSession.loadUri(httpUri)
         mainSession.waitForPageStop()
 
         mainSession.forCallbacksDuringWait(object : NavigationDelegate {
@@ -742,15 +744,15 @@ class NavigationDelegateTest : BaseSessionTest() {
                 assertThat(
                     "URI should be HTTP then redirected to HTTPS",
                     request.uri,
-                    equalTo(forEachCall(http_uri, https_uri)),
+                    equalTo(forEachCall(httpUri, httpsUri)),
                 )
                 return null
             }
         })
 
         // load subdomain that will trigger the cert error
-        val no_cert_uri = "https://nocert.example.com/"
-        mainSession.loadUri(no_cert_uri)
+        val noCertUri = "https://nocert.example.com/"
+        mainSession.loadUri(noCertUri)
         mainSession.waitForPageStop()
 
         mainSession.forCallbacksDuringWait(object : NavigationDelegate {
@@ -909,6 +911,56 @@ class NavigationDelegateTest : BaseSessionTest() {
                     request.isRedirect,
                     equalTo(forEachCall(false, true)),
                 )
+                return null
+            }
+        })
+    }
+
+    @Test fun sandboxCallNavigationDelegate() {
+        mainSession.loadTestPath(IFRAME_SANDBOX_ALLOW)
+        sessionRule.waitForPageStop()
+        mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('tel-button').click();")
+        sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URI should not be null", request.uri, notNullValue())
+                return null
+            }
+
+            @AssertCalled(count = 1)
+            override fun onSubframeLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny?>? {
+                assertThat("URI should not be null", request.uri, notNullValue())
+                assertThat("URI should not be null", request.uri, notNullValue())
+                return null
+            }
+        })
+    }
+
+    @Test fun sandboxDoesntCallNavigationDelegate() {
+        mainSession.loadTestPath(IFRAME_SANDBOX_BLOCK)
+        sessionRule.waitForPageStop()
+        mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('tel-button').click();")
+        sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                return null
+            }
+
+            @AssertCalled(count = 0)
+            override fun onSubframeLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny?>? {
                 return null
             }
         })
@@ -2666,6 +2718,7 @@ class NavigationDelegateTest : BaseSessionTest() {
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
+                dataCollectionPermissions: Array<String>,
             ): GeckoResult<WebExtension.PermissionPromptResponse>? {
                 return GeckoResult.fromValue(
                     WebExtension.PermissionPromptResponse(
@@ -3332,5 +3385,30 @@ class NavigationDelegateTest : BaseSessionTest() {
                 assertThat("Scroll offset is 0", session.evaluateJS("window.scrollY") as Double, equalTo(0.0))
             }
         }
+    }
+
+    @Test
+    fun textDirectiveUserActivationExternalLoad() {
+        // External app links (LOAD_FLAGS_EXTERNAL) are always user-initiated, so
+        // text fragment directives should be allowed to scroll.
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.text_fragments.enabled" to true,
+            ),
+        )
+
+        val session = sessionRule.createOpenSession()
+        session.load(
+            Loader()
+                .uri(createTestUrl(TRANSLATIONS_ES + "#:~:text=moverse"))
+                .flags(GeckoSession.LOAD_FLAGS_EXTERNAL),
+        )
+        session.waitForPageStop()
+
+        assertThat(
+            "External load should scroll to text fragment",
+            session.evaluateJS("window.scrollY") as Double,
+            not(equalTo(0.0)),
+        )
     }
 }

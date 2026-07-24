@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WinHandleWatcher_h__
-#define WinHandleWatcher_h__
+#ifndef WinHandleWatcher_h_
+#define WinHandleWatcher_h_
 
 #include <minwindef.h>
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 
 #include "nsIEventTarget.h"
 #include "nsIRunnable.h"
@@ -114,4 +113,4 @@ class HandleWatcher {
 };
 }  // namespace mozilla
 
-#endif  // WinHandleWatcher_h__
+#endif  // WinHandleWatcher_h_

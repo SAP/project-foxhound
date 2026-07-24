@@ -7,8 +7,8 @@
 #ifndef PANNING_UTILS_H
 #define PANNING_UTILS_H
 
-#include "AudioSegment.h"
 #include "AudioNodeEngine.h"
+#include "AudioSegment.h"
 
 namespace mozilla::dom {
 

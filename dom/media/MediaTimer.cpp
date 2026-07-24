@@ -6,14 +6,14 @@
 
 #include "MediaTimer.h"
 
+#include <math.h>
+
 #include "mozilla/AwakeTimeStamp.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
-#include <math.h>
 
 namespace mozilla {
 
@@ -27,8 +27,7 @@ MediaTimer<T>::MediaTimer(bool aFuzzy)
 
   // Use the SharedThreadPool to create an nsIThreadPool with a maximum of one
   // thread, which is equivalent to an nsIThread for our purposes.
-  RefPtr<SharedThreadPool> threadPool(
-      SharedThreadPool::Get("MediaTimer"_ns, 1));
+  RefPtr<SharedThreadPool> threadPool(SharedThreadPool::Get("MediaTimer", 1));
   mThread = threadPool.get();
   mTimer = NS_NewTimer(mThread);
 }
@@ -44,7 +43,7 @@ void MediaTimer<T>::DispatchDestroy() {
                                                   &MediaTimer::Destroy),
                        NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   (void)rv;
 }
 
@@ -110,7 +109,7 @@ void MediaTimer<T>::ScheduleUpdate() {
       NewRunnableMethod("MediaTimer::Update", this, &MediaTimer::Update),
       NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   (void)rv;
 }
 
@@ -199,7 +198,7 @@ void MediaTimer<T>::ArmTimer(const T& aTarget, const T& aNow) {
       TimeDuration::FromMicroseconds(delay.ToMicroseconds());
   MOZ_ALWAYS_SUCCEEDS(mTimer->InitHighResolutionWithNamedFuncCallback(
       &TimerCallback, this, duration, nsITimer::TYPE_ONE_SHOT,
-      "MediaTimer::TimerCallback"));
+      "MediaTimer::TimerCallback"_ns));
 }
 
 template <typename T>

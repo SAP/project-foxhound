@@ -4,36 +4,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseCommandController_h__
-#define nsBaseCommandController_h__
+#ifndef nsBaseCommandController_h_
+#define nsBaseCommandController_h_
 
 #include "nsIController.h"
-#include "nsIControllerContext.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsControllerCommandTable.h"
+
+#define NS_BASECOMMANDCONTROLLER_IID \
+  {0xd749fad0, 0xccf1, 0x4972, {0xb9, 0xa3, 0xd4, 0x1b, 0xaf, 0xee, 0xf1, 0xb7}}
+
+class nsControllerCommandTable;
 
 // The base editor controller is used for both text widgets, and all other text
 // and html editing
 class nsBaseCommandController final : public nsIController,
-                                      public nsIControllerContext,
-                                      public nsIInterfaceRequestor,
                                       public nsICommandController {
  public:
-  /**
-   * The default constructor initializes the instance with new
-   * nsControllerCommandTable.  The other constructor does it with
-   * the given aControllerCommandTable.
-   */
-  explicit nsBaseCommandController(
-      nsControllerCommandTable* aControllerCommandTable =
-          new nsControllerCommandTable());
+  explicit nsBaseCommandController(nsControllerCommandTable*);
+  void SetContext(nsISupportsWeakReference* aContext) {
+    mContext = do_GetWeakReference(aContext);
+  }
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTROLLER
   NS_DECL_NSICOMMANDCONTROLLER
-  NS_DECL_NSICONTROLLERCONTEXT
-  NS_DECL_NSIINTERFACEREQUESTOR
+  NS_INLINE_DECL_STATIC_IID(NS_BASECOMMANDCONTROLLER_IID)
 
   static already_AddRefed<nsBaseCommandController> CreateWindowController();
   static already_AddRefed<nsBaseCommandController> CreateEditorController();
@@ -46,11 +41,14 @@ class nsBaseCommandController final : public nsIController,
   virtual ~nsBaseCommandController();
 
  private:
-  nsWeakPtr mCommandContextWeakPtr;
-  nsISupports* mCommandContextRawPtr;
+  nsWeakPtr mContext;
 
   // Our reference to the command manager
   RefPtr<nsControllerCommandTable> mCommandTable;
 };
+
+inline nsISupports* ToSupports(nsBaseCommandController* aController) {
+  return static_cast<nsIController*>(aController);
+}
 
 #endif /* nsBaseCommandController_h_ */

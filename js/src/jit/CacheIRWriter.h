@@ -42,6 +42,7 @@
 #include "vm/List.h"
 #include "vm/Opcodes.h"
 #include "vm/RealmFuses.h"
+#include "vm/RuntimeFuses.h"
 #include "vm/Shape.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "wasm/WasmConstants.h"
@@ -204,10 +205,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     assertSameZone(shape);
     addStubField(uintptr_t(shape), StubField::Type::WeakShape);
   }
-  void writeWeakGetterSetterField(GetterSetter* gs) {
-    MOZ_ASSERT(gs);
-    addStubField(uintptr_t(gs), StubField::Type::WeakGetterSetter);
-  }
   void writeObjectField(JSObject* obj) {
     MOZ_ASSERT(obj);
     assertSameCompartment(obj);
@@ -240,11 +237,18 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   void writeRawPointerField(const void* ptr) {
     addStubField(uintptr_t(ptr), StubField::Type::RawPointer);
   }
+  void writeICScriptField(const ICScript* icScript) {
+    addStubField(uintptr_t(icScript), StubField::Type::ICScript);
+  }
   void writeIdField(jsid id) {
     addStubField(id.asRawBits(), StubField::Type::Id);
   }
   void writeValueField(const Value& val) {
     addStubField(val.asRawBits(), StubField::Type::Value);
+  }
+  void writeWeakValueField(const Value& val) {
+    MOZ_ASSERT(val.isGCThing());
+    addStubField(val.asRawBits(), StubField::Type::WeakValue);
   }
   void writeRawInt64Field(uint64_t val) {
     addStubField(val, StubField::Type::RawInt64);
@@ -303,6 +307,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     static_assert(sizeof(RealmFuses::FuseIndex) == sizeof(uint8_t),
                   "RealmFuses::FuseIndex must fit in a byte");
     buffer_.writeByte(uint8_t(realmFuseIndex));
+  }
+  void writeRuntimeFuseIndexImm(RuntimeFuses::FuseIndex runtimeFuseIndex) {
+    static_assert(sizeof(RuntimeFuses::FuseIndex) == sizeof(uint8_t),
+                  "RuntimeFuses::FuseIndex must fit in a byte");
+    buffer_.writeByte(uint8_t(runtimeFuseIndex));
   }
 
   void writeByteImm(uint32_t b) {
@@ -387,8 +396,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   size_t stubDataSize() const { return stubDataSize_; }
   void copyStubData(uint8_t* dest) const;
   bool stubDataEquals(const uint8_t* stubData) const;
-  bool stubDataEqualsIgnoring(const uint8_t* stubData,
-                              uint32_t ignoreOffset) const;
+  bool stubDataEqualsIgnoringShapeAndOffset(
+      const uint8_t* stubData, uint32_t shapeFieldOffset,
+      mozilla::Maybe<uint32_t> offsetFieldOffset) const;
 
   bool operandIsDead(uint32_t operandId, uint32_t currentInstruction) const {
     if (operandId >= operandLastUsed_.length()) {
@@ -714,13 +724,15 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   }
 #endif
 
-  void metaScriptedThisShape(Shape* thisShape) {
-    metaScriptedThisShape_(thisShape);
-  }
-
   void guardMultipleShapes(ObjOperandId obj, ListObject* shapes) {
     MOZ_ASSERT(shapes->length() > 0);
     guardMultipleShapes_(obj, shapes);
+  }
+
+  Int32OperandId guardMultipleShapesToOffset(ObjOperandId obj,
+                                             ListObject* shapes) {
+    MOZ_ASSERT(shapes->length() > 0);
+    return guardMultipleShapesToOffset_(obj, shapes);
   }
 
   friend class CacheIRCloner;

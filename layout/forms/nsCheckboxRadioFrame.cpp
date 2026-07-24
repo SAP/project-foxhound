@@ -6,6 +6,7 @@
 
 #include "nsCheckboxRadioFrame.h"
 
+#include "LayoutConstants.h"
 #include "mozilla/PresShell.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
@@ -50,16 +51,16 @@ nscoord nsCheckboxRadioFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 
 /* virtual */
 LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
-    gfxContext* aRC, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   LogicalSize size(aWM, 0, 0);
   if (!StyleDisplay()->HasAppearance()) {
     return size;
   }
   return nsAtomicContainerFrame::ComputeAutoSize(
-      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizingInput, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
       aSizeOverrides, aFlags);
 }
 
@@ -121,6 +122,26 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
     const float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     aDesiredSize.Width() *= inflation;
     aDesiredSize.Height() *= inflation;
+  }
+
+  {
+    const nsSize containerSize = aDesiredSize.PhysicalSize();
+    for (auto* kid : mFrames) {
+      MOZ_ASSERT(kid->IsPlaceholderFrame(),
+                 "We only really expect placeholders here");
+      const auto kidWm = kid->GetWritingMode();
+      auto availSize = aDesiredSize.Size(kidWm);
+      availSize.BSize(kidWm) = NS_UNCONSTRAINEDSIZE;
+      ReflowInput kidReflowInput(aPresContext, aReflowInput, kid, availSize);
+      ReflowOutput kidDesiredSize(kidReflowInput);
+      nsReflowStatus status;
+      const LogicalPoint position(kidWm);
+      ReflowChild(kid, aPresContext, kidDesiredSize, kidReflowInput, kidWm,
+                  position, containerSize, ReflowChildFlags::Default, status);
+      FinishReflowChild(kid, aPresContext, kidDesiredSize, &kidReflowInput,
+                        kidWm, position, containerSize,
+                        ReflowChildFlags::Default);
+    }
   }
 
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,

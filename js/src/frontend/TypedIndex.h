@@ -7,6 +7,7 @@
 #ifndef frontend_TypedIndex_h
 #define frontend_TypedIndex_h
 
+#include <compare>  // std::strong_ordering
 #include <cstdint>
 #include <stddef.h>
 
@@ -30,10 +31,7 @@ struct TypedIndex {
     return *this;
   }
 
-  bool operator<(TypedIndex other) const { return index < other.index; }
-  bool operator<=(TypedIndex other) const { return index <= other.index; }
-  bool operator>(TypedIndex other) const { return index > other.index; }
-  bool operator>=(TypedIndex other) const { return index >= other.index; }
+  constexpr auto operator<=>(const TypedIndex& other) const = default;
 };
 
 }  // namespace frontend

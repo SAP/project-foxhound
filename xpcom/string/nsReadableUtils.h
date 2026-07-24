@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 // IWYU pragma: private, include "nsString.h"
 
-#ifndef nsReadableUtils_h___
-#define nsReadableUtils_h___
+#ifndef nsReadableUtils_h_
+#define nsReadableUtils_h_
 
 /**
  * I guess all the routines in this file are all mis-named.
@@ -607,4 +607,4 @@ int32_t CompareUTF8toUTF16(const nsACString& aUTF8String,
 
 void AppendUCS4ToUTF16(const uint32_t aSource, nsAString& aDest);
 
-#endif  // !defined(nsReadableUtils_h___)
+#endif  // !defined(nsReadableUtils_h_)

@@ -18,9 +18,7 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -31,9 +29,6 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 @RunWith(AndroidJUnit4::class)
 class AudioFocusTest {
     private lateinit var audioManager: AudioManager
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setUp() {

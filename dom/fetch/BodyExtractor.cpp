@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BodyExtractor.h"
+
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/XMLHttpRequest.h"
-#include "mozilla/UniquePtr.h"
 #include "nsContentUtils.h"
 #include "nsDOMSerializer.h"
 #include "nsIGlobalObject.h"

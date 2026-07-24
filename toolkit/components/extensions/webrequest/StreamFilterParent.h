@@ -10,7 +10,6 @@
 #include "StreamFilterBase.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
 
-#include "mozilla/LinkedList.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/WebRequestService.h"
 #include "nsIStreamListener.h"

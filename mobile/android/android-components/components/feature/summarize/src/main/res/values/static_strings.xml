@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources>
+    <!--
+    TODO:
+        The feature is highly dynamic, and we are temporarily adding the strings as non-translatable.
+        Once the string definitions settle with UX, we should:
+         1. Adjust the string keys and usages to match requirements
+         2. Remove the "translatable=false"
+         3. Rename the file to `strings.xml`
+         4. Submit a patch in phabricator (GitHub does not allow L10N reviewers)
+      -->
+
+    <!-- Link text to learn more about downloading Gemini Nano -->
+    <string name="mozac_summarize_learn_more_link">Learn more</string>
+
+    <!-- Title for the off-device shake summarization consent screen -->
+    <string name="mozac_summarize_shake_consent_off_device_title">Summarize this page</string>
+
+    <!-- Message for the off-device shake summarization consent screen  -->
+    <string name="mozac_summarize_shake_consent_off_device_message">Shake your device, get a page summary in seconds.</string>
+
+    <!-- Button text for the off-device shake summarization consent screen approving shake consent -->
+    <string name="mozac_summarize_shake_consent_off_device_button_positive">Summarize page</string>
+
+    <!-- Button text for the off-device shake summarization consent screen denying shake consent -->
+    <string name="mozac_summarize_shake_consent_off_device_negative_button">Not now</string>
+
+    <!-- Title for the on-device shake summarization and download consent screen -->
+    <string name="mozac_summarize_shake_consent_on_device_title">Summarize this page</string>
+
+    <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+    <string name="mozac_summarize_shake_consent_on_device_message">After a quick one-time download, %s can summarize pages when you shake your device.</string>
+
+    <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+    <string name="mozac_summarize_shake_consent_on_device_button_positive">Download to summarize</string>
+
+    <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+    <string name="mozac_summarize_shake_consent_on_device_negative_button">Not now</string>
+
+    <!-- Title for the download consent screen -->
+    <string name="mozac_summarize_download_consent_title">Set up private summaries</string>
+
+    <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+    <string name="mozac_summarize_download_nano_consent_message">A one-time download lets %s create page summaries that stay in your control.</string>
+
+    <!-- Button text for the consent to download an on-device model approving download consent -->
+    <string name="mozac_summarize_download_consent_button_positive">Download to summarize</string>
+
+    <!-- Button text for the consent to download an on-device model denying download consent -->
+    <string name="mozac_summarize_download_consent_button_negative">Cancel</string>
+
+    <!-- Title for the download in progress screen -->
+    <string name="mozac_summarize_download_progress_title">Setting up summaries</string>
+
+    <!-- Message to describe that a download is in progress using an on-device, private model -->
+    <string name="mozac_summarize_download_progress_message">One-time download for private summaries.</string>
+
+    <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+    <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB </string>
+
+    <!-- Button text shown while a download is in progress to cancel the download -->
+    <string name="mozac_summarize_download_progress_button_negative">Cancel</string>
+
+    <!-- Title for the download error screen -->
+    <string name="mozac_summarize_download_error_title">Error</string>
+
+    <!-- Generic fallback message for the download error screen -->
+    <string name="mozac_summarize_download_error_fallback_message">Unknown error</string>
+
+    <!-- Button for the download error screen to try again -->
+    <string name="mozac_summarize_download_error_positive_button">Try again</string>
+
+    <!-- Button for the download error screen to cancel -->
+    <string name="mozac_summarize_download_error_negative_button">Cancel</string>
+
+    <!-- Title for the info error screen -->
+    <string name="mozac_summarize_info_error_title">Error</string>
+
+    <!-- Generic fallback message for the info error screen -->
+    <string name="mozac_summarize_info_error_fallback_message">Unknown error</string>
+
+</resources>

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAuthSASL_h__
-#define nsAuthSASL_h__
+#ifndef nsAuthSASL_h_
+#define nsAuthSASL_h_
 
 #include "nsIAuthModule.h"
 #include "nsString.h"
@@ -32,4 +32,4 @@ class nsAuthSASL final : public nsIAuthModule {
   bool mSASLReady;
 };
 
-#endif /* nsAuthSASL_h__ */
+#endif /* nsAuthSASL_h_ */

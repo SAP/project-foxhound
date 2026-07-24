@@ -95,7 +95,6 @@
 #include "double-conversion/double-conversion.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/Span.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/UniquePtr.h"
@@ -113,12 +112,6 @@ class JSONWriteFunc {
   virtual void Write(const Span<const char>& aStr) = 0;
   virtual ~JSONWriteFunc() = default;
 };
-
-// Ideally this would be within |EscapedString| but when compiling with GCC
-// on Linux that caused link errors, whereas this formulation didn't.
-namespace detail {
-extern MFBT_DATA const char gTwoCharEscapes[256];
-}  // namespace detail
 
 class JSONWriter {
   // From http://www.ietf.org/rfc/rfc4627.txt:
@@ -154,6 +147,42 @@ class JSONWriter {
 
    public:
     explicit EscapedString(const Span<const char>& aStr) : mStringSpan(aStr) {
+      // clang-format off
+      // The chars with non-'___' entries in this table are those that can be
+      // represented with a two-char escape sequence. The value is the second char in
+      // the sequence, that which follows the initial backslash.
+      #define ___ 0
+      static constexpr char TwoCharEscapes[256] = {
+          /*          0    1    2    3    4    5    6    7    8    9 */
+          /*   0+ */ ___, ___, ___,  ___, ___, ___, ___, ___, 'b', 't',
+          /*  10+ */ 'n', ___, 'f',  'r', ___, ___, ___, ___, ___, ___,
+          /*  20+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  30+ */ ___, ___, ___,  ___, '"', ___, ___, ___, ___, ___,
+          /*  40+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  50+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  60+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  70+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  80+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /*  90+ */ ___, ___, '\\', ___, ___, ___, ___, ___, ___, ___,
+          /* 100+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 110+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 120+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 130+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 140+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 150+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 160+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 170+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 180+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 190+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 200+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 210+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 220+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 230+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 240+ */ ___, ___, ___,  ___, ___, ___, ___, ___, ___, ___,
+          /* 250+ */ ___, ___, ___,  ___, ___, ___};
+      #undef ___
+      // clang-format on
+
       // First, see if we need to modify the string.
       size_t nExtra = 0;
       for (const char& c : aStr) {
@@ -168,7 +197,7 @@ class JSONWriter {
           mStringSpan = mStringSpan.First(&c - mStringSpan.data());
           break;
         }
-        if (detail::gTwoCharEscapes[u]) {
+        if (TwoCharEscapes[u]) {
           nExtra += 1;
         } else if (u <= 0x1f) {
           nExtra += 5;
@@ -192,9 +221,9 @@ class JSONWriter {
         // ensure it can't be interpreted as negative
         uint8_t u = static_cast<uint8_t>(c);
         MOZ_ASSERT(u != 0, "Null terminator should have been handled above");
-        if (detail::gTwoCharEscapes[u]) {
+        if (TwoCharEscapes[u]) {
           mOwnedStr[i++] = '\\';
-          mOwnedStr[i++] = detail::gTwoCharEscapes[u];
+          mOwnedStr[i++] = TwoCharEscapes[u];
         } else if (u <= 0x1f) {
           mOwnedStr[i++] = '\\';
           mOwnedStr[i++] = 'u';

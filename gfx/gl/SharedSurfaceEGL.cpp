@@ -94,7 +94,6 @@ void SharedSurface_EGLImage::ProducerReleaseImpl() {
   if (egl->IsExtensionSupported(EGLExtension::KHR_fence_sync) &&
       gl->IsExtensionSupported(GLContext::OES_EGL_sync)) {
     if (mSync) {
-      MOZ_RELEASE_ASSERT(false, "GFX: Non-recycleable should not Fence twice.");
       MOZ_ALWAYS_TRUE(egl->fDestroySync(mSync));
       mSync = 0;
     }

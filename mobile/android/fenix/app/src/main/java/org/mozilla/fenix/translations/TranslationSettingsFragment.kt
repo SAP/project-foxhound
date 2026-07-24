@@ -6,16 +6,15 @@ package org.mozilla.fenix.translations
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import androidx.fragment.app.Fragment
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import mozilla.components.browser.state.action.TranslationsAction
 import mozilla.components.browser.state.selector.selectedTab
@@ -46,40 +45,38 @@ class TranslationSettingsFragment : Fragment(), UserInteractionHandler {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            FirefoxTheme {
-                TranslationSettings(
-                    translationSwitchList = getTranslationSwitchItemList(),
-                    showAutomaticTranslations = FxNimbus.features.translations.value().globalLangSettingsEnabled,
-                    showNeverTranslate = FxNimbus.features.translations.value().globalSiteSettingsEnabled,
-                    showDownloads = FxNimbus.features.translations.value().downloadsEnabled,
-                    pageSettingsError = browserStore.observeAsComposableState { state ->
-                        state.selectedTab?.translationsState?.settingsError
-                    }.value,
-                    onAutomaticTranslationClicked = {
-                        Translations.action.record(Translations.ActionExtra("global_lang_settings"))
-                        findNavController().navigate(
-                            TranslationSettingsFragmentDirections
-                                .actionTranslationSettingsFragmentToAutomaticTranslationPreferenceFragment(),
-                        )
-                    },
-                    onNeverTranslationClicked = {
-                        Translations.action.record(Translations.ActionExtra("global_site_settings"))
-                        findNavController().navigate(
-                            TranslationSettingsFragmentDirections
-                                .actionTranslationSettingsToNeverTranslateSitePreference(),
-                        )
-                    },
-                    onDownloadLanguageClicked = {
-                        Translations.action.record(Translations.ActionExtra("downloads"))
-                        findNavController().navigate(
-                            TranslationSettingsFragmentDirections
-                                .actionTranslationSettingsFragmentToDownloadLanguagesPreferenceFragment(),
-                        )
-                    },
-                )
-            }
+    ) = content {
+        FirefoxTheme {
+            TranslationSettings(
+                translationSwitchList = getTranslationSwitchItemList(),
+                showAutomaticTranslations = FxNimbus.features.translations.value().globalLangSettingsEnabled,
+                showNeverTranslate = FxNimbus.features.translations.value().globalSiteSettingsEnabled,
+                showDownloads = FxNimbus.features.translations.value().downloadsEnabled,
+                pageSettingsError = browserStore.observeAsComposableState { state ->
+                    state.selectedTab?.translationsState?.settingsError
+                }.value,
+                onAutomaticTranslationClicked = {
+                    Translations.action.record(Translations.ActionExtra("global_lang_settings"))
+                    findNavController().navigate(
+                        TranslationSettingsFragmentDirections
+                            .actionTranslationSettingsFragmentToAutomaticTranslationPreferenceFragment(),
+                    )
+                },
+                onNeverTranslationClicked = {
+                    Translations.action.record(Translations.ActionExtra("global_site_settings"))
+                    findNavController().navigate(
+                        TranslationSettingsFragmentDirections
+                            .actionTranslationSettingsToNeverTranslateSitePreference(),
+                    )
+                },
+                onDownloadLanguageClicked = {
+                    Translations.action.record(Translations.ActionExtra("downloads"))
+                    findNavController().navigate(
+                        TranslationSettingsFragmentDirections
+                            .actionTranslationSettingsFragmentToDownloadLanguagesPreferenceFragment(),
+                    )
+                },
+            )
         }
     }
 

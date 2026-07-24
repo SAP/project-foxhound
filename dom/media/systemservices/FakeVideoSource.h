@@ -7,12 +7,12 @@
 #ifndef DOM_MEDIA_SYSTEMSERVICES_FAKEVIDEOSOURCE_H_
 #define DOM_MEDIA_SYSTEMSERVICES_FAKEVIDEOSOURCE_H_
 
+#include "MediaEventSource.h"
+#include "PerformanceRecorder.h"
 #include "mozilla/EventTargetCapability.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ThreadSafety.h"
-#include "MediaEventSource.h"
-#include "PerformanceRecorder.h"
 
 class nsITimer;
 
@@ -38,7 +38,7 @@ class FakeVideoSource {
   bool CaptureStarted();
   void SetTrackingId(uint32_t aTrackingIdProcId);
 
-  MediaEventSource<RefPtr<layers::Image>>& GeneratedImageEvent() {
+  MediaEventSource<RefPtr<layers::Image>, TimeStamp>& GeneratedImageEvent() {
     return mGeneratedImageEvent;
   }
 
@@ -53,7 +53,7 @@ class FakeVideoSource {
   Mutex mMutex{"FakeVideoSource::mMutex"};
   nsCOMPtr<nsITimer> mTimer MOZ_GUARDED_BY(mMutex);
   PerformanceRecorderMulti<CaptureStage> mCaptureRecorder;
-  MediaEventProducer<RefPtr<layers::Image>> mGeneratedImageEvent;
+  MediaEventProducer<RefPtr<layers::Image>, TimeStamp> mGeneratedImageEvent;
 
   EventTargetCapability<nsISerialEventTarget> mTarget;
   Maybe<TrackingId> mTrackingId MOZ_GUARDED_BY(mTarget);

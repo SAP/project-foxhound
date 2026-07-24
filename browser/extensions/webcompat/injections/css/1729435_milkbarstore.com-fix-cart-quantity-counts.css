@@ -1,0 +1,20 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * milkbarstore.com - cart quantities are not displayed properly
+ * Bug #1729435 - https://bugzilla.mozilla.org/show_bug.cgi?id=1729435
+ *
+ * The site is using non-standard CSS incorrectly, which leads to the
+ * product quantities in their carts being obscured. We can fix it.
+ */
+#cart-main .scroll-pane .items .quantity-wrapper input[name="quantity"] {
+  height: 35px;
+  border: 0;
+  text-align: center;
+  width: 45px;
+  appearance: textfield;
+  font-family: "Garnett Bold", sans-serif;
+  font-weight: 700;
+}

@@ -9,6 +9,7 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "mozilla/GeckoArgs.h"
+#include "mozilla/HelperMacros.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "nsIFile.h"
 #include "nsZipArchive.h"

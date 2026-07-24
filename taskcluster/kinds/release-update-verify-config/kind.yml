@@ -10,10 +10,13 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: update-verify-config
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    index:
+        product: firefox
+    worker-type: b-linux
     worker:
         docker-image:
             in-tree: "update-verify"
@@ -47,7 +50,7 @@ task-defaults:
         include-version:
             by-release-type:
                 beta: beta
-                release(-rc)?: nonbeta
+                release: nonbeta
                 esr.*: esr
                 default: beta
         last-watershed:
@@ -56,40 +59,17 @@ task-defaults:
                     by-platform:
                         linux64-aarch64.*: "136.0b6"
                         default: "72.0"
-                release(-rc)?:
+                release:
                     by-platform:
                         linux64-aarch64.*: "136.0"
                         default: "72.0.2"
-                esr115: "68.0esr"
-                esr128: "128.0esr"
-                esr140: "140.0esr"
+                esr140:
+                    by-platform:
+                        linux64-aarch64.*: "140.0esr"
+                        default: "68.0esr"
                 default: "default"
 
 tasks:
-    firefox-linux:
-        shipping-product: firefox
-        treeherder:
-            symbol: UVC
-            platform: linux32-shippable/opt
-            kind: test
-            tier: 1
-        attributes:
-            build_platform: linux-shippable
-        extra:
-            product: firefox
-            platform: linux-i686
-            updater-platform: linux-x86_64
-            channel:
-                by-release-type:
-                    beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
-                    esr.*: "esr-localtest"
-                    default: "default"
-            mar-channel-id-override:
-                by-release-type:
-                    beta: beta
-                    default: null
-
     firefox-linux64:
         shipping-product: firefox
         treeherder:
@@ -106,7 +86,7 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
@@ -130,7 +110,7 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
@@ -154,7 +134,7 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
@@ -178,7 +158,7 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
@@ -202,7 +182,7 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
@@ -226,28 +206,13 @@ tasks:
             channel:
                 by-release-type:
                     beta: "beta-localtest"
-                    release(-rc)?: "release-localtest"
+                    release: "release-localtest"
                     esr.*: "esr-localtest"
                     default: "default"
             mar-channel-id-override:
                 by-release-type:
                     beta: beta
                     default: null
-
-    devedition-linux:
-        shipping-product: devedition
-        treeherder:
-            symbol: UVC
-            platform: linux32-devedition/opt
-            kind: test
-            tier: 1
-        attributes:
-            build_platform: linux-devedition
-        extra:
-            product: firefox
-            platform: linux-i686
-            updater-platform: linux-x86_64
-            channel: "aurora-localtest"
 
     devedition-linux64:
         shipping-product: devedition

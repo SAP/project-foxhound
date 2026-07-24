@@ -167,7 +167,7 @@ def WebIDLTest(parser, harness):
         )
 
         doTest(
-            "dictionary Foo { %s foo; }; " "interface Test { Foo toJSON(); }; " % type,
+            "dictionary Foo { %s foo; }; interface Test { Foo toJSON(); }; " % type,
             False,
             "dictionary containing only JSON type (%s) should be a JSON type" % type,
         )
@@ -233,7 +233,7 @@ def WebIDLTest(parser, harness):
         )
 
     doTest(
-        "interface Foo : InterfaceWithToJSON { };" "interface Test { Foo toJSON(); };",
+        "interface Foo : InterfaceWithToJSON { };interface Test { Foo toJSON(); };",
         False,
         "inherited interface with toJSON should be a JSON type",
     )
@@ -252,7 +252,7 @@ def WebIDLTest(parser, harness):
         )
 
         doTest(
-            "dictionary Foo { %s foo; }; " "interface Test { Foo toJSON(); }; " % type,
+            "dictionary Foo { %s foo; }; interface Test { Foo toJSON(); }; " % type,
             True,
             "Dictionary containing a non-JSON type (%s) should not be a JSON type"
             % type,
@@ -299,14 +299,13 @@ def WebIDLTest(parser, harness):
             )
 
     doTest(
-        "dictionary Foo { long foo; any bar; };" "interface Test { Foo toJSON(); };",
+        "dictionary Foo { long foo; any bar; };interface Test { Foo toJSON(); };",
         True,
         "dictionary containing a non-JSON type should not be a JSON type",
     )
 
     doTest(
-        "interface Foo : InterfaceWithoutToJSON { }; "
-        "interface Test { Foo toJSON(); };",
+        "interface Foo : InterfaceWithoutToJSON { }; interface Test { Foo toJSON(); };",
         True,
         "interface without toJSON should not be a JSON type",
     )

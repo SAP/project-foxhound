@@ -6,14 +6,13 @@
 
 // Original author: ekr@rtfm.com
 
-#include "logging.h"
-#include "prlock.h"
+#include "transportlayerloopback.h"
 
+#include "logging.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
-
-#include "transportlayerloopback.h"
+#include "prlock.h"
 
 namespace mozilla {
 

@@ -11,7 +11,10 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.quicksuggest.dataCollection.enabled", true]],
+    set: [
+      ["browser.urlbar.quicksuggest.online.available", true],
+      ["browser.urlbar.quicksuggest.online.enabled", true],
+    ],
   });
 
   await PlacesUtils.history.clear();

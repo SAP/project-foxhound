@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head.js"
 firefox-appdir = "browser"
 support-files = ["data/engine.xml"]
@@ -13,11 +16,17 @@ support-files = ["data/engine.xml"]
 
 ["test_UrlbarPrefs.js"]
 
+["test_UrlbarProviderAiChat.js"]
+
+["test_UrlbarProviderSearchSuggestions.js"]
+
 ["test_UrlbarProviderSemanticHistorySearch.js"]
 
 ["test_UrlbarQueryContext.js"]
 
 ["test_UrlbarQueryContext_restrictSource.js"]
+
+["test_UrlbarResult_getDisplayableValueAndHighlights.js"]
 
 ["test_UrlbarSearchUtils.js"]
 
@@ -36,6 +45,7 @@ support-files = ["data/engine.xml"]
 ["test_about_urls.js"]
 
 ["test_autofill_adaptiveHistory.js"]
+requesttimeoutfactor = 3  # Slow on Mac debug
 
 ["test_autofill_bookmarked.js"]
 
@@ -44,14 +54,18 @@ support-files = ["data/engine.xml"]
 ["test_autofill_functional.js"]
 
 ["test_autofill_origins.js"]
+requesttimeoutfactor = 3  # Slow on Mac debug
 
 ["test_autofill_originsAndQueries.js"]
+requesttimeoutfactor = 3  # Slow on Linux debug and Mac debug
 
 ["test_autofill_origins_alt_frecency.js"]
 prefs = [
   "places.frecency.origins.alternative.featureGate=true",
   "browser.urlbar.suggest.quickactions=false",
 ]
+
+["test_autofill_origins_typed_frecency.js"]
 
 ["test_autofill_prefix_fallback.js"]
 
@@ -119,14 +133,14 @@ prefs = [
 
 ["test_protocol_swap.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968543
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968543
 ]
 
 ["test_providerAliasEngines.js"]
 
 ["test_providerHeuristicFallback.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968543
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968543
 ]
 
 ["test_providerHistoryUrlHeuristic.js"]
@@ -134,6 +148,7 @@ skip-if = [
 ["test_providerKeywords.js"]
 
 ["test_providerOmnibox.js"]
+requesttimeoutfactor = 2  # Slow on Linux and Windows
 
 ["test_providerOpenTabs.js"]
 
@@ -164,9 +179,13 @@ skip-if = [
 ["test_quickactions.js"]
 
 ["test_remote_tabs.js"]
-skip-if = ["!sync"]
+skip-if = [
+  "!sync",
+]
 
 ["test_resultGroups.js"]
+
+["test_result_highlights.js"]
 
 ["test_richsuggestions.js"]
 
@@ -176,7 +195,7 @@ skip-if = ["!sync"]
 
 ["test_search_suggestions.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968543
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968543
 ]
 
 ["test_search_suggestions_aliases.js"]

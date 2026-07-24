@@ -56,7 +56,7 @@ struct MOZ_STACK_CLASS ParsedZonedDateTime final {
   ISODateTime dateTime = {};
   JSLinearString* calendar = nullptr;
   ParsedTimeZone timeZoneAnnotation{};
-  mozilla::MaybeOneOf<UTCTimeZone, OffsetTimeZone> timeZone{};
+  mozilla::MaybeOneOf<UTCTimeZone, OffsetTimeZone> timeZone;
   bool isStartOfDay = false;
 
   void trace(JSTracer* trc);

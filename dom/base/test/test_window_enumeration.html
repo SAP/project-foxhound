@@ -18,9 +18,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=807222
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 807222 **/
+/** Test for Bug 807222 */
 var expectedProps = [ "Image", "Audio", "Option",
-                      "PerformanceTiming", "CSS2Properties", "SVGElement" ];
+                      "PerformanceTiming", "CSSStyleProperties", "SVGElement" ];
 var actualProps = Object.getOwnPropertyNames(window);
 
 for (var i = 0; i < expectedProps.length; ++i) {

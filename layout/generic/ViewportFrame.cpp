@@ -12,13 +12,13 @@
 #include "mozilla/ViewportFrame.h"
 
 #include "MobileViewportManager.h"
+#include "mozilla/AbsoluteContainingBlock.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/ViewTransition.h"
-#include "nsAbsoluteContainingBlock.h"
 #include "nsCanvasFrame.h"
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
@@ -26,8 +26,6 @@
 #include "nsSubDocumentFrame.h"
 
 using namespace mozilla;
-
-using AbsPosReflowFlags = nsAbsoluteContainingBlock::AbsPosReflowFlags;
 
 // ScrollContainerFrame can create two other wrap lists for scrollbars and such.
 static constexpr uint16_t kFirstTopLayerIndex = 2;
@@ -199,8 +197,7 @@ nsDisplayWrapList* ViewportFrame::MaybeWrapTopLayerList(
   // Wrap the whole top layer in a single item with maximum z-index,
   // and append it at the very end, so that it stays at the topmost.
   nsDisplayWrapList* wrapList = MakeDisplayItemWithIndex<nsDisplayWrapper>(
-      aBuilder, this, aIndex, &aTopLayerList,
-      aBuilder->CurrentActiveScrolledRoot(), false);
+      aBuilder, this, aIndex, &aTopLayerList, false);
   if (!wrapList) {
     return nullptr;
   }
@@ -211,6 +208,10 @@ nsDisplayWrapList* ViewportFrame::MaybeWrapTopLayerList(
 
 nsDisplayWrapList* ViewportFrame::BuildDisplayListForContentTopLayer(
     nsDisplayListBuilder* aBuilder, bool* aIsOpaque) {
+  if (aBuilder->AvoidBuildingDuplicateOofs()) {
+    return nullptr;
+  }
+
   nsDisplayList topLayerList(aBuilder);
   auto* doc = PresContext()->Document();
 
@@ -218,6 +219,12 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForContentTopLayer(
   for (dom::Element* elem : topLayer) {
     nsIFrame* frame = elem->GetPrimaryFrame();
     if (!frame) {
+      continue;
+    }
+    if (frame->GetContent() != elem->AsContent()) {
+      // area elements in image maps point to the image frame as their primary
+      // frame but we should treat them like they don't have their own frame
+      // here. See also bug 135040.
       continue;
     }
 
@@ -252,15 +259,8 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForContentTopLayer(
                  "layer");
       continue;
     }
-    if (nsIFrame* backdropPh =
-            frame->GetChildList(FrameChildListID::Backdrop).FirstChild()) {
-      MOZ_ASSERT(!backdropPh->GetNextSibling(), "more than one ::backdrop?");
-      MOZ_ASSERT(backdropPh->HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
-                 "did you intend to reflow ::backdrop placeholders?");
-      nsIFrame* backdropFrame =
-          nsPlaceholderFrame::GetRealFrameForPlaceholder(backdropPh);
+    if (auto* backdropFrame = nsLayoutUtils::GetBackdropFrame(elem)) {
       BuildDisplayListForTopLayerFrame(aBuilder, backdropFrame, &topLayerList);
-
       if (aIsOpaque) {
         *aIsOpaque = BackdropListIsOpaque(this, aBuilder, &topLayerList);
       }
@@ -275,6 +275,10 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForContentTopLayer(
 nsDisplayWrapList*
 ViewportFrame::BuildDisplayListForViewTransitionsAndNACTopLayer(
     nsDisplayListBuilder* aBuilder) {
+  if (aBuilder->AvoidBuildingDuplicateOofs()) {
+    return nullptr;
+  }
+
   nsDisplayList topLayerList(aBuilder);
   auto* doc = PresContext()->Document();
   if (dom::ViewTransition* vt = doc->GetActiveViewTransition()) {
@@ -326,6 +330,13 @@ void ViewportFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
 }
 #endif
 
+void ViewportFrame::Destroy(DestroyContext& aContext) {
+  if (PresShell()->IsDestroying()) {
+    PresShell::ClearMouseCapture(this);
+  }
+  nsContainerFrame::Destroy(aContext);
+}
+
 nscoord ViewportFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                       IntrinsicISizeType aType) {
   return mFrames.IsEmpty()
@@ -333,35 +344,31 @@ nscoord ViewportFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
              : mFrames.FirstChild()->IntrinsicISize(aInput, aType);
 }
 
-nsPoint ViewportFrame::AdjustReflowInputForScrollbars(
-    ReflowInput* aReflowInput) const {
-  // Get our prinicpal child frame and see if we're scrollable
-  nsIFrame* kidFrame = mFrames.FirstChild();
+nsRect ViewportFrame::GetContainingBlockAdjustedForScrollbars(
+    const ReflowInput& aReflowInput) const {
+  const WritingMode wm = aReflowInput.GetWritingMode();
 
-  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(kidFrame)) {
-    // Note: In ReflowInput::CalculateHypotheticalPosition(), we exclude the
-    // scrollbar or scrollbar-gutter area when computing the offset to
-    // ViewportFrame. Ensure the code there remains in sync with the logic here.
-    WritingMode wm = aReflowInput->GetWritingMode();
-    LogicalMargin scrollbars(wm,
-                             scrollContainerFrame->GetActualScrollbarSizes());
-    aReflowInput->SetComputedISize(
-        aReflowInput->ComputedISize() - scrollbars.IStartEnd(wm),
-        ReflowInput::ResetResizeFlags::No);
-    aReflowInput->SetAvailableISize(aReflowInput->AvailableISize() -
-                                    scrollbars.IStartEnd(wm));
-    aReflowInput->SetComputedBSize(
-        aReflowInput->ComputedBSize() - scrollbars.BStartEnd(wm),
-        ReflowInput::ResetResizeFlags::No);
-    return nsPoint(scrollbars.Left(wm), scrollbars.Top(wm));
-  }
-  return nsPoint(0, 0);
-}
+  LogicalSize computedSize = aReflowInput.ComputedSize();
+  const nsPoint& origin = [&]() {
+    // Get our prinicpal child frame and see if we're scrollable
+    nsIFrame* kidFrame = mFrames.FirstChild();
+    if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(kidFrame)) {
+      // Note: In ReflowInput::CalculateHypotheticalPosition(), we exclude the
+      // scrollbar or scrollbar-gutter area when computing the offset to
+      // ViewportFrame. Ensure the code there remains in sync with the logic
+      // here.
+      LogicalMargin scrollbars(wm,
+                               scrollContainerFrame->GetActualScrollbarSizes());
+      computedSize.ISize(wm) =
+          std::max(0, aReflowInput.ComputedISize() - scrollbars.IStartEnd(wm));
+      computedSize.BSize(wm) =
+          std::max(0, aReflowInput.ComputedBSize() - scrollbars.BStartEnd(wm));
+      return nsPoint(scrollbars.Left(wm), scrollbars.Top(wm));
+    }
+    return nsPoint(0, 0);
+  }();
 
-nsRect ViewportFrame::AdjustReflowInputAsContainingBlock(
-    ReflowInput* aReflowInput) const {
-  const nsPoint origin = AdjustReflowInputForScrollbars(aReflowInput);
-  nsRect rect(origin, aReflowInput->ComputedPhysicalSize());
+  nsRect rect(origin, computedSize.GetPhysicalSize(wm));
   rect.SizeTo(AdjustViewportSizeForFixedPosition(rect));
 
   return rect;
@@ -437,8 +444,8 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   if (HasAbsolutelyPositionedChildren()) {
-    // Make a copy of the reflow input and change the computed width and height
-    // to reflect the available space for the fixed items
+    // Make a copy of the reflow input and change the computed block size to
+    // reflect the available space for the fixed items
     ReflowInput reflowInput(aReflowInput);
 
     if (reflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE) {
@@ -452,11 +459,19 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
       reflowInput.SetComputedBSize(maxSize.BSize(wm));
     }
 
-    nsRect rect = AdjustReflowInputAsContainingBlock(&reflowInput);
-    AbsPosReflowFlags flags =
-        AbsPosReflowFlags::CBWidthAndHeightChanged;  // XXX could be optimized
+    // The containing block for children. We intentionally not take scrollbar
+    // size and dynamic toolbar into account because
+    // ::-moz-snapshot-containing-block should include those areas.
+    //
+    // We will take them into account in AbsoluteContainingBlock::Reflow(),
+    // for kid frames other than ::-moz-snapshot-containing-block.
+    const nsRect cb(nsPoint(), reflowInput.ComputedPhysicalSize());
+    // XXX: To optimize the performance, set the flags only when the CB width or
+    // height actually changes.
+    AbsPosReflowFlags flags{AbsPosReflowFlag::CBWidthChanged,
+                            AbsPosReflowFlag::CBHeightChanged};
     GetAbsoluteContainingBlock()->Reflow(this, aPresContext, reflowInput,
-                                         aStatus, rect, flags,
+                                         aStatus, cb, flags,
                                          /* aOverflowAreas = */ nullptr);
   }
 
@@ -499,23 +514,9 @@ nsSize ViewportFrame::AdjustViewportSizeForFixedPosition(
   nsSize result = aViewportRect.Size();
 
   mozilla::PresShell* presShell = PresShell();
-  // Layout fixed position elements to the visual viewport size if and only if
-  // it has been set and it is larger than the computed size, otherwise use the
-  // computed size.
-  if (presShell->IsVisualViewportSizeSet()) {
-    if (presShell->GetDynamicToolbarState() == DynamicToolbarState::Collapsed &&
-        result < presShell->GetVisualViewportSizeUpdatedByDynamicToolbar()) {
-      // We need to use the viewport size updated by the dynamic toolbar in the
-      // case where the dynamic toolbar is completely hidden.
-      result = presShell->GetVisualViewportSizeUpdatedByDynamicToolbar();
-    } else if (result < presShell->GetVisualViewportSize()) {
-      result = presShell->GetVisualViewportSize();
-    }
-  }
-  // Expand the size to the layout viewport size if necessary.
-  const nsSize layoutViewportSize = presShell->GetLayoutViewportSize();
-  if (result < layoutViewportSize) {
-    result = layoutViewportSize;
+  const nsSize fixedViewportSize = presShell->GetFixedViewportSize();
+  if (result < fixedViewportSize) {
+    result = fixedViewportSize;
   }
 
   return result;

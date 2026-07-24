@@ -168,7 +168,7 @@ void AppShutdown::MaybeDoRestart() {
     if (sSavedProfLDEnvVar && !EnvHasValue("XRE_PROFILE_LOCAL_PATH")) {
       SetEnvironmentVariableW(L"XRE_PROFILE_LOCAL_PATH", sSavedProfLDEnvVar);
     }
-    Unused << NotePreXULSkeletonUIRestarting();
+    (void)NotePreXULSkeletonUIRestarting();
 #else
     if (sSavedProfDEnvVar && !EnvHasValue("XRE_PROFILE_PATH")) {
       PR_SetEnv(sSavedProfDEnvVar);

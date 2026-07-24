@@ -16,8 +16,8 @@ extern crate synstructure;
 
 use proc_macro::TokenStream;
 
-mod cg;
 mod animate;
+mod cg;
 mod compute_squared_distance;
 mod parse;
 mod specified_value_info;
@@ -26,6 +26,7 @@ mod to_animated_zero;
 mod to_computed_value;
 mod to_css;
 mod to_resolved_value;
+mod to_typed;
 
 #[proc_macro_derive(Animate, attributes(animate, animation))]
 pub fn derive_animate(stream: TokenStream) -> TokenStream {
@@ -79,4 +80,10 @@ pub fn derive_to_css(stream: TokenStream) -> TokenStream {
 pub fn derive_specified_value_info(stream: TokenStream) -> TokenStream {
     let input = syn::parse(stream).unwrap();
     specified_value_info::derive(input).into()
+}
+
+#[proc_macro_derive(ToTyped, attributes(css, typed_value))]
+pub fn derive_to_typed(stream: TokenStream) -> TokenStream {
+    let input = syn::parse(stream).unwrap();
+    to_typed::derive(input).into()
 }

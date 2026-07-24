@@ -14,7 +14,6 @@
 #include "nsString.h"
 #include "WinUtils.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/ipc/ProtocolUtils.h"

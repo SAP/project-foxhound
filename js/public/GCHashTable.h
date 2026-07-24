@@ -75,7 +75,15 @@ class GCHashMap : public js::HashMap<Key, Value, HashPolicy, AllocPolicy> {
   explicit GCHashMap(size_t length) : Base(length) {}
   GCHashMap(AllocPolicy a, size_t length) : Base(std::move(a), length) {}
 
-  void trace(JSTracer* trc) {
+  // GCHashMap is movable
+  GCHashMap(GCHashMap&& rhs) : Base(std::move(rhs)) {}
+  void operator=(GCHashMap&& rhs) {
+    MOZ_ASSERT(this != &rhs, "self-move assignment is prohibited");
+    Base::operator=(std::move(rhs));
+  }
+
+  void trace(JSTracer* trc, js::gc::Cell* owner = nullptr) {
+    js::TraceOwnedAllocs(trc, owner, *this, "hashmap storage");
     for (typename Base::Enum e(*this); !e.empty(); e.popFront()) {
       GCPolicy<Value>::trace(trc, &e.front().value(), "hashmap value");
       GCPolicy<Key>::trace(trc, &e.front().mutableKey(), "hashmap key");
@@ -85,11 +93,12 @@ class GCHashMap : public js::HashMap<Key, Value, HashPolicy, AllocPolicy> {
   bool traceWeak(JSTracer* trc) {
     typename Base::Enum e(*this);
     traceWeakEntries(trc, e);
+    Base::compact();
     return !this->empty();
   }
 
   void traceWeakEntries(JSTracer* trc, typename Base::Enum& e) {
-    for (typename Base::Enum e(*this); !e.empty(); e.popFront()) {
+    for (; !e.empty(); e.popFront()) {
       if (!MapEntryGCPolicy::traceWeak(trc, &e.front().mutableKey(),
                                        &e.front().value())) {
         e.removeFront();
@@ -107,11 +116,9 @@ class GCHashMap : public js::HashMap<Key, Value, HashPolicy, AllocPolicy> {
     return false;
   }
 
-  // GCHashMap is movable
-  GCHashMap(GCHashMap&& rhs) : Base(std::move(rhs)) {}
-  void operator=(GCHashMap&& rhs) {
-    MOZ_ASSERT(this != &rhs, "self-move assignment is prohibited");
-    Base::operator=(std::move(rhs));
+  // Get size of allocations using the AllocPolicy.
+  size_t sizeOfOwnedAllocs(mozilla::MallocSizeOf mallocSizeOf) {
+    return SizeOfOwnedAllocs(*this, mallocSizeOf);
   }
 
  private:
@@ -265,7 +272,15 @@ class GCHashSet : public js::HashSet<T, HashPolicy, AllocPolicy> {
   explicit GCHashSet(size_t length) : Base(length) {}
   GCHashSet(AllocPolicy a, size_t length) : Base(std::move(a), length) {}
 
-  void trace(JSTracer* trc) {
+  // GCHashSet is movable
+  GCHashSet(GCHashSet&& rhs) : Base(std::move(rhs)) {}
+  void operator=(GCHashSet&& rhs) {
+    MOZ_ASSERT(this != &rhs, "self-move assignment is prohibited");
+    Base::operator=(std::move(rhs));
+  }
+
+  void trace(JSTracer* trc, js::gc::Cell* owner = nullptr) {
+    js::TraceOwnedAllocs(trc, owner, *this, "hashset storage");
     for (typename Base::Enum e(*this); !e.empty(); e.popFront()) {
       GCPolicy<T>::trace(trc, &e.mutableFront(), "hashset element");
     }
@@ -274,6 +289,7 @@ class GCHashSet : public js::HashSet<T, HashPolicy, AllocPolicy> {
   bool traceWeak(JSTracer* trc) {
     typename Base::Enum e(*this);
     traceWeakEntries(trc, e);
+    Base::compact();
     return !this->empty();
   }
 
@@ -294,11 +310,9 @@ class GCHashSet : public js::HashSet<T, HashPolicy, AllocPolicy> {
     return false;
   }
 
-  // GCHashSet is movable
-  GCHashSet(GCHashSet&& rhs) : Base(std::move(rhs)) {}
-  void operator=(GCHashSet&& rhs) {
-    MOZ_ASSERT(this != &rhs, "self-move assignment is prohibited");
-    Base::operator=(std::move(rhs));
+  // Get size of allocations using the AllocPolicy.
+  size_t sizeOfOwnedAllocs(mozilla::MallocSizeOf mallocSizeOf) {
+    return SizeOfOwnedAllocs(*this, mallocSizeOf);
   }
 
  private:
@@ -431,7 +445,7 @@ class WeakCache<
 
     // Potentially take a lock while the Enum's destructor is called as this can
     // rehash/resize the table and access the store buffer.
-    mozilla::Maybe<js::gc::AutoLockStoreBuffer> lock;
+    mozilla::Maybe<js::gc::AutoLockSweepingLock> lock;
     if (needsLock) {
       lock.emplace(trc->runtime());
     }
@@ -446,7 +460,7 @@ class WeakCache<
     return true;
   }
 
-  bool needsIncrementalBarrier() const override { return barrierTracer; }
+  bool needsMarkingBarrier() const override { return barrierTracer; }
 
  private:
   using Entry = typename Map::Entry;
@@ -538,7 +552,7 @@ class WeakCache<
   bool has(const Lookup& l) const { return lookup(l).found(); }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return map.sizeOfExcludingThis(mallocSizeOf);
+    return map.shallowSizeOfExcludingThis(mallocSizeOf);
   }
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(this) + map.shallowSizeOfExcludingThis(mallocSizeOf);
@@ -619,7 +633,7 @@ class WeakCache<GCHashSet<T, HashPolicy, AllocPolicy>> final
     size_t steps = set.count();
 
     // Create an Enum and sweep the table entries. It's not necessary to take
-    // the store buffer lock yet.
+    // the sweeping lock yet.
     mozilla::Maybe<typename Set::Enum> e;
     e.emplace(set);
     set.traceWeakEntries(trc, e.ref());
@@ -627,7 +641,7 @@ class WeakCache<GCHashSet<T, HashPolicy, AllocPolicy>> final
     // Destroy the Enum, potentially rehashing or resizing the table. Since this
     // can access the store buffer, we need to take a lock for this if we're
     // called off main thread.
-    mozilla::Maybe<js::gc::AutoLockStoreBuffer> lock;
+    mozilla::Maybe<js::gc::AutoLockSweepingLock> lock;
     if (needsLock) {
       lock.emplace(trc->runtime());
     }
@@ -644,7 +658,7 @@ class WeakCache<GCHashSet<T, HashPolicy, AllocPolicy>> final
     return true;
   }
 
-  bool needsIncrementalBarrier() const override { return barrierTracer; }
+  bool needsMarkingBarrier() const override { return barrierTracer; }
 
   // Steal the contents of this weak cache.
   Set stealContents() {

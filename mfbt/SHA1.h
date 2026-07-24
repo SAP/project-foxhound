@@ -46,7 +46,7 @@ class SHA1Sum {
  public:
   MFBT_API SHA1Sum();
 
-  static const size_t kHashSize = 20;
+  static constexpr size_t kHashSize = 20;
   typedef uint8_t Hash[kHashSize];
 
   /* Add len bytes of dataIn to the data sequence being hashed. */

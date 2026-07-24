@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBufferedStreams_h__
-#define nsBufferedStreams_h__
+#ifndef nsBufferedStreams_h_
+#define nsBufferedStreams_h_
 
 #include "nsIBufferedStreams.h"
 #include "nsIInputStream.h"
@@ -162,4 +162,4 @@ class nsBufferedOutputStream : public nsBufferedStream,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // nsBufferedStreams_h__
+#endif  // nsBufferedStreams_h_

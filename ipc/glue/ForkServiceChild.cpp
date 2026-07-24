@@ -10,7 +10,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Services.h"
@@ -149,7 +148,7 @@ Result<Ok, LaunchError> ForkServiceChild::SendForkNewSubprocess(
     WriteParam(&writer, aOptions.fork_flags);
     WriteParam(&writer, std::move(aOptions.sandbox_chroot_server));
 #endif
-    WriteIPDLParam(&writer, nullptr, std::move(execChild));
+    WriteParam(&writer, std::move(execChild));
     if (!mTcver->Send(msg)) {
       MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
               ("the pipe to the fork server is closed or having errors"));
@@ -189,7 +188,7 @@ Result<Ok, LaunchError> ForkServiceChild::SendForkNewSubprocess(
   }
   IPC::MessageReader reader(*reply);
 
-  if (!ReadIPDLParam(&reader, nullptr, aPid)) {
+  if (!ReadParam(&reader, aPid)) {
     MOZ_CRASH("Error deserializing 'pid_t'");
   }
   reader.EndRead();

@@ -21,6 +21,7 @@ class PrincipalInfo;
 namespace dom {
 
 class IPCServiceWorkerDescriptor;
+enum class WorkerType : uint8_t;
 enum class ServiceWorkerState : uint8_t;
 
 // This class represents a snapshot of a particular ServiceWorkerInfo object.
@@ -37,13 +38,13 @@ class ServiceWorkerDescriptor final {
   ServiceWorkerDescriptor(uint64_t aId, uint64_t aRegistrationId,
                           uint64_t aRegistrationVersion,
                           nsIPrincipal* aPrincipal, const nsACString& aScope,
-                          const nsACString& aScriptURL,
+                          WorkerType aType, const nsACString& aScriptURL,
                           ServiceWorkerState aState);
 
   ServiceWorkerDescriptor(uint64_t aId, uint64_t aRegistrationId,
                           uint64_t aRegistrationVersion,
                           const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-                          const nsACString& aScope,
+                          const nsACString& aScope, WorkerType aType,
                           const nsACString& aScriptURL,
                           ServiceWorkerState aState);
 
@@ -73,6 +74,8 @@ class ServiceWorkerDescriptor final {
   Result<nsCOMPtr<nsIPrincipal>, nsresult> GetPrincipal() const;
 
   const nsCString& Scope() const;
+
+  WorkerType Type() const;
 
   const nsCString& ScriptURL() const;
 

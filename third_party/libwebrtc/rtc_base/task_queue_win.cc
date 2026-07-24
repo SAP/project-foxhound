@@ -44,7 +44,6 @@ static_assert(false, "This file should not be built, see Bug 1797161.");
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
@@ -60,7 +59,7 @@ namespace {
 void CALLBACK InitializeQueueThread(ULONG_PTR param) {
   MSG msg;
   ::PeekMessage(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
-  rtc::Event* data = reinterpret_cast<rtc::Event*>(param);
+  Event* data = reinterpret_cast<Event*>(param);
   data->Set();
 }
 
@@ -207,9 +206,9 @@ TaskQueueWin::TaskQueueWin(absl::string_view queue_name,
                            ThreadPriority priority)
     : in_queue_(::CreateEvent(nullptr, true, false, nullptr)) {
   RTC_DCHECK(in_queue_);
-  thread_ = rtc::PlatformThread::SpawnJoinable(
-      [this] { RunThreadMain(); }, queue_name,
-      rtc::ThreadAttributes().SetPriority(priority));
+  thread_ =
+      PlatformThread::SpawnJoinable([this] { RunThreadMain(); }, queue_name,
+                                    ThreadAttributes().SetPriority(priority));
 
   Event event(false, false);
   RTC_CHECK(thread_.QueueAPC(&InitializeQueueThread,
@@ -279,7 +278,7 @@ void TaskQueueWin::RunThreadMain() {
     // (e.g. required for InitializeQueueThread and stopping the thread in
     // PlatformThread).
     DWORD result = ::MsgWaitForMultipleObjectsEx(
-        arraysize(handles), handles, INFINITE, QS_ALLEVENTS, MWMO_ALERTABLE);
+        std::size(handles), handles, INFINITE, QS_ALLEVENTS, MWMO_ALERTABLE);
     RTC_CHECK_NE(WAIT_FAILED, result);
     if (result == (WAIT_OBJECT_0 + 2)) {
       // There are messages in the message queue that need to be handled.

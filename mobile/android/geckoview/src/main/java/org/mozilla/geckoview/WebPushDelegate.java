@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 
+/** Delegate for handling web push subscription events. */
 public interface WebPushDelegate {
   /**
    * Creates a push subscription for the given service worker scope. A scope uniquely identifies a

@@ -134,6 +134,7 @@ class Image {
 
   virtual void OnPrepareForwardToHost() {}
   virtual void OnAbandonForwardToHost() {}
+  virtual void OnSetCurrent() {}
 
   virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() = 0;
 

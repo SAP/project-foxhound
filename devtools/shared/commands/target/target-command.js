@@ -45,7 +45,7 @@ class TargetCommand extends EventEmitter {
    *        The context to inspector identified by this descriptor.
    * @param {WatcherFront} watcherFront
    *        If available, a reference to the related Watcher Front.
-   * @param {Object} commands
+   * @param {object} commands
    *        The commands object with all interfaces defined from devtools/shared/commands/
    */
   constructor({ descriptorFront, watcherFront, commands }) {
@@ -353,16 +353,16 @@ class TargetCommand extends EventEmitter {
    *
    * @param {TargetFront} targetFront
    *        The target that just got destroyed.
-   * @param {Object} options
-   * @param {Boolean} [options.isTargetSwitching]
+   * @param {object} options
+   * @param {boolean} [options.isTargetSwitching]
    *        To be set to true when this is about the top level target which is being replaced
    *        by a new one.
    *        The passed target should be still the one store in TargetCommand.targetFront
    *        and will be replaced via a call to onTargetAvailable with a new target front.
-   * @param {Boolean} [options.isModeSwitching]
+   * @param {boolean} [options.isModeSwitching]
    *        To be set to true when the target was destroyed was called as the result of a
    *        change to the devtools.browsertoolbox.scope pref.
-   * @param {Boolean} [options.shouldDestroyTargetFront]
+   * @param {boolean} [options.shouldDestroyTargetFront]
    *        By default, the passed target front will be destroyed. But in some cases like
    *        legacy listeners for service workers we want to keep the front alive.
    */
@@ -470,9 +470,9 @@ class TargetCommand extends EventEmitter {
    *   - a target type is supported
    *   - or that a custom trait is true
    *
-   * @param {String} [targetTypeOrTrait]
+   * @param {string} [targetTypeOrTrait]
    *        Optional target type or trait.
-   * @return {Boolean} true if the watcher is available and supports the
+   * @return {boolean} true if the watcher is available and supports the
    *          optional targetTypeOrTrait
    */
   hasTargetWatcherSupport(targetTypeOrTrait) {
@@ -753,8 +753,8 @@ class TargetCommand extends EventEmitter {
   /**
    * Listen for the creation and/or destruction of target fronts matching one of the provided types.
    *
-   * @param {Object} options
-   * @param {Array<String>} options.types
+   * @param {object} options
+   * @param {Array<string>} options.types
    *        The type of target to listen for. Constant of TargetCommand.TYPES.
    * @param {Function} options.onAvailable
    *        Mandatory callback fired when a target has been just created or was already available.
@@ -935,7 +935,7 @@ class TargetCommand extends EventEmitter {
   /**
    * Retrieve all the current target fronts of a given type.
    *
-   * @param {Array<String>} types
+   * @param {Array<string>} types
    *        The types of target to retrieve. Array of TargetCommand.TYPES
    * @return {Array<TargetFront>} Array of target fronts matching any of the
    *         provided types.
@@ -956,7 +956,7 @@ class TargetCommand extends EventEmitter {
    * Retrieve all the target fronts in the selected target tree (including the selected
    * target itself).
    *
-   * @param {Array<String>} types
+   * @param {Array<string>} types
    *        The types of target to retrieve. Array of TargetCommand.TYPES
    * @return {Promise<Array<TargetFront>>} Promise that resolves to an array of target fronts.
    */
@@ -982,12 +982,12 @@ class TargetCommand extends EventEmitter {
   /**
    * For all the target fronts of given types, retrieve all the target-scoped fronts of the given types.
    *
-   * @param {Array<String>} targetTypes
+   * @param {Array<string>} targetTypes
    *        The types of target to iterate over. Constant of TargetCommand.TYPES.
-   * @param {String} frontType
+   * @param {string} frontType
    *        The type of target-scoped front to retrieve. It can be "inspector", "console", "thread",...
-   * @param {Object} options
-   * @param {Boolean} options.onlyInSelectedTargetTree
+   * @param {object} options
+   * @param {boolean} options.onlyInSelectedTargetTree
    *        Set to true to only get the fronts for targets who are in the "targets tree"
    *        of the selected target.
    */
@@ -1062,7 +1062,7 @@ class TargetCommand extends EventEmitter {
    * Reload the current top level target.
    * This only works for targets inheriting from WindowGlobalTarget.
    *
-   * @param {Boolean} bypassCache
+   * @param {boolean} bypassCache
    *        If true, the reload will be forced to bypass any cache.
    */
   async reloadTopLevelTarget(bypassCache = false) {
@@ -1093,8 +1093,8 @@ class TargetCommand extends EventEmitter {
   /**
    * Navigate the top level document to a new URL.
    *
-   * @param {String} url
-   * @param {Boolean} waitForLoad
+   * @param {string} url
+   * @param {boolean} waitForLoad
    *        Default to true and wait for the document to be fully loaded before resolving.
    * @return Promise
    *        Promise resolved once the navigation has been proceeded by the remote runtime,
@@ -1153,7 +1153,7 @@ class TargetCommand extends EventEmitter {
   /**
    * Returns true if the top-level frame is the selected one
    *
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   isTopLevelTargetSelected() {
     return this.selectedTargetFront === this.targetFront;
@@ -1162,7 +1162,7 @@ class TargetCommand extends EventEmitter {
   /**
    * Returns true if a non top-level frame is the selected one in the iframe picker.
    *
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   isNonTopLevelTargetSelected() {
     return this.selectedTargetFront !== this.targetFront;

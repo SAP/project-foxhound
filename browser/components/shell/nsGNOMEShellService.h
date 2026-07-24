@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsgnomeshellservice_h____
-#define nsgnomeshellservice_h____
+#ifndef nsgnomeshellservice_h_
+#define nsgnomeshellservice_h_
 
 #include "nsIGNOMEShellService.h"
 #include "nsToolkitShellService.h"
@@ -43,4 +43,4 @@ class nsGNOMEShellService final : public nsIGNOMEShellService,
   bool mAppIsInPath;
 };
 
-#endif  // nsgnomeshellservice_h____
+#endif  // nsgnomeshellservice_h_

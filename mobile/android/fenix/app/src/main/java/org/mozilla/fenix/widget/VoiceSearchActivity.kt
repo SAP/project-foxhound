@@ -97,7 +97,7 @@ class VoiceSearchActivity : AppCompatActivity() {
             )
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE,
-                components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+                components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
                     LocaleManager.getCurrentLocale(this@VoiceSearchActivity)
                 },
             )

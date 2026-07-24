@@ -9,7 +9,6 @@
 #include "mozilla/Assertions.h"     // MOZ_ASSERT
 #include "mozilla/FloatingPoint.h"  // mozilla::IsNegativeZero
 
-#include <iterator>  // std::size
 #include <stdint.h>  // uint32_t
 
 #include "builtin/Array.h"          // ArrayToSource

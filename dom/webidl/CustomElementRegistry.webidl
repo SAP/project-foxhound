@@ -39,6 +39,8 @@ callback LifecycleDisconnectedCallback = undefined();
 callback LifecycleAdoptedCallback = undefined(Document? oldDocument,
                                               Document? newDocment);
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleConnectedMoveCallback = undefined();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback LifecycleAttributeChangedCallback = undefined(DOMString attrName,
                                                        DOMString? oldValue,
                                                        DOMString? newValue,
@@ -59,6 +61,7 @@ callback LifecycleGetCustomInterfaceCallback = object?(any iid);
 dictionary LifecycleCallbacks {
   LifecycleConnectedCallback connectedCallback;
   LifecycleDisconnectedCallback disconnectedCallback;
+  LifecycleConnectedMoveCallback connectedMoveCallback;
   LifecycleAdoptedCallback adoptedCallback;
   LifecycleAttributeChangedCallback attributeChangedCallback;
   [ChromeOnly] LifecycleGetCustomInterfaceCallback getCustomInterfaceCallback;

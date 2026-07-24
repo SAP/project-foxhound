@@ -9,11 +9,10 @@
  * boxes, also used for various anonymous boxes
  */
 
-#ifndef nsBlockFrame_h___
-#define nsBlockFrame_h___
+#ifndef nsBlockFrame_h_
+#define nsBlockFrame_h_
 
 #include "mozilla/IntrinsicISizesCache.h"
-#include "nsCSSPseudoElements.h"
 #include "nsContainerFrame.h"
 #include "nsFloatManager.h"
 #include "nsHTMLParts.h"
@@ -153,11 +152,6 @@ class nsBlockFrame : public nsContainerFrame {
   void List(FILE* out = stderr, const char* aPrefix = "",
             ListFlags aFlags = ListFlags()) const override;
   nsresult GetFrameName(nsAString& aResult) const override;
-#endif
-
-#ifdef DEBUG
-  const char* LineReflowStatusToString(
-      LineReflowStatus aLineReflowStatus) const;
 #endif
 
 #ifdef ACCESSIBILITY
@@ -544,7 +538,7 @@ class nsBlockFrame : public nsContainerFrame {
       // box of a button to do it.
       auto pseudoType = Style()->GetPseudoType();
       return !mozilla::PseudoStyle::IsAnonBox(pseudoType) ||
-             pseudoType == mozilla::PseudoStyleType::scrolledContent;
+             pseudoType == mozilla::PseudoStyleType::MozScrolledContent;
     }
     return IsButtonControlFrame();
   }
@@ -665,7 +659,7 @@ class nsBlockFrame : public nsContainerFrame {
    * Determine if we have any pushed floats from a previous continuation.
    *
    * @returns true, if any of the floats at the beginning of our floats list
-   *          have the NS_FRAME_IS_PUSHED_FLOAT bit set; false otherwise.
+   *          have the NS_FRAME_IS_PUSHED_OUT_OF_FLOW bit set; false otherwise.
    */
   bool HasPushedFloatsFromPrevContinuation() const;
 
@@ -769,8 +763,8 @@ class nsBlockFrame : public nsContainerFrame {
   void DoCollectFloats(nsIFrame* aFrame, nsFrameList& aList,
                        bool aCollectFromSiblings);
 
-  // Remove a float, abs, rel positioned frame from the appropriate block's list
-  static void DoRemoveOutOfFlowFrame(DestroyContext&, nsIFrame*);
+  // Remove a float and its continuations.
+  static void DoRemoveFloats(DestroyContext&, nsIFrame*);
 
   /** set up the conditions necessary for an resize reflow
    * the primary task is to mark the minimumly sufficient lines dirty.
@@ -1076,8 +1070,6 @@ class nsBlockFrame : public nsContainerFrame {
 
   static int32_t gNoiseIndent;
 
-  static const char* kReflowCommandType[];
-
  protected:
   static void InitDebugFlags();
 #endif
@@ -1178,4 +1170,4 @@ class nsBlockInFlowLineIterator {
   bool FindValidLine();
 };
 
-#endif /* nsBlockFrame_h___ */
+#endif /* nsBlockFrame_h_ */

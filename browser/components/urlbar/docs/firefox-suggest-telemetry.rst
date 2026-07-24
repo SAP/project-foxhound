@@ -1331,7 +1331,11 @@ Changelog
   Firefox 94.0.2
     Introduced. [Bug 1735976_]
 
+  Firefox 146.0
+    Removed. [Bug 1995362_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
+.. _1995362: https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
 
 browser.urlbar.suggest.quicksuggest
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1371,8 +1375,12 @@ Changelog
     all other users, it will default to true when/if they are enrolled in
     online. [Bug 1740965_]
 
+  Firefox 146.0
+    Removed. [Bug 1995574_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1740965: https://bugzilla.mozilla.org/show_bug.cgi?id=1740965
+.. _1995574: https://bugzilla.mozilla.org/show_bug.cgi?id=1995574
 
 browser.urlbar.suggest.quicksuggest.sponsored
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_XRReferenceSpace_h_
 #define mozilla_dom_XRReferenceSpace_h_
 
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "mozilla/dom/XRSpace.h"
-
-#include "gfxVR.h"
 
 namespace mozilla::dom {
 

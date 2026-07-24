@@ -5,6 +5,7 @@
 "use strict";
 
 const {
+  VIEW_NODE_ATTR_TYPE,
   VIEW_NODE_CSS_QUERY_CONTAINER,
   VIEW_NODE_CSS_SELECTOR_WARNINGS,
   VIEW_NODE_FONT_TYPE,
@@ -63,7 +64,7 @@ function getDeclarationFromNode(node, rule) {
  *        The node which we want information about
  * @param {ElementStyle} elementStyle
  *        The ElementStyle to which this rule belongs
- * @return {Object|null} containing the following props:
+ * @return {object | null} containing the following props:
  * - rule {Rule} The Rule object.
  * - type {String} One of the VIEW_NODE_XXX_TYPE const in
  *   client/inspector/shared/node-types.
@@ -131,9 +132,12 @@ function getNodeInfo(node, elementStyle) {
       toggleActive: getShapeToggleActive(node),
       point: getShapePoint(node),
     };
-  } else if (declaration && classList.contains("ruleview-unused-warning")) {
+  } else if (
+    declaration &&
+    classList.contains("ruleview-inactive-css-warning")
+  ) {
     type = VIEW_NODE_INACTIVE_CSS;
-    value = declaration.isUsed();
+    value = declaration.getInactiveCssData();
   } else if (node.closest(".container-query-declaration")) {
     type = VIEW_NODE_CSS_QUERY_CONTAINER;
     const containerQueryEl = node.closest(".container-query");
@@ -144,6 +148,11 @@ function getNodeInfo(node, elementStyle) {
   } else if (node.classList.contains("ruleview-selector-warnings")) {
     type = VIEW_NODE_CSS_SELECTOR_WARNINGS;
     value = node.getAttribute("data-selector-warning-kind").split(",");
+  } else if (node.classList.contains("inspector-attribute")) {
+    type = VIEW_NODE_ATTR_TYPE;
+    value = {
+      attribute: node.getAttribute("data-attribute"),
+    };
   } else if (declaration && classList.contains("inspector-shapeswatch")) {
     type = VIEW_NODE_SHAPE_SWATCH;
     value = {
@@ -232,7 +241,7 @@ function getNodeInfo(node, elementStyle) {
  *
  * @param {DOMNode} node
  *        The node to start from
- * @return {Object} {name, value}
+ * @return {object} {name, value}
  */
 function getPropertyNameAndValue(node) {
   while (node?.classList) {
@@ -282,7 +291,7 @@ function getShapeToggleActive(node) {
  *
  * @param {DOMNode} node
  *        A shape point node
- * @returns {String} The point associated with the given node.
+ * @returns {string} The point associated with the given node.
  */
 function getShapePoint(node) {
   const classList = node.classList;
@@ -305,11 +314,10 @@ function getShapePoint(node) {
  * Returns an array of CSS variables used in a CSS property value.
  * If no CSS variables are used, returns an empty array.
  *
- * @param {String} propertyValue
+ * @param {string} propertyValue
  *        CSS property value (e.g. "1px solid var(--color, blue)")
  * @return {Array}
  *         List of variable names (e.g. ["--color"])
- *
  */
 function getCSSVariables(propertyValue = "") {
   const variables = [];

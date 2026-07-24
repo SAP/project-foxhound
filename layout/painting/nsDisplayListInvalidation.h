@@ -9,7 +9,6 @@
 
 #include "ImgDrawResult.h"
 #include "gfxRect.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/layers/WebRenderUserData.h"
 #include "nsColor.h"

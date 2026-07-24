@@ -159,6 +159,7 @@ devtools.jar:
     skin/images/filter-swatch.svg (themes/images/filter-swatch.svg)
     skin/images/application-debug.svg (themes/images/application-debug.svg)
     skin/images/application-manifest.svg (themes/images/application-manifest.svg)
+    skin/images/application-session-history.svg (themes/images/application-session-history.svg)
     skin/images/fox-smiling.svg (themes/images/fox-smiling.svg)
     skin/images/grid.svg (themes/images/grid.svg)
     skin/images/angle-swatch.svg (themes/images/angle-swatch.svg)
@@ -258,7 +259,6 @@ devtools.jar:
     content/debugger/images/sources/angular.svg (debugger/images/sources/angular.svg)
     content/debugger/images/sources/babel.svg (debugger/images/sources/babel.svg)
     content/debugger/images/sources/backbone.svg (debugger/images/sources/backbone.svg)
-    content/debugger/images/sources/choo.svg (debugger/images/sources/choo.svg)
     content/debugger/images/sources/coffeescript.svg (debugger/images/sources/coffeescript.svg)
     content/debugger/images/sources/dojo.svg (debugger/images/sources/dojo.svg)
     content/debugger/images/sources/ember.svg (debugger/images/sources/ember.svg)
@@ -289,7 +289,7 @@ devtools.jar:
     content/debugger/src/components/QuickOpenModal.css (debugger/src/components/QuickOpenModal.css)
     content/debugger/src/components/ShortcutsModal.css (debugger/src/components/ShortcutsModal.css)
     content/debugger/src/components/WelcomeBox.css (debugger/src/components/WelcomeBox.css)
-    content/debugger/src/components/shared/AccessibleImage.css (debugger/src/components/shared/AccessibleImage.css)
+    content/debugger/src/components/shared/DebuggerImage.css (debugger/src/components/shared/DebuggerImage.css)
     content/debugger/src/components/shared/Accordion.css (debugger/src/components/shared/Accordion.css)
     content/debugger/src/components/shared/Badge.css (debugger/src/components/shared/Badge.css)
     content/debugger/src/components/shared/BracketArrow.css (debugger/src/components/shared/BracketArrow.css)
@@ -312,6 +312,7 @@ devtools.jar:
     content/debugger/src/components/Editor/Preview/Popup.css (debugger/src/components/Editor/Preview/Popup.css)
     content/debugger/src/components/Editor/SearchInFileBar.css (debugger/src/components/Editor/SearchInFileBar.css)
     content/debugger/src/components/Editor/Tabs.css (debugger/src/components/Editor/Tabs.css)
+    content/debugger/src/components/Editor/TracePanel.css (debugger/src/components/Editor/TracePanel.css)
     content/debugger/src/components/PrimaryPanes/Outline.css (debugger/src/components/PrimaryPanes/Outline.css)
     content/debugger/src/components/PrimaryPanes/OutlineFilter.css (debugger/src/components/PrimaryPanes/OutlineFilter.css)
     content/debugger/src/components/PrimaryPanes/ProjectSearch.css (debugger/src/components/PrimaryPanes/ProjectSearch.css)
@@ -458,6 +459,11 @@ devtools.jar:
     content/application/src/components/service-workers/RegistrationList.css (application/src/components/service-workers/RegistrationList.css)
     content/application/src/components/service-workers/Worker.css (application/src/components/service-workers/Worker.css)
     content/application/src/components/ui/UIButton.css (application/src/components/ui/UIButton.css)
+    content/application/src/components/session-history/SessionHistory.css (application/src/components/session-history/SessionHistory.css)
+
+    # Anti tracking panel
+    content/anti-tracking/index.html (anti-tracking/index.html)
+    content/anti-tracking/anti-tracking.css (anti-tracking/anti-tracking.css)
 
     # about:profiling
     skin/aboutprofiling.css (themes/aboutprofiling.css)

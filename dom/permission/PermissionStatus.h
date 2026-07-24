@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_PermissionStatus_h_
 #define mozilla_dom_PermissionStatus_h_
 
-#include "mozilla/dom/PermissionsBinding.h"
-#include "mozilla/dom/PermissionStatusBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/PermissionStatusBinding.h"
+#include "mozilla/dom/PermissionsBinding.h"
 
 namespace mozilla::dom {
 

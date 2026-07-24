@@ -6,23 +6,24 @@
 
 #include "SourceBuffer.h"
 
+#include <time.h>
+
 #include "AsyncEventRunner.h"
 #include "MediaData.h"
 #include "MediaSourceDemuxer.h"
 #include "MediaSourceUtils.h"
+#include "TimeUnits.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MediaSourceBinding.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsError.h"
-#include "nsIRunnable.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIRunnable.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Logging.h"
-#include <time.h>
-#include "TimeUnits.h"
 
 struct JSContext;
 class JSObject;

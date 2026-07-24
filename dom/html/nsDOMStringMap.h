@@ -7,13 +7,13 @@
 #ifndef nsDOMStringMap_h
 #define nsDOMStringMap_h
 
+#include "js/RootingAPI.h"       // JS::Handle
+#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
 #include "nsCycleCollectionParticipant.h"
+#include "nsString.h"
 #include "nsStubMutationObserver.h"
 #include "nsTArray.h"
-#include "nsString.h"
 #include "nsWrapperCache.h"
-#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
-#include "js/RootingAPI.h"       // JS::Handle
 
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "mozilla/dom/Element.h"

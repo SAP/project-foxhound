@@ -27,6 +27,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Marionette: "chrome://remote/content/components/Marionette.sys.mjs",
   MarionettePrefs: "chrome://remote/content/marionette/prefs.sys.mjs",
   modal: "chrome://remote/content/shared/Prompt.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   navigate: "chrome://remote/content/marionette/navigate.sys.mjs",
   permissions: "chrome://remote/content/shared/Permissions.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
@@ -157,10 +158,12 @@ class ActionsHelper {
    */
   dispatchEvent(eventName, browsingContext, details) {
     if (
-      eventName === "synthesizeWheelAtPoint" &&
-      lazy.actions.useAsyncWheelEvents
+      (eventName === "synthesizeWheelAtPoint" &&
+        lazy.actions.useAsyncWheelEvents) ||
+      (eventName == "synthesizeMouseAtPoint" &&
+        lazy.actions.useAsyncMouseEvents)
     ) {
-      browsingContext = browsingContext.topChromeWindow.browsingContext;
+      browsingContext = browsingContext.topChromeWindow?.browsingContext;
       details.eventData.asyncEnabled = true;
     }
 
@@ -172,12 +175,16 @@ class ActionsHelper {
    *
    * @param {BrowsingContext} browsingContext
    *     The browsing context to dispatch the event to.
-   *
-   * @returns {Promise}
-   *     Promise that resolves when the finalization is done.
    */
-  finalizeAction(browsingContext) {
-    return this.#getActor(browsingContext).finalizeAction();
+  async finalizeAction(browsingContext) {
+    try {
+      await this.#getActor(browsingContext).finalizeAction();
+    } catch (e) {
+      // Ignore the error if the underlying browsing context is already gone.
+      if (e.name !== lazy.error.NoSuchWindowError.name) {
+        throw e;
+      }
+    }
   }
 
   /**
@@ -333,6 +340,14 @@ export function GeckoDriver(server) {
   this._actionsHelper = new ActionsHelper(this);
 }
 
+GeckoDriver.prototype._trace = function (message, browsingContext = null) {
+  if (browsingContext !== null) {
+    lazy.logger.trace(`[${browsingContext.id}] ${message}`);
+  } else {
+    lazy.logger.trace(message);
+  }
+};
+
 /**
  * The current context decides if commands are executed in chrome- or
  * content space.
@@ -409,7 +424,14 @@ GeckoDriver.prototype.QueryInterface = ChromeUtils.generateQI([
  * Callback used to observe the closing of modal dialogs
  * during the session's lifetime.
  */
-GeckoDriver.prototype.handleClosedModalDialog = function () {
+GeckoDriver.prototype.handleClosedModalDialog = function (_eventName, data) {
+  const { contentBrowser, detail } = data;
+
+  this._trace(
+    `Prompt closed (type: "${detail.promptType}", accepted: "${detail.accepted}")`,
+    contentBrowser.browsingContext
+  );
+
   this.dialog = null;
 };
 
@@ -417,12 +439,24 @@ GeckoDriver.prototype.handleClosedModalDialog = function () {
  * Callback used to observe the creation of new modal dialogs
  * during the session's lifetime.
  */
-GeckoDriver.prototype.handleOpenModalDialog = function (eventName, data) {
-  this.dialog = data.prompt;
+GeckoDriver.prototype.handleOpenModalDialog = function (_eventName, data) {
+  const { contentBrowser, prompt } = data;
+
+  prompt.getText().then(text => {
+    // We need the text to identify a user prompt when it gets
+    // randomly opened. Because on Android the text is asynchronously
+    // retrieved lets delay the logging without making the handler async.
+    this._trace(
+      `Prompt opened (type: "${prompt.promptType}", text: "${text}")`,
+      contentBrowser.browsingContext
+    );
+  });
+
+  this.dialog = prompt;
 
   if (this.dialog.promptType === "beforeunload" && !this.currentSession?.bidi) {
     // Only implicitly accept the prompt when its not a BiDi session.
-    lazy.logger.trace(`Implicitly accepted "beforeunload" prompt`);
+    this._trace(`Implicitly accepted "beforeunload" prompt`);
     this.dialog.accept();
     return;
   }
@@ -563,7 +597,9 @@ GeckoDriver.prototype.isReftestBrowser = function (element) {
  */
 GeckoDriver.prototype.addBrowser = function (win) {
   let context = new lazy.browser.Context(win, this);
-  let winId = lazy.windowManager.getIdForWindow(win);
+  let winId = lazy.NavigableManager.getIdForBrowsingContext(
+    win.browsingContext
+  );
 
   this.browsers[winId] = context;
   this.curBrowser = this.browsers[winId];
@@ -642,8 +678,9 @@ GeckoDriver.prototype.newSession = async function (cmd) {
       lazy.logger.debug(`Waiting for initial application window`);
       await lazy.Marionette.browserStartupFinished;
 
-      const appWin =
-        await lazy.windowManager.waitForInitialApplicationWindowLoaded();
+      // This call includes a fallback to "mail:3pane" as well.
+      const appWin = Services.wm.getMostRecentBrowserWindow();
+      await lazy.windowManager.waitForChromeWindowLoaded(appWin);
 
       if (lazy.MarionettePrefs.clickToStart) {
         Services.prompt.alert(
@@ -801,7 +838,7 @@ GeckoDriver.prototype.getSessionCapabilities = function () {
  *     relative to this path.
  * @param {Array<Array<string, string, string>>} cmd.parameters.entries
  *     An array of arrays, each containing a registry entry (type, namespace,
- *     path, options) as it would appar in a chrome.manifest file. Only the
+ *     path, options) as it would appear in a chrome.manifest file. Only the
  *     following entry types are currently accepted:
  *
  *         - "content" A URL entry. Must be a 3-element array.
@@ -938,14 +975,14 @@ GeckoDriver.prototype.getContext = function () {
  *     The array items must be serialisable to the WebDriver protocol.
  * @param {string=} cmd.parameters.sandbox
  *     Name of the sandbox to evaluate the script in.  The sandbox is
- *     cached for later re-use on the same Window object if
- *     <var>newSandbox</var> is false.  If he parameter is undefined,
+ *     cached for later reuse on the same Window object if
+ *     <var>newSandbox</var> is false.  If the parameter is undefined,
  *     the script is evaluated in a mutable sandbox.  If the parameter
- *     is "system", it will be evaluted in a sandbox with elevated system
+ *     is "system", it will be evaluated in a sandbox with elevated system
  *     privileges, equivalent to chrome space.
  * @param {boolean=} cmd.parameters.newSandbox
  *     Forces the script to be evaluated in a fresh sandbox.  Note that if
- *     it is undefined, the script will normally be evaluted in a fresh
+ *     it is undefined, the script will normally be evaluated in a fresh
  *     sandbox.
  * @param {string=} cmd.parameters.filename
  *     Filename of the client's program where this script is evaluated.
@@ -960,8 +997,10 @@ GeckoDriver.prototype.getContext = function () {
  *     If an {@link Error} was thrown whilst evaluating the script.
  * @throws {NoSuchElementError}
  *     If an element that was passed as part of <var>args</var> is unknown.
+ * @throws {NoSuchFrameError}
+ *     Child browsing context has been discarded.
  * @throws {NoSuchWindowError}
- *     Browsing context has been discarded.
+ *     Top-level browsing context has been discarded.
  * @throws {ScriptTimeoutError}
  *     If the script was interrupted due to reaching the session's
  *     script timeout.
@@ -1011,14 +1050,14 @@ GeckoDriver.prototype.executeScript = function (cmd) {
  *     The array items must be serialisable to the WebDriver protocol.
  * @param {string=} cmd.parameters.sandbox
  *     Name of the sandbox to evaluate the script in.  The sandbox is
- *     cached for later re-use on the same Window object if
+ *     cached for later reuse on the same Window object if
  *     <var>newSandbox</var> is false.  If the parameter is undefined,
  *     the script is evaluated in a mutable sandbox.  If the parameter
- *     is "system", it will be evaluted in a sandbox with elevated system
+ *     is "system", it will be evaluated in a sandbox with elevated system
  *     privileges, equivalent to chrome space.
  * @param {boolean=} cmd.parameters.newSandbox
  *     Forces the script to be evaluated in a fresh sandbox.  Note that if
- *     it is undefined, the script will normally be evaluted in a fresh
+ *     it is undefined, the script will normally be evaluated in a fresh
  *     sandbox.
  * @param {string=} cmd.parameters.filename
  *     Filename of the client's program where this script is evaluated.
@@ -1033,8 +1072,10 @@ GeckoDriver.prototype.executeScript = function (cmd) {
  *     If an Error was thrown whilst evaluating the script.
  * @throws {NoSuchElementError}
  *     If an element that was passed as part of <var>args</var> is unknown.
+ * @throws {NoSuchFrameError}
+ *     Child browsing context has been discarded.
  * @throws {NoSuchWindowError}
- *     Browsing context has been discarded.
+ *     Top-level browsing context has been discarded.
  * @throws {ScriptTimeoutError}
  *     If the script was interrupted due to reaching the session's
  *     script timeout.
@@ -1355,9 +1396,12 @@ GeckoDriver.prototype.getWindowHandle = function () {
   lazy.assert.open(this.getBrowsingContext({ top: true }));
 
   if (this.context == lazy.Context.Chrome) {
-    return lazy.windowManager.getIdForWindow(this.curBrowser.window);
+    return lazy.NavigableManager.getIdForBrowsingContext(
+      this.currentSession.chromeBrowsingContext
+    );
   }
-  return lazy.TabManager.getIdForBrowser(this.curBrowser.contentBrowser);
+
+  return this.curBrowser.contentBrowserId;
 };
 
 /**
@@ -1376,9 +1420,14 @@ GeckoDriver.prototype.getWindowHandle = function () {
  */
 GeckoDriver.prototype.getWindowHandles = function () {
   if (this.context == lazy.Context.Chrome) {
-    return lazy.windowManager.chromeWindowHandles.map(String);
+    return lazy.windowManager.windows.map(window =>
+      lazy.NavigableManager.getIdForBrowsingContext(window.browsingContext)
+    );
   }
-  return lazy.TabManager.allBrowserUniqueIds.map(String);
+
+  return lazy.TabManager.getBrowsers({ unloaded: true }).map(browser =>
+    lazy.NavigableManager.getIdForBrowser(browser)
+  );
 };
 
 /**
@@ -1484,6 +1533,47 @@ GeckoDriver.prototype.setWindowRect = async function (cmd) {
 };
 
 /**
+ * Find a specific window matching the provided window handle.
+ *
+ * @param {string} handle
+ *     The unique handle of either a chrome window or a content browser, as
+ *     returned by :js:func:`#getIdForBrowser` or :js:func:`#getIdForWindow`.
+ *
+ * @returns {object|null}
+ *     A window properties object, or `null` if a window cannot be found.
+ *.    @see :js:func:`WindowManager#getWindowProperties`
+ */
+GeckoDriver.prototype._findWindowByHandle = function (handle) {
+  for (const win of lazy.windowManager.windows) {
+    const chromeWindowId = lazy.NavigableManager.getIdForBrowsingContext(
+      win.browsingContext
+    );
+    if (chromeWindowId == handle) {
+      return this.getWindowProperties(win);
+    }
+
+    // Otherwise check if the chrome window has a tab browser, and that it
+    // contains a tab with the wanted window handle.
+    const tabBrowser = lazy.TabManager.getTabBrowser(win);
+    if (tabBrowser && tabBrowser.tabs) {
+      for (let i = 0; i < tabBrowser.tabs.length; ++i) {
+        let contentBrowser = lazy.TabManager.getBrowserForTab(
+          tabBrowser.tabs[i]
+        );
+        let contentWindowId =
+          lazy.NavigableManager.getIdForBrowser(contentBrowser);
+
+        if (contentWindowId == handle) {
+          return this.getWindowProperties(win, { tabIndex: i });
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
  * Switch current top-level browsing context by name or server-assigned
  * ID.  Searches for windows by name, then ID.  Content windows take
  * precedence.
@@ -1512,7 +1602,7 @@ GeckoDriver.prototype.switchToWindow = async function (cmd) {
     lazy.pprint`Expected "focus" to be a boolean, got ${focus}`
   );
 
-  const found = lazy.windowManager.findWindowByHandle(handle);
+  const found = this._findWindowByHandle(handle);
 
   let selected = false;
   if (found) {
@@ -1529,6 +1619,50 @@ GeckoDriver.prototype.switchToWindow = async function (cmd) {
       `Unable to locate window: ${handle}`
     );
   }
+};
+
+/**
+ * A set of properties that describe a window and allow it to be uniquely
+ * identified. The described window can either be a Chrome Window or a
+ * Content Window.
+ *
+ * @typedef {object} WindowProperties
+ * @property {Window} win
+ *     The Chrome Window containing the window. When describing
+ *     a Chrome Window, this is the window itself.
+ * @property {string} id
+ *     The unique id of the containing Chrome Window.
+ * @property {boolean} hasTabBrowser
+ *     `true` if the Chrome Window has a tabBrowser.
+ * @property {number=} tabIndex
+ *     Optional, the index of the specific tab within the window.
+ */
+
+/**
+ * Returns a WindowProperties object, that can be used with :js:func:`GeckoDriver#setWindowHandle`.
+ *
+ * @param {Window} win
+ *     The Chrome Window for which we want to create a properties object.
+ * @param {object=} options
+ * @param {number} options.tabIndex
+ *     Tab index of a specific Content Window in the specified Chrome Window.
+ *
+ * @returns {WindowProperties}
+ *     A window properties object.
+ */
+GeckoDriver.prototype.getWindowProperties = function (win, options = {}) {
+  const { tabIndex } = options;
+
+  if (!Window.isInstance(win)) {
+    throw new TypeError("Invalid argument, expected a Window object");
+  }
+
+  return {
+    win,
+    id: lazy.NavigableManager.getIdForBrowsingContext(win.browsingContext),
+    hasTabBrowser: !!lazy.TabManager.getTabBrowser(win),
+    tabIndex,
+  };
 };
 
 /**
@@ -2706,7 +2840,7 @@ GeckoDriver.prototype.newWindow = async function (cmd) {
     }
   );
 
-  const id = lazy.TabManager.getIdForBrowser(contentBrowser);
+  const id = lazy.NavigableManager.getIdForBrowser(contentBrowser);
 
   return { handle: id.toString(), type };
 };
@@ -2747,7 +2881,9 @@ GeckoDriver.prototype.close = async function () {
   await this.curBrowser.closeTab();
   this.currentSession.contentBrowsingContext = null;
 
-  return lazy.TabManager.allBrowserUniqueIds.map(String);
+  return lazy.TabManager.getBrowsers({ unloaded: true }).map(browser =>
+    lazy.NavigableManager.getIdForBrowser(browser)
+  );
 };
 
 /**
@@ -2787,7 +2923,9 @@ GeckoDriver.prototype.closeChromeWindow = async function () {
   this.currentSession.chromeBrowsingContext = null;
   this.currentSession.contentBrowsingContext = null;
 
-  return lazy.windowManager.chromeWindowHandles.map(String);
+  return lazy.windowManager.windows.map(window =>
+    lazy.NavigableManager.getIdForBrowsingContext(window.browsingContext)
+  );
 };
 
 /** Delete Marionette session. */
@@ -3444,6 +3582,7 @@ GeckoDriver.prototype.setupReftest = async function (cmd) {
     urlCount = {},
     screenshot = "unexpected",
     isPrint = false,
+    cacheScreenshots = true,
   } = cmd.parameters;
   if (!["always", "fail", "unexpected"].includes(screenshot)) {
     throw new lazy.error.InvalidArgumentError(
@@ -3452,7 +3591,7 @@ GeckoDriver.prototype.setupReftest = async function (cmd) {
   }
 
   this._reftest = new lazy.reftest.Runner(this);
-  this._reftest.setup(urlCount, screenshot, isPrint);
+  this._reftest.setup(urlCount, screenshot, isPrint, cacheScreenshots);
 };
 
 /** Run a reftest. */
@@ -3505,6 +3644,41 @@ GeckoDriver.prototype.teardownReftest = function () {
 
   this._reftest.teardown();
   this._reftest = null;
+};
+
+/**
+ * Implements the GenerateTestReport functionality of the Reporting API.
+ *
+ * @see https://w3c.github.io/reporting/#generate-test-report-command *
+ *
+ * @param {object} cmd
+ * @param {string} cmd.parameters.message
+ *     The message contents of the report being generated.
+ * @param {string=} cmd.parameters.group
+ *     The name of the reporting endpoint that the report should be sent to.
+ *     @see https://www.w3.org/TR/reporting-1/#endpoint
+ *
+ * @throws {InvalidArgumentError}
+ *     If a message argument wasn't passed in the parameters.
+ */
+
+GeckoDriver.prototype.generateTestReport = async function (cmd) {
+  const { message, group = "default" } = cmd.parameters;
+
+  lazy.assert.open(this.getBrowsingContext());
+  await this._handleUserPrompts();
+
+  lazy.assert.string(
+    message,
+    lazy.pprint(`Expected "message" to be a string, got ${message}`)
+  );
+
+  lazy.assert.string(
+    group,
+    lazy.pprint(`Expected "group" to be a string, got ${group}`)
+  );
+
+  await this.getActor().generateTestReport(message, group);
 };
 
 /**
@@ -3605,6 +3779,25 @@ GeckoDriver.prototype.print = async function (cmd) {
   );
 
   return btoa(binaryString);
+};
+
+GeckoDriver.prototype.getGlobalPrivacyControl = function () {
+  const gpc = Services.prefs.getBoolPref(
+    "privacy.globalprivacycontrol.enabled",
+    true
+  );
+  return { gpc };
+};
+
+GeckoDriver.prototype.setGlobalPrivacyControl = function (cmd) {
+  const { gpc } = cmd.parameters;
+  if (typeof gpc != "boolean") {
+    throw new lazy.error.InvalidArgumentError(
+      "Value of `gpc` should be of type 'boolean'"
+    );
+  }
+  Services.prefs.setBoolPref("privacy.globalprivacycontrol.enabled", gpc);
+  return { gpc };
 };
 
 GeckoDriver.prototype.addVirtualAuthenticator = function (cmd) {
@@ -3946,6 +4139,13 @@ GeckoDriver.prototype.commands = {
   "WebDriver:SwitchToParentFrame": GeckoDriver.prototype.switchToParentFrame,
   "WebDriver:SwitchToWindow": GeckoDriver.prototype.switchToWindow,
   "WebDriver:TakeScreenshot": GeckoDriver.prototype.takeScreenshot,
+
+  // Global Privacy Control
+  "GPC:GetGlobalPrivacyControl": GeckoDriver.prototype.getGlobalPrivacyControl,
+  "GPC:SetGlobalPrivacyControl": GeckoDriver.prototype.setGlobalPrivacyControl,
+
+  // Reporting API test generation of reports
+  "Reporting:GenerateTestReport": GeckoDriver.prototype.generateTestReport,
 
   // WebAuthn
   "WebAuthn:AddVirtualAuthenticator":

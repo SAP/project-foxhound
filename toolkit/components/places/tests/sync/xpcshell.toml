@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_sync.js"
 support-files = [
   "sync_utils_bookmarks.html",

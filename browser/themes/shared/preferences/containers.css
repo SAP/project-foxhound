@@ -21,7 +21,7 @@
 
 #containersView richlistitem {
   padding-block: 4px;
-  border-block-end: 1px solid var(--in-content-border-color);
+  border-block-end: 1px solid var(--border-color);
 }
 
 #containersView richlistitem > .container-buttons {

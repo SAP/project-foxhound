@@ -19,6 +19,7 @@ class MozillaRuleSetProvider : RuleSetProvider {
         ruleSetId,
         listOf(
             ProjectLicenseRule(config),
+            NoSystemCurrentTimeMillisRule(config),
         ),
     )
 }

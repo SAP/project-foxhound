@@ -32,6 +32,7 @@ const PROTOCOL_HANDLER_OPEN_PERM_KEY = "open-protocol-handler";
 const PERMISSION_KEY_DELIMITER = "^";
 
 const TEST_PROTOS = ["foo", "bar"];
+const WALLET_PROTO = "moz-test-wallet";
 
 let testDir = getChromeDir(getResolvedURI(gTestPath));
 
@@ -51,6 +52,7 @@ const NULL_PRINCIPAL_SCHEME = Services.scriptSecurityManager
 
 /**
  * Get the open protocol handler permission key for a given protocol scheme.
+ *
  * @param {string} aProtocolScheme - Scheme of protocol to construct permission
  * key with.
  */
@@ -60,23 +62,13 @@ function getSkipProtoDialogPermissionKey(aProtocolScheme) {
   );
 }
 
-function getSystemProtocol() {
-  // TODO add a scheme for Windows 10 or greater once support is added (see bug 1764599).
-  if (AppConstants.platform == "macosx") {
-    return "itunes";
-  }
-
-  info(
-    "Skipping this test since there isn't a suitable default protocol on this platform"
-  );
-  return null;
-}
-
 /**
  * Creates dummy web protocol handlers used for testing.
  */
 function initTestHandlers() {
-  TEST_PROTOS.forEach(scheme => {
+  const allProtos = structuredClone(TEST_PROTOS);
+  allProtos.push(WALLET_PROTO);
+  allProtos.forEach(scheme => {
     let webHandler = Cc[
       "@mozilla.org/uriloader/web-handler-app;1"
     ].createInstance(Ci.nsIWebHandlerApp);
@@ -93,6 +85,7 @@ function initTestHandlers() {
 /**
  * Update whether the protocol handler dialog is shown for our test protocol +
  * handler.
+ *
  * @param {string} scheme - Scheme of the protocol to change the ask state for.
  * @param {boolean} ask - true => show dialog, false => skip dialog.
  */
@@ -105,6 +98,7 @@ function updateAlwaysAsk(scheme, ask) {
 /**
  * Test whether the protocol handler dialog is set to show for our
  * test protocol + handler.
+ *
  * @param {string} scheme - Scheme of the protocol to test the ask state for.
  * @param {boolean} ask - true => show dialog, false => skip dialog.
  */
@@ -118,6 +112,7 @@ function testAlwaysAsk(scheme, ask) {
 
 /**
  * Triggers the load via a server redirect.
+ *
  * @param {string} serverRedirect - The redirect type.
  */
 function useServerRedirect(serverRedirect) {
@@ -147,6 +142,7 @@ function useServerRedirect(serverRedirect) {
 /**
  * Triggers the load with a specific principal or the browser's current
  * principal.
+ *
  * @param {nsIPrincipal} [principal] - Principal to use to trigger the load.
  */
 function useTriggeringPrincipal(principal = undefined) {
@@ -162,12 +158,13 @@ function useTriggeringPrincipal(principal = undefined) {
 /**
  * Navigates to a test URL with the given protocol scheme and waits for the
  * result.
+ *
  * @param {MozBrowser} browser - Browser to navigate.
  * @param {string} scheme - Scheme of the test url. e.g. irc
- * @param {Object} [options] - Test options.
- * @param {Object} [options.permDialogOptions] - Test options for the permission
+ * @param {object} [options] - Test options.
+ * @param {object} [options.permDialogOptions] - Test options for the permission
  * dialog. If defined, we expect this dialog to be shown.
- * @param {Object} [options.chooserDialogOptions] - Test options for the chooser
+ * @param {object} [options.chooserDialogOptions] - Test options for the chooser
  * dialog. If defined, we expect this dialog to be shown.
  * @param {Function} [options.triggerLoad] - An async callback function to
  * trigger the load. Will be passed the browser and scheme to use.
@@ -223,6 +220,7 @@ async function testOpenProto(
       actionConfirm,
       actionChangeApp,
       checkContents,
+      hasWalletWarning = false,
     } = permDialogOptions;
 
     if (actionChangeApp) {
@@ -230,15 +228,35 @@ async function testOpenProto(
     }
 
     let descriptionEl = dialogEl.querySelector("#description");
-    ok(
-      descriptionEl && BrowserTestUtils.isVisible(descriptionEl),
-      "Has a visible description element."
-    );
+    let warningEl = dialogEl.querySelector("#warning-bar");
+    if (hasWalletWarning) {
+      ok(
+        descriptionEl && !BrowserTestUtils.isVisible(descriptionEl),
+        "Has an invisible description element."
+      );
+      ok(
+        warningEl && BrowserTestUtils.isVisible(warningEl),
+        "Has a visible warning element."
+      );
+      ok(
+        !warningEl.innerHTML.toLowerCase().includes(NULL_PRINCIPAL_SCHEME),
+        "Warning does not include NullPrincipal scheme."
+      );
+    } else {
+      ok(
+        descriptionEl && BrowserTestUtils.isVisible(descriptionEl),
+        "Has a visible description element."
+      );
 
-    ok(
-      !descriptionEl.innerHTML.toLowerCase().includes(NULL_PRINCIPAL_SCHEME),
-      "Description does not include NullPrincipal scheme."
-    );
+      ok(
+        !descriptionEl.innerHTML.toLowerCase().includes(NULL_PRINCIPAL_SCHEME),
+        "Description does not include NullPrincipal scheme."
+      );
+      ok(
+        warningEl && !BrowserTestUtils.isVisible(warningEl),
+        "Has an invisible warning element."
+      );
+    }
 
     await testCheckbox(dialogEl, dialogType, {
       hasCheckbox,
@@ -308,10 +326,11 @@ async function testOpenProto(
 
 /**
  * Inspects the checkbox state and interacts with it.
+ *
  * @param {dialog} dialogEl
  * @param {string} dialogType - String identifier of dialog type.
  * Either "permission" or "chooser".
- * @param {Object} options - Test Options.
+ * @param {object} options - Test Options.
  * @param {boolean} [options.hasCheckbox] - Whether the dialog is expected to
  * have a visible checkbox.
  * @param {boolean} [options.hasCheckboxState] - The check state of the checkbox
@@ -365,6 +384,7 @@ async function testCheckbox(
 
 /**
  * Wait for the test handler to be opened.
+ *
  * @param {MozBrowser} browser - The browser the load should occur in.
  * @param {string} scheme - Scheme which triggered the handler to open.
  */
@@ -378,6 +398,7 @@ function waitForHandlerURL(browser, scheme) {
 
 /**
  * Test for open-protocol-handler permission.
+ *
  * @param {nsIPrincipal} principal - The principal to test the permission on.
  * @param {string} scheme - Scheme to generate permission key.
  * @param {boolean} hasPerm - Whether we expect the princial to set the
@@ -395,6 +416,7 @@ function testPermission(principal, scheme, hasPerm) {
 /**
  * Get the checkbox element of the dialog used to remember the handler choice or
  * store the permission.
+ *
  * @param {SubDialog} dialog - Protocol handler dialog embedded in a SubDialog.
  * @param {string} dialogType - Type of the dialog which holds the checkbox.
  * @returns {HTMLInputElement} - Checkbox of the dialog.
@@ -423,6 +445,7 @@ function getDialogType(dialog) {
 
 /**
  * Exit a protocol handler SubDialog and wait for it to be fully closed.
+ *
  * @param {MozBrowser} browser - Browser element of the tab where the dialog is
  * shown.
  * @param {SubDialog} dialog - SubDialog object which holds the protocol handler
@@ -444,7 +467,7 @@ async function closeDialog(browser, dialog, confirm, scheme) {
       listItem.click();
     }
 
-    dialogEl.setAttribute("buttondisabledaccept", false);
+    dialogEl.removeAttribute("buttondisabledaccept");
     dialogEl.acceptDialog();
   } else {
     dialogEl.cancelDialog();
@@ -466,6 +489,9 @@ registerCleanupFunction(function () {
 
 add_setup(async function () {
   initTestHandlers();
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.wallet_schemes", WALLET_PROTO]],
+  });
 });
 
 /**
@@ -1375,6 +1401,80 @@ add_task(async function test_unloaded_iframe() {
         hasCheckbox: true,
         actionConfirm: false, // Cancel dialog
       },
+    });
+  });
+});
+
+/**
+ * Tests that we show a warning UI element for a wallet scheme
+ */
+add_task(async function test_prompt_warning_for_wallet_scheme() {
+  // Test that we show the warning in the simple case.
+  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
+    await testOpenProto(browser, WALLET_PROTO, {
+      permDialogOptions: {
+        hasCheckbox: true,
+        hasChangeApp: false,
+        chooserIsNext: true,
+        actionConfirm: true,
+        hasWalletWarning: true,
+      },
+      chooserDialogOptions: { hasCheckbox: true, actionConfirm: true },
+    });
+  });
+
+  // Test that we show the warning with a null principal
+  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
+    await testOpenProto(browser, WALLET_PROTO, {
+      triggerLoad: () => {
+        let uri = `${WALLET_PROTO}://test`;
+        ContentTask.spawn(browser, { uri }, args => {
+          let frame = content.document.createElement("iframe");
+          frame.src = `data:text/html,<script>location.href="${args.uri}"</script>`;
+          content.document.body.appendChild(frame);
+        });
+      },
+      permDialogOptions: {
+        hasCheckbox: false,
+        chooserIsNext: true,
+        hasChangeApp: false,
+        actionConfirm: true,
+        hasWalletWarning: true,
+      },
+      chooserDialogOptions: {
+        hasCheckbox: true,
+        actionConfirm: false, // Cancel dialog
+      },
+    });
+  });
+
+  // Test that we show the warning with a system principal
+  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
+    await testOpenProto(browser, WALLET_PROTO, {
+      permDialogOptions: {
+        hasCheckbox: false,
+        hasChangeApp: false,
+        chooserIsNext: true,
+        actionChangeApp: false,
+        hasWalletWarning: true,
+      },
+      triggerLoad: useTriggeringPrincipal(
+        Services.scriptSecurityManager.getSystemPrincipal()
+      ),
+    });
+  });
+
+  // Test that we don't show the warning for another scheme.
+  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
+    await testOpenProto(browser, TEST_PROTOS[0], {
+      permDialogOptions: {
+        hasCheckbox: true,
+        hasChangeApp: false,
+        chooserIsNext: true,
+        actionConfirm: true,
+        hasWalletWarning: false,
+      },
+      chooserDialogOptions: { hasCheckbox: true, actionConfirm: true },
     });
   });
 });

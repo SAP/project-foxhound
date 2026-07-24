@@ -18,9 +18,9 @@ def maybe_setup_os_integration(config, tasks):
         return
 
     for task in tasks:
-        # Tags are ignored for raptor / talos. Marionette doesn't
-        # support dynamic chunking.
-        if task["suite"] in ("raptor", "talos", "marionette"):
+        # Tags are ignored for raptor / talos. Marionette unittest
+        # doesn't support dynamic chunking.
+        if task["suite"] in ("raptor", "talos", "marionette-unittest"):
             yield task
             continue
 

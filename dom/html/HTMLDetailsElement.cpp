@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/HTMLDetailsElement.h"
 
+#include "mozilla/BuiltInStyleSheets.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/HTMLDetailsElementBinding.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/BuiltInStyleSheets.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsTextNode.h"
 
@@ -60,8 +60,9 @@ void HTMLDetailsElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         } else {
           oldState.Assign(stringForState(wasOpen));
         }
-        RefPtr<ToggleEvent> toggleEvent = CreateToggleEvent(
-            u"toggle"_ns, oldState, stringForState(isOpen), Cancelable::eNo);
+        RefPtr<ToggleEvent> toggleEvent =
+            CreateToggleEvent(u"toggle"_ns, oldState, stringForState(isOpen),
+                              Cancelable::eNo, nullptr);
         mToggleEventDispatcher =
             new AsyncEventDispatcher(this, toggleEvent.forget());
         mToggleEventDispatcher->PostDOMEvent();
@@ -98,7 +99,7 @@ void HTMLDetailsElement::SetupShadowTree() {
     return;
   }
 
-  nsNodeInfoManager* nim = OwnerDoc()->NodeInfoManager();
+  nsNodeInfoManager* nim = NodeInfoManager();
   RefPtr<NodeInfo> slotNodeInfo = nim->GetNodeInfo(
       nsGkAtoms::slot, nullptr, kNameSpaceID_XHTML, nsINode::ELEMENT_NODE);
   sr->AppendBuiltInStyleSheet(BuiltInStyleSheet::Details);
@@ -137,7 +138,7 @@ void HTMLDetailsElement::SetupShadowTree() {
       return;
     }
     if (StaticPrefs::layout_css_details_content_enabled()) {
-      slot->SetPseudoElementType(PseudoStyleType::detailsContent);
+      slot->SetPseudoElementType(PseudoStyleType::DetailsContent);
     }
     sr->AppendChildTo(slot, kNotify, IgnoreErrors());
   }
@@ -168,7 +169,10 @@ bool HTMLDetailsElement::HandleCommandInternal(Element* aSource,
     return true;
   }
 
-  MOZ_ASSERT(StaticPrefs::dom_element_commandfor_on_details_enabled());
+  if (!StaticPrefs::dom_element_commandfor_on_details_enabled()) {
+    return false;
+  }
+
   if (aCommand == Command::Toggle) {
     ToggleOpen();
     return true;
@@ -202,13 +206,8 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
     return;
   }
 
-  RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
-
-  RefPtr<Document> doc = OwnerDoc();
-  bool oldFlag = doc->FireMutationEvents();
-  doc->SetFireMutationEvents(false);
-
-  nsINode* root = SubtreeRoot();
+  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
+  nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
       continue;
@@ -222,8 +221,6 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
       }
     }
   }
-
-  doc->SetFireMutationEvents(oldFlag);
 }
 
 void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
@@ -237,13 +234,8 @@ void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
     return;
   }
 
-  RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
-
-  RefPtr<Document> doc = OwnerDoc();
-  bool oldFlag = doc->FireMutationEvents();
-  doc->SetFireMutationEvents(false);
-
-  nsINode* root = SubtreeRoot();
+  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
+  nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
       continue;
@@ -258,8 +250,6 @@ void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
       }
     }
   }
-
-  doc->SetFireMutationEvents(oldFlag);
 }
 
 }  // namespace mozilla::dom

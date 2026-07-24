@@ -5,11 +5,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "AudioInputSource.h"
-
+#include "MockCubeb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
-#include "MockCubeb.h"
 #include "mozilla/Result.h"
 #include "mozilla/gtest/WaitFor.h"
 #include "nsContentUtils.h"
@@ -80,10 +78,10 @@ TEST(TestAudioInputSource, StartAndStop)
     EXPECT_EQ(stream->InputChannels(), channels);
     EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(sourceRate));
 
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { ais->Stop(); });
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
   }
 
   // Make sure restart is ok.
@@ -99,10 +97,10 @@ TEST(TestAudioInputSource, StartAndStop)
     EXPECT_EQ(stream->InputChannels(), channels);
     EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(sourceRate));
 
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { ais->Stop(); });
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
   }
 
   ais = nullptr;  // Drop the SharedThreadPool here.
@@ -156,10 +154,10 @@ TEST(TestAudioInputSource, DataOutputBeforeStartAndAfterStop)
 
   stream->SetInputRecordingEnabled(true);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   // Check the data output
   {
@@ -230,13 +228,13 @@ TEST(TestAudioInputSource, ErrorCallback)
   EXPECT_FALSE(stream->mHasOutput);
   EXPECT_EQ(stream->InputChannels(), channels);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { stream->ForceError(); });
   WaitFor(stream->ErrorForcedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   ais = nullptr;  // Drop the SharedThreadPool here.
 }
@@ -278,13 +276,13 @@ TEST(TestAudioInputSource, DeviceChangedCallback)
   EXPECT_FALSE(stream->mHasOutput);
   EXPECT_EQ(stream->InputChannels(), channels);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { stream->ForceDeviceChanged(); });
   WaitFor(stream->DeviceChangeForcedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   ais = nullptr;  // Drop the SharedThreadPool here.
 }
@@ -330,7 +328,7 @@ TEST(TestAudioInputSource, InputProcessing)
         EXPECT_EQ(WaitFor(p), aExpected);
 
         DispatchFunction([&] { ais->Stop(); });
-        Unused << WaitFor(cubeb->StreamDestroyEvent());
+        (void)WaitFor(cubeb->StreamDestroyEvent());
       };
 
   // Not supported by backend.

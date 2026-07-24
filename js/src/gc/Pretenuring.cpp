@@ -494,7 +494,7 @@ void AllocSite::printInfo(bool hasPromotionRate, double promotionRate,
   // Location and bytecode op (not present for catch-all sites).
   char location[21] = {'\0'};
   char opName[13] = {'\0'};
-  if (hasScript()) {
+  if (hasScript() && pcOffset() != EnvSitePCOffset) {
     uint32_t line = PCToLineNumber(script(), script()->offsetToPC(pcOffset()));
     const char* scriptName = FindBaseName(script()->filename());
     SprintfLiteral(location, "%s:%u", scriptName, line);

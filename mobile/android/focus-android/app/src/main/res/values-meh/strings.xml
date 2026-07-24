@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p> <p>Ni´ima kua iin nuu nánuku yu´u: <ul> <li>Nánuku jee kaka nuu ka̱a̱ ya´a</li> <li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li> <li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li> </ul> </p> <p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/> <a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p>\n<p>Ni´ima kua iin nuu nánuku yu´u:\n<ul>\n<li>Nánuku jee kaka nuu ka̱a̱ ya´a</li>\n<li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li>\n<li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li>\n</ul> </p>\n<p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/>\n<a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privacidad jii seguridad</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -844,9 +851,9 @@
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Conexión ntu va´a</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Sa̱na kuvi iin problema jii configuración ka̱a̱ servidor a xíín íyo neva kuvi sa´a xeen.<br/><br/> Dee a kivɨ-nu servidor ya´a íchi yata sa̱naan kuvi iin error nkene ntañu\'u, kuvi nakivɨ-nu íchika dee nníní.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Sa̱na kuvi iin problema jii configuración ka̱a̱ servidor a xíín íyo neva kuvi sa´a xeen.<br/><br/>\nDee a kivɨ-nu servidor ya´a íchi yata sa̱naan kuvi iin error nkene ntañu\'u, kuvi nakivɨ-nu íchika dee nníní.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Sana íyo ñivɨ kuvi kantu\'un noo\'o nuu sitio ya\'a de jia\'nu kuvi koo tixi.</label> <br><br> <label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Sana íyo ñivɨ kuvi kantu\'un noo\'o nuu sitio ya\'a de jia\'nu kuvi koo tixi.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

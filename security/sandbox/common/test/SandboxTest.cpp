@@ -77,7 +77,7 @@ void InitializeSandboxTestingActors(
 
   // GMPlugin binds us to the GMP Thread, so we need IPC's Send to be done on
   // the same thread
-  Unused << aActor->SendInitSandboxTesting(std::move(sandboxTestingChildEnd));
+  (void)aActor->SendInitSandboxTesting(std::move(sandboxTestingChildEnd));
   // But then the SandboxTestingParent::Create() call needs to be on the main
   // thread
   NS_DispatchToMainThread(NS_NewRunnableFunction(

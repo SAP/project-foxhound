@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FdPrintf_h__
-#define __FdPrintf_h__
+#ifndef FdPrintf_h_
+#define FdPrintf_h_
 
 #include <cstdarg>
 
@@ -55,4 +55,4 @@ void FdPrintf(platform_handle_t aFd, const char* aFormat, ...)
 // Write buffer contents without formatting (eg for use with SNPrintf).
 void FdPuts(platform_handle_t aFd, const char* aBuf, size_t aLen);
 
-#endif /* __FdPrintf_h__ */
+#endif /* FdPrintf_h_ */

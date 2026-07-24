@@ -40,6 +40,12 @@ const TEST_URI = `
         color: salmon;
       }
     }
+
+    @container mycontainer {
+      h2, [test-hint="query-less-container-query"] {
+        color: hotpink;
+      }
+    }
   </style>
   <body id=myBody class="a-container test">
     <h1>Hello @container!</h1>
@@ -105,6 +111,10 @@ add_task(async function () {
   assertContainerQueryData(view, [
     { selector: "element", ancestorRulesData: null },
     {
+      selector: `h2, [test-hint="query-less-container-query"]`,
+      ancestorRulesData: ["@container mycontainer {"],
+    },
+    {
       selector: `div, [test-hint="container-duplicate-name--section"]`,
       ancestorRulesData: ["@container mycontainer (1px < width < 10000px) {"],
     },
@@ -131,6 +141,16 @@ add_task(async function () {
     inspector,
     view,
     ruleIndex: 2,
+    expectedHeaderText: "<section>",
+    expectedBodyText: [
+      "container-type: inline-size",
+      `inline-size: ${sectionInlineSize}`,
+    ],
+  });
+  await assertQueryContainerTooltip({
+    inspector,
+    view,
+    ruleIndex: 3,
     expectedHeaderText: "<body#myBody.a-container.test>",
     expectedBodyText: [
       "container-type: size",
@@ -145,7 +165,10 @@ add_task(async function () {
   await assertJumpToContainerButton(inspector, view, 1, "section");
 
   await selectNode("h2", inspector);
-  await assertJumpToContainerButton(inspector, view, 2, "body");
+  await assertJumpToContainerButton(inspector, view, 2, "section");
+
+  await selectNode("h2", inspector);
+  await assertJumpToContainerButton(inspector, view, 3, "body");
 });
 
 function assertContainerQueryData(view, expectedRules) {

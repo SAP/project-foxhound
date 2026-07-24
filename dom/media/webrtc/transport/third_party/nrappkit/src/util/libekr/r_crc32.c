@@ -147,10 +147,10 @@ static const u_int32_t crctab[256] = {
 #include <stdio.h>
 #include <sys/types.h>
 
-int r_crc32(char *buf, int dlen, u_int32_t *cval)
+int r_crc32(const char *buf, int dlen, u_int32_t *cval)
 {
     u_int32_t crc = ~0;
-    char *p = 0;
+    const char *p = 0;
     int i;
     u_int32_t crc32_total = 0 ;
 

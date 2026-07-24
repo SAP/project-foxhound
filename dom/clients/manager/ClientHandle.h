@@ -6,10 +6,10 @@
 #ifndef _mozilla_dom_ClientHandle_h
 #define _mozilla_dom_ClientHandle_h
 
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientOpPromise.h"
 #include "mozilla/dom/ClientThing.h"
-#include "mozilla/MozPromise.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -85,7 +85,8 @@ class ClientHandle final : public ClientThing<ClientHandleChild> {
   // it triggers an error handled in the Client's context.  Other errors
   // will result in the promise rejecting.
   RefPtr<GenericErrorResultPromise> PostMessage(
-      ipc::StructuredCloneData& aData, const ServiceWorkerDescriptor& aSource);
+      NotNull<ipc::StructuredCloneData*> aData,
+      const ServiceWorkerDescriptor& aSource);
 
   // Return a Promise that resolves when the ClientHandle object is detached
   // from its remote actors.  This will happen if the ClientSource is destroyed

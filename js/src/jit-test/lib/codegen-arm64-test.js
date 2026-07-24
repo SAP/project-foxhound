@@ -5,15 +5,15 @@ load(libdir + "codegen-test-common.js");
 
 // End of prologue
 var arm64_prefix = `
-910003fd  mov     x29, sp
-910003fc  mov     x28, sp(
-f9000bb7  str     x23, \\[x29, #16\\])?
+mov     x29, sp
+mov     x28, sp(
+str     x23, \\[x29, #16\\])?
 `;
 
 // Start of epilogue
 var arm64_suffix = `
-f94007fe  ldr     x30, \\[sp, #8\\]
-f94003fd  ldr     x29, \\[sp\\]
+ldr     x30, \\[sp, #8\\]
+ldr     x29, \\[sp\\]
 `;
 
 // For when nothing else applies: `module_text` is the complete source text of
@@ -35,7 +35,8 @@ function codegenTestARM64_adhoc(module_text, export_name, expected, options = {}
         expected = expected + '\n' + arm64_suffix;
     expected = fixlines(expected);
 
-    const output_matches_expected = output.match(new RegExp(expected)) != null;
+    const output_simple = stripencoding(output, `${HEX}{8}`);
+    const output_matches_expected = output_simple.match(new RegExp(expected)) != null;
     if (!output_matches_expected) {
         print("---- codegen-arm64-test.js: TEST FAILED ----");
     }

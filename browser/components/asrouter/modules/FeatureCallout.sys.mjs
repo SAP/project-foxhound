@@ -7,7 +7,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PageEventManager: "resource:///modules/asrouter/PageEventManager.sys.mjs",
 });
 
@@ -30,18 +31,18 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
  */
 export class FeatureCallout {
   /**
-   * @typedef {Object} FeatureCalloutOptions
+   * @typedef {object} FeatureCalloutOptions
    * @property {Window} win window in which messages will be rendered.
-   * @property {{name: String, defaultValue?: String}} [pref] optional pref used
+   * @property {{name: string, defaultValue?: string}} [pref] optional pref used
    *   to track progress through a given feature tour. for example:
    *   {
    *     name: "browser.pdfjs.feature-tour",
    *     defaultValue: '{ screen: "FEATURE_CALLOUT_1", complete: false }',
    *   }
    *   or { name: "browser.pdfjs.feature-tour" } (defaultValue is optional)
-   * @property {String} [location] string to pass as the page when requesting
+   * @property {string} [location] string to pass as the page when requesting
    *   messages from ASRouter and sending telemetry.
-   * @property {String} context either "chrome" or "content". "chrome" is used
+   * @property {string} context either "chrome" or "content". "chrome" is used
    *   when the callout is shown in the browser chrome, and "content" is used
    *   when the callout is shown in a content page like Firefox View.
    * @property {MozBrowser} [browser] <browser> element responsible for the
@@ -191,15 +192,15 @@ export class FeatureCallout {
   }
 
   /**
-   * @typedef {Object} AdvanceScreensOptions
-   * @property {Boolean|"actionResult"} [behavior] Set to true to take effect
+   * @typedef {object} AdvanceScreensOptions
+   * @property {boolean | "actionResult"} [behavior] Set to true to take effect
    *   immediately, or set to "actionResult" to only advance screens after the
    *   special message action has resolved successfully. "actionResult" requires
    *   `action.needsAwait` to be true. Defaults to true.
-   * @property {String} [id] The id of the screen to advance to. If both id and
+   * @property {string} [id] The id of the screen to advance to. If both id and
    *   direction are provided (which they shouldn't be), the id takes priority.
    *   Either `id` or `direction` is required. Passing `%end%` ends the tour.
-   * @property {Number} [direction] How many screens, and in which direction, to
+   * @property {number} [direction] How many screens, and in which direction, to
    *   advance. Positive integers advance forward, negative integers advance
    *   backward. Must be an integer. If advancing by the specified number of
    *   screens would take you beyond the last screen, it will end the tour, just
@@ -480,10 +481,11 @@ export class FeatureCallout {
       case "popupshowing":
         // If another panel is showing, close the tour.
         if (
+          event.target.ownerGlobal === this.win &&
           event.target !== this._container &&
           event.target.localName === "panel" &&
           event.target.id !== "ctrlTab-panel" &&
-          event.target.ownerGlobal === this.win
+          event.target.getAttribute("noautohide") !== "true"
         ) {
           this.endTour();
         }
@@ -569,18 +571,18 @@ export class FeatureCallout {
    */
 
   /**
-   * @typedef {Object} PanelPosition Specifies how the callout panel should be
+   * @typedef {object} PanelPosition Specifies how the callout panel should be
    *   positioned relative to the anchor element, by providing which point on
    *   the callout should be aligned with which point on the anchor element.
    * @property {PopupAttachmentPoint} anchor_attachment
    * @property {PopupAttachmentPoint} callout_attachment
-   * @property {String} [panel_position_string] The attachments joined into a
+   * @property {string} [panel_position_string] The attachments joined into a
    *   string, e.g. "bottomleft topright". Passed to XULPopupElement::openPopup.
    *   This is not provided by JSON, but generated from anchor_attachment and
    *   callout_attachment.
-   * @property {Number} [offset_x] Offset in pixels to apply to the callout
+   * @property {number} [offset_x] Offset in pixels to apply to the callout
    *   position in the horizontal direction.
-   * @property {Number} [offset_y] The same in the vertical direction.
+   * @property {number} [offset_y] The same in the vertical direction.
    *
    * This is used when you want the callout to be displayed as a <panel>
    * element. A panel is critical when the callout is displayed in the browser
@@ -616,35 +618,35 @@ export class FeatureCallout {
    */
 
   /**
-   * @typedef {Object} PositionOverride CSS properties to override
+   * @typedef {object} PositionOverride CSS properties to override
    *   the callout's position relative to the anchor element. Although the
    *   callout is not actually a child of the anchor element, this allows
    *   absolute positioning of the callout relative to the anchor element. In
    *   other words, { top: "0px", left: "0px" } will position the callout in the
    *   top left corner of the anchor element, in the same way these properties
    *   would position a child element.
-   * @property {String} [top]
-   * @property {String} [left]
-   * @property {String} [right]
-   * @property {String} [bottom]
+   * @property {string} [top]
+   * @property {string} [left]
+   * @property {string} [right]
+   * @property {string} [bottom]
    */
 
   /**
-   * @typedef {Object} AutoFocusOptions For the optional autofocus feature.
-   * @property {String} [selector] A preferred CSS selector, if you want a
+   * @typedef {object} AutoFocusOptions For the optional autofocus feature.
+   * @property {string} [selector] A preferred CSS selector, if you want a
    *   specific element to be focused. If omitted, the default prioritization
    *   listed below will be used, based on `use_defaults`.
    * Default prioritization: primary_button, secondary_button, additional_button
    *   (excluding pseudo-links), dismiss_button, <input>, any button.
-   * @property {Boolean} [use_defaults] Whether to use the default element
+   * @property {boolean} [use_defaults] Whether to use the default element
    *   prioritization. If `selector` is provided and the element can't be found,
    *   and this is set to false, nothing will be selected. If `selector` is not
    *   provided, this must be true. Defaults to true.
    */
 
   /**
-   * @typedef {Object} Anchor
-   * @property {String} selector CSS selector for the anchor node.
+   * @typedef {object} Anchor
+   * @property {string} selector CSS selector for the anchor node.
    * @property {Element} [element] The anchor node resolved from the selector.
    *   Not provided by JSON, but generated dynamically.
    * @property {PanelPosition} [panel_position] Used to show the callout in a
@@ -654,12 +656,12 @@ export class FeatureCallout {
    * @property {PositionOverride} [absolute_position] Only used for HTML
    *   callouts, i.e. when panel_position is not specified. Allows absolute
    *   positioning of the callout relative to the anchor element.
-   * @property {Boolean} [hide_arrow] Whether to hide the arrow.
-   * @property {Boolean} [no_open_on_anchor] Whether to set the [open] style on
+   * @property {boolean} [hide_arrow] Whether to hide the arrow.
+   * @property {boolean} [no_open_on_anchor] Whether to set the [open] style on
    *   the anchor element when the callout is shown. False to set it, true to
    *   not set it. This only works for panel callouts. Not all elements have an
    *   [open] style. Buttons do, for example. It's usually similar to :active.
-   * @property {Number} [arrow_width] The desired width of the arrow in a number
+   * @property {number} [arrow_width] The desired width of the arrow in a number
    *   of pixels. 33.94113 by default (this corresponds to 24px edges).
    * @property {AutoFocusOptions} [autofocus] Options for the optional autofocus
    *   feature. Typically omitted, but if provided, an element inside the
@@ -670,6 +672,7 @@ export class FeatureCallout {
    * Return the first visible anchor element for the current screen. Screens can
    * specify multiple anchors in an array, and the first one that is visible
    * will be used. If none are visible, return null.
+   *
    * @returns {Anchor|null}
    */
   _getAnchor() {
@@ -927,7 +930,7 @@ export class FeatureCallout {
    * form "anchor_attachment callout_attachment".
    *
    * @param {PanelPosition} panelPosition
-   * @returns {String|null} A string like "bottomcenter topright", or null if
+   * @returns {string | null} A string like "bottomcenter topright", or null if
    *   the panelPosition object is invalid.
    */
   _getPanelPositionString(panelPosition) {
@@ -1019,8 +1022,13 @@ export class FeatureCallout {
     }
 
     const { autohide, ignorekeys, padding } = this.currentScreen.content;
-    const { panel_position, hide_arrow, no_open_on_anchor, arrow_width } =
-      anchor;
+    const {
+      panel_position,
+      hide_arrow,
+      no_open_on_anchor,
+      arrow_width,
+      arrow_corner_distance,
+    } = anchor;
     const needsPanel =
       "MozXULElement" in this.win && !!panel_position?.panel_position_string;
 
@@ -1067,6 +1075,14 @@ export class FeatureCallout {
         this._container.style.setProperty("--arrow-width", `${arrow_width}px`);
       } else {
         this._container.style.removeProperty("--arrow-width");
+      }
+      if (arrow_corner_distance) {
+        this._container.style.setProperty(
+          "--arrow-corner-distance",
+          `${arrow_corner_distance}px`
+        );
+      } else {
+        this._container.style.removeProperty("--arrow-corner-distance");
       }
       if (padding) {
         // This property used to accept a number value, either a number or a
@@ -1167,7 +1183,8 @@ export class FeatureCallout {
     /**
      * Horizontally align a top/bottom-positioned callout according to the
      * passed position.
-     * @param {String} position one of...
+     *
+     * @param {string} position one of...
      *   - "center": for use with top/bottom. arrow is in the center, and the
      *       center of the callout aligns with the parent center.
      *   - "center-arrow-start": for use with center-arrow-top-start. arrow is
@@ -1619,7 +1636,8 @@ export class FeatureCallout {
 
   /**
    * Emit an event to the broker, if one is present.
-   * @param {String} name
+   *
+   * @param {string} name
    * @param {any} data
    */
   _emitEvent(name, data) {
@@ -1747,8 +1765,9 @@ export class FeatureCallout {
    * provided, try requesting one from ASRouter. The message content is stored
    * in this.config, which is returned by AWGetFeatureConfig. The aboutwelcome
    * bundle will use that function to get the content when it executes.
-   * @param {Object} [message] ASRouter message. Omit to request a new one.
-   * @param {Number} [screenIndex] Index of the screen to render.
+   *
+   * @param {object} [message] ASRouter message. Omit to request a new one.
+   * @param {number} [screenIndex] Index of the screen to render.
    * @returns {Promise<boolean>} true if a message is loaded, false if not.
    */
   async _updateConfig(message, screenIndex) {
@@ -1821,7 +1840,8 @@ export class FeatureCallout {
   /**
    * Request a message from ASRouter, targeting the `browser` and `page` values
    * passed to the constructor.
-   * @returns {Promise<Object>} the requested message.
+   *
+   * @returns {Promise<object>} the requested message.
    */
   async _loadConfig() {
     this.loadingConfig = true;
@@ -1838,7 +1858,8 @@ export class FeatureCallout {
 
   /**
    * Try to render the callout in the current document.
-   * @returns {Promise<Boolean>} whether the callout was rendered.
+   *
+   * @returns {Promise<boolean>} whether the callout was rendered.
    */
   async _renderCallout() {
     this._setupWindowFunctions();
@@ -1858,34 +1879,35 @@ export class FeatureCallout {
 
   /**
    * For each member of the screen's page_event_listeners array, add a listener.
+   *
    * @param {Array<PageEventListenerConfig>} listeners
    *
-   * @typedef {Object} PageEventListenerConfig
+   * @typedef {object} PageEventListenerConfig
    * @property {PageEventListenerParams} params Event listener parameters
    * @property {PageEventListenerAction} action Sent when the event fires
    *
-   * @typedef {Object} PageEventListenerParams See PageEventManager.sys.mjs
-   * @property {String} type Event type string e.g. `click`
-   * @property {String} [selectors] Target selector, e.g. `tag.class, #id[attr]`
+   * @typedef {object} PageEventListenerParams See PageEventManager.sys.mjs
+   * @property {string} type Event type string e.g. `click`
+   * @property {string} [selectors] Target selector, e.g. `tag.class, #id[attr]`
    * @property {PageEventListenerOptions} [options] addEventListener options
    *
-   * @typedef {Object} PageEventListenerOptions
-   * @property {Boolean} [capture] Use event capturing phase
-   * @property {Boolean} [once] Remove listener after first event
-   * @property {Boolean} [preventDefault] Prevent default action
-   * @property {Number} [interval] Used only for `timeout` and `interval` event
+   * @typedef {object} PageEventListenerOptions
+   * @property {boolean} [capture] Use event capturing phase
+   * @property {boolean} [once] Remove listener after first event
+   * @property {boolean} [preventDefault] Prevent default action
+   * @property {number} [interval] Used only for `timeout` and `interval` event
    *   types. These don't set up real event listeners, but instead invoke the
    *   action on a timer.
-   * @property {Boolean} [every_window] Extend addEventListener to all windows.
+   * @property {boolean} [every_window] Extend addEventListener to all windows.
    *   Not compatible with `interval`.
    *
-   * @typedef {Object} PageEventListenerAction Action sent to AboutWelcomeParent
-   * @property {String} [type] Action type, e.g. `OPEN_URL`
-   * @property {Object} [data] Extra data, properties depend on action type
+   * @typedef {object} PageEventListenerAction Action sent to AboutWelcomeParent
+   * @property {string} [type] Action type, e.g. `OPEN_URL`
+   * @property {object} [data] Extra data, properties depend on action type
    * @property {AdvanceScreensOptions} [advance_screens] Jump to a new screen
-   * @property {Boolean|"actionResult"} [dismiss] Dismiss callout
-   * @property {Boolean|"actionResult"} [reposition] Reposition callout
-   * @property {Boolean} [needsAwait] Wait for any special message actions
+   * @property {boolean | "actionResult"} [dismiss] Dismiss callout
+   * @property {boolean | "actionResult"} [reposition] Reposition callout
+   * @property {boolean} [needsAwait] Wait for any special message actions
    *   (given by the type property above) to resolve before advancing screens,
    *   dismissing, or repositioning the callout, if those actions are set to
    *   "actionResult".
@@ -1906,6 +1928,7 @@ export class FeatureCallout {
 
   /**
    * Perform an action in response to a page event.
+   *
    * @param {PageEventListenerAction} action
    * @param {Event} event Triggering event
    */
@@ -1972,8 +1995,9 @@ export class FeatureCallout {
 
   /**
    * For a given element, calculate a unique string that identifies it.
+   *
    * @param {Element} target Element to calculate the selector for
-   * @returns {String} Computed event target selector, e.g. `button#next`
+   * @returns {string} Computed event target selector, e.g. `button#next`
    */
   _getUniqueElementIdentifier(target) {
     let source;
@@ -2017,6 +2041,7 @@ export class FeatureCallout {
    * button is found, focus the first input element. If no affirmative action is
    * found, focus the first button, which is probably the dismiss button. A
    * custom selector can also be provided to focus a specific element.
+   *
    * @param {AutoFocusOptions} [options]
    * @returns {Element|null} The element to focus when the callout is shown.
    */
@@ -2053,8 +2078,9 @@ export class FeatureCallout {
   /**
    * Show a feature callout message, either by requesting one from ASRouter or
    * by showing a message passed as an argument.
-   * @param {Object} [message] optional message to show instead of requesting one
-   * @returns {Promise<Boolean>} true if a message was shown
+   *
+   * @param {object} [message] optional message to show instead of requesting one
+   * @returns {Promise<boolean>} true if a message was shown
    */
   async showFeatureCallout(message) {
     let updated = await this._updateConfig(message);
@@ -2144,17 +2170,17 @@ export class FeatureCallout {
   }
 
   /**
-   * @typedef {Object} FeatureCalloutTheme An object with a set of custom color
+   * @typedef {object} FeatureCalloutTheme An object with a set of custom color
    *   schemes and/or a preset key. If both are provided, the preset will be
    *   applied first, then the custom themes will override the preset values.
-   * @property {String} [preset] Key of {@link FeatureCallout.themePresets}
+   * @property {string} [preset] Key of {@link FeatureCallout.themePresets}
    * @property {ColorScheme} [light] Custom light scheme
    * @property {ColorScheme} [dark] Custom dark scheme
    * @property {ColorScheme} [hcm] Custom high contrast scheme
    * @property {ColorScheme} [all] Custom scheme that will be applied in all
    *   cases, but overridden by the other schemes if they are present. This is
    *   useful if the values are already controlled by the browser theme.
-   * @property {Boolean} [simulateContent] Set to true if the feature callout
+   * @property {boolean} [simulateContent] Set to true if the feature callout
    *   exists in the browser chrome but is meant to be displayed over the
    *   content area to appear as if it is part of the page. This will cause the
    *   styles to use a media query targeting the content instead of the chrome,
@@ -2164,12 +2190,13 @@ export class FeatureCallout {
    */
 
   /**
-   * @typedef {Object} ColorScheme An object with key-value pairs, with keys
+   * @typedef {object} ColorScheme An object with key-value pairs, with keys
    *   from {@link FeatureCallout.themePropNames}, mapped to CSS color values
    */
 
   /**
    * Combine the preset and custom themes into a single object and store it.
+   *
    * @param {FeatureCalloutTheme} theme
    */
   _initTheme(theme) {
@@ -2220,8 +2247,9 @@ export class FeatureCallout {
 
   /**
    * Set or remove a CSS custom property on the feature callout container
-   * @param {String} name Name of the CSS custom property
-   * @param {String|void} [value] Value of the property, or omit to remove it
+   *
+   * @param {string} name Name of the CSS custom property
+   * @param {string | void} [value] Value of the property, or omit to remove it
    */
   _setThemeVariable(name, value) {
     if (value) {
@@ -2264,57 +2292,53 @@ export class FeatureCallout {
     "dismiss-button-background-active",
   ];
 
-  /** @type {Object<String, FeatureCalloutTheme>} */
+  /** @type {{[key: string]: FeatureCalloutTheme}} */
   static themePresets = {
     // For themed system pages like New Tab and Firefox View. Themed content
     // colors inherit from the user's theme through contentTheme.js.
     "themed-content": {
       all: {
         background:
-          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
-        color: "var(--newtab-text-primary-color, var(--in-content-page-color))",
+          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
+        color: "var(--newtab-text-primary-color, var(--text-color))",
         border:
           "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #000)",
-        "accent-color": "var(--in-content-primary-button-background)",
+        "accent-color": "var(--button-background-color-primary)",
         "button-background": "color-mix(in srgb, transparent 93%, #000)",
-        "button-color":
-          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+        "button-color": "var(--newtab-text-primary-color, var(--text-color))",
         "button-border": "transparent",
         "button-background-hover": "color-mix(in srgb, transparent 88%, #000)",
         "button-color-hover":
-          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+          "var(--newtab-text-primary-color, var(--text-color))",
         "button-border-hover": "transparent",
         "button-background-active": "color-mix(in srgb, transparent 80%, #000)",
         "button-color-active":
-          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+          "var(--newtab-text-primary-color, var(--text-color))",
         "button-border-active": "transparent",
-        "primary-button-background":
-          "var(--in-content-primary-button-background)",
-        "primary-button-color": "var(--in-content-primary-button-text-color)",
-        "primary-button-border":
-          "var(--in-content-primary-button-border-color)",
+        "primary-button-background": "var(--button-background-color-primary)",
+        "primary-button-color": "var(--button-text-color-primary)",
+        "primary-button-border": "var(--button-border-color-primary)",
         "primary-button-background-hover":
-          "var(--in-content-primary-button-background-hover)",
-        "primary-button-color-hover":
-          "var(--in-content-primary-button-text-color-hover)",
+          "var(--button-background-color-primary-hover)",
+        "primary-button-color-hover": "var(--button-text-color-primary-hover)",
         "primary-button-border-hover":
-          "var(--in-content-primary-button-border-hover)",
+          "var(--button-border-color-primary-hover)",
         "primary-button-background-active":
-          "var(--in-content-primary-button-background-active)",
+          "var(--button-background-color-primary-active)",
         "primary-button-color-active":
-          "var(--in-content-primary-button-text-color-active)",
+          "var(--button-text-color-primary-active)",
         "primary-button-border-active":
-          "var(--in-content-primary-button-border-active)",
+          "var(--button-border-color-primary-active)",
         "link-color": "LinkText",
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
         "dismiss-button-background":
-          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
+          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
         "dismiss-button-background-hover":
-          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
+          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
         "dismiss-button-background-active":
-          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
+          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
       },
       dark: {
         border:

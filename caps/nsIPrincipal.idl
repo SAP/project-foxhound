@@ -360,7 +360,7 @@ interface nsIPrincipal : nsISupports
      *
      * May be called from any thread.
      */
-    readonly attribute ACString exposablePrePath;
+    readonly attribute AUTF8String exposablePrePath;
 
     /**
      * Returns the Spec of the Principals URI with
@@ -368,7 +368,7 @@ interface nsIPrincipal : nsISupports
      *
      * May be called from any thread.
      */
-    readonly attribute ACString exposableSpec;
+    readonly attribute AUTF8String exposableSpec;
 
     /**
      * Return the scheme of the principals URI

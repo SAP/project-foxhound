@@ -21,7 +21,7 @@ class MiddleCroppingLabelFrame final : public MiddleCroppingBlockFrame {
 
   void GetUncroppedValue(nsAString& aValue) override;
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 };
 
 }  // namespace mozilla

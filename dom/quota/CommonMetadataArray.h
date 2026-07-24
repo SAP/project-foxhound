@@ -7,9 +7,8 @@
 #ifndef DOM_QUOTA_COMMONMETADATAARRAY_H_
 #define DOM_QUOTA_COMMONMETADATAARRAY_H_
 
-#include "mozilla/dom/quota/CommonMetadataArrayFwd.h"
-
 #include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/CommonMetadataArrayFwd.h"
 #include "nsTArray.h"
 
 #endif  // DOM_QUOTA_COMMONMETADATAARRAY_H_

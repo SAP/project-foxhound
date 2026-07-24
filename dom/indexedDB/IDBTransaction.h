@@ -4,20 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_idbtransaction_h__
-#define mozilla_dom_idbtransaction_h__
+#ifndef mozilla_dom_idbtransaction_h_
+#define mozilla_dom_idbtransaction_h_
 
 #include "FlippedOnce.h"
-#include "mozilla/Attributes.h"
+#include "SafeRefPtr.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/dom/IDBTransactionBinding.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
-#include "mozilla/DOMEventTargetHelper.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIRunnable.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "SafeRefPtr.h"
 
 namespace mozilla {
 
@@ -390,4 +389,4 @@ inline bool ReferenceEquals(const Maybe<IDBTransaction&>& aLHS,
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_idbtransaction_h__
+#endif  // mozilla_dom_idbtransaction_h_

@@ -50,7 +50,6 @@ const TLS_VERSIONS = [
 ExtensionPreferencesManager.addSetting("network.networkPredictionEnabled", {
   permission: "privacy",
   prefNames: [
-    "network.predictor.enabled",
     "network.prefetch-next",
     "network.http.speculative-parallel-limit",
     "network.dns.disablePrefetch",
@@ -60,14 +59,12 @@ ExtensionPreferencesManager.addSetting("network.networkPredictionEnabled", {
     return {
       "network.http.speculative-parallel-limit": value ? undefined : 0,
       "network.dns.disablePrefetch": !value,
-      "network.predictor.enabled": value,
       "network.prefetch-next": value,
     };
   },
 
   getCallback() {
     return (
-      getBoolPref("network.predictor.enabled") &&
       getBoolPref("network.prefetch-next") &&
       getIntPref("network.http.speculative-parallel-limit") > 0 &&
       !getBoolPref("network.dns.disablePrefetch")

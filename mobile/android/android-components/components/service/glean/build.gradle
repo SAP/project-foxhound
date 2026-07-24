@@ -2,60 +2,45 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.service.glean'
 }
 
-// Define library names and version constants.
-String GLEAN_LIBRARY = "org.mozilla.telemetry:glean:${libs.versions.mozilla.glean.get()}"
-String GLEAN_LIBRARY_FORUNITTESTS = "org.mozilla.telemetry:glean-native-forUnitTests:${libs.versions.mozilla.glean.get()}"
-
 dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.androidx.work.runtime
-    
-    api GLEAN_LIBRARY
-
     // So consumers can set a HTTP client.
     api project(':components:concept-fetch')
 
-    implementation project(':components:support-ktx')
+    api libs.mozilla.glean
+
     implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
 
-    testImplementation libs.androidx.test.core
+    implementation libs.androidx.work.runtime
+    implementation libs.kotlinx.coroutines
 
-    testImplementation platform(libs.junit.bom)
-    testImplementation libs.junit4
-    testRuntimeOnly libs.junit.vintage
-    testRuntimeOnly libs.junit.platform.launcher
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.mockwebserver
-    testImplementation libs.androidx.work.testing
-
-    testImplementation project(':components:support-test')
     testImplementation project(':components:lib-fetch-httpurlconnection')
     testImplementation project(':components:lib-fetch-okhttp')
+    testImplementation project(':components:support-test')
 
-    testImplementation GLEAN_LIBRARY_FORUNITTESTS
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.work.testing
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.mockwebserver
+    testImplementation libs.mozilla.glean.forUnitTests
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

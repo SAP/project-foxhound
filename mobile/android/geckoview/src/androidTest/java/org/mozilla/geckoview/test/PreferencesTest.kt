@@ -11,9 +11,13 @@ import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
 import junit.framework.TestCase.fail
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.gecko.EventDispatcher.QueryException
+import org.mozilla.gecko.util.ThreadUtils
 import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
@@ -23,9 +27,11 @@ import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_BOOL
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_INT
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_INVALID
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_STRING
+import org.mozilla.geckoview.GeckoPreferenceController.SetGeckoPreference
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
+@Suppress("LargeClass")
 @OptIn(ExperimentalGeckoViewApi::class)
 class PreferencesTest : BaseSessionTest() {
     /**
@@ -806,11 +812,9 @@ class PreferencesTest : BaseSessionTest() {
             )
             fail("Should not complete requests on a pref of a different type.")
         } catch (e: RuntimeException) {
-            val cause = e.cause as QueryException
-            assertEquals(
+            assertTrue(
                 "Correctly could not set preference.",
-                "There was an issue with the preference.",
-                cause.data,
+                e.message!!.contains("Unable to set preference."),
             )
         }
         val result =
@@ -859,5 +863,133 @@ class PreferencesTest : BaseSessionTest() {
         assertEquals("Pref name after clearing is as expected.", arbitraryPref, postClearing.pref)
         assertEquals("Pref value after clearing is null as expected.", null, postClearing.value)
         assertEquals("Pref type after clearing is as expected.", PREF_TYPE_INVALID, postClearing.type)
+    }
+
+    /**
+     * Basic test of setting multiple prefs on the user branch.
+     */
+    @Test
+    fun setMultiplePrefsUserBranchPref() {
+        val branch = PREF_BRANCH_USER
+        // Arbitrary preferences selected from StaticPrefList.yaml
+        val intPref = "browser.contentanalysis.max_connections"
+        val intPrefInitial = sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(intPref))
+        val intSet = intPrefInitial.defaultValue as Int + 1
+
+        val stringPref = "browser.active_color"
+        val stringPrefInitial = sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(stringPref))
+        val stringSet = stringPrefInitial.defaultValue as String + "?"
+
+        val floatPref = "general.smoothScroll.msdPhysics.slowdownMinDeltaRatio"
+        val floatPrefInitial = sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(floatPref))
+        val floatSet = floatPrefInitial.defaultValue as String + "1"
+
+        val boolPref = "general.smoothScroll.scrollbars"
+        val boolPrefInitial = sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(boolPref))
+        val boolSet = !(boolPrefInitial.defaultValue as Boolean)
+
+        val unknownPref = "pref.unknown.does.not.exist.v3"
+        val unknownSet = "hello-world"
+
+        val prefsList =
+            listOf(
+                SetGeckoPreference.setIntPref(intPref, intSet, branch),
+                SetGeckoPreference.setStringPref(stringPref, stringSet, branch),
+                SetGeckoPreference.setStringPref(floatPref, floatSet, branch),
+                SetGeckoPreference.setBoolPref(boolPref, boolSet, branch),
+                SetGeckoPreference.setStringPref(unknownPref, unknownSet, branch),
+            )
+
+        val setResults =
+            sessionRule.waitForResult(
+                GeckoPreferenceController.setGeckoPrefs(prefsList),
+            )
+
+        assertTrue("Int pref responded set, as expected.", setResults[intPref]!!)
+        assertTrue("String pref responded set, as expected.", setResults[stringPref]!!)
+        assertTrue("Float pref responded set, as expected.", setResults[floatPref]!!)
+        assertTrue("Bool pref responded set, as expected.", setResults[boolPref]!!)
+        assertTrue("Unknown pref was set.", setResults[unknownPref]!!)
+
+        val actuals = sessionRule.getPrefs(intPref, stringPref, floatPref, boolPref, unknownPref)
+        assertEquals("Int pref actually set, as expected.", intSet, actuals[0] as Int)
+        assertEquals("String pref actually set, as expected.", stringSet, actuals[1] as String)
+        assertEquals("Float pref actually set as, expected.", floatSet, actuals[2] as String)
+        assertEquals("Bool pref actually set as, expected.", boolSet, actuals[3] as Boolean)
+        assertEquals("Unknown pref actually set, as expected.", unknownSet, actuals[4] as String)
+    }
+
+    /**
+     * Basic test of setting multiple prefs on the default branch.
+     */
+    @Test
+    fun setMultiplePrefsDefaultBranchPref() {
+        val branch = PREF_BRANCH_DEFAULT
+        // Arbitrary preferences selected from StaticPrefList.yaml
+        val intPref = "browser.tabs.inTitlebar"
+        val intPrefInitial =
+            sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(intPref))
+        val intSet = intPrefInitial.defaultValue as Int + 1
+
+        val stringPref = "browser.anchor_color.dark"
+        val stringPrefInitial =
+            sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(stringPref))
+        val stringSet = stringPrefInitial.defaultValue as String + "?"
+
+        val floatPref = "dom.lazy-loading.margin.bottom"
+        val floatPrefInitial =
+            sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(floatPref))
+        val floatSet = floatPrefInitial.defaultValue as String + "1"
+
+        val boolPref = "editor.use_css"
+        val boolPrefInitial =
+            sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(boolPref))
+        val boolSet = !(boolPrefInitial.defaultValue as Boolean)
+
+        val prefsList =
+            listOf(
+                SetGeckoPreference.setIntPref(intPref, intSet, branch),
+                SetGeckoPreference.setStringPref(stringPref, stringSet, branch),
+                SetGeckoPreference.setStringPref(floatPref, floatSet, branch),
+                SetGeckoPreference.setBoolPref(boolPref, boolSet, branch),
+            )
+
+        val setResults =
+            sessionRule.waitForResult(
+                GeckoPreferenceController.setGeckoPrefs(prefsList),
+            )
+
+        assertTrue("Int pref responded set, as expected.", setResults[intPref]!!)
+        assertTrue("String pref responded set, as expected.", setResults[stringPref]!!)
+        assertTrue("Float pref responded set, as expected.", setResults[floatPref]!!)
+        assertTrue("Bool pref responded set, as expected.", setResults[boolPref]!!)
+
+        val actuals = sessionRule.getPrefs(intPref, stringPref, floatPref, boolPref)
+        assertEquals("Int pref actually set, as expected.", intSet, actuals[0] as Int)
+        assertEquals("String pref actually set, as expected.", stringSet, actuals[1] as String)
+        assertEquals("Float pref actually set as, expected.", floatSet, actuals[2] as String)
+        assertEquals("Bool pref actually set as, expected.", boolSet, actuals[3] as Boolean)
+    }
+
+    /**
+     * These APIs must be ran on a thread with a handler. Test checks it fails as expected.
+     */
+    @Test
+    fun getGeckoPreferenceOnNonHandlerThread() {
+        // Arbitrary preferences selected from StaticPrefList.yaml
+        val intPref = "dom.user_activation.transient.timeout"
+
+        var didThrow = false
+        runBlocking {
+            launch(Dispatchers.IO) {
+                try {
+                    sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(intPref))
+                    Assert.fail("Should have thrown.")
+                } catch (_: IllegalThreadStateException) {
+                    didThrow = true
+                }
+            }
+        }
+        assertTrue("Did correctly throw.", didThrow)
     }
 }

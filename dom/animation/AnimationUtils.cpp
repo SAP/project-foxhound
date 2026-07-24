@@ -6,15 +6,15 @@
 
 #include "AnimationUtils.h"
 
+#include "mozilla/EffectSet.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeEffect.h"
-#include "mozilla/EffectSet.h"
-#include "nsDebug.h"
 #include "nsAtom.h"
+#include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
-#include "nsGlobalWindowInner.h"
 #include "nsString.h"
 #include "xpcpublic.h"  // For xpc::NativeGlobal
 
@@ -115,6 +115,11 @@ AnimationUtils::GetElementPseudoPair(const Element* aElementOrPseudo) {
   if (aElementOrPseudo->IsGeneratedContentContainerForMarker()) {
     return {aElementOrPseudo->GetParent()->AsElement(),
             PseudoStyleRequest::Marker()};
+  }
+
+  if (aElementOrPseudo->IsGeneratedContentContainerForBackdrop()) {
+    return {aElementOrPseudo->GetParent()->AsElement(),
+            PseudoStyleRequest::Backdrop()};
   }
 
   const PseudoStyleType type = aElementOrPseudo->GetPseudoElementType();

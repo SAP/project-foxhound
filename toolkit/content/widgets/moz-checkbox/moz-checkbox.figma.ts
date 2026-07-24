@@ -2,7 +2,7 @@ import figma, { html } from "@figma/code-connect/html";
 
 // Desktop v3 (newest)
 figma.connect(
-  "https://www.figma.com/design/3WoKOSGtaSjhUHKldHCXbc/Desktop-v3?node-id=32-996&m=dev",
+  "https://www.figma.com/design/3WoKOSGtaSjhUHKldHCXbc/Desktop-Components-3?node-id=3907-17658",
   {
     props: {
       labelProps: figma.nestedProps("Label", {
@@ -19,30 +19,37 @@ figma.connect(
       }),
       checkboxProps: figma.nestedProps("Checkbox", {
         checked: figma.boolean("Checked"),
-        disabled: figma.enum("State", { Disabled: true }),
       }),
+      disabled: figma.boolean("Disabled"),
     },
     example: props => html`
       <moz-checkbox
-        checked=${props.checkboxProps.checked}
-        disabled=${props.checkboxProps.disabled}
-        description=${props.labelProps.description}
         label=${props.labelProps.label}
-        support-page=${props.labelProps.supportPage}
+        name="example-moz-checkbox-name"
+        value="example moz-checkbox value"
+        checked=${props.checkboxProps.checked}
+        disabled=${props.disabled}
         iconsrc=${props.labelProps.iconSrc}
+        description=${props.labelProps.description}
+        support-page=${props.labelProps.supportPage}
       ></moz-checkbox>
+      <!--
+  The Figma component allows for the moz-checkbox to render in an
+  indeterminate state, such as for the parent checkbox of nested
+  checkboxes. This is not set with a property for the web component.
+-->
     `,
   }
 );
 
 // Desktop Components (deprecated)
 figma.connect(
-  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=800-12337&m=dev",
+  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=800-12337",
   {
     props: {
       checked: figma.boolean("Checked"),
       description: figma.boolean("Description", {
-        true: "Description to edit",
+        true: figma.textContent("✏️ Description"),
       }),
       disabled: figma.boolean("Disabled"),
       label: figma.textContent("✏️ Label"),

@@ -6,23 +6,23 @@
 
 #include "ServiceWorkerRegistration.h"
 
-#include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+#include "ServiceWorkerRegistrationChild.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/CookieStoreManager.h"
+#include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/NavigationPreloadManager.h"
 #include "mozilla/dom/NavigationPreloadManagerBinding.h"
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PushManager.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ScopeExit.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPIDOMWindow.h"
-#include "ServiceWorkerRegistrationChild.h"
 
 using mozilla::ipc::ResponseRejectReason;
 

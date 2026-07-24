@@ -43,3 +43,9 @@ class RaptorLogger:
 
     def crash(self, *args, **kwargs):
         return self.logger.crash(*args, **kwargs)
+
+    def group_start(self, *args, **kwargs):
+        return self.logger.group_start(*args, **kwargs)
+
+    def group_end(self, *args, **kwargs):
+        return self.logger.group_end(*args, **kwargs)

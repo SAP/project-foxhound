@@ -13,13 +13,6 @@
         xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns="http://www.w3.org/1999/xhtml"
-#ifdef XP_MACOSX
-        data-l10n-id="browser-main-window-titles-mac"
-#else
-        data-l10n-id="browser-main-window-titles"
-#endif
-        data-l10n-args="{&quot;content-title&quot;:&quot;CONTENTTITLE&quot;,&quot;profile-name&quot;:&quot;PROFILENAME&quot;}"
-        data-l10n-attrs="data-content-title-default, data-content-title-private, data-title-default, data-title-private, data-content-title-default-with-profile, data-content-title-private-with-profile, data-title-default-with-profile, data-title-private-with-profile"
         customtitlebar="true"
         windowtype="navigator:browser"
         macanimationtype="document"
@@ -75,7 +68,9 @@
   <link rel="localization" href="browser/firefoxView.ftl"/>
   <link rel="localization" href="browser/genai.ftl"/>
   <link rel="localization" href="browser/identityCredentialNotification.ftl" />
+  <link rel="localization" href="browser/ipProtection.ftl"/>
   <link rel="localization" href="browser/menubar.ftl"/>
+  <link rel="localization" href="browser/openTabs.ftl"/>
   <link rel="localization" href="browser/originControls.ftl"/>
   <link rel="localization" href="browser/panelUI.ftl"/>
   <link rel="localization" href="browser/places.ftl"/>
@@ -85,10 +80,12 @@
   <link rel="localization" href="browser/search.ftl"/>
   <link rel="localization" href="browser/sidebarMenu.ftl"/>
   <link rel="localization" href="browser/tabbrowser.ftl"/>
+  <link rel="localization" href="browser/taskbartabs.ftl"/>
   <link rel="localization" href="browser/toolbarContextMenu.ftl"/>
   <link rel="localization" href="browser/translations.ftl" />
   <link rel="localization" href="browser/unifiedExtensions.ftl"/>
   <link rel="localization" href="browser/webrtcIndicator.ftl"/>
+  <link rel="localization" href="browser/webrtc-preview.ftl"/>
   <link rel="localization" href="toolkit/branding/brandings.ftl"/>
   <link rel="localization" href="toolkit/global/contextual-identity.ftl"/>
   <link rel="localization" href="toolkit/global/textActions.ftl"/>
@@ -101,8 +98,8 @@
   <link rel="localization" href="browser/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
   <link rel="localization" href="preview/smartTabGroups.ftl"/>
-  <link rel="localization" href="preview/taskbartabs.ftl"/>
-  <link rel="localization" href="preview/ipProtection.ftl"/>
+  <link rel="localization" href="preview/genai.ftl"/>
+  <link rel="localization" href="preview/aiWindow.ftl" />
 
   <title data-l10n-id="browser-main-window-default-title"></title>
 
@@ -119,6 +116,17 @@
 
 #include appmenu-viewcache.inc.xhtml
 #include unified-extensions-viewcache.inc.xhtml
+
+# These strings are used to compose the window title. They are in the DOM to
+# benefit from startup caching.
+  <html:div id="titlestrings" hidden="" xmlns="http://www.w3.org/1999/xhtml">
+    <span id="mainWindowTitle"
+          data-l10n-id="browser-main-window-default-title"></span>
+    <span id="privateWindowTitle"
+          data-l10n-id="browser-main-private-window-title"></span>
+    <span id="privateWindowSuffixForContent"
+          data-l10n-id="browser-main-private-suffix-for-content"></span>
+  </html:div>
 
   <html:dialog id="window-modal-dialog" style="visibility: hidden; height: 0; width: 0"/>
   <html:template id="window-modal-dialog-template">

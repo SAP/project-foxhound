@@ -4,7 +4,6 @@
 
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/SocketProcessChild.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 namespace net {
@@ -50,7 +49,7 @@ void BackgroundDataBridgeParent::OnStopRequest(
                              [self, aStatus, aTiming, aLastActiveTabOptHit,
                               aResponseTrailers, aOnStopRequestStart]() {
                                if (self->CanSend()) {
-                                 Unused << self->SendOnStopRequest(
+                                 (void)self->SendOnStopRequest(
                                      aStatus, aTiming, aLastActiveTabOptHit,
                                      aResponseTrailers, aOnStopRequestStart);
                                  self->Close();

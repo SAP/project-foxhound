@@ -52,7 +52,10 @@ DIRS += ["xre"]
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     DIRS += ["mozapps/handling"]
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
-    DIRS += ["system/unixproxy"]
+    DIRS += [
+        "system/commonproxy",
+        "system/unixproxy",
+    ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     DIRS += [
         "mozapps/macos-frameworks",
@@ -75,6 +78,9 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
 TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.crashreporter.test.browser += [
     "crashreporter/test/browser/crashreport.sjs",
 ]
+
+if CONFIG["ENABLE_TESTS"]:
+    DIRS += ["tests/gtest"]
 
 with Files("docs/**"):
     BUG_COMPONENT = ("Toolkit", "General")

@@ -100,6 +100,31 @@ add_task(async function test_storage_managed() {
           browser.storage.managed.get({ str: "a", num: 2 }),
         ])
       );
+
+      browser.test.sendMessage(
+        "getKeysResults",
+        await browser.storage.managed.getKeys()
+      );
+
+      browser.test.sendMessage(
+        "getBytesInUseAllResults",
+        await browser.storage.managed.getBytesInUse()
+      );
+
+      browser.test.sendMessage(
+        "getBytesInUseStrKeyResults",
+        await browser.storage.managed.getBytesInUse("str")
+      );
+
+      browser.test.sendMessage(
+        "getBytesInUseArrayKeyResults",
+        await browser.storage.managed.getBytesInUse(["str", "obj"])
+      );
+
+      browser.test.sendMessage(
+        "getBytesInUseInvalidKeyResults",
+        await browser.storage.managed.getBytesInUse("foo")
+      );
     },
   });
 
@@ -110,6 +135,30 @@ add_task(async function test_storage_managed() {
     { null: null, obj: MANIFEST.data.obj },
     { str: "hello", num: 2 },
   ]);
+  deepEqual(
+    await extension.awaitMessage("getKeysResults"),
+    Object.keys(MANIFEST.data)
+  );
+  equal(
+    await extension.awaitMessage("getBytesInUseAllResults"),
+    0,
+    "getBytesInUse() returns 0 for the whole storage area"
+  );
+  equal(
+    await extension.awaitMessage("getBytesInUseStrKeyResults"),
+    0,
+    "getBytesInUse() returns 0 for a single string key"
+  );
+  equal(
+    await extension.awaitMessage("getBytesInUseArrayKeyResults"),
+    0,
+    "getBytesInUse() returns 0 for an array of keys"
+  );
+  equal(
+    await extension.awaitMessage("getBytesInUseInvalidKeyResults"),
+    0,
+    "getBytesInUse() returns 0 for a key not present in storage"
+  );
   await extension.unload();
 });
 

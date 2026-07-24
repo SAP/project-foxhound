@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsICancelableRunnable_h__
-#define nsICancelableRunnable_h__
+#ifndef nsICancelableRunnable_h_
+#define nsICancelableRunnable_h_
 
 #include "nsISupports.h"
 
@@ -31,4 +31,4 @@ class nsICancelableRunnable : public nsISupports {
   virtual ~nsICancelableRunnable() = default;
 };
 
-#endif  // nsICancelableRunnable_h__
+#endif  // nsICancelableRunnable_h_

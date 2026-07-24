@@ -9,13 +9,13 @@
 #include <algorithm>  // For std::stable_sort, std::min
 #include <utility>
 
-#include "jsapi.h"             // For most JSAPI
+#include "PseudoStyleType.h"   // For PseudoStyleType
 #include "js/ForOfIterator.h"  // For JS::ForOfIterator
 #include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetProperty, JS_GetPropertyById
-#include "mozilla/AnimatedPropertyID.h"
+#include "jsapi.h"                  // For most JSAPI
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/RangedArray.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoCSSParser.h"
@@ -30,7 +30,6 @@
 #include "mozilla/dom/Nullable.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"
-#include "nsCSSPseudoElements.h"  // For PseudoStyleType
 #include "nsClassHashtable.h"
 #include "nsContentUtils.h"  // For GetContextForContent
 #include "nsIScriptError.h"
@@ -63,7 +62,7 @@ enum class ListAllowance { eDisallow, eAllow };
 struct PropertyValuesPair {
   PropertyValuesPair() : mProperty(eCSSProperty_UNKNOWN) {}
 
-  AnimatedPropertyID mProperty;
+  CSSPropertyId mProperty;
   nsTArray<nsCString> mValues;
 };
 
@@ -72,7 +71,7 @@ struct PropertyValuesPair {
  * BaseKeyframe or BasePropertyIndexedKeyframe object.
  */
 struct AdditionalProperty {
-  AnimatedPropertyID mProperty;
+  CSSPropertyId mProperty;
   size_t mJsidIndex = 0;  // Index into |ids| in GetPropertyValuesPairs.
 
   struct PropertyComparator {
@@ -82,14 +81,14 @@ struct AdditionalProperty {
     }
     bool LessThan(const AdditionalProperty& aLhs,
                   const AdditionalProperty& aRhs) const {
-      bool customLhs =
-          aLhs.mProperty.mID == nsCSSPropertyID::eCSSPropertyExtra_variable;
-      bool customRhs =
-          aRhs.mProperty.mID == nsCSSPropertyID::eCSSPropertyExtra_variable;
+      bool customLhs = aLhs.mProperty.mId ==
+                       NonCustomCSSPropertyId::eCSSPropertyExtra_variable;
+      bool customRhs = aRhs.mProperty.mId ==
+                       NonCustomCSSPropertyId::eCSSPropertyExtra_variable;
       if (!customLhs && !customRhs) {
         // Compare by IDL names.
-        return nsCSSProps::PropertyIDLNameSortPosition(aLhs.mProperty.mID) <
-               nsCSSProps::PropertyIDLNameSortPosition(aRhs.mProperty.mID);
+        return nsCSSProps::PropertyIDLNameSortPosition(aLhs.mProperty.mId) <
+               nsCSSProps::PropertyIDLNameSortPosition(aRhs.mProperty.mId);
       }
       if (customLhs && customRhs) {
         // Compare by custom property names.
@@ -115,7 +114,7 @@ struct KeyframeValueEntry {
   KeyframeValueEntry()
       : mProperty(eCSSProperty_UNKNOWN), mOffset(), mComposite() {}
 
-  AnimatedPropertyID mProperty;
+  CSSPropertyId mProperty;
   AnimationValue mValue;
 
   float mOffset;
@@ -130,15 +129,15 @@ struct KeyframeValueEntry {
     static bool LessThan(const KeyframeValueEntry& aLhs,
                          const KeyframeValueEntry& aRhs) {
       // First, sort by property name.
-      bool customLhs =
-          aLhs.mProperty.mID == nsCSSPropertyID::eCSSPropertyExtra_variable;
-      bool customRhs =
-          aRhs.mProperty.mID == nsCSSPropertyID::eCSSPropertyExtra_variable;
+      bool customLhs = aLhs.mProperty.mId ==
+                       NonCustomCSSPropertyId::eCSSPropertyExtra_variable;
+      bool customRhs = aRhs.mProperty.mId ==
+                       NonCustomCSSPropertyId::eCSSPropertyExtra_variable;
       if (!customLhs && !customRhs) {
         // Compare by IDL names.
         int32_t order =
-            nsCSSProps::PropertyIDLNameSortPosition(aLhs.mProperty.mID) -
-            nsCSSProps::PropertyIDLNameSortPosition(aRhs.mProperty.mID);
+            nsCSSProps::PropertyIDLNameSortPosition(aLhs.mProperty.mId) -
+            nsCSSProps::PropertyIDLNameSortPosition(aRhs.mProperty.mId);
         if (order != 0) {
           return order < 0;
         }
@@ -199,7 +198,7 @@ static bool AppendValueAsString(JSContext* aCx, nsTArray<nsCString>& aValues,
                                 JS::Handle<JS::Value> aValue);
 
 static Maybe<PropertyValuePair> MakePropertyValuePair(
-    const AnimatedPropertyID& aProperty, const nsACString& aStringValue,
+    const CSSPropertyId& aProperty, const nsACString& aStringValue,
     dom::Document* aDocument);
 
 static bool HasValidOffsets(const nsTArray<Keyframe>& aKeyframes);
@@ -350,11 +349,11 @@ nsTArray<AnimationProperty> KeyframeUtils::GetAnimationPropertiesFromKeyframes(
 }
 
 /* static */
-bool KeyframeUtils::IsAnimatableProperty(const AnimatedPropertyID& aProperty) {
+bool KeyframeUtils::IsAnimatableProperty(const CSSPropertyId& aProperty) {
   // Regardless of the backend type, treat the 'display' property as not
   // animatable. (Servo will report it as being animatable, since it is
   // in fact animatable by SMIL.)
-  if (aProperty.mID == eCSSProperty_display) {
+  if (aProperty.mId == eCSSProperty_display) {
     return false;
   }
   return Servo_Property_IsAnimatable(&aProperty);
@@ -500,7 +499,7 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
       // includes a chrome-only member that can be set to indicate that
       // ComputeValues should fail for shorthand property values on that
       // keyframe.
-      if (nsCSSProps::IsShorthand(pair.mProperty.mID) &&
+      if (nsCSSProps::IsShorthand(pair.mProperty.mId) &&
           keyframeDict.mSimulateComputeValuesFailure) {
         MarkAsComputeValuesFailureKey(keyframe->mPropertyValues.LastElement());
       }
@@ -556,26 +555,21 @@ static bool GetPropertyValuesPairs(JSContext* aCx,
     // This means if the attribute is the string "cssOffset"/"cssFloat", we use
     // CSS "offset"/"float" property.
     // https://drafts.csswg.org/web-animations/#property-name-conversion
-    nsCSSPropertyID propertyID = nsCSSPropertyID::eCSSProperty_UNKNOWN;
+    NonCustomCSSPropertyId propertyId =
+        NonCustomCSSPropertyId::eCSSProperty_UNKNOWN;
     if (nsCSSProps::IsCustomPropertyName(propName)) {
-      propertyID = eCSSPropertyExtra_variable;
+      propertyId = eCSSPropertyExtra_variable;
     } else if (propName.EqualsLiteral("cssOffset")) {
-      propertyID = nsCSSPropertyID::eCSSProperty_offset;
+      propertyId = NonCustomCSSPropertyId::eCSSProperty_offset;
     } else if (propName.EqualsLiteral("cssFloat")) {
-      propertyID = nsCSSPropertyID::eCSSProperty_float;
+      propertyId = NonCustomCSSPropertyId::eCSSProperty_float;
     } else if (!propName.EqualsLiteral("offset") &&
                !propName.EqualsLiteral("float")) {
-      propertyID = nsCSSProps::LookupPropertyByIDLName(
+      propertyId = nsCSSProps::LookupPropertyByIDLName(
           propName, CSSEnabledState::ForAllContent);
     }
 
-    // TODO(zrhoffman, bug 1811897) Add test coverage for removing the `--`
-    // prefix here.
-    AnimatedPropertyID property =
-        propertyID == eCSSPropertyExtra_variable
-            ? AnimatedPropertyID(
-                  NS_Atomize(Substring(propName, 2, propName.Length() - 2)))
-            : AnimatedPropertyID(propertyID);
+    auto property = CSSPropertyId::FromIdOrCustomProperty(propertyId, propName);
 
     if (KeyframeUtils::IsAnimatableProperty(property)) {
       properties.AppendElement(AdditionalProperty{std::move(property), i});
@@ -658,8 +652,8 @@ static bool AppendValueAsString(JSContext* aCx, nsTArray<nsCString>& aValues,
 }
 
 static void ReportInvalidPropertyValueToConsole(
-    const AnimatedPropertyID& aProperty,
-    const nsACString& aInvalidPropertyValue, dom::Document* aDoc) {
+    const CSSPropertyId& aProperty, const nsACString& aInvalidPropertyValue,
+    dom::Document* aDoc) {
   AutoTArray<nsString, 2> params;
   params.AppendElement(NS_ConvertUTF8toUTF16(aInvalidPropertyValue));
   aProperty.ToString(*params.AppendElement());
@@ -679,7 +673,7 @@ static void ReportInvalidPropertyValueToConsole(
  *   an invalid property value.
  */
 static Maybe<PropertyValuePair> MakePropertyValuePair(
-    const AnimatedPropertyID& aProperty, const nsACString& aStringValue,
+    const CSSPropertyId& aProperty, const nsACString& aStringValue,
     dom::Document* aDocument) {
   MOZ_ASSERT(aDocument);
   Maybe<PropertyValuePair> result;
@@ -730,7 +724,7 @@ static bool HasValidOffsets(const nsTArray<Keyframe>& aKeyframes) {
  *              a shorthand property.
  */
 static void MarkAsComputeValuesFailureKey(PropertyValuePair& aPair) {
-  MOZ_ASSERT(nsCSSProps::IsShorthand(aPair.mProperty.mID),
+  MOZ_ASSERT(nsCSSProps::IsShorthand(aPair.mProperty.mId),
              "Only shorthand property values can be marked as failure values");
 
   aPair.mSimulateComputeValuesFailure = true;
@@ -861,7 +855,7 @@ static void BuildSegmentsFromValueEntries(
   // care to identify properties that lack a value at offset 0.0/1.0 and drops
   // those properties from |aResult|.
 
-  AnimatedPropertyID lastProperty(eCSSProperty_UNKNOWN);
+  CSSPropertyId lastProperty(eCSSProperty_UNKNOWN);
   AnimationProperty* animationProperty = nullptr;
 
   size_t i = 0, n = aEntries.Length();
@@ -876,7 +870,7 @@ static void BuildSegmentsFromValueEntries(
         // If the last entry with offset 1 and no animation property, that means
         // it is the only entry for this property so append a single segment
         // from 0 offset to |aEntry[i].offset|.
-        Unused << HandleMissingInitialKeyframe(aResult, aEntries[i]);
+        (void)HandleMissingInitialKeyframe(aResult, aEntries[i]);
       }
       animationProperty = nullptr;
       break;

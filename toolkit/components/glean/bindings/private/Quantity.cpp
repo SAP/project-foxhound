@@ -18,7 +18,7 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void QuantityMetric::Set(int64_t aValue) const {
+void QuantityStandalone::Set(int64_t aValue) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (aValue >= 0) {
     uint32_t theValue = static_cast<uint32_t>(aValue);

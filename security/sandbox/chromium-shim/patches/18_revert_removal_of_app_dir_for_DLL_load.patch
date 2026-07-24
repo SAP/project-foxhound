@@ -12,29 +12,29 @@ diff --git a/sandbox/win/src/process_mitigations.cc b/sandbox/win/src/process_mi
 --- a/sandbox/win/src/process_mitigations.cc
 +++ b/sandbox/win/src/process_mitigations.cc
 @@ -72,26 +72,17 @@ bool ApplyProcessMitigationsToCurrentPro
+   // Check to make sure we have new flags to apply
+   MitigationFlags combined_flags = starting_flags | flags;
+   if (combined_flags == starting_flags)
+     return true;
+ 
+   base::win::Version version = base::win::GetVersion();
  
    if (flags & MITIGATION_DLL_SEARCH_ORDER) {
-     SetDefaultDllDirectoriesFunction set_default_dll_directories =
-         reinterpret_cast<SetDefaultDllDirectoriesFunction>(
-             ::GetProcAddress(module, "SetDefaultDllDirectories"));
- 
-     // Check for SetDefaultDllDirectories since it requires KB2533623.
-     if (set_default_dll_directories) {
 -#if defined(COMPONENT_BUILD)
--      const DWORD directory_flags = LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
+-    const DWORD directory_flags = LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
 -#else
--      // In a non-component build, all DLLs will be loaded manually, or via
--      // manifest definition, so these flags can be stronger. This prevents DLL
--      // planting in the application directory.
--      const DWORD directory_flags =
--          LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_USER_DIRS;
+-    // In a non-component build, all DLLs will be loaded manually, or via
+-    // manifest definition, so these flags can be stronger. This prevents DLL
+-    // planting in the application directory.
+-    const DWORD directory_flags =
+-        LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_USER_DIRS;
 -#endif
--      if (!set_default_dll_directories(directory_flags) &&
-+      if (!set_default_dll_directories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) &&
-           ERROR_ACCESS_DENIED != ::GetLastError()) {
-         return false;
-       }
+-    if (!::SetDefaultDllDirectories(directory_flags)) {
++    if (!::SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)) {
+       return false;
      }
+ 
+     applied_flags |= MITIGATION_DLL_SEARCH_ORDER;
    }
  
    // Set the heap to terminate on corruption

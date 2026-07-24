@@ -46,7 +46,7 @@ export const navigate = {};
  *     True if the page load has been finished.
  */
 function checkReadyState(pageLoadStrategy, eventData = {}) {
-  const { documentURI, readyState } = eventData;
+  const { documentURI, readyState, isUncommittedInitialDocument } = eventData;
 
   const result = { error: null, finished: false };
 
@@ -77,7 +77,9 @@ function checkReadyState(pageLoadStrategy, eventData = {}) {
       break;
 
     case "complete":
-      result.finished = true;
+      if (!isUncommittedInitialDocument) {
+        result.finished = true;
+      }
       break;
   }
 
@@ -342,7 +344,8 @@ navigate.waitForNavigationCompleted = async function waitForNavigationCompleted(
       case "pageshow": {
         // Don't require an unload event when a top-level browsing context
         // change occurred.
-        if (!seenUnload && !browsingContextChanged) {
+        // The initial about:blank load has no previous page to unload.
+        if (!seenUnload && !browsingContextChanged && !data.isInitialDocument) {
           return;
         }
         const result = checkReadyState(pageLoadStrategy, data);
@@ -398,42 +401,47 @@ navigate.waitForNavigationCompleted = async function waitForNavigationCompleted(
 
   lazy.EventDispatcher.on("page-load", onNavigation);
 
-  return new lazy.TimedPromise(
-    async (resolve, reject) => {
-      rejectNavigation = reject;
-      resolveNavigation = resolve;
+  const waitForCompleted = async (resolve, reject) => {
+    rejectNavigation = reject;
+    resolveNavigation = resolve;
 
-      try {
-        await callback();
+    try {
+      await callback();
 
-        // Certain commands like clickElement can cause a navigation. Setup a timer
-        // to check if a "beforeunload" event has been emitted within the given
-        // time frame. If not resolve the Promise.
-        if (
-          !requireBeforeUnload &&
-          lazy.MarionettePrefs.navigateAfterClickEnabled
-        ) {
-          unloadTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-          unloadTimer.initWithCallback(
-            onTimer,
-            lazy.MarionettePrefs.navigateAfterClickTimeout *
-              lazy.getTimeoutMultiplier(),
-            Ci.nsITimer.TYPE_ONE_SHOT
-          );
-        }
-      } catch (e) {
-        // Executing the callback above could destroy the actor pair before the
-        // command returns. Such an error has to be ignored.
-        if (e.name !== "AbortError") {
-          checkDone({ finished: true, error: e });
-        }
+      // Certain commands like clickElement can cause a navigation. Setup a timer
+      // to check if a "beforeunload" event has been emitted within the given
+      // time frame. If not resolve the Promise.
+      if (
+        !requireBeforeUnload &&
+        lazy.MarionettePrefs.navigateAfterClickEnabled
+      ) {
+        unloadTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+        unloadTimer.initWithCallback(
+          onTimer,
+          lazy.MarionettePrefs.navigateAfterClickTimeout *
+            lazy.getTimeoutMultiplier(),
+          Ci.nsITimer.TYPE_ONE_SHOT
+        );
       }
-    },
-    {
-      errorMessage: "Navigation timed out",
-      timeout: driver.currentSession.timeouts.pageLoad,
+    } catch (e) {
+      // Executing the callback above could destroy the actor pair before the
+      // command returns. Such an error has to be ignored.
+      if (e.name !== "AbortError") {
+        checkDone({ finished: true, error: e });
+      }
     }
-  ).finally(() => {
+  };
+
+  const pageLoadTimeout = driver.currentSession.timeouts.pageLoad;
+  const promise =
+    pageLoadTimeout === null
+      ? new Promise(waitForCompleted)
+      : new lazy.TimedPromise(waitForCompleted, {
+          errorMessage: "Navigation timed out",
+          timeout: pageLoadTimeout,
+        });
+
+  return promise.finally(() => {
     // Clean-up all registered listeners and timers
     Services.obs.removeObserver(
       onBrowsingContextDiscarded,

@@ -27,7 +27,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 
 let idToTextMap = new Map([
@@ -161,10 +161,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
   /**
    * Retrieves login data for the user.
    *
-   * @return {{
-   *            numLogins: Number,
-   *            potentiallyBreachedLogins: Number,
-   *            mobileDeviceConnected: Boolean }}
+   * @return {{numLogins: number, potentiallyBreachedLogins: number, mobileDeviceConnected: boolean }}
    */
   async getLoginData() {
     if (gTestOverride && "getLoginData" in gTestOverride) {
@@ -212,14 +209,18 @@ export class AboutProtectionsParent extends JSWindowActorParent {
   }
 
   /**
+   * @typedef {object} ProtectionsMonitorData
+   * @property {number} monitoredEmails
+   * @property {number} numBreaches
+   * @property {number} passwords
+   * @property {?string} userEmail
+   * @property {boolean} error
+   */
+
+  /**
    * Retrieves monitor data for the user.
    *
-   * @return {{ monitoredEmails: Number,
-   *            numBreaches: Number,
-   *            passwords: Number,
-   *            userEmail: String|null,
-   *            error: Boolean }}
-   *         Monitor data.
+   * @return {ProtectionsMonitorData}
    */
   async getMonitorData() {
     if (gTestOverride && "getMonitorData" in gTestOverride) {
@@ -302,10 +303,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
    */
   async shouldShowProxyCard() {
     const region = lazy.Region.home || "";
-    const languages = Services.prefs.getComplexValue(
-      "intl.accept_languages",
-      Ci.nsIPrefLocalizedString
-    );
+    const languages = Services.locale.acceptLanguages;
     const alreadyInstalled = await lazy.AddonManager.getAddonByID(
       SECURE_PROXY_ADDON_ID
     );
@@ -313,7 +311,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
     return (
       region.toLowerCase() === "us" &&
       !alreadyInstalled &&
-      languages.data.toLowerCase().includes("en-us")
+      languages.toLowerCase().includes("en-us")
     );
   }
 
@@ -367,7 +365,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
       case "OpenSyncPreferences":
         win.openTrustedLinkIn("about:preferences#sync", "tab");
         break;
-      case "FetchContentBlockingEvents":
+      case "FetchContentBlockingEvents": {
         let dataToSend = {};
         let displayNames = new Services.intl.DisplayNames(undefined, {
           type: "weekday",
@@ -413,6 +411,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
         dataToSend.sumEvents = sumEvents;
 
         return dataToSend;
+      }
 
       case "FetchMonitorData":
         return this.getMonitorData();
@@ -425,8 +424,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
         break;
 
       case "GetShowProxyCard":
-        let card = await this.shouldShowProxyCard();
-        return card;
+        return await this.shouldShowProxyCard();
 
       case "RecordEntryPoint":
         entrypoint = aMessage.data.entrypoint;

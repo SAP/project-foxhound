@@ -9,9 +9,9 @@
 #ifndef mozilla_ServoCSSParser_h
 #define mozilla_ServoCSSParser_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/gfx/Matrix.h"
-#include "nsCSSPropertyID.h"
 #include "nsColor.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsStringFwd.h"
@@ -22,16 +22,19 @@ class RefPtr;
 
 namespace mozilla {
 
-struct AnimatedPropertyID;
+struct CSSPropertyId;
 class ServoStyleSet;
 struct URLExtraData;
+struct StyleAbsoluteColor;
 struct StyleFontFamilyList;
 struct StyleFontStretch;
 struct StyleFontWeight;
 struct StyleFontStyle;
 struct StyleLockedDeclarationBlock;
 struct StyleParsingMode;
+struct StylePerDocumentStyleData;
 union StyleComputedFontStyleDescriptor;
+enum class StyleColorSpace : uint8_t;
 
 template <typename Integer, typename Number, typename LinearStops>
 struct StyleTimingFunction;
@@ -62,8 +65,8 @@ class ServoCSSParser {
   /**
    * Computes an nscolor from the given CSS <color> value.
    *
-   * @param aStyleSet The style set whose nsPresContext will be used to
-   *   compute system colors and other special color values.
+   * @param aStyleData The style data to compute system colors and other special
+   *   color values.
    * @param aCurrentColor The color value that currentcolor should compute to.
    * @param aValue The CSS <color> value.
    * @param aResultColor The resulting computed color value.
@@ -74,10 +77,23 @@ class ServoCSSParser {
    *   won't be reported to the console.
    * @return Whether aValue was successfully parsed and aResultColor was set.
    */
-  static bool ComputeColor(ServoStyleSet* aStyleSet, nscolor aCurrentColor,
-                           const nsACString& aValue, nscolor* aResultColor,
+  static bool ComputeColor(const StylePerDocumentStyleData* aStyleData,
+                           nscolor aCurrentColor, const nsACString& aValue,
+                           nscolor* aResultColor,
                            bool* aWasCurrentColor = nullptr,
                            css::Loader* aLoader = nullptr);
+
+  /**
+   * Computes a StyleAbsoluteColor from the given CSS <color> value.
+   *
+   * @param aStyleData The style data to compute system colors and other special
+   *   color values.
+   * @param aValue The CSS <color> value.
+   * @return The resulting computed color value. For invalid color value,
+   *   Nothing() will be returned.
+   */
+  static Maybe<StyleAbsoluteColor> ComputeAbsoluteColor(
+      const StylePerDocumentStyleData* aStyleData, const nsACString& aValue);
 
   /**
   * Takes a CSS <color> and convert it to another color space.
@@ -113,11 +129,11 @@ class ServoCSSParser {
    *   in Servo.
    */
   static already_AddRefed<StyleLockedDeclarationBlock> ParseProperty(
-      nsCSSPropertyID aProperty, const nsACString& aValue,
+      NonCustomCSSPropertyId aProperty, const nsACString& aValue,
       const ParsingEnvironment& aParsingEnvironment,
       const StyleParsingMode& aParsingMode);
   static already_AddRefed<StyleLockedDeclarationBlock> ParseProperty(
-      const AnimatedPropertyID& aProperty, const nsACString& aValue,
+      const CSSPropertyId& aProperty, const nsACString& aValue,
       const ParsingEnvironment& aParsingEnvironment,
       const StyleParsingMode& aParsingMode);
 

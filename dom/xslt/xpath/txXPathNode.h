@@ -3,11 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txXPathNode_h__
-#define txXPathNode_h__
+#ifndef txXPathNode_h_
+#define txXPathNode_h_
 
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
+#include "nsIContent.h"
 #include "nsINode.h"
 #include "nsNameSpaceManager.h"
 
@@ -127,4 +127,4 @@ inline bool txXPathNode::operator==(const txXPathNode& aNode) const {
   return mIndex == aNode.mIndex && mNode == aNode.mNode;
 }
 
-#endif /* txXPathNode_h__ */
+#endif /* txXPathNode_h_ */

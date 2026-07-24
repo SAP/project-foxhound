@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=392746
 <head>
   <title>Test for Bug 392746</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style>
   </style>
@@ -19,13 +20,11 @@ text <span id="c">ccc text</span> text text <span id="e">eee text</span> text te
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript">
- var wu = SpecialPowers.getDOMWindowUtils(window);
-
 function ctrlselect(aX,aY, aX2, aY2) {
-  var modifyers = (navigator.platform.includes("Mac")) ? 8 : 2;
-  wu.sendMouseEvent('mousedown',  aX, aY, 0, 1, modifyers);
-  wu.sendMouseEvent('mousemove',  aX2, aY2, 0, 0, modifyers);
-  wu.sendMouseEvent('mouseup',  aX2, aY2, 0, 1, modifyers);
+  var isMac = navigator.platform.includes("Mac");
+  synthesizeMouseAtPoint(aX, aY, { type: "mousedown", metaKey: isMac, ctrlKey: !isMac });
+  synthesizeMouseAtPoint(aX2, aY2, { type: "mousemove", metaKey: isMac, ctrlKey: !isMac });
+  synthesizeMouseAtPoint(aX2, aY2, { type: "mouseup", metaKey: isMac, ctrlKey: !isMac });
 }
 
  function test() {
@@ -54,9 +53,9 @@ function ctrlselect(aX,aY, aX2, aY2) {
   ok(sel.focusOffset == 0, 'focusOffset should be 0');
   ok(sel.anchorOffset == 8, 'anchorOffset should be 8');
 
-  wu.sendMouseEvent('mousedown', 0, 0, 0, 1, 0);
-  wu.sendMouseEvent('mousemove',  0, 0, 0, 0, 0);
-  wu.sendMouseEvent('mouseup',  0, 0, 0, 1, 0);
+  synthesizeMouseAtPoint(0, 0, { type: "mousedown" });
+  synthesizeMouseAtPoint(0, 0, { type: "mousemove" });
+  synthesizeMouseAtPoint(0, 0, { type: "mouseup" });
 
   SimpleTest.finish();
 }

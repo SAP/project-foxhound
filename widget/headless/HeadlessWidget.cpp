@@ -2,6 +2,7 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "InputData.h"
 #include "HeadlessWidget.h"
 #include "ErrorList.h"
 #include "HeadlessCompositorWidget.h"
@@ -14,6 +15,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
+#include "UnitTransforms.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/widget/HeadlessWidgetTypes.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
@@ -111,21 +113,18 @@ void HeadlessWidget::Destroy() {
     }
   }
 
-  nsBaseWidget::OnDestroy();
+  nsIWidget::OnDestroy();
 
-  nsBaseWidget::Destroy();
+  nsIWidget::Destroy();
 }
 
 nsresult HeadlessWidget::Create(nsIWidget* aParent,
                                 const LayoutDeviceIntRect& aRect,
-                                widget::InitData* aInitData) {
+                                const widget::InitData& aInitData) {
   BaseCreate(aParent, aInitData);
-
   mBounds = aRect;
   mRestoreBounds = aRect;
-
-  mAlwaysOnTop = aInitData && aInitData->mAlwaysOnTop;
-
+  mAlwaysOnTop = aInitData.mAlwaysOnTop;
   return NS_OK;
 }
 
@@ -168,9 +167,10 @@ void HeadlessWidget::Show(bool aState) {
   LOG(("HeadlessWidget::Show [%p] state %d\n", (void*)this, aState));
 
   // Top-level window and dialogs are activated/raised when shown.
-  // NB: alwaysontop windows are generally used for peripheral indicators,
-  //     so we don't focus them by default.
-  if (aState && !mAlwaysOnTop &&
+  // NB: alwaysontop windows are generally used for peripheral indicators.
+  //     So we don't focus them by default unless they are a Document
+  //     Picture-in-Picture.
+  if (aState && (!mAlwaysOnTop || mPiPType == PiPType::DocumentPiP) &&
       (mWindowType == WindowType::TopLevel ||
        mWindowType == WindowType::Dialog)) {
     RaiseWindow();
@@ -201,20 +201,17 @@ void HeadlessWidget::Enable(bool aState) { mEnabled = aState; }
 
 bool HeadlessWidget::IsEnabled() const { return mEnabled; }
 
-void HeadlessWidget::Move(double aX, double aY) {
-  LOG(("HeadlessWidget::Move [%p] %f %f\n", (void*)this, aX, aY));
+void HeadlessWidget::Move(const DesktopPoint& aPoint) {
+  LOG(("HeadlessWidget::Move [%p] %f %f\n", this, aPoint.x.value,
+       aPoint.y.value));
 
-  double scale =
-      BoundsUseDesktopPixels() ? GetDesktopToDeviceScale().scale : 1.0;
-  int32_t x = NSToIntRound(aX * scale);
-  int32_t y = NSToIntRound(aY * scale);
-
+  auto topLeft =
+      LayoutDeviceIntPoint::Round(aPoint * GetDesktopToDeviceScale());
   if (mWindowType == WindowType::TopLevel ||
       mWindowType == WindowType::Dialog) {
     SetSizeMode(nsSizeMode_Normal);
   }
-
-  MoveInternal(x, y);
+  MoveInternal(topLeft.x, topLeft.y);
 }
 
 void HeadlessWidget::MoveInternal(int32_t aX, int32_t aY) {
@@ -226,7 +223,7 @@ void HeadlessWidget::MoveInternal(int32_t aX, int32_t aY) {
   }
 
   mBounds.MoveTo(aX, aY);
-  NotifyWindowMoved(aX, aY);
+  NotifyWindowMoved(mBounds.TopLeft());
 }
 
 LayoutDeviceIntPoint HeadlessWidget::WidgetToScreenOffset() {
@@ -237,7 +234,7 @@ LayoutDeviceIntPoint HeadlessWidget::WidgetToScreenOffset() {
 }
 
 WindowRenderer* HeadlessWidget::GetWindowRenderer() {
-  return nsBaseWidget::GetWindowRenderer();
+  return nsIWidget::GetWindowRenderer();
 }
 
 void HeadlessWidget::SetCompositorWidgetDelegate(
@@ -252,9 +249,9 @@ void HeadlessWidget::SetCompositorWidgetDelegate(
   }
 }
 
-void HeadlessWidget::Resize(double aWidth, double aHeight, bool aRepaint) {
-  int32_t width = NSToIntRound(aWidth);
-  int32_t height = NSToIntRound(aHeight);
+void HeadlessWidget::Resize(const DesktopSize& aSize, bool aRepaint) {
+  int32_t width = NSToIntRound(aSize.width);
+  int32_t height = NSToIntRound(aSize.height);
   ResizeInternal(width, height, aRepaint);
 }
 
@@ -264,22 +261,22 @@ void HeadlessWidget::ResizeInternal(int32_t aWidth, int32_t aHeight,
   mBounds.SizeTo(LayoutDeviceIntSize(aWidth, aHeight));
 
   if (mCompositorWidget) {
-    mCompositorWidget->NotifyClientSizeChanged(
-        LayoutDeviceIntSize(mBounds.Width(), mBounds.Height()));
+    mCompositorWidget->NotifyClientSizeChanged(mBounds.Size());
   }
   if (mWidgetListener) {
-    mWidgetListener->WindowResized(this, mBounds.Width(), mBounds.Height());
+    mWidgetListener->WindowResized(this, mBounds.Size());
   }
   if (mAttachedWidgetListener) {
-    mAttachedWidgetListener->WindowResized(this, mBounds.Width(),
-                                           mBounds.Height());
+    mAttachedWidgetListener->WindowResized(this, mBounds.Size());
   }
 }
 
-void HeadlessWidget::Resize(double aX, double aY, double aWidth, double aHeight,
-                            bool aRepaint) {
-  MoveInternal(NSToIntRound(aX), NSToIntRound(aY));
-  Resize(aWidth, aHeight, aRepaint);
+void HeadlessWidget::Resize(const DesktopRect& aRect, bool aRepaint) {
+  auto tl =
+      LayoutDeviceIntPoint::Round(aRect.TopLeft() * GetDesktopToDeviceScale());
+  // Intentionally to avoid SetSizeMode() call in Move().
+  MoveInternal(tl.x, tl.y);
+  Resize(aRect.Size(), aRepaint);
 }
 
 void HeadlessWidget::SetSizeMode(nsSizeMode aMode) {
@@ -335,7 +332,7 @@ void HeadlessWidget::ApplySizeModeSideEffects() {
     }
     case nsSizeMode_Fullscreen:
       // This will take care of resizing the window.
-      nsBaseWidget::InfallibleMakeFullScreen(true);
+      nsIWidget::InfallibleMakeFullScreen(true);
       break;
     default:
       break;
@@ -402,23 +399,6 @@ bool HeadlessWidget::GetEditCommands(NativeKeyBindingsType aType,
   HeadlessKeyBindings& bindings = HeadlessKeyBindings::GetInstance();
   bindings.GetEditCommands(aType, aEvent, writingMode, aCommands);
   return true;
-}
-
-nsresult HeadlessWidget::DispatchEvent(WidgetGUIEvent* aEvent,
-                                       nsEventStatus& aStatus) {
-#ifdef DEBUG
-  debug_DumpEvent(stdout, aEvent->mWidget, aEvent, "HeadlessWidget", 0);
-#endif
-
-  aStatus = nsEventStatus_eIgnore;
-
-  if (mAttachedWidgetListener) {
-    aStatus = mAttachedWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  } else if (mWidgetListener) {
-    aStatus = mWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  }
-
-  return NS_OK;
 }
 
 nsresult HeadlessWidget::SynthesizeNativeMouseEvent(

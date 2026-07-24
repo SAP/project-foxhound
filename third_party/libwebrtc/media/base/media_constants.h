@@ -17,7 +17,7 @@
 
 // This file contains constants related to media.
 
-namespace cricket {
+namespace webrtc {
 
 extern const int kVideoCodecClockrate;
 
@@ -167,6 +167,7 @@ extern const size_t kConferenceDefaultNumTemporalLayers;
 
 extern const char kApplicationSpecificBandwidth[];
 extern const char kTransportSpecificBandwidth[];
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // MEDIA_BASE_MEDIA_CONSTANTS_H_

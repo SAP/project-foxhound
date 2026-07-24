@@ -6,7 +6,6 @@
 
 /* Data conversion between native and JavaScript types. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Range.h"
 #include "mozilla/Sprintf.h"
 
@@ -1192,15 +1191,15 @@ nsresult XPCConvert::JSValToXPCException(JSContext* cx, MutableHandleValue s,
 
       // If it is an engine Error with an error report then let's
       // extract the report and build an xpcexception from that
-      const JSErrorReport* report;
-      if (nullptr != (report = JS_ErrorFromException(cx, obj))) {
+      JS::BorrowedErrorReport report(cx);
+      if (JS_ErrorFromException(cx, obj, report)) {
         JS::UniqueChars toStringResult;
         RootedString str(cx, ToString(cx, s));
         if (str) {
           toStringResult = JS_EncodeStringToUTF8(cx, str);
         }
         return JSErrorToXPCException(cx, toStringResult.get(), ifaceName,
-                                     methodName, report, exceptn);
+                                     methodName, report.get(), exceptn);
       }
 
       // XXX we should do a check against 'js_ErrorClass' here and

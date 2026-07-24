@@ -9,6 +9,10 @@ const {
 } = require("resource://devtools/client/application/src/constants.js");
 
 function updateSelectedPage(selectedPage) {
+  Services.prefs.setCharPref(
+    "devtools.application.selectedSidebar",
+    selectedPage
+  );
   return {
     type: UPDATE_SELECTED_PAGE,
     selectedPage,

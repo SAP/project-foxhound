@@ -10,7 +10,7 @@ import mozunit
 import pytest
 from tryselect.task_config import Pernosco, all_task_configs
 
-TC_URL = "https://firefox-ci-tc.services.mozilla.com"
+TC_URL = "https://taskcluster.example.com"
 TH_URL = "https://treeherder.mozilla.org"
 
 # task configs have a list of tests of the form (input, expected)
@@ -24,13 +24,30 @@ TASK_CONFIG_TESTS = {
     ],
     "chemspill-prio": [
         ([], None),
-        (["--chemspill-prio"], {"try_task_config": {"chemspill-prio": True}}),
+        (["--chemspill"], {"try_task_config": {"priority": "low"}}),
+        (["--chemspill-priority"], {"try_task_config": {"priority": "low"}}),
     ],
     "env": [
         ([], None),
         (
             ["--env", "foo=bar", "--env", "num=10"],
             {"try_task_config": {"env": {"foo": "bar", "num": "10"}}},
+        ),
+        (
+            ["--profiler"],
+            {"try_task_config": {"env": {"MOZ_PROFILER_STARTUP": "1"}}},
+        ),
+        (
+            ["--record"],
+            {"try_task_config": {"env": {"MOZ_RECORD_TEST": "1"}}},
+        ),
+        (
+            ["--profiler", "--record"],
+            {
+                "try_task_config": {
+                    "env": {"MOZ_PROFILER_STARTUP": "1", "MOZ_RECORD_TEST": "1"}
+                }
+            },
         ),
     ],
     "path": [
@@ -40,6 +57,26 @@ TASK_CONFIG_TESTS = {
             {
                 "try_task_config": {
                     "env": {"MOZHARNESS_TEST_PATHS": '{"xpcshell": ["dom/indexedDB"]}'}
+                }
+            },
+        ),
+        (
+            ["dom/indexedDB/test/head.js"],
+            {
+                "try_task_config": {
+                    "env": {
+                        "MOZHARNESS_TEST_PATHS": '{"xpcshell": ["dom/indexedDB/test"]}'
+                    }
+                }
+            },
+        ),
+        (
+            ["dom/indexedDB/test/test_add_put.html", "--allow-testfile-path"],
+            {
+                "try_task_config": {
+                    "env": {
+                        "MOZHARNESS_TEST_PATHS": '{"xpcshell": ["dom/indexedDB/test/test_add_put.html"]}'
+                    }
                 }
             },
         ),
@@ -61,7 +98,8 @@ TASK_CONFIG_TESTS = {
     "rebuild": [
         ([], None),
         (["--rebuild", "10"], {"try_task_config": {"rebuild": 10}}),
-        (["--rebuild", "1"], SystemExit),
+        (["--rebuild", "1"], {"try_task_config": {"rebuild": 1}}),
+        (["--rebuild", "0"], SystemExit),
         (["--rebuild", "21"], SystemExit),
     ],
     "worker-overrides": [
@@ -90,7 +128,7 @@ TASK_CONFIG_TESTS = {
         (
             [
                 "--worker-override",
-                "b-linux=worker/pool" "--worker-suffix",
+                "b-linux=worker/pool--worker-suffix",
                 "b-linux=-dev",
             ],
             SystemExit,
@@ -105,12 +143,18 @@ TASK_CONFIG_TESTS = {
 
 @pytest.fixture
 def config_patch_resolver(patch_resolver):
-    def inner(paths):
+    def inner(paths, allow_testfile_path):
         patch_resolver(
             [], [{"flavor": "xpcshell", "srcdir_relpath": path} for path in paths]
         )
 
     return inner
+
+
+@pytest.fixture(autouse=True)
+def mock_root_url(monkeypatch):
+    monkeypatch.delenv("TASKCLUSTER_PROXY_URL", raising=False)
+    monkeypatch.setenv("TASKCLUSTER_ROOT_URL", TC_URL)
 
 
 def test_task_configs(config_patch_resolver, task_config, args, expected):
@@ -164,7 +208,7 @@ def test_pernosco(patch_ssh_user):
     assert params == {"try_task_config": {"env": {"PERNOSCO": "1"}, "pernosco": True}}
 
 
-def test_exisiting_tasks(responses, patch_ssh_user):
+def test_exisiting_tasks(mocker, responses, patch_ssh_user):
     parser = ArgumentParser()
     cfg = all_task_configs["existing-tasks"]()
     cfg.add_arguments(parser)
@@ -191,7 +235,13 @@ def test_exisiting_tasks(responses, patch_ssh_user):
 
     responses.add(
         responses.GET,
-        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public/label-to-taskid.json",
+        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public%2flabel-to-taskid.json",
+        status=303,
+        json={"url": f"{TC_URL}/artifacts/label-to-taskid.json"},
+    )
+    responses.add(
+        responses.GET,
+        f"{TC_URL}/artifacts/label-to-taskid.json",
         json=label_to_taskid,
     )
 
@@ -217,7 +267,13 @@ def test_exisiting_tasks_task_id(responses):
 
     responses.add(
         responses.GET,
-        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public/label-to-taskid.json",
+        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public%2flabel-to-taskid.json",
+        status=303,
+        json={"url": f"{TC_URL}/artifacts/label-to-taskid.json"},
+    )
+    responses.add(
+        responses.GET,
+        f"{TC_URL}/artifacts/label-to-taskid.json",
         json=label_to_taskid,
     )
 
@@ -245,7 +301,13 @@ def test_exisiting_tasks_rev(responses):
 
     responses.add(
         responses.GET,
-        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public/label-to-taskid.json",
+        f"{TC_URL}/api/queue/v1/task/{task_id}/artifacts/public%2flabel-to-taskid.json",
+        status=303,
+        json={"url": f"{TC_URL}/artifacts/label-to-taskid.json"},
+    )
+    responses.add(
+        responses.GET,
+        f"{TC_URL}/artifacts/label-to-taskid.json",
         json=label_to_taskid,
     )
 

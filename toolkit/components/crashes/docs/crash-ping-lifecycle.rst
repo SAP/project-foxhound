@@ -35,20 +35,41 @@ BigQuery Tables
 * Desktop view: ``firefox_desktop.crash``.
 * Crashreporter client view: ``firefox_crashreporter.crash``. This uses the same metrics/ping definitions
   as desktop.
-* Combined desktop/crashreporter client view: ``firefox_desktop.desktop_crashes``.
 * Fenix view: ``fenix.crash``. This ping has a few different metrics, but is overall very similar to
   the desktop ping. As a result, it's a little verbose to combine fenix and desktop pings in a
   query, however most metrics exist in both with the same name.
+* Combined view (**HIGHLY RECOMMENDED, IMPLEMENTS THE NOTES BELOW**): ``telemetry.firefox_crashes``.
+  This combines the pings from desktop, the crashreporter client, fenix, focus, and klar. It merges
+  the metrics structs of desktop and android in an obvious way (essentially similar to an outer
+  join). It also deduplicates based on minidump hash and adds ``crash_app_channel``,
+  ``crash_app_display_version``, and ``crash_app_build`` columns.
 
-**NOTE**: When querying the source data, you should always prefer the `crash.app_channel`,
-`crash.app_display_version`, and `crash.app_build` metrics rather than the similarly named fields of
-the Glean `client_info` struct. These values correspond to the application information *at the time
-of the crash*, and moreover the crash reporter client can't fully populate the client_info. However,
-it is best to fall back to the `client_info` if these are null (see `bug 1966213
-<https://bugzilla.mozilla.org/show_bug.cgi?id=1966213>`__). Java exception pings on Fenix are known
-to be missing these metrics (see `bug 1966210
-<https://bugzilla.mozilla.org/show_bug.cgi?id=1966210>`__). This can be easily achieved with e.g.
-``IFNULL(metrics.string.crash_app_channel, client_info.app_channel)``.
+**NOTES**
+
+* When querying the source data, you should always prefer the ``crash.app_channel``,
+  ``crash.app_display_version``, and ``crash.app_build`` metrics rather than the similarly named
+  fields of the Glean ``client_info`` struct. These values correspond to the application information
+  *at the time of the crash*, and moreover the crash reporter client can't fully populate the
+  client_info. However, it is best to fall back to the ``client_info`` if these are null (see `bug
+  1966213 <https://bugzilla.mozilla.org/show_bug.cgi?id=1966213>`__). Java exception pings on Fenix
+  are known to be missing these metrics (see `bug 1966210
+  <https://bugzilla.mozilla.org/show_bug.cgi?id=1966210>`__). This can be easily achieved with e.g.
+  ``IFNULL(metrics.string.crash_app_channel, client_info.app_channel)``.
+
+* We may receive duplicate pings corresponding to the same crash event. You should be careful to
+  deduplicate based on minidump hash if doing anything pertaining to counting crash events.
+
+  * You can deduplicate with a BigQuery ``QUALIFY`` clause like:
+
+    .. code-block:: sql
+
+      QUALIFY
+        metrics.string.crash_minidump_sha256_hash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+        OR metrics.string.crash_minidump_sha256_hash IS NULL
+        OR ROW_NUMBER() OVER(PARTITION BY metrics.string.crash_minidump_sha256_hash ORDER BY submission_timestamp) = 1
+
+    This will dedup any non-null and non-empty minidump hashes.
+
 
 Source
 ------
@@ -79,7 +100,7 @@ BigQuery
 The ingested output (including symbolicated stacks and crash signatures) is loaded into BigQuery in
 the ``moz-fx-data-shared-prod.crash_ping_ingest_external.ingest_output`` table. It is partitioned on
 ``submission_timestamp`` to match the Glean views/tables, and it can be joined on ``document_id``
-(and optionally ``submission_timestamp``) with the fenix/desktop views.
+(and optionally ``submission_timestamp``) with the fenix/desktop/combined views.
 
 What if post-processing has a bug?
 ----------------------------------

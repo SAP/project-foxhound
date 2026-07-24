@@ -7,12 +7,11 @@
 #ifndef mozilla_dom_SpeechSynthesisUtterance_h
 #define mozilla_dom_SpeechSynthesisUtterance_h
 
+#include "js/TypeDecls.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "nsCOMPtr.h"
-#include "nsString.h"
-#include "js/TypeDecls.h"
-
 #include "nsSpeechTask.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

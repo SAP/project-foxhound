@@ -17,7 +17,7 @@ body {
 }
 
 .top-level-process {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .shared-process {

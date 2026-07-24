@@ -9,6 +9,9 @@ add_task(async function () {
     await BrowserTestUtils.waitForEvent(window, "MozLayerTreeReady");
   }
 
+  // Allow the initial about:blank to settle.
+  await new Promise(resolve => setTimeout(resolve, 0));
+
   EventUtils.synthesizeKey("KEY_Escape", { shiftKey: true });
 
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);

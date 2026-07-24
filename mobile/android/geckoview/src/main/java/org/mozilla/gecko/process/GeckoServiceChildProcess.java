@@ -5,9 +5,11 @@
 
 package org.mozilla.gecko.process;
 
+import android.app.Application;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
@@ -53,7 +55,12 @@ public class GeckoServiceChildProcess extends Service {
   @Override
   public void onCreate() {
     super.onCreate();
-    Log.i(LOGTAG, "onCreate");
+
+    final StringBuilder sb = new StringBuilder("onCreate");
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      sb.append(", process name: ").append(Application.getProcessName());
+    }
+    Log.i(LOGTAG, sb.toString());
 
     if (sState != ProcessState.NEW) {
       // We don't support reusing processes, and this could get us in a really weird state,

@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txXPathTreeWalker_h__
-#define txXPathTreeWalker_h__
+#ifndef txXPathTreeWalker_h_
+#define txXPathTreeWalker_h_
 
-#include "txCore.h"
-#include "txXPathNode.h"
 #include "nsIContentInlines.h"
 #include "nsTArray.h"
+#include "txCore.h"
+#include "txXPathNode.h"
 
 class nsAtom;
 
@@ -171,4 +171,4 @@ inline bool txXPathNodeUtils::isText(const txXPathNode& aNode) {
   return aNode.isContent() && aNode.Content()->IsText();
 }
 
-#endif /* txXPathTreeWalker_h__ */
+#endif /* txXPathTreeWalker_h_ */

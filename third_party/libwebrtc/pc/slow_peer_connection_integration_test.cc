@@ -11,8 +11,7 @@
 // This file is intended for PeerConnection integration tests that are
 // slow to execute (currently defined as more than 5 seconds per test).
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -36,7 +35,6 @@
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/fake_network.h"
 #include "rtc_base/firewall_socket_server.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/test_certificate_verifier.h"
@@ -178,7 +176,7 @@ TEST_P(PeerConnectionIntegrationTest,
   // Enable TCP-TLS for the fake turn server. We need to pass in 88.88.88.0 so
   // that host name verification passes on the fake certificate.
   CreateTurnServer(turn_server_internal_address, turn_server_external_address,
-                   cricket::PROTO_TLS, "88.88.88.0");
+                   PROTO_TLS, "88.88.88.0");
 
   PeerConnectionInterface::IceServer ice_server;
   ice_server.urls.push_back("turns:88.88.88.0:3478?transport=tcp");
@@ -223,11 +221,11 @@ TEST_P(PeerConnectionIntegrationTest,
   options.offer_to_receive_video = 1;
   caller()->SetOfferAnswerOptions(options);
   caller()->CreateAndSetAndSignalOffer();
-  bool wait_res = true;
+  bool wait_res = WaitUntil([&]() { return DtlsConnected(); },
+                            {.timeout = kDefaultTimeout});
   // TODO(bugs.webrtc.org/9219): When IceConnectionState is implemented
   // properly, should be able to just wait for a state of "failed" instead of
   // waiting a fixed 10 seconds.
-  WAIT_(DtlsConnected(), kDefaultTimeout.ms(), wait_res);
   ASSERT_FALSE(wait_res);
 
   EXPECT_GT(client_1_cert_verifier->call_count_, 0u);
@@ -256,15 +254,14 @@ TEST_P(PeerConnectionIntegrationTest, GetCaptureStartNtpTimeWithOldStatsApi) {
 
   // Get the audio output level stats. Note that the level is not available
   // until an RTCP packet has been received.
-  EXPECT_THAT(
-      WaitUntil(
-          [&] {
-            return callee()
-                ->OldGetStatsForTrack(remote_audio_track.get())
-                ->CaptureStartNtpTime();
-          },
-          ::testing::Gt(0), {.timeout = 2 * kMaxWaitForFrames}),
-      IsRtcOk());
+  EXPECT_THAT(WaitUntil(
+                  [&] {
+                    return callee()
+                        ->OldGetStatsForTrack(remote_audio_track.get())
+                        ->CaptureStartNtpTime();
+                  },
+                  ::testing::Gt(0), {.timeout = 2 * kMaxWaitForFrames}),
+              IsRtcOk());
 }
 
 // Test that firewalling the ICE connection causes the clients to identify the
@@ -280,12 +277,12 @@ class PeerConnectionIntegrationIceStatesTest
   }
 
   void StartStunServer(const SocketAddress& server_address) {
-    stun_server_ =
-        TestStunServer::Create(firewall(), server_address, *network_thread());
+    stun_server_ = TestStunServer::Create(env_, server_address, *firewall(),
+                                          *network_thread());
   }
 
   bool TestIPv6() {
-    return (port_allocator_flags_ & cricket::PORTALLOCATOR_ENABLE_IPV6);
+    return (port_allocator_flags_ & PORTALLOCATOR_ENABLE_IPV6);
   }
 
   std::vector<SocketAddress> CallerAddresses() {
@@ -403,7 +400,7 @@ TEST_P(PeerConnectionIntegrationIceStatesTestWithFakeClock, VerifyIceStates) {
   // Block connections to/from the caller and wait for ICE to become
   // disconnected.
   for (const auto& caller_address : CallerAddresses()) {
-    firewall()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, caller_address);
+    firewall()->AddRule(false, FP_ANY, FD_ANY, caller_address);
   }
   RTC_LOG(LS_INFO) << "Firewall rules applied";
   ScopedFakeClock& fake_clock = FakeClock();
@@ -439,7 +436,7 @@ TEST_P(PeerConnectionIntegrationIceStatesTestWithFakeClock, VerifyIceStates) {
   // is signaled by the state transitioning to "failed".
   constexpr TimeDelta kConsentTimeout = TimeDelta::Millis(30000);
   for (const auto& caller_address : CallerAddresses()) {
-    firewall()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, caller_address);
+    firewall()->AddRule(false, FP_ANY, FD_ANY, caller_address);
   }
   RTC_LOG(LS_INFO) << "Firewall rules applied again";
   ASSERT_THAT(
@@ -471,7 +468,7 @@ TEST_P(PeerConnectionIntegrationTest, CallTransferredForCallee) {
   // receiving client. These SRTP packets will be dropped.
   std::unique_ptr<PeerConnectionIntegrationWrapper> original_peer(
       SetCallerPcWrapperAndReturnCurrent(
-          CreatePeerConnectionWrapperWithAlternateKey().release()));
+          CreatePeerConnectionWrapperWithAlternateKey()));
   // TODO(deadbeef): Why do we call Close here? That goes against the comment
   // directly above.
   original_peer->pc()->Close();
@@ -504,7 +501,7 @@ TEST_P(PeerConnectionIntegrationTest, CallTransferredForCaller) {
   // receiving client. These SRTP packets will be dropped.
   std::unique_ptr<PeerConnectionIntegrationWrapper> original_peer(
       SetCalleePcWrapperAndReturnCurrent(
-          CreatePeerConnectionWrapperWithAlternateKey().release()));
+          CreatePeerConnectionWrapperWithAlternateKey()));
   // TODO(deadbeef): Why do we call Close here? That goes against the comment
   // directly above.
   original_peer->pc()->Close();
@@ -527,14 +524,14 @@ INSTANTIATE_TEST_SUITE_P(PeerConnectionIntegrationTest,
                          Values(SdpSemantics::kPlanB_DEPRECATED,
                                 SdpSemantics::kUnifiedPlan));
 
-constexpr uint32_t kFlagsIPv4NoStun = cricket::PORTALLOCATOR_DISABLE_TCP |
-                                      cricket::PORTALLOCATOR_DISABLE_STUN |
-                                      cricket::PORTALLOCATOR_DISABLE_RELAY;
+constexpr uint32_t kFlagsIPv4NoStun = PORTALLOCATOR_DISABLE_TCP |
+                                      PORTALLOCATOR_DISABLE_STUN |
+                                      PORTALLOCATOR_DISABLE_RELAY;
 constexpr uint32_t kFlagsIPv6NoStun =
-    cricket::PORTALLOCATOR_DISABLE_TCP | cricket::PORTALLOCATOR_DISABLE_STUN |
-    cricket::PORTALLOCATOR_ENABLE_IPV6 | cricket::PORTALLOCATOR_DISABLE_RELAY;
+    PORTALLOCATOR_DISABLE_TCP | PORTALLOCATOR_DISABLE_STUN |
+    PORTALLOCATOR_ENABLE_IPV6 | PORTALLOCATOR_DISABLE_RELAY;
 constexpr uint32_t kFlagsIPv4Stun =
-    cricket::PORTALLOCATOR_DISABLE_TCP | cricket::PORTALLOCATOR_DISABLE_RELAY;
+    PORTALLOCATOR_DISABLE_TCP | PORTALLOCATOR_DISABLE_RELAY;
 
 INSTANTIATE_TEST_SUITE_P(
     PeerConnectionIntegrationTest,

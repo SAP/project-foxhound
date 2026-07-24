@@ -220,16 +220,21 @@ class MOZ_STACK_CLASS CreateNodeResultBase final : public CaretPoint {
                                 EditorDOMPoint&& aCandidateCaretPoint)
       : CaretPoint(std::move(aCandidateCaretPoint)), mNode(&aNode) {}
 
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode)
-      : mNode(std::move(aNode)) {}
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode,
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode)
+      : mNode(std::forward<RefPtr<NT>>(aNode)) {}
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode,
                                 const EditorDOMPoint& aCandidateCaretPoint)
-      : CaretPoint(aCandidateCaretPoint), mNode(std::move(aNode)) {
+      : CaretPoint(aCandidateCaretPoint),
+        mNode(std::forward<RefPtr<NT>>(aNode)) {
     MOZ_ASSERT(mNode);
   }
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode,
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode,
                                 EditorDOMPoint&& aCandidateCaretPoint)
-      : CaretPoint(std::move(aCandidateCaretPoint)), mNode(std::move(aNode)) {
+      : CaretPoint(std::move(aCandidateCaretPoint)),
+        mNode(std::forward<RefPtr<NT>>(aNode)) {
     MOZ_ASSERT(mNode);
   }
 

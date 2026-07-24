@@ -7,25 +7,21 @@
 #include "DecoderDoctorDiagnostics.h"
 #include "MediaKeySystemAccessPermissionRequest.h"
 #include "VideoUtils.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/Unused.h"
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
-#endif
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/KeySystemNames.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsTHashMap.h"
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
+#include "nsTHashMap.h"
 
 namespace mozilla::dom {
 
@@ -605,7 +601,7 @@ bool MediaKeySystemAccessManager::AwaitInstall(
   MOZ_DIAGNOSTIC_ASSERT(
       aRequest->mTimer == nullptr,
       "Timer should not already be set on a request we're about to await");
-  aRequest->mTimer = timer;
+  aRequest->mTimer = std::move(timer);
 
   mPendingInstallRequests.AppendElement(std::move(aRequest));
   return true;

@@ -30,6 +30,8 @@ const TAB_CHANGE_EVENTS = Object.freeze([
   "TabOpen",
   "TabPinned",
   "TabUnpinned",
+  "SplitViewCreated",
+  "SplitViewRemoved",
 ]);
 const TAB_RECENCY_CHANGE_EVENTS = Object.freeze([
   "activate",
@@ -170,11 +172,11 @@ class OpenTabsTarget extends EventTarget {
     );
   }
 
-  /*
+  /**
    * @param {string} type
    *        Either "TabChange" or "TabRecencyChange"
-   * @param {Object|Function} listener
-   * @param {Object} [options]
+   * @param {object | Function} listener
+   * @param {object} [options]
    */
   addEventListener(type, listener, options) {
     let hadListeners = this.haveAnyListeners;
@@ -186,10 +188,10 @@ class OpenTabsTarget extends EventTarget {
     }
   }
 
-  /*
+  /**
    * @param {string} type
    *        Either "TabChange" or "TabRecencyChange"
-   * @param {Object|Function} listener
+   * @param {object | Function} listener
    */
   removeEventListener(type, listener) {
     let hadListeners = this.haveAnyListeners;
@@ -252,6 +254,8 @@ class OpenTabsTarget extends EventTarget {
     tabContainer.addEventListener("TabPinned", this);
     tabContainer.addEventListener("TabUnpinned", this);
     tabContainer.addEventListener("TabSelect", this);
+    tabContainer.addEventListener("SplitViewCreated", this);
+    tabContainer.addEventListener("SplitViewRemoved", this);
     win.addEventListener("activate", this);
     win.addEventListener("sizemodechange", this);
 
@@ -284,6 +288,8 @@ class OpenTabsTarget extends EventTarget {
       tabContainer.removeEventListener("TabPinned", this);
       tabContainer.removeEventListener("TabSelect", this);
       tabContainer.removeEventListener("TabUnpinned", this);
+      tabContainer.removeEventListener("SplitViewCreated", this);
+      tabContainer.removeEventListener("SplitViewRemoved", this);
       win.removeEventListener("activate", this);
       win.removeEventListener("sizemodechange", this);
 
@@ -340,7 +346,7 @@ class OpenTabsTarget extends EventTarget {
     }
   }
 
-  /*
+  /**
    * @param {Window} win
    * @param {boolean} sortByRecency
    * @returns {Array<Tab>}
@@ -363,7 +369,7 @@ class OpenTabsTarget extends EventTarget {
     return this.currentWindows.flatMap(win => this.getTabsForWindow(win));
   }
 
-  /*
+  /**
    * @returns {Array<Tab>}
    *    A by-recency-sorted, aggregated list of tabs from all the same-privateness browser windows.
    */

@@ -33,7 +33,6 @@
 #include "mozilla/ProcessPriorityManager.h"
 #include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/RemoteMediaManagerParent.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TimeStamp.h"
@@ -67,6 +66,9 @@
 #include "nscore.h"
 #include "prenv.h"
 #include "skia/include/core/SkGraphics.h"
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxSettings.h"
+#endif
 #if defined(XP_WIN)
 #  include <dwrite.h>
 #  include <process.h>
@@ -74,7 +76,6 @@
 
 #  include "gfxDWriteFonts.h"
 #  include "gfxWindowsPlatform.h"
-#  include "mozilla/WindowsVersion.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/layers/CompositeProcessD3D11FencesHolderMap.h"
 #  include "mozilla/layers/GpuProcessD3D11TextureMap.h"
@@ -143,8 +144,7 @@ GPUParent* GPUParent::GetSingleton() {
   if (lowMemory && !sLowMemory) {
     NS_DispatchToMainThread(
         NS_NewRunnableFunction("gfx::GPUParent::FlushMemory", []() -> void {
-          Unused << GPUParent::GetSingleton()->SendFlushMemory(
-              u"low-memory"_ns);
+          (void)GPUParent::GetSingleton()->SendFlushMemory(u"low-memory"_ns);
         }));
   }
   sLowMemory = lowMemory;
@@ -211,35 +211,32 @@ bool GPUParent::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
   apz::InitializeGlobalState();
   LayerTreeOwnerTracker::Initialize();
   CompositorBridgeParent::InitializeStatics();
+
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  // On macOS, we pass the empty string for the process name because
+  // the bundle name (CFBundleName) is the complete name already.
+  // If the sandbox is enabled, setting the executable name will fail
+  // so don't attempt it. The executable name will be shown in
+  // Activity Monitor as the process name.
+  if (!IsGPUSandboxEnabled()) {
+    mozilla::ipc::SetThisProcessName("");
+  }
+#elif defined(XP_MACOSX)
+  mozilla::ipc::SetThisProcessName("");
+#else
   mozilla::ipc::SetThisProcessName("GPU Process");
+#endif  // XP_MACOSX && MOZ_SANDBOX
 
   return true;
 }
 
 void GPUParent::NotifyDeviceReset(DeviceResetReason aReason,
                                   DeviceResetDetectPlace aPlace) {
-  if (!NS_IsMainThread()) {
-    NS_DispatchToMainThread(NS_NewRunnableFunction(
-        "gfx::GPUParent::NotifyDeviceReset", [aReason, aPlace]() -> void {
-          GPUParent::GetSingleton()->NotifyDeviceReset(aReason, aPlace);
-        }));
-    return;
-  }
-
-  // Reset and reinitialize the compositor devices
-#ifdef XP_WIN
-  if (!DeviceManagerDx::Get()->MaybeResetAndReacquireDevices()) {
-    // If the device doesn't need to be reset then the device
-    // has already been reset by a previous NotifyDeviceReset message.
-    return;
-  }
-#endif
-
   // Notify the main process that there's been a device reset
   // and that they should reset their compositors and repaint
   GPUDeviceData data;
   RecvGetDeviceStatus(&data);
-  Unused << SendNotifyDeviceReset(data, aReason, aPlace);
+  (void)SendNotifyDeviceReset(data, aReason, aPlace);
 }
 
 void GPUParent::NotifyOverlayInfo(layers::OverlayInfo aInfo) {
@@ -250,7 +247,7 @@ void GPUParent::NotifyOverlayInfo(layers::OverlayInfo aInfo) {
         }));
     return;
   }
-  Unused << SendNotifyOverlayInfo(aInfo);
+  (void)SendNotifyOverlayInfo(aInfo);
 }
 
 void GPUParent::NotifySwapChainInfo(layers::SwapChainInfo aInfo) {
@@ -261,7 +258,7 @@ void GPUParent::NotifySwapChainInfo(layers::SwapChainInfo aInfo) {
         }));
     return;
   }
-  Unused << SendNotifySwapChainInfo(aInfo);
+  (void)SendNotifySwapChainInfo(aInfo);
 }
 
 void GPUParent::NotifyDisableRemoteCanvas() {
@@ -272,23 +269,33 @@ void GPUParent::NotifyDisableRemoteCanvas() {
         }));
     return;
   }
-  Unused << SendNotifyDisableRemoteCanvas();
+  (void)SendNotifyDisableRemoteCanvas();
+}
+
+void GPUParent::ReportGLStrings(GfxInfoGLStrings&& aStrings) {
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "gfx::GPUParent::ReportGLStrings",
+        [strings = std::move(aStrings)]() mutable -> void {
+          GPUParent::GetSingleton()->ReportGLStrings(std::move(strings));
+        }));
+    return;
+  }
+  (void)SendReportGLStrings(std::move(aStrings));
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvInit(
     nsTArray<GfxVarUpdate>&& vars, const DevicePrefs& devicePrefs,
     nsTArray<LayerTreeIdMapping>&& aMappings,
-    nsTArray<GfxInfoFeatureStatus>&& aFeatures, uint32_t aWrNamespace) {
-  for (const auto& var : vars) {
-    gfxVars::ApplyUpdate(var);
-  }
+    nsTArray<GfxInfoFeatureStatus>&& aFeatures, uint32_t aWrNamespace,
+    InitResolver&& aInitResolver) {
+  gfxVars::ApplyUpdate(vars);
 
   // Inherit device preferences.
   gfxConfig::Inherit(Feature::HW_COMPOSITING, devicePrefs.hwCompositing());
   gfxConfig::Inherit(Feature::D3D11_COMPOSITING,
                      devicePrefs.d3d11Compositing());
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
-  gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
   gfxConfig::Inherit(Feature::D3D11_HW_ANGLE, devicePrefs.d3d11HwAngle());
 
   {  // Let the crash reporter know if we've got WR enabled or not. For other
@@ -308,8 +315,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   // here that would normally be initialized there.
   SkGraphics::Init();
 
-  bool useRemoteCanvas =
-      gfxVars::RemoteCanvasEnabled() || gfxVars::UseAcceleratedCanvas2D();
+  bool useRemoteCanvas = gfxVars::UseAcceleratedCanvas2D();
   if (useRemoteCanvas) {
     gfxGradientCache::Init();
   }
@@ -327,7 +333,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   DeviceManagerDx::Get()->CreateDirectCompositionDevice();
   // Ensure to initialize GfxInfo
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  Unused << gfxInfo;
+  (void)gfxInfo;
 
   Factory::EnsureDWriteFactory();
 #endif
@@ -368,7 +374,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 
   // Ensure that GfxInfo::Init is called on the main thread.
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  Unused << gfxInfo;
+  (void)gfxInfo;
 #endif
 
 #ifdef ANDROID
@@ -384,7 +390,6 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   SkInitCairoFT(false);
 
   if (gfxVars::UseAHardwareBufferSharedSurfaceWebglOop()) {
-    layers::AndroidHardwareBufferApi::Init();
     layers::AndroidHardwareBufferManager::Init();
   }
 
@@ -403,7 +408,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   // Send a message to the UI process that we're done.
   GPUDeviceData data;
   RecvGetDeviceStatus(&data);
-  Unused << SendInitComplete(data);
+  aInitResolver(data);
 
   // Dispatch a task to background thread to determine the media codec supported
   // result, and propagate it back to the chrome process on the main thread.
@@ -414,8 +419,8 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
             NS_DispatchToMainThread(NS_NewRunnableFunction(
                 "GPUParent::UpdateMediaCodecsSupported",
                 [supported = media::MCSInfo::GetSupportFromFactory()]() {
-                  Unused << GPUParent::GetSingleton()
-                                ->SendUpdateMediaCodecsSupported(supported);
+                  (void)GPUParent::GetSingleton()
+                      ->SendUpdateMediaCodecsSupported(supported);
                 }));
           }),
       nsIEventTarget::DISPATCH_NORMAL));
@@ -498,33 +503,29 @@ mozilla::ipc::IPCResult GPUParent::RecvInitProfiler(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
-#if defined(XP_WIN)
-  auto scopeExit = MakeScopeExit(
-      [couldUseHWDecoder = gfx::gfxVars::CanUseHardwareVideoDecoding()] {
-        if (couldUseHWDecoder != gfx::gfxVars::CanUseHardwareVideoDecoding()) {
-          MOZ_ALWAYS_SUCCEEDS(NS_DispatchBackgroundTask(
-              NS_NewRunnableFunction(
-                  "GPUParent::RecvUpdateVar",
-                  []() {
-                    WMFDecoderModule::Init();
-                    if (StaticPrefs::media_ffvpx_hw_enabled()) {
-                      FFVPXRuntimeLinker::Init();
-                    }
-                    NS_DispatchToMainThread(NS_NewRunnableFunction(
-                        "GPUParent::UpdateMediaCodecsSupported",
-                        [supported = media::MCSInfo::GetSupportFromFactory(
-                             true /* force refresh */)]() {
-                          Unused << GPUParent::GetSingleton()
-                                        ->SendUpdateMediaCodecsSupported(
-                                            supported);
-                        }));
-                  }),
-              nsIEventTarget::DISPATCH_NORMAL));
-        }
-      });
-#endif
+mozilla::ipc::IPCResult GPUParent::RecvUpdateVar(
+    const nsTArray<GfxVarUpdate>& aUpdate) {
   gfxVars::ApplyUpdate(aUpdate);
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "GPUParent::RecvUpdateVar",
+          []() {
+#ifdef XP_WIN
+            WMFDecoderModule::Init();
+#endif
+            if (StaticPrefs::media_ffvpx_hw_enabled()) {
+              FFVPXRuntimeLinker::Init();
+            }
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "GPUParent::UpdateMediaCodecsSupported",
+                [supported = media::MCSInfo::GetSupportFromFactory(
+                     true /* force refresh */)]() {
+                  if (auto* gpu = GPUParent::GetSingleton()) {
+                    (void)gpu->SendUpdateMediaCodecsSupported(supported);
+                  }
+                }));
+          }),
+      nsIEventTarget::DISPATCH_NORMAL));
   return IPC_OK();
 }
 
@@ -676,7 +677,7 @@ mozilla::ipc::IPCResult GPUParent::RecvRequestMemoryReport(
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
       [&](const MemoryReport& aReport) {
-        Unused << GetSingleton()->SendAddMemoryReport(aReport);
+        (void)GetSingleton()->SendAddMemoryReport(aReport);
       },
       aResolver);
   return IPC_OK();

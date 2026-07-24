@@ -5,18 +5,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
-#include <iostream>
+#include "runnable_utils.h"
 
-#include "nsCOMPtr.h"
-#include "nsNetCID.h"
+#include <iostream>
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-
+#include "nsCOMPtr.h"
+#include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-
-#include "runnable_utils.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"

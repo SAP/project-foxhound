@@ -154,7 +154,8 @@ bool Spinner::WaitForNotification() {
       [](nsITimer*, void* isTimeout) {
         *reinterpret_cast<bool*>(isTimeout) = true;
       },
-      &isTimeout, 5000, nsITimer::TYPE_ONE_SHOT, __func__);
+      &isTimeout, 5000, nsITimer::TYPE_ONE_SHOT,
+      "Spinner:WaitForNotification"_ns);
 
   SpinEventLoopUntil("Spinner:WaitForNotification"_ns, [&]() -> bool {
     if (isTimeout) {

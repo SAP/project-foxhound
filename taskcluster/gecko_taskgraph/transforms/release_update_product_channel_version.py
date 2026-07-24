@@ -22,7 +22,7 @@ def make_task_worker(config, jobs):
             job,
             "scopes",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])}
+            **{"release-level": release_level(config.params)},
         )
         job["worker"]["product"] = job["shipping-product"]
         job["worker"]["version"] = config.params["version"]

@@ -12,8 +12,6 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/MozPromise.h"
-#include <memory>
-#include <string>
 #include <limits>
 
 // PerfStats
@@ -26,8 +24,10 @@
 // PerfStats::RecordMeasurement{Start,End} manually. Use
 // RecordMeasurementCount() for incrementing counters.
 //
-// Controlling: Use ChromeUtils.SetPerfStatsCollectionMask(mask), where mask=0
-// disables all metrics and mask=0xFFFFFFFF enables all of them.
+// Controlling: Use ChromeUtils.setPerfStatsFeatures(array), where an empty
+// array disables all metrics. Pass metric names as strings, e.g.
+// ["LayerTransactions", "Rasterizing"]. To enable all features, use
+// ChromeUtils.enableAllPerfStatsFeatures();
 //
 // Reporting: Results can be accessed with ChromeUtils.CollectPerfStats().
 // Browsertime will sum results across processes and report them.
@@ -92,41 +92,42 @@ class PerfStats {
  public:
   typedef MozPromise<nsCString, bool, true> PerfStatsPromise;
 
-  enum class Metric : uint64_t {
+  // MetricMask is a bitmask based on 'Metric', i.e. Metric::LayerBuilding (2)
+  // is synonymous to 1 << 2 in MetricMask.
+  using MetricMask = uint64_t;
+  using MetricCounter = uint32_t;
+
+  enum class Metric : MetricMask {
 #define DECLARE_ENUM(metric) metric,
     FOR_EACH_PERFSTATS_METRIC(DECLARE_ENUM)
 #undef DECLARE_ENUM
         Max
   };
 
-  // MetricMask is a bitmask based on 'Metric', i.e. Metric::LayerBuilding (2)
-  // is synonymous to 1 << 2 in MetricMask.
-  using MetricMask = uint64_t;
-
   static void RecordMeasurementStart(Metric aMetric) {
-    if (!(sCollectionMask & (1 << static_cast<uint64_t>(aMetric)))) {
+    if (!(sCollectionMask & (1 << static_cast<MetricMask>(aMetric)))) {
       return;
     }
     RecordMeasurementStartInternal(aMetric);
   }
 
   static void RecordMeasurementEnd(Metric aMetric) {
-    if (!(sCollectionMask & (1 << static_cast<uint64_t>(aMetric)))) {
+    if (!(sCollectionMask & (1 << static_cast<MetricMask>(aMetric)))) {
       return;
     }
     RecordMeasurementEndInternal(aMetric);
   }
 
   static void RecordMeasurement(Metric aMetric, TimeDuration aDuration) {
-    if (!(sCollectionMask & (1 << static_cast<uint64_t>(aMetric)))) {
+    if (!(sCollectionMask & (1 << static_cast<MetricMask>(aMetric)))) {
       return;
     }
     RecordMeasurementInternal(aMetric, aDuration);
   }
 
   static void RecordMeasurementCounter(Metric aMetric,
-                                       uint64_t aIncrementAmount) {
-    if (!(sCollectionMask & (1 << static_cast<uint64_t>(aMetric)))) {
+                                       MetricMask aIncrementAmount) {
+    if (!(sCollectionMask & (1 << static_cast<MetricMask>(aMetric)))) {
       return;
     }
     RecordMeasurementCounterInternal(aMetric, aIncrementAmount);
@@ -155,13 +156,17 @@ class PerfStats {
     GetSingleton()->StorePerfStatsInternal(aParent, aPerfStats);
   }
 
+  // Returns the mask with the bit set for a given metric name, or 0 if not
+  // found
+  static MetricMask GetFeatureMask(const char* aMetricName);
+
  private:
   static PerfStats* GetSingleton();
   static void RecordMeasurementStartInternal(Metric aMetric);
   static void RecordMeasurementEndInternal(Metric aMetric);
   static void RecordMeasurementInternal(Metric aMetric, TimeDuration aDuration);
   static void RecordMeasurementCounterInternal(Metric aMetric,
-                                               uint64_t aIncrementAmount);
+                                               MetricCounter aIncrementAmount);
 
   void ResetCollection();
   void StorePerfStatsInternal(dom::ContentParent* aParent,
@@ -172,13 +177,13 @@ class PerfStats {
   static Atomic<MetricMask, MemoryOrdering::Relaxed> sCollectionMask;
   static StaticMutex sMutex MOZ_UNANNOTATED;
   static StaticAutoPtr<PerfStats> sSingleton;
-  TimeStamp mRecordedStarts[static_cast<uint64_t>(Metric::Max)];
-  double mRecordedTimes[static_cast<uint64_t>(Metric::Max)];
-  uint32_t mRecordedCounts[static_cast<uint64_t>(Metric::Max)];
+  TimeStamp mRecordedStarts[static_cast<MetricMask>(Metric::Max)];
+  double mRecordedTimes[static_cast<MetricMask>(Metric::Max)];
+  MetricCounter mRecordedCounts[static_cast<MetricMask>(Metric::Max)];
   nsTArray<nsCString> mStoredPerfStats;
 };
 
-static_assert(static_cast<uint64_t>(1)
+static_assert(static_cast<PerfStats::MetricMask>(1)
                       << (static_cast<uint64_t>(PerfStats::Metric::Max) - 1) <=
                   std::numeric_limits<PerfStats::MetricMask>::max(),
               "More metrics than can fit into sCollectionMask bitmask");

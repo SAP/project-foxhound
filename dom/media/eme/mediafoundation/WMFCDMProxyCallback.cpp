@@ -73,6 +73,25 @@ void WMFCDMProxyCallback::OnSessionKeyExpiration(
       }));
 }
 
+void WMFCDMProxyCallback::OnSessionClosed(
+    const MFCDMSessionClosedResult& aResult) {
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "WMFCDMProxyCallback::OnSessionClosed",
+      [self = RefPtr{this}, this, result = aResult]() {
+        RETURN_IF_NULL(mProxy);
+        mProxy->OnSessionClosed(result.sessionId(), result.reason());
+      }));
+}
+
+void WMFCDMProxyCallback::OnRemoteProcessCrashed() {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction("WMFCDMProxyCallback::OnRemoteProcessCrashed",
+                             [self = RefPtr{this}, this]() {
+                               RETURN_IF_NULL(mProxy);
+                               mProxy->Terminated();
+                             }));
+}
+
 void WMFCDMProxyCallback::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
   mProxy = nullptr;

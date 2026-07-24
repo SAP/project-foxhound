@@ -47,9 +47,7 @@
 #ifndef mozilla_HashFunctions_h
 #define mozilla_HashFunctions_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Char16.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Types.h"
 #include "mozilla/WrappingOperations.h"
@@ -327,7 +325,8 @@ template <typename WCharT, typename = typename std::enable_if<
  * same result out of HashBytes as you would out of HashString.
  */
 [[nodiscard]] extern MFBT_API HashNumber HashBytes(const void* bytes,
-                                                   size_t aLength);
+                                                   size_t aLength,
+                                                   HashNumber startingHash = 0);
 
 /**
  * A pseudorandom function mapping 32-bit integers to 32-bit integers.

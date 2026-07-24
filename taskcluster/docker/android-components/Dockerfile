@@ -17,7 +17,6 @@ ENV CURL='curl --location --retry 5' \
 # yaml required by some ui-test tasks
 RUN apt-get update && \
     apt-get install \
-      autoconf2.13 \
       build-essential \
       base-files \
       ccache \

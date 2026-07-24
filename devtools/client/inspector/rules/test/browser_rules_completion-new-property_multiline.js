@@ -102,8 +102,8 @@ add_task(async function () {
   let onRuleviewChanged = view.once("ruleview-changed");
   const onSuggest = editor.once("after-suggest");
 
-  const node = editor.popup._list.childNodes[editor.popup.selectedIndex];
-  EventUtils.synthesizeMouseAtCenter(node, {}, editor.popup._window);
+  const node = editor.popup.list.childNodes[editor.popup.selectedIndex];
+  EventUtils.synthesizeMouseAtCenter(node, {}, node.ownerGlobal);
 
   view.debounce.flush();
   await onSuggest;
@@ -126,7 +126,7 @@ add_task(async function () {
  * Wait for the editor to emit "after-suggest" to make sure the autocompletion
  * process is finished.
  *
- * @param {String} key
+ * @param {string} key
  *        The key to send to the input.
  * @param {InplaceEditor} editor
  *        The inplace editor which owns the focused input.

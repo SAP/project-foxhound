@@ -329,7 +329,7 @@ export class Database {
    * Since we run the pruning logic after syncing, any attachment without a
    * matching record can be discarded as they will be unreachable forever.
    *
-   * @param {Array<String>} excludeIds List of attachments IDs to exclude from pruning.
+   * @param {Array<string>} excludeIds List of attachments IDs to exclude from pruning.
    */
   async pruneAttachments(excludeIds) {
     const _cid = this.identifier;
@@ -496,11 +496,11 @@ const gPendingWriteOperations = new Set();
  * Helper to wrap some IDBObjectStore operations into a promise.
  *
  * @param {IDBDatabase} db
- * @param {String|String[]} storeNames - either a string or an array of strings.
+ * @param {string | string[]} storeNames - either a string or an array of strings.
  * @param {function} callback
- * @param {Object} options
- * @param {String} options.mode
- * @param {String} options.desc   for shutdown tracking.
+ * @param {object} options
+ * @param {string} options.mode
+ * @param {string} options.desc   for shutdown tracking.
  */
 async function executeIDB(storeNames, callback, options = {}) {
   if (!gDB) {

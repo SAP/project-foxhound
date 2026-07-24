@@ -57,6 +57,7 @@ class MozillaPrinter : public EmptyTestEventListener {
     MOZ_PRINT("TEST-%s | GTest unit test: %s\n",
               aUnitTest.Passed() ? "PASS" : "UNEXPECTED-FAIL",
               aUnitTest.Passed() ? "passed" : "failed");
+    MOZ_PRINT("Skipped: %d\n", aUnitTest.skipped_test_count());
     MOZ_PRINT("Passed: %d\n", aUnitTest.successful_test_count());
     MOZ_PRINT("Failed: %d\n", aUnitTest.failed_test_count());
     if (mLogFile) {
@@ -78,10 +79,13 @@ class MozillaPrinter : public EmptyTestEventListener {
               aTestPartResult.file_name(), aTestPartResult.line_number());
   }
   virtual void OnTestEnd(const TestInfo& aTestInfo) override {
-    MOZ_PRINT("TEST-%s | %s.%s | test completed (time: %" PRIi64 "ms)\n",
-              aTestInfo.result()->Passed() ? "PASS" : "UNEXPECTED-FAIL",
-              aTestInfo.test_case_name(), aTestInfo.name(),
-              aTestInfo.result()->elapsed_time());
+    MOZ_PRINT(
+        "TEST-%s | %s.%s | test completed (time: %" PRIi64 "ms)\n",
+        aTestInfo.result()->Passed()
+            ? "PASS"
+            : (aTestInfo.result()->Skipped() ? "FAIL" : "UNEXPECTED-FAIL"),
+        aTestInfo.test_case_name(), aTestInfo.name(),
+        aTestInfo.result()->elapsed_time());
     MOZ_ASSERT(&aTestInfo == mTestInfo);
     mTestInfo = nullptr;
   }

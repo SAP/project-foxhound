@@ -218,8 +218,8 @@ add_task(async function testZeroSizePassedToPrinter() {
     ok(BrowserTestUtils.isVisible(orientation), "Orientation picker is shown");
 
     await helper.closeDialog();
-  });
-}, "page_size_zero.html");
+  }, "page_size_zero.html");
+});
 
 add_task(async function testZeroWidthPassedToPrinter() {
   await PrintHelper.withTestPage(async helper => {
@@ -238,8 +238,8 @@ add_task(async function testZeroWidthPassedToPrinter() {
     ok(BrowserTestUtils.isVisible(orientation), "Orientation picker is shown");
 
     await helper.closeDialog();
-  });
-}, "page_size_zero_width.html");
+  }, "page_size_zero_width.html");
+});
 
 add_task(async function testDefaultSizePassedToPrinter() {
   await PrintHelper.withTestPage(async helper => {

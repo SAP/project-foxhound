@@ -105,19 +105,19 @@ const customLazy = {
  * Start tracing against a given JS global.
  * Only code run from that global will be logged.
  *
- * @param {Object} options
+ * @param {object} options
  *        Object with configurations:
- * @param {Object} options.global
+ * @param {object} options.global
  *        The tracer only log traces related to the code executed within this global.
  *        When omitted, it will default to the options object's global.
- * @param {Boolean} options.traceAllGlobals
+ * @param {boolean} options.traceAllGlobals
  *        When set to true, this will trace all the globals running in the current thread.
- * @param {String} options.prefix
+ * @param {string} options.prefix
  *        Optional string logged as a prefix to all traces.
- * @param {Boolean} options.loggingMethod
+ * @param {boolean} options.loggingMethod
  *        Optional setting to use something else than `dump()` to log traces to stdout.
  *        This is mostly used by tests.
- * @param {Boolean} options.traceDOMEvents
+ * @param {boolean} options.traceDOMEvents
  *        Optional setting to enable tracing all the DOM events being going through
  *        dom/events/EventListenerManager.cpp's `EventListenerManager`.
  * @param {Array<string>} options.traceDOMMutations
@@ -126,27 +126,27 @@ const customLazy = {
  *          - "add": trace all new DOM Node being added,
  *          - "attributes": trace all DOM attribute modifications,
  *          - "delete": trace all DOM Node being removed.
- * @param {Boolean} options.traceValues
+ * @param {boolean} options.traceValues
  *        Optional setting to enable tracing all function call values as well,
  *        as returned values (when we do log returned frames).
- * @param {Boolean} options.traceOnNextInteraction
+ * @param {boolean} options.traceOnNextInteraction
  *        Optional setting to enable when the tracing should only start when the
  *        use starts interacting with the page. i.e. on next keydown or mousedown.
- * @param {Boolean} options.traceSteps
+ * @param {boolean} options.traceSteps
  *        Optional setting to enable tracing each frame within a function execution.
  *        (i.e. not only function call and function returns [when traceFunctionReturn is true])
- * @param {Boolean} options.traceFunctionReturn
+ * @param {boolean} options.traceFunctionReturn
  *        Optional setting to enable when the tracing should notify about frame exit.
  *        i.e. when a function call returns or throws.
- * @param {String} options.filterFrameSourceUrl
+ * @param {string} options.filterFrameSourceUrl
  *        Optional setting to restrict all traces to only a given source URL.
  *        This is a loose check, so any source whose URL includes the passed string will be traced.
- * @param {Number} options.maxDepth
+ * @param {number} options.maxDepth
  *        Optional setting to ignore frames when depth is greater than the passed number.
- * @param {Number} options.maxRecords
+ * @param {number} options.maxRecords
  *        Optional setting to stop the tracer after having recorded at least
  *        the passed number of top level frames.
- * @param {Number} options.pauseOnStep
+ * @param {number} options.pauseOnStep
  *        Optional setting to delay each frame execution for a given amount of time in ms.
  */
 class JavaScriptTracer {
@@ -503,7 +503,7 @@ class JavaScriptTracer {
   /**
    * Stop observing execution.
    *
-   * @param {String} reason
+   * @param {string} reason
    *        Optional string to justify why the tracer stopped.
    */
   stopTracing(reason = "") {
@@ -586,9 +586,9 @@ class JavaScriptTracer {
    * Notify DevTools and/or the user via stdout that tracing
    * has been enabled or disabled.
    *
-   * @param {Boolean} state
+   * @param {boolean} state
    *        True if we just started tracing, false when it just stopped.
-   * @param {String} reason
+   * @param {string} reason
    *        Optional string to justify why the tracer stopped.
    */
   notifyToggle(state, reason) {
@@ -809,7 +809,7 @@ class JavaScriptTracer {
    * Display to stdout one given frame execution, which represents a function call.
    *
    * @param {Debugger.Frame} frame
-   * @param {Number} depth
+   * @param {number} depth
    */
   logFrameEnteredToStdout(frame, depth) {
     const padding = "—".repeat(depth + 1);
@@ -861,7 +861,7 @@ class JavaScriptTracer {
    * Display to stdout one given frame execution, which represents a step within a function execution.
    *
    * @param {Debugger.Frame} frame
-   * @param {Number} depth
+   * @param {number} depth
    */
   logFrameStepToStdout(frame, depth) {
     const padding = "—".repeat(depth + 1);
@@ -875,8 +875,8 @@ class JavaScriptTracer {
    * Display to stdout the exit of a given frame execution, which represents a function return.
    *
    * @param {Debugger.Frame} frame
-   * @param {String} why
-   * @param {Number} depth
+   * @param {string} why
+   * @param {number} depth
    */
   logFrameExitedToStdout(frame, depth, why, rv) {
     const padding = "—".repeat(depth + 1);
@@ -910,7 +910,7 @@ class JavaScriptTracer {
  * Return a string description for any arbitrary JS value.
  * Used when logging to stdout.
  *
- * @param {Object} obj
+ * @param {object} obj
  *        Any JavaScript object to describe.
  * @return String
  *         User meaningful descriptor for the object.
@@ -979,7 +979,7 @@ let activeTracer = null;
  * Start tracing JavaScript.
  * i.e. log the name of any function being called in JS and its location in source code.
  *
- * @params {Object} options (mandatory)
+ * @param {object} options (mandatory)
  *        See JavaScriptTracer.startTracing jsdoc.
  */
 function startTracing(options) {
@@ -1022,7 +1022,7 @@ function stopTracing() {
  *   - formatedDisplayName is a string and is a human readable name for the current frame
  *   - prefix is a string to display as a prefix of any logged frame
  *
- * @param {Object} listener
+ * @param {object} listener
  */
 function addTracingListener(listener) {
   listeners.add(listener);
@@ -1068,7 +1068,7 @@ function getFrameDepth(frame) {
  *
  * @param {Debugger.Frame} frame
  *        The frame being traced.
- * @return {String}
+ * @return {string}
  *        The URL's magic string.
  */
 function getTerminalHyperLink(frame) {
@@ -1088,7 +1088,7 @@ function getTerminalHyperLink(frame) {
  * Helper function to synchronously pause the current frame execution
  * for a given duration in ms.
  *
- * @param {Number} duration
+ * @param {number} duration
  */
 function syncPause(duration) {
   let freeze = true;

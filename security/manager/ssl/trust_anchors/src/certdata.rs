@@ -12,12 +12,13 @@ use pkcs11_bindings::*;
 pub const CKC_X_509_BYTES: &[u8] = &CKC_X_509.to_ne_bytes();
 pub const CKO_CERTIFICATE_BYTES: &[u8] = &CKO_CERTIFICATE.to_ne_bytes();
 pub const CKO_NSS_BUILTIN_ROOT_LIST_BYTES: &[u8] = &CKO_NSS_BUILTIN_ROOT_LIST.to_ne_bytes();
-pub const CKO_NSS_TRUST_BYTES: &[u8] = &CKO_NSS_TRUST.to_ne_bytes();
-pub const CKT_NSS_MUST_VERIFY_TRUST_BYTES: &[u8] = &CKT_NSS_MUST_VERIFY_TRUST.to_ne_bytes();
-pub const CKT_NSS_NOT_TRUSTED_BYTES: &[u8] = &CKT_NSS_NOT_TRUSTED.to_ne_bytes();
-pub const CKT_NSS_TRUSTED_DELEGATOR_BYTES: &[u8] = &CKT_NSS_TRUSTED_DELEGATOR.to_ne_bytes();
+pub const CKO_TRUST_BYTES: &[u8] = &CKO_TRUST.to_ne_bytes();
+pub const CKT_TRUST_MUST_VERIFY_TRUST_BYTES: &[u8] = &CKT_TRUST_MUST_VERIFY_TRUST.to_ne_bytes();
+pub const CKT_NOT_TRUSTED_BYTES: &[u8] = &CKT_NOT_TRUSTED.to_ne_bytes();
+pub const CKT_TRUST_ANCHOR_BYTES: &[u8] = &CKT_TRUST_ANCHOR.to_ne_bytes();
 pub const CK_FALSE_BYTES: &[u8] = &CK_FALSE.to_ne_bytes();
 pub const CK_TRUE_BYTES: &[u8] = &CK_TRUE.to_ne_bytes();
+pub const CKM_SHA256_BYTES: &[u8] = &CKM_SHA256.to_ne_bytes();
 
 #[derive(PartialEq, Eq)]
 pub struct Root {
@@ -28,8 +29,7 @@ pub struct Root {
     pub mozilla_ca_policy: Option<&'static [u8]>,
     pub server_distrust_after: Option<&'static [u8]>,
     pub email_distrust_after: Option<&'static [u8]>,
-    pub sha1: [u8; 20],
-    pub md5: [u8; 16],
+    pub sha256: [u8; 32],
     pub trust_server: &'static [u8],
     pub trust_email: &'static [u8],
 }

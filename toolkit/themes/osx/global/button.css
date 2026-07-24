@@ -19,7 +19,7 @@ button:where(:hover:active) {
 
 /* When the window isn't focused, the default button background isn't drawn,
  * so don't change the text color then: */
-button:where([default="true"]:not(:-moz-window-inactive)) {
+button:where([default]:not(:-moz-window-inactive)) {
   color: -moz-mac-defaultbuttontext;
 }
 
@@ -35,7 +35,7 @@ button[type="default"] {
 
 /* .......... disabled state .......... */
 
-button:where([disabled="true"]) {
+button:where([disabled]) {
   color: GrayText;
 }
 

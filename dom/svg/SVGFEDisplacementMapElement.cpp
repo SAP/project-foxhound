@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFEDisplacementMapElement.h"
-#include "mozilla/dom/SVGFEDisplacementMapElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFEDisplacementMapElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEDisplacementMap)
 
@@ -82,7 +83,7 @@ FilterPrimitiveDescription SVGFEDisplacementMapElement::GetPrimitiveDescription(
     return FilterPrimitiveDescription(AsVariant(std::move(atts)));
   }
 
-  float scale = aInstance->GetPrimitiveNumber(SVGContentUtils::XY,
+  float scale = aInstance->GetPrimitiveNumber(SVGLength::Axis::XY,
                                               &mNumberAttributes[SCALE]);
   uint32_t xChannel = mEnumAttributes[CHANNEL_X].GetAnimValue();
   uint32_t yChannel = mEnumAttributes[CHANNEL_Y].GetAnimValue();

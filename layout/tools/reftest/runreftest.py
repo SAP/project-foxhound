@@ -5,6 +5,7 @@
 """
 Runs the reftest test harness.
 """
+
 import json
 import os
 import platform
@@ -540,9 +541,6 @@ class RefTest:
             browserEnv["TZ"] = "PST8PDT"
             browserEnv["LC_ALL"] = "en_US.UTF-8"
 
-        # This should help with consistency
-        browserEnv["GTK_THEME"] = "Adwaita"
-
         for v in options.environment:
             ix = v.find("=")
             if ix <= 0:
@@ -766,12 +764,10 @@ class RefTest:
 
         print("REFTEST INFO | Result summary:")
         for summaryObj, (text, categories) in zip(summaryObjects, summaryLines):
-            details = ", ".join(
-                [
-                    "%d %s" % (summaryObj[attribute], description)
-                    for (attribute, description) in categories
-                ]
-            )
+            details = ", ".join([
+                "%d %s" % (summaryObj[attribute], description)
+                for (attribute, description) in categories
+            ])
             print(
                 "REFTEST INFO | "
                 + text

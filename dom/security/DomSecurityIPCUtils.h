@@ -8,8 +8,8 @@
 #define mozilla_dom_domsecurityipcutils_h
 
 #include "ipc/EnumSerializer.h"
-#include "nsILoadInfo.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsILoadInfo.h"
 
 namespace IPC {
 

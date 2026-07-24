@@ -8,7 +8,17 @@
 
 #include <cstring>
 
+#include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
+
+namespace IPC {
+template <>
+struct ParamTraits<mozilla::MediaPacket::Type>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::MediaPacket::Type, mozilla::MediaPacket::UNCLASSIFIED,
+          mozilla::MediaPacket::SCTP> {};
+}  // namespace IPC
 
 namespace mozilla {
 
@@ -30,66 +40,52 @@ MediaPacket::MediaPacket(const MediaPacket& orig)
 MediaPacket MediaPacket::Clone() const { return MediaPacket(*this); }
 
 void MediaPacket::Serialize(IPC::MessageWriter* aWriter) const {
-  aWriter->WriteUInt32(len_);
-  aWriter->WriteUInt32(capacity_);
+  WriteParam(aWriter, len_);
+  WriteParam(aWriter, capacity_);
+  WriteParam(aWriter, encrypted_len_);
+  WriteParam(aWriter, sdp_level_);
+  WriteParam(aWriter, type_);
+
   if (len_) {
     aWriter->WriteBytes(data_.get(), len_);
   }
-  aWriter->WriteUInt32(encrypted_len_);
   if (encrypted_len_) {
     aWriter->WriteBytes(encrypted_data_.get(), encrypted_len_);
   }
-  aWriter->WriteInt32(sdp_level_.isSome() ? *sdp_level_ : -1);
-  aWriter->WriteInt32(type_);
 }
 
 bool MediaPacket::Deserialize(IPC::MessageReader* aReader) {
   Reset();
-  uint32_t len;
-  if (!aReader->ReadUInt32(&len)) {
+  if (!ReadParam(aReader, &len_) || !ReadParam(aReader, &capacity_) ||
+      !ReadParam(aReader, &encrypted_len_) ||
+      !ReadParam(aReader, &sdp_level_) || !ReadParam(aReader, &type_)) {
     return false;
   }
-  uint32_t capacity;
-  if (!aReader->ReadUInt32(&capacity)) {
+
+  if (capacity_ < len_) {
     return false;
   }
-  if (len) {
-    MOZ_RELEASE_ASSERT(capacity >= len);
-    UniquePtr<uint8_t[]> data(new uint8_t[capacity]);
-    if (!aReader->ReadBytesInto(data.get(), len)) {
+
+  // Kinda arbitrary, but we want some sort of ceiling here.
+  if ((capacity_ > 1024 * 1024) || (encrypted_len_ > 1024 * 1024)) {
+    return false;
+  }
+
+  if (capacity_) {
+    data_.reset(new uint8_t[capacity_]);
+    if (len_) {
+      if (!aReader->ReadBytesInto(data_.get(), len_)) {
+        return false;
+      }
+    }
+  }
+
+  if (encrypted_len_) {
+    encrypted_data_.reset(new uint8_t[encrypted_len_]);
+    if (!aReader->ReadBytesInto(encrypted_data_.get(), encrypted_len_)) {
       return false;
     }
-    data_ = std::move(data);
-    len_ = len;
-    capacity_ = capacity;
   }
-
-  if (!aReader->ReadUInt32(&len)) {
-    return false;
-  }
-  if (len) {
-    UniquePtr<uint8_t[]> data(new uint8_t[len]);
-    if (!aReader->ReadBytesInto(data.get(), len)) {
-      return false;
-    }
-    encrypted_data_ = std::move(data);
-    encrypted_len_ = len;
-  }
-
-  int32_t sdp_level;
-  if (!aReader->ReadInt32(&sdp_level)) {
-    return false;
-  }
-
-  if (sdp_level >= 0) {
-    sdp_level_ = Some(sdp_level);
-  }
-
-  int32_t type;
-  if (!aReader->ReadInt32(&type)) {
-    return false;
-  }
-  type_ = static_cast<Type>(type);
   return true;
 }
 

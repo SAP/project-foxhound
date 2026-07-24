@@ -16,11 +16,10 @@
 #include "mozilla/dom/ContentParent.h"  // For RemoteTypePrefix
 #include "mozilla/FileUtils.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/Unused.h"
 #include "mozilla/GfxMessageUtils.h"  // For ParamTraits<GeckoProcessType>
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/SharedLibraries.h"
 #include "mozilla/Try.h"
-#include "SharedLibraries.h"
 
 static const char MAGIC[] = "permahangsavev1";
 
@@ -297,14 +296,14 @@ void nsHangDetails::Submit() {
               // processes.
               hangDetails->mDetails.remoteType().Assign(
                   dom::RemoteTypePrefix(cc->GetRemoteType()));
-              Unused << cc->SendBHRThreadHang(hangDetails->mDetails);
+              (void)cc->SendBHRThreadHang(hangDetails->mDetails);
             }
             break;
           }
           case GeckoProcessType_GPU: {
             auto gp = gfx::GPUParent::GetSingleton();
             if (gp) {
-              Unused << gp->SendBHRThreadHang(hangDetails->mDetails);
+              (void)gp->SendBHRThreadHang(hangDetails->mDetails);
             }
             break;
           }
@@ -457,8 +456,7 @@ Result<Ok, nsresult> WriteTString(PRFileDesc* aFile,
 
 template <typename CharT>
 Result<nsTString<CharT>, nsresult> ReadTString(PRFileDesc* aFile) {
-  uint32_t length;
-  MOZ_TRY_VAR(length, ReadUint(aFile));
+  uint32_t length = MOZ_TRY(ReadUint(aFile));
   nsTString<CharT> result;
   CharT buffer[512];
   size_t bufferLength = sizeof(buffer) / sizeof(CharT);
@@ -528,22 +526,18 @@ Result<Ok, nsresult> WriteEntry(PRFileDesc* aFile, const HangStack& aStack,
 }
 
 Result<Ok, nsresult> ReadEntry(PRFileDesc* aFile, HangStack& aStack) {
-  uint32_t type;
-  MOZ_TRY_VAR(type, ReadUint(aFile));
+  uint32_t type = MOZ_TRY(ReadUint(aFile));
   HangEntry::Type entryType = HangEntry::Type(type);
   switch (entryType) {
     case HangEntry::TnsCString:
     case HangEntry::THangEntryBufOffset: {
-      nsCString str;
-      MOZ_TRY_VAR(str, ReadTString<char>(aFile));
+      nsCString str = MOZ_TRY(ReadTString<char>(aFile));
       aStack.stack().AppendElement(std::move(str));
       break;
     }
     case HangEntry::THangEntryModOffset: {
-      uint32_t module;
-      MOZ_TRY_VAR(module, ReadUint(aFile));
-      uint32_t offset;
-      MOZ_TRY_VAR(offset, ReadUint(aFile));
+      uint32_t module = MOZ_TRY(ReadUint(aFile));
+      uint32_t offset = MOZ_TRY(ReadUint(aFile));
       aStack.stack().AppendElement(HangEntryModOffset(module, offset));
       break;
     }
@@ -594,16 +588,14 @@ Result<HangDetails, nsresult> ReadHangDetailsFromFile(nsIFile* aFile) {
   }
 
   HangDetails result;
-  uint32_t duration;
-  MOZ_TRY_VAR(duration, ReadUint(fd));
+  uint32_t duration = MOZ_TRY(ReadUint(fd));
   result.duration() = TimeDuration::FromMilliseconds(double(duration));
-  MOZ_TRY_VAR(result.threadName(), ReadTString<char>(fd));
-  MOZ_TRY_VAR(result.runnableName(), ReadTString<char>(fd));
-  MOZ_TRY_VAR(result.process(), ReadTString<char>(fd));
-  MOZ_TRY_VAR(result.remoteType(), ReadTString<char>(fd));
+  result.threadName() = MOZ_TRY(ReadTString<char>(fd));
+  result.runnableName() = MOZ_TRY(ReadTString<char>(fd));
+  result.process() = MOZ_TRY(ReadTString<char>(fd));
+  result.remoteType() = MOZ_TRY(ReadTString<char>(fd));
 
-  uint32_t numAnnotations;
-  MOZ_TRY_VAR(numAnnotations, ReadUint(fd));
+  uint32_t numAnnotations = MOZ_TRY(ReadUint(fd));
   auto& annotations = result.annotations();
 
   // Add a "Unrecovered" annotation so we can know when processing this that
@@ -615,14 +607,13 @@ Result<HangDetails, nsresult> ReadHangDetailsFromFile(nsIFile* aFile) {
 
   for (size_t i = 0; i < numAnnotations; ++i) {
     HangAnnotation annot;
-    MOZ_TRY_VAR(annot.name(), ReadTString<char16_t>(fd));
-    MOZ_TRY_VAR(annot.value(), ReadTString<char16_t>(fd));
+    annot.name() = MOZ_TRY(ReadTString<char16_t>(fd));
+    annot.value() = MOZ_TRY(ReadTString<char16_t>(fd));
     annotations.AppendElement(std::move(annot));
   }
 
   auto& stack = result.stack();
-  uint32_t numFrames;
-  MOZ_TRY_VAR(numFrames, ReadUint(fd));
+  uint32_t numFrames = MOZ_TRY(ReadUint(fd));
   if (!stack.stack().SetCapacity(numFrames, mozilla::fallible)) {
     return Err(NS_ERROR_FAILURE);
   }
@@ -631,8 +622,7 @@ Result<HangDetails, nsresult> ReadHangDetailsFromFile(nsIFile* aFile) {
     MOZ_TRY(ReadEntry(fd, stack));
   }
 
-  uint32_t numModules;
-  MOZ_TRY_VAR(numModules, ReadUint(fd));
+  uint32_t numModules = MOZ_TRY(ReadUint(fd));
   auto& modules = stack.modules();
   if (!annotations.SetCapacity(numModules, mozilla::fallible)) {
     return Err(NS_ERROR_FAILURE);
@@ -640,8 +630,8 @@ Result<HangDetails, nsresult> ReadHangDetailsFromFile(nsIFile* aFile) {
 
   for (size_t i = 0; i < numModules; ++i) {
     HangModule module;
-    MOZ_TRY_VAR(module.name(), ReadTString<char16_t>(fd));
-    MOZ_TRY_VAR(module.breakpadId(), ReadTString<char>(fd));
+    module.name() = MOZ_TRY(ReadTString<char16_t>(fd));
+    module.breakpadId() = MOZ_TRY(ReadTString<char>(fd));
     modules.AppendElement(std::move(module));
   }
 
@@ -725,7 +715,7 @@ SubmitPersistedPermahangRunnable::Run() {
     // and delete it to prevent future runs from having to go through the
     // same thing. If we succeeded, however, the file should be cleaned up
     // once the hang is submitted.
-    Unused << mPermahangFile->Remove(false);
+    (void)mPermahangFile->Remove(false);
     return hangDetailsResult.unwrapErr();
   }
   RefPtr<nsHangDetails> hangDetails =

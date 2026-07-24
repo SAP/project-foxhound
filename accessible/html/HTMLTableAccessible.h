@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLTableAccessible_h__
-#define mozilla_a11y_HTMLTableAccessible_h__
+#ifndef mozilla_a11y_HTMLTableAccessible_h_
+#define mozilla_a11y_HTMLTableAccessible_h_
 
 #include "HyperTextAccessible.h"
 
@@ -32,12 +32,11 @@ class HTMLTableCellAccessible : public HyperTextAccessible {
   // LocalAccessible
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
-  virtual uint64_t NativeInteractiveState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
 
  protected:
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
   // HTMLTableCellAccessible
@@ -84,9 +83,6 @@ class HTMLTableRowAccessible : public HyperTextAccessible {
 
  protected:
   virtual ~HTMLTableRowAccessible() {}
-
-  // LocalAccessible
-  virtual ENameValueFlag NativeName(nsString& aName) const override;
 };
 
 /**
@@ -122,7 +118,8 @@ class HTMLTableAccessible : public HyperTextAccessible {
   }
 
   // LocalAccessible
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual uint64_t NativeState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual Relation RelationByType(RelationType aRelationType) const override;
@@ -136,7 +133,7 @@ class HTMLTableAccessible : public HyperTextAccessible {
   virtual ENameValueFlag NativeName(nsString& aName) const override;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 

@@ -1,0 +1,163 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.chip {
+  --chip-border-color: var(--color-violet-0);
+  --chip-hover-border-color: color-mix(in srgb, var(--color-violet-20) 50%, transparent);
+  --chip-selected-border-color: var(--color-violet-20);
+  --chip-background-color: var(--color-violet-0);
+  --chip-hover-background-color: var(--color-violet-0);
+  --chip-selected-background-color: color-mix(in srgb, var(--color-violet-20) 20%, var(--color-violet-0));
+  --chip-label-color: var(--color-violet-90);
+  --chip-text-color: var(--color-gray-100);
+  --chip-text-color-deemphasized: color-mix(in srgb, var(--color-gray-100) 69%, transparent);
+  --chip-text-color-empty: color-mix(in srgb, var(--color-gray-100) 60%, transparent);
+}
+
+/* Shared base styles */
+.chip {
+  display: inline-flex;
+  max-width: calc(var(--size-item-medium) * 7);
+  align-items: center;
+  gap: var(--space-small, 8px);
+  border-radius: var(--border-radius-medium);
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  color: inherit;
+}
+
+button.chip {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+}
+
+/* Shared styles */
+.chip-icon {
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  border-radius: var(--border-radius-xsmall);
+  flex-shrink: 0;
+}
+
+.chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: normal;
+  line-height: normal;
+}
+
+.chip-at {
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-color-deemphasized, var(--chip-text-color-deemphasized));
+}
+
+.chip-remove {
+  display: none;
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: var(--border-radius-xsmall);
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+.chip-remove-icon {
+  box-sizing: border-box;
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  padding: var(--space-xxsmall);
+}
+
+/* Type: In-line */
+:host([type="in-line"]) .chip {
+  --border-color: var(--chip-border-color);
+
+  align-items: baseline;
+  border: 1px solid;
+  border-color: var(--border-color);
+  gap: var(--space-xsmall);
+  padding: var(--space-xxsmall) var(--space-xsmall);
+}
+
+:host([type="in-line"]) .chip-icon {
+  align-self: center;
+  transition: opacity 120ms ease;
+}
+
+:host([type="in-line"]) .chip-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: var(--text-color-deemphasized, var(--chip-text-color-deemphasized));
+  word-break: break-all;
+}
+
+:host([type="in-line"]) .chip:hover .chip-label,
+:host([type="in-line"]) .chip-at {
+  color: var(--text-color, var(--chip-text-color));
+}
+
+:host([type="in-line"]) .chip[data-empty] .chip-label {
+  --text-color: var(--chip-text-color-empty);
+
+  color: var(--text-color);
+}
+
+/* Type: Context Chip */
+:host([type="context-chip"]) .chip {
+  --background-color-box: var(--chip-background-color);
+
+  padding: var(--space-small);
+  border: 1px solid transparent;
+  background-color: var(--background-color-box);
+}
+
+:host([type="context-chip"]) .chip-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+:host([type="context-chip"]) .chip-label {
+  --text-color: var(--chip-label-color);
+
+  display: flex;
+  height: var(--size-item-small);
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 0 0;
+  color: var(--text-color);
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+}
+
+:host([type="context-chip"]) .chip:hover .chip-icon {
+  display: none;
+}
+
+:host([type="context-chip"]) .chip:hover .chip-remove {
+  display: flex;
+}
+
+/* Global hover and selected - must come after type-specific rules to override borders */
+.chip:hover {
+  background-color: var(--chip-hover-background-color);
+  border-color: var(--chip-hover-border-color);
+}
+
+:host([selected]) .chip:not(:hover) {
+  background-color: var(--chip-selected-background-color);
+  border-color: var(--chip-selected-border-color);
+}

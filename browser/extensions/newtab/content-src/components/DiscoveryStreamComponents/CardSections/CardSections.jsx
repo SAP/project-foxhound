@@ -2,82 +2,73 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { DSEmptyState } from "../DSEmptyState/DSEmptyState";
 import { DSCard, PlaceholderDSCard } from "../DSCard/DSCard";
 import { useSelector } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { useIntersectionObserver } from "../../../lib/utils";
+import {
+  useIntersectionObserver,
+  getActiveColumnLayout,
+} from "../../../lib/utils";
 import { SectionContextMenu } from "../SectionContextMenu/SectionContextMenu";
 import { InterestPicker } from "../InterestPicker/InterestPicker";
 import { AdBanner } from "../AdBanner/AdBanner.jsx";
 import { PersonalizedCard } from "../PersonalizedCard/PersonalizedCard";
 import { FollowSectionButtonHighlight } from "../FeatureHighlight/FollowSectionButtonHighlight";
 import { MessageWrapper } from "content-src/components/MessageWrapper/MessageWrapper";
-import { TrendingSearches } from "../TrendingSearches/TrendingSearches.jsx";
+import { BriefingCard } from "../BriefingCard/BriefingCard.jsx";
 
 // Prefs
 const PREF_SECTIONS_CARDS_ENABLED = "discoverystream.sections.cards.enabled";
-const PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED =
-  "discoverystream.sections.cards.thumbsUpDown.enabled";
 const PREF_SECTIONS_PERSONALIZATION_ENABLED =
   "discoverystream.sections.personalization.enabled";
 const PREF_TOPICS_ENABLED = "discoverystream.topicLabels.enabled";
 const PREF_TOPICS_SELECTED = "discoverystream.topicSelection.selectedTopics";
 const PREF_TOPICS_AVAILABLE = "discoverystream.topicSelection.topics";
-const PREF_THUMBS_UP_DOWN_ENABLED = "discoverystream.thumbsUpDown.enabled";
 const PREF_INTEREST_PICKER_ENABLED =
   "discoverystream.sections.interestPicker.enabled";
 const PREF_VISIBLE_SECTIONS =
   "discoverystream.sections.interestPicker.visibleSections";
 const PREF_BILLBOARD_ENABLED = "newtabAdSize.billboard";
+const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
 const PREF_LEADERBOARD_ENABLED = "newtabAdSize.leaderboard";
 const PREF_LEADERBOARD_POSITION = "newtabAdSize.leaderboard.position";
-const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
-const PREF_REFINED_CARDS_ENABLED = "discoverystream.refinedCardsLayout.enabled";
 const PREF_INFERRED_PERSONALIZATION_USER =
   "discoverystream.sections.personalization.inferred.user.enabled";
-const PREF_TRENDING_SEARCH = "trendingSearch.enabled";
-const PREF_TRENDING_SEARCH_SYSTEM = "system.trendingSearch.enabled";
-const PREF_SEARCH_ENGINE = "trendingSearch.defaultSearchEngine";
-const PREF_TRENDING_SEARCH_VARIANT = "trendingSearch.variant";
+const PREF_DAILY_BRIEF_SECTIONID = "discoverystream.dailyBrief.sectionId";
+const PREF_DAILY_BRIEF_ENABLED = "discoverystream.dailyBrief.enabled";
+const PREF_SPOCS_STARTUPCACHE_ENABLED =
+  "discoverystream.spocs.startupCache.enabled";
 
-function getLayoutData(
-  responsiveLayouts,
-  index,
-  refinedCardsLayout,
-  sectionKey
-) {
+// Feed URL
+const CURATED_RECOMMENDATIONS_FEED_URL =
+  "https://merino.services.mozilla.com/api/v1/curated-recommendations";
+
+function getLayoutData(responsiveLayouts, index) {
   let layoutData = {
     classNames: [],
     imageSizes: {},
+    allowsWidget: false,
   };
 
   responsiveLayouts.forEach(layout => {
     layout.tiles.forEach((tile, tileIndex) => {
       if (tile.position === index) {
-        // When trending searches should be placed in the `top_stories_section`,
-        // we update the layout so that the first item is always a medium card to make
-        // room for the trending search widget
-        if (sectionKey === "top_stories_section" && tileIndex === 0) {
-          layoutData.classNames.push(`col-${layout.columnCount}-medium`);
-          layoutData.classNames.push(
-            `col-${layout.columnCount}-position-${tileIndex}`
-          );
-          layoutData.imageSizes[layout.columnCount] = "medium";
-          layoutData.classNames.push(`col-${layout.columnCount}-hide-excerpt`);
-        } else {
-          layoutData.classNames.push(`col-${layout.columnCount}-${tile.size}`);
-          layoutData.classNames.push(
-            `col-${layout.columnCount}-position-${tileIndex}`
-          );
-          layoutData.imageSizes[layout.columnCount] = tile.size;
+        layoutData.classNames.push(`col-${layout.columnCount}-${tile.size}`);
+        layoutData.classNames.push(
+          `col-${layout.columnCount}-position-${tileIndex}`
+        );
+        layoutData.imageSizes[layout.columnCount] = tile.size;
+
+        if (tile.allowsWidget) {
+          layoutData.allowsWidget = true;
         }
 
         // The API tells us whether the tile should show the excerpt or not.
         // Apply extra styles accordingly.
         if (tile.hasExcerpt) {
-          if (tile.size === "medium" && refinedCardsLayout) {
+          if (tile.size === "medium") {
             layoutData.classNames.push(
               `col-${layout.columnCount}-hide-excerpt`
             );
@@ -139,42 +130,97 @@ function CardSection({
   dispatch,
   type,
   firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
   ctaButtonVariant,
   ctaButtonSponsors,
   anySectionsFollowed,
+  placeholder,
 }) {
   const prefs = useSelector(state => state.Prefs.values);
 
   const { messageData } = useSelector(state => state.Messages);
 
-  const { sectionPersonalization } = useSelector(
+  const { sectionPersonalization, feeds } = useSelector(
     state => state.DiscoveryStream
   );
+  const { isForStartupCache } = useSelector(state => state.App);
+
+  const [focusedIndex, setFocusedIndex] = useState(0);
+
+  const onCardFocus = index => {
+    setFocusedIndex(index);
+  };
+
+  const handleCardKeyDown = e => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+
+      const currentCardEl = e.target.closest("article.ds-card");
+      if (!currentCardEl) {
+        return;
+      }
+
+      const activeColumn = getActiveColumnLayout(window.innerWidth);
+
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL
+        ? e.key === "ArrowRight"
+        : e.key === "ArrowLeft";
+
+      // Extract current position from classList
+      let currentPosition = null;
+      const positionPrefix = `${activeColumn}-position-`;
+      for (let className of currentCardEl.classList) {
+        if (className.startsWith(positionPrefix)) {
+          currentPosition = parseInt(
+            className.substring(positionPrefix.length),
+            10
+          );
+          break;
+        }
+      }
+
+      if (currentPosition === null) {
+        return;
+      }
+
+      const targetPosition = navigateToPrevious
+        ? currentPosition - 1
+        : currentPosition + 1;
+
+      // Find card with target position
+      const parentEl = currentCardEl.parentElement;
+      if (parentEl) {
+        const targetSelector = `article.ds-card.${activeColumn}-position-${targetPosition}`;
+        const targetCardEl = parentEl.querySelector(targetSelector);
+
+        if (targetCardEl) {
+          const link = targetCardEl.querySelector("a.ds-card-link");
+          if (link) {
+            link.focus();
+          }
+        }
+      }
+    }
+  };
+
   const showTopics = prefs[PREF_TOPICS_ENABLED];
   const mayHaveSectionsCards = prefs[PREF_SECTIONS_CARDS_ENABLED];
-  const mayHaveSectionsCardsThumbsUpDown =
-    prefs[PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED];
-  const mayHaveThumbsUpDown = prefs[PREF_THUMBS_UP_DOWN_ENABLED];
   const selectedTopics = prefs[PREF_TOPICS_SELECTED];
   const availableTopics = prefs[PREF_TOPICS_AVAILABLE];
-  const refinedCardsLayout = prefs[PREF_REFINED_CARDS_ENABLED];
+  const spocsStartupCacheEnabled = prefs[PREF_SPOCS_STARTUPCACHE_ENABLED];
+  const dailyBriefEnabled =
+    prefs.trainhopConfig?.dailyBriefing?.enabled ||
+    prefs[PREF_DAILY_BRIEF_ENABLED];
+  const dailyBriefSectionId =
+    prefs.trainhopConfig?.dailyBriefing?.sectionId ||
+    prefs[PREF_DAILY_BRIEF_SECTIONID];
 
-  const trendingEnabled =
-    prefs[PREF_TRENDING_SEARCH] &&
-    prefs[PREF_TRENDING_SEARCH_SYSTEM] &&
-    prefs[PREF_SEARCH_ENGINE]?.toLowerCase() === "google";
-  const trendingVariant = prefs[PREF_TRENDING_SEARCH_VARIANT];
-
-  const shouldShowTrendingSearch = trendingEnabled && trendingVariant === "b";
-
-  const { saveToPocketCard } = useSelector(state => state.DiscoveryStream);
   const mayHaveSectionsPersonalization =
     prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
 
   const { sectionKey, title, subtitle } = section;
-  const { responsiveLayouts } = section.layout;
+  const { responsiveLayouts, name: layoutName } = section.layout;
 
   const following = sectionPersonalization[sectionKey]?.isFollowed;
 
@@ -186,17 +232,14 @@ function CardSection({
           section: sectionKey,
           section_position: sectionPosition,
           is_section_followed: following,
+          layout_name: layoutName,
         },
       })
     );
-  }, [dispatch, sectionKey, sectionPosition, following]);
+  }, [dispatch, sectionKey, sectionPosition, following, layoutName]);
 
   // Ref to hold the section element
   const sectionRefs = useIntersectionObserver(handleIntersection);
-
-  // Only show thumbs up/down buttons if both default thumbs and sections thumbs prefs are enabled
-  const mayHaveCombinedThumbsUpDown =
-    mayHaveSectionsCardsThumbsUpDown && mayHaveThumbsUpDown;
 
   const onFollowClick = useCallback(() => {
     const updatedSectionData = {
@@ -249,14 +292,157 @@ function CardSection({
     );
   }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
 
-  const { maxTile } = getMaxTiles(responsiveLayouts);
+  let { maxTile } = getMaxTiles(responsiveLayouts);
+  if (placeholder) {
+    // We need a number that divides evenly by 2, 3, and 4.
+    // So it can be displayed without orphans in grids with 2, 3, and 4 columns.
+    maxTile = 12;
+  }
+
+  const shouldShowBriefingCard =
+    sectionKey === dailyBriefSectionId && dailyBriefEnabled;
+
+  const getBriefingData = () => {
+    const EMPTY_BRIEFING = { headlines: [], lastUpdated: null };
+
+    if (!shouldShowBriefingCard) {
+      return EMPTY_BRIEFING;
+    }
+
+    const sections = feeds?.data[CURATED_RECOMMENDATIONS_FEED_URL];
+    if (!sections) {
+      return EMPTY_BRIEFING;
+    }
+
+    const headlines = sections.data.recommendations.filter(
+      rec => rec.section === dailyBriefSectionId && rec.isHeadline
+    );
+    return { headlines, lastUpdated: sections.lastUpdated };
+  };
+
+  const { headlines: briefingHeadlines, lastUpdated: briefingLastUpdated } =
+    getBriefingData();
+  const hasBriefingHeadlines = briefingHeadlines.length === 3;
+
   const displaySections = section.data.slice(0, maxTile);
   const isSectionEmpty = !displaySections?.length;
-  const shouldShowLabels = sectionKey === "top_stories_section" && showTopics;
+  const shouldShowLabels = sectionKey === dailyBriefSectionId && showTopics;
 
   if (isSectionEmpty) {
     return null;
   }
+
+  function buildCards() {
+    const cards = [];
+    let dataIndex = 0;
+
+    for (let position = 0; position < maxTile; position++) {
+      const layoutData = getLayoutData(responsiveLayouts, position);
+      const { classNames, imageSizes } = layoutData;
+      const shouldRenderWidget =
+        shouldShowBriefingCard &&
+        layoutData.allowsWidget &&
+        hasBriefingHeadlines;
+
+      if (shouldRenderWidget) {
+        cards.push(
+          <BriefingCard
+            key="briefing-card"
+            sectionClassNames={classNames.join(" ")}
+            headlines={briefingHeadlines}
+            lastUpdated={briefingLastUpdated}
+            selectedTopics={selectedTopics}
+            isFollowed={following}
+            firstVisibleTimestamp={firstVisibleTimestamp}
+          />
+        );
+        continue;
+      }
+
+      if (dataIndex >= displaySections.length) {
+        break;
+      }
+      const rec = displaySections[dataIndex];
+      const currentIndex = dataIndex;
+
+      // Render a placeholder card when:
+      // 1. No recommendation is available.
+      // 2. The item is flagged as a placeholder.
+      // 3. Spocs are loading for with spocs startup cache disabled.
+      const isPlaceholder =
+        !rec ||
+        rec.placeholder ||
+        placeholder ||
+        (rec.flight_id &&
+          !spocsStartupCacheEnabled &&
+          isForStartupCache.DiscoveryStream);
+
+      if (isPlaceholder) {
+        cards.push(<PlaceholderDSCard key={`dscard-${currentIndex}`} />);
+      } else {
+        cards.push(
+          <DSCard
+            key={`dscard-${rec.id}`}
+            pos={rec.pos}
+            flightId={rec.flight_id}
+            image_src={rec.image_src}
+            raw_image_src={rec.raw_image_src}
+            icon_src={rec.icon_src}
+            word_count={rec.word_count}
+            time_to_read={rec.time_to_read}
+            title={rec.title}
+            topic={rec.topic}
+            features={rec.features}
+            excerpt={rec.excerpt}
+            url={rec.url}
+            id={rec.id}
+            shim={rec.shim}
+            fetchTimestamp={rec.fetchTimestamp}
+            type={type}
+            context={rec.context}
+            sponsor={rec.sponsor}
+            sponsored_by_override={rec.sponsored_by_override}
+            dispatch={dispatch}
+            source={rec.domain}
+            publisher={rec.publisher}
+            pocket_id={rec.pocket_id}
+            context_type={rec.context_type}
+            bookmarkGuid={rec.bookmarkGuid}
+            recommendation_id={rec.recommendation_id}
+            firstVisibleTimestamp={firstVisibleTimestamp}
+            corpus_item_id={rec.corpus_item_id}
+            scheduled_corpus_item_id={rec.scheduled_corpus_item_id}
+            recommended_at={rec.recommended_at}
+            received_rank={rec.received_rank}
+            format={rec.format}
+            alt_text={rec.alt_text}
+            mayHaveSectionsCards={mayHaveSectionsCards}
+            showTopics={shouldShowLabels}
+            selectedTopics={selectedTopics}
+            availableTopics={availableTopics}
+            ctaButtonSponsors={ctaButtonSponsors}
+            ctaButtonVariant={ctaButtonVariant}
+            sectionsClassNames={classNames.join(" ")}
+            sectionsCardImageSizes={imageSizes}
+            section={sectionKey}
+            sectionPosition={sectionPosition}
+            sectionFollowed={following}
+            sectionLayoutName={layoutName}
+            isTimeSensitive={rec.isTimeSensitive}
+            tabIndex={currentIndex === focusedIndex ? 0 : -1}
+            onFocus={() => onCardFocus(currentIndex)}
+            attribution={rec.attribution}
+            isDailyBrief={shouldShowBriefingCard}
+          />
+        );
+      }
+      dataIndex++;
+    }
+
+    return cards;
+  }
+
+  const cards = buildCards();
 
   const sectionContextWrapper = (
     <div className="section-context-wrapper">
@@ -264,7 +450,7 @@ function CardSection({
         className={following ? "section-follow following" : "section-follow"}
       >
         {!anySectionsFollowed &&
-          sectionPosition === 1 &&
+          sectionPosition === 0 &&
           shouldShowOMCHighlight(
             messageData,
             "FollowSectionButtonHighlight"
@@ -275,11 +461,12 @@ function CardSection({
                 position="arrow-inline-start"
                 dispatch={dispatch}
                 feature="FEATURE_FOLLOW_SECTION_BUTTON"
+                messageData={messageData}
               />
             </MessageWrapper>
           )}
         {!anySectionsFollowed &&
-          sectionPosition === 1 &&
+          sectionPosition === 0 &&
           shouldShowOMCHighlight(
             messageData,
             "FollowSectionButtonAltHighlight"
@@ -325,7 +512,6 @@ function CardSection({
       />
     </div>
   );
-
   return (
     <section
       className="ds-section"
@@ -340,80 +526,11 @@ function CardSection({
         </div>
         {mayHaveSectionsPersonalization ? sectionContextWrapper : null}
       </div>
-      <div className={`ds-section-grid ds-card-grid`}>
-        {section.data.slice(0, maxTile).map((rec, index) => {
-          const layoutData = getLayoutData(
-            responsiveLayouts,
-            index,
-            refinedCardsLayout,
-            shouldShowTrendingSearch && sectionKey
-          );
-
-          const { classNames, imageSizes } = layoutData;
-          if (!rec || rec.placeholder) {
-            return <PlaceholderDSCard key={`dscard-${index}`} />;
-          }
-
-          const card = (
-            <DSCard
-              key={`dscard-${rec.id}`}
-              pos={rec.pos}
-              flightId={rec.flight_id}
-              image_src={rec.image_src}
-              raw_image_src={rec.raw_image_src}
-              icon_src={rec.icon_src}
-              word_count={rec.word_count}
-              time_to_read={rec.time_to_read}
-              title={rec.title}
-              topic={rec.topic}
-              features={rec.features}
-              excerpt={rec.excerpt}
-              url={rec.url}
-              id={rec.id}
-              shim={rec.shim}
-              fetchTimestamp={rec.fetchTimestamp}
-              type={type}
-              context={rec.context}
-              sponsor={rec.sponsor}
-              sponsored_by_override={rec.sponsored_by_override}
-              dispatch={dispatch}
-              source={rec.domain}
-              publisher={rec.publisher}
-              pocket_id={rec.pocket_id}
-              context_type={rec.context_type}
-              bookmarkGuid={rec.bookmarkGuid}
-              recommendation_id={rec.recommendation_id}
-              firstVisibleTimestamp={firstVisibleTimestamp}
-              corpus_item_id={rec.corpus_item_id}
-              scheduled_corpus_item_id={rec.scheduled_corpus_item_id}
-              recommended_at={rec.recommended_at}
-              received_rank={rec.received_rank}
-              format={rec.format}
-              alt_text={rec.alt_text}
-              mayHaveThumbsUpDown={mayHaveCombinedThumbsUpDown}
-              mayHaveSectionsCards={mayHaveSectionsCards}
-              showTopics={shouldShowLabels}
-              selectedTopics={selectedTopics}
-              availableTopics={availableTopics}
-              is_collection={is_collection}
-              saveToPocketCard={saveToPocketCard}
-              ctaButtonSponsors={ctaButtonSponsors}
-              ctaButtonVariant={ctaButtonVariant}
-              spocMessageVariant={spocMessageVariant}
-              sectionsClassNames={classNames.join(" ")}
-              sectionsCardImageSizes={imageSizes}
-              section={sectionKey}
-              sectionPosition={sectionPosition}
-              sectionFollowed={following}
-              isTimeSensitive={rec.isTimeSensitive}
-            />
-          );
-          return index === 0 &&
-            shouldShowTrendingSearch &&
-            sectionKey === "top_stories_section"
-            ? [card, <TrendingSearches key="trending" />]
-            : [card];
-        })}
+      <div
+        className={`ds-section-grid ds-card-grid`}
+        onKeyDown={handleCardKeyDown}
+      >
+        {cards}
       </div>
     </section>
   );
@@ -425,10 +542,9 @@ function CardSections({
   dispatch,
   type,
   firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
   ctaButtonVariant,
   ctaButtonSponsors,
+  placeholder,
 }) {
   const prefs = useSelector(state => state.Prefs.values);
   const { spocs, sectionPersonalization } = useSelector(
@@ -451,7 +567,25 @@ function CardSections({
     sectionPersonalization &&
     Object.values(sectionPersonalization).some(section => section?.isFollowed);
 
-  let filteredSections = data.sections.filter(
+  let sectionsData = data.sections;
+
+  if (placeholder) {
+    // To clean up the placeholder state for sections if the whole section is loading still.
+    sectionsData = [
+      {
+        ...sectionsData[0],
+        title: "",
+        subtitle: "",
+      },
+      {
+        ...sectionsData[1],
+        title: "",
+        subtitle: "",
+      },
+    ];
+  }
+
+  let filteredSections = sectionsData.filter(
     section => !sectionPersonalization[section.sectionKey]?.isBlocked
   );
 
@@ -475,11 +609,10 @@ function CardSections({
       dispatch={dispatch}
       type={type}
       firstVisibleTimestamp={firstVisibleTimestamp}
-      is_collection={is_collection}
-      spocMessageVariant={spocMessageVariant}
       ctaButtonVariant={ctaButtonVariant}
       ctaButtonSponsors={ctaButtonSponsors}
       anySectionsFollowed={anySectionsFollowed}
+      placeholder={placeholder}
     />
   ));
 

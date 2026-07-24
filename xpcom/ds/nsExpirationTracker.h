@@ -22,7 +22,6 @@
 #include "nsThreadUtils.h"
 #include "nscore.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefCountType.h"
 #include "mozilla/RefPtr.h"
@@ -92,7 +91,7 @@ class ExpirationTrackerImpl {
    * runnable of the asynchronous invocation to NotifyExpired().
 
    */
-  ExpirationTrackerImpl(uint32_t aTimerPeriod, const char* aName,
+  ExpirationTrackerImpl(uint32_t aTimerPeriod, const nsACString& aName,
                         nsIEventTarget* aEventTarget = nullptr)
       : mTimerPeriod(aTimerPeriod),
         mNewestGeneration(0),
@@ -371,7 +370,7 @@ class ExpirationTrackerImpl {
   uint32_t mTimerPeriod;
   uint32_t mNewestGeneration;
   bool mInAgeOneGeneration;
-  const char* const mName;  // Used for timer firing profiling.
+  const nsCString mName;  // Used for timer firing profiling.
   const nsCOMPtr<nsIEventTarget> mEventTarget;
 
   /**
@@ -497,7 +496,7 @@ class nsExpirationTracker
   virtual void NotifyExpired(T* aObj) = 0;
 
  public:
-  nsExpirationTracker(uint32_t aTimerPeriod, const char* aName,
+  nsExpirationTracker(uint32_t aTimerPeriod, const nsACString& aName,
                       nsIEventTarget* aEventTarget = nullptr)
       : ::detail::SingleThreadedExpirationTracker<T, K>(aTimerPeriod, aName,
                                                         aEventTarget) {}

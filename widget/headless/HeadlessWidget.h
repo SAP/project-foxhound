@@ -7,7 +7,7 @@
 #define HEADLESSWIDGET_H
 
 #include "mozilla/widget/InProcessCompositorWidget.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "CompositorWidget.h"
 #include "mozilla/dom/WheelEventBinding.h"
 
@@ -39,11 +39,11 @@ namespace mozilla {
 enum class NativeKeyBindingsType : uint8_t;
 namespace widget {
 
-class HeadlessWidget final : public nsBaseWidget {
+class HeadlessWidget final : public nsIWidget {
  public:
   HeadlessWidget();
 
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(HeadlessWidget, nsBaseWidget)
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HeadlessWidget, nsIWidget)
 
   void* GetNativeData(uint32_t aDataType) override {
     // Headless widgets have no native data.
@@ -51,8 +51,8 @@ class HeadlessWidget final : public nsBaseWidget {
   }
 
   nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                  widget::InitData* aInitData = nullptr) override;
-  using nsBaseWidget::Create;  // for Create signature not overridden here
+                  const widget::InitData&) override;
+  using nsIWidget::Create;  // for Create signature not overridden here
 
   void GetCompositorWidgetInitData(
       mozilla::widget::CompositorWidgetInitData* aInitData) override;
@@ -60,16 +60,16 @@ class HeadlessWidget final : public nsBaseWidget {
   void Destroy() override;
   void Show(bool aState) override;
   bool IsVisible() const override;
-  void Move(double aX, double aY) override;
-  void Resize(double aWidth, double aHeight, bool aRepaint) override;
-  void Resize(double aX, double aY, double aWidth, double aHeight,
-              bool aRepaint) override;
+  void Move(const DesktopPoint&) override;
+  void Resize(const DesktopSize&, bool aRepaint) override;
+  void Resize(const DesktopRect&, bool aRepaint) override;
   nsSizeMode SizeMode() override { return mSizeMode; }
   void SetSizeMode(nsSizeMode aMode) override;
   nsresult MakeFullScreen(bool aFullScreen) override;
   void Enable(bool aState) override;
   bool IsEnabled() const override;
   void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
+  LayoutDeviceIntRect GetBounds() override { return mBounds; }
   void Invalidate(const LayoutDeviceIntRect& aRect) override {
     // TODO: see if we need to do anything here.
   }
@@ -93,9 +93,6 @@ class HeadlessWidget final : public nsBaseWidget {
   MOZ_CAN_RUN_SCRIPT bool GetEditCommands(
       NativeKeyBindingsType aType, const WidgetKeyboardEvent& aEvent,
       nsTArray<CommandInt>& aCommands) override;
-
-  nsresult DispatchEvent(WidgetGUIEvent* aEvent,
-                         nsEventStatus& aStatus) override;
 
   nsresult SynthesizeNativeMouseEvent(
       LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
@@ -149,6 +146,7 @@ class HeadlessWidget final : public nsBaseWidget {
   // In headless there is no window manager to track window bounds
   // across size mode changes, so we must track it to emulate.
   LayoutDeviceIntRect mRestoreBounds;
+  LayoutDeviceIntRect mBounds;
   void ApplySizeModeSideEffects();
   // Move while maintaining size mode.
   void MoveInternal(int32_t aX, int32_t aY);

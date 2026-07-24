@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_net_CachePurgeLock_h__
-#define mozilla_net_CachePurgeLock_h__
+#ifndef mozilla_net_CachePurgeLock_h_
+#define mozilla_net_CachePurgeLock_h_
 
 #include "nsICachePurgeLock.h"
 #include "mozilla/MultiInstanceLock.h"
@@ -21,4 +21,4 @@ class CachePurgeLock : public nsICachePurgeLock {
 
 }  // namespace mozilla::net
 
-#endif  // mozilla_net_CachePurgeLock_h__
+#endif  // mozilla_net_CachePurgeLock_h_

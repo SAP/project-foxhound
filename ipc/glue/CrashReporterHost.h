@@ -9,7 +9,6 @@
 
 #include <functional>
 
-#include "mozilla/UniquePtr.h"
 #include "base/process.h"
 #include "nsExceptionHandler.h"
 #include "nsIFile.h"

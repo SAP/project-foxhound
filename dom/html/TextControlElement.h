@@ -222,16 +222,6 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   inline static constexpr int32_t DEFAULT_ROWS_TEXTAREA = 2;
   inline static constexpr int32_t DEFAULT_UNDO_CAP = 1000;
 
-  // wrap can be one of these three values.
-  typedef enum {
-    eHTMLTextWrap_Off = 1,   // "off"
-    eHTMLTextWrap_Hard = 2,  // "hard"
-    eHTMLTextWrap_Soft = 3   // the default
-  } nsHTMLTextWrap;
-
-  static bool GetWrapPropertyEnum(nsIContent* aContent,
-                                  nsHTMLTextWrap& aWrapProp);
-
   /**
    * Does the editor have a selection cache?
    *

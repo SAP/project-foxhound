@@ -43,7 +43,7 @@ A warning icon appears next to unsupported CSS properties or rules that have inv
 Browser compat warnings
 -----------------------
 
-CSS properties have varied level of support across different browsers. From Firefox 81, compatibility tooltips may be displayed next to any CSS properties that have known compatibility issues,as shown below.
+CSS properties have varied level of support across different browsers. Compatibility tooltips may be displayed next to any CSS properties that have known compatibility issues,as shown below.
 
 .. image:: firefox_compatibility_tootips.jpg
   :alt: Tooltip displayed next to CSS element. Hover to find out browsers with compatibility issues.
@@ -86,9 +86,9 @@ It displays each rule as in a stylesheet, with a list of selectors followed by a
 .. |image1| image:: screen_shot_2016-12-16_at_10.51.15_am.png
   :width: 20
 
-If the element has a `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/display>`_ declaration, then it gets a grid icon next to it, like this: |image1|. Click that icon to display the grid overlaid on the page, including grid lines and tracks. See :doc:`Examine grid layouts <../examine_grid_layouts/index>` for more on this.
+If the element has a `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/display>`_ declaration, then it gets a grid icon next to it, like this: |image1|. Click that icon to display the grid overlaid on the page, including grid lines and tracks. See :doc:`Examine grid layouts <../examine_grid_layouts/index>` for more on this.
 
-To view `user-agent styles <https://developer.mozilla.org/en-US/docs/Web/CSS/Cascade>`_ (*i.e.,* browser-default CSS rules), enable "Inspector > Show Browser Styles" under the :doc:`developer tool settings <../../../settings/index>` panel. (Note that this setting is independent of the "Browser styles" checkbox in the :ref:`Computed view <page_inspector_how_to_examine_and_edit_css_examine_computed_css>`.)
+To view `user-agent styles <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Introduction>`_ (*i.e.,* browser-default CSS rules), enable "Inspector > Show Browser Styles" under the :doc:`developer tool settings <../../../settings/index>` panel. (Note that this setting is independent of the "Browser styles" checkbox in the :ref:`Computed view <page_inspector_how_to_examine_and_edit_css_examine_computed_css>`.)
 
 User-agent styles are displayed against a different background, and the link to the filename and line number contains the prefix ``(user agent)``:
 
@@ -140,7 +140,7 @@ Click the "X" at the end of the search box to remove the filter.
 Strict search
 ~~~~~~~~~~~~~
 
-By default, the search box highlights all declarations which contain any part of the string. For example, searching for "color" will highlight declarations containing `border-bottom-color <https://developer.mozilla.org/en-US/docs/Web/CSS/border-bottom-color>`_ and `background-color <https://developer.mozilla.org/en-US/docs/Web/CSS/background-color>`_ as well as just `color <https://developer.mozilla.org/en-US/docs/Web/CSS/color>`_:
+By default, the search box highlights all declarations which contain any part of the string. For example, searching for "color" will highlight declarations containing `border-bottom-color <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/border-bottom-color>`_ and `background-color <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/background-color>`_ as well as just `color <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/color>`_:
 
 .. image:: filter_rules_2.png
   :class: border
@@ -154,13 +154,13 @@ If you enclose the search query in backticks, like this: `color`, the search is 
 Expanding shorthand properties
 ------------------------------
 
-`Shorthand properties <https://developer.mozilla.org/en-US/docs/Web/CSS/Shorthand_properties>`_ can be expanded to display their related longhand properties by clicking the arrow besides them.
+`Shorthand properties <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Shorthand_properties>`_ can be expanded to display their related longhand properties by clicking the arrow besides them.
 
 
 Displaying pseudo-elements
 --------------------------
 
-The Rule view displays the following `pseudo-elements <https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-elements>`_, if they are applied to the selected element:
+The Rule view displays the following `pseudo-elements <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/Pseudo-elements>`_, if they are applied to the selected element:
 
 - ``::after``
 - ``::backdrop``
@@ -204,7 +204,7 @@ There's a button to the right of the filter box:
   :class: border
 
 
-Click the button to see checkboxes that you can use to enable the `:hover <https://developer.mozilla.org/en-US/docs/Web/CSS/:hover>`_, `:active <https://developer.mozilla.org/en-US/docs/Web/CSS/:active>`_ and `:focus <https://developer.mozilla.org/en-US/docs/Web/CSS/:focus>`_, `:focus-within <https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-within>`_, `:focus-visible <https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible>`_, `:visited <https://developer.mozilla.org/en-US/docs/Web/CSS/:visited>`_, and `:target <https://developer.mozilla.org/en-US/docs/Web/CSS/:target>`_ pseudo-classes for the selected element:
+Click the button to see checkboxes that you can use to enable the `:hover <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:hover>`_, `:active <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:active>`_ and `:focus <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus>`_, `:focus-within <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus-within>`_, `:focus-visible <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus-visible>`_, `:visited <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:visited>`_, and `:target <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:target>`_ pseudo-classes for the selected element:
 
 
 .. image:: show_pseudo_classes_hover.png
@@ -227,7 +227,7 @@ With an element selected in the HTML pane, you can click the **.cls** button in 
 
 
 - You can clear the checkbox for a particular class name, to see how the element would appear without that class applied to it.
-- You can add a class to the element by typing a name in the *Add new class* field below the Rules toolbar. From Firefox 81, autocompletions based on existing classes are suggested as you type.
+- You can add a class to the element by typing a name in the *Add new class* field below the Rules toolbar. Autocompletions based on existing classes are suggested as you type.
 
 
 .. _page-inspector-how-to-examine-and-edit-css-link-to-css-file:
@@ -276,7 +276,7 @@ When on, any rules defined for printing the page will be displayed similar to th
 View @media rules for prefers-color-scheme
 ------------------------------------------
 
-The color scheme simulator buttons can be used to test the rendering of styles based on the `prefers-color-scheme <https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme>`_ media query (if any are defined for the page). There are two buttons, which enable the light and dark preference, respectively. Selecting either button deselects the other. If neither button is selected then the simulator does not set a preference, and the browser renders using the default feature value set by the operating system.
+The color scheme simulator buttons can be used to test the rendering of styles based on the `prefers-color-scheme <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-color-scheme>`_ media query (if any are defined for the page). There are two buttons, which enable the light and dark preference, respectively. Selecting either button deselects the other. If neither button is selected then the simulator does not set a preference, and the browser renders using the default feature value set by the operating system.
 
 
 .. |image3| image:: color_scheme_null.png
@@ -314,7 +314,7 @@ The color scheme simulator buttons can be used to test the rendering of styles b
 Note that if the operating system mode is set to a particular mode, then simulating that mode will not change page rendering (i.e. simulating dark mode when the operating system is using dark mode will not change the display).
 
 .. note::
-  If ``privacy.resistFingerprinting`` has been set **true**, the `prefers-color-scheme <https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme>`_ preference is forced to ``light``. You must set``privacy.resistFingerprinting`` to **false** in order to use this feature.
+  If ``privacy.resistFingerprinting`` has been set **true**, the `prefers-color-scheme <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-color-scheme>`_ preference is forced to ``light``. You must set``privacy.resistFingerprinting`` to **false** in order to use this feature.
 
 
 .. _page_inspector_how_to_examine_and_edit_css_examine_computed_css:
@@ -368,7 +368,7 @@ While you're editing CSS, the context menu you'll see is the normal one for work
 CSS variable autocompletion
 ---------------------------
 
-`CSS variable names <https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties>`_ will auto-complete depending on the variables defined in the CSS. If you enter ``var(`` into a property value and then type a dash (``-``), any variables you have declared in your CSS will then appear in an autocomplete list, which shows a color swatch so you can see exactly what color each variable choice is storing (`bug 1451211 <https://bugzilla.mozilla.org/show_bug.cgi?id=1451211>`_)
+`CSS variable names <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascading_variables/Using_custom_properties>`_ will auto-complete depending on the variables defined in the CSS. If you enter ``var(`` into a property value and then type a dash (``-``), any variables you have declared in your CSS will then appear in an autocomplete list, which shows a color swatch so you can see exactly what color each variable choice is storing (`bug 1451211 <https://bugzilla.mozilla.org/show_bug.cgi?id=1451211>`_)
 
 .. image:: edit_rule_var_autocomplete.png
   :class: border

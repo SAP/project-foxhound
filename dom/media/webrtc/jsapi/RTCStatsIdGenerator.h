@@ -4,12 +4,11 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=80: */
 
-#ifndef _RTCSTATSIDGENERATOR_H_
-#define _RTCSTATSIDGENERATOR_H_
+#ifndef RTCSTATSIDGENERATOR_H_
+#define RTCSTATSIDGENERATOR_H_
 
 #include <map>
 
-#include "mozilla/Atomics.h"
 #include "mozilla/UniquePtr.h"
 #include "nsISupportsImpl.h"
 #include "nsString.h"

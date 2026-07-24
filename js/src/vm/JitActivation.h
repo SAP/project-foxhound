@@ -30,6 +30,7 @@
 #include "wasm/WasmConstants.h"       // js::wasm::Trap
 #include "wasm/WasmFrame.h"           // js::wasm::Frame
 #include "wasm/WasmFrameIter.h"  // js::wasm::{ExitReason,RegisterState,WasmFrameIter}
+#include "wasm/WasmPI.h"         // js::wasm::SuspenderObject
 
 struct JS_PUBLIC_API JSContext;
 class JS_PUBLIC_API JSTracer;
@@ -52,6 +53,12 @@ class JitActivation : public Activation {
 
   // When hasWasmExitFP(), encodedWasmExitReason_ holds ExitReason.
   uint32_t encodedWasmExitReason_;
+#ifdef ENABLE_WASM_JSPI
+  // This would be a 'Rooted', except that the 'Rooted' values in the super
+  // class `Activation` conflict with the LIFO ordering that 'Rooted' requires.
+  // So instead we manually trace it.
+  JS::Rooted<wasm::SuspenderObject*> wasmExitSuspender_;
+#endif
 
   JitActivation* prevJitActivation_;
 
@@ -108,6 +115,8 @@ class JitActivation : public Activation {
   explicit JitActivation(JSContext* cx);
   ~JitActivation();
 
+  void trace(JSTracer* trc);
+
   bool isProfiling() const {
     // All JitActivations can be profiled.
     return true;
@@ -135,10 +144,14 @@ class JitActivation : public Activation {
     MOZ_ASSERT(hasJSExitFP());
     return packedExitFP_;
   }
-  void setJSExitFP(uint8_t* fp) { packedExitFP_ = fp; }
+  void setJSExitFP(uint8_t* fp) {
+    packedExitFP_ = fp;
+#ifdef ENABLE_WASM_JSPI
+    wasmExitSuspender_ = nullptr;
+#endif
+  }
 
   uint8_t* packedExitFP() const { return packedExitFP_; }
-  void setPackedExitFP(uint8_t* fp) { packedExitFP_ = fp; }
 
 #ifdef CHECK_OSIPOINT_REGISTERS
   void setCheckRegs(bool check) { checkRegs_ = check; }
@@ -174,8 +187,6 @@ class JitActivation : public Activation {
   // Remove a previous rematerialization by fp.
   void removeRematerializedFrame(uint8_t* top);
 
-  void traceRematerializedFrames(JSTracer* trc);
-
   // Register the results of on Ion frame recovery.
   bool registerIonFrameRecovery(RInstructionResults&& results);
 
@@ -185,8 +196,6 @@ class JitActivation : public Activation {
   // If an Ion frame recovery exists for the |fp| frame exists, then remove it
   // from the activation.
   void removeIonFrameRecovery(JitFrameLayout* fp);
-
-  void traceIonRecovery(JSTracer* trc);
 
   // Return the bailout information if it is registered.
   const BailoutFrameInfo* bailoutData() const { return bailoutData_; }
@@ -219,13 +228,20 @@ class JitActivation : public Activation {
   wasm::Instance* wasmExitInstance() const {
     return wasm::GetNearestEffectiveInstance(wasmExitFP());
   }
-  void setWasmExitFP(const wasm::Frame* fp) {
+  void setWasmExitFP(const wasm::Frame* fp, wasm::SuspenderObject* suspender) {
     if (fp) {
       MOZ_ASSERT(!wasm::Frame::isExitFP(fp));
       packedExitFP_ = wasm::Frame::addExitFPTag(fp);
+#ifdef ENABLE_WASM_JSPI
+      wasmExitSuspender_ = suspender;
+#endif
       MOZ_ASSERT(hasWasmExitFP());
     } else {
+      MOZ_ASSERT(!suspender);
       packedExitFP_ = nullptr;
+#ifdef ENABLE_WASM_JSPI
+      wasmExitSuspender_ = nullptr;
+#endif
     }
   }
   wasm::ExitReason wasmExitReason() const {
@@ -235,10 +251,20 @@ class JitActivation : public Activation {
   static size_t offsetOfEncodedWasmExitReason() {
     return offsetof(JitActivation, encodedWasmExitReason_);
   }
+#ifdef ENABLE_WASM_JSPI
+  wasm::SuspenderObject* wasmExitSuspender() const {
+    MOZ_ASSERT(hasWasmExitFP());
+    return wasmExitSuspender_;
+  }
+  static size_t offsetOfWasmExitSuspender() {
+    return offsetof(JitActivation, wasmExitSuspender_) +
+           Rooted<wasm::SuspenderObject*>::offsetOfPtr();
+  }
+#endif
 
   void startWasmTrap(wasm::Trap trap, const wasm::TrapSite& trapSite,
                      const wasm::RegisterState& state);
-  void finishWasmTrap();
+  void finishWasmTrap(bool isResuming);
   bool isWasmTrapping() const { return !!wasmTrapData_; }
   const wasm::TrapData& wasmTrapData() { return *wasmTrapData_; }
 };

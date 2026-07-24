@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     #[cfg(any(feature = "compiled_data", feature = "buffer_provider"))]
@@ -34,13 +33,14 @@ pub mod ffi {
         FnInStruct,
         hidden
     )]
+    #[diplomat::attr(demo_gen, disable)] // TODO needs custom page
     pub struct CodePointMapData8(icu_properties::CodePointMapData<u8>);
 
     #[cfg(any(feature = "compiled_data", feature = "buffer_provider"))]
     fn convert_8<P: icu_collections::codepointtrie::TrieValue>(
         data: icu_properties::CodePointMapData<P>,
     ) -> Box<CodePointMapData8> {
-        #[allow(clippy::unwrap_used)] // infallible for the chosen properties
+        #[expect(clippy::unwrap_used)] // infallible for the chosen properties
         Box::new(CodePointMapData8(
             data.try_into_converted().map_err(|_| ()).unwrap(),
         ))
@@ -386,6 +386,7 @@ pub mod ffi {
     #[diplomat::rust_link(icu::properties, Mod)]
     #[diplomat::rust_link(icu::properties::CodePointMapData, Struct)]
     #[diplomat::rust_link(icu::properties::CodePointMapDataBorrowed, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // TODO needs custom page
     pub struct CodePointMapData16(icu_properties::CodePointMapData<u16>);
 
     impl CodePointMapData16 {
@@ -440,7 +441,7 @@ pub mod ffi {
         #[diplomat::attr(auto, named_constructor = "script")]
         #[cfg(feature = "compiled_data")]
         pub fn create_script() -> Box<CodePointMapData16> {
-            #[allow(clippy::unwrap_used)] // script is a 16-bit property
+            #[expect(clippy::unwrap_used)] // script is a 16-bit property
             let data = icu_properties::CodePointMapData::<Script>::new()
                 .static_to_owned()
                 .try_into_converted()
@@ -456,7 +457,7 @@ pub mod ffi {
         pub fn create_script_with_provider(
             provider: &DataProvider,
         ) -> Result<Box<CodePointMapData16>, DataError> {
-            #[allow(clippy::unwrap_used)] // script is a 16-bit property
+            #[expect(clippy::unwrap_used)] // script is a 16-bit property
             Ok(Box::new(CodePointMapData16(
                 icu_properties::CodePointMapData::<Script>::try_new_unstable(
                     &provider.get_unstable()?,

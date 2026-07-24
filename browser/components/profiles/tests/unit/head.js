@@ -4,21 +4,12 @@
 
 "use strict";
 
-const { SelectableProfile } = ChromeUtils.importESModule(
-  "resource:///modules/profiles/SelectableProfile.sys.mjs"
-);
-const { Sqlite } = ChromeUtils.importESModule(
-  "resource://gre/modules/Sqlite.sys.mjs"
-);
-
 const lazy = {};
 
-ChromeUtils.defineLazyGetter(lazy, "SelectableProfileService", () => {
-  const { SelectableProfileService } = ChromeUtils.importESModule(
-    "resource:///modules/profiles/SelectableProfileService.sys.mjs"
-  );
-
-  return SelectableProfileService;
+ChromeUtils.defineESModuleGetters(lazy, {
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "ProfilesDatastoreService", () => {
@@ -78,7 +69,7 @@ function getRelativeProfilePath(path) {
   );
 
   if (AppConstants.platform === "win") {
-    relativePath = relativePath.replace("/", "\\");
+    relativePath = relativePath.replaceAll("/", "\\");
   }
 
   return relativePath;
@@ -101,7 +92,7 @@ async function openDatabase() {
   let dbFile = Services.dirsvc.get("UAppData", Ci.nsIFile);
   dbFile.append("Profile Groups");
   dbFile.append(`${getProfileService().currentProfile.storeID}.sqlite`);
-  return Sqlite.openConnection({
+  return lazy.Sqlite.openConnection({
     path: dbFile.path,
     openNotExclusive: true,
   });

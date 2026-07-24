@@ -65,20 +65,13 @@ async function testInlineStyle(view) {
 
   await expandComputedViewPropertyByIndex(view, 0);
 
-  const onTab = waitForTab();
-  info("Clicking on the first rule-link in the computed-view");
+  info(
+    "Check that we don't display a link for style attribute declaration in the computed-view"
+  );
   checkComputedViewLink(view, {
     index: 0,
-    expectedText: "element",
-    expectedTitle: "element",
+    expectedText: null,
   });
-
-  const tab = await onTab;
-
-  const tabURI = tab.linkedBrowser.documentURI.spec;
-  ok(tabURI.startsWith("view-source:"), "View source tab is open");
-  info("Closing tab");
-  gBrowser.removeTab(tab);
 }
 
 async function testFirstInlineStyleSheet(view, toolbox) {
@@ -139,7 +132,7 @@ async function testExternalStyleSheet(view, toolbox) {
   info("Clicking on an external stylesheet link");
   checkComputedViewLink(view, {
     index: 2,
-    expectedText: `${STYLESHEET_URL.replace("data:text/css,", "")}:1`,
+    expectedText: `.highlight {color: blue}:1`,
     expectedTitle: `${STYLESHEET_URL}:1`,
   });
 
@@ -167,8 +160,8 @@ async function testConstructedStyleSheet(view, toolbox) {
 
   checkComputedViewLink(view, {
     index: 1,
-    expectedText: "constructed",
-    expectedTitle: "constructed",
+    expectedText: "constructed:1",
+    expectedTitle: "constructed:1",
   });
 
   info("Waiting for an editor to be selected in StyleEditor");
@@ -199,6 +192,12 @@ async function validateStyleEditorSheet(editor, expectedSheetIndex) {
 
 function checkComputedViewLink(view, { index, expectedText, expectedTitle }) {
   const link = getComputedViewLinkByIndex(view, index);
+
+  if (expectedText === null) {
+    is(link, null, `There's no link for matched selector #${index}`);
+    return;
+  }
+
   is(link.innerText, expectedText, `Link #${index} has expected label`);
   is(
     link.getAttribute("title"),

@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIFrameInlines_h___
-#define nsIFrameInlines_h___
+#ifndef nsIFrameInlines_h_
+#define nsIFrameInlines_h_
 
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/dom/ElementInlines.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsContainerFrame.h"
 #include "nsFrameManager.h"
 #include "nsIContentInlines.h"
@@ -42,9 +41,11 @@ bool nsIFrame::IsLegacyWebkitBox() const {
   return HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
 }
 
-bool nsIFrame::IsMasonry(mozilla::LogicalAxis aAxis) const {
+bool nsIFrame::IsMasonry(mozilla::WritingMode aWM,
+                         mozilla::LogicalAxis aAxis) const {
   MOZ_DIAGNOSTIC_ASSERT(IsGridContainerFrame());
-  return HasAnyStateBits(aAxis == mozilla::LogicalAxis::Block
+  const auto axisInOurWM = aWM.ConvertAxisTo(aAxis, GetWritingMode());
+  return HasAnyStateBits(axisInOurWM == mozilla::LogicalAxis::Block
                              ? NS_STATE_GRID_IS_ROW_MASONRY
                              : NS_STATE_GRID_IS_COL_MASONRY);
 }
@@ -52,7 +53,7 @@ bool nsIFrame::IsMasonry(mozilla::LogicalAxis aAxis) const {
 bool nsIFrame::IsTableCaption() const {
   return StyleDisplay()->mDisplay == mozilla::StyleDisplay::TableCaption &&
          GetParent()->Style()->GetPseudoType() ==
-             mozilla::PseudoStyleType::tableWrapper;
+             mozilla::PseudoStyleType::MozTableWrapper;
 }
 
 bool nsIFrame::IsFloating() const {
@@ -118,7 +119,7 @@ bool nsIFrame::IsColumnSpanInMulticolSubtree() const {
           // A frame other than inline and block won't have
           // NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR. We instead test its parent.
           (GetParent() && GetParent()->Style()->GetPseudoType() ==
-                              mozilla::PseudoStyleType::columnSpanWrapper));
+                              mozilla::PseudoStyleType::MozColumnSpanWrapper));
 }
 
 mozilla::StyleDisplay nsIFrame::GetDisplay() const {

@@ -108,7 +108,7 @@ class StatsCallbackWrapper : public nsIWebTransportStreamStatsCallback {
     if (!mTarget->IsOnCurrentThread()) {
       RefPtr<StatsCallbackWrapper> self(this);
       nsCOMPtr<nsIWebTransportSendStreamStats> stats = aStats;
-      Unused << mTarget->Dispatch(NS_NewRunnableFunction(
+      (void)mTarget->Dispatch(NS_NewRunnableFunction(
           "StatsCallbackWrapper::OnSendStatsAvailable",
           [self{std::move(self)}, stats{std::move(stats)}]() {
             self->OnSendStatsAvailable(stats);
@@ -125,7 +125,7 @@ class StatsCallbackWrapper : public nsIWebTransportStreamStatsCallback {
     if (!mTarget->IsOnCurrentThread()) {
       RefPtr<StatsCallbackWrapper> self(this);
       nsCOMPtr<nsIWebTransportReceiveStreamStats> stats = aStats;
-      Unused << mTarget->Dispatch(NS_NewRunnableFunction(
+      (void)mTarget->Dispatch(NS_NewRunnableFunction(
           "StatsCallbackWrapper::OnReceiveStatsAvailable",
           [self{std::move(self)}, stats{std::move(stats)}]() {
             self->OnReceiveStatsAvailable(stats);
@@ -253,7 +253,7 @@ void WebTransportStreamProxy::AsyncInputStreamWrapper::MaybeCloseStream() {
   }
 
   uint64_t available = 0;
-  Unused << Available(&available);
+  (void)Available(&available);
   if (available) {
     // Don't close the InputStream if there's unread data available, since it
     // would be lost. We exit above unless we know no more data will be received

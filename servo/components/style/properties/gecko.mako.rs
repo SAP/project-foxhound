@@ -4,14 +4,11 @@
 
 // `data` comes from components/style/properties.mako.rs; see build.rs for more details.
 
-<%!
-    from data import to_camel_case, to_camel_case_lower
-    from data import Keyword
-%>
+<%! from data import to_camel_case, to_camel_case_lower, Keyword, SYSTEM_FONT_LONGHANDS %>
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
 use crate::Atom;
-use app_units::Au;
+use crate::logical_geometry::PhysicalSide;
 use crate::computed_value_flags::*;
 use crate::custom_properties::ComputedCustomProperties;
 use crate::gecko_bindings::bindings;
@@ -35,8 +32,9 @@ use servo_arc::{Arc, UniqueArc};
 use std::mem::{forget, MaybeUninit, ManuallyDrop};
 use std::{ops, ptr};
 use crate::values;
-use crate::values::computed::{BorderStyle, Time, Zoom};
+use crate::values::computed::{Time, Zoom};
 use crate::values::computed::font::FontSize;
+use crate::dom::AttributeReferences;
 
 
 pub mod style_structs {
@@ -63,6 +61,7 @@ impl ComputedValues {
     pub fn new(
         pseudo: Option<&PseudoElement>,
         custom_properties: ComputedCustomProperties,
+        attributes_referenced: AttributeReferences,
         writing_mode: WritingMode,
         effective_zoom: Zoom,
         flags: ComputedValueFlags,
@@ -74,6 +73,7 @@ impl ComputedValues {
     ) -> Arc<Self> {
         ComputedValuesInner::new(
             custom_properties,
+            attributes_referenced,
             writing_mode,
             effective_zoom,
             flags,
@@ -88,6 +88,7 @@ impl ComputedValues {
     pub fn default_values(doc: &structs::Document) -> Arc<Self> {
         ComputedValuesInner::new(
             ComputedCustomProperties::default(),
+            AttributeReferences::default(),
             WritingMode::empty(), // FIXME(bz): This seems dubious
             Zoom::ONE,
             ComputedValueFlags::empty(),
@@ -141,6 +142,25 @@ impl ComputedValues {
         })
     }
 
+    /// Calls the given function for each cached lazy pseudo-element style.
+    pub fn each_cached_lazy_pseudo<F>(&self, mut f: F)
+    where
+        F: FnMut(&Self),
+    {
+        thin_vec::auto_thin_vec!(let array: [*const structs::ComputedStyle; 4]);
+        unsafe {
+            bindings::Gecko_GetCachedLazyPseudoStyles(
+                self.as_gecko_computed_style(),
+                array.as_mut().as_mut_ptr(),
+            );
+        }
+        for style in array.iter() {
+            // ComputedValues is a newtype around ComputedStyle, so same layout
+            let values: &ComputedValues = unsafe { &*(*style as *const ComputedValues) };
+            f(values);
+        }
+    }
+
 }
 
 impl Drop for ComputedValues {
@@ -156,33 +176,6 @@ impl Drop for ComputedValues {
 unsafe impl Sync for ComputedValues {}
 unsafe impl Send for ComputedValues {}
 
-impl Clone for ComputedValues {
-    fn clone(&self) -> Self {
-        unreachable!()
-    }
-}
-
-impl Clone for ComputedValuesInner {
-    fn clone(&self) -> Self {
-        ComputedValuesInner {
-            % for style_struct in data.style_structs:
-            ${style_struct.gecko_name}: Arc::into_raw(unsafe { Arc::from_raw_addrefed(self.${style_struct.name_lower}_ptr()) }) as *const _,
-            % endfor
-            custom_properties: self.custom_properties.clone(),
-            writing_mode: self.writing_mode.clone(),
-            flags: self.flags.clone(),
-            effective_zoom: self.effective_zoom,
-            rules: self.rules.clone(),
-            visited_style: if self.visited_style.is_null() {
-                ptr::null()
-            } else {
-                Arc::into_raw(unsafe { Arc::from_raw_addrefed(self.visited_style_ptr()) }) as *const _
-            },
-        }
-    }
-}
-
-
 impl Drop for ComputedValuesInner {
     fn drop(&mut self) {
         % for style_struct in data.style_structs:
@@ -197,6 +190,7 @@ impl Drop for ComputedValuesInner {
 impl ComputedValuesInner {
     pub fn new(
         custom_properties: ComputedCustomProperties,
+        attribute_references: AttributeReferences,
         writing_mode: WritingMode,
         effective_zoom: Zoom,
         flags: ComputedValueFlags,
@@ -208,6 +202,7 @@ impl ComputedValuesInner {
     ) -> Self {
         Self {
             custom_properties,
+            attribute_references,
             writing_mode,
             rules,
             visited_style: visited_style.map_or(ptr::null(), |p| Arc::into_raw(p)) as *const _,
@@ -221,7 +216,7 @@ impl ComputedValuesInner {
 
     fn to_outer(self, pseudo: Option<&PseudoElement>) -> Arc<ComputedValues> {
         let pseudo_ty = match pseudo {
-            Some(p) => p.pseudo_type_and_argument().0,
+            Some(p) => p.pseudo_type(),
             None => structs::PseudoStyleType::NotPseudo,
         };
         unsafe {
@@ -280,23 +275,8 @@ impl ComputedValuesInner {
     }
 
     #[inline]
-    pub fn clone_${style_struct.name_lower}(&self) -> Arc<style_structs::${style_struct.name}> {
-        unsafe { Arc::from_raw_addrefed(self.${style_struct.name_lower}_ptr()) }
-    }
-    #[inline]
     pub fn get_${style_struct.name_lower}(&self) -> &style_structs::${style_struct.name} {
         unsafe { &*self.${style_struct.name_lower}_ptr() }
-    }
-
-    #[inline]
-    pub fn mutate_${style_struct.name_lower}(&mut self) -> &mut style_structs::${style_struct.name} {
-        unsafe {
-            let mut arc = Arc::from_raw(self.${style_struct.name_lower}_ptr());
-            let ptr = Arc::make_mut(&mut arc) as *mut _;
-            // Sound for the same reason _ptr() is sound.
-            self.${style_struct.gecko_name} = Arc::into_raw(arc) as *const _;
-            &mut *ptr
-        }
     }
     % endfor
 }
@@ -312,6 +292,25 @@ impl ComputedValuesInner {
     #[allow(non_snake_case)]
     pub fn clone_${ident}(&self) -> longhands::${ident}::computed_value::T {
         From::from(self.${gecko_ffi_name}.clone())
+    }
+</%def>
+
+<%def name="impl_physical_sides(ident, props)">
+    pub fn get_${ident}(&self, s: PhysicalSide) -> &longhands::${data.longhands_by_name[props[0]].ident}::computed_value::T {
+        match s {
+            PhysicalSide::Top => &self.${data.longhands_by_name[props[0]].gecko_ffi_name},
+            PhysicalSide::Right => &self.${data.longhands_by_name[props[1]].gecko_ffi_name},
+            PhysicalSide::Bottom => &self.${data.longhands_by_name[props[2]].gecko_ffi_name},
+            PhysicalSide::Left => &self.${data.longhands_by_name[props[3]].gecko_ffi_name},
+        }
+    }
+    pub fn set_${ident}(&mut self, s: PhysicalSide, v: longhands::${data.longhands_by_name[props[0]].ident}::computed_value::T) {
+        match s {
+            PhysicalSide::Top => self.set_${data.longhands_by_name[props[0]].ident}(v),
+            PhysicalSide::Right => self.set_${data.longhands_by_name[props[1]].ident}(v),
+            PhysicalSide::Bottom => self.set_${data.longhands_by_name[props[2]].ident}(v),
+            PhysicalSide::Left => self.set_${data.longhands_by_name[props[3]].ident}(v),
+        }
     }
 </%def>
 
@@ -467,18 +466,16 @@ impl ${style_struct.gecko_struct_name} {
             UniqueArc::assume_init(result).shareable()
         }
 % else:
-        lazy_static! {
-            static ref DEFAULT: Arc<${style_struct.gecko_struct_name}> = unsafe {
-                let mut result = UniqueArc::<${style_struct.gecko_struct_name}>::new_uninit();
-                Gecko_Construct_Default_${style_struct.gecko_ffi_name}(
-                    result.as_mut_ptr() as *mut _,
-                    std::ptr::null(),
-                );
-                let arc = UniqueArc::assume_init(result).shareable();
-                arc.mark_as_intentionally_leaked();
-                arc
-            };
-        };
+        static DEFAULT: std::sync::LazyLock<Arc<${style_struct.gecko_struct_name}>> = std::sync::LazyLock::new(|| unsafe {
+            let mut result = UniqueArc::<${style_struct.gecko_struct_name}>::new_uninit();
+            Gecko_Construct_Default_${style_struct.gecko_ffi_name}(
+                result.as_mut_ptr() as *mut _,
+                std::ptr::null(),
+            );
+            let arc = UniqueArc::assume_init(result).shareable();
+            arc.mark_as_intentionally_leaked();
+            arc
+        });
         DEFAULT.clone()
 % endif
     }
@@ -590,108 +587,24 @@ fn static_assert() {
 }
 
 
-<% skip_border_longhands = " ".join(["border-{0}-{1}".format(x.ident, y)
-                                     for x in SIDES
-                                     for y in ["style", "width"]]) %>
-
-<%self:impl_trait style_struct_name="Border"
-                  skip_longhands="${skip_border_longhands}">
-    % for side in SIDES:
-    pub fn set_border_${side.ident}_style(&mut self, v: BorderStyle) {
-        self.mBorderStyle[${side.index}] = v;
-
-        // This is needed because the initial mComputedBorder value is set to
-        // zero.
-        //
-        // In order to compute stuff, we start from the initial struct, and keep
-        // going down the tree applying properties.
-        //
-        // That means, effectively, that when we set border-style to something
-        // non-hidden, we should use the initial border instead.
-        //
-        // Servo stores the initial border-width in the initial struct, and then
-        // adjusts as needed in the fixup phase. This means that the initial
-        // struct is technically not valid without fixups, and that you lose
-        // pretty much any sharing of the initial struct, which is kind of
-        // unfortunate.
-        //
-        // Gecko has two fields for this, one that stores the "specified"
-        // border, and other that stores the actual computed one. That means
-        // that when we set border-style, border-width may change and we need to
-        // sync back to the specified one. This is what this function does.
-        //
-        // Note that this doesn't impose any dependency in the order of
-        // computation of the properties. This is only relevant if border-style
-        // is specified, but border-width isn't. If border-width is specified at
-        // some point, the two mBorder and mComputedBorder fields would be the
-        // same already.
-        //
-        // Once we're here, we know that we'll run style fixups, so it's fine to
-        // just copy the specified border here, we'll adjust it if it's
-        // incorrect later.
-        self.mComputedBorder.${side.ident} = self.mBorder.${side.ident};
-    }
-
-    pub fn copy_border_${side.ident}_style_from(&mut self, other: &Self) {
-        self.set_border_${side.ident}_style(other.mBorderStyle[${side.index}]);
-    }
-
-    pub fn reset_border_${side.ident}_style(&mut self, other: &Self) {
-        self.copy_border_${side.ident}_style_from(other);
-    }
-
-    #[inline]
-    pub fn clone_border_${side.ident}_style(&self) -> BorderStyle {
-        self.mBorderStyle[${side.index}]
-    }
-
-    ${impl_border_width("border_%s_width" % side.ident, "mComputedBorder.%s" % side.ident, "mBorder.%s" % side.ident)}
-
-    pub fn border_${side.ident}_has_nonzero_width(&self) -> bool {
-        self.mComputedBorder.${side.ident} != 0
-    }
-    % endfor
+<%self:impl_trait style_struct_name="Border">
 </%self:impl_trait>
 
-<%self:impl_trait style_struct_name="Margin"></%self:impl_trait>
+<%self:impl_trait style_struct_name="Margin">
+    ${impl_physical_sides("margin", ["margin-top", "margin-right", "margin-bottom", "margin-left"])}
+</%self:impl_trait>
 <%self:impl_trait style_struct_name="Padding"></%self:impl_trait>
 <%self:impl_trait style_struct_name="Page"></%self:impl_trait>
 
 <%self:impl_trait style_struct_name="Position">
+    ${impl_physical_sides("inset", ["top", "right", "bottom", "left"])}
     pub fn set_computed_justify_items(&mut self, v: values::specified::JustifyItems) {
-        debug_assert_ne!(v.0, crate::values::specified::align::AlignFlags::LEGACY);
+        debug_assert_ne!(v, values::specified::JustifyItems::legacy());
         self.mJustifyItems.computed = v;
     }
 </%self:impl_trait>
 
-<%self:impl_trait style_struct_name="Outline"
-                  skip_longhands="outline-style outline-width">
-
-    pub fn set_outline_style(&mut self, v: longhands::outline_style::computed_value::T) {
-        self.mOutlineStyle = v;
-        // NB: This is needed to correctly handling the initial value of
-        // outline-width when outline-style changes, see the
-        // update_border_${side.ident} comment for more details.
-        self.mActualOutlineWidth = self.mOutlineWidth;
-    }
-
-    pub fn copy_outline_style_from(&mut self, other: &Self) {
-        self.set_outline_style(other.mOutlineStyle);
-    }
-
-    pub fn reset_outline_style(&mut self, other: &Self) {
-        self.copy_outline_style_from(other)
-    }
-
-    pub fn clone_outline_style(&self) -> longhands::outline_style::computed_value::T {
-        self.mOutlineStyle.clone()
-    }
-
-    ${impl_border_width("outline_width", "mActualOutlineWidth", "mOutlineWidth")}
-
-    pub fn outline_has_nonzero_width(&self) -> bool {
-        self.mActualOutlineWidth != 0
-    }
+<%self:impl_trait style_struct_name="Outline">
 </%self:impl_trait>
 
 <% skip_font_longhands = """font-size -x-lang font-feature-settings font-variation-settings""" %>
@@ -1292,33 +1205,7 @@ mask-mode mask-repeat mask-clip mask-origin mask-composite mask-position-x mask-
     }
 </%self:impl_trait>
 
-<%self:impl_trait style_struct_name="Column"
-                  skip_longhands="column-rule-width column-rule-style">
-    pub fn set_column_rule_style(&mut self, v: longhands::column_rule_style::computed_value::T) {
-        self.mColumnRuleStyle = v;
-        // NB: This is needed to correctly handling the initial value of
-        // column-rule-width when colun-rule-style changes, see the
-        // update_border_${side.ident} comment for more details.
-        self.mActualColumnRuleWidth = self.mColumnRuleWidth;
-    }
-
-    pub fn copy_column_rule_style_from(&mut self, other: &Self) {
-        self.set_column_rule_style(other.mColumnRuleStyle);
-    }
-
-    pub fn reset_column_rule_style(&mut self, other: &Self) {
-        self.copy_column_rule_style_from(other)
-    }
-
-    pub fn clone_column_rule_style(&self) -> longhands::column_rule_style::computed_value::T {
-        self.mColumnRuleStyle.clone()
-    }
-
-    ${impl_border_width("column_rule_width", "mActualColumnRuleWidth", "mColumnRuleWidth")}
-
-    pub fn column_rule_has_nonzero_width(&self) -> bool {
-        self.mActualColumnRuleWidth != 0
-    }
+<%self:impl_trait style_struct_name="Column">
 </%self:impl_trait>
 
 <%self:impl_trait style_struct_name="Counters">
@@ -1469,3 +1356,116 @@ pub fn assert_initial_values_match(data: &PerDocumentStyleData) {
         % endfor
     }
 }
+
+% if engine == "gecko":
+pub mod system_font {
+    //! We deal with system fonts here
+    //!
+    //! System fonts can only be set as a group via the font shorthand.
+    //! They resolve at compute time (not parse time -- this lets the
+    //! browser respond to changes to the OS font settings).
+    //!
+    //! While Gecko handles these as a separate property and keyword
+    //! values on each property indicating that the font should be picked
+    //! from the -x-system-font property, we avoid this. Instead,
+    //! each font longhand has a special SystemFont variant which contains
+    //! the specified system font. When the cascade function (in helpers)
+    //! detects that a value has a system font, it will resolve it, and
+    //! cache it on the ComputedValues. After this, it can be just fetched
+    //! whenever a font longhand on the same element needs the system font.
+    //!
+    //! When a longhand property is holding a SystemFont, it's serialized
+    //! to an empty string as if its value comes from a shorthand with
+    //! variable reference. We may want to improve this behavior at some
+    //! point. See also https://github.com/w3c/csswg-drafts/issues/1586.
+
+    use crate::properties::longhands;
+    use std::hash::{Hash, Hasher};
+    use crate::values::computed::{ToComputedValue, Context};
+    use crate::values::specified::font::SystemFont;
+    // ComputedValues are compared at times
+    // so we need these impls. We don't want to
+    // add Eq to Number (which contains a float)
+    // so instead we have an eq impl which skips the
+    // cached values
+    impl PartialEq for ComputedSystemFont {
+        fn eq(&self, other: &Self) -> bool {
+            self.system_font == other.system_font
+        }
+    }
+    impl Eq for ComputedSystemFont {}
+
+    impl Hash for ComputedSystemFont {
+        fn hash<H: Hasher>(&self, hasher: &mut H) {
+            self.system_font.hash(hasher)
+        }
+    }
+
+    impl ToComputedValue for SystemFont {
+        type ComputedValue = ComputedSystemFont;
+
+        fn to_computed_value(&self, cx: &Context) -> Self::ComputedValue {
+            use crate::gecko_bindings::bindings;
+            use crate::gecko_bindings::structs::nsFont;
+            use crate::values::computed::font::FontSize;
+            use crate::values::specified::font::KeywordInfo;
+            use crate::values::generics::NonNegative;
+            use std::mem;
+
+            let mut system = mem::MaybeUninit::<nsFont>::uninit();
+            let system = unsafe {
+                bindings::Gecko_nsFont_InitSystem(
+                    system.as_mut_ptr(),
+                    *self,
+                    &**cx.style().get_font(),
+                    cx.device().document()
+                );
+                &mut *system.as_mut_ptr()
+            };
+            let size = NonNegative(cx.maybe_zoom_text(system.size.0));
+            let ret = ComputedSystemFont {
+                font_family: system.family.clone(),
+                font_size: FontSize {
+                    computed_size: size,
+                    used_size: size,
+                    keyword_info: KeywordInfo::none()
+                },
+                font_weight: system.weight,
+                font_stretch: system.stretch,
+                font_style: system.style,
+                system_font: *self,
+            };
+            unsafe { bindings::Gecko_nsFont_Destroy(system); }
+            ret
+        }
+
+        fn from_computed_value(_: &ComputedSystemFont) -> Self {
+            unreachable!()
+        }
+    }
+
+    #[inline]
+    /// Compute and cache a system font
+    ///
+    /// Must be called before attempting to compute a system font
+    /// specified value
+    pub fn resolve_system_font(system: SystemFont, context: &mut Context) {
+        // Checking if context.cached_system_font.is_none() isn't enough,
+        // if animating from one system font to another the cached system font
+        // may change
+        if context.cached_system_font.as_ref().is_none_or(|x| x.system_font != system) {
+            let computed = system.to_computed_value(context);
+            context.cached_system_font = Some(computed);
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct ComputedSystemFont {
+        % for name in SYSTEM_FONT_LONGHANDS:
+            pub ${name}: longhands::${name}::computed_value::T,
+        % endfor
+        pub system_font: SystemFont,
+    }
+
+}
+% endif

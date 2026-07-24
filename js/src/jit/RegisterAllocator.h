@@ -9,6 +9,8 @@
 
 #include "mozilla/MathAlgorithms.h"
 
+#include <compare>  // std::strong_ordering
+
 #include "jit/LIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
@@ -164,17 +166,7 @@ class CodePosition {
 
   SubPosition subpos() const { return (SubPosition)(bits_ & SUBPOSITION_MASK); }
 
-  bool operator<(CodePosition other) const { return bits_ < other.bits_; }
-
-  bool operator<=(CodePosition other) const { return bits_ <= other.bits_; }
-
-  bool operator!=(CodePosition other) const { return bits_ != other.bits_; }
-
-  bool operator==(CodePosition other) const { return bits_ == other.bits_; }
-
-  bool operator>(CodePosition other) const { return bits_ > other.bits_; }
-
-  bool operator>=(CodePosition other) const { return bits_ >= other.bits_; }
+  constexpr auto operator<=>(const CodePosition& other) const = default;
 
   uint32_t operator-(CodePosition other) const {
     MOZ_ASSERT(bits_ >= other.bits_);

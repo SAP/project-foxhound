@@ -3,11 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
+    run-on-repo-type: [hg]
     platform: linux64/opt
     treeherder:
         kind: test
         tier: 2
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800

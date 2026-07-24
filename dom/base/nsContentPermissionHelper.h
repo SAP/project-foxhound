@@ -7,12 +7,12 @@
 #ifndef nsContentPermissionHelper_h
 #define nsContentPermissionHelper_h
 
-#include "nsIContentPermissionPrompt.h"
-#include "nsTArray.h"
-#include "nsIMutableArray.h"
+#include "mozilla/PermissionDelegateHandler.h"
 #include "mozilla/dom/PContentPermissionRequestChild.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/PermissionDelegateHandler.h"
+#include "nsIContentPermissionPrompt.h"
+#include "nsIMutableArray.h"
+#include "nsTArray.h"
 
 // Microsoft's API Name hackery sucks
 // XXXbz Doing this in a header is a gigantic footgun. See
@@ -63,10 +63,14 @@ class nsContentPermissionUtils {
   // @param aIsRequestDelegatedToUnsafeThirdParty see
   // ContentPermissionRequestParent.
   static PContentPermissionRequestParent* CreateContentPermissionRequestParent(
-      const nsTArray<PermissionRequest>& aRequests, Element* aElement,
-      nsIPrincipal* aPrincipal, nsIPrincipal* aTopLevelPrincipal,
+      Element* aElement, nsIPrincipal* aPrincipal,
+      nsIPrincipal* aTopLevelPrincipal,
       const bool aHasValidTransientUserGestureActivation,
       const bool aIsRequestDelegatedToUnsafeThirdParty, const TabId& aTabId);
+
+  static void InitContentPermissionRequestParent(
+      PContentPermissionRequestParent* aActor,
+      nsTArray<PermissionRequest>&& aRequests);
 
   static nsresult AskPermission(nsIContentPermissionRequest* aRequest,
                                 nsPIDOMWindowInner* aWindow);
@@ -105,6 +109,7 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
       bool* aHasValidTransientUserGestureActivation) override;
   NS_IMETHOD GetIsRequestDelegatedToUnsafeThirdParty(
       bool* aIsRequestDelegatedToUnsafeThirdParty) override;
+  NS_IMETHOD NotifyShown(void) override;
   // Overrides for Allow() and Cancel() aren't provided by this class.
   // That is the responsibility of the subclasses.
 

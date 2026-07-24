@@ -8,18 +8,32 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/array_view.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio_codecs/audio_decoder.h"
-#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/environment/environment_factory.h"
+#include "api/make_ref_counted.h"
 #include "api/neteq/default_neteq_factory.h"
 #include "api/neteq/neteq.h"
+#include "api/rtp_headers.h"
+#include "api/scoped_refptr.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/neteq/tools/rtp_generator.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "test/audio_decoder_proxy_factory.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace test {
@@ -54,18 +68,23 @@ class MockAudioDecoder final : public AudioDecoder {
 
   class MockFrame : public AudioDecoder::EncodedAudioFrame {
    public:
-    MockFrame(size_t num_channels) : num_channels_(num_channels) {}
+    MockFrame(size_t num_channels) : num_channels_(num_channels) {
+      RTC_DCHECK_GE(num_channels_, 1);
+      RTC_DCHECK_LE(num_channels_, AudioDecoder::kMaxNumberOfChannels);
+    }
 
     size_t Duration() const override { return kPacketDuration; }
 
     std::optional<DecodeResult> Decode(
-        rtc::ArrayView<int16_t> decoded) const override {
+        ArrayView<int16_t> decoded) const override {
       const size_t output_size =
           sizeof(int16_t) * kPacketDuration * num_channels_;
       if (decoded.size() >= output_size) {
         memset(decoded.data(), 0,
                sizeof(int16_t) * kPacketDuration * num_channels_);
-        return DecodeResult{kPacketDuration * num_channels_, kSpeech};
+        return DecodeResult{
+            .num_decoded_samples = kPacketDuration * num_channels_,
+            .speech_type = kSpeech};
       } else {
         ADD_FAILURE() << "Expected decoded.size() to be >= output_size ("
                       << decoded.size() << " vs. " << output_size << ")";
@@ -77,7 +96,7 @@ class MockAudioDecoder final : public AudioDecoder {
     const size_t num_channels_;
   };
 
-  std::vector<ParseResult> ParsePayload(rtc::Buffer&& /* payload */,
+  std::vector<ParseResult> ParsePayload(Buffer&& /* payload */,
                                         uint32_t timestamp) override {
     std::vector<ParseResult> results;
     if (fec_enabled_) {
@@ -161,8 +180,7 @@ class NetEqNetworkStatsTest {
 
   NetEqNetworkStatsTest(const SdpAudioFormat& format, MockAudioDecoder* decoder)
       : decoder_(decoder),
-        decoder_factory_(
-            rtc::make_ref_counted<AudioDecoderProxyFactory>(decoder)),
+        decoder_factory_(make_ref_counted<AudioDecoderProxyFactory>(decoder)),
         samples_per_ms_(format.clockrate_hz / 1000),
         frame_size_samples_(kFrameSizeMs * samples_per_ms_),
         rtp_generator_(new RtpGenerator(samples_per_ms_)),
@@ -260,18 +278,29 @@ class NetEqNetworkStatsTest {
 
   void DecodeFecTest() {
     decoder_->set_fec_enabled(false);
-    NetEqNetworkStatsCheck expects = {kIgnore,  // current_buffer_size_ms
-                                      kIgnore,  // preferred_buffer_size_ms
-                                      kIgnore,  // jitter_peaks_found
-                                      kEqual,   // packet_loss_rate
-                                      kEqual,   // expand_rate
-                                      kEqual,   // voice_expand_rate
-                                      kIgnore,  // preemptive_rate
-                                      kEqual,   // accelerate_rate
-                                      kEqual,   // decoded_fec_rate
-                                      kEqual,   // discarded_fec_rate
-                                      kEqual,   // added_zero_samples
-                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+    NetEqNetworkStatsCheck expects = {
+        .current_buffer_size_ms = kIgnore,
+        .preferred_buffer_size_ms = kIgnore,
+        .jitter_peaks_found = kIgnore,
+        .packet_loss_rate = kEqual,
+        .expand_rate = kEqual,
+        .speech_expand_rate = kEqual,
+        .preemptive_rate = kIgnore,
+        .accelerate_rate = kEqual,
+        .secondary_decoded_rate = kEqual,
+        .secondary_discarded_rate = kEqual,
+        .added_zero_samples = kEqual,
+        .stats_ref = {.current_buffer_size_ms = 0,
+                      .preferred_buffer_size_ms = 0,
+                      .jitter_peaks_found = 0,
+                      .expand_rate = 0,
+                      .speech_expand_rate = 0,
+                      .preemptive_rate = 0,
+                      .accelerate_rate = 0,
+                      .secondary_decoded_rate = 0,
+                      .secondary_discarded_rate = 0,
+                      .mean_waiting_time_ms = 0,
+                      .median_waiting_time_ms = 0}};
     RunTest(50, expects);
 
     // Next we introduce packet losses.
@@ -290,18 +319,29 @@ class NetEqNetworkStatsTest {
   }
 
   void NoiseExpansionTest() {
-    NetEqNetworkStatsCheck expects = {kIgnore,  // current_buffer_size_ms
-                                      kIgnore,  // preferred_buffer_size_ms
-                                      kIgnore,  // jitter_peaks_found
-                                      kEqual,   // packet_loss_rate
-                                      kEqual,   // expand_rate
-                                      kEqual,   // speech_expand_rate
-                                      kIgnore,  // preemptive_rate
-                                      kEqual,   // accelerate_rate
-                                      kEqual,   // decoded_fec_rate
-                                      kEqual,   // discard_fec_rate
-                                      kEqual,   // added_zero_samples
-                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+    NetEqNetworkStatsCheck expects = {
+        .current_buffer_size_ms = kIgnore,
+        .preferred_buffer_size_ms = kIgnore,
+        .jitter_peaks_found = kIgnore,
+        .packet_loss_rate = kEqual,
+        .expand_rate = kEqual,
+        .speech_expand_rate = kEqual,
+        .preemptive_rate = kIgnore,
+        .accelerate_rate = kEqual,
+        .secondary_decoded_rate = kEqual,
+        .secondary_discarded_rate = kEqual,
+        .added_zero_samples = kEqual,
+        .stats_ref = {.current_buffer_size_ms = 0,
+                      .preferred_buffer_size_ms = 0,
+                      .jitter_peaks_found = 0,
+                      .expand_rate = 0,
+                      .speech_expand_rate = 0,
+                      .preemptive_rate = 0,
+                      .accelerate_rate = 0,
+                      .secondary_decoded_rate = 0,
+                      .secondary_discarded_rate = 0,
+                      .mean_waiting_time_ms = 0,
+                      .median_waiting_time_ms = 0}};
     RunTest(50, expects);
 
     SetPacketLossRate(1);
@@ -312,7 +352,7 @@ class NetEqNetworkStatsTest {
 
  private:
   MockAudioDecoder* decoder_;
-  rtc::scoped_refptr<AudioDecoderProxyFactory> decoder_factory_;
+  scoped_refptr<AudioDecoderProxyFactory> decoder_factory_;
   std::unique_ptr<NetEq> neteq_;
 
   const int samples_per_ms_;

@@ -33,11 +33,11 @@ of April 2023.
    *UrlbarQueryContext* is created every time the text in the input changes.
 
 #.
-   *UrlbarController* `tells UrlbarProvidersManager <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarController.sys.mjs#140>`_
+   *UrlbarController* `tells ProvidersManager <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarController.sys.mjs#140>`_
    that the providers should fetch results.
 
 #.
-   *UrlbarProvidersManager* tells `each <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#408>`_
+   *ProvidersManager* tells `each <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#408>`_
    provider to decide if it wants to provide results for this query by calling
    their `isActive <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#422>`_
    methods. The provider can decide whether or not it will be active for this
@@ -45,7 +45,7 @@ of April 2023.
    *UrlbarProviderTopSites* `isn't active if the user has typed a search string <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProviderTopSites.sys.mjs#97>`_.
 
 #.
-   *UrlbarProvidersManager* then tells the *active* providers to fetch results by
+   *ProvidersManager* then tells the *active* providers to fetch results by
    `calling their startQuery method <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#462>`_.
 
 #.
@@ -56,22 +56,22 @@ of April 2023.
    *UrlbarProviderSearchSuggestions* would create a *UrlbarResult* for each one.
 
 #.
-   The providers send their results back to *UrlbarProvidersManager*. They do
+   The providers send their results back to *ProvidersManager*. They do
    this one result at a time by `calling the addCallback callback <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProviderSearchSuggestions.sys.mjs#292>`_
-   passed into startQuery. *UrlbarProvidersManager* takes all the results from all the
+   passed into startQuery. *ProvidersManager* takes all the results from all the
    providers and `puts them into the list of unsorted results <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#607>`_.
 
    Due to the asynchronous and parallel nature of providers, this and the
    following steps may occur multiple times per search. Some providers may take
    longer than others to return their results. We don't want to wait for slow
    providers before showing results. To handle slow providers,
-   *UrlbarProvidersManager* gathers results from providers in "chunks". A timer
+   *ProvidersManager* gathers results from providers in "chunks". A timer
    fires on an internal. Every time the timer fires, we take whatever results we
    have from the active providers (the "chunk" of results) and perform the
    following steps.
 
 #.
-   *UrlbarProvidersManager* `asks <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#648>`_
+   *ProvidersManager* `asks <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#648>`_
    *UrlbarMuxer* to sort the unsorted results.
 
 #.
@@ -82,7 +82,7 @@ of April 2023.
    ``browser.urlbar.maxRichResults`` preference.
 
 #.
-   Once the results are sorted, *UrlbarProvidersManager*
+   Once the results are sorted, *ProvidersManager*
    `tells UrlbarController <https://searchfox.org/mozilla-central/rev/0ffaecaa075887ab07bf4c607c61ea2faa81b172/browser/components/urlbar/UrlbarProvidersManager.sys.mjs#675>`_
    that results are ready to be shown.
 

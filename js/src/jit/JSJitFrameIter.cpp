@@ -72,7 +72,11 @@ bool JSJitFrameIter::checkInvalidation(IonScript** ionScriptOut) const {
     return false;
   }
 
-  int32_t invalidationDataOffset = ((int32_t*)returnAddr)[-1];
+  // Use memcpy because this load may not be properly aligned.
+  int32_t invalidationDataOffset;
+  memcpy(&invalidationDataOffset, returnAddr - sizeof(int32_t),
+         sizeof(int32_t));
+
   uint8_t* ionScriptDataOffset = returnAddr + invalidationDataOffset;
   IonScript* ionScript = (IonScript*)Assembler::GetPointer(ionScriptDataOffset);
   MOZ_ASSERT(ionScript->containsReturnAddress(returnAddr));
@@ -386,10 +390,6 @@ void JSJitFrameIter::dump() const {
       fprintf(stderr, " Baseline Interpreter Entry frame\n");
       fprintf(stderr, "  Caller frame ptr: %p\n", current()->callerFramePtr());
       break;
-    case FrameType::Rectifier:
-      fprintf(stderr, " Rectifier frame\n");
-      fprintf(stderr, "  Caller frame ptr: %p\n", current()->callerFramePtr());
-      break;
     case FrameType::TrampolineNative:
       fprintf(stderr, " TrampolineNative frame\n");
       fprintf(stderr, "  Caller frame ptr: %p\n", current()->callerFramePtr());
@@ -537,7 +537,7 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
 
   MOZ_ASSERT(entry->isIon() || entry->isIonIC() || entry->isBaseline() ||
              entry->isBaselineInterpreter() || entry->isDummy() ||
-             entry->isSelfHostedShared());
+             entry->isRealmIndependentShared());
 
   // Treat dummy lookups as an empty frame sequence.
   if (entry->isDummy()) {
@@ -557,7 +557,7 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
   if (entry->isIon()) {
     // If looked-up callee doesn't match frame callee, don't accept
     // lastProfilingCallSite
-    if (entry->asIon().getScript(0) != callee) {
+    if (!entry->asIon().getScriptSource(0).matches(callee)) {
       return false;
     }
 
@@ -569,7 +569,8 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
   if (entry->isBaseline()) {
     // If looked-up callee doesn't match frame callee, don't accept
     // lastProfilingCallSite
-    if (forLastCallSite && entry->asBaseline().script() != callee) {
+    if (forLastCallSite &&
+        !entry->asBaseline().scriptSource().matches(callee)) {
       return false;
     }
 
@@ -578,7 +579,7 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
     return true;
   }
 
-  if (entry->isSelfHostedShared()) {
+  if (entry->isRealmIndependentShared()) {
     // Shared entries don't track who the callee is, so we can't check
     // lastProfilingCallSite
     type_ = FrameType::BaselineJS;
@@ -601,7 +602,8 @@ const char* JSJitProfilingFrameIterator::baselineInterpreterLabel() const {
 }
 
 void JSJitProfilingFrameIterator::baselineInterpreterScriptPC(
-    JSScript** script, jsbytecode** pc, uint64_t* realmID) const {
+    JSScript** script, jsbytecode** pc, uint64_t* realmID,
+    uint32_t* sourceId) const {
   MOZ_ASSERT(type_ == FrameType::BaselineJS);
   BaselineFrame* blFrame = (BaselineFrame*)(fp_ - BaselineFrame::Size());
   *script = frameScript();
@@ -615,6 +617,7 @@ void JSJitProfilingFrameIterator::baselineInterpreterScriptPC(
     }
 
     *realmID = (*script)->realm()->creationOptions().profilerRealmID();
+    *sourceId = (*script)->scriptSource()->id();
   }
 }
 
@@ -642,8 +645,6 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
    * |
    * ^--- Entry Frame (BaselineInterpreter) (unwrapped)
    * |
-   * ^--- Arguments Rectifier (unwrapped)
-   * |
    * ^--- Trampoline Native (unwrapped)
    * |
    * ^--- Entry Frame (CppToJSJit)
@@ -658,23 +659,11 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
       continue;
     }
 
-    // Unwrap rectifier frames.
-    if (frame->prevType() == FrameType::Rectifier) {
-      frame = GetPreviousRawFrame<RectifierFrameLayout*>(frame);
-      MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
-                 frame->prevType() == FrameType::BaselineStub ||
-                 frame->prevType() == FrameType::TrampolineNative ||
-                 frame->prevType() == FrameType::WasmToJSJit ||
-                 frame->prevType() == FrameType::CppToJSJit);
-      continue;
-    }
-
     // Unwrap TrampolineNative frames.
     if (frame->prevType() == FrameType::TrampolineNative) {
       frame = GetPreviousRawFrame<TrampolineNativeFrameLayout*>(frame);
       MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
                  frame->prevType() == FrameType::BaselineStub ||
-                 frame->prevType() == FrameType::Rectifier ||
                  frame->prevType() == FrameType::WasmToJSJit ||
                  frame->prevType() == FrameType::CppToJSJit);
       continue;
@@ -729,12 +718,11 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
       return;
 
     case FrameType::BaselineInterpreterEntry:
-    case FrameType::Rectifier:
     case FrameType::TrampolineNative:
     case FrameType::Exit:
     case FrameType::Bailout:
-      // Rectifier and Baseline Interpreter entry frames are handled before
-      // this switch. The other frame types can't call JS functions directly.
+      // Baseline Interpreter entry frames are handled before this switch. The
+      // other frame types can't call JS functions directly.
       break;
   }
 

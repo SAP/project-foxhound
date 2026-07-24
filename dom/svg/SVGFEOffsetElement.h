@@ -55,13 +55,13 @@ class SVGFEOffsetElement final : public SVGFEOffsetElementBase {
   NumberAttributesInfo GetNumberInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
-  enum { DX, DY };
-  SVGAnimatedNumber mNumberAttributes[2];
-  static NumberInfo sNumberInfo[2];
-
   enum { RESULT, IN1 };
   SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
+
+  enum { DX, DY };
+  SVGAnimatedNumber mNumberAttributes[2];
+  static NumberInfo sNumberInfo[2];
 };
 
 }  // namespace mozilla::dom

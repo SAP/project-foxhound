@@ -12,6 +12,7 @@
 #include "nsHttpTransaction.h"
 #include "nsIClassOfService.h"
 #include "nsISocketTransport.h"
+#include "nsISupportsPriority.h"
 #include "nsSocketTransportService2.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
@@ -24,7 +25,7 @@ namespace mozilla {
 namespace net {
 
 Http3StreamBase::Http3StreamBase(nsAHttpTransaction* trans,
-                                 Http3Session* session)
+                                 Http3SessionBase* session)
     : mTransaction(trans), mSession(session) {}
 
 Http3StreamBase::~Http3StreamBase() = default;
@@ -53,6 +54,7 @@ void Http3Stream::Close(nsresult aResult) {
   mTransaction->Close(aResult);
   // Clear the mSession to break the cycle.
   mSession = nullptr;
+  mClosed = true;
 }
 
 bool Http3Stream::GetHeadersString(const char* buf, uint32_t avail,
@@ -184,6 +186,7 @@ nsresult Http3Stream::OnReadSegment(const char* buf, uint32_t count,
       rv = mSession->SendRequestBody(mStreamId, buf, count, countRead);
       if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
         mSendingBlockedByFlowControlCount++;
+        mBlockedByFlowControl = true;
       }
 
       if (NS_FAILED(rv)) {

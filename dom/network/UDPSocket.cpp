@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UDPSocket.h"
+
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/File.h"
 #include "mozilla/dom/ErrorEvent.h"
-#include "mozilla/dom/network/UDPSocketChild.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/UDPMessageEvent.h"
 #include "mozilla/dom/UDPSocketBinding.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/network/UDPSocketChild.h"
 #include "mozilla/net/DNS.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"

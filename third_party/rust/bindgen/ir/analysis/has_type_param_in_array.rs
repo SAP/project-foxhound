@@ -17,7 +17,7 @@ use crate::{HashMap, HashSet};
 /// * If T is a type alias, a templated alias or an indirection to another type,
 ///   it has type parameter in array if the type T refers to has.
 /// * If T is a compound type, it has array if any of base memter or field
-///   has type paramter in array.
+///   has type parameter in array.
 /// * If T is an instantiation of an abstract template definition, T has
 ///   type parameter in array if any of the template arguments or template definition
 ///   has.
@@ -39,7 +39,7 @@ pub(crate) struct HasTypeParameterInArray<'ctx> {
     dependencies: HashMap<ItemId, Vec<ItemId>>,
 }
 
-impl<'ctx> HasTypeParameterInArray<'ctx> {
+impl HasTypeParameterInArray<'_> {
     fn consider_edge(kind: EdgeKind) -> bool {
         match kind {
             // These are the only edges that can affect whether a type has type parameter
@@ -58,25 +58,21 @@ impl<'ctx> HasTypeParameterInArray<'ctx> {
             EdgeKind::FunctionParameter |
             EdgeKind::InnerType |
             EdgeKind::InnerVar |
-            EdgeKind::Method => false,
+            EdgeKind::Method |
             EdgeKind::Generic => false,
         }
     }
 
     fn insert<Id: Into<ItemId>>(&mut self, id: Id) -> ConstrainResult {
         let id = id.into();
-        trace!(
-            "inserting {:?} into the has_type_parameter_in_array set",
-            id
-        );
+        trace!("inserting {id:?} into the has_type_parameter_in_array set");
 
         let was_not_already_in_set =
             self.has_type_parameter_in_array.insert(id);
         assert!(
             was_not_already_in_set,
-            "We shouldn't try and insert {:?} twice because if it was \
-             already in the set, `constrain` should have exited early.",
-            id
+            "We shouldn't try and insert {id:?} twice because if it was \
+             already in the set, `constrain` should have exited early."
         );
 
         ConstrainResult::Changed
@@ -100,11 +96,11 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
     }
 
     fn initial_worklist(&self) -> Vec<ItemId> {
-        self.ctx.allowlisted_items().iter().cloned().collect()
+        self.ctx.allowlisted_items().iter().copied().collect()
     }
 
     fn constrain(&mut self, id: ItemId) -> ConstrainResult {
-        trace!("constrain: {:?}", id);
+        trace!("constrain: {id:?}");
 
         if self.has_type_parameter_in_array.contains(&id) {
             trace!("    already know it do not have array");
@@ -112,12 +108,9 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
         }
 
         let item = self.ctx.resolve_item(id);
-        let ty = match item.as_type() {
-            Some(ty) => ty,
-            None => {
-                trace!("    not a type; ignoring");
-                return ConstrainResult::Same;
-            }
+        let Some(ty) = item.as_type() else {
+            trace!("    not a type; ignoring");
+            return ConstrainResult::Same;
         };
 
         match *ty.kind() {
@@ -146,17 +139,14 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
             TypeKind::Array(t, _) => {
                 let inner_ty =
                     self.ctx.resolve_type(t).canonical_type(self.ctx);
-                match *inner_ty.kind() {
-                    TypeKind::TypeParam => {
-                        trace!("    Array with Named type has type parameter");
-                        self.insert(id)
-                    }
-                    _ => {
-                        trace!(
-                            "    Array without Named type does have type parameter"
-                        );
-                        ConstrainResult::Same
-                    }
+                if let TypeKind::TypeParam = *inner_ty.kind() {
+                    trace!("    Array with Named type has type parameter");
+                    self.insert(id)
+                } else {
+                    trace!(
+                        "    Array without Named type does have type parameter"
+                    );
+                    ConstrainResult::Same
                 }
             }
 
@@ -210,7 +200,7 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
                 if args_have {
                     trace!(
                         "    template args have array, so \
-                         insantiation also has array"
+                         instantiation also has array"
                     );
                     return self.insert(id);
                 }
@@ -221,7 +211,7 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
                 if def_has {
                     trace!(
                         "    template definition has array, so \
-                         insantiation also has"
+                         instantiation also has"
                     );
                     return self.insert(id);
                 }
@@ -238,7 +228,7 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
     {
         if let Some(edges) = self.dependencies.get(&id) {
             for item in edges {
-                trace!("enqueue {:?} into worklist", item);
+                trace!("enqueue {item:?} into worklist");
                 f(*item);
             }
         }

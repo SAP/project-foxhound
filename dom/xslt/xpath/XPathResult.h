@@ -6,16 +6,15 @@
 #ifndef mozilla_dom_XPathResult_h
 #define mozilla_dom_XPathResult_h
 
-#include "nsStubMutationObserver.h"
+#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsTArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
-#include "nsString.h"
-#include "nsWrapperCache.h"
 #include "nsINode.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class txAExprResult;
 

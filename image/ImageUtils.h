@@ -7,8 +7,8 @@
 #define mozilla_image_ImageUtils_h
 
 #include "FrameTimeout.h"
+#include "Orientation.h"
 #include "mozilla/image/SurfaceFlags.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
@@ -49,6 +49,7 @@ enum class DecoderType {
 };
 
 struct DecodeMetadataResult {
+  CopyableTArray<OrientedIntSize> mNativeSizes;
   int32_t mWidth = 0;
   int32_t mHeight = 0;
   int32_t mRepetitions = -1;

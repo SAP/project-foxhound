@@ -21,7 +21,6 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use euclid::{Transform3D, point2};
-use time::precise_time_ns;
 use malloc_size_of::MallocSizeOfOps;
 use api::units::*;
 use api::{ExternalImageSource, ImageBufferKind, ImageFormat};
@@ -65,7 +64,7 @@ pub fn upload_to_texture_cache(
         items_uploaded: 0,
     };
 
-    let upload_total_start = precise_time_ns();
+    let upload_total_start = zeitstempel::now();
 
     let mut batch_upload_textures = Vec::new();
 
@@ -88,7 +87,7 @@ pub fn upload_to_texture_cache(
         let texture = &renderer.texture_resolver.texture_cache_map[&texture_id].texture;
         for update in updates {
             let TextureCacheUpdate { rect, stride, offset, format_override, source } = update;
-            let mut arc_data = None; 
+            let mut arc_data = None;
             let dummy_data;
             let data = match source {
                 TextureUpdateSource::Bytes { ref data } => {
@@ -100,7 +99,7 @@ pub fn upload_to_texture_cache(
                         .as_mut()
                         .expect("Found external image, but no handler set!");
                     // The filter is only relevant for NativeTexture external images.
-                    match handler.lock(id, channel_index).source {
+                    match handler.lock(id, channel_index, false).source {
                         ExternalImageSource::RawData(data) => {
                             &data[offset as usize ..]
                         }
@@ -176,7 +175,7 @@ pub fn upload_to_texture_cache(
                     &mut stats,
                 );
             } else {
-                let upload_start_time = precise_time_ns();
+                let upload_start_time = zeitstempel::now();
 
                 stats.bytes_uploaded += uploader.upload(
                     &mut renderer.device,
@@ -188,7 +187,7 @@ pub fn upload_to_texture_cache(
                     data.len()
                 );
 
-                stats.upload_time += precise_time_ns() - upload_start_time;
+                stats.upload_time += zeitstempel::now() - upload_start_time;
             }
 
             if let TextureUpdateSource::External { id, channel_index } = source {
@@ -200,7 +199,7 @@ pub fn upload_to_texture_cache(
         }
     }
 
-    let upload_start_time = precise_time_ns();
+    let upload_start_time = zeitstempel::now();
     // Upload batched texture updates to their temporary textures.
     for batch_buffer in batch_upload_buffers.into_iter().map(|(_, (_, buffers))| buffers).flatten() {
         let texture = &batch_upload_textures[batch_buffer.texture_index];
@@ -240,20 +239,20 @@ pub fn upload_to_texture_cache(
             }
         }
     }
-    stats.upload_time += precise_time_ns() - upload_start_time;
+    stats.upload_time += zeitstempel::now() - upload_start_time;
 
 
     // Flush all uploads, batched or otherwise.
-    let flush_start_time = precise_time_ns();
+    let flush_start_time = zeitstempel::now();
     uploader.flush(&mut renderer.device);
-    stats.upload_time += precise_time_ns() - flush_start_time;
+    stats.upload_time += zeitstempel::now() - flush_start_time;
 
     if !batch_upload_copies.is_empty() {
         // Copy updates that were batch uploaded to their correct destination in the texture cache.
         // Sort them by destination and source to minimize framebuffer binding changes.
         batch_upload_copies.sort_unstable_by_key(|b| (b.dest_texture_id.0, b.src_texture_index));
 
-        let gpu_copy_start = precise_time_ns();
+        let gpu_copy_start = zeitstempel::now();
 
         if renderer.device.use_draw_calls_for_texture_copy() {
             // Some drivers have a very high CPU overhead when submitting hundreds of small blit
@@ -273,7 +272,7 @@ pub fn upload_to_texture_cache(
             );
         }
 
-        stats.gpu_copy_commands_time += precise_time_ns() - gpu_copy_start;
+        stats.gpu_copy_commands_time += zeitstempel::now() - gpu_copy_start;
     }
 
     for texture in batch_upload_textures.drain(..) {
@@ -286,7 +285,7 @@ pub fn upload_to_texture_cache(
     // the profiler can treat them as events and we can get notified
     // when they happen.
 
-    let upload_total = precise_time_ns() - upload_total_start;
+    let upload_total = zeitstempel::now() - upload_total_start;
     renderer.profile.add(
         profiler::TOTAL_UPLOAD_TIME,
         profiler::ns_to_ms(upload_total)
@@ -374,14 +373,14 @@ fn copy_into_staging_buffer<'a>(
             let new_slice = FreeRectSlice(buffers.len() as u32);
             allocator.extend(new_slice, BATCH_UPLOAD_TEXTURE_SIZE, update_rect.size());
 
-            let texture_alloc_time_start = precise_time_ns();
+            let texture_alloc_time_start = zeitstempel::now();
             let staging_texture = staging_texture_pool.get_texture(device, texture.get_format());
-            stats.texture_alloc_time = precise_time_ns() - texture_alloc_time_start;
+            stats.texture_alloc_time = zeitstempel::now() - texture_alloc_time_start;
 
             let texture_index = batch_upload_textures.len();
             batch_upload_textures.push(staging_texture);
 
-            let cpu_buffer_alloc_start_time = precise_time_ns();
+            let cpu_buffer_alloc_start_time = zeitstempel::now();
             let staging_buffer = match device.upload_method() {
                 UploadMethod::Immediate => StagingBufferKind::CpuBuffer {
                     bytes: staging_texture_pool.get_temporary_buffer(),
@@ -396,7 +395,7 @@ fn copy_into_staging_buffer<'a>(
                     StagingBufferKind::Pbo(pbo)
                 }
             };
-            stats.cpu_buffer_alloc_time += precise_time_ns() - cpu_buffer_alloc_start_time;
+            stats.cpu_buffer_alloc_time += zeitstempel::now() - cpu_buffer_alloc_start_time;
 
             buffers.push(BatchUploadBuffer {
                 staging_buffer,
@@ -420,7 +419,7 @@ fn copy_into_staging_buffer<'a>(
     });
 
     unsafe {
-        let memcpy_start_time = precise_time_ns();
+        let memcpy_start_time = zeitstempel::now();
         let bpp = texture.get_format().bytes_per_pixel() as usize;
         let width_bytes = update_rect.width() as usize * bpp;
         let src_stride = update_stride.map_or(width_bytes, |stride| {
@@ -455,7 +454,7 @@ fn copy_into_staging_buffer<'a>(
             dst[dst_start..dst_end].copy_from_slice(&src[src_start..src_end])
         }
 
-        stats.cpu_copy_time += precise_time_ns() - memcpy_start_time;
+        stats.cpu_copy_time += zeitstempel::now() - memcpy_start_time;
     }
 }
 
@@ -478,9 +477,9 @@ fn skip_staging_buffer<'a>(
     let (_, buffers) = batch_upload_buffers.entry(texture.get_format())
         .or_insert_with(|| (GuillotineAllocator::new(None), Vec::new()));
 
-    let texture_alloc_time_start = precise_time_ns();
+    let texture_alloc_time_start = zeitstempel::now();
     let staging_texture = staging_texture_pool.get_texture(device, texture.get_format());
-    stats.texture_alloc_time = precise_time_ns() - texture_alloc_time_start;
+    stats.texture_alloc_time = zeitstempel::now() - texture_alloc_time_start;
 
     let texture_index = batch_upload_textures.len();
     batch_upload_textures.push(staging_texture);
@@ -578,6 +577,7 @@ fn copy_from_staging_to_cache_using_draw_calls(
                     None,
                     &mut renderer.renderer_errors,
                     &mut renderer.profile,
+                    &mut renderer.command_log,
                 );
 
             prev_dst = Some(copy.dest_texture_id);

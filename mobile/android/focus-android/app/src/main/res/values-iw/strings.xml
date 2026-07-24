@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -145,6 +152,11 @@
     Do not translate or transliterate Focus Nightly.
   -->
   <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">חיפוש ב־Focus Nightly</string>
+  <!--
+    Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
+    %2$s is the url for the learn-more link.
+  -->
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s מחזיר את השליטה לידיים שלך.</p>\n<p>אפשר להשתמש בו כדפדפן פרטי:\n<ul>\n<li>לחפש ולגלוש ישירות מהיישומון</li>\n<li>לחסום רכיבי מעקב (או לעדכן את ההגדרות כדי לאפשר אותם)</li>\n<li>לבצע מחיקה כללית כדי למחוק עוגיות לרבות היסטוריית חיפוש וגלישה</li>\n</ul> </p>\n<p>%1$s נוצר על ידי Mozilla. היעד שלנו הוא לאמץ אינטרנט בריא ופתוח.<br/>\n<a href=\"%2$s\">למידע נוסף</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">מידע נוסף</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -459,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">בחירה בהמשך מהווה הסכמה ל%1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">בחירה בהמשך מהווה הסכמה ל%1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">תנאי השימוש של Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">תנאי השימוש של Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">‏Firefox דואג לפרטיות שלך. מידע נוסף ב%1$s שלנו</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">‏Firefox דואג לפרטיות שלך. מידע נוסף ב%1$s שלנו.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">הצהרת הפרטיות.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">הצהרת הפרטיות</string>
   <!-- New Onboarding flow first screen button label -->
@@ -558,6 +562,8 @@
   <string name="tabs_tray_action_erase">מחיקת היסטורית גלישה</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">סגירת לשוניות אחרות</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">הוספת לשונית חדשה</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -623,6 +629,8 @@
   <string name="preferences_cookie_banner_summary_off">כבויה</string>
   <!-- Title preference inside Cookie banner reduction screen. Here you can set the cookie banner option to disabled or reject_all. -->
   <string name="cookie_banner_reject_all_option_title">צמצום כרזות עוגיות</string>
+  <!-- Preference summary inside Cookie banner reduction screen. Here you can set the cookie banner option to disabled or reject_all. -->
+  <string name="cookie_banner_reject_all_option_summary">אפשר לצמצם את כמות בקשות אישור המעקב שמופיעות על ידי דחיית בקשות לעוגיות, כשניתן.</string>
   <!-- Preference for removing cookie/consent banners from sites automatically, this is shown as part of the protections panel with the tracking protection toggle. -->
   <string name="cookie_banner_exception_item_title">צמצום כרזות עוגיות</string>
   <!-- Text for indicating cookie banner handling is on this site, this is shown as part of the protections panel with the tracking protection toggle. -->
@@ -645,6 +653,8 @@
   <string name="cookie_banner_exception_panel_description_state_on_for_site">‏%1$s ינקה את העוגיות של אתר זה וירענן את הדף. ניקוי כל העוגיות עשוי לנתק את החשבון שלך מהאתר או לרוקן את עגלת הקניות שלך.</string>
   <!-- Long text for a detail explanation indicating what will happen if cookie banner handling is off for a site, this is shown as part of the cookie banner panel in the toolbar. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="cookie_banner_exception_panel_description_state_off_for_site2">‏%1$s יכול לנסות לדחות באופן אוטומטי בקשות כרזות עוגיות.</string>
+  <!-- Long text for a detail explanation indicating that cookie banner reduction is not supported for the current site, this is shown as part of the cookie banner panel in the toolbar. -->
+  <string name="cookie_banner_exception_panel_description_site_is_not_supported">צמצום בקשות העוגיות לא תומך כרגע באתר הזה. אפשר להציע לך לבקש מהצוות לסקור את האתר הזה ולהוסיף תמיכה בעתיד?</string>
   <!-- Text for cancel button indicating that cookie banner reduction is not supported for the current site, this is shown as part of the cookie banner panel in the toolbar. -->
   <string name="cookie_banner_exception_panel_site_is_not_supported_cancel_button">ביטול</string>
   <!-- Text for request support button indicating that cookie banner reduction is not supported for the current site, this is shown as part of the cookie banner panel in the toolbar. -->
@@ -653,6 +663,12 @@
   <string name="cookie_banner_report_a_site_snackbar_label">הבקשה לתמיכה באתר הוגשה.</string>
   <!-- Label for cookie banner item from tracking protection, after the user reports with success a website where cookie banner reducer did not work -->
   <string name="cookie_banner_the_site_was_reported">הבקשה לתמיכה באתר הוגשה.</string>
+  <!--
+    Contextual Feature Recommendation Popups
+
+    CFR for Cookie Banner (Banner Info Message). %1$s will be replaced by the app name, %2$s will be an active link using the string cfr_cookie_banner_link as text.
+  -->
+  <string name="cfr_cookie_banner">%1$s מנסה לדחות בקשות לעוגיות כדי להסיר בקשות לעוגיות מעצבנות.\n\nאפשר לנהל את העדפות בקשות העוגיות דרך %2$s.</string>
   <!-- CFR for Cookie Banner (Banner Info Message). This string is used as text for a link in cfr_cookie_banner and takes the user to the app settings. -->
   <string name="cfr_cookie_banner_link">הגדרות</string>
   <!-- Preference for autoplay -->
@@ -809,6 +825,8 @@
   <string name="advertising">פרסום</string>
   <!-- Category of trackers (social media) that can be blocked by Enhanced Tracking Protection. -->
   <string name="social">רשתות חברתיות</string>
+  <!-- Category of trackers (analytics) that can be blocked by Enhanced Tracking Protection. -->
+  <string name="analytics">ניתוח נתונים</string>
   <!-- Preference title for enhanced tracking protection settings. -->
   <string name="enhanced_tracking_protection">הגנת מעקב מתקדמת</string>
   <!-- Enhanced tracking protection preference description when the tracking protection is disabled for this site. -->
@@ -866,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ייתכן שמדובר בבעיה בתצורת השרת או שגורם כלשהו מנסה להתחזות לשרת.<br/><br/> אם התחברת לשרת זה בהצלחה בעבר, ייתכן שהשגיאה זמנית.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ייתכן שמישהו מנסה להתחזות לאתר, וההמשך אליו עלול להיות מסוכן.</label> <br><br> <label>ל־%1$s אין אמון ב־<b>%2$s</b> כיוון שמנפיק האישור אינו מוכר, האישור נחתם עצמאית, או שהשרת לא שולח את אישורי הביניים הנכונים.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ייתכן שמישהו מנסה להתחזות לאתר, וההמשך אליו עלול להיות מסוכן.</label> <br><br>\n<label>ל־%1$s אין אמון ב־<b>%2$s</b> כיוון שמנפיק האישור אינו מוכר, האישור נחתם עצמאית, או שהשרת לא שולח את אישורי הביניים הנכונים.</label>]]></string>
   <!--
     Sessions List
 

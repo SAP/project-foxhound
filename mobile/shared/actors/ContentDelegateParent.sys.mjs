@@ -29,6 +29,39 @@ export class ContentDelegateParent extends GeckoViewActorParent {
         this.window.windowUtils.remoteFrameFullscreenChanged(this.browser);
         return null;
       }
+
+      case "GeckoView:DOMMetaViewportFit": {
+        return this.eventDispatcher.sendRequest({
+          viewportfit: aMsg.data,
+          type: "GeckoView:DOMMetaViewportFit",
+        });
+      }
+
+      case "GeckoView:ContextMenu": {
+        return this.eventDispatcher.sendRequest({
+          ...aMsg.data,
+          type: "GeckoView:ContextMenu",
+        });
+      }
+
+      case "GeckoView:WebAppManifest": {
+        return this.eventDispatcher.sendRequest({
+          manifest: aMsg.data,
+          type: "GeckoView:WebAppManifest",
+        });
+      }
+
+      case "GeckoView:FirstContentfulPaint": {
+        return this.eventDispatcher.sendRequest({
+          type: "GeckoView:FirstContentfulPaint",
+        });
+      }
+
+      case "GeckoView:PaintStatusReset": {
+        return this.eventDispatcher.sendRequest({
+          type: "GeckoView:PaintStatusReset",
+        });
+      }
     }
 
     return super.receiveMessage(aMsg);

@@ -12,7 +12,9 @@ prefs = [
   "app.update.BITS.enabled=false",
   "app.update.langpack.enabled=true",
 ]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 # About Dialog Application Update Tests
 
@@ -54,7 +56,9 @@ tags = "os_integration"
 ["browser_aboutDialog_fc_apply_blocked.js"]
 
 ["browser_aboutDialog_fc_check_cantApply.js"]
-run-if = ["os == 'win' && !msix"] # "test must be able to prevent file deletion."
+run-if = [
+  "os == 'win' && !msix", # "test must be able to prevent file deletion."
+]
 tags = "os_integration"
 
 ["browser_aboutDialog_fc_check_malformedXML.js"]
@@ -109,7 +113,9 @@ tags = "os_integration"
 ["browser_aboutPrefs_fc_apply_blocked.js"]
 
 ["browser_aboutPrefs_fc_check_cantApply.js"]
-run-if = ["os == 'win' && !msix"] # "test must be able to prevent file deletion."
+run-if = [
+  "os == 'win' && !msix", # "test must be able to prevent file deletion."
+]
 tags = "os_integration"
 
 ["browser_aboutPrefs_fc_check_malformedXML.js"]
@@ -149,7 +155,9 @@ tags = "os_integration"
 # Doorhanger Application Update Tests
 
 ["browser_doorhanger_bc_check_cantApply.js"]
-run-if = ["os == 'win' && !msix"] # "test must be able to prevent file deletion."
+run-if = [
+  "os == 'win' && !msix", # "test must be able to prevent file deletion."
+]
 tags = "os_integration"
 
 ["browser_doorhanger_bc_check_malformedXML.js"]
@@ -172,7 +180,9 @@ tags = "os_integration"
 
 ["browser_doorhanger_bc_multiUpdate.js"]
 tags = "os_integration"
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks"] # Bug 1909498
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+]
 
 ["browser_doorhanger_bc_multiUpdate_promptWaitTime.js"]
 

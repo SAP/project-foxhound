@@ -19,6 +19,7 @@ enum AccType {
    * alphabetical order since they are used in switch statement.
    */
   eNoType,
+  eHTMLAbbrevType,
   eHTMLBRType,
   eHTMLButtonType,
   eHTMLCanvasType,
@@ -86,10 +87,9 @@ enum AccGenericType {
   eTableRow = 1 << 13,
   eText = 1 << 14,
   eNumericValue = 1 << 15,
-  eActionable = 1 << 16,  // This is for remote accessibles
-  eDPub = 1 << 17,
+  eDPub = 1 << 16,
 
-  eLastAccGenericType = eActionable,
+  eLastAccGenericType = eDPub,
   eAllGenericTypes = (eLastAccGenericType << 1) - 1
 };
 

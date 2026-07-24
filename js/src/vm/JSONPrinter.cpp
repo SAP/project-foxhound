@@ -7,12 +7,11 @@
 #include "vm/JSONPrinter.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerPrintfMacros.h"
 
 #include <stdarg.h>
 
-#include "jsnum.h"
+#include "builtin/Number.h"
 
 using namespace js;
 

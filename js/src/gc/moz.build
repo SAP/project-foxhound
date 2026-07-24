@@ -9,6 +9,7 @@ FINAL_LIBRARY = "js"
 # Includes should be relative to parent path
 LOCAL_INCLUDES += ["!..", ".."]
 
+include("../js-compileflags.mozbuild")
 include("../js-config.mozbuild")
 include("../js-cxxflags.mozbuild")
 
@@ -35,7 +36,6 @@ UNIFIED_SOURCES += [
     "GCAPI.cpp",
     "GCParallelTask.cpp",
     "Heap.cpp",
-    "MallocedBlockCache.cpp",
     "Marking.cpp",
     "Nursery.cpp",
     "ParallelMarking.cpp",
@@ -62,3 +62,6 @@ SOURCES += [
     #   bundled with.
     "StoreBuffer.cpp",
 ]
+
+if CONFIG["FUZZING_JS_FUZZILLI"]:
+    include("/tools/fuzzing/libfuzzer-config.mozbuild")

@@ -28,6 +28,11 @@ import org.mozilla.gecko.util.ThreadUtils;
 public class GeckoDisplay {
   private final GeckoSession mSession;
 
+  /**
+   * Protected constructor for GeckoDisplay.
+   *
+   * @param session The GeckoSession this display is associated with
+   */
   protected GeckoDisplay(final GeckoSession session) {
     mSession = session;
   }

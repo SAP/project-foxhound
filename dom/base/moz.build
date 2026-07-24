@@ -42,7 +42,7 @@ EXPORTS += [
     "AutocompleteFieldList.h",
     "Crypto.h",
     "HTMLSplitOnSpacesTokenizer.h",
-    "IframeSandboxKeywordList.h",
+    "IframeSandboxKeywordList.inc",
     "mozAutoDocUpdate.h",
     "NodeUbiReporting.h",
     "nsAttrName.h",
@@ -59,9 +59,9 @@ EXPORTS += [
     "nsContentTypeParser.h",
     "nsContentUtils.h",
     "nsCopySupport.h",
-    "nsDeprecatedOperationList.h",
+    "nsDeprecatedOperationList.inc",
     "nsDocElementCreatedNotificationRunner.h",
-    "nsDocumentWarningList.h",
+    "nsDocumentWarningList.inc",
     "nsDOMAttributeMap.h",
     "nsDOMCID.h",
     "nsDOMJSUtils.h",
@@ -103,7 +103,6 @@ EXPORTS += [
     "nsStubDocumentObserver.h",
     "nsStubMutationObserver.h",
     "nsStyledElement.h",
-    "nsTextFragment.h",
     "nsTextNode.h",
     "nsTraversal.h",
     "nsTreeSanitizer.h",
@@ -155,6 +154,7 @@ EXPORTS.mozilla.dom += [
     "CacheExpirationTime.h",
     "CCGCScheduler.h",
     "CharacterData.h",
+    "CharacterDataBuffer.h",
     "ChildIterator.h",
     "ChildProcessMessageManager.h",
     "ChromeMessageBroadcaster.h",
@@ -162,12 +162,10 @@ EXPORTS.mozilla.dom += [
     "ChromeNodeList.h",
     "ChromeUtils.h",
     "Comment.h",
-    "CompressionStream.h",
     "ContentFrameMessageManager.h",
     "ContentProcessMessageManager.h",
     "CrossShadowBoundaryRange.h",
     "CustomElementRegistry.h",
-    "DecompressionStream.h",
     "DirectionalityUtils.h",
     "DocGroup.h",
     "Document.h",
@@ -192,6 +190,7 @@ EXPORTS.mozilla.dom += [
     "EventSource.h",
     "EventSourceEventService.h",
     "External.h",
+    "FastFrontRemovableArray.h",
     "FilteredNodeIterator.h",
     "FormData.h",
     "FragmentDirective.h",
@@ -340,6 +339,7 @@ UNIFIED_SOURCES += [
     "BorrowedAttrInfo.cpp",
     "CCGCScheduler.cpp",
     "CharacterData.cpp",
+    "CharacterDataBuffer.cpp",
     "ChildIterator.cpp",
     "ChromeMessageBroadcaster.cpp",
     "ChromeMessageSender.cpp",
@@ -441,7 +441,6 @@ UNIFIED_SOURCES += [
     "nsStubMutationObserver.cpp",
     "nsStyledElement.cpp",
     "nsSyncLoadService.cpp",
-    "nsTextFragment.cpp",
     "nsTextNode.cpp",
     "nsTraversal.cpp",
     "nsTreeSanitizer.cpp",
@@ -515,20 +514,6 @@ if CONFIG["MOZ_PLACES"]:
         "PlacesWeakCallbackWrapper.cpp",
     ]
 
-# on win32 if we add these files to UNIFIED_SOURCES then the compiler generates
-# larger stack frames for some recursive functions that cause us to hit stack
-# overflows (see bug 1824565)
-if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["TARGET_CPU"] == "x86":
-    SOURCES += [
-        "CompressionStream.cpp",
-        "DecompressionStream.cpp",
-    ]
-else:
-    UNIFIED_SOURCES += [
-        "CompressionStream.cpp",
-        "DecompressionStream.cpp",
-    ]
-
 # these files couldn't be in UNIFIED_SOURCES for now for reasons given below:
 SOURCES += [
     # Several conflicts with other bindings.
@@ -551,16 +536,16 @@ SOURCES += [
 ]
 
 # Are we targeting x86-32 or x86-64?  If so, we want to include SSE2 code for
-# nsTextFragment.cpp
+# CharacterDataBuffer.cpp
 if CONFIG["INTEL_ARCHITECTURE"]:
-    SOURCES += ["nsTextFragmentSSE2.cpp"]
-    SOURCES["nsTextFragmentSSE2.cpp"].flags += CONFIG["SSE2_FLAGS"]
+    SOURCES += ["CharacterDataBufferSSE2.cpp"]
+    SOURCES["CharacterDataBufferSSE2.cpp"].flags += CONFIG["SSE2_FLAGS"]
 
 # Are we targeting PowerPC? If so, we can enable a SIMD version for
-# nsTextFragment.cpp as well.
+# CharacterDataBuffer.cpp as well.
 if CONFIG["TARGET_CPU"].startswith("ppc"):
-    SOURCES += ["nsTextFragmentVMX.cpp"]
-    SOURCES["nsTextFragmentVMX.cpp"].flags += CONFIG["PPC_VMX_FLAGS"]
+    SOURCES += ["CharacterDataBufferVMX.cpp"]
+    SOURCES["CharacterDataBufferVMX.cpp"].flags += CONFIG["PPC_VMX_FLAGS"]
 
 EXTRA_JS_MODULES += [
     "ContentAreaDropListener.sys.mjs",
@@ -645,8 +630,11 @@ GeneratedFile(
     inputs=[
         "UseCounters.conf",
         "UseCountersWorker.conf",
-        "nsDeprecatedOperationList.h",
-        "!/layout/style/ServoCSSPropList.py",
+        "nsDeprecatedOperationList.inc",
+        "/servo/components/style/properties/counted_unknown_properties.py",
+        "/servo/components/style/properties/data.py",
+        "/servo/components/style/properties/longhands.toml",
+        "/servo/components/style/properties/shorthands.toml",
         "/servo/components/style/properties/counted_unknown_properties.py",
     ],
 )

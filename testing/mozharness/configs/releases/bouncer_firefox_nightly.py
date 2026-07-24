@@ -8,7 +8,6 @@ config = {
         "installer-latest": {
             "product-name": "Firefox-nightly-latest",
             "platforms": [
-                "linux",
                 "linux64",
                 "linux64-aarch64",
                 "osx",
@@ -20,7 +19,6 @@ config = {
         "installer-latest-ssl": {
             "product-name": "Firefox-nightly-latest-SSL",
             "platforms": [
-                "linux",
                 "linux64",
                 "linux64-aarch64",
                 "osx",
@@ -32,7 +30,6 @@ config = {
         "installer-latest-l10n-ssl": {
             "product-name": "Firefox-nightly-latest-l10n-SSL",
             "platforms": [
-                "linux",
                 "linux64",
                 "linux64-aarch64",
                 "osx",

@@ -34,7 +34,6 @@
 #include <sys/sysctl.h>
 
 using mozilla::StaticMutexAutoLock;
-using mozilla::Unused;
 using namespace nsMacUtilsImpl;
 
 static mozilla::LazyLogModule sMacUtilsLog("macutils");
@@ -209,7 +208,7 @@ bool nsMacUtilsImpl::IsTCSMAvailable() {
     // and initialized sTCSMStatus first (changing it from
     // TCSM_Unknown), we can continue without needing to update it
     // again. Hence, we ignore compareExchange's return value.
-    Unused << sTCSMStatus.compareExchange(TCSM_Unknown, newStatus);
+    (void)sTCSMStatus.compareExchange(TCSM_Unknown, newStatus);
   }
   return (sTCSMStatus == TCSM_Available);
 }

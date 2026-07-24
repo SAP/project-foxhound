@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIIdleRunnable_h__
-#define nsIIdleRunnable_h__
+#ifndef nsIIdleRunnable_h_
+#define nsIIdleRunnable_h_
 
 #include "nsISupports.h"
 #include "mozilla/TimeStamp.h"
@@ -39,4 +39,4 @@ class nsIIdleRunnable : public nsISupports {
   virtual ~nsIIdleRunnable() = default;
 };
 
-#endif  // nsIIdleRunnable_h__
+#endif  // nsIIdleRunnable_h_

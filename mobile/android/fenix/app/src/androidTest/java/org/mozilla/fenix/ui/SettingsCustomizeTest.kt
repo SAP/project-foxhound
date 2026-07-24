@@ -9,10 +9,12 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SkipLeaks
+import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.enableOrDisableBackGestureNavigationOnDevice
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
+import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.TestHelper.verifyDarkThemeApplied
 import org.mozilla.fenix.helpers.TestHelper.verifyLightThemeApplied
 import org.mozilla.fenix.helpers.TestSetup
@@ -22,7 +24,7 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
 
 class SettingsCustomizeTest : TestSetup() {
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
@@ -32,7 +34,7 @@ class SettingsCustomizeTest : TestSetup() {
 
     private fun getUiTheme(): Boolean {
         val mode =
-            activityTestRule.activity.resources?.configuration?.uiMode?.and(Configuration.UI_MODE_NIGHT_MASK)
+            composeTestRule.activity.resources?.configuration?.uiMode?.and(Configuration.UI_MODE_NIGHT_MASK)
 
         return when (mode) {
             Configuration.UI_MODE_NIGHT_YES -> true // dark theme is set
@@ -45,9 +47,9 @@ class SettingsCustomizeTest : TestSetup() {
     @Test
     fun changeThemeOfTheAppTest() {
         // Goes through the settings and changes the default search engine, then verifies it changes.
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openCustomizeSubMenu {
             verifyThemes()
             selectDarkMode()
@@ -60,25 +62,25 @@ class SettingsCustomizeTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/466571
     @Test
     fun setToolbarPositionTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openCustomizeSubMenu {
             verifyAddressBarPositionPreference("Bottom")
             clickTopToolbarToggle()
             verifyAddressBarPositionPreference("Top")
         }.goBack {
-        }.goBack {
-            verifyAddressBarPosition(bottomPosition = false)
+        }.goBack(composeTestRule) {
+            verifyToolbarPosition(bottomPosition = false)
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openCustomizeSubMenu {
             clickBottomToolbarToggle()
             verifyAddressBarPositionPreference("Bottom")
             exitMenu()
         }
-        homeScreen {
-            verifyAddressBarPosition(bottomPosition = true)
+        homeScreen(composeTestRule) {
+            verifyToolbarPosition(bottomPosition = true)
         }
     }
 
@@ -86,24 +88,24 @@ class SettingsCustomizeTest : TestSetup() {
     @Test
     @SkipLeaks
     fun turnOffSwipeToSwitchTabsPreferenceTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
         // Disable the back gesture from the edge of the screen on the device.
         enableOrDisableBackGestureNavigationOnDevice(backGestureNavigationEnabled = false)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openCustomizeSubMenu {
             verifySwipeToolbarGesturePrefState(true)
             clickSwipeToolbarToSwitchTabToggle()
             verifySwipeToolbarGesturePrefState(false)
             exitMenu()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
         }.openNewTab {
         }.submitQuery(secondWebPage.url.toString()) {
             swipeNavBarRight(secondWebPage.url.toString())
@@ -116,13 +118,78 @@ class SettingsCustomizeTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1992289
     @Test
     fun pullToRefreshPreferenceTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openCustomizeSubMenu {
             verifyPullToRefreshGesturePrefState(isEnabled = true)
             clickPullToRefreshToggle()
             verifyPullToRefreshGesturePrefState(isEnabled = false)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186732
+    @SmokeTest
+    @Test
+    fun verifyTheDefaultAppIconSettingTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openCustomizeSubMenu {
+            verifyAppIconOption(composeTestRule, "Default")
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186731
+    @SmokeTest
+    @Test
+    fun verifyTheAppIconSelectionPageTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openCustomizeSubMenu {
+            clickTheAppIconOption(composeTestRule)
+            verifyAppIconSettingItems(composeTestRule)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186734
+    @SmokeTest
+    @Test
+    fun verifyTheChangeAppIconButtonTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openCustomizeSubMenu {
+            verifyAppIconOption(composeTestRule, "Default")
+            clickTheAppIconOption(composeTestRule)
+            clickAppIconOption(composeTestRule, appIconOptionName = "Dark")
+            verifyChangeAppIconDialog(composeTestRule)
+            clickTheChangeIconDialogButton(composeTestRule)
+            restartApp(composeTestRule.activityRule)
+        }
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openCustomizeSubMenu {
+            verifyAppIconOption(composeTestRule, "Dark")
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3333174
+    @Test
+    fun verifyTheToolbarLayoutSectionTest() {
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openCustomizeSubMenu {
+            verifyToolbarLayout()
+            verifyToolbarLayoutPreference("Simple")
+            selectExpandedToolbarLayout()
+            clickBottomToolbarToggle()
+            verifyAddressBarPositionPreference("Bottom")
+            verifyToolbarLayout()
+            verifyToolbarLayoutPreference("Expanded")
         }
     }
 }

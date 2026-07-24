@@ -19,6 +19,15 @@ for (const pref of devtoolsPreferences.getChildList("")) {
   }
 }
 
+{
+  const { PromiseTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
+  );
+  PromiseTestUtils.allowMatchingRejectionsGlobally(
+    /REDUX_MIDDLEWARE_IGNORED_REDUX_ACTION/
+  );
+}
+
 async function resetPreferencesModifiedDuringTest() {
   if (!isXpcshell) {
     await SpecialPowers.flushPrefEnv();
@@ -157,7 +166,7 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
-// When loaded from xpcshell test, this file is loaded via xpcshell.ini's head property
+// When loaded from xpcshell test, this file is loaded via xpcshell.toml's head property
 // and so it loaded first before anything else and isn't having access to Services global.
 // Whereas many head.js files from mochitest import this file via loadSubScript
 // and already expose Services as a global.
@@ -247,7 +256,7 @@ try {
   ok(
     false,
     "MISSING DEPENDENCY ON telemetry-test-helpers.js\n" +
-      "Please add the following line in browser.ini:\n" +
+      "Please add the following line in browser.toml:\n" +
       "  !/devtools/client/shared/test/telemetry-test-helpers.js\n"
   );
   throw e;
@@ -418,7 +427,6 @@ async function safeCloseBrowserConsole({ clearOutput = false } = {}) {
  * we listen to this message to cleanup the observer.
  */
 function highlighterTestActorBootstrap() {
-  /* eslint-env mozilla/process-script */
   const HIGHLIGHTER_TEST_ACTOR_URL =
     "chrome://mochitests/content/browser/devtools/client/shared/test/highlighter-test-actor.js";
 
@@ -477,7 +485,7 @@ if (isMochitest) {
  * Spawn an instance of the highlighter test actor for the given toolbox
  *
  * @param {Toolbox} toolbox
- * @param {Object} options
+ * @param {object} options
  * @param {Function} options.target: Optional target to get the highlighterTestFront for.
  *        If not provided, the top level target will be used.
  * @returns {HighlighterTestFront}
@@ -534,8 +542,9 @@ function waitForAllTargetsToBeAttached(targetCommand) {
 
 /**
  * Add a new test tab in the browser and load the given url.
- * @param {String} url The url to be loaded in the new tab
- * @param {Object} options Object with various optional fields:
+ *
+ * @param {string} url The url to be loaded in the new tab
+ * @param {object} options Object with various optional fields:
  *   - {Boolean} background If true, open the tab in background
  *   - {ChromeWindow} window Firefox top level window we should use to open the tab
  *   - {Number} userContextId The userContextId of the tab.
@@ -564,7 +573,10 @@ async function addTab(url, options = {}) {
   }
 
   if (waitForLoad) {
-    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    // accept any URL as url arg might not be serialized or redirects might happen
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+      wantLoad: () => true,
+    });
     // Waiting for presShell helps with test timeouts in webrender platforms.
     await waitForPresShell(tab.linkedBrowser);
     info("Tab added and finished loading");
@@ -577,7 +589,8 @@ async function addTab(url, options = {}) {
 
 /**
  * Remove the given tab.
- * @param {Object} tab The tab to be removed.
+ *
+ * @param {object} tab The tab to be removed.
  * @return Promise<undefined> resolved when the tab is successfully removed.
  */
 async function removeTab(tab) {
@@ -595,13 +608,12 @@ async function removeTab(tab) {
  * Alias for navigateTo which will reuse the current URI of the provided browser
  * to trigger a navigation.
  */
-async function reloadBrowser({
-  browser = gBrowser.selectedBrowser,
+async function reloadSelectedTab({
   isErrorPage = false,
   waitForLoad = true,
 } = {}) {
-  return navigateTo(browser.currentURI.spec, {
-    browser,
+  return navigateTo(gBrowser.selectedBrowser.currentURI.spec, {
+    browser: gBrowser.selectedBrowser,
     isErrorPage,
     waitForLoad,
   });
@@ -612,7 +624,7 @@ async function reloadBrowser({
  * Also wait for the toolbox to attach to the new target, if we navigated
  * to a new process.
  *
- * @param {String} url The url to be loaded in the current tab.
+ * @param {string} url The url to be loaded in the current tab.
  * @param {JSON} options Optional dictionary object with the following keys:
  *        - {XULBrowser} browser
  *          The browser element which should navigate. Defaults to the selected
@@ -655,10 +667,20 @@ async function navigateTo(
     isErrorPage
   );
 
-  // if we're navigating to the same page we're already on, use reloadTab instead as the
-  // behavior slightly differs from loadURI (e.g. scroll position isn't keps with the latter).
   if (uri === browser.currentURI.spec) {
-    gBrowser.reloadTab(gBrowser.getTabForBrowser(browser));
+    // As BrowserCommands.reload only supports reloading the currently selected tab,
+    // only support reloading the selected tab.
+    is(
+      browser,
+      gBrowser.selectedBrowser,
+      "Only supports reloading the selected tab"
+    );
+
+    // If we're navigating to the same page we're already on,
+    // uses `BrowserCommands.reload()`,
+    // which is the method used to reload page from firefox UI.
+    // Compared to `gBrowser.reloadTab()`, it actually reloads iframes.
+    BrowserCommands.reload();
   } else {
     BrowserTestUtils.startLoadingURIString(browser, uri);
   }
@@ -880,6 +902,8 @@ function _watchForPanelReload(toolbox, toolId) {
 
       info("Waiting for inspector updates after page reload");
       await onReloaded;
+
+      info("Received 'reloaded' event for inspector");
     };
   } else if (
     ["netmonitor", "accessibility", "webconsole", "jsdebugger"].includes(toolId)
@@ -888,6 +912,8 @@ function _watchForPanelReload(toolbox, toolId) {
     return async function () {
       info(`Waiting for ${toolId} updates after page reload`);
       await onReloaded;
+
+      info(`Received 'reloaded' event for ${toolId}`);
     };
   }
   return null;
@@ -918,7 +944,7 @@ async function watchForCommandsReload(
   // - dom-complete if we can wait for a full page load
   // - dom-loading otherwise
   // This allows to wait for page load for consumers calling directly
-  // waitForDevTools instead of navigateTo/reloadBrowser.
+  // waitForDevTools instead of navigateTo/reloadSelectedTab.
   // This is also useful as an alternative to target switching, when no target
   // switch is supposed to happen.
   const waitForCompleteLoad = waitForLoad && !isErrorPage;
@@ -1011,21 +1037,11 @@ async function createAndAttachTargetForTab(tab) {
   return target;
 }
 
-function isFissionEnabled() {
-  return SpecialPowers.useRemoteSubframes;
-}
-
-function isEveryFrameTargetEnabled() {
-  return Services.prefs.getBoolPref(
-    "devtools.every-frame-target.enabled",
-    false
-  );
-}
-
 /**
  * Open the inspector in a tab with given URL.
+ *
  * @param {string} url  The URL to open.
- * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
+ * @param {string} hostType Optional hostType, as defined in Toolbox.HostType
  * @return A promise that is resolved once the tab and inspector have loaded
  *         with an object: { tab, toolbox, inspector, highlighterTestFront }.
  */
@@ -1045,7 +1061,7 @@ function getActiveInspector() {
  * Simulate a key event from an electron key shortcut string:
  * https://github.com/electron/electron/blob/master/docs/api/accelerator.md
  *
- * @param {String} key
+ * @param {string} key
  * @param {DOMWindow} target
  *        Optional window where to fire the key event
  */
@@ -1069,6 +1085,7 @@ var waitForTime = DevToolsUtils.waitForTime;
 
 /**
  * Wait for a tick.
+ *
  * @return {Promise}
  */
 function waitForTick() {
@@ -1079,7 +1096,7 @@ function waitForTick() {
  * This shouldn't be used in the tests, but is useful when writing new tests or
  * debugging existing tests in order to introduce delays in the test steps
  *
- * @param {Number} ms
+ * @param {number} ms
  *        The time to wait
  * @return A promise that resolves when the time is passed
  */
@@ -1178,13 +1195,13 @@ async function waitForTimeout(
 /**
  * Wait for eventName on target to be delivered a number of times.
  *
- * @param {Object} target
+ * @param {object} target
  *        An observable object that either supports on/off or
  *        addEventListener/removeEventListener
- * @param {String} eventName
- * @param {Number} numTimes
+ * @param {string} eventName
+ * @param {number} numTimes
  *        Number of deliveries to wait for.
- * @param {Boolean} useCapture
+ * @param {boolean} useCapture
  *        Optional, for addEventListener/removeEventListener
  * @return A promise that resolves when the event has been handled
  */
@@ -1224,12 +1241,12 @@ function waitForNEvents(target, eventName, numTimes, useCapture = false) {
 /**
  * Wait for DOM change on target.
  *
- * @param {Object} target
+ * @param {object} target
  *        The Node on which to observe DOM mutations.
- * @param {String} selector
+ * @param {string} selector
  *        Given a selector to watch whether the expected element is changed
  *        on target.
- * @param {Number} expectedLength
+ * @param {number} expectedLength
  *        Optional, default set to 1
  *        There may be more than one element match an array match the selector,
  *        give an expected length to wait for more elements.
@@ -1259,11 +1276,11 @@ function waitForDOM(target, selector, expectedLength = 1) {
 /**
  * Wait for eventName on target.
  *
- * @param {Object} target
+ * @param {object} target
  *        An observable object that either supports on/off or
  *        addEventListener/removeEventListener
- * @param {String} eventName
- * @param {Boolean} useCapture
+ * @param {string} eventName
+ * @param {boolean} useCapture
  *        Optional, for addEventListener/removeEventListener
  * @return A promise that resolves when the event has been handled
  */
@@ -1277,7 +1294,8 @@ function once(target, eventName, useCapture = false) {
  * is either not common-enough to be in head.js, or that is located in a
  * separate directory.
  * The script will be loaded synchronously and in the test's scope.
- * @param {String} filePath The file path, relative to the current directory.
+ *
+ * @param {string} filePath The file path, relative to the current directory.
  *                 Examples:
  *                 - "helper_attributes_test_runner.js"
  */
@@ -1288,9 +1306,10 @@ function loadHelperScript(filePath) {
 
 /**
  * Open the toolbox in a given tab.
+ *
  * @param {XULNode} tab The tab the toolbox should be opened in.
- * @param {String} toolId Optional. The ID of the tool to be selected.
- * @param {String} hostType Optional. The type of toolbox host to be used.
+ * @param {string} toolId Optional. The ID of the tool to be selected.
+ * @param {string} hostType Optional. The type of toolbox host to be used.
  * @return {Promise} Resolves with the toolbox, when it has been opened.
  */
 async function openToolboxForTab(tab, toolId, hostType) {
@@ -1318,9 +1337,10 @@ async function openToolboxForTab(tab, toolId, hostType) {
 
 /**
  * Add a new tab and open the toolbox in it.
- * @param {String} url The URL for the tab to be opened.
- * @param {String} toolId Optional. The ID of the tool to be selected.
- * @param {String} hostType Optional. The type of toolbox host to be used.
+ *
+ * @param {string} url The URL for the tab to be opened.
+ * @param {string} toolId Optional. The ID of the tool to be selected.
+ * @param {string} hostType Optional. The type of toolbox host to be used.
  * @return {Promise} Resolves when the tab has been added, loaded and the
  * toolbox has been opened. Resolves to the toolbox.
  */
@@ -1331,6 +1351,7 @@ async function openNewTabAndToolbox(url, toolId, hostType) {
 
 /**
  * Close a tab and if necessary, the toolbox that belongs to it
+ *
  * @param {Tab} tab The tab to close.
  * @return {Promise} Resolves when the toolbox and tab have been destroyed and
  * closed.
@@ -1347,6 +1368,7 @@ async function closeTabAndToolbox(tab = gBrowser.selectedTab) {
 
 /**
  * Close a toolbox and the current tab.
+ *
  * @param {Toolbox} toolbox The toolbox to close.
  * @return {Promise} Resolves when the toolbox and tab have been destroyed and
  * closed.
@@ -1458,7 +1480,7 @@ function waitForClipboardPromise(setup, expected) {
  * pushPrefEnv that returns a promise resolving when the preferences have been
  * updated.
  *
- * @param {String} preferenceName
+ * @param {string} preferenceName
  *        The name of the preference to updated
  * @param {} value
  *        The preference value, type can vary
@@ -1504,8 +1526,11 @@ function isWindows() {
  *
  * The server can be accessed like:
  *
- *   const server = createTestHTTPServer();
- *   let url = "http://localhost: " + server.identity.primaryPort + "/path";
+ * ```js
+ * const server = createTestHTTPServer();
+ * let url = "http://localhost: " + server.identity.primaryPort + "/path";
+ * ```
+ *
  * @returns {HttpServer}
  */
 function createTestHTTPServer() {
@@ -1522,7 +1547,7 @@ function createTestHTTPServer() {
   return server;
 }
 
-/*
+/**
  * Register an actor in the content process of the current tab.
  *
  * Calling ActorRegistry.registerModule only registers the actor in the current process.
@@ -1645,14 +1670,15 @@ function colorAt(image, x, y) {
 
 let allDownloads = [];
 /**
- * Returns a Promise that resolves when a new screenshot is available in the download folder.
+ * Returns a Promise that resolves when a new file (e.g. screenshot, JSON, …) is available
+ * in the download folder.
  *
- * @param {Object} [options]
- * @param {Boolean} options.isWindowPrivate: Set to true if the window from which the screenshot
- *                  is taken is a private window. This will ensure that we check that the
- *                  screenshot appears in the private window, not the non-private one (See Bug 1783373)
+ * @param {object} [options]
+ * @param {boolean} options.isWindowPrivate: Set to true if the window from which the file
+ *                  is downloaded is a private window. This will ensure that we check that the
+ *                  file appears in the private window, not the non-private one (See Bug 1783373)
  */
-async function waitUntilScreenshot({ isWindowPrivate = false } = {}) {
+async function waitUntilDownload({ isWindowPrivate = false } = {}) {
   const { Downloads } = ChromeUtils.importESModule(
     "resource://gre/modules/Downloads.sys.mjs"
   );
@@ -1715,7 +1741,7 @@ async function takeNodeScreenshot(inspector) {
   info(
     "Call screenshotNode() and wait until the screenshot is found in the Downloads"
   );
-  const whenScreenshotSucceeded = waitUntilScreenshot();
+  const whenScreenshotSucceeded = waitUntilDownload();
   inspector.screenshotNode();
   const filePath = await whenScreenshotSucceeded;
 
@@ -1785,6 +1811,7 @@ function checkImageColorAt({ image, x = 0, y, expectedColor, label }) {
 
 /**
  * Wait until the store has reached a state that matches the predicate.
+ *
  * @param Store store
  *        The Redux store being used.
  * @param function predicate
@@ -1817,11 +1844,11 @@ function waitUntilState(store, predicate) {
  * If the action is async and defines a `status` property, this helper will wait
  * for the status to reach either "error" or "done".
  *
- * @param {Object} store
+ * @param {object} store
  *        Redux store where the action should be dispatched.
- * @param {String} actionType
+ * @param {string} actionType
  *        The actionType to wait for.
- * @param {Number} repeat
+ * @param {number} repeat
  *        Optional, number of time the action is expected to be dispatched.
  *        Defaults to 1
  * @return {Promise}
@@ -1856,7 +1883,7 @@ function waitForDispatch(store, actionType, repeat = 1) {
  * @param {BrowsingContext|XULBrowser} browsingContext
  *        The topmost browsing context under which we should search for the
  *        browsing context.
- * @param {Array<String>} selectors
+ * @param {Array<string>} selectors
  *        Array of CSS selectors that form a path to a specific nested frame.
  * @return {BrowsingContext} The nested browsing context.
  */
@@ -1890,7 +1917,7 @@ async function getBrowsingContextInFrames(browsingContext, selectors) {
  * Synthesize a mouse event on an element, after ensuring that it is visible
  * in the viewport.
  *
- * @param {String|Array} selector: The node selector to get the node target for the event.
+ * @param {string | Array} selector: The node selector to get the node target for the event.
  *        To target an element in a specific iframe, pass an array of CSS selectors
  *        (e.g. ["iframe", ".el-in-iframe"])
  * @param {number} x
@@ -1929,7 +1956,7 @@ async function safeSynthesizeMouseEventInContentPage(
  * Synthesize a mouse event at the center of an element, after ensuring that it is visible
  * in the viewport.
  *
- * @param {String|Array} selector: The node selector to get the node target for the event.
+ * @param {string | Array} selector: The node selector to get the node target for the event.
  *        To target an element in a specific iframe, pass an array of CSS selectors
  *        (e.g. ["iframe", ".el-in-iframe"])
  * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeMouse
@@ -1964,7 +1991,7 @@ async function safeSynthesizeMouseEventAtCenterInContentPage(
  * Scroll into view an element in the content page matching the passed selector
  *
  * @param {BrowsingContext} browsingContext: The browsing context the element lives in.
- * @param {String} selector: The node selector to get the node to scroll into view
+ * @param {string} selector: The node selector to get the node to scroll into view
  * @returns {Promise}
  */
 function scrollContentPageNodeIntoView(browsingContext, selector) {
@@ -1982,7 +2009,7 @@ function scrollContentPageNodeIntoView(browsingContext, selector) {
 /**
  * Change the zoom level of the selected page.
  *
- * @param {Number} zoomLevel
+ * @param {number} zoomLevel
  */
 function setContentPageZoomLevel(zoomLevel) {
   gBrowser.selectedBrowser.fullZoom = zoomLevel;
@@ -1991,8 +2018,8 @@ function setContentPageZoomLevel(zoomLevel) {
 /**
  * Wait for the next DOCUMENT_EVENT dom-complete resource on a top-level target
  *
- * @param {Object} commands
- * @return {Promise<Object>}
+ * @param {object} commands
+ * @return {Promise<object>}
  *         Return a promise which resolves once we fully settle the resource listener.
  *         You should await for its resolution before doing the action which may fire
  *         your resource.
@@ -2019,7 +2046,7 @@ async function waitForNextTopLevelDomCompleteResource(commands) {
  * early.
  *
  * @param {BrowsingContext} context
- **/
+ */
 function waitForPresShell(context) {
   return SpecialPowers.spawn(context, [], async () => {
     const winUtils = SpecialPowers.getDOMWindowUtils(content);
@@ -2356,7 +2383,7 @@ function getClientCssProperties() {
 /**
  * Helper method to stop a Service Worker promptly.
  *
- * @param {String} workerUrl
+ * @param {string} workerUrl
  *        Absolute Worker URL to stop.
  */
 async function stopServiceWorker(workerUrl) {
@@ -2422,7 +2449,7 @@ async function stopServiceWorker(workerUrl) {
 /**
  * Helper method to stop and unregister a Service Worker promptly.
  *
- * @param {String} workerUrl
+ * @param {string} workerUrl
  *        Absolute Worker URL to unregister.
  */
 async function unregisterServiceWorker(workerUrl) {
@@ -2521,22 +2548,24 @@ async function toggleJsTracer(toolbox) {
 /**
  * Retrieve the context menu element corresponding to the provided id, for the
  * provided netmonitor instance.
- * @param {Object} monitor
+ *
+ * @param {object} monitor
  *        The network monitor object
- * @param {String} id
+ * @param {string} id
  *        The id of the context menu item
  */
 function getNetmonitorContextMenuItem(monitor, id) {
-  const Menu = require("resource://devtools/client/framework/menu.js");
-  return Menu.getMenuElementById(id, monitor.panelWin.document);
+  const menuDoc = DevToolsUtils.getTopWindow(monitor.panelWin).document;
+  return menuDoc.getElementById(id);
 }
 
-/*
+/**
  * Selects and clicks the context menu item of the netmonitor, it should
  * also wait for the popup to close.
- * @param {Object} monitor
+ *
+ * @param {object} monitor
  *        The network monitor object
- * @param {String} id
+ * @param {string} id
  *        The id of the context menu item
  */
 async function selectNetmonitorContextMenuItem(monitor, id) {
@@ -2570,7 +2599,7 @@ async function _maybeOpenAncestorMenu(menuItem) {
  * which contains a given string.
  *
  * @param {Toolbox} toolbox
- * @param {String} query
+ * @param {string} query
  * @return {Array<DOMElement>}
  */
 async function findConsoleMessages(toolbox, query) {
@@ -2588,8 +2617,8 @@ async function findConsoleMessages(toolbox, query) {
  * Returns the DOM Element in the Web Console for the link to the JS Source.
  *
  * @param {Toolbox} toolbox
- * @param {String} messageText
- * @param {String} linkText
+ * @param {string} messageText
+ * @param {string} linkText
  * @return {DOMElement}
  */
 async function waitForConsoleMessageLink(toolbox, messageText, linkText) {
@@ -2608,4 +2637,93 @@ async function waitForConsoleMessageLink(toolbox, messageText, linkText) {
 
     return linkEl;
   });
+}
+
+/**
+ * Click on a Frame component link and ensure it opens the debugger on the expected location
+ *
+ * @param {Toolbox} toolbox
+ * @param {DOMElement} frameLinkNode
+ * @param {Object] options
+ * @param {string | null} options.url
+ * @param {number | null} options.line
+ * @param {number | null} options.column
+ * @param {string | undefined} logPointExpr
+ */
+async function clickAndAssertFrameLinkNode(
+  toolbox,
+  frameLinkNode,
+  { url, line, column },
+  logPointExpr
+) {
+  info("checking click on node location");
+
+  // If the debugger hasn't fully loaded yet and breakpoints are still being
+  // added when we click on the logpoint link, the logpoint panel might not
+  // render. Work around this for now, see bug 1592854.
+  if (logPointExpr) {
+    await waitForTime(1000);
+  }
+
+  const onSourceOpened = toolbox.once("source-opened-in-debugger");
+
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    // The frame DOM Element may be coming from a Debugger Frame component, or a shared compoentn Frame component
+    // and the link would be at a distinct selector.
+    frameLinkNode.querySelector(".frame-link-filename") ||
+      frameLinkNode.querySelector(".location")
+  );
+
+  // Wait for the source to finish loading, if it is pending.
+  await onSourceOpened;
+
+  // Wait for the debugger to have fully processed the opened source
+  const dbg = toolbox.getPanel("jsdebugger");
+
+  const selectedLocation = await waitFor(() =>
+    dbg._selectors.getSelectedLocation(dbg._getState())
+  );
+
+  if (typeof url == "string") {
+    const frameUrl = frameLinkNode.getAttribute("data-url");
+    is(frameUrl, url, "Frame link url is correct");
+
+    is(selectedLocation.source.url, url, "debugger opened url is correct");
+  }
+  if (typeof line == "number") {
+    const frameLine = frameLinkNode.getAttribute("data-line");
+    is(parseInt(frameLine, 10), line, "Frame link line is correct");
+
+    is(selectedLocation.line, line, "debugger opened line is correct");
+  }
+  if (typeof column == "number") {
+    // Note that debugger's Frame component doesn't show the column
+    const frameColumn = frameLinkNode.getAttribute("data-column");
+    is(parseInt(frameColumn, 10), column, "Frame link column is correct");
+
+    // Redux location object uses 0-based column, while we display a 1-based one.
+    is(
+      selectedLocation.column + 1,
+      column,
+      "debugger opened column is correct"
+    );
+  }
+
+  if (logPointExpr !== undefined && logPointExpr !== "") {
+    const inputEl = dbg.panelWin.document.activeElement;
+
+    const isPanelFocused =
+      inputEl.classList.contains("cm-content") &&
+      inputEl.closest(".conditional-breakpoint-panel.log-point");
+
+    ok(isPanelFocused, "The textarea of logpoint panel is focused");
+
+    const inputValue = inputEl.parentElement.parentElement.innerText.trim();
+    is(
+      inputValue,
+      logPointExpr,
+      "The input in the open logpoint panel matches the logpoint expression"
+    );
+  }
 }

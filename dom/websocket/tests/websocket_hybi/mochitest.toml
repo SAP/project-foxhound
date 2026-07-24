@@ -1,7 +1,7 @@
 [DEFAULT]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = [
   "file_binary-frames_wsh.py",

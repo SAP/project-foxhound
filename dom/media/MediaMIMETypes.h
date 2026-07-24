@@ -166,8 +166,13 @@ class MediaExtendedMIMEType {
   Maybe<int32_t> GetChannels() const { return GetMaybeNumber(mChannels); }
   Maybe<int32_t> GetSamplerate() const { return GetMaybeNumber(mSamplerate); }
 
+  // Total number of parameters, including non-media parameters. Lazily init'd -
+  // mutates mNumParams and numParamsCached on first use. Callable from any
+  // thread, not thread safe.
+  size_t GetParameterCount() const;
+
   // Original string. Note that "type/subtype" may not be lowercase,
-  // use Type().AsString() instead to get the normalized "type/subtype".
+  // use Type().AsString() instead to get the normalized "type/subtype"
   const nsCString& OriginalString() const { return mOriginalString; }
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
@@ -207,6 +212,9 @@ class MediaExtendedMIMEType {
   int32_t mSamplerate = -1;  // -1 if not provided.
   // For both audio and video.
   int32_t mBitrate = -1;  // -1 if not provided.
+  // General parameter information
+  mutable size_t mNumParams = 0;          // lazily init'd since counting params
+  mutable bool mNumParamsCached = false;  // needs additional parser (CMimeType)
 };
 
 Maybe<MediaExtendedMIMEType> MakeMediaExtendedMIMEType(const nsAString& aType);

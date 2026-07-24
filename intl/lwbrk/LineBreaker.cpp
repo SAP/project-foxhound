@@ -5,7 +5,7 @@
 
 #include "mozilla/intl/LineBreaker.h"
 
-#include "diplomat_runtime.hpp"
+#include "icu4x/diplomat_runtime.hpp"
 #include "icu4x/LineBreakIteratorLatin1.hpp"
 #include "icu4x/LineBreakIteratorUtf16.hpp"
 #include "icu4x/LineSegmenter.hpp"
@@ -16,7 +16,6 @@
 #include "nsTArray.h"
 #include "nsUnicodeProperties.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/intl/Segmenter.h"
@@ -454,6 +453,7 @@ static int8_t GetClass(uint32_t u, LineBreakRule aLevel,
       /* AKSARA_START = 45,                 [AS] */ CLASS_CHARACTER,
       /* VIRAMA_FINAL = 46,                 [VF] */ CLASS_CHARACTER,
       /* VIRAMA = 47,                       [VI] */ CLASS_CHARACTER,
+      /* UNAMBIGUOUS_HYPHEN = 48            [HH] */ CLASS_BREAKABLE,
   };
 
   static_assert(U_LB_COUNT == std::size(sUnicodeLineBreakToClass),
@@ -1317,7 +1317,8 @@ void LineBreaker::ComputeBreakPositions(const uint8_t* aChars, uint32_t aLength,
     auto lineSegmenter =
         GetLineSegmenter(useDefault, aWordBreak, aLevel, aIsChineseOrJapanese);
     auto segmenter = icu4x::LineSegmenter::FromFFI(lineSegmenter);
-    auto iterator = segmenter->segment_latin1(diplomat::span{aChars, aLength});
+    auto iterator = segmenter->segment_latin1(
+        diplomat::span<const uint8_t>{aChars, aLength});
 
     while (true) {
       const int32_t nextPos = iterator->next();

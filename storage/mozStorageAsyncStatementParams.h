@@ -7,7 +7,6 @@
 #ifndef mozilla_storage_mozStorageAsyncStatementParams_h_
 #define mozilla_storage_mozStorageAsyncStatementParams_h_
 
-#include "mozilla/Attributes.h"
 #include "nsPIDOMWindow.h"
 #include "nsWrapperCache.h"
 

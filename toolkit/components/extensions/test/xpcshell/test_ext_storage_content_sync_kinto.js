@@ -23,5 +23,5 @@ add_task(async function test_contentscript_storage_sync() {
 });
 
 add_task(async function test_contentscript_storage_no_bytes_in_use() {
-  await test_contentscript_storage_area_with_bytes_in_use("sync", false);
+  await test_contentscript_storage_sync_getBytesInUse("sync", false);
 });

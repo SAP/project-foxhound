@@ -170,9 +170,9 @@ exports.defineLazyPrototypeGetter = function (object, key, callback) {
  *
  * @param {Debugger.Object} object
  *        The Debugger.Object to get the value from.
- * @param {String} key
+ * @param {string} key
  *        The key to look for.
- * @param {Boolean} invokeUnsafeGetter (defaults to false).
+ * @param {boolean} invokeUnsafeGetter (defaults to false).
  *        Optional boolean to indicate if the function should execute unsafe getter
  *        in order to retrieve its result's properties.
  *        ⚠️ This should be set to true *ONLY* on user action as it may cause side-effects
@@ -334,9 +334,9 @@ exports.hasSafeGetter = function (desc) {
  *
  * @param {Debugger.Object} object
  *        The Debugger.Object to check on.
- * @param {String} key
+ * @param {string} key
  *        The key to look for.
- * @param {Boolean} invokeUnsafeGetter (defaults to false).
+ * @param {boolean} invokeUnsafeGetter (defaults to false).
  *        Optional boolean to indicate if the function should execute unsafe getter
  *        in order to retrieve its result's properties.
  * @return Boolean
@@ -727,8 +727,8 @@ function mainThreadFetch(
 /**
  * Opens a channel for given URL. Tries a bit harder than NetUtil.newChannel.
  *
- * @param {String} url - The URL to open a channel for.
- * @param {Object} options - The options object passed to @method fetch.
+ * @param {string} url - The URL to open a channel for.
+ * @param {object} options - The options object passed to @method fetch.
  * @return {nsIChannel} - The newly created channel. Throws on failure.
  */
 function newChannelForURL(url, { policy, window, principal }) {
@@ -807,7 +807,7 @@ if (this.isWorker) {
 /**
  * Open the file at the given path for reading.
  *
- * @param {String} filePath
+ * @param {string} filePath
  *
  * @returns Promise<nsIInputStream>
  */
@@ -835,13 +835,13 @@ exports.openFileStream = function (filePath) {
  *        The parent window to use to display the filepicker.
  * @param {UInt8Array} dataArray
  *        The data to write to the file.
- * @param {String} fileName
+ * @param {string} fileName
  *        The suggested filename.
  * @param {Array} filters
  *        An array of object of the following shape:
  *          - pattern: A pattern for accepted files (example: "*.js")
  *          - label: The label that will be displayed in the save file dialog.
- * @return {String|null}
+ * @return {string | null}
  *        The path to the local saved file, if saved.
  */
 exports.saveAs = async function (
@@ -878,7 +878,7 @@ exports.saveAs = async function (
  * @param {nsIWindow} parentWindow
  *        Optional parent window. If null the parent window of the file picker
  *        will be the window of the attached input element.
- * @param {String} suggestedFilename
+ * @param {string} suggestedFilename
  *        The suggested filename.
  * @param {Array} filters
  *        An array of object of the following shape:
@@ -1018,11 +1018,11 @@ exports.getTopWindow = getTopWindow;
 /**
  * Check whether two objects are identical by performing
  * a deep equality check on their properties and values.
- * See toolkit/modules/ObjectUtils.jsm for implementation.
+ * See toolkit/modules/ObjectUtils.sys.mjs for implementation.
  *
- * @param {Object} a
- * @param {Object} b
- * @return {Boolean}
+ * @param {object} a
+ * @param {object} b
+ * @return {boolean}
  */
 exports.deepEqual = (a, b) => {
   return lazy.ObjectUtils.deepEqual(a, b);

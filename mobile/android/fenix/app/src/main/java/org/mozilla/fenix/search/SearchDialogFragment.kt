@@ -24,14 +24,12 @@ import android.view.ViewGroup
 import android.view.ViewStub
 import android.view.Window
 import android.view.WindowManager
-import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentDialog
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDialogFragment
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -47,6 +45,7 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
@@ -79,7 +78,6 @@ import mozilla.components.support.ktx.kotlin.toNormalizedUrl
 import mozilla.components.ui.autocomplete.InlineAutocompleteEditText
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Awesomebar
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.VoiceSearch
@@ -94,6 +92,7 @@ import org.mozilla.fenix.databinding.FragmentSearchDialogBinding
 import org.mozilla.fenix.databinding.SearchSuggestionsHintBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.increaseTapArea
+import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
@@ -103,6 +102,7 @@ import org.mozilla.fenix.navigation.DefaultNavControllerProvider
 import org.mozilla.fenix.navigation.NavControllerProvider
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.search.awesomebar.AwesomeBarView
+import org.mozilla.fenix.search.awesomebar.DeleteHistoryEntryDelegate
 import org.mozilla.fenix.search.awesomebar.toSearchProviderState
 import org.mozilla.fenix.search.ext.searchEngineShortcuts
 import org.mozilla.fenix.search.toolbar.IncreasedTapAreaActionDecorator
@@ -110,6 +110,11 @@ import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
 import org.mozilla.fenix.search.toolbar.SearchSelectorToolbarAction
 import org.mozilla.fenix.search.toolbar.ToolbarView
 import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.telemetry.ACTION_QR_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
+import kotlin.LazyThreadSafetyMode.NONE
+import mozilla.components.browser.toolbar.R as toolbarR
+import org.mozilla.fenix.GleanMetrics.Toolbar as GleanMetricsToolbar
 
 typealias SearchDialogFragmentStore = SearchFragmentStore
 
@@ -207,7 +212,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         return ComponentDialog(requireContext(), this.theme).apply {
-            if ((requireActivity() as HomeActivity).browsingModeManager.mode.isPrivate) {
+            if (requireComponents.appStore.state.mode.isPrivate) {
                 this.secure(requireActivity())
             }
 
@@ -244,11 +249,11 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         val args by navArgs<SearchDialogFragmentArgs>()
         _binding = FragmentSearchDialogBinding.inflate(inflater, container, false)
         val activity = requireActivity() as HomeActivity
-        val isPrivate = activity.browsingModeManager.mode.isPrivate
+        val isPrivate = requireComponents.appStore.state.mode.isPrivate
 
         store = SearchDialogFragmentStore(
             createInitialSearchFragmentState(
-                activity,
+                requireActivity(),
                 requireComponents,
                 tabId = args.sessionId,
                 pastedText = args.pastedText,
@@ -259,8 +264,13 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             ),
         )
 
+        val deleteHistoryDelegate by lazy(NONE) {
+            DeleteHistoryEntryDelegate(binding.root, requireComponents, store)
+        }
+
         controller = SearchDialogController(
-            activity = activity,
+            appStore = requireComponents.appStore,
+            context = requireContext(),
             store = requireComponents.core.store,
             tabsUseCases = requireComponents.useCases.tabsUseCases,
             fenixBrowserUseCases = requireComponents.useCases.fenixBrowserUseCases,
@@ -283,6 +293,9 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             dismissDialogAndGoBack = {
                 dismissDialogAndGoBack()
             },
+            showDeleteHistoryItemSnackbar = {
+                deleteHistoryDelegate.handleDeletingHistoryEntry(it)
+            },
         )
         nullableInteractor = SearchDialogInteractor(searchController = requireNotNull(controller))
 
@@ -297,7 +310,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             binding.toolbar,
             fromHomeFragment,
         ).also {
-            inlineAutocompleteEditText = it.view.findViewById(R.id.mozac_browser_toolbar_edit_url_view)
+            inlineAutocompleteEditText = it.view.findViewById(toolbarR.id.mozac_browser_toolbar_edit_url_view)
             inlineAutocompleteEditText.increaseTapArea(TAP_INCREASE_DPS_4)
         }
 
@@ -317,6 +330,9 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         }
 
         awesomeBarView.view.setOnEditSuggestionListener(toolbarView.view::setSearchTerms)
+        awesomeBarView.view.setOnRemoveSuggestionButtonClicked {
+            interactor.onRemoveHistorySuggestionButtonClicked(it)
+        }
 
         inlineAutocompleteEditText.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
 
@@ -367,7 +383,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         return binding.root
     }
 
-    @SuppressWarnings("LongMethod", "ComplexMethod")
+    @SuppressWarnings("LongMethod", "CognitiveComplexMethod")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -436,12 +452,12 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             } else {
                 view.hideKeyboard()
                 toolbarView.view.clearFocus()
-                (activity as HomeActivity)
-                    .openToBrowserAndLoad(
-                        searchTermOrURL = clipboardUrl,
-                        newTab = store.state.tabId == null,
-                        from = BrowserDirection.FromSearchDialog,
-                    )
+                findNavController().openToBrowser()
+                requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+                    searchTermOrURL = clipboardUrl,
+                    newTab = store.state.tabId == null,
+                    flags = EngineSession.LoadUrlFlags.none(),
+                )
             }
             requireContext().components.clipboardHandler.text = null
         }
@@ -450,14 +466,15 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             val searchSuggestionHintBinding = SearchSuggestionsHintBinding.bind(inflated)
 
             searchSuggestionHintBinding.learnMore.setOnClickListener {
-                (activity as HomeActivity)
-                    .openToBrowserAndLoad(
-                        searchTermOrURL = SupportUtils.getGenericSumoURLForTopic(
-                            SupportUtils.SumoTopic.SEARCH_SUGGESTION,
-                        ),
-                        newTab = store.state.tabId == null,
-                        from = BrowserDirection.FromSearchDialog,
+                val url = SupportUtils.getGenericSumoURLForTopic(
+                    SupportUtils.SumoTopic.SEARCH_SUGGESTION,
                     )
+                findNavController().openToBrowser()
+                requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+                    searchTermOrURL = url,
+                    newTab = store.state.tabId == null,
+                    flags = EngineSession.LoadUrlFlags.none(),
+                )
             }
 
             searchSuggestionHintBinding.allow.setOnClickListener {
@@ -493,9 +510,10 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         ImeInsetsSynchronizer.setup(view)
         observeClipboardState()
         observeSuggestionProvidersState()
+        observeHiddenSearchSuggestions()
 
         val shouldShowSuggestions = store.state.run {
-            (showTrendingSearches || showRecentSearches || showShortcutsSuggestions) &&
+            (showTrendingSearches || showRecentSearches) &&
                 (query.isNotEmpty() || FxNimbus.features.searchSuggestionsOnHomepage.value().enabled)
         }
 
@@ -564,7 +582,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
          *  query as consumeFrom may run several times on fragment start due to state updates.
          * */
 
-        flow.map { state -> state.url != state.query && state.query.isNotBlank() || state.showSearchShortcuts }
+        flow.map { state -> (state.url != state.query && state.query.isNotBlank()) || state.showSearchShortcuts }
             .distinctUntilChanged()
             .collect { shouldShowAwesomebar ->
                 binding.awesomeBar.visibility = if (shouldShowAwesomebar) {
@@ -588,14 +606,13 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             }
     }
 
+    private fun observeHiddenSearchSuggestions() = consumeFlow(store) { flow ->
+        flow.distinctUntilChangedBy { it.hiddenSuggestions }
+            .collect { awesomeBarView.view.updateHiddenSuggestions(it.hiddenSuggestions) }
+    }
+
     private fun updateAccessibilityTraversalOrder() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            binding.fillLinkFromClipboard.accessibilityTraversalAfter = binding.searchWrapper.id
-        } else {
-            viewLifecycleOwner.lifecycleScope.launch {
-                binding.searchWrapper.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
-            }
-        }
+        binding.fillLinkFromClipboard.accessibilityTraversalAfter = binding.searchWrapper.id
     }
 
     override fun onResume() {
@@ -624,6 +641,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        _awesomeBarView?.dispose()
         _awesomeBarView = null
         nullableInteractor = null
         controller?.apply {
@@ -708,7 +726,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                 val normalizedUrl = result.toNormalizedUrl()
                 if (!normalizedUrl.toUri().isHttpOrHttps) {
                     activity?.let {
-                        AlertDialog.Builder(it).apply {
+                        MaterialAlertDialogBuilder(it).apply {
                             setMessage(R.string.qr_scanner_dialog_invalid)
                             setPositiveButton(R.string.qr_scanner_dialog_invalid_ok) { dialog: DialogInterface, _ ->
                                 dialog.dismiss()
@@ -718,7 +736,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                     }
                 } else {
                     activity?.let {
-                        AlertDialog.Builder(it).apply {
+                        MaterialAlertDialogBuilder(it).apply {
                             val spannable = resources.getSpanned(
                                 R.string.qr_scanner_confirmation_dialog_message,
                                 getString(R.string.app_name) to StyleSpan(Typeface.BOLD),
@@ -729,13 +747,15 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                                 dialog.cancel()
                             }
                             setPositiveButton(R.string.qr_scanner_dialog_positive) { dialog: DialogInterface, _ ->
-                                (activity as? HomeActivity)?.openToBrowserAndLoad(
-                                    searchTermOrURL = normalizedUrl,
-                                    newTab = store.state.tabId == null,
-                                    from = BrowserDirection.FromSearchDialog,
-                                    flags = EngineSession.LoadUrlFlags.external(),
-                                )
-                                dialog.dismiss()
+                                if (isAdded) {
+                                    findNavController().openToBrowser()
+                                    requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+                                        searchTermOrURL = normalizedUrl,
+                                        newTab = store.state.tabId == null,
+                                        flags = EngineSession.LoadUrlFlags.external(),
+                                    )
+                                    dialog.dismiss()
+                                }
                             }
                             create().withCenterAlignedButtons()
                         }.show()
@@ -934,7 +954,9 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             return
         }
 
-        Events.browserToolbarQrScanTapped.record(NoExtras())
+        GleanMetricsToolbar.buttonTapped.record(
+            GleanMetricsToolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_QR_CLICKED),
+        )
 
         view?.hideKeyboard()
         toolbarView.view.clearFocus()
@@ -973,7 +995,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             } else {
                 val clipboardUrl = context?.components?.clipboardHandler?.extractURL()
 
-                if (clipboardUrl != null && !((activity as HomeActivity).browsingModeManager.mode.isPrivate)) {
+                if (clipboardUrl != null && !requireComponents.appStore.state.mode.isPrivate) {
                     requireComponents.core.engine.speculativeConnect(clipboardUrl)
                 }
                 binding.clipboardUrl.text = clipboardUrl

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef InputChannelThrottleQueueParent_h__
-#define InputChannelThrottleQueueParent_h__
+#ifndef InputChannelThrottleQueueParent_h_
+#define InputChannelThrottleQueueParent_h_
 
 #include "nsISupportsImpl.h"
 #include "nsIThrottledInputChannel.h"
@@ -41,4 +41,4 @@ class InputChannelThrottleQueueParent final
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // InputChannelThrottleQueueParent_h__
+#endif  // InputChannelThrottleQueueParent_h_

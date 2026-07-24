@@ -16,13 +16,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "HandlerService",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "MIMEService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -132,16 +132,8 @@ export let DownloadsViewableInternally = {
     {
       extension: "avif",
       mimeTypes: ["image/avif"],
-      initAvailable() {
-        XPCOMUtils.defineLazyPreferenceGetter(
-          this,
-          "available",
-          "image.avif.enabled",
-          false,
-          () => DownloadsViewableInternally._updateHandler(this)
-        );
-      },
-      // available getter is set by initAvailable()
+      available: true,
+      managedElsewhere: false,
     },
     {
       extension: "jxl",

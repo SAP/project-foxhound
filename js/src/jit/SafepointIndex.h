@@ -7,8 +7,6 @@
 #ifndef jit_SafepointIndex_h
 #define jit_SafepointIndex_h
 
-#include "mozilla/Assertions.h"
-
 #include <stdint.h>
 
 #include "jit/IonTypes.h"

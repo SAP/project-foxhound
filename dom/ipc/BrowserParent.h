@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_BrowserParent_h
 #define mozilla_dom_BrowserParent_h
 
-#include <utility>
-
 #include "LiveResizeListener.h"
 #include "Units.h"
 #include "js/TypeDecls.h"
@@ -66,7 +64,6 @@ class SourceSurface;
 namespace dom {
 
 class CanonicalBrowsingContext;
-class ClonedMessageData;
 class ContentParent;
 class Element;
 class DataTransfer;
@@ -90,7 +87,6 @@ class BrowserParent final : public PBrowserParent,
                             public nsSupportsWeakReference,
                             public TabContext,
                             public LiveResizeListener {
-  typedef mozilla::dom::ClonedMessageData ClonedMessageData;
   using TapType = GeckoContentController_TapType;
 
   friend class PBrowserParent;
@@ -206,6 +202,9 @@ class BrowserParent final : public PBrowserParent,
    */
   bool CreatingWindow() const { return mCreatingWindow; }
 
+  // Whether our embedder can render transparent.
+  bool IsTransparent() const;
+
   /*
    * Visit each BrowserParent in the tree formed by PBrowser and
    * PBrowserBridge, including `this`.
@@ -308,9 +307,7 @@ class BrowserParent final : public PBrowserParent,
       nsTArray<nsCString>&& aTrackingFullHashes,
       const Maybe<mozilla::ContentBlockingNotifier::
                       StorageAccessPermissionGrantedReason>& aReason,
-      const Maybe<mozilla::ContentBlockingNotifier::CanvasFingerprinter>&
-          aCanvasFingerprinter,
-      const Maybe<bool>& aCanvasFingerprinterKnownText);
+      const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent);
 
   mozilla::ipc::IPCResult RecvNavigationFinished();
 
@@ -328,11 +325,11 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvImageLoadComplete(const nsresult& aResult);
 
   mozilla::ipc::IPCResult RecvSyncMessage(
-      const nsString& aMessage, const ClonedMessageData& aData,
-      nsTArray<ipc::StructuredCloneData>* aRetVal);
+      const nsString& aMessage, NotNull<ipc::StructuredCloneData*> aData,
+      nsTArray<NotNull<RefPtr<ipc::StructuredCloneData>>>* aRetVal);
 
-  mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMessage,
-                                           const ClonedMessageData& aData);
+  mozilla::ipc::IPCResult RecvAsyncMessage(
+      const nsString& aMessage, NotNull<ipc::StructuredCloneData*> aData);
 
   mozilla::ipc::IPCResult RecvNotifyIMEFocus(
       const ContentCache& aContentCache,
@@ -690,7 +687,7 @@ class BrowserParent final : public PBrowserParent,
                              LayoutDeviceIntRect* aDragRect);
 
   mozilla::ipc::IPCResult RecvEnsureLayersConnected(
-      CompositorOptions* aCompositorOptions);
+      Maybe<CompositorOptions>* aCompositorOptions);
 
   // LiveResizeListener implementation
   void LiveResizeStarted() override;
@@ -701,8 +698,7 @@ class BrowserParent final : public PBrowserParent,
 
   void NavigateByKey(bool aForward, bool aForDocumentNavigation);
 
-  bool GetDocShellIsActive();
-  void SetDocShellIsActive(bool aDocShellIsActive);
+  bool GetDocShellIsActive() const;
 
   bool GetHasPresented();
   bool GetHasLayers();
@@ -712,6 +708,7 @@ class BrowserParent final : public PBrowserParent,
   void SetPriorityHint(bool aPriorityHint);
   void PreserveLayers(bool aPreserveLayers);
   void NotifyResolutionChanged();
+  void NotifyTransparencyChanged();
 
   bool CanCancelContentJS(nsIRemoteTab::NavigationType aNavigationType,
                           int32_t aNavigationIndex,
@@ -729,9 +726,10 @@ class BrowserParent final : public PBrowserParent,
   void SetBrowserBridgeParent(BrowserBridgeParent* aBrowser);
   void SetBrowserHost(BrowserHost* aBrowser);
 
-  bool ReceiveMessage(
-      const nsString& aMessage, bool aSync, ipc::StructuredCloneData* aData,
-      nsTArray<ipc::StructuredCloneData>* aJSONRetVal = nullptr);
+  bool ReceiveMessage(const nsString& aMessage, bool aSync,
+                      NotNull<ipc::StructuredCloneData*> aData,
+                      nsTArray<NotNull<RefPtr<ipc::StructuredCloneData>>>*
+                          aJSONRetVal = nullptr);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 

@@ -1,0 +1,13 @@
+---
+includes:
+  description: >
+    "Ensure we only include MFBT headers we actually use"
+  extensions: ['c', 'cc', 'cpp', 'cxx', 'h', 'hpp', 'm', 'mm']
+  include: ['.']
+  exclude:
+    - js/src/tests/style/BadIncludesOrder-inl.h
+    - config/msvc-stl-wrapper.template.h
+    - widget/cocoa/nsMenuItemIconX.mm
+  type: external
+  payload: includes:lint
+  support-files: ['tools/lint/includes/**']

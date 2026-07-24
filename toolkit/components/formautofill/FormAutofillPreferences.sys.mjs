@@ -6,46 +6,102 @@
  * Injects the form autofill section into about:preferences.
  */
 
-// Add addresses enabled flag in telemetry environment for recording the number of
-// users who disable/enable the address autofill feature.
-const MANAGE_ADDRESSES_URL =
-  "chrome://formautofill/content/manageAddresses.xhtml";
-const MANAGE_CREDITCARDS_URL =
-  "chrome://formautofill/content/manageCreditCards.xhtml";
-
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+  formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
+  ManageAddresses: "chrome://formautofill/content/manageDialog.mjs",
 });
+
 ChromeUtils.defineLazyGetter(
   lazy,
   "l10n",
   () =>
     new Localization(
-      ["branding/brand.ftl", "browser/preferences/preferences.ftl"],
+      [
+        "toolkit/formautofill/formAutofill.ftl",
+        "branding/brand.ftl",
+        "browser/preferences/preferences.ftl",
+      ],
       true
     )
 );
 
-const { ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF } =
-  FormAutofill;
+const MANAGE_ADDRESSES_URL =
+  "chrome://formautofill/content/manageAddresses.xhtml";
+const EDIT_ADDRESS_URL = "chrome://formautofill/content/editAddress.xhtml";
+const MANAGE_CREDITCARDS_URL =
+  "chrome://formautofill/content/manageCreditCards.xhtml";
+const EDIT_CREDIT_CARD_URL =
+  "chrome://formautofill/content/editCreditCard.xhtml";
+
 const {
   MANAGE_ADDRESSES_L10N_IDS,
   EDIT_ADDRESS_L10N_IDS,
   MANAGE_CREDITCARDS_L10N_IDS,
   EDIT_CREDITCARD_L10N_IDS,
 } = FormAutofillUtils;
-// Add credit card enabled flag in telemetry environment for recording the number of
-// users who disable/enable the credit card autofill feature.
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
+const { ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF } =
+  FormAutofill;
 
-export function FormAutofillPreferences() {}
+const FORM_AUTOFILL_CONFIG = {
+  payments: {
+    l10nId: "payments-group",
+    headingLevel: 2,
+    items: [
+      {
+        id: "saveAndFillPayments",
+        l10nId: "autofill-payment-methods-checkbox-message-2",
+        supportPage: "credit-card-autofill",
+        items: [
+          {
+            id: "requireOSAuthForPayments",
+            l10nId: "autofill-reauth-payment-methods-checkbox-2",
+            supportPage:
+              "credit-card-autofill#w_require-authentication-for-autofill",
+          },
+        ],
+      },
+      {
+        id: "savedPaymentsButton",
+        l10nId: "autofill-payment-methods-manage-payments-button",
+        control: "moz-box-button",
+        controlAttrs: {
+          "search-l10n-ids": MANAGE_CREDITCARDS_L10N_IDS.concat(
+            EDIT_CREDITCARD_L10N_IDS
+          ).join(","),
+        },
+      },
+    ],
+  },
+  addresses: {
+    l10nId: "addresses-group",
+    headingLevel: 2,
+    items: [
+      {
+        id: "saveAndFillAddresses",
+        l10nId: "autofill-addresses-checkbox-message",
+        supportPage: "automatically-fill-your-address-web-forms",
+      },
+      {
+        id: "savedAddressesButton",
+        l10nId: "autofill-addresses-manage-addresses-button",
+        control: "moz-box-button",
+        controlAttrs: {
+          "search-l10n-ids": MANAGE_ADDRESSES_L10N_IDS.concat(
+            EDIT_ADDRESS_L10N_IDS
+          ).join(","),
+        },
+      },
+    ],
+  },
+};
 
-FormAutofillPreferences.prototype = {
+export class FormAutofillPreferences {
   /**
    * Create the Form Autofill preference group.
    *
@@ -54,18 +110,7 @@ FormAutofillPreferences.prototype = {
    */
   init(document) {
     this.createPreferenceGroup(document);
-    this.attachEventListeners();
-
-    return this.refs.formAutofillFragment;
-  },
-
-  /**
-   * Remove event listeners and the preference group.
-   */
-  uninit() {
-    this.detachEventListeners();
-    this.refs.formAutofillGroup.remove();
-  },
+  }
 
   /**
    * Create Form Autofill preference group
@@ -73,330 +118,469 @@ FormAutofillPreferences.prototype = {
    * @param  {HTMLDocument} document
    */
   createPreferenceGroup(document) {
-    let formAutofillFragment = document.createDocumentFragment();
-    let formAutofillGroupBoxLabel = document.createXULElement("label");
-    let formAutofillGroupBoxLabelHeading = document.createElementNS(
-      HTML_NS,
-      "h2"
+    const win = document.ownerGlobal;
+    win.Preferences.addAll([
+      // Credit cards and addresses
+      { id: ENABLED_AUTOFILL_ADDRESSES_PREF, type: "bool" },
+      { id: ENABLED_AUTOFILL_CREDITCARDS_PREF, type: "bool" },
+      {
+        id: "extensions.formautofill.creditCards.os-auth.locked.enabled",
+        type: "bool",
+      },
+    ]);
+
+    win.Preferences.addSetting({
+      id: "saveAndFillAddresses",
+      pref: ENABLED_AUTOFILL_ADDRESSES_PREF,
+      visible: () => FormAutofill.isAutofillAddressesAvailable,
+    });
+    win.Preferences.addSetting({
+      id: "savedAddressesButton",
+      pref: null,
+      visible: () => FormAutofill.isAutofillAddressesAvailable,
+      onUserClick: e => {
+        e.preventDefault();
+        if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
+          e.target.ownerGlobal.gotoPref("paneManageAddresses");
+        } else {
+          e.target.ownerGlobal.gSubDialog.open(MANAGE_ADDRESSES_URL);
+        }
+      },
+    });
+
+    win.Preferences.addSetting({
+      id: "saveAndFillPayments",
+      pref: ENABLED_AUTOFILL_CREDITCARDS_PREF,
+      visible: () => FormAutofill.isAutofillCreditCardsAvailable,
+    });
+    win.Preferences.addSetting({
+      id: "savedPaymentsButton",
+      pref: null,
+      visible: () => FormAutofill.isAutofillCreditCardsAvailable,
+      onUserClick: e => {
+        e.preventDefault();
+
+        if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
+          e.target.ownerGlobal.gotoPref("paneManagePayments");
+        } else {
+          e.target.ownerGlobal.gSubDialog.open(MANAGE_CREDITCARDS_URL);
+        }
+      },
+    });
+    win.Preferences.addSetting({
+      id: "requireOSAuthForPayments",
+      visible: () => lazy.OSKeyStore.canReauth(),
+      get: () => FormAutofillUtils.getOSAuthEnabled(),
+      async set(checked) {
+        await FormAutofillPreferences.trySetOSAuthEnabled(win, checked);
+
+        // Trigger change event to keep checkbox UI in sync with pref value
+        Services.obs.notifyObservers(null, "OSAuthEnabledChange");
+      },
+      setup: emitChange => {
+        Services.obs.addObserver(emitChange, "OSAuthEnabledChange");
+        return () =>
+          Services.obs.removeObserver(emitChange, "OSAuthEnabledChange");
+      },
+    });
+
+    win.SettingGroupManager.registerGroups(FORM_AUTOFILL_CONFIG);
+    win.initSettingGroup("payments");
+    win.initSettingGroup("addresses");
+    Services.obs.notifyObservers(win, "formautofill-preferences-initialized");
+  }
+
+  async initializePaymentsStorage() {
+    await lazy.formAutofillStorage.initialize();
+  }
+
+  async initializeAddressesStorage() {
+    await lazy.formAutofillStorage.initialize();
+  }
+
+  /**
+   * Helper that sets OS Auth from the about:preferences, if authorized.
+   *
+   * @param  {object} win
+   *          The browser window.
+   * @param  {boolean} checked
+   *          The new state to set OS auth for payments, which determines if its
+   *          enabled or not. If not authorized, set to the current checked state.
+   */
+  static async trySetOSAuthEnabled(win, checked) {
+    let messageText = await lazy.l10n.formatValueSync(
+      "autofill-creditcard-os-dialog-message"
     );
-    let formAutofillGroup = document.createXULElement("vbox");
-    // Wrappers are used to properly compute the search tooltip positions
-    // let savedAddressesBtnWrapper = document.createXULElement("hbox");
-    // let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
-    this.refs = {};
-    this.refs.formAutofillGroup = formAutofillGroup;
-    this.refs.formAutofillFragment = formAutofillFragment;
+    let captionText = await lazy.l10n.formatValueSync(
+      "autofill-creditcard-os-auth-dialog-caption"
+    );
 
-    formAutofillGroupBoxLabel.appendChild(formAutofillGroupBoxLabelHeading);
-    formAutofillFragment.appendChild(formAutofillGroupBoxLabel);
-    formAutofillFragment.appendChild(formAutofillGroup);
+    // Calling OSKeyStore.ensureLoggedIn() instead of FormAutofillUtils.verifyOSAuth()
+    // since we want to authenticate user each time this setting is changed.
 
-    let showAddressUI = FormAutofill.isAutofillAddressesAvailable;
-    let showCreditCardUI = FormAutofill.isAutofillCreditCardsAvailable;
+    // Note on Glean collection: because OSKeyStore.ensureLoggedIn() is not wrapped in
+    // verifyOSAuth(), it will be documenting "success" for unsupported platforms
+    // and won't record "fail_error", only "fail_user_canceled"
+    let isAuthorized = (
+      await lazy.OSKeyStore.ensureLoggedIn(messageText, captionText, win, false)
+    ).authenticated;
+    Glean.formautofill.promptShownOsReauth.record({
+      trigger: "toggle_pref_os_auth",
+      result: isAuthorized ? "success" : "fail_user_canceled",
+    });
 
-    if (!showAddressUI && !showCreditCardUI) {
+    if (!isAuthorized) {
       return;
     }
 
-    formAutofillGroupBoxLabelHeading.textContent = lazy.l10n.formatValueSync(
-      "pane-privacy-autofill-header"
+    // If target.checked is checked, enable OSAuth. Otherwise, reset the pref value.
+    FormAutofillUtils.setOSAuthEnabled(checked);
+    Glean.formautofill.requireOsReauthToggle.record({
+      toggle_state: checked,
+    });
+  }
+
+  async makePaymentsListItems() {
+    const records = await lazy.formAutofillStorage.creditCards.getAll();
+
+    let items = [];
+
+    if (!records.length) {
+      items = [
+        {
+          id: "no-payments-stored",
+          l10nId: "payments-no-payments-stored-message",
+          control: "moz-box-item",
+          l10nArgs: {},
+        },
+      ];
+    } else {
+      items = records
+        .sort(record => record.timeCreated)
+        .map(record => {
+          const config = {
+            id: "payment-item",
+            control: "moz-box-item",
+            l10nId: "payment-moz-box-item",
+            iconSrc: "chrome://browser/skin/payment-methods-16.svg",
+            l10nArgs: {
+              cardNumber: record["cc-number"].replace(/^(\*+)(\d+)$/, "$1 $2"),
+              expDate: record["cc-exp"].replace(/^(\d{4})-\d{2}$/, "XX/$1"),
+            },
+            options: [
+              {
+                control: "moz-button",
+                iconSrc: "chrome://global/skin/icons/delete.svg",
+                type: "icon",
+                l10nId: "payments-delete-payment-button-label",
+                controlAttrs: {
+                  slot: "actions",
+                  action: "remove",
+                  guid: record.guid,
+                },
+              },
+              {
+                control: "moz-button",
+                iconSrc: "chrome://global/skin/icons/edit.svg",
+                type: "icon",
+                l10nId: "payments-edit-payment-button-label",
+                controlAttrs: {
+                  slot: "actions",
+                  action: "edit",
+                  guid: record.guid,
+                },
+              },
+            ],
+          };
+
+          return config;
+        });
+    }
+
+    return [
+      {
+        id: "payments-list-header",
+        control: "moz-box-item",
+        l10nId: "payments-list-header",
+        slot: "header",
+      },
+      ...items,
+    ];
+  }
+
+  async makeAddressesListItems() {
+    const addresses = await lazy.formAutofillStorage.addresses.getAll();
+    const records = addresses.slice().reverse();
+
+    let items = [];
+
+    if (!records.length) {
+      items = [
+        {
+          id: "no-addresses-stored",
+          l10nId: "addresses-no-addresses-stored-message",
+          l10nArgs: {},
+          control: "moz-box-item",
+        },
+      ];
+    } else {
+      items = records.map(record => {
+        const addressFormatted = [
+          record["street-address"],
+          record["address-level2"],
+          record["address-level1"],
+          record.country,
+          record["postal-code"],
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        const config = {
+          id: "address-item",
+          control: "moz-box-item",
+          l10nId: "address-moz-box-item",
+          iconSrc: "chrome://browser/skin/notification-icons/geo.svg",
+          l10nArgs: {
+            name: `${record.name}`,
+            address: addressFormatted,
+          },
+          options: [
+            {
+              id: "delete-address-button",
+              control: "moz-button",
+              iconSrc: "chrome://global/skin/icons/delete.svg",
+              type: "icon",
+              l10nId: "addreses-delete-address-button-label",
+              controlAttrs: {
+                slot: "actions",
+                action: "remove",
+                guid: record.guid,
+              },
+            },
+            {
+              id: "edit-address-button",
+              control: "moz-button",
+              iconSrc: "chrome://global/skin/icons/edit.svg",
+              type: "icon",
+              l10nId: "addreses-edit-address-button-label",
+              controlAttrs: {
+                slot: "actions",
+                action: "edit",
+                guid: record.guid,
+              },
+            },
+          ],
+        };
+
+        return config;
+      });
+    }
+
+    return [
+      {
+        id: "addresses-list-header",
+        control: "moz-box-item",
+        l10nId: "addresses-list-header",
+        slot: "header",
+      },
+      ...items,
+    ];
+  }
+
+  /**
+   * Open the browser window modal to prompt the user whether
+   * or they want to remove their payment.
+   *
+   * @param  {string} guid
+   *          The guid of the payment item we are prompting to remove.
+   * @param  {object} browsingContext
+   *          Browsing context to open the prompt in
+   * @param  {string} title
+   *          The title text displayed in the modal to prompt the user with
+   * @param  {string} confirmBtn
+   *        The text for confirming removing a payment method
+   * @param  {string} cancelBtn
+   *        The text for cancelling removing a payment method
+   */
+  async openRemovePaymentDialog(
+    guid,
+    browsingContext,
+    title,
+    confirmBtn,
+    cancelBtn
+  ) {
+    const flags =
+      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
+      Services.prompt.BUTTON_TITLE_CANCEL * Services.prompt.BUTTON_POS_1;
+    const result = await Services.prompt.asyncConfirmEx(
+      browsingContext,
+      Services.prompt.MODAL_TYPE_INTERNAL_WINDOW,
+      title,
+      null,
+      flags,
+      confirmBtn,
+      cancelBtn,
+      null,
+      null,
+      false
     );
 
-    if (showAddressUI) {
-      let savedAddressesBtnWrapper = document.createXULElement("hbox");
-      let addressAutofill = document.createXULElement("hbox");
-      let addressAutofillCheckboxGroup = document.createXULElement("hbox");
-      let addressAutofillCheckbox = document.createXULElement("checkbox");
-      let addressAutofillLearnMore = document.createElement("a", {
-        is: "moz-support-link",
-      });
-      let savedAddressesBtn = document.createXULElement("button", {
-        is: "highlightable-button",
-      });
-      savedAddressesBtn.className = "accessory-button";
-      addressAutofillCheckbox.className = "tail-with-learn-more";
-
-      formAutofillGroup.id = "formAutofillGroup";
-      addressAutofill.id = "addressAutofill";
-      addressAutofillLearnMore.id = "addressAutofillLearnMore";
-
-      addressAutofill.setAttribute("data-subcategory", "address-autofill");
-      addressAutofillCheckbox.setAttribute(
-        "label",
-        lazy.l10n.formatValueSync("autofill-addresses-checkbox")
-      );
-      savedAddressesBtn.setAttribute(
-        "label",
-        lazy.l10n.formatValueSync("autofill-saved-addresses-button")
-      );
-      // Align the start to keep the savedAddressesBtn as original size
-      // when addressAutofillCheckboxGroup's height is changed by a longer l10n string
-      savedAddressesBtnWrapper.setAttribute("align", "start");
-
-      addressAutofillLearnMore.setAttribute(
-        "support-page",
-        "autofill-card-address"
-      );
-
-      // Add preferences search support
-      savedAddressesBtn.setAttribute(
-        "search-l10n-ids",
-        MANAGE_ADDRESSES_L10N_IDS.concat(EDIT_ADDRESS_L10N_IDS).join(",")
-      );
-
-      // Manually set the checked state
-      if (FormAutofill.isAutofillAddressesEnabled) {
-        addressAutofillCheckbox.setAttribute("checked", true);
-      }
-      if (FormAutofill.isAutofillAddressesLocked) {
-        addressAutofillCheckbox.disabled = true;
-      }
-
-      addressAutofillCheckboxGroup.setAttribute("align", "center");
-      addressAutofillCheckboxGroup.setAttribute("flex", "1");
-
-      formAutofillGroup.appendChild(addressAutofill);
-      addressAutofill.appendChild(addressAutofillCheckboxGroup);
-      addressAutofillCheckboxGroup.appendChild(addressAutofillCheckbox);
-      addressAutofillCheckboxGroup.appendChild(addressAutofillLearnMore);
-      addressAutofill.appendChild(savedAddressesBtnWrapper);
-      savedAddressesBtnWrapper.appendChild(savedAddressesBtn);
-
-      this.refs.formAutofillFragment = formAutofillFragment;
-      this.refs.addressAutofillCheckbox = addressAutofillCheckbox;
-      this.refs.savedAddressesBtn = savedAddressesBtn;
+    const propBag = result.QueryInterface(Ci.nsIPropertyBag2);
+    // Confirmed
+    if (propBag.get("buttonNumClicked") === 0) {
+      lazy.formAutofillStorage.creditCards.remove(guid);
     }
+  }
 
-    if (showCreditCardUI) {
-      let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
-      let creditCardAutofill = document.createXULElement("hbox");
-      let creditCardAutofillCheckboxGroup = document.createXULElement("hbox");
-      let creditCardAutofillCheckbox = document.createXULElement("checkbox");
-      let creditCardAutofillLearnMore = document.createElement("a", {
-        is: "moz-support-link",
-      });
-      let savedCreditCardsBtn = document.createXULElement("button", {
-        is: "highlightable-button",
-      });
-      savedCreditCardsBtn.className = "accessory-button";
-      creditCardAutofillCheckbox.className = "tail-with-learn-more";
-
-      creditCardAutofill.id = "creditCardAutofill";
-      creditCardAutofillLearnMore.id = "creditCardAutofillLearnMore";
-
-      creditCardAutofill.setAttribute(
-        "data-subcategory",
-        "credit-card-autofill"
-      );
-      creditCardAutofillCheckbox.setAttribute(
-        "label",
-        lazy.l10n.formatValueSync("autofill-payment-methods-checkbox-message")
-      );
-
-      savedCreditCardsBtn.setAttribute(
-        "label",
-        lazy.l10n.formatValueSync("autofill-saved-payment-methods-button")
-      );
-      // Align the start to keep the savedCreditCardsBtn as original size
-      // when creditCardAutofillCheckboxGroup's height is changed by a longer l10n string
-      savedCreditCardsBtnWrapper.setAttribute("align", "start");
-
-      creditCardAutofillLearnMore.setAttribute(
-        "support-page",
-        "credit-card-autofill"
-      );
-
-      let creditCardsAutofillDescription =
-        document.createXULElement("description");
-
-      creditCardsAutofillDescription.setAttribute("flex", "1");
-      creditCardsAutofillDescription.className = "indent tip-caption";
-      creditCardsAutofillDescription.setAttribute("data-l10n-attrs", "hidden");
-      creditCardsAutofillDescription.setAttribute(
-        "data-l10n-id",
-        "autofill-payment-methods-checkbox-submessage"
-      );
-
-      // Add preferences search support
-      savedCreditCardsBtn.setAttribute(
-        "search-l10n-ids",
-        MANAGE_CREDITCARDS_L10N_IDS.concat(EDIT_CREDITCARD_L10N_IDS).join(",")
-      );
-
-      // Manually set the checked state
-      if (FormAutofill.isAutofillCreditCardsEnabled) {
-        creditCardAutofillCheckbox.setAttribute("checked", true);
-      }
-      if (FormAutofill.isAutofillCreditCardsLocked) {
-        creditCardAutofillCheckbox.disabled = true;
-      }
-
-      creditCardAutofillCheckboxGroup.setAttribute("align", "center");
-      creditCardAutofillCheckboxGroup.setAttribute("flex", "1");
-
-      formAutofillGroup.appendChild(creditCardAutofill);
-      creditCardAutofill.appendChild(creditCardAutofillCheckboxGroup);
-      creditCardAutofillCheckboxGroup.appendChild(creditCardAutofillCheckbox);
-      creditCardAutofillCheckboxGroup.appendChild(creditCardAutofillLearnMore);
-      creditCardAutofill.appendChild(savedCreditCardsBtnWrapper);
-      savedCreditCardsBtnWrapper.appendChild(savedCreditCardsBtn);
-      formAutofillGroup.appendChild(creditCardsAutofillDescription);
-
-      this.refs.creditCardAutofillCheckbox = creditCardAutofillCheckbox;
-      this.refs.savedCreditCardsBtn = savedCreditCardsBtn;
-
-      if (
-        lazy.OSKeyStore.canReauth() &&
-        !Services.prefs.getBoolPref("security.nocertdb", false)
-      ) {
-        let reauth = document.createXULElement("hbox");
-        let reauthCheckboxGroup = document.createXULElement("hbox");
-        let reauthCheckbox = document.createXULElement("checkbox");
-        let reauthLearnMore = document.createElement("a", {
-          is: "moz-support-link",
-        });
-
-        reauthCheckboxGroup.classList.add("indent");
-        reauthCheckbox.classList.add("tail-with-learn-more");
-        reauthCheckbox.disabled = !FormAutofill.isAutofillCreditCardsEnabled;
-
-        reauth.id = "creditCardReauthenticate";
-        reauthLearnMore.id = "creditCardReauthenticateLearnMore";
-
-        reauth.setAttribute("data-subcategory", "reauth-credit-card-autofill");
-
-        reauthCheckbox.setAttribute(
-          "label",
-          lazy.l10n.formatValueSync("autofill-reauth-payment-methods-checkbox")
-        );
-
-        // If target.checked is checked, enable OSAuth. Otherwise, reset the pref value.
-        reauthCheckbox.setAttribute(
-          "checked",
-          FormAutofillUtils.getOSAuthEnabled()
-        );
-
-        reauthLearnMore.setAttribute(
-          "support-page",
-          "credit-card-autofill#w_require-authentication-for-autofill"
-        );
-
-        reauthCheckboxGroup.setAttribute("align", "center");
-        reauthCheckboxGroup.setAttribute("flex", "1");
-
-        formAutofillGroup.appendChild(reauth);
-        reauth.appendChild(reauthCheckboxGroup);
-        reauthCheckboxGroup.appendChild(reauthCheckbox);
-        reauthCheckboxGroup.appendChild(reauthLearnMore);
-        this.refs.reauthCheckbox = reauthCheckbox;
-      }
-    }
-  },
-
+  async openEditCreditCardDialog(guid, window) {
+    const creditCard = await lazy.formAutofillStorage.creditCards.get(guid);
+    return FormAutofillPreferences.openEditCreditCardDialog(creditCard, window);
+  }
   /**
-   * Handle events
+   * Open the edit credit card dialog to create/edit a credit card.
    *
-   * @param  {DOMEvent} event
+   * @param  {object} creditCard
+   *         The credit card we want to edit.
    */
-  async handleEvent(event) {
-    switch (event.type) {
-      case "command": {
-        let target = event.target;
-
-        if (target == this.refs.addressAutofillCheckbox) {
-          // Set preference directly instead of relying on <Preference>
-          Services.prefs.setBoolPref(
-            ENABLED_AUTOFILL_ADDRESSES_PREF,
-            target.checked
-          );
-        } else if (target == this.refs.creditCardAutofillCheckbox) {
-          Services.prefs.setBoolPref(
-            ENABLED_AUTOFILL_CREDITCARDS_PREF,
-            target.checked
-          );
-          if (this.refs.reauthCheckbox) {
-            this.refs.reauthCheckbox.disabled = !target.checked;
-          }
-        } else if (target == this.refs.reauthCheckbox) {
-          if (!lazy.OSKeyStore.canReauth()) {
-            break;
-          }
-
-          let messageText = await lazy.l10n.formatValueSync(
-            "autofill-creditcard-os-dialog-message"
-          );
-          let captionText = await lazy.l10n.formatValueSync(
-            "autofill-creditcard-os-auth-dialog-caption"
-          );
-          let win = target.ownerGlobal.docShell.chromeEventHandler.ownerGlobal;
-
-          // Calling OSKeyStore.ensureLoggedIn() instead of FormAutofillUtils.verifyOSAuth()
-          // since we want to authenticate user each time this setting is changed.
-
-          // Note on Glean collection: because OSKeyStore.ensureLoggedIn() is not wrapped in
-          // verifyOSAuth(), it will be documenting "success" for unsupported platforms
-          // and won't record "fail_error", only "fail_user_canceled"
-          let isAuthorized = (
-            await lazy.OSKeyStore.ensureLoggedIn(
-              messageText,
-              captionText,
-              win,
-              false
-            )
-          ).authenticated;
-          Glean.formautofill.promptShownOsReauth.record({
-            trigger: "toggle_pref_os_auth",
-            result: isAuthorized ? "success" : "fail_user_canceled",
-          });
-
-          if (!isAuthorized) {
-            target.checked = !target.checked;
-            break;
-          }
-
-          // If target.checked is checked, enable OSAuth. Otherwise, reset the pref value.
-          FormAutofillUtils.setOSAuthEnabled(target.checked);
-          Glean.formautofill.requireOsReauthToggle.record({
-            toggle_state: target.checked,
-          });
-        } else if (target == this.refs.savedAddressesBtn) {
-          target.ownerGlobal.gSubDialog.open(MANAGE_ADDRESSES_URL);
-        } else if (target == this.refs.savedCreditCardsBtn) {
-          target.ownerGlobal.gSubDialog.open(MANAGE_CREDITCARDS_URL);
-        }
-        break;
+  static async openEditCreditCardDialog(creditCard, window) {
+    // Ask for reauth if user is trying to edit an existing credit card.
+    if (creditCard) {
+      const promptMessage = FormAutofillUtils.reauthOSPromptMessage(
+        "autofill-edit-payment-method-os-prompt-macos",
+        "autofill-edit-payment-method-os-prompt-windows",
+        "autofill-edit-payment-method-os-prompt-other"
+      );
+      let verified;
+      let result;
+      try {
+        verified = await FormAutofillUtils.verifyUserOSAuth(
+          FormAutofill.AUTOFILL_CREDITCARDS_OS_AUTH_LOCKED_PREF,
+          promptMessage
+        );
+        result = verified ? "success" : "fail_user_canceled";
+      } catch (ex) {
+        result = "fail_error";
+        throw ex;
+      } finally {
+        Glean.formautofill.promptShownOsReauth.record({
+          trigger: "edit",
+          result,
+        });
       }
-      case "click": {
-        let target = event.target;
-
-        if (target == this.refs.addressAutofillCheckboxLabel) {
-          let pref = FormAutofill.isAutofillAddressesEnabled;
-          Services.prefs.setBoolPref(ENABLED_AUTOFILL_ADDRESSES_PREF, !pref);
-          this.refs.addressAutofillCheckbox.checked = !pref;
-        } else if (target == this.refs.creditCardAutofillCheckboxLabel) {
-          let pref = FormAutofill.isAutofillCreditCardsEnabled;
-          Services.prefs.setBoolPref(ENABLED_AUTOFILL_CREDITCARDS_PREF, !pref);
-          this.refs.creditCardAutofillCheckbox.checked = !pref;
-          this.refs.reauthCheckbox.disabled = pref;
-        }
-        break;
+      if (!verified) {
+        return;
       }
     }
-  },
 
+    let decryptedCCNumObj = {};
+    let errorResult = 0;
+    if (creditCard && creditCard["cc-number-encrypted"]) {
+      try {
+        decryptedCCNumObj["cc-number"] = await lazy.OSKeyStore.decrypt(
+          creditCard["cc-number-encrypted"],
+          "formautofill_cc"
+        );
+      } catch (ex) {
+        errorResult = ex.result;
+        if (ex.result == Cr.NS_ERROR_ABORT) {
+          // User shouldn't be ask to reauth here, but it could happen.
+          // Return here and skip opening the dialog.
+          return;
+        }
+        // We've got ourselves a real error.
+        // Recover from encryption error so the user gets a chance to re-enter
+        // unencrypted credit card number.
+        decryptedCCNumObj["cc-number"] = "";
+        console.error(ex);
+      } finally {
+        Glean.creditcard.osKeystoreDecrypt.record({
+          isDecryptSuccess: errorResult === 0,
+          errorResult,
+          trigger: "edit",
+        });
+      }
+    }
+    let decryptedCreditCard = Object.assign({}, creditCard, decryptedCCNumObj);
+    window.gSubDialog.open(
+      EDIT_CREDIT_CARD_URL,
+      { features: "resizable=no" },
+      {
+        record: decryptedCreditCard,
+      }
+    );
+  }
   /**
-   * Attach event listener
+   * Open the browser window modal to prompt the user whether
+   * or they want to remove their address.
+   *
+   * @param  {string} guid
+   *          The guid of the address item we are prompting to remove.
+   * @param  {object} browsingContext
+   *          Browsing context to open the prompt in
+   * @param  {string} title
+   *          The title text displayed in the modal to prompt the user with
+   * @param  {string} confirmBtn
+   *        The text for confirming the removal of an address
+   * @param  {string} cancelBtn
+   *        The text for cancelling removal of an address
    */
-  attachEventListeners() {
-    this.refs.formAutofillGroup.addEventListener("command", this);
-    this.refs.formAutofillGroup.addEventListener("click", this);
-  },
+  async openRemoveAddressDialog(
+    guid,
+    browsingContext,
+    title,
+    confirmBtn,
+    cancelBtn
+  ) {
+    const flags =
+      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
+      Services.prompt.BUTTON_TITLE_CANCEL * Services.prompt.BUTTON_POS_1;
+    const result = await Services.prompt.asyncConfirmEx(
+      browsingContext,
+      Services.prompt.MODAL_TYPE_INTERNAL_WINDOW,
+      title,
+      null,
+      flags,
+      confirmBtn,
+      cancelBtn,
+      null,
+      null,
+      false
+    );
 
+    const propBag = result.QueryInterface(Ci.nsIPropertyBag2);
+    // Confirmed
+    if (propBag.get("buttonNumClicked") === 0) {
+      lazy.formAutofillStorage.addresses.remove(guid);
+    }
+  }
+
+  async openEditAddressDialog(guid, window) {
+    const address = await lazy.formAutofillStorage.addresses.get(guid);
+    return FormAutofillPreferences.openEditAddressDialog(address, window);
+  }
   /**
-   * Remove event listener
+   * Open the edit address dialog to create/edit an address.
+   *
+   * @param  {object} address
+   *         The address we want to edit.
    */
-  detachEventListeners() {
-    this.refs.formAutofillGroup.removeEventListener("command", this);
-    this.refs.formAutofillGroup.removeEventListener("click", this);
-  },
-};
+  static async openEditAddressDialog(address, window) {
+    window.gSubDialog.open(EDIT_ADDRESS_URL, undefined, {
+      record: address ?? undefined,
+      // Don't validate in preferences since it's fine for fields to be missing
+      // for autofill purposes. For PaymentRequest addresses get more validation.
+      noValidate: true,
+      l10nStrings: lazy.ManageAddresses.getAddressL10nStrings(),
+    });
+  }
+
+  static openPaymentPreference() {
+    const win = Services.wm.getMostRecentBrowserWindow();
+    win.openPreferences("privacy-payment-methods-autofill");
+  }
+
+  static openAddressPreference() {
+    const win = Services.wm.getMostRecentBrowserWindow();
+    win.openPreferences("privacy-address-autofill");
+  }
+}

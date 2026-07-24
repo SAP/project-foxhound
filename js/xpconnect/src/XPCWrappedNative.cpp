@@ -28,7 +28,6 @@
 #include <stdint.h>
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/ProfilerLabels.h"
@@ -824,7 +823,7 @@ void XPCWrappedNative::SystemIsBeingShutDown() {
     }
     // We leak the tearoff mNative
     // (for the same reason we leak mIdentity - see above).
-    Unused << to->TakeNative().take();
+    (void)to->TakeNative().take();
     to->SetInterface(nullptr);
   }
 }

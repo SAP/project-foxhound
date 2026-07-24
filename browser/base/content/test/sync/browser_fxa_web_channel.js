@@ -117,13 +117,23 @@ var gTests = [
           content_uri: TEST_HTTP_PATH,
           channel_id: TEST_CHANNEL_ID,
           helpers: {
-            shouldAllowRelink(acctName) {
-              return acctName === "testuser@testuser.com";
+            _selectableProfilesEnabled() {
+              return false;
             },
-            promptProfileSyncWarningIfNeeded(acctName) {
-              if (acctName === "testuser@testuser.com") {
+            shouldAllowRelink(acctData) {
+              if (acctData.uid == "uid") {
+                Assert.equal(acctData.email, "testuser@testuser.com");
+                return true;
+              }
+              Assert.notEqual(acctData.email, "testuser@testuser.com");
+              return false;
+            },
+            promptProfileSyncWarningIfNeeded(acctData) {
+              if (acctData.uid == "uid") {
+                Assert.equal(acctData.email, "testuser@testuser.com");
                 return { action: "continue" };
               }
+              Assert.notEqual(acctData.email, "testuser@testuser.com");
               return { action: "cancel" };
             },
           },

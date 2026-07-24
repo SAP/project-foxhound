@@ -18,8 +18,8 @@ namespace mozilla::intl {
 
 /* static */
 Result<UniquePtr<TimeZone>, ICUError> TimeZone::TryCreate(
-    Maybe<Span<const char16_t>> aTimeZoneOverride) {
-  const UChar* zoneID = nullptr;
+    Maybe<Span<const char>> aTimeZoneOverride) {
+  const char* zoneID = nullptr;
   int32_t zoneIDLen = 0;
   if (aTimeZoneOverride) {
     zoneIDLen = static_cast<int32_t>(aTimeZoneOverride->Length());
@@ -29,8 +29,8 @@ Result<UniquePtr<TimeZone>, ICUError> TimeZone::TryCreate(
 #if MOZ_INTL_USE_ICU_CPP_TIMEZONE
   UniquePtr<icu::TimeZone> tz;
   if (zoneID) {
-    tz.reset(
-        icu::TimeZone::createTimeZone(icu::UnicodeString(zoneID, zoneIDLen)));
+    tz.reset(icu::TimeZone::createTimeZone(
+        icu::UnicodeString(zoneID, zoneIDLen, icu::UnicodeString::kInvariant)));
   } else {
     tz.reset(icu::TimeZone::createDefault());
   }
@@ -42,6 +42,15 @@ Result<UniquePtr<TimeZone>, ICUError> TimeZone::TryCreate(
 
   return MakeUnique<TimeZone>(std::move(tz));
 #else
+  const char16_t* zoneIDChar16 = nullptr;
+  Vector<char16_t, TimeZoneIdentifierLength> zoneIDChars;
+  if (zoneID) {
+    if (!zoneIDChars.append(zoneID, zoneIDLen)) {
+      return Err(ICUError::OutOfMemory);
+    }
+    zoneIDChar16 = zoneIDChars.begin();
+  }
+
   // An empty string is used for the root locale. This is regarded as the base
   // locale of all locales, and is used as the language/country neutral locale
   // for locale sensitive operations.
@@ -49,7 +58,7 @@ Result<UniquePtr<TimeZone>, ICUError> TimeZone::TryCreate(
 
   UErrorCode status = U_ZERO_ERROR;
   UCalendar* calendar =
-      ucal_open(zoneID, zoneIDLen, rootLocale, UCAL_DEFAULT, &status);
+      ucal_open(zoneIDChar16, zoneIDLen, rootLocale, UCAL_DEFAULT, &status);
 
   if (U_FAILURE(status)) {
     return Err(ToICUError(status));

@@ -11,11 +11,11 @@
 #editBMPanel_newFolderButton {
   appearance: none;
   margin: 0;
-  border: 0;
-  border-radius: 4px;
+  border: var(--button-border);
+  border-radius: var(--button-border-radius);
   background-color: var(--button-background-color);
   color: var(--button-text-color);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   min-width: 0;
   padding: 8px 16px;
 
@@ -25,10 +25,14 @@
 
   &:hover {
     background-color: var(--button-background-color-hover);
+    border-color: var(--button-border-color-hover);
+    color: var(--button-text-color-hover);
   }
 
   &:hover:active {
     background-color: var(--button-background-color-active);
+    border-color: var(--button-border-color-active);
+    color: var(--button-text-color-active);
   }
 }
 
@@ -96,14 +100,19 @@
   min-height: 32px;
   color: var(--button-text-color);
   background-color: var(--button-background-color);
-  border-radius: 4px;
+  border: var(--button-border);
+  border-radius: var(--button-border-radius);
 
   &:hover {
     background-color: var(--button-background-color-hover);
+    border-color: var(--button-border-color-hover);
+    color: var(--button-text-color-hover);
   }
 
   &:hover:active {
-    background-color: var(--button-background-color-hover);
+    background-color: var(--button-background-color-active);
+    border-color: var(--button-border-color-active);
+    color: var(--button-text-color-active);
   }
 }
 

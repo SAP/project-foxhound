@@ -8,7 +8,7 @@
     android:id="@+id/panel_wrapper"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/layer1">
+    android:background="?attr/colorSurface">
 
     <ImageView
         android:id="@+id/navigate_back"

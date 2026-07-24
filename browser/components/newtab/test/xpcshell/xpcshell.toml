@@ -1,18 +1,41 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 firefox-appdir = "browser"
 head = "../../../../extensions/newtab/test/xpcshell/head.js"
 prefs = [
-  "browser.newtabpage.resource-mapping.log=true"
+  "browser.newtabpage.resource-mapping.log=true",
+  "browser.startup.homepage.abouthome_cache.testing=true",
 ]
+support-files = [
+  "component-registrants/TestRegistrant1.sys.mjs",
+  "component-registrants/TestRegistrant2.sys.mjs",
+  "component-registrants/TestRegistrantDuplicateTypes.sys.mjs",
+  "component-registrants/TestRegistrantInvalidConfigs.sys.mjs",
+  "component-registrants/NotARegistrant.sys.mjs",
+]
+
+["test_AboutHomeStartupCacheChild.js"]
 
 ["test_AboutNewTab.js"]
 
+["test_AboutNewTabComponentRegistry.js"]
+
 ["test_AboutNewTabRedirector.js"]
+
+["test_AboutNewTabResourceMapping_emergencyFallback.js"]
 
 ["test_disableNewTabAsAddon_pref.js"]
 prefs = ["browser.newtabpage.disableNewTabAsAddon=true"]
 
 ["test_nimbus_newtabTrainhopAddon.js"]
+head = "../../../../extensions/newtab/test/xpcshell/head.js head_nimbus_trainhop.js"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1989373
+]
+
+["test_nimbus_newtabTrainhopAddon_firstStartup.js"]
 head = "../../../../extensions/newtab/test/xpcshell/head.js head_nimbus_trainhop.js"
 
 ["test_nimbus_newtabTrainhopAddon_onBrowserReady.js"]

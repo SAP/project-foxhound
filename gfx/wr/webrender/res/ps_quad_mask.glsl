@@ -27,7 +27,7 @@ flat varying highp vec2 vClipMode;
 
 PER_INSTANCE in ivec4 aClipData;
 
-#define CLIP_SPACE_RASTER       0
+#define CLIP_SPACE_DEVICE       0
 #define CLIP_SPACE_PRIMITIVE    1
 
 struct Clip {
@@ -71,7 +71,7 @@ void pattern_vertex(PrimitiveInfo prim_info) {
     vClipLocalPos = clip_transform.m * vec4(prim_info.local_pos, 0.0, 1.0);
 
 #ifndef WR_FEATURE_FAST_PATH
-    if (clip.space == CLIP_SPACE_RASTER) {
+    if (clip.space == CLIP_SPACE_DEVICE) {
         vTransformBounds = vec4(clip.rect.p0, clip.rect.p1);
     } else {
         RectWithEndpoint xf_bounds = RectWithEndpoint(

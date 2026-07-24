@@ -4,7 +4,6 @@
 
 #include "nsHtml5Module.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_html5.h"

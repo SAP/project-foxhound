@@ -21,6 +21,8 @@ support-files = [
 
 ["browser_sma_create_new_profile.js"]
 
+["browser_sma_create_taskbar_tab.js"]
+
 ["browser_sma_default_browser.js"]
 
 ["browser_sma_default_pdf_handler.js"]
@@ -29,11 +31,15 @@ support-files = [
 
 ["browser_sma_docs.js"]
 
+["browser_sma_fxa_aiwindow_signin_flow.js"]
+
 ["browser_sma_handle_multiaction.js"]
 
 ["browser_sma_open_about_page.js"]
 
 ["browser_sma_open_awesome_bar.js"]
+
+["browser_sma_open_panel.js"]
 
 ["browser_sma_open_private_browser_window.js"]
 
@@ -45,6 +51,8 @@ support-files = [
 
 ["browser_sma_open_spotlight_dialog.js"]
 
+["browser_sma_open_tab_in_splitview.js"]
+
 ["browser_sma_open_url.js"]
 
 ["browser_sma_pin_current_tab.js"]
@@ -52,10 +60,14 @@ support-files = [
 ["browser_sma_pin_firefox.js"]
 
 ["browser_sma_pin_private_firefox.js"]
-run-if = ["os == 'win' && !msix"] # Bug 1911343
+run-if = [
+  "os == 'win' && !msix", # Bug 1911343
+]
 
 ["browser_sma_pin_start_menu.js"]
-run-if = ["os == 'win' && msix"]
+run-if = [
+  "os == 'win' && msix",
+]
 
 ["browser_sma_set_bookmarks_toolbar_visibility.js"]
 
@@ -66,7 +78,9 @@ run-if = ["os == 'win' && msix"]
 ["browser_sma_show_firefox_accounts.js"]
 
 ["browser_sma_show_migration_wizard.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug 1837646
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1837646
+]
 
 ["browser_sma_submit_onboarding_opt_out_ping.js"]
 

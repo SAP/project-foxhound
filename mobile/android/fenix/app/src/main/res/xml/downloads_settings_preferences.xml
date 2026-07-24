@@ -1,16 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?><!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <androidx.preference.PreferenceCategory
+        android:key="@string/pref_key_downloads_storage_category"
+        android:layout="@layout/preference_category_no_icon_style"
+        android:title="@string/preferences_category_file_storage"
+        app:allowDividerBelow="true">
+        <androidx.preference.Preference
+            android:key="@string/pref_key_downloads_default_location"
+            android:title="@string/preferences_downloads_default_location_title"
+            app:allowDividerBelow="true"
+            app:iconSpaceReserved="false" />
+        <Preference
+            android:layout="@layout/preference_divider"
+            android:selectable="false" />
+    </androidx.preference.PreferenceCategory>
+
+    <Preference
+        android:layout="@layout/preference_spacer"
+        android:selectable="false"/>
 
     <SwitchPreference
         android:defaultValue="false"
         android:key="@string/pref_key_external_download_manager"
-        android:title="@string/preferences_choose_app_for_downloads" />
+        android:title="@string/preferences_choose_app_for_downloads"
+        app:iconSpaceReserved="false" />
 
     <SwitchPreference
         android:defaultValue="false"
         android:key="@string/pref_key_downloads_clean_up_files_automatically"
         android:summary="@string/preferences_downloads_settings_clean_up_files_summary"
-        android:title="@string/preferences_downloads_settings_clean_up_files_title" />
+        android:title="@string/preferences_downloads_settings_clean_up_files_title"
+        app:iconSpaceReserved="false" />
 </androidx.preference.PreferenceScreen>

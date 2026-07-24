@@ -14,8 +14,6 @@
 
 #include "gtest/gtest.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Char16.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Services.h"
 #include "mozilla/WinDllServices.h"
@@ -209,6 +207,17 @@ TEST(TestDllBlocklist, UtilityProcessOnly_AllowInMainProcess)
 TEST(TestDllBlocklist, GMPluginProcessOnly_AllowInMainProcess)
 {
   constexpr auto kLeafName = u"TestDllBlocklist_GMPluginProcessOnly.dll"_ns;
+  nsString dllPath = GetFullPath(kLeafName);
+
+  nsModuleHandle hDll(::LoadLibraryW(dllPath.get()));
+
+  EXPECT_TRUE(!!hDll);
+  EXPECT_TRUE(!!::GetModuleHandleW(kLeafName.get()));
+}
+
+TEST(TestDllBlocklist, RDDProcessOnly_AllowInMainProcess)
+{
+  constexpr auto kLeafName = u"TestDllBlocklist_RDDProcessOnly.dll"_ns;
   nsString dllPath = GetFullPath(kLeafName);
 
   nsModuleHandle hDll(::LoadLibraryW(dllPath.get()));

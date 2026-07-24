@@ -74,9 +74,9 @@ void CompositorVsyncDispatcher::SetCompositorVsyncObserver(
 }
 
 void CompositorVsyncDispatcher::Shutdown() {
-  // Need to explicitly remove CompositorVsyncDispatcher when the nsBaseWidget
+  // Need to explicitly remove CompositorVsyncDispatcher when the nsIWidget
   // shuts down. Otherwise, we would get dead vsync notifications between when
-  // the nsBaseWidget shuts down and the CompositorBridgeParent shuts down.
+  // the nsIWidget shuts down and the CompositorBridgeParent shuts down.
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mDidShutdown);

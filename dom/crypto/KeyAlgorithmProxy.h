@@ -8,7 +8,7 @@
 #define mozilla_dom_KeyAlgorithmProxy_h
 
 #include <cstdint>
-#include <utility>
+
 #include "js/RootingAPI.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/KeyAlgorithmBinding.h"

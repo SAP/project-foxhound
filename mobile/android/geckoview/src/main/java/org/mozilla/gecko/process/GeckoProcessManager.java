@@ -41,6 +41,9 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
   // This id univocally identifies the current process manager instance
   private final String mInstanceId;
 
+  private boolean mIsolatedProcess = false;
+  private boolean mAppZygote = false;
+
   public static GeckoProcessManager getInstance() {
     return INSTANCE;
   }
@@ -126,7 +129,11 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
         throw new RuntimeException("Invalid PID");
       }
 
-      mType = type;
+      if (type == GeckoProcessType.CONTENT) {
+        mType = GeckoProcessType.determineContentProcessType();
+      } else {
+        mType = type;
+      }
       mPid = pid;
     }
 
@@ -187,7 +194,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
       mPid = INVALID_PID;
     }
 
-    public int getPid() {
+    public int getPid() throws AssertionError, IncompleteChildConnectionException {
       XPCOMEventTarget.assertOnLauncherThread();
       if (mChild == null) {
         throw new IncompleteChildConnectionException(
@@ -302,11 +309,18 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     }
   }
 
+  /** package */
+  static boolean isContent(final GeckoProcessType type) {
+    return type == GeckoProcessType.CONTENT
+        || type == GeckoProcessType.CONTENT_ISOLATED
+        || type == GeckoProcessType.CONTENT_ISOLATED_WITH_ZYGOTE;
+  }
+
   private static class NonContentConnection extends ChildConnection {
     public NonContentConnection(
         @NonNull final ServiceAllocator allocator, @NonNull final GeckoProcessType type) {
       super(allocator, type, PriorityLevel.FOREGROUND);
-      if (type == GeckoProcessType.CONTENT) {
+      if (GeckoProcessManager.isContent(type)) {
         throw new AssertionError("Attempt to create a NonContentConnection as CONTENT");
       }
     }
@@ -415,7 +429,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     public ContentConnection(
         @NonNull final ServiceAllocator allocator, @NonNull final PriorityLevel initialPriority) {
-      super(allocator, GeckoProcessType.CONTENT, initialPriority);
+      super(allocator, GeckoProcessType.determineContentProcessType(), initialPriority);
     }
 
     @Override
@@ -558,7 +572,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     public void removeConnection(@NonNull final ChildConnection conn) {
       XPCOMEventTarget.assertOnLauncherThread();
 
-      if (conn.getType() == GeckoProcessType.CONTENT) {
+      if (isContent(conn.getType())) {
         removeContentConnection(conn);
         return;
       }
@@ -572,7 +586,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     /** Saves any state information that was acquired upon start completion. */
     public void onBindComplete(@NonNull final ChildConnection conn) {
-      if (conn.getType() == GeckoProcessType.CONTENT) {
+      if (isContent(conn.getType())) {
         final int pid = conn.getPid();
         if (pid == INVALID_PID) {
           throw new AssertionError(
@@ -586,7 +600,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     /** Retrieve the ChildConnection for an already running content process. */
     private ContentConnection getExistingContentConnection(@NonNull final Selector selector) {
       XPCOMEventTarget.assertOnLauncherThread();
-      if (selector.getType() != GeckoProcessType.CONTENT) {
+      if (!isContent(selector.getType())) {
         throw new IllegalArgumentException("Selector is not for content!");
       }
 
@@ -607,7 +621,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
       final GeckoProcessType type = selector.getType();
 
-      if (type == GeckoProcessType.CONTENT) {
+      if (isContent(type)) {
         return getExistingContentConnection(selector);
       }
 
@@ -635,7 +649,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     /** Retrieve or create a new child process for the specified non-content process. */
     private ChildConnection getNonContentConnection(@NonNull final GeckoProcessType type) {
       XPCOMEventTarget.assertOnLauncherThread();
-      if (type == GeckoProcessType.CONTENT) {
+      if (isContent(type)) {
         throw new IllegalArgumentException("Content processes not supported by this method");
       }
 
@@ -657,7 +671,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     /** Retrieve a ChildConnection for the purposes of starting a new child process. */
     public ChildConnection getConnectionForStart(@NonNull final GeckoProcessType type) {
-      if (type == GeckoProcessType.CONTENT) {
+      if (isContent(type)) {
         return getContentConnectionForStart();
       }
 
@@ -666,7 +680,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     /** Retrieve a ChildConnection for the purposes of preloading a new child process. */
     public ChildConnection getConnectionForPreload(@NonNull final GeckoProcessType type) {
-      if (type == GeckoProcessType.CONTENT) {
+      if (isContent(type)) {
         final ContentConnection conn = getNewContentConnection(PriorityLevel.BACKGROUND);
         mNonStartedContentConnections.add(conn);
         return conn;
@@ -692,6 +706,26 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
                 connection.bind();
               }
             });
+  }
+
+  /** Sets whether the content service runs on isolated process. */
+  public void setIsolatedProcessEnabled(final boolean enabled) {
+    mIsolatedProcess = enabled;
+  }
+
+  /** Sets whether the content service runs on isolated process with app Zygote preloading. */
+  public void setAppZygoteEnabled(final boolean enabled) {
+    mAppZygote = enabled;
+  }
+
+  /** true if the content service runs on isolated process. */
+  public boolean isIsolatedProcessEnabled() {
+    return mIsolatedProcess;
+  }
+
+  /** true if app Zygote preloading is enabled. */
+  public boolean isAppZygoteEnabled() {
+    return mAppZygote;
   }
 
   public void crashChild(@NonNull final Selector selector) {
@@ -762,7 +796,14 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
         () -> {
           INSTANCE
               .start(info)
-              .accept(result::complete, result::completeExceptionally)
+              .accept(
+                  result::complete,
+                  exception -> {
+                    if (type == GeckoProcessType.GPU) {
+                      GeckoAppShell.logGpuProcessLaunchFailure(exception.getMessage());
+                    }
+                    result.completeExceptionally(exception);
+                  })
               .finally_(info::cleanup);
         });
 
@@ -823,13 +864,18 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     if (error instanceof StartException) {
       final StartException startError = (StartException) error;
-      if (startError.errorCode == IChildProcess.STARTED_BUSY) {
+      if (isContent(info.type) && startError.errorCode == IChildProcess.STARTED_BUSY) {
         // This process is owned by a different runtime, so we can't use
-        // it. We will keep retrying indefinitely until we find a non-busy process.
+        // it. For content processes we will keep retrying indefinitely until
+        // we find a non-busy process.
         // Note: this strategy is pretty bad, we go through each process in
         // sequence until one works, the multiple runtime case is test-only
         // for now, so that's ok. We can improve on this if we eventually
         // end up needing something fancier.
+        // For non-content processes there is only a single service defined for
+        // each process type, meaning this will never succeed while an instance
+        // of that process is alive. We therefore do *not* want to retry
+        // indefinitely. See bug 1844829.
         return start(info, retryLog);
       }
     }

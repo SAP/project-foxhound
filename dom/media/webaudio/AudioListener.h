@@ -7,15 +7,14 @@
 #ifndef AudioListener_h_
 #define AudioListener_h_
 
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
-#include "ThreeDPoint.h"
 #include "AudioContext.h"
 #include "PannerNode.h"
+#include "ThreeDPoint.h"
 #include "WebAudioUtils.h"
 #include "js/TypeDecls.h"
 #include "mozilla/MemoryReporting.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

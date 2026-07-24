@@ -8,6 +8,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchUIUtils: "moz-src:///browser/components/search/SearchUIUtils.sys.mjs",
 });
 
@@ -39,9 +40,9 @@ this.search = class extends ExtensionAPI {
     return {
       search: {
         async get() {
-          await Services.search.promiseInitialized;
-          let visibleEngines = await Services.search.getVisibleEngines();
-          let defaultEngine = await Services.search.getDefault();
+          await SearchService.promiseInitialized;
+          let visibleEngines = await SearchService.getVisibleEngines();
+          let defaultEngine = await SearchService.getDefault();
           return Promise.all(
             visibleEngines.map(async engine => {
               let favIconUrl = await engine.getIconURL();
@@ -55,7 +56,7 @@ this.search = class extends ExtensionAPI {
               if (
                 favIconUrl &&
                 (favIconUrl.startsWith("blob:") ||
-                  (favIconUrl.startsWith("moz-extension:") &&
+                  (ExtensionUtils.isExtensionUrl(favIconUrl) &&
                     !favIconUrl.startsWith(context.extension.baseURL)))
               ) {
                 favIconUrl = await ExtensionUtils.makeDataURI(favIconUrl);
@@ -72,11 +73,11 @@ this.search = class extends ExtensionAPI {
         },
 
         async search(searchProperties) {
-          await Services.search.promiseInitialized;
+          await SearchService.promiseInitialized;
           let engine;
 
           if (searchProperties.engine) {
-            engine = Services.search.getEngineByName(searchProperties.engine);
+            engine = SearchService.getEngineByName(searchProperties.engine);
             if (!engine) {
               throw new ExtensionError(
                 `${searchProperties.engine} was not found`
@@ -90,18 +91,19 @@ this.search = class extends ExtensionAPI {
             defaultDisposition: "NEW_TAB",
           });
 
-          await SearchUIUtils.loadSearchFromExtension({
+          await SearchUIUtils.loadSearch({
             window: windowTracker.topWindow,
-            query: searchProperties.query,
+            searchText: searchProperties.query,
             where,
             engine,
             tab,
             triggeringPrincipal: context.principal,
+            sapSource: "webextension",
           });
         },
 
         async query(queryProperties) {
-          await Services.search.promiseInitialized;
+          await SearchService.promiseInitialized;
 
           let { tab, where } = getTarget({
             tabId: queryProperties.tabId,
@@ -109,12 +111,13 @@ this.search = class extends ExtensionAPI {
             defaultDisposition: "CURRENT_TAB",
           });
 
-          await SearchUIUtils.loadSearchFromExtension({
+          await SearchUIUtils.loadSearch({
             window: windowTracker.topWindow,
-            query: queryProperties.text,
+            searchText: queryProperties.text,
             where,
             tab,
             triggeringPrincipal: context.principal,
+            sapSource: "webextension",
           });
         },
       },

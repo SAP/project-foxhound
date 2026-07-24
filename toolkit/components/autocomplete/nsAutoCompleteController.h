@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsAutoCompleteController__
-#define __nsAutoCompleteController__
+#ifndef _nsAutoCompleteController_
+#define _nsAutoCompleteController_
 
 #include "nsIAutoCompleteController.h"
 
@@ -210,4 +210,4 @@ class nsAutoCompleteController final : public nsIAutoCompleteController,
   int32_t mCompletedSelectionIndex;
 };
 
-#endif /* __nsAutoCompleteController__ */
+#endif /* _nsAutoCompleteController_ */

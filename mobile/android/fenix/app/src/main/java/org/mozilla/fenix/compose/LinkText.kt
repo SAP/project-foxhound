@@ -5,14 +5,12 @@
 package org.mozilla.fenix.compose
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -34,8 +32,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import mozilla.components.compose.base.button.TextButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+
+private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(28.dp)
 
 /**
  * The tag used for links in the text for annotated strings.
@@ -74,9 +75,9 @@ fun LinkText(
     linkTextStates: List<LinkTextState>,
     style: TextStyle = FirefoxTheme.typography.body2.copy(
         textAlign = TextAlign.Center,
-        color = FirefoxTheme.colors.textSecondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     ),
-    linkTextColor: Color = FirefoxTheme.colors.textAccent,
+    linkTextColor: Color = MaterialTheme.colorScheme.tertiary,
     linkTextDecoration: TextDecoration = TextDecoration.None,
     textAlign: TextAlign? = null,
     shouldApplyAccessibleSize: Boolean = false,
@@ -127,50 +128,34 @@ private fun LinksDialog(
     onDismissRequest: () -> Unit,
 ) {
     Dialog(onDismissRequest = { onDismissRequest() }) {
-        Card(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .background(color = FirefoxTheme.colors.layer2)
-                    .padding(all = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = stringResource(id = R.string.a11y_links_title),
-                    color = FirefoxTheme.colors.textPrimary,
-                    style = FirefoxTheme.typography.headline5,
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = ROUNDED_CORNER_SHAPE,
                 )
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(id = R.string.a11y_links_title),
+                color = MaterialTheme.colorScheme.onSurface,
+                style = FirefoxTheme.typography.headline5,
+            )
 
-                linkTextStates.forEach { linkText ->
-                    TextButton(
-                        onClick = { linkText.onClick(linkText.url) },
-                        modifier = Modifier
-                            .align(Alignment.Start),
-                    ) {
-                        Text(
-                            text = linkText.text,
-                            color = FirefoxTheme.colors.textAccent,
-                            textDecoration = TextDecoration.Underline,
-                            style = FirefoxTheme.typography.button,
-                        )
-                    }
-                }
-
+            linkTextStates.forEach { linkText ->
                 TextButton(
-                    onClick = { onDismissRequest() },
-                    modifier = Modifier
-                        .align(Alignment.End),
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.standard_snackbar_error_dismiss),
-                        color = FirefoxTheme.colors.textAccent,
-                        style = FirefoxTheme.typography.button,
-                    )
-                }
+                    text = linkText.text,
+                    onClick = { linkText.onClick(linkText.url) },
+                    modifier = Modifier.align(Alignment.Start),
+                )
             }
+
+            TextButton(
+                text = stringResource(id = R.string.standard_snackbar_error_dismiss),
+                onClick = onDismissRequest,
+                modifier = Modifier.align(Alignment.End),
+            )
         }
     }
 }
@@ -216,8 +201,9 @@ private fun LinkTextEndPreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
+
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Surface {
             LinkText(text = "This is normal text, click here", linkTextStates = listOf(state))
         }
     }
@@ -231,8 +217,9 @@ private fun LinkTextMiddlePreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
+
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Surface {
             LinkText(text = "This is clickable text, followed by normal text", linkTextStates = listOf(state))
         }
     }
@@ -246,8 +233,9 @@ private fun LinkTextStyledPreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
+
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Surface {
             LinkText(
                 text = "This is clickable text, in a different style",
                 linkTextStates = listOf(state),
@@ -265,13 +253,14 @@ private fun LinkTextClickStyledPreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
+
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Surface {
             LinkText(
                 text = "This is clickable text, with underlined text",
                 linkTextStates = listOf(state),
                 style = FirefoxTheme.typography.headline5,
-                linkTextColor = FirefoxTheme.colors.textOnColorSecondary,
+                linkTextColor = Color.Red,
                 linkTextDecoration = TextDecoration.Underline,
             )
         }
@@ -286,14 +275,14 @@ private fun MultipleLinksPreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
-
     val state2 = LinkTextState(
         text = "another clickable text",
         url = "www.mozilla.com",
         onClick = {},
     )
+
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Surface {
             LinkText(
                 text = "This is clickable text, followed by normal text, followed by another clickable text",
                 linkTextStates = listOf(state1, state2),
@@ -310,14 +299,13 @@ private fun LinksDialogPreview() {
         url = "www.mozilla.com",
         onClick = {},
     )
-
     val state2 = LinkTextState(
         text = "another clickable text",
         url = "www.mozilla.com",
         onClick = {},
     )
-
     val linkTextStateList = listOf(state1, state2)
+
     FirefoxTheme {
         LinksDialog(
             linkTextStates = linkTextStateList,

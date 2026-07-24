@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     #[cfg(any(feature = "compiled_data", feature = "buffer_provider"))]
@@ -47,6 +46,7 @@ pub mod ffi {
         #[diplomat::rust_link(icu::properties::props::BasicEmoji, Struct)]
         #[diplomat::attr(auto, named_constructor = "basic")]
         #[cfg(feature = "compiled_data")]
+        #[diplomat::demo(default_constructor)]
         pub fn create_basic() -> Box<EmojiSetData> {
             Box::new(EmojiSetData(
                 icu_properties::EmojiSetData::new::<BasicEmoji>().static_to_owned(),

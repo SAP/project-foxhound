@@ -31,7 +31,7 @@
 #    endif
 #  endif
 #  ifndef MOZ_THROW_NORETURN
-#    define MOZ_THROW_NORETURN MOZ_NORETURN
+#    define MOZ_THROW_NORETURN __attribute__((__noreturn__))
 #  endif
 
 // MinGW doesn't appropriately inline these functions in debug builds,

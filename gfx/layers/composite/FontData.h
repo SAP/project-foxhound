@@ -7,6 +7,9 @@
 // This is explicitly not guarded as we want only 1 file to include this and
 // it's good if things break if someone else does.
 
+#ifndef GFX_LAYERS_COMPOSITE_FONTDATA_H_
+#define GFX_LAYERS_COMPOSITE_FONTDATA_H_
+
 namespace mozilla {
 namespace layers {
 namespace normal_font {
@@ -302,3 +305,5 @@ const FontBitmapInfo sDefaultCompositorFont = {
 
 }  // namespace layers
 }  // namespace mozilla
+
+#endif  // GFX_LAYERS_COMPOSITE_FONTDATA_H_

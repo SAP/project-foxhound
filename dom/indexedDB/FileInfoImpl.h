@@ -8,11 +8,10 @@
 #define DOM_INDEXEDDB_FILEINFOIMPL_H_
 
 #include "FileInfo.h"
-
+#include "mozilla/Mutex.h"
 #include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/Mutex.h"
 #include "nsIFile.h"
 
 namespace mozilla::dom::indexedDB {

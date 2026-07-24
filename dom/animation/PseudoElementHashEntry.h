@@ -7,10 +7,10 @@
 #ifndef mozilla_PseudoElementHashEntry_h
 #define mozilla_PseudoElementHashEntry_h
 
-#include "mozilla/dom/Element.h"
+#include "PLDHashTable.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/HashFunctions.h"
-#include "PLDHashTable.h"
+#include "mozilla/dom/Element.h"
 
 namespace mozilla {
 

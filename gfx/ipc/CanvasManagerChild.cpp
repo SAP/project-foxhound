@@ -18,10 +18,9 @@
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/webgpu/WebGPUChild.h"
 
-using namespace mozilla::dom;
-using namespace mozilla::layers;
-
 namespace mozilla::gfx {
+
+using namespace layers;
 
 // The IPDL actor holds a strong reference to CanvasManagerChild which we use
 // to keep it alive. The owning thread will tell us to close when it is
@@ -31,7 +30,7 @@ MOZ_THREAD_LOCAL(CanvasManagerChild*) CanvasManagerChild::sLocalManager;
 
 Atomic<uint32_t> CanvasManagerChild::sNextId(1);
 
-CanvasManagerChild::CanvasManagerChild(ThreadSafeWorkerRef* aWorkerRef,
+CanvasManagerChild::CanvasManagerChild(dom::ThreadSafeWorkerRef* aWorkerRef,
                                        uint32_t aId)
     : mWorkerRef(aWorkerRef), mId(aId) {}
 
@@ -106,7 +105,7 @@ void CanvasManagerChild::Destroy() {
   }
 
   // We are only used on the main thread, or on worker threads.
-  WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
+  dom::WorkerPrivate* worker = dom::GetCurrentThreadWorkerPrivate();
   MOZ_ASSERT_IF(!worker, NS_IsMainThread());
 
   ipc::Endpoint<PCanvasManagerParent> parentEndpoint;
@@ -223,7 +222,7 @@ RefPtr<webgpu::WebGPUChild> CanvasManagerChild::GetWebGPUChild() {
 layers::ActiveResourceTracker* CanvasManagerChild::GetActiveResourceTracker() {
   if (!mActiveResourceTracker) {
     mActiveResourceTracker = MakeUnique<ActiveResourceTracker>(
-        1000, "CanvasManagerChild", GetCurrentSerialEventTarget());
+        1000, "CanvasManagerChild"_ns, GetCurrentSerialEventTarget());
   }
   return mActiveResourceTracker.get();
 }
@@ -231,15 +230,15 @@ layers::ActiveResourceTracker* CanvasManagerChild::GetActiveResourceTracker() {
 already_AddRefed<DataSourceSurface> CanvasManagerChild::GetSnapshot(
     uint32_t aManagerId, ActorId aProtocolId,
     const Maybe<RemoteTextureOwnerId>& aOwnerId,
-    const Maybe<RawId>& aCommandEncoderId, SurfaceFormat aFormat,
-    bool aPremultiply, bool aYFlip) {
+    const Maybe<RawId>& aCommandEncoderId, const Maybe<RawId>& aCommandBufferId,
+    SurfaceFormat aFormat, bool aPremultiply, bool aYFlip) {
   if (!CanSend()) {
     return nullptr;
   }
 
   webgl::FrontBufferSnapshotIpc res;
   if (!SendGetSnapshot(aManagerId, aProtocolId, aOwnerId, aCommandEncoderId,
-                       &res)) {
+                       aCommandBufferId, &res)) {
     return nullptr;
   }
 

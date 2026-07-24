@@ -9,6 +9,10 @@ loadTestSubscript("head_devtools.js");
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /can't be sent as the connection just closed/
 );
+// Also ignore REDUX_MIDDLEWARE_IGNORED_REDUX_ACTION (bug 2013040).
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Dispatching '.*' action after panel's closing/
+);
 
 function background() {
   browser.test.onMessage.addListener(msg => {

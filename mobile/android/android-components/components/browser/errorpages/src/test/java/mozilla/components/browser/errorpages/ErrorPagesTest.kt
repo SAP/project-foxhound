@@ -74,6 +74,7 @@ class ErrorPagesTest {
         assertUrlEncodingIsValid(ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI)
         assertUrlEncodingIsValid(ErrorType.ERROR_SAFEBROWSING_HARMFUL_URI)
         assertUrlEncodingIsValid(ErrorType.ERROR_SAFEBROWSING_PHISHING_URI)
+        assertUrlEncodingIsValid(ErrorType.ERROR_HARMFULADDON_URI)
         assertUrlEncodingIsValid(ErrorType.ERROR_HTTPS_ONLY)
         assertUrlEncodingIsValid(ErrorType.ERROR_BAD_HSTS_CERT)
     }
@@ -91,7 +92,7 @@ class ErrorPagesTest {
         )
 
         val expectedImageName = if (errorType.imageNameRes != null) {
-            testContext.resources.getString(errorType.imageNameRes!!) + ".svg"
+            testContext.resources.getString(errorType.imageNameRes) + ".svg"
         } else {
             ""
         }

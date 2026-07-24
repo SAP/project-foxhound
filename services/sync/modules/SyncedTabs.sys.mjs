@@ -12,6 +12,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   getRemoteCommandStore: "resource://services-sync/TabsStore.sys.mjs",
   RemoteCommand: "resource://services-sync/TabsStore.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  TRUSTED_FAVICON_SCHEMES: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
+  getMozRemoteImageURL: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
 });
 
 // The Sync XPCOM service
@@ -71,10 +73,24 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // A private singleton that does the work.
 let SyncedTabsInternal = {
   /* Make a "tab" record. Returns a promise */
-  async _makeTab(client, tab, url, showRemoteIcons) {
+  async _makeTab(client, tab, url, showRemoteIcons, iconSize, iconColorScheme) {
     let icon;
     if (showRemoteIcons) {
       icon = tab.icon;
+      if (icon) {
+        try {
+          const iconUri = Services.io.newURI(icon);
+          if (!lazy.TRUSTED_FAVICON_SCHEMES.includes(iconUri.scheme)) {
+            icon = lazy.getMozRemoteImageURL(iconUri.spec, {
+              size: iconSize,
+              colorScheme: iconColorScheme,
+            });
+          }
+        } catch (e) {
+          lazy.log.error("Failed to fixup icon URL", e);
+          icon = "";
+        }
+      }
     }
     if (!icon) {
       // By not specifying a size the favicon service will pick the default,
@@ -182,6 +198,13 @@ let SyncedTabsInternal = {
     );
 
     let engine = lazy.Weave.Service.engineManager.get("tabs");
+    let win = Services.wm.getMostRecentWindow("navigator:browser");
+    // default values when no win, primarily for tests.
+    let iconSize = win ? Math.floor(16 * win.devicePixelRatio) : 16;
+    let iconColorScheme = win?.matchMedia("(prefers-color-scheme: dark)")
+      ?.matches
+      ? "dark"
+      : "light";
 
     let ntabs = 0;
     let clientTabList = await engine.getAllClients();
@@ -219,7 +242,14 @@ let SyncedTabsInternal = {
         if (!url) {
           continue;
         }
-        let tabRepr = await this._makeTab(client, tab, url, showRemoteIcons);
+        let tabRepr = await this._makeTab(
+          client,
+          tab,
+          url,
+          showRemoteIcons,
+          iconSize,
+          iconColorScheme
+        );
         if (filter && !this._tabMatchesFilter(tabRepr, filter)) {
           continue;
         }

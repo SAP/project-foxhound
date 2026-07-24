@@ -19,32 +19,72 @@
 
 namespace mozilla::net {
 
-Http3WebTransportSession::Http3WebTransportSession(nsAHttpTransaction* trans,
-                                                   Http3Session* aHttp3Session)
+//-----------------------------------------------------------------------------
+// Http3TunnelStreamBase
+//-----------------------------------------------------------------------------
+
+Http3TunnelStreamBase::Http3TunnelStreamBase(nsAHttpTransaction* trans,
+                                             Http3SessionBase* aHttp3Session)
     : Http3StreamBase(trans, aHttp3Session) {}
 
-Http3WebTransportSession::~Http3WebTransportSession() = default;
+bool Http3TunnelStreamBase::ConsumeHeaders(const char* buf, uint32_t avail,
+                                           uint32_t* countUsed) {
+  LOG3(("Http3TunnelStreamBase::ConsumeHeaders %p avail=%u.", this, avail));
 
-uint64_t Http3WebTransportSession::GetStreamId() const {
-  return Http3StreamBase::StreamId();
+  mFlatHttpRequestHeaders.Append(buf, avail);
+  // We can use the simple double crlf because firefox is the
+  // only client we are parsing
+  int32_t endHeader = mFlatHttpRequestHeaders.Find("\r\n\r\n");
+
+  if (endHeader == kNotFound) {
+    // We don't have all the headers yet
+    LOG3(
+        ("Http3TunnelStreamBase::ConsumeHeaders %p "
+         "Need more header bytes. Len = %zu",
+         this, mFlatHttpRequestHeaders.Length()));
+    *countUsed = avail;
+    return false;
+  }
+
+  uint32_t oldLen = mFlatHttpRequestHeaders.Length();
+  mFlatHttpRequestHeaders.SetLength(endHeader + 2);
+  *countUsed = avail - (oldLen - endHeader) + 4;
+
+  return true;
 }
 
-nsresult Http3WebTransportSession::ReadSegments() {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("Http3WebTransportSession::ReadSegments %p mSendState=%d mRecvState=%d",
+nsresult Http3TunnelStreamBase::TryActivating() {
+  LOG(("Http3TunnelStreamBase::TryActivating [this=%p]", this));
+  nsHttpRequestHead* head = mTransaction->RequestHead();
+
+  nsAutoCString host;
+  nsresult rv = head->GetHeader(nsHttp::Host, host);
+  if (NS_FAILED(rv)) {
+    MOZ_ASSERT(false);
+    return rv;
+  }
+  nsAutoCString path;
+  head->Path(path);
+
+  return mSession->TryActivating(""_ns, ""_ns, host, path,
+                                 mFlatHttpRequestHeaders, &mStreamId, this);
+}
+
+nsresult Http3TunnelStreamBase::ReadSegments() {
+  LOG(("Http3TunnelStreamBase::ReadSegments %p mSendState=%d mRecvState=%d",
        this, mSendState, mRecvState));
   if (mSendState == PROCESSING_DATAGRAM) {
-    return NS_OK;
+    return OnProcessDatagram();
   }
 
   if ((mRecvState == RECV_DONE) || (mRecvState == ACTIVE) ||
       (mRecvState == CLOSE_PENDING)) {
     // Don't transmit any request frames if the peer cannot respond or respone
     // is already done.
-    LOG3((
-        "Http3WebTransportSession %p ReadSegments request stream aborted due to"
-        " response side closure\n",
-        this));
+    LOG3(
+        ("Http3TunnelStreamBase %p ReadSegments request stream aborted due to"
+         " response side closure\n",
+         this));
     return NS_ERROR_ABORT;
   }
 
@@ -54,8 +94,8 @@ nsresult Http3WebTransportSession::ReadSegments() {
   do {
     transactionBytes = 0;
     rv = mSocketOutCondition = NS_OK;
-    LOG(("Http3WebTransportSession::ReadSegments state=%d [this=%p]",
-         mSendState, this));
+    LOG(("Http3TunnelStreamBase::ReadSegments state=%d [this=%p]", mSendState,
+         this));
     switch (mSendState) {
       case PREPARING_HEADERS: {
         rv = mTransaction->ReadSegmentsAgain(
@@ -66,7 +106,7 @@ nsresult Http3WebTransportSession::ReadSegments() {
         // queued at the session level (due to concurrency concerns) may not
         // call onReadSegment off the ReadSegments() stack above.
         LOG3(
-            ("Http3WebTransportSession %p ReadSegments forcing OnReadSegment "
+            ("Http3TunnelStreamBase %p ReadSegments forcing OnReadSegment "
              "call\n",
              this));
         uint32_t wasted = 0;
@@ -80,7 +120,7 @@ nsresult Http3WebTransportSession::ReadSegments() {
         break;
     }
 
-    LOG(("Http3WebTransportSession::ReadSegments rv=0x%" PRIx32
+    LOG(("Http3TunnelStreamBase::ReadSegments rv=0x%" PRIx32
          " read=%u sock-cond=%" PRIx32 " again=%d [this=%p]",
          static_cast<uint32_t>(rv), transactionBytes,
          static_cast<uint32_t>(mSocketOutCondition), again, this));
@@ -106,7 +146,6 @@ nsresult Http3WebTransportSession::ReadSegments() {
     } else if (!transactionBytes) {
       mTransaction->OnTransportStatus(nullptr, NS_NET_STATUS_WAITING_FOR, 0);
 
-      mSendState = PROCESSING_DATAGRAM;
       rv = NS_OK;
       again = false;
     }
@@ -115,111 +154,14 @@ nsresult Http3WebTransportSession::ReadSegments() {
   return rv;
 }
 
-bool Http3WebTransportSession::ConsumeHeaders(const char* buf, uint32_t avail,
-                                              uint32_t* countUsed) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG3(("Http3WebTransportSession::ConsumeHeaders %p avail=%u.", this, avail));
-
-  mFlatHttpRequestHeaders.Append(buf, avail);
-  // We can use the simple double crlf because firefox is the
-  // only client we are parsing
-  int32_t endHeader = mFlatHttpRequestHeaders.Find("\r\n\r\n");
-
-  if (endHeader == kNotFound) {
-    // We don't have all the headers yet
-    LOG3(
-        ("Http3WebTransportSession::ConsumeHeaders %p "
-         "Need more header bytes. Len = %zu",
-         this, mFlatHttpRequestHeaders.Length()));
-    *countUsed = avail;
-    return false;
-  }
-
-  uint32_t oldLen = mFlatHttpRequestHeaders.Length();
-  mFlatHttpRequestHeaders.SetLength(endHeader + 2);
-  *countUsed = avail - (oldLen - endHeader) + 4;
-
-  return true;
-}
-
-nsresult Http3WebTransportSession::TryActivating() {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("Http3WebTransportSession::TryActivating [this=%p]", this));
-  nsHttpRequestHead* head = mTransaction->RequestHead();
-
-  nsAutoCString host;
-  nsresult rv = head->GetHeader(nsHttp::Host, host);
-  if (NS_FAILED(rv)) {
-    MOZ_ASSERT(false);
-    return rv;
-  }
-  nsAutoCString path;
-  head->Path(path);
-
-  return mSession->TryActivating(""_ns, ""_ns, host, path,
-                                 mFlatHttpRequestHeaders, &mStreamId, this);
-}
-
-nsresult Http3WebTransportSession::OnReadSegment(const char* buf,
-                                                 uint32_t count,
-                                                 uint32_t* countRead) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-
-  LOG(("Http3WebTransportSession::OnReadSegment count=%u state=%d [this=%p]",
-       count, mSendState, this));
-
-  nsresult rv = NS_OK;
-
-  switch (mSendState) {
-    case PREPARING_HEADERS: {
-      if (!ConsumeHeaders(buf, count, countRead)) {
-        break;
-      }
-      mSendState = WAITING_TO_ACTIVATE;
-    }
-      [[fallthrough]];
-    case WAITING_TO_ACTIVATE:
-      rv = TryActivating();
-      if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
-        LOG3(
-            ("Http3WebTransportSession::OnReadSegment %p cannot activate now. "
-             "queued.\n",
-             this));
-        break;
-      }
-      if (NS_FAILED(rv)) {
-        LOG3(
-            ("Http3WebTransportSession::OnReadSegment %p cannot activate "
-             "error=0x%" PRIx32 ".",
-             this, static_cast<uint32_t>(rv)));
-        break;
-      }
-
-      // Successfully activated.
-      mTransaction->OnTransportStatus(nullptr, NS_NET_STATUS_SENDING_TO, 0);
-
-      mSendState = PROCESSING_DATAGRAM;
-      break;
-    default:
-      MOZ_ASSERT(false, "We are done sending this request!");
-      rv = NS_ERROR_UNEXPECTED;
-      break;
-  }
-
-  mSocketOutCondition = rv;
-
-  return mSocketOutCondition;
-}
-
-nsresult Http3WebTransportSession::WriteSegments() {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("Http3WebTransportSession::WriteSegments [this=%p]", this));
+nsresult Http3TunnelStreamBase::WriteSegments() {
+  LOG(("Http3TunnelStreamBase::WriteSegments [this=%p]", this));
   nsresult rv = NS_OK;
   uint32_t countWrittenSingle = 0;
   bool again = true;
 
   if (mRecvState == CLOSE_PENDING) {
-    mSession->CloseWebTransport(mStreamId, mStatus, mReason);
+    OnClosePending();
     mRecvState = RECV_DONE;
     // This will closed the steam because the stream is Done().
     return NS_OK;
@@ -230,7 +172,7 @@ nsresult Http3WebTransportSession::WriteSegments() {
     countWrittenSingle = 0;
     rv = mTransaction->WriteSegmentsAgain(
         this, nsIOService::gDefaultSegmentSize, &countWrittenSingle, &again);
-    LOG(("Http3WebTransportSession::WriteSegments rv=0x%" PRIx32
+    LOG(("Http3TunnelStreamBase::WriteSegments rv=0x%" PRIx32
          " countWrittenSingle=%" PRIu32 " socketin=%" PRIx32 " [this=%p]",
          static_cast<uint32_t>(rv), countWrittenSingle,
          static_cast<uint32_t>(mSocketInCondition), this));
@@ -254,6 +196,9 @@ nsresult Http3WebTransportSession::WriteSegments() {
         rv = mSocketInCondition;
       }
       again = false;
+    } else if (mRecvState == ACTIVE) {
+      // again = false;
+      again = OnActivated();
     }
     // read more from the socket until error...
   } while (again && gHttpHandler->Active());
@@ -261,7 +206,7 @@ nsresult Http3WebTransportSession::WriteSegments() {
   return rv;
 }
 
-void Http3WebTransportSession::SetResponseHeaders(
+void Http3TunnelStreamBase::SetResponseHeaders(
     nsTArray<uint8_t>& aResponseHeaders, bool fin, bool interim) {
   MOZ_ASSERT(mRecvState == BEFORE_HEADERS ||
              mRecvState == READING_INTERIM_HEADERS);
@@ -269,11 +214,9 @@ void Http3WebTransportSession::SetResponseHeaders(
   mRecvState = (interim) ? READING_INTERIM_HEADERS : READING_HEADERS;
 }
 
-nsresult Http3WebTransportSession::OnWriteSegment(char* buf, uint32_t count,
-                                                  uint32_t* countWritten) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-
-  LOG(("Http3WebTransportSession::OnWriteSegment [this=%p, state=%d", this,
+nsresult Http3TunnelStreamBase::OnWriteSegment(char* buf, uint32_t count,
+                                               uint32_t* countWritten) {
+  LOG(("Http3TunnelStreamBase::OnWriteSegment [this=%p, state=%d", this,
        mRecvState));
   nsresult rv = NS_OK;
   switch (mRecvState) {
@@ -322,6 +265,75 @@ nsresult Http3WebTransportSession::OnWriteSegment(char* buf, uint32_t count,
   return rv;
 }
 
+nsresult Http3TunnelStreamBase::OnReadSegment(const char* buf, uint32_t count,
+                                              uint32_t* countRead) {
+  LOG(("Http3TunnelStreamBase::OnReadSegment count=%u state=%d [this=%p]",
+       count, mSendState, this));
+
+  nsresult rv = NS_OK;
+
+  switch (mSendState) {
+    case PREPARING_HEADERS: {
+      if (!ConsumeHeaders(buf, count, countRead)) {
+        break;
+      }
+      mSendState = WAITING_TO_ACTIVATE;
+    }
+      [[fallthrough]];
+    case WAITING_TO_ACTIVATE:
+      rv = TryActivating();
+      if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+        LOG3(
+            ("Http3TunnelStreamBase::OnReadSegment %p cannot activate now. "
+             "queued.\n",
+             this));
+        break;
+      }
+      if (NS_FAILED(rv)) {
+        LOG3(
+            ("Http3TunnelStreamBase::OnReadSegment %p cannot activate "
+             "error=0x%" PRIx32 ".",
+             this, static_cast<uint32_t>(rv)));
+        break;
+      }
+
+      // Successfully activated.
+      mTransaction->OnTransportStatus(nullptr, NS_NET_STATUS_SENDING_TO, 0);
+
+      mSendState = PROCESSING_DATAGRAM;
+      break;
+    default:
+      MOZ_ASSERT(false, "We are done sending this request!");
+      rv = NS_ERROR_UNEXPECTED;
+      break;
+  }
+
+  mSocketOutCondition = rv;
+
+  return mSocketOutCondition;
+}
+
+void Http3TunnelStreamBase::TransactionIsDone(nsresult aResult) {
+  mTransaction->Close(aResult);
+  mTransaction = nullptr;
+}
+
+//-----------------------------------------------------------------------------
+// Http3WebTransportSession
+//-----------------------------------------------------------------------------
+
+Http3WebTransportSession::Http3WebTransportSession(nsAHttpTransaction* trans,
+                                                   Http3Session* aHttp3Session)
+    : Http3TunnelStreamBase(trans, aHttp3Session) {
+  LOG(("Http3WebTransportSession ctor %p", this));
+}
+
+Http3WebTransportSession::~Http3WebTransportSession() = default;
+
+uint64_t Http3WebTransportSession::GetStreamId() const {
+  return Http3StreamBase::StreamId();
+}
+
 void Http3WebTransportSession::Close(nsresult aResult) {
   LOG(("Http3WebTransportSession::Close %p", this));
   if (mListener) {
@@ -339,6 +351,10 @@ void Http3WebTransportSession::Close(nsresult aResult) {
     mSession->CloseWebTransportConn();
     mSession = nullptr;
   }
+}
+
+void Http3WebTransportSession::OnClosePending() {
+  mSession->CloseWebTransport(mStreamId, mStatus, mReason);
 }
 
 void Http3WebTransportSession::OnSessionClosed(bool aCleanly, uint32_t aStatus,
@@ -367,11 +383,6 @@ void Http3WebTransportSession::CloseSession(uint32_t aStatus,
     mSendState = SEND_DONE;
   }
   mListener = nullptr;
-}
-
-void Http3WebTransportSession::TransactionIsDone(nsresult aResult) {
-  mTransaction->Close(aResult);
-  mTransaction = nullptr;
 }
 
 void Http3WebTransportSession::CreateOutgoingBidirectionalStream(

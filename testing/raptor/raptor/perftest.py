@@ -609,16 +609,13 @@ class Perftest(metaclass=ABCMeta):
             playback_manifest = test.get("playback_pageset_manifest")
         playback_manifests = playback_manifest.split(",")
 
-        self.config.update(
-            {
-                "playback_tool": test.get("playback"),
-                "playback_version": test.get("playback_version", "8.1.1"),
-                "playback_files": [
-                    os.path.join(playback_dir, manifest)
-                    for manifest in playback_manifests
-                ],
-            }
-        )
+        self.config.update({
+            "playback_tool": test.get("playback"),
+            "playback_version": test.get("playback_version", "8.1.1"),
+            "playback_files": [
+                os.path.join(playback_dir, manifest) for manifest in playback_manifests
+            ],
+        })
 
         LOG.info("test uses playback tool: %s " % self.config["playback_tool"])
 
@@ -749,7 +746,7 @@ class PerftestAndroid(Perftest):
             LOG.info("Reverse port forwarding is used only on local devices")
 
     def build_browser_profile(self):
-        super(PerftestAndroid, self).build_browser_profile()
+        super().build_browser_profile()
 
         if self.config["app"] in FIREFOX_ANDROID_APPS:
             # Merge in the Android profile.
@@ -803,7 +800,7 @@ class PerftestDesktop(Perftest):
     """Mixin class for Desktop-specific Perftest subclasses"""
 
     def __init__(self, *args, **kwargs):
-        super(PerftestDesktop, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def setup_chrome_args(self, test):
         """Sets up chrome/chromium cmd-line arguments.
@@ -876,7 +873,7 @@ class PerftestDesktop(Perftest):
                 elif "linux" in self.config["platform"]:
                     command = [self.config["binary"], "--version"]
                     proc = subprocess.run(
-                        command, timeout=10, capture_output=True, text=True
+                        command, check=False, timeout=10, capture_output=True, text=True
                     )
 
                     bmeta = proc.stdout.split("\n")

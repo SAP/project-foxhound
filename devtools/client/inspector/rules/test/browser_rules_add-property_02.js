@@ -120,6 +120,18 @@ add_task(async function () {
     3,
     "We still have the same number of text properties."
   );
+
+  await checkRuleViewContent(view, [
+    { selector: "element", selectorEditable: false, declarations: [] },
+    {
+      selector: "#testid",
+      declarations: [
+        { name: "color", value: "blue" },
+        { name: "background-color", value: "purple", dirty: true },
+        { name: "--x", value: "", dirty: true },
+      ],
+    },
+  ]);
 });
 
 add_task(async function addDeclarationInRuleWithNestedRule() {

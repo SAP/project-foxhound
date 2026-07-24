@@ -3,13 +3,16 @@
 
 "use strict";
 
-add_task(async function testHiddenWhenStudiesDisabled() {
+add_task(async function testHiddenWhenLabsDisabled() {
   const cleanup = await setupLabsTest();
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.preferences.experimental", true],
-      ["browser.preferences.experimental.hidden", false],
-    ],
+    set: [["browser.preferences.experimental.hidden", false]],
+  });
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      UserMessaging: { FirefoxLabs: false },
+    },
   });
 
   await BrowserTestUtils.openNewForegroundTab(
@@ -19,151 +22,27 @@ add_task(async function testHiddenWhenStudiesDisabled() {
 
   const doc = gBrowser.contentDocument;
 
-  await waitForExperimentalFeaturesShown(doc);
-
-  const enrollPromises = [
-    promiseNimbusStoreUpdate("nimbus-qa-1", true),
-    promiseNimbusStoreUpdate("nimbus-qa-2", true),
-  ];
-
-  await enrollByClick(doc.getElementById("nimbus-qa-1"), true);
-  await enrollByClick(doc.getElementById("nimbus-qa-2"), true);
-
-  await enrollPromises;
-
-  const unenrollPromises = [
-    promiseNimbusStoreUpdate("nimbus-qa-1", false),
-    promiseNimbusStoreUpdate("nimbus-qa-2", false),
-  ];
-
-  // Disabling studies should remove the experimental pane.
-  await SpecialPowers.pushPrefEnv({
-    set: [["app.shield.optoutstudies.enabled", false]],
-  });
-
-  await waitForExperimentalFeaturesHidden(doc);
-  await unenrollPromises;
-
-  ok(
-    !ExperimentAPI._manager.store.get("nimbus-qa-1")?.active,
-    "Should unenroll from nimbus-qa-1"
-  );
-  ok(
-    !ExperimentAPI._manager.store.get("nimbus-qa-2")?.active,
-    "Should unenroll from nimbus-qa-2"
-  );
-
-  // Re-enabling studies should re-add it.
-  await SpecialPowers.popPrefEnv();
-  await waitForExperimentalFeaturesShown(doc);
-
-  // Navigate back to the experimental tab.
-  EventUtils.synthesizeMouseAtCenter(
-    doc.getElementById("category-experimental"),
-    {},
-    gBrowser.contentWindow
-  );
-
-  await waitForPageFlush();
-
-  is(
-    doc.querySelector(".category[selected]").id,
-    "category-experimental",
-    "Experimental category selected"
-  );
-
-  ok(
-    !doc.getElementById("nimbus-qa-1").checked,
-    "nimbus-qa-1 checkbox unchecked"
-  );
-  ok(
-    !doc.getElementById("nimbus-qa-2").checked,
-    "nimbus-qa-2 checkbox unchecked"
-  );
-
-  await enrollByClick(doc.getElementById("nimbus-qa-1"), true);
-  await enrollByClick(doc.getElementById("nimbus-qa-2"), true);
-
-  // Likewise, disabling telemetry should remove the experimental pane.
-  await SpecialPowers.pushPrefEnv({
-    set: [["datareporting.healthreport.uploadEnabled", false]],
-  });
-
-  await waitForExperimentalFeaturesHidden(doc);
-
-  ok(
-    !ExperimentAPI._manager.store.get("nimbus-qa-1")?.active,
-    "Should unenroll from nimbus-qa-1"
-  );
-  ok(
-    !ExperimentAPI._manager.store.get("nimbus-qa-2")?.active,
-    "Should unenroll from nimbus-qa-2"
-  );
-
-  await SpecialPowers.popPrefEnv();
-
-  // Re-enabling studies should re-add it.
-  await waitForExperimentalFeaturesShown(doc);
-
-  ok(
-    !doc.getElementById("nimbus-qa-1").checked,
-    "nimbus-qa-1 checkbox unchecked"
-  );
-  ok(
-    !doc.getElementById("nimbus-qa-2").checked,
-    "nimbus-qa-2 checkbox unchecked"
-  );
-
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
-
-  await cleanup();
-  await SpecialPowers.popPrefEnv();
-});
-
-async function waitForExperimentalFeaturesShown(doc) {
-  await TestUtils.waitForCondition(
-    () => doc.querySelector(".featureGate"),
-    "Wait for features to be added to the DOM"
-  );
-
-  ok(
-    !doc.getElementById("category-experimental").hidden,
-    "Experimental Features section should not be hidden"
-  );
-
-  ok(
-    !Services.prefs.getBoolPref("browser.preferences.experimental.hidden"),
-    "Hidden pref should be false"
-  );
-}
-
-async function waitForExperimentalFeaturesHidden(doc) {
   await TestUtils.waitForCondition(
     () => doc.getElementById("category-experimental").hidden,
-    "Wait for Experimental Features section to get hidden"
+    "Wait for Experimental Features section label to become hidden"
   );
 
-  ok(
-    doc.getElementById("category-experimental").hidden,
-    "Experimental Features section should be hidden when all features are hidden"
+  is(
+    doc.getElementById("pane-experimental-featureGates"),
+    null,
+    "Experimental Features section not added to the DOM"
   );
-  ok(
-    doc.getElementById("firefoxExperimentalCategory").hidden,
-    "Experimental Features header should be hidden when all features are hidden"
-  );
+
   is(
     doc.querySelector(".category[selected]").id,
     "category-general",
     "When the experimental features section is hidden, navigating to #experimental should redirect to #general"
   );
-  ok(
-    Services.prefs.getBoolPref("browser.preferences.experimental.hidden"),
-    "Hidden pref should be true"
-  );
-}
 
-function waitForPageFlush() {
-  return new Promise(resolve =>
-    requestAnimationFrame(() => requestAnimationFrame(resolve))
-  );
-}
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  await SpecialPowers.popPrefEnv();
+  await cleanup();
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({});
+});

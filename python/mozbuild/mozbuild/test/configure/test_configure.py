@@ -40,9 +40,9 @@ class TestConfigure(unittest.TestCase):
         return config
 
     def moz_configure(self, source):
-        return MockedOpen(
-            {os.path.join(test_data_path, "moz.configure"): textwrap.dedent(source)}
-        )
+        return MockedOpen({
+            os.path.join(test_data_path, "moz.configure"): textwrap.dedent(source)
+        })
 
     def test_defaults(self):
         config = self.get_config()
@@ -269,16 +269,18 @@ class TestConfigure(unittest.TestCase):
 
     def test_returned_choices(self):
         for val in ("a", "b", "c"):
-            config = self.get_config(
-                ["--enable-values=alpha", "--returned-choices=%s" % val]
-            )
+            config = self.get_config([
+                "--enable-values=alpha",
+                "--returned-choices=%s" % val,
+            ])
             self.assertIn("CHOICES", config)
             self.assertEqual(PositiveOptionValue((val,)), config["CHOICES"])
 
         for val in ("0", "1", "2"):
-            config = self.get_config(
-                ["--enable-values=numeric", "--returned-choices=%s" % val]
-            )
+            config = self.get_config([
+                "--enable-values=numeric",
+                "--returned-choices=%s" % val,
+            ])
             self.assertIn("CHOICES", config)
             self.assertEqual(PositiveOptionValue((val,)), config["CHOICES"])
 
@@ -474,7 +476,7 @@ class TestConfigure(unittest.TestCase):
         class CountApplyImportsSandbox(ConfigureSandbox):
             def _apply_imports(self, *args, **kwargs):
                 imports.append((args, kwargs))
-                super(CountApplyImportsSandbox, self)._apply_imports(*args, **kwargs)
+                super()._apply_imports(*args, **kwargs)
 
         config = {}
         out = StringIO()
@@ -1374,7 +1376,7 @@ class TestConfigure(unittest.TestCase):
 
             self.assertEqual(
                 str(e.exception),
-                "@depends function needs the same `when` as " "options it depends on",
+                "@depends function needs the same `when` as options it depends on",
             )
 
         with self.moz_configure(
@@ -1394,7 +1396,7 @@ class TestConfigure(unittest.TestCase):
 
             self.assertEqual(
                 str(e.exception),
-                "@depends function needs the same `when` as " "options it depends on",
+                "@depends function needs the same `when` as options it depends on",
             )
 
         with self.moz_configure(
@@ -1485,10 +1487,9 @@ class TestConfigure(unittest.TestCase):
         self.assertEqual(str(e.exception), "Unexpected type: 'int'")
 
     def test_include_when(self):
-        with MockedOpen(
-            {
-                os.path.join(test_data_path, "moz.configure"): textwrap.dedent(
-                    """
+        with MockedOpen({
+            os.path.join(test_data_path, "moz.configure"): textwrap.dedent(
+                """
                 option('--with-foo', help='Foo')
 
                 include('always.configure', when=True)
@@ -1499,27 +1500,27 @@ class TestConfigure(unittest.TestCase):
                 set_config('BAR', bar)
                 set_config('QUX', qux)
             """
-                ),
-                os.path.join(test_data_path, "always.configure"): textwrap.dedent(
-                    """
+            ),
+            os.path.join(test_data_path, "always.configure"): textwrap.dedent(
+                """
                 option('--with-bar', help='Bar')
                 @depends('--with-bar')
                 def bar(x):
                     if x:
                         return 'bar'
             """
-                ),
-                os.path.join(test_data_path, "never.configure"): textwrap.dedent(
-                    """
+            ),
+            os.path.join(test_data_path, "never.configure"): textwrap.dedent(
+                """
                 option('--with-qux', help='Qux')
                 @depends('--with-qux')
                 def qux(x):
                     if x:
                         return 'qux'
             """
-                ),
-                os.path.join(test_data_path, "foo.configure"): textwrap.dedent(
-                    """
+            ),
+            os.path.join(test_data_path, "foo.configure"): textwrap.dedent(
+                """
                 option('--with-foo-really', help='Really foo')
                 @depends('--with-foo-really')
                 def foo(x):
@@ -1528,14 +1529,13 @@ class TestConfigure(unittest.TestCase):
 
                 include('foo2.configure', when='--with-foo-really')
             """
-                ),
-                os.path.join(test_data_path, "foo2.configure"): textwrap.dedent(
-                    """
+            ),
+            os.path.join(test_data_path, "foo2.configure"): textwrap.dedent(
+                """
                 set_config('FOO2', True)
             """
-                ),
-            }
-        ):
+            ),
+        }):
             config = self.get_config()
             self.assertEqual(config, {})
 
@@ -1586,7 +1586,7 @@ class TestConfigure(unittest.TestCase):
                 self.get_config()
 
         self.assertIn(
-            "Cannot assign `foo` because it is neither a @depends nor a " "@template",
+            "Cannot assign `foo` because it is neither a @depends nor a @template",
             str(e.exception),
         )
 
@@ -1615,7 +1615,7 @@ class TestConfigure(unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            "'--with-foo' is not a known option. Maybe it's " "declared too late?",
+            "'--with-foo' is not a known option. Maybe it's declared too late?",
         )
 
         with self.assertRaises(ConfigureError) as e:
@@ -1642,7 +1642,7 @@ class TestConfigure(unittest.TestCase):
 
         self.assertEqual(
             str(e.exception),
-            "Cannot use object of type 'int' as argument " "to @depends",
+            "Cannot use object of type 'int' as argument to @depends",
         )
 
         with self.assertRaises(ConfigureError) as e:
@@ -1947,7 +1947,7 @@ class TestConfigure(unittest.TestCase):
 
             self.assertEqual(
                 str(e.exception),
-                "@depends function needs the same `when` as " "options it depends on",
+                "@depends function needs the same `when` as options it depends on",
             )
 
         with self.moz_configure(
@@ -2084,9 +2084,9 @@ class TestConfigure(unittest.TestCase):
                         ("", NegativeOptionValue()),
                         ("--baz=baz", PositiveOptionValue(("baz",))),
                     ):
-                        config = self.get_config(
-                            [x for x in (foo_opt, bar_opt, baz_opt) if x]
-                        )
+                        config = self.get_config([
+                            x for x in (foo_opt, bar_opt, baz_opt) if x
+                        ])
                         self.assertEqual(
                             config,
                             {

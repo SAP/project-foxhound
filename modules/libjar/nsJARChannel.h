@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsJARChannel_h__
-#define nsJARChannel_h__
+#ifndef nsJARChannel_h_
+#define nsJARChannel_h_
 
-#include "mozilla/net/MemoryDownloader.h"
 #include "nsIJARChannel.h"
 #include "nsIJARURI.h"
 #include "nsIEventTarget.h"
@@ -113,4 +112,4 @@ class nsJARChannel final : public nsIJARChannel,
   nsCOMPtr<nsIEventTarget> mWorker;
 };
 
-#endif  // nsJARChannel_h__
+#endif  // nsJARChannel_h_

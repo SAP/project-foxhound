@@ -31,8 +31,8 @@ add_setup(async function () {
   });
 
   await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
-  defaultEngine = Services.search.getEngineByName("Example");
-  await Services.search.moveEngine(suggestionsEngine, 0);
+  defaultEngine = SearchService.getEngineByName("Example");
+  await SearchService.moveEngine(suggestionsEngine, 0);
 
   // Set our top sites.
   await PlacesUtils.history.clear();

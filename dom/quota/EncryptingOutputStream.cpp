@@ -5,10 +5,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EncryptingOutputStream.h"
-#include "EncryptingOutputStream_impl.h"
 
-#include <type_traits>
-#include "mozilla/MacroForEach.h"
+#include "EncryptingOutputStream_impl.h"
 #include "nsStreamUtils.h"
 
 namespace mozilla::dom::quota {

@@ -15,6 +15,7 @@ import io.mockk.verify
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.mock
+import mozilla.components.support.utils.FakeDateTimeProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,6 +23,8 @@ import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.utils.Settings
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.Calendar
 import java.util.Locale
 
@@ -39,6 +42,9 @@ class DefaultMetricsStorageTest {
     private var installTime = 0L
     private val doGetInstallTime = { installTime }
 
+    private val todaysDate = LocalDate.of(2026, 2, 6)
+    private val currentTimeMillis = todaysDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+
     private val settings = mockk<Settings>()
 
     private val dispatcher = StandardTestDispatcher()
@@ -54,7 +60,15 @@ class DefaultMetricsStorageTest {
         every { settings.firstWeekDaysOfUseGrowthData } returns setOf()
         every { settings.firstWeekDaysOfUseGrowthData = any() } returns Unit
 
-        storage = DefaultMetricsStorage(mockk(), settings, doCheckDefaultBrowser, doShouldSendGenerally, doGetInstallTime, dispatcher)
+        storage = DefaultMetricsStorage(
+            context = mockk(),
+            settings = settings,
+            checkDefaultBrowser = doCheckDefaultBrowser,
+            shouldSendGenerally = doShouldSendGenerally,
+            getInstalledTime = doGetInstallTime,
+            dispatcher = dispatcher,
+            dateTimeProvider = FakeDateTimeProvider(),
+        )
     }
 
     @Test
@@ -492,6 +506,408 @@ class DefaultMetricsStorageTest {
         assertFalse(captureSent.isCaptured)
     }
 
+    // shouldTrackFirstWeekLastDaysActivity
+    @Test
+    fun `GIVEN activity on 5th day of the first week WHEN checking for last days activity THEN return true`() {
+        installTime = currentTimeMillis
+        val fifthDayMillis = installTime + (dayMillis * 4)
+
+        val result = storage.shouldTrackFirstWeekLastDaysActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(fifthDayMillis).toDateStrings(),
+            currentTime = fifthDayMillis,
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN activity on 7th day of the first week WHEN checking for last days activity THEN return true`() {
+        installTime = currentTimeMillis
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.shouldTrackFirstWeekLastDaysActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(seventhDayMillis).toDateStrings(),
+            currentTime = seventhDayMillis,
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN no activity in the last 3 days of the first week WHEN checking for last days activity THEN return false`() {
+        installTime = currentTimeMillis
+        val fourthDayMillis = installTime + (dayMillis * 3)
+
+        val result = storage.shouldTrackFirstWeekLastDaysActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(fourthDayMillis).toDateStrings(),
+            currentTime = fourthDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN activity in last 3 days but event already sent WHEN checking for last days activity THEN return false`() {
+        installTime = currentTimeMillis
+        val sixthDayMillis = installTime + (dayMillis * 5)
+
+        val result = storage.shouldTrackFirstWeekLastDaysActivity(
+            eventSent = true,
+            firstWeekDaysOfUse = setOf(sixthDayMillis).toDateStrings(),
+            currentTime = sixthDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN no activity in last 3 days of first week but outside of it WHEN checking for last days activity THEN return false`() {
+        installTime = currentTimeMillis
+        val eighthDayMillis = installTime + (dayMillis * 7)
+
+        val result = storage.shouldTrackFirstWeekLastDaysActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(eighthDayMillis).toDateStrings(),
+            currentTime = eighthDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    // shouldTrackFirstWeekRecurrentlyActivity
+    @Test
+    fun `GIVEN minimum of 2 days of activity in first and second half of the week WHEN checking for recurrent activity THEN return true`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+        val fourthDayMillis = installTime + (dayMillis * 3)
+        val fifthDayMillis = installTime + (dayMillis * 4)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.shouldTrackFirstWeekRecurrentlyActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(
+                firstDayMillis,
+                fourthDayMillis,
+                fifthDayMillis,
+                seventhDayMillis,
+            ).toDateStrings(),
+            currentTime = seventhDayMillis,
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN activity only in first half of the week WHEN checking for recurrent activity THEN return false`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+        val fourthDayMillis = installTime + (dayMillis * 3)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.shouldTrackFirstWeekRecurrentlyActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(firstDayMillis, fourthDayMillis).toDateStrings(),
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN activity only in second half of the week WHEN checking for recurrent activity THEN return false`() {
+        installTime = currentTimeMillis
+        val fifthDayMillis = installTime + (dayMillis * 4)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.shouldTrackFirstWeekRecurrentlyActivity(
+            eventSent = false,
+            firstWeekDaysOfUse = setOf(fifthDayMillis, seventhDayMillis).toDateStrings(),
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN activity in both halves but event already sent WHEN checking for recurrent activity THEN return false`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+        val secondDayMillis = installTime + dayMillis
+        val fifthDayMillis = installTime + (dayMillis * 4)
+        val sixthDayMillis = installTime + (dayMillis * 5)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.shouldTrackFirstWeekRecurrentlyActivity(
+            eventSent = true,
+            firstWeekDaysOfUse = setOf(
+                firstDayMillis,
+                secondDayMillis,
+                fifthDayMillis,
+                sixthDayMillis,
+                seventhDayMillis,
+            ).toDateStrings(),
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    // shouldTrackFirstWeekFullActivityDefault
+    @Test
+    fun `GIVEN activity every day and set as default in first 4 days WHEN checking for full activity default THEN return true`() {
+        installTime = currentTimeMillis
+        val days = (0..6).map { (installTime + (it * dayMillis)) }.toSet().toDateStrings()
+        val seventhDayMillis = installTime + (6 * dayMillis)
+
+        val result = storage.shouldTrackFirstWeekFullActivityDefault(
+            eventSent = false,
+            isBrowserSetToDefaultDuringFirstFourDays = true,
+            firstWeekDaysOfUse = days,
+            currentTime = seventhDayMillis,
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN activity only 5 days WHEN checking for full activity default THEN return false`() {
+        installTime = currentTimeMillis
+        val days = (0..4).map { (installTime + (it * dayMillis)) }.toSet().toDateStrings()
+        val seventhDayMillis = installTime + (6 * dayMillis)
+
+        val result = storage.shouldTrackFirstWeekFullActivityDefault(
+            eventSent = false,
+            isBrowserSetToDefaultDuringFirstFourDays = true,
+            firstWeekDaysOfUse = days,
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN activity only 6 days WHEN checking for full activity default on 8th day THEN return false`() {
+        installTime = currentTimeMillis
+        val days = (0..5).map { (installTime + (it * dayMillis)) }.toSet().toDateStrings()
+        val eighthDayMillis = installTime + (7 * dayMillis)
+
+        val result = storage.shouldTrackFirstWeekFullActivityDefault(
+            eventSent = false,
+            isBrowserSetToDefaultDuringFirstFourDays = true,
+            firstWeekDaysOfUse = days,
+            currentTime = eighthDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN not set as default in first 4 days WHEN checking for full activity default THEN return false`() {
+        installTime = currentTimeMillis
+        val days = (0..6).map { (installTime + (it * dayMillis)) }.toSet().toDateStrings()
+        val seventhDayMillis = installTime + (6 * dayMillis)
+
+        val result = storage.shouldTrackFirstWeekFullActivityDefault(
+            eventSent = false,
+            isBrowserSetToDefaultDuringFirstFourDays = false,
+            firstWeekDaysOfUse = days,
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN activity every day and set as default in first 4 days but event already sent WHEN checking for full activity default THEN return false`() {
+        installTime = currentTimeMillis
+        val days = (0..6).map { (installTime + (it * dayMillis)) }.toSet().toDateStrings()
+        val seventhDayMillis = installTime + (6 * dayMillis)
+
+        val result = storage.shouldTrackFirstWeekFullActivityDefault(
+            eventSent = true,
+            isBrowserSetToDefaultDuringFirstFourDays = true,
+            firstWeekDaysOfUse = days,
+            currentTime = seventhDayMillis,
+        )
+
+        assertFalse(result)
+    }
+
+    // activeInFirstPartOfTheWeek
+    @Test
+    fun `GIVEN 2 active days in the first 4 days WHEN checking activeInFirstPartOfTheWeek THEN return true`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+        val fourthDayMillis = installTime + (dayMillis * 3)
+
+        val result = storage.activeInFirstPartOfTheWeek(
+            setOf(
+                firstDayMillis,
+                fourthDayMillis,
+            ).toDateStrings(),
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN 1 active day in the first 4 days WHEN checking activeInFirstPartOfTheWeek THEN return false`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+
+        val result = storage.activeInFirstPartOfTheWeek(setOf(firstDayMillis).toDateStrings())
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN 2 active days but none in the first 4 days WHEN checking activeInFirstPartOfTheWeek THEN return false`() {
+        installTime = currentTimeMillis
+        val sixthDayMillis = installTime + (dayMillis * 5)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.activeInFirstPartOfTheWeek(
+            setOf(
+                sixthDayMillis,
+                seventhDayMillis,
+            ).toDateStrings(),
+        )
+
+        assertFalse(result)
+    }
+
+    // activeInLastPartOfTheWeek
+    @Test
+    fun `GIVEN 2 active days in the last 3 days WHEN checking activeInLastPartOfTheWeek THEN return true`() {
+        installTime = currentTimeMillis
+        val fifthDayMillis = installTime + (dayMillis * 4)
+        val seventhDayMillis = installTime + (dayMillis * 6)
+
+        val result = storage.activeInLastPartOfTheWeek(
+            setOf(
+                fifthDayMillis,
+                seventhDayMillis,
+            ).toDateStrings(),
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN 1 active day in the last 3 days WHEN checking activeInLastPartOfTheWeek THEN return false`() {
+        installTime = currentTimeMillis
+        val fifthDayMillis = installTime + (dayMillis * 4)
+
+        val result = storage.activeInLastPartOfTheWeek(setOf(fifthDayMillis).toDateStrings())
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN 2 active days but none in the last 3 days WHEN checking activeInLastPartOfTheWeek THEN return false`() {
+        installTime = currentTimeMillis
+        val firstDayMillis = installTime
+        val secondDayMillis = installTime + dayMillis
+
+        val result = storage.activeInLastPartOfTheWeek(
+            setOf(
+                firstDayMillis,
+                secondDayMillis,
+            ).toDateStrings(),
+        )
+
+        assertFalse(result)
+    }
+
+    // updateIsDefaultBrowserDuringFirstFourDays
+    @Test
+    fun `GIVEN app is default browser within first 4 days WHEN updating THEN setting is updated`() {
+        installTime = currentTimeMillis
+        every {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        } returns Unit
+        val secondDayMillis = installTime + dayMillis
+
+        storage.updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = false,
+            isDefaultBrowser = true,
+            currentTime = secondDayMillis,
+        )
+
+        verify { settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = true }
+    }
+
+    @Test
+    fun `GIVEN app is not default browser within first 4 days WHEN updating THEN setting is not updated`() {
+        installTime = currentTimeMillis
+        every {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        } returns Unit
+        val secondDayMillis = installTime + dayMillis
+
+        storage.updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = false,
+            isDefaultBrowser = false,
+            currentTime = secondDayMillis,
+        )
+
+        verify(exactly = 0) {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        }
+    }
+
+    @Test
+    fun `GIVEN browser not set to default during first 4 days WHEN it is set to default on fifth day THEN the setting is not updated`() {
+        installTime = currentTimeMillis
+        every {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        } returns Unit
+        val fourthDayMillis = installTime + (dayMillis * 3)
+        val fifthDayMillis = installTime + (dayMillis * 4)
+
+        storage.updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = false,
+            isDefaultBrowser = false,
+            currentTime = fourthDayMillis,
+        )
+
+        verify(exactly = 0) {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        }
+
+        storage.updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = false,
+            isDefaultBrowser = true,
+            currentTime = fifthDayMillis,
+        )
+
+        verify(exactly = 0) {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        }
+    }
+
+    @Test
+    fun `GIVEN setting is already true WHEN updating THEN setting is not updated again`() {
+        installTime = currentTimeMillis
+        every {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        } returns Unit
+        val secondDayMillis = installTime + dayMillis
+
+        storage.updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = true,
+            isDefaultBrowser = true,
+            currentTime = secondDayMillis,
+        )
+
+        verify(exactly = 0) {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = any()
+        }
+    }
+
     private fun Calendar.copy() = clone() as Calendar
     private fun Calendar.createNextDay() = copy().apply {
         add(Calendar.DAY_OF_MONTH, 1)
@@ -499,7 +915,12 @@ class DefaultMetricsStorageTest {
     private fun Calendar.createPreviousDay() = copy().apply {
         add(Calendar.DAY_OF_MONTH, -1)
     }
+
     private fun Set<Calendar>.toStrings() = map {
         formatter.format(it.time)
+    }.toSet()
+
+    private fun Set<Long>.toDateStrings() = map {
+        formatter.format(it).toString()
     }.toSet()
 }

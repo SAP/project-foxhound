@@ -3,17 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Assertions.h"
 #include "txXPathOptimizer.h"
-#include "txExprResult.h"
+
+#include "mozilla/Assertions.h"
 #include "nsAtom.h"
 #include "nsGkAtoms.h"
-#include "txXPathNode.h"
 #include "txExpr.h"
+#include "txExprResult.h"
 #include "txIXPathContext.h"
+#include "txXPathNode.h"
 
 using mozilla::UniquePtr;
-using mozilla::Unused;
 
 class txEarlyEvalContext : public txIEvalContext {
  public:
@@ -219,7 +219,7 @@ void txXPathOptimizer::optimizeUnion(Expr* aInExpr, Expr** aOutExpr) {
         unionTest->addNodeTest(currentStep->getNodeTest());
 
         currentStep->setNodeTest(unionTest);
-        Unused << owner.release();
+        (void)owner.release();
       }
 
       // Merge the nodetest into the union

@@ -8,8 +8,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Unused.h"
 #include "MsaaAccessible.h"
 #include "nsAccessibilityService.h"
 
@@ -70,7 +68,7 @@ bool MsaaIdGenerator::ReleaseID(uint32_t aID) {
   // so capturing this here is safe.
   mReleaseIDTimer->InitWithNamedFuncCallback(
       ReleasePendingIdsCallback, this, kReleaseDelay, nsITimer::TYPE_ONE_SHOT,
-      "a11y::MsaaIdGenerator::ReleaseIDDelayed");
+      "a11y::MsaaIdGenerator::ReleaseIDDelayed"_ns);
 
   return true;
 }

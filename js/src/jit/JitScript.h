@@ -214,7 +214,7 @@ class alignas(uintptr_t) ICScript final : public TrailingArray<ICScript> {
   bool traceWeak(JSTracer* trc);
 
 #ifdef DEBUG
-  mozilla::HashNumber hash();
+  mozilla::HashNumber hash(JSContext* cx);
 #endif
 
  private:
@@ -362,6 +362,7 @@ class alignas(uintptr_t) JitScript final
   struct Flags {
     // True if this script entered Ion via OSR at a loop header.
     bool hadIonOSR : 1;
+    bool ranBytecodeAnalysis : 1;
   };
   Flags flags_ = {};  // Zero-initialize flags.
 
@@ -402,6 +403,9 @@ class alignas(uintptr_t) JitScript final
   void setHadIonOSR() { flags_.hadIonOSR = true; }
   bool hadIonOSR() const { return flags_.hadIonOSR; }
 
+  void setRanBytecodeAnalysis() { flags_.ranBytecodeAnalysis = true; }
+  bool ranBytecodeAnalysis() const { return flags_.ranBytecodeAnalysis; }
+
   uint32_t numICEntries() const { return icScript_.numICEntries(); }
 
 #ifdef DEBUG
@@ -410,6 +414,7 @@ class alignas(uintptr_t) JitScript final
   void resetAllActiveFlags();
 
   void ensureProfileString(JSContext* cx, JSScript* script);
+  void ensureProfilerScriptSource(JSContext* cx, JSScript* script);
 
   const char* profileString() const {
     MOZ_ASSERT(profileString_);

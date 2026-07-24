@@ -13,7 +13,8 @@ interface nsIAuthPrompt;
 interface nsISimpleEnumerator;
 interface nsIWebBrowserChrome;
 interface nsIWindowCreator;
-
+interface nsIOpenWindowInfo;
+interface nsIPrincipal;
 
 /**
  * nsIWindowWatcher is the keeper of Gecko/DOM Windows. It maintains
@@ -153,7 +154,6 @@ interface nsIWindowWatcher : nsISupports {
       Retrieves the active window from the focus manager.
   */
   readonly attribute mozIDOMWindowProxy activeWindow;
-
 };
 
 %{C++

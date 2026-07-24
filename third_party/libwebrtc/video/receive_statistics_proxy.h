@@ -11,25 +11,34 @@
 #ifndef VIDEO_RECEIVE_STATISTICS_PROXY_H_
 #define VIDEO_RECEIVE_STATISTICS_PROXY_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
-#include <string>
-#include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "api/video/corruption_detection/frame_instrumentation_evaluation.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_timing.h"
 #include "api/video_codecs/video_decoder.h"
 #include "call/video_receive_stream.h"
-#include "modules/include/module_common_types.h"
+#include "common_video/frame_counts.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/numerics/histogram_percentile_counter.h"
 #include "rtc_base/numerics/moving_max_counter.h"
 #include "rtc_base/numerics/running_statistics.h"
 #include "rtc_base/numerics/sample_counter.h"
 #include "rtc_base/rate_statistics.h"
-#include "rtc_base/rate_tracker.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 #include "video/stats_counter.h"
@@ -47,7 +56,8 @@ struct VideoFrameMetaData;
 
 class ReceiveStatisticsProxy : public VideoStreamBufferControllerStatsObserver,
                                public RtcpCnameCallback,
-                               public RtcpPacketTypeCounterObserver {
+                               public RtcpPacketTypeCounterObserver,
+                               public CorruptionScoreObserver {
  public:
   ReceiveStatisticsProxy(uint32_t remote_ssrc,
                          Clock* clock,
@@ -108,7 +118,7 @@ class ReceiveStatisticsProxy : public VideoStreamBufferControllerStatsObserver,
   void OnCname(uint32_t ssrc, absl::string_view cname) override;
 
   void OnCorruptionScore(double corruption_score,
-                         VideoContentType content_type);
+                         VideoContentType content_type) override;
 
   // Implements RtcpPacketTypeCounterObserver.
   void RtcpPacketTypesCounterUpdated(
@@ -158,7 +168,7 @@ class ReceiveStatisticsProxy : public VideoStreamBufferControllerStatsObserver,
       int64_t now_ms) const;
 
   Clock* const clock_;
-  const int64_t start_ms_;
+  const Timestamp start_;
 
   // Note: The `stats_.rtp_stats` member is not used or populated by this class.
   mutable VideoReceiveStreamInterface::Stats stats_
@@ -167,8 +177,8 @@ class ReceiveStatisticsProxy : public VideoStreamBufferControllerStatsObserver,
   const uint32_t remote_ssrc_;
   RateStatistics decode_fps_estimator_ RTC_GUARDED_BY(main_thread_);
   RateStatistics renders_fps_estimator_ RTC_GUARDED_BY(main_thread_);
-  rtc::RateTracker render_fps_tracker_ RTC_GUARDED_BY(main_thread_);
-  rtc::RateTracker render_pixel_tracker_ RTC_GUARDED_BY(main_thread_);
+  Timestamp first_frame_rendered_ RTC_GUARDED_BY(main_thread_);
+  int64_t total_render_sqrt_pixels_ RTC_GUARDED_BY(main_thread_);
   SampleCounter sync_offset_counter_ RTC_GUARDED_BY(main_thread_);
   SampleCounter decode_time_counter_ RTC_GUARDED_BY(main_thread_);
   SampleCounter jitter_delay_counter_ RTC_GUARDED_BY(main_thread_);
@@ -194,7 +204,7 @@ class ReceiveStatisticsProxy : public VideoStreamBufferControllerStatsObserver,
   std::optional<int64_t> last_decoded_frame_time_ms_
       RTC_GUARDED_BY(main_thread_);
   size_t num_delayed_frames_rendered_ RTC_GUARDED_BY(main_thread_);
-  int64_t sum_missed_render_deadline_ms_ RTC_GUARDED_BY(main_thread_);
+  TimeDelta sum_missed_render_deadline_ RTC_GUARDED_BY(main_thread_);
   // Mutable because calling Max() on MovingMaxCounter is not const. Yet it is
   // called from const GetStats().
   mutable MovingMaxCounter<TimingFrameInfo> timing_frame_info_counter_

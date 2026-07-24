@@ -3,12 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef FOGIPC_h__
-#define FOGIPC_h__
+#ifndef FOGIPC_h_
+#define FOGIPC_h_
 
 #include <functional>
 
-#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "nsTArrayForwardDeclare.h"
 
@@ -99,4 +98,4 @@ void RecordPowerMetrics();
 }  // namespace glean
 }  // namespace mozilla
 
-#endif  // FOGIPC_h__
+#endif  // FOGIPC_h_

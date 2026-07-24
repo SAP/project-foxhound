@@ -30,6 +30,5 @@ support-files = ["file_mixed_content_auto_upgrade_display_console.html"]
 
 ["browser_test_mixed_content_download.js"]
 skip-if = [
-  "win11_2009", # Bug 1784764
-  "os == 'linux' && !debug", # Bug 1784764
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1784764
 ]

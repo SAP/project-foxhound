@@ -195,8 +195,7 @@ support-files = [
 
 ["test_defineESModuleGetters_options_worker.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_envChain_frameScript.js"]
@@ -237,26 +236,25 @@ skip-if = [
 
 ["test_import_global_contextual_worker.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_import_global_current.js"]
 
 ["test_import_global_current_worker.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_import_global_worker.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_import_stack.js"]
-skip-if = ["!nightly_build"]
+skip-if = [
+  "!nightly_build",
+]
 
 ["test_isProxy.js"]
 
@@ -265,9 +263,6 @@ skip-if = ["!nightly_build"]
 ["test_js_weak_references.js"]
 
 ["test_json_parse_with_source.js"]
-prefs = [
-  "javascript.options.experimental.json_parse_with_source=true",
-]
 
 ["test_loadedESModules.js"]
 
@@ -279,11 +274,15 @@ prefs = [
 
 ["test_messageChannel.js"]
 
+["test_new_document_wrapper_preservation.js"]
+
 ["test_nuke_sandbox.js"]
 
 ["test_nuke_sandbox_event_listeners.js"]
 
 ["test_nuke_webextension_wrappers.js"]
+# bug 1865028
+skip-if = ["true"]
 
 ["test_onGarbageCollection-01.js"]
 head = "head_ongc.js"
@@ -339,9 +338,16 @@ head = "head_ongc.js"
 ["test_subScriptLoader.js"]
 
 ["test_symbols_as_weak_keys.js"]
-skip-if = ["!nightly_build"]
+skip-if = [
+  "!nightly_build",
+]
 
 ["test_tearoffs.js"]
+
+["test_telemetry.js"]
+prefs = [
+  "javascript.options.experimental.self_hosted_cache=true",
+]
 
 ["test_textDecoder.js"]
 
@@ -354,14 +360,14 @@ skip-if = ["!nightly_build"]
 ["test_wasm_jspi_profiler.js"]
 skip-if = [
   "!nightly_build",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan",
 ]
 
 ["test_wasm_tailcalls_profiler.js"]
+requesttimeoutfactor = 3  # Slow on Windows
 skip-if = [
   "!nightly_build",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan",
 ]
 
 ["test_watchdog_default.js"]

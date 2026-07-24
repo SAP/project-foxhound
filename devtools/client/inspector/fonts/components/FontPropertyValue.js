@@ -90,9 +90,9 @@ class FontPropertyValue extends PureComponent {
    * Given a `prop` key found on the component's props, check the matching `propLabel`.
    * If `propLabel` is true, return the `prop` value; Otherwise, return null.
    *
-   * @param {String} prop
+   * @param {string} prop
    *        Key found on the component's props.
-   * @return {Number|null}
+   * @return {number | null}
    */
   getPropLabel(prop) {
     const label = this.props[`${prop}Label`];
@@ -114,9 +114,9 @@ class FontPropertyValue extends PureComponent {
    * Ensure it is a number and that it does not go outside the min/max limits, unless
    * allowed by the `allowOverflow` and `allowUnderflow` props.
    *
-   * @param  {Number} value
+   * @param  {number} value
    *         Numeric value
-   * @return {Boolean}
+   * @return {boolean}
    *         Whether the value conforms to the components contraints.
    */
   isValueValid(value) {
@@ -173,6 +173,7 @@ class FontPropertyValue extends PureComponent {
    *
    * Number inputs in Firefox can't be trusted to filter out non-digit characters,
    * therefore we must implement our own validation.
+   *
    * @see https://bugzilla.mozilla.org/show_bug.cgi?id=1398528
    *
    * @param {Event} e
@@ -263,7 +264,7 @@ class FontPropertyValue extends PureComponent {
    * state instead of from props to prevent jittering during continous dragging of the
    * range input thumb or incrementing from the number input.
    *
-   * @param {Boolean} isInteractive
+   * @param {boolean} isInteractive
    *        Whether to mark the interactive state on or off.
    */
   toggleInteractiveState(isInteractive) {
@@ -284,7 +285,7 @@ class FontPropertyValue extends PureComponent {
    *
    * @see this.onBlur() for logic reconciling the internal state with props.
    *
-   * @param {Number} value
+   * @param {number} value
    *        Numeric property value.
    */
   updateValue(value) {

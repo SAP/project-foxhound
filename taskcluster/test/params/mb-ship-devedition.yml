@@ -17,10 +17,6 @@ existing_tasks:
   build-android-arm-shippable-lite/opt-upload-symbols: H4sWumyURaq-_SOpF_L4-g
   build-android-arm-shippable/opt: VujvXBzMRD-L9ktVi2gJhQ
   build-android-arm-shippable/opt-upload-symbols: fuAT9DCFRVOAIrH_qI6ANQ
-  build-android-x86-shippable-lite/opt: dY5HkQxOQFyGHAeJuQuHjw
-  build-android-x86-shippable-lite/opt-upload-symbols: GHKILWZkTYOQltpuiGsKxA
-  build-android-x86-shippable/opt: UrobaP4JSDmAeXUepYRfQA
-  build-android-x86-shippable/opt-upload-symbols: P8Kv8e0xT0qYFdl91MyuhA
   build-android-x86_64-asan-fuzzing/opt: ZBWTk_-bQQCz6YJmliKDUg
   build-android-x86_64-shippable-lite/opt: CnHRYjsZQ7yDd80bUWueRg
   build-android-x86_64-shippable-lite/opt-upload-symbols: SYj1jfibRsOJLhucAmFZ6Q
@@ -243,7 +239,6 @@ existing_tasks:
   fetch-xar: D21ielmgQmizRTszd0yuxQ
   fetch-xz-5.4.4: bKLWrDhKRKqeIP6singvGQ
   fuzzing-python: dilNlDlNR5mZZ4UemFbA_w
-  generate-profile-android-x86-shippable/opt: a7B12IM-Txu_ASQabWE23Q
   generate-profile-android-x86_64-shippable/opt: JgJ7I-hTToGzRL2QeF1Pqg
   generate-profile-linux-shippable/opt: faMDRtrTSdCgjNhafWz5MQ
   generate-profile-linux64-shippable/opt: KjAlgjZfSIWrz0210SWV0w
@@ -251,7 +246,6 @@ existing_tasks:
   generate-profile-win32-shippable/opt: PeKp0BmBRAyAZ_SmWr02vQ
   generate-profile-win64-shippable/opt: YG86cFJKRai7Xmmuv1CCNw
   hazard-linux64-haz/debug: bO7OMp1bQsGwmOUPakGSTQ
-  instrumented-build-android-x86-shippable/opt: EvEe4kKmQGGOySRB4F0A5A
   instrumented-build-android-x86_64-shippable/opt: YWiX1LWnTO2avHbJactrOw
   instrumented-build-linux-shippable/opt: Cu2uc-gMThaULwCVPDjMCA
   instrumented-build-linux64-shippable/opt: dpkY9JwPQ56PofWGEAr4aA
@@ -2454,8 +2448,6 @@ existing_tasks:
   toolchain-android-arm-libunwind-17: MB28IG86QhqULlgWFgXBcA
   toolchain-android-x64-compiler-rt-17: Q38Mk-2wRI2fqObYJv_-AQ
   toolchain-android-x64-libunwind-17: c7S-ISTWReSq4QxlF9cLBw
-  toolchain-android-x86-compiler-rt-17: MTUGrMwdQDWEAX62qDtnsw
-  toolchain-android-x86-libunwind-17: GKa23zxiQGqReOTKKT40wA
   toolchain-browsertime: WzM15r-EQRCkuxRJWuPcBA
   toolchain-clang-dist-toolchain: UOI6Ncl2Q8ONcl5JEqK9AQ
   toolchain-linux32-llvm-symbolizer-17: FpHJGUtDRgqaySuBjMUC-A
@@ -2526,7 +2518,6 @@ existing_tasks:
   toolchain-linux64-winchecksec: SVDd4XWNQbyL2L7Gy5MRlQ
   toolchain-linux64-wine: ItOfIoMiRx-KXcSGxWJ_rg
   toolchain-linux64-x64-compiler-rt-17: asI3jotbSniZHRZEaQAACw
-  toolchain-linux64-x86-compiler-rt-17: SXnO2_ZMTp-XuG3fsHLuUQ
   toolchain-linux64-xar: CGxSNSA2QXK9l-zUegpBEw
   toolchain-macosx64-aarch64-cargo-vet: GuHSvO42StSWamK3IzApgA
   toolchain-macosx64-aarch64-cbindgen: bcpirkoxTZmdXIV2n3xl0A

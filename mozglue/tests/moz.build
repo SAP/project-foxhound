@@ -32,6 +32,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
         [
             "TestNativeNt",
             "TestPEExportSection",
+            "TestSharedMappingCommit",
             "TestStackCookie",
             "TestTimeStampWin",
         ],

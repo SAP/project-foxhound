@@ -6,21 +6,19 @@
 
 #include "StorageIPC.h"
 
+#include "LocalStorageManager.h"
+#include "SessionStorageCache.h"
+#include "SessionStorageManager.h"
+#include "SessionStorageObserver.h"
 #include "StorageCommon.h"
 #include "StorageUtils.h"
-#include "LocalStorageManager.h"
-#include "SessionStorageObserver.h"
-#include "SessionStorageManager.h"
-#include "SessionStorageCache.h"
-
+#include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundParent.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsIPrincipal.h"
 #include "nsThreadUtils.h"
@@ -361,7 +359,7 @@ mozilla::ipc::IPCResult StorageDBChild::RecvOriginsHavingData(
   // Force population of mOriginsHavingData even if there are no origins so that
   // ShouldPreloadOrigin does not generate false positives for all origins.
   if (!aOrigins.Length()) {
-    Unused << OriginsHavingData();
+    (void)OriginsHavingData();
   }
 
   for (uint32_t i = 0; i < aOrigins.Length(); ++i) {
@@ -426,7 +424,7 @@ StorageDBChild::ShutdownObserver::Observe(nsISupports* aSubject,
     return NS_ERROR_FAILURE;
   }
 
-  Unused << observerService->RemoveObserver(this, "xpcom-shutdown");
+  (void)observerService->RemoveObserver(this, "xpcom-shutdown");
 
   StorageDBChild*& storageChild = sStorageChild[mPrivateBrowsingId];
   if (storageChild) {
@@ -639,7 +637,7 @@ mozilla::ipc::IPCResult LocalStorageCacheParent::RecvNotify(
       // instead of posting it to the main thread.  The advantage of doing so is
       // that it would save an IPC message in the case where the principals do
       // not match.
-      Unused << localStorageCacheParent->SendObserve(
+      (void)localStorageCacheParent->SendObserve(
           mPrincipalInfo, localStorageCacheParent->PrincipalInfo(),
           mPrivateBrowsingId, aDocumentURI, aKey, aOldValue, aNewValue);
     }
@@ -739,7 +737,7 @@ void StorageDBParent::Init() {
   if (storageThread) {
     nsTArray<nsCString> scopes;
     storageThread->GetOriginsHavingData(&scopes);
-    mozilla::Unused << SendOriginsHavingData(scopes);
+    (void)SendOriginsHavingData(scopes);
   }
 }
 
@@ -818,7 +816,7 @@ class SyncLoadCacheHelper : public LocalStorageCacheBridge {
     *mRv = NS_ERROR_UNEXPECTED;
   }
 
-  virtual const nsCString Origin() const override {
+  virtual nsCString Origin() const override {
     return LocalStorageManager::CreateOrigin(mSuffix, mOrigin);
   }
   virtual const nsCString& OriginNoSuffix() const override { return mOrigin; }
@@ -902,7 +900,7 @@ mozilla::ipc::IPCResult StorageDBParent::RecvAsyncAddItem(
   nsresult rv = storageThread->AsyncAddItem(
       NewCache(aOriginSuffix, aOriginNoSuffix), aKey, aValue);
   if (NS_FAILED(rv) && mIPCOpen) {
-    mozilla::Unused << SendError(rv);
+    (void)SendError(rv);
   }
 
   return IPC_OK();
@@ -920,7 +918,7 @@ mozilla::ipc::IPCResult StorageDBParent::RecvAsyncUpdateItem(
   nsresult rv = storageThread->AsyncUpdateItem(
       NewCache(aOriginSuffix, aOriginNoSuffix), aKey, aValue);
   if (NS_FAILED(rv) && mIPCOpen) {
-    mozilla::Unused << SendError(rv);
+    (void)SendError(rv);
   }
 
   return IPC_OK();
@@ -938,7 +936,7 @@ mozilla::ipc::IPCResult StorageDBParent::RecvAsyncRemoveItem(
   nsresult rv = storageThread->AsyncRemoveItem(
       NewCache(aOriginSuffix, aOriginNoSuffix), aKey);
   if (NS_FAILED(rv) && mIPCOpen) {
-    mozilla::Unused << SendError(rv);
+    (void)SendError(rv);
   }
 
   return IPC_OK();
@@ -955,7 +953,7 @@ mozilla::ipc::IPCResult StorageDBParent::RecvAsyncClear(
   nsresult rv =
       storageThread->AsyncClear(NewCache(aOriginSuffix, aOriginNoSuffix));
   if (NS_FAILED(rv) && mIPCOpen) {
-    mozilla::Unused << SendError(rv);
+    (void)SendError(rv);
   }
 
   return IPC_OK();
@@ -1024,8 +1022,7 @@ void StorageDBParent::Observe(const nsACString& aTopic,
                               const nsAString& aOriginAttributesPattern,
                               const nsACString& aOriginScope) {
   if (mIPCOpen) {
-    mozilla::Unused << SendObserve(aTopic, aOriginAttributesPattern,
-                                   aOriginScope);
+    (void)SendObserve(aTopic, aOriginAttributesPattern, aOriginScope);
   }
 }
 
@@ -1074,11 +1071,10 @@ class LoadRunnable : public Runnable {
 
     switch (mType) {
       case loadItem:
-        mozilla::Unused << mParent->SendLoadItem(mSuffix, mOrigin, mKey,
-                                                 mValue);
+        (void)mParent->SendLoadItem(mSuffix, mOrigin, mKey, mValue);
         break;
       case loadDone:
-        mozilla::Unused << mParent->SendLoadDone(mSuffix, mOrigin, mRv);
+        (void)mParent->SendLoadDone(mSuffix, mOrigin, mRv);
         break;
     }
 
@@ -1092,7 +1088,7 @@ class LoadRunnable : public Runnable {
 
 // StorageDBParent::CacheParentBridge
 
-const nsCString StorageDBParent::CacheParentBridge::Origin() const {
+nsCString StorageDBParent::CacheParentBridge::Origin() const {
   return LocalStorageManager::CreateOrigin(mOriginSuffix, mOriginNoSuffix);
 }
 
@@ -1182,7 +1178,7 @@ class UsageRunnable : public Runnable {
       return NS_OK;
     }
 
-    mozilla::Unused << mParent->SendLoadUsage(mOriginScope, mUsage);
+    (void)mParent->SendLoadUsage(mOriginScope, mUsage);
 
     mParent = nullptr;
 
@@ -1341,8 +1337,8 @@ nsresult SessionStorageObserverParent::Observe(
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!mActorDestroyed) {
-    mozilla::Unused << SendObserve(nsDependentCString(aTopic),
-                                   aOriginAttributesPattern, aOriginScope);
+    (void)SendObserve(nsDependentCString(aTopic), aOriginAttributesPattern,
+                      aOriginScope);
   }
   return NS_OK;
 }
@@ -1453,9 +1449,11 @@ BackgroundSessionStorageManager* SessionStorageManagerParent::GetManager()
 }
 
 mozilla::ipc::IPCResult SessionStorageManagerParent::RecvClearStorages(
-    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
+    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+    const uint32_t& aMode) {
   ::mozilla::ipc::AssertIsOnBackgroundThread();
-  mBackgroundManager->ClearStorages(aPattern, aOriginScope);
+  mBackgroundManager->ClearStorages(aPattern, aOriginScope,
+                                    static_cast<DomainMatchingMode>(aMode));
   return IPC_OK();
 }
 

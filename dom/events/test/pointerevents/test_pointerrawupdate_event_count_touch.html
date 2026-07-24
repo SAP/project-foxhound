@@ -23,7 +23,7 @@ if (!window.opener) {
   info("run tests in a new tab");
   window.open("test_pointerrawupdate_event_count_touch.html");
 } else {
-  function runTests() {
+  async function runTests() {
     const target0 = window.document.getElementById("target0");
     const utils = SpecialPowers.getDOMWindowUtils(window);
     utils.advanceTimeAndRefresh(0);
@@ -36,12 +36,34 @@ if (!window.opener) {
         event.screenY
       }, clientX: ${event.clientX}, clientY:${event.clientY}, buttons:${
         event.buttons
-      } }`;
+      }, pointerId: ${event.pointerId}, pointerType:"${event.pointerType}" }`;
     }
 
     SimpleTest.executeSoon(async () => {
-      function onPointerRawUpdate(event) {
+      function putEventToAllEvents(event) {
         allEvents.push(event);
+      }
+      const allEventsToLog = [
+        "pointerdown",
+        "pointerup",
+        "pointermove",
+        "pointerrawupdate",
+        "pointerover",
+        "pointerenter",
+        "pointerout",
+        "pointerleave",
+        "pointercancel",
+      ];
+      for (const type of allEventsToLog) {
+        target0.addEventListener(type, putEventToAllEvents, {capture: true});
+      }
+      function onPointerRawUpdate(event) {
+        // Windows may notify unexpected mouse move when multiple pointers are
+        // used even without the user actually moves the mouse.  Let's ignore
+        // the events since they are not what we're checking in this test.
+        if (event.pointerType != "touch") {
+          return;
+        }
         pointerRawUpdateEvents.push(event);
         // Currently, we need to compute the coordinates of the coalesced events
         // while the host event is being dispatched. See bug 1960530.
@@ -50,13 +72,21 @@ if (!window.opener) {
       target0.addEventListener("pointerrawupdate", onPointerRawUpdate);
       const waitForPointerMove = new Promise(resolve => {
         function onPointerMove(event) {
-          allEvents.push(event);
+          // Windows may notify unexpected mouse move when multiple pointers are
+          // used even without the user actually moves the mouse.  Let's ignore
+          // the events since they are not what we're checking in this test.
+          if (event.pointerType != "touch") {
+            return;
+          }
           for (const coalescedEvent of event.getCoalescedEvents()) {
             coalescedPointerMoveEvents.push(coalescedEvent);
           }
           if (pointerRawUpdateEvents.length > 1) {
             target0.removeEventListener("pointermove", onPointerMove);
             target0.removeEventListener("pointerrawupdate", onPointerRawUpdate);
+            for (const type of allEventsToLog) {
+              target0.removeEventListener(type, putEventToAllEvents, {capture: true});
+            }
             resolve();
           }
         }
@@ -70,11 +100,6 @@ if (!window.opener) {
           info(`${event.type}: ${stringifyPointerEvent(event)}`);
         }
         opener.ok(!!pointerRawUpdateEvents.length, "At least one pointerrawupdate event should be fired");
-        opener.is(
-          pointerRawUpdateEvents.length,
-          coalescedPointerMoveEvents.length,
-          `pointermove.getCoalescedEvents().length should be same as the number of preceding pointerrawupdate`
-        );
         {
           let i = 0;
           for (const pointerRawUpdateEvent of pointerRawUpdateEvents) {
@@ -95,8 +120,25 @@ if (!window.opener) {
           opener.is(
             stringifyPointerEvent(pointerRawUpdateEvents[i]),
             stringifyPointerEvent(coalescedPointerMoveEvents[i]),
-            `pointerrawupdate(${i++}): should have same values as coalesced pointermove events`
+            `pointerrawupdate(${i}): should have same values as coalesced pointermove events`
           );
+        }
+        if (pointerRawUpdateEvents.length < coalescedPointerMoveEvents.length) {
+          for (let i = pointerRawUpdateEvents.length; i < coalescedPointerMoveEvents.length; i++) {
+            opener.is(
+              "{}",
+              stringifyPointerEvent(coalescedPointerMoveEvents[i]),
+              `coalescedPointerMoveEvents(${i++}): should not be there`
+            );
+          }
+        } else if (pointerRawUpdateEvents.length > coalescedPointerMoveEvents.length) {
+          for (let i = coalescedPointerMoveEvents.length; i < pointerRawUpdateEvents.length; i++) {
+            opener.is(
+              stringifyPointerEvent(pointerRawUpdateEvents[i]),
+              "{}",
+              `pointerrawupdate(${i++}): should not be there`
+            );
+          }
         }
         opener.SimpleTest.finish();
         window.close();

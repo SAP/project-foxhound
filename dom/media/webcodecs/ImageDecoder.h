@@ -8,9 +8,7 @@
 #define mozilla_dom_ImageDecoder_h
 
 #include "FrameTimeout.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ImageDecoderBinding.h"
 #include "mozilla/dom/WebCodecsUtils.h"

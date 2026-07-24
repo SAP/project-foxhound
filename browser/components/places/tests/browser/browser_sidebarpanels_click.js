@@ -71,6 +71,9 @@ add_task(async function test_sidebarpanels_click() {
         visitDate: Date.now() * 1000,
         transition: PlacesUtils.history.TRANSITION_TYPED,
       });
+      // This test is specifically exercising the xul:tree interactions in the legacy sidebar
+      // panel implementations; it doesn't make sense to run it with revamp enabled.
+      await pushPref("sidebar.revamp", false);
     },
     prepare() {
       sidebar.contentDocument.getElementById("byvisited").doCommand();
@@ -84,7 +87,8 @@ add_task(async function test_sidebarpanels_click() {
       );
       is(tree.selectedNode.itemId, -1, "The selected node is not bookmarked");
     },
-    cleanup() {
+    async cleanup() {
+      await popPref();
       return PlacesUtils.history.clear();
     },
     sidebarName: HISTORY_SIDEBAR_ID,

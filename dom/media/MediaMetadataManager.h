@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(MediaMetadataManager_h__)
-#  define MediaMetadataManager_h__
-
-#  include "mozilla/AbstractThread.h"
-#  include "mozilla/LinkedList.h"
+#if !defined(MediaMetadataManager_h_)
+#  define MediaMetadataManager_h_
 
 #  include "MediaEventSource.h"
 #  include "TimeUnits.h"
 #  include "VideoUtils.h"
+#  include "mozilla/AbstractThread.h"
+#  include "mozilla/LinkedList.h"
 
 namespace mozilla {
 

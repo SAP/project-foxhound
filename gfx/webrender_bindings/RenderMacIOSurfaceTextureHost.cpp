@@ -14,6 +14,9 @@
 
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/GpuFence.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/TimeStamp.h"
 #include "ScopedGLHelpers.h"
 
 namespace mozilla {
@@ -104,6 +107,19 @@ wr::WrExternalImage RenderMacIOSurfaceTextureHost::Lock(uint8_t aChannelIndex,
     for (size_t i = 1; i < mSurface->GetPlaneCount(); ++i) {
       CreateTextureForPlane(i, mGL, mSurface, &(mTextureHandles[i]));
     }
+  }
+
+  if (mGpuFence) {
+    // This timeout matches the acquisition timeout for the keyed mutex
+    // in the D3D11 texture host.
+    auto timeout = TimeDuration::FromMilliseconds(10000);
+    auto start = TimeStamp::Now();
+    AUTO_PROFILER_MARKER("Lock MacIOSurfaceTexture", GRAPHICS);
+    while (!mGpuFence->HasCompleted() && (TimeStamp::Now() - start) < timeout) {
+      PR_Sleep(PR_MillisecondsToInterval(1));
+    }
+  } else {
+    PROFILER_MARKER_UNTYPED("No GpuFence", GRAPHICS);
   }
 
   const auto size = GetSize(aChannelIndex);

@@ -7,9 +7,9 @@
 #ifndef DOM_QUOTA_QUOTAUSAGEREQUESTCHILD_H_
 #define DOM_QUOTA_QUOTAUSAGEREQUESTCHILD_H_
 
-#include "nsISupportsImpl.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/quota/PQuotaUsageRequestChild.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom::quota {
 

@@ -4,38 +4,40 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ScriptLoader.h"
 #include "ModuleLoader.h"
 
-#include "jsapi.h"
+#include "GeckoProfiler.h"
+#include "ScriptLoader.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::InstantiateOptions
 #include "js/ContextOptions.h"  // JS::ContextOptionsRef
-#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/MemoryFunctions.h"
 #include "js/Modules.h"  // JS::FinishDynamicModuleImport, JS::{G,S}etModuleResolveHook, JS::Get{ModulePrivate,ModuleScript,RequestedModule{s,Specifier,SourcePos}}, JS::SetModule{DynamicImport,Metadata}Hook
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Realm.h"
 #include "js/SourceText.h"
+#include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/loader/LoadedScript.h"
-#include "js/loader/ScriptLoadRequest.h"
-#include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ModuleLoadRequest.h"
-#include "mozilla/dom/RequestBinding.h"
+#include "js/loader/ModuleLoaderBase.h"
+#include "js/loader/ScriptLoadRequest.h"
+#include "jsapi.h"
 #include "mozilla/Assertions.h"
-#include "nsError.h"
-#include "xpcpublic.h"
-#include "GeckoProfiler.h"
-#include "nsContentSecurityManager.h"
-#include "nsIContent.h"
-#include "nsJSUtils.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "nsContentSecurityManager.h"
+#include "nsError.h"
+#include "nsIContent.h"
 #include "nsIPrincipal.h"
-#include "mozilla/LoadInfo.h"
-#include "mozilla/Maybe.h"
+#include "nsJSUtils.h"
+#include "xpcpublic.h"
 
 using JS::SourceText;
 using namespace JS::loader;
@@ -67,24 +69,25 @@ bool ModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest, nsresult* aRvOut) {
     return false;
   }
 
-  // If this document is sandboxed without 'allow-scripts', abort.
-  if (GetScriptLoader()->GetDocument()->HasScriptsBlockedBySandbox()) {
-    *aRvOut = NS_OK;
-    return false;
-  }
-
-  // To prevent dynamic code execution, content scripts can only
-  // load moz-extension URLs.
   nsCOMPtr<nsIPrincipal> principal = aRequest->TriggeringPrincipal();
-  if (BasePrincipal::Cast(principal)->ContentScriptAddonPolicy() &&
-      !aRequest->mURI->SchemeIs("moz-extension")) {
-    *aRvOut = NS_ERROR_DOM_WEBEXT_CONTENT_SCRIPT_URI;
-    return false;
+  if (BasePrincipal::Cast(principal)->ContentScriptAddonPolicy()) {
+    // To prevent dynamic code execution, content scripts can only
+    // load moz-extension URLs.
+    if (!aRequest->URI()->SchemeIs("moz-extension")) {
+      *aRvOut = NS_ERROR_DOM_WEBEXT_CONTENT_SCRIPT_URI;
+      return false;
+    }
+  } else {
+    // If this document is sandboxed without 'allow-scripts', abort.
+    if (GetScriptLoader()->GetDocument()->HasScriptsBlockedBySandbox()) {
+      *aRvOut = NS_ERROR_CONTENT_BLOCKED;
+      return false;
+    }
   }
 
   if (LOG_ENABLED()) {
     nsAutoCString url;
-    aRequest->mURI->GetAsciiSpec(url);
+    aRequest->URI()->GetAsciiSpec(url);
     LOG(("ScriptLoadRequest (%p): Start Module Load (url = %s)", aRequest,
          url.get()));
   }
@@ -93,7 +96,7 @@ bool ModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest, nsresult* aRvOut) {
 }
 
 nsresult ModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
-  if (aRequest->IsStencil()) {
+  if (aRequest->IsCachedStencil()) {
     GetScriptLoader()->EmulateNetworkEvents(aRequest);
     SetModuleFetchStarted(aRequest);
     return aRequest->OnFetchComplete(NS_OK);
@@ -162,7 +165,7 @@ void ModuleLoader::ExecuteInlineModule(ModuleLoadRequest* aRequest) {
 void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsFinished());
 
-  if (aRequest->IsTopLevel()) {
+  if (aRequest->IsTopLevel() || aRequest->IsDynamicImport()) {
     if (aRequest->GetScriptLoadContext()->mIsInline &&
         aRequest->GetScriptLoadContext()->GetParserCreated() ==
             NOT_FROM_PARSER) {
@@ -210,10 +213,6 @@ void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
 nsresult ModuleLoader::CompileFetchedModule(
     JSContext* aCx, JS::Handle<JSObject*> aGlobal, JS::CompileOptions& aOptions,
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleOut) {
-  if (aRequest->IsTextSource()) {
-    GetScriptLoader()->CalculateBytecodeCacheFlag(aRequest);
-  }
-
   if (!nsJSUtils::IsScriptable(aGlobal)) {
     return NS_ERROR_FAILURE;
   }
@@ -221,20 +220,40 @@ nsresult ModuleLoader::CompileFetchedModule(
   switch (aRequest->mModuleType) {
     case JS::ModuleType::Unknown:
       MOZ_CRASH("Unexpected module type");
-    case JS::ModuleType::JavaScript:
-      return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleOut);
-    case JS::ModuleType::JSON: {
+    case JS::ModuleType::JavaScriptOrWasm:
+      return CompileJavaScriptOrWasmModule(aCx, aOptions, aRequest, aModuleOut);
+    case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleOut);
-    }
+    case JS::ModuleType::CSS:
+      return CompileCssModule(aCx, aOptions, aRequest, aModuleOut);
+    case JS::ModuleType::Bytes:
+      MOZ_CRASH("Unexpected module type");
   }
 
   MOZ_CRASH("Unhandled module type");
 }
 
-nsresult ModuleLoader::CompileJavaScriptModule(
+nsresult ModuleLoader::CompileJavaScriptOrWasmModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleOut) {
-  if (aRequest->IsStencil()) {
+  GetScriptLoader()->CalculateCacheFlag(aRequest);
+
+#ifdef NIGHTLY_BUILD
+  if (aRequest->HasWasmMimeTypeEssence()) {
+    MOZ_ASSERT(aRequest->IsWasmBytes());
+    auto* wasmModule =
+        JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    if (!wasmModule) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aModuleOut.set(wasmModule);
+    return NS_OK;
+  }
+#endif
+  MOZ_ASSERT(!aRequest->IsWasmBytes());
+
+  if (aRequest->IsCachedStencil()) {
     JS::InstantiateOptions instantiateOptions(aOptions);
     RefPtr<JS::Stencil> stencil = aRequest->GetStencil();
     aModuleOut.set(
@@ -261,6 +280,8 @@ nsresult ModuleLoader::CompileJavaScriptModule(
       return NS_ERROR_FAILURE;
     }
 
+    aRequest->SetStencil(stencil);
+
     JS::InstantiateOptions instantiateOptions(aOptions);
     aModuleOut.set(JS::InstantiateModuleStencil(aCx, instantiateOptions,
                                                 stencil, &storage));
@@ -268,8 +289,7 @@ nsresult ModuleLoader::CompileJavaScriptModule(
       return NS_ERROR_FAILURE;
     }
 
-    if (aRequest->IsTextSource() &&
-        aRequest->PassedConditionForBytecodeEncoding()) {
+    if (aRequest->PassedConditionForEitherCache()) {
       bool alreadyStarted;
       if (!JS::StartCollectingDelazifications(aCx, aModuleOut, stencil,
                                               alreadyStarted)) {
@@ -278,7 +298,7 @@ nsresult ModuleLoader::CompileJavaScriptModule(
       MOZ_ASSERT(!alreadyStarted);
     }
 
-    GetScriptLoader()->TryCacheRequest(aRequest, stencil);
+    GetScriptLoader()->TryCacheRequest(aRequest);
 
     return NS_OK;
   }
@@ -295,11 +315,11 @@ nsresult ModuleLoader::CompileJavaScriptModule(
     };
     stencil = maybeSource.mapNonEmpty(compile);
   } else {
-    MOZ_ASSERT(aRequest->IsBytecode());
+    MOZ_ASSERT(aRequest->IsSerializedStencil());
     JS::DecodeOptions decodeOptions(aOptions);
     decodeOptions.borrowBuffer = true;
 
-    JS::TranscodeRange range = aRequest->Bytecode();
+    JS::TranscodeRange range = aRequest->SerializedStencil();
     JS::TranscodeResult tr =
         JS::DecodeStencil(aCx, decodeOptions, range, getter_AddRefs(stencil));
     if (tr != JS::TranscodeResult::Ok) {
@@ -311,6 +331,8 @@ nsresult ModuleLoader::CompileJavaScriptModule(
     return NS_ERROR_FAILURE;
   }
 
+  aRequest->SetStencil(stencil);
+
   JS::InstantiateOptions instantiateOptions(aOptions);
   aModuleOut.set(
       JS::InstantiateModuleStencil(aCx, instantiateOptions, stencil));
@@ -318,8 +340,7 @@ nsresult ModuleLoader::CompileJavaScriptModule(
     return NS_ERROR_FAILURE;
   }
 
-  if (aRequest->IsTextSource() &&
-      aRequest->PassedConditionForBytecodeEncoding()) {
+  if (aRequest->PassedConditionForEitherCache()) {
     bool alreadyStarted;
     if (!JS::StartCollectingDelazifications(aCx, aModuleOut, stencil,
                                             alreadyStarted)) {
@@ -328,7 +349,7 @@ nsresult ModuleLoader::CompileJavaScriptModule(
     MOZ_ASSERT(!alreadyStarted);
   }
 
-  GetScriptLoader()->TryCacheRequest(aRequest, stencil);
+  GetScriptLoader()->TryCacheRequest(aRequest);
 
   return NS_OK;
 }
@@ -357,112 +378,154 @@ nsresult ModuleLoader::CompileJsonModule(
   return NS_OK;
 }
 
+nsresult ModuleLoader::CompileCssModule(
+    JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
+    JS::MutableHandle<JSObject*> aModuleOut) {
+  MOZ_ASSERT(!aRequest->GetScriptLoadContext()->mWasCompiledOMT);
+  MOZ_ASSERT(mozilla::StaticPrefs::layout_css_module_scripts_enabled());
+
+  MOZ_ASSERT(aRequest->IsTextSource());
+  ModuleLoader::MaybeSourceText maybeSource;
+  nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
+                                          aRequest->mLoadContext.get());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // https://html.spec.whatwg.org/#creating-a-css-module-script
+  JS::Rooted<JSObject*> cssModule(aCx, nullptr);
+  ErrorResult error;
+  auto compile = [&](auto& source) {
+    using T = decltype(source);
+    static_assert(std::is_same_v<T, JS::SourceText<char16_t>&> ||
+                  std::is_same_v<T, JS::SourceText<Utf8Unit>&>);
+
+    nsCOMPtr<nsPIDOMWindowInner> window =
+        do_QueryInterface(aRequest->GetGlobalObject());
+    if (!window) {
+      error.ThrowNotSupportedError("Not supported when there is no document");
+      return;
+    }
+
+    Document* constructorDocument = window->GetExtantDoc();
+    if (!constructorDocument) {
+      error.ThrowNotSupportedError("Not supported when there is no document");
+      return;
+    }
+
+    // 5. Let sheet be the result of running the steps to create a constructed
+    // CSSStyleSheet
+    //    with an empty dictionary as the argument.
+    // Note that according to the specification, the baseURL should be the
+    // baseURL of the document, but that doesn't seem correct (see
+    // https://github.com/whatwg/html/issues/11629).
+    dom::CSSStyleSheetInit options;
+    RefPtr<StyleSheet> sheet = StyleSheet::CreateConstructedSheet(
+        *constructorDocument, aRequest->BaseURL(), options, error);
+    if (error.Failed()) {
+      return;
+    }
+
+    // 6. Run the steps to synchronously replace the rules of a CSSStyleSheet on
+    // sheet given source. Ideally we wouldn't run this on the main thread for
+    // large scripts, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987143.
+    if constexpr (std::is_same_v<T, JS::SourceText<mozilla::Utf8Unit>&>) {
+      nsDependentCSubstring text(source.get(), source.length());
+      sheet->ReplaceSync(text, error);
+    } else if constexpr (std::is_same_v<T, JS::SourceText<char16_t>&>) {
+      nsDependentSubstring text(source.get(), source.length());
+      sheet->ReplaceSync(NS_ConvertUTF16toUTF8(text), error);
+    }
+    if (error.Failed()) {
+      return;
+    }
+
+    JS::Rooted<JS::Value> val(aCx, JS::NullValue());
+    if (!GetOrCreateDOMReflector(aCx, sheet, &val) || !val.isObject()) {
+      if (!JS_IsExceptionPending(aCx)) {
+        error.ThrowUnknownError("Internal error");
+      }
+      return;
+    }
+
+    // Steps. 1 - 4 (re-ordered), 7, 8
+    cssModule.set(JS::CreateDefaultExportSyntheticModule(aCx, val));
+  };
+
+  maybeSource.mapNonEmpty(compile);
+  if (!cssModule) {
+    if (error.Failed()) {
+      MOZ_ALWAYS_TRUE(error.MaybeSetPendingException(aCx));
+    }
+    return NS_ERROR_FAILURE;
+  }
+
+  aModuleOut.set(cssModule);
+  return NS_OK;
+}
+
 already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateTopLevel(
     nsIURI* aURI, nsIScriptElement* aElement, ReferrerPolicy aReferrerPolicy,
     ScriptFetchOptions* aFetchOptions, const SRIMetadata& aIntegrity,
     nsIURI* aReferrer, ScriptLoadContext* aContext,
     ScriptLoadRequestType aRequestType) {
-  RefPtr<VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(
-          aURI, JS::ModuleType::JavaScript);
-
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, JS::ModuleType::JavaScript, aReferrerPolicy, aFetchOptions,
-      aIntegrity, aReferrer, aContext, ModuleLoadRequest::Kind::TopLevel, this,
-      visitedSet, nullptr);
+      JS::ModuleType::JavaScript, aIntegrity, aReferrer, aContext,
+      ModuleLoadRequest::Kind::TopLevel, this, nullptr);
 
-  GetScriptLoader()->TryUseCache(request, aElement, aFetchOptions->mNonce,
-                                 aRequestType);
+  GetScriptLoader()->TryUseCache(aReferrerPolicy, aFetchOptions, aURI, request,
+                                 aElement, aFetchOptions->mNonce, aRequestType);
 
   return request.forget();
 }
 
-already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateStaticImport(
-    nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
-    const mozilla::dom::SRIMetadata& aSriMetadata) {
-  RefPtr<ScriptLoadContext> newContext = new ScriptLoadContext();
-  newContext->mIsInline = false;
-  // Propagated Parent values. TODO: allow child modules to use root module's
-  // script mode.
-  newContext->mScriptMode = aParent->GetScriptLoadContext()->mScriptMode;
-
-  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, aParent->ReferrerPolicy(), aParent->mFetchOptions,
-      aSriMetadata, aParent->mURI, newContext,
-      ModuleLoadRequest::Kind::StaticImport, aParent->mLoader,
-      aParent->mVisitedSet, aParent->GetRootModule());
-
-  GetScriptLoader()->TryUseCache(request);
-
-  return request.forget();
-}
-
-already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
-    JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-    LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-    JS::Handle<JSObject*> aPromise) {
-  MOZ_ASSERT(aSpecifier);
-  MOZ_ASSERT(aPromise);
-
-  RefPtr<ScriptFetchOptions> options = nullptr;
-  nsIURI* baseURL = nullptr;
+already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateRequest(
+    JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+    JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+    bool aIsDynamicImport, ScriptFetchOptions* aOptions,
+    ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+    const SRIMetadata& aSriMetadata) {
   RefPtr<ScriptLoadContext> context = new ScriptLoadContext();
-  ReferrerPolicy referrerPolicy;
-
-  if (aMaybeActiveScript) {
-    // https://html.spec.whatwg.org/multipage/webappapis.html#hostloadimportedmodule
-    // Step 6.3. Set fetchOptions to the new descendant script fetch options for
-    // referencingScript's fetch options.
-    options = aMaybeActiveScript->GetFetchOptions();
-    referrerPolicy = aMaybeActiveScript->ReferrerPolicy();
-    baseURL = aMaybeActiveScript->BaseURL();
+  context->mIsInline = false;
+  ModuleLoadRequest::Kind kind;
+  ModuleLoadRequest* root = nullptr;
+  if (aIsDynamicImport) {
+    context->mScriptMode = ScriptLoadContext::ScriptMode::eAsync;
+    kind = ModuleLoadRequest::Kind::DynamicImport;
   } else {
-    // We don't have a referencing script so fall back on using
-    // options from the document. This can happen when the user
-    // triggers an inline event handler, as there is no active script
-    // there.
-    Document* document = GetScriptLoader()->GetDocument();
-
-    nsCOMPtr<nsIPrincipal> principal = GetGlobalObject()->PrincipalOrNull();
-    MOZ_ASSERT_IF(GetKind() == WebExtension,
-                  BasePrincipal::Cast(principal)->ContentScriptAddonPolicy());
-    MOZ_ASSERT_IF(GetKind() == Normal, principal == document->NodePrincipal());
-
-    // https://html.spec.whatwg.org/multipage/webappapis.html#hostloadimportedmodule
-    // Step 4. Let fetchOptions be the default classic script fetch options.
-    //
-    // https://html.spec.whatwg.org/multipage/webappapis.html#default-classic-script-fetch-options
-    // The default classic script fetch options are a script fetch options whose
-    // cryptographic nonce is the empty string, integrity metadata is the empty
-    // string, parser metadata is "not-parser-inserted", credentials mode is
-    // "same-origin", referrer policy is the empty string, and fetch priority is
-    // "auto".
-    options = new ScriptFetchOptions(
-        mozilla::CORS_NONE, /* aNonce = */ u""_ns, RequestPriority::Auto,
-        ParserMetadata::NotParserInserted, principal);
-    referrerPolicy = document->GetReferrerPolicy();
-    baseURL = document->GetDocBaseURI();
+    MOZ_ASSERT(!aHostDefined.isUndefined());
+    root = static_cast<ModuleLoadRequest*>(aHostDefined.toPrivate());
+    MOZ_ASSERT(root);
+    LoadContextBase* loadContext = root->mLoadContext;
+    context->mScriptMode = loadContext->AsWindowContext()->mScriptMode;
+    kind = ModuleLoadRequest::Kind::StaticImport;
   }
 
-  context->mIsInline = false;
-  context->mScriptMode = ScriptLoadContext::ScriptMode::eAsync;
-
-  RefPtr<VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI, aModuleType);
-
-  SRIMetadata sriMetadata;
-  GetImportMapSRI(aURI, baseURL, mLoader->GetConsoleReportCollector(),
-                  &sriMetadata);
-
+  JS::ModuleType moduleType = GetModuleRequestType(aCx, aModuleRequest);
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, referrerPolicy, options, sriMetadata, baseURL, context,
-      ModuleLoadRequest::Kind::DynamicImport, this, visitedSet, nullptr);
+      moduleType, aSriMetadata, aBaseURL, context, kind, this, root);
 
-  request->SetDynamicImport(aMaybeActiveScript, aSpecifier, aPromise);
-
-  GetScriptLoader()->TryUseCache(request);
+  GetScriptLoader()->TryUseCache(aReferrerPolicy, aOptions, aURI, request);
 
   return request.forget();
+}
+
+already_AddRefed<ScriptFetchOptions>
+ModuleLoader::CreateDefaultScriptFetchOptions() {
+  RefPtr<ScriptFetchOptions> options = ScriptFetchOptions::CreateDefault();
+  nsCOMPtr<nsIPrincipal> principal = GetGlobalObject()->PrincipalOrNull();
+  options->SetTriggeringPrincipal(principal);
+  return options.forget();
+}
+
+nsIURI* ModuleLoader::GetClientReferrerURI() {
+  Document* document = GetScriptLoader()->GetDocument();
+#ifdef DEBUG
+  nsCOMPtr<nsIPrincipal> principal = GetGlobalObject()->PrincipalOrNull();
+#endif  // DEBUG
+  MOZ_ASSERT_IF(GetKind() == WebExtension,
+                BasePrincipal::Cast(principal)->ContentScriptAddonPolicy());
+  MOZ_ASSERT_IF(GetKind() == Normal, principal == document->NodePrincipal());
+
+  return document->GetDocBaseURI();
 }
 
 ModuleLoader::~ModuleLoader() {

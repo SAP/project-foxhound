@@ -14,11 +14,11 @@
 #include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLInputElementBinding.h"
-#include "nsIControllers.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
-#include "nsStubMutationObserver.h"
 #include "nsGkAtoms.h"
+#include "nsIControllers.h"
+#include "nsStubMutationObserver.h"
 
 class nsIControllers;
 class nsPresContext;
@@ -121,7 +121,7 @@ class HTMLTextAreaElement final : public TextControlElement,
                       nsAttrValue& aResult) override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
@@ -188,8 +188,9 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aDisabled, aError);
   }
-  // nsGenericHTMLFormControlElementWithState::GetForm is fine
-  using nsGenericHTMLFormControlElementWithState::GetForm;
+  // nsGenericHTMLFormControlElementWithState::GetForm* is fine
+  using nsGenericHTMLFormControlElementWithState::GetFormForBindings;
+  using nsGenericHTMLFormControlElementWithState::GetFormInternal;
   int32_t MaxLength() const { return GetIntAttr(nsGkAtoms::maxlength, -1); }
   int32_t UsedMaxLength() const final { return MaxLength(); }
   void SetMaxLength(int32_t aMaxLength, ErrorResult& aError) {
@@ -334,11 +335,8 @@ class HTMLTextAreaElement final : public TextControlElement,
   /**
    * Get the value, whether it is from the content or the frame.
    * @param aValue the value [out]
-   * @param aIgnoreWrap whether to ignore the wrap attribute when getting the
-   *        value.  If this is true, linebreaks will not be inserted even if
-   *        wrap=hard.
    */
-  void GetValueInternal(nsAString& aValue, bool aIgnoreWrap) const;
+  void GetValueInternal(nsAString& aValue) const;
 
   /**
    * Setting the value.

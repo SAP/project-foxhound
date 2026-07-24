@@ -8,24 +8,19 @@ import androidx.concurrent.futures.await
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.sync.DeviceCommandQueue
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 
 @RunWith(AndroidJUnit4::class)
 class SyncedTabsCommandsFlushWorkerTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
     private val commands: SyncedTabsCommands = mock()
 
     @Before
@@ -34,7 +29,7 @@ class SyncedTabsCommandsFlushWorkerTest {
     }
 
     @Test
-    fun `GIVEN a successfully flushed queue WHEN the worker runs THEN the work should complete successfully`() = runTestOnMain {
+    fun `GIVEN a successfully flushed queue WHEN the worker runs THEN the work should complete successfully`() = runTest {
         whenever(commands.flush()).thenReturn(DeviceCommandQueue.FlushResult.ok())
 
         val worker = TestListenableWorkerBuilder<SyncedTabsCommandsFlushWorker>(testContext).build()
@@ -45,7 +40,7 @@ class SyncedTabsCommandsFlushWorkerTest {
     }
 
     @Test
-    fun `GIVEN a queue that should be flushed again WHEN the worker runs THEN the work should be retried`() = runTestOnMain {
+    fun `GIVEN a queue that should be flushed again WHEN the worker runs THEN the work should be retried`() = runTest {
         whenever(commands.flush()).thenReturn(DeviceCommandQueue.FlushResult.retry())
 
         val worker = TestListenableWorkerBuilder<SyncedTabsCommandsFlushWorker>(testContext).build()

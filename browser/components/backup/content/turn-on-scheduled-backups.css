@@ -7,6 +7,13 @@
 
 :host {
   --margin-inline-start-checkbox-content: calc(var(--checkbox-margin-inline) + var(--checkbox-size));
+  --font-size-heading: 17px;
+  --font-size-sub-heading: 15px;
+  --font-weight-label: normal;
+  --font-size-label: 14px;
+  --padding-block-wrapper: 20px;
+  --margin-block-start-file-picker: 18px;
+  --gap-button-group: 12px;
 }
 
 #backup-turn-on-scheduled-wrapper {
@@ -82,10 +89,78 @@
   }
 
   #passwords {
-    margin-inline-start: var(--margin-inline-start-checkbox-content);
+    margin-inline: var(--margin-inline-start-checkbox-content);
   }
 
   #backup-turn-on-scheduled-button-group {
     grid-area: button-group;
+  }
+}
+
+:host([hide-password-input]) #backup-turn-on-scheduled-wrapper #sensitive-data-controls {
+  display: none;
+}
+
+:host([hide-file-path-chooser]) #backup-turn-on-scheduled-wrapper #backup-location-controls {
+  display: none;
+}
+
+:host([hide-file-path-chooser]) #backup-turn-on-scheduled-wrapper #sensitive-data-controls #sensitive-data-checkbox {
+  display: none;
+}
+
+:host([hide-file-path-chooser]) #backup-turn-on-scheduled-wrapper #backup-turn-on-scheduled-header {
+  display: none;
+}
+
+:host([hide-buttons]) #backup-turn-on-scheduled-wrapper #backup-turn-on-scheduled-button-group {
+  display: none;
+}
+
+:host([hide-secondary-button]) #backup-turn-on-scheduled-wrapper #backup-turn-on-scheduled-cancel-button {
+  display: none;
+}
+
+:host([hide-headers]) #backup-turn-on-scheduled-description {
+  display: none;
+}
+
+:host([embedded-fx-backup-opt-in]) {
+  #backup-turn-on-scheduled-wrapper {
+    width: 500px;
+    margin-inline: auto;
+    padding-block: var(--padding-block-wrapper);
+    overflow: hidden;
+
+    #backup-location-controls #backup-location-filepicker {
+      margin-block-start: var(--margin-block-start-file-picker);
+    }
+
+    #backup-turn-on-scheduled-header {
+      font-weight: var(--heading-font-weight);
+      font-size: var(--font-size-heading);
+      text-align: start;
+    }
+
+    #backup-location-label {
+      font-size: var(--font-size-label);
+      text-align: start;
+      font-weight: var(--font-weight-label);
+    }
+  }
+}
+
+:host([embedded-fx-backup-opt-in]:not([hide-buttons])) {
+  #backup-turn-on-scheduled-wrapper {
+    #backup-turn-on-scheduled-button-group {
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: center;
+      gap: var(--gap-button-group);
+
+      #backup-turn-on-scheduled-confirm-button {
+        margin: 0;
+      }
+    }
   }
 }

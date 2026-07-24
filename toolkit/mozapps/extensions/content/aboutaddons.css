@@ -5,7 +5,7 @@
 :root {
   --addon-icon-size: 32px;
   --main-margin-start: 28px;
-  --sidebar-width: var(--in-content-sidebar-width);
+  --sidebar-width: var(--size-sidebar);
   --z-index-sticky-container: 5;
   --z-index-popup: 10;
 }
@@ -14,7 +14,7 @@
   :root {
     --main-margin-start: 16px;
     /* Maintain a main margin so card shadows don't overlap the sidebar. */
-    --sidebar-width: calc(var(--in-content-sidebar-width) - var(--main-margin-start));
+    --sidebar-width: calc(var(--size-sidebar-narrow) - var(--main-margin-start));
   }
 }
 
@@ -25,7 +25,7 @@
 body {
   cursor: default;
   /* The page starts to look really bad lower than this. */
-  min-width: 500px;
+  min-width: var(--size-layout-xlarge);
 }
 
 h1 {
@@ -57,7 +57,7 @@ h2 {
     content: "";
     width: 1px;
     height: 100%;
-    background-color: var(--in-content-border-color);
+    background-color: var(--border-color);
     top: 0;
     inset-inline-end: 0;
     position: absolute;
@@ -82,10 +82,10 @@ h2 {
   display: inline-block;
   min-width: 20px;
   background-color: var(--color-accent-primary);
-  color: var(--in-content-primary-button-text-color);
-  font-weight: bold;
+  color: var(--button-text-color-primary);
+  font-weight: var(--font-weight-bold);
   /* Use a large border-radius to get semi-circles on the sides. */
-  border-radius: 1000px;
+  border-radius: var(--border-radius-circle);
   padding: 2px 6px;
   content: attr(badge-count);
   text-align: center;
@@ -125,7 +125,7 @@ h2 {
 }
 
 .sticky-container {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   width: 100%;
   position: sticky;
   top: 0;
@@ -133,7 +133,7 @@ h2 {
 }
 
 .main-search {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -160,7 +160,7 @@ search-addons {
 }
 
 .main-heading {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   display: flex;
   margin-inline-start: var(--main-margin-start);
   padding-bottom: 16px;
@@ -211,7 +211,7 @@ message-bar-stack > * {
 
 .list-section-subheading {
   font-size: 0.9em;
-  font-weight: 400;
+  font-weight: normal;
   margin-block-start: 0.5em;
 }
 
@@ -270,22 +270,20 @@ addon-list addon-card > .addon.card {
 }
 
 addon-card[expanded] .addon-card-message,
-addon-card[expanded] .update-postponed-bar {
+addon-card[expanded] .update-postponed-bar,
+.update-postponed-bar:has(+ .addon-card-message:not([hidden])) {
   border-radius: 0;
   margin-bottom: 0;
 }
 
-addon-card[expanded] .update-postponed-bar + .addon-card-message {
-  /* Remove margin between the two message bars when they are both
-   * visible in the detail view */
-  margin-top: 0;
+.update-postponed-bar:has(+ .addon-card-message:not([hidden])) {
+  border-bottom: none;
 }
 
-.update-postponed-bar + .addon-card-message:not([hidden]) {
-  /* Prevent the small overlapping between the two message bars
-   * when they are both visible at the same time one after the
-   * other on the same addon card */
-  margin-top: 12px;
+.update-postponed-bar:not([hidden]) + .addon-card-message {
+  /* Remove margin between the two message bars when they are both
+   * visible at the same time. */
+  margin-top: 0;
 }
 
 /* Theme preview image. */
@@ -324,7 +322,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name {
   font-size: 16px;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   line-height: 22px;
   margin: 0;
   margin-inline-end: 8px;
@@ -332,7 +330,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name-link,
 .addon-name-link:hover {
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   text-decoration: none;
 }
 
@@ -401,7 +399,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
   font-size: 14px;
   line-height: 20px;
   color: var(--text-color-deemphasized);
-  font-weight: 400;
+  font-weight: normal;
 }
 
 /* Prevent the content from wrapping unless expanded. */
@@ -537,8 +535,8 @@ button.addon-detail-description-toggle {
 .addon-detail-contribute {
   display: flex;
   padding: var(--card-padding);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   margin-bottom: var(--card-padding);
   flex-direction: column;
 }
@@ -568,10 +566,10 @@ button.addon-detail-description-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
   margin: 0 calc(var(--card-padding) * -1);
   padding: var(--card-padding);
-  color: var(--in-content-text-color);
+  color: var(--text-color);
 }
 
 .addon-detail-row.addon-detail-help-row {
@@ -630,7 +628,7 @@ button.addon-detail-description-toggle {
   display: block;
   width: 5px;
   height: 5px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   background-color: var(--color-accent-primary);
 }
 
@@ -725,8 +723,26 @@ addon-permissions-list > .addon-detail-row {
   }
 }
 
-.permission-header {
+.permission-header,
+.permission-subheader {
   font-size: 1em;
+  margin: 0;
+}
+
+.addon-permissions-list-wrapper {
+  color: var(--text-color);
+  padding: var(--space-large) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.permission-subsection {
+  padding-bottom: var(--space-xsmall);
+}
+
+addon-permissions-list .addon-permissions-list-wrapper:not(:first-child) {
+  border-top: 1px solid var(--border-color);
 }
 
 .tab-group {
@@ -734,8 +750,8 @@ addon-permissions-list > .addon-detail-row {
   margin-top: 8px;
   /* Pull the buttons flush with the side of the card */
   margin-inline: calc(var(--card-padding) * -1);
-  border-bottom: 1px solid var(--in-content-border-color);
-  border-top: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
   font-size: 0;
   line-height: 0;
 }
@@ -753,7 +769,7 @@ button.tab-button {
 }
 
 button.tab-button:hover {
-  border-top-color: var(--in-content-box-border-color);
+  border-top-color: var(--border-color);
 }
 
 button.tab-button[selected],
@@ -765,8 +781,8 @@ button.tab-button[selected]:hover {
 @media (prefers-contrast) {
   button.tab-button[selected],
   button.tab-button[selected]:hover {
-    color: var(--in-content-primary-button-text-color);
-    background-color: var(--in-content-primary-button-background);
+    color: var(--button-text-color-primary);
+    background-color: var(--button-background-color-primary);
   }
 }
 
@@ -789,7 +805,7 @@ section:not(:empty) ~ #empty-addons-message {
     display: block;
     width: 5px;
     height: 5px;
-    border-radius: 50%;
+    border-radius: var(--border-radius-circle);
     min-width: auto;
     padding: 0;
     /* move the badged dot into the top-end (right in ltr, left in rtl) corner. */
@@ -798,5 +814,5 @@ section:not(:empty) ~ #empty-addons-message {
 }
 
 .permission-header > .addon-sitepermissions-host {
-  font-weight: bolder;
+  font-weight: var(--font-weight-bold);
 }

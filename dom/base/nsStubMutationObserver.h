@@ -14,8 +14,8 @@
 #ifndef nsStubMutationObserver_h_
 #define nsStubMutationObserver_h_
 
-#include "nsTHashMap.h"
 #include "nsIMutationObserver.h"
+#include "nsTHashMap.h"
 
 /**
  * There are two advantages to inheriting from nsStubMutationObserver

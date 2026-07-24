@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseAppShell_h__
-#define nsBaseAppShell_h__
+#ifndef nsBaseAppShell_h_
+#define nsBaseAppShell_h_
 
 #include "mozilla/Atomics.h"
 #include "nsIAppShell.h"
@@ -137,4 +137,4 @@ class nsBaseAppShell : public nsIAppShell,
   bool mProcessedGeckoEvents;
 };
 
-#endif  // nsBaseAppShell_h__
+#endif  // nsBaseAppShell_h_

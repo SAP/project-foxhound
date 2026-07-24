@@ -7,15 +7,12 @@
  * Tests if request cause is reported correctly when using source maps.
  */
 
-const CAUSE_FILE_NAME = "html_maps-test-page.html";
-const CAUSE_URL = HTTPS_EXAMPLE_URL + CAUSE_FILE_NAME;
-
 const N_EXPECTED_REQUESTS = 4;
 
 add_task(async function () {
   // the initNetMonitor function clears the network request list after the
   // page is loaded. That's why we first load a bogus page from SIMPLE_URL,
-  // and only then load the real thing from CAUSE_URL - we want to catch
+  // and only then load the real thing from SOURCEMAP_URL - we want to catch
   // all the requests the page is making, not only the XHRs.
   // We can't use about:blank here, because initNetMonitor checks that the
   // page has actually made at least one request.
@@ -26,7 +23,7 @@ add_task(async function () {
 
   store.dispatch(Actions.batchEnable(false));
   let waitPromise = waitForNetworkEvents(monitor, N_EXPECTED_REQUESTS);
-  await navigateTo(CAUSE_URL);
+  await navigateTo(SOURCEMAP_URL);
   await waitPromise;
 
   info("Clicking item and waiting for details panel to open");

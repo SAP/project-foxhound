@@ -5,8 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ImageBitmap.h"
+
+#include "imgLoader.h"
+#include "imgTools.h"
+#include "jsapi.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/CanvasUtils.h"
@@ -18,27 +24,22 @@
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/SVGImageElement.h"
+#include "mozilla/dom/StructuredCloneTags.h"
+#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Scale.h"
 #include "mozilla/gfx/Swizzle.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/ScopeExit.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIAsyncInputStream.h"
 #include "nsISerialEventTarget.h"
-#include "nsNetUtil.h"
 #include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
 #include "nsStreamUtils.h"
-#include "imgLoader.h"
-#include "imgTools.h"
-#include "jsapi.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::layers;
@@ -80,8 +81,7 @@ class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
 
   void DispatchToWorker() {
     MOZ_ASSERT(mTarget);
-    Unused << NS_WARN_IF(
-        NS_FAILED(mTarget->Dispatch(this, NS_DISPATCH_NORMAL)));
+    (void)NS_WARN_IF(NS_FAILED(mTarget->Dispatch(this, NS_DISPATCH_NORMAL)));
     mTarget = nullptr;
   }
 
@@ -358,9 +358,24 @@ static already_AddRefed<DataSourceSurface> ScaleDataSourceSurface(
   uint8_t* srcBufferPtr = srcMap.GetData();
   uint8_t* dstBufferPtr = dstMap.GetData();
 
-  bool res = Scale(srcBufferPtr, srcSize.width, srcSize.height,
-                   srcMap.GetStride(), dstBufferPtr, dstSize.width,
-                   dstSize.height, dstMap.GetStride(), aSurface->GetFormat());
+  SamplingFilter filter = SamplingFilter::LINEAR;
+  switch (aOptions.mResizeQuality) {
+    case ResizeQuality::Pixelated:
+      filter = SamplingFilter::POINT;
+      break;
+    case ResizeQuality::Medium:
+    case ResizeQuality::High:
+      filter = SamplingFilter::GOOD;
+      break;
+    case ResizeQuality::Low:
+    default:
+      break;
+  }
+
+  bool res =
+      Scale(srcBufferPtr, srcSize.width, srcSize.height, srcMap.GetStride(),
+            dstBufferPtr, dstSize.width, dstSize.height, dstMap.GetStride(),
+            aSurface->GetFormat(), filter);
   if (!res) {
     return nullptr;
   }
@@ -854,7 +869,9 @@ already_AddRefed<SourceSurface> ImageBitmap::PrepareForDrawTarget(
       cropped = Factory::CreateDrawTarget(BackendType::SKIA,
                                           mPictureRect.Size(), format);
     } else {
-      cropped = aTarget->CreateSimilarDrawTarget(mPictureRect.Size(), format);
+      if (aTarget->CanCreateSimilarDrawTarget(mPictureRect.Size(), format)) {
+        cropped = aTarget->CreateSimilarDrawTarget(mPictureRect.Size(), format);
+      }
     }
 
     if (NS_WARN_IF(!cropped)) {
@@ -1062,7 +1079,9 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
   bool willModify = aOptions.mImageOrientation == ImageOrientation::FlipY ||
                     requiresPremultiply || requiresUnpremultiply;
   if ((willModify && !aAllocatedImageData) ||
-      (aOptions.mImageOrientation == ImageOrientation::FlipY &&
+      ((aOptions.mImageOrientation == ImageOrientation::FlipY ||
+        aOptions.mResizeWidth.WasPassed() ||
+        aOptions.mResizeHeight.WasPassed()) &&
        aCropRect.isSome()) ||
       aMustCopy) {
     dataSurface = surface->GetDataSurface();

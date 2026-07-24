@@ -31,17 +31,13 @@ import mozilla.components.concept.storage.Login
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.feature.autofill.handler.EXTRA_LOGIN_ID
 import mozilla.components.feature.autofill.structure.ParsedStructure
-import mozilla.components.support.utils.PendingIntentUtils
 
-@RequiresApi(Build.VERSION_CODES.O)
 internal data class LoginDatasetBuilder(
     val parsedStructure: ParsedStructure,
     val login: Login,
     val needsConfirmation: Boolean,
     val requestOffset: Int = 0,
 ) : DatasetBuilder {
-
-    @SuppressLint("NewApi")
     override fun build(
         context: Context,
         configuration: AutofillConfiguration,
@@ -57,7 +53,7 @@ internal data class LoginDatasetBuilder(
             context,
             0,
             attributionIntent,
-            PendingIntentUtils.defaultFlags or PendingIntent.FLAG_CANCEL_CURRENT,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT,
         )
 
         val usernameText = login.usernamePresentationOrFallback(context)
@@ -177,7 +173,6 @@ internal fun canUseInlineSuggestions(imeSpec: InlinePresentationSpec): Boolean {
     return UiVersions.getVersions(imeSpec.style).contains(UiVersions.INLINE_UI_VERSION_1)
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 internal fun Dataset.Builder.setValue(
     id: AutofillId,
     value: AutofillValue?,

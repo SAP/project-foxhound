@@ -6,12 +6,11 @@
 
 #include "FFmpegAudioEncoder.h"
 
-#include "FFmpegRuntimeLinker.h"
+#include "AudioSegment.h"
 #include "FFmpegLog.h"
+#include "FFmpegRuntimeLinker.h"
 #include "FFmpegUtils.h"
 #include "MediaData.h"
-
-#include "AudioSegment.h"
 
 namespace mozilla {
 

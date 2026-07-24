@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 const {
   FX_MONITOR_OAUTH_CLIENT_ID,
   FX_RELAY_OAUTH_CLIENT_ID,
+  SCOPE_APP_SYNC,
   VPN_OAUTH_CLIENT_ID,
 } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccountsCommon.sys.mjs"
@@ -18,6 +16,8 @@ const { UIState } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   EnsureFxAccountsWebChannel:
     "resource://gre/modules/FxAccountsWebChannel.sys.mjs",
@@ -25,6 +25,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
   SyncedTabsManagement: "resource://services-sync/SyncedTabs.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
@@ -473,6 +474,8 @@ var gSync = {
   _syncStartTime: 0,
   _syncAnimationTimer: 0,
   _obs: ["weave:engine:sync:finish", "quit-application", UIState.ON_UPDATE],
+  // Track whether send tab exposure events have been recorded for current context menu session
+  _sendTabExposureRecorded: new Set(),
 
   get log() {
     if (!this._log) {
@@ -496,6 +499,7 @@ var gSync = {
         "browser/sync.ftl",
         "browser/syncedTabs.ftl",
         "browser/newtab/asrouter.ftl",
+        "preview/aiWindow.ftl",
       ],
       true
     ));
@@ -504,8 +508,10 @@ var gSync = {
   // Returns true if FxA is configured, but the send tab targets list isn't
   // ready yet.
   get sendTabConfiguredAndLoading() {
+    const state = UIState.get();
     return (
-      UIState.get().status == UIState.STATUS_SIGNED_IN &&
+      state.status == UIState.STATUS_SIGNED_IN &&
+      state.syncEnabled &&
       !fxAccounts.device.recentDeviceList
     );
   },
@@ -530,8 +536,10 @@ var gSync = {
 
   getSendTabTargets() {
     const targets = [];
+    const state = UIState.get();
     if (
-      UIState.get().status != UIState.STATUS_SIGNED_IN ||
+      state.status != UIState.STATUS_SIGNED_IN ||
+      !state.syncEnabled ||
       !fxAccounts.device.recentDeviceList
     ) {
       return targets;
@@ -787,6 +795,25 @@ var gSync = {
     if (ctaCopyVariant) {
       NimbusFeatures.fxaAvatarMenuItem.recordExposureEvent();
     }
+
+    // Record Send Tab exposure if the option is visible
+    const sendTabButton = PanelMultiView.getViewNode(
+      document,
+      "PanelUI-fxa-menu-sendtab-button"
+    );
+    if (sendTabButton && !sendTabButton.hidden) {
+      const targets = this.getSendTabTargets();
+      // Use the FxA toolbar button as the trigger node
+      const triggerNode =
+        panelview.triggerNode ||
+        document.getElementById("fxa-toolbar-menu-button") ||
+        document.getElementById("appMenu-fxa-label2");
+      if (triggerNode) {
+        this.emitFxaToolbarTelemetry("send_tab_exposed", triggerNode, {
+          device_count: String(targets.length),
+        });
+      }
+    }
   },
 
   onFxAPanelViewHiding(panelview) {
@@ -801,7 +828,7 @@ var gSync = {
         this.openPrefsFromFxaMenu("sync_settings", button);
         break;
       case "PanelUI-fxa-menu-setup-sync-button":
-        this.openChooseWhatToSync("sync_settings", button);
+        this.openSyncSetup("sync_settings", button);
         break;
 
       case "PanelUI-fxa-menu-sendtab-connect-device-button":
@@ -833,7 +860,7 @@ var gSync = {
         this.openVPNLink(button);
         break;
       case "PanelUI-fxa-menu-sendtab-not-configured-button":
-        this.openPrefsFromFxaMenu("send_tab", button);
+        this.openSyncSetup("send_tab", button);
         break;
     }
   },
@@ -919,6 +946,7 @@ var gSync = {
 
   /**
    * Potential network call. Fetch the list of OAuth clients attached to the current Mozilla account.
+   *
    * @returns {Promise<boolean>} - Resolves to true if successful, false otherwise.
    */
   async fetchListOfOAuthClients() {
@@ -952,8 +980,8 @@ var gSync = {
   },
 
   showSendToDeviceViewFromFxaMenu(anchor) {
-    const { status } = UIState.get();
-    if (status === UIState.STATUS_NOT_CONFIGURED) {
+    const state = UIState.get();
+    if (state.status !== UIState.STATUS_SIGNED_IN || !state.syncEnabled) {
       PanelUI.showSubView("PanelUI-fxa-menu-sendtab-not-configured", anchor);
       return;
     }
@@ -967,7 +995,10 @@ var gSync = {
     }
 
     this.showSendToDeviceView(anchor);
-    this.emitFxaToolbarTelemetry("send_tab", anchor);
+    // Record that the user opened the Send Tab submenu
+    this.emitFxaToolbarTelemetry("send_tab_opened", anchor, {
+      device_count: String(targets.length),
+    });
   },
 
   _populateSendTabToDevicesView(panelViewNode, reloadDevices = true) {
@@ -980,12 +1011,9 @@ var gSync = {
 
     // This is on top because it also clears the device list between state
     // changes.
-    this.populateSendTabToDevicesMenu(
-      bodyNode,
-      uri,
-      title,
+    this.populateSendTabToDevicesMenu(bodyNode, uri, title, {
       multiselected,
-      (clientId, name, clientType, lastModified) => {
+      createDeviceNodeFn: (clientId, name, clientType, lastModified) => {
         if (!name) {
           return document.createXULElement("toolbarseparator");
         }
@@ -1015,8 +1043,8 @@ var gSync = {
         });
         return item;
       },
-      true
-    );
+      isFxaMenu: true,
+    });
 
     bodyNode.removeAttribute("state");
     // If the app just started, we won't have fetched the device list yet. Sync
@@ -1113,10 +1141,12 @@ var gSync = {
     this.enableSendTabIfValidTab();
 
     if (!this.getSendTabTargets().length) {
-      PanelMultiView.getViewNode(
-        document,
-        "PanelUI-fxa-menu-sendtab-button"
-      ).hidden = true;
+      for (const id of [
+        "PanelUI-fxa-menu-sendtab-button",
+        "PanelUI-fxa-menu-sendtab-separator",
+      ]) {
+        PanelMultiView.getViewNode(document, id).hidden = true;
+      }
     }
 
     if (anchor.getAttribute("open") == "true") {
@@ -1190,10 +1220,14 @@ var gSync = {
       document,
       "PanelUI-fxa-menu-setup-sync-container"
     );
-
     const fxaToolbarMenuButton = document.getElementById(
       "fxa-toolbar-menu-button"
     );
+    const syncSetupSeparator = PanelMultiView.getViewNode(
+      document,
+      "PanelUI-set-up-sync-separator"
+    );
+
     let fxaAvatarLabelEl = document.getElementById("fxa-avatar-label");
 
     // Reset FxA/Sync UI elements to default, which is signed out
@@ -1306,8 +1340,15 @@ var gSync = {
           if (this._shouldShowSyncOffIndicator()) {
             fxaToolbarMenuButton?.setAttribute("badge-status", "sync-disabled");
           }
-          // Show the sync element depending on if the user is enrolled or not
           syncSetupEl.removeAttribute("hidden");
+        }
+
+        if (state.hasSyncKeys) {
+          cadButtonEl.removeAttribute("hidden");
+          syncSetupSeparator.removeAttribute("hidden");
+        } else {
+          cadButtonEl.setAttribute("hidden", "true");
+          syncSetupSeparator.setAttribute("hidden", "true");
         }
 
         // Reposition profiles elements
@@ -1370,16 +1411,18 @@ var gSync = {
       t => !!BrowserUtils.getShareableURL(t.linkedBrowser.currentURI)
     );
 
-    PanelMultiView.getViewNode(
-      document,
-      "PanelUI-fxa-menu-sendtab-button"
-    ).hidden = !canSendAllURIs;
+    for (const id of [
+      "PanelUI-fxa-menu-sendtab-button",
+      "PanelUI-fxa-menu-sendtab-separator",
+    ]) {
+      PanelMultiView.getViewNode(document, id).hidden = !canSendAllURIs;
+    }
   },
 
   // This is mis-named - it can be used to record any FxA UI telemetry, whether from
   // the toolbar or not. The required `sourceElement` param is enough to help us know
   // how to record the interaction.
-  emitFxaToolbarTelemetry(type, sourceElement) {
+  emitFxaToolbarTelemetry(type, sourceElement, extraOpts = {}) {
     if (UIState.isReady()) {
       const state = UIState.get();
       const hasAvatar = state.avatarURL && !state.avatarIsDefault;
@@ -1387,6 +1430,7 @@ var gSync = {
         fxa_status: state.status,
         fxa_avatar: hasAvatar ? "true" : "false",
         fxa_sync_on: state.syncEnabled,
+        ...extraOpts,
       };
 
       let eventName = this._getEntryPointForElement(sourceElement);
@@ -1398,13 +1442,31 @@ var gSync = {
       } else {
         return;
       }
-      Glean[category][
-        "click" +
+
+      // Handle the new Send Tab event types:
+      // - send_tab_exposed -> sendTabExposed
+      // - send_tab_opened -> sendTabOpened
+      // - send_tab -> clickSendTab (legacy click format)
+      let methodName;
+      if (type.startsWith("send_tab_")) {
+        // Convert send_tab_exposed -> sendTabExposed
+        methodName = type
+          .split("_")
+          .map((word, i) =>
+            i === 0 ? word : word[0].toUpperCase() + word.slice(1)
+          )
+          .join("");
+      } else {
+        // Legacy format: click + capitalized type (e.g., "sync_now" -> "clickSyncNow")
+        methodName =
+          "click" +
           type
             .split("_")
             .map(word => word[0].toUpperCase() + word.slice(1))
-            .join("")
-      ]?.record(extraOptions);
+            .join("");
+      }
+
+      Glean[category][methodName]?.record(extraOptions);
     }
   },
 
@@ -1671,7 +1733,7 @@ var gSync = {
   },
 
   // Returns true if we managed to send the tab to any targets, false otherwise.
-  async sendTabToDevice(url, targets, title) {
+  async sendTabToDevice(tab, targets) {
     const fxaCommandsDevices = [];
     for (const target of targets) {
       if (fxAccounts.commands.sendTab.isDeviceCompatible(target)) {
@@ -1710,7 +1772,7 @@ var gSync = {
       );
       const report = await fxAccounts.commands.sendTab.send(
         fxaCommandsDevices,
-        { url, title }
+        tab
       );
       for (let { device, error } of report.failed) {
         this.log.error(
@@ -1723,25 +1785,21 @@ var gSync = {
     return numFailed < targets.length; // Good enough.
   },
 
-  populateSendTabToDevicesMenu(
-    devicesPopup,
-    uri,
-    title,
-    multiselected,
-    createDeviceNodeFn,
-    isFxaMenu = false
-  ) {
+  populateSendTabToDevicesMenu(devicesPopup, uri, title, options = {}) {
+    const {
+      multiselected = false,
+      createDeviceNodeFn = (targetId, name) => {
+        let eltName = name ? "menuitem" : "menuseparator";
+        return document.createXULElement(eltName);
+      },
+      isFxaMenu = false,
+      contextMenuType = null,
+    } = options;
     uri = BrowserUtils.getShareableURL(uri);
     if (!uri) {
       // log an error as everyone should have already checked this.
       this.log.error("Ignoring request to share a non-sharable URL");
       return;
-    }
-    if (!createDeviceNodeFn) {
-      createDeviceNodeFn = (targetId, name) => {
-        let eltName = name ? "menuitem" : "menuseparator";
-        return document.createXULElement(eltName);
-      };
     }
 
     // remove existing menu items
@@ -1770,8 +1828,17 @@ var gSync = {
           uri.spec,
           title,
           multiselected,
-          isFxaMenu
+          isFxaMenu,
+          contextMenuType
         );
+
+        if (contextMenuType) {
+          this._recordSendTabTelemetry(
+            "send_tab_opened",
+            targets.length,
+            contextMenuType
+          );
+        }
       } else {
         this._appendSendTabSingleDevice(fragment, createDeviceNodeFn);
       }
@@ -1801,22 +1868,25 @@ var gSync = {
     url,
     title,
     multiselected,
-    isFxaMenu = false
+    isFxaMenu = false,
+    contextMenuType = null
   ) {
+    let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(gBrowser);
     let tabsToSend = multiselected
       ? gBrowser.selectedTabs.map(t => {
           return {
             url: t.linkedBrowser.currentURI.spec,
             title: t.linkedBrowser.contentTitle,
+            private: isPrivate,
           };
         })
-      : [{ url, title }];
+      : [{ url, title, private: isPrivate }];
 
     const send = to => {
       Promise.all(
         tabsToSend.map(t =>
           // sendTabToDevice does not reject.
-          this.sendTabToDevice(t.url, to, t.title)
+          this.sendTabToDevice(t, to)
         )
       ).then(results => {
         // Show the Sent! confirmation if any of the sends succeeded.
@@ -1838,11 +1908,45 @@ var gSync = {
     };
     const onSendAllCommand = () => {
       send(targets);
+      // Record Send Tab clicked telemetry for "Send to All Devices"
+      if (isFxaMenu) {
+        const triggerNode =
+          document.getElementById("fxa-toolbar-menu-button") ||
+          document.getElementById("appMenu-fxa-label2");
+        this.emitFxaToolbarTelemetry("send_tab", triggerNode, {
+          device_count: String(targets.length),
+          action: "all_devices",
+        });
+      } else if (contextMenuType) {
+        this._recordSendTabTelemetry(
+          "click_send_tab",
+          targets.length,
+          contextMenuType,
+          "all_devices"
+        );
+      }
     };
     const onTargetDeviceCommand = event => {
       const targetId = event.target.getAttribute("clientId");
       const target = targets.find(t => t.id == targetId);
       send([target]);
+      // Record Send Tab clicked telemetry for specific device
+      if (isFxaMenu) {
+        const triggerNode =
+          document.getElementById("fxa-toolbar-menu-button") ||
+          document.getElementById("appMenu-fxa-label2");
+        this.emitFxaToolbarTelemetry("send_tab", triggerNode, {
+          device_count: String(targets.length),
+          action: "device",
+        });
+      } else if (contextMenuType) {
+        this._recordSendTabTelemetry(
+          "click_send_tab",
+          targets.length,
+          contextMenuType,
+          "device"
+        );
+      }
     };
 
     function addTargetDevice(targetId, name, targetType, lastModified) {
@@ -1908,13 +2012,77 @@ var gSync = {
       );
       targetDevice.addEventListener(
         "command",
-        () => gSync.openDevicesManagementPage("sendtab"),
+        () => {
+          gSync.openDevicesManagementPage("sendtab");
+          // Record Send Tab clicked telemetry for "Manage Devices"
+          if (isFxaMenu) {
+            const triggerNode =
+              document.getElementById("fxa-toolbar-menu-button") ||
+              document.getElementById("appMenu-fxa-label2");
+            this.emitFxaToolbarTelemetry("send_tab", triggerNode, {
+              device_count: String(targets.length),
+              action: "manage_devices",
+            });
+          } else if (contextMenuType) {
+            this._recordSendTabTelemetry(
+              "click_send_tab",
+              targets.length,
+              contextMenuType,
+              "manage_devices"
+            );
+          }
+        },
         true
       );
       targetDevice.classList.add("sync-menuitem", "sendtab-target");
       targetDevice.setAttribute("label", manageDevicesLabel);
       fragment.appendChild(targetDevice);
     }
+  },
+
+  _resetSendTabExposureTracking() {
+    this._sendTabExposureRecorded.clear();
+  },
+
+  _recordSendTabTelemetry(eventType, deviceCount, contextType, action = null) {
+    const extraParams = {
+      device_count: String(deviceCount),
+    };
+
+    if (action) {
+      extraParams.action = action;
+    }
+
+    // Map context types to Glean categories
+    const categoryMap = {
+      tab: "tabContextMenu",
+      page: "pageContextMenu",
+      link: "pageContextMenu",
+    };
+
+    // Map event types to method names
+    const methodMap = {
+      send_tab_exposed: "sendTabExposed",
+      send_tab_opened: "sendTabOpened",
+      click_send_tab: "clickSendTab",
+    };
+
+    const category = categoryMap[contextType];
+    const method = methodMap[eventType];
+
+    if (!category || !method) {
+      this.log.error(
+        `Invalid telemetry parameters: eventType=${eventType}, contextType=${contextType}`
+      );
+      return;
+    }
+
+    // Add context_type for page/link context menus
+    if (contextType === "page" || contextType === "link") {
+      extraParams.context_type = contextType;
+    }
+
+    Glean[category][method].record(extraParams);
   },
 
   _appendSendTabSingleDevice(fragment, createDeviceNodeFn) {
@@ -1999,9 +2167,13 @@ var gSync = {
 
     let sendTabsToDevice = document.getElementById("context_sendTabToDevice");
     sendTabsToDevice.disabled = !enabled;
+    let sendTabToDeviceSeparator = document.getElementById(
+      "context_sendTabToDeviceSeparator"
+    );
 
     if (hideItems || !hasASendableURI) {
       sendTabsToDevice.hidden = true;
+      sendTabToDeviceSeparator.hidden = true;
     } else {
       let tabCount = aTargetTab.multiselected
         ? gBrowser.multiSelectedTabsCount
@@ -2011,6 +2183,20 @@ var gSync = {
         JSON.stringify({ tabCount })
       );
       sendTabsToDevice.hidden = false;
+      sendTabToDeviceSeparator.hidden = false;
+
+      if (enabled) {
+        const targets = this.getSendTabTargets();
+        const exposureKey = "tab-context";
+        if (targets.length && !this._sendTabExposureRecorded.has(exposureKey)) {
+          this._recordSendTabTelemetry(
+            "send_tab_exposed",
+            targets.length,
+            "tab"
+          );
+          this._sendTabExposureRecorded.add(exposureKey);
+        }
+      }
     }
   },
 
@@ -2047,10 +2233,12 @@ var gSync = {
       "context-sendpagetodevice",
       !hideItems && showSendPage
     );
-    contextMenu.showItem(
+    for (const id of [
       "context-sendlinktodevice",
-      !hideItems && showSendLink
-    );
+      "context-sep-sendlinktodevice",
+    ]) {
+      contextMenu.showItem(id, !hideItems && showSendLink);
+    }
 
     if (!showSendLink && !showSendPage) {
       return false;
@@ -2061,6 +2249,20 @@ var gSync = {
       "disabled",
       !enabled || null
     );
+
+    if (!hideItems && enabled) {
+      const targets = this.getSendTabTargets();
+      const exposureKey = showSendLink ? "link-context" : "page-context";
+      if (targets.length && !this._sendTabExposureRecorded.has(exposureKey)) {
+        this._recordSendTabTelemetry(
+          "send_tab_exposed",
+          targets.length,
+          showSendLink ? "link" : "page"
+        );
+        this._sendTabExposureRecorded.add(exposureKey);
+      }
+    }
+
     // return true if context menu items are visible
     return !hideItems && (showSendPage || showSendLink);
   },
@@ -2159,9 +2361,13 @@ var gSync = {
       deleteLocalData: false,
     };
 
+    const bodyId = AIWindow.hasActiveAIWindows()
+      ? "fxa-signout-dialog-body-aiwindow"
+      : "fxa-signout-dialog-body";
+
     let [title, body, button, checkbox] = await document.l10n.formatValues([
       { id: "fxa-signout-dialog-title2" },
-      { id: "fxa-signout-dialog-body" },
+      { id: bodyId },
       { id: "fxa-signout-dialog2-button" },
       { id: "fxa-signout-dialog2-checkbox" },
     ]);
@@ -2294,6 +2500,41 @@ var gSync = {
     this.openPrefs(entryPoint, null, { action: "choose-what-to-sync" });
   },
 
+  /**
+   * Opens the appropriate sync setup flow based on whether the user has sync keys.
+   * - If the user has sync keys: opens sync preferences to configure what to sync
+   * - If the user doesn't have sync keys (third-party auth): opens FxA to create password
+   */
+  async openSyncSetup(type, sourceElement, extraParams = {}) {
+    this.emitFxaToolbarTelemetry(type, sourceElement);
+    const entryPoint = this._getEntryPointForElement(sourceElement);
+
+    try {
+      // Check if the user has sync keys
+      const hasKeys = await fxAccounts.keys.hasKeysForScope(SCOPE_APP_SYNC);
+
+      if (hasKeys) {
+        // User has keys - go to prefs to configure what to sync
+        this.openPrefs(entryPoint, null, { action: "choose-what-to-sync" });
+      } else {
+        // User doesn't have keys (third-party auth) - go to FxA to create password
+        // This will request SCOPE_APP_SYNC so FxA knows to generate sync keys
+        if (!(await FxAccounts.canConnectAccount())) {
+          return;
+        }
+        const url = await FxAccounts.config.promiseSetPasswordURI(
+          entryPoint,
+          extraParams
+        );
+        switchToTabHavingURI(url, true, { replaceQueryString: true });
+      }
+    } catch (err) {
+      this.log.error("Failed to determine sync setup flow", err);
+      // Fall back to opening prefs
+      this.openPrefs(entryPoint);
+    }
+  },
+
   openSyncedTabsPanel() {
     let placement = CustomizableUI.getPlacementOfWidget("sync-button");
     let area = placement?.area;
@@ -2421,8 +2662,10 @@ var gSync = {
     }
   },
 
-  /** Checks if the current list of attached clients to the Mozilla account
+  /**
+   * Checks if the current list of attached clients to the Mozilla account
    * has a service associated with the passed in Id
+   *
    *  @param {string} clientId
    *   A known static Id from FxA that identifies the service it's associated with
    *  @returns {boolean}

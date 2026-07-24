@@ -443,16 +443,16 @@ DocAccessible* DocManager::CreateDocOrRootAccessible(Document* aDocument) {
     return nullptr;
   }
 
-  nsIWidget* widget = nsContentUtils::WidgetForDocument(aDocument);
-  if (!widget || widget->GetWindowType() == widget::WindowType::Invisible) {
-    return nullptr;
-  }
-
   // Ignore documents without presshell. We must not ignore documents with no
   // root frame because DOM focus can hit such documents and ignoring them would
   // prevent a11y focus.
   PresShell* presShell = aDocument->GetPresShell();
   if (!presShell || presShell->IsDestroying()) {
+    return nullptr;
+  }
+
+  nsIWidget* widget = presShell->GetRootWidget();
+  if (!widget || widget->GetWindowType() == widget::WindowType::Invisible) {
     return nullptr;
   }
 

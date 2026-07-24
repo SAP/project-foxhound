@@ -7,8 +7,6 @@
 #ifndef mozilla_ipc_nsIIPCSerializableInputStream_h
 #define mozilla_ipc_nsIIPCSerializableInputStream_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 

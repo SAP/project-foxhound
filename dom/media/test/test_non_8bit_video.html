@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Test 10/12-bit video files</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+<script type="application/javascript">
+
+/** This test checks if 10- and 12-bit video plays. */
+const videos = ["av1-yuv444p10.webm", "av1-yuv422p10.webm", "av1-yuv444p12.webm",
+                "vp9-yuv420p10.webm"];
+// Windows HW decoder doesn't support 12-bit VP9. TODO: fallback to SW decoder.
+if (SpecialPowers.Services.appinfo.OS != "WINNT") {
+  videos.push("vp9-yuv420p12.webm");
+}
+add_task(async function testPlayAll() {
+  await Promise.all(videos.map(
+    (f) => {
+      let v = document.createElement("video");
+      document.body.appendChild(v);
+      v.src = f;
+      return v;
+    }).map(
+      (v) => v.play())).then(
+        () => ok(true, "All video played."),
+        (e) => ok(false, "Play video error: " + e));
+});
+
+</script>
+</head>
+<body>
+</body>
+</html>

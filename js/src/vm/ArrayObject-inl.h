@@ -48,7 +48,9 @@ namespace js {
   aobj->initFixedElements(kind, length);
 
   if (MOZ_UNLIKELY(length > INT32_MAX)) {
-    cx->runtime()->hasSeenArrayExceedsInt32LengthFuse.ref().popFuse(cx);
+    cx->runtime()
+        ->runtimeFuses.ref()
+        .hasSeenArrayExceedsInt32LengthFuse.popFuse(cx);
   }
 
   if (!nDynamicSlots) {

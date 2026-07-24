@@ -9,7 +9,7 @@
 #ifndef mozilla_Array_h
 #define mozilla_Array_h
 
-#include <stddef.h>
+#include <cstddef>
 
 #include <iterator>
 #include <ostream>

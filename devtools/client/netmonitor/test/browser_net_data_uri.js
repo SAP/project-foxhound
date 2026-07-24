@@ -21,7 +21,7 @@ add_task(async function test_navigation_to_data_uri() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 1);
-  reloadBrowser({ waitForLoad: false });
+  reloadSelectedTab({ waitForLoad: false });
   await wait;
 
   const firstItem = document.querySelectorAll(".request-list-item")[0];
@@ -68,7 +68,7 @@ add_task(async function test_content_request_to_data_uri() {
   store.dispatch(Actions.batchEnable(false));
 
   let onNetworkEvents = waitForNetworkEvents(monitor, 1);
-  reloadBrowser({ waitForLoad: false });
+  reloadSelectedTab({ waitForLoad: false });
   await onNetworkEvents;
 
   info("Load an image in content with a data URI");

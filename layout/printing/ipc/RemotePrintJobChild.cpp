@@ -7,7 +7,6 @@
 #include "RemotePrintJobChild.h"
 
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/Unused.h"
 #include "nsPagePrintTimer.h"
 #include "nsPrintJob.h"
 #include "private/pprio.h"
@@ -24,7 +23,7 @@ nsresult RemotePrintJobChild::InitializePrint(const nsString& aDocumentTitle,
                                               const int32_t& aEndPage) {
   // Print initialization can sometimes display a dialog in the parent, so we
   // need to spin a nested event loop until initialization completes.
-  Unused << SendInitializePrint(aDocumentTitle, aStartPage, aEndPage);
+  (void)SendInitializePrint(aDocumentTitle, aStartPage, aEndPage);
   mozilla::SpinEventLoopUntil("RemotePrintJobChild::InitializePrint"_ns,
                               [&]() { return mPrintInitialized; });
 
@@ -62,8 +61,8 @@ void RemotePrintJobChild::ProcessPage(const IntSize& aSizeInPoints,
 
   mPagePrintTimer->WaitForRemotePrint();
   if (!mDestroyed) {
-    Unused << SendProcessPage(aSizeInPoints.width, aSizeInPoints.height,
-                              std::move(aDeps));
+    (void)SendProcessPage(aSizeInPoints.width, aSizeInPoints.height,
+                          std::move(aDeps));
   }
 }
 
@@ -118,8 +117,8 @@ RemotePrintJobChild::OnProgressChange(nsIWebProgress* aProgress,
                                       int32_t aCurTotalProgress,
                                       int32_t aMaxTotalProgress) {
   if (!mDestroyed) {
-    Unused << SendProgressChange(aCurSelfProgress, aMaxSelfProgress,
-                                 aCurTotalProgress, aMaxTotalProgress);
+    (void)SendProgressChange(aCurSelfProgress, aMaxSelfProgress,
+                             aCurTotalProgress, aMaxTotalProgress);
   }
 
   return NS_OK;
@@ -137,7 +136,7 @@ RemotePrintJobChild::OnStatusChange(nsIWebProgress* aProgress,
                                     nsIRequest* aRequest, nsresult aStatus,
                                     const char16_t* aMessage) {
   if (NS_SUCCEEDED(mInitializationResult) && !mDestroyed) {
-    Unused << SendStatusChange(aStatus);
+    (void)SendStatusChange(aStatus);
   }
 
   return NS_OK;

@@ -146,8 +146,8 @@ add_task(async function test_history_cards_created() {
   SidebarController.hide();
 });
 
-add_task(async function test_history_searchbox_focus() {
-  const { component } = await showHistorySidebar();
+add_task(async function test_history_searchbox_focus_and_context_menu() {
+  const { component, contentWindow } = await showHistorySidebar();
   const { searchTextbox } = component;
 
   ok(component.shadowRoot.activeElement, "check activeElement is present");
@@ -156,6 +156,24 @@ add_task(async function test_history_searchbox_focus() {
     searchTextbox,
     "Check search box is focused"
   );
+
+  const promisePopupShown = BrowserTestUtils.waitForEvent(
+    contentWindow,
+    "popupshown"
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    searchTextbox,
+    { type: "contextmenu", button: 2 },
+    contentWindow
+  );
+  const { target: menu } = await promisePopupShown;
+  Assert.equal(
+    menu.id,
+    "textbox-contextmenu",
+    "The correct context menu is shown."
+  );
+  menu.hidePopup();
+
   SidebarController.hide();
 });
 
@@ -255,11 +273,7 @@ add_task(async function test_history_sort() {
   );
   ok(true, "There is a card for each site.");
 
-  Assert.equal(
-    sortBySiteButton.getAttribute("checked"),
-    "true",
-    "Sort by site is checked."
-  );
+  ok(sortBySiteButton.hasAttribute("checked"), "Sort by site is checked.");
   for (const card of component.cards) {
     Assert.equal(card.expanded, true, "All cards are expanded.");
   }
@@ -275,11 +289,7 @@ add_task(async function test_history_sort() {
     () => component.lists.length === dates.length
   );
   ok(true, "There is a card for each date.");
-  Assert.equal(
-    sortByDateButton.getAttribute("checked"),
-    "true",
-    "Sort by date is checked."
-  );
+  ok(sortByDateButton.hasAttribute("checked"), "Sort by date is checked.");
   for (const [i, card] of component.cards.entries()) {
     Assert.equal(
       card.expanded,
@@ -302,9 +312,8 @@ add_task(async function test_history_sort() {
     true,
     "There is a card for each date, and a nested card for each site."
   );
-  Assert.equal(
-    sortByDateSiteButton.getAttribute("checked"),
-    "true",
+  ok(
+    sortByDateSiteButton.hasAttribute("checked"),
     "Sort by date and site is checked."
   );
   const outerCards = [...component.cards].filter(
@@ -333,11 +342,113 @@ add_task(async function test_history_sort() {
     URLs.length,
     "There is a single card with a row for each site."
   );
-  Assert.equal(
-    sortByLastVisitedButton.getAttribute("checked"),
-    "true",
+  ok(
+    sortByLastVisitedButton.hasAttribute("checked"),
     "Sort by last visited is checked."
   );
+
+  SidebarController.hide();
+});
+
+add_task(async function test_history_auxclick() {
+  const { component, contentWindow } = await showHistorySidebar();
+  const { lists } = component;
+  await BrowserTestUtils.waitForMutationCondition(
+    component.shadowRoot,
+    { childList: true, subtree: true },
+    () => !!lists.length
+  );
+  await BrowserTestUtils.waitForMutationCondition(
+    lists[0].shadowRoot,
+    { subtree: true, childList: true },
+    () => lists[0].rowEls.length === URLs.length
+  );
+  ok(true, "History rows are shown.");
+  const rows = lists[0].rowEls;
+
+  info("Open the first link with auxclick.");
+
+  {
+    const tabPromise = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      "http://mochi.test:8888/browser/",
+      true
+    );
+
+    // See the comment in test_history_hover_buttons.
+    AccessibilityUtils.setEnv({ focusableRule: false });
+    EventUtils.synthesizeMouseAtCenter(
+      rows[0].mainEl,
+      {
+        button: 1,
+        shiftKey: false,
+      },
+      contentWindow
+    );
+    AccessibilityUtils.resetEnv();
+
+    const tab = await tabPromise;
+
+    is(gBrowser.selectedTab, tab, "The opened tab should be selected");
+
+    BrowserTestUtils.removeTab(tab);
+  }
+
+  {
+    const selectedTabAtStart = gBrowser.selectedTab;
+
+    const tabPromise = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      "http://mochi.test:8888/browser/",
+      true
+    );
+
+    AccessibilityUtils.setEnv({ focusableRule: false });
+    EventUtils.synthesizeMouseAtCenter(
+      rows[0].mainEl,
+      {
+        button: 1,
+        shiftKey: true,
+      },
+      contentWindow
+    );
+    AccessibilityUtils.resetEnv();
+
+    const tab = await tabPromise;
+
+    is(
+      gBrowser.selectedTab,
+      selectedTabAtStart,
+      "The opened tab should not be selected"
+    );
+
+    Assert.notEqual(
+      gBrowser.selectedTab,
+      tab,
+      "The opened tab should not be selected"
+    );
+
+    BrowserTestUtils.removeTab(tab);
+  }
+
+  {
+    const selectedTabAtStart = gBrowser.selectedTab;
+    const tabsLengthAtStart = gBrowser.tabs.length;
+
+    AccessibilityUtils.setEnv({ focusableRule: false });
+    EventUtils.synthesizeMouseAtCenter(
+      rows[0].mainEl,
+      {
+        button: 2,
+      },
+      contentWindow
+    );
+    AccessibilityUtils.resetEnv();
+
+    is(gBrowser.selectedTab, selectedTabAtStart, "No tab is opened");
+
+    is(gBrowser.tabs.length, tabsLengthAtStart, "No tab is opened");
+  }
 
   SidebarController.hide();
 });
@@ -365,10 +476,10 @@ add_task(async function test_history_hover_buttons() {
   // a mouse user would not need these links to become focusable, therefore this rule check shall be ignored
   // by a11y_checks suite. Bug 1961686 is a follow up update a helper so we can later remove this.
   AccessibilityUtils.setEnv({ focusableRule: false });
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeMouseAtCenter(rows[0].mainEl, {}, contentWindow),
-    URLs[0]
-  );
+  const browser = gBrowser.selectedBrowser;
+  const loaded = BrowserTestUtils.browserLoaded(browser, false, URLs[0]);
+  EventUtils.synthesizeMouseAtCenter(rows[0].mainEl, {}, contentWindow);
+  await loaded;
   AccessibilityUtils.resetEnv();
 
   info("Remove the first entry.");

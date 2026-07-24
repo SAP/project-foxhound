@@ -670,6 +670,8 @@ load 1373586.html
 load 1375858.html
 load 1381134.html
 load 1381134-2.html
+load 1395974-1.html
+load 1395974-2.html
 load 1397449.html
 load 1401420-1.html
 load 1401709.html
@@ -807,7 +809,7 @@ asserts(0-4) load 1730506.html # asserts from integer overflow & bogus sizes wit
 asserts(1-4) load 1730570.html # asserts from integer overflow & bogus sizes
 load 1734015.html
 skip-if(Android) load 1741488-1.html # printPreview doesn't work on android
-skip-if(Android) asserts(2-2) load 1764205.html # printPreview doesn't work on android
+pref(layout.abspos.fragmentainer-aware-positioning.enabled,true) skip-if(Android) asserts(14-14) load 1764205.html # printPreview doesn't work on android
 load 1776079.html
 asserts(0-2) load 1791606.html
 load 1799749.html
@@ -821,3 +823,8 @@ load 1870219.html
 load 1915006.html
 asserts(0-85) load 1881375-1.html # bug 1890687 - assertions about fragmentation invariants, failing many times because the test runs in a loop
 asserts(0-5) load 1965081.html # Bug 457400 - ASSERTION: can't mark frame dirty during reflow
+load 1978475-1.html
+load 1990258.html
+load 1990319.html
+load 1998521.html
+load 1999326.html

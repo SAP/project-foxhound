@@ -6,6 +6,9 @@
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 // Lazily import ExtensionParent to allow AddonTestUtils.createAppInfo to
 // override Services.appinfo.
 ChromeUtils.defineESModuleGetters(this, {
@@ -46,7 +49,7 @@ add_task(async function shutdown_during_search_provider_startup() {
   });
 
   let initialized = false;
-  Services.search.promiseInitialized.then(() => {
+  SearchService.promiseInitialized.then(() => {
     initialized = true;
   });
 
@@ -90,7 +93,7 @@ add_task(async function shutdown_during_search_provider_startup() {
   await uninstallingPromise;
   Assert.ok(!uninstalled, "Uninstall should not be finished yet");
   Assert.ok(!initialized, "Search service should still be uninitialized");
-  await Services.search.init();
+  await SearchService.init();
   Assert.ok(initialized, "Search service should be initialized");
 
   // After initializing the search service, the search provider registration

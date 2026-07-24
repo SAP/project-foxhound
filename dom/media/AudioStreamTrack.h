@@ -6,9 +6,9 @@
 #ifndef AUDIOSTREAMTRACK_H_
 #define AUDIOSTREAMTRACK_H_
 
-#include "MediaStreamTrack.h"
-#include "DOMMediaStream.h"
 #include "CrossGraphPort.h"
+#include "DOMMediaStream.h"
+#include "MediaStreamTrack.h"
 #include "nsClassHashtable.h"
 
 namespace mozilla::dom {
@@ -24,6 +24,8 @@ class AudioStreamTrack : public MediaStreamTrack {
       : MediaStreamTrack(aWindow, aInputTrack, aSource, aReadyState, aMuted,
                          aConstraints) {}
 
+  already_AddRefed<MediaStreamTrack> Clone() override;
+
   AudioStreamTrack* AsAudioStreamTrack() override { return this; }
   const AudioStreamTrack* AsAudioStreamTrack() const override { return this; }
 
@@ -34,13 +36,30 @@ class AudioStreamTrack : public MediaStreamTrack {
   void RemoveAudioOutput(void* aKey);
   void SetAudioOutputVolume(void* aKey, float aVolume);
 
+  // Use AddConsumerPort instead of ForwardTrackContentsTo when possible, since
+  // it handles CrossGraphPort creation automatically. Must be balanced with a
+  // corresponding RemoveConsumerPort call.
+  already_AddRefed<MediaInputPort> AddConsumerPort(ProcessedMediaTrack* aTrack);
+  void RemoveConsumerPort(MediaInputPort* aPort);
+
   // WebIDL
   void GetKind(nsAString& aKind) override { aKind.AssignLiteral("audio"); }
 
   void GetLabel(nsAString& aLabel, CallerType aCallerType) override;
 
  protected:
-  already_AddRefed<MediaStreamTrack> CloneInternal() override;
+  void SetReadyState(MediaStreamTrackState aState) override;
+
+ private:
+  // Main thread only
+  struct CrossGraphConnection {
+    UniquePtr<CrossGraphPort> mPort;
+    size_t mRefCount;
+
+    explicit CrossGraphConnection(UniquePtr<CrossGraphPort> aPort)
+        : mPort(std::move(aPort)), mRefCount(1) {}
+  };
+  nsTArray<CrossGraphConnection> mCrossGraphs;
 };
 
 }  // namespace mozilla::dom

@@ -13,9 +13,10 @@ kind-dependencies:
     - repackage-flatpak
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Pushes Flatpaks onto Flathub
     run-on-projects: []  # to make sure this never runs as part of CI
-    run-on-releases: [beta, release, release-rc]
+    run-on-releases: [beta, release]
     shipping-phase: ship
     treeherder:
         kind: build

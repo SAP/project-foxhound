@@ -61,7 +61,7 @@ const JUSTIFY_CONTENT = "justify-content";
  * The FlexboxHighlighter is the class that overlays a visual canvas on top of
  * display: [inline-]flex elements.
  *
- * @param {String} options.color
+ * @param {string} options.color
  *        The color that should be used to draw the highlighter for this flexbox.
  * Structure:
  * <div class="highlighter-container">
@@ -79,11 +79,12 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   constructor(highlighterEnv) {
     super(highlighterEnv);
 
-    this.ID_CLASS_PREFIX = "flexbox-";
-
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-flexbox",
+      }
     );
     this.isReady = this.markup.initialize();
 
@@ -116,33 +117,31 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   _buildMarkup() {
     const container = this.markup.createNode({
       attributes: {
-        class: "highlighter-container",
+        class: "flexbox-highlighter-container",
       },
     });
 
-    const root = this.markup.createNode({
+    this.rootEl = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
-        class: "root",
+        id: "flexbox-root",
+        class: "flexbox-root",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // We use a <canvas> element because there is an arbitrary number of items and texts
     // to draw which wouldn't be possible with HTML or SVG without having to insert and
     // remove the whole markup on every update.
     this.markup.createNode({
-      parent: root,
+      parent: this.rootEl,
       nodeType: "canvas",
       attributes: {
-        id: "canvas",
-        class: "canvas",
+        id: "flexbox-canvas",
+        class: "flexbox-canvas",
         hidden: "true",
         width: CANVAS_SIZE,
         height: CANVAS_SIZE,
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     return container;
@@ -163,6 +162,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
     }
 
     this.markup.destroy();
+    this.rootEl = null;
 
     // Clear the pattern cache to avoid dead object exceptions (Bug 1342051).
     this.clearCache();
@@ -187,7 +187,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   }
 
   get canvas() {
-    return this.getElement("canvas");
+    return this.getElement("flexbox-canvas");
   }
 
   get color() {
@@ -203,13 +203,13 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   }
 
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   /**
    * Gets the flexbox container pattern used to render the container regions.
    *
-   * @param  {Number} devicePixelRatio
+   * @param  {number} devicePixelRatio
    *         The device pixel ratio we want the pattern for.
    * @return {CanvasPattern} flex container pattern.
    */
@@ -256,7 +256,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   /**
    * Gets the flexbox justify content pattern used to render the justify content regions.
    *
-   * @param  {Number} devicePixelRatio
+   * @param  {number} devicePixelRatio
    *         The device pixel ratio we want the pattern for.
    * @return {CanvasPattern} flex justify content pattern.
    */
@@ -303,7 +303,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   }
 
   getNode(id) {
-    return this.markup.content.root.getElementById(this.ID_CLASS_PREFIX + id);
+    return this.markup.content.root.getElementById(id);
   }
 
   /**
@@ -382,7 +382,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   }
 
   _hideFlexbox() {
-    this.getElement("canvas").setAttribute("hidden", "true");
+    this.getElement("flexbox-canvas").setAttribute("hidden", "true");
   }
 
   /**
@@ -408,7 +408,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   }
 
   _showFlexbox() {
-    this.getElement("canvas").removeAttribute("hidden");
+    this.getElement("flexbox-canvas").removeAttribute("hidden");
   }
 
   /**
@@ -761,7 +761,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
   /**
    * Set up the canvas with the given options prior to drawing.
    *
-   * @param {String} [options.lineDash = null]
+   * @param {string} [options.lineDash = null]
    *        An Array of numbers that specify distances to alternately draw a
    *        line and a gap (in coordinate space units). If the number of
    *        elements in the array is odd, the elements of the array get copied
@@ -773,13 +773,13 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
    *          FLEXBOX_LINES_PROPERTIES.edge.lineDash,
    *          FLEXBOX_LINES_PROPERTIES.item.lineDash
    *          FLEXBOX_LINES_PROPERTIES.alignItems.lineDash
-   * @param {Number} [options.lineWidthMultiplier = 1]
+   * @param {number} [options.lineWidthMultiplier = 1]
    *        The width of the line.
-   * @param {Number} [options.offset = `(displayPixelRatio / 2) % 1`]
+   * @param {number} [options.offset = `(displayPixelRatio / 2) % 1`]
    *        The single line width used to obtain a crisp line.
-   * @param {Boolean} [options.skipLineAndStroke = false]
+   * @param {boolean} [options.skipLineAndStroke = false]
    *        Skip the setting of lineWidth and strokeStyle.
-   * @param {Boolean} [options.useContainerScrollOffsets = false]
+   * @param {boolean} [options.useContainerScrollOffsets = false]
    *        Take the flexbox container's scroll and zoom offsets into account.
    *        This is needed for drawing flex lines and justify content when the
    *        flexbox container itself is display:scroll.
@@ -868,7 +868,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
     this._showFlexbox();
     this.prevColor = this.color;
 
-    const root = this.getNode("root");
+    const root = this.getNode("flexbox-root");
     root.style.setProperty("width", `${width}px`);
     root.style.setProperty("height", `${height}px`);
 
@@ -883,7 +883,7 @@ class FlexboxHighlighter extends AutoRefreshHighlighter {
  *
  * @param  {DOMNode} container
  *         The flex container.
- * @return {Object|null} representation of the Flex data object.
+ * @return {object | null} representation of the Flex data object.
  */
 function getFlexData(container) {
   const flex = container.getAsFlexContainer();
@@ -957,7 +957,7 @@ function getRectFromFlexItemValues(item, container) {
  *         The old Flex data object.
  * @param  {Flex} newFlexData
  *         The new Flex data object.
- * @return {Boolean} true if the flex data has changed and false otherwise.
+ * @return {boolean} true if the flex data has changed and false otherwise.
  */
 // eslint-disable-next-line complexity
 function compareFlexData(oldFlexData, newFlexData) {

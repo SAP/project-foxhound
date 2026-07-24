@@ -16,7 +16,8 @@ namespace mozilla {
 
 /**
  * StaticAutoPtr and StaticRefPtr are like UniquePtr and RefPtr, except they
- * are suitable for use as global variables.
+ * never call the owned object destructor and they cannot be constructed through
+ * a pointer.
  *
  * In particular, a global instance of Static{Auto,Ref}Ptr doesn't cause the
  * compiler to emit a static initializer.
@@ -25,7 +26,8 @@ namespace mozilla {
  * 0, the default constexpr constructors will result in no actual code being
  * generated. Since we rely on this, the clang plugin, run as part of our
  * "static analysis" builds, makes it a compile-time error to use
- * Static{Auto,Ref}Ptr as anything except a global variable.
+ * Static{Auto,Ref}Ptr as anything except a global variable. Plus it would leak
+ * memory if it wasn't for global variables.
  *
  * Static{Auto,Ref}Ptr have a limited interface as compared to ns{Auto,Ref}Ptr;
  * this is intentional, since their range of acceptable uses is smaller.

@@ -4,17 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "BatteryManager.h"
+
 #include <cmath>
 #include <limits>
-#include "BatteryManager.h"
+
 #include "Constants.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Hal.h"
-#include "mozilla/dom/BatteryManagerBinding.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/BatteryManagerBinding.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "mozilla/dom/Document.h"
 
 /**
  * We have to use macros here because our leak analysis tool things we are

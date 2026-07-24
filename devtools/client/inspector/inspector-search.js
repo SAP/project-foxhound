@@ -15,52 +15,50 @@ const MAX_SUGGESTIONS = 15;
 /**
  * Converts any input field into a document search box.
  *
- * @param {InspectorPanel} inspector
- *        The InspectorPanel to access the inspector commands for
- *        search and document traversal.
- * @param {DOMNode} input
- *        The input element to which the panel will be attached and from where
- *        search input will be taken.
- * @param {DOMNode} clearBtn
- *        The clear button in the input field that will clear the input value.
- * @param {DOMNode} prevBtn
- *        The prev button in the search label that will move
- *        selection to previous match.
- * @param {DOMNode} nextBtn
- *        The next button in the search label that will move
- *        selection to next match.
- *
  * Emits the following events:
  * - search-cleared: when the search box is emptied
  * - search-result: when a search is made and a result is selected
  */
-function InspectorSearch(inspector, input, clearBtn, prevBtn, nextBtn) {
-  this.inspector = inspector;
-  this.searchBox = input;
-  this.searchClearButton = clearBtn;
-  this.searchPrevButton = prevBtn;
-  this.searchNextButton = nextBtn;
-  this._lastSearched = null;
+class InspectorSearch extends EventEmitter {
+  /**
+   * @param {InspectorPanel} inspector
+   *        The InspectorPanel to access the inspector commands for
+   *        search and document traversal.
+   * @param {HTMLElement} input
+   *        The input element to which the panel will be attached and from where
+   *        search input will be taken.
+   * @param {HTMLElement} clearBtn
+   *        The clear button in the input field that will clear the input value.
+   * @param {HTMLElement} prevBtn
+   *        The prev button in the search label that will move
+   *        selection to previous match.
+   * @param {HTMLElement} nextBtn
+   *        The next button in the search label that will move
+   *        selection to next match.
+   */
+  constructor(inspector, input, clearBtn, prevBtn, nextBtn) {
+    super();
+    this.inspector = inspector;
+    this.searchBox = input;
+    this.searchClearButton = clearBtn;
+    this.searchPrevButton = prevBtn;
+    this.searchNextButton = nextBtn;
+    this._lastSearched = null;
 
-  this._onKeyDown = this._onKeyDown.bind(this);
-  this._onInput = this._onInput.bind(this);
-  this.findPrev = this.findPrev.bind(this);
-  this.findNext = this.findNext.bind(this);
-  this._onClearSearch = this._onClearSearch.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
+    this._onInput = this._onInput.bind(this);
+    this.findPrev = this.findPrev.bind(this);
+    this.findNext = this.findNext.bind(this);
+    this._onClearSearch = this._onClearSearch.bind(this);
 
-  this.searchBox.addEventListener("keydown", this._onKeyDown, true);
-  this.searchBox.addEventListener("input", this._onInput, true);
-  this.searchPrevButton.addEventListener("click", this.findPrev, true);
-  this.searchNextButton.addEventListener("click", this.findNext, true);
-  this.searchClearButton.addEventListener("click", this._onClearSearch);
+    this.searchBox.addEventListener("keydown", this._onKeyDown, true);
+    this.searchBox.addEventListener("input", this._onInput, true);
+    this.searchPrevButton.addEventListener("click", this.findPrev, true);
+    this.searchNextButton.addEventListener("click", this.findNext, true);
+    this.searchClearButton.addEventListener("click", this._onClearSearch);
 
-  this.autocompleter = new SelectorAutocompleter(inspector, input);
-  EventEmitter.decorate(this);
-}
-
-exports.InspectorSearch = InspectorSearch;
-
-InspectorSearch.prototype = {
+    this.autocompleter = new SelectorAutocompleter(inspector, input);
+  }
   destroy() {
     this.searchBox.removeEventListener("keydown", this._onKeyDown, true);
     this.searchBox.removeEventListener("input", this._onInput, true);
@@ -72,11 +70,11 @@ InspectorSearch.prototype = {
     this.searchNextButton = null;
     this.searchClearButton = null;
     this.autocompleter.destroy();
-  },
+  }
 
   _onSearch(reverse = false) {
     this.doFullTextSearch(this.searchBox.value, reverse).catch(console.error);
-  },
+  }
 
   async doFullTextSearch(query, reverse) {
     const lastSearched = this._lastSearched;
@@ -116,7 +114,7 @@ InspectorSearch.prototype = {
       searchContainer.classList.add("devtools-searchbox-no-match");
       this.emit("search-result");
     }
-  },
+  }
 
   _onInput() {
     if (this.searchBox.value.length === 0) {
@@ -125,7 +123,7 @@ InspectorSearch.prototype = {
     } else {
       this.searchClearButton.hidden = false;
     }
-  },
+  }
 
   _onKeyDown(event) {
     if (event.keyCode === KeyCodes.DOM_VK_RETURN) {
@@ -150,15 +148,15 @@ InspectorSearch.prototype = {
       event.preventDefault();
       this.autocompleter.hidePopup();
     }
-  },
+  }
 
   findNext() {
     this._onSearch();
-  },
+  }
 
   findPrev() {
     this._onSearch(true);
-  },
+  }
 
   _onClearSearch() {
     this.searchBox.parentNode.classList.remove("devtools-searchbox-no-match");
@@ -166,8 +164,10 @@ InspectorSearch.prototype = {
     this.searchBox.focus();
     this.searchClearButton.hidden = true;
     this.emit("search-cleared");
-  },
-};
+  }
+}
+
+exports.InspectorSearch = InspectorSearch;
 
 /**
  * Converts any input box on a page to a CSS selector search and suggestion box.
@@ -175,16 +175,16 @@ InspectorSearch.prototype = {
  * Emits 'processing-done' event when it is done processing the current
  * keypress, search request or selection from the list, whether that led to a
  * search or not.
- *
- * @constructor
- * @param InspectorPanel inspector
- *        The InspectorPanel to access the inspector commands for
- *        search and document traversal.
- * @param nsiInputElement inputNode
- *        The input element to which the panel will be attached and from where
- *        search input will be taken.
  */
 class SelectorAutocompleter extends EventEmitter {
+  /**
+   * @param {InspectorPanel} inspector
+   *        The InspectorPanel to access the inspector commands for
+   *        search and document traversal.
+   * @param {HTMLElement} inputNode
+   *        The input element to which the panel will be attached and from where
+   *        search input will be taken.
+   */
   constructor(inspector, inputNode) {
     super();
 
@@ -203,7 +203,7 @@ class SelectorAutocompleter extends EventEmitter {
     };
 
     // The popup will be attached to the toolbox document.
-    this.searchPopup = new AutocompletePopup(inspector._toolbox.doc, options);
+    this.searchPopup = new AutocompletePopup(inspector.toolbox.doc, options);
 
     this.searchBox.addEventListener("input", this.showSuggestions, true);
     this.searchBox.addEventListener("keypress", this.#onSearchKeypress, true);
@@ -460,7 +460,7 @@ class SelectorAutocompleter extends EventEmitter {
    * Populates the suggestions list and show the suggestion popup.
    *
    * @param {Array} suggestions: List of suggestions
-   * @param {String|null} popupState: One of SelectorAutocompleter.States
+   * @param {string | null} popupState: One of SelectorAutocompleter.States
    * @return {Promise} promise that will resolve when the autocomplete popup is fully
    * displayed or hidden.
    */

@@ -29,8 +29,256 @@ export let ContentBlockingPrefs = {
     "privacy.trackingprotection.allow_list.baseline.enabled",
   PREF_ALLOW_LIST_CONVENIENCE:
     "privacy.trackingprotection.allow_list.convenience.enabled",
+  PREF_LNA_ETP_ENABLED: "network.lna.etp.enabled",
 
   switchingCategory: false,
+
+  /**
+   * Apply a category preference rule to update preference expectations.   *
+   *
+   * @param {string} item - The rule to apply (e.g., "tp", "-fp", "lna")
+   * @param {string} type - The category type ("strict", "standard")
+   */
+  // eslint-disable-next-line complexity
+  applyCategoryPref(item, type) {
+    switch (item) {
+      case "tp":
+        this.CATEGORY_PREFS[type]["privacy.trackingprotection.enabled"] = true;
+        break;
+      case "-tp":
+        this.CATEGORY_PREFS[type]["privacy.trackingprotection.enabled"] = false;
+        break;
+      case "tpPrivate":
+        this.CATEGORY_PREFS[type]["privacy.trackingprotection.pbmode.enabled"] =
+          true;
+        break;
+      case "-tpPrivate":
+        this.CATEGORY_PREFS[type]["privacy.trackingprotection.pbmode.enabled"] =
+          false;
+        break;
+      case "fp":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.fingerprinting.enabled"
+        ] = true;
+        break;
+      case "-fp":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.fingerprinting.enabled"
+        ] = false;
+        break;
+      case "cryptoTP":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.cryptomining.enabled"
+        ] = true;
+        break;
+      case "-cryptoTP":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.cryptomining.enabled"
+        ] = false;
+        break;
+      case "stp":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.socialtracking.enabled"
+        ] = true;
+        break;
+      case "-stp":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.socialtracking.enabled"
+        ] = false;
+        break;
+      case "emailTP":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.emailtracking.enabled"
+        ] = true;
+        break;
+      case "-emailTP":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.emailtracking.enabled"
+        ] = false;
+        break;
+      case "emailTPPrivate":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.emailtracking.pbmode.enabled"
+        ] = true;
+        break;
+      case "-emailTPPrivate":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.emailtracking.pbmode.enabled"
+        ] = false;
+        break;
+      case "consentmanagerSkip":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.consentmanager.skip.enabled"
+        ] = true;
+        break;
+      case "-consentmanagerSkip":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.consentmanager.skip.enabled"
+        ] = false;
+        break;
+      case "consentmanagerSkipPrivate":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.consentmanager.skip.pbmode.enabled"
+        ] = true;
+        break;
+      case "-consentmanagerSkipPrivate":
+        this.CATEGORY_PREFS[type][
+          "privacy.trackingprotection.consentmanager.skip.pbmode.enabled"
+        ] = false;
+        break;
+      case "lvl2":
+        this.CATEGORY_PREFS[type][
+          "privacy.annotate_channels.strict_list.enabled"
+        ] = true;
+        break;
+      case "-lvl2":
+        this.CATEGORY_PREFS[type][
+          "privacy.annotate_channels.strict_list.enabled"
+        ] = false;
+        break;
+      case "rp":
+        this.CATEGORY_PREFS[type][
+          "network.http.referer.disallowCrossSiteRelaxingDefault"
+        ] = true;
+        break;
+      case "-rp":
+        this.CATEGORY_PREFS[type][
+          "network.http.referer.disallowCrossSiteRelaxingDefault"
+        ] = false;
+        break;
+      case "rpTop":
+        this.CATEGORY_PREFS[type][
+          "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
+        ] = true;
+        break;
+      case "-rpTop":
+        this.CATEGORY_PREFS[type][
+          "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
+        ] = false;
+        break;
+      case "ocsp":
+        this.CATEGORY_PREFS[type][
+          "privacy.partition.network_state.ocsp_cache"
+        ] = true;
+        break;
+      case "-ocsp":
+        this.CATEGORY_PREFS[type][
+          "privacy.partition.network_state.ocsp_cache"
+        ] = false;
+        break;
+      case "qps":
+        this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled"] = true;
+        break;
+      case "-qps":
+        this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled"] = false;
+        break;
+      case "qpsPBM":
+        this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled.pbmode"] =
+          true;
+        break;
+      case "-qpsPBM":
+        this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled.pbmode"] =
+          false;
+        break;
+      case "fpp":
+        this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = true;
+        break;
+      case "-fpp":
+        this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = false;
+        break;
+      case "fppPrivate":
+        this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection.pbmode"] =
+          true;
+        break;
+      case "-fppPrivate":
+        this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection.pbmode"] =
+          false;
+        break;
+      case "cookieBehavior0":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_ACCEPT;
+        break;
+      case "cookieBehavior1":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
+        break;
+      case "cookieBehavior2":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT;
+        break;
+      case "cookieBehavior3":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
+        break;
+      case "cookieBehavior4":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
+        break;
+      case "cookieBehavior5":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+        break;
+      case "cookieBehaviorPBM0":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_ACCEPT;
+        break;
+      case "cookieBehaviorPBM1":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
+        break;
+      case "cookieBehaviorPBM2":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT;
+        break;
+      case "cookieBehaviorPBM3":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
+        break;
+      case "cookieBehaviorPBM4":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
+        break;
+      case "cookieBehaviorPBM5":
+        this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
+          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+        break;
+      case "3pcd":
+        this.CATEGORY_PREFS[type][
+          "network.cookie.cookieBehavior.optInPartitioning"
+        ] = true;
+        break;
+      case "-3pcd":
+        this.CATEGORY_PREFS[type][
+          "network.cookie.cookieBehavior.optInPartitioning"
+        ] = false;
+        break;
+      case "btp":
+        this.CATEGORY_PREFS[type]["privacy.bounceTrackingProtection.mode"] =
+          Ci.nsIBounceTrackingProtection.MODE_ENABLED;
+        break;
+      case "-btp":
+        // We currently consider MODE_ENABLED_DRY_RUN the "off" state. See
+        // nsIBounceTrackingProtection.idl for details.
+        this.CATEGORY_PREFS[type]["privacy.bounceTrackingProtection.mode"] =
+          Ci.nsIBounceTrackingProtection.MODE_ENABLED_DRY_RUN;
+        break;
+      case "lna":
+        // turn on LNA for etp strict only if network.lna.etp.enabled
+        // network.lna.etp.enabled is controlled by nimbus
+        if (Services.prefs.getBoolPref(this.PREF_LNA_ETP_ENABLED, false)) {
+          this.CATEGORY_PREFS[type]["network.lna.blocking"] = true;
+        }
+        break;
+      case "-lna":
+        // currently LNA is only enabled with ETP strict mode with pref network.lna.etp.enabled
+        if (Services.prefs.getBoolPref(this.PREF_LNA_ETP_ENABLED, false)) {
+          this.CATEGORY_PREFS[type]["network.lna.blocking"] = false;
+        }
+        break;
+      default:
+        console.error(`Error: Unknown rule observed ${item}`);
+    }
+  },
 
   setPrefExpectations() {
     // The prefs inside CATEGORY_PREFS are initial values.
@@ -62,6 +310,7 @@ export let ContentBlockingPrefs = {
         "privacy.fingerprintingProtection.pbmode": null,
         "network.cookie.cookieBehavior.optInPartitioning": null,
         "privacy.bounceTrackingProtection.mode": null,
+        "network.lna.blocking": null,
         [this.PREF_ALLOW_LIST_BASELINE]: true,
         [this.PREF_ALLOW_LIST_CONVENIENCE]: false,
       },
@@ -88,6 +337,7 @@ export let ContentBlockingPrefs = {
         "privacy.fingerprintingProtection.pbmode": null,
         "network.cookie.cookieBehavior.optInPartitioning": null,
         "privacy.bounceTrackingProtection.mode": null,
+        "network.lna.blocking": null,
         [this.PREF_ALLOW_LIST_BASELINE]: null,
         [this.PREF_ALLOW_LIST_CONVENIENCE]: null,
       },
@@ -97,234 +347,7 @@ export let ContentBlockingPrefs = {
       .getStringPref(this.PREF_STRICT_DEF)
       .split(",");
     for (let item of rulesArray) {
-      switch (item) {
-        case "tp":
-          this.CATEGORY_PREFS[type]["privacy.trackingprotection.enabled"] =
-            true;
-          break;
-        case "-tp":
-          this.CATEGORY_PREFS[type]["privacy.trackingprotection.enabled"] =
-            false;
-          break;
-        case "tpPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.pbmode.enabled"
-          ] = true;
-          break;
-        case "-tpPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.pbmode.enabled"
-          ] = false;
-          break;
-        case "fp":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.fingerprinting.enabled"
-          ] = true;
-          break;
-        case "-fp":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.fingerprinting.enabled"
-          ] = false;
-          break;
-        case "cryptoTP":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.cryptomining.enabled"
-          ] = true;
-          break;
-        case "-cryptoTP":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.cryptomining.enabled"
-          ] = false;
-          break;
-        case "stp":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.socialtracking.enabled"
-          ] = true;
-          break;
-        case "-stp":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.socialtracking.enabled"
-          ] = false;
-          break;
-        case "emailTP":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.emailtracking.enabled"
-          ] = true;
-          break;
-        case "-emailTP":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.emailtracking.enabled"
-          ] = false;
-          break;
-        case "emailTPPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.emailtracking.pbmode.enabled"
-          ] = true;
-          break;
-        case "-emailTPPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.emailtracking.pbmode.enabled"
-          ] = false;
-          break;
-        case "consentmanagerSkip":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.consentmanager.skip.enabled"
-          ] = true;
-          break;
-        case "-consentmanagerSkip":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.consentmanager.skip.enabled"
-          ] = false;
-          break;
-        case "consentmanagerSkipPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.consentmanager.skip.pbmode.enabled"
-          ] = true;
-          break;
-        case "-consentmanagerSkipPrivate":
-          this.CATEGORY_PREFS[type][
-            "privacy.trackingprotection.consentmanager.skip.pbmode.enabled"
-          ] = false;
-          break;
-        case "lvl2":
-          this.CATEGORY_PREFS[type][
-            "privacy.annotate_channels.strict_list.enabled"
-          ] = true;
-          break;
-        case "-lvl2":
-          this.CATEGORY_PREFS[type][
-            "privacy.annotate_channels.strict_list.enabled"
-          ] = false;
-          break;
-        case "rp":
-          this.CATEGORY_PREFS[type][
-            "network.http.referer.disallowCrossSiteRelaxingDefault"
-          ] = true;
-          break;
-        case "-rp":
-          this.CATEGORY_PREFS[type][
-            "network.http.referer.disallowCrossSiteRelaxingDefault"
-          ] = false;
-          break;
-        case "rpTop":
-          this.CATEGORY_PREFS[type][
-            "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
-          ] = true;
-          break;
-        case "-rpTop":
-          this.CATEGORY_PREFS[type][
-            "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
-          ] = false;
-          break;
-        case "ocsp":
-          this.CATEGORY_PREFS[type][
-            "privacy.partition.network_state.ocsp_cache"
-          ] = true;
-          break;
-        case "-ocsp":
-          this.CATEGORY_PREFS[type][
-            "privacy.partition.network_state.ocsp_cache"
-          ] = false;
-          break;
-        case "qps":
-          this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled"] = true;
-          break;
-        case "-qps":
-          this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled"] = false;
-          break;
-        case "qpsPBM":
-          this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled.pbmode"] =
-            true;
-          break;
-        case "-qpsPBM":
-          this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled.pbmode"] =
-            false;
-          break;
-        case "fpp":
-          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = true;
-          break;
-        case "-fpp":
-          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = false;
-          break;
-        case "fppPrivate":
-          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection.pbmode"] =
-            true;
-          break;
-        case "-fppPrivate":
-          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection.pbmode"] =
-            false;
-          break;
-        case "cookieBehavior0":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_ACCEPT;
-          break;
-        case "cookieBehavior1":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
-          break;
-        case "cookieBehavior2":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT;
-          break;
-        case "cookieBehavior3":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
-          break;
-        case "cookieBehavior4":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
-          break;
-        case "cookieBehavior5":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
-          break;
-        case "cookieBehaviorPBM0":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_ACCEPT;
-          break;
-        case "cookieBehaviorPBM1":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
-          break;
-        case "cookieBehaviorPBM2":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT;
-          break;
-        case "cookieBehaviorPBM3":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
-          break;
-        case "cookieBehaviorPBM4":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
-          break;
-        case "cookieBehaviorPBM5":
-          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior.pbmode"] =
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
-          break;
-        case "3pcd":
-          this.CATEGORY_PREFS[type][
-            "network.cookie.cookieBehavior.optInPartitioning"
-          ] = true;
-          break;
-        case "-3pcd":
-          this.CATEGORY_PREFS[type][
-            "network.cookie.cookieBehavior.optInPartitioning"
-          ] = false;
-          break;
-        case "btp":
-          this.CATEGORY_PREFS[type]["privacy.bounceTrackingProtection.mode"] =
-            Ci.nsIBounceTrackingProtection.MODE_ENABLED;
-          break;
-        case "-btp":
-          // We currently consider MODE_ENABLED_DRY_RUN the "off" state. See
-          // nsIBounceTrackingProtection.idl for details.
-          this.CATEGORY_PREFS[type]["privacy.bounceTrackingProtection.mode"] =
-            Ci.nsIBounceTrackingProtection.MODE_ENABLED_DRY_RUN;
-          break;
-        default:
-          console.error(`Error: Unknown rule observed ${item}`);
-      }
+      this.applyCategoryPref(item, type);
     }
   },
 
@@ -400,7 +423,7 @@ export let ContentBlockingPrefs = {
     }
   },
 
-  updateCBCategory(preserveAllowListSettings = false) {
+  updateCBCategory(preserveAllowListSettings = true) {
     if (
       this.switchingCategory ||
       !Services.prefs.prefHasUserValue(this.PREF_CB_CATEGORY)
@@ -467,13 +490,24 @@ export let ContentBlockingPrefs = {
     }
   },
 
-  setPrefExpectationsAndUpdate(preserveAllowListSettings = false) {
+  setPrefExpectationsAndUpdate() {
     this.setPrefExpectations();
-    this.updateCBCategory(preserveAllowListSettings);
+    this.updateCBCategory();
   },
 
   observe(subject, topic, data) {
     if (topic != "nsPref:changed") {
+      return;
+    }
+
+    // We need this early return to avoid updating the CB category prematurely. Specifically when
+    // user changes the CB category, the observer for hasUserInteractedWithETPSettings is triggered
+    // before the category is actually changed. If we do not return here, the category may be updated
+    // incorrectly (for example, to custom when it should be strict).
+    if (
+      data ===
+      "privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings"
+    ) {
       return;
     }
 
@@ -487,14 +521,16 @@ export let ContentBlockingPrefs = {
     if (data.startsWith("privacy.trackingprotection")) {
       this.setPrefExpectations();
     } else if (data == this.PREF_CB_CATEGORY) {
-      this.updateCBCategory();
+      this.updateCBCategory(false);
     } else if (data == "browser.contentblocking.features.strict") {
+      this.setPrefExpectationsAndUpdate();
+    } else if (data == this.PREF_LNA_ETP_ENABLED) {
       this.setPrefExpectationsAndUpdate();
     }
   },
 
   init() {
-    this.setPrefExpectationsAndUpdate(true);
+    this.setPrefExpectationsAndUpdate();
     this.matchCBCategory();
 
     for (let prefix of PREF_PREFIXES_TO_OBSERVE) {
@@ -518,6 +554,7 @@ const PREF_PREFIXES_TO_OBSERVE = new Set([
   "privacy.fingerprintingProtection",
   ContentBlockingPrefs.PREF_CB_CATEGORY,
   ContentBlockingPrefs.PREF_STRICT_DEF,
+  ContentBlockingPrefs.PREF_LNA_ETP_ENABLED,
 ]);
 
 ContentBlockingPrefs.QueryInterface = ChromeUtils.generateQI([Ci.nsIObserver]);

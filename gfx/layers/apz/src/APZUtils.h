@@ -13,7 +13,6 @@
 // Do not include this header from source files outside of gfx/layers.
 
 #include <stdint.h>  // for uint32_t
-#include <type_traits>
 #include "gfxTypes.h"
 #include "FrameMetrics.h"
 #include "LayersTypes.h"
@@ -21,7 +20,6 @@
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/APZPublicUtils.h"  // for DispatchToContent
-#include "mozilla/DefineEnum.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/FloatingPoint.h"
 

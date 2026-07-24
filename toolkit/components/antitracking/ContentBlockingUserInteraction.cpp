@@ -51,7 +51,7 @@ void ContentBlockingUserInteraction::Observe(nsIPrincipal* aPrincipal) {
     rv = permManager->AddFromPrincipal(aPrincipal, USER_INTERACTION_PERM,
                                        nsIPermissionManager::ALLOW_ACTION,
                                        expirationType, when);
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
 
     if (StaticPrefs::privacy_antitracking_testing()) {
       nsCOMPtr<nsIObserverService> obs = services::GetObserverService();

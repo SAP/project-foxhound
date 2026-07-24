@@ -6,24 +6,24 @@
 #ifndef MOZILLA_MEDIATRACKGRAPHIMPL_H_
 #define MOZILLA_MEDIATRACKGRAPHIMPL_H_
 
-#include "MediaTrackGraph.h"
+#include <atomic>
 
+#include "AsyncLogger.h"
 #include "AudioMixer.h"
-#include "GraphDriver.h"
 #include "DeviceInputTrack.h"
+#include "GraphDriver.h"
+#include "MediaEventSource.h"
+#include "MediaTrackGraph.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/WeakPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIMemoryReporter.h"
 #include "nsINamed.h"
 #include "nsIRunnable.h"
 #include "nsIThreadInternal.h"
 #include "nsITimer.h"
-#include "AsyncLogger.h"
 
 namespace mozilla {
 
@@ -32,6 +32,7 @@ class ShutdownBlocker;
 }
 
 class AudioContextOperationControlMessage;
+class CubebDeviceEnumerator;
 template <typename T>
 class LinkedList;
 class GraphRunner;
@@ -292,14 +293,13 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * OneIterationImpl is called directly. Mixed audio output from the graph is
    * passed into aMixerReceiver, if it is non-null.
    */
-  IterationResult OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
+  IterationResult OneIteration(GraphTime aStateTime,
                                MixerCallbackReceiver* aMixerReceiver) override;
 
   /**
    * Returns true if this MediaTrackGraph should keep running
    */
   IterationResult OneIterationImpl(GraphTime aStateTime,
-                                   GraphTime aIterationEnd,
                                    MixerCallbackReceiver* aMixerReceiver);
 
   /**
@@ -309,10 +309,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * messages.
    */
   void SignalMainThreadCleanup();
-
-  /* This is the end of the current iteration, that is, the current time of the
-   * graph. */
-  GraphTime IterationEnd() const;
 
   /**
    * Ensure there is an event posted to the main thread to run RunInStableState.
@@ -359,14 +355,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   void UpdateGraph(GraphTime aEndBlockingDecisions);
 
-  void SwapMessageQueues() MOZ_REQUIRES(mMonitor) {
+  void SwapMessageQueues() {
+    MonitorAutoLock lock(mMonitor);
     MOZ_ASSERT(OnGraphThreadOrNotRunning());
-    mMonitor.AssertCurrentThreadOwns();
     MOZ_ASSERT(mFrontMessageQueue.IsEmpty());
     mFrontMessageQueue.SwapElements(mBackMessageQueue);
-    if (!mFrontMessageQueue.IsEmpty()) {
-      EnsureNextIteration();
-    }
   }
   /**
    * Do all the processing and play the audio and video, from
@@ -385,7 +378,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   /* From the main thread, ask the MTG to resolve the returned promise when
    * the device specified has started.
    * A null aDeviceID indicates the default audio output device.
-   * The promise is rejected with NS_ERROR_INVALID_ARG if aSink does not
+   * The promise is rejected with NS_ERROR_INVALID_ARG if aDeviceID does not
    * correspond to any output devices used by the graph, or
    * NS_ERROR_NOT_AVAILABLE if outputs to the device are removed or
    * NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is force shut down
@@ -459,7 +452,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   TrackTime GraphTimeToTrackTimeWithBlocking(const MediaTrack* aTrack,
                                              GraphTime aTime) const;
 
- private:
+ protected:
   /**
    * Set mOutputDeviceForAEC to indicate the audio output to be passed as the
    * reverse stream for audio echo cancellation.  Graph thread.
@@ -562,7 +555,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     mTrackOrderDirty = true;
   }
 
- private:
+ protected:
   // Get the current maximum channel count required for a device.
   // aDevice is an element of mOutputDevices.  Graph thread only.
   struct OutputDeviceEntry;
@@ -582,6 +575,39 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     AssertOnGraphThread();
     return mOutputDeviceForAEC != PrimaryOutputDeviceID();
   }
+  /* Return whether the audio output device used for the aec reverse stream
+   * corresponds to the primary output device, explicitly or implicitly.
+   * Implicitly meaning when the primary output device is the system default
+   * output device, and the output device used for the aec reverse stream is
+   * explicit and matches the current system default output device. */
+  bool OutputForAECIsPrimary() {
+    AssertOnGraphThread();
+    if (mOutputDeviceForAEC == PrimaryOutputDeviceID()) {
+      // Output device for AEC is explicitly the primary output device, which is
+      // used for the duplex stream of the graph driver.
+      return true;
+    }
+    // The output device for AEC is still considered primary if the primary
+    // output device is set to follow the system default output device, and the
+    // output device for AEC is explicitly the current system default output
+    // device.
+    return PrimaryOutputDeviceID() == DEFAULT_OUTPUT_DEVICE &&
+           mOutputDeviceForAEC == mDefaultOutputDeviceID;
+  }
+  CubebUtils::AudioDeviceID DefaultOutputDeviceID() const {
+    return mDefaultOutputDeviceID.load(std::memory_order_relaxed);
+  }
+  /**
+   * Update whether the enumerator is set up for default output device tracking,
+   * based on presence of input devices.
+   * Marked virtual for unittests. Main thread only.
+   */
+  virtual void UpdateEnumeratorDefaultDeviceTracking();
+  /**
+   * Update the tracked default output device from the enumerator.
+   * Main thread only.
+   */
+  void UpdateDefaultDevice();
   /**
    * The audio input channel count for a MediaTrackGraph is the max of all the
    * channel counts requested by the listeners. The max channel count is
@@ -1010,7 +1036,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
  protected:
   virtual ~MediaTrackGraphImpl();
 
- private:
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
   // Set a new native iput device when the current native input device is close.
@@ -1121,14 +1146,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   const float mGlobalVolume;
 
 #ifdef DEBUG
- protected:
   /**
    * Used to assert when AppendMessage() runs control messages synchronously.
    */
   bool mCanRunMessagesSynchronously;
 #endif
 
- private:
   /**
    * The graph's main-thread observable graph time.
    * Updated by the stable state runnable after each iteration.
@@ -1161,11 +1184,25 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   DeviceInputTrackManager mDeviceInputTrackManagerMainThread;
 
- private:
+  /**
+   * An enumerator for tracking the system default output device. Set only while
+   * an input track is present in the graph, as the system default output device
+   * is used for AEC decisions. Main thread only.
+   */
+  RefPtr<CubebDeviceEnumerator> mEnumeratorMainThread;
+
+ protected:
   /**
    * Manage the native or non-native input device in graph. Graph thread only.
    */
   DeviceInputTrackManager mDeviceInputTrackManagerGraphThread;
+  MediaEventListener mOutputDevicesChangedListener;
+  /**
+   * The system's current default device. When PrimaryOutputDeviceID() is
+   * nullptr, this is what it maps to. There will be a delay between a user
+   * changing their default device, to this device ID being up to date.
+   */
+  std::atomic<CubebUtils::AudioDeviceID> mDefaultOutputDeviceID = {nullptr};
   /**
    * The mixer that the graph mixes into during an iteration. This is here
    * rather than on the stack so that its buffer is not allocated each

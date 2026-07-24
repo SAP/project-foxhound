@@ -81,10 +81,6 @@ uint64_t HTMLTableCellAccessible::NativeState() const {
   return state;
 }
 
-uint64_t HTMLTableCellAccessible::NativeInteractiveState() const {
-  return HyperTextAccessible::NativeInteractiveState() | states::SELECTABLE;
-}
-
 already_AddRefed<AccAttributes> HTMLTableCellAccessible::NativeAttributes() {
   RefPtr<AccAttributes> attributes = HyperTextAccessible::NativeAttributes();
 
@@ -139,7 +135,7 @@ already_AddRefed<AccAttributes> HTMLTableCellAccessible::NativeAttributes() {
 
 void HTMLTableCellAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType,
+                                                  AttrModType aModType,
                                                   const nsAttrValue* aOldValue,
                                                   uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -283,21 +279,6 @@ role HTMLTableHeaderCellAccessible::NativeRole() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HTMLTableRowAccessible
-////////////////////////////////////////////////////////////////////////////////
-
-// LocalAccessible protected
-ENameValueFlag HTMLTableRowAccessible::NativeName(nsString& aName) const {
-  // For table row accessibles, we only want to calculate the name from the
-  // sub tree if an ARIA role is present.
-  if (HasStrongARIARole()) {
-    return AccessibleWrap::NativeName(aName);
-  }
-
-  return eNameOK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // HTMLTableAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -329,10 +310,11 @@ ENameValueFlag HTMLTableAccessible::NativeName(nsString& aName) const {
   if (caption) {
     nsIContent* captionContent = caption->GetContent();
     if (captionContent) {
-      nsTextEquivUtils::AppendTextEquivFromContent(this, captionContent,
-                                                   &aName);
+      bool usedHiddenContent = nsTextEquivUtils::AppendTextEquivFromContent(
+          this, captionContent, &aName);
+      aName.CompressWhitespace();
       if (!aName.IsEmpty()) {
-        return eNameFromRelations;
+        return usedHiddenContent ? eNameOK : eNameFromRelations;
       }
     }
   }
@@ -344,7 +326,7 @@ ENameValueFlag HTMLTableAccessible::NativeName(nsString& aName) const {
 
 void HTMLTableAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              AttrModType aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -397,16 +379,7 @@ Relation HTMLTableAccessible::RelationByType(RelationType aType) const {
 
 LocalAccessible* HTMLTableAccessible::Caption() const {
   LocalAccessible* child = mChildren.SafeElementAt(0, nullptr);
-  // Since this is an HTML table the caption needs to be a caption
-  // element with no ARIA role (except for a reduntant role='caption').
-  // If we did a full Role() calculation here we risk getting into an infinite
-  // loop where the parent role would depend on its name which would need to be
-  // calculated by retrieving the caption (bug 1420773.)
-  return child && child->NativeRole() == roles::CAPTION &&
-                 (!child->HasStrongARIARole() ||
-                  child->IsARIARole(nsGkAtoms::caption))
-             ? child
-             : nullptr;
+  return child && child->IsHTMLCaption() ? child : nullptr;
 }
 
 uint32_t HTMLTableAccessible::ColCount() const {
@@ -657,12 +630,13 @@ bool HTMLTableAccessible::IsProbablyLayoutTable() {
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLTableAccessible: protected implementation
 
-void HTMLTableAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag HTMLTableAccessible::Description(
+    nsString& aDescription) const {
   // Helpful for debugging layout vs. data tables
   aDescription.Truncate();
-  LocalAccessible::Description(aDescription);
+  EDescriptionValueFlag descFlag = LocalAccessible::Description(aDescription);
   if (!aDescription.IsEmpty()) {
-    return;
+    return descFlag;
   }
 
   // Use summary as description if it weren't used as a name.
@@ -688,6 +662,8 @@ void HTMLTableAccessible::Description(nsString& aDescription) const {
   }
   printf("\nTABLE: %s\n", NS_ConvertUTF16toUTF8(mLayoutHeuristic).get());
 #endif
+
+  return eDescriptionOK;
 }
 
 nsTableWrapperFrame* HTMLTableAccessible::GetTableWrapperFrame() const {

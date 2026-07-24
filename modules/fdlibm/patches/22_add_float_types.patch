@@ -41,26 +41,3 @@ diff --git a/e_rem_pio2f.cpp b/e_rem_pio2f.cpp
  	}
      /*
       * all other (large) arguments
-diff --git a/s_scalbnf.cpp b/s_scalbnf.cpp
---- a/s_scalbnf.cpp
-+++ b/s_scalbnf.cpp
-@@ -7,18 +7,18 @@
-  * for all contributors to musl.
-  */
- #include <stdint.h>
-
- #include "math_private.h"
- 
- float scalbnf(float x, int n)
- {
- 	union {float f; uint32_t i;} u;
--	float_t y = x;
-+	float y = x;
- 
- 	if (n > 127) {
- 		y *= 0x1p127f;
- 		n -= 127;
- 		if (n > 127) {
- 			y *= 0x1p127f;
- 			n -= 127;
- 			if (n > 127)

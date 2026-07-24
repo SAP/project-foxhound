@@ -8,18 +8,17 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
-#include "nsIFormControl.h"
 #include "mozilla/dom/ButtonInputTypes.h"
 #include "mozilla/dom/CheckableInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
 #include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/FileInputType.h"
-#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/NumericInputTypes.h"
 #include "mozilla/dom/SingleLineTextInputTypes.h"
-
 #include "nsContentUtils.h"
+#include "nsIFormControl.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

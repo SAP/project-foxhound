@@ -8,6 +8,7 @@
 #define mozilla_dom_QueueWithSizes_h
 
 #include <cmath>
+
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "mozilla/ErrorResult.h"

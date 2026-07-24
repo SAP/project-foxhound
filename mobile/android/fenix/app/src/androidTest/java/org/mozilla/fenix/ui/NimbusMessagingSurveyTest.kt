@@ -6,9 +6,11 @@ package org.mozilla.fenix.ui
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.json.JSONObject
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.experiments.nimbus.HardcodedNimbusFeatures
@@ -32,13 +34,8 @@ class NimbusMessagingSurveyTest : TestSetup() {
     private lateinit var hardcodedNimbus: HardcodedNimbusFeatures
 
     @get:Rule
-    val activityTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides(
-        skipOnboarding = true,
-    )
-
-    @Rule
-    @JvmField
-    val retryTestRule = RetryTestRule(2)
+    val composeTestRule =
+        AndroidComposeTestRule(HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)) { it.activity }
 
     @Before
     override fun setUp() {
@@ -86,26 +83,26 @@ class NimbusMessagingSurveyTest : TestSetup() {
                 ),
             )
         }
-        activityTestRule.finishActivity()
+        composeTestRule.activityRule.finishActivity()
         hardcodedNimbus.connectWith(FxNimbus)
-        activityTestRule.launchActivity(null)
+        composeTestRule.activityRule.launchActivity(null)
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2809390
     @Test
     fun checkSurveyNavigatesCorrectly() {
-        surveyScreen {
-            verifySurveyButton()
+        surveyScreen(composeTestRule) {
+            verifySurveyButton(composeTestRule)
         }.clickSurveyButton {
-            assertNotEquals("", getCurrentUrl())
+            verifyUrl("example.com")
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2809389
     @Test
     fun checkSurveyNoThanksNavigatesCorrectly() {
-        surveyScreen {
-            verifySurveyNoThanksButton()
+        surveyScreen(composeTestRule) {
+            verifySurveyNoThanksButton(composeTestRule)
         }.clickNoThanksSurveyButton {
             verifyTabCounter("0")
         }
@@ -114,10 +111,10 @@ class NimbusMessagingSurveyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2809388
     @Test
     fun checkSurveyLandscapeLooksCorrect() {
-        activityTestRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        surveyScreen {
-            verifySurveyNoThanksButton()
-            verifySurveyButton()
+        composeTestRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        surveyScreen(composeTestRule) {
+            verifySurveyNoThanksButton(composeTestRule)
+            verifySurveyButton(composeTestRule)
         }.clickNoThanksSurveyButton {
             verifyTabCounter("0")
         }

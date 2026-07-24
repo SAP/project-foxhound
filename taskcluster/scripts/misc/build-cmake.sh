@@ -10,10 +10,10 @@ cd $MOZ_FETCHES_DIR/cmake
 # Work around https://gitlab.kitware.com/cmake/cmake/-/issues/26031
 patch -p1 <<'EOF'
 diff --git a/Source/bindexplib.cxx b/Source/bindexplib.cxx
-index 52e200c24f..07ccf3965c 100644
+index bbcb0bccc9..f5d80dd784 100644
 --- a/Source/bindexplib.cxx
 +++ b/Source/bindexplib.cxx
-@@ -398,7 +398,7 @@ static bool DumpFile(std::string const& nmPath, const char* filename,
+@@ -414,7 +414,7 @@ static bool DumpFile(std::string const& nmPath, char const* filename,
                       std::set<std::string>& symbols,
                       std::set<std::string>& dataSymbols)
  {
@@ -28,17 +28,39 @@ EOF
 # The resulting cmake works well enough for our use.
 patch -p1 <<'EOF'
 diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
-index c268a92111..d18f8cf221 100644
+index c54da4408a..8408355c4a 100644
 --- a/Source/CMakeLists.txt
 +++ b/Source/CMakeLists.txt
-@@ -863,7 +863,6 @@ if(WIN32)
- 
+@@ -964,7 +964,6 @@ if(WIN32)
+
      # Add a manifest file to executables on Windows to allow for
      # GetVersion to work properly on Windows 8 and above.
 -    target_sources(ManifestLib INTERFACE cmake.version.manifest)
    endif()
  endif()
- 
+
+EOF
+
+# Work around https://github.com/llvm/llvm-project/issues/134237
+# Should be removable once we update to clang 21.
+patch -p1 <<'EOF'
+diff --git a/Modules/CMakeFindBinUtils.cmake b/Modules/CMakeFindBinUtils.cmake
+index 1948c63bad..cb4cefaa72 100644
+--- a/Modules/CMakeFindBinUtils.cmake
++++ b/Modules/CMakeFindBinUtils.cmake
+@@ -87,9 +87,9 @@ if(("x${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_SIMULATE_ID}" STREQUAL "xMSVC" AND
+   if("x${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_COMPILER_ID}" MATCHES "^x(Clang|LLVMFlang)$")
+     set(_CMAKE_NM_NAMES "llvm-nm" "nm")
+     list(PREPEND _CMAKE_AR_NAMES "llvm-lib")
+-    if("${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_COMPILER_VERSION}" VERSION_GREATER_EQUAL 14.0.2)
+-      list(PREPEND _CMAKE_MT_NAMES "llvm-mt")
+-    endif()
++    # if("${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_COMPILER_VERSION}" VERSION_GREATER_EQUAL 14.0.2)
++    #   list(PREPEND _CMAKE_MT_NAMES "llvm-mt")
++    # endif()
+     list(PREPEND _CMAKE_LINKER_NAMES "lld-link")
+     list(APPEND _CMAKE_TOOL_VARS NM)
+   elseif("x${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_COMPILER_ID}" STREQUAL "xIntel")
 EOF
 
 export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"

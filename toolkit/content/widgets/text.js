@@ -15,23 +15,8 @@
     Services.prefs.getIntPref("ui.key.menuAccessKey") != 0;
   if (gUnderlineAccesskey) {
     try {
-      const nsIPrefLocalizedString = Ci.nsIPrefLocalizedString;
-      const prefNameInsertSeparator =
-        "intl.menuitems.insertseparatorbeforeaccesskeys";
-      const prefNameAlwaysAppendAccessKey =
-        "intl.menuitems.alwaysappendaccesskeys";
-
-      let val = Services.prefs.getComplexValue(
-        prefNameInsertSeparator,
-        nsIPrefLocalizedString
-      ).data;
-      gInsertSeparator = val == "true";
-
-      val = Services.prefs.getComplexValue(
-        prefNameAlwaysAppendAccessKey,
-        nsIPrefLocalizedString
-      ).data;
-      gAlwaysAppendAccessKey = val == "true";
+      gInsertSeparator = Services.locale.insertSeparatorBeforeAccesskeys;
+      gAlwaysAppendAccessKey = Services.locale.alwaysAppendAccesskeys;
     } catch (e) {
       gInsertSeparator = gAlwaysAppendAccessKey = true;
     }
@@ -83,7 +68,7 @@
       if (
         (controlElement.localName == "checkbox" ||
           controlElement.localName == "radio") &&
-        controlElement.getAttribute("disabled") == "true"
+        controlElement.hasAttribute("disabled")
       ) {
         return;
       }

@@ -6,8 +6,8 @@
 
 /* base class for all rule types in a CSS style sheet */
 
-#ifndef mozilla_css_Rule_h___
-#define mozilla_css_Rule_h___
+#ifndef mozilla_css_Rule_h_
+#define mozilla_css_Rule_h_
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StyleSheet.h"
@@ -150,4 +150,4 @@ class Rule : public nsISupports, public nsWrapperCache, public SupportsWeakPtr {
 }  // namespace css
 }  // namespace mozilla
 
-#endif /* mozilla_css_Rule_h___ */
+#endif /* mozilla_css_Rule_h_ */

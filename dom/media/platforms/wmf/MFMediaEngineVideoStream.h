@@ -7,7 +7,6 @@
 
 #include "MFMediaEngineStream.h"
 #include "WMFUtils.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 
 namespace mozilla {

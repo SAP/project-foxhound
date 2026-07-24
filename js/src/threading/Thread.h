@@ -7,10 +7,8 @@
 #ifndef threading_Thread_h
 #define threading_Thread_h
 
-#include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
 
-#include <stdint.h>
 #include <type_traits>
 #include <utility>
 

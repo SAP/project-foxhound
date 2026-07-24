@@ -408,6 +408,11 @@ class BaseAssemblerX64 : public BaseAssembler {
     m_formatter.twoByteOp64(OP2_IMUL_GvEv, src, dst);
   }
 
+  void imulq_r(RegisterID multiplier) {
+    spew("imulq      %s", GPReg64Name(multiplier));
+    m_formatter.oneByteOp64(OP_GROUP3_Ev, multiplier, GROUP3_OP_IMUL);
+  }
+
   void imulq_mr(int32_t offset, RegisterID base, RegisterID dst) {
     spew("imulq      " MEM_ob ", %s", ADDR_ob(offset, base), GPReg64Name(dst));
     m_formatter.twoByteOp64(OP2_IMUL_GvEv, offset, base, dst);
@@ -422,6 +427,11 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_IMUL_GvEvIz, src, dst);
       m_formatter.immediate32(value);
     }
+  }
+
+  void mulq_r(RegisterID multiplier) {
+    spew("mulq       %s", GPReg64Name(multiplier));
+    m_formatter.oneByteOp64(OP_GROUP3_Ev, multiplier, GROUP3_OP_MUL);
   }
 
   void cqo() {
@@ -709,6 +719,12 @@ class BaseAssemblerX64 : public BaseAssembler {
     spew("leaq       " MEM_obs ", %s", ADDR_obs(offset, base, index, scale),
          GPReg64Name(dst));
     m_formatter.oneByteOp64(OP_LEA, offset, base, index, scale, dst);
+  }
+
+  void leaq_mr(int32_t offset, RegisterID index, int scale, RegisterID dst) {
+    spew("leaq       " MEM_os ", %s", ADDR_os(offset, index, scale),
+         GPReg64Name(dst));
+    m_formatter.oneByteOp64_disp32(OP_LEA, offset, index, scale, dst);
   }
 
   void movq_i32m(int32_t imm, int32_t offset, RegisterID base) {
@@ -1045,8 +1061,17 @@ class BaseAssemblerX64 : public BaseAssembler {
   [[nodiscard]] JmpSrc vmulpd_ripr(XMMRegisterID src, XMMRegisterID dst) {
     return twoByteRipOpSimd("vmulpd", VEX_PD, OP2_MULPD_VpdWpd, src, dst);
   }
+  [[nodiscard]] JmpSrc vandps_ripr(XMMRegisterID src, XMMRegisterID dst) {
+    return twoByteRipOpSimd("vandps", VEX_PS, OP2_ANDPS_VpsWps, src, dst);
+  }
   [[nodiscard]] JmpSrc vandpd_ripr(XMMRegisterID src, XMMRegisterID dst) {
     return twoByteRipOpSimd("vandpd", VEX_PD, OP2_ANDPD_VpdWpd, src, dst);
+  }
+  [[nodiscard]] JmpSrc vxorps_ripr(XMMRegisterID src, XMMRegisterID dst) {
+    return twoByteRipOpSimd("vxorps", VEX_PS, OP2_XORPS_VpsWps, src, dst);
+  }
+  [[nodiscard]] JmpSrc vxorpd_ripr(XMMRegisterID src, XMMRegisterID dst) {
+    return twoByteRipOpSimd("vxorpd", VEX_PD, OP2_XORPD_VpdWpd, src, dst);
   }
   [[nodiscard]] JmpSrc vminpd_ripr(XMMRegisterID src, XMMRegisterID dst) {
     return twoByteRipOpSimd("vminpd", VEX_PD, OP2_MINPD_VpdWpd, src, dst);
@@ -1176,6 +1201,17 @@ class BaseAssemblerX64 : public BaseAssembler {
     int reg = dst;
     m_formatter.threeByteOpVex64(VEX_SD /* = F2 */, OP3_SHRX_GyEyBy, ESCAPE_38,
                                  rm, src0, reg);
+  }
+
+  void andnq_rrr(RegisterID src1, RegisterID src2, RegisterID dst) {
+    spew("andnq      %s, %s, %s", GPReg64Name(src1), GPReg64Name(src2),
+         GPReg64Name(dst));
+
+    RegisterID rm = src2;
+    XMMRegisterID src0 = static_cast<XMMRegisterID>(src1);
+    int reg = dst;
+    m_formatter.threeByteOpVex64(VEX_PS, OP3_ANDN_GyByEy, ESCAPE_38, rm, src0,
+                                 reg);
   }
 
  private:

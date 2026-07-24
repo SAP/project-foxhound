@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_ipc_VsyncParent_h
 #define mozilla_dom_ipc_VsyncParent_h
 
-#include "mozilla/dom/PVsyncParent.h"
-#include "mozilla/VsyncDispatcher.h"
-#include "nsCOMPtr.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/VsyncDispatcher.h"
+#include "mozilla/dom/PVsyncParent.h"
+#include "nsCOMPtr.h"
 
 class nsIThread;
 

@@ -7,8 +7,8 @@
 #define TRANSFRMX_TXSTYLESHEETCOMPILEHANDLERS_H
 
 #include "nsError.h"
-#include "txNamespaceMap.h"
 #include "txExpandedNameMap.h"
+#include "txNamespaceMap.h"
 
 struct txStylesheetAttr;
 class txStylesheetCompilerState;

@@ -7,9 +7,9 @@
 #define MOZILLA_AUDIONODEENGINE_H_
 
 #include "AudioSegment.h"
-#include "mozilla/dom/AudioNode.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/AudioNode.h"
 
 namespace WebCore {
 class Reverb;

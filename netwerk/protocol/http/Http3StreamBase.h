@@ -13,18 +13,22 @@
 
 namespace mozilla::net {
 
-class Http3Session;
+class Http3SessionBase;
 class Http3Stream;
 class Http3WebTransportSession;
 class Http3WebTransportStream;
+class Http3ConnectUDPStream;
+class Http3StreamTunnel;
 
 class Http3StreamBase : public SupportsWeakPtr, public ARefBase {
  public:
-  Http3StreamBase(nsAHttpTransaction* trans, Http3Session* session);
+  Http3StreamBase(nsAHttpTransaction* trans, Http3SessionBase* session);
 
   virtual Http3WebTransportSession* GetHttp3WebTransportSession() = 0;
   virtual Http3WebTransportStream* GetHttp3WebTransportStream() = 0;
   virtual Http3Stream* GetHttp3Stream() = 0;
+  virtual Http3ConnectUDPStream* GetHttp3ConnectUDPStream() = 0;
+  virtual Http3StreamTunnel* GetHttp3StreamTunnel() = 0;
 
   bool HasStreamId() const { return mStreamId != UINT64_MAX; }
   uint64_t StreamId() const { return mStreamId; }
@@ -55,6 +59,11 @@ class Http3StreamBase : public SupportsWeakPtr, public ARefBase {
   void SetInTxQueue(bool aValue) { mInTxQueue = aValue; }
   bool IsInTxQueue() const { return mInTxQueue; }
 
+  void SetBlockedByFlowControl(bool aValue) { mBlockedByFlowControl = aValue; }
+  bool BlockedByFlowControl() const { return mBlockedByFlowControl; }
+
+  bool Closed() const { return mClosed; }
+
  protected:
   ~Http3StreamBase();
 
@@ -62,11 +71,13 @@ class Http3StreamBase : public SupportsWeakPtr, public ARefBase {
   int64_t mSendOrder{0};
   bool mSendOrderIsSet{false};
   RefPtr<nsAHttpTransaction> mTransaction;
-  RefPtr<Http3Session> mSession;
+  RefPtr<Http3SessionBase> mSession;
   bool mQueued{false};
   bool mFin{false};
   bool mResetRecv{false};
   bool mInTxQueue{false};
+  bool mBlockedByFlowControl{false};
+  bool mClosed{false};
 };
 
 }  // namespace mozilla::net

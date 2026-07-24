@@ -3,7 +3,12 @@
 **/export const description = `createTexture validation tests.`;import { AllFeaturesMaxLimitsGPUTest } from '../.././gpu_test.js';
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { assert, makeValueTestVariant } from '../../../common/util/util.js';
-import { kTextureDimensions, kTextureUsages } from '../../capability_info.js';
+import {
+  kTextureDimensions,
+  kTextureUsages,
+  isValidTextureUsageCombination,
+  kValidCombinationsOfOneOrTwoTextureUsages } from
+'../../capability_info.js';
 import { GPUConst } from '../../constants.js';
 import {
   kAllTextureFormats,
@@ -130,7 +135,7 @@ fn((t) => {
     () => {
       t.createTextureTracked(descriptor);
     },
-    !textureDimensionAndFormatCompatibleForDevice(t.device, dimension, format)
+    !textureDimensionAndFormatCompatibleForDevice(t.device.features, dimension, format)
   );
 });
 
@@ -293,7 +298,8 @@ fn((t) => {
   };
 
   const success =
-  sampleCount === 1 || sampleCount === 4 && isTextureFormatMultisampled(t.device, format);
+  sampleCount === 1 ||
+  sampleCount === 4 && isTextureFormatMultisampled(t.device.features, format);
 
   t.expectValidationError(() => {
     t.createTextureTracked(descriptor);
@@ -323,27 +329,25 @@ unless(
   arrayLayerCount === 2 && dimension !== '2d' && dimension !== undefined
 ).
 combine('mipLevelCount', [1, 2]).
-expand('usage', () => {
-  const usageSet = new Set();
-  for (const usage0 of kTextureUsages) {
-    for (const usage1 of kTextureUsages) {
-      usageSet.add(usage0 | usage1);
-    }
-  }
-  return usageSet;
-})
+combine('usage', kValidCombinationsOfOneOrTwoTextureUsages)
 // Filter out incompatible dimension type and format combinations.
 .filter(({ dimension, format }) =>
 textureFormatAndDimensionPossiblyCompatible(dimension, format)
 ).
-unless(({ usage, format, mipLevelCount, dimension }) => {
+unless(({ usage, format, arrayLayerCount, mipLevelCount, dimension }) => {
   return (
     (usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 && (
     !isTextureFormatPossiblyUsableAsColorRenderAttachment(format) ||
     dimension !== '2d') ||
     (usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 &&
     !isTextureFormatPossiblyStorageReadable(format) ||
-    mipLevelCount !== 1 && dimension === '1d');
+    mipLevelCount !== 1 && dimension === '1d' ||
+    (usage & GPUConst.TextureUsage.TRANSIENT_ATTACHMENT) !== 0 && (
+    usage !== (
+    GPUConst.TextureUsage.RENDER_ATTACHMENT |
+    GPUConst.TextureUsage.TRANSIENT_ATTACHMENT) ||
+    mipLevelCount !== 1 ||
+    arrayLayerCount !== 1));
 
 })
 ).
@@ -353,6 +357,10 @@ fn((t) => {
   t.skipIfTextureFormatAndDimensionNotCompatible(format, dimension);
   if ((usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0) {
     t.skipIfTextureFormatNotUsableAsRenderAttachment(format);
+  }
+  // MAINTENANCE_TODO(#4509): Remove this when TRANSIENT_ATTACHMENT is added to the WebGPU spec.
+  if ((usage & GPUConst.TextureUsage.TRANSIENT_ATTACHMENT) !== 0) {
+    t.skipIfTransientAttachmentNotSupported();
   }
   const { blockWidth, blockHeight } = getBlockInfoForTextureFormat(format);
 
@@ -373,12 +381,12 @@ fn((t) => {
 
   const satisfyWithStorageUsageRequirement =
   (usage & GPUConst.TextureUsage.STORAGE_BINDING) === 0 ||
-  isTextureFormatUsableWithStorageAccessMode(t.device, format, 'write-only');
+  isTextureFormatUsableWithStorageAccessMode(t.device.features, format, 'write-only');
 
   const success =
   sampleCount === 1 && satisfyWithStorageUsageRequirement ||
   sampleCount === 4 &&
-  isTextureFormatMultisampled(t.device, format) && (
+  isTextureFormatMultisampled(t.device.features, format) && (
   dimension === '2d' || dimension === undefined) &&
   mipLevelCount === 1 &&
   arrayLayerCount === 1 &&
@@ -985,7 +993,7 @@ fn((t) => {
   size[0] <= maxTextureDimension3D &&
   size[1] <= maxTextureDimension3D &&
   size[2] <= maxTextureDimension3D &&
-  textureDimensionAndFormatCompatibleForDevice(t.device, '3d', format);
+  textureDimensionAndFormatCompatibleForDevice(t.device.features, '3d', format);
 
   t.expectValidationError(() => {
     t.createTextureTracked(descriptor);
@@ -1007,7 +1015,10 @@ combine('usage1', kTextureUsages)
 // Filter out incompatible dimension type and format combinations.
 .filter(({ dimension, format }) =>
 textureFormatAndDimensionPossiblyCompatible(dimension, format)
-)
+).
+unless(({ usage0, usage1 }) => {
+  return !isValidTextureUsageCombination(usage0 | usage1);
+})
 ).
 fn((t) => {
   const { dimension, format, usage0, usage1 } = t.params;
@@ -1024,19 +1035,63 @@ fn((t) => {
     usage
   };
 
+  // MAINTENANCE_TODO(#4509): Remove this when TRANSIENT_ATTACHMENT is added to the WebGPU spec.
+  if ((usage & GPUConst.TextureUsage.TRANSIENT_ATTACHMENT) !== 0) {
+    t.skipIfTransientAttachmentNotSupported();
+  }
+
   let success = true;
   const appliedDimension = dimension ?? '2d';
   // Note that we unconditionally test copy usages for all formats and
   // expect failure if copying from or to is not supported.
   if (usage & GPUTextureUsage.STORAGE_BINDING) {
-    if (!isTextureFormatUsableWithStorageAccessMode(t.device, format, 'write-only'))
+    if (!isTextureFormatUsableWithStorageAccessMode(t.device.features, format, 'write-only'))
     success = false;
   }
   if (usage & GPUTextureUsage.RENDER_ATTACHMENT) {
     if (appliedDimension === '1d') success = false;
-    if (isColorTextureFormat(format) && !isTextureFormatColorRenderable(t.device, format))
+    if (
+    isColorTextureFormat(format) &&
+    !isTextureFormatColorRenderable(t.device.features, format))
+
     success = false;
   }
+  if (usage & GPUTextureUsage.TRANSIENT_ATTACHMENT) {
+    if (appliedDimension !== '2d') success = false;
+  }
+
+  t.expectValidationError(() => {
+    t.createTextureTracked(descriptor);
+  }, !success);
+});
+
+g.test('depthOrArrayLayers_and_mipLevelCount_for_transient_attachments').
+desc(`Test depthOrArrayLayers and mipLevelCount must be 1 for transient attachments`).
+params((u) =>
+u.
+combine('format', ['rgba8unorm', 'depth24plus']).
+beginSubcases().
+combine('depthOrArrayLayers', [1, 2]).
+combine('mipLevelCount', [1, 2])
+).
+fn((t) => {
+  // MAINTENANCE_TODO(#4509): Remove this when TRANSIENT_ATTACHMENT is added to the WebGPU spec.
+  t.skipIfTransientAttachmentNotSupported();
+
+  const { format, depthOrArrayLayers, mipLevelCount } = t.params;
+
+  const info = getBlockInfoForTextureFormat(format);
+  const size = [info.blockWidth, info.blockHeight, depthOrArrayLayers];
+  const descriptor = {
+    size,
+    mipLevelCount,
+    format,
+    usage: GPUConst.TextureUsage.RENDER_ATTACHMENT | GPUConst.TextureUsage.TRANSIENT_ATTACHMENT
+  };
+
+  let success = true;
+  if (depthOrArrayLayers !== 1) success = false;
+  if (mipLevelCount !== 1) success = false;
 
   t.expectValidationError(() => {
     t.createTextureTracked(descriptor);
@@ -1064,7 +1119,7 @@ fn((t) => {
   t.skipIfTextureFormatNotSupported(format, viewFormat);
 
   const { blockWidth, blockHeight } = getBlockInfoForTextureFormat(format);
-  const compatible = textureFormatsAreViewCompatible(t.device, format, viewFormat);
+  const compatible = textureFormatsAreViewCompatible(t.device.features, format, viewFormat);
 
   // Test the viewFormat in the list.
   t.expectValidationError(() => {

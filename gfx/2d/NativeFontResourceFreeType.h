@@ -23,7 +23,7 @@ class NativeFontResourceFreeType
 
 #ifdef MOZ_WIDGET_ANDROID
   static already_AddRefed<NativeFontResourceFreeType> Create(
-      uint8_t* aFontData, uint32_t aDataLength,
+      const uint8_t* aFontData, uint32_t aDataLength,
       FT_Library aFTLibrary = nullptr);
 
   already_AddRefed<UnscaledFont> CreateUnscaledFont(
@@ -41,7 +41,7 @@ class NativeFontResourceFreeType
                              FT_Library aFTLibrary = nullptr);
 
   template <class T>
-  static already_AddRefed<T> CreateInternal(uint8_t* aFontData,
+  static already_AddRefed<T> CreateInternal(const uint8_t* aFontData,
                                             uint32_t aDataLength,
                                             FT_Library aFTLibrary);
 
@@ -57,7 +57,7 @@ class NativeFontResourceFontconfig final : public NativeFontResourceFreeType {
                                           override)
 
   static already_AddRefed<NativeFontResourceFontconfig> Create(
-      uint8_t* aFontData, uint32_t aDataLength,
+      const uint8_t* aFontData, uint32_t aDataLength,
       FT_Library aFTLibrary = nullptr);
 
   already_AddRefed<UnscaledFont> CreateUnscaledFont(

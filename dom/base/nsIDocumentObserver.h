@@ -3,12 +3,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIDocumentObserver_h___
-#define nsIDocumentObserver_h___
+#ifndef nsIDocumentObserver_h_
+#define nsIDocumentObserver_h_
 
-#include "nsISupports.h"
-#include "nsIMutationObserver.h"
 #include "mozilla/dom/RustTypes.h"
+#include "nsIMutationObserver.h"
+#include "nsISupports.h"
 
 namespace mozilla {
 
@@ -111,4 +111,4 @@ class nsIDocumentObserver : public nsIMutationObserver {
 #define NS_IMPL_NSIDOCUMENTOBSERVER_CONTENT(_class) \
   NS_IMPL_NSIMUTATIONOBSERVER_CONTENT(_class)
 
-#endif /* nsIDocumentObserver_h___ */
+#endif /* nsIDocumentObserver_h_ */

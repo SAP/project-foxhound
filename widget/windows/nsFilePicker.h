@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFilePicker_h__
-#define nsFilePicker_h__
+#ifndef nsFilePicker_h_
+#define nsFilePicker_h_
 
 #include <windows.h>
 
@@ -133,4 +133,4 @@ class nsFilePicker final : public nsBaseWinFilePicker {
   AutoTArray<Filter, 1> mFilterList;
 };
 
-#endif  // nsFilePicker_h__
+#endif  // nsFilePicker_h_

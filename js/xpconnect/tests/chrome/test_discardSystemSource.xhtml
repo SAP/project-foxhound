@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990353
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  /** Test for Bug 990353 **/
+  /** Test for Bug 990353 */
   SimpleTest.waitForExplicitFinish();
 
   function canary() {
@@ -69,7 +69,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990353
     ok(/someBitOfSource/.test(canary.toString()), "Should have own source");
 
     window[0].frameElement.onload = frameLoaded;
-    window[0].location = "file_discardSystemSource.html";
+    window[0].location = "chrome://mochitests/content/chrome/js/xpconnect/tests/chrome/file_discardSystemSource.html";
   }
   addLoadEvent(function() {
     SpecialPowers.pushPrefEnv({set: [['javascript.options.discardSystemSource', true]]}, go);

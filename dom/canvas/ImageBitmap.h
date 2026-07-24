@@ -7,16 +7,15 @@
 #ifndef mozilla_dom_ImageBitmap_h
 #define mozilla_dom_ImageBitmap_h
 
-#include "mozilla/Attributes.h"
+#include "ImageData.h"
+#include "gfxTypes.h"  // for gfxAlphaType
+#include "mozilla/Maybe.h"
 #include "mozilla/SurfaceFromElementResult.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/gfx/Rect.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
-#include "ImageData.h"
-#include "gfxTypes.h"  // for gfxAlphaType
 #include "nsCycleCollectionParticipant.h"
 
 struct JSContext;

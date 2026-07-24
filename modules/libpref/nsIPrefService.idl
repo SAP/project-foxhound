@@ -7,6 +7,7 @@
 #include "nsIPrefBranch.idl"
 
 interface nsIFile;
+interface nsIPrefOverrideMap;
 
 /**
  * A helper function for reading access statistics for preferences.
@@ -88,13 +89,17 @@ interface nsIPrefService : nsISupports
    * thread.
    *
    * @param aFile The file to be written.
+   * @param aOverrideMap Map of pref names to values that will "override"
+   *                     current pref values in the backup.
    * @returns A DOM promise that resolves when the backup is complete.
    *
    * @see readUserPrefsFromFile
    * @see nsIFile
    */
   [implicit_jscontext]
-  Promise backupPrefFile(in nsIFile aFile);
+  Promise backupPrefFile(
+      in nsIFile aFile,
+      [optional] in nsIPrefOverrideMap aOverrideMap);
 
   /**
    * Call to get a Preferences "Branch" which accesses user preference data.
@@ -203,6 +208,11 @@ interface nsIPrefService : nsISupports
    * started.
    */
   readonly attribute PRTime userPrefsFileLastModifiedAtStartup;
+
+  /**
+   * The preamble text for prefs.js.
+   */
+  readonly attribute ACString prefsJsPreamble;
 };
 
 %{C++

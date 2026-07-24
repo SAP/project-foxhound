@@ -10,8 +10,7 @@
 
 #include <memory>  // std::uninitialized_fill_n
 
-#include "jsnum.h"  // CharsToNumber
-
+#include "builtin/Number.h"  // CharsToNumber
 #include "frontend/CompilationStencil.h"
 #include "js/GCAPI.h"            // JS::AutoSuppressGCAnalysis
 #include "js/Printer.h"          // Sprinter, QuoteString
@@ -768,7 +767,8 @@ bool ParserAtomsTable::isExtendedUnclonedSelfHostedFunctionName(
       case WellKnownAtomId::dollar_ArrayValues_:
       case WellKnownAtomId::dollar_RegExpFlagsGetter_:
       case WellKnownAtomId::dollar_RegExpToString_:
-      case WellKnownAtomId::dollar_SharedArrayBufferSpecies_: {
+      case WellKnownAtomId::dollar_SharedArrayBufferSpecies_:
+      case WellKnownAtomId::dollar_TypedArraySpecies_: {
 #ifdef DEBUG
         const auto& info = GetWellKnownAtomInfo(index.toWellKnownAtomId());
         MOZ_ASSERT(info.content[0] ==

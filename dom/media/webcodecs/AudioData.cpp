@@ -4,24 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Assertions.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/Logging.h"
 #include "mozilla/dom/AudioData.h"
-#include "mozilla/dom/AudioDataBinding.h"
-#include "mozilla/dom/BufferSourceBinding.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/StructuredCloneTags.h"
-#include "nsStringFwd.h"
-#include "nsFmtString.h"
 
 #include <utility>
 
 #include "AudioSampleFormat.h"
 #include "WebCodecsUtils.h"
 #include "js/StructuredClone.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
+#include "mozilla/dom/AudioDataBinding.h"
+#include "mozilla/dom/BufferSourceBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/StructuredCloneTags.h"
+#include "nsFmtString.h"
+#include "nsStringFwd.h"
+#include "nsTHashSet.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 
@@ -176,8 +177,8 @@ Result<Ok, nsCString> IsValidAudioDataInit(const AudioDataInit& aInit) {
 
   if (!bytesNeeded.isValid()) {
     return LogAndReturnErr(
-        FMT_STRING("Overflow when computing the number of bytes needed to hold "
-                   "audio samples ({}*{}*{})"),
+        "Overflow when computing the number of bytes needed to hold "
+        "audio samples ({}*{}*{})",
         aInit.mNumberOfFrames, aInit.mNumberOfChannels,
         BytesPerSamples(aInit.mFormat));
   }
@@ -188,7 +189,7 @@ Result<Ok, nsCString> IsValidAudioDataInit(const AudioDataInit& aInit) {
       });
   if (arraySizeBytes < bytesNeeded.value()) {
     return LogAndReturnErr(
-        FMT_STRING("Array of size {} not big enough, should be at least {}"),
+        "Array of size {} not big enough, should be at least {}",
         arraySizeBytes, bytesNeeded.value());
   }
   return Ok();
@@ -214,15 +215,82 @@ already_AddRefed<AudioData> AudioData::Constructor(const GlobalObject& aGlobal,
     aRv.ThrowTypeError(rv.inspectErr());
     return nullptr;
   }
-  auto resource = AudioDataResource::Construct(aInit.mData);
+
+  nsTHashSet<const JSObject*> transferSet;
+  for (const auto& buffer : aInit.mTransfer) {
+    if (transferSet.Contains(buffer.Obj())) {
+      // 9.2.2.2. If init.transfer contains more than one reference to
+      // the same ArrayBuffer, then throw a DataCloneError DOMException.
+      LOGE("AudioData Constructor -- duplicate transferred ArrayBuffer");
+      aRv.ThrowDataCloneError(
+          "Transfer contains duplicate ArrayBuffer objects");
+      return nullptr;
+    }
+    transferSet.Insert(buffer.Obj());
+  }
+
+  for (const auto& buffer : aInit.mTransfer) {
+    if (JS::IsDetachedArrayBufferObject(buffer.Obj())) {
+      // 9.2.2.3.1. If [[Detached]] internal slot is true, then
+      // throw a DataCloneError DOMException.
+      LOGE("AudioData Constructor -- detached transferred ArrayBuffer");
+      aRv.ThrowDataCloneError("Transfer contains detached ArrayBuffer objects");
+      return nullptr;
+    }
+  }
+
+  // 9.2.2.4.7. If init.transfer contains an ArrayBuffer referenced by init.data
+  // the User Agent MAY choose to:
+  // 9.2.2.4.7.1. Let resource be a new media resource referencing sample data
+  // in data.
+  size_t transferLen = 0;
+  size_t transferOffset = 0;
+  Maybe<JS::Rooted<JSObject*>> transferView;
+  Maybe<JS::Rooted<JSObject*>> transferBuffer;
+  const auto& data = aInit.mData;
+  if (data.IsArrayBuffer()) {
+    transferBuffer.emplace(aGlobal.Context(), data.GetAsArrayBuffer().Obj());
+    if (transferSet.Contains(*transferBuffer)) {
+      transferLen = JS::GetArrayBufferByteLength(*transferBuffer);
+    }
+  } else if (data.IsArrayBufferView()) {
+    // store rooted ArrayBufferView object in outer variable to prolong
+    // its lifetime (for JS::Rooted's tracking).
+    transferView.emplace(aGlobal.Context(), data.GetAsArrayBufferView().Obj());
+    bool isShared;
+    transferBuffer.emplace(aGlobal.Context(),
+                           JS_GetArrayBufferViewBuffer(
+                               aGlobal.Context(), *transferView, &isShared));
+    if (transferSet.Contains(*transferBuffer)) {
+      transferOffset = JS_GetArrayBufferViewByteOffset(*transferView);
+      transferLen = JS_GetArrayBufferViewByteLength(*transferView);
+    }
+  }
+  UniquePtr<uint8_t[], JS::FreePolicy> transferData;
+  if (transferLen) {
+    void* bufferContents =
+        JS::StealArrayBufferContents(aGlobal.Context(), *transferBuffer);
+    transferData = UniquePtr<uint8_t[], JS::FreePolicy>(
+        static_cast<uint8_t*>(bufferContents));
+  }
+
+  auto resource =
+      transferData ? MakeAndAddRef<AudioDataResource>(
+                         std::move(transferData), transferOffset, transferLen)
+                   : AudioDataResource::Construct(data);
   if (resource.isErr()) {
     LOGD("AudioData::Constructor failure (OOM)");
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
 
-  return MakeAndAddRef<mozilla::dom::AudioData>(global, resource.unwrap(),
-                                                aInit);
+  // 9.2.2.3. For each transferable in init.transfer:
+  // 9.2.2.3.1. Perform DetachArrayBuffer on transferable
+  for (const auto& buffer : aInit.mTransfer) {
+    JS::Rooted<JSObject*> obj(aGlobal.Context(), buffer.Obj());
+    JS::DetachArrayBuffer(aGlobal.Context(), obj);
+  }
+  return MakeAndAddRef<AudioData>(global, resource.unwrap(), aInit);
 }
 
 // https://w3c.github.io/webcodecs/#dom-audiodata-format
@@ -317,9 +385,10 @@ size_t AudioData::ComputeCopyElementCount(
     }
   } else {
     if (aOptions.mPlaneIndex >= mNumberOfChannels) {
-      auto msg = nsFmtCString(FMT_STRING("Plane index {} greater or equal "
-                                         "than the number of channels {}"),
-                              aOptions.mPlaneIndex, mNumberOfChannels);
+      auto msg = nsFmtCString(
+          "Plane index {} greater or equal "
+          "than the number of channels {}",
+          aOptions.mPlaneIndex, mNumberOfChannels);
       LOGD("{}", msg.get());
       aRv.ThrowRangeError(msg);
       return 0;
@@ -330,9 +399,9 @@ size_t AudioData::ComputeCopyElementCount(
   uint64_t frameCount = mNumberOfFrames;
   // 7
   if (aOptions.mFrameOffset >= frameCount) {
-    auto msg = nsFmtCString(
-        FMT_STRING("Frame offset of {} greater or equal than frame count {}"),
-        aOptions.mFrameOffset, frameCount);
+    auto msg =
+        nsFmtCString("Frame offset of {} greater or equal than frame count {}",
+                     aOptions.mFrameOffset, frameCount);
     LOGD("{}", msg.get());
     aRv.ThrowRangeError(msg);
     return 0;
@@ -341,10 +410,11 @@ size_t AudioData::ComputeCopyElementCount(
   uint64_t copyFrameCount = frameCount - aOptions.mFrameOffset;
   if (aOptions.mFrameCount.WasPassed()) {
     if (aOptions.mFrameCount.Value() > copyFrameCount) {
-      auto msg = nsFmtCString(FMT_STRING("Passed copy frame count of {} "
-                                         "greater than available source frames "
-                                         "for copy of {}"),
-                              aOptions.mFrameCount.Value(), copyFrameCount);
+      auto msg = nsFmtCString(
+          "Passed copy frame count of {} "
+          "greater than available source frames "
+          "for copy of {}",
+          aOptions.mFrameCount.Value(), copyFrameCount);
       LOGD("{}", msg.get());
       aRv.ThrowRangeError(msg);
       return 0;
@@ -470,7 +540,7 @@ nsCString AudioData::ToString() const {
   if (!mResource) {
     return nsCString("AudioData[detached]");
   }
-  return nsFmtCString(FMT_STRING("AudioData[{} bytes {} {}Hz {} x {}ch]"),
+  return nsFmtCString("AudioData[{} bytes {} {}Hz {} x {}ch]",
                       mResource->Data().LengthBytes(),
                       GetEnumString(mAudioSampleFormat.value()).get(),
                       mSampleRate, mNumberOfFrames, mNumberOfChannels);
@@ -479,9 +549,8 @@ nsCString AudioData::ToString() const {
 nsCString CopyToToString(size_t aDestBufSize,
                          const AudioDataCopyToOptions& aOptions) {
   return nsFmtCString(
-      FMT_STRING(
-          "AudioDataCopyToOptions[data: {} bytes, {}, frame count: {}, frame "
-          "offset: {}, plane: {}]"),
+      "AudioDataCopyToOptions[data: {} bytes, {}, frame count: {}, frame "
+      "offset: {}, plane: {}]",
       aDestBufSize,
       aOptions.mFormat.WasPassed()
           ? GetEnumString(aOptions.mFormat.Value()).get()
@@ -568,10 +637,11 @@ void AudioData::CopyTo(const AllowSharedBufferSource& aDestination,
   uint32_t bytesPerSample = BytesPerSamples(destFormat.value());
   CheckedInt<uint32_t> copyLength = bytesPerSample;
   copyLength *= copyElementCount;
-  if (copyLength.value() > destLength) {
-    auto msg = nsFmtCString(FMT_STRING("destination buffer of length {} too "
-                                       "small for copying {} elements"),
-                            destLength, bytesPerSample * copyElementCount);
+  if (!copyLength.isValid() || copyLength.value() > destLength) {
+    auto msg = nsFmtCString(
+        "destination buffer of length {} too "
+        "small for copying {} elements",
+        destLength, bytesPerSample * copyElementCount);
     LOGD("{}", msg.get());
     aRv.ThrowRangeError(msg);
     return;

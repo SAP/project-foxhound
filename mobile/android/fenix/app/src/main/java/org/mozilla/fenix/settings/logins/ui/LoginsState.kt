@@ -12,32 +12,40 @@ import mozilla.components.lib.state.State
  * @property loginItems Login items to be displayed in the current list screen.
  * @property searchText The text to filter login items.
  * @property sortOrder The order to display the login items.
- * @property biometricAuthenticationDialogState State representing the biometric authentication state.
  * @property loginsListState State representing the list login subscreen, if visible.
  * @property loginsAddLoginState State representing the add login subscreen, if visible.
  * @property loginsEditLoginState State representing the edit login subscreen, if visible.
  * @property loginsLoginDetailState State representing the login detail subscreen, if visible.
- * @property loginsDeletionState State representing the deletion state.
+ * @property loginDeletionDialogState State representing the deletion state.
  * @property newLoginState State representing the new login to be added state.
+ * @property updateLoginState State representing the new login to be edited state.
  */
 internal data class LoginsState(
-    val loginItems: List<LoginItem> = listOf(),
-    val searchText: String? = null,
-    val sortOrder: LoginsSortOrder = LoginsSortOrder.default,
-    val biometricAuthenticationDialogState: BiometricAuthenticationDialogState? =
-        BiometricAuthenticationDialogState.None,
-    val loginsListState: LoginsListState? = null,
-    val loginsAddLoginState: LoginsAddLoginState? = null,
-    val loginsEditLoginState: LoginsEditLoginState? = null,
-    val loginsLoginDetailState: LoginsLoginDetailState? = null,
-    val loginsDeletionState: LoginDeletionState? = null,
-    val newLoginState: NewLoginState? = NewLoginState.None,
-) : State
-
-internal sealed class BiometricAuthenticationDialogState {
-    data object None : BiometricAuthenticationDialogState()
-    data object Authorized : BiometricAuthenticationDialogState()
-    data object NonAuthorized : BiometricAuthenticationDialogState()
+    val loginItems: List<LoginItem>,
+    val searchText: String?,
+    val sortOrder: LoginsSortOrder,
+    val loginsListState: LoginsListState?,
+    val loginsAddLoginState: LoginsAddLoginState?,
+    val loginsEditLoginState: LoginsEditLoginState?,
+    val loginsLoginDetailState: LoginsLoginDetailState?,
+    val loginDeletionDialogState: LoginDeletionDialogState,
+    val newLoginState: NewLoginState?,
+    val updateLoginState: UpdateLoginState?,
+) : State {
+    companion object {
+        val default: LoginsState = LoginsState(
+            loginItems = listOf(),
+            searchText = null,
+            sortOrder = LoginsSortOrder.default,
+            loginsListState = null,
+            loginsAddLoginState = null,
+            loginsEditLoginState = null,
+            loginsLoginDetailState = null,
+            loginDeletionDialogState = LoginDeletionDialogState.None,
+            newLoginState = NewLoginState.None,
+            updateLoginState = UpdateLoginState.None,
+        )
+    }
 }
 
 internal sealed class NewLoginState {
@@ -45,11 +53,16 @@ internal sealed class NewLoginState {
     data object Duplicate : NewLoginState()
 }
 
-internal sealed class LoginDeletionState {
-    data object None : LoginDeletionState()
+internal sealed class UpdateLoginState {
+    data object None : UpdateLoginState()
+    data object Duplicate : UpdateLoginState()
+}
+
+internal sealed class LoginDeletionDialogState {
+    data object None : LoginDeletionDialogState()
     data class Presenting(
         val guidToDelete: String,
-    ) : LoginDeletionState()
+    ) : LoginDeletionDialogState()
 }
 
 internal data class LoginsListState(
@@ -121,8 +134,8 @@ sealed class LoginsSortOrder {
         }
     }
 
-    internal fun LoginsState.isGuidToDelete(guid: String): Boolean = when (loginsDeletionState) {
-        is LoginDeletionState.Presenting -> loginsDeletionState.guidToDelete == guid
+    internal fun LoginsState.isGuidToDelete(guid: String): Boolean = when (loginDeletionDialogState) {
+        is LoginDeletionDialogState.Presenting -> loginDeletionDialogState.guidToDelete == guid
         else -> false
     }
 }

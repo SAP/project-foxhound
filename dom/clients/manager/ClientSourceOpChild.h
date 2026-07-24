@@ -6,9 +6,9 @@
 #ifndef _mozilla_dom_ClientSourceOpChild_h
 #define _mozilla_dom_ClientSourceOpChild_h
 
+#include "ClientOpPromise.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/PClientSourceOpChild.h"
-#include "ClientOpPromise.h"
 
 namespace mozilla::dom {
 

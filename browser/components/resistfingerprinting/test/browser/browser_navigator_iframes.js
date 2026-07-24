@@ -103,7 +103,8 @@ const SPOOFED_UA_OS = {
   android: "Android 10; Mobile",
   other: "X11; Linux x86_64",
 };
-const SPOOFED_HW_CONCURRENCY = 2;
+const SPOOFED_HW_CONCURRENCY =
+  SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
 
 const CONST_APPCODENAME = "Mozilla";
 const CONST_APPNAME = "Netscape";
@@ -306,6 +307,12 @@ add_setup(async () => {
     framer_crossOrigin_userAgentHTTPHeader: spoofedUserAgent,
     framee_crossOrigin_userAgentHTTPHeader: spoofedUserAgent,
   };
+
+  registerCleanupFunction(async function () {
+    Services.prefs.clearUserPref(
+      "privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings"
+    );
+  });
 });
 
 const uri = `https://${FRAMER_DOMAIN}/browser/browser/components/resistfingerprinting/test/browser/file_navigator_iframer.html`;
@@ -322,6 +329,13 @@ add_task(async () => {
 add_task(async () => {
   expectedResults = structuredClone(allSpoofed);
   await simpleRFPTest(uri, testNavigator, expectedResults);
+});
+
+add_task(async () => {
+  expectedResults = structuredClone(allSpoofed);
+  await simpleRFPTest(uri, testNavigator, expectedResults, {}, [
+    ["pdfjs.disabled", true],
+  ]);
 });
 
 // In the below tests, we use the cross-origin domain as the base URI of a resource we fetch (on both the framer and framee)

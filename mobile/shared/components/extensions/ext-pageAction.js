@@ -73,6 +73,10 @@ class PageAction extends PageActionBase {
   dispatchClick() {
     this.clickDelegate.onClick();
   }
+
+  isPanelShownBlockingOpenPopup(_window) {
+    return ExtensionActionHelper.isShowingAnyExtensionActionPopup();
+  }
 }
 
 this.pageAction = class extends ExtensionAPIPersistent {
@@ -144,6 +148,8 @@ this.pageAction = class extends ExtensionAPIPersistent {
         }).api(),
 
         openPopup() {
+          const window = windowTracker.getCurrentWindow(context);
+          action.throwIfOpenPopupIsBlockedByAnyAction(window);
           action.openPopup();
         },
       },

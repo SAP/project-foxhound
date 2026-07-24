@@ -5,28 +5,26 @@
 package org.mozilla.fenix.downloads.listscreen.di
 
 import android.content.Context
+import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.lib.state.Middleware
 import org.mozilla.fenix.components.Components
+import org.mozilla.fenix.downloads.listscreen.DownloadNavigationMiddleware
 import org.mozilla.fenix.downloads.listscreen.middleware.BroadcastSender
 import org.mozilla.fenix.downloads.listscreen.middleware.DefaultBroadcastSender
 import org.mozilla.fenix.downloads.listscreen.middleware.DefaultFileItemDescriptionProvider
-import org.mozilla.fenix.downloads.listscreen.middleware.DefaultUndoDelayProvider
 import org.mozilla.fenix.downloads.listscreen.middleware.DownloadDeleteMiddleware
 import org.mozilla.fenix.downloads.listscreen.middleware.DownloadTelemetryMiddleware
 import org.mozilla.fenix.downloads.listscreen.middleware.DownloadUIMapperMiddleware
+import org.mozilla.fenix.downloads.listscreen.middleware.DownloadUIRenameMiddleware
 import org.mozilla.fenix.downloads.listscreen.middleware.DownloadUIShareMiddleware
 import org.mozilla.fenix.downloads.listscreen.middleware.DownloadsServiceCommunicationMiddleware
-import org.mozilla.fenix.downloads.listscreen.middleware.UndoDelayProvider
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.utils.getUndoDelay
 
 internal object DownloadUIMiddlewareProvider {
-
-    @Volatile
-    private var undoDelayProvider: UndoDelayProvider? = null
 
     @Volatile
     private var broadcastSender: BroadcastSender? = null
@@ -34,17 +32,20 @@ internal object DownloadUIMiddlewareProvider {
     internal fun provideMiddleware(
         coroutineScope: CoroutineScope,
         applicationContext: Context,
+        navController: NavController,
     ): List<Middleware<DownloadUIState, DownloadUIAction>> = listOf(
         provideUIMapperMiddleware(applicationContext, coroutineScope),
         provideShareMiddleware(applicationContext),
         provideTelemetryMiddleware(),
-        provideDeleteMiddleware(applicationContext.components),
+        provideDeleteMiddleware(applicationContext.getUndoDelay(), applicationContext.components),
         provideDownloadsServiceCommunicationMiddleware(applicationContext),
+        provideDownloadNavigationMiddleware(navController),
+        provideRenameMiddleware(applicationContext, coroutineScope),
     )
 
-    private fun provideDeleteMiddleware(components: Components) =
+    private fun provideDeleteMiddleware(undoDelay: Long, components: Components) =
         DownloadDeleteMiddleware(
-            undoDelayProvider = provideUndoDelayProvider(components.settings),
+            undoDelay = undoDelay,
             removeDownloadUseCase = components.useCases.downloadUseCases.removeDownload,
         )
 
@@ -66,17 +67,21 @@ internal object DownloadUIMiddlewareProvider {
 
     private fun provideTelemetryMiddleware() = DownloadTelemetryMiddleware()
 
-    internal fun provideUndoDelayProvider(settings: Settings): UndoDelayProvider {
-        initializeUndoDelayProvider(settings)
-        return requireNotNull(undoDelayProvider) {
-            "UndoDelayProvider not initialized. Call initialize(settings) first."
-        }
-    }
+    private fun provideRenameMiddleware(
+        applicationContext: Context,
+        coroutineScope: CoroutineScope,
+    ) = DownloadUIRenameMiddleware(
+        browserStore = applicationContext.components.core.store,
+        scope = coroutineScope,
+    )
 
     private fun provideDownloadsServiceCommunicationMiddleware(applicationContext: Context) =
         DownloadsServiceCommunicationMiddleware(
            provideBroadcastSender(applicationContext),
         )
+
+    private fun provideDownloadNavigationMiddleware(navController: NavController) =
+        DownloadNavigationMiddleware(navController)
 
     private fun provideBroadcastSender(applicationContext: Context): BroadcastSender {
         initializeBroadcastSender(applicationContext)
@@ -90,16 +95,6 @@ internal object DownloadUIMiddlewareProvider {
             synchronized(this) {
                 if (broadcastSender == null) {
                     broadcastSender = DefaultBroadcastSender(applicationContext)
-                }
-            }
-        }
-    }
-
-    private fun initializeUndoDelayProvider(settings: Settings) {
-        if (undoDelayProvider == null) {
-            synchronized(this) {
-                if (undoDelayProvider == null) {
-                    undoDelayProvider = DefaultUndoDelayProvider(settings)
                 }
             }
         }

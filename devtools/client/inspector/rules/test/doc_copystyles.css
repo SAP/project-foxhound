@@ -9,3 +9,21 @@ html, body, #testid {
   border-color: #00F !important;
   --var: "*/";
 }
+
+:where(#testid) {
+  color: gold;
+  --unused-1: 1;
+  --unused-2: 2;
+  --unused-3: 3;
+  --unused-4: 4;
+  --unused-5: 5;
+  --unused-6: 6;
+  --unused-7: 7;
+  --unused-8: 8;
+  --unused-9: 9;
+  --unused-10: 10;
+  --unused-11: 11;
+  --unused-12: 12;
+  --unused-13: 13;
+  background-color: tomato;
+}

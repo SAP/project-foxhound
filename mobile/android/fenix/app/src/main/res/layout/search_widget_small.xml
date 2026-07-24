@@ -5,6 +5,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="100dp"
     android:layout_height="50dp"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:background="@drawable/rounded_search_widget_background"
     android:orientation="horizontal">
 
@@ -12,6 +13,7 @@
         android:id="@+id/button_search_widget_new_tab_icon"
         android:layout_width="50dp"
         android:layout_height="50dp"
+        android:padding="12dp"
         android:contentDescription="@string/search_widget_content_description_2"
         android:scaleType="centerInside" />
 

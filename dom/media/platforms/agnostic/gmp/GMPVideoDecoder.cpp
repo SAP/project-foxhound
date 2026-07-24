@@ -5,20 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPVideoDecoder.h"
+
+#include "AnnexB.h"
 #include "GMPDecoderModule.h"
-#include "GMPVideoHost.h"
 #include "GMPLog.h"
 #include "GMPUtils.h"
+#include "GMPVideoHost.h"
+#include "H264.h"
+#include "MP4Decoder.h"
 #include "MediaData.h"
+#include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "nsServiceManagerUtils.h"
-#include "AnnexB.h"
-#include "H264.h"
-#include "MP4Decoder.h"
 #include "prsystem.h"
-#include "VPXDecoder.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 

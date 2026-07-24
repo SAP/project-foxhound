@@ -53,7 +53,8 @@ function promiseNextTick() {
 
 /**
  * Wait for a notification to be shown in a notification box.
- * @param {Object} aNotificationBox The notification box.
+ *
+ * @param {object} aNotificationBox The notification box.
  * @return {Promise} Resolved when the notification is displayed.
  */
 function promiseWaitForAlertActive(aNotificationBox) {
@@ -70,7 +71,8 @@ function promiseWaitForAlertActive(aNotificationBox) {
 
 /**
  * Wait for a notification to be closed.
- * @param {Object} aNotification The notification.
+ *
+ * @param {object} aNotification The notification.
  * @return {Promise} Resolved when the notification is closed.
  */
 function promiseWaitForNotificationClose(aNotification) {

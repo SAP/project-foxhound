@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { cardContextTypes } from "../../Card/types.mjs";
-import { SponsoredContentHighlight } from "../FeatureHighlight/SponsoredContentHighlight";
 // eslint-disable-next-line no-shadow
 import { CSSTransition, TransitionGroup } from "react-transition-group";
 import { FluentOrText } from "../../FluentOrText/FluentOrText.jsx";
@@ -84,8 +83,6 @@ export class DSContextFooter extends React.PureComponent {
       sponsored_by_override,
       cta_button_variant,
       source,
-      spocMessageVariant,
-      dispatch,
       mayHaveSectionsCards,
     } = this.props;
 
@@ -125,12 +122,6 @@ export class DSContextFooter extends React.PureComponent {
       return (
         <div className="story-footer">
           {sponsorLabel}
-          {sponsorLabel && spocMessageVariant === "variant-b" && (
-            <SponsoredContentHighlight
-              dispatch={dispatch}
-              position="inset-block-end inset-inline-start"
-            />
-          )}
           {dsMessageLabel}
         </div>
       );
@@ -141,7 +132,7 @@ export class DSContextFooter extends React.PureComponent {
 }
 
 export const DSMessageFooter = props => {
-  const { context, context_type, saveToPocketCard } = props;
+  const { context, context_type } = props;
 
   const dsMessageLabel = DSMessageLabel({
     context,
@@ -149,7 +140,7 @@ export const DSMessageFooter = props => {
   });
 
   // This case is specific and already displayed to the user elsewhere.
-  if (!dsMessageLabel || (saveToPocketCard && context_type === "pocket")) {
+  if (!dsMessageLabel) {
     return null;
   }
 

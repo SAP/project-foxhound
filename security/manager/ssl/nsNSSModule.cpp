@@ -11,7 +11,6 @@
 #include "OSReauthenticator.h"
 #include "PKCS11ModuleDB.h"
 #include "SecretDecoderRing.h"
-#include "mozilla/MacroArgs.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/SyncRunnable.h"
 #include "nsCertTree.h"
@@ -92,7 +91,6 @@ static nsresult Constructor(REFNSIID aIID, void** aResult) {
 // new component with ThreadRestriction::MainThreadOnly is added.
 IMPL(SecretDecoderRing, nullptr)
 IMPL(nsPK11TokenDB, nullptr)
-IMPL(PKCS11ModuleDB, nullptr)
 IMPL(nsNSSCertificateDB, nullptr)
 IMPL(nsCertTree, nullptr)
 IMPL(ContentSignatureVerifier, nullptr)

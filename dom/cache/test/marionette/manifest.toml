@@ -5,5 +5,6 @@ tags = "inc-origin-init"
 
 ["test_caches_delete_cleanup_after_shutdown.py"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov", # Bug 1937657
+  "true", # Bug 2007259
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1937657
 ]

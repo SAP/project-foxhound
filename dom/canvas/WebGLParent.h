@@ -7,9 +7,9 @@
 #define WEBGLPARENT_H_
 
 #include "mozilla/GfxMessageUtils.h"
-#include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/dom/PWebGLParent.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/PWebGLParent.h"
+#include "mozilla/dom/ipc/IdType.h"
 
 namespace mozilla {
 

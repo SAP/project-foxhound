@@ -17,12 +17,11 @@
  * given to the new protocol handler.
  */
 
-#ifndef nsPreloadedStream_h__
-#define nsPreloadedStream_h__
+#ifndef nsPreloadedStream_h_
+#define nsPreloadedStream_h_
 
 #include "nsIAsyncInputStream.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 
 namespace mozilla {

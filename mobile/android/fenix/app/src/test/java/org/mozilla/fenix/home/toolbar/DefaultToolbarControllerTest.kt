@@ -7,7 +7,9 @@ package org.mozilla.fenix.home.toolbar
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
 import androidx.navigation.NavOptions
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import mozilla.components.browser.state.search.SearchEngine
@@ -22,11 +24,13 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.BrowserDirection
+import org.mozilla.experiments.nimbus.NimbusEventStore
 import org.mozilla.fenix.GleanMetrics.Events
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.NimbusComponents
+import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
@@ -37,9 +41,17 @@ class DefaultToolbarControllerTest {
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
 
-    private val activity: HomeActivity = mockk(relaxed = true)
+    private val appStore: AppStore = mockk(relaxed = true)
     private val navController: NavController = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
+    private val fenixBrowserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+
+    val nimbusEventsStore: NimbusEventStore = mockk {
+        every { recordEvent(any()) } just Runs
+    }
+    private val nimbusComponents: NimbusComponents = mockk {
+        every { events } returns nimbusEventsStore
+    }
 
     private val searchEngine = SearchEngine(
         id = "test",
@@ -61,10 +73,11 @@ class DefaultToolbarControllerTest {
             ),
         )
 
+        every { appStore.state } returns AppState()
+
         every { navController.currentDestination } returns mockk {
             every { id } returns R.id.homeFragment
         }
-        every { activity.settings() } returns settings
     }
 
     @Test
@@ -76,11 +89,12 @@ class DefaultToolbarControllerTest {
         createController().handlePasteAndGo(clipboardText)
 
         verify {
-            activity.openToBrowserAndLoad(
+            navController.navigate(R.id.browserFragment)
+            fenixBrowserUseCases.loadUrlOrSearch(
                 searchTermOrURL = clipboardText,
                 newTab = true,
-                from = BrowserDirection.FromHome,
-                engine = searchEngine,
+                private = false,
+                searchEngine = searchEngine,
             )
         }
 
@@ -90,11 +104,50 @@ class DefaultToolbarControllerTest {
         createController().handlePasteAndGo(clipboardText)
 
         verify {
-            activity.openToBrowserAndLoad(
+            navController.navigate(R.id.browserFragment)
+            fenixBrowserUseCases.loadUrlOrSearch(
                 searchTermOrURL = clipboardText,
                 newTab = true,
-                from = BrowserDirection.FromHome,
-                engine = searchEngine,
+                private = false,
+                searchEngine = searchEngine,
+            )
+        }
+
+        assertNotNull(Events.enteredUrl.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN homepage as a new tab is enabled WHEN Paste & Go toolbar menu is clicked THEN open the browser with the clipboard text as the search term`() {
+        every { settings.enableHomepageAsNewTab } returns true
+
+        assertNull(Events.enteredUrl.testGetValue())
+        assertNull(Events.performedSearch.testGetValue())
+
+        var clipboardText = "text"
+        createController().handlePasteAndGo(clipboardText)
+
+        verify {
+            navController.navigate(R.id.browserFragment)
+            fenixBrowserUseCases.loadUrlOrSearch(
+                searchTermOrURL = clipboardText,
+                newTab = false,
+                private = false,
+                searchEngine = searchEngine,
+            )
+        }
+
+        assertNotNull(Events.performedSearch.testGetValue())
+
+        clipboardText = "https://mozilla.org"
+        createController().handlePasteAndGo(clipboardText)
+
+        verify {
+            navController.navigate(R.id.browserFragment)
+            fenixBrowserUseCases.loadUrlOrSearch(
+                searchTermOrURL = clipboardText,
+                newTab = false,
+                private = false,
+                searchEngine = searchEngine,
             )
         }
 
@@ -134,8 +187,11 @@ class DefaultToolbarControllerTest {
     }
 
     private fun createController() = DefaultToolbarController(
-        activity = activity,
-        store = store,
+        appStore = appStore,
+        browserStore = store,
+        nimbusComponents = nimbusComponents,
         navController = navController,
+        settings = settings,
+        fenixBrowserUseCases = fenixBrowserUseCases,
     )
 }

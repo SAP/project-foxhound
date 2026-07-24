@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <string.h>
+
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 
 namespace mozilla {
@@ -18,11 +19,11 @@ namespace mozilla {
  */
 class MediaEnginePrefs {
  public:
-  static const int DEFAULT_VIDEO_FPS = 30;
-  static const int DEFAULT_43_VIDEO_WIDTH = 640;
-  static const int DEFAULT_43_VIDEO_HEIGHT = 480;
-  static const int DEFAULT_169_VIDEO_WIDTH = 1280;
-  static const int DEFAULT_169_VIDEO_HEIGHT = 720;
+  static constexpr int DEFAULT_VIDEO_FPS = 30;
+  static constexpr int DEFAULT_43_VIDEO_WIDTH = 640;
+  static constexpr int DEFAULT_43_VIDEO_HEIGHT = 480;
+  static constexpr int DEFAULT_169_VIDEO_WIDTH = 1280;
+  static constexpr int DEFAULT_169_VIDEO_HEIGHT = 720;
 
   MediaEnginePrefs()
       : mWidth(0),

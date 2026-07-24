@@ -7,7 +7,6 @@
 #ifndef DOM_SMIL_SMILTYPE_H_
 #define DOM_SMIL_SMILTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "nscore.h"
 
 namespace mozilla {

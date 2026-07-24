@@ -135,8 +135,6 @@ def get_default_logger(component=None):
 
     :param component: The component name to tag log messages with
     """
-    global _default_logger_name
-
     if not _default_logger_name:
         return None
 
@@ -584,7 +582,9 @@ class StructuredLogger:
         Unicode("java_stack", default=None, optional=True),
         Unicode("process_type", default=None, optional=True),
         List(Unicode, "stackwalk_errors", default=None),
+        List(Any, "crashing_thread_stack", default=None, optional=True),
         Unicode("subsuite", default=None, optional=True),
+        Boolean("quiet", default=False, optional=True),
     )
     def crash(self, data):
         if data["stackwalk_errors"] is None:

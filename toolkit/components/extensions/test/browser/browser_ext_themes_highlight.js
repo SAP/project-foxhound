@@ -32,7 +32,11 @@ add_task(async function test_support_selection() {
 
   let fields = [
     gURLBar.inputField,
-    document.querySelector("#searchbar .searchbar-textbox"),
+    document.querySelector(
+      Services.prefs.getBoolPref("browser.search.widget.new")
+        ? "#search-container .urlbar-input"
+        : "#searchbar .searchbar-textbox"
+    ),
     document.querySelector(".findbar-textbox"),
   ].filter(field => {
     let bounds = field.getBoundingClientRect();

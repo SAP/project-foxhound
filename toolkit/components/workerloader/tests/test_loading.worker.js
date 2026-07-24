@@ -84,7 +84,7 @@ add_test(function test_exceptions() {
     -1,
     "moduleStack contains the name of the module"
   );
-  is(exn.lineNumber, 12, "The error comes with the right line number");
+  is(exn.lineNumber, 10, "The error comes with the right line number");
 
   exn = should_throw(() => require(PATH + "moduleF-syntaxerror.xml"));
   ok(!!exn, "Attempting to load a non-well formatted module raises an error");
@@ -103,7 +103,7 @@ add_test(function test_exceptions() {
     -1,
     "The name of the right file appears somewhere in the stack"
   );
-  is(exn.lineNumber, 13, "The error comes with the right line number");
+  is(exn.lineNumber, 11, "The error comes with the right line number");
 });
 
 function get_exn(f) {

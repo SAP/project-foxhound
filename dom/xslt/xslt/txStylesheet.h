@@ -6,11 +6,11 @@
 #ifndef TX_TXSTYLESHEET_H
 #define TX_TXSTYLESHEET_H
 
-#include "txOutputFormat.h"
+#include "nsISupportsImpl.h"
 #include "txExpandedNameMap.h"
 #include "txList.h"
+#include "txOutputFormat.h"
 #include "txXSLTPatterns.h"
-#include "nsISupportsImpl.h"
 
 class txInstruction;
 class txTemplateItem;

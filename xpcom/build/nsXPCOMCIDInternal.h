@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXPCOMCIDInternal_h__
-#define nsXPCOMCIDInternal_h__
+#ifndef nsXPCOMCIDInternal_h_
+#define nsXPCOMCIDInternal_h_
 
 #include "nsXPCOMCID.h"
 
@@ -42,4 +42,4 @@
  */
 #define XULRUNTIME_SERVICE_CONTRACTID "@mozilla.org/xre/runtime;1"
 
-#endif  // nsXPCOMCIDInternal_h__
+#endif  // nsXPCOMCIDInternal_h_

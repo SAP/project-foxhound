@@ -11,6 +11,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.telemetry.glean.private.NoExtras
@@ -60,6 +61,7 @@ class OnboardingFirstFragment : Fragment() {
         )
         return ComposeView(requireContext()).apply {
             isTransitionGroup = true
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         }
     }
 
@@ -77,5 +79,12 @@ class OnboardingFirstFragment : Fragment() {
                 )
             }
         }
+    }
+
+    /**
+     * Companion object for the [OnboardingFirstFragment].
+     */
+    companion object {
+        const val FRAGMENT_TAG = "onboarding-first-fragment"
     }
 }

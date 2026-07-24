@@ -30,10 +30,11 @@
 #include "absl/strings/string_view.h"
 #include "api/candidate.h"
 #include "api/dtls_transport_interface.h"
+#include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/function_view.h"
 #include "api/media_types.h"
-#include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtp_headers.h"
 #include "api/transport/bandwidth_usage.h"
 #include "api/transport/ecn_marking.h"
@@ -44,8 +45,6 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "logging/rtc_event_log/events/logged_rtp_rtcp.h"
-#include "logging/rtc_event_log/events/rtc_event_generic_packet_received.h"
-#include "logging/rtc_event_log/events/rtc_event_generic_packet_sent.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
@@ -77,7 +76,6 @@
 #include "rtc_tools/rtc_event_log_visualizer/log_simulation.h"
 #include "rtc_tools/rtc_event_log_visualizer/plot_base.h"
 #include "system_wrappers/include/clock.h"
-#include "test/explicit_key_value_config.h"
 
 namespace webrtc {
 
@@ -282,44 +280,43 @@ absl::string_view GetIceCandidateTypeAsString(IceCandidateType type) {
   }
 }
 
-std::string GetProtocolAsString(webrtc::IceCandidatePairProtocol protocol) {
+std::string GetProtocolAsString(IceCandidatePairProtocol protocol) {
   switch (protocol) {
-    case webrtc::IceCandidatePairProtocol::kUdp:
+    case IceCandidatePairProtocol::kUdp:
       return kProtocolUdp;
-    case webrtc::IceCandidatePairProtocol::kTcp:
+    case IceCandidatePairProtocol::kTcp:
       return kProtocolTcp;
-    case webrtc::IceCandidatePairProtocol::kSsltcp:
+    case IceCandidatePairProtocol::kSsltcp:
       return kProtocolSsltcp;
-    case webrtc::IceCandidatePairProtocol::kTls:
+    case IceCandidatePairProtocol::kTls:
       return kProtocolTls;
     default:
       return kUnknownEnumValue;
   }
 }
 
-std::string GetAddressFamilyAsString(
-    webrtc::IceCandidatePairAddressFamily family) {
+std::string GetAddressFamilyAsString(IceCandidatePairAddressFamily family) {
   switch (family) {
-    case webrtc::IceCandidatePairAddressFamily::kIpv4:
+    case IceCandidatePairAddressFamily::kIpv4:
       return kAddressFamilyIpv4;
-    case webrtc::IceCandidatePairAddressFamily::kIpv6:
+    case IceCandidatePairAddressFamily::kIpv6:
       return kAddressFamilyIpv6;
     default:
       return kUnknownEnumValue;
   }
 }
 
-std::string GetNetworkTypeAsString(webrtc::IceCandidateNetworkType type) {
+std::string GetNetworkTypeAsString(IceCandidateNetworkType type) {
   switch (type) {
-    case webrtc::IceCandidateNetworkType::kEthernet:
+    case IceCandidateNetworkType::kEthernet:
       return kNetworkTypeEthernet;
-    case webrtc::IceCandidateNetworkType::kLoopback:
+    case IceCandidateNetworkType::kLoopback:
       return kNetworkTypeLoopback;
-    case webrtc::IceCandidateNetworkType::kWifi:
+    case IceCandidateNetworkType::kWifi:
       return kNetworkTypeWifi;
-    case webrtc::IceCandidateNetworkType::kVpn:
+    case IceCandidateNetworkType::kVpn:
       return kNetworkTypeVpn;
-    case webrtc::IceCandidateNetworkType::kCellular:
+    case IceCandidateNetworkType::kCellular:
       return kNetworkTypeCellular;
     default:
       return kUnknownEnumValue;
@@ -435,19 +432,19 @@ struct PacketLossSummary {
   Timestamp base_time = Timestamp::MinusInfinity();
 };
 
-float GetHighestSeqNumber(const webrtc::rtcp::ReportBlock& block) {
+float GetHighestSeqNumber(const rtcp::ReportBlock& block) {
   return block.extended_high_seq_num();
 }
 
-float GetFractionLost(const webrtc::rtcp::ReportBlock& block) {
+float GetFractionLost(const rtcp::ReportBlock& block) {
   return static_cast<double>(block.fraction_lost()) / 256 * 100;
 }
 
-float GetCumulativeLost(const webrtc::rtcp::ReportBlock& block) {
+float GetCumulativeLost(const rtcp::ReportBlock& block) {
   return block.cumulative_lost();
 }
 
-float DelaySinceLastSr(const webrtc::rtcp::ReportBlock& block) {
+float DelaySinceLastSr(const rtcp::ReportBlock& block) {
   return static_cast<double>(block.delay_since_last_sr()) / 65536;
 }
 
@@ -472,7 +469,7 @@ std::map<uint32_t, std::string> BuildCandidateIdLogDescriptionMap(
 
 EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
                                    bool normalize_time)
-    : parsed_log_(log) {
+    : env_(CreateEnvironment()), parsed_log_(log) {
   config_.window_duration_ = TimeDelta::Millis(250);
   config_.step_ = TimeDelta::Millis(10);
   if (!log.start_log_events().empty()) {
@@ -494,9 +491,10 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
                    << " seconds long.";
 }
 
-EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
+EventLogAnalyzer::EventLogAnalyzer(const Environment& env,
+                                   const ParsedRtcEventLog& log,
                                    const AnalyzerConfig& config)
-    : parsed_log_(log), config_(config) {
+    : env_(env), parsed_log_(log), config_(config) {
   RTC_LOG(LS_INFO) << "Log is "
                    << (parsed_log_.last_timestamp().ms() -
                        parsed_log_.first_timestamp().ms()) /
@@ -534,35 +532,35 @@ void EventLogAnalyzer::InitializeMapOfNamedGraphs(bool show_detector_state,
                                                   bool show_alr_state,
                                                   bool show_link_capacity) {
   plots_.RegisterPlot("incoming_packet_sizes", [this](Plot* plot) {
-    this->CreatePacketGraph(webrtc::kIncomingPacket, plot);
+    this->CreatePacketGraph(kIncomingPacket, plot);
   });
 
   plots_.RegisterPlot("outgoing_packet_sizes", [this](Plot* plot) {
-    this->CreatePacketGraph(webrtc::kOutgoingPacket, plot);
+    this->CreatePacketGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("incoming_rtcp_types", [this](Plot* plot) {
-    this->CreateRtcpTypeGraph(webrtc::kIncomingPacket, plot);
+    this->CreateRtcpTypeGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_rtcp_types", [this](Plot* plot) {
-    this->CreateRtcpTypeGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateRtcpTypeGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("incoming_packet_count", [this](Plot* plot) {
-    this->CreateAccumulatedPacketsGraph(webrtc::kIncomingPacket, plot);
+    this->CreateAccumulatedPacketsGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_packet_count", [this](Plot* plot) {
-    this->CreateAccumulatedPacketsGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateAccumulatedPacketsGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("incoming_packet_rate", [this](Plot* plot) {
-    this->CreatePacketRateGraph(webrtc::kIncomingPacket, plot);
+    this->CreatePacketRateGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_packet_rate", [this](Plot* plot) {
-    this->CreatePacketRateGraph(webrtc::kOutgoingPacket, plot);
+    this->CreatePacketRateGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("total_incoming_packet_rate", [this](Plot* plot) {
-    this->CreateTotalPacketRateGraph(webrtc::kIncomingPacket, plot);
+    this->CreateTotalPacketRateGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("total_outgoing_packet_rate", [this](Plot* plot) {
-    this->CreateTotalPacketRateGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateTotalPacketRateGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("audio_playout",
                       [this](Plot* plot) { this->CreatePlayoutGraph(plot); });
@@ -572,10 +570,10 @@ void EventLogAnalyzer::InitializeMapOfNamedGraphs(bool show_detector_state,
   });
 
   plots_.RegisterPlot("incoming_audio_level", [this](Plot* plot) {
-    this->CreateAudioLevelGraph(webrtc::kIncomingPacket, plot);
+    this->CreateAudioLevelGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_audio_level", [this](Plot* plot) {
-    this->CreateAudioLevelGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateAudioLevelGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("incoming_sequence_number_delta", [this](Plot* plot) {
     this->CreateSequenceNumberGraph(plot);
@@ -596,16 +594,16 @@ void EventLogAnalyzer::InitializeMapOfNamedGraphs(bool show_detector_state,
             plot, show_detector_state, show_alr_state, show_link_capacity);
       });
   plots_.RegisterPlot("incoming_stream_bitrate", [this](Plot* plot) {
-    this->CreateStreamBitrateGraph(webrtc::kIncomingPacket, plot);
+    this->CreateStreamBitrateGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_stream_bitrate", [this](Plot* plot) {
-    this->CreateStreamBitrateGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateStreamBitrateGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("incoming_layer_bitrate_allocation", [this](Plot* plot) {
-    this->CreateBitrateAllocationGraph(webrtc::kIncomingPacket, plot);
+    this->CreateBitrateAllocationGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_layer_bitrate_allocation", [this](Plot* plot) {
-    this->CreateBitrateAllocationGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateBitrateAllocationGraph(kOutgoingPacket, plot);
   });
   plots_.RegisterPlot("simulated_receiveside_bwe", [this](Plot* plot) {
     this->CreateReceiveSideBweSimulationGraph(plot);
@@ -616,14 +614,23 @@ void EventLogAnalyzer::InitializeMapOfNamedGraphs(bool show_detector_state,
   plots_.RegisterPlot("simulated_goog_cc", [this](Plot* plot) {
     this->CreateGoogCcSimulationGraph(plot);
   });
+  plots_.RegisterPlot("outgoing_loss", [this](Plot* plot) {
+    this->CreateOutgoingLossRateGraph(plot);
+  });
   plots_.RegisterPlot("outgoing_twcc_loss", [this](Plot* plot) {
-    this->CreateOutgoingTWCCLossRateGraph(plot);
+    this->CreateOutgoingLossRateGraph(plot);
   });
   plots_.RegisterPlot("outgoing_ecn_feedback", [this](Plot* plot) {
     this->CreateOutgoingEcnFeedbackGraph(plot);
   });
   plots_.RegisterPlot("incoming_ecn_feedback", [this](Plot* plot) {
     this->CreateIncomingEcnFeedbackGraph(plot);
+  });
+  plots_.RegisterPlot("scream_ref_window", [this](Plot* plot) {
+    this->CreateScreamRefWindowGraph(plot);
+  });
+  plots_.RegisterPlot("scream_delay_estimates", [this](Plot* plot) {
+    this->CreateScreamDelayEstimateGraph(plot);
   });
   plots_.RegisterPlot("network_delay_feedback", [this](Plot* plot) {
     this->CreateNetworkDelayFeedbackGraph(plot);
@@ -632,54 +639,54 @@ void EventLogAnalyzer::InitializeMapOfNamedGraphs(bool show_detector_state,
     this->CreateFractionLossGraph(plot);
   });
   plots_.RegisterPlot("incoming_timestamps", [this](Plot* plot) {
-    this->CreateTimestampGraph(webrtc::kIncomingPacket, plot);
+    this->CreateTimestampGraph(kIncomingPacket, plot);
   });
   plots_.RegisterPlot("outgoing_timestamps", [this](Plot* plot) {
-    this->CreateTimestampGraph(webrtc::kOutgoingPacket, plot);
+    this->CreateTimestampGraph(kOutgoingPacket, plot);
   });
 
   plots_.RegisterPlot("incoming_rtcp_fraction_lost", [this](Plot* plot) {
-    this->CreateSenderAndReceiverReportPlot(
-        webrtc::kIncomingPacket, GetFractionLost,
-        "Fraction lost (incoming RTCP)", "Loss rate (percent)", plot);
+    this->CreateSenderAndReceiverReportPlot(kIncomingPacket, GetFractionLost,
+                                            "Fraction lost (incoming RTCP)",
+                                            "Loss rate (percent)", plot);
   });
   plots_.RegisterPlot("outgoing_rtcp_fraction_lost", [this](Plot* plot) {
-    this->CreateSenderAndReceiverReportPlot(
-        webrtc::kOutgoingPacket, GetFractionLost,
-        "Fraction lost (outgoing RTCP)", "Loss rate (percent)", plot);
+    this->CreateSenderAndReceiverReportPlot(kOutgoingPacket, GetFractionLost,
+                                            "Fraction lost (outgoing RTCP)",
+                                            "Loss rate (percent)", plot);
   });
 
   plots_.RegisterPlot("incoming_rtcp_cumulative_lost", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kIncomingPacket, GetCumulativeLost,
+        kIncomingPacket, GetCumulativeLost,
         "Cumulative lost packets (incoming RTCP)", "Packets", plot);
   });
   plots_.RegisterPlot("outgoing_rtcp_cumulative_lost", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kOutgoingPacket, GetCumulativeLost,
+        kOutgoingPacket, GetCumulativeLost,
         "Cumulative lost packets (outgoing RTCP)", "Packets", plot);
   });
 
   plots_.RegisterPlot("incoming_rtcp_highest_seq_number", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kIncomingPacket, GetHighestSeqNumber,
+        kIncomingPacket, GetHighestSeqNumber,
         "Highest sequence number (incoming RTCP)", "Sequence number", plot);
   });
   plots_.RegisterPlot("outgoing_rtcp_highest_seq_number", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kOutgoingPacket, GetHighestSeqNumber,
+        kOutgoingPacket, GetHighestSeqNumber,
         "Highest sequence number (outgoing RTCP)", "Sequence number", plot);
   });
 
   plots_.RegisterPlot("incoming_rtcp_delay_since_last_sr", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kIncomingPacket, DelaySinceLastSr,
+        kIncomingPacket, DelaySinceLastSr,
         "Delay since last received sender report (incoming RTCP)", "Time (s)",
         plot);
   });
   plots_.RegisterPlot("outgoing_rtcp_delay_since_last_sr", [this](Plot* plot) {
     this->CreateSenderAndReceiverReportPlot(
-        webrtc::kOutgoingPacket, DelaySinceLastSr,
+        kOutgoingPacket, DelaySinceLastSr,
         "Delay since last received sender report (outgoing RTCP)", "Time (s)",
         plot);
   });
@@ -767,34 +774,37 @@ void EventLogAnalyzer::CreateRtcpTypeGraph(PacketDirection direction,
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(
       parsed_log_.transport_feedbacks(direction), config_, "TWCC", 1));
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(
-      parsed_log_.receiver_reports(direction), config_, "RR", 2));
+      parsed_log_.congestion_feedback(direction), config_, "CCFB", 2));
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(
-      parsed_log_.sender_reports(direction), config_, "SR", 3));
+      parsed_log_.receiver_reports(direction), config_, "RR", 3));
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(
-      parsed_log_.extended_reports(direction), config_, "XR", 4));
+      parsed_log_.sender_reports(direction), config_, "SR", 4));
+  plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(
+      parsed_log_.extended_reports(direction), config_, "XR", 5));
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(parsed_log_.nacks(direction),
-                                                  config_, "NACK", 5));
+                                                  config_, "NACK", 6));
   plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(parsed_log_.rembs(direction),
-                                                  config_, "REMB", 6));
+                                                  config_, "REMB", 7));
   plot->AppendTimeSeries(
-      CreateRtcpTypeTimeSeries(parsed_log_.firs(direction), config_, "FIR", 7));
+      CreateRtcpTypeTimeSeries(parsed_log_.firs(direction), config_, "FIR", 8));
   plot->AppendTimeSeries(
-      CreateRtcpTypeTimeSeries(parsed_log_.plis(direction), config_, "PLI", 8));
-  plot->AppendTimeSeries(
-      CreateRtcpTypeTimeSeries(parsed_log_.byes(direction), config_, "BYE", 9));
+      CreateRtcpTypeTimeSeries(parsed_log_.plis(direction), config_, "PLI", 9));
+  plot->AppendTimeSeries(CreateRtcpTypeTimeSeries(parsed_log_.byes(direction),
+                                                  config_, "BYE", 10));
   plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
                  "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, "RTCP type", kBottomMargin, kTopMargin);
   plot->SetTitle(GetDirectionAsString(direction) + " RTCP packets");
   plot->SetYAxisTickLabels({{1, "TWCC"},
-                            {2, "RR"},
-                            {3, "SR"},
-                            {4, "XR"},
-                            {5, "NACK"},
-                            {6, "REMB"},
-                            {7, "FIR"},
-                            {8, "PLI"},
-                            {9, "BYE"}});
+                            {2, "CCFB"},
+                            {3, "RR"},
+                            {4, "SR"},
+                            {5, "XR"},
+                            {6, "NACK"},
+                            {7, "REMB"},
+                            {8, "FIR"},
+                            {9, "PLI"},
+                            {10, "BYE"}});
 }
 
 template <typename IterableType>
@@ -1223,17 +1233,6 @@ void EventLogAnalyzer::CreateTotalIncomingBitrateGraph(Plot* plot) const {
   }
   plot->AppendTimeSeriesIfNotEmpty(std::move(remb_series));
 
-  if (!parsed_log_.generic_packets_received().empty()) {
-    TimeSeries time_series("Incoming generic bitrate", LineStyle::kLine);
-    auto GetPacketSizeKilobits = [](const LoggedGenericPacketReceived& packet) {
-      return packet.packet_length * 8.0 / 1000.0;
-    };
-    MovingAverage<LoggedGenericPacketReceived, double>(
-        GetPacketSizeKilobits, parsed_log_.generic_packets_received(), config_,
-        &time_series);
-    plot->AppendTimeSeries(std::move(time_series));
-  }
-
   plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
                  "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, "Bitrate (kbps)", kBottomMargin, kTopMargin);
@@ -1352,6 +1351,13 @@ void EventLogAnalyzer::CreateTotalOutgoingBitrateGraph(
   last_series->intervals.emplace_back(last_detector_switch,
                                       config_.CallEndTimeSec());
 
+  TimeSeries scream_series("Scream target rate", LineStyle::kStep);
+  for (auto& scream_update : parsed_log_.bwe_scream_updates()) {
+    float x = config_.GetCallTimeSec(scream_update.log_time());
+    float y = static_cast<float>(scream_update.target_rate.kbps());
+    scream_series.points.emplace_back(x, y);
+  }
+
   TimeSeries created_series("Probe cluster created.", LineStyle::kNone,
                             PointStyle::kHighlight);
   for (auto& cluster : parsed_log_.bwe_probe_cluster_created_events()) {
@@ -1414,6 +1420,7 @@ void EventLogAnalyzer::CreateTotalOutgoingBitrateGraph(
   plot->AppendTimeSeries(std::move(loss_series));
   plot->AppendTimeSeriesIfNotEmpty(std::move(probe_failures_series));
   plot->AppendTimeSeries(std::move(delay_series));
+  plot->AppendTimeSeriesIfNotEmpty(std::move(scream_series));
   plot->AppendTimeSeries(std::move(created_series));
   plot->AppendTimeSeries(std::move(result_series));
 
@@ -1425,32 +1432,6 @@ void EventLogAnalyzer::CreateTotalOutgoingBitrateGraph(
     remb_series.points.emplace_back(x, y);
   }
   plot->AppendTimeSeriesIfNotEmpty(std::move(remb_series));
-
-  if (!parsed_log_.generic_packets_sent().empty()) {
-    {
-      TimeSeries time_series("Outgoing generic total bitrate",
-                             LineStyle::kLine);
-      auto GetPacketSizeKilobits = [](const LoggedGenericPacketSent& packet) {
-        return packet.packet_length() * 8.0 / 1000.0;
-      };
-      MovingAverage<LoggedGenericPacketSent, double>(
-          GetPacketSizeKilobits, parsed_log_.generic_packets_sent(), config_,
-          &time_series);
-      plot->AppendTimeSeries(std::move(time_series));
-    }
-
-    {
-      TimeSeries time_series("Outgoing generic payload bitrate",
-                             LineStyle::kLine);
-      auto GetPacketSizeKilobits = [](const LoggedGenericPacketSent& packet) {
-        return packet.payload_length * 8.0 / 1000.0;
-      };
-      MovingAverage<LoggedGenericPacketSent, double>(
-          GetPacketSizeKilobits, parsed_log_.generic_packets_sent(), config_,
-          &time_series);
-      plot->AppendTimeSeries(std::move(time_series));
-    }
-  }
 
   plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
                  "Time (s)", kLeftMargin, kRightMargin);
@@ -1534,7 +1515,7 @@ void EventLogAnalyzer::CreateGoogCcSimulationGraph(Plot* plot) const {
                            PointStyle::kHighlight);
 
   LogBasedNetworkControllerSimulation simulation(
-      std::make_unique<GoogCcNetworkControllerFactory>(),
+      env_, std::make_unique<GoogCcNetworkControllerFactory>(),
       [&](const NetworkControlUpdate& update, Timestamp at_time) {
         if (update.target_rate) {
           target_rates.points.emplace_back(
@@ -1575,6 +1556,51 @@ void EventLogAnalyzer::CreateIncomingEcnFeedbackGraph(Plot* plot) const {
   plot->SetTitle("Incoming ECN count per feedback");
 }
 
+void EventLogAnalyzer::CreateScreamRefWindowGraph(Plot* plot) const {
+  TimeSeries ref_window_series("RefWindow", LineStyle::kStep);
+  for (auto& scream_update : parsed_log_.bwe_scream_updates()) {
+    float x = config_.GetCallTimeSec(scream_update.log_time());
+    float y = static_cast<float>(scream_update.ref_window.bytes());
+    ref_window_series.points.emplace_back(x, y);
+  }
+  plot->AppendTimeSeries(std::move(ref_window_series));
+
+  TimeSeries data_in_flight_series("Data in flight", LineStyle::kLine);
+  for (auto& scream_update : parsed_log_.bwe_scream_updates()) {
+    float x = config_.GetCallTimeSec(scream_update.log_time());
+    float y = static_cast<float>(scream_update.data_in_flight.bytes());
+    data_in_flight_series.points.emplace_back(x, y);
+  }
+  plot->AppendTimeSeries(std::move(data_in_flight_series));
+
+  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
+                 "Time (s)", kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, 3000, "Bytes", kBottomMargin, kTopMargin);
+  plot->SetTitle("Scream Ref Window");
+}
+
+void EventLogAnalyzer::CreateScreamDelayEstimateGraph(Plot* plot) const {
+  TimeSeries smoothed_rtt_series("Smoothed RTT", LineStyle::kStep);
+  TimeSeries avg_queue_delay_series("Avg queue delay", LineStyle::kStep);
+
+  for (auto& scream_update : parsed_log_.bwe_scream_updates()) {
+    float x = config_.GetCallTimeSec(scream_update.log_time());
+    float smoothed_rtt_ms = static_cast<float>(scream_update.smoothed_rtt.ms());
+    smoothed_rtt_series.points.emplace_back(x, smoothed_rtt_ms);
+    float avg_queue_delay_ms =
+        static_cast<float>(scream_update.avg_queue_delay.ms());
+    avg_queue_delay_series.points.emplace_back(x, avg_queue_delay_ms);
+  }
+
+  plot->AppendTimeSeries(std::move(smoothed_rtt_series));
+  plot->AppendTimeSeries(std::move(avg_queue_delay_series));
+
+  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
+                 "Time (s)", kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, 50, "Delay (ms)", kBottomMargin, kTopMargin);
+  plot->SetTitle("Scream delay estimates");
+}
+
 void EventLogAnalyzer::CreateEcnFeedbackGraph(Plot* plot,
                                               PacketDirection direction) const {
   TimeSeries not_ect("Not ECN capable", LineStyle::kBar,
@@ -1592,16 +1618,16 @@ void EventLogAnalyzer::CreateEcnFeedbackGraph(Plot* plot,
     for (const rtcp::CongestionControlFeedback::PacketInfo& info :
          feedback.congestion_feedback.packets()) {
       switch (info.ecn) {
-        case webrtc::EcnMarking::kNotEct:
+        case EcnMarking::kNotEct:
           ++not_ect_count;
           break;
-        case webrtc::EcnMarking::kEct1:
+        case EcnMarking::kEct1:
           ++ect_1_count;
           break;
-        case webrtc::EcnMarking::kEct0:
+        case EcnMarking::kEct0:
           RTC_LOG(LS_ERROR) << "unexpected ect(0)";
           break;
-        case webrtc::EcnMarking::kCe:
+        case EcnMarking::kCe:
           ++ce_count;
           break;
       }
@@ -1624,7 +1650,68 @@ void EventLogAnalyzer::CreateEcnFeedbackGraph(Plot* plot,
                           kTopMargin);
 }
 
-void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) const {
+void EventLogAnalyzer::CreateOutgoingLossRateGraph(Plot* plot) const {
+  struct PacketLossPerFeedback {
+    Timestamp timestamp;              // Time when this feedback was received.
+    int num_packets_in_feedback = 0;  // Includes lost packets.
+    int num_lost_packets = 0;         // In this specific feedback.
+    int num_reordered_packets = 0;    // Packets received in this feedback, but
+                                      // was previously reported as lost.
+    int num_missing_feedback =
+        0;  // Packets missing feedback between this report and the previous.
+  };
+
+  class LossFeedbackBuilder {
+   public:
+    void AddPacket(uint16_t sequence_number, TimeDelta arrival_time_delta) {
+      last_unwrapped_sequence_number_ =
+          sequence_number_unwrapper_.Unwrap(sequence_number);
+      if (!first_sequence_number_.has_value()) {
+        first_sequence_number_ = last_unwrapped_sequence_number_;
+      }
+      ++num_packets_;
+      if (arrival_time_delta.IsInfinite()) {
+        lost_sequence_numbers_.insert(last_unwrapped_sequence_number_);
+      } else {
+        num_reordered_packets_ += previous_lost_sequence_numbers_.count(
+            last_unwrapped_sequence_number_);
+      }
+    }
+
+    void Update(PacketLossPerFeedback& feedback) {
+      feedback.num_packets_in_feedback += num_packets_;
+      feedback.num_lost_packets += lost_sequence_numbers_.size();
+      feedback.num_reordered_packets += num_reordered_packets_;
+      if (first_sequence_number_.has_value() &&
+          previous_feedback_highest_seq_number_.has_value()) {
+        feedback.num_missing_feedback +=
+            *first_sequence_number_ - *previous_feedback_highest_seq_number_ -
+            1;
+      }
+
+      // Prepare for next feedback.
+      first_sequence_number_ = std::nullopt;
+      previous_lost_sequence_numbers_.insert(lost_sequence_numbers_.begin(),
+                                             lost_sequence_numbers_.end());
+      previous_feedback_highest_seq_number_ = last_unwrapped_sequence_number_;
+      lost_sequence_numbers_.clear();
+      num_reordered_packets_ = 0;
+      num_packets_ = 0;
+    }
+
+   private:
+    int64_t last_unwrapped_sequence_number_ = 0;
+    int num_reordered_packets_ = 0;
+    int num_packets_ = 0;
+    std::optional<int64_t> first_sequence_number_;
+
+    std::unordered_set<int64_t> lost_sequence_numbers_;
+    std::unordered_set<int64_t> previous_lost_sequence_numbers_;
+    std::optional<int64_t> previous_feedback_highest_seq_number_;
+
+    RtpSequenceNumberUnwrapper sequence_number_unwrapper_;
+  };
+
   TimeSeries loss_rate_series("Loss rate (from packet feedback)",
                               LineStyle::kLine, PointStyle::kHighlight);
   TimeSeries reordered_packets_between_feedback(
@@ -1634,6 +1721,47 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) const {
                                       LineStyle::kLine, PointStyle::kHighlight);
   TimeSeries missing_feedback_series("Missing feedback", LineStyle::kNone,
                                      PointStyle::kHighlight);
+
+  std::vector<PacketLossPerFeedback> loss_per_feedback;
+
+  if (!parsed_log_.congestion_feedback(kIncomingPacket).empty()) {
+    plot->SetTitle("Outgoing loss rate (from CCFB)");
+
+    std::map</*ssrc*/ uint32_t, LossFeedbackBuilder> per_ssrc_builder;
+    for (const LoggedRtcpCongestionControlFeedback& feedback :
+         parsed_log_.congestion_feedback(kIncomingPacket)) {
+      const rtcp::CongestionControlFeedback& transport_feedback =
+          feedback.congestion_feedback;
+
+      PacketLossPerFeedback packet_loss_per_feedback = {
+          .timestamp = feedback.log_time()};
+      for (const rtcp::CongestionControlFeedback::PacketInfo& packet :
+           transport_feedback.packets()) {
+        per_ssrc_builder[packet.ssrc].AddPacket(packet.sequence_number,
+                                                packet.arrival_time_offset);
+      }
+      for (auto& [ssrc, builder] : per_ssrc_builder) {
+        builder.Update(packet_loss_per_feedback);
+      }
+      loss_per_feedback.push_back(packet_loss_per_feedback);
+    }
+  } else if (!parsed_log_.transport_feedbacks(kIncomingPacket).empty()) {
+    plot->SetTitle("Outgoing loss rate (from TWCC)");
+
+    LossFeedbackBuilder builder;
+    for (const LoggedRtcpPacketTransportFeedback& feedback :
+         parsed_log_.transport_feedbacks(kIncomingPacket)) {
+      feedback.transport_feedback.ForAllPackets(
+          [&](uint16_t sequence_number, TimeDelta receive_time_delta) {
+            builder.AddPacket(sequence_number, receive_time_delta);
+          });
+      PacketLossPerFeedback packet_loss_per_feedback = {
+          .timestamp = feedback.log_time()};
+      builder.Update(packet_loss_per_feedback);
+      loss_per_feedback.push_back(packet_loss_per_feedback);
+    }
+  }
+
   PacketLossSummary window_summary;
   Timestamp last_observation_receive_time = Timestamp::Zero();
 
@@ -1641,66 +1769,37 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) const {
   constexpr TimeDelta kObservationDuration = TimeDelta::Millis(250);
   constexpr uint32_t kObservationWindowSize = 20;
   std::deque<PacketLossSummary> observations;
-  SeqNumUnwrapper<uint16_t> unwrapper;
-  int64_t last_acked = 1;
-  if (!parsed_log_.transport_feedbacks(kIncomingPacket).empty()) {
-    last_acked =
-        unwrapper.Unwrap(parsed_log_.transport_feedbacks(kIncomingPacket)[0]
-                             .transport_feedback.GetBaseSequence());
-  }
-  std::unordered_set<int64_t> previous_feedback_lost_sequence_numbers;
-  size_t previous_feedback_size = 0;
-  for (auto& feedback : parsed_log_.transport_feedbacks(kIncomingPacket)) {
-    const rtcp::TransportFeedback& transport_feedback =
-        feedback.transport_feedback;
-    int64_t base_seq_num =
-        unwrapper.Unwrap(transport_feedback.GetBaseSequence());
-    // Collect packets that do not have feedback, which are from the last acked
-    // packet, to the current base packet.
-    for (int64_t seq_num = last_acked; seq_num < base_seq_num; ++seq_num) {
+  int previous_feedback_size = 0;
+  for (const PacketLossPerFeedback& feedback : loss_per_feedback) {
+    for (int64_t num = 0; num < feedback.num_missing_feedback; ++num) {
       missing_feedback_series.points.emplace_back(
-          config_.GetCallTimeSec(feedback.timestamp),
-          100 + seq_num - last_acked);
+          config_.GetCallTimeSec(feedback.timestamp), 100 + num);
     }
-    last_acked = base_seq_num + transport_feedback.GetPacketStatusCount();
-
-    int num_reordered_packets = 0;
-    std::unordered_set<int64_t> lost_sequence_numbers;
-    transport_feedback.ForAllPackets(
-        [&](uint16_t sequence_number, TimeDelta receive_time_delta) {
-          int64_t unwrapped_seq = unwrapper.Unwrap(sequence_number);
-          if (receive_time_delta.IsInfinite()) {
-            lost_sequence_numbers.insert(unwrapped_seq);
-          } else {
-            num_reordered_packets +=
-                previous_feedback_lost_sequence_numbers.count(unwrapped_seq);
-          }
-        });
 
     // Compute loss rate from the transport feedback.
-    float loss_rate =
-        static_cast<float>(lost_sequence_numbers.size() * 100.0 /
-                           transport_feedback.GetPacketStatusCount());
+    float loss_rate = static_cast<float>(feedback.num_lost_packets * 100.0 /
+                                         feedback.num_packets_in_feedback);
 
     loss_rate_series.points.emplace_back(
         config_.GetCallTimeSec(feedback.timestamp), loss_rate);
     float reordered_rate =
         previous_feedback_size == 0
             ? 0
-            : static_cast<float>(num_reordered_packets * 100.0 /
+            : static_cast<float>(feedback.num_reordered_packets * 100.0 /
                                  previous_feedback_size);
+    previous_feedback_size = feedback.num_packets_in_feedback;
     reordered_packets_between_feedback.points.emplace_back(
         config_.GetCallTimeSec(feedback.timestamp), reordered_rate);
 
     // Compute loss rate in a window of kObservationWindowSize.
     if (window_summary.num_packets == 0) {
-      window_summary.base_time = feedback.log_time();
+      window_summary.base_time = feedback.timestamp;
     }
-    window_summary.num_packets += transport_feedback.GetPacketStatusCount();
+    window_summary.num_packets += feedback.num_packets_in_feedback;
     window_summary.num_lost_packets +=
-        lost_sequence_numbers.size() - num_reordered_packets;
+        feedback.num_lost_packets - feedback.num_reordered_packets;
 
-    const Timestamp last_received_time = feedback.log_time();
+    const Timestamp last_received_time = feedback.timestamp;
     const TimeDelta observation_duration =
         window_summary.base_time == Timestamp::Zero()
             ? TimeDelta::Zero()
@@ -1729,8 +1828,6 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) const {
       }
       window_summary = PacketLossSummary();
     }
-    std::swap(previous_feedback_lost_sequence_numbers, lost_sequence_numbers);
-    previous_feedback_size = transport_feedback.GetPacketStatusCount();
   }
   // Add the data set to the plot.
   plot->AppendTimeSeriesIfNotEmpty(std::move(loss_rate_series));
@@ -1743,7 +1840,6 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) const {
                  "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 100, "Loss rate (percent)", kBottomMargin,
                           kTopMargin);
-  plot->SetTitle("Outgoing loss rate (from TWCC feedback)");
 }
 
 void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
@@ -1763,14 +1859,13 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
 
   SimulatedClock clock(0);
   BitrateObserver observer;
-  RtcEventLogNull null_event_log;
   TransportFeedbackAdapter transport_feedback;
   auto factory = GoogCcNetworkControllerFactory();
   TimeDelta process_interval = factory.GetProcessInterval();
   // TODO(holmer): Log the call config and use that here instead.
   static const uint32_t kDefaultStartBitrateBps = 300000;
-  NetworkControllerConfig cc_config(CreateEnvironment(&null_event_log));
-  cc_config.constraints.at_time = Timestamp::Micros(clock.TimeInMicroseconds());
+  NetworkControllerConfig cc_config(env_);
+  cc_config.constraints.at_time = clock.CurrentTime();
   cc_config.constraints.starting_rate =
       DataRate::BitsPerSec(kDefaultStartBitrateBps);
   auto goog_cc = factory.Create(cc_config);
@@ -1810,12 +1905,12 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
   };
 
   RateStatistics raw_acked_bitrate(750, 8000);
-  test::ExplicitKeyValueConfig throughput_config(
+  FieldTrials throughput_config(
       "WebRTC-Bwe-RobustThroughputEstimatorSettings/enabled:true/");
   std::unique_ptr<AcknowledgedBitrateEstimatorInterface>
       robust_throughput_estimator(
           AcknowledgedBitrateEstimatorInterface::Create(&throughput_config));
-  test::ExplicitKeyValueConfig acked_bitrate_config(
+  FieldTrials acked_bitrate_config(
       "WebRTC-Bwe-RobustThroughputEstimatorSettings/enabled:false/");
   std::unique_ptr<AcknowledgedBitrateEstimatorInterface>
       acknowledged_bitrate_estimator(
@@ -1853,7 +1948,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
             0u,  // Per packet overhead bytes.,
             Timestamp::Micros(rtp_packet.rtp.log_time_us()));
       }
-      rtc::SentPacket sent_packet;
+      SentPacketInfo sent_packet;
       sent_packet.send_time_ms = rtp_packet.rtp.log_time_ms();
       sent_packet.info.included_in_allocation = true;
       sent_packet.info.packet_size_bytes = rtp_packet.rtp.total_length;
@@ -1871,8 +1966,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextRtcpTime());
 
       auto feedback_msg = transport_feedback.ProcessTransportFeedback(
-          rtcp_iterator->transport_feedback,
-          Timestamp::Millis(clock.TimeInMilliseconds()));
+          rtcp_iterator->transport_feedback, clock.CurrentTime());
       if (feedback_msg) {
         observer.Update(goog_cc->OnTransportPacketsFeedback(*feedback_msg));
         std::vector<PacketResult> feedback =
@@ -1911,7 +2005,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) const {
     if (clock.TimeInMicroseconds() >= NextProcessTime()) {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextProcessTime());
       ProcessInterval msg;
-      msg.at_time = Timestamp::Micros(clock.TimeInMicroseconds());
+      msg.at_time = clock.CurrentTime();
       observer.Update(goog_cc->OnProcessInterval(msg));
       next_process_time_us_ += process_interval.us();
     }
@@ -1969,9 +2063,11 @@ void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) const {
   }
 
   SimulatedClock clock(0);
+  EnvironmentFactory env_factory(env_);
+  env_factory.Set(&clock);
   RembInterceptor remb_interceptor;
   ReceiveSideCongestionController rscc(
-      CreateEnvironment(&clock), [](auto...) {},
+      env_factory.Create(), [](auto...) {},
       absl::bind_front(&RembInterceptor::SendRemb, &remb_interceptor));
   // TODO(holmer): Log the call config and use that here instead.
   // static const uint32_t kDefaultStartBitrateBps = 300000;
@@ -2228,8 +2324,8 @@ void EventLogAnalyzer::CreateIceCandidatePairConfigGraph(Plot* plot) const {
   }
 
   // TODO(qingsi): There can be a large number of candidate pairs generated by
-  // certain calls and the frontend cannot render the chart in this case due to
-  // the failure of generating a palette with the same number of colors.
+  // certain calls and the frontend cannot render the chart in this case due
+  // to the failure of generating a palette with the same number of colors.
   for (auto& kv : configs_by_cp_id) {
     plot->AppendTimeSeries(std::move(kv.second));
   }

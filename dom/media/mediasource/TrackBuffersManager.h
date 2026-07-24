@@ -7,14 +7,6 @@
 #ifndef MOZILLA_TRACKBUFFERSMANAGER_H_
 #define MOZILLA_TRACKBUFFERSMANAGER_H_
 
-#include "mozilla/Atomics.h"
-#include "mozilla/EventTargetCapability.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/TaskQueue.h"
-#include "mozilla/dom/MediaDebugInfoBinding.h"
-
 #include "MediaContainerType.h"
 #include "MediaData.h"
 #include "MediaDataDemuxer.h"
@@ -23,6 +15,13 @@
 #include "MediaSpan.h"
 #include "SourceBufferTask.h"
 #include "TimeUnits.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/EventTargetCapability.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/TaskQueue.h"
+#include "mozilla/dom/MediaDebugInfoBinding.h"
 #include "nsTArray.h"
 
 namespace mozilla {

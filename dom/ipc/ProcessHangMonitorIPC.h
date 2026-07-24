@@ -9,10 +9,9 @@
 
 #include "base/task.h"
 #include "base/thread.h"
-
 #include "mozilla/PProcessHangMonitor.h"
-#include "mozilla/PProcessHangMonitorParent.h"
 #include "mozilla/PProcessHangMonitorChild.h"
+#include "mozilla/PProcessHangMonitorParent.h"
 
 namespace mozilla {
 

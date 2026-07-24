@@ -46,6 +46,16 @@ class BaselineCompileQueue {
 
   bool isEmpty() const { return numQueued_ == 0; }
 
+  bool enqueue(JSScript* script) {
+    if (numQueued_ >= JitOptions.baselineQueueCapacity) {
+      return false;  // Queue is full
+    }
+    queue_[numQueued_] = script;
+    numQueued_++;
+    assertInvariants();
+    return true;
+  }
+
   MOZ_ALWAYS_INLINE
   void assertInvariants() const {
     // The queue always contains |numQueued| JSScript* pointers,

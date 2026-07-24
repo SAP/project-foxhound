@@ -130,7 +130,6 @@ add_task(async function bookmark() {
     () => bookmarkButton.label === "Edit This Bookmark…"
   );
   Assert.ok(bookmarkButton.hasAttribute("starred"));
-  Assert.equal(bookmarkButton.getAttribute("starred"), "true");
 
   // Click it again.
   hiddenPromise = promisePageActionPanelHidden(win);
@@ -174,11 +173,11 @@ add_task(async function bookmark() {
 });
 
 add_task(async function test_disabledPageAction_hidden_in_protonOverflowMenu() {
-  // Make sure the overflow menu urlbar button is visible (indipendently from
+  // Make sure the overflow menu urlbar button is visible (independently from
   // the current size of the Firefox window).
-  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  BrowserPageActions.mainButtonNode.style.display = "flex";
   registerCleanupFunction(() => {
-    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+    BrowserPageActions.mainButtonNode.style.removeProperty("display");
   });
 
   const extension = ExtensionTestUtils.loadExtension({

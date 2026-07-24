@@ -4,21 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXMLContentSink_h__
-#define nsXMLContentSink_h__
+#ifndef nsXMLContentSink_h_
+#define nsXMLContentSink_h_
 
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
-#include "mozilla/Attributes.h"
-#include "nsContentSink.h"
-#include "nsIXMLContentSink.h"
-#include "nsIExpatSink.h"
-#include "nsIDocumentTransformer.h"
-#include "nsTArray.h"
+#include "mozilla/dom/FromParser.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
+#include "nsContentSink.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIDTD.h"
-#include "mozilla/dom/FromParser.h"
+#include "nsIDocumentTransformer.h"
+#include "nsIExpatSink.h"
+#include "nsIXMLContentSink.h"
+#include "nsTArray.h"
 
 class nsIURI;
 class nsIContent;
@@ -60,7 +58,7 @@ class nsXMLContentSink : public nsContentSink,
 
   // nsIContentSink
   NS_IMETHOD WillParse(void) override;
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
+  NS_IMETHOD WillBuildModel() override;
   NS_IMETHOD DidBuildModel(bool aTerminated) override;
   NS_IMETHOD WillInterrupt(void) override;
   void WillResume() override;
@@ -187,21 +185,22 @@ class nsXMLContentSink : public nsContentSink,
   nsCOMPtr<nsIContent> mDocElement;
   nsCOMPtr<nsIContent> mCurrentHead;  // When set, we're in an XHTML <haed>
 
-  XMLContentSinkState mState;
+  XMLContentSinkState mState = eXMLContentSinkState_InProlog;
 
   // The length of the valid data in mText.
-  int32_t mTextLength;
+  int32_t mTextLength = 0;
 
-  int32_t mNotifyLevel;
+  int32_t mNotifyLevel = 0;
   RefPtr<nsTextNode> mLastTextNode;
 
-  uint8_t mPrettyPrintXML : 1;
-  uint8_t mPrettyPrintHasSpecialRoot : 1;
-  uint8_t mPrettyPrintHasFactoredElements : 1;
-  uint8_t mPrettyPrinting : 1;  // True if we called PrettyPrint() and it
-                                // decided we should in fact prettyprint.
+  bool mPrettyPrintXML : 1 = true;
+  bool mPrettyPrintHasSpecialRoot : 1 = false;
+  bool mPrettyPrintHasFactoredElements : 1 = false;
+  // True if we called PrettyPrint() and it
+  // decided we should in fact prettyprint.
+  bool mPrettyPrinting : 1 = false;
   // True to call prevent script execution in the fragment mode.
-  uint8_t mPreventScriptExecution : 1;
+  bool mPreventScriptExecution : 1 = false;
 
   nsTArray<StackNode> mContentStack;
 
@@ -216,7 +215,7 @@ class nsXMLContentSink : public nsContentSink,
 
   static const int NS_ACCUMULATION_BUFFER_SIZE = 4096;
   // Our currently accumulated text that we have not flushed to a textnode yet.
-  char16_t mText[NS_ACCUMULATION_BUFFER_SIZE];
+  char16_t mText[NS_ACCUMULATION_BUFFER_SIZE] = {0};
 };
 
-#endif  // nsXMLContentSink_h__
+#endif  // nsXMLContentSink_h_

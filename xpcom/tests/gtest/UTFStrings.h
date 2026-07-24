@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef utfstrings_h__
-#define utfstrings_h__
+#ifndef utfstrings_h_
+#define utfstrings_h_
 
 struct UTFStringsStringPair {
   char16_t m16[16];

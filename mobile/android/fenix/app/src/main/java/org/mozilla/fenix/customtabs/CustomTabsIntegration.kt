@@ -8,9 +8,6 @@ import android.app.Activity
 import android.content.Context
 import androidx.annotation.ColorInt
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-import androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
-import androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
 import androidx.appcompat.content.res.AppCompatResources.getDrawable
 import androidx.core.graphics.ColorUtils
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
@@ -32,21 +29,19 @@ import org.mozilla.fenix.components.toolbar.ToolbarMenu
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.utils.getAppNightMode
+import mozilla.components.ui.icons.R as iconsR
 
 @Suppress("LongParameterList")
 class CustomTabsIntegration(
-    private val context: Context,
     store: BrowserStore,
     useCases: CustomTabsUseCases,
     private val browserToolbar: BrowserToolbar,
     private val sessionId: String,
     private val activity: Activity,
     private val interactor: BrowserToolbarInteractor,
-    shouldReverseItems: Boolean,
     private val isSandboxCustomTab: Boolean,
     private val isPrivate: Boolean,
-    isMenuRedesignEnabled: Boolean,
 ) : LifecycleAwareFeature, UserInteractionHandler {
 
     @VisibleForTesting
@@ -74,23 +69,11 @@ class CustomTabsIntegration(
         }
     }
 
-    private val customTabToolbarMenu by lazy {
-        CustomTabToolbarMenu(
-            context,
-            store,
-            sessionId,
-            shouldReverseItems,
-            isSandboxCustomTab,
-            onItemTapped = interactor::onBrowserToolbarMenuItemTapped,
-        )
-    }
-
     private val feature = CustomTabsToolbarFeature(
         store = store,
         toolbar = browserToolbar,
         sessionId = sessionId,
         useCases = useCases,
-        menuBuilder = if (isMenuRedesignEnabled) null else customTabToolbarMenu.menuBuilder,
         menuItemIndex = START_OF_MENU_ITEMS_INDEX,
         window = activity.window,
         customTabsToolbarListeners = CustomTabsToolbarListeners(
@@ -120,16 +103,6 @@ class CustomTabsIntegration(
         ),
         customTabsColorsConfig = getCustomTabsColorsConfig(),
     )
-
-    private fun Settings.getAppNightMode() = if (shouldFollowDeviceTheme) {
-        MODE_NIGHT_FOLLOW_SYSTEM
-    } else {
-        if (shouldUseLightTheme) {
-            MODE_NIGHT_NO
-        } else {
-            MODE_NIGHT_YES
-        }
-    }
 
     private fun getCustomTabsColorsConfig() = CustomTabsColorsConfig(
         updateStatusBarColor = !isPrivate,
@@ -177,14 +150,14 @@ class CustomTabsIntegration(
         if (forwardAction == null) {
             val primaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_forward_24,
+                iconsR.drawable.mozac_ic_forward_24,
             )?.apply {
                 setTint(enableTint)
             } ?: return
 
             val secondaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_forward_24,
+                iconsR.drawable.mozac_ic_forward_24,
             )?.apply {
                 setTint(disableTint)
             } ?: return
@@ -224,14 +197,14 @@ class CustomTabsIntegration(
         if (backAction == null) {
             val primaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_back_24,
+                iconsR.drawable.mozac_ic_back_24,
             )?.apply {
                 setTint(enableTint)
             } ?: return
 
             val secondaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_back_24,
+                iconsR.drawable.mozac_ic_back_24,
             )?.apply {
                 setTint(disableTint)
             } ?: return
@@ -284,14 +257,14 @@ class CustomTabsIntegration(
         if (openInAction == null) {
             val primaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_open_in,
+                iconsR.drawable.mozac_ic_open_in,
             )?.apply {
                 setTint(enableTint)
             } ?: return
 
             val secondaryDrawable = getDrawable(
                 context,
-                R.drawable.mozac_ic_open_in,
+                iconsR.drawable.mozac_ic_open_in,
             )?.apply {
                 setTint(disableTint)
             } ?: return

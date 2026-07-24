@@ -33,7 +33,6 @@
 
 #include "jArray.h"
 #include "mozilla/ImportScanner.h"
-#include "mozilla/Likely.h"
 #include "nsAHtml5TreeBuilderState.h"
 #include "nsAtom.h"
 #include "nsContentUtils.h"
@@ -339,6 +338,9 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
                nsHtml5String systemIdentifier, bool forceQuirks);
   void comment(char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
   void characters(const char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
+  void characters(const char16_t* buf, int32_t start, int32_t length) {
+    characters(buf, EmptyTaint, start, length);
+  }
   void zeroOriginatingReplacementCharacter();
   void zeroOrReplacementCharacter();
   void eof();

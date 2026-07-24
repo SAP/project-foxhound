@@ -23,7 +23,7 @@
  *
  * NOTE: What you need to do when you add new event messages?
  * - If the new events are dispatched to the DOM, they should be registered in
- *   dom/events/EventNameList.h
+ *   dom/events/EventNameList.inc
  * - If the new events are dispatched to the DOM, set proper default values of
  *   "bubbles" and "cancelable" in WidgetEvent::SetDefaultCancelableAndBubbles()
  *   defined in widget/BasicEvents.h.
@@ -155,8 +155,6 @@ NS_EVENT_MESSAGE(eFormReset)
 NS_EVENT_MESSAGE(eFormChange)
 NS_EVENT_MESSAGE(eFormSelect)
 NS_EVENT_MESSAGE(eFormInvalid)
-NS_EVENT_MESSAGE(eFormCheckboxStateChange)
-NS_EVENT_MESSAGE(eFormRadioStateChange)
 NS_EVENT_MESSAGE(eFormData)
 
 // Need separate focus/blur notifications for non-native widgets
@@ -190,16 +188,6 @@ NS_EVENT_MESSAGE(eLegacyMousePixelScroll)
 
 NS_EVENT_MESSAGE(eScrollPortUnderflow)
 NS_EVENT_MESSAGE(eScrollPortOverflow)
-
-NS_EVENT_MESSAGE(eLegacySubtreeModified)
-NS_EVENT_MESSAGE(eLegacyNodeInserted)
-NS_EVENT_MESSAGE(eLegacyNodeRemoved)
-NS_EVENT_MESSAGE(eLegacyNodeRemovedFromDocument)
-NS_EVENT_MESSAGE(eLegacyNodeInsertedIntoDocument)
-NS_EVENT_MESSAGE(eLegacyAttrModified)
-NS_EVENT_MESSAGE(eLegacyCharacterDataModified)
-NS_EVENT_MESSAGE_FIRST_LAST(eLegacyMutationEvent, eLegacySubtreeModified,
-                            eLegacyCharacterDataModified)
 
 NS_EVENT_MESSAGE(eUnidentifiedEvent)
 
@@ -253,6 +241,8 @@ NS_EVENT_MESSAGE(eLegacyDOMFocusOut)
 // pagetransition events
 NS_EVENT_MESSAGE(ePageShow)
 NS_EVENT_MESSAGE(ePageHide)
+
+NS_EVENT_MESSAGE(ePageReveal)
 
 // Canvas events
 NS_EVENT_MESSAGE(eContextLost)
@@ -405,10 +395,6 @@ NS_EVENT_MESSAGE(eSMILRepeatEvent)
 NS_EVENT_MESSAGE(eAudioProcess)
 NS_EVENT_MESSAGE(eAudioComplete)
 
-// script notification events
-NS_EVENT_MESSAGE(eBeforeScriptExecute)
-NS_EVENT_MESSAGE(eAfterScriptExecute)
-
 NS_EVENT_MESSAGE(eBeforePrint)
 NS_EVENT_MESSAGE(eAfterPrint)
 
@@ -517,6 +503,9 @@ NS_EVENT_MESSAGE(eEncrypted)
 NS_EVENT_MESSAGE(eWaitingForKey)
 
 NS_EVENT_MESSAGE(eScrollend)
+
+// Legacy orientatipon events.
+NS_EVENT_MESSAGE(eMozOrientationChange)
 
 #ifdef UNDEF_NS_EVENT_MESSAGE_FIRST_LAST
 #  undef UNDEF_NS_EVENT_MESSAGE_FIRST_LAST

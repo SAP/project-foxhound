@@ -213,11 +213,6 @@ add_task(async function testBasicServerSentEvents() {
  * 3) Assert that the close connection message is displayed when the connection is closed.
  */
 add_task(async function testServerSentEventsDetails() {
-  // TODO: Should enable this test when Bug 1557795 gets fixed.
-  // eslint-disable-next-line no-constant-condition
-  if (true) {
-    return null;
-  }
   const { httpServer, sendResponseMessages, completeResponse } =
     setupTestServer();
   const port = httpServer.identity.primaryPort;
@@ -279,7 +274,7 @@ add_task(async function testServerSentEventsDetails() {
   const waitForMoreMessages = waitForDOM(
     document,
     "#messages-view .message-list-table .message-list-item",
-    3
+    4
   );
   info("Send a couple of more messages");
   sendResponseMessages();

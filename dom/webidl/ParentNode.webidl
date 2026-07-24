@@ -31,6 +31,9 @@ interface mixin ParentNode {
   [CEReactions, Throws, Unscopable]
   undefined replaceChildren((Node or DOMString)... nodes);
 
+  [CEReactions, Throws, Pref="dom.movebefore.enabled"]
+  undefined moveBefore(Node node, Node? child);
+
   [Throws, Pure]
   Element?  querySelector(UTF8String selectors);
   [Throws, Pure]

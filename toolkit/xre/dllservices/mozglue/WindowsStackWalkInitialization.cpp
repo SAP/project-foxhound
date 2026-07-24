@@ -7,6 +7,7 @@
 #include "mozilla/WindowsStackWalkInitialization.h"
 
 #include "nsWindowsDllInterceptor.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/StackWalk_windows.h"
 #include "mozilla/WindowsDiagnostics.h"

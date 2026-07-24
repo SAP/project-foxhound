@@ -42,10 +42,10 @@ add_task(async function selected_result_tip() {
     const deferred = Promise.withResolvers();
     const provider = new UrlbarTestUtils.TestProvider({
       results: [
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.TIP,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          {
+        new UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.TIP,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          payload: {
             type,
             helpUrl: "https://example.com/",
             titleL10n: { id: "urlbar-search-tips-confirm" },
@@ -55,19 +55,24 @@ add_task(async function selected_result_tip() {
                 l10n: { id: "urlbar-search-tips-confirm" },
               },
             ],
-          }
-        ),
+          },
+        }),
       ],
       priority: 1,
       onEngagement: () => {
         deferred.resolve();
       },
     });
-    UrlbarProvidersManager.registerProvider(provider);
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+    providersManager.registerProvider(provider);
 
     await doTest(async () => {
       await openPopup("example");
       await selectRowByType(type);
+      let newTabOpened = BrowserTestUtils.waitForNewTab(
+        gBrowser,
+        "https://example.com/"
+      );
       EventUtils.synthesizeKey("VK_RETURN");
       await deferred.promise;
 
@@ -77,23 +82,20 @@ add_task(async function selected_result_tip() {
           results: expected,
         },
       ]);
+
+      let newTab = await newTabOpened;
+      await BrowserTestUtils.removeTab(newTab);
     });
 
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   }
 });
 
 add_task(async function selected_result_intervention_clear() {
-  let useOldClearHistoryDialog = Services.prefs.getBoolPref(
-    "privacy.sanitize.useOldClearHistoryDialog"
-  );
-  let dialogURL = useOldClearHistoryDialog
-    ? "chrome://browser/content/sanitize.xhtml"
-    : "chrome://browser/content/sanitize_v2.xhtml";
   await doInterventionTest(
     SEARCH_STRINGS.CLEAR,
     "intervention_clear",
-    dialogURL,
+    "chrome://browser/content/sanitize_v2.xhtml",
     [
       {
         selected_result: "intervention_clear",
@@ -152,6 +154,53 @@ add_task(async function selected_result_intervention_update() {
       },
     ]
   );
+});
+
+add_task(async function learn_more_link() {
+  const provider = new UrlbarTestUtils.TestProvider({
+    results: [
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.TIP,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
+          type: "test",
+          titleL10n: { id: "urlbar-search-tips-confirm" },
+          descriptionL10n: {
+            id: "firefox-suggest-onboarding-main-accept-option-label",
+          },
+          descriptionLearnMoreTopic: "learn_more_link",
+        },
+      }),
+    ],
+    priority: 1,
+  });
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
+
+  await doTest(async () => {
+    await openPopup("any");
+    let expectedURL = "http://127.0.0.1:8888/support-dummy/learn_more_link";
+    let newTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, expectedURL);
+    EventUtils.synthesizeKey("KEY_Tab");
+    Assert.equal(
+      gURLBar.view.selectedElement.dataset.l10nName,
+      "learn-more-link"
+    );
+    EventUtils.synthesizeKey("KEY_Enter");
+    info("Wait until expected url is loaded in the current tab");
+    let newTab = await newTabOpened;
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "tip_unknown",
+        engagement_type: "help",
+      },
+    ]);
+
+    await BrowserTestUtils.removeTab(newTab);
+  });
+
+  providersManager.unregisterProvider(provider);
 });
 
 async function doInterventionTest(keyword, type, dialog, expectedTelemetry) {

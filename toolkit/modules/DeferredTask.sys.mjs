@@ -351,7 +351,7 @@ export class DeferredTask {
    * Executes the associated task and catches exceptions.
    */
   async #runTask() {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     try {
       await this.#taskFn();
     } catch (ex) {

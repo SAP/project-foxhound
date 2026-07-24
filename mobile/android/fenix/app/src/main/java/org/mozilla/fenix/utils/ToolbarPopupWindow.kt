@@ -28,7 +28,9 @@ import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.databinding.BrowserToolbarPopupWindowBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isToolbarAtBottom
+import org.mozilla.fenix.ext.pixelSizeFor
 import java.lang.ref.WeakReference
+import mozilla.components.browser.menu.R as menuR
 
 /**
  * Since Android 12 reading the clipboard triggers an OS notification.
@@ -66,11 +68,11 @@ object ToolbarPopupWindow {
         val popupWindow = PopupWindow(
             binding.root,
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            context.resources.getDimensionPixelSize(R.dimen.context_menu_height),
+            context.pixelSizeFor(R.dimen.context_menu_height),
             true,
         )
         popupWindow.elevation =
-            context.resources.getDimension(R.dimen.mozac_browser_menu_elevation)
+            context.resources.getDimension(menuR.dimen.mozac_browser_menu_elevation)
 
         // This is a workaround for SDK<23 to allow popup dismissal on outside or back button press
         // See: https://github.com/mozilla-mobile/fenix/issues/10027
@@ -130,7 +132,7 @@ object ToolbarPopupWindow {
         toolbarLayout.get()?.let {
             popupWindow.showAsDropDown(
                 it,
-                context.resources.getDimensionPixelSize(R.dimen.context_menu_x_offset),
+                context.pixelSizeFor(R.dimen.context_menu_x_offset),
                 popupVerticalOffset,
                 Gravity.START,
             )

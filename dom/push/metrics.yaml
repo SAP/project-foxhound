@@ -23,6 +23,7 @@ web_push:
     notification_emails:
       - krosylight@mozilla.com
     expires: never
+
   error_code:
     type: labeled_counter
     description: >
@@ -40,6 +41,7 @@ web_push:
     notification_emails:
       - krosylight@mozilla.com
     expires: never
+
   content_encoding:
     type: labeled_counter
     description: >
@@ -54,6 +56,7 @@ web_push:
     notification_emails:
       - krosylight@mozilla.com
     expires: never
+
   unsubscribed_by_clearing_data:
     type: counter
     description: >
@@ -64,13 +67,13 @@ web_push:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1948721
     notification_emails:
       - krosylight@mozilla.com
-    expires: 149
+    expires: 159
 
   api_notify:
     type: counter
     description: >
       Number of push messages that were successfully decrypted and delivered to
-      a ServiceWorker.
+      a ServiceWorker when required.
 
       This metric was generated to correspond to the Legacy Telemetry count
       histogram PUSH_API_NOTIFY.
@@ -82,3 +85,27 @@ web_push:
       - push@mozilla.com
     expires: never
     telemetry_mirror: h#PUSH_API_NOTIFY
+
+  declarative:
+    type: counter
+    description: >
+      Number of push messages in the Declarative Web Push format.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1969357
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1969357
+    notification_emails:
+      - krosylight@mozilla.com
+    expires: never
+
+  declarative_mutable:
+    type: counter
+    description: >
+      Number of push messages in the Declarative Web Push format with mutable: true.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1969357
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1969357
+    notification_emails:
+      - krosylight@mozilla.com
+    expires: never

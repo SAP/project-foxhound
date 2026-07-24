@@ -1,0 +1,13 @@
+diff --git a/intl/icu/source/data/locales/en.txt b/intl/icu/source/data/locales/en.txt
+index 5d7c9d5a80b3..413c6f967d97 100644
+--- a/intl/icu/source/data/locales/en.txt
++++ b/intl/icu/source/data/locales/en.txt
+@@ -913,7 +913,7 @@ en{
+                 Hms{"HH:mm:ss"}
+                 Hmsv{"HH:mm:ss v"}
+                 Hmv{"HH:mm v"}
+-                Hv{"HH'h' v"}
++                Hv{"HH v"}
+                 M{"L"}
+                 MEd{"E, M/d"}
+                 MMM{"LLL"}

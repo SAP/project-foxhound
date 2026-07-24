@@ -1,0 +1,39 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "cookieSetter.html",
+  "test-image.png",
+  "test-image.png^headers^",
+  "test-warning-groups.html",
+  "test-warning-group-csp.html",
+  "test-warning-group-csp.html^headers^",
+  # head.js dependencies:
+  "head.js",
+  "shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/shared-head.js", # Required by head.js
+  "!/devtools/client/debugger/test/mochitest/shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/telemetry-test-helpers.js", # Required by /devtools/client/shared/test/shared-head.js
+  "!/devtools/client/shared/test/highlighter-test-actor.js", # Required by /devtools/client/shared/test/shared-head.js
+]
+
+["browser_webconsole_warning_group_cookies.js"]
+
+["browser_webconsole_warning_group_csp.js"]
+
+["browser_webconsole_warning_group_enhanced_tracking_protection.js"]
+
+["browser_webconsole_warning_group_multiples.js"]
+
+["browser_webconsole_warning_group_storage_isolation.js"]
+skip-if = [
+  "true", # Bug 1765369, test currently broken on all platforms.
+]
+
+["browser_webconsole_warning_groups.js"]
+
+["browser_webconsole_warning_groups_filtering.js"]
+
+["browser_webconsole_warning_groups_outside_console_group.js"]
+
+["browser_webconsole_warning_groups_toggle.js"]

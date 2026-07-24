@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef WIDGET_WINDOWS_AUDIOSESSION_H_
+#define WIDGET_WINDOWS_AUDIOSESSION_H_
+
 #include "nsString.h"
 
 namespace mozilla {
@@ -18,3 +21,5 @@ void DestroyAudioSession();
 
 }  // namespace widget
 }  // namespace mozilla
+
+#endif  // WIDGET_WINDOWS_AUDIOSESSION_H_

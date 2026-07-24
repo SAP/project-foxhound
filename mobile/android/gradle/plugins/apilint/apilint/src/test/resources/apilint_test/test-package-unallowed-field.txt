@@ -1,0 +1,8 @@
+import android.support.annotation.NonNull;
+
+package test {
+  public class TestClass {
+    field @NonNull public not_allowed.TestFieldType fieldBadType;
+  }
+}
+

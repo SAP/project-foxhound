@@ -10,27 +10,24 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
-#include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsITimer.h"
-#include "nsIObserver.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsWrapperCache.h"
-
-#include "nsCycleCollectionParticipant.h"
-
-#include "GeolocationPosition.h"
 #include "GeolocationCoordinates.h"
+#include "GeolocationPosition.h"
+#include "GeolocationSystem.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CallbackObject.h"
+#include "mozilla/dom/GeolocationBinding.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIDOMGeoPosition.h"
 #include "nsIDOMGeoPositionCallback.h"
 #include "nsIDOMGeoPositionErrorCallback.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/GeolocationBinding.h"
-#include "mozilla/dom/CallbackObject.h"
-#include "GeolocationSystem.h"
-
 #include "nsIGeolocationProvider.h"
-#include "mozilla/Attributes.h"
+#include "nsIObserver.h"
+#include "nsITimer.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsGeolocationService;
 class nsGeolocationRequest;

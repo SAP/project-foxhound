@@ -14,11 +14,11 @@
 #include <utility>
 
 #include "api/array_view.h"
+#include "api/field_trials.h"
 #include "api/video/encoded_frame.h"
 #include "api/video/frame_buffer.h"
 #include "rtc_base/numerics/sequence_number_unwrapper.h"
 #include "test/fuzzers/fuzz_data_helper.h"
-#include "test/scoped_key_value_config.h"
 
 namespace webrtc {
 namespace {
@@ -37,10 +37,10 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
     return;
   }
 
-  test::ScopedKeyValueConfig field_trials;
+  FieldTrials field_trials("");
   FrameBuffer buffer(/*max_frame_slots=*/100, /*max_decode_history=*/1000,
                      field_trials);
-  test::FuzzDataHelper helper(rtc::MakeArrayView(data, size));
+  test::FuzzDataHelper helper(webrtc::MakeArrayView(data, size));
   SeqNumUnwrapper<uint16_t, kFrameIdLength> unwrapper;
 
   while (helper.BytesLeft() > 0) {

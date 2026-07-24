@@ -103,3 +103,18 @@ if (sourceRepoFile.canRead()) {
         logger.info("mozconfig.gradle> Parsed source-repo.h: ${gradle.ext.mozconfig.source_repo}");
     }
 }
+
+// Configures Maven repositories from mozconfig onto a RepositoryHandler.
+// In Groovy, pass `delegate` from within a `repositories { }` closure, since
+// `delegate` refers to the RepositoryHandler that receives method calls.
+// In Kotlin, pass `this`.
+gradle.ext.configureMavenRepositories = { handler ->
+    gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
+        handler.maven {
+            url = repository
+            if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
+                allowInsecureProtocol = true
+            }
+        }
+    }
+}

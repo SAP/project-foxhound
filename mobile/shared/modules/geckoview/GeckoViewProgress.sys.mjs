@@ -11,14 +11,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "OverrideService",
   "@mozilla.org/security/certoverride;1",
-  "nsICertOverrideService"
+  Ci.nsICertOverrideService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
+  Ci.nsIIDNService
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -568,6 +568,13 @@ export class GeckoViewProgress extends GeckoViewModule {
       case "MozAfterPaint": // fall-through
       case "pageshow": {
         this._progressTracker?.handleEvent(aMsg);
+        if (aMsg.name === "pageshow") {
+          const nav = this.moduleManager._applinkNavigation;
+          if (nav) {
+            this.moduleManager._applinkNavigation = null;
+            nav.resolve();
+          }
+        }
         break;
       }
     }

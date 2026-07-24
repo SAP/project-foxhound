@@ -36,10 +36,10 @@ CSSFilterInstance::CSSFilterInstance(
     const nsIntRect& aTargetBoundsInFilterSpace,
     const gfxMatrix& aFrameSpaceInCSSPxToFilterSpaceTransform)
     : mFilter(aFilter),
-      mShadowFallbackColor(aShadowFallbackColor),
       mTargetBoundsInFilterSpace(aTargetBoundsInFilterSpace),
       mFrameSpaceInCSSPxToFilterSpaceTransform(
-          aFrameSpaceInCSSPxToFilterSpaceTransform) {}
+          aFrameSpaceInCSSPxToFilterSpaceTransform),
+      mShadowFallbackColor(aShadowFallbackColor) {}
 
 nsresult CSSFilterInstance::BuildPrimitives(
     nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,

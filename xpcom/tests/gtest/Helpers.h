@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __Helpers_h
-#define __Helpers_h
+#ifndef Helpers_h
+#define Helpers_h
 
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
@@ -15,6 +15,7 @@
 #include "nsStringStream.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Queue.h"
 #include <stdint.h>
 
 class nsIInputStream;
@@ -190,6 +191,76 @@ class LengthCallback final : public nsIInputStreamLengthCallback {
   ~LengthCallback() = default;
 };
 
+// A simple queue of runnables, to serve as the base target of
+// ThrottledEventQueues/StopGapEventTargets (or other event targets that are
+// some kind of passthrough/filter) in tests.
+//
+// This is much simpler than mozilla::TaskQueue, and so better for unit tests.
+// It's about the same as mozilla::EventQueue, but that doesn't implement
+// nsIEventTarget, so it can't be the base target of a ThrottledEventQueue or
+// StopGapEventTarget.
+struct RunnableQueue : public nsISerialEventTarget {
+  mozilla::Queue<nsCOMPtr<nsIRunnable>> runnables;
+
+  bool IsEmpty() { return runnables.IsEmpty(); }
+  size_t Length() { return runnables.Count(); }
+
+  [[nodiscard]] nsresult Run() {
+    while (!runnables.IsEmpty()) {
+      auto runnable = runnables.Pop();
+      nsresult rv = runnable->Run();
+      if (NS_FAILED(rv)) return rv;
+    }
+
+    return NS_OK;
+  }
+
+  // nsIEventTarget methods
+
+  [[nodiscard]] NS_IMETHODIMP Dispatch(already_AddRefed<nsIRunnable> aRunnable,
+                                       DispatchFlags aFlags) override {
+    MOZ_ALWAYS_TRUE(aFlags == nsIEventTarget::DISPATCH_NORMAL);
+    runnables.Push(aRunnable);
+    return NS_OK;
+  }
+
+  [[nodiscard]] NS_IMETHODIMP DispatchFromScript(
+      nsIRunnable* aRunnable, DispatchFlags aFlags) override {
+    RefPtr<nsIRunnable> r = aRunnable;
+    return Dispatch(r.forget(), aFlags);
+  }
+
+  NS_IMETHOD_(bool)
+  IsOnCurrentThreadInfallible(void) override { return NS_IsMainThread(); }
+
+  [[nodiscard]] NS_IMETHOD IsOnCurrentThread(bool* retval) override {
+    *retval = IsOnCurrentThreadInfallible();
+    return NS_OK;
+  }
+
+  [[nodiscard]] NS_IMETHODIMP DelayedDispatch(
+      already_AddRefed<nsIRunnable> aEvent, uint32_t aDelay) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  NS_IMETHOD RegisterShutdownTask(nsITargetShutdownTask*) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask*) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  NS_IMETHOD_(FeatureFlags) GetFeatures() override { return SUPPORTS_BASE; }
+
+  // nsISupports methods
+
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+ private:
+  virtual ~RunnableQueue() = default;
+};
+
 }  // namespace testing
 
-#endif  // __Helpers_h
+#endif  // Helpers_h

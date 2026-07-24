@@ -10,13 +10,14 @@
 
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 
-#include "absl/strings/string_view.h"
-#include "rtc_base/strings/string_builder.h"
-
 // Check to verify that the define is properly set.
 #if !defined(WEBRTC_APM_DEBUG_DUMP) || \
     (WEBRTC_APM_DEBUG_DUMP != 0 && WEBRTC_APM_DEBUG_DUMP != 1)
 #error "Set WEBRTC_APM_DEBUG_DUMP to either 0 or 1"
+#endif
+
+#if WEBRTC_APM_DEBUG_DUMP == 1
+#include "rtc_base/strings/string_builder.h"
 #endif
 
 namespace webrtc {
@@ -36,7 +37,7 @@ std::string FormFileName(absl::string_view output_dir,
                          int reinit_index,
                          absl::string_view suffix) {
   char buf[1024];
-  rtc::SimpleStringBuilder ss(buf);
+  SimpleStringBuilder ss(buf);
   if (!output_dir.empty()) {
     ss << output_dir;
     if (output_dir.back() != kPathDelimiter) {

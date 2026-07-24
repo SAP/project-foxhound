@@ -5,19 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteLazyInputStream.h"
+
 #include "RemoteLazyInputStreamChild.h"
 #include "RemoteLazyInputStreamParent.h"
+#include "RemoteLazyInputStreamStorage.h"
+#include "RemoteLazyInputStreamThread.h"
 #include "chrome/common/ipc_message_utils.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/Logging.h"
+#include "mozilla/NonBlockingAsyncInputStream.h"
 #include "mozilla/PRemoteLazyInputStream.h"
+#include "mozilla/SlicedInputStream.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/InputStreamParams.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/SlicedInputStream.h"
-#include "mozilla/NonBlockingAsyncInputStream.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsID.h"
@@ -26,8 +29,6 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
-#include "RemoteLazyInputStreamStorage.h"
-#include "RemoteLazyInputStreamThread.h"
 
 namespace mozilla {
 
@@ -649,7 +650,7 @@ RemoteLazyInputStream::CloneWithRange(uint64_t aStart, uint64_t aLength,
       // The copy failed, revert the changes we did and restore our previous
       // inner stream.
       mAsyncInnerStream = nullptr;
-      mInnerStream = innerStream;
+      mInnerStream = std::move(innerStream);
       return rv;
     }
 
@@ -730,7 +731,7 @@ RemoteLazyInputStream::AsyncWait(nsIInputStreamCallback* aCallback,
         MOZ_ASSERT(mActor);
 
         mInputStreamCallback = aCallback;
-        mInputStreamCallbackEventTarget = eventTarget;
+        mInputStreamCallbackEventTarget = std::move(eventTarget);
         mInputStreamCallbackFlags = aFlags;
         mInputStreamCallbackRequestedCount = aRequestedCount;
         mState = ePending;
@@ -746,7 +747,7 @@ RemoteLazyInputStream::AsyncWait(nsIInputStreamCallback* aCallback,
         }
 
         mInputStreamCallback = aCallback;
-        mInputStreamCallbackEventTarget = eventTarget;
+        mInputStreamCallbackEventTarget = std::move(eventTarget);
         mInputStreamCallbackFlags = aFlags;
         mInputStreamCallbackRequestedCount = aRequestedCount;
         return NS_OK;
@@ -1132,7 +1133,7 @@ nsresult RemoteLazyInputStream::EnsureAsyncRemoteStream() {
   }
 
   MOZ_ASSERT(asyncStream);
-  mAsyncInnerStream = asyncStream;
+  mAsyncInnerStream = std::move(asyncStream);
   mInnerStream = nullptr;
 
   return NS_OK;

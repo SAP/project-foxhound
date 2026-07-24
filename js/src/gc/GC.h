@@ -13,10 +13,12 @@
 
 #include "gc/AllocKind.h"
 #include "gc/GCEnum.h"
+#include "js/Context.h"
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
 #include "js/RealmIterators.h"
 #include "js/TraceKind.h"
+#include "vm/GeckoProfiler.h"
 
 class JSTracer;
 
@@ -68,6 +70,7 @@ class ArenaChunk;
   _("compactingEnabled", JSGC_COMPACTING_ENABLED, true)                     \
   _("nurseryEnabled", JSGC_NURSERY_ENABLED, true)                           \
   _("parallelMarkingEnabled", JSGC_PARALLEL_MARKING_ENABLED, true)          \
+  _("concurrentMarkingEnabled", JSGC_CONCURRENT_MARKING_ENABLED, true)      \
   _("parallelMarkingThresholdMB", JSGC_PARALLEL_MARKING_THRESHOLD_MB, true) \
   _("minLastDitchGCPeriod", JSGC_MIN_LAST_DITCH_GC_PERIOD, true)            \
   _("nurseryEagerCollectionThresholdKB",                                    \
@@ -89,11 +92,59 @@ class ArenaChunk;
   _("systemPageSizeKB", JSGC_SYSTEM_PAGE_SIZE_KB, false)                    \
   _("semispaceNurseryEnabled", JSGC_SEMISPACE_NURSERY_ENABLED, true)        \
   _("generateMissingAllocSites", JSGC_GENERATE_MISSING_ALLOC_SITES, true)   \
-  _("highFrequencyMode", JSGC_HIGH_FREQUENCY_MODE, false)
+  _("highFrequencyMode", JSGC_HIGH_FREQUENCY_MODE, false)                   \
+  _("storeBufferEntries", JSGC_STORE_BUFFER_ENTRIES, true)                  \
+  _("storeBufferScaling", JSGC_STORE_BUFFER_SCALING, true)                  \
+  _("incrementalWeakMapMarkingEnabled", JSGC_INCREMENTAL_WEAKMAP_ENABLED, true)
 
 // Get the key and writability give a GC parameter name.
 extern bool GetGCParameterInfo(const char* name, JSGCParamKey* keyOut,
                                bool* writableOut);
+
+namespace gc {
+
+void FinishGC(JSContext* cx, JS::GCReason = JS::GCReason::FINISH_GC);
+
+// Abstract base class for exclusive heap access for tracing or GC.
+class MOZ_RAII AutoHeapSession {
+ public:
+  ~AutoHeapSession();
+
+ protected:
+  AutoHeapSession(GCRuntime* gc, JS::HeapState state);
+
+ private:
+  AutoHeapSession(const AutoHeapSession&) = delete;
+  void operator=(const AutoHeapSession&) = delete;
+
+  GCRuntime* gc;
+  JS::HeapState prevState;
+  mozilla::Maybe<AutoGeckoProfilerEntry> profilingStackFrame;
+};
+
+class MOZ_RAII AutoTraceSession : public AutoHeapSession,
+                                  public JS::AutoCheckCannotGC {
+ public:
+  explicit AutoTraceSession(JSRuntime* rt);
+};
+
+struct MOZ_RAII AutoFinishGC {
+  explicit AutoFinishGC(JSContext* cx, JS::GCReason reason) {
+    FinishGC(cx, reason);
+  }
+};
+
+// This class should be used by any code that needs exclusive access to the heap
+// in order to trace through it.
+class MOZ_RAII AutoPrepareForTracing : private AutoFinishGC,
+                                       public AutoTraceSession {
+ public:
+  explicit AutoPrepareForTracing(JSContext* cx)
+      : AutoFinishGC(cx, JS::GCReason::PREPARE_FOR_TRACING),
+        AutoTraceSession(JS_GetRuntime(cx)) {}
+};
+
+}  // namespace gc
 
 extern void TraceRuntime(JSTracer* trc);
 
@@ -134,7 +185,8 @@ extern void IterateHeapUnbarriered(JSContext* cx, void* data,
                                    IterateZoneCallback zoneCallback,
                                    JS::IterateRealmCallback realmCallback,
                                    IterateArenaCallback arenaCallback,
-                                   IterateCellCallback cellCallback);
+                                   IterateCellCallback cellCallback,
+                                   const js::gc::AutoTraceSession& session);
 
 /*
  * This function is like IterateHeapUnbarriered, but does it for a single zone.
@@ -142,13 +194,14 @@ extern void IterateHeapUnbarriered(JSContext* cx, void* data,
 extern void IterateHeapUnbarrieredForZone(
     JSContext* cx, JS::Zone* zone, void* data, IterateZoneCallback zoneCallback,
     JS::IterateRealmCallback realmCallback, IterateArenaCallback arenaCallback,
-    IterateCellCallback cellCallback);
+    IterateCellCallback cellCallback, const js::gc::AutoTraceSession& session);
 
 /*
  * Invoke chunkCallback on every in-use chunk.
  */
 extern void IterateChunks(JSContext* cx, void* data,
-                          IterateChunkCallback chunkCallback);
+                          IterateChunkCallback chunkCallback,
+                          const js::gc::AutoTraceSession& session);
 
 using IterateScriptCallback = void (*)(JSRuntime*, void*, BaseScript*,
                                        const JS::AutoRequireNoGC&);
@@ -164,8 +217,6 @@ JS::Realm* NewRealm(JSContext* cx, JSPrincipals* principals,
                     const JS::RealmOptions& options);
 
 namespace gc {
-
-void FinishGC(JSContext* cx, JS::GCReason = JS::GCReason::FINISH_GC);
 
 void WaitForBackgroundTasks(JSContext* cx);
 

@@ -311,8 +311,9 @@ class PermissionsDialogFragmentTest {
         assertTrue(
             firstItem is RequiredPermissionsListItem.PermissionItem &&
                 firstItem.permissionText.contains(
-                    testContext.getString(
-                        R.string.mozac_feature_addons_permissions_all_domain_count_description,
+                    testContext.resources.getQuantityString(
+                        R.plurals.mozac_feature_addons_permissions_all_domain_count_description_2,
+                        origins.size,
                         origins.size,
                     ),
                 ),
@@ -453,8 +454,9 @@ class PermissionsDialogFragmentTest {
         assertTrue(
             firstItem is RequiredPermissionsListItem.PermissionItem &&
                 firstItem.permissionText.contains(
-                    testContext.getString(
-                        R.string.mozac_feature_addons_permissions_all_domain_count_description,
+                    testContext.resources.getQuantityString(
+                        R.plurals.mozac_feature_addons_permissions_all_domain_count_description_2,
+                        origins.size,
                         origins.size,
                     ),
                 ),
@@ -544,8 +546,9 @@ class PermissionsDialogFragmentTest {
         assertTrue(
             firstToggled is RequiredPermissionsListItem.PermissionItem &&
                 firstToggled.permissionText.contains(
-                    testContext.getString(
-                        R.string.mozac_feature_addons_permissions_all_domain_count_description,
+                    testContext.resources.getQuantityString(
+                        R.plurals.mozac_feature_addons_permissions_all_domain_count_description_2,
+                        origins.size,
                         origins.size,
                     ),
                 ),
@@ -1329,7 +1332,11 @@ class PermissionsDialogFragmentTest {
         val firstItem = recyclerAdapter.getItemAtPosition(0)
         assertTrue(
             firstItem is RequiredPermissionsListItem.PermissionItem && firstItem.permissionText.contains(
-                testContext.getString(R.string.mozac_feature_addons_permissions_all_domain_count_description, 1),
+                testContext.resources.getQuantityString(
+                    R.plurals.mozac_feature_addons_permissions_all_domain_count_description_2,
+                    1,
+                    1,
+                ),
             ),
         )
         val secondItem = recyclerAdapter.getItemAtPosition(1)

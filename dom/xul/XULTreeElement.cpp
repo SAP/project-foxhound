@@ -4,18 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "nsTreeContentView.h"
-#include "nsITreeSelection.h"
+#include "mozilla/dom/XULTreeElement.h"
+
 #include "ChildIterator.h"
-#include "nsError.h"
-#include "nsTreeBodyFrame.h"
-#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/XULTreeElement.h"
 #include "mozilla/dom/XULTreeElementBinding.h"
+#include "nsCOMPtr.h"
+#include "nsError.h"
+#include "nsITreeSelection.h"
+#include "nsScrollbarFrame.h"
+#include "nsTreeBodyFrame.h"
+#include "nsTreeContentView.h"
 
 namespace mozilla::dom {
 
@@ -398,6 +400,33 @@ void XULTreeElement::RemoveImageCacheEntry(int32_t aRowIndex,
   if (body) {
     body->RemoveImageCacheEntry(aRowIndex, &aCol);
   }
+}
+
+nsScrollbarFrame* FindScrollbar(const XULTreeElement* aTree) {
+  auto* shadow = aTree->GetShadowRoot();
+  if (!shadow) {
+    return nullptr;
+  }
+  for (nsINode* cur = shadow; cur; cur = cur->GetNextNode(shadow)) {
+    if (cur->IsXULElement(nsGkAtoms::scrollbar)) {
+      return do_QueryFrame(cur->AsElement()->GetPrimaryFrame());
+    }
+  }
+  return nullptr;
+}
+
+int32_t XULTreeElement::ScrollbarPosition() const {
+  if (auto* sb = FindScrollbar(this)) {
+    return sb->GetCurPos();
+  }
+  return 0;
+}
+
+int32_t XULTreeElement::ScrollbarMaxPosition() const {
+  if (auto* sb = FindScrollbar(this)) {
+    return sb->GetMaxPos();
+  }
+  return 0;
 }
 
 }  // namespace mozilla::dom

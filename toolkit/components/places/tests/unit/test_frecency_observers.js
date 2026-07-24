@@ -72,16 +72,6 @@ add_task(async function test_clear() {
   Assert.deepEqual(received, ["history-cleared"]);
 });
 
-add_task(async function test_nsNavHistory_idleDaily() {
-  await PlacesUtils.bookmarks.insert({
-    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    url: "https://test-site1.org",
-    title: "test",
-  });
-  PlacesFrecencyRecalculator.observe(null, "idle-daily", "");
-  await Promise.all([onRankingChanged()]);
-});
-
 add_task(async function test_nsNavHistory_recalculate() {
   await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,

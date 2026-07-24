@@ -155,10 +155,7 @@ const TESTCASES = [
                  <input id="targetElement" type="text">
                </form>`,
     elementId: "targetElement",
-    expectedReturnValue: [
-      "cc-number",
-      { fathomLabel: "cc-number", fathomConfidence: 1 },
-    ],
+    expectedReturnValue: ["cc-number", { fathomConfidence: 1 }],
   },
   {
     description: "Identify credit card type field",
@@ -304,7 +301,7 @@ add_task(async function test_autofill_creditCards_autocomplete_off_pref() {
                 <label for="targetElement"> Card Number</label>
                 <input id="targetElement" type="text">
               </form>`;
-  expected = ["cc-number", { fathomLabel: "cc-number", fathomConfidence: 1 }];
+  expected = ["cc-number", { fathomConfidence: 1 }];
   info(
     `Set pref so that credit card autofill does not respect autocomplete="off"`
   );

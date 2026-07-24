@@ -14,7 +14,6 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 
 #include <string>
 

@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PlatformEncoderModule.h"
+
 #include "H264.h"
-#include "nsPrintfCString.h"
 #include "mozilla/ToString.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 
@@ -15,45 +16,6 @@ extern LazyLogModule sPEMLog;
 #define LOGD(fmt, ...)                       \
   MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
           ("PEM: %s: " fmt, __func__, ##__VA_ARGS__))
-
-// TODO: Automatically generate this (Bug 1865896)
-const char* GetCodecTypeString(const CodecType& aCodecType) {
-  switch (aCodecType) {
-    case CodecType::_BeginVideo_:
-      return "_BeginVideo_";
-    case CodecType::H264:
-      return "H264";
-    case CodecType::H265:
-      return "H265";
-    case CodecType::VP8:
-      return "VP8";
-    case CodecType::VP9:
-      return "VP9";
-    case CodecType::AV1:
-      return "AV1";
-    case CodecType::_EndVideo_:  // CodecType::_BeginAudio_
-      return "_EndVideo_/_BeginAudio_";
-    case CodecType::Opus:
-      return "Opus";
-    case CodecType::Vorbis:
-      return "Vorbis";
-    case CodecType::Flac:
-      return "Flac";
-    case CodecType::AAC:
-      return "AAC";
-    case CodecType::PCM:
-      return "PCM";
-      break;
-    case CodecType::G722:
-      return "G722";
-    case CodecType::_EndAudio_:
-      return "_EndAudio_";
-    case CodecType::Unknown:
-      return "Unknown";
-  }
-  MOZ_ASSERT_UNREACHABLE("undefined codec type");
-  return "Undefined";
-}
 
 RefPtr<PlatformEncoderModule::CreateEncoderPromise>
 PlatformEncoderModule::AsyncCreateEncoder(const EncoderConfig& aEncoderConfig,

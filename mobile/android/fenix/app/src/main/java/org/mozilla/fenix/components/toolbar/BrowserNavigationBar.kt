@@ -8,24 +8,21 @@ import android.content.Context
 import android.view.Gravity
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.ComposeView
 import androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
-import androidx.fragment.app.Fragment
-import mozilla.components.browser.state.state.CustomTabSessionState
-import mozilla.components.browser.state.store.BrowserStore
+import androidx.core.view.isVisible
 import mozilla.components.compose.browser.toolbar.NavigationBar
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
-import mozilla.components.feature.toolbar.ToolbarBehaviorController
-import mozilla.components.lib.state.ext.observeAsState
-import org.mozilla.fenix.browser.store.BrowserScreenStore
-import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.StoreProvider
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Top
+import mozilla.components.support.utils.KeyboardState
+import mozilla.components.support.utils.keyboardAsState
+import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
 
@@ -34,83 +31,25 @@ import org.mozilla.fenix.utils.Settings
  * lifecycle-aware integration for use within the [BrowserToolbarView] framework.
  *
  * @param context [Context] used to access resources and other application-level operations.
- * @param lifecycleOwner [Fragment] as a [LifecycleOwner] to used to organize lifecycle dependent operations.
  * @param container [ViewGroup] which will serve as parent of this View.
- * @param appStore [AppStore] to sync from.
- * @param browserScreenStore [BrowserScreenStore] used for integration with other browser screen functionalities.
- * @param browserStore [BrowserStore] used for observing the browsing details.
- * @param components [Components] allowing interactions with other application features.
+ * @param toolbarStore [BrowserToolbarStore] containing the navigation bar state.
  * @param settings [Settings] object to get the toolbar position and other settings.
- * @param customTabSession [CustomTabSessionState] if the toolbar is shown in a custom tab.
+ * @param hideWhenKeyboardShown If true, navigation bar will be hidden when the keyboard is visible.
  */
-@Suppress("LongParameterList")
 class BrowserNavigationBar(
     private val context: Context,
-    private val lifecycleOwner: Fragment,
-    container: ViewGroup,
-    private val appStore: AppStore,
-    private val browserScreenStore: BrowserScreenStore,
-    private val browserStore: BrowserStore,
-    private val components: Components,
+    private val container: ViewGroup,
+    private val toolbarStore: BrowserToolbarStore,
     private val settings: Settings,
-    customTabSession: CustomTabSessionState? = null,
-) : FenixBrowserToolbarView(
-    context = context,
-    settings = settings,
-    customTabSession = customTabSession,
-) {
-    override fun updateDividerVisibility(isVisible: Boolean) {
-        // No-op: Divider is not controlled through this.
+    private val hideWhenKeyboardShown: Boolean,
+    ) {
+    val layout = ComposeView(context).apply {
+        setContent { DefaultNavigationBarContent() }
+    }.apply {
+        id = R.id.navigation_bar
+        addToParent(this)
+        setNavbarDynamicBehavior(this)
     }
-
-    val store = StoreProvider.get(lifecycleOwner) {
-        BrowserToolbarStore(
-            initialState = BrowserToolbarState(),
-            middleware = listOf(
-                BrowserToolbarMiddleware(
-                    appStore = appStore,
-                    browserScreenStore = browserScreenStore,
-                    browserStore = browserStore,
-                    permissionsStorage = components.core.geckoSitePermissionsStorage,
-                    cookieBannersStorage = components.core.cookieBannersStorage,
-                    trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
-                    useCases = components.useCases,
-                    nimbusComponents = components.nimbus,
-                    clipboard = components.clipboardHandler,
-                    publicSuffixList = components.publicSuffixList,
-                    settings = settings,
-                    bookmarksStorage = components.core.bookmarksStorage,
-                ),
-            ),
-        )
-    }
-
-    override val layout: ScrollableToolbarComposeView =
-        ScrollableToolbarComposeView(context, this) {
-            DisposableEffect(browserStore, customTabSession) {
-                val toolbarController = ToolbarBehaviorController(
-                    toolbar = this@BrowserNavigationBar,
-                    store = browserStore,
-                    customTabId = customTabSession?.id,
-                )
-                toolbarController.start()
-                onDispose { toolbarController.stop() }
-            }
-
-            DefaultNavigationBarContent(showDivider = true)
-        }.apply {
-            container.addView(
-                this,
-                LayoutParams(
-                    LayoutParams.MATCH_PARENT,
-                    LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    gravity = Gravity.BOTTOM
-                },
-            )
-
-            post { setToolbarBehavior(ToolbarPosition.BOTTOM) }
-        }
 
     /**
      * Returns a [Composable] function that renders the default navigation bar content and ensures
@@ -126,20 +65,60 @@ class BrowserNavigationBar(
             }
         }
 
-        DefaultNavigationBarContent(showDivider = false)
+        DefaultNavigationBarContent()
+    }
+
+    internal fun gone() {
+        layout.isVisible = false
+    }
+
+    internal fun visible() {
+        layout.isVisible = true
     }
 
     @Composable
-    private fun DefaultNavigationBarContent(showDivider: Boolean) {
-        val uiState by store.observeAsState(initialValue = store.state) { it }
+    private fun DefaultNavigationBarContent() {
+        val uiState by toolbarStore.stateFlow.collectAsState()
+        val toolbarGravity = remember(settings) {
+            when (settings.shouldUseBottomToolbar) {
+                true -> Bottom
+                false -> Top
+            }
+        }
+        val isKeyboardVisible = if (hideWhenKeyboardShown) {
+            val keyboardState by keyboardAsState()
+            keyboardState == KeyboardState.Opened
+        } else {
+            false
+        }
 
-        if (uiState.displayState.navigationActions.isNotEmpty()) {
+        if (uiState.displayState.navigationActions.isNotEmpty() && !isKeyboardVisible) {
             FirefoxTheme {
                 NavigationBar(
                     actions = uiState.displayState.navigationActions,
-                    shouldShowDivider = showDivider,
-                    onInteraction = { store.dispatch(it) },
+                    toolbarGravity = toolbarGravity,
+                    onInteraction = { toolbarStore.dispatch(it) },
                 )
+            }
+        }
+    }
+
+    private fun addToParent(view: ComposeView) {
+        container.addView(
+            view,
+            LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = Gravity.BOTTOM
+            },
+        )
+    }
+
+    private fun setNavbarDynamicBehavior(view: ComposeView) {
+        if (!settings.shouldUseBottomToolbar && settings.isDynamicToolbarEnabled) {
+            (view.layoutParams as LayoutParams).apply {
+                behavior = NavbarToolbarSyncBehavior(context)
             }
         }
     }

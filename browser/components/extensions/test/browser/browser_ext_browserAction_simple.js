@@ -93,12 +93,6 @@ async function testAction(manifest_version) {
   await waitForConsole;
 }
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-});
-
 add_task(async function test_browserAction() {
   await testAction(2);
 });

@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-json-parse-with-source) skip-if(!JSON.hasOwnProperty('isRawJSON')||!xulRuntime.shell) -- json-parse-with-source is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Igalia S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

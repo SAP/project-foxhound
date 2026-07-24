@@ -17,7 +17,7 @@ const {
  * The nsIConsoleService listener. This is used to send all of the console
  * messages (JavaScript, CSS and more) to the remote Web Console instance.
  *
- * @constructor
+ * @class
  * @param nsIDOMWindow [window]
  *        Optional - the window object for which we are created. This is used
  *        for filtering out messages that belong to other windows.
@@ -40,12 +40,14 @@ class ConsoleServiceListener {
 
   /**
    * The content window for which we listen to page errors.
+   *
    * @type nsIDOMWindow
    */
   window = null;
 
   /**
    * The function which is notified of messages from the console service.
+   *
    * @type function
    */
   handler = null;

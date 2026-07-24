@@ -7,7 +7,7 @@ package org.mozilla.focus.settings.advanced
 import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.preference.Preference
-import androidx.preference.SwitchPreferenceCompat
+import androidx.preference.SwitchPreference
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.components
 import org.mozilla.focus.ext.getPreferenceKey
@@ -22,22 +22,27 @@ class SecretSettingsFragment :
     BaseSettingsFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {
 
-    override fun onStart() {
-        super.onStart()
+    override fun onResume() {
+        super.onResume()
         showToolbar(getString(R.string.preference_secret_settings))
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         addPreferencesFromResource(R.xml.secret_settings)
 
-        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_remote_server_prod).apply {
+        requirePreference<SwitchPreference>(R.string.pref_key_remote_server_prod).apply {
             isVisible = true
             isChecked = context.settings.useProductionRemoteSettingsServer
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
-        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_use_remote_search_configuration).apply {
+        requirePreference<SwitchPreference>(R.string.pref_key_use_remote_search_configuration).apply {
             isVisible = true
             isChecked = context.settings.useRemoteSearchConfiguration
             onPreferenceChangeListener = object : SharedPreferenceUpdater() {
@@ -54,7 +59,11 @@ class SecretSettingsFragment :
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
-        findPreference<SwitchPreferenceCompat>(
+        if (!isAdded) {
+            return
+        }
+
+        findPreference<SwitchPreference>(
             getPreferenceKey(R.string.pref_key_use_nimbus_preview),
         )?.let { nimbusPreviewPref ->
             if (key == nimbusPreviewPref.key) {

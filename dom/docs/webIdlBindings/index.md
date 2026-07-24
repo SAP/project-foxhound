@@ -824,7 +824,7 @@ is the responsibility of the caller.
 
 For example, this Web IDL:
 
-``` webidl
+``` text
 dictionary Dict {
   long foo = 5;
   DOMString bar;
@@ -1065,7 +1065,7 @@ of the struct is the concatenation of the names of the types in the
 union, with "Or" inserted between them, and for an owning struct
 "Owning" prepended. So for example, this IDL:
 
-``` webidl
+``` text
 undefined passUnion((object or long) arg);
 (object or long) receiveUnion();
 undefined passSequenceOfUnions(sequence<(object or long)> arg);
@@ -1842,7 +1842,7 @@ the first time the object is constructed, or any static method on the
 object is invoked.
 
 The complete list of valid deprecation tags is maintained in
-[nsDeprecatedOperationList.h](https://searchfox.org/mozilla-central/source/dom/base/nsDeprecatedOperationList.h).
+[nsDeprecatedOperationList.inc](https://searchfox.org/mozilla-central/source/dom/base/nsDeprecatedOperationList.h).
 Each new tag requires that a localized string be defined, containing the
 deprecation message to display.
 

@@ -81,12 +81,8 @@ WindowsMediaFoundationCDMOriginsListService.prototype = {
     }
 
     this._rs = lazy.RemoteSettings(COLLECTION_NAME);
-    this._rs.on("sync", async event => {
-      let {
-        data: { current },
-      } = event;
-      this._onUpdateEntries(current || []);
-    });
+    this._rsListener = this._onRemoteSettingSync.bind(this);
+    this._rs.on("sync", this._rsListener);
 
     let entries;
     try {
@@ -97,6 +93,13 @@ WindowsMediaFoundationCDMOriginsListService.prototype = {
 
     this._onUpdateEntries(entries || []);
     this._entriesReady = true;
+  },
+
+  _onRemoteSettingSync(event) {
+    let {
+      data: { current },
+    } = event;
+    this._onUpdateEntries(current || []);
   },
 
   _onUpdateEntries(aEntries) {
@@ -133,8 +136,9 @@ WindowsMediaFoundationCDMOriginsListService.prototype = {
       this._callbacks = null;
       this._originsList = null;
       if (this._rs) {
-        this._rs.off("sync");
+        this._rs.off("sync", this._rsListener);
         this._rs = null;
+        this._rsListener = null;
       }
     }
   },

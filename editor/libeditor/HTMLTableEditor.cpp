@@ -381,7 +381,8 @@ HTMLEditor::InsertTableCellsWithTransaction(
   MOZ_ASSERT(aPointToInsert.IsSetAndValid());
   MOZ_ASSERT(aNumberOfCellsToInsert > 0);
 
-  if (!HTMLEditUtils::IsTableRow(aPointToInsert.GetContainer())) {
+  if (!HTMLEditUtils::IsTableRowElement(
+          aPointToInsert.GetContainerAs<nsIContent>())) {
     NS_WARNING("Tried to insert cell elements to non-<tr> element");
     return Err(NS_ERROR_FAILURE);
   }
@@ -663,8 +664,9 @@ nsresult HTMLEditor::InsertTableColumnsWithTransaction(
     return NS_ERROR_FAILURE;
   }
 
-  if (!HTMLEditUtils::IsTableRow(aPointToInsert.GetContainer())) {
-    NS_WARNING("Tried to insert columns to non-<tr> element");
+  if (NS_WARN_IF(!aPointToInsert.IsInContentNode()) ||
+      NS_WARN_IF(!HTMLEditUtils::IsTableRowElement(
+          *aPointToInsert.ContainerAs<nsIContent>()))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -690,8 +692,7 @@ nsresult HTMLEditor::InsertTableColumnsWithTransaction(
   // the caller wants to insert column immediately after the last cell of
   // the pointing cell element or in the raw.
   const bool insertAfterPreviousCell = [&]() {
-    if (!aPointToInsert.IsEndOfContainer() &&
-        HTMLEditUtils::IsTableCell(aPointToInsert.GetChild())) {
+    if (HTMLEditUtils::IsTableCellElement(aPointToInsert.GetChild())) {
       return false;  // Insert before the cell element.
     }
     // There is a previous cell element, we should add a column after it.
@@ -714,7 +715,7 @@ nsresult HTMLEditor::InsertTableColumnsWithTransaction(
       // Insert columns immediately before current column.
       const OwningNonNull<Element> tableCellElement =
           *aPointToInsert.GetChild()->AsElement();
-      MOZ_ASSERT(HTMLEditUtils::IsTableCell(tableCellElement));
+      MOZ_ASSERT(HTMLEditUtils::IsTableCellElement(*tableCellElement));
       CellIndexes cellIndexes(*tableCellElement, presShell);
       if (NS_WARN_IF(cellIndexes.isErr())) {
         return Err(NS_ERROR_FAILURE);
@@ -857,7 +858,7 @@ nsresult HTMLEditor::InsertTableColumnsWithTransaction(
         cellElementToPutCaret =
             unwrappedInsertCellElementsResult.UnwrapNewNode();
         MOZ_ASSERT(cellElementToPutCaret);
-        MOZ_ASSERT(HTMLEditUtils::IsTableCell(cellElementToPutCaret));
+        MOZ_ASSERT(HTMLEditUtils::IsTableCellElement(*cellElementToPutCaret));
       }
     }
     return cellElementToPutCaret;
@@ -927,7 +928,7 @@ nsresult HTMLEditor::InsertTableRowsWithTransaction(
     Element& aCellElement, int32_t aNumberOfRowsToInsert,
     InsertPosition aInsertPosition) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(HTMLEditUtils::IsTableCell(&aCellElement));
+  MOZ_ASSERT(HTMLEditUtils::IsTableCellElement(aCellElement));
 
   const RefPtr<PresShell> presShell = GetPresShell();
   if (MOZ_UNLIKELY(NS_WARN_IF(!presShell))) {
@@ -935,7 +936,7 @@ nsresult HTMLEditor::InsertTableRowsWithTransaction(
   }
 
   if (MOZ_UNLIKELY(
-          !HTMLEditUtils::IsTableRow(aCellElement.GetParentElement()))) {
+          !HTMLEditUtils::IsTableRowElement(aCellElement.GetParentElement()))) {
     NS_WARNING("Tried to insert columns to non-<tr> element");
     return NS_ERROR_FAILURE;
   }
@@ -1050,7 +1051,7 @@ nsresult HTMLEditor::InsertTableRowsWithTransaction(
         if (!referenceRowElement) {
           if (Element* maybeTableRowElement =
                   cellDataInStartRow.mElement->GetParentElement()) {
-            if (HTMLEditUtils::IsTableRow(maybeTableRowElement)) {
+            if (HTMLEditUtils::IsTableRowElement(*maybeTableRowElement)) {
               referenceRowElement = maybeTableRowElement;
             }
           }
@@ -1108,8 +1109,9 @@ nsresult HTMLEditor::InsertTableRowsWithTransaction(
   }
 
   MOZ_ASSERT_IF(referenceRowData.mElement,
-                HTMLEditUtils::IsTableRow(referenceRowData.mElement));
-  if (NS_WARN_IF(!HTMLEditUtils::IsTableRow(aCellElement.GetParentElement()))) {
+                HTMLEditUtils::IsTableRowElement(*referenceRowData.mElement));
+  if (NS_WARN_IF(
+          !HTMLEditUtils::IsTableRowElement(aCellElement.GetParentElement()))) {
     return NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE;
   }
 
@@ -1217,8 +1219,7 @@ nsresult HTMLEditor::InsertTableRowsWithTransaction(
       EditorRawDOMPoint point(firstInsertedTRElementOrError.inspect(),
                               referenceRowData.mOffsetInTRElementToPutCaret);
       if (MOZ_LIKELY(point.IsSetAndValid()) &&
-          MOZ_LIKELY(!point.IsEndOfContainer()) &&
-          MOZ_LIKELY(HTMLEditUtils::IsTableCell(point.GetChild()))) {
+          MOZ_LIKELY(HTMLEditUtils::IsTableCellElement(point.GetChild()))) {
         return OwningNonNull<Element>(*point.GetChild()->AsElement());
       }
     }
@@ -4137,14 +4138,16 @@ nsresult HTMLEditor::GetCellContext(Element** aTable, Element** aCell,
     if (!cellOrRowOrTableElementOrError.inspect()) {
       return NS_SUCCESS_EDITOR_ELEMENT_NOT_FOUND;
     }
-    if (HTMLEditUtils::IsTable(cellOrRowOrTableElementOrError.inspect())) {
+    if (cellOrRowOrTableElementOrError.inspect()->IsHTMLElement(
+            nsGkAtoms::table)) {
       // We have a selected table, not a cell
       if (aTable) {
         cellOrRowOrTableElementOrError.unwrap().forget(aTable);
       }
       return NS_OK;
     }
-    if (!HTMLEditUtils::IsTableCell(cellOrRowOrTableElementOrError.inspect())) {
+    if (!HTMLEditUtils::IsTableCellElement(
+            cellOrRowOrTableElementOrError.inspect())) {
       return NS_SUCCESS_EDITOR_ELEMENT_NOT_FOUND;
     }
 
@@ -4392,21 +4395,21 @@ NS_IMETHODIMP HTMLEditor::GetSelectedOrParentTableElement(
     return NS_OK;
   }
 
-  if (HTMLEditUtils::IsTableCell(cellOrRowOrTableElement)) {
+  if (HTMLEditUtils::IsTableCellElement(*cellOrRowOrTableElement)) {
     aTagName.AssignLiteral("td");
     // Keep *aSelectedCount as 0.
     cellOrRowOrTableElement.forget(aCellOrRowOrTableElement);
     return NS_OK;
   }
 
-  if (HTMLEditUtils::IsTable(cellOrRowOrTableElement)) {
+  if (cellOrRowOrTableElement->IsHTMLElement(nsGkAtoms::table)) {
     aTagName.AssignLiteral("table");
     *aSelectedCount = 1;
     cellOrRowOrTableElement.forget(aCellOrRowOrTableElement);
     return NS_OK;
   }
 
-  if (HTMLEditUtils::IsTableRow(cellOrRowOrTableElement)) {
+  if (HTMLEditUtils::IsTableRowElement(*cellOrRowOrTableElement)) {
     aTagName.AssignLiteral("tr");
     *aSelectedCount = 1;
     cellOrRowOrTableElement.forget(aCellOrRowOrTableElement);
@@ -4496,11 +4499,11 @@ HTMLEditor::GetFirstSelectedCellElementInTable() const {
   }
 
   const RefPtr<Element>& element = cellOrRowOrTableElementOrError.inspect();
-  if (!HTMLEditUtils::IsTableCell(element)) {
+  if (!HTMLEditUtils::IsTableCellElement(*element)) {
     return RefPtr<Element>();
   }
 
-  if (!HTMLEditUtils::IsTableRow(element->GetParentNode())) {
+  if (!HTMLEditUtils::IsTableRowElement(element->GetParent())) {
     NS_WARNING("There was no parent <tr> element for the found cell");
     return RefPtr<Element>();
   }

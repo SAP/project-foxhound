@@ -61,7 +61,7 @@ def patch_vcs(monkeypatch):
 
 @pytest.fixture(scope="session")
 def run_mach():
-    mach = mach_initialize.initialize(tasks.build.topsrcdir)
+    mach = mach_initialize.initialize(tasks.build.topsrcdir, ["try"])
 
     def inner(args):
         return mach.run(args)

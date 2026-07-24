@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_ProcInfo_linux_h
-#define __mozilla_ProcInfo_linux_h
+#ifndef _mozilla_ProcInfo_linux_h
+#define _mozilla_ProcInfo_linux_h
 
 // The following is directly inspired from kernel:
 // https://github.com/torvalds/linux/blob/v5.16/include/linux/posix-timers.h#L29-L48

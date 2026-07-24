@@ -80,7 +80,7 @@ interface nsIServiceWorkerInfo : nsISupports
   // milliseconds since the (parent) process was created or 0 if there is no
   // current deadline.  This is primarily intended to allow tests to compare
   // consistent values, not be useful in general.  But note that
-  // `Components.utils.now()` operates in the same units (milliseconds since
+  // `ChromeUtils.now()` operates in the same units (milliseconds since
   // current process startup), and so can be used to hackily translate to wall
   // clock time.
   readonly attribute double lifetimeDeadline;

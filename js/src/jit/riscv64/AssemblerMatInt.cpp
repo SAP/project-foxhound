@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/Maybe.h"
 
 #include "gc/Marking.h"
 #include "jit/AutoWritableJitCode.h"

@@ -8,8 +8,8 @@
 #define WaveShaperNode_h_
 
 #include "AudioNode.h"
-#include "mozilla/dom/WaveShaperNodeBinding.h"
 #include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/WaveShaperNodeBinding.h"
 
 namespace mozilla::dom {
 

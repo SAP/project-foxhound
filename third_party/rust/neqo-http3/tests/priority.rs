@@ -4,26 +4,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::time::Instant;
-
 use neqo_common::event::Provider as _;
 use neqo_crypto::AuthenticationStatus;
 use neqo_http3::{
     Header, Http3Client, Http3ClientEvent, Http3Server, Http3ServerEvent, Http3State, Priority,
 };
 use test_fixture::*;
-
-fn exchange_packets(client: &mut Http3Client, server: &mut Http3Server) {
-    let mut out = None;
-    loop {
-        out = client.process(out, now()).dgram();
-        let client_done = out.is_none();
-        out = server.process(out, now()).dgram();
-        if out.is_none() && client_done {
-            break;
-        }
-    }
-}
 
 // Perform only QUIC transport handshake.
 fn connect_with(client: &mut Http3Client, server: &mut Http3Server) {
@@ -69,14 +55,14 @@ fn priority_update() {
     let (mut client, mut server) = connect();
     let stream_id = client
         .fetch(
-            Instant::now(),
+            now(),
             "GET",
-            &("https", "something.com", "/"),
+            ("https", "something.com", "/"),
             &[Header::new("priority", "u=4,i")],
             Priority::new(4, true),
         )
         .unwrap();
-    exchange_packets(&mut client, &mut server);
+    exchange_packets(&mut client, &mut server, false, None);
 
     // get event of the above request, skipping events of the connection setup
     let header_event = loop {
@@ -103,7 +89,7 @@ fn priority_update() {
 
     let update_priority = Priority::new(3, false);
     client.priority_update(stream_id, update_priority).unwrap();
-    exchange_packets(&mut client, &mut server);
+    exchange_packets(&mut client, &mut server, false, None);
 
     let found = server.events().any(|e| {
         if let Http3ServerEvent::PriorityUpdate {
@@ -126,19 +112,19 @@ fn priority_update_dont_send_for_cancelled_stream() {
     let (mut client, mut server) = connect();
     let stream_id = client
         .fetch(
-            Instant::now(),
+            now(),
             "GET",
-            &("https", "something.com", "/"),
+            ("https", "something.com", "/"),
             &[Header::new("priority", "u=5")],
             Priority::new(5, false),
         )
         .unwrap();
-    exchange_packets(&mut client, &mut server);
+    exchange_packets(&mut client, &mut server, false, None);
 
     let update_priority = Priority::new(6, false);
     client.priority_update(stream_id, update_priority).unwrap();
     client.cancel_fetch(stream_id, 11).unwrap();
-    exchange_packets(&mut client, &mut server);
+    exchange_packets(&mut client, &mut server, false, None);
 
     while let Some(event) = server.next_event() {
         if matches!(event, Http3ServerEvent::PriorityUpdate { .. }) {

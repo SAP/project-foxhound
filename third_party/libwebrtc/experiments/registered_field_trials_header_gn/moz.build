@@ -26,6 +26,7 @@ GeneratedFile(
 )
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "/ipc/chromium/src",
     "/tools/profiler/public"

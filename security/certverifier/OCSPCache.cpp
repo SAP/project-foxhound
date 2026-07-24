@@ -24,8 +24,6 @@
 
 #include "OCSPCache.h"
 
-#include <limits>
-
 #include "NSSCertDBTrustDomain.h"
 #include "pk11pub.h"
 #include "mozilla/Logging.h"

@@ -4,16 +4,55 @@ support-files = [
 ]
 
 prefs = [
-  "browser.ipProtection.enabled=true",
+  "browser.ipProtection.log=true",
+  "browser.ipProtection.features.siteExceptions=true",
+  "dom.security.https_first=false",
+  "browser.ipProtection.bandwidth.enabled=true",
 ]
+
+["browser_IPPChannelFilter.js"]
+
+["browser_IPPProxyManager.js"]
+
+["browser_IPProtectionService.js"]
+
+["browser_guardian_client.js"]
+
+["browser_ipprotection_alert_manager.js"]
+
+["browser_ipprotection_bandwidth_precision.js"]
+
+["browser_ipprotection_confirmation_hints_site_exclusion.js"]
 
 ["browser_ipprotection_content.js"]
 
-["browser_ipprotection_content_signedout.js"]
+["browser_ipprotection_content_site_exclusion.js"]
+
+["browser_ipprotection_content_unauthenticated.js"]
 
 ["browser_ipprotection_header.js"]
 
+["browser_ipprotection_infobar.js"]
+
+["browser_ipprotection_keyboard_navigation.js"]
+
+["browser_ipprotection_message_bar.js"]
+
+["browser_ipprotection_network_error.js"]
+
+["browser_ipprotection_optout.js"]
+
 ["browser_ipprotection_panel.js"]
 
+["browser_ipprotection_proxy_errors.js"]
+
+["browser_ipprotection_status_box.js"]
+
+["browser_ipprotection_status_card.js"]
+
+["browser_ipprotection_telemetry.js"]
+
 ["browser_ipprotection_toolbar.js"]
-skip-if = ["devedition"]
+skip-if = [
+  "devedition",
+]

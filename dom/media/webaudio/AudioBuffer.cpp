@@ -5,21 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioBuffer.h"
-#include "mozilla/dom/AudioBufferBinding.h"
-#include "jsfriendapi.h"
+
+#include <numeric>
+
+#include "AudioChannelFormat.h"
+#include "AudioNodeEngine.h"
+#include "AudioSegment.h"
 #include "js/ArrayBuffer.h"             // JS::StealArrayBufferContents
 #include "js/experimental/TypedData.h"  // JS_NewFloat32Array, JS_GetFloat32ArrayData, JS_GetTypedArrayLength, JS_GetArrayBufferViewBuffer
+#include "jsfriendapi.h"
 #include "mozilla/ErrorResult.h"
-#include "AudioSegment.h"
-#include "AudioChannelFormat.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/MemoryReporting.h"
-#include "AudioNodeEngine.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/dom/AudioBufferBinding.h"
 #include "nsPrintfCString.h"
 #include "nsTHashSet.h"
-#include <numeric>
 
 namespace mozilla::dom {
 

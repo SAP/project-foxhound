@@ -4,15 +4,14 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
-import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.webextension.WebExtensionBrowserAction
 import mozilla.components.concept.engine.webextension.WebExtensionPageAction
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,41 +25,41 @@ class WebExtensionActionTest {
 
     @Test
     fun `InstallWebExtension - Adds an extension to the BrowserState extensions`() {
-        val store = BrowserStore()
+        var state = BrowserState()
 
-        assertTrue(store.state.extensions.isEmpty())
+        assertTrue(state.extensions.isEmpty())
 
         val extension = WebExtensionState("id", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
 
-        assertFalse(store.state.extensions.isEmpty())
-        assertEquals(extension, store.state.extensions.values.first())
+        assertFalse(state.extensions.isEmpty())
+        assertEquals(extension, state.extensions.values.first())
 
         // Installing the same extension twice should have no effect
-        val state = store.state
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
-        assertSame(state, store.state)
+        val oldState = state
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
+        assertEquals(oldState, state)
     }
 
     @Test
     fun `InstallWebExtension - Keeps existing browser and page actions`() {
-        val store = BrowserStore()
-        assertTrue(store.state.extensions.isEmpty())
+        var state = BrowserState()
+        assertTrue(state.extensions.isEmpty())
 
         val extension = WebExtensionState("id", "url", "name")
         val mockedBrowserAction = mock<WebExtensionBrowserAction>()
         val mockedPageAction = mock<WebExtensionPageAction>()
-        store.dispatch(WebExtensionAction.UpdateBrowserAction(extension.id, mockedBrowserAction)).joinBlocking()
-        store.dispatch(WebExtensionAction.UpdatePageAction(extension.id, mockedPageAction)).joinBlocking()
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateBrowserAction(extension.id, mockedBrowserAction))
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePageAction(extension.id, mockedPageAction))
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
 
-        assertFalse(store.state.extensions.isEmpty())
+        assertFalse(state.extensions.isEmpty())
         assertEquals(
             extension.copy(
                 browserAction = mockedBrowserAction,
                 pageAction = mockedPageAction,
             ),
-            store.state.extensions.values.first(),
+            state.extensions.values.first(),
         )
     }
 
@@ -68,97 +67,87 @@ class WebExtensionActionTest {
     fun `UninstallWebExtension - Removes all state of the uninstalled extension`() {
         val tab1 = createTab("url")
         val tab2 = createTab("url")
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab1, tab2),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab1, tab2),
         )
 
-        assertTrue(store.state.extensions.isEmpty())
+        assertTrue(state.extensions.isEmpty())
 
         val extension1 = WebExtensionState("id1", "url")
         val extension2 = WebExtensionState("i2", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension1)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension1))
 
-        assertFalse(store.state.extensions.isEmpty())
-        assertEquals(extension1, store.state.extensions.values.first())
+        assertFalse(state.extensions.isEmpty())
+        assertEquals(extension1, state.extensions.values.first())
 
         val mockedBrowserAction = mock<WebExtensionBrowserAction>()
-        store.dispatch(WebExtensionAction.UpdateBrowserAction(extension1.id, mockedBrowserAction)).joinBlocking()
-        assertEquals(mockedBrowserAction, store.state.extensions.values.first().browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateBrowserAction(extension1.id, mockedBrowserAction))
+        assertEquals(mockedBrowserAction, state.extensions.values.first().browserAction)
 
-        store.dispatch(WebExtensionAction.UpdateTabBrowserAction(tab1.id, extension1.id, mockedBrowserAction))
-            .joinBlocking()
-        val extensionsTab1 = store.state.tabs.first().extensionState
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateTabBrowserAction(tab1.id, extension1.id, mockedBrowserAction))
+        val extensionsTab1 = state.tabs.first().extensionState
         assertEquals(mockedBrowserAction, extensionsTab1.values.first().browserAction)
 
-        store.dispatch(WebExtensionAction.UpdateTabBrowserAction(tab2.id, extension2.id, mockedBrowserAction))
-            .joinBlocking()
-        val extensionsTab2 = store.state.tabs.last().extensionState
-        assertEquals(mockedBrowserAction, extensionsTab2.values.last().browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateTabBrowserAction(tab2.id, extension2.id, mockedBrowserAction))
 
-        store.dispatch(WebExtensionAction.UninstallWebExtensionAction(extension1.id)).joinBlocking()
-        assertTrue(store.state.extensions.isEmpty())
-        assertTrue(store.state.tabs.first().extensionState.isEmpty())
-        assertFalse(store.state.tabs.last().extensionState.isEmpty())
-        assertEquals(mockedBrowserAction, extensionsTab2.values.last().browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UninstallWebExtensionAction(extension1.id))
+        assertTrue(state.extensions.isEmpty())
+        assertTrue(state.tabs.first().extensionState.isEmpty())
+        assertFalse(state.tabs.last().extensionState.isEmpty())
+        assertEquals(mockedBrowserAction, state.tabs.last().extensionState.values.last().browserAction)
     }
 
     @Test
     fun `UninstallAllWebExtensions - Removes all state of all extensions`() {
         val tab1 = createTab("url")
         val tab2 = createTab("url")
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab1, tab2),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab1, tab2),
         )
-        assertTrue(store.state.extensions.isEmpty())
+        assertTrue(state.extensions.isEmpty())
 
         val extension1 = WebExtensionState("id1", "url")
         val extension2 = WebExtensionState("i2", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension1)).joinBlocking()
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension2)).joinBlocking()
-        assertEquals(2, store.state.extensions.size)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension1))
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension2))
+        assertEquals(2, state.extensions.size)
 
         val mockedBrowserAction = mock<WebExtensionBrowserAction>()
-        store.dispatch(WebExtensionAction.UpdateBrowserAction(extension1.id, mockedBrowserAction)).joinBlocking()
-        assertEquals(mockedBrowserAction, store.state.extensions["id1"]?.browserAction)
-        store.dispatch(WebExtensionAction.UpdateTabBrowserAction(tab1.id, extension1.id, mockedBrowserAction)).joinBlocking()
-        store.dispatch(WebExtensionAction.UpdateTabBrowserAction(tab2.id, extension2.id, mockedBrowserAction)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateBrowserAction(extension1.id, mockedBrowserAction))
+        assertEquals(mockedBrowserAction, state.extensions["id1"]?.browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateTabBrowserAction(tab1.id, extension1.id, mockedBrowserAction))
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateTabBrowserAction(tab2.id, extension2.id, mockedBrowserAction))
 
-        store.dispatch(WebExtensionAction.UninstallAllWebExtensionsAction).joinBlocking()
-        assertTrue(store.state.extensions.isEmpty())
-        assertTrue(store.state.tabs.first().extensionState.isEmpty())
-        assertTrue(store.state.tabs.last().extensionState.isEmpty())
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UninstallAllWebExtensionsAction)
+        assertTrue(state.extensions.isEmpty())
+        assertTrue(state.tabs.first().extensionState.isEmpty())
+        assertTrue(state.tabs.last().extensionState.isEmpty())
     }
 
     @Test
     fun `UpdateBrowserAction - Updates a global browser action of an existing WebExtensionState on the BrowserState`() {
-        val store = BrowserStore()
+        var state = BrowserState()
         val mockedBrowserAction = mock<WebExtensionBrowserAction>()
         val mockedBrowserAction2 = mock<WebExtensionBrowserAction>()
 
-        assertTrue(store.state.extensions.isEmpty())
-        store.dispatch(WebExtensionAction.UpdateBrowserAction("id", mockedBrowserAction)).joinBlocking()
-        assertEquals(mockedBrowserAction, store.state.extensions.values.first().browserAction)
+        assertTrue(state.extensions.isEmpty())
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateBrowserAction("id", mockedBrowserAction))
+        assertEquals(mockedBrowserAction, state.extensions.values.first().browserAction)
 
         val extension = WebExtensionState("id", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
-        assertFalse(store.state.extensions.isEmpty())
-        assertEquals(mockedBrowserAction, store.state.extensions.values.first().browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
+        assertFalse(state.extensions.isEmpty())
+        assertEquals(mockedBrowserAction, state.extensions.values.first().browserAction)
 
-        store.dispatch(WebExtensionAction.UpdateBrowserAction("id", mockedBrowserAction2)).joinBlocking()
-        assertEquals(mockedBrowserAction2, store.state.extensions.values.first().browserAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateBrowserAction("id", mockedBrowserAction2))
+        assertEquals(mockedBrowserAction2, state.extensions.values.first().browserAction)
     }
 
     @Test
     fun `UpdateTabBrowserAction - Updates the browser action of an existing WebExtensionState on a given tab`() {
         val tab = createTab("url")
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab),
         )
         val mockedBrowserAction = mock<WebExtensionBrowserAction>()
 
@@ -166,15 +155,16 @@ class WebExtensionActionTest {
 
         val extension = WebExtensionState("id", "url")
 
-        store.dispatch(
+        state = BrowserStateReducer.reduce(
+            state,
             WebExtensionAction.UpdateTabBrowserAction(
                 tab.id,
                 extension.id,
                 mockedBrowserAction,
             ),
-        ).joinBlocking()
+        )
 
-        val extensions = store.state.tabs.first().extensionState
+        val extensions = state.tabs.first().extensionState
 
         assertEquals(mockedBrowserAction, extensions.values.first().browserAction)
     }
@@ -196,51 +186,48 @@ class WebExtensionActionTest {
                 ),
             ),
         )
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab),
         )
 
-        store.dispatch(
+        state = BrowserStateReducer.reduce(
+            state,
             WebExtensionAction.UpdateTabBrowserAction(
                 tab.id,
                 "extensionId",
                 mockedBrowserAction2,
             ),
-        ).joinBlocking()
+        )
 
-        val extensions = store.state.tabs.first().extensionState
+        val extensions = state.tabs.first().extensionState
 
         assertEquals(mockedBrowserAction2, extensions.values.first().browserAction)
     }
 
     @Test
     fun `UpdatePageAction - Updates a global page action of an existing WebExtensionState on the BrowserState`() {
-        val store = BrowserStore()
+        var state = BrowserState()
         val mockedPageAction = mock<WebExtensionPageAction>()
         val mockedPageAction2 = mock<WebExtensionPageAction>()
 
-        assertTrue(store.state.extensions.isEmpty())
-        store.dispatch(WebExtensionAction.UpdatePageAction("id", mockedPageAction)).joinBlocking()
-        assertEquals(mockedPageAction, store.state.extensions.values.first().pageAction)
+        assertTrue(state.extensions.isEmpty())
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePageAction("id", mockedPageAction))
+        assertEquals(mockedPageAction, state.extensions.values.first().pageAction)
 
         val extension = WebExtensionState("id", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
-        assertFalse(store.state.extensions.isEmpty())
-        assertEquals(mockedPageAction, store.state.extensions.values.first().pageAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
+        assertFalse(state.extensions.isEmpty())
+        assertEquals(mockedPageAction, state.extensions.values.first().pageAction)
 
-        store.dispatch(WebExtensionAction.UpdatePageAction("id", mockedPageAction2)).joinBlocking()
-        assertEquals(mockedPageAction2, store.state.extensions.values.first().pageAction)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePageAction("id", mockedPageAction2))
+        assertEquals(mockedPageAction2, state.extensions.values.first().pageAction)
     }
 
     @Test
     fun `UpdateTabPageAction - Updates the page action of an existing WebExtensionState on a given tab`() {
         val tab = createTab("url")
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab),
         )
         val mockedPageAction = mock<WebExtensionPageAction>()
 
@@ -248,15 +235,16 @@ class WebExtensionActionTest {
 
         val extension = WebExtensionState("id", "url")
 
-        store.dispatch(
+        state = BrowserStateReducer.reduce(
+            state,
             WebExtensionAction.UpdateTabPageAction(
                 tab.id,
                 extension.id,
                 mockedPageAction,
             ),
-        ).joinBlocking()
+        )
 
-        val extensions = store.state.tabs.first().extensionState
+        val extensions = state.tabs.first().extensionState
 
         assertEquals(mockedPageAction, extensions.values.first().pageAction)
     }
@@ -278,63 +266,62 @@ class WebExtensionActionTest {
                 ),
             ),
         )
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab),
         )
 
-        store.dispatch(
+        state = BrowserStateReducer.reduce(
+            state,
             WebExtensionAction.UpdateTabPageAction(
                 tab.id,
                 "extensionId",
                 mockedPageAction2,
             ),
-        ).joinBlocking()
+        )
 
-        val extensions = store.state.tabs.first().extensionState
+        val extensions = state.tabs.first().extensionState
 
         assertEquals(mockedPageAction2, extensions.values.first().pageAction)
     }
 
     @Test
     fun `UpdatePopupSessionAction - Adds popup session to the web extension state`() {
-        val store = BrowserStore()
+        var state = BrowserState()
 
         val extension = WebExtensionState("id", "url")
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
 
-        assertEquals(extension, store.state.extensions[extension.id])
-        assertNull(store.state.extensions[extension.id]?.popupSessionId)
-        assertNull(store.state.extensions[extension.id]?.popupSession)
+        assertEquals(extension, state.extensions[extension.id])
+        assertNull(state.extensions[extension.id]?.popupSessionId)
+        assertNull(state.extensions[extension.id]?.popupSession)
 
         val engineSession: EngineSession = mock()
-        store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, popupSession = engineSession)).joinBlocking()
-        assertEquals(engineSession, store.state.extensions[extension.id]?.popupSession)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePopupSessionAction(extension.id, popupSession = engineSession))
+        assertEquals(engineSession, state.extensions[extension.id]?.popupSession)
 
-        store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, popupSession = null)).joinBlocking()
-        assertNull(store.state.extensions[extension.id]?.popupSession)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePopupSessionAction(extension.id, popupSession = null))
+        assertNull(state.extensions[extension.id]?.popupSession)
 
-        store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, "popupId")).joinBlocking()
-        assertEquals("popupId", store.state.extensions[extension.id]?.popupSessionId)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePopupSessionAction(extension.id, "popupId"))
+        assertEquals("popupId", state.extensions[extension.id]?.popupSessionId)
 
-        store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, null)).joinBlocking()
-        assertNull(store.state.extensions[extension.id]?.popupSessionId)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePopupSessionAction(extension.id, null))
+        assertNull(state.extensions[extension.id]?.popupSessionId)
     }
 
     @Test
     fun `UpdateWebExtensionEnabledAction - Updates enabled state of an existing web extension`() {
-        val store = BrowserStore()
+        var state = BrowserState()
         val extension = WebExtensionState("id", "url")
 
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
-        assertTrue(store.state.extensions[extension.id]?.enabled!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
+        assertTrue(state.extensions[extension.id]?.enabled!!)
 
-        store.dispatch(WebExtensionAction.UpdateWebExtensionEnabledAction(extension.id, false)).joinBlocking()
-        assertFalse(store.state.extensions[extension.id]?.enabled!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateWebExtensionEnabledAction(extension.id, false))
+        assertFalse(state.extensions[extension.id]?.enabled!!)
 
-        store.dispatch(WebExtensionAction.UpdateWebExtensionEnabledAction(extension.id, true)).joinBlocking()
-        assertTrue(store.state.extensions[extension.id]?.enabled!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateWebExtensionEnabledAction(extension.id, true))
+        assertTrue(state.extensions[extension.id]?.enabled!!)
     }
 
     @Test
@@ -342,80 +329,72 @@ class WebExtensionActionTest {
         val existingExtension = WebExtensionState("id", "url")
         val updatedExtension = WebExtensionState("id", "url2")
 
-        val store = BrowserStore(
-            initialState = BrowserState(
-                extensions = mapOf("id" to existingExtension),
-            ),
+        var state = BrowserState(
+            extensions = mapOf("id" to existingExtension),
         )
 
-        store.dispatch(WebExtensionAction.UpdateWebExtensionAction(updatedExtension)).joinBlocking()
-        assertEquals(updatedExtension, store.state.extensions.values.first())
-        assertSame(updatedExtension, store.state.extensions.values.first())
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateWebExtensionAction(updatedExtension))
+        assertEquals(updatedExtension, state.extensions.values.first())
+        assertSame(updatedExtension, state.extensions.values.first())
     }
 
     @Test
     fun `UpdateWebExtensionAllowedInPrivateBrowsingAction - Updates allowedInPrivateBrowsing state of an existing web extension`() {
-        val store = BrowserStore()
+        var state = BrowserState()
         val extension = WebExtensionState("id", "url", allowedInPrivateBrowsing = false)
 
-        store.dispatch(WebExtensionAction.InstallWebExtensionAction(extension)).joinBlocking()
-        assertFalse(store.state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.InstallWebExtensionAction(extension))
+        assertFalse(state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
 
-        store.dispatch(WebExtensionAction.UpdateWebExtensionAllowedInPrivateBrowsingAction(extension.id, true)).joinBlocking()
-        assertTrue(store.state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateWebExtensionAllowedInPrivateBrowsingAction(extension.id, true))
+        assertTrue(state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
 
-        store.dispatch(WebExtensionAction.UpdateWebExtensionAllowedInPrivateBrowsingAction(extension.id, false)).joinBlocking()
-        assertFalse(store.state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateWebExtensionAllowedInPrivateBrowsingAction(extension.id, false))
+        assertFalse(state.extensions[extension.id]?.allowedInPrivateBrowsing!!)
     }
 
     @Test
     fun `UpdateWebExtensionTabAction - Marks tab active for web extensions`() {
         val tab = createTab(url = "https://mozilla.org")
-        val store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab),
         )
 
-        assertNull(store.state.activeWebExtensionTabId)
+        assertNull(state.activeWebExtensionTabId)
 
-        store.dispatch(WebExtensionAction.UpdateActiveWebExtensionTabAction(tab.id)).joinBlocking()
-        assertEquals(tab.id, store.state.activeWebExtensionTabId)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateActiveWebExtensionTabAction(tab.id))
+        assertEquals(tab.id, state.activeWebExtensionTabId)
 
-        store.dispatch(WebExtensionAction.UpdateActiveWebExtensionTabAction(null)).joinBlocking()
-        assertNull(store.state.activeWebExtensionTabId)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdateActiveWebExtensionTabAction(null))
+        assertNull(state.activeWebExtensionTabId)
     }
 
     @Test
     fun `WHEN UpdatePromptRequestWebExtensionAction is dispatched THEN a WebExtensionPromptRequest is added to the store`() {
-        val store = BrowserStore()
+        var state = BrowserState()
 
-        assertNull(store.state.webExtensionPromptRequest)
+        assertNull(state.webExtensionPromptRequest)
 
         val promptRequest =
             WebExtensionPromptRequest.AfterInstallation.Permissions.Required(mock(), mock(), mock(), mock(), mock())
 
-        store.dispatch(WebExtensionAction.UpdatePromptRequestWebExtensionAction(promptRequest))
-            .joinBlocking()
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.UpdatePromptRequestWebExtensionAction(promptRequest))
 
-        assertEquals(promptRequest, store.state.webExtensionPromptRequest)
+        assertNotNull(state.webExtensionPromptRequest)
+        assertEquals(promptRequest, state.webExtensionPromptRequest)
     }
 
     @Test
-    fun `WHEN ConsumePromptRequestWebExtensionAction is dispatched THEN the actual WebExtensionPromptRequest is removed from the store`() {
-        val promptRequest = WebExtensionPromptRequest.AfterInstallation.Permissions.Required(mock(), mock(), mock(), mock(), mock())
+    fun `WHEN ConsumePromptRequestWebExtensionAction is dispatched THEN the WebExtensionPromptRequest is removed from the store`() {
+        val promptRequest =
+            WebExtensionPromptRequest.AfterInstallation.Permissions.Required(mock(), mock(), mock(), mock(), mock())
 
-        val store = BrowserStore(
-            initialState = BrowserState(
-                webExtensionPromptRequest = promptRequest,
-            ),
+        var state = BrowserState(
+            webExtensionPromptRequest = promptRequest,
         )
+        assertNotNull(state.webExtensionPromptRequest)
 
-        assertNotNull(store.state.webExtensionPromptRequest)
-
-        store.dispatch(WebExtensionAction.ConsumePromptRequestWebExtensionAction)
-            .joinBlocking()
-
-        assertNull(store.state.webExtensionPromptRequest)
+        state = BrowserStateReducer.reduce(state, WebExtensionAction.ConsumePromptRequestWebExtensionAction)
+        assertNull(state.webExtensionPromptRequest)
     }
 }

@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_DocAccessibleWrap_h__
-#define mozilla_a11y_DocAccessibleWrap_h__
+#ifndef mozilla_a11y_DocAccessibleWrap_h_
+#define mozilla_a11y_DocAccessibleWrap_h_
 
 #include "DocAccessible.h"
 #include "nsTHashSet.h"
@@ -26,7 +26,7 @@ class DocAccessibleWrap : public DocAccessible {
   virtual void Shutdown() override;
 
   virtual void AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
-                                nsAtom* aAttribute, int32_t aModType,
+                                nsAtom* aAttribute, AttrModType aModType,
                                 const nsAttrValue* aOldValue) override;
 
   void QueueNewLiveRegion(LocalAccessible* aAccessible);

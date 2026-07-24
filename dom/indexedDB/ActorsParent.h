@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_actorsparent_h__
-#define mozilla_dom_indexeddb_actorsparent_h__
+#ifndef mozilla_dom_indexeddb_actorsparent_h_
+#define mozilla_dom_indexeddb_actorsparent_h_
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/PBrowserParent.h"
 #include "nsIPermissionManager.h"
 
 class nsIPrincipal;
@@ -60,4 +60,4 @@ FileHandleThreadPool* GetFileHandleThreadPool();
 }  // namespace indexedDB
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_indexeddb_actorsparent_h__
+#endif  // mozilla_dom_indexeddb_actorsparent_h_

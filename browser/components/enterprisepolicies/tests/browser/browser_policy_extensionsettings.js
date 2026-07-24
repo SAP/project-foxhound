@@ -5,6 +5,9 @@
 const BASE_URL =
   "http://mochi.test:8888/browser/browser/components/enterprisepolicies/tests/browser/";
 
+const AMO_BASE_URL =
+  "https://example.com/browser/browser/components/enterprisepolicies/tests/browser/";
+
 /**
  * Wait for the given PopupNotification to display
  *
@@ -34,14 +37,13 @@ function promisePopupNotificationShown(name) {
 }
 
 add_setup(async function setupTestEnvironment() {
-  // Once InstallTrigger is removed, the tests targeting InstallTrigger should
-  // be removed or adapted to don't use InstallTrigger.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", true],
       // Relax the user input requirements while running this test.
       ["xpinstall.userActivation.required", false],
+      // Simulated AMO installs.
+      ["extensions.webapi.testing", true],
+      ["extensions.install.requireBuiltInCerts", false],
     ],
   });
 });
@@ -72,7 +74,7 @@ add_task(async function test_install_source_blocked_link() {
   BrowserTestUtils.removeTab(tab);
 });
 
-add_task(async function test_install_source_blocked_installtrigger() {
+add_task(async function test_install_source_blocked_mozAddonManager() {
   await setupPolicyEngineWithJson({
     policies: {
       ExtensionSettings: {
@@ -88,12 +90,12 @@ add_task(async function test_install_source_blocked_installtrigger() {
   );
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
-    opening: BASE_URL + "extensionsettings.html",
+    opening: AMO_BASE_URL + "extensionsettings.html",
     waitForStateStop: true,
   });
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-    content.document.getElementById("policytest_installtrigger").click();
+    content.document.getElementById("policytest_mozaddonmanager").click();
   });
   let popup = await popupPromise;
   let description = popup.querySelector(".popup-notification-description");
@@ -184,12 +186,12 @@ add_task(async function test_install_source_allowed_link() {
   BrowserTestUtils.removeTab(tab);
 });
 
-add_task(async function test_install_source_allowed_installtrigger() {
+add_task(async function test_install_source_allowed_mozAddonManager() {
   await setupPolicyEngineWithJson({
     policies: {
       ExtensionSettings: {
         "*": {
-          install_sources: ["http://mochi.test/*"],
+          install_sources: ["https://example.com/*"],
         },
       },
     },
@@ -197,14 +199,37 @@ add_task(async function test_install_source_allowed_installtrigger() {
   let popupPromise = promisePopupNotificationShown("addon-webext-permissions");
   let tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
-    opening: BASE_URL + "extensionsettings.html",
+    opening: AMO_BASE_URL + "extensionsettings.html",
     waitForStateStop: true,
   });
 
+  info("Trigger addon install and wait for add-on install permissions dialog");
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-    content.document.getElementById("policytest_installtrigger").click();
+    content.document.getElementById("policytest_mozaddonmanager").click();
   });
   await popupPromise;
+  info("Got addon-webext-permissions dialog show");
+  // NOTE: wait for mozAddonManager promise to be resolved (prevents to
+  // hit NS_ERROR_NOT_INITIALIZED if the promise is resolved after the
+  // tab has been already closed).
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    const { addonInstall, promiseCompleted } = content.wrappedJSObject;
+    addonInstall.cancel();
+    const res = await promiseCompleted.catch(err => {
+      return err;
+    });
+    if (res instanceof content.Error) {
+      if (res.message.includes("Install failed: onDownloadCancelled")) {
+        dump(`Expect addon install to be cancelled: ${res}\n`);
+        return;
+      }
+      // Re-throw unexpected error.
+      throw res;
+    }
+    throw new Error(
+      "Unxpected mozAddonManager install promise resolved as successfull"
+    );
+  });
   BrowserTestUtils.removeTab(tab);
 });
 

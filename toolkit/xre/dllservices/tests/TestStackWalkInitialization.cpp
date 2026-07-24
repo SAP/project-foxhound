@@ -12,8 +12,6 @@
 
 #include <windows.h>
 
-#include <cstdio>
-
 #define TEST_FAILED(format, ...)                                               \
   do {                                                                         \
     wprintf(L"TEST-FAILED | TestStackWalkInitialization | " format __VA_OPT__( \

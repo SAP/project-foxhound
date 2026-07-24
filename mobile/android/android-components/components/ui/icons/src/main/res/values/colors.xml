@@ -16,9 +16,14 @@
     <!-- Account Sync Avatar fill colors for mozac_ic_avatar_warning_circle_fill_critical_24 -->
     <color name="mozac_ui_avatar_warning_bg_fill_critical">#FFFFFF</color>
     <color name="mozac_ui_avatar_warning_fill_critical">#C50042</color>
+    <color name="mozac_ui_private_avatar_warning_fill_critical">#FF9AA2</color>
 
     <!-- Extensions disabled icon fill colors for mozac_ic_extension_warning_24 -->
     <color name="mozac_ui_extensions_warning_bg_fill_critical">#FFFFFF</color>
     <color name="mozac_ui_extensions_warning_fill_critical">#C50042</color>
+    <color name="mozac_ui_private_extensions_warning_fill_critical">#FF9AA2</color>
 
+    <!-- Lock slash critical fill colors for mozac_ic_lock_slash_critical_24 -->
+    <color name="mozac_ui_lock_slash_bg_fill_critical">#FFFFFF</color>
+    <color name="mozac_ui_lock_slash_fill_critical">#C50042</color>
 </resources>

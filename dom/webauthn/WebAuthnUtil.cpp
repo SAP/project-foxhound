@@ -4,11 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "hasht.h"
-#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/WebAuthnUtil.h"
+
+#include "hasht.h"
+#include "mozilla/Base64.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozpkix/pkixutil.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsHTMLDocument.h"
 #include "nsICryptoHash.h"
 #include "nsIEffectiveTLDService.h"
@@ -116,19 +122,41 @@ bool IsWebAuthnAllowedInDocument(const nsCOMPtr<Document>& aDoc) {
   return aDoc->IsHTMLOrXHTML();
 }
 
-bool IsWebAuthnAllowedForPrincipal(const nsCOMPtr<nsIPrincipal>& aPrincipal) {
-  MOZ_ASSERT(aPrincipal);
-  if (aPrincipal->GetIsNullPrincipal()) {
+bool IsWebAuthnAllowedInContext(WindowGlobalParent* aContext) {
+  nsIPrincipal* principal = aContext->DocumentPrincipal();
+  MOZ_ASSERT(principal);
+
+  if (principal->GetIsNullPrincipal()) {
     return false;
   }
-  if (aPrincipal->GetIsIpAddress()) {
+
+  if (principal->GetIsIpAddress()) {
     return false;
   }
   // This next test is not strictly necessary since CredentialsContainer is
   // [SecureContext] in our webidl.
-  if (!aPrincipal->GetIsOriginPotentiallyTrustworthy()) {
+  if (!principal->GetIsOriginPotentiallyTrustworthy()) {
     return false;
   }
+
+  if (principal->GetIsLoopbackHost()) {
+    return true;
+  }
+
+  if (StaticPrefs::security_webauthn_allow_with_certificate_override()) {
+    return true;
+  }
+
+  WindowGlobalParent* windowContext = aContext;
+  while (windowContext) {
+    nsITransportSecurityInfo* securityInfo = windowContext->GetSecurityInfo();
+    if (securityInfo &&
+        !IsWebAuthnAllowedForTransportSecurityInfo(securityInfo)) {
+      return false;
+    }
+    windowContext = windowContext->GetParentWindowContext();
+  }
+
   return true;
 }
 
@@ -241,6 +269,333 @@ nsresult HashCString(const nsACString& aIn, /* out */ nsTArray<uint8_t>& aOut) {
     return NS_ERROR_FAILURE;
   }
 
+  return NS_OK;
+}
+
+uint32_t WebAuthnTimeout(const Optional<uint32_t>& aTimeout) {
+  uint32_t adjustedTimeout = 30000;
+  if (aTimeout.WasPassed()) {
+    adjustedTimeout = aTimeout.Value();
+    adjustedTimeout = std::max(15000u, adjustedTimeout);
+    adjustedTimeout = std::min(120000u, adjustedTimeout);
+  }
+  return adjustedTimeout;
+}
+
+static nsresult SerializeWebAuthnData(
+    const OwningArrayBufferViewOrArrayBuffer& aData, nsString& aOut) {
+  return ProcessTypedArrays(
+      aData, [&](const Span<uint8_t>& aData, JS::AutoCheckCannotGC&&) {
+        nsAutoCString result;
+        nsresult rv = mozilla::Base64URLEncode(
+            aData.Length(), aData.Elements(),
+            Base64URLEncodePaddingPolicy::Omit, result);
+        if (NS_SUCCEEDED(rv)) {
+          aOut.Assign(NS_ConvertUTF8toUTF16(result));
+        }
+        return rv;
+      });
+}
+
+nsresult SerializeWebAuthnCreationOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialCreationOptions& aOptions, nsString& aOut) {
+  nsresult rv;
+  PublicKeyCredentialCreationOptionsJSON json;
+
+  json.mRp.mId.Construct(aRpId);
+
+  json.mRp.mName.Assign(aOptions.mRp.mName);
+
+  json.mUser.mName.Assign(aOptions.mUser.mName);
+
+  rv = SerializeWebAuthnData(aOptions.mUser.mId, json.mUser.mId);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mUser.mDisplayName.Assign(aOptions.mUser.mDisplayName);
+
+  rv = SerializeWebAuthnData(aOptions.mChallenge, json.mChallenge);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mPubKeyCredParams = aOptions.mPubKeyCredParams;
+
+  json.mTimeout.Construct(WebAuthnTimeout(aOptions.mTimeout));
+
+  for (const auto& excludeCredential : aOptions.mExcludeCredentials) {
+    PublicKeyCredentialDescriptorJSON* excludeCredentialJSON =
+        json.mExcludeCredentials.AppendElement(fallible);
+    if (!excludeCredentialJSON) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    excludeCredentialJSON->mType = excludeCredential.mType;
+    rv = SerializeWebAuthnData(excludeCredential.mId,
+                               excludeCredentialJSON->mId);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (excludeCredential.mTransports.WasPassed()) {
+      excludeCredentialJSON->mTransports.Construct(
+          excludeCredential.mTransports.Value());
+    }
+  }
+
+  json.mAuthenticatorSelection.Construct(aOptions.mAuthenticatorSelection);
+
+  json.mHints = aOptions.mHints;
+
+  json.mAttestation = aOptions.mAttestation;
+
+  AuthenticationExtensionsClientInputsJSON& extensionsJSON =
+      json.mExtensions.Construct();
+
+  if (aOptions.mExtensions.mAppid.WasPassed()) {
+    extensionsJSON.mAppid.Construct(aOptions.mExtensions.mAppid.Value());
+  }
+
+  if (aOptions.mExtensions.mCredentialProtectionPolicy.WasPassed()) {
+    extensionsJSON.mCredentialProtectionPolicy.Construct(
+        aOptions.mExtensions.mCredentialProtectionPolicy.Value());
+  }
+
+  if (aOptions.mExtensions.mEnforceCredentialProtectionPolicy.WasPassed()) {
+    extensionsJSON.mEnforceCredentialProtectionPolicy.Construct(
+        aOptions.mExtensions.mEnforceCredentialProtectionPolicy.Value());
+  }
+
+  if (aOptions.mExtensions.mCredProps.WasPassed()) {
+    extensionsJSON.mCredProps.Construct(
+        aOptions.mExtensions.mCredProps.Value());
+  }
+
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    extensionsJSON.mHmacCreateSecret.Construct(
+        aOptions.mExtensions.mHmacCreateSecret.Value());
+  }
+
+  if (aOptions.mExtensions.mMinPinLength.WasPassed()) {
+    extensionsJSON.mMinPinLength.Construct(
+        aOptions.mExtensions.mMinPinLength.Value());
+  }
+
+  if (aOptions.mExtensions.mLargeBlob.WasPassed()) {
+    const AuthenticationExtensionsLargeBlobInputs& largeBlobInputs =
+        aOptions.mExtensions.mLargeBlob.Value();
+    AuthenticationExtensionsLargeBlobInputsJSON& largeBlobInputsJSON =
+        extensionsJSON.mLargeBlob.Construct();
+
+    if (largeBlobInputs.mSupport.WasPassed()) {
+      largeBlobInputsJSON.mSupport.Construct(largeBlobInputs.mSupport.Value());
+    }
+
+    if (largeBlobInputs.mRead.WasPassed()) {
+      largeBlobInputsJSON.mRead.Construct(largeBlobInputs.mRead.Value());
+    }
+
+    if (largeBlobInputs.mWrite.WasPassed()) {
+      nsString write;
+      rv = SerializeWebAuthnData(largeBlobInputs.mWrite.Value(), write);
+      NS_ENSURE_SUCCESS(rv, rv);
+      largeBlobInputsJSON.mWrite.Construct(write);
+    }
+  }
+
+  if (aOptions.mExtensions.mPrf.WasPassed()) {
+    const AuthenticationExtensionsPRFInputs& prfInputs =
+        aOptions.mExtensions.mPrf.Value();
+    AuthenticationExtensionsPRFInputsJSON& prfInputsJSON =
+        extensionsJSON.mPrf.Construct();
+
+    if (prfInputs.mEval.WasPassed()) {
+      AuthenticationExtensionsPRFValuesJSON& evalJSON =
+          prfInputsJSON.mEval.Construct();
+      rv = SerializeWebAuthnData(prfInputs.mEval.Value().mFirst,
+                                 evalJSON.mFirst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (prfInputs.mEval.Value().mSecond.WasPassed()) {
+        nsString second;
+        rv = SerializeWebAuthnData(prfInputs.mEval.Value().mSecond.Value(),
+                                   second);
+        NS_ENSURE_SUCCESS(rv, rv);
+        evalJSON.mSecond.Construct(second);
+      }
+    }
+
+    if (prfInputs.mEvalByCredential.WasPassed()) {
+      for (const auto& entry : prfInputs.mEvalByCredential.Value().Entries()) {
+        auto* jsonEntry =
+            prfInputsJSON.mEvalByCredential.Construct().Entries().AppendElement(
+                fallible);
+        if (!jsonEntry) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+
+        jsonEntry->mKey = entry.mKey;
+        AuthenticationExtensionsPRFValuesJSON& valuesJSON = jsonEntry->mValue;
+
+        rv = SerializeWebAuthnData(entry.mValue.mFirst, valuesJSON.mFirst);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (entry.mValue.mSecond.WasPassed()) {
+          nsString second;
+          rv = SerializeWebAuthnData(entry.mValue.mSecond.Value(), second);
+          NS_ENSURE_SUCCESS(rv, rv);
+          valuesJSON.mSecond.Construct(second);
+        }
+      }
+    }
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!ToJSValue(aCx, json, &value)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString jsonString;
+  if (!nsContentUtils::StringifyJSON(aCx, value, jsonString,
+                                     UndefinedIsNullStringLiteral)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aOut = std::move(jsonString);
+  return NS_OK;
+}
+
+nsresult SerializeWebAuthnRequestOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialRequestOptions& aOptions, nsString& aOut) {
+  nsresult rv;
+  PublicKeyCredentialRequestOptionsJSON json;
+
+  rv = SerializeWebAuthnData(aOptions.mChallenge, json.mChallenge);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mTimeout.Construct(WebAuthnTimeout(aOptions.mTimeout));
+
+  json.mRpId.Construct(aRpId);
+
+  for (const auto& allowCredential : aOptions.mAllowCredentials) {
+    PublicKeyCredentialDescriptorJSON* allowCredentialJSON =
+        json.mAllowCredentials.AppendElement(fallible);
+    if (!allowCredentialJSON) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    allowCredentialJSON->mType = allowCredential.mType;
+    rv = SerializeWebAuthnData(allowCredential.mId, allowCredentialJSON->mId);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (allowCredential.mTransports.WasPassed()) {
+      allowCredentialJSON->mTransports.Construct(
+          allowCredential.mTransports.Value());
+    }
+  }
+
+  json.mUserVerification = aOptions.mUserVerification;
+
+  json.mHints = aOptions.mHints;
+
+  AuthenticationExtensionsClientInputsJSON& extensionsJSON =
+      json.mExtensions.Construct();
+
+  if (aOptions.mExtensions.mAppid.WasPassed()) {
+    extensionsJSON.mAppid.Construct(aOptions.mExtensions.mAppid.Value());
+  }
+
+  if (aOptions.mExtensions.mCredProps.WasPassed()) {
+    extensionsJSON.mCredProps.Construct(
+        aOptions.mExtensions.mCredProps.Value());
+  }
+
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    extensionsJSON.mHmacCreateSecret.Construct(
+        aOptions.mExtensions.mHmacCreateSecret.Value());
+  }
+
+  if (aOptions.mExtensions.mMinPinLength.WasPassed()) {
+    extensionsJSON.mMinPinLength.Construct(
+        aOptions.mExtensions.mMinPinLength.Value());
+  }
+
+  if (aOptions.mExtensions.mLargeBlob.WasPassed()) {
+    const AuthenticationExtensionsLargeBlobInputs& largeBlobInputs =
+        aOptions.mExtensions.mLargeBlob.Value();
+    AuthenticationExtensionsLargeBlobInputsJSON& largeBlobInputsJSON =
+        extensionsJSON.mLargeBlob.Construct();
+
+    if (largeBlobInputs.mSupport.WasPassed()) {
+      largeBlobInputsJSON.mSupport.Construct(largeBlobInputs.mSupport.Value());
+    }
+
+    if (largeBlobInputs.mRead.WasPassed()) {
+      largeBlobInputsJSON.mRead.Construct(largeBlobInputs.mRead.Value());
+    }
+
+    if (largeBlobInputs.mWrite.WasPassed()) {
+      nsString write;
+      rv = SerializeWebAuthnData(largeBlobInputs.mWrite.Value(), write);
+      NS_ENSURE_SUCCESS(rv, rv);
+      largeBlobInputsJSON.mWrite.Construct(write);
+    }
+  }
+
+  if (aOptions.mExtensions.mPrf.WasPassed()) {
+    const AuthenticationExtensionsPRFInputs& prfInputs =
+        aOptions.mExtensions.mPrf.Value();
+    AuthenticationExtensionsPRFInputsJSON& prfInputsJSON =
+        extensionsJSON.mPrf.Construct();
+
+    if (prfInputs.mEval.WasPassed()) {
+      AuthenticationExtensionsPRFValuesJSON& evalJSON =
+          prfInputsJSON.mEval.Construct();
+      rv = SerializeWebAuthnData(prfInputs.mEval.Value().mFirst,
+                                 evalJSON.mFirst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (prfInputs.mEval.Value().mSecond.WasPassed()) {
+        nsString second;
+        rv = SerializeWebAuthnData(prfInputs.mEval.Value().mSecond.Value(),
+                                   second);
+        NS_ENSURE_SUCCESS(rv, rv);
+        evalJSON.mSecond.Construct(second);
+      }
+    }
+
+    if (prfInputs.mEvalByCredential.WasPassed()) {
+      for (const auto& entry : prfInputs.mEvalByCredential.Value().Entries()) {
+        auto* jsonEntry =
+            prfInputsJSON.mEvalByCredential.Construct().Entries().AppendElement(
+                fallible);
+        if (!jsonEntry) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+
+        jsonEntry->mKey = entry.mKey;
+        AuthenticationExtensionsPRFValuesJSON& valuesJSON = jsonEntry->mValue;
+
+        rv = SerializeWebAuthnData(entry.mValue.mFirst, valuesJSON.mFirst);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (entry.mValue.mSecond.WasPassed()) {
+          nsString second;
+          rv = SerializeWebAuthnData(entry.mValue.mSecond.Value(), second);
+          NS_ENSURE_SUCCESS(rv, rv);
+          valuesJSON.mSecond.Construct(second);
+        }
+      }
+    }
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!ToJSValue(aCx, json, &value)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString jsonString;
+  if (!nsContentUtils::StringifyJSON(aCx, value, jsonString,
+                                     UndefinedIsNullStringLiteral)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aOut = std::move(jsonString);
   return NS_OK;
 }
 

@@ -7,7 +7,6 @@
 #ifndef threading_ExclusiveData_h
 #define threading_ExclusiveData_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/OperatorNewExtensions.h"
 
 #include <utility>

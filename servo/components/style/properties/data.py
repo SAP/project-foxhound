@@ -3,6 +3,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import re
+import toml
+import os
+from itertools import groupby
 from counted_unknown_properties import COUNTED_UNKNOWN_PROPERTIES
 
 # It is important that the order of these physical / logical variants matches
@@ -15,20 +18,6 @@ LOGICAL_SIDES = ["block-start", "block-end", "inline-start", "inline-end"]
 LOGICAL_CORNERS = ["start-start", "start-end", "end-start", "end-end"]
 LOGICAL_SIZES = ["block-size", "inline-size"]
 LOGICAL_AXES = ["block", "inline"]
-
-# bool is True when logical
-ALL_SIDES = [(side, False) for side in PHYSICAL_SIDES] + [
-    (side, True) for side in LOGICAL_SIDES
-]
-ALL_SIZES = [(size, False) for size in PHYSICAL_SIZES] + [
-    (size, True) for size in LOGICAL_SIZES
-]
-ALL_CORNERS = [(corner, False) for corner in PHYSICAL_CORNERS] + [
-    (corner, True) for corner in LOGICAL_CORNERS
-]
-ALL_AXES = [(axis, False) for axis in PHYSICAL_AXES] + [
-    (axis, True) for axis in LOGICAL_AXES
-]
 
 SYSTEM_FONT_LONGHANDS = """font_family font_size font_style
                            font_stretch font_weight""".split()
@@ -102,37 +91,31 @@ STYLE_RULE = 1 << 0
 PAGE_RULE = 1 << 1
 KEYFRAME_RULE = 1 << 2
 POSITION_TRY_RULE = 1 << 3
+SCOPE_RULE = 1 << 4
 
-ALL_RULES = STYLE_RULE | PAGE_RULE | KEYFRAME_RULE
-DEFAULT_RULES = STYLE_RULE | KEYFRAME_RULE
+ALL_RULES = STYLE_RULE | PAGE_RULE | KEYFRAME_RULE | SCOPE_RULE
+DEFAULT_RULES = STYLE_RULE | KEYFRAME_RULE | SCOPE_RULE
 DEFAULT_RULES_AND_PAGE = DEFAULT_RULES | PAGE_RULE
-DEFAULT_RULES_EXCEPT_KEYFRAME = STYLE_RULE
+DEFAULT_RULES_EXCEPT_KEYFRAME = STYLE_RULE | SCOPE_RULE
 DEFAULT_RULES_AND_POSITION_TRY = DEFAULT_RULES | POSITION_TRY_RULE
 
 # Rule name to value dict
 RULE_VALUES = {
-    "Style": STYLE_RULE,
-    "Page": PAGE_RULE,
-    "Keyframe": KEYFRAME_RULE,
-    "PositionTry": POSITION_TRY_RULE,
+    "style": STYLE_RULE,
+    "page": PAGE_RULE,
+    "keyframe": KEYFRAME_RULE,
+    "position-try": POSITION_TRY_RULE,
+    "scope": SCOPE_RULE,
 }
 
 
-def rule_values_from_arg(that):
-    if isinstance(that, int):
-        return that
+def rule_values_from_arg(rule_types):
+    if not rule_types:
+        return DEFAULT_RULES
     mask = 0
-    for rule in that.split():
+    for rule in rule_types:
         mask |= RULE_VALUES[rule]
     return mask
-
-
-def maybe_moz_logical_alias(engine, side, prop):
-    if engine == "gecko" and side[1]:
-        axis, dir = side[0].split("-")
-        if axis == "inline":
-            return prop % dir
-    return None
 
 
 def to_rust_ident(name):
@@ -140,6 +123,14 @@ def to_rust_ident(name):
     if name in ["static", "super", "box", "move"]:  # Rust keywords
         name += "_"
     return name
+
+
+def idl_method(name, camel_case):
+    if name == "float":
+        return "CssFloat"
+    if name.startswith("-x-"):
+        return camel_case[1:]
+    return camel_case
 
 
 def to_snake_case(ident):
@@ -164,10 +155,26 @@ def to_idl_name(ident):
 
 def parse_aliases(value):
     aliases = {}
-    for pair in value.split():
+    for pair in value:
         [a, v] = pair.split("=")
         aliases[a] = v
     return aliases
+
+
+class Vector(object):
+    def __init__(
+        self,
+        need_index=False,
+        none_value=None,
+        separator='Comma',
+        animation_type=None,
+        simple_bindings=False,
+    ):
+        self.need_index = need_index
+        self.none_value = none_value
+        self.separator = separator
+        self.animation_type = animation_type
+        self.simple_bindings = simple_bindings
 
 
 class Keyword(object):
@@ -177,34 +184,29 @@ class Keyword(object):
         values,
         gecko_constant_prefix=None,
         gecko_enum_prefix=None,
-        custom_consts=None,
         extra_gecko_values=None,
         extra_servo_values=None,
         gecko_aliases=None,
         servo_aliases=None,
-        gecko_strip_moz_prefix=None,
         gecko_inexhaustive=None,
     ):
         self.name = name
-        self.values = values.split()
+        self.values = values;
+        assert isinstance(values, list), name
         if gecko_constant_prefix and gecko_enum_prefix:
             raise TypeError(
                 "Only one of gecko_constant_prefix and gecko_enum_prefix "
                 "can be specified"
             )
-        self.gecko_constant_prefix = (
-            gecko_constant_prefix or "NS_STYLE_" + self.name.upper().replace("-", "_")
-        )
+        self.gecko_constant_prefix = gecko_constant_prefix
         self.gecko_enum_prefix = gecko_enum_prefix
-        self.extra_gecko_values = (extra_gecko_values or "").split()
-        self.extra_servo_values = (extra_servo_values or "").split()
-        self.gecko_aliases = parse_aliases(gecko_aliases or "")
-        self.servo_aliases = parse_aliases(servo_aliases or "")
-        self.consts_map = {} if custom_consts is None else custom_consts
-        self.gecko_strip_moz_prefix = (
-            True if gecko_strip_moz_prefix is None else gecko_strip_moz_prefix
-        )
-        self.gecko_inexhaustive = gecko_inexhaustive or (gecko_enum_prefix is None)
+        if not gecko_constant_prefix and not gecko_enum_prefix:
+            self.gecko_enum_prefix = "Style" + to_camel_case(name.replace("-moz-", "").replace("-webkit-", ""))
+        self.extra_gecko_values = extra_gecko_values or []
+        self.extra_servo_values = extra_servo_values or []
+        self.gecko_aliases = parse_aliases(gecko_aliases or [])
+        self.servo_aliases = parse_aliases(servo_aliases or [])
+        self.gecko_inexhaustive = gecko_inexhaustive or self.gecko_constant_prefix is not None
 
     def values_for(self, engine):
         if engine == "gecko":
@@ -223,18 +225,13 @@ class Keyword(object):
             raise Exception("Bad engine: " + engine)
 
     def gecko_constant(self, value):
-        moz_stripped = (
-            value.replace("-moz-", "")
-            if self.gecko_strip_moz_prefix
-            else value.replace("-moz-", "moz-")
-        )
-        mapped = self.consts_map.get(value)
+        moz_stripped = value.replace("-moz-", "")
         if self.gecko_enum_prefix:
             parts = moz_stripped.replace("-", "_").split("_")
-            parts = mapped if mapped else [p.title() for p in parts]
+            parts = [p.title() for p in parts]
             return self.gecko_enum_prefix + "::" + "".join(parts)
         else:
-            suffix = mapped if mapped else moz_stripped.replace("-", "_")
+            suffix = moz_stripped.replace("-", "_")
             return self.gecko_constant_prefix + "_" + suffix.upper()
 
     def needs_cast(self):
@@ -257,19 +254,10 @@ class Keyword(object):
             )
 
 
-def arg_to_bool(arg):
-    if isinstance(arg, bool):
-        return arg
-    assert arg in ["True", "False"], "Unexpected value for boolean arguement: " + repr(
-        arg
-    )
-    return arg == "True"
-
-
 def parse_property_aliases(alias_list):
     result = []
     if alias_list:
-        for alias in alias_list.split():
+        for alias in alias_list:
             (name, _, pref) = alias.partition(":")
             result.append((name, pref))
     return result
@@ -300,6 +288,7 @@ class Property(object):
         self.camel_case = to_camel_case(self.ident)
         self.servo_pref = servo_pref
         self.gecko_pref = gecko_pref
+        self.idl_method = idl_method(name, self.camel_case)
         self.rule_types_allowed = rule_values_from_arg(rule_types_allowed)
         # For enabled_in, the setup is as follows:
         # It needs to be one of the four values: ["", "ua", "chrome", "content"]
@@ -342,8 +331,8 @@ class Property(object):
     def is_prioritary(self):
         return self.name in PRIORITARY_PROPERTIES
 
-    def nscsspropertyid(self):
-        return "nsCSSPropertyID::eCSSProperty_" + self.ident
+    def noncustomcsspropertyid(self):
+        return "NonCustomCSSPropertyId::eCSSProperty_" + self.ident
 
 
 class Longhand(Property):
@@ -351,17 +340,19 @@ class Longhand(Property):
         self,
         style_struct,
         name,
+        initial_value=None,
+        initial_specified_value=None,
+        parse_method='parse',
         spec=None,
-        animation_type=None,
+        animation_type="normal",
         keyword=None,
         predefined_type=None,
         servo_pref=None,
         gecko_pref=None,
         enabled_in="content",
-        need_index=False,
         gecko_ffi_name=None,
         has_effect_on_gecko_scrollbars=None,
-        rule_types_allowed=DEFAULT_RULES,
+        rule_types_allowed=None,
         cast_type="u8",
         logical=False,
         logical_group=None,
@@ -369,11 +360,10 @@ class Longhand(Property):
         extra_prefixes=None,
         boxed=False,
         flags=None,
-        allow_quirks="No",
+        allow_quirks=False,
         ignored_when_colors_disabled=False,
-        simple_vector_bindings=False,
-        vector=False,
-        servo_restyle_damage="repaint",
+        vector=None,
+        servo_restyle_damage="rebuild_box",
         affects=None,
     ):
         Property.__init__(
@@ -392,6 +382,9 @@ class Longhand(Property):
         self.affects = affects
         self.flags += self.affects_flags()
 
+        self.parse_method = parse_method
+        self.initial_value = initial_value
+        self.initial_specified_value = initial_specified_value
         self.keyword = keyword
         self.predefined_type = predefined_type
         self.style_struct = style_struct
@@ -408,24 +401,18 @@ class Longhand(Property):
             + "specified, and must have a value of True or False, iff a "
             + "property is inherited and is behind a Gecko pref or internal"
         )
-        self.need_index = need_index
         self.gecko_ffi_name = gecko_ffi_name or "m" + self.camel_case
         self.cast_type = cast_type
-        self.logical = arg_to_bool(logical)
+        self.logical = logical
         self.logical_group = logical_group
         if self.logical:
-            assert logical_group, "Property " + name + " must have a logical group"
+            assert logical_group, f"Property {name} must have a logical group"
 
-        self.boxed = arg_to_bool(boxed)
+        self.boxed = boxed
         self.allow_quirks = allow_quirks
         self.ignored_when_colors_disabled = ignored_when_colors_disabled
-        self.is_vector = vector
-        self.simple_vector_bindings = simple_vector_bindings
+        self.vector = Vector(**vector) if vector is not None else None
 
-        # This is done like this since just a plain bool argument seemed like
-        # really random.
-        if animation_type is None:
-            animation_type = "normal"
         assert animation_type in ["none", "normal", "discrete"]
         self.animation_type = animation_type
         self.animatable = animation_type != "none"
@@ -507,12 +494,12 @@ class Longhand(Property):
             raise Exception("Bad engine: " + engine)
 
     def base_type(self):
-        if self.predefined_type and not self.is_vector:
+        if self.predefined_type and not self.vector:
             return "crate::values::specified::{}".format(self.predefined_type)
         return "longhands::{}::SpecifiedValue".format(self.ident)
 
     def specified_type(self):
-        if self.predefined_type and not self.is_vector:
+        if self.predefined_type and not self.vector:
             ty = "crate::values::specified::{}".format(self.predefined_type)
         else:
             ty = "longhands::{}::SpecifiedValue".format(self.ident)
@@ -549,6 +536,7 @@ class Longhand(Property):
             "SVGStrokeDashArray",
             "SVGWidth",
             "TextDecorationLength",
+            "TextDecorationInset",
             "TextIndent",
             "WordSpacing",
         }
@@ -561,13 +549,11 @@ class Longhand(Property):
         return self.is_zoom_dependent()
 
     def specified_is_copy(self):
-        if self.is_vector or self.boxed:
+        if self.vector or self.boxed:
             return False
         if self.predefined_type:
             return self.predefined_type in {
-                "AlignContent",
-                "AlignItems",
-                "AlignSelf",
+                "AlignmentBaseline",
                 "Appearance",
                 "AnimationComposition",
                 "AnimationDirection",
@@ -587,6 +573,7 @@ class Longhand(Property):
                 "ContentVisibility",
                 "ContainerType",
                 "Display",
+                "DominantBaseline",
                 "FillRule",
                 "Float",
                 "FontLanguageOverride",
@@ -608,9 +595,10 @@ class Longhand(Property):
                 "PositionArea",
                 "PositionAreaKeyword",
                 "PositionProperty",
-                "JustifyContent",
+                "ContentDistribution",
+                "ItemPlacement",
+                "SelfAlignment",
                 "JustifyItems",
-                "JustifySelf",
                 "LineBreak",
                 "LineClamp",
                 "MasonryAutoFlow",
@@ -628,7 +616,6 @@ class Longhand(Property):
                 "OutlineStyle",
                 "Overflow",
                 "OverflowAnchor",
-                "OverflowClipBox",
                 "OverflowWrap",
                 "OverscrollBehavior",
                 "PageOrientation",
@@ -650,6 +637,9 @@ class Longhand(Property):
                 "ScrollSnapType",
                 "TextAlign",
                 "TextAlignLast",
+                "TextAutospace",
+                "TextBoxEdge",
+                "TextBoxTrim",
                 "TextDecorationLine",
                 "TextEmphasisPosition",
                 "TextJustify",
@@ -658,7 +648,6 @@ class Longhand(Property):
                 "TouchAction",
                 "TransformStyle",
                 "UserFocus",
-                "UserInput",
                 "UserSelect",
                 "VectorEffect",
                 "WordBreak",
@@ -688,8 +677,12 @@ class Shorthand(Property):
         spec=None,
         servo_pref=None,
         gecko_pref=None,
+        kind=None,
+        allow_quirks=False,
+        derive_serialize=False,
+        derive_value_info=True,
         enabled_in="content",
-        rule_types_allowed=DEFAULT_RULES,
+        rule_types_allowed=None,
         aliases=None,
         extra_prefixes=None,
         flags=None,
@@ -707,6 +700,10 @@ class Shorthand(Property):
             flags=flags,
         )
         self.sub_properties = sub_properties
+        self.derive_serialize = derive_serialize
+        self.derive_value_info = derive_value_info
+        self.allow_quirks = allow_quirks
+        self.kind = kind
 
     def get_animatable(self):
         for sub in self.sub_properties:
@@ -726,6 +723,7 @@ class Alias(object):
         self.name = name
         self.ident = to_rust_ident(name)
         self.camel_case = to_camel_case(self.ident)
+        self.idl_method = idl_method(name, self.camel_case)
         self.original = original
         self.enabled_in = original.enabled_in
         self.animatable = original.animatable
@@ -760,8 +758,8 @@ class Alias(object):
     def enabled_in_content(self):
         return self.enabled_in == "content"
 
-    def nscsspropertyid(self):
-        return "nsCSSPropertyID::eCSSPropertyAlias_%s" % self.ident
+    def noncustomcsspropertyid(self):
+        return "NonCustomCSSPropertyId::eCSSPropertyAlias_%s" % self.ident
 
 
 class Method(object):
@@ -807,7 +805,7 @@ class PropertiesData(object):
         self.engine = engine
         self.longhands = []
         self.longhands_by_name = {}
-        self.longhands_by_logical_group = {}
+        self.logical_groups = {}
         self.longhand_aliases = []
         self.shorthands = []
         self.shorthands_by_name = {}
@@ -841,42 +839,187 @@ class PropertiesData(object):
             StyleStruct("UI", inherited=False, gecko_name="UIReset"),
             StyleStruct("XUL", inherited=False),
         ]
-        self.current_style_struct = None
+
+        longhands_toml = toml.loads(open(os.path.join(os.path.dirname(__file__), "longhands.toml")).read())
+        for name, args in longhands_toml.items():
+            style_struct = self.style_struct_by_name_lower(args["struct"])
+            del args['struct']
+
+            # Handle keyword properties
+            if 'keyword' in args:
+                keyword_dict = args.pop('keyword')
+                if 'values' not in keyword_dict:
+                    raise TypeError(f"{name}: keyword should have 'values'")
+                values = keyword_dict.pop('values')
+                keyword = Keyword(name, values, **keyword_dict)
+                self.declare_longhand(style_struct, name, keyword=keyword, **args)
+            else:
+                # Handle predefined_type properties
+                if 'type' not in args:
+                    raise TypeError(f"{name} should have a type")
+                args['predefined_type'] = args.pop('type')
+                if 'initial' not in args and not args.get('vector'):
+                    raise TypeError(f"{name} should have an initial value (only vector properties should lack one)")
+                args['initial_value'] = args.pop('initial', None)
+                self.declare_longhand(style_struct, name, **args)
+
+        for group, props in self.logical_groups.items():
+            logical_count = sum(1 for p in props if p.logical)
+            if logical_count * 2 != len(props):
+                raise RuntimeError(f"Logical group {group} has unbalanced logical / physical properties")
+
+        # After this code, `data.longhands` is sorted in the following order:
+        # - first all keyword variants and all variants known to be Copy,
+        # - second all the other variants, such as all variants with the same field
+        #   have consecutive discriminants.
+        # The variable `variants` contain the same entries as `data.longhands` in
+        # the same order, but must exist separately to the data source, because
+        # we then need to add three additional variants `WideKeywordDeclaration`,
+        # `VariableDeclaration` and `CustomDeclaration`.
+        self.declaration_variants = []
+        for property in self.longhands:
+            self.declaration_variants.append({
+                "name": property.camel_case,
+                "type": property.specified_type(),
+                "doc": "`" + property.name + "`",
+                "copy": property.specified_is_copy(),
+            })
+        groups = {}
+        keyfunc = lambda x: x["type"]
+        sortkeys = {}
+        # WARNING: It is *really* important for the variants of `LonghandId`
+        # and `PropertyDeclaration` to be defined in the exact same order,
+        # with the exception of `CSSWideKeyword`, `WithVariables` and `Custom`,
+        # which don't exist in `LonghandId`.
+        for ty, group in groupby(sorted(self.declaration_variants, key=keyfunc), keyfunc):
+            group = list(group)
+            groups[ty] = group
+            for v in group:
+                if len(group) == 1:
+                    sortkeys[v["name"]] = (not v["copy"], 1, v["name"], "")
+                else:
+                    sortkeys[v["name"]] = (not v["copy"], len(group), ty, v["name"])
+        # It is extremely important to sort the `data.longhands` array here so
+        # that it is in the same order as `variants`, for `LonghandId` and
+        # `PropertyDeclarationId` to coincide.
+        self.longhands.sort(key=lambda x: sortkeys[x.camel_case])
+        self.declaration_variants.sort(key=lambda x: sortkeys[x["name"]])
+        self.declaration_extra_variants = [
+            {
+                "name": "CSSWideKeyword",
+                "type": "WideKeywordDeclaration",
+                "doc": "A CSS-wide keyword.",
+                "copy": False,
+            },
+            {
+                "name": "WithVariables",
+                "type": "VariableDeclaration",
+                "doc": "An unparsed declaration.",
+                "copy": False,
+            },
+            {
+                "name": "Custom",
+                "type": "CustomDeclaration",
+                "doc": "A custom property declaration.",
+                "copy": False,
+            },
+        ]
+        for v in self.declaration_extra_variants:
+            self.declaration_variants.append(v)
+            groups[v["type"]] = [v]
+
+        shorthands_toml = toml.loads(open(os.path.join(os.path.dirname(__file__), "shorthands.toml")).read())
+        for name, args in shorthands_toml.items():
+            self.declare_shorthand(name, **args)
+        self.declare_all_shorthand()
+
+
+    def declare_all_shorthand(self):
+        # We don't define the 'all' shorthand using the regular helpers:shorthand
+        # mechanism, since it causes some very large types to be generated.
+        #
+        # Make sure logical properties appear before its physical
+        # counter-parts, in order to prevent bugs like:
+        #
+        #   https://bugzilla.mozilla.org/show_bug.cgi?id=1410028
+        #
+        # FIXME(emilio): Adopt the resolution from:
+        #
+        #   https://github.com/w3c/csswg-drafts/issues/1898
+        #
+        # when there is one, whatever that is.
+        logical_longhands = []
+        other_longhands = []
+        for p in self.longhands:
+            if p.name in ['direction', 'unicode-bidi']:
+                continue;
+            if not p.enabled_in_content() and not p.experimental(self.engine):
+                continue;
+            if "style" not in p.rule_types_allowed_names():
+                continue;
+            if p.logical:
+                logical_longhands.append(p)
+            else:
+                other_longhands.append(p)
+
+        # Cache locality when iterating over the `all` shorthand is important
+        # for transition handling, so we sort by style struct.
+        # We technically don't care about the logical prop order (because those
+        # are not animated themselves), but we sort them the same way for
+        # consistency.
+        logical_longhands.sort(key=lambda p: p.style_struct.name)
+        other_longhands.sort(key=lambda p: p.style_struct.name)
+
+        all_names = list(map(lambda p: p.name, logical_longhands + other_longhands))
+
+        self.all_shorthand_length = len(all_names)
+        self.declare_shorthand(
+            "all",
+            all_names,
+            spec="https://drafts.csswg.org/css-cascade-3/#all-shorthand"
+        )
+
+
+    def style_struct_by_name_lower(self, name):
+        for s in self.style_structs:
+            if s.name_lower == name:
+                return s
+        raise TypeError(f"Unexpected struct name {name}")
 
     def active_style_structs(self):
         return [s for s in self.style_structs if s.longhands]
 
     def add_prefixed_aliases(self, property):
-        # FIXME Servo's DOM architecture doesn't support vendor-prefixed properties.
-        #       See servo/servo#14941.
-        if self.engine == "gecko":
-            for prefix, pref in property.extra_prefixes:
-                property.aliases.append(("-%s-%s" % (prefix, property.name), pref))
+        for prefix, pref in property.extra_prefixes:
+            property.aliases.append(("-%s-%s" % (prefix, property.name), pref))
 
-    def declare_longhand(self, name, engines=None, **kwargs):
-        engines = engines.split()
-        if self.engine not in engines:
+    def declare_longhand(self, style_struct, name, extra_gecko_aliases=None, engine=None, **kwargs):
+        if engine and self.engine != engine:
             return
-
-        longhand = Longhand(self.current_style_struct, name, **kwargs)
+        if extra_gecko_aliases and self.engine == "gecko":
+            kwargs.setdefault('aliases', []).extend(extra_gecko_aliases)
+        longhand = Longhand(style_struct, name, **kwargs)
         self.add_prefixed_aliases(longhand)
         longhand.aliases = [Alias(xp[0], longhand, xp[1]) for xp in longhand.aliases]
         self.longhand_aliases += longhand.aliases
-        self.current_style_struct.longhands.append(longhand)
+        style_struct.longhands.append(longhand)
         self.longhands.append(longhand)
         self.longhands_by_name[name] = longhand
         if longhand.logical_group:
-            self.longhands_by_logical_group.setdefault(
+            self.logical_groups.setdefault(
                 longhand.logical_group, []
             ).append(longhand)
 
         return longhand
 
-    def declare_shorthand(self, name, sub_properties, engines, *args, **kwargs):
-        engines = engines.split()
-        if self.engine not in engines:
+    def declare_shorthand(self, name, sub_properties, extra_gecko_sub_properties=None, extra_gecko_aliases=None, engine=None, *args, **kwargs):
+        if engine and self.engine != engine:
             return
-
+        if self.engine == "gecko":
+            if extra_gecko_sub_properties:
+                sub_properties.extend(extra_gecko_sub_properties)
+            if extra_gecko_aliases:
+                kwargs.setdefault('aliases', []).extend(extra_gecko_aliases)
         sub_properties = [self.longhands_by_name[s] for s in sub_properties]
         shorthand = Shorthand(name, sub_properties, *args, **kwargs)
         self.add_prefixed_aliases(shorthand)
@@ -892,6 +1035,9 @@ class PropertiesData(object):
     def all_aliases(self):
         return self.longhand_aliases + self.shorthand_aliases
 
+    def all_properties_and_aliases(self):
+        return self.longhands + self.shorthands + self.longhand_aliases + self.shorthand_aliases
+
 
 def _add_logical_props(data, props):
     groups = set()
@@ -903,7 +1049,7 @@ def _add_logical_props(data, props):
         if prop.logical_group:
             groups.add(prop.logical_group)
     for group in groups:
-        for prop in data.longhands_by_logical_group[group]:
+        for prop in data.logical_groups[group]:
             props.add(prop.name)
 
 
@@ -931,7 +1077,7 @@ def _remove_common_first_line_and_first_letter_properties(props, engine):
 class PropertyRestrictions:
     @staticmethod
     def logical_group(data, group):
-        return [p.name for p in data.longhands_by_logical_group[group]]
+        return [p.name for p in data.logical_groups[group]]
 
     @staticmethod
     def shorthand(data, shorthand):
@@ -989,8 +1135,8 @@ class PropertyRestrictions:
                 "initial-letter",
                 # Kinda like css-fonts?
                 "-moz-osx-font-smoothing",
-                "vertical-align",
-                # Will become shorthand of vertical-align (Bug 1830771)
+                "alignment-baseline",
+                "baseline-shift",
                 "baseline-source",
                 "line-height",
                 # Kinda like css-backgrounds?
@@ -1022,8 +1168,8 @@ class PropertyRestrictions:
                 "opacity",
                 # Kinda like css-fonts?
                 "-moz-osx-font-smoothing",
-                "vertical-align",
-                # Will become shorthand of vertical-align (Bug 1830771)
+                "alignment-baseline",
+                "baseline-shift",
                 "baseline-source",
                 "line-height",
                 # Kinda like css-backgrounds?
@@ -1068,18 +1214,29 @@ class PropertyRestrictions:
 
         return props
 
-    # https://drafts.csswg.org/css-pseudo/#marker-pseudo
+    # https://drafts.csswg.org/css-lists-3/#marker-properties
     @staticmethod
     def marker(data):
         return set(
             [
                 "color",
+                "content",
+                "counter-increment",
+                "counter-reset",
+                "counter-set",
+                "cursor",
+                "direction",
+                "hyphens",
+                "line-height",
+                "quotes",
                 "text-combine-upright",
+                "text-emphasis-color",
+                "text-emphasis-position",
+                "text-emphasis-style",
+                "text-orientation",
+                "text-shadow",
                 "text-transform",
                 "unicode-bidi",
-                "direction",
-                "content",
-                "line-height",
                 "-moz-osx-font-smoothing",
             ]
             + PropertyRestrictions.shorthand(data, "text-wrap")

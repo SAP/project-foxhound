@@ -7,30 +7,31 @@
 #include "mozilla/dom/HTMLButtonElement.h"
 
 #include "HTMLFormSubmissionConstants.h"
-#include "mozilla/dom/CommandEvent.h"
-#include "mozilla/dom/FormData.h"
-#include "mozilla/dom/HTMLButtonElementBinding.h"
-#include "nsAttrValueInlines.h"
-#include "nsIContentInlines.h"
-#include "nsGkAtoms.h"
-#include "nsPresContext.h"
-#include "nsIFormControl.h"
-#include "nsIFrame.h"
-#include "mozilla/dom/Document.h"
+#include "mozAutoDocUpdate.h"
 #include "mozilla/ContentEvents.h"
-#include "mozilla/FocusModel.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/TextEvents.h"
-#include "nsUnicharUtils.h"
-#include "nsLayoutUtils.h"
 #include "mozilla/PresState.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/dom/CommandEvent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FormData.h"
+#include "mozilla/dom/HTMLButtonElementBinding.h"
+#include "mozilla/dom/HTMLFormElement.h"
+#include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsError.h"
 #include "nsFocusManager.h"
-#include "mozilla/dom/HTMLFormElement.h"
-#include "mozAutoDocUpdate.h"
+#include "nsGkAtoms.h"
+#include "nsIContentInlines.h"
+#include "nsIFormControl.h"
+#include "nsIFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
+#include "nsUnicharUtils.h"
 
 #define NS_IN_SUBMIT_CLICK (1 << 0)
 #define NS_OUTER_ACTIVATE_EVENT (1 << 1)
@@ -353,7 +354,7 @@ void HTMLButtonElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
 
   // 4. Let target be the result of running element's get the
   // commandfor-associated element.
-  RefPtr<Element> target = GetCommandForElement();
+  RefPtr<Element> target = GetCommandForElementInternal();
 
   // 5. If target is not null:
   if (target) {
@@ -381,12 +382,11 @@ void HTMLButtonElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
     // 5.5. Let continue be the result of firing an event named command at
     // target, using CommandEvent, with its command attribute initialized to
     // command, its source attribute initialized to element, and its cancelable
-    // and composed attributes initialized to true.
+    // attribute initialized to true.
     CommandEventInit init;
     GetCommand(init.mCommand);
     init.mSource = this;
     init.mCancelable = true;
-    init.mComposed = true;
     RefPtr<Event> event = CommandEvent::Constructor(this, u"command"_ns, init);
     event->SetTrusted(true);
     event->SetTarget(target);
@@ -404,9 +404,11 @@ void HTMLButtonElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
     target->HandleCommandInternal(this, command, IgnoreErrors());
 
   } else {
+    nsCOMPtr<Element> eventTarget =
+        do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
     // 6. Otherwise, run the popover target attribute activation behavior given
     // element and event's target.
-    HandlePopoverTargetAction();
+    HandlePopoverTargetAction(eventTarget);
   }
 }
 
@@ -574,8 +576,9 @@ void HTMLButtonElement::GetCommand(nsAString& aCommand) const {
   }
   if (command == Command::Custom) {
     const nsAttrValue* attr = GetParsedAttr(nsGkAtoms::command);
-    MOZ_ASSERT(attr->Type() == nsAttrValue::eString);
-    aCommand.Assign(attr->GetStringValue());
+    MOZ_ASSERT(attr->Type() == nsAttrValue::eString ||
+               attr->Type() == nsAttrValue::eAtom);
+    aCommand.Assign(nsAttrValueOrString(attr).String());
     MOZ_ASSERT(
         aCommand.Length() >= 2,
         "Custom commands start with '--' so must be atleast 2 chars long!");
@@ -601,21 +604,28 @@ Element::Command HTMLButtonElement::GetCommand() const {
       }
       return command;
     }
-    if (StringBeginsWith(attr->GetStringValue(), u"--"_ns)) {
+    if (StringBeginsWith(nsAttrValueOrString(attr).String(), u"--"_ns)) {
       return Command::Custom;
     }
   }
   return Command::Invalid;
 }
 
-Element* HTMLButtonElement::GetCommandForElement() const {
+Element* HTMLButtonElement::GetCommandForElementForBindings() const {
   if (StaticPrefs::dom_element_commandfor_enabled()) {
-    return GetAttrAssociatedElement(nsGkAtoms::commandfor);
+    return GetAttrAssociatedElementForBindings(nsGkAtoms::commandfor);
   }
   return nullptr;
 }
 
-void HTMLButtonElement::SetCommandForElement(Element* aElement) {
+Element* HTMLButtonElement::GetCommandForElementInternal() const {
+  if (StaticPrefs::dom_element_commandfor_enabled()) {
+    return GetAttrAssociatedElementInternal(nsGkAtoms::commandfor);
+  }
+  return nullptr;
+}
+
+void HTMLButtonElement::SetCommandForElementForBindings(Element* aElement) {
   ExplicitlySetAttrElement(nsGkAtoms::commandfor, aElement);
 }
 
@@ -625,3 +635,5 @@ JSObject* HTMLButtonElement::WrapNode(JSContext* aCx,
 }
 
 }  // namespace mozilla::dom
+#undef NS_IN_SUBMIT_CLICK
+#undef NS_OUTER_ACTIVATE_EVENT

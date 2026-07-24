@@ -6,37 +6,38 @@
 
 /**
  * A WebProgressListener that listens for file loads.
- *
- * @constructor
- * @param object window
- *        The window for which we need to track file loads.
- * @param object owner
- *        The listener owner which needs to implement:
- *        - onFileActivity(aFileURI)
  */
-function ConsoleFileActivityListener(window, owner) {
-  this.window = window;
-  this.owner = owner;
-}
-exports.ConsoleFileActivityListener = ConsoleFileActivityListener;
+class ConsoleFileActivityListener {
+  /**
+   * @param {object} window
+   *        The window for which we need to track file loads.
+   * @param {object} owner
+   *        The listener owner which needs to implement:
+   *        - onFileActivity(aFileURI)
+   */
+  constructor(window, owner) {
+    this.window = window;
+    this.owner = owner;
+  }
 
-ConsoleFileActivityListener.prototype = {
   /**
    * Tells if the console progress listener is initialized or not.
+   *
    * @private
    * @type boolean
    */
-  _initialized: false,
+  _initialized = false;
 
-  _webProgress: null,
+  _webProgress = null;
 
-  QueryInterface: ChromeUtils.generateQI([
+  QueryInterface = ChromeUtils.generateQI([
     "nsIWebProgressListener",
     "nsISupportsWeakReference",
-  ]),
+  ]);
 
   /**
    * Initialize the ConsoleFileActivityListener.
+   *
    * @private
    */
   _init() {
@@ -51,7 +52,7 @@ ConsoleFileActivityListener.prototype = {
     );
 
     this._initialized = true;
-  },
+  }
 
   /**
    * Start a monitor/tracker related to the current nsIWebProgressListener
@@ -59,14 +60,14 @@ ConsoleFileActivityListener.prototype = {
    */
   startMonitor() {
     this._init();
-  },
+  }
 
   /**
    * Stop monitoring.
    */
   stopMonitor() {
     this.destroy();
-  },
+  }
 
   onStateChange(progress, request, state, status) {
     if (!this.owner) {
@@ -74,12 +75,13 @@ ConsoleFileActivityListener.prototype = {
     }
 
     this._checkFileActivity(progress, request, state, status);
-  },
+  }
 
   /**
    * Check if there is any file load, given the arguments of
    * nsIWebProgressListener.onStateChange. If the state change tells that a file
    * URI has been loaded, then the remote Web Console instance is notified.
+   *
    * @private
    */
   _checkFileActivity(progress, request, state) {
@@ -101,7 +103,7 @@ ConsoleFileActivityListener.prototype = {
     }
 
     this.owner.onFileActivity(uri.spec);
-  },
+  }
 
   /**
    * Destroy the ConsoleFileActivityListener.
@@ -122,5 +124,7 @@ ConsoleFileActivityListener.prototype = {
     this._webProgress = null;
     this.window = null;
     this.owner = null;
-  },
-};
+  }
+}
+
+exports.ConsoleFileActivityListener = ConsoleFileActivityListener;

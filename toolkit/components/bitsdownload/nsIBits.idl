@@ -317,6 +317,14 @@ interface nsIBitsRequest : nsIRequest
   readonly attribute nsBitsErrorType transferError;
 
   /**
+   * HRESULT error code reported by BITS for the transfer failure, if available.
+   * This will be 0 if there was no error or if the failure is not associated
+   * with an HRESULT. Intended to be read after the transfer has stopped,
+   * alongside transferError.
+   */
+  readonly attribute long transferErrorCode;
+
+  /**
    * Requests a change to the frequency that Firefox is receiving download
    * status notifications.
    *

@@ -6,18 +6,17 @@
 #ifndef WEBGLIPDL_H_
 #define WEBGLIPDL_H_
 
+#include "WebGLTypes.h"
 #include "gfxTypes.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/GfxMessageUtils.h"
-#include "mozilla/dom/BindingIPCUtils.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
-#include "mozilla/ipc/Shmem.h"
-#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/ParamTraits_IsEnumCase.h"
 #include "mozilla/ParamTraits_STL.h"
 #include "mozilla/ParamTraits_TiedFields.h"
-#include "WebGLTypes.h"
+#include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/ipc/Shmem.h"
+#include "mozilla/layers/LayersSurfaces.h"
 
 namespace mozilla {
 namespace webgl {
@@ -118,55 +117,53 @@ class RaiiShmem final {
 using Int32Vector = std::vector<int32_t>;
 
 }  // namespace webgl
+}  // namespace mozilla
 
-namespace ipc {
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<mozilla::webgl::FrontBufferSnapshotIpc> final {
+struct ParamTraits<mozilla::webgl::FrontBufferSnapshotIpc> final {
   using T = mozilla::webgl::FrontBufferSnapshotIpc;
 
-  static void Write(IPC::MessageWriter* const writer, IProtocol* actor, T& in) {
+  static void Write(IPC::MessageWriter* const writer, T& in) {
     WriteParam(writer, in.surfSize);
     WriteParam(writer, in.byteStride);
-    WriteIPDLParam(writer, actor, std::move(in.shmem));
+    WriteParam(writer, std::move(in.shmem));
   }
 
-  static bool Read(IPC::MessageReader* const reader, IProtocol* actor,
-                   T* const out) {
+  static bool Read(IPC::MessageReader* const reader, T* const out) {
     return ReadParam(reader, &out->surfSize) &&
            ReadParam(reader, &out->byteStride) &&
-           ReadIPDLParam(reader, actor, &out->shmem);
+           ReadParam(reader, &out->shmem);
   }
 };
 
 // -
 
 template <>
-struct IPDLParamTraits<mozilla::webgl::ReadPixelsResultIpc> final {
+struct ParamTraits<mozilla::webgl::ReadPixelsResultIpc> final {
   using T = mozilla::webgl::ReadPixelsResultIpc;
 
-  static void Write(IPC::MessageWriter* const writer, IProtocol* actor, T& in) {
+  static void Write(MessageWriter* const writer, T& in) {
     WriteParam(writer, in.subrect);
     WriteParam(writer, in.byteStride);
-    WriteIPDLParam(writer, actor, std::move(in.shmem));
+    WriteParam(writer, std::move(in.shmem));
   }
 
-  static bool Read(IPC::MessageReader* const reader, IProtocol* actor,
-                   T* const out) {
+  static bool Read(MessageReader* const reader, T* const out) {
     return ReadParam(reader, &out->subrect) &&
            ReadParam(reader, &out->byteStride) &&
-           ReadIPDLParam(reader, actor, &out->shmem);
+           ReadParam(reader, &out->shmem);
   }
 };
 
 // -
 
 template <>
-struct IPDLParamTraits<mozilla::webgl::TexUnpackBlobDesc> final {
+struct ParamTraits<mozilla::webgl::TexUnpackBlobDesc> final {
   using T = mozilla::webgl::TexUnpackBlobDesc;
 
-  static void Write(IPC::MessageWriter* const writer, IProtocol* actor,
-                    T&& in) {
+  static void Write(MessageWriter* const writer, T&& in) {
     WriteParam(writer, in.imageTarget);
     WriteParam(writer, in.size);
     WriteParam(writer, in.srcAlphaType);
@@ -174,32 +171,21 @@ struct IPDLParamTraits<mozilla::webgl::TexUnpackBlobDesc> final {
     MOZ_RELEASE_ASSERT(!in.pboOffset);
     WriteParam(writer, in.structuredSrcSize);
     MOZ_RELEASE_ASSERT(!in.image);
-    WriteIPDLParam(writer, actor, std::move(in.sd));
+    WriteParam(writer, std::move(in.sd));
     MOZ_RELEASE_ASSERT(!in.sourceSurf);
     WriteParam(writer, in.unpacking);
     WriteParam(writer, in.applyUnpackTransforms);
   }
 
-  static bool Read(IPC::MessageReader* const reader, IProtocol* actor,
-                   T* const out) {
+  static bool Read(MessageReader* const reader, T* const out) {
     return ReadParam(reader, &out->imageTarget) &&
            ReadParam(reader, &out->size) &&
            ReadParam(reader, &out->srcAlphaType) &&
            ReadParam(reader, &out->structuredSrcSize) &&
-           ReadIPDLParam(reader, actor, &out->sd) &&
-           ReadParam(reader, &out->unpacking) &&
+           ReadParam(reader, &out->sd) && ReadParam(reader, &out->unpacking) &&
            ReadParam(reader, &out->applyUnpackTransforms);
   }
 };
-
-}  // namespace ipc
-
-namespace webgl {
-using Int32Vector = std::vector<int32_t>;
-}  // namespace webgl
-}  // namespace mozilla
-
-namespace IPC {
 
 // -
 

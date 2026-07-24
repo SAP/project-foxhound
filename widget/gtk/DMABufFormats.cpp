@@ -417,14 +417,20 @@ void GlobalDMABufFormats::SetModifiersToGfxVars() {
 
   format = formats->GetFormat(GBM_FORMAT_P010);
   if (format) {
+    LOGDMABUF(("GBM_FORMAT_P010 is directly composited"));
     mFormatP010 = new DRMFormat(*format);
     gfxVars::SetDMABufModifiersP010(*format->GetModifiers());
   }
-
   format = formats->GetFormat(GBM_FORMAT_NV12);
   if (format) {
+    LOGDMABUF(("GBM_FORMAT_NV12 is directly composited"));
     mFormatNV12 = new DRMFormat(*format);
     gfxVars::SetDMABufModifiersNV12(*format->GetModifiers());
+  }
+  format = formats->GetFormat(GBM_FORMAT_YUV420);
+  if (format) {
+    LOGDMABUF(("GBM_FORMAT_YUV420 is directly composited"));
+    mFormatYUV420 = new DRMFormat(*format);
   }
 }
 
@@ -455,10 +461,32 @@ DRMFormat* GlobalDMABufFormats::GetDRMFormat(int32_t aFOURCCFormat) {
       return mFormatP010;
     case GBM_FORMAT_NV12:
       return mFormatNV12;
+    case GBM_FORMAT_YUV420:
+      return mFormatYUV420;
     default:
       gfxCriticalNoteOnce << "DMABufDevice::GetDRMFormat() unknow format: "
                           << aFOURCCFormat;
       return nullptr;
+  }
+}
+
+bool GlobalDMABufFormats::SupportsDirectComposition(
+    mozilla::gfx::SurfaceFormat aFormat) const {
+  switch (aFormat) {
+    case gfx::SurfaceFormat::R8G8B8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+      return true;
+    case gfx::SurfaceFormat::NV12:
+      return !!mFormatNV12;
+    case gfx::SurfaceFormat::YUV420:
+      return !!mFormatYUV420;
+    case gfx::SurfaceFormat::P010:
+      return !!mFormatP010;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return false;
   }
 }
 

@@ -6,7 +6,6 @@
 #define DOM_MEDIA_PLATFORM_WMF_CLEARKEY_WMFCLEARKEYCDMUTILS_H
 
 #include <initguid.h>
-#include <memory>
 #include <mfidl.h>
 #include <mutex>
 #include <thread>
@@ -17,7 +16,6 @@
 
 #include "MFCDMExtra.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -123,7 +121,7 @@ class AutoPropVar final {
     if (mVar.vt != VT_EMPTY) {
       HRESULT hr = PropVariantClear(&mVar);
       MOZ_ASSERT(SUCCEEDED(hr));
-      Unused << hr;
+      (void)hr;
     }
   }
 

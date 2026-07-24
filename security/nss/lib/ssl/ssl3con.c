@@ -362,7 +362,7 @@ static const CK_MECHANISM_TYPE auth_alg_defs[] = {
     CKM_ECDH1_DERIVE,      /* ssl_auth_ecdh_ecdsa */
     CKM_RSA_PKCS,          /* ssl_auth_rsa_sign */
     CKM_RSA_PKCS_PSS,      /* ssl_auth_rsa_pss */
-    CKM_NSS_HKDF_SHA256,   /* ssl_auth_psk (just check for HKDF) */
+    CKM_HKDF_DATA,         /* ssl_auth_psk (just check for HKDF) */
     CKM_INVALID_MECHANISM  /* ssl_auth_tls13_any */
 };
 PR_STATIC_ASSERT(PR_ARRAY_SIZE(auth_alg_defs) == ssl_auth_size);
@@ -1389,7 +1389,8 @@ ssl3_GetNewRandom(SSL3Random random)
     return rv;
 }
 
-SECStatus
+/* this only implements TLS 1.2 and earlier signatures */
+static SECStatus
 ssl3_SignHashesWithPrivKey(SSL3Hashes *hash, SECKEYPrivateKey *key,
                            SSLSignatureScheme scheme, PRBool isTls, SECItem *buf)
 {
@@ -1450,8 +1451,9 @@ ssl3_SignHashesWithPrivKey(SSL3Hashes *hash, SECKEYPrivateKey *key,
             PORT_SetError(SEC_ERROR_INVALID_KEY);
             goto done;
         }
-        /* since we are calling PK11_SignWithMechanism directly, we need to check the
-         * key policy ourselves (which is already checked in SGN_Digest */
+        /* since we are calling PK11_SignWithMechanism directly, we need to
+         * check the key policy ourselves (which is already checked in
+         * SGN_Digest) */
         rv = NSS_OptionGet(NSS_KEY_SIZE_POLICY_FLAGS, &optval);
         if ((rv == SECSuccess) &&
             ((optval & NSS_KEY_SIZE_POLICY_SIGN_FLAG) == NSS_KEY_SIZE_POLICY_SIGN_FLAG)) {
@@ -1526,8 +1528,9 @@ ssl3_SignHashes(sslSocket *ss, SSL3Hashes *hash, SECKEYPrivateKey *key,
     return SECSuccess;
 }
 
-/* Called from ssl3_VerifySignedHashes and tls13_HandleCertificateVerify. */
-SECStatus
+/* Called from ssl3_VerifySignedHashes */
+/* this only implements TLS 1.2 and earlier signatures */
+static SECStatus
 ssl_VerifySignedHashesWithPubKey(sslSocket *ss, SECKEYPublicKey *key,
                                  SSLSignatureScheme scheme,
                                  SSL3Hashes *hash, SECItem *buf)
@@ -3755,7 +3758,7 @@ tls_ComputeExtendedMasterSecretInt(sslSocket *ss, PK11SymKey *pms,
                                    PK11SymKey **msp)
 {
     ssl3CipherSpec *pwSpec = ss->ssl3.pwSpec;
-    CK_NSS_TLS_EXTENDED_MASTER_KEY_DERIVE_PARAMS extended_master_params;
+    CK_TLS12_EXTENDED_MASTER_KEY_DERIVE_PARAMS extended_master_params;
     SSL3Hashes hashes;
 
     /*
@@ -3783,9 +3786,9 @@ tls_ComputeExtendedMasterSecretInt(sslSocket *ss, PK11SymKey *pms,
     }
 
     if (isDH) {
-        master_derive = CKM_NSS_TLS_EXTENDED_MASTER_KEY_DERIVE_DH;
+        master_derive = CKM_TLS12_EXTENDED_MASTER_KEY_DERIVE_DH;
     } else {
-        master_derive = CKM_NSS_TLS_EXTENDED_MASTER_KEY_DERIVE;
+        master_derive = CKM_TLS12_EXTENDED_MASTER_KEY_DERIVE;
         pms_version_ptr = &pms_version;
     }
 
@@ -12241,7 +12244,7 @@ ssl3_SendNextProto(sslSocket *ss)
     return rv;
 }
 
-/* called from ssl3_SendFinished and tls13_DeriveSecret.
+/* called from ssl3_SendFinished, tls13_DeriveSecret and tls13_LogECHSecret.
  *
  * This function is simply a debugging aid and therefore does not return a
  * SECStatus. */
@@ -12251,18 +12254,6 @@ ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret)
 #ifdef NSS_ALLOW_SSLKEYLOGFILE
     SECStatus rv;
     SECItem *keyData;
-    /* Longest label is "CLIENT_HANDSHAKE_TRAFFIC_SECRET", master secret is 48
-     * bytes which happens to be the largest in TLS 1.3 as well (SHA384).
-     * Maximum line length: "CLIENT_HANDSHAKE_TRAFFIC_SECRET" (31) + " " (1) +
-     * client_random (32*2) + " " (1) +
-     * traffic_secret (48*2) + "\n" (1) = 194. */
-    char buf[200];
-    unsigned int offset, len;
-
-    PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
-
-    if (!ssl_keylog_iob)
-        return;
 
     rv = PK11_ExtractKeyValue(secret);
     if (rv != SECSuccess)
@@ -12270,17 +12261,36 @@ ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret)
 
     /* keyData does not need to be freed. */
     keyData = PK11_GetKeyData(secret);
-    if (!keyData || !keyData->data)
+
+    ssl3_WriteKeyLog(ss, label, keyData);
+#endif
+}
+
+/* called from ssl3_RecordKeyLog and tls13_EchKeyLog.
+ *
+ * This function is simply a debugging aid and therefore does not return a
+ * SECStatus. */
+void
+ssl3_WriteKeyLog(sslSocket *ss, const char *label, const SECItem *item)
+{
+#ifdef NSS_ALLOW_SSLKEYLOGFILE
+    char *buf;
+    unsigned int offset, len;
+
+    if (item == NULL || item->data == NULL)
+        return;
+
+    PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
+
+    if (!ssl_keylog_iob)
         return;
 
     len = strlen(label) + 1 +          /* label + space */
           SSL3_RANDOM_LENGTH * 2 + 1 + /* client random (hex) + space */
-          keyData->len * 2 + 1;        /* secret (hex) + newline */
-    PORT_Assert(len <= sizeof(buf));
-    if (len > sizeof(buf))
+          item->len * 2 + 1;           /* secret (hex) + newline */
+    buf = (char *)PORT_Alloc(len);
+    if (!buf)
         return;
-
-    /* https://developer.mozilla.org/en/NSS_Key_Log_Format */
 
     /* There could be multiple, concurrent writers to the
      * keylog, so we have to do everything in a single call to
@@ -12292,8 +12302,8 @@ ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret)
     hexEncode(buf + offset, ss->ssl3.hs.client_random, SSL3_RANDOM_LENGTH);
     offset += SSL3_RANDOM_LENGTH * 2;
     buf[offset++] = ' ';
-    hexEncode(buf + offset, keyData->data, keyData->len);
-    offset += keyData->len * 2;
+    hexEncode(buf + offset, item->data, item->len);
+    offset += item->len * 2;
     buf[offset++] = '\n';
 
     PORT_Assert(offset == len);
@@ -12302,6 +12312,7 @@ ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret)
     if (fwrite(buf, len, 1, ssl_keylog_iob) == 1)
         fflush(ssl_keylog_iob);
     PZ_Unlock(ssl_keylog_lock);
+    PORT_Free(buf);
 #endif
 }
 

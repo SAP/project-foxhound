@@ -13,7 +13,7 @@
 
 namespace mozilla {
 
-void MappedDeclarationsBuilder::SetIdentAtomValue(nsCSSPropertyID aId,
+void MappedDeclarationsBuilder::SetIdentAtomValue(NonCustomCSSPropertyId aId,
                                                   nsAtom* aValue) {
   Servo_DeclarationBlock_SetIdentStringValue(&EnsureDecls(), aId, aValue);
   if (aId == eCSSProperty__x_lang) {

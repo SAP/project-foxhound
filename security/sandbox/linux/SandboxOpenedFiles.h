@@ -8,8 +8,6 @@
 #define mozilla_SandboxOpenedFiles_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Range.h"
-#include "mozilla/UniquePtr.h"
 
 #include <vector>
 #include <string>

@@ -4,6 +4,9 @@
 
 /////////////////////////////////////////////////////////////////////////////
 
+#ifndef BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_
+#define BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_
+
 #ifdef XP_WIN
 #  define NS_WINIEHISTORYENUMERATOR_CID \
     {0x93480624,                        \
@@ -26,3 +29,5 @@
 // 136e2c4d-c5a4-477c-b131-d93d7d704f64
 #define NS_PRIVATE_BROWSING_SERVICE_WRAPPER_CID \
   {0x136e2c4d, 0xc5a4, 0x477c, {0xb1, 0x31, 0xd9, 0x3d, 0x7d, 0x70, 0x4f, 0x64}}
+
+#endif  // BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_

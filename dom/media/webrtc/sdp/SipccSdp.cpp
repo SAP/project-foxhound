@@ -7,8 +7,9 @@
 #include "sdp/SipccSdp.h"
 
 #include <cstdlib>
-#include "mozilla/UniquePtr.h"
+
 #include "mozilla/Assertions.h"
+#include "mozilla/UniquePtr.h"
 #include "sdp/SdpParser.h"
 
 #ifdef CRLF

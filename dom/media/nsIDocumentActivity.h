@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIDocumentActivity_h__
-#define nsIDocumentActivity_h__
+#ifndef nsIDocumentActivity_h_
+#define nsIDocumentActivity_h_
 
 #include "nsISupports.h"
 
@@ -22,4 +22,4 @@ class nsIDocumentActivity : public nsISupports {
 #define NS_DECL_NSIDOCUMENTACTIVITY \
   virtual void NotifyOwnerDocumentActivityChanged() override;
 
-#endif /* nsIDocumentActivity_h__ */
+#endif /* nsIDocumentActivity_h_ */

@@ -43,7 +43,7 @@ HeapAnalysesClient.prototype.destroy = function () {
  * path. This is a prerequisite for asking the worker to perform various
  * analyses on a heap snapshot.
  *
- * @param {String} snapshotFilePath
+ * @param {string} snapshotFilePath
  *
  * @returns Promise
  *          The promise is fulfilled if the heap snapshot is successfully
@@ -59,7 +59,7 @@ HeapAnalysesClient.prototype.readHeapSnapshot = function (snapshotFilePath) {
  * Tell the worker to delete all references to the snapshot and dominator trees
  * linked to the provided snapshot file path.
  *
- * @param {String} snapshotFilePath
+ * @param {string} snapshotFilePath
  * @return Promise<undefined>
  */
 HeapAnalysesClient.prototype.deleteHeapSnapshot = function (snapshotFilePath) {
@@ -70,9 +70,9 @@ HeapAnalysesClient.prototype.deleteHeapSnapshot = function (snapshotFilePath) {
  * Request the creation time given a snapshot file path. Returns `null`
  * if snapshot does not exist.
  *
- * @param {String} snapshotFilePath
+ * @param {string} snapshotFilePath
  *        The path to the snapshot.
- * @return {Number?}
+ * @return {number?}
  *        The unix timestamp of the creation time of the snapshot, or null if
  *        snapshot does not exist.
  */
@@ -80,21 +80,21 @@ HeapAnalysesClient.prototype.getCreationTime = function (snapshotFilePath) {
   return this._worker.performTask("getCreationTime", snapshotFilePath);
 };
 
-/** * Censuses *****************************************************************/
+/*** Censuses *****************************************************************/
 
 /**
  * Ask the worker to perform a census analysis on the heap snapshot with the
  * given path. The heap snapshot at the given path must have already been read
  * into memory by the worker (see `readHeapSnapshot`).
  *
- * @param {String} snapshotFilePath
+ * @param {string} snapshotFilePath
  *
- * @param {Object} censusOptions
+ * @param {object} censusOptions
  *        A structured-cloneable object specifying the requested census's
  *        breakdown. See the "takeCensus" section of
  *        `js/src/doc/Debugger/Debugger.Memory.md` for detailed documentation.
  *
- * @param {Object} requestOptions
+ * @param {object} requestOptions
  *        An object specifying options of this worker request.
  *        - {Boolean} asTreeNode
  *          Whether or not the census is returned as a CensusTreeNode,
@@ -133,7 +133,7 @@ HeapAnalysesClient.prototype.takeCensus = function (
  * Get the individual nodes that correspond to the given census report leaf
  * indices.
  *
- * @param {Object} opts
+ * @param {object} opts
  *        An object with the following properties:
  *        - {DominatorTreeId} dominatorTreeId: The id of the dominator tree.
  *        - {Set<Number>} indices: The indices of the census report leaves we
@@ -146,13 +146,12 @@ HeapAnalysesClient.prototype.takeCensus = function (
  *        - {Number} maxIndividuals: The maximum number of individual nodes to
  *          return.
  *
- * @returns {Promise<Object>}
+ * @returns {Promise<object>}
  *          A promise of an object with the following properties:
  *          - {Array<DominatorTreeNode>} nodes: An array of `DominatorTreeNode`s
  *            with their shortest paths attached, and without any dominator tree
  *            child/parent information attached. The results are sorted by
  *            retained size.
- *
  */
 HeapAnalysesClient.prototype.getCensusIndividuals = function (opts) {
   return this._worker.performTask("getCensusIndividuals", opts);
@@ -163,18 +162,18 @@ HeapAnalysesClient.prototype.getCensusIndividuals = function (opts) {
  * paths and then return the difference between them. Both heap snapshots must
  * have already been read into memory by the worker (see `readHeapSnapshot`).
  *
- * @param {String} firstSnapshotFilePath
+ * @param {string} firstSnapshotFilePath
  *        The first snapshot file path.
  *
- * @param {String} secondSnapshotFilePath
+ * @param {string} secondSnapshotFilePath
  *        The second snapshot file path.
  *
- * @param {Object} censusOptions
+ * @param {object} censusOptions
  *        A structured-cloneable object specifying the requested census's
  *        breakdown. See the "takeCensus" section of
  *        `js/src/doc/Debugger/Debugger.Memory.md` for detailed documentation.
  *
- * @param {Object} requestOptions
+ * @param {object} requestOptions
  *        An object specifying options for this request.
  *        - {Boolean} asTreeNode
  *          Whether the resulting delta report should be converted to a census
@@ -209,13 +208,13 @@ HeapAnalysesClient.prototype.takeCensusDiff = function (
   });
 };
 
-/** * Dominator Trees **********************************************************/
+/*** Dominator Trees **********************************************************/
 
 /**
  * Compute the dominator tree of the heap snapshot loaded from the given file
  * path. Returns the id of the computed dominator tree.
  *
- * @param {String} snapshotFilePath
+ * @param {string} snapshotFilePath
  *
  * @returns {Promise<DominatorTreeId>}
  */
@@ -228,7 +227,7 @@ HeapAnalysesClient.prototype.computeDominatorTree = function (
 /**
  * Get the initial, partial view of the dominator tree with the given id.
  *
- * @param {Object} opts
+ * @param {object} opts
  *        An object specifying options for this request.
  *        - {DominatorTreeId} dominatorTreeId
  *          The id of the dominator tree.
@@ -252,7 +251,7 @@ HeapAnalysesClient.prototype.getDominatorTree = function (opts) {
 /**
  * Get a subset of a nodes children in the dominator tree.
  *
- * @param {Object} opts
+ * @param {object} opts
  *        An object specifying options for this request.
  *        - {DominatorTreeId} dominatorTreeId
  *          The id of the dominator tree.
@@ -269,7 +268,7 @@ HeapAnalysesClient.prototype.getDominatorTree = function (opts) {
  *        - {Number} maxRetainingPaths
  *          The maximum number of retaining paths to find for each node.
  *
- * @returns {Promise<Object>}
+ * @returns {Promise<object>}
  *          A promise of an object with the following properties:
  *          - {Array<DominatorTreeNode>} nodes
  *            The requested nodes that are immediately dominated by the node

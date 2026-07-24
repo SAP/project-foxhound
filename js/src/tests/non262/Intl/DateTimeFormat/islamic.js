@@ -10,11 +10,6 @@ function tabularDate(options, date) {
     return new Intl.DateTimeFormat("ar-SA-u-ca-islamic-tbla-nu-latn", opts).format(date);
 }
 
-function sightingDate(options, date) {
-    var opts = Object.assign({timeZone: "Asia/Riyadh"}, options);
-    return new Intl.DateTimeFormat("ar-SA-u-ca-islamic-rgsa-nu-latn", opts).format(date);
-}
-
 function ummAlQuraDate(options, date) {
     var opts = Object.assign({timeZone: "Asia/Riyadh"}, options);
     return new Intl.DateTimeFormat("ar-SA-u-ca-islamic-umalqura-nu-latn", opts).format(date);
@@ -32,17 +27,6 @@ function testIslamicTbla() {
     // Day is different by one.
     var day = {day: "numeric"};
     assertEq(Number(civilDate(day, date)) - Number(tabularDate(day, date)), -1);
-}
-
-// Test islamic-rgsa (Saudi Arabia sighting).
-// Sighting of the hilal (crescent moon) in Saudi Arabia.
-function testIslamicRgsa() {
-    var date1 = new Date(Date.UTC(1975, 5 - 1, 6));
-    var date2 = new Date(Date.UTC(2015, 1 - 1, 1));
-    var dayMonthYear = {year: "numeric", month: "numeric", day: "numeric"};
-
-    assertEq(sightingDate(dayMonthYear, date1), tabularDate(dayMonthYear, date1));
-    assertEq(sightingDate(dayMonthYear, date2), civilDate(dayMonthYear, date2));
 }
 
 // Test islamic-umalqura (Umm al-Qura).
@@ -82,7 +66,6 @@ function testIslamicUmalqura() {
 }
 
 testIslamicTbla();
-testIslamicRgsa();
 testIslamicUmalqura();
 
 if (typeof reportCompare === "function")

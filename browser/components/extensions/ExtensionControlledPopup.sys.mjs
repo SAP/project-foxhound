@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
- * @fileOverview
+/**
+ * @file
  * This module exports a class that can be used to handle displaying a popup
  * doorhanger with a primary action to not show a popup for this extension again
  * and a secondary action disables the addon, or brings the user to their settings.
@@ -21,7 +21,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionSettingsStore:
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -45,7 +46,8 @@ ChromeUtils.defineLazyGetter(lazy, "distributionAddonsList", function () {
 });
 
 export class ExtensionControlledPopup {
-  /* Provide necessary options for the popup.
+  /**
+   * Provide necessary options for the popup.
    *
    * @param {object} opts Options for configuring popup.
    * @param {string} opts.confirmedType
@@ -77,20 +79,20 @@ export class ExtensionControlledPopup {
    * @param {string} opts.learnMoreLink
    *                 The name of the SUMO page to link to, this is added to
    *                 app.support.baseURL.
-   * @param optional {string} opts.preferencesLocation
+   * @param {string} [opts.preferencesLocation]
    *                 If included, the name of the preferences tab that will be opened
    *                 by the secondary action. If not included, the secondary option will
    *                 disable the addon.
-   * @param optional {string} opts.preferencesEntrypoint
+   * @param {string} [opts.preferencesEntrypoint]
    *                 The entrypoint to pass to preferences telemetry.
-   * @param {function} opts.onObserverAdded
+   * @param {Function} opts.onObserverAdded
    *                   A callback that is triggered when an observer is registered to
    *                   trigger the popup on the next observerTopic.
-   * @param {function} opts.onObserverRemoved
+   * @param {Function} opts.onObserverRemoved
    *                   A callback that is triggered when the observer is removed,
    *                   either because the popup is opening or it was explicitly
    *                   cancelled by calling removeObserver.
-   * @param {function} opts.beforeDisableAddon
+   * @param {Function} opts.beforeDisableAddon
    *                   A function that is called before disabling an extension when the
    *                   user decides to disable the extension. If this function is async
    *                   then the extension won't be disabled until it is fulfilled.

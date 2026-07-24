@@ -21,7 +21,7 @@ add_task(async function () {
   info(
     "Checking playback rate existence which includes custom rate of animations"
   );
-  const expectedPlaybackRates = [0.1, 0.25, 0.5, 1, 1.5, 2, 5, 10];
+  const expectedPlaybackRates = [0.01, 0.1, 0.25, 0.5, 1, 1.5, 2, 5, 10];
   await assertPlaybackRateOptions(selectEl, expectedPlaybackRates);
 
   info("Checking selected playback rate");

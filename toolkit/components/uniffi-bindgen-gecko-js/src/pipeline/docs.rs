@@ -6,18 +6,18 @@ use super::*;
 
 pub fn pass(root: &mut Root) -> Result<()> {
     let mut module_docs = vec![];
-    root.visit_mut(|module: &mut Module| {
-        if module.fixture {
+    root.visit_mut(|namespace: &mut Namespace| {
+        if namespace.fixture {
             return;
         }
         let mut docs = ApiModuleDocs {
-            filename: format!("{}.md", module.name),
-            jsdoc_module_name: format!("{}.sys", module.js_name),
-            module_name: format!("{}.sys.mjs", module.js_name),
+            filename: format!("{}.md", namespace.name),
+            jsdoc_module_name: format!("{}.sys", namespace.js_name),
+            module_name: format!("{}.sys.mjs", namespace.js_name),
             classes: vec![],
             functions: vec![],
         };
-        module.visit(|type_def: &TypeDefinition| {
+        namespace.visit(|type_def: &TypeDefinition| {
             match type_def {
                 TypeDefinition::Interface(Interface {
                     name, docstring, ..
@@ -54,7 +54,7 @@ pub fn pass(root: &mut Root) -> Result<()> {
                 _ => (),
             }
         });
-        module.visit(|func: &Function| {
+        namespace.visit(|func: &Function| {
             docs.functions.push(func.name.clone());
         });
         docs.classes.sort();

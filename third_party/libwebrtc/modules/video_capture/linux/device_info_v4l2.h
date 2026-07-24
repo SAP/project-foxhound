@@ -11,9 +11,10 @@
 #ifndef MODULES_VIDEO_CAPTURE_LINUX_DEVICE_INFO_V4L2_H_
 #define MODULES_VIDEO_CAPTURE_LINUX_DEVICE_INFO_V4L2_H_
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "modules/video_capture/device_info_impl.h"
+#include "rtc_base/thread_annotations.h"
 
 #include "rtc_base/platform_thread.h"
 #ifdef WEBRTC_LINUX
@@ -61,7 +62,7 @@ class DeviceInfoV4l2 : public DeviceInfoImpl {
   int EventCheck(int fd);
   int HandleEvents(int fd);
   int ProcessInotifyEvents();
-  rtc::PlatformThread _inotifyEventThread;
+  PlatformThread _inotifyEventThread;
   void InotifyProcess();
   int _fd_v4l, _fd_dev, _wd_v4l, _wd_dev; /* accessed on InotifyEventThread thread */
   std::atomic<bool> _isShutdown;

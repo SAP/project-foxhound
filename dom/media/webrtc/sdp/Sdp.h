@@ -60,17 +60,15 @@
                                                                 '__'
 */
 
-#ifndef _SDP_H_
-#define _SDP_H_
+#ifndef SDP_H_
+#define SDP_H_
 
 #include <ostream>
-#include <vector>
 #include <sstream>
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Maybe.h"
-#include "sdp/SdpMediaSection.h"
+
 #include "sdp/SdpAttributeList.h"
 #include "sdp/SdpEnum.h"
+#include "sdp/SdpMediaSection.h"
 
 namespace mozilla {
 

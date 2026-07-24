@@ -171,7 +171,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=632379
 
 var gFinished = false;
 
-/** Test for Bug 632379 **/
+/** Test for Bug 632379 */
 // Tests whether scrolling a menu affects the position at which popups appear
 var pos = new Array(2);
 var count=0;
@@ -184,8 +184,8 @@ function snapshot(elem)
     ++count;
     if (count <= 1) {
         // close the submenu and open the bottom submenu
-        synthesizeKey("KEY_ArrowLeft");
-        sendString("9");
+        document.getElementById(elem.parentNode.id).openMenu(false);
+        document.getElementById("menu9").openMenu(true);
     } else {
         if (!navigator.platform.includes("Mac")) {
             is(pos[1], pos[0], `Popup ${elem.parentNode.id} should open in the same place when the menu is scrolled`);
@@ -211,7 +211,7 @@ function openSubmenu(mainMenu, e)
     }
     info("openSubmenu() called");
     // open a submenu in the middle
-    sendString("5");
+    document.getElementById("menu5").openMenu(true);
 }
 
 SimpleTest.waitForExplicitFinish();

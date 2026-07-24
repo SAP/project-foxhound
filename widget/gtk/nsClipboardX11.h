@@ -5,12 +5,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsClipboardX11_h_
-#define __nsClipboardX11_h_
+#ifndef _nsClipboardX11_h_
+#define _nsClipboardX11_h_
 
 #include <gtk/gtk.h>
 
-#include "mozilla/Maybe.h"
 #include "nsClipboard.h"
 
 class nsRetrievalContextX11 : public nsRetrievalContext {
@@ -29,4 +28,4 @@ class nsRetrievalContextX11 : public nsRetrievalContext {
                                      const char* aMimeType = nullptr);
 };
 
-#endif /* __nsClipboardX11_h_ */
+#endif /* _nsClipboardX11_h_ */

@@ -397,7 +397,8 @@ void gfxUserFontEntry::FontLoadComplete() {
   GetUserFontSets(fontSets);
   for (gfxUserFontSet* fontSet : fontSets) {
     fontSet->IncrementGeneration();
-    if (nsPresContext* ctx = dom::FontFaceSetImpl::GetPresContextFor(fontSet)) {
+    if (FontVisibilityProvider* ctx =
+            dom::FontFaceSetImpl::GetFontVisibilityProviderFor(fontSet)) {
       // Update layout for the presence of the new font.  Since this is
       // asynchronous, reflows will coalesce.
       ctx->UserFontSetUpdated(this);
@@ -459,8 +460,8 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
       gfxFontEntry* fe = nullptr;
       if (!pfl->IsFontFamilyWhitelistActive()) {
         fe = gfxPlatform::GetPlatform()->LookupLocalFont(
-            fontSet->GetPresContext(), currSrc.mLocalName, Weight(), Stretch(),
-            SlantStyle());
+            fontSet->GetFontVisibilityProvider(), currSrc.mLocalName, Weight(),
+            Stretch(), SlantStyle());
         // Note that we've attempted a local lookup, even if it failed,
         // as this means we are dependent on any updates to the font list.
         mSeenLocalSource = true;
@@ -654,8 +655,6 @@ void gfxUserFontEntry::SetLoadState(UserFontLoadState aLoadState) {
   mUserFontLoadState = aLoadState;
 }
 
-MOZ_DEFINE_MALLOC_SIZE_OF_ON_ALLOC(UserFontMallocSizeOfOnAlloc)
-
 bool gfxUserFontEntry::LoadPlatformFontSync(uint32_t aSrcIndex,
                                             const uint8_t* aFontData,
                                             uint32_t aLength) {
@@ -744,7 +743,6 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
 
   gfxFontEntry* fe = nullptr;
   uint32_t fontCompressionRatio = 0;
-  size_t computedSize = 0;
 
   if (aSanitizedFontData) {
     if (aSanitizedLength) {
@@ -766,14 +764,6 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
     gfxFontUtils::GetFullNameFromSFNT(aSanitizedFontData, aSanitizedLength,
                                       originalFullName);
 
-    // Record size for memory reporting purposes. We measure this now
-    // because by the time we potentially want to collect reports, this
-    // data block may have been handed off to opaque OS font APIs that
-    // don't allow us to retrieve or measure it directly.
-    // The *OnAlloc function will also tell DMD about this block, as the
-    // OS font code may hold on to it for an extended period.
-    computedSize = UserFontMallocSizeOfOnAlloc(aSanitizedFontData);
-
     // Here ownership of aSanitizedFontData is passed to the platform,
     // which will delete it when no longer required
     fe = gfxPlatform::GetPlatform()->MakePlatformFont(
@@ -785,8 +775,6 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
   }
 
   if (fe) {
-    fe->mComputedSizeOfUserFont = computedSize;
-
     // Save a copy of the metadata block (if present) for InspectorUtils
     // to use if required. Ownership of the metadata block will be passed
     // to the gfxUserFontData record below.
@@ -1229,9 +1217,6 @@ bool gfxUserFontSet::UserFontCache::Entry::KeyEquals(
 }
 
 void gfxUserFontSet::UserFontCache::CacheFont(gfxFontEntry* aFontEntry) {
-  NS_ASSERTION(aFontEntry->mFamilyName.Length() != 0,
-               "caching a font associated with no family yet");
-
   // if caching is disabled, simply return
   if (StaticPrefs::gfx_downloadable_fonts_disable_cache()) {
     return;

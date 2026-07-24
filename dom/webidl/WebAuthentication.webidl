@@ -24,7 +24,7 @@ typedef DOMString Base64URLString;
 
 [GenerateConversionToJS]
 dictionary RegistrationResponseJSON {
-    required Base64URLString id;
+    required DOMString id;
     required Base64URLString rawId;
     required AuthenticatorAttestationResponseJSON response;
     DOMString authenticatorAttachment;
@@ -52,7 +52,7 @@ dictionary AuthenticatorAttestationResponseJSON {
 
 [GenerateConversionToJS]
 dictionary AuthenticationResponseJSON {
-    required Base64URLString id;
+    required DOMString id;
     required Base64URLString rawId;
     required AuthenticatorAssertionResponseJSON response;
     DOMString authenticatorAttachment;
@@ -66,7 +66,6 @@ dictionary AuthenticatorAssertionResponseJSON {
     required Base64URLString authenticatorData;
     required Base64URLString signature;
     Base64URLString userHandle;
-    Base64URLString attestationObject;
 };
 
 [GenerateConversionToJS]
@@ -80,17 +79,17 @@ partial interface PublicKeyCredential {
 
 [SecureContext]
 partial interface PublicKeyCredential {
-    [Throws, Pref="security.webauthn.enable_json_serialization_methods"] static PublicKeyCredentialCreationOptions parseCreationOptionsFromJSON(PublicKeyCredentialCreationOptionsJSON options);
-};
-
-// https://w3c.github.io/webauthn/#sctn-getClientCapabilities
-[SecureContext]
-partial interface PublicKeyCredential {
-        [Throws] static Promise<PublicKeyCredentialClientCapabilities> getClientCapabilities();
+    [Throws] static Promise<PublicKeyCredentialClientCapabilities> getClientCapabilities();
 };
 
 typedef record<DOMString, boolean> PublicKeyCredentialClientCapabilities;
 
+[SecureContext]
+partial interface PublicKeyCredential {
+    [Throws, Pref="security.webauthn.enable_json_serialization_methods"] static PublicKeyCredentialCreationOptions parseCreationOptionsFromJSON(PublicKeyCredentialCreationOptionsJSON options);
+};
+
+[GenerateConversionToJS]
 dictionary PublicKeyCredentialCreationOptionsJSON {
     required PublicKeyCredentialRpEntity                    rp;
     required PublicKeyCredentialUserEntityJSON              user;
@@ -101,7 +100,6 @@ dictionary PublicKeyCredentialCreationOptionsJSON {
     AuthenticatorSelectionCriteria                          authenticatorSelection;
     sequence<DOMString>                                     hints = [];
     DOMString                                               attestation = "none";
-    sequence<DOMString>                                     attestationFormats = [];
     AuthenticationExtensionsClientInputsJSON                extensions;
 };
 
@@ -112,8 +110,8 @@ dictionary PublicKeyCredentialUserEntityJSON {
 };
 
 dictionary PublicKeyCredentialDescriptorJSON {
-    required Base64URLString        id;
     required DOMString              type;
+    required Base64URLString        id;
     sequence<DOMString>             transports;
 };
 
@@ -125,6 +123,7 @@ partial interface PublicKeyCredential {
     [Throws, Pref="security.webauthn.enable_json_serialization_methods"] static PublicKeyCredentialRequestOptions parseRequestOptionsFromJSON(PublicKeyCredentialRequestOptionsJSON options);
 };
 
+[GenerateConversionToJS]
 dictionary PublicKeyCredentialRequestOptionsJSON {
     required Base64URLString                                challenge;
     unsigned long                                           timeout;
@@ -132,8 +131,6 @@ dictionary PublicKeyCredentialRequestOptionsJSON {
     sequence<PublicKeyCredentialDescriptorJSON>             allowCredentials = [];
     DOMString                                               userVerification = "preferred";
     sequence<DOMString>                                     hints = [];
-    DOMString                                               attestation = "none";
-    sequence<DOMString>                                     attestationFormats = [];
     AuthenticationExtensionsClientInputsJSON                extensions;
 };
 
@@ -162,21 +159,22 @@ interface AuthenticatorAssertionResponse : AuthenticatorResponse {
 };
 
 dictionary PublicKeyCredentialParameters {
-    required DOMString                type;
-    required COSEAlgorithmIdentifier  alg;
+    required DOMString                    type;
+    required COSEAlgorithmIdentifier      alg;
 };
 
 dictionary PublicKeyCredentialCreationOptions {
-    required PublicKeyCredentialRpEntity   rp;
-    required PublicKeyCredentialUserEntity user;
+    required PublicKeyCredentialRpEntity         rp;
+    required PublicKeyCredentialUserEntity       user;
 
-    required BufferSource                            challenge;
-    required sequence<PublicKeyCredentialParameters> pubKeyCredParams;
+    required BufferSource                             challenge;
+    required sequence<PublicKeyCredentialParameters>  pubKeyCredParams;
 
     unsigned long                                timeout;
     sequence<PublicKeyCredentialDescriptor>      excludeCredentials = [];
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticatorSelectionCriteria               authenticatorSelection = {};
+    sequence<DOMString>                          hints = [];
     DOMString                                    attestation = "none";
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticationExtensionsClientInputs         extensions = {};
@@ -205,9 +203,10 @@ dictionary AuthenticatorSelectionCriteria {
 dictionary PublicKeyCredentialRequestOptions {
     required BufferSource                challenge;
     unsigned long                        timeout;
-    USVString                            rpId;
+    DOMString                            rpId;
     sequence<PublicKeyCredentialDescriptor> allowCredentials = [];
     DOMString                            userVerification = "preferred";
+    sequence<DOMString>                  hints = [];
     // FIXME: bug 1493860: should this "= {}" be here?
     AuthenticationExtensionsClientInputs extensions = {};
 };
@@ -250,33 +249,22 @@ typedef sequence<AAGUID>      AuthenticatorSelectionList;
 typedef BufferSource      AAGUID;
 
 partial dictionary AuthenticationExtensionsClientInputs {
-    USVString appid;
+  DOMString appid;
+};
+partial dictionary AuthenticationExtensionsClientInputsJSON {
+  DOMString appid;
 };
 
 partial dictionary AuthenticationExtensionsClientOutputs {
-    boolean appid;
+  boolean appid;
 };
-
-// The spec does not define any partial dictionaries that modify
-// AuthenticationExtensionsClientInputsJSON, but this seems to be an error. All changes to
-// AuthenticationExtensionsClientInputs must be accompanied by changes to
-// AuthenticationExtensionsClientInputsJSON for parseCreationOptionsFromJSON and
-// parseRequestOptionsFromJSON to function correctly.
-// (see: https://github.com/w3c/webauthn/issues/1968).
-partial dictionary AuthenticationExtensionsClientInputsJSON {
-    USVString appid;
-};
-
-// We also deviate from the spec by mirroring changes to AuthenticationExtensionsClientOutputs in
-// AuthenticationExtensionsClientOutputsJSON.
 partial dictionary AuthenticationExtensionsClientOutputsJSON {
-    boolean appid;
+  boolean appid;
 };
 
 partial dictionary AuthenticationExtensionsClientInputs {
     boolean credProps;
 };
-
 partial dictionary AuthenticationExtensionsClientInputsJSON {
     boolean credProps;
 };
@@ -288,9 +276,85 @@ dictionary CredentialPropertiesOutput {
 partial dictionary AuthenticationExtensionsClientOutputs {
     CredentialPropertiesOutput credProps;
 };
-
 partial dictionary AuthenticationExtensionsClientOutputsJSON {
     CredentialPropertiesOutput credProps;
+};
+
+dictionary AuthenticationExtensionsPRFValues {
+    required BufferSource first;
+    BufferSource second;
+};
+dictionary AuthenticationExtensionsPRFValuesJSON {
+    required Base64URLString first;
+    Base64URLString second;
+};
+
+dictionary AuthenticationExtensionsPRFInputs {
+    AuthenticationExtensionsPRFValues eval;
+    record<DOMString, AuthenticationExtensionsPRFValues> evalByCredential;
+};
+dictionary AuthenticationExtensionsPRFInputsJSON {
+    AuthenticationExtensionsPRFValuesJSON eval;
+    record<DOMString, AuthenticationExtensionsPRFValuesJSON> evalByCredential;
+};
+
+partial dictionary AuthenticationExtensionsClientInputs {
+    AuthenticationExtensionsPRFInputs prf;
+};
+partial dictionary AuthenticationExtensionsClientInputsJSON {
+    AuthenticationExtensionsPRFInputsJSON prf;
+};
+
+dictionary AuthenticationExtensionsPRFOutputs {
+    boolean enabled;
+    AuthenticationExtensionsPRFValues results;
+};
+dictionary AuthenticationExtensionsPRFOutputsJSON {
+    boolean enabled;
+    AuthenticationExtensionsPRFValuesJSON results;
+};
+
+partial dictionary AuthenticationExtensionsClientOutputs {
+    AuthenticationExtensionsPRFOutputs prf;
+};
+partial dictionary AuthenticationExtensionsClientOutputsJSON {
+    AuthenticationExtensionsPRFOutputsJSON prf;
+};
+
+partial dictionary AuthenticationExtensionsClientInputs {
+    AuthenticationExtensionsLargeBlobInputs largeBlob;
+};
+partial dictionary AuthenticationExtensionsClientInputsJSON {
+    AuthenticationExtensionsLargeBlobInputsJSON largeBlob;
+};
+
+dictionary AuthenticationExtensionsLargeBlobInputs {
+    DOMString support;
+    boolean read;
+    BufferSource write;
+};
+dictionary AuthenticationExtensionsLargeBlobInputsJSON {
+    DOMString support;
+    boolean read;
+    Base64URLString write;
+};
+
+partial dictionary AuthenticationExtensionsClientOutputs {
+    AuthenticationExtensionsLargeBlobOutputs largeBlob;
+};
+partial dictionary AuthenticationExtensionsClientOutputsJSON {
+    AuthenticationExtensionsLargeBlobOutputsJSON largeBlob;
+};
+
+dictionary AuthenticationExtensionsLargeBlobOutputs {
+    boolean supported;
+    ArrayBuffer blob;
+    boolean written;
+};
+dictionary AuthenticationExtensionsLargeBlobOutputsJSON {
+    boolean supported;
+    Base64URLString blob;
+    boolean written;
 };
 
 /*
@@ -305,7 +369,6 @@ enum CredentialProtectionPolicy {
   "userVerificationOptionalWithCredentialIDList",
   "userVerificationRequired",
 };
-
 partial dictionary AuthenticationExtensionsClientInputs {
   CredentialProtectionPolicy credentialProtectionPolicy;
   // The specification includes a default `= false` value for
@@ -314,7 +377,6 @@ partial dictionary AuthenticationExtensionsClientInputs {
   // with value false, the extension was sent with value true.
   boolean enforceCredentialProtectionPolicy;
 };
-
 partial dictionary AuthenticationExtensionsClientInputsJSON {
   CredentialProtectionPolicy credentialProtectionPolicy;
   boolean enforceCredentialProtectionPolicy;
@@ -324,63 +386,18 @@ partial dictionary AuthenticationExtensionsClientInputsJSON {
 // <https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#sctn-hmac-secret-extension>
 // note: we don't support hmac-secret in get() (see instead the prf extension)
 // so we only define the create() inputs and outputs here.
-
 partial dictionary AuthenticationExtensionsClientInputs {
+    boolean hmacCreateSecret;
+};
+partial dictionary AuthenticationExtensionsClientInputsJSON {
     boolean hmacCreateSecret;
 };
 
 partial dictionary AuthenticationExtensionsClientOutputs {
     boolean hmacCreateSecret;
 };
-
-partial dictionary AuthenticationExtensionsClientInputsJSON {
-    boolean hmacCreateSecret;
-};
-
 partial dictionary AuthenticationExtensionsClientOutputsJSON {
     boolean hmacCreateSecret;
-};
-
-// largeBlob
-// <https://w3c.github.io/webauthn/#sctn-large-blob-extension>
-partial dictionary AuthenticationExtensionsClientInputs {
-    AuthenticationExtensionsLargeBlobInputs largeBlob;
-};
-
-partial dictionary AuthenticationExtensionsClientInputsJSON {
-    AuthenticationExtensionsLargeBlobInputsJSON largeBlob;
-};
-
-dictionary AuthenticationExtensionsLargeBlobInputs {
-    DOMString support;
-    boolean read;
-    BufferSource write;
-};
-
-dictionary AuthenticationExtensionsLargeBlobInputsJSON {
-    DOMString support;
-    boolean read;
-    Base64URLString write;
-};
-
-partial dictionary AuthenticationExtensionsClientOutputs {
-    AuthenticationExtensionsLargeBlobOutputs largeBlob;
-};
-
-partial dictionary AuthenticationExtensionsClientOutputsJSON {
-    AuthenticationExtensionsLargeBlobOutputsJSON largeBlob;
-};
-
-dictionary AuthenticationExtensionsLargeBlobOutputs {
-    boolean supported;
-    ArrayBuffer blob;
-    boolean written;
-};
-
-dictionary AuthenticationExtensionsLargeBlobOutputsJSON {
-    boolean supported;
-    Base64URLString blob;
-    boolean written;
 };
 
 // minPinLength
@@ -388,56 +405,6 @@ dictionary AuthenticationExtensionsLargeBlobOutputsJSON {
 partial dictionary AuthenticationExtensionsClientInputs {
   boolean minPinLength;
 };
-
 partial dictionary AuthenticationExtensionsClientInputsJSON {
   boolean minPinLength;
-};
-
-
-// prf
-// <https://w3c.github.io/webauthn/#prf-extension>
-dictionary AuthenticationExtensionsPRFValues {
-  required BufferSource first;
-  BufferSource second;
-};
-
-dictionary AuthenticationExtensionsPRFValuesJSON {
-  required Base64URLString first;
-  Base64URLString second;
-};
-
-dictionary AuthenticationExtensionsPRFInputs {
-  AuthenticationExtensionsPRFValues eval;
-  record<USVString, AuthenticationExtensionsPRFValues> evalByCredential;
-};
-
-dictionary AuthenticationExtensionsPRFInputsJSON {
-  AuthenticationExtensionsPRFValuesJSON eval;
-  record<USVString, AuthenticationExtensionsPRFValuesJSON> evalByCredential;
-};
-
-partial dictionary AuthenticationExtensionsClientInputs {
-  AuthenticationExtensionsPRFInputs prf;
-};
-
-partial dictionary AuthenticationExtensionsClientInputsJSON {
-  AuthenticationExtensionsPRFInputsJSON prf;
-};
-
-dictionary AuthenticationExtensionsPRFOutputs {
-  boolean enabled;
-  AuthenticationExtensionsPRFValues results;
-};
-
-dictionary AuthenticationExtensionsPRFOutputsJSON {
-  boolean enabled;
-  AuthenticationExtensionsPRFValuesJSON results;
-};
-
-partial dictionary AuthenticationExtensionsClientOutputs {
-  AuthenticationExtensionsPRFOutputs prf;
-};
-
-partial dictionary AuthenticationExtensionsClientOutputsJSON {
-  AuthenticationExtensionsPRFOutputsJSON prf;
 };

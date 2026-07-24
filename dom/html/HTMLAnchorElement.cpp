@@ -9,18 +9,17 @@
 
 #include "mozilla/dom/HTMLAnchorElement.h"
 
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLAnchorElementBinding.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
-#include "mozilla/FocusModel.h"
-#include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
 #include "nsIURI.h"
+#include "nsPresContext.h"
 #include "nsTaintingUtils.h"
 #include "nsWindowSizes.h"
 

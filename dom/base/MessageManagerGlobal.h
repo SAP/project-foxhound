@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_MessageManagerGlobal_h
 #define mozilla_dom_MessageManagerGlobal_h
 
-#include "nsFrameMessageManager.h"
 #include "mozilla/ErrorResult.h"
+#include "nsFrameMessageManager.h"
 
 namespace mozilla::dom {
 
@@ -35,23 +35,6 @@ class MessageManagerGlobal {
       return;
     }
     mMessageManager->RemoveMessageListener(aMessageName, aListener, aError);
-  }
-  void AddWeakMessageListener(const nsAString& aMessageName,
-                              MessageListener& aListener, ErrorResult& aError) {
-    if (!mMessageManager) {
-      aError.Throw(NS_ERROR_NOT_INITIALIZED);
-      return;
-    }
-    mMessageManager->AddWeakMessageListener(aMessageName, aListener, aError);
-  }
-  void RemoveWeakMessageListener(const nsAString& aMessageName,
-                                 MessageListener& aListener,
-                                 ErrorResult& aError) {
-    if (!mMessageManager) {
-      aError.Throw(NS_ERROR_NOT_INITIALIZED);
-      return;
-    }
-    mMessageManager->RemoveWeakMessageListener(aMessageName, aListener, aError);
   }
 
   // MessageSender

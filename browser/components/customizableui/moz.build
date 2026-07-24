@@ -16,7 +16,7 @@ TESTING_JS_MODULES += [
     "test/CustomizableUITestUtils.sys.mjs",
 ]
 
-EXTRA_JS_MODULES += [
+MOZ_SRC_FILES += [
     "CustomizableUI.sys.mjs",
     "CustomizableWidgets.sys.mjs",
     "CustomizeMode.sys.mjs",

@@ -8,9 +8,9 @@
 
 #include "MediaDecoder.h"
 #include "mozilla/Logging.h"
-#include "mozilla/media/MediaUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/media/MediaUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIWritablePropertyBag2.h"
 

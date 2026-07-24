@@ -5,12 +5,12 @@
 #include "CCGCScheduler.h"
 
 #include "js/GCAPI.h"
-#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/PerfStats.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/glean/DomMetrics.h"
-#include "mozilla/PerfStats.h"
 #include "nsRefreshDriver.h"
 
 /* Globally initialized constants
@@ -460,7 +460,7 @@ void CCGCScheduler::PokeShrinkingGC() {
         }
       },
       this, StaticPrefs::javascript_options_compact_on_user_inactive_delay(),
-      nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "ShrinkingGCTimerFired");
+      nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "ShrinkingGCTimerFired"_ns);
 }
 
 void CCGCScheduler::PokeFullGC() {
@@ -482,7 +482,7 @@ void CCGCScheduler::PokeFullGC() {
           }
         },
         this, StaticPrefs::javascript_options_gc_delay_full(),
-        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "FullGCTimerFired");
+        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "FullGCTimerFired"_ns);
   }
 }
 
@@ -581,7 +581,7 @@ void CCGCScheduler::EnsureGCRunner(TimeDuration aDelay) {
   // Wait at most the interslice GC delay before forcing a run.
   mGCRunner = IdleTaskRunner::Create(
       [this](TimeStamp aDeadline) { return GCRunnerFired(aDeadline); },
-      "CCGCScheduler::EnsureGCRunner", aDelay,
+      "CCGCScheduler::EnsureGCRunner"_ns, aDelay,
       TimeDuration::FromMilliseconds(
           StaticPrefs::javascript_options_gc_delay_interslice()),
       minimumBudget, true, [this] { return mDidShutdown; },
@@ -644,7 +644,7 @@ void CCGCScheduler::EnsureCCRunner(TimeDuration aDelay, TimeDuration aBudget) {
   if (!mCCRunner) {
     mCCRunner = IdleTaskRunner::Create(
         [this](TimeStamp aDeadline) { return CCRunnerFired(aDeadline); },
-        "EnsureCCRunner::CCRunnerFired", 0, aDelay, minimumBudget, true,
+        "EnsureCCRunner::CCRunnerFired"_ns, 0, aDelay, minimumBudget, true,
         [this] { return mDidShutdown; });
   } else {
     mCCRunner->SetMinimumUsefulBudget(minimumBudget.ToMilliseconds());

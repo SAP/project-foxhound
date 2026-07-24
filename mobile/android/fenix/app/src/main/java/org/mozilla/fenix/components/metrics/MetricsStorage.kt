@@ -7,13 +7,16 @@ package org.mozilla.fenix.components.metrics
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
+import org.mozilla.fenix.Config
 import org.mozilla.fenix.android.DefaultActivityLifecycleCallbacks
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.utils.Settings
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -51,6 +54,7 @@ interface MetricsStorage {
     fun updateUsageState(usageLength: Long)
 }
 
+@Suppress("TooManyFunctions")
 internal class DefaultMetricsStorage(
     context: Context,
     private val settings: Settings,
@@ -58,6 +62,7 @@ internal class DefaultMetricsStorage(
     private val shouldSendGenerally: () -> Boolean = { shouldSendGenerally(context) },
     private val getInstalledTime: () -> Long = { getInstalledTime(context) },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
 ) : MetricsStorage {
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -100,6 +105,27 @@ internal class DefaultMetricsStorage(
                 is Event.GrowthData.UserActivated -> {
                     hasUserReachedActivatedThreshold()
                 }
+                is Event.FirstWeekPostInstall.LastThreeDaysActivity -> {
+                    shouldTrackFirstWeekLastDaysActivity(
+                        currentTime = dateTimeProvider.currentTimeMillis(),
+                        firstWeekDaysOfUse = settings.firstWeekDaysOfUseGrowthData,
+                        eventSent = settings.firstWeekPostInstallLastThreeDaysActivitySent,
+                    )
+                }
+                is Event.FirstWeekPostInstall.RecurrentActivity -> {
+                    shouldTrackFirstWeekRecurrentlyActivity(
+                        currentTime = dateTimeProvider.currentTimeMillis(),
+                        firstWeekDaysOfUse = settings.firstWeekDaysOfUseGrowthData,
+                        eventSent = settings.firstWeekPostInstallRecurrentActivitySent,
+                    )
+                }
+                is Event.FirstWeekPostInstall.EverydayActivityAndSetToDefault -> {
+                    shouldTrackFirstWeekFullActivityDefault(
+                        currentTime = dateTimeProvider.currentTimeMillis(),
+                        firstWeekDaysOfUse = settings.firstWeekDaysOfUseGrowthData,
+                        eventSent = settings.firstWeekPostInstallEverydayActivityAndSetToDefaultSent,
+                    )
+                }
             }
         }
 
@@ -125,6 +151,15 @@ internal class DefaultMetricsStorage(
             }
             is Event.GrowthData.UserActivated -> {
                 settings.growthUserActivatedSent = true
+            }
+            is Event.FirstWeekPostInstall.LastThreeDaysActivity -> {
+                settings.firstWeekPostInstallLastThreeDaysActivitySent = true
+            }
+            is Event.FirstWeekPostInstall.RecurrentActivity -> {
+                settings.firstWeekPostInstallRecurrentActivitySent = true
+            }
+            is Event.FirstWeekPostInstall.EverydayActivityAndSetToDefault -> {
+                settings.firstWeekPostInstallEverydayActivityAndSetToDefaultSent = true
             }
         }
     }
@@ -192,6 +227,87 @@ internal class DefaultMetricsStorage(
         return false
     }.getOrDefault(false)
 
+    @VisibleForTesting
+    internal fun shouldTrackFirstWeekLastDaysActivity(
+        currentTime: Long,
+        firstWeekDaysOfUse: Set<String>,
+        eventSent: Boolean,
+    ): Boolean = Result.runCatching {
+        if (!currentTime.duringFirst7Days() || eventSent) {
+            return false
+        }
+
+        return firstWeekDaysOfUse.toTimestamps().any { date ->
+            date.duringLastThreeDays()
+        }
+    }.getOrDefault(false)
+
+    @VisibleForTesting
+    internal fun shouldTrackFirstWeekRecurrentlyActivity(
+        currentTime: Long,
+        firstWeekDaysOfUse: Set<String>,
+        eventSent: Boolean,
+    ): Boolean = Result.runCatching {
+        if (!currentTime.duringFirst7Days() || eventSent) {
+            return false
+        }
+
+        return activeInFirstPartOfTheWeek(firstWeekDaysOfUse) && activeInLastPartOfTheWeek(firstWeekDaysOfUse)
+    }.getOrDefault(false)
+
+    @VisibleForTesting
+    internal fun shouldTrackFirstWeekFullActivityDefault(
+        currentTime: Long,
+        firstWeekDaysOfUse: Set<String>,
+        eventSent: Boolean,
+        isBrowserSetToDefaultDuringFirstFourDays: Boolean =
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays,
+    ): Boolean = Result.runCatching {
+        if (!currentTime.duringFirst7Days() || eventSent) {
+            return false
+        }
+
+        updateIsDefaultBrowserDuringFirstFourDays(
+            isDefaultBrowserDuringFirstFourDay = isBrowserSetToDefaultDuringFirstFourDays,
+            currentTime = currentTime,
+        )
+
+        val isAllWeekActive = firstWeekDaysOfUse.toTimestamps().count { date ->
+            date.duringFirst7Days()
+        } == NUMBER_OF_DAYS_IN_A_WEEK
+
+        return isBrowserSetToDefaultDuringFirstFourDays && isAllWeekActive
+    }.getOrDefault(false)
+
+    @VisibleForTesting
+    internal fun activeInFirstPartOfTheWeek(firstWeekDaysOfUse: Set<String>): Boolean =
+        firstWeekDaysOfUse.toTimestamps()
+            .count { date -> date.duringFirstFourDays() } >= MINIMUM_ACTIVE_DAYS_FOR_RECURRENT_ACTIVITY
+
+    @VisibleForTesting
+    internal fun activeInLastPartOfTheWeek(firstWeekDaysOfUse: Set<String>): Boolean =
+        firstWeekDaysOfUse.toTimestamps()
+            .count { date -> date.duringLastThreeDays() } >= MINIMUM_ACTIVE_DAYS_FOR_RECURRENT_ACTIVITY
+
+    @VisibleForTesting
+    internal fun updateIsDefaultBrowserDuringFirstFourDays(
+        currentTime: Long,
+        isDefaultBrowserDuringFirstFourDay: Boolean,
+        isDefaultBrowser: Boolean = checkDefaultBrowser(),
+    ) {
+        val shouldUpdate = !isDefaultBrowserDuringFirstFourDay &&
+            isDefaultBrowser &&
+            currentTime.duringFirstFourDays()
+
+        if (shouldUpdate) {
+            settings.firstWeekPostInstallIsBrowserSetToDefaultDuringFirstFourDays = true
+        }
+    }
+
+    private fun Set<String>.toTimestamps(): List<Long> = mapNotNull {
+        dateFormatter.parse(it)?.time
+    }
+
     private fun Long.toCalendar(): Calendar = Calendar.getInstance(Locale.US).also { calendar ->
         calendar.timeInMillis = this
     }
@@ -204,13 +320,30 @@ internal class DefaultMetricsStorage(
 
     private fun Long.afterThirdDay() = this > getInstalledTime() + THREE_DAY_MILLIS
 
+    private fun Long.afterFourthDay() = this >= getInstalledTimeToMidnight() + FOUR_DAY_MILLIS
+
+    private fun Long.duringLastThreeDays() = this.afterFourthDay() && this.duringFirst7Days()
+
+    private fun Long.duringFirstFourDays() = this < getInstalledTimeToMidnight() + FOUR_DAY_MILLIS
+
     private fun Long.duringFirstWeek() = this < getInstalledTime() + FULL_WEEK_MILLIS
+
+    private fun Long.duringFirst7Days() = this < getInstalledTimeToMidnight() + SEVEN_DAYS_MILLIS
 
     private fun Long.duringFirstMonth() = this < getInstalledTime() + SHORTEST_MONTH_MILLIS
 
     private fun Calendar.createNextDay() = (this.clone() as Calendar).also { calendar ->
         calendar.add(Calendar.DAY_OF_MONTH, 1)
     }
+
+    private fun getInstalledTimeToMidnight() = getInstalledTime().toMidnight()
+
+    private fun Long.toMidnight(): Long = this.toCalendar().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 
     private fun hasUserReachedActivatedThreshold(): Boolean {
         return !settings.growthUserActivatedSent &&
@@ -256,11 +389,14 @@ internal class DefaultMetricsStorage(
     companion object {
         private const val DAY_MILLIS: Long = 1000 * 60 * 60 * 24
         private const val THREE_DAY_MILLIS: Long = 3 * DAY_MILLIS
+        private const val FOUR_DAY_MILLIS: Long = 4 * DAY_MILLIS
         private const val SHORTEST_MONTH_MILLIS: Long = DAY_MILLIS * 28
 
         // Note this is 8 so that recording of FirstWeekSeriesActivity happens throughout the length
         // of the 7th day after install
         private const val FULL_WEEK_MILLIS: Long = DAY_MILLIS * 8
+
+        private const val SEVEN_DAYS_MILLIS: Long = DAY_MILLIS * 7
 
         // The usage threshold we are interested in is currently 340 seconds.
         private const val USAGE_THRESHOLD_MILLIS = 1000 * 340
@@ -268,17 +404,21 @@ internal class DefaultMetricsStorage(
         // The usage threshold for "activated" growth users.
         private const val DAYS_ACTIVATED_THREASHOLD = 3
 
+        // Minimum active days required for recurrent activity.
+        private const val MINIMUM_ACTIVE_DAYS_FOR_RECURRENT_ACTIVITY = 2
+
+        private const val NUMBER_OF_DAYS_IN_A_WEEK = 7
+
         /**
          * Determines whether events should be tracked based on some general criteria:
          * - user has installed as a result of a campaign
-         * - tracking is still enabled through Nimbus
+         * - this is a release build
          */
         fun shouldSendGenerally(context: Context): Boolean {
-            return context.settings().adjustCampaignId.isNotEmpty() &&
-                FxNimbus.features.growthData.value().enabled
+            return context.settings().adjustCampaignId.isNotEmpty() && Config.channel.isRelease
         }
 
-        fun getInstalledTime(context: Context): Long = context.packageManager
+        fun getInstalledTime(context: Context): Long = context.packageManagerCompatHelper
             .getPackageInfoCompat(context.packageName, 0)
             .firstInstallTime
     }

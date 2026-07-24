@@ -5,8 +5,8 @@
 #ifndef mozilla_FocusModel_h
 #define mozilla_FocusModel_h
 
-#include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/TypedEnumBits.h"
 
 namespace mozilla {

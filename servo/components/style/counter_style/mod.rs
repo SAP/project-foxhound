@@ -6,24 +6,27 @@
 //!
 //! [counter-style]: https://drafts.csswg.org/css-counter-styles/
 
+use crate::derives::*;
 use crate::error_reporting::ContextualParseError;
 use crate::parser::{Parse, ParserContext};
 use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::values::specified::Integer;
 use crate::values::{AtomString, CustomIdent};
 use crate::Atom;
 use cssparser::{
+    ascii_case_insensitive_phf_map, match_ignore_ascii_case, CowRcStr, Parser, ParserState,
+    SourceLocation, Token,
+};
+use cssparser::{
     AtRuleParser, DeclarationParser, QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser,
 };
-use cssparser::{CowRcStr, Parser, ParserState, SourceLocation, Token};
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Write};
 use std::mem;
 use std::num::Wrapping;
 use style_traits::{
-    Comma, CssWriter, KeywordsCollectFn, OneOrMoreSeparated, ParseError, SpecifiedValueInfo,
-    StyleParseErrorKind, ToCss,
+    Comma, CssStringWriter, CssWriter, KeywordsCollectFn, OneOrMoreSeparated, ParseError,
+    SpecifiedValueInfo, StyleParseErrorKind, ToCss,
 };
 
 /// https://drafts.csswg.org/css-counter-styles/#typedef-symbols-type
@@ -98,11 +101,11 @@ impl CounterStyle {
     pub fn is_bullet(&self) -> bool {
         match self {
             CounterStyle::Name(CustomIdent(ref name)) => {
-                name == &atom!("disc") ||
-                    name == &atom!("circle") ||
-                    name == &atom!("square") ||
-                    name == &atom!("disclosure-closed") ||
-                    name == &atom!("disclosure-open")
+                name == &atom!("disc")
+                    || name == &atom!("circle")
+                    || name == &atom!("square")
+                    || name == &atom!("disclosure-closed")
+                    || name == &atom!("disclosure-open")
             },
             _ => false,
         }
@@ -147,9 +150,9 @@ impl CounterStyle {
                     let symbols = Symbols::parse(context, input)?;
                     // There must be at least two symbols for alphabetic or
                     // numeric system.
-                    if (symbols_type == SymbolsType::Alphabetic ||
-                        symbols_type == SymbolsType::Numeric) &&
-                        symbols.0.len() < 2
+                    if (symbols_type == SymbolsType::Alphabetic
+                        || symbols_type == SymbolsType::Numeric)
+                        && symbols.0.len() < 2
                     {
                         return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                     }
@@ -218,12 +221,12 @@ fn counter_style_name_from_ident<'i>(
 }
 
 fn is_valid_name_definition(ident: &CustomIdent) -> bool {
-    ident.0 != atom!("decimal") &&
-        ident.0 != atom!("disc") &&
-        ident.0 != atom!("circle") &&
-        ident.0 != atom!("square") &&
-        ident.0 != atom!("disclosure-closed") &&
-        ident.0 != atom!("disclosure-open")
+    ident.0 != atom!("decimal")
+        && ident.0 != atom!("disc")
+        && ident.0 != atom!("circle")
+        && ident.0 != atom!("square")
+        && ident.0 != atom!("disclosure-closed")
+        && ident.0 != atom!("disclosure-open")
 }
 
 /// Parse the prelude of an @counter-style rule
@@ -265,11 +268,11 @@ pub fn parse_counter_style_body<'i, 't>(
         }
     }
     let error = match *rule.resolved_system() {
-        ref system @ System::Cyclic |
-        ref system @ System::Fixed { .. } |
-        ref system @ System::Symbolic |
-        ref system @ System::Alphabetic |
-        ref system @ System::Numeric
+        ref system @ System::Cyclic
+        | ref system @ System::Fixed { .. }
+        | ref system @ System::Symbolic
+        | ref system @ System::Alphabetic
+        | ref system @ System::Numeric
             if rule.symbols.is_none() =>
         {
             let system = system.to_css_string();

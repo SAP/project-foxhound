@@ -12,10 +12,13 @@ num-derive = "0.4"
 num-traits = "0.2"
 
 [target."cfg(any(target_os = \"android\", target_os = \"linux\", target_os = \"macos\"))".dependencies]
-nix = { version = "0.29", features = ["process"] }
+nix = { version = "0.30", features = ["process"] }
+
+[target."cfg(target_os = \"macos\")".dependencies]
+mach2 = { version = "0.4" }
 
 [target."cfg(any(target_os = \"android\", target_os = \"linux\"))".dependencies]
-minidump-writer = "0.10"
+minidump-writer = "0.11"
 rust_minidump_writer_linux = { path = "../rust_minidump_writer_linux" }
 
 [target."cfg(target_os = \"windows\")".dependencies]

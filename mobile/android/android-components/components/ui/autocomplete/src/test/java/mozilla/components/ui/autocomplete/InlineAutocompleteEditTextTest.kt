@@ -7,7 +7,6 @@ package mozilla.components.ui.autocomplete
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
 import android.view.KeyEvent
 import android.view.ViewParent
@@ -33,7 +32,6 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
-import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
 class InlineAutocompleteEditTextTest {
@@ -516,26 +514,6 @@ class InlineAutocompleteEditTextTest {
 
         verify(editText).paste(anyInt(), anyInt(), anyBoolean())
         verify(editText, never()).callOnTextContextMenuItemSuper(anyInt())
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP, Build.VERSION_CODES.LOLLIPOP_MR1])
-    fun `GIVEN an Android L device, WHEN onTextContextMenuItem is called for paste THEN we should paste() with formatting`() {
-        val editText = spy(InlineAutocompleteEditText(testContext, null))
-
-        editText.onTextContextMenuItem(android.R.id.paste)
-
-        verify(editText).paste(anyInt(), anyInt(), eq(true))
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.M, Build.VERSION_CODES.N, Build.VERSION_CODES.O, Build.VERSION_CODES.P])
-    fun `GIVEN an Android M device, WHEN onTextContextMenuItem is called for paste THEN we should paste() without formatting`() {
-        val editText = spy(InlineAutocompleteEditText(testContext, null))
-
-        editText.onTextContextMenuItem(android.R.id.paste)
-
-        verify(editText).paste(anyInt(), anyInt(), eq(false))
     }
 
     @Test

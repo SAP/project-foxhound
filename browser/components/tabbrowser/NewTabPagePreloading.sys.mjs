@@ -13,6 +13,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -77,11 +79,13 @@ export let NewTabPagePreloading = {
    */
   _adoptBrowserFromOtherWindow(window) {
     let winPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
+    let winAIWindow = lazy.AIWindow.isAIWindowActive(window);
     // Grab the least-recently-focused window with a preloaded browser:
     let oldWin = lazy.BrowserWindowTracker.orderedWindows
       .filter(w => {
         return (
           winPrivate == lazy.PrivateBrowsingUtils.isWindowPrivate(w) &&
+          winAIWindow == lazy.AIWindow.isAIWindowActive(w) &&
           w.gBrowser &&
           w.gBrowser.preloadedBrowser
         );
@@ -119,9 +123,12 @@ export let NewTabPagePreloading = {
 
     // Don't bother creating a preload browser if we're not in the top set of windows:
     let windowPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
+    let windowAIWindow = lazy.AIWindow.isAIWindowActive(window);
     let countKey = windowPrivate ? "private" : "normal";
     let topWindows = lazy.BrowserWindowTracker.orderedWindows.filter(
-      w => lazy.PrivateBrowsingUtils.isWindowPrivate(w) == windowPrivate
+      w =>
+        lazy.PrivateBrowsingUtils.isWindowPrivate(w) == windowPrivate &&
+        lazy.AIWindow.isAIWindowActive(w) == windowAIWindow
     );
     if (topWindows.indexOf(window) >= this.MAX_COUNT) {
       return;

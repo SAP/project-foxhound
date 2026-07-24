@@ -11,7 +11,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Services.h"
 #include "mozilla/SimpleEnumerator.h"
 #include "mozilla/StaticPrefs_extensions.h"
@@ -257,8 +256,7 @@ ExtensionPolicyService::CollectReports(nsIHandleReportCallback* aHandleReport,
     name.ReplaceSubstring("\"", "");
     name.ReplaceSubstring("\\", "");
 
-    nsString url;
-    MOZ_TRY_VAR(url, ext->GetURL(u""_ns));
+    nsString url = MOZ_TRY(ext->GetURL(u""_ns));
 
     nsPrintfCString desc("Extension(id=%s, name=\"%s\", baseURL=%s)", id.get(),
                          name.get(), NS_ConvertUTF16toUTF8(url).get());
@@ -361,7 +359,7 @@ already_AddRefed<Promise> ExtensionPolicyService::ExecuteContentScripts(
   }
 
   RefPtr<Promise> promise = Promise::All(aCx, promises, IgnoreErrors());
-  Unused << NS_WARN_IF(!promise);
+  (void)NS_WARN_IF(!promise);
   return promise.forget();
 }
 
@@ -641,7 +639,7 @@ RefPtr<AtomSet> ExtensionPolicyService::QuarantinedDomains() {
 
 void ExtensionPolicyService::UpdateRestrictedDomains() {
   nsAutoCString eltsString;
-  Unused << Preferences::GetCString(RESTRICTED_DOMAINS_PREF, eltsString);
+  (void)Preferences::GetCString(RESTRICTED_DOMAINS_PREF, eltsString);
 
   AutoTArray<nsString, 32> elts;
   for (const nsACString& elt : eltsString.Split(',')) {

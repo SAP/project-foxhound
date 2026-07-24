@@ -7,7 +7,7 @@ import { html } from "lit.all.mjs";
 import "chrome://global/content/elements/moz-card.mjs";
 import "./password-validation-inputs.mjs";
 
-window.MozXULElement.insertFTLIfNeeded("locales-preview/backupSettings.ftl");
+window.MozXULElement.insertFTLIfNeeded("browser/backupSettings.ftl");
 window.MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
 
 export default {

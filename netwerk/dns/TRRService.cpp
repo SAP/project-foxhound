@@ -15,6 +15,7 @@
 #include "nsIOService.h"
 #include "nsNetUtil.h"
 #include "nsStandardURL.h"
+#include "DNSServiceBase.h"
 #include "TRR.h"
 #include "TRRService.h"
 
@@ -27,6 +28,8 @@
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/net/TRRServiceChild.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "nsSocketTransportService2.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 
@@ -117,9 +120,7 @@ NS_IMPL_RELEASE_USING_AGGREGATOR(TRRService::ConfirmationContext,
 NS_IMPL_QUERY_INTERFACE(TRRService::ConfirmationContext, nsITimerCallback,
                         nsINamed)
 
-TRRService::TRRService() : mLock("TRRService") {
-  MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
-}
+TRRService::TRRService() { MOZ_ASSERT(NS_IsMainThread(), "wrong thread"); }
 
 // static
 TRRService* TRRService::Get() { return sTRRServicePtr; }
@@ -202,14 +203,16 @@ nsresult TRRService::Init(bool aNativeHTTPSQueryEnabled) {
       RebuildSuffixList(std::move(suffixList));
     }
 
-    nsCOMPtr<nsIThread> thread;
-    if (NS_FAILED(
-            NS_NewNamedThread("TRR Background", getter_AddRefs(thread)))) {
-      NS_WARNING("NS_NewNamedThread failed!");
-      return NS_ERROR_FAILURE;
-    }
+    if (!StaticPrefs::network_trr_parse_on_socket_thread()) {
+      nsCOMPtr<nsIThread> thread;
+      if (NS_FAILED(
+              NS_NewNamedThread("TRR Background", getter_AddRefs(thread)))) {
+        NS_WARNING("NS_NewNamedThread failed!");
+        return NS_ERROR_FAILURE;
+      }
 
-    sTRRBackgroundThread = thread;
+      sTRRBackgroundThread = thread;
+    }
   }
 
   LOG(("Initialized TRRService\n"));
@@ -334,10 +337,8 @@ bool TRRService::MaybeSetPrivateURI(const nsACString& aURI) {
       if (!neckoParent) {
         continue;
       }
-      Unused << neckoParent->SendSetTRRDomain(host);
+      (void)neckoParent->SendSetTRRDomain(host);
     }
-
-    AsyncCreateTRRConnectionInfo(mPrivateURI);
 
     // The URI has changed. We should trigger a new confirmation immediately.
     // We must do this here because the URI could also change because of
@@ -355,6 +356,10 @@ bool TRRService::MaybeSetPrivateURI(const nsACString& aURI) {
   if (obs) {
     obs->NotifyObservers(nullptr, NS_NETWORK_TRR_URI_CHANGED_TOPIC, nullptr);
   }
+
+  // Call this without lock to avoid deadlock.
+  AsyncCreateTRRConnectionInfo(newURI);
+
   return true;
 }
 
@@ -426,6 +431,11 @@ nsresult TRRService::ReadPrefs(const char* name) {
     parseExcludedDomains(TRR_PREF("builtin-excluded-domains"));
     clearEntireCache = true;
   }
+  if (!name || !strcmp(name, TRR_PREF("force_http3_first"))) {
+    nsAutoCString uri;
+    GetURI(uri);
+    AsyncCreateTRRConnectionInfo(uri);
+  }
 
   // if name is null, then we're just now initializing. In that case we don't
   // need to clear the cache.
@@ -460,13 +470,14 @@ void TRRService::ReadEtcHostsFile() {
     return;
   }
 
-  DoReadEtcHostsFile([](const nsTArray<nsCString>* aArray) -> bool {
-    RefPtr<TRRService> service(sTRRServicePtr);
-    if (service && aArray) {
-      service->AddEtcHosts(*aArray);
-    }
-    return !!service;
-  });
+  DNSServiceBase::DoReadEtcHostsFile(
+      [](const nsTArray<nsCString>* aArray) -> bool {
+        RefPtr<TRRService> service(sTRRServicePtr);
+        if (service && aArray) {
+          service->AddEtcHosts(*aArray);
+        }
+        return !!service;
+      });
 }
 
 void TRRService::GetURI(nsACString& result) {
@@ -537,11 +548,27 @@ already_AddRefed<nsIThread> TRRService::TRRThread() {
 }
 
 already_AddRefed<nsIThread> TRRService::TRRThread_locked() {
+  if (StaticPrefs::network_trr_parse_on_socket_thread()) {
+    if (!gSocketTransportService) {
+      return nullptr;
+    }
+
+    return gSocketTransportService->GetSocketThread();
+  }
+
   RefPtr<nsIThread> thread = sTRRBackgroundThread;
   return thread.forget();
 }
 
 bool TRRService::IsOnTRRThread() {
+  if (StaticPrefs::network_trr_parse_on_socket_thread()) {
+    if (!gSocketTransportService) {
+      return false;
+    }
+
+    return OnSocketThread();
+  }
+
   nsCOMPtr<nsIThread> thread;
   {
     MutexAutoLock lock(mLock);
@@ -615,8 +642,11 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
     }
 
     if (!strcmp(aTopic, NS_NETWORK_LINK_TOPIC)) {
-      if (NS_ConvertUTF16toUTF8(aData).EqualsLiteral(
-              NS_NETWORK_LINK_DATA_DOWN)) {
+      nsAutoCString converted = NS_ConvertUTF16toUTF8(aData);
+      if (converted.EqualsLiteral(NS_NETWORK_LINK_DATA_DOWN)) {
+        MutexAutoLock lock(mLock);
+        mConfirmation.RecordEvent("network-down", lock);
+      } else if (converted.EqualsLiteral(NS_NETWORK_LINK_DATA_CHANGED)) {
         MutexAutoLock lock(mLock);
         mConfirmation.RecordEvent("network-change", lock);
       }
@@ -627,7 +657,7 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
         CheckURIPrefs();
       }
 
-      if (NS_ConvertUTF16toUTF8(aData).EqualsLiteral(NS_NETWORK_LINK_DATA_UP)) {
+      if (converted.EqualsLiteral(NS_NETWORK_LINK_DATA_UP)) {
         mConfirmation.HandleEvent(ConfirmationEvent::NetworkUp);
       }
     }
@@ -646,8 +676,8 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
       thread = sTRRBackgroundThread.get();
       sTRRBackgroundThread = nullptr;
       MOZ_ALWAYS_SUCCEEDS(thread->Shutdown());
-      sTRRServicePtr = nullptr;
     }
+    sTRRServicePtr = nullptr;
   }
   return NS_OK;
 }
@@ -667,6 +697,7 @@ void TRRService::RebuildSuffixList(nsTArray<nsCString>&& aSuffixList) {
 
 void TRRService::ConfirmationContext::SetState(
     enum ConfirmationState aNewState) {
+  LOG(("ConfirmationContext::SetState %u", uint32_t(aNewState)));
   mState = aNewState;
 
   enum ConfirmationState state = mState;
@@ -711,7 +742,7 @@ void TRRService::ConfirmationContext::SetState(
   TRRServiceChild* child = TRRServiceChild::GetSingleton();
   if (child && child->CanSend()) {
     LOG(("TRRService::SendSetConfirmationState"));
-    Unused << child->SendSetConfirmationState(mState);
+    (void)child->SendSetConfirmationState(mState);
   }
 }
 
@@ -798,9 +829,11 @@ bool TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
 
     MOZ_ASSERT(mode == nsIDNSService::MODE_TRRFIRST,
                "Should only confirm in TRR first mode");
-    // Set aUseFreshConnection if TRR lookups are retried.
+    // Set aUseFreshConnection if TRR lookups are retried
+    // or if confirmation already failed.
     mTask = new TRR(service, service->mConfirmationNS, TRRTYPE_NS, ""_ns, false,
-                    StaticPrefs::network_trr_retry_on_recoverable_errors());
+                    mState == CONFIRM_TRYING_FAILED ||
+                        StaticPrefs::network_trr_retry_on_recoverable_errors());
     mTask->SetTimeout(StaticPrefs::network_trr_confirmation_timeout_ms());
     mTask->SetPurpose(TRR::Confirmation);
 
@@ -866,6 +899,8 @@ bool TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
       }
       break;
     case ConfirmationEvent::ConfirmOK:
+      // Reset confirmation retry timeout to default
+      mRetryInterval = StaticPrefs::network_trr_retry_timeout_ms();
       SetState(CONFIRM_OK);
       mTask = nullptr;
       break;
@@ -875,7 +910,7 @@ bool TRRService::ConfirmationContext::HandleEvent(ConfirmationEvent aEvent,
       SetState(CONFIRM_FAILED);
       mTask = nullptr;
       // retry failed NS confirmation
-
+      LOG(("Setting timer to reconfirm %u", uint32_t(mRetryInterval)));
       NS_NewTimerWithCallback(getter_AddRefs(mTimer), this, mRetryInterval,
                               nsITimer::TYPE_ONE_SHOT);
       // double the interval up to this point
@@ -1296,8 +1331,12 @@ void TRRService::ConfirmationContext::CompleteConfirmation(nsresult aStatus,
 
     MOZ_ASSERT(mTask);
     if (NS_SUCCEEDED(aStatus)) {
+      profiler_add_marker("TRR Confirmation Success",
+                          geckoprofiler::category::NETWORK);
       HandleEvent(ConfirmationEvent::ConfirmOK, lock);
     } else {
+      profiler_add_marker("TRR Confirmation Failure",
+                          geckoprofiler::category::NETWORK);
       HandleEvent(ConfirmationEvent::ConfirmFail, lock);
     }
 
@@ -1373,9 +1412,9 @@ NS_IMETHODIMP TRRService::OnProxyConfigChanged() {
   return NS_OK;
 }
 
-void TRRService::InitTRRConnectionInfo() {
+void TRRService::InitTRRConnectionInfo(bool aForceReinit) {
   if (XRE_IsParentProcess()) {
-    TRRServiceBase::InitTRRConnectionInfo();
+    TRRServiceBase::InitTRRConnectionInfo(aForceReinit);
     return;
   }
 
@@ -1385,7 +1424,7 @@ void TRRService::InitTRRConnectionInfo() {
   TRRServiceChild* child = TRRServiceChild::GetSingleton();
   if (child && child->CanSend()) {
     LOG(("TRRService::SendInitTRRConnectionInfo"));
-    Unused << child->SendInitTRRConnectionInfo();
+    (void)child->SendInitTRRConnectionInfo(aForceReinit);
   }
 }
 

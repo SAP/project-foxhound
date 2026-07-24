@@ -8,8 +8,8 @@
 
 #include "GMPLog.h"
 #include "GMPService.h"
-#include "gmp-video-frame-encoded.h"
 #include "VideoLimits.h"
+#include "gmp-video-frame-encoded.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Base64.h"
 #include "mozilla/EndianUtils.h"

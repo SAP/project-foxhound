@@ -15,34 +15,34 @@ add_task(async function slowHeuristicSelected() {
   // First, add a provider that adds a heuristic result on a delay.  Both this
   // provider and the one below have a high priority so that only they are used
   // during the test.
-  let engine = await Services.search.getDefault();
-  let heuristicResult = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    {
+  let engine = await SearchService.getDefault();
+  let heuristicResult = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.SEARCH,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    heuristic: true,
+    payload: {
       suggestion: "test",
       engine: engine.name,
-    }
-  );
-  heuristicResult.heuristic = true;
+    },
+  });
   let heuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [heuristicResult],
     name: "heuristicProvider",
     priority: Infinity,
     addTimeout: 500,
   });
-  UrlbarProvidersManager.registerProvider(heuristicProvider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(heuristicProvider);
 
   // Second, add another provider that adds a non-heuristic result immediately
   // with suggestedIndex = 1.
-  let nonHeuristicResult = makeTipResult();
-  nonHeuristicResult.suggestedIndex = 1;
+  let nonHeuristicResult = makeTipResult({ suggestedIndex: 1 });
   let nonHeuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [nonHeuristicResult],
     name: "nonHeuristicProvider",
     priority: Infinity,
   });
-  UrlbarProvidersManager.registerProvider(nonHeuristicProvider);
+  providersManager.registerProvider(nonHeuristicProvider);
 
   // Do a search.
   const win = await BrowserTestUtils.openNewBrowserWindow();
@@ -61,8 +61,8 @@ add_task(async function slowHeuristicSelected() {
   Assert.equal(actualNonHeuristic.type, UrlbarUtils.RESULT_TYPE.TIP);
 
   await UrlbarTestUtils.promisePopupClose(win);
-  UrlbarProvidersManager.unregisterProvider(heuristicProvider);
-  UrlbarProvidersManager.unregisterProvider(nonHeuristicProvider);
+  providersManager.unregisterProvider(heuristicProvider);
+  providersManager.unregisterProvider(nonHeuristicProvider);
   await BrowserTestUtils.closeWindow(win);
 });
 
@@ -73,34 +73,34 @@ add_task(async function oneOffRemainsSelected() {
   // First, add a provider that adds a heuristic result on a delay.  Both this
   // provider and the one below have a high priority so that only they are used
   // during the test.
-  let engine = await Services.search.getDefault();
-  let heuristicResult = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    {
+  let engine = await SearchService.getDefault();
+  let heuristicResult = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.SEARCH,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    heuristic: true,
+    payload: {
       suggestion: "test",
       engine: engine.name,
-    }
-  );
-  heuristicResult.heuristic = true;
+    },
+  });
   let heuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [heuristicResult],
     name: "heuristicProvider",
     priority: Infinity,
     addTimeout: 500,
   });
-  UrlbarProvidersManager.registerProvider(heuristicProvider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(heuristicProvider);
 
   // Second, add another provider that adds a non-heuristic result immediately
   // with suggestedIndex = 1.
-  let nonHeuristicResult = makeTipResult();
-  nonHeuristicResult.suggestedIndex = 1;
+  let nonHeuristicResult = makeTipResult({ suggestedIndex: 1 });
   let nonHeuristicProvider = new UrlbarTestUtils.TestProvider({
     results: [nonHeuristicResult],
     name: "nonHeuristicProvider",
     priority: Infinity,
   });
-  UrlbarProvidersManager.registerProvider(nonHeuristicProvider);
+  providersManager.registerProvider(nonHeuristicProvider);
 
   // Do a search but don't wait for it to finish.
   const win = await BrowserTestUtils.openNewBrowserWindow();
@@ -138,16 +138,17 @@ add_task(async function oneOffRemainsSelected() {
   );
 
   await UrlbarTestUtils.promisePopupClose(win);
-  UrlbarProvidersManager.unregisterProvider(heuristicProvider);
-  UrlbarProvidersManager.unregisterProvider(nonHeuristicProvider);
+  providersManager.unregisterProvider(heuristicProvider);
+  providersManager.unregisterProvider(nonHeuristicProvider);
   await BrowserTestUtils.closeWindow(win);
 });
 
-function makeTipResult() {
-  return new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+function makeTipResult({ suggestedIndex }) {
+  return new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TIP,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    suggestedIndex,
+    payload: {
       helpUrl: "http://example.com/",
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
@@ -157,6 +158,6 @@ function makeTipResult() {
           l10n: { id: "urlbar-search-tips-confirm" },
         },
       ],
-    }
-  );
+    },
+  });
 }

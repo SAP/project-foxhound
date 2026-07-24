@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Kişiselleştir
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Kapat
+    .aria-label = Kapat
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = Yeni kısayol
 newtab-topsites-edit-topsites-header = Sık kullanılan siteyi düzenle
 newtab-topsites-edit-shortcut-header = Kısayolu düzenle
 newtab-topsites-add-shortcut-label = Kısayol ekle
+newtab-topsites-add-shortcut-title =
+    .title = Kısayol ekle
+    .aria-label = Kısayol ekle
 newtab-topsites-title-label = Başlık
 newtab-topsites-title-input =
     .placeholder = Başlık yazın
@@ -69,7 +75,7 @@ newtab-topsites-image-validation = Resim yüklenemedi. Başka bir adres deneyin.
 
 ## Top Sites - General form dialog buttons. These are verbs/actions.
 
-newtab-topsites-cancel-button = İptal
+newtab-topsites-cancel-button = Vazgeç
 newtab-topsites-delete-history-button = Geçmişten sil
 newtab-topsites-save-button = Kaydet
 newtab-topsites-preview-button = Ön izleme yap
@@ -84,6 +90,14 @@ newtab-confirm-delete-history-p2 = Bu işlem geri alınamaz.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponsorlu
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (sabitlendi)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -218,7 +232,7 @@ newtab-section-expand-section-label =
 ## Section Headers.
 
 newtab-section-header-topsites = Sık Kullanılan Siteler
-newtab-section-header-recent-activity = Son Etkinlikler
+newtab-section-header-recent-activity = Son etkinlikler
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider } öneriyor
@@ -304,19 +318,32 @@ newtab-custom-pocket-subtitle = { -brand-product-name } ailesinin bir parçası 
 newtab-custom-stories-toggle =
     .label = Önerilen makaleler
     .description = { -brand-product-name } ailesinin seçtiği harika içerikler
+newtab-custom-stories-personalized-toggle =
+    .label = Haberler
+newtab-custom-stories-personalized-checkbox-label = Etkinliğinize göre kişiselleştirilmiş haberler
 newtab-custom-pocket-sponsored = Sponsorlu haberler
 newtab-custom-pocket-show-recent-saves = Son kaydedilenleri göster
 newtab-custom-recent-title = Son etkinlikler
 newtab-custom-recent-subtitle = Son kullanılan siteler ve içeriklerden bir seçki
-newtab-custom-recent-toggle =
-    .label = Son etkinlikler
-    .description = Son kullanılan siteler ve içeriklerden bir seçki
 newtab-custom-weather-toggle =
     .label = Hava durumu
     .description = Bugünkü hava durumu tahmini
-newtab-custom-trending-search-toggle =
-    .label = Gündemdeki aramalar
-    .description = Popüler ve sıkça aranan konular
+newtab-custom-widget-weather-toggle =
+    .label = Hava durumu
+newtab-custom-widget-lists-toggle =
+    .label = Listeler
+newtab-custom-widget-timer-toggle =
+    .label = Sayaç
+newtab-custom-widget-section-title = Araçlar
+newtab-custom-widget-section-toggle =
+    .label = Araçlar
+newtab-widget-manage-title = Araçlar
+newtab-widget-manage-widget-button =
+    .label = Araçları yönet
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Kapat
+    .aria-label = Menüyü kapat
 newtab-custom-close-button = Kapat
 newtab-custom-settings = Diğer ayarları yönet
 
@@ -329,6 +356,7 @@ newtab-wallpaper-custom-color = Renk seç
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Bu resim, izin verilen { $file_size } MB boyut sınırını aşıyor. Lütfen daha küçük bir dosya yüklemeyi deneyin.
+newtab-wallpaper-error-upload-file-type = Dosyanızı yükleyemedik. Lütfen bir resim dosyasıyla yeniden deneyin.
 newtab-wallpaper-error-file-type = Dosyanızı yükleyemedik. Lütfen farklı bir dosya türüyle tekrar deneyin.
 newtab-wallpaper-light-red-panda = Kızıl panda
 newtab-wallpaper-light-mountain = Beyaz dağ
@@ -378,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Mor ve yeşil ışık geçişi
 newtab-wallpaper-abstract-blue-purple-waves = Mavi ve mor dalgalı şekiller
 newtab-wallpaper-abstract-black-waves = Siyah dalgalı şekiller
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotoğraflar
 newtab-wallpaper-beach-at-sunrise = Gün doğumunda sahil
@@ -408,6 +436,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -434,8 +466,9 @@ newtab-weather-menu-change-location = Konumu değiştir
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Konum ara
     .aria-label = Konum ara
-newtab-weather-change-location-search-input = Konum ara
 newtab-weather-menu-weather-display = Hava durumu göstergesi
+newtab-weather-todays-forecast = Bugünkü hava durumu
+newtab-weather-see-full-forecast = Tüm hava durumunu göster
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -448,10 +481,24 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenhayt
 newtab-weather-menu-temperature-option-celsius = Celcius
 newtab-weather-menu-change-temperature-units-fahrenheit = Fahrenhayta geç
 newtab-weather-menu-change-temperature-units-celsius = Celsius’a geç
+newtab-weather-menu-hide-weather-v2 = Hava durumunu gizle
 newtab-weather-menu-hide-weather = Yeni sekmede hava durumunu gizle
 newtab-weather-menu-learn-more = Daha fazla bilgi al
+newtab-weather-menu-detect-my-location = Konumumu tespit et
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Hava durumu verileri şu anda mevcut değil.
+newtab-weather-opt-in-see-weather = Bulunduğunuz yerin hava durumunu görmek ister misiniz?
+newtab-weather-opt-in-not-now =
+    .label = Şimdi değil
+newtab-weather-opt-in-yes =
+    .label = Evet
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = { $provider } tahminlerine bak
+    .aria-description = { $provider } ∙ Sponsorlu
 
 ## Topic Labels
 
@@ -535,6 +582,12 @@ newtab-custom-wallpaper-title = Artık kendi duvar kâğıtlarınızı kullanabi
 newtab-custom-wallpaper-subtitle = { -brand-product-name } tarayıcınızı kişiselleştirmek için kendi duvar kâğıdınızı yükleyin veya istediğiniz rengi seçin.
 newtab-custom-wallpaper-cta = Deneyin
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = { -brand-product-name } tarayıcınızı kişiselleştirmek için bir duvar kâğıdı seçin
+newtab-new-user-custom-wallpaper-subtitle = Özel duvar kağıtları ve renklerle her yeni sekmede evinizdeymiş gibi hissedin.
+newtab-new-user-custom-wallpaper-cta = Hemen deneyin
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Mobil cihazlar için { -brand-product-name }’u indirin
@@ -550,7 +603,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Favorileri siteleriniz parmaklarınızın ucunda
 newtab-shortcuts-highlight-subtitle = Sevdiğiniz siteleri bir tık kadar yakınınızda tutmak için kısayol ekleyebilirsiniz.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Bunu neden rapor ediyorsunuz?
@@ -568,20 +621,119 @@ newtab-report-content-inappropriate-offensive =
     .label = Uygunsuz veya saldırgan
 newtab-report-content-spam-misleading =
     .label = Spam veya yanıltıcı
+newtab-report-content-requires-payment-subscription =
+    .label = Ödeme veya abonelik gerektirir
+newtab-report-content-requires-payment-subscription-learn-more = Daha fazla bilgi alın
 newtab-report-cancel = Vazgeç
 newtab-report-submit = Gönder
 newtab-toast-thanks-for-reporting =
     .message = Raporunuz için teşekkür ederiz.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Google Gündeminde
-newtab-trending-searches-show-trending =
-    .title = Arama trendlerini göster
-newtab-trending-searches-hide-trending =
-    .title = Arama trendlerini gizle
-newtab-trending-searches-learn-more = Daha fazla bilgi al
-newtab-trending-searches-dismiss = Arama trendlerini gizle
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Gündemdeki aramalar
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Aklınızda ne var? Bir görev ekleyin.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Yeni
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Tamamlandı ({ $number })
+newtab-widget-task-list-menu-copy = Kopyala
+newtab-widget-lists-menu-edit = Liste adını düzenle
+newtab-widget-lists-menu-create = Yeni liste oluştur
+newtab-widget-lists-menu-delete = Bu listeyi sil
+newtab-widget-lists-menu-copy = Listeyi panoya kopyala
+newtab-widget-lists-menu-hide = Tüm listeleri gizle
+newtab-widget-lists-menu-learn-more = Daha fazla bilgi al
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Görev ekle
+newtab-widget-lists-input-error = Görev eklemek için lütfen metin yazın.
+newtab-widget-lists-input-menu-open-link = Bağlantıyı aç
+newtab-widget-lists-input-menu-move-up = Yukarı taşı
+newtab-widget-lists-input-menu-move-down = Aşağı taşı
+newtab-widget-lists-input-menu-delete = Sil
+newtab-widget-lists-input-menu-edit = Düzenle
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Yeni liste oluştur
+newtab-widget-lists-name-label-default =
+    .label = Görev listesi
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Görev listesi
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Yeni liste
+newtab-widget-section-title = Araçlar
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Araçları gizle
+    .aria-label = Tüm araçları gizle
+newtab-widget-section-maximize =
+    .title = Araçları genişlet
+    .aria-label = Tüm araçları tam boyuta genişlet
+newtab-widget-section-minimize =
+    .title = Araçları küçült
+    .aria-label = Tüm araçları kompakt boyuta küçült
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Sayaç
+newtab-widget-timer-notification-focus = Odaklanma süresi bitti. İyi iş çıkardınız. Ara vermek ister misiniz?
+newtab-widget-timer-notification-break = Molanız bitti. Odaklanmaya hazır mısınız?
+newtab-widget-timer-notification-warning = Bildirimler kapalı
+newtab-widget-timer-mode-focus =
+    .label = Odaklan
+newtab-widget-timer-mode-break =
+    .label = Mola ver
+newtab-widget-timer-label-play =
+    .label = Başlat
+newtab-widget-timer-label-pause =
+    .label = Duraklat
+newtab-widget-timer-reset =
+    .title = Sıfırla
+newtab-widget-timer-menu-notifications = Bildirimleri kapat
+newtab-widget-timer-menu-notifications-on = Bildirimleri aç
+newtab-widget-timer-menu-hide = Sayacı gizle
+newtab-widget-timer-menu-learn-more = Daha fazla bilgi al
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Öne çıkan başlıklar
+newtab-daily-briefing-card-menu-dismiss = Kapat
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = { $minutes } dk. önce güncellendi
+newtab-widget-message-title = Listeler ve sayaçla işinize daha iyi odaklanın
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Küçük anımsatıcılar ve günlük görev listeleriyle, odaklanma oturumları ve molalarla zamanınızı daha iyi yönetin.
+newtab-promo-card-title = { -brand-product-name } tarayıcısını destekleyin
+newtab-promo-card-body = Sponsorlarımız daha iyi bir web inşa etme misyonumuzu destekliyor
+newtab-promo-card-cta = Daha fazla bilgi alın
+newtab-promo-card-dismiss-button =
+    .title = Kapat
+    .aria-label = Kapat
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Kapat
+    .aria-label = Kapat
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Bu alanı özelleştirin
+newtab-activation-window-message-customization-focus-message = Yeni bir duvar kâğıdı seçin, sevdiğiniz sitelerin kısayollarını ekleyin ve ilginizi çeken makalelerden haberdar olun.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Özelleştirmeye başla
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Burası sizin yeriniz
+newtab-activation-window-message-values-focus-message = { -brand-product-name } internette istediğiniz gibi gezinmenizi ve güne daha kişisel bir şekilde başlamanızı sağlar. { -brand-product-name } tarayıcınızı özelleştirin.

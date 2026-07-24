@@ -22,14 +22,14 @@ config = {
     "partial_env": {
         "CXXFLAGS": (
             "-target x86_64-apple-darwin "
-            "-isysroot {MOZ_FETCHES_DIR}/MacOSX13.3.sdk "
+            "-isysroot {MOZ_FETCHES_DIR}/MacOSX26.2.sdk "
             "-mmacosx-version-min=10.12".format(
                 MOZ_FETCHES_DIR=os.environ["MOZ_FETCHES_DIR"]
             )
         ),
         "LDFLAGS": (
             "-target x86_64-apple-darwin "
-            "-isysroot {MOZ_FETCHES_DIR}/MacOSX13.3.sdk "
+            "-isysroot {MOZ_FETCHES_DIR}/MacOSX26.2.sdk "
             "-mmacosx-version-min=10.12".format(
                 MOZ_FETCHES_DIR=os.environ["MOZ_FETCHES_DIR"]
             )

@@ -7,10 +7,10 @@
 #ifndef DOM_SVG_SVGANIMATEDPOINTLIST_H_
 #define DOM_SVG_SVGANIMATEDPOINTLIST_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
+#include <memory>
+
 #include "SVGPointList.h"
+#include "mozilla/SMILAttr.h"
 
 namespace mozilla {
 
@@ -49,7 +49,7 @@ class SVGAnimatedPointList {
   SVGAnimatedPointList& operator=(const SVGAnimatedPointList& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGPointList>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGPointList>(*aOther.mAnimVal);
     }
     return *this;
   }
@@ -87,7 +87,7 @@ class SVGAnimatedPointList {
 
   bool IsAnimating() const { return !!mAnimVal; }
 
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
 
  private:
   // mAnimVal is a pointer to allow us to determine if we're being animated or
@@ -96,7 +96,7 @@ class SVGAnimatedPointList {
   // the empty string (<set to="">).
 
   SVGPointList mBaseVal;
-  UniquePtr<SVGPointList> mAnimVal;
+  std::unique_ptr<SVGPointList> mAnimVal;
 
   struct SMILAnimatedPointList : public SMILAttr {
    public:

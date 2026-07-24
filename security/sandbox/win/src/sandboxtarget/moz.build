@@ -15,6 +15,9 @@ SOURCES += [
 LOCAL_INCLUDES += [
     "/security/sandbox/chromium",
     "/security/sandbox/chromium-shim",
+    "/security/sandbox/chromium-shim/base/allocator/partition_allocator/src",
+    "/security/sandbox/chromium/base/allocator/partition_allocator/src",
+    "/third_party/abseil-cpp",
 ]
 
 DEFINES["UNICODE"] = True

@@ -57,7 +57,10 @@ static nsresult SchemeIsHTTPS(const nsACString& originScheme,
 }
 
 bool AltSvcMapping::AcceptableProxy(nsProxyInfo* proxyInfo) {
-  return !proxyInfo || proxyInfo->IsDirect() || proxyInfo->IsSOCKS();
+  // TODO: We also need to make sure the inner connection will connect to the
+  // routed host.
+  return !proxyInfo || proxyInfo->IsDirect() || proxyInfo->IsSOCKS() ||
+         proxyInfo->IsHttp3Proxy();
 }
 
 void AltSvcMapping::ProcessHeader(
@@ -120,7 +123,6 @@ void AltSvcMapping::ProcessHeader(
 
   LOG(("Alt-Svc Response Header %s\n", buf.get()));
   ParsedHeaderValueListList parsedAltSvc(buf);
-  int32_t numEntriesInHeader = parsedAltSvc.mValues.Length();
 
   nsTArray<RefPtr<AltSvcMapping>> h3Mappings;
   nsTArray<RefPtr<AltSvcMapping>> otherMappings;
@@ -143,8 +145,6 @@ void AltSvcMapping::ProcessHeader(
       if (!pairIndex) {
         if (currentName.EqualsLiteral("clear")) {
           clearEntry = true;
-          --numEntriesInHeader;  // Only want to keep track of actual alt-svc
-                                 // maps, not clearing
           break;
         }
 
@@ -259,11 +259,6 @@ void AltSvcMapping::ProcessHeader(
 
   std::for_each(otherMappings.begin(), otherMappings.end(),
                 doUpdateAltSvcMapping);
-
-  if (numEntriesInHeader) {  // Ignore headers that were just "alt-svc: clear"
-    glean::http::altsvc_entries_per_header.AccumulateSingleSample(
-        numEntriesInHeader);
-  }
 }
 
 AltSvcMapping::AltSvcMapping(nsIDataStorage* storage, int32_t epoch,
@@ -326,6 +321,24 @@ AltSvcMapping::AltSvcMapping(nsIDataStorage* storage, int32_t epoch,
                 mOriginAttributes, mIsHttp3);
   }
 }
+
+AltSvcMapping::AltSvcMapping(const nsACString& originScheme,
+                             const nsACString& originHost, int32_t originPort,
+                             const nsACString& username, bool privateBrowsing,
+                             const nsACString& alternateHost,
+                             int32_t alternatePort, const nsACString& npnToken,
+                             const OriginAttributes& originAttributes,
+                             bool aIsHttp3, SupportedAlpnRank aRank)
+    : mAlternateHost(alternateHost),
+      mAlternatePort(alternatePort),
+      mOriginHost(originHost),
+      mOriginPort(originPort),
+      mUsername(username),
+      mPrivate(privateBrowsing),
+      mNPNToken(npnToken),
+      mOriginAttributes(originAttributes),
+      mIsHttp3(aIsHttp3),
+      mAlpnRank(aRank) {}
 
 void AltSvcMapping::MakeHashKey(nsCString& outKey,
                                 const nsACString& originScheme,
@@ -521,7 +534,7 @@ AltSvcMapping::AltSvcMapping(nsIDataStorage* storage, int32_t epoch,
     _NS_NEXT_TOKEN;
     mMixedScheme = Substring(str, start, idx - start).EqualsLiteral("y");
     _NS_NEXT_TOKEN;
-    Unused << mOriginAttributes.PopulateFromSuffix(
+    (void)mOriginAttributes.PopulateFromSuffix(
         Substring(str, start, idx - start));
     // The separator after the top window origin is a pipe character since the
     // origin string can contain colons.
@@ -772,7 +785,7 @@ class WellKnownChecker {
         nsresult rv = uu->Verify(mTransactionAlternate->mWKResponse, mOrigin);
         if (NS_SUCCEEDED(rv)) {
           bool validWK = false;
-          Unused << uu->GetValid(&validWK);
+          (void)uu->GetValid(&validWK);
           if (!validWK) {
             LOG(("WellKnownChecker::Done %p json parser declares invalid\n%s\n",
                  this, mTransactionAlternate->mWKResponse.get()));
@@ -807,15 +820,11 @@ class WellKnownChecker {
   nsresult MakeChannel(nsHttpChannel* chan, TransactionObserver* obs,
                        nsHttpConnectionInfo* ci, nsIURI* uri, uint32_t caps,
                        nsILoadInfo* loadInfo) {
-    uint64_t channelId;
     nsLoadFlags flags;
 
-    ExtContentPolicyType contentPolicyType =
-        loadInfo->GetExternalContentPolicyType();
-
-    if (NS_FAILED(gHttpHandler->NewChannelId(channelId)) ||
-        NS_FAILED(chan->Init(uri, caps, nullptr, 0, nullptr, channelId,
-                             contentPolicyType, loadInfo)) ||
+    uint64_t channelId = gHttpHandler->NewChannelId();
+    if (NS_FAILED(
+            chan->Init(uri, caps, nullptr, 0, nullptr, channelId, loadInfo)) ||
         NS_FAILED(chan->SetAllowAltSvc(false)) ||
         NS_FAILED(chan->SetRedirectMode(
             nsIHttpChannelInternal::REDIRECT_MODE_ERROR)) ||
@@ -1139,8 +1148,8 @@ void AltSvcCache::UpdateAltServiceMapping(
   }
 
   if (map->IsHttp3()) {
-    bool isDirectOrNoProxy = pi ? pi->IsDirect() : true;
-    if (!isDirectOrNoProxy) {
+    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;
+    if (!isProxyAllowed) {
       LOG(
           ("AltSvcCache::UpdateAltServiceMapping %p map %p ignored h3 because "
            "proxy is in use %p\n",
@@ -1235,7 +1244,7 @@ void AltSvcCache::UpdateAltServiceMapping(
 already_AddRefed<AltSvcMapping> AltSvcCache::GetAltServiceMapping(
     const nsACString& scheme, const nsACString& host, int32_t port,
     bool privateBrowsing, const OriginAttributes& originAttributes,
-    bool aHttp2Allowed, bool aHttp3Allowed) {
+    bool aHttp2Allowed, bool aHttp3Allowed, bool aForceHttp3First) {
   EnsureStorageInited();
 
   bool isHTTPS;
@@ -1251,6 +1260,12 @@ already_AddRefed<AltSvcMapping> AltSvcCache::GetAltServiceMapping(
 
   // First look for HTTP3
   if (aHttp3Allowed) {
+    if (aForceHttp3First) {
+      RefPtr<Http3FirstAltSvcMapping> mapping = new Http3FirstAltSvcMapping(
+          "https"_ns, host, port, ""_ns, privateBrowsing, host, port, "h3"_ns,
+          originAttributes, true, SupportedAlpnRank::HTTP_3_VER_1);
+      return mapping.forget();
+    }
     nsAutoCString key;
     AltSvcMapping::MakeHashKey(key, scheme, host, port, privateBrowsing,
                                originAttributes, true);
@@ -1402,12 +1417,6 @@ AltSvcOverride::GetParallelSpeculativeConnectLimit(
 }
 
 NS_IMETHODIMP
-AltSvcOverride::GetIsFromPredictor(bool* isFromPredictor) {
-  *isFromPredictor = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 AltSvcOverride::GetAllow1918(bool* allow) {
   // normally we don't do speculative connects to 1918.. and we use
   // speculative connects for the mapping validation, so override
@@ -1420,6 +1429,28 @@ template class AltSvcTransaction<AltSvcTransactionChild>;
 
 NS_IMPL_ISUPPORTS(AltSvcOverride, nsIInterfaceRequestor,
                   nsISpeculativeConnectionOverrider)
+
+Http3FirstAltSvcMapping::Http3FirstAltSvcMapping(
+    const nsACString& originScheme, const nsACString& originHost,
+    int32_t originPort, const nsACString& username, bool privateBrowsing,
+    const nsACString& alternateHost, int32_t alternatePort,
+    const nsACString& npnToken, const OriginAttributes& originAttributes,
+    bool aIsHttp3, SupportedAlpnRank aRank)
+    : AltSvcMapping(originScheme, originHost, originPort, username,
+                    privateBrowsing, alternateHost, alternatePort, npnToken,
+                    originAttributes, aIsHttp3, aRank) {}
+
+Http3FirstAltSvcMapping::~Http3FirstAltSvcMapping() = default;
+
+void Http3FirstAltSvcMapping::GetConnectionInfo(
+    nsHttpConnectionInfo** outCI, nsProxyInfo* pi,
+    const OriginAttributes& originAttributes) {
+  RefPtr<nsHttpConnectionInfo> ci = new nsHttpConnectionInfo(
+      mOriginHost, mOriginPort, mNPNToken, mUsername, pi, originAttributes,
+      mAlternateHost, mAlternatePort, mIsHttp3, false);
+  ci->SetPrivate(mPrivate);
+  ci.forget(outCI);
+}
 
 }  // namespace net
 }  // namespace mozilla

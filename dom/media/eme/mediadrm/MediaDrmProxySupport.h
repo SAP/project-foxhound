@@ -8,9 +8,9 @@
 #define MediaDrmProxySupport_H
 
 #include "mozilla/DecryptorProxyCallback.h"
-#include "mozilla/java/MediaDrmProxyWrappers.h"
 #include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/java/MediaDrmProxyWrappers.h"
 #include "nsString.h"
 
 namespace mozilla {

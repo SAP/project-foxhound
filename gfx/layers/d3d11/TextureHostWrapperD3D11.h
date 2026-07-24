@@ -12,7 +12,6 @@
 
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/TextureHost.h"
-#include "mozilla/UniquePtr.h"
 
 class nsIThreadPool;
 struct ID3D11Texture2D;

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!--
     Home Fragment
 
@@ -10,6 +17,8 @@
   <string name="tab_tray_add_new_collection">ନୂଆ ସଂଗ୍ରହ ଯୋଡ଼ନ୍ତୁ</string>
   <!-- Label of editable text in create collection dialog for naming a new collection -->
   <string name="tab_tray_add_new_collection_name">ନାମ</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!-- Text for the negative action button to dismiss the Close Tabs Banner. -->
   <string name="tab_tray_close_tabs_banner_negative_button_text">ବରଖାସ୍ତ କରନ୍ତୁ</string>
   <!--
@@ -23,7 +32,7 @@
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">ସମସ୍ତଙ୍କୁ ଦର୍ଶାନ୍ତୁ</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">ସହାୟତା</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">ସହାୟତା</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">ସେଟିଂସମୂହ</string>
   <!-- Browser menu button that opens a user's library -->
@@ -38,9 +47,9 @@
   -->
   <string name="browser_menu_open_in_fenix">%1$sରେ ଖୋଲନ୍ତୁ</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">ଯୋଡ଼ନ୍ତୁ</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">ଯୋଡ଼ନ୍ତୁ</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">ସମ୍ପାଦନା</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">ସମ୍ପାଦନା</string>
   <!--
     Locale Settings Fragment
 
@@ -51,6 +60,10 @@
   <string name="default_locale_text">ଡିଭାଇସ୍ ର ଭାଷାକୁ ଅନୁସରଣ କରନ୍ତୁ</string>
   <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
   <string name="search_shortcuts_engine_settings">ସନ୍ଧାନ ଇଞ୍ଜିନ୍ ସେଟିଂସ୍</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!--
     Search Widget
 
@@ -110,7 +123,7 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">ବ୍ୟକ୍ତିଗତ ଟ୍ୟାବ୍ ଯୋଡ଼ନ୍ତୁ</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">ବ୍ୟକ୍ତିଗତ</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">ବ୍ୟକ୍ତିଗତ</string>
   <!-- Text for the header that groups the history for today -->
   <string name="history_today">ଆଜି</string>
   <!-- Text for the header that groups the history for yesterday -->
@@ -164,4 +177,10 @@
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

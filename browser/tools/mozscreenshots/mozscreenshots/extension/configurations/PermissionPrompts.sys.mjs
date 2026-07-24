@@ -160,7 +160,6 @@ async function clickOn(selector, beforeContentFn) {
   );
 
   await SpecialPowers.spawn(lastTab.linkedBrowser, [selector], arg => {
-    /* eslint-env mozilla/chrome-script */
     let element = content.document.querySelector(arg);
     return EventUtils.synthesizeClick(element);
   });

@@ -22,7 +22,7 @@ extern "C" {
  *
  * SPDX-FileCopyrightText: 2017 David Edmundson
  *
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  * </pre>
  */
 struct org_kde_kwin_appmenu;

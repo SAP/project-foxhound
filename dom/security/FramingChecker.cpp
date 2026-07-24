@@ -8,26 +8,24 @@
 
 #include <stdint.h>  // uint32_t
 
+#include "mozilla/Assertions.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/net/HttpBaseChannel.h"
 #include "nsCOMPtr.h"
+#include "nsContentSecurityUtils.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsHttpChannel.h"
-#include "nsContentSecurityUtils.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsHttpChannel.h"
 #include "nsIContentPolicy.h"
+#include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsLiteralString.h"
-#include "nsTArray.h"
 #include "nsStringFwd.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/net/HttpBaseChannel.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Services.h"
-#include "mozilla/Unused.h"
-
-#include "nsIObserverService.h"
+#include "nsTArray.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -135,8 +133,7 @@ bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
   }
 
   nsAutoCString xfoHeaderValue;
-  Unused << httpChannel->GetResponseHeader("X-Frame-Options"_ns,
-                                           xfoHeaderValue);
+  (void)httpChannel->GetResponseHeader("X-Frame-Options"_ns, xfoHeaderValue);
 
   // Step 10. (paritally) if the only header we received was empty, then we
   // process it as if it wasn't sent at all.

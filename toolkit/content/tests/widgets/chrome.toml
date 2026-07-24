@@ -18,7 +18,9 @@ prefs = ["app.support.baseURL='https://support.mozilla.org/'"]
 ["test_label_checkbox.xhtml"]
 
 ["test_menubar.xhtml"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1933983
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1933983
+]
 
 ["test_moz_badge.html"]
 
@@ -50,19 +52,31 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bu
 
 ["test_moz_input_color.html"]
 
+["test_moz_input_elems_in_form.html"]
+
+["test_moz_input_email.html"]
+
 ["test_moz_input_folder.html"]
+
+["test_moz_input_number.html"]
 
 ["test_moz_input_password.html"]
 
 ["test_moz_input_search.html"]
 
+["test_moz_input_tel.html"]
+
 ["test_moz_input_text.html"]
+
+["test_moz_input_url.html"]
 
 ["test_moz_label.html"]
 
 ["test_moz_lit_element.html"]
 
 ["test_moz_message_bar.html"]
+
+["test_moz_page_header.html"]
 
 ["test_moz_page_nav.html"]
 
@@ -75,6 +89,12 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bu
 ["test_moz_reorderable_list.html"]
 
 ["test_moz_select.html"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1997197
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && debug", # Bug 1997197
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1997197
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1997197
+]
 
 ["test_moz_support_link.html"]
 

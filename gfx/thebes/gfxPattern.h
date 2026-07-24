@@ -9,7 +9,6 @@
 #include "gfxTypes.h"
 
 #include "gfxMatrix.h"
-#include "mozilla/Alignment.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PatternHelpers.h"
 #include "nsISupportsImpl.h"

@@ -5,14 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Crypto.h"
+
 #include "js/ScalarType.h"
 #include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType
+#include "mozilla/dom/CryptoBinding.h"
+#include "mozilla/dom/SubtleCrypto.h"
 #include "nsCOMPtr.h"
 #include "nsIRandomGenerator.h"
 #include "nsReadableUtils.h"
-
-#include "mozilla/dom/CryptoBinding.h"
-#include "mozilla/dom/SubtleCrypto.h"
 #include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {

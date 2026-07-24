@@ -24,6 +24,7 @@ import mozilla.components.ui.tabcounter.TabCounterMenu
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.ReaderMode
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
@@ -43,6 +44,10 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeScreenViewModel
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB_LONG_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_HOME_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -218,7 +223,9 @@ class DefaultBrowserToolbarController(
     }
 
     override fun handleHomeButtonClick() {
-        Events.browserToolbarHomeTapped.record(NoExtras())
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_HOME_CLICKED),
+        )
 
         if (settings.enableHomepageAsNewTab) {
             fenixBrowserUseCases.navigateToHomepage()
@@ -278,7 +285,9 @@ class DefaultBrowserToolbarController(
             )
         }
 
-        Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab"))
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_ADD_NEW_TAB),
+        )
 
         browserAnimator.captureEngineViewAndDrawStatically {
             navController.navigate(
@@ -288,7 +297,9 @@ class DefaultBrowserToolbarController(
     }
 
     override fun handleNewTabButtonLongClick() {
-        Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab_long_press"))
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_ADD_NEW_TAB_LONG_CLICKED),
+        )
     }
 
     override fun handleMenuButtonClicked(
@@ -303,10 +314,6 @@ class DefaultBrowserToolbarController(
                 isSandboxCustomTab = isSandboxCustomTab,
             ),
         )
-    }
-
-    companion object {
-        internal const val TELEMETRY_BROWSER_IDENTIFIER = "browserMenu"
     }
 }
 

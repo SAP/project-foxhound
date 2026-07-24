@@ -1,0 +1,32 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Generate the metrics file and ensure the srcdir metrics file is up-to-date.
+# The srcdir metrics file is necessary for the Glean probe-scraper to read and
+# create database tables.
+GeneratedFile(
+    "generated_metrics.yaml",
+    script="glean_metrics.py",
+    inputs=["!../annotations/validated.yaml"],
+)
+
+# Generate the Rust language bindings for the crash ping metrics.
+GeneratedFile(
+    "glean_metrics.rs",
+    script="glean_rust.py",
+    inputs=[
+        "/toolkit/components/glean/tags.yaml",
+        "pings.yaml",
+        "!generated_metrics.yaml",
+    ],
+)
+
+# Generate the conversion code for each annotation to Glean metrics.
+GeneratedFile(
+    "conversions.rs",
+    script="conversions.py",
+    inputs=["!../annotations/validated.yaml"],
+)

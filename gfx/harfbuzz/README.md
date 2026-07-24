@@ -1,42 +1,31 @@
-[![Linux CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/linux-ci.yml)
-[![macoOS CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/macos-ci.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/macos-ci.yml)
-[![Windows CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/msvc-ci.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/msvc-ci.yml)
-[![CircleCI Build Status](https://circleci.com/gh/harfbuzz/harfbuzz/tree/main.svg?style=svg)](https://circleci.com/gh/harfbuzz/harfbuzz/tree/main)
+# HarfBuzz
+
+<div align="center">
+
+<p><img src="HarfBuzz.png" alt="HarfBuzz Logo" width="256"/></p>
+
+[![Linux CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/linux.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/linux.yml)
+[![macoOS CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/macos.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/macos.yml)
+[![Windows CI Status](https://github.com/harfbuzz/harfbuzz/actions/workflows/msvc.yml/badge.svg)](https://github.com/harfbuzz/harfbuzz/actions/workflows/msvc.yml)
 [![OSS-Fuzz Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/harfbuzz.svg)](https://oss-fuzz-build-logs.storage.googleapis.com/index.html#harfbuzz)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/15166/badge.svg)](https://scan.coverity.com/projects/harfbuzz)
 [![Packaging status](https://repology.org/badge/tiny-repos/harfbuzz.svg)](https://repology.org/project/harfbuzz/versions)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/harfbuzz/harfbuzz/badge)](https://securityscorecards.dev/viewer/?uri=github.com/harfbuzz/harfbuzz)
 
-
-# HarfBuzz
+</div>
 
 HarfBuzz is a text shaping engine. It primarily supports [OpenType][1], but also
-[Apple Advanced Typography][2]. HarfBuzz is used in Android, Chrome,
-ChromeOS, Firefox, GNOME, GTK+, KDE, Qt, LibreOffice, OpenJDK, XeTeX,
-PlayStation, Microsoft Edge, Adobe Photoshop, Illustrator, InDesign,
-Godot Engine, Unreal Engine, and other places.
+[Apple Advanced Typography][2].
+Check “[What is HarfBuzz?](https://harfbuzz.github.io/what-is-harfbuzz.html)” chapter
+in the user manual for more inforamation on what HarfBuzz do and what it doesn’t do.
 
-[![xkcd-derived image](xkcd.png)](https://xkcd.com/2347/)
-
-For bug reports, mailing list, and other information please visit:
-
-  http://harfbuzz.org/
+The canonical source tree and bug trackers are available on [github][4].
+Both development and user support discussion around HarfBuzz happen on
+[github][4] as well.
 
 For license information, see [COPYING](COPYING).
 
-## Documentation
-
-For user manual as well as API documentation, check: https://harfbuzz.github.io
-
-## Download
-
-For tarball releases of HarfBuzz, look [here][3]. At the same place you
-will also find Win32/Win64 binary bundles that include `libharfbuzz` DLL,
-`hb-view.exe`, `hb-shape.exe`, and all dependencies.
-
-The canonical source tree is available on [github][4].
-Both development and user support discussion around HarfBuzz happens on
-[github][4] as well.
+## API stability
 
 The API that comes with `hb.h` will not change incompatibly. Other, peripheral,
 headers are more likely to go through minor modifications, but again, we do our
@@ -44,11 +33,21 @@ best to never change API in an incompatible way. We will never break the ABI.
 
 The API and ABI are stable even across major version number jumps. In fact,
 current HarfBuzz is API/ABI compatible all the way back to the 0.9.x series.
-If one day we need to break the API/ABI, that would be called a new a library.
+If one day we need to break the API/ABI, that would be called a new library.
 
 As such, we bump the major version number only when we add major new features,
 the minor version when there is new API, and the micro version when there
 are bug fixes.
+
+## Documentation
+
+For user manual as well as API documentation, check: https://harfbuzz.github.io
+
+## Download
+
+Tarball releases of HarfBuzz are available on [github releases][3] page. At the same place you
+will also find Win32/Win64 binary bundles that include `libharfbuzz` DLL,
+`hb-view.exe`, `hb-shape.exe`, and all dependencies.
 
 ## Development
 
@@ -79,6 +78,9 @@ Internationalization and Unicode Conference over the years:
 More presentations and papers are available on [behdad][11]'s website.
 In particular, the following _studies_ are relevant to HarfBuzz development:
 
+- 2025 – [AAT layout caches][24]
+- 2025 – [OpenType Layout lookup caches][23]
+- 2025 – [Introducing HarfRust][22]
 - 2025 – [Subsetting][21]
 - 2025 – [Caching][12]
 - 2025 – [`hb-decycler`][13]
@@ -106,6 +108,19 @@ transliterated using the Latin script. It also means "talkative" or
 > TrueType that adds support for complex script rendering, and HarfBuzz is an
 > implementation of OpenType complex text shaping.
 
+## Users
+
+HarfBuzz is used in Android, Chrome,
+ChromeOS, Firefox, GNOME, GTK+, KDE, Qt, LibreOffice, OpenJDK, XeTeX, Scribus,
+PlayStation, Microsoft Edge, Amazon Kindle, Adobe Photoshop, Illustrator,
+InDesign, Godot Engine, Unreal Engine, QuarkXPress, Figma, and other places.
+
+<p align="center">
+  <a href="https://xkcd.com/2347/" rel="nofollow">
+    <img src="xkcd.png" width="256" alt="xkcd-derived image">
+  </a>
+</p>
+
 ## Distribution
 
 <details>
@@ -119,10 +134,10 @@ transliterated using the Latin script. It also means "talkative" or
 [2]: https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6AATIntro.html
 [3]: https://github.com/harfbuzz/harfbuzz/releases
 [4]: https://github.com/harfbuzz/harfbuzz
-[6]: http://behdad.org/text2024
+[6]: https://behdad.org/text2024
 [7]: https://docs.google.com/presentation/d/1x97pfbB1gbD53Yhz6-_yBUozQMVJ_5yMqqR_D-R7b7I/preview
 [8]: https://docs.google.com/presentation/d/1ySTZaXP5XKFg0OpmHZM00v5b17GSr3ojnzJekl4U8qI/preview
-[9]: http://behdad.org/download/Presentations/slippy/harfbuzz_slides.pdf
+[9]: https://behdad.org/doc/harfbuzz2009-slides.pdf
 [10]: https://docs.google.com/document/d/12jfNpQJzeVIAxoUSpk7KziyINAa1msbGliyXqguS86M/preview
 [11]: https://behdad.org/
 [12]: https://docs.google.com/document/d/1_VgObf6Je0J8byMLsi7HCQHnKo2emGnx_ib_sHo-bt4/preview
@@ -135,3 +150,6 @@ transliterated using the Latin script. It also means "talkative" or
 [19]: https://prezi.com/view/THNPJGFVDUCWoM20syev/
 [20]: https://behdad.org/doc/harfbuzz10years-slides.pdf
 [21]: https://docs.google.com/document/d/1_vZrt97OorJ0jA1YzJ29LRcGr3YGrNJANdOABjVZGEs/preview
+[22]: https://docs.google.com/document/d/1aH_waagdEM5UhslQxCeFEb82ECBhPlZjy5_MwLNLBYo/preview
+[23]: https://docs.google.com/document/d/1hRd5oYQJLrt0JuwWhEJWi7wh_9rbaIJkX6IR9DW7rZQ/preview
+[24]: https://docs.google.com/document/d/1a3K6fHjsiWW36vSzwJwCwEBOgznunKs80PSpBbpfHiA/preview

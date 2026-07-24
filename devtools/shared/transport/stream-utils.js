@@ -60,49 +60,49 @@ function copyStream(input, output, length) {
   return copier.copy();
 }
 
-function StreamCopier(input, output, length) {
-  EventEmitter.decorate(this);
-  this._id = StreamCopier._nextId++;
-  this.input = input;
-  // Save off the base output stream, since we know it's async as we've required
-  this.baseAsyncOutput = output;
-  if (IOUtil.outputStreamIsBuffered(output)) {
-    this.output = output;
-  } else {
-    this.output = Cc[
-      "@mozilla.org/network/buffered-output-stream;1"
-    ].createInstance(Ci.nsIBufferedOutputStream);
-    this.output.init(output, BUFFER_SIZE);
+class StreamCopier extends EventEmitter {
+  static _nextId = 0;
+
+  constructor(input, output, length) {
+    super();
+    this._id = StreamCopier._nextId++;
+    this.input = input;
+    // Save off the base output stream, since we know it's async as we've required
+    this.baseAsyncOutput = output;
+    if (IOUtil.outputStreamIsBuffered(output)) {
+      this.output = output;
+    } else {
+      this.output = Cc[
+        "@mozilla.org/network/buffered-output-stream;1"
+      ].createInstance(Ci.nsIBufferedOutputStream);
+      this.output.init(output, BUFFER_SIZE);
+    }
+    this._length = length;
+    this._amountLeft = length;
+    let _resolve;
+    let _reject;
+    this._deferred = new Promise((resolve, reject) => {
+      _resolve = resolve;
+      _reject = reject;
+    });
+    this._deferred.resolve = _resolve;
+    this._deferred.reject = _reject;
+
+    this._copy = this._copy.bind(this);
+    this._flush = this._flush.bind(this);
+    this._destroy = this._destroy.bind(this);
+
+    // Copy promise's then method up to this object.
+    // Allows the copier to offer a promise interface for the simple succeed or
+    // fail scenarios, but also emit events (due to the EventEmitter) for other
+    // states, like progress.
+    this.then = this._deferred.then.bind(this._deferred);
+    this.then(this._destroy, this._destroy);
+
+    // Stream ready callback starts as |_copy|, but may switch to |_flush| at end
+    // if flushing would block the output stream.
+    this._streamReadyCallback = this._copy;
   }
-  this._length = length;
-  this._amountLeft = length;
-  let _resolve;
-  let _reject;
-  this._deferred = new Promise((resolve, reject) => {
-    _resolve = resolve;
-    _reject = reject;
-  });
-  this._deferred.resolve = _resolve;
-  this._deferred.reject = _reject;
-
-  this._copy = this._copy.bind(this);
-  this._flush = this._flush.bind(this);
-  this._destroy = this._destroy.bind(this);
-
-  // Copy promise's then method up to this object.
-  // Allows the copier to offer a promise interface for the simple succeed or
-  // fail scenarios, but also emit events (due to the EventEmitter) for other
-  // states, like progress.
-  this.then = this._deferred.then.bind(this._deferred);
-  this.then(this._destroy, this._destroy);
-
-  // Stream ready callback starts as |_copy|, but may switch to |_flush| at end
-  // if flushing would block the output stream.
-  this._streamReadyCallback = this._copy;
-}
-StreamCopier._nextId = 0;
-
-StreamCopier.prototype = {
   copy() {
     // Dispatch to the next tick so that it's possible to attach a progress
     // event listener, even for extremely fast copies (like when testing).
@@ -114,7 +114,7 @@ StreamCopier.prototype = {
       }
     });
     return this;
-  },
+  }
 
   _copy() {
     const bytesAvailable = this.input.available();
@@ -146,14 +146,14 @@ StreamCopier.prototype = {
 
     this._debug("Waiting for input stream");
     this.input.asyncWait(this, 0, 0, Services.tm.currentThread);
-  },
+  }
 
   _emitProgress() {
     this.emit("progress", {
       bytesSent: this._length - this._amountLeft,
       totalBytes: this._length,
     });
-  },
+  }
 
   _flush() {
     try {
@@ -172,7 +172,7 @@ StreamCopier.prototype = {
       throw e;
     }
     this._deferred.resolve();
-  },
+  }
 
   _destroy() {
     this._destroy = null;
@@ -180,24 +180,24 @@ StreamCopier.prototype = {
     this._flush = null;
     this.input = null;
     this.output = null;
-  },
+  }
 
   // nsIInputStreamCallback
   onInputStreamReady() {
     this._streamReadyCallback();
-  },
+  }
 
   // nsIOutputStreamCallback
   onOutputStreamReady() {
     this._streamReadyCallback();
-  },
+  }
 
   _debug(msg) {
     // Prefix logs with the copier ID, which makes logs much easier to
     // understand when several copiers are running simultaneously
     dumpv("Copier: " + this._id + " " + msg);
-  },
-};
+  }
+}
 
 /**
  * Read from a stream, one byte at a time, up to the next |delimiter|
@@ -206,7 +206,8 @@ StreamCopier.prototype = {
  * stream.  In that case, we only read as many bytes as the stream currently has
  * to offer.
  * TODO: This implementation could be removed if bug 984651 is fixed, which
- *       provides a native version of the same idea.
+ * provides a native version of the same idea.
+ *
  * @param stream nsIInputStream
  *        The input stream to read from.
  * @param delimiter string
@@ -274,12 +275,14 @@ class AsyncStreamToArrayBufferCopier {
   /**
    * This is a wrapper on top of #originalStream, to be able to read buffers
    * easily.
+   *
    * @typedef {nsIBinaryInputStream}
    */
   #binaryStream;
 
   /**
    * This is the output buffer, accessed as an UInt8Array.
+   *
    * @typedef {Uint8Array}
    */
   #outputArray;
@@ -287,6 +290,7 @@ class AsyncStreamToArrayBufferCopier {
   /**
    * How many bytes have been read already. This is also the next index to write
    * in #outputArray.
+   *
    * @typedef {number}
    */
   #pointer = 0;
@@ -294,12 +298,14 @@ class AsyncStreamToArrayBufferCopier {
   /**
    * The count of bytes to be transfered. It is infered from the byteLength of
    * of the output buffer.
+   *
    * @typedef {number}
    */
   #count;
 
   /**
    * This temporary buffer is used when reading from #binaryStream.
+   *
    * @typedef {ArrayBuffer}
    */
   #tempBuffer;
@@ -416,12 +422,14 @@ class ArrayBufferToAsyncStreamCopier {
   /**
    * This is a wrapper on top of #originalStream, to be able to write buffers
    * easily.
+   *
    * @typedef {nsIBinaryOutputStream}
    */
   #binaryStream;
 
   /**
    * This is the input buffer, accessed as an UInt8Array.
+   *
    * @typedef {Uint8Array}
    */
   #inputArray;
@@ -429,6 +437,7 @@ class ArrayBufferToAsyncStreamCopier {
   /**
    * How many bytes have been read already. This is also the next index to read
    * in #outputArray.
+   *
    * @typedef {number}
    */
   #pointer = 0;
@@ -436,6 +445,7 @@ class ArrayBufferToAsyncStreamCopier {
   /**
    * The count of bytes to be transfered. It is infered from the byteLength of
    * of the input buffer.
+   *
    * @typedef {number}
    */
   #count;

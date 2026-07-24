@@ -5,17 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PannerNode.h"
+
 #include "AlignmentUtils.h"
+#include "AudioBufferSourceNode.h"
 #include "AudioDestinationNode.h"
+#include "AudioListener.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioListener.h"
 #include "PanningUtils.h"
-#include "AudioBufferSourceNode.h"
 #include "PlayingRefChangeHandler.h"
-#include "blink/HRTFPanner.h"
-#include "blink/HRTFDatabaseLoader.h"
 #include "Tracing.h"
+#include "blink/HRTFDatabaseLoader.h"
+#include "blink/HRTFPanner.h"
 
 using WebCore::HRTFDatabaseLoader;
 using WebCore::HRTFPanner;
@@ -441,6 +442,9 @@ void PannerNodeEngine::HRTFPanningFunction(const AudioBlock& aInput,
   input.mVolume *=
       ComputeConeGain(position, orientation) * ComputeDistanceGain(position);
 
+  if (mDestination->Graph()->IsNonRealtime()) {
+    mHRTFPanner->DatabaseLoader()->waitForLoaderThreadCompletion();
+  }
   mHRTFPanner->pan(azimuth, elevation, &input, aOutput);
 }
 
@@ -629,7 +633,11 @@ void PannerNodeEngine::EqualPowerPanningFunction(const AudioBlock& aInput,
   }
 }
 
-// This algorithm is specified in the webaudio spec.
+// With infinite precision, this would be equivalent to the algorithm in
+// https://webaudio.github.io/web-audio-api/#azimuth-elevation.
+// atan2() is used in place of acos() because the precision of acos(x)
+// degrades rapidly as x approaches 1 or -1.
+// acos() amplifies small errors in x when x is near 1 or -1.
 void PannerNodeEngine::ComputeAzimuthAndElevation(const ThreeDPoint& position,
                                                   float& aAzimuth,
                                                   float& aElevation) {
@@ -640,46 +648,40 @@ void PannerNodeEngine::ComputeAzimuthAndElevation(const ThreeDPoint& position,
     return;
   }
 
-  sourceListener.Normalize();
-
-  // Project the source-listener vector on the x-z plane.
   const ThreeDPoint& listenerFront = mListenerEngine->FrontVector();
   const ThreeDPoint& listenerRight = mListenerEngine->RightVector();
-  ThreeDPoint up = listenerRight.CrossProduct(listenerFront);
+  ThreeDPoint listenerUp = listenerRight.CrossProduct(listenerFront);
+  // Project source - listener vector onto each listener axis.
+  double frontProjection = sourceListener.DotProduct(listenerFront);
+  double rightProjection = sourceListener.DotProduct(listenerRight);
+  double upProjection = sourceListener.DotProduct(listenerUp);
+  // Magnitude of source - listener vector projected onto the front-right plane
+  double planeMagnitude = fdlibm_hypot(frontProjection, rightProjection);
+  // Up is elevation 90; down is -90; right-front plane is zero.
+  // Divide by M_PI before multiplying by 180 so that integer power of two
+  // factors of pi convert exactly.
+  aElevation = fdlibm_atan2(upProjection, planeMagnitude) / M_PI * 180;
+  WebAudioUtils::FixNaN(aElevation);
+  MOZ_ASSERT(aElevation <= 90);
+  MOZ_ASSERT(aElevation >= -90);
 
-  double upProjection = sourceListener.DotProduct(up);
-  aElevation = 90 - 180 * fdlibm_acos(upProjection) / M_PI;
-
-  if (aElevation > 90) {
-    aElevation = 180 - aElevation;
-  } else if (aElevation < -90) {
-    aElevation = -180 - aElevation;
-  }
-
-  ThreeDPoint projectedSource = sourceListener - up * upProjection;
-  if (projectedSource.IsZero()) {
+  if (planeMagnitude == 0.0) {
     // source - listener direction is up or down.
     aAzimuth = 0.0;
     return;
   }
-  projectedSource.Normalize();
 
-  // Actually compute the angle, and convert to degrees
-  double projection = projectedSource.DotProduct(listenerRight);
-  aAzimuth = 180 * fdlibm_acos(projection) / M_PI;
-
-  // Compute whether the source is in front or behind the listener.
-  double frontBack = projectedSource.DotProduct(listenerFront);
-  if (frontBack < 0) {
-    aAzimuth = 360 - aAzimuth;
-  }
-  // Rotate the azimuth so it is relative to the listener front vector instead
-  // of the right vector.
-  if ((aAzimuth >= 0) && (aAzimuth <= 270)) {
-    aAzimuth = 90 - aAzimuth;
+  // Compute the azimuth, and convert to degrees.
+  // Right is 90, left is -90; front is zero.
+  aAzimuth = fdlibm_atan2(rightProjection, frontProjection) / M_PI * 180;
+  // Back is 180, even when rightProjection is -0.
+  if (aAzimuth == -180) {
+    aAzimuth = 180;
   } else {
-    aAzimuth = 450 - aAzimuth;
+    WebAudioUtils::FixNaN(aAzimuth);
   }
+  MOZ_ASSERT(aAzimuth <= 180);
+  MOZ_ASSERT(aAzimuth > -180);
 }
 
 // This algorithm is described in the WebAudio spec.

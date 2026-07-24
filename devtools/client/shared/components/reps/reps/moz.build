@@ -42,5 +42,6 @@ DevToolsModules(
     "symbol.mjs",
     "text-node.mjs",
     "undefined.mjs",
+    "value-summary-reader.mjs",
     "window.mjs",
 )

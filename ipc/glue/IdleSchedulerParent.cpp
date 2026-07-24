@@ -6,7 +6,6 @@
 
 #include "mozilla/StaticPrefs_page_load.h"
 #include "mozilla/StaticPrefs_javascript.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/IdleSchedulerParent.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/NeverDestroyed.h"
@@ -354,7 +353,7 @@ void IdleSchedulerParent::SendIdleTime() {
   // the task from it's list this will return false.  Instead check
   // mRequestedIdleBudget.
   MOZ_ASSERT(mRequestedIdleBudget);
-  Unused << SendIdleTime(mCurrentRequestId, mRequestedIdleBudget);
+  (void)SendIdleTime(mCurrentRequestId, mRequestedIdleBudget);
 }
 
 void IdleSchedulerParent::SendMayGC() {
@@ -431,7 +430,7 @@ void IdleSchedulerParent::EnsureStarvationTimer() {
     NS_NewTimerWithFuncCallback(
         &sStarvationPreventer, StarvationCallback, nullptr,
         StaticPrefs::page_load_deprioritization_period(),
-        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "StarvationCallback");
+        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "StarvationCallback"_ns);
   }
 }
 

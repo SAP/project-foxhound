@@ -29,7 +29,7 @@ async function testStrings() {
     let id = doc.l10n.getAttributes(elt).id;
     is(
       id,
-      "content-blocking-and-isolating-etp-warning-description-3",
+      "content-blocking-and-isolating-etp-warning-description-4",
       "The correct warning description string is in use"
     );
   }
@@ -39,7 +39,7 @@ async function testStrings() {
   let id = doc.l10n.getAttributes(elt).id;
   is(
     id,
-    "sitedata-option-block-cross-site-cookies",
+    "sitedata-option-block-cross-site-cookies2",
     "The correct string is in use for the cookie blocking option"
   );
 

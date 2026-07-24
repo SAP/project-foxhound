@@ -1,17 +1,31 @@
 [DEFAULT]
 support-files = ["head.js"]
+prefs = [
+  # Show old design when Network Error Page new design is active
+  "security.certerrors.felt-privacy-v1=false"
+]
 
 ["browser_CaptivePortalWatcher.js"]
-skip-if = ["os == 'win'"] # Bug 1313894
+skip-if = [
+  "os == 'win'", # Bug 1313894
+]
 
 ["browser_CaptivePortalWatcher_1.js"]
-skip-if = ["os == 'win'"] # Bug 1313894
+skip-if = [
+  "os == 'win'", # Bug 1313894
+]
 
 ["browser_captivePortalTabReference.js"]
 
 ["browser_captivePortal_certErrorUI.js"]
+skip-if = [
+  "debug && verify-standalone",
+]
 
 ["browser_captivePortal_https_only.js"]
+
+["browser_captivePortal_lna.js"]
+support-files = ["head.js", "file_captivePortal_lna.html"]
 
 ["browser_captivePortal_trr_mode3.js"]
 https_first_disabled = true

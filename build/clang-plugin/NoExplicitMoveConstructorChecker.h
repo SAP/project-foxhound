@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NoExplicitMoveConstructorChecker_h__
-#define NoExplicitMoveConstructorChecker_h__
+#ifndef NoExplicitMoveConstructorChecker_h_
+#define NoExplicitMoveConstructorChecker_h_
 
 #include "plugin.h"
 

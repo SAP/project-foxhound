@@ -3,7 +3,7 @@ browser/components/topsites/content/tippytop/favicons/
 browser/components/topsites/content/tippytop/images/
 browser/extensions/formautofill/content/third-party/
 browser/extensions/formautofill/test/fixtures/third_party/
-devtools/client/inspector/markup/test/lib_*
+devtools/client/inspector/markup/test/events/lib_*
 devtools/client/jsonview/lib/require.js
 devtools/client/shared/build/babel.js
 devtools/client/shared/source-map/
@@ -12,7 +12,7 @@ devtools/client/shared/sourceeditor/codemirror6/
 devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
 devtools/client/shared/sourceeditor/test/codemirror/
 devtools/client/shared/vendor/
-devtools/client/inspector/markup/test/helper_diff.js
+devtools/client/inspector/markup/test/events/helper_diff.js
 devtools/client/debugger/src/workers/parser/utils/parse-script-tags/
 devtools/shared/acorn/
 devtools/shared/compatibility/dataset/css-properties.json
@@ -20,8 +20,6 @@ devtools/shared/heapsnapshot/CoreDump.pb.cc
 devtools/shared/heapsnapshot/CoreDump.pb.h
 devtools/shared/jsbeautify/
 devtools/shared/node-properties/
-devtools/shared/qrcode/decoder/
-devtools/shared/qrcode/encoder/
 devtools/shared/sprintfjs/
 devtools/shared/storage/vendor/
 dom/canvas/test/webgl-conf/checkout/
@@ -36,6 +34,7 @@ dom/media/platforms/ffmpeg/ffmpeg58/
 dom/media/platforms/ffmpeg/ffmpeg59/
 dom/media/platforms/ffmpeg/ffmpeg60/
 dom/media/platforms/ffmpeg/ffmpeg61/
+dom/media/platforms/ffmpeg/ffmpeg62/
 dom/media/platforms/ffmpeg/libav53/
 dom/media/platforms/ffmpeg/libav54/
 dom/media/platforms/ffmpeg/libav55/
@@ -97,6 +96,7 @@ ipc/chromium/src/third_party/
 js/src/ctypes/libffi/
 js/src/dtoa.c
 js/src/editline/
+js/src/irregexp/imported/
 js/src/jit/arm64/vixl/
 js/src/octane/
 js/src/tests/test262/
@@ -145,10 +145,10 @@ modules/freetype2/
 modules/woff2/
 modules/xz-embedded/
 modules/zlib/
+mozglue/baseprofiler/core/vtune/
 mozglue/misc/decimal/
-mozglue/static/lz4/.*
+mozglue/static/lz4/
 mozglue/tests/glibc_printf_tests/
-netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
 netwerk/srtp/src/
 nsprpub/
@@ -196,10 +196,8 @@ toolkit/components/translations/bergamot-translator/thirdparty
 toolkit/components/translations/bergamot-translator/bergamot-translator.js
 toolkit/components/url-classifier/chromium/
 toolkit/components/utils/mozjexl.sys.mjs
-toolkit/components/viaduct/fetch_msg_types.pb.cc
-toolkit/components/viaduct/fetch_msg_types.pb.h
 toolkit/content/vendor/react/
-toolkit/content/widgets/vendor/lit.all.mjs
+toolkit/content/widgets/vendor/
 toolkit/crashreporter/breakpad-client/
 toolkit/crashreporter/google-breakpad/
 toolkit/modules/third_party/

@@ -10,7 +10,6 @@ if CONFIG["MOZ_WEBRTC_SIGNALING"]:
     if CONFIG["CC_TYPE"] == "clang-cl":
         CXXFLAGS += ["-Wno-invalid-source-encoding"]
 
-    if CONFIG["ENABLE_TESTS"]:
-        TEST_DIRS += [
-            "signaling/gtest",
-        ]
+    TEST_DIRS += [
+        "signaling/gtest",
+    ]

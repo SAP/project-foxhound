@@ -5,12 +5,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsClipboard_h_
-#define __nsClipboard_h_
+#ifndef _nsClipboard_h_
+#define _nsClipboard_h_
 
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
 #include "nsBaseClipboard.h"
 #include "nsIClipboard.h"
 #include "nsIObserver.h"
@@ -151,9 +150,36 @@ class nsClipboard final : public nsBaseClipboard, public nsIObserver {
   nsCOMPtr<nsITransferable> mGlobalTransferable;
   RefPtr<nsRetrievalContext> mContext;
 
+  void IncrementSequenceNumber(int32_t aWhichClipboard) {
+    if (aWhichClipboard == kSelectionClipboard) {
+      mSelectionSequenceNumber++;
+    } else {
+      mGlobalSequenceNumber++;
+    }
+  }
+  int32_t GetSequenceNumber(int32_t aWhichClipboard) {
+    return (aWhichClipboard == kSelectionClipboard) ? mSelectionSequenceNumber
+                                                    : mGlobalSequenceNumber;
+  }
+
   // Sequence number of the system clipboard data.
   int32_t mSelectionSequenceNumber = 0;
   int32_t mGlobalSequenceNumber = 0;
+
+  void MarkNextOwnerClipboardChange(int32_t aWhichClipboard, bool aOurChange) {
+    if (aWhichClipboard == kSelectionClipboard) {
+      mWeSetSelectionData = aOurChange;
+    } else {
+      mWeSetGlobalData = aOurChange;
+    }
+  }
+  bool IsOurOwnerClipboardChange(int32_t aWhichClipboard) {
+    return (aWhichClipboard == kSelectionClipboard) ? mWeSetSelectionData
+                                                    : mWeSetGlobalData;
+  }
+
+  bool mWeSetSelectionData = false;
+  bool mWeSetGlobalData = false;
 };
 
 extern const int kClipboardTimeout;
@@ -163,4 +189,4 @@ GdkAtom GetSelectionAtom(int32_t aWhichClipboard);
 mozilla::Maybe<nsIClipboard::ClipboardType> GetGeckoClipboardType(
     GtkClipboard* aGtkClipboard);
 
-#endif /* __nsClipboard_h_ */
+#endif /* _nsClipboard_h_ */

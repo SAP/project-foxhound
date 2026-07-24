@@ -10,14 +10,30 @@
 
 #include "rtc_base/async_dns_resolver.h"
 
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
+#include "api/async_dns_resolver.h"
 #include "api/make_ref_counted.h"
-#include "rtc_base/logging.h"
+#include "api/ref_counted_base.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
+#include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/ip_address.h"
+#include "rtc_base/net_helpers.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
+
+#if defined(WEBRTC_POSIX)
+#include <netdb.h>
+#endif
 
 #if defined(WEBRTC_MAC) || defined(WEBRTC_IOS)
 #include <dispatch/dispatch.h>
@@ -27,22 +43,12 @@ namespace webrtc {
 
 namespace {
 
-#ifdef __native_client__
-int ResolveHostname(absl::string_view hostname,
-                    int family,
-                    std::vector<rtc::IPAddress>* addresses) {
-  RTC_DCHECK_NOTREACHED();
-  RTC_LOG(LS_WARNING) << "ResolveHostname() is not implemented for NaCl";
-  return -1;
-}
-#else   // notdef(__native_client__)
 int ResolveHostname(absl::string_view hostname,
                     int family,
                     std::vector<IPAddress>& addresses) {
   addresses.clear();
   struct addrinfo* result = nullptr;
-  struct addrinfo hints = {0};
-  hints.ai_family = family;
+  struct addrinfo hints = {.ai_flags = AI_ADDRCONFIG, .ai_family = family};
   // `family` here will almost always be AF_UNSPEC, because `family` comes from
   // AsyncResolver::addr_.family(), which comes from a SocketAddress constructed
   // with a hostname. When a SocketAddress is constructed with a hostname, its
@@ -60,7 +66,6 @@ int ResolveHostname(absl::string_view hostname,
   // Android (source code, not documentation):
   // https://android.googlesource.com/platform/bionic/+/
   // 7e0bfb511e85834d7c6cb9631206b62f82701d60/libc/netbsd/net/getaddrinfo.c#1657
-  hints.ai_flags = AI_ADDRCONFIG;
   int ret =
       getaddrinfo(std::string(hostname).c_str(), nullptr, &hints, &result);
   if (ret != 0) {
@@ -78,7 +83,6 @@ int ResolveHostname(absl::string_view hostname,
   freeaddrinfo(result);
   return 0;
 }
-#endif  // !__native_client__
 
 // Special task posting for Mac/iOS
 #if defined(WEBRTC_MAC) || defined(WEBRTC_IOS)
@@ -99,20 +103,20 @@ void PostTaskToGlobalQueue(
 
 }  // namespace
 
-class AsyncDnsResolver::State : public rtc::RefCountedBase {
+class AsyncDnsResolver::State : public RefCountedBase {
  public:
   enum class Status {
     kActive,    // Running request, or able to be passed one
     kFinished,  // Request has finished processing
     kDead       // The owning AsyncDnsResolver has been deleted
   };
-  static rtc::scoped_refptr<AsyncDnsResolver::State> Create() {
-    return rtc::make_ref_counted<AsyncDnsResolver::State>();
+  static scoped_refptr<AsyncDnsResolver::State> Create() {
+    return make_ref_counted<AsyncDnsResolver::State>();
   }
 
   // Execute the passed function if the state is Active.
   void Finish(absl::AnyInvocable<void()> function) {
-    webrtc::MutexLock lock(&mutex_);
+    MutexLock lock(&mutex_);
     if (status_ != Status::kActive) {
       return;
     }
@@ -120,12 +124,12 @@ class AsyncDnsResolver::State : public rtc::RefCountedBase {
     function();
   }
   void Kill() {
-    webrtc::MutexLock lock(&mutex_);
+    MutexLock lock(&mutex_);
     status_ = Status::kDead;
   }
 
  private:
-  webrtc::Mutex mutex_;
+  Mutex mutex_;
   Status status_ RTC_GUARDED_BY(mutex_) = Status::kActive;
 };
 
@@ -148,7 +152,7 @@ void AsyncDnsResolver::Start(const SocketAddress& addr,
   result_.addr_ = addr;
   callback_ = std::move(callback);
   auto thread_function = [this, addr, family, flag = safety_.flag(),
-                          caller_task_queue = webrtc::TaskQueueBase::Current(),
+                          caller_task_queue = TaskQueueBase::Current(),
                           state = state_] {
     std::vector<IPAddress> addresses;
     int error = ResolveHostname(addr.hostname(), family, addresses);

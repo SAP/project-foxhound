@@ -7,7 +7,6 @@
 #define mozilla_net_SocketProcessHost_h
 
 #include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/ipc/TaskFactory.h"

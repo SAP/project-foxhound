@@ -44,7 +44,7 @@ add_task(async function () {
 
   info("Switching over to the computed-view");
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  view = selectComputedView(inspector);
+  view = await selectComputedView(inspector);
   await onComputedViewReady;
 
   info("Testing that the background-image computed style has a tooltip too");

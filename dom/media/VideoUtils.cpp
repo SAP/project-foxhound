@@ -13,12 +13,12 @@
 #include "MediaResource.h"
 #include "TimeUnits.h"
 #include "mozilla/Base64.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/dom/ContentChild.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentTypeParser.h"
 #include "nsIConsoleService.h"
@@ -245,35 +245,29 @@ bool IsValidVideoRegion(const gfx::IntSize& aFrame,
 }
 
 already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
-  const char* name;
-  uint32_t threads = 4;
+  RefPtr<SharedThreadPool> pool;
   switch (aType) {
     case MediaThreadType::PLATFORM_DECODER:
-      name = "MediaPDecoder";
+      pool = SharedThreadPool::Get("MediaPDecoder", 4);
       break;
     case MediaThreadType::WEBRTC_CALL_THREAD:
-      name = "WebrtcCallThread";
-      threads = 1;
+      pool = SharedThreadPool::Get("WebrtcCallThread", 1);
       break;
     case MediaThreadType::WEBRTC_WORKER:
-      name = "WebrtcWorker";
+      pool = SharedThreadPool::Get("WebrtcWorker", 4);
       break;
     case MediaThreadType::MDSM:
-      name = "MediaDecoderStateMachine";
-      threads = 1;
+      pool = SharedThreadPool::Get("MediaDecoderStateMachine", 1);
       break;
     case MediaThreadType::PLATFORM_ENCODER:
-      name = "MediaPEncoder";
+      pool = SharedThreadPool::Get("MediaPEncoder", 4);
       break;
     default:
       MOZ_FALLTHROUGH_ASSERT("Unexpected MediaThreadType");
     case MediaThreadType::SUPERVISOR:
-      name = "MediaSupervisor";
+      pool = SharedThreadPool::Get("MediaSupervisor", 4);
       break;
   }
-
-  RefPtr<SharedThreadPool> pool =
-      SharedThreadPool::Get(nsDependentCString(name), threads);
 
   // Ensure a larger stack for platform decoder threads
   bool needsLargerStacks = aType == MediaThreadType::PLATFORM_DECODER;
@@ -977,7 +971,7 @@ nsresult GenerateRandomPathName(nsCString& aOutSalt, uint32_t aLength) {
   return NS_OK;
 }
 
-already_AddRefed<TaskQueue> CreateMediaDecodeTaskQueue(const char* aName) {
+already_AddRefed<TaskQueue> CreateMediaDecodeTaskQueue(StaticString aName) {
   RefPtr<TaskQueue> queue = TaskQueue::Create(
       GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER), aName);
   return queue.forget();
@@ -1110,6 +1104,32 @@ bool IsH264CodecString(const nsAString& aCodec) {
   H264_LEVEL level;
   return ExtractH264CodecDetails(aCodec, profile, constraint, level,
                                  H264CodecStringStrictness::Lenient);
+}
+
+bool IsAllowedH264Codec(const nsAString& aCodec) {
+  uint8_t profile = 0, constraint = 0;
+  H264_LEVEL level;
+
+  // Don't validate too much here, validation happens below
+  if (!ExtractH264CodecDetails(aCodec, profile, constraint, level,
+                               H264CodecStringStrictness::Lenient)) {
+    return false;
+  }
+
+  // Just assume what we can play on all platforms the codecs/formats that
+  // WMF can play, since we don't have documentation about what other
+  // platforms can play... According to the WMF documentation:
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/dd797815%28v=vs.85%29.aspx
+  // "The Media Foundation H.264 video decoder is a Media Foundation Transform
+  // that supports decoding of Baseline, Main, and High profiles, up to level
+  // 5.1.". We extend the limit to level 6.2, relying on the decoder to handle
+  // any potential errors, the level limit being rather arbitrary.
+  // We also report that we can play Extended profile, as there are
+  // bitstreams that are Extended compliant that are also Baseline compliant.
+  return level >= H264_LEVEL::H264_LEVEL_1 &&
+         level <= H264_LEVEL::H264_LEVEL_6_2 &&
+         (profile == H264_PROFILE_BASE || profile == H264_PROFILE_MAIN ||
+          profile == H264_PROFILE_EXTENDED || profile == H264_PROFILE_HIGH);
 }
 
 bool IsH265CodecString(const nsAString& aCodec) {

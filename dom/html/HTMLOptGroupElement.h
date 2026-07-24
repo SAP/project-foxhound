@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLOptGroupElement_h
 #define mozilla_dom_HTMLOptGroupElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
@@ -27,10 +26,16 @@ class HTMLOptGroupElement final : public nsGenericHTMLElement {
                                        nsGenericHTMLElement)
 
   // nsINode
-  void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                         bool aNotify, ErrorResult& aRv) override;
-  void RemoveChildNode(nsIContent* aKid, bool aNotify,
-                       const BatchRemovalState*) override;
+  void InsertChildBefore(
+      nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+      nsINode* aOldParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
+  void RemoveChildNode(
+      nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+      nsINode* aNewParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
 
   // nsIContent
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
@@ -53,17 +58,12 @@ class HTMLOptGroupElement final : public nsGenericHTMLElement {
     SetHTMLAttr(nsGkAtoms::label, aLabel, aError);
   }
 
+  // Get the select content element that contains this optgroup
+  HTMLSelectElement* GetSelect() const;
+
  protected:
   virtual ~HTMLOptGroupElement();
-
   JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
-
- protected:
-  /**
-   * Get the select content element that contains this option
-   * @param aSelectElement the select element [OUT]
-   */
-  Element* GetSelect();
 };
 
 }  // namespace dom

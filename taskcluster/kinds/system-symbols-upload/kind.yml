@@ -13,13 +13,16 @@ transforms:
 kind-dependencies:
     - system-symbols
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     system-symbols-upload:
         description: Upload Symbols
         from-deps: {}
         attributes:
             cron: true
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: "lint"}
             max-run-time: 1800

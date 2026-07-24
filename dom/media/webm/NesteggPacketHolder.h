@@ -6,10 +6,12 @@
 #if !defined(NesteggPacketHolder_h_)
 #  define NesteggPacketHolder_h_
 
-#  include <deque>
 #  include <stdint.h>
-#  include "nsAutoRef.h"
+
+#  include <deque>
+
 #  include "nestegg/nestegg.h"
+#  include "nsAutoRef.h"
 
 namespace mozilla {
 
@@ -74,6 +76,13 @@ class NesteggPacketHolder {
     MOZ_ASSERT(IsInitialized());
     return mIsKeyframe;
   }
+  // Return the discard padding (if exists) in microseconds for the packet.
+  int64_t DiscardPaddingUs() const {
+    MOZ_ASSERT(IsInitialized());
+    int64_t paddingNs = 0;
+    nestegg_packet_discard_padding(mPacket, &paddingNs);
+    return paddingNs / 1000;
+  }
 
  private:
   ~NesteggPacketHolder() { nestegg_free_packet(mPacket); }
@@ -115,10 +124,10 @@ class WebMPacketQueue {
     mQueue.push_front(std::move(aItem));
   }
 
-  already_AddRefed<NesteggPacketHolder> PopFront() {
+  RefPtr<NesteggPacketHolder> PopFront() {
     RefPtr<NesteggPacketHolder> result = std::move(mQueue.front());
     mQueue.pop_front();
-    return result.forget();
+    return result;
   }
 
   void Reset() {

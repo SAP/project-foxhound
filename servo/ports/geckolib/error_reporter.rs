@@ -132,8 +132,8 @@ struct ErrorParams<'a> {
 /// a second parameter if it exists, for use in the prefix for the eventual error message.
 fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
     let (main, prefix) = match err {
-        ParseErrorKind::Custom(StyleParseErrorKind::InvalidColor(property, token)) |
-        ParseErrorKind::Custom(StyleParseErrorKind::InvalidFilter(property, token)) => (
+        ParseErrorKind::Custom(StyleParseErrorKind::InvalidColor(property, token))
+        | ParseErrorKind::Custom(StyleParseErrorKind::InvalidFilter(property, token)) => (
             Some(ErrorString::Snippet(property.into())),
             Some(ErrorString::UnexpectedToken(token)),
         ),
@@ -142,22 +142,22 @@ fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
             (Some(ErrorString::Ident(ident)), None)
         },
 
-        ParseErrorKind::Basic(BasicParseErrorKind::UnexpectedToken(token)) |
-        ParseErrorKind::Custom(StyleParseErrorKind::ValueError(
+        ParseErrorKind::Basic(BasicParseErrorKind::UnexpectedToken(token))
+        | ParseErrorKind::Custom(StyleParseErrorKind::ValueError(
             ValueParseErrorKind::InvalidColor(token),
         )) => (Some(ErrorString::UnexpectedToken(token)), None),
 
         ParseErrorKind::Custom(StyleParseErrorKind::SelectorError(err)) => match err {
-            SelectorParseErrorKind::UnexpectedTokenInAttributeSelector(t) |
-            SelectorParseErrorKind::BadValueInAttr(t) |
-            SelectorParseErrorKind::ExpectedBarInAttr(t) |
-            SelectorParseErrorKind::NoQualifiedNameInAttributeSelector(t) |
-            SelectorParseErrorKind::InvalidQualNameInAttr(t) |
-            SelectorParseErrorKind::ExplicitNamespaceUnexpectedToken(t) |
-            SelectorParseErrorKind::PseudoElementExpectedIdent(t) |
-            SelectorParseErrorKind::NoIdentForPseudo(t) |
-            SelectorParseErrorKind::ClassNeedsIdent(t) |
-            SelectorParseErrorKind::PseudoElementExpectedColon(t) => {
+            SelectorParseErrorKind::UnexpectedTokenInAttributeSelector(t)
+            | SelectorParseErrorKind::BadValueInAttr(t)
+            | SelectorParseErrorKind::ExpectedBarInAttr(t)
+            | SelectorParseErrorKind::NoQualifiedNameInAttributeSelector(t)
+            | SelectorParseErrorKind::InvalidQualNameInAttr(t)
+            | SelectorParseErrorKind::ExplicitNamespaceUnexpectedToken(t)
+            | SelectorParseErrorKind::PseudoElementExpectedIdent(t)
+            | SelectorParseErrorKind::NoIdentForPseudo(t)
+            | SelectorParseErrorKind::ClassNeedsIdent(t)
+            | SelectorParseErrorKind::PseudoElementExpectedColon(t) => {
                 (None, Some(ErrorString::UnexpectedToken(t)))
             },
             SelectorParseErrorKind::ExpectedNamespace(namespace) => {
@@ -169,9 +169,12 @@ fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
             SelectorParseErrorKind::EmptySelector | SelectorParseErrorKind::DanglingCombinator => {
                 (None, None)
             },
-            err => (Some(extract_error_param(ParseErrorKind::Custom(
-                StyleParseErrorKind::SelectorError(err),
-            ))?), None),
+            err => (
+                Some(extract_error_param(ParseErrorKind::Custom(
+                    StyleParseErrorKind::SelectorError(err),
+                ))?),
+                None,
+            ),
         },
         err => (Some(extract_error_param(err)?), None),
     };
@@ -184,28 +187,28 @@ fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
 impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
     fn error_data(self) -> (CowRcStr<'a>, ErrorKind<'a>) {
         match self {
-            ContextualParseError::UnsupportedPropertyDeclaration(s, err, _) |
-            ContextualParseError::UnsupportedPropertyDescriptor(s, err) |
-            ContextualParseError::UnsupportedFontFaceDescriptor(s, err) |
-            ContextualParseError::UnsupportedFontFeatureValuesDescriptor(s, err) |
-            ContextualParseError::UnsupportedFontPaletteValuesDescriptor(s, err) |
-            ContextualParseError::InvalidKeyframeRule(s, err) |
-            ContextualParseError::InvalidFontFeatureValuesRule(s, err) |
-            ContextualParseError::InvalidRule(s, err) |
-            ContextualParseError::UnsupportedRule(s, err) |
-            ContextualParseError::UnsupportedViewportDescriptorDeclaration(s, err) |
-            ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(s, err) |
-            ContextualParseError::InvalidMediaRule(s, err) |
-            ContextualParseError::UnsupportedValue(s, err) => (s.into(), err.kind),
-            ContextualParseError::NeverMatchingHostSelector(s) |
-            ContextualParseError::InvalidCounterStyleWithoutSymbols(s) |
-            ContextualParseError::InvalidCounterStyleNotEnoughSymbols(s) => (
+            ContextualParseError::UnsupportedPropertyDeclaration(s, err, _)
+            | ContextualParseError::UnsupportedPropertyDescriptor(s, err)
+            | ContextualParseError::UnsupportedFontFaceDescriptor(s, err)
+            | ContextualParseError::UnsupportedFontFeatureValuesDescriptor(s, err)
+            | ContextualParseError::UnsupportedFontPaletteValuesDescriptor(s, err)
+            | ContextualParseError::InvalidKeyframeRule(s, err)
+            | ContextualParseError::InvalidFontFeatureValuesRule(s, err)
+            | ContextualParseError::InvalidRule(s, err)
+            | ContextualParseError::UnsupportedRule(s, err)
+            | ContextualParseError::UnsupportedViewportDescriptorDeclaration(s, err)
+            | ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(s, err)
+            | ContextualParseError::InvalidMediaRule(s, err)
+            | ContextualParseError::UnsupportedValue(s, err) => (s.into(), err.kind),
+            ContextualParseError::NeverMatchingHostSelector(s)
+            | ContextualParseError::InvalidCounterStyleWithoutSymbols(s)
+            | ContextualParseError::InvalidCounterStyleNotEnoughSymbols(s) => (
                 s.into(),
                 ParseErrorKind::Custom(StyleParseErrorKind::UnspecifiedError.into()),
             ),
-            ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols |
-            ContextualParseError::InvalidCounterStyleExtendsWithSymbols |
-            ContextualParseError::InvalidCounterStyleExtendsWithAdditiveSymbols => (
+            ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols
+            | ContextualParseError::InvalidCounterStyleExtendsWithSymbols
+            | ContextualParseError::InvalidCounterStyleExtendsWithAdditiveSymbols => (
                 "".into(),
                 ParseErrorKind::Custom(StyleParseErrorKind::UnspecifiedError.into()),
             ),
@@ -215,7 +218,9 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
     fn error_params(self) -> ErrorParams<'a> {
         let (s, error) = self.error_data();
         let mut params = extract_error_params(error).unwrap_or_default();
-        params.main_param.get_or_insert_with(|| ErrorString::Snippet(s));
+        params
+            .main_param
+            .get_or_insert_with(|| ErrorString::Snippet(s));
         params
     }
 
@@ -235,8 +240,8 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                     ..
                 },
                 _,
-            ) |
-            ContextualParseError::UnsupportedPropertyDeclaration(
+            )
+            | ContextualParseError::UnsupportedPropertyDeclaration(
                 _,
                 ParseError {
                     kind: ParseErrorKind::Basic(BasicParseErrorKind::AtRuleInvalid(_)),
@@ -355,8 +360,8 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                         }
                     },
                     ParseErrorKind::Custom(
-                        StyleParseErrorKind::PropertySyntaxField(_) |
-                        StyleParseErrorKind::PropertyInheritsField(_),
+                        StyleParseErrorKind::PropertySyntaxField(_)
+                        | StyleParseErrorKind::PropertyInheritsField(_),
                     ) => {
                         // Keeps PEBadSelectorRSIgnored from being reported when a syntax descriptor
                         // error or inherits descriptor error was already reported.
@@ -388,17 +393,17 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             ContextualParseError::NeverMatchingHostSelector(..) => {
                 (cstr!("PENeverMatchingHostSelector"), Action::Nothing)
             },
-            ContextualParseError::UnsupportedViewportDescriptorDeclaration(..) |
-            ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(..) |
-            ContextualParseError::InvalidCounterStyleWithoutSymbols(..) |
-            ContextualParseError::InvalidCounterStyleNotEnoughSymbols(..) |
-            ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols |
-            ContextualParseError::InvalidCounterStyleExtendsWithSymbols |
-            ContextualParseError::InvalidCounterStyleExtendsWithAdditiveSymbols |
-            ContextualParseError::UnsupportedPropertyDescriptor(..) |
-            ContextualParseError::UnsupportedFontFeatureValuesDescriptor(..) |
-            ContextualParseError::UnsupportedFontPaletteValuesDescriptor(..) |
-            ContextualParseError::InvalidFontFeatureValuesRule(..) => {
+            ContextualParseError::UnsupportedViewportDescriptorDeclaration(..)
+            | ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(..)
+            | ContextualParseError::InvalidCounterStyleWithoutSymbols(..)
+            | ContextualParseError::InvalidCounterStyleNotEnoughSymbols(..)
+            | ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols
+            | ContextualParseError::InvalidCounterStyleExtendsWithSymbols
+            | ContextualParseError::InvalidCounterStyleExtendsWithAdditiveSymbols
+            | ContextualParseError::UnsupportedPropertyDescriptor(..)
+            | ContextualParseError::UnsupportedFontFeatureValuesDescriptor(..)
+            | ContextualParseError::UnsupportedFontPaletteValuesDescriptor(..)
+            | ContextualParseError::InvalidFontFeatureValuesRule(..) => {
                 (cstr!("PEUnknownAtRule"), Action::Skip)
             },
             ContextualParseError::UnsupportedValue(_, ParseError { ref kind, .. }) => {

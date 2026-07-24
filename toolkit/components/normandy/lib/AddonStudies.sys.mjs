@@ -3,11 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * @typedef {Object} Study
- * @property {Number} recipeId
+ * @typedef {object} Study
+ * @property {number} recipeId
  *   ID of the recipe that created the study. Used as the primary key of the
  *   study.
- * @property {Number} slug
+ * @property {number} slug
  *   String code used to identify the study for use in Telemetry and logging.
  * @property {string} userFacingName
  *   Name of the study to show to the user
@@ -92,7 +92,7 @@ async function getDatabase() {
  * Get a transaction for interacting with the study store.
  *
  * @param {IDBDatabase} db
- * @param {String} mode Either "readonly" or "readwrite"
+ * @param {string} mode Either "readonly" or "readwrite"
  *
  * NOTE: Methods on the store returned by this function MUST be called
  * synchronously, otherwise the transaction with the store will expire.
@@ -236,6 +236,7 @@ export var AddonStudies = {
 
   /**
    * If a study add-on is uninstalled, mark the study as having ended.
+   *
    * @param {Addon} addon
    */
   async onUninstalled(addon) {
@@ -258,8 +259,9 @@ export var AddonStudies = {
 
   /**
    * Test whether there is a study in storage for the given recipe ID.
-   * @param {Number} recipeId
-   * @returns {Boolean}
+   *
+   * @param {number} recipeId
+   * @returns {boolean}
    */
   async has(recipeId) {
     const db = await getDatabase();
@@ -269,7 +271,8 @@ export var AddonStudies = {
 
   /**
    * Fetch a study from storage.
-   * @param {Number} recipeId
+   *
+   * @param {number} recipeId
    * @return {Study} The requested study, or null if none with that ID exist.
    */
   async get(recipeId) {
@@ -283,6 +286,7 @@ export var AddonStudies = {
 
   /**
    * Fetch all studies in storage.
+   *
    * @return {Array<Study>}
    */
   async getAll({ branched = AddonStudies.FILTER_ALL } = {}) {
@@ -303,6 +307,7 @@ export var AddonStudies = {
 
   /**
    * Fetch all studies in storage.
+   *
    * @return {Array<Study>}
    */
   async getAllActive(options) {
@@ -311,6 +316,7 @@ export var AddonStudies = {
 
   /**
    * Add a study to storage.
+   *
    * @return {Promise<void, Error>} Resolves when the study is stored, or rejects with an error.
    */
   async add(study) {
@@ -320,6 +326,7 @@ export var AddonStudies = {
 
   /**
    * Update a study in storage.
+   *
    * @return {Promise<void, Error>} Resolves when the study is updated, or rejects with an error.
    */
   async update(study) {
@@ -330,6 +337,7 @@ export var AddonStudies = {
   /**
    * Update many existing studies. More efficient than calling `update` many
    * times in a row.
+   *
    * @param {Array<AddonStudy>} studies
    * @throws If any of the passed studies have a slug that doesn't exist in the database already.
    */
@@ -365,6 +373,7 @@ export var AddonStudies = {
 
   /**
    * Remove a study from storage
+   *
    * @param recipeId The recipeId of the study to delete
    * @return {Promise<void, Error>} Resolves when the study is deleted, or rejects with an error.
    */
@@ -375,9 +384,10 @@ export var AddonStudies = {
 
   /**
    * Mark a study object as having ended. Modifies the study in-place.
+   *
    * @param {IDBDatabase} db
    * @param {Study} study
-   * @param {String} reason Why the study is ending.
+   * @param {string} reason Why the study is ending.
    */
   async markAsEnded(study, reason = "unknown") {
     if (reason === "unknown") {

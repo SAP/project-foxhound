@@ -51,6 +51,11 @@ interface FeatureSettingsHelper {
     var isDeleteSitePermissionsEnabled: Boolean
 
     /**
+     * Whether the Unified Trust Panel is enabled or not.
+     */
+    var isUnifiedTrustPanelEnabled: Boolean
+
+    /**
      * The current "Enhanced Tracking Protection" policy.
      * @see ETPPolicy
      */
@@ -67,9 +72,9 @@ interface FeatureSettingsHelper {
     var isLocationPermissionEnabled: SitePermissionsRules.Action
 
     /**
-     * Enable or disable the new main menu.
+     * Enable or disable the composable toolbar.
      */
-    var isMenuRedesignEnabled: Boolean
+    var isComposableToolbarEnabled: Boolean
 
     /**
      * Enable or disable the new main menu CFR.
@@ -92,9 +97,37 @@ interface FeatureSettingsHelper {
     var onboardingFeatureEnabled: Boolean
 
     /**
-     * Enable or disable new crash reporter.
+     * Enable or disable new crash reporter flow.
      */
-    var isUseNewCrashReporterDialog: Boolean
+    var isUseNewCrashReporterFlow: Boolean
+
+    /**
+     * Enable or disable the tab swipe CFR.
+     */
+    var isTabSwipeCFREnabled: Boolean
+
+    /**
+     * Accept or not the terms of service.
+     */
+    var isTermsOfServiceAccepted: Boolean
+
+    /**
+     * The Open links in External apps settings, between the following options:
+     * - Ask before opening
+     * - Never
+     * - Always open in app
+     */
+    var openLinksInExternalApp: OpenLinksInApp
+
+    /**
+     * Enable or disable the Tab Manager's opening animation.
+     */
+    var tabManagerOpeningAnimationEnabled: Boolean
+
+    /**
+     * Indicates if the toolbar CFR was displayed to the user.
+     */
+    var hasSeenBrowserToolbarCFR: Boolean
 
     /**
      * Enable or disable the translations prompt after a page that can be translated is loaded.
@@ -123,4 +156,10 @@ enum class ETPPolicy {
     STANDARD,
     STRICT,
     CUSTOM,
+}
+
+enum class OpenLinksInApp {
+    ALWAYS,
+    NEVER,
+    ASK,
 }

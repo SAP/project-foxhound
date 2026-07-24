@@ -9,24 +9,26 @@ support-files = [
 
 ["browser_UITour.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'", # Intermittent failures, bug 951965
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 951965
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 951965
+  "verify-standalone",
 ]
 
 ["browser_UITour2.js"]
 
 ["browser_UITour3.js"]
-fail-if = ["a11y_checks"] # Bug 1854526 clicked UITourTooltipClose may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854526 clicked UITourTooltipClose may not be focusable
+]
 
 ["browser_UITour4.js"]
 
 ["browser_UITour5.js"]
 
+["browser_UITour_aiwindow.js"]
+
 ["browser_UITour_annotation_size_attributes.js"]
 
 ["browser_UITour_availableTargets.js"]
-
-["browser_UITour_colorway.js"]
 
 ["browser_UITour_defaultBrowser.js"]
 
@@ -35,16 +37,22 @@ fail-if = ["a11y_checks"] # Bug 1854526 clicked UITourTooltipClose may not be fo
 ["browser_UITour_forceReaderMode.js"]
 
 ["browser_UITour_modalDialog.js"]
-run-if = ["os == 'mac'"] # modal dialog disabling only working on OS X.
+run-if = [
+  "os == 'mac'", # modal dialog disabling only working on OS X.
+]
 tags = "os_integration"
 
 ["browser_UITour_observe.js"]
 
 ["browser_UITour_panel_close_annotation.js"]
-skip-if = ["true"] # Bug 1026310
+skip-if = [
+  "true", # Bug 1026310
+]
 
 ["browser_UITour_pocket.js"]
-skip-if = ["true"] # Disabled pending removal of pocket UI Tour
+skip-if = [
+  "true", # Disabled pending removal of pocket UI Tour
+]
 
 ["browser_UITour_private_browsing.js"]
 
@@ -68,5 +76,3 @@ tags = "os_integration"
 ["browser_fxa_config.js"]
 
 ["browser_openPreferences.js"]
-
-["browser_openSearchPanel.js"]

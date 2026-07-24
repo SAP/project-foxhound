@@ -25,7 +25,7 @@
 #include "p2p/base/transport_description_factory.h"
 #include "pc/simulcast_description.h"
 
-namespace cricket {
+namespace webrtc {
 
 // Default RTCP CNAME for unit tests.
 const char kDefaultRtcpCname[] = "DefaultRtcpCname";
@@ -44,9 +44,9 @@ struct SenderOptions {
 
 // Options for an individual media description/"m=" section.
 struct MediaDescriptionOptions {
-  MediaDescriptionOptions(webrtc::MediaType type,
+  MediaDescriptionOptions(MediaType type,
                           const std::string& mid,
-                          webrtc::RtpTransceiverDirection direction,
+                          RtpTransceiverDirection direction,
                           bool stopped)
       : type(type), mid(mid), direction(direction), stopped(stopped) {}
 
@@ -60,16 +60,16 @@ struct MediaDescriptionOptions {
                       const SimulcastLayerList& simulcast_layers,
                       int num_sim_layers);
 
-  webrtc::MediaType type;
+  MediaType type;
   std::string mid;
-  webrtc::RtpTransceiverDirection direction;
+  RtpTransceiverDirection direction;
   bool stopped;
   TransportOptions transport_options;
   // Note: There's no equivalent "RtpReceiverOptions" because only send
   // stream information goes in the local descriptions.
   std::vector<SenderOptions> sender_options;
-  std::vector<webrtc::RtpCodecCapability> codec_preferences;
-  std::vector<webrtc::RtpHeaderExtensionCapability> header_extensions;
+  std::vector<RtpCodecCapability> codec_preferences;
+  std::vector<RtpHeaderExtensionCapability> header_extensions;
   // Codecs to include in a generated offer or answer.
   // If this is used, session-level codec lists MUST be ignored.
   std::vector<Codec> codecs_to_include;
@@ -90,15 +90,11 @@ struct MediaDescriptionOptions {
 struct MediaSessionOptions {
   MediaSessionOptions() {}
 
-  bool has_audio() const {
-    return HasMediaDescription(webrtc::MediaType::AUDIO);
-  }
-  bool has_video() const {
-    return HasMediaDescription(webrtc::MediaType::VIDEO);
-  }
-  bool has_data() const { return HasMediaDescription(webrtc::MediaType::DATA); }
+  bool has_audio() const { return HasMediaDescription(MediaType::AUDIO); }
+  bool has_video() const { return HasMediaDescription(MediaType::VIDEO); }
+  bool has_data() const { return HasMediaDescription(MediaType::DATA); }
 
-  bool HasMediaDescription(webrtc::MediaType type) const;
+  bool HasMediaDescription(MediaType type) const;
 
   bool vad_enabled = true;  // When disabled, removes all CN codecs from SDP.
   bool rtcp_mux_enabled = true;
@@ -106,7 +102,7 @@ struct MediaSessionOptions {
   bool offer_extmap_allow_mixed = false;
   bool raw_packetization_for_video = false;
   std::string rtcp_cname = kDefaultRtcpCname;
-  webrtc::CryptoOptions crypto_options;
+  CryptoOptions crypto_options;
   // List of media description options in the same order that the media
   // descriptions will be generated.
   std::vector<MediaDescriptionOptions> media_description_options;
@@ -117,8 +113,12 @@ struct MediaSessionOptions {
   // Default is true for backwards compatibility with clients that use
   // this internal interface.
   bool use_obsolete_sctp_sdp = true;
+
+  // Parse and serialize the draft-hancke-tsvwg-snap sctp-init.
+  bool use_sctp_snap = false;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // PC_MEDIA_OPTIONS_H_

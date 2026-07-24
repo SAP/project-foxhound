@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTStringHasher_h___
-#define nsTStringHasher_h___
+#ifndef nsTStringHasher_h_
+#define nsTStringHasher_h_
 
 #include "mozilla/HashTable.h"  // mozilla::{DefaultHasher, HashNumber, HashString}
 
@@ -27,4 +27,4 @@ struct DefaultHasher<nsTString<T>> {
 
 }  // namespace mozilla
 
-#endif  // !defined(nsTStringHasher_h___)
+#endif  // !defined(nsTStringHasher_h_)

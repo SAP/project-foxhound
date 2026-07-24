@@ -2,7 +2,7 @@
 Set event listener breakpoints
 ==============================
 
-Starting with Firefox 69, debugging an application that includes event handlers is simplified because the debugger now includes the ability to automatically break when the code hits an event handler. This article explains how to use it.
+Debugging an application that includes event handlers can be done by automatically breaking when the code hits an event handler. This article explains how to use it.
 
 Using a standard event breakpoint
 *********************************
@@ -30,7 +30,7 @@ This is also useful when debugging code that you're unfamiliar with, to save tim
 Logging on events
 *****************
 
-In Firefox 71 onwards, the “Log” checkbox is available in the *Event Listener Breakpoints* list. Selecting this and then choosing some events to break on will mean that when you step through code, information about events fired will be logged to the console instead of the DevTools breaking on each one.
+A “Log” checkbox is available in the *Event Listener Breakpoints* list. Selecting this and then choosing some events to break on will mean that when you step through code, information about events fired will be logged to the console instead of the DevTools breaking on each one.
 
 So if we choose to log keyboard events, for example, the code no longer pauses as each event is fired:
 
@@ -60,7 +60,7 @@ Now the logs will show where in your app jQuery was called, rather than where in
 Filter by event type
 ********************
 
-Also added to Firefox 71 is a new *Filter by event type...* text input, which can also be found at the top of the *Event Listener Breakpoints* list. When you click in this input and type a search term, the list of event listener types will filter by that term allowing you to find the events you want to break on more easily.
+A *Filter by event type...* text input can be found at the top of the *Event Listener Breakpoints* list. When you click in this input and type a search term, the list of event listener types will filter by that term allowing you to find the events you want to break on more easily.
 
 .. image:: filter-event-breakpoints.png
   :class: border
@@ -69,4 +69,4 @@ Also added to Firefox 71 is a new *Filter by event type...* text input, which ca
 Inline variable preview
 ***********************
 
-New in Firefox 71, the :ref:`source pane <debugger_ui_tour_source_pane>` now gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.
+The :ref:`source pane <debugger_ui_tour_source_pane>` gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.

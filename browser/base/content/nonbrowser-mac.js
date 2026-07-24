@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 var NonBrowserWindow = {
   delayedStartupTimeoutId: null,
   MAC_HIDDEN_WINDOW: "chrome://browser/content/hiddenWindowMac.xhtml",
@@ -121,8 +119,10 @@ var NonBrowserWindow = {
     // initialise the offline listener
     BrowserOffline.init();
 
-    // initialize the private browsing UI
-    gPrivateBrowsingUI.init();
+    // Initialize the private browsing UI only if window is private
+    if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+      PrivateBrowsingUI.init(window);
+    }
   },
 
   shutdown() {

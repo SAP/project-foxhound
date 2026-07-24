@@ -6,9 +6,9 @@
 
 #include "ServiceWorkerJobQueue.h"
 
-#include "nsThreadUtils.h"
 #include "ServiceWorkerJob.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 

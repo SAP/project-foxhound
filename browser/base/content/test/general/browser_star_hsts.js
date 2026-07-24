@@ -26,9 +26,16 @@ add_task(async function test_star_redirect() {
 
   let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
   // This will add the page to the HSTS cache.
-  await promiseTabLoadEvent(tab, secureURL, secureURL);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: secureURL,
+  });
   // This should transparently be redirected to the secure page.
-  await promiseTabLoadEvent(tab, unsecureURL, secureURL);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: unsecureURL,
+    finalURI: secureURL,
+  });
 
   await promiseStarState(BookmarkingUI.STATUS_UNSTARRED);
 
@@ -61,25 +68,4 @@ function promiseStarState(aValue) {
       }
     })();
   });
-}
-
-/**
- * Starts a load in an existing tab and waits for it to finish (via some event).
- *
- * @param aTab
- *        The tab to load into.
- * @param aUrl
- *        The url to load.
- * @param [optional] aFinalURL
- *        The url to wait for, same as aURL if not defined.
- * @return {Promise} resolved when the event is handled.
- */
-function promiseTabLoadEvent(aTab, aURL, aFinalURL) {
-  if (!aFinalURL) {
-    aFinalURL = aURL;
-  }
-
-  info("Wait for load tab event");
-  BrowserTestUtils.startLoadingURIString(aTab.linkedBrowser, aURL);
-  return BrowserTestUtils.browserLoaded(aTab.linkedBrowser, false, aFinalURL);
 }

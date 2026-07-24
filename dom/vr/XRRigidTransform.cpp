@@ -5,10 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRRigidTransform.h"
-#include "mozilla/dom/DOMPoint.h"
-#include "mozilla/dom/Pose.h"
-#include "mozilla/dom/DOMPointBinding.h"
+
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/DOMPoint.h"
+#include "mozilla/dom/DOMPointBinding.h"
+#include "mozilla/dom/Pose.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {
@@ -127,7 +128,7 @@ void XRRigidTransform::UpdateInternal() {
   }
   if (mInverse) {
     gfx::Matrix4x4Double inverseMatrix = mRawTransformMatrix;
-    Unused << inverseMatrix.Invert();
+    (void)inverseMatrix.Invert();
     mInverse->Update(inverseMatrix);
   }
 }
@@ -160,7 +161,7 @@ void XRRigidTransform::GetMatrix(JSContext* aCx,
 already_AddRefed<XRRigidTransform> XRRigidTransform::Inverse() {
   if (!mInverse) {
     gfx::Matrix4x4Double inverseMatrix = mRawTransformMatrix;
-    Unused << inverseMatrix.Invert();
+    (void)inverseMatrix.Invert();
     mInverse = new XRRigidTransform(mParent, inverseMatrix);
   }
 

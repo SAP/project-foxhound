@@ -6,9 +6,9 @@
 
 #include "MediaController.h"
 
+#include "MediaControlKeySource.h"
 #include "MediaControlService.h"
 #include "MediaControlUtils.h"
-#include "MediaControlKeySource.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -494,7 +494,7 @@ void MediaController::HandleSupportedMediaSessionActionsChanged(
     return;
   }
   LOG("Supported keys changes");
-  mSupportedKeys = newSupportedKeys;
+  mSupportedKeys = std::move(newSupportedKeys);
   mSupportedKeysChangedEvent.Notify(mSupportedKeys);
   RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
       this, u"supportedkeyschange"_ns, CanBubble::eYes);

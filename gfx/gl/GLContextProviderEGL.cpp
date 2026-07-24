@@ -61,7 +61,6 @@
 #include "GLContextProvider.h"
 #include "GLLibraryEGL.h"
 #include "GLLibraryLoader.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -340,26 +339,8 @@ EGLSurface GLContextEGL::CreateEGLSurfaceForCompositorWidget(
   EGLNativeWindowType window =
       GET_NATIVE_WINDOW_FROM_COMPOSITOR_WIDGET(aCompositorWidget);
   if (!window) {
-#ifdef MOZ_WIDGET_GTK
-    // RenderCompositorEGL does not like EGL_NO_SURFACE as it fallbacks
-    // to SW rendering or claims itself as paused.
-    // In case we're missing valid native window because aCompositorWidget
-    // hidden, just create a fallback EGLSurface. Actual EGLSurface will be
-    // created by widget code later when aCompositorWidget becomes visible.
-    mozilla::gfx::IntSize pbSize(16, 16);
-#  ifdef MOZ_WAYLAND
-    if (GdkIsWaylandDisplay()) {
-      return CreateWaylandOffscreenSurface(*egl, aConfig, pbSize);
-    } else
-#  endif
-    {
-      return CreatePBufferSurfaceTryingPowerOfTwo(*egl, aConfig, LOCAL_EGL_NONE,
-                                                  pbSize);
-    }
-#else
     gfxCriticalNote << "window is null";
     return EGL_NO_SURFACE;
-#endif
   }
 
   return mozilla::gl::CreateSurfaceFromNativeWindow(*egl, window, aConfig);

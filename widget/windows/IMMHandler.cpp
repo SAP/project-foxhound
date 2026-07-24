@@ -14,7 +14,6 @@
 #include "KeyboardLayout.h"
 #include <algorithm>
 
-#include "mozilla/CheckedInt.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/ToString.h"
@@ -392,7 +391,7 @@ void IMMHandler::CommitComposition(nsWindow* aWindow, bool aForce) {
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::CommitComposition, aForce=%s, aWindow=%p, hWnd=%p, "
            "mComposingWindow=%p%s",
-           GetBoolName(aForce), aWindow, aWindow->GetWindowHandle(),
+           TrueOrFalse(aForce), aWindow, aWindow->GetWindowHandle(),
            gIMMHandler ? gIMMHandler->mComposingWindow : nullptr,
            gIMMHandler && gIMMHandler->mComposingWindow
                ? IsComposingOnOurEditor() ? " (composing on editor)"
@@ -406,7 +405,7 @@ void IMMHandler::CommitComposition(nsWindow* aWindow, bool aForce) {
   bool associated = context.AssociateDefaultContext();
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("  IMMHandler::CommitComposition, associated=%s",
-           GetBoolName(associated)));
+           TrueOrFalse(associated)));
 
   if (context.IsValid()) {
     ::ImmNotifyIME(context.get(), NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
@@ -423,7 +422,7 @@ void IMMHandler::CancelComposition(nsWindow* aWindow, bool aForce) {
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::CancelComposition, aForce=%s, aWindow=%p, hWnd=%p, "
            "mComposingWindow=%p%s",
-           GetBoolName(aForce), aWindow, aWindow->GetWindowHandle(),
+           TrueOrFalse(aForce), aWindow, aWindow->GetWindowHandle(),
            gIMMHandler ? gIMMHandler->mComposingWindow : nullptr,
            gIMMHandler && gIMMHandler->mComposingWindow
                ? IsComposingOnOurEditor() ? " (composing on editor)"
@@ -437,7 +436,7 @@ void IMMHandler::CancelComposition(nsWindow* aWindow, bool aForce) {
   bool associated = context.AssociateDefaultContext();
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("  IMMHandler::CancelComposition, associated=%s",
-           GetBoolName(associated)));
+           TrueOrFalse(associated)));
 
   if (context.IsValid()) {
     ::ImmNotifyIME(context.get(), NI_COMPOSITIONSTR, CPS_CANCEL, 0);
@@ -453,9 +452,9 @@ void IMMHandler::OnFocusChange(bool aFocus, nsWindow* aWindow) {
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::OnFocusChange(aFocus=%s, aWindow=%p), sHasFocus=%s, "
            "IsComposingWindow(aWindow)=%s, aWindow->Destroyed()=%s",
-           GetBoolName(aFocus), aWindow, GetBoolName(sHasFocus),
-           GetBoolName(IsComposingWindow(aWindow)),
-           GetBoolName(aWindow->Destroyed())));
+           TrueOrFalse(aFocus), aWindow, TrueOrFalse(sHasFocus),
+           TrueOrFalse(IsComposingWindow(aWindow)),
+           TrueOrFalse(aWindow->Destroyed())));
 
   if (!aFocus) {
     IMEHandler::MaybeDestroyNativeCaret();
@@ -608,7 +607,7 @@ void IMMHandler::OnInputLangChange(nsWindow* aWindow, WPARAM wParam,
 bool IMMHandler::OnIMEStartComposition(nsWindow* aWindow, MSGResult& aResult) {
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::OnIMEStartComposition, hWnd=%p, mIsComposing=%s",
-           aWindow->GetWindowHandle(), GetBoolName(mIsComposing)));
+           aWindow->GetWindowHandle(), TrueOrFalse(mIsComposing)));
   aResult.mConsumed = ShouldDrawCompositionStringOurselves();
   if (mIsComposing) {
     NS_WARNING("Composition has been already started");
@@ -628,10 +627,10 @@ bool IMMHandler::OnIMEComposition(nsWindow* aWindow, WPARAM wParam,
        ", mIsComposing=%s, "
        "GCS_RESULTSTR=%s, GCS_COMPSTR=%s, GCS_COMPATTR=%s, GCS_COMPCLAUSE=%s, "
        "GCS_CURSORPOS=%s,",
-       aWindow->GetWindowHandle(), lParam, GetBoolName(mIsComposing),
-       GetBoolName(lParam & GCS_RESULTSTR), GetBoolName(lParam & GCS_COMPSTR),
-       GetBoolName(lParam & GCS_COMPATTR), GetBoolName(lParam & GCS_COMPCLAUSE),
-       GetBoolName(lParam & GCS_CURSORPOS)));
+       aWindow->GetWindowHandle(), lParam, TrueOrFalse(mIsComposing),
+       TrueOrFalse(lParam & GCS_RESULTSTR), TrueOrFalse(lParam & GCS_COMPSTR),
+       TrueOrFalse(lParam & GCS_COMPATTR), TrueOrFalse(lParam & GCS_COMPCLAUSE),
+       TrueOrFalse(lParam & GCS_CURSORPOS)));
 
   IMEContext context(aWindow);
   aResult.mConsumed = HandleComposition(aWindow, context, lParam);
@@ -641,7 +640,7 @@ bool IMMHandler::OnIMEComposition(nsWindow* aWindow, WPARAM wParam,
 bool IMMHandler::OnIMEEndComposition(nsWindow* aWindow, MSGResult& aResult) {
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::OnIMEEndComposition, hWnd=%p, mIsComposing=%s",
-           aWindow->GetWindowHandle(), GetBoolName(mIsComposing)));
+           aWindow->GetWindowHandle(), TrueOrFalse(mIsComposing)));
 
   aResult.mConsumed = ShouldDrawCompositionStringOurselves();
   if (!mIsComposing) {
@@ -1551,7 +1550,7 @@ bool IMMHandler::CommitCompositionOnPreviousWindow(nsWindow* aWindow) {
 
   MOZ_LOG(gIMELog, LogLevel::Info,
           ("IMMHandler::CommitCompositionOnPreviousWindow, mIsComposing=%s",
-           GetBoolName(mIsComposing)));
+           TrueOrFalse(mIsComposing)));
 
   // If we have composition, we should dispatch composition events internally.
   if (mIsComposing) {
@@ -1589,7 +1588,7 @@ void IMMHandler::DispatchEvent(nsWindow* aWindow, WidgetGUIEvent& aEvent) {
       gIMELog, LogLevel::Info,
       ("IMMHandler::DispatchEvent(aWindow=0x%p, aEvent={ mMessage=%s }, "
        "aWindow->Destroyed()=%s",
-       aWindow, ToChar(aEvent.mMessage), GetBoolName(aWindow->Destroyed())));
+       aWindow, ToChar(aEvent.mMessage), TrueOrFalse(aWindow->Destroyed())));
 
   if (aWindow->Destroyed()) {
     return;
@@ -1861,7 +1860,7 @@ bool IMMHandler::GetCharacterRectOfSelectedTextAt(
         gIMELog, LogLevel::Error,
         ("IMMHandler::GetCharacterRectOfSelectedTextAt, FAILED, due to "
          "aOffset is too large (aOffset=%u, targetLength=%u, mIsComposing=%s)",
-         aOffset, targetLength, GetBoolName(mIsComposing)));
+         aOffset, targetLength, TrueOrFalse(mIsComposing)));
     return false;
   }
 

@@ -2,35 +2,60 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 import { RootBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/RootBiDiModule.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  NetworkHelper:
+    "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   CacheBehavior: "chrome://remote/content/shared/NetworkCacheManager.sys.mjs",
-  NetworkDecodedBodySizeMap:
-    "chrome://remote/content/shared/NetworkDecodedBodySizeMap.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   matchURLPattern:
     "chrome://remote/content/shared/webdriver/URLPattern.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
+  NetworkDataBytes: "chrome://remote/content/shared/NetworkDataBytes.sys.mjs",
+  NetworkDecodedBodySizeMap:
+    "chrome://remote/content/shared/NetworkDecodedBodySizeMap.sys.mjs",
   NetworkListener:
     "chrome://remote/content/shared/listeners/NetworkListener.sys.mjs",
+  NetworkResponse: "chrome://remote/content/shared/NetworkResponse.sys.mjs",
   parseChallengeHeader:
     "chrome://remote/content/shared/ChallengeHeaderParser.sys.mjs",
   parseURLPattern:
     "chrome://remote/content/shared/webdriver/URLPattern.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
   updateCacheBehavior:
     "chrome://remote/content/shared/NetworkCacheManager.sys.mjs",
+  UserContextManager:
+    "chrome://remote/content/shared/UserContextManager.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.WEBDRIVER_BIDI)
+);
+
+// WIP: See Bug 1994983, the invalid tests for network.setExtraHeaders expect
+// the optional arguments not to accept null.
+const NULL = Symbol("NULL");
+
+/**
+ * Defines the maximum total size as expected by the specification at
+ * https://w3c.github.io/webdriver-bidi/#max-total-data-size
+ */
+const DEFAULT_MAX_TOTAL_SIZE = 200 * 1000 * 1000;
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "maxTotalDataSize",
+  "remote.network.maxTotalDataSize",
+  DEFAULT_MAX_TOTAL_SIZE
 );
 
 /**
@@ -81,6 +106,25 @@ export const BytesValueType = {
  */
 
 /**
+ * Enum of possible network data collector types.
+ *
+ * @readonly
+ * @enum {CollectorType}
+ */
+const CollectorType = {
+  Blob: "blob",
+};
+
+/**
+ * @typedef {object} Collector
+ * @property {number} maxEncodedDataSize
+ * @property {Set<DataType>} dataTypes
+ * @property {string} collector
+ * @property {CollectorType} collectorType
+ * @property {Set<string>} userContexts
+ */
+
+/**
  * Enum of possible continueWithAuth actions.
  *
  * @readonly
@@ -109,6 +153,27 @@ const ContinueWithAuthAction = {
  * @typedef {object} CookieHeader
  * @property {string} name
  * @property {BytesValue} value
+ */
+
+/**
+ * Enum of possible network data types.
+ *
+ * @readonly
+ * @enum {DataType}
+ */
+const DataType = {
+  Request: "request",
+  Response: "response",
+};
+
+/**
+ * @typedef {object} Data
+ * @property {BytesValue|null} bytes
+ * @property {Array<Collector>} collectors
+ * @property {boolean} pending
+ * @property {string} request
+ * @property {number} size
+ * @property {DataType} type
  */
 
 /**
@@ -308,10 +373,18 @@ const IMMUTABLE_RESPONSE_HEADERS = [
   "transfer-encoding",
 ];
 
+const UNAVAILABLE_DATA_ERROR_REASON = {
+  Aborted: "aborted",
+  Evicted: "evicted",
+};
+
 class NetworkModule extends RootBiDiModule {
   #blockedRequests;
+  #collectedNetworkData;
   #decodedBodySizeMap;
+  #extraHeaders;
   #interceptMap;
+  #networkCollectors;
   #networkListener;
   #redirectedRequests;
   #subscribedEvents;
@@ -322,8 +395,35 @@ class NetworkModule extends RootBiDiModule {
     // Map of request id to BlockedRequest
     this.#blockedRequests = new Map();
 
+    // Map of collected network Data, from a composite key `${requestId}-${dataType}`
+    // to a network Data struct.
+    // https://w3c.github.io/webdriver-bidi/#collected-network-data
+    // TODO: This is a property of the remote end per spec, not of the session.
+    // At the moment, each network module starts its own network observer. This
+    // makes it impossible to have a session agnostic step when receiving a new
+    // network event.
+    // Note: Implemented as a Map. A Map is guaranteed to iterate in the order
+    // of insertion, but still provides fast lookup.
+    this.#collectedNetworkData = new Map();
+
+    // Implements the BiDi Session extra headers.
+    // https://w3c.github.io/webdriver-bidi/#session-extra-headers
+    this.#extraHeaders = {
+      // Array of Header objects, initially empty.
+      defaultHeaders: [],
+      // WeakMap between navigables and arrays of Header objects.
+      // Due to technical limitations, navigables are represented via the
+      // BrowsingContextWebProgress of the top level browsing context.
+      navigableHeaders: new WeakMap(),
+      // Map between user context ids and arrays of Header objects.
+      userContextHeaders: new Map(),
+    };
+
     // Map of intercept id to InterceptProperties
     this.#interceptMap = new Map();
+
+    // Map of collector id to Collector
+    this.#networkCollectors = new Map();
 
     // Set of request ids which are being redirected using continueRequest with
     // a url parameter. Those requests will lead to an additional beforeRequestSent
@@ -344,9 +444,19 @@ class NetworkModule extends RootBiDiModule {
     this.#networkListener.on("fetch-error", this.#onFetchError);
     this.#networkListener.on("response-completed", this.#onResponseEvent);
     this.#networkListener.on("response-started", this.#onResponseEvent);
+
+    lazy.UserContextManager.on(
+      "user-context-deleted",
+      this.#onUserContextDeleted
+    );
   }
 
   destroy() {
+    lazy.UserContextManager.off(
+      "user-context-deleted",
+      this.#onUserContextDeleted
+    );
+
     this.#networkListener.off("auth-required", this.#onAuthRequired);
     this.#networkListener.off("before-request-sent", this.#onBeforeRequestSent);
     this.#networkListener.off("fetch-error", this.#onFetchError);
@@ -356,6 +466,10 @@ class NetworkModule extends RootBiDiModule {
 
     this.#decodedBodySizeMap.destroy();
 
+    // Network related session cleanup steps
+    // https://w3c.github.io/webdriver-bidi/#cleanup-the-session
+
+    // Resume blocked requests
     for (const [, { request }] of this.#blockedRequests) {
       try {
         request.wrappedChannel.resume();
@@ -366,10 +480,163 @@ class NetworkModule extends RootBiDiModule {
       }
     }
 
-    this.#decodedBodySizeMap = null;
+    // Remove collectors from collected data.
+    // TODO: This step is unnecessary until we support multiple sessions, because
+    // the collectedNetworkData is attached to the session and is cleaned up
+    // afterwards.
+
     this.#blockedRequests = null;
+    this.#collectedNetworkData = null;
+    this.#decodedBodySizeMap = null;
+    this.#extraHeaders = null;
     this.#interceptMap = null;
+    this.#networkCollectors = null;
     this.#subscribedEvents = null;
+  }
+
+  /**
+   * Adds a data collector to collect network data.
+   *
+   * @param {object=} options
+   * @param {Array<DataType>} options.dataTypes
+   *     Maximum size of data to collect in bytes.
+   * @param {number} options.maxEncodedDataSize
+   *     Maximum size of data to collect in bytes.
+   * @param {CollectorType=} options.collectorType
+   *     The type of data to collect. Optional, defaults to "blob".
+   * @param {Array<string>=} options.contexts
+   *     Optional list of browsing context ids.
+   * @param {Array<string>=} options.userContexts
+   *     Optional list of user context ids.
+   *
+   * @returns {object}
+   *     An object with the following property:
+   *     - collector {string} The unique id of the data collector.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   */
+  addDataCollector(options = {}) {
+    const {
+      dataTypes,
+      maxEncodedDataSize,
+      collectorType = CollectorType.Blob,
+      contexts: contextIds = null,
+      userContexts: userContextIds = null,
+    } = options;
+
+    lazy.assert.positiveInteger(
+      maxEncodedDataSize,
+      lazy.pprint`Expected "maxEncodedDataSize" to be a positive integer, got ${maxEncodedDataSize}`
+    );
+
+    if (maxEncodedDataSize === 0) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "maxEncodedDataSize" to be greater than 0, got ${maxEncodedDataSize}`
+      );
+    }
+
+    if (maxEncodedDataSize > lazy.maxTotalDataSize) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "maxEncodedDataSize" to be less than the max total data size available (${lazy.maxTotalDataSize}), got ${maxEncodedDataSize}`
+      );
+    }
+
+    lazy.assert.isNonEmptyArray(
+      dataTypes,
+      `Expected "dataTypes" to be a non-empty array, got ${dataTypes}`
+    );
+
+    const supportedDataTypes = Object.values(DataType);
+    for (const dataType of dataTypes) {
+      if (!supportedDataTypes.includes(dataType)) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "dataTypes" values to be one of ${supportedDataTypes},` +
+            lazy.pprint` got ${dataType}`
+        );
+      }
+    }
+
+    const supportedCollectorTypes = Object.values(CollectorType);
+    if (!supportedCollectorTypes.includes(collectorType)) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "collectorType" to be one of ${supportedCollectorTypes},` +
+          lazy.pprint` got ${collectorType}`
+      );
+    }
+
+    const navigables = new Set();
+    const userContexts = new Set();
+    if (contextIds !== null) {
+      lazy.assert.isNonEmptyArray(
+        contextIds,
+        lazy.pprint`Expected "contexts" to be a non-empty array, got ${contextIds}`
+      );
+
+      for (const contextId of contextIds) {
+        lazy.assert.string(
+          contextId,
+          lazy.pprint`Expected elements of "contexts" to be a string, got ${contextId}`
+        );
+        const context = this._getNavigable(contextId);
+
+        lazy.assert.topLevel(
+          context,
+          lazy.pprint`Browsing context with id ${contextId} is not top-level`
+        );
+
+        navigables.add(contextId);
+      }
+    }
+
+    if (userContextIds !== null) {
+      lazy.assert.isNonEmptyArray(
+        userContextIds,
+        lazy.pprint`Expected "userContexts" to be a non-empty array, got ${userContextIds}`
+      );
+
+      for (const userContextId of userContextIds) {
+        lazy.assert.string(
+          userContextId,
+          lazy.pprint`Expected elements of "userContexts" to be a string, got ${userContextId}`
+        );
+
+        const internalId =
+          lazy.UserContextManager.getInternalIdById(userContextId);
+
+        if (internalId === null) {
+          throw new lazy.error.NoSuchUserContextError(
+            `User context with id: ${userContextId} doesn't exist`
+          );
+        }
+
+        userContexts.add(userContextId);
+      }
+    }
+
+    if (contextIds !== null && userContextIds !== null) {
+      throw new lazy.error.InvalidArgumentError(
+        `Providing both "contexts" and "userContexts" arguments is not supported`
+      );
+    }
+
+    // Generate a unique collector ID
+    const collectorId = lazy.generateUUID();
+
+    const collector = {
+      collector: collectorId,
+      collectorType,
+      contexts: navigables,
+      dataTypes,
+      maxEncodedDataSize,
+      userContexts,
+    };
+
+    this.#networkCollectors.set(collectorId, collector);
+
+    return {
+      collector: collectorId,
+    };
   }
 
   /**
@@ -411,7 +678,7 @@ class NetworkModule extends RootBiDiModule {
           contextId,
           `Expected elements of "contexts" to be a string, got ${contextId}`
         );
-        const context = this.#getBrowsingContext(contextId);
+        const context = this._getNavigable(contextId);
 
         lazy.assert.topLevel(
           context,
@@ -624,16 +891,16 @@ class NetworkModule extends RootBiDiModule {
    * @param {object=} options
    * @param {string} options.request
    *     The id of the blocked request that should be continued.
-   * @param {Array<SetCookieHeader>=} options.cookies [unsupported]
+   * @param {Array<SetCookieHeader>=} options.cookies
    *     Optional array of set-cookie header values to replace the set-cookie
    *     headers of the response.
    * @param {AuthCredentials=} options.credentials
    *     Optional AuthCredentials to use.
-   * @param {Array<Header>=} options.headers [unsupported]
+   * @param {Array<Header>=} options.headers
    *     Optional array of header values to replace the headers of the response.
-   * @param {string=} options.reasonPhrase [unsupported]
+   * @param {string=} options.reasonPhrase
    *     Optional string to replace the status message of the response.
-   * @param {number=} options.statusCode [unsupported]
+   * @param {number=} options.statusCode
    *     Optional number to replace the status code of the response.
    *
    * @throws {InvalidArgumentError}
@@ -845,6 +1112,189 @@ class NetworkModule extends RootBiDiModule {
     }
 
     resolveBlockedEvent();
+  }
+
+  /**
+   * Releases a collected network data for a given collector and data type.
+   *
+   * @param {object=} options
+   * @param {string} options.collector
+   *     The collector from which the data should be disowned.
+   * @param {string} options.dataType
+   *     The data type of the data to disown.
+   * @param {string} options.request
+   *     The id of the request for which data should be disowned.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchNetworkCollectorError}
+   *     Raised if the collector id could not be found in the internal collectors
+   *     map.
+   * @throws {NoSuchNetworkDataError}
+   *     If the network data could not be found for the provided parameters.
+   */
+  async disownData(options = {}) {
+    const { collector, dataType, request: requestId } = options;
+
+    lazy.assert.string(
+      requestId,
+      lazy.pprint`Expected "request" to be a string, got ${requestId}`
+    );
+
+    const supportedDataTypes = Object.values(DataType);
+    if (!supportedDataTypes.includes(dataType)) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "dataType" to be one of ${supportedDataTypes},` +
+          lazy.pprint` got ${dataType}`
+      );
+    }
+
+    lazy.assert.string(
+      collector,
+      lazy.pprint`Expected "collector" to be a string, got ${collector}`
+    );
+
+    if (!this.#networkCollectors.has(collector)) {
+      throw new lazy.error.NoSuchNetworkCollectorError(
+        `Network data collector with id ${collector} not found`
+      );
+    }
+
+    const collectedData = this.#getCollectedData(requestId, dataType);
+    if (!collectedData) {
+      throw new lazy.error.NoSuchNetworkDataError(
+        `Network data for request id ${requestId} and DataType ${dataType} not found`
+      );
+    }
+
+    if (!collectedData.collectors.has(collector)) {
+      throw new lazy.error.NoSuchNetworkDataError(
+        `Network data for request id ${requestId} and DataType ${dataType} does not match collector ${collector}`
+      );
+    }
+
+    this.#removeCollectorFromData(collectedData, collector);
+  }
+
+  /**
+   * An object that holds information about a network data content.
+   *
+   * @typedef NetworkGetDataResult
+   *
+   * @property {BytesValue} bytes
+   *     The network data content as BytesValue.
+   */
+
+  /**
+   * Retrieve a network data if available.
+   *
+   * @param {object} options
+   * @param {string=} options.collector
+   *     Optional id of a collector. If provided, data will only be returned if
+   *     the collector is in the network data collectors.
+   * @param {DataType} options.dataType
+   *     The type of the data to retrieve.
+   * @param {boolean=} options.disown
+   *     Optional. If set to true, the collector parameter is mandatory and the
+   *     collector will be removed from the network data collectors. Defaults to
+   *     false.
+   * @param {string} options.request
+   *     The id of the request of the data to retrieve.
+   *
+   * @returns {NetworkGetDataResult}
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchNetworkCollectorError}
+   *     Raised if the collector id could not be found in the internal collectors
+   *     map.
+   * @throws {NoSuchNetworkDataError}
+   *     If the network data could not be found for the provided parameters.
+   * @throws {UnavailableNetworkDataError}
+   *     If the network data content is no longer available because it was
+   *     evicted.
+   */
+  async getData(options = {}) {
+    const {
+      collector = null,
+      dataType,
+      disown = null,
+      request: requestId,
+    } = options;
+
+    lazy.assert.string(
+      requestId,
+      lazy.pprint`Expected "request" to be a string, got ${requestId}`
+    );
+
+    const supportedDataTypes = Object.values(DataType);
+    if (!supportedDataTypes.includes(dataType)) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "dataType" to be one of ${supportedDataTypes},` +
+          lazy.pprint` got ${dataType}`
+      );
+    }
+
+    if (collector !== null) {
+      lazy.assert.string(
+        collector,
+        lazy.pprint`Expected "collector" to be a string, got ${collector}`
+      );
+
+      if (!this.#networkCollectors.has(collector)) {
+        throw new lazy.error.NoSuchNetworkCollectorError(
+          `Network data collector with id ${collector} not found`
+        );
+      }
+    }
+
+    if (disown !== null) {
+      lazy.assert.boolean(
+        disown,
+        lazy.pprint`Expected "disown" to be a boolean, got ${disown}`
+      );
+
+      if (disown && collector === null) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "collector" to be provided when using "disown"=true`
+        );
+      }
+    }
+
+    const collectedData = this.#getCollectedData(requestId, dataType);
+    if (!collectedData) {
+      throw new lazy.error.NoSuchNetworkDataError(
+        `Network data for request id ${requestId} and DataType ${dataType} not found`
+      );
+    }
+
+    if (collectedData.pending) {
+      await collectedData.networkDataCollected.promise;
+    }
+
+    if (collector !== null && !collectedData.collectors.has(collector)) {
+      throw new lazy.error.NoSuchNetworkDataError(
+        `Network data for request id ${requestId} and DataType ${dataType} does not match collector ${collector}`
+      );
+    }
+
+    if (collectedData.bytes === null) {
+      const reason = collectedData.unavailableReason;
+      throw new lazy.error.UnavailableNetworkDataError(
+        `Network data content for request id ${requestId} and DataType ${dataType} is unavailable (reason: ${reason})`
+      );
+    }
+
+    const value = await collectedData.bytes.getBytesValue();
+    const type = collectedData.bytes.isBase64
+      ? BytesValueType.Base64
+      : BytesValueType.String;
+
+    if (disown) {
+      this.#removeCollectorFromData(collectedData, collector);
+    }
+
+    return { bytes: this.#serializeAsBytesValue(value, type) };
   }
 
   /**
@@ -1069,6 +1519,40 @@ class NetworkModule extends RootBiDiModule {
   }
 
   /**
+   * Removes a data collector.
+   *
+   * @param {object=} options
+   * @param {string} options.collector
+   *     The id of the collector to remove.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchNetworkCollectorError}
+   *     Raised if the collector id could not be found in the internal collectors
+   *     map.
+   */
+  removeDataCollector(options = {}) {
+    const { collector } = options;
+
+    lazy.assert.string(
+      collector,
+      lazy.pprint`Expected "collector" to be a string, got ${collector}`
+    );
+
+    if (!this.#networkCollectors.has(collector)) {
+      throw new lazy.error.NoSuchNetworkCollectorError(
+        `Network data collector with id ${collector} not found`
+      );
+    }
+
+    this.#networkCollectors.delete(collector);
+
+    for (const [, collectedData] of this.#collectedNetworkData) {
+      this.#removeCollectorFromData(collectedData, collector);
+    }
+  }
+
+  /**
    * Removes an existing network intercept.
    *
    * @param {object=} options
@@ -1141,7 +1625,7 @@ class NetworkModule extends RootBiDiModule {
         contextId,
         lazy.pprint`Expected elements of "contexts" to be a string, got ${contextId}`
       );
-      const context = this.#getBrowsingContext(contextId);
+      const context = this._getNavigable(contextId);
 
       lazy.assert.topLevel(
         context,
@@ -1152,6 +1636,114 @@ class NetworkModule extends RootBiDiModule {
     }
 
     lazy.updateCacheBehavior(behavior, contexts);
+  }
+
+  /**
+   * Allows to specify headers that will extend, or overwrite, existing request
+   * headers.
+   *
+   * @param {object=} options
+   * @param {Array<Header>} options.headers
+   *     Array of header values to replace the headers of the response.
+   * @param {Array<string>=} options.contexts
+   *     Optional list of browsing context ids.
+   * @param {Array<string>=} options.userContexts
+   *     Optional list of user context ids.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchFrameError}
+   *     If the browsing context cannot be found.
+   */
+  setExtraHeaders(options = {}) {
+    const {
+      headers,
+      contexts: contextIds = NULL,
+      userContexts: userContextIds = NULL,
+    } = options;
+
+    lazy.assert.array(
+      headers,
+      lazy.pprint`Expected "headers" to be an array, got ${headers}`
+    );
+
+    const deserializedHeaders = this.#deserializeHeaders(headers);
+
+    if (contextIds !== NULL && userContextIds !== NULL) {
+      throw new lazy.error.InvalidArgumentError(
+        `Providing both "contexts" and "userContexts" arguments is not supported`
+      );
+    }
+
+    const navigables = new Set();
+    const userContexts = new Set();
+    if (userContextIds !== NULL) {
+      lazy.assert.isNonEmptyArray(
+        userContextIds,
+        lazy.pprint`Expected "userContexts" to be a non-empty array, got ${userContextIds}`
+      );
+
+      for (const userContextId of userContextIds) {
+        lazy.assert.string(
+          userContextId,
+          lazy.pprint`Expected elements of "userContexts" to be a string, got ${userContextId}`
+        );
+
+        const internalId =
+          lazy.UserContextManager.getInternalIdById(userContextId);
+
+        if (internalId === null) {
+          throw new lazy.error.NoSuchUserContextError(
+            `User context with id: ${userContextId} doesn't exist`
+          );
+        }
+
+        userContexts.add(userContextId);
+      }
+    }
+
+    if (contextIds !== NULL) {
+      lazy.assert.isNonEmptyArray(
+        contextIds,
+        lazy.pprint`Expected "contexts" to be a non-empty array, got ${contextIds}`
+      );
+
+      for (const contextId of contextIds) {
+        lazy.assert.string(
+          contextId,
+          lazy.pprint`Expected elements of "contexts" to be a string, got ${contextId}`
+        );
+        const context = this._getNavigable(contextId);
+
+        lazy.assert.topLevel(
+          context,
+          lazy.pprint`Browsing context with id ${contextId} is not top-level`
+        );
+
+        navigables.add(contextId);
+      }
+    }
+
+    if (userContextIds !== NULL) {
+      for (const userContextId of userContexts) {
+        this.#extraHeaders.userContextHeaders.set(
+          userContextId,
+          deserializedHeaders
+        );
+      }
+    } else if (contextIds !== NULL) {
+      for (const contextId of navigables) {
+        const context = this._getNavigable(contextId);
+        this.#extraHeaders.navigableHeaders.set(
+          context.webProgress,
+          deserializedHeaders
+        );
+      }
+    } else {
+      this.#extraHeaders.defaultHeaders = deserializedHeaders;
+    }
+
+    this.#networkListener.startListening();
   }
 
   /**
@@ -1186,6 +1778,36 @@ class NetworkModule extends RootBiDiModule {
     blockedEventPromise.finally(() => {
       this.#blockedRequests.delete(requestId);
     });
+  }
+
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#allocate-size-to-record-data
+   *
+   * @param {number} size
+   *     The size to allocate in bytes.
+   */
+  #allocateSizeToRecordData(size) {
+    let availableSize = lazy.maxTotalDataSize;
+    const alreadyCollectedData = [];
+    for (const [, collectedData] of this.#collectedNetworkData) {
+      if (collectedData.bytes !== null) {
+        availableSize = availableSize - collectedData.size;
+        alreadyCollectedData.push(collectedData);
+      }
+    }
+
+    if (size > availableSize) {
+      for (const collectedData of alreadyCollectedData) {
+        availableSize = availableSize + collectedData.size;
+        collectedData.bytes = null;
+        collectedData.unavailableReason = UNAVAILABLE_DATA_ERROR_REASON.Evicted;
+        collectedData.size = null;
+
+        if (size <= availableSize) {
+          return;
+        }
+      }
+    }
   }
 
   #assertAuthCredentials(credentials) {
@@ -1297,6 +1919,67 @@ class NetworkModule extends RootBiDiModule {
     }
   }
 
+  #cloneNetworkRequestBody(request) {
+    if (!this.#networkCollectors.size) {
+      return;
+    }
+
+    // If request body is missing or null, do not store any collected data.
+    if (!request.postData || request.postData === null) {
+      return;
+    }
+
+    const collectedData = {
+      bytes: null,
+      collectors: new Set(),
+      pending: true,
+      // This allows to implement the await/resume on "network data collected"
+      // described in the specification.
+      networkDataCollected: Promise.withResolvers(),
+      request: request.requestId,
+      size: null,
+      type: DataType.Request,
+    };
+
+    // The actual cloning is already handled by the DevTools
+    // NetworkResponseListener, here we just have to prepare the networkData and
+    // add it to the array.
+    this.#collectedNetworkData.set(
+      `${request.requestId}-${DataType.Request}`,
+      collectedData
+    );
+  }
+
+  #cloneNetworkResponseBody(request) {
+    if (!this.#networkCollectors.size) {
+      return;
+    }
+
+    const collectedData = {
+      bytes: null,
+      // The cloned body is fully handled by DevTools' NetworkResponseListener
+      // so it will not explicitly be stored here.
+      collectors: new Set(),
+      pending: true,
+      // This allows to implement the await/resume on "network data collected"
+      // described in the specification.
+      networkDataCollected: Promise.withResolvers(),
+      request: request.requestId,
+      size: null,
+      type: DataType.Response,
+      // Internal string used in the UnavailableNetworkData error message.
+      unavailableReason: null,
+    };
+
+    // The actual cloning is already handled by the DevTools
+    // NetworkResponseListener, here we just have to prepare the networkData and
+    // add it to the array.
+    this.#collectedNetworkData.set(
+      `${request.requestId}-${DataType.Response}`,
+      collectedData
+    );
+  }
+
   #deserializeHeader(protocolHeader) {
     const name = protocolHeader.name;
     const value = deserializeBytesValue(protocolHeader.value);
@@ -1368,24 +2051,17 @@ class NetworkModule extends RootBiDiModule {
     return challenges;
   }
 
-  #getBrowsingContext(contextId) {
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (context === null) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing Context with id ${contextId} not found`
-      );
-    }
-
-    if (!context.currentWindowGlobal) {
-      throw new lazy.error.NoSuchFrameError(
-        `No window found for BrowsingContext with id ${contextId}`
-      );
-    }
-
-    return context;
+  #getCollectedData(requestId, dataType) {
+    return this.#collectedNetworkData.get(`${requestId}-${dataType}`) || null;
   }
 
   #getNetworkIntercepts(event, request, topContextId) {
+    if (!request.supportsInterception) {
+      // For requests which do not support interception (such as data URIs or
+      // cached resources), do not attempt to match intercepts.
+      return [];
+    }
+
     const intercepts = [];
 
     let phase;
@@ -1589,12 +2265,272 @@ class NetworkModule extends RootBiDiModule {
       .every(c => validTokenMap[c]);
   }
 
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#match-collector-for-navigable
+   *
+   * @param {Collector} collector
+   *     The collector to match
+   * @param {BrowsingContext} navigable
+   *     The navigable (BrowsingContext) to match
+   * @returns {boolean}
+   *     True if the collector corresponds to the provided navigable. False
+   *     otherwise.
+   */
+  #matchCollectorForNavigable(collector, navigable) {
+    if (collector.contexts.size) {
+      const navigableId =
+        lazy.NavigableManager.getIdForBrowsingContext(navigable);
+      return collector.contexts.has(navigableId);
+    }
+
+    if (collector.userContexts.size) {
+      const userContext =
+        lazy.UserContextManager.getIdByBrowsingContext(navigable);
+      return collector.userContexts.has(userContext);
+    }
+
+    // Return true.
+    return true;
+  }
+
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#maybe-abort-network-response-body-collection
+   *
+   * @param {NetworkRequest} request
+   *     The request object for which we want to abort the body collection.
+   */
+  #maybeAbortNetworkResponseBodyCollection(request) {
+    const collectedData = this.#getCollectedData(
+      request.requestId,
+      DataType.Response
+    );
+    if (collectedData === null) {
+      return;
+    }
+
+    lazy.logger.trace(
+      `Network data not collected for request "${request.requestId}" and data type "${DataType.Response}"` +
+        `: fetch error`
+    );
+    collectedData.pending = false;
+    collectedData.unavailableReason = UNAVAILABLE_DATA_ERROR_REASON.Aborted;
+    collectedData.networkDataCollected.resolve();
+  }
+
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#maybe-collect-network-request-body
+   *
+   * @param {NetworkRequest} request
+   *     The request object for which we want to collect the body.
+   */
+  async #maybeCollectNetworkRequestBody(request) {
+    const collectedData = this.#getCollectedData(
+      request.requestId,
+      DataType.Request
+    );
+
+    if (collectedData === null) {
+      return;
+    }
+
+    this.#maybeCollectNetworkData({
+      collectedData,
+      dataType: DataType.Request,
+      request,
+      readAndProcessBodyFn: request.readAndProcessRequestBody,
+      size: request.postDataSize,
+    });
+  }
+
+  /**
+   * Implements https://www.w3.org/TR/webdriver-bidi/#maybe-collect-network-response-body
+   *
+   * @param {NetworkRequest} request
+   *     The request object for which we want to collect the body.
+   * @param {NetworkResponse} response
+   *     The response object for which we want to collect the body.
+   */
+  async #maybeCollectNetworkResponseBody(request, response) {
+    if (response.willRedirect) {
+      return;
+    }
+
+    const collectedData = this.#getCollectedData(
+      request.requestId,
+      DataType.Response
+    );
+
+    if (collectedData === null) {
+      return;
+    }
+
+    if (!(response instanceof lazy.NetworkResponse) && !response.isDataURL) {
+      lazy.logger.trace(
+        `Network data not collected for request "${request.requestId}" and data type "${DataType.Response}"` +
+          `: unsupported response (read from memory cache)`
+      );
+      // Cached stencils do not return any response body.
+      collectedData.pending = false;
+      collectedData.networkDataCollected.resolve();
+      this.#collectedNetworkData.delete(
+        `${collectedData.request}-${collectedData.type}`
+      );
+      return;
+    }
+
+    let readAndProcessBodyFn, size;
+    if (response.isDataURL) {
+      // Handle data URLs as a special case since the response is not provided
+      // by the DevTools ResponseListener in this case.
+      const url = request.serializedURL;
+      const body = url.substring(url.indexOf(",") + 1);
+      const isText =
+        response.mimeType &&
+        lazy.NetworkHelper.isTextMimeType(response.mimeType);
+
+      readAndProcessBodyFn = () =>
+        new lazy.NetworkDataBytes({
+          getBytesValue: () => body,
+          isBase64: !isText,
+        });
+      size = body.length;
+    } else {
+      readAndProcessBodyFn = response.readAndProcessResponseBody;
+      size = response.encodedBodySize;
+    }
+
+    this.#maybeCollectNetworkData({
+      collectedData,
+      dataType: DataType.Response,
+      request,
+      readAndProcessBodyFn,
+      size,
+    });
+  }
+
+  /**
+   * Implements https://www.w3.org/TR/webdriver-bidi/#maybe-collect-network-data
+   *
+   * @param {object} options
+   * @param {Data} options.collectedData
+   * @param {DataType} options.dataType
+   * @param {NetworkRequest} options.request
+   * @param {Function} options.readAndProcessBodyFn
+   * @param {number} options.size
+   */
+  async #maybeCollectNetworkData(options) {
+    const {
+      collectedData,
+      dataType,
+      request,
+      // Note: this parameter is not present in
+      // https://www.w3.org/TR/webdriver-bidi/#maybe-collect-network-data
+      // Each caller is responsible for providing a callable which will return
+      // a NetworkDataBytes instance corresponding to the collected data.
+      readAndProcessBodyFn,
+      // Note: the spec assumes that in some cases the size can be computed
+      // dynamically. But in practice we might be storing encoding data in a
+      // format which makes it hard to get the size. So here we always expect
+      // callers to provide a size.
+      size,
+    } = options;
+
+    const browsingContext = lazy.NavigableManager.getBrowsingContextById(
+      request.contextId
+    );
+    if (!browsingContext) {
+      lazy.logger.trace(
+        `Network data not collected for request "${request.requestId}" and data type "${dataType}"` +
+          `: navigable no longer available`
+      );
+      collectedData.pending = false;
+      this.#collectedNetworkData.delete(
+        `${collectedData.request}-${collectedData.type}`
+      );
+      collectedData.networkDataCollected.resolve();
+      return;
+    }
+
+    const topNavigable = browsingContext.top;
+    let collectors = [];
+    for (const [, collector] of this.#networkCollectors) {
+      if (
+        collector.dataTypes.includes(dataType) &&
+        this.#matchCollectorForNavigable(collector, topNavigable)
+      ) {
+        collectors.push(collector);
+      }
+    }
+
+    if (!collectors.length) {
+      lazy.logger.trace(
+        `Network data not collected for request "${request.requestId}" and data type "${dataType}"` +
+          `: no matching collector`
+      );
+      collectedData.pending = false;
+      this.#collectedNetworkData.delete(
+        `${collectedData.request}-${collectedData.type}`
+      );
+      collectedData.networkDataCollected.resolve();
+      return;
+    }
+
+    let bytes = null;
+
+    // At this point, the specification expects to processBody for the cloned
+    // body. Here we do not explicitly clone the bodies.
+    // For responses, DevTools' NetworkResponseListener clones the stream.
+    // For requests, NetworkHelper.readPostTextFromRequest clones the stream on
+    // the fly to read it as text.
+    try {
+      const bytesOrNull = await readAndProcessBodyFn();
+      if (bytesOrNull !== null) {
+        bytes = bytesOrNull;
+      }
+    } catch {
+      // Let processBodyError be this step: Do nothing.
+    }
+
+    // If the network module was destroyed while waiting to read the response
+    // body, the session has been destroyed. Resolve the promise and bail out.
+    if (!this.#collectedNetworkData) {
+      collectedData.networkDataCollected.resolve();
+      return;
+    }
+
+    if (bytes !== null) {
+      for (const collector of collectors) {
+        if (size <= collector.maxEncodedDataSize) {
+          collectedData.collectors.add(collector.collector);
+        }
+      }
+
+      if (collectedData.collectors.size) {
+        this.#allocateSizeToRecordData(size);
+        collectedData.bytes = bytes;
+        collectedData.size = size;
+      }
+    }
+
+    // Note: specification flips `collectedData.pending` to false earlier, but
+    // the implementation is async with `await response.readResponseBody()`.
+    // `collectedData.pending` is only flipped before returning here - and in
+    // early returns above.
+    collectedData.pending = false;
+    if (!collectedData.collectors.size) {
+      this.#collectedNetworkData.delete(
+        `${collectedData.request}-${collectedData.type}`
+      );
+    }
+    collectedData.networkDataCollected.resolve();
+  }
+
   #onAuthRequired = (name, data) => {
     const { authCallbacks, request, response } = data;
 
     let isBlocked = false;
     try {
-      const browsingContext = lazy.TabManager.getBrowsingContextById(
+      const browsingContext = lazy.NavigableManager.getBrowsingContextById(
         request.contextId
       );
       if (!browsingContext) {
@@ -1667,7 +2603,7 @@ class NetworkModule extends RootBiDiModule {
       return;
     }
 
-    const browsingContext = lazy.TabManager.getBrowsingContextById(
+    const browsingContext = lazy.NavigableManager.getBrowsingContextById(
       request.contextId
     );
     if (!browsingContext) {
@@ -1675,6 +2611,14 @@ class NetworkModule extends RootBiDiModule {
       // browsing context.
       return;
     }
+
+    // Make sure a collected data is created for the request.
+    // Note: this is supposed to be triggered from fetch and doesn't depend on
+    // whether network events are used or not.
+    this.#cloneNetworkRequestBody(request);
+
+    const relatedNavigables = [browsingContext];
+    this.#updateRequestHeaders(request, relatedNavigables);
 
     const protocolEventName = "network.beforeRequestSent";
 
@@ -1686,6 +2630,8 @@ class NetworkModule extends RootBiDiModule {
       // bail out.
       return;
     }
+
+    this.#maybeCollectNetworkRequestBody(request);
 
     const baseParameters = this.#processNetworkEvent(
       protocolEventName,
@@ -1707,9 +2653,7 @@ class NetworkModule extends RootBiDiModule {
       protocolEventName,
       beforeRequestSentEvent
     );
-    if (beforeRequestSentEvent.isBlocked && request.supportsInterception) {
-      // TODO: Requests suspended in beforeRequestSent still reach the server at
-      // the moment. https://bugzilla.mozilla.org/show_bug.cgi?id=1849686
+    if (beforeRequestSentEvent.isBlocked) {
       request.wrappedChannel.suspend(
         this.#getSuspendMarkerText(request, "beforeRequestSent")
       );
@@ -1727,7 +2671,7 @@ class NetworkModule extends RootBiDiModule {
   #onFetchError = (name, data) => {
     const { request } = data;
 
-    const browsingContext = lazy.TabManager.getBrowsingContextById(
+    const browsingContext = lazy.NavigableManager.getBrowsingContextById(
       request.contextId
     );
     if (!browsingContext) {
@@ -1746,6 +2690,8 @@ class NetworkModule extends RootBiDiModule {
       // bail out.
       return;
     }
+
+    this.#maybeAbortNetworkResponseBodyCollection(request);
 
     const baseParameters = this.#processNetworkEvent(
       protocolEventName,
@@ -1767,7 +2713,7 @@ class NetworkModule extends RootBiDiModule {
   #onResponseEvent = async (name, data) => {
     const { request, response } = data;
 
-    const browsingContext = lazy.TabManager.getBrowsingContextById(
+    const browsingContext = lazy.NavigableManager.getBrowsingContextById(
       request.contextId
     );
     if (!browsingContext) {
@@ -1781,6 +2727,10 @@ class NetworkModule extends RootBiDiModule {
         ? "network.responseStarted"
         : "network.responseCompleted";
 
+    if (protocolEventName === "network.responseStarted") {
+      this.#cloneNetworkResponseBody(request);
+    }
+
     const isListening = this._hasListener(protocolEventName, {
       contextId: browsingContext.id,
     });
@@ -1788,6 +2738,10 @@ class NetworkModule extends RootBiDiModule {
       // If there are no listeners subscribed to this event and this context,
       // bail out.
       return;
+    }
+
+    if (protocolEventName === "network.responseCompleted") {
+      this.#maybeCollectNetworkResponseBody(request, response);
     }
 
     const baseParameters = this.#processNetworkEvent(
@@ -1828,6 +2782,13 @@ class NetworkModule extends RootBiDiModule {
     }
   };
 
+  #onUserContextDeleted = (name, data) => {
+    const userContextId = data.userContextId;
+    if (this.#extraHeaders.userContextHeaders.has(userContextId)) {
+      this.#extraHeaders.userContextHeaders.delete(userContextId);
+    }
+  };
+
   #processNetworkEvent(event, request) {
     const requestData = this.#getRequestData(request);
     const navigation = request.navigationId;
@@ -1836,8 +2797,9 @@ class NetworkModule extends RootBiDiModule {
     if (request.contextId) {
       // Retrieve the top browsing context id for this network event.
       contextId = request.contextId;
-      const browsingContext = lazy.TabManager.getBrowsingContextById(contextId);
-      topContextId = lazy.TabManager.getIdForBrowsingContext(
+      const browsingContext =
+        lazy.NavigableManager.getBrowsingContextById(contextId);
+      topContextId = lazy.NavigableManager.getIdForBrowsingContext(
         browsingContext.top
       );
     }
@@ -1862,6 +2824,25 @@ class NetworkModule extends RootBiDiModule {
     return params;
   }
 
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#remove-collector-from-data
+   *
+   * @param {Data} collectedData
+   *     The Data from which the collector should be removed.
+   * @param {string} collectorId
+   *     The collector id to remove.
+   */
+  #removeCollectorFromData(collectedData, collectorId) {
+    if (collectedData.collectors.has(collectorId)) {
+      collectedData.collectors.delete(collectorId);
+      if (!collectedData.collectors.size) {
+        this.#collectedNetworkData.delete(
+          `${collectedData.request}-${collectedData.type}`
+        );
+      }
+    }
+  }
+
   #serializeCookieHeader(cookieHeader) {
     const name = cookieHeader.name;
     const value = deserializeBytesValue(cookieHeader.value);
@@ -1871,7 +2852,10 @@ class NetworkModule extends RootBiDiModule {
   #serializeHeader(name, value) {
     return {
       name,
-      value: this.#serializeStringAsBytesValue(value),
+      // TODO: For now, we handle all headers and cookies with the "string" type.
+      // See Bug 1835216 to add support for "base64" type and handle non-utf8
+      // values.
+      value: this.#serializeAsBytesValue(value, BytesValueType.String),
     };
   }
 
@@ -1915,7 +2899,7 @@ class NetworkModule extends RootBiDiModule {
   }
 
   /**
-   * Serialize a string value as BytesValue.
+   * Serialize a value as BytesValue.
    *
    * Note: This does not attempt to fully implement serialize protocol bytes
    * (https://w3c.github.io/webdriver-bidi/#serialize-protocol-bytes) as the
@@ -1925,12 +2909,9 @@ class NetworkModule extends RootBiDiModule {
    * @param {string} value
    *     The value to serialize.
    */
-  #serializeStringAsBytesValue(value) {
-    // TODO: For now, we handle all headers and cookies with the "string" type.
-    // See Bug 1835216 to add support for "base64" type and handle non-utf8
-    // values.
+  #serializeAsBytesValue(value, type) {
     return {
-      type: BytesValueType.String,
+      type,
       value,
     };
   }
@@ -1958,6 +2939,41 @@ class NetworkModule extends RootBiDiModule {
   #unsubscribeEvent(event) {
     if (this.constructor.supportedEvents.includes(event)) {
       this.#stopListening(event);
+    }
+  }
+
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#update-headers
+   */
+  #updateHeaders(request, headers) {
+    for (const [name, value] of headers) {
+      // Use merge: false to always override the value
+      request.setRequestHeader(name, value, { merge: false });
+    }
+  }
+
+  /**
+   * Implements https://w3c.github.io/webdriver-bidi/#update-request-headers
+   */
+  #updateRequestHeaders(request, navigables) {
+    for (const browsingContext of navigables) {
+      this.#updateHeaders(request, this.#extraHeaders.defaultHeaders);
+
+      const userContextHeaders = this.#extraHeaders.userContextHeaders;
+      const userContext =
+        lazy.UserContextManager.getIdByBrowsingContext(browsingContext);
+      if (userContextHeaders.has(userContext)) {
+        this.#updateHeaders(request, userContextHeaders.get(userContext));
+      }
+
+      const navigableHeaders = this.#extraHeaders.navigableHeaders;
+      const topNavigableWebProgress = browsingContext.top.webProgress;
+      if (navigableHeaders.has(topNavigableWebProgress)) {
+        this.#updateHeaders(
+          request,
+          navigableHeaders.get(topNavigableWebProgress)
+        );
+      }
     }
   }
 

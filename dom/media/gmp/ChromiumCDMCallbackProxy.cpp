@@ -138,7 +138,8 @@ void ChromiumCDMCallbackProxy::ExpirationChange(const nsCString& aSessionId,
 void ChromiumCDMCallbackProxy::SessionClosed(const nsCString& aSessionId) {
   DispatchToMainThread("ChromiumCDMProxy::OnSessionClosed",
                        &ChromiumCDMProxy::OnSessionClosed,
-                       NS_ConvertUTF8toUTF16(aSessionId));
+                       NS_ConvertUTF8toUTF16(aSessionId),
+                       dom::MediaKeySessionClosedReason::Closed_by_application);
 }
 
 void ChromiumCDMCallbackProxy::QueryOutputProtectionStatus() {

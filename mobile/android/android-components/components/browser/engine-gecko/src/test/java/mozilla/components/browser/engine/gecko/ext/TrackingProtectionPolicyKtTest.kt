@@ -64,8 +64,8 @@ class TrackingProtectionPolicyKtTest {
     }
 
     @Test
-    fun `getEtpLevel is always Strict unless None`() {
-        assertEquals(EtpLevel.STRICT, TrackingProtectionPolicy.recommended().getEtpLevel())
+    fun `getEtpLevel reflects TrackingProtectionPolicy`() {
+        assertEquals(EtpLevel.DEFAULT, TrackingProtectionPolicy.recommended().getEtpLevel())
         assertEquals(EtpLevel.STRICT, TrackingProtectionPolicy.strict().getEtpLevel())
         assertEquals(EtpLevel.NONE, TrackingProtectionPolicy.none().getEtpLevel())
     }

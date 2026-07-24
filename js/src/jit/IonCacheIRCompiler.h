@@ -85,12 +85,17 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
 
   [[nodiscard]] bool emitAddAndStoreSlotShared(
       CacheOp op, ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-      uint32_t newShapeOffset, mozilla::Maybe<uint32_t> numNewSlotsOffset);
+      uint32_t newShapeOffset, mozilla::Maybe<uint32_t> numNewSlotsOffset,
+      bool preserveWrapper);
 
   template <typename IdType>
   [[nodiscard]] bool emitCallScriptedProxyGetShared(
       ValOperandId targetId, ObjOperandId receiverId, ObjOperandId handlerId,
       ObjOperandId trapId, IdType id, uint32_t nargsAndFlags);
+
+  enum class StringCharOutOfBounds { Failure, EmptyString, UndefinedValue };
+  bool emitLoadStringCharResult(StringOperandId strId, Int32OperandId indexId,
+                                StringCharOutOfBounds outOfBounds);
 
   void pushStubCodePointer();
 

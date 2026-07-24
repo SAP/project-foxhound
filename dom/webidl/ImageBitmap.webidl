@@ -390,7 +390,7 @@ typedef sequence<ChannelPixelLayout> ImagePixelLayout;
 enum ImageOrientation { "none", "flipY", "from-image" };
 enum PremultiplyAlpha { "none", "premultiply", "default" };
 enum ColorSpaceConversion { "none", "default" };
-//enum ResizeQuality { "pixelated", "low", "medium", "high" };
+enum ResizeQuality { "pixelated", "low", "medium", "high" };
 
 dictionary ImageBitmapOptions {
   ImageOrientation imageOrientation = "none";
@@ -399,5 +399,5 @@ dictionary ImageBitmapOptions {
   ColorSpaceConversion colorSpaceConversion = "default";
   [EnforceRange] unsigned long resizeWidth;
   [EnforceRange] unsigned long resizeHeight;
-  //ResizeQuality resizeQuality = "low";
+  ResizeQuality resizeQuality = "low";
 };

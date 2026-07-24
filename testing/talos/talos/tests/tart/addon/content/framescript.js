@@ -1,5 +1,3 @@
-/* eslint-env mozilla/frame-script */
-
 (function () {
   const TART_PREFIX = "tart@mozilla.org:";
 

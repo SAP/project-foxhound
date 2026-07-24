@@ -19,6 +19,7 @@
 #include <fontconfig/fontconfig.h>
 
 #include "GRefPtr.h"
+#include "GSettings.h"
 #include "GUniquePtr.h"
 #include "gtk/gtk.h"
 #include "nsGtkUtils.h"
@@ -35,6 +36,7 @@
 #include "mozilla/WidgetUtilsGtk.h"
 #include "ScreenHelperGTK.h"
 #include "ScrollbarDrawing.h"
+#include "nsAppShell.h"
 
 #include "GtkWidgets.h"
 #include "nsString.h"
@@ -123,6 +125,7 @@ static float GetGtkTextScaleFactor() {
 
 static bool sCSDAvailable;
 
+#ifdef MOZ_ENABLE_DBUS
 static nsCString GVariantToString(GVariant* aVariant) {
   nsCString ret;
   gchar* s = g_variant_print(aVariant, TRUE);
@@ -243,6 +246,7 @@ bool nsLookAndFeel::RecomputeDBusSettings() {
   g_variant_builder_add(&namespacesBuilder, "s", "org.freedesktop.appearance");
 
   GUniquePtr<GError> error;
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GVariant> variant = dont_AddRef(g_dbus_proxy_call_sync(
       mDBusSettingsProxy, "ReadAll", g_variant_new("(as)", &namespacesBuilder),
       G_DBUS_CALL_FLAGS_NONE,
@@ -292,6 +296,7 @@ bool nsLookAndFeel::RecomputeDBusSettings() {
 void nsLookAndFeel::WatchDBus() {
   LOGLNF("nsLookAndFeel::WatchDBus");
   GUniquePtr<GError> error;
+  nsAppShell::DBusConnectionCheck();
   mDBusSettingsProxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
       "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
@@ -319,7 +324,9 @@ void nsLookAndFeel::UnwatchDBus() {
   g_signal_handlers_disconnect_by_func(
       mDBusSettingsProxy, FuncToGpointer(settings_changed_signal_cb), this);
   mDBusSettingsProxy = nullptr;
+  nsAppShell::DBusConnectionCheck();
 }
+#endif
 
 nsLookAndFeel::nsLookAndFeel() {
   static constexpr nsLiteralCString kObservedSettings[] = {
@@ -365,6 +372,7 @@ nsLookAndFeel::nsLookAndFeel() {
   sCSDAvailable =
       nsWindow::GetSystemGtkWindowDecoration() != nsWindow::GTK_DECORATION_NONE;
 
+#ifdef MOZ_ENABLE_DBUS
   if (ShouldUsePortal(PortalKind::Settings)) {
     mDBusID = g_bus_watch_name(
         G_BUS_TYPE_SESSION, "org.freedesktop.portal.Desktop",
@@ -380,6 +388,7 @@ nsLookAndFeel::nsLookAndFeel() {
         },
         this, nullptr);
   }
+#endif
   if (IsKdeDesktopEnvironment()) {
     GUniquePtr<gchar> path(
         g_strconcat(g_get_user_config_dir(), "/gtk-3.0/colors.css", NULL));
@@ -397,11 +406,13 @@ nsLookAndFeel::nsLookAndFeel() {
 
 nsLookAndFeel::~nsLookAndFeel() {
   ClearRoundedCornerProvider();
+#ifdef MOZ_ENABLE_DBUS
   if (mDBusID) {
     g_bus_unwatch_name(mDBusID);
     mDBusID = 0;
   }
   UnwatchDBus();
+#endif
   if (GtkSettings* settings = gtk_settings_get_default()) {
     g_signal_handlers_disconnect_by_func(
         settings, FuncToGpointer(settings_changed_cb), nullptr);
@@ -1020,8 +1031,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     } break;
     case IntID::ScrollArrowStyle: {
       aResult = eScrollArrowStyle_Single;
-      GtkSettings* settings = gtk_settings_get_default();
-      if (MOZ_LIKELY(settings)) {
+      if (MOZ_LIKELY(gtk_settings_get_default())) {
         GtkWidget* scrollbar = GtkWidgets::Get(GtkWidgets::Type::Scrollbar);
         aResult = ConvertGTKStepperStyleToMozillaScrollArrowStyle(scrollbar);
       }
@@ -1199,6 +1209,28 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
         // Though the X11 code just hides the native menubar without
         // communicating it to the front-end...
         return false;
+      }();
+      break;
+    case IntID::HourCycle:
+      aResult = []() {
+        if (MOZ_UNLIKELY(!gtk_settings_get_default())) {
+          // Avoid accessing gsettings early on startup on xpcshell, in order to
+          // avoid messing with tests that try to mock our session bus.
+          // FIXME(bug 1981011): Ideally we would be able to not have this
+          // special case.
+          return 0;
+        }
+
+        nsAutoCString result;
+        widget::GSettings::GetString("org.gnome.desktop.interface"_ns,
+                                     "clock-format"_ns, result);
+        if (result == "12h") {
+          return 12;
+        }
+        if (result == "24h") {
+          return 24;
+        }
+        return 0;
       }();
       break;
     default:
@@ -1690,8 +1722,8 @@ void nsLookAndFeel::UpdateRoundedBottomCornerStyles() {
   if (!gtk_css_provider_load_from_data(mRoundedCornerProvider.get(),
                                        string.get(), string.Length(),
                                        getter_Transfers(error))) {
-    NS_WARNING(nsPrintfCString("Failed to load provider: %s - %s\n",
-                               string.get(), error ? error->message : nullptr)
+    NS_WARNING(nsPrintfCString("Failed to load provider: %s - %s", string.get(),
+                               error ? error->message : nullptr)
                    .get());
   }
   gtk_style_context_add_provider_for_screen(
@@ -2144,8 +2176,8 @@ void nsLookAndFeel::PerThemeData::Init() {
   mName = GetGtkTheme();
 
   mFamily = [&] {
-    if (StringBeginsWith(mName, "Adw"_ns)) {
-      // This catches "Adwaita", "Adwaita-dark", and "Adw-gtk3" too.
+    if (StringBeginsWith(mName, "adw"_ns, nsCaseInsensitiveCStringComparator)) {
+      // This catches "Adwaita", "Adwaita-dark", and "{A,a}dw-gtk3" too.
       return ThemeFamily::Adwaita;
     }
     if (StringBeginsWith(mName, "Breeze"_ns)) {

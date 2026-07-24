@@ -478,4 +478,15 @@ interface nsISHEntry : nsISupports
      * what a Wireframe is.
      */
     [implicit_jscontext] attribute jsval wireframe;
+
+    /**
+     * https://html.spec.whatwg.org/#she-navigation-api-key
+     * Only used with SHIP enabled.
+     */
+    attribute nsIDRef navigationKey;
+    /**
+     * https://html.spec.whatwg.org/#she-navigation-api-id
+     * Only used with SHIP enabled.
+     */
+    attribute nsIDRef navigationId;
 };

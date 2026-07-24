@@ -3,7 +3,7 @@
 
 "use strict";
 
-// via xpcshell.ini
+// via xpcshell.toml
 /* import-globals-from ../../../shared/test/shared-head.js */
 
 Services.prefs.setBoolPref("devtools.testing", true);
@@ -155,11 +155,11 @@ async function createTempFile() {
  * If the action is async and defines a `status` property, this helper will wait
  * for the status to reach either "error" or "done".
  *
- * @param {Object} store
+ * @param {object} store
  *        Redux store where the action should be dispatched.
- * @param {String} actionType
+ * @param {string} actionType
  *        The actionType to wait for.
- * @param {Number} repeat
+ * @param {number} repeat
  *        Optional, number of time the action is expected to be dispatched.
  *        Defaults to 1
  * @return {Promise}

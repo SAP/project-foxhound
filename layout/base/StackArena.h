@@ -7,7 +7,7 @@
 #ifndef StackArena_h
 #define StackArena_h
 
-#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsError.h"
 

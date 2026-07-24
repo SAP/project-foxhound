@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/skin/design-system/toolbar.css");
 @import url("chrome://browser/skin/browser-colors.css");
 @import url("chrome://browser/skin/addons/extension-controlled.css");
 @import url("chrome://browser/skin/addons/unified-extensions.css");
@@ -24,6 +25,8 @@
 @import url("chrome://browser/skin/places/editBookmarkPanel.css");
 @import url("chrome://browser/skin/searchbar.css");
 @import url("chrome://browser/skin/sidebar.css");
+@import url("chrome://browser/skin/urlbar-variables.css");
+@import url("chrome://browser/skin/aiWindowSidebar.css");
 @import url("chrome://browser/skin/customizableui/customizeMode.css");
 @import url("chrome://browser/skin/UITour.css");
 @import url("chrome://browser/skin/formautofill-notification.css");
@@ -36,6 +39,20 @@ body {
 }
 
 :root {
+  --window-min-width: 500px;
+  /* Vertical tabs need extra room in the nav bar for window controls,
+     drag space, and the sidebar button. */
+  --window-min-width-increase-for-vertical-tabs: calc(var(--window-controls-size) + 23px);
+  --window-controls-size: 138px;
+  @media (-moz-platform: macos) {
+    --window-controls-size: 76px;
+  }
+  @media (-moz-platform: linux) {
+    /* FIXME: Use --titlebar-button-* variables to calculate the window
+              controls' size. */
+    --window-controls-size: 115px;
+  }
+
   user-select: none;
   color-scheme: light dark;
   text-rendering: optimizeLegibility;
@@ -51,40 +68,30 @@ body {
   }
 
   &:not([chromehidden~="toolbar"]) {
-    min-width: 450px;
+    min-width: var(--window-min-width);
     min-height: 120px;
 
     /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("sidebar.verticalTabs") {
-      min-width: 732px;
+      min-width: calc(var(--window-min-width) + var(--window-min-width-increase-for-vertical-tabs));
 
       /* If the Content Analysis icon is showing, we don't
          want to collapse it, so make a little more room. */
       &[contentanalysisactive] {
-        min-width: 768px;
-      }
-
-      @media (-moz-platform: macos) {
-        min-width: 670px;
-
-        /* If the Content Analysis icon is showing, we don't
-          want to collapse it, so make a little more room. */
-        /* stylelint-disable max-nesting-depth */
-        &[contentanalysisactive] {
-          min-width: 706px;
-        }
+        min-width: calc(var(--window-min-width) + var(--window-min-width-increase-for-vertical-tabs) + 36px);
       }
     }
   }
 
   &[taskbartab]:not([chromehidden~="toolbar"]) {
-    min-width: 732px;
+    min-width: 804px;
   }
 
   /* z-indices that fight on the browser stack */
   --browser-stack-z-index-devtools-splitter: 1;
   --browser-stack-z-index-dialog-stack: 2;
   --browser-stack-z-index-rdm-toolbar: 3;
+  --browser-stack-z-index-screenshots-panel: 4;
 
   /* z-indices that fight in the general browser / toolbox area */
   --browser-area-z-index-toolbox: 0;
@@ -95,17 +102,6 @@ body {
 
   /* on macOS the animation of the toolbox in fullscreen needs the toolbox to be higher */
   --browser-area-z-index-toolbox-while-animating: 4;
-
-  --toolbarbutton-border-radius: 4px;
-  --identity-box-margin-inline: 4px;
-  --urlbar-min-height: max(32px, 1.4em);
-  --urlbar-icon-padding: calc((var(--urlbar-min-height) - 2px /* border */ - 2px /* padding */ - 16px /* icon */) / 2);
-
-  /* This should be used for icons and chiclets inside the input field. It makes
-     the gap around them more uniform when they are close to the field edges */
-  --urlbar-icon-border-radius: calc(var(--toolbarbutton-border-radius) - 1px);
-  --urlbar-searchmodeswitcher-inline-padding: 6px;
-  --urlbar-searchmodeswitcher-margin-inline-end: 0.45em;
 
   --lwt-additional-images: none;
   --lwt-background-alignment: right top;
@@ -132,14 +128,6 @@ body {
 
   &[lwtheme] {
     color: var(--lwt-text-color);
-  }
-
-  &[uidensity="compact"] {
-    --urlbar-min-height: max(26px, 1.4em);
-  }
-
-  &[uidensity="touch"] {
-    --urlbar-min-height: max(34px, 1.4em);
   }
 }
 
@@ -211,8 +199,7 @@ body {
     border-bottom-style: none;
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media (-moz-platform: macos) and -moz-pref("browser.theme.native-theme") {
+  @media (-moz-platform: macos) and (-moz-native-theme) {
     /* This is conceptually a background, but putting this on a pseudo-element
      * avoids it from suppressing the chrome-content separator border, etc.
      *
@@ -263,7 +250,7 @@ body {
   -moz-window-dragging: drag;
 
   :root[customtitlebar] &,
-  :root[customtitlebar] & #urlbar:popover-open {
+  :root[customtitlebar] & .urlbar:popover-open {
     will-change: opacity;
     transition: opacity var(--inactive-window-transition);
 
@@ -288,7 +275,7 @@ body {
     }
   }
 
-  #toolbar-menubar[autohide="true"]:not([inactive]) ~ :is(#TabsToolbar, #nav-bar) > & {
+  #toolbar-menubar[autohide]:not([inactive]) ~ :is(#TabsToolbar, #nav-bar) > & {
     visibility: hidden;
   }
 
@@ -313,14 +300,14 @@ body {
 
   @media (-moz-platform: linux) and (-moz-gtk-csd-reversed-placement: 0) {
     :root:not([sizemode="normal"]) &[type="pre-tabs"],
-    :root[gtktiledwindow="true"] &[type="pre-tabs"] {
+    :root[gtktiledwindow] &[type="pre-tabs"] {
       display: none;
     }
   }
 
   @media (-moz-gtk-csd-reversed-placement) {
     :root:not([sizemode="normal"]) &[type="post-tabs"],
-    :root[gtktiledwindow="true"] &[type="post-tabs"] {
+    :root[gtktiledwindow] &[type="post-tabs"] {
       display: none;
     }
   }
@@ -333,8 +320,7 @@ body {
 
   /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.verticalTabs") {
-    &[type="pre-tabs"],
-    &[type="post-tabs"] {
+    :root:not([taskbartab]) &:is([type="pre-tabs"], [type="post-tabs"]) {
       display: none;
     }
   }
@@ -344,7 +330,7 @@ body {
  * (That is, if the menu bar doesn't autohide, and we're not in a fullscreen or
  * popup window.) */
 :root:not([chromehidden~="menubar"], [inFullscreen])
-  #toolbar-menubar[autohide="false"]
+  #toolbar-menubar:not([autohide], [collapsed])
   ~ :is(#TabsToolbar, #nav-bar)
   > :is(.titlebar-buttonbox-container, .titlebar-spacer) {
   display: none;
@@ -373,7 +359,7 @@ body {
 /* Menu bar */
 
 #toolbar-menubar {
-  &[autohide="true"] {
+  &[autohide] {
     overflow: hidden;
 
     /* For linux and windows, when temporarily showing the menu bar, make it at least
@@ -396,10 +382,6 @@ body {
       appearance: none !important;
     }
   }
-
-  &:not([autohide]) {
-    visibility: collapse;
-  }
 }
 
 /* Hide menu elements intended for keyboard access support */
@@ -410,14 +392,12 @@ body {
 /* Profiles menu */
 
 #menu_newProfile {
-  -moz-context-properties: fill;
-  fill: currentColor;
-  list-style-image: url(chrome://global/skin/icons/plus.svg);
+  --menuitem-icon: url(chrome://global/skin/icons/plus.svg);
 }
 
 .menuitem-iconic-profile {
+  --menuitem-icon-fill: var(--menu-profiles-theme-bg);
   -moz-context-properties: fill, stroke;
-  fill: var(--menu-profiles-theme-bg);
   stroke: var(--menu-profiles-theme-fg);
 }
 
@@ -458,6 +438,15 @@ body {
   @media not -moz-pref("sidebar.verticalTabs") {
     display: none;
   }
+
+  :root[taskbartab] & {
+    display: none;
+  }
+}
+
+/* Share Button */
+.share-more-button {
+  --menuitem-icon: url("chrome://global/skin/icons/more.svg");
 }
 
 /* Bookmarks toolbar */
@@ -484,7 +473,7 @@ body {
       max-height 170ms ease-out,
       var(--ext-theme-background-transition);
 
-    &[collapsed="true"] {
+    &[collapsed] {
       transition:
         min-height 170ms ease-out,
         max-height 170ms ease-out,
@@ -492,7 +481,7 @@ body {
     }
   }
 
-  &[collapsed="true"] {
+  &[collapsed] {
     max-height: 0;
 
     &.instant {
@@ -503,7 +492,7 @@ body {
   /* Bookmarks toolbar empty message */
 
   /* If the toolbar is not initialized set a zero width, but retain height. */
-  &[collapsed="false"]:not([initialized]) > #personal-toolbar-empty {
+  &:not([collapsed], [initialized]) > #personal-toolbar-empty {
     visibility: hidden;
     width: 0;
     overflow-x: hidden;
@@ -586,30 +575,24 @@ menupopup::part(drop-indicator) {
   list-style-image: none;
   height: 2px;
   margin-inline-end: -4em;
-  background-color: SelectedItem;
+  background-color: AccentColor;
   pointer-events: none;
 }
 
 /* Back / Forward buttons context menu */
 
 .unified-nav-current {
-  font-weight: var(--font-weight-bold);
-}
-
-.unified-nav-back,
-.unified-nav-forward {
-  -moz-context-properties: fill;
-  fill: currentColor;
+  font-weight: var(--font-weight-semibold);
 }
 
 .unified-nav-back[_moz-menuactive]:-moz-locale-dir(ltr),
 .unified-nav-forward[_moz-menuactive]:-moz-locale-dir(rtl) {
-  list-style-image: url("chrome://browser/skin/back.svg") !important;
+  --menuitem-icon: url("chrome://browser/skin/back.svg") !important;
 }
 
 .unified-nav-forward[_moz-menuactive]:-moz-locale-dir(ltr),
 .unified-nav-back[_moz-menuactive]:-moz-locale-dir(rtl) {
-  list-style-image: url("chrome://browser/skin/forward.svg") !important;
+  --menuitem-icon: url("chrome://browser/skin/forward.svg") !important;
 }
 
 /* Find bar */
@@ -682,10 +665,10 @@ menupopup::part(drop-indicator) {
 
 /* Various panels and popup notifications */
 
-#screenshotsPagePanel {
+.screenshotsPagePanel {
   position: relative;
   max-height: 0;
-  z-index: 1; /* Above the web content in this stack. */
+  z-index: var(--browser-stack-z-index-screenshots-panel); /* Above the web content in this stack. */
 }
 
 /* Override theme colors since the picker uses extra colors that
@@ -697,7 +680,7 @@ menupopup::part(drop-indicator) {
 }
 
 #widget-overflow .webextension-popup-browser {
-  background: #fff;
+  background: white;
 
   /* height set via JS can be lower than the stack min-height,
      ensure the browser takes up at least that min-height */
@@ -746,9 +729,9 @@ menupopup::part(drop-indicator) {
 
       &::part(button) {
         font-size: var(--font-size-large);
-        font-weight: var(--font-weight);
+        font-weight: normal;
         justify-content: flex-start;
-        padding-inline: calc((var(--button-size-icon) - var(--icon-size-default)) / 2 - var(--border-width));
+        padding-inline: calc((var(--button-size-icon) - var(--icon-size)) / 2 - var(--border-width));
       }
 
       &::part(moz-button-label) {
@@ -776,7 +759,7 @@ menupopup::part(drop-indicator) {
 
 #cfr-notification-header-label {
   margin: 9px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #cfr-notification-header-link {
@@ -797,12 +780,12 @@ menupopup::part(drop-indicator) {
 
   &:hover {
     background-color: hsla(0, 0%, 70%, 0.2);
-    border-radius: 2px;
+    border-radius: var(--border-radius-xsmall);
   }
 }
 
 #contextual-feature-recommendation-notification {
-  width: 400px;
+  width: var(--size-layout-large);
 
   .popup-notification-icon {
     margin-inline-end: 4px;
@@ -860,7 +843,7 @@ menupopup::part(drop-indicator) {
     }
 
     description {
-      font-weight: 400;
+      font-weight: normal;
       margin: unset;
       margin-inline: 12px;
     }
@@ -882,7 +865,7 @@ menupopup::part(drop-indicator) {
       background-color: rgba(216, 216, 216, 0.2);
       color: white;
       border: none;
-      border-radius: 2px;
+      border-radius: var(--border-radius-xsmall);
       margin: 4px;
       padding: 3px 12px;
       flex: 1;
@@ -912,7 +895,7 @@ menupopup::part(drop-indicator) {
     .popup-notification-secondary-button {
       margin: 3px;
       border: none;
-      border-radius: 2px;
+      border-radius: var(--border-radius-xsmall);
       background-image: url(chrome://global/skin/icons/close.svg);
       background-color: transparent;
       background-repeat: no-repeat;
@@ -972,7 +955,7 @@ menupopup::part(drop-indicator) {
     }
 
     .popup-notification-description {
-      font-weight: 600;
+      font-weight: var(--font-weight-semibold);
       margin-bottom: 15px;
     }
 
@@ -1067,7 +1050,7 @@ menupopup::part(drop-indicator) {
   margin: 0;
   background-color: rgb(0, 96, 223);
   color: rgb(255, 255, 255);
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
   padding: 10px;
   margin-top: 15px;
   margin-bottom: 10px;
@@ -1148,7 +1131,7 @@ popupnotificationcontent {
 }
 
 .popup-notification-description {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   margin-top: 0;
 
   > b {
@@ -1224,7 +1207,7 @@ popupnotificationcontent {
     margin-inline: 8px;
 
     > span:first-of-type {
-      font-weight: bold;
+      font-weight: var(--font-weight-bold);
     }
 
     > span:last-of-type {
@@ -1236,7 +1219,7 @@ popupnotificationcontent {
 .relay-integration-header-variation {
   display: flex;
   align-items: center;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   font-size: 1.5em;
   margin: auto;
 
@@ -1289,8 +1272,8 @@ popupnotificationcontent {
 
 #historySwipeAnimationPreviousArrow,
 #historySwipeAnimationNextArrow {
-  --swipe-nav-icon-primary-color: SelectedItemText;
-  --swipe-nav-icon-accent-color: SelectedItem;
+  --swipe-nav-icon-primary-color: AccentColorText;
+  --swipe-nav-icon-accent-color: AccentColor;
 
   will-change: transform;
 
@@ -1383,16 +1366,6 @@ popupnotificationcontent {
   }
 }
 
-/* TODO: move this to toolkit */
-panel toolbarseparator {
-  appearance: none;
-  min-height: 0;
-  border-top: 1px solid var(--panel-separator-color);
-  border-bottom: none;
-  margin: var(--panel-separator-margin);
-  padding: 0;
-}
-
 /* Picture-in-Picture panel */
 
 #PictureInPicturePanel {
@@ -1407,4 +1380,103 @@ panel toolbarseparator {
 
 #PictureInPicturePanelFooter {
   margin: 8px 16px 16px;
+}
+
+/* AI Window Toggle Button */
+
+#ai-window-toggle {
+  list-style-image: url("chrome://branding/content/icon32.png");
+  padding-inline-end: var(--space-small);
+  border-radius: var(--border-radius-medium);
+
+  /* Toggle button icon is designed to be slightly larger at 20px */
+  > .toolbarbutton-icon {
+    padding: 8px;
+    box-shadow: 0 0 16px 4px var(--box-shadow-color-darker-layer-1) inset;
+  }
+
+  :root[ai-window] & {
+    list-style-image: url("chrome://browser/skin/ai-window.svg");
+
+    > .toolbarbutton-icon {
+      box-shadow: 0 0 16px 4px var(--smartwindow-toggle-shadow-color) inset;
+    }
+  }
+}
+
+#ai-window-switch-classic,
+#ai-window-switch-ai {
+  &:hover {
+    background-color: var(--button-background-color-ghost-hover);
+  }
+
+  .toolbarbutton-icon {
+    margin-inline-end: var(--space-small);
+    width: var(--icon-size-medium);
+    height: var(--icon-size-medium);
+  }
+
+  &::after {
+    content: url("chrome://global/skin/icons/check.svg");
+    -moz-context-properties: fill;
+    fill: currentColor;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+#ai-window-switch-classic {
+  list-style-image: url("chrome://branding/content/icon32.png");
+
+  :root[ai-window] &::after {
+    display: none;
+  }
+}
+
+#ai-window-switch-ai {
+  list-style-image: url("chrome://browser/skin/ai-window.svg");
+
+  :root:not([ai-window]) &::after {
+    display: none;
+  }
+}
+
+/* AI window immersive view (hidden nav bar and buttons) */
+:root[ai-window][aiwindow-immersive-view] {
+  #nav-bar:not(.browser-titlebar) {
+    height: 0;
+    min-height: 0;
+    visibility: hidden;
+  }
+
+  #urlbar-container,
+  #nav-bar-customization-target > *:not(#sidebar-button),
+  #nav-bar-overflow-button,
+  #PanelUI-button,
+  #smartwindow-ask-button {
+    visibility: hidden;
+  }
+
+  /* immersive view styles exclusive for first run */
+  &[aiwindow-first-run] {
+    #TabsToolbar > .toolbar-items {
+      opacity: 0.2;
+      pointer-events: none;
+    }
+
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media -moz-pref("sidebar.verticalTabs") {
+      #sidebar-main {
+        opacity: 0.2;
+        pointer-events: none;
+      }
+    }
+  }
+}
+
+/* Bookmarks roots menu-items */
+
+#BMB_bookmarksToolbar,
+#bookmarksToolbarFolderMenu {
+  --menuitem-icon: url("chrome://browser/skin/places/bookmarksToolbar.svg");
 }

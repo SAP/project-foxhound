@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 3600
     run:
@@ -20,9 +20,6 @@ linux64-gcc-8:
         symbol: TL(gcc8)
     run:
         script: build-gcc-linux.sh
-        toolchain-alias:
-            - linux64-gcc
-            - linux64-gcc-base
     fetches:
         fetch:
             - gcc-8.5.0
@@ -40,6 +37,23 @@ linux64-gcc-9:
     fetches:
         fetch:
             - gcc-9.5.0
+            - gmp-6.1.0
+            - isl-0.16.1
+            - mpc-1.0.3
+            - mpfr-3.1.4
+
+linux64-gcc-10:
+    description: "GCC 10 toolchain build"
+    treeherder:
+        symbol: TL(gcc10)
+    run:
+        script: build-gcc-linux.sh
+        toolchain-alias:
+            - linux64-gcc
+            - linux64-gcc-base
+    fetches:
+        fetch:
+            - gcc-10.5.0
             - gmp-6.1.0
             - isl-0.16.1
             - mpc-1.0.3
@@ -73,7 +87,7 @@ linux64-gcc-14:
             - mpc-1.0.3
             - mpfr-3.1.4
 
-linux64-gcc-sixgill:
+linux64-gcc-10-sixgill:
     description: "sixgill GCC plugin build"
     treeherder:
         symbol: TL(sixgill)
@@ -84,10 +98,10 @@ linux64-gcc-sixgill:
         toolchain-artifact: public/build/sixgill.tar.xz
     fetches:
         fetch:
-            - gcc-9.5.0
+            - gcc-10.5.0
             - gmp-6.1.0
             - isl-0.16.1
             - mpc-1.0.3
             - mpfr-3.1.4
         toolchain:
-            - linux64-gcc-9
+            - linux64-gcc-10

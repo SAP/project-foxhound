@@ -9,14 +9,14 @@
  * ways.
  */
 
-#ifndef nsSyncLoadService_h__
-#define nsSyncLoadService_h__
+#ifndef nsSyncLoadService_h_
+#define nsSyncLoadService_h_
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "nscore.h"
 #include "nsIContentPolicy.h"
 #include "nsILoadInfo.h"
 #include "nsIReferrerInfo.h"
+#include "nscore.h"
 
 class nsICookieJarSettings;
 class nsIInputStream;
@@ -68,4 +68,4 @@ class nsSyncLoadService {
                                            nsIChannel* aChannel);
 };
 
-#endif  // nsSyncLoadService_h__
+#endif  // nsSyncLoadService_h_

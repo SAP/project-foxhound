@@ -1,0 +1,32 @@
+From: Dan Baker <dbaker@mozilla.com>
+Date: Wed, 3 Dec 2025 09:44:00 -0700
+Subject: Bug 2000941 - (fix-412ea40eeb) ifdef out IID_IGraphicsCaptureSession6
+ as current windows build SDK does not include it
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/cb3700134901dea40f70b2da11e35b3e861d0c3c
+---
+ modules/desktop_capture/win/wgc_capture_session.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/modules/desktop_capture/win/wgc_capture_session.cc b/modules/desktop_capture/win/wgc_capture_session.cc
+index 3037d471cc..763ae9c22d 100644
+--- a/modules/desktop_capture/win/wgc_capture_session.cc
++++ b/modules/desktop_capture/win/wgc_capture_session.cc
+@@ -276,6 +276,9 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
+   }
+ #endif
+ 
++// Until Mozilla builds with SDK v10.0.26100.0 or newer, this
++// code will not build.
++#if !defined(WEBRTC_MOZILLA_BUILD)
+   // Windows 11 24H2 (10.0.26100.0) added
+   // `IGraphicsCaptureSession6::put_IncludeSecondaryWindows()`. See
+   // `wgc_include_secondary_windows()` in
+@@ -287,6 +290,7 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
+     session6->put_IncludeSecondaryWindows(
+         options.wgc_include_secondary_windows());
+   }
++#endif
+ 
+   allow_zero_hertz_ = options.allow_wgc_zero_hertz();
+ 

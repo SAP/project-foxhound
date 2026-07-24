@@ -7,13 +7,13 @@
 #ifndef nsDeviceSensors_h
 #define nsDeviceSensors_h
 
-#include "nsIDeviceSensors.h"
-#include "nsCOMArray.h"
-#include "nsTArray.h"
-#include "nsCOMPtr.h"
-#include "mozilla/dom/DeviceMotionEvent.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/HalSensor.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/DeviceMotionEvent.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsIDeviceSensors.h"
+#include "nsTArray.h"
 
 class nsIDOMWindow;
 

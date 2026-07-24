@@ -123,20 +123,20 @@ ENameValueFlag HTMLAreaAccessible::NativeName(nsString& aName) const {
   ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
-  if (!mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName)) {
-    Value(aName);
-  }
-
+  mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName);
   return eNameOK;
 }
 
-void HTMLAreaAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag HTMLAreaAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
 
   // Still to do - follow IE's standard here
   RefPtr<dom::HTMLAreaElement> area =
       dom::HTMLAreaElement::FromNodeOrNull(mContent);
   if (area) area->GetShape(aDescription);
+
+  return eDescriptionOK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -8,6 +8,8 @@
 
 #include "EditTransactionBase.h"  // base class
 
+#include "EditorForwards.h"
+
 #include "mozilla/Attributes.h"            // override
 #include "nsCOMPtr.h"                      // nsCOMPtr members
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED
@@ -27,8 +29,8 @@ class Element;
  */
 class ChangeAttributeTransaction final : public EditTransactionBase {
  protected:
-  ChangeAttributeTransaction(dom::Element& aElement, nsAtom& aAttribute,
-                             const nsAString* aValue);
+  ChangeAttributeTransaction(EditorBase& aEditorBase, dom::Element& aElement,
+                             nsAtom& aAttribute, const nsAString* aValue);
 
  public:
   /**
@@ -40,7 +42,8 @@ class ChangeAttributeTransaction final : public EditTransactionBase {
    * @param aValue      The new value for aAttribute.
    */
   static already_AddRefed<ChangeAttributeTransaction> Create(
-      dom::Element& aElement, nsAtom& aAttribute, const nsAString& aValue);
+      EditorBase& aEditorBase, dom::Element& aElement, nsAtom& aAttribute,
+      const nsAString& aValue);
 
   /**
    * Creates a change attribute transaction to remove an attribute.  This
@@ -50,7 +53,7 @@ class ChangeAttributeTransaction final : public EditTransactionBase {
    * @param aAttribute  The name of the attribute to remove.
    */
   static already_AddRefed<ChangeAttributeTransaction> CreateToRemove(
-      dom::Element& aElement, nsAtom& aAttribute);
+      EditorBase& aEditorBase, dom::Element& aElement, nsAtom& aAttribute);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ChangeAttributeTransaction,
@@ -66,6 +69,8 @@ class ChangeAttributeTransaction final : public EditTransactionBase {
 
  private:
   virtual ~ChangeAttributeTransaction() = default;
+
+  RefPtr<EditorBase> mEditorBase;
 
   // The element to operate upon
   nsCOMPtr<dom::Element> mElement;

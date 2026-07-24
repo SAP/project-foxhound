@@ -9,6 +9,7 @@ import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.support.test.robolectric.testContext
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.utils.Settings
@@ -28,6 +29,29 @@ class DefaultPrivacyPreferencesRepositoryTest {
 
         settings.crashReportChoice = CrashReportOption.Never.label
         assertFalse(repository.getPreference(PreferenceType.CrashReporting))
+    }
+
+    @Test
+    fun `WHEN setPreference is enabled for crash reporting THEN settings is updated to Auto`() {
+        val settings = Settings(testContext)
+        val repository = DefaultPrivacyPreferencesRepository(settings)
+        assertTrue(CrashReportOption.fromLabel(settings.crashReportChoice) == CrashReportOption.Ask)
+        assertFalse(repository.getPreference(PreferenceType.CrashReporting))
+
+        repository.setPreference(PreferenceType.CrashReporting, true)
+        assertEquals(CrashReportOption.Auto.label, settings.crashReportChoice)
+    }
+
+    @Test
+    fun `WHEN setPreference is disabled for crash reporting THEN settings is updated to Ask`() {
+        val settings = Settings(testContext)
+        val repository = DefaultPrivacyPreferencesRepository(settings)
+        settings.crashReportChoice = CrashReportOption.Auto.label
+        assertTrue(CrashReportOption.fromLabel(settings.crashReportChoice) == CrashReportOption.Auto)
+        assertTrue(repository.getPreference(PreferenceType.CrashReporting))
+
+        repository.setPreference(PreferenceType.CrashReporting, false)
+        assertEquals(CrashReportOption.Ask.label, settings.crashReportChoice)
     }
 
     @Test

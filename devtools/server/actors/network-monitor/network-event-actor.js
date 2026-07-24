@@ -29,13 +29,6 @@ ChromeUtils.defineESModuleGetters(
 
 const CONTENT_TYPE_REGEXP = /^content-type/i;
 
-const REDIRECT_STATES = [
-  301, // HTTP Moved Permanently
-  302, // HTTP Found
-  303, // HTTP See Other
-  307, // HTTP Temporary Redirect
-];
-
 function isDataChannel(channel) {
   return channel instanceof Ci.nsIDataChannel;
 }
@@ -47,23 +40,23 @@ function isFileChannel(channel) {
 /**
  * Creates an actor for a network event.
  *
- * @constructor
+ * @class
  * @param {DevToolsServerConnection} conn
  *        The connection into which this Actor will be added.
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        The Session Context to help know what is debugged.
  *        See devtools/server/actors/watcher/session-context.js
- * @param {Object} options
+ * @param {object} options
  *        Dictionary object with the following attributes:
  *        - onNetworkEventUpdate: optional function
  *          Callback for updates for the network event
  *        - onNetworkEventDestroy: optional function
  *          Callback for the destruction of the network event
- * @param {Object} networkEventOptions
+ * @param {object} networkEventOptions
  *        Object describing the network event or the configuration of the
  *        network observer, and which cannot be easily inferred from the raw
  *        channel.
- *        - blockingExtension: optional string
+ *        - extension: optional object with `blocking` or `blocked` extension IDs
  *          id of the blocking webextension if any
  *        - blockedReason: optional number or string
  *        - discardRequestBody: boolean
@@ -109,7 +102,7 @@ class NetworkEventActor extends Actor {
     };
 
     if (isDataChannel(channel) || isFileChannel(channel)) {
-      this._innerWindowId = null;
+      this._innerWindowId = lazy.NetworkUtils.getChannelInnerWindowId(channel);
       this._isNavigationRequest = false;
 
       this._request = {
@@ -126,6 +119,7 @@ class NetworkEventActor extends Actor {
     // should be destroyed when a window is destroyed. See network-events.js.
     this._innerWindowId = lazy.NetworkUtils.getChannelInnerWindowId(channel);
     this._isNavigationRequest = lazy.NetworkUtils.isNavigationRequest(channel);
+    this._isRedirect = false;
 
     // Retrieve cookies and headers from the channel
     const { cookies, headers } =
@@ -223,7 +217,7 @@ class NetworkEventActor extends Actor {
       resourceId: this._channelId,
       resourceType: NETWORK_EVENT,
       blockedReason,
-      blockingExtension: networkEventOptions.blockingExtension,
+      extension: networkEventOptions.extension,
       browsingContextID,
       cause,
       // This is used specifically in the browser toolbox console to distinguish privileged
@@ -290,7 +284,6 @@ class NetworkEventActor extends Actor {
       headersSize = this._request.rawHeaders.length;
       rawHeaders = this._createLongStringActor(this._request.rawHeaders);
     }
-
     return {
       headers: this._request.headers.map(header => ({
         name: header.name,
@@ -446,8 +439,27 @@ class NetworkEventActor extends Actor {
    *         The response packet - network response content.
    */
   getResponseContent() {
+    const content = { ...this._response.content };
+    if (this._response.contentLongStringActor) {
+      // Remove the old actor from the pool as new actor will be created
+      // with updated content.
+      this.unmanage(this._response.contentLongStringActor);
+    }
+    this._response.contentLongStringActor = new LongStringActor(
+      this.conn,
+      // When trying to fetch content on a previous page load, or a cancelled request,
+      // `response.content` can be an empty object
+      content.text || ""
+    );
+    // bug 1462561 - Use "json" type and manually manage/marshall actors to workaround
+    // protocol.js performance issue
+    this.manage(this._response.contentLongStringActor);
+    content.text = this._discardResponseBody
+      ? ""
+      : this._response.contentLongStringActor.form();
+
     return {
-      content: this._response.content,
+      content,
       contentDiscarded: this._discardResponseBody,
     };
   }
@@ -468,9 +480,9 @@ class NetworkEventActor extends Actor {
     };
   }
 
-  /** ****************************************************************
+  /******************************************************************
    * Listeners for new network event data coming from NetworkMonitor.
-   ******************************************************************/
+   *****************************************************************/
 
   addCacheDetails({ fromCache, fromServiceWorker }) {
     this._resource.fromCache = fromCache;
@@ -540,6 +552,7 @@ class NetworkEventActor extends Actor {
     // separate variables here to bring some attention to this issue.
     const { responseStatus, responseStatusText } = channel;
 
+    this._isRedirect = lazy.NetworkUtils.isRedirect(responseStatus);
     fromCache = fromCache || lazy.NetworkUtils.isFromCache(channel);
     const isDataOrFile = isDataChannel(channel) || isFileChannel(channel);
 
@@ -571,7 +584,7 @@ class NetworkEventActor extends Actor {
     }
 
     // Discard the response body for known redirect response statuses.
-    if (REDIRECT_STATES.includes(responseStatus)) {
+    if (this._isRedirect) {
       this._discardResponseBody = true;
     }
 
@@ -609,6 +622,7 @@ class NetworkEventActor extends Actor {
       remotePort: fromCache ? "" : channel.remotePort,
       status: isDataOrFile ? "200" : responseStatus + "",
       statusText: isDataOrFile ? "0K" : responseStatusText,
+      isRedirect: this._isRedirect,
       earlyHintsStatus: earlyHintsResponseRawHeaders ? "103" : "",
       waitingTime,
       isResolvedByTRR: channel.isResolvedByTRR,
@@ -639,25 +653,40 @@ class NetworkEventActor extends Actor {
   }
 
   /**
+   * Add network response content end.
+   *
+   * @param object
+   */
+  addResponseContentComplete({ blockedReason, extension }) {
+    // Ignore calls when this actor is already destroyed
+    if (this.isDestroyed()) {
+      return;
+    }
+
+    this._onEventUpdate(
+      lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE,
+      {
+        blockedReason,
+        extension,
+      }
+    );
+  }
+
+  /**
    * Add network response content.
    *
    * @param object content
    *        The response content.
-   * @param object
    */
-  addResponseContent(content, { blockedReason, blockingExtension }) {
+  addResponseContent(content, data) {
+    const { blockedReason, extension } = data || {};
+
     // Ignore calls when this actor is already destroyed
     if (this.isDestroyed()) {
       return;
     }
 
     this._response.content = content;
-    content.text = new LongStringActor(this.conn, content.text);
-    // bug 1462561 - Use "json" type and manually manage/marshall actors to workaround
-    // protocol.js performance issue
-    this.manage(content.text);
-    content.text = content.text.form();
-
     this._onEventUpdate(
       lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_CONTENT,
       {
@@ -665,7 +694,7 @@ class NetworkEventActor extends Actor {
         contentSize: content.size,
         transferredSize: content.transferredSize,
         blockedReason,
-        blockingExtension,
+        extension,
       }
     );
   }

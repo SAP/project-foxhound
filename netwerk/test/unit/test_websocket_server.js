@@ -7,7 +7,16 @@
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
+
+const {
+  NodeWebSocketPlainServer,
+  NodeWebSocketServer,
+  NodeWebSocketHttp2Server,
+  NodeHTTPProxyServer,
+  NodeHTTPSProxyServer,
+  NodeHTTP2ProxyServer,
+  WebSocketConnection,
+} = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
 
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
@@ -55,6 +64,41 @@ async function channelOpenPromise(url, msg) {
   conn.close();
   let finalStatus = await finalStatusPromise;
   return [finalStatus.status, res];
+}
+
+// h1.1 direct
+async function test_h1_plain_websocket_direct() {
+  let wss = new NodeWebSocketPlainServer();
+  await wss.start();
+  registerCleanupFunction(async () => wss.stop());
+  Assert.notEqual(wss.port(), null);
+  await wss.registerMessageHandler((data, ws) => {
+    ws.send(data);
+  });
+  let url = `ws://localhost:${wss.port()}`;
+  const msg = "test websocket";
+
+  let conn = new WebSocketConnection();
+  await conn.open(url);
+  conn.send(msg);
+  let mess1 = await conn.receiveMessages();
+  Assert.deepEqual(mess1, [msg]);
+
+  // Now send 3 more, and check that we received all of them
+  conn.send(msg);
+  conn.send(msg);
+  conn.send(msg);
+  let mess2 = [];
+  while (mess2.length < 3) {
+    // receive could return 1, 2 or all 3 replies.
+    mess2 = mess2.concat(await conn.receiveMessages());
+  }
+  Assert.deepEqual(mess2, [msg, msg, msg]);
+
+  conn.close();
+  let { status } = await conn.finished();
+
+  Assert.equal(status, Cr.NS_OK);
 }
 
 // h1.1 direct
@@ -408,6 +452,7 @@ async function test_websocket_fallback() {
   checkConnectionActivities(observer.activites, "localhost", wss.port());
 }
 
+add_task(test_h1_plain_websocket_direct);
 add_task(test_h1_websocket_direct);
 add_task(test_h2_websocket_direct);
 add_task(test_h1_ws_with_secure_h1_proxy);

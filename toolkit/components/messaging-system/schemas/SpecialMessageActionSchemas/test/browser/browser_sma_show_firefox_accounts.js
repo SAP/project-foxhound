@@ -3,7 +3,7 @@
 
 "use strict";
 
-// Note: "identity.fxaccounts.remote.root" is set to https://example.com in browser.ini
+// Note: "identity.fxaccounts.remote.root" is set to https://example.com in browser.toml
 add_task(async function test_SHOW_FIREFOX_ACCOUNTS() {
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     let loaded = BrowserTestUtils.browserLoaded(browser);

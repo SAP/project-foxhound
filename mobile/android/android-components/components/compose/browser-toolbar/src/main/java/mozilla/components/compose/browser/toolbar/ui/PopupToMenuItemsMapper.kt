@@ -6,6 +6,7 @@ package mozilla.components.compose.browser.toolbar.ui
 
 import android.view.SoundEffectConstants
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
@@ -32,11 +35,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import mozilla.components.compose.base.Divider
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
@@ -75,6 +77,7 @@ internal fun menuItemComposable(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                         .thenConditional(
                             Modifier.clickable(
                                 role = Role.Button,
@@ -89,7 +92,7 @@ internal fun menuItemComposable(
                                 },
                             ),
                         ) { source.onClick != null }
-                        .semantics(mergeDescendants = true) {
+                        .clearAndSetSemantics {
                             this.contentDescription = contentDescription
                         }
                         .fillMaxWidth()
@@ -104,7 +107,7 @@ internal fun menuItemComposable(
                                 modifier = Modifier.size(24.dp),
                                 contentScale = ContentScale.Crop,
                                 colorFilter = when (source.icon.shouldTint) {
-                                    true -> ColorFilter.tint(AcornTheme.colors.iconPrimary)
+                                    true -> ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
                                     else -> null
                                 },
                             )
@@ -114,7 +117,7 @@ internal fun menuItemComposable(
                                 painter = painterResource(source.icon.resourceId),
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
-                                tint = AcornTheme.colors.iconPrimary,
+                                tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                         null -> {}
@@ -129,7 +132,7 @@ internal fun menuItemComposable(
                         modifier = Modifier
                             .fillMaxSize()
                             .wrapContentSize(Alignment.CenterStart),
-                        color = AcornTheme.colors.textPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         style = AcornTheme.typography.subtitle1,
                     )
@@ -139,9 +142,7 @@ internal fun menuItemComposable(
 
         is BrowserToolbarMenuDivider -> {
             @Composable {
-                Divider(
-                    color = AcornTheme.colors.borderSecondary,
-                )
+                HorizontalDivider()
             }
         }
     }

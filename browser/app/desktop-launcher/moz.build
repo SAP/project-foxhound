@@ -1,0 +1,51 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+
+# Try to sort out our building/branding model into something a C
+# preprocessor can understand
+if CONFIG["MOZ_BRANDING_DIRECTORY"] == "browser/branding/official":
+    if CONFIG["MOZ_UPDATE_CHANNEL"] == "beta":
+        DEFINES["MOZ_BRANDING_IS_BETA"] = 1
+    else:
+        DEFINES["MOZ_BRANDING_IS_OFFICIAL"] = 1
+elif CONFIG["MOZ_BRANDING_DIRECTORY"] == "browser/branding/nightly":
+    DEFINES["MOZ_BRANDING_IS_NIGHTLY"] = 1
+elif CONFIG["MOZ_BRANDING_DIRECTORY"] == "browser/branding/aurora":
+    DEFINES["MOZ_BRANDING_IS_DEVEDITION"] = 1
+else:
+    DEFINES["MOZ_BRANDING_IS_UNOFFICIAL"] = 1
+
+SPHINX_TREES["/browser/desktop-launcher"] = "docs"
+
+UNIFIED_SOURCES += [
+    "download_firefox.cpp",
+    "file_sink.cpp",
+    "find_firefox.cpp",
+    "main.cpp",
+    "tempfile_name.cpp",
+]
+
+OS_LIBS += [
+    "advapi32",
+    "rpcrt4",
+    "shell32",
+    "winhttp",
+]
+LOCAL_INCLUDES += [
+    "/toolkit/xre",
+]
+DIST_SUBDIR = "desktop-launcher"
+TEST_DIRS += ["tests/gtest", "tests/lib"]
+LDFLAGS = ["-SUBSYSTEM:WINDOWS", "-ENTRY:wmainCRTStartup"]
+USE_STATIC_MSVCRT = True
+Program("desktop-launcher")
+DisableStlWrapping()
+DEFINES["FIREFOX_ICO"] = '"%s/%s/%s.ico"' % (
+    TOPSRCDIR,
+    CONFIG["MOZ_BRANDING_DIRECTORY"],
+    "firefox",
+)
+
+RCINCLUDE = "desktop-launcher.rc"

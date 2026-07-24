@@ -11,7 +11,8 @@ const { validateBreakpointLocation } = ChromeUtils.importESModule(
 
 const asyncStore = asyncStoreHelper("debugger", {
   pendingBreakpoints: ["pending-breakpoints", {}],
-  tabs: ["tabs", []],
+  openedURLs: ["openedURLs", []],
+  prettyPrintedURLs: ["pretty-printed-urls", []],
   xhrBreakpoints: ["xhr-breakpoints", []],
   eventListenerBreakpoints: ["event-listener-breakpoints", undefined],
   blackboxedRanges: ["blackboxedRanges", {}],

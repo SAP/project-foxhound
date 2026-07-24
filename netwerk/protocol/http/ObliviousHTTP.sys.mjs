@@ -47,6 +47,21 @@ function readFromStream(stream, count) {
   return arrayBuffer;
 }
 
+/**
+ * @typedef {object} OHTTPResponse
+ *   An object with properties mimicking that of a Response.
+ * @property {boolean} ok
+ *   Indicates whether the request was successful.
+ * @property {number} status
+ *   Representation of the HTTP status code.
+ * @property {?Headers} headers
+ *   Representing the response headers.
+ * @property {() => ?JSON} json
+ *   Returns the parsed JSON response body.
+ * @property {() => ?Blob} blob
+ *   Returns a Blob response body.
+ */
+
 export class ObliviousHTTP {
   /**
    * Get a cached, or fetch a copy of, an OHTTP config from a given URL.
@@ -54,7 +69,7 @@ export class ObliviousHTTP {
    * @param {string} gatewayConfigURL
    *   The URL for the config that needs to be fetched.
    *   The URL should be complete (i.e. include the full path to the config).
-   * @returns {Uint8Array}
+   * @returns {Promise<Uint8Array>}
    *   The config bytes.
    */
   static async getOHTTPConfig(gatewayConfigURL) {
@@ -68,13 +83,13 @@ export class ObliviousHTTP {
    *   The URL of the OHTTP relay to use.
    * @param {Uint8Array} config
    *   A byte array representing the OHTTP config.
-   * @param {string} requestURL
+   * @param {URL|string} requestURL
    *   The URL of the request we want to make over the relay.
    * @param {object} options
-   * @param {string} options.method
+   * @param {string} [options.method]
    *   The HTTP method to use for the inner request. Only GET, POST, and PUT are
    *   supported right now.
-   * @param {string|ArrayBuffer} options.body
+   * @param {string|ArrayBuffer} [options.body]
    *   The body content to send over the request.
    * @param {object} options.headers
    *   The request headers to set. Each property of the object represents
@@ -82,25 +97,22 @@ export class ObliviousHTTP {
    * @param {AbortSignal} options.signal
    *   If the consumer passes an AbortSignal object, aborting the signal
    *   will abort the request.
-   * @param {Function} options.abortCallback
+   * @param {Function} [options.abortCallback]
    *   Called if the abort signal is triggered before the request completes
    *   fully.
    *
-   * @returns {object}
-   *   Returns an object with properties mimicking that of a normal fetch():
-   *   .ok = boolean indicating whether the request was successful.
-   *   .status = integer representation of the HTTP status code
-   *   .headers = object representing the response headers.
-   *   .json() = method that returns the parsed JSON response body.
+   * @returns {Promise<OHTTPResponse>}
    */
   static async ohttpRequest(
     obliviousHTTPRelay,
     config,
     requestURL,
-    { method = "GET", body, headers, signal, abortCallback } = {}
+    { method = "GET", body, headers, signal, abortCallback }
   ) {
     let relayURI = Services.io.newURI(obliviousHTTPRelay);
-    let requestURI = Services.io.newURI(requestURL);
+    let requestURI = URL.isInstance(requestURL)
+      ? requestURL.URI
+      : Services.io.newURI(requestURL);
     let obliviousHttpChannel = lazy.ohttpService
       .newChannel(relayURI, requestURI, config)
       .QueryInterface(Ci.nsIHttpChannel);
@@ -191,6 +203,7 @@ export class ObliviousHTTP {
               resolve({
                 ok: false,
                 status: ohttpStatus,
+                headers: null,
                 json() {
                   return null;
                 },

@@ -6,15 +6,15 @@
 
 #include "VisualViewport.h"
 
+#include "DocumentInlines.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ToString.h"
-#include "nsIDocShell.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIDocShell.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
-#include "DocumentInlines.h"
 
 static mozilla::LazyLogModule sVvpLog("visualviewport");
 #define VVP_LOG(...) MOZ_LOG(sVvpLog, LogLevel::Debug, (__VA_ARGS__))

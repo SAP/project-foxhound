@@ -13,7 +13,6 @@
 #include "MediaInfo.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
@@ -167,6 +166,12 @@ void DecoderTemplate<DecoderType>::Configure(const ConfigType& aConfig,
     return;
   }
 
+  // Audio encoders are all software, no need to do anything.
+  // This is incomplete and will be implemented fully in bug 1967793
+  if constexpr (std::is_same_v<ConfigType, VideoDecoderConfig>) {
+    ApplyResistFingerprintingIfNeeded(config, GetOwnerGlobal());
+  }
+
   mState = CodecState::Configured;
   mKeyChunkRequired = true;
   mDecodeCounter = 0;
@@ -202,6 +207,9 @@ void DecoderTemplate<DecoderType>::Decode(InputType& aInput, ErrorResult& aRv) {
     mKeyChunkRequired = false;
   }
 
+  mAsyncDurationTracker.Start(
+      aInput.Timestamp(),
+      AutoWebCodecsMarker(DecoderType::Name.get(), ".decode-duration"));
   mDecodeQueueSize += 1;
   mControlMessageQueue.emplace(UniquePtr<ControlMessage>(
       new DecodeMessage(++mDecodeCounter, mLatestConfigureId,
@@ -308,6 +316,12 @@ void DecoderTemplate<DecoderType>::CloseInternal(const nsresult& aResult) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aResult != NS_ERROR_DOM_ABORT_ERR, "Use CloseInternalWithAbort");
 
+  // Return early if already closed. This can happen when async error handling
+  // tasks race with user-initiated close().
+  if (mState == CodecState::Closed) {
+    return;
+  }
+
   auto r = ResetInternal(aResult);
   if (r.isErr()) {
     nsCString name;
@@ -349,6 +363,7 @@ void DecoderTemplate<DecoderType>::OutputDecodedData(
   for (RefPtr<OutputType>& frame : frames) {
     LOG("Outputing decoded data: ts: %" PRId64, frame->Timestamp());
     RefPtr<OutputType> f = frame;
+    mAsyncDurationTracker.End(f->Timestamp());
     cb->Call((OutputType&)(*f));
   }
 }
@@ -546,13 +561,16 @@ MessageProcessedResult DecoderTemplate<DecoderType>::ProcessConfigureMessage(
                  self->QueueATask(
                      "Error during configure",
                      [self = RefPtr{self}]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
-                       MOZ_ASSERT(self->mState != CodecState::Closed);
                        self->CloseInternal(
                            NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
                      });
                  return;
                }
 
+               LOG("%s %p, DecoderAgent #%d configured successfully. %u decode "
+                   "requests are pending",
+                   DecoderType::Name.get(), self.get(), id,
+                   self->mDecodeQueueSize);
                self->mMessageQueueBlocked = false;
                self->ProcessControlMessageQueue();
              })
@@ -568,7 +586,7 @@ MessageProcessedResult DecoderTemplate<DecoderType>::ProcessDecodeMessage(
   MOZ_ASSERT(mState == CodecState::Configured);
   MOZ_ASSERT(aMessage->AsDecodeMessage());
 
-  AUTO_DECODER_MARKER(marker, ".decode");
+  AUTO_DECODER_MARKER(marker, ".decode-process");
 
   if (mProcessingMessage) {
     LOGV("%s %p is processing %s. Defer %s", DecoderType::Name.get(), this,
@@ -644,7 +662,6 @@ MessageProcessedResult DecoderTemplate<DecoderType>::ProcessDecodeMessage(
                  self->QueueATask(
                      "Error during decode runnable",
                      [self = RefPtr{self}]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
-                       MOZ_ASSERT(self->mState != CodecState::Closed);
                        self->CloseInternal(
                            NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
                      });
@@ -754,7 +771,6 @@ MessageProcessedResult DecoderTemplate<DecoderType>::ProcessFlushMessage(
                        // Otherwise, the promise is going to be rejected by
                        // CloseInternal() below.
                        self->mProcessingMessage.reset();
-                       MOZ_ASSERT(self->mState != CodecState::Closed);
                        self->CloseInternal(
                            NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR);
                      });
@@ -848,7 +864,7 @@ bool DecoderTemplate<DecoderType>::CreateDecoderAgent(
         [self = RefPtr{this}]() {
           LOG("%s %p, worker is going away", DecoderType::Name.get(),
               self.get());
-          Unused << self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+          (void)self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
         });
     if (NS_WARN_IF(!workerRef)) {
       return false;
@@ -884,7 +900,7 @@ bool DecoderTemplate<DecoderType>::CreateDecoderAgent(
        ref = mWorkerRef](bool /* aUnUsed*/) {
         LOG("%s %p gets xpcom-will-shutdown notification for DecoderAgent #%d",
             DecoderType::Name.get(), self.get(), id);
-        Unused << self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+        (void)self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
       },
       [self = RefPtr{this}, id = mAgent->mId,
        ref = mWorkerRef](bool /* aUnUsed*/) {

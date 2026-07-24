@@ -6,6 +6,8 @@
 
 #include "mozilla/dom/Permissions.h"
 
+#include "PermissionUtils.h"
+#include "mozilla/StaticPrefs_permissions.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MidiPermissionStatus.h"
 #include "mozilla/dom/PermissionSetParametersBinding.h"
@@ -14,8 +16,6 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/StorageAccessPermissionStatus.h"
-#include "mozilla/StaticPrefs_permissions.h"
-#include "PermissionUtils.h"
 
 namespace mozilla::dom {
 

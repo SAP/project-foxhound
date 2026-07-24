@@ -4,7 +4,6 @@
 package org.mozilla.focus.onboarding
 
 import android.content.Context
-import android.os.Build
 import mozilla.components.support.test.whenever
 import org.junit.Before
 import org.junit.Test
@@ -21,7 +20,6 @@ import org.mozilla.focus.fragment.onboarding.OnboardingStorage
 import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.AppStore
 import org.mozilla.focus.utils.Settings
-import org.robolectric.annotation.Config
 
 class OnboardingControllerTest {
 
@@ -68,13 +66,5 @@ class OnboardingControllerTest {
 
         verify(settings).isFirstRun = false
         verify(appStore).dispatch(AppAction.FinishFirstRun("1"))
-    }
-
-    @Config(sdk = [Build.VERSION_CODES.M])
-    @Test
-    fun `GIVEN onBoarding and build version is M, WHEN get started button is pressed, THEN onBoarding flow must end`() {
-        onboardingController.handleGetStartedButtonClicked()
-
-        verify(onboardingController, times(1)).handleFinishOnBoarding()
     }
 }

@@ -59,16 +59,16 @@ class Cookie final : public nsICookie {
  public:
   // Generate a unique and monotonically increasing creation time. See comment
   // in Cookie.cpp.
-  static int64_t GenerateUniqueCreationTime(int64_t aCreationTime);
+  static int64_t GenerateUniqueCreationTimeInUSec(int64_t aCreationTimeInUSec);
 
   // public helper to create an Cookie object.
   static already_AddRefed<Cookie> Create(
       const CookieStruct& aCookieData,
       const OriginAttributes& aOriginAttributes);
 
-  // Same as Cookie::Create but fixes the lastAccessed and creationDates
-  // if they are set in the future.
-  // Should only get called from CookiePersistentStorage::InitDBConn
+  // Same as Cookie::Create but fixes the last accessed and creation time
+  // attributes if they are set in the future.  Should only get called from
+  // CookiePersistentStorage::InitDBConn
   static already_AddRefed<Cookie> CreateValidated(
       const CookieStruct& aCookieData,
       const OriginAttributes& aOriginAttributes);
@@ -83,13 +83,14 @@ class Cookie final : public nsICookie {
     return nsDependentCSubstring(mData.host(), IsDomain() ? 1 : 0);
   }
   inline const nsCString& Path() const { return mData.path(); }
-  inline int64_t Expiry() const { return mData.expiry(); }  // in milliseconds
-  inline int64_t LastAccessed() const {
-    return mData.lastAccessed();
-  }  // in microseconds
-  inline int64_t CreationTime() const {
-    return mData.creationTime();
-  }  // in microseconds
+  inline int64_t ExpiryInMSec() const { return mData.expiryInMSec(); }
+  inline int64_t LastAccessedInUSec() const {
+    return mData.lastAccessedInUSec();
+  }
+  inline int64_t CreationTimeInUSec() const {
+    return mData.creationTimeInUSec();
+  }
+  inline int64_t UpdateTimeInUSec() const { return mData.updateTimeInUSec(); }
   inline bool IsSession() const { return mData.isSession(); }
   inline bool IsDomain() const { return *mData.host().get() == '.'; }
   inline bool IsSecure() const { return mData.isSecure(); }
@@ -105,15 +106,24 @@ class Cookie final : public nsICookie {
   inline uint8_t SchemeMap() const { return mData.schemeMap(); }
 
   // setters
-  inline void SetExpiry(int64_t aExpiry) { mData.expiry() = aExpiry; }
-  inline void SetLastAccessed(int64_t aTime) { mData.lastAccessed() = aTime; }
+  inline void SetExpiryInMSec(int64_t aExpiryInMSec) {
+    mData.expiryInMSec() = aExpiryInMSec;
+  }
+  inline void SetLastAccessedInUSec(int64_t aTimeInUSec) {
+    mData.lastAccessedInUSec() = aTimeInUSec;
+  }
   inline void SetIsSession(bool aIsSession) { mData.isSession() = aIsSession; }
   inline bool SetIsHttpOnly(bool aIsHttpOnly) {
     return mData.isHttpOnly() = aIsHttpOnly;
   }
   // Set the creation time manually, overriding the monotonicity checks in
   // Create(). Use with caution!
-  inline void SetCreationTime(int64_t aTime) { mData.creationTime() = aTime; }
+  inline void SetCreationTimeInUSec(int64_t aTimeInUSec) {
+    mData.creationTimeInUSec() = aTimeInUSec;
+  }
+  inline void SetUpdateTimeInUSec(int64_t aTimeInUSec) {
+    mData.updateTimeInUSec() = aTimeInUSec;
+  }
   inline void SetSchemeMap(uint8_t aSchemeMap) {
     mData.schemeMap() = aSchemeMap;
   }
@@ -145,8 +155,8 @@ class Cookie final : public nsICookie {
 class CompareCookiesForSending {
  public:
   bool Equals(const nsICookie* aCookie1, const nsICookie* aCookie2) const {
-    return Cookie::Cast(aCookie1)->CreationTime() ==
-               Cookie::Cast(aCookie2)->CreationTime() &&
+    return Cookie::Cast(aCookie1)->CreationTimeInUSec() ==
+               Cookie::Cast(aCookie2)->CreationTimeInUSec() &&
            Cookie::Cast(aCookie2)->Path().Length() ==
                Cookie::Cast(aCookie1)->Path().Length();
   }
@@ -161,8 +171,8 @@ class CompareCookiesForSending {
     // required for backwards compatibility since some websites erroneously
     // depend on receiving cookies in the order in which they were sent to the
     // browser!  see bug 236772.
-    return Cookie::Cast(aCookie1)->CreationTime() <
-           Cookie::Cast(aCookie2)->CreationTime();
+    return Cookie::Cast(aCookie1)->CreationTimeInUSec() <
+           Cookie::Cast(aCookie2)->CreationTimeInUSec();
   }
 };
 

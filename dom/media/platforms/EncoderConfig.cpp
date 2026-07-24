@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EncoderConfig.h"
+
 #include "ImageContainer.h"
 #include "MP4Decoder.h"
 #include "VPXDecoder.h"
@@ -13,27 +14,8 @@
 
 namespace mozilla {
 
-CodecType EncoderConfig::CodecTypeForMime(const nsACString& aMimeType) {
-  if (MP4Decoder::IsH264(aMimeType)) {
-    return CodecType::H264;
-  }
-  if (VPXDecoder::IsVPX(aMimeType, VPXDecoder::VP8)) {
-    return CodecType::VP8;
-  }
-  if (VPXDecoder::IsVPX(aMimeType, VPXDecoder::VP9)) {
-    return CodecType::VP9;
-  }
-  MOZ_ASSERT_UNREACHABLE("Unsupported Mimetype");
-  return CodecType::Unknown;
-}
-
-const char* CodecTypeStrings[] = {
-    "BeginVideo", "H264", "VP8", "VP9",  "EndVideo", "Opus",   "Vorbis",
-    "Flac",       "AAC",  "PCM", "G722", "EndAudio", "Unknown"};
-
 nsCString EncoderConfig::ToString() const {
-  nsCString rv;
-  rv.Append(CodecTypeStrings[UnderlyingValue(mCodec)]);
+  nsCString rv(EnumValueToString(mCodec));
   rv.AppendLiteral(mBitrateMode == BitrateMode::Constant ? " (CBR)" : " (VBR)");
   rv.AppendPrintf("%" PRIu32 "bps", mBitrate);
   if (mUsage == Usage::Realtime) {
@@ -41,7 +23,7 @@ nsCString EncoderConfig::ToString() const {
   } else {
     rv.AppendLiteral(", record");
   }
-  if (mCodec > CodecType::_BeginVideo_ && mCodec < CodecType::_EndVideo_) {
+  if (IsVideo()) {
     rv.AppendPrintf(" [%dx%d]", mSize.Width(), mSize.Height());
     if (mHardwarePreference == HardwarePreference::RequireHardware) {
       rv.AppendLiteral(", hw required");
@@ -50,20 +32,35 @@ nsCString EncoderConfig::ToString() const {
     } else {
       rv.AppendLiteral(", hw: no preference");
     }
-    rv.AppendPrintf(" format: %s ", mFormat.ToString().get());
+    rv.AppendPrintf(", %s", mFormat.ToString().get());
     if (mScalabilityMode == ScalabilityMode::L1T2) {
-      rv.AppendLiteral(" (L1T2)");
+      rv.AppendLiteral(", L1T2");
     } else if (mScalabilityMode == ScalabilityMode::L1T3) {
-      rv.AppendLiteral(" (L1T3)");
+      rv.AppendLiteral(", L1T3");
     }
-    rv.AppendPrintf(", fps: %" PRIu8, mFramerate);
+    rv.AppendPrintf(", %" PRIu8 " fps", mFramerate);
     rv.AppendPrintf(", kf interval: %zu", mKeyframeInterval);
   } else {
+    MOZ_ASSERT(IsAudio());
     rv.AppendPrintf(", ch: %" PRIu32 ", %" PRIu32 "Hz", mNumberOfChannels,
                     mSampleRate);
   }
-  rv.AppendPrintf("(w/%s codec specific)",
-                  mCodecSpecific.is<void_t>() ? "o" : "");
+  const char* specificStr = "";
+  if (mCodecSpecific.is<void_t>()) {
+    specificStr = "o";
+  } else if (mCodecSpecific.is<H264Specific>()) {
+    specificStr = " H264";
+  } else if (mCodecSpecific.is<OpusSpecific>()) {
+    specificStr = " Opus";
+  } else if (mCodecSpecific.is<VP8Specific>()) {
+    specificStr = " VP8";
+  } else if (mCodecSpecific.is<VP9Specific>()) {
+    specificStr = " VP9";
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Unexpected codec specific type");
+    specificStr = " unknown";
+  }
+  rv.AppendPrintf(" (w/%s codec specific)", specificStr);
   return rv;
 };
 

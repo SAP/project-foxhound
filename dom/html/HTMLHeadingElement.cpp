@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLHeadingElement.h"
-#include "mozilla/dom/HTMLHeadingElementBinding.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/HTMLHeadingElementBinding.h"
 #include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Heading)

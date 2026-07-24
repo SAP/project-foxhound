@@ -7,7 +7,7 @@
 // In safe mode, PKCS#11 modules should not be loaded. This test tests this by
 // simulating starting in safe mode and then attempting to load a module.
 
-function run_test() {
+add_task(async function run_test() {
   do_get_profile();
 
   // Simulate starting in safe mode.
@@ -49,10 +49,17 @@ function run_test() {
   libraryFile.append("pkcs11testmodule");
   libraryFile.append(libraryName);
   ok(libraryFile.exists(), "The pkcs11testmodule file should exist");
-  throws(
-    () =>
-      pkcs11ModuleDB.addModule("PKCS11 Test Module", libraryFile.path, 0, 0),
-    /NS_ERROR_FAILURE/,
-    "addModule should throw when in safe mode"
-  );
-}
+  let caughtException = false;
+  try {
+    await pkcs11ModuleDB.addModule(
+      "PKCS11 Test Module",
+      libraryFile.path,
+      0,
+      0
+    );
+  } catch (e) {
+    caughtException = true;
+    ok(/NS_ERROR_FAILURE/.test(e), "expecting NS_ERROR_FAILURE");
+  }
+  ok(caughtException, "addModule should throw when in safe mode");
+});

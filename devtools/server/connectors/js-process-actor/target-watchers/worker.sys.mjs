@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "wdm",
   "@mozilla.org/dom/workers/workerdebuggermanager;1",
-  "nsIWorkerDebuggerManager"
+  Ci.nsIWorkerDebuggerManager
 );
 
 const { TYPE_DEDICATED, TYPE_SERVICE, TYPE_SHARED } = Ci.nsIWorkerDebugger;
@@ -166,7 +166,7 @@ export class WorkerTargetWatcherClass {
    * Instantiate a worker target actor related to a given WorkerDebugger object
    * and for a given watcher actor.
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    * @param {WorkerDebugger} dbg
    */
   async createWorkerTargetActor(watcherDataObject, dbg) {
@@ -314,14 +314,14 @@ export class WorkerTargetWatcherClass {
   /**
    * Indicates whether or not we should handle the worker debugger
    *
-   * @param {Object} sessionData
+   * @param {object} sessionData
    *        The session data for a given watcher, which includes metadata
    *        about the debugged context.
    * @param {WorkerDebugger} dbg
    *        The worker debugger we want to check.
-   * @param {String} targetType
+   * @param {string} targetType
    *        The expected worker target type.
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   shouldHandleWorker(sessionData, dbg, targetType) {
     if (!isWorkerDebuggerAlive(dbg)) {
@@ -409,12 +409,12 @@ export class WorkerTargetWatcherClass {
  * Communicate the type and entries to the Worker Target actor, via the WorkerDebugger.
  *
  * @param {WorkerDebugger} dbg
- * @param {String} workerThreadServerForwardingPrefix
- * @param {String} type
+ * @param {string} workerThreadServerForwardingPrefix
+ * @param {string} type
  *        Session data type name
  * @param {Array} entries
  *        Session data entries to add or set.
- * @param {String} updateType
+ * @param {string} updateType
  *        Either "add" or "set", to control if we should only add some items,
  *        or replace the whole data set with the new entries.
  * @returns {Promise} Returns a Promise that resolves once the data entry were handled

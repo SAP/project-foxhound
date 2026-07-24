@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _include_gfx_ipc_D3DMessageUtils_h__
-#define _include_gfx_ipc_D3DMessageUtils_h__
+#ifndef _include_gfx_ipc_D3DMessageUtils_h_
+#define _include_gfx_ipc_D3DMessageUtils_h_
 
 #include "chrome/common/ipc_message_utils.h"
 #include "ipc/IPCMessageUtils.h"
@@ -43,4 +43,4 @@ struct ParamTraits<DxgiAdapterDesc> {
 
 }  // namespace IPC
 
-#endif  // _include_gfx_ipc_D3DMessageUtils_h__
+#endif  // _include_gfx_ipc_D3DMessageUtils_h_

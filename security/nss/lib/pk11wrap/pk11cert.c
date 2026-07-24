@@ -177,6 +177,11 @@ PK11_IsUserCert(PK11SlotInfo *slot, CERTCertificate *cert,
                               pubKey->u.ec.publicValue.data,
                               pubKey->u.ec.publicValue.len);
                 break;
+            case mldsaKey:
+                PK11_SETATTRS(&theTemplate, CKA_VALUE,
+                              pubKey->u.mldsa.publicValue.data,
+                              pubKey->u.mldsa.publicValue.len);
+                break;
             case keaKey:
             case fortezzaKey:
             case kyberKey:
@@ -189,7 +194,8 @@ PK11_IsUserCert(PK11SlotInfo *slot, CERTCertificate *cert,
             SECKEY_DestroyPublicKey(pubKey);
             return PR_FALSE;
         }
-        if (pubKey->keyType != ecKey && pubKey->keyType != edKey && pubKey->keyType != ecMontKey) {
+        if (pubKey->keyType != ecKey && pubKey->keyType != edKey &&
+            pubKey->keyType != ecMontKey && pubKey->keyType != mldsaKey) {
             pk11_SignedToUnsigned(&theTemplate);
         }
         if (pk11_FindObjectByTemplate(slot, &theTemplate, 1) != CK_INVALID_HANDLE) {
@@ -1104,25 +1110,11 @@ PK11_GetPubIndexKeyID(CERTCertificate *cert)
     if (pubk == NULL)
         return NULL;
 
-    switch (pubk->keyType) {
-        case rsaKey:
-            newItem = SECITEM_DupItem(&pubk->u.rsa.modulus);
-            break;
-        case dsaKey:
-            newItem = SECITEM_DupItem(&pubk->u.dsa.publicValue);
-            break;
-        case dhKey:
-            newItem = SECITEM_DupItem(&pubk->u.dh.publicValue);
-            break;
-        case ecKey:
-        case edKey:
-        case ecMontKey:
-            newItem = SECITEM_DupItem(&pubk->u.ec.publicValue);
-            break;
-        case fortezzaKey:
-        default:
-            newItem = NULL; /* Fortezza Fix later... */
+    const SECItem *oldItem = PK11_GetPublicValueFromPublicKey(pubk);
+    if (oldItem) {
+        newItem = SECITEM_DupItem(oldItem);
     }
+
     SECKEY_DestroyPublicKey(pubk);
     /* make hash of it */
     return newItem;

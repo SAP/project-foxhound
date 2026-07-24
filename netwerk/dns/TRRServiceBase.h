@@ -12,6 +12,7 @@
 #include "nsString.h"
 #include "nsIDNSService.h"
 #include "nsIProtocolProxyService2.h"
+#include "nsTHashMap.h"
 
 class nsICancelable;
 class nsIProxyInfo;
@@ -34,8 +35,12 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
   already_AddRefed<nsHttpConnectionInfo> TRRConnectionInfo();
   // Called to initialize the connection info. Once the connection info is
   // created first time, mTRRConnectionInfoInited will be set to true.
-  virtual void InitTRRConnectionInfo();
+  // When aForceReinit is true, we always create the conncetion info again.
+  virtual void InitTRRConnectionInfo(bool aForceReinit = false);
   bool TRRConnectionInfoInited() const { return mTRRConnectionInfoInited; }
+
+  void SetHttp3FirstForServer(const nsACString& aServer, bool aEnabled);
+  bool GetHttp3FirstForServer(const nsACString& aServer);
 
  protected:
   virtual ~TRRServiceBase();
@@ -54,7 +59,6 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
   void OnTRRModeChange();
   void OnTRRURIChange();
 
-  void DoReadEtcHostsFile(ParsingCallback aCallback);
   virtual void ReadEtcHostsFile() = 0;
   // Called to create a connection info that will be used by TRRServiceChannel.
   // Note that when this function is called, mDefaultTRRConnectionInfo will be
@@ -70,6 +74,9 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
   void RegisterProxyChangeListener();
   void UnregisterProxyChangeListener();
 
+  already_AddRefed<nsHttpConnectionInfo> CreateConnInfoHelper(
+      nsIURI* aURI, nsIProxyInfo* aProxyInfo);
+
   nsCString mPrivateURI;  // protected by mMutex
   // Pref caches should only be used on the main thread.
   nsCString mURIPref;
@@ -83,6 +90,9 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
   Atomic<bool, Relaxed> mTRRConnectionInfoInited{false};
   DataMutex<RefPtr<nsHttpConnectionInfo>> mDefaultTRRConnectionInfo;
   bool mNativeHTTPSQueryEnabled{false};
+
+  Mutex mLock{"TRRService"};
+  nsTHashMap<nsCString, bool> mHttp3FirstServers MOZ_GUARDED_BY(mLock);
 };
 
 }  // namespace net

@@ -9,13 +9,12 @@
 #include <bitset>
 #include <vector>
 
-#include "mozilla/WeakPtr.h"
-
 #include "GLScreenBuffer.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
 #include "WebGLTexture.h"
 #include "WebGLTypes.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 

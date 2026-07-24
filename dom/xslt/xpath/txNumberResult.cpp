@@ -8,8 +8,6 @@
  * Represents the a number as the result of evaluating an Expr
  **/
 
-#include "mozilla/FloatingPoint.h"
-
 #include "txExprResult.h"
 
 /**

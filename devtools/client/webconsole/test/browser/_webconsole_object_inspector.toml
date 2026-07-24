@@ -1,0 +1,116 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "test-eval-in-stackframe.html",
+  "test-local-session-storage.html",
+  # head.js dependencies:
+  "head.js",
+  "shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/shared-head.js", # Required by head.js
+  "!/devtools/client/debugger/test/mochitest/shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/telemetry-test-helpers.js", # Required by /devtools/client/shared/test/shared-head.js
+  "!/devtools/client/shared/test/highlighter-test-actor.js", # Required by /devtools/client/shared/test/shared-head.js
+]
+
+["browser_webconsole_object_ctrl_click.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_in_sidebar_keyboard_nav.js"]
+
+["browser_webconsole_object_inspector.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector__proto__.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_array_getters.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_entries.js"]
+support-files = ["browser_webconsole_object_inspector_entries.snapshot.mjs"]
+tags = "object-snapshots"
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+https_first_disabled = true # JS HttpServer doesn't support https
+skip-if = [
+  "http3", # JS HttpServer doesn't support http3
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1965340
+]
+
+["browser_webconsole_object_inspector_getters.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_getters_prototype.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_getters_shadowed.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_key_sorting.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_local_session_storage.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_nested_promise.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_nested_proxy.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_private_properties.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+support-files = [
+  "page_webconsole_object_inspector_private_properties.html"
+]
+
+["browser_webconsole_object_inspector_scroll.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_selected_text.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_symbols.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_while_debugging_and_inspecting.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_object_inspector_wrapped_primitive_value.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]

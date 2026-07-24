@@ -4,15 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txExecutionState.h"
-#include "txSingleNodeContext.h"
+
 #include "txInstructions.h"
-#include "txStylesheet.h"
-#include "txVariableMap.h"
-#include "txRtfHandler.h"
-#include "txXSLTProcessor.h"
 #include "txLog.h"
+#include "txRtfHandler.h"
+#include "txSingleNodeContext.h"
+#include "txStylesheet.h"
 #include "txURIUtils.h"
+#include "txVariableMap.h"
 #include "txXMLParser.h"
+#include "txXSLTProcessor.h"
 
 using namespace mozilla;
 

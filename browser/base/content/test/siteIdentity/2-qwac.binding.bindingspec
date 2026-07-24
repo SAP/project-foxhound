@@ -1,0 +1,13 @@
+signingCertificate:
+issuer:Test CA
+subject:printableString/CN=2-QWAC/O=Test 2-QWAC Organization/L=2-QWAC Test Locality/C=EX
+extension:qcStatements:0.4.0.1862.1.1,0.4.0.1862.1.6:0.4.0.1862.1.6.3
+extension:certificatePolicies:0.4.0.194112.1.6
+extension:extKeyUsage:tlsBinding
+extension:subjectAlternativeName:bound-by-2-qwac.example.com
+:end
+certificateToBind:
+subject:Bound By 2-QWAC
+issuer:printableString/CN=Temporary Certificate Authority/O=Mozilla Testing/OU=Profile Guided Optimization
+extension:subjectAlternativeName:bound-by-2-qwac.example.com
+:end

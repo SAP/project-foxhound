@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __AboutThirdPartyUtils_h__
-#define __AboutThirdPartyUtils_h__
+#ifndef AboutThirdPartyUtils_h_
+#define AboutThirdPartyUtils_h_
 
 #include "nsString.h"
 
@@ -33,4 +33,4 @@ bool CorrectMsiComponentPath(nsAString& aPath);
 
 }  // namespace mozilla
 
-#endif  // __AboutThirdPartyUtils_h__
+#endif  // AboutThirdPartyUtils_h_

@@ -17,8 +17,8 @@ function find_slot_by_name(module, name) {
   return null;
 }
 
-function find_module_by_name(moduleDB, name) {
-  for (let slot of moduleDB.listModules()) {
+async function find_module_by_name(moduleDB, name) {
+  for (let slot of await moduleDB.listModules()) {
     if (slot.name == name) {
       return slot;
     }
@@ -47,18 +47,18 @@ const gPromptFactory = {
   getPrompt: () => gPrompt,
 };
 
-function run_test() {
+add_task(async function run_test() {
   MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
 
   let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
   libraryFile.append("pkcs11testmodule");
   libraryFile.append(ctypes.libraryName("pkcs11testmodule"));
-  loadPKCS11Module(libraryFile, "PKCS11 Test Module", false);
+  await loadPKCS11Module(libraryFile, "PKCS11 Test Module", false);
 
   let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
     Ci.nsIPKCS11ModuleDB
   );
-  let testModule = find_module_by_name(moduleDB, "PKCS11 Test Module");
+  let testModule = await find_module_by_name(moduleDB, "PKCS11 Test Module");
   notEqual(testModule, null, "should be able to find test module");
   let testSlot = find_slot_by_name(testModule, "Test PKCS11 Slot 二");
   notEqual(testSlot, null, "should be able to find 'Test PKCS11 Slot 二'");
@@ -123,7 +123,7 @@ function run_test() {
   let bundle = Services.strings.createBundle(
     "chrome://pipnss/locale/pipnss.properties"
   );
-  let internalModule = find_module_by_name(
+  let internalModule = await find_module_by_name(
     moduleDB,
     "NSS Internal PKCS #11 Module"
   );
@@ -158,4 +158,4 @@ function run_test() {
     bundle.GetStringFromName("ManufacturerID"),
     "key slot should have expected 'manID'"
   );
-}
+});

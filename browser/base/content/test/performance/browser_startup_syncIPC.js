@@ -16,7 +16,7 @@ const SKELETONUI = Services.prefs.getBoolPref(
 );
 // GPUPROCESS is approximate; any check for this should have "ignoreIfUnused: true".
 const GPUPROCESS =
-  ((WIN || LINUX) &&
+  ((WIN || LINUX || MAC) &&
     Services.prefs.getBoolPref("layers.gpu-process.enabled")) ||
   Services.prefs.getBoolPref("layers.gpu-process.force-enabled");
 

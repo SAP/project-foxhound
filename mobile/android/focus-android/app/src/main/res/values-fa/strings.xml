@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -29,7 +36,7 @@
   -->
   <string name="search_hint">جست‌وجو برای %1$s</string>
   <!-- Menu item: Share the currently visible page -->
-  <string name="menu_share">اشتراک‌گذاری…</string>
+  <string name="menu_share">هم‌رسانی…</string>
   <!-- Menu item: Report an issue on the current site -->
   <string name="menu_report_site_issue">گزارش مشکل در پایگاه</string>
   <!--
@@ -82,7 +89,7 @@
     This is the title of a dialog that shows all the share targets (apps or contacts) when
     sharing an URL.
   -->
-  <string name="share_dialog_title">اشتراک‌گذاری از طریق</string>
+  <string name="share_dialog_title">هم‌رسانی از طریق</string>
   <string name="notification_erase_text">پاک کردن تاریخچهٔ مرورگر</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">باز کردن</string>
@@ -136,7 +143,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s شما را تحت کنترل قرار می‌دهد.</p> <p>از این به عنوان یک مرورگر خصوصی استفاده کنید: <ul> <li>مستقیما در برنامه جست‌وجو و مرور کنید</li> <li>ردیاب‌ها را مسدود کنید (یا تنظیمات را برای اجازه دادن به ردیاب‌ها تغییر دهید)</li> <li>کوکی‌ها را مانند جست‌وجو و تاریخچه مرور پاک یا حذف کنید</li> </ul> </p> <p>%1$s توسط موزیلا ساخته شده است. ماموریت ما تا رواج یک اینترنت سالم و باز است.<br/> <a href=\"%2$s\">بیشتر بدانید</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s شما را تحت کنترل قرار می‌دهد.</p>\n<p>از این به عنوان یک مرورگر خصوصی استفاده کنید:\n<ul>\n<li>مستقیما در برنامه جست‌وجو و مرور کنید</li>\n<li>ردیاب‌ها را مسدود کنید (یا تنظیمات را برای اجازه دادن به ردیاب‌ها تغییر دهید)</li>\n<li>کوکی‌ها را مانند جست‌وجو و تاریخچه مرور پاک یا حذف کنید</li>\n</ul> </p>\n<p>%1$s توسط موزیلا ساخته شده است. ماموریت ما تا رواج یک اینترنت سالم و باز است.<br/>\n<a href=\"%2$s\">بیشتر بدانید</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">اطلاعات بیشتر</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">حریم خصوصی و امنیت</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -307,8 +316,11 @@
   <string name="preference_mozilla_telemetry_summary">اطلاعات بیشتر</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
   <string name="preference_mozilla_telemetry_summary2">موزیلا تلاش می‌کند تنها اطلاعاتی که برای بهینه‌سازی %1$s برای همه به آنها نیاز دارد را جمع‌آوری کند.</string>
+  <string name="preference_daily_usage_ping_learn_more">اطلاعات بیشتر</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">نکات حریم‌خصوصی</string>
+  <!-- Link to Focus Crash reports list. -->
+  <string name="preference_crashes">ازکارافتادگی‌ها</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="preference_about">درباره %1$s</string>
   <!-- Header for the list of installed search engines -->
@@ -430,6 +442,8 @@
   <string name="onboarding_first_screen_title">به %1$s خوش‌ آمدید</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">سریع. خصوصی. بدون حواس پرتی.</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">ادامه</string>
   <!--
     Onboarding second screen: Title
 
@@ -497,7 +511,7 @@
   <string name="download_firefox" tools:ignore="BrandUsage">دریافت فایرفاکس</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">نام کاربری</string>
-  <string name="gv_prompt_password_hint">کلمه عبور</string>
+  <string name="gv_prompt_password_hint">گذرواژه</string>
   <string name="gv_prompt_clear">پاک کردن</string>
   <!--
     Text shown in Security Information Popup
@@ -545,6 +559,18 @@
   <string name="preferences_open_links_in_apps">باز کردن پیوندها در برنامه‌ها</string>
   <!-- Title of Advanced Setting category -->
   <string name="preference_category_advanced">پیشرفته</string>
+  <!-- Text for request support button indicating that cookie banner reduction is not supported for the current site, this is shown as part of the cookie banner panel in the toolbar. -->
+  <string name="cookie_banner_exception_panel_site_is_not_supported_request_support_button">درخواست پشتیبانی</string>
+  <!-- CFR for Cookie Banner (Banner Info Message). This string is used as text for a link in cfr_cookie_banner and takes the user to the app settings. -->
+  <string name="cfr_cookie_banner_link">تنظیمات</string>
+  <!-- Preference for autoplay -->
+  <string name="preference_autoplay">پخش خودکار</string>
+  <!-- Button label that take the user to the Android App setting -->
+  <string name="phone_feature_go_to_settings">برو به تنظیمات</string>
+  <!-- Preference for altering the camera access for all websites -->
+  <string name="preference_phone_feature_camera">دوربین</string>
+  <!-- Preference for altering the notification access for all websites -->
+  <string name="preference_phone_feature_notification">آگاه‌سازی</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">اشکال زدایی از طریق USB/Wi-Fi</string>
   <!--
@@ -642,7 +668,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">بستن زبانه</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">ارسال گزارش خرابی ها به موزیلا</string>
+  <string name="crash_report_send_crash_label">ارسال گزارش ازکارافتادگی به Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -675,6 +701,8 @@
     Text for the menu button to remove a top site
   -->
   <string name="remove_top_site">حذف</string>
+  <!-- Text for the menu item to remove a top site -->
+  <string name="rename_top_site_item">تغییر نام</string>
   <!-- Text for the dialog title for renaming a top site -->
   <string name="rename_top_site">تغییر نام</string>
   <!--
@@ -703,4 +731,10 @@
   -->
   <string name="close_tab">بستن زبانه</string>
   <!-- Promote SearchWidget Dialog -->
+
+  <!--
+    Content description (not visible, for screen readers etc.): This is the description for the
+    close button from promote search widget dialog.
+  -->
+  <string name="promote_search_widget_dialog_content_description">بستن</string>
 </resources>

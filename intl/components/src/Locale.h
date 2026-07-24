@@ -20,7 +20,6 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Try.h"
 #include "mozilla/TypedEnumBits.h"
-#include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 
 #include <algorithm>
@@ -423,13 +422,10 @@ class MOZ_STACK_CLASS Locale final {
    * Set the variant subtags. Each element must be a valid variant subtag.
    */
   void SetVariants(VariantsVector&& aVariants) {
-#ifdef DEBUG
-    // See bug 1583449 for why the lambda can't be in the MOZ_ASSERT.
-    auto isValidVariant = [](const auto& variant) {
-      return IsStructurallyValidVariantTag(variant.Span());
-    };
-#endif
-    MOZ_ASSERT(std::all_of(aVariants.begin(), aVariants.end(), isValidVariant));
+    MOZ_ASSERT(std::all_of(
+        aVariants.begin(), aVariants.end(), [](const auto& variant) {
+          return IsStructurallyValidVariantTag(variant.Span());
+        }));
     mVariants = std::move(aVariants);
   }
 

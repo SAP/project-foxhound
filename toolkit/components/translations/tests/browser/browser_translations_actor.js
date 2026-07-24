@@ -228,8 +228,10 @@ add_task(async function test_translating_to_and_from_app_language() {
    */
   function getUniqueLanguagePairs(records) {
     const langPairs = new Set();
-    for (const { fromLang, toLang, variant } of records) {
-      langPairs.add(TranslationsParent.nonPivotKey(fromLang, toLang, variant));
+    for (const { sourceLanguage, targetLanguage, variant } of records) {
+      langPairs.add(
+        TranslationsParent.nonPivotKey(sourceLanguage, targetLanguage, variant)
+      );
     }
     return Array.from(langPairs)
       .sort()

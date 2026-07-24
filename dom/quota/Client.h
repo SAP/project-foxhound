@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_client_h__
-#define mozilla_dom_quota_client_h__
+#ifndef mozilla_dom_quota_client_h_
+#define mozilla_dom_quota_client_h_
 
 #include "ErrorList.h"
 #include "mozilla/Atomics.h"
@@ -191,4 +191,4 @@ class Client {
 
 }  // namespace mozilla::dom::quota
 
-#endif  // mozilla_dom_quota_client_h__
+#endif  // mozilla_dom_quota_client_h_

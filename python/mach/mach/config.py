@@ -83,6 +83,30 @@ class BooleanType(ConfigType):
         return "true" if value else "false"
 
 
+class NullableBooleanType(ConfigType):
+    """ConfigType for nullable boolean: True, False, or None."""
+
+    @staticmethod
+    def validate(value):
+        if value is not None and not isinstance(value, bool):
+            raise TypeError()
+
+    @staticmethod
+    def from_config(config, section, option):
+        value = config.get(section, option).lower()
+        if value == "true":
+            return True
+        elif value == "false":
+            return False
+        return None
+
+    @staticmethod
+    def to_config(value):
+        if value is None:
+            return "unknown"
+        return "true" if value else "false"
+
+
 class IntegerType(ConfigType):
     @staticmethod
     def validate(value):
@@ -118,6 +142,7 @@ class PathType(StringType):
 TYPE_CLASSES = {
     "string": StringType,
     "boolean": BooleanType,
+    "nullable_boolean": NullableBooleanType,
     "int": IntegerType,
     "pos_int": PositiveIntegerType,
     "path": PathType,

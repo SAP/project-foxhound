@@ -7,8 +7,8 @@
 #include "mozilla/dom/cache/TypeUtils.h"
 
 #include <algorithm>
+
 #include "mozilla/StaticPrefs_extensions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/CacheStorageBinding.h"
 #include "mozilla/dom/FetchTypes.h"
@@ -20,10 +20,10 @@
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/InputStreamUtils.h"
-#include "nsCharSeparatedTokenizer.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "nsCOMPtr.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsHttp.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "nsPromiseFlatString.h"

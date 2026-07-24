@@ -38,7 +38,7 @@ async function sendRequest(path, request) {
     {
       extraArgs: [
         `http://localhost:${server.identity.primaryPort}${path}`,
-        "testUserAgent/1",
+        "testUserAgent/1 (foo bar)",
         request,
       ],
     }
@@ -56,7 +56,7 @@ const EXTRA_DATA = JSON.stringify({
 server.registerPathHandler("/mime_post", (request, response) => {
   response.processAsync();
   (async () => {
-    Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1");
+    Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1 (foo bar)");
     Assert.equal(request.method, "POST");
     const body = CommonUtils.readBytesFromInputStream(request.bodyInputStream);
     const data = await new Response(body, {
@@ -115,7 +115,7 @@ add_task(async function test_mime_post() {
 server.registerPathHandler("/post", (request, response) => {
   response.processAsync();
   Assert.equal(request.method, "POST");
-  Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1");
+  Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1 (foo bar)");
   Assert.equal(request.getHeader("Foo"), "Bar");
   const body = CommonUtils.readBytesFromInputStream(request.bodyInputStream);
   Assert.deepEqual(Array.from(new TextEncoder().encode(body)), [1, 2, 3, 4, 5]);

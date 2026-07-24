@@ -33,10 +33,9 @@ easier to analyze.
 #. Launch the browser and get it into whatever state you need to be in
    just before your bug occurs.
 #. Open a new tab and type in "about:logging" into the URL bar.
-#. Adjust the location of the log file if you don't like the default
 #. Adjust the list of modules that you want to log: this list has the
    exact same format as the MOZ_LOG environment variable (see below).
-   Generally the default list is OK, unless a Mozilla developer has told
+   Generally the default list is OK, unless a Firefox developer has told
    you to modify it.
 
    * For cookie issues, use presets ``Cookies``
@@ -44,19 +43,26 @@ easier to analyze.
    * For HTTP/3 or QUIC issues, use presets ``HTTP/3``
    * For other networking issues, use presets ``Networking``
 
+#. If instructed to do so by a developer, select `Logging to a file` and
+   note the path to the log file.
 #. Click on Start Logging.
 #. Reproduce the bug (i.e. go to the web site that is broken for you and
    make the bug happen in the browser)
-#. Make a note of the value of "Current Log File".
 #. Click on Stop Logging.
-#. Go to the folder containing the specified log file, and gather all
-   the log files. You will see several files that look like:
+#. If logging to the profiler, a new tab will open with the profile.
+   Click `Upload Local Profile` and either upload to the cloud and copy
+   the URL, or download the dump to your local device. Note that
+   unchecking the boxes will sanitize the profile to remove some private
+   information, but that could make it more difficult to diagnose the problem.
+#. Provide the link or dump to the Firefox developer via bugzilla or email.
+#. If logging to a file, go to the folder containing the specified log file,
+   and gather all the log files. You will see several files that look like:
    log.txt-main.1806.moz_log, log.txt-child.1954.moz_log,
    log.txt-child.1970.moz_log, etc.  This is because Firefox now uses
    multiple processes, and each process gets its own log file.
 #. For many bugs, the "log.txt-main.moz_log" file is the only thing you need to
    upload as a file attachment to your Bugzilla bug (this is assuming
-   you're logging to help a mozilla developer).  Other bugs may require
+   you're logging to help a firefox developer).  Other bugs may require
    all the logs to be uploaded--ask the developer if you're not sure.
 #. Pat yourself on the back--a job well done!  Thanks for helping us
    debug Firefox.

@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use neqo_common::{Datagram, Ecn, Tos};
+use neqo_common::{event::Provider as _, Datagram, Ecn, Tos};
 use strum::IntoEnumIterator as _;
 use test_fixture::{
     assertions::{assert_v4_path, assert_v6_path},
@@ -21,8 +21,8 @@ use crate::{
         send_with_modifier_and_receive, DEFAULT_RTT,
     },
     ecn, packet,
-    path::MAX_PATH_PROBES,
-    ConnectionId, ConnectionParameters, StreamType,
+    path::Path,
+    ConnectionEvent, ConnectionId, ConnectionParameters, Output, StreamType,
 };
 
 fn assert_ecn_enabled(tos: Tos) {
@@ -74,6 +74,8 @@ fn drop_ecn_marked_datagrams() -> fn(Datagram) -> Option<Datagram> {
     |d| (!d.tos().is_ecn_marked()).then_some(d)
 }
 
+/// Given that ECN validation only starts after the handshake, it does not delay
+/// connection establishment.
 #[test]
 fn handshake_delay_with_ecn_blackhole() {
     let start = now();
@@ -94,8 +96,73 @@ fn handshake_delay_with_ecn_blackhole() {
 
     assert_eq!(
         (finish - start).as_millis() / DEFAULT_RTT.as_millis(),
-        45,
-        "expected 3 RTT for first client PTO + 6 RTT for second PTO + 12 RTT for third PTO + another 21 RTT for the same on the server side + 3 RTT for handshake to be confirmed",
+        3,
+        "expect ECN path validation to start after handshake",
+    );
+}
+
+#[test]
+fn request_response_delay_after_handshake_with_ecn_blackhole() {
+    let mut now = now();
+    let mut client = new_client(ConnectionParameters::default().mlkem(false));
+    let mut server = default_server();
+    now = handshake_with_modifier(
+        &mut client,
+        &mut server,
+        now,
+        DEFAULT_RTT,
+        drop_ecn_marked_datagrams(),
+    );
+
+    let start = now;
+    let stream_id = client.stream_create(StreamType::BiDi).unwrap();
+    client.stream_send(stream_id, b"ping").unwrap();
+    client.stream_close_send(stream_id).unwrap();
+
+    // Wait for client to send a non-ECN-marked datagram.
+    let client_dg = loop {
+        match client.process_output(now) {
+            Output::Datagram(dg) if !dg.tos().is_ecn_marked() => break dg,
+            Output::Callback(dur) => now += dur,
+            _ => {}
+        }
+    };
+
+    server.process_input(client_dg, now);
+    let stream_id = server
+        .events()
+        .find_map(|e| match e {
+            ConnectionEvent::RecvStreamReadable { stream_id, .. } => Some(stream_id),
+            _ => None,
+        })
+        .unwrap();
+    let mut buf = vec![];
+    server.stream_recv(stream_id, &mut buf).unwrap();
+    server.stream_send(stream_id, b"pong").unwrap();
+    server.stream_close_send(stream_id).unwrap();
+
+    // Wait for server to send a non-ECN-marked datagram.
+    let server_dg = loop {
+        match server.process_output(now) {
+            Output::Datagram(dg) if !dg.tos().is_ecn_marked() => break dg,
+            Output::Callback(dur) => now += dur,
+            _ => {}
+        }
+    };
+
+    client.process_input(server_dg, now);
+    client
+        .events()
+        .find_map(|e| match e {
+            ConnectionEvent::RecvStreamReadable { stream_id, .. } => Some(stream_id),
+            _ => None,
+        })
+        .unwrap();
+
+    assert_eq!(
+        (now - start).as_millis() / DEFAULT_RTT.as_millis(),
+        8,
+        "expect ECN path validation to start after handshake",
     );
 }
 
@@ -113,22 +180,22 @@ fn migration_delay_to_ecn_blackhole() {
         .migrate(Some(DEFAULT_ADDR_V4), Some(DEFAULT_ADDR_V4), false, now)
         .unwrap();
 
-    // The client should send MAX_PATH_PROBES path challenges with ECN enabled, and then another
-    // MAX_PATH_PROBES without ECN.
+    // The client should send Path::MAX_PROBES path challenges with ECN enabled, and then another
+    // Path::MAX_PROBES without ECN.
     let mut probes = 0;
-    while probes < MAX_PATH_PROBES * 2 {
+    while probes < Path::MAX_PROBES * 2 {
         match client.process_output(now) {
-            crate::Output::Callback(t) => {
+            Output::Callback(t) => {
                 now += t;
             }
-            crate::Output::Datagram(d) => {
+            Output::Datagram(d) => {
                 // The new path is IPv4.
                 if d.source().is_ipv4() {
                     // This should be a PATH_CHALLENGE.
                     probes += 1;
                     assert_eq!(client.stats().frame_tx.path_challenge, probes);
                     assert_path_challenge_min_len(&client, &d, now);
-                    if probes <= MAX_PATH_PROBES {
+                    if probes <= Path::MAX_PROBES {
                         // The first probes should be sent with ECN.
                         assert_ecn_enabled(d.tos());
                     } else {
@@ -137,7 +204,7 @@ fn migration_delay_to_ecn_blackhole() {
                     }
                 }
             }
-            crate::Output::None => panic!("unexpected output"),
+            Output::None => panic!("unexpected output"),
         }
     }
 }
@@ -150,7 +217,9 @@ fn debug() {
         "stats for\u{0020}
   rx: 0 drop 0 dup 0 saved 0
   tx: 0 lost 0 lateack 0 ptoack 0 unackdrop 0
-  pmtud: 0 sent 0 acked 0 lost 0 change 0 iface_mtu 0 pmtu
+  cc: ce_loss 0 ce_ecn 0 ce_spurious 0
+  ss_exit: false
+  pmtud: 0 sent 0 acked 0 lost 0 iface_mtu 0 pmtu
   resumed: false
   frames rx:
     crypto 0 done 0 token 0 close 0
@@ -289,7 +358,7 @@ pub fn migration_with_modifiers(
     connect_force_idle_with_modifier(&mut client, &mut server, orig_path_modifier);
     let mut now = now();
 
-    // Right after the handshake, the ECN validation should still be in progress.
+    // Right after the handshake, the ECN validation should be in progress.
     let client_pkt = send_something(&mut client, now);
     assert_ecn_enabled(client_pkt.tos());
     server.process_input(orig_path_modifier(client_pkt).unwrap(), now);
@@ -383,7 +452,7 @@ pub fn migration_with_modifiers(
         let client_confirmation = client.process_output(now).dgram().unwrap();
         assert_v4_path(&client_confirmation, false);
 
-        // The server has now sent 2 packets, so it is blocked on the pacer.  Wait.
+        // The server has now sent 2 packets, so it is blocked on the pacer. Wait.
         let server_pacing = server.process_output(now).callback();
         assert_ne!(server_pacing, Duration::new(0, 0));
         // ... then confirm that the server sends on the new path still.

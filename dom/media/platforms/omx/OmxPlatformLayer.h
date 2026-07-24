@@ -10,9 +10,8 @@
 #  include "OMX_Core.h"
 #  include "OMX_Types.h"
 #  include "OMX_Video.h"
-
-#  include "nsStringFwd.h"
 #  include "OmxPromiseLayer.h"
+#  include "nsStringFwd.h"
 
 namespace mozilla {
 

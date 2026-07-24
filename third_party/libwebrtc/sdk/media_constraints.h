@@ -16,8 +16,8 @@
 #ifndef SDK_MEDIA_CONSTRAINTS_H_
 #define SDK_MEDIA_CONSTRAINTS_H_
 
-#include <stddef.h>
-
+#include <cstddef>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -118,7 +118,7 @@ void CopyConstraintsIntoRtcConfiguration(
 
 // Copy all relevant constraints into an AudioOptions object.
 void CopyConstraintsIntoAudioOptions(const MediaConstraints* constraints,
-                                     cricket::AudioOptions* options);
+                                     AudioOptions* options);
 
 bool CopyConstraintsIntoOfferAnswerOptions(
     const MediaConstraints* constraints,

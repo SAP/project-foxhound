@@ -6,12 +6,13 @@
 
 #include "SVGTransformListSMILType.h"
 
+#include <math.h>
+
+#include "SVGTransform.h"
+#include "SVGTransformList.h"
 #include "mozilla/SMILValue.h"
 #include "nsCRT.h"
 #include "nsMathUtils.h"
-#include "SVGTransformList.h"
-#include "SVGTransform.h"
-#include <math.h>
 
 using namespace mozilla::dom::SVGTransform_Binding;
 

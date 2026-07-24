@@ -7,12 +7,13 @@
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
     /// Whether a crash report should be sent.
+    #[serde(default = "default_true")]
     pub submit_report: bool,
     /// Whether the URL that was open should be included in a sent report.
+    #[serde(default = "default_true")]
     pub include_url: bool,
     /// Whether hardware tests (such as memory tests) are enabled
-    // This is a new field, so might be missing in previously stored settings
-    #[serde(default = "missing_test_hardware")]
+    #[serde(default = "default_true")]
     pub test_hardware: bool,
 }
 
@@ -43,6 +44,6 @@ impl Settings {
     }
 }
 
-fn missing_test_hardware() -> bool {
+fn default_true() -> bool {
     true
 }

@@ -25,7 +25,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/URLPreloader.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Services.h"
 #include "mozilla/Try.h"
@@ -46,8 +45,6 @@
 #include "nsIObserverService.h"
 #include "nsReadableUtils.h"
 #include "nsXULAppAPI.h"
-
-#include <stdlib.h>
 
 namespace mozilla {
 
@@ -211,8 +208,7 @@ static_assert(sizeof STRUCTURED_CLONE_MAGIC % 8 == 0,
 static Result<nsCString, nsresult> ReadFileLZ4(nsIFile* file) {
   static const char MAGIC_NUMBER[] = "mozLz40";
 
-  nsCString lz4;
-  MOZ_TRY_VAR(lz4, URLPreloader::ReadFile(file));
+  nsCString lz4 = MOZ_TRY(URLPreloader::ReadFile(file));
 
   if (lz4.IsEmpty()) {
     return lz4;
@@ -256,7 +252,7 @@ static Result<FileLocation, nsresult> GetFileLocation(nsIURI* uri) {
     nsCString entry;
     MOZ_TRY(ParseJARURI(uri, getter_AddRefs(fileURI), entry));
 
-    MOZ_TRY_VAR(file, GetFile(fileURI));
+    file = MOZ_TRY(GetFile(fileURI));
 
     location.Init(file, entry);
   }
@@ -440,8 +436,7 @@ Result<nsCOMPtr<nsIFile>, nsresult> Addon::FullPath() {
 }
 
 Result<bool, nsresult> Addon::UpdateLastModifiedTime() {
-  nsCOMPtr<nsIFile> file;
-  MOZ_TRY_VAR(file, FullPath());
+  nsCOMPtr<nsIFile> file = MOZ_TRY(FullPath());
 
   JS::Rooted<JSObject*> obj(mCx, mObject);
 
@@ -525,8 +520,7 @@ nsresult AddonManagerStartup::ReadStartupData(
 
       if (addon.Enabled() &&
           (shouldCheck || addon.ShouldCheckStartupModifications())) {
-        bool changed;
-        MOZ_TRY_VAR(changed, addon.UpdateLastModifiedTime());
+        bool changed = MOZ_TRY(addon.UpdateLastModifiedTime());
         if (changed) {
           loc.SetChanged(true);
         }
@@ -540,25 +534,27 @@ nsresult AddonManagerStartup::ReadStartupData(
 nsresult AddonManagerStartup::EncodeBlob(JS::Handle<JS::Value> value,
                                          JSContext* cx,
                                          JS::MutableHandle<JS::Value> result) {
-  StructuredCloneData holder;
+  auto holder = MakeRefPtr<StructuredCloneData>(
+      JS::StructuredCloneScope::DifferentProcess,
+      dom::StructuredCloneHolder::TransferringNotSupported);
 
   ErrorResult rv;
-  holder.Write(cx, value, rv);
+  holder->Write(cx, value, rv);
+  rv.WouldReportJSException();
   if (rv.Failed()) {
     return rv.StealNSResult();
   }
 
   nsAutoCString scData;
 
-  bool ok =
-      holder.Data().ForEachDataChunk([&](const char* aData, size_t aSize) {
+  bool ok = holder->BufferData().ForEachDataChunk(
+      [&](const char* aData, size_t aSize) {
         return scData.Append(nsDependentCSubstring(aData, aSize),
                              mozilla::fallible);
       });
   NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
 
-  nsCString lz4;
-  MOZ_TRY_VAR(lz4, EncodeLZ4(scData, STRUCTURED_CLONE_MAGIC));
+  nsCString lz4 = MOZ_TRY(EncodeLZ4(scData, STRUCTURED_CLONE_MAGIC));
 
   JS::Rooted<JSObject*> obj(cx, dom::ArrayBuffer::Create(cx, lz4, rv));
   RETURN_NSRESULT_ON_FAILURE(rv);
@@ -575,8 +571,6 @@ nsresult AddonManagerStartup::DecodeBlob(JS::Handle<JS::Value> value,
                      JS::ArrayBufferHasData(&value.toObject()),
                  NS_ERROR_INVALID_ARG);
 
-  StructuredCloneData holder;
-
   nsCString data;
   {
     JS::AutoCheckCannotGC nogc;
@@ -590,14 +584,23 @@ nsresult AddonManagerStartup::DecodeBlob(JS::Handle<JS::Value> value,
         reinterpret_cast<char*>(JS::GetArrayBufferData(obj, &isShared, nogc)),
         uint32_t(len));
 
-    MOZ_TRY_VAR(data, DecodeLZ4(lz4, STRUCTURED_CLONE_MAGIC));
+    data = MOZ_TRY(DecodeLZ4(lz4, STRUCTURED_CLONE_MAGIC));
   }
 
-  bool ok = holder.CopyExternalData(data.get(), data.Length());
+  auto holder = MakeRefPtr<StructuredCloneData>(
+      JS::StructuredCloneScope::DifferentProcess,
+      dom::StructuredCloneHolder::TransferringNotSupported);
+  // FIXME: This currently assumes the data on disk was serialized with the same
+  // JS_STRUCTURED_CLONE_VERSION as the current binary. This should probably be
+  // improved to avoid migration issues if JS_STRUCTURED_CLONE_VERSION is bumped
+  // in the future.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=2014441
+  bool ok = holder->CopyExternalData(data.get(), data.Length(),
+                                     JS_STRUCTURED_CLONE_VERSION);
   NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
 
   ErrorResult rv;
-  holder.Read(cx, result, rv);
+  holder->Read(cx, result, rv);
   return rv.StealNSResult();
 }
 
@@ -620,8 +623,7 @@ static nsresult EnumerateZip(nsIZipReader* zip, const nsACString& pattern,
 nsresult AddonManagerStartup::EnumerateJAR(nsIURI* uri,
                                            const nsACString& pattern,
                                            nsTArray<nsString>& results) {
-  nsCOMPtr<nsIZipReaderCache> zipCache;
-  MOZ_TRY_VAR(zipCache, GetJarCache());
+  nsCOMPtr<nsIZipReaderCache> zipCache = MOZ_TRY(GetJarCache());
 
   nsCOMPtr<nsIZipReader> zip;
   nsCOMPtr<nsIFile> file;
@@ -630,11 +632,11 @@ nsresult AddonManagerStartup::EnumerateJAR(nsIURI* uri,
     nsCString entry;
     MOZ_TRY(ParseJARURI(jarURI, getter_AddRefs(fileURI), entry));
 
-    MOZ_TRY_VAR(file, GetFile(fileURI));
+    file = MOZ_TRY(GetFile(fileURI));
     MOZ_TRY(
         zipCache->GetInnerZip(file, Substring(entry, 1), getter_AddRefs(zip)));
   } else {
-    MOZ_TRY_VAR(file, GetFile(uri));
+    file = MOZ_TRY(GetFile(uri));
     MOZ_TRY(zipCache->GetZip(file, getter_AddRefs(zip)));
   }
   MOZ_ASSERT(zip);
@@ -720,7 +722,7 @@ class RegistryEntries final : public nsIJSRAIIHelper,
   void Register();
 
  protected:
-  virtual ~RegistryEntries() { Unused << Destruct(); }
+  virtual ~RegistryEntries() { (void)Destruct(); }
 
  private:
   FileLocation mLocation;
@@ -790,8 +792,7 @@ AddonManagerStartup::RegisterChrome(nsIURI* manifestURI,
   NS_ENSURE_ARG_POINTER(manifestURI);
   NS_ENSURE_TRUE(IsArray(locations), NS_ERROR_INVALID_ARG);
 
-  FileLocation location;
-  MOZ_TRY_VAR(location, GetFileLocation(manifestURI));
+  FileLocation location = MOZ_TRY(GetFileLocation(manifestURI));
 
   nsTArray<RegistryEntries::Locale> locales;
   nsTArray<ContentEntry> content;

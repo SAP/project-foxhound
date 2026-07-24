@@ -22,7 +22,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 
 class GrRecordingContext;
 class SkPaint;
@@ -39,12 +38,14 @@ SkSurface_Base::~SkSurface_Base() {
     // in case the canvas outsurvives us, we null the callback
     if (fCachedCanvas) {
         fCachedCanvas->setSurfaceBase(nullptr);
+        fCachedCanvas->onSurfaceDelete();
     }
 }
 
 GrRecordingContext* SkSurface_Base::onGetRecordingContext() const { return nullptr; }
 
 skgpu::graphite::Recorder* SkSurface_Base::onGetRecorder() const { return nullptr; }
+SkRecorder* SkSurface_Base::onGetBaseRecorder() const { return nullptr; }
 
 void SkSurface_Base::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
                             const SkSamplingOptions& sampling, const SkPaint* paint) {

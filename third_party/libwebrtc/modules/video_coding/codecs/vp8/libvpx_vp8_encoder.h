@@ -11,18 +11,22 @@
 #ifndef MODULES_VIDEO_CODING_CODECS_VP8_LIBVPX_VP8_ENCODER_H_
 #define MODULES_VIDEO_CODING_CODECS_VP8_LIBVPX_VP8_ENCODER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <string>
-#include <utility>
+#include <optional>
 #include <vector>
 
-#include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
 #include "api/fec_controller_override.h"
-#include "api/field_trials_view.h"
+#include "api/scoped_refptr.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/vp8_frame_buffer_controller.h"
 #include "api/video_codecs/vp8_frame_config.h"
@@ -30,12 +34,13 @@
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/utility/corruption_detection_settings_generator.h"
+#include "modules/video_coding/utility/frame_sampler.h"
 #include "modules/video_coding/utility/framerate_controller_deprecated.h"
-#include "modules/video_coding/utility/vp8_constants.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
+#include "rtc_base/experiments/psnr_experiment.h"
 #include "rtc_base/experiments/rate_control_settings.h"
-#include "vpx/vp8cx.h"
-#include "vpx/vpx_encoder.h"
+#include "third_party/libvpx/source/libvpx/vpx/vpx_encoder.h"
+#include "third_party/libvpx/source/libvpx/vpx/vpx_image.h"
 
 namespace webrtc {
 
@@ -108,8 +113,8 @@ class LibvpxVp8Encoder : public VideoEncoder {
   // as a result, allowing the caller to keep references to them until after
   // encoding has finished. On failure to convert the buffer, an empty list is
   // returned.
-  std::vector<rtc::scoped_refptr<VideoFrameBuffer>> PrepareBuffers(
-      rtc::scoped_refptr<VideoFrameBuffer> buffer);
+  std::vector<scoped_refptr<VideoFrameBuffer>> PrepareBuffers(
+      scoped_refptr<VideoFrameBuffer> buffer);
 
   const Environment env_;
   const std::unique_ptr<LibvpxInterface> libvpx_;
@@ -152,6 +157,11 @@ class LibvpxVp8Encoder : public VideoEncoder {
 
   std::unique_ptr<CorruptionDetectionSettingsGenerator>
       corruption_detection_settings_generator_;
+
+  // Determine whether the frame should be sampled for PSNR.
+  // TODO(webrtc:388070060): Remove after rollout.
+  const PsnrExperiment psnr_experiment_;
+  FrameSampler psnr_frame_sampler_;
 };
 
 }  // namespace webrtc

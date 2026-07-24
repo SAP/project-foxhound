@@ -9,7 +9,6 @@
 
 #include "LauncherProcessWin.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
-#include "mozilla/Maybe.h"
 #include "nsWindowsHelpers.h"
 
 namespace mozilla {

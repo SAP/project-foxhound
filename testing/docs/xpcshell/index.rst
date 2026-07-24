@@ -318,6 +318,45 @@ listed under the ``[DEFAULT]`` section of the manifest.
 ``[test_*]``
    Test file names must start with ``test_`` and are listed in square
    brackets
+``requesttimeoutfactor``
+   A multiplier applied to the default test timeout. The default timeout for
+   xpcshell tests is 30 seconds. Setting ``requesttimeoutfactor = 2`` will
+   increase the timeout to 60 seconds (30 × 2). This can be set either at the
+   manifest level (under ``[DEFAULT]``) to apply to all tests, or on individual
+   test entries to apply only to specific tests.
+
+   **Important:** Slower platforms (such as Android, debug builds, TSan, ASan) already
+   have platform-wide timeout factors defined in ``taskcluster/kinds/test/xpcshell.yml``
+   that apply to all tests running on those platforms. These platform factors are
+   multiplied with any manifest-level or test-level factors you specify. Therefore,
+   you should **not** set ``requesttimeoutfactor`` in manifests simply because a
+   platform is generally slower—only use it when a specific test needs extra time
+   beyond what the platform factor already provides.
+
+   This should be used when tests legitimately require more time due to:
+
+   - Specific tests being disproportionately slower on certain platforms (beyond the general platform slowness)
+   - Complex operations that take longer than the default timeout (e.g., large database operations, extensive network tests)
+   - Tests that run multiple time-consuming operations sequentially
+
+   You should **not** use this for tests that are slow due to inefficient test code
+   or unnecessary waits. Consider profiling and refactoring such tests instead.
+
+   Example usage in a manifest:
+
+   .. code:: toml
+
+      [DEFAULT]
+      # Apply a 2x timeout factor to all tests in this manifest
+      requesttimeoutfactor = 2
+
+      ["test_slow_on_windows.js"]
+      # This test needs 3x timeout (90 seconds) on Windows
+      requesttimeoutfactor = 3  # Slow on Windows
+
+   When a test-level factor is specified, it replaces (not multiplies) the manifest-level
+   factor. For example, if the manifest has ``requesttimeoutfactor = 2`` and a test has
+   ``requesttimeoutfactor = 3``, the test will use a 3x factor, not 6x.
 
 
 Creating a new xpcshell.toml file
@@ -382,7 +421,7 @@ well, and they will be made available by their filename.
    ├──test_example.js
    └──xpcshell.toml
 
-.. code:: toml
+.. code:: text
 
    # xpcshell.toml
    [DEFAULT]

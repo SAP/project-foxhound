@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteEncoderModule.h"
+
 #include "RemoteDecodeUtils.h"
 #include "RemoteMediaDataEncoderChild.h"
 #include "RemoteMediaManagerChild.h"

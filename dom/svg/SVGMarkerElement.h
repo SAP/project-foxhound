@@ -7,15 +7,15 @@
 #ifndef DOM_SVG_SVGMARKERELEMENT_H_
 #define DOM_SVG_SVGMARKERELEMENT_H_
 
+#include <memory>
+
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedOrient.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGAnimatedViewBox.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGMarkerElementBinding.h"
-#include "mozilla/UniquePtr.h"
 
 nsresult NS_NewSVGMarkerElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -76,21 +76,22 @@ class SVGMarkerElement final : public SVGMarkerElementBase {
   SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio() override;
   SVGAnimatedViewBox* GetAnimatedViewBox() override;
 
+  std::unique_ptr<gfx::Matrix> mViewBoxToViewportTransform;
+
+  SVGViewportElement* mCoordCtx;
+
   enum { REFX, REFY, MARKERWIDTH, MARKERHEIGHT };
   SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
-
-  enum { MARKERUNITS };
-  SVGAnimatedEnumeration mEnumAttributes[1];
-  static SVGEnumMapping sUnitsMap[];
-  static EnumInfo sEnumInfo[1];
 
   SVGAnimatedOrient mOrient;
   SVGAnimatedViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 
-  SVGViewportElement* mCoordCtx;
-  UniquePtr<gfx::Matrix> mViewBoxToViewportTransform;
+  enum { MARKERUNITS };
+  SVGAnimatedEnumeration mEnumAttributes[1];
+  static SVGEnumMapping sUnitsMap[];
+  static EnumInfo sEnumInfo[1];
 };
 
 }  // namespace dom

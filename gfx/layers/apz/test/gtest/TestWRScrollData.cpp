@@ -13,7 +13,6 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/WebRenderScrollDataWrapper.h"
-#include "mozilla/UniquePtr.h"
 #include "apz/src/APZCTreeManager.h"
 
 using mozilla::layers::APZCTreeManager;

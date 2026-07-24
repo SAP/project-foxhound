@@ -11,7 +11,6 @@
 
 #include "Accessible.h"
 #include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
 #include "xpcAccessible.h"
 
 namespace mozilla::a11y {

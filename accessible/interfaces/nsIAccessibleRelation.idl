@@ -161,6 +161,16 @@ interface nsIAccessibleRelation : nsISupports
   const unsigned long RELATION_LINKS_TO = 0x19;
 
   /**
+   * This object is has an action associated with the target object.
+   */
+  const unsigned long RELATION_ACTION = 0x20;
+
+  /**
+   * This object is has an action that operates on the target object.
+   */
+  const unsigned long RELATION_ACTION_FOR = 0x21;
+
+  /**
    * Returns the type of the relation.
    */
   readonly attribute unsigned long relationType;

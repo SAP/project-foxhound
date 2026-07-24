@@ -16,7 +16,7 @@ add_setup(async function () {
 
 add_task(async function test_restore_functionality() {
   // Ensure no engines are hidden to begin with.
-  for (let engine of await Services.search.getAppProvidedEngines()) {
+  for (let engine of await SearchService.getAppProvidedEngines()) {
     if (engine.hidden) {
       engine.hidden = false;
     }
@@ -39,7 +39,7 @@ add_task(async function test_restore_functionality() {
 
   let tree = doc.querySelector("#engineList");
   // Check for default search engines to be displayed in the engineList
-  let defaultEngines = await Services.search.getAppProvidedEngines();
+  let defaultEngines = await SearchService.getAppProvidedEngines();
   for (let i = 0; i < defaultEngines.length; i++) {
     let cellName = tree.view.getCellText(
       i,
@@ -53,7 +53,7 @@ add_task(async function test_restore_functionality() {
   doc.getElementById("removeEngineButton").click();
   await updatedPromise;
 
-  let engine = await Services.search.getEngineByName("DuckDuckGo");
+  let engine = await SearchService.getEngineByName("DuckDuckGo");
 
   Assert.ok(engine.hidden, "Should have hidden the engine");
   Assert.ok(
@@ -81,7 +81,7 @@ add_task(async function test_restore_functionality() {
 });
 
 add_task(async function test_restoreEnabledOnOpenWithEngineHidden() {
-  let engine = await Services.search.getEngineByName("DuckDuckGo");
+  let engine = await SearchService.getEngineByName("DuckDuckGo");
   engine.hidden = true;
 
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
@@ -129,7 +129,7 @@ add_task(async function test_removeOutOfOrder() {
   let removeEngineButton = doc.getElementById("removeEngineButton");
   removeEngineButton.scrollIntoView();
 
-  let defaultEngines = await Services.search.getAppProvidedEngines();
+  let defaultEngines = await SearchService.getAppProvidedEngines();
 
   // Remove the last two engines.  After each removal, the selection should move
   // to the first local shortcut.
@@ -156,7 +156,7 @@ add_task(async function test_removeOutOfOrder() {
   for (let i = 0; i < defaultEngines.length - 3; i++) {
     tree.view.selection.select(0);
 
-    if (defaultEngines[0].name == Services.search.defaultEngine.name) {
+    if (defaultEngines[0].name == SearchService.defaultEngine.name) {
       tree.view.selection.select(1);
     }
 
@@ -212,7 +212,7 @@ add_task(async function test_removeAndRestoreMultiple() {
   let removeEngineButton = doc.getElementById("removeEngineButton");
   removeEngineButton.scrollIntoView();
 
-  let defaultEngines = await Services.search.getAppProvidedEngines();
+  let defaultEngines = await SearchService.getAppProvidedEngines();
 
   // Remove the second and fourth engines.
   for (let i = 0; i < 2; i++) {

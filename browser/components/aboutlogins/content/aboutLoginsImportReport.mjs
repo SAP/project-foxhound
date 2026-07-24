@@ -16,7 +16,7 @@ document.dispatchEvent(
 
 function importReportDataHandler(event) {
   switch (event.detail.messageType) {
-    case "ImportReportData":
+    case "ImportReportData": {
       const logins = event.detail.value;
       const report = {
         added: 0,
@@ -77,6 +77,7 @@ function importReportDataHandler(event) {
         new CustomEvent("AboutLoginsImportReportReady", { bubbles: true })
       );
       break;
+    }
   }
 }
 

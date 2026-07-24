@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_VisualViewport_h
 #define mozilla_dom_VisualViewport_h
 
+#include "Units.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/VisualViewportBinding.h"
-#include "Units.h"
 
 class nsPresContext;
 

@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_WorkerEventTarget_h
 #define mozilla_dom_WorkerEventTarget_h
 
-#include "nsISerialEventTarget.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "nsISerialEventTarget.h"
 
 namespace mozilla::dom {
 

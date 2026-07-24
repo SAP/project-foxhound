@@ -27,7 +27,8 @@ static nsresult CopyFromLockedMacIOSurface(MacIOSurface* aSurface,
   size_t bytesPerRow = aSurface->GetBytesPerRow();
   SurfaceFormat ioFormat = aSurface->GetFormat();
 
-  if ((ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2) &&
+  if ((ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2 ||
+       ioFormat == SurfaceFormat::P010 || ioFormat == SurfaceFormat::NV16) &&
       (aSize.width > PlanarYCbCrImage::MAX_DIMENSION ||
        aSize.height > PlanarYCbCrImage::MAX_DIMENSION)) {
     return NS_ERROR_FAILURE;
@@ -71,6 +72,53 @@ static nsresult CopyFromLockedMacIOSurface(MacIOSurface* aSurface,
     data.mColorRange = aSurface->IsFullRange() ? gfx::ColorRange::FULL
                                                : gfx::ColorRange::LIMITED;
     data.mChromaSubsampling = ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
+
+    nsresult result =
+        ConvertYCbCrToRGB(data, SurfaceFormat::B8G8R8X8, aSize, aData, aStride);
+    MOZ_ASSERT(NS_SUCCEEDED(result), "Failed to convert YUV into RGB data");
+    return result;
+  }
+
+  if (ioFormat == SurfaceFormat::P010 || ioFormat == SurfaceFormat::NV16) {
+    // P010 (4:2:0) and NV16 (4:2:2) store 10-bit values in the high bits of
+    // each uint16_t (shifted left by 6 via safeShift10BitBy6 on write).
+    // We de-interleave the CbCr plane and pass ColorDepth::COLOR_16 so that
+    // ConvertYCbCrToRGB uses scale=256, which correctly maps the high-bit
+    // storage to 8-bit output.
+    size_t cbCrStride = aSurface->GetBytesPerRow(1);
+    size_t cbCrWidth = aSurface->GetDevicePixelWidth(1);
+    size_t cbCrHeight = aSurface->GetDevicePixelHeight(1);
+
+    auto cbPlane = MakeUnique<uint16_t[]>(cbCrWidth * cbCrHeight);
+    auto crPlane = MakeUnique<uint16_t[]>(cbCrWidth * cbCrHeight);
+
+    uint8_t* src = (uint8_t*)aSurface->GetBaseAddressOfPlane(1);
+    uint16_t* cbDest = cbPlane.get();
+    uint16_t* crDest = crPlane.get();
+
+    for (size_t i = 0; i < cbCrHeight; i++) {
+      uint16_t* rowSrc = reinterpret_cast<uint16_t*>(src + cbCrStride * i);
+      for (size_t j = 0; j < cbCrWidth; j++) {
+        *cbDest++ = *rowSrc++;
+        *crDest++ = *rowSrc++;
+      }
+    }
+
+    PlanarYCbCrData data;
+    data.mYChannel = (uint8_t*)aSurface->GetBaseAddressOfPlane(0);
+    data.mYStride = aSurface->GetBytesPerRow(0);
+    data.mCbChannel = (uint8_t*)cbPlane.get();
+    data.mCrChannel = (uint8_t*)crPlane.get();
+    data.mCbCrStride = cbCrWidth * sizeof(uint16_t);
+    data.mPictureRect = IntRect(IntPoint(0, 0), aSize);
+    data.mYUVColorSpace = aSurface->GetYUVColorSpace();
+    data.mColorPrimaries = aSurface->mColorPrimaries;
+    data.mColorRange = aSurface->IsFullRange() ? gfx::ColorRange::FULL
+                                               : gfx::ColorRange::LIMITED;
+    data.mChromaSubsampling = (ioFormat == SurfaceFormat::P010)
+                                  ? ChromaSubsampling::HALF_WIDTH_AND_HEIGHT
+                                  : ChromaSubsampling::HALF_WIDTH;
+    data.mColorDepth = ColorDepth::COLOR_16;
 
     nsresult result =
         ConvertYCbCrToRGB(data, SurfaceFormat::B8G8R8X8, aSize, aData, aStride);
@@ -170,7 +218,8 @@ already_AddRefed<SourceSurface> CreateSourceSurfaceFromMacIOSurface(
   SurfaceFormat ioFormat = aSurface->GetFormat();
 
   SurfaceFormat format =
-      (ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2)
+      (ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2 ||
+       ioFormat == SurfaceFormat::P010 || ioFormat == SurfaceFormat::NV16)
           ? SurfaceFormat::B8G8R8X8
           : SurfaceFormat::B8G8R8A8;
 
@@ -221,7 +270,8 @@ nsresult CreateSurfaceDescriptorBufferFromMacIOSurface(
   SurfaceFormat ioFormat = aSurface->GetFormat();
 
   SurfaceFormat format =
-      (ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2)
+      (ioFormat == SurfaceFormat::NV12 || ioFormat == SurfaceFormat::YUY2 ||
+       ioFormat == SurfaceFormat::P010 || ioFormat == SurfaceFormat::NV16)
           ? SurfaceFormat::B8G8R8X8
           : SurfaceFormat::B8G8R8A8;
 

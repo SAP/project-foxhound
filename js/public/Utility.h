@@ -10,8 +10,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Compiler.h"
-#include "mozilla/TemplateLib.h"
+#include "mozilla/CheckedArithmetic.h"
+#include "mozilla/Likely.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stdlib.h>
@@ -32,7 +32,7 @@ namespace mozilla {}
 /* The private JS engine namespace. */
 namespace js {}
 
-extern MOZ_NORETURN MOZ_COLD JS_PUBLIC_API void JS_Assert(const char* s,
+[[noreturn]] extern MOZ_COLD JS_PUBLIC_API void JS_Assert(const char* s,
                                                           const char* file,
                                                           int ln);
 
@@ -308,8 +308,8 @@ namespace js {
 
 /* Disable OOM testing in sections which are not OOM safe. */
 struct MOZ_RAII JS_PUBLIC_DATA AutoEnterOOMUnsafeRegion {
-  MOZ_NORETURN MOZ_COLD void crash(const char* reason) { crash_impl(reason); }
-  MOZ_NORETURN MOZ_COLD void crash(size_t size, const char* reason) {
+  [[noreturn]] MOZ_COLD void crash(const char* reason) { crash_impl(reason); }
+  [[noreturn]] MOZ_COLD void crash(size_t size, const char* reason) {
     crash_impl(reason);
   }
 
@@ -344,8 +344,8 @@ struct MOZ_RAII JS_PUBLIC_DATA AutoEnterOOMUnsafeRegion {
   bool oomEnabled_;
 #  endif
  private:
-  static MOZ_NORETURN MOZ_COLD void crash_impl(const char* reason);
-  static MOZ_NORETURN MOZ_COLD void crash_impl(size_t size, const char* reason);
+  [[noreturn]] static MOZ_COLD void crash_impl(const char* reason);
+  [[noreturn]] static MOZ_COLD void crash_impl(size_t size, const char* reason);
 };
 
 } /* namespace js */
@@ -556,8 +556,7 @@ namespace js {
 template <typename T>
 [[nodiscard]] inline bool CalculateAllocSize(size_t numElems,
                                              size_t* bytesOut) {
-  *bytesOut = numElems * sizeof(T);
-  return (numElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) == 0;
+  return mozilla::SafeMul(numElems, sizeof(T), bytesOut);
 }
 
 /*
@@ -568,9 +567,9 @@ template <typename T>
 template <typename T, typename Extra>
 [[nodiscard]] inline bool CalculateAllocSizeWithExtra(size_t numExtra,
                                                       size_t* bytesOut) {
-  *bytesOut = sizeof(T) + numExtra * sizeof(Extra);
-  return (numExtra & mozilla::tl::MulOverflowMask<sizeof(Extra)>::value) == 0 &&
-         *bytesOut >= sizeof(T);
+  size_t tmp;
+  return mozilla::SafeMul(numExtra, sizeof(Extra), &tmp) &&
+         mozilla::SafeAdd(sizeof(T), tmp, bytesOut);
 }
 
 } /* namespace js */
@@ -626,7 +625,8 @@ template <class T>
 static MOZ_ALWAYS_INLINE T* js_pod_arena_realloc(arena_id_t arena, T* prior,
                                                  size_t oldSize,
                                                  size_t newSize) {
-  MOZ_ASSERT(!(oldSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value));
+  [[maybe_unused]] size_t tmp;
+  MOZ_ASSERT(mozilla::SafeMul(oldSize, sizeof(T), &tmp));
   size_t bytes;
   if (MOZ_UNLIKELY(!js::CalculateAllocSize<T>(newSize, &bytes))) {
     return nullptr;

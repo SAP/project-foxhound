@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/memory_grow64.wast
+// ./test/core/memory64/memory_grow64.wast
 
-// ./test/core/memory_grow64.wast:1
+// ./test/core/memory64/memory_grow64.wast:1
 let $0 = instantiate(`(module
     (memory i64 0)
 
@@ -29,121 +29,121 @@ let $0 = instantiate(`(module
     (func (export "size") (result i64) (memory.size))
 )`);
 
-// ./test/core/memory_grow64.wast:14
+// ./test/core/memory64/memory_grow64.wast:14
 assert_return(() => invoke($0, `size`, []), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:15
+// ./test/core/memory64/memory_grow64.wast:15
 assert_trap(() => invoke($0, `store_at_zero`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:16
+// ./test/core/memory64/memory_grow64.wast:16
 assert_trap(() => invoke($0, `load_at_zero`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:17
+// ./test/core/memory64/memory_grow64.wast:17
 assert_trap(() => invoke($0, `store_at_page_size`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:18
+// ./test/core/memory64/memory_grow64.wast:18
 assert_trap(() => invoke($0, `load_at_page_size`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:19
+// ./test/core/memory64/memory_grow64.wast:19
 assert_return(() => invoke($0, `grow`, [1n]), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:20
+// ./test/core/memory64/memory_grow64.wast:20
 assert_return(() => invoke($0, `size`, []), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:21
+// ./test/core/memory64/memory_grow64.wast:21
 assert_return(() => invoke($0, `load_at_zero`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:22
+// ./test/core/memory64/memory_grow64.wast:22
 assert_return(() => invoke($0, `store_at_zero`, []), []);
 
-// ./test/core/memory_grow64.wast:23
+// ./test/core/memory64/memory_grow64.wast:23
 assert_return(() => invoke($0, `load_at_zero`, []), [value("i32", 2)]);
 
-// ./test/core/memory_grow64.wast:24
+// ./test/core/memory64/memory_grow64.wast:24
 assert_trap(() => invoke($0, `store_at_page_size`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:25
+// ./test/core/memory64/memory_grow64.wast:25
 assert_trap(() => invoke($0, `load_at_page_size`, []), `out of bounds memory access`);
 
-// ./test/core/memory_grow64.wast:26
+// ./test/core/memory64/memory_grow64.wast:26
 assert_return(() => invoke($0, `grow`, [4n]), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:27
+// ./test/core/memory64/memory_grow64.wast:27
 assert_return(() => invoke($0, `size`, []), [value("i64", 5n)]);
 
-// ./test/core/memory_grow64.wast:28
+// ./test/core/memory64/memory_grow64.wast:28
 assert_return(() => invoke($0, `load_at_zero`, []), [value("i32", 2)]);
 
-// ./test/core/memory_grow64.wast:29
+// ./test/core/memory64/memory_grow64.wast:29
 assert_return(() => invoke($0, `store_at_zero`, []), []);
 
-// ./test/core/memory_grow64.wast:30
+// ./test/core/memory64/memory_grow64.wast:30
 assert_return(() => invoke($0, `load_at_zero`, []), [value("i32", 2)]);
 
-// ./test/core/memory_grow64.wast:31
+// ./test/core/memory64/memory_grow64.wast:31
 assert_return(() => invoke($0, `load_at_page_size`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:32
+// ./test/core/memory64/memory_grow64.wast:32
 assert_return(() => invoke($0, `store_at_page_size`, []), []);
 
-// ./test/core/memory_grow64.wast:33
+// ./test/core/memory64/memory_grow64.wast:33
 assert_return(() => invoke($0, `load_at_page_size`, []), [value("i32", 3)]);
 
-// ./test/core/memory_grow64.wast:36
+// ./test/core/memory64/memory_grow64.wast:36
 let $1 = instantiate(`(module
   (memory i64 0)
   (func (export "grow") (param i64) (result i64) (memory.grow (local.get 0)))
 )`);
 
-// ./test/core/memory_grow64.wast:41
+// ./test/core/memory64/memory_grow64.wast:41
 assert_return(() => invoke($1, `grow`, [0n]), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:42
+// ./test/core/memory64/memory_grow64.wast:42
 assert_return(() => invoke($1, `grow`, [1n]), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:43
+// ./test/core/memory64/memory_grow64.wast:43
 assert_return(() => invoke($1, `grow`, [0n]), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:44
+// ./test/core/memory64/memory_grow64.wast:44
 assert_return(() => invoke($1, `grow`, [2n]), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:45
+// ./test/core/memory64/memory_grow64.wast:45
 assert_return(() => invoke($1, `grow`, [800n]), [value("i64", 3n)]);
 
-// ./test/core/memory_grow64.wast:46
+// ./test/core/memory64/memory_grow64.wast:46
 assert_return(() => invoke($1, `grow`, [1n]), [value("i64", 803n)]);
 
-// ./test/core/memory_grow64.wast:48
+// ./test/core/memory64/memory_grow64.wast:48
 let $2 = instantiate(`(module
   (memory i64 0 10)
   (func (export "grow") (param i64) (result i64) (memory.grow (local.get 0)))
 )`);
 
-// ./test/core/memory_grow64.wast:53
+// ./test/core/memory64/memory_grow64.wast:53
 assert_return(() => invoke($2, `grow`, [0n]), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:54
+// ./test/core/memory64/memory_grow64.wast:54
 assert_return(() => invoke($2, `grow`, [1n]), [value("i64", 0n)]);
 
-// ./test/core/memory_grow64.wast:55
+// ./test/core/memory64/memory_grow64.wast:55
 assert_return(() => invoke($2, `grow`, [1n]), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:56
+// ./test/core/memory64/memory_grow64.wast:56
 assert_return(() => invoke($2, `grow`, [2n]), [value("i64", 2n)]);
 
-// ./test/core/memory_grow64.wast:57
+// ./test/core/memory64/memory_grow64.wast:57
 assert_return(() => invoke($2, `grow`, [6n]), [value("i64", 4n)]);
 
-// ./test/core/memory_grow64.wast:58
+// ./test/core/memory64/memory_grow64.wast:58
 assert_return(() => invoke($2, `grow`, [0n]), [value("i64", 10n)]);
 
-// ./test/core/memory_grow64.wast:59
+// ./test/core/memory64/memory_grow64.wast:59
 assert_return(() => invoke($2, `grow`, [1n]), [value("i64", -1n)]);
 
-// ./test/core/memory_grow64.wast:60
+// ./test/core/memory64/memory_grow64.wast:60
 assert_return(() => invoke($2, `grow`, [65536n]), [value("i64", -1n)]);
 
-// ./test/core/memory_grow64.wast:64
+// ./test/core/memory64/memory_grow64.wast:64
 let $3 = instantiate(`(module
   (memory i64 1)
   (func (export "grow") (param i64) (result i64)
@@ -165,35 +165,35 @@ let $3 = instantiate(`(module
   )
 )`);
 
-// ./test/core/memory_grow64.wast:85
+// ./test/core/memory64/memory_grow64.wast:85
 assert_return(() => invoke($3, `check-memory-zero`, [0n, 65535n]), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:86
+// ./test/core/memory64/memory_grow64.wast:86
 assert_return(() => invoke($3, `grow`, [1n]), [value("i64", 1n)]);
 
-// ./test/core/memory_grow64.wast:87
+// ./test/core/memory64/memory_grow64.wast:87
 assert_return(() => invoke($3, `check-memory-zero`, [65536n, 131071n]), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:88
+// ./test/core/memory64/memory_grow64.wast:88
 assert_return(() => invoke($3, `grow`, [1n]), [value("i64", 2n)]);
 
-// ./test/core/memory_grow64.wast:89
+// ./test/core/memory64/memory_grow64.wast:89
 assert_return(() => invoke($3, `check-memory-zero`, [131072n, 196607n]), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:90
+// ./test/core/memory64/memory_grow64.wast:90
 assert_return(() => invoke($3, `grow`, [1n]), [value("i64", 3n)]);
 
-// ./test/core/memory_grow64.wast:91
+// ./test/core/memory64/memory_grow64.wast:91
 assert_return(() => invoke($3, `check-memory-zero`, [196608n, 262143n]), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:92
+// ./test/core/memory64/memory_grow64.wast:92
 assert_return(() => invoke($3, `grow`, [1n]), [value("i64", 4n)]);
 
-// ./test/core/memory_grow64.wast:93
+// ./test/core/memory64/memory_grow64.wast:93
 assert_return(() => invoke($3, `check-memory-zero`, [262144n, 327679n]), [value("i32", 0)]);
 
-// ./test/core/memory_grow64.wast:94
+// ./test/core/memory64/memory_grow64.wast:94
 assert_return(() => invoke($3, `grow`, [1n]), [value("i64", 5n)]);
 
-// ./test/core/memory_grow64.wast:95
+// ./test/core/memory64/memory_grow64.wast:95
 assert_return(() => invoke($3, `check-memory-zero`, [327680n, 393215n]), [value("i32", 0)]);

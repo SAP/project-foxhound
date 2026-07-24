@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DataMutex_h__
-#define DataMutex_h__
+#ifndef DataMutex_h_
+#define DataMutex_h_
 
 #include <utility>
 #include "mozilla/Mutex.h"
@@ -127,4 +127,4 @@ using StaticDataMutex = DataMutexBase<T, StaticMutexNameless>;
 
 }  // namespace mozilla
 
-#endif  // DataMutex_h__
+#endif  // DataMutex_h_

@@ -339,10 +339,10 @@ class ObjectFront extends FrontClassWithSpec(objectSpec) {
  * In the case an ObjectFront is created, we also check if the object has properties
  * that should be turned into fronts as well.
  *
- * @param {String|Number|Object} options: The packet returned by the server.
+ * @param {string | number | object} options: The packet returned by the server.
  * @param {Front} parentFront
  *
- * @returns {Number|String|Object|LongStringFront|ObjectFront}
+ * @returns {number | string | object | LongStringFront | ObjectFront}
  */
 function getAdHocFrontOrPrimitiveGrip(packet, parentFront) {
   // We only want to try to create a front when it makes sense, i.e when it has an
@@ -425,7 +425,7 @@ function getAdHocFrontOrPrimitiveGrip(packet, parentFront) {
  * values, …).
  *
  * @param {ObjectFront} objectFront
- * @param {String|Number|Object} packet: The packet returned by the server
+ * @param {string | number | object} packet: The packet returned by the server
  */
 function createChildFronts(objectFront, packet) {
   if (packet.preview) {

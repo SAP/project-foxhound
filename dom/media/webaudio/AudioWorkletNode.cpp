@@ -6,32 +6,32 @@
 
 #include "AudioWorkletNode.h"
 
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
+#include "AudioParam.h"
 #include "AudioParamMap.h"
 #include "AudioWorklet.h"
 #include "AudioWorkletImpl.h"
+#include "PlayingRefChangeHandler.h"
+#include "Tracing.h"
 #include "js/Array.h"  // JS::{Get,Set}ArrayLength, JS::NewArrayLength
 #include "js/CallAndConstruct.h"  // JS::Call, JS::IsCallable
 #include "js/Exception.h"
-#include "js/experimental/TypedData.h"  // JS_NewFloat32Array, JS_GetFloat32ArrayData, JS_GetTypedArrayLength, JS_GetArrayBufferViewBuffer
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineUCProperty, JS_GetProperty
-#include "mozilla/dom/AudioWorkletNodeBinding.h"
+#include "js/experimental/TypedData.h"  // JS_NewFloat32Array, JS_GetFloat32ArrayData, JS_GetTypedArrayLength, JS_GetArrayBufferViewBuffer
+#include "mozilla/ScopeExit.h"
+#include "mozilla/Span.h"
 #include "mozilla/dom/AudioParamMapBinding.h"
+#include "mozilla/dom/AudioWorkletNodeBinding.h"
 #include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ErrorEvent.h"
-#include "mozilla/dom/Worklet.h"
-#include "nsIScriptGlobalObject.h"
-#include "AudioParam.h"
-#include "AudioDestinationNode.h"
 #include "mozilla/dom/MessageChannel.h"
 #include "mozilla/dom/MessagePort.h"
-#include "mozilla/ScopeExit.h"
-#include "nsReadableUtils.h"
-#include "mozilla/Span.h"
-#include "PlayingRefChangeHandler.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/Worklet.h"
+#include "nsIScriptGlobalObject.h"
 #include "nsPrintfCString.h"
-#include "Tracing.h"
+#include "nsReadableUtils.h"
 
 namespace mozilla::dom {
 

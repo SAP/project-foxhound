@@ -7,14 +7,14 @@
 #ifndef DocGroup_h
 #define DocGroup_h
 
-#include "nsISupportsImpl.h"
-#include "nsIPrincipal.h"
-#include "nsThreadUtils.h"
-#include "nsTHashSet.h"
-#include "nsString.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/HTMLSlotElement.h"
+#include "nsIPrincipal.h"
+#include "nsISupportsImpl.h"
+#include "nsString.h"
+#include "nsTHashSet.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 class AbstractThread;
@@ -43,8 +43,6 @@ class JSExecutionManager;
 // however, align with web-visible synchronous script access boundaries.
 class DocGroup final {
  public:
-  typedef nsTArray<Document*>::iterator Iterator;
-
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DocGroup)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(DocGroup)
 
@@ -77,16 +75,6 @@ class DocGroup final {
   // BrowsingContextGroup::RemoveDocument(which in turn calls
   // DocGroup::RemoveDocument).
   void RemoveDocument(Document* aDocument);
-
-  // Iterators for iterating over every document within the DocGroup
-  Iterator begin() {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mDocuments.begin();
-  }
-  Iterator end() {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mDocuments.end();
-  }
 
   // Return a pointer that can be continually checked to see if access to this
   // DocGroup is valid. This pointer should live at least as long as the

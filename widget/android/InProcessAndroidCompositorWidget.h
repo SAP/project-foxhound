@@ -8,6 +8,7 @@
 
 #include "AndroidCompositorWidget.h"
 #include "CompositorWidget.h"
+#include "mozilla/VsyncDispatcher.h"
 
 class nsWindow;
 

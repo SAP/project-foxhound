@@ -7,6 +7,7 @@ import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
@@ -39,7 +40,8 @@ class NetworkModule extends Module {
       }
 
       // Resolve browsing context to a Navigable id.
-      request.contextId = lazy.TabManager.getIdForBrowsingContext(context);
+      request.contextId =
+        lazy.NavigableManager.getIdForBrowsingContext(context);
 
       this.messageHandler.handleCommand({
         moduleName: "network",

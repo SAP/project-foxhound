@@ -39,7 +39,6 @@ const TEST_URI = `
   </details>`;
 
 add_task(async function () {
-  await pushPref("layout.css.details-content.enabled", true);
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openComputedView();
   await selectNode("p#matches", inspector);

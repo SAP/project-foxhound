@@ -7,25 +7,26 @@
 #ifndef mozilla_widget_IOSView_h
 #define mozilla_widget_IOSView_h
 
+#include "CFTypeRefPtr.h"
 #include "mozilla/widget/EventDispatcher.h"
 
 namespace mozilla::widget {
 
 class IOSView final : public nsIGeckoViewView {
-  virtual ~IOSView();
+  virtual ~IOSView() = default;
 
  public:
   const RefPtr<mozilla::widget::EventDispatcher> mEventDispatcher{
       new mozilla::widget::EventDispatcher()};
 
-  IOSView() {}
+  IOSView() = default;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIGECKOVIEWVIEW
 
   NS_FORWARD_NSIGECKOVIEWEVENTDISPATCHER(mEventDispatcher->)
 
-  id mInitData;
+  CFTypeRefPtr<CFDictionaryRef> mInitData;
 };
 
 }  // namespace mozilla::widget

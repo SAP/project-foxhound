@@ -17,9 +17,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <limits>
-#include <set>
-
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/eintr_wrapper.h"
@@ -31,7 +28,6 @@
 #include "base/dir_reader_posix.h"
 
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 // For PR_DuplicateEnvironment:
 #include "prenv.h"
 #include "prmem.h"

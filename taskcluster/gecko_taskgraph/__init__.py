@@ -10,15 +10,30 @@ from taskgraph import config as taskgraph_config
 from taskgraph import generator
 from taskgraph import morph as taskgraph_morph
 from taskgraph.transforms.task import payload_builders
-from taskgraph.util import schema
+from taskgraph.util import docker, schema
 from taskgraph.util import taskcluster as tc_util
 
 from gecko_taskgraph.config import graph_config_schema
 
 GECKO = os.path.normpath(os.path.realpath(os.path.join(__file__, "..", "..", "..")))
+TEST_CONFIGS = os.path.join(GECKO, "taskcluster", "test_configs")
 
 # Overwrite Taskgraph's default graph_config_schema with a custom one.
 taskgraph_config.graph_config_schema = graph_config_schema
+
+# Overwrite Taskgraph's RUN_TASK_SNIPPET to place the binaries in Gecko
+# specific locations.
+docker.RUN_TASK_FILES = {
+    f"run-task/{path}": os.path.join(docker.RUN_TASK_ROOT, path)
+    for path in [
+        "run-task",
+        "fetch-content",
+    ]
+}
+docker.RUN_TASK_SNIPPET = [
+    "COPY run-task/run-task /builds/worker/bin/run-task-git\n",
+    "COPY run-task/fetch-content /builds/worker/bin/fetch-content\n",
+]
 
 # Don't use any of the upstream morphs.
 # TODO Investigate merging our morphs with upstream.
@@ -31,16 +46,14 @@ tc_util.PRODUCTION_TASKCLUSTER_ROOT_URL = "https://firefox-ci-tc.services.mozill
 # Schemas for YAML files should use dashed identifiers by default. If there are
 # components of the schema for which there is a good reason to use another format,
 # exceptions can be added here.
-schema.EXCEPTED_SCHEMA_IDENTIFIERS.extend(
-    [
-        "test_name",
-        "json_location",
-        "video_location",
-        "profile_name",
-        "target_path",
-        "try_task_config",
-    ]
-)
+schema.EXCEPTED_SCHEMA_IDENTIFIERS.extend([
+    "test_name",
+    "json_location",
+    "video_location",
+    "profile_name",
+    "target_path",
+    "try_task_config",
+])
 
 # TODO: These are temporarily redefined in gecko_taskgraph. Remove them from
 # upstream until they can be consolidated.
@@ -55,8 +68,6 @@ def register(graph_config):
     Args:
         graph_config: The graph configuration object.
     """
-    from taskgraph.optimize.base import registry
-
     from gecko_taskgraph import (  # noqa
         filter_tasks,
         morph,
@@ -67,11 +78,6 @@ def register(graph_config):
         dependencies,  # noqa - trigger group_by registration
     )
     from gecko_taskgraph.util.verify import verifications
-
-    # TODO: Remove along with
-    # `gecko_taskgraph.optimize.strategies.SkipUnlessChanged`
-    # (see comment over there)
-    del registry["skip-unless-changed"]
 
     register_mozilla_taskgraph(graph_config)
     register_android_taskgraph(graph_config)

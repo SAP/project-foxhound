@@ -34,6 +34,18 @@ this.storage = class extends ExtensionAPI {
           ])
           .then(deserialize);
       },
+      getKeys() {
+        return context.childManager.callParentAsyncFunction(
+          "storage.local.JSONFileBackend.getKeys",
+          []
+        );
+      },
+      getBytesInUse(keys) {
+        return context.childManager.callParentAsyncFunction(
+          "storage.local.JSONFileBackend.getBytesInUse",
+          [serialize(keys)]
+        );
+      },
       set(items) {
         return context.childManager.callParentAsyncFunction(
           "storage.local.JSONFileBackend.set",
@@ -85,6 +97,14 @@ this.storage = class extends ExtensionAPI {
             return db.get(keys);
           }
         );
+      },
+      async getKeys() {
+        const db = await getDB();
+        return db.getKeys();
+      },
+      async getBytesInUse(keys) {
+        const db = await getDB();
+        return db.getBytesInUse(keys);
       },
       set(items) {
         function serialize(name, anonymizedName, value) {
@@ -240,7 +260,14 @@ this.storage = class extends ExtensionAPI {
     const local = {
       onChanged: makeOnChangedEventTarget("storage.local.onChanged"),
     };
-    for (let method of ["get", "set", "remove", "clear"]) {
+    for (let method of [
+      "get",
+      "getKeys",
+      "getBytesInUse",
+      "set",
+      "remove",
+      "clear",
+    ]) {
       local[method] = async function (...args) {
         try {
           // Discover the selected backend if it is not known yet.
@@ -258,7 +285,11 @@ this.storage = class extends ExtensionAPI {
             // If the storage.local method is not 'get' (which doesn't change any of the stored data),
             // fall back to call the method in the parent process, so that it can be completed even
             // if this context has been destroyed in the meantime.
-            if (method !== "get") {
+            if (
+              method !== "get" &&
+              method !== "getKeys" &&
+              method !== "getBytesInUse"
+            ) {
               // Let the outer try to catch rejections returned by the backend methods.
               try {
                 const result =

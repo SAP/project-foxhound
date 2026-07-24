@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_persistencetype_h__
-#define mozilla_dom_quota_persistencetype_h__
+#ifndef mozilla_dom_quota_persistencetype_h_
+#define mozilla_dom_quota_persistencetype_h_
 
 #include <array>
 #include <cstdint>
-#include "mozilla/Assertions.h"
+
 #include "mozilla/Maybe.h"
 #include "mozilla/fallible.h"
 #include "nsStringFwd.h"
@@ -43,6 +43,12 @@ static const PersistenceType kBestEffortPersistenceTypes[] = {
 static const PersistenceType kInitializableBestEffortPersistenceTypes[] = {
     PERSISTENCE_TYPE_TEMPORARY, PERSISTENCE_TYPE_DEFAULT};
 
+static const PersistenceType kTemporaryPersistenceTypes[] = {
+    PERSISTENCE_TYPE_TEMPORARY, PERSISTENCE_TYPE_DEFAULT,
+    PERSISTENCE_TYPE_PRIVATE};
+
+bool IsTemporaryPersistenceType(const PersistenceType aPersistenceType);
+
 bool IsValidPersistenceType(PersistenceType aPersistenceType);
 
 bool IsBestEffortPersistenceType(const PersistenceType aPersistenceType);
@@ -67,4 +73,4 @@ std::array<PersistenceType, 2> ComplementaryPersistenceTypes(
 
 }  // namespace mozilla::dom::quota
 
-#endif  // mozilla_dom_quota_persistencetype_h__
+#endif  // mozilla_dom_quota_persistencetype_h_

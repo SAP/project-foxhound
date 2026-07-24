@@ -4,9 +4,13 @@
 
 #![forbid(unsafe_code)]
 
+//! The cascade level and shadow cascade order for tracking shadow tree rules.
+
+use crate::derives::*;
 use crate::properties::Importance;
 use crate::shared_lock::{SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheets::Origin;
+use crate::values::animated::ToAnimatedValue;
 
 /// The cascade level these rules are relevant at, as per[1][2][3].
 ///
@@ -28,8 +32,25 @@ use crate::stylesheets::Origin;
 /// [2]: https://drafts.csswg.org/css-cascade/#preshint
 /// [3]: https://html.spec.whatwg.org/multipage/#presentational-hints
 /// [4]: https://drafts.csswg.org/css-scoping/#shadow-cascading
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C, u8)]
 pub enum CascadeLevel {
     /// Normal User-Agent rules.
     UANormal,
@@ -50,6 +71,8 @@ pub enum CascadeLevel {
         ///    https://drafts.csswg.org/css-scoping/#shadow-cascading
         shadow_cascade_order: ShadowCascadeOrder,
     },
+    /// https://drafts.csswg.org/css-anchor-position-1/#position-fallback-origin
+    PositionFallback,
     /// SVG SMIL animations.
     SMILOverride,
     /// CSS animations and script-generated animations.
@@ -79,13 +102,14 @@ impl CascadeLevel {
             } => Self::AuthorImportant {
                 shadow_cascade_order: -shadow_cascade_order,
             },
-            Self::PresHints |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::AuthorImportant { .. } |
-            Self::UserImportant |
-            Self::UAImportant |
-            Self::Transitions => *self,
+            Self::PresHints
+            | Self::PositionFallback
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::AuthorImportant { .. }
+            | Self::UserImportant
+            | Self::UAImportant
+            | Self::Transitions => *self,
         }
     }
 
@@ -99,13 +123,14 @@ impl CascadeLevel {
             } => Self::AuthorNormal {
                 shadow_cascade_order: -shadow_cascade_order,
             },
-            Self::PresHints |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::AuthorNormal { .. } |
-            Self::UserNormal |
-            Self::UANormal |
-            Self::Transitions => *self,
+            Self::PresHints
+            | Self::PositionFallback
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::AuthorNormal { .. }
+            | Self::UserNormal
+            | Self::UANormal
+            | Self::Transitions => *self,
         }
     }
 
@@ -164,12 +189,13 @@ impl CascadeLevel {
         match *self {
             Self::UAImportant | Self::UANormal => Origin::UserAgent,
             Self::UserImportant | Self::UserNormal => Origin::User,
-            Self::PresHints |
-            Self::AuthorNormal { .. } |
-            Self::AuthorImportant { .. } |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::Transitions => Origin::Author,
+            Self::PresHints
+            | Self::PositionFallback { .. }
+            | Self::AuthorNormal { .. }
+            | Self::AuthorImportant { .. }
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::Transitions => Origin::Author,
         }
     }
 
@@ -181,6 +207,15 @@ impl CascadeLevel {
             _ => false,
         }
     }
+
+    /// Returns whether this cascade level is tree.
+    #[inline]
+    pub fn is_tree(&self) -> bool {
+        matches!(
+            *self,
+            Self::AuthorImportant { .. } | Self::AuthorNormal { .. }
+        )
+    }
 }
 
 /// A counter to track how many shadow root rules deep we are. This is used to
@@ -189,7 +224,24 @@ impl CascadeLevel {
 /// https://drafts.csswg.org/css-scoping/#shadow-cascading
 ///
 /// See the static functions for the meaning of different values.
-#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    Serialize,
+    Deserialize,
+)]
+#[repr(transparent)]
 pub struct ShadowCascadeOrder(i8);
 
 impl ShadowCascadeOrder {
@@ -208,7 +260,7 @@ impl ShadowCascadeOrder {
 
     /// A level for the element's tree.
     #[inline]
-    fn for_same_tree() -> Self {
+    pub fn for_same_tree() -> Self {
         Self(0)
     }
 
@@ -245,5 +297,19 @@ impl std::ops::Neg for ShadowCascadeOrder {
     #[inline]
     fn neg(self) -> Self {
         Self(self.0.neg())
+    }
+}
+
+impl ToAnimatedValue for ShadowCascadeOrder {
+    type AnimatedValue = ShadowCascadeOrder;
+
+    #[inline]
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
+        self
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        animated
     }
 }

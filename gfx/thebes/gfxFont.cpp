@@ -5,13 +5,10 @@
 
 #include "gfxFont.h"
 
-#include "mozilla/BinarySearch.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/intl/Segmenter.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SVGContextPaint.h"
@@ -59,9 +56,6 @@
 #  include "cairo-win32.h"
 #  include "gfxWindowsPlatform.h"
 #endif
-
-#include "harfbuzz/hb.h"
-#include "harfbuzz/hb-ot.h"
 
 #include <algorithm>
 #include <limits>
@@ -183,7 +177,7 @@ void gfxFontCache::Shutdown() {
 
 gfxFontCache::gfxFontCache(nsIEventTarget* aEventTarget)
     : ExpirationTrackerImpl<gfxFont, 3, Lock, AutoLock>(
-          FONT_TIMEOUT_SECONDS * 1000, "gfxFontCache", aEventTarget) {
+          FONT_TIMEOUT_SECONDS * 1000, "gfxFontCache"_ns, aEventTarget) {
   nsCOMPtr<nsIObserverService> obs = GetObserverService();
   if (obs) {
     obs->AddObserver(new Observer, "memory-pressure", false);
@@ -600,29 +594,29 @@ void gfxFontShaper::MergeFontFeatures(
     case NS_FONT_VARIANT_CAPS_NORMAL:
       break;
 
-    case NS_FONT_VARIANT_CAPS_ALLSMALL:
+    case NS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS:
       addOrReplace(gfxFontFeature{HB_TAG('c', '2', 's', 'c'), 1});
       // fall through to the small-caps case
       [[fallthrough]];
 
-    case NS_FONT_VARIANT_CAPS_SMALLCAPS:
+    case NS_FONT_VARIANT_CAPS_SMALL_CAPS:
       addOrReplace(gfxFontFeature{HB_TAG('s', 'm', 'c', 'p'), 1});
       break;
 
-    case NS_FONT_VARIANT_CAPS_ALLPETITE:
+    case NS_FONT_VARIANT_CAPS_ALL_PETITE_CAPS:
       addOrReplace(gfxFontFeature{aAddSmallCaps ? HB_TAG('c', '2', 's', 'c')
                                                 : HB_TAG('c', '2', 'p', 'c'),
                                   1});
       // fall through to the petite-caps case
       [[fallthrough]];
 
-    case NS_FONT_VARIANT_CAPS_PETITECAPS:
+    case NS_FONT_VARIANT_CAPS_PETITE_CAPS:
       addOrReplace(gfxFontFeature{aAddSmallCaps ? HB_TAG('s', 'm', 'c', 'p')
                                                 : HB_TAG('p', 'c', 'a', 'p'),
                                   1});
       break;
 
-    case NS_FONT_VARIANT_CAPS_TITLING:
+    case NS_FONT_VARIANT_CAPS_TITLING_CAPS:
       addOrReplace(gfxFontFeature{HB_TAG('t', 'i', 't', 'l'), 1});
       break;
 
@@ -1004,7 +998,7 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
 
   // Ensure the gfxFontEntry's unitsPerEm and extents fields are initialized,
   // so that GetFontExtents can use them without risk of races.
-  Unused << mFontEntry->UnitsPerEm();
+  (void)mFontEntry->UnitsPerEm();
 }
 
 gfxFont::~gfxFont() {
@@ -1012,6 +1006,7 @@ gfxFont::~gfxFont() {
 
   // Delete objects owned through atomic pointers. (Some of these may be null,
   // but that's OK.)
+  delete mVerticalBaselines.exchange(nullptr);
   delete mVerticalMetrics.exchange(nullptr);
   delete mHarfBuzzShaper.exchange(nullptr);
   delete mGraphiteShaper.exchange(nullptr);
@@ -1427,6 +1422,7 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
         flags = flags | gfxFontEntry::SpaceFeatures::HasFeatures;
         uint32_t index = static_cast<uint32_t>(s) >> 5;
         uint32_t bit = static_cast<uint32_t>(s) & 0x1f;
+        MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
         if (isDefaultFeature) {
           mFontEntry->mDefaultSubSpaceFeatures[index] |= (1 << bit);
         } else {
@@ -1440,8 +1436,11 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
   // spaces in default features of default script?
   // ==> can't use word cache, skip GPOS analysis
   bool canUseWordCache = true;
-  if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON)) {
-    canUseWordCache = false;
+  {
+    MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
+    if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON)) {
+      canUseWordCache = false;
+    }
   }
 
   // GPOS lookups - distinguish kerning from non-kerning features
@@ -1460,6 +1459,7 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
   }
 
   if (MOZ_UNLIKELY(log)) {
+    MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
     TimeDuration elapsed = TimeStamp::Now() - start;
     LOG_FONTINIT((
         "(fontinit-spacelookups) font: %s - "
@@ -1494,6 +1494,7 @@ bool gfxFont::HasSubstitutionRulesWithSpaceLookups(Script aRunScript) const {
   }
 
   // default features have space lookups ==> true
+  MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
   if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON) ||
       HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, aRunScript)) {
     return true;
@@ -1575,13 +1576,13 @@ bool gfxFont::SupportsVariantCaps(Script aScript, uint32_t aVariantCaps,
   aSyntheticLowerToSmallCaps = false;
   aSyntheticUpperToSmallCaps = false;
   switch (aVariantCaps) {
-    case NS_FONT_VARIANT_CAPS_SMALLCAPS:
+    case NS_FONT_VARIANT_CAPS_SMALL_CAPS:
       ok = SupportsFeature(aScript, HB_TAG('s', 'm', 'c', 'p'));
       if (!ok) {
         aSyntheticLowerToSmallCaps = true;
       }
       break;
-    case NS_FONT_VARIANT_CAPS_ALLSMALL:
+    case NS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS:
       ok = SupportsFeature(aScript, HB_TAG('s', 'm', 'c', 'p')) &&
            SupportsFeature(aScript, HB_TAG('c', '2', 's', 'c'));
       if (!ok) {
@@ -1589,7 +1590,7 @@ bool gfxFont::SupportsVariantCaps(Script aScript, uint32_t aVariantCaps,
         aSyntheticUpperToSmallCaps = true;
       }
       break;
-    case NS_FONT_VARIANT_CAPS_PETITECAPS:
+    case NS_FONT_VARIANT_CAPS_PETITE_CAPS:
       ok = SupportsFeature(aScript, HB_TAG('p', 'c', 'a', 'p'));
       if (!ok) {
         ok = SupportsFeature(aScript, HB_TAG('s', 'm', 'c', 'p'));
@@ -1599,7 +1600,7 @@ bool gfxFont::SupportsVariantCaps(Script aScript, uint32_t aVariantCaps,
         aSyntheticLowerToSmallCaps = true;
       }
       break;
-    case NS_FONT_VARIANT_CAPS_ALLPETITE:
+    case NS_FONT_VARIANT_CAPS_ALL_PETITE_CAPS:
       ok = SupportsFeature(aScript, HB_TAG('p', 'c', 'a', 'p')) &&
            SupportsFeature(aScript, HB_TAG('c', '2', 'p', 'c'));
       if (!ok) {
@@ -2766,7 +2767,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
             // Save a snapshot of the rendering in the cache.
             // (We ignore potential failure here, and just paint the snapshot
             // without caching it.)
-            Unused << mColorGlyphCache->mCache.add(cached, aGlyphId, snapshot);
+            (void)mColorGlyphCache->mCache.add(cached, aGlyphId, snapshot);
           }
         }
       }
@@ -2909,16 +2910,16 @@ bool gfxFont::MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart,
                             gfxFloat* aAdvanceMin, gfxFloat* aAdvanceMax) {
   const gfxTextRun::CompressedGlyph* charGlyphs =
       aTextRun->GetCharacterGlyphs();
-  double x = 0;
-  if (aSpacing) {
-    x += aSpacing[0].mBefore;
-  }
   uint32_t spaceGlyph = GetSpaceGlyph();
   bool allGlyphsInvisible = true;
 
   AutoReadLock lock(aExtents->mLock);
 
+  double x = 0;
   for (uint32_t i = aStart; i < aEnd; ++i) {
+    if (aSpacing) {
+      x += aSpacing->mBefore;
+    }
     const gfxTextRun::CompressedGlyph* glyphData = &charGlyphs[i];
     if (glyphData->IsSimpleGlyph()) {
       double advance = glyphData->GetSimpleAdvance();
@@ -3006,11 +3007,8 @@ bool gfxFont::MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart,
       }
     }
     if (aSpacing) {
-      double space = aSpacing[i - aStart].mAfter;
-      if (i + 1 < aEnd) {
-        space += aSpacing[i + 1 - aStart].mBefore;
-      }
-      x += space;
+      x += aSpacing->mAfter;
+      ++aSpacing;
     }
   }
 
@@ -3233,6 +3231,7 @@ bool gfxFont::AgeCachedWords() {
         it.remove();
       }
     }
+    mWordCache->compact();
     return mWordCache->empty();
   }
   return true;
@@ -3864,10 +3863,11 @@ template bool gfxFont::SplitAndInitTextRun(
 
 template <>
 bool gfxFont::InitFakeSmallCapsRun(
-    nsPresContext* aPresContext, DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
-    const char16_t* aText, uint32_t aOffset, uint32_t aLength,
-    FontMatchType aMatchType, gfx::ShapedTextFlags aOrientation, Script aScript,
-    nsAtom* aLanguage, bool aSyntheticLower, bool aSyntheticUpper) {
+    FontVisibilityProvider* aFontVisibilityProvider, DrawTarget* aDrawTarget,
+    gfxTextRun* aTextRun, const char16_t* aText, uint32_t aOffset,
+    uint32_t aLength, FontMatchType aMatchType,
+    gfx::ShapedTextFlags aOrientation, Script aScript, nsAtom* aLanguage,
+    bool aSyntheticLower, bool aSyntheticUpper) {
   bool ok = true;
 
   RefPtr<gfxFont> smallCapsFont = GetSmallCapsFont();
@@ -4051,13 +4051,14 @@ bool gfxFont::InitFakeSmallCapsRun(
 
 template <>
 bool gfxFont::InitFakeSmallCapsRun(
-    nsPresContext* aPresContext, DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
-    const uint8_t* aText, uint32_t aOffset, uint32_t aLength,
-    FontMatchType aMatchType, gfx::ShapedTextFlags aOrientation, Script aScript,
-    nsAtom* aLanguage, bool aSyntheticLower, bool aSyntheticUpper) {
+    FontVisibilityProvider* aFontVisibilityProvider, DrawTarget* aDrawTarget,
+    gfxTextRun* aTextRun, const uint8_t* aText, uint32_t aOffset,
+    uint32_t aLength, FontMatchType aMatchType,
+    gfx::ShapedTextFlags aOrientation, Script aScript, nsAtom* aLanguage,
+    bool aSyntheticLower, bool aSyntheticUpper) {
   NS_ConvertASCIItoUTF16 unicodeString(reinterpret_cast<const char*>(aText),
                                        aLength);
-  return InitFakeSmallCapsRun(aPresContext, aDrawTarget, aTextRun,
+  return InitFakeSmallCapsRun(aFontVisibilityProvider, aDrawTarget, aTextRun,
                               static_cast<const char16_t*>(unicodeString.get()),
                               aOffset, aLength, aMatchType, aOrientation,
                               aScript, aLanguage, aSyntheticLower,
@@ -4300,12 +4301,8 @@ void gfxFont::CalculateDerivedMetrics(Metrics& aMetrics) {
   }
 
   aMetrics.maxHeight = aMetrics.maxAscent + aMetrics.maxDescent;
-
-  if (aMetrics.maxHeight - aMetrics.emHeight > 0.0) {
-    aMetrics.internalLeading = aMetrics.maxHeight - aMetrics.emHeight;
-  } else {
-    aMetrics.internalLeading = 0.0;
-  }
+  aMetrics.internalLeading =
+      std::max(0.0, aMetrics.maxHeight - aMetrics.emHeight);
 
   aMetrics.emAscent =
       aMetrics.maxAscent * aMetrics.emHeight / aMetrics.maxHeight;
@@ -4425,69 +4422,33 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
   }
 }
 
-gfxFont::Baselines gfxFont::GetBaselines(Orientation aOrientation) {
-  // Approximated baselines for fonts lacking actual baseline data. These are
-  // fractions of the em ascent/descent from the alphabetic baseline.
-  const double kHangingBaselineDefault = 0.8;       // fraction of ascent
-  const double kIdeographicBaselineDefault = -0.5;  // fraction of descent
+gfxFloat gfxFont::GetBaseline(const Baseline& aBaseline,
+                              Orientation aOrientation) {
+  std::atomic<gfxFloat>& baseline =
+      GetBaselines(aOrientation).*(aBaseline.first);
+  hb_ot_layout_baseline_tag_t tag = aBaseline.second;
 
-  // If no BASE table is present, just return synthetic values immediately.
-  if (!mFontEntry->HasFontTable(TRUETYPE_TAG('B', 'A', 'S', 'E'))) {
-    // No baseline table; just synthesize them immediately.
-    const Metrics& metrics = GetMetrics(aOrientation);
-    return Baselines{
-        0.0,                                             // alphabetic
-        kHangingBaselineDefault * metrics.emAscent,      // hanging
-        kIdeographicBaselineDefault * metrics.emDescent  // ideographic
-    };
-  }
-
-  // Use harfbuzz to try to read the font's baseline metrics.
-  Baselines result{NAN, NAN, NAN};
-  hb_font_t* hbFont = gfxHarfBuzzShaper::CreateHBFont(this);
-  hb_direction_t hbDir = aOrientation == nsFontMetrics::eHorizontal
-                             ? HB_DIRECTION_LTR
-                             : HB_DIRECTION_TTB;
-  hb_position_t position;
-  unsigned count = 0;
-  auto Fix2Float = [](hb_position_t f) -> gfxFloat { return f / 65536.0; };
-  if (hb_ot_layout_get_baseline(hbFont, HB_OT_LAYOUT_BASELINE_TAG_ROMAN, hbDir,
-                                HB_OT_TAG_DEFAULT_SCRIPT,
-                                HB_OT_TAG_DEFAULT_LANGUAGE, &position)) {
-    result.mAlphabetic = Fix2Float(position);
-    count++;
-  }
-  if (hb_ot_layout_get_baseline(hbFont, HB_OT_LAYOUT_BASELINE_TAG_HANGING,
-                                hbDir, HB_OT_TAG_DEFAULT_SCRIPT,
-                                HB_OT_TAG_DEFAULT_LANGUAGE, &position)) {
-    result.mHanging = Fix2Float(position);
-    count++;
-  }
-  if (hb_ot_layout_get_baseline(
-          hbFont, HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_BOTTOM_OR_LEFT, hbDir,
-          HB_OT_TAG_DEFAULT_SCRIPT, HB_OT_TAG_DEFAULT_LANGUAGE, &position)) {
-    result.mIdeographic = Fix2Float(position);
-    count++;
-  }
-  hb_font_destroy(hbFont);
-  // If we successfully read all three, we can return now.
-  if (count == 3) {
-    return result;
+  gfxFloat value = baseline;
+  if (std::isnan(value)) {
+    // Use harfbuzz to try to read the font's baseline metrics. For
+    // missing baselines, harfbuzz will synthesize fallbacks according
+    // to the CSS Inline Layout Module Level 3 specification.
+    hb_font_t* hbFont = gfxHarfBuzzShaper::CreateHBFont(this);
+    hb_direction_t hbDir = aOrientation == nsFontMetrics::eHorizontal
+                               ? HB_DIRECTION_LTR
+                               : HB_DIRECTION_TTB;
+    hb_position_t position;
+    hb_ot_layout_get_baseline_with_fallback(
+        hbFont, tag, hbDir, HB_OT_TAG_DEFAULT_SCRIPT,
+        HB_OT_TAG_DEFAULT_LANGUAGE, &position);
+    hb_font_destroy(hbFont);
+    value = position / 65536.0;
+    [[maybe_unused]] gfxFloat oldValue = baseline.exchange(value);
+    MOZ_ASSERT(std::isnan(oldValue) || oldValue == value,
+               "computed baseline mismatch");
   }
 
-  // Synthesize the baselines that we didn't find in the font.
-  const Metrics& metrics = GetMetrics(aOrientation);
-  if (std::isnan(result.mAlphabetic)) {
-    result.mAlphabetic = 0.0;
-  }
-  if (std::isnan(result.mHanging)) {
-    result.mHanging = kHangingBaselineDefault * metrics.emAscent;
-  }
-  if (std::isnan(result.mIdeographic)) {
-    result.mIdeographic = kIdeographicBaselineDefault * metrics.emDescent;
-  }
-
-  return result;
+  return value;
 }
 
 // Create a Metrics record to be used for vertical layout. This should never
@@ -4671,9 +4632,12 @@ void gfxFont::CreateVerticalMetrics() {
 
   // Somewhat arbitrary values for now, subject to future refinement...
   metrics->spaceWidth = metrics->aveCharWidth;
-  metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
+
+  metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
+  metrics->internalLeading =
+      std::max(0.0, metrics->maxHeight - metrics->emHeight);
 
   if (metrics->zeroWidth < 0.0) {
     metrics->zeroWidth = metrics->aveCharWidth;
@@ -4681,6 +4645,13 @@ void gfxFont::CreateVerticalMetrics() {
 
   if (!mVerticalMetrics.compareExchange(nullptr, metrics)) {
     delete metrics;
+  }
+}
+
+void gfxFont::CreateVerticalBaselines() {
+  auto* baselines = new Baselines();
+  if (!mVerticalBaselines.compareExchange(nullptr, baselines)) {
+    delete baselines;
   }
 }
 

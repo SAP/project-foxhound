@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBidiUtils_h__
-#define nsBidiUtils_h__
+#ifndef nsBidiUtils_h_
+#define nsBidiUtils_h_
 
 #include "mozilla/intl/BidiClass.h"
 
@@ -240,4 +240,4 @@ inline bool HasRTLChars(mozilla::Span<const char16_t> aBuffer) {
 #define UTF32_CHAR_IS_BIDI(c)                                   \
   ((IS_IN_BMP_RTL_BLOCK(c)) || (IS_RTL_PRESENTATION_FORM(c)) || \
    (IS_IN_SMP_RTL_BLOCK(c)))
-#endif /* nsBidiUtils_h__ */
+#endif /* nsBidiUtils_h_ */

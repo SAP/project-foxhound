@@ -4,29 +4,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsWrapperCache.h"
+#include "mozilla/dom/VRDisplay.h"
 
+#include "Navigator.h"
+#include "VRDisplayClient.h"
+#include "VRDisplayPresentation.h"
+#include "VRManagerChild.h"
+#include "gfxUtils.h"
+#include "gfxVR.h"
+#include "mozilla/Base64.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/VRDisplay.h"
 #include "mozilla/dom/VRDisplayBinding.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/Base64.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
-#include "Navigator.h"
-#include "gfxUtils.h"
-#include "gfxVR.h"
-#include "VRDisplayClient.h"
-#include "VRManagerChild.h"
-#include "VRDisplayPresentation.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
-#include "nsGlobalWindowInner.h"
+#include "nsWrapperCache.h"
 
 using namespace mozilla::gfx;
 
@@ -564,7 +564,7 @@ void VRDisplay::GetLayers(nsTArray<VRLayer>& result) {
 }
 
 void VRDisplay::SubmitFrame() {
-  AUTO_PROFILER_TRACING_MARKER("VR", "SubmitFrameAtVRDisplay", OTHER);
+  AUTO_PROFILER_MARKER("SubmitFrameAtVRDisplay", OTHER);
 
   if (mClient && !mClient->IsPresentationGenerationCurrent()) {
     mPresentation = nullptr;

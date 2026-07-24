@@ -5,17 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageCapture.h"
+
+#include "CaptureTask.h"
+#include "MediaEngineSource.h"
 #include "mozilla/dom/BlobEvent.h"
 #include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/ImageCaptureError.h"
 #include "mozilla/dom/ImageCaptureErrorEvent.h"
 #include "mozilla/dom/ImageCaptureErrorEventBinding.h"
 #include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/dom/Document.h"
-#include "CaptureTask.h"
-#include "MediaEngineSource.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla {

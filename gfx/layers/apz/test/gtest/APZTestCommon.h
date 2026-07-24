@@ -15,7 +15,6 @@
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
@@ -280,7 +279,6 @@ class TestAPZCTreeManager : public APZCTreeManager {
 
   SampleTime GetFrameTime() override { return mcc->GetSampleTime(); }
 
- private:
   RefPtr<MockContentControllerDelayed> mcc;
 };
 
@@ -366,14 +364,14 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     EXPECT_EQ(FLING, mState);
   }
 
-  void AssertStateIsSmoothScroll() const {
+  void AssertInSmoothScroll() const {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(SMOOTH_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Smooth));
   }
 
-  void AssertStateIsSmoothMsdScroll() const {
+  void AssertInSmoothMsdScroll() const {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(SMOOTHMSD_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::SmoothMsd));
   }
 
   void AssertStateIsPanningLockedY() {
@@ -396,9 +394,14 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     EXPECT_EQ(PAN_MOMENTUM, mState);
   }
 
-  void AssertStateIsWheelScroll() {
+  void AssertInWheelScroll() {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(WHEEL_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Wheel));
+  }
+
+  void AssertInKeyboardScroll() {
+    RecursiveMutexAutoLock lock(mRecursiveMutex);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Keyboard));
   }
 
   void AssertStateIsAutoscroll() {
@@ -469,7 +472,7 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
   }
 
   bool IsWheelScrollAnimationRunning() const {
-    return mState == PanZoomState::WHEEL_SCROLL;
+    return InScrollAnimation(ScrollAnimationKind::Wheel);
   }
 
  private:
@@ -769,7 +772,7 @@ void APZCTesterBase::Pan(const RefPtr<InputReceiver>& aTarget,
   auto stepVector = (aTouchEnd - aTouchStart) / numSteps;
   for (int k = 1; k < numSteps; k++) {
     auto stepPoint = aTouchStart + stepVector * k;
-    Unused << TouchMove(aTarget, stepPoint, mcc->Time());
+    (void)TouchMove(aTarget, stepPoint, mcc->Time());
 
     mcc->AdvanceBy(TIME_BETWEEN_TOUCH_EVENT);
   }
@@ -971,7 +974,7 @@ void APZCTesterBase::PinchWithTouchInput(const RefPtr<InputReceiver>& aTarget,
         CreateSingleTouchData(inputId, stepPoint1));
     mtiMoveStep.mTouches.AppendElement(
         CreateSingleTouchData(inputId + 1, stepPoint2));
-    Unused << aTarget->ReceiveInputEvent(mtiMoveStep);
+    (void)aTarget->ReceiveInputEvent(mtiMoveStep);
 
     mcc->AdvanceBy(aOptions.mTimeBetweenTouchEvents);
   }

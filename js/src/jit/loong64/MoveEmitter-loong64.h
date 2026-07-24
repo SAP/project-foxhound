@@ -52,7 +52,7 @@ class MoveEmitterLOONG64 {
   void emit(const MoveOp& move);
 
  public:
-  MoveEmitterLOONG64(MacroAssembler& masm)
+  explicit MoveEmitterLOONG64(MacroAssembler& masm)
       : inCycle_(0),
         masm(masm),
         pushedAtStart_(masm.framePushed()),

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpChannelAuthProvider_h__
-#define nsHttpChannelAuthProvider_h__
+#ifndef nsHttpChannelAuthProvider_h_
+#define nsHttpChannelAuthProvider_h_
 
 #include "nsIHttpChannelAuthProvider.h"
 #include "nsIAuthPromptCallback.h"
@@ -85,7 +85,6 @@ class nsHttpChannelAuthProvider final : public nsIHttpChannelAuthProvider,
                                            uint32_t authFlags,
                                            nsHttpAuthIdentity&);
 
-  bool ConfirmAuth(const char* bundleKey, bool doYesNoPrompt);
   void SetAuthorizationHeader(nsHttpAuthCache*, const nsHttpAtom& header,
                               const nsACString& scheme, const nsACString& host,
                               int32_t port, const nsACString& path,
@@ -167,7 +166,6 @@ class nsHttpChannelAuthProvider final : public nsIHttpChannelAuthProvider,
   uint32_t mProxyAuth : 1;
   uint32_t mTriedProxyAuth : 1;
   uint32_t mTriedHostAuth : 1;
-  uint32_t mSuppressDefensiveAuth : 1;
 
   // If a cross-origin sub-resource is being loaded, this flag will be set.
   // In that case, the prompt text will be different to warn users.
@@ -182,4 +180,4 @@ class nsHttpChannelAuthProvider final : public nsIHttpChannelAuthProvider,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpChannelAuthProvider_h__
+#endif  // nsHttpChannelAuthProvider_h_

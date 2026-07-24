@@ -1,4 +1,9 @@
 add_task(async function () {
+  // The frame-sep element is shared with "Ask an AI Chatbot".
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.menu", false]],
+  });
+
   let loadedPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     true

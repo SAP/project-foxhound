@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerDebuggerChild.h"
+
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -152,8 +153,8 @@ mozilla::ipc::IPCResult RemoteWorkerDebuggerChild::RecvInitialize(
     MOZ_ASSERT_DEBUG_OR_FUZZING(workerPrivate);
     RefPtr<CompileRemoteDebuggerScriptRunnable> runnable =
         new CompileRemoteDebuggerScriptRunnable(workerPrivate, aURL, nullptr);
-    Unused << NS_WARN_IF(!runnable->Dispatch(workerPrivate));
-    Unused << SendSetAsInitialized();
+    (void)NS_WARN_IF(!runnable->Dispatch(workerPrivate));
+    (void)SendSetAsInitialized();
   }
   mIsInitialized = true;
   return IPC_OK();
@@ -165,7 +166,7 @@ mozilla::ipc::IPCResult RemoteWorkerDebuggerChild::RecvPostMessage(
   MOZ_ASSERT_DEBUG_OR_FUZZING(workerPrivate);
   RefPtr<RemoteDebuggerMessageEventRunnable> runnable =
       new RemoteDebuggerMessageEventRunnable(aMessage);
-  Unused << NS_WARN_IF(!runnable->Dispatch(workerPrivate));
+  (void)NS_WARN_IF(!runnable->Dispatch(workerPrivate));
   return IPC_OK();
 }
 

@@ -57,6 +57,14 @@
         "profileGroupID": {
           "type": "string",
           "description": "The ID for the profile group that the backup was created on. Optional."
+        },
+        "healthTelemetryEnabled": {
+          "type": "boolean",
+          "description": "Indicates that the user profile in this archive has enabled the sending of technical and interaction data to Mozilla. Optional, defaults to false."
+        },
+        "usageTelemetryEnabled": {
+          "type": "boolean",
+          "description": "Indicates that the user profile in this archive has enabled the sending of technical and interaction data to Mozilla. Optional, defaults to false."
         }
       },
       "required": [

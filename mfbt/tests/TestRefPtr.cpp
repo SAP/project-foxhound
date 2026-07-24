@@ -50,7 +50,7 @@ void GetNewFoo(Foo** aFoo) {
 
 void GetNewFoo(RefPtr<Foo>* aFoo) { *aFoo = new Bar(); }
 
-already_AddRefed<Foo> GetNullFoo() { return 0; }
+already_AddRefed<Foo> GetNullFoo() { return nullptr; }
 
 int main() {
   MOZ_RELEASE_ASSERT(0 == Foo::sNumDestroyed);

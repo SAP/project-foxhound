@@ -10,7 +10,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -63,19 +62,17 @@ class CrashService : Service() {
     }
 
     private fun ensureChannelExists(): String {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager: NotificationManager = getSystemService(
-                Context.NOTIFICATION_SERVICE,
-            ) as NotificationManager
+        val notificationManager: NotificationManager = getSystemService(
+            Context.NOTIFICATION_SERVICE,
+        ) as NotificationManager
 
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "Crash Service",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            )
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "Crash Service",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
 
-            notificationManager.createNotificationChannel(channel)
-        }
+        notificationManager.createNotificationChannel(channel)
 
         return NOTIFICATION_CHANNEL_ID
     }

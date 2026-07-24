@@ -5,6 +5,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "DefaultCodecPreferences.h"
+
 #include "gmp/GMPUtils.h"
 #include "libwebrtcglue/VideoConduit.h"
 #include "mozilla/StaticPrefs_media.h"

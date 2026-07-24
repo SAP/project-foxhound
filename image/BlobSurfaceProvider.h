@@ -10,7 +10,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/DrawEventRecorder.h"
+#include "mozilla/gfx/DrawEventRecorderTypes.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "ImageRegion.h"
 #include "ISurfaceProvider.h"
@@ -25,7 +25,7 @@ class BlobImageKeyData final {
   BlobImageKeyData(
       layers::WebRenderLayerManager* aManager, const wr::BlobImageKey& aBlobKey,
       std::vector<RefPtr<gfx::ScaledFont>>&& aScaledFonts,
-      gfx::DrawEventRecorderPrivate::ExternalSurfacesHolder&& aExternalSurfaces)
+      gfx::DrawEventRecorderPrivate_ExternalSurfacesHolder&& aExternalSurfaces)
       : mManager(aManager),
         mBlobKey(aBlobKey),
         mScaledFonts(std::move(aScaledFonts)),
@@ -54,7 +54,7 @@ class BlobImageKeyData final {
   RefPtr<layers::WebRenderLayerManager> mManager;
   wr::BlobImageKey mBlobKey;
   std::vector<RefPtr<gfx::ScaledFont>> mScaledFonts;
-  gfx::DrawEventRecorderPrivate::ExternalSurfacesHolder mExternalSurfaces;
+  gfx::DrawEventRecorderPrivate_ExternalSurfacesHolder mExternalSurfaces;
   bool mDirty;
 };
 

@@ -5,21 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/FileSystemRequestParent.h"
-#include "mozilla/dom/PFileSystemParams.h"
 
 #include "GetDirectoryListingTask.h"
 #include "GetFileOrDirectoryTask.h"
 #include "GetFilesTask.h"
-
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemSecurity.h"
-#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/dom/OSFileSystem.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/PFileSystemParams.h"
+#include "mozilla/ipc/BackgroundParent.h"
 #include "nsProxyRelease.h"
 
 using namespace mozilla::ipc;

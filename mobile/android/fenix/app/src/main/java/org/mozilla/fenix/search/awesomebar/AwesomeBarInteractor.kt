@@ -5,6 +5,7 @@
 package org.mozilla.fenix.search.awesomebar
 
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.concept.awesomebar.AwesomeBar.GroupedSuggestion
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags
 
 /**
@@ -52,4 +53,11 @@ interface AwesomeBarInteractor {
      * Called whenever search engine suggestion is tapped
      */
     fun onSearchEngineSuggestionSelected(searchEngine: SearchEngine)
+
+    /**
+     * Called when the remove button is clicked for history search suggestions.
+     *
+     * @param suggestion The [GroupedSuggestion] for which the remove button was clicked.
+     */
+    fun onRemoveHistorySuggestionButtonClicked(suggestion: GroupedSuggestion)
 }

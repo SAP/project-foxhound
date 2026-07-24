@@ -17,6 +17,7 @@ function handleRequest(request, response) {
       "strictHeader=true; path=/; SameSite=Strict",
       true
     );
+    response.setHeader("Content-Type", "text/html");
     response.write(`
       <head>
         <meta http-equiv='set-cookie' content='laxMeta=true; path=/; SameSite=Lax'>
@@ -33,6 +34,7 @@ function handleRequest(request, response) {
     let baseURI =
       "https://example.org/" +
       request.path.replace(/[a-z-]*\.sjs/, "mimeme.sjs?type=");
+    response.setHeader("Content-Type", "text/html");
     response.write(`
       <link rel="stylesheet" type="text/css" href="${baseURI}css">
       <iframe src="${baseURI}html"></iframe>

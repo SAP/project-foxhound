@@ -1,0 +1,277 @@
+<!doctype html>
+<html>
+  <head>
+    <title>UA Widget and Trusted Types</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script type="text/javascript" src="head.js"></script>
+    <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+    <!-- See bug 1948227. UA Widgets may be broken if a page enforces
+         Trusted Types. In order to mitigate this issue, we skip Trusted
+         Types enforcement when the relevant node in the API called has
+         the NODE_HAS_BEEN_IN_UA_WIDGET set (currently, only for the
+         ShadowRoot of the UA Widget as well as its Element and CharacterData
+         descendants). This covers at least basic DOM mutations happening
+         within the ShadowDOM subtree (innerHTML, setAttribute, ...).
+      -->
+  </head>
+  <body>
+    <p id="display"></p>
+
+    <div id="content"></div>
+
+    <script class="testbody" type="text/javascript">
+      function pushPref(preferenceName, value) {
+        return new Promise(resolve => {
+          const options = { set: [[preferenceName, value]] };
+          SpecialPowers.pushPrefEnv(options, resolve);
+        });
+      }
+
+      add_task(async _ => {
+        await pushPref("dom.security.trusted_types.enabled", true);
+
+        // Append the CSP policy after enabling TrustedTypes, so that it is
+        // taken into account.
+        document.head.insertAdjacentHTML(
+          "beforeend",
+          `<meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">`
+        );
+
+        // Sanity check: TrustedTypes enforcement is enabled.
+        let error = undefined;
+        try {
+          document.createElement("div").innerHTML = "foo";
+        } catch (e) {
+          error = e;
+        }
+        ok(
+          error && /Sink type mismatch violation blocked by CSP/.test(error),
+          "TrustedTypes enforcement happens outside the sandbox."
+        );
+
+        const content = document.getElementById("content");
+
+        const div = content.appendChild(document.createElement("div"));
+        div.attachShadow({ mode: "open" });
+        SpecialPowers.wrap(div.shadowRoot).setIsUAWidget();
+
+        const sandbox = SpecialPowers.Cu.getUAWidgetScope(
+          SpecialPowers.wrap(div).nodePrincipal
+        );
+
+        SpecialPowers.setWrapped(
+          sandbox,
+          "info",
+          SpecialPowers.wrapFor(info, sandbox)
+        );
+        SpecialPowers.setWrapped(
+          sandbox,
+          "is",
+          SpecialPowers.wrapFor(is, sandbox)
+        );
+        SpecialPowers.setWrapped(
+          sandbox,
+          "ok",
+          SpecialPowers.wrapFor(ok, sandbox)
+        );
+
+        const sandboxScript = function (shadowRoot) {
+          info("UA Widget scope tests");
+          let host = shadowRoot.host;
+          let doc = host.ownerDocument;
+          let win = doc.defaultView;
+
+          function throwTrustedTypesError(fun) {
+            let error = undefined;
+            try {
+              fun();
+            } catch (e) {
+              error = e;
+            }
+            ok(
+              error &&
+                /Sink type mismatch violation blocked by CSP/.test(error),
+              "Should throw a TrustedTypes error."
+            );
+          }
+
+          is(shadowRoot.childElementCount, 0, "Shadow root initially empty.");
+
+          // ShadowRoot.setHTMLUnsafe().
+          throwTrustedTypesError(_ => shadowRoot.setHTMLUnsafe("<p></p>"));
+
+          // ShadowRoot.innerHTML.
+          shadowRoot.innerHTML = "<div></div>";
+          is(
+            shadowRoot.innerHTML,
+            "<div></div>",
+            "No TrustedTypes enforcement for ShadowRoot.innerHTML."
+          );
+          const element = shadowRoot.firstElementChild;
+
+          // Element.innerHTML.
+          element.innerHTML = "<div>foo</div>";
+          is(
+            element.innerHTML,
+            "<div>foo</div>",
+            "No TrustedTypes enforcement for Element.innerHTML."
+          );
+
+          // Element.outerHTML.
+          is(element.parentNode, shadowRoot);
+          element.firstElementChild.outerHTML = "<span>bar</span>";
+          is(
+            element.innerHTML,
+            "<span>bar</span>",
+            "No TrustedTypes enforcement for Element.outerHTML."
+          );
+
+          // Element.insertAdjacentHTML().
+          element.insertAdjacentHTML("beforeend", "baz");
+          is(
+            element.innerHTML,
+            "<span>bar</span>baz",
+            "No TrustedTypes enforcement for Element.insertAdjacentHTML()"
+          );
+
+          // Element.setHTMLUnsafe().
+          element.setHTMLUnsafe("<p></p>");
+          is(
+            element.innerHTML,
+            "<p></p>",
+            "No TrustedTypes enforcement for Element.setHTMLUnsafe()"
+          );
+
+          // HTMLIframeElement.srcdoc.
+          element.innerHTML = "<iframe></iframe>";
+          const iframe = element.firstElementChild;
+          iframe.srcdoc = "<div></div>";
+          is(
+            iframe.srcdoc,
+            "<div></div>",
+            "No TrustedTypes enforcement for HTMLIframeElement.srcdoc"
+          );
+
+          // Document.parseHTMLUnsafe().
+          const iframeWin = iframe.contentWindow;
+          const iframeDoc = iframe.contentDocument;
+          throwTrustedTypesError(_ =>
+            win.Document.parseHTMLUnsafe("<p>foo</p>")
+          );
+          throwTrustedTypesError(_ =>
+            iframeWin.Document.parseHTMLUnsafe("<p>foo</p>")
+          );
+
+          // Document.write()/writeln().
+          throwTrustedTypesError(_ => doc.write("1"));
+          throwTrustedTypesError(_ => doc.writeln("2"));
+          throwTrustedTypesError(_ => iframeDoc.write("3"));
+          throwTrustedTypesError(_ => iframeDoc.writeln("4"));
+
+          // Document.execCommand("insertHTML", ...);
+          throwTrustedTypesError(_ =>
+            doc.execCommand("insertHTML", false, "1")
+          );
+          throwTrustedTypesError(_ =>
+            iframeDoc.execCommand("insertHTML", false, "2")
+          );
+
+          // Range.createContextualFragment()
+          const range = doc.createRange();
+          range.selectNodeContents(doc.documentElement);
+          throwTrustedTypesError(_ => range.createContextualFragment("1"));
+          const iframeRange = iframeDoc.createRange();
+          iframeRange.selectNodeContents(iframeDoc.documentElement);
+          throwTrustedTypesError(_ =>
+            iframeRange.createContextualFragment("2")
+          );
+          // HTMLScriptElement src/text/innerText/textContent
+          element.innerHTML = "<script><\u002Fscript>";
+          const scriptElement = element.firstElementChild;
+          scriptElement.src = "data:text/javascript,;";
+          is(
+            scriptElement.src,
+            "data:text/javascript,;",
+            "No TrustedTypes enforcement for HTMLScriptElement.src"
+          );
+          scriptElement.text = ";";
+          is(
+            scriptElement.text,
+            ";",
+            "No TrustedTypes enforcement for HTMLScriptElement.src"
+          );
+          scriptElement.innerText = ";;";
+          is(
+            scriptElement.innerText,
+            ";;",
+            "No TrustedTypes enforcement for HTMLScriptElement.innerText"
+          );
+          scriptElement.textContent = ";;;";
+          is(
+            scriptElement.textContent,
+            ";;;",
+            "No TrustedTypes enforcement for HTMLScriptElement.textContent"
+          );
+
+          // Element.setAttribute/setAttributeNS.
+          element.innerHTML = "<svg><a></a></svg>";
+          const svgAnchor = element.firstElementChild.firstElementChild;
+          const xlinkNS = "http://www.w3.org/1999/xlink";
+          svgAnchor.setAttribute("href", "https://example.com/1.html");
+          is(
+            svgAnchor.getAttribute("href"),
+            "https://example.com/1.html",
+            "No TrustedTypes enforcement for Element.setAttribute()"
+          );
+          svgAnchor.removeAttribute("href");
+          svgAnchor.setAttributeNS(
+            xlinkNS,
+            "href",
+            "https://example.com/2.html"
+          );
+          is(
+            svgAnchor.getAttributeNS(xlinkNS, "href"),
+            "https://example.com/2.html",
+            "No TrustedTypes enforcement for Element.setAttributeNS()"
+          );
+
+          // SVGAnimatedString.baseVal
+          svgAnchor.href.baseVal = "https://example.com/3.html";
+          is(
+            svgAnchor.getAttribute("href"),
+            "https://example.com/3.html",
+            "No TrustedTypes enforcement for Element.href.baseVal"
+          );
+
+          // eval and new Function
+          // eslint-disable-next-line no-eval
+          is(eval("2+3"), 5);
+          is(new Function("a", "b", "return a * b")(2, 3), 6);
+
+          // Worker/SharedWorker constructors.
+          throwTrustedTypesError(
+            _ => new win.Worker("data:text/javascript,void 0")
+          );
+          throwTrustedTypesError(
+            _ => new iframeWin.Worker("data:text/javascript,void 0")
+          );
+          throwTrustedTypesError(
+            _ => new win.SharedWorker("data:text/javascript,void 0")
+          );
+          throwTrustedTypesError(
+            _ => new iframeWin.SharedWorker("data:text/javascript,void 0")
+          );
+
+          // WindowOrWorkerGlobalScope.setTimeout/setInterval
+          throwTrustedTypesError(_ => win.setTimeout(";"));
+          throwTrustedTypesError(_ => win.setInterval(";"));
+        };
+        SpecialPowers.Cu.evalInSandbox(
+          "this.script = " + sandboxScript.toString(),
+          sandbox
+        );
+        sandbox.script(div.shadowRoot);
+      });
+    </script>
+  </body>
+</html>

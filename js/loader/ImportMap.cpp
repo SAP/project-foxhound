@@ -9,6 +9,7 @@
 #include "js/Array.h"                 // IsArrayObject
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/JSON.h"                  // JS_ParseJSON
+#include "js/PropertyDescriptor.h"    // JS::PropertyDescriptor
 #include "LoadedScript.h"
 #include "ModuleLoaderBase.h"  // ScriptLoaderInterface
 #include "nsContentUtils.h"
@@ -107,19 +108,19 @@ static void NormalizeSpecifierKey(const nsAString& aSpecifierKey,
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#sorting-and-normalizing-a-module-specifier-map
 static UniquePtr<SpecifierMap> SortAndNormalizeSpecifierMap(
-    JSContext* aCx, JS::HandleObject aOriginalMap, nsIURI* aBaseURL,
+    JSContext* aCx, HandleObject aOriginalMap, nsIURI* aBaseURL,
     const ReportWarningHelper& aWarning) {
   // Step 1. Let normalized be an empty ordered map.
   UniquePtr<SpecifierMap> normalized = MakeUnique<SpecifierMap>();
 
-  JS::Rooted<JS::IdVector> specifierKeys(aCx, JS::IdVector(aCx));
+  Rooted<IdVector> specifierKeys(aCx, IdVector(aCx));
   if (!JS_Enumerate(aCx, aOriginalMap, &specifierKeys)) {
     return nullptr;
   }
 
   // Step 2. For each specifierKey → value of originalMap,
   for (size_t i = 0; i < specifierKeys.length(); i++) {
-    const JS::RootedId specifierId(aCx, specifierKeys[i]);
+    const RootedId specifierId(aCx, specifierKeys[i]);
     nsAutoJSString specifierKey;
     NS_ENSURE_TRUE(specifierKey.init(aCx, specifierId), nullptr);
 
@@ -134,7 +135,7 @@ static UniquePtr<SpecifierMap> SortAndNormalizeSpecifierMap(
       continue;
     }
 
-    JS::RootedValue idVal(aCx);
+    RootedValue idVal(aCx);
     NS_ENSURE_TRUE(JS_GetPropertyById(aCx, aOriginalMap, specifierId, &idVal),
                    nullptr);
     // Step 2.3. If value is not a string, then:
@@ -213,7 +214,7 @@ static UniquePtr<SpecifierMap> SortAndNormalizeSpecifierMap(
 // https://infra.spec.whatwg.org/#ordered-map
 //
 // If it is, *aIsMap will be set to true.
-static bool IsMapObject(JSContext* aCx, JS::HandleValue aMapVal, bool* aIsMap) {
+static bool IsMapObject(JSContext* aCx, HandleValue aMapVal, bool* aIsMap) {
   MOZ_ASSERT(aIsMap);
 
   *aIsMap = false;
@@ -232,9 +233,9 @@ static bool IsMapObject(JSContext* aCx, JS::HandleValue aMapVal, bool* aIsMap) {
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#sorting-and-normalizing-scopes
 static UniquePtr<ScopeMap> SortAndNormalizeScopes(
-    JSContext* aCx, JS::HandleObject aOriginalMap, nsIURI* aBaseURL,
+    JSContext* aCx, HandleObject aOriginalMap, nsIURI* aBaseURL,
     const ReportWarningHelper& aWarning) {
-  JS::Rooted<JS::IdVector> scopeKeys(aCx, JS::IdVector(aCx));
+  Rooted<IdVector> scopeKeys(aCx, IdVector(aCx));
   if (!JS_Enumerate(aCx, aOriginalMap, &scopeKeys)) {
     return nullptr;
   }
@@ -244,14 +245,14 @@ static UniquePtr<ScopeMap> SortAndNormalizeScopes(
 
   // Step 2. For each scopePrefix → potentialSpecifierMap of originalMap,
   for (size_t i = 0; i < scopeKeys.length(); i++) {
-    const JS::RootedId scopeKey(aCx, scopeKeys[i]);
+    const RootedId scopeKey(aCx, scopeKeys[i]);
     nsAutoJSString scopePrefix;
     NS_ENSURE_TRUE(scopePrefix.init(aCx, scopeKey), nullptr);
 
     // Step 2.1. If potentialSpecifierMap is not an ordered map, then throw a
     // TypeError indicating that the value of the scope with prefix scopePrefix
     // needs to be a JSON object.
-    JS::RootedValue mapVal(aCx);
+    RootedValue mapVal(aCx);
     NS_ENSURE_TRUE(JS_GetPropertyById(aCx, aOriginalMap, scopeKey, &mapVal),
                    nullptr);
 
@@ -290,7 +291,7 @@ static UniquePtr<ScopeMap> SortAndNormalizeScopes(
 
     // Step 2.5. Set normalized[normalizedScopePrefix] to the result of sorting
     // and normalizing a specifier map given potentialSpecifierMap and baseURL.
-    JS::RootedObject potentialSpecifierMap(aCx, &mapVal.toObject());
+    RootedObject potentialSpecifierMap(aCx, &mapVal.toObject());
     UniquePtr<SpecifierMap> specifierMap = SortAndNormalizeSpecifierMap(
         aCx, potentialSpecifierMap, aBaseURL, aWarning);
     if (!specifierMap) {
@@ -311,19 +312,19 @@ static UniquePtr<ScopeMap> SortAndNormalizeScopes(
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#normalizing-a-module-integrity-map
 static UniquePtr<IntegrityMap> NormalizeIntegrity(
-    JSContext* aCx, JS::HandleObject aOriginalMap, nsIURI* aBaseURL,
+    JSContext* aCx, HandleObject aOriginalMap, nsIURI* aBaseURL,
     const ReportWarningHelper& aWarning) {
   // Step 1. Let normalized be an empty ordered map.
   UniquePtr<IntegrityMap> normalized = MakeUnique<IntegrityMap>();
 
-  JS::Rooted<JS::IdVector> keys(aCx, JS::IdVector(aCx));
+  Rooted<IdVector> keys(aCx, IdVector(aCx));
   if (!JS_Enumerate(aCx, aOriginalMap, &keys)) {
     return nullptr;
   }
 
   // Step 2. For each key → value of originalMap,
   for (size_t i = 0; i < keys.length(); i++) {
-    const JS::RootedId keyId(aCx, keys[i]);
+    const RootedId keyId(aCx, keys[i]);
     nsAutoJSString key;
     NS_ENSURE_TRUE(key.init(aCx, keyId), nullptr);
 
@@ -345,7 +346,7 @@ static UniquePtr<IntegrityMap> NormalizeIntegrity(
 
     nsCOMPtr<nsIURI> resolvedURL = parseResult.unwrap();
 
-    JS::RootedValue idVal(aCx);
+    RootedValue idVal(aCx);
     NS_ENSURE_TRUE(JS_GetPropertyById(aCx, aOriginalMap, keyId, &idVal),
                    nullptr);
 
@@ -371,6 +372,21 @@ static UniquePtr<IntegrityMap> NormalizeIntegrity(
   return normalized;
 }
 
+static bool GetOwnProperty(JSContext* aCx, Handle<JSObject*> aObj,
+                           const char* aName, MutableHandle<Value> aValueOut) {
+  JS::Rooted<mozilla::Maybe<JS::PropertyDescriptor>> desc(aCx);
+  if (!JS_GetOwnPropertyDescriptor(aCx, aObj, aName, &desc)) {
+    return false;
+  }
+
+  if (desc.isNothing()) {
+    return true;
+  }
+  MOZ_ASSERT(!desc->isAccessorDescriptor());
+  aValueOut.set(desc->value());
+  return true;
+}
+
 // https://html.spec.whatwg.org/multipage/webappapis.html#parse-an-import-map-string
 // static
 UniquePtr<ImportMap> ImportMap::ParseString(
@@ -378,7 +394,7 @@ UniquePtr<ImportMap> ImportMap::ParseString(
     const ReportWarningHelper& aWarning) {
   // Step 1. Let parsed be the result of parsing JSON into Infra values given
   // input.
-  JS::Rooted<JS::Value> parsedVal(aCx);
+  Rooted<Value> parsedVal(aCx);
   if (!JS_ParseJSON(aCx, aInput.get(), aInput.length(), &parsedVal)) {
     NS_WARNING("Parsing Import map string failed");
 
@@ -386,13 +402,14 @@ UniquePtr<ImportMap> ImportMap::ParseString(
     // If so we update the error message from JSON parser to make it more clear
     // that the parsing of import map has failed.
     MOZ_ASSERT(JS_IsExceptionPending(aCx));
-    JS::Rooted<JS::Value> exn(aCx);
+    Rooted<Value> exn(aCx);
     if (!JS_GetPendingException(aCx, &exn)) {
       return nullptr;
     }
     MOZ_ASSERT(exn.isObject());
-    JS::Rooted<JSObject*> obj(aCx, &exn.toObject());
-    JSErrorReport* err = JS_ErrorFromException(aCx, obj);
+    Rooted<JSObject*> obj(aCx, &exn.toObject());
+    JS::BorrowedErrorReport err(aCx);
+    MOZ_ALWAYS_TRUE(JS_ErrorFromException(aCx, obj, err));
     if (err->exnType == JSEXN_SYNTAXERR) {
       JS_ClearPendingException(aCx);
       JS_ReportErrorNumberASCII(aCx, js::GetErrorMessage, nullptr,
@@ -415,9 +432,9 @@ UniquePtr<ImportMap> ImportMap::ParseString(
     return nullptr;
   }
 
-  JS::RootedObject parsedObj(aCx, &parsedVal.toObject());
-  JS::RootedValue importsVal(aCx);
-  if (!JS_GetProperty(aCx, parsedObj, "imports", &importsVal)) {
+  RootedObject parsedObj(aCx, &parsedVal.toObject());
+  RootedValue importsVal(aCx);
+  if (!GetOwnProperty(aCx, parsedObj, "imports", &importsVal)) {
     return nullptr;
   }
 
@@ -444,7 +461,7 @@ UniquePtr<ImportMap> ImportMap::ParseString(
 
     // Step 4.2. Set sortedAndNormalizedImports to the result of sorting and
     // normalizing a module specifier map given parsed["imports"] and baseURL.
-    JS::RootedObject importsObj(aCx, &importsVal.toObject());
+    RootedObject importsObj(aCx, &importsVal.toObject());
     sortedAndNormalizedImports =
         SortAndNormalizeSpecifierMap(aCx, importsObj, aBaseURL, aWarning);
     if (!sortedAndNormalizedImports) {
@@ -452,8 +469,8 @@ UniquePtr<ImportMap> ImportMap::ParseString(
     }
   }
 
-  JS::RootedValue scopesVal(aCx);
-  if (!JS_GetProperty(aCx, parsedObj, "scopes", &scopesVal)) {
+  RootedValue scopesVal(aCx);
+  if (!GetOwnProperty(aCx, parsedObj, "scopes", &scopesVal)) {
     return nullptr;
   }
 
@@ -480,7 +497,7 @@ UniquePtr<ImportMap> ImportMap::ParseString(
 
     // Step 6.2. Set sortedAndNormalizedScopes to the result of sorting and
     // normalizing scopes given parsed["scopes"] and baseURL.
-    JS::RootedObject scopesObj(aCx, &scopesVal.toObject());
+    RootedObject scopesObj(aCx, &scopesVal.toObject());
     sortedAndNormalizedScopes =
         SortAndNormalizeScopes(aCx, scopesObj, aBaseURL, aWarning);
     if (!sortedAndNormalizedScopes) {
@@ -488,8 +505,8 @@ UniquePtr<ImportMap> ImportMap::ParseString(
     }
   }
 
-  JS::RootedValue integrityVal(aCx);
-  if (!JS_GetProperty(aCx, parsedObj, "integrity", &integrityVal)) {
+  RootedValue integrityVal(aCx);
+  if (!GetOwnProperty(aCx, parsedObj, "integrity", &integrityVal)) {
     return nullptr;
   }
 
@@ -516,7 +533,7 @@ UniquePtr<ImportMap> ImportMap::ParseString(
 
     // Step 6.2. Set normalizedIntegrity to the result of normalizing
     // integrities given parsed["integrity"] and baseURL.
-    JS::RootedObject integrityObj(aCx, &integrityVal.toObject());
+    RootedObject integrityObj(aCx, &integrityVal.toObject());
     normalizedIntegrity =
         NormalizeIntegrity(aCx, integrityObj, aBaseURL, aWarning);
     if (!normalizedIntegrity) {
@@ -527,13 +544,13 @@ UniquePtr<ImportMap> ImportMap::ParseString(
   // Step 9. If parsed's keys contains any items besides "imports", "scopes",
   // or "integrity", then the user agent should report a warning to the console
   // indicating that an invalid top-level key was present in the import map.
-  JS::Rooted<JS::IdVector> keys(aCx, JS::IdVector(aCx));
+  Rooted<IdVector> keys(aCx, IdVector(aCx));
   if (!JS_Enumerate(aCx, parsedObj, &keys)) {
     return nullptr;
   }
 
   for (size_t i = 0; i < keys.length(); i++) {
-    const JS::RootedId key(aCx, keys[i]);
+    const RootedId key(aCx, keys[i]);
     nsAutoJSString val;
     NS_ENSURE_TRUE(val.init(aCx, key), nullptr);
     if (val.EqualsLiteral("imports") || val.EqualsLiteral("scopes") ||
@@ -583,7 +600,6 @@ static mozilla::Result<nsCOMPtr<nsIURI>, ResolveError> ResolveImportsMatch(
     const SpecifierMap* aSpecifierMap) {
   // Step 1. For each specifierKey → resolutionResult of specifierMap,
   for (auto&& [specifierKey, resolutionResult] : *aSpecifierMap) {
-    nsAutoString specifier{aNormalizedSpecifier};
     nsCString asURL = aAsURL ? aAsURL->GetSpecOrDefault() : EmptyCString();
 
     // Step 1.1. If specifierKey is normalizedSpecifier, then:

@@ -135,5 +135,10 @@ sealed class TrustPanelAction : Action {
          * @property phoneFeature Requested [PhoneFeature] to be managed.
          */
         data class ManagePhoneFeature(val phoneFeature: PhoneFeature) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating to view the security certificate.
+         */
+        data object SecurityCertificate : Navigate()
     }
 }

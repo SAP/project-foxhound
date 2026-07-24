@@ -5,14 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRInputSource.h"
-#include "mozilla/dom/XRInputSourceEvent.h"
-#include "XRNativeOriginViewer.h"
-#include "XRNativeOriginTracker.h"
-#include "XRInputSpace.h"
-#include "VRDisplayClient.h"
 
+#include "VRDisplayClient.h"
+#include "XRInputSpace.h"
+#include "XRNativeOriginTracker.h"
+#include "XRNativeOriginViewer.h"
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadManager.h"
+#include "mozilla/dom/XRInputSourceEvent.h"
 
 namespace mozilla::dom {
 
@@ -111,7 +111,7 @@ nsTArray<nsString> GetInputSourceProfile(gfx::VRControllerType aType) {
       profile.AppendElement(id);
       break;
     default:
-      NS_WARNING("Unsupported XR input source profile.\n");
+      NS_WARNING("Unsupported XR input source profile.");
       break;
   }
   return profile;

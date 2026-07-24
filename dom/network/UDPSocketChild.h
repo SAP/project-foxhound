@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_UDPSocketChild_h__
-#define mozilla_dom_UDPSocketChild_h__
+#ifndef mozilla_dom_UDPSocketChild_h_
+#define mozilla_dom_UDPSocketChild_h_
 
 #include "mozilla/net/PUDPSocketChild.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 #define UDPSOCKETCHILD_CID \
   {0xb47e5a0f, 0xd384, 0x48ef, {0x88, 0x85, 0x42, 0x59, 0x79, 0x3d, 0x9c, 0xf0}}
@@ -102,4 +102,4 @@ class UDPSocketChild : public mozilla::net::PUDPSocketChild,
 
 }  // namespace mozilla::dom
 
-#endif  // !defined(mozilla_dom_UDPSocketChild_h__)
+#endif  // !defined(mozilla_dom_UDPSocketChild_h_)

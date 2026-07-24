@@ -46,8 +46,12 @@ class Wait:
 
             # Wait 30 seconds for window to open, checking for its presence once
             # every 5 seconds.
-            wait = Wait(marionette, timeout=30, interval=5,
-                        ignored_exceptions=errors.NoSuchWindowException)
+            wait = Wait(
+                marionette,
+                timeout=30,
+                interval=5,
+                ignored_exceptions=errors.NoSuchWindowException,
+            )
             window = wait.until(lambda m: m.switch_to_window(42))
 
         :param marionette: The input value to be provided to
@@ -148,12 +152,12 @@ class Wait:
 
         if message:
             message = f" with message: {message}"
+        else:
+            message = ""
 
+        elapsed = round(self.clock.now - start, 1)
         raise errors.TimeoutException(
-            # pylint: disable=W1633
-            "Timed out after {0:.1f} seconds{1}".format(
-                float(round((self.clock.now - start), 1)), message if message else ""
-            ),
+            f"Timed out after {elapsed:.1f} seconds{message}",
             cause=last_exc,
         )
 

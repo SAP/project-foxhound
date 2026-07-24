@@ -27,6 +27,7 @@ async function checkPanelOpens() {
 /**
  * Start a download and check that the downloads panel opens correctly according
  * to the download parameter, openDownloadsListOnStart
+ *
  * @param {boolean} [openDownloadsListOnStart]
  *        true (default) - open downloads panel when download starts
  *        false - no downloads panel; update indicator attention state
@@ -79,11 +80,7 @@ async function downloadAndCheckPanel({ openDownloadsListOnStart = true } = {}) {
 
 function clickCheckbox(checkbox) {
   // Clicking a checkbox toggles its checkedness first.
-  if (checkbox.getAttribute("checked") == "true") {
-    checkbox.removeAttribute("checked");
-  } else {
-    checkbox.setAttribute("checked", "true");
-  }
+  checkbox.toggleAttribute("checked");
   // Then it runs the command and closes the popup.
   checkbox.doCommand();
   checkbox.parentElement.hidePopup();
@@ -95,6 +92,7 @@ function clickCheckbox(checkbox) {
  * we should get a file picker dialog. If preferredAction is alwaysAsk, we
  * should get an unknown content type dialog. If neither of those is true, we
  * should get no dialog at all, and expect the downloads panel to open.
+ *
  * @param {boolean} [expectPanelToOpen] true - fail if panel doesn't open
  *                                      false (default) - fail if it opens
  * @param {number}  [preferredAction]   Default download action:
@@ -597,7 +595,7 @@ add_task(async function test_alwaysOpenPanel_menuitem() {
   info("Check context menu for downloads button.");
   await openContextMenu(button);
   is(checkbox.hidden, false, "Always Open checkbox is visible.");
-  is(checkbox.getAttribute("checked"), "true", "Always Open is enabled.");
+  ok(checkbox.hasAttribute("checked"), "Always Open is enabled.");
 
   info("Disable Always Open via context menu.");
   clickCheckbox(checkbox);
@@ -611,7 +609,7 @@ add_task(async function test_alwaysOpenPanel_menuitem() {
 
   await openContextMenu(button);
   is(checkbox.hidden, false, "Always Open checkbox is visible.");
-  isnot(checkbox.getAttribute("checked"), "true", "Always Open is disabled.");
+  ok(!checkbox.hasAttribute("checked"), "Always Open is disabled.");
 
   info("Enable Always Open via context menu");
   clickCheckbox(checkbox);

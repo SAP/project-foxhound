@@ -6,8 +6,6 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  AppProvidedSearchEngine:
-    "moz-src:///toolkit/components/search/AppProvidedSearchEngine.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
@@ -17,6 +15,10 @@ const lazy = XPCOMUtils.declareLazy({
       maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
     }),
 });
+
+/**
+ * @import {SearchEngine} from "./SearchEngine.sys.mjs"
+ */
 
 const SETTINGS_FILENAME = "search.json.mozlz4";
 
@@ -77,7 +79,7 @@ export class SearchSettings {
    */
   #searchService = null;
 
-  /*
+  /**
    * The user's settings file read from disk so we can persist metadata for
    * engines that are default or hidden, the user's locale and region, hashes
    * for the loadPath, and hashes for default and private default engines.
@@ -85,37 +87,44 @@ export class SearchSettings {
    * to the settings.
    *
    * Structure of settings:
-   * Object { version: <number>,
-   *          engines: [...],
-   *          metaData: {...},
-   *        }
+   *
+   * ```
+   * Object {
+   *   version: <number>,
+   *   engines: [...],
+   *   metaData: {...},
+   * }
+   * ```
    *
    * Settings metaData is the active metadata for setting and getting attributes.
    * When a new metadata attribute is set, we save it to #settings.metaData and
    * write #settings to disk.
    *
    * #settings.metaData attributes:
-   * @property {string} current
-   *    The current user-set default engine. The associated hash is called
-   *    'hash'.
-   * @property {string} private
-   *    The current user-set private engine. The associated hash is called
-   *    'privateHash'.
-   *    The current and prviate objects have associated hash fields to validate
-   *    the value is set by the application.
-   * @property {string} appDefaultEngine
-   * @property {string} channel
-   *    Configuration is restricted to the specified channel. ESR is an example
-   *    of a channel.
-   * @property {string} distroID
-   *    Specifies which distribution the default engine is included in.
-   * @property {string} experiment
-   *    Specifies if the application is running on an experiment.
-   * @property {string} locale
-   * @property {string} region
-   * @property {boolean} useSavedOrder
-   *    True if the user's order information stored in settings is used.
    *
+   * @property {string} current
+   *   The current user-set default engine. The associated hash is called
+   *   'hash'.
+   * @property {string} private
+   *   The current user-set private engine. The associated hash is called
+   *   'privateHash'.
+   *   The current and prviate objects have associated hash fields to validate
+   *   the value is set by the application.
+   * @property {string} appDefaultEngine
+   *   The identifier of the current application default engine.
+   * @property {string} channel
+   *   Configuration is restricted to the specified channel. ESR is an example
+   *   of a channel.
+   * @property {string} distroID
+   *   Specifies which distribution the default engine is included in.
+   * @property {string} experiment
+   *   Specifies if the application is running on an experiment.
+   * @property {string} locale
+   *   The current locale.
+   * @property {string} region
+   *   The current region.
+   * @property {boolean} useSavedOrder
+   *   True if the user's order information stored in settings is used.
    */
   #settings = null;
 
@@ -236,6 +245,13 @@ export class SearchSettings {
   }
 
   /**
+   * Test-only function to reset the settings.
+   */
+  _testResetSettings() {
+    this.#resetSettings(false);
+  }
+
+  /**
    * Queues writing the settings until after SETTINGS_INVALIDATION_DELAY. If there
    * is a currently queued task then it will be restarted.
    */
@@ -306,15 +322,17 @@ export class SearchSettings {
     );
     settings.metaData = this.#settings.metaData;
 
-    // Persist metadata for AppProvided engines even if they aren't currently
+    // Persist metadata for config engines even if they aren't currently
     // active, this means if they become active again their settings
     // will be restored. This can happen if a user switches between regions.
     if (this.#settings?.engines) {
       for (let engine of this.#settings.engines) {
-        // TODO: The line below should compare names instead of ids.
+        // TODO: The line below should compare names instead of ids (bug 1973899).
         let included = settings.engines.some(e => e._name == engine._name);
+        // If a config engine is user-installed and not included, it was
+        // explicitly removed by the user and we should not persist its metadata.
         let userInstalled = engine._metaData["user-installed"];
-        if (engine._isAppProvided && !userInstalled && !included) {
+        if (engine._isConfigEngine && !userInstalled && !included) {
           settings.engines.push(engine);
         }
       }
@@ -422,21 +440,20 @@ export class SearchSettings {
    *
    * @param {string} name
    *   The name of the attribute to get.
-   * @param {boolean} isAppProvided
-   *   |true| if the engine associated with the attribute is an application
-   *          provided engine.
+   * @param {boolean} isConfigEngine
+   *   Whether the engine associated with the attribute is a config engine.
    * @returns {*}
    *   The value of the attribute.
    *   We return undefined if the value of the attribute is not known or does
    *   not match the verification hash.
    */
-  getVerifiedMetaDataAttribute(name, isAppProvided) {
+  getVerifiedMetaDataAttribute(name, isConfigEngine) {
     let attribute = this.getMetaDataAttribute(name);
 
-    // If the selected engine is an application provided one, we can relax the
+    // If the selected engine is a config engine, we can relax the
     // verification hash check to reduce the annoyance for users who
     // backup/sync their profile in custom ways.
-    if (isAppProvided) {
+    if (isConfigEngine) {
       return attribute;
     }
 
@@ -535,7 +552,7 @@ export class SearchSettings {
   }
 
   // nsIObserver
-  observe(engine, topic, verb) {
+  observe(subject, topic, verb) {
     switch (topic) {
       case lazy.SearchUtils.TOPIC_ENGINE_MODIFIED:
         switch (verb) {
@@ -545,11 +562,9 @@ export class SearchSettings {
             this._delayedWrite();
             break;
           case lazy.SearchUtils.MODIFIED_TYPE.ICON_CHANGED:
-            // Application Provided Search Engines have their icons stored in
-            // Remote Settings, so we don't need to update the saved settings.
-            if (
-              !(engine?.wrappedJSObject instanceof lazy.AppProvidedSearchEngine)
-            ) {
+            // Config Search Engines have their icons stored in Remote
+            // Settings, so we don't need to update the saved settings.
+            if (!subject.wrappedJSObject.isConfigEngine) {
               this._delayedWrite();
             }
             break;
@@ -684,7 +699,7 @@ export class SearchSettings {
    *
    * @param {string} engineName
    *   The name of the engine.
-   * @returns {nsISearchEngine}
+   * @returns {?SearchEngine}
    *   The associated engine if found, null otherwise.
    */
   #getEngineByName(engineName) {
@@ -709,6 +724,7 @@ export class SearchSettings {
     this.#migrateTo10();
     this.#migrateTo11();
     await this.#migrateTo12();
+    this.#migrateTo13();
   }
 
   #migrateTo6() {
@@ -908,6 +924,24 @@ export class SearchSettings {
           let size = lazy.SearchUtils.decodeSize(byteArray, contentType, 16);
           engine._iconMapObj ||= {};
           engine._iconMapObj[size] = iconURL;
+        }
+      }
+    }
+  }
+
+  #migrateTo13() {
+    // App provided engines are renamed to config engines, see bug 1973315.
+    // At the same time, we also rename _isBuiltin _isConfigEngine.
+    // This originally happed in bug 1631898, but instead of adding a migration,
+    // the initial implementation simply checked both values.
+    if (this.#settings.version < 13 && this.#settings.engines) {
+      for (let engine of this.#settings.engines) {
+        if (engine._isAppProvided) {
+          delete engine._isAppProvided;
+          engine._isConfigEngine = true;
+        } else if (engine._isBuiltin) {
+          delete engine._isBuiltin;
+          engine._isConfigEngine = true;
         }
       }
     }

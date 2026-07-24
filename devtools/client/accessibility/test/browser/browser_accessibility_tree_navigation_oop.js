@@ -26,7 +26,7 @@ const tests = [
         },
       ],
       sidebar: {
-        name: "",
+        name: null,
         role: "document",
         actions: [],
         value: "",

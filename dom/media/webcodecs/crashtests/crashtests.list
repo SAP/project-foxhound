@@ -15,3 +15,9 @@ skip-if(Android) load 1908231.html
 skip-if(Android) pref(media.test.null.decoder.creation-failure,true) load 1913311.html
 skip-if(Android) load 1934334.html
 load 1938591.html
+skip-if(Android) load 1999390.html
+skip-if(Android) load 2012791.html
+skip-if(Android) load 2013957.html
+skip-if(Android) load 2014836.html
+skip-if(Android) load 2014892.html
+skip-if(Android) load 2017470.html

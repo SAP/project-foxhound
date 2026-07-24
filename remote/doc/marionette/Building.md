@@ -1,4 +1,4 @@
-# Building
+# Building Marionette
 
 Marionette is built into Firefox by default and ships in the official
 Firefox binary.  As Marionette is written in [XPCOM] flavoured

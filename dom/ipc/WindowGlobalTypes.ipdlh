@@ -28,6 +28,7 @@ struct WindowGlobalInit
   nullable nsIURI documentURI;
 
   bool isInitialDocument;
+  bool isUncommittedInitialDocument;
   bool blockAllMixedContent;
   bool upgradeInsecureRequests;
   uint32_t sandboxFlags;

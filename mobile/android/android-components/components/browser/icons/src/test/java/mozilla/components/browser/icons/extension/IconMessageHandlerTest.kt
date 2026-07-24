@@ -7,7 +7,6 @@ package mozilla.components.browser.icons.extension
 import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -35,7 +34,6 @@ import org.mockito.Mockito.verify
 @RunWith(AndroidJUnit4::class)
 class IconMessageHandlerTest {
 
-    @ExperimentalCoroutinesApi
     @OptIn(DelicateCoroutinesApi::class)
     @Test
     fun `Complex message (TheVerge) is transformed into IconRequest and loaded`() {
@@ -210,7 +208,6 @@ class IconMessageHandlerTest {
             }
 
             store.dispatch(TrackingProtectionAction.ClearTrackersAction("test-url"))
-                .join()
 
             // Loaded icon will be set on session
 

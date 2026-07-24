@@ -1,5 +1,7 @@
-Search
-======
+.. _browser-search:
+
+Search UI
+=========
 
 This document describes the implementation of parts of Firefox's search interfaces.
 

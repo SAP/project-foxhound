@@ -8,6 +8,12 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  TabGroupTestUtils: "resource://testing-common/TabGroupTestUtils.sys.mjs",
+});
+
 const TEST_URL = `${TEST_BASE_URL}dummy_page.html`;
 
 add_task(async function test_with_oneoff_button() {
@@ -64,8 +70,8 @@ add_task(async function test_with_oneoff_button() {
     "Waiting until the search mode title will be visible"
   );
   await BrowserTestUtils.waitForCondition(
-    () => BrowserTestUtils.isHidden(switchTabLabel),
-    "Waiting until the switch tab label will be hidden"
+    () => BrowserTestUtils.isVisible(switchTabLabel),
+    "Waiting until the switch tab label will be visible"
   );
 
   await PlacesUtils.history.clear();
@@ -123,3 +129,144 @@ add_task(async function test_with_keytype() {
   await PlacesUtils.history.clear();
   gBrowser.removeTab(tab);
 });
+
+add_task(async function test_chiclet_contextual_id() {
+  // Add a container tab in the background. Use `openNewForegroundTab` since it
+  // waits for the page to load, which is important for triggering the
+  // switch-to-tab, and then switch back to the first tab.
+  let containerTab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening: () => {
+      gBrowser.selectedTab = BrowserTestUtils.addTab(
+        gBrowser,
+        "https://example.com/test_chiclet_contextual_id",
+        { userContextId: 1 }
+      );
+    },
+  });
+  await BrowserTestUtils.switchTab(gBrowser, gBrowser.tabs[0]);
+
+  // Do a search that matches the tab. There should be a switch-to-tab result.
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test_chiclet_contextual_id",
+  });
+
+  let {
+    result,
+    element: { row },
+  } = await getDetailsOfTabSwitchResult();
+
+  Assert.equal(
+    result.type,
+    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    "Result at index 1 should be a tab switch"
+  );
+
+  // The row should have the contextual ID chiclet, and the chiclet shouldn't
+  // have any l10n attributes.
+  let chiclet = row.querySelector(".action-contextualidentity");
+  Assert.ok(chiclet, "The contextual ID chiclet should be in the row");
+  Assert.ok(
+    BrowserTestUtils.isVisible(chiclet),
+    "The contextual ID chiclet should be visible"
+  );
+  Assert.deepEqual(
+    document.l10n.getAttributes(chiclet),
+    { id: null, args: null },
+    "The contextual ID chiclet should not have l10n attributes"
+  );
+
+  // Check its text content.
+  let label = ContextualIdentityService.getUserContextLabel(1);
+  Assert.ok(label, "Sanity check: A label is defined for the contextual ID");
+  Assert.equal(
+    chiclet.textContent,
+    label,
+    "The contextual ID chiclet should have the expected label"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  await BrowserTestUtils.removeTab(containerTab);
+});
+
+add_task(async function test_chiclet_tab_group() {
+  // Add a tab group in the background. Use `openNewForegroundTab` since it
+  // waits for the page to load, which is important for triggering the
+  // switch-to-tab, and then switch back to the first tab.
+  let label = "test_chiclet_tab_group";
+  let tabs = [
+    await BrowserTestUtils.openNewForegroundTab({
+      gBrowser,
+      url: "https://example.com/" + label,
+    }),
+  ];
+  let tabGroup = gBrowser.addTabGroup(tabs, {
+    label,
+    color: "blue",
+  });
+  await BrowserTestUtils.switchTab(gBrowser, gBrowser.tabs[0]);
+
+  // Do a search that matches a tab in the group. There should be a
+  // switch-to-tab result.
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: label,
+  });
+
+  let {
+    result,
+    element: { row },
+  } = await getDetailsOfTabSwitchResult();
+
+  Assert.equal(
+    result.type,
+    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    "Result at index 1 should be a tab switch"
+  );
+
+  // The row should have the tab group chiclet, and the chiclet shouldn't have
+  // any l10n attributes.
+  let chiclet = row.querySelector(".urlbarView-tabGroup");
+  Assert.ok(chiclet, "The tab group chiclet should be in the row");
+  Assert.ok(
+    BrowserTestUtils.isVisible(chiclet),
+    "The tab group chiclet should be visible"
+  );
+  Assert.deepEqual(
+    document.l10n.getAttributes(chiclet),
+    { id: null, args: null },
+    "The tab group chiclet should not have l10n attributes"
+  );
+
+  // Check the chiclet's children, the full-width and narrow-width labels.
+  let fullLabel = chiclet.children[0];
+  Assert.ok(fullLabel, "The tab group full-width label should exist");
+  Assert.equal(
+    fullLabel.textContent,
+    label,
+    "The tab group full-width label should be the full label text"
+  );
+
+  let narrowLabel = chiclet.children[1];
+  Assert.ok(narrowLabel, "The tab group narrow-width label should exist");
+  Assert.equal(
+    narrowLabel.textContent,
+    label[0],
+    "The tab group narrow-width label should be first char of the full label"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  await TabGroupTestUtils.removeTabGroup(tabGroup);
+  TabGroupTestUtils.forgetSavedTabGroups();
+});
+
+async function getDetailsOfTabSwitchResult() {
+  for (let i = 0; i < UrlbarTestUtils.getResultCount(window); i++) {
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+    if (details.type == UrlbarUtils.RESULT_TYPE.TAB_SWITCH) {
+      return details;
+    }
+  }
+  return null;
+}

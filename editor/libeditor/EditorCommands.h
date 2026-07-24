@@ -12,7 +12,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TypedEnumBits.h"
 #include "nsGkAtoms.h"
-#include "nsIControllerCommand.h"
+#include "mozilla/ControllerCommand.h"
 #include "nsIPrincipal.h"
 #include "nsISupportsImpl.h"
 #include "nsRefPtrHashtable.h"
@@ -65,10 +65,8 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(EditorCommandParamType)
  * stateless. Any state must be stored via the refCon (an nsIEditor).
  */
 
-class EditorCommand : public nsIControllerCommand {
+class EditorCommand : public ControllerCommand {
  public:
-  NS_DECL_ISUPPORTS
-
   static EditorCommandParamType GetParamType(Command aCommand) {
     // Keep same order of registration in EditorController.cpp and
     // HTMLEditorController.cpp.
@@ -311,19 +309,16 @@ class EditorCommand : public nsIControllerCommand {
     }
   }
 
-  // nsIControllerCommand methods.  Use EditorCommand specific methods instead
+  // ControllerCommand methods.  Use EditorCommand specific methods instead
   // for internal use.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD
-  IsCommandEnabled(const char* aCommandName, nsISupports* aCommandRefCon,
-                   bool* aIsEnabled) final;
-  MOZ_CAN_RUN_SCRIPT NS_IMETHOD DoCommand(const char* aCommandName,
-                                          nsISupports* aCommandRefCon) final;
-  MOZ_CAN_RUN_SCRIPT NS_IMETHOD
-  DoCommandParams(const char* aCommandName, nsICommandParams* aParams,
-                  nsISupports* aCommandRefCon) final;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD
-  GetCommandStateParams(const char* aCommandName, nsICommandParams* aParams,
-                        nsISupports* aCommandRefCon) final;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool IsCommandEnabled(
+      const nsACString& aCommandName, nsISupports* aCommandRefCon) final;
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommand(const nsACString& aCommandName,
+                                        nsICommandParams* aParams,
+                                        nsISupports* aCommandRefCon) final;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void GetCommandStateParams(
+      const nsACString& aCommandName, nsICommandParams* aParams,
+      nsISupports* aCommandRefCon) final;
 
   MOZ_CAN_RUN_SCRIPT virtual bool IsCommandEnabled(
       Command aCommand, EditorBase* aEditorBase) const = 0;
@@ -409,14 +404,14 @@ class EditorCommand : public nsIControllerCommand {
 
 #define NS_DECL_EDITOR_COMMAND_COMMON_METHODS                              \
  public:                                                                   \
-  MOZ_CAN_RUN_SCRIPT virtual bool IsCommandEnabled(                        \
+  MOZ_CAN_RUN_SCRIPT bool IsCommandEnabled(                                \
       Command aCommand, EditorBase* aEditorBase) const final;              \
   using EditorCommand::IsCommandEnabled;                                   \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommand(                           \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommand(                                   \
       Command aCommand, EditorBase& aEditorBase, nsIPrincipal* aPrincipal) \
       const final;                                                         \
   using EditorCommand::DoCommand;                                          \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult GetCommandStateParams(               \
+  MOZ_CAN_RUN_SCRIPT nsresult GetCommandStateParams(                       \
       Command aCommand, nsCommandParams& aParams, EditorBase* aEditorBase, \
       nsIEditingSession* aEditingSession) const final;                     \
   using EditorCommand::GetCommandStateParams;                              \
@@ -424,7 +419,7 @@ class EditorCommand : public nsIControllerCommand {
 
 #define NS_DECL_DO_COMMAND_PARAM_DELEGATE_TO_DO_COMMAND                    \
  public:                                                                   \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(                      \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommandParam(                              \
       Command aCommand, EditorBase& aEditorBase, nsIPrincipal* aPrincipal) \
       const final {                                                        \
     return DoCommand(aCommand, aEditorBase, aPrincipal);                   \
@@ -432,25 +427,25 @@ class EditorCommand : public nsIControllerCommand {
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_BOOL_PARAM        \
  public:                                               \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(  \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommandParam(          \
       Command aCommand, const Maybe<bool>& aBoolParam, \
       EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_CSTRING_PARAM       \
  public:                                                 \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(    \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommandParam(            \
       Command aCommand, const nsACString& aCStringParam, \
       EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_STRING_PARAM      \
  public:                                               \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(  \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommandParam(          \
       Command aCommand, const nsAString& aStringParam, \
       EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
 #define NS_DECL_DO_COMMAND_PARAM_FOR_TRANSFERABLE_PARAM      \
  public:                                                     \
-  MOZ_CAN_RUN_SCRIPT virtual nsresult DoCommandParam(        \
+  MOZ_CAN_RUN_SCRIPT nsresult DoCommandParam(                \
       Command aCommand, nsITransferable* aTransferableParam, \
       EditorBase& aEditorBase, nsIPrincipal* aPrincipal) const final;
 
@@ -553,8 +548,6 @@ NS_DECL_EDITOR_COMMAND_FOR_NO_PARAM_WITH_DELEGATE(PasteQuotationCommand)
 // (like styles etc)
 class StateUpdatingCommandBase : public EditorCommand {
  public:
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(StateUpdatingCommandBase, EditorCommand)
-
   NS_DECL_EDITOR_COMMAND_COMMON_METHODS
   NS_DECL_DO_COMMAND_PARAM_DELEGATE_TO_DO_COMMAND
 
@@ -648,8 +641,6 @@ class StyleUpdatingCommand final : public StateUpdatingCommandBase {
 
 class InsertTagCommand final : public EditorCommand {
  public:
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(InsertTagCommand, EditorCommand)
-
   NS_DECL_EDITOR_COMMAND_COMMON_METHODS
   NS_DECL_DO_COMMAND_PARAM_DELEGATE_TO_DO_COMMAND
   NS_DECL_DO_COMMAND_PARAM_FOR_STRING_PARAM
@@ -714,8 +705,6 @@ class ListItemCommand final : public StateUpdatingCommandBase {
 // Base class for commands whose state consists of a string (e.g. para format)
 class MultiStateCommandBase : public EditorCommand {
  public:
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(MultiStateCommandBase, EditorCommand)
-
   NS_DECL_EDITOR_COMMAND_COMMON_METHODS
   NS_DECL_DO_COMMAND_PARAM_FOR_STRING_PARAM
 
@@ -881,8 +870,6 @@ NS_DECL_EDITOR_COMMAND_FOR_NO_PARAM_WITH_DELEGATE(DocumentStateCommand)
 
 class SetDocumentStateCommand final : public EditorCommand {
  public:
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(SetDocumentStateCommand, EditorCommand)
-
   NS_DECL_EDITOR_COMMAND_COMMON_METHODS
   NS_DECL_DO_COMMAND_PARAM_FOR_BOOL_PARAM
   NS_DECL_DO_COMMAND_PARAM_FOR_CSTRING_PARAM

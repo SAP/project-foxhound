@@ -215,11 +215,12 @@ LoginManagerCrypto_SDR.prototype = {
   /**
    * Decrypts the specified strings, using the SecretDecoderRing.
    *
-   * @resolve {string[]} The decrypted strings. If a string cannot
-   * be decrypted, the empty string is returned for that instance.
-   * Callers will need to use decrypt() to determine if the encrypted
-   * string is invalid or intentionally empty. Throws/reject with
-   * an error if there was a problem.
+   * @returns {Promise<string[]>}
+   *   Resolved to the decrypted strings. If a string cannot be decrypted, the
+   *   empty string is returned for that instance. Callers will need to use
+   *   decrypt() to determine if the encrypted string is invalid or intentionally
+   *   empty.
+   *   Throws/rejects with an error if there was a problem.
    */
   async decryptMany(cipherTexts) {
     if (!Array.isArray(cipherTexts) || !cipherTexts.length) {

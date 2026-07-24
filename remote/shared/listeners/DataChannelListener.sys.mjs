@@ -31,7 +31,7 @@ const OBSERVER_TOPIC_DATA_CHANNEL_OPENED = "data-channel-opened";
  * };
  * ```
  *
- * @fires cached-resource-sent
+ * @fires DataChannelListener#"cached-resource-sent"
  *    The DataChannelListener emits "data-channel-opened" event with the
  *    following object as payload:
  *      - {nsIDataChannel} channel

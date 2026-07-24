@@ -6,10 +6,12 @@
 
 pub mod cascade;
 pub mod declaration_block;
+pub mod shorthands;
 
 pub use self::cascade::*;
 pub use self::declaration_block::*;
 pub use self::generated::*;
+
 /// The CSS properties supported by the style system.
 /// Generated from the properties.mako.rs template by build.rs
 #[macro_use]
@@ -20,18 +22,19 @@ pub mod generated {
 }
 
 use crate::custom_properties::{self, ComputedCustomProperties};
+use crate::derives::*;
+use crate::dom::AttributeTracker;
 #[cfg(feature = "gecko")]
-use crate::gecko_bindings::structs::{nsCSSPropertyID, AnimatedPropertyID, RefPtr};
+use crate::gecko_bindings::structs::{CSSPropertyId, NonCustomCSSPropertyId, RefPtr};
 use crate::logical_geometry::WritingMode;
 use crate::parser::ParserContext;
-use crate::str::CssString;
 use crate::stylesheets::CssRuleType;
 use crate::stylesheets::Origin;
 use crate::stylist::Stylist;
 use crate::values::{computed, serialize_atom_name};
 use arrayvec::{ArrayVec, Drain as ArrayVecDrain};
-use cssparser::{Parser, ParserInput};
-use fxhash::FxHashMap;
+use cssparser::{match_ignore_ascii_case, Parser, ParserInput};
+use rustc_hash::FxHashMap;
 use servo_arc::Arc;
 use std::{
     borrow::Cow,
@@ -39,7 +42,8 @@ use std::{
     mem,
 };
 use style_traits::{
-    CssWriter, KeywordsCollectFn, ParseError, ParsingMode, SpecifiedValueInfo, ToCss,
+    CssString, CssWriter, KeywordsCollectFn, ParseError, ParsingMode, SpecifiedValueInfo, ToCss,
+    ToTyped, TypedValue,
 };
 
 bitflags! {
@@ -77,7 +81,9 @@ bitflags! {
 }
 
 /// An enum to represent a CSS Wide keyword.
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(
+    Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
+)]
 pub enum CSSWideKeyword {
     /// The `initial` keyword.
     Initial,
@@ -137,8 +143,16 @@ pub struct WideKeywordDeclaration {
     pub keyword: CSSWideKeyword,
 }
 
+// XXX Switch back to ToTyped derive once it can automatically handle structs
+// Tracking in bug 1991631
+impl ToTyped for WideKeywordDeclaration {
+    fn to_typed(&self) -> Option<TypedValue> {
+        self.keyword.to_typed()
+    }
+}
+
 /// An unparsed declaration that contains `var()` functions.
-#[derive(Clone, PartialEq, ToCss, ToShmem, MallocSizeOf)]
+#[derive(Clone, PartialEq, ToCss, ToShmem, MallocSizeOf, ToTyped)]
 pub struct VariableDeclaration {
     /// The id of the property this declaration represents.
     #[css(skip)]
@@ -161,7 +175,7 @@ pub enum CustomDeclarationValue {
 }
 
 /// A custom property declaration with the property name and the declared value.
-#[derive(Clone, PartialEq, ToCss, ToShmem, MallocSizeOf)]
+#[derive(Clone, PartialEq, ToCss, ToShmem, MallocSizeOf, ToTyped)]
 pub struct CustomDeclaration {
     /// The name of the custom property.
     #[css(skip)]
@@ -208,24 +222,24 @@ impl NonCustomPropertyId {
         self.0 as usize
     }
 
-    /// Convert a `NonCustomPropertyId` into a `nsCSSPropertyID`.
+    /// Convert a `NonCustomPropertyId` into a `NonCustomCSSPropertyId`.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_nscsspropertyid(self) -> nsCSSPropertyID {
-        // unsafe: guaranteed by static_assert_nscsspropertyid.
-        unsafe { mem::transmute(self.0 as i32) }
+    pub fn to_noncustomcsspropertyid(self) -> NonCustomCSSPropertyId {
+        // unsafe: guaranteed by static_assert_noncustomcsspropertyid.
+        unsafe { mem::transmute(self.0) }
     }
 
-    /// Convert an `nsCSSPropertyID` into a `NonCustomPropertyId`.
+    /// Convert an `NonCustomCSSPropertyId` into a `NonCustomPropertyId`.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn from_nscsspropertyid(prop: nsCSSPropertyID) -> Option<Self> {
-        let prop = prop as i32;
-        if prop < 0 || prop >= property_counts::NON_CUSTOM as i32 {
+    pub fn from_noncustomcsspropertyid(prop: NonCustomCSSPropertyId) -> Option<Self> {
+        let prop = prop as u16;
+        if prop >= property_counts::NON_CUSTOM as u16 {
             return None;
         }
-        // guaranteed by static_assert_nscsspropertyid above.
-        Some(NonCustomPropertyId(prop as u16))
+        // guaranteed by static_assert_noncustomcsspropertyid above.
+        Some(NonCustomPropertyId(prop))
     }
 
     /// Resolves the alias of a given property if needed.
@@ -254,8 +268,8 @@ impl NonCustomPropertyId {
     /// Returns a shorthand id, if this property is one.
     #[inline]
     pub fn as_shorthand(self) -> Option<ShorthandId> {
-        if self.0 >= property_counts::LONGHANDS as u16 &&
-            self.0 < property_counts::LONGHANDS_AND_SHORTHANDS as u16
+        if self.0 >= property_counts::LONGHANDS as u16
+            && self.0 < property_counts::LONGHANDS_AND_SHORTHANDS as u16
         {
             return Some(unsafe { mem::transmute(self.0 - (property_counts::LONGHANDS as u16)) });
         }
@@ -409,23 +423,25 @@ impl PropertyId {
         Ok(id)
     }
 
-    /// Returns a property id from Gecko's nsCSSPropertyID.
+    /// Returns a property id from Gecko's NonCustomCSSPropertyId.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn from_nscsspropertyid(id: nsCSSPropertyID) -> Option<Self> {
-        Some(NonCustomPropertyId::from_nscsspropertyid(id)?.to_property_id())
+    pub fn from_noncustomcsspropertyid(id: NonCustomCSSPropertyId) -> Option<Self> {
+        Some(NonCustomPropertyId::from_noncustomcsspropertyid(id)?.to_property_id())
     }
 
-    /// Returns a property id from Gecko's AnimatedPropertyID.
+    /// Returns a property id from Gecko's CSSPropertyId.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn from_gecko_animated_property_id(property: &AnimatedPropertyID) -> Option<Self> {
+    pub fn from_gecko_css_property_id(property: &CSSPropertyId) -> Option<Self> {
         Some(
-            if property.mID == nsCSSPropertyID::eCSSPropertyExtra_variable {
+            if property.mId == NonCustomCSSPropertyId::eCSSPropertyExtra_variable {
                 debug_assert!(!property.mCustomName.mRawPtr.is_null());
                 Self::Custom(unsafe { crate::Atom::from_raw(property.mCustomName.mRawPtr) })
             } else {
-                Self::NonCustom(NonCustomPropertyId::from_nscsspropertyid(property.mID)?)
+                Self::NonCustom(NonCustomPropertyId::from_noncustomcsspropertyid(
+                    property.mId,
+                )?)
             },
         )
     }
@@ -438,7 +454,7 @@ impl PropertyId {
 
     /// Given this property id, get it either as a shorthand or as a
     /// `PropertyDeclarationId`.
-    pub fn as_shorthand(&self) -> Result<ShorthandId, PropertyDeclarationId> {
+    pub fn as_shorthand(&self) -> Result<ShorthandId, PropertyDeclarationId<'_>> {
         match *self {
             Self::NonCustom(id) => match id.longhand_or_shorthand() {
                 Ok(lh) => Err(PropertyDeclarationId::Longhand(lh)),
@@ -475,22 +491,27 @@ impl PropertyId {
         id.enabled_for_all_content()
     }
 
-    /// Converts this PropertyId in nsCSSPropertyID, resolving aliases to the
+    /// Converts this PropertyId in NonCustomCSSPropertyId, resolving aliases to the
     /// resolved property, and returning eCSSPropertyExtra_variable for custom
     /// properties.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_nscsspropertyid_resolving_aliases(&self) -> nsCSSPropertyID {
+    pub fn to_noncustomcsspropertyid_resolving_aliases(&self) -> NonCustomCSSPropertyId {
         match self.non_custom_non_alias_id() {
-            Some(id) => id.to_nscsspropertyid(),
-            None => nsCSSPropertyID::eCSSPropertyExtra_variable,
+            Some(id) => id.to_noncustomcsspropertyid(),
+            None => NonCustomCSSPropertyId::eCSSPropertyExtra_variable,
         }
     }
 
     fn allowed_in(&self, context: &ParserContext) -> bool {
         let id = match self.non_custom_id() {
             // Custom properties are allowed everywhere, except `position-try`.
-            None => return !context.nesting_context.rule_types.contains(CssRuleType::PositionTry),
+            None => {
+                return !context
+                    .nesting_context
+                    .rule_types
+                    .contains(CssRuleType::PositionTry)
+            },
             Some(id) => id,
         };
         id.allowed_in(context)
@@ -592,17 +613,17 @@ impl LonghandId {
         LonghandIdSet::discrete_animatable().contains(self)
     }
 
-    /// Converts from a LonghandId to an adequate nsCSSPropertyID.
+    /// Converts from a LonghandId to an adequate NonCustomCSSPropertyId.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_nscsspropertyid(self) -> nsCSSPropertyID {
-        NonCustomPropertyId::from(self).to_nscsspropertyid()
+    pub fn to_noncustomcsspropertyid(self) -> NonCustomCSSPropertyId {
+        NonCustomPropertyId::from(self).to_noncustomcsspropertyid()
     }
 
     #[cfg(feature = "gecko")]
-    /// Returns a longhand id from Gecko's nsCSSPropertyID.
-    pub fn from_nscsspropertyid(id: nsCSSPropertyID) -> Option<Self> {
-        NonCustomPropertyId::from_nscsspropertyid(id)?
+    /// Returns a longhand id from Gecko's NonCustomCSSPropertyId.
+    pub fn from_noncustomcsspropertyid(id: NonCustomCSSPropertyId) -> Option<Self> {
+        NonCustomPropertyId::from_noncustomcsspropertyid(id)?
             .unaliased()
             .as_longhand()
     }
@@ -631,18 +652,18 @@ impl ShorthandId {
         NonCustomPropertyId::from(*self).name()
     }
 
-    /// Converts from a ShorthandId to an adequate nsCSSPropertyID.
+    /// Converts from a ShorthandId to an adequate NonCustomCSSPropertyId.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_nscsspropertyid(self) -> nsCSSPropertyID {
-        NonCustomPropertyId::from(self).to_nscsspropertyid()
+    pub fn to_noncustomcsspropertyid(self) -> NonCustomCSSPropertyId {
+        NonCustomPropertyId::from(self).to_noncustomcsspropertyid()
     }
 
-    /// Converts from a nsCSSPropertyID to a ShorthandId.
+    /// Converts from a NonCustomCSSPropertyId to a ShorthandId.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn from_nscsspropertyid(id: nsCSSPropertyID) -> Option<Self> {
-        NonCustomPropertyId::from_nscsspropertyid(id)?
+    pub fn from_noncustomcsspropertyid(id: NonCustomCSSPropertyId) -> Option<Self> {
+        NonCustomPropertyId::from_noncustomcsspropertyid(id)?
             .unaliased()
             .as_shorthand()
     }
@@ -730,10 +751,17 @@ fn parse_non_custom_property_declaration_value_into<'i>(
     };
 
     input.reset(&start);
-    input.look_for_var_or_env_functions();
+    input.look_for_arbitrary_substitution_functions(
+        if static_prefs::pref!("layout.css.attr.enabled") {
+            &["var", "env", "attr"]
+        } else {
+            &["var", "env"]
+        },
+    );
+
     let err = match parse_entirely_into(declarations, input) {
         Ok(()) => {
-            input.seen_var_or_env_functions();
+            input.seen_arbitrary_substitution_functions();
             return Ok(());
         },
         Err(e) => e,
@@ -755,7 +783,7 @@ fn parse_non_custom_property_declaration_value_into<'i>(
         }
         at_start = false;
     }
-    if !input.seen_var_or_env_functions() || invalid {
+    if !input.seen_arbitrary_substitution_functions() || invalid {
         return Err(err);
     }
     input.reset(start);
@@ -957,23 +985,21 @@ impl OwnedPropertyDeclarationId {
 
     /// Returns the corresponding PropertyDeclarationId.
     #[inline]
-    pub fn as_borrowed(&self) -> PropertyDeclarationId {
+    pub fn as_borrowed(&self) -> PropertyDeclarationId<'_> {
         match self {
             Self::Longhand(id) => PropertyDeclarationId::Longhand(*id),
             Self::Custom(name) => PropertyDeclarationId::Custom(name),
         }
     }
 
-    /// Convert an `AnimatedPropertyID` into an `OwnedPropertyDeclarationId`.
+    /// Convert an `CSSPropertyId` into an `OwnedPropertyDeclarationId`.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn from_gecko_animated_property_id(property: &AnimatedPropertyID) -> Option<Self> {
-        Some(
-            match PropertyId::from_gecko_animated_property_id(property)? {
-                PropertyId::Custom(name) => Self::Custom(name),
-                PropertyId::NonCustom(id) => Self::Longhand(id.as_longhand()?),
-            },
-        )
+    pub fn from_gecko_css_property_id(property: &CSSPropertyId) -> Option<Self> {
+        Some(match PropertyId::from_gecko_css_property_id(property)? {
+            PropertyId::Custom(name) => Self::Custom(name),
+            PropertyId::NonCustom(id) => Self::Longhand(id.as_longhand()?),
+        })
     }
 }
 
@@ -1102,36 +1128,36 @@ impl<'a> PropertyDeclarationId<'a> {
         match self {
             Self::Longhand(longhand) => longhand.is_discrete_animatable(),
             // TODO(bug 1885995): Refine this.
-            Self::Custom(_) => cfg!(feature = "gecko")
+            Self::Custom(_) => cfg!(feature = "gecko"),
         }
     }
 
-    /// Converts from a to an adequate nsCSSPropertyID, returning
+    /// Converts from a to an adequate NonCustomCSSPropertyId, returning
     /// eCSSPropertyExtra_variable for custom properties.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_nscsspropertyid(self) -> nsCSSPropertyID {
+    pub fn to_noncustomcsspropertyid(self) -> NonCustomCSSPropertyId {
         match self {
-            PropertyDeclarationId::Longhand(id) => id.to_nscsspropertyid(),
-            PropertyDeclarationId::Custom(_) => nsCSSPropertyID::eCSSPropertyExtra_variable,
+            PropertyDeclarationId::Longhand(id) => id.to_noncustomcsspropertyid(),
+            PropertyDeclarationId::Custom(_) => NonCustomCSSPropertyId::eCSSPropertyExtra_variable,
         }
     }
 
-    /// Convert a `PropertyDeclarationId` into an `AnimatedPropertyID`
+    /// Convert a `PropertyDeclarationId` into an `CSSPropertyId`
     ///
     /// FIXME(emilio, bug 1870107): We should consider using cbindgen to generate the property id
     /// representation or so.
     #[cfg(feature = "gecko")]
     #[inline]
-    pub fn to_gecko_animated_property_id(&self) -> AnimatedPropertyID {
+    pub fn to_gecko_css_property_id(&self) -> CSSPropertyId {
         match self {
-            Self::Longhand(id) => AnimatedPropertyID {
-                mID: id.to_nscsspropertyid(),
+            Self::Longhand(id) => CSSPropertyId {
+                mId: id.to_noncustomcsspropertyid(),
                 mCustomName: RefPtr::null(),
             },
             Self::Custom(name) => {
-                let mut property_id = AnimatedPropertyID {
-                    mID: nsCSSPropertyID::eCSSPropertyExtra_variable,
+                let mut property_id = CSSPropertyId {
+                    mId: NonCustomCSSPropertyId::eCSSPropertyExtra_variable,
                     mCustomName: RefPtr::null(),
                 };
                 property_id.mCustomName.mRawPtr = (*name).clone().into_addrefed();
@@ -1188,7 +1214,7 @@ impl LonghandIdSet {
     }
 
     /// Iterate over the current longhand id set.
-    pub fn iter(&self) -> LonghandIdSetIterator {
+    pub fn iter(&self) -> LonghandIdSetIterator<'_> {
         LonghandIdSetIterator {
             chunks: &self.storage,
             cur_chunk: 0,
@@ -1335,7 +1361,7 @@ impl SourcePropertyDeclaration {
     }
 
     /// Similar to Vec::drain: leaves this empty when the return value is dropped.
-    pub fn drain(&mut self) -> SourcePropertyDeclarationDrain {
+    pub fn drain(&mut self) -> SourcePropertyDeclarationDrain<'_> {
         SourcePropertyDeclarationDrain {
             declarations: self.declarations.drain(..),
             all_shorthand: mem::replace(&mut self.all_shorthand, AllShorthand::NotSet),
@@ -1408,6 +1434,7 @@ impl UnparsedValue {
         stylist: &Stylist,
         computed_context: &computed::Context,
         shorthand_cache: &'cache mut ShorthandsWithPropertyReferencesCache,
+        attribute_tracker: &mut AttributeTracker,
     ) -> Cow<'cache, PropertyDeclaration> {
         let invalid_at_computed_value_time = || {
             let keyword = if longhand_id.inherited() {
@@ -1442,6 +1469,7 @@ impl UnparsedValue {
             custom_properties,
             stylist,
             computed_context,
+            attribute_tracker,
         ) {
             Ok(css) => css,
             Err(..) => return invalid_at_computed_value_time(),
@@ -1545,7 +1573,7 @@ impl Default for AllShorthand {
 impl AllShorthand {
     /// Iterates property declarations from the given all shorthand value.
     #[inline]
-    pub fn declarations(&self) -> AllShorthandDeclarationIterator {
+    pub fn declarations(&self) -> AllShorthandDeclarationIterator<'_> {
         AllShorthandDeclarationIterator {
             all_shorthand: self,
             longhands: ShorthandId::All.longhands(),
@@ -1597,6 +1625,79 @@ where
             let id = *self.iter.next()?;
             if !self.filter || id.into().enabled_for_all_content() {
                 return Some(id);
+            }
+        }
+    }
+}
+
+/// An iterator over all the properties that transition on a given style.
+pub struct TransitionPropertyIterator<'a> {
+    style: &'a ComputedValues,
+    index_range: core::ops::Range<usize>,
+    longhand_iterator: Option<NonCustomPropertyIterator<LonghandId>>,
+}
+
+impl<'a> TransitionPropertyIterator<'a> {
+    /// Create a `TransitionPropertyIterator` for the given style.
+    pub fn from_style(style: &'a ComputedValues) -> Self {
+        Self {
+            style,
+            index_range: 0..style.get_ui().transition_property_count(),
+            longhand_iterator: None,
+        }
+    }
+}
+
+/// A single iteration of the TransitionPropertyIterator.
+pub struct TransitionPropertyIteration {
+    /// The id of the longhand for this property.
+    pub property: OwnedPropertyDeclarationId,
+    /// The index of this property in the list of transition properties for this iterator's
+    /// style.
+    pub index: usize,
+}
+
+impl<'a> Iterator for TransitionPropertyIterator<'a> {
+    type Item = TransitionPropertyIteration;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use crate::values::computed::TransitionProperty;
+        loop {
+            if let Some(ref mut longhand_iterator) = self.longhand_iterator {
+                if let Some(longhand_id) = longhand_iterator.next() {
+                    return Some(TransitionPropertyIteration {
+                        property: OwnedPropertyDeclarationId::Longhand(longhand_id),
+                        index: self.index_range.start - 1,
+                    });
+                }
+                self.longhand_iterator = None;
+            }
+
+            let index = self.index_range.next()?;
+            match self.style.get_ui().transition_property_at(index) {
+                TransitionProperty::NonCustom(id) => {
+                    match id.longhand_or_shorthand() {
+                        Ok(longhand_id) => {
+                            return Some(TransitionPropertyIteration {
+                                property: OwnedPropertyDeclarationId::Longhand(longhand_id),
+                                index,
+                            });
+                        },
+                        Err(shorthand_id) => {
+                            // In the other cases, we set up our state so that we are ready to
+                            // compute the next value of the iterator and then loop (equivalent
+                            // to calling self.next()).
+                            self.longhand_iterator = Some(shorthand_id.longhands());
+                        },
+                    }
+                },
+                TransitionProperty::Custom(name) => {
+                    return Some(TransitionPropertyIteration {
+                        property: OwnedPropertyDeclarationId::Custom(name),
+                        index,
+                    })
+                },
+                TransitionProperty::Unsupported(..) => {},
             }
         }
     }

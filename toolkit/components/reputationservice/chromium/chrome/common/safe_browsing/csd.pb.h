@@ -4,7 +4,6 @@
 #ifndef GOOGLE_PROTOBUF_INCLUDED_csd_2eproto
 #define GOOGLE_PROTOBUF_INCLUDED_csd_2eproto
 
-#include <limits>
 #include <string>
 
 #include <google/protobuf/port_def.inc>

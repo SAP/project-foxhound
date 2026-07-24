@@ -5,16 +5,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UDPSocketChild.h"
+
 #include "UDPSocket.h"
-#include "mozilla/Unused.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/NeckoChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/NeckoChild.h"
 
 using mozilla::net::gNeckoChild;
 
@@ -183,7 +183,7 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackOpened(
 
   UDPSOCKET_LOG(("%s: %s:%u", __FUNCTION__, mLocalAddress.get(), mLocalPort));
   nsresult rv = mSocket->CallListenerOpened();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
@@ -196,14 +196,14 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackConnected(
 
   UDPSOCKET_LOG(("%s: %s:%u", __FUNCTION__, mLocalAddress.get(), mLocalPort));
   nsresult rv = mSocket->CallListenerConnected();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackClosed() {
   nsresult rv = mSocket->CallListenerClosed();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
@@ -215,7 +215,7 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackReceivedData(
                  aData.Length()));
   nsresult rv = mSocket->CallListenerReceivedData(aAddressInfo.addr(),
                                                   aAddressInfo.port(), aData);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
@@ -226,7 +226,7 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackError(
   UDPSOCKET_LOG(("%s: %s:%s:%u", __FUNCTION__, aMessage.get(), aFilename.get(),
                  aLineNumber));
   nsresult rv = mSocket->CallListenerError(aMessage, aFilename, aLineNumber);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }

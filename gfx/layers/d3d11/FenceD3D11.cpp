@@ -16,7 +16,7 @@
 namespace mozilla {
 namespace layers {
 
-MOZ_RUNINIT RefPtr<ID3D11Device> mDevice;
+constinit RefPtr<ID3D11Device> mDevice;
 
 /* static */
 RefPtr<FenceD3D11> FenceD3D11::Create(ID3D11Device* aDevice) {

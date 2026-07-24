@@ -5,7 +5,7 @@
     "vendor": "0xabcd",
     "versionRange": { "minVersion": "15.0", "maxVersion": "15.0" },
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 
@@ -150,7 +150,7 @@
     "vendor": "0xabcd",
     "versionRange": { "minVersion": "15.0", "maxVersion": "15.0" },
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 
@@ -295,7 +295,7 @@
     "vendor": "0xabcd",
     "versionRange": { "minVersion": "15.0", "maxVersion": "15.0" },
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 
@@ -440,7 +440,7 @@
     "vendor": "0xabcd",
     "versionRange": { "minVersion": "15.0", "maxVersion": "15.0" },
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 

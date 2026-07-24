@@ -66,7 +66,7 @@ const lameMultiWindowState = {
 };
 
 function test() {
-  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore **/
+  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore */
   waitForExplicitFinish();
 
   let newWindow, reopenedWindow;

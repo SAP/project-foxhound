@@ -7,6 +7,7 @@ package mozilla.components.support.test.fakes.engine
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.View
+import kotlinx.coroutines.flow.flowOf
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.selection.SelectionActionDelegate
@@ -19,6 +20,10 @@ class FakeEngineView(
     context: Context,
 ) : View(context),
     EngineView {
+
+    override val verticalScrollPosition = flowOf(0f)
+    override val verticalScrollDelta = flowOf(0f)
+
     override fun render(session: EngineSession) = Unit
 
     override fun captureThumbnail(onFinish: (Bitmap?) -> Unit) = Unit

@@ -63,7 +63,7 @@ def analyze_qm_failures(output_to, workdir):
         sys.exit(2)
 
     if output_to == "qmstacks_until_<lasteventtime>.txt":
-        output_to = path.join(workdir, f'qmstacks_until_{run["lasteventtime"]}.txt')
+        output_to = path.join(workdir, f"qmstacks_until_{run['lasteventtime']}.txt")
     elif output_to.exists():
         error(
             f'The output file "{output_to}" already exists. This script would override it.'

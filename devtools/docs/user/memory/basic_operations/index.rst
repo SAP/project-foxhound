@@ -3,16 +3,6 @@ Basic operations
 ================
 
 
-.. _memory-basic-operations-opening-the-memory-tool:
-
-Opening the Memory tool
-***********************
-
-Before Firefox 50, the Memory tool is not enabled by default. To enable it, open the developer tool settings, and check the "Memory" box under "Default Firefox Developer Tools".
-
-From Firefox 50 onwards, the Memory tool is enabled by default.
-
-
 .. _memory-basic-operations-taking-a-heap-snapshot:
 
 Taking a heap snapshot
@@ -52,7 +42,7 @@ If you close the Memory tool, all unsaved snapshots will be discarded. To save a
 
 You'll be prompted for a name and location, and the file will be saved with an ``.fxsnapshot`` extension.
 
-To load a snapshot from an existing ``.fxsnapshot`` file, click the import button, which looks like a rectangle with an arrow rising from it (before Firefox 49, this button was labeled with the text "Import..."):
+To load a snapshot from an existing ``.fxsnapshot`` file, click the import button, which looks like a rectangle with an arrow rising from it:
 
 .. image:: memory-5-small.png
   :class: center
@@ -65,9 +55,9 @@ You'll be prompted to find a snapshot file on disk.
 Comparing snapshots
 *******************
 
-Starting in Firefox 45, you can diff two heap snapshots. The diff shows you where memory was allocated or freed between the two snapshots.
+You can diff two heap snapshots. The diff shows you where memory was allocated or freed between the two snapshots.
 
-To create a diff, click the button that looks like a Venn diagram next to the camera icon (before Firefox 47, this looked like a "+/-" icon):
+To create a diff, click the button that looks like a Venn diagram next to the camera icon:
 
 .. image:: memory-6-small.png
   :class: center
@@ -89,7 +79,7 @@ You'll be prompted to select the snapshot to use as a baseline, then the snapsho
 Recording call stacks
 *********************
 
-The Memory tool can tell you exactly where in your code you are allocating memory. However, recording this information has a run-time cost, so you must ask the tool to record memory calls *before* the memory is allocated, if you want to see memory call sites in the snapshot. To do this, check "Record call stacks" (before Firefox 49 this was labeled "Record allocation stacks"):
+The Memory tool can tell you exactly where in your code you are allocating memory. However, recording this information has a run-time cost, so you must ask the tool to record memory calls *before* the memory is allocated, if you want to see memory call sites in the snapshot. To do this, check "Record call stacks":
 
 .. image:: memory-7-small.png
   :class: center

@@ -2,13 +2,18 @@
 tags = "remote"
 subsuite = "remote"
 support-files = [
-    "amosigned.xpi",
     "head.js",
+    "webextensions/*",
+    "workers/*",
 ]
 
 ["browser_Addon.js"]
 
+["browser_NavigableManager.js"]
+
 ["browser_NavigationManager.js"]
+
+["browser_NavigationManager_committed.js"]
 
 ["browser_NavigationManager_failed_navigation.js"]
 
@@ -21,4 +26,14 @@ support-files = [
 ["browser_UserContextManager.js"]
 
 ["browser_WindowManager.js"]
-skip-if = ["display == 'wayland'"] # Bug 1923833: Window restoring doesn't work after the window was minimized on Wayland
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1923833: Window restoring doesn't work after the window was minimized on Wayland
+]
+
+["browser_WorkerListener.js"]
+
+["browser_WorkerListener_chromeWorker.js"]
+
+["browser_WorkerListener_serviceWorker.js"]
+
+["browser_WorkerListener_sharedWorker.js"]

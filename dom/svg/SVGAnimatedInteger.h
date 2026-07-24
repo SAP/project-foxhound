@@ -7,13 +7,13 @@
 #ifndef DOM_SVG_SVGANIMATEDINTEGER_H_
 #define DOM_SVG_SVGANIMATEDINTEGER_H_
 
+#include <memory>
+
+#include "DOMSVGAnimatedInteger.h"
+#include "mozilla/SMILAttr.h"
+#include "mozilla/dom/SVGElement.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "DOMSVGAnimatedInteger.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/SVGElement.h"
 
 namespace mozilla {
 
@@ -53,7 +53,7 @@ class SVGAnimatedInteger {
 
   already_AddRefed<dom::DOMSVGAnimatedInteger> ToDOMAnimatedInteger(
       SVGElement* aSVGElement);
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
   int32_t mAnimVal;

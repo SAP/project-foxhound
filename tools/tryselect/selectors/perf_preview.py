@@ -4,7 +4,6 @@
 
 """This script is intended to be called through fzf as a preview formatter."""
 
-
 import argparse
 import json
 import os

@@ -11,14 +11,13 @@
 
 // Global includes
 #include "mozilla/ErrorNames.h"
-#include "mozilla/MacroForEach.h"
+#include "mozilla/dom/quota/QuotaUsageRequestChild.h"
 #include "nsDebug.h"
 #include "nsIQuotaCallbacks.h"
 #include "nsISupportsUtils.h"
 #include "nsIVariant.h"
 #include "nsStringFwd.h"
 #include "nscore.h"
-#include "mozilla/dom/quota/QuotaUsageRequestChild.h"
 
 namespace mozilla {
 class Runnable;

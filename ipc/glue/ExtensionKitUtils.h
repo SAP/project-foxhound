@@ -75,6 +75,15 @@ class ExtensionKitProcess {
   void* mProcessObject;
 };
 
+enum class ExtensionKitSandboxRevision {
+  // RestrictedSandboxRevision.revision1
+  Revision1,
+};
+
+// Call `applyRestrictedSandbox` on the current ExtensionKit process, if it
+// supports the given sandbox revision.
+void LockdownExtensionKitProcess(ExtensionKitSandboxRevision aRevision);
+
 }  // namespace mozilla::ipc
 
 #endif  // mozilla_ipc_ExtensionKitUtils_h

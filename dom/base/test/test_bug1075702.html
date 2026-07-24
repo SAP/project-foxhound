@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1075702
 <pre id="test">
 <script type="application/javascript">
 
-  /** Test for Bug 1075702 **/
+  /** Test for Bug 1075702 */
 function test() {
   // test: Element.removeAttributeNode()
 
@@ -41,42 +41,11 @@ function test() {
   "Should be UPPERCASE AGAIN!");
   is(document.documentElement.getAttributeNS("", "AA"), "UPPERCASE", "Should be UPPERCASE!");
 
-  var removedNodeAccordingToEvent;
-
-  function mutationHandler(aEvent) {
-    removedNodeAccordingToEvent = aEvent.relatedNode;
-  }
-
-  var test1 = document.createElement("div");
-  test1.setAttribute("x", "y");
-  removedNodeAccordingToEvent = null;
-
-  function testremoveNamedItemNS() {
-    test1.addEventListener("DOMAttrModified", mutationHandler, true);
-    var removedNodeAccordingToRemoveNamedItemNS = test1.attributes.removeNamedItemNS(null, "x");
-    test1.removeEventListener("DOMAttrModified", mutationHandler, true);
-    is(removedNodeAccordingToEvent, removedNodeAccordingToRemoveNamedItemNS, "Node removed according to event is not same as node removed by removeNamedItemNS.");
-  }
-
-  testremoveNamedItemNS();
-
-  var test2 = document.createElement("div");
-  test2.setAttribute("x", "y");
-  removedNodeAccordingToEvent = null;
-
-  function testremoveNamedItem() {
-    test2.addEventListener("DOMAttrModified", mutationHandler, true);
-    var removedNodeAccordingToRemoveNamedItem = test2.attributes.removeNamedItem("x");
-    test2.removeEventListener("DOMAttrModified", mutationHandler, true);
-    is(removedNodeAccordingToEvent, removedNodeAccordingToRemoveNamedItem, "Node removed according to event is not same as node removed by removeNamedItem.");
-  }
-
-  testremoveNamedItem();
   SimpleTest.finish();
 }
 
 SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv({"set": [["dom.mutation_events.enabled", true]]}, test);
+SimpleTest.executeSoon(test);
 </script>
 </body>
 </html>

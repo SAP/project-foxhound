@@ -2,15 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_places_PlaceInfo_h__
-#define mozilla_places_PlaceInfo_h__
+#ifndef mozilla_places_PlaceInfo_h_
+#define mozilla_places_PlaceInfo_h_
 
 #include "mozIAsyncHistory.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 class mozIVisitInfo;
 
@@ -45,4 +44,4 @@ class PlaceInfo final : public mozIPlaceInfo {
 }  // namespace places
 }  // namespace mozilla
 
-#endif  // mozilla_places_PlaceInfo_h__
+#endif  // mozilla_places_PlaceInfo_h_

@@ -16,7 +16,6 @@
 #include "nsWindowDefs.h"
 #include "InputDeviceUtils.h"
 #include "KeyboardLayout.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_widget.h"
@@ -31,7 +30,6 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
-#include "mozilla/Unused.h"
 #include "nsIContentPolicy.h"
 #include "WindowsUIUtils.h"
 #include "nsContentUtils.h"
@@ -235,48 +233,12 @@ float WinUtils::SystemDPI() {
 // static
 double WinUtils::SystemScaleFactor() { return SystemDPI() / 96.0; }
 
-typedef HRESULT(WINAPI* GETDPIFORMONITORPROC)(HMONITOR, MONITOR_DPI_TYPE, UINT*,
-                                              UINT*);
-
-typedef HRESULT(WINAPI* GETPROCESSDPIAWARENESSPROC)(HANDLE,
-                                                    PROCESS_DPI_AWARENESS*);
-
-GETDPIFORMONITORPROC sGetDpiForMonitor;
-GETPROCESSDPIAWARENESSPROC sGetProcessDpiAwareness;
-
-static bool SlowIsPerMonitorDPIAware() {
-  // Intentionally leak the handle.
-  HMODULE shcore = LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (shcore) {
-    sGetDpiForMonitor =
-        (GETDPIFORMONITORPROC)GetProcAddress(shcore, "GetDpiForMonitor");
-    sGetProcessDpiAwareness = (GETPROCESSDPIAWARENESSPROC)GetProcAddress(
-        shcore, "GetProcessDpiAwareness");
-  }
-  PROCESS_DPI_AWARENESS dpiAwareness;
-  return sGetDpiForMonitor && sGetProcessDpiAwareness &&
-         SUCCEEDED(
-             sGetProcessDpiAwareness(GetCurrentProcess(), &dpiAwareness)) &&
-         dpiAwareness == PROCESS_PER_MONITOR_DPI_AWARE;
-}
-
-/* static */
-bool WinUtils::IsPerMonitorDPIAware() {
-  static bool perMonitorDPIAware = SlowIsPerMonitorDPIAware();
-  return perMonitorDPIAware;
-}
-
 /* static */
 float WinUtils::MonitorDPI(HMONITOR aMonitor) {
-  if (IsPerMonitorDPIAware()) {
-    UINT dpiX, dpiY = 96;
-    sGetDpiForMonitor(aMonitor ? aMonitor : GetPrimaryMonitor(),
-                      MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-    return dpiY;
-  }
-
-  // We're not per-monitor aware, use system DPI instead.
-  return SystemDPI();
+  UINT dpiX, dpiY = 96;
+  GetDpiForMonitor(aMonitor ? aMonitor : GetPrimaryMonitor(), MDT_EFFECTIVE_DPI,
+                   &dpiX, &dpiY);
+  return dpiY;
 }
 
 /* static */
@@ -317,14 +279,9 @@ WinUtils::GetPrimaryMonitor() {
 /* static */
 HMONITOR
 WinUtils::MonitorFromRect(const gfx::Rect& rect) {
-  // convert coordinates from desktop to device pixels for MonitorFromRect
-  double dpiScale =
-      IsPerMonitorDPIAware() ? 1.0 : LogToPhysFactor(GetPrimaryMonitor());
-
-  RECT globalWindowBounds = {NSToIntRound(dpiScale * rect.X()),
-                             NSToIntRound(dpiScale * rect.Y()),
-                             NSToIntRound(dpiScale * (rect.XMost())),
-                             NSToIntRound(dpiScale * (rect.YMost()))};
+  RECT globalWindowBounds = {NSToIntRound(rect.X()), NSToIntRound(rect.Y()),
+                             NSToIntRound(rect.XMost()),
+                             NSToIntRound(rect.YMost())};
 
   return ::MonitorFromRect(&globalWindowBounds, MONITOR_DEFAULTTONEAREST);
 }
@@ -341,7 +298,7 @@ int WinUtils::GetSystemMetricsForDpi(int nIndex, UINT dpi) {
   if (HasSystemMetricsForDpi()) {
     return sGetSystemMetricsForDpi(nIndex, dpi);
   } else {
-    double scale = IsPerMonitorDPIAware() ? dpi / SystemDPI() : 1.0;
+    double scale = dpi / SystemDPI();
     return NSToIntRound(::GetSystemMetrics(nIndex) * scale);
   }
 }
@@ -908,8 +865,7 @@ AsyncDeleteAllFaviconsFromDisk::AsyncDeleteAllFaviconsFromDisk(
 
   // Prepare the profile directory cache on the main thread, to ensure we wont
   // do this on non-main threads.
-  Unused << NS_GetSpecialDirectory("ProfLDS",
-                                   getter_AddRefs(mJumpListCacheDir));
+  (void)NS_GetSpecialDirectory("ProfLDS", getter_AddRefs(mJumpListCacheDir));
 }
 
 NS_IMETHODIMP AsyncDeleteAllFaviconsFromDisk::Run() {
@@ -1772,13 +1728,13 @@ bool WinUtils::UnexpandEnvVars(nsAString& aPath) {
 WinUtils::WhitelistVec WinUtils::BuildWhitelist() {
   WhitelistVec result;
 
-  Unused << result.emplaceBack(
+  (void)result.emplaceBack(
       std::make_pair(nsString(u"%ProgramFiles%"_ns), nsDependentString()));
 
   // When no substitution is required, set the void flag
   result.back().second.SetIsVoid(true);
 
-  Unused << result.emplaceBack(
+  (void)result.emplaceBack(
       std::make_pair(nsString(u"%SystemRoot%"_ns), nsDependentString()));
   result.back().second.SetIsVoid(true);
 
@@ -1793,8 +1749,8 @@ WinUtils::WhitelistVec WinUtils::BuildWhitelist() {
     nsAutoString cleanTmpPath(tmpPath);
     if (UnexpandEnvVars(cleanTmpPath)) {
       constexpr auto tempVar = u"%TEMP%"_ns;
-      Unused << result.emplaceBack(std::make_pair(
-          nsString(cleanTmpPath), nsDependentString(tempVar, 0)));
+      (void)result.emplaceBack(std::make_pair(nsString(cleanTmpPath),
+                                              nsDependentString(tempVar, 0)));
     }
   }
 
@@ -2056,6 +2012,21 @@ bool WinUtils::MicaPopupsEnabled() {
   }
   auto* lf = static_cast<nsLookAndFeel*>(nsLookAndFeel::GetInstance());
   return !lf->NeedsMicaWorkaround();
+}
+
+static BOOL CALLBACK InvalidateWindowPreviewsProc(HWND aHwnd, LPARAM aLParam) {
+  if (RefPtr<nsWindow> window = WinUtils::GetNSWindowPtr(aHwnd)) {
+    RefPtr<nsITaskbarWindowPreview> taskbarPreview =
+        window->GetTaskbarPreview();
+    if (taskbarPreview) {
+      taskbarPreview->Invalidate();
+    }
+  }
+  return TRUE;
+}
+
+void WinUtils::InvalidateWindowPreviews() {
+  ::EnumWindows(InvalidateWindowPreviewsProc, 0);
 }
 
 // There are undocumented APIs to query/change the system DPI settings found by

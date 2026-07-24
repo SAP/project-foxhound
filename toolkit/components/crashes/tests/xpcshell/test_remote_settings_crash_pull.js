@@ -457,6 +457,53 @@ add_task(
   }
 );
 
+add_task(function test_pref_disabled() {
+  const originalPref = Services.prefs.getBoolPref(
+    "browser.crashReports.onDemand"
+  );
+  Services.prefs.setBoolPref("browser.crashReports.onDemand", false);
+
+  const originalCollection = RemoteSettingsCrashPull.collection;
+  let collectionCalled = false;
+  RemoteSettingsCrashPull.collection = function () {
+    console.debug("Calling collection()");
+    collectionCalled = true;
+  };
+
+  RemoteSettingsCrashPull.start();
+
+  Assert.ok(RemoteSettingsCrashPull, "RemoteSettingsCrashPull obtained.");
+  Assert.ok(
+    !collectionCalled,
+    "Method collection() should not have been called"
+  );
+
+  RemoteSettingsCrashPull.collection = originalCollection;
+  Services.prefs.setBoolPref("browser.crashReports.onDemand", originalPref);
+});
+
+add_task(function test_pref_enabled() {
+  const originalPref = Services.prefs.getBoolPref(
+    "browser.crashReports.onDemand"
+  );
+  Services.prefs.setBoolPref("browser.crashReports.onDemand", true);
+
+  const originalCollection = RemoteSettingsCrashPull.collection;
+  let collectionCalled = false;
+  RemoteSettingsCrashPull.collection = function () {
+    console.debug("Calling collection()");
+    collectionCalled = true;
+  };
+
+  RemoteSettingsCrashPull.start();
+
+  Assert.ok(RemoteSettingsCrashPull, "RemoteSettingsCrashPull obtained.");
+  Assert.ok(collectionCalled, "Method collection() should have been called");
+
+  RemoteSettingsCrashPull.collection = originalCollection;
+  Services.prefs.setBoolPref("browser.crashReports.onDemand", originalPref);
+});
+
 add_task(function teardown_test() {
   cleanup_fake_appdir();
 });

@@ -4,12 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txURIUtils.h"
-#include "nsNetUtil.h"
-#include "mozilla/dom/Document.h"
-#include "nsIPrincipal.h"
+
 #include "mozilla/LoadInfo.h"
-#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "nsIPrincipal.h"
+#include "nsNetUtil.h"
 
 using mozilla::dom::Document;
 using mozilla::net::LoadInfo;

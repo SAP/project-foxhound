@@ -6,28 +6,22 @@
 
 #include "PushNotifier.h"
 
-#include "nsContentUtils.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/BodyUtil.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ServiceWorkerManager.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsICategoryManager.h"
 #include "nsIPushService.h"
 #include "nsIXULRuntime.h"
 #include "nsNetUtil.h"
 #include "nsXPCOM.h"
-#include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
-#include "mozilla/Unused.h"
-
-#include "mozilla/dom/BodyUtil.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
 
 namespace mozilla::dom {
-
-PushNotifier::PushNotifier() = default;
-
-PushNotifier::~PushNotifier() = default;
 
 NS_IMPL_CYCLE_COLLECTION_0(PushNotifier)
 
@@ -94,7 +88,7 @@ PushNotifier::NotifyError(const nsACString& aScope, nsIPrincipal* aPrincipal,
 nsresult PushNotifier::Dispatch(PushDispatcher& aDispatcher) {
   if (XRE_IsParentProcess()) {
     // Always notify XPCOM observers in the parent process.
-    Unused << NS_WARN_IF(NS_FAILED(aDispatcher.NotifyObservers()));
+    (void)NS_WARN_IF(NS_FAILED(aDispatcher.NotifyObservers()));
 
     // e10s is disabled; notify workers in the parent.
     return aDispatcher.NotifyWorkers();
@@ -109,7 +103,7 @@ nsresult PushNotifier::Dispatch(PushDispatcher& aDispatcher) {
 
   ContentChild* parentActor = ContentChild::GetSingleton();
   if (!NS_WARN_IF(!parentActor)) {
-    Unused << NS_WARN_IF(!aDispatcher.SendToParent(parentActor));
+    (void)NS_WARN_IF(!aDispatcher.SendToParent(parentActor));
   }
 
   return rv;
@@ -212,7 +206,7 @@ PushDispatcher::~PushDispatcher() = default;
 nsresult PushDispatcher::HandleNoChildProcesses() { return NS_OK; }
 
 nsresult PushDispatcher::NotifyObserversAndWorkers() {
-  Unused << NS_WARN_IF(NS_FAILED(NotifyObservers()));
+  (void)NS_WARN_IF(NS_FAILED(NotifyObservers()));
   return NotifyWorkers();
 }
 

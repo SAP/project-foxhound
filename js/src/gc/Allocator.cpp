@@ -6,7 +6,6 @@
 
 #include "gc/Allocator.h"
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/TimeStamp.h"
 
@@ -45,14 +44,16 @@ static Heap MinHeapToTenure(bool allowNurseryAlloc) {
 }
 
 void Zone::setNurseryAllocFlags(bool allocObjects, bool allocStrings,
-                                bool allocBigInts) {
+                                bool allocBigInts, bool allocGetterSetters) {
   allocNurseryObjects_ = allocObjects;
   allocNurseryStrings_ = allocStrings;
   allocNurseryBigInts_ = allocBigInts;
+  allocNurseryGetterSetters_ = allocGetterSetters;
 
   minObjectHeapToTenure_ = MinHeapToTenure(allocNurseryObjects());
   minStringHeapToTenure_ = MinHeapToTenure(allocNurseryStrings());
   minBigintHeapToTenure_ = MinHeapToTenure(allocNurseryBigInts());
+  minGetterSetterHeapToTenure_ = MinHeapToTenure(allocNurseryGetterSetters());
 }
 
 #define INSTANTIATE_ALLOC_NURSERY_CELL(traceKind, allowGc)          \
@@ -65,6 +66,8 @@ INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::String, NoGC)
 INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::String, CanGC)
 INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::BigInt, NoGC)
 INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::BigInt, CanGC)
+INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::GetterSetter, NoGC)
+INSTANTIATE_ALLOC_NURSERY_CELL(JS::TraceKind::GetterSetter, CanGC)
 #undef INSTANTIATE_ALLOC_NURSERY_CELL
 
 // Attempt to allocate a new cell in the nursery. If there is not enough room in
@@ -330,10 +333,11 @@ void* js::gc::AllocateTenuredCellInGC(Zone* zone, AllocKind thingKind) {
 
 void GCRuntime::startBackgroundAllocTaskIfIdle() {
   AutoLockHelperThreadState lock;
-  if (!allocTask.wasStarted(lock)) {
-    // Join the previous invocation of the task. This will return immediately
-    // if the thread has never been started.
+  if (allocTask.isFinished(lock)) {
     allocTask.joinWithLockHeld(lock);
+  }
+
+  if (allocTask.isIdle(lock)) {
     allocTask.startWithLockHeld(lock);
   }
 }
@@ -487,14 +491,7 @@ Arena* GCRuntime::allocateArena(ArenaChunk* chunk, Zone* zone,
 
   Arena* arena = chunk->allocateArena(this, zone, thingKind);
 
-  if (IsBufferAllocKind(thingKind)) {
-    // Try to keep GC scheduling the same to minimize benchmark noise.
-    // Keep this in sync with Arena::release.
-    size_t usableSize = ArenaSize - Arena::firstThingOffset(thingKind);
-    zone->mallocHeapSize.addBytes(usableSize);
-  } else {
-    zone->gcHeapSize.addGCArena(heapSize);
-  }
+  zone->gcHeapSize.addGCArena(heapSize);
 
   // Trigger an incremental slice if needed.
   if (checkThresholds != ShouldCheckThresholds::DontCheckThresholds) {
@@ -518,8 +515,6 @@ Arena* ArenaChunk::allocateArena(GCRuntime* gc, Zone* zone,
   Arena* arena = fetchNextFreeArena(gc);
 
   updateCurrentChunkAfterAlloc(gc);
-
-  verify();
 
   return arena;
 }

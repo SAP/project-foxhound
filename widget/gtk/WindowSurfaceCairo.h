@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_CAIRO_H
-#define _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_CAIRO_H
+#ifndef MOZILLA_WIDGET_GTK_WINDOW_SURFACE_CAIRO_H
+#define MOZILLA_WIDGET_GTK_WINDOW_SURFACE_CAIRO_H
 
 #include "mozilla/widget/WindowSurface.h"
 #include "mozilla/gfx/Types.h"
@@ -35,4 +35,4 @@ class WindowSurfaceCairo : public WindowSurface {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H
+#endif  // MOZILLA_WIDGET_GTK_WINDOW_SURFACE_X11_IMAGE_H

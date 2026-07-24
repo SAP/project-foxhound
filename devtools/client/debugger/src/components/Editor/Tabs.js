@@ -13,47 +13,33 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import {
-  getSourceTabs,
+  getOpenedSources,
   getSelectedSource,
-  getSourcesForTabs,
   getIsPaused,
   getCurrentThread,
   getBlackBoxRanges,
 } from "../../selectors/index";
 import { isVisible } from "../../utils/ui";
 
-import { getHiddenTabs } from "../../utils/tabs";
-import { isPretty, getFileURL } from "../../utils/source";
+import { getHiddenTabsSources } from "../../utils/tabs";
+import { getFileURL } from "../../utils/source";
 import actions from "../../actions/index";
 
 import Tab from "./Tab";
 import { PaneToggleButton } from "../shared/Button/index";
 import Dropdown from "../shared/Dropdown";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 import CommandBar from "../SecondaryPanes/CommandBar";
 
 const { debounce } = require("resource://devtools/shared/debounce.js");
-
-function haveTabSourcesChanged(tabSources, prevTabSources) {
-  if (tabSources.length !== prevTabSources.length) {
-    return true;
-  }
-
-  for (let i = 0; i < tabSources.length; ++i) {
-    if (tabSources[i].id !== prevTabSources[i].id) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 class Tabs extends PureComponent {
   constructor(props) {
     super(props);
     this.state = {
       dropdownShown: false,
-      hiddenTabs: [],
+      // List of Sources objects for the tabs that overflow and are shown in the drop down menu
+      hiddenSources: [],
     };
 
     this.onResize = debounce(() => {
@@ -72,8 +58,7 @@ class Tabs extends PureComponent {
       selectedSource: PropTypes.object,
       blackBoxRanges: PropTypes.object.isRequired,
       startPanelCollapsed: PropTypes.bool.isRequired,
-      tabSources: PropTypes.array.isRequired,
-      tabs: PropTypes.array.isRequired,
+      openedSources: PropTypes.array.isRequired,
       togglePaneCollapse: PropTypes.func.isRequired,
     };
   }
@@ -81,7 +66,7 @@ class Tabs extends PureComponent {
   componentDidUpdate(prevProps) {
     if (
       this.props.selectedSource !== prevProps.selectedSource ||
-      haveTabSourcesChanged(this.props.tabSources, prevProps.tabSources)
+      this.props.openedSources !== prevProps.openedSources
     ) {
       this.updateHiddenTabs();
     }
@@ -108,22 +93,29 @@ class Tabs extends PureComponent {
    */
   updateHiddenTabs = () => {
     if (!this.refs.sourceTabs) {
+      // Ensure hiding the dropdown if we removed all sources.
+      if (this.state.hiddenSources.length) {
+        this.setState({ hiddenSources: [] });
+      }
       return;
     }
-    const { selectedSource, tabSources, moveTab } = this.props;
+    const { selectedSource, moveTab } = this.props;
     const sourceTabEls = this.refs.sourceTabs.children;
-    const hiddenTabs = getHiddenTabs(tabSources, sourceTabEls);
+    const hiddenSources = getHiddenTabsSources(
+      this.props.openedSources,
+      sourceTabEls
+    );
 
     if (
       selectedSource &&
       isVisible() &&
-      hiddenTabs.find(tab => tab.id == selectedSource.id)
+      hiddenSources.includes(selectedSource)
     ) {
       moveTab(selectedSource.url, 0);
       return;
     }
 
-    this.setState({ hiddenTabs });
+    this.setState({ hiddenSources });
   };
 
   toggleSourcesDropdown() {
@@ -133,9 +125,6 @@ class Tabs extends PureComponent {
   }
 
   getIconClass(source) {
-    if (isPretty(source)) {
-      return "prettyPrint";
-    }
     if (this.props.blackBoxRanges[source.url]) {
       return "blackBox";
     }
@@ -152,8 +141,9 @@ class Tabs extends PureComponent {
         onClick,
         title: getFileURL(source, false),
       },
-      React.createElement(AccessibleImage, {
-        className: `dropdown-icon ${this.getIconClass(source)}`,
+      React.createElement(DebuggerImage, {
+        name: this.getIconClass(source),
+        className: "dropdown-icon",
       }),
       span(
         {
@@ -216,8 +206,8 @@ class Tabs extends PureComponent {
   };
 
   renderTabs() {
-    const { tabs } = this.props;
-    if (!tabs) {
+    const { openedSources } = this.props;
+    if (!openedSources.length) {
       return null;
     }
     return div(
@@ -225,28 +215,27 @@ class Tabs extends PureComponent {
         className: "source-tabs",
         ref: "sourceTabs",
       },
-      tabs.map(({ source, sourceActor }, index) => {
+      openedSources.map((source, index) => {
         return React.createElement(Tab, {
           onDragStart: this.onTabDragStart,
           onDragOver: this.onTabDragOver,
           onDragEnd: this.onTabDragEnd,
-          key: source.id + sourceActor?.id,
+          key: source.id,
           index,
           source,
-          sourceActor,
         });
       })
     );
   }
 
   renderDropdown() {
-    const { hiddenTabs } = this.state;
-    if (!hiddenTabs || !hiddenTabs.length) {
+    const { hiddenSources } = this.state;
+    if (!hiddenSources || !hiddenSources.length) {
       return null;
     }
-    const panel = ul(null, hiddenTabs.map(this.renderDropdownSource));
-    const icon = React.createElement(AccessibleImage, {
-      className: "more-tabs",
+    const panel = ul(null, hiddenSources.map(this.renderDropdownSource));
+    const icon = React.createElement(DebuggerImage, {
+      name: "more-tabs",
     });
     return React.createElement(Dropdown, {
       panel,
@@ -302,8 +291,7 @@ class Tabs extends PureComponent {
 const mapStateToProps = state => {
   return {
     selectedSource: getSelectedSource(state),
-    tabSources: getSourcesForTabs(state),
-    tabs: getSourceTabs(state),
+    openedSources: getOpenedSources(state),
     blackBoxRanges: getBlackBoxRanges(state),
     isPaused: getIsPaused(state, getCurrentThread(state)),
   };
@@ -313,7 +301,5 @@ export default connect(mapStateToProps, {
   selectSource: actions.selectSource,
   moveTab: actions.moveTab,
   moveTabBySourceId: actions.moveTabBySourceId,
-  closeTab: actions.closeTab,
   togglePaneCollapse: actions.togglePaneCollapse,
-  showSource: actions.showSource,
 })(Tabs);

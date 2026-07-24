@@ -12,16 +12,16 @@
 #include "ClientOpenWindowUtils.h"
 #include "ClientPrincipalUtils.h"
 #include "ClientSourceParent.h"
+#include "jsfriendapi.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/ScopeExit.h"
-#include "jsfriendapi.h"
 #include "nsIAsyncShutdown.h"
 #include "nsIXULRuntime.h"
 #include "nsProxyRelease.h"
@@ -164,7 +164,7 @@ void ClientManagerService::Shutdown() {
   // all source, handle, and operation actors.
   for (auto actor :
        CopyableAutoTArray<ClientManagerParent*, 16>(mManagerList)) {
-    Unused << PClientManagerParent::Send__delete__(actor);
+    (void)PClientManagerParent::Send__delete__(actor);
   }
 
   // Destroying manager actors should've also destroyed all source actors, so
@@ -393,7 +393,7 @@ void ClientManagerService::AddManager(ClientManagerParent* aManager) {
 
   // If shutdown has already begun then immediately destroy the actor.
   if (mShutdown) {
-    Unused << PClientManagerParent::Send__delete__(aManager);
+    (void)PClientManagerParent::Send__delete__(aManager);
   }
 }
 
@@ -657,7 +657,7 @@ RefPtr<ClientOpPromise> ClientManagerService::Claim(
     }
 
     if (source->IsFrozen()) {
-      Unused << source->SendEvictFromBFCache();
+      (void)source->SendEvictFromBFCache();
       continue;
     }
 

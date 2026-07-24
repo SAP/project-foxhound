@@ -11,7 +11,6 @@
 #  define PROCESSMODEL_WINAPI
 #endif
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsIProcess.h"
 #include "nsIObserver.h"

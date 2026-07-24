@@ -4,16 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WorkerModuleLoader.h"
+
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/loader/ModuleLoadRequest.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/WorkerLoadContext.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/workerinternals/ScriptLoader.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "WorkerModuleLoader.h"
-
+#include "mozilla/dom/workerinternals/ScriptLoader.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom::workerinternals::loader {
@@ -40,29 +40,67 @@ nsIURI* WorkerModuleLoader::GetBaseURI() const {
   return workerPrivate->GetBaseURI();
 }
 
-already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateStaticImport(
-    nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
+nsIURI* WorkerModuleLoader::GetClientReferrerURI() {
+  // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+  // Step 3. "client":
+  //   2. let referrerSource be environment’s creation URL.
+  //
+  // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-creation-url
+  // https://html.spec.whatwg.org/multipage/workers.html#set-up-a-worker-environment-settings-object
+  return GetBaseURI();
+}
+
+already_AddRefed<JS::loader::ScriptFetchOptions>
+WorkerModuleLoader::CreateDefaultScriptFetchOptions() {
+  RefPtr<ScriptFetchOptions> options = ScriptFetchOptions::CreateDefault();
+  return options.forget();
+}
+
+already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateRequest(
+    JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+    JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+    bool aIsDynamicImport, ScriptFetchOptions* aOptions,
+    mozilla::dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
     const mozilla::dom::SRIMetadata& aSriMetadata) {
-  // We are intentionally deviating from the specification here and using the
-  // worker's CSP rather than the document CSP. The spec otherwise requires our
-  // service worker integration to be changed, and additionally the decision
-  // here did not make sense as we are treating static imports as different from
-  // other kinds of subresources.
-  // See Discussion in https://github.com/w3c/webappsec-csp/issues/336
   Maybe<ClientInfo> clientInfo = GetGlobalObject()->GetClientInfo();
 
-  RefPtr<WorkerLoadContext> loadContext = new WorkerLoadContext(
-      WorkerLoadContext::Kind::StaticImport, clientInfo,
-      aParent->GetWorkerLoadContext()->mScriptLoader,
-      aParent->GetWorkerLoadContext()->mOnlyExistingCachedResourcesAllowed);
-  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, aParent->ReferrerPolicy(), aParent->mFetchOptions,
-      SRIMetadata(), aParent->mURI, loadContext,
-      ModuleLoadRequest::Kind::StaticImport, this, aParent->mVisitedSet,
-      aParent->GetRootModule());
+  ModuleLoadRequest::Kind kind;
+  RefPtr<WorkerLoadContext> loadContext;
+  ModuleLoadRequest* root = nullptr;
+  if (aIsDynamicImport) {
+    if (!CreateDynamicImportLoader()) {
+      return nullptr;
+    }
 
-  request->mURL = request->mURI->GetSpecOrDefault();
-  request->NoCacheEntryFound();
+    loadContext = new WorkerLoadContext(
+        WorkerLoadContext::Kind::DynamicImport, clientInfo,
+        GetCurrentScriptLoader(),
+        // When dynamic import is supported in ServiceWorkers,
+        // the current plan in onlyExistingCachedResourcesAllowed
+        // is that only existing cached resources will be
+        // allowed.  (`import()` will not be used for caching
+        // side effects, but instead a specific method will be
+        // used during installation.)
+        true);
+
+    kind = ModuleLoadRequest::Kind::DynamicImport;
+  } else {
+    MOZ_ASSERT(!aHostDefined.isUndefined());
+    root = static_cast<ModuleLoadRequest*>(aHostDefined.toPrivate());
+    MOZ_ASSERT(root);
+    WorkerLoadContext* context = root->mLoadContext->AsWorkerContext();
+    loadContext = new WorkerLoadContext(
+        WorkerLoadContext::Kind::StaticImport, clientInfo,
+        context->mScriptLoader, context->mOnlyExistingCachedResourcesAllowed);
+    kind = ModuleLoadRequest::Kind::StaticImport;
+  }
+
+  JS::ModuleType moduleType = JS::GetModuleRequestType(aCx, aModuleRequest);
+  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
+      moduleType, SRIMetadata(), aBaseURL, loadContext, kind, this, root);
+
+  request->mURL = aURI->GetSpecOrDefault();
+  request->NoCacheEntryFound(aReferrerPolicy, aOptions, aURI);
   return request.forget();
 }
 
@@ -82,84 +120,17 @@ bool WorkerModuleLoader::CreateDynamicImportLoader() {
   return true;
 }
 
-already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateDynamicImport(
-    JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-    LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-    JS::Handle<JSObject*> aPromise) {
+bool WorkerModuleLoader::IsDynamicImportSupported() {
   WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-
-  if (!CreateDynamicImportLoader()) {
-    return nullptr;
-  }
-
   // Not supported for Service Workers.
   // https://github.com/w3c/ServiceWorker/issues/1585 covers existing discussion
   // about potentially supporting use of import().
-  if (workerPrivate->IsServiceWorker()) {
-    return nullptr;
-  }
-  MOZ_ASSERT(aSpecifier);
-  MOZ_ASSERT(aPromise);
-
-  RefPtr<ScriptFetchOptions> options;
-  nsIURI* baseURL = nullptr;
-  if (aMaybeActiveScript) {
-    // https://html.spec.whatwg.org/multipage/webappapis.html#hostloadimportedmodule
-    // Step 6.3. Set fetchOptions to the new descendant script fetch options for
-    // referencingScript's fetch options.
-    options = aMaybeActiveScript->GetFetchOptions();
-    baseURL = aMaybeActiveScript->BaseURL();
-  } else {
-    // https://html.spec.whatwg.org/multipage/webappapis.html#hostloadimportedmodule
-    // Step 4. Let fetchOptions be the default classic script fetch options.
-    //
-    // https://html.spec.whatwg.org/multipage/webappapis.html#default-classic-script-fetch-options
-    // The default classic script fetch options are a script fetch options whose
-    // cryptographic nonce is the empty string, integrity metadata is the empty
-    // string, parser metadata is "not-parser-inserted", credentials mode is
-    // "same-origin", referrer policy is the empty string, and fetch priority is
-    // "auto".
-    options = new ScriptFetchOptions(
-        CORSMode::CORS_NONE, /* aNonce = */ u""_ns, RequestPriority::Auto,
-        JS::loader::ParserMetadata::NotParserInserted, nullptr);
-    baseURL = GetBaseURI();
-  }
-
-  Maybe<ClientInfo> clientInfo = GetGlobalObject()->GetClientInfo();
-
-  RefPtr<WorkerLoadContext> context = new WorkerLoadContext(
-      WorkerLoadContext::Kind::DynamicImport, clientInfo,
-      GetCurrentScriptLoader(),
-      // When dynamic import is supported in ServiceWorkers,
-      // the current plan in onlyExistingCachedResourcesAllowed
-      // is that only existing cached resources will be
-      // allowed.  (`import()` will not be used for caching
-      // side effects, but instead a specific method will be
-      // used during installation.)
-      true);
-
-  RefPtr<JS::loader::VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI, aModuleType);
-
-  ReferrerPolicy referrerPolicy = workerPrivate->GetReferrerPolicy();
-  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, referrerPolicy, options, SRIMetadata(), baseURL,
-      context, ModuleLoadRequest::Kind::DynamicImport, this, visitedSet,
-      nullptr);
-
-  request->SetDynamicImport(aMaybeActiveScript, aSpecifier, aPromise);
-  request->NoCacheEntryFound();
-
-  return request.forget();
+  return !workerPrivate->IsServiceWorker();
 }
 
-bool WorkerModuleLoader::IsDynamicImportSupported() {
+bool WorkerModuleLoader::IsForServiceWorker() const {
   WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-  if (workerPrivate->IsServiceWorker()) {
-    return false;
-  }
-
-  return true;
+  return workerPrivate && workerPrivate->IsServiceWorker();
 }
 
 bool WorkerModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
@@ -179,19 +150,36 @@ nsresult WorkerModuleLoader::CompileFetchedModule(
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleScript) {
   switch (aRequest->mModuleType) {
     case JS::ModuleType::Unknown:
+    case JS::ModuleType::Bytes:
       MOZ_CRASH("Unexpected module type");
-    case JS::ModuleType::JavaScript:
-      return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::JavaScriptOrWasm:
+      return CompileJavaScriptOrWasmModule(aCx, aOptions, aRequest,
+                                           aModuleScript);
     case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::CSS:
+      MOZ_CRASH("CSS modules are not supported in workers");
   }
 
   MOZ_CRASH("Unhandled module type");
 }
 
-nsresult WorkerModuleLoader::CompileJavaScriptModule(
+nsresult WorkerModuleLoader::CompileJavaScriptOrWasmModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
+#ifdef NIGHTLY_BUILD
+  if (aRequest->HasWasmMimeTypeEssence()) {
+    MOZ_ASSERT(aRequest->IsWasmBytes());
+    auto* wasmModule =
+        JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    if (!wasmModule) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aModuleScript.set(wasmModule);
+    return NS_OK;
+  }
+#endif
   MOZ_ASSERT(aRequest->IsTextSource());
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
@@ -251,20 +239,21 @@ WorkerScriptLoader* WorkerModuleLoader::GetScriptLoaderFor(
 }
 
 void WorkerModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
-  if (aRequest->IsTopLevel()) {
-    AutoJSAPI jsapi;
-    if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
-      return;
-    }
-    RefPtr<WorkerScriptLoader> requestScriptLoader =
-        GetScriptLoaderFor(aRequest);
-    if (aRequest->IsDynamicImport()) {
-      aRequest->ProcessDynamicImport();
-      requestScriptLoader->TryShutdown();
-    } else {
-      requestScriptLoader->MaybeMoveToLoadedList(aRequest);
-      requestScriptLoader->ProcessPendingRequests(jsapi.cx());
-    }
+  if (aRequest->IsStaticImport()) {
+    return;
+  }
+
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
+    return;
+  }
+  RefPtr<WorkerScriptLoader> requestScriptLoader = GetScriptLoaderFor(aRequest);
+  if (aRequest->IsDynamicImport()) {
+    aRequest->ProcessDynamicImport();
+    requestScriptLoader->TryShutdown();
+  } else {
+    requestScriptLoader->MaybeMoveToLoadedList(aRequest);
+    requestScriptLoader->ProcessPendingRequests(jsapi.cx());
   }
 }
 

@@ -14,14 +14,18 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUITestUtils: "resource://testing-common/SearchUITestUtils.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
-  UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
-  UrlbarEventBufferer: "resource:///modules/UrlbarEventBufferer.sys.mjs",
-  UrlbarQueryContext: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  UrlbarController:
+    "moz-src:///browser/components/urlbar/UrlbarController.sys.mjs",
+  UrlbarEventBufferer:
+    "moz-src:///browser/components/urlbar/UrlbarEventBufferer.sys.mjs",
+  UrlbarQueryContext:
+    "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -87,25 +91,6 @@ function waitForLoadStartOrTimeout(win = window, timeoutMs = 1000) {
     win.gBrowser.removeTabsProgressListener(listener);
     win.clearTimeout(timeout);
   });
-}
-
-/**
- * Opens the url bar context menu by synthesizing a click.
- * Returns a menu item that is specified by an id.
- *
- * @param {string} anonid - Identifier of a menu item of the url bar context menu.
- * @returns {string} - The element that has the corresponding identifier.
- */
-async function promiseContextualMenuitem(anonid) {
-  let textBox = gURLBar.querySelector("moz-input-box");
-  let cxmenu = textBox.menupopup;
-  let cxmenuPromise = BrowserTestUtils.waitForEvent(cxmenu, "popupshown");
-  EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {
-    type: "contextmenu",
-    button: 2,
-  });
-  await cxmenuPromise;
-  return textBox.getMenuItem(anonid);
 }
 
 /**
@@ -356,7 +341,7 @@ function assertSearchStringIsInUrlbar(
 async function searchWithTab(
   searchString,
   tab = null,
-  engine = Services.search.defaultEngine,
+  engine = SearchService.defaultEngine,
   expectedPersistedSearchTerms = true
 ) {
   if (!tab) {
@@ -400,7 +385,7 @@ async function focusSwitcher(win = window) {
   Assert.ok(win.gURLBar.hasAttribute("focused"), "Urlbar was focused");
 
   EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, win);
-  let switcher = win.document.getElementById("urlbar-searchmode-switcher");
+  let switcher = win.gURLBar.querySelector(".searchmode-switcher");
   await BrowserTestUtils.waitForCondition(
     () => win.document.activeElement == switcher
   );

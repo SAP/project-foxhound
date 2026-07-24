@@ -10,8 +10,8 @@
 #include <d3d11.h>
 #include <vector>
 
+#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/StaticPtr.h"
 
@@ -43,6 +43,8 @@ class CompositeProcessD3D11FencesHolderMap {
 
   bool WaitWriteFence(CompositeProcessFencesHolderId aHolderId,
                       ID3D11Device* aDevice);
+  std::pair<const RefPtr<gfx::FileHandleWrapper>, uint64_t>
+  GetWriteFenceHandleAndValue(CompositeProcessFencesHolderId aHolderId) const;
   bool WaitAllFencesAndForget(CompositeProcessFencesHolderId aHolderId,
                               ID3D11Device* aDevice);
 

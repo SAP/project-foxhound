@@ -4,15 +4,14 @@
 
 #include "ImageDecoderSupport.h"
 
-#include "imgINotificationObserver.h"
 #include "imgITools.h"
-#include "imgINotificationObserver.h"
 #include "gfxUtils.h"
 #include "AndroidGraphics.h"
 #include "JavaExceptions.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/java/ImageWrappers.h"
+#include "nsIChannel.h"
 #include "nsNetUtil.h"
 
 using namespace mozilla::gfx;

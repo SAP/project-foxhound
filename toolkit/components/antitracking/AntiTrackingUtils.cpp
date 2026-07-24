@@ -22,6 +22,7 @@
 #include "mozilla/PermissionManager.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsGlobalWindowInner.h"
+#include "nsHttpChannel.h"
 #include "nsIChannel.h"
 #include "nsICookieService.h"
 #include "nsIEffectiveTLDService.h"
@@ -29,6 +30,7 @@
 #include "nsIPermission.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
+#include "nsMixedContentBlocker.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
 #include "nsRFPService.h"
@@ -158,28 +160,6 @@ bool AntiTrackingUtils::CreateStorageFramePermissionKey(
 }
 
 // static
-bool AntiTrackingUtils::CreateStorageRequestPermissionKey(
-    nsIURI* aURI, nsACString& aPermissionKey) {
-  MOZ_ASSERT(aPermissionKey.IsEmpty());
-  nsCOMPtr<nsIEffectiveTLDService> eTLDService =
-      mozilla::components::EffectiveTLD::Service();
-  if (!eTLDService) {
-    return false;
-  }
-  nsCString site;
-  nsresult rv = eTLDService->GetSite(aURI, site);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-  static const nsLiteralCString prefix =
-      nsLiteralCString("AllowStorageAccessRequest^");
-  aPermissionKey.SetCapacity(prefix.Length() + site.Length());
-  aPermissionKey.Append(prefix);
-  aPermissionKey.Append(site);
-  return true;
-}
-
-// static
 bool AntiTrackingUtils::IsStorageAccessPermission(nsIPermission* aPermission,
                                                   nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aPermission);
@@ -287,9 +267,7 @@ Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
 // static
 bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
                                                const nsAutoCString& aType,
-                                               bool aIsInPrivateBrowsing,
-                                               uint32_t* aRejectedReason,
-                                               uint32_t aBlockedReason) {
+                                               bool aIsInPrivateBrowsing) {
   RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (NS_WARN_IF(!permManager)) {
     LOG(("Failed to obtain the permission manager"));
@@ -357,9 +335,6 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
     }
 
     if (!found) {
-      if (aRejectedReason) {
-        *aRejectedReason = aBlockedReason;
-      }
       return false;
     }
   } else {
@@ -377,9 +352,6 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
         aPrincipal);
 
     if (result != nsIPermissionManager::ALLOW_ACTION) {
-      if (aRejectedReason) {
-        *aRejectedReason = aBlockedReason;
-      }
       return false;
     }
   }
@@ -499,8 +471,8 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
       if (NS_SUCCEEDED(rv) && isDocument) {
         nsIScriptSecurityManager* ssm =
             nsScriptSecurityManager::GetScriptSecurityManager();
-        Unused << ssm->GetChannelResultPrincipal(
-            aChannel, getter_AddRefs(targetPrincipal));
+        (void)ssm->GetChannelResultPrincipal(aChannel,
+                                             getter_AddRefs(targetPrincipal));
       }
     }
   }
@@ -529,7 +501,8 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
       BasePrincipal::CreateContentPrincipal(trackingURI,
                                             loadInfo->GetOriginAttributes());
 
-  if (IsThirdPartyChannel(aChannel)) {
+  bool isThirdParty = IsThirdPartyChannel(aChannel);
+  if (isThirdParty) {
     nsAutoCString targetOrigin;
     nsAutoCString trackingOrigin;
     if (NS_FAILED(targetPrincipal->GetOriginNoSuffix(targetOrigin)) ||
@@ -552,11 +525,8 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
   nsAutoCString type;
   AntiTrackingUtils::CreateStoragePermissionKey(trackingPrincipal, type);
 
-  uint32_t unusedReason = 0;
-
-  if (AntiTrackingUtils::CheckStoragePermission(targetPrincipal, type,
-                                                NS_UsePrivateBrowsing(aChannel),
-                                                &unusedReason, unusedReason)) {
+  if (AntiTrackingUtils::CheckStoragePermission(
+          targetPrincipal, type, NS_UsePrivateBrowsing(aChannel))) {
     return nsILoadInfo::HasStoragePermission;
   }
 
@@ -630,7 +600,186 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
     }
   }
 
+  // The remaining part of the function is for determining whether storage
+  // access could be granted using Storage-Access-Headers. And granting it
+  // if instructed by the server via the "Activate-Storage-Access"-header.
+  // Storage-Access headers are only sent in secure context
+  if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(trackingURI)) {
+    return nsILoadInfo::NoStoragePermission;
+  }
+
+  // In case Storage-Access was granted to the origin prior with the
+  // Storage-Access-API and the permission still exists, the website can
+  // activate Storage-Access with Storage-Access-Headers.
+  uint32_t result = 0;
+  rv = AntiTrackingUtils::TestStoragePermissionInParent(
+      targetPrincipal, trackingPrincipal, &result);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nsILoadInfo::NoStoragePermission;
+  }
+  if (result == nsIPermissionManager::ALLOW_ACTION) {
+    if (RefPtr<net::nsHttpChannel> httpChannel = do_QueryObject(aChannel)) {
+      if (httpChannel->StorageAccessReloadedChannel()) {
+        return nsILoadInfo::HasStoragePermission;
+      } else {
+        return nsILoadInfo::InactiveStoragePermission;
+      }
+    }
+  }
+
+  // In the ABA-case, A can also get storage-access automatically via
+  // Storage-Access-Headers.
+  if (isThirdParty) {
+    if (RefPtr<net::nsHttpChannel> httpChannel = do_QueryObject(aChannel)) {
+      // Determine whether we are in ABA or AB case, erroring on AB side
+      bool isAB = true;
+      rv = targetPrincipal->IsThirdPartyURI(trackingURI, &isAB);
+      if (NS_FAILED(rv)) {
+        return nsILoadInfo::NoStoragePermission;
+      }
+      if (isAB) {
+        // Third party resource, that could potentially have storage access
+        // Sending "Sec-Fetch-Storage-Access: none"
+        return nsILoadInfo::DisabledStoragePermission;
+      } else {
+        if (httpChannel->StorageAccessReloadedChannel()) {
+          // The server sent a retry response after we sent the "inactive"
+          // activate storage-access
+          // Sending "Sec-Fetch-Storage-Access: active"
+          return nsILoadInfo::HasStoragePermission;
+        } else {
+          // The site could has implicit storage-access due to ABA scenario.
+          // Let the server know that replying with "retry" will lead to us
+          // reloading the channel with storage-access enabled.
+          // Sending "Sec-Fetch-Storage-Access: inactive"
+          return nsILoadInfo::InactiveStoragePermission;
+        }
+      }
+    }
+  }
+
   return nsILoadInfo::NoStoragePermission;
+}
+
+// static
+nsresult AntiTrackingUtils::ActivateStoragePermissionStateInParent(
+    nsIChannel* aChannel) {
+  NS_ENSURE_ARG_POINTER(aChannel);
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+
+  if (GetStoragePermissionStateInParent(aChannel) !=
+      nsILoadInfo::InactiveStoragePermission) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  if (NS_WARN_IF(!loadInfo)) {
+    return NS_ERROR_FAILURE;
+  }
+
+#ifdef DEBUG
+  // We are only allowed to transition from "Inactive" to "Has". Parent function
+  // should check this condition, but check here again to make extra sure.
+  nsILoadInfo::StoragePermissionState currentStorageAccess =
+      loadInfo->GetStoragePermission();
+  MOZ_ASSERT(currentStorageAccess == nsILoadInfo::InactiveStoragePermission);
+#endif
+
+  // Allow accessing unpartitioned cookies
+  MOZ_TRY(loadInfo->SetStoragePermission(nsILoadInfo::HasStoragePermission));
+  return NS_OK;
+}
+
+bool AntiTrackingUtils::ProcessStorageAccessHeadersShouldRetry(
+    nsIChannel* aChannel) {
+  bool ShouldRetry = false;
+  nsresult rv = ProcessStorageAccessHeaders(aChannel, &ShouldRetry);
+  return NS_SUCCEEDED(rv) && ShouldRetry;
+}
+
+nsresult AntiTrackingUtils::ProcessStorageAccessHeaders(nsIChannel* aChannel,
+                                                        bool* aOutRetry) {
+  NS_ENSURE_ARG_POINTER(aChannel);
+  NS_ENSURE_ARG_POINTER(aOutRetry);
+  *aOutRetry = false;
+  if (!StaticPrefs::dom_storage_access_enabled() ||
+      !StaticPrefs::dom_storage_access_headers_enabled()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+  NS_ENSURE_TRUE(httpChannel, NS_ERROR_FAILURE);
+
+  // only continue processing if we got an Activate-Storage-Access response
+  // header
+  nsAutoCString activate;
+  MOZ_TRY(
+      httpChannel->GetResponseHeader("Activate-Storage-Access"_ns, activate));
+
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  MOZ_TRY(aChannel->GetLoadInfo(getter_AddRefs(loadInfo)));
+
+  // 1. If request's credentials mode is not "include", return failure.
+  uint32_t cookiePolicy = 0;
+  MOZ_TRY(loadInfo->GetCookiePolicy(&cookiePolicy));
+  if (cookiePolicy != nsILoadInfo::SEC_COOKIES_INCLUDE) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // 2. If request's `eligible for storage-access` is "eligible", return
+  // failure. When storage-access is already granted, no need to process further
+  nsILoadInfo::StoragePermissionState storageAccess =
+      AntiTrackingUtils::GetStoragePermissionStateInParent(aChannel);
+  if (storageAccess != nsILoadInfo::InactiveStoragePermission) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // 3. Let storageAccessStatus be request's storage access status.
+  nsAutoCString storageAccessStatus;
+
+  // 4. If storageAccessStatus is not "inactive", return failure.
+  MOZ_TRY(httpChannel->GetRequestHeader("Sec-Fetch-Storage-Access"_ns,
+                                        storageAccessStatus));
+  if (!storageAccessStatus.EqualsLiteral("inactive")) {
+    return NS_ERROR_FAILURE;
+  }
+  net::ActivateStorageAccess asa =
+      MOZ_TRY(net::ParseActivateStorageAccess(activate));
+
+  switch (asa.variant) {
+    case net::ActivateStorageAccessVariant::Load: {
+      // TODO: only do on document channels / load?
+      auto policyType = loadInfo->GetExternalContentPolicyType();
+      if (policyType != ExtContentPolicy::TYPE_SUBDOCUMENT) {
+        return NS_ERROR_FAILURE;
+      }
+      MOZ_TRY(
+          AntiTrackingUtils::ActivateStoragePermissionStateInParent(aChannel));
+      return NS_OK;
+    }
+    case net::ActivateStorageAccessVariant::RetryOrigin: {
+      // check whether specified allowedOrigin allows this retry
+      // parse origin
+      nsCOMPtr<nsIURI> allowedOrigin;
+      MOZ_TRY(NS_NewURI(getter_AddRefs(allowedOrigin), asa.origin.get()));
+
+      nsIPrincipal* loadingPrincipal = loadInfo->GetLoadingPrincipal();
+      if (!loadingPrincipal) {
+        return NS_ERROR_FAILURE;
+      }
+      if (!loadingPrincipal->IsSameOrigin(allowedOrigin)) {
+        return NS_ERROR_FAILURE;
+      }
+      *aOutRetry = true;
+      return NS_OK;
+    }
+    case net::ActivateStorageAccessVariant::RetryAny:
+      // no checks on origin necessary
+      *aOutRetry = true;
+      return NS_OK;
+  }
+  MOZ_ASSERT(false, "Invalid enum variant");
+  return NS_ERROR_FAILURE;
 }
 
 uint64_t AntiTrackingUtils::GetTopLevelAntiTrackingWindowId(
@@ -847,7 +996,7 @@ void AntiTrackingUtils::ComputeIsThirdPartyToTopWindow(nsIChannel* aChannel) {
   }
 
   nsCOMPtr<nsIURI> uri;
-  Unused << aChannel->GetURI(getter_AddRefs(uri));
+  (void)aChannel->GetURI(getter_AddRefs(uri));
 
   // In some cases we don't have a browsingContext. For example, in xpcshell
   // tests, channels that are used to download images and channels for loading
@@ -991,8 +1140,8 @@ bool AntiTrackingUtils::IsThirdPartyWindow(nsPIDOMWindowInner* aWindow,
     // to use IsThirdPartyWindow check that examine the whole hierarchy.
     nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
         components::ThirdPartyUtil::Service();
-    Unused << thirdPartyUtil->IsThirdPartyWindow(aWindow->GetOuterWindow(),
-                                                 nullptr, &thirdParty);
+    (void)thirdPartyUtil->IsThirdPartyWindow(aWindow->GetOuterWindow(), nullptr,
+                                             &thirdParty);
     return thirdParty;
   }
 
@@ -1081,7 +1230,7 @@ bool AntiTrackingUtils::IsThirdPartyContext(BrowsingContext* aBrowsingContext) {
     if (!parentDocShell) {
       return true;
     }
-    Document* parentDoc = parentDocShell->GetDocument();
+    Document* parentDoc = parentDocShell->GetExtantDocument();
     if (!parentDoc || parentDoc->GetSandboxFlags() & SANDBOXED_ORIGIN) {
       return true;
     }
@@ -1127,7 +1276,7 @@ void AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel) {
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
-  Unused << loadInfo->SetStoragePermission(
+  (void)loadInfo->SetStoragePermission(
       AntiTrackingUtils::GetStoragePermissionStateInParent(aChannel));
 
   // Note that we need to put this after computing the IsThirdPartyToTopWindow
@@ -1146,7 +1295,7 @@ void AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel) {
 #endif
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   // Subresources (including subdocuments) may have a different partition key,
   // particularly one without or with the same-site bit. We have to update that
   // here.
@@ -1177,8 +1326,8 @@ void AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel) {
   // We only need to set FPD for top-level loads. FPD will automatically be
   // propagated to non-top level loads via CookieJarSetting.
   nsCOMPtr<nsIURI> uri;
-  Unused << aChannel->GetURI(getter_AddRefs(uri));
-  net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri, false);
+  (void)aChannel->GetURI(getter_AddRefs(uri));
+  net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
 
   // Generate the fingerprinting randomization key for top-level loads. The key
   // will automatically be propagated to sub loads.

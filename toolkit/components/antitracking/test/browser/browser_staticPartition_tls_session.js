@@ -21,6 +21,7 @@ const TEST_URL_C = TEST_ORIGIN_C + TEST_ENDPOINT;
 
 /**
  * Waits for a load with the given URL to happen and returns the peerId.
+ *
  * @param {string} url - The URL expected to load.
  * @returns {Promise<string>} a promise which resolves on load with the
  * associated socket peerId.
@@ -51,6 +52,7 @@ async function waitForLoad(url) {
  * associated with the load.
  * Note: Loads are identified by URI. If multiple loads with the same URI happen
  * concurrently, this method may not map them correctly.
+ *
  * @param {MozBrowser} browser
  * @param {string} url
  * @returns {Promise<string>} Resolves on load with the peer id associated with

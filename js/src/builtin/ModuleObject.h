@@ -11,6 +11,7 @@
 #include "mozilla/Maybe.h"      // mozilla::Maybe
 #include "mozilla/Span.h"
 
+#include <cstdint>   // UINT32_MAX
 #include <stddef.h>  // size_t
 #include <stdint.h>  // int32_t, uint32_t
 
@@ -65,12 +66,15 @@ class ImportAttribute {
 
 using ImportAttributeVector = GCVector<ImportAttribute, 0, SystemAllocPolicy>;
 
+enum class ImportPhase : uint8_t { Evaluation, Limit };
+
 class ModuleRequestObject : public NativeObject {
  public:
   enum {
     SpecifierSlot = 0,
     FirstUnsupportedAttributeKeySlot,
     ModuleTypeSlot,
+    PhaseSlot,
     SlotCount
   };
 
@@ -78,13 +82,15 @@ class ModuleRequestObject : public NativeObject {
   static bool isInstance(HandleValue value);
   [[nodiscard]] static ModuleRequestObject* create(
       JSContext* cx, Handle<JSAtom*> specifier,
-      Handle<ImportAttributeVector> maybeAttributes);
-  [[nodiscard]] static ModuleRequestObject* create(JSContext* cx,
-                                                   Handle<JSAtom*> specifier,
-                                                   JS::ModuleType moduleType);
+      Handle<ImportAttributeVector> maybeAttributes,
+      ImportPhase phase = ImportPhase::Evaluation);
+  [[nodiscard]] static ModuleRequestObject* create(
+      JSContext* cx, Handle<JSAtom*> specifier, JS::ModuleType moduleType,
+      ImportPhase phase = ImportPhase::Evaluation);
 
   JSAtom* specifier() const;
   JS::ModuleType moduleType() const;
+  ImportPhase phase() const;
 
   // We process import attributes earlier in the process, but according to the
   // spec, we should error during module evaluation if we encounter an
@@ -307,6 +313,7 @@ class ModuleNamespaceObject : public ProxyObject {
 // Value types of [[Status]] in a Cyclic Module Record
 // https://tc39.es/ecma262/#table-cyclic-module-fields
 enum class ModuleStatus : int8_t {
+  New,
   Unlinked,
   Linking,
   Linked,
@@ -321,25 +328,57 @@ enum class ModuleStatus : int8_t {
   Evaluated_Error
 };
 
-// Special values for CyclicModuleFields' asyncEvaluatingPostOrderSlot field,
-// which is used as part of the implementation of the AsyncEvaluation field of
-// cyclic module records.
+// Special values for CyclicModuleFields' asyncEvaluationOrderSlot field,
+// which represents the AsyncEvaluationOrder field of cyclic module records.
 //
-// The spec requires us to be able to tell the order in which the field was set
-// to true for async evaluating modules.
-//
-// This is arranged by using an integer to record the order. After evaluation is
-// complete the value is set to ASYNC_EVALUATING_POST_ORDER_CLEARED.
+// AsyncEvaluationOrder can have three states:
+//  - a positive integer, represented by values <=
+//    ASYNC_EVALUATING_POST_ORDER_MAX_VALUE
+//  - ~unset~, represented by ASYNC_EVALUATING_POST_ORDER_UNSET
+//  - ~done~, represented by ASYNC_EVALUATING_POST_ORDER_DONE
 //
 // See https://tc39.es/ecma262/#sec-cyclic-module-records for field defintion.
 // See https://tc39.es/ecma262/#sec-async-module-execution-fulfilled for sort
 // requirement.
 
-// Initial value for the runtime's counter used to generate these values.
-constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_INIT = 1;
+// Value that the field is initially set to.
+constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_UNSET = UINT32_MAX;
 
 // Value that the field is set to after being cleared.
-constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_CLEARED = 0;
+constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_DONE = UINT32_MAX - 1;
+
+constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_MAX_VALUE = UINT32_MAX - 2;
+
+class AsyncEvaluationOrder {
+ private:
+  uint32_t value = ASYNC_EVALUATING_POST_ORDER_UNSET;
+
+ public:
+  bool isUnset() const;
+  bool isInteger() const;
+  bool isDone() const;
+
+  uint32_t get() const;
+
+  void set(JSRuntime* rt);
+  void setDone(JSRuntime* rt);
+};
+
+// The map used by [[LoadedModules]] in Realm Record Fields, Script Record
+// Fields, and additional fields of Cyclic Module Records.
+// https://tc39.es/ecma262/#table-realm-record-fields
+// https://tc39.es/ecma262/#table-script-records
+// https://tc39.es/ecma262/#table-cyclic-module-fields
+//
+// For Import attributes proposal, this map maps from ModuleRequest records to
+// Module records.
+// https://tc39.es/proposal-import-attributes/#sec-cyclic-module-records
+//
+// TODO:
+// Bug 1968874 : Implement [[LoadedModules]] in Realm Records and Script Records
+using LoadedModuleMap =
+    GCHashMap<HeapPtr<JSObject*>, HeapPtr<ModuleObject*>,
+              StableCellHasher<HeapPtr<JSObject*>>, SystemAllocPolicy>;
 
 // Currently, the ModuleObject class is used to represent both the Source Text
 // Module Record and the Synthetic Module Record. Ideally, this is something
@@ -392,8 +431,6 @@ class ModuleObject : public NativeObject {
   ModuleEnvironmentObject* environment() const;
   ModuleNamespaceObject* namespace_();
   ModuleStatus status() const;
-  mozilla::Maybe<uint32_t> maybeDfsIndex() const;
-  uint32_t dfsIndex() const;
   mozilla::Maybe<uint32_t> maybeDfsAncestorIndex() const;
   uint32_t dfsAncestorIndex() const;
   bool hadEvaluationError() const;
@@ -411,15 +448,12 @@ class ModuleObject : public NativeObject {
   IndirectBindingMap& importBindings();
 
   void setStatus(ModuleStatus newStatus);
-  void setDfsIndex(uint32_t index);
   void setDfsAncestorIndex(uint32_t index);
-  void clearDfsIndexes();
+  void clearDfsAncestorIndex();
 
   static PromiseObject* createTopLevelCapability(JSContext* cx,
                                                  Handle<ModuleObject*> module);
   bool hasTopLevelAwait() const;
-  bool isAsyncEvaluating() const;
-  void setAsyncEvaluating();
   void setEvaluationError(HandleValue newValue);
   void setPendingAsyncDependencies(uint32_t newValue);
   void setInitialTopLevelCapability(Handle<PromiseObject*> capability);
@@ -429,13 +463,14 @@ class ModuleObject : public NativeObject {
   ListObject* asyncParentModules() const;
   mozilla::Maybe<uint32_t> maybePendingAsyncDependencies() const;
   uint32_t pendingAsyncDependencies() const;
-  mozilla::Maybe<uint32_t> maybeAsyncEvaluatingPostOrder() const;
-  uint32_t getAsyncEvaluatingPostOrder() const;
-  void clearAsyncEvaluatingPostOrder();
+  AsyncEvaluationOrder& asyncEvaluationOrder();
+  AsyncEvaluationOrder const& asyncEvaluationOrder() const;
   void setCycleRoot(ModuleObject* cycleRoot);
   ModuleObject* getCycleRoot() const;
   bool hasCyclicModuleFields() const;
   bool hasSyntheticModuleFields() const;
+  LoadedModuleMap& loadedModules();
+  const LoadedModuleMap& loadedModules() const;
 
   static void onTopLevelEvaluationFinished(ModuleObject* module);
 
@@ -479,22 +514,81 @@ class ModuleObject : public NativeObject {
   const SyntheticModuleFields* syntheticModuleFields() const;
 };
 
-JSObject* GetOrCreateModuleMetaObject(JSContext* cx, HandleObject module);
+using VisitedModuleSet =
+    GCHashSet<HeapPtr<ModuleObject*>, DefaultHasher<HeapPtr<ModuleObject*>>,
+              SystemAllocPolicy>;
 
-ModuleObject* CallModuleResolveHook(JSContext* cx,
-                                    HandleValue referencingPrivate,
-                                    HandleObject moduleRequest);
+// The fields of a GraphLoadingState Record, as described in:
+// https://tc39.es/ecma262/#graphloadingstate-record
+struct GraphLoadingStateRecord {
+  GraphLoadingStateRecord() = default;
+  GraphLoadingStateRecord(JS::LoadModuleResolvedCallback resolved,
+                          JS::LoadModuleRejectedCallback rejected);
+
+  void trace(JSTracer* trc);
+
+  // [[Visited]] : a List of Cyclic Module Records
+  VisitedModuleSet visited;
+
+  JS::LoadModuleResolvedCallback resolved;
+  JS::LoadModuleRejectedCallback rejected;
+};
+
+class GraphLoadingStateRecordObject : public NativeObject {
+ public:
+  enum {
+    StateSlot = 0,
+    PromiseSlot,
+    IsLoadingSlot,
+    PendingModulesCountSlot,
+    HostDefinedSlot,
+    SlotCount
+  };
+
+  static const JSClass class_;
+  static const JSClassOps classOps_;
+
+  [[nodiscard]] static GraphLoadingStateRecordObject* create(
+      JSContext* cx, bool isLoading, uint32_t pendingModulesCount,
+      JS::LoadModuleResolvedCallback resolved,
+      JS::LoadModuleRejectedCallback rejected, Handle<Value> hostDefined);
+
+  [[nodiscard]] static GraphLoadingStateRecordObject* create(
+      JSContext* cx, bool isLoading, uint32_t pendingModulesCount,
+      Handle<PromiseObject*> promise, Handle<Value> hostDefined);
+
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
+  static void trace(JSTracer* trc, JSObject* obj);
+
+  // [[PromiseCapability]] : a PromiseCapability Record
+  PromiseObject* promise();
+
+  // [[IsLoading]] : a Boolean
+  bool isLoading();
+  void setIsLoading(bool isLoading);
+
+  // [[PendingModulesCount]] : a non-negative integer
+  uint32_t pendingModulesCount();
+  void setPendingModulesCount(uint32_t count);
+
+  VisitedModuleSet& visited();
+
+  Value hostDefined();
+
+  bool resolved(JSContext* cx, JS::Handle<JS::Value> hostDefined);
+  bool rejected(JSContext* cx, JS::Handle<JS::Value> hostDefined,
+                Handle<JS::Value> error);
+};
+
+JSObject* GetOrCreateModuleMetaObject(JSContext* cx, HandleObject module);
 
 JSObject* StartDynamicModuleImport(JSContext* cx, HandleScript script,
                                    HandleValue specifier, HandleValue options);
 
-bool OnModuleEvaluationFailure(JSContext* cx, HandleObject evaluationPromise,
-                               JS::ModuleErrorBehaviour errorBehaviour);
-
-bool FinishDynamicModuleImport(JSContext* cx, HandleObject evaluationPromise,
-                               HandleValue referencingPrivate,
-                               HandleObject moduleRequest,
-                               HandleObject promise);
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+JSObject* StartDynamicModuleImportSource(JSContext* cx, HandleScript script,
+                                         HandleValue specifier);
+#endif
 
 }  // namespace js
 

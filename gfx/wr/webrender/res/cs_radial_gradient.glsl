@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include shared,rect,render_task,gpu_cache,gpu_buffer,gradient
+#include shared,rect,render_task,gpu_buffer,gradient
 
 varying highp vec2 v_pos;
 
@@ -63,8 +63,12 @@ void swgl_drawSpanRGBA8() {
     if (address < 0) {
         return;
     }
-    swgl_commitRadialGradientRGBA8(sGpuBufferF, address, GRADIENT_ENTRIES, v_gradient_repeat.x != 0.0,
+#ifdef WR_FEATURE_DITHERING
+    swgl_commitDitheredRadialGradientRGBA8(sGpuBufferF, address, GRADIENT_ENTRIES, v_gradient_repeat.x != 0.0,
                                    v_pos, v_start_radius.x);
+#else
+    swgl_commitRadialGradientRGBA8(sGpuBufferF, address, GRADIENT_ENTRIES, v_gradient_repeat.x != 0.0, v_pos, v_start_radius.x);
+#endif
 }
 #endif
 

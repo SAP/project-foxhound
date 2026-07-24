@@ -14,23 +14,33 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
+import androidx.navigation.NavHostController
 import androidx.navigation.fragment.findNavController
 import androidx.preference.Preference
 import androidx.preference.SwitchPreference
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.ext.consumeFrom
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.service.sync.autofill.AutofillCreditCardsAddressesStorage
 import mozilla.components.ui.widgets.withCenterAlignedButtons
+import org.mozilla.fenix.Config
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
+import org.mozilla.fenix.components.LogMiddleware
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
@@ -38,11 +48,20 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.SharedPreferenceUpdater
 import org.mozilla.fenix.settings.SyncPreferenceView
+import org.mozilla.fenix.settings.autofill.ui.AccountAuthState
+import org.mozilla.fenix.settings.autofill.ui.AutofillSettingsMiddleware
+import org.mozilla.fenix.settings.autofill.ui.AutofillSettingsScreen
+import org.mozilla.fenix.settings.autofill.ui.AutofillSettingsState
+import org.mozilla.fenix.settings.autofill.ui.AutofillSettingsStore
 import org.mozilla.fenix.settings.biometric.BiometricPromptPreferenceFragment
 import org.mozilla.fenix.settings.requirePreference
+import org.mozilla.fenix.theme.FirefoxTheme
+import kotlin.Boolean
+import com.google.android.material.R as materialR
+import mozilla.components.ui.icons.R as iconsR
 
 /**
- * Autofill settings fragment displays a list of settings related to autofilling, adding and
+ * Autofill settings fragment displays a list of settings related to auto filling, adding and
  * syncing credit cards and addresses.
  */
 @SuppressWarnings("TooManyFunctions")
@@ -74,15 +93,27 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        store = StoreProvider.get(this) {
-            AutofillFragmentStore(AutofillFragmentState())
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        if (requireContext().settings().enableComposeAutofillSettings) {
+            return autofillSettingsComposeView()
+        }
+
+        store = storeProvider.get { restoredState ->
+            AutofillFragmentStore(restoredState ?: AutofillFragmentState())
         }
         loadAutofillState()
+        return super.onCreateView(inflater, container, savedInstanceState)
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        if (requireContext().settings().enableComposeAutofillSettings) {
+            return
+        }
+
         setPreferencesFromResource(
             if (requireComponents.settings.addressFeature) {
                 R.xml.autofill_preferences
@@ -119,17 +150,71 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
         }
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
-        loadAutofillState()
-        return super.onCreateView(inflater, container, savedInstanceState)
-    }
+    private fun autofillSettingsComposeView(): View =
+        ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            val buildStore = { _: NavHostController ->
+
+                val autofillStore by fragmentStore(
+                    AutofillSettingsState.default.copy(
+                        saveFillAddresses = requireContext().settings().shouldAutofillAddressDetails,
+                        saveFillCards = requireContext().settings().shouldAutofillCreditCardDetails,
+                        syncAddresses = requireContext().settings().shouldSyncAddressesAcrossDevices,
+                        syncCreditCards = requireContext().settings().shouldSyncCreditCardsAcrossDevices,
+                        accountAuthState = if (requireContext().settings().signedInFxaAccount) {
+                            AccountAuthState.Authenticated
+                        } else {
+                            AccountAuthState.LoggedOut
+                        },
+                    ),
+                ) {
+                    AutofillSettingsStore(
+                        initialState = it,
+                        middleware = listOf(
+                            LogMiddleware(
+                                tag = "AutofillSettingsStore",
+                                shouldIncludeDetailedData = { Config.channel.isDebug },
+                            ),
+                            createAutofillSettingsMiddleware(),
+                        ),
+                    )
+                }
+
+                autofillStore
+            }
+            setContent {
+                FirefoxTheme {
+                    AutofillSettingsScreen(
+                        buildStore = buildStore,
+                        accountManager = requireComponents.backgroundServices.accountManager,
+                        isAddressSyncEnabled = requireComponents.settings.isAddressSyncEnabled,
+                    )
+                }
+            }
+        }
+
+    private fun createAutofillSettingsMiddleware() =
+        AutofillSettingsMiddleware(
+            autofillSettingsStorage = requireContext().components.core.autofillStorage,
+            accountManager = requireComponents.backgroundServices.accountManager,
+            updateSaveFillStatus = { destination, newValue ->
+                updateSaveFillStatus(destination, newValue)
+            },
+            updateSyncStatusAcrossDevices = { destination, newValue ->
+                updateSyncStatusAcrossDevices(destination, newValue)
+            },
+            goToScreen = { nextFragment ->
+                goToFragment(nextFragment)
+            },
+            exitAutofillSettings = { this@AutofillSettingFragment.findNavController().popBackStack() },
+        )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        if (requireContext().settings().enableComposeAutofillSettings) {
+            return
+        }
 
         requirePreference<SwitchPreference>(R.string.pref_key_credit_cards_save_and_autofill_cards).summary =
             getString(R.string.preferences_credit_cards_save_and_autofill_cards_summary_2, getString(R.string.app_name))
@@ -151,6 +236,11 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
 
     override fun onResume() {
         super.onResume()
+
+        if (requireContext().settings().enableComposeAutofillSettings) {
+            hideToolbar()
+            return
+        }
 
         if (requireComponents.settings.addressFeature) {
             showToolbar(getString(R.string.preferences_autofill))
@@ -230,7 +320,14 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
             manageAddressesPreference.title =
                 getString(R.string.preferences_addresses_manage_addresses)
         } else {
-            manageAddressesPreference.setIcon(R.drawable.ic_new)
+            manageAddressesPreference.setIcon(iconsR.drawable.mozac_ic_plus_24)
+            manageAddressesPreference.icon?.setTint(
+                MaterialColors.getColor(
+                    requireActivity(),
+                    materialR.attr.colorOnSurface,
+                    "Could not resolve themed color",
+                ),
+            )
             manageAddressesPreference.title =
                 getString(R.string.preferences_addresses_add_address)
         }
@@ -266,7 +363,14 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
             manageSavedCardsPreference.title =
                 getString(R.string.preferences_credit_cards_manage_saved_cards_2)
         } else {
-            manageSavedCardsPreference.setIcon(R.drawable.ic_new)
+            manageSavedCardsPreference.setIcon(iconsR.drawable.mozac_ic_plus_24)
+            manageSavedCardsPreference.icon?.setTint(
+                MaterialColors.getColor(
+                    requireContext(),
+                    materialR.attr.colorOnSurface,
+                    "Could not resolve themed color",
+                ),
+            )
             manageSavedCardsPreference.title =
                 getString(R.string.preferences_credit_cards_add_credit_card_2)
         }
@@ -311,7 +415,7 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
      * only used when BiometricPrompt is unavailable on the device.
      */
     override fun showPinDialogWarning(context: Context) {
-        AlertDialog.Builder(context).apply {
+        MaterialAlertDialogBuilder(context).apply {
             setTitle(getString(R.string.credit_cards_warning_dialog_title_2))
             setMessage(getString(R.string.credit_cards_warning_dialog_message_3))
 
@@ -346,11 +450,89 @@ class AutofillSettingFragment : BiometricPromptPreferenceFragment() {
         startForResult.launch(intent)
     }
 
+    private fun goToFragment(destination: String) {
+        with(AutofillScreenDestination) {
+            when (destination) {
+                ADD_ADDRESS -> {
+                    navigateToAddAddressFragment()
+                }
+                MANAGE_ADDRESSES -> {
+                    navigateToAddressManagementFragment()
+                }
+                ADD_CREDIT_CARD -> {
+                    navigateToAddCreditCardFragment()
+                }
+
+                MANAGE_CREDIT_CARDS -> {
+                    navigateToCreditCardManagementFragment()
+                }
+                SYNC_SIGN_IN -> {
+                    syncSignIn()
+                }
+            }
+        }
+    }
+
+    private fun navigateToAddAddressFragment() {
+        val directions =
+            AutofillSettingFragmentDirections
+                .actionAutofillSettingFragmentToAddressEditorFragment()
+        findNavController().navigate(directions)
+    }
+
+    private fun navigateToAddressManagementFragment() {
+        val directions =
+            AutofillSettingFragmentDirections
+                .actionAutofillSettingFragmentToAddressManagementFragment()
+        findNavController().navigate(directions)
+    }
+
+    private fun navigateToAddCreditCardFragment() {
+        val directions =
+            AutofillSettingFragmentDirections
+                .actionAutofillSettingFragmentToCreditCardEditorFragment()
+        findNavController().navigate(directions)
+    }
+
     private fun navigateToCreditCardManagementFragment() {
         val directions =
             AutofillSettingFragmentDirections
                 .actionAutofillSettingFragmentToCreditCardsManagementFragment()
         findNavController().navigate(directions)
+    }
+
+    private fun syncSignIn() {
+        findNavController().navigate(
+            NavGraphDirections.actionGlobalTurnOnSync(entrypoint = FenixFxAEntryPoint.AutofillSetting),
+        )
+    }
+
+    private fun updateSyncStatusAcrossDevices(destination: String, newValue: Boolean) {
+        when (destination) {
+            AutofillScreenDestination.ADDRESS -> {
+                SyncEnginesStorage(requireContext()).setStatus(SyncEngine.Addresses, newValue)
+                requireContext().settings().shouldSyncAddressesAcrossDevices =
+                    newValue
+            }
+
+            AutofillScreenDestination.CREDIT_CARD -> {
+                SyncEnginesStorage(requireContext()).setStatus(SyncEngine.CreditCards, newValue)
+                requireContext().settings().shouldSyncCreditCardsAcrossDevices =
+                    newValue
+            }
+        }
+    }
+
+    private fun updateSaveFillStatus(destination: String, newValue: Boolean) {
+        when (destination) {
+            AutofillScreenDestination.ADDRESS -> {
+                requireContext().settings().shouldAutofillAddressDetails = newValue
+            }
+
+            AutofillScreenDestination.CREDIT_CARD -> {
+                requireContext().settings().shouldAutofillCreditCardDetails = newValue
+            }
+        }
     }
 
     companion object {

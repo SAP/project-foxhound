@@ -15,12 +15,13 @@ export class LayoutDebugChild extends JSWindowActorChild {
       this._debuggingTools.init(this.contentWindow);
     }
     switch (msg.name) {
-      case "LayoutDebug:Call":
+      case "LayoutDebug:Call": {
         let pid = Services.appinfo.processID;
         dump(`[${pid} ${this.contentWindow.location}]\n`);
         this._debuggingTools[msg.data.name](msg.data.arg);
         dump("\n");
         break;
+      }
       default:
         throw `unknown message ${msg.name} sent to LayoutDebugChild`;
     }

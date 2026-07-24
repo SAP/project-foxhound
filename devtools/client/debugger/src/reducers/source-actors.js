@@ -56,13 +56,14 @@ export default function update(state = initialSourceActorsState(), action) {
       };
     }
 
-    case "REMOVE_THREAD": {
-      for (const sourceActor of state.mutableSourceActors.values()) {
-        if (sourceActor.thread == action.threadActorID) {
-          state.mutableSourceActors.delete(sourceActor.id);
-          state.mutableBreakableLines.delete(sourceActor.id);
-          state.mutableSourceActorsWithSourceMap.delete(sourceActor.id);
-        }
+    case "REMOVE_SOURCES": {
+      if (!action.actors.length) {
+        return state;
+      }
+      for (const { id } of action.actors) {
+        state.mutableSourceActors.delete(id);
+        state.mutableBreakableLines.delete(id);
+        state.mutableSourceActorsWithSourceMap.delete(id);
       }
       return {
         ...state,

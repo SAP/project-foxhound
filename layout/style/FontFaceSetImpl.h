@@ -132,9 +132,10 @@ class FontFaceSetImpl : public nsISupports, public gfxUserFontSet {
 
   virtual void FlushUserFontSet() = 0;
 
-  static nsPresContext* GetPresContextFor(gfxUserFontSet* aUserFontSet) {
+  static FontVisibilityProvider* GetFontVisibilityProviderFor(
+      gfxUserFontSet* aUserFontSet) {
     const auto* set = static_cast<FontFaceSetImpl*>(aUserFontSet);
-    return set ? set->GetPresContext() : nullptr;
+    return set ? set->GetFontVisibilityProvider() : nullptr;
   }
 
   virtual void RefreshStandardFontLoadPrincipal();

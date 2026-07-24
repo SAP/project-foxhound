@@ -10,22 +10,22 @@ prefs = [
 
 ["test_notification_basics.html"]
 skip-if = [
-  "xorigin", # Bug 1792790
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Bug 1792790
 ]
 
 ["test_notification_browser_failure.html"]
 support-files = ["notification_empty_sw.js"]
 skip-if = [
-  "xorigin", # Bug 1792790
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Bug 1792790
 ]
 
 ["test_notification_cleanup.html"]
 support-files = ["notification_empty_sw.js"]
 skip-if = [
-  "xorigin", # Bug 1792790
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Bug 1792790
 ]
 
 ["test_notification_crossorigin_iframe.html"]
@@ -34,13 +34,17 @@ support-files = ["blank.html"]
 ["test_notification_crossorigin_iframe_nested_glean.html"]
 support-files = ["blank.html"]
 
-["test_notification_euc_kr.html"]
+["test_notification_image.html"]
+skip-if = [
+  "xorigin", # Bug 1792790
+]
+support-files = ["file_pink.gif"]
 
 ["test_notification_insecure_context.html"]
 # This test needs to be run on HTTP (not HTTPS).
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 scheme = "http"
 
@@ -51,7 +55,9 @@ support-files = ["blank.html"]
 support-files = ["notification_constructor_error.js"]
 
 ["test_notification_serviceworker_get.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notification_get_sw.js",
   "notification/register.html",
@@ -59,9 +65,9 @@ support-files = [
 
 ["test_notification_serviceworker_openWindow.html"]
 skip-if = [
-  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
-  "http3",
   "http2",
+  "http3",
+  "xorigin", # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
 ]
 support-files = [
   "notification_openWindow.serviceworker.js",
@@ -72,10 +78,10 @@ tags = "openwindow"
 
 ["test_notification_serviceworker_openWindow_nested.html"]
 skip-if = [
-  "xorigin", # Bug 1792790
   "condprof", # timed out
-  "http3",
   "http2",
+  "http3",
+  "xorigin", # Bug 1792790
 ]
 support-files = [
   "openWindow.serviceworker.js",
@@ -86,13 +92,17 @@ support-files = [
 tags = "openwindow"
 
 ["test_notification_serviceworker_show.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notification_show_sw.js",
 ]
 
 ["test_notification_swr_worker_show.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notification_empty_sw.js",
   "notification_show_dedicated.js",
@@ -100,8 +110,8 @@ support-files = [
 
 ["test_notification_tag.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["create_notification.html"]
 
@@ -129,7 +139,9 @@ skip-if = [
 support-files = ["notification_permission_worker.js"]
 
 ["test_notificationclick.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notificationclick.html",
   "notificationclick.serviceworker.js",
@@ -137,7 +149,9 @@ support-files = [
 ]
 
 ["test_notificationclick_focus.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notificationclick_focus.html",
   "notificationclick_focus.serviceworker.js",
@@ -145,7 +159,9 @@ support-files = [
 ]
 
 ["test_notificationclick_otherwindow.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "notificationclick-otherwindow.html",
   "notificationclick.serviceworker.js",
@@ -153,7 +169,9 @@ support-files = [
 ]
 
 ["test_notificationclose.html"]
-skip-if = ["xorigin"] # Bug 1792790
+skip-if = [
+  "xorigin", # Bug 1792790
+]
 support-files = [
   "blank.html",
   "notificationclose.html",

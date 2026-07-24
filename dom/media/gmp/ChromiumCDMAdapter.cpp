@@ -13,22 +13,24 @@
 #include "content_decryption_module_ext.h"
 #include "gmp-api/gmp-entrypoints.h"
 #include "gmp-api/gmp-video-codec.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/HelperMacros.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/dom/KeySystemNames.h"
 
 #ifdef XP_WIN
-#  include "WinUtils.h"
-#  include "nsWindowsDllInterceptor.h"
-#  include <windows.h>
 #  include <strsafe.h>
+#  include <windows.h>
+
 #  include <unordered_map>
 #  include <vector>
+
+#  include "WinUtils.h"
+#  include "nsWindowsDllInterceptor.h"
 #else
-#  include <sys/types.h>
-#  include <sys/stat.h>
-#  include <unistd.h>
 #  include <fcntl.h>
+#  include <sys/stat.h>
+#  include <sys/types.h>
+#  include <unistd.h>
 #endif
 
 const GMPPlatformAPI* sPlatform = nullptr;

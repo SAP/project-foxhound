@@ -1,0 +1,6 @@
+package test {
+  public class TestClass {
+    ctor @not_allowed.Annotation protected TestClass();
+  }
+}
+

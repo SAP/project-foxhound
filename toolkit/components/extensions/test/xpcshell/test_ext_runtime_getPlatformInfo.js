@@ -9,6 +9,7 @@ function backgroundScript() {
       "aarch64",
       "arm",
       "ppc64",
+      "riscv64",
       "s390x",
       "sparc64",
       "x86-32",

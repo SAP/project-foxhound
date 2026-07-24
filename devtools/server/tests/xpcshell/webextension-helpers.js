@@ -23,7 +23,7 @@ const {
 /**
  * Loads and starts up a test extension given the provided extension configuration.
  *
- * @param {Object} extConfig - The extension configuration object
+ * @param {object} extConfig - The extension configuration object
  * @return {ExtensionWrapper} extension - Resolves with an extension object once the
  * extension has started up.
  */
@@ -40,8 +40,8 @@ exports.startupExtension = startupExtension;
  * Initializes the extensionStorage actor for a given extension. This is effectively
  * what happens when the addon storage panel is opened in the browser.
  *
- * @param {String} - id, The addon id
- * @return {Object} - Resolves with the DevTools "commands" objact and the extensionStorage
+ * @param {string} - id, The addon id
+ * @return {object} - Resolves with the DevTools "commands" objact and the extensionStorage
  * resource/front.
  */
 async function openAddonStoragePanel(id) {
@@ -69,13 +69,13 @@ exports.openAddonStoragePanel = openAddonStoragePanel;
 /**
  * Builds the extension configuration object passed into ExtensionTestUtils.loadExtension
  *
- * @param {Object} options - Options, if any, to add to the configuration
+ * @param {object} options - Options, if any, to add to the configuration
  * @param {Function} options.background - A function comprising the test extension's
  * background script if provided
- * @param {Object} options.files - An object whose keys correspond to file names and
+ * @param {object} options.files - An object whose keys correspond to file names and
  * values map to the file contents
- * @param {Object} options.manifest - An object representing the extension's manifest
- * @return {Object} - The extension configuration object
+ * @param {object} options.manifest - An object representing the extension's manifest
+ * @return {object} - The extension configuration object
  */
 function getExtensionConfig(options = {}) {
   const { manifest, ...otherOptions } = options;
@@ -165,8 +165,8 @@ exports.extensionScriptWithMessageListener = extensionScriptWithMessageListener;
 /**
  * Shutdown procedure common to all tasks.
  *
- * @param {Object} extension - The test extension
- * @param {Object} commands - The web extension commands used by the DevTools to interact with the backend
+ * @param {object} extension - The test extension
+ * @param {object} commands - The web extension commands used by the DevTools to interact with the backend
  */
 async function shutdown(extension, commands) {
   if (commands) {

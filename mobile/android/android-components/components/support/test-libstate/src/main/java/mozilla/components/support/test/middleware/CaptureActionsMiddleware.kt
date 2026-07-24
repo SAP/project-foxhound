@@ -6,8 +6,8 @@ package mozilla.components.support.test.middleware
 
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.State
+import mozilla.components.lib.state.Store
 import kotlin.reflect.KClass
 
 /**
@@ -17,7 +17,7 @@ class CaptureActionsMiddleware<S : State, A : Action> : Middleware<S, A> {
     private val capturedActions = mutableListOf<A>()
 
     @Synchronized
-    override fun invoke(context: MiddlewareContext<S, A>, next: (A) -> Unit, action: A) {
+    override fun invoke(store: Store<S, A>, next: (A) -> Unit, action: A) {
         capturedActions.add(action)
         next(action)
     }
@@ -60,7 +60,7 @@ class CaptureActionsMiddleware<S : State, A : Action> : Middleware<S, A> {
      * store. Throws [AssertionError] if no such action was dispatched.
      */
     @Synchronized
-    fun <X : A> assertLastAction(clazz: KClass<X>, block: (X) -> Unit) {
+    fun <X : A> assertLastAction(clazz: KClass<X>, block: (X) -> Unit = {}) {
         val action = findLastAction(clazz)
         block(action)
     }
@@ -73,6 +73,17 @@ class CaptureActionsMiddleware<S : State, A : Action> : Middleware<S, A> {
     fun <X : A> assertNotDispatched(clazz: KClass<X>) {
         if (!capturedActions.none { it.javaClass == clazz.java }) {
             throw AssertionError("Action of type $clazz was dispatched: ${findFirstAction(clazz)}")
+        }
+    }
+
+    /**
+     * Asserts that no actions were dispatched on the store.
+     * Throws [AssertionError] if any action was found.
+     */
+    @Synchronized
+    fun assertNoActionDispatched() {
+        if (capturedActions.isNotEmpty()) {
+            throw AssertionError("Expected no actions, but found: $capturedActions")
         }
     }
 

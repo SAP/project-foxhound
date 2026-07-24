@@ -23,7 +23,7 @@ internal object TranslationsStateReducer {
     /**
      * Reducer for [BrowserState.translationEngine] and [SessionState.translationsState]
      */
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun reduce(state: BrowserState, action: TranslationsAction): BrowserState = when (action) {
         TranslationsAction.InitTranslationsBrowserState -> {
             state.copy(translationsInitialized = true)

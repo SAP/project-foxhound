@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_ipc_VsyncWorkerChild_h
 #define mozilla_dom_ipc_VsyncWorkerChild_h
 
-#include "mozilla/dom/VsyncChild.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/VsyncChild.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {

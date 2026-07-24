@@ -12,17 +12,17 @@ import android.support.customtabs.ICustomTabsService
 import androidx.browser.customtabs.CustomTabsService
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.Engine
 import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
 import mozilla.components.service.digitalassetlinks.RelationChecker
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -31,17 +31,16 @@ import org.mockito.Mockito.verify
 @RunWith(AndroidJUnit4::class)
 class AbstractCustomTabsServiceTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
     @Test
-    fun customTabService() {
-        val customTabsService = object : MockCustomTabsService() {
+    fun customTabService() = runTest {
+        val customTabsService = object : MockCustomTabsService(this) {
             override val customTabsServiceStore = CustomTabsServiceStore()
             override fun getPackageManager(): PackageManager = mock()
         }
 
         val customTabsServiceStub = customTabsService.onBind(mock())
+        testScheduler.advanceUntilIdle()
+
         assertNotNull(customTabsServiceStub)
 
         val stub = customTabsServiceStub as ICustomTabsService.Stub
@@ -77,10 +76,10 @@ class AbstractCustomTabsServiceTest {
     }
 
     @Test
-    fun `Warmup will access engine instance`() {
+    fun `Warmup will access engine instance`() = runTest {
         var engineAccessed = false
 
-        val customTabsService = object : MockCustomTabsService() {
+        val customTabsService = object : MockCustomTabsService(this) {
             override val engine: Engine
                 get() {
                     engineAccessed = true
@@ -91,19 +90,21 @@ class AbstractCustomTabsServiceTest {
         val stub = customTabsService.onBind(mock()) as ICustomTabsService.Stub
 
         assertTrue(stub.warmup(42))
+        testScheduler.runCurrent()
 
         assertTrue(engineAccessed)
     }
 
     @Test
-    fun `mayLaunchUrl opens a speculative connection for most likely URL`() {
+    fun `mayLaunchUrl opens a speculative connection for most likely URL`() = runTest {
         val engine: Engine = mock()
 
-        val customTabsService = object : MockCustomTabsService() {
+        val customTabsService = object : MockCustomTabsService(this) {
             override val engine: Engine = engine
         }
 
         val stub = customTabsService.onBind(mock()) as ICustomTabsService.Stub
+        testScheduler.advanceUntilIdle()
 
         assertTrue(stub.mayLaunchUrl(mock(), "https://www.mozilla.org".toUri(), Bundle(), listOf()))
 
@@ -111,19 +112,21 @@ class AbstractCustomTabsServiceTest {
     }
 
     @Test
-    fun `verifier is only created when store and client are provided`() {
-        val basic = MockCustomTabsService()
+    fun `verifier is only created when store and client are provided`() = runTest {
+        val basic = MockCustomTabsService(this)
         assertNull(basic.verifier)
 
-        val both = object : MockCustomTabsService() {
+        val both = object : MockCustomTabsService(this) {
             override val relationChecker: RelationChecker = mock()
 
             override fun getPackageManager(): PackageManager = mock()
         }
+        testScheduler.advanceUntilIdle()
+
         assertNotNull(both.verifier)
     }
 
-    private open class MockCustomTabsService : AbstractCustomTabsService() {
+    private open class MockCustomTabsService(override val scope: CoroutineScope) : AbstractCustomTabsService() {
         override val engine: Engine = mock()
         override val customTabsServiceStore: CustomTabsServiceStore = mock()
     }

@@ -369,7 +369,7 @@ nsNavBookmarks::InsertBookmark(int64_t aFolder, nsIURI* aURI, int32_t aIndex,
   mozStorageTransaction transaction(mDB->MainConn(), false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   nsNavHistory* history = nsNavHistory::GetHistoryService();
   NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
@@ -571,7 +571,7 @@ nsNavBookmarks::RemoveItem(int64_t aItemId, uint16_t aSource) {
   mozStorageTransaction transaction(mDB->MainConn(), false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   if (bookmark.type == TYPE_FOLDER) {
     // Remove all of the folder's children.
@@ -711,7 +711,7 @@ nsNavBookmarks::CreateFolder(int64_t aParent, const nsACString& aTitle,
   mozStorageTransaction transaction(mDB->MainConn(), false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   if (aIndex == nsINavBookmarksService::DEFAULT_INDEX ||
       aIndex >= folderCount) {
@@ -887,7 +887,7 @@ nsresult nsNavBookmarks::RemoveFolderChildren(int64_t aFolderId,
   mozStorageTransaction transaction(mDB->MainConn(), false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   nsCOMPtr<mozIStorageStatement> deleteStatement =
       mDB->GetStatement(nsLiteralCString("DELETE FROM moz_bookmarks "
@@ -1086,74 +1086,6 @@ nsresult nsNavBookmarks::FetchItemInfo(int64_t aItemId,
   return NS_OK;
 }
 
-nsresult nsNavBookmarks::FetchItemInfo(const nsCString& aGUID,
-                                       BookmarkData& _bookmark) {
-  // LEFT JOIN since not all bookmarks have an associated place.
-  nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
-      "SELECT b.id, h.url, b.title, b.position, b.fk, b.parent, b.type, "
-      "b.dateAdded, b.lastModified, t.guid, t.parent, "
-      "b.syncStatus "
-      "FROM moz_bookmarks b "
-      "LEFT JOIN moz_bookmarks t ON t.id = b.parent "
-      "LEFT JOIN moz_places h ON h.id = b.fk "
-      "WHERE b.guid = :item_guid");
-  NS_ENSURE_STATE(stmt);
-  mozStorageStatementScoper scoper(stmt);
-
-  nsresult rv = stmt->BindUTF8StringByName("item_guid"_ns, aGUID);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  _bookmark.guid = aGUID;
-
-  bool hasResult;
-  rv = stmt->ExecuteStep(&hasResult);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!hasResult) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  rv = stmt->GetInt64(0, &_bookmark.id);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = stmt->GetUTF8String(1, _bookmark.url);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool isNull;
-  rv = stmt->GetIsNull(2, &isNull);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!isNull) {
-    rv = stmt->GetUTF8String(2, _bookmark.title);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-  rv = stmt->GetInt32(3, &_bookmark.position);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->GetInt64(4, &_bookmark.placeId);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->GetInt64(5, &_bookmark.parentId);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->GetInt32(6, &_bookmark.type);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->GetInt64(7, reinterpret_cast<int64_t*>(&_bookmark.dateAdded));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->GetInt64(8, reinterpret_cast<int64_t*>(&_bookmark.lastModified));
-  NS_ENSURE_SUCCESS(rv, rv);
-  // Getting properties of the root would show no parent.
-  rv = stmt->GetIsNull(9, &isNull);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!isNull) {
-    rv = stmt->GetUTF8String(9, _bookmark.parentGuid);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->GetInt64(10, &_bookmark.grandParentId);
-    NS_ENSURE_SUCCESS(rv, rv);
-  } else {
-    _bookmark.grandParentId = -1;
-  }
-  rv = stmt->GetInt32(11, &_bookmark.syncStatus);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
 nsresult nsNavBookmarks::SetItemDateInternal(enum BookmarkDate aDateType,
                                              int64_t aSyncChangeDelta,
                                              int64_t aItemId, PRTime aValue) {
@@ -1205,7 +1137,7 @@ nsNavBookmarks::SetItemLastModified(int64_t aItemId, PRTime aLastModified,
     mozStorageTransaction transaction(mDB->MainConn(), false);
 
     // XXX Handle the error, bug 1696133.
-    Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+    (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
     rv = SetItemDateInternal(LAST_MODIFIED, syncChangeDelta, bookmark.id,
                              bookmark.lastModified);
@@ -1424,7 +1356,7 @@ nsNavBookmarks::SetItemTitle(int64_t aItemId, const nsACString& aTitle,
     mozStorageTransaction transaction(mDB->MainConn(), false);
 
     // XXX Handle the error, bug 1696133.
-    Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+    (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
     rv = SetItemTitleInternal(bookmark, title, syncChangeDelta);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1501,182 +1433,6 @@ nsNavBookmarks::GetItemTitle(int64_t aItemId, nsACString& _title) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   _title = bookmark.title;
-  return NS_OK;
-}
-
-nsresult nsNavBookmarks::QueryFolderChildren(
-    int64_t aFolderId, nsNavHistoryQueryOptions* aOptions,
-    nsCOMArray<nsNavHistoryResultNode>* aChildren) {
-  NS_ENSURE_ARG_POINTER(aOptions);
-  NS_ENSURE_ARG_POINTER(aChildren);
-
-  // Select all children of a given folder, sorted by position.
-  // This is a LEFT JOIN because not all bookmarks types have a place.
-  // We construct a result where the first columns exactly match those returned
-  // by mDBGetURLPageInfo, and additionally contains columns for position,
-  // item_child, and folder_child from moz_bookmarks.
-  nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
-      nsNavHistory::GetTagsSqlFragment(
-          nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS,
-          aOptions->ExcludeItems()) +
-      "SELECT "
-      "  h.id, h.url, b.title, h.rev_host, h.visit_count, "
-      "  h.last_visit_date, null, b.id, b.dateAdded, b.lastModified, b.parent, "
-      "  (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, "
-      "  h.frecency, h.hidden, h.guid, null, null, null, "
-      "  b.guid, b.position, b.type, b.fk, t.guid, t.id, t.title "
-      "FROM moz_bookmarks b "
-      "LEFT JOIN moz_places h ON b.fk = h.id "
-      "LEFT JOIN moz_bookmarks t ON t.guid = target_folder_guid(h.url) "
-      "WHERE b.parent = :parent "
-      "AND (NOT :excludeItems OR "
-      "b.type = :folder OR "
-      "h.url_hash BETWEEN hash('place', 'prefix_lo') "
-      "               AND hash('place', 'prefix_hi')) "
-      "ORDER BY b.position ASC"_ns);
-  NS_ENSURE_STATE(stmt);
-  mozStorageStatementScoper scoper(stmt);
-
-  nsresult rv = stmt->BindInt64ByName("parent"_ns, aFolderId);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindInt32ByName("folder"_ns, TYPE_FOLDER);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindInt32ByName("excludeItems"_ns, aOptions->ExcludeItems());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<mozIStorageValueArray> row = do_QueryInterface(stmt, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  int32_t index = -1;
-  bool hasResult;
-  while (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
-    rv = ProcessFolderNodeRow(row, aOptions, aChildren, index);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  return NS_OK;
-}
-
-nsresult nsNavBookmarks::ProcessFolderNodeRow(
-    mozIStorageValueArray* aRow, nsNavHistoryQueryOptions* aOptions,
-    nsCOMArray<nsNavHistoryResultNode>* aChildren, int32_t& aCurrentIndex) {
-  NS_ENSURE_ARG_POINTER(aRow);
-  NS_ENSURE_ARG_POINTER(aOptions);
-  NS_ENSURE_ARG_POINTER(aChildren);
-
-  // The results will be in order of aCurrentIndex. Even if we don't add a node
-  // because it was excluded, we need to count its index, so do that before
-  // doing anything else.
-  aCurrentIndex++;
-
-  int32_t itemType;
-  nsresult rv = aRow->GetInt32(kGetChildrenIndex_Type, &itemType);
-  NS_ENSURE_SUCCESS(rv, rv);
-  int64_t id;
-  rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemId, &id);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  RefPtr<nsNavHistoryResultNode> node;
-
-  if (itemType == TYPE_BOOKMARK) {
-    nsNavHistory* history = nsNavHistory::GetHistoryService();
-    NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
-    rv = history->RowToResult(aRow, aOptions, getter_AddRefs(node));
-    NS_ENSURE_SUCCESS(rv, rv);
-    uint32_t nodeType;
-    node->GetType(&nodeType);
-    if (nodeType == nsINavHistoryResultNode::RESULT_TYPE_QUERY &&
-        aOptions->ExcludeQueries()) {
-      return NS_OK;
-    }
-  } else if (itemType == TYPE_FOLDER) {
-    nsAutoCString title;
-    bool isNull;
-    rv = aRow->GetIsNull(nsNavHistory::kGetInfoIndex_Title, &isNull);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!isNull) {
-      rv = aRow->GetUTF8String(nsNavHistory::kGetInfoIndex_Title, title);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    nsAutoCString guid;
-    rv = aRow->GetUTF8String(kGetChildrenIndex_Guid, guid);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // Don't use options from the parent to build the new folder node, it will
-    // inherit those later when it's inserted in the result.
-    node = new nsNavHistoryFolderResultNode(id, guid, id, guid, title,
-                                            new nsNavHistoryQueryOptions());
-
-    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemDateAdded,
-                        reinterpret_cast<int64_t*>(&node->mDateAdded));
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemLastModified,
-                        reinterpret_cast<int64_t*>(&node->mLastModified));
-    NS_ENSURE_SUCCESS(rv, rv);
-  } else {
-    // This is a separator.
-    node = new nsNavHistorySeparatorResultNode();
-
-    node->mItemId = id;
-    rv = aRow->GetUTF8String(kGetChildrenIndex_Guid, node->mBookmarkGuid);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemDateAdded,
-                        reinterpret_cast<int64_t*>(&node->mDateAdded));
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = aRow->GetInt64(nsNavHistory::kGetInfoIndex_ItemLastModified,
-                        reinterpret_cast<int64_t*>(&node->mLastModified));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  // Store the index of the node within this container.  Note that this is not
-  // moz_bookmarks.position.
-  node->mBookmarkIndex = aCurrentIndex;
-
-  NS_ENSURE_TRUE(aChildren->AppendObject(node), NS_ERROR_OUT_OF_MEMORY);
-  return NS_OK;
-}
-
-nsresult nsNavBookmarks::QueryFolderChildrenAsync(
-    nsNavHistoryFolderResultNode* aNode,
-    mozIStoragePendingStatement** _pendingStmt) {
-  NS_ENSURE_ARG_POINTER(aNode);
-  NS_ENSURE_ARG_POINTER(_pendingStmt);
-
-  // Select all children of a given folder, sorted by position.
-  // This is a LEFT JOIN because not all bookmarks types have a place.
-  // We construct a result where the first columns exactly match those returned
-  // by mDBGetURLPageInfo, and additionally contains columns for position,
-  // item_child, and folder_child from moz_bookmarks.
-  nsCOMPtr<mozIStorageAsyncStatement> stmt = mDB->GetAsyncStatement(
-      "SELECT h.id, h.url, b.title, h.rev_host, h.visit_count, "
-      "h.last_visit_date, null, b.id, b.dateAdded, b.lastModified, "
-      "b.parent, null, h.frecency, h.hidden, h.guid, null, null, null, "
-      "b.guid, b.position, b.type, b.fk, t.guid, t.id, t.title "
-      "FROM moz_bookmarks b "
-      "LEFT JOIN moz_places h ON b.fk = h.id "
-      "LEFT JOIN moz_bookmarks t ON t.guid = target_folder_guid(h.url) "
-      "WHERE b.parent = :parent "
-      "AND (NOT :excludeItems OR "
-      "b.type = :folder OR "
-      "h.url_hash BETWEEN hash('place', 'prefix_lo') AND hash('place', "
-      "'prefix_hi')) "
-      "ORDER BY b.position ASC");
-  NS_ENSURE_STATE(stmt);
-
-  nsresult rv = stmt->BindInt64ByName("parent"_ns, aNode->mTargetFolderItemId);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindInt32ByName("folder"_ns, TYPE_FOLDER);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv =
-      stmt->BindInt32ByName("excludeItems"_ns, aNode->mOptions->ExcludeItems());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<mozIStoragePendingStatement> pendingStmt;
-  rv = stmt->ExecuteAsync(aNode, getter_AddRefs(pendingStmt));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  NS_IF_ADDREF(*_pendingStmt = pendingStmt);
   return NS_OK;
 }
 

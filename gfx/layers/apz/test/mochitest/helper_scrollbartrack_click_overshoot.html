@@ -19,7 +19,8 @@ async function test() {
   var targetElement = elementForTarget(window);
   var w = {},
     h = {};
-  utilsForTarget(window).getScrollbarSizes(targetElement, w, h);
+  var utils = utilsForTarget(window);
+  utils.getScrollbarSizes(targetElement, w, h);
   var verticalScrollbarWidth = w.value;
   var mouseX = targetElement.clientWidth + verticalScrollbarWidth / 2;
   var mouseY = targetElement.clientHeight - 100; // 100 pixels above the bottom of the scrollbar track
@@ -53,6 +54,11 @@ async function test() {
 
   // Flush everything just to be safe
   await promiseOnlyApzControllerFlushed();
+
+  // Give WebRender a chance to sample any remaining async scroll offset
+  // that affects the scrollbar position.
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
 
   var result = hitTest({x: mouseX, y: mouseY});
 

@@ -7,9 +7,9 @@
 #include "Client.h"
 
 // Global includes
-#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla::dom::quota {
 

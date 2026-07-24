@@ -27,6 +27,7 @@ from mozfile import which
 from mozversioncontrol import get_repository_object
 from packaging.version import Version
 
+from mozboot.aerynos import AerynOsBootstrapper
 from mozboot.archlinux import ArchlinuxBootstrapper
 from mozboot.base import MODERN_RUST_VERSION
 from mozboot.centosfedora import CentOSFedoraBootstrapper
@@ -57,15 +58,13 @@ Please choose the version of Firefox you want to build (see note above):
 %s
 Your choice: """
 
-APPLICATIONS = OrderedDict(
-    [
-        ("Firefox for Desktop Artifact Mode", "browser_artifact_mode"),
-        ("Firefox for Desktop", "browser"),
-        ("GeckoView/Firefox for Android Artifact Mode", "mobile_android_artifact_mode"),
-        ("GeckoView/Firefox for Android", "mobile_android"),
-        ("SpiderMonkey JavaScript engine", "js"),
-    ]
-)
+APPLICATIONS = OrderedDict([
+    ("Firefox for Desktop Artifact Mode", "browser_artifact_mode"),
+    ("Firefox for Desktop", "browser"),
+    ("GeckoView/Firefox for Android Artifact Mode", "mobile_android_artifact_mode"),
+    ("GeckoView/Firefox for Android", "mobile_android"),
+    ("SpiderMonkey JavaScript engine", "js"),
+])
 
 FINISHED = """
 Your system should be ready to build %s!
@@ -118,6 +117,7 @@ DEBIAN_DISTROS = (
     "pureos",
     "deepin",
     "tuxedo",
+    "zorin",
 )
 
 FEDORA_DISTROS = (
@@ -170,7 +170,10 @@ def check_for_hgrc_state_dir_mismatch(state_dir):
     import subprocess
 
     result = subprocess.run(
-        ["hg", "config", "--source", "-T", "json"], capture_output=True, text=True
+        ["hg", "config", "--source", "-T", "json"],
+        check=False,
+        capture_output=True,
+        text=True,
     )
 
     if result.returncode:
@@ -255,9 +258,8 @@ class Bootstrapper:
         if sys.platform.startswith("linux"):
             # distro package provides reliable ids for popular distributions so
             # we use those instead of the full distribution name
-            dist_id, version, codename = distro.linux_distribution(
-                full_distribution_name=False
-            )
+            dist_id = distro.id()
+            version = distro.version()
 
             if dist_id in FEDORA_DISTROS:
                 cls = CentOSFedoraBootstrapper
@@ -265,13 +267,14 @@ class Bootstrapper:
             elif dist_id in DEBIAN_DISTROS:
                 cls = DebianBootstrapper
                 args["distro"] = dist_id
-                args["codename"] = codename
             elif dist_id in ("gentoo", "funtoo"):
                 cls = GentooBootstrapper
             elif dist_id in ("solus"):
                 cls = SolusBootstrapper
-            elif dist_id in ("arch") or Path("/etc/arch-release").exists():
+            elif dist_id in ("arch", "kaos") or Path("/etc/arch-release").exists():
                 cls = ArchlinuxBootstrapper
+            elif dist_id in ("aerynos"):
+                cls = AerynOsBootstrapper
             elif dist_id in ("void"):
                 cls = VoidBootstrapper
             elif dist_id in (
@@ -315,7 +318,7 @@ class Bootstrapper:
                 cls = WindowsBootstrapper
         if cls is None:
             raise NotImplementedError(
-                "Bootstrap support is not yet available " "for your OS."
+                "Bootstrap support is not yet available for your OS."
             )
 
         self.instance = cls(**args)
@@ -337,11 +340,6 @@ class Bootstrapper:
 
     def check_code_submission(self, checkout_root: Path):
         if self.instance.no_interactive or which("moz-phab"):
-            return
-
-        # Skip moz-phab install until bug 1696357 is fixed and makes it to a moz-phab
-        # release.
-        if sys.platform.startswith("darwin") and platform.machine() == "arm64":
             return
 
         if not self.instance.prompt_yesno("Will you be submitting commits to Mozilla?"):
@@ -415,7 +413,7 @@ class Bootstrapper:
         repo = get_repository_object(checkout_root)
         self.instance.srcdir = checkout_root
         self.instance.validate_environment()
-        self._validate_python_environment(checkout_root)
+        self._populate_optional_packages(checkout_root)
 
         if sys.platform.startswith("win"):
             self._check_for_dev_drive(checkout_root)
@@ -689,23 +687,7 @@ class Bootstrapper:
             # No mozconfig file exists yet
             self._write_default_mozconfig(raw_mozconfig)
 
-    def _validate_python_environment(self, topsrcdir):
-        valid = True
-        pip3 = to_optional_path(which("pip3"))
-        if not pip3:
-            print("ERROR: Could not find pip3.", file=sys.stderr)
-            self.instance.suggest_install_pip3()
-            valid = False
-        if not valid:
-            print(
-                "ERROR: Your Python installation will not be able to run "
-                "`mach bootstrap`. `mach bootstrap` cannot maintain your "
-                "Python environment for you; fix the errors shown here, and "
-                "then re-run `mach bootstrap`.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
+    def _populate_optional_packages(self, topsrcdir):
         mach_site = MachSiteManager.from_environment(
             topsrcdir,
             lambda: os.path.normpath(get_state_dir(True, topsrcdir=topsrcdir)),
@@ -718,12 +700,10 @@ def current_firefox_checkout(env, hg: Optional[Path] = None):
 
     Returns one of None, ``git``, or ``hg``.
     """
-    HG_ROOT_REVISIONS = set(
-        [
-            # From mozilla-unified.
-            "8ba995b74e18334ab3707f27e9eb8f4e37ba3d29"
-        ]
-    )
+    HG_ROOT_REVISIONS = set([
+        # From mozilla-unified.
+        "8ba995b74e18334ab3707f27e9eb8f4e37ba3d29"
+    ])
 
     path = Path.cwd()
     while path:
@@ -782,6 +762,7 @@ def _warn_if_risky_revision(path: Path):
 def _macos_is_running_under_rosetta():
     proc = subprocess.run(
         ["sysctl", "-n", "sysctl.proc_translated"],
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )

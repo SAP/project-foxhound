@@ -10,8 +10,8 @@ origin:
 
   url: https://github.com/google/brotli
 
-  release: ed738e842d2fbdf2d6459e39267a633c4a9b2f5d (2023-08-29T11:00:29Z).
-  revision: ed738e842d2fbdf2d6459e39267a633c4a9b2f5d
+  release: 028fb5a23661f123017c060daa546b55cf4bde29 (2025-10-27T13:07:48Z).
+  revision: 028fb5a23661f123017c060daa546b55cf4bde29
 
   license: MIT
 
@@ -24,16 +24,17 @@ vendoring:
     - ".*"
     - "*"
     - docs
+    - go
     - python
     - scripts
     - tests
-    - c/enc
     - c/tools
 
   include:
     - c/include/
     - c/common/
     - c/dec/
+    - c/enc/
 
   keep:
     - LICENSE
@@ -48,3 +49,15 @@ vendoring:
     - action: move-dir
       from: '{vendor_dir}/c/dec'
       to: '{vendor_dir}/dec'
+    - action: move-dir
+      from: '{vendor_dir}/c/enc'
+      to: '{vendor_dir}/enc'
+    # To prevent the build error:
+    # enc/static_init.c from UNIFIED_SOURCES would have the same object name as
+    # dec/static_init.c from UNIFIED_SOURCES in non-unified builds.
+    # See bug 1733308.
+    - action: move-file
+      from: '{vendor_dir}/enc/static_init.c'
+      to: '{vendor_dir}/enc/static_init_enc.c'
+    - action: delete-path
+      path: '{vendor_dir}/c'

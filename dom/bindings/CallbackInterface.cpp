@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CallbackInterface.h"
-#include "jsapi.h"
+
 #include "js/CallAndConstruct.h"  // JS::IsCallable
 #include "js/CharacterEncoding.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty, JS_GetPropertyById
+#include "jsapi.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "nsPrintfCString.h"
 

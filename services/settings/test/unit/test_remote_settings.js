@@ -40,10 +40,6 @@ add_task(() => {
   server = new HttpServer();
   server.start(-1);
 
-  // Pretend we are in nightly channel to make sure all telemetry events are sent.
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => "nightly";
-
   // Point the blocklist clients to use this local HTTP server.
   Services.prefs.setStringPref(
     "services.settings.server",
@@ -75,7 +71,6 @@ add_task(() => {
   server.registerPathHandler("/fake-x5u", handleResponse);
 
   registerCleanupFunction(() => {
-    Policy.getChannel = oldGetChannel;
     server.stop(() => {});
   });
 });
@@ -93,8 +88,8 @@ add_task(async function test_records_obtained_from_server_are_stored_in_db() {
   const timestamp = await client.db.getLastModified();
   equal(timestamp, 3000, "timestamp was stored");
 
-  const { signature } = await client.db.getMetadata();
-  equal(signature.signature, "abcdef", "metadata was stored");
+  const { signatures } = await client.db.getMetadata();
+  equal(signatures[0].signature, "abcdef", "metadata was stored");
 });
 add_task(clear_state);
 
@@ -815,7 +810,7 @@ add_task(async function test_inspect_method() {
   equal(mainBucket, "main");
   equal(serverURL, `http://localhost:${server.identity.primaryPort}/v1`);
   equal(defaultSigner, rsSigner);
-  equal(serverTimestamp, '"5000"');
+  equal(serverTimestamp, "5000");
 
   // A collection is listed in .inspect() if it has local data or if there
   // is a JSON dump for it.
@@ -1515,10 +1510,12 @@ wNuvFqc=
           metadata: {
             id: "password-fields",
             last_modified: 1234,
-            signature: {
-              signature: "abcdef",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "abcdef",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           changes: [
             {
@@ -1530,7 +1527,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=3001&_since=%223000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=3001&_since=3000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1542,7 +1539,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           timestamp: 4000,
           changes: [
@@ -1561,7 +1558,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=4001&_since=%224000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=4001&_since=4000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1573,7 +1570,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           timestamp: 5000,
           changes: [
@@ -1584,7 +1581,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10000&_since=%229999%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10000&_since=9999":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1599,7 +1596,7 @@ wNuvFqc=
           error: "Service Unavailable",
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10001&_since=%2210000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10001&_since=10000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1611,7 +1608,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: "<invalid json",
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=11001&_since=%2211000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=11001&_since=11000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1680,10 +1677,12 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {
-              signature: "some-sig",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "some-sig",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           timestamp: 3000,
           changes: [
@@ -1696,7 +1695,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=1337&_since=%223000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=1337&_since=3000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1708,10 +1707,12 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {
-              signature: "some-sig",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "some-sig",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           timestamp: 3001,
           changes: [
@@ -1738,10 +1739,12 @@ wNuvFqc=
         metadata: {
           id: "language-dictionaries",
           last_modified: 1234,
-          signature: {
-            signature: "xyz",
-            x5u: `http://localhost:${port}/fake-x5u`,
-          },
+          signatures: [
+            {
+              signature: "xyz",
+              x5u: `http://localhost:${port}/fake-x5u`,
+            },
+          ],
         },
         changes: [
           {
@@ -1777,10 +1780,12 @@ wNuvFqc=
           metadata: {
             id: "with-local-fields",
             last_modified: 1234,
-            signature: {
-              signature: "xyz",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "xyz",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           changes: [
             {
@@ -1790,7 +1795,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/with-local-fields/changeset?_expected=3000&_since=%222000%22":
+    "GET:/v1/buckets/main/collections/with-local-fields/changeset?_expected=3000&_since=2000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1803,7 +1808,7 @@ wNuvFqc=
         responseBody: {
           timestamp: 3000,
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           changes: [
             {

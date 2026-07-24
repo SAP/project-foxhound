@@ -10,10 +10,8 @@
 #define mozilla_Compression_h_
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Types.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
 
 struct LZ4F_cctx_s;  // compression context
 struct LZ4F_dctx_s;  // decompression context
@@ -118,7 +116,7 @@ class LZ4 {
    */
   static inline size_t maxCompressedSize(size_t aInputSize) {
     size_t max = (aInputSize + (aInputSize / 255) + 16);
-    MOZ_ASSERT(max > aInputSize);
+    MOZ_RELEASE_ASSERT(max > aInputSize);
     return max;
   }
 };

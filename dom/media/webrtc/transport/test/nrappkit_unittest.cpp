@@ -10,8 +10,10 @@
 
 // nrappkit includes
 extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "async_timer.h"
+// clang-format on
 }
 
 #include "runnable_utils.h"

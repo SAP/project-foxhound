@@ -114,30 +114,37 @@ nr_stun_filter_addrs_for_ifname(nr_local_addr src[], const int src_begin, const 
   for (int i = src_begin; i < src_end; ++i) {
     if (strncmp(ifname, src[i].addr.ifname, sizeof(src[i].addr.ifname))) {
       /* Ignore addrs from other interfaces */
+      r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring addr from interface other than %s", ifname);
       continue;
     }
 
     if (nr_stun_is_duplicate_addr(dest, *dest_index, &src[i])) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring duplicate addr");
         /* skip src[i], it's a duplicate */
     }
     else if (remove_loopback && nr_transport_addr_is_loopback(&src[i].addr)) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring loopback addr");
         /* skip src[i], it's a loopback */
     }
     else if (remove_link_local &&
              nr_transport_addr_is_link_local(&src[i].addr)) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring link local addr");
         /* skip src[i], it's a link-local address */
     }
     else if (filter_mac_ipv6 &&
              nr_transport_addr_is_mac_based(&src[i].addr)) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring MAC-based addr");
         /* skip src[i], it's MAC based */
     }
     else if (filter_teredo_ipv6 &&
              nr_transport_addr_is_teredo(&src[i].addr)) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring teredo addr");
         /* skip src[i], it's a Teredo address */
     }
     else if (filter_non_temp_ipv6 &&
              (src[i].addr.ip_version == NR_IPV6) &&
              !(src[i].flags & NR_ADDR_FLAG_TEMPORARY)) {
+        r_log(NR_LOG_STUN, LOG_WARNING, "Ignoring non-temp addr (we have at least one temp addr)");
         /* skip src[i], it's a non-temporary ipv6, and we have a temporary */
     }
     else {
@@ -160,7 +167,7 @@ nr_stun_filter_addrs(nr_local_addr addrs[], int remove_loopback, int remove_link
     nr_local_addr *tmp = 0;
     int dest_index = 0;
 
-    tmp = RMALLOC(*count * sizeof(*tmp));
+    tmp = (nr_local_addr*)RMALLOC(*count * sizeof(*tmp));
     if (!tmp)
         ABORT(R_NO_MEMORY);
 

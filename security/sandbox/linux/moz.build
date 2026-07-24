@@ -28,21 +28,25 @@ EXPORTS.mozilla += [
 ]
 
 UNIFIED_SOURCES += [
+    "../chromium-shim/base/debug/stack_trace.cpp",
     "../chromium-shim/base/logging.cpp",
     "../chromium-shim/base/threading/platform_thread_linux.cpp",
     "../chromium/base/at_exit.cc",
-    "../chromium/base/callback_internal.cc",
+    "../chromium/base/check.cc",
+    "../chromium/base/check_op.cc",
+    "../chromium/base/debug/alias.cc",
+    "../chromium/base/debug/crash_logging.cc",
+    "../chromium/base/functional/callback_internal.cc",
     "../chromium/base/lazy_instance_helpers.cc",
     "../chromium/base/location.cc",
     "../chromium/base/memory/ref_counted.cc",
     "../chromium/base/posix/can_lower_nice_to.cc",
     "../chromium/base/posix/safe_strerror.cc",
-    "../chromium/base/strings/string16.cc",
     "../chromium/base/strings/string_number_conversions.cc",
-    "../chromium/base/strings/string_piece.cc",
     "../chromium/base/strings/string_util.cc",
     "../chromium/base/strings/string_util_constants.cc",
     "../chromium/base/strings/stringprintf.cc",
+    "../chromium/base/strings/utf_ostream_operators.cc",
     "../chromium/base/strings/utf_string_conversion_utils.cc",
     "../chromium/base/strings/utf_string_conversions.cc",
     "../chromium/base/synchronization/condition_variable_posix.cc",
@@ -52,14 +56,15 @@ UNIFIED_SOURCES += [
     "../chromium/base/threading/platform_thread.cc",
     "../chromium/base/threading/platform_thread_internal_posix.cc",
     "../chromium/base/threading/platform_thread_posix.cc",
+    "../chromium/base/threading/platform_thread_ref.cc",
     "../chromium/base/threading/thread_collision_warner.cc",
     "../chromium/base/threading/thread_id_name_manager.cc",
     "../chromium/base/threading/thread_local_storage.cc",
     "../chromium/base/threading/thread_local_storage_posix.cc",
     "../chromium/base/threading/thread_restrictions.cc",
     "../chromium/base/time/time.cc",
-    "../chromium/base/time/time_exploded_posix.cc",
     "../chromium/base/time/time_now_posix.cc",
+    "../chromium/base/trace_event/trace_event_stub.cc",
     "../chromium/sandbox/linux/bpf_dsl/bpf_dsl.cc",
     "../chromium/sandbox/linux/bpf_dsl/codegen.cc",
     "../chromium/sandbox/linux/bpf_dsl/dump_bpf.cc",
@@ -84,7 +89,6 @@ UNIFIED_SOURCES += [
 
 SOURCES += [
     "../chromium/base/strings/safe_sprintf.cc",
-    "../chromium/base/third_party/icu/icu_utf.cc",
     "../chromium/sandbox/linux/seccomp-bpf/trap.cc",
     "../chromium/sandbox/linux/services/syscall_wrappers.cc",
 ]
@@ -95,10 +99,6 @@ SOURCES += [
 SOURCES["../chromium/base/strings/safe_sprintf.cc"].flags += ["-DNDEBUG"]
 
 if CONFIG["CC_TYPE"] in ("clang", "gcc"):
-    # Keep clang from warning about intentional 'switch' fallthrough in icu_utf.cc:
-    SOURCES["../chromium/base/third_party/icu/icu_utf.cc"].flags += [
-        "-Wno-implicit-fallthrough"
-    ]
     SOURCES["../chromium/sandbox/linux/seccomp-bpf/trap.cc"].flags += [
         "-Wno-unreachable-code-return"
     ]
@@ -122,6 +122,11 @@ DisableStlWrapping()
 LOCAL_INCLUDES += ["/security/sandbox/linux"]
 LOCAL_INCLUDES += ["/security/sandbox/chromium-shim"]
 LOCAL_INCLUDES += ["/security/sandbox/chromium"]
+LOCAL_INCLUDES += [
+    "/security/sandbox/chromium-shim/base/allocator/partition_allocator/src"
+]
+LOCAL_INCLUDES += ["/security/sandbox/chromium/base/allocator/partition_allocator/src"]
+LOCAL_INCLUDES += ["/third_party/abseil-cpp"]
 LOCAL_INCLUDES += ["/nsprpub"]
 LOCAL_INCLUDES += ["/mozglue/baseprofiler/core/"]
 

@@ -59,9 +59,9 @@ add_task(async function test_launcher() {
   sendCommandLine.resetHistory();
   execProcess.resetHistory();
 
-  SelectableProfileService.launchInstance(profile, "about:profilemanager");
+  SelectableProfileService.launchInstance(profile, ["about:profilemanager"]);
 
-  expected = ["-url", "about:profilemanager"];
+  expected = ["-new-tab", "about:profilemanager"];
 
   Assert.equal(
     sendCommandLine.callCount,

@@ -10,7 +10,6 @@
 #include "PSMRunnable.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
@@ -19,7 +18,6 @@
 #include "mozilla/Span.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/Unused.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/intl/Localization.h"
 #include "nsContentUtils.h"
@@ -338,7 +336,8 @@ OCSPRequest::Run() {
 
   rv = NS_NewTimerWithFuncCallback(
       getter_AddRefs(mTimeoutTimer), OCSPRequest::OnTimeout, this,
-      mTimeout.ToMilliseconds(), nsITimer::TYPE_ONE_SHOT, "OCSPRequest::Run");
+      mTimeout.ToMilliseconds(), nsITimer::TYPE_ONE_SHOT,
+      "OCSPRequest::Run"_ns);
   if (NS_FAILED(rv)) {
     return NotifyDone(rv, lock);
   }
@@ -362,7 +361,7 @@ nsresult OCSPRequest::NotifyDone(nsresult rv, MonitorAutoLock& lock) {
   mLoader = nullptr;
   mResponseResult = rv;
   if (mTimeoutTimer) {
-    Unused << mTimeoutTimer->Cancel();
+    (void)mTimeoutTimer->Cancel();
   }
   mNotifiedDone = true;
   lock.Notify();
@@ -653,6 +652,12 @@ nsCString getKeaGroupName(uint32_t aKeaGroup) {
       break;
     case ssl_grp_kem_mlkem768x25519:
       groupName = "mlkem768x25519"_ns;
+      break;
+    case ssl_grp_kem_secp256r1mlkem768:
+      groupName = "secp256r1mlkem768"_ns;
+      break;
+    case ssl_grp_kem_secp384r1mlkem1024:
+      groupName = "secp384r1mlkem1024"_ns;
       break;
     case ssl_grp_ffdhe_2048:
       groupName = "FF 2048"_ns;

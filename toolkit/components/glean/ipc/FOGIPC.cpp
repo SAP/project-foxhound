@@ -31,7 +31,6 @@
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
-#include "mozilla/Unused.h"
 #include "GMPPlatform.h"
 #include "GMPServiceParent.h"
 #include "nsIClassifiedChannel.h"
@@ -75,9 +74,9 @@ struct ProcessingTimeMarker {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
     schema.AddKeyLabelFormat("time", "Recorded Time", MS::Format::Milliseconds);
     schema.AddKeyLabelFormat("tracker", "Tracker Type", MS::Format::String);
+    schema.AddKeyFormat("label", MS::Format::String, MS::PayloadFlags::Hidden);
     schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.label}: {marker.data.time}");
+    schema.SetTableLabel("{marker.data.label}: {marker.data.time}");
     return schema;
   }
 };
@@ -97,9 +96,9 @@ struct ProcessEnergyMarker {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
     schema.AddKeyLabelFormat("energy", "Energy (µWh)", MS::Format::Integer);
+    schema.AddKeyFormat("label", MS::Format::String, MS::PayloadFlags::Hidden);
     schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.label}: {marker.data.energy}µWh");
+    schema.SetTableLabel("{marker.data.label}: {marker.data.energy}µWh");
     return schema;
   }
 };
@@ -116,6 +115,7 @@ enum ProcessType {
   eContentForeground,
   eContentBackground,
   eGpuProcess,
+  eInferenceProcess,
   eUnknown,
 };
 
@@ -189,6 +189,10 @@ void RecordThreadCpuUse(const nsACString& aThreadName, uint64_t aCpuTimeMs,
         power_cpu_ms_per_thread::gpu_process.Get(threadName)
             .Add(int32_t(aCpuTimeMs));
         break;
+      case eInferenceProcess:
+        power_cpu_ms_per_thread::inference_process.Get(threadName)
+            .Add(int32_t(aCpuTimeMs));
+        break;
       case eUnknown:
         // Nothing to do.
         break;
@@ -216,6 +220,10 @@ void RecordThreadCpuUse(const nsACString& aThreadName, uint64_t aCpuTimeMs,
         break;
       case eGpuProcess:
         power_wakeups_per_thread::gpu_process.Get(threadName)
+            .Add(int32_t(aWakeCount));
+        break;
+      case eInferenceProcess:
+        power_wakeups_per_thread::inference_process.Get(threadName)
             .Add(int32_t(aWakeCount));
         break;
       case eUnknown:
@@ -350,6 +358,9 @@ void RecordPowerMetrics() {
             MOZ_ASSERT_UNREACHABLE("Unsuppored process type for cpu time");
             break;
         }
+      } else if (type == INFERENCE_REMOTE_TYPE) {
+        type.AssignLiteral("inference");
+        gThisProcessType = ProcessType::eInferenceProcess;
       }
       GetTrackerType(trackerType);
     } else {
@@ -387,24 +398,12 @@ void RecordPowerMetrics() {
     int32_t nNewCpuTime = int32_t(newCpuTime);
     if (newCpuTime < std::numeric_limits<int32_t>::max()) {
       power::total_cpu_time_ms.Add(nNewCpuTime);
-      // GLAM EXPERIMENT
-      // This metric is temporary, disabled by default, and will be enabled only
-      // for the purpose of experimenting with client-side sampling of data for
-      // GLAM use. See Bug 1947604 for more information.
-      glam_experiment::total_cpu_time_ms.Add(nNewCpuTime);
-      // END GLAM EXPERIMENT
       power::cpu_time_per_process_type_ms.Get(type).Add(nNewCpuTime);
       if (!trackerType.IsEmpty()) {
         power::cpu_time_per_tracker_type_ms.Get(trackerType).Add(nNewCpuTime);
       }
     } else {
       power::cpu_time_bogus_values.Add(1);
-      // GLAM EXPERIMENT
-      // This metric is temporary, disabled by default, and will be enabled only
-      // for the purpose of experimenting with client-side sampling of data for
-      // GLAM use. See Bug 1947604 for more information.
-      glam_experiment::cpu_time_bogus_values.Add(1);
-      // END GLAM EXPERIMENT
     }
     PROFILER_MARKER("Process CPU Time", OTHER, {}, ProcessingTimeMarker,
                     nNewCpuTime, type, trackerType);
@@ -561,18 +560,18 @@ void SendFOGData(ipc::ByteBuf&& buf) {
       mozilla::gmp::SendFOGData(std::move(buf));
     } break;
     case GeckoProcessType_GPU:
-      Unused << mozilla::gfx::GPUParent::GetSingleton()->SendFOGData(
+      (void)mozilla::gfx::GPUParent::GetSingleton()->SendFOGData(
           std::move(buf));
       break;
     case GeckoProcessType_RDD:
-      Unused << mozilla::RDDParent::GetSingleton()->SendFOGData(std::move(buf));
+      (void)mozilla::RDDParent::GetSingleton()->SendFOGData(std::move(buf));
       break;
     case GeckoProcessType_Socket:
-      Unused << net::SocketProcessChild::GetSingleton()->SendFOGData(
+      (void)net::SocketProcessChild::GetSingleton()->SendFOGData(
           std::move(buf));
       break;
     case GeckoProcessType_Utility:
-      Unused << ipc::UtilityProcessChild::GetSingleton()->SendFOGData(
+      (void)ipc::UtilityProcessChild::GetSingleton()->SendFOGData(
           std::move(buf));
       break;
     default:
@@ -627,19 +626,19 @@ void TestTriggerMetrics(uint32_t aProcessType,
     case nsIXULRuntime::PROCESS_TYPE_SOCKET: {
       RefPtr<net::SocketProcessParent> socketParent(
           net::SocketProcessParent::GetSingleton());
-      Unused << socketParent->SendTestTriggerMetrics()->Then(
+      (void)socketParent->SendTestTriggerMetrics()->Then(
           GetCurrentSerialEventTarget(), __func__,
           [promise]() { promise->MaybeResolveWithUndefined(); },
           [promise]() { promise->MaybeRejectWithUndefined(); });
     } break;
     case nsIXULRuntime::PROCESS_TYPE_UTILITY:
-      Unused << ipc::UtilityProcessManager::GetSingleton()
-                    ->GetProcessParent(ipc::SandboxingKind::GENERIC_UTILITY)
-                    ->SendTestTriggerMetrics()
-                    ->Then(
-                        GetCurrentSerialEventTarget(), __func__,
-                        [promise]() { promise->MaybeResolveWithUndefined(); },
-                        [promise]() { promise->MaybeRejectWithUndefined(); });
+      (void)ipc::UtilityProcessManager::GetSingleton()
+          ->GetProcessParent(ipc::SandboxingKind::GENERIC_UTILITY)
+          ->SendTestTriggerMetrics()
+          ->Then(
+              GetCurrentSerialEventTarget(), __func__,
+              [promise]() { promise->MaybeResolveWithUndefined(); },
+              [promise]() { promise->MaybeRejectWithUndefined(); });
       break;
     default:
       promise->MaybeRejectWithUndefined();

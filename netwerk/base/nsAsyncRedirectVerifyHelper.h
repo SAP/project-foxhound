@@ -12,7 +12,6 @@
 #include "nsINamed.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
 
 class nsIChannel;
 

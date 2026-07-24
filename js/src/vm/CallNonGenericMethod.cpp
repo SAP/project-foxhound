@@ -27,7 +27,8 @@ bool JS::detail::CallMethodIfWrapped(JSContext* cx, IsAcceptableThis test,
   }
 
   if (IsCallSelfHostedNonGenericMethod(impl)) {
-    return ReportIncompatibleSelfHostedMethod(cx, thisv);
+    return ReportIncompatibleSelfHostedMethod(cx, thisv,
+                                              IncompatibleContext::Regular);
   }
 
   ReportIncompatible(cx, args);

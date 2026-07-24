@@ -11,11 +11,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.AddonManagerException
@@ -29,8 +27,6 @@ import org.mozilla.samples.browser.databinding.FragmentAddOnsBinding
 import org.mozilla.samples.browser.databinding.OverlayAddOnProgressBinding
 import org.mozilla.samples.browser.ext.components
 import java.util.concurrent.CancellationException
-import androidx.browser.R as androidxBrowserR
-import mozilla.components.browser.menu.R as menuR
 import mozilla.components.feature.addons.R as addonsR
 
 /**
@@ -38,7 +34,6 @@ import mozilla.components.feature.addons.R as addonsR
  */
 class AddonsFragment : Fragment(), AddonsManagerAdapterDelegate {
     private lateinit var recyclerView: RecyclerView
-    private val scope = CoroutineScope(Dispatchers.IO)
     private var adapter: AddonsManagerAdapter? = null
 
     private var _binding: FragmentAddOnsBinding? = null
@@ -61,10 +56,6 @@ class AddonsFragment : Fragment(), AddonsManagerAdapterDelegate {
     override fun onStart() {
         super.onStart()
 
-        this@AddonsFragment.view?.let { view ->
-            bindRecyclerView(view)
-        }
-
         findPreviousPermissionDialogFragment()?.let { dialog ->
             dialog.onPositiveButtonClicked = onConfirmPermissionButtonClicked
         }
@@ -73,37 +64,28 @@ class AddonsFragment : Fragment(), AddonsManagerAdapterDelegate {
     private fun bindRecyclerView(rootView: View) {
         recyclerView = rootView.findViewById(R.id.add_ons_list)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        scope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val context = requireContext()
+                // Call getAddons directly. It will internally switch to ioDispatcher.
                 val addons = context.components.addonManager.getAddons()
 
-                val style = AddonsManagerAdapter.Style(
-                    dividerColor = androidxBrowserR.color.browser_actions_divider_color,
-                    dividerHeight = menuR.dimen.mozac_browser_menu_item_divider_height,
-                )
-
-                scope.launch(Dispatchers.Main) {
-                    if (adapter == null) {
-                        adapter = AddonsManagerAdapter(
-                            addonsManagerDelegate = this@AddonsFragment,
-                            addons = addons,
-                            style = style,
-                            store = context.components.store,
-                        )
-                        recyclerView.adapter = adapter
-                    } else {
-                        adapter?.updateAddons(addons)
-                    }
+                if (adapter == null) {
+                    adapter = AddonsManagerAdapter(
+                        addonsManagerDelegate = this@AddonsFragment,
+                        addons = addons,
+                        store = context.components.store,
+                    )
+                    recyclerView.adapter = adapter
+                } else {
+                    adapter?.updateAddons(addons)
                 }
             } catch (e: AddonManagerException) {
-                scope.launch(Dispatchers.Main) {
-                    Toast.makeText(
-                        activity,
-                        addonsR.string.mozac_feature_addons_failed_to_query_extensions,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
+                Toast.makeText(
+                    activity,
+                    addonsR.string.mozac_feature_addons_failed_to_query_extensions,
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
@@ -216,7 +198,7 @@ class AddonsFragment : Fragment(), AddonsManagerAdapterDelegate {
         )
 
         includedBinding.cancelButton.setOnClickListener {
-            MainScope().launch {
+            viewLifecycleOwner.lifecycleScope.launch {
                 // Hide the installation progress overlay once cancellation is successful.
                 if (installOperation.cancel().await()) {
                     includedBinding.root.visibility = View.GONE

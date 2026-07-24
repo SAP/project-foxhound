@@ -5,11 +5,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "CubebInputStream.h"
-
+#include "MockCubeb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "mozilla/gtest/WaitFor.h"
-#include "MockCubeb.h"
 
 using namespace mozilla;
 

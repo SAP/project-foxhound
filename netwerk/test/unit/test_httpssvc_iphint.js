@@ -15,10 +15,9 @@ const { TestUtils } = ChromeUtils.importESModule(
 );
 
 add_setup(async function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
-
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
   trr_test_setup();
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
@@ -47,12 +46,6 @@ add_setup(async function setup() {
 
 // Test if IP hint addresses can be accessed as regular A/AAAA records.
 add_task(async function testStoreiphint() {
-  trrServer = new TRRServer();
-  registerCleanupFunction(async () => {
-    await trrServer.stop();
-  });
-  await trrServer.start();
-
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -197,8 +190,6 @@ add_task(async function testStoreiphint() {
     Ci.nsIDNSService.RESOLVE_IP_HINT | Ci.nsIDNSService.RESOLVE_DISABLE_IPV6,
     ["1.2.3.4", "5.6.7.8"]
   );
-
-  await trrServer.stop();
 });
 
 function makeChan(url) {
@@ -222,11 +213,11 @@ function channelOpenPromise(chan, flags) {
 // Test if we can connect to the server with the IP hint address.
 add_task(async function testConnectionWithiphint() {
   Services.dns.clearCache(true);
-  Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    "https://127.0.0.1:" + h2Port + "/httpssvc_use_iphint"
+    "https://127.0.0.1:" + h2Port + "/doh?httpssvc_use_iphint=1"
   );
+  Services.prefs.setIntPref("network.trr.mode", 3);
 
   // Resolving test.iphint.com should be failed.
   let { inStatus } = await new TRRDNSListener("test.iphint.com", {
@@ -255,15 +246,11 @@ add_task(async function testConnectionWithiphint() {
   certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
     false
   );
-
-  await trrServer.stop();
 });
 
 // Test the case that we failed to use IP Hint address because DNS cache
 // is bypassed.
 add_task(async function testiphintWithFreshDNS() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -351,5 +338,4 @@ add_task(async function testiphintWithFreshDNS() {
   certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyData(
     false
   );
-  await trrServer.stop();
 });

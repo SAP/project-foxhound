@@ -19,7 +19,6 @@
 #include "TLSClientAuthCertSelection.h"
 #include "keyhi.h"
 #include "mozilla/Base64.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -760,7 +759,7 @@ static int16_t nsSSLIOLayerPoll(PRFileDesc* fd, int16_t in_flags,
                : "[%p] poll SSL socket using lower %d\n",
            fd, (int)in_flags));
 
-  socketInfo->MaybeDispatchSelectClientAuthCertificate();
+  socketInfo->MaybeSelectClientAuthCertificate();
 
   // We want the handshake to continue during certificate validation, so we
   // don't need to do anything special here. libssl automatically blocks when
@@ -1257,9 +1256,6 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
   // success of this function.
   PRFileDesc* sslSock = SSL_ImportFD(nullptr, fd);
   if (!sslSock) {
-    return nullptr;
-  }
-  if (SSL_SetPKCS11PinArg(sslSock, infoObject) != SECSuccess) {
     return nullptr;
   }
   if (SSL_HandshakeCallback(sslSock, HandshakeCallback, infoObject) !=

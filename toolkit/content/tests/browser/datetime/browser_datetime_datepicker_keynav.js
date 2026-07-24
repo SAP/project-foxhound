@@ -66,7 +66,7 @@ add_task(async function test_datepicker_keyboard_nav() {
   );
 
   Assert.equal(
-    helper.panel.querySelector("#dateTimePopupFrame").contentDocument
+    helper.panel.querySelector("#DateTimePickerPanelPopupFrame").contentDocument
       .activeElement.textContent,
     "15",
     "Picker is opened with a focus set to the currently selected date"
@@ -286,7 +286,7 @@ add_task(async function test_datepicker_keyboard_arrows() {
     `data:text/html,<input id=date type=date value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
   Assert.equal(helper.panel.state, "open", "Panel should be opened");
 
@@ -368,7 +368,7 @@ add_task(async function test_datepicker_keyboard_home_end() {
     `data:text/html,<input id=date type=date value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
   Assert.equal(helper.panel.state, "open", "Panel should be opened");
 
@@ -454,7 +454,7 @@ add_task(async function test_datepicker_keyboard_pgup_pgdown() {
     `data:text/html,<input id=date type=date value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
   Assert.equal(helper.panel.state, "open", "Panel should be opened");
 

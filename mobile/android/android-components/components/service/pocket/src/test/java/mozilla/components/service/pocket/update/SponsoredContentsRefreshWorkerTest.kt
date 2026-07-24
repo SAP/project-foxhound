@@ -8,28 +8,21 @@ import androidx.concurrent.futures.await
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
 import mozilla.components.service.pocket.GlobalDependencyProvider
 import mozilla.components.service.pocket.mars.SponsoredContentsUseCases
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 
-@ExperimentalCoroutinesApi // for runTestOnMain
 @RunWith(AndroidJUnit4::class)
 class SponsoredContentsRefreshWorkerTest {
 
-    @get:Rule
-    val mainCoroutineRule = MainCoroutineRule()
-
     @Test
-    fun `WHEN sponsored contents are refreshed successfully THEN return success`() = runTestOnMain {
+    fun `WHEN sponsored contents are refreshed successfully THEN return success`() = runTest {
         val useCases: SponsoredContentsUseCases = mock()
         val refreshSponsoredContents: SponsoredContentsUseCases.RefreshSponsoredContents = mock()
 
@@ -45,7 +38,7 @@ class SponsoredContentsRefreshWorkerTest {
     }
 
     @Test
-    fun `WHEN sponsored contents are refreshed unsuccessfully THEN worker should retry`() = runTestOnMain {
+    fun `WHEN sponsored contents are refreshed unsuccessfully THEN worker should retry`() = runTest {
         val useCases: SponsoredContentsUseCases = mock()
         val refreshSponsoredContents: SponsoredContentsUseCases.RefreshSponsoredContents = mock()
 

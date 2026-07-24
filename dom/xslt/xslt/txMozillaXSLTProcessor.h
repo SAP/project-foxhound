@@ -6,15 +6,14 @@
 #ifndef TRANSFRMX_TXMOZILLAXSLTPROCESSOR_H
 #define TRANSFRMX_TXMOZILLAXSLTPROCESSOR_H
 
-#include "nsStubMutationObserver.h"
-#include "nsIDocumentTransformer.h"
-#include "txExpandedNameMap.h"
-#include "txNamespaceMap.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/XSLTProcessorBinding.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDocumentTransformer.h"
+#include "nsStubMutationObserver.h"
+#include "nsWrapperCache.h"
+#include "txExpandedNameMap.h"
+#include "txNamespaceMap.h"
 
 class nsINode;
 class nsIURI;

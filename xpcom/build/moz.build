@@ -22,7 +22,6 @@ EXPORTS.mozilla += [
     "Omnijar.h",
     "PoisonIOInterposer.h",
     "SmallArrayLRUCache.h",
-    "XPCOM.h",
     "XREAppData.h",
 ]
 

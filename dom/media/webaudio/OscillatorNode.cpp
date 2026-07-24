@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OscillatorNode.h"
+
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioDestinationNode.h"
-#include "nsContentUtils.h"
+#include "Tracing.h"
 #include "WebAudioUtils.h"
 #include "blink/PeriodicWave.h"
-#include "Tracing.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 
@@ -480,6 +481,9 @@ void OscillatorNode::SendPeriodicWaveToTrack() {
 }
 
 void OscillatorNode::Start(double aWhen, ErrorResult& aRv) {
+  WEB_AUDIO_API_LOG("{:f}: {} {} Start({:f})", Context()->CurrentTime(),
+                    NodeType(), Id(), aWhen);
+
   if (!WebAudioUtils::IsTimeValid(aWhen)) {
     aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("start time");
     return;
@@ -504,6 +508,9 @@ void OscillatorNode::Start(double aWhen, ErrorResult& aRv) {
 }
 
 void OscillatorNode::Stop(double aWhen, ErrorResult& aRv) {
+  WEB_AUDIO_API_LOG("{:f}: {} {} Stop({:f})", Context()->CurrentTime(),
+                    NodeType(), Id(), aWhen);
+
   if (!WebAudioUtils::IsTimeValid(aWhen)) {
     aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("stop time");
     return;

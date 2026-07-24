@@ -15,12 +15,6 @@ const { SearchUtils } = ChromeUtils.importESModule(
   "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
 );
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.update2.engineAliasRefresh", true]],
-  });
-});
-
 add_task(async function test_addEngineGet() {
   await openPreferencesViaOpenPreferencesAPI("search", {
     leaveOpen: true,
@@ -65,7 +59,7 @@ add_task(async function test_addEngineGet() {
   Assert.ok(true, "Got added notification.");
 
   // Check new engine.
-  let engine = Services.search.getEngineByName("Bugzilla");
+  let engine = SearchService.getEngineByName("Bugzilla");
   Assert.equal(engine.name, "Bugzilla", "Name is correct.");
   Assert.equal(
     engine.getSubmission("föö").uri.spec,
@@ -76,7 +70,7 @@ add_task(async function test_addEngineGet() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_addEnginePost() {
@@ -105,7 +99,7 @@ add_task(async function test_addEnginePost() {
   Assert.ok(true, "Got added notification.");
 
   // Check new engine.
-  let engine = Services.search.getEngineByName("Bugzilla Post");
+  let engine = SearchService.getEngineByName("Bugzilla Post");
   Assert.equal(engine.name, "Bugzilla Post", "Name is correct.");
   let submission = engine.getSubmission("föö");
   Assert.equal(
@@ -127,14 +121,14 @@ add_task(async function test_addEnginePost() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_validation() {
   await openPreferencesViaOpenPreferencesAPI("search", {
     leaveOpen: true,
   });
-  let existingEngine = await Services.search.addUserEngine({
+  let existingEngine = await SearchService.addUserEngine({
     name: "user",
     url: "https://example.com/user?q={searchTerms}&b=ff",
     alias: "u",
@@ -254,7 +248,7 @@ add_task(async function test_validation() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(existingEngine);
+  await SearchService.removeEngine(existingEngine);
 });
 
 add_task(async function test_editGetEngine() {
@@ -265,12 +259,12 @@ add_task(async function test_editGetEngine() {
   let doc = gBrowser.contentDocument;
   let tree = doc.querySelector("#engineList");
   let view = tree.view.wrappedJSObject;
-  let engine = await Services.search.addUserEngine({
+  let engine = await SearchService.addUserEngine({
     name: "user",
     url: "https://example.com/user?q={searchTerms}&b=ff",
     alias: "u",
   });
-  engine.wrappedJSObject.changeUrl(
+  engine.changeUrl(
     SearchUtils.URL_TYPE.SUGGEST_JSON,
     "https://example.com/suggest?query={searchTerms}",
     null
@@ -407,7 +401,7 @@ add_task(async function test_editGetEngine() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_editPostEngine() {
@@ -421,7 +415,7 @@ add_task(async function test_editPostEngine() {
 
   let params = new URLSearchParams();
   params.append("q", "{searchTerms}");
-  let engine = await Services.search.addUserEngine({
+  let engine = await SearchService.addUserEngine({
     name: "user post",
     url: "https://example.com/user",
     params,
@@ -549,7 +543,7 @@ add_task(async function test_editPostEngine() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_icon() {
@@ -593,7 +587,7 @@ add_task(async function test_icon() {
   await PlacesTestUtils.setFaviconForPage(pageUrl, iconUrl, dataURL);
 
   // Edit engine and check favicon.
-  let engines = await Services.search.getEngines();
+  let engines = await SearchService.getEngines();
   let i = engines.findIndex(e => e.id == engine.id);
   view.selection.select(i);
   dialogWin = await openDialogWith(doc, () => editButton.click());
@@ -610,7 +604,7 @@ add_task(async function test_icon() {
 
   // Clean up.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
   PlacesUtils.favicons.expireAllFavicons();
   await PlacesUtils.history.clear();
 });

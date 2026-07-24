@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/field_trials.h"
 #include "api/function_view.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
@@ -44,32 +45,25 @@
 #include "rtc_base/containers/flat_map.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
-#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/pc/e2e/analyzer/video/default_video_quality_analyzer.h"
 #include "test/pc/e2e/analyzer/video/default_video_quality_analyzer_shared_objects.h"
-#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 namespace {
 
-using ::cricket::kAv1CodecName;
-using ::cricket::kH264CodecName;
-using ::cricket::kVp8CodecName;
-using ::cricket::kVp9CodecName;
 using ::testing::Combine;
 using ::testing::Optional;
 using ::testing::UnitTest;
 using ::testing::Values;
 using ::testing::ValuesIn;
-using ::webrtc::webrtc_pc_e2e::EmulatedSFUConfig;
-using ::webrtc::webrtc_pc_e2e::PeerConfigurer;
-using ::webrtc::webrtc_pc_e2e::RunParams;
-using ::webrtc::webrtc_pc_e2e::ScreenShareConfig;
-using ::webrtc::webrtc_pc_e2e::VideoCodecConfig;
-using ::webrtc::webrtc_pc_e2e::VideoConfig;
+using webrtc_pc_e2e::EmulatedSFUConfig;
+using webrtc_pc_e2e::PeerConfigurer;
+using webrtc_pc_e2e::RunParams;
+using webrtc_pc_e2e::ScreenShareConfig;
+using webrtc_pc_e2e::VideoCodecConfig;
+using webrtc_pc_e2e::VideoConfig;
 
 std::unique_ptr<webrtc_pc_e2e::PeerConnectionE2EQualityTestFixture>
 CreateTestFixture(absl::string_view test_case_name,
@@ -92,11 +86,6 @@ CreateTestFixture(absl::string_view test_case_name,
   return fixture;
 }
 
-// Takes the current active field trials set, and appends some new trials.
-std::string AppendFieldTrials(std::string new_trial_string) {
-  return std::string(field_trial::GetFieldTrialString()) + new_trial_string;
-}
-
 enum class UseDependencyDescriptor {
   Enabled,
   Disabled,
@@ -115,8 +104,10 @@ struct SvcTestParameters {
     int num_temporal_layers =
         ScalabilityModeToNumTemporalLayers(*scalability_mode);
 
-    return SvcTestParameters{codec_name, scalability_mode_str,
-                             num_spatial_layers, num_temporal_layers};
+    return SvcTestParameters{.codec_name = codec_name,
+                             .scalability_mode = scalability_mode_str,
+                             .expected_spatial_layers = num_spatial_layers,
+                             .expected_temporal_layers = num_temporal_layers};
   }
 
   std::string codec_name;
@@ -133,9 +124,9 @@ class SvcTest : public testing::TestWithParam<
   }
 
   static VideoCodecConfig ToVideoCodecConfig(absl::string_view codec) {
-    if (codec == cricket::kVp9CodecName) {
+    if (codec == kVp9CodecName) {
       return VideoCodecConfig(
-          cricket::kVp9CodecName,
+          kVp9CodecName,
           {{kVP9FmtpProfileId, VP9ProfileToString(VP9Profile::kProfile0)}});
     }
 
@@ -217,7 +208,7 @@ class SvcVideoQualityAnalyzer : public DefaultVideoQualityAnalyzer {
 
   void OnStatsReports(
       absl::string_view pc_label,
-      const rtc::scoped_refptr<const RTCStatsReport>& report) override {
+      const scoped_refptr<const RTCStatsReport>& report) override {
     // Extract the scalability mode reported in the stats.
     auto outbound_stats = report->GetStatsOfType<RTCOutboundRtpStreamStats>();
     for (const auto& stat : outbound_stats) {
@@ -321,11 +312,10 @@ MATCHER_P2(HasSpatialAndTemporalLayersSMode,
 }
 
 TEST_P(SvcTest, ScalabilityModeSupported) {
-  std::string trials;
+  FieldTrials trials("");
   if (UseDependencyDescriptor()) {
-    trials += "WebRTC-DependencyDescriptorAdvertised/Enabled/";
+    trials.Set("WebRTC-DependencyDescriptorAdvertised", "Enabled");
   }
-  test::ScopedFieldTrials override_trials(AppendFieldTrials(trials));
   std::unique_ptr<NetworkEmulationManager> network_emulation_manager =
       CreateNetworkEmulationManager({.time_mode = TimeMode::kSimulated});
   auto analyzer = std::make_unique<SvcVideoQualityAnalyzer>(
@@ -336,7 +326,7 @@ TEST_P(SvcTest, ScalabilityModeSupported) {
       *network_emulation_manager->time_controller(),
       network_emulation_manager->CreateEndpointPairWithTwoWayRoutes(
           BuiltInNetworkBehaviorConfig()),
-      [this](PeerConfigurer* alice) {
+      [&](PeerConfigurer* alice) {
         VideoConfig video(/*stream_label=*/"alice-video", /*width=*/1850,
                           /*height=*/1110, /*fps=*/30);
         if (IsSMode()) {
@@ -351,8 +341,10 @@ TEST_P(SvcTest, ScalabilityModeSupported) {
             video, ScreenShareConfig(TimeDelta::Seconds(5)));
         alice->AddVideoConfig(std::move(video), std::move(generator));
         alice->SetVideoCodecs({video_codec_config});
+        alice->AddFieldTrials(trials);
       },
-      [](PeerConfigurer* bob) {}, std::move(analyzer));
+      [&](PeerConfigurer* bob) { bob->AddFieldTrials(trials); },
+      std::move(analyzer));
   fixture->Run(RunParams(TimeDelta::Seconds(10)));
   EXPECT_THAT(analyzer_ptr->encoder_layers_seen(),
               HasSpatialAndTemporalLayers(

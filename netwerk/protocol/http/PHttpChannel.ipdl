@@ -120,6 +120,12 @@ child:
   // channel.
   async ReportSecurityMessage(nsString messageTag, nsString messageCategory);
 
+  // Report Local Network Access information to console in content process
+  // where CallingScriptLocationString() can access JS context.
+  // topLevelSite must be passed from parent process because with Fission,
+  // cross-site content processes cannot access top-level document in another process.
+  async ReportLNAToConsole(NetAddr peerAddr, nsCString messageType, nsCString promptAction, nsCString topLevelSite);
+
   // Tell child to delete channel (all IPDL deletes must be done from child to
   // avoid races: see bug 591708).
   async DeleteSelf();

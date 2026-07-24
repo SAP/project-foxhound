@@ -43,9 +43,10 @@ function parseSockJS(msg) {
       return { type: "message", data: payload };
     case "m":
       return { type: "message", data: payload };
-    case "c":
+    case "c": {
       const [code, message] = payload;
       return { type: "close", code, message };
+    }
     default:
       return null;
   }

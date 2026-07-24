@@ -11,6 +11,7 @@
 using namespace js;
 using JS::SliceBudget;
 using JS::TimeBudget;
+using JS::UnlimitedBudget;
 using JS::WorkBudget;
 
 BEGIN_TEST(testSliceBudgetUnlimited) {
@@ -23,6 +24,9 @@ BEGIN_TEST(testSliceBudgetUnlimited) {
 
   budget.step(1000000);
   CHECK(!budget.isOverBudget());
+
+  SliceBudget budget2 = SliceBudget(UnlimitedBudget());
+  CHECK(budget2.isUnlimited());
 
   return true;
 }
@@ -121,3 +125,40 @@ BEGIN_TEST(testSliceBudgetInterruptibleTime) {
   return true;
 }
 END_TEST(testSliceBudgetInterruptibleTime)
+
+BEGIN_TEST(testSliceBudgetInterruptibleUnlimited) {
+  SliceBudget::InterruptRequestFlag wantInterrupt(false);
+
+  SliceBudget budget = SliceBudget(UnlimitedBudget(), &wantInterrupt);
+  CHECK(budget.isUnlimited());
+  CHECK(!budget.isOverBudget());
+
+  // Do enough work for an expensive check.
+  budget.step(1000);
+  CHECK(!budget.isOverBudget());
+
+  // We do a little work but not enough work to check interrupt.
+  budget.step(500);
+  CHECK(!budget.isOverBudget());
+
+  // External signal: interrupt requested.
+  wantInterrupt = true;
+
+  // Interrupt requested, but not enough work has been done to check for it.
+  CHECK(!budget.isOverBudget());
+
+  // Do enough work for an expensive check.
+  budget.step(1000);
+
+  // Interrupt requested!
+  CHECK(budget.isOverBudget());
+
+  // The external flag is not reset, but the budget will internally remember
+  // that an interrupt was requested.
+  CHECK(wantInterrupt);
+  wantInterrupt = false;
+  CHECK(budget.isOverBudget());
+
+  return true;
+}
+END_TEST(testSliceBudgetInterruptibleUnlimited)

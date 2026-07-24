@@ -9,7 +9,6 @@
  *
  * We can automatically hide the message for users.
  */
-div:has(> div > a[href="https://google.com/chrome"])
-{
+div:has(> div > a[href="https://google.com/chrome"]) {
   display: none;
 }

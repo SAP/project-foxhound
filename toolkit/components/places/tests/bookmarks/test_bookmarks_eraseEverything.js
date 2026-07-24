@@ -1,6 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+// This test originally expected bookmarks added after visits to boost frecency
+// scores. The frecency algorithm has since changed - adding a bookmark after a
+// visit doesn't retroactively change the frecency score for a site unless no
+// visits exist for a bookmark.
+//
+// This test now verifies that frecency remains stable when bookmarks are added
+// and removed after visits, and ensures eraseEverything() doesn't modify the
+// frecency calculation.
 add_task(async function test_eraseEverything() {
   await PlacesTestUtils.addVisits({
     uri: NetUtil.newURI("http://example.com/"),
@@ -8,18 +16,33 @@ add_task(async function test_eraseEverything() {
   await PlacesTestUtils.addVisits({
     uri: NetUtil.newURI("http://mozilla.org/"),
   });
-  let frecencyForExample = await PlacesTestUtils.getDatabaseValue(
+
+  let exampleFrecency = await PlacesTestUtils.getDatabaseValue(
     "moz_places",
     "frecency",
-    { url: "http://example.com/" }
+    {
+      url: "http://example.com/",
+    }
   );
-  let frecencyForMozilla = await PlacesTestUtils.getDatabaseValue(
+  Assert.greater(
+    exampleFrecency,
+    0,
+    "http://example.com should have a non-zero frecency."
+  );
+
+  let mozillaFrecency = await PlacesTestUtils.getDatabaseValue(
     "moz_places",
     "frecency",
-    { url: "http://mozilla.org/" }
+    {
+      url: "http://mozilla.org/",
+    }
   );
-  Assert.greater(frecencyForExample, 0);
-  Assert.greater(frecencyForMozilla, 0);
+  Assert.greater(
+    mozillaFrecency,
+    0,
+    "http://mozilla.org should have a non-zero frecency."
+  );
+
   let unfiledFolder = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     type: PlacesUtils.bookmarks.TYPE_FOLDER,
@@ -75,17 +98,19 @@ add_task(async function test_eraseEverything() {
   checkBookmarkObject(toolbarBookmarkInFolder);
 
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-  Assert.greater(
+  Assert.equal(
     await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
       url: "http://example.com/",
     }),
-    frecencyForExample
+    exampleFrecency,
+    "Frecency should not have changed."
   );
-  Assert.greater(
+  Assert.equal(
     await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
-      url: "http://example.com/",
+      url: "http://mozilla.org/",
     }),
-    frecencyForMozilla
+    mozillaFrecency,
+    "Frecency should not have changed."
   );
 
   await PlacesUtils.bookmarks.eraseEverything();
@@ -95,13 +120,15 @@ add_task(async function test_eraseEverything() {
     await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
       url: "http://example.com/",
     }),
-    frecencyForExample
+    exampleFrecency,
+    "Frecency should not have changed."
   );
   Assert.equal(
     await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
-      url: "http://example.com/",
+      url: "http://mozilla.org/",
     }),
-    frecencyForMozilla
+    mozillaFrecency,
+    "Frecency should not have changed."
   );
 });
 

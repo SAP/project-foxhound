@@ -15,6 +15,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.clearPackageData
 import org.mozilla.fenix.benchmark.utils.completeOnboarding
+import org.mozilla.fenix.benchmark.utils.revokeNotificationPermission
 
 /**
  * This test class generates a baseline profile on a critical user journey, that goes through
@@ -22,8 +23,6 @@ import org.mozilla.fenix.benchmark.utils.completeOnboarding
  *
  * Refer to the [baseline profile documentation](https://d.android.com/topic/performance/baselineprofiles)
  * for more information.
- *
- * Make sure `autosignReleaseWithDebugKey=true` is present in local.properties.
  *
  * Generate the baseline profile using this gradle task:
  * ```
@@ -44,23 +43,21 @@ import org.mozilla.fenix.benchmark.utils.completeOnboarding
 @RequiresApi(Build.VERSION_CODES.P)
 @RunWith(AndroidJUnit4::class)
 @BaselineProfileGenerator
-@Ignore("Disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1971317")
 class OnboardingBaselineProfileGenerator {
 
     @get:Rule
     val rule = BaselineProfileRule()
 
+    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
     @Test
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
         ) {
             device.clearPackageData(packageName = packageName)
+            device.revokeNotificationPermission(packageName = packageName)
             startActivityAndWait()
             device.completeOnboarding()
-
-            pressHome()
-            device.clearPackageData(packageName = packageName)
         }
     }
 }

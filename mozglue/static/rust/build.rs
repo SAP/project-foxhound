@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use rustc_version::{version, Version};
+use rustc_version::{version, version_meta, Channel, Version};
 
 fn main() {
     let mut build = cc::Build::new();
@@ -16,10 +16,10 @@ fn main() {
     println!("cargo:rerun-if-changed=wrappers.cpp");
 
     let ver = version().unwrap();
-    let max_oom_hook_version = Version::parse("1.90.0-alpha").unwrap();
+    let max_oom_hook_version = Version::parse("1.92.0-alpha").unwrap();
     // The new alloc error panic feature was temporarily reverted. We kept the
     // code in tree, but the version here is such that it's effectively never used.
-    let max_alloc_error_panic_version = Version::parse("1.90.0-alpha").unwrap();
+    let max_alloc_error_panic_version = Version::parse("1.92.0-alpha").unwrap();
 
     println!("cargo::rustc-check-cfg=cfg(has_panic_hook_info)");
     println!("cargo::rustc-check-cfg=cfg(oom_with, values(\"hook\", \"alloc_error_panic\"))");
@@ -27,7 +27,9 @@ fn main() {
         println!("cargo:rustc-cfg=oom_with=\"hook\"");
     } else if ver < max_alloc_error_panic_version {
         println!("cargo:rustc-cfg=oom_with=\"alloc_error_panic\"");
-    } else if std::env::var("MOZ_AUTOMATION").is_ok() {
+    } else if std::env::var("MOZ_AUTOMATION").is_ok()
+        && version_meta().unwrap().channel != Channel::Nightly
+    {
         panic!("Builds on automation must use a version of rust for which we know how to hook OOM: want < {}, have {}",
                max_alloc_error_panic_version, ver);
     }

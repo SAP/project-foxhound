@@ -469,6 +469,7 @@ enum class BaselineOption : uint8_t {
 
 using BaselineOptions = EnumFlags<BaselineOption>;
 
+bool DispatchOffThreadBaselineBatchEager(JSContext* cx);
 bool DispatchOffThreadBaselineBatch(JSContext* cx);
 
 MethodStatus BaselineCompile(JSContext* cx, JSScript* script,

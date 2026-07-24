@@ -133,9 +133,9 @@ add_task(async function test_tabdialog_page_title() {
 /**
  * Test helper for checking the origin header of a dialog.
  *
- * @param {Object} browser
+ * @param {object} browser
  *        The browser the dialog was opened from.
- * @param {String|null}  origin
+ * @param {string | null}  origin
  *        The page origin that should be displayed in the header, if any.
  */
 async function checkOriginText(browser, origin = null) {

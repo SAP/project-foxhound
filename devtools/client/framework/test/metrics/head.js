@@ -34,7 +34,7 @@ function countCharsInModules(modules) {
 /**
  * Record module loading data.
  *
- * @param {Object}
+ * @param {object}
  * - filterString {String} path to use to filter modules specific to the current panel
  * - loaders {Array} Array of Loaders to check for modules
  * - panelName {String} reused in identifiers for perfherder data

@@ -32,7 +32,7 @@
 #  include <gtk/gtk.h>
 #endif
 
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 
 #ifdef LIBFUZZER
 #  include "FuzzerDefs.h"

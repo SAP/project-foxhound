@@ -15,7 +15,8 @@ const ServerSocket = CC(
 var serv;
 var ios;
 
-/** Example local IP addresses (literal IP address hostname).
+/**
+ * Example local IP addresses (literal IP address hostname).
  *
  * Note: for IPv6 Unique Local and Link Local, a wider range of addresses is
  * set aside than those most commonly used. Technically, link local addresses
@@ -51,7 +52,8 @@ var localIPv6Literals = [
 ];
 var localIPLiterals = localIPv4Literals.concat(localIPv6Literals);
 
-/** Test function list and descriptions.
+/**
+ * Test function list and descriptions.
  */
 var testList = [
   test_localhost_http_speculative_connect,
@@ -59,6 +61,7 @@ var testList = [
   test_hostnames_resolving_to_local_addresses,
   test_proxies_with_local_addresses,
   test_speculative_connect_with_proxy_filter,
+  test_speculative_connect_with_proxy_filter_and_callback,
 ];
 
 var testDescription = [
@@ -67,12 +70,14 @@ var testDescription = [
   "Expect failure with resolved local IPs",
   "Expect failure for proxies with local IPs",
   "Expect failure without notification callbacks",
+  "Expect pass with notification callbacks and proxy filter",
 ];
 
 var testIdx = 0;
 var hostIdx = 0;
 
-/** TestServer
+/**
+ * TestServer
  *
  * Implements nsIServerSocket for test_speculative_connect.
  */
@@ -94,7 +99,8 @@ TestServer.prototype = {
   onStopListening() {},
 };
 
-/** TestFailedStreamCallback
+/**
+ * TestFailedStreamCallback
  *
  * Implements nsI[Input|Output]StreamCallback for socket layer tests.
  * Expect failure in all cases
@@ -149,7 +155,8 @@ TestFailedStreamCallback.prototype = {
   },
 };
 
-/** test_localhost_http_speculative_connect
+/**
+ * test_localhost_http_speculative_connect
  *
  * Tests a basic positive case using nsIOService.SpeculativeConnect:
  * connecting to localhost via http.
@@ -167,7 +174,8 @@ function test_localhost_http_speculative_connect() {
     .speculativeConnect(URI, principal, null, false);
 }
 
-/** test_localhost_https_speculative_connect
+/**
+ * test_localhost_https_speculative_connect
  *
  * Tests a basic positive case using nsIOService.SpeculativeConnect:
  * connecting to localhost via https.
@@ -195,7 +203,8 @@ function test_localhost_https_speculative_connect() {
  *  2. Verify hostnames that need to be resolved at the socket layer.
  */
 
-/** test_hostnames_resolving_to_addresses
+/**
+ * test_hostnames_resolving_to_addresses
  *
  * Common test function for resolved hostnames. Takes a list of hosts, a
  * boolean to determine if the test is expected to succeed or fail, and a
@@ -269,7 +278,8 @@ function test_hostnames_resolving_to_local_addresses() {
   test_hostnames_resolving_to_addresses(host, next);
 }
 
-/** test_speculative_connect_with_host_list
+/**
+ * test_speculative_connect_with_host_list
  *
  * Common test function for resolved proxy hosts. Takes a list of hosts, a
  * boolean to determine if the test is expected to succeed or fail, and a
@@ -398,7 +408,37 @@ function test_speculative_connect_with_proxy_filter() {
   next_test();
 }
 
-/** next_test
+function test_speculative_connect_with_proxy_filter_and_callback() {
+  let filter = new ProxyFilter("https", "localhost", 80, 0);
+  let pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
+  pps.registerFilter(filter, 10);
+  let URI = ios.newURI("https://not-exist-dommain.com");
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
+    URI,
+    {}
+  );
+
+  let callback = {
+    QueryInterface: ChromeUtils.generateQI(["nsIInterfaceRequestor"]),
+    getInterface() {
+      return null;
+    },
+  };
+
+  ios
+    .QueryInterface(Ci.nsISpeculativeConnect)
+    .speculativeConnect(URI, principal, callback, false);
+  Assert.ok(
+    true,
+    "speculativeConnect should succeed when callback is provided with proxy filter registered"
+  );
+
+  pps.unregisterFilter(filter);
+  next_test();
+}
+
+/**
+ * next_test
  *
  * Calls the next test in testList. Each test is responsible for calling this
  * function when its test cases are complete.
@@ -415,7 +455,8 @@ function next_test() {
   testList[testIdx++]();
 }
 
-/** run_test
+/**
+ * run_test
  *
  * Main entry function for test execution.
  */

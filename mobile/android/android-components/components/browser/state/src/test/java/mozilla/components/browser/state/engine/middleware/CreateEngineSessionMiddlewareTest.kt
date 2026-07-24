@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.state.engine.middleware
 
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.selector.findCustomTab
@@ -16,15 +17,10 @@ import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSessionState
 import mozilla.components.support.test.any
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyString
@@ -35,18 +31,14 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 class CreateEngineSessionMiddlewareTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val dispatcher = coroutinesTestRule.testDispatcher
-    private val scope = coroutinesTestRule.scope
 
     @Test
-    fun `creates engine session if needed`() = runTestOnMain {
+    fun `creates engine session if needed`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tab = createTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
             initialState = BrowserState(tabs = listOf(tab)),
@@ -54,27 +46,25 @@ class CreateEngineSessionMiddlewareTest {
         )
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
 
-        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id))
+        testScheduler.advanceUntilIdle()
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findTab(tab.id)?.engineState?.engineSession)
 
-        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id))
+        testScheduler.advanceUntilIdle()
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findTab(tab.id)?.engineState?.engineSession)
     }
 
     @Test
-    fun `restores engine session state if available`() = runTestOnMain {
+    fun `restores engine session state if available`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
         val engineSessionState: EngineSessionState = mock()
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tab = createTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
             initialState = BrowserState(tabs = listOf(tab)),
@@ -82,40 +72,38 @@ class CreateEngineSessionMiddlewareTest {
         )
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
 
-        store.dispatch(EngineAction.UpdateEngineSessionStateAction(tab.id, engineSessionState)).joinBlocking()
-        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.UpdateEngineSessionStateAction(tab.id, engineSessionState))
+        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id))
+        testScheduler.advanceUntilIdle()
 
         verify(engineSession).restoreState(engineSessionState)
         Unit
     }
 
     @Test
-    fun `creates no engine session if tab does not exist`() = runTestOnMain {
+    fun `creates no engine session if tab does not exist`() = runTest {
         val engine: Engine = mock()
         `when`(engine.createSession(anyBoolean(), anyString())).thenReturn(mock())
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val store = BrowserStore(
             initialState = BrowserState(tabs = listOf()),
             middleware = listOf(middleware),
         )
 
-        store.dispatch(EngineAction.CreateEngineSessionAction("invalid")).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.CreateEngineSessionAction("invalid"))
+        testScheduler.advanceUntilIdle()
 
         verify(engine, never()).createSession(anyBoolean(), any())
         Unit
     }
 
     @Test
-    fun `creates no engine session if session does not exist`() = runTestOnMain {
+    fun `creates no engine session if session does not exist`() = runTest {
         val engine: Engine = mock()
         `when`(engine.createSession(anyBoolean(), anyString())).thenReturn(mock())
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tab = createTab("https://www.mozilla.org", id = "1")
 
         val store = BrowserStore(
@@ -125,22 +113,21 @@ class CreateEngineSessionMiddlewareTest {
 
         store.dispatch(
             EngineAction.CreateEngineSessionAction("non-existent"),
-        ).joinBlocking()
+        )
 
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(engine, never()).createSession(anyBoolean(), any())
         Unit
     }
 
     @Test
-    fun `dispatches follow-up action after engine session is created`() = runTestOnMain {
+    fun `dispatches follow-up action after engine session is created`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tab = createTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
             initialState = BrowserState(tabs = listOf(tab)),
@@ -149,10 +136,9 @@ class CreateEngineSessionMiddlewareTest {
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
 
         val followupAction = ContentAction.UpdateTitleAction(tab.id, "test")
-        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id, followupAction = followupAction)).joinBlocking()
+        store.dispatch(EngineAction.CreateEngineSessionAction(tab.id, followupAction = followupAction))
 
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findTab(tab.id)?.engineState?.engineSession)
@@ -160,12 +146,12 @@ class CreateEngineSessionMiddlewareTest {
     }
 
     @Test
-    fun `dispatches follow-up action once engine session is created by pending action`() = runTestOnMain {
+    fun `dispatches follow-up action once engine session is created by pending action`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tab = createTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
             initialState = BrowserState(tabs = listOf(tab)),
@@ -179,8 +165,7 @@ class CreateEngineSessionMiddlewareTest {
         store.dispatch(EngineAction.CreateEngineSessionAction(tab.id))
         store.dispatch(EngineAction.CreateEngineSessionAction(tab.id, followupAction = followupAction))
 
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findTab(tab.id)?.engineState?.engineSession)
@@ -188,12 +173,12 @@ class CreateEngineSessionMiddlewareTest {
     }
 
     @Test
-    fun `creating engine session for custom tab`() {
+    fun `creating engine session for custom tab`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val customTab = createCustomTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
             initialState = BrowserState(customTabs = listOf(customTab)),
@@ -202,10 +187,9 @@ class CreateEngineSessionMiddlewareTest {
         assertNull(store.state.findCustomTab(customTab.id)?.engineState?.engineSession)
 
         val followupAction = ContentAction.UpdateTitleAction(customTab.id, "test")
-        store.dispatch(EngineAction.CreateEngineSessionAction(customTab.id, followupAction = followupAction)).joinBlocking()
+        store.dispatch(EngineAction.CreateEngineSessionAction(customTab.id, followupAction = followupAction))
 
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findCustomTab(customTab.id)?.engineState?.engineSession)
@@ -213,12 +197,12 @@ class CreateEngineSessionMiddlewareTest {
     }
 
     @Test
-    fun `creating engine session for custom tab with desktopMode enabled`() {
+    fun `creating engine session for custom tab with desktopMode enabled`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val customTab = createCustomTab("https://www.mozilla.org", id = "1", desktopMode = true)
         val store = BrowserStore(
             initialState = BrowserState(customTabs = listOf(customTab)),
@@ -227,10 +211,9 @@ class CreateEngineSessionMiddlewareTest {
         assertNull(store.state.findCustomTab(customTab.id)?.engineState?.engineSession)
 
         val followupAction = ContentAction.UpdateTitleAction(customTab.id, "test")
-        store.dispatch(EngineAction.CreateEngineSessionAction(customTab.id, followupAction = followupAction)).joinBlocking()
+        store.dispatch(EngineAction.CreateEngineSessionAction(customTab.id, followupAction = followupAction))
 
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         verify(engine, times(1)).createSession(false)
         assertEquals(engineSession, store.state.findCustomTab(customTab.id)?.engineState?.engineSession)
@@ -239,12 +222,12 @@ class CreateEngineSessionMiddlewareTest {
     }
 
     @Test
-    fun `set desktop mode on based on tab's property once engine session is created`() = runTestOnMain {
+    fun `set desktop mode on based on tab's property once engine session is created`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tabs = listOf(
             createTab("https://www.mozilla.org", id = "1", desktopMode = true),
             createTab("https://www.mozilla.com", id = "2", desktopMode = false),
@@ -255,19 +238,18 @@ class CreateEngineSessionMiddlewareTest {
         )
         assertNull(store.state.findTab(tabs[0].id)?.engineState?.engineSession)
 
-        store.dispatch(EngineAction.CreateEngineSessionAction(tabs[0].id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.CreateEngineSessionAction(tabs[0].id))
+        testScheduler.advanceUntilIdle()
         verify(engineSession).toggleDesktopMode(eq(true), eq(false))
     }
 
     @Test
-    fun `set desktop mode off based on tab's property once engine session is created`() = runTestOnMain {
+    fun `set desktop mode off based on tab's property once engine session is created`() = runTest {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         whenever(engine.createSession(anyBoolean(), any())).thenReturn(engineSession)
 
-        val middleware = CreateEngineSessionMiddleware(engine, scope)
+        val middleware = CreateEngineSessionMiddleware(engine, this)
         val tabs = listOf(
             createTab("https://www.mozilla.org", id = "1", desktopMode = true),
             createTab("https://www.mozilla.com", id = "2", desktopMode = false),
@@ -278,9 +260,8 @@ class CreateEngineSessionMiddlewareTest {
         )
         assertNull(store.state.findTab(tabs[0].id)?.engineState?.engineSession)
 
-        store.dispatch(EngineAction.CreateEngineSessionAction(tabs[1].id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(EngineAction.CreateEngineSessionAction(tabs[1].id))
+        testScheduler.advanceUntilIdle()
         verify(engineSession).toggleDesktopMode(eq(false), eq(false))
     }
 }

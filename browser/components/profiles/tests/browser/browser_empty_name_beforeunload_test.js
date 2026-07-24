@@ -5,7 +5,10 @@
 
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
+    set: [
+      ["dom.require_user_interaction_for_beforeunload", false],
+      ["test.wait300msAfterTabSwitch", true],
+    ],
   });
 
   await initGroupDatabase();
@@ -34,17 +37,34 @@ const resetGlean = async () => {
 };
 
 const launchDialog = async tab => {
+  // Wait for the profile card to be displayed before unloading so that
+  // the beforeunload listener is already attached.
+  info("Awaiting profile card initialization");
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    let profileCard =
+      content.document.querySelector("new-profile-card") ||
+      content.document.querySelector("edit-profile-card");
+    let profileCardObject = profileCard.wrappedJSObject;
+
+    await ContentTaskUtils.waitForCondition(
+      () => profileCardObject.initialized,
+      "Waiting for new-profile-card to be initialized"
+    );
+  });
+
   // Note: we manually trigger the dialog, rather than using PromptTestUtils,
   // because we want to assert on the contents of the dialog.
   tab.linkedBrowser.asyncPermitUnload();
+  info("Issued asyncPermitUnload");
+
   let dialogMgr = gBrowser
     .getTabDialogBox(tab.linkedBrowser)
     .getContentDialogManager();
   await BrowserTestUtils.waitForCondition(
-    () => dialogMgr.dialogs.length,
+    () => dialogMgr._dialogs.length,
     "Waiting for the beforeunload dialog to be displayed"
   );
-  let dialog = dialogMgr.dialogs[0];
+  let dialog = dialogMgr._dialogs[0];
   await dialog._dialogReady;
   return dialog;
 };

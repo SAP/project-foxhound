@@ -21,7 +21,7 @@ add_task(async function () {
   await pushPref("devtools.inspector.rule-view.focusNextOnEnter", false);
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
 
   await selectNode("div", inspector);
   const prop1 = getTextProperty(ruleView, 1, { color: "red" });

@@ -8,11 +8,11 @@ browser.jar:
 *  content/browser/preferences/preferences.xhtml
 
    content/browser/preferences/main.js
+   content/browser/preferences/translations.js
    content/browser/preferences/home.js
    content/browser/preferences/search.js
    content/browser/preferences/privacy.js
    content/browser/preferences/containers.js
-   content/browser/preferences/translations.js
    content/browser/preferences/sync.js
    content/browser/preferences/experimental.js
    content/browser/preferences/moreFromMozilla.js
@@ -21,8 +21,31 @@ browser.jar:
    content/browser/preferences/findInPage.js
    content/browser/preferences/more-from-mozilla-qr-code-simple.svg
    content/browser/preferences/more-from-mozilla-qr-code-simple-cn.svg
+   content/browser/preferences/browser-layout-horizontal.svg
+   content/browser/preferences/browser-layout-vertical.svg
    content/browser/preferences/web-appearance-dark.svg
    content/browser/preferences/web-appearance-light.svg
+   content/browser/preferences/etp-toggle-promo.svg
+   content/browser/preferences/etp-advanced-banner.svg
+   content/browser/preferences/spell-check-promo.svg
+   content/browser/preferences/OnDeviceModelManager.mjs
+   content/browser/preferences/config/aiFeatures.mjs                    (config/aiFeatures.mjs)
+   content/browser/preferences/config/block-ai-confirmation-dialog.css  (config/block-ai-confirmation-dialog.css)
+   content/browser/preferences/config/SettingGroupManager.mjs           (config/SettingGroupManager.mjs)
+   content/browser/preferences/widgets/dialog-button.mjs                (widgets/dialog-button/dialog-button.mjs)
+   content/browser/preferences/widgets/placeholder-message.mjs          (widgets/placeholder-message/placeholder-message.mjs)
+   content/browser/preferences/widgets/placeholder-message.css          (widgets/placeholder-message/placeholder-message.css)
+   content/browser/preferences/widgets/nav-notice.mjs                   (widgets/nav-notice/nav-notice.mjs)
+   content/browser/preferences/widgets/nav-notice.css                   (widgets/nav-notice/nav-notice.css)
+   content/browser/preferences/widgets/setting-control.css              (widgets/setting-control/setting-control.css)
    content/browser/preferences/widgets/setting-control.mjs              (widgets/setting-control/setting-control.mjs)
    content/browser/preferences/widgets/setting-group.mjs                (widgets/setting-group/setting-group.mjs)
    content/browser/preferences/widgets/setting-group.css                (widgets/setting-group/setting-group.css)
+   content/browser/preferences/widgets/setting-element.mjs              (widgets/setting-element/setting-element.mjs)
+   content/browser/preferences/widgets/setting-pane.mjs                 (widgets/setting-pane/setting-pane.mjs)
+   content/browser/preferences/widgets/setting-pane.css                 (widgets/setting-pane/setting-pane.css)
+   content/browser/preferences/widgets/security-privacy-card.mjs        (widgets/security-privacy/security-privacy-card/security-privacy-card.mjs)
+   content/browser/preferences/widgets/security-privacy-card.css        (widgets/security-privacy/security-privacy-card/security-privacy-card.css)
+   content/browser/preferences/widgets/sync-device-name.mjs          (widgets/sync-device-name/sync-device-name.mjs)
+   content/browser/preferences/widgets/sync-engines-list.mjs          (widgets/sync-engine-list/sync-engines-list.mjs)
+   content/browser/preferences/widgets/sync-engines-list.css          (widgets/sync-engine-list/sync-engines-list.css)

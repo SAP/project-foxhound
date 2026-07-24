@@ -633,9 +633,6 @@ static void SplitInlineAncestors(nsContainerFrame* aParent,
 
       nsFrameList tail = parent->StealFramesAfter(frame);
 
-      // Reparent views as necessary
-      nsContainerFrame::ReparentFrameViewList(tail, parent, newParent);
-
       // The parent's continuation adopts the siblings after the split.
       MOZ_ASSERT(!newParent->IsBlockFrameOrSubclass(),
                  "blocks should not be IsBidiSplittable");
@@ -1474,7 +1471,7 @@ bool nsBidiPresUtils::ChildListMayRequireBidi(nsIFrame* aFirstChild,
         dom::Text* content = frame->GetContent()->AsText();
         if (content != *aCurrContent) {
           *aCurrContent = content;
-          const nsTextFragment* txt = &content->TextFragment();
+          const dom::CharacterDataBuffer* txt = &content->DataBuffer();
           if (txt->Is2b() &&
               HasRTLChars(Span(txt->Get2b(), txt->GetLength()))) {
             return true;

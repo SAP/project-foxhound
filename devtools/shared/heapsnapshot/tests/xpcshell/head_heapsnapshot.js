@@ -153,7 +153,7 @@ function readHeapSnapshot(filePath) {
  * directory, read it back as a HeapSnapshot instance, and then take a census of
  * the heap snapshot's serialized heap graph with the provided census options.
  *
- * @param {Object|undefined} censusOptions
+ * @param {object | undefined} censusOptions
  *        Options that should be passed through to the takeCensus method. See
  *        js/src/doc/Debugger/Debugger.Memory.md for details.
  *
@@ -161,7 +161,7 @@ function readHeapSnapshot(filePath) {
  *        If a Debugger object is given, only serialize the subgraph covered by
  *        the Debugger's debuggees. If null, serialize the whole heap graph.
  *
- * @param {String} fileName
+ * @param {string} fileName
  *        The file name to save the heap snapshot's core dump file to, within
  *        the current directory.
  *
@@ -228,16 +228,16 @@ function savedFrameReplacer(key, val) {
  * Assert that creating a CensusTreeNode from the given `report` with the
  * specified `breakdown` creates the given `expected` CensusTreeNode.
  *
- * @param {Object} breakdown
+ * @param {object} breakdown
  *        The census breakdown.
  *
- * @param {Object} report
+ * @param {object} report
  *        The census report.
  *
- * @param {Object} expected
+ * @param {object} expected
  *        The expected CensusTreeNode result.
  *
- * @param {Object} options
+ * @param {object} options
  *        The options to pass through to `censusReportToCensusTreeNode`.
  */
 function compareCensusViewData(breakdown, report, expected, options) {
@@ -347,16 +347,16 @@ function assertStructurallyEquivalent(actual, expected, path = "root") {
  * Assert that creating a diff of the `first` and `second` census reports
  * creates the `expected` delta-report.
  *
- * @param {Object} breakdown
+ * @param {object} breakdown
  *        The census breakdown.
  *
- * @param {Object} first
+ * @param {object} first
  *        The first census report.
  *
- * @param {Object} second
+ * @param {object} second
  *        The second census report.
  *
- * @param {Object} expected
+ * @param {object} expected
  *        The expected delta-report.
  */
 function assertDiff(breakdown, first, second, expected) {
@@ -376,10 +376,10 @@ function assertDiff(breakdown, first, second, expected) {
  * Assert that creating a label and getting a shallow size from the given node
  * description with the specified breakdown is as expected.
  *
- * @param {Object} breakdown
- * @param {Object} givenDescription
- * @param {Number} expectedShallowSize
- * @param {Object} expectedLabel
+ * @param {object} breakdown
+ * @param {object} givenDescription
+ * @param {number} expectedShallowSize
+ * @param {object} expectedLabel
  */
 function assertLabelAndShallowSize(
   breakdown,
@@ -414,7 +414,7 @@ let TEST_NODE_ID_COUNTER = 0;
  * Create a mock DominatorTreeNode for testing, with sane defaults. Override any
  * property by providing it on `opts`. Optionally pass child nodes as well.
  *
- * @param {Object} opts
+ * @param {object} opts
  * @param {Array<DominatorTreeNode>?} children
  *
  * @returns {DominatorTreeNode}

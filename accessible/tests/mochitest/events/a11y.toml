@@ -8,8 +8,6 @@ support-files = [
   "!/image/test/mochitest/animated-gif-finalframe.gif",
   "!/image/test/mochitest/animated-gif.gif"]
 
-["test_announcement.html"]
-
 ["test_aria_alert.html"]
 
 ["test_aria_menu.html"]
@@ -43,11 +41,10 @@ support-files = [
 ["test_focus_autocomplete.xhtml"]
 # Disabled on Linux and Windows due to frequent failures - bug 695019, bug 890795
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
 ]
 
 ["test_focus_canvas.html"]
@@ -65,6 +62,9 @@ skip-if = [
 ["test_focus_listcontrols.xhtml"]
 
 ["test_focus_menu.xhtml"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1808737
+]
 
 ["test_focus_name.html"]
 
@@ -95,7 +95,9 @@ skip-if = [
 ["test_scroll_caret.xhtml"]
 
 ["test_selection.html"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"]
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
 
 ["test_selection.xhtml"]
 
@@ -116,4 +118,6 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"]
 ["test_tree.xhtml"]
 
 ["test_valuechange.html"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"]
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]

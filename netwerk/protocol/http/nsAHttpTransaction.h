@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAHttpTransaction_h__
-#define nsAHttpTransaction_h__
+#ifndef nsAHttpTransaction_h_
+#define nsAHttpTransaction_h_
 
 #include "nsTArray.h"
 #include "nsWeakReference.h"
@@ -234,6 +234,9 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual bool IsForWebTransport() { return false; }
   virtual bool IsResettingForTunnelConn() { return false; }
   virtual void SetResettingForTunnelConn(bool aValue) {}
+
+  virtual void InvokeCallback() {}
+  virtual bool IsForFallback() { return false; }
 };
 
 #define NS_DECL_NSAHTTPTRANSACTION                                             \
@@ -307,4 +310,4 @@ class nsAHttpSegmentWriter {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsAHttpTransaction_h__
+#endif  // nsAHttpTransaction_h_

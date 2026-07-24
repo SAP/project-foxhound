@@ -7,7 +7,6 @@
 #define DOM_MEDIA_PLATFORMS_MEDIACODECSSUPPORT_H_
 #include <array>
 
-#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/StaticMutex.h"

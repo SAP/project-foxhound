@@ -43,11 +43,12 @@ function waitForCondition(condition, nextTest, errorMsg) {
 /**
  * An utility function to write some text in the search input box
  * in a content page.
- * @param {Object} browser
+ *
+ * @param {object} browser
  *        The browser that contains the content.
- * @param {String} text
+ * @param {string} text
  *        The string to write in the search field.
- * @param {String} fieldName
+ * @param {string} fieldName
  *        The name of the field to write to.
  */
 let typeInSearchField = async function (browser, text, fieldName) {
@@ -169,7 +170,7 @@ function clickSecondaryAction(actionIndex) {
     // secondary action (index 0) is the button shown directly in the panel.
     let actionMenuItem =
       popupNotification.querySelectorAll("menuitem")[actionIndex - 1];
-    await EventUtils.synthesizeMouseAtCenter(actionMenuItem, {});
+    popupNotification.menupopup.activateItem(actionMenuItem);
     await removePromise;
   })();
 }
@@ -320,8 +321,8 @@ async function initPageActionsTest() {
 
   // Make the main button visible. It's not unless the window is narrow. This
   // test isn't concerned with that behavior. We have other tests for that.
-  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  BrowserPageActions.mainButtonNode.style.display = "flex";
   registerCleanupFunction(() => {
-    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+    BrowserPageActions.mainButtonNode.style.removeProperty("display");
   });
 }

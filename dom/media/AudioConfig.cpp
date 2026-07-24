@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioConfig.h"
-#include "nsString.h"
+
 #include <array>
+
+#include "nsString.h"
 
 namespace mozilla {
 

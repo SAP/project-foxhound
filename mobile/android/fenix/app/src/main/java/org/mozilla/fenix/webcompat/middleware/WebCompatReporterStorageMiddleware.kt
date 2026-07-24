@@ -6,7 +6,6 @@ package org.mozilla.fenix.webcompat.middleware
 
 import androidx.annotation.VisibleForTesting
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.WebCompatAction
@@ -25,14 +24,14 @@ class WebCompatReporterStorageMiddleware(
 ) : Middleware<WebCompatReporterState, WebCompatReporterAction> {
 
     override fun invoke(
-        context: MiddlewareContext<WebCompatReporterState, WebCompatReporterAction>,
+        store: Store<WebCompatReporterState, WebCompatReporterAction>,
         next: (WebCompatReporterAction) -> Unit,
         action: WebCompatReporterAction,
     ) {
         next(action)
 
         when (action) {
-            is WebCompatReporterStorageAction -> processStorageAction(store = context.store, action = action)
+            is WebCompatReporterStorageAction -> processStorageAction(store = store, action = action)
             else -> {} // no-op
         }
     }
@@ -53,7 +52,7 @@ class WebCompatReporterStorageMiddleware(
                 }
             }
             WebCompatReporterAction.BackPressed,
-            WebCompatReporterAction.SendMoreInfoClicked,
+            WebCompatReporterAction.AddMoreInfoClicked,
             WebCompatReporterAction.LearnMoreClicked,
             -> appStore.dispatch(
                 WebCompatAction.WebCompatStateUpdated(
@@ -71,6 +70,7 @@ internal fun WebCompatState.toReporterState() = WebCompatReporterState(
     enteredUrl = enteredUrl,
     reason = reason?.let { WebCompatReporterState.BrokenSiteReason.valueOf(it) },
     problemDescription = problemDescription,
+    includeEtpBlockedUrls = includeEtpBlockedUrls,
 )
 
 @VisibleForTesting
@@ -79,4 +79,5 @@ internal fun WebCompatReporterState.toPersistedState() = WebCompatState(
     enteredUrl = enteredUrl.ifEmpty { tabUrl }, // do not save the URL is the text field is empty
     reason = reason?.name,
     problemDescription = problemDescription,
+    includeEtpBlockedUrls = includeEtpBlockedUrls,
 )

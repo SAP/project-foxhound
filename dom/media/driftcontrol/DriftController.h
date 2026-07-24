@@ -6,13 +6,11 @@
 #ifndef DOM_MEDIA_DRIFTCONTROL_DRIFTCONTROLLER_H_
 #define DOM_MEDIA_DRIFTCONTROL_DRIFTCONTROLLER_H_
 
-#include "TimeUnits.h"
-#include "mozilla/RollingMean.h"
-
-#include <algorithm>
 #include <cstdint>
 
 #include "MediaSegment.h"
+#include "TimeUnits.h"
+#include "mozilla/RollingMean.h"
 
 namespace mozilla {
 

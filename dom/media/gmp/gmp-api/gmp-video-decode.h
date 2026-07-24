@@ -34,11 +34,12 @@
 #ifndef GMP_VIDEO_DECODE_h_
 #define GMP_VIDEO_DECODE_h_
 
-#include "gmp-errors.h"
-#include "gmp-video-frame-i420.h"
-#include "gmp-video-frame-encoded.h"
-#include "gmp-video-codec.h"
 #include <stdint.h>
+
+#include "gmp-errors.h"
+#include "gmp-video-codec.h"
+#include "gmp-video-frame-encoded.h"
+#include "gmp-video-frame-i420.h"
 
 // ALL METHODS MUST BE CALLED ON THE MAIN THREAD
 class GMPVideoDecoderCallback {

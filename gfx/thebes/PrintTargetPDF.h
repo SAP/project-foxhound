@@ -18,7 +18,8 @@ namespace gfx {
  */
 class PrintTargetPDF final : public PrintTarget {
  public:
-  static already_AddRefed<PrintTargetPDF> CreateOrNull(
+  // NOTE: Might create a PrintTargetSkPDF.
+  static already_AddRefed<PrintTarget> CreateOrNull(
       nsIOutputStream* aStream, const IntSize& aSizeInPoints);
 
   nsresult BeginPage(const IntSize& aSizeInPoints) override;

@@ -1,0 +1,40 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Wed, 8 Oct 2025 17:49:00 +0000
+Subject: Bug 1980501 - enable c++20 builds in libwebrtc. r?ng!
+
+Differential Revision: https://phabricator.services.mozilla.com/D267994
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/43de54a6e52daf0a06956ae01951ef1e29d46e82
+---
+ BUILD.gn | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/BUILD.gn b/BUILD.gn
+index 1189638c1a..9e8e1260fe 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -316,6 +316,16 @@ config("common_config") {
+   cflags_objc = []
+   defines = []
+ 
++  # We should be able to remove this after c++20 is enabled
++  # across the Mozilla tree.
++  if (build_with_mozilla) {
++    if (is_win) {
++      cflags_cc += [ "-std:c++20" ]
++    } else {
++      cflags_cc += [ "-std=gnu++20" ]
++    }
++  }
++
+   if (rtc_enable_protobuf) {
+     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
+   } else {
+@@ -421,7 +431,7 @@ config("common_config") {
+         # "-Wnested-externs",  (C/Obj-C only)
+       ]
+       cflags_objc += [ "-Wstrict-prototypes" ]
+-      cflags_cc = [
++      cflags_cc += [
+         "-Wnon-virtual-dtor",
+ 
+         # This is enabled for clang; enable for gcc as well.

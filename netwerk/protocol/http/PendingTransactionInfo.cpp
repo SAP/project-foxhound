@@ -120,7 +120,7 @@ bool PendingTransactionInfo::TryClaimingActiveConn(HttpConnectionBase* conn) {
     nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
     conn->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
     if (tlsSocketControl) {
-      Unused << tlsSocketControl->Claim();
+      (void)tlsSocketControl->Claim();
     }
     return true;
   }

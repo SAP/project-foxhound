@@ -31,6 +31,8 @@ policy-AutoLaunchProtocolsFromOrigins = Define a list of external protocols that
 
 policy-BackgroundAppUpdate2 = Enable or disable the background updater.
 
+policy-Backup = Disable backup or restore of profile data.
+
 policy-BlockAboutAddons = Block access to the Add-ons Manager (about:addons).
 
 policy-BlockAboutConfig = Block access to the about:config page.
@@ -92,6 +94,8 @@ policy-DisableProfileImport = Disable the menu command to Import data from anoth
 
 policy-DisableProfileRefresh = Disable the Refresh { -brand-short-name } button in the about:support page.
 
+policy-DisableRemoteImprovements = Prevent { -brand-short-name } from applying performance, stability, and feature changes between updates.
+
 policy-DisableSafeMode = Disable the feature to restart in Safe Mode. Note: the Shift key to enter Safe Mode can only be disabled on Windows using Group Policy.
 
 policy-DisableSecurityBypass = Prevent the user from bypassing certain security warnings.
@@ -135,6 +139,8 @@ policy-FirefoxHome2 = Configure { -firefox-home-brand-name }.
 
 policy-FirefoxSuggest = Configure { -firefox-suggest-brand-name }.
 
+policy-GenerativeAI = Configure generative AI features.
+
 policy-GoToIntranetSiteForSingleWordEntryInAddressBar = Force direct intranet site navigation instead of searching when typing single word entries in the address bar.
 
 policy-Handlers = Configure default application handlers.
@@ -161,6 +167,8 @@ policy-LegacySameSiteCookieBehaviorEnabledForDomainList = Revert to legacy SameS
 ##
 
 policy-LocalFileLinks = Allow specific websites to link to local files.
+
+policy-LocalNetworkAccess = Enable or disable local network access checks.
 
 policy-ManagedBookmarks = Configures a list of bookmarks managed by an administrator that cannot be changed by the user.
 
@@ -199,7 +207,7 @@ policy-Permissions2 = Configure permissions for camera, microphone, location, no
 
 policy-PictureInPicture = Enable or disable Picture-in-Picture.
 
-policy-PopupBlocking = Allow certain websites to display popups by default.
+policy-PopupBlocking2 = Allow certain websites to display popups and be redirected by third-party frames.
 
 policy-Preferences = Set and lock the value for a subset of preferences.
 
@@ -240,6 +248,8 @@ policy-TranslateEnabled = Enable or disable webpage translation.
 policy-UserMessaging = Don’t show certain messages to the user.
 
 policy-UseSystemPrintDialog = Print using the system print dialog.
+
+policy-VisualSearchEnabled = Enable or disable visual search.
 
 # “format” refers to the format used for the value of this policy.
 policy-WebsiteFilter = Block websites from being visited. See documentation for more details on the format.

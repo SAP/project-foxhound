@@ -11,7 +11,6 @@
 #include "nsTArray.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Attributes.h"
 #include "nsThreadUtils.h"
 
 #include "SQLiteMutex.h"

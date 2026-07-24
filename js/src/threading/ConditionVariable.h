@@ -10,7 +10,6 @@
 #include "mozilla/PlatformConditionVariable.h"
 #include "mozilla/TimeStamp.h"
 
-#include <stdint.h>
 #include <utility>
 #if !defined(XP_WIN) && !defined(__wasi__)
 #  include <pthread.h>

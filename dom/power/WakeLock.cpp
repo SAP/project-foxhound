@@ -5,14 +5,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WakeLock.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Event.h"  // for Event
+
 #include "mozilla/Hal.h"
 #include "mozilla/HalWakeLock.h"
-#include "nsError.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Document.h"
-#include "nsPIDOMWindow.h"
+#include "mozilla/dom/Event.h"  // for Event
+#include "nsError.h"
 #include "nsIPropertyBag2.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla::hal;
 

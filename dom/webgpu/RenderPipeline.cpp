@@ -6,7 +6,6 @@
 #include "RenderPipeline.h"
 
 #include "Device.h"
-#include "ipc/WebGPUChild.h"
 #include "mozilla/dom/WebGPUBinding.h"
 
 namespace mozilla::webgpu {
@@ -14,52 +13,19 @@ namespace mozilla::webgpu {
 GPU_IMPL_CYCLE_COLLECTION(RenderPipeline, mParent)
 GPU_IMPL_JS_WRAP(RenderPipeline)
 
-RenderPipeline::RenderPipeline(Device* const aParent, RawId aId,
-                               RawId aImplicitPipelineLayoutId,
-                               nsTArray<RawId>&& aImplicitBindGroupLayoutIds)
-    : ChildOf(aParent),
-      mImplicitPipelineLayoutId(aImplicitPipelineLayoutId),
-      mImplicitBindGroupLayoutIds(std::move(aImplicitBindGroupLayoutIds)),
-      mId(aId) {
-  MOZ_RELEASE_ASSERT(aId);
-}
+RenderPipeline::RenderPipeline(Device* const aParent, RawId aId)
+    : ObjectBase(aParent->GetChild(), aId,
+                 ffi::wgpu_client_drop_render_pipeline),
+      ChildOf(aParent) {}
 
-RenderPipeline::~RenderPipeline() { Cleanup(); }
-
-void RenderPipeline::Cleanup() {
-  if (!mValid) {
-    return;
-  }
-  mValid = false;
-
-  auto bridge = mParent->GetBridge();
-  if (!bridge) {
-    return;
-  }
-
-  ffi::wgpu_client_drop_render_pipeline(bridge->GetClient(), mId,
-                                        mImplicitPipelineLayoutId,
-                                        mImplicitBindGroupLayoutIds.Elements(),
-                                        mImplicitBindGroupLayoutIds.Length());
-
-  if (mImplicitPipelineLayoutId) {
-    wgpu_client_free_pipeline_layout_id(bridge->GetClient(),
-                                        mImplicitPipelineLayoutId);
-  }
-
-  for (const auto& id : mImplicitBindGroupLayoutIds) {
-    wgpu_client_free_bind_group_layout_id(bridge->GetClient(), id);
-  }
-}
+RenderPipeline::~RenderPipeline() = default;
 
 already_AddRefed<BindGroupLayout> RenderPipeline::GetBindGroupLayout(
     uint32_t aIndex) const {
-  auto bridge = mParent->GetBridge();
-
   const RawId bglId = ffi::wgpu_client_render_pipeline_get_bind_group_layout(
-      bridge->GetClient(), mParent->GetId(), mId, aIndex);
+      GetClient(), mParent->GetId(), GetId(), aIndex);
 
-  RefPtr<BindGroupLayout> object = new BindGroupLayout(mParent, bglId, false);
+  RefPtr<BindGroupLayout> object = new BindGroupLayout(mParent, bglId);
   return object.forget();
 }
 

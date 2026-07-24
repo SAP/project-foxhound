@@ -18,32 +18,32 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Variant.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/HTMLInputElementBinding.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/SingleLineTextInputTypes.h"
-#include "mozilla/dom/NumericInputTypes.h"
-#include "mozilla/dom/CheckableInputTypes.h"
 #include "mozilla/dom/ButtonInputTypes.h"
-#include "mozilla/dom/DateTimeInputTypes.h"
+#include "mozilla/dom/CheckableInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
 #include "mozilla/dom/ConstraintValidation.h"
+#include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/FileInputType.h"
+#include "mozilla/dom/HTMLInputElementBinding.h"
 #include "mozilla/dom/HiddenInputType.h"
+#include "mozilla/dom/NumericInputTypes.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RadioGroupContainer.h"
-#include "nsGenericHTMLElement.h"
-#include "nsImageLoadingContent.h"
+#include "mozilla/dom/SingleLineTextInputTypes.h"
 #include "nsCOMPtr.h"
-#include "nsIFilePicker.h"
-#include "nsIContentPrefService2.h"
 #include "nsContentUtils.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIContentPrefService2.h"
+#include "nsIFilePicker.h"
+#include "nsImageLoadingContent.h"
 
 class nsIEditor;
-class nsIRadioVisitor;
 
 namespace mozilla {
 
 class EventChainPostVisitor;
 class EventChainPreVisitor;
+enum class StyleColorSpace : uint8_t;
 
 namespace dom {
 
@@ -120,8 +120,8 @@ class HTMLInputElement final : public TextControlElement,
 
  public:
   using ConstraintValidation::GetValidationMessage;
-  using nsGenericHTMLFormControlElementWithState::GetForm;
   using nsGenericHTMLFormControlElementWithState::GetFormAction;
+  using nsGenericHTMLFormControlElementWithState::GetFormForBindings;
   using ValueSetterOption = TextControlState::ValueSetterOption;
   using ValueSetterOptions = TextControlState::ValueSetterOptions;
 
@@ -184,7 +184,7 @@ class HTMLInputElement final : public TextControlElement,
   void GetLastInteractiveValue(nsAString&);
 
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
@@ -298,6 +298,7 @@ class HTMLInputElement final : public TextControlElement,
   void AddToRadioGroup();
   void RemoveFromRadioGroup();
   void DisconnectRadioGroupContainer();
+  void UpdateRadioGroupState();
 
   /**
    * Helper function returning the currently selected button in the radio group.
@@ -454,6 +455,11 @@ class HTMLInputElement final : public TextControlElement,
     SetHTMLAttr(nsGkAtoms::accept, aValue, aRv);
   }
 
+  bool Alpha() const;
+  void SetAlpha(bool aValue, ErrorResult& aRv) {
+    SetHTMLBoolAttr(nsGkAtoms::alpha, aValue, aRv);
+  }
+
   void GetAlt(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::alt, aValue); }
   void SetAlt(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::alt, aValue, aRv);
@@ -479,6 +485,12 @@ class HTMLInputElement final : public TextControlElement,
 
   bool Checked() const { return mChecked; }
   void SetChecked(bool aChecked);
+
+  void GetColorSpace(nsAString& aValue) const;
+  StyleColorSpace GetColorSpaceEnum() const;
+  void SetColorSpace(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::colorspace, aValue, aRv);
+  }
 
   bool IsRadioOrCheckbox() const {
     return mType == FormControlType::InputCheckbox ||
@@ -534,7 +546,8 @@ class HTMLInputElement final : public TextControlElement,
   bool IsDraggingRange() const { return mIsDraggingRange; }
   void SetIndeterminate(bool aValue);
 
-  HTMLDataListElement* GetList() const;
+  Element* GetListForBindings() const;
+  HTMLDataListElement* GetListInternal() const;
 
   void GetMax(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::max, aValue); }
   void SetMax(const nsAString& aValue, ErrorResult& aRv) {
@@ -695,7 +708,8 @@ class HTMLInputElement final : public TextControlElement,
   // <input> element.
   bool StepsInputValue(const WidgetKeyboardEvent&) const;
 
-  already_AddRefed<nsINodeList> GetLabels();
+  already_AddRefed<nsINodeList> GetLabelsForBindings();
+  already_AddRefed<nsINodeList> GetLabelsInternal();
 
   MOZ_CAN_RUN_SCRIPT void Select();
 
@@ -723,7 +737,7 @@ class HTMLInputElement final : public TextControlElement,
                                        SelectionMode aSelectMode,
                                        ErrorResult& aRv);
 
-  void ShowPicker(ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void ShowPicker(ErrorResult& aRv);
 
   bool WebkitDirectoryAttr() const {
     return HasAttr(nsGkAtoms::webkitdirectory);
@@ -781,13 +795,19 @@ class HTMLInputElement final : public TextControlElement,
   Element* GetDateTimeBoxElement();
 
   /*
-   * The following functions are called from datetime input box XBL to control
+   * The following functions are called from the datetimebox element to control
    * and update the picker.
    */
   void OpenDateTimePicker(const DateTimeValue& aInitialValue);
-  void UpdateDateTimePicker(const DateTimeValue& aValue);
   void CloseDateTimePicker();
-  void SetDateTimePickerState(bool aIsOpen);
+
+  /**
+   * Sets open state for the input element, depending on whether the picker is
+   * open or closed.
+   */
+  void SetOpenState(bool aIsOpen);
+
+  void OpenColorPicker();
 
   /*
    * Called from datetime input box binding when inner text fields are focused
@@ -809,6 +829,21 @@ class HTMLInputElement final : public TextControlElement,
   double GetStepBaseAsDouble() { return GetStepBase().toDouble(); }
   double GetMinimumAsDouble() { return GetMinimum().toDouble(); }
   double GetMaximumAsDouble() { return GetMaximum().toDouble(); }
+
+  /**
+   * Return the current value as InputPickerColor.
+   */
+  void GetColor(InputPickerColor& aValue);
+
+  /**
+   * Update color value when alpha or colorspace is changed.
+   */
+  void UpdateColor();
+
+  /**
+   * Converts the InputPickerColor into a string and set it as user input.
+   */
+  void SetUserInputColor(const InputPickerColor& aValue);
 
   void StartNumberControlSpinnerSpin();
   enum SpinnerStopState { eAllowDispatchingEvents, eDisallowDispatchingEvents };
@@ -1002,15 +1037,10 @@ class HTMLInputElement final : public TextControlElement,
 
   /**
    * Visit the group of radio buttons this radio belongs to
-   * @param aVisitor the visitor to visit with
-   */
-  nsresult VisitGroup(nsIRadioVisitor* aVisitor);
-
-  /**
-   * Visit the group of radio buttons this radio belongs to
    * @param aCallback the callback function to visit the node
    */
-  void VisitGroup(const RadioGroupContainer::VisitCallback& aCallback);
+  template <typename VisitCallback>
+  void VisitGroup(VisitCallback&& aCallback, bool aSkipThis = true);
 
   /**
    * Do all the work that |SetChecked| does (radio button handling, etc.), but
@@ -1018,13 +1048,6 @@ class HTMLInputElement final : public TextControlElement,
    */
   void DoSetChecked(bool aValue, bool aNotify, bool aSetValueChanged,
                     bool aUpdateOtherElement = true);
-
-  /**
-   * Do all the work that |SetCheckedChanged| does (radio button handling,
-   * etc.), but take an |aNotify| parameter that lets it avoid flushing content
-   * when it can.
-   */
-  void DoSetCheckedChanged(bool aCheckedChanged, bool aNotify);
 
   /**
    * Actually set checked and notify the frame of the change.
@@ -1148,14 +1171,6 @@ class HTMLInputElement final : public TextControlElement,
    * should be added into, if one exists.
    */
   RadioGroupContainer* FindTreeRadioGroupContainer() const;
-
-  /**
-   * Parse a color string of the form #XXXXXX where X should be hexa characters
-   * @param the string to be parsed.
-   * @return whether the string is a valid simple color.
-   * Note : this function does not consider the empty string as valid.
-   */
-  bool IsValidSimpleColor(const nsAString& aValue) const;
 
   /**
    * Parse a week string of the form yyyy-Www
@@ -1358,11 +1373,6 @@ class HTMLInputElement final : public TextControlElement,
    * @param aStep The value used to be multiplied against the step value.
    */
   void ApplyStep(int32_t aStep, ErrorResult&);
-
-  /**
-   * Returns if the current type is an experimental mobile type.
-   */
-  static bool IsExperimentalMobileType(FormControlType);
 
   /*
    * Returns if the current type is one of the date/time input types: date,

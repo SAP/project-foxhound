@@ -7,7 +7,6 @@
 #define loader_AutoMemMap_h
 
 #include "mozilla/FileUtils.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Result.h"
 

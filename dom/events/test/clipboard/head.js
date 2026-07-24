@@ -8,6 +8,53 @@
 const kPasteMenuPopupId = "clipboardReadPasteMenuPopup";
 const kPasteMenuItemId = "clipboardReadPasteMenuItem";
 
+const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
+  "chrome://mochitests/content",
+  "https://example.com"
+);
+
+const kPasteCommandTests = [
+  { description: "Test paste command without editing" },
+  {
+    description: "Test paste command on <textarea>",
+    setupFn: aBrowser => {
+      return SpecialPowers.spawn(aBrowser, [], () => {
+        const textarea = content.document.createElement("textarea");
+        content.document.body.appendChild(textarea);
+        textarea.focus();
+      });
+    },
+    additionalCheckFunc: (aBrowser, aClipboardData) => {
+      return SpecialPowers.spawn(aBrowser, [aClipboardData], aClipboardData => {
+        const textarea = content.document.querySelector("textarea");
+        is(textarea.value, aClipboardData, "check <textarea> value");
+      });
+    },
+  },
+  {
+    description: "Test paste command on <div contenteditable=true>",
+    setupFn: aBrowser => {
+      return SpecialPowers.spawn(aBrowser, [], () => {
+        const div = content.document.createElement("div");
+        div.setAttribute("contenteditable", "true");
+        content.document.body.appendChild(div);
+        div.focus();
+      });
+    },
+    additionalCheckFunc: (aBrowser, aClipboardData) => {
+      return SpecialPowers.spawn(aBrowser, [aClipboardData], aClipboardData => {
+        const div = content.document.querySelector("div");
+        is(div.innerText, aClipboardData, "check contenteditable innerText");
+      });
+    },
+  },
+];
+
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js",
+  this
+);
+
 function promiseWritingRandomTextToClipboard() {
   const clipboardText = "X" + Math.random();
   return navigator.clipboard.writeText(clipboardText).then(() => {
@@ -40,10 +87,12 @@ function promisePasteButtonIsShown() {
     ok(true, "Witnessed 'popupshown' event for 'Paste' button.");
 
     const pasteButton = document.getElementById(kPasteMenuItemId);
-    ok(
-      pasteButton.disabled,
-      "Paste button should be shown with disabled by default"
-    );
+    if (Services.prefs.getIntPref("security.dialog_enable_delay") > 0) {
+      ok(
+        pasteButton.disabled,
+        "Paste button should be shown with disabled by default"
+      );
+    }
     await BrowserTestUtils.waitForMutationCondition(
       pasteButton,
       { attributeFilter: ["disabled"] },
@@ -131,8 +180,15 @@ async function promiseDismissPasteButton() {
 
 // @param aBrowser browser object of the content tab.
 // @param aContentElementId the ID of the element to be clicked.
-function promiseClickContentElement(aBrowser, aContentElementId) {
-  return SpecialPowers.spawn(
+async function promiseClickContentElement(aBrowser, aContentElementId) {
+  // We intentionally turn off this a11y check, because the following click
+  // is send on an arbitrary web content that is not expected to be tested
+  // by itself with the browser mochitests, therefore this rule check shall
+  // be ignored by a11y-checks suite.
+  AccessibilityUtils.setEnv({
+    mustHaveAccessibleRule: false,
+  });
+  let result = await SpecialPowers.spawn(
     aBrowser,
     [aContentElementId],
     async _contentElementId => {
@@ -152,6 +208,8 @@ function promiseClickContentElement(aBrowser, aContentElementId) {
       return promise;
     }
   );
+  AccessibilityUtils.resetEnv();
+  return result;
 }
 
 // @param aBrowser browser object of the content tab.

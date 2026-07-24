@@ -44,6 +44,7 @@ function Test() {
 }
 
 SimpleTest.waitForExplicitFinish();
+SimpleTest.requestLongerTimeout(2);
 Test().then(function() {
   SimpleTest.finish();
 });

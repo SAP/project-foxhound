@@ -10,14 +10,13 @@
 
 #include "ChildIterator.h"
 #include "GeckoProfiler.h"
+#include "mozilla/AbsoluteContainingBlock.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresState.h"
 #include "mozilla/ViewportFrame.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "nsAbsoluteContainingBlock.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsError.h"
@@ -64,7 +63,7 @@ void nsFrameManager::AppendFrames(nsContainerFrame* aParentFrame,
                                   FrameChildListID aListID,
                                   nsFrameList&& aFrameList) {
   if (aParentFrame->IsAbsoluteContainer() &&
-      aListID == aParentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     aParentFrame->GetAbsoluteContainingBlock()->AppendFrames(
         aParentFrame, aListID, std::move(aFrameList));
   } else {
@@ -85,7 +84,7 @@ void nsFrameManager::InsertFrames(nsContainerFrame* aParentFrame,
       "aPrevFrame must be the last continuation in its chain!");
 
   if (aParentFrame->IsAbsoluteContainer() &&
-      aListID == aParentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     aParentFrame->GetAbsoluteContainingBlock()->InsertFrames(
         aParentFrame, aListID, aPrevFrame, std::move(aFrameList));
   } else {
@@ -115,7 +114,7 @@ void nsFrameManager::RemoveFrame(DestroyContext& aContext,
                "Must call RemoveFrame on placeholder for out-of-flows.");
   nsContainerFrame* parentFrame = aOldFrame->GetParent();
   if (parentFrame->IsAbsoluteContainer() &&
-      aListID == parentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     parentFrame->GetAbsoluteContainingBlock()->RemoveFrame(aContext, aListID,
                                                            aOldFrame);
   } else {

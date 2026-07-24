@@ -4,92 +4,121 @@
 
 @import "chrome://global/skin/global.css";
 
-:host {
-  --status-card-connected-background-color: var(--color-violet-90);
+hr {
+  border-style: solid none none none;
+  border-color: var(--panel-separator-color);
+  margin: var(--panel-separator-margin);
 }
 
 #ipprotection-content-wrapper {
+  --panel-subview-body-padding-inline: 0;
   display: flex;
   flex-direction: column;
 }
 
-#status-card {
-  padding: var(--space-large);
-  margin: var(--space-large);
-  background-color: initial;
-  color: initial;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-medium);
+.vpn-top-content {
+  margin-block-start: var(--space-small);
+}
 
-  &.is-enabled {
-    background-color: var(--status-card-connected-background-color);
-    color: #fff;
+.vpn-bottom-content {
+  display: flex;
+  flex-direction: column;
+  margin-block-start: var(--space-small);
+  moz-button {
+    --button-alignment: start;
+    --button-border-radius: var(--border-radius-small);
+    --button-font-weight: var(--font-weight);
+    --button-icon-fill: var(--icon-color);
+    --button-padding: var(--space-small) var(--space-medium);
+
+    width: 100%;
   }
 }
 
-#connection-wrapper {
-  display: flex;
-  align-items: center;
-  gap: var(--space-large);
+.vpn-title {
+  /* Intentionally using a larger font size for clearer visual hierarchy
+ * stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.4em;
+  font-weight: var(--font-weight-semibold);
+  padding-top: var(--space-large);
+  padding-bottom: var(--space-xsmall);
+  margin-block: 0;
 }
 
-/* TODO: add animations for the icon (Bug 1976388) */
-#connection-icon {
-  width: 48px;
-  height: 48px;
-  background-image: url("chrome://browser/content/ipprotection/assets/ipprotection-connection-off.svg");
-  background-repeat: no-repeat;
-  background-size: cover;
-  -moz-context-properties: fill;
-  fill: currentColor;
-
-  &.is-enabled {
-    background-image: url("chrome://browser/content/ipprotection/assets/ipprotection-connection-on.svg");
-  }
-}
-
-#connection-details-and-toggle {
-  display: flex;
-  align-items: center;
-  flex-grow: 1;
-  justify-content: space-between;
-}
-
-#connection-title,
-#connection-time {
+.vpn-subtitle {
   margin: 0;
 }
 
-#connection-title {
+.vpn-description {
+  /* Intentionally using a larger font size for clearer visual hierarchy
+/* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.23em;
+  color: var(--text-color-deemphasized);
+}
+
+.vpn-description ul {
+  padding-inline-start: var(--space-xxlarge);
+}
+
+.vpn-description li {
+  padding-block-start: var(--space-xsmall);
+}
+
+.vpn-description li:last-of-type {
+  padding-block-end: var(--space-small);
+}
+
+.vpn-button {
+  /* Intentionally using a larger font size for clearer visual hierarchy
+/* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.2em;
+  display: block;
+  padding-top: var(--space-medium);
+}
+
+#unauthenticated-vpn-content {
+  display: flex;
+  flex-direction: column;
+  padding-block-start: 0;
+  padding-block-end: var(--space-small);
+  padding-inline-start: var(--space-large);
+  padding-inline-end: var(--space-large);
+}
+
+#unauthenticated-vpn-message {
+  margin: 0;
+}
+
+ipprotection-message-bar.vpn-top-content {
+  margin-block-start: 0;
   margin-block-end: var(--space-small);
 }
 
-#upgrade-vpn-content {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-small) var(--space-large);
-}
-
-#upgrade-vpn-title {
-  margin: 0;
-}
-
-#upgrade-vpn-button {
-  align-self: end;
-}
-
-#signed-out-vpn-content {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-medium) var(--space-large) var(--space-small);
-}
-
-#sign-in-vpn {
-  align-self: end;
-}
-
 @media (prefers-color-scheme: dark) {
-  #signed-out-vpn-img {
-    content: url("chrome://browser/content/ipprotection/assets/ipprotection-darkmode.svg");
+  #unauthenticated-vpn-img {
+    content: url("chrome://browser/content/ipprotection/assets/vpn-panel-get-started-dark.svg");
   }
+}
+
+#site-exclusion-control {
+  display: flex;
+  justify-content: space-between;
+
+  padding-inline: var(--space-medium);
+  padding-block: var(--space-medium);
+
+  &:has(+ .vpn-bottom-content) {
+    border-bottom: var(--border-width) solid var(--border-color-card);
+  }
+}
+
+#site-exclusion-icon {
+  -moz-context-properties: fill;
+  fill: var(--icon-color);
+}
+
+#site-exclusion-label-container {
+  display: flex;
+  flex-grow: 1;
+  gap: var(--space-small);
 }

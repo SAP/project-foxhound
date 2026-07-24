@@ -65,12 +65,13 @@ add_task(async function () {
 
     // scroll the checkbox into the viewport and click checkbox
     checkbox.scrollIntoView();
+    let update = waitForSettingControlChange(checkbox.control);
     EventUtils.synthesizeMouseAtCenter(
-      checkbox,
+      checkbox.inputEl,
       {},
       gBrowser.selectedBrowser.contentWindow
     );
-
+    await update;
     // check that both settings are now turned on or off
     is(
       Services.prefs.getBoolPref("browser.safebrowsing.phishing.enabled"),
@@ -87,12 +88,12 @@ add_task(async function () {
     checked = checkbox.checked;
     if (blockDownloads) {
       is(
-        blockDownloads.hasAttribute("disabled"),
+        blockDownloads.disabled,
         !checked,
         "block downloads checkbox is set correctly"
       );
       is(
-        blockUncommon.hasAttribute("disabled"),
+        blockUncommon.disabled,
         !checked || !blockDownloads.checked,
         "block uncommon checkbox is set correctly"
       );

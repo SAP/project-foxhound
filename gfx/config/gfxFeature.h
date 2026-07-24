@@ -21,7 +21,6 @@ namespace gfx {
   _(HW_COMPOSITING, Feature, "Compositing")                                  \
   _(D3D11_COMPOSITING, Feature, "Direct3D11 Compositing")                    \
   _(OPENGL_COMPOSITING, Feature, "OpenGL Compositing")                       \
-  _(DIRECT2D, Feature, "Direct2D")                                           \
   _(D3D11_HW_ANGLE, Feature, "Direct3D11 hardware ANGLE")                    \
   _(DIRECT_DRAW, Feature, "DirectDraw")                                      \
   _(GPU_PROCESS, Feature, "GPU Process")                                     \
@@ -34,7 +33,6 @@ namespace gfx {
   _(WEBRENDER_DCOMP_PRESENT, Feature, "WebRender DirectComposition")         \
   _(WEBRENDER_SCISSORED_CACHE_CLEARS, Feature,                               \
     "WebRender scissored cache clears")                                      \
-  _(OMTP, Feature, "Off Main Thread Painting")                               \
   _(WEBGPU, Feature, "WebGPU")                                               \
   _(X11_EGL, Feature, "X11 EGL")                                             \
   _(DMABUF, Feature, "DMABUF")                                               \
@@ -54,7 +52,6 @@ namespace gfx {
   _(H264_HW_DECODE, Feature, "H.264 hardware decoding")                      \
   _(AV1_HW_DECODE, Feature, "AV1 hardware decoding")                         \
   _(HEVC_HW_DECODE, Feature, "HEVC hardware decoding")                       \
-  _(REMOTE_CANVAS, Feature, "Remote canvas")                                 \
   _(DMABUF_WEBGL, Feature, "DMABuf for WebGL")                               \
   _(VP8_HW_ENCODE, Feature, "VP8 hardware encoding")                         \
   _(VP9_HW_ENCODE, Feature, "VP9 hardware encoding")                         \
@@ -63,6 +60,8 @@ namespace gfx {
   _(HEVC_HW_ENCODE, Feature, "HEVC hardware encoding")                       \
   _(WMF_HW_DRM, Feature, "Windows Media Foundation hardware DRM")            \
   _(GL_NORM16_TEXTURES, Feature, "OpenGL normalized 16-bit texture formats") \
+  _(WEBGPU_EXTERNAL_TEXTURE, Feature, "WebGPU external textures")            \
+  _(MESA_THREADING, Feature, "Mesa glthread enabled")                        \
   /* Add new entries above this comment */
 
 enum class Feature : uint32_t {

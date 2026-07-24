@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/SVGRect.h"
 
+#include "SVGAnimatedViewBox.h"
 #include "mozilla/dom/SVGRectBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
-#include "SVGAnimatedViewBox.h"
 #include "nsWrapperCache.h"
 
 using namespace mozilla::gfx;
@@ -38,7 +38,7 @@ JSObject* SVGRect::WrapObject(JSContext* aCx,
 float SVGRect::X() {
   switch (mType) {
     case RectType::AnimValue:
-      static_cast<SVGElement*>(mParent->AsElement())->FlushAnimations();
+      static_cast<SVGElement*>(mParent.get())->FlushAnimations();
       return mVal->GetAnimValue().x;
     case RectType::BaseValue:
       return mVal->GetBaseValue().x;
@@ -50,7 +50,7 @@ float SVGRect::X() {
 float SVGRect::Y() {
   switch (mType) {
     case RectType::AnimValue:
-      static_cast<SVGElement*>(mParent->AsElement())->FlushAnimations();
+      static_cast<SVGElement*>(mParent.get())->FlushAnimations();
       return mVal->GetAnimValue().y;
     case RectType::BaseValue:
       return mVal->GetBaseValue().y;
@@ -62,7 +62,7 @@ float SVGRect::Y() {
 float SVGRect::Width() {
   switch (mType) {
     case RectType::AnimValue:
-      static_cast<SVGElement*>(mParent->AsElement())->FlushAnimations();
+      static_cast<SVGElement*>(mParent.get())->FlushAnimations();
       return mVal->GetAnimValue().width;
     case RectType::BaseValue:
       return mVal->GetBaseValue().width;
@@ -74,7 +74,7 @@ float SVGRect::Width() {
 float SVGRect::Height() {
   switch (mType) {
     case RectType::AnimValue:
-      static_cast<SVGElement*>(mParent->AsElement())->FlushAnimations();
+      static_cast<SVGElement*>(mParent.get())->FlushAnimations();
       return mVal->GetAnimValue().height;
     case RectType::BaseValue:
       return mVal->GetBaseValue().height;
@@ -88,12 +88,9 @@ void SVGRect::SetX(float aX, ErrorResult& aRv) {
     case RectType::AnimValue:
       aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
       return;
-    case RectType::BaseValue: {
-      SVGViewBox rect = mVal->GetBaseValue();
-      rect.x = aX;
-      mVal->SetBaseValue(rect, static_cast<SVGElement*>(mParent->AsElement()));
+    case RectType::BaseValue:
+      mVal->SetBaseX(aX, static_cast<SVGElement*>(mParent.get()));
       return;
-    }
     default:
       mRect.x = aX;
   }
@@ -104,12 +101,9 @@ void SVGRect::SetY(float aY, ErrorResult& aRv) {
     case RectType::AnimValue:
       aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
       return;
-    case RectType::BaseValue: {
-      SVGViewBox rect = mVal->GetBaseValue();
-      rect.y = aY;
-      mVal->SetBaseValue(rect, static_cast<SVGElement*>(mParent->AsElement()));
+    case RectType::BaseValue:
+      mVal->SetBaseY(aY, static_cast<SVGElement*>(mParent.get()));
       return;
-    }
     default:
       mRect.y = aY;
   }
@@ -121,9 +115,7 @@ void SVGRect::SetWidth(float aWidth, ErrorResult& aRv) {
       aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
       return;
     case RectType::BaseValue: {
-      SVGViewBox rect = mVal->GetBaseValue();
-      rect.width = aWidth;
-      mVal->SetBaseValue(rect, static_cast<SVGElement*>(mParent->AsElement()));
+      mVal->SetBaseWidth(aWidth, static_cast<SVGElement*>(mParent.get()));
       return;
     }
     default:
@@ -136,12 +128,9 @@ void SVGRect::SetHeight(float aHeight, ErrorResult& aRv) {
     case RectType::AnimValue:
       aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
       return;
-    case RectType::BaseValue: {
-      SVGViewBox rect = mVal->GetBaseValue();
-      rect.height = aHeight;
-      mVal->SetBaseValue(rect, static_cast<SVGElement*>(mParent->AsElement()));
+    case RectType::BaseValue:
+      mVal->SetBaseHeight(aHeight, static_cast<SVGElement*>(mParent.get()));
       return;
-    }
     default:
       mRect.height = aHeight;
   }

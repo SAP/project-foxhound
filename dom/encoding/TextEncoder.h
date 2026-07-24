@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_textencoder_h_
 #define mozilla_dom_textencoder_h_
 
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/Encoding.h"
 
 namespace mozilla {
 class ErrorResult;

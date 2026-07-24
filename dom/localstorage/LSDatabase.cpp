@@ -14,16 +14,14 @@
 // Global includes
 #include <cstring>
 #include <new>
-#include <utility>
+
 #include "MainThreadUtils.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/PBackgroundLSDatabase.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsHashKeys.h"
@@ -31,6 +29,7 @@
 #include "nsIObserverService.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nscore.h"
 
 namespace mozilla::dom {

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_FileInputType_h__
-#define mozilla_dom_FileInputType_h__
+#ifndef mozilla_dom_FileInputType_h_
+#define mozilla_dom_FileInputType_h_
 
 #include "mozilla/dom/InputType.h"
 
@@ -29,4 +29,4 @@ class FileInputType : public InputType {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_FileInputType_h__ */
+#endif /* mozilla_dom_FileInputType_h_ */

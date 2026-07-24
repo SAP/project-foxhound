@@ -8,6 +8,14 @@
 newtab-page-title = Нов раздел
 newtab-settings-button =
     .title = Настройки на новия раздел
+newtab-customize-panel-icon-button =
+    .title = Персонализирайте тази страница
+newtab-customize-panel-icon-button-label = Персонализиране
+newtab-personalize-settings-icon-label =
+    .title = Персонализиране на нов раздел
+    .aria-label = Настройки
+newtab-settings-dialog-label =
+    .aria-label = Настройки
 newtab-personalize-icon-label =
     .title = Приспособяване на новите раздели
     .aria-label = Приспособяване на новите раздели
@@ -48,6 +56,9 @@ newtab-topsites-add-shortcut-header = Нова клавишна комбинац
 newtab-topsites-edit-topsites-header = Променяне на често посещавана страница
 newtab-topsites-edit-shortcut-header = Промяна на икона
 newtab-topsites-add-shortcut-label = Добавяне на пряк път
+newtab-topsites-add-shortcut-title =
+    .title = Добавяне на пряк път
+    .aria-label = Добавяне на пряк път
 newtab-topsites-title-label = Заглавие
 newtab-topsites-title-input =
     .placeholder = Въведете заглавие
@@ -76,6 +87,14 @@ newtab-confirm-delete-history-p2 = Действието е необратимо.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Спонсорирано
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (закачен)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -111,9 +130,21 @@ newtab-menu-save-to-pocket = Запазване в { -pocket-brand-name }
 newtab-menu-delete-pocket = Изтриване от { -pocket-brand-name }
 newtab-menu-archive-pocket = Архивиране в { -pocket-brand-name }
 newtab-menu-show-privacy-info = Спонсори и поверителност
+newtab-menu-about-fakespot = Относно { -fakespot-brand-name }
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Докладване
+# Context menu option to personalize New Tab recommended stories by blocking a section of stories,
+# e.g. "Sports". "Block" is a verb here.
+newtab-menu-section-block = Забраняване
+# "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+# e.g. Following the travel section of stories.
+newtab-menu-section-unfollow = Прекратяване  на следенето на темата
 
 ## Context menu options for sponsored stories and new ad formats on New Tab.
 
+newtab-menu-manage-sponsored-content = Управление на спонсорирано съдържание
+newtab-menu-our-sponsors-and-your-privacy = Нашите спонсори и вашата поверителност
+newtab-menu-report-this-ad = Докладване на рекламата
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -176,6 +207,8 @@ newtab-label-sponsored-by = Спонсорирано от { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } мин.
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Спонсорирано
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -237,6 +270,7 @@ newtab-pocket-more-recommendations = Повече препоръчани
 newtab-pocket-learn-more = Научете повече
 newtab-pocket-cta-button = Вземете { -pocket-brand-name }
 newtab-pocket-cta-text = Запазете статиите, които харесвате в { -pocket-brand-name } и заредете ума си с увлекателни четива.
+newtab-pocket-pocket-firefox-family = { -pocket-brand-name } е част от семейството на { -brand-product-name }
 newtab-pocket-save = Запазване
 newtab-pocket-saved = Запазено
 
@@ -258,6 +292,7 @@ newtab-toast-dismiss-button =
 ## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
 
 newtab-pocket-onboarding-discover = Открийте най-доброто от интернет
+newtab-pocket-onboarding-cta = { -pocket-brand-name } изследва широка гама от публикации, за да предостави най-информиращото, вдъхновяващо и надеждно съдържание точно за вашия четец { -brand-product-name }.
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
@@ -285,22 +320,35 @@ newtab-custom-pocket-subtitle = Изключително съдържание, �
 newtab-custom-stories-toggle =
     .label = Препоръчани истории
     .description = Изключително съдържание подбрано от семейството на { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Истории
+newtab-custom-stories-personalized-checkbox-label = Персонализирани истории въз основа на вашата активност
 newtab-custom-pocket-sponsored = Платени публикации
 newtab-custom-pocket-show-recent-saves = Показване на последните запазени
 newtab-custom-recent-title = Последна активност
 newtab-custom-recent-subtitle = Избрани страници и съдържание
-newtab-custom-recent-toggle =
-    .label = Последна активност
-    .description = Избрани страници и съдържание
 newtab-custom-weather-toggle =
     .label = Времето
     .description = Времето днес накратко
+newtab-custom-widget-weather-toggle =
+    .label = Времето
+newtab-custom-widget-lists-toggle =
+    .label = Списъци
+newtab-custom-widget-timer-toggle =
+    .label = Таймер
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Затваряне
+    .aria-label = Затваряне на менюто
 newtab-custom-close-button = Затваряне
 newtab-custom-settings = Настройки
 
 ## New Tab Wallpapers
 
 newtab-wallpaper-title = Тапети
+newtab-wallpaper-reset = Връщане на стандартни настройки
+newtab-wallpaper-upload-image = Качване на изображение
+newtab-wallpaper-custom-color = Изберете цвят
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Изображението надхвърля ограничението за големина на файла от { $file_size }MB. Моля, опитайте се да качите по-малък файл.
@@ -346,8 +394,9 @@ newtab-wallpaper-abstract-purple = Лилави фигури
 newtab-wallpaper-abstract-orange = Оранжеви фигури
 newtab-wallpaper-gradient-orange = Преливащо се оранжево и розово
 newtab-wallpaper-abstract-blue-purple = Сини и лилави фигури
+newtab-wallpaper-abstract-white-curves = Бяло със засенчени извивки
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Снимки
 newtab-wallpaper-beach-at-sunrise = Плаж при изгрев
@@ -364,6 +413,11 @@ feature-highlight-wallpaper =
 
 ## Celestial
 
+# “Celestial” referring to astronomy; positioned in or relating to the sky,
+# or outer space as observed in astronomy.
+# Not to be confused with religious definition of the word.
+newtab-wallpaper-category-title-celestial = Небесен
+newtab-wallpaper-celestial-lunar-eclipse = Лунно затъмнение
 
 ## New Tab Weather
 
@@ -415,33 +469,22 @@ newtab-topic-label-home = Дом и градина
 ## Topic Selection Modal
 
 newtab-topic-selection-button-maybe-later = Може би по-късно
+newtab-topic-selection-button-update-interests = Актуализирайте интересите си
 newtab-topic-selection-button-pick-interests = Изберете вашите интереси
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
 
 ## Strings for custom wallpaper highlight
 
 newtab-custom-wallpaper-cta = Опитайте
 
-## Strings for download mobile highlight
+## Strings for task / to-do list productivity widget
 
+newtab-widget-lists-menu-delete = Изтриване на този списък
+newtab-widget-lists-menu-learn-more = Научете повече
+newtab-widget-lists-input-menu-delete = Изтриване
 
-## Strings for shortcuts highlight
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
 
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-
+newtab-widget-timer-menu-learn-more = Научете повече
+newtab-promo-card-body = Нашите спонсори подкрепят мисията ни да изградим по-добра мрежа
+newtab-promo-card-cta = Научете повече

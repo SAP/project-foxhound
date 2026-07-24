@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "peuService",
   "@mozilla.org/partitioning/exception-list-service;1",
-  "nsIPartitioningExceptionListService"
+  Ci.nsIPartitioningExceptionListService
 );
 
 const TEST_REDIRECT_TOP_PAGE =
@@ -88,8 +88,8 @@ function executeContentScript(browser, callback, options = {}) {
             once: true,
           });
 
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
         } else {
           // first-party
           let runnableStr = `(() => {return (${obj.callback});})();`;

@@ -5,10 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPCrashHelperHolder.h"
+
 #include "GMPService.h"
 #include "mozilla/RefPtr.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/ipc/ProtocolUtils.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla {
 

@@ -85,8 +85,6 @@ export class PromptListener {
    * Handles `DOMModalDialogClosed` events.
    */
   handleEvent(event) {
-    lazy.logger.trace(`Received event ${event.type}`);
-
     const chromeWin = event.target.opener
       ? event.target.opener.ownerGlobal
       : event.target.ownerGlobal;
@@ -114,7 +112,8 @@ export class PromptListener {
     // At the moment the event details are present for GeckoView and on desktop
     // only for Services.prompt.MODAL_TYPE_CONTENT prompts.
     if (event.detail) {
-      const { areLeaving, promptType, value } = event.detail;
+      const { areLeaving, owningBrowsingContext, promptType, value } =
+        event.detail;
       // `areLeaving` returns undefined for alerts, for confirms and prompts
       // it returns true if a user prompt was accepted and false if it was dismissed.
       detail.accepted = areLeaving === undefined ? true : areLeaving;
@@ -122,6 +121,7 @@ export class PromptListener {
       if (value) {
         detail.userText = value;
       }
+      detail.browsingContext = owningBrowsingContext;
     }
 
     this.emit("closed", {
@@ -136,12 +136,12 @@ export class PromptListener {
    * `domwindowopened` - when a new chrome window opened,
    * `geckoview-prompt-show` - when a modal dialog opened on Android.
    */
-  observe(subject, topic) {
-    lazy.logger.trace(`Received observer notification ${topic}`);
-
+  async observe(subject, topic) {
     let curBrowser = this.#curBrowserFn && this.#curBrowserFn();
     switch (topic) {
-      case "common-dialog-loaded":
+      case "common-dialog-loaded": {
+        const browsingContext = subject.args.owningBrowsingContext;
+
         if (curBrowser) {
           if (
             !this.#hasCommonDialog(
@@ -153,37 +153,27 @@ export class PromptListener {
             return;
           }
         } else {
-          const chromeWin = subject.opener
-            ? subject.opener.ownerGlobal
-            : subject.ownerGlobal;
-
-          for (const tab of lazy.TabManager.getTabsForWindow(chromeWin)) {
-            const contentBrowser = lazy.TabManager.getBrowserForTab(tab);
-            const window = lazy.TabManager.getWindowForTab(tab);
-
-            if (this.#hasCommonDialog(contentBrowser, window, subject)) {
-              curBrowser = {
-                contentBrowser,
-                window,
-              };
-
-              break;
-            }
-          }
+          curBrowser = { contentBrowser: browsingContext.embedderElement };
         }
 
-        this.emit("opened", {
-          contentBrowser: curBrowser.contentBrowser,
-          prompt: new lazy.modal.Dialog(subject),
-        });
+        this.emit(
+          "opened",
+          await this.#getOpenedEventDetail(
+            browsingContext,
+            curBrowser.contentBrowser,
+            subject
+          )
+        );
 
         break;
+      }
 
-      case "domwindowopened":
+      case "domwindowopened": {
         subject.addEventListener("DOMModalDialogClosed", this);
         break;
+      }
 
-      case "geckoview-prompt-show":
+      case "geckoview-prompt-show": {
         for (let win of Services.wm.getEnumerator(null)) {
           const subjectObject = subject.wrappedJSObject;
           const prompt = win
@@ -202,14 +192,19 @@ export class PromptListener {
               continue;
             }
 
-            this.emit("opened", {
-              contentBrowser,
-              prompt: new lazy.modal.Dialog(prompt),
-            });
+            this.emit(
+              "opened",
+              await this.#getOpenedEventDetail(
+                subjectObject.owningBrowsingContext,
+                contentBrowser,
+                prompt
+              )
+            );
             return;
           }
         }
         break;
+      }
     }
   }
 
@@ -231,6 +226,23 @@ export class PromptListener {
     this.#listening = false;
   }
 
+  async #getOpenedEventDetail(browsingContext, contentBrowser, dialog) {
+    const prompt = new lazy.modal.Dialog(dialog);
+
+    return {
+      browsingContext,
+      contentBrowser,
+      prompt,
+      // Resolve prompt details here to avoid sending an open event
+      // with the data that is resolved after a prompt is handled.
+      promptDetails: {
+        defaultValue:
+          prompt.promptType === "prompt" ? await prompt.getInputText() : null,
+        message: await prompt.getText(),
+      },
+    };
+  }
+
   #hasCommonDialog(contentBrowser, window, prompt) {
     const modalType = prompt.Dialog.args.modalType;
     if (
@@ -248,9 +260,13 @@ export class PromptListener {
   }
 
   #register() {
-    Services.obs.addObserver(this, "common-dialog-loaded");
-    Services.obs.addObserver(this, "domwindowopened");
-    Services.obs.addObserver(this, "geckoview-prompt-show");
+    for (const observerName of [
+      "common-dialog-loaded",
+      "domwindowopened",
+      "geckoview-prompt-show",
+    ]) {
+      Services.obs.addObserver(this, observerName);
+    }
 
     // Register event listener and save already open prompts for all already open windows.
     for (const win of Services.wm.getEnumerator(null)) {
@@ -259,21 +275,19 @@ export class PromptListener {
   }
 
   #unregister() {
-    const removeObserver = observerName => {
-      try {
-        Services.obs.removeObserver(this, observerName);
-      } catch (e) {
-        lazy.logger.debug(`Failed to remove observer "${observerName}"`);
-      }
-    };
-
-    for (const observerName of [
+    [
       "common-dialog-loaded",
       "domwindowopened",
       "geckoview-prompt-show",
-    ]) {
-      removeObserver(observerName);
-    }
+    ].forEach(observerName => {
+      try {
+        Services.obs.removeObserver(this, observerName);
+      } catch (e) {
+        lazy.logger.debug(
+          `${this.constructor.name}: Failed to remove observer "${observerName}"`
+        );
+      }
+    });
 
     // Unregister event listener for all open windows
     for (const win of Services.wm.getEnumerator(null)) {

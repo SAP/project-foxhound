@@ -25,7 +25,7 @@
                                       \
   _(ExecutionTracerInstanceLock, 250) \
                                       \
-  _(StoreBuffer, 275)                 \
+  _(Sweeping, 275)                    \
                                       \
   _(GCLock, 300)                      \
                                       \
@@ -36,13 +36,12 @@
   _(WasmInitBuiltinThunks, 451)       \
   _(StringsCache, 500)                \
   _(FutexThread, 500)                 \
-  _(GeckoProfilerStrings, 500)        \
   _(ProtectedRegionTree, 500)         \
   _(ShellOffThreadState, 500)         \
   _(ShellStreamCacheEntryState, 500)  \
   _(SimulatorCacheLock, 500)          \
   _(Arm64SimulatorLock, 500)          \
-  _(IonSpewer, 500)                   \
+  _(JitSpewGraphOutput, 500)          \
   _(PerfSpewer, 500)                  \
   _(CacheIRSpewer, 500)               \
   _(DateTimeInfoMutex, 500)           \
@@ -62,6 +61,7 @@
   _(SourceCompression, 500)           \
   _(GCDelayedMarkingLock, 500)        \
   _(BufferAllocator, 500)             \
+  _(GeckoProfilerScriptSources, 500)  \
                                       \
   _(SharedImmutableStringsCache, 600) \
   _(IrregexpLazyStatic, 600)          \

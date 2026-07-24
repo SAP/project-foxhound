@@ -10,7 +10,6 @@
 #include "LocalStorageCache.h"
 #include "StorageDBThread.h"
 #include "StorageObserver.h"
-
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/FlippedOnce.h"
@@ -367,7 +366,7 @@ class StorageDBParent final : public PBackgroundStorageParent {
     virtual ~CacheParentBridge() = default;
 
     // LocalStorageCacheBridge
-    virtual const nsCString Origin() const override;
+    virtual nsCString Origin() const override;
     virtual const nsCString& OriginNoSuffix() const override {
       return mOriginNoSuffix;
     }
@@ -562,8 +561,8 @@ class SessionStorageManagerParent final
   BackgroundSessionStorageManager* GetManager() const;
 
   mozilla::ipc::IPCResult RecvClearStorages(
-      const OriginAttributesPattern& aPattern,
-      const nsACString& aOriginScope) override;
+      const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+      const uint32_t& aMode) override;
 
  private:
   ~SessionStorageManagerParent();

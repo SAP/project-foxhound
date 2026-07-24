@@ -354,8 +354,9 @@ https://tls13.example.com:443        privileged,tls1,tls1_3
 # Hosts for youtube rewrite tests
 https://mochitest.youtube.com:443
 
-# Host for U2F localhost tests
+# Hosts for WebAuthn localhost tests
 https://localhost:443
+https://badcertdomain.localhost:443     cert=badCertDomain
 
 # Bug 1402530
 http://localhost:80                 privileged
@@ -413,3 +414,10 @@ https://includesubdomains.preloaded.test:443     privileged
 
 # Profiler URL to test profile uploads
 https://api.profiler.firefox.com:443
+
+# FirefoxRelay test country and PSL-specific deny- and allow-list matching
+http://accounts.example.com.ar:80    privileged
+https://accounts.example.com.ar:443    privileged
+
+https://1-qwac.example.com:443 privileged,cert=1-qwac
+https://bound-by-2-qwac.example.com:443 privileged,cert=bound-by-2-qwac

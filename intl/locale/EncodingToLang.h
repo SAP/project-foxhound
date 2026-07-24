@@ -25,7 +25,7 @@ class EncodingToLang {
 
  private:
   static nsAtom* sLangs[];
-  static const mozilla::NotNull<const mozilla::Encoding *> *
+  static const mozilla::NotNull<const mozilla::Encoding*>*
       kEncodingsByRoughFrequency[];
 };
 

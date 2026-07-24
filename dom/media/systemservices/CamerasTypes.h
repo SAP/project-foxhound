@@ -7,8 +7,8 @@
 #ifndef mozilla_CamerasTypes_h
 #define mozilla_CamerasTypes_h
 
-#include "ipc/EnumSerializer.h"
 #include "PerformanceRecorder.h"
+#include "ipc/EnumSerializer.h"
 
 namespace mozilla::camera {
 

@@ -4,13 +4,8 @@
 
 package org.mozilla.fenix.components.metrics
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
-import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
@@ -64,7 +59,12 @@ class FirstSessionPing(
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal fun triggerPing() {
         FirstSession.timestamp.set()
-        FirstSession.installSource.set(installSourcePackage())
+        FirstSession.installSource.set(
+            installSourcePackage(
+                packageManager = context.application.packageManager,
+                packageName = context.application.packageName,
+            ),
+        )
 
         CoroutineScope(Dispatchers.IO).launch {
             FirstSession.distributionId.set(context.components.distributionIdManager.getDistributionId())
@@ -73,38 +73,6 @@ class FirstSessionPing(
             markAsTriggered()
         }
     }
-
-    @SuppressLint("NewApi") // Lint cannot resolve 'sdk' as 'SDK_INT' as it's not referenced directly.
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun installSourcePackage(sdk: Int = SDK_INT) = with(context.application) {
-        if (sdk >= Build.VERSION_CODES.R) {
-            installSourcePackageForBuildMinR(packageManager, packageName)
-        } else {
-            installSourcePackageForBuildMaxQ(packageManager, packageName)
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun installSourcePackageForBuildMinR(
-        packageManager: PackageManager,
-        packageName: String,
-    ) = try {
-        packageManager.getInstallSourceInfo(packageName).installingPackageName
-    } catch (e: PackageManager.NameNotFoundException) {
-        Logger.debug("$packageName is not available to the caller")
-        null
-    }.orEmpty()
-
-    private fun installSourcePackageForBuildMaxQ(
-        packageManager: PackageManager,
-        packageName: String,
-    ) = try {
-        @Suppress("DEPRECATION")
-        packageManager.getInstallerPackageName(packageName)
-    } catch (e: IllegalArgumentException) {
-        Logger.debug("$packageName is not installed")
-        null
-    }.orEmpty()
 
     /**
      * Trigger sending the `installation` ping if it wasn't sent already.

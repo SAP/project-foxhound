@@ -82,4 +82,11 @@ class AwesomeBarView(
             view.addProviders(provider)
         }
     }
+
+    /**
+     * Disposes the view components and suggestion providers
+     */
+    fun dispose() {
+        view.removeAllProviders()
+    }
 }

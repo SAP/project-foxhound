@@ -54,11 +54,11 @@
 #ifndef mozilla_ServoBindingTypes_h
 #define mozilla_ServoBindingTypes_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Types.h"
-#include "nsCSSPropertyID.h"
 #include "nsStyleAutoArray.h"
 #include "nsTArray.h"
 
@@ -111,7 +111,7 @@ class Element;
   struct StyleLocked##name_;         \
   }                                  \
   SERVO_ARC_TYPE(name_, mozilla::StyleLocked##name_)
-#include "mozilla/ServoLockedArcTypeList.h"
+#include "mozilla/ServoLockedArcTypeList.inc"
 
 #define UNLOCKED_RULE_TYPE(name_) \
   namespace mozilla {             \
@@ -126,6 +126,7 @@ UNLOCKED_RULE_TYPE(Namespace)
 UNLOCKED_RULE_TYPE(Margin)
 UNLOCKED_RULE_TYPE(Container)
 UNLOCKED_RULE_TYPE(Media)
+UNLOCKED_RULE_TYPE(CustomMedia)
 UNLOCKED_RULE_TYPE(Supports)
 UNLOCKED_RULE_TYPE(Document)
 UNLOCKED_RULE_TYPE(FontFeatureValues)
@@ -142,19 +143,20 @@ SERVO_ARC_TYPE(StyleSheetContents, mozilla::StyleStylesheetContents)
 #undef SERVO_LOCKED_ARC_TYPE
 #undef SERVO_ARC_TYPE
 
-#define SERVO_BOXED_TYPE(name_, type_)                                        \
-  namespace mozilla {                                                         \
-  struct Style##type_;                                                        \
-  }                                                                           \
-  extern "C" void Servo_##name_##_Drop(mozilla::Style##type_*);               \
-  namespace mozilla {                                                         \
-  template <>                                                                 \
-  class DefaultDelete<Style##type_> {                                         \
-   public:                                                                    \
-    void operator()(Style##type_* aPtr) const { Servo_##name_##_Drop(aPtr); } \
-  };                                                                          \
+#define SERVO_BOXED_TYPE(name_, type_)                          \
+  namespace mozilla {                                           \
+  struct Style##type_;                                          \
+  }                                                             \
+  extern "C" void Servo_##name_##_Drop(mozilla::Style##type_*); \
+  namespace std {                                               \
+  template <>                                                   \
+  struct default_delete<mozilla::Style##type_> {                \
+    void operator()(mozilla::Style##type_* aPtr) const {        \
+      Servo_##name_##_Drop(aPtr);                               \
+    }                                                           \
+  };                                                            \
   }
-#include "mozilla/ServoBoxedTypeList.h"
+#include "mozilla/ServoBoxedTypeList.inc"
 #undef SERVO_BOXED_TYPE
 
 // Other special cases.

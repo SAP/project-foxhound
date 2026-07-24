@@ -4,12 +4,10 @@
 
 package org.mozilla.fenix.crashes
 
+import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.crash.store.TimeInMillis
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -17,9 +15,6 @@ import org.mockito.Mockito.`when`
 import org.mozilla.fenix.utils.Settings
 
 class SettingsCrashReportCacheTest {
-
-    @get:Rule val coroutineRule = MainCoroutineRule()
-
     private lateinit var settings: Settings
 
     @Before
@@ -28,7 +23,7 @@ class SettingsCrashReportCacheTest {
     }
 
     @Test
-    fun `GIVEN cache has 0 stored for crashReportCutoffDate WHEN accessed THEN returns null`() = runTestOnMain {
+    fun `GIVEN cache has 0 stored for crashReportCutoffDate WHEN accessed THEN returns null`() = runTest {
         `when`(settings.crashReportCutoffDate).thenReturn(0)
 
         val cache = SettingsCrashReportCache(settings)
@@ -38,7 +33,7 @@ class SettingsCrashReportCacheTest {
     }
 
     @Test
-    fun `WHEN setting CutoffDate with null value THEN 0 is stored`() = runTestOnMain {
+    fun `WHEN setting CutoffDate with null value THEN 0 is stored`() = runTest {
         val cache = SettingsCrashReportCache(settings)
         cache.setCutoffDate(null)
 
@@ -46,7 +41,7 @@ class SettingsCrashReportCacheTest {
     }
 
     @Test
-    fun `GIVEN cache has 0 stored for DeferredUntil WHEN accessed THEN returns null`() = runTestOnMain {
+    fun `GIVEN cache has 0 stored for DeferredUntil WHEN accessed THEN returns null`() = runTest {
         `when`(settings.crashReportDeferredUntil).thenReturn(0)
 
         val cache = SettingsCrashReportCache(settings)
@@ -56,7 +51,7 @@ class SettingsCrashReportCacheTest {
     }
 
     @Test
-    fun `WHEN setting DeferredUntil with null value THEN 0 is stored`() = runTestOnMain {
+    fun `WHEN setting DeferredUntil with null value THEN 0 is stored`() = runTest {
         val cache = SettingsCrashReportCache(settings)
         cache.setDeferredUntil(null)
 
@@ -64,7 +59,7 @@ class SettingsCrashReportCacheTest {
     }
 
     @Test
-    fun `WHEN retrieving CrashPullDeferUntil with never show again set THEN returns a future timestamp`() = runTestOnMain {
+    fun `WHEN retrieving CrashPullDeferUntil with never show again set THEN returns a future timestamp`() = runTest {
         `when`(settings.crashPullNeverShowAgain).thenReturn(true)
         `when`(settings.crashPullDontShowBefore).thenReturn(0)
 

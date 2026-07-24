@@ -115,7 +115,7 @@ async function doHelpTest({
   );
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 }
 
 // (SHIFT+)TABs through a result with a menu button. The result is the second
@@ -165,7 +165,7 @@ add_task(async function keyboardSelection_secondResult() {
   assertOtherResultSelected(0, "previous result");
 
   await UrlbarTestUtils.promisePopupClose(window);
-  UrlbarProvidersManager.unregisterProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 });
 
 // (SHIFT+)TABs through a result with a help button.  The result is the
@@ -236,7 +236,7 @@ add_task(async function keyboardSelection_lastResult() {
   assertOtherResultSelected(numSelectable - 3, "previous result");
 
   await UrlbarTestUtils.promisePopupClose(window);
-  UrlbarProvidersManager.unregisterProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 });
 
 // Picks the main part of the test result with the keyboard.
@@ -314,7 +314,7 @@ async function doPickTest({ pickHelp, useKeyboard }) {
     if (pickHelp) {
       BrowserTestUtils.removeTab(gBrowser.selectedTab);
     }
-    UrlbarProvidersManager.unregisterProvider(provider);
+    ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 
     // Avoid showing adaptive history autofill.
     await PlacesTestUtils.clearInputHistory();
@@ -350,17 +350,15 @@ function registerTestProvider({
 
   let provider = new UrlbarTestUtils.TestProvider({
     results: [
-      Object.assign(
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          payload
-        ),
-        { suggestedIndex }
-      ),
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        suggestedIndex,
+        payload,
+      }),
     ],
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").registerProvider(provider);
   return provider;
 }
 

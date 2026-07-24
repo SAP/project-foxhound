@@ -36,7 +36,7 @@ class BookmarksUseCaseTest {
         val useCase = BookmarksUseCase(bookmarksStorage, historyStorage)
 
         every { bookmarkNode.url }.answers { "https://mozilla.org" }
-        coEvery { bookmarksStorage.getBookmarksWithUrl(any()) }.coAnswers { listOf(bookmarkNode) }
+        coEvery { bookmarksStorage.getBookmarksWithUrl(any()) }.coAnswers { Result.success(listOf(bookmarkNode)) }
 
         val result = useCase.addBookmark("https://mozilla.org", "Mozilla")
 
@@ -45,13 +45,12 @@ class BookmarksUseCaseTest {
 
     @Test
     fun `WHEN adding bookmark THEN new item is stored`() = runTest {
-        val bookmarksStorage = mockk<BookmarksStorage>(relaxed = true)
+        val bookmarksStorage = mockk<BookmarksStorage>()
         val historyStorage = mockk<HistoryStorage>(relaxed = true)
-        val bookmarkNode = mockk<BookmarkNode>()
         val useCase = BookmarksUseCase(bookmarksStorage, historyStorage)
 
-        every { bookmarkNode.url }.answers { "https://firefox.com" }
-        coEvery { bookmarksStorage.getBookmarksWithUrl(any()) }.coAnswers { listOf(bookmarkNode) }
+        coEvery { bookmarksStorage.getBookmarksWithUrl(eq("https://mozilla.org")) }.coAnswers { Result.success(listOf()) }
+        coEvery { bookmarksStorage.addItem(any(), any(), any(), any()) } returns Result.success("id")
 
         val result = useCase.addBookmark("https://mozilla.org", "Mozilla")
 
@@ -62,13 +61,14 @@ class BookmarksUseCaseTest {
 
     @Test
     fun `WHEN adding bookmark THEN new item is stored in folder`() = runTest {
-        val bookmarksStorage = mockk<BookmarksStorage>(relaxed = true)
+        val bookmarksStorage = mockk<BookmarksStorage>()
         val historyStorage = mockk<HistoryStorage>(relaxed = true)
         val bookmarkNode = mockk<BookmarkNode>()
         val useCase = BookmarksUseCase(bookmarksStorage, historyStorage)
 
         every { bookmarkNode.url }.answers { "https://firefox.com" }
-        coEvery { bookmarksStorage.getBookmarksWithUrl(any()) }.coAnswers { listOf(bookmarkNode) }
+        coEvery { bookmarksStorage.getBookmarksWithUrl(any()) }.coAnswers { Result.success(listOf(bookmarkNode)) }
+        coEvery { bookmarksStorage.addItem(any(), any(), any(), any()) } returns Result.success("id")
 
         val result = useCase.addBookmark("https://mozilla.org", "Mozilla", parentGuid = "parentGuid")
 
@@ -114,7 +114,7 @@ class BookmarksUseCaseTest {
                 any(),
                 any(),
             )
-        }.coAnswers { listOf(bookmarkNode) }
+        }.coAnswers { Result.success(listOf(bookmarkNode)) }
 
         val result = useCase.retrieveRecentBookmarks(BookmarksUseCase.DEFAULT_BOOKMARKS_TO_RETRIEVE)
 
@@ -150,7 +150,7 @@ class BookmarksUseCaseTest {
         val historyStorage = mockk<HistoryStorage>(relaxed = true)
         val useCase = BookmarksUseCase(bookmarksStorage, historyStorage)
 
-        coEvery { bookmarksStorage.getRecentBookmarks(any(), any(), any()) }.coAnswers { listOf() }
+        coEvery { bookmarksStorage.getRecentBookmarks(any(), any(), any()) }.coAnswers { Result.success(listOf()) }
 
         val result = useCase.retrieveRecentBookmarks(BookmarksUseCase.DEFAULT_BOOKMARKS_TO_RETRIEVE)
 

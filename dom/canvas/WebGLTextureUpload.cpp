@@ -4,37 +4,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLTextureUpload.h"
-#include "WebGLTexture.h"
 
 #include <algorithm>
-#include <limits>
 
 #include "CanvasUtils.h"
 #include "ClientWebGLContext.h"
 #include "GLBlitHelper.h"
 #include "GLContext.h"
-#include "mozilla/Casting.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Logging.h"
+#include "ScopedGLHelpers.h"
+#include "TexUnpackBlob.h"
+#include "WebGLBuffer.h"
+#include "WebGLContext.h"
+#include "WebGLContextUtils.h"
+#include "WebGLFormats.h"
+#include "WebGLFramebuffer.h"
+#include "WebGLTexelConversions.h"
+#include "WebGLTexture.h"
+#include "mozilla/MathAlgorithms.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/OffscreenCanvas.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/SharedSurfacesChild.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/Unused.h"
 #include "nsLayoutUtils.h"
-#include "ScopedGLHelpers.h"
-#include "TexUnpackBlob.h"
-#include "WebGLBuffer.h"
-#include "WebGLContext.h"
-#include "WebGLFormats.h"
-#include "WebGLContextUtils.h"
-#include "WebGLFramebuffer.h"
-#include "WebGLTexelConversions.h"
 
 namespace mozilla {
 namespace webgl {

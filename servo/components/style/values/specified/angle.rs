@@ -4,15 +4,17 @@
 
 //! Specified angles.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::angle::Angle as ComputedAngle;
 use crate::values::computed::{Context, ToComputedValue};
 use crate::values::specified::calc::CalcNode;
 use crate::values::CSSFloat;
 use crate::Zero;
-use cssparser::{Parser, Token};
+use cssparser::{match_ignore_ascii_case, Parser, Token};
 use std::f32::consts::PI;
 use std::fmt::{self, Write};
+use std::ops::Neg;
 use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, ToCss};
 
 /// A specified angle dimension.
@@ -61,10 +63,10 @@ impl AngleDimension {
 
     fn unitless_value(&self) -> CSSFloat {
         match *self {
-            AngleDimension::Deg(v) |
-            AngleDimension::Rad(v) |
-            AngleDimension::Turn(v) |
-            AngleDimension::Grad(v) => v,
+            AngleDimension::Deg(v)
+            | AngleDimension::Rad(v)
+            | AngleDimension::Turn(v)
+            | AngleDimension::Grad(v) => v,
         }
     }
 
@@ -274,3 +276,21 @@ impl Angle {
 }
 
 impl SpecifiedValueInfo for Angle {}
+
+impl Neg for Angle {
+    type Output = Angle;
+
+    #[inline]
+    fn neg(self) -> Angle {
+        let value = match self.value {
+            AngleDimension::Deg(v) => AngleDimension::Deg(-v),
+            AngleDimension::Rad(v) => AngleDimension::Rad(-v),
+            AngleDimension::Turn(v) => AngleDimension::Turn(-v),
+            AngleDimension::Grad(v) => AngleDimension::Grad(-v),
+        };
+        Angle {
+            value,
+            was_calc: self.was_calc,
+        }
+    }
+}

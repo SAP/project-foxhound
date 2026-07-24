@@ -5,15 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIPrincipal.idl"
 #include "nsrootidl.idl"
-/*#include "nsIWidget.idl"  Boy this would be nice.*/
 
 [ptr] native nsIWidget(nsIWidget);
 %{C++
 #include "Units.h"
 #include "mozilla/DimensionRequest.h"
-
-class nsIWidget;
+#include "nsCOMPtr.h"
+#include "nsIWidget.h"
 %}
 
 typedef voidPtr nativeWindow;
@@ -29,36 +29,6 @@ native DimensionKind(mozilla::DimensionKind);
 [scriptable, builtinclass, uuid(ca635529-a977-4552-9b8a-66187e54d882)]
 interface nsIBaseWindow : nsISupports
 {
-  /*
-  Allows a client to initialize an object implementing this interface with
-  the usually required window setup information.
-  It is possible to pass null for parentWidget, but only docshells support
-  this.
-
-  @param parentWidget - This allows a system to pass in the parenting widget.
-    This allows some objects to optimize themselves and rely on the view
-    system for event flow rather than creating numerous native windows.  If
-    one of these is not available, nullptr should be passed.
-
-  @param x - This is the x co-ordinate relative to the parent to place the
-    window.
-
-  @param y - This is the y co-ordinate relative to the parent to place the
-    window.
-
-  @param cx - This is the width  for the window to be.
-
-  @param cy - This is the height for the window to be.
-
-  @return  NS_OK - Window Init succeeded without a problem.
-        NS_ERROR_UNEXPECTED - Call was unexpected at this time. Perhaps
-          initWindow() had already been called.
-        NS_ERROR_INVALID_ARG - controls that require a parentWidget may return
-          invalid arg when they do not receive what they are needing.
-  */
-  [noscript]void initWindow(
-    in nsIWidget parentWidget,  in long x, in long y, in long cx, in long cy);
-
   /*
   Tell the window that it should destroy itself.  This call should not be
   necessary as it will happen implictly when final release occurs on the
@@ -181,13 +151,6 @@ interface nsIBaseWindow : nsISupports
   }
 %}
 
-  /**
-   * Tell the window to repaint itself
-   * @param aForce - if true, repaint immediately
-   *                 if false, the window may defer repainting as it sees fit.
-   */
-  void repaint(in boolean force);
-
   /*
   This is the parenting widget for the control.
 
@@ -229,6 +192,13 @@ interface nsIBaseWindow : nsISupports
   lives if it has not had to create its own widget.
   */
   [noscript] readonly attribute nsIWidget mainWidget;
+%{C++
+  already_AddRefed<nsIWidget> GetMainWidget() {
+    nsCOMPtr<nsIWidget> widget;
+    GetMainWidget(getter_AddRefs(widget));
+    return widget.forget();
+  }
+%}
 
   /*
   The number of device pixels per CSS pixel used by this window's widget at the

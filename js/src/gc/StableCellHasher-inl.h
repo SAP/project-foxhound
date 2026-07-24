@@ -225,7 +225,7 @@ template <typename T>
   // removed from the table later on.
   if (!gc::HasUniqueId(k)) {
     Key key = k;
-    MOZ_ASSERT(key->zoneFromAnyThread()->needsIncrementalBarrier() &&
+    MOZ_ASSERT(key->zoneFromAnyThread()->needsMarkingBarrier() &&
                !key->isMarkedAny());
   }
   MOZ_ASSERT(gc::HasUniqueId(l));

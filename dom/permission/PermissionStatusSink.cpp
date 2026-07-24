@@ -5,14 +5,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PermissionStatusSink.h"
+
 #include "PermissionObserver.h"
 #include "PermissionStatus.h"
-
 #include "mozilla/Permission.h"
 #include "mozilla/PermissionDelegateHandler.h"
 #include "mozilla/PermissionManager.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
 
@@ -50,10 +51,26 @@ PermissionStatusSink::Init() {
 
     MutexAutoLock lock(mMutex);
 
-    mWorkerRef = WeakWorkerRef::Create(
-        workerPrivate, [self = RefPtr(this)] { self->Disentangle(); });
+    RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
+        workerPrivate, "PermissionStatusSink",
+        [self = RefPtr(this)]() { self->Disentangle(); });
+    if (NS_WARN_IF(!workerRef)) {
+      // If WorkerRef creation fails, the Worker has started shutting down. But
+      // we are on the Worker thread, promise handlers in
+      // PermissionStatus::Init()/Permissions::Query() can still be dispatched
+      // to the Worker thread for outer promise rejection.
+      return PermissionStatePromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                     __func__);
+      ;
+    }
+
+    mWorkerRef = new ThreadSafeWorkerRef(workerRef);
   }
 
+  // On the Worker thread, so the below async function must be executed before
+  // WorkerRef callback which should also be on the Worker thread. So the above
+  // created WorkerRef should protect the outer promise handling can be
+  // dispatched on the Worker thread.
   return InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
                      [self = RefPtr(this)] {
                        MOZ_ASSERT(!self->mObserver);
@@ -101,6 +118,17 @@ bool PermissionStatusSink::MaybeUpdatedByNotifyOnlyOnMainThread(
 void PermissionStatusSink::PermissionChangedOnMainThread() {
   MOZ_ASSERT(NS_IsMainThread());
 
+  // Nothing to do if Worker had shutted down.
+  if (!mSerialEventTarget->IsOnCurrentThread()) {
+    MutexAutoLock lock(mMutex);
+    if (!mWorkerRef) {
+      return;
+    }
+  }
+
+  // mWorkerRef is not nullptr, it will protect the promise handling can be
+  // dispatched to the Worker thread, even though the Worker starts shutdown,
+  // because mWorkerRef is nullify on the main thread.
   ComputeStateOnMainThread()->Then(
       mSerialEventTarget, __func__,
       [self = RefPtr(this)](
@@ -116,16 +144,15 @@ void PermissionStatusSink::Disentangle() {
 
   mPermissionStatus = nullptr;
 
-  {
-    MutexAutoLock lock(mMutex);
-    mWorkerRef = nullptr;
-  }
-
   NS_DispatchToMainThread(
       NS_NewRunnableFunction(__func__, [self = RefPtr(this)] {
         if (self->mObserver) {
           self->mObserver->RemoveSink(self);
           self->mObserver = nullptr;
+        }
+        {
+          MutexAutoLock lock(self->mMutex);
+          self->mWorkerRef = nullptr;
         }
       }));
 }
@@ -166,7 +193,7 @@ PermissionStatusSink::ComputeStateOnMainThread() {
 
     // If we have mWorkerRef, we haven't received the WorkerRef notification
     // yet.
-    WorkerPrivate* workerPrivate = mWorkerRef->GetUnsafePrivate();
+    WorkerPrivate* workerPrivate = mWorkerRef->Private();
     MOZ_ASSERT(workerPrivate);
 
     ancestorWindow = workerPrivate->GetAncestorWindow();

@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "api/array_view.h"
+#include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/rtpfb.h"
-#include "rtc_base/network/ecn_marking.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -28,12 +28,15 @@ namespace rtcp {
 class CongestionControlFeedback : public Rtpfb {
  public:
   struct PacketInfo {
+    bool received() const {
+      return arrival_time_offset != TimeDelta::MinusInfinity();
+    }
+
     uint32_t ssrc = 0;
     uint16_t sequence_number = 0;
-    //  Time offset from report timestamp. Minus infinity if the packet has not
-    //  been received.
+    //  Time offset from report timestamp.
     TimeDelta arrival_time_offset = TimeDelta::MinusInfinity();
-    rtc::EcnMarking ecn = rtc::EcnMarking::kNotEct;
+    EcnMarking ecn = EcnMarking::kNotEct;
   };
 
   static constexpr uint8_t kFeedbackMessageType = 11;
@@ -47,7 +50,7 @@ class CongestionControlFeedback : public Rtpfb {
 
   bool Parse(const CommonHeader& packet);
 
-  rtc::ArrayView<const PacketInfo> packets() const { return packets_; }
+  ArrayView<const PacketInfo> packets() const { return packets_; }
 
   uint32_t report_timestamp_compact_ntp() const {
     return report_timestamp_compact_ntp_;

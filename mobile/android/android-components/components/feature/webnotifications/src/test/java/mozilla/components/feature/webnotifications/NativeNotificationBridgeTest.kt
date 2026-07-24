@@ -9,7 +9,6 @@ import android.app.Notification.BigTextStyle
 import android.app.Notification.EXTRA_SUB_TEXT
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.icons.Icon
@@ -38,12 +37,20 @@ private const val TEST_TEXT = "test text"
 private const val TEST_URL = "mozilla.org"
 private const val TEST_CHANNEL = "testChannel"
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class NativeNotificationBridgeTest {
     private val blankNotification = WebNotification(
-        TEST_TITLE, TEST_TAG, TEST_TEXT, TEST_URL, null, null,
-        null, true, mock(), 0, privateBrowsing = false,
+        TEST_TITLE,
+        TEST_TAG,
+        TEST_TEXT,
+        TEST_URL,
+        null,
+        null,
+        null,
+        true,
+        mock(),
+        0,
+        privateBrowsing = false,
     )
 
     private lateinit var icons: BrowserIcons

@@ -3,7 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import hashlib
 import os
+import pathlib
 import sys
 import time
 
@@ -19,7 +21,7 @@ try:
 except ImportError:
     from time import time as monotonic
 
-BUGBUG_BASE_URL = "https://bugbug.herokuapp.com"
+BUGBUG_BASE_URL = "https://bugbug.moz.tools"
 RETRY_TIMEOUT = 9 * 60  # seconds
 RETRY_INTERVAL = 10  # seconds
 
@@ -53,6 +55,16 @@ def get_session():
     return requests_retry_session(retries=5, session=s)
 
 
+def _perfherder_artifact_path(base_path, perfherder_data):
+    base_dir = base_path.parent
+    stem = base_path.stem
+    sequence = int(time.monotonic() * 1000)
+    payload = json.dumps(perfherder_data, sort_keys=True).encode("utf-8")
+    digest = hashlib.sha1(payload).hexdigest()[:8]
+
+    return base_dir / f"{stem}-{sequence}-{digest}.json"
+
+
 def _write_perfherder_data(lower_is_better):
     if os.environ.get("MOZ_AUTOMATION", "0") == "1":
         perfherder_data = {
@@ -69,6 +81,21 @@ def _write_perfherder_data(lower_is_better):
             ],
         }
         print(f"PERFHERDER_DATA: {json.dumps(perfherder_data)}", file=sys.stderr)
+        perfherder_path = os.environ.get("MOZ_PERFHERDER_UPLOAD")
+        decision_upload_dir = os.environ.get("MOZ_UPLOAD_DIR")
+        if perfherder_path:
+            upload_path = pathlib.Path(perfherder_path)
+        elif decision_upload_dir:
+            upload_path = (
+                pathlib.Path(decision_upload_dir) / "perfherder-data-bugbug.json"
+            )
+        else:
+            return
+
+        upload_path.parent.mkdir(parents=True, exist_ok=True)
+        target = _perfherder_artifact_path(upload_path, perfherder_data)
+        with target.open("w", encoding="utf-8") as f:
+            json.dump(perfherder_data, f)
 
 
 @memoize
@@ -121,3 +148,71 @@ def push_schedules(branch, rev):
         }
 
     return data
+
+
+@memoize
+def patch_schedules(base_rev, patch_content, mode="quick"):
+    """Query BugBug API with a patch to get test recommendations.
+
+    This is used by `./mach test --auto` to get test recommendations for local changes.
+
+    Args:
+        base_rev (str): The base revision hash.
+        patch_content (str): The patch content with commit metadata.
+        mode (str): The mode of test selection, which determines the confidence
+            threshold. One of 'extensive', 'moderate', or 'quick'.
+    Returns:
+        dict: A dictionary with containing test recommendations filtered by
+            confidence threshold.
+
+    Raises:
+        BugbugTimeoutException: If the API times out.
+    """
+
+    import hashlib
+    import re
+
+    # This ensures consistent hashing across multiple runs with identical
+    # changes by stripping the date before hashing.
+    filtered_content = re.sub(r"^Date: .*$", "", patch_content, flags=re.MULTILINE)
+    patch_hash = hashlib.md5(filtered_content.encode("utf-8")).hexdigest()
+
+    url = BUGBUG_BASE_URL + f"/patch/{base_rev}/{patch_hash}/schedules"
+
+    session = get_session()
+
+    r = session.post(
+        url,
+        data=patch_content.encode("utf-8"),
+        headers={"Content-Type": "text/plain"},
+    )
+    r.raise_for_status()
+
+    timeout = RETRY_TIMEOUT
+    attempts = timeout / RETRY_INTERVAL
+    i = 0
+    while i < attempts:
+        if r.status_code != 202:
+            break
+
+        time.sleep(RETRY_INTERVAL)
+        r = session.get(url)
+        r.raise_for_status()
+        i += 1
+
+    data = r.json()
+    if r.status_code == 202:
+        raise BugbugTimeoutException(f"Timed out waiting for result from '{url}'")
+
+    if mode == "extensive":
+        confidence_threshold = CT_LOW
+    elif mode == "moderate":
+        confidence_threshold = CT_MEDIUM
+    elif mode == "quick":
+        confidence_threshold = CT_HIGH
+    else:
+        raise ValueError(
+            f"Invalid mode: '{mode}'; expected one of 'extensive', 'moderate', 'quick'"
+        )
+
+    return {k: v for k, v in data["groups"].items() if v >= confidence_threshold}

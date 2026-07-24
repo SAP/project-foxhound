@@ -54,16 +54,18 @@ void XMLStylesheetProcessingInstruction::UnbindFromTree(
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
 
   ProcessingInstruction::UnbindFromTree(aContext);
-  Unused << UpdateStyleSheetInternal(oldDoc, nullptr);
+  (void)UpdateStyleSheetInternal(oldDoc, nullptr);
 }
 
 // nsINode
 
 void XMLStylesheetProcessingInstruction::SetNodeValueInternal(
-    const nsAString& aNodeValue, ErrorResult& aError) {
-  CharacterData::SetNodeValueInternal(aNodeValue, aError);
+    const nsAString& aNodeValue, ErrorResult& aError,
+    MutationEffectOnScript aMutationEffectOnScript) {
+  CharacterData::SetNodeValueInternal(aNodeValue, aError,
+                                      aMutationEffectOnScript);
   if (!aError.Failed()) {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
   }
 }
 

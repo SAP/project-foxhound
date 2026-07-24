@@ -6,13 +6,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSActorService.h"
-#include "mozilla/dom/ChromeUtilsBinding.h"
+
+#include "mozilla/ArrayAlgorithm.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/EventListenerBinding.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Event.h"
-#include "mozilla/dom/EventTargetBinding.h"
+#include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/InProcessParent.h"
 #include "mozilla/dom/JSActorManager.h"
@@ -24,14 +31,8 @@
 #include "mozilla/dom/JSWindowActorProtocol.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/PContent.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/ArrayAlgorithm.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Logging.h"
 #include "nsIObserverService.h"
 
 namespace mozilla::dom {
@@ -99,7 +100,7 @@ void JSActorService::RegisterWindowActor(const nsACString& aName,
   AutoTArray<JSWindowActorInfo, 1> windowInfos{proto->ToIPC()};
   nsTArray<JSProcessActorInfo> contentInfos{};
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    Unused << cp->SendInitJSActorInfos(contentInfos, windowInfos);
+    (void)cp->SendInitJSActorInfos(contentInfos, windowInfos);
   }
 
   // Register event listeners for any existing chrome targets.
@@ -135,7 +136,7 @@ void JSActorService::UnregisterWindowActor(const nsACString& aName) {
     if (XRE_IsParentProcess()) {
       for (auto* cp : ContentParent::AllProcesses(ContentParent::eAll)) {
         if (cp->CanSend()) {
-          Unused << cp->SendUnregisterJSWindowActor(name);
+          (void)cp->SendUnregisterJSWindowActor(name);
         }
         for (const auto& bp : cp->ManagedPBrowserParent()) {
           for (const auto& wgp : bp->ManagedPWindowGlobalParent()) {
@@ -275,7 +276,7 @@ void JSActorService::RegisterProcessActor(const nsACString& aName,
   AutoTArray<JSProcessActorInfo, 1> contentInfos{proto->ToIPC()};
   nsTArray<JSWindowActorInfo> windowInfos{};
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    Unused << cp->SendInitJSActorInfos(contentInfos, windowInfos);
+    (void)cp->SendInitJSActorInfos(contentInfos, windowInfos);
   }
 
   // Add observers to the protocol.
@@ -301,7 +302,7 @@ void JSActorService::UnregisterProcessActor(const nsACString& aName) {
     if (XRE_IsParentProcess()) {
       for (auto* cp : ContentParent::AllProcesses(ContentParent::eAll)) {
         if (cp->CanSend()) {
-          Unused << cp->SendUnregisterJSProcessActor(name);
+          (void)cp->SendUnregisterJSProcessActor(name);
         }
         managers.AppendElement(cp);
       }
@@ -335,6 +336,21 @@ JSActorService::GetJSProcessActorProtocol(const nsACString& aName) {
 already_AddRefed<JSWindowActorProtocol>
 JSActorService::GetJSWindowActorProtocol(const nsACString& aName) {
   return mWindowActorDescriptors.Get(aName);
+}
+
+bool JSActorProtocol::RemoteTypePrefixMatches(const nsACString& aRemoteType) {
+  if (mRemoteTypes.IsEmpty()) {
+    return true;
+  }
+
+  nsDependentCSubstring remoteTypePrefix(RemoteTypePrefix(aRemoteType));
+  for (auto& remoteType : mRemoteTypes) {
+    // TODO: Maybe this should use glob-style matching instead. See bug 2006165.
+    if (StringBeginsWith(remoteTypePrefix, remoteType)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace mozilla::dom

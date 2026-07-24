@@ -9,7 +9,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
 });
 
 let testActionCalled = 0;
@@ -153,7 +153,7 @@ add_task(async function test_sitesearch() {
   await loadURI(gBrowser.selectedBrowser, ENGINE_TEST_URL);
 
   const query = "search";
-  let engine = Services.search.getEngineByName("Contextual");
+  let engine = SearchService.getEngineByName("Contextual");
   const [expectedUrl] = UrlbarUtils.getSearchQueryUrl(engine, query);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -179,35 +179,40 @@ add_task(async function test_sitesearch() {
 });
 
 add_task(async function enter_action_search_mode() {
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    value: "> ",
-  });
-  await UrlbarTestUtils.assertSearchMode(window, {
-    source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
-    entry: "typed",
-    restrictType: "symbol",
-  });
-  let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
-  Assert.equal(
-    result.providerName,
-    "UrlbarProviderActionsSearchMode",
-    "Actions are shown"
-  );
+  // Test with prefix and exact match.
+  const KEYWORDS = ["pref", "preferences"];
 
-  let pageLoaded = BrowserTestUtils.browserLoaded(window);
-  EventUtils.synthesizeKey("pref", {}, window);
-  EventUtils.synthesizeKey("KEY_Tab");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await pageLoaded;
+  for (let keyword of KEYWORDS) {
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "> ",
+    });
+    await UrlbarTestUtils.assertSearchMode(window, {
+      source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+      entry: "typed",
+      restrictType: "symbol",
+    });
+    let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.equal(
+      result.providerName,
+      "UrlbarProviderActionsSearchMode",
+      "Actions are shown"
+    );
 
-  Assert.equal(
-    window.gBrowser.selectedBrowser.currentURI.spec,
-    "about:preferences",
-    "Opened settings page"
-  );
+    let pageLoaded = BrowserTestUtils.browserLoaded(window);
+    EventUtils.synthesizeKey(keyword, {}, window);
+    EventUtils.synthesizeKey("KEY_Tab");
+    EventUtils.synthesizeKey("KEY_Enter");
+    await pageLoaded;
 
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    Assert.equal(
+      window.gBrowser.selectedBrowser.currentURI.spec,
+      "about:preferences",
+      "Opened settings page"
+    );
+
+    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  }
 });
 
 add_task(async function test_opensearch() {

@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.customtabs.feature
 
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.annotation.VisibleForTesting
 import androidx.browser.customtabs.CustomTabsService.Relation
@@ -18,9 +17,10 @@ import mozilla.components.feature.customtabs.store.VerificationStatus.PENDING
 import mozilla.components.feature.customtabs.store.VerificationStatus.SUCCESS
 import mozilla.components.feature.customtabs.verify.OriginVerifier
 import mozilla.components.service.digitalassetlinks.RelationChecker
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 
 class OriginVerifierFeature(
-    private val packageManager: PackageManager,
+    private val packageManager: PackageManagerCompatHelper,
     private val relationChecker: RelationChecker,
     private val dispatch: (CustomTabsAction) -> Unit,
 ) {
@@ -52,7 +52,10 @@ class OriginVerifierFeature(
     }
 
     @VisibleForTesting
-    internal fun getVerifier(packageName: String, @Relation relation: Int): OriginVerifier {
+    internal fun getVerifier(
+        packageName: String,
+        @Relation relation: Int,
+    ): OriginVerifier {
         cachedVerifier?.let {
             val (cachedPackage, cachedRelation, verifier) = it
             if (cachedPackage == packageName && cachedRelation == relation) {

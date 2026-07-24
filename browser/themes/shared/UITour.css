@@ -66,7 +66,7 @@
   min-width: 24px;
 
   &.rounded-highlight {
-    border-radius: 4px;
+    border-radius: var(--border-radius-small);
   }
 
   &[active] {
@@ -104,8 +104,8 @@
 }
 
 #UITourTooltipIcon {
-  width: 48px;
-  height: 48px;
+  width: var(--size-item-xlarge);
+  height: var(--size-item-xlarge);
   margin-inline-end: 10px;
 }
 
@@ -116,7 +116,7 @@
 
 #UITourTooltipTitle {
   font-size: 1.45rem;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin: 0;
 }
 
@@ -178,7 +178,7 @@
 #UITourTooltipButtons > button:not(.button-link) {
   appearance: none;
   background-color: rgb(251, 251, 251);
-  border-radius: 3px;
+  border-radius: var(--border-radius-xsmall);
   border: 1px solid;
   border-color: rgb(192, 192, 192);
   color: rgb(71, 71, 71);

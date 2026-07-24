@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
+#include "transportflow.h"
+
 #include <deque>
 
-#include "transportflow.h"
 #include "transportlayer.h"
 
 namespace mozilla {

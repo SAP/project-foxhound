@@ -10,7 +10,6 @@
 #include <ostream>
 #include <utility>
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "nsTArrayForwardDeclare.h"
 

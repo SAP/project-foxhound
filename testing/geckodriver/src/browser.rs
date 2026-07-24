@@ -200,12 +200,6 @@ impl LocalBrowser {
             }
         }
         self.process.kill()?;
-
-        // Restoring the prefs if the browser fails to stop perhaps doesn't work anyway
-        if let Some(prefs_backup) = self.prefs_backup {
-            prefs_backup.restore();
-        };
-
         Ok(())
     }
 
@@ -239,6 +233,25 @@ impl LocalBrowser {
             ),
             Ok(None) => None,
             Err(_) => Some("{unknown}".into()),
+        }
+    }
+}
+
+impl Drop for LocalBrowser {
+    fn drop(&mut self) {
+        if let Some(prefs_backup) = self.prefs_backup.take() {
+            debug!("Restore user preferences");
+            prefs_backup.restore();
+        }
+
+        if let Some(profile_path) = &self.profile_path {
+            // Save minidump files of potential crashes from the profile if requested.
+            if let Err(e) = copy_minidumps_files(profile_path) {
+                error!(
+                    "Failed to save crash minidumps to the specified location: {}",
+                    e
+                );
+            }
         }
     }
 }
@@ -327,14 +340,8 @@ impl RemoteBrowser {
         })
     }
 
-    fn close(self) -> WebDriverResult<()> {
+    fn close(&self) -> WebDriverResult<()> {
         self.handler.force_stop()?;
-
-        // Restoring the prefs if the browser fails to stop perhaps doesn't work anyway
-        if let Some(prefs_backup) = self.prefs_backup {
-            prefs_backup.restore();
-        };
-
         Ok(())
     }
 
@@ -348,6 +355,23 @@ impl RemoteBrowser {
 
     fn push_file(&self, content: &[u8], path: &str) -> Result<String, AndroidError> {
         self.handler.push_as_file(content, path)
+    }
+}
+
+impl Drop for RemoteBrowser {
+    fn drop(&mut self) {
+        // Restore preferences which had custom values set.
+        if let Some(prefs_backup) = self.prefs_backup.take() {
+            prefs_backup.restore();
+        }
+
+        // Save minidump files of potential crashes from the profile if requested.
+        if let Err(e) = self.handler.copy_minidumps_files() {
+            error!(
+                "Failed to save crash minidumps to the specified location: {}",
+                e
+            );
+        }
     }
 }
 
@@ -435,9 +459,64 @@ impl PrefsBackup {
     }
 }
 
+fn copy_minidumps_files(profile_path: &Path) -> WebDriverResult<()> {
+    let mut minidumps_path = profile_path.to_path_buf();
+    minidumps_path.push("minidumps");
+
+    match std::fs::read_dir(&minidumps_path) {
+        Ok(entries) => {
+            let save_path = match env::var("MINIDUMP_SAVE_PATH").map(PathBuf::from) {
+                Ok(path) => path,
+                Err(_) => {
+                    debug!("Set MINIDUMP_SAVE_PATH to store crash minidumps.");
+                    return Ok(());
+                }
+            };
+
+            for result_entry in entries {
+                let entry = result_entry?;
+                let file_type = entry.file_type()?;
+
+                if file_type.is_dir() {
+                    continue;
+                }
+
+                let path = entry.path();
+                let extension = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.to_lowercase())
+                    .unwrap_or(String::from(""));
+
+                // Copy only *.dmp and *.extra files.
+                if extension == "dmp" || extension == "extra" {
+                    let dest_path = save_path.join(entry.file_name());
+                    fs::copy(path, &dest_path)?;
+
+                    debug!(
+                        "Copied minidump file {:?} to {:?}.",
+                        entry.file_name(),
+                        save_path.display()
+                    );
+                }
+            }
+        }
+        Err(_) => {
+            warn!(
+                "Couldn't read files from minidumps folder '{}'",
+                minidumps_path.display(),
+            );
+
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::set_prefs;
+    use super::*;
     use crate::browser::read_marionette_port;
     use crate::capabilities::{FirefoxOptions, ProfileType};
     use base64::prelude::BASE64_STANDARD;
@@ -448,7 +527,13 @@ mod tests {
     use std::fs::File;
     use std::io::{Read, Write};
     use std::path::Path;
-    use tempfile::tempdir;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    // Mutex used to run environment variable–related tests sequentially.
+    lazy_static::lazy_static! {
+        static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
+    }
 
     fn example_profile() -> Value {
         let mut profile_data = Vec::with_capacity(1024);
@@ -591,7 +676,7 @@ mod tests {
             file.write_all(data).unwrap();
         }
 
-        let profile_dir = tempdir().unwrap();
+        let profile_dir = TempDir::new().unwrap();
         let profile_path = profile_dir.path();
         assert_eq!(read_marionette_port(profile_path), None);
         assert_eq!(read_marionette_port(profile_path), None);
@@ -601,5 +686,168 @@ mod tests {
         assert_eq!(read_marionette_port(profile_path), Some(1234));
         create_port_file(profile_path, b"1234abc");
         assert_eq!(read_marionette_port(profile_path), None);
+    }
+
+    fn assert_minidump_files(minidumps_path: &Path, filename: &str) {
+        let mut dmp_file_present = false;
+        let mut extra_file_present = false;
+
+        for result_entry in std::fs::read_dir(minidumps_path).unwrap() {
+            let entry = result_entry.unwrap();
+
+            let path: PathBuf = entry.path();
+            let filename_from_path = path.file_stem().unwrap().to_str().unwrap();
+            if filename == filename_from_path {
+                let extension = path.extension().and_then(|ext| ext.to_str()).unwrap();
+
+                if extension == "dmp" {
+                    dmp_file_present = true;
+                }
+
+                if extension == "extra" {
+                    extra_file_present = true;
+                }
+            }
+        }
+
+        assert!(dmp_file_present);
+        assert!(extra_file_present);
+    }
+
+    fn create_file(folder: &Path, filename: &str) {
+        let file = folder.join(filename);
+        File::create(&file).unwrap();
+    }
+
+    fn create_minidump_files(profile_path: &Path, filename: &str) {
+        let folder = create_minidump_folder(profile_path);
+
+        let mut file_extensions = [".dmp", ".extra"];
+        for file_extension in file_extensions.iter_mut() {
+            let mut filename_with_extension: String = filename.to_owned();
+            filename_with_extension.push_str(file_extension);
+
+            create_file(&folder, &filename_with_extension);
+        }
+    }
+
+    fn create_minidump_folder(profile_path: &Path) -> PathBuf {
+        let minidumps_folder = profile_path.join("minidumps");
+        if !minidumps_folder.is_dir() {
+            fs::create_dir(&minidumps_folder).unwrap();
+        }
+
+        minidumps_folder
+    }
+
+    #[test]
+    fn test_copy_minidumps() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let tmp_dir_profile = TempDir::new().unwrap();
+        let profile_path = tmp_dir_profile.path();
+
+        let filename = "test";
+        create_minidump_files(profile_path, filename);
+
+        let tmp_dir_minidumps = TempDir::new().unwrap();
+        let minidumps_path = tmp_dir_minidumps.path();
+
+        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        assert!(copy_minidumps_files(profile_path).is_ok());
+        env::remove_var("MINIDUMP_SAVE_PATH");
+
+        assert_minidump_files(minidumps_path, filename);
+
+        tmp_dir_profile.close().unwrap();
+        tmp_dir_minidumps.close().unwrap();
+    }
+
+    #[test]
+    fn test_copy_multiple_minidumps() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let tmp_dir_profile = TempDir::new().unwrap();
+        let profile_path = tmp_dir_profile.path();
+
+        let filename_1 = "test_1";
+        create_minidump_files(profile_path, filename_1);
+
+        let filename_2 = "test_2";
+        create_minidump_files(profile_path, filename_2);
+
+        let tmp_dir_minidumps = TempDir::new().unwrap();
+        let minidumps_path = tmp_dir_minidumps.path();
+
+        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        assert!(copy_minidumps_files(profile_path).is_ok());
+        env::remove_var("MINIDUMP_SAVE_PATH");
+
+        assert_minidump_files(minidumps_path, filename_1);
+        assert_minidump_files(minidumps_path, filename_1);
+
+        tmp_dir_profile.close().unwrap();
+        tmp_dir_minidumps.close().unwrap();
+    }
+
+    #[test]
+    fn test_copy_minidumps_with_non_existent_manifest_path() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let tmp_dir_profile = TempDir::new().unwrap();
+        let profile_path = tmp_dir_profile.path();
+
+        create_minidump_folder(profile_path);
+
+        std::env::set_var("MINIDUMP_SAVE_PATH", Path::new("/non-existent"));
+        assert!(copy_minidumps_files(profile_path).is_ok());
+        env::remove_var("MINIDUMP_SAVE_PATH");
+
+        tmp_dir_profile.close().unwrap();
+    }
+
+    #[test]
+    fn test_copy_minidumps_with_non_existent_profile_path() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let tmp_dir_profile = TempDir::new().unwrap();
+        let profile_path = tmp_dir_profile.path();
+
+        std::env::set_var("MINIDUMP_SAVE_PATH", Path::new("/non-existent"));
+        assert!(copy_minidumps_files(profile_path).is_ok());
+        env::remove_var("MINIDUMP_SAVE_PATH");
+
+        tmp_dir_profile.close().unwrap();
+    }
+
+    #[test]
+    fn test_copy_minidumps_with_no_minidump_files() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let tmp_dir_profile = TempDir::new().unwrap();
+        let profile_path = tmp_dir_profile.path();
+
+        let minidumps_folder = create_minidump_folder(profile_path);
+
+        // Create a folder.
+        let test_folder_binding = profile_path.join("test");
+        let test_folder = test_folder_binding.as_path();
+        fs::create_dir(test_folder).unwrap();
+
+        // Create a file with non minidumps extension.
+        create_file(&minidumps_folder, "test.txt");
+
+        let tmp_dir_minidumps = TempDir::new().unwrap();
+        let minidumps_path = tmp_dir_minidumps.path();
+
+        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        assert!(copy_minidumps_files(profile_path).is_ok());
+        env::remove_var("MINIDUMP_SAVE_PATH");
+
+        // Check that the non minidump file and the folder were not copied.
+        assert!(minidumps_path.read_dir().unwrap().next().is_none());
+
+        tmp_dir_profile.close().unwrap();
+        tmp_dir_minidumps.close().unwrap();
     }
 }

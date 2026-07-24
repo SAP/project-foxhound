@@ -88,8 +88,12 @@ add_task(async function test_prefs_entrypoint() {
       );
       let doc = browser.contentDocument;
       ok(
-        !doc.getElementById("dataMigrationGroup"),
-        "Should remove import entrypoint in prefs if disabled via policy."
+        doc.getElementById("dataMigrationGroup"),
+        "Import entrypoint group should exist."
+      );
+      ok(
+        BrowserTestUtils.isHidden(doc.getElementById("dataMigrationGroup")),
+        "Import entrypoint should be hidden in prefs if disabled via policy."
       );
       ok(
         !doc.getElementById("migrationWizardDialog").open,

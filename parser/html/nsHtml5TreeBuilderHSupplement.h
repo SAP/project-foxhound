@@ -26,7 +26,6 @@ int32_t mHandlesUsed;
 nsTArray<mozilla::UniquePtr<nsIContent*[]>> mOldHandles;
 nsHtml5TreeOpStage* mSpeculativeLoadStage;
 nsresult mBroken;
-int32_t isInSVGOddPCData = 0;
 // Controls whether the current HTML script goes through the more complex
 // path that accommodates the possibility of the script becoming a
 // parser-blocking script and the possibility of the script inserting
@@ -65,12 +64,11 @@ nsIContentHandle* getDocumentFragmentForTemplate(nsIContentHandle* aTemplate);
 void setDocumentFragmentForTemplate(nsIContentHandle* aTemplate,
                                     nsIContentHandle* aFragment);
 
-nsIContentHandle* getShadowRootFromHost(nsIContentHandle* aHost,
-                                        nsIContentHandle* aTemplateNode,
-                                        nsHtml5String aShadowRootMode,
-                                        bool aShadowRootIsClonable,
-                                        bool aShadowRootIsSerializable,
-                                        bool aShadowRootDelegatesFocus);
+nsIContentHandle* getShadowRootFromHost(
+    nsIContentHandle* aHost, nsIContentHandle* aTemplateNode,
+    nsHtml5String aShadowRootMode, bool aShadowRootIsClonable,
+    bool aShadowRootIsSerializable, bool aShadowRootDelegatesFocus,
+    nsHtml5String aShadowRootReferenceTarget);
 
 nsIContentHandle* getFormPointerForContext(nsIContentHandle* aContext);
 

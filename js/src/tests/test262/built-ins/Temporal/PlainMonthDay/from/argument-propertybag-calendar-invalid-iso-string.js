@@ -1,24 +1,26 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2025 Brage Hogstad, University of Bergen. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.plainmonthday.from
-description: Various invalid ISO string values for calendar in a property bag
+description: Invalid ISO string as calendar should throw RangeError
 features: [Temporal]
 ---*/
 
 const invalidStrings = [
-	["", "empty string"],
+  ["", "empty string"],
+  ["1997-12-04[u-ca=notacal]", "Unknown calendar"],
+  ["notacal", "Unknown calendar"],
 ];
 
-for (const [calendar, description] of invalidStrings) {
-	const arg = { monthCode: "M11", day: 18, calendar };
-	assert.throws(
-		RangeError,
-		() => Temporal.PlainMonthDay.from(arg),
-		`${description} is not a valid calendar ID`
-	);
+for (const [cal, description] of invalidStrings) {
+  const arg = { year: 1976, monthCode: "M11", day: 18, calendar: cal };
+  assert.throws(
+    RangeError,
+    () => Temporal.PlainMonthDay.from(arg),
+    `${description} is not a valid calendar ID`
+  );
 }
 
 reportCompare(0, 0);

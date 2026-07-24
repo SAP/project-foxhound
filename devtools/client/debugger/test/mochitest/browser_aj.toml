@@ -3,7 +3,6 @@ tags = "devtools"
 subsuite = "devtools"
 support-files = [
   "examples/*",
-  "integration-tests/*",
   "head.js",
   "shared-head.js",
   "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
@@ -16,7 +15,6 @@ support-files = [
 ]
 prefs = [
  "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
- "devtools.debugger.features.javascript-tracing=true", # This pref has to be set before the process starts
  "javascript.options.experimental.explicit_resource_management=true", # This pref has to be set before the process starts
 ]
 
@@ -28,11 +26,9 @@ prefs = [
 
 ["browser_dbg-backgroundtask-debugging.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1591064
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1591064
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1591064
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1937229
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1591064
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1767707
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1767707
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1937229
 ]
 
 ["browser_dbg-bfcache.js"]
@@ -42,7 +38,9 @@ skip-if = [
 ["browser_dbg-blackbox-original.js"]
 
 ["browser_dbg-blackbox.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan",
+]
 
 ["browser_dbg-breaking-from-console.js"]
 
@@ -51,39 +49,53 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_dbg-breakpoint-skipping-console.js"]
 
 ["browser_dbg-breakpoint-skipping.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-actions.js"]
 
 ["browser_dbg-breakpoints-columns.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-cond-functional.js"]
 
 ["browser_dbg-breakpoints-cond-shortcut.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-cond-source-maps.js"]
 
 ["browser_dbg-breakpoints-cond-ui-state.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-debugger-statement.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-duplicate-functions.js"]
 
 ["browser_dbg-breakpoints-in-evaled-sources.js"]
 
 ["browser_dbg-breakpoints-list.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-popup.js"]
 
 ["browser_dbg-breakpoints-reloading-with-source-changes.js"]
 
 ["browser_dbg-breakpoints-reloading.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-breakpoints-same-file-per-target.js"]
 
@@ -92,22 +104,18 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_dbg-breakpoints-sourcemap-with-sections.js"]
 
 ["browser_dbg-breakpoints.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-browser-toolbox-unselected-pause.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1591064
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1591064
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1937315
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1591064
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1937315
 ]
 
 ["browser_dbg-browser-toolbox-workers.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1591064, parent intercept mode is needed
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1591064
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1767721
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1591064, parent intercept mode is needed
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1767721
 ]
 
 ["browser_dbg-call-stack.js"]
@@ -117,42 +125,58 @@ skip-if = [
 ["browser_dbg-console-async.js"]
 
 ["browser_dbg-console-eval.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-console-link.js"]
 
 ["browser_dbg-console-map-bindings.js"]
 
 ["browser_dbg-console.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-content-script-sources.js"]
 
 ["browser_dbg-continue-to-here-click.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-continue-to-here.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-custom-formatters.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-debug-line.js"]
 
 ["browser_dbg-debugger-buttons.js"]
 
 ["browser_dbg-dom-mutation-breakpoints-fission.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-dom-mutation-breakpoints.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-eager-eval-skip-pause.js"]
 
 ["browser_dbg-editor-exception.js"]
 
 ["browser_dbg-editor-gutter.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-editor-highlight.js"]
 
@@ -165,7 +189,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_dbg-editor-select.js"]
 
 ["browser_dbg-ember-original-variable-mapping-notifications.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-es-module-worker.js"]
 
@@ -175,53 +201,41 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_dbg-event-breakpoints-fission.js"]
 
+["browser_dbg-event-breakpoints-unsupported.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
 ["browser_dbg-event-breakpoints.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1959062
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1959062
+]
 
 ["browser_dbg-event-handler.js"]
 
 ["browser_dbg-expressions-error.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-expressions-focus.js"]
 
 ["browser_dbg-expressions-thread.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_dbg-expressions-watch.js"]
 
 ["browser_dbg-expressions.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_dbg-extension-inspectedWindow-debugger-statement.js"]
-
-["browser_dbg-features-asm.js"]
-
-["browser_dbg-features-breakable-lines.js"]
-
-["browser_dbg-features-breakable-positions.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_dbg-features-breakpoints.js"]
-
-["browser_dbg-features-browser-toolbox-source-tree.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1591064
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1591064
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1781499
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1591064
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
 ]
 
-["browser_dbg-features-source-text-content.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_dbg-features-source-tree.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-
-["browser_dbg-features-tabs.js"]
-
-["browser_dbg-features-wasm.js"]
+["browser_dbg-extension-inspectedWindow-debugger-statement.js"]
 
 ["browser_dbg-fission-frame-breakpoint.js"]
 
@@ -255,40 +269,7 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_dbg-inline-preview.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1607636
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1607636
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1607636
 ]
 
 ["browser_dbg-inline-script-offset.js"]
-
-["browser_dbg-inspector-integration.js"]
-
-["browser_dbg-integration-reloading-compressed-sourcemaps.js"]
-
-["browser_dbg-integration-reloading-uncompressed-sourcemaps.js"]
-
-["browser_dbg-javascript-tracer-function-returns.js"]
-
-["browser_dbg-javascript-tracer-next-interaction.js"]
-
-["browser_dbg-javascript-tracer-next-load.js"]
-
-["browser_dbg-javascript-tracer-sidebar-values-search.js"]
-
-["browser_dbg-javascript-tracer-sidebar.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug 1924435
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1924435
-]
-
-["browser_dbg-javascript-tracer-values-preview.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug The tracer tree isn't yet accessible
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug The tracer tree isn't yet accessible
-]
-
-["browser_dbg-javascript-tracer-values.js"]
-
-["browser_dbg-javascript-tracer-worker.js"]
-
-["browser_dbg-javascript-tracer.js"]

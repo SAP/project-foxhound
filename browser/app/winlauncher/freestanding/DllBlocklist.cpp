@@ -4,9 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/BinarySearch.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/Types.h"
 #include "mozilla/WindowsDllBlocklist.h"
@@ -192,6 +190,11 @@ static BlockAction CheckBlockInfo(const DllBlockInfo* aInfo,
 
   if ((aInfo->mFlags & DllBlockInfoFlags::GMPLUGIN_PROCESSES_ONLY) &&
       !(gBlocklistInitFlags & eDllBlocklistInitFlagIsGMPluginProcess)) {
+    return BlockAction::Allow;
+  }
+
+  if ((aInfo->mFlags & DllBlockInfoFlags::RDD_PROCESSES_ONLY) &&
+      !(gBlocklistInitFlags & eDllBlocklistInitFlagIsRDDProcess)) {
     return BlockAction::Allow;
   }
 
@@ -457,7 +460,7 @@ MOZ_NEVER_INLINE NTSTATUS AfterMapViewOfExecutableSection(
       // use it to bypass CIG.  In a sandbox process, this addition fails
       // because we cannot map the section to a writable region, but it's
       // ignorable because the paths have been added by the browser process.
-      Unused << SharedSection::AddDependentModule(sectionFileName);
+      (void)SharedSection::AddDependentModule(sectionFileName);
 
       bool attemptToBlockViaRedirect;
 #if defined(NIGHTLY_BUILD)

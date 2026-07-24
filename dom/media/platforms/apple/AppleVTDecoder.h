@@ -81,6 +81,18 @@ class AppleVTDecoder final : public MediaDataDecoder,
     return ConversionRequired::kNeedNone;
   }
 
+  Maybe<PropertyValue> GetDecodeProperty(PropertyName aName) const override {
+    // Some Intel GPU has long decoding time and needs more frames queued to
+    // play smoothly. See bug 1230641.
+    static constexpr uint32_t kMinNumOutputBuffers = 10;
+    switch (aName) {
+      case PropertyName::MinNumVideoBuffers:
+        return Some(PropertyValue(kMinNumOutputBuffers));
+      default:
+        return MediaDataDecoder::GetDecodeProperty(aName);
+    }
+  }
+
   // Access from the taskqueue and the decoder's thread.
   // OutputFrame is thread-safe.
   void OutputFrame(CVPixelBufferRef aImage, AppleFrameRef aFrameRef);

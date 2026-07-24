@@ -20,7 +20,6 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/CookieStoreParent.h"
 #include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/EndpointForReportParent.h"
 #include "mozilla/dom/FetchParent.h"
 #include "mozilla/dom/FileCreatorParent.h"
 #include "mozilla/dom/FileSystemManagerParentFactory.h"
@@ -58,6 +57,7 @@
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/quota/QuotaParent.h"
 #include "mozilla/dom/simpledb/ActorsParent.h"
+#include "mozilla/dom/cache/BoundStorageKeyParent.h"
 #include "mozilla/dom/VsyncParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -464,6 +464,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateFileSystemManagerParent(
 
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateWebTransportParent(
     const nsAString& aURL, nsIPrincipal* aPrincipal,
+    const uint64_t& aBrowsingContextID,
     const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
     const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
     nsTArray<WebTransportHash>&& aServerCertHashes,
@@ -474,9 +475,10 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateWebTransportParent(
 
   RefPtr<mozilla::dom::WebTransportParent> webt =
       new mozilla::dom::WebTransportParent();
-  webt->Create(aURL, aPrincipal, aClientInfo, aDedicated, aRequireUnreliable,
-               aCongestionControl, std::move(aServerCertHashes),
-               std::move(aParentEndpoint), std::move(aResolver));
+  webt->Create(aURL, aPrincipal, aBrowsingContextID, aClientInfo, aDedicated,
+               aRequireUnreliable, aCongestionControl,
+               std::move(aServerCertHashes), std::move(aParentEndpoint),
+               std::move(aResolver));
   return IPC_OK();
 }
 
@@ -580,7 +582,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPFileCreatorConstructor(
   // We allow the creation of File via this IPC call only for the 'file' process
   // or for testing.
   if (!isFileRemoteType && !StaticPrefs::dom_file_createInChild()) {
-    Unused << dom::FileCreatorParent::Send__delete__(
+    (void)dom::FileCreatorParent::Send__delete__(
         actor, dom::FileCreationErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
     return IPC_OK();
   }
@@ -881,7 +883,8 @@ BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar() {
 already_AddRefed<PCacheStorageParent>
 BackgroundParentImpl::AllocPCacheStorageParent(
     const Namespace& aNamespace, const PrincipalInfo& aPrincipalInfo) {
-  return dom::cache::AllocPCacheStorageParent(this, aNamespace, aPrincipalInfo);
+  return dom::cache::AllocPCacheStorageParent(this, nullptr, aNamespace,
+                                              aPrincipalInfo);
 }
 
 PMessagePortParent* BackgroundParentImpl::AllocPMessagePortParent(
@@ -1096,6 +1099,25 @@ BackgroundParentImpl::RecvPHttpBackgroundChannelConstructor(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateBoundStorageKeyParent(
+    Endpoint<::mozilla::dom::cache::PBoundStorageKeyParent>&& aEndpoint,
+    const Namespace& aNamespace, const PrincipalInfo& aPrincipalInfo) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  if (!aEndpoint.IsValid()) {
+    return IPC_FAIL(this, "Invalid endpoint for BoundStorageKeyParent");
+  }
+
+  auto* pActor = new dom::cache::BoundStorageKeyParent(this);
+  if (!aEndpoint.Bind(pActor)) {
+    return IPC_FAIL(this,
+                    "Failed to bind endpoint for BoundStorageKeyParent actor");
+  }
+
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateMIDIPort(
     Endpoint<PMIDIPortParent>&& aEndpoint, const MIDIPortInfo& aPortInfo,
     const bool& aSysexEnabled) {
@@ -1297,22 +1319,6 @@ BackgroundParentImpl::RecvPServiceWorkerRegistrationConstructor(
   return IPC_OK();
 }
 
-dom::PEndpointForReportParent*
-BackgroundParentImpl::AllocPEndpointForReportParent(
-    const nsAString& aGroupName, const PrincipalInfo& aPrincipalInfo) {
-  RefPtr<dom::EndpointForReportParent> actor =
-      new dom::EndpointForReportParent();
-  return actor.forget().take();
-}
-
-mozilla::ipc::IPCResult BackgroundParentImpl::RecvPEndpointForReportConstructor(
-    PEndpointForReportParent* aActor, const nsAString& aGroupName,
-    const PrincipalInfo& aPrincipalInfo) {
-  static_cast<dom::EndpointForReportParent*>(aActor)->Run(aGroupName,
-                                                          aPrincipalInfo);
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
     EnsureRDDProcessAndCreateBridgeResolver&& aResolver) {
@@ -1421,27 +1427,6 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvRequestCameraAccess(
 #else
   aResolver(CamerasAccessStatus::Error);
 #endif
-  return IPC_OK();
-}
-
-bool BackgroundParentImpl::DeallocPEndpointForReportParent(
-    PEndpointForReportParent* aActor) {
-  RefPtr<dom::EndpointForReportParent> actor =
-      dont_AddRef(static_cast<dom::EndpointForReportParent*>(aActor));
-  return true;
-}
-
-mozilla::ipc::IPCResult BackgroundParentImpl::RecvRemoveEndpoint(
-    const nsAString& aGroupName, const nsACString& aEndpointURL,
-    const PrincipalInfo& aPrincipalInfo) {
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "BackgroundParentImpl::RecvRemoveEndpoint(",
-      [aGroupName = nsString(aGroupName),
-       aEndpointURL = nsCString(aEndpointURL), aPrincipalInfo]() {
-        dom::ReportingHeader::RemoveEndpoint(aGroupName, aEndpointURL,
-                                             aPrincipalInfo);
-      }));
-
   return IPC_OK();
 }
 

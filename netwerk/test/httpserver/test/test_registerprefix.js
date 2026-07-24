@@ -58,36 +58,36 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
   ];
 });
 
-/** *************************
+/*****************************
  * registered prefix handler *
- ***************************/
+ *****************************/
 
 function prefixHandler(channel) {
   nocache(channel);
   srv.registerPrefixHandler("/prefix/", makeOverride("prefix"));
 }
 
-/** ******************************
+/**********************************
  * registered path handler on top *
- ********************************/
+ **********************************/
 
 function pathHandler(channel) {
   nocache(channel);
   srv.registerPathHandler("/prefix/dummy", makeOverride("path"));
 }
 
-/** ********************************
+/************************************
  * registered longer prefix handler *
- **********************************/
+ ************************************/
 
 function longerPrefixHandler(channel) {
   nocache(channel);
   srv.registerPrefixHandler("/prefix/subpath/", makeOverride("subpath"));
 }
 
-/** **********************
+/**************************
  * removed prefix handler *
- ************************/
+ **************************/
 
 function removeHandlers(channel) {
   nocache(channel);
@@ -95,9 +95,9 @@ function removeHandlers(channel) {
   srv.registerPathHandler("/prefix/dummy", null);
 }
 
-/** ***************************
+/*******************************
  * re-register shorter handler *
- *****************************/
+ *******************************/
 
 function newPrefixHandler(channel) {
   nocache(channel);

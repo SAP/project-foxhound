@@ -368,7 +368,6 @@ MCall* MakeCall(TempAllocator& alloc, Undef addUndefined, CallInfo& callInfo,
   }
 
   // Explicitly pad any missing arguments with |undefined|.
-  // This permits skipping the argumentsRectifier.
   MOZ_ASSERT_IF(target && targetArgs > callInfo.argc(), target->hasJitEntry());
 
   MConstant* undef = nullptr;

@@ -1,5 +1,9 @@
-commit d6a3a85e988251a7e4966035e618c6d203f1bb7c
-Author: Almaz <mingaleev@google.com>
-Date:   Fri Apr 11 18:26:16 2025 +0100
+commit ea346ffcbdc4cde776147d9456fd71121005e52f
+Author: Robin Leroy <egg.robin.leroy@gmail.com>
+Date:   Thu Dec 18 17:47:46 2025 +0100
 
-    ICU-23096 Update ICU data to TZDB 2025b. (#45)
+    ICU-23296 Update tzdata to 2025c (#46)
+    
+    * ICU-23296 Pick up CLDR changes since 2025b
+    
+    * ICU-23296 Add 2025c data

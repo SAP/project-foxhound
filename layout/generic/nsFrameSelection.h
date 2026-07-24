@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFrameSelection_h___
-#define nsFrameSelection_h___
+#ifndef nsFrameSelection_h_
+#define nsFrameSelection_h_
 
 #include <stdint.h>
 
@@ -43,7 +43,14 @@ struct SelectionDetails {
       : mStart(), mEnd(), mSelectionType(mozilla::SelectionType::eInvalid) {
     MOZ_COUNT_CTOR(SelectionDetails);
   }
-  MOZ_COUNTED_DTOR(SelectionDetails)
+  ~SelectionDetails() {
+    MOZ_COUNT_DTOR(SelectionDetails);
+    // Destroy the linked list without recursion.
+    auto next = std::move(mNext);
+    while (next) {
+      next = std::move(next->mNext);
+    }
+  }
 
   int32_t mStart;
   int32_t mEnd;
@@ -424,12 +431,13 @@ class nsFrameSelection final {
    * @param aContent is the content asking
    * @param aContentOffset is the starting content boundary
    * @param aContentLength is the length of the content piece asking
-   * @param aSlowCheck will check using slow method with no shortcuts
+   * @param aIgnoreSelection is Yes, this won't return selection details about
+   * the normal selection.
    */
-  mozilla::UniquePtr<SelectionDetails> LookUpSelection(nsIContent* aContent,
-                                                       int32_t aContentOffset,
-                                                       int32_t aContentLength,
-                                                       bool aSlowCheck) const;
+  enum class IgnoreNormalSelection : bool { No, Yes };
+  mozilla::UniquePtr<SelectionDetails> LookUpSelection(
+      nsIContent* aContent, int32_t aContentOffset, int32_t aContentLength,
+      IgnoreNormalSelection aIgnoreNormalSelection) const;
 
   /**
    * Sets the drag state to aState for resons of drag state.
@@ -1392,4 +1400,4 @@ struct LimitersAndCaretData {
 
 }  // namespace mozilla
 
-#endif /* nsFrameSelection_h___ */
+#endif /* nsFrameSelection_h_ */

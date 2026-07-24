@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_storage_Variant_h__
-#define mozilla_storage_Variant_h__
+#ifndef mozilla_storage_Variant_h_
+#define mozilla_storage_Variant_h_
 
 #include "nsIInterfaceRequestor.h"
 #include "nsIVariant.h"
@@ -516,4 +516,4 @@ using ArrayOfUTF8StringsVariant = Variant<nsCString[], false>;
 
 #include "Variant_inl.h"
 
-#endif  // mozilla_storage_Variant_h__
+#endif  // mozilla_storage_Variant_h_

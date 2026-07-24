@@ -8,7 +8,6 @@
 
 #include "../../AboutThirdPartyUtils.h"
 #include "mozilla/AboutThirdParty.h"
-#include "mozilla/ArrayUtils.h"
 #include "nsTArray.h"
 
 using namespace mozilla;

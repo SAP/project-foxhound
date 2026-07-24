@@ -9,10 +9,9 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
-
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-#include "nsCOMPtr.h"
 
 namespace mozilla::dom {
 

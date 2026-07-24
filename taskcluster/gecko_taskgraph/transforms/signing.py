@@ -8,7 +8,7 @@ Transform the signing task into an actual task description.
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.keyed_by import evaluate_keyed_by
-from taskgraph.util.schema import Schema, taskref_or_string
+from taskgraph.util.schema import LegacySchema, taskref_or_string
 from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.task import task_description_schema
@@ -20,43 +20,42 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-signing_description_schema = Schema(
-    {
-        # Artifacts from dep task to sign - Sync with taskgraph/transforms/task.py
-        # because this is passed directly into the signingscript worker
-        Required("upstream-artifacts"): [
-            {
-                # taskId of the task with the artifact
-                Required("taskId"): taskref_or_string,
-                # type of signing task (for CoT)
-                Required("taskType"): str,
-                # Paths to the artifacts to sign
-                Required("paths"): [str],
-                # Signing formats to use on each of the paths
-                Required("formats"): [str],
-            }
-        ],
-        # attributes for this task
-        Optional("attributes"): {str: object},
-        # unique label to describe this signing task, defaults to {dep.label}-signing
-        Optional("label"): str,
-        # treeherder is allowed here to override any defaults we use for signing.  See
-        # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
-        # below transforms for defaults of various values.
-        Optional("treeherder"): task_description_schema["treeherder"],
-        # Routes specific to this task, if defined
-        Optional("routes"): [str],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Required("dependencies"): task_description_schema["dependencies"],
-        Optional("extra"): {str: object},
-        # Max number of partner repacks per chunk
-        Optional("repacks-per-chunk"): int,
-        # Override the default priority for the project
-        Optional("priority"): task_description_schema["priority"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+signing_description_schema = LegacySchema({
+    # Artifacts from dep task to sign - Sync with taskgraph/transforms/task.py
+    # because this is passed directly into the signingscript worker
+    Required("upstream-artifacts"): [
+        {
+            # taskId of the task with the artifact
+            Required("taskId"): taskref_or_string,
+            # type of signing task (for CoT)
+            Required("taskType"): str,
+            # Paths to the artifacts to sign
+            Required("paths"): [str],
+            # Signing formats to use on each of the paths
+            Required("formats"): [str],
+        }
+    ],
+    # attributes for this task
+    Optional("attributes"): {str: object},
+    # unique label to describe this signing task, defaults to {dep.label}-signing
+    Optional("label"): str,
+    # treeherder is allowed here to override any defaults we use for signing.  See
+    # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
+    # below transforms for defaults of various values.
+    Optional("treeherder"): task_description_schema["treeherder"],
+    # Routes specific to this task, if defined
+    Optional("routes"): [str],
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Required("dependencies"): task_description_schema["dependencies"],
+    Optional("extra"): {str: object},
+    # Max number of partner repacks per chunk
+    Optional("repacks-per-chunk"): int,
+    # Override the default priority for the project
+    Optional("priority"): task_description_schema["priority"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 
 def get_locales_description(attributes, default):
@@ -184,6 +183,7 @@ def make_task_description(config, jobs):
             "dependencies": job["dependencies"],
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "optimization": dep_job.optimization,
             "routes": job.get("routes", []),
             "shipping-product": job.get("shipping-product"),

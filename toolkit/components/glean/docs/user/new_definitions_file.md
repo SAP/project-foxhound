@@ -118,12 +118,8 @@ For more information on what expiry means and the
 on this subject. Some quick facts:
 
 * Data collected to expired metrics is not recorded or sent.
-* Recording to expired metrics is not an error at runtime.
-* Expired metrics being in a `metrics.yaml` is a linting error in `glean_parser`.
-* Expired (and non-expired) metrics that are no longer useful should be promptly removed from your `metrics.yaml`.
-  This reduces the size and improves the performance of Firefox
-  (and speeds up the Firefox build process)
-  by decreasing the amount of code that needs to be generated.
+* Recording to expired metrics is not an error at runtime,
+  but will fail the test `test_no_expired_metrics` and so must be removed before landing.
 
 [instrumentation-tests]: ./instrumentation_tests
 [glean-debug]: https://mozilla.github.io/glean/book/reference/debug/index.html

@@ -8,7 +8,6 @@
 
 #include "nsIConverterOutputStream.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Encoding.h"
 
 class nsIOutputStream;

@@ -25,6 +25,7 @@ import org.mozilla.gecko.util.GeckoBundle;
 public class ContentBlockingController {
   private static final String LOGTAG = "GeckoContentBlocking";
 
+  /** Content blocking event constants and data. */
   public static class Event {
     // These values must be kept in sync with the corresponding values in
     // nsIWebProgressListener.idl.
@@ -125,6 +126,7 @@ public class ContentBlockingController {
     /** Indicates that suspicious fingerprinting content has been blocked */
     public static final int BLOCKED_SUSPICIOUS_FINGERPRINTING = 0x00000004;
 
+    /** Protected constructor for Event. */
     protected Event() {}
   }
 
@@ -133,6 +135,7 @@ public class ContentBlockingController {
   public static class LogEntry {
     /** Data about why a given entry was blocked. */
     public static class BlockingData {
+      /** Log event type definitions for content blocking. */
       @Retention(RetentionPolicy.SOURCE)
       @IntDef({
         Event.BLOCKED_TRACKING_CONTENT, Event.LOADED_LEVEL_1_TRACKING_CONTENT,
@@ -166,6 +169,7 @@ public class ContentBlockingController {
         count = bundle.getInt("count");
       }
 
+      /** Protected constructor for BlockingData. */
       protected BlockingData() {
         category = Event.BLOCKED_TRACKING_CONTENT;
         blocked = false;
@@ -189,6 +193,7 @@ public class ContentBlockingController {
       blockingData = Collections.unmodifiableList(dataArray);
     }
 
+    /** Protected constructor for LogEntry. */
     protected LogEntry() {
       origin = null;
       blockingData = null;

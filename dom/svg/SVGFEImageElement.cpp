@@ -6,19 +6,19 @@
 
 #include "mozilla/dom/SVGFEImageElement.h"
 
+#include "imgIContainer.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/SVGObserverUtils.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/SVGFEImageElementBinding.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsNetUtil.h"
-#include "imgIContainer.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEImage)
 
@@ -36,18 +36,33 @@ SVGElement::StringInfo SVGFEImageElement::sStringInfo[3] = {
     {nsGkAtoms::href, kNameSpaceID_None, true},
     {nsGkAtoms::href, kNameSpaceID_XLink, true}};
 
+// Cycle collection magic -- based on SVGUseElement
+NS_IMPL_CYCLE_COLLECTION_CLASS(SVGFEImageElement)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SVGFEImageElement,
+                                                SVGFEImageElementBase)
+  tmp->mImageContentObserver = nullptr;
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(SVGFEImageElement,
+                                                  SVGFEImageElementBase)
+  SVGObserverUtils::TraverseFEImageObserver(tmp, &cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
 //----------------------------------------------------------------------
 // nsISupports methods
 
-NS_IMPL_ISUPPORTS_INHERITED(SVGFEImageElement, SVGFEImageElementBase,
-                            imgINotificationObserver, nsIImageLoadingContent)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(SVGFEImageElement,
+                                             SVGFEImageElementBase,
+                                             imgINotificationObserver,
+                                             nsIImageLoadingContent)
 
 //----------------------------------------------------------------------
 // Implementation
 
 SVGFEImageElement::SVGFEImageElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-    : SVGFEImageElementBase(std::move(aNodeInfo)), mImageAnimationMode(0) {
+    : SVGFEImageElementBase(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
 }
@@ -58,12 +73,9 @@ SVGFEImageElement::~SVGFEImageElement() { nsImageLoadingContent::Destroy(); }
 
 void SVGFEImageElement::UpdateSrcURI() {
   nsAutoString href;
-  if (mStringAttributes[HREF].IsExplicitlySet()) {
-    mStringAttributes[HREF].GetAnimValue(href, this);
-  } else {
-    mStringAttributes[XLINK_HREF].GetAnimValue(href, this);
-  }
+  HrefAsString(href);
 
+  mImageContentObserver = nullptr;
   mSrcURI = nullptr;
   if (!href.IsEmpty()) {
     StringToURI(href, OwnerDoc(), getter_AddRefs(mSrcURI));
@@ -80,9 +92,15 @@ void SVGFEImageElement::LoadSelectedImage(bool aAlwaysLoad,
     return;
   }
 
-  nsresult rv = NS_ERROR_FAILURE;
-
   const bool kNotify = true;
+
+  if (SVGObserverUtils::GetAndObserveFEImageContent(this)) {
+    // We have a local target, don't try to load an image.
+    CancelImageRequests(kNotify);
+    return;
+  }
+
+  nsresult rv = NS_ERROR_FAILURE;
   if (mSrcURI || (mStringAttributes[HREF].IsExplicitlySet() ||
                   mStringAttributes[XLINK_HREF].IsExplicitlySet())) {
     rv = LoadImage(mSrcURI, /* aForce = */ true, kNotify, eImageLoadType_Normal,
@@ -165,6 +183,7 @@ nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
 }
 
 void SVGFEImageElement::UnbindFromTree(UnbindContext& aContext) {
+  mImageContentObserver = nullptr;
   nsImageLoadingContent::UnbindFromTree();
   SVGFEImageElementBase::UnbindFromTree(aContext);
 }
@@ -308,7 +327,8 @@ bool SVGFEImageElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
 // SVGElement methods
 
 already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -334,7 +354,7 @@ NS_IMETHODIMP_(void)
 SVGFEImageElement::FrameCreated(nsIFrame* aFrame) {
   nsImageLoadingContent::FrameCreated(aFrame);
 
-  uint64_t mode = aFrame->PresContext()->ImageAnimationMode();
+  auto mode = aFrame->PresContext()->ImageAnimationMode();
   if (mode == mImageAnimationMode) {
     return;
   }
@@ -392,6 +412,34 @@ void SVGFEImageElement::DidAnimateAttribute(int32_t aNameSpaceID,
     QueueImageTask(mSrcURI, /* aAlwaysLoad = */ true, /* aNotify */ true);
   }
   SVGFEImageElementBase::DidAnimateAttribute(aNameSpaceID, aAttribute);
+}
+
+//----------------------------------------------------------------------
+// Public helper methods
+
+void SVGFEImageElement::HrefAsString(nsAString& aHref) {
+  if (mStringAttributes[HREF].IsExplicitlySet()) {
+    mStringAttributes[HREF].GetBaseValue(aHref, this);
+  } else {
+    mStringAttributes[XLINK_HREF].GetBaseValue(aHref, this);
+  }
+}
+
+void SVGFEImageElement::NotifyImageContentChanged() {
+  // We don't support rendering fragments yet (bug 455986)
+}
+
+void SVGFEImageElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                               size_t* aNodeSize) const {
+  SVGElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
+
+  // It is okay to include the size of mSrcURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsImageLoadingContent::StringToURI(). Only objects that created
+  // their own URI will call nsIURI::SizeOfIncludingThis().
+  if (mSrcURI) {
+    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+  }
 }
 
 }  // namespace mozilla::dom

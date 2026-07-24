@@ -7,6 +7,13 @@ const { GenAI } = ChromeUtils.importESModule(
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("sidebar.old-sidebar.has-used");
+  // Ensure sidebar is hidden after each test:
+  if (!document.getElementById("sidebar-box").hidden) {
+    info(
+      `Sidebar ${SidebarController.currentID} was left open, closing it in cleanup function`
+    );
+    SidebarController.hide({ dismissPanel: true });
+  }
 });
 
 /**
@@ -30,9 +37,9 @@ add_task(async function test_default_telemetry() {
     "Default menu shown for test"
   );
   Assert.equal(
-    Glean.genaiChatbot.page.testGetValue() ?? false,
-    false,
-    "Default no page feature for test"
+    Glean.genaiChatbot.page.testGetValue() ?? true,
+    true,
+    "Default page feature for test"
   );
   Assert.equal(
     Glean.genaiChatbot.provider.testGetValue() ?? "none",
@@ -56,7 +63,7 @@ add_task(async function test_default_telemetry() {
   );
 
   Services.fog.testResetFOG();
-  SidebarController.show("viewGenaiChatSidebar");
+  await SidebarController.show("viewGenaiChatSidebar");
   await TestUtils.waitForCondition(
     () => Glean.genaiChatbot.sidebarToggle.testGetValue(),
     "Sidebar toggle recorded before hiding"
@@ -172,5 +179,6 @@ add_task(async function test_summarize_telemetry() {
   Assert.equal(events[0].extra.selection, "0", "Has selection length");
   Assert.equal(events[0].extra.source, "test_entry", "Correct source");
 
+  SidebarController.hide({ dismissPanel: true });
   await SpecialPowers.popPrefEnv();
 });

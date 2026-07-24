@@ -1,0 +1,42 @@
+[package]
+name = "logins"
+edition = "2021"
+version = "0.1.0"
+authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
+license = "MPL-2.0"
+exclude = ["/android", "/ios"]
+
+[features]
+default = []
+keydb = ["nss/keydb", "dep:async-trait", "dep:futures"]
+
+[dependencies]
+# TODO: we've enabled the "standalone-sync" feature - see the description
+# of this feature in sync15's Cargo.toml for what we should do instead.
+sync15 = { path = "../sync15", features=["standalone-sync"] }
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+parking_lot = ">=0.11,<=0.12"
+lazy_static = "1.4"
+url = "2.2"
+sql-support = { path = "../support/sql" }
+jwcrypto = { path = "../support/jwcrypto" }
+nss = { path = "../support/rc_crypto/nss", default-features = false }
+interrupt-support = { path = "../support/interrupt" }
+error-support = { path = "../support/error" }
+rusqlite = { version = "0.37.0", features = ["limits", "unlock_notify"] }
+sync-guid = { path = "../support/guid", features = ["rusqlite_support", "random"] }
+thiserror = "2"
+anyhow = "1.0"
+uniffi = { version = "0.31" }
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true, features = ["executor"] }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
+
+[dev-dependencies]
+error-support = { path = "../support/error", features = ["testing"] }
+tempfile = "3.2.0"
+nss = { path = "../support/rc_crypto/nss" }

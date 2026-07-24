@@ -9,129 +9,126 @@
 
 #include "mozilla/dom/HTMLInputElement.h"
 
-#include "mozilla/ArrayUtils.h"
+#include <algorithm>
+#include <cmath>
+
+#include "HTMLDataListElement.h"
+#include "HTMLFormSubmissionConstants.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Components.h"
+#include "mozilla/ContentEvents.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/EventStateManager.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresState.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoComputedData.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_signon.h"
+#include "mozilla/TextControlState.h"
+#include "mozilla/TextEditor.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/TextUtils.h"
+#include "mozilla/TouchEvents.h"
+#include "mozilla/Try.h"
 #include "mozilla/dom/AutocompleteInfoBinding.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/GetFilesHelper.h"
-#include "mozilla/dom/NumericInputTypes.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/dom/InputType.h"
-#include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/MouseEvent.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/WheelEventBinding.h"
-#include "mozilla/dom/WindowGlobalChild.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_signon.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Try.h"
-#include "mozilla/Unused.h"
-#include "nsAttrValueInlines.h"
-#include "nsCRTGlue.h"
-#include "nsIFilePicker.h"
-#include "nsNetUtil.h"
-#include "nsQueryObject.h"
-
-#include "HTMLDataListElement.h"
-#include "HTMLFormSubmissionConstants.h"
-#include "mozilla/glean/DomMetrics.h"
-#include "nsBaseCommandController.h"
-#include "nsIStringBundle.h"
-#include "nsFocusManager.h"
-#include "nsColorControlFrame.h"
-#include "nsFileControlFrame.h"
-#include "nsNumberControlFrame.h"
-#include "nsSearchControlFrame.h"
-#include "nsPIDOMWindow.h"
-#include "nsRepeatService.h"
-#include "mozilla/dom/ProgressEvent.h"
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
-#include "nsPresContext.h"
-#include "nsIFormControl.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLDataListElement.h"
 #include "mozilla/dom/HTMLOptionElement.h"
-#include "nsIFrame.h"
-#include "nsRangeFrame.h"
+#include "mozilla/dom/InputType.h"
+#include "mozilla/dom/MouseEvent.h"
+#include "mozilla/dom/NumericInputTypes.h"
+#include "mozilla/dom/ProgressEvent.h"
+#include "mozilla/dom/UnionTypes.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/WheelEventBinding.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/glean/DomMetrics.h"
+#include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
+#include "nsBaseCommandController.h"
+#include "nsCRTGlue.h"
+#include "nsColorControlFrame.h"
 #include "nsError.h"
+#include "nsFileControlFrame.h"
+#include "nsFocusManager.h"
+#include "nsGkAtoms.h"
 #include "nsIEditor.h"
+#include "nsIFilePicker.h"
+#include "nsIFormControl.h"
+#include "nsIFormFillController.h"
+#include "nsIFrame.h"
+#include "nsIMutationObserver.h"
 #include "nsIPromptCollection.h"
-
-#include "mozilla/PresState.h"
-#include "nsLinebreakConverter.h"  //to strip out carriage returns
-#include "nsReadableUtils.h"
-#include "nsUnicharUtils.h"
+#include "nsIStringBundle.h"
 #include "nsLayoutUtils.h"
+#include "nsLinebreakConverter.h"  //to strip out carriage returns
+#include "nsNetUtil.h"
+#include "nsNumberControlFrame.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsQueryObject.h"
+#include "nsRangeFrame.h"
+#include "nsReadableUtils.h"
+#include "nsRepeatService.h"
+#include "nsSearchControlFrame.h"
+#include "nsStyleConsts.h"
 #include "nsTaintingUtils.h"
+#include "nsUnicharUtils.h"
 #include "nsVariant.h"
-
-#include "mozilla/ContentEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/MappedDeclarationsBuilder.h"
-#include "mozilla/InternalMutationEvent.h"
-#include "mozilla/TextControlState.h"
-#include "mozilla/TextEditor.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TouchEvents.h"
-
-#include <algorithm>
 
 // input type=radio
 #include "mozilla/dom/RadioGroupContainer.h"
-#include "nsIRadioVisitor.h"
-#include "nsRadioVisitor.h"
 
 // input type=file
-#include "mozilla/dom/FileSystemEntry.h"
-#include "mozilla/dom/FileSystem.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileList.h"
-#include "nsIFile.h"
+#include "mozilla/dom/FileSystem.h"
+#include "mozilla/dom/FileSystemEntry.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIContentPrefService2.h"
+#include "nsIFile.h"
 #include "nsIMIMEService.h"
 #include "nsIObserverService.h"
 
 // input type=image
-#include "nsImageLoadingContent.h"
+
+#include "HTMLSplitOnSpacesTokenizer.h"
 #include "imgRequestProxy.h"
-
 #include "mozAutoDocUpdate.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/DirectionalityUtils.h"
-
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/MathAlgorithms.h"
-
-#include <limits>
-
-#include "nsIColorPicker.h"
-#include "nsIStringEnumerator.h"
-#include "HTMLSplitOnSpacesTokenizer.h"
-#include "nsIMIMEInfo.h"
+#include "mozilla/dom/DirectionalityUtils.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentUtils.h"
 #include "nsFrameSelection.h"
+#include "nsIColorPicker.h"
+#include "nsIMIMEInfo.h"
+#include "nsIStringEnumerator.h"
+#include "nsImageLoadingContent.h"
 #include "nsXULControllers.h"
 
 // input type=date
 #include "js/Date.h"
+
+#ifdef ACCESSIBILITY
+#  include "nsAccessibilityService.h"
+#endif
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Input)
 
@@ -196,6 +193,14 @@ static constexpr nsAttrValue::EnumTableEntry kCaptureTable[] = {
 static constexpr const nsAttrValue::EnumTableEntry* kCaptureDefault =
     &kCaptureTable[2];
 
+static constexpr nsAttrValue::EnumTableEntry kColorSpaceTable[] = {
+    {"limited-srgb", StyleColorSpace::Srgb},
+    {"display-p3", StyleColorSpace::DisplayP3},
+};
+
+static constexpr const nsAttrValue::EnumTableEntry* kColorSpaceDefault =
+    &kColorSpaceTable[0];
+
 using namespace blink;
 
 constexpr Decimal HTMLInputElement::kStepScaleFactorDate(86400000_d);
@@ -249,7 +254,7 @@ class DispatchChangeEventCallback final : public GetFilesCallback {
     }
 
     mInputElement->SetFilesOrDirectories(array, true);
-    Unused << NS_WARN_IF(NS_FAILED(DispatchEvents()));
+    (void)NS_WARN_IF(NS_FAILED(DispatchEvents()));
   }
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
@@ -354,7 +359,7 @@ UploadLastDir::ContentPrefCallback::HandleCompletion(uint16_t aReason) {
 
   if (!prefStr.IsEmpty()) {
     nsresult rv = NS_NewLocalFile(prefStr, getter_AddRefs(localFile));
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
   }
 
   if (localFile) {
@@ -730,8 +735,107 @@ static bool IsPickerBlocked(Document* aDoc) {
   return true;
 }
 
+/**
+ * Parse a CSS color string and convert it to the target colorspace if it
+ * succeeds.
+ * Step 2 of:
+ * https://html.spec.whatwg.org/#update-a-color-well-control-color
+ *
+ * We have this function separately for datalist implementation to filter out
+ * invalid values.
+ *
+ * @param aValue the string to be parsed
+ * @return the parsed result as a HTML compatible form
+ */
+static Maybe<StyleAbsoluteColor> MaybeComputeColor(Document* aDocument,
+                                                   const nsAString& aValue) {
+  // Step 2: Let color be the result of parsing element's value.
+  return ServoCSSParser::ComputeAbsoluteColor(
+      aDocument->EnsureStyleSet().RawData(), NS_ConvertUTF16toUTF8(aValue));
+}
+
+/**
+ * MaybeComputeColor + Step 3 of:
+ * https://html.spec.whatwg.org/#update-a-color-well-control-color
+ */
+static StyleAbsoluteColor MaybeComputeColorOrBlack(Document* aDocument,
+                                                   const nsAString& aValue) {
+  return MaybeComputeColor(aDocument, aValue)
+      // Step 3: If color is failure, then set color to opaque black.
+      .valueOr(StyleAbsoluteColor::BLACK);
+}
+
+/**
+ * https://html.spec.whatwg.org/#serialize-a-color-well-control-color
+ * https://drafts.csswg.org/css-color/#color-serialization-html-compatible-serialization-is-requested
+ *
+ * @param aColor The parsed color
+ * @param aResult The result in the form of #ffffff.
+ */
+static void SerializeColorForHTMLCompatibility(const StyleAbsoluteColor& aColor,
+                                               nsAString& aResult) {
+  // Raw StyleAbsoluteColor can have floats outside of 0-1 range e.g. when
+  // display-p3 color is converted to srgb, and ToColor guarantees to fit the
+  // values within the range.
+  nscolor color = aColor.ToColor();
+  aResult.Truncate();
+  aResult.AppendPrintf("#%02x%02x%02x", NS_GET_R(color), NS_GET_G(color),
+                       NS_GET_B(color));
+}
+
+static void ClampColorComponents(StyleAbsoluteColor& aColor) {
+  MOZ_ASSERT(aColor.color_space == StyleColorSpace::Srgb);
+  aColor.components._0 = std::clamp(aColor.components._0, 0.0f, 1.0f);
+  aColor.components._1 = std::clamp(aColor.components._1, 0.0f, 1.0f);
+  aColor.components._2 = std::clamp(aColor.components._2, 0.0f, 1.0f);
+}
+
+// https://html.spec.whatwg.org/#serialize-a-color-well-control-color
+static void SerializeColor(const StyleAbsoluteColor& aColor,
+                           StyleColorSpace aTargetColorSpace,
+                           bool aSpecifiedAlpha, nsAString& aResult) {
+  // Step 2: Let htmlCompatible be false.
+  bool htmlCompatible = false;
+
+  // Step 3: If element's alpha attribute is not specified, then set color's
+  // alpha component to be fully opaque.
+  // (Setting colorspace here as it's easier.)
+  StyleAbsoluteColor color = aColor.ToColorSpace(aTargetColorSpace);
+  if (!aSpecifiedAlpha) {
+    color.alpha = 1.0;
+  }
+
+  // Step 4: If element's colorspace attribute is in the Limited sRGB state:
+  if (color.color_space == StyleColorSpace::Srgb) {
+    // Step 4.2: Round each of color's components so they are in the range 0 to
+    // 255, inclusive. Components are to be rounded towards +∞.
+    ClampColorComponents(color);
+
+    if (!aSpecifiedAlpha) {
+      // Step 4.3: If element's alpha attribute is not specified, then set
+      // htmlCompatible to true.
+      htmlCompatible = true;
+    } else {
+      // Step 4.4: Otherwise, set color to color converted using the 'color()'
+      // function.
+      // (Unset the legacy bit to force `color()`)
+      color.flags &= ~StyleColorFlags::IS_LEGACY_SRGB;
+    }
+  }
+
+  // Step 6: Return the result of serializing color. If htmlCompatible is true,
+  // then do so with HTML-compatible serialization requested.
+  if (htmlCompatible) {
+    SerializeColorForHTMLCompatibility(color, aResult);
+    return;
+  }
+  nsAutoCString result;
+  Servo_AbsoluteColor_ToCss(&color, &result);
+  CopyUTF8toUTF16(result, aResult);
+}
+
 nsTArray<nsString> HTMLInputElement::GetColorsFromList() {
-  RefPtr<HTMLDataListElement> dataList = GetList();
+  RefPtr<HTMLDataListElement> dataList = GetListInternal();
   if (!dataList) {
     return {};
   }
@@ -746,10 +850,13 @@ nsTArray<nsString> HTMLInputElement::GetColorsFromList() {
       continue;
     }
 
-    nsString value;
+    nsAutoString value;
     option->GetValue(value);
-    if (IsValidSimpleColor(value)) {
-      ToLowerCase(value);
+    // https://html.spec.whatwg.org/#update-a-color-well-control-color
+    // https://html.spec.whatwg.org/#serialize-a-color-well-control-color
+    if (Maybe<StyleAbsoluteColor> result =
+            MaybeComputeColor(OwnerDoc(), value)) {
+      SerializeColor(*result, GetColorSpaceEnum(), Alpha(), value);
       colors.AppendElement(value);
     }
   }
@@ -776,6 +883,16 @@ nsresult HTMLInputElement::InitColorPicker() {
     return NS_OK;
   }
 
+  // NOTE(krosylight): Android doesn't support HTML widgets. We can modify
+  // GeckoView to handle MozOpenColorPicker and let it keep using its current
+  // picker, but for now this is ok.
+#ifndef ANDROID
+  if (StaticPrefs::dom_forms_html_color_picker_enabled()) {
+    OpenColorPicker();
+    return NS_OK;
+  }
+#endif
+
   // Get Loc title
   nsAutoString title;
   nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
@@ -799,7 +916,7 @@ nsresult HTMLInputElement::InitColorPicker() {
   rv = colorPicker->Open(callback);
   if (NS_SUCCEEDED(rv)) {
     mPickerRunning = true;
-    SetStates(ElementState::OPEN, true);
+    SetOpenState(true);
   }
 
   return rv;
@@ -885,6 +1002,14 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   nsCOMPtr<nsIFilePickerShownCallback> callback =
       new HTMLInputElement::nsFilePickerShownCallback(this, filePicker);
 
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (obs) {
+    // Used by WebDriver BiDi to emit input.fileDialogOpened whenever an input
+    // type=file opens a file picker.
+    obs->NotifyObservers(ToSupports(this), "file-input-picker-opening",
+                         nullptr);
+  }
+
   if (!oldFiles.IsEmpty() && aType != FILE_PICKER_DIRECTORY) {
     nsAutoString path;
 
@@ -908,7 +1033,7 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
     rv = filePicker->Open(callback);
     if (NS_SUCCEEDED(rv)) {
       mPickerRunning = true;
-      SetStates(ElementState::OPEN, true);
+      SetOpenState(true);
     }
 
     return rv;
@@ -917,7 +1042,7 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   HTMLInputElement::gUploadLastDir->FetchDirectoryAndDisplayPicker(
       doc, filePicker, callback);
   mPickerRunning = true;
-  SetStates(ElementState::OPEN, true);
+  SetOpenState(true);
   return NS_OK;
 }
 
@@ -1015,12 +1140,6 @@ UploadLastDir::Observe(nsISupports* aSubject, char const* aTopic,
   }
   return NS_OK;
 }
-
-#ifdef ACCESSIBILITY
-// Helper method
-static nsresult FireEventForAccessibility(HTMLInputElement* aTarget,
-                                          EventMessage aEventMessage);
-#endif
 
 //
 // construction, destruction
@@ -1299,17 +1418,17 @@ void HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aNameSpaceID == kNameSpaceID_None) {
     bool needValidityUpdate = false;
     if (aName == nsGkAtoms::src) {
+      nsAttrValueOrString value(aValue);
       mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-          this, aValue ? aValue->GetStringValue() : EmptyString(),
-          aSubjectPrincipal);
+          this, value.String(), aSubjectPrincipal);
       if (aNotify && mType == FormControlType::InputImage) {
         if (aValue) {
           // Mark channel as urgent-start before load image if the image load is
           // initiated by a user interaction.
           mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
-          LoadImage(aValue->GetStringValue(), true, aNotify,
-                    eImageLoadType_Normal, mSrcTriggeringPrincipal);
+          LoadImage(value.String(), true, aNotify, eImageLoadType_Normal,
+                    mSrcTriggeringPrincipal);
         } else {
           // Null value means the attr got unset; drop the image
           CancelImageRequests(aNotify);
@@ -1471,6 +1590,8 @@ void HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       }
       UpdatePlaceholderShownState();
       needValidityUpdate = true;
+    } else if (aName == nsGkAtoms::colorspace || aName == nsGkAtoms::alpha) {
+      UpdateColor();
     }
 
     if (CreatesDateTimeWidget()) {
@@ -1540,6 +1661,13 @@ void HTMLInputElement::ResultForDialogSubmit(nsAString& aResult) {
   }
 }
 
+bool HTMLInputElement::Alpha() const {
+  if (!StaticPrefs::dom_forms_alpha_enabled()) {
+    return false;
+  }
+  return HasAttr(nsGkAtoms::alpha);
+}
+
 void HTMLInputElement::GetAutocomplete(nsAString& aValue) {
   if (!DoesAutocompleteApply()) {
     return;
@@ -1565,6 +1693,25 @@ void HTMLInputElement::GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo) {
 
 void HTMLInputElement::GetCapture(nsAString& aValue) {
   GetEnumAttr(nsGkAtoms::capture, kCaptureDefault->tag, aValue);
+}
+
+void HTMLInputElement::GetColorSpace(nsAString& aValue) const {
+  if (!StaticPrefs::dom_forms_colorspace_enabled()) {
+    aValue.Truncate();
+    aValue.AppendLiteral("limited-srgb");
+    return;
+  }
+  GetEnumAttr(nsGkAtoms::colorspace, kColorSpaceDefault->tag, aValue);
+}
+
+StyleColorSpace HTMLInputElement::GetColorSpaceEnum() const {
+  if (!StaticPrefs::dom_forms_colorspace_enabled()) {
+    return StyleColorSpace::Srgb;
+  }
+  if (const nsAttrValue* captureVal = GetParsedAttr(nsGkAtoms::colorspace)) {
+    return static_cast<StyleColorSpace>(captureVal->GetEnumValue());
+  }
+  return StyleColorSpace::Srgb;
 }
 
 void HTMLInputElement::GetFormEnctype(nsAString& aValue) {
@@ -1667,7 +1814,7 @@ void HTMLInputElement::GetNonFileValueInternal(nsAString& aValue) const {
     case VALUE_MODE_VALUE:
       if (IsSingleLineTextControl(false)) {
         if (mInputData.mState) {
-          mInputData.mState->GetValue(aValue, true, /* aForDisplay = */ false);
+          mInputData.mState->GetValue(aValue, /* aForDisplay = */ false);
           Element::SetTaintSourceGetAttr(nsGkAtoms::value, aValue);
         } else {
           // Value hasn't been set yet.
@@ -1780,7 +1927,11 @@ void HTMLInputElement::SetValue(const nsAString& aValue, CallerType aCallerType,
   }
 }
 
-HTMLDataListElement* HTMLInputElement::GetList() const {
+Element* HTMLInputElement::GetListForBindings() const {
+  return RetargetReferenceTargetForBindings(GetListInternal());
+}
+
+HTMLDataListElement* HTMLInputElement::GetListInternal() const {
   nsAutoString dataListId;
   GetAttr(nsGkAtoms::list, dataListId);
   if (dataListId.IsEmpty()) {
@@ -1792,8 +1943,9 @@ HTMLDataListElement* HTMLInputElement::GetList() const {
     return nullptr;
   }
 
-  return HTMLDataListElement::FromNodeOrNull(
-      docOrShadow->GetElementById(dataListId));
+  Element* target = docOrShadow->GetElementById(dataListId);
+  Element* list = target ? target->ResolveReferenceTarget() : nullptr;
+  return HTMLDataListElement::FromNodeOrNull(list);
 }
 
 void HTMLInputElement::SetValue(Decimal aValue, CallerType aCallerType) {
@@ -2041,6 +2193,68 @@ Decimal HTMLInputElement::GetStepBase() const {
   return kDefaultStepBase;
 }
 
+void HTMLInputElement::GetColor(InputPickerColor& aValue) {
+  MOZ_ASSERT(mType == FormControlType::InputColor,
+             "getColor is only for type=color.");
+
+  nsAutoString value;
+  GetValue(value, CallerType::System);
+
+  // We should pass colorspace info to the color picker (bug 2009748), but for
+  // now we pass sRGB values.
+  StyleAbsoluteColor color = MaybeComputeColorOrBlack(OwnerDoc(), value)
+                                 .ToColorSpace(StyleColorSpace::Srgb);
+  ClampColorComponents(color);
+  aValue.mComponent1 = color.components._0;
+  aValue.mComponent2 = color.components._1;
+  aValue.mComponent3 = color.components._2;
+  aValue.mAlpha = Alpha() ? color.alpha : NAN;
+
+  // aValue.mColorSpace = mColorSpace;
+}
+
+// SetValueInternal is CAN_RUN_SCRIPT but only for text inputs.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void HTMLInputElement::UpdateColor() {
+  // https://html.spec.whatwg.org/#attr-input-colorspace
+  // Whenever the element's alpha or colorspace attributes are changed, the user
+  // agent must run update a color well control color given the element.
+  // (But it involves setting value, which will run sanitization, which will
+  // call the same function. So we just call Get/SetValue here.)
+  if (mType != FormControlType::InputColor) {
+    // This is only needed for color, basically no-op for others.
+    return;
+  }
+  if (!mValueChanged) {
+    SetDefaultValueAsValue();
+    return;
+  }
+  nsAutoString value;
+  GetValue(value, CallerType::NonSystem);
+  SetValueInternal(value, {ValueSetterOption::ByInternalAPI});
+}
+
+void HTMLInputElement::SetUserInputColor(const InputPickerColor& aValue) {
+  MOZ_ASSERT(mType == FormControlType::InputColor,
+             "setUserInputColor is only for type=color.");
+
+  nsAutoString serialized;
+  SerializeColor(
+      StyleAbsoluteColor{
+          .components =
+              StyleColorComponents{
+                  ._0 = aValue.mComponent1,
+                  ._1 = aValue.mComponent2,
+                  ._2 = aValue.mComponent3,
+              },
+          .alpha = aValue.mAlpha,
+          .color_space = StyleColorSpace::Srgb,
+      },
+      GetColorSpaceEnum(), Alpha(), serialized);
+
+  // (We are either Chrome/UA but the principal doesn't matter for color inputs)
+  SetUserInput(serialized, *NodePrincipal());
+}
+
 Decimal HTMLInputElement::GetValueIfStepped(int32_t aStep,
                                             StepCallerType aCallerType,
                                             ErrorResult& aRv) {
@@ -2213,13 +2427,13 @@ void HTMLInputElement::MozSetFileNameArray(const Sequence<nsString>& aFileNames,
                          nsASCIICaseInsensitiveStringComparator)) {
       // Converts the URL string into the corresponding nsIFile if possible
       // A local file will be created if the URL string begins with file://
-      Unused << NS_GetFileFromURLSpec(NS_ConvertUTF16toUTF8(aFileNames[i]),
-                                      getter_AddRefs(file));
+      (void)NS_GetFileFromURLSpec(NS_ConvertUTF16toUTF8(aFileNames[i]),
+                                  getter_AddRefs(file));
     }
 
     if (!file) {
       // this is no "file://", try as local file
-      Unused << NS_NewLocalFile(aFileNames[i], getter_AddRefs(file));
+      (void)NS_NewLocalFile(aFileNames[i], getter_AddRefs(file));
     }
 
     if (!file) {
@@ -2303,19 +2517,8 @@ void HTMLInputElement::OpenDateTimePicker(const DateTimeValue& aInitialValue) {
   }
 
   mDateTimeInputBoxValue = MakeUnique<DateTimeValue>(aInitialValue);
-  nsContentUtils::DispatchChromeEvent(OwnerDoc(), static_cast<Element*>(this),
+  nsContentUtils::DispatchChromeEvent(OwnerDoc(), this,
                                       u"MozOpenDateTimePicker"_ns,
-                                      CanBubble::eYes, Cancelable::eYes);
-}
-
-void HTMLInputElement::UpdateDateTimePicker(const DateTimeValue& aValue) {
-  if (NS_WARN_IF(!IsDateTimeInputType(mType))) {
-    return;
-  }
-
-  mDateTimeInputBoxValue = MakeUnique<DateTimeValue>(aValue);
-  nsContentUtils::DispatchChromeEvent(OwnerDoc(), static_cast<Element*>(this),
-                                      u"MozUpdateDateTimePicker"_ns,
                                       CanBubble::eYes, Cancelable::eYes);
 }
 
@@ -2324,13 +2527,23 @@ void HTMLInputElement::CloseDateTimePicker() {
     return;
   }
 
-  nsContentUtils::DispatchChromeEvent(OwnerDoc(), static_cast<Element*>(this),
+  nsContentUtils::DispatchChromeEvent(OwnerDoc(), this,
                                       u"MozCloseDateTimePicker"_ns,
                                       CanBubble::eYes, Cancelable::eYes);
 }
 
-void HTMLInputElement::SetDateTimePickerState(bool aIsOpen) {
+void HTMLInputElement::SetOpenState(bool aIsOpen) {
   SetStates(ElementState::OPEN, aIsOpen);
+}
+
+void HTMLInputElement::OpenColorPicker() {
+  if (NS_WARN_IF(mType != FormControlType::InputColor)) {
+    return;
+  }
+
+  nsContentUtils::DispatchChromeEvent(OwnerDoc(), this,
+                                      u"MozOpenColorPicker"_ns, CanBubble::eYes,
+                                      Cancelable::eYes);
 }
 
 void HTMLInputElement::SetFocusState(bool aIsFocused) {
@@ -2836,6 +3049,11 @@ nsresult HTMLInputElement::SetValueInternal(
             do_QueryFrame(GetPrimaryFrame());
         if (colorControlFrame) {
           colorControlFrame->UpdateColor();
+#ifdef ACCESSIBILITY
+          if (nsAccessibilityService* accService = GetAccService()) {
+            accService->ColorValueChanged(colorControlFrame->PresShell(), this);
+          }
+#endif
         }
       }
       return NS_OK;
@@ -2895,15 +3113,14 @@ void HTMLInputElement::SetLastValueChangeWasInteractive(bool aWasInteractive) {
 }
 
 void HTMLInputElement::SetCheckedChanged(bool aCheckedChanged) {
-  DoSetCheckedChanged(aCheckedChanged, true);
-}
-
-void HTMLInputElement::DoSetCheckedChanged(bool aCheckedChanged, bool aNotify) {
   if (mType == FormControlType::InputRadio) {
     if (mCheckedChanged != aCheckedChanged) {
-      nsCOMPtr<nsIRadioVisitor> visitor =
-          new nsRadioSetCheckedChangedVisitor(aCheckedChanged);
-      VisitGroup(visitor);
+      VisitGroup(
+          [aCheckedChanged](HTMLInputElement* aRadio) {
+            aRadio->SetCheckedChangedInternal(aCheckedChanged);
+            return true;
+          },
+          false);
     }
   } else {
     SetCheckedChangedInternal(aCheckedChanged);
@@ -2929,7 +3146,7 @@ void HTMLInputElement::DoSetChecked(bool aChecked, bool aNotify,
   // value or not, we say the value was changed so that defaultValue don't
   // affect it no more.
   if (aSetValueChanged) {
-    DoSetCheckedChanged(true, aNotify);
+    SetCheckedChanged(true);
   }
 
   // Don't do anything if we're not changing whether it's checked (it would
@@ -2966,10 +3183,8 @@ void HTMLInputElement::RadioSetChecked(bool aNotify, bool aUpdateOtherElement) {
   if (aUpdateOtherElement) {
     // It’s possible for multiple radio input to have their checkedness set to
     // true, so we need to deselect all of them.
-    VisitGroup([self = RefPtr{this}](HTMLInputElement* aRadio) {
-      if (aRadio != self) {
-        aRadio->SetCheckedInternal(false, true);
-      }
+    VisitGroup([](HTMLInputElement* aRadio) {
+      aRadio->SetCheckedInternal(false, true);
       return true;
     });
   }
@@ -3093,8 +3308,7 @@ void HTMLInputElement::SetCheckedInternal(bool aChecked, bool aNotify) {
   // Notify all radios in the group that value has changed, this is to let
   // radios to have the chance to update its states, e.g., :indeterminate.
   if (mType == FormControlType::InputRadio) {
-    nsCOMPtr<nsIRadioVisitor> visitor = new nsRadioUpdateStateVisitor(this);
-    VisitGroup(visitor);
+    UpdateRadioGroupState();
   }
 }
 
@@ -3168,12 +3382,10 @@ bool HTMLInputElement::NeedToInitializeEditorForEvent(
   // because they are lazily initialized.  We don't need to initialize the
   // control for certain types of events, because we know that those events are
   // safe to be handled without the editor being initialized.  These events
-  // include: mousein/move/out, overflow/underflow, DOM mutation, and void
-  // events. Void events are dispatched frequently by async keyboard scrolling
-  // to focused elements, so it's important to handle them to prevent excessive
-  // DOM mutations.
-  if (!IsSingleLineTextControl(false) ||
-      aVisitor.mEvent->mClass == eMutationEventClass) {
+  // include: mousein/move/out, overflow/underflow, and void events. Void events
+  // are dispatched frequently by async keyboard scrolling to focused elements,
+  // so it's important to handle them to prevent excessive DOM mutations.
+  if (!IsSingleLineTextControl(false)) {
     return false;
   }
 
@@ -4163,13 +4375,14 @@ void EndSubmitClick(EventChainPostVisitor& aVisitor) {
 void HTMLInputElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
   auto oldType = FormControlType(NS_CONTROL_TYPE(aVisitor.mItemFlags));
 
+  auto endSubmit = MakeScopeExit([&] { EndSubmitClick(aVisitor); });
+
   if (IsDisabled() && oldType != FormControlType::InputCheckbox &&
       oldType != FormControlType::InputRadio) {
     // Behave as if defaultPrevented when the element becomes disabled by event
     // listeners. Checkboxes and radio buttons should still process clicks for
     // web compat. See:
     // https://html.spec.whatwg.org/multipage/input.html#the-input-element:activation-behaviour
-    EndSubmitClick(aVisitor);
     return;
   }
 
@@ -4187,21 +4400,6 @@ void HTMLInputElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
     nsContentUtils::DispatchTrustedEvent<WidgetEvent>(
         OwnerDoc(), static_cast<Element*>(this), eFormChange, CanBubble::eYes,
         Cancelable::eNo);
-#ifdef ACCESSIBILITY
-    // Fire an event to notify accessibility
-    if (mType == FormControlType::InputCheckbox) {
-      if (nsContentUtils::MayHaveFormCheckboxStateChangeListeners()) {
-        FireEventForAccessibility(this, eFormCheckboxStateChange);
-      }
-    } else if (nsContentUtils::MayHaveFormRadioStateChangeListeners()) {
-      FireEventForAccessibility(this, eFormRadioStateChange);
-      // Fire event for the previous selected radio.
-      nsCOMPtr<nsIContent> content = do_QueryInterface(aVisitor.mItemData);
-      if (auto* previous = HTMLInputElement::FromNodeOrNull(content)) {
-        FireEventForAccessibility(previous, eFormRadioStateChange);
-      }
-    }
-#endif
   }
 
   switch (mType) {
@@ -4217,6 +4415,7 @@ void HTMLInputElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
           form->MaybeSubmit(this);
         }
         aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+        return;
       }
       break;
 
@@ -4224,10 +4423,10 @@ void HTMLInputElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
       break;
   }  // switch
   if (IsButtonControl()) {
-    HandlePopoverTargetAction();
+    nsCOMPtr<Element> eventTarget =
+        do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
+    HandlePopoverTargetAction(eventTarget);
   }
-
-  EndSubmitClick(aVisitor);
 }
 
 void HTMLInputElement::LegacyCanceledActivationBehavior(
@@ -5021,13 +5220,14 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
       }
     } break;
     case FormControlType::InputColor: {
-      if (IsValidSimpleColor(aValue)) {
-        ToLowerCase(aValue);
-      } else {
-        // Set default (black) color, if aValue wasn't parsed correctly.
-        aValue.AssignLiteral("#000000");
-      }
-    } break;
+      // https://html.spec.whatwg.org/#update-a-color-well-control-color
+      // https://html.spec.whatwg.org/#serialize-a-color-well-control-color
+      StyleAbsoluteColor color = MaybeComputeColorOrBlack(OwnerDoc(), aValue);
+      // Serialization step 6: If htmlCompatible is true, then do so with
+      // HTML-compatible serialization requested.
+      SerializeColor(color, GetColorSpaceEnum(), Alpha(), aValue);
+      break;
+    }
     default:
       break;
   }
@@ -5047,20 +5247,6 @@ Maybe<nscolor> HTMLInputElement::ParseSimpleColor(const nsAString& aColor) {
   }
 
   return Some(color);
-}
-
-bool HTMLInputElement::IsValidSimpleColor(const nsAString& aValue) const {
-  if (aValue.Length() != 7 || aValue.First() != '#') {
-    return false;
-  }
-
-  for (int i = 1; i < 7; ++i) {
-    if (!IsAsciiDigit(aValue[i]) && !(aValue[i] >= 'a' && aValue[i] <= 'f') &&
-        !(aValue[i] >= 'A' && aValue[i] <= 'F')) {
-      return false;
-    }
-  }
-  return true;
 }
 
 bool HTMLInputElement::IsLeapYear(uint32_t aYear) const {
@@ -5522,6 +5708,10 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       return aResult.ParseEnumValue(aValue, kCaptureTable, false,
                                     kCaptureDefault);
     }
+    if (aAttribute == nsGkAtoms::colorspace) {
+      return aResult.ParseEnumValue(aValue, kColorSpaceTable, false,
+                                    kColorSpaceDefault);
+    }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       // We have to call |ParseImageAttribute| unconditionally since we
       // don't know if we're going to have a type="image" attribute yet,
@@ -5549,16 +5739,13 @@ void HTMLInputElement::ImageInputMapAttributesIntoRule(
   nsGenericHTMLFormControlElementWithState::MapCommonAttributesInto(aBuilder);
 }
 
-nsChangeHint HTMLInputElement::GetAttributeChangeHint(const nsAtom* aAttribute,
-                                                      int32_t aModType) const {
+nsChangeHint HTMLInputElement::GetAttributeChangeHint(
+    const nsAtom* aAttribute, AttrModType aModType) const {
   nsChangeHint retval =
       nsGenericHTMLFormControlElementWithState::GetAttributeChangeHint(
           aAttribute, aModType);
 
-  const bool isAdditionOrRemoval =
-      aModType == MutationEvent_Binding::ADDITION ||
-      aModType == MutationEvent_Binding::REMOVAL;
-
+  const bool isAdditionOrRemoval = IsAdditionOrRemoval(aModType);
   const bool reconstruct = [&] {
     if (aAttribute == nsGkAtoms::type) {
       return true;
@@ -5921,7 +6108,7 @@ void HTMLInputElement::ShowPicker(ErrorResult& aRv) {
   // InitFilePicker() and InitColorPicker() consume it themselves,
   // so only consume in this function if not those.
 
-  // Step 4. If element's type attribute is in the File Upload state, then run
+  // Step 5. If element's type attribute is in the File Upload state, then run
   // these steps in parallel:
   if (mType == FormControlType::InputFile) {
     FilePickerType type = FILE_PICKER_FILE;
@@ -5933,9 +6120,11 @@ void HTMLInputElement::ShowPicker(ErrorResult& aRv) {
     return;
   }
 
-  // Step 5. Otherwise, the user agent should show any relevant user interface
+  // Step 6. Otherwise, the user agent should show any relevant user interface
   // for selecting a value for element, in the way it normally would when the
   // user interacts with the control
+
+  // Step 6 for color
   if (mType == FormControlType::InputColor) {
     InitColorPicker();
     return;
@@ -5948,6 +6137,7 @@ void HTMLInputElement::ShowPicker(ErrorResult& aRv) {
     return;
   }
 
+  // Step 6 for date and time types
   if (IsDateTimeTypeSupported(mType)) {
     if (CreatesDateTimeWidget()) {
       if (RefPtr<Element> dateTimeBoxElement = GetDateTimeBoxElement()) {
@@ -5962,18 +6152,21 @@ void HTMLInputElement::ShowPicker(ErrorResult& aRv) {
       GetDateTimeInputBoxValue(value);
       OpenDateTimePicker(value);
     }
+    return;
+  }
+
+  // Step 6 for input elements with a suggestions source element.
+  // I.e. show the autocomplete dropdown based on the list attribute.
+  // XXX Form-fill support on android is bug 1535985.
+  if (StaticPrefs::dom_input_showPicker_datalist_enabled() &&
+      IsSingleLineTextControl(true) && GetListInternal()) {
+    if (nsCOMPtr<nsIFormFillController> controller =
+            do_GetService("@mozilla.org/satchel/form-fill-controller;1")) {
+      controller->SetControlledElement(this);
+      controller->ShowPopup();
+    }
   }
 }
-
-#ifdef ACCESSIBILITY
-/*static*/ nsresult FireEventForAccessibility(HTMLInputElement* aTarget,
-                                              EventMessage aEventMessage) {
-  Element* element = static_cast<Element*>(aTarget);
-  return nsContentUtils::DispatchTrustedEvent<WidgetEvent>(
-      element->OwnerDoc(), element, aEventMessage, CanBubble::eYes,
-      Cancelable::eYes);
-}
-#endif
 
 void HTMLInputElement::UpdateApzAwareFlag() {
 #if !defined(ANDROID) && !defined(XP_MACOSX)
@@ -6248,6 +6441,7 @@ void HTMLInputElement::SaveState() {
 }
 
 void HTMLInputElement::DoneCreatingElement() {
+  MOZ_ASSERT(!mDoneCreating);
   mDoneCreating = true;
 
   //
@@ -6451,9 +6645,10 @@ void HTMLInputElement::AddToRadioGroup() {
   //
   bool checkedChanged = mCheckedChanged;
 
-  nsCOMPtr<nsIRadioVisitor> visitor =
-      new nsRadioGetCheckedChangedVisitor(&checkedChanged, this);
-  VisitGroup(visitor);
+  VisitGroup([&checkedChanged](HTMLInputElement* aRadio) {
+    checkedChanged = aRadio->GetCheckedChanged();
+    return false;
+  });
 
   SetCheckedChangedInternal(checkedChanged);
 
@@ -6476,8 +6671,7 @@ void HTMLInputElement::RemoveFromRadioGroup() {
   // longer a selected radio button
   if (mChecked) {
     container->SetCurrentRadioButton(name, nullptr);
-    nsCOMPtr<nsIRadioVisitor> visitor = new nsRadioUpdateStateVisitor(this);
-    VisitGroup(visitor);
+    UpdateRadioGroupState();
   } else {
     AddStates(ElementState::INDETERMINATE);
   }
@@ -6567,23 +6761,12 @@ bool HTMLInputElement::IsHTMLFocusable(IsFocusableFlags aFlags,
   return false;
 }
 
-nsresult HTMLInputElement::VisitGroup(nsIRadioVisitor* aVisitor) {
+template <typename VisitCallback>
+void HTMLInputElement::VisitGroup(VisitCallback&& aCallback, bool aSkipThis) {
   if (auto* container = GetCurrentRadioGroupContainer()) {
     nsAutoString name;
     GetAttr(nsGkAtoms::name, name);
-    return container->WalkRadioGroup(name, aVisitor);
-  }
-
-  aVisitor->Visit(this);
-  return NS_OK;
-}
-
-void HTMLInputElement::VisitGroup(
-    const RadioGroupContainer::VisitCallback& aCallback) {
-  if (auto* container = GetCurrentRadioGroupContainer()) {
-    nsAutoString name;
-    GetAttr(nsGkAtoms::name, name);
-    container->WalkRadioGroup(name, aCallback);
+    container->WalkRadioGroup(name, aCallback, aSkipThis ? this : nullptr);
     return;
   }
 
@@ -6896,9 +7079,12 @@ void HTMLInputElement::UpdateValueMissingValidityStateForRadio(
 
     // nsRadioSetValueMissingState will call ElementStateChanged while visiting.
     nsAutoScriptBlocker scriptBlocker;
-    nsCOMPtr<nsIRadioVisitor> visitor =
-        new nsRadioSetValueMissingState(this, valueMissing);
-    VisitGroup(visitor);
+    VisitGroup([valueMissing](HTMLInputElement* aRadio) {
+      aRadio->SetValidityState(
+          nsIConstraintValidation::VALIDITY_STATE_VALUE_MISSING, valueMissing);
+      aRadio->UpdateValidityElementStates(true);
+      return true;
+    });
   }
 }
 
@@ -7093,7 +7279,7 @@ bool HTMLInputElement::ValueChanged() const { return mValueChanged; }
 
 void HTMLInputElement::GetTextEditorValue(nsAString& aValue) const {
   if (TextControlState* state = GetEditorState()) {
-    state->GetValue(aValue, /* aIgnoreWrap = */ true, /* aForDisplay = */ true);
+    state->GetValue(aValue, /* aForDisplay = */ true);
   }
 }
 
@@ -7445,7 +7631,7 @@ void HTMLInputElement::UpdateHasRange(bool aNotify) {
 
 void HTMLInputElement::PickerClosed() {
   mPickerRunning = false;
-  SetStates(ElementState::OPEN, false);
+  SetOpenState(false);
 }
 
 JSObject* HTMLInputElement::WrapNode(JSContext* aCx,
@@ -7522,12 +7708,16 @@ void HTMLInputElement::GetWebkitEntries(
   aSequence.AppendElements(mFileData->mEntries);
 }
 
-already_AddRefed<nsINodeList> HTMLInputElement::GetLabels() {
+already_AddRefed<nsINodeList> HTMLInputElement::GetLabelsForBindings() {
+  return GetLabelsInternal();
+}
+
+already_AddRefed<nsINodeList> HTMLInputElement::GetLabelsInternal() {
   if (!IsLabelable()) {
     return nullptr;
   }
 
-  return nsGenericHTMLElement::Labels();
+  return nsGenericHTMLElement::LabelsInternal();
 }
 
 void HTMLInputElement::MaybeFireInputPasswordRemoved() {
@@ -7552,6 +7742,19 @@ void HTMLInputElement::MaybeFireInputPasswordRemoved() {
       ChromeOnlyDispatch::eYes);
 }
 
+void HTMLInputElement::UpdateRadioGroupState() {
+  VisitGroup([](HTMLInputElement* aRadio) {
+    aRadio->UpdateIndeterminateState(true);
+    aRadio->UpdateValidityElementStates(true);
+    return true;
+  });
+}
+
 }  // namespace mozilla::dom
 
+#undef NS_OUTER_ACTIVATE_EVENT
 #undef NS_ORIGINAL_CHECKED_VALUE
+#undef NS_ORIGINAL_INDETERMINATE_VALUE
+#undef NS_PRE_HANDLE_BLUR_EVENT
+#undef NS_IN_SUBMIT_CLICK
+#undef NS_CONTROL_TYPE

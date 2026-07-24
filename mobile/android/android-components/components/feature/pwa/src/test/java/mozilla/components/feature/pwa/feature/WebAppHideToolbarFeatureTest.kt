@@ -8,7 +8,6 @@ import androidx.browser.customtabs.CustomTabsService.RELATION_HANDLE_ALL_URLS
 import androidx.browser.customtabs.CustomTabsSessionToken
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -25,7 +24,6 @@ import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
 import mozilla.components.feature.customtabs.store.OriginRelationPair
 import mozilla.components.feature.customtabs.store.ValidateRelationshipAction
 import mozilla.components.feature.customtabs.store.VerificationStatus
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertFalse
@@ -35,7 +33,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class WebAppHideToolbarFeatureTest {
 
@@ -205,22 +202,22 @@ class WebAppHideToolbarFeatureTest {
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.com/example-page"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://firefox.com/out-of-scope"),
-        ).joinBlocking()
+        )
         assertTrue(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.com/back-in-scope"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://m.mozilla.com/second-origin"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
     }
 
@@ -240,22 +237,22 @@ class WebAppHideToolbarFeatureTest {
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.github.io/my-app/"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://firefox.com/out-of-scope"),
-        ).joinBlocking()
+        )
         assertTrue(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.github.io/my-app-almost-in-scope"),
-        ).joinBlocking()
+        )
         assertTrue(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.github.io/my-app/sub-page"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
     }
 
@@ -275,12 +272,12 @@ class WebAppHideToolbarFeatureTest {
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.github.io/prefix/"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
 
         store.dispatch(
             ContentAction.UpdateUrlAction(customTabId, "https://mozilla.github.io/prefix-of/resource.html"),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
     }
 
@@ -314,7 +311,7 @@ class WebAppHideToolbarFeatureTest {
                 "https://m.mozilla.com".toUri(),
                 VerificationStatus.PENDING,
             ),
-        ).joinBlocking()
+        )
         assertTrue(toolbarVisible)
 
         customTabsStore.dispatch(
@@ -324,7 +321,7 @@ class WebAppHideToolbarFeatureTest {
                 "https://mozilla.com".toUri(),
                 VerificationStatus.PENDING,
             ),
-        ).joinBlocking()
+        )
         assertFalse(toolbarVisible)
     }
 

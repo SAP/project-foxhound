@@ -10,7 +10,6 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
-#include <iterator>
 
 #include "jit/shared/Architecture-shared.h"
 
@@ -171,7 +170,8 @@ class Registers {
       (1U << Registers::a3) | (1U << Registers::a4) | (1U << Registers::a5) |
       (1U << Registers::a6) | (1U << Registers::a7) | (1U << Registers::t0) |
       (1U << Registers::t1) | (1U << Registers::t2) | (1U << Registers::t3) |
-      (1U << Registers::t4) | (1U << Registers::t5) | (1U << Registers::t6);
+      (1U << Registers::t4) | (1U << Registers::t5) | (1U << Registers::t6) |
+      (1U << Registers::t7) | (1U << Registers::t8);
 
   // We use this constant to save registers when entering functions. This
   // is why $ra is added here even though it is not "Non Volatile".
@@ -183,8 +183,9 @@ class Registers {
 
   static const SetType NonAllocatableMask =
       (1U << Registers::zero) |  // Always be zero.
-      (1U << Registers::t7) |    // First scratch register.
-      (1U << Registers::t8) |    // Second scratch register.
+      (1U << Registers::t7) |    // Scratch register.
+      (1U << Registers::t8) |    // Scratch register.
+      (1U << Registers::s8) |    // Saved scratch register.
       (1U << Registers::rx) |    // Reserved Register.
       (1U << Registers::ra) | (1U << Registers::tp) | (1U << Registers::sp) |
       (1U << Registers::fp);

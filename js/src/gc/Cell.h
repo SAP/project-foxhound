@@ -7,7 +7,6 @@
 #ifndef gc_Cell_h
 #define gc_Cell_h
 
-#include "mozilla/Atomics.h"
 #include "mozilla/EndianUtils.h"
 
 #include <type_traits>
@@ -41,6 +40,10 @@ extern bool CurrentThreadIsOffThreadCompiling();
 extern void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc,
                                                      gc::Cell** thingp,
                                                      const char* name);
+
+#ifdef MOZ_TSAN
+extern void FullMemoryFence(JSRuntime* runtime);
+#endif
 
 namespace gc {
 
@@ -142,7 +145,8 @@ class HeaderWord {
 // During moving GC operation a Cell may be marked as forwarded. This indicates
 // that a gc::RelocationOverlay is currently stored in the Cell's memory and
 // should be used to find the new location of the Cell.
-struct Cell {
+class Cell {
+ protected:
   // Cell header word. Stores GC flags and derived class data.
   HeaderWord header_;
 
@@ -211,6 +215,13 @@ struct Cell {
   inline JS::Zone* nurseryZone() const;
   inline JS::Zone* nurseryZoneFromAnyThread() const;
 
+  MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZone() const {
+    return JS::shadow::Zone::from(zone());
+  }
+  MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
+    return JS::shadow::Zone::from(zoneFromAnyThread());
+  }
+
   inline ChunkBase* chunk() const;
 
   // Default implementation for kinds that cannot be permanent. This may be
@@ -265,13 +276,6 @@ class TenuredCell : public Cell {
   inline JS::Zone* zone() const;
   inline JS::Zone* zoneFromAnyThread() const;
   inline bool isInsideZone(JS::Zone* zone) const;
-
-  MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZone() const {
-    return JS::shadow::Zone::from(zone());
-  }
-  MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
-    return JS::shadow::Zone::from(zoneFromAnyThread());
-  }
 
   template <typename T, typename = std::enable_if_t<JS::IsBaseTraceType_v<T>>>
   inline bool is() const {
@@ -359,8 +363,10 @@ inline uintptr_t Cell::address() const {
 ChunkBase* Cell::chunk() const {
   uintptr_t addr = uintptr_t(this);
   MOZ_ASSERT(addr % CellAlignBytes == 0);
-  addr &= ~ChunkMask;
-  return reinterpret_cast<ChunkBase*>(addr);
+  auto* chunk = reinterpret_cast<ChunkBase*>(addr & ~ChunkMask);
+  MOZ_ASSERT(chunk->isNurseryChunk() ||
+             chunk->kind == ChunkKind::TenuredArenas);
+  return chunk;
 }
 
 inline StoreBuffer* Cell::storeBuffer() const { return chunk()->storeBuffer; }
@@ -406,7 +412,7 @@ inline JS::TraceKind Cell::getTraceKind() const {
 }
 
 /* static */ MOZ_ALWAYS_INLINE bool Cell::needPreWriteBarrier(JS::Zone* zone) {
-  return JS::shadow::Zone::from(zone)->needsIncrementalBarrier();
+  return JS::shadow::Zone::from(zone)->needsMarkingBarrier();
 }
 
 MOZ_ALWAYS_INLINE bool TenuredCell::isMarkedAny() const {
@@ -488,7 +494,7 @@ MOZ_ALWAYS_INLINE void ReadBarrierImpl(TenuredCell* thing) {
   MOZ_ASSERT(thing);
 
   JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
-  if (shadowZone->needsIncrementalBarrier()) {
+  if (shadowZone->needsMarkingBarrier()) {
     PerformIncrementalReadBarrier(thing);
     return;
   }
@@ -528,7 +534,7 @@ MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(TenuredCell* thing) {
   // AutoDisableBarriers.
 
   JS::shadow::Zone* zone = thing->shadowZoneFromAnyThread();
-  if (zone->needsIncrementalBarrier()) {
+  if (zone->needsMarkingBarrier()) {
     PerformIncrementalPreWriteBarrier(thing);
   }
 }
@@ -562,7 +568,7 @@ MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data,
   MOZ_ASSERT(!CurrentThreadIsGCMarking());
 
   auto* shadowZone = JS::shadow::Zone::from(zone);
-  if (!shadowZone->needsIncrementalBarrier()) {
+  if (!shadowZone->needsMarkingBarrier()) {
     return;
   }
 
@@ -578,6 +584,44 @@ template <typename T>
 MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data) {
   MOZ_ASSERT(data);
   PreWriteBarrier(zone, data, [](JSTracer* trc, T* data) { data->trace(trc); });
+}
+
+MOZ_ALWAYS_INLINE void MemoryReleaseFence(JS::Zone* zone) {
+#ifdef JS_GC_CONCURRENT_MARKING
+  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+
+  if (JS::shadow::Zone::from(zone)->needsMarkingBarrier(
+          JS::shadow::Zone::Concurrent)) {
+#  ifdef MOZ_TSAN
+    FullMemoryFence(JS::shadow::Zone::from(zone)->runtimeFromMainThread());
+#  else
+    std::atomic_thread_fence(std::memory_order_release);
+#  endif
+  }
+#endif
+}
+
+template <typename T>
+MOZ_ALWAYS_INLINE void MemoryReleaseFence(T* thing) {
+#ifdef JS_GC_CONCURRENT_MARKING
+  static_assert(std::is_base_of_v<Cell, T>);
+
+  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+
+  // todo: may not be worth doing isPermanentAndMayBeShared check.
+  // todo: may or may not have concrete type
+  if (!thing) {
+    return;
+  }
+
+  // todo: Ideally this would be zone() but stencil writes into objects
+  // off-thread during under PrivateScriptData::InitFromStencil.
+  JS::Zone* zone = thing->zoneFromAnyThread();
+
+  MemoryReleaseFence(zone);
+#endif
 }
 
 #ifdef DEBUG
@@ -827,30 +871,27 @@ constexpr inline bool GCTypeIsTenured() {
 }
 
 template <class PtrT>
-class alignas(gc::CellAlignBytes) TenuredCellWithGCPointer
-    : public TenuredCell {
+class alignas(gc::CellAlignBytes) CellWithGCPointer : public Cell {
   static void staticAsserts() {
     // These static asserts are not in class scope because the PtrT may not be
     // defined when this class template is instantiated.
     static_assert(
         !std::is_pointer_v<PtrT>,
         "PtrT should be the type of the referent, not of the pointer");
-    static_assert(
-        std::is_base_of_v<Cell, PtrT>,
-        "Only use TenuredCellWithGCPointer for pointers to GC things");
-    static_assert(
-        !GCTypeIsTenured<PtrT>,
-        "Don't use TenuredCellWithGCPointer for always-tenured GC things");
+    static_assert(std::is_base_of_v<Cell, PtrT>,
+                  "Only use CellWithGCPointer for pointers to GC things");
+    static_assert(!GCTypeIsTenured<PtrT>,
+                  "Don't use CellWithGCPointer for always-tenured GC things");
   }
 
  protected:
-  TenuredCellWithGCPointer() = default;
-  explicit TenuredCellWithGCPointer(PtrT* initial) { initHeaderPtr(initial); }
+  CellWithGCPointer() = default;
+  explicit CellWithGCPointer(PtrT* initial) { initHeaderPtr(initial); }
 
   void initHeaderPtr(PtrT* initial) {
     uintptr_t data = uintptr_t(initial);
     this->header_.set(data);
-    if (initial && IsInsideNursery(initial)) {
+    if (initial && isTenured() && IsInsideNursery(initial)) {
       CellHeaderPostWriteBarrier(headerPtrAddress(), nullptr, initial);
     }
   }
@@ -873,7 +914,7 @@ class alignas(gc::CellAlignBytes) TenuredCellWithGCPointer
   }
 
   static constexpr size_t offsetOfHeaderPtr() {
-    return offsetof(TenuredCellWithGCPointer, header_);
+    return offsetof(CellWithGCPointer, header_);
   }
 };
 
@@ -895,32 +936,6 @@ template <>
 inline bool TenuredThingIsMarkedAny<Cell>(Cell* thing) {
   return thing->asTenured().isMarkedAny();
 }
-
-class alignas(gc::CellAlignBytes) SmallBuffer : public TenuredCell {
- public:
-  static constexpr uintptr_t NURSERY_OWNED_BIT = Bit(3);
-
-  void check() const {}  // No check value.
-
-  bool isNurseryOwned() const;
-  void setNurseryOwned(bool value);
-
-  static const JS::TraceKind TraceKind = JS::TraceKind::SmallBuffer;
-  void traceChildren(JSTracer* trc) {
-    // TODO: Generic tracing not supported for sized allocations.
-    // GCRuntime::checkForCompartmentMismatches ends up calling this because it
-    // iterates all GC cells.
-  }
-
-  size_t allocBytes() const;
-  void* data() { return this + 1; }
-};
-template <size_t bytes>
-struct SmallBufferN : public SmallBuffer {
-  uint8_t data[bytes];
-};
-static_assert(sizeof(SmallBufferN<16>) == 16 + sizeof(SmallBuffer));
-static_assert(sizeof(SmallBufferN<128>) == 128 + sizeof(SmallBuffer));
 
 } /* namespace gc */
 } /* namespace js */

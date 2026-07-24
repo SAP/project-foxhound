@@ -5,13 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebBrowserPersistRemoteDocument.h"
+
 #include "WebBrowserPersistDocumentParent.h"
 #include "WebBrowserPersistResourcesParent.h"
 #include "WebBrowserPersistSerializeParent.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
-
 #include "nsDebug.h"
 #include "nsIPrincipal.h"
 #include "nsISHEntry.h"
@@ -37,7 +36,7 @@ WebBrowserPersistRemoteDocument ::WebBrowserPersistRemoteDocument(
 
 WebBrowserPersistRemoteDocument::~WebBrowserPersistRemoteDocument() {
   if (mActor) {
-    Unused << WebBrowserPersistDocumentParent::Send__delete__(mActor);
+    (void)WebBrowserPersistDocumentParent::Send__delete__(mActor);
     // That will call mActor->ActorDestroy, which calls this->ActorDestroy
     // (whether or not the IPC send succeeds).
   }

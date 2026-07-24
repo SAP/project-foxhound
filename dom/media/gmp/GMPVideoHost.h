@@ -6,9 +6,9 @@
 #ifndef GMPVideoHost_h_
 #define GMPVideoHost_h_
 
+#include "gmp-video-frame.h"
 #include "gmp-video-host.h"
 #include "gmp-video-plane.h"
-#include "gmp-video-frame.h"
 #include "nsTArray.h"
 
 namespace mozilla::gmp {

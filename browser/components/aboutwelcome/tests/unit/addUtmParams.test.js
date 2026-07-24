@@ -25,10 +25,13 @@ describe("addUtmParams", () => {
     assert.equal(params.get("utm_term"), "foo", "utm_term");
   });
   it("should not override the URL's existing utm param values", () => {
-    const url = new URL("https://foo.com/?utm_source=foo&utm_campaign=bar");
+    const url = new URL(
+      "https://foo.com/?utm_source=foo&utm_campaign=bar&utm_term=baz"
+    );
     const params = addUtmParams(url, "foo").searchParams;
     assert.equal(params.get("utm_source"), "foo", "utm_source");
     assert.equal(params.get("utm_campaign"), "bar", "utm_campaign");
+    assert.equal(params.get("utm_term"), "baz", "utm_term");
     assert.equal(params.get("utm_medium"), "referral", "utm_medium");
   });
 });

@@ -138,7 +138,7 @@ function writeTestTempFile(fileName, content) {
   }
 }
 
-/** * Transport Factories ***/
+/*** Transport Factories ***/
 
 var socket_transport = async function () {
   if (!DevToolsServer.listeningSockets) {
@@ -163,7 +163,7 @@ function local_transport() {
   return Promise.resolve(DevToolsServer.connectPipe());
 }
 
-/** * Sample Data ***/
+/*** Sample Data ***/
 
 var gReallyLong;
 function really_long() {

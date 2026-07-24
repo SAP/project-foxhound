@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef XULTextElement_h__
-#define XULTextElement_h__
+#ifndef XULTextElement_h_
+#define XULTextElement_h_
 
 #include "nsXULElement.h"
 
@@ -16,9 +16,9 @@ class XULTextElement final : public nsXULElement {
   explicit XULTextElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : nsXULElement(std::move(aNodeInfo)) {}
 
-  bool Disabled() { return GetXULBoolAttr(nsGkAtoms::disabled); }
+  bool Disabled() { return IsDisabled(); }
   MOZ_CAN_RUN_SCRIPT void SetDisabled(bool aValue) {
-    SetXULBoolAttr(nsGkAtoms::disabled, aValue, mozilla::IgnoreErrors());
+    SetBoolAttr(nsGkAtoms::disabled, aValue);
   }
   void GetValue(DOMString& aValue) const {
     GetXULAttr(nsGkAtoms::value, aValue);
@@ -34,7 +34,11 @@ class XULTextElement final : public nsXULElement {
   }
 
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
+
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
   NS_IMPL_FROMNODE_HELPER(XULTextElement,
                           IsAnyOfXULElements(nsGkAtoms::label,

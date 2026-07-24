@@ -7,14 +7,14 @@
 #ifndef DOM_SVG_SVGANIMATEDNUMBERPAIR_H_
 #define DOM_SVG_SVGANIMATEDNUMBERPAIR_H_
 
+#include <memory>
+
 #include "DOMSVGAnimatedNumber.h"
+#include "mozilla/EnumeratedArray.h"
+#include "mozilla/SMILAttr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
 #include "nsMathUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 
@@ -25,16 +25,24 @@ class SVGAnimationElement;
 class SVGElement;
 }  // namespace dom
 
+enum class SVGAnimatedNumberPairWhichOne { First, Second };
+
+// Glue to make EnumeratedArray work with SVGAnimatedNumberPairWhichOne.
+template <>
+struct MaxContiguousEnumValue<SVGAnimatedNumberPairWhichOne> {
+  static constexpr auto value = SVGAnimatedNumberPairWhichOne::Second;
+};
+
 class SVGAnimatedNumberPair {
  public:
   friend class AutoChangeNumberPairNotifier;
   using SVGElement = dom::SVGElement;
 
-  enum PairIndex { eFirst, eSecond };
+  using WhichOneOfPair = SVGAnimatedNumberPairWhichOne;
+  using PairValues = EnumeratedArray<WhichOneOfPair, float>;
 
-  void Init(uint8_t aAttrEnum = 0xff, float aValue1 = 0, float aValue2 = 0) {
-    mAnimVal[0] = mBaseVal[0] = aValue1;
-    mAnimVal[1] = mBaseVal[1] = aValue2;
+  void Init(uint8_t aAttrEnum = 0xff, float aValue = 0) {
+    mAnimVal = mBaseVal = PairValues(aValue, aValue);
     mAttrEnum = aAttrEnum;
     mIsAnimated = false;
     mIsBaseSet = false;
@@ -43,15 +51,15 @@ class SVGAnimatedNumberPair {
   nsresult SetBaseValueString(const nsAString& aValue, SVGElement* aSVGElement);
   void GetBaseValueString(nsAString& aValue) const;
 
-  void SetBaseValue(float aValue, PairIndex aPairIndex,
+  void SetBaseValue(float aValue, WhichOneOfPair aWhichOneOfPair,
                     SVGElement* aSVGElement);
   void SetBaseValues(float aValue1, float aValue2, SVGElement* aSVGElement);
-  float GetBaseValue(PairIndex aIndex) const {
-    return mBaseVal[aIndex == eFirst ? 0 : 1];
+  float GetBaseValue(WhichOneOfPair aWhichOneOfPair) const {
+    return mBaseVal[aWhichOneOfPair];
   }
   void SetAnimValue(const float aValue[2], SVGElement* aSVGElement);
-  float GetAnimValue(PairIndex aIndex) const {
-    return mAnimVal[aIndex == eFirst ? 0 : 1];
+  float GetAnimValue(WhichOneOfPair aWhichOneOfPair) const {
+    return mAnimVal[aWhichOneOfPair];
   }
 
   // Returns true if the animated value of this number has been explicitly
@@ -62,12 +70,12 @@ class SVGAnimatedNumberPair {
   bool IsExplicitlySet() const { return mIsAnimated || mIsBaseSet; }
 
   already_AddRefed<dom::DOMSVGAnimatedNumber> ToDOMAnimatedNumber(
-      PairIndex aIndex, SVGElement* aSVGElement);
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+      WhichOneOfPair aWhichOneOfPair, SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
-  float mAnimVal[2];
-  float mBaseVal[2];
+  PairValues mAnimVal;
+  PairValues mBaseVal;
   uint8_t mAttrEnum;  // element specified tracking for attribute
   bool mIsAnimated;
   bool mIsBaseSet;
@@ -76,25 +84,27 @@ class SVGAnimatedNumberPair {
   // DOM wrapper class for the (DOM)SVGAnimatedNumber interface where the
   // wrapped class is SVGAnimatedNumberPair.
   struct DOMAnimatedNumber final : public dom::DOMSVGAnimatedNumber {
-    DOMAnimatedNumber(SVGAnimatedNumberPair* aVal, PairIndex aIndex,
-                      SVGElement* aSVGElement)
-        : dom::DOMSVGAnimatedNumber(aSVGElement), mVal(aVal), mIndex(aIndex) {}
+    DOMAnimatedNumber(SVGAnimatedNumberPair* aVal,
+                      WhichOneOfPair aWhichOneOfPair, SVGElement* aSVGElement)
+        : dom::DOMSVGAnimatedNumber(aSVGElement),
+          mVal(aVal),
+          mWhichOneOfPair(aWhichOneOfPair) {}
     virtual ~DOMAnimatedNumber();
 
-    SVGAnimatedNumberPair* mVal;  // kept alive because it belongs to content
-    PairIndex mIndex;             // are we the first or second number
+    SVGAnimatedNumberPair* mVal;     // kept alive because it belongs to content
+    WhichOneOfPair mWhichOneOfPair;  // are we the first or second number
 
-    float BaseVal() override { return mVal->GetBaseValue(mIndex); }
+    float BaseVal() override { return mVal->GetBaseValue(mWhichOneOfPair); }
     void SetBaseVal(float aValue) override {
       MOZ_ASSERT(std::isfinite(aValue));
-      mVal->SetBaseValue(aValue, mIndex, mSVGElement);
+      mVal->SetBaseValue(aValue, mWhichOneOfPair, mSVGElement);
     }
 
     // Script may have modified animation parameters or timeline -- DOM getters
     // need to flush any resample requests to reflect these modifications.
     float AnimVal() override {
       mSVGElement->FlushAnimations();
-      return mVal->GetAnimValue(mIndex);
+      return mVal->GetAnimValue(mWhichOneOfPair);
     }
   };
 

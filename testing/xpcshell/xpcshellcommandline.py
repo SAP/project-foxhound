@@ -206,7 +206,7 @@ def add_common_arguments(parser):
         "--jsdebugger",
         dest="jsDebugger",
         action="store_true",
-        help="Waits for a devtools JS debugger to connect before " "starting the test.",
+        help="Waits for a devtools JS debugger to connect before starting the test.",
     )
     parser.add_argument(
         "--jsdebugger-port",
@@ -269,6 +269,13 @@ def add_common_arguments(parser):
         help="override the number of jobs (threads) when running tests "
         "in parallel, the default is CPU x 1.5 when running via mach "
         "and CPU x 4 when running in automation",
+    )
+    parser.add_argument(
+        "--timeout-factor",
+        type=float,
+        dest="timeoutFactor",
+        default=1.0,
+        help="multiplier for test timeout values",
     )
     parser.add_argument(
         "--variant",
@@ -443,7 +450,7 @@ def add_remote_arguments(parser):
         action="store",
         type=str,
         dest="remoteTestRoot",
-        help="Remote directory to use as test root " "(eg. /data/local/tmp/test_root).",
+        help="Remote directory to use as test root (eg. /data/local/tmp/test_root).",
     )
 
 

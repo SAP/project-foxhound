@@ -7,8 +7,8 @@
 #ifndef DOM_SVG_SVGSTOPELEMENT_H_
 #define DOM_SVG_SVGSTOPELEMENT_H_
 
-#include "mozilla/dom/SVGElement.h"
 #include "SVGAnimatedNumber.h"
+#include "mozilla/dom/SVGElement.h"
 
 nsresult NS_NewSVGStopElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);

@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCheckboxRadioFrame_h___
-#define nsCheckboxRadioFrame_h___
+#ifndef nsCheckboxRadioFrame_h_
+#define nsCheckboxRadioFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsDisplayList.h"
 
@@ -29,7 +28,7 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame {
                          mozilla::IntrinsicISizeType aType) override;
 
   mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,

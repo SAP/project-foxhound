@@ -5,25 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LocalStorageManager.h"
+
 #include "LocalStorage.h"
 #include "StorageDBThread.h"
 #include "StorageIPC.h"
 #include "StorageUtils.h"
-
-#include "nsIEffectiveTLDService.h"
-
-#include "nsPIDOMWindow.h"
-#include "nsNetUtil.h"
-#include "nsNetCID.h"
-#include "nsPrintfCString.h"
-#include "nsXULAppAPI.h"
-#include "nsThreadUtils.h"
-#include "nsIObserverService.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/LocalStorageCommon.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIObserverService.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::dom {
 
@@ -377,7 +376,8 @@ nsresult LocalStorageManager::Observe(const char* aTopic,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, "browser:purge-sessionStorage")) {
+  if (!strcmp(aTopic, "browser:purge-sessionStorage") ||
+      !strcmp(aTopic, "extension:purge-sessionStorage")) {
     // This is only meant for SessionStorageManager.
     return NS_OK;
   }

@@ -16,6 +16,9 @@ Please note that some targeting attributes require stricter controls on the tele
 * [attachedFxAOAuthClients](#attachedfxaoauthclients)
 * [attributionData](#attributiondata)
 * [backgroundTaskName](#backgroundtaskname)
+* [backupsInfo](#backupsinfo)
+* [backupArchiveEnabled](#backuparchiveenabled)
+* [backupRestoreEnabled](#backuprestoreenabled)
 * [blockedCountByType](#blockedcountbytype)
 * [browserIsSelected](#browserisselected)
 * [browserSettings](#browsersettings)
@@ -24,7 +27,9 @@ Please note that some targeting attributes require stricter controls on the tele
 * [creditCardsSaved](#creditcardssaved)
 * [currentDate](#currentdate)
 * [currentTabGroups](#currenttabgroups)
+* [currentTabInstalledAsWebApp](#currenttabinstalledaswebapp)
 * [currentProfileId](#currentprofileid)
+* [profileGroupProfileCount](#profileGroupProfileCount)
 * [defaultPDFHandler](#defaultpdfhandler)
 * [devToolsOpenedCount](#devtoolsopenedcount)
 * [distributionId](#distributionid)
@@ -43,16 +48,20 @@ Please note that some targeting attributes require stricter controls on the tele
 * [hasSelectableProfiles](#hasselectableprofiles)
 * [homePageSettings](#homepagesettings)
 * [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [isAIWindow](#isaiwindow)
 * [isChinaRepack](#ischinarepack)
 * [isDefaultBrowser](#isdefaultbrowser)
 * [isDefaultBrowserUncached](#isdefaultbrowseruncached)
 * [isDefaultHandler](#isdefaulthandler)
 * [isDeviceMigration](#isdevicemigration)
+* [isEncryptedBackup](#isEncryptedBackup)
 * [isFxAEnabled](#isfxaenabled)
 * [isFxASignedIn](#isfxasignedin)
 * [isMajorUpgrade](#ismajorupgrade)
 * [isMSIX](#ismsix)
+* [isPrivateWindow](#isprivatewindow)
 * [isRTAMO](#isrtamo)
+* [isSmartWindowOnboarding](#issmartwindowonboarding)
 * [unhandledCampaignAction](#unhandledCampaignAction)
 * [launchOnLoginEnabled](#launchonloginenabled)
 * [locale](#locale)
@@ -60,6 +69,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [memoryMB](#memorymb)
 * [messageImpressions](#messageimpressions)
 * [needsUpdate](#needsupdate)
+* [newtabAddonVersion](#newtabaddonversion)
 * [newtabSettings](#newtabsettings)
 * [packageFamilyName](#packagefamilyname)
 * [pinnedSites](#pinnedsites)
@@ -78,6 +88,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [searchEngines](#searchengines)
 * [sync](#sync)
 * [systemArch](#systemarch)
+* [tabNotesCount](#tabnotescount)
 * [topFrecentSites](#topfrecentsites)
 * [totalBlockedCount](#totalblockedcount)
 * [totalBookmarksCount](#totalbookmarkscount)
@@ -505,7 +516,8 @@ declare const region: string;
 
 ### `searchEngines`
 
-Information about the current and available search engines.
+Information about the current and available search engines. If the user's engine
+is a third party engine, then the value will be ``null``.
 
 #### Examples
 * Is the current default search engine set to google?
@@ -521,7 +533,7 @@ interface SearchEnginesResponse: {
   current: SearchEngineId;
   installed: Array<SearchEngineId>;
 }
-// This is an identifier for a search engine such as "google" or "amazondotcom"
+// This is an identifier for a search engine such as "google" or "ddg"
 type SearchEngineId = string;
 ```
 
@@ -553,9 +565,9 @@ Information about the browser's top 25 frecent sites.
 
 
 #### Examples
-* Is mozilla.com in the user's top frecent sites with a frececy greater than 400?
+* Is `mozilla.com` in the user's top frecent sites and with a last visit date greater than April 4th, 2018(UNIX Epoch timestamp 1522843725924)?
 ```java
-"mozilla.com" in topFrecentSites[.frecency >= 400]|mapToProperty("host")
+"mozilla.com" in topFrecentSites[.lastVisitDate > 1522843725924]|mapToProperty("host")
 ```
 
 #### Definition
@@ -566,6 +578,7 @@ interface TopSite {
   url: string;
   // e.g. foo.mozilla.com
   host: string;
+  // Deprecated property unsupported in Firefox 145+, refer to bug 1987415 for guidance on future options.
   frecency: number;
   lastVisitDate: UnixEpochNumber;
 }
@@ -662,6 +675,17 @@ Pref used by system administrators to disallow add-ons from installed altogether
 ```ts
 declare const xpinstallEnabled: boolean;
 ```
+
+### `currentTabInstalledAsWebApp`
+
+Returns whether the current tab has a matching Web App (Taskbar Tab) installed.
+
+#### Definition
+
+```ts
+declare const currentTabInstalledAsWebApp: Promise<boolean>;
+```
+
 ### `currentTabGroups`
 
 Returns the number of currently open tab groups.
@@ -835,6 +859,36 @@ actually emit from tabs, this is always true. For other triggers, like
 declare const browserIsSelected: boolean;
 ```
 
+### `isAIWindow`
+
+A context property included for all triggers that evaluates to `true` when the
+message comes from an AI Window, and `false` otherwise.
+
+#### Definition
+
+```ts
+declare const isAIWindow: boolean;
+```
+
+#### Examples
+
+* Target AI Windows only:
+```javascript
+isAIWindow
+```
+
+* Target Classic Windows only:
+```javascript
+!isAIWindow
+```
+
+* Target both AI Windows and Classic Windows:
+```javascript
+isAIWindow == isAIWindow
+or equivalently
+(isAIWindow || !isAIWindow)
+```
+
 ### `isChinaRepack`
 
 Does the user use [the partner repack distributed by Mozilla Online](https://github.com/mozilla-partners/mozillaonline),
@@ -954,6 +1008,17 @@ Object {
     { url: "moz-extension://123dsa43213acklncd/home.html", host: "" }
   ],
 }
+```
+
+### `newtabAddonVersion`
+
+The full version string of the built-in New Tab add-on that is actively in use.
+Comparisons should be done with the `versionCompare` filter expression.
+
+#### Definition
+
+```ts
+declare const newtabAddonVersion: string;
 ```
 
 ### `newtabSettings`
@@ -1087,6 +1152,10 @@ A boolean. `true` if the user is configured to use the embedded Migration Wizard
 
 A boolean. `true` when [RTAMO](first-run.md#return-to-amo-rtamo) has been used to download Firefox, `false` otherwise.
 
+### `isPrivateWindow`
+
+A boolean. `true` when the current active content window is in Private Browsing Mode; `false` otherwise.
+
 ### `canCreateSelectableProfiles`
 
 A boolean. `true` when both the current install and current profile support creating additional profiles using the `SelectableProfileService`; `false` otherwise.
@@ -1097,7 +1166,7 @@ A boolean. `true` when the `toolkit.profiles.storeID` pref has a value. Indicate
 
 ### `unhandledCampaignAction`
 
-A string. A special message action to be executed on first-run. For example, `"SET_DEFAULT_BROWSER"` when the user selected to set as default via the [install marketing page](https://www.mozilla.org/firefox/new/) and set default has not yet been automatically triggered, `null` otherwise.
+A string. A special message action to be executed on first-run. For example, `"SET_DEFAULT_BROWSER"` when the user selected to set as default via the [install marketing page](https://www.mozilla.org/firefox/new/) and set default has not yet been automatically triggered, `null` otherwise. Currently supported actions include `"PIN_AND_DEFAULT"`, `"PIN_FIREFOX_TO_TASKBAR"`, and `"SET_DEFAULT_BROWSER"`.
 
 ### `isMSIX`
 
@@ -1126,6 +1195,17 @@ The architecture of this Firefox build: x86, x86-64 or aarch64.
 declare const systemArch: string | null;
 ```
 
+### `tabNotesCount`
+
+The total number of tab notes the user has stored in their current profile.
+
+#### Definition
+
+```ts
+declare const tabNotesCount: Promise<number>;
+```
+
+
 ### `totalSearches`
 
 Returns the number of times a user has completed a search in the URL Bar. The number is arbitrarily capped at 100.
@@ -1137,3 +1217,44 @@ Returns the stable profile group ID used for data reporting.
 ### `currentProfileId`
 
 The integer-valued identifier of the current selectable profile, as reported by `SelectableProfileService`, converted to a string.
+
+### `profileGroupProfileCount`
+
+The number of profiles in the current profile group or zero if either the
+feature is not enabled or the user has not created any profiles.
+
+### `backupsInfo`
+
+Provides information about the backups a user has in the default directory.
+
+#### Definition
+
+```ts
+declare const backupsInfo: {
+  // True if exactly one backup was found.
+  found: boolean;
+
+  // True if multiple backups were found.
+  multipleBackupsFound: boolean;
+
+  // Absolute path to the selected backup to restore when `found` is true.
+  // Null when no single file is selected (none or multiple).
+  backupFileToRestore: string | null;
+};
+```
+
+### `backupArchiveEnabled`
+
+Indicates whether the archive function is enabled by BackupService.
+
+### `backupRestoreEnabled`
+
+Indicates whether the restore function is enabled by BackupService.
+
+### `isEncryptedBackup`
+
+Indicates whether a user has selected an encrypted or non-encrypted backup method during the spotlight onboarding flow. (Refers to the `messaging-system-action.backupChooser` pref.)
+
+### `isSmartWindowOnboarding`
+
+A boolean. `true` when a user downloads Firefox from a Smart Window marketing campaign (ie. `attributionData.campaign == "smart_window"`), `false` otherwise.

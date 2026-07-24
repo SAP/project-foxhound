@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_TextTrackRegion_h
 #define mozilla_dom_TextTrackRegion_h
 
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/TextTrack.h"
+#include "mozilla/dom/VTTRegionBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/TextTrack.h"
-#include "mozilla/dom/VTTRegionBinding.h"
-#include "mozilla/Preferences.h"
 
 namespace mozilla::dom {
 

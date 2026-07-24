@@ -156,10 +156,6 @@ struct FunctionCall {
     MOZ_ASSERT_IF(abiKind == ABIKind::System,
                   restoreState == RestoreState::None ||
                       restoreState == RestoreState::PinnedRegs);
-    // Our uses of the wasm ABI either preserves everything or nothing.
-    MOZ_ASSERT_IF(abiKind == ABIKind::Wasm,
-                  restoreState == RestoreState::None ||
-                      restoreState == RestoreState::All);
     if (abiKind == ABIKind::System) {
       // Builtin calls use the system hardFP setting on ARM32.
 #if defined(JS_CODEGEN_ARM)
@@ -192,6 +188,8 @@ enum class PreBarrierKind {
 };
 
 enum class PostBarrierKind {
+  // No post barrier.
+  None,
   // Add a store buffer entry if the new value requires it, but do not attempt
   // to remove a pre-existing entry.
   Imprecise,
@@ -308,6 +306,9 @@ struct BaseCompiler final {
   // emitted at the end of compilation.
   Vector<OutOfLineCode*, 8, SystemAllocPolicy> outOfLine_;
 
+  // The stack maps for this compilation.
+  StackMaps* stackMaps_;
+
   // Stack map state.  This keeps track of live pointer slots and allows precise
   // stack maps to be generated at safe points.
   StackMapGenerator stackMapGenerator_;
@@ -390,7 +391,8 @@ struct BaseCompiler final {
   inline bool isMem64(uint32_t memoryIndex) const;
   inline bool hugeMemoryEnabled(uint32_t memoryIndex) const;
   inline uint32_t instanceOffsetOfMemoryBase(uint32_t memoryIndex) const;
-  inline uint32_t instanceOffsetOfBoundsCheckLimit(uint32_t memoryIndex) const;
+  inline uint32_t instanceOffsetOfBoundsCheckLimit(uint32_t memoryIndex,
+                                                   unsigned byteSize) const;
 
   // The casts are used by some of the ScratchRegister implementations.
   operator MacroAssembler&() const { return masm; }
@@ -643,6 +645,9 @@ struct BaseCompiler final {
 
   // Count the number of memory references on the value stack.
   inline size_t countMemRefsOnStk();
+
+  // Check if there are any live registers on the value stack.
+  inline bool hasLiveRegsOnStk();
 
   // Print the stack to stderr.
   void showStack(const char* who) const;
@@ -952,12 +957,6 @@ struct BaseCompiler final {
   [[nodiscard]] bool createStackMap(
       const char* who, HasDebugFrameWithLiveRefs debugFrameWithLiveRefs);
 
-  // The most general stackmap construction.
-  [[nodiscard]] bool createStackMap(
-      const char* who, const ExitStubMapVector& extras,
-      uint32_t assemblerOffset,
-      HasDebugFrameWithLiveRefs debugFrameWithLiveRefs);
-
   ////////////////////////////////////////////////////////////
   //
   // Control stack
@@ -1237,17 +1236,17 @@ struct BaseCompiler final {
 
   void branchAddNoOverflow(uint64_t offset, RegI32 ptr, Label* ok);
   void branchTestLowZero(RegI32 ptr, Imm32 mask, Label* ok);
-  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, RegPtr instance,
-                                    RegI32 ptr, Label* ok);
-  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, RegPtr instance,
-                                 RegI32 ptr, Label* ok);
+  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, unsigned byteSize,
+                                    RegPtr instance, RegI32 ptr, Label* ok);
+  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, unsigned byteSize,
+                                 RegPtr instance, RegI32 ptr, Label* ok);
 
   void branchAddNoOverflow(uint64_t offset, RegI64 ptr, Label* ok);
   void branchTestLowZero(RegI64 ptr, Imm32 mask, Label* ok);
-  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, RegPtr instance,
-                                    RegI64 ptr, Label* ok);
-  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, RegPtr instance,
-                                 RegI64 ptr, Label* ok);
+  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, unsigned byteSize,
+                                    RegPtr instance, RegI64 ptr, Label* ok);
+  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, unsigned byteSize,
+                                 RegPtr instance, RegI64 ptr, Label* ok);
 
   // Some consumers depend on the returned Address not incorporating instance,
   // as instance may be the scratch register.
@@ -1412,7 +1411,7 @@ struct BaseCompiler final {
   //   register is preserved by this function.
   // - `value` is the value that was stored in the field. This register is
   //   preserved by this function.
-  // - `temp` is clobbered by this function.
+  // - `temp` is consumed by this function.
   [[nodiscard]] bool emitPostBarrierWholeCell(RegRef object, RegRef value,
                                               RegPtr temp);
 
@@ -1846,7 +1845,8 @@ struct BaseCompiler final {
 
   [[nodiscard]] bool emitGcArraySet(RegRef object, RegPtr data, RegI32 index,
                                     const ArrayType& array, AnyReg value,
-                                    PreBarrierKind preBarrierKind);
+                                    PreBarrierKind preBarrierKind,
+                                    PostBarrierKind postBarrierKind);
 
 #ifdef ENABLE_WASM_SIMD
   void emitVectorAndNot();

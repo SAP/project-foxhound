@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsTHashMap.h"
 #include "WebTaskScheduler.h"
-#include "WebTaskSchedulerWorker.h"
-#include "WebTaskSchedulerMainThread.h"
-#include "nsGlobalWindowInner.h"
 
-#include "mozilla/dom/WorkerPrivate.h"
+#include "WebTaskSchedulerMainThread.h"
+#include "WebTaskSchedulerWorker.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "nsGlobalWindowInner.h"
+#include "nsTHashMap.h"
 
 namespace mozilla::dom {
 

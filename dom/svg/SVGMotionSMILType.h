@@ -9,21 +9,20 @@
 #ifndef DOM_SVG_SVGMOTIONSMILTYPE_H_
 #define DOM_SVG_SVGMOTIONSMILTYPE_H_
 
-#include "mozilla/gfx/2D.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 
 class SMILValue;
 
 /**
- * MotionRotateType: Enum to indicate the type of our "rotate" attribute.
+ * RotateType: Enum to indicate the type of our "rotate" attribute.
  */
-enum RotateType {
-  eRotateType_Explicit,    // for e.g. rotate="45"/"45deg"/"0.785rad"
-  eRotateType_Auto,        // for rotate="auto"
-  eRotateType_AutoReverse  // for rotate="auto-reverse"
+enum class RotateType : uint8_t {
+  Explicit,    // for e.g. rotate="45"/"45deg"/"0.785rad"
+  Auto,        // for rotate="auto"
+  AutoReverse  // for rotate="auto-reverse"
 };
 
 /**

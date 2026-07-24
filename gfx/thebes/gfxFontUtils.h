@@ -9,7 +9,6 @@
 #include <string.h>
 #include <algorithm>
 #include <new>
-#include <utility>
 #include "gfxPlatform.h"
 #include "harfbuzz/hb.h"
 #include "mozilla/Assertions.h"
@@ -18,7 +17,6 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/UniquePtr.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nscore.h"
@@ -61,18 +59,34 @@ class gfxSparseBitSet {
   enum { BLOCK_SIZE_BITS = BLOCK_SIZE * 8 };
   enum { NO_BLOCK = 0xffff };  // index value indicating missing (empty) block
 
+  // The BlockIndex type is just a uint16_t, except it will default-construct
+  // with the value NO_BLOCK so that we can do AppendElements(size_t) to grow
+  // the index.
+  struct BlockIndex {
+    BlockIndex() : mIndex(NO_BLOCK) {}
+    explicit BlockIndex(uint16_t aIndex) : mIndex(aIndex) {}
+
+    operator uint16_t() const { return mIndex; }
+
+    uint16_t mIndex;
+  };
+
   struct Block {
-    explicit Block(unsigned char memsetValue = 0) {
+    Block() { memset(mBits, 0, BLOCK_SIZE); }
+    explicit Block(unsigned char memsetValue) {
       memset(mBits, memsetValue, BLOCK_SIZE);
     }
     uint8_t mBits[BLOCK_SIZE];
   };
 
   friend struct IPC::ParamTraits<gfxSparseBitSet>;
+  friend struct IPC::ParamTraits<BlockIndex>;
   friend struct IPC::ParamTraits<Block>;
 
  public:
   gfxSparseBitSet() = default;
+  explicit gfxSparseBitSet(uint32_t aReserveCapacity)
+      : mBlockIndex(aReserveCapacity), mBlocks(aReserveCapacity) {}
 
   bool Equals(const gfxSparseBitSet* aOther) const {
     if (mBlockIndex.Length() != aOther->mBlockIndex.Length()) {
@@ -80,8 +94,8 @@ class gfxSparseBitSet {
     }
     size_t n = mBlockIndex.Length();
     for (size_t i = 0; i < n; ++i) {
-      uint32_t b1 = mBlockIndex[i];
-      uint32_t b2 = aOther->mBlockIndex[i];
+      uint16_t b1 = mBlockIndex[i];
+      uint16_t b2 = aOther->mBlockIndex[i];
       if ((b1 == NO_BLOCK) != (b2 == NO_BLOCK)) {
         return false;
       }
@@ -176,13 +190,13 @@ class gfxSparseBitSet {
 
   void set(uint32_t aIndex) {
     uint32_t i = aIndex / BLOCK_SIZE_BITS;
-    while (i >= mBlockIndex.Length()) {
-      mBlockIndex.AppendElement(NO_BLOCK);
+    if (i >= mBlockIndex.Length()) {
+      mBlockIndex.AppendElements(i - mBlockIndex.Length() + 1);
     }
     if (mBlockIndex[i] == NO_BLOCK) {
       mBlocks.AppendElement();
       MOZ_ASSERT(mBlocks.Length() < 0xffff, "block index overflow!");
-      mBlockIndex[i] = static_cast<uint16_t>(mBlocks.Length() - 1);
+      mBlockIndex[i].mIndex = static_cast<uint16_t>(mBlocks.Length() - 1);
     }
     Block& block = mBlocks[mBlockIndex[i]];
     block.mBits[(aIndex >> 3) & (BLOCK_SIZE - 1)] |= 1 << (aIndex & 0x7);
@@ -200,8 +214,8 @@ class gfxSparseBitSet {
     const uint32_t startIndex = aStart / BLOCK_SIZE_BITS;
     const uint32_t endIndex = aEnd / BLOCK_SIZE_BITS;
 
-    while (endIndex >= mBlockIndex.Length()) {
-      mBlockIndex.AppendElement(NO_BLOCK);
+    if (endIndex >= mBlockIndex.Length()) {
+      mBlockIndex.AppendElements(endIndex - mBlockIndex.Length() + 1);
     }
 
     for (uint32_t i = startIndex; i <= endIndex; ++i) {
@@ -210,9 +224,9 @@ class gfxSparseBitSet {
 
       if (mBlockIndex[i] == NO_BLOCK) {
         bool fullBlock = (aStart <= blockFirstBit && aEnd >= blockLastBit);
-        mBlocks.AppendElement(Block(fullBlock ? 0xFF : 0));
+        mBlocks.AppendElement(fullBlock ? Block(0xFF) : Block());
         MOZ_ASSERT(mBlocks.Length() < 0xffff, "block index overflow!");
-        mBlockIndex[i] = static_cast<uint16_t>(mBlocks.Length() - 1);
+        mBlockIndex[i].mIndex = static_cast<uint16_t>(mBlocks.Length() - 1);
         if (fullBlock) {
           continue;
         }
@@ -236,9 +250,7 @@ class gfxSparseBitSet {
       return;
     }
     if (mBlockIndex[i] == NO_BLOCK) {
-      mBlocks.AppendElement();
-      MOZ_ASSERT(mBlocks.Length() < 0xffff, "block index overflow!");
-      mBlockIndex[i] = static_cast<uint16_t>(mBlocks.Length() - 1);
+      return;
     }
     Block& block = mBlocks[mBlockIndex[i]];
     block.mBits[(aIndex >> 3) & (BLOCK_SIZE - 1)] &= ~(1 << (aIndex & 0x7));
@@ -287,10 +299,10 @@ class gfxSparseBitSet {
 
   // set this bitset to the union of its current contents and another
   void Union(const gfxSparseBitSet& aBitset) {
-    // ensure mBlocks is large enough
+    // ensure mBlockIndex is large enough
     uint32_t blockCount = aBitset.mBlockIndex.Length();
-    while (blockCount > mBlockIndex.Length()) {
-      mBlockIndex.AppendElement(NO_BLOCK);
+    if (blockCount > mBlockIndex.Length()) {
+      mBlockIndex.AppendElements(blockCount - mBlockIndex.Length());
     }
     // for each block that may be present in aBitset...
     for (uint32_t i = 0; i < blockCount; ++i) {
@@ -302,7 +314,7 @@ class gfxSparseBitSet {
       if (mBlockIndex[i] == NO_BLOCK) {
         mBlocks.AppendElement(aBitset.mBlocks[aBitset.mBlockIndex[i]]);
         MOZ_ASSERT(mBlocks.Length() < 0xffff, "block index overflow!");
-        mBlockIndex[i] = static_cast<uint16_t>(mBlocks.Length() - 1);
+        mBlockIndex[i].mIndex = static_cast<uint16_t>(mBlocks.Length() - 1);
         continue;
       }
       // else set existing block to the union of both
@@ -335,8 +347,8 @@ class gfxSparseBitSet {
     return check;
   }
 
- private:
-  CopyableTArray<uint16_t> mBlockIndex;
+ protected:
+  CopyableTArray<BlockIndex> mBlockIndex;
   CopyableTArray<Block> mBlocks;
 };
 
@@ -484,7 +496,7 @@ inline void gfxSparseBitSet::Union(const SharedBitSet& aBitset) {
     if (mBlockIndex[i] == NO_BLOCK) {
       mBlocks.AppendElement(blocks[blockIndex[i]]);
       MOZ_ASSERT(mBlocks.Length() < 0xffff, "block index overflow");
-      mBlockIndex[i] = uint16_t(mBlocks.Length() - 1);
+      mBlockIndex[i].mIndex = uint16_t(mBlocks.Length() - 1);
       continue;
     }
     // Else set existing target block to the union of both.
@@ -1105,46 +1117,6 @@ class gfxFontUtils {
     return aCh == kBlackFlag && aNext >= kTagLetterA && aNext <= kTagLetterZ;
   }
 
-  static inline bool IsInvalid(uint32_t ch) { return (ch == 0xFFFD); }
-
-  // Font code may want to know if there is the potential for bidi behavior
-  // to be triggered by any of the characters in a text run; this can be
-  // used to test that possibility.
-  enum {
-    kUnicodeBidiScriptsStart = 0x0590,
-    kUnicodeBidiScriptsEnd = 0x08FF,
-    kUnicodeBidiPresentationStart = 0xFB1D,
-    kUnicodeBidiPresentationEnd = 0xFEFC,
-    kUnicodeFirstHighSurrogateBlock = 0xD800,
-    kUnicodeRLM = 0x200F,
-    kUnicodeRLE = 0x202B,
-    kUnicodeRLO = 0x202E
-  };
-
-  static inline bool PotentialRTLChar(char16_t aCh) {
-    if (aCh >= kUnicodeBidiScriptsStart && aCh <= kUnicodeBidiScriptsEnd)
-      // bidi scripts Hebrew, Arabic, Syriac, Thaana, N'Ko are all encoded
-      // together
-      return true;
-
-    if (aCh == kUnicodeRLM || aCh == kUnicodeRLE || aCh == kUnicodeRLO)
-      // directional controls that trigger bidi layout
-      return true;
-
-    if (aCh >= kUnicodeBidiPresentationStart &&
-        aCh <= kUnicodeBidiPresentationEnd)
-      // presentation forms of Arabic and Hebrew letters
-      return true;
-
-    if ((aCh & 0xFF00) == kUnicodeFirstHighSurrogateBlock)
-      // surrogate that could be part of a bidi supplementary char
-      // (Cypriot, Aramaic, Phoenecian, etc)
-      return true;
-
-    // otherwise we know this char cannot trigger bidi reordering
-    return false;
-  }
-
   // parse a simple list of font family names into
   // an array of strings
   static void ParseFontList(const nsACString& aFamilyList,
@@ -1152,8 +1124,7 @@ class gfxFontUtils {
 
   // for a given pref name, initialize a list of font names
   static void GetPrefsFontList(const char* aPrefName,
-                               nsTArray<nsCString>& aFontList,
-                               bool aLocalized = false);
+                               nsTArray<nsCString>& aFontList);
 
   // generate a unique font name
   static nsresult MakeUniqueUserFontName(nsAString& aName);

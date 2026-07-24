@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
+AddonTestUtils.init(this);
 
 add_task(async function test_manifest_csp() {
   let normalized = await ExtensionTestUtils.normalizeManifest({
@@ -111,4 +111,54 @@ add_task(async function test_manifest_csp_v3() {
     ],
     "Should have the expected warning for extension_pages CSP"
   );
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      content_security_policy: {
+        extension_pages: "script-src 'self' http://localhost:8080;",
+      },
+    },
+    temporarilyInstalled: true,
+  });
+
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  await extension.startup();
+  ExtensionTestUtils.failOnSchemaWarnings(true);
+
+  Assert.deepEqual(
+    extension.extension.warnings,
+    "Reading manifest: Warning processing content_security_policy.extension_pages: Warning processing content_security_policy.extension_pages: " +
+      "Using localhost in the Content Security Policy is invalid, and is only permitted during development with temporarily loaded add-ons",
+    "Expected manifest warnings"
+  );
+
+  await extension.unload();
+
+  extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      content_security_policy: {
+        extension_pages: "script-src 'self' http://localhost:8080;",
+      },
+    },
+    temporarilyInstalled: false,
+  });
+
+  let { messages } = await promiseConsoleOutput(async () => {
+    ExtensionTestUtils.failOnSchemaWarnings(false);
+    await extension.startup();
+    ExtensionTestUtils.failOnSchemaWarnings(true);
+  });
+
+  AddonTestUtils.checkMessages(messages, {
+    expected: [
+      {
+        message:
+          /Reading manifest: Error processing content_security_policy.extension_pages: Using localhost in the Content Security Policy is invalid, and is only permitted during development with temporarily loaded add-ons/,
+      },
+    ],
+  });
+
+  await extension.unload();
 });

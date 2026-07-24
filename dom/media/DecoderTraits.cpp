@@ -5,36 +5,40 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DecoderTraits.h"
-#include "MediaContainerType.h"
-#include "mozilla/glean/DomMediaHlsMetrics.h"
-#include "mozilla/Preferences.h"
 
+#include "MediaContainerType.h"
 #include "OggDecoder.h"
 #include "OggDemuxer.h"
-
 #include "WebMDecoder.h"
 #include "WebMDemuxer.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/glean/DomMediaHlsMetrics.h"
+#include "mozilla/glean/DomMediaMetrics.h"
+#include "nsMimeTypes.h"
 
 #ifdef MOZ_ANDROID_HLS_SUPPORT
 #  include "HLSDecoder.h"
 #endif
-#include "MP4Decoder.h"
-#include "MP4Demuxer.h"
-#include "MediaFormatReader.h"
-
+#include "ADTSDecoder.h"
+#include "ADTSDemuxer.h"
+#include "FlacDecoder.h"
+#include "FlacDemuxer.h"
 #include "MP3Decoder.h"
 #include "MP3Demuxer.h"
-
+#include "MP4Decoder.h"
+#include "MP4Demuxer.h"
+#include "MatroskaDecoder.h"
+#include "MatroskaDemuxer.h"
+#include "MediaFormatReader.h"
 #include "WaveDecoder.h"
 #include "WaveDemuxer.h"
 
-#include "ADTSDecoder.h"
-#include "ADTSDemuxer.h"
-
-#include "FlacDecoder.h"
-#include "FlacDemuxer.h"
-
 namespace mozilla {
+
+extern LazyLogModule gMediaDecoderLog;
+#define LOGD(x, ...) \
+  MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, x, ##__VA_ARGS__)
 
 /* static */
 bool DecoderTraits::IsHttpLiveStreamingType(const MediaContainerType& aType) {
@@ -113,6 +117,16 @@ static CanPlayStatus CanHandleCodecsType(
     // flac is supported and working: the codec must be invalid.
     return CANPLAY_NO;
   }
+  if (MatroskaDecoder::IsSupportedType(
+          mimeType,
+          /* DecoderDoctorDiagnostics* */ nullptr)) {
+    if (MatroskaDecoder::IsSupportedType(aType, aDiagnostics)) {
+      return CANPLAY_YES;
+    }
+    // We can only reach this position if a particular codec was requested,
+    // mkv is supported and working: the codec must be invalid.
+    return CANPLAY_NO;
+  }
 
   return CANPLAY_MAYBE;
 }
@@ -121,6 +135,9 @@ static CanPlayStatus CanHandleMediaType(
     const MediaContainerType& aType, DecoderDoctorDiagnostics* aDiagnostics) {
   if (DecoderTraits::IsHttpLiveStreamingType(aType)) {
     glean::hls::canplay_requested.Add();
+  }
+  if (MatroskaDecoder::IsMatroskaType(aType)) {
+    glean::media::mkv_content_count.Add();
   }
 #ifdef MOZ_ANDROID_HLS_SUPPORT
   if (HLSDecoder::IsSupportedType(aType)) {
@@ -160,6 +177,9 @@ static CanPlayStatus CanHandleMediaType(
   if (FlacDecoder::IsSupportedType(mimeType)) {
     return CANPLAY_MAYBE;
   }
+  if (MatroskaDecoder::IsSupportedType(mimeType, aDiagnostics)) {
+    return CANPLAY_MAYBE;
+  }
   return CANPLAY_NO;
 }
 
@@ -172,7 +192,7 @@ CanPlayStatus DecoderTraits::CanHandleContainerType(
 
 /* static */
 bool DecoderTraits::ShouldHandleMediaType(
-    const char* aMIMEType, DecoderDoctorDiagnostics* aDiagnostics) {
+    const nsACString& aMIMEType, DecoderDoctorDiagnostics* aDiagnostics) {
   Maybe<MediaContainerType> containerType = MakeMediaContainerType(aMIMEType);
   if (!containerType) {
     return false;
@@ -211,6 +231,12 @@ already_AddRefed<MediaDataDemuxer> DecoderTraits::CreateDemuxer(
     demuxer = new OggDemuxer(aResource);
   } else if (WebMDecoder::IsSupportedType(aType)) {
     demuxer = new WebMDemuxer(aResource);
+  } else if (MatroskaDecoder::IsSupportedType(
+                 aType,
+                 /* DecoderDoctorDiagnostics* */ nullptr)) {
+    demuxer = new MatroskaDemuxer(aResource);
+  } else {
+    LOGD("CreateDemuxer: unsupported type {}", aType.OriginalString().get());
   }
 
   return demuxer.forget();
@@ -259,6 +285,9 @@ bool DecoderTraits::IsSupportedInVideoDocument(const nsACString& aType) {
          MP3Decoder::IsSupportedType(*type) ||
          ADTSDecoder::IsSupportedType(*type) ||
          FlacDecoder::IsSupportedType(*type) ||
+         MatroskaDecoder::IsSupportedType(
+             *type,
+             /* DecoderDoctorDiagnostics* */ nullptr) ||
 #ifdef MOZ_ANDROID_HLS_SUPPORT
          HLSDecoder::IsSupportedType(*type) ||
 #endif
@@ -292,7 +321,13 @@ nsTArray<UniquePtr<TrackInfo>> DecoderTraits::GetTracksInfo(
   if (FlacDecoder::IsSupportedType(mimeType)) {
     return FlacDecoder::GetTracksInfo(aType);
   }
+  if (MatroskaDecoder::IsSupportedType(mimeType, nullptr)) {
+    return MatroskaDecoder::GetTracksInfo(aType);
+  }
   return nsTArray<UniquePtr<TrackInfo>>();
 }
 
 }  // namespace mozilla
+
+// avoid redefined macro in unified build
+#undef LOGD

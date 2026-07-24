@@ -14,7 +14,6 @@
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Assertions.h"
 
 namespace mozilla {
 

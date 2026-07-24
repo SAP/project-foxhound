@@ -65,13 +65,10 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/Unused.h"
 #include "AccessCheck.h"
 #include "nsGlobalWindowInner.h"
 #include "nsAboutProtocolUtils.h"
@@ -1423,8 +1420,8 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
   ZRREPORT_GC_BYTES(pathPrefix + "bigints/gc-heap"_ns, zStats.bigIntsGCHeap,
                     "BigInt values.");
 
-  ZRREPORT_BYTES(pathPrefix + "bigints/malloc-heap"_ns,
-                 zStats.bigIntsMallocHeap, "BigInt values.");
+  ZRREPORT_NONHEAP_BYTES(pathPrefix + "bigints/gc-buffers"_ns,
+                         zStats.bigIntsGCBuffers, "BigInt values.");
 
   ZRREPORT_GC_BYTES(pathPrefix + "jit-codes-gc-heap"_ns, zStats.jitCodesGCHeap,
                     "References to executable code pools used by the JITs.");
@@ -1454,8 +1451,9 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
   ZRREPORT_GC_BYTES(pathPrefix + "scopes/gc-heap"_ns, zStats.scopesGCHeap,
                     "Scope information for scripts.");
 
-  ZRREPORT_BYTES(pathPrefix + "scopes/malloc-heap"_ns, zStats.scopesMallocHeap,
-                 "Arrays of binding names and other binding-related data.");
+  ZRREPORT_NONHEAP_BYTES(
+      pathPrefix + "scopes/gc-buffers"_ns, zStats.scopesGCBuffers,
+      "Arrays of binding names and other binding-related data.");
 
   ZRREPORT_GC_BYTES(pathPrefix + "regexp-shareds/gc-heap"_ns,
                     zStats.regExpSharedsGCHeap, "Shared compiled regexp data.");
@@ -1463,11 +1461,6 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
   ZRREPORT_BYTES(pathPrefix + "regexp-shareds/malloc-heap"_ns,
                  zStats.regExpSharedsMallocHeap,
                  "Shared compiled regexp data.");
-
-  // zStats.smallBuffersGCHeap is not reported as a separate item here as it's
-  // reported as part of the owning cell. We must still count it as part of the
-  // total heap size.
-  gcTotal += zStats.smallBuffersGCHeap;
 
   ZRREPORT_BYTES(pathPrefix + "zone-object"_ns, zStats.zoneObject,
                  "The JS::Zone object itself.");
@@ -1479,6 +1472,9 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
 
   ZRREPORT_BYTES(pathPrefix + "cacheir-stubs"_ns, zStats.cacheIRStubs,
                  "The JIT's IC stubs (excluding code).");
+
+  ZRREPORT_BYTES(pathPrefix + "object-fuses"_ns, zStats.objectFuses,
+                 "Information about constant object properties.");
 
   ZRREPORT_BYTES(pathPrefix + "script-counts-map"_ns, zStats.scriptCountsMap,
                  "Profiling-related information for scripts.");
@@ -1693,15 +1689,21 @@ static void ReportClassStats(const ClassInfo& classInfo, const nsACString& path,
                     "Objects, including fixed slots.");
   }
 
-  if (classInfo.objectsMallocHeapSlots > 0) {
+  if (classInfo.objectsGCBufferSlots > 0) {
     REPORT_BYTES(path + "objects/gc-buffers/slots"_ns, KIND_NONHEAP,
-                 classInfo.objectsMallocHeapSlots, "Non-fixed object slots.");
+                 classInfo.objectsGCBufferSlots, "Non-fixed object slots.");
   }
 
-  if (classInfo.objectsMallocHeapElementsNormal > 0) {
+  if (classInfo.objectsGCBufferElementsNormal > 0) {
     REPORT_BYTES(path + "objects/gc-buffers/elements/normal"_ns, KIND_NONHEAP,
-                 classInfo.objectsMallocHeapElementsNormal,
+                 classInfo.objectsGCBufferElementsNormal,
                  "Normal (non-wasm) indexed elements.");
+  }
+
+  if (classInfo.objectsMallocHeapElementsArrayBuffer > 0) {
+    REPORT_BYTES(path + "objects/malloc-heap/elements/array-buffer"_ns,
+                 KIND_HEAP, classInfo.objectsMallocHeapElementsArrayBuffer,
+                 "JS array buffer elements allocated in the malloc heap.");
   }
 
   if (classInfo.objectsMallocHeapElementsAsmJS > 0) {
@@ -1761,6 +1763,11 @@ static void ReportClassStats(const ClassInfo& classInfo, const nsACString& path,
                  classInfo.objectsNonHeapCodeWasm,
                  "AOT-compiled wasm/asm.js code.");
   }
+
+  if (classInfo.objectsGCBufferMisc > 0) {
+    REPORT_BYTES(path + "objects/non-heap/misc"_ns, KIND_NONHEAP,
+                 classInfo.objectsGCBufferMisc, "Miscellaneous object data.");
+  }
 }
 
 static void ReportRealmStats(const JS::RealmStats& realmStats,
@@ -1807,8 +1814,8 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
       "JSScript instances. There is one per user-defined function in a "
       "script, and one for the top-level code in a script.");
 
-  ZRREPORT_BYTES(realmJSPathPrefix + "scripts/malloc-heap/data"_ns,
-                 realmStats.scriptsMallocHeapData,
+  ZRREPORT_BYTES(realmJSPathPrefix + "scripts/gc-buffers"_ns,
+                 realmStats.scriptsGCBuffers,
                  "Various variable-length tables in JSScripts.");
 
   ZRREPORT_BYTES(realmJSPathPrefix + "baseline/data"_ns,
@@ -1827,9 +1834,8 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
   ZRREPORT_BYTES(realmJSPathPrefix + "realm-object"_ns, realmStats.realmObject,
                  "The JS::Realm object itself.");
 
-  ZRREPORT_BYTES(
-      realmJSPathPrefix + "realm-tables"_ns, realmStats.realmTables,
-      "Realm-wide tables storing object group information and wasm instances.");
+  ZRREPORT_BYTES(realmJSPathPrefix + "realm-tables"_ns, realmStats.realmTables,
+                 "Realm-wide tables storing wasm instances.");
 
   ZRREPORT_BYTES(realmJSPathPrefix + "inner-views"_ns,
                  realmStats.innerViewsTable,
@@ -2074,7 +2080,7 @@ class JSMainRuntimeRealmsReporter final : public nsIMemoryReporter {
     path.Insert(js::IsSystemRealm(realm) ? "js-main-runtime-realms/system/"_ns
                                          : "js-main-runtime-realms/user/"_ns,
                 0);
-    mozilla::Unused << data->paths.append(path);
+    (void)data->paths.append(path);
   }
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* handleReport,
@@ -2424,11 +2430,6 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
       KIND_OTHER, rtStats.zTotals.unusedGCThings.regExpShared,
       "Unused regexpshared cells within non-empty arenas.");
 
-  REPORT_BYTES(
-      "js-main-runtime-gc-heap-committed/unused/gc-things/small-buffers"_ns,
-      KIND_OTHER, rtStats.zTotals.unusedGCThings.smallBuffer,
-      "Unused small buffer cells within non-empty arenas.");
-
   REPORT_BYTES("js-main-runtime-gc-heap-committed/used/chunk-admin"_ns,
                KIND_OTHER, rtStats.gcHeapChunkAdmin,
                "The same as 'explicit/js-non-window/gc-heap/chunk-admin'.");
@@ -2495,11 +2496,6 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
       KIND_OTHER, rtStats.zTotals.regExpSharedsGCHeap,
       "Used regexpshared cells.");
 
-  MREPORT_BYTES(
-      "js-main-runtime-gc-heap-committed/used/gc-things/small-buffers"_ns,
-      KIND_OTHER, rtStats.zTotals.smallBuffersGCHeap,
-      "Used small buffer cells.");
-
   MOZ_ASSERT(gcThingTotal == rtStats.gcHeapGCThings);
   (void)gcThingTotal;
 
@@ -2561,17 +2557,21 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
                "The memory used by the JSContexts in HelperThreadState.");
 }
 
-static nsresult JSSizeOfTab(JSObject* objArg, size_t* jsObjectsSize,
+static nsresult JSSizeOfTab(JSObject* obj, size_t* jsObjectsSize,
                             size_t* jsStringsSize, size_t* jsPrivateSize,
                             size_t* jsOtherSize) {
   JSContext* cx = XPCJSContext::Get()->Context();
-  JS::RootedObject obj(cx, objArg);
+  JS::Zone* zone = JS::GetObjectZone(obj);
+  if (JS::IsIncrementalGCInProgress(cx)) {
+    JS::FinishIncrementalGC(cx, JS::GCReason::PREPARE_FOR_TRACING);
+  }
+  JS::AutoCheckCannotGC nogc(cx);
 
   TabSizes sizes;
   OrphanReporter orphanReporter(XPCConvert::GetISupportsFromJSObject);
-  NS_ENSURE_TRUE(
-      JS::AddSizeOfTab(cx, obj, moz_malloc_size_of, &orphanReporter, &sizes),
-      NS_ERROR_OUT_OF_MEMORY);
+  NS_ENSURE_TRUE(JS::AddSizeOfTab(cx, zone, moz_malloc_size_of, &orphanReporter,
+                                  &sizes, nogc),
+                 NS_ERROR_OUT_OF_MEMORY);
 
   *jsObjectsSize = sizes.objects_;
   *jsStringsSize = sizes.strings_;
@@ -2772,11 +2772,12 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       break;
     case JSMetric::GC_REASON_2: {
       // Assert that every reason has an associated glean label.
-      static_assert(static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
-                        static_cast<uint8_t>(
-                            glean::javascript_gc::ReasonLabel::e__Other__),
-                    "GC reason enum and glean::javascript_gc::reason labels do "
-                    "not match.");
+      static_assert(
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
+              static_cast<uint8_t>(
+                  glean::javascript_gc::ReasonLabel::e__Other__),
+          "GC reason enum and glean::javascript_gc::reason labels do "
+          "not match.");
       MOZ_ASSERT(static_cast<JS::GCReason>(sample) <=
                      JS::GCReason::LAST_FIREFOX_REASON,
                  "Invalid GC Reason.");
@@ -2805,7 +2806,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
     case JSMetric::GC_MINOR_REASON: {
       // Assert that every reason has an associated glean label.
       static_assert(
-          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
               static_cast<uint8_t>(
                   glean::javascript_gc::MinorReasonLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
@@ -2821,7 +2822,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
     case JSMetric::GC_MINOR_REASON_LONG: {
       // Assert that every reason has an associated glean label.
       static_assert(
-          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
               static_cast<uint8_t>(
                   glean::javascript_gc::MinorReasonLongLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
@@ -2863,6 +2864,9 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
     case JSUseCounter::WASM:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm);
       return;
+    case JSUseCounter::USE_ASM:
+      SetUseCounter(obj, eUseCounter_custom_JS_use_asm);
+      return;
     case JSUseCounter::WASM_LEGACY_EXCEPTIONS:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm_legacy_exceptions);
       return;
@@ -2878,18 +2882,6 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
     case JSUseCounter::OPTIMIZE_PROMISE_LOOKUP_FUSE:
       SetUseCounter(obj, eUseCounter_custom_JS_optimizePromiseLookup_fuse);
       return;
-    case JSUseCounter::THENABLE_USE:
-      SetUseCounter(obj, eUseCounter_custom_JS_thenable);
-      return;
-    case JSUseCounter::THENABLE_USE_PROTO:
-      SetUseCounter(obj, eUseCounter_custom_JS_thenable_proto);
-      return;
-    case JSUseCounter::THENABLE_USE_STANDARD_PROTO:
-      SetUseCounter(obj, eUseCounter_custom_JS_thenable_standard_proto);
-      return;
-    case JSUseCounter::THENABLE_USE_OBJECT_PROTO:
-      SetUseCounter(obj, eUseCounter_custom_JS_thenable_object_proto);
-      return;
     case JSUseCounter::LEGACY_LANG_SUBTAG:
       SetUseCounter(obj, eUseCounter_custom_JS_legacy_lang_subtag);
       return;
@@ -2904,20 +2896,6 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
       return;
     case JSUseCounter::DATEPARSE_IMPL_DEF:
       SetUseCounter(obj, eUseCounter_custom_JS_dateparse_impl_def);
-      return;
-    case JSUseCounter::REGEXP_SYMBOL_PROTOCOL_ON_PRIMITIVE:
-      SetUseCounter(obj,
-                    eUseCounter_custom_JS_regexp_symbol_protocol_on_primitive);
-      return;
-    case JSUseCounter::ERROR_CAPTURESTACKTRACE:
-      SetUseCounter(obj, eUseCounter_custom_JS_error_capturestacktrace);
-      return;
-    case JSUseCounter::ERROR_CAPTURESTACKTRACE_CTOR:
-      SetUseCounter(obj, eUseCounter_custom_JS_error_capturestacktrace_ctor);
-      return;
-    case JSUseCounter::ERROR_CAPTURESTACKTRACE_UNCALLABLE_CTOR:
-      SetUseCounter(
-          obj, eUseCounter_custom_JS_error_capturestacktrace_uncallable_ctor);
       return;
     case JSUseCounter::COUNT:
       break;

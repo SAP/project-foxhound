@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p> <p>Erabili nabigatzaile pribatu gisa: <ul> <li>Bilatu eta nabigatu aplikaziotik zuzenean</li> <li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li> <li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li> </ul> </p> <p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/> <a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p>\n<p>Erabili nabigatzaile pribatu gisa:\n<ul>\n<li>Bilatu eta nabigatu aplikaziotik zuzenean</li>\n<li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li>\n<li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li>\n</ul> </p>\n<p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/>\n<a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Argibide gehiago</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Pribatutasuna eta segurtasuna</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -462,21 +471,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Jarraitzearekin bat, %1$s onartzen dituzu.</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Jarraitzearekin bat, %1$s onartzen dituzu.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxen erabilera-baldintzak</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefoxen erabilera-baldintzak</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxi zure pribatutasunak axola dio. Irakurri gehiago gure %1$s.</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefoxi zure pribatutasunak axola dio. Irakurri gehiago gure %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Pribatutasun-oharrean</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Pribatutasun-oharrean</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Jarraitu</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Lotura erabilgarri</string>
   <!--
@@ -551,6 +562,8 @@
   <string name="tabs_tray_action_erase">Ezabatu nabigatze-historia</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Itxi beste fitxak</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Gehitu fitxa berria</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -871,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Hau zerbitzariaren konfigurazio-errore batengatik edo norbait zerbitzariaren nortasuna hartzen ari delako izan daiteke. <br/><br/> Aurretik zerbitzari honetara behar bezala konektatu bazara, errorea behin-behinekoa izan daiteke.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Baten bat gunea ordezten saiatzen egon liteke eta jarraitzea arriskutsua izan liteke.</label> <br><br> <label>%1$sek ez du <b>%2$s</b> fidagarritzat jotzen ziurtagiriaren jaulkitzailea ezezaguna delako, ziurtagiria guneak berak sinatutakoa delako, edo zerbitzariak ez dituelako tarteko ziurtagiriak egoki bidaltzen.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Baten bat gunea ordezten saiatzen egon liteke eta jarraitzea arriskutsua izan liteke.</label> <br><br>\n<label>%1$sek ez du <b>%2$s</b> fidagarritzat jotzen ziurtagiriaren jaulkitzailea ezezaguna delako, ziurtagiria guneak berak sinatutakoa delako, edo zerbitzariak ez dituelako tarteko ziurtagiriak egoki bidaltzen.</label>]]></string>
   <!--
     Sessions List
 

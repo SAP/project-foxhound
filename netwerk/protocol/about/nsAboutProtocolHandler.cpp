@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
-#include "mozilla/ArrayUtils.h"
 
 #include "nsAboutProtocolHandler.h"
 #include "nsIURI.h"
@@ -21,7 +20,6 @@
 #include "nsIChannel.h"
 #include "nsIScriptError.h"
 #include "nsIClassInfoImpl.h"
-#include "DefaultURI.h"
 
 #include "mozilla/ipc/URIUtils.h"
 
@@ -132,16 +130,6 @@ nsresult nsAboutProtocolHandler::CreateNewURI(const nsACString& aSpec,
 
     rv = NS_MutateURI(new nsNestedAboutURI::Mutator())
              .Apply(&nsINestedAboutURIMutator::InitWithBase, inner, aBaseURI)
-             .SetSpec(aSpec)
-             .Finalize(url);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  // use DefaultURI to check for validity when we have possible hostnames
-  // since nsSimpleURI doesn't know about hostnames
-  auto pos = aSpec.Find("about:/");
-  if (pos != kNotFound) {
-    rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
              .SetSpec(aSpec)
              .Finalize(url);
     NS_ENSURE_SUCCESS(rv, rv);

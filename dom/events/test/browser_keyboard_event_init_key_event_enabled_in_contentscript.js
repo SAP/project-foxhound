@@ -37,12 +37,22 @@ async function installAndStartExtension() {
   return extension;
 }
 
+add_task(async function test_default_pref_value() {
+  // The preference value has had complicated checks in the past few years,
+  // let's verify that it is false by default as part of deprecation, see
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=2015079
+  is(
+    Services.prefs.getBoolPref(
+      "dom.keyboardevent.init_key_event.enabled_in_addons"
+    ),
+    false,
+    "dom.keyboardevent.init_key_event.enabled_in_addons defaults to false"
+  );
+});
+
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.keyboardevent.init_key_event.enabled", false],
-      ["dom.keyboardevent.init_key_event.enabled_in_addons", true],
-    ],
+    set: [["dom.keyboardevent.init_key_event.enabled_in_addons", true]],
   });
 
   const extension = await installAndStartExtension();

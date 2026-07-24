@@ -198,16 +198,16 @@
 
 .ruleview-computedlist,
 [hidden]:is(
-    .ruleview-expandable-container,
-    .ruleview-overridden-items,
-    .ruleview-overridden-rule-filter,
-    .ruleview-warning,
-    .ruleview-unused-warning,
-    .ruleview-compatibility-warning,
-    .ruleview-used,
-    .ruleview-invalid-at-computed-value-time-warning,
+  .ruleview-expandable-container,
+  .ruleview-overridden-items,
+  .ruleview-overridden-rule-filter,
+  .ruleview-warning,
+  .ruleview-inactive-css-warning,
+  .ruleview-compatibility-warning,
+  .ruleview-used,
+  .ruleview-invalid-at-computed-value-time-warning,
 
-  ),
+),
 .ruleview-overridden .inspector-grid {
   display: none;
 }
@@ -344,11 +344,16 @@
 
 /**
  * Display rules that don't match the current selected element and uneditable
- * user agent styles differently
+ * user agent styles differently.
+ * Use :where() to get a 0-specificity rule so the background-color can be overridden
+ * if needed (e.g. when highlighted by `.theme-bg-contrast`)
  */
-.ruleview-rule.unmatched,
-.ruleview-rule[unmatched="true"],
-.ruleview-rule[uneditable="true"] {
+/* prettier-ignore */
+:where(
+  .ruleview-rule.unmatched,
+  .ruleview-rule[unmatched="true"],
+  .ruleview-rule[uneditable="true"]
+) {
   background: var(--theme-tab-toolbar-background);
 }
 
@@ -509,7 +514,7 @@
 }
 
 .ruleview-warning,
-.ruleview-unused-warning,
+.ruleview-inactive-css-warning,
 .ruleview-compatibility-warning,
 .ruleview-invalid-at-computed-value-time-warning {
   display: inline-block;
@@ -530,7 +535,7 @@
   fill: var(--invalid-at-computed-value-time-fill-color);
 }
 
-.ruleview-unused-warning {
+.ruleview-inactive-css-warning {
   background-image: url(resource://devtools-shared-images/info-small.svg);
   background-color: var(--theme-sidebar-background);
   fill: var(--theme-icon-dimmed-color);
@@ -542,7 +547,7 @@
   fill: var(--theme-icon-dimmed-color);
 }
 
-.ruleview-unused-warning:hover,
+.ruleview-inactive-css-warning:hover,
 .ruleview-compatibility-warning:hover {
   fill: var(--theme-icon-color);
   stroke: var(--theme-icon-color);
@@ -571,6 +576,11 @@
   transform: rotate(-90deg);
 }
 
+.ruleview-propertycontainer .ruleview-variable-link {
+  /* Prevent line break when copy/pasting an entire rule */
+  user-select: auto;
+}
+
 .ruleview-newproperty {
   /* As we don't have the checkbox displayed before the input, we need to align it
      with the property name above it. */
@@ -586,6 +596,7 @@
 
 .ruleview-computedlist {
   list-style: none;
+  margin: 0;
   padding: 0;
 }
 
@@ -631,7 +642,8 @@
   margin-left: 0;
 }
 
-.ruleview-overridden {
+.ruleview-overridden,
+.ruleview-invalid {
   text-decoration: line-through solid var(--theme-text-color-inactive);
 }
 
@@ -687,7 +699,6 @@
   vertical-align: middle;
 }
 
-.ruleview-property.ruleview-changed,
 .ruleview-property[dirty] {
   border-left-color: var(--theme-highlight-green);
 }
@@ -717,7 +728,7 @@
 
   &.ruleview-selector.unmatched,
   & .inspector-unmatched,
-  .ruleview-property:is(.unused, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
+  .ruleview-property:is(.inactive-css, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
     color: var(--rule-highlight-unmatched-unused-color);
   }
 
@@ -784,7 +795,12 @@
 
 .ruleview-rule:is(.unmatched, [unmatched="true"]) .ruleview-selector,
 .ruleview-selector.unmatched,
-.ruleview-property:is(.unused, .ruleview-overridden) :is(.ruleview-propertyname, .ruleview-propertyvalue) {
+/* prettier-ignore */
+.ruleview-property:is(
+  .inactive-css,
+  .ruleview-overridden,
+  .ruleview-invalid
+) :is(.ruleview-propertyname, .ruleview-propertyvalue) {
   color: var(--theme-text-color-inactive);
 }
 
@@ -929,4 +945,19 @@
 
 .ruleview-propertyvalue-break-spaces {
   white-space: break-spaces;
+}
+
+.ruleview-propertyvalue .inspector-attribute:not(.inspector-unmatched) {
+  color: var(--theme-highlight-blue);
+}
+
+.ruleview-show-unused-custom-css-properties {
+  margin-block: 4px;
+  /* Align the button with the properties above it. */
+  /* prettier-ignore */
+  margin-inline-start: calc(
+    var(--rule-enableproperty-size) +
+    var(--rule-enableproperty-margin-inline-start) +
+    var(--rule-enableproperty-margin-inline-end)
+  );
 }

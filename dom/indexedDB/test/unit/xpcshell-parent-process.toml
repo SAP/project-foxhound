@@ -30,7 +30,9 @@ support-files = [
 ["include:xpcshell-shared.toml"]
 
 ["make_URLSearchParams.js"]
-run-if = ["false"] # Only used for recreating URLSearchParams_profile.zip
+run-if = [
+  "false", # Only used for recreating URLSearchParams_profile.zip
+]
 
 ["test_URLSearchParams.js"]
 
@@ -43,10 +45,13 @@ run-if = ["false"] # Only used for recreating URLSearchParams_profile.zip
 ["test_cleanup_transaction.js"]
 
 ["test_clear_object_store_with_indexes.js"]
-requesttimeoutfactor = 2
+requesttimeoutfactor = 2  # Slow on Windows
+run-sequentially = [
+  "os == 'mac'", # frequent parallel fail on Mac
+  "os == 'linux'", # frequent parallel fail on Linux
+]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1959284
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1959284
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1959284
 ]
 
 ["test_connection_idle_maintenance.js"]
@@ -73,7 +78,9 @@ skip-if = [
 
 ["test_invalidate.js"]
 # disabled for the moment.
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_marker_file.js"]
 
@@ -112,12 +119,12 @@ skip-if = ["true"]
 ["test_storagePersistentUpgrade.js"]
 
 ["test_temporary_storage.js"]
+requesttimeoutfactor = 2  # Slow on Linux and Windows
 skip-if = [
   "inc_origin_init", # bug 1942783
 ]
 
 ["test_transaction_durability.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_unexpectedDirectory.js"]
 

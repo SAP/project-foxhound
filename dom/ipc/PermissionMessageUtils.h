@@ -4,28 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_permission_message_utils_h__
-#define mozilla_dom_permission_message_utils_h__
+#ifndef mozilla_dom_permission_message_utils_h_
+#define mozilla_dom_permission_message_utils_h_
 
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "ipc/IPCMessageUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIPrincipal.h"
 
-namespace mozilla::ipc {
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<nsIPrincipal*> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    nsIPrincipal* aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RefPtr<nsIPrincipal>* aResult);
+struct ParamTraits<nsIPrincipal*> {
+  static void Write(IPC::MessageWriter* aWriter, nsIPrincipal* aParam);
+  static bool Read(IPC::MessageReader* aReader, RefPtr<nsIPrincipal>* aResult);
 
   // Overload to support deserializing nsCOMPtr<nsIPrincipal> directly.
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+  static bool Read(IPC::MessageReader* aReader,
                    nsCOMPtr<nsIPrincipal>* aResult) {
     RefPtr<nsIPrincipal> result;
-    if (!Read(aReader, aActor, &result)) {
+    if (!Read(aReader, &result)) {
       return false;
     }
     *aResult = std::move(result);
@@ -33,6 +30,6 @@ struct IPDLParamTraits<nsIPrincipal*> {
   }
 };
 
-}  // namespace mozilla::ipc
+}  // namespace IPC
 
-#endif  // mozilla_dom_permission_message_utils_h__
+#endif  // mozilla_dom_permission_message_utils_h_

@@ -11,14 +11,27 @@ import org.mozilla.fenix.ext.increaseTapArea
 
 /**
  * A Decorator that accepts a [Toolbar.Action] and increases its tap area.
+ *
+ * This class wraps a [Toolbar.Action] and modifies its behavior by increasing the tap area of
+ * the view it's bound to. This is useful for making small UI elements easier to tap.
+ *
+ * @param action The original [Toolbar.Action] to be decorated.
+ * @param tapAreaIncreaser A function that takes a [View] and an [Int] (the amount to increase
+ * the tap area by in dps) and applies the tap area increase to the view.
+ * By default, this uses the `increaseTapArea` extension function.
  */
 class IncreasedTapAreaActionDecorator(
     private val action: Toolbar.Action,
+    private val tapAreaIncreaser: (View, Int) -> Unit = { view, tapIncrease ->
+        view.increaseTapArea(
+            tapIncrease,
+        )
+    },
 ) : Toolbar.Action by action {
 
     override fun bind(view: View) {
         action.bind(view)
-        view.increaseTapArea(TAP_INCREASE_DPS)
+        tapAreaIncreaser(view, TAP_INCREASE_DPS)
     }
 
     companion object {

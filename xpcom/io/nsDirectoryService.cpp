@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
+#include "nsArrayEnumerator.h"
+#include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryService.h"
 #include "nsLocalFile.h"
@@ -23,16 +23,11 @@
 #  include <windows.h>
 #  include <shlobj.h>
 #  include <stdlib.h>
-#  include <stdio.h>
 #elif defined(XP_UNIX)
 #  include <unistd.h>
 #  include <stdlib.h>
 #  include <sys/param.h>
 #  include "prenv.h"
-#  ifdef MOZ_WIDGET_COCOA
-#    include <CoreServices/CoreServices.h>
-#    include <Carbon/Carbon.h>
-#  endif
 #endif
 
 #include "SpecialSystemDirectory.h"
@@ -41,10 +36,7 @@
 
 using namespace mozilla;
 
-//----------------------------------------------------------------------------------------
-nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile)
-//----------------------------------------------------------------------------------------
-{
+nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile) {
   if (NS_WARN_IF(!aFile)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -79,7 +71,7 @@ nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile)
 #endif
   }
   return mXCurProcD->Clone(aFile);
-}  // GetCurrentProcessDirectory()
+}
 
 StaticRefPtr<nsDirectoryService> nsDirectoryService::gService;
 
@@ -319,10 +311,9 @@ nsDirectoryService::UnregisterProvider(nsIDirectoryServiceProvider* aProv) {
   return NS_OK;
 }
 
-// DO NOT ADD ANY LOCATIONS TO THIS FUNCTION UNTIL YOU TALK TO:
-// dougt@netscape.com. This is meant to be a place of xpcom or system specific
-// file locations, not application specific locations.  If you need the later,
-// register a callback for your application.
+// This is meant to be a place of xpcom or system specific file locations,
+// not application specific locations. If you need the latter, register a
+// callback for your application.
 
 NS_IMETHODIMP
 nsDirectoryService::GetFile(const char* aProp, bool* aPersistent,
@@ -415,6 +406,11 @@ nsDirectoryService::GetFile(const char* aProp, bool* aPersistent,
     rv = GetSpecialSystemDirectory(Win_Cookies, getter_AddRefs(localFile));
   } else if (inAtom == nsGkAtoms::DirectoryService_DefaultDownloadDirectory) {
     rv = GetSpecialSystemDirectory(Win_Downloads, getter_AddRefs(localFile));
+  } else if (inAtom == nsGkAtoms::DirectoryService_OneDrivePersonalDirectory) {
+    // OneDrives can be added, removed or even moved at any time.
+    *aPersistent = false;
+    rv = GetSpecialSystemDirectory(Win_OneDrivePersonal,
+                                   getter_AddRefs(localFile));
   }
 #elif defined(XP_UNIX)
   else if (inAtom == nsGkAtoms::Home) {
@@ -450,10 +446,20 @@ nsDirectoryService::GetFile(const char* aProp, bool* aPersistent,
 
 NS_IMETHODIMP
 nsDirectoryService::GetFiles(const char* aProp, nsISimpleEnumerator** aResult) {
-  if (NS_WARN_IF(!aResult)) {
-    return NS_ERROR_INVALID_ARG;
-  }
+  NS_ENSURE_ARG(aProp);
+  NS_ENSURE_ARG(aResult);
   *aResult = nullptr;
 
+#ifdef XP_WIN
+  if (!strcmp(aProp, NS_WIN_ONEDRIVE_BUSINESS_DIR_LIST)) {
+    nsCOMArray<nsIFile> directories;
+    nsresult rv =
+        GetSpecialSystemDirectoryList(Win_OneDriveBusiness, directories);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = NS_NewArrayEnumerator(aResult, directories, NS_GET_IID(nsIFile));
+    NS_ENSURE_SUCCESS(rv, rv);
+    return NS_SUCCESS_AGGREGATE_RESULT;
+  }
+#endif  // XP_WIN
   return NS_ERROR_FAILURE;
 }

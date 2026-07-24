@@ -1,9 +1,9 @@
 https://github.com/libffi/libffi/pull/577.
 
-diff --git a/js/src/ctypes/libffi/src/aarch64/ffi.c b/js/src/ctypes/libffi/src/aarch64/ffi.c
+diff --git a/src/aarch64/ffi.c b/src/aarch64/ffi.c
 index 1ebf43c192afe..a0a8c69dacf8b 100644
---- a/js/src/ctypes/libffi/src/aarch64/ffi.c
-+++ b/js/src/ctypes/libffi/src/aarch64/ffi.c
+--- a/src/aarch64/ffi.c
++++ b/src/aarch64/ffi.c
 @@ -638,22 +638,23 @@ ffi_call_int (ffi_cif *cif, void (*fn)(void), void *orig_rvalue,
  	    if (state.ngrn < N_X_ARG_REG)
  	      context->x[state.ngrn++] = ext;

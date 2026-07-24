@@ -5,30 +5,30 @@
 
 #include "nsXULPrototypeDocument.h"
 
-#include "nsXULElement.h"
-#include "nsAString.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIPrincipal.h"
-#include "nsJSPrincipals.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIURI.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "nsString.h"
-#include "nsDOMCID.h"
-#include "nsNodeInfoManager.h"
-#include "nsContentUtils.h"
-#include "nsCCUncollectableMarker.h"
-#include "xpcpublic.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "nsXULPrototypeCache.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Text.h"
+#include "nsAString.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsContentUtils.h"
+#include "nsDOMCID.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsIURI.h"
+#include "nsJSPrincipals.h"
+#include "nsNodeInfoManager.h"
+#include "nsString.h"
+#include "nsXULElement.h"
+#include "nsXULPrototypeCache.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -204,17 +204,16 @@ nsXULPrototypeDocument::Read(nsIObjectInputStream* aStream) {
   return NotifyLoadDone();
 }
 
-static nsresult GetNodeInfos(nsXULPrototypeElement* aPrototype,
-                             nsTArray<RefPtr<mozilla::dom::NodeInfo>>& aArray) {
+static void GetNodeInfos(nsXULPrototypeElement* aPrototype,
+                         nsTArray<RefPtr<mozilla::dom::NodeInfo>>& aArray) {
   if (aArray.IndexOf(aPrototype->mNodeInfo) == aArray.NoIndex) {
     aArray.AppendElement(aPrototype->mNodeInfo);
   }
 
   // Search attributes
-  size_t i;
-  for (i = 0; i < aPrototype->mAttributes.Length(); ++i) {
+  for (nsXULPrototypeAttribute& attr : aPrototype->mAttributes) {
     RefPtr<mozilla::dom::NodeInfo> ni;
-    nsAttrName* name = &aPrototype->mAttributes[i].mName;
+    nsAttrName* name = &attr.mName;
     if (name->IsAtom()) {
       ni = aPrototype->mNodeInfo->NodeInfoManager()->GetNodeInfo(
           name->Atom(), nullptr, kNameSpaceID_None, nsINode::ATTRIBUTE_NODE);
@@ -228,16 +227,11 @@ static nsresult GetNodeInfos(nsXULPrototypeElement* aPrototype,
   }
 
   // Search children
-  for (i = 0; i < aPrototype->mChildren.Length(); ++i) {
-    nsXULPrototypeNode* child = aPrototype->mChildren[i];
+  for (nsXULPrototypeNode* child : aPrototype->mChildren) {
     if (child->mType == nsXULPrototypeNode::eType_Element) {
-      nsresult rv =
-          GetNodeInfos(static_cast<nsXULPrototypeElement*>(child), aArray);
-      NS_ENSURE_SUCCESS(rv, rv);
+      GetNodeInfos(static_cast<nsXULPrototypeElement*>(child), aArray);
     }
   }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -270,10 +264,7 @@ nsXULPrototypeDocument::Write(nsIObjectOutputStream* aStream) {
   // mozilla::dom::NodeInfo table
   nsTArray<RefPtr<mozilla::dom::NodeInfo>> nodeInfos;
   if (mRoot) {
-    tmp = GetNodeInfos(mRoot, nodeInfos);
-    if (NS_FAILED(tmp)) {
-      rv = tmp;
-    }
+    GetNodeInfos(mRoot, nodeInfos);
   }
 
   uint32_t nodeInfoCount = nodeInfos.Length();
@@ -429,9 +420,6 @@ void nsXULPrototypeDocument::SetIsL10nCached(bool aIsCached) {
 
 void nsXULPrototypeDocument::RebuildPrototypeFromElement(
     nsXULPrototypeElement* aPrototype, Element* aElement, bool aDeep) {
-  aPrototype->mHasIdAttribute = aElement->HasID();
-  aPrototype->mHasClassAttribute = aElement->MayHaveClass();
-  aPrototype->mHasStyleAttribute = aElement->MayHaveStyle();
   NodeInfo* oldNodeInfo = aElement->NodeInfo();
   RefPtr<NodeInfo> newNodeInfo = mNodeInfoManager->GetNodeInfo(
       oldNodeInfo->NameAtom(), oldNodeInfo->GetPrefixAtom(),
@@ -457,7 +445,10 @@ void nsXULPrototypeDocument::RebuildPrototypeFromElement(
       protoAttr->mName.SetTo(newNodeInfo);
     }
     protoAttr->mValue.SetTo(*attr.mValue);
-
+    if (protoAttr->mValue.Type() == nsAttrValue::eCSSDeclaration) {
+      // Ensure declarations get copied-on-write if needed.
+      protoAttr->mValue.GetCSSDeclarationValue()->SetImmutable();
+    }
     protoAttr++;
   }
 

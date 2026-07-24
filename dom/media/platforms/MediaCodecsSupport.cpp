@@ -8,16 +8,16 @@
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"
 #endif
-#include "MediaCodecsSupport.h"
 #include "MP4Decoder.h"
+#include "MediaCodecsSupport.h"
 #include "PDMFactory.h"
 #include "PEMFactory.h"
 #include "PlatformDecoderModule.h"
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsTHashMap.h"
-#include "VideoUtils.h"
 
 using MediaCodecsSupport = mozilla::media::MediaCodecsSupport;
 

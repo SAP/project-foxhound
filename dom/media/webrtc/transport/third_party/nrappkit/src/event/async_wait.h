@@ -51,13 +51,12 @@ typedef void (*NR_async_cb)(NR_SOCKET resource,int how,void *arg);
 #define NR_ASYNC_WAIT_WRITE 1
 
 
-int NR_async_wait_init(void);
+// These are defined in dom/media/webrtc/transport/nr_socket_prsock.cpp
 int NR_async_wait(NR_SOCKET sock, int how, NR_async_cb cb,void *cb_arg,
                             char *function,int line);
 int NR_async_cancel(NR_SOCKET sock,int how);
+// defined in dom/media/webrtc/transport/nr_timer.cpp
 int NR_async_schedule(NR_async_cb cb,void *arg,char *function,int line);
-int NR_async_event_wait(int *eventsp);
-int NR_async_event_wait2(int *eventsp,struct timeval *tv);
 
 
 #ifdef NR_DEBUG_ASYNC

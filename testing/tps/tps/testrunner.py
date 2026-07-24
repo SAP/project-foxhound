@@ -482,14 +482,12 @@ class TPSTestRunner:
             if not self.addonversion:
                 self.addonversion = result["addonversion"]
 
-            self.results.append(
-                {
-                    "state": result["state"],
-                    "name": result["name"],
-                    "message": result["message"],
-                    "logdata": result["logdata"],
-                }
-            )
+            self.results.append({
+                "state": result["state"],
+                "name": result["name"],
+                "message": result["message"],
+                "logdata": result["logdata"],
+            })
             if result["state"] == "TEST-PASS":
                 self.numpassed += 1
             else:

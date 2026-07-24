@@ -4,7 +4,6 @@
 
 #include <windows.h>
 #include <shlwapi.h>
-#include <stdio.h>
 #include <wchar.h>
 #include <shlobj.h>
 

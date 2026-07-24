@@ -11,26 +11,27 @@
  */
 
 #include "nsContentList.h"
-#include "nsIContent.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/ContentIterator.h"
-#include "mozilla/dom/Element.h"
-#include "nsWrapperCacheInlines.h"
-#include "nsContentUtils.h"
-#include "nsCCUncollectableMarker.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/HTMLCollectionBinding.h"
-#include "mozilla/dom/NodeListBinding.h"
-#include "mozilla/Likely.h"
-#include "nsGenericHTMLElement.h"
-#include "jsfriendapi.h"
+
 #include <algorithm>
-#include "mozilla/dom/NodeInfoInlines.h"
-#include "mozilla/MruCache.h"
-#include "mozilla/StaticPtr.h"
 
 #include "PLDHashTable.h"
+#include "jsfriendapi.h"
+#include "mozilla/ContentIterator.h"
+#include "mozilla/MruCache.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLCollectionBinding.h"
+#include "mozilla/dom/HTMLLabelElement.h"
+#include "mozilla/dom/NodeInfoInlines.h"
+#include "mozilla/dom/NodeListBinding.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsContentUtils.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
 #include "nsTHashtable.h"
+#include "nsWrapperCacheInlines.h"
 
 #ifdef DEBUG_CONTENT_LIST
 #  define ASSERT_IN_SYNC AssertInSync()
@@ -669,7 +670,7 @@ nsIContent* nsContentList::Item(uint32_t aIndex) {
 }
 
 void nsContentList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   MOZ_ASSERT(aElement, "Must have a content node to work with");
 
@@ -898,6 +899,10 @@ bool nsContentList::MatchSelf(nsIContent* aContent) {
   return false;
 }
 
+nsINode* nsContentList::GetNextNode(nsINode* aCurrent) {
+  return aCurrent->GetNextNode(mRootNode);
+}
+
 void nsContentList::PopulateSelf(uint32_t aNeededLength,
                                  uint32_t aExpectedElementsIfDirty) {
   if (!mRootNode) {
@@ -923,7 +928,7 @@ void nsContentList::PopulateSelf(uint32_t aNeededLength,
     // start searching at the root.
     nsINode* cur = count ? mElements[count - 1].get() : mRootNode;
     do {
-      cur = cur->GetNextNode(mRootNode);
+      cur = GetNextNode(cur);
       if (!cur) {
         break;
       }
@@ -1085,7 +1090,7 @@ JSObject* nsCachableElementsByNameNodeList::WrapObject(
 
 void nsCachableElementsByNameNodeList::AttributeChanged(
     Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
-    int32_t aModType, const nsAttrValue* aOldValue) {
+    AttrModType aModType, const nsAttrValue* aOldValue) {
   // No need to rebuild the list if the changed attribute is not the name
   // attribute.
   if (aAttribute != nsGkAtoms::name) {
@@ -1108,17 +1113,50 @@ JSObject* nsCacheableFuncStringHTMLCollection::WrapObject(
 //-----------------------------------------------------
 // nsLabelsNodeList
 
+nsLabelsNodeList::nsLabelsNodeList(nsGenericHTMLElement* aLabeledElement,
+                                   nsINode* aSubtreeRoot,
+                                   nsContentListMatchFunc aMatchFunc,
+                                   nsContentListDestroyFunc aDestroyFunc)
+    : nsContentList(aSubtreeRoot, aMatchFunc, aDestroyFunc, aLabeledElement) {
+  WatchLabeledDescendantsOfNearestAncestorLabel(aLabeledElement);
+  if (ShadowRoot* shadow = ShadowRoot::FromNodeOrNull(aSubtreeRoot)) {
+    shadow->Host()->AddReferenceTargetChangeObserver(ResetRootsCallback, this);
+  }
+  mRoots.AppendElement(aSubtreeRoot);
+  ResetRoots();
+}
+
+nsLabelsNodeList::~nsLabelsNodeList() {
+  for (nsINode* root : mRoots) {
+    root->RemoveMutationObserver(this);
+    if (ShadowRoot* shadow = ShadowRoot::FromNodeOrNull(root)) {
+      Element* host = shadow->GetHost();
+      if (host) {
+        host->RemoveReferenceTargetChangeObserver(ResetRootsCallback, this);
+      }
+    }
+  }
+}
+
 JSObject* nsLabelsNodeList::WrapObject(JSContext* cx,
                                        JS::Handle<JSObject*> aGivenProto) {
   return NodeList_Binding::Wrap(cx, this, aGivenProto);
 }
 
+bool nsLabelsNodeList::NodeIsInScope(nsINode* aNode) {
+  for (nsINode* root : mRoots) {
+    if (nsContentUtils::IsInSameAnonymousTree(root, aNode)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void nsLabelsNodeList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType,
+                                        nsAtom* aAttribute, AttrModType,
                                         const nsAttrValue* aOldValue) {
   MOZ_ASSERT(aElement, "Must have a content node to work with");
-  if (mState == State::Dirty ||
-      !nsContentUtils::IsInSameAnonymousTree(mRootNode, aElement)) {
+  if (mState == State::Dirty || !NodeIsInScope(aElement)) {
     return;
   }
 
@@ -1135,11 +1173,9 @@ void nsLabelsNodeList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
 void nsLabelsNodeList::ContentAppended(nsIContent* aFirstNewContent,
                                        const ContentAppendInfo&) {
   nsIContent* container = aFirstNewContent->GetParent();
-  // If a labelable element is moved to outside or inside of
-  // nested associated labels, we're gonna have to modify
-  // the content list.
-  if (mState != State::Dirty &&
-      nsContentUtils::IsInSameAnonymousTree(mRootNode, container)) {
+  // If a labelable element is moved to outside or inside of nested associated
+  // labels, we're gonna have to modify the content list.
+  if (mState != State::Dirty && NodeIsInScope(container)) {
     SetDirty();
     return;
   }
@@ -1147,11 +1183,9 @@ void nsLabelsNodeList::ContentAppended(nsIContent* aFirstNewContent,
 
 void nsLabelsNodeList::ContentInserted(nsIContent* aChild,
                                        const ContentInsertInfo&) {
-  // If a labelable element is moved to outside or inside of
-  // nested associated labels, we're gonna have to modify
-  // the content list.
-  if (mState != State::Dirty &&
-      nsContentUtils::IsInSameAnonymousTree(mRootNode, aChild)) {
+  // If a labelable element is moved to outside or inside of nested associated
+  // labels, we're gonna have to modify the content list.
+  if (mState != State::Dirty && NodeIsInScope(aChild)) {
     SetDirty();
     return;
   }
@@ -1159,28 +1193,178 @@ void nsLabelsNodeList::ContentInserted(nsIContent* aChild,
 
 void nsLabelsNodeList::ContentWillBeRemoved(nsIContent* aChild,
                                             const ContentRemoveInfo&) {
-  // If a labelable element is removed, we're gonna have to clean
-  // the content list.
-  if (mState != State::Dirty &&
-      nsContentUtils::IsInSameAnonymousTree(mRootNode, aChild)) {
+  // If a labelable element is removed, we're gonna have to clean the content
+  // list.
+  if (mState != State::Dirty && NodeIsInScope(aChild)) {
     SetDirty();
     return;
   }
 }
 
-void nsLabelsNodeList::MaybeResetRoot(nsINode* aRootNode) {
-  MOZ_ASSERT(aRootNode, "Must have root");
-  if (mRootNode == aRootNode) {
+void nsLabelsNodeList::NodeWillBeDestroyed(nsINode* aNode) {
+  nsContentList::NodeWillBeDestroyed(aNode);
+
+  mData = nullptr;
+  mRoots.Clear();
+}
+
+// static
+bool nsLabelsNodeList::ResetRootsCallback(void* aData) {
+  nsLabelsNodeList* list = (nsLabelsNodeList*)aData;
+  list->ResetRoots();
+  return true;
+}
+
+// static
+bool nsLabelsNodeList::SetDirtyCallback(void* aData) {
+  nsLabelsNodeList* list = (nsLabelsNodeList*)aData;
+  list->SetDirty();
+  return true;
+}
+
+void nsLabelsNodeList::WatchLabeledDescendantsOfNearestAncestorLabel(
+    Element* labeledHost) {
+  if (!StaticPrefs::dom_shadowdom_referenceTarget_enabled()) {
     return;
   }
-
-  MOZ_ASSERT(mIsLiveList, "nsLabelsNodeList is always a live list");
-  if (mRootNode) {
-    mRootNode->RemoveMutationObserver(this);
+  MOZ_ASSERT(labeledHost);
+  Element* parentElement = labeledHost->GetParentElement();
+  while (parentElement) {
+    if (HTMLLabelElement* label = HTMLLabelElement::FromNode(parentElement)) {
+      // Use GetControlForBindings() to get the element in the same scope as the
+      // label, instead of the deep labeled element.
+      if (Element* labeledElement = label->GetControlForBindings()) {
+        if (labeledElement != labeledHost) {
+          // If the labeled element's reference target changes such that it's no
+          // longer labelable, our labeled element might become the target for
+          // the ancestor label.
+          labeledElement->AddReferenceTargetChangeObserver(SetDirtyCallback,
+                                                           this);
+        }
+      }
+      return;
+    }
+    parentElement = parentElement->GetParentElement();
   }
-  mRootNode = aRootNode;
-  mRootNode->AddMutationObserver(this);
+}
+
+void nsLabelsNodeList::ResetRoots() {
+  MOZ_ASSERT(mIsLiveList, "nsLabelsNodeList is always a live list");
+
+  nsGenericHTMLElement* labeledElement =
+      static_cast<nsGenericHTMLElement*>(mData);
+  MOZ_ASSERT(labeledElement, "Must have labeled element");
+
+  nsTArray<nsINode*> newRoots;
+
+  Element* labeledElementOrHost = labeledElement;
+  bool labeledElementOrHostIsInShadowTree = false;
+  ShadowRoot* shadowRoot = labeledElement->GetContainingShadow();
+  while (shadowRoot) {
+    newRoots.AppendElement(shadowRoot);
+    // If reference target is not enabled, GetReferenceTargetElement() will
+    // always return nullptr.
+    if (shadowRoot->GetReferenceTargetElement() != labeledElementOrHost) {
+      labeledElementOrHostIsInShadowTree = true;
+      break;
+    }
+    labeledElementOrHost = shadowRoot->Host();
+    WatchLabeledDescendantsOfNearestAncestorLabel(labeledElementOrHost);
+    shadowRoot = labeledElementOrHost->GetContainingShadow();
+  }
+
+  // If the outermost labeled element or host is in a shadow tree, its
+  // containing shadow root is already in newRoots.
+  if (!labeledElementOrHostIsInShadowTree) {
+    // `labeledHost` is either `labeledElement`, or the shadow host which has
+    // `labeledElement` as its resolved reference target.
+    DocumentOrShadowRoot* doc = labeledElementOrHost->GetUncomposedDoc();
+    if (doc) {
+      newRoots.AppendElement(&doc->AsNode());
+    } else if (newRoots.IsEmpty()) {
+      newRoots.AppendElement(labeledElementOrHost->SubtreeRoot());
+    }
+  }
+
+  if (newRoots == mRoots) {
+    return;
+  }
+  MOZ_ASSERT(!newRoots.IsEmpty(), "Must have at least one root");
+
+  for (nsINode* root : mRoots) {
+    if (!newRoots.Contains(root)) {
+      root->RemoveMutationObserver(this);
+    }
+
+    // Only the outermost shadow root should have this as a
+    // ReferenceTargetChangedObserver, to avoid duplicated notifications.
+    if (ShadowRoot* shadow = ShadowRoot::FromNodeOrNull(root)) {
+      Element* host = shadow->GetHost();
+      if (host) {
+        host->RemoveReferenceTargetChangeObserver(ResetRootsCallback, this);
+      }
+    }
+  }
+  for (nsINode* root : newRoots) {
+    if (!mRoots.Contains(root)) {
+      root->AddMutationObserver(this);
+    }
+  }
+
+  mRoots = std::move(newRoots);
+  mRootNode = mRoots.LastElement();
+
+  if (labeledElementOrHostIsInShadowTree) {
+    ShadowRoot* shadow = ShadowRoot::FromNodeOrNull(mRootNode);
+    MOZ_ASSERT(shadow);
+    shadow->Host()->AddReferenceTargetChangeObserver(ResetRootsCallback, this);
+  }
+  labeledElementOrHost->AddReferenceTargetChangeObserver(ResetRootsCallback,
+                                                         this);
+
   SetDirty();
+}
+
+nsINode* nsLabelsNodeList::GetNextNode(nsINode* aCurrent) {
+  nsGenericHTMLElement* labeledElement = (nsGenericHTMLElement*)mData;
+  MOZ_ASSERT(labeledElement, "Must have labeled element");
+  MOZ_ASSERT(mRootNode, "Must have root node");
+
+  nsINode* next = nullptr;
+
+  // If aCurrent's resolved reference target is the labeled element, descend
+  // into aCurrent's shadow root, if it has one. (Otherwise, ignore shadow
+  // roots.)
+  if (aCurrent->IsElement()) {
+    Element* curElement = aCurrent->AsElement();
+    ShadowRoot* curShadow = curElement->GetShadowRoot();
+    if (curShadow && curElement->ResolveReferenceTarget() == labeledElement) {
+      next = curShadow->GetFirstChild();
+    }
+  }
+  if (next) {
+    return next;
+  }
+
+  // Default case: just get the next node in the current tree.
+  next = aCurrent->GetNextNode();
+  if (next) {
+    return next;
+  }
+
+  // If we descended into a shadow tree, back out of it until we find an
+  // adjacent node, or hit a shadow root which doesn't have the current element
+  // as its reference target.
+  nsINode* cur = aCurrent;
+  while (!next) {
+    ShadowRoot* shadow = cur->GetContainingShadow();
+    if (!shadow || shadow->GetReferenceTargetElement() == cur) {
+      break;
+    }
+    cur = shadow->Host();
+    next = cur->GetNextNode();
+  }
+  return next;
 }
 
 void nsLabelsNodeList::PopulateSelf(uint32_t aNeededLength,
@@ -1197,4 +1381,18 @@ void nsLabelsNodeList::PopulateSelf(uint32_t aNeededLength,
   }
 
   nsContentList::PopulateSelf(aNeededLength, aExpectedElementsIfDirty);
+}
+
+void nsLabelsNodeList::LastRelease() {
+  for (nsINode* root : mRoots) {
+    root->RemoveMutationObserver(this);
+    if (ShadowRoot* shadow = ShadowRoot::FromNodeOrNull(root)) {
+      if (Element* host = shadow->GetHost()) {
+        host->RemoveReferenceTargetChangeObserver(ResetRootsCallback, this);
+      }
+    }
+  }
+  mRoots.Clear();
+
+  nsContentList::LastRelease();
 }

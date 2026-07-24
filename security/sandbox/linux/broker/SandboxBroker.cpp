@@ -32,7 +32,6 @@
 #include "base/string_util.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -190,6 +189,15 @@ void SandboxBroker::Policy::AddPath(int aPerms, const char* aPath,
   perms |= aPerms;
 }
 
+void SandboxBroker::Policy::RemoveAllDenyRules() {
+  for (auto iter = mMap.Iter(); !iter.Done(); iter.Next()) {
+    iter.Data() &= ~FORCE_DENY;
+    if ((iter.Data() & ~RECURSIVE) == 0) {
+      iter.Remove();
+    }
+  }
+}
+
 void SandboxBroker::Policy::AddTree(int aPerms, const char* aPath) {
   struct stat statBuf;
 
@@ -286,7 +294,7 @@ void SandboxBroker::Policy::AddAncestors(const char* aPath, int aPerms) {
   nsAutoCString path(aPath);
 
   while (true) {
-    const auto lastSlash = path.RFindCharInSet("/");
+    const auto lastSlash = path.RFindChar('/');
     if (lastSlash <= 0) {
       MOZ_ASSERT(lastSlash == 0);
       return;
@@ -294,6 +302,91 @@ void SandboxBroker::Policy::AddAncestors(const char* aPath, int aPerms) {
     path.Truncate(lastSlash);
     AddPath(aPerms, path.get());
   }
+}
+
+enum class IterationDecision : uint8_t { Continue, Break };
+
+// This is slightly different from the loop in AddAncestors: it leaves the
+// trailing slashes attached so they'll match AddTree entries.
+template <typename Fn>
+void ForEachAncestorDirectoryWithTrailingSlash(const nsACString& aPath,
+                                               Fn&& aCallback) {
+  if (aPath.IsEmpty()) {
+    return;
+  }
+  nsAutoCString ancestor(aPath);
+  while (true) {
+    // Last() release-asserts that the string is not empty. We bail out on empty
+    // strings above, and the Truncate() below will always give us a non-empty
+    // string.
+    if (ancestor.Last() == '/') {
+      ancestor.Truncate(ancestor.Length() - 1);
+    }
+    const auto lastSlash = ancestor.RFindChar('/');
+    if (lastSlash < 0) {
+      MOZ_ASSERT(ancestor.IsEmpty());
+      break;
+    }
+    ancestor.Truncate(lastSlash + 1);
+    if (aCallback(ancestor) == IterationDecision::Break) {
+      break;
+    }
+  }
+}
+
+struct Match {
+  size_t mPrefixLength;
+  int mPerms;
+
+  bool operator<(const Match& aOther) const {
+    // We want longer matches first.
+    return mPrefixLength > aOther.mPrefixLength;
+  }
+};
+static int ComputeInheritedPerms(const Span<Match> aAncestorMatches,
+                                 bool aIncludeDeny) {
+  MOZ_ASSERT(std::is_sorted(aAncestorMatches.begin(), aAncestorMatches.end()));
+  MOZ_ASSERT(std::all_of(aAncestorMatches.begin(), aAncestorMatches.end(),
+                         [](const Match& aMatch) {
+                           return aMatch.mPerms & SandboxBroker::RECURSIVE;
+                         }));
+
+  int inheritedPerms = 0;
+  for (const Match& match : aAncestorMatches) {
+    if (match.mPerms & SandboxBroker::FORCE_DENY) {
+      // If we have anything under a FORCE_DENY dir, then we want to stop
+      // the inheritance chain now.
+      if (aIncludeDeny) {
+        inheritedPerms |= match.mPerms & ~SandboxBroker::RECURSIVE;
+      }
+      break;
+    }
+    inheritedPerms |= match.mPerms & ~SandboxBroker::RECURSIVE;
+    // We've found a more specific rule, if we hit a DENY, we want to stop at
+    // that point without including it.
+    aIncludeDeny = false;
+  }
+  MOZ_ASSERT(!(inheritedPerms & SandboxBroker::RECURSIVE));
+  return inheritedPerms;
+}
+
+// FIXME(emilio): This duplicates some logic with Lookup(), and doesn't deal
+// with prefix rules that don't fall onto a directory boundary. Consider
+// changing PathPermissionMap to some sort of radix tree data structure instead
+// (which will also make Lookup() faster), or deal with prefixes here like
+// Lookup() does by iterating the whole map (would be quadratic and slower).
+static int ComputeInheritedPerms(const SandboxBroker::PathPermissionMap& aMap,
+                                 const nsACString& aPath, bool aIncludeDeny) {
+  AutoTArray<Match, 4> matches;
+  ForEachAncestorDirectoryWithTrailingSlash(
+      aPath, [&](const nsACString& aAncestor) {
+        const int ancestorPerms = aMap.Get(aAncestor);
+        if (ancestorPerms & SandboxBroker::RECURSIVE) {
+          matches.AppendElement(Match{aAncestor.Length(), ancestorPerms});
+        }
+        return IterationDecision::Continue;
+      });
+  return ComputeInheritedPerms(matches, aIncludeDeny);
 }
 
 void SandboxBroker::Policy::FixRecursivePermissions() {
@@ -308,40 +401,9 @@ void SandboxBroker::Policy::FixRecursivePermissions() {
 
   for (const auto& entry : oldMap) {
     const nsACString& path = entry.GetKey();
-    const int& localPerms = entry.GetData();
-    int inheritedPerms = 0;
-
-    nsAutoCString ancestor(path);
-    // This is slightly different from the loop in AddAncestors: it
-    // leaves the trailing slashes attached so they'll match AddTree
-    // entries.
-    while (true) {
-      // Last() release-asserts that the string is not empty.  We
-      // should never have empty keys in the map, and the Truncate()
-      // below will always give us a non-empty string.
-      if (ancestor.Last() == '/') {
-        ancestor.Truncate(ancestor.Length() - 1);
-      }
-      const auto lastSlash = ancestor.RFindCharInSet("/");
-      if (lastSlash < 0) {
-        MOZ_ASSERT(ancestor.IsEmpty());
-        break;
-      }
-      ancestor.Truncate(lastSlash + 1);
-      const int ancestorPerms = oldMap.Get(ancestor);
-      if (ancestorPerms & RECURSIVE) {
-        // if a child is set with FORCE_DENY, do not compute inheritedPerms
-        if ((localPerms & FORCE_DENY) == FORCE_DENY) {
-          if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-            SANDBOX_LOG("skip inheritence policy for %s: %d",
-                        PromiseFlatCString(path).get(), localPerms);
-          }
-        } else {
-          inheritedPerms |= ancestorPerms & ~RECURSIVE;
-        }
-      }
-    }
-
+    const int localPerms = entry.GetData();
+    const int inheritedPerms =
+        ComputeInheritedPerms(oldMap, path, /* aIncludeDeny = */ false);
     const int newPerms = localPerms | inheritedPerms;
     if ((newPerms & ~RECURSIVE) == inheritedPerms) {
       if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
@@ -368,29 +430,23 @@ int SandboxBroker::Policy::Lookup(const nsACString& aPath) const {
   if (perms) {
     return perms;
   }
-
   // Not a legally constructed path
-  if (!ValidatePath(PromiseFlatCString(aPath).get())) return 0;
-
-  // Now it's either an illegal access, or a recursive
-  // directory permission. We'll have to check the entire
-  // whitelist for the best match (slower).
-  int allPerms = 0;
+  if (!ValidatePath(PromiseFlatCString(aPath).get())) {
+    return 0;
+  }
+  // Now it's either an illegal access, or a recursive directory permission.
+  // We'll have to check the entire whitelist for the best match (slower).
+  AutoTArray<Match, 4> matches;
   for (const auto& entry : mMap) {
-    const nsACString& whiteListPath = entry.GetKey();
-    const int& perms = entry.GetData();
-
-    if (!(perms & RECURSIVE)) continue;
-
-    // passed part starts with something on the whitelist
-    if (StringBeginsWith(aPath, whiteListPath)) {
-      allPerms |= perms;
+    if ((entry.GetData() & RECURSIVE) &&
+        StringBeginsWith(aPath, entry.GetKey())) {
+      matches.AppendElement(Match{entry.GetKey().Length(), entry.GetData()});
     }
   }
-
-  // Strip away the RECURSIVE flag as it doesn't
-  // necessarily apply to aPath.
-  return allPerms & ~RECURSIVE;
+  if (matches.Length() > 1) {
+    matches.Sort();
+  }
+  return ComputeInheritedPerms(matches, /* aIncludeDeny= */ true);
 }
 
 static bool AllowOperation(int aReqFlags, int aPerms) {

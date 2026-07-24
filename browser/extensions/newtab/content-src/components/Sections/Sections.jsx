@@ -9,7 +9,6 @@ import { ComponentPerfTimer } from "content-src/components/ComponentPerfTimer/Co
 import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
 import { connect } from "react-redux";
 import { MoreRecommendations } from "content-src/components/MoreRecommendations/MoreRecommendations";
-import { PocketLoggedInCta } from "content-src/components/PocketLoggedInCta/PocketLoggedInCta";
 import React from "react";
 import { TopSites } from "content-src/components/TopSites/TopSites";
 
@@ -166,7 +165,6 @@ export class Section extends React.PureComponent {
       eventSource,
       title,
       rows,
-      Pocket,
       emptyState,
       dispatch,
       compactCards,
@@ -188,13 +186,6 @@ export class Section extends React.PureComponent {
     const { numRows } = this;
     const maxCards = maxCardsPerRow * numRows;
     const maxCardsOnNarrow = CARDS_PER_ROW_DEFAULT * numRows;
-
-    const { pocketCta, isUserLoggedIn } = Pocket || {};
-    const { useCta } = pocketCta || {};
-
-    const shouldShowPocketCta =
-      id === "topstories" && useCta && isUserLoggedIn === false;
-
     const shouldShowReadMore = read_more_endpoint;
 
     const realRows = rows.slice(0, maxCards);
@@ -277,12 +268,6 @@ export class Section extends React.PureComponent {
           )}
           {id === "topstories" && (
             <div className="top-stories-bottom-container">
-              {shouldShowPocketCta && (
-                <div className="wrapper-cta">
-                  <PocketLoggedInCta />
-                </div>
-              )}
-
               <div className="wrapper-more-recommendations">
                 {shouldShowReadMore && (
                   <MoreRecommendations

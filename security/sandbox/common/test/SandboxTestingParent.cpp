@@ -96,7 +96,7 @@ mozilla::ipc::IPCResult SandboxTestingParent::RecvReportTestResults(
 }
 
 mozilla::ipc::IPCResult SandboxTestingParent::RecvTestCompleted() {
-  Unused << SendShutDown();
+  (void)SendShutDown();
   NS_DispatchToMainThread(
       NS_NewRunnableFunction("SandboxReportTestResults", []() {
         nsCOMPtr<nsIObserverService> observerService =

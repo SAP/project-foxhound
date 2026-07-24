@@ -4,8 +4,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_PICKLE_H__
-#define BASE_PICKLE_H__
+#ifndef BASE_PICKLE_H_
+#define BASE_PICKLE_H_
 
 #include <string>
 
@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/string16.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/BufferList.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/TimeStamp.h"
@@ -295,4 +294,4 @@ class Pickle {
   uint32_t header_size_;
 };
 
-#endif  // BASE_PICKLE_H__
+#endif  // BASE_PICKLE_H_

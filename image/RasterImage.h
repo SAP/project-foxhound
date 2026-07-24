@@ -29,9 +29,7 @@
 #include "ISurfaceProvider.h"
 #include "Orientation.h"
 #include "mozilla/AtomicBitfields.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/TimeStamp.h"
@@ -415,12 +413,6 @@ class RasterImage final : public ImageResource,
        (bool, WantFullDecode, 1)))
 
   TimeStamp mDrawStartTime;
-
-  // This field is set according to the DecoderType of this image once when
-  // initialized so that a decoder's flags can be set according to any
-  // preferences that affect its behavior in a way that would otherwise cause
-  // errors, such as enabling or disabling animation.
-  DecoderFlags mDefaultDecoderFlags = DefaultDecoderFlags();
 
   //////////////////////////////////////////////////////////////////////////////
   // Scaling.

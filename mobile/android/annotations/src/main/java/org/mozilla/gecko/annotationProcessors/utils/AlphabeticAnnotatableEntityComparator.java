@@ -10,6 +10,7 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.Comparator;
 
+/** Comparator for sorting annotatable entities alphabetically. */
 public class AlphabeticAnnotatableEntityComparator<T extends Member> implements Comparator<T> {
   @Override
   public int compare(T aLhs, T aRhs) {

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function testClosedTabData() {
-  /** Test for Bug 461634 **/
+  /** Test for Bug 461634 */
 
   const REMEMBER = Date.now(),
     FORGET = Math.random();

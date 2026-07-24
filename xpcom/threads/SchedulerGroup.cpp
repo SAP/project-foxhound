@@ -10,11 +10,15 @@
 namespace mozilla {
 
 /* static */
-nsresult SchedulerGroup::Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) {
+nsresult SchedulerGroup::Dispatch(already_AddRefed<nsIRunnable>&& aRunnable,
+                                  nsIEventTarget::DispatchFlags aFlags) {
   if (NS_IsMainThread()) {
+    // NOTE: NS_DispatchToCurrentThread always specifies `NS_DISPATCH_FALLIBLE`.
+    // This is done to maintain previous behaviour that all SchedulerGroup
+    // dispatches from the main thread to the main thread are non-leaking.
     return NS_DispatchToCurrentThread(std::move(aRunnable));
   }
-  return NS_DispatchToMainThread(std::move(aRunnable));
+  return NS_DispatchToMainThread(std::move(aRunnable), aFlags);
 }
 
 }  // namespace mozilla

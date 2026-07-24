@@ -6,8 +6,8 @@
 
 /* internal interface for observing CSS style sheet loads */
 
-#ifndef nsICSSLoaderObserver_h___
-#define nsICSSLoaderObserver_h___
+#ifndef nsICSSLoaderObserver_h_
+#define nsICSSLoaderObserver_h_
 
 #include "nsISupports.h"
 
@@ -39,4 +39,4 @@ class nsICSSLoaderObserver : public nsISupports {
                               nsresult aStatus) = 0;
 };
 
-#endif  // nsICSSLoaderObserver_h___
+#endif  // nsICSSLoaderObserver_h_

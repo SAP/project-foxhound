@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCRTGlue_h__
-#define nsCRTGlue_h__
+#ifndef nsCRTGlue_h_
+#define nsCRTGlue_h_
 
 #include "nscore.h"
 
@@ -169,4 +169,4 @@ void NS_MakeRandomString(char* aBuf, int32_t aBufLen);
 
 #define FILE_ILLEGAL_CHARACTERS CONTROL_CHARACTERS OS_FILE_ILLEGAL_CHARACTERS
 
-#endif  // nsCRTGlue_h__
+#endif  // nsCRTGlue_h_

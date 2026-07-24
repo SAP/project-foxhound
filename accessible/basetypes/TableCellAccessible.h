@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_TableCellAccessible_h__
-#define mozilla_a11y_TableCellAccessible_h__
+#ifndef mozilla_a11y_TableCellAccessible_h_
+#define mozilla_a11y_TableCellAccessible_h_
 
 #include "nsTArray.h"
 #include <stdint.h>
@@ -65,4 +65,4 @@ class TableCellAccessible {
 }  // namespace a11y
 }  // namespace mozilla
 
-#endif  // mozilla_a11y_TableCellAccessible_h__
+#endif  // mozilla_a11y_TableCellAccessible_h_

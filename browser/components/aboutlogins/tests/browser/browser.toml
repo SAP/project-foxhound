@@ -12,20 +12,27 @@ skip-if = [
   "asan",
   "ccov",
   "debug",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1648862
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1648862
-  "os == 'win' && !debug", # bug 1605494 is more prevalent on linux, Bug 1627419
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1648862
+  "os == 'win' && opt", # bug 1605494 is more prevalent on linux, Bug 1627419
   "tsan",
 ]
 
 ["browser_alertDismissedAfterChangingPassword.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt"] # Bug 1684513
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1684513
+]
+
+["browser_breachAlertLinkTelemetry.js"]
 
 ["browser_breachAlertShowingForAddedLogin.js"]
 
 ["browser_confirmDeleteDialog.js"]
 
 ["browser_contextmenuFillLogins.js"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Disabling because of Bug 1974208
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Disabling because of Bug 1974208
+]
 
 ["browser_copyToClipboardButton.js"]
 
@@ -38,12 +45,13 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt
 ["browser_loginFilter.js"]
 
 ["browser_loginItemErrors.js"]
-skip-if = ["debug"] # Bug 1577710
+skip-if = [
+  "debug", # Bug 1577710
+]
 
 ["browser_loginListChanges.js"]
 
 ["browser_loginSortOrderRestored.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] # Bug 1587625; Bug 1587626 for linux1804
 
 ["browser_noLoginsView.js"]
 
@@ -53,14 +61,14 @@ skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] # 
 
 ["browser_openImport.js"]
 run-if = [
-  "os == 'win'", #  import is only available on Windows and macOS
   "os == 'mac'", #  import is only available on Windows and macOS
+  "os == 'win'", #  import is only available on Windows and macOS
 ]
 
 ["browser_openImportCSV.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && asan && swgl", # Bug 1775754
-  "os == 'mac' && os_version == '15.00' && arch == 'aarch64'", # Bug 1775754
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1775754
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775754
 ]
 
 ["browser_openPreferences.js"]
@@ -69,29 +77,28 @@ skip-if = [
 
 ["browser_openSite.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1581889
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1581889
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1581889
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && socketprocess_networking", # Bug 1775756
+  "os == 'win' && os_version == '11.26100' && opt && msix", # Bug 1775756
 ]
 
 ["browser_osAuthDialog.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # bug 1527745
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1527745
-  "os == 'win' && os_version == '11.26100' && bits == 64 && asan", # Bug 1836545
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1527745
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1836545
 ]
 
 ["browser_primaryPassword.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # bug 1569789
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1569789
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1569789
 ]
 
 ["browser_removeAllDialog.js"]
 
 ["browser_sessionRestore.js"]
 skip-if = [
-  "tsan",
   "debug", # Bug 1576876
+  "tsan",
 ]
 
 ["browser_tabKeyNav.js"]

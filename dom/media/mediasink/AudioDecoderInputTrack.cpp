@@ -5,11 +5,10 @@
 #include "AudioDecoderInputTrack.h"
 
 #include "MediaData.h"
+#include "RLBoxSoundTouch.h"
+#include "Tracing.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "Tracing.h"
-
-#include "RLBoxSoundTouch.h"
 
 namespace mozilla {
 
@@ -26,21 +25,19 @@ extern LazyLogModule gMediaDecoderLog;
 /* static */
 AudioDecoderInputTrack* AudioDecoderInputTrack::Create(
     MediaTrackGraph* aGraph, nsISerialEventTarget* aDecoderThread,
-    const AudioInfo& aInfo, float aPlaybackRate, float aVolume,
-    bool aPreservesPitch) {
+    const AudioInfo& aInfo, float aPlaybackRate, bool aPreservesPitch) {
   MOZ_ASSERT(aGraph);
   MOZ_ASSERT(aDecoderThread);
   AudioDecoderInputTrack* track =
       new AudioDecoderInputTrack(aDecoderThread, aGraph->GraphRate(), aInfo,
-                                 aPlaybackRate, aVolume, aPreservesPitch);
+                                 aPlaybackRate, aPreservesPitch);
   aGraph->AddTrack(track);
   return track;
 }
 
 AudioDecoderInputTrack::AudioDecoderInputTrack(
     nsISerialEventTarget* aDecoderThread, TrackRate aGraphRate,
-    const AudioInfo& aInfo, float aPlaybackRate, float aVolume,
-    bool aPreservesPitch)
+    const AudioInfo& aInfo, float aPlaybackRate, bool aPreservesPitch)
     : ProcessedMediaTrack(aGraphRate, MediaSegment::AUDIO, new AudioSegment()),
       mDecoderThread(aDecoderThread),
       mResamplerChannelCount(0),
@@ -48,7 +45,6 @@ AudioDecoderInputTrack::AudioDecoderInputTrack(
       mInputSampleRate(aInfo.mRate),
       mDelayedScheduler(mDecoderThread),
       mPlaybackRate(aPlaybackRate),
-      mVolume(aVolume),
       mPreservesPitch(aPreservesPitch) {}
 
 bool AudioDecoderInputTrack::ConvertAudioDataToSegment(
@@ -217,28 +213,14 @@ void AudioDecoderInputTrack::ClearFutureData() {
 
 void AudioDecoderInputTrack::PushDataToSPSCQueue(SPSCData& data) {
   AssertOnDecoderThread();
+  auto threadId = std::this_thread::get_id();
+  if (threadId != mProducerThreadId) {
+    mProducerThreadId = threadId;
+    mSPSCQueue.ResetProducerThreadId();
+  }
   const bool rv = mSPSCQueue.Enqueue(data);
   MOZ_DIAGNOSTIC_ASSERT(rv, "Failed to push data, SPSC queue is full!");
-  Unused << rv;
-}
-
-void AudioDecoderInputTrack::SetVolume(float aVolume) {
-  AssertOnDecoderThread();
-  LOG("Set volume=%f", aVolume);
-  GetMainThreadSerialEventTarget()->Dispatch(
-      NS_NewRunnableFunction("AudioDecoderInputTrack::SetVolume",
-                             [self = RefPtr<AudioDecoderInputTrack>(this),
-                              aVolume] { self->SetVolumeImpl(aVolume); }));
-}
-
-void AudioDecoderInputTrack::SetVolumeImpl(float aVolume) {
-  MOZ_ASSERT(NS_IsMainThread());
-  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aVolume] {
-    TRACE_COMMENT("AudioDecoderInputTrack::SetVolume ControlMessage", "%f",
-                  aVolume);
-    LOG_M("Apply volume=%f", this, aVolume);
-    mVolume = aVolume;
-  });
+  (void)rv;
 }
 
 void AudioDecoderInputTrack::SetPlaybackRate(float aPlaybackRate) {
@@ -396,7 +378,6 @@ TrackTime AudioDecoderInputTrack::AppendBufferedDataToOutput(
   // Apply any necessary change on the segement which would be outputed to the
   // graph.
   const TrackTime appendedDuration = outputSegment.GetDuration();
-  outputSegment.ApplyVolume(mVolume);
   ApplyTrackDisabling(&outputSegment);
   mSegment->AppendFrom(&outputSegment);
 
@@ -441,7 +422,7 @@ TrackTime AudioDecoderInputTrack::AppendTimeStretchedDataToSegment(
     }
   });
   MOZ_ASSERT(consumedDuration >= 0);
-  Unused << GetDataFromTimeStretcher(aExpectedDuration, aOutput);
+  (void)GetDataFromTimeStretcher(aExpectedDuration, aOutput);
   return consumedDuration;
 }
 

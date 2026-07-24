@@ -27,11 +27,12 @@ export class TestWindowChild extends JSWindowActorChild {
         aMessage.data.toChild = true;
         this.sendAsyncMessage("toParent", aMessage.data);
         break;
-      case "asyncAdd":
+      case "asyncAdd": {
         let { a, b } = aMessage.data;
         return new Promise(resolve => {
           resolve({ result: a + b });
         });
+      }
       case "error":
         return Promise.reject(new SyntaxError(aMessage.data.message));
       case "exception":

@@ -9,8 +9,6 @@
 
 #if defined(XP_WIN)
 
-#  include "mozilla/UniquePtr.h"
-
 #  include <stdlib.h>
 #  include <windows.h>
 

@@ -57,7 +57,7 @@ class TestAsyncReturnsParent : public PTestAsyncReturnsParent {
 IPDL_TEST(TestAsyncReturns, NoReturn) {
   mActor->SendNoReturn(
       [](bool unused) { FAIL() << "resolve handler should not be called"; },
-      [=](ResponseRejectReason&& aReason) {
+      [this](ResponseRejectReason&& aReason) {
         if (aReason != ResponseRejectReason::ResolverDestroyed) {
           FAIL() << "reject with wrong reason";
         }
@@ -67,7 +67,7 @@ IPDL_TEST(TestAsyncReturns, NoReturn) {
 
 IPDL_TEST(TestAsyncReturns, PingPong) {
   mActor->SendPing(
-      [=](bool one) {
+      [this](bool one) {
         EXPECT_TRUE(one);
         mActor->Close();
       },

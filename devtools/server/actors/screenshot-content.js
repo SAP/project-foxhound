@@ -35,14 +35,14 @@ exports.ScreenshotContentActor = class ScreenshotContentActor extends Actor {
    * Retrieve some window-related information that will be passed to the parent process
    * to actually generate the screenshot.
    *
-   * @param {Object} args
-   * @param {Boolean} args.fullpage: Should the screenshot be the height of the whole page
-   * @param {String} args.selector: A CSS selector for the element we should take the
+   * @param {object} args
+   * @param {boolean} args.fullpage: Should the screenshot be the height of the whole page
+   * @param {string} args.selector: A CSS selector for the element we should take the
    *                 screenshot of. The function will return true for the `error` property
    *                 if the screenshot does not match any element.
-   * @param {String} args.nodeActorID: The actorID of the node actor matching the element
+   * @param {string} args.nodeActorID: The actorID of the node actor matching the element
    *                 we should take the screenshot of.
-   * @returns {Object} An object with the following properties:
+   * @returns {object} An object with the following properties:
    *          - error {Boolean}: Set to true if an issue was encountered that prevents
    *            taking the screenshot
    *          - messages {Array<Object{text, level}>}: An array of objects representing

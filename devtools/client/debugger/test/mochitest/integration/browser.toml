@@ -1,0 +1,57 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "../examples/*",
+  "integration-tests/*",
+  "head.js",
+  "../head.js",
+  "../shared-head.js",
+  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+  "!/devtools/client/webconsole/test/browser/shared-head.js",
+]
+prefs = [
+ "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
+ "javascript.options.asmjs=true", # Re-enable asm.js for 'browser_dbg-features-asm.js'
+]
+
+["browser_dbg-features-asm.js"]
+
+["browser_dbg-features-breakable-lines.js"]
+
+["browser_dbg-features-breakable-positions.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-features-breakpoints.js"]
+
+["browser_dbg-features-browser-toolbox-source-tree.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1591064
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1781499
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1591064
+]
+
+["browser_dbg-features-source-text-content.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-features-source-tree.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-features-tabs.js"]
+
+["browser_dbg-features-wasm.js"]
+
+["browser_dbg-integration-reloading-compressed-sourcemaps.js"]
+
+["browser_dbg-integration-reloading-uncompressed-sourcemaps.js"]

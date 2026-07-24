@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ___nsscriptableinputstream___h_
-#define ___nsscriptableinputstream___h_
+#ifndef _nsscriptableinputstream_h_
+#define _nsscriptableinputstream_h_
 
 #include "nsIScriptableInputStream.h"
 #include "nsIInputStream.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 
 #define NS_SCRIPTABLEINPUTSTREAM_CID \
   {0x7225c040, 0xa9bf, 0x11d3, {0xa1, 0x97, 0x0, 0x50, 0x4, 0x1c, 0xaf, 0x44}}
@@ -39,4 +38,4 @@ class nsScriptableInputStream final : public nsIScriptableInputStream {
   nsCOMPtr<nsIInputStream> mInputStream;
 };
 
-#endif  // ___nsscriptableinputstream___h_
+#endif  // _nsscriptableinputstream_h_

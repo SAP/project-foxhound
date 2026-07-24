@@ -3,6 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef GFX_GL_WGLLIBRARY_H_
+#define GFX_GL_WGLLIBRARY_H_
+
 #include "GLContextTypes.h"
 #include "GLLibraryLoader.h"
 #include "mozilla/UniquePtr.h"
@@ -61,9 +64,10 @@ class WGLLibrary {
     int(GLAPIENTRY* fReleasePbufferDC)(HANDLE hPbuffer, HDC dc);
     // BOOL (GLAPIENTRY * fBindTexImage) (HANDLE hPbuffer, int iBuffer);
     // BOOL (GLAPIENTRY * fReleaseTexImage) (HANDLE hPbuffer, int iBuffer);
-    BOOL(GLAPIENTRY* fChoosePixelFormat)
-    (HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList,
-     UINT nMaxFormats, int* piFormats, UINT* nNumFormats);
+    BOOL(GLAPIENTRY* fChoosePixelFormat)(HDC hdc, const int* piAttribIList,
+                                         const FLOAT* pfAttribFList,
+                                         UINT nMaxFormats, int* piFormats,
+                                         UINT* nNumFormats);
     // BOOL (GLAPIENTRY * fGetPixelFormatAttribiv) (HDC hdc,
     //                                             int iPixelFormat,
     //                                             int iLayerPlane,
@@ -74,18 +78,18 @@ class WGLLibrary {
     HGLRC(GLAPIENTRY* fCreateContextAttribsARB)
     (HDC hdc, HGLRC hShareContext, const int* attribList);
     // WGL_NV_DX_interop:
-    BOOL(GLAPIENTRY* fDXSetResourceShareHandleNV)
-    (void* dxObject, HANDLE shareHandle);
+    BOOL(GLAPIENTRY* fDXSetResourceShareHandleNV)(void* dxObject,
+                                                  HANDLE shareHandle);
     HANDLE(GLAPIENTRY* fDXOpenDeviceNV)(void* dxDevice);
     BOOL(GLAPIENTRY* fDXCloseDeviceNV)(HANDLE hDevice);
     HANDLE(GLAPIENTRY* fDXRegisterObjectNV)
     (HANDLE hDevice, void* dxObject, GLuint name, GLenum type, GLenum access);
     BOOL(GLAPIENTRY* fDXUnregisterObjectNV)(HANDLE hDevice, HANDLE hObject);
     BOOL(GLAPIENTRY* fDXObjectAccessNV)(HANDLE hObject, GLenum access);
-    BOOL(GLAPIENTRY* fDXLockObjectsNV)
-    (HANDLE hDevice, GLint count, HANDLE* hObjects);
-    BOOL(GLAPIENTRY* fDXUnlockObjectsNV)
-    (HANDLE hDevice, GLint count, HANDLE* hObjects);
+    BOOL(GLAPIENTRY* fDXLockObjectsNV)(HANDLE hDevice, GLint count,
+                                       HANDLE* hObjects);
+    BOOL(GLAPIENTRY* fDXUnlockObjectsNV)(HANDLE hDevice, GLint count,
+                                         HANDLE* hObjects);
   } mSymbols = {};
 
   bool EnsureInitialized();
@@ -112,3 +116,5 @@ extern WGLLibrary sWGLLib;
 
 } /* namespace gl */
 } /* namespace mozilla */
+
+#endif  // GFX_GL_WGLLIBRARY_H_

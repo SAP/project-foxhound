@@ -320,8 +320,7 @@ random-if(winWidget) fuzzy(0-25,0-2800) fails-if(useDrawSnapshot) HTTP == 289480
 == 296904-1.html 296904-1-ref.html
 == 299136-1.html 299136-1-ref.html
 == 299837-1.html 299837-1-ref.html
-pref(layout.css.grid-multi-pass-track-sizing.enabled,true) skip-if(Android) == chrome://reftest/content/bugs/299837-3.xhtml chrome://reftest/content/bugs/299837-3-ref.xhtml
-pref(layout.css.grid-multi-pass-track-sizing.enabled,false) skip-if(Android) == chrome://reftest/content/bugs/299837-3.xhtml chrome://reftest/content/bugs/299837-3-ref.xhtml # We may remove this duplicate test after enabling the pref by default in bug 1957244
+skip-if(Android) == chrome://reftest/content/bugs/299837-3.xhtml chrome://reftest/content/bugs/299837-3-ref.xhtml
 == 300691-1a.html 300691-1-ref.html
 == 300691-1b.html 300691-1-ref.html
 == 300691-1c.html 300691-1-ref.html
@@ -992,9 +991,6 @@ fails-if(Android) fuzzy(63-65,1024-1024) == 421885-1.xml 421885-1-ref.xml
 random-if(gtkWidget||Android) == 423599-1.html 423599-1-ref.html # bug 1309095
 == 423676-1.html 423676-1-ref.html
 fails == 423823-1.html 423823-1-ref.html # scrolling rowgroups were removed in bug 28800
-== chrome://reftest/content/bugs/424074-1.xhtml chrome://reftest/content/bugs/424074-1-ref.xhtml
-fails-if(Android) != chrome://reftest/content/bugs/424074-1.xhtml chrome://reftest/content/bugs/424074-1-ref2.xhtml
-random-if(gtkWidget) == chrome://reftest/content/bugs/424074-1-ref2.xhtml chrome://reftest/content/bugs/424074-1-ref3.xhtml
 == 424236-1.html 424236-1-ref.html
 == 424236-2.html 424236-2-ref.html
 == 424236-3.html 424236-3-ref.html
@@ -1522,7 +1518,7 @@ fuzzy-if(winWidget,0-52,0-1051) == 586683-1.html 586683-1-ref.html
 == 589615-1b.html 589615-1-ref.html
 == 589672-1.html 589672-1-ref.html
 != 589682-1.html 589682-1-notref.html
-pref(dom.meta-viewport.enabled,true) == 593243-1.html 593243-1-ref.html
+skip-if(Android&&!emulator) pref(dom.meta-viewport.enabled,true) == 593243-1.html 593243-1-ref.html
 pref(dom.meta-viewport.enabled,true) == 593243-2.html 593243-2-ref.html
 == 593544-1.html 593544-1-ref.html
 == 594333-1.html 594333-1-ref.html
@@ -1751,7 +1747,6 @@ fuzzy(0-1,0-5) == 956513-1.svg 956513-1-ref.svg
 fuzzy(0-1,0-80) == 961887-1.html 961887-1-ref.html
 == 961887-2.html 961887-2-ref.html
 == 961887-3.html 961887-3-ref.html
-fuzzy(0-1,0-2) pref(layout.css.overflow-clip-box.enabled,true) pref(layout.forms.reveal-password-button.enabled,false) == 966992-1.html 966992-1-ref.html
 == 966510-1.html 966510-1-ref.html
 == 966510-2.html 966510-2-ref.html
 fuzzy(0-1,0-123) == 978911-1.svg 978911-1-ref.svg
@@ -1766,7 +1761,6 @@ fuzzy(0-1,0-123) == 978911-1.svg 978911-1-ref.svg
 == 987680-1.html 987680-1-ref.html
 # Fuzzy on WR due to alpha blending
 fuzzy(0-1,0-1473) == 991046-1.html 991046-1-ref.html
-pref(layout.css.overflow-clip-box.enabled,true) fuzzy(0-2,0-845) == 992447.html 992447-ref.html
 == 1003425-1.html 1003425-1-ref.html
 == 1003425-2.html 1003425-2-ref.html
 == 1005405-1.html 1005405-1-ref.html
@@ -1905,7 +1899,6 @@ fuzzy(0-1,0-1) == 1202512-2.html 1202512-2-ref.html
 == 1219985-7.html 1219985-ref-transparent-clear.html
 == 1219985-8.html 1219985-ref-opaque-clear.html
 == 1222226-1.html 1222226-1-ref.html
-pref(layout.css.overflow-clip-box.enabled,true) == 1226278.html 1226278-ref.html
 == 1230466.html about:blank
 random-if(gtkWidget) != 1238243-1.html 1238243-1-notref.html # may fail on Linux, depending on Korean fonts available
 == 1238243-2.html 1238243-2-ref.html
@@ -1942,7 +1935,7 @@ fuzzy(0-13,0-40000) fuzzy-if(winWidget,0-13,0-40000) == 1316719-1b.html 1316719-
 fuzzy(0-13,0-40000) fuzzy-if(winWidget,0-13,0-40000) == 1316719-1c.html 1316719-1-ref.html
 != 1318769-1.html 1318769-1-ref.html
 == 1322512-1.html 1322512-1-ref.html
-skip-if(winWidget&&isDebugBuild) == 1330051.svg 1330051-ref.svg
+== 1330051.svg 1330051-ref.svg
 != 1336591-1.html 1336591-1-ref.html
 == 1348481-1.html 1348481-ref.html
 == 1348481-2.html 1348481-ref.html
@@ -2074,7 +2067,7 @@ skip-if(!cocoaWidget) != 1608124-2.html 1608124-2-notref.html
 fuzzy(0-145,0-48536) == 1614788-1.svg 1614788-1-ref.svg # large fuzz necesary to test bug: 239,202824 is how much it differs when bug exists
 == blob-fallback-clip.html blob-fallback-clip-ref.html
 fuzzy-if(cocoaWidget,0-42,0-4) fuzzy-if(winWidget,249-249,999-999) == 1617515-1.html 1617515-1-ref.html
-== 1624118.html 1624118-ref.html
+skip-if(Android&&!emulator) == 1624118.html 1624118-ref.html
 fuzzy(0-2,0-21184) == 1626259-1.html 1626259-1-ref.html
 fuzzy(0-2,0-21184) == 1626259-2.html 1626259-2-ref.html
 != 1642583-1.html 1642583-1-ref.html
@@ -2097,7 +2090,7 @@ skip-if(Android) == 1727172-1.xhtml 1727172-1-ref.html
 == 1726663-1.html 1726663-1-ref.html
 == 1727016-1.html 1727016-1-ref.html
 != 1730314-1.html 1730314-1-ref.html
-fuzzy(0-4,0-19) fuzzy-if(Android,0-11,0-2600) fuzzy-if(winWidget,0-154,0-350) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
+fuzzy(0-4,0-19) fuzzy-if(Android,0-17,0-2600) fuzzy-if(winWidget,0-154,0-350) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
 
 # Have to skip android because it doesn't set up example.org as a local host,
 # so the test crashes there.
@@ -2105,7 +2098,7 @@ fuzzy(255-255,171000-171000) skip-if(Android) HTTP == 1743533-1.html 1743533-1-n
 fuzzy(255-255,171000-171000) skip-if(Android) HTTP == 1743533-2.html 1743533-1-notref.html # do not decrease the fuzz! this is a not equal test, the high fuzz minimum is to ensure they differ by enough.
 fuzzy(0-128,0-17172) skip-if(Android) HTTP == 1743533-1.html 1743533-2.html # Fuzzy is only needed because scrollbars and fragmentation are different between fission and non-fission iframes, otherwise this should pass exactly. It's pretty close.
 
-== 1743560-1.html 1743560-1-ref.html
+pref(gfx.font_rendering.fallback.async,false) == 1743560-1.html 1743560-1-ref.html
 == 1743851-1.html 1743851-1-ref.html
 pref(image.downscale-during-decode.enabled,true) == 1744468-1.html 1744468-1-ref.html # do not increase fuzz without looking, the test should be smoothly downscaled, not pixelated
 == 1747272-1.html 1747272-1-ref.html
@@ -2127,7 +2120,7 @@ skip-if(Android) test-pref(ui.textScaleFactor,50) test-pref(browser.display.os-z
 pref(widget.disable-dark-scrollbar,false) == 1777135.html 1777135-ref.html
 test-pref(widget.non-native-theme.use-theme-accent,false) == 1778834.html 1778834-ref.html
 # do not adjust the fuzz without looking, this test was written as fuzzy on purpose (because that was the only way to make a test work)
-fuzzy(16-47,26939-44425) == 1780191-1.svg 1780191-1-ref.svg
+fuzzy(16-68,26939-44439) == 1780191-1.svg 1780191-1-ref.svg
 pref(layout.css.prefers-color-scheme.content-override,0) == 1787127.html 1787127-ref.html
 pref(layout.css.prefers-color-scheme.content-override,1) == 1787127.html 1787127-ref.html
 pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127-ref.html

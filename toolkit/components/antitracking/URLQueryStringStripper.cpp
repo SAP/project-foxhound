@@ -9,7 +9,6 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/glean/AntitrackingMetrics.h"
 
 #include "nsIEffectiveTLDService.h"
@@ -236,6 +235,7 @@ nsresult URLQueryStringStripper::ManageObservers() {
     // We are listening to strip-on-share but the feature is off, unregister.
     if (!StaticPrefs::privacy_query_stripping_strip_on_share_enabled()) {
       // Clean up strip-on-share list
+      mStripOnShareGlobal.reset();
       mStripOnShareMap.Clear();
       rv = mListService->UnregisterStripOnShareObserver(this);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -308,7 +308,7 @@ nsresult URLQueryStringStripper::StripQueryString(nsIURI* aURI,
   nsAutoCString newQuery;
   params.Serialize(newQuery, false);
 
-  Unused << NS_MutateURI(uri).SetQuery(newQuery).Finalize(aOutput);
+  (void)NS_MutateURI(uri).SetQuery(newQuery).Finalize(aOutput);
   return NS_OK;
 }
 
@@ -362,10 +362,19 @@ URLQueryStringStripper::OnStripOnShareUpdate(const nsTArray<nsString>& aArgs,
       // Skipping malformed rules
       continue;
     }
-    for (const auto& topLevelSite : rule.mTopLevelSites) {
-      mStripOnShareMap.InsertOrUpdate(topLevelSite, rule);
+    for (const auto& origin : rule.mOrigins) {
+      if (rule.mIsGlobal) {
+        // Adding global rules only to mStripOnShareGlobal, not here
+        continue;
+      }
+
+      mStripOnShareMap.InsertOrUpdate(origin, rule);
+    }
+    if (rule.mIsGlobal) {
+      mStripOnShareGlobal = Some(rule);
     }
   }
+
   return NS_OK;
 }
 // static
@@ -396,20 +405,20 @@ bool URLQueryStringStripper::ShouldStripParam(const nsACString& aHost,
   nsAutoCString lowerCaseName;
   ToLowerCase(aName, lowerCaseName);
 
-  // Look through the global rules.
-  dom::StripRule globalRule;
-  bool keyExists = mStripOnShareMap.Get("*"_ns, &globalRule);
   // There should always be a global rule.
-  MOZ_ASSERT(keyExists);
+  MOZ_ASSERT(mStripOnShareGlobal.isSome());
+  const dom::StripRule& globalRule = mStripOnShareGlobal.ref();
 
   // Look through the global rules.
-  for (const auto& param : globalRule.mQueryParams) {
-    if (param == lowerCaseName) {
-      return true;
+  if (mStripOnShareGlobal.isSome()) {
+    for (const auto& param : globalRule.mQueryParams) {
+      if (param == lowerCaseName) {
+        return true;
+      }
     }
   }
-
   // Check for site specific rules.
+  bool keyExists;
   dom::StripRule siteSpecificRule;
   keyExists = mStripOnShareMap.Get(aHost, &siteSpecificRule);
   if (keyExists) {
@@ -468,6 +477,11 @@ int URLQueryStringStripper::TryStripValue(const nsACString& aHost,
 nsresult URLQueryStringStripper::StripForCopyOrShareInternal(
     nsIURI* aURI, nsIURI** aStrippedURI, int& aStripCount, bool aDry,
     bool aStripNestedURIs) {
+  if (!StaticPrefs::privacy_query_stripping_strip_on_share_enabled()) {
+    aStripCount = 0;
+    return NS_OK;
+  }
+
   nsAutoCString query;
   nsresult rv = aURI->GetQuery(query);
   NS_ENSURE_SUCCESS(rv, rv);

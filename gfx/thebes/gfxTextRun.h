@@ -36,6 +36,7 @@
 #  include <stdio.h>
 #endif
 
+class FontVisibilityProvider;
 class gfxContext;
 class gfxFontGroup;
 class nsAtom;
@@ -154,14 +155,18 @@ class gfxTextRun : public gfxShapedText {
   // Describe range [start, end) of a text run. The range is
   // restricted to grapheme cluster boundaries.
   struct Range {
-    uint32_t start;
-    uint32_t end;
+    uint32_t start = 0;
+    uint32_t end = 0;
     uint32_t Length() const { return end - start; }
 
-    Range() : start(0), end(0) {}
+    Range() = default;
     Range(uint32_t aStart, uint32_t aEnd) : start(aStart), end(aEnd) {}
     explicit Range(const gfxTextRun* aTextRun)
-        : start(0), end(aTextRun->GetLength()) {}
+        : Range(0, aTextRun->GetLength()) {}
+
+    bool Intersects(const Range& aOther) const {
+      return start < aOther.end && end > aOther.start;
+    }
   };
 
   // All coordinates are in layout/app units
@@ -237,8 +242,10 @@ class gfxTextRun : public gfxShapedText {
      * inside clusters. In other words, if character i is not
      * CLUSTER_START, then character i-1 must have zero after-spacing and
      * character i must have zero before-spacing.
+     * Returns true if there is (or may be) any custom spacing; false if we
+     * are sure that aSpacing contains only zero values.
      */
-    virtual void GetSpacing(Range aRange, Spacing* aSpacing) const = 0;
+    virtual bool GetSpacing(Range aRange, Spacing* aSpacing) const = 0;
 
     // Returns a gfxContext that can be used to measure the hyphen glyph.
     // Only called if the hyphen width is requested.
@@ -545,6 +552,7 @@ class gfxTextRun : public gfxShapedText {
       case Script::KATAKANA_OR_HIRAGANA:
       case Script::SIMPLIFIED_HAN:
       case Script::TRADITIONAL_HAN:
+      case Script::TRADITIONAL_HAN_WITH_LATIN:
       case Script::JAPANESE:
       case Script::KOREAN:
       case Script::HAN_WITH_BOPOMOFO:
@@ -906,11 +914,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
   typedef gfxShapedText::CompressedGlyph CompressedGlyph;
   friend class MathMLTextRunFactory;
   friend class nsCaseTransformTextRunFactory;
+  friend class gfxPlatformFontList;
 
   static void
   Shutdown();  // platform must call this to release the languageAtomService
 
-  gfxFontGroup(nsPresContext* aPresContext,
+  gfxFontGroup(FontVisibilityProvider* aFontVisibilityProvider,
                const mozilla::StyleFontFamilyList& aFontFamilyList,
                const gfxFontStyle* aStyle, nsAtom* aLanguage,
                bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
@@ -945,7 +954,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // Get the presContext for which this fontGroup was constructed. This may be
   // null! (In the case of canvas not connected to a document.)
-  nsPresContext* GetPresContext() const { return mPresContext; }
+  FontVisibilityProvider* GetFontVisibilityProvider() const {
+    return mFontVisibilityProvider;
+  }
 
   /**
    * The listed characters should be treated as invisible and zero-width
@@ -1352,7 +1363,7 @@ class gfxFontGroup final : public gfxTextRunFactory {
     bool mHasFontEntry : 1;
   };
 
-  nsPresContext* mPresContext = nullptr;
+  FontVisibilityProvider* mFontVisibilityProvider = nullptr;
 
   // List of font families, either named or generic.
   // Generic names map to system pref fonts based on language.

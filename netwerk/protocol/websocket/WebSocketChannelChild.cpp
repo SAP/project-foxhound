@@ -319,7 +319,7 @@ void WebSocketChannelChild::OnError() {
   LOG(("WebSocketChannelChild::OnError() %p", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-    Unused << mListenerMT->mListener->OnError();
+    (void)mListenerMT->mListener->OnError();
   }
 }
 

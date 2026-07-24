@@ -8,13 +8,14 @@
 
 #include <unordered_map>
 
-#include "mozilla/WeakPtr.h"
-#include "mozilla/ipc/SharedMemoryHandle.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
-#include "mozilla/webgpu/PWebGPUParent.h"
-#include "mozilla/webrender/WebRenderAPI.h"
 #include "WebGPUTypes.h"
 #include "base/timer.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/ipc/SharedMemoryHandle.h"
+#include "mozilla/webgpu/ExternalTexture.h"
+#include "mozilla/webgpu/PWebGPUParent.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
+#include "mozilla/webrender/WebRenderAPI.h"
 
 namespace mozilla {
 
@@ -24,9 +25,58 @@ class RemoteTextureOwnerClient;
 
 namespace webgpu {
 
-class ErrorBuffer;
 class SharedTexture;
 class PresentationData;
+
+// A fixed-capacity buffer for receiving textual error messages from
+// `wgpu_bindings`.
+//
+// The `ToFFI` method returns an `ffi::WGPUErrorBuffer` pointing to our
+// buffer, for you to pass to fallible FFI-visible `wgpu_bindings`
+// functions. These indicate failure by storing an error message in the
+// buffer, which you can retrieve by calling `GetError`.
+//
+// If you call `ToFFI` on this type, you must also call `GetError` to check for
+// an error. Otherwise, the destructor asserts.
+//
+// TODO: refactor this to avoid stack-allocating the buffer all the time.
+class ErrorBuffer {
+  // if the message doesn't fit, it will be truncated
+  static constexpr unsigned BUFFER_SIZE = 512;
+  ffi::WGPUErrorBufferType mType = ffi::WGPUErrorBufferType_None;
+  char mMessageUtf8[BUFFER_SIZE] = {};
+  bool mAwaitingGetError = false;
+  RawId mDeviceId = 0;
+
+ public:
+  ErrorBuffer();
+  ErrorBuffer(const ErrorBuffer&) = delete;
+  ~ErrorBuffer();
+
+  ffi::WGPUErrorBuffer ToFFI();
+
+  ffi::WGPUErrorBufferType GetType();
+
+  static Maybe<dom::GPUErrorFilter> ErrorTypeToFilterType(
+      ffi::WGPUErrorBufferType aType);
+
+  struct Error {
+    dom::GPUErrorFilter type;
+    bool isDeviceLost;
+    nsCString message;
+    RawId deviceId;
+  };
+
+  // Retrieve the error message was stored in this buffer. Asserts that
+  // this instance actually contains an error (viz., that `GetType() !=
+  // ffi::WGPUErrorBufferType_None`).
+  //
+  // Mark this `ErrorBuffer` as having been handled, so its destructor
+  // won't assert.
+  Maybe<Error> GetError();
+
+  void CoerceValidationToInternal();
+};
 
 // Destroy/Drop messages:
 // - Messages with "Destroy" in their name request deallocation of resources
@@ -45,7 +95,7 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebGPUParent, override)
 
  public:
-  explicit WebGPUParent();
+  explicit WebGPUParent(const dom::ContentParentId& aContentId);
 
   void PostAdapterRequestDevice(RawId aDeviceId);
   void BufferUnmap(RawId aDeviceId, RawId aBufferId, bool aFlush);
@@ -53,9 +103,13 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
                               ipc::ByteBuf&& aSerializedMessages,
                               nsTArray<ipc::ByteBuf>&& aDataBuffers,
                               nsTArray<MutableSharedMemoryHandle>&& aShmems);
+  ipc::IPCResult RecvCreateExternalTextureSource(
+      RawId aDeviceId, RawId aQueueId, RawId aExternalTextureSourceId,
+      const ExternalTextureSourceDescriptor& aDesc);
   void QueueSubmit(RawId aQueueId, RawId aDeviceId,
                    Span<const RawId> aCommandBuffers,
-                   Span<const RawId> aTextureIds);
+                   Span<const RawId> aTextureIds,
+                   Span<const RawId> aExternalTextureSourceIds);
   void DeviceCreateSwapChain(RawId aDeviceId, RawId aQueueId,
                              const layers::RGBDescriptor& aDesc,
                              const nsTArray<RawId>& aBufferIds,
@@ -63,6 +117,7 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
                              bool aUseSharedTextureInSwapChain);
 
   void SwapChainPresent(RawId aTextureId, RawId aCommandEncoderId,
+                        RawId aCommandBufferId,
                         const layers::RemoteTextureId& aRemoteTextureId,
                         const layers::RemoteTextureOwnerId& aOwnerId);
   void SwapChainDrop(const layers::RemoteTextureOwnerId& aOwnerId,
@@ -74,13 +129,13 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
 
   ipc::IPCResult GetFrontBufferSnapshot(
       IProtocol* aProtocol, const layers::RemoteTextureOwnerId& aOwnerId,
-      const RawId& aCommandEncoderId, Maybe<Shmem>& aShmem, gfx::IntSize& aSize,
-      uint32_t& aByteStride);
+      const RawId& aCommandEncoderId, const RawId& aCommandBufferId,
+      Maybe<Shmem>& aShmem, gfx::IntSize& aSize, uint32_t& aByteStride);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   struct BufferMapData {
-    ipc::SharedMemoryMapping mShmem;
+    std::shared_ptr<ipc::SharedMemoryMapping> mShmem;
     // True if buffer's usage has MAP_READ or MAP_WRITE set.
     bool mHasMapFlags;
     uint64_t mMappedOffset;
@@ -129,9 +184,18 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   RefPtr<gfx::FileHandleWrapper> GetDeviceFenceHandle(const RawId aDeviceId);
 
   void RemoveSharedTexture(RawId aTextureId);
+
+  const ExternalTextureSourceHost& GetExternalTextureSource(
+      ffi::WGPUExternalTextureSourceId aId) const;
+  void DestroyExternalTextureSource(RawId aId);
+  void DropExternalTextureSource(RawId aId);
+
   void DeallocBufferShmem(RawId aBufferId);
   void PreDeviceDrop(RawId aDeviceId);
+
+#if defined(XP_WIN)
   static Maybe<ffi::WGPUFfiLUID> GetCompositorDeviceLuid();
+#endif
 
   struct MapRequest {
     WeakPtr<WebGPUParent> mParent;
@@ -147,6 +211,7 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
 
   struct OnSubmittedWorkDoneRequest {
     WeakPtr<WebGPUParent> mParent;
+    ffi::WGPUDeviceId mQueueId;
   };
 
   static void OnSubmittedWorkDoneCallback(
@@ -154,12 +219,14 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
 
   void ReportError(RawId aDeviceId, GPUErrorFilter, const nsCString& message);
 
-  nsTArray<Maybe<ipc::shared_memory::MutableMapping>> mTempMappings;
+  std::vector<std::shared_ptr<ipc::SharedMemoryMapping>> mTempMappings;
 
   /// A map from wgpu buffer ids to data about their shared memory segments.
   /// Includes entries about mappedAtCreation, MAP_READ and MAP_WRITE buffers,
   /// regardless of their state.
   std::unordered_map<RawId, BufferMapData> mSharedMemoryMap;
+
+  const dom::ContentParentId mContentId;
 
  private:
   static void DeviceLostCallback(uint8_t* aUserData, uint8_t aReason,
@@ -186,6 +253,8 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
 
   std::unordered_map<ffi::WGPUTextureId, std::shared_ptr<SharedTexture>>
       mSharedTextures;
+
+  std::unordered_map<RawId, ExternalTextureSourceHost> mExternalTextureSources;
 
   // Store a set of DeviceIds that have been SendDeviceLost. We use this to
   // limit each Device to one DeviceLost message.

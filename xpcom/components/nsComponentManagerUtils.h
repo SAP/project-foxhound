@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsComponentManagerUtils_h__
-#define nsComponentManagerUtils_h__
+#ifndef nsComponentManagerUtils_h_
+#define nsComponentManagerUtils_h_
 
 #include "nscore.h"
 #include "nsCOMPtr.h"
@@ -167,4 +167,4 @@ inline nsresult CallGetClassObject(const char* aContractID,
                             reinterpret_cast<void**>(aDestination));
 }
 
-#endif /* nsComponentManagerUtils_h__ */
+#endif /* nsComponentManagerUtils_h_ */

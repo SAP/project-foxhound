@@ -83,7 +83,8 @@ class RenderCompositorANGLE final : public RenderCompositor {
 
   bool ShouldUseNativeCompositor() override;
 
-  bool ShouldUseLayerCompositor() override;
+  bool ShouldUseLayerCompositor() const override;
+  bool UseLayerCompositor() const override;
 
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
@@ -136,7 +137,6 @@ class RenderCompositorANGLE final : public RenderCompositor {
 
  protected:
   bool UseCompositor() const;
-  bool UseLayerCompositor() const;
   bool RecreateNonNativeCompositorSwapChain();
   void InitializeUsePartialPresent();
   void InsertGraphicsCommandsFinishedWaitQuery(

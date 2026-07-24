@@ -17,6 +17,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/glean/NetwerkMetrics.h"
+#include "nsCRT.h"
 #include "prnetdb.h"
 
 namespace mozilla::net {
@@ -245,7 +246,8 @@ nsresult CacheFileMetadata::WriteMetadata(
     memcpy(p, mBuf, mElementsSize);
     p += mElementsSize;
   }
-
+  LOG(("CacheFileMetadata::WriteMetadata() [this=%p, key=%s, mElementsSize=%d]",
+       this, mKey.get(), mElementsSize));
   CacheHash::Hash32_t hash;
   hash = CacheHash::Hash(mWriteBuf + sizeof(uint32_t),
                          p - mWriteBuf - sizeof(uint32_t));
@@ -382,7 +384,7 @@ const char* CacheFileMetadata::GetElement(const char* aKey) {
       return nullptr;
     }
 
-    if (strcmp(data, aKey) == 0) {
+    if (nsCRT::strcasecmp(data, aKey) == 0) {
       LOG(("CacheFileMetadata::GetElement() - Key found [this=%p, key=%s]",
            this, aKey));
       return value;

@@ -6,8 +6,8 @@
 
 /* class that a parent frame uses to reflow a block frame */
 
-#ifndef nsBlockReflowContext_h___
-#define nsBlockReflowContext_h___
+#ifndef nsBlockReflowContext_h_
+#define nsBlockReflowContext_h_
 
 #include "mozilla/ReflowOutput.h"
 
@@ -88,4 +88,4 @@ class nsBlockReflowContext {
   mozilla::CollapsingMargin mBStartMargin;
 };
 
-#endif /* nsBlockReflowContext_h___ */
+#endif /* nsBlockReflowContext_h_ */

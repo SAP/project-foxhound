@@ -20,6 +20,10 @@ const TEST_URI = `<html>
   </body>
 </html>`;
 
+const {
+  simulation,
+} = require("resource://devtools/server/actors/accessibility/constants.js");
+
 /**
  * Test data has the format of:
  * {
@@ -35,54 +39,74 @@ const tests = [
     expected: {
       simulation: {
         buttonActive: false,
+        colorMatrix: [],
       },
     },
   },
   {
     desc: "Clicking the menu button shows the menu with No Simulation selected.",
-    setup: async ({ doc }) => {
-      await openSimulationMenu(doc);
+    setup: async ({ doc, toolbox }) => {
+      await openSimulationMenu(doc, toolbox.doc);
     },
     expected: {
       simulation: {
         buttonActive: false,
         checkedOptionIndices: [0],
+        colorMatrix: [],
       },
     },
   },
   {
     desc: "Selecting an option renders the menu button active and closes the menu.",
-    setup: async ({ doc }) => {
-      await toggleSimulationOption(doc, 2);
+    setup: async ({ toolbox }) => {
+      await toggleSimulationOption(toolbox.doc, 2);
     },
     expected: {
       simulation: {
         buttonActive: true,
         checkedOptionIndices: [2],
+        colorMatrix: simulation.COLOR_TRANSFORMATION_MATRICES.DEUTERANOPIA,
       },
     },
   },
   {
     desc: "Reopening the menu preserves the previously selected option.",
-    setup: async ({ doc }) => {
-      await openSimulationMenu(doc);
+    setup: async ({ doc, toolbox }) => {
+      await openSimulationMenu(doc, toolbox.doc);
     },
     expected: {
       simulation: {
         buttonActive: true,
         checkedOptionIndices: [2],
+        colorMatrix: simulation.COLOR_TRANSFORMATION_MATRICES.DEUTERANOPIA,
+      },
+    },
+  },
+  {
+    desc: "Reloading the page preserves the previously selected option.",
+    setup: async ({ panel }) => {
+      const onReloaded = panel.once("reloaded");
+      panel.accessibilityProxy.commands.targetCommand.reloadTopLevelTarget();
+      await onReloaded;
+    },
+    expected: {
+      simulation: {
+        buttonActive: true,
+        checkedOptionIndices: [2],
+        colorMatrix: simulation.COLOR_TRANSFORMATION_MATRICES.DEUTERANOPIA,
       },
     },
   },
   {
     desc: "Unselecting the option renders the button inactive and closes the menu.",
-    setup: async ({ doc }) => {
-      await toggleSimulationOption(doc, 2);
+    setup: async ({ toolbox }) => {
+      await toggleSimulationOption(toolbox.doc, 2);
     },
     expected: {
       simulation: {
         buttonActive: false,
         checkedOptionIndices: [0],
+        colorMatrix: simulation.COLOR_TRANSFORMATION_MATRICES.NONE,
       },
     },
   },

@@ -4,15 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_Exceptions_h__
-#define mozilla_dom_Exceptions_h__
+#ifndef mozilla_dom_Exceptions_h_
+#define mozilla_dom_Exceptions_h_
 
 // DOM exception throwing machinery (for both main thread and workers).
 
 #include <stdint.h>
+
+#include "jsapi.h"
 #include "jspubtd.h"
 #include "nsString.h"
-#include "jsapi.h"
 
 class nsIStackFrame;
 class nsPIDOMWindowInner;

@@ -4,57 +4,35 @@
 
 package mozilla.components.compose.base.textfield
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TextFieldDefaults.indicatorLine
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.error
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.ui.icons.R
-
-private val FocusedIndicatorLineThickness = 2.dp
-private val UnfocusedIndicatorLineThickness = 1.dp
-private val NoIndicatorLineThickness = 0.dp
-
-private val TrailingIconHeight = 24.dp
 
 /**
  * UI for a text field.
@@ -64,6 +42,7 @@ private val TrailingIconHeight = 24.dp
  * @param placeholder The text displayed when the text field is empty.
  * @param errorText The message displayed when there is an error.
  * @param modifier Modifier to be applied to the text field layout.
+ * @param supportingText Optional helper text that can be displayed below the input field.
  * @param label Optional text displayed as a header above the input field.
  * @param isError Whether there is an error with the input value. When set to true, error styling
  * will be applied to the text field.
@@ -73,11 +52,9 @@ private val TrailingIconHeight = 24.dp
  * the maxLines attribute will be automatically set to 1.
  * @param maxLines The maximum number of input lines visible to the user at once.
  * @param minLines The minimum number of input lines visible to the user at once.
- * @param minHeight The minimum height constraint for the input field.
- * @param trailingIcons The optional composable for adding trailing icons at the end of the text field
+ * @param trailingIcon The optional composable for adding a trailing icon at the end of the text field
  * container.
  * @param colors [TextFieldColors] to use for styling text field colors.
- * @param style [TextFieldStyle] to use for styling text field.
  * @param visualTransformation The visual transformation filter for changing the visual representation
  * of the input. By default no visual transformation is applied.
  * @param keyboardOptions Software keyboard options that contains configuration such as [KeyboardType] and [ImeAction].
@@ -85,8 +62,6 @@ private val TrailingIconHeight = 24.dp
  * called. Note that this IME action may be different from what you specified in
  * [KeyboardOptions.imeAction].
  */
-@OptIn(ExperimentalMaterial3Api::class)
-@Suppress("LongMethod")
 @Composable
 fun TextField(
     value: String,
@@ -94,263 +69,88 @@ fun TextField(
     placeholder: String,
     errorText: String,
     modifier: Modifier = Modifier,
+    supportingText: String? = null,
     label: String? = null,
     isError: Boolean = false,
     isEnabled: Boolean = true,
     singleLine: Boolean = true,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     minLines: Int = 1,
-    minHeight: Dp = TrailingIconHeight,
-    trailingIcons: @Composable (TrailingIconScope.() -> Unit)? = null,
-    colors: TextFieldColors = TextFieldColors.default(),
-    style: TextFieldStyle = TextFieldStyle.default(),
+    trailingIcon: @Composable (TrailingIconScope.() -> Unit)? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    colors: TextFieldColors = TextFieldDefaults.colors(),
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions(),
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    // We use the Material textFieldColors for the indicator line as it keeps track of error
-    // and focused states
-    val indicatorLineColors = TextFieldDefaults.colors(
-        focusedIndicatorColor = colors.focusedIndicatorColor,
-        unfocusedIndicatorColor = colors.unfocusedIndicatorColor,
-        errorIndicatorColor = colors.errorIndicatorColor,
-    )
-
-    Column(
-        modifier = modifier,
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .thenConditional(
-                    modifier = Modifier.semantics { error(errorText) },
-                ) { isError }
-                .indicatorLine(
-                    enabled = isEnabled,
-                    isError = isError,
-                    interactionSource = interactionSource,
-                    colors = indicatorLineColors,
-                    focusedIndicatorLineThickness = FocusedIndicatorLineThickness,
-                    unfocusedIndicatorLineThickness = if (isEnabled) {
-                        UnfocusedIndicatorLineThickness
-                    } else {
-                        NoIndicatorLineThickness
-                    },
-                )
-                .defaultMinSize(
-                    minWidth = TextFieldDefaults.MinWidth,
-                ),
-            enabled = isEnabled,
-            textStyle = style.inputStyle.copy(
-                color = colors.inputColor,
-            ),
-            cursorBrush = SolidColor(if (isError) colors.errorCursorColor else colors.cursorColor),
-            visualTransformation = visualTransformation,
-            keyboardOptions = keyboardOptions,
-            keyboardActions = keyboardActions,
-            interactionSource = interactionSource,
-            singleLine = singleLine,
-            maxLines = maxLines,
-            minLines = minLines,
-            decorationBox = @Composable { innerTextField ->
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    label?.let {
-                        Text(
-                            text = label,
-                            style = style.labelStyle,
-                            color = colors.labelColor,
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                // Ensures that the text field will remain the same height as the trailing icon
-                                .heightIn(min = minHeight),
-                            // The difference in alignment is to ensure that the placeholder text
-                            // aligns with the cursor when more than 1 line is displayed
-                            contentAlignment = if (singleLine || maxLines == 1) {
-                                Alignment.CenterStart
-                            } else {
-                                Alignment.TopStart
-                            },
-                        ) {
-                            // This only controls the cursor and the input text
-                            innerTextField()
-
-                            if (value.isEmpty()) {
-                                Text(
-                                    text = placeholder,
-                                    style = style.placeholderStyle,
-                                    color = colors.placeholderColor,
-                                )
-                            }
-                        }
-
-                        if (isError) {
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Icon(
-                                painter = painterResource(R.drawable.mozac_ic_warning_fill_24),
-                                contentDescription = null,
-                                tint = colors.errorTrailingIconColor,
-                            )
-                        } else if (trailingIcons != null) {
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Row {
-                                with(TrailingIconScope(this)) {
-                                    trailingIcons.invoke(this)
-                                }
-                            }
-                        }
-                    }
-
-                    // Padding between the text (and trailing icon), and the indicator line
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-            },
-        )
-
-        if (isError) {
-            Spacer(modifier = Modifier.height(4.dp))
-
+    val labelComposable: @Composable (() -> Unit)? = label?.let {
+        @Composable {
             Text(
-                text = errorText,
-                // The a11y for this is handled via the above `BasicTextField`
-                modifier = Modifier.clearAndSetSemantics { },
-                style = style.errorTextStyle,
-                color = colors.errorTextColor,
+                text = label,
+                style = AcornTheme.typography.caption,
             )
         }
     }
-}
-
-/**
- * [Color]s to use for the cursor and indicator line of [TextField].
- *
- * @property inputColor The color for the input text.
- * @property labelColor The color for the label.
- * @property placeholderColor The color for the placeholder.
- * @property errorTextColor The color for the error text.
- * @property cursorColor The color for the cursor.
- * @property errorCursorColor The error color for the cursor.
- * @property focusedIndicatorColor The color for the indicator when focused.
- * @property unfocusedIndicatorColor The color for the indicator when not focused.
- * @property errorIndicatorColor The error color for the indicator.
- * @property errorTrailingIconColor The trailing icon color of the warning icon.
- */
-data class TextFieldColors(
-    val inputColor: Color,
-    val labelColor: Color,
-    val placeholderColor: Color,
-    val errorTextColor: Color,
-    val cursorColor: Color,
-    val errorCursorColor: Color,
-    val focusedIndicatorColor: Color,
-    val unfocusedIndicatorColor: Color,
-    val errorIndicatorColor: Color,
-    val errorTrailingIconColor: Color,
-) {
-
-    /**
-     * @see [TextFieldColors].
-     */
-    companion object {
-
-        /**
-         * The default colors for [TextField].
-         *
-         * @param inputColor @see [TextFieldColors.inputColor].
-         * @param labelColor @see [TextFieldColors.labelColor].
-         * @param placeholderColor @see [TextFieldColors.placeholderColor].
-         * @param errorTextColor @see [TextFieldColors.errorTextColor].
-         * @param cursorColor @see [TextFieldColors.cursorColor].
-         * @param errorCursorColor @see [TextFieldColors.errorCursorColor].
-         * @param focusedIndicatorColor @see [TextFieldColors.focusedIndicatorColor].
-         * @param unfocusedIndicatorColor @see [TextFieldColors.unfocusedIndicatorColor].
-         * @param errorIndicatorColor @see [TextFieldColors.errorIndicatorColor].
-         * @param errorTrailingIconColor @see [TextFieldColors.errorTrailingIconColor].
-         */
-        @Composable
-        fun default(
-            inputColor: Color = AcornTheme.colors.textPrimary,
-            labelColor: Color = AcornTheme.colors.textPrimary,
-            placeholderColor: Color = AcornTheme.colors.textSecondary,
-            errorTextColor: Color = AcornTheme.colors.textCritical,
-            cursorColor: Color = AcornTheme.colors.borderFormDefault,
-            errorCursorColor: Color = AcornTheme.colors.borderFormDefault,
-            focusedIndicatorColor: Color = AcornTheme.colors.borderFormDefault,
-            unfocusedIndicatorColor: Color = AcornTheme.colors.borderFormDefault,
-            errorIndicatorColor: Color = AcornTheme.colors.borderCritical,
-            errorTrailingIconColor: Color = AcornTheme.colors.iconCritical,
-        ) = TextFieldColors(
-            inputColor = inputColor,
-            labelColor = labelColor,
-            placeholderColor = placeholderColor,
-            errorTextColor = errorTextColor,
-            cursorColor = cursorColor,
-            errorCursorColor = errorCursorColor,
-            focusedIndicatorColor = focusedIndicatorColor,
-            unfocusedIndicatorColor = unfocusedIndicatorColor,
-            errorIndicatorColor = errorIndicatorColor,
-            errorTrailingIconColor = errorTrailingIconColor,
+    val placeholderComposable: @Composable () -> Unit = {
+        Text(
+            text = placeholder,
+            style = AcornTheme.typography.body1,
         )
     }
-}
-
-/**
- * [TextStyle]s to use for the [TextField].
- *
- * @property inputStyle The text style for the input text.
- * @property labelStyle The text style for the label text.
- * @property placeholderStyle The text style for the placeholder text.
- * @property errorTextStyle The text style for the error text.
- */
-data class TextFieldStyle(
-    val inputStyle: TextStyle,
-    val labelStyle: TextStyle,
-    val placeholderStyle: TextStyle,
-    val errorTextStyle: TextStyle,
-) {
-
-    /**
-     * @see [TextFieldStyle].
-     */
-    companion object {
-
-        /**
-         * The default text styles for [TextField].
-         *
-         * @param inputStyle @see [TextFieldStyle.inputStyle].
-         * @param labelStyle @see [TextFieldStyle.labelStyle].
-         * @param placeholderStyle @see [TextFieldStyle.placeholderStyle].
-         * @param errorTextStyle @see [TextFieldStyle.errorTextStyle].
-         */
-        fun default(
-            inputStyle: TextStyle = AcornTheme.typography.subtitle1,
-            labelStyle: TextStyle = AcornTheme.typography.caption,
-            placeholderStyle: TextStyle = AcornTheme.typography.subtitle1,
-            errorTextStyle: TextStyle = AcornTheme.typography.caption,
-        ) = TextFieldStyle(
-            inputStyle = inputStyle,
-            labelStyle = labelStyle,
-            placeholderStyle = placeholderStyle,
-            errorTextStyle = errorTextStyle,
-        )
+    val supportingTextComposable: @Composable () -> Unit = {
+            if (isError) {
+                Text(
+                    text = errorText,
+                    style = AcornTheme.typography.caption,
+                )
+            } else {
+                supportingText?.let {
+                    Text(
+                        text = it,
+                        style = AcornTheme.typography.caption,
+                    )
+                }
+            }
     }
+
+    val trailingIconCompose: @Composable () -> Unit = {
+        if (isError) {
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Icon(
+                painter = painterResource(R.drawable.mozac_ic_warning_fill_24),
+                contentDescription = null,
+            )
+        } else if (trailingIcon != null) {
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Row {
+                with(TrailingIconScope(this)) {
+                    trailingIcon.invoke(this)
+                }
+            }
+        }
+    }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .fillMaxWidth(),
+        enabled = isEnabled,
+        textStyle = AcornTheme.typography.body1,
+        label = labelComposable,
+        placeholder = placeholderComposable,
+        leadingIcon = leadingIcon,
+        trailingIcon = trailingIconCompose,
+        supportingText = supportingTextComposable,
+        isError = isError,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        maxLines = maxLines,
+        minLines = minLines,
+    )
 }
 
 private data class TextFieldPreviewState(
@@ -358,12 +158,12 @@ private data class TextFieldPreviewState(
     val label: String,
     val placeholder: String = "Placeholder",
     val errorText: String = "Error text",
+    val supportingText: String? = "Supporting text",
     val isError: Boolean = false,
     val singleLine: Boolean = true,
     val maxLines: Int = Int.MAX_VALUE,
     val minLines: Int = 1,
-    val minHeight: Dp = TrailingIconHeight,
-    val trailingIcons: @Composable (TrailingIconScope.() -> Unit)? = null,
+    val trailingIcon: @Composable (TrailingIconScope.() -> Unit)? = null,
 )
 
 private class TextFieldParameterProvider : PreviewParameterProvider<TextFieldPreviewState> {
@@ -416,14 +216,12 @@ private class TextFieldParameterProvider : PreviewParameterProvider<TextFieldPre
             TextFieldPreviewState(
                 initialText = "Typed",
                 label = "Typed, No error, 1 trailing icon",
-                minHeight = 48.dp,
-                trailingIcons = { CrossTextFieldButton {} },
+                trailingIcon = { CrossTextFieldButton {} },
             ),
             TextFieldPreviewState(
                 initialText = "Typed",
                 label = "Typed, No error, 2 trailing icons",
-                minHeight = 48.dp,
-                trailingIcons = {
+                trailingIcon = {
                     EyeTextFieldButton {}
                     CrossTextFieldButton {}
                 },
@@ -432,11 +230,19 @@ private class TextFieldParameterProvider : PreviewParameterProvider<TextFieldPre
                 initialText = "Typed",
                 label = "Typed, Error, 2 trailing icons",
                 isError = true,
-                minHeight = 48.dp,
-                trailingIcons = {
+                trailingIcon = {
                     EyeTextFieldButton {}
                     CrossTextFieldButton {}
                 },
+            ),
+            TextFieldPreviewState(
+                initialText = "",
+                label = "Empty, Supporting text, Maximum lines is 2",
+                errorText = "Error text",
+                supportingText = "Supporting text",
+                isError = false,
+                singleLine = false,
+                maxLines = 2,
             ),
         )
 }
@@ -449,9 +255,8 @@ private fun TextFieldPreview(
     var text by remember { mutableStateOf(textFieldState.initialText) }
 
     AcornTheme {
-        Column(
+        Surface(
             modifier = Modifier
-                .background(color = AcornTheme.colors.layer1)
                 .padding(8.dp),
         ) {
             TextField(
@@ -459,14 +264,14 @@ private fun TextFieldPreview(
                 onValueChange = { text = it },
                 placeholder = textFieldState.placeholder,
                 errorText = textFieldState.errorText,
+                supportingText = textFieldState.supportingText,
                 modifier = Modifier.fillMaxWidth(),
                 label = textFieldState.label,
                 isError = textFieldState.isError,
                 singleLine = textFieldState.singleLine,
                 maxLines = textFieldState.maxLines,
                 minLines = textFieldState.minLines,
-                minHeight = textFieldState.minHeight,
-                trailingIcons = textFieldState.trailingIcons,
+                trailingIcon = textFieldState.trailingIcon,
             )
         }
     }

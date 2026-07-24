@@ -8,9 +8,9 @@
 
 #include "DOMSVGPointList.h"
 #include "gfx2DGlue.h"
-#include "nsError.h"
 #include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/SVGPointBinding.h"
+#include "nsError.h"
 
 // See the architecture comment in DOMSVGPointList.h.
 
@@ -37,7 +37,7 @@ class MOZ_RAII AutoChangePointNotifier {
   DOMSVGPoint* const mValue;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGPoint, DOMSVGPoint>
+constinit static SVGAttrTearoffTable<SVGPoint, DOMSVGPoint>
     sSVGTranslateTearOffTable;
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
@@ -116,17 +116,15 @@ void DOMSVGPoint::SetY(float aY, ErrorResult& aRv) {
 
 already_AddRefed<DOMSVGPoint> DOMSVGPoint::MatrixTransform(
     const DOMMatrix2DInit& aMatrix, ErrorResult& aRv) {
-  RefPtr<DOMMatrixReadOnly> matrix =
-      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aMatrix, aRv);
+  auto matrix2D = DOMMatrixReadOnly::ToValidatedMatrixDouble(aMatrix, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
-  const auto* matrix2D = matrix->GetInternal2D();
-  if (!matrix2D->IsFinite()) {
+  if (!matrix2D.IsFinite()) {
     aRv.ThrowTypeError<MSG_NOT_FINITE>("MatrixTransform matrix");
     return nullptr;
   }
-  auto pt = matrix2D->TransformPoint(InternalItem());
+  auto pt = matrix2D.TransformPoint(InternalItem());
   return do_AddRef(new DOMSVGPoint(ToPoint(pt)));
 }
 

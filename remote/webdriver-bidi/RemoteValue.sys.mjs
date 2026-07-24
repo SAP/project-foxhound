@@ -349,12 +349,13 @@ export function deserialize(serializedValue, realm, extraOptions) {
     }
 
     // Non-primitive protocol values
-    case "array":
+    case "array": {
       const array = realm.cloneIntoRealm([]);
       deserializeValueList(value, realm, extraOptions).forEach(v =>
         array.push(v)
       );
       return array;
+    }
     case "date":
       // We want to support only Date Time String format,
       // check if the value follows it.
@@ -365,20 +366,22 @@ export function deserialize(serializedValue, realm, extraOptions) {
       }
 
       return realm.cloneIntoRealm(new Date(value));
-    case "map":
+    case "map": {
       const map = realm.cloneIntoRealm(new Map());
       deserializeKeyValueList(value, realm, extraOptions).forEach(([k, v]) =>
         map.set(k, v)
       );
 
       return map;
-    case "object":
+    }
+    case "object": {
       const object = realm.cloneIntoRealm({});
       deserializeKeyValueList(value, realm, extraOptions).forEach(
         ([k, v]) => (object[k] = v)
       );
       return object;
-    case "regexp":
+    }
+    case "regexp": {
       lazy.assert.object(
         value,
         lazy.pprint`Expected "value" for RegExp to be an object, got ${value}`
@@ -401,10 +404,12 @@ export function deserialize(serializedValue, realm, extraOptions) {
           `Failed to deserialize value as RegExp: ${value}`
         );
       }
-    case "set":
+    }
+    case "set": {
       const set = realm.cloneIntoRealm(new Set());
       deserializeValueList(value, realm, extraOptions).forEach(v => set.add(v));
       return set;
+    }
   }
 
   lazy.logger.warn(`Unsupported type for local value ${type}`);
@@ -717,7 +722,7 @@ function serializeNode(
 
     const shadowRoot = node.openOrClosedShadowRoot;
     serialized.shadowRoot = null;
-    if (shadowRoot !== null) {
+    if (shadowRoot !== null && !shadowRoot.isUAWidget()) {
       serialized.shadowRoot = serialize(
         shadowRoot,
         serializationOptions,

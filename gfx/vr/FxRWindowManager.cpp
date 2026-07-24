@@ -7,6 +7,7 @@
 #include "mozilla/Assertions.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/WidgetUtils.h"
 
 #include "nsWindow.h"
 

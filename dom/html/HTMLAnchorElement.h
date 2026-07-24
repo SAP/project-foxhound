@@ -11,10 +11,10 @@
 #define mozilla_dom_HTMLAnchorElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Link.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "nsGenericHTMLElement.h"
+#include "mozilla/dom/Link.h"
 #include "nsDOMTokenList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
@@ -25,7 +25,7 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
                                 public Link,
                                 public SupportsDNSPrefetch {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
   explicit HTMLAnchorElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -112,10 +112,6 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
   }
   void SetHreflang(const nsAString& aValue, mozilla::ErrorResult& rv) {
     SetHTMLAttr(nsGkAtoms::hreflang, aValue, rv);
-  }
-  // Needed for docshell
-  void GetType(nsAString& aValue) const {
-    GetHTMLAttr(nsGkAtoms::type, aValue);
   }
   void GetType(DOMString& aValue) const {
     GetHTMLAttr(nsGkAtoms::type, aValue);

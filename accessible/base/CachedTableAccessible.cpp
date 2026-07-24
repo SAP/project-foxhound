@@ -13,6 +13,7 @@
 #include "mozilla/UniquePtr.h"
 #include "nsAccUtils.h"
 #include "nsIAccessiblePivot.h"
+#include "nsThreadUtils.h"
 #include "Pivot.h"
 #include "RemoteAccessible.h"
 
@@ -59,7 +60,17 @@ CachedTableAccessible* CachedTableAccessible::GetFrom(Accessible* aAcc) {
   MOZ_ASSERT(aAcc->IsTable());
   if (!sCachedTables) {
     sCachedTables = new CachedTablesMap();
-    ClearOnShutdown(&sCachedTables);
+    if (NS_IsMainThread()) {
+      ClearOnShutdown(&sCachedTables);
+    } else {
+#ifdef ANDROID
+      NS_DispatchToMainThread(
+          NS_NewRunnableFunction("CachedTableAccessible::GetFrom",
+                                 [] { ClearOnShutdown(&sCachedTables); }));
+#else
+      MOZ_ASSERT_UNREACHABLE("Querying a table on the wrong thread!");
+#endif
+    }
   }
   return &sCachedTables->LookupOrInsertWith(
       aAcc, [&] { return CachedTableAccessible(aAcc); });

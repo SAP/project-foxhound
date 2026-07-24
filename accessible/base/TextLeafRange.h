@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_TextLeafRange_h__
-#define mozilla_a11y_TextLeafRange_h__
+#ifndef mozilla_a11y_TextLeafRange_h_
+#define mozilla_a11y_TextLeafRange_h_
 
 #include <stdint.h>
 
@@ -166,7 +166,7 @@ class TextLeafPoint final {
    * Returns a rect (in dev pixels) describing position and size of
    * the character at mOffset in mAcc. This rect is screen-relative.
    */
-  LayoutDeviceIntRect CharBounds();
+  LayoutDeviceIntRect CharBounds() const;
 
   /**
    * Returns true if the given point (in screen coords) is contained
@@ -252,6 +252,10 @@ class TextLeafPoint final {
    * such that the resulting rect contains only one character.
    */
   LayoutDeviceIntRect ComputeBoundsFromFrame() const;
+
+  LayoutDeviceIntRect InsertionPointBounds() const;
+
+  friend class TextLeafRange;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(TextLeafPoint::BoundaryFlags)
@@ -345,6 +349,8 @@ class TextLeafRange final {
    */
   nsTArray<TextLeafRange> VisibleLines(Accessible* aContainer) const;
 
+  void GetFlattenedText(nsAString& aText) const;
+
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
@@ -356,10 +362,11 @@ class TextLeafRange final {
    * that the first and last lines might be partial if the range begins or ends
    * in the middle of a line. They are exclusive of mEnd, since range ends are
    * always exclusive, so including mEnd would include the bounds for 1
-   * character past the end of the range. Each rectangle is screen-relative. The
-   * function returns true if it walks any lines, and false if it could not walk
-   * any lines, which could happen if the start and end points are improperly
-   * positioned.
+   * character past the end of the range. Each rectangle is screen-relative. If
+   * this range is collapsed, the callback is called with the insertion point
+   * bounds. The function returns true if it walks any lines, and false if it
+   * could not walk any lines, which could happen if the start and end points
+   * are improperly positioned.
    */
   using LineRectCallback =
       FunctionRef<void(TextLeafRange, LayoutDeviceIntRect)>;

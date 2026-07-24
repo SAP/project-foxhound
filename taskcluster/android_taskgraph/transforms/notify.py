@@ -38,12 +38,10 @@ def add_notify_email(config, tasks):
             }
 
             routes = task.setdefault("routes", [])
-            routes.extend(
-                [
-                    f"notify.email.{address}.on-{reason}"
-                    for address in email_config["to-addresses"]
-                    for reason in email_config["on-reasons"]
-                ]
-            )
+            routes.extend([
+                f"notify.email.{address}.on-{reason}"
+                for address in email_config["to-addresses"]
+                for reason in email_config["on-reasons"]
+            ])
 
         yield task

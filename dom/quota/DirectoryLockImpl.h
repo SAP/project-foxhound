@@ -9,10 +9,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <utility>
 
-#include "nsISupportsImpl.h"
-#include "nsTArray.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EnumSet.h"
@@ -30,6 +27,8 @@
 #include "mozilla/dom/quota/PersistenceScope.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
+#include "nsISupportsImpl.h"
+#include "nsTArray.h"
 
 class nsITimer;
 

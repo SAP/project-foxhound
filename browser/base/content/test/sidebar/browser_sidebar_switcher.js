@@ -1,9 +1,23 @@
+/* Any copyright is dedicated to the Public Domain.
+ * https://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
+
+add_setup(async function () {
+  /* This test exercises the sidebar switcher -
+  which is only available under the legacy sidebar. */
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 registerCleanupFunction(() => {
   SidebarController.hide();
 });
 
 /**
  * Helper function that opens a sidebar switcher panel popup menu
+ *
  * @returns Promise that resolves when the switcher panel popup is shown
  *          without any action from a user/test
  */
@@ -22,6 +36,7 @@ function showSwitcherPanelPromise() {
 
 /**
  * Helper function that waits for a sidebar switcher panel's "popupshown" event
+ *
  * @returns Promise which resolves when the popup menu is opened
  */
 async function waitForSwitcherPopupShown() {
@@ -35,7 +50,8 @@ async function waitForSwitcherPopupShown() {
  * Helper function that sends a mouse click to a specific menu item or a key
  * event to a active menu item of the sidebar switcher menu popup. Provide a
  * querySelector parameter when a click behavior is needed.
- * @param {String} [querySelector=null]  An HTML attribute of the menu item
+ *
+ * @param {string} [querySelector=null]  An HTML attribute of the menu item
  *                                       to be clicked
  * @returns Promise that resolves when both the menu popup is hidden and
  *          the sidebar itself is focused
@@ -57,8 +73,9 @@ function pickSwitcherMenuitem(querySelector = null) {
 /**
  * Helper function to test a key handling of sidebar menu popup items used to
  * access a specific sidebar
- * @param {String} key           Event.key to open the switcher menu popup
- * @param {String} sidebarTitle  Title of the sidebar that is to be activated
+ *
+ * @param {string} key           Event.key to open the switcher menu popup
+ * @param {string} sidebarTitle  Title of the sidebar that is to be activated
  *                               during the test (capitalized one word versions),
  *                               i.e. "History" or "Tabs"
  */
@@ -109,45 +126,63 @@ async function testSidebarMenuKeyToggle(key, sidebarTitle) {
     "open",
     "Sidebar menu popup is open"
   );
+  if (
+    AppConstants.platform == "macosx" &&
+    Services.prefs.getBoolPref("widget.macos.native-anchored-menus", false)
+  ) {
+    // We cannot synthesize key events with native menus, so explicitly
+    // activate the desired sidebar
+    let sidebarShown = BrowserTestUtils.waitForEvent(window, "SidebarShown");
+    if (sidebarTitle == "Tabs") {
+      SidebarController._switcherPanel.activateItem(
+        document.getElementById("sidebar-switcher-tabs")
+      );
+    } else {
+      SidebarController._switcherPanel.activateItem(
+        document.getElementById("sidebar-switcher-history")
+      );
+    }
+    await sidebarShown;
+  } else {
+    info("Testing keyboard navigation between sidebar menu popup controls");
 
-  info("Testing keyboard navigation between sidebar menu popup controls");
+    let arrowDown = async (menuitemId, msg) => {
+      let menuItemActive = BrowserTestUtils.waitForEvent(
+        SidebarController._switcherPanel,
+        "DOMMenuItemActive"
+      );
+      EventUtils.synthesizeKey("KEY_ArrowDown", {});
+      await menuItemActive;
+      Assert.ok(
+        document.getElementById(menuitemId).hasAttribute("_moz-menuactive"),
+        msg
+      );
+    };
 
-  let arrowDown = async (menuitemId, msg) => {
-    let menuItemActive = BrowserTestUtils.waitForEvent(
-      SidebarController._switcherPanel,
-      "DOMMenuItemActive"
-    );
-    EventUtils.synthesizeKey("KEY_ArrowDown", {});
-    await menuItemActive;
-    Assert.ok(
-      document.getElementById(menuitemId).hasAttribute("_moz-menuactive"),
-      msg
-    );
-  };
-
-  // Move to the first sidebar switcher option:
-  await arrowDown(
-    "sidebar-switcher-bookmarks",
-    "The 1st sidebar menu item (Bookmarks) is active"
-  );
-
-  // Move to the next sidebar switcher option:
-  await arrowDown(
-    "sidebar-switcher-history",
-    "The 2nd sidebar menu item (History) is active"
-  );
-
-  if (sidebarTitle === "Tabs") {
+    // Move to the first sidebar switcher option:
     await arrowDown(
-      "sidebar-switcher-tabs",
-      "The 3rd sidebar menu item (Synced Tabs) is active"
+      "sidebar-switcher-bookmarks",
+      "The 1st sidebar menu item (Bookmarks) is active"
     );
-  }
 
-  // Activate the tested sidebar switcher option to open the tested sidebar:
-  let sidebarShown = BrowserTestUtils.waitForEvent(window, "SidebarShown");
-  await pickSwitcherMenuitem(/* querySelector = */ null);
-  await sidebarShown;
+    // Move to the next sidebar switcher option:
+    await arrowDown(
+      "sidebar-switcher-history",
+      "The 2nd sidebar menu item (History) is active"
+    );
+
+    if (sidebarTitle === "Tabs") {
+      await arrowDown(
+        "sidebar-switcher-tabs",
+        "The 3rd sidebar menu item (Synced Tabs) is active"
+      );
+    }
+
+    // Activate the tested sidebar switcher option to open the tested sidebar:
+    let sidebarShown = BrowserTestUtils.waitForEvent(window, "SidebarShown");
+    await pickSwitcherMenuitem(/* querySelector = */ null);
+    await sidebarShown;
+  }
 
   info("Testing keyboard navigation when a sidebar menu popup is closed");
 
@@ -222,8 +257,8 @@ add_task(async function markup() {
     "popuphidden"
   );
 
-  // Close on Escape anywhere
-  EventUtils.synthesizeKey("KEY_Escape", {});
+  // Close popup
+  sidebarPopup.hidePopup();
   await waitForPopupHidden;
 
   Assert.equal(

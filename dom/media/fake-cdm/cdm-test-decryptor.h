@@ -3,11 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef FAKE_DECRYPTOR_H__
-#define FAKE_DECRYPTOR_H__
+#ifndef FAKE_DECRYPTOR_H_
+#define FAKE_DECRYPTOR_H_
+
+#include <string>
 
 #include "content_decryption_module.h"
-#include <string>
 
 class FakeDecryptor : public cdm::ContentDecryptionModule_10 {
  public:

@@ -8,6 +8,7 @@
 #define js_TraceableFifo_h
 
 #include "ds/Fifo.h"
+#include "js/GCVector.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
 
@@ -30,8 +31,9 @@ namespace js {
 // must either be used with Rooted, or barriered and traced manually.
 template <typename T, size_t MinInlineCapacity = 0,
           typename AllocPolicy = TempAllocPolicy>
-class TraceableFifo : public js::Fifo<T, MinInlineCapacity, AllocPolicy> {
-  using Base = js::Fifo<T, MinInlineCapacity, AllocPolicy>;
+class TraceableFifo
+    : public js::Fifo<T, MinInlineCapacity, AllocPolicy, JS::GCVector> {
+  using Base = js::Fifo<T, MinInlineCapacity, AllocPolicy, JS::GCVector>;
 
  public:
   explicit TraceableFifo(AllocPolicy alloc = AllocPolicy())
@@ -44,12 +46,8 @@ class TraceableFifo : public js::Fifo<T, MinInlineCapacity, AllocPolicy> {
   TraceableFifo& operator=(const TraceableFifo&) = delete;
 
   void trace(JSTracer* trc) {
-    for (size_t i = 0; i < this->front_.length(); ++i) {
-      JS::GCPolicy<T>::trace(trc, &this->front_[i], "fifo element");
-    }
-    for (size_t i = 0; i < this->rear_.length(); ++i) {
-      JS::GCPolicy<T>::trace(trc, &this->rear_[i], "fifo element");
-    }
+    this->front_.trace(trc);
+    this->rear_.trace(trc);
   }
 };
 

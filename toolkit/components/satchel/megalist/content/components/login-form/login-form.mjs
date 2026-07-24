@@ -27,6 +27,8 @@ export class LoginForm extends MozLitElement {
     passwordValue: { type: String },
     passwordVisible: { type: Boolean },
     _showDeleteCard: { type: Boolean, state: true },
+    _originInvalid: { type: Boolean, state: true },
+    _passwordInvalid: { type: Boolean, state: true },
   };
 
   static queries = {
@@ -44,6 +46,8 @@ export class LoginForm extends MozLitElement {
     this.usernameValue = "";
     this.passwordValue = "";
     this._showDeleteCard = false;
+    this._originInvalid = false;
+    this._passwordInvalid = false;
   }
 
   async firstUpdated() {
@@ -96,7 +100,12 @@ export class LoginForm extends MozLitElement {
   }
 
   #shouldShowWarning(field, input, warning) {
-    if (!input.checkValidity()) {
+    const fieldInvalid =
+      warning === this.originWarning
+        ? this._originInvalid
+        : this._passwordInvalid;
+
+    if (!input.checkValidity() || fieldInvalid) {
       // FIXME: for some reason checkValidity does not apply the :invalid style
       // to the field. For now, we reset the input value to "" apply :invalid
       // styling.
@@ -106,11 +115,21 @@ export class LoginForm extends MozLitElement {
       warning.setAttribute("message", input.validationMessage);
       warning.classList.add("invalid-input");
       field.setAttribute("aria-describedby", warning.id);
+      if (warning === this.originWarning) {
+        this._originInvalid = true;
+      } else if (warning === this.passwordWarning) {
+        this._passwordInvalid = true;
+      }
       return true;
     }
 
     field.removeAttribute("aria-describedby");
     this.#removeWarning(warning);
+    if (warning === this.originWarning) {
+      this._originInvalid = false;
+    } else if (warning === this.passwordWarning) {
+      this._passwordInvalid = false;
+    }
     return false;
   }
 
@@ -118,10 +137,17 @@ export class LoginForm extends MozLitElement {
     const field = e.target;
     const warning =
       field.name === "origin" ? this.originWarning : this.passwordWarning;
+    const isValid = field.input.checkValidity();
 
-    if (field.input.checkValidity()) {
+    if (isValid) {
       this.#removeWarning(warning);
       field.removeAttribute("aria-describedby");
+    }
+
+    if (field.name === "origin") {
+      this._originInvalid = !isValid;
+    } else if (field.name === "password") {
+      this._passwordInvalid = !isValid;
     }
   }
 
@@ -235,7 +261,7 @@ export class LoginForm extends MozLitElement {
     const heading =
       this.type !== "edit"
         ? "contextual-manager-passwords-create-label"
-        : "contextual-manager-passwords-edit-label";
+        : "contextual-manager-passwords-update-label";
 
     return html`<link
         rel="stylesheet"

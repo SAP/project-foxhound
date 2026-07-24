@@ -176,25 +176,22 @@ class PypiBasedTool:
                 print(release)
                 # there is one, so install it. Note that install_pip_package
                 # does not work here, so just run pip directly.
-                subprocess.check_call(
-                    [
-                        cmd.virtualenv_manager.python_path,
-                        "-m",
-                        "pip",
-                        "install",
-                        f"{self.pypi_name}=={release}",
-                    ]
-                )
+                subprocess.check_call([
+                    cmd.virtualenv_manager.python_path,
+                    "-m",
+                    "pip",
+                    "install",
+                    f"{self.pypi_name}=={release}",
+                ])
                 print(
                     "%s was updated to version %s. please"
                     " re-run your command." % (self.pypi_name, release)
                 )
+            # Tool is up to date, return the parser.
+            elif subcommand:
+                return tool.parser(subcommand)
             else:
-                # Tool is up to date, return the parser.
-                if subcommand:
-                    return tool.parser(subcommand)
-                else:
-                    return tool.parser()
+                return tool.parser()
         # exit if we updated or installed mozregression because
         # we may have already imported mozregression and running it
         # as this may cause issues.
@@ -268,7 +265,8 @@ def npm(command_context, args):
     # in the wrong places and probably other badness too without this:
     npm_path, _ = find_npm_executable()
     if not npm_path:
-        exit(-1, "could not find npm executable")
+        print("error: could not find npm executable")
+        sys.exit(-1)
     path = os.path.abspath(os.path.dirname(npm_path))
     os.environ["PATH"] = "{}{}{}".format(path, os.pathsep, os.environ["PATH"])
 
@@ -281,6 +279,34 @@ def npm(command_context, args):
         [npm_path, "--scripts-prepend-node-path=auto"] + args,
         pass_thru=True,  # Avoid eating npm output/error messages
         ensure_exit_code=False,  # Don't throw on non-zero exit code.
+    )
+
+
+@Command(
+    "npx",
+    category="devenv",
+    description="Run the npx executable from the NodeJS used for building.",
+)
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def npx(command_context, args):
+    from mozbuild.nodeutil import find_npx_executable
+
+    # Avoid logging the command
+    command_context.log_manager.terminal_handler.setLevel(logging.CRITICAL)
+
+    import os
+
+    npx_path, _ = find_npx_executable()
+    if not npx_path:
+        print("error: could not find npx executable")
+        sys.exit(-1)
+    path = os.path.abspath(os.path.dirname(npx_path))
+    os.environ["PATH"] = "{}{}{}".format(path, os.pathsep, os.environ["PATH"])
+
+    return command_context.run_process(
+        [npx_path] + args,
+        pass_thru=True,
+        ensure_exit_code=False,
     )
 
 

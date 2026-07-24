@@ -20,7 +20,6 @@ class JetStreamSupport(BasePythonSupport):
         score_tracker = {}
 
         for k, v in raw_result["extras"][0]["js3_res"]["tests"].items():
-
             score_tracker[k + "-" + "Geometric"] = v["metrics"]["Score"]["current"]
             for measure, metrics in v["tests"].items():
                 score_tracker[k + "-" + measure] = metrics["metrics"]["Time"]["current"]
@@ -46,12 +45,18 @@ class JetStreamSupport(BasePythonSupport):
 
         subtest = {
             "unit": unit,
-            "alertThreshold": float(test.get("alert_threshold", 2.0)),
+            # Bug 1968521 for the time being use 5% for jetstream 3 subtests.
+            "alertThreshold": float(test.get("subtest_alert_threshold", 5.0)),
             "lowerIsBetter": lower_is_better,
             "name": measurement_name,
             "replicates": replicates,
+            "shouldAlert": True,
             "value": round(filters.mean(replicates), 3),
         }
+
+        # Overall score also appears in the subtests payload so just ensure it is 2%
+        if measurement_name == "score":
+            subtest["alertThreshold"] = float(test.get("alert_threshold", 2.0))
 
         return subtest
 
@@ -76,11 +81,14 @@ class JetStreamSupport(BasePythonSupport):
         suite["subtests"].sort(key=lambda subtest: subtest["name"])
 
         score = 0
+        replicates = []
         for subtest in suite["subtests"]:
             if subtest["name"] == "score":
                 score = subtest["value"]
+                replicates = subtest.get("replicates", [])
                 break
         suite["value"] = score
+        suite["replicates"] = replicates
 
     def modify_command(self, cmd, test):
         """Modify the browsertime command to have the appropriate suite name in

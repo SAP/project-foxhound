@@ -7,7 +7,6 @@
 #ifndef mozilla_scriptablecontentiterator_h
 #define mozilla_scriptablecontentiterator_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"

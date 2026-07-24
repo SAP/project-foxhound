@@ -14,7 +14,7 @@
 
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "mozilla/widget/WinTaskbar.h"
 #include "WinUtils.h"
@@ -186,7 +186,16 @@ Win11PinToTaskBarResult PinCurrentAppToTaskbarWin11(
   Win11PinToTaskBarResult unlockStatus =
       UnlockLimitedAccessFeature(Win11LimitedAccessFeatureType::Taskbar);
   if (unlockStatus.result != Win11PinToTaskBarResultStatus::Success) {
-    return unlockStatus;
+    // Limited Access Feature no longer necessary for Windows 11 26200 Build
+    // 7840, and possibly other channels.
+    if (!IsWin11OrLater()) {
+      return unlockStatus;
+    }
+
+    TASKBAR_PINNING_LOG(
+        LogLevel::Warning,
+        "Limited Access Feature failed to unlock, attempting to use Taskbar "
+        "Pinning API assuming LAF is no longer necessary.");
   }
 
   HRESULT hr;
@@ -407,7 +416,16 @@ Win11PinToTaskBarResult IsCurrentAppPinnedToTaskbarWin11(bool aCheckOnly) {
   Win11PinToTaskBarResult unlockStatus =
       UnlockLimitedAccessFeature(Win11LimitedAccessFeatureType::Taskbar);
   if (unlockStatus.result != Win11PinToTaskBarResultStatus::Success) {
-    return unlockStatus;
+    // Limited Access Feature no longer necessary for Windows 11 26200 Build
+    // 7840, and possibly other channels.
+    if (!IsWin11OrLater()) {
+      return unlockStatus;
+    }
+
+    TASKBAR_PINNING_LOG(
+        LogLevel::Warning,
+        "Limited Access Feature failed to unlock, attempting to use Taskbar "
+        "Pinning API assuming LAF is no longer necessary.");
   }
 
   HRESULT hr;

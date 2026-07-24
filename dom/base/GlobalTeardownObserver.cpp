@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GlobalTeardownObserver.h"
-#include "nsGlobalWindowInner.h"
+
 #include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla {
 
@@ -64,7 +65,13 @@ nsresult GlobalTeardownObserver::CheckCurrentGlobalCorrectness() const {
     }
   }
 
-  if (mParentObject->IsDying() && !NS_IsMainThread()) {
+  if (NS_IsMainThread()) {
+    return NS_OK;
+  }
+
+  // Not on main thread, might check if is on the global's owning thread before
+  // calling IsDying().
+  if (mParentObject->IsDying()) {
     return NS_ERROR_FAILURE;
   }
 

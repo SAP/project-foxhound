@@ -7,7 +7,6 @@
 #ifndef mozilla_image_imgLoader_h
 #define mozilla_image_imgLoader_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
@@ -140,8 +139,6 @@ class imgCacheEntry {
   bool mForcePrincipalCheck : 1;
   bool mHasNotified : 1;
 };
-
-#include <vector>
 
 #define NS_IMGLOADER_CID                      \
   {/* c1354898-e3fe-4602-88a7-c4520c21cb4e */ \

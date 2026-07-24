@@ -1,0 +1,86 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <title>Test for showPicker() with datalist</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="satchel_common.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+</head>
+
+<body>
+  <input list="suggest" type="text" id="field1">
+  <datalist id="suggest">
+    <option value="First"></option>
+    <option value="Second"></option>
+    <option value="Third"></option>
+  </datalist>
+<script>
+
+async function waitForPopupClosed() {
+  return SimpleTest.promiseWaitForCondition(async () => {
+    const popupState = await getPopupState();
+    return !popupState.open;
+  }, "Wait for popup to be closed");
+}
+
+add_setup(async function init() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.select.showPicker.enabled", true]],
+  });
+});
+
+add_task(async function showPicker_enter() {
+  let input = document.getElementById("field1");
+  await popupBy(() => {
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
+    input.showPicker();
+  });
+  isnot(document.activeElement, input, "Input element should not be focused");
+  assertAutocompleteItems("First", "Second", "Third");
+
+  const popupClosedPromise = waitForPopupClosed();
+  // The first item is selected by default, so ArrowDown navigates the selected
+  // item to second item.
+  assertValueAfterKeys(
+    input,
+    ["KEY_ArrowDown", "KEY_Enter"],
+    "Second");
+  await popupClosedPromise;
+
+  // Do not show the popup again once it has been closed if the input element is not focused.
+  isnot(document.activeElement, input, "Input element should still not be focused");
+  await noPopupBy(() => {
+    synthesizeKey("KEY_ArrowDown");
+  });
+});
+
+add_task(async function showPicker_esc() {
+  let input = document.getElementById("field1");
+  input.value = "";
+  await popupBy(() => {
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
+    input.showPicker();
+  });
+  isnot(document.activeElement, input, "Input element should not be focused");
+  assertAutocompleteItems("First", "Second", "Third");
+
+  const popupClosedPromise = waitForPopupClosed();
+  assertValueAfterKeys(
+    input,
+    ["KEY_ArrowDown", "KEY_Escape"],
+    "");
+  await popupClosedPromise;
+
+  // Do not show the popup again once it has been closed if the input element is not focused.
+  isnot(document.activeElement, input, "Input element should still not be focused");
+  await noPopupBy(() => {
+    synthesizeKey("KEY_ArrowDown");
+  });
+});
+
+</script>
+</body>
+
+</html>

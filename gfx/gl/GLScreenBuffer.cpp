@@ -93,23 +93,19 @@ SwapChainPresenter::~SwapChainPresenter() {
   auto newFront = SwapBackBuffer(nullptr);
   if (newFront) {
     mSwapChain->mPrevFrontBuffer = mSwapChain->mFrontBuffer;
-    mSwapChain->mFrontBuffer = newFront;
+    mSwapChain->mFrontBuffer = std::move(newFront);
   }
 }
 
 std::shared_ptr<SharedSurface> SwapChainPresenter::SwapBackBuffer(
     std::shared_ptr<SharedSurface> back) {
   if (mBackBuffer) {
-    mBackBuffer->UnlockProd();
-    mBackBuffer->ProducerRelease();
-    mBackBuffer->Commit();
+    mBackBuffer->EndWrite();
   }
   auto old = mBackBuffer;
   mBackBuffer = back;
   if (mBackBuffer) {
-    mBackBuffer->WaitForBufferOwnership();
-    mBackBuffer->ProducerAcquire();
-    mBackBuffer->LockProd();
+    mBackBuffer->BeginWrite();
   }
   return old;
 }

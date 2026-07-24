@@ -10,7 +10,6 @@ COMPILE_FLAGS["OS_INCLUDES"] = []
 AllowCompilerWarnings()
 
 DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
-DEFINES["_LIBCPP_HARDENING_MODE"] = "_LIBCPP_HARDENING_MODE_NONE"
 
 FINAL_LIBRARY = "xul"
 
@@ -54,7 +53,6 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["USE_OZONE"] = "1"
     DEFINES["USE_UDEV"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
-    DEFINES["_GLIBCXX_ASSERTIONS"] = "1"
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
 
@@ -108,12 +106,10 @@ if CONFIG["TARGET_CPU"] == "loongarch64":
 
 if CONFIG["TARGET_CPU"] == "mips32":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["TARGET_CPU"] == "mips64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "Android":
@@ -144,12 +140,10 @@ if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "x86":
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "arm":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
@@ -158,12 +152,10 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
         "-msse2"
     ]
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86_64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 Library("internal_gn")

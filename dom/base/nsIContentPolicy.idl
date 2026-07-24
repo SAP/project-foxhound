@@ -462,12 +462,20 @@ interface nsIContentPolicy : nsISupports
     TYPE_INTERNAL_JSON_PRELOAD = 63,
 
     /**
+     * Indicates an internal constant for Notification image icons.
+     *
+     * This will be mapped to TYPE_IMAGE before being passed
+     * to content policy implementations.
+     */
+    TYPE_INTERNAL_IMAGE_NOTIFICATION = 64,
+
+    /**
      * Used to indicate the end of this list, not a content policy. If you want
      * to add a new content policy type, place it before this sentinel value
      * TYPE_END, have it use TYPE_END's current value, and increment TYPE_END by
      * one. (TYPE_END should always have the highest numerical value.)
      */
-    TYPE_END = 64,
+    TYPE_END = 65,
 
     /* When adding new content types, please update
      * NS_CP_ContentTypeName, nsCSPContext, CSP_ContentTypeToDirective,

@@ -8,14 +8,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 let lazy = {};
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  Favicons: ["@mozilla.org/browser/favicon-service;1", "nsIFaviconService"],
-});
-
-ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
-  return console.createInstance({
-    prefix: "TaskbarTabs",
-    maxLogLevel: "Warn",
-  });
+  Favicons: ["@mozilla.org/browser/favicon-service;1", Ci.nsIFaviconService],
 });
 
 export const TaskbarTabsUtils = {
@@ -62,135 +55,63 @@ export const TaskbarTabsUtils = {
   },
 
   /**
-   * Retrieves a favicon image container for the provided URL.
+   * Retrieves an image container for the provided URL. May throw if an error
+   * occurs while decoding.
    *
-   * @param {nsIURI} aUri - The URI to retrieve a favicon for.
-   * @returns {imgIContainer} A container of the favicon retrieved, or the
+   * Raster images will be scaled to 256x256 pixels.
+   *
+   * @param {nsIURI} aUri - The URI to parse the image from. Must be a local
+   * URI, like data:, chrome:, or file:.
+   * @returns {imgIContainer} A container of the icon retrieved, or the
    * default favicon.
+   * @throws {TypeError} aUri is not an nsIURI.
+   * @throws {Error} aUri is not a local URI.
+   * @throws {Components.Exception} The image could not be decoded.
    */
-  async getFavicon(aUri) {
-    let favicon = await lazy.Favicons.getFaviconForPage(aUri);
-
-    let imgContainer;
-    if (favicon) {
-      lazy.logConsole.debug(`Using favicon at URI ${favicon.dataURI.spec}.`);
-      try {
-        imgContainer = await getImageFromUri(favicon.dataURI);
-      } catch (e) {
-        lazy.logConsole.error(
-          `${e.message}, falling through to default favicon.`
-        );
-      }
-    }
-
-    if (!imgContainer) {
-      lazy.logConsole.debug(
-        `Unable to retrieve icon for ${aUri.spec}, using default favicon at ${lazy.Favicons.defaultFavicon.spec}.`
+  async _imageFromLocalURI(aUri) {
+    if (!(aUri instanceof Ci.nsIURI)) {
+      throw new TypeError(
+        "Invalid argument, `aUri` should be instance of `nsIURI`"
       );
-      imgContainer = await getImageFromUri(lazy.Favicons.defaultFavicon);
     }
 
-    return imgContainer;
+    const protocolFlags = Services.io.getProtocolFlags(aUri.scheme);
+    if (!(protocolFlags & Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE)) {
+      throw new Error("Attempting to create an image from a non-local URI");
+    }
+
+    const channel = Services.io.newChannelFromURI(
+      aUri,
+      null,
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null,
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_IMAGE
+    );
+
+    return ChromeUtils.fetchDecodedImage(aUri, channel);
+  },
+
+  /**
+   * Gets the favicon for aUri as a data URI.
+   *
+   * @param {nsIURI} aUri - The URI to look up the favicon for.
+   * @returns {nsIURI} The data URI of the favicon.
+   */
+  async getFaviconUri(aUri) {
+    let favicon = await lazy.Favicons.getFaviconForPage(aUri);
+    return favicon?.dataURI;
+  },
+
+  /**
+   * Gets the default favicon as an imgIContainer. This icon is used if no
+   * other icons are available.
+   *
+   * @returns {imgIContainer} The default favicon.
+   */
+  async getDefaultIcon() {
+    return await TaskbarTabsUtils._imageFromLocalURI(
+      lazy.Favicons.defaultFavicon
+    );
   },
 };
-
-class ChannelListener {
-  #request = null;
-  #imageListener = null;
-  #rejector = null;
-
-  constructor(rejector) {
-    this.#rejector = rejector;
-  }
-
-  setImageListener(imageListener) {
-    this.#imageListener = imageListener;
-    if (this.#request) {
-      this.#imageListener.onStartRequest(this.#request);
-    }
-  }
-
-  onStartRequest(request) {
-    this.#request = request;
-    if (this.#imageListener) {
-      this.#imageListener.onStartRequest(request);
-    }
-  }
-
-  onStopRequest(request, status) {
-    if (this.#imageListener) {
-      this.#imageListener.onStopRequest(request, status);
-    }
-
-    if (!Components.isSuccessCode(status)) {
-      this.#rejector(new Components.Exception("Image loading failed", status));
-    }
-
-    this.#imageListener = null;
-    this.#rejector = null;
-    this.#request = null;
-  }
-
-  onDataAvailable(request, inputStream, offset, count) {
-    if (this.#imageListener) {
-      this.#imageListener.onDataAvailable(request, inputStream, offset, count);
-    }
-  }
-}
-
-/**
- * Retrieves an image given a URI.
- *
- * @param {nsIURI} aUri - The URI to retrieve an image from.
- * @returns {Promise<imgIContainer>} Resolves to an image container.
- */
-async function getImageFromUri(aUri) {
-  // Creating the Taskbar Tabs icon should not result in a network request.
-  const protocolFlags = Services.io.getProtocolFlags(aUri.scheme);
-  if (!(protocolFlags & Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE)) {
-    throw new Error(
-      `Scheme "${aUri.scheme}" is not supported for creating a Taskbar Tab icon, URI should be local`
-    );
-  }
-
-  const channel = Services.io.newChannelFromURI(
-    aUri,
-    null,
-    Services.scriptSecurityManager.getSystemPrincipal(),
-    null,
-    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-    Ci.nsIContentPolicy.TYPE_IMAGE
-  );
-
-  return new Promise((resolve, reject) => {
-    let imageTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
-
-    // Despite the docs it is fine to pass null here, we then just get a global loader.
-    let imageLoader = imageTools.getImgLoaderForDocument(null);
-    let observer = imageTools.createScriptedObserver({
-      decodeComplete() {
-        request.cancel(Cr.NS_BINDING_ABORTED);
-        resolve(request.image);
-      },
-    });
-
-    let channelListener = new ChannelListener(reject);
-    channel.asyncOpen(channelListener);
-
-    let streamListener = {};
-    let request = imageLoader.loadImageWithChannelXPCOM(
-      channel,
-      observer,
-      null,
-      streamListener
-    );
-    // Force image decoding to start when the container is available.
-    request.startDecoding(Ci.imgIContainer.FLAG_ASYNC_NOTIFY);
-
-    // If the request is coming from the cache then there will be no listener
-    // and the channel will have been automatically cancelled.
-    if (streamListener.value) {
-      channelListener.setImageListener(streamListener.value);
-    }
-  });
-}
